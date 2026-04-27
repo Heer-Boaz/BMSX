@@ -418,4 +418,7 @@ behaviourtree.wait = wait
 behaviourtree.action = action
 behaviourtree.compositeaction = compositeaction
 
+-- Export common tick status constants for compile-time resolution by carts
+behaviourtree.running = 'RUNNING'
+
 return behaviourtree

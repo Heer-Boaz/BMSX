@@ -291,7 +291,11 @@ void rewriteConstRelocations(
 	const std::vector<ProgramAsset::ConstReloc>& relocs,
 	const std::vector<int>& cartConstRemap,
 	const std::vector<int>& cartGlobalRemap,
-	const std::vector<int>& cartSystemGlobalRemap
+	const std::vector<int>& cartSystemGlobalRemap,
+	const std::vector<Value>& mergedConstValues,
+	const StringPool& mergedConstStrings,
+	const std::vector<std::string>& mergedGlobalNames,
+	const std::vector<std::string>& mergedSystemGlobalNames
 ) {
 	for (size_t i = 0; i < relocs.size(); ++i) {
 		const ProgramAsset::ConstReloc& reloc = relocs[i];
@@ -319,6 +323,62 @@ void rewriteConstRelocations(
 			: reloc.kind == ProgramAsset::ConstRelocKind::Sys
 				? cartSystemGlobalRemap[static_cast<size_t>(reloc.constIndex)]
 				: cartConstRemap[static_cast<size_t>(reloc.constIndex)];
+
+		// Handle module-placeholder relocations emitted by the TS compiler.
+		// These store a string sentinel in the merged const pool of the form
+		// "modslot:<slotName>". Resolve that string to a merged global/system
+		// global slot index and rewrite the instruction into GETSYS/GETGL.
+		if (reloc.kind == ProgramAsset::ConstRelocKind::Module) {
+			if (mappedIndex < 0 || static_cast<size_t>(mappedIndex) >= mergedConstValues.size()) {
+				throw std::runtime_error("[ProgramLinker] Module const index out of range.");
+			}
+			const Value cv = mergedConstValues[static_cast<size_t>(mappedIndex)];
+			if (!valueIsString(cv)) {
+				throw std::runtime_error("[ProgramLinker] Module reloc must refer to a string const.");
+			}
+			const std::string text = mergedConstStrings.toString(asStringId(cv));
+			const std::string prefix = "modslot:";
+			std::string slotName = text;
+			if (text.rfind(prefix, 0) == 0) {
+				slotName = text.substr(prefix.size());
+			}
+			int foundIndex = -1;
+			bool system = false;
+			for (size_t j = 0; j < mergedSystemGlobalNames.size(); ++j) {
+				if (mergedSystemGlobalNames[j] == slotName) {
+					foundIndex = static_cast<int>(j);
+					system = true;
+					break;
+				}
+			}
+			if (foundIndex < 0) {
+				for (size_t j = 0; j < mergedGlobalNames.size(); ++j) {
+					if (mergedGlobalNames[j] == slotName) {
+						foundIndex = static_cast<int>(j);
+						break;
+					}
+				}
+			}
+			if (foundIndex < 0) {
+				throw std::runtime_error("[ProgramLinker] Missing module export slot '" + slotName + "' in merged globals.");
+			}
+			const uint32_t nextWide = static_cast<uint32_t>(foundIndex) >> (MAX_BX_BITS + EXT_BX_BITS);
+			if (!hasWide && nextWide != 0) {
+				throw std::runtime_error("[ProgramLinker] Const reloc requires WIDE prefix.");
+			}
+			const uint8_t nextExt = static_cast<uint8_t>((static_cast<uint32_t>(foundIndex) >> MAX_BX_BITS) & 0xff);
+			const uint16_t nextLow = static_cast<uint16_t>(static_cast<uint32_t>(foundIndex) & MAX_LOW_BX);
+			bLow = static_cast<uint8_t>((nextLow >> 6) & 0x3f);
+			cLow = static_cast<uint8_t>(nextLow & 0x3f);
+			ext = nextExt;
+			op = static_cast<uint8_t>(system ? OpCode::GETSYS : OpCode::GETGL);
+			if (hasWide) {
+				wideB = static_cast<uint8_t>(nextWide & 0x3f);
+				writeWideInstruction(code, wordIndex - 1, wideA, wideB, wideC);
+			}
+			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
+			continue;
+		}
 
 		if (reloc.kind == ProgramAsset::ConstRelocKind::Bx
 			|| reloc.kind == ProgramAsset::ConstRelocKind::Gl
@@ -532,7 +592,11 @@ LinkedProgramAsset linkProgramAssets(
 		cartAsset.link.constRelocs,
 		merged.cartRemap,
 		mergedGlobals.cartRemap,
-		mergedSystemGlobals.cartRemap
+		mergedSystemGlobals.cartRemap,
+		merged.values,
+		linkedProgram->stringPool,
+		mergedGlobals.names,
+		mergedSystemGlobals.names
 	);
 	linkedProgram->constPool = std::move(merged.values);
 

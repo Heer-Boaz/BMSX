@@ -3643,6 +3643,26 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
 	const { program, metadata, constRelocs } = programBuilder.buildProgram();
+
+	// Ensure module export slot names (built during module compile-info collection)
+	// are present in the program metadata so linkers can resolve 'modslot:' placeholders.
+	// Externals (engine-provided modules passed as externalModules) are treated as
+	// system globals so they are preferred when resolving placeholders.
+	if (metadata) {
+		for (const [, info] of moduleCompileContext.modulesByPath) {
+			for (const slotName of info.exportSlotsByPathKey.values()) {
+				if (info.external) {
+					if (!metadata.systemGlobalNames.includes(slotName)) {
+						metadata.systemGlobalNames.push(slotName);
+					}
+				} else {
+					if (!metadata.globalNames.includes(slotName)) {
+						metadata.globalNames.push(slotName);
+					}
+				}
+			}
+		}
+	}
 	return {
 		program,
 		metadata,
@@ -3653,14 +3673,14 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	};
 }
 
-export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): { program: Program; metadata: ProgramMetadata; entryProtoIndex: number } {
-	const optLevel = options.optLevel ?? 0;
-	const frontend = buildCompilerSemanticFrontend(chunk, [], { ...options, baseMetadata: metadata });
+export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): { program: Program; metadata: ProgramMetadata; entryProtoIndex: number } {
+	const optLevel = options.optLevel;
+	const frontend = buildCompilerSemanticFrontend(chunk, [], { ...options, baseMetadata: programMetadata });
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
 	}
-	const programBuilder = createProgramBuilderFromProgram(base, metadata, optLevel);
+	const programBuilder = createProgramBuilderFromProgram(base, programMetadata, optLevel);
 	const compileErrors: CompileError[] = [];
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
@@ -3696,8 +3716,8 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 	if (compileErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
-	const { program, metadata: nextMetadata } = programBuilder.buildProgram();
-	return { program, metadata: nextMetadata, entryProtoIndex };
+	const { program, metadata } = programBuilder.buildProgram();
+	return { program, metadata, entryProtoIndex };
 }
 // end normalized-body-acceptable
 // end repeated-sequence-acceptable

@@ -485,8 +485,28 @@ export const linkProgramAssets = (
 	const mergedConsts = mergeConstPools(engineAsset.program.constPool, cartAsset.program.constPool);
 	const engineMetadata = engineSymbols?.metadata;
 	const cartMetadata = cartSymbols?.metadata;
-	const mergedSystemGlobals = mergeNamedSlots(engineMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES);
-	const mergedGlobals = mergeNamedSlots(engineMetadata?.globalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.globalNames ?? EMPTY_SLOT_NAMES);
+
+	// If the cart contains any 'module' const-relocs we must have full symbol metadata
+	// available from both engine and cart so module export slot names (in global/system
+	// name tables) can be resolved. Do not silently default to empty lists in that case;
+	// surface a clear diagnostic so the caller can fix the pipeline (compiler/rompacker)
+	// instead of letting the linker fabricate names.
+	const hasModuleRelocs = cartAsset.link.constRelocs.some(r => r.kind === 'module');
+	if (hasModuleRelocs) {
+		if (!engineMetadata || !cartMetadata) {
+			throw new Error('[ProgramLinker] Missing program symbols metadata required to resolve module relocations. Provide both engineSymbols and cartSymbols with metadata when linking a cart that contains module placeholders.');
+		}
+		if (!Array.isArray(engineMetadata.systemGlobalNames) || !Array.isArray(cartMetadata.systemGlobalNames) || !Array.isArray(engineMetadata.globalNames) || !Array.isArray(cartMetadata.globalNames)) {
+			throw new Error('[ProgramLinker] Incomplete program symbols metadata: expected globalNames and systemGlobalNames arrays in both engine and cart symbols.');
+		}
+	}
+
+	const mergedSystemGlobals = hasModuleRelocs
+		? mergeNamedSlots(engineMetadata!.systemGlobalNames, cartMetadata!.systemGlobalNames)
+		: mergeNamedSlots(engineMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES);
+	const mergedGlobals = hasModuleRelocs
+		? mergeNamedSlots(engineMetadata!.globalNames, cartMetadata!.globalNames)
+		: mergeNamedSlots(engineMetadata?.globalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.globalNames ?? EMPTY_SLOT_NAMES);
 	rewriteConstRelocations(
 		cartCode,
 		cartAsset.link.constRelocs,
@@ -516,14 +536,14 @@ export const linkProgramAssets = (
 	};
 
 	const moduleProtos: Array<{ path: string; protoIndex: number }> = [];
-	for (const entry of cartAsset.moduleProtos) {
+	for (const entry of cartAsset.moduleProtos ?? []) {
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex + baseProtoCount });
 	}
-	for (const entry of engineAsset.moduleProtos) {
+	for (const entry of engineAsset.moduleProtos ?? []) {
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex });
 	}
-	const moduleAliases = cartAsset.moduleAliases.concat(engineAsset.moduleAliases);
-	const staticModulePaths = engineAsset.staticModulePaths.concat(cartAsset.staticModulePaths);
+	const moduleAliases = (cartAsset.moduleAliases ?? []).concat(engineAsset.moduleAliases ?? []);
+	const staticModulePaths = (engineAsset.staticModulePaths ?? []).concat(cartAsset.staticModulePaths ?? []);
 	const entryProtoIndex = cartAsset.entryProtoIndex + baseProtoCount;
 	const metadata = mergeMetadata(
 		engineMetadata,

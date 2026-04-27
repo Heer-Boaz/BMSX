@@ -23,6 +23,10 @@ struct ProgramAsset {
 		ConstC,
 		Gl,
 		Sys,
+		// Reloc kind for module export placeholders emitted by the TypeScript
+		// compiler when an external module export cannot be resolved at compile time.
+		// The linker must resolve these into GETSYS/GETGL accesses.
+		Module,
 	};
 
 	struct ConstReloc {

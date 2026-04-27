@@ -20,6 +20,7 @@ constexpr ConstRelocKindEntry CONST_RELOC_KIND_ENTRIES[] = {
 	{"const_c", ProgramAsset::ConstRelocKind::ConstC},
 	{"gl", ProgramAsset::ConstRelocKind::Gl},
 	{"sys", ProgramAsset::ConstRelocKind::Sys},
+	{"module", ProgramAsset::ConstRelocKind::Module},
 };
 
 ProgramAsset::ConstRelocKind parseConstRelocKind(const std::string& kind) {
