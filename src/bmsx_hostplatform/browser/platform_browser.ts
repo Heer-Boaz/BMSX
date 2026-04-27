@@ -104,12 +104,21 @@ export class BrowserPlatform implements Platform {
 		}
 		this.rng = new BrowserRngService();
 		this.gameviewHost = new BrowserGameViewHost(canvas);
+
+		if (!options.debug) {
+			// Prevent the user from accidentally closing the game window if not in debug mode
+			engineCore.platform.lifecycle.onWillExit((e: PlatformExitEvent) => {
+				e.preventDefault();
+				e.setReturnMessage('Are you sure you want to exit this awesome game?');
+			});
+		}
 	}
 }
 
 export interface BrowserPlatformOptions {
 	ufpsScaled?: number;
 	audioContext: AudioContext;
+	debug: boolean;
 }
 
 class BrowserClock implements Clock {

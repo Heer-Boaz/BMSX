@@ -41,14 +41,6 @@ declare global {
 }
 
 /**
- * Function that initializes the boot ROM and starts the game.
- * @param {Uint8Array} rom - The cart ROM blob.
- * @param {AudioContext} sndcontext - The audio context for the boot ROM.
- * @param {GainNode} gainnode - The gain node for the boot ROM.
- * @returns {void}
- */
-
-/**
  * Object representing the boot ROM.
  */
 export const bootrom = {
@@ -130,7 +122,7 @@ export const bootrom = {
 				if (!(gamescreen instanceof HTMLCanvasElement)) {
 					throw new Error('#gamescreen must be a <canvas> to construct a Platform.');
 				}
-				const platform = constructPlatformFromViewHostHandle(gamescreen, { audioContext: bootrom.sndcontext });
+				const platform = constructPlatformFromViewHostHandle(gamescreen, { audioContext: bootrom.sndcontext, debug: this.debug });
 				bootrom.platform = platform;
 				bootrom.viewHost = platform.gameviewHost;
 			}

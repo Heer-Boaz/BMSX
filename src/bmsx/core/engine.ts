@@ -1,29 +1,20 @@
 import { SoundMaster } from "../audio/soundmaster";
 import { Input } from "../input/manager";
-import type { VibrationParams } from "../platform";
-import type { ActionStateQuery } from '../input/models';
 import { GameView } from "../render/gameview";
 import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_factory";
-import type { SkyboxImageIds } from "../machine/devices/vdp/contracts";
-import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
-import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
-import { RuntimeAssets, type CartManifest, type MachineManifest, type vec2 } from "../rompack/format";
+import { setMicrotaskQueue } from '../platform';
+import type { GameViewHost, Platform } from '../platform';
 import { buildSystemRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex } from '../rompack/loader';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
 import { renderGate, runGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
-import { raiseEngineIrq } from '../machine/runtime/engine_irq';
-import { installNativeGlobal, runConsoleChunkToNative } from '../machine/program/executor';
-import { IRQ_NEWGAME } from '../machine/bus/io';
 import type { GPUBackend } from '../render/backend/interfaces';
-import { InputSource, KeyModifier } from '../input/player';
+import { InputSource } from '../input/player';
 import { shallowcopy } from '../common/shallowcopy';
 import { clearAllQueues } from '../render/shared/queues';
 import { clearOverlayFrame } from '../render/editor/overlay_queue';
-import type { Table } from '../machine/cpu/cpu';
-import { buildActionStateTable, buildButtonStateTable, packActionStateFlags } from '../machine/firmware/input_state_tables';
 import { restoreVdpContextState } from '../render/vdp/context_state';
 import { initializeVdpTextureTransfer } from '../render/vdp/texture_transfer';
 import { runEngineHostFrame } from './host_frame';
@@ -46,8 +37,6 @@ export interface EngineStartupOptions {
 
 const DEFAULT_MASTER_VOLUME = 1;
 
-export const HZ_SCALE = PLATFORM_HZ_SCALE;
-
 /**
  * Represents the main game loop and manages the game state.
  */
@@ -65,12 +54,6 @@ export class EngineCore {
 
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
-	private _assets: RuntimeAssets = null;
-	private _system_assets: RuntimeAssets = null;
-	private _cart_manifest: CartManifest = null;
-	private _machine_manifest: MachineManifest = null;
-	private _cart_project_root_path: string = null;
-
 	/**
 	 * The turn counter for the game.
 	 */
@@ -78,7 +61,6 @@ export class EngineCore {
 	/**
 	 * The ID of the animation frame request.
 	 */
-	private frameLoopHandle: { stop(): void } = null;
 	private _view!: GameView;
 	private _platform!: Platform;
 	/**
@@ -129,25 +111,6 @@ export class EngineCore {
 	 */
 	public debug_runSingleFrameAndPause!: boolean;
 
-	private removeWillExit: SubscriptionHandle = null;
-
-	public get assets(): RuntimeAssets { return this._assets; }
-	public get system_assets(): RuntimeAssets { return this._system_assets; }
-	public get cart_manifest(): CartManifest { return this._cart_manifest; }
-	public get machine_manifest(): MachineManifest { return this._machine_manifest; }
-	public get cart_project_root_path(): string { return this._cart_project_root_path; }
-	public set_assets(assets: RuntimeAssets): void {
-		this._assets = assets;
-	}
-	public set_cart_manifest(manifest: CartManifest): void {
-		this._cart_manifest = manifest;
-	}
-	public set_machine_manifest(manifest: MachineManifest): void {
-		this._machine_manifest = manifest;
-	}
-	public set_cart_project_root_path(path: string): void {
-		this._cart_project_root_path = path;
-	}
 
 	public get view(): GameView { return this._view; }
 
@@ -156,71 +119,8 @@ export class EngineCore {
 	public get sndmaster(): SoundMaster { return SoundMaster.instance; }
 	public get platform(): Platform { return this._platform!; }
 
-	public action_triggered(playerIndex: number, action: string): boolean {
-		return this.input.getPlayerInput(playerIndex).checkActionTriggered(action);
-	}
-
-	public actions_triggered(playerIndex: number, ...actions: { id: string, def: string }[]): string[] {
-		return this.input.getPlayerInput(playerIndex).checkActionsTriggered(...actions);
-	}
-
-	public get_action_state(playerIndex: number, action: string, window?: number): number {
-		return packActionStateFlags(this.input.getPlayerInput(playerIndex).getActionState(action, window));
-	}
-
-	public get_key_state(playerIndex: number, keyCode: string, modifiers: KeyModifier): Table {
-		return buildButtonStateTable(Runtime.instance, this.input.getPlayerInput(playerIndex).getKeyState(keyCode, modifiers));
-	}
-
-	/** @deprecated Use {@link action_triggered} / {@link actions_triggered} with ActionParser definitions instead. */
-	public get_pressed_actions(playerIndex: number, query?: ActionStateQuery): Table[] {
-		const runtime = Runtime.instance;
-		return this.input.getPlayerInput(playerIndex).getPressedActions(query).map(state => buildActionStateTable(runtime, state));
-	}
-
-	public consume_action(playerIndex: number, actionToConsume: string) {
-		this.input.getPlayerInput(playerIndex).consumeAction(actionToConsume);
-	}
-
-	public consume_actions(playerIndex: number, ...actionsToConsume: string[]) {
-		this.input.getPlayerInput(playerIndex).consumeActions(...actionsToConsume);
-	}
-
-	public get_frame_delta_ms(): number {
-		return Runtime.instance.frameLoop.frameDeltaMs;
-	}
-
-	public is_cart_program_active(): boolean {
-		return Runtime.hasInstance && Runtime.instance.activeProgramSource !== 'engine';
-	}
-
-	public request_new_game(): void {
-		raiseEngineIrq(Runtime.instance, IRQ_NEWGAME);
-	}
-
-	public evaluate_lua(source: string): unknown[] {
-		return runConsoleChunkToNative(Runtime.instance, source);
-	}
-
-	public install_native_global(name: string, value: unknown): void {
-		installNativeGlobal(Runtime.instance, name, value);
-	}
-
 	public consume_button(playerIndex: number, buttonCode: string, source: InputSource) {
 		this.input.getPlayerInput(playerIndex).consumeRawButton(buttonCode, source);
-	}
-
-	public apply_vibration_effect(playerIndex: number, effectParams: VibrationParams): void {
-		if (!this.input.getPlayerInput(playerIndex).supportsVibrationEffect) return;
-		this.input.getPlayerInput(playerIndex).applyVibrationEffect(effectParams);
-	}
-
-	public hide_onscreen_gamepad_buttons(gamepad_button_ids: string[]): void {
-		this.input.hideOnscreenGamepadButtons(gamepad_button_ids);
-	}
-
-	public get viewportsize(): vec2 {
-		return this.view.viewportSize;
 	}
 
 	/**
@@ -235,10 +135,6 @@ export class EngineCore {
 			return;
 		}
 		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
-	}
-
-	public set_skybox_imgs(ids: SkyboxImageIds): void {
-		Runtime.instance.machine.vdp.setSkyboxImages(ids);
 	}
 
 	/**
@@ -262,11 +158,6 @@ export class EngineCore {
 			machine: SYSTEM_MACHINE_MANIFEST,
 			entry_path: SYSTEM_BOOT_ENTRY_PATH,
 		});
-		this._system_assets = engineLayer.assets;
-		this._assets = this._system_assets;
-		this._cart_manifest = null;
-		this._machine_manifest = engineLayer.index.machine;
-		this._cart_project_root_path = null;
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
 		setMicrotaskQueue(platform.microtasks);
@@ -325,20 +216,11 @@ export class EngineCore {
 		if (this.debug) {
 			Input.instance.enableDebugMode(this.view.surface);
 		}
-		else {
-			// Prevent the user from accidentally closing the game window if not in debug mode
-			this.removeWillExit = engineCore.platform.lifecycle.onWillExit(this.onBeforeUnload);
-		}
 		this.initialized = true; // Mark the game as initialized
 		await Runtime.init(engineLayer, workspaceOverlay, cartridge);
 		// SoundMaster.instance.volume = 0;
 		return this!; // Allow chaining
 	}
-
-	private onBeforeUnload = (e: PlatformExitEvent) => {
-		e.preventDefault();
-		e.setReturnMessage('Are you sure you want to exit this awesome game?');
-	};
 
 	public async refreshRenderAssets(): Promise<void> {
 		this.texmanager.setBackend(this.view.backend);
@@ -383,14 +265,6 @@ export class EngineCore {
 	}
 
 	/**
-	 * Gets the current turn counter value.
-	 * @returns The current turn counter value.
-	 */
-	public get turnCounter(): number {
-		return this._turnCounter!;
-	}
-
-	/**
 	 * Starts the game loop and sets the `running` flag to `true`.
 	 * @returns void
 	 */
@@ -404,31 +278,10 @@ export class EngineCore {
 		const runtime = Runtime.instance;
 		runtime.frameLoop.currentTimeMs = now;
 		runtime.frameScheduler.clearQueuedTime();
-		this.frameLoopHandle = platform.frames.start((currentTime: number) => {
+		platform.frames.start((currentTime: number) => {
 			runEngineHostFrame(this, runtime, currentTime, runGate.ready);
 		});
 		this.running = true;
-	}
-
-	/**
-	 * Stops the game loop and clears the screen, stops all sound effects and music.
-	 * @returns void
-	 */
-	public stop(): void {
-		this.running = false;
-		if (this.frameLoopHandle) {
-			this.frameLoopHandle.stop();
-			this.frameLoopHandle = null;
-		}
-		const platform = this.platform;
-		const handle = platform.frames.start(() => {
-			handle.stop();
-			this.sndmaster.stopAllVoices();
-		});
-		if (this.removeWillExit) {
-			this.removeWillExit.unsubscribe();
-			this.removeWillExit = null;
-		}
 	}
 
 	public request_shutdown(): void {
