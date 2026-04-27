@@ -157,13 +157,13 @@ function menu.update()
 	mem[sys_inp_query] = &'up[rp] || up[jp]'
 	if mem[sys_inp_status] ~= 0 then
 		state.selected = state.selected - 1
-		-- if state.selected < 1 then state.selected = #entries end
+		if state.selected < 1 then state.selected = #entries end
 		if state.selected < 1 then state.selected = 1 end
 	end
 	mem[sys_inp_query] = &'down[rp] || down[jp]'
 	if mem[sys_inp_status] ~= 0 then
 		state.selected = state.selected + 1
-		-- if state.selected > #entries then state.selected = 1 end
+		if state.selected > #entries then state.selected = 1 end
 		if state.selected > #entries then state.selected = #entries end
 	end
 	mem[sys_inp_query] = &'left[jp]'
