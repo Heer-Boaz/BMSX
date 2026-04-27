@@ -57,7 +57,6 @@ import {
 } from './target_semantics';
 import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_kind';
 import { luaModulo } from '../../lua/numeric';
-import { semanticSymbolKindToLuaSymbolKind } from '../../lua/semantic/common';
 
 export type CompiledProgram = {
 	program: Program;

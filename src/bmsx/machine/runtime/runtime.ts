@@ -462,9 +462,6 @@ export class Runtime {
 		this.activeMachineManifest = options.activeMachineManifest;
 		this.cartManifest = options.cartManifest;
 		this.cartProjectRootPath = options.cartProjectRootPath;
-		engineCore.set_machine_manifest(this.activeMachineManifest);
-		engineCore.set_cart_manifest(this.cartManifest);
-		engineCore.set_cart_project_root_path(this.cartProjectRootPath);
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.gameViewState = createGameViewState(engineCore.view);
 		api = new Api({
@@ -623,13 +620,11 @@ export class Runtime {
 
 	private activateEngineProgramAssets(): void {
 		this.activeAssets = this.assets.biosLayer.assets;
-		engineCore.set_assets(this.activeAssets);
 		this.activateProgramSource('engine');
 	}
 
 	public activateCartProgramAssets(): void {
 		this.activeAssets = (this.assets.overlayLayer ?? this.assets.cartLayer).assets;
-		engineCore.set_assets(this.activeAssets);
 		const perfSpecs = getMachinePerfSpecs(this.activeMachineManifest);
 		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
 		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);

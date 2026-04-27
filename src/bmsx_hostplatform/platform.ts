@@ -8,6 +8,7 @@ export { CLIPlatformServices, CLIGameViewHost, CLIPlatformOptions } from './cli/
 export interface ConstructPlatformOptions {
 	audioContext: AudioContext;
 	ufpsScaled?: number;
+	debug: boolean;
 }
 
 export function constructPlatformFromViewHostHandle(handle: GameViewHostHandle, options: ConstructPlatformOptions): Platform {

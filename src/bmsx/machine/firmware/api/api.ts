@@ -16,7 +16,7 @@ import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointL
 import { setSpriteParallaxRig, submitMesh, submit_particle } from '../../../render/shared/queues';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../builtin_descriptors';
 import { createLuaTable, type LuaTable } from '../../../lua/value';
-import { BmsxColors, type VdpSlotSource } from '../../devices/vdp/vdp';
+import { BmsxColors } from '../../devices/vdp/vdp';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;
@@ -145,31 +145,16 @@ export class Api {
 		submitMesh(submission);
 	}
 
-	private readParticleSource(options: ParticleApiOptions | undefined): VdpSlotSource {
-		if (!options) {
-			throw new Error('put_particle requires slot/u/v/w/h.');
-		}
-		const { slot, u, v, w, h } = options;
-		if (slot === undefined || u === undefined || v === undefined || w === undefined || h === undefined) {
-			throw new Error('put_particle requires slot/u/v/w/h.');
-		}
-		return { slot, u, v, w, h };
-	}
-
 	public put_particle(position: vec3arr, size: number, colorvalue: number | color, options?: ParticleApiOptions): void {
-		if (!options) {
-			throw new Error('put_particle requires slot/u/v/w/h.');
-		}
-		const source = this.readParticleSource(options);
 		const submission: ParticleRenderSubmission = {
 			position,
 			size,
 			color: this.resolve_color(colorvalue),
-			slot: source.slot,
-			u: source.u,
-			v: source.v,
-			w: source.w,
-			h: source.h,
+			slot: options.slot,
+			u: options.u,
+			v: options.v,
+			w: options.w,
+			h: options.h,
 			ambient_mode: options.ambient_mode,
 			ambient_factor: options.ambient_factor,
 		};
