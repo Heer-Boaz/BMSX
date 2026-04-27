@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CPP_DIR="$ROOT_DIR/src/bmsx_cpp"
 LOCAL_CFG="$ROOT_DIR/scripts/retroarch.local.cfg"
+
+# Default build type; user can pass --debug or --release
 BUILD_TYPE="Release"
 
 while [[ $# -gt 0 ]]; do
@@ -22,14 +24,12 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-BUILD_DIR="$ROOT_DIR/build-${BUILD_TYPE,,}"
+BUILD_DIR="$ROOT_DIR/build"
 ROM_PATH="${1:-$ROOT_DIR/dist/2025.debug.rom}"
 
 run_linux() {
-	local cores_dir="${XDG_CONFIG_HOME:-$HOME/.config}/retroarch/cores"
-	local core_name="bmsx_libretro.so"
-	local retroarch_dir="$ROOT_DIR/tools/retroarch-gles2"
-	local retroarch_bin="$retroarch_dir/retroarch"
+	# Install dependencies and configure the CMake build (Ninja + ccache)
+	# NOTE: this script no longer performs builds, copies cores, or launches RetroArch.
 
 	sudo apt-get update
 	sudo apt-get install -y \
@@ -50,30 +50,21 @@ run_linux() {
 		libxss-dev \
 		libxcursor-dev \
 		libasound2-dev \
-		libpulse-dev
+		libpulse-dev \
+		ninja-build \
+		ccache
+	# Ensure ccache has a reasonable cache size for repeated builds
+	ccache -M 10G || true
 
-	cmake -S "$CPP_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DBMSX_BUILD_LIBRETRO=ON
-	cmake --build "$BUILD_DIR" --config "$BUILD_TYPE"
+	# Configure with Ninja and enable ccache as the compiler launcher by default
+	cmake -S "$CPP_DIR" -B "$BUILD_DIR" -G Ninja \
+		-DCMAKE_C_COMPILER_LAUNCHER=ccache \
+		-DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+		-DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+		-DBMSX_BUILD_LIBRETRO=ON
 
-	if [[ -d "$retroarch_dir" ]]; then
-		(
-			cd "$retroarch_dir"
-			git fetch --depth 1 origin master
-			git reset --hard FETCH_HEAD
-		)
-	else
-		git clone --depth 1 https://github.com/libretro/RetroArch.git "$retroarch_dir"
-	fi
-	(
-		cd "$retroarch_dir"
-		./configure --enable-opengles --enable-opengles3 --enable-egl --disable-opengl
-		make -j"$(nproc)"
-	)
-
-	mkdir -p "$cores_dir"
-	cp "$BUILD_DIR/$core_name" "$cores_dir/$core_name"
-
-	"$retroarch_bin" --appendconfig="$LOCAL_CFG" -L "$cores_dir/$core_name" "$ROM_PATH"
+	echo "Dependencies installed and CMake configured with Ninja and ccache in: $BUILD_DIR"
+	echo "This script will NOT build cores, copy cores, or launch RetroArch. Use your dedicated build scripts to build and run cores/hosts."
 }
 
 run_linux

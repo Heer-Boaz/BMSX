@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+import os from 'node:os';
 
 export interface BuilderLogger {
 	divider(title: string): void;
@@ -44,8 +45,10 @@ function runCommand(command: string, args: string[]): void {
 }
 
 function getLibretroBuildDir(platform: RomPackerTarget, debug: boolean): string {
-	const base = platform === 'libretro-win' ? 'build-win' : 'build';
-	return debug ? `${base}-debug` : `${base}-release`;
+	// Use a single build directory per platform. The build type (Debug/Release)
+	// is passed to CMake via -DCMAKE_BUILD_TYPE rather than using separate
+	// build folders like build-debug/build-release.
+	return platform === 'libretro-win' ? 'build-win' : 'build';
 }
 
 function getLibretroCoreFilename(platform: RomPackerTarget): string {
@@ -91,7 +94,15 @@ function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget, logg
 	const buildType = debug ? 'Debug' : 'Release';
 	const buildDir = getLibretroBuildDir(platform, debug);
 	logger.info(`Using build dir ${pc.white(buildDir)} (${buildType})`);
-	const cmakeArgs = ['-S', 'src/bmsx_cpp', '-B', buildDir, `-DCMAKE_BUILD_TYPE=${buildType}`, '-DBMSX_BUILD_LIBRETRO=ON', '-DBMSX_BUILD_LIBRETRO_HOST=OFF'];
+	const cmakeArgs = [
+		'-S', 'src/bmsx_cpp', '-B', buildDir,
+		'-G', 'Ninja',
+		`-DCMAKE_BUILD_TYPE=${buildType}`,
+		'-DBMSX_BUILD_LIBRETRO=ON',
+		'-DBMSX_BUILD_LIBRETRO_HOST=OFF',
+		'-DCMAKE_C_COMPILER_LAUNCHER=ccache',
+		'-DCMAKE_CXX_COMPILER_LAUNCHER=ccache',
+	];
 	if (platform === 'libretro-wsl') {
 		cmakeArgs.push('-DCMAKE_CXX_STANDARD=20');
 	}
@@ -103,7 +114,8 @@ function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget, logg
 	}
 	runCommand(cmakeBin, cmakeArgs);
 	const config = debug ? 'Debug' : 'Release';
-	runCommand(cmakeBin, ['--build', buildDir, '--config', config]);
+	const cpuCount = os.cpus().length;
+	runCommand(cmakeBin, ['--build', buildDir, '--config', config, '--parallel', String(cpuCount)]);
 }
 
 function extractLibretroConstant(source: string, constantName: string): string {

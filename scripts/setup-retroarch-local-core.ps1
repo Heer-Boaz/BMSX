@@ -1,7 +1,5 @@
 param(
 	[string]$RomPath,
-	[ValidateSet('Debug', 'Release')]
-	[string]$BuildType = 'Release',
 	[string]$RetroArchDir = $env:RETROARCH_DIR_WIN
 )
 
@@ -35,19 +33,28 @@ if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
 	}
 }
 
-& $CMakeExe -S $CppDir -B $BuildDir -A x64 -DBMSX_BUILD_LIBRETRO=ON -DCMAKE_BUILD_TYPE=$BuildType
-& $CMakeExe --build $BuildDir --config $BuildType
+# Ensure Ninja and ccache are available on Windows; prefer winget over choco if present
+$CpuCount = [Environment]::ProcessorCount
+if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+	if (Get-Command winget -ErrorAction SilentlyContinue) {
+		winget install --silent --accept-package-agreements --accept-source-agreements Ninja
+	} elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+		choco install -y ninja
+	} else {
+		Write-Host "Warning: 'ninja' not found. Please install winget or chocolatey and re-run this script."
+	}
+}
+if (-not (Get-Command ccache -ErrorAction SilentlyContinue)) {
+	if (Get-Command winget -ErrorAction SilentlyContinue) {
+		winget install --silent --accept-package-agreements --accept-source-agreements ccache
+	} elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+		choco install -y ccache
+	} else {
+		Write-Host "Warning: 'ccache' not found. Please install winget or chocolatey and re-run this script."
+	}
+}
 
-$CorePath = Join-Path (Join-Path $BuildDir $BuildType) $CoreName
-$CoresDir = Join-Path $RetroArchDir 'cores'
-$InfoDir = Join-Path $RetroArchDir 'info'
-$InfoSrc = Join-Path $RootDir 'dist\bmsx_libretro.info'
-$InfoDst = Join-Path $InfoDir 'bmsx_libretro.info'
-$RetroArchExe = Join-Path $RetroArchDir 'retroarch.exe'
+# Configure with Ninja generator and enable ccache as the compiler launcher by default
+& $CMakeExe -S $CppDir -B $BuildDir -G Ninja -DBMSX_BUILD_LIBRETRO=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
-New-Item -ItemType Directory -Force $CoresDir | Out-Null
-Copy-Item -Force $CorePath (Join-Path $CoresDir $CoreName)
-New-Item -ItemType Directory -Force $InfoDir | Out-Null
-Copy-Item -Force $InfoSrc $InfoDst
-
-& $RetroArchExe --appendconfig $LocalCfg -L (Join-Path $CoresDir $CoreName) $RomPath
+Write-Host "Dependencies installed and CMake configured with Ninja and ccache in $BuildDir"

@@ -12,7 +12,7 @@ SNESMINI_CXX_FLAGS ?= -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=
 SNESMINI_SYSROOT_LIB_DIR ?= $(SNESMINI_SYSROOT)/lib/arm-linux-gnueabihf
 SNESMINI_SYSROOT_USR_LIB_DIR ?= $(SNESMINI_SYSROOT)/usr/lib/arm-linux-gnueabihf
 SNESMINI_LINK_FLAGS ?= -L$(SNESMINI_SYSROOT_USR_LIB_DIR) -L$(SNESMINI_SYSROOT_LIB_DIR) -Wl,-rpath-link,$(SNESMINI_SYSROOT_USR_LIB_DIR):$(SNESMINI_SYSROOT_LIB_DIR) -static-libstdc++ -static-libgcc
-SNESMINI_CMAKE_ARGS ?= -DBMSX_BUILD_LIBRETRO=ON -DBMSX_BUILD_LIBRETRO_HOST=OFF -DBMSX_ENABLE_GLES2=ON -DBMSX_ENABLE_ZLIB=OFF -DGLESV2_LIBRARY=$(SNESMINI_SYSROOT_USR_LIB_DIR)/libGLESv2.so -DCMAKE_C_FLAGS="$(SNESMINI_C_FLAGS)" -DCMAKE_CXX_FLAGS="$(SNESMINI_CXX_FLAGS)" -DCMAKE_CXX_STANDARD=17 -DCMAKE_SYSROOT="$(SNESMINI_SYSROOT)" -DCMAKE_EXE_LINKER_FLAGS="$(SNESMINI_LINK_FLAGS)" -DCMAKE_SHARED_LINKER_FLAGS="$(SNESMINI_LINK_FLAGS)"
+SNESMINI_CMAKE_ARGS ?= -G Ninja -DBMSX_BUILD_LIBRETRO=ON -DBMSX_BUILD_LIBRETRO_HOST=OFF -DBMSX_ENABLE_GLES2=ON -DBMSX_ENABLE_ZLIB=OFF -DGLESV2_LIBRARY=$(SNESMINI_SYSROOT_USR_LIB_DIR)/libGLESv2.so -DCMAKE_C_FLAGS="$(SNESMINI_C_FLAGS)" -DCMAKE_CXX_FLAGS="$(SNESMINI_CXX_FLAGS)" -DCMAKE_CXX_STANDARD=17 -DCMAKE_SYSROOT="$(SNESMINI_SYSROOT)" -DCMAKE_EXE_LINKER_FLAGS="$(SNESMINI_LINK_FLAGS)" -DCMAKE_SHARED_LINKER_FLAGS="$(SNESMINI_LINK_FLAGS)" -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 SNESMINI_LIBRETRO_ENTRY ?= $(CURDIR)/src/bmsx_cpp/platform/libretro/libretro_entry.cpp
 SNESMINI_DIST_DIR ?= $(CURDIR)/dist
 
@@ -38,10 +38,13 @@ libretro-host-snesmini-debug:
 
 libretro-host-wsl-debug:
 	cmake -S src/bmsx_cpp -B build-libretro-host \
+		-G Ninja \
+		-DCMAKE_C_COMPILER_LAUNCHER=ccache \
+		-DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
 		-DCMAKE_BUILD_TYPE=Debug \
 		-DBMSX_BUILD_LIBRETRO_HOST=ON \
 		-DBMSX_BUILD_LIBRETRO=OFF
-	cmake --build build-libretro-host --config Debug --target bmsx_libretro_host
+	cmake --build build-libretro-host --config Debug --parallel "$(nproc)" --target bmsx_libretro_host
 	@mkdir -p "$(SNESMINI_DIST_DIR)"
 	cp build-libretro-host/bmsx_libretro_host "$(SNESMINI_DIST_DIR)/bmsx_libretro_host.wsl"
 
@@ -58,7 +61,7 @@ libretro-snesmini-debug-inner: snesmini-sysroot
 		cmake -S src/bmsx_cpp -B "$(SNESMINI_BUILD_DIR)" \
 			-DCMAKE_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
 			$(SNESMINI_CMAKE_ARGS)
-	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)" --target bmsx_libretro
+	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)" --parallel "$(nproc)" --target bmsx_libretro
 	@mkdir -p "$(SNESMINI_DIST_DIR)"
 	cp "$(SNESMINI_BUILD_DIR)/bmsx_libretro.so" "$(SNESMINI_DIST_DIR)/bmsx_libretro.so"
 ifeq ($(SNESMINI_VALIDATE_LIBDEPS),1)
@@ -83,6 +86,6 @@ libretro-host-snesmini-debug-host: snesmini-sysroot
 			-DCMAKE_CXX_FLAGS="$(SNESMINI_CXX_FLAGS) -isystem /usr/include" \
 			-DBMSX_BUILD_LIBRETRO=OFF \
 			-DBMSX_BUILD_LIBRETRO_HOST=ON
-	cmake --build "$(SNESMINI_BUILD_DIR_HOST)" --config "$(SNESMINI_BUILD_TYPE)" --target bmsx_libretro_host
+	cmake --build "$(SNESMINI_BUILD_DIR_HOST)" --config "$(SNESMINI_BUILD_TYPE)" --parallel "$(nproc)" --target bmsx_libretro_host
 	@mkdir -p "$(SNESMINI_DIST_DIR)"
 	cp "$(SNESMINI_BUILD_DIR_HOST)/bmsx_libretro_host" "$(SNESMINI_DIST_DIR)/bmsx_libretro_host"
