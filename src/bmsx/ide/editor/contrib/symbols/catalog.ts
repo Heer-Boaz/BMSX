@@ -7,6 +7,7 @@ import { listGlobalLuaSymbols, listLuaSymbols } from '../intellisense/engine';
 import { symbolKindLabel } from '../../../../lua/semantic/model';
 import { extractErrorMessage } from '../../../../lua/value';
 import { symbolSearchState } from './search/state';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export function symbolCatalogDedupKey(entry: LuaSymbolEntry): string {
 	const { location, kind, name } = entry;
@@ -26,7 +27,7 @@ export function symbolSourceLabel(entry: LuaSymbolEntry): string | null {
 	return computeSourceLabel(path);
 }
 
-export function refreshSymbolCatalog(force: boolean): void {
+export function refreshSymbolCatalog(runtime: Runtime, force: boolean): void {
 	const scope: 'local' | 'global' = symbolSearchState.global ? 'global' : 'local';
 	let path: string = null;
 	if (scope === 'local') {
@@ -43,8 +44,8 @@ export function refreshSymbolCatalog(force: boolean): void {
 	let entries: LuaSymbolEntry[] = [];
 	try {
 		entries = scope === 'global'
-			? listGlobalLuaSymbols()
-			: listLuaSymbols(path);
+			? listGlobalLuaSymbols(runtime)
+			: listLuaSymbols(runtime, path);
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		symbolSearchState.catalog = [];

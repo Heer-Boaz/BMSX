@@ -1,5 +1,4 @@
 import * as constants from '../../../../common/constants';
-import { resourcePanel } from '../panel/controller';
 import { setFieldText } from '../../../../editor/ui/inline/text_field';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { resetBlink } from '../../../../editor/render/caret';
@@ -9,15 +8,16 @@ import { listResources } from '../../../../workspace/workspace';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
 import { renameController } from '../../../../editor/contrib/rename/controller';
 import { createResourceState } from '../widget_state';
+import type { Runtime } from '../../../../../machine/runtime/runtime';
 
-export function openCreateResourcePrompt(): void {
+export function openCreateResourcePrompt(runtime: Runtime): void {
 	if (createResourceState.working) {
 		return;
 	}
-	resourcePanel.setFocused(false);
+	runtime.editor.resourcePanel.setFocused(false);
 	renameController.cancel();
 	let defaultPath = createResourceState.path.length === 0
-		? determineCreateResourceDefaultPath()
+		? determineCreateResourceDefaultPath(runtime)
 		: createResourceState.path;
 	if (defaultPath.length > constants.CREATE_RESOURCE_MAX_PATH_LENGTH) {
 		defaultPath = defaultPath.slice(defaultPath.length - constants.CREATE_RESOURCE_MAX_PATH_LENGTH);
@@ -43,7 +43,7 @@ export function closeCreateResourcePrompt(focusEditor: boolean): void {
 	resetBlink();
 }
 
-export function determineCreateResourceDefaultPath(): string {
+export function determineCreateResourceDefaultPath(runtime: Runtime): string {
 	const lastDirectory = createResourceState.lastDirectory;
 	if (lastDirectory.length > 0) {
 		return lastDirectory;
@@ -53,7 +53,7 @@ export function determineCreateResourceDefaultPath(): string {
 	if (activePath.length > 0) {
 		return ensureDirectorySuffix(activePath);
 	}
-	const descriptors = listResources();
+	const descriptors = listResources(runtime);
 	const firstEditableLua = descriptors.find(entry => entry.type === 'lua' && entry.readOnly !== true && entry.path.length > 0);
 	if (firstEditableLua) {
 		return ensureDirectorySuffix(firstEditableLua.path);

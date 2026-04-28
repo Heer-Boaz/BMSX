@@ -52,6 +52,7 @@ Input::Input() {
 	// Create player inputs
 	for (i32 i = 0; i < PLAYERS_MAX; i++) {
 		m_playerInputs[i] = std::make_unique<PlayerInput>(i + 1);
+		m_playerInputs[i]->setFrameDurationMs(m_frameDurationMs);
 	}
 }
 
@@ -104,6 +105,15 @@ void Input::shutdown() {
 
 PlayerInput* Input::getPlayerInput(i32 playerIndex) {
 	return m_playerInputs[toInternalPlayerIndex(playerIndex)].get();
+}
+
+void Input::setFrameDurationMs(f64 frameDurationMs) {
+	m_frameDurationMs = frameDurationMs;
+	for (auto& player : m_playerInputs) {
+		if (player) {
+			player->setFrameDurationMs(frameDurationMs);
+		}
+	}
 }
 
 /* ============================================================================

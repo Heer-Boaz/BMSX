@@ -4,7 +4,7 @@ namespace bmsx {
 
 class Runtime;
 
-void syncRuntimeGameViewStateToTable(Runtime& runtime);
-void applyRuntimeGameViewTableToState(Runtime& runtime);
+void syncRuntimeGameViewToTable(Runtime& runtime);
+void applyRuntimeGameViewTableToHost(Runtime& runtime);
 
 } // namespace bmsx

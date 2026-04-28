@@ -13,8 +13,10 @@ import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { listResources } from '../../../workspace/workspace';
 import type { Decl, LuaSemanticWorkspaceSnapshot } from '../../../../lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export type ProjectReferenceEnvironment = {
+	runtime: Runtime;
 	activeContext: CodeTabContext;
 	activeSource: string;
 	activeLines: readonly string[];
@@ -223,7 +225,7 @@ function prepareProjectSemanticFrontend(
 		registerProjectFile(inputs, metadata, path, source, lines);
 	}
 
-	const resources = environment.listResources ? environment.listResources() : listResources();
+	const resources = environment.listResources ? environment.listResources() : listResources(environment.runtime);
 	for (let index = 0; index < resources.length; index += 1) {
 		const descriptor = resources[index];
 		if (!(descriptor.type === 'lua' || descriptor.path.endsWith('.lua')) || metadata.has(descriptor.path)) {
@@ -231,7 +233,7 @@ function prepareProjectSemanticFrontend(
 		}
 		const source = environment.loadLuaResource && descriptor.asset_id
 			? environment.loadLuaResource(descriptor.asset_id)
-			: luaPipeline.resourceSourceForChunk(descriptor.path);
+			: luaPipeline.resourceSourceForChunk(environment.runtime, descriptor.path);
 		const lines = splitText(source);
 		registerProjectFile(inputs, metadata, descriptor.path, source, lines, descriptor.asset_id);
 	}
@@ -240,7 +242,7 @@ function prepareProjectSemanticFrontend(
 	return {
 		metadata,
 		snapshot,
-		frontend: createEditorSemanticFrontend(snapshot),
+		frontend: createEditorSemanticFrontend(environment.runtime, snapshot),
 	};
 }
 

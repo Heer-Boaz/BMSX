@@ -35,8 +35,8 @@ ResolvedRuntimeTiming resolveRuntimeTiming(
 
 void applyRuntimeTiming(Runtime& runtime, const ResolvedRuntimeTiming& timing) {
 	runtime.timing.applyUfpsScaled(timing.ufpsScaled);
-	setFrameTiming(timing.cpuHz, timing.cycleBudgetPerFrame, timing.vblankCycles);
-	setTransferRatesFromManifest({
+	setFrameTiming(runtime, timing.cpuHz, timing.cycleBudgetPerFrame, timing.vblankCycles);
+	setTransferRatesFromManifest(runtime, {
 		timing.imgDecBytesPerSec,
 		timing.dmaBytesPerSecIso,
 		timing.dmaBytesPerSecBulk,

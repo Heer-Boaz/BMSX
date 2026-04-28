@@ -13,9 +13,10 @@ import { listResources } from '../../../workspace/workspace';
 import { computeResourceTabTitle } from '../tab/titles';
 import { codeTabSessionState } from './session_state';
 import { tabSessionState } from '../tab/session_state';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
-function resolveLuaSource(descriptor: ResourceDescriptor): string {
-	return luaPipeline.resourceSourceForChunk(descriptor.path);
+function resolveLuaSource(runtime: Runtime, descriptor: ResourceDescriptor): string {
+	return luaPipeline.resourceSourceForChunk(runtime, descriptor.path);
 }
 
 function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: string, mode: CodeTabMode): CodeTabContext {
@@ -87,15 +88,15 @@ export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescripto
 	return tab;
 }
 
-export function createEntryTabContext(): CodeTabContext {
-	const luaDescriptors = listResources().filter(r => r.type === 'lua');
-	const preferredRegistry = luaPipeline.listLuaSourceRegistries()[0].registry;
+export function createEntryTabContext(runtime: Runtime): CodeTabContext {
+	const luaDescriptors = listResources(runtime).filter(r => r.type === 'lua');
+	const preferredRegistry = luaPipeline.listLuaSourceRegistries(runtime)[0].registry;
 	const descriptor = luaDescriptors.find(r => r.path === preferredRegistry.entry_path)!;
-	return createLuaCodeTabContext(descriptor);
+	return createLuaCodeTabContext(runtime, descriptor);
 }
 
-export function createLuaCodeTabContext(descriptor: ResourceDescriptor): CodeTabContext {
-	return createCodeTabContext(descriptor, resolveLuaSource(descriptor), 'lua');
+export function createLuaCodeTabContext(runtime: Runtime, descriptor: ResourceDescriptor): CodeTabContext {
+	return createCodeTabContext(descriptor, resolveLuaSource(runtime, descriptor), 'lua');
 }
 
 export function createAemCodeTabContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {

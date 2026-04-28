@@ -1,6 +1,6 @@
 import { insertText } from '../../editing/text_editing_and_selection';
 import * as TextEditing from '../../editing/text_editing_and_selection';
-import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
+import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 
 export function handleEditorEditingKeys(): void {
 	const ctrlDown = isCtrlDown();

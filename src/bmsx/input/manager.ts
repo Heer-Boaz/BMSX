@@ -613,6 +613,7 @@ export class Input implements RegisterablePersistent {
 	private gameplayCaptureEnabled = true;
 	private readonly additionalCaptureKeys: Set<string> = new Set();
 	private readonly globalShortcuts = new GlobalShortcutRegistry();
+	private frameDurationMs = 1000 / 60;
 
 	/**
 	 * Retrieves the player input for the specified player index.
@@ -627,9 +628,18 @@ export class Input implements RegisterablePersistent {
 			index = 1;
 		}
 		if (!this.playerInputs[index]) {
-			this.playerInputs[index] = new PlayerInput(playerIndex);
+			this.playerInputs[index] = new PlayerInput(playerIndex, this.frameDurationMs);
 		}
 		return this.playerInputs[index];
+	}
+
+	public setFrameDurationMs(frameDurationMs: number): void {
+		this.frameDurationMs = frameDurationMs;
+		for (const player of this.playerInputs) {
+			if (player) {
+				player.setFrameDurationMs(frameDurationMs);
+			}
+		}
 	}
 
 	/**

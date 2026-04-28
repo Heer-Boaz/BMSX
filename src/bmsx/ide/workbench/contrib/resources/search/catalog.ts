@@ -4,14 +4,14 @@ import { listResourcesStrict } from '../catalog';
 import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../../../editor/navigation/quick_input_navigation';
 import { resetBlink } from '../../../../editor/render/caret';
 import { resourceSearchWindowCapacity } from '../../../../editor/ui/view/view';
-import { Runtime } from '../../../../../machine/runtime/runtime';
 import { resourceSearchState } from '../widget_state';
+import type { Runtime } from '../../../../../machine/runtime/runtime';
 
-export function refreshResourceCatalog(): void {
+export function refreshResourceCatalog(runtime: Runtime): void {
 	try {
-		const descriptors = listResourcesStrict();
+		const descriptors = listResourcesStrict(runtime);
 		const augmented = descriptors.slice();
-		const imgAssets = Object.values(Runtime.instance.activeAssets.img);
+		const imgAssets = Object.values(runtime.activeAssets.img);
 		for (const asset of imgAssets) {
 			if (asset.type !== 'atlas') {
 				continue;

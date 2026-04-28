@@ -1,14 +1,11 @@
 import type { OverlayApi as Api } from '../../runtime/overlay_api';
 import type { EditorFont } from '../ui/view/font';
 import { drawEditorText } from './text_renderer';
-import { bottomMargin } from '../../workbench/common/layout';
-import { showEditorMessage } from '../../common/feedback_state';
 import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, writeWrappedOverlayLine } from '../common/text/layout';
-import type { FaultSnapshot, RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/models';
+import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/models';
 import type { StackTraceFrame } from '../../../lua/value';
 import type { RectBounds } from '../../../rompack/format';
 import { point_in_rect } from '../../../common/rect';
-import * as workbenchMode from '../../workbench/mode';
 import { api } from '../../runtime/overlay_api';
 import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import * as constants from '../../common/constants';
@@ -17,11 +14,7 @@ import { resetBlink } from './caret';
 import { formatRuntimeErrorLocation } from '../../common/runtime_error_format';
 import { splitText } from '../../../common/text_lines';
 import { BmsxColors } from '../../../machine/devices/vdp/vdp';
-import { editorRuntimeState } from '../common/runtime_state';
-import { activate } from '../../cart_editor';
-import { focusChunkSource } from '../../workbench/contrib/resources/navigation';
-import { setActiveRuntimeErrorOverlayForCurrentContext, setExecutionStopHighlightForCurrentContext } from '../../workbench/error/navigation';
-import { editorPointerState } from '../input/pointer/state';
+import { editorPointerState } from '../../input/pointer/state';
 import { editorCaretState } from '../ui/view/caret/state';
 import { runtimeErrorState } from '../contrib/runtime_error/state';
 import { editorDocumentState } from '../editing/document_state';
@@ -166,16 +159,12 @@ export function renderErrorOverlayText(
 		currentY += lineHeight;
 	}
 }
-export function computeRuntimeErrorOverlayGeometry(codeRight: number, textLeft: number): { contentRight: number; availableBottom: number; } {
+export function computeRuntimeErrorOverlayGeometry(codeRight: number, textLeft: number, contentBottom: number): { contentRight: number; availableBottom: number; } {
 	const contentRightCandidate = codeRight
 		- (editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
 		- constants.CODE_AREA_RIGHT_MARGIN;
 	const contentRight = textLeft > contentRightCandidate ? textLeft : contentRightCandidate;
-	const codeBottom = editorViewState.viewportHeight - bottomMargin();
-	const availableBottom = editorViewState.codeHorizontalScrollbarVisible
-		? codeBottom - constants.SCROLLBAR_WIDTH
-		: codeBottom;
-	return { contentRight, availableBottom };
+	return { contentRight, availableBottom: contentBottom };
 }
 export function resolveRuntimeErrorOverlayAnchor(
 	overlay: RuntimeErrorOverlay,
@@ -233,7 +222,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 	};
 }
 
-export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, textLeft: number): RuntimeErrorOverlayRenderResult {
+export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, textLeft: number, contentBottom: number): RuntimeErrorOverlayRenderResult {
 	const overlay = runtimeErrorState.activeOverlay;
 	if (!overlay || overlay.hidden) {
 		return 'absent';
@@ -251,7 +240,7 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 		overlay.layout = null;
 		return 'below';
 	}
-	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft);
+	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft, contentBottom);
 	const anchor = resolveRuntimeErrorOverlayAnchor(overlay, codeTop, textLeft, geometry.contentRight, geometry.availableBottom);
 	if (!anchor) {
 		overlay.layout = null;
@@ -336,6 +325,12 @@ export type RuntimeErrorOverlayClickResult = { kind: 'expand'; } |
 { kind: 'collapse'; } |
 { kind: 'navigate'; frame: StackTraceFrame; } |
 { kind: 'noop'; };
+
+export type AppliedRuntimeErrorOverlay = {
+	overlay: RuntimeErrorOverlay;
+	targetRow: number;
+	statusLine: string;
+};
 
 export function computeRuntimeErrorOverlayLayout(
 	overlay: RuntimeErrorOverlay,
@@ -488,59 +483,13 @@ export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverl
 	return -1;
 }
 
-export function renderFaultOverlay() {
-	const snapshot = workbenchMode.getFaultSnapshot();
-	if (!snapshot) return;
-	showRuntimeErrorInChunk(
-		snapshot.path,
-		snapshot.line,
-		snapshot.column,
-		snapshot.message,
-		snapshot.details
-	);
-}
-
-export function renderRuntimeFaultOverlay(options: {
-	snapshot: FaultSnapshot;
-	luaRuntimeFailed: boolean;
-	needsFlush: boolean;
-	force?: boolean;
-}): boolean {
-	const { snapshot } = options;
-	if (!editorRuntimeState.initialized) return false;
-	if (!options.force && (!options.luaRuntimeFailed || !options.needsFlush)) return false;
-	if (!snapshot) return false;
-	showRuntimeErrorInChunk(
-		snapshot.path,
-		snapshot.line,
-		snapshot.column,
-		snapshot.message,
-		snapshot.details
-	);
-	return true;
-}
-
-export function showRuntimeErrorInChunk(
-	path: string,
-	line: number,
-	column: number,
-	message: string,
-	details?: RuntimeErrorDetails
-): void {
-	focusChunkSource(path);
-	showRuntimeError(line, column, message, details, path);
-}
-
-export function showRuntimeError(
+export function applyRuntimeErrorOverlay(
 	line: number,
 	column: number,
 	message: string,
 	details?: RuntimeErrorDetails,
 	path: string = ''
-): void {
-	if (!editorRuntimeState.active) {
-		activate();
-	}
+): AppliedRuntimeErrorOverlay {
 	const buffer = editorDocumentState.buffer;
 	const targetRow = editorViewState.layout.clampBufferRow(buffer, line - 1);
 	const currentLine = buffer.getLineContent(targetRow);
@@ -578,8 +527,6 @@ export function showRuntimeError(
 		hidden: false,
 	};
 	rebuildRuntimeErrorOverlayView(overlay);
-	setActiveRuntimeErrorOverlayForCurrentContext(overlay);
-	setExecutionStopHighlightForCurrentContext(targetRow);
 	const statusLine = overlay.lines.length > 0 ? overlay.lines[0] : 'Runtime error';
-	showEditorMessage(statusLine, constants.COLOR_STATUS_ERROR, 2.0);
+	return { overlay, targetRow, statusLine };
 }

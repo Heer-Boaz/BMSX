@@ -6,7 +6,7 @@ import { getSelectionRange, getSelectionText } from '../../editing/text_editing_
 import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch, TextField } from '../../../common/models';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { enqueueBackgroundTask } from '../../../common/background_tasks';
-import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
+import { beginNavigationCapture, completeNavigation } from '../../../navigation/navigation_history';
 import { updateDesiredColumn } from '../../ui/view/caret/caret';
 import { listResources } from '../../../workspace/workspace';
 import { closeLineJump } from './line_jump';
@@ -19,8 +19,9 @@ import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../e
 import { editorDocumentState } from '../../editing/document_state';
 import { splitText } from '../../../../common/text_lines';
 import { editorViewState } from '../../ui/view/state';
-import { renameController } from '../rename/controller';
+import type { RenameController } from '../rename/controller';
 import { editorSearchState } from './widget_state';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 const LOCAL_ROWS_PER_SLICE = 256;
 const GLOBAL_ROWS_PER_SLICE = 128;
@@ -60,44 +61,69 @@ export function activeSearchMatchCount(): number {
 		: editorSearchState.matches.length;
 }
 
-export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
-	clearReferenceHighlights();
-	closeSymbolSearch(false);
-	closeLineJump(false);
-	renameController.cancel();
-
-	editorSearchState.scope = scope;
-	editorSearchState.displayOffset = 0;
-	editorSearchState.hoverIndex = -1;
-	editorSearchState.currentIndex = -1;
-
-	if (scope === 'global') {
-		cancelSearchJob();
-		editorSearchState.matches = [];
-		editorSearchState.globalMatches = [];
-	} else {
-		cancelGlobalSearchJob();
-		editorSearchState.globalMatches = [];
+export class EditorSearchController {
+	public constructor(private readonly runtime: Runtime, private readonly renameController: RenameController) {
 	}
 
-	editorSearchState.visible = true;
-	editorSearchState.active = true;
+	public openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
+		clearReferenceHighlights();
+		closeSymbolSearch(false);
+		closeLineJump(false);
+		this.renameController.cancel();
 
-	applySearchFieldText(editorSearchState.query, true);
+		editorSearchState.scope = scope;
+		editorSearchState.displayOffset = 0;
+		editorSearchState.hoverIndex = -1;
+		editorSearchState.currentIndex = -1;
 
-	if (useSelection) {
-		const range = getSelectionRange();
-		const selected = getSelectionText();
-		if (range && selected.length > 0 && selected.indexOf('\n') === -1) {
-			applySearchFieldText(selected, true);
-			editorDocumentState.cursorRow = range.start.row;
-			editorDocumentState.cursorColumn = range.start.column;
+		if (scope === 'global') {
+			cancelSearchJob();
+			editorSearchState.matches = [];
+			editorSearchState.globalMatches = [];
+		} else {
+			cancelGlobalSearchJob();
+			editorSearchState.globalMatches = [];
 		}
+
+		editorSearchState.visible = true;
+		editorSearchState.active = true;
+
+		applySearchFieldText(editorSearchState.query, true);
+
+		if (useSelection) {
+			const range = getSelectionRange();
+			const selected = getSelectionText();
+			if (range && selected.length > 0 && selected.indexOf('\n') === -1) {
+				applySearchFieldText(selected, true);
+				editorDocumentState.cursorRow = range.start.row;
+				editorDocumentState.cursorColumn = range.start.column;
+			}
+		}
+
+		editorSearchState.query = editorSearchState.field.text;
+		this.onSearchQueryChanged();
+		resetBlink();
 	}
 
-	editorSearchState.query = editorSearchState.field.text;
-	onSearchQueryChanged();
-	resetBlink();
+	public onSearchQueryChanged(): void {
+		if (editorSearchState.scope === 'global') {
+			this.onGlobalSearchQueryChanged();
+			return;
+		}
+		onLocalSearchQueryChanged();
+	}
+
+	private onGlobalSearchQueryChanged(): void {
+		editorSearchState.displayOffset = 0;
+		editorSearchState.hoverIndex = -1;
+		editorSearchState.currentIndex = -1;
+		if (editorSearchState.query.length === 0) {
+			cancelGlobalSearchJob();
+			editorSearchState.globalMatches = [];
+			return;
+		}
+		startGlobalSearchJob(this.runtime);
+	}
 }
 
 export function closeSearch(clearQuery: boolean, forceHide = false): void {
@@ -128,7 +154,7 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 		editorSearchState.matches = [];
 		editorSearchState.currentIndex = -1;
 		editorSearchState.visible = true;
-		onSearchQueryChanged();
+		onLocalSearchQueryChanged();
 	}
 
 	editorDocumentState.selectionAnchor = null;
@@ -151,11 +177,7 @@ export function focusEditorFromSearch(): void {
 	resetBlink();
 }
 
-export function onSearchQueryChanged(): void {
-	if (editorSearchState.scope === 'global') {
-		onGlobalSearchQueryChanged();
-		return;
-	}
+function onLocalSearchQueryChanged(): void {
 	if (editorSearchState.query.length === 0) {
 		cancelSearchJob();
 		editorSearchState.matches = [];
@@ -165,18 +187,6 @@ export function onSearchQueryChanged(): void {
 		return;
 	}
 	startSearchJob();
-}
-
-export function onGlobalSearchQueryChanged(): void {
-	editorSearchState.displayOffset = 0;
-	editorSearchState.hoverIndex = -1;
-	editorSearchState.currentIndex = -1;
-	if (editorSearchState.query.length === 0) {
-		cancelGlobalSearchJob();
-		editorSearchState.globalMatches = [];
-		return;
-	}
-	startGlobalSearchJob();
 }
 
 export function startSearchJob(): void {
@@ -269,10 +279,10 @@ function ensureLocalJobCompleted(): void {
 	}
 }
 
-function startGlobalSearchJob(): void {
+function startGlobalSearchJob(runtime: Runtime): void {
 	cancelGlobalSearchJob();
 
-	const descriptors = listResources().filter(entry => entry.type === 'lua');
+	const descriptors = listResources(runtime).filter(entry => entry.type === 'lua');
 	const job: GlobalSearchJob = {
 		query: normalizeQuery(editorSearchState.query),
 		descriptors,
@@ -287,10 +297,10 @@ function startGlobalSearchJob(): void {
 	editorSearchState.currentIndex = -1;
 	editorSearchState.displayOffset = 0;
 	editorSearchState.hoverIndex = -1;
-	enqueueBackgroundTask(() => runGlobalSearchSlice(job));
+	enqueueBackgroundTask(() => runGlobalSearchSlice(runtime, job));
 }
 
-function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
+function runGlobalSearchSlice(runtime: Runtime, job: GlobalSearchJob): boolean {
 	if (editorSearchState.globalJob !== job) return false;
 	if (job.query.length === 0) {
 		editorSearchState.globalJob = null;
@@ -301,7 +311,7 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 	while (job.descriptorIndex < job.descriptors.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {
 			if (job.currentLines === null) {
 				const descriptor = job.descriptors[job.descriptorIndex];
-				const source = luaPipeline.resourceSourceForChunk(descriptor.path);
+				const source = luaPipeline.resourceSourceForChunk(runtime, descriptor.path);
 				job.currentLines = splitText(source);
 				job.nextRow = 0;
 			}

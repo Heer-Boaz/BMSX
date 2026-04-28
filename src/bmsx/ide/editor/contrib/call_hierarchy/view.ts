@@ -3,6 +3,7 @@ import type { LuaDefinitionLocation } from '../../../../lua/semantic_contracts';
 import { createEditorSemanticFrontend } from '../intellisense/frontend';
 import type { LuaSemanticWorkspaceSnapshot, SymbolID } from '../../../../lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export type CallHierarchyViewNodeKind = 'root' | 'caller' | 'call';
 
@@ -20,13 +21,14 @@ export type CallHierarchyView = {
 };
 
 export function buildIncomingCallHierarchyView(options: {
+	runtime: Runtime;
 	snapshot: LuaSemanticWorkspaceSnapshot;
 	rootSymbolId: SymbolID;
 	rootExpression: string;
 	maxDepth?: number;
 	allowedPaths?: ReadonlySet<string>;
 }): CallHierarchyView {
-	const frontend = createEditorSemanticFrontend(options.snapshot);
+	const frontend = createEditorSemanticFrontend(options.runtime, options.snapshot);
 	const rootDecl = frontend.getDecl(options.rootSymbolId);
 	if (!rootDecl) {
 		return null;

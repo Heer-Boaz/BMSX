@@ -1,11 +1,11 @@
 import { clamp } from '../../../../common/clamp';
-import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import type { ResourceDescriptor } from '../../../../rompack/resource';
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
 import { appendTextLines } from '../../../../common/text_lines';
 import type { ResourceViewerState } from '../../../common/models';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export type ResourceViewerBounds = {
 	codeTop: number;
@@ -38,7 +38,7 @@ const resourceViewerLayout: ResourceViewerLayout = {
 	textCapacity: 0,
 };
 
-export function buildResourceViewerState(descriptor: ResourceDescriptor): ResourceViewerState {
+export function buildResourceViewerState(runtime: Runtime, descriptor: ResourceDescriptor): ResourceViewerState {
 	const title = computeResourceTabTitle(descriptor);
 	const lines: string[] = [
 		`Path: ${descriptor.path || '<none>'}`,
@@ -53,12 +53,12 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 		scroll: 0,
 	};
 	let error: string = null;
-	const assets = Runtime.instance.activeAssets;
+	const assets = runtime.activeAssets;
 	lines.push('');
 	switch (descriptor.type) {
 		case 'lua': {
 			const path = descriptor.path ?? descriptor.asset_id;
-			const source = luaPipeline.resourceSourceForChunk(path);
+			const source = luaPipeline.resourceSourceForChunk(runtime, path);
 			if (typeof source === 'string') {
 				appendResourceViewerLine(lines, '-- Lua Source --');
 				lines.push('');

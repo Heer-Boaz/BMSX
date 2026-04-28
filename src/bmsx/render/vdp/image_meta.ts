@@ -9,7 +9,6 @@ import {
 	VDP_SLOT_SYSTEM,
 } from '../../machine/bus/io';
 import type { Memory } from '../../machine/memory/memory';
-import { Runtime } from '../../machine/runtime/runtime';
 
 export type ImageAtlasRect = {
 	atlasId: number;
@@ -91,8 +90,7 @@ export function resolveAtlasSlotFromMemory(memory: Memory, atlasId: number): num
 	throw new Error(`[VDPImageMeta] Atlas ${atlasId} is not loaded in a VDP slot.`);
 }
 
-export function resolveImageSlotSource(assets: RuntimeAssetState, imgid: string): VdpSlotSource {
-	const memory = Runtime.instance.machine.memory;
+export function resolveImageSlotSource(memory: Memory, assets: RuntimeAssetState, imgid: string): VdpSlotSource {
 	const layers = [assets.overlayLayer, assets.cartLayer, assets.biosLayer];
 	for (let index = 0; index < layers.length; index += 1) {
 		const layer = layers[index];

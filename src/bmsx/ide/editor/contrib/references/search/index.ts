@@ -14,8 +14,9 @@ import {
 	type ReferenceSymbolEntry,
 } from '../sources';
 import { buildReferenceSearchCatalog, showReferenceSearchStatusMessage, updateReferenceSearchMatches } from './catalog';
+import type { Runtime } from '../../../../../machine/runtime/runtime';
 
-export function openReferenceSearchPopup(): void {
+export function openReferenceSearchPopup(runtime: Runtime): void {
 	const context = getActiveCodeTabContext();
 	if (context.mode !== 'lua') {
 		return;
@@ -25,6 +26,7 @@ export function openReferenceSearchPopup(): void {
 	}
 	renameController.cancel();
 	const result = resolveReferenceLookup({
+		runtime,
 		buffer: editorDocumentState.buffer,
 		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,
@@ -38,7 +40,7 @@ export function openReferenceSearchPopup(): void {
 	}
 	const { info, initialIndex } = result;
 	referenceState.apply(info, initialIndex);
-	symbolSearchState.referenceCatalog = buildReferenceSearchCatalog(info, context);
+	symbolSearchState.referenceCatalog = buildReferenceSearchCatalog(runtime, info, context);
 	if (symbolSearchState.referenceCatalog.length === 0) {
 		showEditorMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 		return;
@@ -56,7 +58,7 @@ export function openReferenceSearchPopup(): void {
 	showReferenceSearchStatusMessage();
 }
 
-export function applyReferenceSearchSelection(index: number): void {
+export function applyReferenceSearchSelection(runtime: Runtime, index: number): void {
 	if (index < 0 || index >= symbolSearchState.matches.length) {
 		showEditorMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
@@ -69,7 +71,7 @@ export function applyReferenceSearchSelection(index: number): void {
 	const expressionLabel = referenceState.getExpression() ?? symbol.name;
 	closeSymbolSearch(true);
 	referenceState.clear();
-	navigateToLuaDefinition(symbol.location);
+	navigateToLuaDefinition(runtime, symbol.location);
 	if (entryIndex >= 0 && total > 0) {
 		showEditorMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 		return;

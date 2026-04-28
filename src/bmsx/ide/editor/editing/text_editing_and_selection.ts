@@ -12,13 +12,11 @@
  */
 
 import { engineCore } from '../../../core/engine';
-import { editorRuntimeState } from '../common/runtime_state';
 import { showEditorMessage } from '../../common/feedback_state';
 import type { EditContext, Position } from '../../common/models';
 import { getActiveCodeTabContext } from '../../workbench/ui/code_tab/contexts';
 import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import { markDiagnosticsDirty } from '../contrib/diagnostics/analysis';
-import { completionController } from '../contrib/suggest/completion_controller';
 import { currentLine } from '../common/text/layout';
 import { invalidateLineRange, markTextMutated } from '../common/text/runtime';
 import { capturePreMutationSource } from '../common/text/runtime';
@@ -1019,11 +1017,6 @@ export function applyDocumentFormatting(): void {
 		const message = extractErrorMessage(error);
 		showEditorMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
 	}
-}
-export function handlePostEditMutation(): void {
-	const editContext = editorRuntimeState.pendingEditContext;
-	editorRuntimeState.pendingEditContext = null;
-	completionController.updateAfterEdit(editContext);
 }
 export function computeEditContextFromSources(previous: string, next: string): EditContext {
 	if (previous === next) {

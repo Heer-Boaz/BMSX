@@ -1,4 +1,4 @@
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../../editor/input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../../input/keyboard/key_input';
 import type { ProblemsPanelController } from './controller';
 import { handleProblemsPanelNavigationCommand } from './navigation';
 

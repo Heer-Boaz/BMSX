@@ -3,6 +3,7 @@ import type { EditorTabId, ResourceViewerState } from '../../../common/models';
 import { setActiveTab } from '../../ui/tabs';
 import { tabSessionState } from '../../ui/tab/session_state';
 import { buildResourceViewerState } from './viewer';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export function getActiveResourceViewer(): ResourceViewerState {
 	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
@@ -15,7 +16,7 @@ export function getActiveResourceViewer(): ResourceViewerState {
 	return null;
 }
 
-export function openResourceViewerTab(descriptor: ResourceDescriptor): void {
+export function openResourceViewerTab(runtime: Runtime, descriptor: ResourceDescriptor): void {
 	const tabId: EditorTabId = `resource:${descriptor.path}`;
 	let tab = null;
 	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
@@ -25,7 +26,7 @@ export function openResourceViewerTab(descriptor: ResourceDescriptor): void {
 			break;
 		}
 	}
-	const state = buildResourceViewerState(descriptor);
+	const state = buildResourceViewerState(runtime, descriptor);
 	if (tab) {
 		tab.title = state.title;
 		tab.resource = state;

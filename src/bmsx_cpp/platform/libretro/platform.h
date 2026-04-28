@@ -11,7 +11,6 @@
 
 #include "libretro.h"
 #include "../../platform.h"
-#include "core/engine.h"
 #include "render/backend/backend.h"
 #include <chrono>
 #include <vector>
@@ -26,6 +25,7 @@ class GamepadInput;
 class KeyboardInput;
 class PointerInput;
 class LibretroInputHub;
+class EngineCore;
 
 /* ============================================================================
  * Framebuffer for video output
@@ -172,7 +172,7 @@ public:
 								bool applyGlow,
 								bool applyFringing,
 								bool applyAperture);
-	void setDitherType(GameView::DitherType type);
+	void setDitherType(i32 type);
 	void setFrameSkipOptions(bool enabled);
 	void setFrameSkipNext(bool skip);
 	void setPlatformPaused(bool paused);
@@ -264,7 +264,7 @@ private:
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
 	bool m_crt_postprocessing_enabled = false;
 	i32 m_postprocess_scale = 1;
-	GameView::DitherType m_dither_type = GameView::DitherType::None;
+	i32 m_dither_type = 0;
 	bool m_frameskip_enabled = false;
 	bool m_frameskip_next = false;
 	bool m_render_assets_need_refresh = true;

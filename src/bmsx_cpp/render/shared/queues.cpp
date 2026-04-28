@@ -100,7 +100,7 @@ static void forEachActiveQueue(FeatureQueue<T>& queue, Fn&& fn) {
 
 // --- 2D framebuffer API ---
 
-void submitSprite(const ImgRenderSubmission& options) {
+void submitSprite(Runtime& runtime, const ImgRenderSubmission& options) {
 	if (!options.scale.has_value()) {
 		throw BMSX_RUNTIME_ERROR("submitSprite requires scale.");
 	}
@@ -113,7 +113,6 @@ void submitSprite(const ImgRenderSubmission& options) {
 	if (!options.layer.has_value()) {
 		throw BMSX_RUNTIME_ERROR("submitSprite requires layer.");
 	}
-	auto& runtime = Runtime::instance();
 	const ResolvedSpriteAsset resolved = resolveSpriteAsset(runtime.activeAssets(), runtime.machine().memory(), options.imgid, "Sprite Queue");
 	submitResolvedSprite(
 		runtime,
@@ -165,8 +164,8 @@ void resetTransientState() {
 	clearBackQueues();
 }
 
-void clearAllQueues() {
-	auto& vdp = Runtime::instance().machine().vdp();
+void clearAllQueues(Runtime& runtime) {
+	auto& vdp = runtime.machine().vdp();
 	vdp.initializeRegisters();
 	s_meshQueue.clearAll();
 	s_particleQueue.clearAll();
@@ -178,7 +177,7 @@ void correctAreaStartEnd(f32& x, f32& y, f32& ex, f32& ey) {
 	if (ey < y) std::swap(y, ey);
 }
 
-void submitRectangle(const RectRenderSubmission& options) {
+void submitRectangle(Runtime& runtime, const RectRenderSubmission& options) {
 	if (!options.layer.has_value()) {
 		throw BMSX_RUNTIME_ERROR("submitRectangle requires layer.");
 	}
@@ -191,23 +190,23 @@ void submitRectangle(const RectRenderSubmission& options) {
 
 	correctAreaStartEnd(x, y, ex, ey);
 	if (options.kind == RectRenderSubmission::Kind::Fill) {
-		Runtime::instance().machine().vdp().enqueueFillRect(x, y, ex, ey, z, renderLayerTo2dLayer(*options.layer), c);
+		runtime.machine().vdp().enqueueFillRect(x, y, ex, ey, z, renderLayerTo2dLayer(*options.layer), c);
 		return;
 	}
-	Runtime::instance().machine().vdp().enqueueDrawRect(x, y, ex, ey, z, renderLayerTo2dLayer(*options.layer), c);
+	runtime.machine().vdp().enqueueDrawRect(x, y, ex, ey, z, renderLayerTo2dLayer(*options.layer), c);
 }
 
-void submitDrawPolygon(const PolyRenderSubmission& options) {
+void submitDrawPolygon(Runtime& runtime, const PolyRenderSubmission& options) {
 	if (!options.thickness.has_value()) {
 		throw BMSX_RUNTIME_ERROR("submitDrawPolygon requires thickness.");
 	}
 	if (!options.layer.has_value()) {
 		throw BMSX_RUNTIME_ERROR("submitDrawPolygon requires layer.");
 	}
-	Runtime::instance().machine().vdp().enqueueDrawPoly(options.points, options.z, options.color, *options.thickness, renderLayerTo2dLayer(*options.layer));
+	runtime.machine().vdp().enqueueDrawPoly(options.points, options.z, options.color, *options.thickness, renderLayerTo2dLayer(*options.layer));
 }
 
-void submitGlyphs(const GlyphRenderSubmission& options) {
+void submitGlyphs(Runtime& runtime, const GlyphRenderSubmission& options) {
 	if (!options.font) {
 		throw BMSX_RUNTIME_ERROR("submitGlyphs requires font.");
 	}
@@ -240,11 +239,12 @@ void submitGlyphs(const GlyphRenderSubmission& options) {
 										*options.center_block_width);
 	}
 
-	renderGlyphs(x, options.y, *lines, *options.glyph_start, *options.glyph_end,
+	renderGlyphs(runtime, x, options.y, *lines, *options.glyph_start, *options.glyph_end,
 					*options.z, options.font, *options.color, options.background_color, *options.layer);
 }
 
-void renderGlyphs(f32 x,
+void renderGlyphs(Runtime& runtime,
+					f32 x,
 					f32 y,
 					const std::vector<std::string>& lines,
 					i32 start,
@@ -254,7 +254,7 @@ void renderGlyphs(f32 x,
 					const Color& color,
 					const std::optional<Color>& backgroundColor,
 					RenderLayer layer) {
-	Runtime::instance().machine().vdp().enqueueGlyphRun(lines, x, y, z, font, color, backgroundColor, start, end, renderLayerTo2dLayer(layer));
+	runtime.machine().vdp().enqueueGlyphRun(lines, x, y, z, font, color, backgroundColor, start, end, renderLayerTo2dLayer(layer));
 }
 
 // --- Mesh queue API ---

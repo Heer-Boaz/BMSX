@@ -1,4 +1,4 @@
-import { Runtime } from '../../machine/runtime/runtime';
+import type { Runtime } from '../../machine/runtime/runtime';
 import type { ImageAtlasRect } from '../vdp/image_meta';
 import { resolveImageAtlasRect } from '../vdp/image_meta';
 
@@ -106,7 +106,7 @@ export class BFont {
 	protected readonly fallbackCharacter: string = '?';
 	protected letter_to_img: GlyphMap;
 
-	constructor(glyphmap?: GlyphMap, advancePadding: number = 0) {
+	constructor(protected readonly runtime: Runtime, glyphmap?: GlyphMap, advancePadding: number = 0) {
 		this.letter_to_img = glyphmap ?? DEFAULT_GLYPH_MAP;
 		this.advancePadding = advancePadding;
 		this.lineHeightValue = this.char_height('A');
@@ -125,11 +125,11 @@ export class BFont {
 	}
 
 	protected getGlyphAsset(imgid: string) {
-		return Runtime.instance.assets.getImageAsset(imgid);
+		return this.runtime.assets.getImageAsset(imgid);
 	}
 
 	protected getGlyphRect(imgid: string): ImageAtlasRect {
-		return resolveImageAtlasRect(Runtime.instance.assets, imgid);
+		return resolveImageAtlasRect(this.runtime.assets, imgid);
 	}
 
 	public textWidth(text: string): number {

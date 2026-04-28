@@ -12,13 +12,12 @@ namespace bmsx {
 
 RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 	RuntimeResumeSnapshot snapshot;
-	snapshot.machineState = captureRuntimeMachineState();
+	snapshot.machineState = captureRuntimeMachineState(runtime);
 	const_cast<CPU&>(runtime.m_machine.cpu()).syncGlobalSlotsToTable();
 	runtime.m_machine.cpu().globals->forEachEntry([&snapshot](Value key, Value value) {
 		snapshot.globals.emplace_back(key, value);
 	});
 	snapshot.storageState = runtime.m_api->captureStorageState();
-	snapshot.gameViewState = runtime.m_gameViewState;
 	snapshot.renderState = captureRuntimeRenderState();
 	snapshot.randomSeed = runtime.m_randomSeedValue;
 	snapshot.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
@@ -26,10 +25,9 @@ RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 }
 
 void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& snapshot) {
-	applyRuntimeMachineState(snapshot.machineState);
+	applyRuntimeMachineState(runtime, snapshot.machineState);
 	restoreVdpContextState(runtime.machine().vdp());
 	runtime.m_api->restoreStorageState(snapshot.storageState);
-	runtime.m_gameViewState = snapshot.gameViewState;
 	applyRuntimeRenderState(snapshot.renderState);
 	runtime.m_randomSeedValue = snapshot.randomSeed;
 	runtime.m_pendingCall = snapshot.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
@@ -40,7 +38,7 @@ void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& s
 	for (const auto& [key, value] : snapshot.globals) {
 		runtime.m_machine.cpu().setGlobalByKey(key, value);
 	}
-	syncRuntimeGameViewStateToTable();
+	syncRuntimeGameViewToTable(runtime);
 	RenderQueues::clearBackQueues();
 }
 

@@ -36,6 +36,7 @@ import {
 	resolveVdpRenderSurface,
 	resolveVdpSurfaceSlotBinding,
 } from '../surfaces';
+import { registerVdpBlitterExecutorFactory } from './index';
 
 type DrawMode = 'slot' | 'solid';
 
@@ -613,4 +614,22 @@ export class WebGLVdpBlitterExecutor {
 		}
 		drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, commands.length, timeSeconds, deltaSeconds);
 	}
+}
+
+let registered = false;
+
+export function registerWebGLVdpBlitterExecutorFactory(): void {
+	if (registered) {
+		return;
+	}
+	registered = true;
+	let webglExecutorBackend: WebGLBackend | null = null;
+	let webglExecutor: WebGLVdpBlitterExecutor | null = null;
+	registerVdpBlitterExecutorFactory('webgl2', (backend) => {
+		if (webglExecutor === null || webglExecutorBackend !== backend) {
+			webglExecutorBackend = backend as WebGLBackend;
+			webglExecutor = new WebGLVdpBlitterExecutor(webglExecutorBackend);
+		}
+		return webglExecutor;
+	});
 }

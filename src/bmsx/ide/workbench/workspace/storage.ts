@@ -1,6 +1,7 @@
 import { engineCore } from '../../../core/engine';
 import { scheduleIdeOnce } from '../../common/background_tasks';
 import { taskGate } from '../../../core/taskgate';
+import type { Runtime } from '../../../machine/runtime/runtime';
 import { clearWorkspaceCachedSources } from '../../workspace/cache';
 import { workspaceState } from './state';
 import { clearWorkspaceStorageConfiguration, configureWorkspaceStorage, isWorkspaceServerAvailable, scheduleWorkspaceServerRetry, writeWorkspaceStateFile } from './io';
@@ -20,13 +21,13 @@ function detachWorkspaceExitHandler(): void {
 	}
 }
 
-function attachWorkspaceExitHandler(): void {
+function attachWorkspaceExitHandler(runtime: Runtime): void {
 	detachWorkspaceExitHandler();
 	workspaceState.disposeExitListener = engineCore.platform.lifecycle.onWillExit(() => {
 		if (!workspaceState.autosaveEnabled) {
 			return;
 		}
-		void runWorkspaceAutosaveTick();
+		void runWorkspaceAutosaveTick(runtime);
 	});
 }
 
@@ -36,7 +37,7 @@ function disableWorkspacePersistence(): void {
 	detachWorkspaceExitHandler();
 }
 
-export function initializeWorkspaceStorage(projectRootPath: string | null): void {
+export function initializeWorkspaceStorage(runtime: Runtime, projectRootPath: string | null): void {
 	stopWorkspaceAutosaveLoop();
 	workspaceState.autosaveSignature = null;
 	clearWorkspaceCachedSources();
@@ -48,12 +49,12 @@ export function initializeWorkspaceStorage(projectRootPath: string | null): void
 		return;
 	}
 	workspaceState.autosaveEnabled = true;
-	attachWorkspaceExitHandler();
+	attachWorkspaceExitHandler(runtime);
 	const token = workspaceRestoreGate.begin({ blocking: true, tag: 'restore' });
 	(async () => {
 		try {
 			await configureWorkspaceStorage(projectRootPath);
-			const signature = await restoreWorkspaceSessionFromDisk();
+			const signature = await restoreWorkspaceSessionFromDisk(runtime);
 			workspaceState.autosaveSignature = signature;
 			workspaceState.serverConnected = isWorkspaceServerAvailable();
 		} catch (error) {
@@ -64,25 +65,25 @@ export function initializeWorkspaceStorage(projectRootPath: string | null): void
 			workspaceRestoreGate.end(token);
 		}
 		if (workspaceState.autosaveEnabled) {
-			scheduleWorkspaceAutosaveLoop();
+			scheduleWorkspaceAutosaveLoop(runtime);
 		}
 		if (workspaceState.autosaveQueued) {
 			workspaceState.autosaveQueued = false;
-			void runWorkspaceAutosaveTick();
+			void runWorkspaceAutosaveTick(runtime);
 		}
 	})().catch((error) => {
 		console.warn('[CartEditor] Workspace restore failed:', error);
 	});
 }
 
-export function scheduleWorkspaceAutosaveLoop(): void {
+export function scheduleWorkspaceAutosaveLoop(runtime: Runtime): void {
 	if (!workspaceState.autosaveEnabled || workspaceState.autosaveHandle) {
 		return;
 	}
 	workspaceState.autosaveHandle = scheduleIdeOnce(WORKSPACE_AUTOSAVE_INTERVAL_MS, () => {
 		workspaceState.autosaveHandle = null;
-		void runWorkspaceAutosaveTick();
-		scheduleWorkspaceAutosaveLoop();
+		void runWorkspaceAutosaveTick(runtime);
+		scheduleWorkspaceAutosaveLoop(runtime);
 	});
 }
 
@@ -97,7 +98,7 @@ export function stopWorkspaceAutosaveLoop(): void {
 	workspaceState.autosaveHandle = null;
 }
 
-export async function runWorkspaceAutosaveTick(): Promise<void> {
+export async function runWorkspaceAutosaveTick(runtime: Runtime): Promise<void> {
 	if (!workspaceState.autosaveEnabled) {
 		return;
 	}
@@ -115,7 +116,7 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 	workspaceState.autosaveRunning = true;
 	try {
 		const dirtyEntries = collectDirtyContextEntries();
-		const payload = buildWorkspaceAutosavePayload(dirtyEntries);
+		const payload = buildWorkspaceAutosavePayload(runtime, dirtyEntries);
 		if (payload) {
 			const signature = buildWorkspaceAutosaveSignature(payload);
 			if (signature !== workspaceState.autosaveSignature) {
@@ -130,7 +131,7 @@ export async function runWorkspaceAutosaveTick(): Promise<void> {
 		workspaceState.autosaveRunning = false;
 		if (workspaceState.autosaveQueued) {
 			workspaceState.autosaveQueued = false;
-			await runWorkspaceAutosaveTick();
+			await runWorkspaceAutosaveTick(runtime);
 		}
 	}
 }

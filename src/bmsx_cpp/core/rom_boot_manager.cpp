@@ -19,23 +19,31 @@
 
 namespace bmsx {
 
+RomBootManager::RomBootManager(EngineCore& engine)
+	: m_engine(engine) {
+}
+
+bool RomBootManager::hasLoadedCartProgram() const {
+	return m_engine.hasLoadedCartProgram();
+}
+
 void RomBootManager::activateEngineAssets() {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	engine.m_active_assets = &engine.m_engine_assets;
 }
 
 void RomBootManager::activateCartAssets() {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	engine.m_active_assets = &engine.m_cart_assets;
 }
 
 void RomBootManager::setMachineManifest(const MachineManifest& manifest) {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	engine.m_machine_manifest = &manifest;
 }
 
 void RomBootManager::configureViewForMachine(const MachineManifest& manifest) {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	Vec2 viewportSize{
 		static_cast<f32>(manifest.viewportWidth),
 		static_cast<f32>(manifest.viewportHeight)
@@ -48,7 +56,7 @@ void RomBootManager::configureViewForMachine(const MachineManifest& manifest) {
 }
 
 bool RomBootManager::loadEngineAssetsInternal(const u8* data, size_t size) {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	engine.m_engine_assets.clear();
 	if (engine.m_texture_manager) {
 		engine.m_texture_manager->setBackend(engine.m_view ? engine.m_view->backend() : nullptr);
@@ -69,11 +77,10 @@ bool RomBootManager::loadEngineAssetsInternal(const u8* data, size_t size) {
 }
 
 Runtime& RomBootManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine) {
-	EngineCore& engine = EngineCore::instance();
-	if (!Runtime::hasInstance()) {
-		Runtime::createInstance(RuntimeOptions{
+	EngineCore& engine = m_engine;
+	Runtime& runtime = engine.ensureRuntime(RuntimeOptions{
 			1,
-			{ timing.viewportWidth, timing.viewportHeight },
+			Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 			&engine.m_engine_assets,
 			&engine.m_cart_assets,
 			&engine.m_cart_assets,
@@ -87,8 +94,6 @@ Runtime& RomBootManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming
 			timing.vdpWorkUnitsPerSec,
 			timing.geoWorkUnitsPerSec,
 		});
-	}
-	Runtime& runtime = Runtime::instance();
 	runtime.setRuntimeEnvironment(
 		engine.m_engine_assets,
 		engine.assets(),
@@ -97,13 +102,13 @@ Runtime& RomBootManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming
 		{ engine.m_engine_rom_data, engine.m_engine_rom_size },
 		{ engine.m_cart_rom_data, engine.m_cart_rom_size }
 	);
-	applyRuntimeTiming(timing);
+	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	return runtime;
 }
 
 void RomBootManager::bootRuntimeFromProgram() {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	if (!engine.assets().programAsset || !engine.assets().programAsset->program) {
 		return;
 	}
@@ -111,10 +116,9 @@ void RomBootManager::bootRuntimeFromProgram() {
 	engine.m_linked_program_symbols.reset();
 	RuntimeAssets& activeAssets = engine.assets();
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(activeAssets.machine);
-	if (!Runtime::hasInstance()) {
-		Runtime::createInstance(RuntimeOptions{
+	Runtime& runtime = engine.ensureRuntime(RuntimeOptions{
 			1,
-			{ timing.viewportWidth, timing.viewportHeight },
+			Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 			&engine.m_engine_assets,
 			&activeAssets,
 			engine.m_cart_rom_size > 0 ? &engine.m_cart_assets : nullptr,
@@ -128,8 +132,6 @@ void RomBootManager::bootRuntimeFromProgram() {
 			timing.vdpWorkUnitsPerSec,
 			timing.geoWorkUnitsPerSec,
 		});
-	}
-	Runtime& runtime = Runtime::instance();
 	runtime.setRuntimeEnvironment(
 		engine.m_engine_assets,
 		activeAssets,
@@ -138,7 +140,7 @@ void RomBootManager::bootRuntimeFromProgram() {
 		{ engine.m_engine_rom_data, engine.m_engine_rom_size },
 		{ engine.m_cart_rom_data, engine.m_cart_rom_size }
 	);
-	applyRuntimeTiming(timing);
+	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);
 	runtime.resetRuntimeForProgramReload();
@@ -159,7 +161,7 @@ void RomBootManager::bootRuntimeFromProgram() {
 }
 
 bool RomBootManager::bootEngineStartupProgram(const MachineManifest& runtimeMachine, const RuntimeAssets& sizingAssets) {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	if (!engine.m_engine_assets_loaded) {
 		return false;
 	}
@@ -173,10 +175,9 @@ bool RomBootManager::bootEngineStartupProgram(const MachineManifest& runtimeMach
 	applyManifestMemorySpecs(runtimeMachine, engine.m_engine_assets.machine, sizingAssets, engine.m_engine_assets);
 	configureViewForMachine(runtimeMachine);
 
-	if (!Runtime::hasInstance()) {
-		Runtime::createInstance(RuntimeOptions{
+	Runtime& runtime = engine.ensureRuntime(RuntimeOptions{
 			1,
-			{ timing.viewportWidth, timing.viewportHeight },
+			Vec2{ static_cast<f32>(timing.viewportWidth), static_cast<f32>(timing.viewportHeight) },
 			&engine.m_engine_assets,
 			&engine.m_engine_assets,
 			engine.m_cart_rom_size > 0 ? &engine.m_cart_assets : nullptr,
@@ -190,8 +191,6 @@ bool RomBootManager::bootEngineStartupProgram(const MachineManifest& runtimeMach
 			timing.vdpWorkUnitsPerSec,
 			timing.geoWorkUnitsPerSec,
 		});
-	}
-	Runtime& runtime = Runtime::instance();
 	runtime.setRuntimeEnvironment(
 		engine.m_engine_assets,
 		engine.m_engine_assets,
@@ -200,10 +199,10 @@ bool RomBootManager::bootEngineStartupProgram(const MachineManifest& runtimeMach
 		{ engine.m_engine_rom_data, engine.m_engine_rom_size },
 		{ engine.m_cart_rom_data, engine.m_cart_rom_size }
 	);
-	applyRuntimeTiming(timing);
+	applyRuntimeTiming(runtime, timing);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Engine);
-	buildAssetMemory(engine.m_engine_assets, engine.m_engine_assets);
+	buildAssetMemory(runtime, engine.m_engine_assets, engine.m_engine_assets);
 	runtime.machine().memory().sealEngineAssets();
 	runtime.resetRuntimeForProgramReload();
 	engine.refreshRenderAssets();
@@ -213,7 +212,7 @@ bool RomBootManager::bootEngineStartupProgram(const MachineManifest& runtimeMach
 }
 
 bool RomBootManager::loadRomInternal(const u8* data, size_t size) {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	if (engine.m_texture_manager) {
 		engine.m_texture_manager->setBackend(engine.m_view ? engine.m_view->backend() : nullptr);
 	}
@@ -262,7 +261,7 @@ bool RomBootManager::loadRomInternal(const u8* data, size_t size) {
 		applyManifestMemorySpecs(engine.assets().machine, engine.m_engine_assets.machine, engine.assets(), engine.m_engine_assets);
 		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(engine.assets().machine, transferMachine, cpuHz, runtimeUfpsScaled);
 		Runtime& runtime = prepareRuntimeForActiveCart(timing, cartMachine);
-		buildAssetMemory(engine.m_engine_assets, engine.assets());
+		buildAssetMemory(runtime, engine.m_engine_assets, engine.assets());
 		if (engine.assets().hasProgram()) {
 			bootRuntimeFromProgram();
 		}
@@ -273,7 +272,7 @@ bool RomBootManager::loadRomInternal(const u8* data, size_t size) {
 }
 
 bool RomBootManager::loadEngineAssets(const u8* data, size_t size) {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	engine.m_engine_rom_owned.clear();
 	engine.m_engine_rom_data = data;
 	engine.m_engine_rom_size = size;
@@ -281,7 +280,7 @@ bool RomBootManager::loadEngineAssets(const u8* data, size_t size) {
 }
 
 bool RomBootManager::loadEngineAssetsOwned(std::vector<u8>&& data) {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	engine.m_engine_rom_owned = std::move(data);
 	engine.m_engine_rom_data = engine.m_engine_rom_owned.data();
 	engine.m_engine_rom_size = engine.m_engine_rom_owned.size();
@@ -306,7 +305,7 @@ bool RomBootManager::loadEngineAssetsFromPath(const char* path) {
 }
 
 bool RomBootManager::loadRom(const u8* data, size_t size) {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	unloadRom();
 	engine.m_cart_rom_owned.clear();
 	engine.m_cart_rom_data = data;
@@ -315,7 +314,7 @@ bool RomBootManager::loadRom(const u8* data, size_t size) {
 }
 
 bool RomBootManager::loadRomOwned(std::vector<u8>&& data) {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	unloadRom();
 	engine.m_cart_rom_owned = std::move(data);
 	engine.m_cart_rom_data = engine.m_cart_rom_owned.data();
@@ -324,7 +323,7 @@ bool RomBootManager::loadRomOwned(std::vector<u8>&& data) {
 }
 
 void RomBootManager::unloadRom() {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	if (engine.m_rom_loaded) {
 		engine.m_active_assets = &engine.m_engine_assets;
 		engine.m_machine_manifest = &engine.m_engine_assets.machine;
@@ -345,7 +344,7 @@ void RomBootManager::unloadRom() {
 }
 
 bool RomBootManager::bootLoadedCart() {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	if (!engine.m_rom_loaded) {
 		return false;
 	}
@@ -366,7 +365,7 @@ bool RomBootManager::bootLoadedCart() {
 	configureViewForMachine(engine.assets().machine);
 
 	Runtime& runtime = prepareRuntimeForActiveCart(timing, engine.m_cart_assets.machine);
-	buildAssetMemory(engine.m_engine_assets, engine.assets(), RuntimeAssetBuildMode::Cart);
+	buildAssetMemory(runtime, engine.m_engine_assets, engine.assets(), RuntimeAssetBuildMode::Cart);
 	runtime.resetRuntimeForProgramReload();
 	engine.refreshRenderAssets();
 	bootRuntimeFromProgram();
@@ -374,7 +373,7 @@ bool RomBootManager::bootLoadedCart() {
 }
 
 bool RomBootManager::rebootLoadedRom() {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	if (!engine.m_rom_loaded) {
 		return false;
 	}
@@ -402,7 +401,7 @@ bool RomBootManager::rebootLoadedRom() {
 }
 
 bool RomBootManager::bootWithoutCart() {
-	EngineCore& engine = EngineCore::instance();
+	EngineCore& engine = m_engine;
 	if (!engine.m_engine_assets_loaded) {
 		throw std::runtime_error("[BMSX] bootWithoutCart: engine assets not loaded");
 	}

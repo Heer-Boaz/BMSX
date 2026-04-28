@@ -8,14 +8,14 @@ RuntimeMachineState captureRuntimeMachineState(const Runtime& runtime) {
 	RuntimeMachineState state;
 	state.machine = runtime.machine().captureState();
 	state.frameScheduler = runtime.frameScheduler.captureState();
-	state.vblank = runtime.vblank.capture();
+	state.vblank = runtime.vblank.capture(runtime);
 	return state;
 }
 
 void applyRuntimeMachineState(Runtime& runtime, const RuntimeMachineState& state) {
 	runtime.machine().restoreState(state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
-	runtime.vblank.restore(state.vblank);
+	runtime.vblank.restore(runtime, state.vblank);
 }
 
 } // namespace bmsx

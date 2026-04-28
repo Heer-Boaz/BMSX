@@ -1,13 +1,13 @@
 import type { ResourceDescriptor } from '../../common/models';
 import { restoreBreakpointsFromPayload } from '../contrib/debugger/controller';
-import { Runtime } from '../../../machine/runtime/runtime';
+import type { Runtime } from '../../../machine/runtime/runtime';
 import * as workbenchMode from '../mode';
 import { editorDocumentState } from '../../editor/editing/document_state';
 import { fetchWorkspaceFile } from '../../workspace/files';
-import { setFontVariant } from '../../editor/ui/view/view';
 import { initializeTabs } from '../ui/tabs';
 import {
 	clearCodeTabContexts,
+	createEntryTabContext,
 	findCodeTabContext,
 	getActiveCodeTabContextId,
 	getCodeTabContextById,
@@ -23,7 +23,7 @@ import { applySourceToContext, buildSnapshotFromBuffer } from './context_snapsho
 import { buildWorkspaceAutosaveSignature } from './autosave';
 import type { PersistedDirtyEntry, WorkspaceAutosavePayload } from './models';
 
-export async function restoreWorkspaceSessionFromDisk(): Promise<string> {
+export async function restoreWorkspaceSessionFromDisk(runtime: Runtime): Promise<string> {
 	const stateText = await readWorkspaceStateFile();
 	if (!stateText) {
 		return null;
@@ -38,26 +38,21 @@ export async function restoreWorkspaceSessionFromDisk(): Promise<string> {
 	if (!payload) {
 		return null;
 	}
-	await applyWorkspaceAutosavePayload(payload);
+	await applyWorkspaceAutosavePayload(runtime, payload);
 	return buildWorkspaceAutosaveSignature(payload);
 }
 
-export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePayload): Promise<void> {
+export async function applyWorkspaceAutosavePayload(runtime: Runtime, payload: WorkspaceAutosavePayload): Promise<void> {
 	clearCodeTabContexts();
-	initializeTabs();
-	const runtime = Runtime.instance;
+	initializeTabs(createEntryTabContext(runtime), runtime.editor.resourcePanel);
 	if (payload.fontVariant) {
-		if (runtime) {
-			workbenchMode.setActiveIdeFontVariant(payload.fontVariant);
-		} else {
-			setFontVariant(payload.fontVariant);
-		}
+		workbenchMode.setActiveIdeFontVariant(runtime, payload.fontVariant);
 	}
-	await hydrateDirtyFiles(payload.dirtyFiles);
-	restoreBreakpointsFromPayload(payload.breakpoints);
+	await hydrateDirtyFiles(runtime, payload.dirtyFiles);
+	restoreBreakpointsFromPayload(runtime, payload.breakpoints);
 }
 
-export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {
+export async function hydrateDirtyFiles(runtime: Runtime, entries: PersistedDirtyEntry[]): Promise<void> {
 	for (const entry of entries) {
 		const descriptor: ResourceDescriptor = {
 			path: entry.descriptor.path,
@@ -70,7 +65,7 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 			context = findCodeTabContext(descriptor.path);
 		}
 		if (!context) {
-			await openCodeTabForDescriptor(descriptor);
+			await openCodeTabForDescriptor(runtime, descriptor);
 			context = findCodeTabContext(descriptor.path);
 		}
 		if (!context) {

@@ -7,18 +7,17 @@ import { editorFeedbackState } from '../../common/feedback_state';
 import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText, truncateTextToWidth } from '../../editor/common/text/layout';
-import { Runtime } from '../../../machine/runtime/runtime';
 import { api } from '../../runtime/overlay_api';
 import { workspaceState } from '../workspace/state';
 import { editorDocumentState } from '../../editor/editing/document_state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
-import { resourcePanel } from '../contrib/resources/panel/controller';
 import { symbolSearchState } from '../../editor/contrib/symbols/search/state';
+import type { Runtime } from '../../../machine/runtime/runtime';
 
-export function renderStatusBar(): void {
-	const runtime = Runtime.instance;
-	const runtimeFaulted = runtime ? runtime.hasRuntimeFailed : false;
+export function renderStatusBar(runtime: Runtime): void {
+	const runtimeFaulted = runtime.hasRuntimeFailed;
+	const resourcePanel = runtime.editor.resourcePanel;
 	const statusTop = editorViewState.viewportHeight - statusAreaHeight();
 	const statusBottom = editorViewState.viewportHeight;
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;

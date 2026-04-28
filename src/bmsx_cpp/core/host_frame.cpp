@@ -4,7 +4,6 @@
 #include "core/time.h"
 #include "input/manager.h"
 #include "machine/runtime/game/table.h"
-#include "machine/runtime/game/view_state.h"
 #include "machine/runtime/runtime.h"
 
 #include <chrono>
@@ -42,15 +41,13 @@ void EngineCore::runHostFrame(
 		Input::instance().pollInput();
 
 		runtime.screen.clearPresentation();
-		syncGameViewViewportSizeFromHost(runtime.gameViewState(), *view());
-		syncRuntimeGameViewStateToTable();
+		syncRuntimeGameViewToTable(runtime);
 		if (!platformPaused) {
 			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
-			runtime.frameScheduler.run(hostDeltaMs);
-			applyRuntimeGameViewTableToState();
-			applyGameViewStateToHost(runtime.gameViewState(), *view());
-			runtime.screen.syncAfterRuntimeUpdate(previousTickSequence);
+			runtime.frameScheduler.run(runtime, hostDeltaMs);
+			applyRuntimeGameViewTableToHost(runtime);
+			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 
 			flushHostRuntimeAssetEdits(runtime.machine().memory(), *texmanager(), *view());
 		}
@@ -63,10 +60,10 @@ void EngineCore::runHostFrame(
 			runtime.screen.render(*this, runtime);
 		}
 	} catch (const std::exception& e) {
-		runtime.frameLoop.abandonFrameState();
+		runtime.frameLoop.abandonFrameState(runtime);
 		runtime.handleLuaError(e.what());
 	} catch (...) {
-		runtime.frameLoop.abandonFrameState();
+		runtime.frameLoop.abandonFrameState(runtime);
 		runtime.handleLuaError("Unhandled host frame exception.");
 	}
 }

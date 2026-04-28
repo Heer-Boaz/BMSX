@@ -1,53 +1,59 @@
-import type { CodeTabContext, Position } from '../../common/models';
+import type { CodeTabContext, EditContext, Position } from '../../common/models';
 import type { TextBuffer } from '../text/text_buffer';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import type { EditorUndoRecord } from '../text/undo';
 
-export type EditorDocumentState = {
-	buffer: TextBuffer;
-	cursorRow: number;
-	cursorColumn: number;
-	preMutationSource: string;
-	dirty: boolean;
-	desiredColumn: number;
-	desiredDisplayOffset: number;
-	selectionAnchor: Position;
-	selectionAnchorScratch: Position;
-	undoStack: EditorUndoRecord[];
-	redoStack: EditorUndoRecord[];
-	lastHistoryKey: string;
-	lastHistoryTimestamp: number;
-	savePointDepth: number;
-	textVersion: number;
-	lastContentEditAtMs: number;
-	saveGeneration: number;
-	appliedGeneration: number;
-	lastSavedSource: string;
-	customClipboard: string;
-};
+type CursorMovedListener = () => void;
+type TextMutatedListener = (edit: EditContext) => void;
 
-export const editorDocumentState: EditorDocumentState = {
-	buffer: new PieceTreeBuffer(''),
-	cursorRow: 0,
-	cursorColumn: 0,
-	preMutationSource: null,
-	dirty: false,
-	desiredColumn: 0,
-	desiredDisplayOffset: 0,
-	selectionAnchor: null,
-	selectionAnchorScratch: { row: 0, column: 0 },
-	undoStack: [],
-	redoStack: [],
-	lastHistoryKey: null,
-	lastHistoryTimestamp: 0,
-	savePointDepth: 0,
-	textVersion: 0,
-	lastContentEditAtMs: null,
-	saveGeneration: 0,
-	appliedGeneration: 0,
-	lastSavedSource: '',
-	customClipboard: null,
-};
+export class EditorDocumentState {
+	public buffer: TextBuffer = new PieceTreeBuffer('');
+	public cursorRow = 0;
+	public cursorColumn = 0;
+	public preMutationSource: string = null;
+	public dirty = false;
+	public desiredColumn = 0;
+	public desiredDisplayOffset = 0;
+	public selectionAnchor: Position = null;
+	public selectionAnchorScratch: Position = { row: 0, column: 0 };
+	public undoStack: EditorUndoRecord[] = [];
+	public redoStack: EditorUndoRecord[] = [];
+	public lastHistoryKey: string = null;
+	public lastHistoryTimestamp = 0;
+	public savePointDepth = 0;
+	public textVersion = 0;
+	public lastContentEditAtMs: number = null;
+	public saveGeneration = 0;
+	public appliedGeneration = 0;
+	public lastSavedSource = '';
+	public customClipboard: string = null;
+	private readonly cursorMovedListeners = new Set<CursorMovedListener>();
+	private readonly textMutatedListeners = new Set<TextMutatedListener>();
+
+	public onCursorMoved(listener: CursorMovedListener): () => void {
+		this.cursorMovedListeners.add(listener);
+		return () => this.cursorMovedListeners.delete(listener);
+	}
+
+	public emitCursorMoved(): void {
+		for (const listener of this.cursorMovedListeners) {
+			listener();
+		}
+	}
+
+	public onTextMutated(listener: TextMutatedListener): () => void {
+		this.textMutatedListeners.add(listener);
+		return () => this.textMutatedListeners.delete(listener);
+	}
+
+	public emitTextMutated(edit: EditContext): void {
+		for (const listener of this.textMutatedListeners) {
+			listener(edit);
+		}
+	}
+}
+
+export const editorDocumentState = new EditorDocumentState();
 
 export function restoreDocumentStateFromContext(context: CodeTabContext): void {
 	editorDocumentState.buffer = context.buffer;

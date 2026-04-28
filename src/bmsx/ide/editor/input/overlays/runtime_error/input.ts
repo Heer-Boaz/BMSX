@@ -1,9 +1,10 @@
 import { writeClipboard } from '../../../editing/text_editing_and_selection';
 import { buildRuntimeErrorOverlayCopyText } from '../../../contrib/runtime_error/overlay';
 import type { PointerSnapshot } from '../../../../common/models';
-import { collapseRuntimeErrorOverlay, handleRuntimeErrorOverlayPointerClick } from './pointer/actions';
-import { editorPointerState, resetPointerClickTracking } from '../../pointer/state';
+import { handleRuntimeErrorOverlayPointerClick, setRuntimeErrorOverlayExpanded } from './pointer/actions';
+import { editorPointerState, resetPointerClickTracking } from '../../../../input/pointer/state';
 import { runtimeErrorState } from '../../../contrib/runtime_error/state';
+import type { Runtime } from '../../../../../machine/runtime/runtime';
 import {
 	RUNTIME_ERROR_OVERLAY_POINTER_BODY,
 	RUNTIME_ERROR_OVERLAY_POINTER_COPY_BUTTON,
@@ -12,15 +13,15 @@ import {
 	updateRuntimeErrorOverlayPointerHover,
 } from './pointer/hover';
 
-export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number): boolean {
-	const pointerHit = updateRuntimeErrorOverlayPointerHover(snapshot, codeTop, codeRight, textLeft);
+export function processRuntimeErrorOverlayPointer(runtime: Runtime, snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number, contentBottom: number): boolean {
+	const pointerHit = updateRuntimeErrorOverlayPointerHover(snapshot, codeTop, codeRight, textLeft, contentBottom);
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_NONE) {
 		return false;
 	}
 	const overlay = runtimeErrorState.activeOverlay;
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_OUTSIDE) {
 		if (justPressed && overlay.expanded) {
-			collapseRuntimeErrorOverlay(overlay);
+			setRuntimeErrorOverlayExpanded(overlay, false);
 		}
 		return false;
 	}
@@ -36,7 +37,7 @@ export function processRuntimeErrorOverlayPointer(snapshot: PointerSnapshot, jus
 		return true;
 	}
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_BODY) {
-		handleRuntimeErrorOverlayPointerClick(overlay, overlay.hoverLine);
+		handleRuntimeErrorOverlayPointerClick(runtime, overlay, overlay.hoverLine);
 	}
 	return true;
 }

@@ -1,7 +1,6 @@
 import { startSearchJob } from '../../contrib/find/search';
 import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../../workbench/ui/code_tab/contexts';
-import { clearForwardNavigationHistory } from '../../navigation/navigation_history';
-import { handlePostEditMutation } from '../../editing/text_editing_and_selection';
+import { clearForwardNavigationHistory } from '../../../navigation/navigation_history';
 import { markDiagnosticsDirty } from '../../contrib/diagnostics/analysis';
 import { requestSemanticRefresh, clearReferenceHighlights } from '../../contrib/intellisense/engine';
 import { getTextSnapshot } from '../../text/source_text';
@@ -49,7 +48,9 @@ export function markTextMutated(): void {
 	editorViewState.layout.ensureVisualLinesDirty();
 	requestSemanticRefresh();
 	clearForwardNavigationHistory();
-	handlePostEditMutation();
+	const editContext = editorRuntimeState.pendingEditContext;
+	editorRuntimeState.pendingEditContext = null;
+	editorDocumentState.emitTextMutated(editContext);
 	if (editorSearchState.query.length > 0) startSearchJob();
 }
 

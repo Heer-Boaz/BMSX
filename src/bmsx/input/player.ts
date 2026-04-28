@@ -5,7 +5,6 @@ import type { VibrationParams } from '../platform';
 import { KeyboardInput } from './keyboard';
 import { ContextStack, MappingContext } from './context';
 import { engineCore } from '../core/engine';
-import { Runtime } from '../machine/runtime/runtime';
 import { clamp } from '../common/clamp';
 import { deep_clone } from '../common/deep_clone';
 
@@ -72,6 +71,7 @@ export enum KeyModifier {
  * Represents the Input class responsible for handling user input.
  */
 export class PlayerInput {
+	private frameDurationMs = 1000 / 60;
 	/**
 	 * Represents the input handlers for the player.
 	 *
@@ -845,7 +845,7 @@ export class PlayerInput {
 		const guardMs = windowOverride >= 0
 			? clamp(windowOverride, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS)
 			: ACTION_GUARD_MIN_MS;
-		const frames = Math.ceil(guardMs / Runtime.instance.timing.frameDurationMs);
+		const frames = Math.ceil(guardMs / this.frameDurationMs);
 		return frames < 1 ? 1 : frames;
 	}
 
@@ -901,7 +901,7 @@ export class PlayerInput {
 		const justpressed = state.justpressed;
 		const now = this.lastPollTimestampMs ?? engineCore.platform.clock.now();
 		const startMs = state.pressedAtMs ?? state.timestamp ?? now;
-		const frameMs = Runtime.instance.timing.frameDurationMs;
+		const frameMs = this.frameDurationMs;
 		const initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * frameMs;
 		const repeatIntervalMs = REPEAT_INTERVAL_FRAMES * frameMs;
 
@@ -983,9 +983,14 @@ export class PlayerInput {
 	/**
 	 * Initializes the input system.
 	 */
-	public constructor(public playerIndex: number) {
+	public constructor(public playerIndex: number, frameDurationMs: number) {
+		this.frameDurationMs = frameDurationMs;
 		this.inputHandlers['gamepad'] = null;
 		this.reset();
+	}
+
+	public setFrameDurationMs(frameDurationMs: number): void {
+		this.frameDurationMs = frameDurationMs;
 	}
 
 	/** Clears cached transition state so edge detectors don't fire spuriously. */

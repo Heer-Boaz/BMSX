@@ -167,41 +167,6 @@ RuntimeStorageState decodeRuntimeStorageState(const BinValue& value, const char*
 	return state;
 }
 
-BinValue encodeGameViewState(const GameViewState& state) {
-	BinObject viewport;
-	viewport["x"] = static_cast<i64>(state.viewportSize.x);
-	viewport["y"] = static_cast<i64>(state.viewportSize.y);
-
-	BinObject object;
-	object["viewportSize"] = BinValue(std::move(viewport));
-	object["crt_postprocessing_enabled"] = state.crtPostprocessingEnabled;
-	object["enable_noise"] = state.enableNoise;
-	object["enable_colorbleed"] = state.enableColorBleed;
-	object["enable_scanlines"] = state.enableScanlines;
-	object["enable_blur"] = state.enableBlur;
-	object["enable_glow"] = state.enableGlow;
-	object["enable_fringing"] = state.enableFringing;
-	object["enable_aperture"] = state.enableAperture;
-	return BinValue(std::move(object));
-}
-
-GameViewState decodeGameViewState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	const BinObject& viewport = requireObject(requireField(object, "viewportSize", label), "gameViewState.viewportSize");
-	GameViewState state;
-	state.viewportSize.x = requireI32(requireField(viewport, "x", "gameViewState.viewportSize"), "gameViewState.viewportSize.x");
-	state.viewportSize.y = requireI32(requireField(viewport, "y", "gameViewState.viewportSize"), "gameViewState.viewportSize.y");
-	state.crtPostprocessingEnabled = requireBool(requireField(object, "crt_postprocessing_enabled", label), "gameViewState.crt_postprocessing_enabled");
-	state.enableNoise = requireBool(requireField(object, "enable_noise", label), "gameViewState.enable_noise");
-	state.enableColorBleed = requireBool(requireField(object, "enable_colorbleed", label), "gameViewState.enable_colorbleed");
-	state.enableScanlines = requireBool(requireField(object, "enable_scanlines", label), "gameViewState.enable_scanlines");
-	state.enableBlur = requireBool(requireField(object, "enable_blur", label), "gameViewState.enable_blur");
-	state.enableGlow = requireBool(requireField(object, "enable_glow", label), "gameViewState.enable_glow");
-	state.enableFringing = requireBool(requireField(object, "enable_fringing", label), "gameViewState.enable_fringing");
-	state.enableAperture = requireBool(requireField(object, "enable_aperture", label), "gameViewState.enable_aperture");
-	return state;
-}
-
 BinValue encodeRuntimeRenderCameraState(const RuntimeRenderCameraState& state) {
 	BinObject object;
 	object["view"] = encodeNumberArray(state.view);
@@ -882,7 +847,6 @@ BinValue encodeRuntimeSaveStateValue(const RuntimeSaveState& state) {
 	object["storageState"] = encodeRuntimeStorageState(state.storageState);
 	object["machineState"] = encodeRuntimeSaveMachineState(state.machineState);
 	object["cpuState"] = encodeCpuRuntimeState(state.cpuState);
-	object["gameViewState"] = encodeGameViewState(state.gameViewState);
 	object["renderState"] = encodeRuntimeRenderState(state.renderState);
 	object["engineProgramActive"] = state.engineProgramActive;
 	object["luaInitialized"] = state.luaInitialized;
@@ -898,7 +862,6 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 	state.storageState = decodeRuntimeStorageState(requireField(object, "storageState", label), "runtimeSaveState.storageState");
 	state.machineState = decodeRuntimeSaveMachineState(requireField(object, "machineState", label), "runtimeSaveState.machineState");
 	state.cpuState = decodeCpuRuntimeState(requireField(object, "cpuState", label), "runtimeSaveState.cpuState");
-	state.gameViewState = decodeGameViewState(requireField(object, "gameViewState", label), "runtimeSaveState.gameViewState");
 	state.renderState = decodeRuntimeRenderState(requireField(object, "renderState", label), "runtimeSaveState.renderState");
 	state.engineProgramActive = requireBool(requireField(object, "engineProgramActive", label), "runtimeSaveState.engineProgramActive");
 	state.luaInitialized = requireBool(requireField(object, "luaInitialized", label), "runtimeSaveState.luaInitialized");
@@ -941,17 +904,17 @@ RuntimeSaveState decodeRuntimeSaveState(const std::vector<u8>& data) {
 
 // disable-next-line single_line_method_pattern -- byte save-state API composes capture and binary encoding at the public boundary.
 std::vector<u8> captureRuntimeSaveStateBytes(Runtime& runtime) {
-	return encodeRuntimeSaveState(captureRuntimeSaveState());
+	return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 }
 
 // disable-next-line single_line_method_pattern -- byte save-state API composes binary decoding and runtime restore at the public boundary.
 void applyRuntimeSaveStateBytes(Runtime& runtime, const u8* data, size_t size) {
-	applyRuntimeSaveState(decodeRuntimeSaveState(data, size));
+	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(data, size));
 }
 
 // disable-next-line single_line_method_pattern -- vector save-state input is the public owner overload for byte payload callers.
 void applyRuntimeSaveStateBytes(Runtime& runtime, const std::vector<u8>& data) {
-	applyRuntimeSaveStateBytes(data.data(), data.size());
+	applyRuntimeSaveStateBytes(runtime, data.data(), data.size());
 }
 
 } // namespace bmsx

@@ -22,19 +22,20 @@ import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext } fro
 import * as constants from '../../common/constants';
 import { OverlayRenderer } from '../../runtime/overlay_renderer';
 import {
-	isKeyJustPressed as isKeyJustPressed,
+	consumeIdeKey,
+	isAltDown,
 	isCtrlDown,
+	isKeyJustPressed,
 	isMetaDown,
-	isAltDown
-} from '../../editor/input/keyboard/key_input';
+	shouldRepeatKeyFromPlayer,
+} from '../../input/keyboard/key_input';
 import { resolveSnapshotExpression, describeLuaValueForInspector } from '../../editor/contrib/intellisense/engine';
-import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../editor/input/keyboard/key_input';
 import { CompletionController } from '../../editor/contrib/suggest/completion_controller';
 import type { ModuleAliasEntry } from '../../../lua/semantic/model';
 import type { Viewport } from '../../../rompack/format';
-import { Runtime } from '../../../machine/runtime/runtime';
+import type { Runtime } from '../../../machine/runtime/runtime';
+import { runConsoleChunk } from '../../../machine/program/executor';
 import * as luaPipeline from '../../runtime/lua_pipeline';
-import * as workbenchMode from '../../workbench/mode';
 import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './commands';
 import { extractErrorMessage } from '../../../lua/value';
 import { valueToString } from '../../../machine/firmware/globals';
@@ -240,11 +241,11 @@ export class TerminalMode {
 		this.terminalCommands = new TerminalCommandDispatcher(this.runtime);
 		this.setPromptPrefix(this.terminalCommands.getPrompt());
 
-		this.font = new EditorFont(runtime.activeIdeFontVariant);
+		this.font = new EditorFont(runtime, runtime.activeIdeFontVariant);
 		this.maxEntries = MAX_OUTPUT_ENTRIES;
 		this.buffer = new InlineFieldTextBuffer(() => this.getLinesSnapshot(), () => this.field.text, () => this.textVersion);
 		const owner = this;
-		this.completion = new class extends CompletionController {
+		class TerminalCompletionController extends CompletionController {
 			private readonly cursorScratch = { row: 0, column: 0 };
 			private readonly clampScratch = { row: 0, column: 0 };
 
@@ -343,7 +344,8 @@ export class TerminalMode {
 			protected override clearSelectionAnchor(): void {
 				clearSelection(owner.field);
 			}
-		}();
+		}
+		this.completion = new TerminalCompletionController(runtime);
 		this.completion.enterCommitsCompletion = true;
 		this.suggestModel = new TerminalSuggestModel({
 			getInputText: () => this.field.text,
@@ -353,7 +355,7 @@ export class TerminalMode {
 			listCompletionCandidates: () => this.completion.listCompletionCandidates(),
 			closeCompletionSession: () => this.completion.closeSession(),
 			applyCompletionItem: (context, item) => this.completion.applyCompletionItem(context, item),
-			buildSymbolCatalog: () => luaPipeline.listSymbols(),
+			buildSymbolCatalog: () => luaPipeline.listSymbols(this.runtime),
 		});
 		this.suggestController = new TerminalSuggestController({
 			completion: this.completion,
@@ -380,7 +382,7 @@ export class TerminalMode {
 	}
 
 	public setFontVariant(variant: FontVariant): void {
-		this.font = new EditorFont(variant);
+		this.font = new EditorFont(this.runtime, variant);
 		this.cachedLinesVersion = -1;
 		this.resetBlink();
 	}
@@ -512,12 +514,12 @@ export class TerminalMode {
 		if (source.length === 0) {
 			return;
 		}
-		if (workbenchMode.hasFaultSnapshot() && source.startsWith('return ')) {
+		if (this.runtime.workbenchFaultState.faultSnapshot !== null && source.startsWith('return ')) {
 			const expr = source.slice(7).trim();
 			if (TerminalMode.SIMPLE_CHAIN.test(expr)) {
-				const resolved = resolveSnapshotExpression(expr);
+				const resolved = resolveSnapshotExpression(this.runtime, expr);
 				if (resolved !== null) {
-					const { lines } = describeLuaValueForInspector(resolved);
+					const { lines } = describeLuaValueForInspector(this.runtime, resolved);
 					for (let i = 0; i < lines.length; i += 1) {
 						this.appendStdout(lines[i]);
 					}
@@ -526,7 +528,7 @@ export class TerminalMode {
 			}
 		}
 		try {
-			const results: Value[] = luaPipeline.runConsoleChunk(source);
+			const results: Value[] = runConsoleChunk(this.runtime, source);
 			if (results.length > 0) {
 				const summary = results.map(value => valueToString(value)).join('\t');
 				this.appendStdout(summary);

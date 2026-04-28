@@ -121,6 +121,7 @@ public:
 	
 	// Get default input mapping
 	static InputMap getDefaultInputMapping();
+	void setFrameDurationMs(f64 frameDurationMs);
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Frame update
@@ -182,6 +183,7 @@ private:
 	
 	// Current time (updated each poll)
 	f64 m_currentTimeMs = 0.0;
+	f64 m_frameDurationMs = 1000.0 / 60.0;
 
 	i32 m_nextPressId = 1;
 	std::unordered_map<std::string, i32> m_activePressIds;

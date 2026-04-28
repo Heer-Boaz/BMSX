@@ -1,39 +1,37 @@
-import { resourcePanel } from '../../contrib/resources/panel/controller';
 import { cycleTab } from '../../ui/tabs';
 import { isCodeTabActive } from '../../ui/code_tab/contexts';
 import { selectAllSingleCursor } from '../../../editor/editing/cursor/state';
 import { revealCursor, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../editor/render/caret';
-import { executeEditorCommand } from '../../../editor/input/commands/dispatcher';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../editor/input/keyboard/key_input';
-import { isInlineWidgetFocused } from '../../../editor/contrib/quick_input/inline_widget';
-import { runEditorKeyHandlers, type EditorKeyHandler } from '../../../editor/input/keyboard/bindings';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
+import { isInlineWidgetFocused } from '../../../quick_input/inline_widget';
 import { editorDocumentState } from '../../../editor/editing/document_state';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
-function handleCreateResourceBinding(): boolean {
+function handleCreateResourceBinding(runtime: Runtime): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyN')) {
 		return false;
 	}
 	consumeIdeKey('KeyN');
-	executeEditorCommand('createResource');
+	runtime.editor.commands.execute('createResource');
 	return true;
 }
 
-function handleGlobalFindBinding(): boolean {
+function handleGlobalFindBinding(runtime: Runtime): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isShiftDown() || isAltDown() || !isKeyJustPressed('KeyF')) {
 		return false;
 	}
 	consumeIdeKey('KeyF');
-	executeEditorCommand('findGlobal');
+	runtime.editor.commands.execute('findGlobal');
 	return true;
 }
 
-function handleLocalFindBinding(): boolean {
+function handleLocalFindBinding(runtime: Runtime): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || isShiftDown() || isAltDown() || !isKeyJustPressed('KeyF')) {
 		return false;
 	}
 	consumeIdeKey('KeyF');
-	executeEditorCommand('findLocal');
+	runtime.editor.commands.execute('findLocal');
 	return true;
 }
 
@@ -46,30 +44,33 @@ function handleCycleTabBinding(): boolean {
 	return true;
 }
 
-function handleDefinitionAndReferenceBinding(): boolean {
+function handleDefinitionAndReferenceBinding(runtime: Runtime): boolean {
 	if (isInlineWidgetFocused() || !isKeyJustPressed('F12')) {
 		return false;
 	}
 	consumeIdeKey('F12');
 	if (isShiftDown()) {
-		executeEditorCommand('referenceSearch');
+		runtime.editor.commands.execute('referenceSearch');
 		return true;
 	}
-	executeEditorCommand('goToDefinition');
+	runtime.editor.commands.execute('goToDefinition');
 	return true;
 }
 
-function handleRenameBinding(): boolean {
+function handleRenameBinding(runtime: Runtime): boolean {
 	if (isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('F2')) {
 		return false;
 	}
 	consumeIdeKey('F2');
-	executeEditorCommand('rename');
+	runtime.editor.commands.execute('rename');
 	return true;
 }
 
-function handleSelectAllBinding(): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || isInlineWidgetFocused() || resourcePanel.isFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
+function handleSelectAllBinding(runtime: Runtime): boolean {
+	if (!(isCtrlDown() || isMetaDown()) || isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
+		return false;
+	}
+	if (runtime.editor.resourcePanel.isFocused()) {
 		return false;
 	}
 	consumeIdeKey('KeyA');
@@ -82,26 +83,22 @@ function handleSelectAllBinding(): boolean {
 	return true;
 }
 
-function handleLineJumpBinding(): boolean {
+function handleLineJumpBinding(runtime: Runtime): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyL')) {
 		return false;
 	}
 	consumeIdeKey('KeyL');
-	executeEditorCommand('lineJump');
+	runtime.editor.commands.execute('lineJump');
 	return true;
 }
 
-const editorPromptKeyHandlers: readonly EditorKeyHandler[] = [
-	handleCreateResourceBinding,
-	handleGlobalFindBinding,
-	handleLocalFindBinding,
-	handleCycleTabBinding,
-	handleDefinitionAndReferenceBinding,
-	handleRenameBinding,
-	handleSelectAllBinding,
-	handleLineJumpBinding,
-];
-
-export function handleEditorPromptBindings(): boolean {
-	return runEditorKeyHandlers(editorPromptKeyHandlers);
+export function handleEditorPromptBindings(runtime: Runtime): boolean {
+	return handleCreateResourceBinding(runtime)
+		|| handleGlobalFindBinding(runtime)
+		|| handleLocalFindBinding(runtime)
+		|| handleCycleTabBinding()
+		|| handleDefinitionAndReferenceBinding(runtime)
+		|| handleRenameBinding(runtime)
+		|| handleSelectAllBinding(runtime)
+		|| handleLineJumpBinding(runtime);
 }

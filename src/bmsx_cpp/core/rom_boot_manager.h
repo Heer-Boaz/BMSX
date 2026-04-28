@@ -14,6 +14,8 @@ struct ResolvedRuntimeTiming;
 
 class RomBootManager {
 public:
+	explicit RomBootManager(EngineCore& engine);
+
 	bool loadEngineAssets(const u8* data, size_t size);
 	bool loadEngineAssetsOwned(std::vector<u8>&& data);
 	bool loadEngineAssetsFromPath(const char* path);
@@ -25,8 +27,11 @@ public:
 	bool bootLoadedCart();
 	bool rebootLoadedRom();
 	bool bootWithoutCart();
+	bool hasLoadedCartProgram() const;
 
 private:
+	EngineCore& m_engine;
+
 	void activateEngineAssets();
 	void activateCartAssets();
 	void setMachineManifest(const MachineManifest& manifest);

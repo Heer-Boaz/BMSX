@@ -6,11 +6,8 @@ import { clear_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../
 import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../../common/constants';
 import { ScratchBuffer } from '../../../common/scratchbuffer';
 import { editorChromeState } from '../ui/chrome_state';
-import { measureText } from '../../editor/common/text/layout';
-import { editorPointerState } from '../../editor/input/pointer/state';
-import { drawEditorText } from '../../editor/render/text_renderer';
-import { editorViewState } from '../../editor/ui/view/state';
 import { tabSessionState } from '../ui/tab/session_state';
+import type { ChromeRenderContext } from './chrome_context';
 
 type TabMetrics = {
 	tab: EditorTabDescriptor;
@@ -40,42 +37,36 @@ const tabMetricsScratch = new ScratchBuffer<TabMetrics>(createTabMetrics, 8);
 const costsScratch: number[] = [];
 const nextBreakScratch: number[] = [];
 
-function getTabButtonBounds(tabId: string): RectBounds {
-	let bounds = editorChromeState.tabButtonBounds.get(tabId);
+function getStoredTabBounds(boundsByTabId: Map<string, RectBounds>, tabId: string): RectBounds {
+	let bounds = boundsByTabId.get(tabId);
 	if (!bounds) {
 		bounds = create_rect_bounds();
-		editorChromeState.tabButtonBounds.set(tabId, bounds);
+		boundsByTabId.set(tabId, bounds);
 	}
 	return bounds;
 }
 
-function getTabCloseBounds(tabId: string): RectBounds {
-	let bounds = editorChromeState.tabCloseButtonBounds.get(tabId);
-	if (!bounds) {
-		bounds = create_rect_bounds();
-		editorChromeState.tabCloseButtonBounds.set(tabId, bounds);
-	}
-	return bounds;
-}
-
-export function renderTabBar(): number {
+export function renderTabBar(context: ChromeRenderContext): number {
 	tabMetricsScratch.clear();
 	costsScratch.length = 0;
 	nextBreakScratch.length = 0;
 
-	const rowHeight = editorViewState.tabBarHeight;
-	const closeButtonWidth = measureText(constants.TAB_CLOSE_BUTTON_SYMBOL);
+	const rowHeight = context.tabBarHeight;
+	const closeButtonWidth = context.measureText(constants.TAB_CLOSE_BUTTON_SYMBOL);
 	const markerWidth = constants.TAB_DIRTY_MARKER_METRICS.width;
 	const markerHeight = constants.TAB_DIRTY_MARKER_METRICS.height;
+	const borderColor = constants.COLOR_TAB_BORDER;
+	const viewportWidth = context.viewportWidth;
 
 	const tabs = tabSessionState.tabs;
 	const tabCount = tabs.length;
 	const rowHeightTotal = rowHeight;
 	if (tabCount === 0) {
-		const barTop = editorViewState.headerHeight;
+		const barTop = context.headerHeight;
 		const barBottom = barTop + rowHeightTotal;
-		api.fill_rect(0, barTop, editorViewState.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
-		api.fill_rect(0, barBottom - 1, editorViewState.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
+		write_rect_bounds(editorChromeState.tabBarBounds, 0, barTop, viewportWidth, barBottom);
+		api.fill_rect(0, barTop, viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
+		api.fill_rect(0, barBottom - 1, viewportWidth, barBottom, undefined, borderColor);
 		return 1;
 	}
 
@@ -86,9 +77,9 @@ export function renderTabBar(): number {
 	for (let index = 0; index < tabCount; index += 1) {
 		const tab = tabs[index];
 		const metric = tabMetricsScratch.get(index);
-		const textWidth = measureText(tab.title);
-		const dirty = tab.dirty === true;
-		const closable = tab.closable === true;
+		const textWidth = context.measureText(tab.title);
+		const dirty = tab.dirty;
+		const closable = tab.closable;
 		const closeWidth = closable
 			? closeButtonWidth + constants.TAB_CLOSE_BUTTON_PADDING_X * 2
 			: 0;
@@ -109,7 +100,7 @@ export function renderTabBar(): number {
 	const n = tabCount;
 	const spacing = constants.TAB_BUTTON_SPACING;
 	const minTabRowWidth = TAB_DIRTY_LEFT_MARGIN + TAB_DIRTY_RIGHT_MARGIN + 1;
-	const availableTabRowWidth = editorViewState.viewportWidth - TAB_DIRTY_RIGHT_MARGIN;
+	const availableTabRowWidth = viewportWidth - TAB_DIRTY_RIGHT_MARGIN;
 	const maxWidth = availableTabRowWidth > minTabRowWidth ? availableTabRowWidth : minTabRowWidth;
 	const costs = costsScratch;
 	const nextBreak = nextBreakScratch;
@@ -150,12 +141,13 @@ export function renderTabBar(): number {
 	}
 
 	const totalRows = costs[0];
-	const barTop = editorViewState.headerHeight;
+	const barTop = context.headerHeight;
 	const totalHeight = totalRows * rowHeightTotal;
 	const barBottom = barTop + totalHeight;
+	write_rect_bounds(editorChromeState.tabBarBounds, 0, barTop, viewportWidth, barBottom);
 
-	api.fill_rect(0, barTop, editorViewState.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
-	api.fill_rect(0, barBottom - 1, editorViewState.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
+	api.fill_rect(0, barTop, viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
+	api.fill_rect(0, barBottom - 1, viewportWidth, barBottom, undefined, borderColor);
 
 	let rowStart = 0;
 	let rowIndex = 0;
@@ -170,7 +162,7 @@ export function renderTabBar(): number {
 			const tab = entry.tab;
 			const left = cursor;
 			const right = left + entry.tabWidth;
-			const bounds = getTabButtonBounds(tab.id);
+			const bounds = getStoredTabBounds(editorChromeState.tabButtonBounds, tab.id);
 			write_rect_bounds(bounds, left, boundsTop, right, boundsBottom);
 
 			const active = tabSessionState.activeTabId === tab.id;
@@ -178,45 +170,41 @@ export function renderTabBar(): number {
 			const textColor = active ? constants.COLOR_TAB_ACTIVE_TEXT : constants.COLOR_TAB_INACTIVE_TEXT;
 
 			api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, fillColor);
-			api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_TAB_BORDER);
+			api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, borderColor);
 
 			const textX = bounds.left + constants.TAB_BUTTON_PADDING_X;
 			const textY = bounds.top + constants.TAB_BUTTON_PADDING_Y;
-			drawEditorText(editorViewState.font, tab.title, textX, textY, undefined, textColor);
+			context.drawText(tab.title, textX, textY, undefined, textColor);
 
 			const indicatorLeft = bounds.right - entry.indicatorWidth;
 			const indicatorWidth = entry.indicatorWidth;
-			const hovered = tab.id === editorPointerState.tabHoverId;
+			const hovered = tab.id === editorChromeState.tabHoverId;
 
 			if (entry.closable) {
-				const closeBounds = getTabCloseBounds(tab.id);
+				const closeBounds = getStoredTabBounds(editorChromeState.tabCloseButtonBounds, tab.id);
 				write_rect_bounds(closeBounds, bounds.right - entry.closeWidth, bounds.top, bounds.right, bounds.bottom);
 				if (hovered) {
 					const closeX = closeBounds.left + constants.TAB_CLOSE_BUTTON_PADDING_X;
 					const closeY = closeBounds.top + constants.TAB_CLOSE_BUTTON_PADDING_Y;
-					drawEditorText(editorViewState.font, constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, undefined, textColor);
+					context.drawText(constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, undefined, textColor);
 				} else {
 					clear_rect_bounds(closeBounds);
 					if (entry.dirty && entry.markerWidth > 0) {
 						const markerLeft = bounds.right - entry.closeWidth;
 						const markerX = markerLeft + ((entry.closeWidth - entry.markerWidth) >> 1);
-						const markerY = bounds.top + ((bounds.bottom - bounds.top - entry.markerHeight) >> 1);
-						const markerRight = markerX + entry.markerWidth - 1;
-						const markerBottom = markerY + entry.markerHeight - 1;
-						api.fill_rect(markerX, markerY, markerRight, markerBottom, undefined, constants.COLOR_TAB_DIRTY_MARKER);
+						const markerY = centeredDirtyMarkerTop(bounds, entry.markerHeight);
+						drawDirtyMarker(markerX, markerY, entry.markerWidth, entry.markerHeight);
 					}
 				}
 			} else {
-				clear_rect_bounds(getTabCloseBounds(tab.id));
+				clear_rect_bounds(getStoredTabBounds(editorChromeState.tabCloseButtonBounds, tab.id));
 				if (entry.dirty && entry.markerWidth > 0) {
 					const spacing = constants.TAB_DIRTY_MARKER_SPACING;
 					const markerX = indicatorWidth > 0
 						? indicatorLeft + ((indicatorWidth - entry.markerWidth) >> 1)
 						: bounds.right - entry.markerWidth - spacing;
-					const markerY = bounds.top + ((bounds.bottom - bounds.top - entry.markerHeight) >> 1);
-					const markerRight = markerX + entry.markerWidth - 1;
-					const markerBottom = markerY + entry.markerHeight - 1;
-					api.fill_rect(markerX, markerY, markerRight, markerBottom, undefined, constants.COLOR_TAB_DIRTY_MARKER);
+					const markerY = centeredDirtyMarkerTop(bounds, entry.markerHeight);
+					drawDirtyMarker(markerX, markerY, entry.markerWidth, entry.markerHeight);
 				}
 			}
 
@@ -231,4 +219,12 @@ export function renderTabBar(): number {
 	}
 
 	return totalRows;
+}
+
+function centeredDirtyMarkerTop(bounds: RectBounds, markerHeight: number): number {
+	return bounds.top + ((bounds.bottom - bounds.top - markerHeight) >> 1);
+}
+
+function drawDirtyMarker(left: number, top: number, width: number, height: number): void {
+	api.fill_rect(left, top, left + width - 1, top + height - 1, undefined, constants.COLOR_TAB_DIRTY_MARKER);
 }

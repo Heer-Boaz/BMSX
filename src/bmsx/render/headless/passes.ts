@@ -18,7 +18,6 @@ import { BIOS_ATLAS_ID } from '../../rompack/format';
 import { VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE } from '../../machine/memory/map';
 import { VDP_SLOT_PRIMARY, VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../machine/bus/io';
 import type { Mesh } from '../3d/mesh';
-import { Runtime } from '../../machine/runtime/runtime';
 import { readVdpDisplayFrameBufferPixels, vdpDisplayFrameBufferTexture } from '../vdp/framebuffer';
 import type { HeadlessPresentHost } from './view';
 
@@ -64,7 +63,7 @@ function ensureAtlasResource(atlasId: number, slotBytes: number, label: string):
 		return;
 	}
 	let found = false;
-	for (const asset of Runtime.instance.assets.listImageAssets()) {
+	for (const asset of engineCore.runtime.assets.listImageAssets()) {
 		if (asset.type !== 'atlas') continue;
 		const meta = asset.imgmeta;
 		if (!meta || meta.atlasid !== atlasId) continue;
@@ -289,8 +288,8 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			} as Framebuffer2DPipelineState);
 		},
 		exec: (_backend, _fbo, state: Framebuffer2DPipelineState) => {
-			const frameBufferWidth = Runtime.instance.machine.vdp.frameBufferWidth;
-			const frameBufferHeight = Runtime.instance.machine.vdp.frameBufferHeight;
+			const frameBufferWidth = engineCore.runtime.machine.vdp.frameBufferWidth;
+			const frameBufferHeight = engineCore.runtime.machine.vdp.frameBufferHeight;
 			if (frameBufferWidth <= 0 || frameBufferHeight <= 0) {
 				throw new Error(`[HeadlessFramebuffer2D] Invalid framebuffer dimensions ${frameBufferWidth}x${frameBufferHeight}.`);
 			}

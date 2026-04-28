@@ -1,17 +1,18 @@
 import { engineCore } from '../../../../core/engine';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 import { insertText } from '../../editing/text_editing_and_selection';
-import { handleEditorDebuggerInput } from './debug_input';
+import { handleEditorDebuggerInput } from '../../../input/keyboard/debug_input';
 import { handleEditorNavigationKeys } from './navigation_input';
 import { handleEditorEditingKeys } from './editing_input';
 import { handleEditorCharacterInput } from './character_input';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown } from './key_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown } from '../../../input/keyboard/key_input';
 
 export class InputController {
-	public handleEditorInput(): void {
-		if (handleEditorDebuggerInput()) {
+	public handleEditorInput(runtime: Runtime): void {
+		if (handleEditorDebuggerInput(runtime)) {
 			return;
 		}
-		handleEditorNavigationKeys();
+		handleEditorNavigationKeys(runtime);
 		handleEditorEditingKeys();
 		const ctrlDown = isCtrlDown();
 		const metaDown = isMetaDown();

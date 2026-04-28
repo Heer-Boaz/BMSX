@@ -1,16 +1,16 @@
 import { point_in_rect } from '../../../../../common/rect';
-import { isTopBarCommandEnabled, MENU_COMMANDS, MENU_IDS, type MenuId, type TopBarButtonId } from '../../../ui/top_bar/menu';
+import type { RectBounds } from '../../../../../rompack/format';
+import { MENU_COMMANDS, MENU_IDS } from '../../../ui/top_bar/menu';
 import { editorChromeState } from '../../../ui/chrome_state';
 import type { PointerSnapshot } from '../../../../common/models';
-import { executeTopBarCommand } from '../../../../editor/input/commands/dispatcher';
-import { consumeChromePointerPress } from '../../../../editor/input/pointer/chrome/press';
-import { editorViewState } from '../../../../editor/ui/view/state';
+import { consumeChromePointerPress } from '../../../../input/pointer/chrome_press';
+import type { IdeCommandController } from '../../../../commands/controller';
 
-export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
+export function handleTopBarPointer(commands: IdeCommandController, snapshot: PointerSnapshot): boolean {
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
 	const menuOpen = editorChromeState.openMenuId !== null;
-	const inHeader = y >= 0 && y < editorViewState.headerHeight;
+	const inHeader = point_in_rect(x, y, editorChromeState.topBarBounds);
 	const inDropdown = menuOpen && point_in_rect(x, y, editorChromeState.menuDropdownBounds);
 	if (!inHeader && !inDropdown) {
 		if (menuOpen) {
@@ -20,7 +20,7 @@ export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 		return false;
 	}
 	if (inHeader) {
-		const menuId = findTopMenuAtPoint(x, y);
+		const menuId = findBoundedIdAtPoint(MENU_IDS, editorChromeState.menuEntryBounds, x, y);
 		if (menuId) {
 			editorChromeState.openMenuId = editorChromeState.openMenuId === menuId ? null : menuId;
 			consumeChromePointerPress(snapshot);
@@ -34,13 +34,13 @@ export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 		}
 		return false;
 	}
-	const command = findMenuCommandAtPoint(x, y);
+	const command = findBoundedIdAtPoint(MENU_COMMANDS, editorChromeState.topBarButtonBounds, x, y);
 	if (!command) {
 		consumeChromePointerPress(snapshot);
 		return true;
 	}
-	if (isTopBarCommandEnabled(command)) {
-		executeTopBarCommand(command);
+	if (commands.isEnabled(command)) {
+		commands.execute(command);
 		editorChromeState.openMenuId = null;
 		editorChromeState.menuDropdownBounds = null;
 	}
@@ -48,21 +48,11 @@ export function handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 	return true;
 }
 
-function findTopMenuAtPoint(x: number, y: number): MenuId {
-	for (let index = 0; index < MENU_IDS.length; index += 1) {
-		const id = MENU_IDS[index];
-		if (point_in_rect(x, y, editorChromeState.menuEntryBounds[id])) {
+function findBoundedIdAtPoint<T extends string>(ids: readonly T[], bounds: Record<T, RectBounds>, x: number, y: number): T | null {
+	for (let index = 0; index < ids.length; index += 1) {
+		const id = ids[index];
+		if (point_in_rect(x, y, bounds[id])) {
 			return id;
-		}
-	}
-	return null;
-}
-
-function findMenuCommandAtPoint(x: number, y: number): TopBarButtonId {
-	for (let index = 0; index < MENU_COMMANDS.length; index += 1) {
-		const command = MENU_COMMANDS[index];
-		if (point_in_rect(x, y, editorChromeState.topBarButtonBounds[command])) {
-			return command;
 		}
 	}
 	return null;

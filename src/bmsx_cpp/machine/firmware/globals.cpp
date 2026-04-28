@@ -12,6 +12,7 @@
 #include "common/serializer/binencoder.h"
 #include "input/manager.h"
 #include "common/clamp.h"
+#include "render/gameview.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -35,9 +36,9 @@ struct LuaPcallError final : std::exception {
 	const Value value;
 	const std::string message;
 
-	explicit LuaPcallError(Value value)
+	LuaPcallError(Value value, const StringPool& stringPool)
 		: value(value)
-		, message(valueToString(value, Runtime::instance().machine().cpu().stringPool())) {}
+		, message(valueToString(value, stringPool)) {}
 
 	const char* what() const noexcept override {
 		return message.c_str();
@@ -1740,7 +1741,7 @@ void Runtime::setupBuiltins() {
 		const Value& condition = args.empty() ? valueNil() : args.at(0);
 		if (!isTruthy(condition)) {
 			const Value message = args.size() > 1 ? args.at(1) : valueString(m_machine.cpu().internString("assertion failed!"));
-			throw LuaPcallError(message);
+			throw LuaPcallError(message, m_machine.cpu().stringPool());
 		}
 		out.append(args.data(), args.size());
 	});
@@ -1748,7 +1749,7 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("error", [this](NativeArgsView args, NativeResults& out) {
 		const Value message = args.empty() ? valueString(m_machine.cpu().internString("error")) : args.at(0);
 		(void)out;
-		throw LuaPcallError(message);
+		throw LuaPcallError(message, m_machine.cpu().stringPool());
 	});
 
 	registerNativeFunction("setmetatable", [](NativeArgsView args, NativeResults& out) {
@@ -1807,8 +1808,8 @@ void Runtime::setupBuiltins() {
 		out.push_back(valueTable(tbl));
 	});
 
-	registerNativeFunction("select", [](NativeArgsView args, NativeResults& out) {
-		if (valueIsString(args.at(0)) && Runtime::instance().machine().cpu().stringPool().toString(asStringId(args.at(0))) == "#") {
+	registerNativeFunction("select", [&cpu](NativeArgsView args, NativeResults& out) {
+		if (valueIsString(args.at(0)) && cpu.stringPool().toString(asStringId(args.at(0))) == "#") {
 			out.push_back(valueNumber(static_cast<double>(args.size() - 1)));
 			return;
 		}
@@ -3234,8 +3235,8 @@ tableLib->set(key("sort"), m_machine.cpu().createNativeFunction("table.sort", [t
 			return valueToNumber(left) < valueToNumber(right);
 		}
 		if (valueIsString(left) && valueIsString(right)) {
-			return Runtime::instance().machine().cpu().stringPool().toString(asStringId(left))
-				< Runtime::instance().machine().cpu().stringPool().toString(asStringId(right));
+			return m_machine.cpu().stringPool().toString(asStringId(left))
+				< m_machine.cpu().stringPool().toString(asStringId(right));
 		}
 		throw BMSX_RUNTIME_ERROR("table.sort comparison expects numbers or strings.");
 	});
@@ -3282,14 +3283,14 @@ osTable->set(key("difftime"), m_machine.cpu().createNativeFunction("os.difftime"
 	double t1 = asNumber(args.at(1));
 	out.push_back(valueNumber(t2 - t1));
 }));
-osTable->set(key("date"), m_machine.cpu().createNativeFunction("os.date", [str, yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](NativeArgsView args, NativeResults& out) {
-	std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : Runtime::instance().machine().cpu().stringPool().toString(asStringId(args.at(0)));
+osTable->set(key("date"), m_machine.cpu().createNativeFunction("os.date", [this, str, yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](NativeArgsView args, NativeResults& out) {
+	std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
 	std::time_t timeValue = args.size() > 1 && !isNil(args.at(1))
 		? static_cast<std::time_t>(asNumber(args.at(1)))
 		: std::time(nullptr);
 	std::tm timeInfo = *std::localtime(&timeValue);
 	if (format == "*t") {
-		auto* table = Runtime::instance().machine().cpu().createTable(0, 9);
+		auto* table = m_machine.cpu().createTable(0, 9);
 		table->set(yearKey, valueNumber(static_cast<double>(timeInfo.tm_year + 1900)));
 		table->set(monthKey, valueNumber(static_cast<double>(timeInfo.tm_mon + 1)));
 		table->set(dayKey, valueNumber(static_cast<double>(timeInfo.tm_mday)));
@@ -3390,7 +3391,7 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 	registerNativeFunction("pairs", [this, nextFn](NativeArgsView args, NativeResults& out) {
 		const Value& target = args.at(0);
 		if (valueIsTable(target)) {
-			auto* state = Runtime::instance().machine().cpu().createTable(4, 0);
+			auto* state = m_machine.cpu().createTable(4, 0);
 			state->set(valueNumber(1.0), target);
 			state->set(valueNumber(2.0), valueNumber(0.0));
 			state->set(valueNumber(3.0), valueNumber(0.0));
@@ -3703,20 +3704,20 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 	const std::string* cartProjectRootPath = this->cartProjectRootPath();
 	setGlobal("cart_project_root_path", cartProjectRootPath ? str(*cartProjectRootPath) : valueNil());
 
-	const GameViewState& gameViewState = this->gameViewState();
-	const Viewport& viewSize = gameViewState.viewportSize;
+	const GameView& gameView = this->view();
+	const Vec2& viewSize = gameView.viewportSize;
 	auto* viewportTable = cpu.createTable(0, 2);
 	viewportTable->set(key("x"), valueNumber(static_cast<double>(viewSize.x)));
 	viewportTable->set(key("y"), valueNumber(static_cast<double>(viewSize.y)));
 	auto* viewTable = cpu.createTable(0, 8);
-	viewTable->set(key("crt_postprocessing_enabled"), valueBool(gameViewState.crtPostprocessingEnabled));
-	viewTable->set(key("enable_noise"), valueBool(gameViewState.enableNoise));
-	viewTable->set(key("enable_colorbleed"), valueBool(gameViewState.enableColorBleed));
-	viewTable->set(key("enable_scanlines"), valueBool(gameViewState.enableScanlines));
-	viewTable->set(key("enable_blur"), valueBool(gameViewState.enableBlur));
-	viewTable->set(key("enable_glow"), valueBool(gameViewState.enableGlow));
-	viewTable->set(key("enable_fringing"), valueBool(gameViewState.enableFringing));
-	viewTable->set(key("enable_aperture"), valueBool(gameViewState.enableAperture));
+	viewTable->set(key("crt_postprocessing_enabled"), valueBool(gameView.crt_postprocessing_enabled));
+	viewTable->set(key("enable_noise"), valueBool(gameView.applyNoise));
+	viewTable->set(key("enable_colorbleed"), valueBool(gameView.applyColorBleed));
+	viewTable->set(key("enable_scanlines"), valueBool(gameView.applyScanlines));
+	viewTable->set(key("enable_blur"), valueBool(gameView.applyBlur));
+	viewTable->set(key("enable_glow"), valueBool(gameView.applyGlow));
+	viewTable->set(key("enable_fringing"), valueBool(gameView.applyFringing));
+	viewTable->set(key("enable_aperture"), valueBool(gameView.applyAperture));
 
 auto clockNowFn = m_machine.cpu().createNativeFunction("platform.clock.now", [runtimeClock](NativeArgsView args, NativeResults& out) {
 	(void)args;

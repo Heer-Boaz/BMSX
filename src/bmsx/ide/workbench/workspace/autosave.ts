@@ -1,11 +1,11 @@
 import { engineCore } from '../../../core/engine';
-import { Runtime } from '../../../machine/runtime/runtime';
+import type { Runtime } from '../../../machine/runtime/runtime';
 import * as luaPipeline from '../../runtime/lua_pipeline';
 import { editorDocumentState } from '../../editor/editing/document_state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../../workspace/cache';
 import { restoreSnapshot } from '../../editor/editing/undo_controller';
-import { resetNavigationHistoryState } from '../../editor/navigation/navigation_history';
+import { resetNavigationHistoryState } from '../../navigation/navigation_history';
 import { editorDebuggerState } from '../contrib/debugger/state';
 import {
 	findCodeTabContext,
@@ -55,7 +55,7 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 	return entries;
 }
 
-export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextEntry>): WorkspaceAutosavePayload {
+export function buildWorkspaceAutosavePayload(runtime: Runtime, entries: Map<string, DirtyContextEntry>): WorkspaceAutosavePayload {
 	if (!workspaceState.autosaveEnabled) {
 		return null;
 	}
@@ -72,7 +72,6 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 			selectionAnchor: entry.selectionAnchor ? { row: entry.selectionAnchor.row, column: entry.selectionAnchor.column } : null,
 		});
 	}
-	const runtime = Runtime.instance;
 	return {
 		savedAt: engineCore.platform.clock.dateNow(),
 		dirtyFiles,
@@ -134,15 +133,15 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 	}
 }
 
-export function loadCleanSrc(path: string): string {
+export function loadCleanSrc(runtime: Runtime, path: string): string {
 	const context = findCodeTabContext(path);
 	if (context && context.mode === 'aem') {
 		return context.lastSavedSource;
 	}
-	return luaPipeline.resourceSourceForChunk(path);
+	return luaPipeline.resourceSourceForChunk(runtime, path);
 }
 
-export function clearWorkspaceDirtyBuffers(): void {
+export function clearWorkspaceDirtyBuffers(runtime: Runtime): void {
 	clearWorkspaceCachedSources();
 	workspaceState.autosaveSignature = null;
 	editorDocumentState.saveGeneration = editorDocumentState.appliedGeneration;
@@ -153,7 +152,7 @@ export function clearWorkspaceDirtyBuffers(): void {
 	editorDocumentState.lastHistoryTimestamp = 0;
 	editorDocumentState.savePointDepth = 0;
 	for (const context of getCodeTabContexts()) {
-		const source = loadCleanSrc(context.descriptor.path);
+		const source = loadCleanSrc(runtime, context.descriptor.path);
 		applySourceToContext(context, source);
 		context.dirty = false;
 		context.saveGeneration = editorDocumentState.saveGeneration;

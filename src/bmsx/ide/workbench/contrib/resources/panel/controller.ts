@@ -2,7 +2,7 @@ import * as constants from '../../../../common/constants';
 import { clamp } from '../../../../../common/clamp';
 import { create_rect_bounds } from '../../../../../common/rect';
 import { ScratchBuffer } from '../../../../../common/scratchbuffer';
-import { Scrollbar } from '../../../../editor/ui/scrollbar';
+import type { Scrollbar } from '../../../../editor/ui/scrollbar';
 import { renderResourcePanel } from '../../../render/resource_panel';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import type { RectBounds } from '../../../../../rompack/format';
@@ -42,11 +42,7 @@ import {
 	refreshResourcePanelResourceState,
 } from './refresh';
 import { handleResourcePanelKeyboardInput } from './keyboard';
-
-export interface ResourcePanelScrollbars {
-	resourceVertical: Scrollbar;
-	resourceHorizontal: Scrollbar;
-}
+import type { Runtime } from '../../../../../machine/runtime/runtime';
 
 export type ResourcePanelItemMetrics = {
 	item: ResourceBrowserItem;
@@ -58,6 +54,11 @@ export type ResourcePanelItemMetrics = {
 	contentWidth: number;
 	markerStartWidth: number;
 	markerEndWidth: number;
+};
+
+export type ResourcePanelScrollbars = {
+	resourceVertical: Scrollbar;
+	resourceHorizontal: Scrollbar;
 };
 
 function createResourcePanelItemMetrics(): ResourcePanelItemMetrics {
@@ -97,22 +98,15 @@ export class ResourcePanelController {
 	private readonly bounds: RectBounds = create_rect_bounds();
 	private readonly layout: ResourcePanelLayout = createResourcePanelLayout(this.bounds);
 	private readonly itemMetrics = new ScratchBuffer<ResourcePanelItemMetrics>(createResourcePanelItemMetrics);
-
-	// Scrollbars for the panel
 	public readonly resourceVertical: Scrollbar;
 	public readonly resourceHorizontal: Scrollbar;
 
-	constructor(scrollbars?: ResourcePanelScrollbars) {
+	constructor(private readonly runtime: Runtime, scrollbars: ResourcePanelScrollbars) {
 		this.lineHeight = editorViewState.lineHeight;
 		this.charAdvance = editorViewState.charAdvance;
-		if (scrollbars) {
-			this.resourceVertical = scrollbars.resourceVertical;
-			this.resourceHorizontal = scrollbars.resourceHorizontal;
-		} else {
-			this.resourceVertical = new Scrollbar('resourceVertical', 'vertical');
-			this.resourceHorizontal = new Scrollbar('resourceHorizontal', 'horizontal');
-		}
 		this.widthRatio = defaultResourcePanelRatio();
+		this.resourceVertical = scrollbars.resourceVertical;
+		this.resourceHorizontal = scrollbars.resourceHorizontal;
 	}
 
 	public setFontMetrics(lineHeight: number, charAdvance: number): void {
@@ -141,7 +135,7 @@ export class ResourcePanelController {
 		this.mode = 'resources';
 		this.visible = true;
 		this.focused = true;
-		this.refreshContents();
+		this.refresh();
 	}
 
 	showCallHierarchy(view: CallHierarchyView): void {
@@ -158,7 +152,7 @@ export class ResourcePanelController {
 		this.callHierarchyView = view;
 		this.callHierarchyExpandedNodeIds.clear();
 		this.callHierarchyExpandedNodeIds.add(view.root.id);
-		this.refreshContents();
+		this.refreshCallHierarchyContents();
 	}
 
 	hide(): void {
@@ -168,6 +162,7 @@ export class ResourcePanelController {
 		this.mode = 'resources';
 		this.callHierarchyView = null;
 		this.callHierarchyExpandedNodeIds.clear();
+		this.publishCodeAreaLeft();
 	}
 
 	toggleFilterMode(): void {
@@ -176,7 +171,7 @@ export class ResourcePanelController {
 			return;
 		}
 		this.filterMode = this.filterMode === 'lua_only' ? 'all' : 'lua_only';
-		if (this.visible) this.refreshContents();
+		if (this.visible) this.refresh();
 		const modeLabel = this.filterMode === 'lua_only' ? 'Lua resources' : 'all resources';
 		showEditorMessage(`Files panel: showing ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
 	}
@@ -252,14 +247,14 @@ export class ResourcePanelController {
 			this.activateSelectedCallHierarchy();
 			return;
 		}
-		openSelectedResourcePanelItem(this.items, this.selectionIndex);
+		openSelectedResourcePanelItem(this.runtime, this.items, this.selectionIndex);
 	}
 
 	openSelectedCallHierarchyLocation(): void {
 		if (this.mode !== 'command') {
 			return;
 		}
-		openSelectedResourcePanelCallHierarchyLocation(this.items, this.selectionIndex);
+		openSelectedResourcePanelCallHierarchyLocation(this.runtime, this.items, this.selectionIndex);
 	}
 
 	getHorizontalScrollStep(): number {
@@ -276,6 +271,7 @@ export class ResourcePanelController {
 		this.widthRatio = clampedRatio;
 		this.visible = true;
 		this.focused = true;
+		this.publishCodeAreaLeft();
 		this.clampHScroll();
 		this.ensureSelectionVisible();
 		return true;
@@ -292,24 +288,14 @@ export class ResourcePanelController {
 		this.pendingSelectionAssetId = null;
 	}
 
-	private refreshContents(): void {
+	public refresh(): void {
 		const bounds = this.getBounds();
 		if (!bounds) {
 			return;
 		}
 		this.hoverIndex = -1;
 		if (this.mode === 'command') {
-			const previousNodeId = this.selectionIndex >= 0 && this.selectionIndex < this.items.length
-				? this.items[this.selectionIndex].callHierarchyNodeId
-				: null;
-			this.applyRefreshResult(refreshResourcePanelCallHierarchyState({
-				view: this.callHierarchyView,
-				expandedNodeIds: this.callHierarchyExpandedNodeIds,
-				bounds,
-				lineHeight: this.lineHeight,
-				previousNodeId,
-				previousScroll: this.scroll,
-			}));
+			this.refreshCallHierarchyContents();
 			return;
 		}
 		const previousDescriptor = this.pendingSelectionAssetId
@@ -318,6 +304,7 @@ export class ResourcePanelController {
 				? this.items[this.selectionIndex].descriptor
 				: null;
 		this.applyRefreshResult(refreshResourcePanelResourceState({
+			runtime: this.runtime,
 			filterMode: this.filterMode,
 			bounds,
 			lineHeight: this.lineHeight,
@@ -327,6 +314,25 @@ export class ResourcePanelController {
 			previousScroll: this.scroll,
 		}));
 		this.pendingSelectionAssetId = null;
+	}
+
+	private refreshCallHierarchyContents(): void {
+		const bounds = this.getBounds();
+		if (!bounds) {
+			return;
+		}
+		this.hoverIndex = -1;
+		const previousNodeId = this.selectionIndex >= 0 && this.selectionIndex < this.items.length
+			? this.items[this.selectionIndex].callHierarchyNodeId
+			: null;
+		this.applyRefreshResult(refreshResourcePanelCallHierarchyState({
+			view: this.callHierarchyView,
+			expandedNodeIds: this.callHierarchyExpandedNodeIds,
+			bounds,
+			lineHeight: this.lineHeight,
+			previousNodeId,
+			previousScroll: this.scroll,
+		}));
 	}
 
 	queuePendingSelection(assetId: string): void {
@@ -376,9 +382,15 @@ export class ResourcePanelController {
 
 	public getBounds(): RectBounds {
 		if (!this.visible) {
+			this.publishCodeAreaLeft();
 			return null;
 		}
-		return writeResourcePanelBounds(this.bounds, this.widthRatio) ? this.bounds : null;
+		if (!writeResourcePanelBounds(this.bounds, this.widthRatio)) {
+			editorViewState.codeAreaLeft = 0;
+			return null;
+		}
+		this.publishCodeAreaLeft();
+		return this.bounds;
 	}
 
 	public prepareLayout(): ResourcePanelLayout {
@@ -425,9 +437,6 @@ export class ResourcePanelController {
 		this.hscroll = clamp(current, 0, maxScroll);
 	}
 
-	// Public refresh trigger
-	public refresh(): void { this.refreshContents(); }
-
 	public expandSelectedCallHierarchyNode(): void {
 		const expandedNodeId = expandSelectedCallHierarchyNode(
 			this.items,
@@ -435,7 +444,7 @@ export class ResourcePanelController {
 			this.callHierarchyExpandedNodeIds,
 		);
 		if (!expandedNodeId) return;
-		this.refreshContents();
+		this.refreshCallHierarchyContents();
 		this.restoreCallHierarchySelection(expandedNodeId);
 	}
 
@@ -446,12 +455,13 @@ export class ResourcePanelController {
 			this.callHierarchyExpandedNodeIds,
 		);
 		if (!collapsedNodeId) return;
-		this.refreshContents();
+		this.refreshCallHierarchyContents();
 		this.restoreCallHierarchySelection(collapsedNodeId);
 	}
 
 	private activateSelectedCallHierarchy(): void {
 		const toggledNodeId = activateSelectedCallHierarchyItem(
+			this.runtime,
 			this.items,
 			this.selectionIndex,
 			this.callHierarchyExpandedNodeIds,
@@ -459,7 +469,7 @@ export class ResourcePanelController {
 		if (!toggledNodeId) {
 			return;
 		}
-		this.refreshContents();
+		this.refreshCallHierarchyContents();
 		this.restoreCallHierarchySelection(toggledNodeId);
 	}
 
@@ -481,10 +491,10 @@ export class ResourcePanelController {
 		this.scroll = refreshed.scroll;
 		this.clampHScroll();
 	}
-}
 
-export let resourcePanel: ResourcePanelController = null;
-
-export function initializeResourcePanel(scrollbars: ResourcePanelScrollbars): void {
-	resourcePanel = new ResourcePanelController(scrollbars);
+	private publishCodeAreaLeft(): void {
+		editorViewState.codeAreaLeft = this.visible
+			? Math.max(0, this.bounds.right - this.bounds.left)
+			: 0;
+	}
 }

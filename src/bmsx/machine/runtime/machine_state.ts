@@ -1,8 +1,7 @@
 import { RuntimeMachineState } from './contracts';
-import { Runtime } from './runtime';
+import type { Runtime } from './runtime';
 
-export function captureRuntimeMachineState(): RuntimeMachineState {
-	const runtime = Runtime.instance;
+export function captureRuntimeMachineState(runtime: Runtime): RuntimeMachineState {
 	return {
 		machine: runtime.machine.captureState(),
 		frameScheduler: runtime.frameScheduler.captureState(),
@@ -10,8 +9,7 @@ export function captureRuntimeMachineState(): RuntimeMachineState {
 	};
 }
 
-export function applyRuntimeMachineState(state: RuntimeMachineState): void {
-	const runtime = Runtime.instance;
+export function applyRuntimeMachineState(runtime: Runtime, state: RuntimeMachineState): void {
 	runtime.machine.restoreState(state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
 	runtime.vblank.restore(state.vblank);

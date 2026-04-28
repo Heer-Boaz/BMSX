@@ -1,6 +1,6 @@
 import { clamp } from '../../../../common/clamp';
 import type { EditorDiagnostic } from '../../../common/models';
-import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
+import { beginNavigationCapture, completeNavigation } from '../../../navigation/navigation_history';
 import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
 import { getActiveCodeTabContextId, isCodeTabActive } from '../../../workbench/ui/code_tab/contexts';
 import { setCursorPosition, ensureCursorVisible } from '../../ui/view/caret/caret';

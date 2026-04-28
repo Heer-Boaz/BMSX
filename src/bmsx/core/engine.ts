@@ -14,6 +14,7 @@ import { clearAllQueues } from '../render/shared/queues';
 import { clearOverlayFrame } from '../render/editor/overlay_queue';
 import { restoreVdpContextState } from '../render/vdp/context_state';
 import { initializeVdpTextureTransfer } from '../render/vdp/texture_transfer';
+import { registerWebGLVdpBlitterExecutorFactory } from '../render/vdp/blitter/webgl';
 import { runEngineHostFrame } from './host_frame';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -58,6 +59,7 @@ export class EngineCore {
 	 */
 	private _view!: GameView;
 	private _platform!: Platform;
+	private _runtime!: Runtime;
 	/**
 	 * Indicates whether the game is currently running.
 	 */
@@ -90,6 +92,7 @@ export class EngineCore {
 	public get texmanager(): TextureManager { return TextureManager.instance!; }
 	public get sndmaster(): SoundMaster { return SoundMaster.instance; }
 	public get platform(): Platform { return this._platform!; }
+	public get runtime(): Runtime { return this._runtime; }
 
 	/**
 	 * Constructs a new instance of the BMSX class.
@@ -102,7 +105,7 @@ export class EngineCore {
 		if (!this.platform.audio.available) {
 			return;
 		}
-		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
+		this.sndmaster.bootstrapRuntimeAudio(this.runtime.timing.ufps, DEFAULT_MASTER_VOLUME);
 	}
 
 	/**
@@ -112,7 +115,7 @@ export class EngineCore {
 	 * @param view - The view object that manages the game display.
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
-	public async init(init: EngineStartupOptions): Promise<EngineCore> {
+	public async init(init: EngineStartupOptions): Promise<Runtime> {
 		const { engineRom, cartridge, workspaceOverlay, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = init;
 		if (!platform) {
 			throw new Error('[Game] Platform services not provided. Pass a Platform instance in GameInitArgs.');
@@ -139,13 +142,19 @@ export class EngineCore {
 		if (typeof document !== 'undefined') {
 			ensureBrowserBackendFactory();
 		}
+		const runtime = await Runtime.init(engineLayer, workspaceOverlay, cartridge);
+		this._runtime = runtime;
 		const gview = new GameView({
+			runtime,
 			viewportSize,
 			host: resolvedViewHost,
 		});
 		this._view = gview;
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;
+		if (gpuBackend.type === 'webgl2') {
+			registerWebGLVdpBlitterExecutorFactory();
+		}
 		const textureManager = new TextureManager(gpuBackend);
 		initializeVdpTextureTransfer(textureManager, gview);
 		const pipelineRegistry = new RenderPassLibrary(gpuBackend);
@@ -169,21 +178,23 @@ export class EngineCore {
 		});
 
 		await gview.initializeDefaultTextures();
+		await runtime.startPreparedRuntime();
 
 		if (this.debug) {
 			Input.instance.enableDebugMode(this.view.surface);
 		}
 		this.initialized = true; // Mark the game as initialized
-		await Runtime.init(engineLayer, workspaceOverlay, cartridge);
+		this.bootstrapStartupAudio();
+		this.start();
 		// SoundMaster.instance.volume = 0;
-		return this!; // Allow chaining
+		return runtime;
 	}
 
 	public async refreshRenderAssets(): Promise<void> {
 		this.texmanager.setBackend(this.view.backend);
 		initializeVdpTextureTransfer(this.texmanager, this.view);
 		await this.view.initializeDefaultTextures();
-		restoreVdpContextState(Runtime.instance.machine.vdp);
+		restoreVdpContextState(this.runtime.machine.vdp);
 	}
 
 	public async resetRuntime(preserveTextures = false): Promise<void> {
@@ -193,21 +204,19 @@ export class EngineCore {
 		const gateToken = renderGate.begin({ blocking: true, tag: 'runtime-reset' });
 		const runToken = runGate.begin({ blocking: true, tag: 'runtime-reset' });
 		try {
+			const runtime = this.runtime;
 			this.sndmaster.resetPlaybackState();
 			this.debug_runSingleFrameAndPause = false;
-			clearAllQueues();
+			clearAllQueues(runtime);
 			clearOverlayFrame();
 
-			const runtime = Runtime.instance;
-			if (runtime) {
-				runtime.frameScheduler.clearQueuedTime();
-				runtime.screen.clearPresentation();
-				runtime.frameLoop.abandonFrameState();
-				runtime.frameLoop.drawFrameState = null;
-				runtime.vblank.clearHaltUntilIrq();
-				runtime.vblank.reset();
-				runtime.overlayRenderer.abandonFrame();
-			}
+			runtime.frameScheduler.clearQueuedTime();
+			runtime.screen.clearPresentation();
+			runtime.frameLoop.abandonFrameState();
+			runtime.frameLoop.drawFrameState = null;
+			runtime.vblank.clearHaltUntilIrq();
+			runtime.vblank.reset();
+			runtime.overlayRenderer.abandonFrame();
 
 			if (!preserveTextures) {
 				this.texmanager.clear();
@@ -231,11 +240,11 @@ export class EngineCore {
 		}
 		const platform = this.platform;
 		const now = platform.clock.now();
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		runtime.frameLoop.currentTimeMs = now;
 		runtime.frameScheduler.clearQueuedTime();
 		platform.frames.start((currentTime: number) => {
-			runEngineHostFrame(currentTime, runGate.ready);
+			runEngineHostFrame(runtime, currentTime, runGate.ready);
 		});
 		this.running = true;
 	}

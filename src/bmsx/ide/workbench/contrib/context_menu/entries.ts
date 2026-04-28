@@ -1,13 +1,13 @@
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../../machine/firmware/builtin_descriptors';
-import { Runtime } from '../../../../machine/runtime/runtime';
 import { resolveLuaIdentifierChainRoot } from '../../../language/lua/identifier_chain';
 import type { EditorContextMenuEntry, EditorContextToken } from '../../../common/models';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export function buildEditorContextMenuEntries(token: EditorContextToken, editable: boolean): EditorContextMenuEntry[] {
+export function buildEditorContextMenuEntries(runtime: Runtime, token: EditorContextToken, editable: boolean): EditorContextMenuEntry[] {
 	if (token.kind !== 'identifier' || !token.expression || token.expression.length === 0) {
 		return [];
 	}
-	if (isBuiltinContextExpression(token.expression)) {
+	if (isBuiltinContextExpression(runtime, token.expression)) {
 		return [];
 	}
 	const entries: EditorContextMenuEntry[] = [
@@ -21,13 +21,13 @@ export function buildEditorContextMenuEntries(token: EditorContextToken, editabl
 	return entries;
 }
 
-function isBuiltinContextExpression(expression: string): boolean {
+function isBuiltinContextExpression(runtime: Runtime, expression: string): boolean {
 	const root = resolveLuaIdentifierChainRoot(expression);
 	if (root.length === 0) {
 		return false;
 	}
 	const name = root.trim();
-	if (Runtime.instance.luaBuiltinMetadata.has(name)) {
+	if (runtime.luaBuiltinMetadata.has(name)) {
 		return true;
 	}
 	for (let index = 0; index < DEFAULT_LUA_BUILTIN_NAMES.length; index += 1) {

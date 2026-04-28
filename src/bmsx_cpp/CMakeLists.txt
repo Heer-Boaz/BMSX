@@ -184,7 +184,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/save_state/codec.cpp
 	machine/runtime/resume_snapshot.cpp
 	machine/runtime/game/table.cpp
-	machine/runtime/game/view_state.cpp
 	machine/memory/asset_memory.cpp
 	machine/memory/asset_images.cpp
 	machine/runtime/cart_boot.cpp

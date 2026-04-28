@@ -225,12 +225,12 @@ Current evidence:
 - TS VDP command ingestion now mirrors the native command processor shape:
   `Machine` constructs the VDP with the concrete CPU/API/memory owners, and
   packet decoding receives those owners directly instead of looking up
-  `Runtime.instance` from inside the device hot path.
+  a global runtime singleton from inside the device hot path.
 - TS and C++ VDP render-surface texture binding no longer passes a fake VDP
   object into texture lookup. Surface-size resolution still asks the VDP, while
   texture-handle binding is an explicit render-side texture-memory operation.
 - `src/bmsx/render/vdp` and `src/bmsx_cpp/render/vdp` no longer contain
-  `engineCore`, `Runtime.instance`, `EngineCore::instance()`,
+  `engineCore`, runtime singleton access, `EngineCore::instance()`,
   `Runtime::instance()`, `core/engine`, or `machine/runtime/runtime`
   dependencies.
 - `src/bmsx/machine/devices/vdp` and `src/bmsx_cpp/machine/devices/vdp` still

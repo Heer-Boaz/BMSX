@@ -6,7 +6,7 @@ import {
 	prepareOverlayRenderQueues,
 	preparePartialRenderQueues,
 } from './shared/queues';
-import { Runtime } from '../machine/runtime/runtime';
+import type { Runtime } from '../machine/runtime/runtime';
 import type { TickCompletion } from '../machine/scheduler/frame';
 import * as workbenchMode from '../ide/workbench/mode';
 import { commitVdpViewSnapshot } from './vdp/view_snapshot';
@@ -97,7 +97,7 @@ export class RenderPresentationState {
 	private presentFrame(hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		const runtime = this.runtime;
 		engineCore.deltatime = hostDeltaMs;
-		commitVdpViewSnapshot(engineCore.view, runtime.machine.vdp, runtime.assets);
+		commitVdpViewSnapshot(engineCore.view, runtime.machine.vdp, runtime.machine.memory, runtime.assets);
 		engineCore.view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);
 		engineCore.sndmaster.finishFrame();
@@ -122,8 +122,8 @@ export class RenderPresentationState {
 		if (overlayActive) {
 			clearBackQueues();
 		}
-		workbenchMode.tickIDEDraw();
-		workbenchMode.tickTerminalModeDraw();
+		workbenchMode.tickIDEDraw(runtime);
+		workbenchMode.tickTerminalModeDraw(runtime);
 		if (overlayActive) {
 			prepareOverlayRenderQueues();
 		} else if (out.mode === 'completed' && out.commitFrame) {
@@ -165,8 +165,8 @@ export class RenderPresentationState {
 			runtime.frameLoop.abandonFrameState();
 		}
 		runtime.frameScheduler.clearQueuedTime();
-		workbenchMode.tickIDE();
-		workbenchMode.tickTerminalMode();
+		workbenchMode.tickIDE(runtime);
+		workbenchMode.tickTerminalMode(runtime);
 		this.markPresentation('completed', false);
 	}
 
@@ -177,7 +177,7 @@ export class RenderPresentationState {
 			this.markPresentation('completed', false);
 		} else if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
 			this.markPresentation('completed', runtime.frameScheduler.lastTickVisualFrameCommitted);
-		} else if (runtime.isDrawPending || workbenchMode.hasFaultSnapshot()) {
+		} else if (runtime.isDrawPending || runtime.workbenchFaultState.faultSnapshot !== null) {
 			this.markPresentation('partial', false);
 		}
 		while (runtime.frameScheduler.consumeTickCompletion(this.tickCompletionScratch)) {
@@ -236,7 +236,7 @@ export class RenderPresentationState {
 			+ `tick_deferred=${this.debugPresentTickDeferred} tick_held=${this.debugPresentTickHeld} `
 			+ `present_partial=${this.debugPresentPartialPresents} present_commit=${this.debugPresentCommitPresents} `
 			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
-			+ `draw_pending=${runtime.isDrawPending || workbenchMode.hasFaultSnapshot() ? 1 : 0} active_tick=${runtime.frameLoop.currentFrameState !== null ? 1 : 0}`
+			+ `draw_pending=${runtime.isDrawPending || runtime.workbenchFaultState.faultSnapshot !== null ? 1 : 0} active_tick=${runtime.frameLoop.currentFrameState !== null ? 1 : 0}`
 		);
 		this.resetDebugCounters(currentTime);
 	}

@@ -1,4 +1,5 @@
 import { runGate } from '../../../core/taskgate';
+import { engineCore } from '../../../core/engine';
 import {
 	color,
 	MeshRenderSubmission,
@@ -86,7 +87,7 @@ export class Api {
 
 	private getDefaultFont(): BFont {
 		if (this.defaultFont === null) {
-			this.defaultFont = new Font();
+			this.defaultFont = new Font(this.runtime);
 			this.registerFont(this.defaultFont);
 		}
 		return this.defaultFont;
@@ -127,11 +128,11 @@ export class Api {
 	}
 
 	public display_width(): number {
-		return this.runtime.gameViewState.viewportSize.x;
+		return engineCore.view.viewportSize.x;
 	}
 
 	public display_height(): number {
-		return this.runtime.gameViewState.viewportSize.y;
+		return engineCore.view.viewportSize.y;
 	}
 
 	public put_mesh(mesh: MeshRenderSubmission['mesh'], matrix: MeshRenderSubmission['matrix'], options?: Omit<MeshRenderSubmission, 'mesh' | 'matrix'>): void {
@@ -158,7 +159,7 @@ export class Api {
 			ambient_mode: options.ambient_mode,
 			ambient_factor: options.ambient_factor,
 		};
-		submit_particle(submission);
+		submit_particle(this.runtime, submission);
 	}
 
 	public set_camera(view: Float32Array | number[], proj: Float32Array | number[], eye: vec3arr | number[]): void {
@@ -213,7 +214,7 @@ export class Api {
 	}
 
 	public set_cpu_freq_hz(cpuHz: number): void {
-		applyActiveMachineTiming(cpuHz);
+		applyActiveMachineTiming(this._runtime, cpuHz);
 	}
 
 	public list_builtins(): LuaTable {
@@ -233,7 +234,7 @@ export class Api {
 			const glyphValue = entry[1];
 			glyphMap[glyphKey] = glyphValue;
 		}
-		const font = new BFont(glyphMap, definition.advance_padding);
+		const font = new BFont(this.runtime, glyphMap, definition.advance_padding);
 		return this.buildFontDescriptor(font);
 	}
 

@@ -12,6 +12,7 @@ import {
 } from './items';
 import { ensureResourcePanelSelectionScroll } from './navigation';
 import { resourcePanelLineCapacity } from './layout';
+import type { Runtime } from '../../../../../machine/runtime/runtime';
 
 export type ResourcePanelRefreshResult = {
 	items: ResourceBrowserItem[];
@@ -21,6 +22,7 @@ export type ResourcePanelRefreshResult = {
 };
 
 export function refreshResourcePanelResourceState(options: {
+	runtime: Runtime;
 	filterMode: ResourcePanelFilterMode;
 	bounds: RectBounds;
 	lineHeight: number;
@@ -29,7 +31,7 @@ export function refreshResourcePanelResourceState(options: {
 	previousIndex: number;
 	previousScroll: number;
 }): ResourcePanelRefreshResult {
-	const items = buildResourcePanelItems(options.filterMode);
+	const items = buildResourcePanelItems(options.runtime, options.filterMode);
 	const maxLineWidth = computeResourcePanelMaxLineWidth(items);
 	const capacity = resourcePanelLineCapacity(options.bounds, items.length, maxLineWidth, options.lineHeight);
 	const targetAssetId = options.targetAssetId || (options.previousDescriptor ? options.previousDescriptor.asset_id : null);

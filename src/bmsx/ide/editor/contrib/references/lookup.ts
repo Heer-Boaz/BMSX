@@ -2,10 +2,12 @@ import { buildEditorSemanticFrontend } from '../intellisense/frontend';
 import type { ReferenceMatchInfo } from './state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { SearchMatch } from '../../../common/models';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export type ExtractIdentifierExpression = (row: number, column: number) => { expression: string; startColumn: number; endColumn: number };
 
 export type ReferenceLookupOptions = {
+	runtime: Runtime;
 	buffer: TextBuffer;
 	textVersion: number;
 	cursorRow: number;
@@ -23,7 +25,7 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 	if (!identifier) {
 		return { kind: 'error', message: 'No identifier at cursor', duration: 1.6 };
 	}
-	const frontend = buildEditorSemanticFrontend(options.path, options.buffer, options.textVersion);
+	const frontend = buildEditorSemanticFrontend(options.runtime, options.path, options.buffer, options.textVersion);
 	const resolution = frontend.findReferencesByPosition(options.path, options.cursorRow + 1, options.cursorColumn + 1);
 	if (!resolution) {
 		return { kind: 'error', message: `Definition not found for ${identifier.expression}`, duration: 1.8 };

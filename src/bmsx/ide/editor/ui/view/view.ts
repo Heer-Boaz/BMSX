@@ -1,16 +1,16 @@
 import { engineCore } from '../../../../core/engine';
 import { lower_bound } from '../../../../common/lower_bound';
 import { EditorFont } from './font';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 import type { FontVariant } from '../../../../render/shared/bmsx_font';
 import type { Viewport } from '../../../../rompack/format';
-import type { ResourceDescriptor } from '../../../common/models';
 import * as constants from '../../../common/constants';
+import type { CodeTabMode } from '../../../common/models';
 import { CodeLayout } from '../code/layout';
 import { markDiagnosticsDirty } from '../../contrib/diagnostics/analysis';
 import { computeSearchPageStats } from '../../contrib/find/search';
 import { showEditorMessage } from '../../../common/feedback_state';
-import { editorChromeState } from '../../../workbench/ui/chrome_state';
-import { editorPointerState } from '../../input/pointer/state';
+import { editorPointerState } from '../../../input/pointer/state';
 import { editorCaretState } from './caret/state';
 import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../../contrib/intellisense/engine';
 import { ensureCursorVisible, updateDesiredColumn } from './caret/caret';
@@ -18,14 +18,12 @@ import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from './state';
 import { editorSearchState, lineJumpState } from '../../contrib/find/widget_state';
 import { symbolSearchState } from '../../contrib/symbols/search/state';
-import { resourcePanel } from '../../../workbench/contrib/resources/panel/controller';
-import { getActiveCodeTabContext, getActiveCodeTabContextId } from '../../../workbench/ui/code_tab/contexts';
 import { renameController } from '../../contrib/rename/controller';
 import { editorRuntimeState } from '../../common/runtime_state';
 import {
 	ensureVisualLines,
 } from '../../common/text/layout';
-import { rewrapRuntimeErrorOverlays } from '../../../workbench/error/navigation';
+import { rewrapRuntimeErrorOverlays } from '../../../runtime_error/navigation';
 import { bottomMargin, topMargin } from '../../../workbench/common/layout';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 import type { InlineFieldMetrics } from '../inline/text_field';
@@ -167,15 +165,10 @@ export function applyViewportSize(viewport: Viewport): void {
 
 export function updateViewport(viewport: Viewport): void {
 	applyViewportSize(viewport);
-	if (resourcePanel.visible) {
-		const bounds = resourcePanel.getBounds();
-		if (!bounds) {
-			hideResourcePanel();
-		} else {
-			resourcePanel.clampHScroll();
-			resourcePanel.ensureSelectionVisible();
-		}
-	}
+	refreshViewportLayout();
+}
+
+export function refreshViewportLayout(): void {
 	editorViewState.layout.markVisualLinesDirty();
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
@@ -228,7 +221,7 @@ const codeAreaBounds: CodeAreaBounds = {
 };
 
 export function getCodeAreaBounds(): CodeAreaBounds {
-	const codeLeft = resourcePanel.isVisible() ? getResourcePanelWidth() : 0;
+	const codeLeft = editorViewState.codeAreaLeft;
 	const gutterLeft = codeLeft;
 	const gutterRight = gutterLeft + updateGutterWidth();
 	codeAreaBounds.codeTop = codeViewportTop();
@@ -530,9 +523,9 @@ export function getSymbolSearchBarBounds(): BarBounds { return getInlineBarBound
 export function getRenameBarBounds(): BarBounds { return getInlineBarBounds(4); }
 export function getLineJumpBarBounds(): BarBounds { return getInlineBarBounds(5); }
 
-export function configureFontVariant(variant: FontVariant): void {
+export function configureFontVariant(runtime: Runtime, variant: FontVariant, activeCodeTabMode: CodeTabMode | null): void {
 	editorViewState.fontVariant = variant;
-	editorViewState.font = new EditorFont(variant);
+	editorViewState.font = new EditorFont(runtime, variant);
 	editorViewState.lineHeight = editorViewState.font.lineHeight;
 	editorViewState.charAdvance = editorViewState.font.advance('M');
 	editorViewState.spaceAdvance = editorViewState.font.advance(' ');
@@ -546,28 +539,24 @@ export function configureFontVariant(variant: FontVariant): void {
 		maxHighlightCache: 512,
 		semanticDebounceMs: 200,
 		clockNow: editorRuntimeState.clockNow,
-		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(),
+		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(runtime),
 		computeWrapWidth,
 	});
-	const activeContext = getActiveCodeTabContext();
-	if (activeContext) {
-		editorViewState.layout.setCodeTabMode(activeContext.mode);
-	}
-	if (resourcePanel) {
-		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
+	if (activeCodeTabMode) {
+		editorViewState.layout.setCodeTabMode(activeCodeTabMode);
 	}
 	editorViewState.layout.invalidateAllHighlights();
 	editorViewState.layout.markVisualLinesDirty();
 }
 
-export function setFontVariant(variant: FontVariant): void {
-	configureFontVariant(variant);
+export function setFontVariant(runtime: Runtime, variant: FontVariant, activeCodeTabMode: CodeTabMode | null, activeContextId: string | null): void {
+	configureFontVariant(runtime, variant, activeCodeTabMode);
 	ensureVisualLines();
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
 	requestSemanticRefresh();
-	markDiagnosticsDirty(getActiveCodeTabContextId());
+	markDiagnosticsDirty(activeContextId);
 }
 
 export function toggleWordWrap(): void {
@@ -613,40 +602,8 @@ export function notifyReadOnlyEdit(): void {
 	showEditorMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
 }
 
-export function hideResourcePanel(): void {
-	resourcePanel.hide();
-	editorChromeState.resourcePanelResizing = false;
-	resetResourcePanelState();
-}
-
-export function resetResourcePanelState(): void {
-	resourcePanel.queuePendingSelection(null);
-	editorChromeState.resourcePanelResizing = false;
-}
-
-export function refreshResourcePanelContents(): void {
-	resourcePanel.refresh();
-}
-
-export function selectResourceInPanel(descriptor: ResourceDescriptor): void {
-	if (!descriptor.asset_id || descriptor.asset_id.length === 0) {
-		return;
-	}
-	resourcePanel.queuePendingSelection(descriptor.asset_id);
-	if (resourcePanel.isVisible()) {
-		resourcePanel.applyPendingSelection();
-	}
-}
-
 export function getResourcePanelWidth(): number {
-	if (!resourcePanel.isVisible()) {
-		return 0;
-	}
-	const bounds = resourcePanel.getBounds();
-	if (!bounds) {
-		return 0;
-	}
-	const width = bounds.right - bounds.left;
+	const width = editorViewState.codeAreaLeft;
 	return width > 0 ? width : 0;
 }
 
@@ -655,11 +612,4 @@ export function computeWrapWidth(): number {
 	const available = bounds.codeRight - bounds.textLeft;
 	const width = available - 2;
 	return width > editorViewState.charAdvance ? width : editorViewState.charAdvance;
-}
-
-export function scrollResourceBrowser(amount: number): void {
-	if (!resourcePanel.isVisible()) {
-		return;
-	}
-	resourcePanel.scrollBy(amount);
 }

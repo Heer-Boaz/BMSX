@@ -1,6 +1,6 @@
 import { CHARACTER_CODES, CHARACTER_MAP } from '../../../common/character_map';
 import { insertText } from '../../editing/text_editing_and_selection';
-import { consumeIdeKey, isKeyJustPressed, isShiftDown } from './key_input';
+import { consumeIdeKey, isKeyJustPressed, isShiftDown } from '../../../input/keyboard/key_input';
 
 export function handleEditorCharacterInput(): void {
 	for (let i = 0; i < CHARACTER_CODES.length; i += 1) {

@@ -4,7 +4,6 @@
 #include "machine/firmware/api.h"
 #include "machine/runtime/machine_state.h"
 #include "render/runtime/state.h"
-#include "machine/runtime/game/view_state.h"
 
 #include <utility>
 
@@ -16,7 +15,6 @@ struct RuntimeResumeSnapshot {
 	RuntimeMachineState machineState;
 	std::vector<std::pair<Value, Value>> globals;
 	RuntimeStorageState storageState;
-	GameViewState gameViewState;
 	RuntimeRenderState renderState;
 	uint32_t randomSeed = 0;
 	bool pendingEntryCall = false;

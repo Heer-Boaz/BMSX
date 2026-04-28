@@ -3,7 +3,8 @@ import { packActionStateFlags } from '../../firmware/input_state_tables';
 import { Table, createNativeFunction } from '../../cpu/cpu';
 
 import type { StringValue } from '../../memory/string/pool';
-import { Runtime } from '../runtime';
+import type { Runtime } from '../runtime';
+import type { GameView } from '../../../render/gameview';
 
 type GameTableKeys = {
 	game: StringValue;
@@ -30,8 +31,7 @@ type GameTableKeys = {
 
 const gameTableKeysByRuntime = new WeakMap<Runtime, GameTableKeys>();
 
-function getGameTableKeys(): GameTableKeys {
-	const runtime = Runtime.instance;
+function getGameTableKeys(runtime: Runtime): GameTableKeys {
 	let keys = gameTableKeysByRuntime.get(runtime);
 	if (keys) {
 		return keys;
@@ -62,57 +62,51 @@ function getGameTableKeys(): GameTableKeys {
 	return keys;
 }
 
-function writeRuntimeViewportTable(table: Table): void {
-	const keys = getGameTableKeys();
-	const runtime = Runtime.instance;
-	const { viewportSize } = runtime.gameViewState;
+function writeRuntimeViewportTable(runtime: Runtime, table: Table, view: GameView): void {
+	const keys = getGameTableKeys(runtime);
+	const { viewportSize } = view;
 	table.set(keys.x, viewportSize.x);
 	table.set(keys.y, viewportSize.y);
 }
 
-function writeRuntimeViewTable(table: Table): void {
-	const keys = getGameTableKeys();
-	const runtime = Runtime.instance;
-	const state = runtime.gameViewState;
-	table.set(keys.crt_postprocessing_enabled, state.crt_postprocessing_enabled);
-	table.set(keys.enable_noise, state.enable_noise);
-	table.set(keys.enable_colorbleed, state.enable_colorbleed);
-	table.set(keys.enable_scanlines, state.enable_scanlines);
-	table.set(keys.enable_blur, state.enable_blur);
-	table.set(keys.enable_glow, state.enable_glow);
-	table.set(keys.enable_fringing, state.enable_fringing);
-	table.set(keys.enable_aperture, state.enable_aperture);
+function writeRuntimeViewTable(runtime: Runtime, table: Table, view: GameView): void {
+	const keys = getGameTableKeys(runtime);
+	table.set(keys.crt_postprocessing_enabled, view.crt_postprocessing_enabled);
+	table.set(keys.enable_noise, view.enable_noise);
+	table.set(keys.enable_colorbleed, view.enable_colorbleed);
+	table.set(keys.enable_scanlines, view.enable_scanlines);
+	table.set(keys.enable_blur, view.enable_blur);
+	table.set(keys.enable_glow, view.enable_glow);
+	table.set(keys.enable_fringing, view.enable_fringing);
+	table.set(keys.enable_aperture, view.enable_aperture);
 }
 
-function getRuntimeGameTable(): Table {
-	const runtime = Runtime.instance;
-	return runtime.machine.cpu.getGlobalByKey(getGameTableKeys().game) as Table;
+function getRuntimeGameTable(runtime: Runtime): Table {
+	return runtime.machine.cpu.getGlobalByKey(getGameTableKeys(runtime).game) as Table;
 }
 
-function getRuntimeViewportTable(): Table {
-	return getRuntimeGameTable().get(getGameTableKeys().viewportsize) as Table;
+function getRuntimeViewportTable(runtime: Runtime): Table {
+	return getRuntimeGameTable(runtime).get(getGameTableKeys(runtime).viewportsize) as Table;
 }
 
-function getRuntimeViewTable(): Table {
-	return getRuntimeGameTable().get(getGameTableKeys().view) as Table;
+function getRuntimeViewTable(runtime: Runtime): Table {
+	return getRuntimeGameTable(runtime).get(getGameTableKeys(runtime).view) as Table;
 }
 
-function readRuntimeViewBool(table: Table, key: StringValue, field: string): boolean {
+function readRuntimeViewBool(runtime: Runtime, table: Table, key: StringValue, field: string): boolean {
 	const value = table.get(key);
 	if (typeof value !== 'boolean') {
-		const runtime = Runtime.instance;
 		throw runtime.createApiRuntimeError(`game.view.${field} must be boolean.`);
 	}
 	return value;
 }
 
-export function createRuntimeGameTable(): Table {
-	const keys = getGameTableKeys();
+export function createRuntimeGameTable(runtime: Runtime, view: GameView): Table {
+	const keys = getGameTableKeys(runtime);
 	const viewportTable = new Table(0, 2);
-	writeRuntimeViewportTable(viewportTable);
+	writeRuntimeViewportTable(runtime, viewportTable, view);
 	const viewTable = new Table(0, 8);
-	writeRuntimeViewTable(viewTable);
-	const runtime = Runtime.instance;
+	writeRuntimeViewTable(runtime, viewTable, view);
 
 	const clockNowFn = createNativeFunction('platform.clock.now', (_args, out) => {
 		out.push(runtime.clock.now());
@@ -154,29 +148,26 @@ export function createRuntimeGameTable(): Table {
 	return gameTable;
 }
 
-export function syncRuntimeGameViewStateToTable(): void {
-	const runtime = Runtime.instance;
+export function syncRuntimeGameViewToTable(runtime: Runtime, view: GameView): void {
 	if (!runtime.isInitialized) {
 		return;
 	}
-	writeRuntimeViewportTable(getRuntimeViewportTable());
-	writeRuntimeViewTable(getRuntimeViewTable());
+	writeRuntimeViewportTable(runtime, getRuntimeViewportTable(runtime), view);
+	writeRuntimeViewTable(runtime, getRuntimeViewTable(runtime), view);
 }
 
-export function applyRuntimeGameViewTableToState(): void {
-	const runtime = Runtime.instance;
+export function applyRuntimeGameViewTableToHost(runtime: Runtime, view: GameView): void {
 	if (!runtime.isInitialized) {
 		return;
 	}
-	const keys = getGameTableKeys();
-	const table = getRuntimeViewTable();
-	const state = runtime.gameViewState;
-	state.crt_postprocessing_enabled = readRuntimeViewBool(table, keys.crt_postprocessing_enabled, 'crt_postprocessing_enabled');
-	state.enable_noise = readRuntimeViewBool(table, keys.enable_noise, 'enable_noise');
-	state.enable_colorbleed = readRuntimeViewBool(table, keys.enable_colorbleed, 'enable_colorbleed');
-	state.enable_scanlines = readRuntimeViewBool(table, keys.enable_scanlines, 'enable_scanlines');
-	state.enable_blur = readRuntimeViewBool(table, keys.enable_blur, 'enable_blur');
-	state.enable_glow = readRuntimeViewBool(table, keys.enable_glow, 'enable_glow');
-	state.enable_fringing = readRuntimeViewBool(table, keys.enable_fringing, 'enable_fringing');
-	state.enable_aperture = readRuntimeViewBool(table, keys.enable_aperture, 'enable_aperture');
+	const keys = getGameTableKeys(runtime);
+	const table = getRuntimeViewTable(runtime);
+	view.crt_postprocessing_enabled = readRuntimeViewBool(runtime, table, keys.crt_postprocessing_enabled, 'crt_postprocessing_enabled');
+	view.enable_noise = readRuntimeViewBool(runtime, table, keys.enable_noise, 'enable_noise');
+	view.enable_colorbleed = readRuntimeViewBool(runtime, table, keys.enable_colorbleed, 'enable_colorbleed');
+	view.enable_scanlines = readRuntimeViewBool(runtime, table, keys.enable_scanlines, 'enable_scanlines');
+	view.enable_blur = readRuntimeViewBool(runtime, table, keys.enable_blur, 'enable_blur');
+	view.enable_glow = readRuntimeViewBool(runtime, table, keys.enable_glow, 'enable_glow');
+	view.enable_fringing = readRuntimeViewBool(runtime, table, keys.enable_fringing, 'enable_fringing');
+	view.enable_aperture = readRuntimeViewBool(runtime, table, keys.enable_aperture, 'enable_aperture');
 }

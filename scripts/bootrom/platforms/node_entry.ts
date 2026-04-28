@@ -11,7 +11,6 @@ import { HeadlessGameViewHost } from '../../../src/bmsx/render/headless/view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture } from './headless_capture';
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
-import { Runtime } from '../../../src/bmsx/machine/runtime/runtime';
 import { installNativeGlobal, runConsoleChunkToNative } from '../../../src/bmsx/machine/program/executor';
 import { raiseEngineIrq } from '../../../src/bmsx/machine/runtime/engine_irq';
 import { IRQ_NEWGAME } from '../../../src/bmsx/machine/bus/io';
@@ -38,8 +37,6 @@ interface BootGlobals {
 
 type EngineNamespace = {
 	startCart: typeof import('../../../src/bmsx/machine/program/start_cart').startCart;
-	setCpuProfilerEnabled(enabled: boolean): void;
-	formatCpuProfilerReport(): string;
 };
 
 interface InputTimelineEntry {
@@ -556,6 +553,7 @@ async function scheduleInputTimelineFromFile(
 	scheduleCapture: ((capture: ScheduledHeadlessCapture) => void) | null,
 	logger: (msg: string) => void,
 	scheduler: TimelineScheduler,
+	isCartProgramActive: () => boolean,
 	onScheduled?: () => void,
 ): Promise<void> {
 	const resolved = path.resolve(filePath);
@@ -572,7 +570,7 @@ async function scheduleInputTimelineFromFile(
 	const source = `timeline:${path.basename(resolved)}`;
 	const entries = parsed as InputTimelineEntry[];
 	const pollCartActive = (): void => {
-		if (!Runtime.hasInstance || Runtime.instance.activeProgramSource === 'engine') {
+		if (!isCartProgramActive()) {
 			scheduler.scheduleOnce(frameIntervalMs, pollCartActive);
 			return;
 		}
@@ -816,7 +814,7 @@ async function main(): Promise<void> {
 	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading ROM: ${romPath}`);
-	const runtime = await prepareRuntime(cliOptions, romPath, debugFlag);
+	const engine = await prepareRuntime(cliOptions, romPath, debugFlag);
 	const romDirectory = path.resolve(path.dirname(romPath));
 	const engineAssetsPath = cliOptions.engineAssetsPath
 		? path.resolve(cliOptions.engineAssetsPath)
@@ -843,14 +841,6 @@ async function main(): Promise<void> {
 	let cpuProfileDumped = false;
 	let cpuProfileActive = false;
 	const baseRequestExit = createProcessExitController(() => captureCoordinator);
-	const requestExit = (code: number): void => {
-		if (!cpuProfileDumped && cpuProfileActive) {
-			cpuProfileDumped = true;
-			printHeadlessCpuProfile(__BOOTROM_TARGET__);
-		}
-		baseRequestExit(code);
-	};
-	processExitController = requestExit;
 	const postInput = (event: InputEvt) => {
 		platform.input.post(event);
 	};
@@ -916,6 +906,32 @@ async function main(): Promise<void> {
 	if (romFolder) {
 		cartRoot = await resolveCartRoot(romFolder);
 	}
+	const bootArgs: BootArgs = {
+		cartridge: buffer,
+		engineAssets: engineAssetsBuffer,
+		platform,
+		viewHost: platform.gameviewHost,
+	};
+	if (debugFlag) {
+		bootArgs.debug = true;
+	}
+
+	console.log(`[bootrom:${__BOOTROM_TARGET__}] Starting game (debug=${debugFlag}, frameIntervalMs=${frameInterval}).`);
+	const runtime = await engine.startCart(bootArgs);
+	const requestExit = (code: number): void => {
+		if (!cpuProfileDumped && cpuProfileActive) {
+			cpuProfileDumped = true;
+			printHeadlessCpuProfile({ formatCpuProfilerReport: () => runtime.machine.cpu.formatProfilerReport() }, __BOOTROM_TARGET__);
+		}
+		baseRequestExit(code);
+	};
+	processExitController = requestExit;
+	if (cliOptions.cpuProfile) {
+		runtime.machine.cpu.setProfilerEnabled(true);
+		cpuProfileActive = true;
+		console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler enabled.`);
+	}
+	const isCartProgramActive = (): boolean => runtime.activeProgramSource !== 'engine';
 	const autoTimelinePath = await resolveAutoTimelinePath(cartRoot, romFolder);
 	let scheduledTimeline = false;
 	if (cliOptions.testPath) {
@@ -929,10 +945,10 @@ async function main(): Promise<void> {
 			testPath: cliOptions.testPath,
 			frameIntervalMs: frameInterval,
 			logger: inputLogger,
-			isCartProgramActive: () => Runtime.hasInstance && Runtime.instance.activeProgramSource !== 'engine',
-			evaluateLua: (source) => runConsoleChunkToNative(source),
-			installNativeGlobal: (name, value) => installNativeGlobal(name, value),
-			requestNewGame: () => raiseEngineIrq(IRQ_NEWGAME),
+			isCartProgramActive,
+			evaluateLua: (source) => runConsoleChunkToNative(runtime, source),
+			installNativeGlobal: (name, value) => installNativeGlobal(runtime, name, value),
+			requestNewGame: () => raiseEngineIrq(runtime, IRQ_NEWGAME),
 			postInput,
 			requestExit,
 			scheduler,
@@ -942,11 +958,11 @@ async function main(): Promise<void> {
 		});
 	} else if (cliOptions.inputTimelinePath) {
 		captureScheduler = ensureCaptureScheduler(cliOptions.inputTimelinePath);
-		await scheduleInputTimelineFromFile(cliOptions.inputTimelinePath, frameInterval, postInput, captureScheduler, inputLogger, scheduler, armTimelineAutoExit);
+		await scheduleInputTimelineFromFile(cliOptions.inputTimelinePath, frameInterval, postInput, captureScheduler, inputLogger, scheduler, isCartProgramActive, armTimelineAutoExit);
 		scheduledTimeline = true;
 	} else if (autoTimelinePath) {
 		captureScheduler = ensureCaptureScheduler(autoTimelinePath);
-		await scheduleInputTimelineFromFile(autoTimelinePath, frameInterval, postInput, captureScheduler, inputLogger, scheduler, armTimelineAutoExit);
+		await scheduleInputTimelineFromFile(autoTimelinePath, frameInterval, postInput, captureScheduler, inputLogger, scheduler, isCartProgramActive, armTimelineAutoExit);
 		scheduledTimeline = true;
 	}
 	const hasTimelineRun = scheduledTimeline;
@@ -970,23 +986,6 @@ async function main(): Promise<void> {
 		requestExit(0);
 	});
 
-	const bootArgs: BootArgs = {
-		cartridge: buffer,
-		engineAssets: engineAssetsBuffer,
-		platform,
-		viewHost: platform.gameviewHost,
-	};
-	if (debugFlag) {
-		bootArgs.debug = true;
-	}
-
-	console.log(`[bootrom:${__BOOTROM_TARGET__}] Starting game (debug=${debugFlag}, frameIntervalMs=${frameInterval}).`);
-	await runtime.startCart(bootArgs);
-	if (cliOptions.cpuProfile) {
-		runtime.setCpuProfilerEnabled(true);
-		cpuProfileActive = true;
-		console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler enabled.`);
-	}
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Game loop running. Press Ctrl+C to exit.`);
 }
 

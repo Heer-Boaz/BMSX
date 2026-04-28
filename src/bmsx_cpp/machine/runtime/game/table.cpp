@@ -1,6 +1,7 @@
 #include "machine/runtime/game/table.h"
 
 #include "machine/runtime/runtime.h"
+#include "render/gameview.h"
 
 #include <string>
 
@@ -12,11 +13,11 @@ Table* getRuntimeGameTable(Runtime& runtime) {
 }
 
 Table* getRuntimeViewportTable(Runtime& runtime) {
-	return asTable(getRuntimeGameTable()->get(runtime.luaKey("viewportsize")));
+	return asTable(getRuntimeGameTable(runtime)->get(runtime.luaKey("viewportsize")));
 }
 
 Table* getRuntimeViewTable(Runtime& runtime) {
-	return asTable(getRuntimeGameTable()->get(runtime.luaKey("view")));
+	return asTable(getRuntimeGameTable(runtime)->get(runtime.luaKey("view")));
 }
 
 bool readRuntimeViewBool(Runtime& runtime, Table& viewTable, const char* field) {
@@ -29,40 +30,40 @@ bool readRuntimeViewBool(Runtime& runtime, Table& viewTable, const char* field) 
 
 } // namespace
 
-void syncRuntimeGameViewStateToTable(Runtime& runtime) {
+void syncRuntimeGameViewToTable(Runtime& runtime) {
 	if (!runtime.isInitialized()) {
 		return;
 	}
-	const GameViewState& state = runtime.gameViewState();
-	auto* const viewportTable = getRuntimeViewportTable();
-	viewportTable->set(runtime.luaKey("x"), valueNumber(static_cast<double>(state.viewportSize.x)));
-	viewportTable->set(runtime.luaKey("y"), valueNumber(static_cast<double>(state.viewportSize.y)));
+	const GameView& view = runtime.view();
+	auto* const viewportTable = getRuntimeViewportTable(runtime);
+	viewportTable->set(runtime.luaKey("x"), valueNumber(static_cast<double>(view.viewportSize.x)));
+	viewportTable->set(runtime.luaKey("y"), valueNumber(static_cast<double>(view.viewportSize.y)));
 
-	auto* const viewTable = getRuntimeViewTable();
-	viewTable->set(runtime.luaKey("crt_postprocessing_enabled"), valueBool(state.crtPostprocessingEnabled));
-	viewTable->set(runtime.luaKey("enable_noise"), valueBool(state.enableNoise));
-	viewTable->set(runtime.luaKey("enable_colorbleed"), valueBool(state.enableColorBleed));
-	viewTable->set(runtime.luaKey("enable_scanlines"), valueBool(state.enableScanlines));
-	viewTable->set(runtime.luaKey("enable_blur"), valueBool(state.enableBlur));
-	viewTable->set(runtime.luaKey("enable_glow"), valueBool(state.enableGlow));
-	viewTable->set(runtime.luaKey("enable_fringing"), valueBool(state.enableFringing));
-	viewTable->set(runtime.luaKey("enable_aperture"), valueBool(state.enableAperture));
+	auto* const viewTable = getRuntimeViewTable(runtime);
+	viewTable->set(runtime.luaKey("crt_postprocessing_enabled"), valueBool(view.crt_postprocessing_enabled));
+	viewTable->set(runtime.luaKey("enable_noise"), valueBool(view.applyNoise));
+	viewTable->set(runtime.luaKey("enable_colorbleed"), valueBool(view.applyColorBleed));
+	viewTable->set(runtime.luaKey("enable_scanlines"), valueBool(view.applyScanlines));
+	viewTable->set(runtime.luaKey("enable_blur"), valueBool(view.applyBlur));
+	viewTable->set(runtime.luaKey("enable_glow"), valueBool(view.applyGlow));
+	viewTable->set(runtime.luaKey("enable_fringing"), valueBool(view.applyFringing));
+	viewTable->set(runtime.luaKey("enable_aperture"), valueBool(view.applyAperture));
 }
 
-void applyRuntimeGameViewTableToState(Runtime& runtime) {
+void applyRuntimeGameViewTableToHost(Runtime& runtime) {
 	if (!runtime.isInitialized()) {
 		return;
 	}
-	auto* const viewTable = getRuntimeViewTable();
-	GameViewState& state = runtime.gameViewState();
-	state.crtPostprocessingEnabled = readRuntimeViewBool(*viewTable, "crt_postprocessing_enabled");
-	state.enableNoise = readRuntimeViewBool(*viewTable, "enable_noise");
-	state.enableColorBleed = readRuntimeViewBool(*viewTable, "enable_colorbleed");
-	state.enableScanlines = readRuntimeViewBool(*viewTable, "enable_scanlines");
-	state.enableBlur = readRuntimeViewBool(*viewTable, "enable_blur");
-	state.enableGlow = readRuntimeViewBool(*viewTable, "enable_glow");
-	state.enableFringing = readRuntimeViewBool(*viewTable, "enable_fringing");
-	state.enableAperture = readRuntimeViewBool(*viewTable, "enable_aperture");
+	auto* const viewTable = getRuntimeViewTable(runtime);
+	GameView& view = runtime.view();
+	view.crt_postprocessing_enabled = readRuntimeViewBool(runtime, *viewTable, "crt_postprocessing_enabled");
+	view.applyNoise = readRuntimeViewBool(runtime, *viewTable, "enable_noise");
+	view.applyColorBleed = readRuntimeViewBool(runtime, *viewTable, "enable_colorbleed");
+	view.applyScanlines = readRuntimeViewBool(runtime, *viewTable, "enable_scanlines");
+	view.applyBlur = readRuntimeViewBool(runtime, *viewTable, "enable_blur");
+	view.applyGlow = readRuntimeViewBool(runtime, *viewTable, "enable_glow");
+	view.applyFringing = readRuntimeViewBool(runtime, *viewTable, "enable_fringing");
+	view.applyAperture = readRuntimeViewBool(runtime, *viewTable, "enable_aperture");
 }
 
 } // namespace bmsx

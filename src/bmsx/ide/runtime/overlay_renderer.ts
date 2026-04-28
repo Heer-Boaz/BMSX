@@ -9,6 +9,7 @@ import type {
 } from '../../render/shared/submissions';
 import { engineCore } from '../../core/engine';
 import { publishOverlayFrame, type EditorOverlayFrame } from '../../render/editor/overlay_queue';
+import type { GameView } from '../../render/gameview';
 import type { Viewport } from '../../rompack/format';
 import { RenderSubmission } from '../../render/backend/interfaces';
 
@@ -32,20 +33,24 @@ export class OverlayRenderer {
 	private static readonly RECT_Z = 0;
 	private static readonly SPRITE_Z = 0;
 
-	public setRenderingViewportType(type: 'viewport' | 'offscreen'): void {
+	public setViewportSize(viewport: Viewport): void {
+		this.overrideSize = { width: viewport.width, height: viewport.height };
+	}
+
+	public setRenderingViewportType(view: GameView, type: 'viewport' | 'offscreen'): void {
 		let targetSize: Viewport;
 		switch (type) {
 			case 'viewport':
-				engineCore.view.viewportTypeIde = 'viewport';
-				targetSize = { width: engineCore.view.viewportSize.x, height: engineCore.view.viewportSize.y };
+				view.viewportTypeIde = 'viewport';
+				targetSize = { width: view.viewportSize.x, height: view.viewportSize.y };
 				break;
 			case 'offscreen':
-				engineCore.view.viewportTypeIde = 'offscreen';
+				view.viewportTypeIde = 'offscreen';
 			default:
-				targetSize = { width: engineCore.view.offscreenCanvasSize.x, height: engineCore.view.offscreenCanvasSize.y };
+				targetSize = { width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y };
 				break;
 		}
-		this.overrideSize = targetSize;
+		this.setViewportSize(targetSize);
 	}
 
 	public get viewportSize(): Viewport {

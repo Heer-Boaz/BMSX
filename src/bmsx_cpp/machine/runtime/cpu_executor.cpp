@@ -13,10 +13,10 @@ namespace {
 void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 	switch (kind) {
 		case TimerKindVblankBegin:
-			runtime.vblank.handleBeginTimer();
+			runtime.vblank.handleBeginTimer(runtime);
 			return;
 		case TimerKindVblankEnd:
-			runtime.vblank.handleEndTimer();
+			runtime.vblank.handleEndTimer(runtime);
 			return;
 		case TimerKindDeviceService:
 			if (auto* renderVdp = runtime.machine().runDeviceService(payload); renderVdp != nullptr) {
@@ -36,14 +36,14 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 	auto& cpu = machine.cpu();
 	int remaining = frameState.cycleBudgetRemaining;
 	RunResult result = RunResult::Yielded;
-	runDueRuntimeTimers();
+	runDueRuntimeTimers(runtime);
 	while (remaining > 0) {
 		int sliceBudget = remaining;
 		const i64 nextDeadline = scheduler.nextDeadline();
 		if (nextDeadline != std::numeric_limits<i64>::max()) {
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
 			if (deadlineBudget <= 0) {
-				runDueRuntimeTimers();
+				runDueRuntimeTimers(runtime);
 				continue;
 			}
 			if (deadlineBudget < sliceBudget) {
@@ -57,7 +57,7 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 		if (consumed > 0) {
 			remaining -= consumed;
 			frameState.activeCpuUsedCycles += consumed;
-			advanceRuntimeTime(consumed);
+			advanceRuntimeTime(runtime, consumed);
 		}
 		if (cpu.isHaltedUntilIrq() || result == RunResult::Halted) {
 			break;
@@ -72,14 +72,14 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 
 void advanceRuntimeTime(Runtime& runtime, int cycles) {
 	runtime.machine().advanceDevices(cycles);
-	runDueRuntimeTimers();
+	runDueRuntimeTimers(runtime);
 }
 
 void runDueRuntimeTimers(Runtime& runtime) {
 	auto& scheduler = runtime.machine().scheduler();
 	while (scheduler.hasDueTimer()) {
 		const uint16_t event = scheduler.popDueTimer();
-		dispatchRuntimeTimer(static_cast<uint8_t>(event >> 8u), static_cast<uint8_t>(event & 0xffu));
+		dispatchRuntimeTimer(runtime, static_cast<uint8_t>(event >> 8u), static_cast<uint8_t>(event & 0xffu));
 	}
 }
 

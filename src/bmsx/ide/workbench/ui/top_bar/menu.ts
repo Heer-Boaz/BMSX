@@ -1,8 +1,5 @@
-import { resourcePanel } from '../../contrib/resources/panel/controller';
-import { problemsPanel } from '../../contrib/problems/panel/controller';
-import { editorDebuggerState } from '../../contrib/debugger/state';
-import { editorDocumentState } from '../../../editor/editing/document_state';
-import { editorViewState } from '../../../editor/ui/view/state';
+import type { TopBarButtonId } from '../../../common/commands';
+import type { IdeCommandController } from '../../../commands/controller';
 
 export const MENU_IDS = ['file', 'run', 'view', 'debug'] as const;
 export type MenuId = typeof MENU_IDS[number];
@@ -18,8 +15,7 @@ export const MENU_COMMANDS = [
 	'debugStepOver',
 	'debugStepInto',
 	'debugStepOut',
-] as const;
-export type TopBarButtonId = typeof MENU_COMMANDS[number];
+] as const satisfies readonly TopBarButtonId[];
 
 export type TopBarMenuSeparator = { type: 'separator' };
 export type TopBarMenuItem = {
@@ -70,38 +66,20 @@ const topBarMenuEntries: TopBarMenuEntry[] = [
 	},
 ];
 
-export function buildTopBarMenuEntries(): TopBarMenuEntry[] {
-	const resourcePanelActive = resourcePanel.isVisible();
-	const resourcePanelMode = resourcePanel.getMode();
-	const resourceFilesMode = resourcePanelMode === 'resources';
-	const filterMode = resourcePanel.getFilterMode();
-	const debuggerPaused = editorDebuggerState.controls.executionState === 'paused';
-	const problemsActive = problemsPanel.isVisible;
-	const filterActive = filterMode === 'lua_only';
-	saveMenuItem.disabled = !editorDocumentState.dirty;
+export function buildTopBarMenuEntries(commands: IdeCommandController): TopBarMenuEntry[] {
+	const resourcePanelActive = commands.isActive('resources');
+	const filterActive = commands.isActive('filter');
+	saveMenuItem.disabled = !commands.isEnabled('save');
 	resourcesMenuItem.label = resourcePanelActive ? 'Hide Files' : 'Show Files';
 	resourcesMenuItem.active = resourcePanelActive;
-	problemsMenuItem.active = problemsActive;
-	wrapMenuItem.active = editorViewState.wordWrapEnabled;
+	problemsMenuItem.active = commands.isActive('problems');
+	wrapMenuItem.active = commands.isActive('wrap');
 	filterMenuItem.label = filterActive ? 'Lua Files Only' : 'All Resources';
 	filterMenuItem.active = filterActive;
-	filterMenuItem.disabled = !resourcePanelActive || !resourceFilesMode;
-	debugContinueMenuItem.disabled = !debuggerPaused;
-	debugStepOverMenuItem.disabled = !debuggerPaused;
-	debugStepIntoMenuItem.disabled = !debuggerPaused;
-	debugStepOutMenuItem.disabled = !debuggerPaused;
+	filterMenuItem.disabled = !commands.isEnabled('filter');
+	debugContinueMenuItem.disabled = !commands.isEnabled('debugContinue');
+	debugStepOverMenuItem.disabled = !commands.isEnabled('debugStepOver');
+	debugStepIntoMenuItem.disabled = !commands.isEnabled('debugStepInto');
+	debugStepOutMenuItem.disabled = !commands.isEnabled('debugStepOut');
 	return topBarMenuEntries;
-}
-
-export function isTopBarCommandEnabled(command: TopBarButtonId): boolean {
-	if (command === 'save') {
-		return editorDocumentState.dirty;
-	}
-	if (command === 'filter') {
-		return resourcePanel.isVisible() && resourcePanel.getMode() === 'resources';
-	}
-	if (command === 'debugContinue' || command === 'debugStepOver' || command === 'debugStepInto' || command === 'debugStepOut') {
-		return editorDebuggerState.controls.executionState === 'paused';
-	}
-	return true;
 }

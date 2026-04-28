@@ -5,6 +5,7 @@
 #include "core/utf8.h"
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"
+#include "render/gameview.h"
 #include "render/shared/hardware/camera.h"
 #include "render/shared/hardware/lighting.h"
 #include "render/shared/queues.h"
@@ -65,7 +66,7 @@ static u32 utf8SingleCodepoint(const std::string& text) {
 } // namespace
 
 Api::Api(Runtime& runtime)
-	: m_runtime()
+	: m_runtime(runtime)
 	, m_persistentData(PERSISTENT_DATA_SIZE, 0.0)
 {
 	m_font = std::make_unique<Font>(m_runtime.systemAssets());
@@ -387,11 +388,11 @@ m_runtime.registerNativeFunction("reboot", [this](NativeArgsView args, NativeRes
 }
 
 int Api::display_width() const {
-	return m_runtime.gameViewState().viewportSize.x;
+	return static_cast<int>(m_runtime.view().viewportSize.x);
 }
 
 int Api::display_height() const {
-	return m_runtime.gameViewState().viewportSize.y;
+	return static_cast<int>(m_runtime.view().viewportSize.y);
 }
 
 BFont* Api::resolveFontId(uint32_t id) const {

@@ -156,6 +156,7 @@ public:
 
 	// Poll all input sources
 	void pollInput(f64 currentTimeMs);
+	void setFrameDurationMs(f64 frameDurationMs) { m_frameDurationMs = frameDurationMs; }
 	
 	// Update state (called after polling)
 	void update(f64 currentTimeMs);
@@ -202,6 +203,8 @@ private:
 	
 	// Last poll timestamp
 	std::optional<f64> m_lastPollTimestampMs;
+
+	f64 m_frameDurationMs = 1000.0 / 60.0;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Helpers

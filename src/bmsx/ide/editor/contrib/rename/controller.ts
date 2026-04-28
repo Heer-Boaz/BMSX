@@ -11,8 +11,9 @@ import { setSingleCursorSelectionAnchor } from '../../editing/cursor/state';
 import { commitRename } from './operations';
 import { handleRenameControllerInput } from './input';
 import { validateRenameIdentifier } from './validation';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export type RenameStartOptions = ReferenceLookupOptions & {
+export type RenameStartOptions = Omit<ReferenceLookupOptions, 'runtime'> & {
 };
 
 const EMPTY_RENAME_MATCHES: SearchMatch[] = [];
@@ -38,10 +39,8 @@ export class RenameController {
 		return LuaLexer.isIdentifierPart(value.charAt(0));
 	};
 
-	public constructor() {}
-
-	public begin(options: RenameStartOptions): boolean {
-		const lookup = resolveReferenceLookup(options);
+	public begin(runtime: Runtime, options: RenameStartOptions): boolean {
+		const lookup = resolveReferenceLookup({ ...options, runtime });
 		if (lookup.kind === 'error') {
 			showEditorMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
 			return false;
@@ -76,11 +75,11 @@ export class RenameController {
 		this.close();
 	}
 
-	public handleInput(): void {
+	public handleInput(runtime: Runtime): void {
 		if (!this.active) {
 			return;
 		}
-		handleRenameControllerInput(this);
+		handleRenameControllerInput(runtime, this);
 	}
 
 	public getField(): TextField {
@@ -115,7 +114,7 @@ export class RenameController {
 		return this.matches;
 	}
 
-	public commit(): void {
+	public commit(runtime: Runtime): void {
 		if (!this.active || !this.info) {
 			return;
 		}
@@ -134,7 +133,7 @@ export class RenameController {
 				this.close();
 				return;
 		}
-		const updatedMatches = commitRename(this.matches, nextName, this.activeIndex, this.info);
+		const updatedMatches = commitRename(runtime, this.matches, nextName, this.activeIndex, this.info);
 		showEditorMessage(`Renamed ${updatedMatches} reference${updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 		this.close();
 	}

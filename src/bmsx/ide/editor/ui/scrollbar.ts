@@ -2,14 +2,7 @@ import { clamp } from '../../../common/clamp';
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../../common/constants';
 import type { ScrollbarKind } from '../../common/models';
 import type { RectBounds } from '../../../rompack/format';
-import { getCodeAreaBounds } from './view/view';
-import { ensureVisualLines } from '../common/text/layout';
-import { resourcePanel } from '../../workbench/contrib/resources/panel/controller';
 import { api } from '../../runtime/overlay_api';
-import { setResourceViewerScroll } from '../../workbench/contrib/resources/viewer';
-import { getActiveResourceViewer } from '../../workbench/contrib/resources/view_tabs';
-import { editorCaretState } from './view/caret/state';
-import { editorViewState } from './view/state';
 
 export class Scrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';
@@ -238,43 +231,5 @@ export class ScrollbarController {
 
 	private pointInRect(x: number, y: number, r: RectBounds): boolean {
 		return x >= r.left && x < r.right && y >= r.top && y < r.bottom;
-	}
-}
-
-export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void {
-	switch (kind) {
-		case 'codeVertical': {
-			ensureVisualLines();
-			editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(Math.round(scroll), editorViewState.layout.getVisualLineCount(), editorViewState.cachedVisibleRowCount);
-			editorCaretState.cursorRevealSuspended = true;
-			break;
-		}
-		case 'codeHorizontal': {
-			if (editorViewState.wordWrapEnabled) {
-				editorViewState.scrollColumn = 0;
-				break;
-			}
-			editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(Math.round(scroll), editorViewState.cachedMaxScrollColumn);
-			editorCaretState.cursorRevealSuspended = true;
-			break;
-		}
-		case 'resourceVertical': {
-			resourcePanel.setScroll(scroll);
-			resourcePanel.setFocused(true);
-			break;
-		}
-		case 'resourceHorizontal': {
-			resourcePanel.setHScroll(scroll);
-			resourcePanel.setFocused(true);
-			break;
-		}
-		case 'viewerVertical': {
-			const viewer = getActiveResourceViewer();
-			if (!viewer) {
-				break;
-			}
-			setResourceViewerScroll(viewer, getCodeAreaBounds(), editorViewState.lineHeight, scroll);
-			break;
-		}
 	}
 }

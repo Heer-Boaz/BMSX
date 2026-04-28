@@ -1,4 +1,4 @@
-import { Runtime } from '../../../../machine/runtime/runtime';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 import * as workbenchMode from '../../mode';
 import { type LuaDebuggerSessionMetrics } from '../../../../lua/debugger';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
@@ -8,48 +8,32 @@ import { focusChunkSource } from '../resources/navigation';
 import { getActiveCodeTabContext } from '../../ui/code_tab/contexts';
 import { clamp, clamp_fallback } from '../../../../common/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
-import { resetPointerClickTracking, editorPointerState } from '../../../editor/input/pointer/state';
+import { resetPointerClickTracking, editorPointerState } from '../../../input/pointer/state';
 import { resetBlink } from '../../../editor/render/caret';
 import type { LuaCallFrame } from '../../../../lua/runtime';
 import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame } from '../../../../lua/value';
 import * as constants from '../../../common/constants';
 import { findFunctionDefinitionRowInActiveFile } from '../../../editor/contrib/intellisense/engine';
-import { clearExecutionStopHighlights, setExecutionStopHighlight, clearRuntimeErrorOverlay } from '../../error/navigation';
+import { clearExecutionStopHighlights, setExecutionStopHighlightForCurrentContext, clearRuntimeErrorOverlay } from '../../../runtime_error/navigation';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 
-type DebuggerResumeCommand = 'continue' | 'step_over' | 'step_into' | 'step_out' | 'ignore_exception' | 'step_out_exception';
+export type DebuggerResumeCommand = 'continue' | 'step_over' | 'step_into' | 'step_out' | 'ignore_exception' | 'step_out_exception';
 
 const DEBUGGER_LOG_PREFIX = '[Debugger]';
 
-export class RuntimeDebuggerCommandExecutor {
-	private static _instance: RuntimeDebuggerCommandExecutor = null;
+export class DebuggerUiController {
+	private hasActiveSuspension = getLastDebuggerPauseEvent() !== null;
+	private readonly unsubscribeLifecycle: () => void;
 
-	public static get instance(): RuntimeDebuggerCommandExecutor {
-		if (!RuntimeDebuggerCommandExecutor._instance) {
-			RuntimeDebuggerCommandExecutor._instance = new RuntimeDebuggerCommandExecutor();
-		}
-		return RuntimeDebuggerCommandExecutor._instance;
+	public constructor(private readonly runtime: Runtime) {
+		updateExecutionState(getDebuggerExecutionState());
+		syncRuntimeBreakpoints(runtime);
+		this.unsubscribeLifecycle = subscribeDebuggerLifecycleEvents(event => this.handleLifecycleEvent(event));
 	}
 
 	public dispose(): void {
-		if (RuntimeDebuggerCommandExecutor._instance === this) {
-			RuntimeDebuggerCommandExecutor._instance = null;
-		}
-	}
-
-	private hasActiveSuspension = getLastDebuggerPauseEvent() !== null;
-
-	constructor() {
-		subscribeDebuggerLifecycleEvents((event: DebuggerLifecycleEvent) => {
-			if (event.type === 'paused' || event.type === 'exception_frame_focus') {
-				this.hasActiveSuspension = true;
-				return;
-			}
-			if (event.type === 'continued') {
-				this.hasActiveSuspension = false;
-			}
-		});
+		this.unsubscribeLifecycle();
 	}
 
 	public get suspended(): boolean {
@@ -61,11 +45,6 @@ export class RuntimeDebuggerCommandExecutor {
 			this.logCommand(command, false, 'no_suspension');
 			return false;
 		}
-		const runtime = Runtime.instance;
-		if (!runtime) {
-			this.logCommand(command, false, 'runtime_unavailable');
-			return false;
-		}
 		const handled = this.dispatchCommand(command);
 		if (!handled) {
 			this.logCommand(command, false, 'unsupported_command');
@@ -75,27 +54,47 @@ export class RuntimeDebuggerCommandExecutor {
 		return true;
 	}
 
+	public navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void {
+		navigateToRuntimeErrorFrameTargetForRuntime(this.runtime, frame);
+	}
+
+	private handleLifecycleEvent(event: DebuggerLifecycleEvent): void {
+		if (event.type === 'continued') {
+			this.hasActiveSuspension = false;
+			updateExecutionState('running');
+			editorDebuggerState.controls.sessionMetrics = null;
+			clearDebuggerPauseOverlay();
+			return;
+		}
+		this.hasActiveSuspension = true;
+		if (event.type === 'paused') {
+			editorDebuggerState.controls.sessionMetrics = event.metrics;
+		}
+		updateExecutionState('paused');
+		showDebuggerPauseOverlay(this.runtime, event.payload, event.type === 'paused' ? event.metrics : null);
+	}
+
 	private dispatchCommand(command: DebuggerResumeCommand): boolean {
 		try {
 			switch (command) {
 				case 'continue':
-					workbenchMode.continueLuaDebugger();
+					workbenchMode.continueLuaDebugger(this.runtime);
 					return true;
 				case 'step_over':
-					workbenchMode.stepOverLuaDebugger();
+					workbenchMode.stepOverLuaDebugger(this.runtime);
 					return true;
 				case 'step_into':
-					workbenchMode.stepIntoLuaDebugger();
+					workbenchMode.stepIntoLuaDebugger(this.runtime);
 					return true;
 				case 'step_out':
-					workbenchMode.stepOutLuaDebugger();
+					workbenchMode.stepOutLuaDebugger(this.runtime);
 					return true;
 				case 'ignore_exception':
-					workbenchMode.ignoreLuaException();
+					workbenchMode.ignoreLuaException(this.runtime);
 					return true;
 				case 'step_out_exception':
-					workbenchMode.stepOutLuaDebugger();
-					workbenchMode.ignoreLuaException();
+					workbenchMode.stepOutLuaDebugger(this.runtime);
+					workbenchMode.ignoreLuaException(this.runtime);
 					return true;
 				default:
 					return false;
@@ -110,29 +109,7 @@ export class RuntimeDebuggerCommandExecutor {
 		console.log(`${DEBUGGER_LOG_PREFIX} command=${command} handled=${handled} reason=${reason}`);
 	}
 }
-let initialized = false;
 
-export function initializeDebuggerUiState(): void {
-	if (initialized) {
-		return;
-	}
-	initialized = true;
-	updateExecutionState(getDebuggerExecutionState());
-	subscribeDebuggerLifecycleEvents(handleDebuggerLifecycleEvent);
-}
-function handleDebuggerLifecycleEvent(event: DebuggerLifecycleEvent): void {
-	if (event.type === 'continued') {
-		updateExecutionState('running');
-		editorDebuggerState.controls.sessionMetrics = null;
-		return;
-	}
-	if (event.type === 'paused') {
-		editorDebuggerState.controls.sessionMetrics = event.metrics;
-		updateExecutionState('paused');
-		return;
-	}
-	updateExecutionState('paused');
-}
 function updateExecutionState(state: DebuggerExecutionState): void {
 	if (editorDebuggerState.controls.executionState === state) {
 		return;
@@ -161,7 +138,7 @@ export function getBreakpointsForChunk(path: string): ReadonlySet<number> {
 	return bucket ? bucket : emptyBreakpoints;
 }
 
-export function toggleBreakpoint(path: string, line: number): BreakpointToggleResult {
+export function toggleBreakpoint(runtime: Runtime, path: string, line: number): BreakpointToggleResult {
 	if (line === null) {
 		return 'unchanged';
 	}
@@ -173,11 +150,11 @@ export function toggleBreakpoint(path: string, line: number): BreakpointToggleRe
 			editorDebuggerState.breakpoints.delete(pathKey);
 		}
 
-		syncRuntimeBreakpoints();
+		syncRuntimeBreakpoints(runtime);
 		return 'removed';
 	}
 	bucket.add(line);
-	syncRuntimeBreakpoints();
+	syncRuntimeBreakpoints(runtime);
 	return 'added';
 }
 
@@ -199,10 +176,10 @@ export function serializeBreakpoints(): SerializedBreakpointMap {
 	return payload;
 }
 
-export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap | null): void {
+export function restoreBreakpointsFromPayload(runtime: Runtime, payload: SerializedBreakpointMap | null): void {
 	editorDebuggerState.breakpoints.clear();
 	if (payload === null) {
-		syncRuntimeBreakpoints();
+		syncRuntimeBreakpoints(runtime);
 		return;
 	}
 	for (const path in payload) {
@@ -212,11 +189,11 @@ export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap |
 		}
 		editorDebuggerState.breakpoints.set(path, new Set(lineEntries));
 	}
-	syncRuntimeBreakpoints();
+	syncRuntimeBreakpoints(runtime);
 }
 
-export function syncRuntimeBreakpoints(): void {
-	Runtime.instance.debuggerController.setBreakpoints(editorDebuggerState.breakpoints);
+export function syncRuntimeBreakpoints(runtime: Runtime): void {
+	runtime.debuggerController.setBreakpoints(editorDebuggerState.breakpoints);
 }
 
 export function getActiveBreakpointPath(): string {
@@ -224,7 +201,7 @@ export function getActiveBreakpointPath(): string {
 	return context.descriptor.path;
 }
 
-export function toggleBreakpointForEditorRow(row: number = editorDocumentState.cursorRow): boolean {
+export function toggleBreakpointForEditorRow(runtime: Runtime, row: number = editorDocumentState.cursorRow): boolean {
 	if (row < 0 || row >= editorDocumentState.buffer.getLineCount()) {
 		return false;
 	}
@@ -234,7 +211,7 @@ export function toggleBreakpointForEditorRow(row: number = editorDocumentState.c
 		return false;
 	}
 	const lineNumber = row + 1;
-	const result = toggleBreakpoint(path, lineNumber);
+	const result = toggleBreakpoint(runtime, path, lineNumber);
 	if (result === 'unchanged') {
 		return false;
 	}
@@ -248,7 +225,7 @@ const MESSAGE_BY_REASON: Record<DebuggerPauseDisplayPayload['reason'], string> =
 	exception: 'Paused on exception',
 };
 
-export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, metrics: LuaDebuggerSessionMetrics): void {
+function showDebuggerPauseOverlay(runtime: Runtime, payload: DebuggerPauseDisplayPayload, metrics: LuaDebuggerSessionMetrics): void {
 	if (!editorRuntimeState.active) {
 		return;
 	}
@@ -257,11 +234,11 @@ export function showDebuggerPauseOverlay(payload: DebuggerPauseDisplayPayload, m
 		clearExecutionStopHighlights();
 		return;
 	}
-	focusChunkSource(normalizedChunk);
+	focusChunkSource(runtime, normalizedChunk);
 	const safeLine = clamp_fallback(payload.line, 1, payload.line - 1, 1);
 	const safeColumn = clamp_fallback(payload.column, 1, payload.column - 1, 1);
 	updateDebuggerCaret(safeLine, safeColumn);
-	setExecutionStopHighlight(safeLine);
+		setExecutionStopHighlightForCurrentContext(safeLine);
 	const baseMessage = MESSAGE_BY_REASON[payload.reason] ?? 'Debugger paused';
 	const metricsText = formatDebuggerMetrics(metrics);
 	const message = metricsText ? `${baseMessage} — ${metricsText}` : baseMessage;
@@ -308,7 +285,7 @@ function formatDebuggerMetrics(metrics: LuaDebuggerSessionMetrics): string {
 	return parts.join(' · ');
 }
 
-export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void {
+function navigateToRuntimeErrorFrameTargetForRuntime(runtime: Runtime, frame: StackTraceFrame): void {
 	if (frame.origin !== 'lua') {
 		return;
 	}
@@ -319,7 +296,7 @@ export function navigateToRuntimeErrorFrameTarget(frame: StackTraceFrame): void 
 	}
 	const normalizedChunk = source;
 	try {
-		focusChunkSource(normalizedChunk);
+		focusChunkSource(runtime, normalizedChunk);
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		showEditorMessage(`Failed to open runtime path: ${message}`, constants.COLOR_STATUS_ERROR, 1.6);
@@ -435,13 +412,3 @@ export function getDebuggerExecutionState(): DebuggerExecutionState {
 export function getLastDebuggerPauseEvent(): DebuggerLifecyclePausedEvent {
 	return lastPausedEvent;
 }
-
-subscribeDebuggerLifecycleEvents((event: DebuggerLifecycleEvent) => {
-	if (event.type === 'paused' || event.type === 'exception_frame_focus') {
-		showDebuggerPauseOverlay(event.payload, event.type === 'paused' ? event.metrics : null);
-		return;
-	}
-	if (event.type === 'continued') {
-		clearDebuggerPauseOverlay();
-	}
-});

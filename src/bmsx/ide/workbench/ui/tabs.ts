@@ -4,13 +4,12 @@ import { editorChromeState } from './chrome_state';
 import { editorDiagnosticsState } from '../../editor/contrib/diagnostics/state';
 import { editorViewState } from '../../editor/ui/view/state';
 import type { CodeTabContext, EditorTabDescriptor, EditorTabKind } from '../../common/models';
-import { beginNavigationCapture, completeNavigation } from '../../editor/navigation/navigation_history';
+import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { closeLineJump } from '../../editor/contrib/find/line_jump';
 import { closeSymbolSearch } from '../../editor/contrib/symbols/shared';
-import { getCodeAreaBounds, hideResourcePanel } from '../../editor/ui/view/view';
+import { getCodeAreaBounds } from '../../editor/ui/view/view';
 import { closeSearch } from '../../editor/contrib/find/search';
 import { clampResourceViewerScroll } from '../contrib/resources/viewer';
-import { editorPointerState } from '../../editor/input/pointer/state';
 import { runtimeErrorState } from '../../editor/contrib/runtime_error/state';
 import { editorCaretState } from '../../editor/ui/view/caret/state';
 import {
@@ -21,6 +20,10 @@ import { activateCodeEditorTab, applyActiveCodeTabSelection, storeActiveCodeTabC
 import { endTabDrag } from './tab/drag';
 import { codeTabSessionState } from './code_tab/session_state';
 import { tabSessionState } from './tab/session_state';
+import type { Runtime } from '../../../machine/runtime/runtime';
+import type { ResourcePanelController } from '../contrib/resources/panel/controller';
+
+let resourcePanelForTabs: ResourcePanelController = undefined!;
 
 function activateResourceViewerTab(tab: EditorTabDescriptor): void {
 	closeSearch(false, true);
@@ -36,13 +39,14 @@ function activateResourceViewerTab(tab: EditorTabDescriptor): void {
 	clampResourceViewerScroll(tab.resource, getCodeAreaBounds(), editorViewState.lineHeight);
 }
 
-export function initializeTabs(initialContext: CodeTabContext = null): void {
+export function initializeTabs(initialContext: CodeTabContext, resourcePanel: ResourcePanelController): void {
+	resourcePanelForTabs = resourcePanel;
 	tabSessionState.tabs = [];
-	editorPointerState.tabHoverId = null;
-	editorPointerState.tabDragState = null;
+	editorChromeState.tabHoverId = null;
+	editorChromeState.tabDragState = null;
 	editorChromeState.tabButtonBounds.clear();
 	editorChromeState.tabCloseButtonBounds.clear();
-	const context = initialContext ?? createEntryTabContext();
+	const context = initialContext;
 	codeTabSessionState.contexts.set(context.id, context);
 	upsertCodeEditorTab(context);
 	tabSessionState.activeTabId = context.id;
@@ -84,7 +88,8 @@ export function setActiveTab(tabId: string, selection?: CodeTabSelection): void 
 		activateResourceViewerTab(tab);
 		return;
 	}
-	hideResourcePanel();
+	resourcePanelForTabs.hide();
+	editorChromeState.resourcePanelResizing = false;
 	activateCodeEditorTab(tab.id, selection);
 	if (navigationCheckpoint) {
 		completeNavigation(navigationCheckpoint);
@@ -112,13 +117,13 @@ export function isTabActive(tabId: string): boolean {
 	return tabSessionState.activeTabId === tabId;
 }
 
-export function closeTab(tabId: string): void {
+export function closeTab(runtime: Runtime, tabId: string): void {
 	const index = tabSessionState.tabs.findIndex(tab => tab.id === tabId);
 	const tab = tabSessionState.tabs[index];
 	if (!tab.closable) {
 		return;
 	}
-	if (editorPointerState.tabDragState && editorPointerState.tabDragState.tabId === tabId) {
+	if (editorChromeState.tabDragState && editorChromeState.tabDragState.tabId === tabId) {
 		endTabDrag();
 	}
 	const isActive = tabSessionState.activeTabId === tabId;
@@ -134,7 +139,7 @@ export function closeTab(tabId: string): void {
 		editorDiagnosticsState.diagnosticsCache.delete(tab.id);
 	}
 	if (tabSessionState.tabs.length === 0) {
-		initializeTabs();
+		initializeTabs(createEntryTabContext(runtime), resourcePanelForTabs);
 	}
 }
 
@@ -157,9 +162,9 @@ export function isActive(): boolean {
 	return editorRuntimeState.active;
 }
 
-export function closeActiveTab(): void {
+export function closeActiveTab(runtime: Runtime): void {
 	if (!tabSessionState.activeTabId) {
 		return;
 	}
-	closeTab(tabSessionState.activeTabId);
+	closeTab(runtime, tabSessionState.activeTabId);
 }

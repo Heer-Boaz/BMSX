@@ -6,7 +6,7 @@ import type {
 } from '../../lua/semantic_contracts';
 import type { ResourceDescriptor } from '../../rompack/resource';
 import type { StackTraceFrame } from '../../lua/value';
-import type { EditorCommandId } from '../editor/input/commands/dispatcher';
+import type { EditorCommandId } from './commands';
 import { RectBounds } from '../../rompack/format';
 import type { TextBuffer } from '../editor/text/text_buffer';
 import type { EditorUndoRecord } from '../editor/text/undo';

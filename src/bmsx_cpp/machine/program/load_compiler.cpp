@@ -200,7 +200,7 @@ CompiledParamPath compileParamPath(
 		};
 	}
 	if (expression.kind == LuaSyntaxKind::MemberExpression) {
-		CompiledParamPath base = compileParamPath(chunkName, *expression.base, paramIndexByName);
+		CompiledParamPath base = compileParamPath(runtime, chunkName, *expression.base, paramIndexByName);
 		base.path.push_back({
 			.kind = LoadSubsetPathStep::Kind::Field,
 			.fieldKey = runtime.machine().cpu().internString(expression.name),
@@ -208,8 +208,8 @@ CompiledParamPath compileParamPath(
 		return base;
 	}
 	if (expression.kind == LuaSyntaxKind::IndexExpression) {
-		CompiledParamPath base = compileParamPath(chunkName, *expression.base, paramIndexByName);
-		base.path.push_back(compilePathStep(chunkName, *expression.index));
+		CompiledParamPath base = compileParamPath(runtime, chunkName, *expression.base, paramIndexByName);
+		base.path.push_back(compilePathStep(runtime, chunkName, *expression.index));
 		return base;
 	}
 	fail(chunkName, "expected a parameter path expression", &expression.range);
@@ -256,10 +256,10 @@ LoadSubsetValueExpr compileValueExpr(
 			.kind = LoadSubsetValueExpr::Kind::Literal,
 			.rootParamIndex = 0,
 			.path = {},
-			.literal = compileLiteralExpr(chunkName, expression),
+			.literal = compileLiteralExpr(runtime, chunkName, expression),
 		};
 	}
-	CompiledParamPath paramPath = compileParamPath(chunkName, expression, paramIndexByName);
+	CompiledParamPath paramPath = compileParamPath(runtime, chunkName, expression, paramIndexByName);
 	return {
 		.kind = LoadSubsetValueExpr::Kind::Param,
 		.rootParamIndex = paramPath.rootParamIndex,
@@ -280,14 +280,14 @@ LoadSubsetOp compileAssignment(
 	if (statement.left.size() != 1 || statement.right.size() != 1) {
 		fail(chunkName, "only single-target assignments are supported", &statement.range);
 	}
-	CompiledParamPath target = compileParamPath(chunkName, statement.left[0], paramIndexByName);
+	CompiledParamPath target = compileParamPath(runtime, chunkName, statement.left[0], paramIndexByName);
 	if (target.path.empty()) {
 		fail(chunkName, "direct parameter assignment is unsupported", &statement.left[0].range);
 	}
 	return {
 		.rootParamIndex = target.rootParamIndex,
 		.path = std::move(target.path),
-		.valueExpr = compileValueExpr(chunkName, statement.right[0], paramIndexByName),
+		.valueExpr = compileValueExpr(runtime, chunkName, statement.right[0], paramIndexByName),
 	};
 }
 
@@ -310,7 +310,7 @@ LoadSubsetCompiledFunction compileFunctionExpression(Runtime& runtime, const std
 		if (statement.kind != LuaSyntaxKind::AssignmentStatement) {
 			fail(chunkName, "only assignment statements are supported inside loadstring functions", &statement.range);
 		}
-		compiled.ops.push_back(compileAssignment(chunkName, statement, paramIndexByName));
+		compiled.ops.push_back(compileAssignment(runtime, chunkName, statement, paramIndexByName));
 	}
 	return compiled;
 }
@@ -323,7 +323,7 @@ LoadSubsetCompiledFunction compileReturnedFunction(Runtime& runtime, const std::
 	if (expression.kind != LuaSyntaxKind::FunctionExpression || expression.functionValue == nullptr) {
 		fail(chunkName, "chunk must return a function expression", &expression.range);
 	}
-	return compileFunctionExpression(chunkName, *expression.functionValue);
+	return compileFunctionExpression(runtime, chunkName, *expression.functionValue);
 }
 
 LoadSubsetCompiledFunction compileChunk(Runtime& runtime, const std::string& chunkName, const LuaChunk& chunk) {
@@ -334,7 +334,7 @@ LoadSubsetCompiledFunction compileChunk(Runtime& runtime, const std::string& chu
 	if (statement.kind != LuaSyntaxKind::ReturnStatement) {
 		fail(chunkName, "chunk must contain exactly one return statement", &statement.range);
 	}
-	return compileReturnedFunction(chunkName, statement);
+	return compileReturnedFunction(runtime, chunkName, statement);
 }
 
 Value buildNativeFunction(Runtime& runtime, const LoadSubsetCompiledFunction& compiled, const std::string& chunkName) {
@@ -362,8 +362,8 @@ Value compileLoadChunk(Runtime& runtime, std::string_view source, std::string_vi
 	LuaParser parser(tokens, chunkName, source);
 	const LuaChunk chunk = parser.parseChunk();
 	const std::string chunkNameString(chunkName);
-	const LoadSubsetCompiledFunction compiled = compileChunk(chunkNameString, chunk);
-	return buildNativeFunction(compiled, chunkNameString);
+	const LoadSubsetCompiledFunction compiled = compileChunk(runtime, chunkNameString, chunk);
+	return buildNativeFunction(runtime, compiled, chunkNameString);
 }
 
 } // namespace bmsx

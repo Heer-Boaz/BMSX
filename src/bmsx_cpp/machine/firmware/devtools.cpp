@@ -96,9 +96,9 @@ std::string getRuntimeLuaEntryPath(Runtime& runtime) {
 }
 
 std::string getRuntimeLuaResourceSource(Runtime& runtime, const std::string& path) {
-	const LuaSourceAsset* source = resolveRuntimeLuaSource(path);
+	const LuaSourceAsset* source = resolveRuntimeLuaSource(runtime, path);
 	if (!source) {
-		throw BMSX_RUNTIME_ERROR("[devtools.get_lua_resource_source] Missing Lua resource for path '" + path + "'. Available: " + summarizeLuaPaths(16));
+		throw BMSX_RUNTIME_ERROR("[devtools.get_lua_resource_source] Missing Lua resource for path '" + path + "'. Available: " + summarizeLuaPaths(runtime, 16));
 	}
 	return source->source;
 }
@@ -145,11 +145,11 @@ void registerRuntimeDevtoolsTable(Runtime& runtime) {
 	}));
 	devtools->set(key("get_lua_entry_path"), cpu.createNativeFunction("devtools.get_lua_entry_path", [&runtime](NativeArgsView args, NativeResults& out) {
 		(void)args;
-		out.push_back(valueString(runtime.machine().cpu().internString(getRuntimeLuaEntryPath())));
+		out.push_back(valueString(runtime.machine().cpu().internString(getRuntimeLuaEntryPath(runtime))));
 	}));
 	devtools->set(key("get_lua_resource_source"), cpu.createNativeFunction("devtools.get_lua_resource_source", [&runtime](NativeArgsView args, NativeResults& out) {
 		const std::string& path = runtime.machine().cpu().stringPool().toString(asStringId(args.at(0)));
-		out.push_back(valueString(runtime.machine().cpu().internString(getRuntimeLuaResourceSource(path))));
+		out.push_back(valueString(runtime.machine().cpu().internString(getRuntimeLuaResourceSource(runtime, path))));
 	}));
 	runtime.setGlobal("devtools", valueTable(devtools));
 }

@@ -6,6 +6,7 @@ import { editorRuntimeState } from '../../common/runtime_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState } from './state';
 import { cacheRuntimeSemanticParseState } from '../intellisense/semantic/workspace/runtime';
 import { getCodeTabContexts } from '../../../workbench/ui/code_tab/contexts';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export type DiagnosticContextInput = {
 	id: string;
@@ -22,6 +23,7 @@ export type DiagnosticProviders = {
 };
 
 export function computeAggregatedEditorDiagnostics(
+	runtime: Runtime,
 	contexts: ReadonlyArray<DiagnosticContextInput>,
 	providers: DiagnosticProviders,
 ): EditorDiagnostic[] {
@@ -43,9 +45,9 @@ export function computeAggregatedEditorDiagnostics(
 		});
 		const baseLines = parseEntry.lines;
 		const parsed = parseEntry.parsed;
-		cacheRuntimeSemanticParseState(path, source, baseLines, parsed);
+		cacheRuntimeSemanticParseState(runtime, path, source, baseLines, parsed);
 		const localSymbols = providers.listLocalSymbols(path);
-		const luaDiagnostics = computeLuaDiagnostics({
+		const luaDiagnostics = computeLuaDiagnostics(runtime, {
 			source,
 			path,
 			localSymbols,

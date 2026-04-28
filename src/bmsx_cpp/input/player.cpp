@@ -4,8 +4,6 @@
 
 #include "player.h"
 #include "action_parser.h"
-#include "core/engine.h"
-#include "../machine/runtime/runtime.h"
 #include "common/clamp.h"
 #include <algorithm>
 #include <cmath>
@@ -700,7 +698,7 @@ i64 PlayerInput::normalizeGuardWindow(std::optional<f64> windowOverride) {
 	const f64 guardMs = windowOverride.has_value() && windowOverride.value() >= 0.0
 		? clamp(windowOverride.value(), ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS)
 		: ACTION_GUARD_MIN_MS;
-	return std::max<i64>(1, static_cast<i64>(std::ceil(guardMs / Runtime::instance().timing.frameDurationMs)));
+	return std::max<i64>(1, static_cast<i64>(std::ceil(guardMs / m_frameDurationMs)));
 }
 
 PlayerInput::RepeatResult PlayerInput::evaluateRawActionRepeat(const std::string& action,
@@ -714,7 +712,7 @@ PlayerInput::RepeatResult PlayerInput::evaluateRawActionRepeat(const std::string
 		bool result = false;
 		const f64 now = m_lastPollTimestampMs.value();
 		const f64 startMs = buttonPressedAtOr(state, now);
-		const f64 frameMs = Runtime::instance().timing.frameDurationMs;
+		const f64 frameMs = m_frameDurationMs;
 		const f64 initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * frameMs;
 		const f64 repeatIntervalMs = REPEAT_INTERVAL_FRAMES * frameMs;
 

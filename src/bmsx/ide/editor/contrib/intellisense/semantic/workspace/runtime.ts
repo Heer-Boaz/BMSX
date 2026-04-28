@@ -1,6 +1,5 @@
 import type { ParsedLuaChunk } from '../../../../../../lua/analysis/parse';
 import { splitText } from '../../../../../../common/text_lines';
-import { Runtime } from '../../../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../../../runtime/lua_pipeline';
 import {
 	getOrCreateSemanticWorkspace,
@@ -8,11 +7,12 @@ import {
 	type SemanticWorkspacePathInput,
 } from './state';
 import type { FileSemanticData, LuaSemanticWorkspace, LuaSemanticWorkspaceSnapshot } from '../../../../../../lua/semantic/model';
+import type { Runtime } from '../../../../../../machine/runtime/runtime';
 
 let primedProjectWorkspace: LuaSemanticWorkspace = null;
 
-export function cacheRuntimeSemanticWorkspaceAnalysis(path: string, source: string, data: FileSemanticData, parsed?: ParsedLuaChunk): void {
-	Runtime.instance.pathSemanticCache.set(path, {
+export function cacheRuntimeSemanticWorkspaceAnalysis(runtime: Runtime, path: string, source: string, data: FileSemanticData, parsed?: ParsedLuaChunk): void {
+	runtime.pathSemanticCache.set(path, {
 		source,
 		model: data.model,
 		definitions: data.model.definitions,
@@ -22,9 +22,9 @@ export function cacheRuntimeSemanticWorkspaceAnalysis(path: string, source: stri
 	});
 }
 
-export function cacheRuntimeSemanticParseState(path: string, source: string, lines: readonly string[], parsed: ParsedLuaChunk): void {
-	const cacheEntry = Runtime.instance.pathSemanticCache.get(path);
-	Runtime.instance.pathSemanticCache.set(path, {
+export function cacheRuntimeSemanticParseState(runtime: Runtime, path: string, source: string, lines: readonly string[], parsed: ParsedLuaChunk): void {
+	const cacheEntry = runtime.pathSemanticCache.get(path);
+	runtime.pathSemanticCache.set(path, {
 		source,
 		model: cacheEntry?.model,
 		definitions: cacheEntry?.definitions,
@@ -33,23 +33,22 @@ export function cacheRuntimeSemanticParseState(path: string, source: string, lin
 	});
 }
 
-export function syncRuntimeSemanticWorkspacePath(input: SemanticWorkspacePathInput, workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace()): FileSemanticData {
+export function syncRuntimeSemanticWorkspacePath(runtime: Runtime, input: SemanticWorkspacePathInput, workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace()): FileSemanticData {
 	const data = syncSemanticWorkspacePath(input, workspace);
-	cacheRuntimeSemanticWorkspaceAnalysis(input.path, data.source, data, data.parsed);
+	cacheRuntimeSemanticWorkspaceAnalysis(runtime, input.path, data.source, data, data.parsed);
 	return data;
 }
 
-export function primeRuntimeSemanticWorkspaceProjectSources(workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace()): LuaSemanticWorkspace {
+export function primeRuntimeSemanticWorkspaceProjectSources(runtime: Runtime, workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace()): LuaSemanticWorkspace {
 	if (primedProjectWorkspace === workspace) {
 		return workspace;
 	}
-	const runtime = Runtime.instance;
-	const registries = luaPipeline.listLuaSourceRegistries();
+	const registries = luaPipeline.listLuaSourceRegistries(runtime);
 	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
 		const path2lua = registries[registryIndex]!.registry.path2lua;
 		for (const path in path2lua) {
 			const cacheEntry = runtime.pathSemanticCache.get(path);
-			const source = cacheEntry ? cacheEntry.source : luaPipeline.resourceSourceForChunk(path);
+			const source = cacheEntry ? cacheEntry.source : luaPipeline.resourceSourceForChunk(runtime, path);
 			const existing = workspace.getFileData(path);
 			if (existing && existing.source === source) {
 				continue;
@@ -58,16 +57,16 @@ export function primeRuntimeSemanticWorkspaceProjectSources(workspace: LuaSemant
 			const parsed = cacheEntry?.parsed;
 			workspace.updateFile(path, source, lines, parsed, undefined);
 			const data = workspace.getFileData(path);
-			cacheRuntimeSemanticWorkspaceAnalysis(path, source, data, parsed);
+			cacheRuntimeSemanticWorkspaceAnalysis(runtime, path, source, data, parsed);
 		}
 	}
 	primedProjectWorkspace = workspace;
 	return workspace;
 }
 
-export function prepareRuntimeSemanticWorkspaceForEditorBuffer(input: SemanticWorkspacePathInput): LuaSemanticWorkspaceSnapshot {
+export function prepareRuntimeSemanticWorkspaceForEditorBuffer(runtime: Runtime, input: SemanticWorkspacePathInput): LuaSemanticWorkspaceSnapshot {
 	const workspace = getOrCreateSemanticWorkspace();
-	syncRuntimeSemanticWorkspacePath(input, workspace);
-	primeRuntimeSemanticWorkspaceProjectSources(workspace);
+	syncRuntimeSemanticWorkspacePath(runtime, input, workspace);
+	primeRuntimeSemanticWorkspaceProjectSources(runtime, workspace);
 	return workspace.getSnapshot();
 }

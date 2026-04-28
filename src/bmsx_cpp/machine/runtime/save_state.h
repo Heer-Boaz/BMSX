@@ -4,7 +4,6 @@
 #include "machine/firmware/api.h"
 #include "render/runtime/state.h"
 #include "machine/runtime/save_machine_state.h"
-#include "machine/runtime/game/view_state.h"
 
 namespace bmsx {
 
@@ -14,7 +13,6 @@ struct RuntimeSaveState {
 	RuntimeSaveMachineState machineState;
 	CpuRuntimeState cpuState;
 	RuntimeStorageState storageState;
-	GameViewState gameViewState;
 	RuntimeRenderState renderState;
 	uint32_t randomSeed = 0;
 	bool pendingEntryCall = false;

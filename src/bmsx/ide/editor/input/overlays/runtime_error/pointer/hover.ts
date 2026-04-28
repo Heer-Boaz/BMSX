@@ -19,13 +19,14 @@ export function updateRuntimeErrorOverlayPointerHover(
 	snapshot: PointerSnapshot,
 	codeTop: number,
 	codeRight: number,
-	textLeft: number
+	textLeft: number,
+	contentBottom: number
 ): number {
 	const overlay = runtimeErrorState.activeOverlay;
 	if (!overlay || overlay.hidden) {
 		return RUNTIME_ERROR_OVERLAY_POINTER_NONE;
 	}
-	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft);
+	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft, contentBottom);
 	const anchor = resolveRuntimeErrorOverlayAnchor(overlay, codeTop, textLeft, geometry.contentRight, geometry.availableBottom);
 	if (!anchor) {
 		overlay.layout = null;

@@ -1,4 +1,5 @@
 import type { PointerSnapshot } from '../../../common/models';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 import {
 	closeActionPrompt,
 	drawActionPromptOverlay,
@@ -19,17 +20,17 @@ export function closeBlockingWorkbenchModal(): boolean {
 	return false;
 }
 
-export function handleBlockingWorkbenchModalInput(): void {
+export function handleBlockingWorkbenchModalInput(runtime: Runtime): void {
 	if (hasActionPrompt()) {
-		handleActionPromptInput();
+		handleActionPromptInput(runtime);
 	}
 }
 
-export function handleBlockingWorkbenchModalPointer(snapshot: PointerSnapshot): boolean {
+export function handleBlockingWorkbenchModalPointer(runtime: Runtime, snapshot: PointerSnapshot): boolean {
 	if (!hasActionPrompt()) {
 		return false;
 	}
-	handleActionPromptPointer(snapshot);
+	handleActionPromptPointer(runtime, snapshot);
 	return true;
 }
 

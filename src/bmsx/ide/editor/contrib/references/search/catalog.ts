@@ -15,12 +15,14 @@ import {
 	type ReferenceCatalogEntry,
 } from '../sources';
 import { getOrCreateSemanticWorkspace } from '../../intellisense/semantic/workspace/state';
+import type { Runtime } from '../../../../../machine/runtime/runtime';
 
-export function buildReferenceSearchCatalog(info: ReferenceMatchInfo, context: CodeTabContext): ReferenceCatalogEntry[] {
+export function buildReferenceSearchCatalog(runtime: Runtime, info: ReferenceMatchInfo, context: CodeTabContext): ReferenceCatalogEntry[] {
 	const path = context.descriptor.path;
 	const activeSource = getTextSnapshot(editorDocumentState.buffer);
 	const activeLines = getLinesSnapshot(editorDocumentState.buffer);
 	const environment: ProjectReferenceEnvironment = {
+		runtime,
 		activeContext: context,
 		activeSource,
 		activeLines,

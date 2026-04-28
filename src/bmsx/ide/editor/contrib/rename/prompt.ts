@@ -11,8 +11,9 @@ import { closeSymbolSearch } from '../symbols/shared';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { editorDocumentState } from '../../editing/document_state';
 import { createResourceState } from '../../../workbench/contrib/resources/widget_state';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export function openRenamePrompt(): void {
+export function openRenamePrompt(runtime: Runtime): void {
 	if (!isEditableCodeTab()) {
 		notifyReadOnlyEdit();
 		return;
@@ -26,7 +27,7 @@ export function openRenamePrompt(): void {
 	if (context.mode !== 'lua') {
 		return;
 	}
-	const started = renameController.begin({
+	const started = renameController.begin(runtime, {
 		buffer: editorDocumentState.buffer,
 		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,

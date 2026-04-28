@@ -124,21 +124,6 @@ export type RuntimeOptions = {
 	geoWorkUnitsPerSec?: number;
 };
 
-export type GameViewState = {
-	viewportSize: {
-		x: number;
-		y: number;
-	};
-	crt_postprocessing_enabled: boolean;
-	enable_noise: boolean;
-	enable_colorbleed: boolean;
-	enable_scanlines: boolean;
-	enable_blur: boolean;
-	enable_glow: boolean;
-	enable_fringing: boolean;
-	enable_aperture: boolean;
-};
-
 export type RuntimeRenderCameraState = {
 	view: number[];
 	proj: number[];
@@ -198,7 +183,6 @@ export type RuntimeResumeSnapshot = {
 	luaLocals?: LuaEntrySnapshot;
 	luaRandomSeed?: number;
 	luaProgramCounter?: number;
-	gameViewState: GameViewState;
 	renderState: RuntimeRenderState;
 	machineState: RuntimeMachineState;
 };
@@ -207,7 +191,6 @@ export type RuntimeSaveState = {
 	storageState: RuntimeStorageState;
 	machineState: RuntimeSaveMachineState;
 	cpuState: CpuRuntimeState;
-	gameViewState: GameViewState;
 	renderState: RuntimeRenderState;
 	engineProgramActive: boolean;
 	luaInitialized: boolean;

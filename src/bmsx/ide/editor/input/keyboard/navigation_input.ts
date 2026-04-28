@@ -1,14 +1,19 @@
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp } from '../../ui/view/caret/caret';
-import { goBackwardInNavigationHistory, goForwardInNavigationHistory } from '../../navigation/navigation_history';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export function handleEditorNavigationKeys(): void {
+type NavigationHistoryCommands = {
+	goBackward(): void;
+	goForward(): void;
+};
+
+export function handleEditorNavigationKeys(runtime: Runtime): void {
 	const ctrlDown = isCtrlDown();
 	const shiftDown = isShiftDown();
 	const altDown = isAltDown();
 	if (altDown) {
-		handleEditorAltNavigation(ctrlDown, shiftDown);
+		handleEditorAltNavigation(runtime.editor.navigation, ctrlDown, shiftDown);
 		return;
 	}
 	if (shouldRepeatKeyFromPlayer('ArrowLeft')) {
@@ -52,16 +57,16 @@ export function handleEditorNavigationKeys(): void {
 	}
 }
 
-function handleEditorAltNavigation(ctrlDown: boolean, shiftDown: boolean): void {
+function handleEditorAltNavigation(navigation: NavigationHistoryCommands, ctrlDown: boolean, shiftDown: boolean): void {
 	if (!ctrlDown && !shiftDown) {
 		if (isKeyJustPressed('ArrowLeft')) {
 			consumeIdeKey('ArrowLeft');
-			goBackwardInNavigationHistory();
+			navigation.goBackward();
 			return;
 		}
 		if (isKeyJustPressed('ArrowRight')) {
 			consumeIdeKey('ArrowRight');
-			goForwardInNavigationHistory();
+			navigation.goForward();
 			return;
 		}
 	}

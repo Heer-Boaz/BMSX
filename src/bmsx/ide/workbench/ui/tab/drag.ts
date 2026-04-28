@@ -4,7 +4,7 @@ import { clamp } from '../../../../common/clamp';
 import { editorChromeState } from '../chrome_state';
 import { getTabBarTotalHeight } from '../../common/layout';
 import { measureText } from '../../../editor/common/text/layout';
-import { editorPointerState, resetPointerClickTracking } from '../../../editor/input/pointer/state';
+import { resetPointerClickTracking } from '../../../input/pointer/state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { tabSessionState } from './session_state';
 
@@ -73,12 +73,12 @@ export function computeTabLayout(): TabLayoutEntry[] {
 
 export function beginTabDrag(tabId: string, pointerX: number): void {
 	if (tabSessionState.tabs.length <= 1) {
-		editorPointerState.tabDragState = null;
+		editorChromeState.tabDragState = null;
 		return;
 	}
 	const bounds = editorChromeState.tabButtonBounds.get(tabId)!;
 	const pointerOffset = pointerX - bounds.left;
-	editorPointerState.tabDragState = {
+	editorChromeState.tabDragState = {
 		tabId,
 		pointerOffset,
 		startX: pointerX,
@@ -87,7 +87,7 @@ export function beginTabDrag(tabId: string, pointerX: number): void {
 }
 
 export function updateTabDrag(pointerX: number, pointerY: number): void {
-	const state = editorPointerState.tabDragState!;
+	const state = editorChromeState.tabDragState!;
 	const distance = Math.abs(pointerX - state.startX);
 	if (!state.hasDragged && distance < constants.TAB_DRAG_ACTIVATION_THRESHOLD) {
 		return;
@@ -145,5 +145,5 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 }
 
 export function endTabDrag(): void {
-	editorPointerState.tabDragState = null;
+	editorChromeState.tabDragState = null;
 }

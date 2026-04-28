@@ -14,13 +14,13 @@ import {
 	ENGINE_LUA_BUILTIN_FUNCTIONS,
 } from './builtin_descriptors';
 import { buildMarshalContext, extendMarshalContext } from './js_bridge';
-import { api, Runtime } from '../runtime/runtime';
+import { api } from '../runtime/runtime';
+import type { Runtime } from '../runtime/runtime';
 import type { LuaBuiltinDescriptor } from '../runtime/contracts';
 
 const FIRMWARE_LUA_GLOBAL_METHODS = new Set<string>();
 
-export function registerApiBuiltins(interpreter: LuaInterpreter): void {
-	const runtime = Runtime.instance;
+export function registerApiBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
 	runtime.apiFunctionNames.clear();
 
 	const env = interpreter.globalEnvironment;
@@ -32,7 +32,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		const targetPlayer = args.length >= 2
 			? Number(args[1])
 			: 1;
-		const marshalCtx = buildMarshalContext();
+		const marshalCtx = buildMarshalContext(runtime);
 		const mappingValue = runtime.luaJsBridge.convertFromLua(mappingTable, marshalCtx) as InputMap;
 		if (!mappingValue || typeof mappingValue !== 'object') {
 			throw interpreter.runtimeError('set_input_map(mapping [, player]) requires mapping to be a table.');
@@ -55,14 +55,14 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		return [];
 	});
 
-	registerLuaGlobal(env, 'set_input_map', setInputMapNative);
-	registerLuaBuiltin({
+	registerLuaGlobal(runtime, env, 'set_input_map', setInputMapNative);
+	registerLuaBuiltin(runtime, {
 		name: 'set_input_map',
 		params: ['mapping', 'player?'],
 		signature: 'set_input_map(mapping [, player])',
 		description: 'Replaces the input bindings for the console player. The optional player argument is zero-based.',
 	});
-	registerLuaGlobal(env, 'devtools', createInterpreterDevtoolsTable(interpreter));
+	registerLuaGlobal(runtime, env, 'devtools', createInterpreterDevtoolsTable(runtime, interpreter));
 
 	const members = collectApiMembers(api);
 	for (const { name, kind, descriptor } of members) {
@@ -99,7 +99,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 				? `${name}(${displayParams.join(', ')})${returnTypeSuffix}`
 				: `${name}()${returnTypeSuffix}`;
 			if (FIRMWARE_LUA_GLOBAL_METHODS.has(name)) {
-				registerLuaBuiltin({
+				registerLuaBuiltin(runtime, {
 					name,
 					params,
 					signature,
@@ -110,11 +110,11 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 				continue;
 			}
 			const native = new LuaNativeFunction(`api.${name}`, (args) => {
-				const baseCtx = buildMarshalContext();
+				const baseCtx = buildMarshalContext(runtime);
 				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.convertFromLua(arg, extendMarshalContext(baseCtx, `arg${index}`)));
 				try {
 					const result = (api[name] as (...inner: unknown[]) => unknown).apply(api, jsArgs);
-					return wrapResultValue(result);
+					return wrapResultValue(runtime, result);
 				} catch (error) {
 					if (isLuaScriptError(error)) {
 						throw error;
@@ -123,8 +123,8 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 						throw interpreter.runtimeError(`[api.${name}] ${message}`);
 				}
 			});
-			registerLuaGlobal(env, name, native);
-			registerLuaBuiltin({
+			registerLuaGlobal(runtime, env, name, native);
+			registerLuaBuiltin(runtime, {
 				name,
 				params,
 				signature,
@@ -140,7 +140,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			const native = new LuaNativeFunction(`api.${name}`, () => {
 				try {
 					const value = getter.call(api);
-					return wrapResultValue(value);
+					return wrapResultValue(runtime, value);
 				} catch (error) {
 					if (isLuaScriptError(error)) {
 						throw error;
@@ -149,14 +149,14 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 						throw interpreter.runtimeError(`[api.${name}] ${message}`);
 				}
 			});
-			registerLuaGlobal(env, name, native);
+			registerLuaGlobal(runtime, env, name, native);
 		}
 	}
 
-	registerEngineBuiltins(interpreter);
+	registerEngineBuiltins(runtime, interpreter);
 }
 
-function registerEngineBuiltins(interpreter: LuaInterpreter): void {
+function registerEngineBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
 	const env = interpreter.globalEnvironment;
 	const callEngineMember = (name: string, args: ReadonlyArray<LuaValue>): LuaCallResult => {
 		const requireFn = interpreter.getGlobal('require') as LuaFunctionValue;
@@ -170,12 +170,11 @@ function registerEngineBuiltins(interpreter: LuaInterpreter): void {
 	for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
 		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
 		const native = new LuaNativeFunction(name, (args) => callEngineMember(name, args));
-		registerLuaGlobal(env, name, native);
+		registerLuaGlobal(runtime, env, name, native);
 	}
 }
 
-export function registerLuaBuiltin(metadata: LuaBuiltinDescriptor): void {
-	const runtime = Runtime.instance;
+export function registerLuaBuiltin(runtime: Runtime, metadata: LuaBuiltinDescriptor): void {
 	const name = metadata.name.trim();
 	if (name.length === 0) {
 		throw new Error(`Invalid Lua builtin name for '${name}'.`);
@@ -297,29 +296,28 @@ function sanitizeParameterName(token: string, index: number): string {
 	return sanitized;
 }
 
-export function seedDefaultLuaBuiltins(): void {
+export function seedDefaultLuaBuiltins(runtime: Runtime): void {
 	for (let index = 0; index < DEFAULT_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
-		registerLuaBuiltin(DEFAULT_LUA_BUILTIN_FUNCTIONS[index]);
+		registerLuaBuiltin(runtime, DEFAULT_LUA_BUILTIN_FUNCTIONS[index]);
 	}
 }
 
-export function registerLuaGlobal(env: LuaEnvironment, name: string, value: LuaValue): void {
-	const runtime = Runtime.instance;
+export function registerLuaGlobal(runtime: Runtime, env: LuaEnvironment, name: string, value: LuaValue): void {
 	env.set(name, value);
 	runtime.apiFunctionNames.add(name);
 }
 
-function wrapResultValue(value: unknown): ReadonlyArray<LuaValue> {
+function wrapResultValue(runtime: Runtime, value: unknown): ReadonlyArray<LuaValue> {
 	if (Array.isArray(value)) {
 		if (value.every((entry) => isLuaValue(entry))) {
 			return value as LuaValue[];
 		}
-		return value.map((entry) => Runtime.instance.luaJsBridge.toLua(entry));
+		return value.map((entry) => runtime.luaJsBridge.toLua(entry));
 	}
 	if (value === undefined) {
 		return [];
 	}
-	const luaValue = Runtime.instance.luaJsBridge.toLua(value);
+	const luaValue = runtime.luaJsBridge.toLua(value);
 	return [luaValue];
 }
 

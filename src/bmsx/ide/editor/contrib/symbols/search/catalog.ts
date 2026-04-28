@@ -6,13 +6,14 @@ import { refreshSymbolCatalog } from '../catalog';
 import type { SymbolSearchResult } from '../../../../common/models';
 import { ensureSymbolSearchSelectionVisible } from '../shared';
 import { symbolSearchState } from './state';
+import type { Runtime } from '../../../../../machine/runtime/runtime';
 
-export function updateSymbolSearchMatches(): void {
+export function updateSymbolSearchMatches(runtime: Runtime): void {
 	if (symbolSearchState.mode === 'references') {
 		updateReferenceSearchMatches();
 		return;
 	}
-	refreshSymbolCatalog(false);
+	refreshSymbolCatalog(runtime, false);
 	symbolSearchState.matches = [];
 	symbolSearchState.selectionIndex = -1;
 	symbolSearchState.displayOffset = 0;

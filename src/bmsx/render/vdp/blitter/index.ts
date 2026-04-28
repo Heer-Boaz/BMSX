@@ -1,39 +1,35 @@
 import type { VDP, VdpBlitterCommand } from '../../../machine/devices/vdp/vdp';
 import type { GPUBackend } from '../../backend/interfaces';
-import { WebGLBackend } from '../../backend/webgl/backend';
 import { vdpTextureBackend } from '../texture_transfer';
 import { HeadlessVdpBlitterExecutor } from './headless';
-import { WebGLVdpBlitterExecutor } from './webgl';
-import { WebGPUVdpBlitterExecutor } from './webgpu';
 
 type VdpBlitterExecutorLike = {
 	execute(vdp: VDP, commands: readonly VdpBlitterCommand[], timeSeconds: number, deltaSeconds: number): void;
 };
 
-let webglExecutorBackend: WebGLBackend | null = null;
-let webglExecutor: WebGLVdpBlitterExecutor | null = null;
 let headlessExecutor: HeadlessVdpBlitterExecutor | null = null;
-let webgpuExecutor: WebGPUVdpBlitterExecutor | null = null;
+const executorFactories = new Map<GPUBackend['type'], (backend: GPUBackend) => VdpBlitterExecutorLike>();
+
+export function registerVdpBlitterExecutorFactory(
+	backendType: GPUBackend['type'],
+	factory: (backend: GPUBackend) => VdpBlitterExecutorLike,
+): void {
+	executorFactories.set(backendType, factory);
+}
 
 function getVdpBlitterExecutor(backend: GPUBackend): VdpBlitterExecutorLike {
 	switch (backend.type) {
-		case 'webgl2':
-			if (webglExecutor === null || webglExecutorBackend !== backend) {
-				webglExecutorBackend = backend as WebGLBackend;
-				webglExecutor = new WebGLVdpBlitterExecutor(webglExecutorBackend);
-			}
-			return webglExecutor;
 		case 'headless':
 			if (headlessExecutor === null) {
 				headlessExecutor = new HeadlessVdpBlitterExecutor();
 			}
 			return headlessExecutor;
-		case 'webgpu':
-			if (webgpuExecutor === null) {
-				webgpuExecutor = new WebGPUVdpBlitterExecutor();
-			}
-			return webgpuExecutor;
 	}
+	const factory = executorFactories.get(backend.type);
+	if (!factory) {
+		throw new Error(`[VDPBlitter] No executor registered for backend '${backend.type}'.`);
+	}
+	return factory(backend);
 }
 
 export function drainReadyVdpExecution(vdp: VDP, timeSeconds: number, deltaSeconds: number): void {

@@ -1,56 +1,41 @@
-import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { showEditorMessage } from '../../../common/feedback_state';
 import * as constants from '../../../common/constants';
-import * as workbenchMode from '../../mode';
 import type { ResourceDescriptor } from '../../../common/models';
-import { closeLineJump } from '../../../editor/contrib/find/line_jump';
-import { closeSymbolSearch } from '../../../editor/contrib/symbols/shared';
-import { closeSearch } from '../../../editor/contrib/find/search';
-import { resetBlink } from '../../../editor/render/caret';
-import { selectResourceInPanel } from '../../../editor/ui/view/view';
-import { closeResourceSearch } from './search';
+import { prepareEditorForSourceFocus, releaseResourcePanelFocus } from '../../../navigation/source_focus';
 import { findResourceDescriptorForChunk } from './lookup';
 import { openResourceViewerTab } from './view_tabs';
-import { resourcePanel } from './panel/controller';
 import { openCodeTabForDescriptor } from '../../ui/code_tab/io';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export function focusEditorFromResourcePanel(): void {
-	if (!resourcePanel.isFocused()) {
-		return;
+export function openResourceDescriptor(runtime: Runtime, descriptor: ResourceDescriptor): void {
+	const resourcePanel = runtime.editor.resourcePanel;
+	if (descriptor.asset_id && descriptor.asset_id.length > 0) {
+		resourcePanel.queuePendingSelection(descriptor.asset_id);
+		if (resourcePanel.isVisible()) {
+			resourcePanel.applyPendingSelection();
+		}
 	}
-	resourcePanel.setFocused(false);
-	resetBlink();
-}
-
-export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
-	selectResourceInPanel(descriptor);
 	if (descriptor.type === 'atlas') {
 		showEditorMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
-		focusEditorFromResourcePanel();
+		releaseResourcePanelFocus(resourcePanel);
 		return;
 	}
 	if (descriptor.type === 'lua' || descriptor.type === 'aem') {
-		void openCodeTabForDescriptor(descriptor);
+		void openCodeTabForDescriptor(runtime, descriptor);
 	} else {
-		openResourceViewerTab(descriptor);
+		openResourceViewerTab(runtime, descriptor);
 	}
-	focusEditorFromResourcePanel();
+	releaseResourcePanelFocus(resourcePanel);
 }
 
-export function focusChunkSource(path: string): void {
-	if (!editorRuntimeState.active) {
-		workbenchMode.activateEditor();
-	}
-	closeSymbolSearch(true);
-	closeResourceSearch(true);
-	closeLineJump(true);
-	closeSearch(true);
+export function focusChunkSource(runtime: Runtime, path: string): void {
+	prepareEditorForSourceFocus(runtime);
 	if (!path) {
 		return;
 	}
-	const descriptor = findResourceDescriptorForChunk(path);
+	const descriptor = findResourceDescriptorForChunk(runtime, path);
 	if (!descriptor) {
 		return;
 	}
-	openResourceDescriptor(descriptor);
+	openResourceDescriptor(runtime, descriptor);
 }

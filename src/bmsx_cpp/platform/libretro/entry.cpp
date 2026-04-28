@@ -20,6 +20,7 @@
 #include "libretro.h"
 #include "platform.h"
 #include "core/taskgate.h"
+#include "core/engine.h"
 #include "../../machine/runtime/runtime.h"
 
 // Core info
@@ -113,7 +114,8 @@ extern "C" RETRO_API void bmsx_focus_changed(bool focused) {
 }
 
 extern "C" RETRO_API bool bmsx_is_cart_program_active(void) {
-	return bmsx::Runtime::hasInstance() && !bmsx::Runtime::instance().isEngineProgramActive();
+	auto* engine = g_platform ? g_platform->engine() : nullptr;
+	return engine && engine->hasRuntime() && !engine->runtime().isEngineProgramActive();
 }
 
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
@@ -1189,7 +1191,7 @@ void retro_init(void) {
 									g_crt_glow_enabled,
 									g_crt_fringing_enabled,
 									g_crt_aperture_enabled);
-	g_platform->setDitherType(static_cast<bmsx::GameView::DitherType>(g_dither_type));
+	g_platform->setDitherType(g_dither_type);
 	g_platform->setFrameSkipOptions(g_frameskip_enabled);
 	if (isHardwareBackendActive()) {
 	try {
@@ -1278,7 +1280,8 @@ extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
 }
 
 extern "C" int64_t bmsx_get_ufps(void) {
-	return bmsx::EngineCore::instance().machineManifest().ufpsScaled.value();
+	auto* engine = g_platform ? g_platform->engine() : nullptr;
+	return engine ? engine->machineManifest().ufpsScaled.value() : bmsx::DEFAULT_UFPS_SCALED;
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {
@@ -1464,7 +1467,7 @@ void retro_run(void) {
 	const int new_dither = read_dither_type();
 	if (new_dither != g_dither_type) {
 		g_dither_type = new_dither;
-		g_platform->setDitherType(static_cast<bmsx::GameView::DitherType>(g_dither_type));
+		g_platform->setDitherType(g_dither_type);
 	}
 	const bool new_frameskip = read_frameskip_enabled();
 	if (new_frameskip != g_frameskip_enabled) {

@@ -5,7 +5,6 @@ import { create_rect_bounds } from '../../../common/rect';
 import { getCodeAreaBounds } from '../../editor/ui/view/view';
 import { applyResourceViewerScroll, resolveResourceViewerLayout } from '../contrib/resources/viewer';
 import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
-import { resourcePanel } from '../contrib/resources/panel/controller';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../runtime/overlay_api';
 import { measureText, writeWrappedOverlayLine } from '../../editor/common/text/layout';
@@ -210,8 +209,8 @@ export function drawResourceViewer(): void {
 		verticalScrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 }
-export function drawResourcePanel(): void {
-	resourcePanel.draw();
+export function drawResourcePanel(controller: ResourcePanelController): void {
+	controller.draw();
 }
 
 export function drawCreateResourceErrorDialog(message: string): void {

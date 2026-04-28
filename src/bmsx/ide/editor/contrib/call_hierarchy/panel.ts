@@ -1,8 +1,8 @@
-import { resourcePanel } from '../../../workbench/contrib/resources/panel/controller';
 import type { CallHierarchyView } from './view';
 import { closeSymbolSearch } from '../symbols/shared';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export function showCallHierarchyView(view: CallHierarchyView): void {
+export function showCallHierarchyView(runtime: Runtime, view: CallHierarchyView): void {
 	closeSymbolSearch(false);
-	resourcePanel.showCallHierarchy(view);
+	runtime.editor.resourcePanel.showCallHierarchy(view);
 }

@@ -1,4 +1,5 @@
 import { extractErrorMessage, type StackTraceFrame } from '../../lua/value';
+import { engineCore } from '../../core/engine';
 import { clamp01 } from '../../common/clamp';
 import {
 	createNativeFunction,
@@ -248,7 +249,7 @@ import { isStringValue, stringValueToString } from '../memory/string/pool';
 
 import type { StringValue } from '../memory/string/pool';
 import type { LuaMarshalContext } from '../runtime/contracts';
-import { Runtime } from '../runtime/runtime';
+import type { Runtime } from '../runtime/runtime';
 import { createRuntimeGameTable } from '../runtime/game/table';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';
 import { callClosureInto } from '../program/executor';
@@ -294,12 +295,11 @@ export function valueToString(value: Value): string {
 }
 // end repeated-sequence-acceptable
 
-export function valueToStringValue(value: Value): StringValue {
-	return Runtime.instance.internString(valueToString(value)); // TODO: REMOVE USELESS WRAPPER!!!!!!!!
+export function valueToStringValue(runtime: Runtime, value: Value): StringValue {
+	return runtime.internString(valueToString(value)); // TODO: REMOVE USELESS WRAPPER!!!!!!!!
 }
 
-function buildMachineManifestTable(manifest: MachineManifest): Table {
-	const runtime = Runtime.instance;
+function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest): Table {
 	const table = new Table(0, 5);
 	if (manifest.namespace.length > 0) {
 		table.set(runtime.luaKey('namespace'), runtime.internString(manifest.namespace));
@@ -362,9 +362,7 @@ function buildMachineManifestTable(manifest: MachineManifest): Table {
 	return table;
 }
 
-function buildCartManifestTable(manifest: CartManifest, machine: MachineManifest, entryPath: string): Table {
-	const runtime = Runtime.instance;
-
+function buildCartManifestTable(runtime: Runtime, manifest: CartManifest, machine: MachineManifest, entryPath: string): Table {
 	const table = new Table(0, 4);
 	if (manifest.title !== undefined && manifest.title.length > 0) {
 		table.set(runtime.luaKey('title'), runtime.internString(manifest.title));
@@ -375,7 +373,7 @@ function buildCartManifestTable(manifest: CartManifest, machine: MachineManifest
 	if (manifest.rom_name !== undefined && manifest.rom_name.length > 0) {
 		table.set(runtime.luaKey('rom_name'), runtime.internString(manifest.rom_name));
 	}
-	table.set(runtime.luaKey('machine'), buildMachineManifestTable(machine));
+	table.set(runtime.luaKey('machine'), buildMachineManifestTable(runtime, machine));
 	const lua = new Table(0, 1);
 	lua.set(runtime.luaKey('entry_path'), runtime.internString(entryPath));
 	table.set(runtime.luaKey('lua'), lua);
@@ -392,7 +390,7 @@ class LuaThrownValueError extends Error {
 	}
 }
 
-export function formatLuaString(template: string, args: ReadonlyArray<Value>, argStart: number): string {
+export function formatLuaString(runtime: Runtime, template: string, args: ReadonlyArray<Value>, argStart: number): string {
 	let argumentIndex = argStart;
 	let output = '';
 
@@ -424,8 +422,6 @@ export function formatLuaString(template: string, args: ReadonlyArray<Value>, ar
 			continue;
 		}
 		if (index === template.length - 1) {
-			const runtime = Runtime.instance;
-
 			throw runtime.createApiRuntimeError('string.format incomplete format specifier.');
 		}
 		if (template.charAt(index + 1) === '%') {
@@ -504,7 +500,6 @@ export function formatLuaString(template: string, args: ReadonlyArray<Value>, ar
 
 		const specifier = template.charAt(cursor);
 		if (specifier.length === 0) {
-			const runtime = Runtime.instance;
 			throw runtime.createApiRuntimeError('string.format incomplete format specifier.');
 		}
 		const zeroPad = flags.zeroPad && !flags.leftAlign;
@@ -717,7 +712,7 @@ export function formatLuaString(template: string, args: ReadonlyArray<Value>, ar
 				break;
 			}
 			default:
-				throw Runtime.instance.createApiRuntimeError(`string.format unsupported format specifier '%${specifier}'.`);
+				throw runtime.createApiRuntimeError(`string.format unsupported format specifier '%${specifier}'.`);
 		}
 
 		index = cursor;
@@ -726,8 +721,7 @@ export function formatLuaString(template: string, args: ReadonlyArray<Value>, ar
 	return output;
 }
 
-function resolveLuaFunctionName(protoIndex: number): string {
-	const runtime = Runtime.instance;
+function resolveLuaFunctionName(runtime: Runtime, protoIndex: number): string {
 	if (!runtime.programMetadata) {
 		return `proto:${protoIndex}`;
 	}
@@ -755,8 +749,7 @@ function resolveLuaFunctionName(protoIndex: number): string {
 	}
 }
 
-export function buildLuaStackFrames(): StackTraceFrame[] {
-	const runtime = Runtime.instance;
+export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
 	const callStack = runtime.machine.cpu.getCallStack();
 	const frames: StackTraceFrame[] = [];
 	for (let index = callStack.length - 1; index >= 0; index -= 1) {
@@ -765,7 +758,7 @@ export function buildLuaStackFrames(): StackTraceFrame[] {
 		const source = range ? range.path : runtime.currentPath;
 		const line = range ? range.start.line : 0;
 		const column = range ? range.start.column : 0;
-		const functionName = resolveLuaFunctionName(entry.protoIndex);
+		const functionName = resolveLuaFunctionName(runtime, entry.protoIndex);
 		frames.push({
 			origin: 'lua',
 			functionName,
@@ -789,8 +782,7 @@ function normalizeLuaIndex(valueNumber: number, length: number, zeroFallback: nu
 	return zeroFallback;
 }
 
-export function seedLuaGlobals(): void {
-	const runtime = Runtime.instance;
+export function seedLuaGlobals(runtime: Runtime): void {
 	const prependValue = (out: Value[], value: Value): void => {
 		const length = out.length;
 		out.length = length + 1;
@@ -804,7 +796,7 @@ export function seedLuaGlobals(): void {
 			callee.invoke(args, out);
 			return;
 		}
-		callClosureInto(callee as Closure, args, out);
+		callClosureInto(runtime, callee as Closure, args, out);
 	};
 	const key = (name: string): StringValue => runtime.internString(name);
 	const setKey = (table: Table, name: string, value: Value): void => {
@@ -972,19 +964,19 @@ export function seedLuaGlobals(): void {
 	};
 
 	const createNativeArrayFromTable = (table: Table, context: LuaMarshalContext): unknown[] => {
-		const tableId = getOrAssignTableId(table);
+		const tableId = getOrAssignTableId(runtime, table);
 		const tableContext = extendMarshalContext(context, `table${tableId}`);
 		const output: unknown[] = [];
 		const visited = runtime.luaScratch.acquireTableMarshal();
 		try {
 			table.forEachEntry((keyValue, value) => {
 				if (typeof keyValue === 'number' && Number.isInteger(keyValue) && keyValue >= 1) {
-					output[keyValue - 1] = toNativeValue(value, extendMarshalContext(tableContext, String(keyValue)), visited);
+					output[keyValue - 1] = toNativeValue(runtime, value, extendMarshalContext(tableContext, String(keyValue)), visited);
 					return;
 				}
 				const segment = describeMarshalSegment(keyValue);
 				const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
-				output.push(toNativeValue(value, nextContext, visited));
+				output.push(toNativeValue(runtime, value, nextContext, visited));
 			});
 			return output;
 		} finally {
@@ -993,16 +985,16 @@ export function seedLuaGlobals(): void {
 	};
 
 	const exposeObjects = (): void => {
-		const gameTable = createRuntimeGameTable();
-		luaPipeline.registerGlobal('game', gameTable);
-		luaPipeline.registerGlobal('$', gameTable);
-		luaPipeline.registerGlobal('devtools', createRuntimeDevtoolsTable());
-		luaPipeline.registerGlobal('assets', getOrCreateAssetsNativeObject());
-		luaPipeline.registerGlobal('system_assets', getOrCreateAssetsNativeObject(runtime.assets.biosLayer.assets));
+		const gameTable = createRuntimeGameTable(runtime, engineCore.view);
+		luaPipeline.registerGlobal(runtime, 'game', gameTable);
+		luaPipeline.registerGlobal(runtime, '$', gameTable);
+		luaPipeline.registerGlobal(runtime, 'devtools', createRuntimeDevtoolsTable(runtime));
+		luaPipeline.registerGlobal(runtime, 'assets', getOrCreateAssetsNativeObject(runtime));
+		luaPipeline.registerGlobal(runtime, 'system_assets', getOrCreateAssetsNativeObject(runtime, runtime.assets.biosLayer.assets));
 		const cartManifest = runtime.cartManifest;
-		luaPipeline.registerGlobal('cart_manifest', cartManifest === null ? null : buildCartManifestTable(cartManifest, cartManifest.machine, cartManifest.lua.entry_path));
-		luaPipeline.registerGlobal('machine_manifest', buildMachineManifestTable(runtime.activeMachineManifest));
-		luaPipeline.registerGlobal('cart_project_root_path', runtime.cartProjectRootPath === null ? null : runtime.internString(runtime.cartProjectRootPath));
+		luaPipeline.registerGlobal(runtime, 'cart_manifest', cartManifest === null ? null : buildCartManifestTable(runtime, cartManifest, cartManifest.machine, cartManifest.lua.entry_path));
+		luaPipeline.registerGlobal(runtime, 'machine_manifest', buildMachineManifestTable(runtime, runtime.activeMachineManifest));
+		luaPipeline.registerGlobal(runtime, 'cart_project_root_path', runtime.cartProjectRootPath === null ? null : runtime.internString(runtime.cartProjectRootPath));
 	};
 
 	const mathTable = new Table(0, 0);
@@ -1129,7 +1121,7 @@ export function seedLuaGlobals(): void {
 		out.push(left < right);
 	}));
 	setKey(mathTable, 'random', createNativeFunction('math.random', (args, out) => {
-		const randomValue = luaPipeline.nextRandom();
+		const randomValue = luaPipeline.nextRandom(runtime);
 		if (args.length === 0) {
 			out.push(randomValue);
 			return;
@@ -1152,7 +1144,7 @@ export function seedLuaGlobals(): void {
 	}));
 	setKey(mathTable, 'randomseed', createNativeFunction('math.randomseed', (args, out) => {
 		const seedValue = args.length > 0 ? (args[0] as number) : runtime.clock.now();
-		luaPipeline.setRandomSeed(Math.floor(seedValue) >>> 0);
+		luaPipeline.setRandomSeed(runtime, Math.floor(seedValue) >>> 0);
 		out.length = 0;
 	}));
 	setKey(mathTable, 'huge', Number.POSITIVE_INFINITY);
@@ -1202,175 +1194,175 @@ export function seedLuaGlobals(): void {
 		out.push(smoothstep01((1 - value) * 2));
 	}));
 
-	luaPipeline.registerGlobal('math', mathTable);
-	luaPipeline.registerGlobal('easing', easingTable);
-	luaPipeline.registerGlobal('sys_boot_cart', IO_SYS_BOOT_CART);
-	luaPipeline.registerGlobal('sys_cart_bootready', IO_SYS_CART_BOOTREADY);
-	luaPipeline.registerGlobal('sys_host_fault_flags', IO_SYS_HOST_FAULT_FLAGS);
-	luaPipeline.registerGlobal('sys_host_fault_stage', IO_SYS_HOST_FAULT_STAGE);
-	luaPipeline.registerGlobal('sys_host_fault_flag_active', HOST_FAULT_FLAG_ACTIVE);
-	luaPipeline.registerGlobal('sys_host_fault_flag_startup_blocking', HOST_FAULT_FLAG_STARTUP_BLOCKING);
-	luaPipeline.registerGlobal('sys_host_fault_stage_none', HOST_FAULT_STAGE_NONE);
-	luaPipeline.registerGlobal('sys_host_fault_stage_startup_refresh', HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH);
-	luaPipeline.registerGlobal('sys_host_fault_message', createNativeFunction('sys_host_fault_message', (_args, out) => {
+	luaPipeline.registerGlobal(runtime, 'math', mathTable);
+	luaPipeline.registerGlobal(runtime, 'easing', easingTable);
+	luaPipeline.registerGlobal(runtime, 'sys_boot_cart', IO_SYS_BOOT_CART);
+	luaPipeline.registerGlobal(runtime, 'sys_cart_bootready', IO_SYS_CART_BOOTREADY);
+	luaPipeline.registerGlobal(runtime, 'sys_host_fault_flags', IO_SYS_HOST_FAULT_FLAGS);
+	luaPipeline.registerGlobal(runtime, 'sys_host_fault_stage', IO_SYS_HOST_FAULT_STAGE);
+	luaPipeline.registerGlobal(runtime, 'sys_host_fault_flag_active', HOST_FAULT_FLAG_ACTIVE);
+	luaPipeline.registerGlobal(runtime, 'sys_host_fault_flag_startup_blocking', HOST_FAULT_FLAG_STARTUP_BLOCKING);
+	luaPipeline.registerGlobal(runtime, 'sys_host_fault_stage_none', HOST_FAULT_STAGE_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_host_fault_stage_startup_refresh', HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH);
+	luaPipeline.registerGlobal(runtime, 'sys_host_fault_message', createNativeFunction('sys_host_fault_message', (_args, out) => {
 		const message = runtime.hostFault.getMessage();
 		out.push(message === null ? null : runtime.internString(message));
 	}));
-	luaPipeline.registerGlobal('sys_cart_magic_addr', CART_ROM_MAGIC_ADDR);
-	luaPipeline.registerGlobal('sys_cart_magic', CART_ROM_MAGIC);
-	luaPipeline.registerGlobal('sys_cart_rom_size', CART_ROM_SIZE);
-	luaPipeline.registerGlobal('sys_ram_size', RAM_SIZE);
-	luaPipeline.registerGlobal('sys_geo_scratch_base', GEO_SCRATCH_BASE);
-	luaPipeline.registerGlobal('sys_geo_scratch_size', GEO_SCRATCH_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_cart_magic_addr', CART_ROM_MAGIC_ADDR);
+	luaPipeline.registerGlobal(runtime, 'sys_cart_magic', CART_ROM_MAGIC);
+	luaPipeline.registerGlobal(runtime, 'sys_cart_rom_size', CART_ROM_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_ram_size', RAM_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_scratch_base', GEO_SCRATCH_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_scratch_size', GEO_SCRATCH_SIZE);
 	const maxAssets = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
-	luaPipeline.registerGlobal('sys_max_assets', maxAssets);
-	luaPipeline.registerGlobal('sys_max_cycles_per_frame', runtime.timing.cycleBudgetPerFrame);
-	luaPipeline.registerGlobal('sys_vdp_dither', IO_VDP_DITHER);
-	luaPipeline.registerGlobal('sys_vdp_slot_primary_atlas', IO_VDP_SLOT_PRIMARY_ATLAS);
-	luaPipeline.registerGlobal('sys_vdp_slot_secondary_atlas', IO_VDP_SLOT_SECONDARY_ATLAS);
-	luaPipeline.registerGlobal('sys_vdp_atlas_none', VDP_SLOT_ATLAS_NONE);
-	luaPipeline.registerGlobal('sys_vdp_cmd', IO_VDP_CMD);
-	luaPipeline.registerGlobal('sys_vdp_cmd_arg_count', IO_VDP_CMD_ARG_COUNT);
-	luaPipeline.registerGlobal('sys_vdp_stream_base', VDP_STREAM_BUFFER_BASE);
-	luaPipeline.registerGlobal('sys_vdp_stream_capacity_words', VDP_STREAM_CAPACITY_WORDS);
-	luaPipeline.registerGlobal('sys_vdp_stream_packet_header_words', VDP_STREAM_PACKET_HEADER_WORDS);
-	luaPipeline.registerGlobal('sys_vdp_fifo', IO_VDP_FIFO);
-	luaPipeline.registerGlobal('sys_vdp_fifo_ctrl', IO_VDP_FIFO_CTRL);
-	luaPipeline.registerGlobal('sys_vdp_fifo_ctrl_seal', VDP_FIFO_CTRL_SEAL);
-	luaPipeline.registerGlobal('sys_vdp_slot_primary', VDP_SLOT_PRIMARY);
-	luaPipeline.registerGlobal('sys_vdp_slot_secondary', VDP_SLOT_SECONDARY);
-	luaPipeline.registerGlobal('sys_vdp_slot_system', VDP_SLOT_SYSTEM);
-	luaPipeline.registerGlobal('sys_vdp_slot_none', VDP_SLOT_NONE);
-	luaPipeline.registerGlobal('sys_vdp_rd_surface', IO_VDP_RD_SURFACE);
-	luaPipeline.registerGlobal('sys_vdp_rd_x', IO_VDP_RD_X);
-	luaPipeline.registerGlobal('sys_vdp_rd_y', IO_VDP_RD_Y);
-	luaPipeline.registerGlobal('sys_vdp_rd_mode', IO_VDP_RD_MODE);
-	luaPipeline.registerGlobal('sys_vdp_rd_status', IO_VDP_RD_STATUS);
-	luaPipeline.registerGlobal('sys_vdp_rd_data', IO_VDP_RD_DATA);
-	luaPipeline.registerGlobal('sys_vdp_status', IO_VDP_STATUS);
-	luaPipeline.registerGlobal('sys_vdp_rd_mode_rgba8888', VDP_RD_MODE_RGBA8888);
-	luaPipeline.registerGlobal('sys_vdp_rd_status_ready', VDP_RD_STATUS_READY);
-	luaPipeline.registerGlobal('sys_vdp_rd_status_overflow', VDP_RD_STATUS_OVERFLOW);
-	luaPipeline.registerGlobal('sys_vdp_status_vblank', VDP_STATUS_VBLANK);
-	luaPipeline.registerGlobal('sys_vdp_status_submit_busy', VDP_STATUS_SUBMIT_BUSY);
-	luaPipeline.registerGlobal('sys_vdp_status_submit_rejected', VDP_STATUS_SUBMIT_REJECTED);
-	luaPipeline.registerGlobal('sys_vdp_layer_world', 0);
-	luaPipeline.registerGlobal('sys_vdp_layer_ui', 1);
-	luaPipeline.registerGlobal('sys_vdp_layer_ide', 2);
-	luaPipeline.registerGlobal('sys_vdp_arg_stride', IO_ARG_STRIDE);
-	luaPipeline.registerGlobal('sys_vdp_cmd_clear', IO_CMD_VDP_CLEAR);
-	luaPipeline.registerGlobal('sys_vdp_cmd_fill_rect', IO_CMD_VDP_FILL_RECT);
-	luaPipeline.registerGlobal('sys_vdp_cmd_blit', IO_CMD_VDP_BLIT);
-	luaPipeline.registerGlobal('sys_vdp_cmd_draw_line', IO_CMD_VDP_DRAW_LINE);
-	luaPipeline.registerGlobal('sys_vdp_cmd_glyph_run', IO_CMD_VDP_GLYPH_RUN);
-	luaPipeline.registerGlobal('sys_vdp_cmd_tile_run', IO_CMD_VDP_TILE_RUN);
-	luaPipeline.registerGlobal('sys_irq_flags', IO_IRQ_FLAGS);
-	luaPipeline.registerGlobal('sys_irq_ack', IO_IRQ_ACK);
-	luaPipeline.registerGlobal('sys_dma_src', IO_DMA_SRC);
-	luaPipeline.registerGlobal('sys_dma_dst', IO_DMA_DST);
-	luaPipeline.registerGlobal('sys_dma_len', IO_DMA_LEN);
-	luaPipeline.registerGlobal('sys_dma_ctrl', IO_DMA_CTRL);
-	luaPipeline.registerGlobal('sys_dma_status', IO_DMA_STATUS);
-	luaPipeline.registerGlobal('sys_dma_written', IO_DMA_WRITTEN);
-	luaPipeline.registerGlobal('sys_geo_src0', IO_GEO_SRC0);
-	luaPipeline.registerGlobal('sys_geo_src1', IO_GEO_SRC1);
-	luaPipeline.registerGlobal('sys_geo_src2', IO_GEO_SRC2);
-	luaPipeline.registerGlobal('sys_geo_dst0', IO_GEO_DST0);
-	luaPipeline.registerGlobal('sys_geo_dst1', IO_GEO_DST1);
-	luaPipeline.registerGlobal('sys_geo_count', IO_GEO_COUNT);
-	luaPipeline.registerGlobal('sys_geo_cmd', IO_GEO_CMD);
-	luaPipeline.registerGlobal('sys_geo_ctrl', IO_GEO_CTRL);
-	luaPipeline.registerGlobal('sys_geo_status', IO_GEO_STATUS);
-	luaPipeline.registerGlobal('sys_geo_param0', IO_GEO_PARAM0);
-	luaPipeline.registerGlobal('sys_geo_param1', IO_GEO_PARAM1);
-	luaPipeline.registerGlobal('sys_geo_stride0', IO_GEO_STRIDE0);
-	luaPipeline.registerGlobal('sys_geo_stride1', IO_GEO_STRIDE1);
-	luaPipeline.registerGlobal('sys_geo_stride2', IO_GEO_STRIDE2);
-	luaPipeline.registerGlobal('sys_geo_processed', IO_GEO_PROCESSED);
-	luaPipeline.registerGlobal('sys_geo_fault', IO_GEO_FAULT);
-	luaPipeline.registerGlobal('sys_img_src', IO_IMG_SRC);
-	luaPipeline.registerGlobal('sys_img_len', IO_IMG_LEN);
-	luaPipeline.registerGlobal('sys_img_dst', IO_IMG_DST);
-	luaPipeline.registerGlobal('sys_img_cap', IO_IMG_CAP);
-	luaPipeline.registerGlobal('sys_img_ctrl', IO_IMG_CTRL);
-	luaPipeline.registerGlobal('sys_img_status', IO_IMG_STATUS);
-	luaPipeline.registerGlobal('sys_img_written', IO_IMG_WRITTEN);
-	luaPipeline.registerGlobal('sys_inp_player', IO_INP_PLAYER);
-	luaPipeline.registerGlobal('sys_inp_action', IO_INP_ACTION);
-	luaPipeline.registerGlobal('sys_inp_bind', IO_INP_BIND);
-	luaPipeline.registerGlobal('sys_inp_ctrl', IO_INP_CTRL);
-	luaPipeline.registerGlobal('sys_inp_query', IO_INP_QUERY);
-	luaPipeline.registerGlobal('sys_inp_status', IO_INP_STATUS);
-	luaPipeline.registerGlobal('sys_inp_value', IO_INP_VALUE);
-	luaPipeline.registerGlobal('sys_inp_consume', IO_INP_CONSUME);
-	luaPipeline.registerGlobal('sys_apu_source_addr', IO_APU_SOURCE_ADDR);
-	luaPipeline.registerGlobal('sys_apu_source_bytes', IO_APU_SOURCE_BYTES);
-	luaPipeline.registerGlobal('sys_apu_source_sample_rate_hz', IO_APU_SOURCE_SAMPLE_RATE_HZ);
-	luaPipeline.registerGlobal('sys_apu_source_channels', IO_APU_SOURCE_CHANNELS);
-	luaPipeline.registerGlobal('sys_apu_source_bits_per_sample', IO_APU_SOURCE_BITS_PER_SAMPLE);
-	luaPipeline.registerGlobal('sys_apu_source_frame_count', IO_APU_SOURCE_FRAME_COUNT);
-	luaPipeline.registerGlobal('sys_apu_source_data_offset', IO_APU_SOURCE_DATA_OFFSET);
-	luaPipeline.registerGlobal('sys_apu_source_data_bytes', IO_APU_SOURCE_DATA_BYTES);
-	luaPipeline.registerGlobal('sys_apu_source_loop_start_sample', IO_APU_SOURCE_LOOP_START_SAMPLE);
-	luaPipeline.registerGlobal('sys_apu_source_loop_end_sample', IO_APU_SOURCE_LOOP_END_SAMPLE);
-	luaPipeline.registerGlobal('sys_apu_slot', IO_APU_SLOT);
-	luaPipeline.registerGlobal('sys_apu_rate_step_q16', IO_APU_RATE_STEP_Q16);
-	luaPipeline.registerGlobal('sys_apu_gain_q12', IO_APU_GAIN_Q12);
-	luaPipeline.registerGlobal('sys_apu_start_sample', IO_APU_START_SAMPLE);
-	luaPipeline.registerGlobal('sys_apu_filter_kind', IO_APU_FILTER_KIND);
-	luaPipeline.registerGlobal('sys_apu_filter_freq_hz', IO_APU_FILTER_FREQ_HZ);
-	luaPipeline.registerGlobal('sys_apu_filter_q_milli', IO_APU_FILTER_Q_MILLI);
-	luaPipeline.registerGlobal('sys_apu_filter_gain_millidb', IO_APU_FILTER_GAIN_MILLIDB);
-	luaPipeline.registerGlobal('sys_apu_fade_samples', IO_APU_FADE_SAMPLES);
-	luaPipeline.registerGlobal('sys_apu_target_gain_q12', IO_APU_TARGET_GAIN_Q12);
-	luaPipeline.registerGlobal('sys_apu_cmd', IO_APU_CMD);
-	luaPipeline.registerGlobal('sys_apu_status', IO_APU_STATUS);
-	luaPipeline.registerGlobal('sys_apu_event_kind', IO_APU_EVENT_KIND);
-	luaPipeline.registerGlobal('sys_apu_event_slot', IO_APU_EVENT_SLOT);
-	luaPipeline.registerGlobal('sys_apu_event_source_addr', IO_APU_EVENT_SOURCE_ADDR);
-	luaPipeline.registerGlobal('sys_apu_event_seq', IO_APU_EVENT_SEQ);
-	luaPipeline.registerGlobal('apu_cmd_play', APU_CMD_PLAY);
-	luaPipeline.registerGlobal('apu_cmd_stop_slot', APU_CMD_STOP_SLOT);
-	luaPipeline.registerGlobal('apu_cmd_ramp_slot', APU_CMD_RAMP_SLOT);
-	luaPipeline.registerGlobal('apu_sample_rate_hz', APU_SAMPLE_RATE_HZ);
-	luaPipeline.registerGlobal('apu_rate_step_q16_one', APU_RATE_STEP_Q16_ONE);
-	luaPipeline.registerGlobal('apu_gain_q12_one', APU_GAIN_Q12_ONE);
-	luaPipeline.registerGlobal('apu_filter_none', APU_FILTER_NONE);
-	luaPipeline.registerGlobal('apu_filter_lowpass', APU_FILTER_LOWPASS);
-	luaPipeline.registerGlobal('apu_filter_highpass', APU_FILTER_HIGHPASS);
-	luaPipeline.registerGlobal('apu_filter_bandpass', APU_FILTER_BANDPASS);
-	luaPipeline.registerGlobal('apu_filter_notch', APU_FILTER_NOTCH);
-	luaPipeline.registerGlobal('apu_filter_allpass', APU_FILTER_ALLPASS);
-	luaPipeline.registerGlobal('apu_filter_peaking', APU_FILTER_PEAKING);
-	luaPipeline.registerGlobal('apu_filter_lowshelf', APU_FILTER_LOWSHELF);
-	luaPipeline.registerGlobal('apu_filter_highshelf', APU_FILTER_HIGHSHELF);
-	luaPipeline.registerGlobal('apu_event_none', APU_EVENT_NONE);
-	luaPipeline.registerGlobal('apu_event_slot_ended', APU_EVENT_SLOT_ENDED);
-	luaPipeline.registerGlobal('inp_ctrl_commit', INP_CTRL_COMMIT);
-	luaPipeline.registerGlobal('inp_ctrl_arm', INP_CTRL_ARM);
-	luaPipeline.registerGlobal('inp_ctrl_reset', INP_CTRL_RESET);
-	luaPipeline.registerGlobal('inp_pressed', ACTION_STATE_FLAG_PRESSED);
-	luaPipeline.registerGlobal('inp_justpressed', ACTION_STATE_FLAG_JUSTPRESSED);
-	luaPipeline.registerGlobal('inp_justreleased', ACTION_STATE_FLAG_JUSTRELEASED);
-	luaPipeline.registerGlobal('inp_consumed', ACTION_STATE_FLAG_CONSUMED);
-	luaPipeline.registerGlobal('inp_guardedjustpressed', ACTION_STATE_FLAG_GUARDEDJUSTPRESSED);
-	luaPipeline.registerGlobal('inp_repeatpressed', ACTION_STATE_FLAG_REPEATPRESSED);
-	luaPipeline.registerGlobal('sys_rom_system_base', SYSTEM_ROM_BASE);
-	luaPipeline.registerGlobal('sys_rom_cart_base', CART_ROM_BASE);
-	luaPipeline.registerGlobal('sys_rom_overlay_base', OVERLAY_ROM_BASE);
-	luaPipeline.registerGlobal('sys_rom_overlay_size', runtime.machine.memory.getOverlayRomSize());
-	luaPipeline.registerGlobal('sys_vram_system_textpage_base', VRAM_SYSTEM_TEXTPAGE_BASE);
-	luaPipeline.registerGlobal('sys_vram_primary_textpage_base', VRAM_PRIMARY_TEXTPAGE_BASE);
-	luaPipeline.registerGlobal('sys_vram_secondary_textpage_base', VRAM_SECONDARY_TEXTPAGE_BASE);
-	luaPipeline.registerGlobal('sys_vram_framebuffer_base', VRAM_FRAMEBUFFER_BASE);
-	luaPipeline.registerGlobal('sys_vram_staging_base', VRAM_STAGING_BASE);
-	luaPipeline.registerGlobal('sys_vram_system_textpage_size', VRAM_SYSTEM_TEXTPAGE_SIZE);
-	luaPipeline.registerGlobal('sys_vram_primary_textpage_size', VRAM_PRIMARY_TEXTPAGE_SIZE);
-	luaPipeline.registerGlobal('sys_vram_secondary_textpage_size', VRAM_SECONDARY_TEXTPAGE_SIZE);
-	luaPipeline.registerGlobal('sys_vram_framebuffer_size', VRAM_FRAMEBUFFER_SIZE);
-	luaPipeline.registerGlobal('sys_vram_staging_size', VRAM_STAGING_SIZE);
-	luaPipeline.registerGlobal('sys_vram_size', runtime.machine.resourceUsageDetector.getVramTotalBytes());
-	luaPipeline.registerGlobal('sys_palette_color', createNativeFunction('sys_palette_color', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'sys_max_assets', maxAssets);
+	luaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.timing.cycleBudgetPerFrame);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_dither', IO_VDP_DITHER);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_primary_atlas', IO_VDP_SLOT_PRIMARY_ATLAS);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_secondary_atlas', IO_VDP_SLOT_SECONDARY_ATLAS);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_atlas_none', VDP_SLOT_ATLAS_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd', IO_VDP_CMD);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_arg_count', IO_VDP_CMD_ARG_COUNT);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_stream_base', VDP_STREAM_BUFFER_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_stream_capacity_words', VDP_STREAM_CAPACITY_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_stream_packet_header_words', VDP_STREAM_PACKET_HEADER_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo', IO_VDP_FIFO);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl', IO_VDP_FIFO_CTRL);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl_seal', VDP_FIFO_CTRL_SEAL);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_primary', VDP_SLOT_PRIMARY);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_secondary', VDP_SLOT_SECONDARY);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_system', VDP_SLOT_SYSTEM);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_none', VDP_SLOT_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_surface', IO_VDP_RD_SURFACE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_x', IO_VDP_RD_X);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_y', IO_VDP_RD_Y);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_mode', IO_VDP_RD_MODE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status', IO_VDP_RD_STATUS);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_data', IO_VDP_RD_DATA);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_status', IO_VDP_STATUS);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_mode_rgba8888', VDP_RD_MODE_RGBA8888);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_ready', VDP_RD_STATUS_READY);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_overflow', VDP_RD_STATUS_OVERFLOW);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_status_vblank', VDP_STATUS_VBLANK);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_status_submit_busy', VDP_STATUS_SUBMIT_BUSY);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_status_submit_rejected', VDP_STATUS_SUBMIT_REJECTED);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_world', 0);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ui', 1);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ide', 2);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_arg_stride', IO_ARG_STRIDE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_clear', IO_CMD_VDP_CLEAR);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_fill_rect', IO_CMD_VDP_FILL_RECT);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_blit', IO_CMD_VDP_BLIT);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_draw_line', IO_CMD_VDP_DRAW_LINE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_glyph_run', IO_CMD_VDP_GLYPH_RUN);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_tile_run', IO_CMD_VDP_TILE_RUN);
+	luaPipeline.registerGlobal(runtime, 'sys_irq_flags', IO_IRQ_FLAGS);
+	luaPipeline.registerGlobal(runtime, 'sys_irq_ack', IO_IRQ_ACK);
+	luaPipeline.registerGlobal(runtime, 'sys_dma_src', IO_DMA_SRC);
+	luaPipeline.registerGlobal(runtime, 'sys_dma_dst', IO_DMA_DST);
+	luaPipeline.registerGlobal(runtime, 'sys_dma_len', IO_DMA_LEN);
+	luaPipeline.registerGlobal(runtime, 'sys_dma_ctrl', IO_DMA_CTRL);
+	luaPipeline.registerGlobal(runtime, 'sys_dma_status', IO_DMA_STATUS);
+	luaPipeline.registerGlobal(runtime, 'sys_dma_written', IO_DMA_WRITTEN);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_src0', IO_GEO_SRC0);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_src1', IO_GEO_SRC1);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_src2', IO_GEO_SRC2);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_dst0', IO_GEO_DST0);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_dst1', IO_GEO_DST1);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_count', IO_GEO_COUNT);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_cmd', IO_GEO_CMD);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_ctrl', IO_GEO_CTRL);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_status', IO_GEO_STATUS);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_param0', IO_GEO_PARAM0);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_param1', IO_GEO_PARAM1);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_stride0', IO_GEO_STRIDE0);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_stride1', IO_GEO_STRIDE1);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_stride2', IO_GEO_STRIDE2);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_processed', IO_GEO_PROCESSED);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault', IO_GEO_FAULT);
+	luaPipeline.registerGlobal(runtime, 'sys_img_src', IO_IMG_SRC);
+	luaPipeline.registerGlobal(runtime, 'sys_img_len', IO_IMG_LEN);
+	luaPipeline.registerGlobal(runtime, 'sys_img_dst', IO_IMG_DST);
+	luaPipeline.registerGlobal(runtime, 'sys_img_cap', IO_IMG_CAP);
+	luaPipeline.registerGlobal(runtime, 'sys_img_ctrl', IO_IMG_CTRL);
+	luaPipeline.registerGlobal(runtime, 'sys_img_status', IO_IMG_STATUS);
+	luaPipeline.registerGlobal(runtime, 'sys_img_written', IO_IMG_WRITTEN);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_player', IO_INP_PLAYER);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_action', IO_INP_ACTION);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_bind', IO_INP_BIND);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_ctrl', IO_INP_CTRL);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_query', IO_INP_QUERY);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_status', IO_INP_STATUS);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_value', IO_INP_VALUE);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_consume', IO_INP_CONSUME);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_addr', IO_APU_SOURCE_ADDR);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_bytes', IO_APU_SOURCE_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_sample_rate_hz', IO_APU_SOURCE_SAMPLE_RATE_HZ);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_channels', IO_APU_SOURCE_CHANNELS);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_bits_per_sample', IO_APU_SOURCE_BITS_PER_SAMPLE);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_frame_count', IO_APU_SOURCE_FRAME_COUNT);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_data_offset', IO_APU_SOURCE_DATA_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_data_bytes', IO_APU_SOURCE_DATA_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_loop_start_sample', IO_APU_SOURCE_LOOP_START_SAMPLE);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_source_loop_end_sample', IO_APU_SOURCE_LOOP_END_SAMPLE);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_slot', IO_APU_SLOT);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_rate_step_q16', IO_APU_RATE_STEP_Q16);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_gain_q12', IO_APU_GAIN_Q12);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_start_sample', IO_APU_START_SAMPLE);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_kind', IO_APU_FILTER_KIND);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_freq_hz', IO_APU_FILTER_FREQ_HZ);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_q_milli', IO_APU_FILTER_Q_MILLI);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_gain_millidb', IO_APU_FILTER_GAIN_MILLIDB);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_fade_samples', IO_APU_FADE_SAMPLES);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_target_gain_q12', IO_APU_TARGET_GAIN_Q12);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_cmd', IO_APU_CMD);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_status', IO_APU_STATUS);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_event_kind', IO_APU_EVENT_KIND);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_event_slot', IO_APU_EVENT_SLOT);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_event_source_addr', IO_APU_EVENT_SOURCE_ADDR);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_event_seq', IO_APU_EVENT_SEQ);
+	luaPipeline.registerGlobal(runtime, 'apu_cmd_play', APU_CMD_PLAY);
+	luaPipeline.registerGlobal(runtime, 'apu_cmd_stop_slot', APU_CMD_STOP_SLOT);
+	luaPipeline.registerGlobal(runtime, 'apu_cmd_ramp_slot', APU_CMD_RAMP_SLOT);
+	luaPipeline.registerGlobal(runtime, 'apu_sample_rate_hz', APU_SAMPLE_RATE_HZ);
+	luaPipeline.registerGlobal(runtime, 'apu_rate_step_q16_one', APU_RATE_STEP_Q16_ONE);
+	luaPipeline.registerGlobal(runtime, 'apu_gain_q12_one', APU_GAIN_Q12_ONE);
+	luaPipeline.registerGlobal(runtime, 'apu_filter_none', APU_FILTER_NONE);
+	luaPipeline.registerGlobal(runtime, 'apu_filter_lowpass', APU_FILTER_LOWPASS);
+	luaPipeline.registerGlobal(runtime, 'apu_filter_highpass', APU_FILTER_HIGHPASS);
+	luaPipeline.registerGlobal(runtime, 'apu_filter_bandpass', APU_FILTER_BANDPASS);
+	luaPipeline.registerGlobal(runtime, 'apu_filter_notch', APU_FILTER_NOTCH);
+	luaPipeline.registerGlobal(runtime, 'apu_filter_allpass', APU_FILTER_ALLPASS);
+	luaPipeline.registerGlobal(runtime, 'apu_filter_peaking', APU_FILTER_PEAKING);
+	luaPipeline.registerGlobal(runtime, 'apu_filter_lowshelf', APU_FILTER_LOWSHELF);
+	luaPipeline.registerGlobal(runtime, 'apu_filter_highshelf', APU_FILTER_HIGHSHELF);
+	luaPipeline.registerGlobal(runtime, 'apu_event_none', APU_EVENT_NONE);
+	luaPipeline.registerGlobal(runtime, 'apu_event_slot_ended', APU_EVENT_SLOT_ENDED);
+	luaPipeline.registerGlobal(runtime, 'inp_ctrl_commit', INP_CTRL_COMMIT);
+	luaPipeline.registerGlobal(runtime, 'inp_ctrl_arm', INP_CTRL_ARM);
+	luaPipeline.registerGlobal(runtime, 'inp_ctrl_reset', INP_CTRL_RESET);
+	luaPipeline.registerGlobal(runtime, 'inp_pressed', ACTION_STATE_FLAG_PRESSED);
+	luaPipeline.registerGlobal(runtime, 'inp_justpressed', ACTION_STATE_FLAG_JUSTPRESSED);
+	luaPipeline.registerGlobal(runtime, 'inp_justreleased', ACTION_STATE_FLAG_JUSTRELEASED);
+	luaPipeline.registerGlobal(runtime, 'inp_consumed', ACTION_STATE_FLAG_CONSUMED);
+	luaPipeline.registerGlobal(runtime, 'inp_guardedjustpressed', ACTION_STATE_FLAG_GUARDEDJUSTPRESSED);
+	luaPipeline.registerGlobal(runtime, 'inp_repeatpressed', ACTION_STATE_FLAG_REPEATPRESSED);
+	luaPipeline.registerGlobal(runtime, 'sys_rom_system_base', SYSTEM_ROM_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_size', runtime.machine.memory.getOverlayRomSize());
+	luaPipeline.registerGlobal(runtime, 'sys_vram_system_textpage_base', VRAM_SYSTEM_TEXTPAGE_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_textpage_base', VRAM_PRIMARY_TEXTPAGE_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_textpage_base', VRAM_SECONDARY_TEXTPAGE_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_base', VRAM_FRAMEBUFFER_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_staging_base', VRAM_STAGING_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_system_textpage_size', VRAM_SYSTEM_TEXTPAGE_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_textpage_size', VRAM_PRIMARY_TEXTPAGE_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_textpage_size', VRAM_SECONDARY_TEXTPAGE_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_size', VRAM_FRAMEBUFFER_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.machine.resourceUsageDetector.getVramTotalBytes());
+	luaPipeline.registerGlobal(runtime, 'sys_palette_color', createNativeFunction('sys_palette_color', (args, out) => {
 		const index = args[0] as number;
 		if (!Number.isInteger(index)) {
 			throw runtime.createApiRuntimeError('sys_palette_color(index) requires an integer palette index.');
@@ -1386,126 +1378,126 @@ export function seedLuaGlobals(): void {
 		table.set(paletteAKey, color.a);
 		out.push(table);
 	}));
-	luaPipeline.registerGlobal('sys_cpu_cycles_used', createNativeFunction('sys_cpu_cycles_used', (_args, out) => {
+	luaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_used', createNativeFunction('sys_cpu_cycles_used', (_args, out) => {
 		out.push(runtime.frameScheduler.lastTickCpuUsedCycles);
 	}));
-	luaPipeline.registerGlobal('sys_cpu_cycles_granted', createNativeFunction('sys_cpu_cycles_granted', (_args, out) => {
+	luaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_granted', createNativeFunction('sys_cpu_cycles_granted', (_args, out) => {
 		out.push(runtime.frameScheduler.lastTickCpuBudgetGranted);
 	}));
-	luaPipeline.registerGlobal('sys_cpu_active_cycles_used', createNativeFunction('sys_cpu_active_cycles_used', (_args, out) => {
+	luaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_used', createNativeFunction('sys_cpu_active_cycles_used', (_args, out) => {
 		out.push(runtime.frameScheduler.lastTickCpuUsedCycles);
 	}));
-	luaPipeline.registerGlobal('sys_cpu_active_cycles_granted', createNativeFunction('sys_cpu_active_cycles_granted', (_args, out) => {
+	luaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_granted', createNativeFunction('sys_cpu_active_cycles_granted', (_args, out) => {
 		out.push(runtime.frameScheduler.lastTickCpuBudgetGranted);
 	}));
-	luaPipeline.registerGlobal('sys_ram_used', createNativeFunction('sys_ram_used', (_args, out) => {
+	luaPipeline.registerGlobal(runtime, 'sys_ram_used', createNativeFunction('sys_ram_used', (_args, out) => {
 		out.push(runtime.machine.resourceUsageDetector.getRamUsedBytes());
 	}));
-	luaPipeline.registerGlobal('sys_vram_used', createNativeFunction('sys_vram_used', (_args, out) => {
+	luaPipeline.registerGlobal(runtime, 'sys_vram_used', createNativeFunction('sys_vram_used', (_args, out) => {
 		out.push(runtime.machine.resourceUsageDetector.getVramUsedBytes());
 	}));
-	luaPipeline.registerGlobal('sys_vdp_work_units_per_sec', createNativeFunction('sys_vdp_work_units_per_sec', (_args, out) => {
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_per_sec', createNativeFunction('sys_vdp_work_units_per_sec', (_args, out) => {
 		out.push(runtime.timing.vdpWorkUnitsPerSec);
 	}));
-	luaPipeline.registerGlobal('sys_vdp_work_units_last', createNativeFunction('sys_vdp_work_units_last', (_args, out) => {
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_last', createNativeFunction('sys_vdp_work_units_last', (_args, out) => {
 		out.push(runtime.frameScheduler.lastTickVdpFrameCost);
 	}));
-	luaPipeline.registerGlobal('sys_vdp_frame_held', createNativeFunction('sys_vdp_frame_held', (_args, out) => {
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_frame_held', createNativeFunction('sys_vdp_frame_held', (_args, out) => {
 		out.push(runtime.frameScheduler.lastTickVdpFrameHeld ? 1 : 0);
 	}));
-	luaPipeline.registerGlobal('irq_dma_done', IRQ_DMA_DONE);
-	luaPipeline.registerGlobal('irq_dma_error', IRQ_DMA_ERROR);
-	luaPipeline.registerGlobal('irq_geo_done', IRQ_GEO_DONE);
-	luaPipeline.registerGlobal('irq_geo_error', IRQ_GEO_ERROR);
-	luaPipeline.registerGlobal('irq_img_done', IRQ_IMG_DONE);
-	luaPipeline.registerGlobal('irq_img_error', IRQ_IMG_ERROR);
-	luaPipeline.registerGlobal('irq_vblank', IRQ_VBLANK);
-	luaPipeline.registerGlobal('irq_reinit', IRQ_REINIT);
-	luaPipeline.registerGlobal('irq_newgame', IRQ_NEWGAME);
-	luaPipeline.registerGlobal('irq_apu', IRQ_APU);
-	luaPipeline.registerGlobal('dma_ctrl_start', DMA_CTRL_START);
-	luaPipeline.registerGlobal('dma_ctrl_strict', DMA_CTRL_STRICT);
-	luaPipeline.registerGlobal('dma_status_busy', DMA_STATUS_BUSY);
-	luaPipeline.registerGlobal('dma_status_done', DMA_STATUS_DONE);
-	luaPipeline.registerGlobal('dma_status_error', DMA_STATUS_ERROR);
-	luaPipeline.registerGlobal('dma_status_clipped', DMA_STATUS_CLIPPED);
-	luaPipeline.registerGlobal('dma_status_rejected', DMA_STATUS_REJECTED);
-	luaPipeline.registerGlobal('sys_geo_ctrl_start', GEO_CTRL_START);
-	luaPipeline.registerGlobal('sys_geo_ctrl_abort', GEO_CTRL_ABORT);
-	luaPipeline.registerGlobal('geo_status_busy', GEO_STATUS_BUSY);
-	luaPipeline.registerGlobal('geo_status_done', GEO_STATUS_DONE);
-	luaPipeline.registerGlobal('geo_status_error', GEO_STATUS_ERROR);
-	luaPipeline.registerGlobal('geo_status_rejected', GEO_STATUS_REJECTED);
-	luaPipeline.registerGlobal('sys_geo_cmd_xform2_batch', IO_CMD_GEO_XFORM2_BATCH);
-	luaPipeline.registerGlobal('sys_geo_cmd_sat2_batch', IO_CMD_GEO_SAT2_BATCH);
-	luaPipeline.registerGlobal('sys_geo_cmd_overlap2d_pass', IO_CMD_GEO_OVERLAP2D_PASS);
-	luaPipeline.registerGlobal('sys_geo_cmd_xform3_batch', IO_CMD_GEO_XFORM3_BATCH);
-	luaPipeline.registerGlobal('sys_geo_cmd_project3_batch', IO_CMD_GEO_PROJECT3_BATCH);
-	luaPipeline.registerGlobal('sys_geo_index_none', GEO_INDEX_NONE);
-	luaPipeline.registerGlobal('sys_geo_primitive_aabb', GEO_PRIMITIVE_AABB);
-	luaPipeline.registerGlobal('sys_geo_primitive_circle', GEO_PRIMITIVE_CIRCLE);
-	luaPipeline.registerGlobal('sys_geo_primitive_convex_poly', GEO_PRIMITIVE_CONVEX_POLY);
-	luaPipeline.registerGlobal('sys_geo_shape_convex_poly', GEO_SHAPE_CONVEX_POLY);
-	luaPipeline.registerGlobal('sys_geo_overlap_mode_candidate_pairs', GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS);
-	luaPipeline.registerGlobal('sys_geo_overlap_mode_full_pass', GEO_OVERLAP2D_MODE_FULL_PASS);
-	luaPipeline.registerGlobal('sys_geo_overlap_broadphase_none', GEO_OVERLAP2D_BROADPHASE_NONE);
-	luaPipeline.registerGlobal('sys_geo_overlap_broadphase_local_bounds_aabb', GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB);
-	luaPipeline.registerGlobal('sys_geo_overlap_contact_clipped_feature', GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE);
-	luaPipeline.registerGlobal('sys_geo_overlap_output_stop_on_overflow', GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW);
-	luaPipeline.registerGlobal('sys_geo_sat_meta_axis_mask', GEO_SAT_META_AXIS_MASK);
-	luaPipeline.registerGlobal('sys_geo_sat_meta_shape_shift', GEO_SAT_META_SHAPE_SHIFT);
-	luaPipeline.registerGlobal('sys_geo_sat_meta_shape_src', GEO_SAT_META_SHAPE_SRC);
-	luaPipeline.registerGlobal('sys_geo_sat_meta_shape_aux', GEO_SAT_META_SHAPE_AUX);
-	luaPipeline.registerGlobal('sys_geo_fault_aborted_by_host', GEO_FAULT_ABORTED_BY_HOST);
-	luaPipeline.registerGlobal('sys_geo_fault_bad_record_alignment', GEO_FAULT_BAD_RECORD_ALIGNMENT);
-	luaPipeline.registerGlobal('sys_geo_fault_bad_vertex_count', GEO_FAULT_BAD_VERTEX_COUNT);
-	luaPipeline.registerGlobal('sys_geo_fault_src_range', GEO_FAULT_SRC_RANGE);
-	luaPipeline.registerGlobal('sys_geo_fault_dst_range', GEO_FAULT_DST_RANGE);
-	luaPipeline.registerGlobal('sys_geo_fault_descriptor_kind', GEO_FAULT_DESCRIPTOR_KIND);
-	luaPipeline.registerGlobal('sys_geo_fault_numeric_overflow_internal', GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL);
-	luaPipeline.registerGlobal('sys_geo_fault_bad_record_flags', GEO_FAULT_BAD_RECORD_FLAGS);
-	luaPipeline.registerGlobal('sys_geo_fault_result_capacity', GEO_FAULT_RESULT_CAPACITY);
-	luaPipeline.registerGlobal('sys_geo_fault_reject_busy', GEO_FAULT_REJECT_BUSY);
-	luaPipeline.registerGlobal('sys_geo_fault_reject_bad_cmd', GEO_FAULT_REJECT_BAD_CMD);
-	luaPipeline.registerGlobal('sys_geo_fault_reject_bad_stride', GEO_FAULT_REJECT_BAD_STRIDE);
-	luaPipeline.registerGlobal('sys_geo_fault_reject_dst_not_ram', GEO_FAULT_REJECT_DST_NOT_RAM);
-	luaPipeline.registerGlobal('sys_geo_fault_reject_misaligned_regs', GEO_FAULT_REJECT_MISALIGNED_REGS);
-	luaPipeline.registerGlobal('sys_geo_fault_reject_bad_register_combo', GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
-	luaPipeline.registerGlobal('img_ctrl_start', IMG_CTRL_START);
-	luaPipeline.registerGlobal('img_status_busy', IMG_STATUS_BUSY);
-	luaPipeline.registerGlobal('img_status_done', IMG_STATUS_DONE);
-	luaPipeline.registerGlobal('img_status_error', IMG_STATUS_ERROR);
-	luaPipeline.registerGlobal('img_status_clipped', IMG_STATUS_CLIPPED);
-	luaPipeline.registerGlobal('img_status_rejected', IMG_STATUS_REJECTED);
+	luaPipeline.registerGlobal(runtime, 'irq_dma_done', IRQ_DMA_DONE);
+	luaPipeline.registerGlobal(runtime, 'irq_dma_error', IRQ_DMA_ERROR);
+	luaPipeline.registerGlobal(runtime, 'irq_geo_done', IRQ_GEO_DONE);
+	luaPipeline.registerGlobal(runtime, 'irq_geo_error', IRQ_GEO_ERROR);
+	luaPipeline.registerGlobal(runtime, 'irq_img_done', IRQ_IMG_DONE);
+	luaPipeline.registerGlobal(runtime, 'irq_img_error', IRQ_IMG_ERROR);
+	luaPipeline.registerGlobal(runtime, 'irq_vblank', IRQ_VBLANK);
+	luaPipeline.registerGlobal(runtime, 'irq_reinit', IRQ_REINIT);
+	luaPipeline.registerGlobal(runtime, 'irq_newgame', IRQ_NEWGAME);
+	luaPipeline.registerGlobal(runtime, 'irq_apu', IRQ_APU);
+	luaPipeline.registerGlobal(runtime, 'dma_ctrl_start', DMA_CTRL_START);
+	luaPipeline.registerGlobal(runtime, 'dma_ctrl_strict', DMA_CTRL_STRICT);
+	luaPipeline.registerGlobal(runtime, 'dma_status_busy', DMA_STATUS_BUSY);
+	luaPipeline.registerGlobal(runtime, 'dma_status_done', DMA_STATUS_DONE);
+	luaPipeline.registerGlobal(runtime, 'dma_status_error', DMA_STATUS_ERROR);
+	luaPipeline.registerGlobal(runtime, 'dma_status_clipped', DMA_STATUS_CLIPPED);
+	luaPipeline.registerGlobal(runtime, 'dma_status_rejected', DMA_STATUS_REJECTED);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_ctrl_start', GEO_CTRL_START);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_ctrl_abort', GEO_CTRL_ABORT);
+	luaPipeline.registerGlobal(runtime, 'geo_status_busy', GEO_STATUS_BUSY);
+	luaPipeline.registerGlobal(runtime, 'geo_status_done', GEO_STATUS_DONE);
+	luaPipeline.registerGlobal(runtime, 'geo_status_error', GEO_STATUS_ERROR);
+	luaPipeline.registerGlobal(runtime, 'geo_status_rejected', GEO_STATUS_REJECTED);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_cmd_xform2_batch', IO_CMD_GEO_XFORM2_BATCH);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_cmd_sat2_batch', IO_CMD_GEO_SAT2_BATCH);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_cmd_overlap2d_pass', IO_CMD_GEO_OVERLAP2D_PASS);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_cmd_xform3_batch', IO_CMD_GEO_XFORM3_BATCH);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_cmd_project3_batch', IO_CMD_GEO_PROJECT3_BATCH);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_index_none', GEO_INDEX_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_primitive_aabb', GEO_PRIMITIVE_AABB);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_primitive_circle', GEO_PRIMITIVE_CIRCLE);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_primitive_convex_poly', GEO_PRIMITIVE_CONVEX_POLY);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_shape_convex_poly', GEO_SHAPE_CONVEX_POLY);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_mode_candidate_pairs', GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_mode_full_pass', GEO_OVERLAP2D_MODE_FULL_PASS);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_broadphase_none', GEO_OVERLAP2D_BROADPHASE_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_broadphase_local_bounds_aabb', GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_contact_clipped_feature', GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_output_stop_on_overflow', GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_axis_mask', GEO_SAT_META_AXIS_MASK);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_shape_shift', GEO_SAT_META_SHAPE_SHIFT);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_shape_src', GEO_SAT_META_SHAPE_SRC);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_shape_aux', GEO_SAT_META_SHAPE_AUX);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_aborted_by_host', GEO_FAULT_ABORTED_BY_HOST);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_bad_record_alignment', GEO_FAULT_BAD_RECORD_ALIGNMENT);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_bad_vertex_count', GEO_FAULT_BAD_VERTEX_COUNT);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_src_range', GEO_FAULT_SRC_RANGE);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_dst_range', GEO_FAULT_DST_RANGE);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_descriptor_kind', GEO_FAULT_DESCRIPTOR_KIND);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_numeric_overflow_internal', GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_bad_record_flags', GEO_FAULT_BAD_RECORD_FLAGS);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_result_capacity', GEO_FAULT_RESULT_CAPACITY);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_busy', GEO_FAULT_REJECT_BUSY);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_bad_cmd', GEO_FAULT_REJECT_BAD_CMD);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_bad_stride', GEO_FAULT_REJECT_BAD_STRIDE);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_dst_not_ram', GEO_FAULT_REJECT_DST_NOT_RAM);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_misaligned_regs', GEO_FAULT_REJECT_MISALIGNED_REGS);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_bad_register_combo', GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
+	luaPipeline.registerGlobal(runtime, 'img_ctrl_start', IMG_CTRL_START);
+	luaPipeline.registerGlobal(runtime, 'img_status_busy', IMG_STATUS_BUSY);
+	luaPipeline.registerGlobal(runtime, 'img_status_done', IMG_STATUS_DONE);
+	luaPipeline.registerGlobal(runtime, 'img_status_error', IMG_STATUS_ERROR);
+	luaPipeline.registerGlobal(runtime, 'img_status_clipped', IMG_STATUS_CLIPPED);
+	luaPipeline.registerGlobal(runtime, 'img_status_rejected', IMG_STATUS_REJECTED);
 	const bitcastBuffer = new ArrayBuffer(8);
 	const bitcastView = new DataView(bitcastBuffer);
-	luaPipeline.registerGlobal('u32_to_f32', createNativeFunction('u32_to_f32', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'u32_to_f32', createNativeFunction('u32_to_f32', (args, out) => {
 		const bits = (args[0] as number) >>> 0;
 		bitcastView.setUint32(0, bits, true);
 		out.push(bitcastView.getFloat32(0, true));
 	}));
-	luaPipeline.registerGlobal('u32_to_i32', createNativeFunction('u32_to_i32', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'u32_to_i32', createNativeFunction('u32_to_i32', (args, out) => {
 		out.push(((args[0] as number) >>> 0) | 0);
 	}));
-	luaPipeline.registerGlobal('u64_to_f64', createNativeFunction('u64_to_f64', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'u64_to_f64', createNativeFunction('u64_to_f64', (args, out) => {
 		const hi = (args[0] as number) >>> 0;
 		const lo = (args[1] as number) >>> 0;
 		bitcastView.setUint32(0, lo, true);
 		bitcastView.setUint32(4, hi, true);
 		out.push(bitcastView.getFloat64(0, true));
 	}));
-	luaPipeline.registerGlobal('clock_now', createNativeFunction('clock_now', (_args, out) => {
+	luaPipeline.registerGlobal(runtime, 'clock_now', createNativeFunction('clock_now', (_args, out) => {
 		out.push(runtime.clock.now());
 	}));
-	luaPipeline.registerGlobal('type', createNativeFunction('type', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'type', createNativeFunction('type', (args, out) => {
 		const value = args.length > 0 ? args[0] : null;
 		out.push(typeOfValue(value));
 	}));
-	luaPipeline.registerGlobal('tostring', createNativeFunction('tostring', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'tostring', createNativeFunction('tostring', (args, out) => {
 		const value = args.length > 0 ? args[0] : null;
-		out.push(valueToStringValue(value));
+		out.push(valueToStringValue(runtime, value));
 	}));
-	luaPipeline.registerGlobal('tonumber', createNativeFunction('tonumber', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'tonumber', createNativeFunction('tonumber', (args, out) => {
 		if (args.length === 0) {
 			out.push(null);
 			return;
@@ -1531,7 +1523,7 @@ export function seedLuaGlobals(): void {
 		}
 		out.push(null);
 	}));
-	luaPipeline.registerGlobal('assert', createNativeFunction('assert', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'assert', createNativeFunction('assert', (args, out) => {
 		void out;
 		const condition = args.length > 0 ? args[0] : null;
 		if (!isTruthyValue(condition)) {
@@ -1542,12 +1534,12 @@ export function seedLuaGlobals(): void {
 			out.push(args[index]);
 		}
 	}));
-	luaPipeline.registerGlobal('error', createNativeFunction('error', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'error', createNativeFunction('error', (args, out) => {
 		void out;
 		const message = args.length > 0 ? args[0] : runtime.internString('error');
 		throw new LuaThrownValueError(message);
 	}));
-	luaPipeline.registerGlobal('setmetatable', createNativeFunction('setmetatable', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'setmetatable', createNativeFunction('setmetatable', (args, out) => {
 		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
 			throw runtime.createApiRuntimeError('setmetatable expects a table or native value as the first argument.');
 		}
@@ -1567,7 +1559,7 @@ export function seedLuaGlobals(): void {
 		target.metatable = metatable;
 		out.push(target);
 	}));
-	luaPipeline.registerGlobal('getmetatable', createNativeFunction('getmetatable', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'getmetatable', createNativeFunction('getmetatable', (args, out) => {
 		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
 			throw runtime.createApiRuntimeError('getmetatable expects a table or native value as the first argument.');
 		}
@@ -1578,22 +1570,22 @@ export function seedLuaGlobals(): void {
 		}
 		out.push(target.metatable);
 	}));
-	luaPipeline.registerGlobal('rawequal', createNativeFunction('rawequal', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'rawequal', createNativeFunction('rawequal', (args, out) => {
 		out.push(args[0] === args[1]);
 	}));
-	luaPipeline.registerGlobal('rawget', createNativeFunction('rawget', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'rawget', createNativeFunction('rawget', (args, out) => {
 		const target = args[0] as Table;
 		const keyValue = args.length > 1 ? args[1] : null;
 		out.push(target.get(keyValue));
 	}));
-	luaPipeline.registerGlobal('rawset', createNativeFunction('rawset', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'rawset', createNativeFunction('rawset', (args, out) => {
 		const target = args[0] as Table;
 		const keyValue = args[1];
 		const value = args.length > 2 ? args[2] : null;
 		target.set(keyValue, value);
 		out.push(target);
 	}));
-	luaPipeline.registerGlobal('select', createNativeFunction('select', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'select', createNativeFunction('select', (args, out) => {
 		const index = args[0];
 		const count = args.length - 1;
 		if (isStringValue(index) && stringValueToString(index) === '#') {
@@ -1607,7 +1599,7 @@ export function seedLuaGlobals(): void {
 			out.push(args[i]);
 		}
 	}));
-	luaPipeline.registerGlobal('pcall', createNativeFunction('pcall', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'pcall', createNativeFunction('pcall', (args, out) => {
 		const fn = args[0];
 		const callArgs = runtime.luaScratch.acquireValue();
 		try {
@@ -1630,7 +1622,7 @@ export function seedLuaGlobals(): void {
 			runtime.luaScratch.releaseValue(callArgs);
 		}
 	}));
-	luaPipeline.registerGlobal('xpcall', createNativeFunction('xpcall', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'xpcall', createNativeFunction('xpcall', (args, out) => {
 		const fn = args[0];
 		const handler = args[1];
 		const callArgs = runtime.luaScratch.acquireValue();
@@ -1654,7 +1646,7 @@ export function seedLuaGlobals(): void {
 			runtime.luaScratch.releaseValue(callArgs);
 		}
 	}));
-	luaPipeline.registerGlobal('loadstring', createNativeFunction('loadstring', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'loadstring', createNativeFunction('loadstring', (args, out) => {
 		if (!isStringValue(args[0])) {
 			throw runtime.createApiRuntimeError('loadstring(source [, chunkname]) requires a string source.');
 		}
@@ -1664,13 +1656,13 @@ export function seedLuaGlobals(): void {
 		const source = stringValueToString(args[0] as StringValue);
 		const chunkName = args.length > 1 && args[1] !== null ? stringValueToString(args[1] as StringValue) : 'loadstring';
 		try {
-			out.push(compileLoadChunk(source, chunkName));
+			out.push(compileLoadChunk(runtime, source, chunkName));
 		} catch (error) {
 			out.push(null);
 			out.push(runtime.internString(extractErrorMessage(error)));
 		}
 	}));
-	luaPipeline.registerGlobal('load', createNativeFunction('load', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'load', createNativeFunction('load', (args, out) => {
 		if (!isStringValue(args[0])) {
 			throw runtime.createApiRuntimeError('load(source [, chunkname [, mode]]) requires a string source.');
 		}
@@ -1692,18 +1684,18 @@ export function seedLuaGlobals(): void {
 		const source = stringValueToString(args[0] as StringValue);
 		const chunkName = args.length > 1 && args[1] !== null ? stringValueToString(args[1] as StringValue) : 'load';
 		try {
-			out.push(compileLoadChunk(source, chunkName));
+			out.push(compileLoadChunk(runtime, source, chunkName));
 		} catch (error) {
 			out.push(null);
 			out.push(runtime.internString(extractErrorMessage(error)));
 		}
 	}));
-	luaPipeline.registerGlobal('require', createNativeFunction('require', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'require', createNativeFunction('require', (args, out) => {
 		const moduleName = stringValueToString(args[0] as StringValue).trim();
-		out.push(luaPipeline.requireModule(moduleName));
+		out.push(luaPipeline.requireModule(runtime, moduleName));
 	}));
-	luaPipeline.registerGlobal('array', createNativeFunction('array', (args, out) => {
-		const ctxBase = buildMarshalContext();
+	luaPipeline.registerGlobal(runtime, 'array', createNativeFunction('array', (args, out) => {
+		const ctxBase = buildMarshalContext(runtime);
 		let result: unknown[] = [];
 		if (args.length === 1 && args[0] instanceof Table) {
 			result = createNativeArrayFromTable(args[0], ctxBase);
@@ -1712,15 +1704,15 @@ export function seedLuaGlobals(): void {
 			const visited = runtime.luaScratch.acquireTableMarshal();
 			try {
 				for (let index = 0; index < args.length; index += 1) {
-					result[index] = toNativeValue(args[index], ctxBase, visited);
+					result[index] = toNativeValue(runtime, args[index], ctxBase, visited);
 				}
 			} finally {
 				runtime.luaScratch.releaseTableMarshal(visited);
 			}
 		}
-		out.push(getOrCreateNativeObject(result));
+		out.push(getOrCreateNativeObject(runtime, result));
 	}));
-	luaPipeline.registerGlobal('print', createNativeFunction('print', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'print', createNativeFunction('print', (args, out) => {
 		const parts: string[] = [];
 		for (let index = 0; index < args.length; index += 1) {
 			parts.push(valueToString(args[index]));
@@ -1830,7 +1822,7 @@ export function seedLuaGlobals(): void {
 	};
 
 	const stringTable = new Table(0, 0);
-	luaPipeline.registerGlobal('wrap_text_lines', createNativeFunction('wrap_text_lines', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'wrap_text_lines', createNativeFunction('wrap_text_lines', (args, out) => {
 		const text = stringValueToString(args[0] as StringValue);
 		const maxChars = Math.floor(args[1] as number);
 		const firstPrefix = args.length > 2 && args[2] !== null ? stringValueToString(args[2] as StringValue) : '';
@@ -2142,11 +2134,11 @@ export function seedLuaGlobals(): void {
 	}));
 	setKey(stringTable, 'format', createNativeFunction('string.format', (args, out) => {
 		const template = stringValueToString(args[0] as StringValue);
-		const formatted = formatLuaString(template, args, 1);
+		const formatted = formatLuaString(runtime, template, args, 1);
 		out.push(runtime.internString(formatted));
 	}));
 	runtime.machine.cpu.setStringIndexTable(stringTable);
-	luaPipeline.registerGlobal('string', stringTable);
+	luaPipeline.registerGlobal(runtime, 'string', stringTable);
 
 	const tableLibrary = new Table(0, 0);
 	setKey(tableLibrary, 'insert', createNativeFunction('table.insert', (args, out) => {
@@ -2265,7 +2257,7 @@ export function seedLuaGlobals(): void {
 			runtime.luaScratch.releaseValue(values);
 		}
 	}));
-	luaPipeline.registerGlobal('table', tableLibrary);
+	luaPipeline.registerGlobal(runtime, 'table', tableLibrary);
 
 	const osTable = new Table(0, 0);
 	const formatOsDate = (format: string, date: Date): string => {
@@ -2428,7 +2420,7 @@ export function seedLuaGlobals(): void {
 		}
 		out.push(runtime.internString(formatOsDate(format, date)));
 	}));
-	luaPipeline.registerGlobal('os', osTable);
+	luaPipeline.registerGlobal(runtime, 'os', osTable);
 
 	const nextFn = createNativeFunction('next', (args, out) => {
 		const target = args[0];
@@ -2443,7 +2435,7 @@ export function seedLuaGlobals(): void {
 			return;
 		}
 		if (isNativeObject(target)) {
-			const entry = nextNativeEntry(target, keyValue);
+			const entry = nextNativeEntry(runtime, target, keyValue);
 			if (entry === null) {
 				out.push(null);
 				return;
@@ -2490,7 +2482,7 @@ export function seedLuaGlobals(): void {
 					out.push(null);
 					return;
 				}
-				out.push(nextIndex, toRuntimeValue(value));
+				out.push(nextIndex, toRuntimeValue(runtime, value));
 				return;
 			}
 			const value = (raw as Record<string, unknown>)[String(nextIndex)];
@@ -2498,15 +2490,15 @@ export function seedLuaGlobals(): void {
 				out.push(null);
 				return;
 			}
-			out.push(nextIndex, toRuntimeValue(value));
+			out.push(nextIndex, toRuntimeValue(runtime, value));
 			return;
 		}
 		throw runtime.createApiRuntimeError('ipairs expects a table or native object.');
 	});
 	runtime.pairsIterator = pairsIterator;
 	runtime.ipairsIterator = ipairsIterator;
-	luaPipeline.registerGlobal('next', nextFn);
-	luaPipeline.registerGlobal('pairs', createNativeFunction('pairs', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'next', nextFn);
+	luaPipeline.registerGlobal(runtime, 'pairs', createNativeFunction('pairs', (args, out) => {
 		const target = args[0];
 		if (target instanceof Table) {
 			const state = new Table(4, 0);
@@ -2518,14 +2510,14 @@ export function seedLuaGlobals(): void {
 			return;
 		}
 		if (!isNativeObject(target)) {
-			const stack = buildLuaStackFrames()
+			const stack = buildLuaStackFrames(runtime)
 				.map(frame => `${frame.source ?? '<unknown>'}:${frame.line ?? '?'}:${frame.column ?? '?'}`)
 				.join(' <- ');
 			throw runtime.createApiRuntimeError(`pairs expects a table or native object (got ${valueToString(target)}). stack=${stack}`);
 		}
-		pushNativePairsIterator(target, out);
+		pushNativePairsIterator(runtime, target, out);
 	}));
-	luaPipeline.registerGlobal('ipairs', createNativeFunction('ipairs', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'ipairs', createNativeFunction('ipairs', (args, out) => {
 		const target = args[0];
 		if (!(target instanceof Table) && !isNativeObject(target)) {
 			throw runtime.createApiRuntimeError('ipairs expects a table or native object.');
@@ -2538,16 +2530,16 @@ export function seedLuaGlobals(): void {
 		if (kind === 'method') {
 			const callable = descriptor.value as (...args: unknown[]) => unknown;
 			const native = createNativeFunction(`api.${name}`, (args, out) => {
-				const ctxBase = buildMarshalContext();
+				const ctxBase = buildMarshalContext(runtime);
 				const visited = runtime.luaScratch.acquireTableMarshal();
 				const jsArgs = runtime.luaScratch.acquireValue() as unknown[];
 				try {
 					for (let index = 0; index < args.length; index += 1) {
 						const nextCtx = extendMarshalContext(ctxBase, `arg${index}`);
-						jsArgs.push(toNativeValue(args[index], nextCtx, visited));
+						jsArgs.push(toNativeValue(runtime, args[index], nextCtx, visited));
 					}
 					const result = callable.apply(runtime.api, jsArgs);
-					wrapNativeResult(result, out);
+					wrapNativeResult(runtime, result, out);
 				} catch (error) {
 					const message = extractErrorMessage(error);
 					throw runtime.createApiRuntimeError(`[api.${name}] ${message}`);
@@ -2556,7 +2548,7 @@ export function seedLuaGlobals(): void {
 					runtime.luaScratch.releaseTableMarshal(visited);
 				}
 			});
-			luaPipeline.registerGlobal(name, native);
+			luaPipeline.registerGlobal(runtime, name, native);
 			continue;
 		}
 		if (descriptor.get) {
@@ -2564,13 +2556,13 @@ export function seedLuaGlobals(): void {
 			const native = createNativeFunction(`api.${name}`, (_args, out) => {
 				try {
 					const result = getter.call(runtime.api);
-					wrapNativeResult(result, out);
+					wrapNativeResult(runtime, result, out);
 				} catch (error) {
 					const message = extractErrorMessage(error);
 					throw runtime.createApiRuntimeError(`[api.${name}] ${message}`);
 				}
 			});
-			luaPipeline.registerGlobal(name, native);
+			luaPipeline.registerGlobal(runtime, name, native);
 		}
 	}
 

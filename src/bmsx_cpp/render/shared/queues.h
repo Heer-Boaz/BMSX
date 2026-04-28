@@ -12,6 +12,7 @@
 #include <functional>
 
 namespace bmsx {
+class Runtime;
 /* ============================================================================
  * Mesh Queue Item (for 3D meshes)
  * ============================================================================ */
@@ -38,22 +39,22 @@ namespace RenderQueues {
 /**
  * Submit one image blit to the framebuffer path.
  */
-void submitSprite(const ImgRenderSubmission& options);
+void submitSprite(Runtime& runtime, const ImgRenderSubmission& options);
 
 /**
  * Submit a rectangle (filled or outline) to the framebuffer path.
  */
-void submitRectangle(const RectRenderSubmission& options);
+void submitRectangle(Runtime& runtime, const RectRenderSubmission& options);
 
 /**
  * Submit a polygon outline to the framebuffer path.
  */
-void submitDrawPolygon(const PolyRenderSubmission& options);
+void submitDrawPolygon(Runtime& runtime, const PolyRenderSubmission& options);
 
 /**
  * Submit glyphs for framebuffer text rendering.
  */
-void submitGlyphs(const GlyphRenderSubmission& options);
+void submitGlyphs(Runtime& runtime, const GlyphRenderSubmission& options);
 
 /**
  * Correct area start/end to ensure positive dimensions.
@@ -99,7 +100,7 @@ void resetTransientState();
 /**
  * Clear both front and back queues and reset VDP queue state to power-on values.
  */
-void clearAllQueues();
+void clearAllQueues(Runtime& runtime);
 
 // --- Mesh queue helpers ---
 
@@ -136,16 +137,17 @@ void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure = 1.0f);
 
 // --- Glyph helpers ---
 
-void renderGlyphs(f32 x,
+void renderGlyphs(Runtime& runtime,
+					f32 x,
 					f32 y,
 					const std::vector<std::string>& lines,
 					i32 start,
 					i32 end,
 					f32 z,
-						BFont* font,
-						const Color& color,
-						const std::optional<Color>& backgroundColor,
-						RenderLayer layer);
+					BFont* font,
+					const Color& color,
+					const std::optional<Color>& backgroundColor,
+					RenderLayer layer);
 
 } // namespace RenderQueues
 

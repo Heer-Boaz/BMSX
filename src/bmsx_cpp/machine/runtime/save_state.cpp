@@ -14,10 +14,9 @@ namespace bmsx {
 RuntimeSaveState captureRuntimeSaveState(Runtime& runtime) {
 	captureVdpContextState(runtime.machine().vdp());
 	RuntimeSaveState state;
-	state.machineState = captureRuntimeSaveMachineState();
-	state.cpuState = captureRuntimeCpuState();
+	state.machineState = captureRuntimeSaveMachineState(runtime);
+	state.cpuState = captureRuntimeCpuState(runtime);
 	state.storageState = runtime.m_api->captureStorageState();
-	state.gameViewState = runtime.m_gameViewState;
 	state.renderState = captureRuntimeRenderState();
 	state.randomSeed = runtime.m_randomSeedValue;
 	state.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
@@ -29,17 +28,16 @@ RuntimeSaveState captureRuntimeSaveState(Runtime& runtime) {
 
 void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state) {
 	runtime.m_programSource = state.engineProgramActive ? Runtime::ProgramSource::Engine : Runtime::ProgramSource::Cart;
-	applyRuntimeSaveMachineState(state.machineState);
-	applyRuntimeCpuState(state.cpuState);
+	applyRuntimeSaveMachineState(runtime, state.machineState);
+	applyRuntimeCpuState(runtime, state.cpuState);
 	runtime.m_api->restoreStorageState(state.storageState);
-	runtime.m_gameViewState = state.gameViewState;
 	applyRuntimeRenderState(state.renderState);
 	restoreVdpContextState(runtime.machine().vdp());
 	runtime.m_randomSeedValue = state.randomSeed;
 	runtime.m_pendingCall = state.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
 	runtime.m_runtimeFailed = state.runtimeFailed;
 	runtime.m_luaInitialized = state.luaInitialized;
-	syncRuntimeGameViewStateToTable();
+	syncRuntimeGameViewToTable(runtime);
 	RenderQueues::clearBackQueues();
 }
 

@@ -1,7 +1,7 @@
 import * as constants from '../../../../common/constants';
 import { showEditorMessage } from '../../../../common/feedback_state';
-import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../../editor/input/keyboard/key_input';
-import { focusEditorFromResourcePanel } from '../navigation';
+import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../../input/keyboard/key_input';
+import { resetBlink } from '../../../../editor/render/caret';
 import type { ResourcePanelController } from './controller';
 
 export function handleResourcePanelKeyboardInput(controller: ResourcePanelController): void {
@@ -26,7 +26,7 @@ export function handleResourcePanelKeyboardInput(controller: ResourcePanelContro
 	if (isKeyJustPressed('Tab')) {
 		consumeIdeKey('Tab');
 		controller.setFocused(false);
-		focusEditorFromResourcePanel();
+		resetBlink();
 		return;
 	}
 	if (controller.getMode() !== 'resources') {

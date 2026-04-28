@@ -1,7 +1,7 @@
 import type { ImageAtlasRect } from '../vdp/image_meta';
 import { BFont, GlyphMap } from './bitmap_font';
 import { resolveImageAtlasRectFromAssets } from '../vdp/image_meta';
-import { Runtime } from '../../machine/runtime/runtime';
+import type { Runtime } from '../../machine/runtime/runtime';
 
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
 
@@ -147,17 +147,17 @@ function buildTinyCharMap(): GlyphMap {
 }
 
 export class Font extends BFont {
-	constructor(config?: { variant?: FontVariant }) {
+	constructor(runtime: Runtime, config?: { variant?: FontVariant }) {
 		const variant = config?.variant ?? DEFAULT_FONT_VARIANT;
 		const preset = FONT_PRESETS[variant];
-		super(preset);
+		super(runtime, preset);
 	}
 
 	protected override getGlyphAsset(imgid: string) {
-		return Runtime.instance.assets.getImageAsset(imgid, Runtime.instance.engineAssetSource);
+		return this.runtime.assets.getImageAsset(imgid, this.runtime.engineAssetSource);
 	}
 
 	protected override getGlyphRect(imgid: string): ImageAtlasRect {
-		return resolveImageAtlasRectFromAssets(Runtime.instance.assets.biosLayer.assets, imgid);
+		return resolveImageAtlasRectFromAssets(this.runtime.assets.biosLayer.assets, imgid);
 	}
 }

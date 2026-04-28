@@ -1,9 +1,9 @@
 import type { ResourceDescriptor } from '../../../../../rompack/resource';
-import { Runtime } from '../../../../../machine/runtime/runtime';
 import { measureTextRange } from '../../../../editor/common/text/layout';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import { listResourcesStrict } from '../catalog';
 import type { CallHierarchyView, CallHierarchyViewNode } from '../../../../editor/contrib/call_hierarchy/view';
+import type { Runtime } from '../../../../../machine/runtime/runtime';
 
 export type ResourcePanelFilterMode = 'lua_only' | 'all';
 
@@ -13,8 +13,8 @@ type ResourceDirectory = {
 	files: { name: string; descriptor: ResourceDescriptor }[];
 };
 
-export function buildResourcePanelItems(filterMode: ResourcePanelFilterMode): ResourceBrowserItem[] {
-	const descriptors = collectResourcePanelDescriptors();
+export function buildResourcePanelItems(runtime: Runtime, filterMode: ResourcePanelFilterMode): ResourceBrowserItem[] {
+	const descriptors = collectResourcePanelDescriptors(runtime);
 	const filtered: ResourceDescriptor[] = [];
 	for (let index = 0; index < descriptors.length; index += 1) {
 		const descriptor = descriptors[index];
@@ -69,10 +69,10 @@ export function findResourcePanelIndexByCallHierarchyNodeId(items: readonly Reso
 	return -1;
 }
 
-function collectResourcePanelDescriptors(): ResourceDescriptor[] {
-	const descriptors = listResourcesStrict();
+function collectResourcePanelDescriptors(runtime: Runtime): ResourceDescriptor[] {
+	const descriptors = listResourcesStrict(runtime);
 	const augmented = descriptors.slice();
-	for (const asset of Runtime.instance.assets.listImageAssets()) {
+	for (const asset of runtime.assets.listImageAssets()) {
 		if (asset.type !== 'atlas') {
 			continue;
 		}

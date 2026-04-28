@@ -16,8 +16,9 @@ import {
 	closeSymbolSearch,
 } from '../shared';
 import { symbolSearchState } from './state';
+import type { Runtime } from '../../../../../machine/runtime/runtime';
 
-export function openSymbolSearch(initialQuery: string = ''): void {
+export function openSymbolSearch(runtime: Runtime, initialQuery: string = ''): void {
 	if (getActiveCodeTabContext().mode !== 'lua') {
 		return;
 	}
@@ -32,13 +33,13 @@ export function openSymbolSearch(initialQuery: string = ''): void {
 	symbolSearchState.visible = true;
 	symbolSearchState.active = true;
 	applySymbolSearchFieldText(initialQuery, true);
-	refreshSymbolCatalog(true);
-	updateSymbolSearchMatches();
+	refreshSymbolCatalog(runtime, true);
+	updateSymbolSearchMatches(runtime);
 	symbolSearchState.hoverIndex = -1;
 	resetBlink();
 }
 
-export function openGlobalSymbolSearch(initialQuery: string = ''): void {
+export function openGlobalSymbolSearch(runtime: Runtime, initialQuery: string = ''): void {
 	if (getActiveCodeTabContext().mode !== 'lua') {
 		return;
 	}
@@ -53,24 +54,24 @@ export function openGlobalSymbolSearch(initialQuery: string = ''): void {
 	symbolSearchState.visible = true;
 	symbolSearchState.active = true;
 	applySymbolSearchFieldText(initialQuery, true);
-	refreshSymbolCatalog(true);
-	updateSymbolSearchMatches();
+	refreshSymbolCatalog(runtime, true);
+	updateSymbolSearchMatches(runtime);
 	symbolSearchState.hoverIndex = -1;
 	resetBlink();
 }
 
-export function applySymbolSearchSelection(index: number): void {
+export function applySymbolSearchSelection(runtime: Runtime, index: number): void {
 	if (index < 0 || index >= symbolSearchState.matches.length) {
 		showEditorMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	if (symbolSearchState.mode === 'references') {
-		applyReferenceSearchSelection(index);
+		applyReferenceSearchSelection(runtime, index);
 		return;
 	}
 	const location = symbolSearchState.matches[index].entry.symbol.location;
 	closeSymbolSearch(true);
 	scheduleMicrotask(() => {
-		navigateToLuaDefinition(location);
+		navigateToLuaDefinition(runtime, location);
 	});
 }

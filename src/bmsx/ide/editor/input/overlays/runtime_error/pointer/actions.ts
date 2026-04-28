@@ -1,13 +1,9 @@
-import { navigateToRuntimeErrorFrameTarget } from '../../../../../workbench/contrib/debugger/controller';
 import { rebuildRuntimeErrorOverlayView } from '../../../../contrib/runtime_error/overlay';
 import { RuntimeErrorOverlay } from '../../../../../common/models';
 import { RuntimeErrorOverlayClickResult } from '../../../../render/error_overlay';
+import type { Runtime } from '../../../../../../machine/runtime/runtime';
 
-export function collapseRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
-	setRuntimeErrorOverlayExpanded(overlay, false);
-}
-
-export function handleRuntimeErrorOverlayPointerClick(overlay: RuntimeErrorOverlay, hoverLine: number): void {
+export function handleRuntimeErrorOverlayPointerClick(runtime: Runtime, overlay: RuntimeErrorOverlay, hoverLine: number): void {
 	const clickResult = evaluateRuntimeErrorOverlayClick(overlay, hoverLine);
 	switch (clickResult.kind) {
 		case 'expand':
@@ -18,7 +14,7 @@ export function handleRuntimeErrorOverlayPointerClick(overlay: RuntimeErrorOverl
 			return;
 		case 'navigate':
 			setRuntimeErrorOverlayExpanded(overlay, false);
-			navigateToRuntimeErrorFrameTarget(clickResult.frame);
+			runtime.editor.debugger.navigateToRuntimeErrorFrameTarget(clickResult.frame);
 			return;
 		case 'noop':
 		default:
@@ -46,7 +42,7 @@ export function evaluateRuntimeErrorOverlayClick(
 	return { kind: 'collapse' };
 }
 
-function setRuntimeErrorOverlayExpanded(overlay: RuntimeErrorOverlay, expanded: boolean): void {
+export function setRuntimeErrorOverlayExpanded(overlay: RuntimeErrorOverlay, expanded: boolean): void {
 	overlay.expanded = expanded;
 	rebuildRuntimeErrorOverlayView(overlay);
 }

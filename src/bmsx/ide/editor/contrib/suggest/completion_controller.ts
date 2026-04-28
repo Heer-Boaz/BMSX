@@ -26,7 +26,7 @@ import {
 } from '../../../common/models';
 import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import * as constants from '../../../common/constants';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import { isLuaCommentContext } from '../../../common/text';
 import { point_in_rect } from '../../../../common/rect';
 import { LuaLexer } from '../../../../lua/syntax/lexer';
@@ -39,6 +39,7 @@ import { resetBlink } from '../../render/caret';
 import { ModuleAliasEntry } from '../../../../lua/semantic/model';
 import { getActiveSemanticDefinitions, getLuaModuleAliases } from '../diagnostics/controller';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor/state';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;
@@ -50,7 +51,7 @@ type LocalCompletionCacheEntry = {
 const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
 
 export class CompletionController {
-	public constructor() {}
+	public constructor(protected readonly runtime: Runtime) {}
 
 	public get session(): CompletionSession | null { return this.completionSession; }
 	public get hint(): ParameterHintState | null { return this.parameterHint; }
@@ -557,7 +558,7 @@ export class CompletionController {
 			};
 			appendItems(this.getModuleMemberCompletionItems(context));
 			const path = this.getActivePath();
-			const runtimeItems = buildMemberCompletionItems({
+			const runtimeItems = buildMemberCompletionItems(this.runtime, {
 				objectName: context.objectName,
 				operator: context.operator,
 				prefix: context.prefix,
@@ -629,7 +630,7 @@ export class CompletionController {
 		if (this.cachedGlobalCompletionItems && this.cachedGlobalCompletionVersion === version) {
 			return this.cachedGlobalCompletionItems;
 		}
-		const entries = listGlobalLuaSymbols();
+		const entries = listGlobalLuaSymbols(this.runtime);
 		const items = this.buildSymbolCompletionItems(entries, 'global');
 		const apiItem: LuaCompletionItem = { label: 'api', insertText: 'api', sortKey: 'global:api', kind: 'global', detail: 'Runtime API root' };
 		items.push(apiItem);
@@ -788,7 +789,7 @@ export class CompletionController {
 		}
 		let symbols: LuaSymbolEntry[] = [];
 		try {
-			symbols = listLuaModuleSymbols(moduleAlias.module);
+			symbols = listLuaModuleSymbols(this.runtime, moduleAlias.module);
 		} catch {
 			symbols = [];
 		}
@@ -918,7 +919,7 @@ export class CompletionController {
 	private ensureBuiltinDescriptorCache(force = false): void {
 		if (!force && this.builtinDescriptors !== null) return;
 		let descriptors: LuaBuiltinDescriptor[];
-		try { descriptors = listLuaBuiltinFunctions(); } catch { descriptors = []; }
+		try { descriptors = listLuaBuiltinFunctions(this.runtime); } catch { descriptors = []; }
 		if (!Array.isArray(descriptors)) descriptors = [];
 		this.builtinDescriptors = descriptors;
 		this.builtinDescriptorMap.clear();
@@ -1465,4 +1466,19 @@ export class CompletionController {
 	}
 }
 
-export const completionController = new CompletionController();
+export class EditorCompletionController extends CompletionController {
+	private readonly unsubscribeCursorMoved: () => void;
+	private readonly unsubscribeTextMutated: () => void;
+
+	public constructor(runtime: Runtime) {
+		super(runtime);
+		this.unsubscribeCursorMoved = editorDocumentState.onCursorMoved(() => this.onCursorMoved());
+		this.unsubscribeTextMutated = editorDocumentState.onTextMutated(edit => this.updateAfterEdit(edit));
+	}
+
+	public dispose(): void {
+		this.unsubscribeCursorMoved();
+		this.unsubscribeTextMutated();
+		this.closeSession();
+	}
+}

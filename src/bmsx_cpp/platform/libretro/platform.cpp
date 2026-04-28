@@ -3,6 +3,7 @@
  */
 
 #include "platform.h"
+#include "core/engine.h"
 #include "core/primitives.h"
 #include "core/host_asset_sync.h"
 #include "core/rom_boot_manager.h"
@@ -16,7 +17,6 @@
 #include "common/mem_snapshot.h"
 #include "../../machine/runtime/runtime.h"
 #include "../../machine/runtime/save_state/codec.h"
-#include "../../machine/runtime/game/view_state.h"
 #if BMSX_ENABLE_GLES2
 #include "render/backend/gles2_backend.h"
 #include "render/post/crt_pipeline_gles2.h"
@@ -241,8 +241,8 @@ void LibretroPlatform::onContextDestroy() {
 #if BMSX_ENABLE_GLES2
 	auto* view = m_engine->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
-	if (Runtime::hasInstance()) {
-		auto& vdp = Runtime::instance().machine().vdp();
+	if (m_engine->hasRuntime()) {
+		auto& vdp = m_engine->runtime().machine().vdp();
 		if (!m_render_assets_need_refresh) {
 			captureVdpContextState(vdp);
 		}
@@ -352,13 +352,13 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 	view->applyAperture = applyAperture;
 }
 
-void LibretroPlatform::setDitherType(GameView::DitherType type) {
+void LibretroPlatform::setDitherType(i32 type) {
 	m_dither_type = type;
-	m_engine->view()->dither_type = type;
-	if (!Runtime::hasInstance()) {
+	m_engine->view()->dither_type = static_cast<GameView::DitherType>(type);
+	if (!m_engine->hasRuntime()) {
 		return;
 	}
-	Runtime::instance().setVdpDitherType(static_cast<i32>(m_dither_type));
+	m_engine->runtime().setVdpDitherType(m_dither_type);
 }
 
 void LibretroPlatform::setFrameSkipOptions(bool enabled) {
@@ -430,7 +430,7 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM into engine\n");
 		return false;
 	}
-	Runtime::instance().setVdpDitherType(static_cast<i32>(m_dither_type));
+	m_engine->runtime().setVdpDitherType(m_dither_type);
 	{
 		const std::string line = memSnapshotLine("libretro:after_loadRom");
 		if (!line.empty()) {
@@ -642,7 +642,7 @@ void LibretroPlatform::runFrame() {
 
 	bool skipRender = m_frameskip_enabled && m_frameskip_next;
 	m_frameskip_next = false;
-	m_engine->runHostFrame(Runtime::instance(), *m_microtask_queue, dt, m_platform_paused, skipRender);
+	m_engine->runHostFrame(m_engine->runtime(), *m_microtask_queue, dt, m_platform_paused, skipRender);
 	processAudio();
 }
 
@@ -699,27 +699,27 @@ void LibretroPlatform::log(retro_log_level level, const char* fmt, ...) {
 }
 
 size_t LibretroPlatform::getStateSize() const {
-	if (!m_rom_loaded || !Runtime::hasInstance()) {
+	if (!m_rom_loaded || !m_engine->hasRuntime()) {
 		return 0;
 	}
-	Runtime& runtime = Runtime::instance();
+	Runtime& runtime = m_engine->runtime();
 	if (!runtime.isInitialized()) {
 		return 0;
 	}
-	return captureRuntimeSaveStateBytes().size();
+	return captureRuntimeSaveStateBytes(runtime).size();
 }
 
 // start fallible-boundary -- libretro serialization callbacks report failure as false after logging.
 bool LibretroPlatform::saveState(void* data, size_t size) {
-	if (!m_rom_loaded || !Runtime::hasInstance()) {
+	if (!m_rom_loaded || !m_engine->hasRuntime()) {
 		return false;
 	}
-	Runtime& runtime = Runtime::instance();
+	Runtime& runtime = m_engine->runtime();
 	if (!runtime.isInitialized()) {
 		return false;
 	}
 	try {
-		const std::vector<u8> state = captureRuntimeSaveStateBytes();
+		const std::vector<u8> state = captureRuntimeSaveStateBytes(runtime);
 		if (size < state.size()) {
 			return false;
 		}
@@ -736,17 +736,16 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 }
 
 bool LibretroPlatform::loadState(const void* data, size_t size) {
-	if (!m_rom_loaded || !Runtime::hasInstance()) {
+	if (!m_rom_loaded || !m_engine->hasRuntime()) {
 		return false;
 	}
-	Runtime& runtime = Runtime::instance();
+	Runtime& runtime = m_engine->runtime();
 	if (!runtime.isInitialized()) {
 		return false;
 	}
 	try {
-		applyRuntimeSaveStateBytes(static_cast<const u8*>(data), size);
+		applyRuntimeSaveStateBytes(runtime, static_cast<const u8*>(data), size);
 		flushHostRuntimeAssetEdits(runtime.machine().memory(), *m_engine->texmanager(), *m_engine->view());
-		applyGameViewStateToHost(runtime.gameViewState(), *m_engine->view());
 		static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
 		m_audio_buffer.clear();
 		m_has_wall_frame_timestamp = false;

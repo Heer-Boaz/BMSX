@@ -80,7 +80,7 @@ export class CartBootState {
 		const frameLoop = runtime.frameLoop;
 		const hasPendingCall = runtime.pendingCall !== null;
 		if (frameLoop.currentFrameState !== null || hasPendingCall) {
-			luaPipeline.resetFrameState();
+			luaPipeline.resetFrameState(runtime);
 		}
 		if (hasPendingCall) {
 			runtime.pendingCall = null;
@@ -90,7 +90,7 @@ export class CartBootState {
 		this.pending = false;
 		console.info('Switching to cart program after BIOS boot request.');
 		runtime.activateProgramSource('cart');
-		void luaPipeline.reloadProgramAndResetWorld();
+		void luaPipeline.reloadProgramAndResetWorld(runtime);
 	}
 
 	private setReadyFlag(value: boolean): void {
@@ -108,7 +108,7 @@ export class CartBootState {
 		this.preparedProgram = null;
 		try {
 			if (runtime.cartLuaSources.can_boot_from_source) {
-				this.preparedProgram = luaPipeline.compileCartLuaProgramForBoot();
+				this.preparedProgram = luaPipeline.compileCartLuaProgramForBoot(runtime);
 				this.setReadyFlag(true);
 				console.info('Cart boot payload prepared from Lua sources.');
 				return;

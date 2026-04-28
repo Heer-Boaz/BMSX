@@ -16,8 +16,10 @@ import { editorCaretState } from '../../ui/view/caret/state';
 import { editorDocumentState } from '../../editing/document_state';
 import { registerCodeTabContext, setTabDirty } from '../../../workbench/ui/code_tab/contexts';
 import { editorViewState } from '../../ui/view/state';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export function commitRename(
+	runtime: Runtime,
 	matches: readonly SearchMatch[],
 	newName: string,
 	activeIndex: number,
@@ -82,7 +84,7 @@ export function commitRename(
 	}
 
 	for (const bucket of rangeMap.values()) {
-		const replacements = crossFileRenameManager.applyRenameToChunk(bucket.path, bucket.ranges, newName, activePath);
+		const replacements = crossFileRenameManager.applyRenameToChunk(runtime, bucket.path, bucket.ranges, newName, activePath);
 		updatedTotal += replacements;
 		if (replacements > 0) {
 			markDiagnosticsDirtyForChunk(bucket.path);
@@ -94,11 +96,11 @@ export function commitRename(
 export class CrossFileRenameManager {
 	public constructor() {}
 
-	public applyRenameToChunk(path: string, ranges: readonly LuaSourceRange[], newName: string, activePath: string): number {
+	public applyRenameToChunk(runtime: Runtime, path: string, ranges: readonly LuaSourceRange[], newName: string, activePath: string): number {
 		if (path === activePath) {
 			return 0;
 		}
-		const context = this.ensureCodeTabContextForChunk(path);
+		const context = this.ensureCodeTabContextForChunk(runtime, path);
 		if (context.readOnly === true) {
 			return 0;
 		}
@@ -142,15 +144,15 @@ export class CrossFileRenameManager {
 		this.markContextTabDirty(context.id, context.dirty);
 	}
 
-	private ensureCodeTabContextForChunk(path: string): CodeTabContext {
+	private ensureCodeTabContextForChunk(runtime: Runtime, path: string): CodeTabContext {
 		const existing = findCodeTabContext(path);
 		if (existing) {
 			return existing;
 		}
-		const descriptor = findResourceDescriptorForChunk(path)!;
+		const descriptor = findResourceDescriptorForChunk(runtime, path)!;
 		let context = findCodeTabContext(descriptor.path);
 		if (!context) {
-			context = createLuaCodeTabContext(descriptor);
+			context = createLuaCodeTabContext(runtime, descriptor);
 			registerCodeTabContext(context);
 			this.markContextTabDirty(context.id, context.dirty);
 		}

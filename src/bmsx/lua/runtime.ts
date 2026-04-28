@@ -50,7 +50,6 @@ import {
 } from './value';
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger';
 import { engineCore } from '../core/engine';
-import { Runtime } from '../machine/runtime/runtime';
 import { isLuaHandlerFunction } from './handler_cache';
 import { LuaInteropAdapter } from '../machine/firmware/js_bridge';
 import { getCachedLuaParse } from './analysis/cache';
@@ -218,12 +217,7 @@ export class LuaNativeFunction implements LuaFunctionValue {
 	}
 
 	public call(args: ReadonlyArray<LuaValue>): LuaCallResult {
-		try {
-			return this.handler(args);
-		} catch (error) {
-			Runtime.instance.interpreter.recordFaultCallStack();
-			throw error;
-		}
+		return this.handler(args);
 	}
 }
 
@@ -293,7 +287,7 @@ export class LuaInterpreter {
 	private readonly packageTable: LuaTable;
 	private readonly packageLoaded: LuaTable;
 	private _requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) = null;
-	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); Runtime.instance.terminal.appendStdout(text); };
+	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); };
 	private instructionBudgetRemaining: number | null = null;
 	private frameStack: ExecutionFrame[] = [];
 	private envStack: LuaEnvironment[] = [];

@@ -94,7 +94,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'CONT') {
-			workbenchMode.deactivateTerminalMode();
+			workbenchMode.deactivateTerminalMode(this.runtime);
 			return true;
 		}
 		if (upper === 'REBOOT') {
@@ -180,13 +180,13 @@ export class TerminalCommandDispatcher {
 
 	private async runWorkspaceReset() {
 		this.runtime.terminal.appendStdout('Discarding dirty files...');
-		await resetWorkspaceDirtyBuffersAndStorage();
+		await resetWorkspaceDirtyBuffersAndStorage(this.runtime);
 		this.runtime.terminal.appendStdout('Dirty workspace buffers cleared');
 	}
 
 	private async runWorkspaceNuke() {
 		this.runtime.terminal.appendStdout('Warning: this will erase workspace!');
-		await nukeWorkspaceState();
+		await nukeWorkspaceState(this.runtime);
 		clearWorkspaceSessionState();
 		this.runtime.terminal.appendStdout('Workspace data wiped');
 	}
@@ -241,7 +241,7 @@ export class TerminalCommandDispatcher {
 	}
 
 	private clearFaultState(): void {
-		const result = workbenchMode.clearFaultState();
+		const result = workbenchMode.clearFaultState(this.runtime);
 		if (!result.cleared) {
 			this.runtime.terminal.appendStderr('No fault to clear');
 			return;
@@ -273,7 +273,7 @@ export class TerminalCommandDispatcher {
 		if (root) {
 			lines.push(`Workspace root: ${root}`);
 		}
-		const snapshot = workbenchMode.getFaultSnapshot();
+			const snapshot = this.runtime.workbenchFaultState.faultSnapshot;
 		if (snapshot) {
 			const location = formatRuntimeErrorLocation(snapshot.path, snapshot.line, snapshot.column);
 			const when = new Date(snapshot.timestampMs).toISOString();
@@ -289,7 +289,7 @@ export class TerminalCommandDispatcher {
 	public getFaultStatusLines(): { lines: string[]; active: boolean } {
 		const lines: string[] = [];
 		const suspension = this.runtime.debuggerSuspendSignal;
-		const faultInfo = workbenchMode.getFaultSnapshot();
+			const faultInfo = this.runtime.workbenchFaultState.faultSnapshot;
 		const faultFlag = this.runtime.hasRuntimeFailed || (suspension !== null && suspension.reason === 'exception');
 		lines.push(`Faulted: ${faultFlag ? 'YES' : 'NO'}`);
 		if (suspension) {

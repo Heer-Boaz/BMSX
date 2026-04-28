@@ -1,10 +1,10 @@
 import { getCodeAreaBounds } from '../../../editor/ui/view/view';
-import { resourcePanel } from '../../contrib/resources/panel/controller';
-import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../../editor/input/keyboard/key_input';
+import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import { applyResourceViewerScroll, clampResourceViewerScroll, resourceViewerTextCapacity, setResourceViewerScroll } from '../../contrib/resources/viewer';
 import { getActiveResourceViewer } from '../../contrib/resources/view_tabs';
 import type { ResourceViewerState } from '../../../common/models';
 import { editorViewState } from '../../../editor/ui/view/state';
+import type { ResourcePanelController } from '../../contrib/resources/panel/controller';
 
 export function handleResourceViewerInput(): void {
 	const viewer = getActiveResourceViewer();
@@ -37,7 +37,7 @@ export function handleResourceViewerInput(): void {
 	}
 }
 
-export function scrollResourceBrowserHorizontal(delta: number): void {
+export function scrollResourceBrowserHorizontal(resourcePanel: ResourcePanelController, delta: number): void {
 	if (!resourcePanel.isVisible()) {
 		return;
 	}

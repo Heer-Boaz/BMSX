@@ -1,6 +1,6 @@
 import { breakUndoSequence } from '../../../editing/undo_controller';
 import { currentLine, ensureVisualLines } from '../../../common/text/layout';
-import { isShiftDown, isCtrlDown } from '../../../input/keyboard/key_input';
+import { isShiftDown, isCtrlDown } from '../../../../input/keyboard/key_input';
 import { resetBlink } from '../../../render/caret';
 import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSelection } from '../../../editing/text_editing_and_selection';
 import { ensureSingleCursorSelectionAnchor } from '../../../editing/cursor/state';
@@ -8,7 +8,6 @@ import type { VisualLineSegment } from '../../../../common/models';
 import { revealCursor, resolveViewportCapacity, setCursorFromVisualIndex, updateDesiredColumn } from './view';
 import { editorDocumentState } from '../../../editing/document_state';
 import { editorViewState } from '../state';
-import { completionController } from '../../../contrib/suggest/completion_controller';
 import { caretNavigation } from './state';
 import { resolveCursorVisualIndex } from './visual_index';
 
@@ -57,7 +56,7 @@ export function setCursorPosition(row: number, column: number): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	completionController.onCursorMoved();
+	editorDocumentState.emitCursorMoved();
 }
 
 /**
@@ -77,7 +76,7 @@ export function moveCursorVertical(delta: number): void {
 	setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
 	resetBlink();
 	revealCursor();
-	completionController.onCursorMoved();
+	editorDocumentState.emitCursorMoved();
 }
 
 /**
@@ -150,7 +149,7 @@ export function moveCursorHorizontal(delta: number): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	completionController.onCursorMoved();
+	editorDocumentState.emitCursorMoved();
 }
 
 /**
@@ -164,7 +163,7 @@ export function moveWordLeft(): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	completionController.onCursorMoved();
+	editorDocumentState.emitCursorMoved();
 }
 
 /**
@@ -178,7 +177,7 @@ export function moveWordRight(): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	completionController.onCursorMoved();
+	editorDocumentState.emitCursorMoved();
 }
 
 /**

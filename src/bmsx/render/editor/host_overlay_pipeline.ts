@@ -22,7 +22,6 @@ import {
 	type WebGLSpriteQuadUniforms,
 } from '../backend/webgl/instanced_buffers';
 import { engineCore } from '../../core/engine';
-import { Runtime } from '../../machine/runtime/runtime';
 import { TAB_SPACES } from '../shared/bitmap_font';
 import type { GlyphRenderSubmission, color } from '../shared/submissions';
 import {
@@ -191,7 +190,7 @@ function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: s
 	if (cached) {
 		return cached;
 	}
-	const runtime = Runtime.instance;
+	const runtime = engineCore.runtime;
 	const meta = runtime.assets.getImageAsset(imgid, runtime.engineAssetSource).imgmeta;
 	let source: HostOverlayImageSource;
 	if (meta.atlasid !== undefined && meta.texcoords) {
@@ -483,7 +482,7 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 	updateAndBindFrameUniforms(backend, {
 		offscreen: { x: passState.width, y: passState.height },
 		logical: { x: passState.overlayWidth, y: passState.overlayHeight },
-		time: Runtime.instance.frameLoop.currentTimeMs / 1000,
+		time: engineCore.runtime.frameLoop.currentTimeMs / 1000,
 		delta: engineCore.deltatime_seconds,
 	});
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);

@@ -45,6 +45,10 @@ struct MachineManifest;
 struct CartManifest;
 class ResourceUsageDetector;
 class Clock;
+class GameView;
+class MicrotaskQueue;
+class RomBootManager;
+class SoundMaster;
 
 constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
 
@@ -58,7 +62,7 @@ struct RuntimeOptions {
 	};
 
 	int playerIndex = 0;
-	Viewport viewport{0, 0};
+	Vec2 viewport{0.0f, 0.0f};
 	RuntimeAssets* systemAssets = nullptr;
 	RuntimeAssets* activeAssets = nullptr;
 	RuntimeAssets* cartAssets = nullptr;
@@ -97,25 +101,15 @@ public:
 		Engine,
 		Cart,
 	};
-	/**
-	 * Create the singleton instance. Throws if already created.
-	 */
-	static Runtime& createInstance(const RuntimeOptions& options);
-
-	/**
-	 * Get the singleton instance. Assumes already created.
-	 */
-	static Runtime& instance();
-
-	/**
-	 * Check if an instance exists.
-	 */
-	static bool hasInstance();
-
-	/**
-	 * Destroy the singleton instance.
-	 */
-	static void destroy();
+	Runtime(
+		const RuntimeOptions& options,
+		Clock& clock,
+		SoundMaster& soundMaster,
+		MicrotaskQueue& microtasks,
+		GameView& view,
+		RomBootManager& romBootManager
+	);
+	~Runtime();
 
 	// Non-copyable
 	Runtime(const Runtime&) = delete;
@@ -155,14 +149,10 @@ public:
 	void setVdpDitherType(i32 type) { m_machine.vdp().setDitherType(type); }
 
 	f64 frameDeltaMs() const { return frameLoop.frameDeltaMs; }
-	Clock& clock() const { return *m_clock; }
+	Clock& clock() const { return m_clock; }
 
-	/**
-	 * Get the viewport size.
-	 */
-	const Viewport& viewport() const { return m_viewport; }
-	GameViewState& gameViewState() { return m_gameViewState; }
-	const GameViewState& gameViewState() const { return m_gameViewState; }
+	GameView& view() { return m_view; }
+	const GameView& view() const { return m_view; }
 	RuntimeAssets& systemAssets() { return *m_systemAssets; }
 	const RuntimeAssets& systemAssets() const { return *m_systemAssets; }
 	RuntimeAssets& activeAssets() { return *m_activeAssets; }
@@ -236,9 +226,6 @@ private:
 		None,
 		Entry,
 	};
-	explicit Runtime(const RuntimeOptions& options);
-	~Runtime();
-
 	void setupBuiltins();
 	void runEngineBuiltinPrelude();
 	void runStaticModuleInitializers(const std::vector<std::string>& paths);
@@ -254,15 +241,14 @@ private:
 	void logLuaCallStack() const;
 	void refreshMemoryMapGlobals();
 
-	static Runtime* s_instance;
-
 	RuntimeAssets* m_systemAssets = nullptr;
 	RuntimeAssets* m_activeAssets = nullptr;
 	RuntimeAssets* m_cartAssets = nullptr;
 	RuntimeOptions::RomSpan m_engineRom;
 	RuntimeOptions::RomSpan m_cartRom;
 	const MachineManifest* m_machineManifest = nullptr;
-	Clock* m_clock = nullptr;
+	Clock& m_clock;
+	GameView& m_view;
 
 		// Runtime core
 		std::unique_ptr<Api> m_api;
@@ -270,9 +256,6 @@ private:
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 
-	// Configuration
-	Viewport m_viewport{0, 0};
-	GameViewState m_gameViewState;
 	ProgramSource m_programSource = ProgramSource::Cart;
 
 	// State flags

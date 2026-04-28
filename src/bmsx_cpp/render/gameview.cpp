@@ -12,6 +12,7 @@
 #include "graph/graph.h"
 #include "lighting/system.h"
 #include "core/engine.h"
+#include "machine/runtime/runtime.h"
 #include "rompack/format.h"
 #include "texture_manager.h"
 #include "common/clamp.h"
@@ -64,23 +65,23 @@ GameView::~GameView() {
  */
 void GameView::initializeRenderer() {
 	// sprite -> RenderQueues::submitSprite
-	renderer.submit.sprite = [](const ImgRenderSubmission& s) {
-		RenderQueues::submitSprite(s);
+	renderer.submit.sprite = [this](const ImgRenderSubmission& s) {
+		RenderQueues::submitSprite(runtime(), s);
 	};
 
 	// rect -> RenderQueues::submitRectangle
-	renderer.submit.rect = [](const RectRenderSubmission& s) {
-		RenderQueues::submitRectangle(s);
+	renderer.submit.rect = [this](const RectRenderSubmission& s) {
+		RenderQueues::submitRectangle(runtime(), s);
 	};
 
 	// poly -> RenderQueues::submitDrawPolygon
-	renderer.submit.poly = [](const PolyRenderSubmission& s) {
-		RenderQueues::submitDrawPolygon(s);
+	renderer.submit.poly = [this](const PolyRenderSubmission& s) {
+		RenderQueues::submitDrawPolygon(runtime(), s);
 	};
 
 	// glyphs -> RenderQueues::submitGlyphs
-	renderer.submit.glyphs = [](const GlyphRenderSubmission& s) {
-		RenderQueues::submitGlyphs(s);
+	renderer.submit.glyphs = [this](const GlyphRenderSubmission& s) {
+		RenderQueues::submitGlyphs(runtime(), s);
 	};
 
 	// particle -> ParticlesPipeline (TODO)
@@ -92,6 +93,17 @@ void GameView::initializeRenderer() {
 	renderer.submit.mesh = [](const MeshRenderSubmission& s) {
 		RenderQueues::submitMesh(s);
 	};
+}
+
+void GameView::bindRuntime(Runtime& runtime) {
+	m_runtime = &runtime;
+}
+
+Runtime& GameView::runtime() {
+	if (!m_runtime) {
+		throw BMSX_RUNTIME_ERROR("[GameView] Runtime dependency is not bound.");
+	}
+	return *m_runtime;
 }
 
 void GameView::setBackend(std::unique_ptr<GPUBackend> backend) {

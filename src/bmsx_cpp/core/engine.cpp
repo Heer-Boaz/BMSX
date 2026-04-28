@@ -23,7 +23,7 @@ EngineCore::EngineCore() {
 	s_instance = this;
 	m_active_assets = &m_engine_assets;
 	m_machine_manifest = &m_engine_assets.machine;
-	m_rom_boot_manager = std::make_unique<RomBootManager>();
+	m_rom_boot_manager = std::make_unique<RomBootManager>(*this);
 }
 
 EngineCore::~EngineCore() {
@@ -107,6 +107,7 @@ void EngineCore::shutdown() {
 
 	stop();
 	m_rom_boot_manager->unloadRom();
+	m_runtime.reset();
 
 	if (m_texture_manager) {
 		m_texture_manager->dispose();
@@ -134,7 +135,7 @@ void EngineCore::start() {
 		case EngineState::Initialized:
 		case EngineState::Stopped:
 			m_state = EngineState::Running;
-			Runtime::instance().frameScheduler.clearQueuedTime();
+			runtime().frameScheduler.clearQueuedTime();
 			break;
 		default:
 			break;
@@ -146,7 +147,7 @@ void EngineCore::pause() {
 	switch (m_state) {
 		case EngineState::Running:
 			m_state = EngineState::Paused;
-			Runtime::instance().screen.clearPresentation();
+			runtime().screen.clearPresentation();
 			break;
 		default:
 			break;
@@ -157,7 +158,7 @@ void EngineCore::resume() {
 	switch (m_state) {
 		case EngineState::Paused:
 			m_state = EngineState::Running;
-			Runtime::instance().frameScheduler.clearQueuedTime();
+			runtime().frameScheduler.clearQueuedTime();
 			break;
 		default:
 			break;
@@ -221,7 +222,7 @@ void EngineCore::refreshRenderAssets() {
 	}
 	initializeVdpTextureTransfer(*m_texture_manager, *m_view);
 	m_view->initializeDefaultTextures();
-	restoreVdpContextState(Runtime::instance().machine().vdp());
+	restoreVdpContextState(runtime().machine().vdp());
 }
 
 void EngineCore::log(LogLevel level, const char* fmt, ...) {
@@ -266,5 +267,28 @@ const ImgAsset* EngineCore::resolveImgAsset(const AssetId& id) const {
 		return asset;
 	}
 	return m_engine_assets.getImg(id);
+}
+
+Runtime& EngineCore::runtime() {
+	return *m_runtime;
+}
+
+const Runtime& EngineCore::runtime() const {
+	return *m_runtime;
+}
+
+Runtime& EngineCore::ensureRuntime(const RuntimeOptions& options) {
+	if (!m_runtime) {
+		m_runtime = std::make_unique<Runtime>(
+			options,
+			*clock(),
+			*soundMaster(),
+			*platform()->microtaskQueue(),
+			*view(),
+			romBootManager()
+		);
+		m_view->bindRuntime(*m_runtime);
+	}
+	return *m_runtime;
 }
 } // namespace bmsx

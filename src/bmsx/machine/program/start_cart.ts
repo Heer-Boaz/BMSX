@@ -1,8 +1,9 @@
 import { engineCore } from '../../core/engine';
 import type { BootArgs } from '../../rompack/format';
+import type { Runtime } from '../runtime/runtime';
 
-export async function startCart(args: BootArgs): Promise<void> {
-	await engineCore.init({
+export async function startCart(args: BootArgs): Promise<Runtime> {
+	return await engineCore.init({
 		engineRom: args.engineAssets,
 		cartridge: args.cartridge,
 		workspaceOverlay: args.workspaceOverlay,

@@ -21,22 +21,25 @@ import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
 import { problemsPanel } from '../../../workbench/contrib/problems/panel/controller';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
 let diagnosticsScheduledForMs = 0;
 let lastDiagnosticsRunMs = 0;
-const DIAGNOSTIC_PROVIDERS: DiagnosticProviders = {
-	listLocalSymbols: (path) => {
-		return listLuaSymbols(path);
-	},
-	listGlobalSymbols: () => {
-		return listGlobalLuaSymbols();
-	},
-	listBuiltins: () => {
-		return listLuaBuiltinFunctions();
-	},
-};
+export function createDiagnosticProviders(runtime: Runtime): DiagnosticProviders {
+	return {
+		listLocalSymbols: (path) => {
+			return listLuaSymbols(runtime, path);
+		},
+		listGlobalSymbols: () => {
+			return listGlobalLuaSymbols(runtime);
+		},
+		listBuiltins: () => {
+			return listLuaBuiltinFunctions(runtime);
+		},
+	};
+}
 
 function cancelDiagnosticsTimer(): void {
 	if (diagnosticsTimer) {
@@ -47,7 +50,7 @@ function cancelDiagnosticsTimer(): void {
 	editorDiagnosticsState.diagnosticsComputationScheduled = false;
 }
 
-export function processDiagnosticsQueue(now: number): void {
+export function processDiagnosticsQueue(runtime: Runtime, now: number): void {
 	if (!editorDiagnosticsState.diagnosticsDirty) {
 		return;
 	}
@@ -67,10 +70,10 @@ export function processDiagnosticsQueue(now: number): void {
 	if (editorDiagnosticsState.diagnosticsDueAtMs === null) {
 		editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 	}
-	scheduleDiagnosticsComputation();
+	scheduleDiagnosticsComputation(runtime);
 }
 
-export function scheduleDiagnosticsComputation(): void {
+export function scheduleDiagnosticsComputation(runtime: Runtime): void {
 	const now = editorRuntimeState.clockNow();
 	const dueAt = editorDiagnosticsState.diagnosticsDueAtMs ?? now + diagnosticsDebounceMs;
 	const spacedDueAt = Math.max(dueAt, lastDiagnosticsRunMs + diagnosticsMinIntervalMs);
@@ -86,11 +89,11 @@ export function scheduleDiagnosticsComputation(): void {
 		diagnosticsTimer = null;
 		diagnosticsScheduledForMs = 0;
 		editorDiagnosticsState.diagnosticsComputationScheduled = false;
-		executeDiagnosticsComputation();
+		executeDiagnosticsComputation(runtime);
 	});
 }
 
-export function executeDiagnosticsComputation(): void {
+export function executeDiagnosticsComputation(runtime: Runtime): void {
 	if (!editorDiagnosticsState.diagnosticsDirty) {
 		editorDiagnosticsState.diagnosticsDueAtMs = null;
 		cancelDiagnosticsTimer();
@@ -109,17 +112,17 @@ export function executeDiagnosticsComputation(): void {
 		return;
 	}
 	if (editorDiagnosticsState.diagnosticsTaskPending) {
-		scheduleDiagnosticsComputation();
+		scheduleDiagnosticsComputation(runtime);
 		return;
 	}
 	const now = editorRuntimeState.clockNow();
 	if (editorDiagnosticsState.diagnosticsDueAtMs === null) {
 		editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
-		scheduleDiagnosticsComputation();
+		scheduleDiagnosticsComputation(runtime);
 		return;
 	}
 	if (now < editorDiagnosticsState.diagnosticsDueAtMs) {
-		scheduleDiagnosticsComputation();
+		scheduleDiagnosticsComputation(runtime);
 		return;
 	}
 	const batch = collectDiagnosticsBatch();
@@ -129,16 +132,16 @@ export function executeDiagnosticsComputation(): void {
 		cancelDiagnosticsTimer();
 		return;
 	}
-	enqueueDiagnosticsJob(batch);
+	enqueueDiagnosticsJob(runtime, batch);
 }
 
-export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
+export function enqueueDiagnosticsJob(runtime: Runtime, contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
 	editorDiagnosticsState.diagnosticsTaskPending = true;
 	enqueueBackgroundTask(() => {
-		runDiagnosticsForContexts(contextIds);
+		runDiagnosticsForContexts(runtime, contextIds);
 		editorDiagnosticsState.diagnosticsTaskPending = false;
 		lastDiagnosticsRunMs = editorRuntimeState.clockNow();
 		if (editorDiagnosticsState.dirtyDiagnosticContexts.size === 0) {
@@ -148,7 +151,7 @@ export function enqueueDiagnosticsJob(contextIds: readonly string[]): void {
 		} else {
 			const now = editorRuntimeState.clockNow();
 			editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
-			processDiagnosticsQueue(now);
+			processDiagnosticsQueue(runtime, now);
 		}
 		return false;
 	});
@@ -162,7 +165,7 @@ export function collectDiagnosticsBatch(): string[] {
 	return [];
 }
 
-export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
+export function runDiagnosticsForContexts(runtime: Runtime, contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
@@ -211,7 +214,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		updateDiagnosticsAggregates();
 		return;
 	}
-	const diagnostics = computeAggregatedEditorDiagnostics(inputs, DIAGNOSTIC_PROVIDERS);
+	const diagnostics = computeAggregatedEditorDiagnostics(runtime, inputs, createDiagnosticProviders(runtime));
 	const byContext = new Map<string, EditorDiagnostic[]>();
 	for (let index = 0; index < diagnostics.length; index += 1) {
 		const diag = diagnostics[index];
@@ -236,10 +239,6 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		editorDiagnosticsState.dirtyDiagnosticContexts.delete(input.id);
 	}
 	updateDiagnosticsAggregates();
-}
-
-export function createDiagnosticProviders(): DiagnosticProviders {
-	return DIAGNOSTIC_PROVIDERS;
 }
 
 export function updateDiagnosticsAggregates(): void {

@@ -24,6 +24,7 @@ class EngineCore;
 class RomBootManager;
 class TextureManager;
 class Runtime;
+struct RuntimeOptions;
 struct ProgramAsset;
 struct ProgramMetadata;
 struct ResolvedRuntimeTiming;
@@ -103,6 +104,10 @@ public:
 	// Core host subsystems
 	Platform* platform() { return m_platform; }
 	GameView* view() { return m_view.get(); }
+	bool hasRuntime() const { return m_runtime != nullptr; }
+	Runtime& runtime();
+	const Runtime& runtime() const;
+	Runtime& ensureRuntime(const RuntimeOptions& options);
 	Registry& registry() { return Registry::instance(); }
 	RuntimeAssets& assets() { return *m_active_assets; }
 	const RuntimeAssets& assets() const { return *m_active_assets; }
@@ -177,6 +182,7 @@ private:
 	std::unique_ptr<SoundMaster> m_sound_master;
 	std::unique_ptr<TextureManager> m_texture_manager;
 	std::unique_ptr<RomBootManager> m_rom_boot_manager;
+	std::unique_ptr<Runtime> m_runtime;
 	RuntimeAssets* m_active_assets = nullptr;
 
 	EngineState m_state = EngineState::Uninitialized;

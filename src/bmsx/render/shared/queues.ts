@@ -12,7 +12,7 @@ import type {
 	RectRenderSubmission,
 	RenderLayer,
 } from './submissions';
-import { Runtime } from '../../machine/runtime/runtime';
+import type { Runtime } from '../../machine/runtime/runtime';
 import { BFont } from './bitmap_font';
 import { setSpriteParallaxRigValues } from '../2d/sprite_parallax_rig';
 import { shallowcopy } from '../../common/shallowcopy';
@@ -22,9 +22,8 @@ const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
 let activeQueueSource: 'front' | 'back' = 'front';
 
-function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color, layer: RenderLayer, parallaxWeight: number, flipH = false, flipV = false): void {
-	const runtime = Runtime.instance;
-	const source = resolveImageSlotSource(runtime.assets, imgid);
+function submitSpriteDirect(runtime: Runtime, imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color, layer: RenderLayer, parallaxWeight: number, flipH = false, flipV = false): void {
+	const source = resolveImageSlotSource(runtime.machine.memory, runtime.assets, imgid);
 	runtime.machine.vdp.enqueueBlit(
 			source.slot,
 			source.u,
@@ -46,7 +45,7 @@ function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scal
 
 // --- 2D framebuffer helpers -------------------------------------------------
 
-export function submitSprite(options: ImgRenderSubmission): void {
+export function submitSprite(runtime: Runtime, options: ImgRenderSubmission): void {
 	if (options.scale === undefined) {
 		throw new Error('submitSprite requires scale.');
 	}
@@ -60,6 +59,7 @@ export function submitSprite(options: ImgRenderSubmission): void {
 		throw new Error('submitSprite requires layer.');
 	}
 	submitSpriteDirect(
+		runtime,
 		options.imgid,
 		options.pos.x,
 		options.pos.y,
@@ -114,8 +114,8 @@ export function resetTransientState(): void {
 	clearBackQueues();
 }
 
-export function clearAllQueues(): void {
-	const vdp = Runtime.instance.machine.vdp;
+export function clearAllQueues(runtime: Runtime): void {
+	const vdp = runtime.machine.vdp;
 	vdp.initializeRegisters();
 	meshQueue.clearAll();
 	particleQueue.clearAll();
@@ -150,8 +150,7 @@ export function meshQueueFrontSize(): number {
 
 // --- Particle queue helpers -------------------------------------------------
 
-export function submit_particle(item: ParticleRenderSubmission): void {
-	const runtime = Runtime.instance;
+export function submit_particle(runtime: Runtime, item: ParticleRenderSubmission): void {
 	if (item.slot === undefined || item.u === undefined || item.v === undefined || item.w === undefined || item.h === undefined) {
 		throw new Error('submit_particle requires slot/u/v/w/h.');
 	}
@@ -192,30 +191,30 @@ export function particleQueueFrontSize(): number {
 	return particleQueue.sizeFront();
 }
 
-export function submitRectangle(options: RectRenderSubmission): void {
+export function submitRectangle(runtime: Runtime, options: RectRenderSubmission): void {
 	if (options.layer === undefined) {
 		throw new Error('submitRectangle requires layer.');
 	}
 	let { left: x, top: y, z, right: ex, bottom: ey } = options.area;
 	[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
 	if (options.kind === 'fill') {
-		Runtime.instance.machine.vdp.enqueueFillRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
+		runtime.machine.vdp.enqueueFillRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
 		return;
 	}
-	Runtime.instance.machine.vdp.enqueueDrawRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
+	runtime.machine.vdp.enqueueDrawRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
 }
 
-export function submitDrawPolygon(options: PolyRenderSubmission): void {
+export function submitDrawPolygon(runtime: Runtime, options: PolyRenderSubmission): void {
 	if (options.thickness === undefined) {
 		throw new Error('submitDrawPolygon requires thickness.');
 	}
 	if (options.layer === undefined) {
 		throw new Error('submitDrawPolygon requires layer.');
 	}
-	Runtime.instance.machine.vdp.enqueueDrawPoly(options.points, options.z, options.color, options.thickness, renderLayerTo2dLayer(options.layer));
+	runtime.machine.vdp.enqueueDrawPoly(options.points, options.z, options.color, options.thickness, renderLayerTo2dLayer(options.layer));
 }
 
-export function submitGlyphs(o: GlyphRenderSubmission) {
+export function submitGlyphs(runtime: Runtime, o: GlyphRenderSubmission) {
 	if (o.font === undefined) {
 		throw new Error('submitGlyphs requires font.');
 	}
@@ -245,6 +244,7 @@ export function submitGlyphs(o: GlyphRenderSubmission) {
 	}
 
 	renderGlyphs(
+		runtime,
 		xx,
 		o.y,
 		lines,
@@ -285,8 +285,8 @@ export function setSkyboxTintExposure(tint: [number, number, number], exposure =
 /**
  * Text rendering utility (engine-level). Preferred UE-style usage is via TextComponent + TextRenderSystem, which uses this internally.
  */
-export function renderGlyphs(x: number, y: number, textToWrite: string | string[], start: number, end: number, z: number, font: BFont, color: color, backgroundColor: color | undefined, layer: RenderLayer): void {
-	Runtime.instance.machine.vdp.enqueueGlyphRun(
+export function renderGlyphs(runtime: Runtime, x: number, y: number, textToWrite: string | string[], start: number, end: number, z: number, font: BFont, color: color, backgroundColor: color | undefined, layer: RenderLayer): void {
+	runtime.machine.vdp.enqueueGlyphRun(
 		textToWrite,
 		x,
 		y,

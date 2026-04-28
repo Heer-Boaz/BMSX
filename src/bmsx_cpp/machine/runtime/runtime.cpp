@@ -1,7 +1,6 @@
 #include "machine/runtime/runtime.h"
 #include "machine/firmware/api.h"
 #include "machine/firmware/devtools.h"
-#include "machine/runtime/game/view_state.h"
 #include "machine/bus/io.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/program/loader.h"
@@ -10,9 +9,9 @@
 #include "render/runtime/state.h"
 #include "render/shared/queues.h"
 #include "machine/runtime/timing/config.h"
-#include "core/engine.h"
 #include "rompack/format.h"
 #include "input/manager.h"
+#include "platform.h"
 #include <array>
 #include <stdexcept>
 
@@ -23,56 +22,40 @@ constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 
 }
 
-// Static instance pointer
-Runtime* Runtime::s_instance = nullptr;
-
-Runtime& Runtime::createInstance(const RuntimeOptions& options) {
-	if (s_instance) {
-		throw BMSX_RUNTIME_ERROR("instance already exists.");
-	}
-	configureLuaHeapUsage({});
-	resetTrackedLuaHeapBytes();
-	s_instance = new Runtime(options);
-	return *s_instance;
-}
-
-Runtime& Runtime::instance() {
-	return *s_instance;
-}
-
-bool Runtime::hasInstance() {
-	return s_instance != nullptr;
-}
-
-void Runtime::destroy() {
-	delete s_instance;
-	s_instance = nullptr;
-}
-
-Runtime::Runtime(const RuntimeOptions& options)
+Runtime::Runtime(
+	const RuntimeOptions& options,
+	Clock& clock,
+	SoundMaster& soundMaster,
+	MicrotaskQueue& microtasks,
+	GameView& view,
+	RomBootManager& romBootManager
+)
 	: timing(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame)
+	, cartBoot(*this, romBootManager)
 	, m_systemAssets(options.systemAssets)
 	, m_activeAssets(options.activeAssets)
 	, m_cartAssets(options.cartAssets)
 	, m_engineRom(options.engineRom)
 	, m_cartRom(options.cartRom)
 	, m_machineManifest(options.machineManifest)
-	, m_clock(EngineCore::instance().clock())
+	, m_clock(clock)
+	, m_view(view)
 	, m_api(std::make_unique<Api>(*this))
-	, m_machine(*m_api, *EngineCore::instance().soundMaster(), *EngineCore::instance().platform()->microtaskQueue(), VdpFrameBufferSize{
+	, m_machine(*m_api, soundMaster, microtasks, VdpFrameBufferSize{
 		static_cast<uint32_t>(options.viewport.x),
 		static_cast<uint32_t>(options.viewport.y)
 	})
-	, m_viewport(options.viewport)
-	{
-	initializeGameViewStateFromHost(m_gameViewState, *EngineCore::instance().view());
+{
+	configureLuaHeapUsage({});
+	resetTrackedLuaHeapBytes();
+	Input::instance().setFrameDurationMs(timing.frameDurationMs);
 	m_api->initializeRuntimeKeys();
 	m_machine.memory().clearIoSlots();
 	m_machine.initializeSystemIo();
 	m_machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
 	setRenderWorkUnitsPerSec(*this, options.vdpWorkUnitsPerSec, options.geoWorkUnitsPerSec);
-	m_randomSeedValue = static_cast<uint32_t>(m_clock->now());
+	m_randomSeedValue = static_cast<uint32_t>(m_clock.now());
 	refreshMemoryMap();
 	m_machine.cpu().setExternalRootMarker([this](GcHeap& heap) {
 		for (const auto& entry : m_moduleCache) {
@@ -173,7 +156,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_machine.memory().clearIoSlots();
 	m_machine.initializeSystemIo();
 	resetHardwareState();
-	m_randomSeedValue = static_cast<uint32_t>(m_clock->now());
+	m_randomSeedValue = static_cast<uint32_t>(m_clock.now());
 }
 
 void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>* staticModulePaths) {

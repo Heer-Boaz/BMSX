@@ -79,7 +79,7 @@ export class VblankState {
 			this.setVblankStatus(true);
 		}
 		this.scheduleCurrentFrameTimers();
-		refreshDeviceTimings(runtime.machine.scheduler.nowCycles);
+		refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles);
 	}
 
 	public capture(): RuntimeVblankSnapshot {
@@ -103,7 +103,7 @@ export class VblankState {
 		runtime.machine.irqController.postLoad();
 		this.setVblankStatus(this.vblankStartCycle === 0 || this.getCyclesIntoFrame() >= this.vblankStartCycle);
 		this.scheduleCurrentFrameTimers();
-		refreshDeviceTimings(runtime.machine.scheduler.nowCycles);
+		refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles);
 	}
 
 	public beginTick(): void {

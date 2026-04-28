@@ -4,26 +4,27 @@ import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../in
 import { extractHoverExpression } from '../intellisense/engine';
 import { buildIncomingCallHierarchyView, type CallHierarchyView } from './view';
 import { editorDocumentState } from '../../editing/document_state';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export type CallHierarchyQueryResult =
 	| { kind: 'success'; view: CallHierarchyView; }
 	| { kind: 'missing_definition'; }
 	| { kind: 'no_calls'; expression: string; };
 
-export function resolveCallHierarchyViewAt(row: number, column: number): CallHierarchyQueryResult {
+export function resolveCallHierarchyViewAt(runtime: Runtime, row: number, column: number): CallHierarchyQueryResult {
 	const context = getActiveCodeTabContext();
 	if (!context) {
 		return { kind: 'missing_definition' };
 	}
 	const path = context.descriptor.path;
-	const snapshot = buildEditorSemanticSnapshot(path, editorDocumentState.buffer, editorDocumentState.textVersion);
-	const frontend = createEditorSemanticFrontend(snapshot);
+	const snapshot = buildEditorSemanticSnapshot(runtime, path, editorDocumentState.buffer, editorDocumentState.textVersion);
+	const frontend = createEditorSemanticFrontend(runtime, snapshot);
 	const resolution = frontend.findReferencesByPosition(path, row + 1, column + 1);
 	const expression = extractHoverExpression(row, column)?.expression;
 	if (!resolution || !expression) {
 		return { kind: 'missing_definition' };
 	}
-	const descriptors = listResources();
+	const descriptors = listResources(runtime);
 	let rootReadOnly = false;
 	for (let index = 0; index < descriptors.length; index += 1) {
 		const descriptor = descriptors[index];
@@ -41,6 +42,7 @@ export function resolveCallHierarchyViewAt(row: number, column: number): CallHie
 	}
 	allowedPaths.add(path);
 	const view = buildIncomingCallHierarchyView({
+		runtime,
 		snapshot,
 		rootSymbolId: resolution.id,
 		rootExpression: expression,

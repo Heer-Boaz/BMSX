@@ -1,7 +1,7 @@
 import { engineCore } from '../../../../core/engine';
 import { CHARACTER_CODES, CHARACTER_MAP } from '../../../common/character_map';
 import * as constants from '../../../common/constants';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import type { InlineInputOptions, Position, TextField } from '../../../common/models';
 import { clamp } from '../../../../common/clamp';
 import { LuaLexer } from '../../../../lua/syntax/lexer';

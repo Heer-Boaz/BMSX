@@ -24,6 +24,7 @@ class GameViewHost;
 class RenderPassLibrary;
 class RenderGraphRuntime;
 class LightingSystem;
+class Runtime;
 
 /* ============================================================================
  * Atmosphere parameters (fog, etc.)
@@ -82,6 +83,7 @@ public:
 	GPUBackend* backend() { return m_backend.get(); }
 	const GPUBackend* backend() const { return m_backend.get(); }
 	BackendType backendType() const;
+	void bindRuntime(Runtime& runtime);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Viewport and canvas sizes
@@ -244,8 +246,10 @@ private:
 	void initializeRenderer();
 	void finalizePresentation();
 	void resetPresentationHistory();
+	Runtime& runtime();
 
 	GameViewHost* m_host;
+	Runtime* m_runtime = nullptr;
 	std::unique_ptr<GPUBackend> m_backend;
 	std::unique_ptr<RenderPassLibrary> m_pipelineRegistry;
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;

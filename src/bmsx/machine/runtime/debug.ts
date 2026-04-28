@@ -2,7 +2,7 @@ import { describeInstructionAtPc, formatSourceSnippet, type InstructionOperandDe
 import { valueToString } from '../firmware/globals';
 import { Table, isNativeObject, type LocalSlotDebug, type SourceRange, type Value } from '../cpu/cpu';
 import { resolveLuaSourceRecordFromRegistries } from '../program/sources';
-import { Runtime } from './runtime';
+import type { Runtime } from './runtime';
 import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
 import { isStringValue, stringValueToString } from '../memory/string/pool';
 import { KEYWORDS } from '../../lua/syntax/token';
@@ -79,8 +79,7 @@ function extractExpressionCandidates(range: SourceRange, sourceText: string): st
 	return result;
 }
 
-function resourceSourceForPath(path: string): string | null {
-	const runtime = Runtime.instance;
+function resourceSourceForPath(runtime: Runtime, path: string): string | null {
 	const binding = resolveLuaSourceRecordFromRegistries(path, [
 		runtime.activeLuaSources,
 		runtime.cartLuaSources,
@@ -140,13 +139,13 @@ function selectLocalSlot(slots: ReadonlyArray<LocalSlotDebug>, name: string, ran
 }
 
 function resolveRootExpressionValue(
+	runtime: Runtime,
 	frameIndex: number,
 	protoIndex: number,
 	range: SourceRange,
 	registers: ReadonlyArray<Value>,
 	rootName: string,
 ): { found: boolean; value: Value } {
-	const runtime = Runtime.instance;
 	const cpu = runtime.machine.cpu;
 	const metadata = runtime.programMetadata;
 	const slots = metadata?.localSlotsByProto?.[protoIndex];
@@ -174,15 +173,15 @@ function resolveRootExpressionValue(
 }
 
 function resolveExpressionValue(
+	runtime: Runtime,
 	frameIndex: number,
 	protoIndex: number,
 	range: SourceRange,
 	registers: ReadonlyArray<Value>,
 	expression: string,
 ): { found: boolean; value: Value } {
-	const runtime = Runtime.instance;
 	const parts = expression.split('.');
-	const root = resolveRootExpressionValue(frameIndex, protoIndex, range, registers, parts[0]);
+	const root = resolveRootExpressionValue(runtime, frameIndex, protoIndex, range, registers, parts[0]);
 	if (!root.found) {
 		return root;
 	}
@@ -202,8 +201,7 @@ function resolveExpressionValue(
 	return { found: true, value: current };
 }
 
-function collectSourceExpressionDebug(range: SourceRange, source: string, registers: ReadonlyArray<Value>): string[] {
-	const runtime = Runtime.instance;
+function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, source: string, registers: ReadonlyArray<Value>): string[] {
 	const callStack = runtime.machine.cpu.getCallStack();
 	if (callStack.length === 0) {
 		return [];
@@ -213,7 +211,7 @@ function collectSourceExpressionDebug(range: SourceRange, source: string, regist
 	const result: string[] = [];
 	for (let index = 0; index < expressions.length; index += 1) {
 		const expression = expressions[index];
-		const resolved = resolveExpressionValue(frameIndex, callStack[frameIndex].protoIndex, range, registers, expression);
+		const resolved = resolveExpressionValue(runtime, frameIndex, callStack[frameIndex].protoIndex, range, registers, expression);
 		if (!resolved.found) {
 			continue;
 		}
@@ -222,8 +220,7 @@ function collectSourceExpressionDebug(range: SourceRange, source: string, regist
 	return result;
 }
 
-export function logDebugState(): void {
-	const runtime = Runtime.instance;
+export function logDebugState(runtime: Runtime): void {
 	const program = runtime.machine.cpu.getProgram();
 	if (!program || program.code.length === 0) {
 		return;
@@ -237,10 +234,10 @@ export function logDebugState(): void {
 	console.error(`\tpc=${instruction.pcText} op=${instruction.opName}${operandSummary.length > 0 ? ` ${operandSummary}` : ''}`);
 	console.error(`\tinstr=${instruction.pcText}: ${instruction.instructionText}`);
 	if (instruction.sourceRange) {
-		const source = resourceSourceForPath(instruction.sourceRange.path);
+		const source = resourceSourceForPath(runtime, instruction.sourceRange.path);
 		console.error(`\tsource=${formatDebugSourceLine(instruction.sourceRange, source)}`);
 		if (source !== null) {
-			const expressions = collectSourceExpressionDebug(instruction.sourceRange, source, debug.registers);
+			const expressions = collectSourceExpressionDebug(runtime, instruction.sourceRange, source, debug.registers);
 			if (expressions.length > 0) {
 				console.error(`\texprs=${expressions.join(' ')}`);
 			}

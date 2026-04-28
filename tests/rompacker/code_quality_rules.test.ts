@@ -12,8 +12,8 @@ function parseFirstFunction(source: string): ts.FunctionDeclaration {
 
 test('single-line wrapper rule catches return-await delegation', () => {
 	const declaration = parseFirstFunction(`
-		export async function loadAemResourceSource(path: string): Promise<string> {
-			return await loadWorkspaceSourceFile(path, Runtime.instance.cartProjectRootPath);
+		export async function loadAemResourceSource(runtime: Runtime, path: string): Promise<string> {
+			return await loadWorkspaceSourceFile(path, runtime.cartProjectRootPath);
 		}
 	`);
 	assert.equal(isSingleLineWrapperCandidate(declaration, declaration.getSourceFile()), true);
@@ -21,8 +21,8 @@ test('single-line wrapper rule catches return-await delegation', () => {
 
 test('single-line wrapper rule catches awaited statement delegation', () => {
 	const declaration = parseFirstFunction(`
-		export async function saveAemResourceSource(path: string, source: string): Promise<void> {
-			await persistWorkspaceSourceFile(path, source, Runtime.instance.cartProjectRootPath);
+		export async function saveAemResourceSource(runtime: Runtime, path: string, source: string): Promise<void> {
+			await persistWorkspaceSourceFile(path, source, runtime.cartProjectRootPath);
 		}
 	`);
 	assert.equal(isSingleLineWrapperCandidate(declaration, declaration.getSourceFile()), true);

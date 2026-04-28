@@ -20,6 +20,7 @@ export type EditorViewState = {
 	tabBarHeight: number;
 	tabBarRowCount: number;
 	baseBottomMargin: number;
+	codeAreaLeft: number;
 	inlineFieldMetricsRef: InlineFieldMetrics;
 	scrollbars: Record<ScrollbarKind, Scrollbar>;
 	scrollbarController: ScrollbarController;
@@ -51,6 +52,7 @@ export const editorViewState: EditorViewState = {
 	tabBarHeight: 0,
 	tabBarRowCount: 1,
 	baseBottomMargin: 0,
+	codeAreaLeft: 0,
 	inlineFieldMetricsRef: undefined!,
 	scrollbars: undefined!,
 	scrollbarController: undefined!,

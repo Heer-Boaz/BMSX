@@ -2,12 +2,13 @@ import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../.
 import * as constants from '../../../common/constants';
 import { measureText } from '../../../editor/common/text/layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';
-import { performEditorAction } from '../../../editor/input/commands/actions';
-import { consumeIdeKey, isKeyJustPressed } from '../../../editor/input/keyboard/key_input';
+import { performEditorAction } from '../../../commands/actions';
+import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { writeCenteredDialogBounds } from '../../../editor/render/dialog_layout';
 import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { ActionPromptAction, ActionPromptLayout, ActionPromptState, PointerSnapshot } from '../../../common/models';
+import type { Runtime } from '../../../../machine/runtime/runtime';
 import { save } from '../../ui/code_tab/io';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type { FontVariant } from '../../../../render/shared/bmsx_font';
@@ -189,12 +190,12 @@ export function findActionPromptChoiceAt(x: number, y: number): ActionPromptChoi
 	return null;
 }
 
-async function attemptPromptSave(): Promise<boolean> {
-	await save();
+async function attemptPromptSave(runtime: Runtime): Promise<boolean> {
+	await save(runtime);
 	return editorDocumentState.dirty === false;
 }
 
-async function handleActionPromptSelection(choice: ActionPromptChoice): Promise<void> {
+async function handleActionPromptSelection(runtime: Runtime, choice: ActionPromptChoice): Promise<void> {
 	const prompt = actionPromptState.prompt;
 	if (!prompt) {
 		return;
@@ -204,31 +205,31 @@ async function handleActionPromptSelection(choice: ActionPromptChoice): Promise<
 		return;
 	}
 	if (choice === 'save-continue') {
-		const saved = await attemptPromptSave();
+		const saved = await attemptPromptSave(runtime);
 		if (!saved) {
 			return;
 		}
 	}
-	if (performEditorAction(prompt.action)) {
+	if (performEditorAction(runtime, prompt.action)) {
 		closeActionPrompt();
 	}
 }
 
-export function handleActionPromptInput(): void {
+export function handleActionPromptInput(runtime: Runtime): void {
 	if (!hasActionPrompt()) {
 		return;
 	}
 	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
 		consumeIdeKey('Enter');
 		consumeIdeKey('NumpadEnter');
-		void handleActionPromptSelection('save-continue');
+		void handleActionPromptSelection(runtime, 'save-continue');
 	}
 }
 
-export function handleActionPromptPointer(snapshot: PointerSnapshot): void {
+export function handleActionPromptPointer(runtime: Runtime, snapshot: PointerSnapshot): void {
 	const choice = findActionPromptChoiceAt(snapshot.viewportX, snapshot.viewportY);
 	if (choice) {
-		void handleActionPromptSelection(choice);
+		void handleActionPromptSelection(runtime, choice);
 	}
 }
 
