@@ -1,4 +1,4 @@
-local timeline<const> = require('timeline/index')
+local timeline<const> = require('bios/timeline/index')
 
 local daemon_cloud<const> = {}
 daemon_cloud.__index = daemon_cloud

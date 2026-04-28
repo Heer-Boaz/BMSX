@@ -28,15 +28,20 @@ export type InputControllerState = {
 	sampleArmed: boolean;
 };
 
-export class InputController {
-	private readonly playerStates: PlayerChipState[] = Array.from(
-		{ length: Input.PLAYERS_MAX },
-		(): PlayerChipState => ({
+function createPlayerChipStates(): PlayerChipState[] {
+	const states = new Array<PlayerChipState>(Input.PLAYERS_MAX);
+	for (let index = 0; index < states.length; index += 1) {
+		states[index] = {
 			keyboard: {},
 			gamepad: {},
 			contextPushed: false,
-		}),
-	);
+		};
+	}
+	return states;
+}
+
+export class InputController {
+	private readonly playerStates = createPlayerChipStates();
 	public sampleArmed = false;
 
 	public constructor(

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "taskgate.h"
-#include "primitives.h"
+#include "core/taskgate.h"
+#include "core/primitives.h"
 #include <chrono>
 #include <functional>
 #include <optional>
@@ -25,9 +25,9 @@ struct BarrierAcquireOptions {
 };
 
 template <typename T>
-class AssetBarrier {
+class TextureLoadBarrier {
 public:
-	explicit AssetBarrier(GateGroup group) : group_(std::move(group)) {}
+	explicit TextureLoadBarrier(GateGroup group) : group_(std::move(group)) {}
 
 	T acquire(const std::string& key, const std::function<T()>& loader,
 				const BarrierAcquireOptions<T>& opts = {}) {
@@ -58,7 +58,7 @@ public:
 			const auto elapsed_ms =
 				std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 			if (elapsed_ms > opts.warnIfLongerMs) {
-				std::cerr << "[AssetBarrier] Slow load > " << opts.warnIfLongerMs
+				std::cerr << "[TextureLoadBarrier] Slow load > " << opts.warnIfLongerMs
 							<< "ms for key=\"" << key << "\"" << std::endl;
 			}
 		}
@@ -79,7 +79,7 @@ public:
 	void addRef(const std::string& key) {
 		auto it = map_.find(key);
 		if (it == map_.end()) {
-			throw BMSX_RUNTIME_ERROR("[AssetBarrier] addRef called for unknown key \"" + key + "\".");
+			throw BMSX_RUNTIME_ERROR("[TextureLoadBarrier] addRef called for unknown key \"" + key + "\".");
 		}
 		it->second.refCount++;
 	}
@@ -87,12 +87,12 @@ public:
 	void release(const std::string& key, BarrierDisposer<T> disposer = {}) {
 		auto it = map_.find(key);
 		if (it == map_.end()) {
-			throw BMSX_RUNTIME_ERROR("[AssetBarrier] release called for unknown key \"" + key + "\".");
+			throw BMSX_RUNTIME_ERROR("[TextureLoadBarrier] release called for unknown key \"" + key + "\".");
 		}
 		Entry& entry = it->second;
 		entry.refCount--;
 		if (entry.refCount < 0) {
-			throw BMSX_RUNTIME_ERROR("[AssetBarrier] refCount underflow for key \"" + key + "\".");
+			throw BMSX_RUNTIME_ERROR("[TextureLoadBarrier] refCount underflow for key \"" + key + "\".");
 		}
 		if (entry.refCount <= 0) {
 			entry.gen++;
@@ -101,7 +101,7 @@ public:
 				if (callDisposer) {
 					try { callDisposer(*entry.value); }
 					catch (const std::exception& e) {
-						std::cerr << "[AssetBarrier] disposer threw on release: " << e.what() << std::endl;
+						std::cerr << "[TextureLoadBarrier] disposer threw on release: " << e.what() << std::endl;
 					}
 				}
 			}
@@ -112,7 +112,7 @@ public:
 	void invalidate(const std::string& key, BarrierDisposer<T> disposer = {}) {
 		auto it = map_.find(key);
 		if (it == map_.end()) {
-			throw BMSX_RUNTIME_ERROR("[AssetBarrier] invalidate called for unknown key \"" + key + "\".");
+			throw BMSX_RUNTIME_ERROR("[TextureLoadBarrier] invalidate called for unknown key \"" + key + "\".");
 		}
 		Entry& entry = it->second;
 		entry.gen++;
@@ -121,7 +121,7 @@ public:
 			if (callDisposer) {
 				try { callDisposer(*entry.value); }
 				catch (const std::exception& e) {
-					std::cerr << "[AssetBarrier] disposer threw on invalidate: " << e.what() << std::endl;
+					std::cerr << "[TextureLoadBarrier] disposer threw on invalidate: " << e.what() << std::endl;
 				}
 			}
 		}
@@ -137,7 +137,7 @@ public:
 				if (callDisposer) {
 					try { callDisposer(*entry.value); }
 					catch (const std::exception& e) {
-						std::cerr << "[AssetBarrier] disposer threw on clear for key=\"" << key << "\": "
+						std::cerr << "[TextureLoadBarrier] disposer threw on clear for key=\"" << key << "\": "
 									<< e.what() << std::endl;
 					}
 				}
@@ -149,7 +149,7 @@ public:
 	void replaceValue(const std::string& key, const T& value, BarrierDisposer<T> disposer = {}) {
 		auto it = map_.find(key);
 		if (it == map_.end()) {
-			throw BMSX_RUNTIME_ERROR("[AssetBarrier] replaceValue called for unknown key \"" + key + "\".");
+			throw BMSX_RUNTIME_ERROR("[TextureLoadBarrier] replaceValue called for unknown key \"" + key + "\".");
 		}
 			Entry& entry = it->second;
 			const std::optional<T> oldValue = entry.value;
@@ -161,7 +161,7 @@ public:
 				if (callDisposer) {
 				try { callDisposer(*oldValue); }
 				catch (const std::exception& e) {
-					std::cerr << "[AssetBarrier] disposer threw on replaceValue: " << e.what() << std::endl;
+					std::cerr << "[TextureLoadBarrier] disposer threw on replaceValue: " << e.what() << std::endl;
 				}
 			}
 		}

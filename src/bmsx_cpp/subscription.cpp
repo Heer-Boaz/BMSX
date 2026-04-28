@@ -1,5 +1,5 @@
 /**
- * BMSX C++ Engine - Subscription Handle Implementation
+ * BMSX C++ Console - Subscription Handle Implementation
  *
  * Provides the SubscriptionHandle pattern used throughout the platform layer.
  * This replaces JavaScript's closure-based unsubscribe pattern with an object

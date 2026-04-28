@@ -1,4 +1,4 @@
-import { engineCore } from '../core/engine';
+import { consoleCore } from '../core/console';
 import { getPressedState, makeButtonState, resetObject } from './manager';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
 import type { VibrationParams } from '../platform';
@@ -37,7 +37,7 @@ export class PointerInput implements InputHandler {
 	public applyVibrationEffect(_params: VibrationParams): void { }
 
 	public pollInput(): void {
-		const now = engineCore.platform.clock.now();
+		const now = consoleCore.platform.clock.now();
 		for (const key of Object.keys(this.buttonStates)) {
 			const state = this.buttonStates[key];
 			if (!state) continue;
@@ -87,7 +87,7 @@ export class PointerInput implements InputHandler {
 		const target = { ...state, value2d: state.value2d ? ([state.value2d[0], state.value2d[1]] as [number, number]) : null };
 		if (target.pressed) {
 			if (!target.pressId) target.pressId = this.nextPressId++;
-			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? engineCore.platform.clock.now();
+			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? consoleCore.platform.clock.now();
 		} else {
 			target.consumed = false;
 		}

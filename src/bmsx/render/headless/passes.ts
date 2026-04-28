@@ -1,4 +1,4 @@
-import { engineCore } from '../../core/engine';
+import { consoleCore } from '../../core/console';
 import { RenderPassLibrary } from '../backend/pass/library';
 import { Framebuffer2DPipelineState, MeshBatchPipelineState, ParticlePipelineState, type RenderPassDef } from '../backend/interfaces';
 import { M4 } from '../3d/math';
@@ -14,8 +14,6 @@ import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/s
 import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 import { resolveActiveCamera3D } from '../shared/hardware/camera';
-import { BIOS_ATLAS_ID } from '../../rompack/format';
-import { VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE } from '../../machine/memory/map';
 import { VDP_SLOT_PRIMARY, VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../machine/bus/io';
 import type { Mesh } from '../3d/mesh';
 import { readVdpDisplayFrameBufferPixels, vdpDisplayFrameBufferTexture } from '../vdp/framebuffer';
@@ -51,39 +49,12 @@ const headlessFallbackParticleState: ParticlePipelineState = {
 	camUp: FALLBACK_CAMERA.camUp,
 };
 
-const validatedAtlasByKey = new Set<string>();
 const validatedMesh = new WeakMap<Mesh, boolean>();
 const MAX_MORPH_TARGETS = 8;
 const MAX_JOINTS = 32;
 const HEADLESS_VERBOSE_DIFF = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.BMSX_HEADLESS_VERBOSE === '1';
 
-function ensureAtlasResource(atlasId: number, slotBytes: number, label: string): void {
-	const key = `${atlasId}:${slotBytes}`;
-	if (validatedAtlasByKey.has(key)) {
-		return;
-	}
-	let found = false;
-	for (const asset of engineCore.runtime.assets.listImageAssets()) {
-		if (asset.type !== 'atlas') continue;
-		const meta = asset.imgmeta;
-		if (!meta || meta.atlasid !== atlasId) continue;
-		if (meta.width <= 0 || meta.height <= 0) {
-			throw new Error(`[${label}] Atlas ${atlasId} has invalid dimensions (${meta.width}x${meta.height}).`);
-		}
-		const bytes = meta.width * meta.height * 4;
-		if (bytes > slotBytes) {
-			throw new Error(`[${label}] Atlas ${atlasId} size ${meta.width}x${meta.height} exceeds slot bytes (${slotBytes}).`);
-		}
-		found = true;
-		break;
-	}
-	if (!found) {
-		throw new Error(`[${label}] Atlas ${atlasId} not registered in assets.`);
-	}
-	validatedAtlasByKey.add(key);
-}
-
-function validateMeshAsset(mesh: Mesh): void {
+function validateMeshRecord(mesh: Mesh): void {
 	if (validatedMesh.has(mesh)) {
 		return;
 	}
@@ -169,7 +140,7 @@ function requireMaterialTexture(mesh: Mesh, slot: 'albedo' | 'normal' | 'metalli
 	if (!key) {
 		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' material texture '${slot}' missing GPU binding.`);
 	}
-	const handle = engineCore.texmanager.getTexture(key);
+	const handle = consoleCore.texmanager.getTexture(key);
 	if (!handle) {
 		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' material texture '${slot}' not loaded (key='${key}').`);
 	}
@@ -280,16 +251,16 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 		stateOnly: true,
 		prepare: () => {
 			registry.setState('framebuffer_2d', {
-				width: engineCore.view.canvasSize.x,
-				height: engineCore.view.canvasSize.y,
-				baseWidth: engineCore.view.viewportSize.x,
-				baseHeight: engineCore.view.viewportSize.y,
+				width: consoleCore.view.canvasSize.x,
+				height: consoleCore.view.canvasSize.y,
+				baseWidth: consoleCore.view.viewportSize.x,
+				baseHeight: consoleCore.view.viewportSize.y,
 				colorTex: vdpDisplayFrameBufferTexture(),
 			} as Framebuffer2DPipelineState);
 		},
 		exec: (_backend, _fbo, state: Framebuffer2DPipelineState) => {
-			const frameBufferWidth = engineCore.runtime.machine.vdp.frameBufferWidth;
-			const frameBufferHeight = engineCore.runtime.machine.vdp.frameBufferHeight;
+			const frameBufferWidth = consoleCore.runtime.machine.vdp.frameBufferWidth;
+			const frameBufferHeight = consoleCore.runtime.machine.vdp.frameBufferHeight;
 			if (frameBufferWidth <= 0 || frameBufferHeight <= 0) {
 				throw new Error(`[HeadlessFramebuffer2D] Invalid framebuffer dimensions ${frameBufferWidth}x${frameBufferHeight}.`);
 			}
@@ -298,7 +269,7 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			if (pixels.byteLength !== expectedByteLength) {
 				throw new Error(`[HeadlessFramebuffer2D] Framebuffer byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);
 			}
-			const host = engineCore.view.host as unknown as HeadlessPresentHost;
+			const host = consoleCore.view.host as unknown as HeadlessPresentHost;
 			host.presentFrameBuffer({
 				pixels,
 				srcWidth: frameBufferWidth,
@@ -326,21 +297,24 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 		id: 'skybox',
 		name: 'HeadlessSkybox',
 		stateOnly: true,
-		shouldExecute: () => !!engineCore.view.skyboxFaceIds,
+		shouldExecute: () => !!consoleCore.view.skyboxFaceSources,
 		exec: () => {
-			const ids = engineCore.view.skyboxFaceIds;
-			const sizes = engineCore.view.skyboxFaceSizes;
-			const bindings = engineCore.view.skyboxFaceTextpageBindings;
-			if (!ids || !sizes || !bindings) {
+			const sources = consoleCore.view.skyboxFaceSources;
+			const sizes = consoleCore.view.skyboxFaceSizes;
+			const bindings = consoleCore.view.skyboxFaceTextpageBindings;
+			if (!sources || !sizes || !bindings) {
 				return;
 			}
-			const snapshot: Snapshot = [`faces=${SKYBOX_FACE_KEYS.map((key) => ids[key]).join(',')}`];
+			const snapshot: Snapshot = [`faces=${SKYBOX_FACE_KEYS.map((key) => {
+				const source = sources[key];
+				return `${source.slot}:${source.u},${source.v},${source.w},${source.h}`;
+			}).join(',')}`];
 			for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
 				const key = SKYBOX_FACE_KEYS[index];
-				const id = ids[key];
+				const source = sources[key];
 				const sizeBase = index * 2;
 				const slot = bindings[index] === 0 ? 'primary' : 'secondary';
-				snapshot.push(`[skybox:${key}] id=${id} size=${sizes[sizeBase]}x${sizes[sizeBase + 1]} slot=${slot}`);
+				snapshot.push(`[skybox:${key}] source=${source.slot}:${source.u},${source.v},${source.w},${source.h} size=${sizes[sizeBase]}x${sizes[sizeBase + 1]} slot=${slot}`);
 			}
 			previousSkyboxSnapshot = emitDiff('skybox', previousSkyboxSnapshot, snapshot);
 		},
@@ -349,19 +323,18 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 }
 
 function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
-	const gv = engineCore.view;
+	const gv = consoleCore.view;
 	const cam = resolveActiveCamera3D();
 	if (!cam) {
 		throw new Error('[HeadlessMeshes] No active 3D camera found.');
 	}
 	const mats = cam.getMatrices();
-	const frustum = cam.frustumPlanesPacked.slice();
 	return {
 		width: gv.offscreenCanvasSize.x,
 		height: gv.offscreenCanvasSize.y,
 		camPos: cam.position,
 		viewProj: mats.vp,
-		cameraFrustum: frustum,
+		cameraFrustum: cam.frustumPlanesPacked,
 		lighting: registry.getState('frame_shared')?.lighting,
 	};
 }
@@ -383,7 +356,7 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 				let index = 0;
 				forEachMeshQueue((submission: MeshRenderSubmission) => {
 					const mesh = submission.mesh;
-					validateMeshAsset(mesh);
+					validateMeshRecord(mesh);
 					requireMaterialTexture(mesh, 'albedo');
 					requireMaterialTexture(mesh, 'normal');
 					requireMaterialTexture(mesh, 'metallicRoughness');
@@ -436,7 +409,7 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 }
 
 function makeParticleState(): ParticlePipelineState {
-	const gv = engineCore.view;
+	const gv = consoleCore.view;
 	const width = gv.offscreenCanvasSize.x;
 	const height = gv.offscreenCanvasSize.y;
 	const cam = resolveActiveCamera3D();
@@ -474,7 +447,6 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 				return;
 			}
 			const snapshot: Snapshot = [`draws=${count} viewport=${particleState.width}x${particleState.height}`];
-			let needsEngineTextpage = false;
 			if (count > 0) {
 				let index = 0;
 				forEachParticleQueue((submission: ParticleRenderSubmission) => {
@@ -490,7 +462,6 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 					if (slot !== VDP_SLOT_PRIMARY && slot !== VDP_SLOT_SECONDARY && slot !== VDP_SLOT_SYSTEM) {
 						throw new Error(`[HeadlessParticles] Particle has invalid slot binding (${slot}).`);
 					}
-					if (slot === VDP_SLOT_SYSTEM) needsEngineTextpage = true;
 					if (!Number.isFinite(uv0[0]) || !Number.isFinite(uv0[1]) || !Number.isFinite(uv1[0]) || !Number.isFinite(uv1[1])) {
 						throw new Error('[HeadlessParticles] Particle UVs must be finite numbers.');
 					}
@@ -500,9 +471,6 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 					snapshot.push(`[particle#${index}] pos=${formatVec3(submission.position)} size=${formatNumber(submission.size)} slot=${slot}`);
 					index += 1;
 				});
-			}
-			if (needsEngineTextpage) {
-				ensureAtlasResource(BIOS_ATLAS_ID, VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE, 'HeadlessParticles');
 			}
 			previousParticleSnapshot = emitDiff('particles', previousParticleSnapshot, snapshot);
 		},

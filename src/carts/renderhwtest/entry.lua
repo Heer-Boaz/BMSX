@@ -1,6 +1,6 @@
 local mesh = nil
 local t = 0
-local render_hw = require("render_hw")
+local render_hw = require("bios/render_hw")
 local put_mesh = render_hw.put_mesh
 local put_particle = render_hw.put_particle
 local set_camera = render_hw.set_camera

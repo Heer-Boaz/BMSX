@@ -1,5 +1,5 @@
 -- ecs.lua
--- ecs core types and system manager for lua engine
+-- ecs core types and system manager for the system ROM runtime
 --
 -- DESIGN PRINCIPLES — ECS systems vs per-object logic
 --

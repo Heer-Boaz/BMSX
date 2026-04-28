@@ -15,13 +15,13 @@ import { clearOverlayFrame } from '../render/editor/overlay_queue';
 import { restoreVdpContextState } from '../render/vdp/context_state';
 import { initializeVdpTextureTransfer } from '../render/vdp/texture_transfer';
 import { registerWebGLVdpBlitterExecutorFactory } from '../render/vdp/blitter/webgl';
-import { runEngineHostFrame } from './host_frame';
+import { runConsoleHostFrame } from './host_frame';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
 
-export interface EngineStartupOptions {
-	engineRom: Uint8Array;
+export interface ConsoleStartupOptions {
+	systemRom: Uint8Array;
 	cartridge?: Uint8Array;
 	workspaceOverlay?: Uint8Array;
 	sndcontext?: AudioContext;
@@ -35,11 +35,8 @@ export interface EngineStartupOptions {
 
 const DEFAULT_MASTER_VOLUME = 1;
 
-/**
- * Represents the main game loop and manages the game state.
- */
-export class EngineCore {
-	private initialized: boolean = false; // Indicates if the game has been initialized
+export class ConsoleCore {
+	private initialized = false;
 	private readonly romBootManager = new RomBootManager();
 
 	/**
@@ -94,9 +91,6 @@ export class EngineCore {
 	public get platform(): Platform { return this._platform!; }
 	public get runtime(): Runtime { return this._runtime; }
 
-	/**
-	 * Constructs a new instance of the BMSX class.
-	 */
 	constructor() {
 		this.initialized = false;
 	}
@@ -108,24 +102,17 @@ export class EngineCore {
 		this.sndmaster.bootstrapRuntimeAudio(this.runtime.timing.ufps, DEFAULT_MASTER_VOLUME);
 	}
 
-	/**
-	 * Inits the game on boot.
-	 * @param rom - The ROM pack containing game assets.
-	 * @param model - The model object that manages the game state.
-	 * @param view - The view object that manages the game display.
-	 * @param debug - Whether to enable debug mode. Defaults to false.
-	 */
-	public async init(init: EngineStartupOptions): Promise<Runtime> {
-		const { engineRom, cartridge, workspaceOverlay, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = init;
+	public async init(init: ConsoleStartupOptions): Promise<Runtime> {
+		const { systemRom, cartridge, workspaceOverlay, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = init;
 		if (!platform) {
-			throw new Error('[Game] Platform services not provided. Pass a Platform instance in GameInitArgs.');
+			throw new Error('[ConsoleCore] Platform services not provided.');
 		}
 		const resolvedViewHost = viewHost ?? platform.gameviewHost;
 		if (!resolvedViewHost) {
-			throw new Error('[Game] Platform did not expose a GameViewHost. Provide one in GameInitArgs.');
+			throw new Error('[ConsoleCore] Platform did not expose a GameViewHost.');
 		}
-		const bootPlan = await this.romBootManager.buildBootPlan({ engineRom, cartridge });
-		const { engineLayer, viewportSize } = bootPlan;
+		const bootPlan = await this.romBootManager.buildBootPlan({ systemRom, cartridge });
+		const { systemLayer, viewportSize } = bootPlan;
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
 		setMicrotaskQueue(platform.microtasks);
@@ -142,7 +129,7 @@ export class EngineCore {
 		if (typeof document !== 'undefined') {
 			ensureBrowserBackendFactory();
 		}
-		const runtime = await Runtime.init(engineLayer, workspaceOverlay, cartridge);
+		const runtime = await Runtime.init(systemLayer, workspaceOverlay, cartridge);
 		this._runtime = runtime;
 		const gview = new GameView({
 			runtime,
@@ -190,7 +177,7 @@ export class EngineCore {
 		return runtime;
 	}
 
-	public async refreshRenderAssets(): Promise<void> {
+	public async refreshRenderSurfaces(): Promise<void> {
 		this.texmanager.setBackend(this.view.backend);
 		initializeVdpTextureTransfer(this.texmanager, this.view);
 		await this.view.initializeDefaultTextures();
@@ -199,7 +186,7 @@ export class EngineCore {
 
 	public async resetRuntime(preserveTextures = false): Promise<void> {
 		if (!this.initialized) {
-			throw new Error('[EngineCore] Cannot reset runtime before initialization.');
+			throw new Error('[ConsoleCore] Cannot reset runtime before initialization.');
 		}
 		const gateToken = renderGate.begin({ blocking: true, tag: 'runtime-reset' });
 		const runToken = runGate.begin({ blocking: true, tag: 'runtime-reset' });
@@ -221,7 +208,7 @@ export class EngineCore {
 			if (!preserveTextures) {
 				this.texmanager.clear();
 				this.view.reset();
-				await this.refreshRenderAssets();
+				await this.refreshRenderSurfaces();
 			}
 		}
 		finally {
@@ -244,7 +231,7 @@ export class EngineCore {
 		runtime.frameLoop.currentTimeMs = now;
 		runtime.frameScheduler.clearQueuedTime();
 		platform.frames.start((currentTime: number) => {
-			runEngineHostFrame(runtime, currentTime, runGate.ready);
+			runConsoleHostFrame(runtime, currentTime, runGate.ready);
 		});
 		this.running = true;
 	}
@@ -254,10 +241,8 @@ export class EngineCore {
 	}
 }
 
-export var engineCore: EngineCore = new EngineCore()!;
+export var consoleCore: ConsoleCore = new ConsoleCore()!;
 
-// Expose legacy global `engineCore` for scripts that expect a global symbol (e.g. bootrom/html glue)
-// We intentionally write to the global scope we resolved earlier so both browser and
-// node-headless runtimes have the same behaviour.
-(globalScope as any).engineCore = engineCore;
-(globalScope as any).$ = engineCore;
+// Browser and node-headless boot glue share this global console handle.
+(globalScope as any).consoleCore = consoleCore;
+(globalScope as any).$ = consoleCore;

@@ -54,8 +54,8 @@ function ensureDotSlashPrefix(source: string): string {
 }
 
 const DIST_OUTPUT_PATHS = new Map<string, string>([
-	['engine.js', 'dist/engine.js'],
-	['engine.debug.js', 'dist/engine.debug.js'],
+	['console.js', 'dist/console.js'],
+	['console.debug.js', 'dist/console.debug.js'],
 	['index.html', 'dist/index.html'],
 	['headless.js', 'dist/headless.js'],
 	['headless_debug.js', 'dist/headless_debug.js'],

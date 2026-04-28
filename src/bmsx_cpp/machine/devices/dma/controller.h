@@ -1,5 +1,6 @@
 #pragma once
 
+#include "machine/devices/dma/image_copy.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 
@@ -35,9 +36,7 @@ public:
 	bool hasPendingVdpSubmit() const;
 	bool hasPendingIsoTransfer() const;
 	bool hasPendingBulkTransfer() const;
-	uint32_t pendingIsoBytes() const;
-	uint32_t pendingBulkBytes() const;
-	void enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete);
+	void enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete);
 	void reset();
 
 	private:
@@ -57,7 +56,7 @@ public:
 			uint32_t remaining = 0;
 			bool strict = false;
 
-			Memory::ImageWritePlan plan;
+			ImageCopyPlan plan;
 			std::vector<uint8_t> pixels;
 		uint32_t row = 0;
 		uint32_t rowOffset = 0;

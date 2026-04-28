@@ -4,9 +4,8 @@ import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonSta
 import type { VibrationParams } from '../platform';
 import { KeyboardInput } from './keyboard';
 import { ContextStack, MappingContext } from './context';
-import { engineCore } from '../core/engine';
+import { consoleCore } from '../core/console';
 import { clamp } from '../common/clamp';
-import { deep_clone } from '../common/deep_clone';
 
 const ACTION_GUARD_MIN_MS = 24;
 const ACTION_GUARD_MAX_MS = 120;
@@ -56,6 +55,39 @@ function getOrCreateMapValue<K, V>(map: Map<K, V>, key: K, create: () => V): V {
 		map.set(key, value);
 	}
 	return value;
+}
+
+type InputBinding = KeyboardBinding | GamepadBinding | PointerBinding;
+type InputBindingMap<T extends InputBinding> = Record<string, T[]>;
+
+function copyInputBinding<T extends InputBinding>(binding: T): T {
+	if (typeof binding === 'string') {
+		return binding;
+	}
+	const copy = { id: binding.id } as T;
+	if (binding.scale !== undefined) {
+		(copy as { scale?: number }).scale = binding.scale;
+	}
+	if (binding.invert !== undefined) {
+		(copy as { invert?: boolean }).invert = binding.invert;
+	}
+	return copy;
+}
+
+function copyInputBindingList<T extends InputBinding>(bindings: readonly T[]): T[] {
+	const out = new Array<T>(bindings.length);
+	for (let index = 0; index < bindings.length; index += 1) {
+		out[index] = copyInputBinding(bindings[index]);
+	}
+	return out;
+}
+
+function copyInputBindingMap<T extends InputBinding>(mapping: InputBindingMap<T>): InputBindingMap<T> {
+	const out: InputBindingMap<T> = {};
+	for (const action of Object.keys(mapping)) {
+		out[action] = copyInputBindingList(mapping[action]);
+	}
+	return out;
 }
 
 /** Bitwise flags representing keyboard modifier keys. */
@@ -181,26 +213,35 @@ export class PlayerInput {
 	 */
 	public setInputMap(inputMap: InputMap): void {
 		if (!inputMap) throw new Error('[PlayerInput] Null or undefined input map provided.');
+		let keyboard = inputMap.keyboard;
+		let gamepad = inputMap.gamepad;
+		let pointer = inputMap.pointer;
 		if (!inputMap.keyboard) {
 			if (this.inputMap?.keyboard) {
-				inputMap.keyboard = this.inputMap.keyboard;
+				keyboard = this.inputMap.keyboard;
 			} else if (this.playerIndex === 1) {
-				inputMap.keyboard = deep_clone(Input.DEFAULT_INPUT_MAPPING.keyboard);
+				keyboard = copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.keyboard) as KeyboardInputMapping;
 			} else {
-				inputMap.keyboard = {};
+				keyboard = {};
 			}
+		} else if (inputMap.keyboard === Input.DEFAULT_INPUT_MAPPING.keyboard) {
+			keyboard = copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.keyboard) as KeyboardInputMapping;
 		}
 		if (!inputMap.gamepad) {
-			inputMap.gamepad = this.inputMap?.gamepad ?? deep_clone(Input.DEFAULT_INPUT_MAPPING.gamepad);
+			gamepad = this.inputMap?.gamepad ?? copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.gamepad) as GamepadInputMapping;
+		} else if (inputMap.gamepad === Input.DEFAULT_INPUT_MAPPING.gamepad) {
+			gamepad = copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.gamepad) as GamepadInputMapping;
 		}
 		if (!inputMap.pointer) {
-			inputMap.pointer = this.inputMap?.pointer ?? deep_clone(Input.DEFAULT_INPUT_MAPPING.pointer);
+			pointer = this.inputMap?.pointer ?? copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.pointer) as PointerInputMapping;
+		} else if (inputMap.pointer === Input.DEFAULT_INPUT_MAPPING.pointer) {
+			pointer = copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.pointer) as PointerInputMapping;
 		}
-		this.inputMap = inputMap;
-		this.trackInputMapBindings(inputMap);
+		this.inputMap = { keyboard, gamepad, pointer };
+		this.trackInputMapBindings(this.inputMap);
 
 		// Mirror into a base context for layered merging semantics
-		const base = new MappingContext('base', 0, true, inputMap.keyboard, inputMap.gamepad, inputMap.pointer);
+		const base = new MappingContext('base', 0, true, this.inputMap.keyboard, this.inputMap.gamepad, this.inputMap.pointer);
 
 		// Reset stack to base
 		this.contexts = new ContextStack();
@@ -788,7 +829,10 @@ export class PlayerInput {
 		} else if (arr.some(binding => bindingId(binding) === id)) {
 			base = arr.filter(binding => bindingId(binding) !== id);
 		} else {
-			base = arr.slice();
+			base = [];
+			for (let index = 0; index < arr.length; index += 1) {
+				base.push(arr[index]);
+			}
 		}
 		base.push(id);
 		map[action] = base;
@@ -899,7 +943,7 @@ export class PlayerInput {
 		let result = false;
 		const pressed = state.pressed;
 		const justpressed = state.justpressed;
-		const now = this.lastPollTimestampMs ?? engineCore.platform.clock.now();
+		const now = this.lastPollTimestampMs ?? consoleCore.platform.clock.now();
 		const startMs = state.pressedAtMs ?? state.timestamp ?? now;
 		const frameMs = this.frameDurationMs;
 		const initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * frameMs;

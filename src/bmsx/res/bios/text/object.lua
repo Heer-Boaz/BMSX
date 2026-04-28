@@ -1,10 +1,10 @@
 -- textobject.lua
 -- text object with typewriter effect for system rom
 
-local worldobject<const> = require('world/object')
-local components<const> = require('components')
-local fsmlibrary<const> = require('fsm/library')
-local wrap_text_lines<const> = require('util/wrap_text_lines')
+local worldobject<const> = require('bios/world/object')
+local components<const> = require('bios/components')
+local fsmlibrary<const> = require('bios/fsm/library')
+local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 
 local textobject<const> = {}
 textobject.__index = textobject

@@ -12,6 +12,18 @@ export type FontGlyph = {
 	advance: number;
 };
 
+export type BitmapFontGlyphRecord = {
+	imgmeta: {
+		width: number;
+		height: number;
+	};
+};
+
+export interface BitmapFontSource {
+	getGlyphRecord(imgid: string): BitmapFontGlyphRecord;
+	getGlyphRect(imgid: string): ImageAtlasRect;
+}
+
 export const TAB_SPACES: number = 2;
 
 const DEFAULT_GLYPH_MAP: GlyphMap = {
@@ -106,7 +118,7 @@ export class BFont {
 	protected readonly fallbackCharacter: string = '?';
 	protected letter_to_img: GlyphMap;
 
-	constructor(protected readonly runtime: Runtime, glyphmap?: GlyphMap, advancePadding: number = 0) {
+	constructor(protected readonly source: BitmapFontSource, glyphmap?: GlyphMap, advancePadding: number = 0) {
 		this.letter_to_img = glyphmap ?? DEFAULT_GLYPH_MAP;
 		this.advancePadding = advancePadding;
 		this.lineHeightValue = this.char_height('A');
@@ -124,12 +136,12 @@ export class BFont {
 		return this.letter_to_img[c] ?? this.letter_to_img[this.fallbackCharacter]!;
 	}
 
-	protected getGlyphAsset(imgid: string) {
-		return this.runtime.assets.getImageAsset(imgid);
+	protected getGlyphRecord(imgid: string) {
+		return this.source.getGlyphRecord(imgid);
 	}
 
 	protected getGlyphRect(imgid: string): ImageAtlasRect {
-		return resolveImageAtlasRect(this.runtime.assets, imgid);
+		return this.source.getGlyphRect(imgid);
 	}
 
 	public textWidth(text: string): number {
@@ -159,9 +171,9 @@ export class BFont {
 			return computed;
 		}
 		const imgid = this.char_to_img(char);
-		const asset = this.getGlyphAsset(imgid);
-		const width = asset.imgmeta.width;
-		const height = asset.imgmeta.height;
+		const record = this.getGlyphRecord(imgid);
+		const width = record.imgmeta.width;
+		const height = record.imgmeta.height;
 			const computed: FontGlyph = {
 				imgid,
 				rect: this.getGlyphRect(imgid),
@@ -199,5 +211,22 @@ export class BFont {
 			width += this.advance(ch);
 		}
 		return width;
+	}
+}
+
+export class RuntimeBitmapFontSource implements BitmapFontSource {
+	constructor(private readonly runtime: Runtime) {
+	}
+
+	public getGlyphRecord(imgid: string): BitmapFontGlyphRecord {
+		const record = this.runtime.rom.getImageRecord(imgid);
+		if (!record.imgmeta) {
+			throw new Error(`[BFont] Image '${imgid}' is missing font metadata.`);
+		}
+		return { imgmeta: record.imgmeta };
+	}
+
+	public getGlyphRect(imgid: string): ImageAtlasRect {
+		return resolveImageAtlasRect(this.runtime.rom, imgid);
 	}
 }

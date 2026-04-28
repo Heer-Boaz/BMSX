@@ -1,5 +1,17 @@
 import type { color } from '../../../common/color';
-import { type Layer2D, type SkyboxImageIds } from './contracts';
+import {
+	type Layer2D,
+	type SkyboxFaceSources,
+	type VdpAtlasDimensions,
+	type VdpFrameBufferSize,
+	type VdpSlotSource,
+	type VdpVramSurface,
+	VDP_RD_SURFACE_COUNT,
+	VDP_RD_SURFACE_SYSTEM,
+	VDP_RD_SURFACE_FRAMEBUFFER,
+	VDP_RD_SURFACE_PRIMARY,
+	VDP_RD_SURFACE_SECONDARY,
+} from './contracts';
 import {
 	VDP_RENDER_ALPHA_COST_MULTIPLIER,
 	VDP_RENDER_CLEAR_COST,
@@ -9,13 +21,6 @@ import {
 	computeClippedRect,
 	tileRunCost,
 } from './budget';
-import {
-	TEXTPAGE_PRIMARY_SLOT_ID,
-	TEXTPAGE_SECONDARY_SLOT_ID,
-	BIOS_ATLAS_ID,
-	FRAMEBUFFER_RENDER_TEXTURE_KEY,
-	generateAtlasAssetId,
-} from '../../../rompack/format';
 import {
 	presentVdpFrameBufferPages,
 	readVdpDisplayFrameBufferPixels,
@@ -31,8 +36,6 @@ import {
 	IO_VDP_CMD_ARG_COUNT,
 	IO_VDP_FIFO,
 	IO_VDP_FIFO_CTRL,
-	IO_PAYLOAD_ALLOC_ADDR,
-	IO_PAYLOAD_DATA_ADDR,
 	IO_VDP_SLOT_PRIMARY_ATLAS,
 	IO_VDP_SLOT_SECONDARY_ATLAS,
 	IO_VDP_RD_DATA,
@@ -55,7 +58,7 @@ import {
 	VDP_STATUS_SUBMIT_REJECTED,
 	VDP_STATUS_VBLANK,
 } from '../../bus/io';
-import { type AssetEntry, type VramWriteSink } from '../../memory/memory';
+import type { VramWriteSink } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
 import type { CPU } from '../../cpu/cpu';
 import type { Api } from '../../firmware/api/api';
@@ -63,12 +66,11 @@ import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_VDP, type DeviceScheduler } from '../../scheduler/device';
 import type { BFont } from '../../../render/shared/bitmap_font';
 import {
-	VRAM_SYSTEM_TEXTPAGE_SIZE,
-	VRAM_PRIMARY_TEXTPAGE_SIZE,
-	VRAM_FRAMEBUFFER_BASE,
+	VRAM_SYSTEM_SLOT_SIZE,
+	VRAM_PRIMARY_SLOT_SIZE,
 	VRAM_FRAMEBUFFER_SIZE,
-	VRAM_SECONDARY_TEXTPAGE_BASE,
-	VRAM_SECONDARY_TEXTPAGE_SIZE,
+	VRAM_SECONDARY_SLOT_BASE,
+	VRAM_SECONDARY_SLOT_SIZE,
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
 	VDP_STREAM_BUFFER_SIZE,
@@ -84,7 +86,7 @@ import { syncVdpSlotTextures } from '../../../render/vdp/slot_textures';
 import { resolveAtlasSlotFromMemory } from '../../../render/vdp/image_meta';
 
 export type VdpState = {
-	skyboxFaceIds: SkyboxImageIds | null;
+	skyboxFaceSources: SkyboxFaceSources | null;
 	ditherType: number;
 };
 
@@ -99,11 +101,6 @@ export type VdpSaveState = VdpState & {
 	displayFrameBufferPixels: Uint8Array;
 };
 
-export type VdpFrameBufferSize = {
-	width: number;
-	height: number;
-};
-
 type VdpSubmittedFrameState = {
 	queue: VdpBlitterCommand[];
 	occupied: boolean;
@@ -112,7 +109,8 @@ type VdpSubmittedFrameState = {
 	cost: number;
 	workRemaining: number;
 	ditherType: number;
-	skyboxFaceIds: SkyboxImageIds | null;
+	hasSkybox: boolean;
+	skyboxFaceSources: SkyboxFaceSources;
 };
 
 type VdpBuildingFrameState = {
@@ -206,11 +204,6 @@ export function invertColorIndex(colorIndex: number): number {
 	return luminance > 0.5 ? 0 : 15;
 }
 
-const VDP_RD_SURFACE_ENGINE = 0;
-const VDP_RD_SURFACE_PRIMARY = 1;
-const VDP_RD_SURFACE_SECONDARY = 2;
-export const VDP_RD_SURFACE_FRAMEBUFFER = 3;
-const VDP_RD_SURFACE_COUNT = 4;
 const VDP_RD_BUDGET_BYTES = 4096;
 const VDP_RD_MAX_CHUNK_PIXELS = 256;
 const VRAM_GARBAGE_CHUNK_BYTES = 64 * 1024;
@@ -254,7 +247,7 @@ type BiasConfig = {
 };
 
 function garbageForceThreshold(maxBias: number, threshold: number): number {
-	return Math.floor((maxBias * threshold) / VRAM_GARBAGE_FORCE_T_DEN);
+	return ((maxBias * threshold) / VRAM_GARBAGE_FORCE_T_DEN) | 0;
 }
 
 function makeBiasConfig(vramBytes: number): BiasConfig {
@@ -283,7 +276,7 @@ function makeBiasConfig(vramBytes: number): BiasConfig {
 }
 
 function frameBufferColorByte(value: number): number {
-	return Math.round(value * 255);
+	return (value * 255 + 0.5) | 0;
 }
 
 function initBlockGen(biasSeed: number, bootSeedMix: number, blockIndex: number, biasConfig: BiasConfig): BlockGen {
@@ -312,8 +305,8 @@ function initBlockGen(biasSeed: number, bootSeedMix: number, blockIndex: number,
 
 	const forceLevel =
 		absBias < biasConfig.threshold0 ? 0 :
-		absBias < biasConfig.threshold1 ? 1 :
-		absBias < biasConfig.threshold2 ? 2 : 3;
+			absBias < biasConfig.threshold1 ? 1 :
+				absBias < biasConfig.threshold2 ? 2 : 3;
 
 	const jitterLevel = 3 - forceLevel;
 
@@ -375,7 +368,7 @@ function fillVramGarbageScratch(buffer: Uint8Array, s: VramGarbageStream): void 
 
 	const biasSeed = (s.machineSeed ^ s.slotSalt) >>> 0;
 	const bootSeedMix = (s.bootSeed ^ s.slotSalt) >>> 0;
-	const vramBytes = (VRAM_SECONDARY_TEXTPAGE_BASE + VRAM_SECONDARY_TEXTPAGE_SIZE - VRAM_STAGING_BASE) >>> 0;
+	const vramBytes = (VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE - VRAM_STAGING_BASE) >>> 0;
 	const biasConfig = makeBiasConfig(vramBytes);
 
 	const BLOCK_BYTES = 32;
@@ -391,7 +384,9 @@ function fillVramGarbageScratch(buffer: Uint8Array, s: VramGarbageStream): void 
 		const blockBase = (blockIndex << BLOCK_SHIFT) >>> 0;
 
 		const startOff = (addr - blockBase) >>> 0;
-		const maxBytesThisBlock = Math.min(BLOCK_BYTES - startOff, total - out);
+		const blockRemaining = BLOCK_BYTES - startOff;
+		const writeRemaining = total - out;
+		const maxBytesThisBlock = blockRemaining < writeRemaining ? blockRemaining : writeRemaining;
 
 		const gen = initBlockGen(biasSeed, bootSeedMix, blockIndex, biasConfig);
 
@@ -412,8 +407,8 @@ function fillVramGarbageScratch(buffer: Uint8Array, s: VramGarbageStream): void 
 				const word = nextWord(gen);
 				const wordByteStart = w << 2;
 				const wordByteEnd = wordByteStart + 4;
-				const a0 = Math.max(wordByteStart, rangeStart);
-				const a1 = Math.min(wordByteEnd, rangeEnd);
+				const a0 = wordByteStart > rangeStart ? wordByteStart : rangeStart;
+				const a1 = wordByteEnd < rangeEnd ? wordByteEnd : rangeEnd;
 				if (a0 >= a1) {
 					continue;
 				}
@@ -431,14 +426,7 @@ function fillVramGarbageScratch(buffer: Uint8Array, s: VramGarbageStream): void 
 	s.addr = (startAddr + total) >>> 0;
 }
 
-type VdpReadSurface = {
-	entry: AssetEntry;
-};
-
-export type VdpAtlasDimensions = {
-	width: number;
-	height: number;
-};
+type VdpReadSurface = VdpSurfaceUploadSlot;
 
 type VdpReadCache = {
 	x0: number;
@@ -450,7 +438,6 @@ type VdpReadCache = {
 export type VdpSurfaceUploadSlot = {
 	baseAddr: number;
 	capacity: number;
-	entry: AssetEntry;
 	surfaceId: number;
 	surfaceWidth: number;
 	surfaceHeight: number;
@@ -474,14 +461,6 @@ export type VdpBlitterSource = {
 	srcY: number;
 	width: number;
 	height: number;
-};
-
-export type VdpSlotSource = {
-	slot: number;
-	u: number;
-	v: number;
-	w: number;
-	h: number;
 };
 
 export type VdpResolvedBlitterSample = {
@@ -638,6 +617,34 @@ export type VdpBlitterCommand =
 
 const BLITTER_FIFO_CAPACITY = 4096;
 
+function createSkyboxFaceSources(): SkyboxFaceSources {
+	return {
+		posx: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
+		negx: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
+		posy: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
+		negy: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
+		posz: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
+		negz: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
+	};
+}
+
+function copyVdpSlotSource(target: VdpSlotSource, source: VdpSlotSource): void {
+	target.slot = source.slot;
+	target.u = source.u;
+	target.v = source.v;
+	target.w = source.w;
+	target.h = source.h;
+}
+
+function copySkyboxFaceSources(target: SkyboxFaceSources, source: SkyboxFaceSources): void {
+	copyVdpSlotSource(target.posx, source.posx);
+	copyVdpSlotSource(target.negx, source.negx);
+	copyVdpSlotSource(target.posy, source.posy);
+	copyVdpSlotSource(target.negy, source.negy);
+	copyVdpSlotSource(target.posz, source.posz);
+	copyVdpSlotSource(target.negz, source.negz);
+}
+
 export class VDP implements VramWriteSink {
 	private vramSlots: VramSlot[] = [];
 	private vramStaging = new Uint8Array(VRAM_STAGING_SIZE);
@@ -650,8 +657,10 @@ export class VDP implements VramWriteSink {
 	private readBudgetBytes = VDP_RD_BUDGET_BYTES;
 	private readOverflow = false;
 	private displayFrameBufferCpuReadback: Uint8Array = new Uint8Array(0);
-	private _skyboxFaceIds: SkyboxImageIds | null = null;
-	private committedSkyboxFaceIds: SkyboxImageIds | null = null;
+	private readonly skyboxFaceSources = createSkyboxFaceSources();
+	private hasSkybox = false;
+	private readonly committedSkyboxFaceSources = createSkyboxFaceSources();
+	private committedHasSkybox = false;
 	private lastDitherType = 0;
 	private committedDitherType = 0;
 	private _frameBufferWidth = 0;
@@ -673,7 +682,8 @@ export class VDP implements VramWriteSink {
 		cost: 0,
 		workRemaining: 0,
 		ditherType: 0,
-		skyboxFaceIds: null,
+		hasSkybox: false,
+		skyboxFaceSources: createSkyboxFaceSources(),
 	};
 	private readonly pendingFrame: VdpSubmittedFrameState = {
 		queue: [],
@@ -683,7 +693,8 @@ export class VDP implements VramWriteSink {
 		cost: 0,
 		workRemaining: 0,
 		ditherType: 0,
-		skyboxFaceIds: null,
+		hasSkybox: false,
+		skyboxFaceSources: createSkyboxFaceSources(),
 	};
 	private readonly glyphBufferPool: VdpGlyphRunGlyph[][] = [];
 	private readonly tileBufferPool: VdpTileRunBlit[][] = [];
@@ -718,8 +729,6 @@ export class VDP implements VramWriteSink {
 		this.memory.mapIoRead(IO_VDP_RD_DATA, this.readVdpData.bind(this));
 		this.memory.mapIoWrite(IO_VDP_FIFO, this.onVdpFifoWrite.bind(this));
 		this.memory.mapIoWrite(IO_VDP_FIFO_CTRL, this.onVdpFifoCtrlWrite.bind(this));
-		this.memory.mapIoWrite(IO_PAYLOAD_ALLOC_ADDR, this.onObsoletePayloadIoWrite.bind(this));
-		this.memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this.onObsoletePayloadIoWrite.bind(this));
 		this.memory.mapIoWrite(IO_VDP_CMD, this.onVdpCommandWrite.bind(this));
 		this.memory.mapIoWrite(IO_VDP_SLOT_PRIMARY_ATLAS, this.onSlotAtlasWrite.bind(this));
 		this.memory.mapIoWrite(IO_VDP_SLOT_SECONDARY_ATLAS, this.onSlotAtlasWrite.bind(this));
@@ -962,10 +971,6 @@ export class VDP implements VramWriteSink {
 		this.refreshSubmitBusyStatus();
 	}
 
-	private onObsoletePayloadIoWrite(): void {
-		throw vdpFault('payload staging I/O is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.');
-	}
-
 	private onVdpCommandWrite(): void {
 		const command = this.memory.readIoU32(IO_VDP_CMD);
 		if (command === 0) {
@@ -1122,7 +1127,7 @@ export class VDP implements VramWriteSink {
 		this.pendingFrame.cost = 0;
 		this.pendingFrame.workRemaining = 0;
 		this.pendingFrame.ditherType = 0;
-		this.pendingFrame.skyboxFaceIds = null;
+		this.pendingFrame.hasSkybox = false;
 	}
 
 	private enqueueBlitterCommand(command: VdpBlitterCommand): void {
@@ -1203,7 +1208,10 @@ export class VDP implements VramWriteSink {
 		frame.cost = frameCost;
 		frame.workRemaining = frameCost;
 		frame.ditherType = this.lastDitherType;
-		frame.skyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
+		frame.hasSkybox = this.hasSkybox;
+		if (this.hasSkybox) {
+			copySkyboxFaceSources(frame.skyboxFaceSources, this.skyboxFaceSources);
+		}
 		this.buildFrame.queue.length = 0;
 		this.buildFrame.cost = 0;
 		this.buildFrame.open = false;
@@ -1242,14 +1250,17 @@ export class VDP implements VramWriteSink {
 		activeFrame.cost = pendingFrame.cost;
 		activeFrame.workRemaining = pendingFrame.cost;
 		activeFrame.ditherType = pendingFrame.ditherType;
-		activeFrame.skyboxFaceIds = pendingFrame.skyboxFaceIds;
+		activeFrame.hasSkybox = pendingFrame.hasSkybox;
+		if (pendingFrame.hasSkybox) {
+			copySkyboxFaceSources(activeFrame.skyboxFaceSources, pendingFrame.skyboxFaceSources);
+		}
 		pendingFrame.occupied = false;
 		pendingFrame.hasCommands = false;
 		pendingFrame.ready = false;
 		pendingFrame.cost = 0;
 		pendingFrame.workRemaining = 0;
 		pendingFrame.ditherType = 0;
-		pendingFrame.skyboxFaceIds = null;
+		pendingFrame.hasSkybox = false;
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
@@ -1324,12 +1335,15 @@ export class VDP implements VramWriteSink {
 		this.activeFrame.cost = 0;
 		this.activeFrame.workRemaining = 0;
 		this.activeFrame.ditherType = 0;
-		this.activeFrame.skyboxFaceIds = null;
+		this.activeFrame.hasSkybox = false;
 	}
 
 	private commitActiveVisualState(): void {
 		this.committedDitherType = this.activeFrame.ditherType;
-		this.committedSkyboxFaceIds = this.activeFrame.skyboxFaceIds;
+		this.committedHasSkybox = this.activeFrame.hasSkybox;
+		if (this.activeFrame.hasSkybox) {
+			copySkyboxFaceSources(this.committedSkyboxFaceSources, this.activeFrame.skyboxFaceSources);
+		}
 	}
 
 	public presentReadyFrameOnVblankEdge(): void {
@@ -1360,36 +1374,9 @@ export class VDP implements VramWriteSink {
 		this.refreshSubmitBusyStatus();
 	}
 
-	private initializeFrameBufferSurface(): void {
-		const width = this.configuredFrameBufferSize.width;
-		const height = this.configuredFrameBufferSize.height;
-		const entry = this.memory.hasAsset(FRAMEBUFFER_RENDER_TEXTURE_KEY)
-			? this.memory.getAssetEntry(FRAMEBUFFER_RENDER_TEXTURE_KEY)
-			: this.memory.registerImageSlotAt({
-				id: FRAMEBUFFER_RENDER_TEXTURE_KEY,
-				baseAddr: VRAM_FRAMEBUFFER_BASE,
-				capacityBytes: VRAM_FRAMEBUFFER_SIZE,
-				clear: false,
-			});
-		const size = width * height * 4;
-		if (size > entry.capacity) {
-			throw vdpFault(`framebuffer surface exceeds VRAM capacity (${size} > ${entry.capacity}).`);
-		}
-		entry.baseSize = size;
-		entry.baseStride = width * 4;
-		entry.regionX = 0;
-		entry.regionY = 0;
-		entry.regionW = width;
-		entry.regionH = height;
-		this._frameBufferWidth = width;
-		this._frameBufferHeight = height;
-		this.displayFrameBufferCpuReadback = new Uint8Array(size);
-		this.registerVramSlot(entry, VDP_RD_SURFACE_FRAMEBUFFER);
-	}
-
 	private resolveSurfaceIdForSlot(slot: number): number {
 		if (slot === VDP_SLOT_SYSTEM) {
-			return VDP_RD_SURFACE_ENGINE;
+			return VDP_RD_SURFACE_SYSTEM;
 		}
 		if (slot === VDP_SLOT_PRIMARY) {
 			return VDP_RD_SURFACE_PRIMARY;
@@ -1764,8 +1751,8 @@ export class VDP implements VramWriteSink {
 	public resolveBlitterSurfaceSize(surfaceId: number): VdpBlitterSurfaceSize {
 		const surface = this.getReadSurface(surfaceId);
 		return {
-			width: surface.entry.regionW,
-			height: surface.entry.regionH,
+			width: surface.surfaceWidth,
+			height: surface.surfaceHeight,
 		};
 	}
 
@@ -1776,7 +1763,7 @@ export class VDP implements VramWriteSink {
 		if (surfaceId === VDP_RD_SURFACE_SECONDARY) {
 			return VDP_SLOT_SECONDARY;
 		}
-		if (surfaceId === VDP_RD_SURFACE_ENGINE) {
+		if (surfaceId === VDP_RD_SURFACE_SYSTEM) {
 			return VDP_SLOT_SYSTEM;
 		}
 		throw vdpFault(`surface ${surfaceId} cannot be sampled by the WebGL blitter.`);
@@ -1806,14 +1793,12 @@ export class VDP implements VramWriteSink {
 			return;
 		}
 		const slot = this.findVramSlot(addr, bytes.byteLength);
-		const entry = slot.entry;
-		if (entry.baseStride === 0 || entry.regionW === 0 || entry.regionH === 0) {
+		if (slot.surfaceWidth === 0 || slot.surfaceHeight === 0) {
 			throw vdpFault('VRAM slot is not initialized.');
 		}
-		this.syncVramSlotSurfaceSize(slot);
 		const offset = addr - slot.baseAddr;
-		const stride = entry.baseStride;
-		const rowCount = entry.regionH;
+		const stride = slot.surfaceWidth * 4;
+		const rowCount = slot.surfaceHeight;
 		const totalBytes = rowCount * stride;
 		if (offset + bytes.byteLength > totalBytes) {
 			throw vdpFault('VRAM write out of bounds.');
@@ -1823,7 +1808,7 @@ export class VDP implements VramWriteSink {
 		}
 		let remaining = bytes.byteLength;
 		let cursor = 0;
-		let row = Math.floor(offset / stride);
+		let row = (offset / stride) >>> 0;
 		let rowOffset = offset - row * stride;
 		while (remaining > 0) {
 			const rowAvailable = stride - rowOffset;
@@ -1852,20 +1837,19 @@ export class VDP implements VramWriteSink {
 			return;
 		}
 		const slot = this.findVramSlot(addr, out.byteLength);
-		const entry = slot.entry;
-		if (entry.baseStride === 0 || entry.regionW === 0 || entry.regionH === 0) {
+		if (slot.surfaceWidth === 0 || slot.surfaceHeight === 0) {
 			out.fill(0);
 			return;
 		}
 		const offset = addr - slot.baseAddr;
-		const stride = entry.baseStride;
-		const totalBytes = entry.regionH * stride;
+		const stride = slot.surfaceWidth * 4;
+		const totalBytes = slot.surfaceHeight * stride;
 		if (offset + out.byteLength > totalBytes) {
 			throw vdpFault('VRAM read out of bounds.');
 		}
 		let remaining = out.byteLength;
 		let cursor = 0;
-		let row = Math.floor(offset / stride);
+		let row = (offset / stride) >>> 0;
 		let rowOffset = offset - row * stride;
 		const buffer = this.getCpuReadbackBuffer(slot.surfaceId);
 		while (remaining > 0) {
@@ -1907,8 +1891,8 @@ export class VDP implements VramWriteSink {
 			throw vdpFault(`unsupported VDP read mode ${mode}.`);
 		}
 		const surface = this.getReadSurface(surfaceId);
-		const width = surface.entry.regionW;
-		const height = surface.entry.regionH;
+		const width = surface.surfaceWidth;
+		const height = surface.surfaceHeight;
 		if (x >= width || y >= height) {
 			throw vdpFault(`VDP read out of bounds (${x}, ${y}) for surface ${surfaceId}.`);
 		}
@@ -1939,8 +1923,8 @@ export class VDP implements VramWriteSink {
 		const dither = 0;
 		const frameBufferSurface = this.readSurfaces[VDP_RD_SURFACE_FRAMEBUFFER];
 		if (frameBufferSurface) {
-			this._frameBufferWidth = frameBufferSurface.entry.regionW;
-			this._frameBufferHeight = frameBufferSurface.entry.regionH;
+			this._frameBufferWidth = frameBufferSurface.surfaceWidth;
+			this._frameBufferHeight = frameBufferSurface.surfaceHeight;
 		} else {
 			this._frameBufferWidth = this.configuredFrameBufferSize.width;
 			this._frameBufferHeight = this.configuredFrameBufferSize.height;
@@ -1949,7 +1933,7 @@ export class VDP implements VramWriteSink {
 		this.blitterSequence = 0;
 		this.resetIngressState();
 		this.resetStatus();
-		this.memory.writeIoValue(IO_VDP_RD_SURFACE, VDP_RD_SURFACE_ENGINE);
+		this.memory.writeIoValue(IO_VDP_RD_SURFACE, VDP_RD_SURFACE_SYSTEM);
 		this.memory.writeIoValue(IO_VDP_RD_X, 0);
 		this.memory.writeIoValue(IO_VDP_RD_Y, 0);
 		this.memory.writeIoValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
@@ -1960,8 +1944,8 @@ export class VDP implements VramWriteSink {
 		}
 		this.lastDitherType = dither;
 		this.committedDitherType = dither;
-		this._skyboxFaceIds = null;
-		this.committedSkyboxFaceIds = null;
+		this.hasSkybox = false;
+		this.committedHasSkybox = false;
 		this.lastFrameCommitted = true;
 		this.lastFrameCost = 0;
 		this.lastFrameHeld = false;
@@ -1981,7 +1965,7 @@ export class VDP implements VramWriteSink {
 
 	public captureState(): VdpState {
 		return {
-			skyboxFaceIds: this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds },
+			skyboxFaceSources: this.hasSkybox ? this.skyboxFaceSources : null,
 			ditherType: this.lastDitherType,
 		};
 	}
@@ -1997,10 +1981,10 @@ export class VDP implements VramWriteSink {
 	}
 
 	public restoreState(state: VdpState): void {
-		if (state.skyboxFaceIds === null) {
+		if (state.skyboxFaceSources === null) {
 			this.clearSkybox();
 		} else {
-			this.setSkyboxImages(state.skyboxFaceIds);
+			this.setSkyboxSources(state.skyboxFaceSources);
 		}
 		this.setDitherType(state.ditherType);
 		this.syncAtlasSlotRegisters();
@@ -2022,8 +2006,8 @@ export class VDP implements VramWriteSink {
 		return this.committedDitherType;
 	}
 
-	public get committedViewSkyboxFaceIds(): SkyboxImageIds | null {
-		return this.committedSkyboxFaceIds;
+	public get committedViewSkyboxFaceSources(): SkyboxFaceSources | null {
+		return this.committedHasSkybox ? this.committedSkyboxFaceSources : null;
 	}
 
 	public takeReadyExecutionQueue(): readonly VdpBlitterCommand[] | null {
@@ -2054,7 +2038,10 @@ export class VDP implements VramWriteSink {
 
 	private commitLiveVisualState(): void {
 		this.committedDitherType = this.lastDitherType;
-		this.committedSkyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
+		this.committedHasSkybox = this.hasSkybox;
+		if (this.hasSkybox) {
+			copySkyboxFaceSources(this.committedSkyboxFaceSources, this.skyboxFaceSources);
+		}
 	}
 
 	private captureSurfacePixels(): VdpSurfacePixelsState[] {
@@ -2083,15 +2070,16 @@ export class VDP implements VramWriteSink {
 		this.markVramSlotDirty(slot, 0, slot.surfaceHeight);
 	}
 
-	public setSkyboxImages(ids: SkyboxImageIds): void {
-		this._skyboxFaceIds = ids;
+	public setSkyboxSources(sources: SkyboxFaceSources): void {
+		copySkyboxFaceSources(this.skyboxFaceSources, sources);
+		this.hasSkybox = true;
 	}
 
 	public clearSkybox(): void {
-		this._skyboxFaceIds = null;
+		this.hasSkybox = false;
 	}
 
-	public registerVramAssets(atlasDimensions: ReadonlyMap<number, VdpAtlasDimensions>): void {
+	public registerVramSurfaces(surfaces: readonly VdpVramSurface[], atlasDimensions: ReadonlyMap<number, VdpAtlasDimensions>): void {
 		this.resetQueuedFrameState();
 		this.atlasDimensionsById = new Map(atlasDimensions);
 		this.vramSlots = [];
@@ -2100,19 +2088,14 @@ export class VDP implements VramWriteSink {
 			this.readCaches[index].width = 0;
 		}
 		this.displayFrameBufferCpuReadback = new Uint8Array(0);
-		this._skyboxFaceIds = null;
-		this.committedSkyboxFaceIds = null;
+		this.hasSkybox = false;
+		this.committedHasSkybox = false;
 		this.committedDitherType = this.lastDitherType;
 		this.vramBootSeed = this.nextVramBootSeed();
 		this.seedVramStaging();
-		this.initializeFrameBufferSurface();
-
-		const engineEntry = this.memory.getAssetEntry(generateAtlasAssetId(BIOS_ATLAS_ID));
-		const primarySlotEntry = this.memory.getAssetEntry(TEXTPAGE_PRIMARY_SLOT_ID);
-		const secondarySlotEntry = this.memory.getAssetEntry(TEXTPAGE_SECONDARY_SLOT_ID);
-		this.registerVramSlot(engineEntry, VDP_RD_SURFACE_ENGINE);
-		this.registerVramSlot(primarySlotEntry, VDP_RD_SURFACE_PRIMARY);
-		this.registerVramSlot(secondarySlotEntry, VDP_RD_SURFACE_SECONDARY);
+		for (let index = 0; index < surfaces.length; index += 1) {
+			this.registerVramSlot(surfaces[index]);
+		}
 		this.syncAtlasSlotRegisters();
 		this.syncRegisters();
 	}
@@ -2150,14 +2133,27 @@ export class VDP implements VramWriteSink {
 		if (width <= 0 || height <= 0 || byteLength > slot.capacity) {
 			return;
 		}
-		const entry = slot.entry;
-		entry.baseSize = byteLength;
-		entry.baseStride = width * 4;
-		entry.regionX = 0;
-		entry.regionY = 0;
-		entry.regionW = width;
-		entry.regionH = height;
-		this.syncVramSlotSurfaceSize(slot);
+		if (slot.surfaceWidth === width && slot.surfaceHeight === height) {
+			return;
+		}
+		const previous = slot.cpuReadback;
+		slot.surfaceWidth = width;
+		slot.surfaceHeight = height;
+		slot.cpuReadback = new Uint8Array(byteLength);
+		this.invalidateReadCache(slot.surfaceId);
+		if (slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
+			this._frameBufferWidth = width;
+			this._frameBufferHeight = height;
+			this.displayFrameBufferCpuReadback = new Uint8Array(byteLength);
+		}
+		if (slot.surfaceId === VDP_RD_SURFACE_SYSTEM) {
+			slot.dirtyRowStart = 0;
+			slot.dirtyRowEnd = 0;
+			return;
+		}
+		this.seedVramSlotTexture(slot);
+		const copyBytes = previous.byteLength < slot.cpuReadback.byteLength ? previous.byteLength : slot.cpuReadback.byteLength;
+		slot.cpuReadback.set(previous.subarray(0, copyBytes));
 	}
 
 	private invalidateReadCache(surfaceId: number): void {
@@ -2179,13 +2175,17 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	private registerReadSurface(surfaceId: number, entry: AssetEntry): void {
-		this.readSurfaces[surfaceId] = { entry };
-		this.invalidateReadCache(surfaceId);
+	private registerReadSurface(slot: VramSlot): void {
+		this.readSurfaces[slot.surfaceId] = slot;
+		this.invalidateReadCache(slot.surfaceId);
 	}
 
 	private getReadSurface(surfaceId: number): VdpReadSurface {
-		return this.readSurfaces[surfaceId]!;
+		const surface = this.readSurfaces[surfaceId];
+		if (surface === null) {
+			throw vdpFault(`read surface ${surfaceId} is not registered.`);
+		}
+		return surface;
 	}
 
 	private getReadCache(surfaceId: number, surface: VdpReadSurface, x: number, y: number): VdpReadCache {
@@ -2197,14 +2197,16 @@ export class VDP implements VramWriteSink {
 	}
 
 	private prefetchReadCache(cache: VdpReadCache, surfaceId: number, surface: VdpReadSurface, x: number, y: number): void {
-		const width = surface.entry.regionW;
-		const maxPixelsByBudget = Math.floor(this.readBudgetBytes / 4);
+		const width = surface.surfaceWidth;
+		const maxPixelsByBudget = this.readBudgetBytes >>> 2;
 		if (maxPixelsByBudget <= 0) {
 			this.readOverflow = true;
 			cache.width = 0;
 			return;
 		}
-		const chunkW = Math.min(VDP_RD_MAX_CHUNK_PIXELS, width - x, maxPixelsByBudget);
+		const remainingWidth = width - x;
+		const chunkLimit = VDP_RD_MAX_CHUNK_PIXELS < remainingWidth ? VDP_RD_MAX_CHUNK_PIXELS : remainingWidth;
+		const chunkW = chunkLimit < maxPixelsByBudget ? chunkLimit : maxPixelsByBudget;
 		const data = this.readSurfacePixels(cache, surfaceId, surface, x, y, chunkW, 1);
 		cache.x0 = x;
 		cache.y = y;
@@ -2223,7 +2225,7 @@ export class VDP implements VramWriteSink {
 
 	private readCpuReadback(cache: VdpReadCache, surfaceId: number, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
 		const buffer = this.getCpuReadbackBuffer(surfaceId);
-		const stride = surface.entry.regionW * 4;
+		const stride = surface.surfaceWidth * 4;
 		const rowBytes = width * 4;
 		const byteLength = rowBytes * height;
 		const out = cache.data.byteLength < byteLength ? (cache.data = new Uint8Array(byteLength)) : cache.data;
@@ -2236,9 +2238,9 @@ export class VDP implements VramWriteSink {
 	}
 
 	private updateCpuReadback(surfaceId: number, slice: Uint8Array, x: number, y: number): void {
-		const surface = this.readSurfaces[surfaceId]!;
+		const surface = this.getReadSurface(surfaceId);
 		const buffer = this.getVramSlotBySurfaceId(surfaceId).cpuReadback;
-		const stride = surface.entry.regionW * 4;
+		const stride = surface.surfaceWidth * 4;
 		const offset = y * stride + x * 4;
 		buffer.set(slice, offset);
 	}
@@ -2250,57 +2252,44 @@ export class VDP implements VramWriteSink {
 	public get trackedUsedVramBytes(): number {
 		let usedBytes = 0;
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
-			usedBytes += this.vramSlots[index].entry.baseSize;
+			const slot = this.vramSlots[index];
+			usedBytes += slot.surfaceWidth * slot.surfaceHeight * 4;
 		}
 		return usedBytes;
 	}
 
 	public get trackedTotalVramBytes(): number {
-		return VRAM_SYSTEM_TEXTPAGE_SIZE + VRAM_PRIMARY_TEXTPAGE_SIZE + VRAM_SECONDARY_TEXTPAGE_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
+		return VRAM_SYSTEM_SLOT_SIZE + VRAM_PRIMARY_SLOT_SIZE + VRAM_SECONDARY_SLOT_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
 	}
 
-	private registerVramSlot(entry: AssetEntry, surfaceId: number): void {
-		const isEngineTextpage = surfaceId === VDP_RD_SURFACE_ENGINE;
-		const surfaceWidth = entry.regionW;
-		const surfaceHeight = entry.regionH;
-		const stream = this.makeVramGarbageStream(entry.baseAddr >>> 0);
+	private registerVramSlot(surface: VdpVramSurface): void {
+		const isSystemSlot = surface.surfaceId === VDP_RD_SURFACE_SYSTEM;
+		const byteLength = surface.width * surface.height * 4;
+		if (surface.width <= 0 || surface.height <= 0 || byteLength > surface.capacity) {
+			throw vdpFault(`VRAM surface ${surface.surfaceId} has invalid dimensions.`);
+		}
+		const stream = this.makeVramGarbageStream(surface.baseAddr >>> 0);
 		fillVramGarbageScratch(this.vramSeedPixel, stream);
 		const slot: VramSlot = {
-			baseAddr: entry.baseAddr,
-			capacity: entry.capacity,
-			entry,
-			surfaceId,
-			surfaceWidth,
-			surfaceHeight,
-			cpuReadback: new Uint8Array(surfaceWidth * surfaceHeight * 4),
+			baseAddr: surface.baseAddr,
+			capacity: surface.capacity,
+			surfaceId: surface.surfaceId,
+			surfaceWidth: surface.width,
+			surfaceHeight: surface.height,
+			cpuReadback: new Uint8Array(byteLength),
 			dirtyRowStart: 0,
 			dirtyRowEnd: 0,
 		};
+		if (slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
+			this._frameBufferWidth = surface.width;
+			this._frameBufferHeight = surface.height;
+			this.displayFrameBufferCpuReadback = new Uint8Array(byteLength);
+		}
 		this.vramSlots.push(slot);
-		this.registerReadSurface(surfaceId, entry);
-		if (!isEngineTextpage) {
+		this.registerReadSurface(slot);
+		if (!isSystemSlot) {
 			this.seedVramSlotTexture(slot);
 		}
-	}
-
-	private syncVramSlotSurfaceSize(slot: VramSlot): void {
-		const width = slot.entry.regionW;
-		const height = slot.entry.regionH;
-		if (slot.surfaceWidth === width && slot.surfaceHeight === height) {
-			return;
-		}
-		const previous = slot.cpuReadback;
-		slot.surfaceWidth = width;
-		slot.surfaceHeight = height;
-		slot.cpuReadback = new Uint8Array(width * height * 4);
-		this.invalidateReadCache(slot.surfaceId);
-		if (slot.surfaceId === VDP_RD_SURFACE_ENGINE) {
-			slot.dirtyRowStart = 0;
-			slot.dirtyRowEnd = 0;
-			return;
-		}
-		this.seedVramSlotTexture(slot);
-		slot.cpuReadback.set(previous.subarray(0, Math.min(previous.byteLength, slot.cpuReadback.byteLength)));
 	}
 
 	private getVramSlotBySurfaceId(surfaceId: number): VramSlot {
@@ -2331,7 +2320,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	private randomU32(): number {
-		return Math.floor(Math.random() * 0xffffffff) >>> 0;
+		return (Math.random() * 0x100000000) >>> 0;
 	}
 
 	private nextVramMachineSeed(): number {
@@ -2353,16 +2342,17 @@ export class VDP implements VramWriteSink {
 	}
 
 	private seedVramSlotTexture(slot: VramSlot): void {
-		const width = slot.entry.regionW;
-		const height = slot.entry.regionH;
+		const width = slot.surfaceWidth;
+		const height = slot.surfaceHeight;
 		const rowPixels = width;
-		const maxPixels = Math.floor(this.vramGarbageScratch.byteLength / 4);
+		const maxPixels = this.vramGarbageScratch.byteLength >>> 2;
 		const stream = this.makeVramGarbageStream(slot.baseAddr >>> 0);
 		const frameBufferSlot = slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER;
 		if (rowPixels <= maxPixels) {
-			const rowsPerChunk = Math.floor(maxPixels / rowPixels);
-			for (let y = 0; y < height; ) {
-				const rows = Math.min(rowsPerChunk, height - y);
+			const rowsPerChunk = (maxPixels / rowPixels) >>> 0;
+			for (let y = 0; y < height;) {
+				const rowsRemaining = height - y;
+				const rows = rowsPerChunk < rowsRemaining ? rowsPerChunk : rowsRemaining;
 				const chunkBytes = rowPixels * rows * 4;
 				const chunk = this.vramGarbageScratch.subarray(0, chunkBytes);
 				fillVramGarbageScratch(chunk, stream);
@@ -2378,8 +2368,9 @@ export class VDP implements VramWriteSink {
 			}
 		} else {
 			for (let y = 0; y < height; y += 1) {
-				for (let x = 0; x < width; ) {
-					const segmentWidth = Math.min(maxPixels, width - x);
+				for (let x = 0; x < width;) {
+					const widthRemaining = width - x;
+					const segmentWidth = maxPixels < widthRemaining ? maxPixels : widthRemaining;
 					const segmentBytes = segmentWidth * 4;
 					const segment = this.vramGarbageScratch.subarray(0, segmentBytes);
 					fillVramGarbageScratch(segment, stream);

@@ -1,4 +1,4 @@
-local round_to_nearest<const> = require('round_to_nearest')
+local round_to_nearest<const> = require('bios/util/round_to_nearest')
 
 local vdp_image<const> = {}
 local cache<const> = {}
@@ -8,11 +8,11 @@ local atlas_name<const> = function(atlas_id)
 end
 
 local resolve_img_asset<const> = function(imgid)
-	local asset<const> = assets.img[imgid]
+	local asset<const> = sys_rom_img[imgid]
 	if asset ~= nil then
 		return asset
 	end
-	return system_assets.img[imgid]
+	return sys_system_rom_img[imgid]
 end
 
 local slot_atlas_addr<const> = function(slot)

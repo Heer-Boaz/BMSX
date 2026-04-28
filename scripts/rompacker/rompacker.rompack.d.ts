@@ -1,5 +1,5 @@
 /**
- * Type definitions shared between the rompacker CLI and the engine runtime.
+ * Type definitions shared between the rompacker CLI and the console runtime.
  */
 import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';
@@ -42,7 +42,7 @@ export type AtlasTexcoords = [
 
 interface BaseResource<TType extends resourcetype> {
 	type: TType; // resource type
-	name: string; // logical name within the rompack, but I think unused in the game engine
+	name: string; // logical name within the rompack.
 	filepath?: string; // Original file path on disk (relative)
 	sourcePath?: string; // Original relative source path before any normalization (e.g. for Lua assets)
 	ext?: string; // file extension

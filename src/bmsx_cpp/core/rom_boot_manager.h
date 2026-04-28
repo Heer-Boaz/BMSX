@@ -6,19 +6,19 @@
 
 namespace bmsx {
 
-class EngineCore;
+class ConsoleCore;
 class Runtime;
 struct MachineManifest;
-struct RuntimeAssets;
+struct RuntimeRomPackage;
 struct ResolvedRuntimeTiming;
 
 class RomBootManager {
 public:
-	explicit RomBootManager(EngineCore& engine);
+	explicit RomBootManager(ConsoleCore& console);
 
-	bool loadEngineAssets(const u8* data, size_t size);
-	bool loadEngineAssetsOwned(std::vector<u8>&& data);
-	bool loadEngineAssetsFromPath(const char* path);
+	bool loadSystemRom(const u8* data, size_t size);
+	bool loadSystemRomOwned(std::vector<u8>&& data);
+	bool loadSystemRomFromPath(const char* path);
 
 	bool loadRom(const u8* data, size_t size);
 	bool loadRomOwned(std::vector<u8>&& data);
@@ -30,16 +30,16 @@ public:
 	bool hasLoadedCartProgram() const;
 
 private:
-	EngineCore& m_engine;
+	ConsoleCore& m_console;
 
-	void activateEngineAssets();
-	void activateCartAssets();
+	void activateSystemRom();
+	void activateCartRom();
 	void setMachineManifest(const MachineManifest& manifest);
 	void configureViewForMachine(const MachineManifest& manifest);
 
-	bool loadEngineAssetsInternal(const u8* data, size_t size);
+	bool loadSystemRomInternal(const u8* data, size_t size);
 	bool loadRomInternal(const u8* data, size_t size);
-	bool bootEngineStartupProgram(const MachineManifest& runtimeMachine, const RuntimeAssets& sizingAssets);
+	bool bootSystemStartupProgram(const MachineManifest& runtimeMachine);
 	Runtime& prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine);
 	void bootRuntimeFromProgram();
 };

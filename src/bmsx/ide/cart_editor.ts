@@ -1,4 +1,4 @@
-import { engineCore } from '../core/engine';
+import { consoleCore } from '../core/console';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { Viewport } from '../rompack/format';
 import { resolveLuaSourceRecordFromRegistries } from '../machine/program/sources';
@@ -128,9 +128,9 @@ export function getSourceForChunk(runtime: Runtime, path: string): string {
 	const asset = resolveLuaSourceRecordFromRegistries(path, [
 		runtime.activeLuaSources,
 		runtime.cartLuaSources,
-		runtime.engineLuaSources,
+		runtime.systemLuaSources,
 	]);
-	const context = findCodeTabContext(path);
+	const context = findCodeTabContext(asset.source_path);
 	if (context) {
 		if (context.id === getActiveCodeTabContext().id) {
 			return getTextSnapshot(editorDocumentState.buffer);
@@ -469,7 +469,7 @@ class RuntimeCartEditor implements CartEditor {
 
 	public handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
 		const errormsg = error instanceof Error ? error.message : String(error);
-		engineCore.paused = true;
+		consoleCore.paused = true;
 		this.activate();
 		const message = `${fallbackMessage}: ${errormsg}`;
 		this.runtime.terminal.appendStderr(message);
@@ -559,8 +559,8 @@ class RuntimeCartEditor implements CartEditor {
 		if (this.crtPostprocessingEnabledBeforeEditor !== null) {
 			return;
 		}
-		this.crtPostprocessingEnabledBeforeEditor = engineCore.view.crt_postprocessing_enabled;
-		engineCore.view.crt_postprocessing_enabled = false;
+		this.crtPostprocessingEnabledBeforeEditor = consoleCore.view.crt_postprocessing_enabled;
+		consoleCore.view.crt_postprocessing_enabled = false;
 	}
 
 	private restoreCrtPostprocessingFromEditor(): void {
@@ -568,7 +568,7 @@ class RuntimeCartEditor implements CartEditor {
 		if (enabled === null) {
 			return;
 		}
-		engineCore.view.crt_postprocessing_enabled = enabled;
+		consoleCore.view.crt_postprocessing_enabled = enabled;
 		this.crtPostprocessingEnabledBeforeEditor = null;
 	}
 }

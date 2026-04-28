@@ -1,7 +1,7 @@
 #include "machine/runtime/timing/config.h"
 
 #include "machine/runtime/runtime.h"
-#include "rompack/assets.h"
+#include "rompack/package.h"
 
 #include <stdexcept>
 

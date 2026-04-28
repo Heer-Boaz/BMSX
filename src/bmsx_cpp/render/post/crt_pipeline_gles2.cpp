@@ -4,7 +4,7 @@
 
 #include "crt_pipeline_gles2.h"
 
-#include "core/engine.h"
+#include "core/console.h"
 #include <cstdio>
 #include <stdexcept>
 #include <string>
@@ -32,7 +32,7 @@ void logFramebufferDitherStateOnce() {
 	glGetIntegerv(GL_ALPHA_BITS, &alpha_bits);
 	const int dither_enabled = glIsEnabled(GL_DITHER) ? 1 : 0;
 
-	EngineCore::instance().log(LogLevel::Warn,
+	ConsoleCore::instance().log(LogLevel::Warn,
 								"[BMSX][GLES2] FB bits RGBA=%d/%d/%d/%d GL_DITHER=%d\n",
 								static_cast<int>(red_bits),
 								static_cast<int>(green_bits),
@@ -586,7 +586,7 @@ void main(){
 				glGetShaderInfoLog(shader, log_length, &written, log_buffer.data());
 				log.assign(log_buffer.data(), static_cast<size_t>(written));
 			}
-			EngineCore::instance().log(LogLevel::Error,
+			ConsoleCore::instance().log(LogLevel::Error,
 										"[BMSX] GLES2 CRT shader compile failed: %s\n",
 										log.c_str());
 			glDeleteShader(shader);
@@ -613,7 +613,7 @@ void main(){
 				glGetProgramInfoLog(program, log_length, &written, log_buffer.data());
 				log.assign(log_buffer.data(), static_cast<size_t>(written));
 			}
-			EngineCore::instance().log(LogLevel::Error,
+			ConsoleCore::instance().log(LogLevel::Error,
 										"[BMSX] GLES2 CRT program link failed: %s\n",
 										log.c_str());
 			glDeleteProgram(program);
@@ -915,7 +915,7 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
 	glUniform2f(g_crt.uniform_src_resolution, static_cast<float>(state.baseWidth), static_cast<float>(state.baseHeight));
 	glUniform1f(g_crt.uniform_scale, 1.0f);
 	glUniform1f(g_crt.uniform_fragscale, static_cast<float>(state.width) / static_cast<float>(state.baseWidth));
-	glUniform1f(g_crt.uniform_time, static_cast<float>(EngineCore::instance().totalTime()));
+	glUniform1f(g_crt.uniform_time, static_cast<float>(ConsoleCore::instance().totalTime()));
 	glUniform1f(g_crt.uniform_random, static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX));
 
 	glUniform1i(g_crt.uniform_apply_noise, state.options.applyNoise ? 1 : 0);

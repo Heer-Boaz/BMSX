@@ -1,5 +1,5 @@
 -- registry.lua
--- lightweight registry for lua engine entities
+-- lightweight registry for system ROM entities
 --
 -- DESIGN PRINCIPLES
 --
@@ -19,7 +19,7 @@
 --    a reference across frames — the entity may have been deregistered.
 --
 -- 3. registry.instance IS THE GLOBAL SINGLETON.
---    Access it via require('registry').instance — do not create additional
+--    Access it via require('bios/registry').instance — do not create additional
 --    registry.new() instances unless you have an explicit separate scope.
 
 local registry<const> = {}

@@ -20,9 +20,8 @@ export const IO_REGION_SIZE = 0x00040000; // 256 KB
 export const DEFAULT_STRING_HANDLE_COUNT = 0x40000; // 256k handles
 export const STRING_HANDLE_ENTRY_SIZE = 16;
 export const DEFAULT_STRING_HEAP_SIZE = 0x02000000; // 32 MB
-export const DEFAULT_ASSET_TABLE_SIZE = 0x00100000; // 1 MB
 export const DEFAULT_GEO_SCRATCH_SIZE = 0x00080000; // 512 KB
-export const DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE = 0x01000000; // 16 MB
+export const DEFAULT_VRAM_IMAGE_SLOT_SIZE = 0x01000000; // 16 MB
 export const DEFAULT_VRAM_STAGING_SIZE = 0x00400000; // 4 MB
 export const DEFAULT_VRAM_FRAMEBUFFER_SIZE = 256 * 212 * 4;
 export const VDP_CMD_ARG_COUNT = 18;
@@ -35,40 +34,30 @@ export let RAM_SIZE = DEFAULT_RAM_SIZE;
 export let STRING_HANDLE_COUNT = DEFAULT_STRING_HANDLE_COUNT;
 export let STRING_HANDLE_TABLE_SIZE = STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
 export let STRING_HEAP_SIZE = DEFAULT_STRING_HEAP_SIZE;
-export let ASSET_TABLE_SIZE = DEFAULT_ASSET_TABLE_SIZE;
-export let VRAM_TEXTPAGE_SLOT_SIZE = DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE;
-export let VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE = DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE;
+export let VRAM_IMAGE_SLOT_SIZE = DEFAULT_VRAM_IMAGE_SLOT_SIZE;
 export let VRAM_STAGING_SIZE = DEFAULT_VRAM_STAGING_SIZE;
 export let VRAM_FRAMEBUFFER_SIZE = DEFAULT_VRAM_FRAMEBUFFER_SIZE;
 
 export let IO_BASE = RAM_BASE;
 export let STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
 export let STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
-export let ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
-export let ASSET_TABLE_BASE = ASSET_RAM_BASE;
-export let ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
-export let ASSET_RAM_SIZE = RAM_SIZE - (ASSET_RAM_BASE - RAM_BASE);
-export let ASSET_DATA_END = ASSET_RAM_BASE + ASSET_RAM_SIZE;
 export let GEO_SCRATCH_BASE = 0;
 export let GEO_SCRATCH_SIZE = DEFAULT_GEO_SCRATCH_SIZE;
 export let VDP_STREAM_BUFFER_BASE = 0;
-export let VRAM_SECONDARY_TEXTPAGE_BASE = 0;
-export let VRAM_PRIMARY_TEXTPAGE_BASE = 0;
-export let VRAM_SYSTEM_TEXTPAGE_BASE = 0;
+export let VRAM_SECONDARY_SLOT_BASE = 0;
+export let VRAM_PRIMARY_SLOT_BASE = 0;
+export let VRAM_SYSTEM_SLOT_BASE = 0;
 export let VRAM_STAGING_BASE = 0;
 export let VRAM_FRAMEBUFFER_BASE = 0;
-export let VRAM_SYSTEM_TEXTPAGE_SIZE = 0;
-export let VRAM_PRIMARY_TEXTPAGE_SIZE = 0;
-export let VRAM_SECONDARY_TEXTPAGE_SIZE = 0;
-export let ASSET_DATA_ALLOC_END = 0;
+export let VRAM_SYSTEM_SLOT_SIZE = 0;
+export let VRAM_PRIMARY_SLOT_SIZE = 0;
+export let VRAM_SECONDARY_SLOT_SIZE = 0;
 export let RAM_USED_END = RAM_BASE + RAM_SIZE;
 
 export type MemoryMapSpecs = {
 	ram_bytes?: number;
 	string_handle_count?: number;
 	string_heap_bytes?: number;
-	asset_table_bytes?: number;
-	asset_data_bytes?: number;
 	slot_bytes?: number;
 	system_slot_bytes?: number;
 	staging_bytes?: number;
@@ -86,30 +75,30 @@ function resolvePositiveInteger(value: number, label: string): number {
 	return resolved;
 }
 
-function resolveNonNegativeInteger(value: number, label: string): number {
-	if (!Number.isFinite(value)) {
-		throw new Error(`[MemoryMap] ${label} must be a finite number.`);
-	}
-	const resolved = Math.floor(value);
-	if (resolved < 0) {
-		throw new Error(`[MemoryMap] ${label} must be greater than or equal to 0.`);
-	}
-	return resolved;
-}
-
 export function alignUp(value: number, alignment: number): number {
 	const mask = alignment - 1;
 	return (value + mask) & ~mask;
+}
+
+export function isVramMappedRange(addr: number, length: number): boolean {
+	if (length <= 0) {
+		return false;
+	}
+	const end = addr + length;
+	const overlaps = (base: number, size: number): boolean => addr < base + size && end > base;
+	return overlaps(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
+		|| overlaps(VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
+		|| overlaps(VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
+		|| overlaps(VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
+		|| overlaps(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
 function recomputeMemoryLayout(config: {
 	ramBytes: number;
 	stringHandleCount: number;
 	stringHeapBytes: number;
-	assetTableBytes: number;
-	assetDataBytes: number;
-	textpageSlotBytes: number;
-	systemTextpageSlotBytes: number;
+	slotBytes: number;
+	systemSlotBytes: number;
 	stagingBytes: number;
 	frameBufferBytes: number;
 }): void {
@@ -117,33 +106,26 @@ function recomputeMemoryLayout(config: {
 	STRING_HANDLE_COUNT = config.stringHandleCount;
 	STRING_HANDLE_TABLE_SIZE = STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
 	STRING_HEAP_SIZE = config.stringHeapBytes;
-	ASSET_TABLE_SIZE = config.assetTableBytes;
-	VRAM_TEXTPAGE_SLOT_SIZE = config.textpageSlotBytes;
-	VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE = config.systemTextpageSlotBytes;
+	VRAM_IMAGE_SLOT_SIZE = config.slotBytes;
+	VRAM_SYSTEM_SLOT_SIZE = config.systemSlotBytes;
 	VRAM_STAGING_SIZE = config.stagingBytes;
 	VRAM_FRAMEBUFFER_SIZE = config.frameBufferBytes;
 
 	IO_BASE = RAM_BASE;
 	STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
 	STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
-	ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
-	ASSET_TABLE_BASE = ASSET_RAM_BASE;
-	ASSET_DATA_BASE = alignUp(ASSET_TABLE_BASE + ASSET_TABLE_SIZE, IO_WORD_SIZE);
-	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes;
-	ASSET_RAM_SIZE = ASSET_DATA_END - ASSET_RAM_BASE;
-	GEO_SCRATCH_BASE = ASSET_DATA_END;
+	GEO_SCRATCH_BASE = alignUp(STRING_HEAP_BASE + STRING_HEAP_SIZE, IO_WORD_SIZE);
 	GEO_SCRATCH_SIZE = DEFAULT_GEO_SCRATCH_SIZE;
 	VDP_STREAM_BUFFER_BASE = GEO_SCRATCH_BASE + GEO_SCRATCH_SIZE;
 
 	VRAM_STAGING_BASE = VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE;
-	VRAM_SYSTEM_TEXTPAGE_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
-	VRAM_PRIMARY_TEXTPAGE_BASE = VRAM_SYSTEM_TEXTPAGE_BASE + VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE;
-	VRAM_SECONDARY_TEXTPAGE_BASE = VRAM_PRIMARY_TEXTPAGE_BASE + VRAM_TEXTPAGE_SLOT_SIZE;
-	VRAM_FRAMEBUFFER_BASE = VRAM_SECONDARY_TEXTPAGE_BASE + VRAM_TEXTPAGE_SLOT_SIZE;
-	VRAM_SYSTEM_TEXTPAGE_SIZE = VRAM_SYSTEM_TEXTPAGE_SLOT_SIZE;
-	VRAM_PRIMARY_TEXTPAGE_SIZE = VRAM_TEXTPAGE_SLOT_SIZE;
-	VRAM_SECONDARY_TEXTPAGE_SIZE = VRAM_TEXTPAGE_SLOT_SIZE;
-	ASSET_DATA_ALLOC_END = ASSET_DATA_END;
+	VRAM_SYSTEM_SLOT_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
+	VRAM_PRIMARY_SLOT_BASE = VRAM_SYSTEM_SLOT_BASE + config.systemSlotBytes;
+	VRAM_SECONDARY_SLOT_BASE = VRAM_PRIMARY_SLOT_BASE + VRAM_IMAGE_SLOT_SIZE;
+	VRAM_FRAMEBUFFER_BASE = VRAM_SECONDARY_SLOT_BASE + VRAM_IMAGE_SLOT_SIZE;
+	VRAM_SYSTEM_SLOT_SIZE = config.systemSlotBytes;
+	VRAM_PRIMARY_SLOT_SIZE = VRAM_IMAGE_SLOT_SIZE;
+	VRAM_SECONDARY_SLOT_SIZE = VRAM_IMAGE_SLOT_SIZE;
 	RAM_USED_END = VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE;
 }
 
@@ -153,32 +135,20 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 		: resolvePositiveInteger(specs.ram_bytes, 'ram_bytes');
 	const stringHandleCount = resolvePositiveInteger(specs?.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT, 'string_handle_count');
 	const stringHeapBytes = resolvePositiveInteger(specs?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE, 'string_heap_bytes');
-	const assetTableBytes = resolvePositiveInteger(specs?.asset_table_bytes ?? DEFAULT_ASSET_TABLE_SIZE, 'asset_table_bytes');
-	const textpageSlotBytes = resolvePositiveInteger(specs?.slot_bytes ?? DEFAULT_VRAM_TEXTPAGE_SLOT_SIZE, 'slot_bytes');
-	const systemTextpageSlotBytes = resolvePositiveInteger(specs?.system_slot_bytes ?? textpageSlotBytes, 'system_slot_bytes');
+	const slotBytes = resolvePositiveInteger(specs?.slot_bytes ?? DEFAULT_VRAM_IMAGE_SLOT_SIZE, 'slot_bytes');
+	const systemSlotBytes = resolvePositiveInteger(specs?.system_slot_bytes ?? slotBytes, 'system_slot_bytes');
 	const stagingBytes = resolvePositiveInteger(specs?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE, 'staging_bytes');
 	const frameBufferBytes = resolvePositiveInteger(specs?.framebuffer_bytes ?? DEFAULT_VRAM_FRAMEBUFFER_SIZE, 'framebuffer_bytes');
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
-	const assetDataBaseOffset = IO_REGION_SIZE
+	const runtimeRamBaseOffset = IO_REGION_SIZE
 		+ stringHandleTableBytes
-		+ stringHeapBytes
-		+ assetTableBytes;
-	const assetDataBasePadding = alignUp(assetDataBaseOffset, IO_WORD_SIZE) - assetDataBaseOffset;
-	const fixedRamBytes = assetDataBaseOffset
-		+ assetDataBasePadding
+		+ stringHeapBytes;
+	const runtimeRamBasePadding = alignUp(runtimeRamBaseOffset, IO_WORD_SIZE) - runtimeRamBaseOffset;
+	const fixedRamBytes = runtimeRamBaseOffset
+		+ runtimeRamBasePadding
 		+ DEFAULT_GEO_SCRATCH_SIZE
 		+ VDP_STREAM_BUFFER_SIZE;
-	const assetDataBytes = specs?.asset_data_bytes !== undefined
-		? resolveNonNegativeInteger(specs.asset_data_bytes, 'asset_data_bytes')
-		: ramBytes !== undefined
-			? (() => {
-				if (ramBytes < fixedRamBytes) {
-					throw new Error(`[MemoryMap] ram_bytes (${ramBytes}) must be at least fixed memory size ${fixedRamBytes}.`);
-				}
-				return ramBytes - fixedRamBytes;
-			})()
-			: resolveNonNegativeInteger(DEFAULT_RAM_SIZE - fixedRamBytes, 'asset_data_bytes');
-	const computedRamBytes = fixedRamBytes + assetDataBytes;
+	const computedRamBytes = fixedRamBytes;
 	if (ramBytes !== undefined) {
 		if (ramBytes < computedRamBytes) {
 			throw new Error(`[MemoryMap] ram_bytes (${ramBytes}) must be at least ${computedRamBytes}.`);
@@ -187,10 +157,8 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 			ramBytes,
 			stringHandleCount,
 			stringHeapBytes,
-			assetTableBytes,
-			assetDataBytes,
-			textpageSlotBytes,
-			systemTextpageSlotBytes,
+			slotBytes,
+			systemSlotBytes,
 			stagingBytes,
 			frameBufferBytes,
 		});
@@ -200,10 +168,8 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 		ramBytes: computedRamBytes,
 		stringHandleCount,
 		stringHeapBytes,
-		assetTableBytes,
-		assetDataBytes,
-		textpageSlotBytes,
-		systemTextpageSlotBytes,
+		slotBytes,
+		systemSlotBytes,
 		stagingBytes,
 		frameBufferBytes,
 	});

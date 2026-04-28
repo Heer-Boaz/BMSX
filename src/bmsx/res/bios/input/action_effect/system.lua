@@ -1,12 +1,12 @@
 -- input_action_effect_system.lua
 -- input intent + input action effect ecs system
 
-local ecs<const> = require('ecs/index')
-local action_effects<const> = require('action_effects')
-local compiler<const> = require('input/action_effect/compiler')
-local dsl<const> = require('input/action_effect/dsl')
-local scratchbatch<const> = require('scratchbatch')
-local world_instance<const> = require('world/index').instance
+local ecs<const> = require('bios/ecs/index')
+local action_effects<const> = require('bios/action_effects')
+local compiler<const> = require('bios/input/action_effect/compiler')
+local dsl<const> = require('bios/input/action_effect/dsl')
+local scratchbatch<const> = require('bios/util/scratchbatch')
+local world_instance<const> = require('bios/world/index').instance
 local inputintentcomponent<const> = 'inputintentcomponent'
 local inputactioneffectcomponent<const> = 'inputactioneffectcomponent'
 local actioneffectcomponentid<const> = 'actioneffectcomponent'
@@ -15,7 +15,7 @@ local action_state_pressed<const> = (1 << 0)
 local action_state_justpressed<const> = (1 << 1)
 local action_state_justreleased<const> = (1 << 2)
 
-local asset_programs_validated = false
+local rom_programs_validated = false
 
 local run_effect<const> = function(effect, env)
 	if not effect then
@@ -25,16 +25,16 @@ local run_effect<const> = function(effect, env)
 	return true
 end
 
-local validate_primary_assets_on_boot<const> = function()
-	if asset_programs_validated then
+local validate_primary_rom_programs_on_boot<const> = function()
+	if rom_programs_validated then
 		return
 	end
-	for id, value in pairs(assets.data) do
+	for id, value in pairs(sys_rom_data) do
 		if dsl.is_input_action_effect_program(value) then
 			compiler.validate_program_effects(value, id)
 		end
 	end
-	asset_programs_validated = true
+	rom_programs_validated = true
 end
 
 local inputactioneffectsystem<const> = {}
@@ -54,7 +54,7 @@ function inputactioneffectsystem.new(priority)
 	self.runtime_by_component = setmetatable({}, { __mode = 'k' })
 	self.frame_serial = 0
 	self.__ecs_id = 'inputactioneffectsystem'
-	validate_primary_assets_on_boot()
+	validate_primary_rom_programs_on_boot()
 	return self
 end
 
@@ -385,7 +385,7 @@ function inputactioneffectsystem:resolve_program_by_id(program_id)
 	if self.missing_program_ids[program_id] then
 		error('[inputactioneffectsystem] program "' .. program_id .. '" is marked as missing.')
 	end
-	local data<const> = assets.data[program_id]
+	local data<const> = sys_rom_data[program_id]
 	if not dsl.is_input_action_effect_program(data) then
 		self.missing_program_ids[program_id] = true
 		error('[inputactioneffectsystem] program "' .. program_id .. '" not found or invalid.')

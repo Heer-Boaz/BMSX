@@ -1,7 +1,7 @@
 #include "machine/firmware/devtools.h"
 
 #include "machine/runtime/runtime.h"
-#include "rompack/assets.h"
+#include "rompack/package.h"
 
 #include <unordered_set>
 #include <vector>
@@ -9,44 +9,29 @@
 namespace bmsx {
 namespace {
 
-bool matchesLuaPathAlias(const std::string& path, const std::string& alias) {
-	if (path == alias) {
-		return true;
-	}
-	if (path.size() <= alias.size()) {
-		return false;
-	}
-	const size_t offset = path.size() - alias.size();
-	return path.compare(offset, alias.size(), alias) == 0 && path[offset - 1] == '/';
-}
-
 template<typename Fn>
-void forEachLuaSource(const RuntimeAssets& assets, Fn&& fn) {
-	for (const auto& entry : assets.lua) {
+void forEachLuaSource(const RuntimeRomPackage& romPackage, Fn&& fn) {
+	for (const auto& entry : romPackage.lua) {
 		fn(entry.second);
 	}
 }
 
-const LuaSourceAsset* resolveLuaSourceByPath(const RuntimeAssets& assets, const std::string& path) {
-	const LuaSourceAsset* direct = assets.getLua(path);
+const LuaSourceAsset* resolveLuaSourceByPath(const RuntimeRomPackage& romPackage, const std::string& path) {
+	const LuaSourceAsset* direct = romPackage.getLua(path);
 	if (direct) {
 		return direct;
 	}
-	const LuaSourceAsset* resolved = nullptr;
-	forEachLuaSource(assets, [&](const LuaSourceAsset& asset) {
-		if (!matchesLuaPathAlias(asset.path, path)) {
+	forEachLuaSource(romPackage, [&](const LuaSourceAsset& asset) {
+		if (direct || asset.path != path) {
 			return;
 		}
-		if (resolved && resolved->path != asset.path) {
-			throw BMSX_RUNTIME_ERROR("Ambiguous lua path '" + path + "'.");
-		}
-		resolved = &asset;
+		direct = &asset;
 	});
-	return resolved;
+	return direct;
 }
 
-void appendUniqueLuaPaths(const RuntimeAssets& assets, std::unordered_set<std::string>& seen, std::vector<std::string>& out, size_t limit) {
-	forEachLuaSource(assets, [&](const LuaSourceAsset& asset) {
+void appendUniqueLuaPaths(const RuntimeRomPackage& romPackage, std::unordered_set<std::string>& seen, std::vector<std::string>& out, size_t limit) {
+	forEachLuaSource(romPackage, [&](const LuaSourceAsset& asset) {
 		if (out.size() >= limit) {
 			return;
 		}
@@ -61,9 +46,9 @@ std::string summarizeLuaPaths(Runtime& runtime, size_t limit) {
 	std::unordered_set<std::string> seen;
 	std::vector<std::string> values;
 	values.reserve(limit);
-	appendUniqueLuaPaths(runtime.activeAssets(), seen, values, limit);
-	if (&runtime.systemAssets() != &runtime.activeAssets()) {
-		appendUniqueLuaPaths(runtime.systemAssets(), seen, values, limit);
+	appendUniqueLuaPaths(runtime.activeRom(), seen, values, limit);
+	if (&runtime.systemRom() != &runtime.activeRom()) {
+		appendUniqueLuaPaths(runtime.systemRom(), seen, values, limit);
 	}
 	std::string out;
 	for (size_t i = 0; i < values.size(); ++i) {
@@ -76,22 +61,22 @@ std::string summarizeLuaPaths(Runtime& runtime, size_t limit) {
 }
 
 const LuaSourceAsset* resolveRuntimeLuaSource(Runtime& runtime, const std::string& path) {
-	if (const LuaSourceAsset* active = resolveLuaSourceByPath(runtime.activeAssets(), path)) {
+	if (const LuaSourceAsset* active = resolveLuaSourceByPath(runtime.activeRom(), path)) {
 		return active;
 	}
-	if (&runtime.systemAssets() != &runtime.activeAssets()) {
-		return resolveLuaSourceByPath(runtime.systemAssets(), path);
+	if (&runtime.systemRom() != &runtime.activeRom()) {
+		return resolveLuaSourceByPath(runtime.systemRom(), path);
 	}
 	return nullptr;
 }
 
 std::string getRuntimeLuaEntryPath(Runtime& runtime) {
-	const RuntimeAssets& assets = runtime.activeAssets();
-	const std::string& entryPath = assets.entryPoint;
+	const RuntimeRomPackage& romPackage = runtime.activeRom();
+	const std::string& entryPath = romPackage.entryPoint;
 	if (entryPath.empty()) {
 		throw BMSX_RUNTIME_ERROR("[devtools.get_lua_entry_path] Lua entry path is empty.");
 	}
-	const LuaSourceAsset* source = resolveLuaSourceByPath(assets, entryPath);
+	const LuaSourceAsset* source = resolveLuaSourceByPath(romPackage, entryPath);
 	return source ? source->path : entryPath;
 }
 
@@ -119,18 +104,18 @@ void registerRuntimeDevtoolsTable(Runtime& runtime) {
 		(void)args;
 		std::unordered_set<std::string> seen;
 		std::vector<const LuaSourceAsset*> entries;
-		entries.reserve(runtime.activeAssets().lua.size() + runtime.systemAssets().lua.size());
-		auto appendAssets = [&](const RuntimeAssets& assets) {
-			forEachLuaSource(assets, [&](const LuaSourceAsset& asset) {
+		entries.reserve(runtime.activeRom().lua.size() + runtime.systemRom().lua.size());
+		auto appendRomPackage = [&](const RuntimeRomPackage& romPackage) {
+			forEachLuaSource(romPackage, [&](const LuaSourceAsset& asset) {
 				if (!seen.insert(asset.path).second) {
 					return;
 				}
 				entries.push_back(&asset);
 			});
 		};
-		appendAssets(runtime.activeAssets());
-		if (&runtime.systemAssets() != &runtime.activeAssets()) {
-			appendAssets(runtime.systemAssets());
+		appendRomPackage(runtime.activeRom());
+		if (&runtime.systemRom() != &runtime.activeRom()) {
+			appendRomPackage(runtime.systemRom());
 		}
 		Table* table = cpu.createTable(0, static_cast<int>(entries.size()));
 		for (size_t index = 0; index < entries.size(); ++index) {

@@ -118,7 +118,7 @@ export class GateGroup {
 	/** End all live scopes matching a category. */
 	endCategory(category: GateCategory): void {
 		const b = this.gate._bucket(this.name);
-		for (const token of Array.from(b.live.values())) {
+		for (const token of b.live.values()) {
 			if (token.category === category) this.end(token);
 		}
 	}
@@ -126,7 +126,7 @@ export class GateGroup {
 	/** Convenience: end everything in this group. */
 	endAll(): void {
 		const b = this.gate._bucket(this.name);
-		for (const token of Array.from(b.live.values())) this.end(token);
+		for (const token of b.live.values()) this.end(token);
 	}
 
 	/** Is this group ready with respect to blocking scopes? */
@@ -154,6 +154,10 @@ export class GateGroup {
 		const blockingByCat = new Map<GateCategory, number>();
 		for (const t of b.live.values()) if (t.blocking)
 			blockingByCat.set(t.category, (blockingByCat.get(t.category) ?? 0) + 1);
+		const live: Array<{ id: number; cat: GateCategory; blocking: boolean; tag?: string }> = [];
+		for (const value of b.live.values()) {
+			live.push({ id: value.id, cat: value.category, blocking: value.blocking, tag: value.tag });
+		}
 
 		return {
 			gen: b.gen,
@@ -161,7 +165,7 @@ export class GateGroup {
 			blockingPending: b.blockingPending,
 			countsByCat: Object.fromEntries(b.countsByCat.entries()),
 			blockingByCat: Object.fromEntries(blockingByCat.entries()),
-			live: Array.from(b.live.values()).map(v => ({ id: v.id, cat: v.category, blocking: v.blocking, tag: v.tag })),
+			live,
 		};
 	}
 

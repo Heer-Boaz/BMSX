@@ -10,7 +10,7 @@
 -- the object already has an FSM.
 
 local constants<const> = require('constants')
-local font_module<const> = require('font')
+local font_module<const> = require('bios/font')
 
 local lithograph_screen<const> = {}
 lithograph_screen.__index = lithograph_screen

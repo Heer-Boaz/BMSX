@@ -2,12 +2,12 @@ import type { RomAsset, CartRomHeader } from '../../src/bmsx/rompack/format';
 import { disassembleProgram } from '../../src/bmsx/machine/cpu/disassembler';
 import type { Program, ProgramMetadata } from '../../src/bmsx/machine/cpu/cpu';
 import {
-	decodeProgramAsset,
-	decodeProgramSymbolsAsset,
+	decodeProgramImage,
 	inflateProgram,
-	PROGRAM_ASSET_ID,
-	PROGRAM_SYMBOLS_ASSET_ID,
-} from '../../src/bmsx/machine/program/asset';
+	PROGRAM_IMAGE_ID,
+	PROGRAM_SYMBOLS_IMAGE_ID,
+} from '../../src/bmsx/machine/program/loader';
+import { decodeBinary } from 'bmsx/common/serializer/binencoder';
 
 export const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
 export const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';
@@ -70,24 +70,24 @@ export function buildLuaSourceLookup(rombin: Uint8Array, assets: RomAsset[]): Ma
 }
 
 export function loadProgramFromAssets(rombin: Uint8Array, assets: RomAsset[]) {
-	const programAssetEntry = assets.find(asset => asset.resid === PROGRAM_ASSET_ID);
-	if (!programAssetEntry) {
+	const programImageEntry = assets.find(asset => asset.resid === PROGRAM_IMAGE_ID);
+	if (!programImageEntry) {
 		throw new Error('[RomInspector] Program asset not found.');
 	}
-	if (programAssetEntry.start === undefined || programAssetEntry.end === undefined) {
-		throw new Error(`[RomInspector] Program asset '${programAssetEntry.resid}' is missing buffer range.`);
+	if (programImageEntry.start === undefined || programImageEntry.end === undefined) {
+		throw new Error(`[RomInspector] Program asset '${programImageEntry.resid}' is missing buffer range.`);
 	}
-	const programBytes = new Uint8Array(rombin.slice(programAssetEntry.start, programAssetEntry.end));
-	const programAsset = decodeProgramAsset(programBytes);
-	const program = inflateProgram(programAsset.program);
-	const symbolsAsset = assets.find(asset => asset.resid === PROGRAM_SYMBOLS_ASSET_ID);
+	const programBytes = new Uint8Array(rombin.slice(programImageEntry.start, programImageEntry.end));
+	const programImage = decodeProgramImage(programBytes);
+	const program = inflateProgram(programImage.program);
+	const symbolsAsset = assets.find(asset => asset.resid === PROGRAM_SYMBOLS_IMAGE_ID);
 	const metadata = symbolsAsset
 		? (() => {
 			if (symbolsAsset.start === undefined || symbolsAsset.end === undefined) {
 				throw new Error(`[RomInspector] Program symbols asset '${symbolsAsset.resid}' is missing buffer range.`);
 			}
 			const symbolsBytes = new Uint8Array(rombin.slice(symbolsAsset.start, symbolsAsset.end));
-			return decodeProgramSymbolsAsset(symbolsBytes).metadata;
+			return decodeBinary(symbolsBytes).metadata;
 		})()
 		: null;
 	const sourceMap = metadata ? buildLuaSourceLookup(rombin, assets) : null;
@@ -109,7 +109,7 @@ export function loadProgramFromAssets(rombin: Uint8Array, assets: RomAsset[]) {
 		}
 		: null;
 	return {
-		programAsset,
+		programImage,
 		program,
 		metadata,
 		sourceTextForPath,
@@ -117,7 +117,7 @@ export function loadProgramFromAssets(rombin: Uint8Array, assets: RomAsset[]) {
 	};
 }
 
-export function disassembleProgramAsset(
+export function disassembleProgramImage(
 	program: Program,
 	metadata: ProgramMetadata | null,
 	sourceTextForPath: ((path: string) => string) | null,

@@ -1,4 +1,4 @@
-import { engineCore } from '../../../../core/engine';
+import { consoleCore } from '../../../../core/console';
 import { CHARACTER_CODES, CHARACTER_MAP } from '../../../common/character_map';
 import * as constants from '../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
@@ -78,7 +78,7 @@ export function setSelectionAnchorPosition(field: TextField, row: number, column
 const writeInlineFieldClipboard = (payload: string): void => {
 	editorDocumentState.customClipboard = payload;
 	try {
-		void engineCore.platform.clipboard.writeText(payload);
+		void consoleCore.platform.clipboard.writeText(payload);
 	// disable-next-line empty_catch_pattern -- System clipboard write is best-effort; the editor clipboard already has the payload.
 	} catch {
 	}
@@ -390,7 +390,7 @@ export function resolveColumn(field: TextField, metrics: InlineFieldMetrics, tex
 }
 
 export function registerPointerClick(field: TextField, column: number, doubleClickInterval: number): boolean {
-	const timestamp = engineCore.platform.clock.now();
+	const timestamp = consoleCore.platform.clock.now();
 	const interval = timestamp - field.lastPointerClickTimeMs;
 	const sameColumn = column === field.lastPointerClickColumn;
 	const isDouble = field.lastPointerClickTimeMs > 0

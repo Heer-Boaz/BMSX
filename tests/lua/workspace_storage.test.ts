@@ -2,7 +2,7 @@ import './test_setup';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { StorageService } from '../../src/bmsx/platform/platform';
-import { $ } from '../../src/bmsx/core/engine';
+import { $ } from '../../src/bmsx/core/console';
 import {
 	buildDirtyFilePath,
 	configureWorkspaceStorage,

@@ -92,15 +92,6 @@ export class HandlerCache {
 		return this.byHandler.get(handler)?.current;
 	}
 
-	public listByModule(moduleId: string): ReadonlyArray<HandlerFn> {
-		const normalizedModule = this.normalizeModuleId(moduleId);
-		const bucket = this.byModule.get(normalizedModule);
-		if (!bucket) {
-			return [];
-		}
-		return Array.from(bucket.values(), record => record.handler);
-	}
-
 	// disable-next-line single_line_method_pattern -- module disposal is the public lifecycle term for unloading cached handlers.
 	public disposeByModule(moduleId: string): void {
 		this.unloadModule(moduleId);

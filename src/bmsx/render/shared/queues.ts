@@ -23,7 +23,7 @@ const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
 let activeQueueSource: 'front' | 'back' = 'front';
 
 function submitSpriteDirect(runtime: Runtime, imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color, layer: RenderLayer, parallaxWeight: number, flipH = false, flipV = false): void {
-	const source = resolveImageSlotSource(runtime.machine.memory, runtime.assets, imgid);
+	const source = resolveImageSlotSource(runtime.machine.memory, runtime.rom, imgid);
 	runtime.machine.vdp.enqueueBlit(
 			source.slot,
 			source.u,

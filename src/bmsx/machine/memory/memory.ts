@@ -1,12 +1,5 @@
 import type { Value } from '../cpu/cpu';
 import {
-	ASSET_DATA_BASE,
-	ASSET_DATA_ALLOC_END,
-	ASSET_DATA_END,
-	ASSET_RAM_BASE,
-	ASSET_RAM_SIZE,
-	ASSET_TABLE_BASE,
-	ASSET_TABLE_SIZE,
 	CART_ROM_BASE,
 	SYSTEM_ROM_BASE,
 	IO_BASE,
@@ -14,16 +7,7 @@ import {
 	OVERLAY_ROM_BASE,
 	RAM_BASE,
 	RAM_USED_END,
-	VRAM_FRAMEBUFFER_BASE,
-	VRAM_FRAMEBUFFER_SIZE,
-	VRAM_SYSTEM_TEXTPAGE_BASE,
-	VRAM_SYSTEM_TEXTPAGE_SIZE,
-	VRAM_PRIMARY_TEXTPAGE_BASE,
-	VRAM_PRIMARY_TEXTPAGE_SIZE,
-	VRAM_SECONDARY_TEXTPAGE_BASE,
-	VRAM_SECONDARY_TEXTPAGE_SIZE,
-	VRAM_STAGING_BASE,
-	VRAM_STAGING_SIZE,
+	isVramMappedRange,
 } from './map';
 import {
 	IO_APU_EVENT_KIND,
@@ -47,51 +31,7 @@ import {
 	IO_VDP_RD_STATUS,
 	IO_VDP_STATUS,
 } from '../bus/io';
-import { enforceLuaHeapBudget } from './lua_heap_usage';
-import { hashAssetId, tokenKey } from '../../rompack/tokens';
-import { ScratchBatch } from '../../common/scratchbatch';
 import { formatNumberAsHex } from '../../common/byte_hex_string';
-
-export type AssetType = 'image';
-
-export type AssetEntry = {
-	id: string;
-	idTokenLo: number;
-	idTokenHi: number;
-	type: AssetType;
-	flags: number;
-	ownerIndex: number;
-	baseAddr: number;
-	baseSize: number;
-	capacity: number;
-	baseStride: number;
-	regionX: number;
-	regionY: number;
-	regionW: number;
-	regionH: number;
-};
-
-export type ImageWritePlan = {
-	baseAddr: number;
-	writeWidth: number;
-	writeHeight: number;
-	writeStride: number;
-	targetStride: number;
-	sourceStride: number;
-	writeSize: number;
-	clipped: boolean;
-};
-
-export type ImageWriteEntry = {
-	baseAddr: number;
-	capacity: number;
-	baseSize: number;
-	baseStride: number;
-	regionX: number;
-	regionY: number;
-	regionW: number;
-	regionH: number;
-};
 
 export type VramWriteSink = {
 	writeVram(addr: number, bytes: Uint8Array): void;
@@ -103,7 +43,6 @@ export type IoWriteHandler = (addr: number, value: Value) => void;
 
 export type MemoryState = {
 	ioMemory: Value[];
-	assetMemory: Uint8Array;
 };
 
 export type MemorySaveState = {
@@ -111,24 +50,13 @@ export type MemorySaveState = {
 };
 
 export type MemoryInit = {
-	engineRom: Uint8Array;
+	systemRom: Uint8Array;
 	cartRom?: Uint8Array;
 	overlayRom?: Uint8Array;
 };
 
-const ASSET_TABLE_MAGIC = 0x32534d41; // 'AMS2'
-export const ASSET_TABLE_HEADER_SIZE = 40;
-export const ASSET_TABLE_ENTRY_SIZE = 64;
-// 2 = FNV-1a 64 over exact UTF-8 bytes.
-const ASSET_TABLE_HASH_ALG_ID = 2;
-const ASSET_PAGE_SHIFT = 12;
-export const ASSET_PAGE_SIZE = 1 << ASSET_PAGE_SHIFT;
-const utf8Decoder = new TextDecoder();
-
-const ASSET_TYPE_IMAGE = 1;
-
 export class Memory {
-	private readonly engineRom: Uint8Array;
+	private readonly systemRom: Uint8Array;
 	private readonly cartRom: Uint8Array | undefined;
 	private readonly overlayRom: Uint8Array | undefined;
 	private readonly ram: Uint8Array;
@@ -141,21 +69,9 @@ export class Memory {
 	private readonly vramReadScratch = new Uint8Array(4);
 	private readonly mappedFloatBuffer = new ArrayBuffer(8);
 	private readonly mappedFloatView = new DataView(this.mappedFloatBuffer);
-	private assetEntries: AssetEntry[] = [];
-	private assetIndexById = new Map<string, number>();
-	private assetIndexByToken = new Map<string, number>();
-	private assetOwnerPages: Int32Array;
-	private readonly assetDirtyEntries = new ScratchBatch<AssetEntry>();
-	private readonly assetDirtyDrainEntries = new ScratchBatch<AssetEntry>();
-	private assetDirtyFlags = new Uint8Array(0);
-	private assetDataCursor = ASSET_DATA_BASE;
-	private assetTableFinalized = false;
-	private engineAssetEntryCount = 0;
-	private engineAssetDataEnd = ASSET_DATA_BASE;
-	private cartAssetDataBase = ASSET_DATA_BASE;
 
 	public constructor(init: MemoryInit) {
-		this.engineRom = init.engineRom;
+		this.systemRom = init.systemRom;
 		this.cartRom = init.cartRom;
 		this.overlayRom = init.overlayRom;
 		this.ram = new Uint8Array(RAM_USED_END - RAM_BASE);
@@ -170,25 +86,10 @@ export class Memory {
 			this.ioReadHandlers[index] = null;
 			this.ioWriteHandlers[index] = null;
 		}
-		const pageCount = Math.ceil((ASSET_DATA_END - ASSET_DATA_BASE) / ASSET_PAGE_SIZE);
-		this.assetOwnerPages = new Int32Array(pageCount);
-		this.resetAssetMemory();
 	}
 
 	public setVramWriter(writer: VramWriteSink): void {
 		this.vramWriter = writer;
-	}
-
-	public getUsedAssetTableBytes(): number {
-		const headerOffset = ASSET_TABLE_BASE - RAM_BASE;
-		const entryCount = this.ramView.getUint32(headerOffset + 12, true);
-		const stringTableLength = this.ramView.getUint32(headerOffset + 20, true);
-		return ASSET_TABLE_HEADER_SIZE + (entryCount * ASSET_TABLE_ENTRY_SIZE) + stringTableLength;
-	}
-
-	public getUsedAssetDataBytes(): number {
-		const headerOffset = ASSET_TABLE_BASE - RAM_BASE;
-		return this.ramView.getUint32(headerOffset + 28, true);
 	}
 
 	public mapIoRead(addr: number, handler: IoReadHandler): void {
@@ -201,10 +102,6 @@ export class Memory {
 
 	public getOverlayRomSize(): number {
 		return this.overlayRom ? this.overlayRom.byteLength : 0;
-	}
-
-	public getIoSlotCount(): number {
-		return this.ioSlots.length;
 	}
 
 	public getIoSlots(): ReadonlyArray<Value> {
@@ -224,373 +121,6 @@ export class Memory {
 		this.ioSlots.fill(null);
 	}
 
-	public resetAssetMemory(): void {
-		const previousDataCursor = this.assetDataCursor;
-		if (previousDataCursor > ASSET_TABLE_BASE) {
-			const clearEnd = Math.min(previousDataCursor, ASSET_DATA_ALLOC_END);
-			const clearStartOffset = ASSET_TABLE_BASE - RAM_BASE;
-			const clearEndOffset = clearEnd - RAM_BASE;
-			this.ram.fill(0, clearStartOffset, clearEndOffset);
-		}
-		this.assetEntries = [];
-		this.assetIndexById.clear();
-		this.assetIndexByToken.clear();
-		this.clearDirtyAssetTracking();
-		this.assetTableFinalized = false;
-		this.engineAssetEntryCount = 0;
-		this.engineAssetDataEnd = ASSET_DATA_BASE;
-		this.cartAssetDataBase = ASSET_DATA_BASE;
-		this.assetOwnerPages.fill(-1);
-		this.assetDataCursor = ASSET_DATA_BASE;
-	}
-
-	public hasAsset(id: string): boolean {
-		if (this.assetIndexById.has(id)) {
-			return true;
-		}
-		const { lo, hi } = hashAssetId(id);
-		return this.assetIndexByToken.has(tokenKey(lo, hi));
-	}
-
-	public sealEngineAssets(): void {
-		this.engineAssetEntryCount = this.assetEntries.length;
-		this.engineAssetDataEnd = this.assetDataCursor;
-		const mask = ASSET_PAGE_SIZE - 1;
-		const aligned = (this.engineAssetDataEnd + mask) & ~mask;
-		if (aligned > ASSET_DATA_ALLOC_END) {
-			throw new Error(`[Memory] Engine data exceeds reserved RAM range (${aligned} > ${ASSET_DATA_ALLOC_END}).`);
-		}
-		this.cartAssetDataBase = aligned;
-	}
-
-	public resetCartAssets(): void {
-		const previousDataCursor = this.assetDataCursor;
-		this.assetEntries.length = this.engineAssetEntryCount;
-		this.assetIndexById.clear();
-		this.assetIndexByToken.clear();
-		this.clearDirtyAssetTracking();
-		this.assetTableFinalized = false;
-		this.assetOwnerPages.fill(-1);
-		for (let index = 0; index < this.assetEntries.length; index += 1) {
-			const entry = this.assetEntries[index];
-			this.assetIndexById.set(entry.id, index);
-			this.assetIndexByToken.set(tokenKey(entry.idTokenLo, entry.idTokenHi), index);
-		}
-		this.mapOwnedAssetPages(this.assetEntries.length);
-		this.assetDataCursor = this.cartAssetDataBase;
-		if (previousDataCursor > this.cartAssetDataBase) {
-			const clearEnd = Math.min(previousDataCursor, ASSET_DATA_ALLOC_END);
-			const clearStartOffset = this.cartAssetDataBase - RAM_BASE;
-			const clearEndOffset = clearEnd - RAM_BASE;
-			this.ram.fill(0, clearStartOffset, clearEndOffset);
-		}
-	}
-
-	public registerImageSlot(params: {
-		id: string;
-		capacityBytes: number;
-		flags?: number;
-	}): AssetEntry {
-		const { addr, view } = this.allocateAssetData(params.capacityBytes, 4);
-		view.fill(0);
-		const entry = this.createAssetEntry({
-			id: params.id,
-			idTokenLo: 0,
-			idTokenHi: 0,
-			type: 'image',
-			flags: params.flags ?? 0,
-			baseAddr: addr,
-			baseSize: 0,
-			capacity: params.capacityBytes,
-			baseStride: 0,
-			regionX: 0,
-			regionY: 0,
-			regionW: 0,
-			regionH: 0,
-			ownerIndex: -1,
-		});
-		return this.registerOwnedAssetEntry(entry, addr, params.capacityBytes);
-	}
-
-	public registerImageSlotAt(params: {
-		id: string;
-		baseAddr: number;
-		capacityBytes: number;
-		flags?: number;
-		clear?: boolean;
-	}): AssetEntry {
-		const isVramSlot = this.isVramRange(params.baseAddr, params.capacityBytes);
-		if (!isVramSlot) {
-			const offset = params.baseAddr - RAM_BASE;
-			if (offset < 0 || offset + params.capacityBytes > this.ram.byteLength) {
-				throw new Error(`[Memory] Image slot '${params.id}' out of RAM bounds.`);
-			}
-			const slotView = this.ram.subarray(offset, offset + params.capacityBytes);
-			if (params.clear !== false) {
-				slotView.fill(0);
-			}
-		}
-		const entry = this.createAssetEntry({
-			id: params.id,
-			idTokenLo: 0,
-			idTokenHi: 0,
-			type: 'image',
-			flags: params.flags ?? 0,
-			baseAddr: params.baseAddr,
-			baseSize: 0,
-			capacity: params.capacityBytes,
-			baseStride: 0,
-			regionX: 0,
-			regionY: 0,
-			regionW: 0,
-			regionH: 0,
-			ownerIndex: -1,
-		});
-		entry.ownerIndex = this.registerAssetEntry(entry);
-		if (!isVramSlot) {
-			this.mapAssetPages(entry.ownerIndex, params.baseAddr, params.capacityBytes);
-		}
-		return entry;
-	}
-
-	public registerImageBuffer(params: {
-		id: string;
-		width: number;
-		height: number;
-		pixels: Uint8Array;
-		flags?: number;
-	}): AssetEntry {
-		const stride = params.width * 4;
-		const size = stride * params.height;
-		const { addr, view } = this.allocateAssetData(size, 4);
-		view.set(params.pixels);
-		const entry = this.createAssetEntry({
-			id: params.id,
-			idTokenLo: 0,
-			idTokenHi: 0,
-			type: 'image',
-			flags: params.flags ?? 0,
-			baseAddr: addr,
-			baseSize: size,
-			capacity: size,
-			baseStride: stride,
-			regionX: 0,
-			regionY: 0,
-			regionW: params.width,
-			regionH: params.height,
-			ownerIndex: -1,
-		});
-		return this.registerOwnedAssetEntry(entry, addr, size);
-	}
-
-	public getAssetEntry(id: string): AssetEntry {
-		return this.getAssetEntryByHandle(this.resolveAssetHandle(id));
-	}
-
-	public getAssetEntryByHandle(handle: number): AssetEntry {
-		if (handle < 0 || handle >= this.assetEntries.length) {
-			throw new Error(`[Memory] Asset handle out of range: ${handle}.`);
-		}
-		return this.assetEntries[handle];
-	}
-
-	public resolveAssetHandle(id: string): number {
-		const direct = this.assetIndexById.get(id);
-		if (direct !== undefined) {
-			return direct;
-		}
-		const { lo, hi } = hashAssetId(id);
-		const key = tokenKey(lo, hi);
-		const handle = this.assetIndexByToken.get(key);
-		if (handle === undefined) {
-			throw new Error(`[Memory] Asset '${id}' not registered in memory.`);
-		}
-		return handle;
-	}
-
-	public getImagePixels(entry: AssetEntry): Uint8Array {
-		if (this.isVramRange(entry.baseAddr, entry.capacity)) {
-			throw new Error(`[Memory] Asset '${entry.id}' lives in VRAM and has no CPU pixel buffer.`);
-		}
-		const offset = entry.baseAddr - RAM_BASE;
-		const size = entry.regionW * entry.regionH * 4;
-		return this.ram.subarray(offset, offset + size);
-	}
-
-	public consumeDirtyAssets(): ScratchBatch<AssetEntry> {
-		const drained = this.assetDirtyDrainEntries;
-		drained.clear();
-		for (let index = 0; index < this.assetDirtyEntries.length; index += 1) {
-			const entry = this.assetDirtyEntries.get(index);
-			this.assetDirtyFlags[entry.ownerIndex] = 0;
-			drained.push(entry);
-		}
-		this.assetDirtyEntries.clear();
-		return drained;
-	}
-
-	public markAllAssetsDirty(): void {
-		for (let index = 0; index < this.assetEntries.length; index += 1) {
-			const entry = this.assetEntries[index];
-			if (entry.ownerIndex !== index) {
-				continue;
-			}
-			if (this.isVramRange(entry.baseAddr, entry.capacity)) {
-				continue;
-			}
-			this.markAssetOwnerDirty(index);
-		}
-	}
-
-	public finalizeAssetTable(): void {
-		const entryCount = this.assetEntries.length;
-		const entriesSize = entryCount * ASSET_TABLE_ENTRY_SIZE;
-		const entryBaseAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE;
-		const encoder = new TextEncoder();
-		const stringOffsets = new Map<string, number>();
-		const strings: Uint8Array[] = [];
-		let stringTableLength = 0;
-
-		for (const entry of this.assetEntries) {
-			let offset = stringOffsets.get(entry.id);
-			if (offset === undefined) {
-				const bytes = encoder.encode(entry.id);
-				offset = stringTableLength;
-				stringOffsets.set(entry.id, offset);
-				strings.push(bytes);
-				stringTableLength += bytes.byteLength + 1;
-			}
-		}
-
-		const stringTableAddr = entryBaseAddr + entriesSize;
-		const tableEnd = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
-		if (stringTableAddr + stringTableLength > tableEnd) {
-			throw new Error(`[Memory] Asset table overflow: entries=${entryCount} strings=${stringTableLength}.`);
-		}
-
-		const headerOffset = ASSET_TABLE_BASE - RAM_BASE;
-		this.ramView.setUint32(headerOffset + 0, ASSET_TABLE_MAGIC, true);
-		this.ramView.setUint32(headerOffset + 4, ASSET_TABLE_HEADER_SIZE, true);
-		this.ramView.setUint32(headerOffset + 8, ASSET_TABLE_ENTRY_SIZE, true);
-		this.ramView.setUint32(headerOffset + 12, entryCount, true);
-		this.ramView.setUint32(headerOffset + 16, stringTableAddr, true);
-		this.ramView.setUint32(headerOffset + 20, stringTableLength, true);
-		this.ramView.setUint32(headerOffset + 24, ASSET_DATA_BASE, true);
-		this.ramView.setUint32(headerOffset + 28, this.assetDataCursor - ASSET_DATA_BASE, true);
-		this.ramView.setUint32(headerOffset + 32, ASSET_TABLE_HASH_ALG_ID, true);
-		this.ramView.setUint32(headerOffset + 36, 0, true);
-
-		for (let index = 0; index < this.assetEntries.length; index += 1) {
-			const entry = this.assetEntries[index];
-			const entryAddr = entryBaseAddr + index * ASSET_TABLE_ENTRY_SIZE;
-			const entryOffset = entryAddr - RAM_BASE;
-			const idOffset = stringTableAddr + stringOffsets.get(entry.id);
-			this.ramView.setUint32(entryOffset + 0, ASSET_TYPE_IMAGE, true);
-			this.ramView.setUint32(entryOffset + 4, entry.flags, true);
-			this.ramView.setUint32(entryOffset + 8, entry.idTokenLo, true);
-			this.ramView.setUint32(entryOffset + 12, entry.idTokenHi, true);
-			this.ramView.setUint32(entryOffset + 16, idOffset, true);
-			this.writeAssetEntryMutableData(entryOffset, entry);
-		}
-
-		const stringOffset = stringTableAddr - RAM_BASE;
-		let cursor = stringOffset;
-		for (const bytes of strings) {
-			this.ram.set(bytes, cursor);
-			cursor += bytes.byteLength;
-			this.ram[cursor] = 0;
-			cursor += 1;
-		}
-		this.assetTableFinalized = true;
-		enforceLuaHeapBudget();
-	}
-
-	public writeImageSlot(entry: AssetEntry, params: { pixels: Uint8Array; width: number; height: number; capacity?: number }): void {
-		const plan = this.planImageSlotWrite(entry, params);
-		if (plan.writeSize > 0) {
-			const offset = entry.baseAddr - RAM_BASE;
-			if (plan.writeWidth === Math.floor(params.width)) {
-				this.ram.set(params.pixels.subarray(0, plan.writeSize), offset);
-			} else {
-				for (let row = 0; row < plan.writeHeight; row += 1) {
-					const srcOffset = row * plan.sourceStride;
-					const dstOffset = offset + row * plan.writeStride;
-					this.ram.set(params.pixels.subarray(srcOffset, srcOffset + plan.writeStride), dstOffset);
-				}
-			}
-			this.markAssetDirty(entry.baseAddr, plan.writeSize);
-		}
-	}
-
-	public planImageWrite(entry: ImageWriteEntry, params: { pixels: Uint8Array; width: number; height: number; capacity?: number }): ImageWritePlan {
-		let capacity = entry.capacity;
-		if (params.capacity !== undefined) {
-			const requestedCapacity = Math.floor(params.capacity);
-			capacity = requestedCapacity < entry.capacity ? requestedCapacity : entry.capacity;
-		}
-		const sourceWidth = Math.floor(params.width);
-		const sourceHeight = Math.floor(params.height);
-		const sourceStride = sourceWidth * 4;
-		const maxPixels = Math.floor(capacity / 4);
-		let writeWidth = sourceWidth;
-		let writeHeight = sourceHeight;
-		if (sourceStride <= 0 || sourceHeight <= 0 || maxPixels <= 0) {
-			writeWidth = 0;
-			writeHeight = 0;
-		} else {
-			const maxRowsByPixels = Math.floor(params.pixels.byteLength / sourceStride);
-			if (sourceWidth > maxPixels) {
-				writeWidth = Math.min(sourceWidth, maxPixels);
-				writeHeight = Math.min(1, maxRowsByPixels);
-			} else {
-				const maxRowsByCapacity = Math.floor(capacity / sourceStride);
-				writeHeight = Math.min(sourceHeight, maxRowsByCapacity, maxRowsByPixels);
-			}
-		}
-		const writeStride = writeWidth * 4;
-		const writeSize = writeStride * writeHeight;
-		entry.baseSize = writeSize;
-		entry.baseStride = writeStride;
-		entry.regionX = 0;
-		entry.regionY = 0;
-		entry.regionW = writeWidth;
-		entry.regionH = writeHeight;
-		return {
-			baseAddr: entry.baseAddr,
-			writeWidth,
-			writeHeight,
-			writeStride,
-			targetStride: writeStride,
-			sourceStride,
-			writeSize,
-			clipped: writeWidth !== sourceWidth || writeHeight !== sourceHeight,
-		};
-	}
-
-	public planImageSlotWrite(entry: AssetEntry, params: { pixels: Uint8Array; width: number; height: number; capacity?: number }): ImageWritePlan {
-		const index = this.assetIndexById.get(entry.id)!;
-		const plan = this.planImageWrite(entry, params);
-		if (this.assetTableFinalized) {
-			this.writeAssetEntryData(index, entry);
-		}
-		return plan;
-	}
-
-	public dumpAssetMemory(): Uint8Array {
-		const offset = ASSET_RAM_BASE - RAM_BASE;
-		return this.ram.slice(offset, offset + ASSET_RAM_SIZE);
-	}
-
-	public restoreAssetMemory(snapshot: Uint8Array): void {
-		const offset = ASSET_RAM_BASE - RAM_BASE;
-		if (snapshot.byteLength !== ASSET_RAM_SIZE) {
-			throw new Error(`[Memory] RAM snapshot length mismatch (${snapshot.byteLength} != ${ASSET_RAM_SIZE}).`);
-		}
-		this.ram.set(snapshot, offset);
-		this.rehydrateAssetEntriesFromTable();
-		this.markAllAssetsDirty();
-	}
-
 	public dumpMutableRam(): Uint8Array {
 		return this.ram.slice();
 	}
@@ -600,20 +130,16 @@ export class Memory {
 			throw new Error(`[Memory] RAM snapshot length mismatch (${snapshot.byteLength} != ${this.ram.byteLength}).`);
 		}
 		this.ram.set(snapshot);
-		this.rehydrateAssetEntriesFromTable();
-		this.markAllAssetsDirty();
 	}
 
 	public captureState(): MemoryState {
 		return {
 			ioMemory: this.ioSlots.slice(),
-			assetMemory: this.dumpAssetMemory(),
 		};
 	}
 
 	public restoreState(state: MemoryState): void {
 		this.loadIoSlots(state.ioMemory);
-		this.restoreAssetMemory(state.assetMemory);
 	}
 
 	public captureSaveState(): MemorySaveState {
@@ -624,134 +150,6 @@ export class Memory {
 
 	public restoreSaveState(state: MemorySaveState): void {
 		this.restoreMutableRam(state.ram);
-	}
-
-	public rehydrateAssetEntriesFromTable(): void {
-		const headerOffset = ASSET_TABLE_BASE - RAM_BASE;
-		const magic = this.ramView.getUint32(headerOffset + 0, true);
-		if (magic !== ASSET_TABLE_MAGIC) {
-			throw new Error(`[Memory] Asset table magic mismatch (${magic} != ${ASSET_TABLE_MAGIC}).`);
-		}
-		const headerSize = this.ramView.getUint32(headerOffset + 4, true);
-		if (headerSize !== ASSET_TABLE_HEADER_SIZE) {
-			throw new Error(`[Memory] Asset table header size mismatch (${headerSize} != ${ASSET_TABLE_HEADER_SIZE}).`);
-		}
-		const entrySize = this.ramView.getUint32(headerOffset + 8, true);
-		if (entrySize !== ASSET_TABLE_ENTRY_SIZE) {
-			throw new Error(`[Memory] Asset table entry size mismatch (${entrySize} != ${ASSET_TABLE_ENTRY_SIZE}).`);
-		}
-		const entryCount = this.ramView.getUint32(headerOffset + 12, true);
-		const stringTableAddr = this.ramView.getUint32(headerOffset + 16, true);
-		const stringTableLength = this.ramView.getUint32(headerOffset + 20, true);
-		const dataBase = this.ramView.getUint32(headerOffset + 24, true);
-		const dataLength = this.ramView.getUint32(headerOffset + 28, true);
-		const hashAlgId = this.ramView.getUint32(headerOffset + 32, true);
-		if (dataBase !== ASSET_DATA_BASE) {
-			throw new Error(`[Memory] Asset table data base mismatch (${dataBase} != ${ASSET_DATA_BASE}).`);
-		}
-		if (hashAlgId !== ASSET_TABLE_HASH_ALG_ID) {
-			throw new Error(`[Memory] Asset table hash algorithm mismatch (${hashAlgId} != ${ASSET_TABLE_HASH_ALG_ID}).`);
-		}
-
-		const stringTableOffset = stringTableAddr - RAM_BASE;
-		const stringTableEnd = stringTableOffset + stringTableLength;
-		const readString = (addr: number): string => {
-			const offset = addr - RAM_BASE;
-			if (offset < stringTableOffset || offset >= stringTableEnd) {
-				throw new Error(`[Memory] Asset string pointer out of range (${addr}).`);
-			}
-			let cursor = offset;
-			while (cursor < stringTableEnd && this.ram[cursor] !== 0) {
-				cursor += 1;
-			}
-			if (cursor >= stringTableEnd) {
-				throw new Error(`[Memory] Asset string at ${addr} missing terminator.`);
-			}
-			return utf8Decoder.decode(this.ram.subarray(offset, cursor));
-		};
-
-		const entryBaseAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE;
-		const reuseEntries = this.assetEntries.length === entryCount;
-		const entries = reuseEntries ? this.assetEntries : new Array<AssetEntry>(entryCount);
-		this.assetIndexById.clear();
-		this.assetIndexByToken.clear();
-		this.clearDirtyAssetTracking();
-		for (let index = 0; index < entryCount; index += 1) {
-			const entryOffset = entryBaseAddr + index * ASSET_TABLE_ENTRY_SIZE - RAM_BASE;
-			const typeId = this.ramView.getUint32(entryOffset + 0, true);
-			const flags = this.ramView.getUint32(entryOffset + 4, true);
-			const tokenLo = this.ramView.getUint32(entryOffset + 8, true);
-			const tokenHi = this.ramView.getUint32(entryOffset + 12, true);
-			const idAddr = this.ramView.getUint32(entryOffset + 16, true);
-			const id = readString(idAddr);
-			if (typeId !== ASSET_TYPE_IMAGE) {
-				throw new Error(`[Memory] Asset '${id}' has unknown type id ${typeId}.`);
-			}
-			const baseAddr = this.ramView.getUint32(entryOffset + 20, true);
-			const baseSize = this.ramView.getUint32(entryOffset + 24, true);
-			const capacity = this.ramView.getUint32(entryOffset + 28, true);
-			const entry: AssetEntry = reuseEntries ? entries[index]! : {
-				id,
-				idTokenLo: tokenLo,
-				idTokenHi: tokenHi,
-				type: 'image',
-				flags,
-				ownerIndex: -1,
-				baseAddr,
-				baseSize,
-				capacity,
-				baseStride: 0,
-				regionX: 0,
-				regionY: 0,
-				regionW: 0,
-				regionH: 0,
-			};
-			entry.id = id;
-			entry.idTokenLo = tokenLo;
-			entry.idTokenHi = tokenHi;
-			entry.type = 'image';
-			entry.flags = flags;
-			entry.ownerIndex = -1;
-			entry.baseAddr = baseAddr;
-			entry.baseSize = baseSize;
-			entry.capacity = capacity;
-			entry.baseStride = 0;
-			entry.regionX = 0;
-			entry.regionY = 0;
-			entry.regionW = 0;
-			entry.regionH = 0;
-			entry.baseStride = this.ramView.getUint32(entryOffset + 32, true);
-			entry.regionX = this.ramView.getUint32(entryOffset + 36, true);
-			entry.regionY = this.ramView.getUint32(entryOffset + 40, true);
-			entry.regionW = this.ramView.getUint32(entryOffset + 44, true);
-			entry.regionH = this.ramView.getUint32(entryOffset + 48, true);
-			const expectedToken = hashAssetId(id);
-			if (expectedToken.lo !== tokenLo || expectedToken.hi !== tokenHi) {
-				throw new Error(`[Memory] Asset token mismatch for '${id}'.`);
-			}
-			const tokenKeyValue = tokenKey(tokenLo, tokenHi);
-			if (this.assetIndexById.has(id)) {
-				throw new Error(`[Memory] Duplicate asset id '${id}' in asset table.`);
-			}
-			if (this.assetIndexByToken.has(tokenKeyValue)) {
-				throw new Error(`[Memory] Duplicate asset token for '${id}' in asset table.`);
-			}
-			entries[index] = entry;
-			this.assetIndexById.set(id, index);
-			this.assetIndexByToken.set(tokenKeyValue, index);
-		}
-		this.assetEntries = entries;
-		this.ensureAssetDirtyFlagCapacity(entryCount);
-
-		for (let index = 0; index < entryCount; index += 1) {
-			const entry = this.assetEntries[index];
-			entry.ownerIndex = index;
-		}
-
-		this.assetOwnerPages.fill(-1);
-		this.mapOwnedAssetPages(entryCount);
-		this.assetDataCursor = dataBase + dataLength;
-		this.assetTableFinalized = true;
 	}
 
 	public readValue(addr: number): Value {
@@ -842,7 +240,6 @@ export class Memory {
 		}
 		const { data, offset } = this.resolveWriteRegion(addr, 1);
 		data[offset] = value & 0xff;
-		this.markAssetDirty(addr, 1);
 	}
 
 	public writeMappedU8(addr: number, value: number): void {
@@ -926,7 +323,6 @@ export class Memory {
 		}
 		const offset = this.resolveRamOffset(addr, 4);
 		this.ramView.setUint32(offset, value >>> 0, true);
-		this.markAssetDirty(addr, 4);
 	}
 
 	public writeMappedU16LE(addr: number, value: number): void {
@@ -971,7 +367,7 @@ export class Memory {
 	}
 
 	public isReadableMainMemoryRange(addr: number, length: number): boolean {
-		return this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.engineRom.byteLength)
+		return this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)
 			|| (!!this.cartRom && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength))
 			|| (!!this.overlayRom && this.isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, this.overlayRom.byteLength))
 			|| this.isRangeWithinRegion(addr, length, RAM_BASE, RAM_USED_END - RAM_BASE);
@@ -988,7 +384,6 @@ export class Memory {
 		}
 		const { data, offset } = this.resolveWriteRegion(addr, bytes.byteLength);
 		data.set(bytes, offset);
-		this.markAssetDirty(addr, bytes.byteLength);
 	}
 
 	public writeBytesFrom(src: Uint8Array, srcOffset: number, dstAddr: number, length: number): void {
@@ -1000,7 +395,6 @@ export class Memory {
 		const { data, offset } = this.resolveWriteRegion(dstAddr, length);
 		const dst = data.subarray(offset, offset + length);
 		dst.set(slice);
-		this.markAssetDirty(dstAddr, length);
 	}
 
 	private isIoAddress(addr: number): boolean {
@@ -1026,8 +420,8 @@ export class Memory {
 
 	private resolveReadRegion(addr: number, length: number): { data: Uint8Array; offset: number } {
 		this.assertReadableRange(addr, length);
-		if (addr >= SYSTEM_ROM_BASE && addr + length <= SYSTEM_ROM_BASE + this.engineRom.byteLength) {
-			return { data: this.engineRom, offset: addr - SYSTEM_ROM_BASE };
+		if (addr >= SYSTEM_ROM_BASE && addr + length <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
+			return { data: this.systemRom, offset: addr - SYSTEM_ROM_BASE };
 		}
 		if (this.cartRom && addr >= CART_ROM_BASE && addr + length <= CART_ROM_BASE + this.cartRom.byteLength) {
 			return { data: this.cartRom, offset: addr - CART_ROM_BASE };
@@ -1065,32 +459,37 @@ export class Memory {
 	}
 
 	private isLuaReadOnlyIoAddress(addr: number): boolean {
-		return addr === IO_SYS_CART_BOOTREADY
-			|| addr === IO_SYS_HOST_FAULT_FLAGS
-			|| addr === IO_SYS_HOST_FAULT_STAGE
-			|| addr === IO_IRQ_FLAGS
-			|| addr === IO_DMA_STATUS
-			|| addr === IO_DMA_WRITTEN
-			|| addr === IO_GEO_STATUS
-			|| addr === IO_GEO_PROCESSED
-			|| addr === IO_GEO_FAULT
-			|| addr === IO_IMG_STATUS
-			|| addr === IO_IMG_WRITTEN
-			|| addr === IO_APU_STATUS
-			|| addr === IO_APU_EVENT_KIND
-			|| addr === IO_APU_EVENT_SLOT
-			|| addr === IO_APU_EVENT_SOURCE_ADDR
-			|| addr === IO_APU_EVENT_SEQ
-			|| addr === IO_VDP_RD_STATUS
-			|| addr === IO_VDP_RD_DATA
-			|| addr === IO_VDP_STATUS;
+		switch (addr) {
+			case IO_SYS_CART_BOOTREADY:
+			case IO_SYS_HOST_FAULT_FLAGS:
+			case IO_SYS_HOST_FAULT_STAGE:
+			case IO_IRQ_FLAGS:
+			case IO_DMA_STATUS:
+			case IO_DMA_WRITTEN:
+			case IO_GEO_STATUS:
+			case IO_GEO_PROCESSED:
+			case IO_GEO_FAULT:
+			case IO_IMG_STATUS:
+			case IO_IMG_WRITTEN:
+			case IO_APU_STATUS:
+			case IO_APU_EVENT_KIND:
+			case IO_APU_EVENT_SLOT:
+			case IO_APU_EVENT_SOURCE_ADDR:
+			case IO_APU_EVENT_SEQ:
+			case IO_VDP_RD_STATUS:
+			case IO_VDP_RD_DATA:
+			case IO_VDP_STATUS:
+				return true;
+			default:
+				return false;
+		}
 	}
 
 	private isMappedWritableRange(addr: number, length: number): boolean {
 		if (this.isIoRegionRange(addr, length)) {
 			return length === IO_WORD_SIZE && this.isIoAddress(addr) && !this.isLuaReadOnlyIoAddress(addr);
 		}
-		if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.engineRom.byteLength)) {
+		if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)) {
 			return false;
 		}
 		if (this.cartRom && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength)) {
@@ -1114,148 +513,7 @@ export class Memory {
 	}
 
 	public isVramRange(addr: number, length: number): boolean {
-		if (length <= 0) {
-			return false;
-		}
-		const end = addr + length;
-		const overlaps = (base: number, size: number): boolean => addr < base + size && end > base;
-		return overlaps(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
-			|| overlaps(VRAM_SYSTEM_TEXTPAGE_BASE, VRAM_SYSTEM_TEXTPAGE_SIZE)
-			|| overlaps(VRAM_PRIMARY_TEXTPAGE_BASE, VRAM_PRIMARY_TEXTPAGE_SIZE)
-			|| overlaps(VRAM_SECONDARY_TEXTPAGE_BASE, VRAM_SECONDARY_TEXTPAGE_SIZE)
-			|| overlaps(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
-	}
-
-	private allocateAssetData(size: number, alignment: number): { addr: number; view: Uint8Array } {
-		let addr = this.assetDataCursor;
-		if (alignment > 1) {
-			const mask = alignment - 1;
-			addr = (addr + mask) & ~mask;
-		}
-		const end = addr + size;
-		if (end > ASSET_DATA_ALLOC_END) {
-			throw new Error(`[Memory] RAM exhausted: ${end} > ${ASSET_DATA_ALLOC_END}.`);
-		}
-		this.assetDataCursor = end;
-		enforceLuaHeapBudget();
-		const offset = addr - RAM_BASE;
-		return { addr, view: this.ram.subarray(offset, offset + size) };
-	}
-
-	private createAssetEntry(entry: AssetEntry): AssetEntry {
-		return { ...entry };
-	}
-
-	private registerAssetEntry(entry: AssetEntry): number {
-		if (this.assetIndexById.has(entry.id)) {
-			throw new Error(`[Memory] Asset entry '${entry.id}' is already registered.`);
-		}
-		const { lo, hi } = hashAssetId(entry.id);
-		entry.idTokenLo = lo;
-		entry.idTokenHi = hi;
-		const key = tokenKey(lo, hi);
-		const existing = this.assetIndexByToken.get(key);
-		if (existing !== undefined) {
-			throw new Error(`[Memory] Asset token collision for '${entry.id}'.`);
-		}
-		const index = this.assetEntries.length;
-		this.assetEntries.push(entry);
-		this.ensureAssetDirtyFlagCapacity(this.assetEntries.length);
-		this.assetDirtyFlags[index] = 0;
-		this.assetIndexById.set(entry.id, index);
-		this.assetIndexByToken.set(key, index);
-		enforceLuaHeapBudget();
-		return index;
-	}
-
-	private registerOwnedAssetEntry(entry: AssetEntry, addr: number, size: number): AssetEntry {
-		entry.ownerIndex = this.registerAssetEntry(entry);
-		this.mapAssetPages(entry.ownerIndex, addr, size);
-		return entry;
-	}
-
-	private mapOwnedAssetPages(entryCount: number): void {
-		for (let index = 0; index < entryCount; index += 1) {
-			const entry = this.assetEntries[index];
-			if (entry.ownerIndex !== index) {
-				continue;
-			}
-			if (this.isVramRange(entry.baseAddr, entry.capacity)) {
-				continue;
-			}
-			this.mapAssetPages(index, entry.baseAddr, entry.capacity);
-		}
-	}
-
-	private writeAssetEntryData(index: number, entry: AssetEntry): void {
-		const entryAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE + index * ASSET_TABLE_ENTRY_SIZE;
-		const entryOffset = entryAddr - RAM_BASE;
-		this.writeAssetEntryMutableData(entryOffset, entry);
-	}
-
-	private writeAssetEntryMutableData(entryOffset: number, entry: AssetEntry): void {
-		this.ramView.setUint32(entryOffset + 20, entry.baseAddr, true);
-		this.ramView.setUint32(entryOffset + 24, entry.baseSize, true);
-		this.ramView.setUint32(entryOffset + 28, entry.capacity, true);
-		this.writeAssetEntryPayload(entryOffset, entry);
-	}
-
-	private writeAssetEntryPayload(entryOffset: number, entry: AssetEntry): void {
-		this.ramView.setUint32(entryOffset + 32, entry.baseStride, true);
-		this.ramView.setUint32(entryOffset + 36, entry.regionX, true);
-		this.ramView.setUint32(entryOffset + 40, entry.regionY, true);
-		this.ramView.setUint32(entryOffset + 44, entry.regionW, true);
-		this.ramView.setUint32(entryOffset + 48, entry.regionH, true);
-	}
-
-	private clearDirtyAssetTracking(): void {
-		this.assetDirtyEntries.clear();
-		this.assetDirtyDrainEntries.clear();
-		this.assetDirtyFlags.fill(0);
-	}
-
-	private ensureAssetDirtyFlagCapacity(length: number): void {
-		if (this.assetDirtyFlags.length >= length) {
-			return;
-		}
-		const grown = new Uint8Array(Math.max(length, this.assetDirtyFlags.length * 2, 8));
-		grown.set(this.assetDirtyFlags);
-		this.assetDirtyFlags = grown;
-	}
-
-	private markAssetOwnerDirty(ownerIndex: number): void {
-		if (this.assetDirtyFlags[ownerIndex] !== 0) {
-			return;
-		}
-		this.assetDirtyFlags[ownerIndex] = 1;
-		this.assetDirtyEntries.push(this.assetEntries[ownerIndex]);
-	}
-
-	private mapAssetPages(ownerIndex: number, addr: number, size: number): void {
-		const startPage = (addr - ASSET_DATA_BASE) >> ASSET_PAGE_SHIFT;
-		const endPage = (addr + size - ASSET_DATA_BASE - 1) >> ASSET_PAGE_SHIFT;
-		for (let page = startPage; page <= endPage; page += 1) {
-			this.assetOwnerPages[page] = ownerIndex;
-		}
-	}
-
-	private markAssetDirty(addr: number, length: number): void {
-		const start = addr < ASSET_DATA_BASE ? ASSET_DATA_BASE : addr;
-		let end = addr + length;
-		if (end > ASSET_DATA_END) {
-			end = ASSET_DATA_END;
-		}
-		if (start >= end) {
-			return;
-		}
-		let startPage = (start - ASSET_DATA_BASE) >> ASSET_PAGE_SHIFT;
-		let endPage = (end - ASSET_DATA_BASE - 1) >> ASSET_PAGE_SHIFT;
-		for (let page = startPage; page <= endPage; page += 1) {
-			const owner = this.assetOwnerPages[page];
-			if (owner >= 0) {
-				this.markAssetOwnerDirty(owner);
-			}
-		}
+		return isVramMappedRange(addr, length);
 	}
 
 }

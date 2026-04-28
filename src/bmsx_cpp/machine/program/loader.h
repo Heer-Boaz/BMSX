@@ -9,9 +9,9 @@
 namespace bmsx {
 
 /**
- * ProgramAsset - deserialized pre-compiled Lua program.
+ * ProgramImage - deserialized pre-compiled Lua program.
  */
-struct ProgramAsset {
+struct ProgramImage {
 	enum class ConstRelocKind {
 		Bx,
 		RkB,
@@ -42,7 +42,6 @@ struct ProgramAsset {
 	int entryProtoIndex = 0;
 	std::unique_ptr<Program> program;
 	std::vector<std::pair<std::string, int>> moduleProtos;  // path -> protoIndex
-	std::vector<std::pair<std::string, std::string>> moduleAliases;  // alias -> path
 	std::vector<std::string> staticModulePaths;
 	LinkInfo link;
 };
@@ -57,10 +56,10 @@ struct ProgramAsset {
 class ProgramLoader {
 public:
 	/**
-	 * Load a ProgramAsset from binary data.
-	 * The binary format is produced by asset.ts::encodeProgramAsset.
+	 * Load a ProgramImage from binary data.
+	 * The binary format is produced by asset.ts::encodeProgramImage.
 	 */
-	static std::unique_ptr<ProgramAsset> load(const uint8_t* data, size_t size);
+	static std::unique_ptr<ProgramImage> load(const uint8_t* data, size_t size);
 
 	/**
 	 * Load program symbols (ProgramMetadata) from binary data.
@@ -69,9 +68,9 @@ public:
 	static std::unique_ptr<ProgramMetadata> loadSymbols(const uint8_t* data, size_t size);
 
 	/**
-	 * Load a ProgramAsset from a vector.
+	 * Load a ProgramImage from a vector.
 	 */
-	static std::unique_ptr<ProgramAsset> load(const std::vector<uint8_t>& data) {
+	static std::unique_ptr<ProgramImage> load(const std::vector<uint8_t>& data) {
 		return load(data.data(), data.size());
 	}
 

@@ -5,8 +5,9 @@
 #ifndef BMSX_FONT_H
 #define BMSX_FONT_H
 
-#include "rompack/assets.h"
+#include "rompack/package.h"
 #include "primitives.h"
+#include <memory>
 #include <string>
 #include <unordered_map>
 
@@ -24,10 +25,18 @@ struct FontGlyph {
 
 constexpr int TAB_SPACES = 2;
 
+class BitmapFontSource {
+public:
+	virtual ~BitmapFontSource() = default;
+	virtual const ImgMeta& glyphMeta(const std::string& imgid) const = 0;
+	virtual ImageAtlasRect glyphRect(const std::string& imgid) const = 0;
+};
+
 class BFont {
 public:
-	explicit BFont(RuntimeAssets& assets, i32 advancePadding = 0);
-	BFont(RuntimeAssets& assets, GlyphMap glyphmap, i32 advancePadding = 0);
+	explicit BFont(RuntimeRomPackage& romPackage, i32 advancePadding = 0);
+	BFont(RuntimeRomPackage& romPackage, GlyphMap glyphmap, i32 advancePadding = 0);
+	BFont(std::shared_ptr<const BitmapFontSource> source, GlyphMap glyphmap, i32 advancePadding = 0);
 
 	i32 char_width(char c);
 	i32 char_height(char c);
@@ -46,7 +55,7 @@ public:
 	i32 measure(const std::string& text);
 
 private:
-	RuntimeAssets& m_assets;
+	std::shared_ptr<const BitmapFontSource> m_source;
 	GlyphMap m_letter_to_img;
 	std::unordered_map<u32, FontGlyph> m_glyphs;
 	i32 m_advance_padding = 0;

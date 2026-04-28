@@ -241,7 +241,7 @@ export class TerminalMode {
 		this.terminalCommands = new TerminalCommandDispatcher(this.runtime);
 		this.setPromptPrefix(this.terminalCommands.getPrompt());
 
-		this.font = new EditorFont(runtime, runtime.activeIdeFontVariant);
+		this.font = new EditorFont(runtime.activeIdeFontVariant);
 		this.maxEntries = MAX_OUTPUT_ENTRIES;
 		this.buffer = new InlineFieldTextBuffer(() => this.getLinesSnapshot(), () => this.field.text, () => this.textVersion);
 		const owner = this;
@@ -382,7 +382,7 @@ export class TerminalMode {
 	}
 
 	public setFontVariant(variant: FontVariant): void {
-		this.font = new EditorFont(this.runtime, variant);
+		this.font = new EditorFont(variant);
 		this.cachedLinesVersion = -1;
 		this.resetBlink();
 	}

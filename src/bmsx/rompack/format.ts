@@ -23,7 +23,7 @@ export type CartRomHeader = {
 	programCodeByteCount: number;
 	programConstPoolCount: number;
 	programProtoCount: number;
-	programModuleAliasCount: number;
+	programReserved0: number;
 	programConstRelocCount: number;
 	metadataOffset: number;
 	metadataLength: number;
@@ -33,17 +33,17 @@ export type CartridgeLayerId = 'system' | 'cart' | 'overlay';
 
 export type RomAssetOp = 'delete';
 
-export interface RuntimeAssets {
-	// Runtime asset cache resolved for the engine. Raw cartridge bytes live outside of this structure.
-	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	bin: id2res; // Reference to raw binary assets that remain addressable in ROM. ALWAYS PRESENT DURING GAME!
-	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
+export interface RuntimeRomPackage {
+	// Decoded ROM package records. Raw cartridge bytes live outside of this structure.
+	img: id2imgres;
+	audio: id2res;
+	model: id2model;
+	data: id2data;
+	bin: id2res;
+	audioevents: id2audioevent;
 	project_root_path: string; // Workspace-relative cart root path for resolving filesystem writes.
-	cart_manifest: CartManifest | null; // Cart metadata for the active program, absent for system assets.
-	machine: MachineManifest; // Effective machine spec for this asset layer.
+	cart_manifest: CartManifest | null; // Cart metadata for the active program, absent for system ROM packages.
+	machine: MachineManifest; // Effective machine spec for this ROM package.
 	entry_path: string; // Entry Lua path for this program.
 }
 
@@ -51,43 +51,43 @@ export type asset_type = 'image' | 'audio' | 'data' | 'bin' | 'atlas' | 'romlabe
 export type asset_id = string;
 
 /**
- * Represents an asset in a ROM pack.
+ * Represents a ROM TOC entry.
  */
 export interface RomAsset {
-	resid: asset_id; // The resource ID of the asset.
-	type: asset_type; // The type of the asset.
+	resid: asset_id; // Resource ID stored in the ROM TOC.
+	type: asset_type; // ROM TOC record type.
 	id_token_lo?: number; // 64-bit exact-id token (low 32)
 	id_token_hi?: number; // 64-bit exact-id token (high 32)
-	op?: RomAssetOp; // Optional patch operation for this asset.
-	start?: number; // The optional start offset of the asset in the ROM. (e.g., atlas-backed images don't own ROM bytes)
-	end?: number; // The optional end offset of the asset in the ROM. (e.g., atlas-backed images don't own ROM bytes)
+	op?: RomAssetOp; // Optional patch operation for this ROM entry.
+	start?: number; // Optional start offset in the ROM. (e.g., atlas-backed images don't own ROM bytes)
+	end?: number; // Optional end offset in the ROM. (e.g., atlas-backed images don't own ROM bytes)
 	compiled_start?: number; // Optional start offset of precompiled Lua chunk data in the ROM
 	compiled_end?: number; // Optional end offset of precompiled Lua chunk data in the ROM
-	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
-	metabuffer_end?: number; // Optional end offset of binary-encoded per-asset metadata in the buffer
-	buffer?: Buffer; // The binary buffer of the asset, used for all assets, including images and audio.
-	compiled_buffer?: Buffer; // ???? The compiled Lua chunk buffer for Lua script assets.
-	texture_buffer?: Buffer; // Optional buffer holding packed textures for model assets
-	collision_bin_buffer?: Buffer; // Optional auxiliary collision binary owned by an image asset.
-	imgmeta?: ImgMeta; // The metadata of the asset, if it is an image.
-	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
+	metabuffer_start?: number; // Optional start offset of binary-encoded per-entry metadata in the buffer
+	metabuffer_end?: number; // Optional end offset of binary-encoded per-entry metadata in the buffer
+	buffer?: Buffer; // Raw buffer owned by this ROM entry at pack time.
+	compiled_buffer?: Buffer; // Compiled Lua chunk buffer for Lua source records.
+	texture_buffer?: Buffer; // Optional buffer holding packed textures for model records.
+	collision_bin_buffer?: Buffer; // Optional auxiliary collision binary owned by an image record.
+	imgmeta?: ImgMeta; // Metadata when this record is an image.
+	audiometa?: AudioMeta; // Metadata when this record is audio.
 	texture_start?: number; // Start offset of the texture buffer within the ROM
 	texture_end?: number;   // End offset of the texture buffer within the ROM
 	collision_bin_start?: number; // Start offset of the image-owned collision binary within the ROM
 	collision_bin_end?: number;   // End offset of the image-owned collision binary within the ROM
-	source_path?: string; // Relative filesystem path for the asset when applicable (e.g., Lua source files).
-	normalized_source_path?: string; // Normalized absolute-ish source path for this asset.
-	update_timestamp?: number; // Last update timestamp for the asset, used for dev hot-resume.
-	payload_id?: CartridgeLayerId; // Cartridge layer backing this asset's raw bytes.
+	source_path?: string; // Relative filesystem path for this record when applicable (e.g., Lua source files).
+	normalized_source_path?: string; // Normalized absolute-ish source path for this record.
+	update_timestamp?: number; // Last update timestamp for dev hot-resume.
+	payload_id?: CartridgeLayerId; // Cartridge layer backing this record's raw bytes.
 }
 
 export interface RomImgAsset extends RomAsset {
 }
 
 export type RomLuaAsset = RomAsset & {
-	src: string; // The Lua source code of the Lua script asset. Known at pack time
-	normalized_source_path?: string; // Normalized absolute source path for this Lua asset, used for source mapping and debugging.
-	update_timestamp: number; // Timestamp of the last update to this Lua asset, used for caching and reloading during development.
+	src: string; // Lua source code known at pack time.
+	normalized_source_path?: string; // Normalized absolute source path used for source mapping and debugging.
+	update_timestamp: number; // Timestamp used for caching and development reloads.
 }
 
 export type id2res = Record<asset_id, RomAsset>;
@@ -105,7 +105,7 @@ export type BinId = asset_id;
 export type LuaId = asset_id;
 
 export type CartridgeIndex = {
-	assets: RomAsset[];
+	entries: RomAsset[];
 	projectRootPath: string;
 	cart_manifest: CartManifest | null;
 	machine: MachineManifest;
@@ -118,7 +118,7 @@ export type CartridgeIndex = {
  */
 export interface BootArgs {
 	cartridge?: Uint8Array;
-	engineAssets: Uint8Array;
+	systemRom: Uint8Array;
 	workspaceOverlay?: Uint8Array;
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
@@ -154,16 +154,16 @@ export interface RegisterablePersistent extends Registerable {
 }
 
 /**
- * Reserved ROM atlas identity for engine/runtime resources.
+ * Reserved ROM atlas identity for system ROM graphics.
  */
 export const BIOS_ATLAS_ID = 254;
 
 /**
  * Texture dictionary key used by GameView to cache VDP slot textures.
  */
-export const BIOS_TEXTPAGE_TEXTURE_KEY = '_textpage_engine';
-export const TEXTPAGE_PRIMARY_SLOT_ID = '_textpage_primary';
-export const TEXTPAGE_SECONDARY_SLOT_ID = '_textpage_secondary';
+export const SYSTEM_SLOT_TEXTURE_KEY = '_system_slot';
+export const VDP_PRIMARY_SLOT_TEXTURE_KEY = '_vdp_slot_primary';
+export const VDP_SECONDARY_SLOT_TEXTURE_KEY = '_vdp_slot_secondary';
 export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
 export const FRAMEBUFFER_RENDER_TEXTURE_KEY = '_framebuffer_render_2d';
 
@@ -482,11 +482,3 @@ export function getMachineMemorySpecs(machine: MachineManifest): MachineMemorySp
 		staging_bytes: vram?.staging_bytes,
 	};
 }
-// 		data: merge(bullshit.data, engine.data),
-// 		audioevents: merge(bullshit.audioevents, engine.audioevents),
-// 		cart: bullshit.cart,
-// 		project_root_path: bullshit.project_root_path,
-// 		manifest: bullshit.manifest,
-// 	};
-// 	return merged;
-// }

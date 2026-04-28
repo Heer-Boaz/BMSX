@@ -1,4 +1,5 @@
 import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/sources';
+import { toLuaModulePath } from '../../machine/program/loader';
 import type { StorageService } from '../../platform';
 import type { Runtime } from '../../machine/runtime/runtime';
 import * as luaPipeline from '../runtime/lua_pipeline';
@@ -20,46 +21,47 @@ function resolveEditableCartLuaSources(runtime: Runtime): LuaSourceRegistry {
 	return runtime.cartLuaSources ? runtime.cartLuaSources : runtime.activeLuaSources;
 }
 
-function resolveEngineProjectRootPath(runtime: Runtime): string {
-	return runtime.engineProjectRootPath;
+function resolveSystemProjectRootPath(runtime: Runtime): string {
+	return runtime.systemProjectRootPath;
 }
 
-function isEngineLuaSourcePath(path: string): boolean {
+function isSystemLuaSourcePath(path: string): boolean {
 	return path === 'res/bios' || path.startsWith('res/bios/');
 }
 
 export function resolveLuaSourceRegistry(runtime: Runtime, path: string): LuaSourceRegistry {
 	const cart = runtime.cartLuaSources;
-	if (cart && cart.path2lua[path]) {
+	if (cart && (cart.path2lua[path] || cart.module2lua[path])) {
 		return cart;
 	}
-	const engine = runtime.engineLuaSources;
-	if (engine && engine.path2lua[path]) {
-		return engine;
+	const system = runtime.systemLuaSources;
+	if (system && (system.path2lua[path] || system.module2lua[path])) {
+		return system;
 	}
 	throw new Error(`Missing Lua source registry for '${path}'.`);
 }
 
 export function resolveLuaSourceProjectRootPath(runtime: Runtime, path: string): string {
 	const cart = runtime.cartLuaSources;
-	if (cart && cart.path2lua[path]) {
+	if (cart && (cart.path2lua[path] || cart.module2lua[path])) {
 		return runtime.cartProjectRootPath;
 	}
-	const engine = runtime.engineLuaSources;
-	if (engine && engine.path2lua[path]) {
-		return resolveEngineProjectRootPath(runtime);
+	const system = runtime.systemLuaSources;
+	if (system && (system.path2lua[path] || system.module2lua[path])) {
+		return resolveSystemProjectRootPath(runtime);
 	}
 	return runtime.cartProjectRootPath;
 }
 
 export async function saveLuaResourceSource(runtime: Runtime, path: string, source: string): Promise<void> {
 	const registry = resolveLuaSourceRegistry(runtime, path);
-	const asset = registry.path2lua[path];
+	const asset = registry.path2lua[path] ?? registry.module2lua[path];
 	const sourcePath = asset.source_path;
 	await persistWorkspaceSourceFile(sourcePath, source, resolveLuaSourceProjectRootPath(runtime, sourcePath));
 	asset.src = source;
 	asset.update_timestamp = runtime.clock.dateNow();
 	registry.path2lua[sourcePath] = asset;
+	registry.module2lua[asset.module_path] = asset;
 	luaPipeline.markSourceChunkAsDirty(runtime, sourcePath);
 }
 
@@ -75,19 +77,21 @@ export async function createLuaResource(runtime: Runtime, request: LuaResourceCr
 		src: contents,
 		base_src: contents,
 		source_path: path,
+		module_path: toLuaModulePath(path),
 		update_timestamp: runtime.clock.dateNow(),
 	};
 	const registerAsset = (registry: LuaSourceRegistry): void => {
 		registry.path2lua[asset.source_path] = asset;
+		registry.module2lua[asset.module_path] = asset;
 		registry.can_boot_from_source = true;
 	};
-	const registry = isEngineLuaSourcePath(asset.source_path)
-		? runtime.engineLuaSources
+	const registry = isSystemLuaSourcePath(asset.source_path)
+		? runtime.systemLuaSources
 		: resolveEditableCartLuaSources(runtime);
 	registerAsset(registry);
-	luaPipeline.invalidateModuleAliases(runtime);
+	luaPipeline.invalidateModuleLookups(runtime);
 	const filesystemPath = asset.source_path;
-	await persistWorkspaceSourceFile(filesystemPath, contents, isEngineLuaSourcePath(filesystemPath) ? resolveEngineProjectRootPath(runtime) : runtime.cartProjectRootPath);
+	await persistWorkspaceSourceFile(filesystemPath, contents, isSystemLuaSourcePath(filesystemPath) ? resolveSystemProjectRootPath(runtime) : runtime.cartProjectRootPath);
 	luaPipeline.markSourceChunkAsDirty(runtime, asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;

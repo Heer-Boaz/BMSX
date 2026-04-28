@@ -4,7 +4,7 @@
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/timing/config.h"
 #include "machine/specs.h"
-#include "rompack/assets.h"
+#include "rompack/package.h"
 
 namespace bmsx {
 

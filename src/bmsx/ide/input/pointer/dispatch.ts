@@ -1,4 +1,4 @@
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 import type { Runtime } from '../../../machine/runtime/runtime';
 import { clearGotoHoverHighlight, clearHoverTooltip } from '../../editor/contrib/intellisense/engine';
 import { computeEditorPointerButtonMask, POINTER_AUX_JUST_PRESSED, POINTER_PRIMARY_JUST_PRESSED, POINTER_PRIMARY_JUST_RELEASED, POINTER_SECONDARY_JUST_PRESSED } from './buttons';
@@ -22,7 +22,7 @@ export function handleTextEditorPointerInput(runtime: Runtime): void {
 	if (prepareEditorPointerFrame(runtime.editor.resourcePanel, snapshot, gotoModifierActive)) {
 		return;
 	}
-	const playerInput = engineCore.input.getPlayerInput(1);
+	const playerInput = consoleCore.input.getPlayerInput(1);
 	const buttonMask = computeEditorPointerButtonMask(playerInput, snapshot.primaryPressed);
 	const justPressed = (buttonMask & POINTER_PRIMARY_JUST_PRESSED) !== 0;
 	const justReleased = (buttonMask & POINTER_PRIMARY_JUST_RELEASED) !== 0;

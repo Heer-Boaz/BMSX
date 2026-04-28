@@ -1,6 +1,5 @@
-#include "core/engine.h"
+#include "core/console.h"
 
-#include "core/host_asset_sync.h"
 #include "core/time.h"
 #include "input/manager.h"
 #include "machine/runtime/game/table.h"
@@ -13,7 +12,7 @@ namespace {
 constexpr double MAX_FRAME_DELTA_MS = 250.0;
 }
 
-void EngineCore::runHostFrame(
+void ConsoleCore::runHostFrame(
 	Runtime& runtime,
 	MicrotaskQueue& microtasks,
 	f64 deltaTime,
@@ -48,8 +47,6 @@ void EngineCore::runHostFrame(
 			runtime.frameScheduler.run(runtime, hostDeltaMs);
 			applyRuntimeGameViewTableToHost(runtime);
 			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
-
-			flushHostRuntimeAssetEdits(runtime.machine().memory(), *texmanager(), *view());
 		}
 		m_delta_time = hostDeltaSeconds;
 

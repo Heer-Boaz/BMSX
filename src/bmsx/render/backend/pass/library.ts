@@ -1,4 +1,4 @@
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 import { registerFramebuffer2DPass_WebGL } from '../../2d/framebuffer_pipeline';
 import { registerHostOverlayPass_Headless, registerHostOverlayPass_WebGL, registerHostOverlayPass_WebGPU } from '../../editor/host_overlay_pipeline';
 import * as MeshPipeline from '../../3d/mesh/pipeline';
@@ -7,7 +7,6 @@ import { registerMeshBatchPass_WebGPU } from '../../3d/mesh/pipeline.wgpu';
 import { registerParticlesPass_WebGL } from '../../3d/particles/pipeline';
 import { registerParticlesPass_WebGPU } from '../../3d/particles/pipeline.wgpu';
 import { registerSkyboxPass_WebGL } from '../../3d/skybox/pipeline';
-import { registerAxisGizmoPass_WebGL } from '../../3d/axis_gizmo_pipeline';
 import { registerSkyboxPass_WebGPU } from '../../3d/skybox/pipeline.wgpu';
 import { registerSolidColorPass_WebGPU } from '../../debug/solidcolor_pipeline.wgpu';
 import { RenderGraphRuntime } from '../../graph/graph';
@@ -72,7 +71,7 @@ export class RenderPassLibrary {
 			graph: { skip: true },
 			exec: () => { /* state only */ },
 			prepare: (backend, _state) => {
-				const gv = engineCore.view;
+				const gv = consoleCore.view;
 				updateAndBindFrameUniforms(backend, {
 					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
@@ -101,7 +100,7 @@ export class RenderPassLibrary {
 			exec: () => { /* state only */ },
 			prepare: (backend, _state) => {
 				// Upload minimal frame-shared values via a UBO foundation
-				const gv = engineCore.view;
+				const gv = consoleCore.view;
 				updateAndBindFrameUniforms(backend, {
 					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
@@ -118,9 +117,6 @@ export class RenderPassLibrary {
 
 		// Particles (WebGPU)
 		registerParticlesPass_WebGL(this);
-
-		// Axis gizmo (WebGL) — runs before sprites so labels render this frame
-		registerAxisGizmoPass_WebGL(this);
 
 		registerFramebuffer2DPass_WebGL(this);
 
@@ -357,7 +353,7 @@ export class RenderPassLibrary {
 			execute: (_ctx, frame) => {
 				const frameTime = frame ? frame.time : 0;
 				const frameDelta = frame ? frame.delta : 0;
-				const gv = engineCore.view;
+				const gv = consoleCore.view;
 				updateAndBindFrameUniforms(gv.backend, {
 					offscreen: { x: offscreenWidth, y: offscreenHeight },
 					logical: { x: viewportWidth, y: viewportHeight },
@@ -435,7 +431,7 @@ export class RenderPassLibrary {
 					const graph = desc.graph;
 						if (graph?.buildState) {
 							const graphCtx = {
-								view: engineCore.view,
+								view: consoleCore.view,
 								getTex: (slot: RenderGraphSlot) => ctx.getTex(getHandle(slot)),
 							};
 						const builtState = graph.buildState(graphCtx) as RenderPassStateRegistry[RenderPassStateId];
@@ -444,7 +440,7 @@ export class RenderPassLibrary {
 					}
 						if (data.present) {
 							// Execute the pass; PipelineRegistry ensures the program/pipeline is bound.
-							const gv = engineCore.view;
+							const gv = consoleCore.view;
 							const presentInput = graph?.presentInput ?? 'auto';
 							const allowDevice = presentInput !== 'frame_color';
 							const useDither = allowDevice && deviceColorEnabled && gv.dither_type !== 0;

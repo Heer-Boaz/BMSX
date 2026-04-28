@@ -6,7 +6,7 @@
 #include "gamepad.h"
 #include "keyboard.h"
 #include "pointer.h"
-#include "core/engine.h"
+#include "core/console.h"
 
 namespace bmsx {
 
@@ -70,7 +70,7 @@ void Input::initialize() {
 	// Set up default input mapping for keyboard player
 	auto defaultMapping = getDefaultInputMapping();
 	m_playerInputs[toInternalPlayerIndex(DEFAULT_KEYBOARD_PLAYER_INDEX)]->setInputMap(defaultMapping);
-	m_focusChangeSub = EngineCore::instance().platform()->gameviewHost()->onFocusChange([this](bool focused) {
+	m_focusChangeSub = ConsoleCore::instance().platform()->gameviewHost()->onFocusChange([this](bool focused) {
 		handleFocusChange(focused);
 	});
 	

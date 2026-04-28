@@ -2,12 +2,13 @@ import pc from 'picocolors';
 
 import {
 	buildBootromScriptIfNewer,
-	buildEngineRuntime,
+	buildConsoleRuntime,
 	buildGameHtmlAndManifest,
 	getNodeLauncherFilename,
 	getRomManifest,
-	isEngineRuntimeRebuildRequired,
+	isConsoleRuntimeRebuildRequired,
 } from './rombuilder';
+import { ensureHostSystemAtlasArtifacts } from './host_system_atlas';
 import type { RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 
 import { join } from 'node:path';
@@ -171,6 +172,11 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 		progress.showInitial();
 	}
 
+	await runStep('Build host system atlas', async () => {
+		const updated = await ensureHostSystemAtlasArtifacts();
+		logger.ok(`Host system atlas → ${pc.white('src/bmsx*/rompack/host_system_atlas.generated')} ${updated ? '' : pc.dim('(up-to-date)')}`);
+	});
+
 	if (platform.startsWith('libretro')) {
 		logger.info('Building libretro core');
 		ensureLibretroCoreBuilt(debug, platform, logger);
@@ -182,15 +188,15 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 	}
 
 	if (platform === 'browser' || platform === 'headless') {
-		await runStep('Build engine runtime', async () => {
-			const engineRuntimeOut = debug ? './dist/engine.debug.js' : './dist/engine.js';
-			const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
+		await runStep('Build console runtime', async () => {
+			const consoleRuntimeOut = debug ? './dist/console.debug.js' : './dist/console.js';
+			const runtimeNeedsRebuild = force || await isConsoleRuntimeRebuildRequired(consoleRuntimeOut);
 			if (runtimeNeedsRebuild) {
-				await buildEngineRuntime(debug);
-				logger.ok(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
+				await buildConsoleRuntime(debug);
+				logger.ok(`Console runtime ready -> ${pc.white(consoleRuntimeOut.replace('./dist/', 'dist/'))}`);
 			}
 			else {
-				logger.ok(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))} (up-to-date)`);
+				logger.ok(`Console runtime ready -> ${pc.white(consoleRuntimeOut.replace('./dist/', 'dist/'))} (up-to-date)`);
 			}
 		});
 	}
@@ -242,12 +248,12 @@ export async function runBrowserDeploy(options: BrowserDeployOptions, logger: Bu
 	logger.bullet('Title', pc.white(resolvedTitle));
 	logger.bullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
 
-	const engineRuntimeOut = debug ? './dist/engine.debug.js' : './dist/engine.js';
-	const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
+	const consoleRuntimeOut = debug ? './dist/console.debug.js' : './dist/console.js';
+	const runtimeNeedsRebuild = force || await isConsoleRuntimeRebuildRequired(consoleRuntimeOut);
 	if (runtimeNeedsRebuild) {
-		logger.info('Build engine runtime');
-		await buildEngineRuntime(debug);
-		logger.ok(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
+		logger.info('Build console runtime');
+		await buildConsoleRuntime(debug);
+		logger.ok(`Console runtime ready -> ${pc.white(consoleRuntimeOut.replace('./dist/', 'dist/'))}`);
 	}
 
 	await buildBootromScriptIfNewer({ debug, forceBuild: force, platform });

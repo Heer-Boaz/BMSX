@@ -4,7 +4,7 @@
 
 #include "keyboard.h"
 #include "manager.h"
-#include "core/engine.h"
+#include "core/console.h"
 #include <algorithm>
 
 namespace bmsx {
@@ -28,7 +28,7 @@ KeyboardInput::~KeyboardInput() {
  * ============================================================================ */
 
 void KeyboardInput::pollInput() {
-	m_currentTimeMs = EngineCore::instance().clock()->now();
+	m_currentTimeMs = ConsoleCore::instance().clock()->now();
 	
 	// Update gamepad button states from key states
 	for (auto& [keyCode, keyState] : m_keyStates) {

@@ -3,13 +3,13 @@ import { type vec2 } from 'bmsx/rompack/format';
 /**
  * Core platform contract.
  *
- * Every host environment (desktop shell, mobile wrapper, browser runtime, etc.) wires the engine
+ * Every host environment (desktop shell, mobile wrapper, browser runtime, etc.) wires the console runtime
  * to native services by implementing this interface. The properties deliberately mirror the systems
- * the engine expects to exist at runtime: timing (`clock`/`frames`), persistence (`storage`), audio,
+ * the console runtime expects to exist at runtime: timing (`clock`/`frames`), persistence (`storage`), audio,
  * human input, onscreen controls, and the high-level `gameviewHost` bridge that couples rendering
  * to the platform's windowing model.
  *
- * The onscreen gamepad is treated as a first-class surface here: when it is enabled the engine
+ * The onscreen gamepad is treated as a first-class surface here: when it is enabled the console runtime
  * expects the platform to expose a concrete implementation capable of delivering pointer events,
  * tracking focus/blur transitions, and mapping host-specific hit testing to canonical control IDs.
  * This is fundamental for layout — the renderer explicitly negotiates canvas space with these controls.
@@ -266,10 +266,10 @@ export interface OnscreenGamepadPlatformSession {
 /**
  * Platform responsibility for rendering and routing events to the virtual controls.
  *
- * When the onscreen gamepad feature flag is on, the engine relies on this bridge to negotiate layout
+ * When the onscreen gamepad feature flag is on, the console runtime relies on this bridge to negotiate layout
  * and to keep pointer gestures synchronised with the gameplay input hub. The implementation is expected
  * to back the controls with whatever UI primitives the host provides (HTML, native widgets, gamepad
- * texture quads, etc.) while maintaining the canonical element IDs that the engine references.
+ * texture quads, etc.) while maintaining the canonical element IDs that the console runtime references.
  */
 export interface OnscreenGamepadPlatform {
 	attach(hooks: OnscreenGamepadPlatformHooks): OnscreenGamepadPlatformSession;
@@ -493,7 +493,7 @@ export interface GameViewHostCapabilityMap {
 }
 
 /**
- * Platform-specific delegate that surfaces rendering and window-management affordances to the engine.
+ * Platform-specific delegate that surfaces rendering and window-management affordances to the console runtime.
  *
  * The GameView queries this host for capabilities rather than accessing global APIs directly. That
  * indirection keeps the renderer agnostic of how the host projects surfaces (DOM, native window, offscreen

@@ -20,9 +20,9 @@ uint32_t resolveAtlasSlotFromMemory(const Memory& memory, int32_t atlasId) {
 	throw BMSX_RUNTIME_ERROR("[VDPImageMeta] Atlas " + std::to_string(atlasId) + " is not loaded in a VDP slot.");
 }
 
-ImageSlotSource resolveImageSlotSourceFromAssets(const RuntimeAssets& assets, const Memory& memory, const std::string& imgId) {
-	const ImageAtlasRect rect = resolveImageAtlasRectFromAssets(assets, imgId);
-	return ImageSlotSource{
+VdpSlotSource resolveVdpSlotSourceFromPackage(const RuntimeRomPackage& romPackage, const Memory& memory, const std::string& imgId) {
+	const ImageAtlasRect rect = resolveImageAtlasRectFromPackage(romPackage, imgId);
+	return VdpSlotSource{
 		resolveAtlasSlotFromMemory(memory, rect.atlasId),
 		rect.u,
 		rect.v,

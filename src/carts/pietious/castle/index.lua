@@ -1,6 +1,6 @@
 local constants<const> = require('constants')
 local castle_map<const> = require('castle/map')
-local progression<const> = require('progression')
+local progression<const> = require('bios/progression')
 local room_spawner<const> = require('room/spawner')
 
 local castle<const> = {}

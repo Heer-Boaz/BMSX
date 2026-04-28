@@ -48,13 +48,13 @@
 		"typescript": "^5.9.3"
 	},
 	"scripts": {
-		"headless:game": "node dist/headless_debug.js --engine-runtime dist/engine.debug.js --engine-assets dist/bmsx-bios.debug.rom",
-		"headless:test": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:test -- <gameromname> <test-file>\"; exit 1; fi; node dist/headless_debug.js --engine-runtime dist/engine.debug.js --engine-assets dist/bmsx-bios.debug.rom --test \"$test\" \"$rom\"' --",
+		"headless:game": "node dist/headless_debug.js --console-runtime dist/console.debug.js --system-rom dist/bmsx-bios.debug.rom",
+		"headless:test": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:test -- <gameromname> <test-file>\"; exit 1; fi; node dist/headless_debug.js --console-runtime dist/console.debug.js --system-rom dist/bmsx-bios.debug.rom --test \"$test\" \"$rom\"' --",
 		"headless:forcebuildallrun": "sh -c 'rom=\"$1\"; if [ -z \"$rom\" ]; then echo \"Usage: npm run headless:forcebuildallrun -- <gameromname>\"; exit 1; fi; npm run build:platform:headless -- --debug --force && npm run build:bios -- --debug --force && npx tsx scripts/rompacker/rompacker.ts --mode rompack --skiptypecheck --debug --force -romname \"$rom\" && npm run headless:game -- \"$rom\"' --",
 		"headless:forcebuildalltest": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:forcebuildalltest -- <gameromname> <test-file>\"; exit 1; fi; npm run build:platform:headless -- --debug --force && npm run build:bios -- --debug --force && npx tsx scripts/rompacker/rompacker.ts --mode rompack --skiptypecheck --debug --force -romname \"$rom\" && npm run headless:test -- \"$rom\" \"$test\"' --",
 		"test:lua": "npx tsx --test tests/lua/*.ts",
 		"test:rompacker": "npx tsx --test tests/rompacker/*.ts",
-		"compile:engine": "npx tsc --build ./src/bmsx",
+		"compile:console": "npx tsc --build ./src/bmsx",
 		"validate:bios": "npx tsx scripts/rompacker/rompacker.ts --mode bios --force -bootloaderpath ./src/bmsx/machine/firmware/default_cart -respath ./src/bmsx/res",
 		"build:bios": "npx tsx scripts/rompacker/rompacker.ts --mode bios --skiptypecheck -bootloaderpath ./src/bmsx/machine/firmware/default_cart -respath ./src/bmsx/res",
 		"validate:game": "npx tsx scripts/rompacker/rompacker.ts --mode rompack --force -romname",

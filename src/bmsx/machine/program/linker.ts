@@ -16,14 +16,14 @@ import { resolveProgramLayout, type ProgramLayout } from './layout';
 import type {
 	EncodedProgram,
 	EncodedValue,
-	ProgramAsset,
+	ProgramImage,
 	ProgramConstReloc,
-	ProgramSymbolsAsset,
-} from './asset';
+	ProgramSymbolsImage,
+} from './loader';
 import { cloneSourceRange } from './source_range';
 
-type LinkedProgramAsset = {
-	programAsset: ProgramAsset;
+type LinkedProgramImage = {
+	programImage: ProgramImage;
 	metadata: ProgramMetadata | null;
 };
 
@@ -56,13 +56,13 @@ const makeConstKey = (value: EncodedValue): string => {
 };
 
 const mergeConstPools = (
-	engineConstPool: ReadonlyArray<EncodedValue>,
+	systemConstPool: ReadonlyArray<EncodedValue>,
 	cartConstPool: ReadonlyArray<EncodedValue>,
 ): { constPool: EncodedValue[]; cartConstRemap: number[] } => {
-	const constPool: EncodedValue[] = engineConstPool.slice();
+	const constPool: EncodedValue[] = systemConstPool.slice();
 	const keyToIndex = new Map<string, number>();
-	for (let index = 0; index < engineConstPool.length; index += 1) {
-		const key = makeConstKey(engineConstPool[index]);
+	for (let index = 0; index < systemConstPool.length; index += 1) {
+		const key = makeConstKey(systemConstPool[index]);
 		if (!keyToIndex.has(key)) {
 			keyToIndex.set(key, index);
 		}
@@ -85,13 +85,13 @@ const mergeConstPools = (
 };
 
 const mergeNamedSlots = (
-	engineNames: ReadonlyArray<string>,
+	systemNames: ReadonlyArray<string>,
 	cartNames: ReadonlyArray<string>,
 ): { names: string[]; cartRemap: number[] } => {
-	const names: string[] = engineNames.slice();
+	const names: string[] = systemNames.slice();
 	const nameToIndex = new Map<string, number>();
-	for (let index = 0; index < engineNames.length; index += 1) {
-		const name = engineNames[index];
+	for (let index = 0; index < systemNames.length; index += 1) {
+		const name = systemNames[index];
 		if (!nameToIndex.has(name)) {
 			nameToIndex.set(name, index);
 		}
@@ -349,22 +349,6 @@ const rewriteClosureIndices = (code: Uint8Array, protoOffset: number): void => {
 	}
 };
 
-const cloneProto = (proto: Proto, entryOffset: number): Proto => {
-	const upvalueDescs = new Array(proto.upvalueDescs.length);
-	for (let index = 0; index < proto.upvalueDescs.length; index += 1) {
-		const desc = proto.upvalueDescs[index];
-		upvalueDescs[index] = { inStack: desc.inStack, index: desc.index };
-	}
-	return {
-		entryPC: proto.entryPC + entryOffset,
-		codeLen: proto.codeLen,
-		numParams: proto.numParams,
-		isVararg: proto.isVararg,
-		maxStack: proto.maxStack,
-		upvalueDescs,
-	};
-};
-
 const cloneLocalSlot = (slot: LocalSlotDebug): LocalSlotDebug => ({
 	name: slot.name,
 	register: slot.register,
@@ -399,47 +383,47 @@ const cloneUpvalueNamesByProto = (
 };
 
 const mergeMetadata = (
-	engine: ProgramMetadata | undefined,
+	system: ProgramMetadata | undefined,
 	cart: ProgramMetadata | undefined,
 	layout: ProgramLayout,
-	engineInstructionCount: number,
+	systemInstructionCount: number,
 	cartInstructionCount: number,
 ): ProgramMetadata | null => {
-	if (!engine && !cart) {
+	if (!system && !cart) {
 		return null;
 	}
-	if (!engine || !cart) {
-		throw new Error('[ProgramLinker] Linking requires both engine and cart symbols when symbols are provided.');
+	if (!system || !cart) {
+		throw new Error('[ProgramLinker] Linking requires both system and cart symbols when symbols are provided.');
 	}
-	if (engine.debugRanges.length !== engineInstructionCount) {
-		throw new Error('[ProgramLinker] Engine debug range length mismatch.');
+	if (system.debugRanges.length !== systemInstructionCount) {
+		throw new Error('[ProgramLinker] System debug range length mismatch.');
 	}
 	if (cart.debugRanges.length !== cartInstructionCount) {
 		throw new Error('[ProgramLinker] Cart debug range length mismatch.');
 	}
-	const mergedSystemGlobals = mergeNamedSlots(engine.systemGlobalNames, cart.systemGlobalNames);
-	const mergedGlobals = mergeNamedSlots(engine.globalNames, cart.globalNames);
-	const engineBaseWord = layout.engineBasePc / INSTRUCTION_BYTES;
+	const mergedSystemGlobals = mergeNamedSlots(system.systemGlobalNames, cart.systemGlobalNames);
+	const mergedGlobals = mergeNamedSlots(system.globalNames, cart.globalNames);
+	const systemBaseWord = layout.systemBasePc / INSTRUCTION_BYTES;
 	const cartBaseWord = layout.cartBasePc / INSTRUCTION_BYTES;
 	const totalInstructionCount = Math.max(
-		engineBaseWord + engineInstructionCount,
+		systemBaseWord + systemInstructionCount,
 		cartBaseWord + cartInstructionCount,
 	);
 	const debugRanges: Array<SourceRange | null> = new Array(totalInstructionCount);
 	debugRanges.fill(null);
-	for (let index = 0; index < engineInstructionCount; index += 1) {
-		debugRanges[engineBaseWord + index] = engine.debugRanges[index];
+	for (let index = 0; index < systemInstructionCount; index += 1) {
+		debugRanges[systemBaseWord + index] = system.debugRanges[index];
 	}
 	for (let index = 0; index < cartInstructionCount; index += 1) {
 		debugRanges[cartBaseWord + index] = cart.debugRanges[index];
 	}
-	const localSlotsByProto = cloneLocalSlotsByProto(engine, engine.protoIds.length)
+	const localSlotsByProto = cloneLocalSlotsByProto(system, system.protoIds.length)
 		.concat(cloneLocalSlotsByProto(cart, cart.protoIds.length));
 	return {
 		debugRanges,
-		protoIds: engine.protoIds.concat(cart.protoIds),
+		protoIds: system.protoIds.concat(cart.protoIds),
 		localSlotsByProto,
-		upvalueNamesByProto: cloneUpvalueNamesByProto(engine, engine.protoIds.length)
+		upvalueNamesByProto: cloneUpvalueNamesByProto(system, system.protoIds.length)
 			.concat(cloneUpvalueNamesByProto(cart, cart.protoIds.length)),
 		systemGlobalNames: mergedSystemGlobals.names,
 		globalNames: mergedGlobals.names,
@@ -451,7 +435,7 @@ const mergeMetadata = (
 /*
 	Fantasy-console linking note
 
-	- This codebase targets a fantasy-console ABI where certain engine/BIOS modules are compile-time
+	- This codebase targets a fantasy-console ABI where certain system ROM modules are compile-time
 	  descriptors (recorded in metadata like `staticModulePaths` / `staticExternalModulePaths`) rather
 	  than runtime Lua tables.
 	- The compiler enforces that these compile-time modules are not treated as runtime values and
@@ -460,56 +444,56 @@ const mergeMetadata = (
 	  (the current emitter uses a nil-load sentinel). The linker MUST detect and resolve these
 	  placeholders into the final relocated operand or concrete machine-level access; they are not
 	  intended to be left as runtime `nil` values.
-	- The linker's responsibility is to combine engine and cart images and remap proto/const/global
+	- The linker's responsibility is to combine system and cart images and remap proto/const/global
 	  indices to the final layout while preserving metadata. Functions such as `rewriteClosureIndices`
 	  and `rewriteConstRelocations` update indices/operands and must preserve encoding semantics when
 	  rewriting the linked buffer.
 
 */
 
-export const linkProgramAssets = (
-	engineAsset: ProgramAsset,
-	engineSymbols: ProgramSymbolsAsset | null,
-	cartAsset: ProgramAsset,
-	cartSymbols: ProgramSymbolsAsset | null,
+export const linkProgramImages = (
+	systemImage: ProgramImage,
+	systemSymbols: ProgramSymbolsImage | null,
+	cartImage: ProgramImage,
+	cartSymbols: ProgramSymbolsImage | null,
 	layout?: Partial<ProgramLayout>,
-): LinkedProgramAsset => {
-	const baseProtoCount = engineAsset.program.protos.length;
-	const engineCodeBytes = engineAsset.program.code.length;
-	const cartCodeBytes = cartAsset.program.code.length;
-	const engineInstructionCount = engineCodeBytes / INSTRUCTION_BYTES;
+): LinkedProgramImage => {
+	const baseProtoCount = systemImage.program.protos.length;
+	const systemCodeBytes = systemImage.program.code.length;
+	const cartCodeBytes = cartImage.program.code.length;
+	const systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;
 	const cartInstructionCount = cartCodeBytes / INSTRUCTION_BYTES;
-	const resolvedLayout = resolveProgramLayout(engineCodeBytes, layout);
-	const cartCode = cartAsset.program.code.slice();
+	const resolvedLayout = resolveProgramLayout(systemCodeBytes, layout);
+	const cartCode = cartImage.program.code.slice();
 	rewriteClosureIndices(cartCode, baseProtoCount);
-	const mergedConsts = mergeConstPools(engineAsset.program.constPool, cartAsset.program.constPool);
-	const engineMetadata = engineSymbols?.metadata;
+	const mergedConsts = mergeConstPools(systemImage.program.constPool, cartImage.program.constPool);
+	const systemMetadata = systemSymbols?.metadata;
 	const cartMetadata = cartSymbols?.metadata;
 
 	// If the cart contains any 'module' const-relocs we must have full symbol metadata
-	// available from both engine and cart so module export slot names (in global/system
+	// available from both system and cart so module export slot names (in global/system
 	// name tables) can be resolved. Do not silently default to empty lists in that case;
 	// surface a clear diagnostic so the caller can fix the pipeline (compiler/rompacker)
 	// instead of letting the linker fabricate names.
-	const hasModuleRelocs = cartAsset.link.constRelocs.some(r => r.kind === 'module');
+	const hasModuleRelocs = cartImage.link.constRelocs.some(r => r.kind === 'module');
 	if (hasModuleRelocs) {
-		if (!engineMetadata || !cartMetadata) {
-			throw new Error('[ProgramLinker] Missing program symbols metadata required to resolve module relocations. Provide both engineSymbols and cartSymbols with metadata when linking a cart that contains module placeholders.');
+		if (!systemMetadata || !cartMetadata) {
+			throw new Error('[ProgramLinker] Missing program symbols metadata required to resolve module relocations. Provide both systemSymbols and cartSymbols with metadata when linking a cart that contains module placeholders.');
 		}
-		if (!Array.isArray(engineMetadata.systemGlobalNames) || !Array.isArray(cartMetadata.systemGlobalNames) || !Array.isArray(engineMetadata.globalNames) || !Array.isArray(cartMetadata.globalNames)) {
-			throw new Error('[ProgramLinker] Incomplete program symbols metadata: expected globalNames and systemGlobalNames arrays in both engine and cart symbols.');
+		if (!Array.isArray(systemMetadata.systemGlobalNames) || !Array.isArray(cartMetadata.systemGlobalNames) || !Array.isArray(systemMetadata.globalNames) || !Array.isArray(cartMetadata.globalNames)) {
+			throw new Error('[ProgramLinker] Incomplete program symbols metadata: expected globalNames and systemGlobalNames arrays in both system and cart symbols.');
 		}
 	}
 
 	const mergedSystemGlobals = hasModuleRelocs
-		? mergeNamedSlots(engineMetadata!.systemGlobalNames, cartMetadata!.systemGlobalNames)
-		: mergeNamedSlots(engineMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES);
+		? mergeNamedSlots(systemMetadata!.systemGlobalNames, cartMetadata!.systemGlobalNames)
+		: mergeNamedSlots(systemMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.systemGlobalNames ?? EMPTY_SLOT_NAMES);
 	const mergedGlobals = hasModuleRelocs
-		? mergeNamedSlots(engineMetadata!.globalNames, cartMetadata!.globalNames)
-		: mergeNamedSlots(engineMetadata?.globalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.globalNames ?? EMPTY_SLOT_NAMES);
+		? mergeNamedSlots(systemMetadata!.globalNames, cartMetadata!.globalNames)
+		: mergeNamedSlots(systemMetadata?.globalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.globalNames ?? EMPTY_SLOT_NAMES);
 	rewriteConstRelocations(
 		cartCode,
-		cartAsset.link.constRelocs,
+		cartImage.link.constRelocs,
 		mergedConsts.cartConstRemap,
 		mergedGlobals.cartRemap,
 		mergedSystemGlobals.cartRemap,
@@ -518,15 +502,34 @@ export const linkProgramAssets = (
 		mergedSystemGlobals.names,
 	);
 
-	const protos = engineAsset.program.protos.map(proto => cloneProto(proto, resolvedLayout.engineBasePc))
-		.concat(cartAsset.program.protos.map(proto => cloneProto(proto, resolvedLayout.cartBasePc)));
+	const protos: Proto[] = [];
+	for (const proto of systemImage.program.protos) {
+		protos.push({
+			entryPC: proto.entryPC + resolvedLayout.systemBasePc,
+			codeLen: proto.codeLen,
+			numParams: proto.numParams,
+			isVararg: proto.isVararg,
+			maxStack: proto.maxStack,
+			upvalueDescs: proto.upvalueDescs,
+		});
+	}
+	for (const proto of cartImage.program.protos) {
+		protos.push({
+			entryPC: proto.entryPC + resolvedLayout.cartBasePc,
+			codeLen: proto.codeLen,
+			numParams: proto.numParams,
+			isVararg: proto.isVararg,
+			maxStack: proto.maxStack,
+			upvalueDescs: proto.upvalueDescs,
+		});
+	}
 
 	const totalBytes = Math.max(
-		resolvedLayout.engineBasePc + engineCodeBytes,
+		resolvedLayout.systemBasePc + systemCodeBytes,
 		resolvedLayout.cartBasePc + cartCodeBytes,
 	);
 	const code = new Uint8Array(totalBytes);
-	code.set(engineAsset.program.code, resolvedLayout.engineBasePc);
+	code.set(systemImage.program.code, resolvedLayout.systemBasePc);
 	code.set(cartCode, resolvedLayout.cartBasePc);
 
 	const program: EncodedProgram = {
@@ -536,29 +539,27 @@ export const linkProgramAssets = (
 	};
 
 	const moduleProtos: Array<{ path: string; protoIndex: number }> = [];
-	for (const entry of cartAsset.moduleProtos ?? []) {
+	for (const entry of cartImage.moduleProtos ?? []) {
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex + baseProtoCount });
 	}
-	for (const entry of engineAsset.moduleProtos ?? []) {
+	for (const entry of systemImage.moduleProtos ?? []) {
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex });
 	}
-	const moduleAliases = (cartAsset.moduleAliases ?? []).concat(engineAsset.moduleAliases ?? []);
-	const staticModulePaths = (engineAsset.staticModulePaths ?? []).concat(cartAsset.staticModulePaths ?? []);
-	const entryProtoIndex = cartAsset.entryProtoIndex + baseProtoCount;
+	const staticModulePaths = (systemImage.staticModulePaths ?? []).concat(cartImage.staticModulePaths ?? []);
+	const entryProtoIndex = cartImage.entryProtoIndex + baseProtoCount;
 	const metadata = mergeMetadata(
-		engineMetadata,
+		systemMetadata,
 		cartMetadata,
 		resolvedLayout,
-		engineInstructionCount,
+		systemInstructionCount,
 		cartInstructionCount,
 	);
 
 	return {
-		programAsset: {
+		programImage: {
 			entryProtoIndex,
 			program,
 			moduleProtos,
-			moduleAliases,
 			staticModulePaths,
 			link: { constRelocs: [] },
 		},

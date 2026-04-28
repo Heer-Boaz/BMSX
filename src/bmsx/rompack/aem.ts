@@ -56,16 +56,16 @@ type ModulationParams = {
 	filter?: AudioFilterParams;
 };
 
-export type AemValidationDataAsset = {
+export type AemValidationDataRecord = {
 	name: string;
 	value: unknown;
 };
 
 export type AemValidationLookup = {
 	audioIds: ReadonlySet<string>;
-	dataAssetNames: ReadonlySet<string>;
+	dataRecordNames: ReadonlySet<string>;
 	dataQualifiedKeys: ReadonlySet<string>;
-	dataAssetValues: Readonly<Record<string, unknown>>;
+	dataRecordValues: Readonly<Record<string, unknown>>;
 };
 
 export type AemValidationResult = {
@@ -134,7 +134,7 @@ function checkUnknownKeys(
 
 export function buildAemValidationLookup(params: {
 	audioIds: Iterable<string>;
-	dataAssets: Iterable<AemValidationDataAsset>;
+	dataRecords: Iterable<AemValidationDataRecord>;
 	keyDepth?: number;
 }): AemValidationLookup {
 	const audioIds = new Set<string>();
@@ -143,26 +143,26 @@ export function buildAemValidationLookup(params: {
 			audioIds.add(audioId);
 		}
 	}
-	const dataAssetNames = new Set<string>();
+	const dataRecordNames = new Set<string>();
 	const dataQualifiedKeys = new Set<string>();
-	const dataAssetValues: Record<string, unknown> = {};
+	const dataRecordValues: Record<string, unknown> = {};
 	const keyDepth = params.keyDepth ?? 3;
-	for (const asset of params.dataAssets) {
-		if (typeof asset.name !== 'string' || asset.name.length === 0) {
+	for (const record of params.dataRecords) {
+		if (typeof record.name !== 'string' || record.name.length === 0) {
 			continue;
 		}
-		dataAssetNames.add(asset.name);
-		dataAssetValues[asset.name] = asset.value;
-		if (!asset.value || typeof asset.value !== 'object' || Array.isArray(asset.value)) {
+		dataRecordNames.add(record.name);
+		dataRecordValues[record.name] = record.value;
+		if (!record.value || typeof record.value !== 'object' || Array.isArray(record.value)) {
 			continue;
 		}
-		collectQualifiedKeys(asset.value as Record<string, unknown>, asset.name, keyDepth, dataQualifiedKeys);
+		collectQualifiedKeys(record.value as Record<string, unknown>, record.name, keyDepth, dataQualifiedKeys);
 	}
 	return {
 		audioIds,
-		dataAssetNames,
+		dataRecordNames,
 		dataQualifiedKeys,
-		dataAssetValues,
+		dataRecordValues,
 	};
 }
 
@@ -337,7 +337,7 @@ function resolveDataPath(lookup: AemValidationLookup, path: string): unknown {
 			return undefined;
 		}
 	}
-	let cursor = lookup.dataAssetValues[segments[0]!];
+	let cursor = lookup.dataRecordValues[segments[0]!];
 	for (let index = 1; index < segments.length; index += 1) {
 		if (!cursor || typeof cursor !== 'object' || Array.isArray(cursor)) {
 			return undefined;
@@ -390,7 +390,7 @@ function checkAction(
 						hint = ` (did you mean ${matches.join(', ')}?)`;
 					}
 				}
-				errors.push(`Unknown data asset or key for modulation_preset '${value}' at ${where}${hint}`);
+				errors.push(`Unknown data record or key for modulation_preset '${value}' at ${where}${hint}`);
 			} else {
 				checkModulationParams(preset, `${where}.modulation_preset(${value})`, errors);
 			}

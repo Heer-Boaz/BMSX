@@ -18,7 +18,7 @@ struct RuntimeSaveState {
 	bool pendingEntryCall = false;
 	bool runtimeFailed = false;
 	bool luaInitialized = false;
-	bool engineProgramActive = false;
+	bool systemProgramActive = false;
 };
 
 RuntimeSaveState captureRuntimeSaveState(Runtime& runtime);

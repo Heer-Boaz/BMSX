@@ -7,7 +7,8 @@ import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../src/bmsx/core/sys
 import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
-import { appendProgramAsset, buildLuaProgramContextAssets, commonResPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, normalizeWorkspacePath, setAtlasFlag } from './rombuilder';
+import { appendProgramImage, buildLuaProgramContextAssets, commonResPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, normalizeWorkspacePath, setAtlasFlag } from './rombuilder';
+import { generateHostSystemAtlasArtifactsFromAssets } from './host_system_atlas';
 import type { RomPackerOptions } from './rompacker.rompack';
 import type { RomAsset } from '../../src/bmsx/rompack/format';
 import { LuaError } from '../../src/bmsx/lua/errors';
@@ -564,7 +565,8 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	}
 	validateAudioEventReferences(BIOSResources);
 	const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
-	const BIOSProgramBoot = appendProgramAsset(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: true, optLevel });
+	await generateHostSystemAtlasArtifactsFromAssets(BIOSRomAssets);
+	const BIOSProgramBoot = appendProgramImage(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: true, optLevel });
 	stripLuaAssets(BIOSRomAssets, debug);
 	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot }));
 	if (progress) {
@@ -709,7 +711,7 @@ async function main() {
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
 			const biosProgramContextAssets = await buildLuaProgramContextAssets(commonResPath, normalizeWorkspacePath(join(commonResPath, '..')));
-			const programBoot = appendProgramAsset(romAssets, romManifest.lua.entry_path, { includeSymbols: true, optLevel, externalLuaAssets: biosProgramContextAssets });
+			const programBoot = appendProgramImage(romAssets, romManifest.lua.entry_path, { includeSymbols: true, optLevel, externalLuaAssets: biosProgramContextAssets });
 			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
 			if (!isBIOSMode) {

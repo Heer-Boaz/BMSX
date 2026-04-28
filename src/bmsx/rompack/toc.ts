@@ -8,7 +8,7 @@ export const ROM_TOC_INVALID_U32 = 0xffffffff;
 const utf8Decoder = new TextDecoder();
 
 export type RomTocPayload = {
-	assets: RomAsset[];
+	entries: RomAsset[];
 	projectRootPath: string | null;
 };
 
@@ -77,17 +77,17 @@ function decodeString(table: Uint8Array, offset: number, length: number, decoder
 	return decoder.decode(table.subarray(offset, offset + length));
 }
 
-export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: string | null; }): Uint8Array {
+export function encodeRomToc(params: { entries: RomAsset[]; projectRootPath?: string | null; }): Uint8Array {
 	const encoder = new TextEncoder();
 	const stringChunks: Uint8Array[] = [];
 	const stringIndex = new Map<string, StringRef>();
 	let stringTableLength = 0;
-	const assets = params.assets
-		.map((asset) => {
-		const token = (typeof asset.id_token_lo === 'number' && typeof asset.id_token_hi === 'number')
-			? { lo: asset.id_token_lo, hi: asset.id_token_hi }
-			: hashAssetId(asset.resid);
-			return { asset, token };
+	const entries = params.entries
+		.map((entry) => {
+		const token = (typeof entry.id_token_lo === 'number' && typeof entry.id_token_hi === 'number')
+			? { lo: entry.id_token_lo, hi: entry.id_token_hi }
+			: hashAssetId(entry.resid);
+			return { entry, token };
 		})
 		.sort((a, b) => (a.token.hi - b.token.hi) || (a.token.lo - b.token.lo));
 
@@ -108,19 +108,19 @@ export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: str
 	};
 
 	const projectRootRef = intern(params.projectRootPath);
-	const entryBuffer = new Uint8Array(assets.length * ROM_TOC_ENTRY_SIZE);
+	const entryBuffer = new Uint8Array(entries.length * ROM_TOC_ENTRY_SIZE);
 	const entryView = new DataView(entryBuffer.buffer, entryBuffer.byteOffset, entryBuffer.byteLength);
 
-	for (let i = 0; i < assets.length; i += 1) {
-		const { asset, token } = assets[i];
+	for (let i = 0; i < entries.length; i += 1) {
+		const { entry, token } = entries[i];
 		const base = i * ROM_TOC_ENTRY_SIZE;
-		const typeId = assetTypeToId(asset.type);
-		const opId = asset.op === 'delete' ? 1 : 0;
-		const residRef = intern(asset.resid);
-		const sourceRef = intern(asset.source_path);
-		const normalizedRef = intern(asset.normalized_source_path);
+		const typeId = assetTypeToId(entry.type);
+		const opId = entry.op === 'delete' ? 1 : 0;
+		const residRef = intern(entry.resid);
+		const sourceRef = intern(entry.source_path);
+		const normalizedRef = intern(entry.normalized_source_path);
 
-		const updateTimestamp = typeof asset.update_timestamp === 'number' ? Math.floor(asset.update_timestamp) : 0;
+		const updateTimestamp = typeof entry.update_timestamp === 'number' ? Math.floor(entry.update_timestamp) : 0;
 		const updateLo = updateTimestamp >>> 0;
 		const updateHi = Math.floor(updateTimestamp / 0x100000000) >>> 0;
 
@@ -134,16 +134,16 @@ export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: str
 		writeU32(entryView, base + 28, sourceRef.length);
 		writeU32(entryView, base + 32, normalizedRef.offset);
 		writeU32(entryView, base + 36, normalizedRef.length);
-		writeU32(entryView, base + 40, asU32(asset.start));
-		writeU32(entryView, base + 44, asU32(asset.end));
-		writeU32(entryView, base + 48, asU32(asset.compiled_start));
-		writeU32(entryView, base + 52, asU32(asset.compiled_end));
-		writeU32(entryView, base + 56, asU32(asset.metabuffer_start));
-		writeU32(entryView, base + 60, asU32(asset.metabuffer_end));
-		writeU32(entryView, base + 64, asU32(asset.texture_start));
-		writeU32(entryView, base + 68, asU32(asset.texture_end));
-		writeU32(entryView, base + 72, asU32(asset.collision_bin_start));
-		writeU32(entryView, base + 76, asU32(asset.collision_bin_end));
+		writeU32(entryView, base + 40, asU32(entry.start));
+		writeU32(entryView, base + 44, asU32(entry.end));
+		writeU32(entryView, base + 48, asU32(entry.compiled_start));
+		writeU32(entryView, base + 52, asU32(entry.compiled_end));
+		writeU32(entryView, base + 56, asU32(entry.metabuffer_start));
+		writeU32(entryView, base + 60, asU32(entry.metabuffer_end));
+		writeU32(entryView, base + 64, asU32(entry.texture_start));
+		writeU32(entryView, base + 68, asU32(entry.texture_end));
+		writeU32(entryView, base + 72, asU32(entry.collision_bin_start));
+		writeU32(entryView, base + 76, asU32(entry.collision_bin_end));
 		writeU32(entryView, base + 80, updateLo);
 		writeU32(entryView, base + 84, updateHi);
 	}
@@ -157,7 +157,7 @@ export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: str
 	writeU32(headerView, 0, ROM_TOC_MAGIC);
 	writeU32(headerView, 4, ROM_TOC_HEADER_SIZE);
 	writeU32(headerView, 8, ROM_TOC_ENTRY_SIZE);
-	writeU32(headerView, 12, assets.length);
+	writeU32(headerView, 12, entries.length);
 	writeU32(headerView, 16, ROM_TOC_HEADER_SIZE);
 	writeU32(headerView, 20, stringTableOffset);
 	writeU32(headerView, 24, stringTable.byteLength);
@@ -205,7 +205,7 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 	const stringTable = buffer.subarray(stringTableOffset, stringTableOffset + stringTableLength);
 	const projectRootPath = decodeString(stringTable, projectRootOffset, projectRootLength, utf8Decoder);
 
-	const assets: RomAsset[] = [];
+	const entries: RomAsset[] = [];
 	for (let i = 0; i < entryCount; i += 1) {
 		const base = entryOffset + i * entrySize;
 		const tokenLo = view.getUint32(base + 0, true);
@@ -236,38 +236,38 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		if (!resid) {
 			throw new Error('ROM TOC entry is missing resid.');
 		}
-		const asset: RomAsset = {
+		const entry: RomAsset = {
 			resid,
 			type: assetTypeFromId(typeId),
 			id_token_lo: tokenLo,
 			id_token_hi: tokenHi,
 		};
 		if (opId === 1) {
-			asset.op = 'delete';
+			entry.op = 'delete';
 		}
 		const sourcePath = decodeString(stringTable, sourceOffset, sourceLength, utf8Decoder);
 		const normalizedSourcePath = decodeString(stringTable, normalizedOffset, normalizedLength, utf8Decoder);
-		if (sourcePath) asset.source_path = sourcePath;
-		if (normalizedSourcePath) asset.normalized_source_path = normalizedSourcePath;
+		if (sourcePath) entry.source_path = sourcePath;
+		if (normalizedSourcePath) entry.normalized_source_path = normalizedSourcePath;
 
-		if (start !== ROM_TOC_INVALID_U32) asset.start = start;
-		if (end !== ROM_TOC_INVALID_U32) asset.end = end;
-		if (compiledStart !== ROM_TOC_INVALID_U32) asset.compiled_start = compiledStart;
-		if (compiledEnd !== ROM_TOC_INVALID_U32) asset.compiled_end = compiledEnd;
-		if (metaStart !== ROM_TOC_INVALID_U32) asset.metabuffer_start = metaStart;
-		if (metaEnd !== ROM_TOC_INVALID_U32) asset.metabuffer_end = metaEnd;
-		if (textureStart !== ROM_TOC_INVALID_U32) asset.texture_start = textureStart;
-		if (textureEnd !== ROM_TOC_INVALID_U32) asset.texture_end = textureEnd;
-		if (collisionBinStart !== ROM_TOC_INVALID_U32) asset.collision_bin_start = collisionBinStart;
-		if (collisionBinEnd !== ROM_TOC_INVALID_U32) asset.collision_bin_end = collisionBinEnd;
+		if (start !== ROM_TOC_INVALID_U32) entry.start = start;
+		if (end !== ROM_TOC_INVALID_U32) entry.end = end;
+		if (compiledStart !== ROM_TOC_INVALID_U32) entry.compiled_start = compiledStart;
+		if (compiledEnd !== ROM_TOC_INVALID_U32) entry.compiled_end = compiledEnd;
+		if (metaStart !== ROM_TOC_INVALID_U32) entry.metabuffer_start = metaStart;
+		if (metaEnd !== ROM_TOC_INVALID_U32) entry.metabuffer_end = metaEnd;
+		if (textureStart !== ROM_TOC_INVALID_U32) entry.texture_start = textureStart;
+		if (textureEnd !== ROM_TOC_INVALID_U32) entry.texture_end = textureEnd;
+		if (collisionBinStart !== ROM_TOC_INVALID_U32) entry.collision_bin_start = collisionBinStart;
+		if (collisionBinEnd !== ROM_TOC_INVALID_U32) entry.collision_bin_end = collisionBinEnd;
 
 		const updateTimestamp = (updateHi * 0x100000000) + updateLo;
 		if (updateTimestamp > 0) {
-			asset.update_timestamp = updateTimestamp;
+			entry.update_timestamp = updateTimestamp;
 		}
 
-		assets.push(asset);
+		entries.push(entry);
 	}
 
-	return { assets, projectRootPath };
+	return { entries, projectRootPath };
 }

@@ -1,5 +1,4 @@
 import { getTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
-import type { Memory } from '../memory/memory';
 import {
 	IO_REGION_SIZE,
 	STRING_HANDLE_COUNT,
@@ -10,7 +9,6 @@ import type { VDP } from '../devices/vdp/vdp';
 
 export class ResourceUsageDetector {
 	constructor(
-		private readonly memory: Memory,
 		private readonly stringHandles: StringHandleTable,
 		private readonly vdp: VDP,
 	) {
@@ -32,9 +30,7 @@ export class ResourceUsageDetector {
 	public getBaseRamUsedBytes(): number {
 		return IO_REGION_SIZE
 			+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
-			+ this.stringHandles.usedHeapBytes()
-			+ this.memory.getUsedAssetTableBytes()
-			+ this.memory.getUsedAssetDataBytes();
+			+ this.stringHandles.usedHeapBytes();
 	}
 
 	private computeTrackedRamUsedBytes(): number {

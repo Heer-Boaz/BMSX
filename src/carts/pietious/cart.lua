@@ -1,6 +1,6 @@
 local constants<const> = require('constants')
 local enemy_registry<const> = require('enemy/registry')
-local progression<const> = require('progression')
+local progression<const> = require('bios/progression')
 local pietious_font<const> = require('pietious_font')
 local player_module<const> = require('player/index')
 local room_module<const> = require('room/index')
@@ -24,7 +24,7 @@ local world_entrance_module<const> = require('world/entrance')
 local daemon_cloud_module<const> = require('daemon_cloud')
 local director_module<const> = require('director')
 local title_screen_module<const> = require('title_screen')
-local collision_profiles<const> = require('collision_profiles')
+local collision_profiles<const> = require('bios/collision_profiles')
 local castle_map<const> = require('castle/map')
 
 local init_epoch = 0

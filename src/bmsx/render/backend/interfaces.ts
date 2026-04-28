@@ -302,7 +302,7 @@ export interface ParticlePipelineState {
 	camUp: Float32Array;
 	textpagePrimaryTex?: TextureHandle;
 	textpageSecondaryTex?: TextureHandle;
-	textpageEngineTex?: TextureHandle;
+	systemSlotTex?: TextureHandle;
 }
 
 export type RenderingViewportType = 'viewport' | 'offscreen';

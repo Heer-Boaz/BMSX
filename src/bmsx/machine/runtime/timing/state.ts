@@ -1,4 +1,4 @@
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 import { HZ_SCALE } from '../../../platform/platform';
 import { resolveUfpsScaled } from './index';
 
@@ -23,7 +23,7 @@ export class TimingState {
 		this.ufpsScaled = resolveUfpsScaled(ufpsScaled);
 		this.ufps = this.ufpsScaled / HZ_SCALE;
 		this.frameDurationMs = 1000 / this.ufps;
-		engineCore.platform.audio.setFrameTimeSec(HZ_SCALE / this.ufpsScaled);
-		engineCore.sndmaster.setMixerFps(this.ufps);
+		consoleCore.platform.audio.setFrameTimeSec(HZ_SCALE / this.ufpsScaled);
+		consoleCore.sndmaster.setMixerFps(this.ufps);
 	}
 }

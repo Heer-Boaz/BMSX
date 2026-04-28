@@ -1,4 +1,4 @@
-import { engineCore } from '../../../../../core/engine';
+import { consoleCore } from '../../../../../core/console';
 import { point_in_rect } from '../../../../../common/rect';
 import { editorChromeState } from '../../../ui/chrome_state';
 import type { PointerSnapshot } from '../../../../common/models';
@@ -35,7 +35,7 @@ export function handleTabBarPointer(runtime: Runtime, snapshot: PointerSnapshot)
 	return false;
 }
 
-export function handleTabBarMiddleClick(runtime: Runtime, snapshot: PointerSnapshot, playerInput: ReturnType<typeof engineCore.input.getPlayerInput>): boolean {
+export function handleTabBarMiddleClick(runtime: Runtime, snapshot: PointerSnapshot, playerInput: ReturnType<typeof consoleCore.input.getPlayerInput>): boolean {
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
 	if (!point_in_rect(x, y, editorChromeState.tabBarBounds)) {

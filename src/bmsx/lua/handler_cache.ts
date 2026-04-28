@@ -97,14 +97,6 @@ export class LuaHandlerCache {
 		return this.byHandler.get(handler)?.current;
 	}
 
-	public listByModule(moduleId: string): ReadonlyArray<LuaHandlerFn> {
-		const bucket = this.byModule.get(moduleId);
-		if (!bucket) {
-			return [];
-		}
-		return Array.from(bucket.values(), record => record.handler);
-	}
-
 	public disposeByModule(moduleId: string): void {
 		this.unloadModule(moduleId);
 	}

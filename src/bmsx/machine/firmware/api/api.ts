@@ -1,12 +1,12 @@
 import { runGate } from '../../../core/taskgate';
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 import {
 	color,
 	MeshRenderSubmission,
 	ParticleRenderSubmission,
 } from '../../../render/shared/submissions';
 import { Font } from '../../../render/shared/bmsx_font';
-import { BFont, GlyphMap } from '../../../render/shared/bitmap_font';
+import { BFont, GlyphMap, RuntimeBitmapFontSource } from '../../../render/shared/bitmap_font';
 import { RuntimeStorage } from '../cart_storage';
 import type { vec3arr } from '../../../rompack/format';
 import { taskGate, GateGroup } from '../../../core/taskgate';
@@ -18,6 +18,7 @@ import { setSpriteParallaxRig, submitMesh, submit_particle } from '../../../rend
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../builtin_descriptors';
 import { createLuaTable, type LuaTable } from '../../../lua/value';
 import { BmsxColors } from '../../devices/vdp/vdp';
+import type { VdpSlotSource } from '../../devices/vdp/contracts';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;
@@ -87,7 +88,7 @@ export class Api {
 
 	private getDefaultFont(): BFont {
 		if (this.defaultFont === null) {
-			this.defaultFont = new Font(this.runtime);
+			this.defaultFont = new Font();
 			this.registerFont(this.defaultFont);
 		}
 		return this.defaultFont;
@@ -128,11 +129,11 @@ export class Api {
 	}
 
 	public display_width(): number {
-		return engineCore.view.viewportSize.x;
+		return consoleCore.view.viewportSize.x;
 	}
 
 	public display_height(): number {
-		return engineCore.view.viewportSize.y;
+		return consoleCore.view.viewportSize.y;
 	}
 
 	public put_mesh(mesh: MeshRenderSubmission['mesh'], matrix: MeshRenderSubmission['matrix'], options?: Omit<MeshRenderSubmission, 'mesh' | 'matrix'>): void {
@@ -169,8 +170,8 @@ export class Api {
 		setHardwareCamera(viewMat, projMat, eyeVec[0], eyeVec[1], eyeVec[2]);
 	}
 
-	public skybox(posx: string, negx: string, posy: string, negy: string, posz: string, negz: string): void {
-		this.runtime.machine.vdp.setSkyboxImages({ posx, negx, posy, negy, posz, negz });
+	public skybox(posx: VdpSlotSource, negx: VdpSlotSource, posy: VdpSlotSource, negy: VdpSlotSource, posz: VdpSlotSource, negz: VdpSlotSource): void {
+		this.runtime.machine.vdp.setSkyboxSources({ posx, negx, posy, negy, posz, negz });
 	}
 
 	public put_ambient_light(id: string, colorvalue: number | color | vec3arr | number[], intensity: number): void {
@@ -234,7 +235,7 @@ export class Api {
 			const glyphValue = entry[1];
 			glyphMap[glyphKey] = glyphValue;
 		}
-		const font = new BFont(this.runtime, glyphMap, definition.advance_padding);
+		const font = new BFont(new RuntimeBitmapFontSource(this.runtime), glyphMap, definition.advance_padding);
 		return this.buildFontDescriptor(font);
 	}
 

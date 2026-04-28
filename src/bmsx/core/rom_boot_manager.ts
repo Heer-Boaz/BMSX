@@ -1,27 +1,27 @@
 import { shallowcopy } from '../common/shallowcopy';
 import {
-	buildSystemRuntimeAssetLayer,
+	buildSystemRuntimeRomLayer,
 	normalizeCartridgeBlob,
 	parseCartridgeIndex,
 } from '../rompack/loader';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
 
-export type RuntimeAssetLayer = Awaited<ReturnType<typeof buildSystemRuntimeAssetLayer>>;
+export type RuntimeRomLayer = Awaited<ReturnType<typeof buildSystemRuntimeRomLayer>>;
 
 export type RomBootPlan = {
-	engineLayer: RuntimeAssetLayer;
+	systemLayer: RuntimeRomLayer;
 	viewportSize: { x: number; y: number };
 };
 
 export class RomBootManager {
-	public async buildBootPlan(options: { engineRom: Uint8Array; cartridge?: Uint8Array }): Promise<RomBootPlan> {
-		const engineLayer = await buildSystemRuntimeAssetLayer({
-			blob: options.engineRom,
+	public async buildBootPlan(options: { systemRom: Uint8Array; cartridge?: Uint8Array }): Promise<RomBootPlan> {
+		const systemLayer = await buildSystemRuntimeRomLayer({
+			blob: options.systemRom,
 			machine: SYSTEM_MACHINE_MANIFEST,
 			entry_path: SYSTEM_BOOT_ENTRY_PATH,
 		});
 
-		let viewport = engineLayer.index.machine.render_size;
+		let viewport = systemLayer.index.machine.render_size;
 		if (options.cartridge) {
 			const cartNormalized = normalizeCartridgeBlob(options.cartridge);
 			const cartIndex = await parseCartridgeIndex(cartNormalized.payload);
@@ -30,7 +30,7 @@ export class RomBootManager {
 
 		const viewportInput = shallowcopy(viewport) as { width?: number; height?: number;};
 		return {
-			engineLayer,
+			systemLayer,
 			viewportSize: {
 				x: viewportInput.width!,
 				y: viewportInput.height!,

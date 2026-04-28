@@ -1391,11 +1391,7 @@ export function listLuaSymbols(runtime: Runtime, path: string): LuaSymbolEntry[]
 }
 
 export function listLuaModuleSymbols(runtime: Runtime, moduleName: string): LuaSymbolEntry[] {
-	const path = runtime.moduleAliases.get(moduleName);
-	if (!path) {
-		return [];
-	}
-	return listLuaSymbols(runtime, path);
+	return listLuaSymbols(runtime, moduleName);
 }
 
 export function listLuaBuiltinFunctions(runtime: Runtime): LuaBuiltinDescriptor[] {
@@ -1576,9 +1572,9 @@ export function getStaticDefinitions(runtime: Runtime, preferredChunk: string): 
 	const matchingChunks: Array<{ path: string; info: { asset_id: string; path?: string } }> = [];
 	const luaSources = runtime.cartLuaSources ? runtime.cartLuaSources : runtime.activeLuaSources;
 	for (const asset of Object.values(luaSources.path2lua) as LuaSourceRecord[]) {
-		const path = asset.source_path;
+		const path = asset.module_path;
 		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.source_path };
-		const matchesPath = preferredChunk !== null && info.path === preferredChunk;
+		const matchesPath = preferredChunk !== null && (info.path === preferredChunk || asset.module_path === preferredChunk);
 		const matchesChunk = preferredChunk !== null && path === preferredChunk;
 		if (!matchesPath && !matchesChunk) {
 			continue;
@@ -1863,7 +1859,7 @@ function resolveRuntimeLocalChainValue(
 	const requestedRecord = resolveLuaSourceRecordFromRegistries(path, [
 		runtime.activeLuaSources,
 		runtime.cartLuaSources,
-		runtime.engineLuaSources,
+		runtime.systemLuaSources,
 	]);
 	const requestedPath = requestedRecord ? requestedRecord.source_path : path;
 	const cpu = runtime.machine.cpu;

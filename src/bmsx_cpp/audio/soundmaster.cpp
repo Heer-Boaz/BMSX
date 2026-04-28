@@ -5,7 +5,7 @@
  */
 
 #include "soundmaster.h"
-#include "core/engine.h"
+#include "core/console.h"
 #include "../machine/cpu/cpu.h"
 #include "../machine/runtime/runtime.h"
 #include <algorithm>
@@ -382,8 +382,8 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 			VoiceRecord& record = m_voices[i];
 			const u8* data = record.data;
 			const int channels = record.channels;
-			const size_t framesInAsset = record.frames;
-			if (framesInAsset == 0) {
+			const size_t framesInRecord = record.frames;
+			if (framesInRecord == 0) {
 				removeVoice(i);
 				continue;
 			}
@@ -398,10 +398,10 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 			};
 
 			const f64 loopStart = record.loopStartFrame.value_or(0.0);
-				const f64 loopEnd = record.loopEndFrame.value_or(static_cast<f64>(framesInAsset));
+				const f64 loopEnd = record.loopEndFrame.value_or(static_cast<f64>(framesInRecord));
 				const bool hasLoop = record.loopStartFrame.has_value() && loopEnd > loopStart;
 				const f64 loopLen = loopEnd - loopStart;
-				const f64 framesInAssetF = static_cast<f64>(framesInAsset);
+				const f64 framesInRecordF = static_cast<f64>(framesInRecord);
 
 			const f64 step = record.step * (static_cast<f64>(record.sampleRate) * invOutputRate);
 
@@ -459,7 +459,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 								position += loopLen;
 							}
 						}
-					} else if (position >= framesInAssetF) {
+					} else if (position >= framesInRecordF) {
 						ended = true;
 						break;
 					}
@@ -471,7 +471,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 						i64 idx1 = idx + 1;
 						if (hasLoop) {
 							idx1 = wrappedAudioIndex(idx1, loopStart, loopEnd);
-						} else if (static_cast<size_t>(idx1) >= framesInAsset) {
+						} else if (static_cast<size_t>(idx1) >= framesInRecord) {
 							idx1 = idx;
 						}
 						const size_t nextIndex = static_cast<size_t>(idx1);
@@ -521,7 +521,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 								break;
 							}
 						}
-						if (!hasLoop && posIndex >= framesInAsset) {
+						if (!hasLoop && posIndex >= framesInRecord) {
 							ended = true;
 							break;
 						}
@@ -548,7 +548,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 								break;
 							}
 						}
-						if (!hasLoop && posIndex >= framesInAsset) {
+						if (!hasLoop && posIndex >= framesInRecord) {
 							ended = true;
 							break;
 						}
@@ -601,7 +601,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 									ended = true;
 									break;
 								}
-							if (position >= framesInAssetF) {
+							if (position >= framesInRecordF) {
 								ended = true;
 								break;
 							}
@@ -613,7 +613,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 							const f32 s0 = static_cast<f32>(readSample(idx0)) * sampleScale;
 							f32 s1 = 0.0f;
 							const size_t idx1 = idx0 + 1;
-							if (idx1 < framesInAsset) {
+							if (idx1 < framesInRecord) {
 								s1 = static_cast<f32>(readSample(idx1)) * sampleScale;
 							}
 								const f32 sample = lerpAudioSample(s0, s1, frac);
@@ -653,7 +653,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 									ended = true;
 									break;
 								}
-							if (position >= framesInAssetF) {
+							if (position >= framesInRecordF) {
 								ended = true;
 								break;
 							}
@@ -668,7 +668,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 							f32 left1 = 0.0f;
 							f32 right1 = 0.0f;
 							const size_t idx1 = idx0 + 1;
-							if (idx1 < framesInAsset) {
+							if (idx1 < framesInRecord) {
 								const size_t base1 = idx1 * static_cast<size_t>(channels);
 								left1 = static_cast<f32>(readSample(base1)) * sampleScale;
 								right1 = static_cast<f32>(readSample(base1 + 1)) * sampleScale;
@@ -933,8 +933,8 @@ VoiceId SoundMaster::startVoiceFromData(AudioSlot slot,
 	record.startedAt = m_audioTimeSec;
 	record.data = audioData;
 	record.usesBadp = source.bitsPerSample == 4;
-	const size_t framesInAsset = record.frames;
-	const f64 durationSec = framesInAsset > 0 ? static_cast<f64>(framesInAsset) / static_cast<f64>(record.sampleRate) : 0.0;
+	const size_t framesInRecord = record.frames;
+	const f64 durationSec = framesInRecord > 0 ? static_cast<f64>(framesInRecord) / static_cast<f64>(record.sampleRate) : 0.0;
 	f64 offset = params.offset;
 	if (durationSec > 0.0) {
 		if (record.loopStartFrame.has_value()) {

@@ -2,9 +2,8 @@
 
 namespace bmsx {
 
-ResourceUsageDetector::ResourceUsageDetector(Memory& memory, StringHandleTable& stringHandles, VDP& vdp)
-	: m_memory(memory)
-	, m_stringHandles(stringHandles)
+ResourceUsageDetector::ResourceUsageDetector(StringHandleTable& stringHandles, VDP& vdp)
+	: m_stringHandles(stringHandles)
 	, m_vdp(vdp) {}
 
 }

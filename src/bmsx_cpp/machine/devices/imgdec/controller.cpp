@@ -7,10 +7,8 @@
 #include "machine/memory/memory.h"
 #include "machine/scheduler/budget.h"
 #include "platform.h"
-#include "rompack/format.h"
 #include "vendor/stb_image.h"
 
-#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -30,6 +28,46 @@ inline std::runtime_error imageDecoderFault(const std::string& message) {
 
 constexpr uint32_t IMGDEC_SERVICE_BATCH_BYTES = 256u;
 
+}
+
+ImageCopyPlan ImgDecController::planImageCopy(const ImageDecodeTarget& target, const DecodedImage& result, uint32_t capacityLimit) {
+	const uint32_t capacity = capacityLimit < target.capacity ? capacityLimit : target.capacity;
+	const uint32_t sourceWidth = result.width;
+	const uint32_t sourceHeight = result.height;
+	const uint32_t sourceStride = sourceWidth * 4u;
+	const uint32_t maxPixels = capacity >> 2u;
+	uint32_t writeWidth = sourceWidth;
+	uint32_t writeHeight = sourceHeight;
+	if (sourceStride == 0u || sourceHeight == 0u || maxPixels == 0u) {
+		writeWidth = 0u;
+		writeHeight = 0u;
+	} else {
+		const uint32_t maxRowsByPixels = static_cast<uint32_t>(result.pixels.size() / sourceStride);
+		if (sourceWidth > maxPixels) {
+			writeWidth = maxPixels;
+			writeHeight = maxRowsByPixels > 0u ? 1u : 0u;
+		} else {
+			const uint32_t maxRowsByCapacity = capacity / sourceStride;
+			if (writeHeight > maxRowsByCapacity) {
+				writeHeight = maxRowsByCapacity;
+			}
+			if (writeHeight > maxRowsByPixels) {
+				writeHeight = maxRowsByPixels;
+			}
+		}
+	}
+	const uint32_t writeStride = writeWidth * 4u;
+	const size_t writeLen = static_cast<size_t>(writeStride) * static_cast<size_t>(writeHeight);
+	ImageCopyPlan plan;
+	plan.baseAddr = target.baseAddr;
+	plan.writeWidth = writeWidth;
+	plan.writeHeight = writeHeight;
+	plan.writeStride = writeStride;
+	plan.targetStride = writeStride;
+	plan.sourceStride = sourceStride;
+	plan.writeLen = writeLen;
+	plan.clipped = writeWidth != sourceWidth || writeHeight != sourceHeight;
+	return plan;
 }
 
 ImgDecController::ImgDecController(
@@ -83,16 +121,6 @@ uint32_t ImgDecController::getPendingDecodeBytes() const {
 	return static_cast<uint32_t>(m_decodeRemaining);
 }
 
-// disable-next-line single_line_method_pattern -- external image-write slots stay owned behind ImgDecController's public device API.
-void ImgDecController::registerExternalSlot(uint32_t baseAddr, Memory::ImageWriteEntry* entry) {
-	m_externalSlots[baseAddr] = entry;
-}
-
-// disable-next-line single_line_method_pattern -- VDP reset clears image-write slots through the image decoder owner.
-void ImgDecController::clearExternalSlots() {
-	m_externalSlots.clear();
-}
-
 void ImgDecController::decodeToVram(
 	std::vector<uint8_t>&& buffer,
 	uint32_t dst,
@@ -118,11 +146,11 @@ void ImgDecController::reset() {
 	m_status = 0;
 	m_pendingError = nullptr;
 	m_pendingResult.reset();
-	m_pendingEntry.reset();
+	m_pendingTarget.reset();
 	m_pendingCap = 0;
 	m_decodeActive = false;
 	m_decodeRemaining = 0;
-	m_decodePlan = Memory::ImageWritePlan{};
+	m_decodePlan = ImageCopyPlan{};
 	m_decodePixels.clear();
 	m_decodeQueued = false;
 	m_decodeWidth = 0;
@@ -183,12 +211,12 @@ void ImgDecController::onService(int64_t nowCycles) {
 		scheduleNextService(nowCycles);
 		return;
 	}
-	if (m_pendingResult && m_pendingEntry) {
+	if (m_pendingResult && m_pendingTarget) {
 		auto result = std::move(*m_pendingResult);
 		m_pendingResult.reset();
-		auto entry = *m_pendingEntry;
-		m_pendingEntry.reset();
-		beginDecode(std::move(result), entry);
+		const auto target = *m_pendingTarget;
+		m_pendingTarget.reset();
+		beginDecode(std::move(result), target);
 	}
 	if (m_decodeActive && m_availableDecodeBytes > 0u) {
 		advanceDecode();
@@ -213,7 +241,7 @@ void ImgDecController::tryStartQueued() {
 void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, std::optional<ImgDecJob> job, bool signalIrq) {
 	m_pendingResult.reset();
 	m_pendingError = nullptr;
-	m_pendingEntry.reset();
+	m_pendingTarget.reset();
 	m_signalIrq = signalIrq;
 	m_status = IMG_STATUS_BUSY;
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
@@ -228,15 +256,14 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 		m_activeJob.reset();
 	}
 
-	ImgDecEntry entry;
+	ImageDecodeTarget target;
 	try {
-		entry = resolveSlotEntry(dst);
+		target = resolveDecodeTarget(dst);
 	} catch (...) {
 		finishError(std::current_exception());
 		return;
 	}
-	const uint32_t entryCap = entry.isAsset ? entry.asset->capacity : entry.external->capacity;
-	const uint32_t effectiveCap = std::min(cap, entryCap);
+	const uint32_t effectiveCap = cap < target.capacity ? cap : target.capacity;
 	if (effectiveCap == 0) {
 		finishError(std::make_exception_ptr(imageDecoderFault("invalid destination capacity.")));
 		return;
@@ -245,7 +272,7 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 	m_active = true;
 	m_decodeActive = false;
 	m_decodeRemaining = 0;
-	m_decodePlan = Memory::ImageWritePlan{};
+	m_decodePlan = ImageCopyPlan{};
 	m_decodePixels.clear();
 	m_decodeQueued = false;
 	m_decodeWidth = 0;
@@ -257,7 +284,7 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 	const uint64_t token = m_decodeToken + 1;
 	m_decodeToken = token;
 	m_gateToken = m_gate.begin(scope);
-	m_microtasks.queueMicrotask([this, entry, token, buffer = std::move(buffer)]() mutable {
+	m_microtasks.queueMicrotask([this, target, token, buffer = std::move(buffer)]() mutable {
 		try {
 			int width = 0;
 			int height = 0;
@@ -286,7 +313,7 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 			stbi_image_free(pixels);
 			if (token == m_decodeToken) {
 				m_pendingResult = std::move(result);
-				m_pendingEntry = entry;
+				m_pendingTarget = target;
 				scheduleNextService(m_scheduler.currentNowCycles());
 			}
 		} catch (...) {
@@ -300,44 +327,22 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 }
 // end fallible-boundary
 
-ImgDecController::ImgDecEntry ImgDecController::resolveSlotEntry(uint32_t dst) {
-	const auto externalIt = m_externalSlots.find(dst);
-	if (externalIt != m_externalSlots.end()) {
-		ImgDecEntry entry;
-		entry.isAsset = false;
-		entry.external = externalIt->second;
-		return entry;
+ImgDecController::ImageDecodeTarget ImgDecController::resolveDecodeTarget(uint32_t dst) {
+	if (dst == VRAM_PRIMARY_SLOT_BASE) {
+		return { VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE };
 	}
-	if (dst == VRAM_PRIMARY_TEXTPAGE_BASE) {
-		ImgDecEntry entry;
-		entry.isAsset = true;
-		entry.asset = &m_memory.getAssetEntry(TEXTPAGE_PRIMARY_SLOT_ID);
-		return entry;
+	if (dst == VRAM_SECONDARY_SLOT_BASE) {
+		return { VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE };
 	}
-	if (dst == VRAM_SECONDARY_TEXTPAGE_BASE) {
-		ImgDecEntry entry;
-		entry.isAsset = true;
-		entry.asset = &m_memory.getAssetEntry(TEXTPAGE_SECONDARY_SLOT_ID);
-		return entry;
-	}
-	if (dst == VRAM_SYSTEM_TEXTPAGE_BASE) {
-		ImgDecEntry entry;
-		entry.isAsset = true;
-		entry.asset = &m_memory.getAssetEntry(generateAtlasAssetId(BIOS_ATLAS_ID));
-		return entry;
+	if (dst == VRAM_SYSTEM_SLOT_BASE) {
+		return { VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE };
 	}
 	throw imageDecoderFault("unsupported destination address " + std::to_string(dst) + ".");
 }
 
-void ImgDecController::beginDecode(DecodedImage&& result, const ImgDecEntry& entry) {
-	const uint32_t cap = m_pendingCap;
+void ImgDecController::beginDecode(DecodedImage&& result, const ImageDecodeTarget& target) {
+	m_decodePlan = planImageCopy(target, result, m_pendingCap);
 	m_pendingCap = 0;
-	const size_t pixelBytes = result.pixels.size();
-	if (entry.isAsset) {
-		m_decodePlan = m_memory.planImageSlotWrite(*entry.asset, pixelBytes, result.width, result.height, cap);
-	} else {
-		m_decodePlan = m_memory.planImageWrite(*entry.external, pixelBytes, result.width, result.height, cap);
-	}
 	m_decodeWidth = result.width;
 	m_decodeHeight = result.height;
 	m_decodePixels = std::move(result.pixels);
@@ -437,7 +442,7 @@ void ImgDecController::scheduleNextService(int64_t nowCycles) {
 		m_scheduler.cancelDeviceService(DeviceServiceImg);
 		return;
 	}
-	if (m_pendingError || (m_pendingResult.has_value() && m_pendingEntry.has_value())) {
+	if (m_pendingError || (m_pendingResult.has_value() && m_pendingTarget.has_value())) {
 		m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles);
 		return;
 	}

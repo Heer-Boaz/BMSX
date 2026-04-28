@@ -53,6 +53,7 @@ public:
 	const CPU& cpu() const { return m_cpu; }
 	DeviceScheduler& scheduler() { return m_deviceScheduler; }
 	const DeviceScheduler& scheduler() const { return m_deviceScheduler; }
+	const VdpFrameBufferSize& frameBufferSize() const { return m_frameBufferSize; }
 	VDP& vdp() { return m_vdp; }
 	const VDP& vdp() const { return m_vdp; }
 	IrqController& irqController() { return m_irqController; }
@@ -82,6 +83,7 @@ public:
 
 private:
 	Memory m_memory;
+	VdpFrameBufferSize m_frameBufferSize;
 	StringHandleTable m_stringHandles;
 	CPU m_cpu;
 	DeviceScheduler m_deviceScheduler;

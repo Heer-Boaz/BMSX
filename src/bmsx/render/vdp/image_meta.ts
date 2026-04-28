@@ -1,6 +1,6 @@
-import { BIOS_ATLAS_ID, generateAtlasAssetId, type ImgMeta, type RuntimeAssets } from '../../rompack/format';
-import type { RuntimeAssetState } from '../../machine/memory/asset/state';
-import type { VdpSlotSource } from '../../machine/devices/vdp/vdp';
+import { BIOS_ATLAS_ID, generateAtlasAssetId, type ImgMeta, type RuntimeRomPackage } from '../../rompack/format';
+import type { RuntimeRomLayers } from '../../rompack/runtime_layers';
+import type { VdpSlotSource } from '../../machine/devices/vdp/contracts';
 import {
 	IO_VDP_SLOT_PRIMARY_ATLAS,
 	IO_VDP_SLOT_SECONDARY_ATLAS,
@@ -34,28 +34,28 @@ function getUvExtents(texcoords: readonly number[]): { minU: number; minV: numbe
 	return { minU, minV, maxU, maxV };
 }
 
-function resolveImageFromAssets(assets: RuntimeAssets, imgid: string): { imgmeta: ImgMeta } {
-	const asset = assets.img[imgid];
-	if (!asset || !asset.imgmeta) {
+function resolveImageFromPackage(packageRecords: RuntimeRomPackage, imgid: string): { imgmeta: ImgMeta } {
+	const record = packageRecords.img[imgid];
+	if (!record || !record.imgmeta) {
 		throw new Error(`[VDPImageMeta] Image '${imgid}' is missing metadata.`);
 	}
-	return { imgmeta: asset.imgmeta };
+	return { imgmeta: record.imgmeta };
 }
 
-function resolveAtlasMeta(assets: RuntimeAssets, atlasId: number): ImgMeta {
-	const atlas = assets.img[generateAtlasAssetId(atlasId)];
+function resolveAtlasMeta(packageRecords: RuntimeRomPackage, atlasId: number): ImgMeta {
+	const atlas = packageRecords.img[generateAtlasAssetId(atlasId)];
 	if (!atlas || !atlas.imgmeta) {
 		throw new Error(`[VDPImageMeta] Atlas ${atlasId} is missing metadata.`);
 	}
 	return atlas.imgmeta;
 }
 
-export function resolveImageAtlasRectFromAssets(assets: RuntimeAssets, imgid: string): ImageAtlasRect {
-	const meta = resolveImageFromAssets(assets, imgid).imgmeta;
+export function resolveImageAtlasRectFromPackage(packageRecords: RuntimeRomPackage, imgid: string): ImageAtlasRect {
+	const meta = resolveImageFromPackage(packageRecords, imgid).imgmeta;
 	if (meta.atlasid === undefined || !meta.texcoords) {
 		throw new Error(`[VDPImageMeta] Image '${imgid}' is not an atlas-backed VDP image.`);
 	}
-	const atlasMeta = resolveAtlasMeta(assets, meta.atlasid);
+	const atlasMeta = resolveAtlasMeta(packageRecords, meta.atlasid);
 	const extents = getUvExtents(meta.texcoords);
 	return {
 		atlasId: meta.atlasid,
@@ -66,12 +66,12 @@ export function resolveImageAtlasRectFromAssets(assets: RuntimeAssets, imgid: st
 	};
 }
 
-export function resolveImageAtlasRect(assets: RuntimeAssetState, imgid: string): ImageAtlasRect {
-	const layers = [assets.overlayLayer, assets.cartLayer, assets.biosLayer];
+export function resolveImageAtlasRect(rom: RuntimeRomLayers, imgid: string): ImageAtlasRect {
+	const layers = [rom.overlayLayer, rom.cartLayer, rom.biosLayer];
 	for (let index = 0; index < layers.length; index += 1) {
 		const layer = layers[index];
-		if (layer && layer.assets.img[imgid]) {
-			return resolveImageAtlasRectFromAssets(layer.assets, imgid);
+		if (layer && layer.package.img[imgid]) {
+			return resolveImageAtlasRectFromPackage(layer.package, imgid);
 		}
 	}
 	throw new Error(`[VDPImageMeta] Image '${imgid}' was not found.`);
@@ -90,12 +90,12 @@ export function resolveAtlasSlotFromMemory(memory: Memory, atlasId: number): num
 	throw new Error(`[VDPImageMeta] Atlas ${atlasId} is not loaded in a VDP slot.`);
 }
 
-export function resolveImageSlotSource(memory: Memory, assets: RuntimeAssetState, imgid: string): VdpSlotSource {
-	const layers = [assets.overlayLayer, assets.cartLayer, assets.biosLayer];
+export function resolveImageSlotSource(memory: Memory, rom: RuntimeRomLayers, imgid: string): VdpSlotSource {
+	const layers = [rom.overlayLayer, rom.cartLayer, rom.biosLayer];
 	for (let index = 0; index < layers.length; index += 1) {
 		const layer = layers[index];
-		if (layer && layer.assets.img[imgid]) {
-			const rect = resolveImageAtlasRectFromAssets(layer.assets, imgid);
+		if (layer && layer.package.img[imgid]) {
+			const rect = resolveImageAtlasRectFromPackage(layer.package, imgid);
 			return {
 				slot: resolveAtlasSlotFromMemory(memory, rect.atlasId),
 				u: rect.u,
@@ -108,13 +108,13 @@ export function resolveImageSlotSource(memory: Memory, assets: RuntimeAssetState
 	throw new Error(`[VDPImageMeta] Image '${imgid}' was not found.`);
 }
 
-export function resolveEngineImageSlotSource(assets: RuntimeAssetState, imgid: string): VdpSlotSource {
-	if (!assets.biosLayer) {
-		throw new Error('[VDPImageMeta] BIOS asset layer is not configured.');
+export function resolveSystemImageSlotSource(rom: RuntimeRomLayers, imgid: string): VdpSlotSource {
+	if (!rom.biosLayer) {
+		throw new Error(`[VDPImageMeta] System ROM image '${imgid}' was requested before the BIOS layer was loaded.`);
 	}
-	const rect = resolveImageAtlasRectFromAssets(assets.biosLayer.assets, imgid);
+	const rect = resolveImageAtlasRectFromPackage(rom.biosLayer.package, imgid);
 	if (rect.atlasId !== BIOS_ATLAS_ID) {
-		throw new Error(`[VDPImageMeta] Engine image '${imgid}' is not in the system atlas.`);
+		throw new Error(`[VDPImageMeta] System ROM image '${imgid}' is not in the system atlas.`);
 	}
 	return {
 		slot: VDP_SLOT_SYSTEM,

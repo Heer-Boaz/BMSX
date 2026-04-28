@@ -1,7 +1,7 @@
 import type { ImageAtlasRect } from '../vdp/image_meta';
 import { BFont, GlyphMap } from './bitmap_font';
-import { resolveImageAtlasRectFromAssets } from '../vdp/image_meta';
-import type { Runtime } from '../../machine/runtime/runtime';
+import { BIOS_ATLAS_ID } from '../../rompack/format';
+import { hostSystemAtlasImage } from '../../rompack/host_system_atlas';
 
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
 
@@ -12,7 +12,7 @@ const FONT_PRESETS: Record<FontVariant, GlyphMap> = {
 	tiny: buildTinyCharMap(),
 } as const;
 
-function fontAssetPrefix(prefix: string): (suffix: string) => string {
+function fontImagePrefix(prefix: string): (suffix: string) => string {
 	return (suffix: string): string => `${prefix}_${suffix}`;
 }
 
@@ -36,7 +36,7 @@ function addAsciiAlphaNumericGlyphs(map: GlyphMap, withPrefix: (suffix: string) 
 
 function buildMsxCharMap(): GlyphMap {
 	const prefix = 'msx_6b_font';
-	const withPrefix = fontAssetPrefix(prefix);
+	const withPrefix = fontImagePrefix(prefix);
 	const map: GlyphMap = {
 		' ': withPrefix('space'),
 		'!': withPrefix('exclamation'),
@@ -92,7 +92,7 @@ function buildMsxCharMap(): GlyphMap {
 
 function buildTinyCharMap(): GlyphMap {
 	const prefix = 'tiny_3b_font';
-	const withPrefix = fontAssetPrefix(prefix);
+	const withPrefix = fontImagePrefix(prefix);
 	const map: GlyphMap = {
 		' ': withPrefix('space'),
 		'!': withPrefix('exclamation'),
@@ -147,17 +147,31 @@ function buildTinyCharMap(): GlyphMap {
 }
 
 export class Font extends BFont {
-	constructor(runtime: Runtime, config?: { variant?: FontVariant }) {
+	constructor(config?: { variant?: FontVariant }) {
 		const variant = config?.variant ?? DEFAULT_FONT_VARIANT;
 		const preset = FONT_PRESETS[variant];
-		super(runtime, preset);
-	}
-
-	protected override getGlyphAsset(imgid: string) {
-		return this.runtime.assets.getImageAsset(imgid, this.runtime.engineAssetSource);
-	}
-
-	protected override getGlyphRect(imgid: string): ImageAtlasRect {
-		return resolveImageAtlasRectFromAssets(this.runtime.assets.biosLayer.assets, imgid);
+		super(HOST_SYSTEM_FONT_SOURCE, preset);
 	}
 }
+
+const HOST_SYSTEM_FONT_SOURCE = {
+	getGlyphRecord(imgid: string) {
+		const image = hostSystemAtlasImage(imgid);
+		return {
+			imgmeta: {
+				width: image.width,
+				height: image.height,
+			},
+		};
+	},
+	getGlyphRect(imgid: string): ImageAtlasRect {
+		const image = hostSystemAtlasImage(imgid);
+		return {
+			atlasId: BIOS_ATLAS_ID,
+			u: image.u,
+			v: image.v,
+			w: image.w,
+			h: image.h,
+		};
+	},
+};

@@ -1,23 +1,23 @@
-import { engineCore } from '../core/engine';
+import { consoleCore } from '../core/console';
 
 let _debuggerControlsVisible: boolean = false;
 
 export function toggleDebuggerControls(): void {
 	if (_debuggerControlsVisible) {
-		engineCore.paused = false;
+		consoleCore.paused = false;
 		hideDebuggerControls();
 	} else {
-		engineCore.paused = true;
+		consoleCore.paused = true;
 		showDebuggerControls();
 	}
 }
 
 function showDebuggerControls(): void {
 	_debuggerControlsVisible = true;
-	engineCore.view.showFadingOverlay('⏸️');
+	consoleCore.view.showFadingOverlay('⏸️');
 }
 
 function hideDebuggerControls(): void {
 	_debuggerControlsVisible = false;
-	engineCore.view.hideFadingOverlay();
+	consoleCore.view.hideFadingOverlay();
 }

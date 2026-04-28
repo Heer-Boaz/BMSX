@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/assetbarrier.h"
-#include "rompack/assets.h"
+#include "render/texture_load_barrier.h"
+#include "rompack/package.h"
 #include "core/registry.h"
 #include "core/taskgate.h"
 #include "backend/backend.h"
@@ -87,10 +87,10 @@ public:
 						i32 width,
 						i32 height,
 						const TextureParams& desc = {});
-	void updateTexturesForAsset(const AssetId& assetId,
-								const u8* pixels,
-								i32 width,
-								i32 height);
+	void updateTexturesForImageId(const AssetId& imageId,
+									const u8* pixels,
+									i32 width,
+									i32 height);
 	TextureHandle resizeTextureForKey(const std::string& keyBase, i32 width, i32 height);
 	void updateTextureRegionForKey(const std::string& keyBase,
 									const u8* pixels,
@@ -100,7 +100,7 @@ public:
 									i32 y);
 
 	/// Replace an existing texture with new pixel data, or create if not exists.
-	/// This is used when cart assets override engine assets with the same key.
+	/// This is used when cart ROM entries override system ROM entries with the same key.
 	TextureHandle replaceTexture(const TextureKey& key,
 									const u8* pixels,
 									i32 width,
@@ -139,7 +139,7 @@ private:
 
 	GPUBackend* m_backend = nullptr;
 	GateGroup m_group;
-	AssetBarrier<TextureHandle> m_textureBarrier;
+	TextureLoadBarrier<TextureHandle> m_textureBarrier;
 	std::unordered_map<ImageKey, ImageCacheEntry> m_imageCache;
 	std::unordered_map<TextureKey, GPUCacheEntry> m_gpuCache;
 

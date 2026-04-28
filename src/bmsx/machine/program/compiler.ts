@@ -36,14 +36,14 @@ import {
 } from '../../lua/syntax/ast';
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
-import { buildModuleAliasesFromPaths, stripLuaExtension, type ProgramConstReloc } from './asset';
+import { stripLuaExtension, type ProgramConstReloc } from './loader';
 import { cloneSourceRange } from './source_range';
 import { StringPool, StringValue, isStringValue, stringValueToString } from '../memory/string/pool';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../cpu/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../../lua/semantic/frontend';
 import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from '../bus/registers';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compile_value_flow';
-import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from '../firmware/system_globals';
+import { SYSTEM_ROM_GLOBAL_NAME_SET } from '../firmware/system_globals';
 import { LuaSyntaxError } from '../../lua/errors';
 import { Decl } from '../../lua/semantic/model';
 import {
@@ -142,7 +142,6 @@ type ModuleCompileInfo = {
 };
 
 type ModuleCompileContext = {
-	moduleAliasMap: Map<string, string>;
 	modulesByPath: Map<string, ModuleCompileInfo>;
 	staticExternalModulePaths: Set<string>;
 };
@@ -211,7 +210,7 @@ class ProgramBuilder {
 		this.stringPool = stringPool ?? new StringPool();
 		this.optLevel = optLevel;
 		this.constMap = new Map<string, number>();
-		this.systemGlobalNameSet = new Set(ENGINE_SYSTEM_GLOBAL_NAME_SET);
+		this.systemGlobalNameSet = new Set(SYSTEM_ROM_GLOBAL_NAME_SET);
 		for (let index = 0; index < this.constPool.length; index += 1) {
 			const value = this.constPool[index];
 			this.constMap.set(this.makeConstKey(value), index);
@@ -1062,7 +1061,7 @@ class FunctionBuilder {
 	}
 
 	private resolveRequiredModulePath(moduleName: string): string | undefined {
-		return this.moduleCompileContext?.moduleAliasMap.get(moduleName);
+		return this.moduleCompileContext?.modulesByPath.has(moduleName) ? moduleName : undefined;
 	}
 
 	private resolveModuleCompileInfo(path: string): ModuleCompileInfo | undefined {
@@ -1117,7 +1116,7 @@ class FunctionBuilder {
 
 		  - This project targets a fantasy-console-style ABI based on flat machine instructions; Lua
 			runtime concepts such as live module tables are not part of the ABI. The compiler treats
-			certain engine/BIOS modules as compile-time descriptors and records their paths in metadata
+			certain system ROM modules as compile-time descriptors and records their paths in metadata
 			(e.g. `staticModulePaths` / `staticExternalModulePaths`).
 		  - The compiler must not fabricate runtime tables. When a module export cannot be resolved at
 			compile time, the compiler emits an explicit link-time placeholder into the instruction
@@ -3358,25 +3357,9 @@ const buildModuleCompileInfo = (
 };
 
 const buildModuleCompileContext = (
-	entryChunk: LuaChunk,
 	modules: ReadonlyArray<ProgramModule>,
 	externalModules: ReadonlyArray<ProgramModule>,
 ): ModuleCompileContext => {
-	const modulePaths = [entryChunk.range.path];
-	for (let index = 0; index < modules.length; index += 1) {
-		modulePaths.push(modules[index].path);
-	}
-	for (let index = 0; index < externalModules.length; index += 1) {
-		modulePaths.push(externalModules[index].path);
-	}
-	const moduleAliasEntries = buildModuleAliasesFromPaths(modulePaths);
-	const moduleAliasMap = new Map<string, string>();
-	for (let index = 0; index < moduleAliasEntries.length; index += 1) {
-		const entry = moduleAliasEntries[index];
-		if (!moduleAliasMap.has(entry.alias)) {
-			moduleAliasMap.set(entry.alias, entry.path);
-		}
-	}
 	const modulesByPath = new Map<string, ModuleCompileInfo>();
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
@@ -3393,7 +3376,6 @@ const buildModuleCompileContext = (
 		}
 	}
 	return {
-		moduleAliasMap,
 		modulesByPath,
 		staticExternalModulePaths: new Set<string>(),
 	};
@@ -3435,8 +3417,8 @@ function buildCompilerSemanticFrontend(
 	options: CompileOptions,
 ): LuaSemanticFrontend {
 	const extraGlobalNames = options.baseMetadata
-		? [...ENGINE_SYSTEM_GLOBAL_NAME_SET, ...options.baseMetadata.systemGlobalNames, ...options.baseMetadata.globalNames]
-		: Array.from(ENGINE_SYSTEM_GLOBAL_NAME_SET);
+		? [...SYSTEM_ROM_GLOBAL_NAME_SET, ...options.baseMetadata.systemGlobalNames, ...options.baseMetadata.globalNames]
+		: Array.from(SYSTEM_ROM_GLOBAL_NAME_SET);
 	const sources = [{
 		path: entryChunk.range.path,
 		source: requireEntrySource(options, entryChunk.range.path),
@@ -3508,22 +3490,6 @@ function compileFunctionExpression(
 	return protoIndex;
 }
 
-function cloneProto(proto: Proto): Proto {
-	const upvalueDescs: UpvalueDesc[] = [];
-	for (let index = 0; index < proto.upvalueDescs.length; index += 1) {
-		const desc = proto.upvalueDescs[index];
-		upvalueDescs.push({ inStack: desc.inStack, index: desc.index });
-	}
-	return {
-		entryPC: 0,
-		codeLen: proto.codeLen,
-		numParams: proto.numParams,
-		isVararg: proto.isVararg,
-		maxStack: proto.maxStack,
-		upvalueDescs,
-	};
-}
-
 function createProgramBuilderFromProgram(
 	base: Program,
 	metadata: ProgramMetadata,
@@ -3547,7 +3513,15 @@ function createProgramBuilderFromProgram(
 			? localSlotsByProto[index]
 			: EMPTY_LOCAL_SLOTS;
 		const upvalueNames = metadata.upvalueNamesByProto?.[index] ?? EMPTY_UPVALUE_NAMES;
-		builder.seedProto(cloneProto(proto), code, ranges, [], localSlots, upvalueNames, protoIds[index]);
+		const seededProto: Proto = {
+			entryPC: 0,
+			codeLen: proto.codeLen,
+			numParams: proto.numParams,
+			isVararg: proto.isVararg,
+			maxStack: proto.maxStack,
+			upvalueDescs: proto.upvalueDescs,
+		};
+		builder.seedProto(seededProto, code, ranges, [], localSlots, upvalueNames, protoIds[index]);
 	}
 	return builder;
 }
@@ -3555,7 +3529,7 @@ function createProgramBuilderFromProgram(
 export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = [], options: CompileOptions = {}): CompiledProgram {
 	const optLevel = options.optLevel ?? 0;
 	const frontend = buildCompilerSemanticFrontend(chunk, modules, options);
-	const moduleCompileContext = buildModuleCompileContext(chunk, modules, options.externalModules ?? []);
+	const moduleCompileContext = buildModuleCompileContext(modules, options.externalModules ?? []);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
@@ -3645,7 +3619,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 
 	// Ensure module export slot names (built during module compile-info collection)
 	// are present in the program metadata so linkers can resolve 'modslot:' placeholders.
-	// Externals (engine-provided modules passed as externalModules) are treated as
+	// Externals (system ROM modules passed as externalModules) are treated as
 	// system globals so they are preferred when resolving placeholders.
 	if (metadata) {
 		for (const [, info] of moduleCompileContext.modulesByPath) {

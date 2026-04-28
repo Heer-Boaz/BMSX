@@ -36,9 +36,9 @@
 --      self:gfx('enemy')
 --      self.collider:apply_collision_profile('enemy')  -- sets layer/mask
 
-local worldobject<const> = require('world/object')
-local components<const> = require('components')
-local vdp_image<const> = require('vdp_image')
+local worldobject<const> = require('bios/world/object')
+local components<const> = require('bios/components')
+local vdp_image<const> = require('bios/vdp_image')
 
 local spriteobject<const> = {}
 spriteobject.__index = spriteobject
@@ -48,7 +48,7 @@ spriteobject.base_sprite_id = 'base_sprite'
 spriteobject.primary_collider_id = 'primary'
 
 local apply_image_metadata<const> = function(self, id)
-	local asset<const> = assets.img[id]
+	local asset<const> = sys_rom_img[id]
 	if asset == nil then
 		error('Image asset "' .. tostring(id) .. '" not found.')
 	end

@@ -18,7 +18,7 @@ constexpr FontVariant DEFAULT_FONT_VARIANT = FontVariant::Msx;
 
 class Font : public BFont {
 public:
-	explicit Font(RuntimeAssets& assets, FontVariant variant = DEFAULT_FONT_VARIANT);
+	explicit Font(FontVariant variant = DEFAULT_FONT_VARIANT);
 };
 
 } // namespace bmsx

@@ -16,7 +16,7 @@
 -- its mask timeline without showing any text.
 
 local constants<const> = require('constants')
-local font_module<const> = require('font')
+local font_module<const> = require('bios/font')
 
 local transition<const> = {}
 transition.__index = transition

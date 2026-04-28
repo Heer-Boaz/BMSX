@@ -1,7 +1,7 @@
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
 local constants<const> = require('constants')
-local components<const> = require('components')
+local components<const> = require('bios/components')
 
 local enemy_base<const> = {}
 local damaging_contact_kinds<const> = {

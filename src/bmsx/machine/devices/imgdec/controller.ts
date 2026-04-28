@@ -18,15 +18,17 @@ import {
 	IRQ_IMG_ERROR,
 } from '../../bus/io';
 import {
-	VRAM_PRIMARY_TEXTPAGE_BASE,
-	VRAM_SECONDARY_TEXTPAGE_BASE,
-	VRAM_SYSTEM_TEXTPAGE_BASE,
+	VRAM_PRIMARY_SLOT_BASE,
+	VRAM_PRIMARY_SLOT_SIZE,
+	VRAM_SECONDARY_SLOT_BASE,
+	VRAM_SECONDARY_SLOT_SIZE,
+	VRAM_SYSTEM_SLOT_BASE,
+	VRAM_SYSTEM_SLOT_SIZE,
 } from '../../memory/map';
-import { TEXTPAGE_PRIMARY_SLOT_ID, TEXTPAGE_SECONDARY_SLOT_ID, BIOS_ATLAS_ID, generateAtlasAssetId } from '../../../rompack/format';
-import type { AssetEntry, ImageWritePlan } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
 import type { DecodedImage } from '../../../common/image_decode';
 import { DmaController } from '../dma/controller';
+import type { ImageCopyPlan } from '../dma/image_copy';
 import type { IrqController } from '../irq/controller';
 import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_IMG, type DeviceScheduler } from '../../scheduler/device';
@@ -39,10 +41,55 @@ type ImgDecJob = {
 	reject: (error: unknown) => void;
 };
 
+type ImageDecodeTarget = {
+	baseAddr: number;
+	capacity: number;
+};
+
 const IMGDEC_SERVICE_BATCH_BYTES = 256;
 
 function imageDecoderFault(message: string): Error {
 	return new Error(`Image decoder fault: ${message}`);
+}
+
+function planImageCopy(target: ImageDecodeTarget, result: DecodedImage, capacityLimit: number): ImageCopyPlan {
+	const capacity = capacityLimit < target.capacity ? capacityLimit : target.capacity;
+	const sourceWidth = result.width;
+	const sourceHeight = result.height;
+	const sourceStride = sourceWidth * 4;
+	const maxPixels = capacity >>> 2;
+	let writeWidth = sourceWidth;
+	let writeHeight = sourceHeight;
+	if (sourceStride <= 0 || sourceHeight <= 0 || maxPixels <= 0) {
+		writeWidth = 0;
+		writeHeight = 0;
+	} else {
+		const maxRowsByPixels = (result.pixels.byteLength - (result.pixels.byteLength % sourceStride)) / sourceStride;
+		if (sourceWidth > maxPixels) {
+			writeWidth = maxPixels;
+			writeHeight = maxRowsByPixels > 0 ? 1 : 0;
+		} else {
+			const maxRowsByCapacity = (capacity - (capacity % sourceStride)) / sourceStride;
+			if (writeHeight > maxRowsByCapacity) {
+				writeHeight = maxRowsByCapacity;
+			}
+			if (writeHeight > maxRowsByPixels) {
+				writeHeight = maxRowsByPixels;
+			}
+		}
+	}
+	const writeStride = writeWidth * 4;
+	const writeSize = writeStride * writeHeight;
+	return {
+		baseAddr: target.baseAddr,
+		writeWidth,
+		writeHeight,
+		writeStride,
+		targetStride: writeStride,
+		sourceStride,
+		writeSize,
+		clipped: writeWidth !== sourceWidth || writeHeight !== sourceHeight,
+	};
 }
 
 export class ImgDecController {
@@ -55,11 +102,11 @@ export class ImgDecController {
 	private status = 0;
 	private pendingError: unknown = null;
 	private pendingResult: DecodedImage | null = null;
-	private pendingEntry: AssetEntry | null = null;
+	private pendingTarget: ImageDecodeTarget | null = null;
 	private pendingCap = 0;
 	private decodeActive = false;
 	private decodeRemaining = 0;
-	private decodePlan: ImageWritePlan | null = null;
+	private decodePlan: ImageCopyPlan | null = null;
 	private decodePixels: Uint8Array | null = null;
 	private decodeResult: DecodedImage | null = null;
 	private decodeQueued = false;
@@ -128,7 +175,7 @@ export class ImgDecController {
 		this.status = 0;
 		this.pendingError = null;
 		this.pendingResult = null;
-		this.pendingEntry = null;
+		this.pendingTarget = null;
 		this.pendingCap = 0;
 		this.decodeActive = false;
 		this.decodeRemaining = 0;
@@ -194,12 +241,12 @@ export class ImgDecController {
 			this.scheduleNextService(nowCycles);
 			return;
 		}
-		if (this.pendingResult !== null && this.pendingEntry !== null) {
+		if (this.pendingResult !== null && this.pendingTarget !== null) {
 			const result = this.pendingResult;
-			const entry = this.pendingEntry;
+			const target = this.pendingTarget;
 			this.pendingResult = null;
-			this.pendingEntry = null;
-			this.beginDecode(result, entry);
+			this.pendingTarget = null;
+			this.beginDecode(result, target);
 		}
 		if (this.decodeActive && this.availableDecodeBytes > 0) {
 			this.advanceDecode();
@@ -224,15 +271,15 @@ export class ImgDecController {
 		this.startJob({ buffer: job.buffer, dst: job.dst, cap: job.cap, src: 0, len: job.buffer.byteLength, job, signalIrq: false });
 	}
 
-	private resolveSlotEntry(dst: number): AssetEntry {
-		if (dst === VRAM_PRIMARY_TEXTPAGE_BASE) {
-			return this.memory.getAssetEntry(TEXTPAGE_PRIMARY_SLOT_ID);
+	private resolveDecodeTarget(dst: number): ImageDecodeTarget {
+		if (dst === VRAM_PRIMARY_SLOT_BASE) {
+			return { baseAddr: VRAM_PRIMARY_SLOT_BASE, capacity: VRAM_PRIMARY_SLOT_SIZE };
 		}
-		if (dst === VRAM_SECONDARY_TEXTPAGE_BASE) {
-			return this.memory.getAssetEntry(TEXTPAGE_SECONDARY_SLOT_ID);
+		if (dst === VRAM_SECONDARY_SLOT_BASE) {
+			return { baseAddr: VRAM_SECONDARY_SLOT_BASE, capacity: VRAM_SECONDARY_SLOT_SIZE };
 		}
-		if (dst === VRAM_SYSTEM_TEXTPAGE_BASE) {
-			return this.memory.getAssetEntry(generateAtlasAssetId(BIOS_ATLAS_ID));
+		if (dst === VRAM_SYSTEM_SLOT_BASE) {
+			return { baseAddr: VRAM_SYSTEM_SLOT_BASE, capacity: VRAM_SYSTEM_SLOT_SIZE };
 		}
 		throw imageDecoderFault(`unsupported destination address ${dst}.`);
 	}
@@ -240,7 +287,7 @@ export class ImgDecController {
 	private startJob(params: { buffer: Uint8Array; dst: number; cap: number; src: number; len: number; job: ImgDecJob | null; signalIrq: boolean }): void {
 		this.pendingResult = null;
 		this.pendingError = null;
-		this.pendingEntry = null;
+		this.pendingTarget = null;
 		this.signalIrq = params.signalIrq;
 		this.status = IMG_STATUS_BUSY;
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
@@ -250,14 +297,14 @@ export class ImgDecController {
 		this.memory.writeValue(IO_IMG_DST, params.dst);
 		this.memory.writeValue(IO_IMG_CAP, params.cap);
 
-		let entry: AssetEntry;
+		let target: ImageDecodeTarget;
 		try {
-			entry = this.resolveSlotEntry(params.dst);
+			target = this.resolveDecodeTarget(params.dst);
 		} catch (error) {
 			this.finishError(error);
 			return;
 		}
-		const effectiveCap = Math.min(params.cap, entry.capacity);
+		const effectiveCap = params.cap < target.capacity ? params.cap : target.capacity;
 		if (effectiveCap === 0) {
 			this.finishError(imageDecoderFault(`invalid destination capacity ${params.cap}.`));
 			return;
@@ -279,7 +326,7 @@ export class ImgDecController {
 				return;
 			}
 			this.pendingResult = result;
-			this.pendingEntry = entry;
+			this.pendingTarget = target;
 			this.scheduleNextService(this.scheduler.currentNowCycles());
 		}).catch((error) => {
 			if (token !== this.decodeToken) {
@@ -290,10 +337,10 @@ export class ImgDecController {
 		});
 	}
 
-	private beginDecode(result: DecodedImage, entry: AssetEntry): void {
+	private beginDecode(result: DecodedImage, target: ImageDecodeTarget): void {
 		const cap = this.pendingCap;
 		this.pendingCap = 0;
-		const plan = this.memory.planImageSlotWrite(entry, { pixels: result.pixels, width: result.width, height: result.height, capacity: cap });
+		const plan = planImageCopy(target, result, cap);
 		this.decodePlan = plan;
 		this.decodePixels = result.pixels;
 		this.decodeResult = result;
@@ -387,7 +434,7 @@ export class ImgDecController {
 			this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 			return;
 		}
-		if (this.pendingError !== null || (this.pendingResult !== null && this.pendingEntry !== null)) {
+		if (this.pendingError !== null || (this.pendingResult !== null && this.pendingTarget !== null)) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 			return;
 		}

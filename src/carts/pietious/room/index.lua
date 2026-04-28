@@ -1,6 +1,6 @@
 local constants<const> = require('constants')
 local castle_map<const> = require('castle/map')
-local timeline<const> = require('timeline/index')
+local timeline<const> = require('bios/timeline/index')
 
 local room<const> = {}
 local water_surface_timeline_id<const> = 'r.ws'
@@ -581,7 +581,7 @@ The important consequence is that we no longer pay the expensive per-frame work
 that the old code did:
 
 	- no per-frame create_tile_id(...) over the whole room
-	- no per-frame assets.img[...] handle resolution over the whole room
+	- no per-frame image lookup over the whole room
 	- no per-frame rebuild of full room/water tile arrays
 	- no per-frame rewrite of the entire tile-run payload when nothing moved
 

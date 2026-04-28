@@ -1,7 +1,7 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
 import type { RenderContext, RenderGraphPassContext, RenderPassStateRegistry } from '../backend/interfaces';
 import { WebGLBackend } from '../backend/webgl/backend';
-import { engineCore } from '../../core/engine';
+import { consoleCore } from '../../core/console';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/constants';
 import fragmentShaderDeviceCode from './shaders/device_quantize.frag.glsl';
 import vertexShaderCRTCode from './shaders/crt.vert.glsl';
@@ -40,9 +40,9 @@ export function registerDeviceQuantize_WebGL(registry: RenderPassLibrary): void 
 		},
 		vsCode: vertexShaderCRTCode,
 		fsCode: fragmentShaderDeviceCode,
-		shouldExecute: () => engineCore.view.dither_type !== 0,
+		shouldExecute: () => consoleCore.view.dither_type !== 0,
 		exec: (be: WebGLBackend, fbo, state: RenderPassStateRegistry['device_quantize']) => {
-			const runtime: DeviceQuantizeRuntime = { backend: be, gl: be.gl as WebGL2RenderingContext, context: engineCore.view };
+			const runtime: DeviceQuantizeRuntime = { backend: be, gl: be.gl as WebGL2RenderingContext, context: consoleCore.view };
 			renderDeviceQuantize(runtime, fbo as WebGLFramebuffer, state);
 		},
 		prepare: (be: WebGLBackend, state: RenderPassStateRegistry['device_quantize']) => {

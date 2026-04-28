@@ -1,4 +1,4 @@
-import { engineCore } from '../core/engine';
+import { consoleCore } from '../core/console';
 import {
 	clearBackQueues,
 	prepareCompletedRenderQueues,
@@ -66,7 +66,7 @@ export class RenderPresentationState {
 		if (!Boolean((globalThis as any).__bmsx_debug_presentrate)) {
 			return;
 		}
-		if (engineCore.paused) {
+		if (consoleCore.paused) {
 			this.debugPresentPausedPresents += 1;
 			return;
 		}
@@ -96,12 +96,12 @@ export class RenderPresentationState {
 
 	private presentFrame(hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		const runtime = this.runtime;
-		engineCore.deltatime = hostDeltaMs;
-		commitVdpViewSnapshot(engineCore.view, runtime.machine.vdp, runtime.machine.memory, runtime.assets);
-		engineCore.view.configurePresentation(mode, commitFrame);
+		consoleCore.deltatime = hostDeltaMs;
+		commitVdpViewSnapshot(consoleCore.view, runtime.machine.vdp);
+		consoleCore.view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);
-		engineCore.sndmaster.finishFrame();
-		engineCore.view.drawgame();
+		consoleCore.sndmaster.finishFrame();
+		consoleCore.view.drawgame();
 		runtime.cartBoot.scheduleDeferredPreparation();
 	}
 

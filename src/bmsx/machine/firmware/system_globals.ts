@@ -1,4 +1,4 @@
-const ENGINE_LUA_BUILTIN_FUNCTION_NAMES = [
+const SYSTEM_LUA_BUILTIN_FUNCTION_NAMES = [
 	'define_fsm',
 	'define_prefab',
 	'define_subsystem',
@@ -23,7 +23,7 @@ const ENGINE_LUA_BUILTIN_FUNCTION_NAMES = [
 	'grant_effect',
 	'trigger_effect',
 	'vdp_load_slot',
-	'vdp_load_sys_textpage',
+	'vdp_load_system_slot',
 	'vdp_blit_img_rgba',
 	'vdp_img_rect',
 	'vdp_img_slot',
@@ -54,18 +54,21 @@ const ENGINE_LUA_BUILTIN_FUNCTION_NAMES = [
 	'find_any_by_tag',
 ] as const;
 
-const ENGINE_LUA_BUILTIN_GLOBAL_NAMES = [
+const SYSTEM_LUA_BUILTIN_GLOBAL_NAMES = [
 	'timeline',
 	'eventemitter',
 	'scratchbatch',
 	'sorted_scratchbatch',
 ] as const;
 
-export const ENGINE_SYSTEM_HELPER_NAMES = [
+export const SYSTEM_ROM_HELPER_NAMES = [
 	'game',
 	'$',
-	'assets',
-	'system_assets',
+	'sys_rom_img',
+	'sys_rom_data',
+	'sys_rom_audio',
+	'sys_rom_audioevents',
+	'sys_system_rom_img',
 	'cart_manifest',
 	'machine_manifest',
 	'cart_project_root_path',
@@ -73,7 +76,7 @@ export const ENGINE_SYSTEM_HELPER_NAMES = [
 	'clock_now',
 ] as const;
 
-const ENGINE_SYSTEM_GEO_GLOBAL_NAMES = [
+const SYSTEM_ROM_GEO_GLOBAL_NAMES = [
 	'sys_geo_scratch_base',
 	'sys_geo_scratch_size',
 	'sys_geo_src0',
@@ -137,7 +140,7 @@ const ENGINE_SYSTEM_GEO_GLOBAL_NAMES = [
 	'sys_geo_fault_reject_bad_register_combo',
 ] as const;
 
-const ENGINE_SYSTEM_INPUT_GLOBAL_NAMES = [
+const SYSTEM_ROM_INPUT_GLOBAL_NAMES = [
 	'sys_inp_player',
 	'sys_inp_action',
 	'sys_inp_bind',
@@ -157,12 +160,12 @@ const ENGINE_SYSTEM_INPUT_GLOBAL_NAMES = [
 	'inp_repeatpressed',
 ] as const;
 
-export const ENGINE_SYSTEM_GLOBAL_NAMES: ReadonlyArray<string> = [
-	...ENGINE_SYSTEM_HELPER_NAMES,
-	...ENGINE_LUA_BUILTIN_FUNCTION_NAMES,
-	...ENGINE_LUA_BUILTIN_GLOBAL_NAMES,
-	...ENGINE_SYSTEM_GEO_GLOBAL_NAMES,
-	...ENGINE_SYSTEM_INPUT_GLOBAL_NAMES,
+export const SYSTEM_ROM_GLOBAL_NAMES: ReadonlyArray<string> = [
+	...SYSTEM_ROM_HELPER_NAMES,
+	...SYSTEM_LUA_BUILTIN_FUNCTION_NAMES,
+	...SYSTEM_LUA_BUILTIN_GLOBAL_NAMES,
+	...SYSTEM_ROM_GEO_GLOBAL_NAMES,
+	...SYSTEM_ROM_INPUT_GLOBAL_NAMES,
 ];
 
-export const ENGINE_SYSTEM_GLOBAL_NAME_SET: ReadonlySet<string> = new Set(ENGINE_SYSTEM_GLOBAL_NAMES);
+export const SYSTEM_ROM_GLOBAL_NAME_SET: ReadonlySet<string> = new Set(SYSTEM_ROM_GLOBAL_NAMES);

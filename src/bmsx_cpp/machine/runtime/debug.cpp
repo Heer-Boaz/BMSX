@@ -42,23 +42,12 @@ const std::unordered_set<std::string> LUA_KEYWORDS = {
 	"while",
 };
 
-bool matchesLuaPathAlias(std::string_view assetPath, std::string_view requestedPath) {
-	if (assetPath == requestedPath) {
-		return true;
-	}
-	if (assetPath.size() <= requestedPath.size()) {
-		return false;
-	}
-	const size_t offset = assetPath.size() - requestedPath.size();
-	return assetPath.compare(offset, requestedPath.size(), requestedPath) == 0 && assetPath[offset - 1] == '/';
-}
-
-const LuaSourceAsset* findLuaSourceByPath(const RuntimeAssets& assets, const std::string& path) {
-	if (const LuaSourceAsset* direct = assets.getLua(path)) {
+const LuaSourceAsset* findLuaSourceByPath(const RuntimeRomPackage& romPackage, const std::string& path) {
+	if (const LuaSourceAsset* direct = romPackage.getLua(path)) {
 		return direct;
 	}
-	for (const auto& entry : assets.lua) {
-		if (matchesLuaPathAlias(entry.second.path, path)) {
+	for (const auto& entry : romPackage.lua) {
+		if (entry.second.path == path) {
 			return &entry.second;
 		}
 	}
@@ -301,8 +290,8 @@ void Runtime::logDebugState() const {
 	if (instruction.sourceRange.has_value()) {
 		const SourceRange& range = *instruction.sourceRange;
 		std::string sourceLine = range.path + ":" + std::to_string(range.startLine) + ":" + std::to_string(range.startColumn);
-		const RuntimeAssets& assets = activeAssets();
-		if (const LuaSourceAsset* sourceAsset = findLuaSourceByPath(assets, range.path)) {
+		const RuntimeRomPackage& romPackage = activeRom();
+		if (const LuaSourceAsset* sourceAsset = findLuaSourceByPath(romPackage, range.path)) {
 			const std::string snippet = formatSourceSnippet(range, sourceAsset->source);
 			if (!snippet.empty()) {
 				sourceLine += " " + snippet;

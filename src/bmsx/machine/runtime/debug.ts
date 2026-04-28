@@ -83,7 +83,7 @@ function resourceSourceForPath(runtime: Runtime, path: string): string | null {
 	const binding = resolveLuaSourceRecordFromRegistries(path, [
 		runtime.activeLuaSources,
 		runtime.cartLuaSources,
-		runtime.engineLuaSources,
+		runtime.systemLuaSources,
 	]);
 	if (!binding) {
 		return null;

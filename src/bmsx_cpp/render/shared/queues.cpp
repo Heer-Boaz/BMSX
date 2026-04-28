@@ -8,7 +8,7 @@
 #include "glyphs.h"
 #include "hardware/camera.h"
 #include "hardware/lighting.h"
-#include "rompack/assets.h"
+#include "rompack/package.h"
 #include "render/vdp/image_meta.h"
 #include "core/font.h"
 #include "../../machine/runtime/runtime.h"
@@ -40,22 +40,22 @@ f32 _skyExposure = 1.0f;
 // Default Z coordinate.
 static constexpr f32 DEFAULT_ZCOORD = 0.0f;
 
-struct ResolvedSpriteAsset {
-	ImageSlotSource source;
+struct ResolvedSpriteRecord {
+	VdpSlotSource source;
 };
 
-static ResolvedSpriteAsset resolveSpriteAsset(const RuntimeAssets& assets, const Memory& memory, const std::string& imgId, const char* context) {
-	const ImageSlotSource source = resolveImageSlotSourceFromAssets(assets, memory, imgId);
+static ResolvedSpriteRecord resolveSpriteRecord(const RuntimeRomPackage& romPackage, const Memory& memory, const std::string& imgId, const char* context) {
+	const VdpSlotSource source = resolveVdpSlotSourceFromPackage(romPackage, memory, imgId);
 	if (source.w == 0 || source.h == 0) {
 		throw BMSX_RUNTIME_ERROR("[" + std::string(context) + "] Image '" + imgId + "' has invalid region size.");
 	}
-	return ResolvedSpriteAsset{
+	return ResolvedSpriteRecord{
 		source,
 	};
 }
 
 static void submitResolvedSprite(Runtime& runtime,
-									const ResolvedSpriteAsset& resolved,
+									const ResolvedSpriteRecord& resolved,
 									f32 x,
 									f32 y,
 									f32 z,
@@ -113,7 +113,7 @@ void submitSprite(Runtime& runtime, const ImgRenderSubmission& options) {
 	if (!options.layer.has_value()) {
 		throw BMSX_RUNTIME_ERROR("submitSprite requires layer.");
 	}
-	const ResolvedSpriteAsset resolved = resolveSpriteAsset(runtime.activeAssets(), runtime.machine().memory(), options.imgid, "Sprite Queue");
+	const ResolvedSpriteRecord resolved = resolveSpriteRecord(runtime.activeRom(), runtime.machine().memory(), options.imgid, "Sprite Queue");
 	submitResolvedSprite(
 		runtime,
 		resolved,

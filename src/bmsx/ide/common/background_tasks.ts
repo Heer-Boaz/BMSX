@@ -1,4 +1,4 @@
-import { engineCore } from '../../core/engine';
+import { consoleCore } from '../../core/console';
 import { scheduleMicrotask, type TimerHandle } from '../../platform/platform';
 
 export type BackgroundTask = () => boolean;
@@ -19,7 +19,7 @@ export function runBackgroundTasks(): void {
 	if (backgroundTasks.length === 0) {
 		return;
 	}
-	const deadline = engineCore.platform.clock.now() + backgroundTaskBudgetMs;
+	const deadline = consoleCore.platform.clock.now() + backgroundTaskBudgetMs;
 	const iterationsLimit = backgroundTasks.length * 2;
 	let iterations = 0;
 	while (backgroundTasks.length > 0) {
@@ -29,7 +29,7 @@ export function runBackgroundTasks(): void {
 			backgroundTasks.push(task);
 		}
 		iterations += 1;
-		if (engineCore.platform.clock.now() >= deadline || iterations >= iterationsLimit) {
+		if (consoleCore.platform.clock.now() >= deadline || iterations >= iterationsLimit) {
 			break;
 		}
 	}
@@ -47,7 +47,7 @@ export function clearBackgroundTasks(): void {
 }
 
 export function scheduleIdeOnce(delayMs: number, cb: () => void): TimerHandle {
-	return engineCore.platform.clock.scheduleOnce(delayMs, () => cb());
+	return consoleCore.platform.clock.scheduleOnce(delayMs, () => cb());
 }
 
 export function scheduleRuntimeTask(task: () => void | Promise<void>, onError: (error: unknown) => void): void {

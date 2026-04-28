@@ -1,4 +1,4 @@
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 import { point_in_rect } from '../../../common/rect';
 import * as constants from '../../common/constants';
 import { problemsPanel } from '../../workbench/contrib/problems/panel/controller';
@@ -20,7 +20,7 @@ import { resourceSearchState } from '../../workbench/contrib/resources/widget_st
 import type { Runtime } from '../../../machine/runtime/runtime';
 
 export function handleEditorWheelInput(runtime: Runtime): void {
-	const playerInput = engineCore.input.getPlayerInput(1);
+	const playerInput = consoleCore.input.getPlayerInput(1);
 	const wheelState = playerInput.getRawButtonState('pointer_wheel', 'pointer');
 	if (wheelState.consumed) {
 		return;
@@ -71,7 +71,7 @@ function handleHoverTooltipWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>
+	playerInput: ReturnType<typeof consoleCore.input.getPlayerInput>
 ): boolean {
 	if (!intellisenseUiState.hoverTooltip) {
 		return false;
@@ -95,7 +95,7 @@ function handleResourceSearchWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>
+	playerInput: ReturnType<typeof consoleCore.input.getPlayerInput>
 ): boolean {
 	if (!resourceSearchState.visible) {
 		return false;
@@ -117,7 +117,7 @@ function handleResourcePanelWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>
+	playerInput: ReturnType<typeof consoleCore.input.getPlayerInput>
 ): boolean {
 	const panelBounds = resourcePanel.getBounds();
 	const pointerInPanel = resourcePanel.isVisible()
@@ -142,7 +142,7 @@ function handleProblemsPanelWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof engineCore.input.getPlayerInput>
+	playerInput: ReturnType<typeof consoleCore.input.getPlayerInput>
 ): boolean {
 	if (!problemsPanel.isVisible) {
 		return false;

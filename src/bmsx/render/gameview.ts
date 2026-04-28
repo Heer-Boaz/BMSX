@@ -1,5 +1,5 @@
 import { BFont } from './shared/bitmap_font';
-import { engineCore } from '../core/engine';
+import { consoleCore } from '../core/console';
 import { clamp01 } from '../common/clamp';
 import { multiply_vec2 } from '../common/vector';
 import { shallowcopy } from '../common/shallowcopy';
@@ -25,11 +25,11 @@ import type {
 	GlyphRenderSubmission,
 } from './shared/submissions';
 import type { Runtime } from '../machine/runtime/runtime';
-import type { SkyboxImageIds } from '../machine/devices/vdp/contracts';
+import type { SkyboxFaceSources } from '../machine/devices/vdp/contracts';
 import {
-	TEXTPAGE_PRIMARY_SLOT_ID,
-	TEXTPAGE_SECONDARY_SLOT_ID,
-	BIOS_TEXTPAGE_TEXTURE_KEY,
+	VDP_PRIMARY_SLOT_TEXTURE_KEY,
+	VDP_SECONDARY_SLOT_TEXTURE_KEY,
+	SYSTEM_SLOT_TEXTURE_KEY,
 } from 'bmsx/rompack/format';
 import { renderGate } from 'bmsx/core/taskgate';
 
@@ -87,7 +87,7 @@ export class GameView implements RenderContext {
 	private lightingSystem: LightingSystem = null;
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
-	public skyboxFaceIds: SkyboxImageIds | null = null;
+	public skyboxFaceSources: SkyboxFaceSources | null = null;
 	public skyboxFaceUvRects: Float32Array | null = null;
 	public skyboxFaceTextpageBindings: Int32Array | null = null;
 	public skyboxFaceSizes: Int32Array | null = null;
@@ -237,7 +237,7 @@ export class GameView implements RenderContext {
 		this.canvasSize = (shallowcopy(opts.canvasSize) ?? multiply_vec2(this.viewportSize, 1)) as vec2; // By default, the canvas is twice the size of the viewport!!
 		// Offscreen resolution for internal render graph targets (view-agnostic, but usually twice the viewport size to allow for effects like CRT post processing)
 		this.offscreenCanvasSize = shallowcopy(opts.offscreenSize ?? multiply_vec2(this.viewportSize, 1)) as vec2;
-		this.lastRenderTimeSeconds = engineCore.platform.clock.now() / 1000;
+		this.lastRenderTimeSeconds = consoleCore.platform.clock.now() / 1000;
 		renderGate.begin({ blocking: true, category: 'init', tag: 'init' }); // Note that we don't store the token; We can end the scope by calling renderGate.end() without a token, assuming that the category is unique fot init. It means that we can safely end the scope later without worrying about late resolves or lifecycle issues.
 	}
 
@@ -362,7 +362,7 @@ export class GameView implements RenderContext {
 		}
 		try {
 			backend.beginFrame();
-			const nowSeconds = engineCore.platform.clock.now() / 1000;
+			const nowSeconds = consoleCore.platform.clock.now() / 1000;
 			updateExternalFrameTiming(this.renderFrameIndex, nowSeconds, nowSeconds - this.lastRenderTimeSeconds);
 			this.renderFrameIndex += 1;
 			this.lastRenderTimeSeconds = nowSeconds;
@@ -399,7 +399,7 @@ export class GameView implements RenderContext {
 	}
 
 	public static get fullscreenEnabled(): boolean {
-		const view = engineCore.view;
+		const view = consoleCore.view;
 		if (!view) {
 			throw new Error('[GameView] View not available while checking fullscreen support.');
 		}
@@ -411,13 +411,13 @@ export class GameView implements RenderContext {
 	}
 
 	public static async triggerFullScreenOnFakeUserEvent(): Promise<void> {
-		const view = engineCore.view;
+		const view = consoleCore.view;
 		if (!view) {
 			throw new Error('[GameView] View not available while entering fullscreen.');
 		}
 		if (GameView.fullscreenEnabled) {
 			try {
-				engineCore.paused = true;
+				consoleCore.paused = true;
 				const controller = view.host.getCapability('display-mode')!;
 				await controller.setFullscreen(true);
 			}
@@ -425,7 +425,7 @@ export class GameView implements RenderContext {
 				console.error(error);
 			}
 			finally {
-				engineCore.paused = false;
+				consoleCore.paused = false;
 			}
 		}
 		if (GameView.fullscreenKeyListenerUnsub) {
@@ -447,13 +447,13 @@ export class GameView implements RenderContext {
 	}
 
 	public static async triggerWindowedOnFakeUserEvent(): Promise<void> {
-		const view = engineCore.view;
+		const view = consoleCore.view;
 		if (!view) {
 			throw new Error('[GameView] View not available while exiting fullscreen.');
 		}
 		if (GameView.fullscreenEnabled) {
 			try {
-				engineCore.paused = true;
+				consoleCore.paused = true;
 				const controller = view.host.getCapability('display-mode')!;
 				await controller.setFullscreen(false);
 			}
@@ -462,7 +462,7 @@ export class GameView implements RenderContext {
 				console.error(error);
 			}
 			finally {
-				engineCore.paused = false;
+				consoleCore.paused = false;
 			}
 		}
 		if (GameView.windowedKeyListenerUnsub) {
@@ -513,14 +513,14 @@ export class GameView implements RenderContext {
 	}
 	public async initializeDefaultTextures(): Promise<void> {
 		const fallback = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
-		this.textures[TEXTPAGE_PRIMARY_SLOT_ID] = fallback; // Start with fallback to avoid undefined states and race conditions
-		this.textures[TEXTPAGE_SECONDARY_SLOT_ID] = fallback;
+		this.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY] = fallback; // Start with fallback to avoid undefined states and race conditions
+		this.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY] = fallback;
 		this.textures['_textpage_fallback'] = fallback;
-		this.skyboxFaceIds = null;
+		this.skyboxFaceSources = null;
 		this.skyboxFaceUvRects = null;
 		this.skyboxFaceTextpageBindings = null;
 		this.skyboxFaceSizes = null;
-		this.textures[BIOS_TEXTPAGE_TEXTURE_KEY] = fallback;
+		this.textures[SYSTEM_SLOT_TEXTURE_KEY] = fallback;
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
 		// Normal map default (0.5,0.5,1.0)

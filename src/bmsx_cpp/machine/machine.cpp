@@ -10,17 +10,18 @@
 namespace bmsx {
 Machine::Machine(Api& api, SoundMaster& soundMaster, MicrotaskQueue& microtasks, VdpFrameBufferSize frameBufferSize)
 	: m_memory()
+	, m_frameBufferSize(frameBufferSize)
 	, m_stringHandles(m_memory)
 	, m_cpu(m_memory, &m_stringHandles)
 	, m_deviceScheduler(m_cpu)
-	, m_vdp(m_memory, m_cpu, api, m_deviceScheduler, frameBufferSize)
+	, m_vdp(m_memory, m_cpu, api, m_deviceScheduler, m_frameBufferSize)
 	, m_irqController(m_memory)
 	, m_dmaController(m_memory, m_irqController, m_vdp, m_deviceScheduler)
 	, m_geometryController(m_memory, m_irqController, m_deviceScheduler)
 	, m_imgDecController(m_memory, m_dmaController, m_irqController, m_deviceScheduler, microtasks)
 	, m_inputController(m_memory, Input::instance(), m_cpu.stringPool())
 	, m_audioController(m_memory, soundMaster, m_irqController)
-	, m_resourceUsageDetector(m_memory, m_stringHandles, m_vdp) {
+	, m_resourceUsageDetector(m_stringHandles, m_vdp) {
 	m_vdp.attachImgDecController(m_imgDecController);
 }
 

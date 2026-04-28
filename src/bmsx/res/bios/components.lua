@@ -1,13 +1,13 @@
 -- components.lua
 -- base component primitives for system rom
 
-local eventemitter_module<const> = require('eventemitter')
-local timeline_module<const> = require('timeline/index')
-local timeline_dispatch<const> = require('timeline/dispatch')
-local collision_profiles<const> = require('collision_profiles')
-local scratchrecordbatch<const> = require('scratchrecordbatch')
-local font_module<const> = require('font')
-local world_instance<const> = require('world/index').instance
+local eventemitter_module<const> = require('bios/eventemitter')
+local timeline_module<const> = require('bios/timeline/index')
+local timeline_dispatch<const> = require('bios/timeline/dispatch')
+local collision_profiles<const> = require('bios/collision_profiles')
+local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
+local font_module<const> = require('bios/font')
+local world_instance<const> = require('bios/world/index').instance
 local eventemitter<const> = eventemitter_module.eventemitter
 local timeline<const> = timeline_module.timeline
 
@@ -242,7 +242,7 @@ local get_sprite_collision_geometry<const> = function(sprite)
 	if sprite._collision_geometry_imgid == id and sprite._collision_geometry_flip_h == flip_h and sprite._collision_geometry_flip_v == flip_v then
 		return sprite._collision_geometry_area, sprite._collision_geometry_polys, sprite._collision_geometry_shape_ref
 	end
-	local image_asset<const> = assets.img[id]
+	local image_asset<const> = sys_rom_img[id]
 	if image_asset == nil or image_asset.imgmeta == nil then
 		error('[spritecomponent] image metadata missing for "' .. tostring(id) .. '"')
 	end

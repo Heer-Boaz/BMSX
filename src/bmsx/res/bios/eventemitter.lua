@@ -98,7 +98,7 @@ eventemitter.instance = eventemitter.new()
 eventemitter.instance.id = 'eventemitter'
 eventemitter.instance.type_name = 'eventemitter'
 eventemitter.instance.registrypersistent = true
-require('registry').instance:register(eventemitter.instance)
+require('bios/registry').instance:register(eventemitter.instance)
 
 -- eventemitter:create_gameevent(spec): canonicalize an event spec in place.
 -- Table payloads stay nested and are exposed via the event wrapper.

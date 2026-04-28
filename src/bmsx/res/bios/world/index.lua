@@ -28,8 +28,8 @@
 --    If you need to
 --    defer a spawn/despawn, use a queue and process it after the loop.
 
-local ecs<const> = require('ecs/index')
-local registry<const> = require('registry')
+local ecs<const> = require('bios/ecs/index')
+local registry<const> = require('bios/registry')
 
 local tickgroup<const> = ecs.tickgroup
 local world_instance
@@ -618,7 +618,7 @@ function world_class:rebind_subsystem_systems(subsys)
 	if self._subsystems_by_id[subsys.id] ~= subsys or subsys.dispose_flag then
 		return
 	end
-	local subsystem_module<const> = require('subsystem/index')
+	local subsystem_module<const> = require('bios/subsystem/index')
 	local systems<const> = {
 		subsystem_module.create_update_system(subsys),
 		subsystem_module.create_animation_system(subsys),

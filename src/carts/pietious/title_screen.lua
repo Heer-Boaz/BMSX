@@ -1,5 +1,5 @@
 local constants<const> = require('constants')
-local components<const> = require('components')
+local components<const> = require('bios/components')
 
 local title_screen<const> = {}
 title_screen.__index = title_screen

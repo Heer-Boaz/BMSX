@@ -91,43 +91,6 @@ export interface LightingDescriptor {
 	pointCount: number;
 }
 
-// Build a descriptor snapshot for any backend (e.g. WebGPU) from current GL-side light lists.
-export function buildLightingDescriptor(frame: LightingFrameState): LightingDescriptor {
-	const dirs = directionalLightList;
-	const pts = pointLightList;
-	const dirCount = Math.min(dirs.length, frame.dirCount);
-	const pointCount = Math.min(pts.length, frame.pointCount);
-	const dirDirections = new Float32Array(dirCount * 3);
-	const dirColors = new Float32Array(dirCount * 3);
-	const dirIntensity = new Float32Array(dirCount);
-	for (let i = 0; i < dirCount; i++) {
-		dirDirections.set(dirs[i].orientation, i * 3);
-		dirColors.set(dirs[i].color, i * 3);
-		dirIntensity[i] = dirs[i].intensity;
-	}
-	const pointPositions = new Float32Array(pointCount * 3);
-	const pointColors = new Float32Array(pointCount * 3);
-	const pointParams = new Float32Array(pointCount * 2);
-	for (let i = 0; i < pointCount; i++) {
-		pointPositions.set(pts[i].pos!, i * 3);
-		pointColors.set(pts[i].color!, i * 3);
-		pointParams[i * 2] = pts[i].range!;
-		pointParams[i * 2 + 1] = pts[i].intensity;
-	}
-	return {
-		ambientColor: frame.ambient ? new Float32Array(frame.ambient.color) : new Float32Array(0),
-		ambientIntensity: frame.ambient ? frame.ambient.intensity : 0,
-		dirDirections,
-		dirColors,
-		dirIntensity,
-		pointPositions,
-		pointColors,
-		pointParams,
-		dirCount,
-		pointCount,
-	};
-}
-
 // --- Pooled descriptor strategy (no per-frame heap churn) ---
 // Pools sized to maximum supported lights. Returned arrays are reused; treat them as transient for the current frame only.
 const poolDirDirections = new Float32ArrayPool(3 * DEFAULT_MAX_DIR_LIGHTS);
@@ -165,26 +128,28 @@ export function buildLightingDescriptorPooled(frame: LightingFrameState): Lighti
 
 	// Fill (only active range) -----------------------------------------------------------------
 	for (let i = 0; i < dirCount; i++) {
-		dirDirections[i * 3] = dirs[i].orientation[0];
-		dirDirections[i * 3 + 1] = dirs[i].orientation[1];
-		dirDirections[i * 3 + 2] = dirs[i].orientation[2];
-		dirColors[i * 3] = dirs[i].color[0];
-		dirColors[i * 3 + 1] = dirs[i].color[1];
-		dirColors[i * 3 + 2] = dirs[i].color[2];
-		dirIntensity[i] = dirs[i].intensity;
+		const light = dirs.get(i);
+		dirDirections[i * 3] = light.orientation[0];
+		dirDirections[i * 3 + 1] = light.orientation[1];
+		dirDirections[i * 3 + 2] = light.orientation[2];
+		dirColors[i * 3] = light.color[0];
+		dirColors[i * 3 + 1] = light.color[1];
+		dirColors[i * 3 + 2] = light.color[2];
+		dirIntensity[i] = light.intensity;
 	}
 	// Optionally zero the unused tail (not strictly required if consumer respects counts)
 	// for (let i = dirCount * 3; i < dirDirections.length; i++) dirDirections[i] = 0; // skipped for perf
 
 	for (let i = 0; i < pointCount; i++) {
-		pointPositions[i * 3] = pts[i].pos![0];
-		pointPositions[i * 3 + 1] = pts[i].pos![1];
-		pointPositions[i * 3 + 2] = pts[i].pos![2];
-		pointColors[i * 3] = pts[i].color![0];
-		pointColors[i * 3 + 1] = pts[i].color![1];
-		pointColors[i * 3 + 2] = pts[i].color![2];
-		pointParams[i * 2] = pts[i].range!;
-		pointParams[i * 2 + 1] = pts[i].intensity;
+		const light = pts.get(i);
+		pointPositions[i * 3] = light.pos![0];
+		pointPositions[i * 3 + 1] = light.pos![1];
+		pointPositions[i * 3 + 2] = light.pos![2];
+		pointColors[i * 3] = light.color![0];
+		pointColors[i * 3 + 1] = light.color![1];
+		pointColors[i * 3 + 2] = light.color![2];
+		pointParams[i * 2] = light.range!;
+		pointParams[i * 2 + 1] = light.intensity;
 	}
 
 	if (frame.ambient) {

@@ -1,24 +1,22 @@
 #pragma once
 
 #include "machine/memory/map.h"
+#include <cstdint>
 
 namespace bmsx {
 
 struct MachineManifest;
-class RuntimeAssets;
 
 MemoryMapConfig resolveRuntimeMemoryMapConfig(
 	const MachineManifest& machine,
 	const MachineManifest& systemMachine,
-	const RuntimeAssets& assets,
-	const RuntimeAssets& engineAssets
+	uint32_t systemSlotBytes
 );
 
 void applyManifestMemorySpecs(
 	const MachineManifest& machine,
 	const MachineManifest& systemMachine,
-	const RuntimeAssets& assets,
-	const RuntimeAssets& engineAssets
+	uint32_t systemSlotBytes
 );
 
 } // namespace bmsx

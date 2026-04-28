@@ -8,7 +8,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"accumulatedHostTimeMs",
 	"array",
 	"arrayLength",
-	"textpageSlots",
+	"vramSlots",
 	"callSitePc",
 	"captureReturns",
 	"closureRef",
@@ -23,7 +23,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"enable_glow",
 	"enable_noise",
 	"enable_scanlines",
-	"engineProgramActive",
+	"systemProgramActive",
 	"entries",
 	"frameIndex",
 	"frameScheduler",
@@ -90,7 +90,6 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"sampleArmed",
 	"secondary",
 	"sequence",
-	"skyboxFaceIds",
 	"storageState",
 	"stringHandles",
 	"tag",
@@ -135,6 +134,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"surfaceId",
 	"pixels",
 	"displayFrameBufferPixels",
+	"skyboxFaceSources",
 };
 
 } // namespace

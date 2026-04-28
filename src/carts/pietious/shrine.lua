@@ -2,7 +2,7 @@
 -- shrine overlay renderer — displays text on the shrine screen.
 
 local constants<const> = require('constants')
-local font_module<const> = require('font')
+local font_module<const> = require('bios/font')
 
 local shrine<const> = {}
 shrine.__index = shrine

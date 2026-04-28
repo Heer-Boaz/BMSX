@@ -12,7 +12,7 @@ export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 		machineState: captureRuntimeSaveMachineState(runtime),
 		cpuState: captureRuntimeCpuState(runtime),
 		renderState: captureRuntimeRenderState(),
-		engineProgramActive: runtime.activeProgramSource === 'engine',
+		systemProgramActive: runtime.activeProgramSource === 'system',
 		luaInitialized: runtime.luaInitialized,
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
 		randomSeed: runtime.randomSeedValue,
@@ -21,7 +21,7 @@ export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 }
 
 export function applyRuntimeSaveState(runtime: Runtime, state: RuntimeSaveState): void {
-	runtime.activateProgramSource(state.engineProgramActive ? 'engine' : 'cart');
+	runtime.activateProgramSource(state.systemProgramActive ? 'system' : 'cart');
 	applyRuntimeSaveMachineState(runtime, state.machineState);
 	restoreVdpContextState(runtime.machine.vdp);
 	applyRuntimeCpuState(runtime, state.cpuState);

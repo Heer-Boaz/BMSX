@@ -10,7 +10,7 @@
 #include "../../post/crt_pipeline_gles2.h"
 #endif
 #include "../../graph/graph.h"
-#include "core/engine.h"
+#include "core/console.h"
 #include "machine/runtime/runtime.h"
 #include <algorithm>
 #include <stdexcept>
@@ -200,7 +200,7 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		setAutoPresentGraph(desc);
 		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
 			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			auto* view = EngineCore::instance().view();
+			auto* view = ConsoleCore::instance().view();
 			auto* colorTex = static_cast<SoftwareTexture*>(crtState.colorTex);
 			auto* softBackend = static_cast<SoftwareBackend*>(backend);
 			view->applyCRTPostProcessing(colorTex->data.data(),
@@ -220,7 +220,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 #if !BMSX_ENABLE_GLES2
 	throw BMSX_RUNTIME_ERROR("[RenderPassLibrary] OpenGLES2 backend disabled at compile time.");
 #else
-	EngineCore* const engine = &EngineCore::instance();
+	ConsoleCore* const console = &ConsoleCore::instance();
 
 	// FrameResolve: per-frame state setup
 	{
@@ -251,9 +251,9 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.bootstrap = [](GPUBackend* backend) {
 			CRTPipeline::initPresentGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
-		desc.exec = [engine](GPUBackend* backend, void*, std::any& state) {
+		desc.exec = [console](GPUBackend* backend, void*, std::any& state) {
 			auto& fbState = std::any_cast<Framebuffer2DPipelineState&>(state);
-			CRTPipeline::renderPresentToCurrentTargetGLES2(static_cast<OpenGLES2Backend*>(backend), engine->view(), fbState);
+			CRTPipeline::renderPresentToCurrentTargetGLES2(static_cast<OpenGLES2Backend*>(backend), console->view(), fbState);
 		};
 		registerPass(desc);
 	}
@@ -272,13 +272,13 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.bootstrap = [](GPUBackend* backend) {
 			CRTPipeline::initDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
-		desc.exec = [engine](GPUBackend* backend, void* fbo, std::any& state) {
+		desc.exec = [console](GPUBackend* backend, void* fbo, std::any& state) {
 			(void)fbo;
 			auto& deviceState = std::any_cast<DeviceQuantizePipelineState&>(state);
-			CRTPipeline::renderDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend), engine->view(), deviceState);
+			CRTPipeline::renderDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend), console->view(), deviceState);
 		};
-		desc.shouldExecute = [engine]() {
-			const auto* view = engine->view();
+		desc.shouldExecute = [console]() {
+			const auto* view = console->view();
 			return static_cast<i32>(view->dither_type) != 0;
 		};
 		desc.prepare = noopPreparePass;
@@ -291,12 +291,12 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.id = "present";
 		desc.name = "Present";
 		setAutoPresentGraph(desc);
-		desc.exec = [engine](GPUBackend* backend, void*, std::any& state) {
+		desc.exec = [console](GPUBackend* backend, void*, std::any& state) {
 			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			CRTPipeline::renderPresentGLES2(static_cast<OpenGLES2Backend*>(backend), engine->view(), crtState);
+			CRTPipeline::renderPresentGLES2(static_cast<OpenGLES2Backend*>(backend), console->view(), crtState);
 		};
-		desc.shouldExecute = [engine]() {
-			const auto* view = engine->view();
+		desc.shouldExecute = [console]() {
+			const auto* view = console->view();
 			return !view->crt_postprocessing_enabled;
 		};
 		desc.prepare = noopPreparePass;
@@ -312,12 +312,12 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.bootstrap = [](GPUBackend* backend) {
 			CRTPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
-		desc.exec = [engine](GPUBackend* backend, void*, std::any& state) {
+		desc.exec = [console](GPUBackend* backend, void*, std::any& state) {
 			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), engine->view(), crtState);
+			CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), console->view(), crtState);
 		};
-		desc.shouldExecute = [engine]() {
-			const auto* view = engine->view();
+		desc.shouldExecute = [console]() {
+			const auto* view = console->view();
 			return view->crt_postprocessing_enabled;
 		};
 		desc.prepare = noopPreparePass;

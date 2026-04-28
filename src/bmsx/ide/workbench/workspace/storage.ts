@@ -1,4 +1,4 @@
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 import { scheduleIdeOnce } from '../../common/background_tasks';
 import { taskGate } from '../../../core/taskgate';
 import type { Runtime } from '../../../machine/runtime/runtime';
@@ -23,7 +23,7 @@ function detachWorkspaceExitHandler(): void {
 
 function attachWorkspaceExitHandler(runtime: Runtime): void {
 	detachWorkspaceExitHandler();
-	workspaceState.disposeExitListener = engineCore.platform.lifecycle.onWillExit(() => {
+	workspaceState.disposeExitListener = consoleCore.platform.lifecycle.onWillExit(() => {
 		if (!workspaceState.autosaveEnabled) {
 			return;
 		}

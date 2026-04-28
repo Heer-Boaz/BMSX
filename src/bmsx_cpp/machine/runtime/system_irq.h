@@ -6,6 +6,6 @@ namespace bmsx {
 
 class Runtime;
 
-void raiseEngineIrq(Runtime& runtime, uint32_t mask);
+void raiseSystemIrq(Runtime& runtime, uint32_t mask);
 
 } // namespace bmsx

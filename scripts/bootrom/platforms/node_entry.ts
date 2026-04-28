@@ -12,7 +12,7 @@ import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type Schedu
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
 import { installNativeGlobal, runConsoleChunkToNative } from '../../../src/bmsx/machine/program/executor';
-import { raiseEngineIrq } from '../../../src/bmsx/machine/runtime/engine_irq';
+import { raiseSystemIrq } from '../../../src/bmsx/machine/runtime/system_irq';
 import { IRQ_NEWGAME } from '../../../src/bmsx/machine/bus/io';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
@@ -26,16 +26,16 @@ interface LaunchOptions {
 	inputTimelinePath?: string;
 	testPath?: string;
 	ttlMs?: number;
-	engineRuntimePath?: string;
-	engineAssetsPath?: string;
+	consoleRuntimePath?: string;
+	systemRomPath?: string;
 	cpuProfile?: boolean;
 }
 
 interface BootGlobals {
-	bmsx?: EngineNamespace;
+	bmsx?: ConsoleNamespace;
 }
 
-type EngineNamespace = {
+type ConsoleNamespace = {
 	startCart: typeof import('../../../src/bmsx/machine/program/start_cart').startCart;
 };
 
@@ -216,8 +216,8 @@ function printHelp(): void {
 	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
 	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule; headless capture markers write screenshots next to the timeline.');
 	console.log('  --test <file>            Host test file executed by the headless test runner.');
-	console.log('  --engine-runtime <path>  JS runtime bundle for the engine (defaults to dist/engine(.debug).js).');
-	console.log('  --engine-assets <path>   Engine asset pack ROM (defaults to dist/bmsx-bios(.debug).rom).');
+	console.log('  --console-runtime <path> JS runtime bundle for the console core (defaults to dist/console(.debug).js).');
+	console.log('  --system-rom <path>      System ROM (defaults to dist/bmsx-bios(.debug).rom).');
 	console.log('  --cpu-profile            Enable fantasy CPU profiling and print a report on exit.');
 	console.log('  --help, -h               Show this help message.');
 	console.log('');
@@ -289,10 +289,10 @@ function parseArgs(argv: string[]): LaunchOptions {
 			index += 2;
 			continue;
 		}
-		if (arg === '--engine-runtime') {
+		if (arg === '--console-runtime') {
 			const next = argv[index + 1];
-			if (!next) throw new Error('Expected path after --engine-runtime.');
-			options.engineRuntimePath = next;
+			if (!next) throw new Error('Expected path after --console-runtime.');
+			options.consoleRuntimePath = next;
 			index += 2;
 			continue;
 		}
@@ -301,10 +301,10 @@ function parseArgs(argv: string[]): LaunchOptions {
 			index += 1;
 			continue;
 		}
-		if (arg === '--engine-assets') {
+		if (arg === '--system-rom') {
 			const next = argv[index + 1];
-			if (!next) throw new Error('Expected path after --engine-assets.');
-			options.engineAssetsPath = next;
+			if (!next) throw new Error('Expected path after --system-rom.');
+			options.systemRomPath = next;
 			index += 2;
 			continue;
 		}
@@ -683,13 +683,13 @@ function sanitizeTime(value: number, index: number): number {
 	return value;
 }
 
-async function loadEngineRuntimeFromFile(filePath: string): Promise<void> {
+async function loadConsoleRuntimeFromFile(filePath: string): Promise<void> {
 	try {
 		const script = await fs.readFile(filePath, 'utf8');
 		const wrapped = new Function('globalScope', `${script}\n//# sourceURL=${filePath}`);
 		wrapped(globalThis as Record<string, unknown>);
 	} catch (err: any) {
-		throw new Error(`Failed to load engine runtime from "${filePath}": ${err?.message ?? err}`);
+		throw new Error(`Failed to load console runtime from "${filePath}": ${err?.message ?? err}`);
 	}
 }
 
@@ -785,18 +785,18 @@ function createPlatform(frameIntervalMs: number): Platform {
 	throw new Error(`Unsupported boot platform: ${__BOOTROM_TARGET__}`);
 }
 
-async function prepareRuntime(cliOptions: LaunchOptions, romPath: string, debugFlag: boolean): Promise<EngineNamespace> {
+async function prepareRuntime(cliOptions: LaunchOptions, romPath: string, debugFlag: boolean): Promise<ConsoleNamespace> {
 	ensureHostEnvironment();
 	const globals = globalThis as unknown as BootGlobals;
 	const romDirectory = path.resolve(path.dirname(romPath));
-	const engineRuntimePath = cliOptions.engineRuntimePath
-		? path.resolve(cliOptions.engineRuntimePath)
-		: path.join(romDirectory, debugFlag ? 'engine.debug.js' : 'engine.js');
+	const consoleRuntimePath = cliOptions.consoleRuntimePath
+		? path.resolve(cliOptions.consoleRuntimePath)
+		: path.join(romDirectory, debugFlag ? 'console.debug.js' : 'console.js');
 
-	await loadEngineRuntimeFromFile(engineRuntimePath);
+	await loadConsoleRuntimeFromFile(consoleRuntimePath);
 	const runtime = globals.bmsx;
 	if (!runtime) {
-		throw new Error('Engine runtime did not register the bmsx namespace.');
+		throw new Error('Console runtime did not register the bmsx namespace.');
 	}
 	return runtime;
 }
@@ -814,16 +814,16 @@ async function main(): Promise<void> {
 	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading ROM: ${romPath}`);
-	const engine = await prepareRuntime(cliOptions, romPath, debugFlag);
+	const consoleRuntime = await prepareRuntime(cliOptions, romPath, debugFlag);
 	const romDirectory = path.resolve(path.dirname(romPath));
-	const engineAssetsPath = cliOptions.engineAssetsPath
-		? path.resolve(cliOptions.engineAssetsPath)
+	const systemRomPath = cliOptions.systemRomPath
+		? path.resolve(cliOptions.systemRomPath)
 		: path.join(romDirectory, debugFlag ? 'bmsx-bios.debug.rom' : 'bmsx-bios.rom');
-	assertDebugArtifacts('Engine runtime', debugFlag, cliOptions.engineRuntimePath ?? path.join(romDirectory, debugFlag ? 'engine.debug.js' : 'engine.js'));
-	assertDebugArtifacts('Engine assets', debugFlag, engineAssetsPath);
+	assertDebugArtifacts('Console runtime', debugFlag, cliOptions.consoleRuntimePath ?? path.join(romDirectory, debugFlag ? 'console.debug.js' : 'console.js'));
+	assertDebugArtifacts('System ROM', debugFlag, systemRomPath);
 	const workspaceRoot = path.resolve(romDirectory, '..');
-	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading engine assets: ${engineAssetsPath}`);
-	const engineAssetsBuffer = await readRomFile(engineAssetsPath);
+	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading system ROM: ${systemRomPath}`);
+	const systemRomBuffer = await readRomFile(systemRomPath);
 
 	const buffer = await readRomFile(romPath);
 	installWorkspaceFetchBridge(workspaceRoot);
@@ -908,7 +908,7 @@ async function main(): Promise<void> {
 	}
 	const bootArgs: BootArgs = {
 		cartridge: buffer,
-		engineAssets: engineAssetsBuffer,
+		systemRom: systemRomBuffer,
 		platform,
 		viewHost: platform.gameviewHost,
 	};
@@ -917,7 +917,7 @@ async function main(): Promise<void> {
 	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Starting game (debug=${debugFlag}, frameIntervalMs=${frameInterval}).`);
-	const runtime = await engine.startCart(bootArgs);
+	const runtime = await consoleRuntime.startCart(bootArgs);
 	const requestExit = (code: number): void => {
 		if (!cpuProfileDumped && cpuProfileActive) {
 			cpuProfileDumped = true;
@@ -931,7 +931,7 @@ async function main(): Promise<void> {
 		cpuProfileActive = true;
 		console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler enabled.`);
 	}
-	const isCartProgramActive = (): boolean => runtime.activeProgramSource !== 'engine';
+	const isCartProgramActive = (): boolean => runtime.activeProgramSource !== 'system';
 	const autoTimelinePath = await resolveAutoTimelinePath(cartRoot, romFolder);
 	let scheduledTimeline = false;
 	if (cliOptions.testPath) {
@@ -948,7 +948,7 @@ async function main(): Promise<void> {
 			isCartProgramActive,
 			evaluateLua: (source) => runConsoleChunkToNative(runtime, source),
 			installNativeGlobal: (name, value) => installNativeGlobal(runtime, name, value),
-			requestNewGame: () => raiseEngineIrq(runtime, IRQ_NEWGAME),
+			requestNewGame: () => raiseSystemIrq(runtime, IRQ_NEWGAME),
 			postInput,
 			requestExit,
 			scheduler,

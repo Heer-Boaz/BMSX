@@ -139,7 +139,6 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Video snapshot fields (owned by VDP, consumed by renderer)
 	// ─────────────────────────────────────────────────────────────────────────
-	SkyboxImageIds skyboxFaceIds;
 	bool skyboxRenderReady = false;
 	std::array<f32, SKYBOX_FACE_COUNT * 4> skyboxFaceUvRects{};
 	std::array<i32, SKYBOX_FACE_COUNT> skyboxFaceTextpageBindings{};

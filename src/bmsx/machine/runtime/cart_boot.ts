@@ -1,7 +1,7 @@
-import { engineCore } from '../../core/engine';
+import { consoleCore } from '../../core/console';
 import type { Program, ProgramMetadata } from '../cpu/cpu';
 import { IO_SYS_BOOT_CART, IO_SYS_CART_BOOTREADY } from '../bus/io';
-import { PROGRAM_ASSET_ID } from '../program/asset';
+import { PROGRAM_IMAGE_ID } from '../program/loader';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';
 import { Runtime } from './runtime';
 
@@ -10,7 +10,6 @@ export type PreparedCartProgram = {
 	metadata: ProgramMetadata;
 	entryProtoIndex: number;
 	moduleProtoMap: Map<string, number>;
-	moduleAliases: Array<{ alias: string; path: string }>;
 	staticModulePaths: string[];
 	entryPath: string;
 };
@@ -46,11 +45,11 @@ export class CartBootState {
 		if (this.deferredPreparationCompleted || this.deferredPreparationScheduled) {
 			return;
 		}
-		if (!runtime.assets.cartLayer || !runtime.cartAssetSource || !runtime.cartLuaSources) {
+		if (!runtime.rom.cartLayer || !runtime.cartRomSource || !runtime.cartLuaSources) {
 			return;
 		}
 		this.deferredPreparationScheduled = true;
-		const handle = engineCore.platform.frames.start(() => {
+		const handle = consoleCore.platform.frames.start(() => {
 			handle.stop();
 			if (this.deferredPreparationHandle === handle) {
 				this.deferredPreparationHandle = null;
@@ -113,7 +112,7 @@ export class CartBootState {
 				console.info('Cart boot payload prepared from Lua sources.');
 				return;
 			}
-			const programEntry = runtime.cartAssetSource.getEntry(PROGRAM_ASSET_ID);
+			const programEntry = runtime.cartRomSource.getEntry(PROGRAM_IMAGE_ID);
 			this.setReadyFlag(!!programEntry);
 		} catch (error) {
 			this.preparedProgram = null;
@@ -125,7 +124,7 @@ export class CartBootState {
 
 	private pollSystemBootRequest(): void {
 		const runtime = this.runtime;
-		if (runtime.activeProgramSource !== 'engine') {
+		if (runtime.activeProgramSource !== 'system') {
 			return;
 		}
 		if (runtime.machine.memory.readIoU32(IO_SYS_BOOT_CART) === 0) {

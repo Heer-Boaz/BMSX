@@ -22,12 +22,12 @@ RuntimeSaveState captureRuntimeSaveState(Runtime& runtime) {
 	state.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
 	state.runtimeFailed = runtime.m_runtimeFailed;
 	state.luaInitialized = runtime.m_luaInitialized;
-	state.engineProgramActive = runtime.m_programSource == Runtime::ProgramSource::Engine;
+	state.systemProgramActive = runtime.m_programSource == Runtime::ProgramSource::System;
 	return state;
 }
 
 void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state) {
-	runtime.m_programSource = state.engineProgramActive ? Runtime::ProgramSource::Engine : Runtime::ProgramSource::Cart;
+	runtime.m_programSource = state.systemProgramActive ? Runtime::ProgramSource::System : Runtime::ProgramSource::Cart;
 	applyRuntimeSaveMachineState(runtime, state.machineState);
 	applyRuntimeCpuState(runtime, state.cpuState);
 	runtime.m_api->restoreStorageState(state.storageState);

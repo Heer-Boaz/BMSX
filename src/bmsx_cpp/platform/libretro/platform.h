@@ -1,8 +1,8 @@
 /*
  * platform.h - BMSX Platform implementation for libretro
  *
- * This header defines the LibretroPlatform class that bridges the BMSX engine
- * with the libretro API, allowing the engine to run in RetroArch and other
+ * This header defines the LibretroPlatform class that bridges the BMSX console
+ * with the libretro API, allowing the console to run in RetroArch and other
  * libretro frontends.
  */
 
@@ -25,7 +25,7 @@ class GamepadInput;
 class KeyboardInput;
 class PointerInput;
 class LibretroInputHub;
-class EngineCore;
+class ConsoleCore;
 
 /* ============================================================================
  * Framebuffer for video output
@@ -190,7 +190,7 @@ public:
 	bool loadRomFromPath(const char* path);
 	bool loadEmptyCart();
 	void unloadRom();
-	void tryLoadEngineAssets(const char* romPath);  // Try to load bmsx-bios.rom from ROM directory
+	void tryLoadSystemRom(const char* romPath);  // Try to load bmsx-bios.rom from ROM directory
 
 	// Emulation control
 	void reset();
@@ -201,8 +201,8 @@ public:
 	const AudioBuffer& getAudioBuffer() const { return m_audio_buffer; }
 	double frameTimeSec() const { return m_frame_time_sec; }
 
-	// Engine access
-	EngineCore* engine() { return m_engine.get(); }
+	// Console access
+	ConsoleCore* console() { return m_console.get(); }
 
 	// Save states
 	size_t getStateSize() const;
@@ -234,7 +234,7 @@ private:
 	void pollInput();
 	void processAudio();
 	void log(retro_log_level level, const char* fmt, ...);
-	bool loadEngineAssetsFromFile(const std::string& path);
+	bool loadSystemRomFromFile(const std::string& path);
 	bool loadRomOwned(std::vector<uint8_t>&& data);
 
 	// Libretro callbacks
@@ -267,13 +267,13 @@ private:
 	i32 m_dither_type = 0;
 	bool m_frameskip_enabled = false;
 	bool m_frameskip_next = false;
-	bool m_render_assets_need_refresh = true;
+	bool m_render_surfaces_need_refresh = true;
 
 	// Controller configuration
 	std::array<unsigned, 4> m_controller_devices{};
 
-	// Engine instance
-	std::unique_ptr<EngineCore> m_engine;
+	// Console instance
+	std::unique_ptr<ConsoleCore> m_console;
 
 	// Platform components
 	std::unique_ptr<Clock> m_clock;

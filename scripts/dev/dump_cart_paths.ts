@@ -1,4 +1,4 @@
-import { loadAssetList, normalizeCartridgeBlob } from '../../src/bmsx/rompack/loader';
+import { normalizeCartridgeBlob, parseCartridgeIndex } from '../../src/bmsx/rompack/loader';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -11,12 +11,12 @@ async function main(): Promise<void> {
 	const absoluteRomPath = path.resolve(romPath);
 	const romBuffer = await readFile(absoluteRomPath);
 	const { payload } = normalizeCartridgeBlob(romBuffer);
-	const { assets, projectRootPath } = await loadAssetList(payload);
+	const { entries, projectRootPath } = await parseCartridgeIndex(payload);
 
 	console.log(`ROM: ${absoluteRomPath}`);
 	console.log(`projectRootPath: ${projectRootPath ?? '<none>'}`);
 	console.log('Assets (type -> sourcePath):');
-	for (const asset of assets) {
+	for (const asset of entries) {
 		const label = asset.source_path ?? '<no source path>';
 		console.log(`  ${asset.type.padEnd(8)} ${asset.resid.padEnd(20)} ${label}`);
 	}

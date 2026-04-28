@@ -1,7 +1,7 @@
 #ifndef BMSX_SYSTEM_MACHINE_H
 #define BMSX_SYSTEM_MACHINE_H
 
-#include "rompack/assets.h"
+#include "rompack/package.h"
 
 namespace bmsx {
 

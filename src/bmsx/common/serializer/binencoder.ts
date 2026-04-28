@@ -542,10 +542,10 @@ export function requireObject(value: unknown, label: string): Record<string, unk
 	return value as Record<string, unknown>;
 }
 
-export function requireObjectKey(value: unknown, key: string, label: string): unknown {
+export function requireObjectKey(value: unknown, key: string, label: string, more_label?: string): unknown {
 	const obj = requireObject(value, label);
 	if (!(key in obj)) {
-		throw new Error(`${label}.${key} is required.`);
+		throw new Error(`${label}.${key} ${more_label ? `(${more_label})` : ''} is required.`);
 	}
 	return obj[key];
 }

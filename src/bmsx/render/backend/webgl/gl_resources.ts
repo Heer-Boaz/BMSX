@@ -1,12 +1,12 @@
 // Centralized low-level WebGL helper & resource creation utilities.
 // Moved out of backend.ts to keep backend focused on orchestration.
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 import { formatNumberAsHex } from '../../../common/byte_hex_string';
 import { TextureParams } from '../interfaces';
 import { TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD } from './constants';
 
 function getRenderContext() {
-	return engineCore.view;
+	return consoleCore.view;
 }
 
 export function glCreateBuffer(

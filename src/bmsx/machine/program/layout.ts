@@ -1,30 +1,30 @@
 import { INSTRUCTION_BYTES } from '../cpu/instruction_format';
 
 export type ProgramLayout = {
-	engineBasePc: number;
+	systemBasePc: number;
 	cartBasePc: number;
 };
 
-export const ENGINE_BASE_PC = 0;
+export const SYSTEM_BASE_PC = 0;
 export const CART_BASE_PC = 0x80000;
 
-export const resolveProgramLayout = (engineCodeBytes: number, layout?: Partial<ProgramLayout>): ProgramLayout => {
-	const engineBasePc = layout?.engineBasePc ?? ENGINE_BASE_PC;
+export const resolveProgramLayout = (systemCodeBytes: number, layout?: Partial<ProgramLayout>): ProgramLayout => {
+	const systemBasePc = layout?.systemBasePc ?? SYSTEM_BASE_PC;
 	const cartBasePc = layout?.cartBasePc ?? CART_BASE_PC;
-	if (engineBasePc < 0) {
-		throw new Error(`[ProgramLayout] Engine base PC must be >= 0 (got ${engineBasePc}).`);
+	if (systemBasePc < 0) {
+		throw new Error(`[ProgramLayout] System base PC must be >= 0 (got ${systemBasePc}).`);
 	}
 	if (cartBasePc < 0) {
 		throw new Error(`[ProgramLayout] Cart base PC must be >= 0 (got ${cartBasePc}).`);
 	}
-	if (engineBasePc % INSTRUCTION_BYTES !== 0) {
-		throw new Error(`[ProgramLayout] Engine base PC must align to ${INSTRUCTION_BYTES}-byte words (got ${engineBasePc}).`);
+	if (systemBasePc % INSTRUCTION_BYTES !== 0) {
+		throw new Error(`[ProgramLayout] System base PC must align to ${INSTRUCTION_BYTES}-byte words (got ${systemBasePc}).`);
 	}
 	if (cartBasePc % INSTRUCTION_BYTES !== 0) {
 		throw new Error(`[ProgramLayout] Cart base PC must align to ${INSTRUCTION_BYTES}-byte words (got ${cartBasePc}).`);
 	}
-	if (engineBasePc + engineCodeBytes > cartBasePc) {
-		throw new Error(`[ProgramLayout] Engine program (${engineCodeBytes} bytes) overlaps cart base PC ${cartBasePc}.`);
+	if (systemBasePc + systemCodeBytes > cartBasePc) {
+		throw new Error(`[ProgramLayout] System program (${systemCodeBytes} bytes) overlaps cart base PC ${cartBasePc}.`);
 	}
-	return { engineBasePc, cartBasePc };
+	return { systemBasePc, cartBasePc };
 };

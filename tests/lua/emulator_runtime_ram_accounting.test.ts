@@ -5,7 +5,7 @@ import { CPU, Table, createNativeFunction, createNativeObject } from '../../src/
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 
 test('tracked heap bytes include rooted tables and native arrays', () => {
-	const memory = new Memory({ engineRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const key = cpu.getStringPool().intern('state');
 	const listKey = cpu.getStringPool().intern('list');
@@ -50,7 +50,7 @@ test('tracked heap bytes include rooted tables and native arrays', () => {
 });
 
 test('tracked heap bytes include explicit extra roots for native iterators and handles', () => {
-	const memory = new Memory({ engineRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 
 	const iterator = createNativeFunction('pairs.iterator', () => {});
@@ -68,7 +68,7 @@ test('tracked heap bytes include explicit extra roots for native iterators and h
 });
 
 test('tracked heap bytes do not include raw js array capacity without native iteration entries', () => {
-	const memory = new Memory({ engineRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 
 	const before = cpu.getTrackedHeapBytes();

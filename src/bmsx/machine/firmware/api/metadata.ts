@@ -66,7 +66,7 @@ export const API_METHOD_METADATA = {
 		returnType: 'void',
 	},
 	skybox: {
-		description: 'Sets the skybox face image ids (posx, negx, posy, negy, posz, negz). Faces must be textpaged and mapped into the primary or secondary textpage slot.',
+		description: 'Sets the skybox face image ids (posx, negx, posy, negy, posz, negz). Faces must be slot-backed and mapped into the primary or secondary image slot.',
 		parameters: [
 			{ name: 'posx', description: 'Positive X face image id.' },
 			{ name: 'negx', description: 'Negative X face image id.' },
@@ -296,7 +296,7 @@ export const API_METHOD_METADATA = {
 			returnDescription: 'Subsystem instance, or nil when not found.',
 		},
 	emit: {
-		description: 'Broadcasts an engine event via the global event bus.',
+		description: 'Broadcasts a runtime event via the global event bus.',
 		parameters: [
 			{ name: 'event_name', description: 'Name of the event to emit.' },
 			{ name: 'emitter_or_id', optional: true, description: 'Optional emitter instance or id.' },

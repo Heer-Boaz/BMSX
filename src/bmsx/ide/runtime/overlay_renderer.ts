@@ -7,7 +7,7 @@ import type {
 	RectRenderSubmission,
 	RenderLayer
 } from '../../render/shared/submissions';
-import { engineCore } from '../../core/engine';
+import { consoleCore } from '../../core/console';
 import { publishOverlayFrame, type EditorOverlayFrame } from '../../render/editor/overlay_queue';
 import type { GameView } from '../../render/gameview';
 import type { Viewport } from '../../rompack/format';
@@ -59,7 +59,7 @@ export class OverlayRenderer {
 
 	public beginFrame(): void {
 		this.capturingFrame = true;
-		const view = engineCore.view;
+		const view = consoleCore.view;
 		const offscreen = view.offscreenCanvasSize;
 		const logical = view.viewportSize;
 		const renderWidth = this.overrideSize ? this.overrideSize.width : offscreen.x;
@@ -151,7 +151,7 @@ export class OverlayRenderer {
 
 	private submit(submission: RenderSubmission): void {
 		if (!this.capturingFrame) {
-			engineCore.view.renderer.submit.typed(submission);
+			consoleCore.view.renderer.submit.typed(submission);
 			return;
 		}
 		this.commands.push(submission);

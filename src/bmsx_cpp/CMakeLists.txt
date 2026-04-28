@@ -94,13 +94,15 @@ add_library(bmsx_core STATIC
 
 	# Core systems
 	core/primitives.cpp
-	core/engine.cpp
+	core/console.cpp
 	core/rom_boot_manager.cpp
-	core/host_asset_sync.cpp
 	core/host_frame.cpp
+	core/vdp_slot_bootstrap.cpp
 	core/system.cpp
 	core/registry.cpp
-	rompack/assets.cpp
+	rompack/package.cpp
+	rompack/host_system_atlas.cpp
+	rompack/host_system_atlas_generated.cpp
 	common/serializer/binencoder.cpp
 	rompack/format.cpp
 	core/font.cpp
@@ -128,7 +130,6 @@ add_library(bmsx_core STATIC
 	render/backend/frame_uniforms.cpp
 	render/lighting/system.cpp
 	render/shared/queues.cpp
-	render/runtime_asset_textures.cpp
 	render/runtime/state.cpp
 	render/shared/camera_state.cpp
 	render/shared/hardware/camera.cpp
@@ -184,11 +185,9 @@ add_library(bmsx_core STATIC
 	machine/runtime/save_state/codec.cpp
 	machine/runtime/resume_snapshot.cpp
 	machine/runtime/game/table.cpp
-	machine/memory/asset_memory.cpp
-	machine/memory/asset_images.cpp
 	machine/runtime/cart_boot.cpp
 	machine/runtime/cpu_executor.cpp
-	machine/runtime/engine_irq.cpp
+	machine/runtime/system_irq.cpp
 	machine/runtime/boot_timing.cpp
 	machine/runtime/frame/loop.cpp
 	machine/program/executor.cpp

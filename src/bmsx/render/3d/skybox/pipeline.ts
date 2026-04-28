@@ -1,4 +1,4 @@
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 import skyboxFS from '../shaders/skybox.frag.glsl';
 import skyboxVS from '../shaders/skybox.vert.glsl';
 import type { RenderContext } from '../../backend/interfaces';
@@ -6,7 +6,7 @@ import { RenderPassLibrary } from '../../backend/pass/library';
 import { SkyboxPipelineState } from '../../backend/interfaces';
 import { TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '../../backend/webgl/constants';
 import { WebGLBackend } from '../../backend/webgl/backend';
-import { TEXTPAGE_PRIMARY_SLOT_ID, TEXTPAGE_SECONDARY_SLOT_ID } from '../../../rompack/format';
+import { VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
 import { _skyTint, _skyExposure } from '../../shared/queues';
 import { resolveActiveCamera3D } from '../../shared/hardware/camera';
 
@@ -131,25 +131,25 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			initSkyboxPipeline(backend as WebGLBackend);
 		},
 		writesDepth: false,
-		shouldExecute: () => !!resolveActiveCamera3D() && !!engineCore.view.skyboxFaceUvRects,
+		shouldExecute: () => !!resolveActiveCamera3D() && !!consoleCore.view.skyboxFaceUvRects,
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
-			const runtime: SkyboxRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: engineCore.view };
+			const runtime: SkyboxRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: consoleCore.view };
 			drawSkybox(runtime, fbo as WebGLFramebuffer, s as SkyboxPipelineState);
 		},
 		prepare: (backend, _state) => {
-			const gv = engineCore.view;
+			const gv = consoleCore.view;
 			if (!gv.skyboxFaceUvRects || !gv.skyboxFaceTextpageBindings) return;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = resolveActiveCamera3D();
 			if (!cam) return;
-			const textpagePrimaryTex = gv.textures[TEXTPAGE_PRIMARY_SLOT_ID];
+			const textpagePrimaryTex = gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY];
 			if (!textpagePrimaryTex) {
-				throw new Error("[Skybox] Texture '_textpage_primary' missing from view textures.");
+				throw new Error(`[Skybox] Texture '${VDP_PRIMARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
 			}
-			const textpageSecondaryTex = gv.textures[TEXTPAGE_SECONDARY_SLOT_ID];
+			const textpageSecondaryTex = gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY];
 			if (!textpageSecondaryTex) {
-				throw new Error("[Skybox] Texture '_textpage_secondary' missing from view textures.");
+				throw new Error(`[Skybox] Texture '${VDP_SECONDARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
 			}
 			// Update state with dynamic data (reuse camera matrices)
 			const mats = cam.getMatrices();

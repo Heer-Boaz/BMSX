@@ -4,7 +4,7 @@
 
 #include "pointer.h"
 #include "manager.h"
-#include "core/engine.h"
+#include "core/console.h"
 #include <algorithm>
 #include <cmath>
 
@@ -38,7 +38,7 @@ PointerInput::~PointerInput() {
 }
 
 void PointerInput::pollInput() {
-	const f64 now = EngineCore::instance().clock()->now();
+	const f64 now = ConsoleCore::instance().clock()->now();
 	const f64 prevPollTime = m_lastPollTimeMs;
 	m_lastPollTimeMs = now;
 

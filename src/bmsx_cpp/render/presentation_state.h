@@ -7,7 +7,7 @@
 
 namespace bmsx {
 
-class EngineCore;
+class ConsoleCore;
 class Runtime;
 
 struct RenderPresentation {
@@ -24,7 +24,7 @@ public:
 	void clearPresentation();
 	void reset();
 	void syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence);
-	void render(EngineCore& engine, Runtime& runtime);
+	void render(ConsoleCore& console, Runtime& runtime);
 
 private:
 	void recordTickCompletion(bool visualCommitted, bool vdpFrameHeld);

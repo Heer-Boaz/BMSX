@@ -6,7 +6,7 @@
  * topological order. This file intentionally avoids touching existing pipeline
  * code so migration can be incremental.
  */
-import { engineCore } from '../../core/engine';
+import { consoleCore } from '../../core/console';
 import { taskGate } from '../../core/taskgate';
 import { color_arr } from '../../rompack/format';
 import { GPUBackend, TextureHandle } from '../backend/interfaces';
@@ -250,9 +250,16 @@ export class RenderGraphRuntime {
 		}
 
 		// Validate single present (backbuffer export)
-		const presentTex = Array.from(texMap.values()).filter(r => r.present);
-		if (presentTex.length !== 1) {
-			throw Error(`RenderGraph validation failed: expected exactly 1 present/exported texture, found ${presentTex.length}.`);
+		let presentTex: InternalTexResource = null;
+		let presentTexCount = 0;
+		for (const resource of texMap.values()) {
+			if (resource.present) {
+				presentTex = resource;
+				presentTexCount += 1;
+			}
+		}
+		if (presentTexCount !== 1) {
+			throw Error(`RenderGraph validation failed: expected exactly 1 present/exported texture, found ${presentTexCount}.`);
 		}
 		// Build reachability from present backwards
 		const passCount = this.passes.length;
@@ -272,7 +279,7 @@ export class RenderGraphRuntime {
 			// Also include writer of any texture this pass exports (present) – handled via lastUse marking above
 		}
 		// Present texture's writer chain
-		const finalRes = presentTex[0];
+		const finalRes = presentTex;
 		if (finalRes.exportPass !== undefined) markPass(finalRes.exportPass);
 		// Mark all writers of the presented resource so overlays are retained in execution order
 		if (finalRes.writerPasses.length) for (const wp of finalRes.writerPasses) markPass(wp);
@@ -381,11 +388,11 @@ export class RenderGraphRuntime {
 	}
 
 	execute(frame: FrameData): void {
-		// If an external asset/task gate system is present (optional), we can delay execution until
+		// If an external texture/task gate system is present (optional), we can delay execution until
 		// blocking async loads finish, and then invalidate once to rebuild resource lifetimes.
 		// Integration contract: global taskGate.group('render') or similar provides readiness.
 		const gateGroup = taskGate.group('render');
-		if (gateGroup && !gateGroup.ready) return; // Defer frame until required assets loaded
+		if (gateGroup && !gateGroup.ready) return; // Defer frame until required textures are loaded
 		if (gateGroup && gateGroup.ready && this._pendingInvalidateOnReady) { this.invalidate(); this._pendingInvalidateOnReady = false; }
 		checkWebGLError('Before compile');
 		if (!this.compiled) this.compile(frame);
@@ -510,9 +517,9 @@ export class RenderGraphRuntime {
 					}
 				};
 			}
-			const t0 = engineCore.platform.clock.now();
+			const t0 = consoleCore.platform.clock.now();
 			pass.execute(ctx, frame, data);
-			const dt = engineCore.platform.clock.now() - t0;
+			const dt = consoleCore.platform.clock.now() - t0;
 			this.passStats.push({ name: pass.name, ms: dt });
 			if (rp) rp.end();
 			checkWebGLError(`After pass execution: ${i}: ${this.passes[i].name}`);

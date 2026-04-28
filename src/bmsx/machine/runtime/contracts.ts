@@ -192,7 +192,7 @@ export type RuntimeSaveState = {
 	machineState: RuntimeSaveMachineState;
 	cpuState: CpuRuntimeState;
 	renderState: RuntimeRenderState;
-	engineProgramActive: boolean;
+	systemProgramActive: boolean;
 	luaInitialized: boolean;
 	luaRuntimeFailed: boolean;
 	randomSeed: number;

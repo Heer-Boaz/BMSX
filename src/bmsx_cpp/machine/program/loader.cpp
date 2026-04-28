@@ -9,21 +9,21 @@ namespace {
 
 struct ConstRelocKindEntry {
 	const char* name;
-	ProgramAsset::ConstRelocKind kind;
+	ProgramImage::ConstRelocKind kind;
 };
 
 constexpr ConstRelocKindEntry CONST_RELOC_KIND_ENTRIES[] = {
-	{"bx", ProgramAsset::ConstRelocKind::Bx},
-	{"rk_b", ProgramAsset::ConstRelocKind::RkB},
-	{"rk_c", ProgramAsset::ConstRelocKind::RkC},
-	{"const_b", ProgramAsset::ConstRelocKind::ConstB},
-	{"const_c", ProgramAsset::ConstRelocKind::ConstC},
-	{"gl", ProgramAsset::ConstRelocKind::Gl},
-	{"sys", ProgramAsset::ConstRelocKind::Sys},
-	{"module", ProgramAsset::ConstRelocKind::Module},
+	{"bx", ProgramImage::ConstRelocKind::Bx},
+	{"rk_b", ProgramImage::ConstRelocKind::RkB},
+	{"rk_c", ProgramImage::ConstRelocKind::RkC},
+	{"const_b", ProgramImage::ConstRelocKind::ConstB},
+	{"const_c", ProgramImage::ConstRelocKind::ConstC},
+	{"gl", ProgramImage::ConstRelocKind::Gl},
+	{"sys", ProgramImage::ConstRelocKind::Sys},
+	{"module", ProgramImage::ConstRelocKind::Module},
 };
 
-ProgramAsset::ConstRelocKind parseConstRelocKind(const std::string& kind) {
+ProgramImage::ConstRelocKind parseConstRelocKind(const std::string& kind) {
 	for (const auto& entry : CONST_RELOC_KIND_ENTRIES) {
 		if (kind == entry.name) {
 			return entry.kind;
@@ -55,18 +55,6 @@ LocalSlotDebug parseLocalSlotDebug(const BinValue& slotVal) {
 	return slot;
 }
 
-std::vector<std::string> parseStringArray(const BinValue& arrayVal) {
-	const auto& array = arrayVal.asArray();
-	std::vector<std::string> values;
-	values.reserve(array.size());
-	for (const auto& entry : array) {
-		values.push_back(entry.asString());
-	}
-	return values;
-}
-
-} // namespace
-
 /**
  * Convert BinValue to runtime Value (for const pool).
  */
@@ -80,7 +68,7 @@ Value binValueToRuntimeValue(const BinValue& bv, StringPool& stringPool) {
 }
 
 /**
- * Extract Program from decoded ProgramAsset.
+ * Extract Program from decoded ProgramImage.
  */
 std::unique_ptr<Program> extractProgram(const BinValue& programObj) {
 	auto program = std::make_unique<Program>();
@@ -157,18 +145,18 @@ std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadata
 	const auto& upvalueNamesByProtoArr = metadataObj.require("upvalueNamesByProto").asArray();
 	metadata->upvalueNamesByProto.resize(upvalueNamesByProtoArr.size());
 	for (size_t protoIndex = 0; protoIndex < upvalueNamesByProtoArr.size(); ++protoIndex) {
-		metadata->upvalueNamesByProto[protoIndex] = parseStringArray(upvalueNamesByProtoArr[protoIndex]);
+		metadata->upvalueNamesByProto[protoIndex] = upvalueNamesByProtoArr[protoIndex];
 	}
 	if (metadata->upvalueNamesByProto.size() != metadata->protoIds.size()) {
 		throw BMSX_RUNTIME_ERROR("ProgramLoader: upvalueNamesByProto length does not match protoIds length.");
 	}
 
-	metadata->systemGlobalNames = parseStringArray(metadataObj.require("systemGlobalNames"));
-	metadata->globalNames = parseStringArray(metadataObj.require("globalNames"));
+	metadata->systemGlobalNames = metadataObj.require("systemGlobalNames");
+	metadata->globalNames = metadataObj.require("globalNames");
 	return metadata;
 }
 
-std::unique_ptr<ProgramAsset> ProgramLoader::load(const uint8_t* data, size_t size) {
+std::unique_ptr<ProgramImage> ProgramLoader::load(const uint8_t* data, size_t size) {
 	// Decode binary format using binencoder
 	BinValue root = decodeBinary(data, size);
 
@@ -176,47 +164,38 @@ std::unique_ptr<ProgramAsset> ProgramLoader::load(const uint8_t* data, size_t si
 		throw BMSX_RUNTIME_ERROR("ProgramLoader: expected object at root");
 	}
 
-	auto asset = std::make_unique<ProgramAsset>();
+	auto image = std::make_unique<ProgramImage>();
 
 	// Extract entryProtoIndex
-	asset->entryProtoIndex = root.require("entryProtoIndex").toI32();
+	image->entryProtoIndex = root.require("entryProtoIndex").toI32();
 
 	// Extract program
-	asset->program = extractProgram(root.require("program"));
+	image->program = extractProgram(root.require("program"));
 
 	// Extract moduleProtos
 	const auto& moduleProtosArr = root.require("moduleProtos").asArray();
-	asset->moduleProtos.reserve(moduleProtosArr.size());
+	image->moduleProtos.reserve(moduleProtosArr.size());
 	for (const auto& mp : moduleProtosArr) {
 		std::string path = mp.require("path").asString();
 		int protoIndex = mp.require("protoIndex").toI32();
-		asset->moduleProtos.emplace_back(std::move(path), protoIndex);
+		image->moduleProtos.emplace_back(std::move(path), protoIndex);
 	}
 
-	// Extract moduleAliases
-	const auto& moduleAliasesArr = root.require("moduleAliases").asArray();
-	asset->moduleAliases.reserve(moduleAliasesArr.size());
-	for (const auto& ma : moduleAliasesArr) {
-		std::string alias = ma.require("alias").asString();
-		std::string path = ma.require("path").asString();
-		asset->moduleAliases.emplace_back(std::move(alias), std::move(path));
-	}
-
-	asset->staticModulePaths = parseStringArray(root.require("staticModulePaths"));
+	image->staticModulePaths = root.require("staticModulePaths");
 
 	// Extract link metadata (required).
 	const auto& linkObj = root.require("link");
 	const auto& constRelocsArr = linkObj.require("constRelocs").asArray();
-	asset->link.constRelocs.reserve(constRelocsArr.size());
+	image->link.constRelocs.reserve(constRelocsArr.size());
 	for (const auto& relocObj : constRelocsArr) {
-		ProgramAsset::ConstReloc reloc;
+		ProgramImage::ConstReloc reloc;
 		reloc.wordIndex = relocObj.require("wordIndex").toI32();
 		reloc.constIndex = relocObj.require("constIndex").toI32();
 		reloc.kind = parseConstRelocKind(relocObj.require("kind").asString());
-		asset->link.constRelocs.push_back(reloc);
+		image->link.constRelocs.push_back(reloc);
 	}
 
-	return asset;
+	return image;
 }
 
 std::unique_ptr<ProgramMetadata> ProgramLoader::loadSymbols(const uint8_t* data, size_t size) {

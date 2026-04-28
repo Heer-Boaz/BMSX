@@ -1,4 +1,4 @@
-local action_effects<const> = require('action_effects')
+local action_effects<const> = require('bios/action_effects')
 
 local player_abilities<const> = {}
 

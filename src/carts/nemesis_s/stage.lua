@@ -379,7 +379,7 @@ function stage_subsystem:apply_stage_config(stage_data)
 end
 
 function stage_subsystem:build_tape()
-	local stage_data<const> = assets.data[constants.stage.asset_id]
+	local stage_data<const> = sys_rom_data[constants.stage.asset_id]
 	self:apply_stage_config(stage_data)
 	local map_rows<const> = stage_data.map_rows
 

@@ -26,7 +26,7 @@ void CartBootState::setReadyFlag(bool value) {
 
 void CartBootState::prepareIfNeeded() {
 	Runtime& runtime = m_runtime;
-	if (!runtime.isEngineProgramActive()) {
+	if (!runtime.isSystemProgramActive()) {
 		return;
 	}
 	if (!m_bootManager.hasLoadedCartProgram()) {
@@ -59,7 +59,7 @@ bool CartBootState::processProgramReloadRequest() {
 
 bool CartBootState::pollSystemBootRequest() {
 	Runtime& runtime = m_runtime;
-	if (!runtime.isEngineProgramActive()) {
+	if (!runtime.isSystemProgramActive()) {
 		return false;
 	}
 	if (runtime.machine().memory().readIoU32(IO_SYS_BOOT_CART) == 0u) {

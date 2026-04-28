@@ -1,4 +1,4 @@
-import { engineCore } from '../../core/engine';
+import { consoleCore } from '../../core/console';
 import { editorRuntimeState } from '../editor/common/runtime_state';
 import { scheduleRuntimeTask } from '../common/background_tasks';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
@@ -31,7 +31,7 @@ export function performEditorAction(runtime: Runtime, action: ActionPromptAction
 	}
 }
 
-function hasPendingEngineModuleReload(runtime: Runtime): boolean {
+function hasPendingSystemModuleReload(runtime: Runtime): boolean {
 	if (!runtime.cartLuaSources) {
 		return false;
 	}
@@ -42,7 +42,7 @@ function hasPendingEngineModuleReload(runtime: Runtime): boolean {
 		if (context.saveGeneration <= context.appliedGeneration) {
 			continue;
 		}
-		if (runtime.engineLuaSources.path2lua[context.descriptor.path]) {
+		if (runtime.systemLuaSources.path2lua[context.descriptor.path]) {
 			return true;
 		}
 	}
@@ -67,26 +67,26 @@ export function performHotResume(runtime: Runtime): boolean {
 		}
 		console.log('[IDE] Applying workspace overrides to BIOS before resume');
 		const engineChanged = await applyWorkspaceOverridesToRegistry(runtime, {
-			registry: runtime.engineLuaSources,
+			registry: runtime.systemLuaSources,
 			storage: runtime.storageService,
 			includeServer: true,
-			projectRootPath: runtime.engineProjectRootPath,
+			projectRootPath: runtime.systemProjectRootPath,
 		});
-		const preserveEngineModules =
-				runtime.activeProgramSource !== 'engine'
+		const preserveSystemModules =
+				runtime.activeProgramSource !== 'system'
 			&& engineChanged.size === 0
-			&& !hasPendingEngineModuleReload(runtime);
+			&& !hasPendingSystemModuleReload(runtime);
 		console.log('[IDE] Capturing runtime snapshot for resume');
 		const snapshot = captureRuntimeResumeSnapshot(runtime);
 		console.log('[IDE] Clear execution stop highlights before resume');
 		workbenchMode.clearFaultState(runtime);
 		console.log('[IDE] Resuming from snapshot after hot-resume');
-		await luaPipeline.resumeFromSnapshot(runtime, snapshot, preserveEngineModules);
+		await luaPipeline.resumeFromSnapshot(runtime, snapshot, preserveSystemModules);
 		if (shouldUpdateGeneration) {
 			console.log('[IDE] Updating applied generation after resume');
 			editorDocumentState.appliedGeneration = targetGeneration;
 		}
-		engineCore.paused = false;
+		consoleCore.paused = false;
 	}, (error) => {
 		console.error(error);
 		runtime.editor.handleRuntimeTaskError(error, 'Failed to resume game');
@@ -102,7 +102,7 @@ export function performReboot(runtime: Runtime): boolean {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		await runtime.rebootToBootRom();
 		editorDocumentState.appliedGeneration = targetGeneration;
-		engineCore.paused = false;
+		consoleCore.paused = false;
 	}, (error) => {
 		runtime.editor.handleRuntimeTaskError(error, 'Failed to reboot game');
 	});

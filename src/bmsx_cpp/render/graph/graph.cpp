@@ -221,10 +221,8 @@ void RenderGraphRuntime::compile(FrameData* frame) {
 
 	for (const auto& res : m_texResources) {
 		if (res.writerPasses.size() > 1) {
-			std::vector<i32> writers = res.writerPasses;
-			std::sort(writers.begin(), writers.end());
-			for (size_t wi = 0; wi + 1 < writers.size(); ++wi) {
-				adj[writers[wi]].push_back(writers[wi + 1]);
+			for (size_t wi = 0; wi + 1 < res.writerPasses.size(); ++wi) {
+				adj[res.writerPasses[wi]].push_back(res.writerPasses[wi + 1]);
 			}
 		}
 	}

@@ -133,9 +133,9 @@
 --     entries provides per-handler emitter filtering, so a handler can
 --     restrict to events from a specific source object.
 
-local fsm_trace<const> = require('fsm/trace')
-local clear_map<const> = require('clear_map')
-local timeline_module<const> = require('timeline/index')
+local fsm_trace<const> = require('bios/fsm/trace')
+local clear_map<const> = require('bios/util/clear_map')
+local timeline_module<const> = require('bios/timeline/index')
 
 local statedefinition<const> = {}
 statedefinition.__index = statedefinition

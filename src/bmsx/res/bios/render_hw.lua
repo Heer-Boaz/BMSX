@@ -3,6 +3,21 @@
 
 local render_hw<const> = {}
 local particle_options<const> = {}
+local skybox_posx<const> = {}
+local skybox_negx<const> = {}
+local skybox_posy<const> = {}
+local skybox_negy<const> = {}
+local skybox_posz<const> = {}
+local skybox_negz<const> = {}
+
+local write_skybox_source<const> = function(dst, imgid)
+	local rect<const> = vdp_img_rect(imgid)
+	dst.slot = vdp_img_slot(rect)
+	dst.u = rect.u
+	dst.v = rect.v
+	dst.w = rect.w
+	dst.h = rect.h
+end
 
 function render_hw.put_mesh(mesh, matrix, opts)
 	put_mesh(mesh, matrix, opts)
@@ -28,7 +43,13 @@ function render_hw.set_camera(view, proj, eye)
 end
 
 function render_hw.skybox(posx, negx, posy, negy, posz, negz)
-	skybox(posx, negx, posy, negy, posz, negz)
+	write_skybox_source(skybox_posx, posx)
+	write_skybox_source(skybox_negx, negx)
+	write_skybox_source(skybox_posy, posy)
+	write_skybox_source(skybox_negy, negy)
+	write_skybox_source(skybox_posz, posz)
+	write_skybox_source(skybox_negz, negz)
+	skybox(skybox_posx, skybox_negx, skybox_posy, skybox_negy, skybox_posz, skybox_negz)
 end
 
 function render_hw.put_ambient_light(id, color, intensity)

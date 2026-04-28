@@ -1,8 +1,8 @@
 /*
- * engine.cpp - Core engine implementation
+ * console.cpp - Console core implementation
  */
 
-#include "engine.h"
+#include "console.h"
 #include "rom_boot_manager.h"
 #include "system.h"
 #include "input/manager.h"
@@ -17,32 +17,32 @@
 
 namespace bmsx {
 
-EngineCore* EngineCore::s_instance = nullptr;
+ConsoleCore* ConsoleCore::s_instance = nullptr;
 
-EngineCore::EngineCore() {
+ConsoleCore::ConsoleCore() {
 	s_instance = this;
-	m_active_assets = &m_engine_assets;
-	m_machine_manifest = &m_engine_assets.machine;
+	m_active_rom = &m_system_rom;
+	m_machine_manifest = &m_system_rom.machine;
 	m_rom_boot_manager = std::make_unique<RomBootManager>(*this);
 }
 
-EngineCore::~EngineCore() {
+ConsoleCore::~ConsoleCore() {
 	shutdown();
 	if (s_instance == this) {
 		s_instance = nullptr;
 	}
 }
 
-EngineCore& EngineCore::instance() {
+ConsoleCore& ConsoleCore::instance() {
 	return *s_instance;
 }
 
-EngineCore* EngineCore::instancePtr() {
+ConsoleCore* ConsoleCore::instancePtr() {
 	return s_instance;
 }
 
-bool EngineCore::initialize(Platform* platform) {
-	if (m_state != EngineState::Uninitialized) {
+bool ConsoleCore::initialize(Platform* platform) {
+	if (m_state != ConsoleState::Uninitialized) {
 		return false;
 	}
 
@@ -96,12 +96,12 @@ bool EngineCore::initialize(Platform* platform) {
 	m_sound_master = std::make_unique<SoundMaster>();
 	registry().registerObject(m_sound_master.get());
 
-	m_state = EngineState::Initialized;
+	m_state = ConsoleState::Initialized;
 	return true;
 }
 
-void EngineCore::shutdown() {
-	if (m_state == EngineState::Uninitialized) {
+void ConsoleCore::shutdown() {
+	if (m_state == ConsoleState::Uninitialized) {
 		return;
 	}
 
@@ -127,14 +127,14 @@ void EngineCore::shutdown() {
 	registry().clear();
 
 	m_platform = nullptr;
-	m_state = EngineState::Uninitialized;
+	m_state = ConsoleState::Uninitialized;
 }
 
-void EngineCore::start() {
+void ConsoleCore::start() {
 	switch (m_state) {
-		case EngineState::Initialized:
-		case EngineState::Stopped:
-			m_state = EngineState::Running;
+		case ConsoleState::Initialized:
+		case ConsoleState::Stopped:
+			m_state = ConsoleState::Running;
 			runtime().frameScheduler.clearQueuedTime();
 			break;
 		default:
@@ -143,10 +143,10 @@ void EngineCore::start() {
 }
 
 // start normalized-body-acceptable -- pause/resume deliberately mirror state-transition symmetry.
-void EngineCore::pause() {
+void ConsoleCore::pause() {
 	switch (m_state) {
-		case EngineState::Running:
-			m_state = EngineState::Paused;
+		case ConsoleState::Running:
+			m_state = ConsoleState::Paused;
 			runtime().screen.clearPresentation();
 			break;
 		default:
@@ -154,10 +154,10 @@ void EngineCore::pause() {
 	}
 }
 
-void EngineCore::resume() {
+void ConsoleCore::resume() {
 	switch (m_state) {
-		case EngineState::Paused:
-			m_state = EngineState::Running;
+		case ConsoleState::Paused:
+			m_state = ConsoleState::Running;
 			runtime().frameScheduler.clearQueuedTime();
 			break;
 		default:
@@ -166,34 +166,34 @@ void EngineCore::resume() {
 }
 // end normalized-body-acceptable
 
-void EngineCore::stop() {
+void ConsoleCore::stop() {
 	switch (m_state) {
-		case EngineState::Running:
-		case EngineState::Paused:
-			m_state = EngineState::Stopped;
+		case ConsoleState::Running:
+		case ConsoleState::Paused:
+			m_state = ConsoleState::Stopped;
 			break;
 		default:
 			break;
 	}
 }
 
-bool EngineCore::acceptHostFrame(f64 deltaTime) const {
+bool ConsoleCore::acceptHostFrame(f64 deltaTime) const {
 	switch (m_state) {
-		case EngineState::Running:
-		case EngineState::Paused:
+		case ConsoleState::Running:
+		case ConsoleState::Paused:
 			return deltaTime > 0.0;
 		default:
 			return false;
 	}
 }
 
-void EngineCore::startLoadedRuntimeFrame(bool romLoaded) {
-	if (romLoaded && m_state == EngineState::Initialized) {
+void ConsoleCore::startLoadedRuntimeFrame(bool romLoaded) {
+	if (romLoaded && m_state == ConsoleState::Initialized) {
 		start();
 	}
 }
 
-void EngineCore::setHostPaused(bool paused, bool romLoaded) {
+void ConsoleCore::setHostPaused(bool paused, bool romLoaded) {
 	if (paused) {
 		pause();
 		if (m_sound_master) {
@@ -202,14 +202,14 @@ void EngineCore::setHostPaused(bool paused, bool romLoaded) {
 		return;
 	}
 
-	if (m_state == EngineState::Paused) {
+	if (m_state == ConsoleState::Paused) {
 		resume();
 	} else {
 		startLoadedRuntimeFrame(romLoaded);
 	}
 }
 
-void EngineCore::refreshRenderAssets() {
+void ConsoleCore::refreshRenderSurfaces() {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
@@ -225,7 +225,7 @@ void EngineCore::refreshRenderAssets() {
 	restoreVdpContextState(runtime().machine().vdp());
 }
 
-void EngineCore::log(LogLevel level, const char* fmt, ...) {
+void ConsoleCore::log(LogLevel level, const char* fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	va_list args_copy;
@@ -243,7 +243,7 @@ void EngineCore::log(LogLevel level, const char* fmt, ...) {
 
 	std::string message;
 	if (written < 0) {
-		message = "EngineCore::log: formatting error";
+		message = "ConsoleCore::log: formatting error";
 	} else {
 		message.resize(static_cast<size_t>(written) + 1);
 		vsnprintf(message.data(), message.size(), fmt, args_copy);
@@ -253,31 +253,31 @@ void EngineCore::log(LogLevel level, const char* fmt, ...) {
 	m_platform->log(level, message);
 }
 
-ImgAsset* EngineCore::resolveImgAsset(const AssetId& id) {
-	ImgAsset* asset = assets().getImg(id);
-	if (asset) {
-		return asset;
+ImgAsset* ConsoleCore::resolveImageRecord(const AssetId& id) {
+	ImgAsset* record = activeRom().getImg(id);
+	if (record) {
+		return record;
 	}
-	return m_engine_assets.getImg(id);
+	return m_system_rom.getImg(id);
 }
 
-const ImgAsset* EngineCore::resolveImgAsset(const AssetId& id) const {
-	const ImgAsset* asset = assets().getImg(id);
-	if (asset) {
-		return asset;
+const ImgAsset* ConsoleCore::resolveImageRecord(const AssetId& id) const {
+	const ImgAsset* record = activeRom().getImg(id);
+	if (record) {
+		return record;
 	}
-	return m_engine_assets.getImg(id);
+	return m_system_rom.getImg(id);
 }
 
-Runtime& EngineCore::runtime() {
+Runtime& ConsoleCore::runtime() {
 	return *m_runtime;
 }
 
-const Runtime& EngineCore::runtime() const {
+const Runtime& ConsoleCore::runtime() const {
 	return *m_runtime;
 }
 
-Runtime& EngineCore::ensureRuntime(const RuntimeOptions& options) {
+Runtime& ConsoleCore::ensureRuntime(const RuntimeOptions& options) {
 	if (!m_runtime) {
 		m_runtime = std::make_unique<Runtime>(
 			options,

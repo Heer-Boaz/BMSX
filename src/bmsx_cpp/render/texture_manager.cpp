@@ -225,20 +225,20 @@ void TextureManager::updateTexture(TextureHandle handle,
 	m_backend->updateTexture(handle, pixels, width, height, desc);
 }
 
-void TextureManager::updateTexturesForAsset(const AssetId& assetId,
-											const u8* pixels,
-											i32 width,
-											i32 height) {
+void TextureManager::updateTexturesForImageId(const AssetId& imageId,
+												const u8* pixels,
+												i32 width,
+												i32 height) {
 	if (!m_backend) {
 		throw BMSX_RUNTIME_ERROR("TextureManager backend not set");
 	}
-	if (assetId.empty()) {
-		throw BMSX_RUNTIME_ERROR("TextureManager: asset id missing for texture update");
+	if (imageId.empty()) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: image id missing for texture update");
 	}
 	if (!pixels || width <= 0 || height <= 0) {
-		throw BMSX_RUNTIME_ERROR("TextureManager: image asset missing pixel data");
+		throw BMSX_RUNTIME_ERROR("TextureManager: image record missing pixel data");
 	}
-	const std::string prefix = assetId + "|";
+	const std::string prefix = imageId + "|";
 	for (auto& [key, gpuEntry] : m_gpuCache) {
 		if (key.rfind(prefix, 0) != 0) {
 			continue;

@@ -15,7 +15,7 @@ declare global {
 		getRomNameFromUrlParameter: () => string;
 		bootrom: {
 			cartridge: Uint8Array;
-			engineAssets: Uint8Array;
+			systemRom: Uint8Array;
 			debug: boolean;
 			sndcontext: AudioContext;
 			snd_unlocked: boolean;
@@ -24,7 +24,7 @@ declare global {
 			startingGamepadIndex: number;
 			enableOnscreenGamepad: boolean;
 			loadCart: (url: string) => Promise<Uint8Array>;
-			loadEngineAssets: (url: string) => Promise<Uint8Array>;
+			loadSystemRom: (url: string) => Promise<Uint8Array>;
 			start: () => Promise<void>;
 			outputError: (errormsg: string) => void;
 			resizeHandler: () => void;
@@ -48,7 +48,7 @@ export const bootrom = {
 	 * This section of code defines the boot ROM object and its properties and methods.
 	 *
 	 * @property {Uint8Array} cartridge - The cart ROM blob.
-	 * @property {Uint8Array} engineAssets - The engine asset blob.
+	 * @property {Uint8Array} systemRom - The system ROM blob.
 	 * @property {boolean} debug - A flag indicating whether debug mode is enabled.
 	 * @property {AudioContext} sndcontext - The audio context for the boot ROM.
 	 * @property {GainNode} gainnode - The gain node for the boot ROM.
@@ -59,17 +59,17 @@ export const bootrom = {
 	 * @param {string} url - The URL of the ROM pack to load.
 	 * @returns {Promise<Uint8Array>} A Promise that resolves to the loaded ROM blob, or null if the loading failed.
 	 *
-	 * @function loadEngineAssets - Asynchronously loads the engine asset blob.
-	 * @param {string} url - The URL of the asset pack to load.
-	 * @returns {Promise<Uint8Array>} A Promise that resolves to the loaded asset blob.
+	 * @function loadSystemRom - Asynchronously loads the system ROM blob.
+	 * @param {string} url - The URL of the system ROM to load.
+	 * @returns {Promise<Uint8Array>} A Promise that resolves to the loaded system ROM.
 	 *
-	 * @function start - Starts the game using the loaded cart and engine assets.
+	 * @function start - Starts the game using the loaded cart and system ROM.
 	 * @returns {Promise<void>} Resolves when startup finishes.
 	 *
 	 * @var {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
 	 */
 	cartridge: null as Uint8Array,
-	engineAssets: null as Uint8Array,
+	systemRom: null as Uint8Array,
 	debug: false,
 	sndcontext: null as AudioContext,
 	snd_unlocked: false,
@@ -140,7 +140,7 @@ export const bootrom = {
 			}
 			return Promise.resolve(entry({
 				cartridge: bootrom.cartridge,
-				engineAssets: bootrom.engineAssets,
+				systemRom: bootrom.systemRom,
 				sndcontext: bootrom.sndcontext,
 				gainnode: bootrom.gainnode,
 				debug: this.debug,
@@ -198,7 +198,7 @@ export const bootrom = {
 		const fetchRom = () => {
 			return fetchBuffer(url).catch(err => {
 				console.error(`Error while fetching ROM: "${err.message}"`);
-				// We do not reject here, allowing the engine core to handle the missing cartridge by itself (showing a blank screen, like a retro-style computer with no cart inserted).
+				// We do not reject here, allowing the console core to handle the missing cartridge by itself (showing a blank screen, like a retro-style computer with no cart inserted).
 			});
 		};
 
@@ -256,11 +256,11 @@ export const bootrom = {
 		});
 	},
 
-	async loadEngineAssets(url: string): Promise<Uint8Array> {
+	async loadSystemRom(url: string): Promise<Uint8Array> {
 		const response = await fetchBuffer(url).catch(err => {
-			throw new Error(`Error while fetching engine assets: "${err.message}"`);
+			throw new Error(`Error while fetching system ROM: "${err.message}"`);
 		});
-		bootrom.engineAssets = response;
+		bootrom.systemRom = response;
 		return response;
 	},
 

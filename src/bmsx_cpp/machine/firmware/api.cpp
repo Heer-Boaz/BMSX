@@ -69,7 +69,7 @@ Api::Api(Runtime& runtime)
 	: m_runtime(runtime)
 	, m_persistentData(PERSISTENT_DATA_SIZE, 0.0)
 {
-	m_font = std::make_unique<Font>(m_runtime.systemAssets());
+	m_font = std::make_unique<Font>();
 }
 
 Api::~Api() = default;
@@ -88,6 +88,11 @@ void Api::initializeRuntimeKeys() {
 	m_keys.valid = m_runtime.luaKey("valid");
 	m_keys.inside = m_runtime.luaKey("inside");
 	m_keys.value = m_runtime.luaKey("value");
+	m_keys.slot = m_runtime.luaKey("slot");
+	m_keys.u = m_runtime.luaKey("u");
+	m_keys.v = m_runtime.luaKey("v");
+	m_keys.w = m_runtime.luaKey("w");
+	m_keys.h = m_runtime.luaKey("h");
 	m_inputStateKeys = createInputStateTableKeys(m_runtime);
 }
 
@@ -294,14 +299,14 @@ m_runtime.registerNativeFunction("put_particle", [this, key](NativeArgsView args
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("skybox", [this, asText](NativeArgsView args, NativeResults& out) {
+m_runtime.registerNativeFunction("skybox", [this](NativeArgsView args, NativeResults& out) {
 	skybox(
-		asText(args.at(0)),
-		asText(args.at(1)),
-		asText(args.at(2)),
-		asText(args.at(3)),
-		asText(args.at(4)),
-		asText(args.at(5))
+		read_image_slot_source(args.at(0), "skybox posx"),
+		read_image_slot_source(args.at(1), "skybox negx"),
+		read_image_slot_source(args.at(2), "skybox posy"),
+		read_image_slot_source(args.at(3), "skybox negy"),
+		read_image_slot_source(args.at(4), "skybox posz"),
+		read_image_slot_source(args.at(5), "skybox negz")
 	);
 	(void)out;
 });
@@ -434,13 +439,13 @@ void Api::put_particle(const ParticleRenderSubmission& submission) {
 	RenderQueues::submit_particle(submission);
 }
 
-void Api::skybox(const std::string& posx,
-				const std::string& negx,
-				const std::string& posy,
-				const std::string& negy,
-				const std::string& posz,
-				const std::string& negz) {
-	m_runtime.machine().vdp().setSkyboxImages(SkyboxImageIds{
+void Api::skybox(const VdpSlotSource& posx,
+				const VdpSlotSource& negx,
+				const VdpSlotSource& posy,
+				const VdpSlotSource& negy,
+				const VdpSlotSource& posz,
+				const VdpSlotSource& negz) {
+	m_runtime.machine().vdp().setSkyboxSources(SkyboxFaceSources{
 		posx,
 		negx,
 		posy,
@@ -586,7 +591,7 @@ BFont* Api::create_font(const Value& definition) {
 
 	const Value advancePaddingValue = definitionTable->get(key("advance_padding"));
 	const i32 advancePadding = isNil(advancePaddingValue) ? 0 : static_cast<i32>(std::floor(asNumber(advancePaddingValue)));
-	std::unique_ptr<BFont> font = std::make_unique<BFont>(m_runtime.activeAssets(), std::move(glyphMap), advancePadding);
+	std::unique_ptr<BFont> font = std::make_unique<BFont>(m_runtime.activeRom(), std::move(glyphMap), advancePadding);
 	BFont* handle = font.get();
 	m_runtime_fonts.push_back(std::move(font));
 	return handle;
@@ -607,6 +612,28 @@ Color Api::resolve_color(const Value& value) {
 	color.b = static_cast<f32>(asNumber(tbl->get(m_keys.b)));
 	color.a = static_cast<f32>(asNumber(tbl->get(m_keys.a)));
 	return color;
+}
+
+VdpSlotSource Api::read_image_slot_source(const Value& value, const char* label) {
+	if (!valueIsTable(value)) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " expects a slot/u/v/w/h table.");
+	}
+	auto* tbl = asTable(value);
+	const Value slot = tbl->get(m_keys.slot);
+	const Value u = tbl->get(m_keys.u);
+	const Value v = tbl->get(m_keys.v);
+	const Value w = tbl->get(m_keys.w);
+	const Value h = tbl->get(m_keys.h);
+	if (isNil(slot) || isNil(u) || isNil(v) || isNil(w) || isNil(h)) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " requires slot/u/v/w/h.");
+	}
+	return VdpSlotSource{
+		static_cast<u32>(asNumber(slot)),
+		static_cast<u32>(asNumber(u)),
+		static_cast<u32>(asNumber(v)),
+		static_cast<u32>(asNumber(w)),
+		static_cast<u32>(asNumber(h)),
+	};
 }
 
 Vec3 Api::read_vec3(const Value& value) {

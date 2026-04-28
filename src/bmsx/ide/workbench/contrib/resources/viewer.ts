@@ -53,7 +53,7 @@ export function buildResourceViewerState(runtime: Runtime, descriptor: ResourceD
 		scroll: 0,
 	};
 	let error: string = null;
-	const assets = runtime.activeAssets;
+	const activePackage = runtime.activePackage;
 	lines.push('');
 	switch (descriptor.type) {
 		case 'lua': {
@@ -69,7 +69,7 @@ export function buildResourceViewerState(runtime: Runtime, descriptor: ResourceD
 			break;
 		}
 		case 'data': {
-			const dataEntry = assets.data?.[descriptor.asset_id];
+			const dataEntry = activePackage.data?.[descriptor.asset_id];
 			if (dataEntry !== undefined) {
 				appendResourceViewerLine(lines, '-- Data --');
 				lines.push('');
@@ -82,7 +82,7 @@ export function buildResourceViewerState(runtime: Runtime, descriptor: ResourceD
 		case 'image':
 		case 'atlas':
 		case 'romlabel': {
-			const image = assets.img?.[descriptor.asset_id];
+			const image = activePackage.img?.[descriptor.asset_id];
 			if (!image) {
 				error = `Image asset '${descriptor.asset_id}' not found.`;
 				break;
@@ -112,7 +112,7 @@ export function buildResourceViewerState(runtime: Runtime, descriptor: ResourceD
 			break;
 		}
 		case 'audio': {
-			const audio = assets.audio?.[descriptor.asset_id];
+			const audio = activePackage.audio?.[descriptor.asset_id];
 			if (!audio) {
 				error = `Audio asset '${descriptor.asset_id}' not found.`;
 				break;
@@ -131,7 +131,7 @@ export function buildResourceViewerState(runtime: Runtime, descriptor: ResourceD
 			break;
 		}
 		case 'model': {
-			const model = assets.model?.[descriptor.asset_id];
+			const model = activePackage.model?.[descriptor.asset_id];
 			if (!model) {
 				error = `Model asset '${descriptor.asset_id}' not found.`;
 				break;
@@ -141,7 +141,7 @@ export function buildResourceViewerState(runtime: Runtime, descriptor: ResourceD
 			break;
 		}
 		case 'aem': {
-			const events = assets.audioevents?.[descriptor.asset_id];
+			const events = activePackage.audioevents?.[descriptor.asset_id];
 			if (!events) {
 				error = `Audio event map '${descriptor.asset_id}' not found.`;
 				break;

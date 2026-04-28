@@ -1,4 +1,4 @@
-import { engineCore } from '../core/engine';
+import { consoleCore } from '../core/console';
 import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, VoiceEndedEvent, AudioFilterParams, SubscriptionHandle, createSubscriptionHandle } from '../platform';
 import { clamp01 } from '../common/clamp';
 
@@ -199,7 +199,7 @@ export class SoundMaster {
 	}
 
 	public bootstrapRuntimeAudio(ufps: number, startingVolume: number): void {
-		this.audio = engineCore.platform.audio;
+		this.audio = consoleCore.platform.audio;
 		const sampleRate = this.A.sampleRate();
 		if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
 			throw new Error('[SoundMaster] Audio sample rate must be a positive finite value.');

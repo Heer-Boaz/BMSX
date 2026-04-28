@@ -28,7 +28,7 @@ const { once } = require('events');
 const { finished } = require('stream/promises');
 // @ts-ignore
 // Import encodeBinary from the public API surface
-// Use direct path to avoid pulling entire engine via public alias during Node execution
+// Use direct path to avoid pulling the console runtime via public alias during Node execution.
 // @ts-ignore
 const { encodeBinary, decodeBinary } = require('../../src/bmsx/common/serializer/binencoder');
 // @ts-ignore
@@ -43,14 +43,12 @@ const { splitText } = require('../../src/bmsx/common/text_lines');
 const { compileLuaChunkToProgram, isLuaCompileError } = require('../../src/bmsx/machine/program/compiler');
 // @ts-ignore
 const {
-	PROGRAM_ASSET_ID,
-	PROGRAM_SYMBOLS_ASSET_ID,
-	buildModuleAliasesFromPaths,
+	PROGRAM_IMAGE_ID,
+	PROGRAM_SYMBOLS_IMAGE_ID,
 	buildProgramBootHeader,
 	encodeProgram,
-	encodeProgramAsset,
-	encodeProgramSymbolsAsset,
-} = require('../../src/bmsx/machine/program/asset');
+	toLuaModulePath,
+} = require('../../src/bmsx/machine/program/loader');
 // @ts-ignore
 // @ts-ignore
 const pako = require('pako');
@@ -266,12 +264,12 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
 	else return null;
 }
 
-export async function buildEngineRuntime(debug: boolean): Promise<void> {
+export async function buildConsoleRuntime(debug: boolean): Promise<void> {
 	await mkdir('./rom', { recursive: true });
 
 	const buildRuntime = async (outfile: string, buildDebug: boolean): Promise<void> => {
 		await build({
-			entryPoints: ['./src/bmsx/machine/program/engine_entry.ts'],
+			entryPoints: ['./src/bmsx/machine/program/console_entry.ts'],
 			bundle: true,
 			platform: 'browser',
 			format: 'iife',
@@ -297,16 +295,16 @@ export async function buildEngineRuntime(debug: boolean): Promise<void> {
 	};
 
 	if (debug) {
-		await buildRuntime('./rom/engine.debug.js', true);
+		await buildRuntime('./rom/console.debug.js', true);
 	} else {
-		await buildRuntime('./rom/engine.js', false);
+		await buildRuntime('./rom/console.js', false);
 	}
 
 	await mkdir('./dist', { recursive: true });
 	if (debug) {
-		await copyFile('./rom/engine.debug.js', './dist/engine.debug.js');
+		await copyFile('./rom/console.debug.js', './dist/console.debug.js');
 	} else {
-		await copyFile('./rom/engine.js', './dist/engine.js');
+		await copyFile('./rom/console.js', './dist/console.js');
 	}
 }
 
@@ -407,7 +405,7 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 			'//#zipjs': zipjs,
 			'/*#css*/': cssMinified,
 			'#title': title,
-			'#enginejs': debug ? 'engine.debug.js' : 'engine.js',
+			'#consolejs': debug ? 'console.debug.js' : 'console.js',
 			'//#debug': `bootrom.debug = ${debug};\n`,
 			'#biospath': `./bmsx-bios.${debug ? 'debug.' : ''}rom`,
 			'__DEFAULT_ROM__': defaultRom,
@@ -758,13 +756,14 @@ export async function buildLuaProgramContextAssets(luaRoot: string, virtualRoot:
 	const assets: RomAsset[] = [];
 	for (const file of files) {
 		const sourcePath = normalizeWorkspacePath(resolveVirtualSourcePath(file, virtualRoot) ?? toWorkspaceRelativePath(file));
+		const modulePath = toLuaModulePath(sourcePath);
 		const buffer = await readFile(file);
 		const source = buffer.toString('utf8');
 		assets.push({
 			resid: `__program_context__/${sourcePath}`,
 			type: 'lua',
 			buffer,
-			compiled_buffer: compileLuaChunkBuffer(source, sourcePath),
+			compiled_buffer: compileLuaChunkBuffer(source, modulePath),
 			source_path: sourcePath,
 		});
 	}
@@ -865,7 +864,7 @@ export type ResourceScanOptions = {
 	 */
 	romFilePath?: string;
 	/**
-	 * Optional override for the engine BIOS ROM path used by cart rebuild checks.
+	 * Optional override for the system ROM path used by cart rebuild checks.
 	 * Defaults to `dist/bmsx-bios[.debug].rom` (based on `debug`).
 	 */
 	biosRomFilePath?: string;
@@ -1200,10 +1199,11 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				}
 				const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
 				const normalizedPath = normalizeWorkspacePath(luaSourcePath);
+				const modulePath = toLuaModulePath(normalizedPath);
 				const source = buffer.toString('utf8');
 				let compiled_buffer: Buffer;
 				try {
-					compiled_buffer = compileLuaChunkBuffer(source, normalizedPath);
+					compiled_buffer = compileLuaChunkBuffer(source, modulePath);
 				} catch (error) {
 					if (isLuaCompileError(error)) {
 						compileErrors.push(formatLuaCompileError(error, source));
@@ -1332,7 +1332,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 	return romAssets;
 }
 
-export function appendProgramAsset(
+export function appendProgramImage(
 	assetList: RomAsset[],
 	entryPath: string = SYSTEM_BOOT_ENTRY_PATH,
 	options: {
@@ -1348,14 +1348,13 @@ export function appendProgramAsset(
 	codeByteCount: number;
 	constPoolCount: number;
 	protoCount: number;
-	moduleAliasCount: number;
 	constRelocCount: number;
 } {
-	const hasProgramAsset = assetList.some(asset => asset.resid === PROGRAM_ASSET_ID);
-	const hasSymbolsAsset = assetList.some(asset => asset.resid === PROGRAM_SYMBOLS_ASSET_ID);
+	const hasProgramImage = assetList.some(asset => asset.resid === PROGRAM_IMAGE_ID);
+	const hasSymbolsAsset = assetList.some(asset => asset.resid === PROGRAM_SYMBOLS_IMAGE_ID);
 	const includeSymbols = options.includeSymbols;
-	if (hasProgramAsset || hasSymbolsAsset) {
-		throw new Error('[RomPacker] appendProgramAsset() expects a fresh asset list without prebuilt program assets.');
+	if (hasProgramImage || hasSymbolsAsset) {
+		throw new Error('[RomPacker] appendProgramImage() expects a fresh asset list without prebuilt program images.');
 	}
 	const baseLuaAssets = assetList.filter(asset => asset.type === 'lua');
 	const luaAssets = baseLuaAssets.slice();
@@ -1363,11 +1362,11 @@ export function appendProgramAsset(
 	if (extraLuaAssets && extraLuaAssets.length > 0) {
 		const seenPaths = new Set<string>();
 		for (const asset of baseLuaAssets) {
-			const path = asset.source_path;
+			const path = toLuaModulePath(asset.source_path);
 			seenPaths.add(path);
 		}
 		for (const asset of extraLuaAssets) {
-			const path = asset.source_path;
+			const path = toLuaModulePath(asset.source_path);
 			if (seenPaths.has(path)) {
 				continue;
 			}
@@ -1378,7 +1377,8 @@ export function appendProgramAsset(
 	if (luaAssets.length === 0) {
 		throw new Error('[RomPacker] Cannot build program header without Lua assets.');
 	}
-	const entryAsset = luaAssets.find(asset => asset.source_path === entryPath);
+	const entryModulePath = toLuaModulePath(entryPath);
+	const entryAsset = luaAssets.find(asset => toLuaModulePath(asset.source_path) === entryModulePath);
 	if (!entryAsset) {
 		throw new Error(`[RomPacker] Lua entry '${entryPath}' not found in asset list.`);
 	}
@@ -1399,7 +1399,7 @@ export function appendProgramAsset(
 			const pathLabel = asset.source_path ?? asset.resid;
 			throw new Error(`[RomPacker] Failed to decode compiled Lua chunk for "${pathLabel}". First bytes: ${previewHex}. ${error?.message ?? error}`);
 		}
-		const path = asset.source_path;
+		const path = toLuaModulePath(asset.source_path);
 		chunksByPath.set(path, decoded);
 		modulePaths.push(path);
 		if (asset === entryAsset) {
@@ -1412,7 +1412,7 @@ export function appendProgramAsset(
 		if (asset === entryAsset) {
 			continue;
 		}
-		const path = asset.source_path;
+		const path = toLuaModulePath(asset.source_path);
 		const chunk = chunksByPath.get(path);
 		modules.push({ path, chunk, source: asset.buffer.toString('utf8') });
 	}
@@ -1423,7 +1423,7 @@ export function appendProgramAsset(
 		if (!asset.compiled_buffer || asset.compiled_buffer.length === 0) {
 			throw new Error(`[RomPacker] External Lua asset '${asset.resid}' is missing its compiled buffer.`);
 		}
-		const path = asset.source_path;
+		const path = toLuaModulePath(asset.source_path);
 		if (!path || chunksByPath.has(path)) {
 			continue;
 		}
@@ -1440,47 +1440,36 @@ export function appendProgramAsset(
 		externalModules,
 	});
 	const program = compiled.program;
-	const programAsset = {
+	const programImage = {
 		entryProtoIndex: compiled.entryProtoIndex,
 		program: encodeProgram(program),
 		moduleProtos: Array.from(compiled.moduleProtoMap.entries(), ([path, protoIndex]) => ({ path, protoIndex })),
-		moduleAliases: buildModuleAliasesFromPaths(modulePaths.concat(externalModulePaths)),
 		staticModulePaths: compiled.staticModulePaths,
 		link: {
 			constRelocs: compiled.constRelocs,
 		},
 	};
 
-	const buffer = Buffer.from(encodeProgramAsset(programAsset));
+	const buffer = Buffer.from(encodeBinary(programImage));
 	assetList.push({
-		resid: PROGRAM_ASSET_ID,
+		resid: PROGRAM_IMAGE_ID,
 		type: 'data',
 		buffer,
-		source_path: PROGRAM_ASSET_ID,
+		source_path: PROGRAM_IMAGE_ID,
 	});
 	if (includeSymbols) {
 		const symbolsAsset = {
 			metadata: compiled.metadata,
 		};
-		const symbolsBuffer = Buffer.from(encodeProgramSymbolsAsset(symbolsAsset));
+		const symbolsBuffer = Buffer.from(encodeBinary(symbolsAsset));
 		assetList.push({
-			resid: PROGRAM_SYMBOLS_ASSET_ID,
+			resid: PROGRAM_SYMBOLS_IMAGE_ID,
 			type: 'data',
 			buffer: symbolsBuffer,
-			source_path: PROGRAM_SYMBOLS_ASSET_ID,
+			source_path: PROGRAM_SYMBOLS_IMAGE_ID,
 		});
 	}
-	return buildProgramBootHeader(programAsset);
-}
-
-/**
- * Generates metadata for an image resource, optionally integrating texture atlas data.
- *
- * @param res - The resource containing the image and any existing metadata.
- * @returns An object containing image dimensions, bounding boxes, center point, and texture atlas coordinates when present.
- */
-export function buildImgMeta(res: ImageResource): ImgMeta {
-	return buildImgMetaFromCollisionBuild(res, buildImageCollisionBuild(res));
+	return buildProgramBootHeader(programImage);
 }
 
 export function buildImgMetaForAtlas(res: TextureAtlasResource): ImgMeta {
@@ -1522,10 +1511,6 @@ export async function createAtlasses(resources: Resource[], reportProgress?: Pro
 	}
 }
 
-function encodeBiosManifest(manifest: RomManifest): Buffer {
-	return Buffer.from(encodeBinary(manifest));
-}
-
 /**
  * Finalizes the ROM pack by concatenating all asset buffers, encoding metadata, and writing the packed ROM file.
  *
@@ -1554,7 +1539,6 @@ export async function finalizeRompack(
 			codeByteCount: number;
 			constPoolCount: number;
 			protoCount: number;
-			moduleAliasCount: number;
 			constRelocCount: number;
 		},
 	}
@@ -1654,7 +1638,7 @@ export async function finalizeRompack(
 		let manifestLength = 0;
 		if (options.manifest) {
 			status?.('encode rom manifest');
-			const manifestBuffer = encodeBiosManifest(options.manifest);
+			const manifestBuffer = Buffer.from(encodeBinary(options.manifest));
 			manifestOffset = offset;
 			manifestLength = manifestBuffer.length;
 			await writeBuffer(manifestBuffer);
@@ -1662,7 +1646,7 @@ export async function finalizeRompack(
 
 		status?.('encode toc');
 		const tocBuffer = Buffer.from(encodeRomToc({
-			assets: assetList,
+			entries: assetList,
 			projectRootPath: options.projectRootPath,
 		}));
 		const tocOffset = offset;
@@ -1684,7 +1668,7 @@ export async function finalizeRompack(
 		headerBuffer.writeUInt32LE(options.programBoot.codeByteCount, 44);
 		headerBuffer.writeUInt32LE(options.programBoot.constPoolCount, 48);
 		headerBuffer.writeUInt32LE(options.programBoot.protoCount, 52);
-		headerBuffer.writeUInt32LE(options.programBoot.moduleAliasCount, 56);
+		headerBuffer.writeUInt32LE(0, 56);
 		headerBuffer.writeUInt32LE(options.programBoot.constRelocCount, 60);
 		headerBuffer.writeUInt32LE(metadataOffset, 64);
 		headerBuffer.writeUInt32LE(metadataLength, 68);
@@ -1802,7 +1786,7 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 		rebuild = !outStats || !entryStats || entryStats.mtime > outStats.mtime;
 	}
 	if (!rebuild) {
-		rebuild = await isEngineRuntimeRebuildRequired(outPath);
+		rebuild = await isConsoleRuntimeRebuildRequired(outPath);
 	}
 
 	if (!rebuild) return;
@@ -1967,15 +1951,15 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 
 	const bootloaderNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles([bootloaderPath], CODE_FILE_EXTENSION_SET), romMtimeMs);
 	const resNeedsRebuild = await anyFileNewerThan(await getFiles(resPath), romMtimeMs);
-	const engineNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(['src/bmsx'], CODE_FILE_EXTENSION_SET), romMtimeMs);
+	const consoleRuntimeNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(['src/bmsx'], CODE_FILE_EXTENSION_SET), romMtimeMs);
 
 	return extraNeedsRebuild ||
 		bootloaderNeedsRebuild ||
 		resNeedsRebuild ||
-		engineNeedsRebuild;
+		consoleRuntimeNeedsRebuild;
 }
 
-export async function isEngineRuntimeRebuildRequired(outFilePath: string = './dist/engine.js'): Promise<boolean> {
+export async function isConsoleRuntimeRebuildRequired(outFilePath: string = './dist/console.js'): Promise<boolean> {
 	let outputStats: Stats;
 	try {
 		outputStats = await stat(outFilePath);

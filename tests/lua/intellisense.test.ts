@@ -166,7 +166,7 @@ test('intellisense recognizes shared runtime globals without false positives', a
 	const { getDefaultLuaBuiltinDescriptors } = await luaStaticDiagnosticsModulePromise;
 	const apiData = getApiCompletionData();
 	const diagnostics = computeLuaDiagnostics({
-		source: 'return assets, cart_manifest, sys_vdp_stream_base',
+		source: 'return sys_rom_data, cart_manifest, sys_vdp_stream_base',
 		path: 'testpath',
 		localSymbols: [],
 		globalSymbols: [],

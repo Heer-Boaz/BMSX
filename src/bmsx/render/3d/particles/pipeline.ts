@@ -1,4 +1,4 @@
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 
 import particleFS from '../shaders/particle.frag.glsl';
 import particleVS from '../shaders/particle.vert.glsl';
@@ -18,7 +18,7 @@ import {
 } from '../../shared/queues';
 import type { ParticleRenderSubmission } from '../../shared/submissions';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../../shared/fallback_camera';
-import { BIOS_TEXTPAGE_TEXTURE_KEY } from '../../../rompack/format';
+import { SYSTEM_SLOT_TEXTURE_KEY, VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
 import { VDP_SLOT_PRIMARY, VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../../machine/bus/io';
 import { resolveActiveCamera3D } from '../../shared/hardware/camera';
 import { clamp } from '../../../common/clamp';
@@ -129,13 +129,13 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	camRight.set(resolvedState.camRight);
 	camUp.set(resolvedState.camUp);
 	const batches = new Map<string, ParticleRenderSubmission[]>();
-	let needsEngineTextpage = false;
+	let needsSystemSlot = false;
 	let needsSecondaryTextpage = false;
 	forEachParticleQueue((p) => {
 		if (!p) return;
 		const slot = p.slot ?? VDP_SLOT_PRIMARY;
 		if (slot === VDP_SLOT_SYSTEM) {
-			needsEngineTextpage = true;
+			needsSystemSlot = true;
 		} else if (slot === VDP_SLOT_SECONDARY) {
 			needsSecondaryTextpage = true;
 		}
@@ -160,15 +160,15 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	gl.uniform1f(ambientFactorLocation, 1.0);
 	const textpagePrimaryTex = resolvedState.textpagePrimaryTex;
 	if (!textpagePrimaryTex) {
-		throw new Error("[ParticlesPipeline] Texture '_textpage_primary' missing from view textures.");
+		throw new Error(`[ParticlesPipeline] Texture '${VDP_PRIMARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
 	}
 	const textpageSecondaryTex = resolvedState.textpageSecondaryTex;
-	const textpageEngineTex = resolvedState.textpageEngineTex;
+	const systemSlotTex = resolvedState.systemSlotTex;
 	if (needsSecondaryTextpage && !textpageSecondaryTex) {
-		throw new Error("[ParticlesPipeline] Texture '_textpage_secondary' missing from view textures.");
+		throw new Error(`[ParticlesPipeline] Texture '${VDP_SECONDARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
 	}
-	if (needsEngineTextpage && !textpageEngineTex) {
-		throw new Error(`[ParticlesPipeline] Texture '${BIOS_TEXTPAGE_TEXTURE_KEY}' missing from view textures.`);
+	if (needsSystemSlot && !systemSlotTex) {
+		throw new Error(`[ParticlesPipeline] Texture '${SYSTEM_SLOT_TEXTURE_KEY}' missing from view textures.`);
 	}
 	context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_PRIMARY;
 	context.bind2DTex(textpagePrimaryTex);
@@ -176,9 +176,9 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 		context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_SECONDARY;
 		context.bind2DTex(textpageSecondaryTex);
 	}
-	if (textpageEngineTex) {
+	if (systemSlotTex) {
 		context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_ENGINE;
-		context.bind2DTex(textpageEngineTex);
+		context.bind2DTex(systemSlotTex);
 	}
 	backend.bindVertexArray(vao);
 	framePage = (framePage + 1) % 3;
@@ -248,25 +248,25 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 		shouldExecute: () => !!particleQueueBackSize(),
 		exec: (backend, fbo, s: RenderPassStateRegistry['particles']) => {
 			const webglBackend = backend as WebGLBackend;
-			const runtime: ParticleRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: engineCore.view };
+			const runtime: ParticleRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: consoleCore.view };
 			renderParticleBatch(runtime, fbo as WebGLFramebuffer, s as ParticlePipelineState);
 		},
 		prepare: (_backend, _state) => {
-			const gv = engineCore.view;
+			const gv = consoleCore.view;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = resolveActiveCamera3D();
-			const textpagePrimaryTex = gv.textures['_textpage_primary'];
+			const textpagePrimaryTex = gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY];
 			if (!textpagePrimaryTex) {
-				throw new Error("[ParticlesPipeline] Texture '_textpage_primary' missing from view textures.");
+				throw new Error(`[ParticlesPipeline] Texture '${VDP_PRIMARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
 			}
-			const textpageSecondaryTex = gv.textures['_textpage_secondary'];
-			const textpageEngineTex = gv.textures[BIOS_TEXTPAGE_TEXTURE_KEY];
+			const textpageSecondaryTex = gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY];
+			const systemSlotTex = gv.textures[SYSTEM_SLOT_TEXTURE_KEY];
 				const state = cam
 					? updateCameraParticleState(width, height, cam)
 					: updateOrthographicParticleState(width, height);
 				state.textpagePrimaryTex = textpagePrimaryTex;
 				state.textpageSecondaryTex = textpageSecondaryTex;
-				state.textpageEngineTex = textpageEngineTex;
+				state.systemSlotTex = systemSlotTex;
 				registry.setState('particles', state);
 			},
 		});

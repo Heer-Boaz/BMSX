@@ -5,10 +5,10 @@
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import type { RomAsset, CartRomHeader, RomManifest } from '../../src/bmsx/rompack/format';
-import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadRomAssetList, parseCartHeader } from '../../src/bmsx/rompack/loader';
+import { getZippedRomAndRomLabelFromBlob, loadRomEntryList, parseCartridgeIndex, parseCartHeader } from '../../src/bmsx/rompack/loader';
 import {
 	buildManifestAsset,
-	disassembleProgramAsset,
+	disassembleProgramImage,
 	formatByteSize,
 	formatNumberAsHex,
 	loadProgramFromAssets,
@@ -65,9 +65,9 @@ async function loadAssets(
 	let manifest: RomManifest | null = null;
 	let projectRootPath: string | null = null;
 	if (header.manifestLength === 0) {
-		const assetsAndRoot = await loadRomAssetList(rombin);
-		assets = assetsAndRoot.assets;
-		projectRootPath = assetsAndRoot.projectRootPath;
+		const entriesAndRoot = await loadRomEntryList(rombin);
+		assets = entriesAndRoot.entries;
+		projectRootPath = entriesAndRoot.projectRootPath;
 		console.log('ROM header has no manifest; loading TOC assets only.');
 		return { assets, manifest, projectRootPath };
 	}
@@ -86,8 +86,10 @@ async function loadAssets(
 	console.log('Extracting ROM pack metadata...');
 	console.log('Loading resources from metadata buffer...');
 	try {
-		// Load asset list from the ROM binary buffer
-		({ assets, manifest, projectRootPath } = await loadAssetList(rombin));
+		const index = await parseCartridgeIndex(rombin);
+		assets = index.entries;
+		manifest = index.cart_manifest;
+		projectRootPath = index.projectRootPath;
 
 		console.log('ROM pack metadata and resources loaded successfully.');
 
@@ -309,7 +311,7 @@ async function main() {
 		if (missingSourcePaths.length > 0) {
 			console.warn(`[RomInspector] Source comments unavailable for ${missingSourcePaths.length} Lua path(s); ROM is stripped or partial.`);
 		}
-		console.log(disassembleProgramAsset(program, metadata, sourceTextForPath, { assembly: true, pcBias }));
+		console.log(disassembleProgramImage(program, metadata, sourceTextForPath, { assembly: true, pcBias }));
 		process.exit(0);
 	}
 

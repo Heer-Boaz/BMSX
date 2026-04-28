@@ -243,8 +243,6 @@ VDP::VDP(
 	m_memory.mapIoRead(IO_VDP_RD_DATA, this, &VDP::readVdpDataThunk);
 	m_memory.mapIoWrite(IO_VDP_FIFO, this, &VDP::onFifoWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_FIFO_CTRL, this, &VDP::onFifoCtrlWriteThunk);
-	m_memory.mapIoWrite(IO_PAYLOAD_ALLOC_ADDR, this, &VDP::onObsoletePayloadWriteThunk);
-	m_memory.mapIoWrite(IO_PAYLOAD_DATA_ADDR, this, &VDP::onObsoletePayloadWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_CMD, this, &VDP::onCommandWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_SLOT_PRIMARY_ATLAS, this, &VDP::onSlotAtlasWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_SLOT_SECONDARY_ATLAS, this, &VDP::onSlotAtlasWriteThunk);
@@ -525,10 +523,6 @@ void VDP::onVdpFifoCtrlWrite() {
 	refreshSubmitBusyStatus();
 }
 
-void VDP::onObsoletePayloadIoWrite() {
-	throw vdpFault("payload staging I/O is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.");
-}
-
 void VDP::onVdpCommandWrite() {
 	const uint32_t command = m_memory.readIoU32(IO_VDP_CMD);
 	if (command == 0u) {
@@ -550,11 +544,6 @@ void VDP::onFifoWriteThunk(void* context, uint32_t, Value) {
 // disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
 void VDP::onFifoCtrlWriteThunk(void* context, uint32_t, Value) {
 	static_cast<VDP*>(context)->onVdpFifoCtrlWrite();
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
-void VDP::onObsoletePayloadWriteThunk(void* context, uint32_t, Value) {
-	static_cast<VDP*>(context)->onObsoletePayloadIoWrite();
 }
 
 // disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
@@ -613,13 +602,11 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 	if ((offset & 3u) != 0u || (length & 3u) != 0u) {
 		throw vdpFault("VRAM writes must be 32-bit aligned.");
 	}
-	auto& entry = m_memory.getAssetEntry(slot.assetId);
-	if (entry.baseStride == 0 || entry.regionW == 0 || entry.regionH == 0) {
+	if (slot.surfaceWidth == 0 || slot.surfaceHeight == 0) {
 		throw vdpFault("VRAM slot not initialized for writes.");
 	}
-		syncVramSlotSurfaceSize(slot);
-	const uint32_t stride = entry.baseStride;
-	const uint32_t totalBytes = entry.regionH * stride;
+	const uint32_t stride = slot.surfaceWidth * 4u;
+	const uint32_t totalBytes = slot.surfaceHeight * stride;
 	if (offset + length > totalBytes) {
 		throw vdpFault("VRAM write exceeds slot bounds.");
 	}
@@ -654,14 +641,13 @@ void VDP::readVram(uint32_t addr, u8* out, size_t length) const {
 		return;
 	}
 	const auto& slot = findVramSlot(addr, length);
-	const auto& entry = m_memory.getAssetEntry(slot.assetId);
-	if (entry.baseStride == 0 || entry.regionW == 0 || entry.regionH == 0) {
+	if (slot.surfaceWidth == 0 || slot.surfaceHeight == 0) {
 		std::memset(out, 0, length);
 		return;
 	}
 	const uint32_t offset = addr - slot.baseAddr;
-	const uint32_t stride = entry.baseStride;
-	const uint32_t totalBytes = entry.regionH * stride;
+	const uint32_t stride = slot.surfaceWidth * 4u;
+	const uint32_t totalBytes = slot.surfaceHeight * stride;
 	if (offset + length > totalBytes) {
 		throw vdpFault("VRAM read exceeds slot bounds.");
 	}
@@ -740,7 +726,7 @@ void VDP::resetQueuedFrameState() {
 	m_pendingFrame.cost = 0;
 	m_pendingFrame.workRemaining = 0;
 	m_pendingFrame.ditherType = 0;
-	m_pendingFrame.skyboxFaceIds = {};
+	m_pendingFrame.skyboxFaceSources = {};
 	m_pendingFrame.hasSkybox = false;
 }
 
@@ -810,7 +796,7 @@ void VDP::assignBuildToSlot(bool active) {
 	frame.cost = frameCost;
 	frame.workRemaining = frameCost;
 	frame.ditherType = m_lastDitherType;
-	frame.skyboxFaceIds = m_skyboxFaceIds;
+	frame.skyboxFaceSources = m_skyboxFaceSources;
 	frame.hasSkybox = m_hasSkybox;
 	m_buildFrame.cost = 0;
 	m_buildFrame.open = false;
@@ -847,7 +833,7 @@ void VDP::promotePendingFrame() {
 	activeFrame.cost = pendingFrame.cost;
 	activeFrame.workRemaining = pendingFrame.cost;
 	activeFrame.ditherType = pendingFrame.ditherType;
-	activeFrame.skyboxFaceIds = pendingFrame.skyboxFaceIds;
+	activeFrame.skyboxFaceSources = pendingFrame.skyboxFaceSources;
 	activeFrame.hasSkybox = pendingFrame.hasSkybox;
 	pendingFrame.occupied = false;
 	pendingFrame.hasCommands = false;
@@ -855,7 +841,7 @@ void VDP::promotePendingFrame() {
 	pendingFrame.cost = 0;
 	pendingFrame.workRemaining = 0;
 	pendingFrame.ditherType = 0;
-	pendingFrame.skyboxFaceIds = {};
+	pendingFrame.skyboxFaceSources = {};
 	pendingFrame.hasSkybox = false;
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
@@ -916,7 +902,7 @@ void VDP::clearActiveFrame() {
 	m_activeFrame.cost = 0;
 	m_activeFrame.workRemaining = 0;
 	m_activeFrame.ditherType = 0;
-	m_activeFrame.skyboxFaceIds = {};
+	m_activeFrame.skyboxFaceSources = {};
 	m_activeFrame.hasSkybox = false;
 }
 
@@ -940,10 +926,10 @@ void VDP::completeReadyExecution(const std::vector<BlitterCommand>* queue) {
 void VDP::commitActiveVisualState() {
 	m_committedDitherType = m_activeFrame.ditherType;
 	if (!m_activeFrame.hasSkybox) {
-		m_committedSkyboxFaceIds = {};
+		m_committedSkyboxFaceSources = {};
 		m_committedHasSkybox = false;
 	} else {
-		m_committedSkyboxFaceIds = m_activeFrame.skyboxFaceIds;
+		m_committedSkyboxFaceSources = m_activeFrame.skyboxFaceSources;
 		m_committedHasSkybox = true;
 	}
 }
@@ -983,37 +969,9 @@ bool VDP::commitReadyFrameOnVblankEdge() {
 }
 // end hot-path
 
-void VDP::initializeFrameBufferSurface() {
-	const uint32_t width = m_configuredFrameBufferSize.width;
-	const uint32_t height = m_configuredFrameBufferSize.height;
-	auto& entry = m_memory.hasAsset(FRAMEBUFFER_RENDER_TEXTURE_KEY)
-		? m_memory.getAssetEntry(FRAMEBUFFER_RENDER_TEXTURE_KEY)
-		: m_memory.registerImageSlotAt(
-			FRAMEBUFFER_RENDER_TEXTURE_KEY,
-			VRAM_FRAMEBUFFER_BASE,
-			VRAM_FRAMEBUFFER_SIZE,
-			0,
-			false
-		);
-	const uint32_t size = width * height * 4u;
-	if (size > entry.capacity) {
-		throw vdpFault("framebuffer surface exceeds VRAM capacity.");
-	}
-	entry.baseSize = size;
-	entry.baseStride = width * 4u;
-	entry.regionX = 0;
-	entry.regionY = 0;
-	entry.regionW = width;
-	entry.regionH = height;
-	m_frameBufferWidth = width;
-	m_frameBufferHeight = height;
-	m_displayFrameBufferCpuReadback.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
-	registerVramSlot(entry, VDP_RD_SURFACE_FRAMEBUFFER);
-}
-
 uint32_t VDP::resolveSurfaceIdForSlot(u32 slot) const {
 	if (slot == VDP_SLOT_SYSTEM) {
-		return VDP_RD_SURFACE_ENGINE;
+		return VDP_RD_SURFACE_SYSTEM;
 	}
 	if (slot == VDP_SLOT_PRIMARY) {
 		return VDP_RD_SURFACE_PRIMARY;
@@ -1024,7 +982,7 @@ uint32_t VDP::resolveSurfaceIdForSlot(u32 slot) const {
 	throw vdpFault("source slot " + std::to_string(slot) + " is not a VDP blitter slot.");
 }
 
-VDP::BlitterSource VDP::resolveBlitterSource(const ImageSlotSource& source) const {
+VDP::BlitterSource VDP::resolveBlitterSource(const VdpSlotSource& source) const {
 	const uint32_t surfaceId = resolveSurfaceIdForSlot(source.slot);
 	return BlitterSource{
 		surfaceId,
@@ -1037,14 +995,13 @@ VDP::BlitterSource VDP::resolveBlitterSource(const ImageSlotSource& source) cons
 
 VdpBlitterSurfaceSize VDP::resolveBlitterSurfaceSize(uint32_t surfaceId) const {
 	const auto& surface = getReadSurface(surfaceId);
-	const auto& entry = m_memory.getAssetEntry(surface.assetId);
 	return VdpBlitterSurfaceSize{
-		entry.regionW,
-		entry.regionH,
+		surface.surfaceWidth,
+		surface.surfaceHeight,
 	};
 }
 
-VDP::ResolvedBlitterSample VDP::resolveBlitterSample(const ImageSlotSource& sourceRect) const {
+VDP::ResolvedBlitterSample VDP::resolveBlitterSample(const VdpSlotSource& sourceRect) const {
 	const BlitterSource source = resolveBlitterSource(sourceRect);
 	const VdpBlitterSurfaceSize surface = resolveBlitterSurfaceSize(source.surfaceId);
 	return ResolvedBlitterSample{
@@ -1065,7 +1022,7 @@ void VDP::enqueueClear(const Color& color) {
 }
 
 void VDP::enqueueBlit(u32 slot, u32 u, u32 v, u32 w, u32 h, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight) {
-	const BlitterSource source = resolveBlitterSource(ImageSlotSource{
+	const BlitterSource source = resolveBlitterSource(VdpSlotSource{
 		slot,
 		u,
 		v,
@@ -1237,7 +1194,7 @@ void VDP::enqueueGlyphRun(const std::string& text, f32 x, f32 y, f32 z, BFont* f
 				continue;
 			}
 			const FontGlyph& glyph = font->getGlyph(codepoint);
-			const BlitterSource sourceBlit = resolveBlitterSource(ImageSlotSource{
+			const BlitterSource sourceBlit = resolveBlitterSource(VdpSlotSource{
 				resolveAtlasSlotFromMemory(m_memory, glyph.rect.atlasId),
 				glyph.rect.u,
 				glyph.rect.v,
@@ -1337,7 +1294,7 @@ void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f
 				continue;
 			}
 			const FontGlyph& glyph = font->getGlyph(codepoint);
-			const BlitterSource source = resolveBlitterSource(ImageSlotSource{
+			const BlitterSource source = resolveBlitterSource(VdpSlotSource{
 				resolveAtlasSlotFromMemory(m_memory, glyph.rect.atlasId),
 				glyph.rect.u,
 				glyph.rect.v,
@@ -1392,7 +1349,7 @@ void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f
 	enqueueBlitterCommand(std::move(command));
 }
 
-void VDP::enqueueTileRun(const std::vector<std::optional<ImageSlotSource>>& sources, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
+void VDP::enqueueTileRun(const std::vector<std::optional<VdpSlotSource>>& sources, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
 	if (sources.size() < static_cast<size_t>(cols * rows)) {
 		throw vdpFault("enqueueTileRun source underrun.");
 	}
@@ -1537,7 +1494,7 @@ void VDP::enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 co
 			if (slot == VDP_SLOT_NONE) {
 				continue;
 			}
-			const BlitterSource source = resolveBlitterSource(ImageSlotSource{
+			const BlitterSource source = resolveBlitterSource(VdpSlotSource{
 				slot,
 				m_memory.readU32(payloadBase + payloadOffset + IO_WORD_SIZE),
 				m_memory.readU32(payloadBase + payloadOffset + (2u * IO_WORD_SIZE)),
@@ -1637,7 +1594,7 @@ void VDP::enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount
 			if (slot == VDP_SLOT_NONE) {
 				continue;
 			}
-			const BlitterSource source = resolveBlitterSource(ImageSlotSource{
+			const BlitterSource source = resolveBlitterSource(VdpSlotSource{
 				slot,
 				payloadWords[payloadOffset + 1u],
 				payloadWords[payloadOffset + 2u],
@@ -1689,11 +1646,11 @@ void VDP::enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount
 void VDP::commitLiveVisualState() {
 	m_committedDitherType = m_lastDitherType;
 	if (!m_hasSkybox) {
-		m_committedSkyboxFaceIds = {};
+		m_committedSkyboxFaceSources = {};
 		m_committedHasSkybox = false;
 		return;
 	}
-	m_committedSkyboxFaceIds = m_skyboxFaceIds;
+	m_committedSkyboxFaceSources = m_skyboxFaceSources;
 	m_committedHasSkybox = true;
 }
 
@@ -1722,9 +1679,8 @@ uint32_t VDP::readVdpData() {
 		throw vdpFault("unsupported VDP read mode.");
 	}
 	const auto& surface = getReadSurface(surfaceId);
-	auto& entry = m_memory.getAssetEntry(surface.assetId);
-	const uint32_t width = entry.regionW;
-	const uint32_t height = entry.regionH;
+	const uint32_t width = surface.surfaceWidth;
+	const uint32_t height = surface.surfaceHeight;
 	if (x >= width || y >= height) {
 		throw vdpFault("VDP read out of bounds.");
 	}
@@ -1763,10 +1719,10 @@ void VDP::onSlotAtlasWriteThunk(void* context, uint32_t addr, Value value) {
 void VDP::initializeRegisters() {
 	const i32 dither = 0;
 	const auto& frameBufferSurface = m_readSurfaces[VDP_RD_SURFACE_FRAMEBUFFER];
-	if (!frameBufferSurface.assetId.empty()) {
-		const auto& entry = m_memory.getAssetEntry(frameBufferSurface.assetId);
-		m_frameBufferWidth = entry.regionW;
-		m_frameBufferHeight = entry.regionH;
+	if (frameBufferSurface.registered) {
+		const auto& slot = getVramSlotBySurfaceId(frameBufferSurface.surfaceId);
+		m_frameBufferWidth = slot.surfaceWidth;
+		m_frameBufferHeight = slot.surfaceHeight;
 	} else {
 		m_frameBufferWidth = m_configuredFrameBufferSize.width;
 		m_frameBufferHeight = m_configuredFrameBufferSize.height;
@@ -1774,7 +1730,7 @@ void VDP::initializeRegisters() {
 	resetQueuedFrameState();
 	resetIngressState();
 	resetStatus();
-	m_memory.writeIoValue(IO_VDP_RD_SURFACE, valueNumber(static_cast<double>(VDP_RD_SURFACE_ENGINE)));
+	m_memory.writeIoValue(IO_VDP_RD_SURFACE, valueNumber(static_cast<double>(VDP_RD_SURFACE_SYSTEM)));
 	m_memory.writeIoValue(IO_VDP_RD_X, valueNumber(0.0));
 	m_memory.writeIoValue(IO_VDP_RD_Y, valueNumber(0.0));
 	m_memory.writeIoValue(IO_VDP_RD_MODE, valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
@@ -1785,9 +1741,9 @@ void VDP::initializeRegisters() {
 	}
 	m_lastDitherType = dither;
 	m_committedDitherType = dither;
-	m_skyboxFaceIds = {};
+	m_skyboxFaceSources = {};
 	m_hasSkybox = false;
-	m_committedSkyboxFaceIds = {};
+	m_committedSkyboxFaceSources = {};
 	m_committedHasSkybox = false;
 	m_lastFrameCommitted = true;
 	m_lastFrameCost = 0;
@@ -1806,32 +1762,26 @@ void VDP::setDitherType(i32 type) {
 	syncRegisters();
 }
 
-void VDP::registerVramAssets(VdpAtlasDimensionsById atlasDimensions) {
+void VDP::registerVramSurfaces(const std::vector<VdpVramSurface>& surfaces, VdpAtlasDimensionsById atlasDimensions) {
 	m_vramSlots.clear();
 	m_atlasDimensionsById = std::move(atlasDimensions);
-	m_imgDecController->clearExternalSlots();
 	m_readSurfaces = {};
 	for (auto& cache : m_readCaches) {
 		cache.width = 0;
 		cache.data.clear();
 	}
 	resetQueuedFrameState();
-	m_skyboxFaceIds = {};
+	m_skyboxFaceSources = {};
 	m_hasSkybox = false;
-	m_committedSkyboxFaceIds = {};
+	m_committedSkyboxFaceSources = {};
 	m_committedHasSkybox = false;
 	m_committedDitherType = m_lastDitherType;
 	m_vramBootSeed = nextVramBootSeed();
 	seedVramStaging();
-	initializeFrameBufferSurface();
-
-	const std::string engineTextpageName = generateAtlasAssetId(BIOS_ATLAS_ID);
-	auto& engineEntry = m_memory.getAssetEntry(engineTextpageName);
-	auto& primarySlotEntry = m_memory.getAssetEntry(TEXTPAGE_PRIMARY_SLOT_ID);
-	auto& secondarySlotEntry = m_memory.getAssetEntry(TEXTPAGE_SECONDARY_SLOT_ID);
-	registerVramSlot(engineEntry, VDP_RD_SURFACE_ENGINE);
-	registerVramSlot(primarySlotEntry, VDP_RD_SURFACE_PRIMARY);
-	registerVramSlot(secondarySlotEntry, VDP_RD_SURFACE_SECONDARY);
+	m_vramSlots.reserve(surfaces.size());
+	for (const auto& surface : surfaces) {
+		registerVramSlot(surface);
+	}
 	syncAtlasSlotRegisters();
 	syncRegisters();
 }
@@ -1839,42 +1789,41 @@ void VDP::registerVramAssets(VdpAtlasDimensionsById atlasDimensions) {
 uint32_t VDP::trackedUsedVramBytes() const {
 	uint32_t usedBytes = 0;
 	for (const auto& slot : m_vramSlots) {
-		const auto& entry = m_memory.getAssetEntry(slot.assetId);
-		usedBytes += entry.baseSize;
+		usedBytes += slot.surfaceWidth * slot.surfaceHeight * 4u;
 	}
 	return usedBytes;
 }
 
 uint32_t VDP::trackedTotalVramBytes() const {
-	return VRAM_SYSTEM_TEXTPAGE_SIZE + VRAM_PRIMARY_TEXTPAGE_SIZE + VRAM_SECONDARY_TEXTPAGE_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
+	return VRAM_SYSTEM_SLOT_SIZE + VRAM_PRIMARY_SLOT_SIZE + VRAM_SECONDARY_SLOT_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
 }
 
 void VDP::attachImgDecController(ImgDecController& controller) {
 	m_imgDecController = &controller;
 }
 
-void VDP::setSkyboxImages(const SkyboxImageIds& ids) {
-	m_skyboxFaceIds = ids;
+void VDP::setSkyboxSources(const SkyboxFaceSources& sources) {
+	m_skyboxFaceSources = sources;
 	m_hasSkybox = true;
 }
 
 void VDP::clearSkybox() {
-	m_skyboxFaceIds = {};
+	m_skyboxFaceSources = {};
 	m_hasSkybox = false;
 }
 
 VdpState VDP::captureState() const {
 	VdpState state;
 	if (m_hasSkybox) {
-		state.skyboxFaceIds = m_skyboxFaceIds;
+		state.skyboxFaceSources = m_skyboxFaceSources;
 	}
 	state.ditherType = m_lastDitherType;
 	return state;
 }
 
 void VDP::restoreState(const VdpState& state) {
-	if (state.skyboxFaceIds.has_value()) {
-		setSkyboxImages(*state.skyboxFaceIds);
+	if (state.skyboxFaceSources.has_value()) {
+		setSkyboxSources(*state.skyboxFaceSources);
 	} else {
 		clearSkybox();
 	}
@@ -1886,7 +1835,7 @@ void VDP::restoreState(const VdpState& state) {
 VdpSaveState VDP::captureSaveState() const {
 	VdpSaveState state;
 	if (m_hasSkybox) {
-		state.skyboxFaceIds = m_skyboxFaceIds;
+		state.skyboxFaceSources = m_skyboxFaceSources;
 	}
 	state.ditherType = m_lastDitherType;
 	state.vramStaging = m_vramStaging;
@@ -1904,23 +1853,31 @@ void VDP::restoreSaveState(const VdpSaveState& state) {
 	m_displayFrameBufferCpuReadback = state.displayFrameBufferPixels;
 }
 
-void VDP::registerVramSlot(const Memory::AssetEntry& entry, uint32_t surfaceId) {
-	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
+void VDP::registerVramSlot(const VdpVramSurface& surface) {
+	const uint32_t size = surface.width * surface.height * 4u;
+	if (surface.width == 0u || surface.height == 0u || size > surface.capacity) {
+		throw vdpFault("VRAM surface has invalid dimensions.");
+	}
+	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, surface.baseAddr};
 	fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
 	VramSlot slot;
-	slot.baseAddr = entry.baseAddr;
-	slot.capacity = entry.capacity;
-	slot.assetId = entry.id;
-	slot.surfaceId = surfaceId;
-	slot.surfaceWidth = entry.regionW;
-	slot.surfaceHeight = entry.regionH;
-	slot.cpuReadback.resize(static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u);
-	slot.dirtySpansByRow.resize(entry.regionH);
+	slot.baseAddr = surface.baseAddr;
+	slot.capacity = surface.capacity;
+	slot.surfaceId = surface.surfaceId;
+	slot.surfaceWidth = surface.width;
+	slot.surfaceHeight = surface.height;
+	slot.cpuReadback.resize(static_cast<size_t>(size));
+	slot.dirtySpansByRow.resize(surface.height);
 	m_vramSlots.push_back(std::move(slot));
-	registerReadSurface(surfaceId, entry.id);
+	registerReadSurface(surface.surfaceId);
 	auto& slotRef = m_vramSlots.back();
-	if (surfaceId == VDP_RD_SURFACE_ENGINE) {
-		invalidateReadCache(surfaceId);
+	if (surface.surfaceId == VDP_RD_SURFACE_FRAMEBUFFER) {
+		m_frameBufferWidth = surface.width;
+		m_frameBufferHeight = surface.height;
+		m_displayFrameBufferCpuReadback.resize(static_cast<size_t>(size));
+	}
+	if (surface.surfaceId == VDP_RD_SURFACE_SYSTEM) {
+		invalidateReadCache(surface.surfaceId);
 		return;
 	}
 	seedVramSlotPixels(slotRef);
@@ -1958,14 +1915,33 @@ void VDP::setVramSlotLogicalDimensions(VramSlot& slot, uint32_t width, uint32_t 
 	if (width == 0u || height == 0u || size > slot.capacity) {
 		return;
 	}
-	auto& entry = m_memory.getAssetEntry(slot.assetId);
-	entry.baseSize = size;
-	entry.baseStride = width * 4u;
-	entry.regionX = 0u;
-	entry.regionY = 0u;
-	entry.regionW = width;
-	entry.regionH = height;
-	syncVramSlotSurfaceSize(slot);
+	if (slot.surfaceWidth == width && slot.surfaceHeight == height) {
+		return;
+	}
+	std::vector<u8> previous;
+	if (slot.surfaceId != VDP_RD_SURFACE_SYSTEM) {
+		previous.swap(slot.cpuReadback);
+	}
+	slot.surfaceWidth = width;
+	slot.surfaceHeight = height;
+	slot.cpuReadback.resize(static_cast<size_t>(size));
+	slot.dirtySpansByRow.assign(height, VramSlot::DirtySpan{});
+	invalidateReadCache(slot.surfaceId);
+	if (slot.surfaceId == VDP_RD_SURFACE_FRAMEBUFFER) {
+		m_frameBufferWidth = width;
+		m_frameBufferHeight = height;
+		m_displayFrameBufferCpuReadback.resize(static_cast<size_t>(size));
+	}
+	if (slot.surfaceId == VDP_RD_SURFACE_SYSTEM) {
+		slot.dirtyRowStart = 0;
+		slot.dirtyRowEnd = 0;
+		return;
+	}
+	seedVramSlotPixels(slot);
+	const size_t copyBytes = previous.size() < slot.cpuReadback.size() ? previous.size() : slot.cpuReadback.size();
+	if (copyBytes > 0u) {
+		std::memcpy(slot.cpuReadback.data(), previous.data(), copyBytes);
+	}
 }
 
 std::vector<VdpSurfacePixelsState> VDP::captureSurfacePixels() const {
@@ -2008,31 +1984,6 @@ const VDP::VramSlot& VDP::findVramSlot(uint32_t addr, size_t length) const {
 		}
 	}
 	throw vdpFault("VRAM write has no mapped slot.");
-}
-
-void VDP::syncVramSlotSurfaceSize(VramSlot& slot) {
-	auto& entry = m_memory.getAssetEntry(slot.assetId);
-	const uint32_t width = entry.regionW;
-	const uint32_t height = entry.regionH;
-	if (slot.surfaceWidth == width && slot.surfaceHeight == height) {
-		return;
-	}
-	const std::vector<u8> previous = slot.cpuReadback;
-	slot.surfaceWidth = width;
-	slot.surfaceHeight = height;
-	slot.cpuReadback.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
-	slot.dirtySpansByRow.assign(height, VramSlot::DirtySpan{});
-	invalidateReadCache(slot.surfaceId);
-	if (slot.surfaceId == VDP_RD_SURFACE_ENGINE) {
-		slot.dirtyRowStart = 0;
-		slot.dirtyRowEnd = 0;
-		return;
-	}
-	seedVramSlotPixels(slot);
-	const size_t copyBytes = std::min(previous.size(), slot.cpuReadback.size());
-	if (copyBytes > 0u) {
-		std::memcpy(slot.cpuReadback.data(), previous.data(), copyBytes);
-	}
 }
 
 void VDP::markVramSlotDirty(VramSlot& slot, uint32_t startRow, uint32_t rowCount) {
@@ -2127,7 +2078,7 @@ void VDP::fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& s
 
 	const uint32_t biasSeed = s.machineSeed ^ s.slotSalt;
 	const uint32_t bootSeedMix = s.bootSeed ^ s.slotSalt;
-	const uint32_t vramBytes = (VRAM_SECONDARY_TEXTPAGE_BASE + VRAM_SECONDARY_TEXTPAGE_SIZE) - VRAM_STAGING_BASE;
+	const uint32_t vramBytes = (VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE) - VRAM_STAGING_BASE;
 	const BiasConfig biasConfig = makeBiasConfig(vramBytes);
 
 	const size_t BLOCK_BYTES = 32u;
@@ -2188,20 +2139,19 @@ void VDP::seedVramStaging() {
 }
 
 void VDP::seedVramSlotPixels(VramSlot& slot) {
-	auto& entry = m_memory.getAssetEntry(slot.assetId);
-	const size_t rowPixels = static_cast<size_t>(entry.regionW);
+	const size_t rowPixels = static_cast<size_t>(slot.surfaceWidth);
 	const size_t maxPixels = m_vramGarbageScratch.size() / 4u;
-	slot.cpuReadback.resize(static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u);
-	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
+	slot.cpuReadback.resize(static_cast<size_t>(slot.surfaceWidth) * static_cast<size_t>(slot.surfaceHeight) * 4u);
+	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, slot.baseAddr};
 	const size_t rowBytes = rowPixels * 4u;
-	const uint32_t height = entry.regionH;
+	const uint32_t height = slot.surfaceHeight;
 	if (rowBytes <= m_vramGarbageScratch.size()) {
 		const size_t rowsPerChunk = std::max<size_t>(1u, m_vramGarbageScratch.size() / rowBytes);
 		for (uint32_t y = 0; y < height; ) {
 			const size_t rows = std::min<size_t>(rowsPerChunk, height - y);
 			const size_t chunkBytes = rowBytes * rows;
 			fillVramGarbageScratch(m_vramGarbageScratch.data(), chunkBytes, stream);
-			if (slot.surfaceId != VDP_RD_SURFACE_ENGINE) {
+			if (slot.surfaceId != VDP_RD_SURFACE_SYSTEM) {
 				markVramSlotDirty(slot, y, static_cast<uint32_t>(rows));
 			}
 			std::memcpy(slot.cpuReadback.data() + static_cast<size_t>(y) * rowBytes, m_vramGarbageScratch.data(), chunkBytes);
@@ -2209,11 +2159,11 @@ void VDP::seedVramSlotPixels(VramSlot& slot) {
 		}
 	} else {
 		for (uint32_t y = 0; y < height; ++y) {
-			for (uint32_t x = 0; x < entry.regionW; ) {
-				const size_t segmentWidth = std::min<size_t>(maxPixels, entry.regionW - x);
+			for (uint32_t x = 0; x < slot.surfaceWidth; ) {
+				const size_t segmentWidth = std::min<size_t>(maxPixels, slot.surfaceWidth - x);
 				const size_t segmentBytes = segmentWidth * 4u;
 				fillVramGarbageScratch(m_vramGarbageScratch.data(), segmentBytes, stream);
-				if (slot.surfaceId != VDP_RD_SURFACE_ENGINE) {
+				if (slot.surfaceId != VDP_RD_SURFACE_SYSTEM) {
 					markVramSlotDirty(slot, y, 1u);
 				}
 				std::memcpy(
@@ -2228,13 +2178,18 @@ void VDP::seedVramSlotPixels(VramSlot& slot) {
 	invalidateReadCache(slot.surfaceId);
 }
 
-void VDP::registerReadSurface(uint32_t surfaceId, const std::string& assetId) {
-	m_readSurfaces[surfaceId].assetId = assetId;
+void VDP::registerReadSurface(uint32_t surfaceId) {
+	m_readSurfaces[surfaceId].surfaceId = surfaceId;
+	m_readSurfaces[surfaceId].registered = true;
 	invalidateReadCache(surfaceId);
 }
 
-const VDP::ReadSurface& VDP::getReadSurface(uint32_t surfaceId) const {
-	return m_readSurfaces[surfaceId];
+const VDP::VramSlot& VDP::getReadSurface(uint32_t surfaceId) const {
+	const ReadSurface& surface = m_readSurfaces[surfaceId];
+	if (!surface.registered) {
+		throw vdpFault("read surface " + std::to_string(surfaceId) + " is not registered.");
+	}
+	return getVramSlotBySurfaceId(surface.surfaceId);
 }
 
 void VDP::clearSurfaceUploadDirty(uint32_t surfaceId) {
@@ -2251,7 +2206,7 @@ void VDP::invalidateReadCache(uint32_t surfaceId) {
 }
 
 // start hot-path -- VDP read cache feeds CPU-side MMIO readback one pixel at a time.
-VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y) {
+VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const VramSlot& surface, uint32_t x, uint32_t y) {
 	auto& cache = m_readCaches[surfaceId];
 	if (cache.width == 0 || cache.y != y || x < cache.x0 || x >= cache.x0 + cache.width) {
 		prefetchReadCache(surfaceId, surface, x, y);
@@ -2260,15 +2215,14 @@ VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const ReadSurface& surface
 }
 
 // start numeric-sanitization-acceptable -- readback chunk width is the minimum of hardware cap, remaining surface span, and per-frame read budget.
-void VDP::prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y) {
-	auto& entry = m_memory.getAssetEntry(surface.assetId);
+void VDP::prefetchReadCache(uint32_t surfaceId, const VramSlot& surface, uint32_t x, uint32_t y) {
 	const uint32_t maxPixelsByBudget = m_readBudgetBytes / 4u;
 	if (maxPixelsByBudget == 0) {
 		m_readOverflow = true;
 		m_readCaches[surfaceId].width = 0;
 		return;
 	}
-	const uint32_t chunkW = std::min(VDP_RD_MAX_CHUNK_PIXELS, std::min(entry.regionW - x, maxPixelsByBudget));
+	const uint32_t chunkW = std::min(VDP_RD_MAX_CHUNK_PIXELS, std::min(surface.surfaceWidth - x, maxPixelsByBudget));
 	auto& cache = m_readCaches[surfaceId];
 	readSurfacePixels(surfaceId, surface, x, y, chunkW, 1, cache.data);
 	cache.x0 = x;
@@ -2277,11 +2231,10 @@ void VDP::prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint
 }
 // end numeric-sanitization-acceptable
 
-void VDP::readSurfacePixels(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::vector<u8>& out) {
+void VDP::readSurfacePixels(uint32_t surfaceId, const VramSlot& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::vector<u8>& out) {
 	out.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
 	const auto& slot = getVramSlotBySurfaceId(surfaceId);
-	const auto& entry = m_memory.getAssetEntry(surface.assetId);
-	const uint32_t stride = entry.regionW * 4u;
+	const uint32_t stride = surface.surfaceWidth * 4u;
 	const uint32_t rowBytes = width * 4u;
 	for (uint32_t row = 0; row < height; ++row) {
 		const size_t srcOffset = static_cast<size_t>(y + row) * static_cast<size_t>(stride) + static_cast<size_t>(x) * 4u;

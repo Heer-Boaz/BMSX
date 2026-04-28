@@ -929,52 +929,7 @@ export function pushNativePairsIterator(runtime: Runtime, target: NativeObject, 
 	out.push(iterator, target, null);
 }
 
-export function getOrCreateAssetsNativeObject(runtime: Runtime, assets = runtime.activeAssets): NativeObject {
-	if (!assets) {
-		throw new Error('Active runtime assets are not configured.');
-	}
-	const cached = runtime.nativeObjectCache.get(assets);
-	if (cached) {
-		return cached;
-	}
-	const assetMapKeys = new Set<string>(['img', 'audio', 'model', 'data', 'bin', 'audioevents']);
-	const wrapper = createNativeObject(assets, {
-		get: (key) => {
-			const prop = resolveNativeKey(key);
-			if (!prop) {
-				throw new Error('Attempted to retrieve an asset that did not use a string or integer key.');
-			}
-			const rawValue = assets[prop];
-			if (rawValue === undefined) {
-				throw new Error(`Asset '${prop}' does not exist.`);
-			}
-			if (assetMapKeys.has(prop)) {
-					return getOrCreateAssetMapNativeObject(runtime, rawValue as Record<string, unknown>, prop as 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents');
-				}
-				if (typeof rawValue === 'function') {
-					return getOrCreateNativeMethod(runtime, assets, prop);
-				}
-				return toRuntimeAssetEntryValue(runtime, rawValue);
-		},
-		set: (key, entryValue) => {
-			const prop = resolveNativeKey(key);
-			if (!prop) {
-				throw new Error('Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.');
-			}
-			if (entryValue === null) {
-				delete assets[prop];
-				return;
-			}
-			const ctx = buildMarshalContext(runtime);
-			assets[prop] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
-		},
-		nextEntry: buildNativeNextEntry(runtime, assets),
-	});
-	runtime.nativeObjectCache.set(assets, wrapper);
-	return wrapper;
-}
-
-export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<string, unknown>, kind: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): NativeObject {
+export function getOrCreateRomEntryMapNativeObject(runtime: Runtime, map: Record<string, unknown>, kind: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): NativeObject {
 	const cached = runtime.nativeObjectCache.get(map);
 	if (cached) {
 		return cached;
@@ -983,21 +938,21 @@ export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<st
 		get: (key) => {
 			const prop = resolveNativeKey(key);
 			if (!prop) {
-				throw new Error('Attempted to retrieve an asset that did not use a string or integer key.');
+				throw new Error('Attempted to retrieve a ROM entry with a non-string key.');
 			}
 			const rawValue = map[prop];
 			if (rawValue === undefined) {
-				throw new Error(`Asset '${prop}' does not exist.`);
+				throw new Error(`ROM entry '${prop}' does not exist.`);
 			}
 			if (typeof rawValue === 'function') {
 				return getOrCreateNativeMethod(runtime, map, prop);
 			}
-			return toRuntimeAssetEntryValue(runtime, rawValue, kind);
+			return toRomEntryValue(runtime, rawValue, kind);
 		},
 		set: (key, entryValue) => {
 			const prop = resolveNativeKey(key);
 			if (!prop) {
-				throw new Error('Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.');
+				throw new Error('Attempted to index a ROM map with a non-string key.');
 			}
 			if (entryValue === null) {
 				delete map[prop];
@@ -1020,11 +975,11 @@ function buildNativeNextEntry(runtime: Runtime, raw: object, kind?: 'img' | 'aud
 		}
 		const key = entry[0];
 		const value = entry[1];
-		return [key, toRuntimeAssetEntryValue(runtime, value, kind)];
+		return [key, toRomEntryValue(runtime, value, kind)];
 	};
 }
 
-function toRuntimeAssetEntryValue(runtime: Runtime, value: unknown, kind?: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): Value {
+function toRomEntryValue(runtime: Runtime, value: unknown, kind?: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): Value {
 	switch (kind) {
 		case 'img':
 		case 'audio':
@@ -1041,17 +996,17 @@ function toRuntimeAssetEntryValue(runtime: Runtime, value: unknown, kind?: 'img'
 		return value as Value;
 	}
 	const objectValue = value as object;
-	const cached = runtime.luaAssetValueCache.get(objectValue);
+	const cached = runtime.luaRomEntryValueCache.get(objectValue);
 	if (cached !== undefined) {
 		return cached;
 	}
 	const converted = toRuntimeValue(runtime, value);
-	runtime.luaAssetValueCache.set(objectValue, converted);
+	runtime.luaRomEntryValueCache.set(objectValue, converted);
 	return converted;
 }
 
-export function syncLuaAssetField(runtime: Runtime, asset: object, field: string, value: Value): void {
-	const cached = runtime.luaAssetValueCache.get(asset);
+export function syncLuaRomEntryField(runtime: Runtime, entry: object, field: string, value: Value): void {
+	const cached = runtime.luaRomEntryValueCache.get(entry);
 	if (!(cached instanceof Table)) {
 		return;
 	}

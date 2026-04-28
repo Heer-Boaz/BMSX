@@ -10,7 +10,7 @@ import {
 	type Ref,
 	type SymbolID,
 } from './model';
-import { buildModuleAliasesFromPaths } from '../../machine/program/asset';
+import { toLuaModulePath } from '../../machine/program/loader';
 import {
 	computeLuaDiagnosticsFromAnalysis,
 	getDefaultLuaBuiltinDescriptors,
@@ -676,11 +676,11 @@ function buildModuleTargetAliasMap(
 	sources: readonly PreparedSource[],
 ): Map<string, string> {
 	const aliases = new Map<string, string>();
-	const entries = buildModuleAliasesFromPaths(sources.map(source => source.path));
-	for (let index = 0; index < entries.length; index += 1) {
-		const entry = entries[index];
-		if (!aliases.has(entry.alias)) {
-			aliases.set(entry.alias, entry.path);
+	for (let index = 0; index < sources.length; index += 1) {
+		const source = sources[index];
+		const modulePath = toLuaModulePath(source.path);
+		if (!aliases.has(modulePath)) {
+			aliases.set(modulePath, source.path);
 		}
 	}
 	return aliases;

@@ -8,25 +8,14 @@ import { StringValue } from '../memory/string/pool';
 import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
 import { buildDirtyFilePath, hasWorkspaceStorage } from '../../ide/workbench/workspace/io';
 
-function matchesLuaPathAlias(path: string, alias: string): boolean {
-	if (path === alias) {
-		return true;
-	}
-	if (path.length <= alias.length) {
-		return false;
-	}
-	const offset = path.length - alias.length;
-	return path.endsWith(alias) && path[offset - 1] === '/';
-}
-
 function listRuntimeLuaRegistries(runtime: Runtime): LuaSourceRegistry[] {
 	const registries: LuaSourceRegistry[] = [];
 	const active = runtime.activeLuaSources;
 	if (active !== null) {
 		registries.push(active);
 	}
-	if (runtime.engineLuaSources !== null && runtime.engineLuaSources !== active) {
-		registries.push(runtime.engineLuaSources);
+	if (runtime.systemLuaSources !== null && runtime.systemLuaSources !== active) {
+		registries.push(runtime.systemLuaSources);
 	}
 	return registries;
 }
@@ -36,19 +25,7 @@ function resolveLuaSourceRecordByPath(registry: LuaSourceRegistry, path: string)
 	if (direct !== undefined) {
 		return direct;
 	}
-	let resolved: LuaSourceRecord | null = null;
-	const entries = Object.values(registry.path2lua);
-	for (let index = 0; index < entries.length; index += 1) {
-		const entry = entries[index];
-		if (!matchesLuaPathAlias(entry.source_path, path)) {
-			continue;
-		}
-		if (resolved !== null && resolved.source_path !== entry.source_path) {
-			throw new Error(`[devtools.get_lua_resource_source] Ambiguous lua path '${path}'.`);
-		}
-		resolved = entry;
-	}
-	return resolved;
+	return registry.module2lua[path] ?? null;
 }
 
 function summarizeLuaPaths(runtime: Runtime, limit: number): string {

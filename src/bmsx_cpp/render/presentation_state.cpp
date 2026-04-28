@@ -1,5 +1,5 @@
 #include "render/presentation_state.h"
-#include "core/engine.h"
+#include "core/console.h"
 #include "core/time.h"
 #include "machine/runtime/runtime.h"
 #include "render/shared/queues.h"
@@ -167,19 +167,19 @@ void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previ
 	}
 }
 
-void RenderPresentationState::render(EngineCore& engine, Runtime& runtime) {
-	if (engine.m_state != EngineState::Running && engine.m_state != EngineState::Paused) {
+void RenderPresentationState::render(ConsoleCore& console, Runtime& runtime) {
+	if (console.m_state != ConsoleState::Running && console.m_state != ConsoleState::Paused) {
 		return;
 	}
 
-	const bool pausedPresent = engine.m_state == EngineState::Paused;
+	const bool pausedPresent = console.m_state == ConsoleState::Paused;
 	const bool runtimePresentPending = !pausedPresent && consumePresentation(m_presentationScratch);
 	const bool shouldPresent = pausedPresent || runtimePresentPending;
 	if (!shouldPresent) {
 		return;
 	}
 
-	if (engine.m_view) {
+	if (console.m_view) {
 		const GameView::PresentationMode presentMode = pausedPresent
 			? GameView::PresentationMode::Completed
 			: m_presentationScratch.mode;
@@ -190,16 +190,16 @@ void RenderPresentationState::render(EngineCore& engine, Runtime& runtime) {
 		if (pausedPresent) {
 			RenderQueues::prepareHeldRenderQueues();
 		}
-		engine.m_view->beginFrame();
+		console.m_view->beginFrame();
 
-		if (!engine.m_rom_loaded) {
-			renderTestPattern(*engine.m_view, engine.m_total_time);
+		if (!console.m_rom_loaded) {
+			renderTestPattern(*console.m_view, console.m_total_time);
 		}
 
-		commitVdpViewSnapshot(*engine.m_view, runtime.machine().vdp(), runtime.activeAssets(), runtime.machine().memory());
-		engine.m_view->configurePresentation(presentMode, commitFrame);
-		engine.m_view->drawGame();
-		engine.m_view->endFrame();
+		commitVdpViewSnapshot(*console.m_view, runtime.machine().vdp());
+		console.m_view->configurePresentation(presentMode, commitFrame);
+		console.m_view->drawGame();
+		console.m_view->endFrame();
 	}
 
 	flushDebugReport(runtime);

@@ -1,8 +1,8 @@
 -- timeline.lua
 -- timeline runtime for system rom
 --
-local clamp_int<const> = require('util/clamp_int')
-local timeline_apply<const> = require('timeline/apply')
+local clamp_int<const> = require('bios/util/clamp_int')
+local timeline_apply<const> = require('bios/timeline/apply')
 --
 -- DESIGN PRINCIPLES — timeline authoring
 --

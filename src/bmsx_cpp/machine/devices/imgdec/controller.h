@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/taskgate.h"
+#include "machine/devices/dma/image_copy.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 #include <cstdint>
@@ -8,7 +9,6 @@
 #include <deque>
 #include <functional>
 #include <optional>
-#include <unordered_map>
 #include <vector>
 
 namespace bmsx {
@@ -34,8 +34,6 @@ public:
 	bool hasPendingDecodeWork() const;
 	uint32_t getPendingDecodeBytes() const;
 	void reset();
-	void registerExternalSlot(uint32_t baseAddr, Memory::ImageWriteEntry* entry);
-	void clearExternalSlots();
 	void decodeToVram(std::vector<uint8_t>&& buffer,
 		uint32_t dst,
 		uint32_t cap,
@@ -45,15 +43,14 @@ public:
 	private:
 		static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
 
-		struct DecodedImage {
+	struct DecodedImage {
 		std::vector<uint8_t> pixels;
 		uint32_t width = 0;
 		uint32_t height = 0;
 	};
-	struct ImgDecEntry {
-		bool isAsset = true;
-		Memory::AssetEntry* asset = nullptr;
-		Memory::ImageWriteEntry* external = nullptr;
+	struct ImageDecodeTarget {
+		uint32_t baseAddr = 0;
+		uint32_t capacity = 0;
 	};
 	struct ImgDecJob {
 		std::vector<uint8_t> buffer;
@@ -63,10 +60,11 @@ public:
 		std::function<void(std::exception_ptr)> reject;
 	};
 
+	static ImageCopyPlan planImageCopy(const ImageDecodeTarget& target, const DecodedImage& result, uint32_t capacityLimit);
 	void tryStartQueued();
 	void startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, std::optional<ImgDecJob> job, bool signalIrq);
-	ImgDecEntry resolveSlotEntry(uint32_t dst);
-	void beginDecode(DecodedImage&& result, const ImgDecEntry& entry);
+	ImageDecodeTarget resolveDecodeTarget(uint32_t dst);
+	void beginDecode(DecodedImage&& result, const ImageDecodeTarget& target);
 	void advanceDecode();
 	void finishSuccess(bool clipped);
 	void finishError(std::exception_ptr error = nullptr);
@@ -82,11 +80,11 @@ public:
 	uint32_t m_status = 0;
 	std::exception_ptr m_pendingError;
 	std::optional<DecodedImage> m_pendingResult;
-	std::optional<ImgDecEntry> m_pendingEntry;
+	std::optional<ImageDecodeTarget> m_pendingTarget;
 	uint32_t m_pendingCap = 0;
 	bool m_decodeActive = false;
 	size_t m_decodeRemaining = 0;
-	Memory::ImageWritePlan m_decodePlan;
+	ImageCopyPlan m_decodePlan;
 	std::vector<uint8_t> m_decodePixels;
 	uint32_t m_decodeWidth = 0;
 	uint32_t m_decodeHeight = 0;
@@ -95,7 +93,6 @@ public:
 	std::deque<ImgDecJob> m_queuedJobs;
 	std::optional<ImgDecJob> m_activeJob;
 	bool m_signalIrq = false;
-	std::unordered_map<uint32_t, Memory::ImageWriteEntry*> m_externalSlots;
 	Memory& m_memory;
 	DmaController& m_dma;
 	IrqController& m_irq;

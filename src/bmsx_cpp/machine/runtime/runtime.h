@@ -39,8 +39,8 @@ namespace bmsx {
 
 // Forward declarations
 class Api;
-struct ProgramAsset;
-class RuntimeAssets;
+struct ProgramImage;
+class RuntimeRomPackage;
 struct MachineManifest;
 struct CartManifest;
 class ResourceUsageDetector;
@@ -63,11 +63,11 @@ struct RuntimeOptions {
 
 	int playerIndex = 0;
 	Vec2 viewport{0.0f, 0.0f};
-	RuntimeAssets* systemAssets = nullptr;
-	RuntimeAssets* activeAssets = nullptr;
-	RuntimeAssets* cartAssets = nullptr;
-	RomSpan engineRom;
-	RomSpan cartRom;
+	RuntimeRomPackage* systemRom = nullptr;
+	RuntimeRomPackage* activeRom = nullptr;
+	RuntimeRomPackage* cartRom = nullptr;
+	RomSpan systemRomBytes;
+	RomSpan cartRomBytes;
 	const MachineManifest* machineManifest = nullptr;
 	i64 ufpsScaled = DEFAULT_UFPS_SCALED;
 	i64 cpuHz = 0;
@@ -81,7 +81,7 @@ struct RuntimeOptions {
  * Runtime owns the live machine, Lua API bindings, hot-resume snapshot state,
  * and full runtime save-state boundaries. Platform byte serialization is a
  * separate layer above those runtime-owned contracts. Timing, CPU execution,
- * frame scheduling, cart boot, and asset-memory responsibilities live in
+ * frame scheduling, cart boot, and ROM memory responsibilities live in
  * their runtime submodules.
  */
 class Runtime {
@@ -98,7 +98,7 @@ public:
 	friend void applyRuntimeCpuState(Runtime& runtime, const CpuRuntimeState& state);
 
 	enum class ProgramSource {
-		Engine,
+		System,
 		Cart,
 	};
 	Runtime(
@@ -119,7 +119,7 @@ public:
 	 * Boot the runtime with a compiled program.
 	 */
 	void boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>* staticModulePaths = nullptr);
-	void boot(const ProgramAsset& asset, ProgramMetadata* metadata);
+	void boot(const ProgramImage& image, ProgramMetadata* metadata);
 	void handleLuaError(const std::string& message);
 
 	/**
@@ -144,7 +144,7 @@ public:
 	bool isTickEnabled() const { return m_tickEnabled; }
 
 	void setProgramSource(ProgramSource source) { m_programSource = source; }
-	bool isEngineProgramActive() const { return m_programSource == ProgramSource::Engine; }
+	bool isSystemProgramActive() const { return m_programSource == ProgramSource::System; }
 
 	void setVdpDitherType(i32 type) { m_machine.vdp().setDitherType(type); }
 
@@ -153,23 +153,23 @@ public:
 
 	GameView& view() { return m_view; }
 	const GameView& view() const { return m_view; }
-	RuntimeAssets& systemAssets() { return *m_systemAssets; }
-	const RuntimeAssets& systemAssets() const { return *m_systemAssets; }
-	RuntimeAssets& activeAssets() { return *m_activeAssets; }
-	const RuntimeAssets& activeAssets() const { return *m_activeAssets; }
-	RuntimeAssets* cartAssets() { return m_cartAssets; }
-	const RuntimeAssets* cartAssets() const { return m_cartAssets; }
+	RuntimeRomPackage& systemRom() { return *m_systemRom; }
+	const RuntimeRomPackage& systemRom() const { return *m_systemRom; }
+	RuntimeRomPackage& activeRom() { return *m_activeRom; }
+	const RuntimeRomPackage& activeRom() const { return *m_activeRom; }
+	RuntimeRomPackage* cartRom() { return m_cartRom; }
+	const RuntimeRomPackage* cartRom() const { return m_cartRom; }
 	const MachineManifest& machineManifest() const { return *m_machineManifest; }
 	const CartManifest* cartManifest() const;
 	const std::string* cartEntryPath() const;
 	const std::string* cartProjectRootPath() const;
 	void setRuntimeEnvironment(
-		RuntimeAssets& systemAssets,
-		RuntimeAssets& activeAssets,
+		RuntimeRomPackage& systemRom,
+		RuntimeRomPackage& activeRom,
 		const MachineManifest& machineManifest,
-		RuntimeAssets* cartAssets,
-		RuntimeOptions::RomSpan engineRom,
-		RuntimeOptions::RomSpan cartRom
+		RuntimeRomPackage* cartRom,
+		RuntimeOptions::RomSpan systemRomBytes,
+		RuntimeOptions::RomSpan cartRomBytes
 	);
 
 	Machine& machine() { return m_machine; }
@@ -227,7 +227,7 @@ private:
 		Entry,
 	};
 	void setupBuiltins();
-	void runEngineBuiltinPrelude();
+	void runSystemBuiltinPrelude();
 	void runStaticModuleInitializers(const std::vector<std::string>& paths);
 	void runStaticModuleInitializer(const std::string& path);
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
@@ -241,11 +241,11 @@ private:
 	void logLuaCallStack() const;
 	void refreshMemoryMapGlobals();
 
-	RuntimeAssets* m_systemAssets = nullptr;
-	RuntimeAssets* m_activeAssets = nullptr;
-	RuntimeAssets* m_cartAssets = nullptr;
-	RuntimeOptions::RomSpan m_engineRom;
-	RuntimeOptions::RomSpan m_cartRom;
+	RuntimeRomPackage* m_systemRom = nullptr;
+	RuntimeRomPackage* m_activeRom = nullptr;
+	RuntimeRomPackage* m_cartRom = nullptr;
+	RuntimeOptions::RomSpan m_systemRomBytes;
+	RuntimeOptions::RomSpan m_cartRomBytes;
 	const MachineManifest* m_machineManifest = nullptr;
 	Clock& m_clock;
 	GameView& m_view;
@@ -272,7 +272,6 @@ private:
 	uint32_t m_randomSeedValue = 0;
 
 	std::unordered_map<std::string, int> m_moduleProtos;
-	std::unordered_map<std::string, std::string> m_moduleAliases;
 	std::unordered_map<std::string, Value> m_moduleCache;
 	std::unordered_map<std::string, std::unique_ptr<std::regex>> m_luaPatternRegexCache;
 	i64 m_debugUpdateCountTotal = 0;

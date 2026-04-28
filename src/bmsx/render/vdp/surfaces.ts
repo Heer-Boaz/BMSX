@@ -1,9 +1,9 @@
 import type { TextureHandle } from '../backend/interfaces';
 import type { VDP } from '../../machine/devices/vdp/vdp';
 import {
-	TEXTPAGE_PRIMARY_SLOT_ID,
-	TEXTPAGE_SECONDARY_SLOT_ID,
-	BIOS_TEXTPAGE_TEXTURE_KEY,
+	VDP_PRIMARY_SLOT_TEXTURE_KEY,
+	VDP_SECONDARY_SLOT_TEXTURE_KEY,
+	SYSTEM_SLOT_TEXTURE_KEY,
 	FRAMEBUFFER_RENDER_TEXTURE_KEY,
 } from '../../rompack/format';
 import {
@@ -11,13 +11,14 @@ import {
 	VDP_SLOT_SECONDARY,
 	VDP_SLOT_SYSTEM,
 } from '../../machine/bus/io';
+import {
+	VDP_RD_SURFACE_SYSTEM,
+	VDP_RD_SURFACE_FRAMEBUFFER,
+	VDP_RD_SURFACE_PRIMARY,
+	VDP_RD_SURFACE_SECONDARY,
+} from '../../machine/devices/vdp/contracts';
 import { vdpRenderFrameBufferTexture } from './framebuffer';
 import { vdpTextureByUri } from './texture_transfer';
-
-const VDP_RD_SURFACE_ENGINE = 0;
-const VDP_RD_SURFACE_PRIMARY = 1;
-const VDP_RD_SURFACE_SECONDARY = 2;
-const VDP_RD_SURFACE_FRAMEBUFFER = 3;
 
 export type VdpRenderSurface = {
 	textureKey: string;
@@ -41,7 +42,7 @@ export function resolveVdpSurfaceSlotBinding(surfaceId: number): number {
 	if (surfaceId === VDP_RD_SURFACE_SECONDARY) {
 		return VDP_SLOT_SECONDARY;
 	}
-	if (surfaceId === VDP_RD_SURFACE_ENGINE) {
+	if (surfaceId === VDP_RD_SURFACE_SYSTEM) {
 		return VDP_SLOT_SYSTEM;
 	}
 	throw new Error(`[VDPSurfaces] Surface ${surfaceId} cannot be sampled by the blitter slot pipeline.`);
@@ -59,14 +60,14 @@ export function getVdpRenderSurfaceTexture(surfaceId: number): TextureHandle {
 }
 
 function resolveVdpSurfaceTextureKey(surfaceId: number): string {
-	if (surfaceId === VDP_RD_SURFACE_ENGINE) {
-		return BIOS_TEXTPAGE_TEXTURE_KEY;
+	if (surfaceId === VDP_RD_SURFACE_SYSTEM) {
+		return SYSTEM_SLOT_TEXTURE_KEY;
 	}
 	if (surfaceId === VDP_RD_SURFACE_PRIMARY) {
-		return TEXTPAGE_PRIMARY_SLOT_ID;
+		return VDP_PRIMARY_SLOT_TEXTURE_KEY;
 	}
 	if (surfaceId === VDP_RD_SURFACE_SECONDARY) {
-		return TEXTPAGE_SECONDARY_SLOT_ID;
+		return VDP_SECONDARY_SLOT_TEXTURE_KEY;
 	}
 	if (surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
 		return FRAMEBUFFER_RENDER_TEXTURE_KEY;

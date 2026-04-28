@@ -5,7 +5,7 @@
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/program/loader.h"
 #include "machine/runtime/resource_usage_detector.h"
-#include "machine/runtime/engine_irq.h"
+#include "machine/runtime/system_irq.h"
 #include "render/runtime/state.h"
 #include "render/shared/queues.h"
 #include "machine/runtime/timing/config.h"
@@ -32,11 +32,11 @@ Runtime::Runtime(
 )
 	: timing(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame)
 	, cartBoot(*this, romBootManager)
-	, m_systemAssets(options.systemAssets)
-	, m_activeAssets(options.activeAssets)
-	, m_cartAssets(options.cartAssets)
-	, m_engineRom(options.engineRom)
+	, m_systemRom(options.systemRom)
+	, m_activeRom(options.activeRom)
 	, m_cartRom(options.cartRom)
+	, m_systemRomBytes(options.systemRomBytes)
+	, m_cartRomBytes(options.cartRomBytes)
 	, m_machineManifest(options.machineManifest)
 	, m_clock(clock)
 	, m_view(view)
@@ -76,8 +76,6 @@ Runtime::Runtime(
 				IO_REGION_SIZE
 					+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
 					+ usage.m_stringHandles.usedHeapBytes()
-					+ usage.m_memory.usedAssetTableBytes()
-					+ usage.m_memory.usedAssetDataBytes()
 			);
 		},
 	});
@@ -94,53 +92,49 @@ Api& Runtime::api() {
 }
 
 const CartManifest* Runtime::cartManifest() const {
-	if (!m_cartAssets || !m_cartAssets->cartManifest) {
+	if (!m_cartRom || !m_cartRom->cartManifest) {
 		return nullptr;
 	}
-	return &*m_cartAssets->cartManifest;
+	return &*m_cartRom->cartManifest;
 }
 
 const std::string* Runtime::cartEntryPath() const {
-	if (!m_cartAssets) {
+	if (!m_cartRom) {
 		return nullptr;
 	}
-	return &m_cartAssets->entryPoint;
+	return &m_cartRom->entryPoint;
 }
 
 const std::string* Runtime::cartProjectRootPath() const {
-	if (!m_cartAssets) {
+	if (!m_cartRom) {
 		return nullptr;
 	}
-	return &m_cartAssets->projectRootPath;
+	return &m_cartRom->projectRootPath;
 }
 
 void Runtime::setRuntimeEnvironment(
-	RuntimeAssets& systemAssets,
-	RuntimeAssets& activeAssets,
+	RuntimeRomPackage& systemRom,
+	RuntimeRomPackage& activeRom,
 	const MachineManifest& machineManifest,
-	RuntimeAssets* cartAssets,
-	RuntimeOptions::RomSpan engineRom,
-	RuntimeOptions::RomSpan cartRom
+	RuntimeRomPackage* cartRom,
+	RuntimeOptions::RomSpan systemRomBytes,
+	RuntimeOptions::RomSpan cartRomBytes
 ) {
-	m_systemAssets = &systemAssets;
-	m_activeAssets = &activeAssets;
+	m_systemRom = &systemRom;
+	m_activeRom = &activeRom;
 	m_machineManifest = &machineManifest;
-	m_cartAssets = cartAssets;
-	m_engineRom = engineRom;
 	m_cartRom = cartRom;
+	m_systemRomBytes = systemRomBytes;
+	m_cartRomBytes = cartRomBytes;
 }
 
-void Runtime::boot(const ProgramAsset& asset, ProgramMetadata* metadata) {
+void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata) {
 	m_moduleProtos.clear();
-	for (const auto& [path, protoIndex] : asset.moduleProtos) {
+	for (const auto& [path, protoIndex] : image.moduleProtos) {
 		m_moduleProtos[path] = protoIndex;
 	}
-	m_moduleAliases.clear();
-	for (const auto& [alias, path] : asset.moduleAliases) {
-		m_moduleAliases[alias] = path;
-	}
 	m_moduleCache.clear();
-	boot(asset.program.get(), metadata, asset.entryProtoIndex, &asset.staticModulePaths);
+	boot(image.program.get(), metadata, image.entryProtoIndex, &image.staticModulePaths);
 }
 
 void Runtime::resetRuntimeForProgramReload() {
@@ -168,7 +162,7 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 		m_program = program;
 		m_programMetadata = metadata;
 		m_machine.cpu().setProgram(program, metadata);
-		runEngineBuiltinPrelude();
+		runSystemBuiltinPrelude();
 		if (staticModulePaths) {
 			runStaticModuleInitializers(*staticModulePaths);
 		}
@@ -187,7 +181,7 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
 	const uint32_t mask = (runInit ? IRQ_REINIT : 0u) | (runNewGame ? IRQ_NEWGAME : 0u);
 	if (mask != 0) {
-		raiseEngineIrq(*this, mask);
+		raiseSystemIrq(*this, mask);
 	}
 }
 
@@ -216,11 +210,11 @@ void Runtime::resetHardwareState() {
 }
 
 void Runtime::refreshMemoryMap() {
-	if (m_engineRom.size > 0) {
-		m_machine.memory().setEngineRom(m_engineRom.data, m_engineRom.size);
+	if (m_systemRomBytes.size > 0) {
+		m_machine.memory().setSystemRom(m_systemRomBytes.data, m_systemRomBytes.size);
 	}
-	if (m_cartRom.size > 0) {
-		m_machine.memory().setCartRom(m_cartRom.data, m_cartRom.size);
+	if (m_cartRomBytes.size > 0) {
+		m_machine.memory().setCartRom(m_cartRomBytes.data, m_cartRomBytes.size);
 	} else {
 		m_machine.memory().setCartRom(CART_ROM_EMPTY_HEADER.data(), CART_ROM_EMPTY_HEADER.size());
 		InputMap emptyMapping;
@@ -230,14 +224,14 @@ void Runtime::refreshMemoryMap() {
 }
 
 void Runtime::refreshMemoryMapGlobals() {
-	setGlobal("sys_vram_system_textpage_base", valueNumber(static_cast<double>(VRAM_SYSTEM_TEXTPAGE_BASE)));
-	setGlobal("sys_vram_primary_textpage_base", valueNumber(static_cast<double>(VRAM_PRIMARY_TEXTPAGE_BASE)));
-	setGlobal("sys_vram_secondary_textpage_base", valueNumber(static_cast<double>(VRAM_SECONDARY_TEXTPAGE_BASE)));
+	setGlobal("sys_vram_system_slot_base", valueNumber(static_cast<double>(VRAM_SYSTEM_SLOT_BASE)));
+	setGlobal("sys_vram_primary_slot_base", valueNumber(static_cast<double>(VRAM_PRIMARY_SLOT_BASE)));
+	setGlobal("sys_vram_secondary_slot_base", valueNumber(static_cast<double>(VRAM_SECONDARY_SLOT_BASE)));
 	setGlobal("sys_vram_framebuffer_base", valueNumber(static_cast<double>(VRAM_FRAMEBUFFER_BASE)));
 	setGlobal("sys_vram_staging_base", valueNumber(static_cast<double>(VRAM_STAGING_BASE)));
-	setGlobal("sys_vram_system_textpage_size", valueNumber(static_cast<double>(VRAM_SYSTEM_TEXTPAGE_SIZE)));
-	setGlobal("sys_vram_primary_textpage_size", valueNumber(static_cast<double>(VRAM_PRIMARY_TEXTPAGE_SIZE)));
-	setGlobal("sys_vram_secondary_textpage_size", valueNumber(static_cast<double>(VRAM_SECONDARY_TEXTPAGE_SIZE)));
+	setGlobal("sys_vram_system_slot_size", valueNumber(static_cast<double>(VRAM_SYSTEM_SLOT_SIZE)));
+	setGlobal("sys_vram_primary_slot_size", valueNumber(static_cast<double>(VRAM_PRIMARY_SLOT_SIZE)));
+	setGlobal("sys_vram_secondary_slot_size", valueNumber(static_cast<double>(VRAM_SECONDARY_SLOT_SIZE)));
 	setGlobal("sys_vram_framebuffer_size", valueNumber(static_cast<double>(VRAM_FRAMEBUFFER_SIZE)));
 	setGlobal("sys_vram_staging_size", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
 	setGlobal("sys_vram_size", valueNumber(static_cast<double>(m_machine.vdp().trackedTotalVramBytes())));

@@ -1,9 +1,9 @@
 -- aem.lua
 -- BIOS Audio Event Map dispatcher. AEM rules decide what to play; APU writes live in apu.lua.
 
-local apu<const> = require('apu')
-local eventemitter<const> = require('eventemitter').eventemitter
-local compile_matcher<const> = require('event_matcher').compile
+local apu<const> = require('bios/apu')
+local eventemitter<const> = require('bios/eventemitter').eventemitter
+local compile_matcher<const> = require('bios/event_matcher').compile
 
 local global_actor_key<const> = false
 local slot_sfx<const> = 0
@@ -37,9 +37,9 @@ local slot_queue_tail
 local resolve_data_path<const> = function(path)
 	local dot = string.find(path, '.', 1, true)
 	if not dot then
-		return assets.data[path]
+		return sys_rom_data[path]
 	end
-	local cursor = assets.data[string.sub(path, 1, dot - 1)]
+	local cursor = sys_rom_data[string.sub(path, 1, dot - 1)]
 	local start = dot + 1
 	while true do
 		dot = string.find(path, '.', start, true)
@@ -619,7 +619,7 @@ local transition_target_asset<const> = function(transition, sync)
 	if target_id == nil then
 		error('aem music_transition missing audio_id target')
 	end
-	return assets.audio[target_id]
+	return sys_rom_audio[target_id]
 end
 
 local dispatch_music_transition<const> = function(transition)
@@ -633,7 +633,7 @@ local dispatch_music_transition<const> = function(transition)
 	end
 	if sync ~= nil and type(sync) ~= 'string' then
 		local stinger_id<const> = sync.stinger
-		local stinger_asset<const> = assets.audio[stinger_id]
+		local stinger_asset<const> = sys_rom_audio[stinger_id]
 		local stinger_type<const> = stinger_asset.audiometa.audiotype
 		if current_music_source_addr ~= 0 then
 			apu.stop_slot(current_music_slot, 0)
@@ -665,7 +665,7 @@ end
 
 local dispatch_action<const> = function(entry, action, payload)
 	if type(action) == 'string' then
-		submit_prepared_play(prepare_plain_play(assets.audio[action], entry.__slot), entry.__queued)
+		submit_prepared_play(prepare_plain_play(sys_rom_audio[action], entry.__slot), entry.__queued)
 		return
 	end
 	if action.stop_music then
@@ -688,7 +688,7 @@ local dispatch_action<const> = function(entry, action, payload)
 		dispatch_music_transition(action.music_transition)
 		return
 	end
-	dispatch_audio_play(entry, assets.audio[action.audio_id], action, payload)
+	dispatch_audio_play(entry, sys_rom_audio[action.audio_id], action, payload)
 end
 
 local handle_event<const> = function(payload)
@@ -719,7 +719,7 @@ end
 local reload<const> = function()
 	eventemitter.instance:remove_subscriber(handle_event, true)
 	reset_audio_state()
-	events = merge_events(assets.audioevents)
+	events = merge_events(sys_rom_audioevents)
 	for event_name in pairs(events) do
 		eventemitter.instance:on({
 			event_name = event_name,

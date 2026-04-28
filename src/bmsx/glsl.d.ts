@@ -2,7 +2,7 @@
 // This keeps imports like `import src from './shader.glsl'` or
 // `import src from './shader.glsl?raw'` typed as `string`.
 //
-// Many bundlers (Vite/Rollup/webpack) support importing non-code assets. Some
+// Many bundlers (Vite/Rollup/webpack) support importing non-code files. Some
 // (like Vite) also support the `?raw` query which forces a raw text import.
 // Adding these declarations keeps TypeScript happy and documents the intended
 // usage.

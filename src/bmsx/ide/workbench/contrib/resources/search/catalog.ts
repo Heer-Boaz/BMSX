@@ -11,12 +11,12 @@ export function refreshResourceCatalog(runtime: Runtime): void {
 	try {
 		const descriptors = listResourcesStrict(runtime);
 		const augmented = descriptors.slice();
-		const imgAssets = Object.values(runtime.activeAssets.img);
-		for (const asset of imgAssets) {
-			if (asset.type !== 'atlas') {
+		const imageRecords = Object.values(runtime.activePackage.img);
+		for (const record of imageRecords) {
+			if (record.type !== 'atlas') {
 				continue;
 			}
-			const key = asset.resid;
+			const key = record.resid;
 			if (!key.startsWith('_atlas_')) {
 				continue;
 			}

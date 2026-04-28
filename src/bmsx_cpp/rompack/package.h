@@ -1,11 +1,12 @@
 /*
- * assets.h - Runtime asset management for BMSX
+ * package.h - Decoded ROM package records for BMSX
  */
 
-#ifndef BMSX_RUNTIME_ASSETS_H
-#define BMSX_RUNTIME_ASSETS_H
+#ifndef BMSX_ROMPACK_PACKAGE_H
+#define BMSX_ROMPACK_PACKAGE_H
 
 #include "core/primitives.h"
+#include "rompack/format.h"
 #include "common/serializer/binencoder.h"
 #include "../machine/program/loader.h"
 #include <string>
@@ -153,14 +154,6 @@ struct ImageAtlasRect {
 	u32 h = 0;
 };
 
-struct ImageSlotSource {
-	u32 slot = 0;
-	u32 u = 0;
-	u32 v = 0;
-	u32 w = 0;
-	u32 h = 0;
-};
-
 /* ============================================================================
  * Audio metadata
  * ============================================================================ */
@@ -230,6 +223,7 @@ struct BinAsset {
 struct LuaSourceAsset {
 	AssetId id;
 	std::string path;
+	std::string modulePath;
 	RomAssetInfo rom;
 	std::string source;
 };
@@ -353,61 +347,26 @@ struct ModelAsset {
 };
 
 /* ============================================================================
- * Machine manifest (effective hardware spec)
+ * RuntimeRomPackage - decoded ROM package
  * ============================================================================ */
 
-struct MachineManifest {
-	std::string namespaceName;
-	i32 viewportWidth = 0;
-	i32 viewportHeight = 0;
-	std::optional<i32> ramBytes;
-	std::optional<i32> textpageSlotBytes;
-	std::optional<i32> systemTextpageSlotBytes;
-	std::optional<i32> stagingBytes;
-	std::optional<i64> cpuHz;
-	std::optional<i64> imgDecBytesPerSec;
-	std::optional<i64> dmaBytesPerSecIso;
-	std::optional<i64> dmaBytesPerSecBulk;
-	std::optional<i64> vdpWorkUnitsPerSec;
-	std::optional<i64> geoWorkUnitsPerSec;
-	std::optional<i64> ufpsScaled;
-};
-
-/* ============================================================================
- * Cart manifest (cartridge metadata)
- * ============================================================================ */
-
-struct CartManifest {
-	std::string name;
-	std::string title;
-	std::string shortName;
-	std::string romName;
-	std::string version;
-	std::string author;
-	std::string description;
-};
-
-/* ============================================================================
- * RuntimeAssets - Main asset container
- * ============================================================================ */
-
-class RuntimeAssets {
+class RuntimeRomPackage {
 public:
-	RuntimeAssets() = default;
-	~RuntimeAssets() = default;
+	RuntimeRomPackage() = default;
+	~RuntimeRomPackage() = default;
 
-	// Asset storage
+	// Decoded ROM record storage.
 	std::unordered_map<AssetToken, ImgAsset> img;
 	std::unordered_map<AssetToken, AudioAsset> audio;
 	std::unordered_map<AssetToken, ModelAsset> model;
-	std::unordered_map<AssetToken, DataAsset> data;  // Generic decoded data assets
+	std::unordered_map<AssetToken, DataAsset> data;
 	std::unordered_map<AssetToken, BinAsset> bin;
 	std::unordered_map<AssetToken, LuaSourceAsset> lua;
 	std::unordered_map<AssetToken, AudioEventAsset> audioevents;
 
-	// Pre-compiled program (loaded from __program__ asset)
-	std::unique_ptr<ProgramAsset> programAsset;
-	// Program symbols (loaded from __program_symbols__ asset)
+	// Pre-compiled program image loaded from the ROM package.
+	std::unique_ptr<ProgramImage> programImage;
+	// Optional program symbols loaded from the ROM package.
 	std::unique_ptr<ProgramMetadata> programSymbols;
 
 	// Project metadata
@@ -416,7 +375,7 @@ public:
 	MachineManifest machine;
 	std::string entryPoint;
 
-	// Asset access
+	// ROM record access.
 	ImgAsset* getImg(const AssetId& id);
 	const ImgAsset* getImg(const AssetId& id) const;
 	AudioAsset* getAudio(const AssetId& id);
@@ -435,17 +394,17 @@ public:
 
 	const BinValue* getAudioEvent(const AssetId& id) const;
 
-	// Clear all assets
+	// Clear all decoded ROM records.
 	void clear();
 
-	// Check if asset exists
+	// Check if a decoded ROM record exists.
 	bool hasImg(const AssetId& id) const;
 	bool hasModel(const AssetId& id) const;
 	bool hasData(const AssetId& id) const;
 	bool hasBin(const AssetId& id) const;
 	bool hasLua(const AssetId& path) const;
 	bool hasAudioEvent(const AssetId& id) const;
-	bool hasProgram() const { return programAsset != nullptr; }
+	bool hasProgram() const { return programImage != nullptr; }
 	bool hasAnyImg() const { return !img.empty(); }
 };
 
@@ -462,22 +421,22 @@ struct AssetLoadCallbacks {
  * ROM loader functions
  * ============================================================================ */
 
-// Load a cart ROM into RuntimeAssets, including cart metadata, machine spec, and entry point.
-bool loadCartAssetsFromRom(const u8* buffer,
+// Load a cart ROM into RuntimeRomPackage, including cart metadata, machine spec, and entry point.
+bool loadCartRomPackageFromRom(const u8* buffer,
 				size_t size,
-				RuntimeAssets& assets,
+				RuntimeRomPackage& romPackage,
 				const AssetLoadCallbacks* callbacks = nullptr,
 				const char* payloadId = "cart");
 
-// Load only the ROM asset/program payload into RuntimeAssets. Does not decode cart metadata.
-bool loadSystemAssetsFromRom(const u8* buffer,
+// Load only the ROM package/program payload into RuntimeRomPackage. Does not decode cart metadata.
+bool loadSystemRomPackageFromRom(const u8* buffer,
 				size_t size,
-				RuntimeAssets& assets,
+				RuntimeRomPackage& romPackage,
 				const AssetLoadCallbacks* callbacks = nullptr,
 				const char* payloadId = "system");
 
-ImageAtlasRect resolveImageAtlasRectFromAssets(const RuntimeAssets& assets, const std::string& imgId);
+ImageAtlasRect resolveImageAtlasRectFromPackage(const RuntimeRomPackage& romPackage, const std::string& imgId);
 
 } // namespace bmsx
 
-#endif // BMSX_RUNTIME_ASSETS_H
+#endif // BMSX_ROMPACK_PACKAGE_H

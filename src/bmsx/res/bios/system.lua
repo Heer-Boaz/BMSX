@@ -1,8 +1,8 @@
--- engine.lua
--- lua engine facade for system rom
+-- system.lua
+-- system ROM facade
 --
 -- NOTE FOR CART AUTHORS:
--- Do not `require('engine')` from cart code and do not call `engine.*`.
+-- Do not `require('bios/system')` from cart code and do not call `system.*`.
 -- Carts must use cart-facing globals/helpers (`oget`, `rget`, `inst`,
 -- `update_world`, `draw_world`, `reset`, `add_space`, `set_space`, `get_space`,
 -- `define_fsm`, `define_effect`, etc.) that are injected by the runtime.
@@ -13,41 +13,41 @@
 -- `local p = constants.physics`): read constants directly from their source table/global.
 -- This module is BIOS/runtime plumbing.
 
-local world_module<const> = require('world/index')
-local ecs_builtin<const> = require('ecs/builtin')
-local ecs_pipeline<const> = require('ecs/pipeline')
-local worldobject<const> = require('world/object')
-local subsystem<const> = require('subsystem/index')
-local spriteobject<const> = require('sprite')
-local textobject<const> = require('text/object')
-local fsmlibrary<const> = require('fsm/library')
-local action_effects<const> = require('action_effects')
-local components<const> = require('components')
-local registry<const> = require('registry')
-local eventemitter_module<const> = require('eventemitter')
+local world_module<const> = require('bios/world/index')
+local ecs_builtin<const> = require('bios/ecs/builtin')
+local ecs_pipeline<const> = require('bios/ecs/pipeline')
+local worldobject<const> = require('bios/world/object')
+local subsystem<const> = require('bios/subsystem/index')
+local spriteobject<const> = require('bios/sprite')
+local textobject<const> = require('bios/text/object')
+local fsmlibrary<const> = require('bios/fsm/library')
+local action_effects<const> = require('bios/action_effects')
+local components<const> = require('bios/components')
+local registry<const> = require('bios/registry')
+local eventemitter_module<const> = require('bios/eventemitter')
 local eventemitter<const> = eventemitter_module.eventemitter
 eventemitter_module.eventemitter = eventemitter
 eventemitter_module.instance = eventemitter.instance
-local quickmenu<const> = require('quickmenu')
-local resource_usage_gizmo<const> = require('resource_usage_gizmo')
+local quickmenu<const> = require('bios/quickmenu')
+local resource_usage_gizmo<const> = require('bios/resource_usage_gizmo')
 -- local ide_editor = require('ide_editor')
-local bool01<const> = require('bool01')
-local deep_clone<const> = require('deep_clone')
-local velocity<const> = require('velocity')
-local rect_overlaps<const> = require('rect_overlaps')
-local clamp_int<const> = require('clamp_int')
-local clear_map<const> = require('clear_map')
-local scratchbatch<const> = require('scratchbatch')
-local sorted_scratchbatch<const> = require('sorted_scratchbatch')
-local div_toward_zero<const> = require('div_toward_zero')
-local round_to_nearest<const> = require('round_to_nearest')
-local rol8<const> = require('rol8')
-local swap_remove<const> = require('swap_remove')
-local timeline<const> = require('timeline/index')
-local aem<const> = require('aem')
-local progression<const> = require('progression')
-local romdir<const> = require('romdir')
-local vdp_image<const> = require('vdp_image')
+local bool01<const> = require('bios/util/bool01')
+local deep_clone<const> = require('bios/util/deep_clone')
+local velocity<const> = require('bios/util/velocity')
+local rect_overlaps<const> = require('bios/util/rect_overlaps')
+local clamp_int<const> = require('bios/util/clamp_int')
+local clear_map<const> = require('bios/util/clear_map')
+local scratchbatch<const> = require('bios/util/scratchbatch')
+local sorted_scratchbatch<const> = require('bios/util/sorted_scratchbatch')
+local div_toward_zero<const> = require('bios/util/div_toward_zero')
+local round_to_nearest<const> = require('bios/util/round_to_nearest')
+local rol8<const> = require('bios/util/rol8')
+local swap_remove<const> = require('bios/util/swap_remove')
+local timeline<const> = require('bios/timeline/index')
+local aem<const> = require('bios/aem')
+local progression<const> = require('bios/progression')
+local romdir<const> = require('bios/romdir')
+local vdp_image<const> = require('bios/vdp_image')
 
 local world_instance<const> = world_module.instance
 
@@ -296,41 +296,41 @@ local apply_subsystem_definition<const> = function(instance, def, addons)
 	apply_ctor(instance, class_table, addons, def.def_id)
 end
 
-local engine<const> = {}
-engine.bool01 = bool01
-engine.clear_map = clear_map
-engine.scratchbatch = scratchbatch
-engine.sorted_scratchbatch = sorted_scratchbatch
-engine.vdp_stream_claim_words = vdp_stream_claim_words
-engine.vdp_blit_img_rgba = vdp_image.write_blit_rgba
-engine.vdp_img_rect = vdp_image.rect
-engine.vdp_img_slot = vdp_image.slot
-engine.vdp_img_source = vdp_image.source
-engine.vdp_write_source_words = vdp_image.write_source_words
-engine.consume_axis_accum = velocity.consume_axis_accum
-engine.deep_clone = deep_clone
-engine.set_velocity = velocity.set_velocity
-engine.move_with_velocity = velocity.move_with_velocity
-engine.rect_overlaps = rect_overlaps
-engine.clamp_int = clamp_int
-engine.div_toward_zero = div_toward_zero
-engine.round_to_nearest = round_to_nearest
-engine.rol8 = rol8
-engine.swap_remove = swap_remove
-engine.timeline = timeline
+local system<const> = {}
+system.bool01 = bool01
+system.clear_map = clear_map
+system.scratchbatch = scratchbatch
+system.sorted_scratchbatch = sorted_scratchbatch
+system.vdp_stream_claim_words = vdp_stream_claim_words
+system.vdp_blit_img_rgba = vdp_image.write_blit_rgba
+system.vdp_img_rect = vdp_image.rect
+system.vdp_img_slot = vdp_image.slot
+system.vdp_img_source = vdp_image.source
+system.vdp_write_source_words = vdp_image.write_source_words
+system.consume_axis_accum = velocity.consume_axis_accum
+system.deep_clone = deep_clone
+system.set_velocity = velocity.set_velocity
+system.move_with_velocity = velocity.move_with_velocity
+system.rect_overlaps = rect_overlaps
+system.clamp_int = clamp_int
+system.div_toward_zero = div_toward_zero
+system.round_to_nearest = round_to_nearest
+system.rol8 = rol8
+system.swap_remove = swap_remove
+system.timeline = timeline
 
-function engine.define_fsm(id, blueprint)
+function system.define_fsm(id, blueprint)
 	fsmlibrary.register(id, blueprint)
 end
 
-function engine.define_prefab(definition)
+function system.define_prefab(definition)
 	if type(definition.class) ~= 'table' then
 		error('define_prefab: definition.class must be a table for "' .. tostring(definition.def_id) .. '".')
 	end
 	definitions[definition.def_id] = definition
 end
 
-function engine.define_subsystem(definition)
+function system.define_subsystem(definition)
 	if type(definition.class) ~= 'table' then
 		error('define_subsystem: definition.class must be a table for "' .. tostring(definition.def_id) .. '".')
 	end
@@ -346,7 +346,7 @@ function engine.define_subsystem(definition)
 	subsystem_definitions[definition.def_id] = definition
 end
 
-function engine.define_component(definition)
+function system.define_component(definition)
 	if type(definition.class) ~= 'table' then
 		error('define_component: definition.class must be a table for "' .. tostring(definition.def_id) .. '".')
 	end
@@ -357,11 +357,11 @@ function engine.define_component(definition)
 	ensure_component_type(definition.def_id, definition)
 end
 
-function engine.define_effect(definition, opts)
+function system.define_effect(definition, opts)
 	action_effects.register_effect(definition, opts)
 end
 
-function engine.vdp_load_slot(slot, atlas_id)
+function system.vdp_load_slot(slot, atlas_id)
 	if vdp_load_queue_head == nil then
 		vdp_load_queue_head = 1
 		vdp_load_queue_tail = 0
@@ -373,11 +373,11 @@ function engine.vdp_load_slot(slot, atlas_id)
 	local dst
 	local cap
 	if slot == sys_vdp_slot_primary then
-		dst = sys_vram_primary_textpage_base
-		cap = sys_vram_primary_textpage_size
+		dst = sys_vram_primary_slot_base
+		cap = sys_vram_primary_slot_size
 	elseif slot == sys_vdp_slot_secondary then
-		dst = sys_vram_secondary_textpage_base
-		cap = sys_vram_secondary_textpage_size
+		dst = sys_vram_secondary_slot_base
+		cap = sys_vram_secondary_slot_size
 	else
 		error('vdp_load_slot: invalid slot ' .. tostring(slot))
 	end
@@ -397,7 +397,7 @@ function engine.vdp_load_slot(slot, atlas_id)
 	return vdp_load_job_seq
 end
 
-function engine.vdp_load_sys_textpage()
+function system.vdp_load_system_slot()
 	if vdp_load_queue_head == nil then
 		vdp_load_queue_head = 1
 		vdp_load_queue_tail = 0
@@ -415,14 +415,14 @@ function engine.vdp_load_sys_textpage()
 		allow_handler = false,
 		src = src,
 		len = len,
-		dst = sys_vram_system_textpage_base,
-		cap = sys_vram_system_textpage_size,
+		dst = sys_vram_system_slot_base,
+		cap = sys_vram_system_slot_size,
 	}
 	vdp_try_start_next_job()
 	return vdp_load_job_seq
 end
 
-function engine.inst(definition_id, addons)
+function system.inst(definition_id, addons)
 	local def<const> = definitions[definition_id]
 	local object_type<const> = def.type
 	if object_type == 'sprite' then
@@ -466,7 +466,7 @@ function engine.inst(definition_id, addons)
 	return instance
 end
 
-function engine.inst_subsystem(definition_id, addons)
+function system.inst_subsystem(definition_id, addons)
 	local def<const> = subsystem_definitions[definition_id]
 	local class_table<const> = def.class
 	local instance_id<const> = (addons and addons.id) or class_table.id or definition_id
@@ -477,66 +477,66 @@ function engine.inst_subsystem(definition_id, addons)
 end
 
 -- Runtime binds global `oget(id)` to this function.
--- Cart code must call `oget(id)` and must not call `engine.oget(id)` directly.
-function engine.oget(id)
+-- Cart code must call `oget(id)` and must not call `system.oget(id)` directly.
+function system.oget(id)
 	return world_instance:get(id)
 end
 
 -- Runtime binds global `rget(id)` to this function.
--- Cart code must call `rget(id)` and must not call `engine.rget(id)` directly.
-function engine.rget(id)
+-- Cart code must call `rget(id)` and must not call `system.rget(id)` directly.
+function system.rget(id)
 	return registry.instance:get(id)
 end
 
-function engine.subsystem(id)
+function system.subsystem(id)
 	return world_instance:get_subsystem(id)
 end
 
-function engine.add_space(space_id)
+function system.add_space(space_id)
 	return world_instance:add_space(space_id)
 end
 
-function engine.set_space(space_id)
+function system.set_space(space_id)
 	return world_instance:set_space(space_id)
 end
 
-function engine.get_space()
+function system.get_space()
 	return world_instance.active_space_id
 end
 
-function engine.objects_by_type(type_name)
+function system.objects_by_type(type_name)
 	return world_instance:objects_by_type(type_name)
 end
 
-function engine.all_objects_by_type(type_name)
+function system.all_objects_by_type(type_name)
 	return world_instance:all_objects_by_type(type_name)
 end
 
-function engine.objects_by_tag(tag)
+function system.objects_by_tag(tag)
 	return world_instance:objects_by_tag(tag)
 end
 
-function engine.all_objects_by_tag(tag)
+function system.all_objects_by_tag(tag)
 	return world_instance:all_objects_by_tag(tag)
 end
 
-function engine.find_by_type(type_name)
+function system.find_by_type(type_name)
 	return world_instance:find_by_type(type_name)
 end
 
-function engine.find_any_by_type(type_name)
+function system.find_any_by_type(type_name)
 	return world_instance:find_any_by_type(type_name)
 end
 
-function engine.find_by_tag(tag)
+function system.find_by_tag(tag)
 	return world_instance:find_by_tag(tag)
 end
 
-function engine.find_any_by_tag(tag)
+function system.find_any_by_tag(tag)
 	return world_instance:find_any_by_tag(tag)
 end
 
-function engine.attach_component(object_or_id, component_or_type)
+function system.attach_component(object_or_id, component_or_type)
 	local obj<const> = type(object_or_id) == 'string' and world_instance:get(object_or_id) or object_or_id
 	if type(component_or_type) == 'table' and component_or_type.type_name then
 		obj:add_component(component_or_type)
@@ -550,7 +550,7 @@ function engine.attach_component(object_or_id, component_or_type)
 	error('attach_component expects a component instance or type name')
 end
 
-function engine.update_world()
+function system.update_world()
 	-- if ide_editor.is_enabled() then
 	-- 	ide_editor.update()
 	-- 	if ide_editor.is_open() then
@@ -564,7 +564,7 @@ function engine.update_world()
 	end
 end
 
-function engine.draw_world()
+function system.draw_world()
 	world_instance:draw()
 	if not quickmenu.is_open() then
 		resource_usage_gizmo.draw()
@@ -572,7 +572,7 @@ function engine.draw_world()
 	quickmenu.draw()
 end
 
-function engine.irq(flags)
+function system.irq(flags)
 	local ack = 0
 	local fatal
 	if (flags & irq_img_done) ~= 0 then
@@ -627,7 +627,7 @@ function engine.irq(flags)
 			if newgame_handler ~= nil then
 				newgame_handler(flags & irq_newgame, flags)
 			else
-				engine.reset()
+				system.reset()
 				new_game()
 			end
 		end
@@ -640,7 +640,7 @@ function engine.irq(flags)
 	end
 end
 
-function engine.on_irq(mask, handler)
+function system.on_irq(mask, handler)
 	if type(mask) ~= 'number' then
 		error('on_irq: mask must be a number')
 	end
@@ -654,7 +654,7 @@ function engine.on_irq(mask, handler)
 	cart_irq_handlers[mask] = handler
 end
 
-function engine.on_vdp_load(handler)
+function system.on_vdp_load(handler)
 	if handler == nil then
 		vdp_load_handler = nil
 		return
@@ -665,63 +665,63 @@ function engine.on_vdp_load(handler)
 	vdp_load_handler = handler
 end
 
-function engine.reset()
+function system.reset()
 	world_instance:clear()
 	registry.instance:clear()
 	ecs_builtin.register_builtin_ecs()
 	ecs_pipeline.defaultecspipelineregistry:build(world_instance, ecs_builtin.default_pipeline_spec())
 end
 
-function engine.configure_ecs(nodes)
+function system.configure_ecs(nodes)
 	return ecs_pipeline.defaultecspipelineregistry:build(world_instance, nodes)
 end
 
-function engine.apply_default_pipeline()
+function system.apply_default_pipeline()
 	ecs_builtin.register_builtin_ecs()
 	return ecs_pipeline.defaultecspipelineregistry:build(world_instance, ecs_builtin.default_pipeline_spec())
 end
 
-function engine.enlist(value)
+function system.enlist(value)
 	registry.instance:register(value)
 end
 
-function engine.delist(id)
+function system.delist(id)
 	registry.instance:deregister(id)
 end
 
-function engine.get_definitions()
+function system.get_definitions()
 	return definitions
 end
 
-function engine.get_definition(def_id)
+function system.get_definition(def_id)
 	return definitions[def_id]
 end
 
-function engine.get_subsystem_definitions()
+function system.get_subsystem_definitions()
 	return subsystem_definitions
 end
 
-function engine.get_subsystem_definition(def_id)
+function system.get_subsystem_definition(def_id)
 	return subsystem_definitions[def_id]
 end
 
-function engine.get_component_definitions()
+function system.get_component_definitions()
 	return component_definitions
 end
 
-function engine.get_component_definition(def_id)
+function system.get_component_definition(def_id)
 	return component_definitions[def_id]
 end
 
-function engine.get_fsm_definitions()
+function system.get_fsm_definitions()
 	return fsmlibrary.definitions()
 end
 
-function engine.get_fsm_definition(fsm_id)
+function system.get_fsm_definition(fsm_id)
 	return fsmlibrary.get(fsm_id)
 end
 
-function engine.grant_effect(object_id, effect_id)
+function system.grant_effect(object_id, effect_id)
 	local obj<const> = world_instance:get(object_id)
 	local component<const> = obj:get_component('actioneffectcomponent')
 	if not component then
@@ -730,7 +730,7 @@ function engine.grant_effect(object_id, effect_id)
 	component:grant_effect(effect_id)
 end
 
-function engine.trigger_effect(object_id, effect_id, options)
+function system.trigger_effect(object_id, effect_id, options)
 	local obj<const> = world_instance:get(object_id)
 	local component<const> = obj:get_component('actioneffectcomponent')
 	if not component then
@@ -743,14 +743,14 @@ function engine.trigger_effect(object_id, effect_id, options)
 	return component:trigger(effect_id)
 end
 
-engine.on_irq(irq_apu, function()
+system.on_irq(irq_apu, function()
 	aem.on_apu_irq()
 end)
 aem.reload()
 progression.init()
 
 -- Register BIOS singletons as persistent registry entries.
--- This mirrors the TS engine where all subsystems (PhysicsWorld, SoundMaster,
+-- This mirrors the TS system where all subsystems (PhysicsWorld, SoundMaster,
 -- Input, Services, etc.) are registered so they are discoverable and inspectable.
 local registry_instance<const> = registry.instance
 local register_singleton<const> = function(obj, id, tn)
@@ -771,7 +771,7 @@ if not world_instance._ecs_pipeline_built then
 	ecs_pipeline.defaultecspipelineregistry:build(world_instance, ecs_builtin.default_pipeline_spec())
 end
 
-engine.eventemitter = eventemitter_module
-engine.eventemitter_module = eventemitter_module
+system.eventemitter = eventemitter_module
+system.eventemitter_module = eventemitter_module
 
-return engine
+return system

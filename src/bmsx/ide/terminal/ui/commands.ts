@@ -1,4 +1,4 @@
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 import { Runtime } from '../../../machine/runtime/runtime';
 import * as workbenchMode from '../../workbench/mode';
 import { getTrackedLuaHeapBytes } from '../../../machine/memory/lua_heap_usage';
@@ -102,7 +102,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'EXIT' || upper === 'QUIT') {
-			engineCore.request_shutdown();
+			consoleCore.request_shutdown();
 			return true;
 		}
 		if (upper === 'IDE') {

@@ -41,13 +41,13 @@ import { WorkerStreamingAudioService } from './worker_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
 import { type vec2 } from 'bmsx/rompack/format';
 
-declare const engineCore: any; // avoid circular dependency issues
+declare const consoleCore: any; // avoid circular dependency issues
 const ONSCREEN_LAYOUT_MODE: 'canvas' | 'gamepad' = 'canvas';
 
 /**
  * Platform wiring for the web-hosted runtime.
  *
- * This implementation maps the engine's abstract platform contract to DOM-powered services and
+ * This implementation maps the console's abstract platform contract to DOM-powered services and
  * provides the onscreen gamepad plumbing that the renderer relies on when the virtual controls are
  * active. Even though the integration lives inside a browser, we deliberately describe capabilities
  * in platform-neutral terms so higher layers can reason about clocks, storage, audio, and layout
@@ -107,7 +107,7 @@ export class BrowserPlatform implements Platform {
 
 		if (!options.debug) {
 			// Prevent the user from accidentally closing the game window if not in debug mode
-			engineCore.platform.lifecycle.onWillExit((e: PlatformExitEvent) => {
+			consoleCore.platform.lifecycle.onWillExit((e: PlatformExitEvent) => {
 				e.preventDefault();
 				e.setReturnMessage('Are you sure you want to exit this awesome game?');
 			});
@@ -1466,7 +1466,7 @@ export class BrowserGameViewHost implements GameViewHost {
 		const viewportIsLandscape = viewportWidth > viewportHeight && viewportWidth !== 0 && viewportHeight !== 0;
 
 		let adjustedWidth = effectiveWidth;
-		const onscreenGamepadEnabled = engineCore.input?.isOnscreenGamepadEnabled;
+		const onscreenGamepadEnabled = consoleCore.input?.isOnscreenGamepadEnabled;
 		if (onscreenGamepadEnabled
 			&& ONSCREEN_LAYOUT_MODE === 'canvas'
 			&& viewportIsLandscape) {
@@ -1533,7 +1533,7 @@ export class BrowserGameViewHost implements GameViewHost {
 		if (displayLeft < 0) displayLeft = 0;
 
 		const isLandscape = size.width >= size.height;
-		const onscreenGamepadEnabled = engineCore.input?.isOnscreenGamepadEnabled;
+		const onscreenGamepadEnabled = consoleCore.input?.isOnscreenGamepadEnabled;
 		let displayTop = isLandscape || !onscreenGamepadEnabled
 			? ~~((verticalContainer - displayHeight) / 2)
 			: 0;

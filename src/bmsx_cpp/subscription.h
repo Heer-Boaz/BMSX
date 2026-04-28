@@ -1,5 +1,5 @@
 /**
- * BMSX C++ Engine - Subscription Handle Header
+ * BMSX C++ Console - Subscription Handle Header
  */
 
 #pragma once

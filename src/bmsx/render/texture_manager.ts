@@ -1,82 +1,4 @@
-//  sRGB Handling in the TypeScript WebGL Backend
-// 1. TextureParams type
-// interfaces.ts — TextureParams has an optional srgb?: boolean field:
-
-// export interface TextureParams {
-//     size?: vec2;
-//     wrapS?: number;
-//     wrapT?: number;
-//     minFilter?: number;
-//     magFilter?: number;
-//     srgb?: boolean;
-// }
-// 2. WebGL Backend — createTexture() (main path)
-// backend.ts — sRGB is the default. When desc.srgb is undefined (not provided), srgb !== false evaluates to true, so SRGB8_ALPHA8 is used:
-
-// createTexture(src, desc): WebGLTexture {
-//     const srgb = desc.srgb !== false;                              // L53 — default = true
-//     const internalFormat = srgb ? this.gl.SRGB8_ALPHA8 : this.gl.RGBA8;  // L54
-//     ...
-//     this.texInfo.set(tex, { w: source.width, h: source.height, srgb });   // L66
-// }
-// 3. WebGL Backend — updateTexture()
-// backend.ts — Preserves the original sRGB flag from texInfo. Falls back to srgb: true if info is missing:
-
-// const srgb = info ? info.srgb : true;                            // L84
-// const internalFormat = srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;        // L85
-// 4. WebGL Backend — resizeTexture()
-// backend.ts — Preserves original flag, falls back to desc.srgb !== false:
-
-// const srgb = info ? info.srgb : _desc.srgb !== false;            // L113
-// const internalFormat = srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;        // L114
-// 5. WebGL Backend — createSolidTexture2D() — NOT sRGB
-// backend.ts — Uses raw gl.RGBA (not SRGB8_ALPHA8) and explicitly marks srgb: false:
-
-// gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
-// ...
-// this.texInfo.set(tex, { w: width, h: height, srgb: false });     // L183
-// 6. WebGL Backend — createColorTexture() — NOT sRGB
-// backend.ts — Used by the render graph for FBO color attachments. Defaults to gl.RGBA8, explicitly srgb: false:
-
-// const internal = (desc.format === undefined ? gl.RGBA8 : desc.format) as GLenum;
-// ...
-// this.texInfo.set(tex, { w: desc.width, h: desc.height, srgb: false });  // L284
-// 7. WebGL Backend — Cubemaps — NOT sRGB
-// backend.ts — createCubemapFromSources, createSolidCubemap, createCubemapEmpty all use raw gl.RGBA as internal format, never SRGB8_ALPHA8. No sRGB tracking for cubemaps.
-
-// 8. gl_resources.ts — Legacy helpers
-// gl_resources.ts — glCreateTexture() always uses SRGB8_ALPHA8 (hardcoded, no option):
-
-// gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);  // L99
-// gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, size.x, size.y, 0, ...);          // L103
-// gl_resources.ts — glCreateTextureFromImage() respects the srgb field, defaulting to SRGB8_ALPHA8:
-
-// gl.texImage2D(gl.TEXTURE_2D, 0, desc.srgb === false ? gl.RGBA8 : gl.SRGB8_ALPHA8, ...);  // L168
-// 9. WebGPU Backend — consistent behavior
-// backend.ts — Same default logic:
-
-// const format = _desc.srgb === false ? 'rgba8unorm' : 'rgba8unorm-srgb';              // L44, L100
-// 10. Textpage & Framebuffer Textures — How They're Created
-// Textpage textures (primary, secondary, engine) and framebuffer texture are all created via TextureManager.createTextureFromPixelsSync() at texture_manager.ts, which calls backend.createTexture(source, desc). The callers in vdp.ts pass no desc (empty {}):
-
-// handle = $.texmanager.createTextureFromPixelsSync(textureKey, this.vramSeedPixel, 1, 1);  // L2153
-// // desc defaults to {} — so srgb is undefined
-// Since desc.srgb is undefined, srgb !== false is true → textpage and framebuffer textures are created as SRGB8_ALPHA8.
-
-// They are later resized via resizeTextureForKey(), which calls resizeTexture() on the backend — this preserves the stored srgb flag from texInfo (which will be true from initial creation).
-
-// Summary Table
-// Texture Type	Internal Format	sRGB?
-// Normal textures (createTexture with no srgb field)	SRGB8_ALPHA8	Yes (default)
-// Textpage textures (primary/secondary/engine)	SRGB8_ALPHA8	Yes (no srgb passed → default)
-// Framebuffer render texture	SRGB8_ALPHA8	Yes (no srgb passed → default)
-// Solid color textures (createSolidTexture2D)	RGBA	No
-// Render graph color targets (createColorTexture)	RGBA8	No
-// Cubemaps (all variants)	RGBA	No
-// Shadow maps	DEPTH_COMPONENT16	N/A
-// glCreateTexture (legacy helper)	SRGB8_ALPHA8	Yes (hardcoded)
-
-import { AssetBarrier } from '../core/assetbarrier';
+import { TextureLoadBarrier } from './texture_load_barrier';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { clamp01 } from '../common/clamp';
 import { color_arr, GLTFModel, Index2GpuTexture, type RomImgAsset, type TextureSource } from '../rompack/format';
@@ -100,7 +22,7 @@ interface GPUCacheEntry {
 	handle?: TextureHandle;
 	refCount: number;
 	ownedFallback?: boolean; // true only if this manager created it
-	barrier?: AssetBarrier<TextureHandle>;
+	barrier?: TextureLoadBarrier<TextureHandle>;
 }
 
 export class TextureManager {
@@ -109,13 +31,13 @@ export class TextureManager {
 
 	private imageCache = new Map<ImageKey, ImageCacheEntry>(); // currently used only for future dedupe
 	private gpuCache = new Map<TextureKey, GPUCacheEntry>();
-	private textureBarrier: AssetBarrier<TextureHandle>;
+	private textureBarrier: TextureLoadBarrier<TextureHandle>;
 	private readonly destroyTextureHandle = (handle: TextureHandle): void => {
 		this.backend.destroyTexture(handle);
 	};
 
 	constructor(private backend: GPUBackend, private defaultGroup: GateGroup = taskGate.group('texture:default')) {
-		this.textureBarrier = new AssetBarrier<TextureHandle>(this.defaultGroup);
+		this.textureBarrier = new TextureLoadBarrier<TextureHandle>(this.defaultGroup);
 		TextureManager._instance = this;
 	}
 	public setBackend(backend: GPUBackend): void { this.backend = backend; }
@@ -229,16 +151,16 @@ export class TextureManager {
 	private launchCubemapReplacement(
 		key: string,
 		acquireFn: () => Promise<TextureHandle>,
-		assetBarrier?: AssetBarrier<TextureHandle>,
+		loadBarrier?: TextureLoadBarrier<TextureHandle>,
 		tag?: string
 	): void {
-		const barrier = assetBarrier ?? this.textureBarrier;
+		const barrier = loadBarrier ?? this.textureBarrier;
 			void barrier.acquire(
 				key,
 				acquireFn,
 				{
 					category: 'texture',
-					block_render: !!assetBarrier, // external barrier implies blocking caller wants it visible
+					block_render: !!loadBarrier, // external barrier implies blocking caller wants it visible
 					tag: tag ?? `cubemap:${key}`,
 					disposer: this.destroyTextureHandle,
 					warnIfLongerMs: 1000,
@@ -259,7 +181,7 @@ export class TextureManager {
 		name: string,
 		streamed?: boolean;
 		delay_ms?: number;
-		assetBarrier?: AssetBarrier<TextureHandle>,
+		loadBarrier?: TextureLoadBarrier<TextureHandle>,
 		// loaders and face ids may be null intentionally (some faces left unset)
 		faceLoaders: readonly (Promise<TextureSource>)[],
 		faceIdsForKey: readonly (string)[],
@@ -267,7 +189,7 @@ export class TextureManager {
 		fallbackColor: color_arr,
 	}): TextureKey {
 		if (!this.backend) throw new Error('TextureManager backend not set');
-		const { name, faceIdsForKey, desc, fallbackColor, assetBarrier, faceLoaders, delay_ms } = options;
+		const { name, faceIdsForKey, desc, fallbackColor, loadBarrier, faceLoaders, delay_ms } = options;
 
 		const key = this.makeCubemapKey(name, faceIdsForKey, desc);
 
@@ -277,7 +199,7 @@ export class TextureManager {
 		this.reserveFallbackCubemap(key, desc, fallbackColor);
 		const entry = this.gpuCache.get(key);
 		if (entry) {
-			entry.barrier = assetBarrier ?? this.textureBarrier;
+			entry.barrier = loadBarrier ?? this.textureBarrier;
 		}
 
 		const streamed = options.streamed ?? false;
@@ -317,7 +239,7 @@ export class TextureManager {
 					}
 				}
 				return this.backend!.createCubemapFromSources(faces, desc);
-			}, assetBarrier, `cubemap:${name}`);
+			}, loadBarrier, `cubemap:${name}`);
 		} else {
 					this.launchCubemapReplacement(key, async () => {
 						if (delay_ms) {
@@ -357,7 +279,7 @@ export class TextureManager {
 
 				await Promise.all(uploadPromises);
 				return cubemap;
-			}, assetBarrier, `cubemap:${name}:streamed`);
+			}, loadBarrier, `cubemap:${name}:streamed`);
 		}
 
 		return key;
@@ -424,8 +346,8 @@ export class TextureManager {
 		return handle;
 	}
 
-	public async updateTexturesForAsset(asset: RomImgAsset, pixels: Uint8Array, width: number, height: number): Promise<void> {
-		await this.updateTexturesForKey(asset.resid, pixels, width, height);
+	public async updateTexturesForImageRecord(record: RomImgAsset, pixels: Uint8Array, width: number, height: number): Promise<void> {
+		await this.updateTexturesForKey(record.resid, pixels, width, height);
 	}
 
 	public async updateTexturesForKey(keyBase: string, pixels: Uint8Array, width: number, height: number): Promise<void> {

@@ -1,7 +1,7 @@
 -- quickmenu.lua
 -- system quick menu (select+start)
 
-local scratchrecordbatch<const> = require('scratchrecordbatch')
+local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 
 local colors<const> = {
 	panel = sys_palette_color(1),

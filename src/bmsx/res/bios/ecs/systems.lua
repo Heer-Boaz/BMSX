@@ -1,7 +1,7 @@
 -- ecs_systems.lua
--- built-in ecs systems for lua engine
+-- built-in ecs systems for the system ROM runtime
 
-local wrap_text_lines<const> = require('util/wrap_text_lines')
+local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 --
 -- DESIGN PRINCIPLES — collision handling via overlap2dsystem
 --
@@ -54,12 +54,12 @@ local wrap_text_lines<const> = require('util/wrap_text_lines')
 --    Use collision_profiles to assign named layer+mask presets rather than
 --    setting layer/mask directly.
 
-local ecs<const> = require('ecs/index')
-local clear_map<const> = require('clear_map')
-local collision2d<const> = require('collision2d')
-local scratchrecordbatch<const> = require('scratchrecordbatch')
-local world_instance<const> = require('world/index').instance
-local vdp_image<const> = require('vdp_image')
+local ecs<const> = require('bios/ecs/index')
+local clear_map<const> = require('bios/util/clear_map')
+local collision2d<const> = require('bios/collision2d')
+local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
+local world_instance<const> = require('bios/world/index').instance
+local vdp_image<const> = require('bios/vdp_image')
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem

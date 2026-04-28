@@ -1,7 +1,7 @@
 -- sorted_scratchbatch.lua
 -- reusable scratch batch with sort support for the active window
 
-local scratchbatch<const> = require('scratchbatch')
+local scratchbatch<const> = require('bios/util/scratchbatch')
 
 local sorted_scratchbatch<const> = {}
 sorted_scratchbatch.__index = sorted_scratchbatch

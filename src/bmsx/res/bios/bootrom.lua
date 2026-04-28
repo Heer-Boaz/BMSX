@@ -1,8 +1,8 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
-local clamp_int<const> = require('util/clamp_int')
-local wrap_text_lines<const> = require('util/wrap_text_lines')
+local clamp_int<const> = require('bios/util/clamp_int')
+local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 
 local reset_scroll_state<const> = function(state) state.top = 0 end
 local scroll_window<const> = function(lines, top, window_size)
@@ -54,8 +54,8 @@ local cart_rom_magic<const> = 0x58534d42
 
 local boot_start
 local boot_requested
-local sys_textpage_ready
-local sys_textpage_failed
+local system_slot_ready
+local system_slot_failed
 local boot_scroll_state<const> = { top = 0 }
 local boot_screen_visible = false
 local boot_screen_presented
@@ -84,7 +84,7 @@ local read_cart_header<const> = function(base)
 		program_code_byte_count = has_extended_header and mem[base + 44] or 0,
 		program_const_pool_count = has_extended_header and mem[base + 48] or 0,
 		program_proto_count = has_extended_header and mem[base + 52] or 0,
-		program_module_alias_count = has_extended_header and mem[base + 56] or 0,
+			program_reserved0 = has_extended_header and mem[base + 56] or 0,
 		program_const_reloc_count = has_extended_header and mem[base + 60] or 0,
 	}
 end
@@ -198,8 +198,6 @@ local toc_invalid_u32<const> = 0xffffffff
 local rom_asset_type_data<const> = 3
 local program_asset_id<const> = '__program__'
 local program_boot_header_version<const> = 1
-local program_boot_flag_has_bios_engine_alias<const> = 1
-
 local bin_version<const> = 0xa1
 local bin_tag_null<const> = 0
 local bin_tag_true<const> = 1
@@ -281,7 +279,7 @@ local build_precheck_key<const> = function(header)
 		.. ':' .. tostring(header.program_code_byte_count)
 		.. ':' .. tostring(header.program_const_pool_count)
 		.. ':' .. tostring(header.program_proto_count)
-		.. ':' .. tostring(header.program_module_alias_count)
+			.. ':' .. tostring(header.program_reserved0)
 		.. ':' .. tostring(header.program_const_reloc_count)
 end
 
@@ -379,12 +377,11 @@ local run_staged_program_link_precheck_job<const> = function()
 			end
 			job.phase = 'validate_system_details'
 		elseif job.phase == 'validate_system_details' then
-			if job.system_details_state == nil then
-				job.system_details_state = begin_program_asset_details_step_state(system_rom_base, job.system_header, job.system_summary, {
-					scope = 'SYSTEM',
-					required_alias = 'bios/engine',
-				})
-			end
+				if job.system_details_state == nil then
+					job.system_details_state = begin_program_asset_details_step_state(system_rom_base, job.system_header, job.system_summary, {
+						scope = 'SYSTEM',
+					})
+				end
 			local done<const>, failure<const> = step_program_asset_details_step_state(job.system_details_state, job)
 			if done == nil then
 				finish_program_link_precheck_from_failure(failure)
@@ -1008,7 +1005,7 @@ end
 local begin_program_asset_payload_reader<const> = function(rom_base, header)
 	local payload<const> = find_program_payload_range(rom_base, header)
 	local payload_size<const> = payload['end'] - payload.start
-	local reader<const> = new_reader(rom_base + payload.start, payload_size, 'program asset payload')
+	local reader<const> = new_reader(rom_base + payload.start, payload_size, 'program image payload')
 	local version<const> = reader_read_u8(reader, 'bin version')
 	if version ~= bin_version then
 		error('Unsupported binary payload version.')
@@ -1037,18 +1034,18 @@ local read_program_asset_core_summary_from_reader<const> = function(reader, prop
 		local key<const> = reader_read_prop_key(reader, prop_names, 'root property id')
 		local value_tag<const> = reader_read_u8(reader, 'root value tag')
 		if key == 'entryProtoIndex' then
-			summary.entry_proto_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.entryProtoIndex')
+			summary.entry_proto_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramImage.entryProtoIndex')
 		elseif key == 'program' then
-			local prop_count<const> = reader_read_object_property_count(reader, value_tag, 'ProgramAsset.program')
+			local prop_count<const> = reader_read_object_property_count(reader, value_tag, 'ProgramImage.program')
 			for j = 1, prop_count do
 				local program_key<const> = reader_read_prop_key(reader, prop_names, 'program property id')
 				local program_tag<const> = reader_read_u8(reader, 'program value tag')
 				if program_key == 'code' then
-					summary.code_range = reader_read_binary_range_from_tag(reader, program_tag, 'ProgramAsset.program.code')
+					summary.code_range = reader_read_binary_range_from_tag(reader, program_tag, 'ProgramImage.program.code')
 				elseif program_key == 'constPool' then
-					summary.const_pool_count = reader_skip_array(reader, prop_names, program_tag, 'ProgramAsset.program.constPool')
+					summary.const_pool_count = reader_skip_array(reader, prop_names, program_tag, 'ProgramImage.program.constPool')
 				elseif program_key == 'protos' then
-					summary.proto_count = reader_skip_array(reader, prop_names, program_tag, 'ProgramAsset.program.protos')
+					summary.proto_count = reader_skip_array(reader, prop_names, program_tag, 'ProgramImage.program.protos')
 				else
 					reader_skip_value_from_tag(reader, prop_names, program_tag)
 				end
@@ -1107,15 +1104,15 @@ step_program_asset_summary_step_state = function(state, job)
 				local program_key<const> = reader_read_prop_key(reader, prop_names, 'program property id')
 				local program_tag<const> = reader_read_u8(reader, 'program value tag')
 				if program_key == 'code' then
-					state.summary.code_range = reader_read_binary_range_from_tag(reader, program_tag, 'ProgramAsset.program.code')
+					state.summary.code_range = reader_read_binary_range_from_tag(reader, program_tag, 'ProgramImage.program.code')
 					state.program_index = state.program_index + 1
 				elseif program_key == 'constPool' then
-					local count<const> = reader_read_array_length(reader, program_tag, 'ProgramAsset.program.constPool')
+					local count<const> = reader_read_array_length(reader, program_tag, 'ProgramImage.program.constPool')
 					state.summary.const_pool_count = count
 					state.skip = new_skip_array_items_state(reader, prop_names, count)
 					state.skip_target = 'program'
 				elseif program_key == 'protos' then
-					local count<const> = reader_read_array_length(reader, program_tag, 'ProgramAsset.program.protos')
+					local count<const> = reader_read_array_length(reader, program_tag, 'ProgramImage.program.protos')
 					state.summary.proto_count = count
 					state.skip = new_skip_array_items_state(reader, prop_names, count)
 					state.skip_target = 'program'
@@ -1134,10 +1131,10 @@ step_program_asset_summary_step_state = function(state, job)
 			local key<const> = reader_read_prop_key(reader, prop_names, 'root property id')
 			local value_tag<const> = reader_read_u8(reader, 'root value tag')
 			if key == 'entryProtoIndex' then
-				state.summary.entry_proto_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.entryProtoIndex')
+				state.summary.entry_proto_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramImage.entryProtoIndex')
 				state.root_index = state.root_index + 1
 			elseif key == 'program' then
-				state.program_prop_count = reader_read_object_property_count(reader, value_tag, 'ProgramAsset.program')
+				state.program_prop_count = reader_read_object_property_count(reader, value_tag, 'ProgramImage.program')
 				state.program_index = 1
 			else
 				state.skip = new_skip_value_state(reader, prop_names, value_tag)
@@ -1183,16 +1180,16 @@ end
 
 validate_program_asset_core = function(summary, scope)
 	if summary.entry_proto_index == nil then
-		return make_program_precheck_failure(scope, 'ENTRYPROTOINDEX IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing entryProtoIndex.')
+		return make_program_precheck_failure(scope, 'ENTRYPROTOINDEX IS MISSING', '[ProgramLinker] ' .. scope .. ' program image is missing entryProtoIndex.')
 	end
 	if summary.code_range == nil then
-		return make_program_precheck_failure(scope, 'PROGRAM.CODE IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing program.code.')
+		return make_program_precheck_failure(scope, 'PROGRAM.CODE IS MISSING', '[ProgramLinker] ' .. scope .. ' program image is missing program.code.')
 	end
 	if summary.const_pool_count == nil then
-		return make_program_precheck_failure(scope, 'PROGRAM.CONSTPOOL IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing program.constPool.')
+		return make_program_precheck_failure(scope, 'PROGRAM.CONSTPOOL IS MISSING', '[ProgramLinker] ' .. scope .. ' program image is missing program.constPool.')
 	end
 	if summary.proto_count == nil then
-		return make_program_precheck_failure(scope, 'PROGRAM.PROTOS IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing program.protos.')
+		return make_program_precheck_failure(scope, 'PROGRAM.PROTOS IS MISSING', '[ProgramLinker] ' .. scope .. ' program image is missing program.protos.')
 	end
 	if (summary.code_range.size % 4) ~= 0 then
 		return make_program_precheck_failure(scope, 'PROGRAM.CODE BYTECOUNT IS MISALIGNED', '[ProgramLinker] ' .. scope .. ' program code length is not divisible by 4.')
@@ -1226,27 +1223,20 @@ validate_program_boot_asset = function(summary, scope, params)
 			'[ProgramLinker] ' .. scope .. ' cart header program entryProtoIndex exceeds proto count.'
 		)
 	end
-	if params and params.required_alias == 'bios/engine' and (summary.program_boot_flags & program_boot_flag_has_bios_engine_alias) == 0 then
-		return {
-			title = scope .. ' PROGRAM MISSING BIOS/ENGINE',
-			detail = 'ALIAS "bios/engine" WAS NOT FOUND',
-			stderr = '[ProgramLinker] ' .. scope .. ' cart header is missing alias flag for "bios/engine".',
-		}
-	end
 	return nil
 end
 
 local read_module_proto_entry<const> = function(reader, prop_names, tag)
-	local prop_count<const> = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleProtos[]')
+	local prop_count<const> = reader_read_object_property_count(reader, tag, 'ProgramImage.moduleProtos[]')
 	local path = nil
 	local proto_index = nil
 	for i = 1, prop_count do
-		local key<const> = reader_read_prop_key(reader, prop_names, 'ProgramAsset.moduleProtos[] property id')
-		local value_tag<const> = reader_read_u8(reader, 'ProgramAsset.moduleProtos[] value tag')
+		local key<const> = reader_read_prop_key(reader, prop_names, 'ProgramImage.moduleProtos[] property id')
+		local value_tag<const> = reader_read_u8(reader, 'ProgramImage.moduleProtos[] value tag')
 		if key == 'path' then
-			path = reader_read_string_from_tag(reader, value_tag, 'ProgramAsset.moduleProtos[].path')
+			path = reader_read_string_from_tag(reader, value_tag, 'ProgramImage.moduleProtos[].path')
 		elseif key == 'protoIndex' then
-			proto_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.moduleProtos[].protoIndex')
+			proto_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramImage.moduleProtos[].protoIndex')
 		else
 			reader_skip_value_from_tag(reader, prop_names, value_tag)
 		end
@@ -1255,9 +1245,9 @@ local read_module_proto_entry<const> = function(reader, prop_names, tag)
 end
 
 local validate_module_protos_array<const> = function(reader, prop_names, tag, summary, scope)
-	local count<const> = reader_read_array_length(reader, tag, 'ProgramAsset.moduleProtos')
+	local count<const> = reader_read_array_length(reader, tag, 'ProgramImage.moduleProtos')
 	for i = 1, count do
-		local item_tag<const> = reader_read_u8(reader, 'ProgramAsset.moduleProtos item tag')
+		local item_tag<const> = reader_read_u8(reader, 'ProgramImage.moduleProtos item tag')
 		local path<const>, proto_index<const> = read_module_proto_entry(reader, prop_names, item_tag)
 		if path == nil or #path == 0 then
 			return make_program_precheck_failure(scope, 'MODULEPROTO PATH IS MISSING', '[ProgramLinker] ' .. scope .. ' moduleProtos entry is missing path.')
@@ -1276,64 +1266,20 @@ local validate_module_protos_array<const> = function(reader, prop_names, tag, su
 	return nil
 end
 
-local read_module_alias_entry<const> = function(reader, prop_names, tag)
-	local prop_count<const> = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleAliases[]')
-	local alias = nil
-	local path = nil
-	for i = 1, prop_count do
-		local key<const> = reader_read_prop_key(reader, prop_names, 'ProgramAsset.moduleAliases[] property id')
-		local value_tag<const> = reader_read_u8(reader, 'ProgramAsset.moduleAliases[] value tag')
-		if key == 'alias' then
-			alias = reader_read_string_from_tag(reader, value_tag, 'ProgramAsset.moduleAliases[].alias')
-		elseif key == 'path' then
-			path = reader_read_string_from_tag(reader, value_tag, 'ProgramAsset.moduleAliases[].path')
-		else
-			reader_skip_value_from_tag(reader, prop_names, value_tag)
-		end
-	end
-	return alias, path
-end
-
-local validate_module_aliases_array<const> = function(reader, prop_names, tag, summary, scope, required_alias)
-	local count<const> = reader_read_array_length(reader, tag, 'ProgramAsset.moduleAliases')
-	local found_required_alias = required_alias == nil
-	for i = 1, count do
-		local item_tag<const> = reader_read_u8(reader, 'ProgramAsset.moduleAliases item tag')
-		local alias<const>, path<const> = read_module_alias_entry(reader, prop_names, item_tag)
-		if alias == nil or #alias == 0 then
-			return make_program_precheck_failure(scope, 'MODULEALIAS ALIAS IS MISSING', '[ProgramLinker] ' .. scope .. ' moduleAliases entry is missing alias.')
-		end
-		if path == nil or #path == 0 then
-			return make_program_precheck_failure(scope, 'MODULEALIAS PATH IS MISSING', '[ProgramLinker] ' .. scope .. ' moduleAliases entry is missing path.')
-		end
-		if required_alias and alias == required_alias then
-			found_required_alias = true
-		end
-	end
-	if required_alias and not found_required_alias then
-		return {
-			title = scope .. ' PROGRAM MISSING ' .. string.upper(required_alias),
-			detail = 'ALIAS "' .. required_alias .. '" WAS NOT FOUND',
-			stderr = '[ProgramLinker] ' .. scope .. ' program asset is missing alias "' .. required_alias .. '".',
-		}
-	end
-	return nil
-end
-
 local read_const_reloc_entry<const> = function(reader, prop_names, tag)
-	local prop_count<const> = reader_read_object_property_count(reader, tag, 'ProgramAsset.link.constRelocs[]')
+	local prop_count<const> = reader_read_object_property_count(reader, tag, 'ProgramImage.link.constRelocs[]')
 	local word_index = nil
 	local kind = nil
 	local const_index = nil
 	for i = 1, prop_count do
-		local key<const> = reader_read_prop_key(reader, prop_names, 'ProgramAsset.link.constRelocs[] property id')
-		local value_tag<const> = reader_read_u8(reader, 'ProgramAsset.link.constRelocs[] value tag')
+		local key<const> = reader_read_prop_key(reader, prop_names, 'ProgramImage.link.constRelocs[] property id')
+		local value_tag<const> = reader_read_u8(reader, 'ProgramImage.link.constRelocs[] value tag')
 		if key == 'wordIndex' then
-			word_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.link.constRelocs[].wordIndex')
+			word_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramImage.link.constRelocs[].wordIndex')
 		elseif key == 'kind' then
-			kind = reader_read_string_from_tag(reader, value_tag, 'ProgramAsset.link.constRelocs[].kind')
+			kind = reader_read_string_from_tag(reader, value_tag, 'ProgramImage.link.constRelocs[].kind')
 		elseif key == 'constIndex' then
-			const_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.link.constRelocs[].constIndex')
+			const_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramImage.link.constRelocs[].constIndex')
 		else
 			reader_skip_value_from_tag(reader, prop_names, value_tag)
 		end
@@ -1342,9 +1288,9 @@ local read_const_reloc_entry<const> = function(reader, prop_names, tag)
 end
 
 local validate_const_relocs_array<const> = function(reader, prop_names, tag, summary, scope)
-	local count<const> = reader_read_array_length(reader, tag, 'ProgramAsset.link.constRelocs')
+	local count<const> = reader_read_array_length(reader, tag, 'ProgramImage.link.constRelocs')
 	for i = 1, count do
-		local item_tag<const> = reader_read_u8(reader, 'ProgramAsset.link.constRelocs item tag')
+		local item_tag<const> = reader_read_u8(reader, 'ProgramImage.link.constRelocs item tag')
 		local word_index<const>, kind<const>, const_index<const> = read_const_reloc_entry(reader, prop_names, item_tag)
 		local reloc_id<const> = tostring(i - 1)
 		if word_index == nil then
@@ -1378,11 +1324,11 @@ local validate_const_relocs_array<const> = function(reader, prop_names, tag, sum
 end
 
 local validate_program_link_object<const> = function(reader, prop_names, tag, summary, scope)
-	local prop_count<const> = reader_read_object_property_count(reader, tag, 'ProgramAsset.link')
+	local prop_count<const> = reader_read_object_property_count(reader, tag, 'ProgramImage.link')
 	local saw_const_relocs = false
 	for i = 1, prop_count do
-		local key<const> = reader_read_prop_key(reader, prop_names, 'ProgramAsset.link property id')
-		local value_tag<const> = reader_read_u8(reader, 'ProgramAsset.link value tag')
+		local key<const> = reader_read_prop_key(reader, prop_names, 'ProgramImage.link property id')
+		local value_tag<const> = reader_read_u8(reader, 'ProgramImage.link value tag')
 		if key == 'constRelocs' then
 			saw_const_relocs = true
 			local failure<const> = validate_const_relocs_array(reader, prop_names, value_tag, summary, scope)
@@ -1394,7 +1340,7 @@ local validate_program_link_object<const> = function(reader, prop_names, tag, su
 		end
 	end
 	if not saw_const_relocs then
-		return make_program_precheck_failure(scope, 'LINK.CONSTRELOCS IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing link.constRelocs.')
+		return make_program_precheck_failure(scope, 'LINK.CONSTRELOCS IS MISSING', '[ProgramLinker] ' .. scope .. ' program image is missing link.constRelocs.')
 	end
 	return nil
 end
@@ -1414,7 +1360,7 @@ local new_module_proto_entry_state<const> = function(reader, prop_names, tag)
 	return {
 		reader = reader,
 		prop_names = prop_names,
-		prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleProtos[]'),
+		prop_count = reader_read_object_property_count(reader, tag, 'ProgramImage.moduleProtos[]'),
 		prop_index = 1,
 		path = nil,
 		proto_index = nil,
@@ -1437,13 +1383,13 @@ local step_module_proto_entry_state<const> = function(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.moduleProtos[] property id')
-			local value_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.moduleProtos[] value tag')
+			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'ProgramImage.moduleProtos[] property id')
+			local value_tag<const> = reader_read_u8(state.reader, 'ProgramImage.moduleProtos[] value tag')
 			if key == 'path' then
-				state.path = reader_read_string_from_tag(state.reader, value_tag, 'ProgramAsset.moduleProtos[].path')
+				state.path = reader_read_string_from_tag(state.reader, value_tag, 'ProgramImage.moduleProtos[].path')
 				state.prop_index = state.prop_index + 1
 			elseif key == 'protoIndex' then
-				state.proto_index = reader_read_non_negative_integer_from_tag(state.reader, value_tag, 'ProgramAsset.moduleProtos[].protoIndex')
+				state.proto_index = reader_read_non_negative_integer_from_tag(state.reader, value_tag, 'ProgramImage.moduleProtos[].protoIndex')
 				state.prop_index = state.prop_index + 1
 			else
 				state.skip = new_skip_value_state(state.reader, state.prop_names, value_tag)
@@ -1456,7 +1402,7 @@ local new_module_protos_array_state<const> = function(reader, prop_names, tag, s
 	return {
 		reader = reader,
 		prop_names = prop_names,
-		count = reader_read_array_length(reader, tag, 'ProgramAsset.moduleProtos'),
+		count = reader_read_array_length(reader, tag, 'ProgramImage.moduleProtos'),
 		index = 1,
 		entry = nil,
 		summary = summary,
@@ -1493,7 +1439,7 @@ local step_module_protos_array_state<const> = function(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local item_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.moduleProtos item tag')
+			local item_tag<const> = reader_read_u8(state.reader, 'ProgramImage.moduleProtos item tag')
 			state.entry = new_module_proto_entry_state(state.reader, state.prop_names, item_tag)
 		end
 	end
@@ -1510,115 +1456,11 @@ local get_module_protos_array_progress<const> = function(state)
 	return clamp_int(progress / state.count, 0, 1)
 end
 
-local new_module_alias_entry_state<const> = function(reader, prop_names, tag)
-	return {
-		reader = reader,
-		prop_names = prop_names,
-		prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleAliases[]'),
-		prop_index = 1,
-		alias = nil,
-		path = nil,
-		skip = nil,
-	}
-end
-
-local step_module_alias_entry_state<const> = function(state, job)
-	while true do
-		if state.skip ~= nil then
-			if not step_skip_state(state.skip, job) then
-				return false
-			end
-			state.skip = nil
-			state.prop_index = state.prop_index + 1
-		else
-			if state.prop_index > state.prop_count then
-				return true
-			end
-			if not consume_precheck_step(job) then
-				return false
-			end
-			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.moduleAliases[] property id')
-			local value_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.moduleAliases[] value tag')
-			if key == 'alias' then
-				state.alias = reader_read_string_from_tag(state.reader, value_tag, 'ProgramAsset.moduleAliases[].alias')
-				state.prop_index = state.prop_index + 1
-			elseif key == 'path' then
-				state.path = reader_read_string_from_tag(state.reader, value_tag, 'ProgramAsset.moduleAliases[].path')
-				state.prop_index = state.prop_index + 1
-			else
-				state.skip = new_skip_value_state(state.reader, state.prop_names, value_tag)
-			end
-		end
-	end
-end
-
-local new_module_aliases_array_state<const> = function(reader, prop_names, tag, scope, required_alias)
-	return {
-		reader = reader,
-		prop_names = prop_names,
-		count = reader_read_array_length(reader, tag, 'ProgramAsset.moduleAliases'),
-		index = 1,
-		entry = nil,
-		scope = scope,
-		required_alias = required_alias,
-		found_required_alias = required_alias == nil,
-	}
-end
-
-local step_module_aliases_array_state<const> = function(state, job)
-	while true do
-		if state.entry ~= nil then
-			local done<const> = step_module_alias_entry_state(state.entry, job)
-			if not done then
-				return false
-			end
-			if state.entry.alias == nil or #state.entry.alias == 0 then
-				return nil, make_program_precheck_failure(state.scope, 'MODULEALIAS ALIAS IS MISSING', '[ProgramLinker] ' .. state.scope .. ' moduleAliases entry is missing alias.')
-			end
-			if state.entry.path == nil or #state.entry.path == 0 then
-				return nil, make_program_precheck_failure(state.scope, 'MODULEALIAS PATH IS MISSING', '[ProgramLinker] ' .. state.scope .. ' moduleAliases entry is missing path.')
-			end
-			if state.required_alias ~= nil and state.entry.alias == state.required_alias then
-				state.found_required_alias = true
-			end
-			state.entry = nil
-			state.index = state.index + 1
-		else
-			if state.index > state.count then
-				if state.required_alias ~= nil and not state.found_required_alias then
-					return nil, {
-						title = state.scope .. ' PROGRAM MISSING ' .. string.upper(state.required_alias),
-						detail = 'ALIAS "' .. state.required_alias .. '" WAS NOT FOUND',
-						stderr = '[ProgramLinker] ' .. state.scope .. ' program asset is missing alias "' .. state.required_alias .. '".',
-					}
-				end
-				return true
-			end
-			if not consume_precheck_step(job) then
-				return false
-			end
-			local item_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.moduleAliases item tag')
-			state.entry = new_module_alias_entry_state(state.reader, state.prop_names, item_tag)
-		end
-	end
-end
-
-local get_module_aliases_array_progress<const> = function(state)
-	if state.count <= 0 then
-		return 1
-	end
-	local progress = state.index - 1
-	if state.entry ~= nil then
-		progress = progress + get_object_entry_state_progress(state.entry)
-	end
-	return clamp_int(progress / state.count, 0, 1)
-end
-
 local new_const_reloc_entry_state<const> = function(reader, prop_names, tag)
 	return {
 		reader = reader,
 		prop_names = prop_names,
-		prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.link.constRelocs[]'),
+		prop_count = reader_read_object_property_count(reader, tag, 'ProgramImage.link.constRelocs[]'),
 		prop_index = 1,
 		word_index = nil,
 		kind = nil,
@@ -1642,16 +1484,16 @@ local step_const_reloc_entry_state<const> = function(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.link.constRelocs[] property id')
-			local value_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.link.constRelocs[] value tag')
+			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'ProgramImage.link.constRelocs[] property id')
+			local value_tag<const> = reader_read_u8(state.reader, 'ProgramImage.link.constRelocs[] value tag')
 			if key == 'wordIndex' then
-				state.word_index = reader_read_non_negative_integer_from_tag(state.reader, value_tag, 'ProgramAsset.link.constRelocs[].wordIndex')
+				state.word_index = reader_read_non_negative_integer_from_tag(state.reader, value_tag, 'ProgramImage.link.constRelocs[].wordIndex')
 				state.prop_index = state.prop_index + 1
 			elseif key == 'kind' then
-				state.kind = reader_read_string_from_tag(state.reader, value_tag, 'ProgramAsset.link.constRelocs[].kind')
+				state.kind = reader_read_string_from_tag(state.reader, value_tag, 'ProgramImage.link.constRelocs[].kind')
 				state.prop_index = state.prop_index + 1
 			elseif key == 'constIndex' then
-				state.const_index = reader_read_non_negative_integer_from_tag(state.reader, value_tag, 'ProgramAsset.link.constRelocs[].constIndex')
+				state.const_index = reader_read_non_negative_integer_from_tag(state.reader, value_tag, 'ProgramImage.link.constRelocs[].constIndex')
 				state.prop_index = state.prop_index + 1
 			else
 				state.skip = new_skip_value_state(state.reader, state.prop_names, value_tag)
@@ -1664,7 +1506,7 @@ local new_const_relocs_array_state<const> = function(reader, prop_names, tag, su
 	return {
 		reader = reader,
 		prop_names = prop_names,
-		count = reader_read_array_length(reader, tag, 'ProgramAsset.link.constRelocs'),
+		count = reader_read_array_length(reader, tag, 'ProgramImage.link.constRelocs'),
 		index = 1,
 		entry = nil,
 		summary = summary,
@@ -1715,7 +1557,7 @@ local step_const_relocs_array_state<const> = function(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local item_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.link.constRelocs item tag')
+			local item_tag<const> = reader_read_u8(state.reader, 'ProgramImage.link.constRelocs item tag')
 			state.entry = new_const_reloc_entry_state(state.reader, state.prop_names, item_tag)
 		end
 	end
@@ -1736,7 +1578,7 @@ local new_link_object_state<const> = function(reader, prop_names, tag, summary, 
 	return {
 		reader = reader,
 		prop_names = prop_names,
-		prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.link'),
+		prop_count = reader_read_object_property_count(reader, tag, 'ProgramImage.link'),
 		prop_index = 1,
 		saw_const_relocs = false,
 		const_relocs = nil,
@@ -1767,15 +1609,15 @@ local step_link_object_state<const> = function(state, job)
 		else
 			if state.prop_index > state.prop_count then
 				if not state.saw_const_relocs then
-					return nil, make_program_precheck_failure(state.scope, 'LINK.CONSTRELOCS IS MISSING', '[ProgramLinker] ' .. state.scope .. ' program asset is missing link.constRelocs.')
+					return nil, make_program_precheck_failure(state.scope, 'LINK.CONSTRELOCS IS MISSING', '[ProgramLinker] ' .. state.scope .. ' program image is missing link.constRelocs.')
 				end
 				return true
 			end
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.link property id')
-			local value_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.link value tag')
+			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'ProgramImage.link property id')
+			local value_tag<const> = reader_read_u8(state.reader, 'ProgramImage.link value tag')
 			if key == 'constRelocs' then
 				state.saw_const_relocs = true
 				state.const_relocs = new_const_relocs_array_state(state.reader, state.prop_names, value_tag, state.summary, state.scope)
@@ -1808,11 +1650,8 @@ begin_program_asset_details_step_state = function(rom_base, header, summary, par
 		root_index = 1,
 		summary = summary,
 		scope = params.scope,
-		required_alias = params.required_alias,
-		saw_module_aliases = false,
 		saw_link = false,
 		module_protos = nil,
-		module_aliases = nil,
 		link = nil,
 		skip = nil,
 	}
@@ -1829,16 +1668,6 @@ step_program_asset_details_step_state = function(state, job)
 				return false
 			end
 			state.module_protos = nil
-			state.root_index = state.root_index + 1
-		elseif state.module_aliases ~= nil then
-			local done<const>, failure<const> = step_module_aliases_array_state(state.module_aliases, job)
-			if done == nil then
-				return nil, failure
-			end
-			if not done then
-				return false
-			end
-			state.module_aliases = nil
 			state.root_index = state.root_index + 1
 		elseif state.link ~= nil then
 			local done<const>, failure<const> = step_link_object_state(state.link, job)
@@ -1858,11 +1687,8 @@ step_program_asset_details_step_state = function(state, job)
 			state.root_index = state.root_index + 1
 		else
 			if state.root_index > state.root_prop_count then
-				if not state.saw_module_aliases then
-					return nil, make_program_precheck_failure(state.scope, 'MODULEALIASES IS MISSING', '[ProgramLinker] ' .. state.scope .. ' program asset is missing moduleAliases.')
-				end
 				if not state.saw_link then
-					return nil, make_program_precheck_failure(state.scope, 'LINK IS MISSING', '[ProgramLinker] ' .. state.scope .. ' program asset is missing link.')
+					return nil, make_program_precheck_failure(state.scope, 'LINK IS MISSING', '[ProgramLinker] ' .. state.scope .. ' program image is missing link.')
 				end
 				return true
 			end
@@ -1873,9 +1699,6 @@ step_program_asset_details_step_state = function(state, job)
 			local value_tag<const> = reader_read_u8(state.reader, 'root value tag')
 			if key == 'moduleProtos' then
 				state.module_protos = new_module_protos_array_state(state.reader, state.prop_names, value_tag, state.summary, state.scope)
-			elseif key == 'moduleAliases' then
-				state.saw_module_aliases = true
-				state.module_aliases = new_module_aliases_array_state(state.reader, state.prop_names, value_tag, state.scope, state.required_alias)
 			elseif key == 'link' then
 				state.saw_link = true
 				state.link = new_link_object_state(state.reader, state.prop_names, value_tag, state.summary, state.scope)
@@ -1893,10 +1716,8 @@ get_program_asset_details_step_progress = function(state)
 	local progress = state.root_index - 1
 	if state.module_protos ~= nil then
 		progress = progress + get_module_protos_array_progress(state.module_protos)
-	elseif state.module_aliases ~= nil then
-		progress = progress + get_module_aliases_array_progress(state.module_aliases)
-	elseif state.link ~= nil then
-		progress = progress + get_link_object_state_progress(state.link)
+		elseif state.link ~= nil then
+			progress = progress + get_link_object_state_progress(state.link)
 	elseif state.skip ~= nil then
 		progress = progress + get_skip_state_progress(state.skip)
 	end
@@ -1905,21 +1726,13 @@ end
 
 validate_program_asset_details = function(rom_base, header, summary, params)
 	local scope<const> = params.scope
-	local required_alias<const> = params.required_alias
 	local reader<const>, prop_names<const>, root_prop_count<const> = begin_program_asset_payload_reader(rom_base, header)
-	local saw_module_aliases = false
 	local saw_link = false
 	for i = 1, root_prop_count do
 		local key<const> = reader_read_prop_key(reader, prop_names, 'root property id')
 		local value_tag<const> = reader_read_u8(reader, 'root value tag')
 		if key == 'moduleProtos' then
 			local failure<const> = validate_module_protos_array(reader, prop_names, value_tag, summary, scope)
-			if failure then
-				return failure
-			end
-		elseif key == 'moduleAliases' then
-			saw_module_aliases = true
-			local failure<const> = validate_module_aliases_array(reader, prop_names, value_tag, summary, scope, required_alias)
 			if failure then
 				return failure
 			end
@@ -1933,11 +1746,8 @@ validate_program_asset_details = function(rom_base, header, summary, params)
 			reader_skip_value_from_tag(reader, prop_names, value_tag)
 		end
 	end
-	if not saw_module_aliases then
-		return make_program_precheck_failure(scope, 'MODULEALIASES IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing moduleAliases.')
-	end
 	if not saw_link then
-		return make_program_precheck_failure(scope, 'LINK IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing link.')
+		return make_program_precheck_failure(scope, 'LINK IS MISSING', '[ProgramLinker] ' .. scope .. ' program image is missing link.')
 	end
 	return nil
 end
@@ -1949,9 +1759,7 @@ local compute_program_link_errors<const> = function(cart_header)
 		errors[#errors + 1] = 'SYSTEM ROM HEADER IS INVALID'
 		return errors, '[ProgramLinker] Missing system ROM header.'
 	end
-	local failure = validate_program_boot_asset(sys_header, 'SYSTEM', {
-		required_alias = 'bios/engine',
-	})
+	local failure = validate_program_boot_asset(sys_header, 'SYSTEM', nil)
 	if failure then
 		errors[#errors + 1] = failure.title
 		errors[#errors + 1] = failure.detail
@@ -2164,7 +1972,7 @@ local build_info<const> = function()
 	local machine_view_label<const> = machine_manifest and machine_manifest.render_size or '--'
 	local machine_cpu_raw<const> = machine_manifest and machine_manifest.cpu_freq_hz
 	local machine_cpu_label<const> = format_cpu_mhz_from_hz(machine_cpu_raw)
-	local vram_total<const> = sys_vram_system_textpage_size + sys_vram_primary_textpage_size + sys_vram_secondary_textpage_size + sys_vram_framebuffer_size + sys_vram_staging_size
+	local vram_total<const> = sys_vram_system_slot_size + sys_vram_primary_slot_size + sys_vram_secondary_slot_size + sys_vram_framebuffer_size + sys_vram_staging_size
 
 	return {
 		machine_view = machine_view_label,
@@ -2184,7 +1992,6 @@ local build_info<const> = function()
 		hw_cart_max = format_bytes(sys_cart_rom_size),
 		hw_ram_total = format_bytes(sys_ram_size),
 		hw_vram_total = format_bytes(vram_total),
-		hw_max_assets = format_bignumbers(sys_max_assets),
 		hw_max_cycles = format_bignumbers(sys_max_cycles_per_frame),
 		bitcast_selftest_ok = bitcast_selftest_ok,
 		bitcast_selftest_status = bitcast_selftest_status,
@@ -2218,7 +2025,7 @@ local compute_boot_progress<const> = function(info, cart_ready, elapsed)
 	if info.bitcast_selftest_ok then
 		stage_done = stage_done + 1
 	end
-	if sys_textpage_ready and not sys_textpage_failed then
+	if system_slot_ready and not system_slot_failed then
 		stage_done = stage_done + 1
 	end
 	stage_done = stage_done + info.precheck_progress
@@ -2262,7 +2069,6 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 		{ label = 'TOTAL RAM', value = info.hw_ram_total, color = color_info_total },
 		{ label = 'TOTAL VRAM', value = info.hw_vram_total, color = color_info_total },
 		{ label = 'VIEWPORT', value = info.machine_view, color = color_info_total },
-		-- { label = 'MAX ASSETS', value = info.hw_max_assets, color = color_accent },
 		-- { label = 'MAX CYCLES/FRAME', value = info.hw_max_cycles, color = color_accent },
 	}
 	local cart_specs<const> = {
@@ -2339,7 +2145,7 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 
 	if cart_present then
 		local cart_ready<const> = cart_boot_ready()
-		if not cart_ready and not boot_requested and sys_textpage_ready and not sys_textpage_failed then
+		if not cart_ready and not boot_requested and system_slot_ready and not system_slot_failed then
 			if not cart_start_failed_logged then
 				cart_start_failed_logged = true
 				print('[BootRom] Cart start failed: cart_boot_ready=0 while BIOS remained active.')
@@ -2366,8 +2172,8 @@ function init()
 	boot_requested = false
 	boot_screen_visible = true
 	boot_screen_presented = false
-	sys_textpage_ready = false
-	sys_textpage_failed = false
+	system_slot_ready = false
+	system_slot_failed = false
 	clear_precheck_cache()
 	bitcast_selftest_ok = false
 	bitcast_selftest_status = 'NOT RUN'
@@ -2376,10 +2182,10 @@ function init()
 	cart_start_failed_logged = false
 	reset_scroll_state(boot_scroll_state)
 	on_irq(irq_img_done, function()
-		sys_textpage_ready = true
+		system_slot_ready = true
 	end)
 	on_irq(irq_img_error, function()
-		sys_textpage_failed = true
+		system_slot_failed = true
 	end)
 	on_irq(irq_reinit, function()
 		init()
@@ -2387,7 +2193,7 @@ function init()
 	on_irq(irq_newgame, function()
 		new_game()
 	end)
-	vdp_load_sys_textpage()
+	vdp_load_system_slot()
 	selftest_bitcast_builtins()
 end
 
@@ -2427,7 +2233,7 @@ local update_boot_screen<const> = function()
 			and cart_boot_ready()
 			and cart_valid
 
-		if cart_present_and_ready and not boot_requested and sys_textpage_ready and not sys_textpage_failed then
+		if cart_present_and_ready and not boot_requested and system_slot_ready and not system_slot_failed then
 			boot_requested = true
 			print('Cart boot requested.')
 			mem[sys_boot_cart] = 1

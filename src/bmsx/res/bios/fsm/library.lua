@@ -23,7 +23,7 @@
 --    It returns all live state machine instances for a given type.  Do not
 --    iterate it in gameplay code; reach objects through the world instead.
 
-local fsm<const> = require('fsm/index')
+local fsm<const> = require('bios/fsm/index')
 
 local statedefinitions<const> = {}
 local activemachines<const> = {}

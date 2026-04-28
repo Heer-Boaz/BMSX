@@ -3,7 +3,7 @@
  *
  * This header mirrors the TypeScript platform.ts interfaces for use in a C++ port.
  * It is designed to facilitate a libretro-compatible implementation while maintaining
- * API parity with the JavaScript engine.
+ * API parity with the JavaScript console runtime.
  *
  * Design principles:
  * - No std::function for hot paths (use function pointers or virtual methods)
@@ -86,7 +86,7 @@ struct FrameLoopHandle {
 };
 
 struct FrameLoop {
-	// Browser/desktop mode: engine requests frames
+	// Browser/desktop mode: console runtime requests frames
 	virtual std::unique_ptr<FrameLoopHandle> start(std::function<void(MonoTime)> tick) = 0;
 
 	// Libretro mode: host pushes frame (optional, for push-based frame loops)
@@ -454,7 +454,7 @@ struct HIDService {
 /**
  * Main platform contract.
  *
- * Every host environment implements this interface to wire the engine to native services.
+ * Every host environment implements this interface to wire the console runtime to native services.
  * For libretro, most services map directly to retro_* callbacks.
  */
 struct Platform {

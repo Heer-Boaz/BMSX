@@ -1,5 +1,5 @@
 local constants<const> = require('constants')
-local text<const> = require('text/index')
+local text<const> = require('bios/text/index')
 
 local castle_map<const> = {}
 local empty_conditions<const> = {}
@@ -442,7 +442,7 @@ local build_draaideuren<const> = function(room_number, object_defs)
 end
 
 local load_room_templates<const> = function()
-	local data<const> = assets.data['castle_map']
+	local data<const> = sys_rom_data['castle_map']
 	local templates<const> = {}
 
 	for raw_room_number, room_def in pairs(data) do

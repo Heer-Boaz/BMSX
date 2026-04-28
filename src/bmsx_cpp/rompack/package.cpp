@@ -1,8 +1,8 @@
 /*
- * assets.cpp - Runtime asset management implementation
+ * romPackage.cpp - Runtime asset management implementation
  */
 
-#include "assets.h"
+#include "package.h"
 #include "common/serializer/binencoder.h"
 #include "../machine/program/loader.h"
 #include "common/endian.h"
@@ -29,6 +29,31 @@ static void updateFlippedTexcoords(ImgMeta& meta) {
 	meta.texcoords_fliph = {right, top, right, bottom, left, top, left, top, right, bottom, left, bottom};
 	meta.texcoords_flipv = {left, bottom, left, top, right, bottom, right, bottom, left, top, right, top};
 	meta.texcoords_fliphv = {right, bottom, right, top, left, bottom, left, bottom, right, top, left, top};
+}
+
+static bool startsWith(std::string_view value, std::string_view prefix) {
+	return value.size() >= prefix.size() && value.compare(0, prefix.size(), prefix) == 0;
+}
+
+static std::string stripLuaExtension(std::string_view path) {
+	static constexpr std::string_view LUA_EXTENSION = ".lua";
+	if (path.size() >= LUA_EXTENSION.size() && path.substr(path.size() - LUA_EXTENSION.size()) == LUA_EXTENSION) {
+		path.remove_suffix(LUA_EXTENSION.size());
+	}
+	return std::string(path);
+}
+
+static std::string toLuaModulePath(std::string_view sourcePath) {
+	static constexpr std::string_view BIOS_SYSTEM_RES_PREFIX = "src/bmsx/res/";
+	static constexpr std::string_view BIOS_RES_PREFIX = "res/";
+	const std::string path = stripLuaExtension(sourcePath);
+	if (startsWith(path, BIOS_SYSTEM_RES_PREFIX)) {
+		return path.substr(BIOS_SYSTEM_RES_PREFIX.size());
+	}
+	if (startsWith(path, BIOS_RES_PREFIX)) {
+		return path.substr(BIOS_RES_PREFIX.size());
+	}
+	return path;
 }
 
 static void updateFlippedBoundingBox(ImgMeta& meta) {
@@ -62,7 +87,7 @@ static const BinValue* findObjectField(const BinObject& obj, const char* key);
 static const BinObject& requireObject(const BinObject& obj, const char* key, const char* label) {
 	auto it = obj.find(key);
 	if (it == obj.end() || !it->second.isObject()) {
-		throw std::runtime_error(std::string("[RuntimeAssets] ") + label + " is required.");
+		throw std::runtime_error(std::string("[RuntimeRomPackage] ") + label + " is required.");
 	}
 	return it->second.asObject();
 }
@@ -70,12 +95,12 @@ static const BinObject& requireObject(const BinObject& obj, const char* key, con
 static i64 parseRequiredPositiveI64(const BinObject& obj, const char* key, const char* label) {
 	auto it = obj.find(key);
 	if (it == obj.end()) {
-		throw std::runtime_error(std::string("[RuntimeAssets] ") + label + " is required.");
+		throw std::runtime_error(std::string("[RuntimeRomPackage] ") + label + " is required.");
 	}
 	const double number = it->second.toNumber();
 	const i64 value = static_cast<i64>(number);
 	if (number != static_cast<double>(value) || value <= 0) {
-		throw std::runtime_error(std::string("[RuntimeAssets] ") + label + " must be a positive integer.");
+		throw std::runtime_error(std::string("[RuntimeRomPackage] ") + label + " must be a positive integer.");
 	}
 	return value;
 }
@@ -115,10 +140,10 @@ static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& mani
 	if (vramValue && vramValue->isObject()) {
 		const auto& vramObj = vramValue->asObject();
 		if (vramObj.count("slot_bytes")) {
-			manifest.textpageSlotBytes = vramObj.at("slot_bytes").toI32();
+			manifest.slotBytes = vramObj.at("slot_bytes").toI32();
 		}
 		if (vramObj.count("system_slot_bytes")) {
-			manifest.systemTextpageSlotBytes = vramObj.at("system_slot_bytes").toI32();
+			manifest.systemSlotBytes = vramObj.at("system_slot_bytes").toI32();
 		}
 		if (vramObj.count("staging_bytes")) {
 			manifest.stagingBytes = vramObj.at("staging_bytes").toI32();
@@ -916,34 +941,34 @@ static ModelAsset parseModelAsset(const std::string& assetId, const BinValue& va
 }
 
 /* ============================================================================
- * RuntimeAssets implementation
+ * RuntimeRomPackage implementation
  * ============================================================================ */
 
-ImgAsset* RuntimeAssets::getImg(const AssetId& id) {
+ImgAsset* RuntimeRomPackage::getImg(const AssetId& id) {
 	return findAssetValue(img, id);
 }
 
-const ImgAsset* RuntimeAssets::getImg(const AssetId& id) const {
+const ImgAsset* RuntimeRomPackage::getImg(const AssetId& id) const {
 	return findAssetValue(img, id);
 }
 
-ImageAtlasRect resolveImageAtlasRectFromAssets(const RuntimeAssets& assets, const std::string& imgId) {
-	const ImgAsset* image = assets.getImg(imgId);
+ImageAtlasRect resolveImageAtlasRectFromPackage(const RuntimeRomPackage& romPackage, const std::string& imgId) {
+	const ImgAsset* image = romPackage.getImg(imgId);
 	if (!image) {
-		throw BMSX_RUNTIME_ERROR("[RuntimeAssets] Image '" + imgId + "' was not found.");
+		throw BMSX_RUNTIME_ERROR("[RuntimeRomPackage] Image '" + imgId + "' was not found.");
 	}
 	const ImgMeta& meta = image->meta;
 	if (!meta.atlasid) {
-		throw BMSX_RUNTIME_ERROR("[RuntimeAssets] Image '" + imgId + "' is not atlas-backed.");
+		throw BMSX_RUNTIME_ERROR("[RuntimeRomPackage] Image '" + imgId + "' is not atlas-backed.");
 	}
 	const i32 atlasId = *meta.atlasid;
 	const std::string atlasAssetId = generateAtlasAssetId(atlasId);
-	const ImgAsset* atlas = assets.getImg(atlasAssetId);
+	const ImgAsset* atlas = romPackage.getImg(atlasAssetId);
 	if (!atlas) {
-		throw BMSX_RUNTIME_ERROR("[RuntimeAssets] Atlas '" + atlasAssetId + "' for image '" + imgId + "' was not found.");
+		throw BMSX_RUNTIME_ERROR("[RuntimeRomPackage] Atlas '" + atlasAssetId + "' for image '" + imgId + "' was not found.");
 	}
 	if (atlas->meta.width <= 0 || atlas->meta.height <= 0 || meta.width <= 0 || meta.height <= 0) {
-		throw BMSX_RUNTIME_ERROR("[RuntimeAssets] Image '" + imgId + "' has invalid atlas dimensions.");
+		throw BMSX_RUNTIME_ERROR("[RuntimeRomPackage] Image '" + imgId + "' has invalid atlas dimensions.");
 	}
 	f32 u0 = 0.0f;
 	f32 v0 = 0.0f;
@@ -961,71 +986,71 @@ ImageAtlasRect resolveImageAtlasRectFromAssets(const RuntimeAssets& assets, cons
 	};
 }
 
-AudioAsset* RuntimeAssets::getAudio(const AssetId& id) {
+AudioAsset* RuntimeRomPackage::getAudio(const AssetId& id) {
 	return findAssetValue(audio, id);
 }
 
-const AudioAsset* RuntimeAssets::getAudio(const AssetId& id) const {
+const AudioAsset* RuntimeRomPackage::getAudio(const AssetId& id) const {
 	return findAssetValue(audio, id);
 }
 
-ModelAsset* RuntimeAssets::getModel(const AssetId& id) {
+ModelAsset* RuntimeRomPackage::getModel(const AssetId& id) {
 	return findAssetValue(model, id);
 }
 
-const ModelAsset* RuntimeAssets::getModel(const AssetId& id) const {
+const ModelAsset* RuntimeRomPackage::getModel(const AssetId& id) const {
 	return findAssetValue(model, id);
 }
 
-const BinValue* RuntimeAssets::getData(const AssetId& id) const {
+const BinValue* RuntimeRomPackage::getData(const AssetId& id) const {
 	return findAssetPayloadValue(data, id);
 }
 
-BinAsset* RuntimeAssets::getBin(const AssetId& id) {
+BinAsset* RuntimeRomPackage::getBin(const AssetId& id) {
 	return findAssetValue(bin, id);
 }
 
-const BinAsset* RuntimeAssets::getBin(const AssetId& id) const {
+const BinAsset* RuntimeRomPackage::getBin(const AssetId& id) const {
 	return findAssetValue(bin, id);
 }
 
-LuaSourceAsset* RuntimeAssets::getLua(const AssetId& path) {
+LuaSourceAsset* RuntimeRomPackage::getLua(const AssetId& path) {
 	return findAssetValue(lua, path);
 }
 
-const LuaSourceAsset* RuntimeAssets::getLua(const AssetId& path) const {
+const LuaSourceAsset* RuntimeRomPackage::getLua(const AssetId& path) const {
 	return findAssetValue(lua, path);
 }
 
-const BinValue* RuntimeAssets::getAudioEvent(const AssetId& id) const {
+const BinValue* RuntimeRomPackage::getAudioEvent(const AssetId& id) const {
 	return findAssetPayloadValue(audioevents, id);
 }
 
-bool RuntimeAssets::hasImg(const AssetId& id) const {
+bool RuntimeRomPackage::hasImg(const AssetId& id) const {
 	return getImg(id) != nullptr;
 }
 
-bool RuntimeAssets::hasModel(const AssetId& id) const {
+bool RuntimeRomPackage::hasModel(const AssetId& id) const {
 	return getModel(id) != nullptr;
 }
 
-bool RuntimeAssets::hasData(const AssetId& id) const {
+bool RuntimeRomPackage::hasData(const AssetId& id) const {
 	return getData(id) != nullptr;
 }
 
-bool RuntimeAssets::hasBin(const AssetId& id) const {
+bool RuntimeRomPackage::hasBin(const AssetId& id) const {
 	return getBin(id) != nullptr;
 }
 
-bool RuntimeAssets::hasLua(const AssetId& path) const {
+bool RuntimeRomPackage::hasLua(const AssetId& path) const {
 	return getLua(path) != nullptr;
 }
 
-bool RuntimeAssets::hasAudioEvent(const AssetId& id) const {
+bool RuntimeRomPackage::hasAudioEvent(const AssetId& id) const {
 	return getAudioEvent(id) != nullptr;
 }
 
-void RuntimeAssets::clear() {
+void RuntimeRomPackage::clear() {
 	img.clear();
 	audio.clear();
 	model.clear();
@@ -1033,7 +1058,7 @@ void RuntimeAssets::clear() {
 	bin.clear();
 	lua.clear();
 	audioevents.clear();
-	programAsset.reset();
+	programImage.reset();
 	programSymbols.reset();
 	projectRootPath.clear();
 	cartManifest.reset();
@@ -1059,7 +1084,7 @@ struct CartRomHeader {
 	u32 programCodeByteCount = 0;
 	u32 programConstPoolCount = 0;
 	u32 programProtoCount = 0;
-	u32 programModuleAliasCount = 0;
+	u32 programReserved0 = 0;
 	u32 programConstRelocCount = 0;
 	u32 metadataOffset = 0;
 	u32 metadataLength = 0;
@@ -1169,7 +1194,7 @@ static CartRomHeader parseCartHeader(const u8* data, size_t size) {
 		header.programCodeByteCount = readLE32(data + 44);
 		header.programConstPoolCount = readLE32(data + 48);
 		header.programProtoCount = readLE32(data + 52);
-		header.programModuleAliasCount = readLE32(data + 56);
+		header.programReserved0 = readLE32(data + 56);
 		header.programConstRelocCount = readLE32(data + 60);
 	}
 	if (header.headerSize >= CART_ROM_HEADER_SIZE) {
@@ -1386,7 +1411,7 @@ static void normalizeRomPayload(const u8* buffer, size_t size, const u8*& romDat
 	}
 }
 
-static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& header, RuntimeAssets& assets) {
+static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& header, RuntimeRomPackage& romPackage) {
 	if (header.manifestLength == 0) {
 		throw BMSX_RUNTIME_ERROR("ROM header is missing manifest payload.");
 	}
@@ -1403,29 +1428,29 @@ static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& head
 	if (manifestObj.count("version")) cartManifest.version = manifestObj.at("version").asString();
 	if (manifestObj.count("author")) cartManifest.author = manifestObj.at("author").asString();
 	if (manifestObj.count("description")) cartManifest.description = manifestObj.at("description").asString();
-	assets.cartManifest = cartManifest;
+	romPackage.cartManifest = cartManifest;
 
 	if (manifestObj.count("machine") && manifestObj.at("machine").isObject()) {
 		const auto& machineObj = manifestObj.at("machine").asObject();
-		if (machineObj.count("namespace")) assets.machine.namespaceName = machineObj.at("namespace").asString();
-		parseMachineSpecs(machineObj, assets.machine);
+		if (machineObj.count("namespace")) romPackage.machine.namespaceName = machineObj.at("namespace").asString();
+		parseMachineSpecs(machineObj, romPackage.machine);
 		if (machineObj.count("render_size") && machineObj.at("render_size").isObject()) {
 			const auto& vpObj = machineObj.at("render_size").asObject();
-			if (vpObj.count("width")) assets.machine.viewportWidth = vpObj.at("width").toI32();
-			if (vpObj.count("height")) assets.machine.viewportHeight = vpObj.at("height").toI32();
+			if (vpObj.count("width")) romPackage.machine.viewportWidth = vpObj.at("width").toI32();
+			if (vpObj.count("height")) romPackage.machine.viewportHeight = vpObj.at("height").toI32();
 		}
 	}
 
 	if (manifestObj.count("lua") && manifestObj.at("lua").isObject()) {
 		const auto& luaObj = manifestObj.at("lua").asObject();
-		if (luaObj.count("entry_path")) assets.entryPoint = luaObj.at("entry_path").asString();
+		if (luaObj.count("entry_path")) romPackage.entryPoint = luaObj.at("entry_path").asString();
 	}
 }
 
 static bool loadRomAssetPayloadInternal(const u8* romData,
 						size_t,
 						const CartRomHeader& header,
-						RuntimeAssets& assets,
+						RuntimeRomPackage& romPackage,
 						const AssetLoadCallbacks*,
 						const char* payloadId,
 						bool loadProjectRoot) {
@@ -1468,7 +1493,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 	const size_t stringTableSize = stringTableLength;
 	const std::string projectRootPath = readStringFromTable(stringTable, stringTableSize, projectRootOffset, projectRootLength);
 	if (loadProjectRoot && !projectRootPath.empty()) {
-		assets.projectRootPath = projectRootPath;
+		romPackage.projectRootPath = projectRootPath;
 	}
 
 	RomMetadataSection sharedMetadata;
@@ -1481,13 +1506,13 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 		sharedMetadataEndOffset = static_cast<size_t>(header.metadataOffset) + static_cast<size_t>(header.metadataLength);
 	}
 
-	// Step 5: Load assets
+	// Step 5: Load ROM TOC records.
 	if (entryCount == 0) {
 		return true;
 	}
 
-	logMemSnapshot("assets:begin");
-	std::cerr << "[BMSX] Loading " << entryCount << " assets from ROM" << std::endl;
+	logMemSnapshot("rom-package:begin");
+	std::cerr << "[BMSX] Loading " << entryCount << " ROM entries" << std::endl;
 
 	for (u32 index = 0; index < entryCount; index += 1) {
 		const u8* entry = tocData + entryOffset + (index * entrySize);
@@ -1618,7 +1643,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						if (imgMeta.count("centerpoint")) {
 							const auto center = readF32Array(imgMeta.at("centerpoint"), assetId, "centerpoint");
 							if (center.size() < 2) {
-								throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field 'centerpoint' expected 2 elements.");
+								throw BMSX_RUNTIME_ERROR("ROM entry '" + assetId + "' field 'centerpoint' expected 2 elements.");
 							}
 							imgAsset.meta.centerX = center[0];
 							imgAsset.meta.centerY = center[1];
@@ -1644,8 +1669,8 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 					}
 				}
 
-				// Store atlas assets as regular images for render lookup.
-				assets.img[assetToken] = std::move(imgAsset);
+				// Store atlas records as regular images for render lookup.
+				romPackage.img[assetToken] = std::move(imgAsset);
 				break;
 			}
 			case AssetTypeKind::Audio: {
@@ -1655,7 +1680,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 
 				// Load audio metadata
 				if (metaBufStart < 0 || metaBufEnd <= metaBufStart) {
-					throw BMSX_RUNTIME_ERROR("Audio asset missing metadata: " + assetId);
+					throw BMSX_RUNTIME_ERROR("Audio ROM entry missing metadata: " + assetId);
 				}
 				BinValue metaVal = useSharedMetadata
 					? decodeBinaryWithPropTable(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart), sharedMetadata.propNames)
@@ -1671,7 +1696,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 				}
 
 				if (bufStart < 0 || bufEnd <= bufStart) {
-					throw BMSX_RUNTIME_ERROR("Audio asset missing payload: " + assetId);
+					throw BMSX_RUNTIME_ERROR("Audio ROM entry missing payload: " + assetId);
 				}
 
 				const u8* audioData = romData + bufStart;
@@ -1687,12 +1712,12 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 				audioAsset.badpSeekOffsets = std::move(metadata.seekOffsets);
 				audioAsset.bytes.clear();
 
-				assets.audio[assetToken] = std::move(audioAsset);
+				romPackage.audio[assetToken] = std::move(audioAsset);
 				break;
 			}
 			case AssetTypeKind::Model: {
 				if (bufStart < 0 || bufEnd <= bufStart) {
-					throw BMSX_RUNTIME_ERROR("Model asset missing payload: " + assetId);
+					throw BMSX_RUNTIME_ERROR("Model ROM entry missing payload: " + assetId);
 				}
 				const u8* modelData = romData + bufStart;
 				const size_t modelSize = static_cast<size_t>(bufEnd - bufStart);
@@ -1704,56 +1729,56 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 					textureSize = static_cast<size_t>(textureBufEnd - textureBufStart);
 				}
 				ModelAsset modelAsset = parseModelAsset(assetId, modelValue, textureData, textureSize);
-				assets.model[assetToken] = std::move(modelAsset);
+				romPackage.model[assetToken] = std::move(modelAsset);
 				break;
 			}
 			case AssetTypeKind::Aem: {
 				if (bufStart < 0 || bufEnd <= bufStart) {
-					throw BMSX_RUNTIME_ERROR("Audio event asset missing payload: " + assetId);
+					throw BMSX_RUNTIME_ERROR("Audio event ROM entry missing payload: " + assetId);
 				}
 				BinValue audioEvents = decodeBinary(romData + bufStart, bufEnd - bufStart);
 				AudioEventAsset audioEventAsset;
 				audioEventAsset.id = assetId;
 				audioEventAsset.rom = romInfo;
 				audioEventAsset.value = std::move(audioEvents);
-				assets.audioevents[assetToken] = std::move(audioEventAsset);
+				romPackage.audioevents[assetToken] = std::move(audioEventAsset);
 				break;
 			}
 			case AssetTypeKind::Bin: {
 				if (bufStart < 0 || bufEnd <= bufStart) {
-					throw BMSX_RUNTIME_ERROR("Bin asset missing payload: " + assetId);
+					throw BMSX_RUNTIME_ERROR("Bin ROM entry missing payload: " + assetId);
 				}
 				BinAsset binAsset;
 				binAsset.id = assetId;
 				binAsset.rom = romInfo;
-				assets.bin[assetToken] = std::move(binAsset);
+				romPackage.bin[assetToken] = std::move(binAsset);
 				break;
 			}
 			case AssetTypeKind::Lua: {
 				if (!romInfo.sourcePath.has_value()) {
-					throw BMSX_RUNTIME_ERROR("Lua asset missing source path: " + assetId);
+					throw BMSX_RUNTIME_ERROR("Lua ROM entry missing source path: " + assetId);
 				}
 				if (bufStart < 0 || bufEnd <= bufStart) {
-					throw BMSX_RUNTIME_ERROR("Lua asset missing source payload: " + assetId);
+					throw BMSX_RUNTIME_ERROR("Lua ROM entry missing source payload: " + assetId);
 				}
-				LuaSourceAsset luaAsset;
-				luaAsset.id = assetId;
-				luaAsset.path = *romInfo.sourcePath;
-				luaAsset.rom = romInfo;
-				luaAsset.source.assign(reinterpret_cast<const char*>(romData + bufStart), static_cast<size_t>(bufEnd - bufStart));
-				assets.lua[hashAssetToken(luaAsset.path)] = std::move(luaAsset);
-				break;
-			}
+					LuaSourceAsset luaAsset;
+					luaAsset.id = assetId;
+					luaAsset.path = *romInfo.sourcePath;
+					luaAsset.modulePath = toLuaModulePath(luaAsset.path);
+					luaAsset.rom = romInfo;
+					luaAsset.source.assign(reinterpret_cast<const char*>(romData + bufStart), static_cast<size_t>(bufEnd - bufStart));
+					romPackage.lua[hashAssetToken(luaAsset.modulePath)] = std::move(luaAsset);
+					break;
+				}
 			case AssetTypeKind::Data: {
-				std::cerr << "[BMSX] Data asset found: id='" << assetId << "' bufStart=" << bufStart << " bufEnd=" << bufEnd << std::endl;
+				std::cerr << "[BMSX] Data ROM entry found: id='" << assetId << "' bufStart=" << bufStart << " bufEnd=" << bufEnd << std::endl;
 				if (bufStart >= 0 && bufEnd > bufStart) {
-					// Check if this is the program asset
 					if (assetId == PROGRAM_ASSET_ID) {
-						std::cerr << "[BMSX] Loading program asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
+						std::cerr << "[BMSX] Loading program image (" << (bufEnd - bufStart) << " bytes)" << std::endl;
 						try {
 							// Load pre-compiled Lua bytecode program
-							assets.programAsset = ProgramLoader::load(romData + bufStart, bufEnd - bufStart);
-							if (assets.programAsset) {
+							romPackage.programImage = ProgramLoader::load(romData + bufStart, bufEnd - bufStart);
+							if (romPackage.programImage) {
 								std::cerr << "[BMSX] Program loaded successfully!" << std::endl;
 							} else {
 								std::cerr << "[BMSX] Program load returned nullptr!" << std::endl;
@@ -1762,10 +1787,10 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 							std::cerr << "[BMSX] Program load FAILED: " << e.what() << std::endl;
 						}
 					} else if (assetId == PROGRAM_SYMBOLS_ASSET_ID) {
-						std::cerr << "[BMSX] Loading program symbols asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
+						std::cerr << "[BMSX] Loading program symbols (" << (bufEnd - bufStart) << " bytes)" << std::endl;
 						try {
-							assets.programSymbols = ProgramLoader::loadSymbols(romData + bufStart, bufEnd - bufStart);
-							if (assets.programSymbols) {
+							romPackage.programSymbols = ProgramLoader::loadSymbols(romData + bufStart, bufEnd - bufStart);
+							if (romPackage.programSymbols) {
 								std::cerr << "[BMSX] Program symbols loaded successfully!" << std::endl;
 							} else {
 								std::cerr << "[BMSX] Program symbols load returned nullptr!" << std::endl;
@@ -1779,7 +1804,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						dataAsset.id = assetId;
 						dataAsset.rom = romInfo;
 						dataAsset.value = std::move(dataValue);
-						assets.data[assetToken] = std::move(dataAsset);
+						romPackage.data[assetToken] = std::move(dataAsset);
 					}
 				}
 				break;
@@ -1790,47 +1815,47 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 		}
 	}
 
-	if (!assets.programAsset && assets.programSymbols) {
-		throw BMSX_RUNTIME_ERROR("Program symbols asset requires the program asset.");
+	if (!romPackage.programImage && romPackage.programSymbols) {
+		throw BMSX_RUNTIME_ERROR("Program symbols require the program image.");
 	}
 
-	logMemSnapshot("assets:end");
+	logMemSnapshot("rom-package:end");
 	return true;
 }
 
-static bool loadAssetsFromRom(const u8* buffer,
+static bool loadRomPackageFromPayload(const u8* buffer,
 							size_t size,
-							RuntimeAssets& assets,
+							RuntimeRomPackage& romPackage,
 							const AssetLoadCallbacks* callbacks,
 							const char* payloadId,
 							bool decodeMetadata,
 							bool cartPayload) {
-	assets.clear();
+	romPackage.clear();
 	const u8* romData = nullptr;
 	size_t romSize = 0;
 	std::vector<u8> decompressed;
 	normalizeRomPayload(buffer, size, romData, romSize, decompressed);
 	const CartRomHeader header = parseCartHeader(romData, romSize);
 	if (decodeMetadata) {
-		decodeCartridgeMetadata(romData, header, assets);
+		decodeCartridgeMetadata(romData, header, romPackage);
 	}
-	return loadRomAssetPayloadInternal(romData, romSize, header, assets, callbacks, payloadId, cartPayload);
+	return loadRomAssetPayloadInternal(romData, romSize, header, romPackage, callbacks, payloadId, cartPayload);
 }
 
-bool loadCartAssetsFromRom(const u8* buffer,
+bool loadCartRomPackageFromRom(const u8* buffer,
 							size_t size,
-							RuntimeAssets& assets,
+							RuntimeRomPackage& romPackage,
 							const AssetLoadCallbacks* callbacks,
 							const char* payloadId) {
-	return loadAssetsFromRom(buffer, size, assets, callbacks, payloadId, true, true);
+	return loadRomPackageFromPayload(buffer, size, romPackage, callbacks, payloadId, true, true);
 }
 
-bool loadSystemAssetsFromRom(const u8* buffer,
+bool loadSystemRomPackageFromRom(const u8* buffer,
 							size_t size,
-							RuntimeAssets& assets,
+							RuntimeRomPackage& romPackage,
 							const AssetLoadCallbacks* callbacks,
 							const char* payloadId) {
-	return loadAssetsFromRom(buffer, size, assets, callbacks, payloadId, false, false);
+	return loadRomPackageFromPayload(buffer, size, romPackage, callbacks, payloadId, false, false);
 }
 
 } // namespace bmsx

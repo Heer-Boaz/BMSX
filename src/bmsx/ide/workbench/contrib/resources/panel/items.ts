@@ -72,11 +72,11 @@ export function findResourcePanelIndexByCallHierarchyNodeId(items: readonly Reso
 function collectResourcePanelDescriptors(runtime: Runtime): ResourceDescriptor[] {
 	const descriptors = listResourcesStrict(runtime);
 	const augmented = descriptors.slice();
-	for (const asset of runtime.assets.listImageAssets()) {
-		if (asset.type !== 'atlas') {
+	for (const record of runtime.rom.listImageRecords()) {
+		if (record.type !== 'atlas') {
 			continue;
 		}
-		const assetId = asset.resid;
+		const assetId = record.resid;
 		let alreadyPresent = false;
 		for (let index = 0; index < augmented.length; index += 1) {
 			if (augmented[index].asset_id === assetId) {

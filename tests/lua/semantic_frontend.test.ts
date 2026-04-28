@@ -6,7 +6,7 @@ import { createLuaSemanticFrontendFromSnapshot } from '../../src/bmsx/ide/editor
 import { LuaSemanticWorkspace } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic_model';
 
 test('LuaSemanticFrontend accepts shared runtime globals without diagnostics', () => {
-	const source = 'return assets, sys_vdp_stream_base, cart_manifest';
+	const source = 'return sys_rom_data, sys_vdp_stream_base, cart_manifest';
 	const frontend = buildLuaSemanticFrontend([{ path: 'globals.lua', source }]);
 	assert.deepEqual(frontend.getFile('globals.lua').diagnostics, []);
 });

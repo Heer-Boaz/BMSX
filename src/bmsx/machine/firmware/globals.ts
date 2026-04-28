@@ -1,5 +1,5 @@
 import { extractErrorMessage, type StackTraceFrame } from '../../lua/value';
-import { engineCore } from '../../core/engine';
+import { consoleCore } from '../../core/console';
 import { clamp01 } from '../../common/clamp';
 import {
 	createNativeFunction,
@@ -11,9 +11,7 @@ import {
 	type Value,
 } from '../cpu/cpu';
 import { formatNumber } from '../common/number_format';
-import { ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE } from '../memory/memory';
 import {
-	ASSET_TABLE_SIZE,
 	CART_ROM_BASE,
 	CART_ROM_MAGIC_ADDR,
 	CART_ROM_SIZE,
@@ -27,14 +25,14 @@ import {
 	VDP_STREAM_PACKET_HEADER_WORDS,
 	VRAM_FRAMEBUFFER_BASE,
 	VRAM_FRAMEBUFFER_SIZE,
-	VRAM_PRIMARY_TEXTPAGE_BASE,
-	VRAM_PRIMARY_TEXTPAGE_SIZE,
-	VRAM_SECONDARY_TEXTPAGE_BASE,
-	VRAM_SECONDARY_TEXTPAGE_SIZE,
+	VRAM_PRIMARY_SLOT_BASE,
+	VRAM_PRIMARY_SLOT_SIZE,
+	VRAM_SECONDARY_SLOT_BASE,
+	VRAM_SECONDARY_SLOT_SIZE,
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
-	VRAM_SYSTEM_TEXTPAGE_BASE,
-	VRAM_SYSTEM_TEXTPAGE_SIZE,
+	VRAM_SYSTEM_SLOT_BASE,
+	VRAM_SYSTEM_SLOT_SIZE,
 } from '../memory/map';
 import { CART_ROM_MAGIC, DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../../rompack/format';
 import { BmsxColors } from '../devices/vdp/vdp';
@@ -235,7 +233,7 @@ import {
 	describeMarshalSegment,
 	extendMarshalContext,
 	getOrAssignTableId,
-	getOrCreateAssetsNativeObject,
+	getOrCreateRomEntryMapNativeObject,
 	getOrCreateNativeObject,
 	nextNativeEntry,
 	pushNativePairsIterator,
@@ -985,12 +983,15 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	};
 
 	const exposeObjects = (): void => {
-		const gameTable = createRuntimeGameTable(runtime, engineCore.view);
+		const gameTable = createRuntimeGameTable(runtime, consoleCore.view);
 		luaPipeline.registerGlobal(runtime, 'game', gameTable);
 		luaPipeline.registerGlobal(runtime, '$', gameTable);
 		luaPipeline.registerGlobal(runtime, 'devtools', createRuntimeDevtoolsTable(runtime));
-		luaPipeline.registerGlobal(runtime, 'assets', getOrCreateAssetsNativeObject(runtime));
-		luaPipeline.registerGlobal(runtime, 'system_assets', getOrCreateAssetsNativeObject(runtime, runtime.assets.biosLayer.assets));
+		luaPipeline.registerGlobal(runtime, 'sys_rom_img', getOrCreateRomEntryMapNativeObject(runtime, runtime.activePackage.img, 'img'));
+		luaPipeline.registerGlobal(runtime, 'sys_rom_data', getOrCreateRomEntryMapNativeObject(runtime, runtime.activePackage.data, 'data'));
+		luaPipeline.registerGlobal(runtime, 'sys_rom_audio', getOrCreateRomEntryMapNativeObject(runtime, runtime.activePackage.audio, 'audio'));
+		luaPipeline.registerGlobal(runtime, 'sys_rom_audioevents', getOrCreateRomEntryMapNativeObject(runtime, runtime.activePackage.audioevents, 'audioevents'));
+		luaPipeline.registerGlobal(runtime, 'sys_system_rom_img', getOrCreateRomEntryMapNativeObject(runtime, runtime.rom.systemPackage().img, 'img'));
 		const cartManifest = runtime.cartManifest;
 		luaPipeline.registerGlobal(runtime, 'cart_manifest', cartManifest === null ? null : buildCartManifestTable(runtime, cartManifest, cartManifest.machine, cartManifest.lua.entry_path));
 		luaPipeline.registerGlobal(runtime, 'machine_manifest', buildMachineManifestTable(runtime, runtime.activeMachineManifest));
@@ -1214,8 +1215,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_ram_size', RAM_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_scratch_base', GEO_SCRATCH_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_scratch_size', GEO_SCRATCH_SIZE);
-	const maxAssets = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
-	luaPipeline.registerGlobal(runtime, 'sys_max_assets', maxAssets);
 	luaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.timing.cycleBudgetPerFrame);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_dither', IO_VDP_DITHER);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_primary_atlas', IO_VDP_SLOT_PRIMARY_ATLAS);
@@ -1351,14 +1350,14 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_size', runtime.machine.memory.getOverlayRomSize());
-	luaPipeline.registerGlobal(runtime, 'sys_vram_system_textpage_base', VRAM_SYSTEM_TEXTPAGE_BASE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_textpage_base', VRAM_PRIMARY_TEXTPAGE_BASE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_textpage_base', VRAM_SECONDARY_TEXTPAGE_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_system_slot_base', VRAM_SYSTEM_SLOT_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_slot_base', VRAM_PRIMARY_SLOT_BASE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_slot_base', VRAM_SECONDARY_SLOT_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_base', VRAM_FRAMEBUFFER_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_staging_base', VRAM_STAGING_BASE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_system_textpage_size', VRAM_SYSTEM_TEXTPAGE_SIZE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_textpage_size', VRAM_PRIMARY_TEXTPAGE_SIZE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_textpage_size', VRAM_SECONDARY_TEXTPAGE_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_system_slot_size', VRAM_SYSTEM_SLOT_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_slot_size', VRAM_PRIMARY_SLOT_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_slot_size', VRAM_SECONDARY_SLOT_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_size', VRAM_FRAMEBUFFER_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.machine.resourceUsageDetector.getVramTotalBytes());

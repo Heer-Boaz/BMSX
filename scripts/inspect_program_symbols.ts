@@ -1,12 +1,12 @@
 import fs from 'fs';
 import { decodeBinary } from '../src/bmsx/common/serializer/binencoder';
-import { PROGRAM_SYMBOLS_ASSET_ID } from '../src/bmsx/machine/program/asset';
+import { PROGRAM_SYMBOLS_IMAGE_ID } from '../src/bmsx/machine/program/loader';
 
 function findAssetEntries(bytes: Uint8Array) {
-	// The rompack format is custom; we'll scan for the program symbols asset by searching for the id string in the binary and then decode near it.
+	// The rompack format is custom; we'll scan for the program symbols image by searching for the id string in the binary and then decode near it.
 	// This is a lightweight inspector for debugging only.
 	const text = new TextDecoder().decode(bytes);
-	const idx = text.indexOf(PROGRAM_SYMBOLS_ASSET_ID);
+	const idx = text.indexOf(PROGRAM_SYMBOLS_IMAGE_ID);
 	if (idx < 0) {
 		console.error('No program symbols id found in ROM.');
 		process.exit(1);
@@ -19,7 +19,7 @@ function findAssetEntries(bytes: Uint8Array) {
 			const slice = bytes.slice(start);
 			const bin = decodeBinary(slice);
 			if (bin && typeof bin === 'object' && bin.hasOwnProperty('metadata')) {
-				console.log('Decoded program symbols asset at offset', start);
+				console.log('Decoded program symbols image at offset', start);
 				console.log('metadata keys:', Object.keys((bin as any).metadata));
 				const metadata = (bin as any).metadata;
 				console.log('systemGlobalNames length=', metadata.systemGlobalNames?.length || 0);
@@ -32,7 +32,7 @@ function findAssetEntries(bytes: Uint8Array) {
 			// ignore
 		}
 	}
-	console.error('Failed to decode program symbols asset by scanning.');
+	console.error('Failed to decode program symbols image by scanning.');
 }
 
 const argv = process.argv.slice(2);

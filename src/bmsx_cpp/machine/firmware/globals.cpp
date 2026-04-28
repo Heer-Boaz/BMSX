@@ -8,7 +8,7 @@
 #include "core/utf8.h"
 #include "platform.h"
 #include "rompack/format.h"
-#include "rompack/assets.h"
+#include "rompack/package.h"
 #include "common/serializer/binencoder.h"
 #include "input/manager.h"
 #include "common/clamp.h"
@@ -1380,12 +1380,10 @@ void Runtime::setupBuiltins() {
 	}));
 	setGlobal("sys_cart_magic_addr", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
 	setGlobal("sys_cart_magic", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
-	const uint32_t maxAssets = (ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE;
 	setGlobal("sys_cart_rom_size", valueNumber(static_cast<double>(CART_ROM_SIZE)));
 	setGlobal("sys_ram_size", valueNumber(static_cast<double>(RAM_SIZE)));
 	setGlobal("sys_geo_scratch_base", valueNumber(static_cast<double>(GEO_SCRATCH_BASE)));
 	setGlobal("sys_geo_scratch_size", valueNumber(static_cast<double>(GEO_SCRATCH_SIZE)));
-	setGlobal("sys_max_assets", valueNumber(static_cast<double>(maxAssets)));
 	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(timing.cycleBudgetPerFrame)));
 	setGlobal("sys_vdp_dither", valueNumber(static_cast<double>(IO_VDP_DITHER)));
 	setGlobal("sys_vdp_slot_primary_atlas", valueNumber(static_cast<double>(IO_VDP_SLOT_PRIMARY_ATLAS)));
@@ -1651,8 +1649,6 @@ void Runtime::setupBuiltins() {
 			IO_REGION_SIZE
 				+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
 				+ usage.m_stringHandles.usedHeapBytes()
-				+ usage.m_memory.usedAssetTableBytes()
-				+ usage.m_memory.usedAssetDataBytes()
 				+ static_cast<uint32_t>(trackedLuaHeapBytes())
 		)));
 	});
@@ -3418,9 +3414,14 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 		out.push_back(valueNumber(0.0));
 	});
 
-	auto buildAssetsNativeObject = [this, &cpu, key, str](const RuntimeAssets& assets) -> Value {
-	auto* assetsTable = cpu.createTable();
-	auto formatAssetKeyNumber = [](double value) -> std::string {
+	struct RomNativeMaps {
+		Value img;
+		Value data;
+		Value audio;
+		Value audioevents;
+	};
+	auto buildRomNativeMaps = [&cpu, key, str](const RuntimeRomPackage& rom) -> RomNativeMaps {
+	auto formatRomKeyNumber = [](double value) -> std::string {
 		if (value == 0.0) {
 			return "0";
 		}
@@ -3428,55 +3429,55 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 		oss << std::fixed << std::setprecision(0) << value;
 		return oss.str();
 	};
-	auto assetIntegerKeyName = [formatAssetKeyNumber](const Value& keyValue) -> std::optional<std::string> {
+	auto romIntegerKeyName = [formatRomKeyNumber](const Value& keyValue) -> std::optional<std::string> {
 		if (!valueIsNumber(keyValue)) {
 			return std::nullopt;
 		}
 		double n = valueToNumber(keyValue);
 		double intpart = 0.0;
 		if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
-			return formatAssetKeyNumber(n);
+			return formatRomKeyNumber(n);
 		}
 		return std::nullopt;
 	};
-	auto readAssetTableValue = [&cpu, assetIntegerKeyName](Table* table, const Value& keyValue) -> Value {
+	auto readRomMapValue = [&cpu, romIntegerKeyName](Table* table, const Value& keyValue) -> Value {
 		if (valueIsString(keyValue)) {
 			Value value = table->get(keyValue);
 			if (isNil(value)) {
 				const std::string& keyName = cpu.stringPool().toString(asStringId(keyValue));
-				throw BMSX_RUNTIME_ERROR("Asset '" + keyName + "' does not exist.");
+				throw BMSX_RUNTIME_ERROR("ROM entry '" + keyName + "' does not exist.");
 			}
 			return value;
 		}
-		if (const std::optional<std::string> keyName = assetIntegerKeyName(keyValue)) {
+		if (const std::optional<std::string> keyName = romIntegerKeyName(keyValue)) {
 			Value resolvedKey = valueString(cpu.internString(*keyName));
 			Value value = table->get(resolvedKey);
 			if (isNil(value)) {
-				throw BMSX_RUNTIME_ERROR("Asset '" + *keyName + "' does not exist.");
+				throw BMSX_RUNTIME_ERROR("ROM entry '" + *keyName + "' does not exist.");
 			}
 			return value;
 		}
-		throw BMSX_RUNTIME_ERROR("Attempted to retrieve an asset that did not use a string or integer key.");
+		throw BMSX_RUNTIME_ERROR("Attempted to retrieve a ROM entry with a non-string key.");
 	};
-	auto writeAssetTableValue = [&cpu, assetIntegerKeyName](Table* table, const Value& keyValue, const Value& value) {
+	auto writeRomMapValue = [&cpu, romIntegerKeyName](Table* table, const Value& keyValue, const Value& value) {
 		if (valueIsString(keyValue)) {
 			table->set(keyValue, value);
 			return;
 		}
-		if (const std::optional<std::string> keyName = assetIntegerKeyName(keyValue)) {
+		if (const std::optional<std::string> keyName = romIntegerKeyName(keyValue)) {
 			table->set(valueString(cpu.internString(*keyName)), value);
 			return;
 		}
-		throw BMSX_RUNTIME_ERROR("Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.");
+		throw BMSX_RUNTIME_ERROR("Attempted to index a ROM map with a non-string key.");
 	};
-	auto makeAssetMapNativeObject = [&cpu, readAssetTableValue, writeAssetTableValue](Table* mapTable) -> Value {
+	auto makeRomMapNativeObject = [&cpu, readRomMapValue, writeRomMapValue](Table* mapTable) -> Value {
 		return cpu.createNativeObject(
 			mapTable,
-			[mapTable, readAssetTableValue](const Value& keyValue) -> Value {
-				return readAssetTableValue(mapTable, keyValue);
+			[mapTable, readRomMapValue](const Value& keyValue) -> Value {
+				return readRomMapValue(mapTable, keyValue);
 			},
-			[mapTable, writeAssetTableValue](const Value& keyValue, const Value& value) {
-				writeAssetTableValue(mapTable, keyValue, value);
+			[mapTable, writeRomMapValue](const Value& keyValue, const Value& value) {
+				writeRomMapValue(mapTable, keyValue, value);
 			},
 			nullptr,
 			[mapTable](const Value& after) -> std::optional<std::pair<Value, Value>> {
@@ -3485,9 +3486,9 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 			[mapTable](GcHeap& heap) {
 				heap.markValue(valueTable(mapTable));
 			}
-		);
-	};
-	auto appendRomAssetFields = [key, str](Table* table, const RomAssetInfo& info, std::string_view resid) {
+			);
+		};
+	auto appendRomEntryFields = [key, str](Table* table, const RomAssetInfo& info, std::string_view resid) {
 		table->set(key("resid"), str(resid));
 		if (!info.type.empty()) {
 			table->set(key("type"), str(info.type));
@@ -3538,84 +3539,53 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 	auto appendBinEntry = [&cpu, str](Table* table, const std::string& assetId, const BinValue& value) {
 		table->set(str(assetId), binValueToRuntimeValue(cpu, value));
 	};
-	const int imgCapacity = static_cast<int>(assets.img.size());
+	const int imgCapacity = static_cast<int>(rom.img.size());
 	auto* imgTable = cpu.createTable(0, imgCapacity);
-	auto appendImgEntry = [&cpu, this, imgTable, key, str, appendRomAssetFields](const ImgAsset& imgAsset) {
+	auto appendImgEntry = [&cpu, imgTable, key, str, appendRomEntryFields](const ImgAsset& imgAsset) {
 		auto* imgEntry = cpu.createTable(0, 8);
-		appendRomAssetFields(imgEntry, imgAsset.rom, imgAsset.id);
+		appendRomEntryFields(imgEntry, imgAsset.rom, imgAsset.id);
 		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(cpu, imgAsset.meta, key)));
 		imgTable->set(str(imgAsset.id), valueTable(imgEntry));
 	};
-	for (const auto& entry : assets.img) {
+	for (const auto& entry : rom.img) {
 		appendImgEntry(entry.second);
 	}
-	assetsTable->set(key("img"), makeAssetMapNativeObject(imgTable));
 
-	const int dataCapacity = static_cast<int>(assets.data.size());
+	const int dataCapacity = static_cast<int>(rom.data.size());
 	auto* dataTable = cpu.createTable(0, dataCapacity);
-	for (const auto& entry : assets.data) {
+	for (const auto& entry : rom.data) {
 		appendBinEntry(dataTable, entry.second.id, entry.second.value);
 	}
-	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
-	const int binCapacity = static_cast<int>(assets.bin.size());
-	auto* binTable = cpu.createTable(0, binCapacity);
-	auto appendBinAssetEntry = [&cpu, binTable, str, appendRomAssetFields](const BinAsset& binAsset) {
-		auto* binEntry = cpu.createTable(0, 8);
-		appendRomAssetFields(binEntry, binAsset.rom, binAsset.id);
-		binTable->set(str(binAsset.id), valueTable(binEntry));
-	};
-	for (const auto& entry : assets.bin) {
-		appendBinAssetEntry(entry.second);
-	}
-	assetsTable->set(key("bin"), makeAssetMapNativeObject(binTable));
-	const int audioCapacity = static_cast<int>(assets.audio.size());
+	const int audioCapacity = static_cast<int>(rom.audio.size());
 	auto* audioTable = cpu.createTable(0, audioCapacity);
-	auto appendAudioEntry = [&cpu, audioTable, key, str, appendRomAssetFields](const AudioAsset& audioAsset) {
+	auto appendAudioEntry = [&cpu, audioTable, key, str, appendRomEntryFields](const AudioAsset& audioAsset) {
 		auto* audioEntry = cpu.createTable(0, 6);
-		appendRomAssetFields(audioEntry, audioAsset.rom, audioAsset.id);
+		appendRomEntryFields(audioEntry, audioAsset.rom, audioAsset.id);
 		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(cpu, audioAsset.meta, key)));
 		audioTable->set(str(audioAsset.id), valueTable(audioEntry));
 	};
-	for (const auto& entry : assets.audio) {
+	for (const auto& entry : rom.audio) {
 		appendAudioEntry(entry.second);
 	}
-	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
-	const int audioEventCapacity = static_cast<int>(assets.audioevents.size());
+	const int audioEventCapacity = static_cast<int>(rom.audioevents.size());
 	auto* audioEventsTable = cpu.createTable(0, audioEventCapacity);
-	for (const auto& entry : assets.audioevents) {
+	for (const auto& entry : rom.audioevents) {
 		appendBinEntry(audioEventsTable, entry.second.id, entry.second.value);
 	}
-	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
-	const int modelCapacity = static_cast<int>(assets.model.size());
-	auto* modelTable = cpu.createTable(0, modelCapacity);
-	auto appendModelEntry = [&cpu, modelTable, key, str](const ModelAsset& modelAsset) {
-		modelTable->set(str(modelAsset.id), valueTable(buildModelAssetTable(cpu, modelAsset, key)));
+	return RomNativeMaps{
+		makeRomMapNativeObject(imgTable),
+		makeRomMapNativeObject(dataTable),
+		makeRomMapNativeObject(audioTable),
+		makeRomMapNativeObject(audioEventsTable),
 	};
-	for (const auto& entry : assets.model) {
-		appendModelEntry(entry.second);
-	}
-	assetsTable->set(key("model"), makeAssetMapNativeObject(modelTable));
-	assetsTable->set(key("project_root_path"), str(assets.projectRootPath));
-	auto assetsNative = cpu.createNativeObject(
-		assetsTable,
-		[assetsTable, readAssetTableValue](const Value& keyValue) -> Value {
-			return readAssetTableValue(assetsTable, keyValue);
-		},
-		[assetsTable, writeAssetTableValue](const Value& keyValue, const Value& value) {
-			writeAssetTableValue(assetsTable, keyValue, value);
-		},
-		nullptr,
-		[assetsTable](const Value& after) -> std::optional<std::pair<Value, Value>> {
-			return assetsTable->nextEntry(after);
-		},
-		[assetsTable](GcHeap& heap) {
-			heap.markValue(valueTable(assetsTable));
-		}
-	);
-	return assetsNative;
 	};
-	setGlobal("assets", buildAssetsNativeObject(activeAssets()));
-	setGlobal("system_assets", buildAssetsNativeObject(systemAssets()));
+	const RomNativeMaps activeRomMaps = buildRomNativeMaps(activeRom());
+	setGlobal("sys_rom_img", activeRomMaps.img);
+	setGlobal("sys_rom_data", activeRomMaps.data);
+	setGlobal("sys_rom_audio", activeRomMaps.audio);
+	setGlobal("sys_rom_audioevents", activeRomMaps.audioevents);
+	const RomNativeMaps systemRomMaps = buildRomNativeMaps(systemRom());
+	setGlobal("sys_system_rom_img", systemRomMaps.img);
 
 	auto buildMachineManifestTable = [&cpu, key, str](const MachineManifest& manifest) -> Table* {
 		auto* machineTable = cpu.createTable(0, 5);
@@ -3661,13 +3631,13 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 			ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));
 			specsTable->set(key("ram"), valueTable(ramTable));
 		}
-		if (manifest.textpageSlotBytes || manifest.systemTextpageSlotBytes || manifest.stagingBytes) {
+		if (manifest.slotBytes || manifest.systemSlotBytes || manifest.stagingBytes) {
 			auto* vramTable = cpu.createTable(0, 3);
-			if (manifest.textpageSlotBytes) {
-				vramTable->set(key("slot_bytes"), valueNumber(static_cast<double>(*manifest.textpageSlotBytes)));
+			if (manifest.slotBytes) {
+				vramTable->set(key("slot_bytes"), valueNumber(static_cast<double>(*manifest.slotBytes)));
 			}
-			if (manifest.systemTextpageSlotBytes) {
-				vramTable->set(key("system_slot_bytes"), valueNumber(static_cast<double>(*manifest.systemTextpageSlotBytes)));
+			if (manifest.systemSlotBytes) {
+				vramTable->set(key("system_slot_bytes"), valueNumber(static_cast<double>(*manifest.systemSlotBytes)));
 			}
 			if (manifest.stagingBytes) {
 				vramTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));

@@ -9,7 +9,7 @@ import type {
 	RomImgAsset,
 	CartManifest,
 	MachineManifest,
-	RuntimeAssets,
+	RuntimeRomPackage,
 	CartridgeIndex,
 	CartridgeLayerId,
 	color_arr,
@@ -19,7 +19,7 @@ import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } f
 import { parseRomMetadataSection } from './metadata';
 import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_ROM_PROGRAM_HEADER_SIZE } from './format';
 import { inflate } from 'pako';
-import { AssetSourceStack, type RawAssetSource } from './source';
+import { RomSourceStack, type RawRomSource } from './source';
 import { decodeRomToc } from './toc';
 import { formatNumberAsHex } from '../common/byte_hex_string';
 
@@ -84,7 +84,7 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	const programCodeByteCount = hasProgramHeader ? dv.getUint32(44, true) : 0;
 	const programConstPoolCount = hasProgramHeader ? dv.getUint32(48, true) : 0;
 	const programProtoCount = hasProgramHeader ? dv.getUint32(52, true) : 0;
-	const programModuleAliasCount = hasProgramHeader ? dv.getUint32(56, true) : 0;
+	const programReserved0 = hasProgramHeader ? dv.getUint32(56, true) : 0;
 	const programConstRelocCount = hasProgramHeader ? dv.getUint32(60, true) : 0;
 	const metadataOffset = hasMetadataHeader ? dv.getUint32(64, true) : 0;
 	const metadataLength = hasMetadataHeader ? dv.getUint32(68, true) : 0;
@@ -110,7 +110,7 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		programCodeByteCount,
 		programConstPoolCount,
 		programProtoCount,
-		programModuleAliasCount,
+		programReserved0,
 		programConstRelocCount,
 		metadataOffset,
 		metadataLength,
@@ -189,8 +189,8 @@ export function normalizeCartridgeBlob(blob: Uint8Array): { payload: Uint8Array;
 	return { payload, romlabel };
 }
 
-type RomAssetList = {
-	assets: RomAsset[];
+type RomEntryList = {
+	entries: RomAsset[];
 	projectRootPath: string;
 };
 
@@ -219,10 +219,10 @@ function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): Cartri
 	};
 }
 
-async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader): Promise<RomAssetList> {
+async function loadRomEntryListFromHeader(rom: Uint8Array, header: CartRomHeader): Promise<RomEntryList> {
 	const sliced = rom.subarray(header.tocOffset, header.tocOffset + header.tocLength);
 	const decoded = decodeRomToc(sliced);
-	const assetList = decoded.assets;
+	const entryList = decoded.entries;
 	const projectRootPath = decodedProjectRootPath(decoded.projectRootPath);
 	const sharedMetadata = header.metadataLength > 0
 		? parseRomMetadataSection(rom.subarray(header.metadataOffset, header.metadataOffset + header.metadataLength))
@@ -314,7 +314,7 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 		return result;
 	}
 
-	for (const asset of assetList) {
+	for (const asset of entryList) {
 		if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
 			const metaStart = asset.metabuffer_start;
 			const metaEnd = asset.metabuffer_end;
@@ -362,31 +362,22 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 		}
 	}
 	return {
-		assets: assetList,
+		entries: entryList,
 		projectRootPath,
 	};
 }
 
-export async function loadRomAssetList(rom: Uint8Array): Promise<RomAssetList> {
+export async function loadRomEntryList(rom: Uint8Array): Promise<RomEntryList> {
 	const header = parseCartHeader(rom);
-	return loadRomAssetListFromHeader(rom, header);
-}
-
-export async function loadAssetList(rom: Uint8Array): Promise<{ assets: RomAsset[]; projectRootPath: string; manifest: CartManifest }> {
-	const { assets, projectRootPath, cart_manifest } = await parseCartridgeIndex(rom);
-	return {
-		assets,
-		projectRootPath,
-		manifest: cart_manifest,
-	};
+	return loadRomEntryListFromHeader(rom, header);
 }
 
 export async function parseCartridgeIndex(payload: Uint8Array): Promise<CartridgeIndex> {
 	const header = parseCartHeader(payload);
-	const { assets, projectRootPath } = await loadRomAssetListFromHeader(payload, header);
+	const { entries, projectRootPath } = await loadRomEntryListFromHeader(payload, header);
 	const { cart_manifest, machine, entry_path, input } = decodeCartridgeMetadata(payload, header);
 	return {
-		assets,
+		entries,
 		projectRootPath,
 		cart_manifest,
 		machine,
@@ -523,7 +514,7 @@ export async function loadModelFromBuffer(asset_id: string, buffer: Uint8Array, 
 	return { name: asset_id, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
-async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets, opts?: RomLoadOptions) {
+async function load(source: RawRomSource, res: RomAsset, romPackage: RuntimeRomPackage, opts?: RomLoadOptions) {
 	if (res.op === 'delete') {
 		return;
 	}
@@ -535,14 +526,14 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 			const imgAsset = {
 				...baseAsset,
 			} as RomImgAsset;
-			assets.img[assetKey] = imgAsset;
+			romPackage.img[assetKey] = imgAsset;
 			break;
 		}
 		case 'audio':
 			if (opts && opts.loadAudioFromBuffer) {
-				assets.audio[assetKey] = await opts.loadAudioFromBuffer(source.getBytes(baseAsset));
+				romPackage.audio[assetKey] = await opts.loadAudioFromBuffer(source.getBytes(baseAsset));
 			} else {
-				assets.audio[assetKey] = baseAsset;
+				romPackage.audio[assetKey] = baseAsset;
 			}
 			break;
 		case 'model': {
@@ -550,28 +541,28 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 				? source.getBytes({ ...baseAsset, start: baseAsset.texture_start, end: baseAsset.texture_end })
 				: undefined;
 			if (opts && opts.loadModelFromBuffer) {
-				assets.model[assetKey] = await opts.loadModelFromBuffer(source.getBytes(baseAsset), texBuf);
+				romPackage.model[assetKey] = await opts.loadModelFromBuffer(source.getBytes(baseAsset), texBuf);
 			} else {
-				assets.model[assetKey] = await loadModelFromBuffer(res.resid, source.getBytes(baseAsset), texBuf);
+				romPackage.model[assetKey] = await loadModelFromBuffer(res.resid, source.getBytes(baseAsset), texBuf);
 			}
 			break;
 		}
 		case 'data':
 			if (opts && opts.loadDataFromBuffer) {
 				const data = await opts.loadDataFromBuffer(source.getBytes(baseAsset));
-				assets.data[assetKey] = data;
+					romPackage.data[assetKey] = data;
 			} else {
 				const data = await loadDataFromBuffer(source.getBytes(baseAsset));
-				assets.data[assetKey] = data;
+					romPackage.data[assetKey] = data;
 			}
 			break;
 		case 'bin':
-			assets.bin[assetKey] = baseAsset;
+			romPackage.bin[assetKey] = baseAsset;
 			break;
 		case 'aem': {
 			const u8 = source.getBytes(baseAsset);
 			const audioevents = decodeBinary(u8);
-			assets.audioevents[assetKey] = audioevents;
+			romPackage.audioevents[assetKey] = audioevents;
 			break;
 		}
 		case 'lua':
@@ -579,19 +570,19 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 		case 'romlabel':
 			break;
 		default:
-			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing runtime assets!`);
+			throw new Error(`Unrecognised resource type in ROM: ${res.type}, while decoding runtime ROM package.`);
 	}
 }
 
-export type RuntimeAssetLayer = {
+export type RuntimeRomLayer = {
 	id: CartridgeLayerId;
 	index: CartridgeIndex;
 	payload: Uint8Array;
-	assets: RuntimeAssets;
+	package: RuntimeRomPackage;
 };
 
-async function loadRuntimeAssetsFromSource(source: RawAssetSource, index: CartridgeIndex, opts?: RomLoadOptions): Promise<RuntimeAssets> {
-	const assets: RuntimeAssets = {
+async function loadRuntimeRomPackageFromSource(source: RawRomSource, index: CartridgeIndex, opts?: RomLoadOptions): Promise<RuntimeRomPackage> {
+	const romPackage: RuntimeRomPackage = {
 		img: {},
 		audio: {},
 		model: {},
@@ -604,40 +595,40 @@ async function loadRuntimeAssetsFromSource(source: RawAssetSource, index: Cartri
 		entry_path: index.entry_path,
 	};
 	const entries = source.list();
-	await Promise.all(entries.map(entry => load(source, entry, assets, opts)));
-	return assets;
+	await Promise.all(entries.map(entry => load(source, entry, romPackage, opts)));
+	return romPackage;
 }
 
-export async function loadRuntimeAssetsFromBuffer(rom: Uint8Array, opts?: RomLoadOptions, payloadId: CartridgeLayerId = 'cart'): Promise<RuntimeAssets> {
+export async function loadRuntimeRomPackageFromBuffer(rom: Uint8Array, opts?: RomLoadOptions, payloadId: CartridgeLayerId = 'cart'): Promise<RuntimeRomPackage> {
 	const index = await parseCartridgeIndex(rom);
-	const source = new AssetSourceStack([{ id: payloadId, index, payload: rom }]);
-	return loadRuntimeAssetsFromSource(source, index, opts);
+	const source = new RomSourceStack([{ id: payloadId, index, payload: rom }]);
+	return loadRuntimeRomPackageFromSource(source, index, opts);
 }
 
-export async function buildRuntimeAssetLayer(params: { blob: Uint8Array; id: CartridgeLayerId; opts?: RomLoadOptions }): Promise<RuntimeAssetLayer> {
+export async function buildRuntimeRomLayer(params: { blob: Uint8Array; id: CartridgeLayerId; opts?: RomLoadOptions }): Promise<RuntimeRomLayer> {
 	const normalized = normalizeCartridgeBlob(params.blob);
 	const index = await parseCartridgeIndex(normalized.payload);
-	const source = new AssetSourceStack([{ id: params.id, index, payload: normalized.payload }]);
-	const assets = await loadRuntimeAssetsFromSource(source, index, params.opts);
-	return { id: params.id, index, payload: normalized.payload, assets };
+	const source = new RomSourceStack([{ id: params.id, index, payload: normalized.payload }]);
+	const runtimePackage = await loadRuntimeRomPackageFromSource(source, index, params.opts);
+	return { id: params.id, index, payload: normalized.payload, package: runtimePackage };
 }
 
-export async function buildSystemRuntimeAssetLayer(params: {
+export async function buildSystemRuntimeRomLayer(params: {
 	blob: Uint8Array;
 	machine: MachineManifest;
 	entry_path: string;
 	opts?: RomLoadOptions;
-}): Promise<RuntimeAssetLayer> {
+}): Promise<RuntimeRomLayer> {
 	const normalized = normalizeCartridgeBlob(params.blob);
-	const { assets } = await loadRomAssetList(normalized.payload);
+	const { entries } = await loadRomEntryList(normalized.payload);
 	const index: CartridgeIndex = {
-		assets,
+		entries,
 		projectRootPath: '',
 		cart_manifest: null,
 		machine: params.machine,
 		entry_path: params.entry_path,
 	};
-	const source = new AssetSourceStack([{ id: 'system', index, payload: normalized.payload }]);
-	const runtimeAssets = await loadRuntimeAssetsFromSource(source, index, params.opts);
-	return { id: 'system', index, payload: normalized.payload, assets: runtimeAssets };
+	const source = new RomSourceStack([{ id: 'system', index, payload: normalized.payload }]);
+	const runtimePackage = await loadRuntimeRomPackageFromSource(source, index, params.opts);
+	return { id: 'system', index, payload: normalized.payload, package: runtimePackage };
 }

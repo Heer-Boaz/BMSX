@@ -1,4 +1,4 @@
-import { engineCore } from '../../../../core/engine';
+import { consoleCore } from '../../../../core/console';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 import { insertText } from '../../editing/text_editing_and_selection';
 import { handleEditorDebuggerInput } from '../../../input/keyboard/debug_input';
@@ -28,7 +28,7 @@ export class InputController {
 	}
 
 	public applyOverrides(active: boolean, captureKeys: readonly string[]): void {
-		const input = engineCore.input;
+		const input = consoleCore.input;
 		input.debugHotkeysPaused = active;
 		for (let i = 0; i < captureKeys.length; i += 1) {
 			input.setKeyboardCapture(captureKeys[i], active);

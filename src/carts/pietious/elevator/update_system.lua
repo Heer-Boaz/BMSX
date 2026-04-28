@@ -1,7 +1,7 @@
-local ecs<const> = require('ecs/index')
-local ecs_builtin<const> = require('ecs/builtin')
-local ecs_pipeline<const> = require('ecs/pipeline')
-local world_instance<const> = require('world/index').instance
+local ecs<const> = require('bios/ecs/index')
+local ecs_builtin<const> = require('bios/ecs/builtin')
+local ecs_pipeline<const> = require('bios/ecs/pipeline')
+local world_instance<const> = require('bios/world/index').instance
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem

@@ -3,10 +3,10 @@
  */
 
 #include "platform.h"
-#include "core/engine.h"
+#include "core/console.h"
 #include "core/primitives.h"
-#include "core/host_asset_sync.h"
 #include "core/rom_boot_manager.h"
+#include "core/system.h"
 #include "input/manager.h"
 #include "input/gamepad.h"
 #include "input/keyboard.h"
@@ -72,7 +72,7 @@ private:
 	f32 m_pitch = 1.0f;
 };
 
-std::string buildEngineAssetsPath(const std::string& directory) {
+std::string buildSystemRomPath(const std::string& directory) {
 	if (directory.empty()) {
 		return {};
 	}
@@ -85,7 +85,7 @@ std::string buildEngineAssetsPath(const std::string& directory) {
 	return path;
 }
 
-std::string buildEngineAssetsPathInSubdir(const std::string& directory, const char* subdir) {
+std::string buildSystemRomPathInSubdir(const std::string& directory, const char* subdir) {
 	if (directory.empty()) {
 		return {};
 	}
@@ -115,8 +115,11 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 		m_backend_type = BackendType::Software;
 	}
 #endif
-	// Initialize framebuffer with default size
-	m_framebuffer.resize(0, 0);
+	const MachineManifest& systemMachine = defaultSystemMachineManifest();
+	m_framebuffer.resize(
+		static_cast<unsigned>(systemMachine.viewportWidth),
+		static_cast<unsigned>(systemMachine.viewportHeight)
+	);
 
 	// Reserve audio buffer for ten frames at 48000Hz / 50fps = 9600 samples
 	m_audio_buffer.reserve(9600);
@@ -133,12 +136,12 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 	// Initialize controller devices
 	m_controller_devices.fill(RETRO_DEVICE_JOYPAD);
 
-	// Create and initialize the engine
-	m_engine = std::make_unique<EngineCore>();
-	m_engine->initialize(this);
-	m_engine->view()->crt_postprocessing_enabled = m_crt_postprocessing_enabled;
+	// Create and initialize the console
+	m_console = std::make_unique<ConsoleCore>();
+	m_console->initialize(this);
+	m_console->view()->crt_postprocessing_enabled = m_crt_postprocessing_enabled;
 	if (m_backend_type == BackendType::Software) {
-		auto* view = m_engine->view();
+		auto* view = m_console->view();
 		auto* backend = view->backend();
 		installBuiltinRenderPipeline(view, backend);
 	}
@@ -163,10 +166,10 @@ LibretroPlatform::~LibretroPlatform() {
 	unloadRom();
 	Input::instance().shutdown();
 
-	// Shutdown engine before destroying platform components
-	if (m_engine) {
-		m_engine->shutdown();
-		m_engine.reset();
+	// Shutdown console before destroying platform components
+	if (m_console) {
+		m_console->shutdown();
+		m_console.reset();
 	}
 
 	log(RETRO_LOG_INFO, "[BMSX] Platform destroyed\n");
@@ -202,7 +205,7 @@ void LibretroPlatform::notifyFocusChange(bool focused) {
 void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer) {
 #if BMSX_ENABLE_GLES2
 	m_hw_get_current_framebuffer = get_current_framebuffer;
-	auto* backend = static_cast<OpenGLES2Backend*>(m_engine->view()->backend());
+	auto* backend = static_cast<OpenGLES2Backend*>(m_console->view()->backend());
 	backend->setFramebufferGetter(m_hw_get_current_framebuffer);
 #else
 	(void)get_current_framebuffer;
@@ -213,7 +216,7 @@ void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t g
 void LibretroPlatform::onContextReset() {
 #if BMSX_ENABLE_GLES2
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: begin\n");
-	auto* view = m_engine->view();
+	auto* view = m_console->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: set framebuffer getter\n");
 	backend->setFramebufferGetter(m_hw_get_current_framebuffer);
@@ -226,10 +229,10 @@ void LibretroPlatform::onContextReset() {
 
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: rebuild render graph\n");
 	installBuiltinRenderPipeline(view, backend);
-	if (m_render_assets_need_refresh) {
-		log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh assets\n");
-		m_engine->refreshRenderAssets();
-		m_render_assets_need_refresh = false;
+	if (m_render_surfaces_need_refresh) {
+		log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh render surfaces\n");
+		m_console->refreshRenderSurfaces();
+		m_render_surfaces_need_refresh = false;
 	}
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: done\n");
 #else
@@ -239,17 +242,17 @@ void LibretroPlatform::onContextReset() {
 
 void LibretroPlatform::onContextDestroy() {
 #if BMSX_ENABLE_GLES2
-	auto* view = m_engine->view();
+	auto* view = m_console->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
-	if (m_engine->hasRuntime()) {
-		auto& vdp = m_engine->runtime().machine().vdp();
-		if (!m_render_assets_need_refresh) {
+	if (m_console->hasRuntime()) {
+		auto& vdp = m_console->runtime().machine().vdp();
+		if (!m_render_surfaces_need_refresh) {
 			captureVdpContextState(vdp);
 		}
 		shutdownVdpContextState();
 	}
-	m_engine->texmanager()->clear();
-	m_render_assets_need_refresh = true;
+	m_console->texmanager()->clear();
+	m_render_surfaces_need_refresh = true;
 	CRTPipeline::shutdownGLES2(backend);
 	backend->onContextDestroy();
 	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
@@ -260,7 +263,7 @@ void LibretroPlatform::onContextDestroy() {
 
 void LibretroPlatform::switchToSoftwareBackend() {
 	m_backend_type = BackendType::Software;
-	auto* view = m_engine->view();
+	auto* view = m_console->view();
 	view->crt_postprocessing_enabled = m_crt_postprocessing_enabled;
 	auto backend = std::make_unique<SoftwareBackend>(
 		m_framebuffer.data,
@@ -274,7 +277,7 @@ void LibretroPlatform::switchToSoftwareBackend() {
 	view->setPipelineRegistry(std::move(registry));
 	view->rebuildGraph();
 	setPostProcessOptions(m_crt_postprocessing_enabled, m_postprocess_scale > 1);
-	m_engine->refreshRenderAssets();
+	m_console->refreshRenderSurfaces();
 }
 
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
@@ -303,7 +306,7 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 		info.timing.fps
 	);
 
-	auto* view = m_engine->view();
+	auto* view = m_console->view();
 	Vec2 renderTargetSize{
 		static_cast<f32>(baseWidth),
 		static_cast<f32>(baseHeight)
@@ -326,7 +329,7 @@ void LibretroPlatform::setPostProcessOptions(bool enableCrt, bool highDetail) {
 	m_crt_postprocessing_enabled = enableCrt;
 	m_postprocess_scale = highDetail ? 2 : 1;
 
-	auto* view = m_engine->view();
+	auto* view = m_console->view();
 	view->crt_postprocessing_enabled = enableCrt;
 	const Vec2 offscreenSize{
 		view->viewportSize.x * static_cast<f32>(m_postprocess_scale),
@@ -342,7 +345,7 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 											bool applyGlow,
 											bool applyFringing,
 											bool applyAperture) {
-	auto* view = m_engine->view();
+	auto* view = m_console->view();
 	view->applyNoise = applyNoise;
 	view->applyColorBleed = applyColorBleed;
 	view->applyScanlines = applyScanlines;
@@ -354,11 +357,11 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 
 void LibretroPlatform::setDitherType(i32 type) {
 	m_dither_type = type;
-	m_engine->view()->dither_type = static_cast<GameView::DitherType>(type);
-	if (!m_engine->hasRuntime()) {
+	m_console->view()->dither_type = static_cast<GameView::DitherType>(type);
+	if (!m_console->hasRuntime()) {
 		return;
 	}
-	m_engine->runtime().setVdpDitherType(m_dither_type);
+	m_console->runtime().setVdpDitherType(m_dither_type);
 }
 
 void LibretroPlatform::setFrameSkipOptions(bool enabled) {
@@ -386,7 +389,7 @@ void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
 }
 
 void LibretroPlatform::applyManifestViewport() {
-	const auto& manifest = m_engine->machineManifest();
+	const auto& manifest = m_console->machineManifest();
 	m_pending_viewport = {
 		static_cast<f32>(manifest.viewportWidth),
 		static_cast<f32>(manifest.viewportHeight)
@@ -426,11 +429,11 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		}
 	}
 
-	if (!m_engine->romBootManager().loadRomOwned(std::move(data))) {
-		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM into engine\n");
+	if (!m_console->romBootManager().loadRomOwned(std::move(data))) {
+		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM\n");
 		return false;
 	}
-	m_engine->runtime().setVdpDitherType(m_dither_type);
+	m_console->runtime().setVdpDitherType(m_dither_type);
 	{
 		const std::string line = memSnapshotLine("libretro:after_loadRom");
 		if (!line.empty()) {
@@ -443,41 +446,41 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 	return true;
 }
 
-void LibretroPlatform::tryLoadEngineAssets(const char* romPath) {
+void LibretroPlatform::tryLoadSystemRom(const char* romPath) {
 	// Extract directory from ROM path
 	std::string pathStr(romPath);
 	size_t lastSlash = pathStr.find_last_of("/\\");
 	std::string directory = (lastSlash != std::string::npos) ? pathStr.substr(0, lastSlash + 1) : "";
-	std::string engineAssetsPath = buildEngineAssetsPath(directory);
-	std::vector<std::string> systemAssetsPaths;
+	std::string systemRomPath = buildSystemRomPath(directory);
+	std::vector<std::string> systemRomPaths;
 	if (!m_system_dir.empty()) {
-		systemAssetsPaths.push_back(buildEngineAssetsPath(m_system_dir));
-		systemAssetsPaths.push_back(buildEngineAssetsPathInSubdir(m_system_dir, "BMSX"));
-		systemAssetsPaths.push_back(buildEngineAssetsPathInSubdir(m_system_dir, "bmsx"));
+		systemRomPaths.push_back(buildSystemRomPath(m_system_dir));
+		systemRomPaths.push_back(buildSystemRomPathInSubdir(m_system_dir, "BMSX"));
+		systemRomPaths.push_back(buildSystemRomPathInSubdir(m_system_dir, "bmsx"));
 	}
 
-	if (!engineAssetsPath.empty() && loadEngineAssetsFromFile(engineAssetsPath)) {
+	if (!systemRomPath.empty() && loadSystemRomFromFile(systemRomPath)) {
 		return;
 	}
-	for (const auto& path : systemAssetsPaths) {
-		if (!path.empty() && loadEngineAssetsFromFile(path)) {
+	for (const auto& path : systemRomPaths) {
+		if (!path.empty() && loadSystemRomFromFile(path)) {
 			return;
 		}
 	}
 
-	if (!engineAssetsPath.empty()) {
-		log(RETRO_LOG_INFO, "[BMSX] No engine assets found at: %s (continuing without)\n", engineAssetsPath.c_str());
+	if (!systemRomPath.empty()) {
+		log(RETRO_LOG_INFO, "[BMSX] No system ROM found at: %s (continuing without)\n", systemRomPath.c_str());
 	}
-	for (const auto& path : systemAssetsPaths) {
+	for (const auto& path : systemRomPaths) {
 		if (!path.empty()) {
-			log(RETRO_LOG_INFO, "[BMSX] No engine assets found in system dir: %s (continuing without)\n", path.c_str());
+			log(RETRO_LOG_INFO, "[BMSX] No system ROM found in system dir: %s (continuing without)\n", path.c_str());
 		}
 	}
 }
 
 bool LibretroPlatform::loadRomFromPath(const char* path) {
-	// Load engine assets first (if available in same directory)
-	tryLoadEngineAssets(path);
+	// Load system ROM first (if available in same directory)
+	tryLoadSystemRom(path);
 
 	// Load the game ROM
 	std::ifstream file(path, std::ios::binary | std::ios::ate);
@@ -501,36 +504,36 @@ bool LibretroPlatform::loadRomFromPath(const char* path) {
 bool LibretroPlatform::loadEmptyCart() {
 	unloadRom();
 
-	// Try to load engine assets from dist directory (default location)
+	// Try to load system ROM from dist directory (default location)
 	// TODO: Make this configurable via core options
-	std::vector<std::string> engineAssetsPaths;
+	std::vector<std::string> systemRomPaths;
 	if (!m_system_dir.empty()) {
-		engineAssetsPaths.push_back(buildEngineAssetsPath(m_system_dir));
-		engineAssetsPaths.push_back(buildEngineAssetsPathInSubdir(m_system_dir, "BMSX"));
-		engineAssetsPaths.push_back(buildEngineAssetsPathInSubdir(m_system_dir, "bmsx"));
+		systemRomPaths.push_back(buildSystemRomPath(m_system_dir));
+		systemRomPaths.push_back(buildSystemRomPathInSubdir(m_system_dir, "BMSX"));
+		systemRomPaths.push_back(buildSystemRomPathInSubdir(m_system_dir, "bmsx"));
 	}
-	engineAssetsPaths.emplace_back("dist/bmsx-bios.rom");
-	engineAssetsPaths.emplace_back("./bmsx-bios.rom");
-	engineAssetsPaths.emplace_back("../bmsx-bios.rom");
+	systemRomPaths.emplace_back("dist/bmsx-bios.rom");
+	systemRomPaths.emplace_back("./bmsx-bios.rom");
+	systemRomPaths.emplace_back("../bmsx-bios.rom");
 
-	bool assetsLoaded = false;
-	for (const auto& path : engineAssetsPaths) {
-		if (loadEngineAssetsFromFile(path)) {
-			assetsLoaded = true;
+	bool systemRomLoaded = false;
+	for (const auto& path : systemRomPaths) {
+		if (loadSystemRomFromFile(path)) {
+			systemRomLoaded = true;
 			break;
 		}
 	}
 
-	if (!assetsLoaded) {
-		for (const auto& path : engineAssetsPaths) {
-			log(RETRO_LOG_INFO, "[BMSX] No engine assets found at: %s\n", path.c_str());
+	if (!systemRomLoaded) {
+		for (const auto& path : systemRomPaths) {
+			log(RETRO_LOG_INFO, "[BMSX] No system ROM found at: %s\n", path.c_str());
 		}
-		log(RETRO_LOG_WARN, "[BMSX] No engine assets found, running without system program\n");
+		log(RETRO_LOG_WARN, "[BMSX] No system ROM found, running without system program\n");
 	}
 
-	// Boot engine with engine assets (runs bootrom.lua)
-	if (assetsLoaded && m_engine && m_engine->romBootManager().bootWithoutCart()) {
-		log(RETRO_LOG_INFO, "[BMSX] Booted with engine system program\n");
+	// Boot system ROM (runs bootrom.lua)
+	if (systemRomLoaded && m_console && m_console->romBootManager().bootWithoutCart()) {
+		log(RETRO_LOG_INFO, "[BMSX] Booted system ROM program\n");
 		m_rom_loaded = true;
 		return true;
 	}
@@ -541,10 +544,10 @@ bool LibretroPlatform::loadEmptyCart() {
 	return true;
 }
 
-bool LibretroPlatform::loadEngineAssetsFromFile(const std::string& path) {
+bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
 	std::ifstream file(path, std::ios::binary | std::ios::ate);
 	if (!file) {
-		log(RETRO_LOG_WARN, "[BMSX] Failed to open engine assets: %s (errno=%d: %s)\n",
+		log(RETRO_LOG_WARN, "[BMSX] Failed to open system ROM: %s (errno=%d: %s)\n",
 			path.c_str(), errno, std::strerror(errno));
 		return false;
 	}
@@ -554,25 +557,25 @@ bool LibretroPlatform::loadEngineAssetsFromFile(const std::string& path) {
 
 	std::vector<uint8_t> data(size);
 	if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
-		log(RETRO_LOG_WARN, "[BMSX] Failed to read engine assets: %s (errno=%d: %s)\n",
+		log(RETRO_LOG_WARN, "[BMSX] Failed to read system ROM: %s (errno=%d: %s)\n",
 			path.c_str(), errno, std::strerror(errno));
 		return false;
 	}
 
-	if (!m_engine->romBootManager().loadEngineAssetsOwned(std::move(data))) {
-		log(RETRO_LOG_WARN, "[BMSX] Failed to parse engine assets: %s\n", path.c_str());
+	if (!m_console->romBootManager().loadSystemRomOwned(std::move(data))) {
+		log(RETRO_LOG_WARN, "[BMSX] Failed to parse system ROM: %s\n", path.c_str());
 		return false;
 	}
 
-	log(RETRO_LOG_INFO, "[BMSX] Engine assets loaded (%zu bytes) from: %s\n", size, path.c_str());
+	log(RETRO_LOG_INFO, "[BMSX] System ROM loaded (%zu bytes) from: %s\n", size, path.c_str());
 	return true;
 }
 
 void LibretroPlatform::unloadRom() {
 	if (m_rom_loaded) {
-		// Unload from engine
-		if (m_engine) {
-			m_engine->romBootManager().unloadRom();
+		// Unload ROM from host core
+		if (m_console) {
+			m_console->romBootManager().unloadRom();
 		}
 		m_rom_loaded = false;
 		log(RETRO_LOG_INFO, "[BMSX] ROM unloaded\n");
@@ -580,13 +583,13 @@ void LibretroPlatform::unloadRom() {
 }
 
 void LibretroPlatform::reset() {
-	m_engine->stop();
+	m_console->stop();
 	static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
 	m_audio_buffer.clear();
 	m_has_wall_frame_timestamp = false;
 
-	if (m_engine && m_engine->romLoaded()) {
-		if (!m_engine->romBootManager().rebootLoadedRom()) {
+	if (m_console && m_console->romLoaded()) {
+		if (!m_console->romBootManager().rebootLoadedRom()) {
 			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: runtime reset failed\n");
 			return;
 		}
@@ -595,12 +598,12 @@ void LibretroPlatform::reset() {
 		return;
 	}
 
-	m_engine->start();
+	m_console->start();
 	log(RETRO_LOG_INFO, "[BMSX] Game reset (runtime rebooted)\n");
 }
 
 void LibretroPlatform::runFrame() {
-	if (!m_rom_loaded || !m_engine) return;
+	if (!m_rom_loaded || !m_console) return;
 
 #if ENABLE_PERFORMANCE_LOGS
 	const auto frameStart = std::chrono::steady_clock::now();
@@ -633,7 +636,7 @@ void LibretroPlatform::runFrame() {
 	}
 
 	if (!m_platform_paused) {
-		m_engine->startLoadedRuntimeFrame(m_rom_loaded);
+		m_console->startLoadedRuntimeFrame(m_rom_loaded);
 	}
 
 	// Poll the platform hub before the runtime frame loop consumes and latches
@@ -642,7 +645,7 @@ void LibretroPlatform::runFrame() {
 
 	bool skipRender = m_frameskip_enabled && m_frameskip_next;
 	m_frameskip_next = false;
-	m_engine->runHostFrame(m_engine->runtime(), *m_microtask_queue, dt, m_platform_paused, skipRender);
+	m_console->runHostFrame(m_console->runtime(), *m_microtask_queue, dt, m_platform_paused, skipRender);
 	processAudio();
 }
 
@@ -652,10 +655,10 @@ void LibretroPlatform::setPlatformPaused(bool paused) {
 	}
 	m_platform_paused = paused;
 	m_has_wall_frame_timestamp = false;
-	if (!m_engine) {
+	if (!m_console) {
 		return;
 	}
-	m_engine->setHostPaused(paused, m_rom_loaded);
+	m_console->setHostPaused(paused, m_rom_loaded);
 }
 
 void LibretroPlatform::pollInput() {
@@ -699,10 +702,10 @@ void LibretroPlatform::log(retro_log_level level, const char* fmt, ...) {
 }
 
 size_t LibretroPlatform::getStateSize() const {
-	if (!m_rom_loaded || !m_engine->hasRuntime()) {
+	if (!m_rom_loaded || !m_console->hasRuntime()) {
 		return 0;
 	}
-	Runtime& runtime = m_engine->runtime();
+	Runtime& runtime = m_console->runtime();
 	if (!runtime.isInitialized()) {
 		return 0;
 	}
@@ -711,10 +714,10 @@ size_t LibretroPlatform::getStateSize() const {
 
 // start fallible-boundary -- libretro serialization callbacks report failure as false after logging.
 bool LibretroPlatform::saveState(void* data, size_t size) {
-	if (!m_rom_loaded || !m_engine->hasRuntime()) {
+	if (!m_rom_loaded || !m_console->hasRuntime()) {
 		return false;
 	}
-	Runtime& runtime = m_engine->runtime();
+	Runtime& runtime = m_console->runtime();
 	if (!runtime.isInitialized()) {
 		return false;
 	}
@@ -736,16 +739,15 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 }
 
 bool LibretroPlatform::loadState(const void* data, size_t size) {
-	if (!m_rom_loaded || !m_engine->hasRuntime()) {
+	if (!m_rom_loaded || !m_console->hasRuntime()) {
 		return false;
 	}
-	Runtime& runtime = m_engine->runtime();
+	Runtime& runtime = m_console->runtime();
 	if (!runtime.isInitialized()) {
 		return false;
 	}
 	try {
 		applyRuntimeSaveStateBytes(runtime, static_cast<const u8*>(data), size);
-		flushHostRuntimeAssetEdits(runtime.machine().memory(), *m_engine->texmanager(), *m_engine->view());
 		static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
 		m_audio_buffer.clear();
 		m_has_wall_frame_timestamp = false;
@@ -1163,7 +1165,7 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
 		if (m_mix_buffer.size() < renderSamples) {
 			m_mix_buffer.resize(renderSamples);
 		}
-		m_platform->engine()->soundMaster()->renderSamples(m_mix_buffer.data(), renderFrames, static_cast<i32>(m_sample_rate));
+		m_platform->console()->soundMaster()->renderSamples(m_mix_buffer.data(), renderFrames, static_cast<i32>(m_sample_rate));
 
 		size_t neededSamples = m_queue_start_samples + m_queue_samples + renderSamples;
 		if (m_queue_start_samples > 0 && neededSamples > m_sample_queue.size()) {

@@ -19,7 +19,7 @@ const KNOWN_FLAGS = new Set<string>([
 ]);
 
 const TASK = {
-	ENGINE_RUNTIME: 'Build engine runtime',
+	CONSOLE_RUNTIME: 'Build console runtime',
 	PLATFORM_ARTIFACTS: 'Build platform artifacts',
 	DONE: 'PLATFORM BUILD COMPLETE',
 } as const;
@@ -27,7 +27,7 @@ const TASK = {
 type TaskName = typeof TASK[keyof typeof TASK];
 
 const platformTaskList: TaskName[] = [
-	TASK.ENGINE_RUNTIME,
+	TASK.CONSOLE_RUNTIME,
 	TASK.PLATFORM_ARTIFACTS,
 	TASK.DONE,
 ];
@@ -192,7 +192,9 @@ function resolvePlatformDependencyRoots(platform: RomPackerTarget): string[] {
 		return [];
 	}
 	return [
+		join(process.cwd(), 'scripts', 'rompacker'),
 		join(process.cwd(), 'scripts', 'bootrom'),
+		join(process.cwd(), 'src', 'bmsx', 'res'),
 		join(process.cwd(), 'src', 'bmsx_hostplatform'),
 		join(process.cwd(), 'src', 'bmsx', 'platform'),
 	];

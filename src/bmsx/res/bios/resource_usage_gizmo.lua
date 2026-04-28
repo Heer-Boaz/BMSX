@@ -1,4 +1,4 @@
-local scratchrecordbatch<const> = require('scratchrecordbatch')
+local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 
 local gizmo<const> = {}
 local label_w<const> = 28

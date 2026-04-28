@@ -5,49 +5,60 @@ const directionalLights = new Map<string, DirectionalLight>();
 const pointLights = new Map<string, PointLight>();
 let hardwareLightingDirty = false;
 
-function cloneVec3(source: readonly number[]): [number, number, number] {
-	return [source[0], source[1], source[2]];
+function writeVec3(target: [number, number, number], source: readonly number[]): void {
+	target[0] = source[0];
+	target[1] = source[1];
+	target[2] = source[2];
 }
 
-function cloneAmbientLight(light: AmbientLight): AmbientLight {
-	return {
-		type: 'ambient',
-		color: cloneVec3(light.color),
-		intensity: light.intensity,
-	};
+function ambientLightRecord(id: string): AmbientLight {
+	let record = ambientLights.get(id);
+	if (!record) {
+		record = { type: 'ambient', color: [0, 0, 0], intensity: 0 };
+		ambientLights.set(id, record);
+	}
+	return record;
 }
 
-function cloneDirectionalLight(light: DirectionalLight): DirectionalLight {
-	return {
-		type: 'directional',
-		color: cloneVec3(light.color),
-		intensity: light.intensity,
-		orientation: cloneVec3(light.orientation),
-	};
+function directionalLightRecord(id: string): DirectionalLight {
+	let record = directionalLights.get(id);
+	if (!record) {
+		record = { type: 'directional', color: [0, 0, 0], intensity: 0, orientation: [0, 0, 0] };
+		directionalLights.set(id, record);
+	}
+	return record;
 }
 
-function clonePointLight(light: PointLight): PointLight {
-	return {
-		type: 'point',
-		color: cloneVec3(light.color),
-		intensity: light.intensity,
-		pos: cloneVec3(light.pos),
-		range: light.range,
-	};
+function pointLightRecord(id: string): PointLight {
+	let record = pointLights.get(id);
+	if (!record) {
+		record = { type: 'point', color: [0, 0, 0], intensity: 0, pos: [0, 0, 0], range: 0 };
+		pointLights.set(id, record);
+	}
+	return record;
 }
 
 export function putHardwareAmbientLight(id: string, light: AmbientLight): void {
-	ambientLights.set(id, cloneAmbientLight(light));
+	const record = ambientLightRecord(id);
+	writeVec3(record.color, light.color);
+	record.intensity = light.intensity;
 	hardwareLightingDirty = true;
 }
 
 export function putHardwareDirectionalLight(id: string, light: DirectionalLight): void {
-	directionalLights.set(id, cloneDirectionalLight(light));
+	const record = directionalLightRecord(id);
+	writeVec3(record.color, light.color);
+	writeVec3(record.orientation, light.orientation);
+	record.intensity = light.intensity;
 	hardwareLightingDirty = true;
 }
 
 export function putHardwarePointLight(id: string, light: PointLight): void {
-	pointLights.set(id, clonePointLight(light));
+	const record = pointLightRecord(id);
+	writeVec3(record.color, light.color);
+	writeVec3(record.pos, light.pos);
+	record.range = light.range;
+	record.intensity = light.intensity;
 	hardwareLightingDirty = true;
 }
 

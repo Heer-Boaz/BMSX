@@ -1,4 +1,4 @@
-import { engineCore } from '../../core/engine';
+import { consoleCore } from '../../core/console';
 import { Input } from '../../input/manager';
 import { KeyModifier } from '../../input/player';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../../lua/errors';
@@ -10,7 +10,6 @@ import {
 	type StackTraceFrame,
 } from '../../lua/value';
 import { publishOverlayFrame } from '../../render/editor/overlay_queue';
-import { flushHostRuntimeAssetEdits } from '../../core/host_asset_sync';
 import * as constants from '../common/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
 import { editorDebuggerState } from './contrib/debugger/state';
@@ -123,7 +122,7 @@ function getRenderTargetState(runtime: Runtime): RenderTargetState {
 }
 
 function captureCurrentTargets(): RenderTargetSnapshot {
-	const view = engineCore.view;
+	const view = consoleCore.view;
 	return {
 		viewportSize: shallowcopy(view.viewportSize),
 		canvasSize: shallowcopy(view.canvasSize),
@@ -132,7 +131,7 @@ function captureCurrentTargets(): RenderTargetSnapshot {
 }
 
 function applyFixedEditorTargets(runtime: Runtime): void {
-	engineCore.view.configureRenderTargets({
+	consoleCore.view.configureRenderTargets({
 		viewportSize: EDITOR_TARGET,
 		canvasSize: EDITOR_TARGET,
 		offscreenSize: EDITOR_TARGET,
@@ -141,7 +140,7 @@ function applyFixedEditorTargets(runtime: Runtime): void {
 }
 
 function restoreTargets(runtime: Runtime, snapshot: RenderTargetSnapshot): void {
-	engineCore.view.configureRenderTargets({
+	consoleCore.view.configureRenderTargets({
 		viewportSize: snapshot.viewportSize,
 		canvasSize: snapshot.canvasSize,
 		offscreenSize: snapshot.offscreenSize,
@@ -204,9 +203,9 @@ function resolveEditorSourceWorkspacePath(runtime: Runtime, source: string): str
 	if (cart && cart.path2lua[source]) {
 		return resolveWorkspacePath(source, runtime.cartProjectRootPath);
 	}
-	const engine = runtime.engineLuaSources;
+	const engine = runtime.systemLuaSources;
 	if (engine && engine.path2lua[source]) {
-		return resolveWorkspacePath(source, runtime.engineProjectRootPath);
+		return resolveWorkspacePath(source, runtime.systemProjectRootPath);
 	}
 	return resolveWorkspacePath(source, runtime.cartProjectRootPath);
 }
@@ -295,13 +294,13 @@ export function updateGamePipelineExts(runtime: Runtime): void {
 }
 
 export function updateOverlayAudioSuspension(runtime: Runtime): void {
-	if (!engineCore.sndmaster.isRuntimeAudioReady()) {
+	if (!consoleCore.sndmaster.isRuntimeAudioReady()) {
 		return;
 	}
 	if (isOverlayActive(runtime)) {
-		engineCore.sndmaster.suspendAll('overlay');
+		consoleCore.sndmaster.suspendAll('overlay');
 	} else {
-		engineCore.sndmaster.resumeAll('overlay');
+		consoleCore.sndmaster.resumeAll('overlay');
 	}
 }
 
@@ -396,7 +395,7 @@ export function registerRuntimeShortcuts(runtime: Runtime): void {
 		setActiveIdeFontVariant(runtime, next);
 	}, KeyModifier.ctrl | KeyModifier.shift));
 	disposers.push(registry.registerKeyboardShortcut(1, 'F8', () => {
-		const modifiers = engineCore.input.getPlayerInput(1).getModifiersState();
+		const modifiers = consoleCore.input.getPlayerInput(1).getModifiersState();
 		if (modifiers.ctrl) {
 			return;
 		}
@@ -423,7 +422,7 @@ export function tickIdeInput(runtime: Runtime): void {
 	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor.isActive) {
 		return;
 	}
-	const pollFrame = engineCore.input.getPlayerInput(1).pollFrame;
+	const pollFrame = consoleCore.input.getPlayerInput(1).pollFrame;
 	if (pollFrame === runtime.lastIdeInputFrame) {
 		return;
 	}
@@ -435,7 +434,7 @@ export function tickTerminalInput(runtime: Runtime): void {
 	if (!runtime.terminal.isActive) {
 		return;
 	}
-	const pollFrame = engineCore.input.getPlayerInput(1).pollFrame;
+	const pollFrame = consoleCore.input.getPlayerInput(1).pollFrame;
 	if (pollFrame === runtime.lastTerminalInputFrame) {
 		return;
 	}
@@ -781,7 +780,6 @@ function beginOverlayUpdateFrame(runtime: Runtime): FrameState | null {
 }
 
 function finishOverlayUpdateFrame(runtime: Runtime, state: FrameState): void {
-	flushHostRuntimeAssetEdits(runtime.machine.memory, engineCore.texmanager);
 	runtime.frameLoop.drawFrameState = state;
 	runtime.frameLoop.abandonFrameState();
 }

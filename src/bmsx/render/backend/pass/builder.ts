@@ -20,7 +20,7 @@ export class RenderPassBuilder {
 	depth(tex: TextureHandle, clearDepth?: number, discardAfter?: boolean): this { this._depth = { tex, clearDepth, discardAfter }; return this; }
 	buildDesc(): RenderPassDesc {
 		const desc: RenderPassDesc = {} as RenderPassDesc;
-		if (this._colors.length) { desc.colors = this._colors.slice(); desc.color = this._colors[0]; }
+		if (this._colors.length) { desc.colors = this._colors; desc.color = this._colors[0]; }
 		if (this._depth) desc.depth = this._depth;
 		if (this._label) desc.label = this._label;
 		return desc;

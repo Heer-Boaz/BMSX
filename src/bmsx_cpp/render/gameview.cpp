@@ -11,7 +11,7 @@
 #include "backend/pass/library.h"
 #include "graph/graph.h"
 #include "lighting/system.h"
-#include "core/engine.h"
+#include "core/console.h"
 #include "machine/runtime/runtime.h"
 #include "rompack/format.h"
 #include "texture_manager.h"
@@ -176,12 +176,10 @@ void GameView::initializeDefaultTextures() {
 
 	const Color fallbackColor{1.0f, 1.0f, 1.0f, 1.0f};
 	TextureHandle fallback = m_backend->createSolidTexture2D(1, 1, fallbackColor);
-	textures["_textpage_primary"] = fallback;
-	textures["_textpage_secondary"] = fallback;
-	textures["_textpage_fallback"] = fallback;
-	skyboxFaceIds = {};
+	textures[VDP_PRIMARY_SLOT_TEXTURE_KEY] = fallback;
+	textures[VDP_SECONDARY_SLOT_TEXTURE_KEY] = fallback;
 	skyboxRenderReady = false;
-	textures[BIOS_TEXTPAGE_TEXTURE_KEY] = fallback;
+	textures[SYSTEM_SLOT_TEXTURE_KEY] = fallback;
 
 	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
 	textures["_default_normal"] = m_backend->createSolidTexture2D(1, 1, {0.5f, 0.5f, 1.0f, 1.0f});
@@ -226,8 +224,8 @@ void GameView::drawGame() {
 
 	FrameData frame;
 	frame.frameIndex = static_cast<u32>(m_renderFrameIndex);
-	frame.time = EngineCore::instance().totalTime();
-	frame.delta = EngineCore::instance().deltaTime();
+	frame.time = ConsoleCore::instance().totalTime();
+	frame.delta = ConsoleCore::instance().deltaTime();
 	m_renderGraph->execute(&frame);
 	finalizePresentation();
 }
@@ -560,7 +558,7 @@ void GameView::applyCRTPostProcessing(const u32* src,
 	const f32 srcHf = static_cast<f32>(srcHeight);
 	const f32 srcMaxX = srcWf - 1.0f;
 	const f32 srcMaxY = srcHf - 1.0f;
-	const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
+	const f32 time = static_cast<f32>(ConsoleCore::instance().totalTime());
 	static u32 noiseState = 0x12345678u;
 	noiseState = noiseState * 1664525u + 1013904223u;
 	const f32 random = static_cast<f32>((noiseState >> 8) & 0xFFFFFF) / 16777215.0f;

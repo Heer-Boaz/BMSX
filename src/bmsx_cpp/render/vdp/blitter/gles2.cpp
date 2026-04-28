@@ -19,7 +19,7 @@ namespace {
 constexpr u8 IMPLICIT_FRAME_CLEAR_RGBA[4] = {0u, 0u, 0u, 255u};
 constexpr float VDP_GLES2_PRIMARY_TEXTPAGE_ID = 0.0f;
 constexpr float VDP_GLES2_SECONDARY_TEXTPAGE_ID = 1.0f;
-constexpr float VDP_GLES2_BIOS_ATLAS_ID = 2.0f;
+constexpr float VDP_GLES2_SYSTEM_SLOT_ID = 2.0f;
 
 struct VdpGles2Vertex {
 	f32 x = 0.0f;
@@ -477,7 +477,7 @@ void bindVdpTextpageMode(const VdpGles2Host& host, VdpDrawMode& boundMode) {
 	host.backend->setActiveTextureUnit(1);
 	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_SECONDARY].texture);
 	host.backend->setActiveTextureUnit(2);
-	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_ENGINE].texture);
+	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_SYSTEM].texture);
 	boundMode = VdpDrawMode::Textpage;
 }
 
@@ -530,15 +530,15 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 		info.invWidth = 1.0f / static_cast<f32>(surface.width);
 		info.invHeight = 1.0f / static_cast<f32>(surface.height);
 	};
-	prepareSurface(VDP_RD_SURFACE_ENGINE, static_cast<f32>(resolveVdpSurfaceSlotBinding(VDP_RD_SURFACE_ENGINE)));
+	prepareSurface(VDP_RD_SURFACE_SYSTEM, static_cast<f32>(resolveVdpSurfaceSlotBinding(VDP_RD_SURFACE_SYSTEM)));
 	prepareSurface(VDP_RD_SURFACE_PRIMARY, static_cast<f32>(resolveVdpSurfaceSlotBinding(VDP_RD_SURFACE_PRIMARY)));
 	prepareSurface(VDP_RD_SURFACE_SECONDARY, static_cast<f32>(resolveVdpSurfaceSlotBinding(VDP_RD_SURFACE_SECONDARY)));
 	prepareSurface(VDP_RD_SURFACE_FRAMEBUFFER, VDP_GLES2_PRIMARY_TEXTPAGE_ID);
 	if (!host.renderTexture) {
 		throw vdpBackendFault("missing framebuffer render texture.");
 	}
-	if (!host.surfaces[VDP_RD_SURFACE_ENGINE].texture) {
-		throw vdpBackendFault("missing engine textpage texture.");
+	if (!host.surfaces[VDP_RD_SURFACE_SYSTEM].texture) {
+		throw vdpBackendFault("missing system VDP slot texture.");
 	}
 	if (!host.surfaces[VDP_RD_SURFACE_PRIMARY].texture) {
 		throw vdpBackendFault("missing primary textpage texture.");

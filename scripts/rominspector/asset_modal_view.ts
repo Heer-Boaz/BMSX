@@ -2,11 +2,11 @@ import { PNG } from 'pngjs';
 import { generateAtlasAssetId, type GLTFModel, type ImgMeta, type RomAsset, type RomManifest } from '../../src/bmsx/rompack/format';
 import { decodeBinary } from '../../src/bmsx/common/serializer/binencoder';
 import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../src/bmsx/rompack/loader';
-import { decodeProgramSymbolsAsset, PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/machine/program/asset';
+import { PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID, ProgramSymbolsImage } from '../../src/bmsx/machine/program/loader';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, renderBufferBar } from './asciiart';
 import { decodeAudioPreviewToPcm } from './audio_preview';
 import {
-	disassembleProgramAsset,
+	disassembleProgramImage,
 	loadProgramFromAssets,
 	ROM_MANIFEST_ASSET_ID,
 } from './shared';
@@ -388,10 +388,10 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 			if (selected.resid === ROM_MANIFEST_ASSET_ID) {
 				const payload = ctx.projectRootPath ? { project_root_path: ctx.projectRootPath, manifest: ctx.manifest } : { manifest: ctx.manifest };
 				preview = JSON.stringify(payload, null, 2);
-			} else if (selected.resid === PROGRAM_ASSET_ID) {
-				const { programAsset, program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(ctx.rombin, ctx.assetList);
-				disassembly = disassembleProgramAsset(program, metadata, sourceTextForPath);
-				metadataLines.push(`Program entry proto: ${programAsset.entryProtoIndex}`);
+			} else if (selected.resid === PROGRAM_IMAGE_ID) {
+				const { programImage, program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(ctx.rombin, ctx.assetList);
+				disassembly = disassembleProgramImage(program, metadata, sourceTextForPath);
+				metadataLines.push(`Program entry proto: ${programImage.entryProtoIndex}`);
 				metadataLines.push(`Program protos: ${program.protos.length}`);
 				metadataLines.push(`Program consts: ${program.constPool.length}`);
 				metadataLines.push(`Program code bytes: ${program.code.length}`);
@@ -399,12 +399,12 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 					metadataLines.push(`Source comments: unavailable (${missingSourcePaths.length} missing Lua paths)`);
 				}
 				preview = '[Program asset: open Details tab for disassembly]';
-			} else if (selected.resid === PROGRAM_SYMBOLS_ASSET_ID) {
-				const symbols = decodeProgramSymbolsAsset(new Uint8Array(ctx.rombin.slice(selected.start, selected.end)));
+			} else if (selected.resid === PROGRAM_SYMBOLS_IMAGE_ID) {
+				const symbols = decodeBinary(new Uint8Array(ctx.rombin.slice(selected.start, selected.end))) as ProgramSymbolsImage;
 				metadataLines.push(`Program symbols protos: ${symbols.metadata.protoIds.length}`);
 				preview = JSON.stringify(symbols.metadata, null, 2);
 			} else {
-				if (!selected.buffer || typeof selected.buffer !== 'object') {
+				if (!selected.buffer) {
 					selected.buffer = await loadDataFromBuffer(new Uint8Array(ctx.rombin.slice(selected.start, selected.end)));
 				}
 				metadataLines.push(`Data size: ${ctx.formatByteSize(selected.end - selected.start)}`);

@@ -1,4 +1,4 @@
-import { engineCore } from '../../../../core/engine';
+import { consoleCore } from '../../../../core/console';
 import { lower_bound } from '../../../../common/lower_bound';
 import { EditorFont } from './font';
 import type { Runtime } from '../../../../machine/runtime/runtime';
@@ -176,7 +176,7 @@ export function refreshViewportLayout(): void {
 }
 
 export function mapScreenPointToViewport(screenX: number, screenY: number): { x: number; y: number; inside: boolean; valid: boolean } {
-	const view = engineCore.view;
+	const view = consoleCore.view;
 	if (!view) {
 		return { x: 0, y: 0, inside: false, valid: false };
 	}
@@ -525,7 +525,7 @@ export function getLineJumpBarBounds(): BarBounds { return getInlineBarBounds(5)
 
 export function configureFontVariant(runtime: Runtime, variant: FontVariant, activeCodeTabMode: CodeTabMode | null): void {
 	editorViewState.fontVariant = variant;
-	editorViewState.font = new EditorFont(runtime, variant);
+	editorViewState.font = new EditorFont(variant);
 	editorViewState.lineHeight = editorViewState.font.lineHeight;
 	editorViewState.charAdvance = editorViewState.font.advance('M');
 	editorViewState.spaceAdvance = editorViewState.font.advance(' ');

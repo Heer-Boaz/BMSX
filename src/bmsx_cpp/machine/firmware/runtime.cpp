@@ -5,26 +5,21 @@
 namespace bmsx {
 
 Value Runtime::requireModule(const std::string& moduleName) {
-	auto aliasIt = m_moduleAliases.find(moduleName);
-	if (aliasIt == m_moduleAliases.end()) {
-		throw BMSX_RUNTIME_ERROR("require('" + moduleName + "') failed: module not found.");
-	}
-	const std::string& path = aliasIt->second;
-	const auto cachedIt = m_moduleCache.find(path);
+	const auto cachedIt = m_moduleCache.find(moduleName);
 	if (cachedIt != m_moduleCache.end()) {
 		return cachedIt->second;
 	}
-	const auto protoIt = m_moduleProtos.find(path);
+	const auto protoIt = m_moduleProtos.find(moduleName);
 	if (protoIt == m_moduleProtos.end()) {
-		throw BMSX_RUNTIME_ERROR("require('" + moduleName + "') failed: module not compiled.");
+		throw BMSX_RUNTIME_ERROR("require('" + moduleName + "') failed: module not found.");
 	}
-	m_moduleCache[path] = valueBool(true);
+	m_moduleCache[moduleName] = valueBool(true);
 	auto* closure = m_machine.cpu().createRootClosure(protoIt->second);
 	NativeResults results;
 	callLuaFunctionInto(closure, NativeArgsView(), results);
 	Value value = results.empty() ? valueNil() : results[0];
 	Value cachedValue = isNil(value) ? valueBool(true) : value;
-	m_moduleCache[path] = cachedValue;
+	m_moduleCache[moduleName] = cachedValue;
 	return cachedValue;
 }
 
@@ -95,9 +90,9 @@ void Runtime::handleLuaError(const std::string& message) {
 	m_runtimeFailed = true;
 }
 
-void Runtime::runEngineBuiltinPrelude() {
-	std::cout << "[Runtime] prelude: binding engine builtins" << std::endl;
-	static const std::array engineBuiltinNames = {
+void Runtime::runSystemBuiltinPrelude() {
+	std::cout << "[Runtime] prelude: binding system ROM builtins" << std::endl;
+	static const std::array systemBuiltinNames = {
 		"define_fsm",
 		"define_prefab",
 		"define_subsystem",
@@ -122,7 +117,7 @@ void Runtime::runEngineBuiltinPrelude() {
 		"grant_effect",
 		"trigger_effect",
 		"vdp_load_slot",
-		"vdp_load_sys_textpage",
+		"vdp_load_system_slot",
 		"vdp_blit_img_rgba",
 		"vdp_img_rect",
 		"vdp_img_slot",
@@ -159,22 +154,22 @@ void Runtime::runEngineBuiltinPrelude() {
 		"scratchbatch",
 		"sorted_scratchbatch",
 	};
-	const Value engineValue = requireModule("bios/engine");
-	Table* engineModule = valueIsTable(engineValue) ? asTable(engineValue) : nullptr;
+	const Value systemValue = requireModule("bios/system");
+	Table* systemModule = valueIsTable(systemValue) ? asTable(systemValue) : nullptr;
 	m_machine.cpu().syncGlobalSlotsToTable();
-	for (const char* name : engineBuiltinNames) {
-		std::string exportName = "res__bios__engine__";
+	for (const char* name : systemBuiltinNames) {
+		std::string exportName = "res__bios__system__";
 		exportName += name;
 		Value value = m_machine.cpu().getGlobalByKey(luaKey(exportName));
-		if (isNil(value) && engineModule) {
-			value = engineModule->get(luaKey(name));
+		if (isNil(value) && systemModule) {
+			value = systemModule->get(luaKey(name));
 		}
 		if (isNil(value)) {
-			throw BMSX_RUNTIME_ERROR("Engine builtin export '" + exportName + "' is missing.");
+			throw BMSX_RUNTIME_ERROR("System ROM builtin export '" + exportName + "' is missing.");
 		}
 		m_machine.cpu().setGlobalByKey(luaKey(name), value);
 	}
-	std::cout << "[Runtime] prelude: engine builtins bound" << std::endl;
+	std::cout << "[Runtime] prelude: system ROM builtins bound" << std::endl;
 }
 
 } // namespace bmsx

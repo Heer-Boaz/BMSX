@@ -2,8 +2,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "machine/cpu/cpu.h"
@@ -13,12 +11,8 @@
 
 namespace bmsx {
 
-constexpr uint32_t ASSET_TABLE_HEADER_SIZE = 40;
-constexpr uint32_t ASSET_TABLE_ENTRY_SIZE = 64;
-
 struct MemoryState {
 	std::vector<Value> ioMemory;
-	std::vector<u8> assetMemory;
 };
 
 struct MemorySaveState {
@@ -38,15 +32,13 @@ public:
 
 	Memory();
 
-	void setEngineRom(const u8* data, size_t size);
+	void setSystemRom(const u8* data, size_t size);
 	void setCartRom(const u8* data, size_t size);
 		void setOverlayRom(u8* data, size_t size);
 		size_t overlayRomSize() const;
 		void setVramWriter(VramWriter* writer);
-		void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
-		void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler);
-		uint32_t usedAssetTableBytes() const;
-	uint32_t usedAssetDataBytes() const;
+	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
+	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler);
 
 	Value readValue(uint32_t addr) const;
 	Value readMappedValue(uint32_t addr) const;
@@ -79,76 +71,12 @@ public:
 	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
 	bool isRamRange(uint32_t addr, size_t length) const;
 
-	enum class AssetType {
-		Image,
-	};
-
-	struct AssetEntry {
-		std::string id;
-		uint64_t idToken = 0;
-		AssetType type = AssetType::Image;
-		uint32_t flags = 0;
-		size_t ownerIndex = 0;
-		uint32_t baseAddr = 0;
-		uint32_t baseSize = 0;
-		uint32_t capacity = 0;
-		uint32_t baseStride = 0;
-		uint32_t regionX = 0;
-		uint32_t regionY = 0;
-		uint32_t regionW = 0;
-		uint32_t regionH = 0;
-	};
-
-	struct ImageWriteEntry {
-		uint32_t baseAddr = 0;
-		uint32_t capacity = 0;
-		uint32_t baseSize = 0;
-		uint32_t baseStride = 0;
-		uint32_t regionX = 0;
-		uint32_t regionY = 0;
-		uint32_t regionW = 0;
-		uint32_t regionH = 0;
-	};
-
-	struct ImageWritePlan {
-		uint32_t baseAddr = 0;
-		uint32_t writeWidth = 0;
-		uint32_t writeHeight = 0;
-		uint32_t writeStride = 0;
-		uint32_t targetStride = 0;
-		uint32_t sourceStride = 0;
-		size_t writeLen = 0;
-		bool clipped = false;
-	};
-
-	void resetAssetMemory();
-	AssetEntry& registerImageBuffer(const std::string& id, const u8* rgba, uint32_t width, uint32_t height, uint32_t flags);
-	AssetEntry& registerImageSlot(const std::string& id, uint32_t capacityBytes, uint32_t flags);
-	AssetEntry& registerImageSlotAt(const std::string& id, uint32_t baseAddr, uint32_t capacityBytes, uint32_t flags, bool clear = true);
-	bool hasAsset(const std::string& id) const;
-	void sealEngineAssets();
-	void resetCartAssets();
-	ImageWritePlan planImageWrite(ImageWriteEntry& entry, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacity);
-	ImageWritePlan planImageSlotWrite(AssetEntry& entry, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacity);
-	void writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacity);
-	void finalizeAssetTable();
-	std::vector<AssetEntry*> consumeDirtyAssets();
-	void markAllAssetsDirty();
-	std::vector<u8> dumpAssetMemory() const;
-	void restoreAssetMemory(const u8* data, size_t size);
 	std::vector<u8> dumpMutableRam() const;
 	void restoreMutableRam(const u8* data, size_t size);
-	void rehydrateAssetEntriesFromTable();
 	MemoryState captureState() const;
 	void restoreState(const MemoryState& state);
 	MemorySaveState captureSaveState() const;
 	void restoreSaveState(const MemorySaveState& state);
-	u32 resolveAssetHandle(const std::string& id) const;
-	AssetEntry& getAssetEntry(const std::string& id);
-	const AssetEntry& getAssetEntry(const std::string& id) const;
-	AssetEntry& getAssetEntryByHandle(size_t handle);
-	const AssetEntry& getAssetEntryByHandle(size_t handle) const;
-	const u8* getImagePixels(const AssetEntry& entry) const;
 
 	const std::vector<Value>& ioSlots() const { return m_ioSlots; }
 	void loadIoSlots(const std::vector<Value>& slots);
@@ -172,7 +100,7 @@ private:
 			IoWriteHandler handler = nullptr;
 		};
 
-		RomSpan m_engineRom;
+		RomSpan m_systemRom;
 		RomSpan m_cartRom;
 		MutableRomSpan m_overlayRom;
 		std::vector<u8> m_ram;
@@ -180,19 +108,6 @@ private:
 		std::vector<IoReadBinding> m_ioReadHandlers;
 		std::vector<IoWriteBinding> m_ioWriteHandlers;
 		VramWriter* m_vramWriter = nullptr;
-
-	std::vector<AssetEntry> m_assetEntries;
-	std::unordered_map<std::string, size_t> m_assetIndexById;
-	std::unordered_map<uint64_t, size_t> m_assetIndexByToken;
-	std::vector<int32_t> m_assetOwnerPages;
-	std::vector<uint8_t> m_assetDirtyFlags;
-	std::vector<size_t> m_assetDirtyList;
-	uint32_t m_assetDataCursor = 0;
-	size_t m_engineAssetEntryCount = 0;
-	uint32_t m_engineAssetDataEnd = ASSET_DATA_BASE;
-	uint32_t m_cartAssetDataBase = ASSET_DATA_BASE;
-	bool m_assetTableFinalized = false;
-
 
 	bool isIoAddress(uint32_t addr) const;
 	bool isIoRegionRange(uint32_t addr, size_t length) const;
@@ -204,14 +119,6 @@ private:
 	bool isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, uint32_t size) const;
 	bool isLuaReadOnlyIoAddress(uint32_t addr) const;
 	bool isMappedWritableRange(uint32_t addr, size_t length) const;
-	void mapAssetPages(size_t ownerIndex, uint32_t addr, uint32_t size);
-	void markAssetDirty(uint32_t addr, uint32_t size);
-	uint32_t allocateAssetData(uint32_t size, uint32_t alignment);
-	size_t addAssetEntry(AssetEntry entry);
-	AssetEntry& addOwnedAssetEntry(AssetEntry entry, uint32_t addr, uint32_t size);
-	void writeAssetEntryMutableData(u8* base, uint32_t entryOffset, const AssetEntry& entry);
-	void writeAssetEntryPayload(u8* base, uint32_t entryOffset, const AssetEntry& entry);
-	void updateAssetEntryData(size_t index, const AssetEntry& entry);
 };
 
 } // namespace bmsx

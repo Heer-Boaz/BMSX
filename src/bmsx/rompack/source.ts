@@ -1,42 +1,41 @@
 import type { asset_id, asset_type, CartridgeIndex, CartridgeLayerId, RomAsset } from './format';
 
-export type AssetSourceLayer = {
+export type RomSourceLayer = {
 	id: CartridgeLayerId;
 	index: CartridgeIndex;
 	payload: Uint8Array;
 };
 
-export interface RawAssetSource {
+export interface RawRomSource {
 	getEntry(id: asset_id): RomAsset | null;
 	getEntryByPath(path: string): RomAsset | null;
-	getBytes(entry: RomAsset): Uint8Array;
 	getBytes(entry: RomAsset): Uint8Array;
 	getBytesView(entry: RomAsset): Uint8Array;
 	list(type?: asset_type): RomAsset[];
 }
 
-export class AssetSourceStack implements RawAssetSource {
-	private readonly layers: AssetSourceLayer[];
+export class RomSourceStack implements RawRomSource {
+	private readonly layers: RomSourceLayer[];
 	private readonly idMaps: Map<string, RomAsset>[];
 	private readonly pathMaps: Map<string, RomAsset>[];
 	private readonly payloads: Partial<Record<CartridgeLayerId, Uint8Array>>;
 
-	public constructor(layers: AssetSourceLayer[]) {
+	public constructor(layers: RomSourceLayer[]) {
 		this.layers = layers;
 		this.idMaps = layers.map(layer => {
 			const map = new Map<string, RomAsset>();
-			for (const asset of layer.index.assets) {
-				map.set(asset.resid, asset);
+			for (const entry of layer.index.entries) {
+				map.set(entry.resid, entry);
 			}
 			return map;
 		});
 		this.pathMaps = layers.map(layer => {
 			const map = new Map<string, RomAsset>();
-			for (const asset of layer.index.assets) {
-				if (!asset.source_path) {
+			for (const entry of layer.index.entries) {
+				if (!entry.source_path) {
 					continue;
 				}
-				map.set(asset.source_path, asset);
+				map.set(entry.source_path, entry);
 			}
 			return map;
 		});
@@ -80,20 +79,20 @@ export class AssetSourceStack implements RawAssetSource {
 		const blocked = new Set<string>();
 		for (let layerIndex = 0; layerIndex < this.layers.length; layerIndex++) {
 			const layer = this.layers[layerIndex];
-			for (const asset of layer.index.assets) {
-				if (type && asset.type !== type) {
+			for (const entry of layer.index.entries) {
+				if (type && entry.type !== type) {
 					continue;
 				}
-				const id = asset.resid;
+				const id = entry.resid;
 				if (blocked.has(id)) {
 					continue;
 				}
-				if (asset.op === 'delete') {
+				if (entry.op === 'delete') {
 					blocked.add(id);
 					resolved.delete(id);
 					continue;
 				}
-				resolved.set(id, this.attachPayloadId(asset, layer.id));
+				resolved.set(id, this.attachPayloadId(entry, layer.id));
 				blocked.add(id);
 			}
 		}

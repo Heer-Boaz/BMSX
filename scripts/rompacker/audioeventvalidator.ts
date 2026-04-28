@@ -1,9 +1,9 @@
-import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument } from '../../src/bmsx/audio/aem';
+import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument } from '../../src/bmsx/rompack/aem';
 import { Resource } from './rompacker.rompack';
 
 export function validateAudioEventReferences(resources: Resource[]): void {
 	const audioIds: string[] = [];
-	const dataAssets: Array<{ name: string; value: unknown }> = [];
+	const dataRecords: Array<{ name: string; value: unknown }> = [];
 	const aemResources: Resource[] = [];
 	for (let index = 0; index < resources.length; index += 1) {
 		const resource = resources[index]!;
@@ -15,7 +15,7 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 			const source = resource.buffer.toString('utf8');
 			const format = resource.datatype === 'json' ? 'json' : 'yaml';
 			const value = parseStructuredTextDocument(source, format, `data file '${resource.filepath ?? resource.name}'`);
-			dataAssets.push({ name: resource.name, value });
+			dataRecords.push({ name: resource.name, value });
 			continue;
 		}
 		if (resource.type === 'aem' && resource.buffer) {
@@ -24,7 +24,7 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 	}
 	const lookup = buildAemValidationLookup({
 		audioIds,
-		dataAssets,
+		dataRecords,
 	});
 	for (let index = 0; index < aemResources.length; index += 1) {
 		const resource = aemResources[index]!;

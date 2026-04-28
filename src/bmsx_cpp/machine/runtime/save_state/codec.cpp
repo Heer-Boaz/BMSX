@@ -428,33 +428,54 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 	return state;
 }
 
-BinValue encodeSkyboxImageIds(const SkyboxImageIds& state) {
+BinValue encodeVdpSlotSource(const VdpSlotSource& source) {
 	BinObject object;
-	object["posx"] = state.posx;
-	object["negx"] = state.negx;
-	object["posy"] = state.posy;
-	object["negy"] = state.negy;
-	object["posz"] = state.posz;
-	object["negz"] = state.negz;
+	object["slot"] = static_cast<i64>(source.slot);
+	object["u"] = static_cast<i64>(source.u);
+	object["v"] = static_cast<i64>(source.v);
+	object["w"] = static_cast<i64>(source.w);
+	object["h"] = static_cast<i64>(source.h);
 	return BinValue(std::move(object));
 }
 
-SkyboxImageIds decodeSkyboxImageIds(const BinValue& value, const char* label) {
+VdpSlotSource decodeVdpSlotSource(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
-	SkyboxImageIds state;
-	state.posx = requireString(requireField(object, "posx", label), "skyboxFaceIds.posx");
-	state.negx = requireString(requireField(object, "negx", label), "skyboxFaceIds.negx");
-	state.posy = requireString(requireField(object, "posy", label), "skyboxFaceIds.posy");
-	state.negy = requireString(requireField(object, "negy", label), "skyboxFaceIds.negy");
-	state.posz = requireString(requireField(object, "posz", label), "skyboxFaceIds.posz");
-	state.negz = requireString(requireField(object, "negz", label), "skyboxFaceIds.negz");
+	return VdpSlotSource{
+		requireU32(requireField(object, "slot", label), "skyboxFaceSources.slot"),
+		requireU32(requireField(object, "u", label), "skyboxFaceSources.u"),
+		requireU32(requireField(object, "v", label), "skyboxFaceSources.v"),
+		requireU32(requireField(object, "w", label), "skyboxFaceSources.w"),
+		requireU32(requireField(object, "h", label), "skyboxFaceSources.h"),
+	};
+}
+
+BinValue encodeSkyboxFaceSources(const SkyboxFaceSources& state) {
+	BinObject object;
+	object["posx"] = encodeVdpSlotSource(state.posx);
+	object["negx"] = encodeVdpSlotSource(state.negx);
+	object["posy"] = encodeVdpSlotSource(state.posy);
+	object["negy"] = encodeVdpSlotSource(state.negy);
+	object["posz"] = encodeVdpSlotSource(state.posz);
+	object["negz"] = encodeVdpSlotSource(state.negz);
+	return BinValue(std::move(object));
+}
+
+SkyboxFaceSources decodeSkyboxFaceSources(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	SkyboxFaceSources state;
+	state.posx = decodeVdpSlotSource(requireField(object, "posx", label), "skyboxFaceSources.posx");
+	state.negx = decodeVdpSlotSource(requireField(object, "negx", label), "skyboxFaceSources.negx");
+	state.posy = decodeVdpSlotSource(requireField(object, "posy", label), "skyboxFaceSources.posy");
+	state.negy = decodeVdpSlotSource(requireField(object, "negy", label), "skyboxFaceSources.negy");
+	state.posz = decodeVdpSlotSource(requireField(object, "posz", label), "skyboxFaceSources.posz");
+	state.negz = decodeVdpSlotSource(requireField(object, "negz", label), "skyboxFaceSources.negz");
 	return state;
 }
 
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
-	object["skyboxFaceIds"] = state.skyboxFaceIds.has_value()
-		? encodeSkyboxImageIds(*state.skyboxFaceIds)
+	object["skyboxFaceSources"] = state.skyboxFaceSources.has_value()
+		? encodeSkyboxFaceSources(*state.skyboxFaceSources)
 		: BinValue(nullptr);
 	object["ditherType"] = static_cast<i64>(state.ditherType);
 	return BinValue(std::move(object));
@@ -463,9 +484,9 @@ BinValue encodeVdpState(const VdpState& state) {
 VdpState decodeVdpState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpState state;
-	const BinValue& skybox = requireField(object, "skyboxFaceIds", label);
+	const BinValue& skybox = requireField(object, "skyboxFaceSources", label);
 	if (!skybox.isNull()) {
-		state.skyboxFaceIds = decodeSkyboxImageIds(skybox, "machine.vdp.skyboxFaceIds");
+		state.skyboxFaceSources = decodeSkyboxFaceSources(skybox, "machine.vdp.skyboxFaceSources");
 	}
 	state.ditherType = requireI32(requireField(object, "ditherType", label), "machine.vdp.ditherType");
 	return state;
@@ -498,7 +519,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	const VdpState base = decodeVdpState(value, label);
 	VdpSaveState state;
-	state.skyboxFaceIds = base.skyboxFaceIds;
+	state.skyboxFaceSources = base.skyboxFaceSources;
 	state.ditherType = base.ditherType;
 	state.vramStaging = requireBinary(requireField(object, "vramStaging", label), "machine.vdp.vramStaging");
 	state.surfacePixels = decodeVector<VdpSurfacePixelsState>(
@@ -848,7 +869,7 @@ BinValue encodeRuntimeSaveStateValue(const RuntimeSaveState& state) {
 	object["machineState"] = encodeRuntimeSaveMachineState(state.machineState);
 	object["cpuState"] = encodeCpuRuntimeState(state.cpuState);
 	object["renderState"] = encodeRuntimeRenderState(state.renderState);
-	object["engineProgramActive"] = state.engineProgramActive;
+	object["systemProgramActive"] = state.systemProgramActive;
 	object["luaInitialized"] = state.luaInitialized;
 	object["luaRuntimeFailed"] = state.runtimeFailed;
 	object["randomSeed"] = static_cast<i64>(state.randomSeed);
@@ -863,7 +884,7 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 	state.machineState = decodeRuntimeSaveMachineState(requireField(object, "machineState", label), "runtimeSaveState.machineState");
 	state.cpuState = decodeCpuRuntimeState(requireField(object, "cpuState", label), "runtimeSaveState.cpuState");
 	state.renderState = decodeRuntimeRenderState(requireField(object, "renderState", label), "runtimeSaveState.renderState");
-	state.engineProgramActive = requireBool(requireField(object, "engineProgramActive", label), "runtimeSaveState.engineProgramActive");
+	state.systemProgramActive = requireBool(requireField(object, "systemProgramActive", label), "runtimeSaveState.systemProgramActive");
 	state.luaInitialized = requireBool(requireField(object, "luaInitialized", label), "runtimeSaveState.luaInitialized");
 	state.runtimeFailed = requireBool(requireField(object, "luaRuntimeFailed", label), "runtimeSaveState.luaRuntimeFailed");
 	state.randomSeed = requireU32(requireField(object, "randomSeed", label), "runtimeSaveState.randomSeed");

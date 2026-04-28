@@ -6,17 +6,17 @@
 
 namespace bmsx {
 
-struct LinkedProgramAsset {
-	std::unique_ptr<ProgramAsset> program;
+struct LinkedProgramImage {
+	std::unique_ptr<ProgramImage> program;
 	std::unique_ptr<ProgramMetadata> metadata;
 };
 
-LinkedProgramAsset linkProgramAssets(
-	const ProgramAsset& engineAsset,
-	const ProgramMetadata* engineSymbols,
-	const ProgramAsset& cartAsset,
+LinkedProgramImage linkProgramImages(
+	const ProgramImage& systemImage,
+	const ProgramMetadata* systemSymbols,
+	const ProgramImage& cartImage,
 	const ProgramMetadata* cartSymbols,
-	int engineBasePc = 0,
+	int systemBasePc = 0,
 	int cartBasePc = 0x80000
 );
 

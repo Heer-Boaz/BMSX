@@ -1,7 +1,7 @@
 #include "machine/specs.h"
 
 #include "machine/runtime/timing/index.h"
-#include "rompack/assets.h"
+#include "rompack/package.h"
 
 #include <stdexcept>
 

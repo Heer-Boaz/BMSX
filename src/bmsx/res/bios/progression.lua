@@ -4,7 +4,7 @@
 -- DESIGN PRINCIPLES — progression state rules
 --
 -- 1. WHAT IS progression?
---    A rules engine that listens to the specific global events referenced by
+--    A rules layer that listens to the specific global events referenced by
 --    mounted programs and updates one or more
 --    'state programs' (key/value maps) based on declarative rules.  It is used
 --    to track persistent world state that evolves as gameplay events fire
@@ -47,8 +47,8 @@
 --    driven by named gameplay events.  Transient per-frame state belongs in the
 --    object FSM or in worldobject fields directly.
 
-local eventemitter<const> = require('eventemitter').eventemitter
-local event_matcher<const> = require('event_matcher')
+local eventemitter<const> = require('bios/eventemitter').eventemitter
+local event_matcher<const> = require('bios/event_matcher')
 
 local progression<const> = {
 	_inited = false,

@@ -59,14 +59,6 @@ bool DmaController::hasPendingBulkTransfer() const {
 	return state.hasActive || !state.queue.empty();
 }
 
-uint32_t DmaController::pendingIsoBytes() const {
-	return pendingBytesForChannel(Channel::Iso);
-}
-
-uint32_t DmaController::pendingBulkBytes() const {
-	return pendingBytesForChannel(Channel::Bulk);
-}
-
 void DmaController::setTiming(int64_t cpuHz, int64_t isoBytesPerSec, int64_t bulkBytesPerSec, int64_t nowCycles) {
 	m_cpuHz = cpuHz;
 	m_isoBytesPerSec = isoBytesPerSec;
@@ -122,7 +114,7 @@ uint32_t DmaController::pendingBytesForChannel(Channel channel) const {
 	return pendingBytes;
 }
 
-void DmaController::enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete) {
+void DmaController::enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete) {
 	DmaJob job;
 	job.kind = DmaJob::Kind::Image;
 	job.channel = Channel::Bulk;
@@ -450,14 +442,14 @@ uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {
 	if (dst == IO_VDP_FIFO) {
 		return VDP_STREAM_BUFFER_SIZE;
 	}
-	if (dst >= VRAM_SYSTEM_TEXTPAGE_BASE && dst < VRAM_SYSTEM_TEXTPAGE_BASE + VRAM_SYSTEM_TEXTPAGE_SIZE) {
-		return (VRAM_SYSTEM_TEXTPAGE_BASE + VRAM_SYSTEM_TEXTPAGE_SIZE) - dst;
+	if (dst >= VRAM_SYSTEM_SLOT_BASE && dst < VRAM_SYSTEM_SLOT_BASE + VRAM_SYSTEM_SLOT_SIZE) {
+		return (VRAM_SYSTEM_SLOT_BASE + VRAM_SYSTEM_SLOT_SIZE) - dst;
 	}
-	if (dst >= VRAM_PRIMARY_TEXTPAGE_BASE && dst < VRAM_PRIMARY_TEXTPAGE_BASE + VRAM_PRIMARY_TEXTPAGE_SIZE) {
-		return (VRAM_PRIMARY_TEXTPAGE_BASE + VRAM_PRIMARY_TEXTPAGE_SIZE) - dst;
+	if (dst >= VRAM_PRIMARY_SLOT_BASE && dst < VRAM_PRIMARY_SLOT_BASE + VRAM_PRIMARY_SLOT_SIZE) {
+		return (VRAM_PRIMARY_SLOT_BASE + VRAM_PRIMARY_SLOT_SIZE) - dst;
 	}
-	if (dst >= VRAM_SECONDARY_TEXTPAGE_BASE && dst < VRAM_SECONDARY_TEXTPAGE_BASE + VRAM_SECONDARY_TEXTPAGE_SIZE) {
-		return (VRAM_SECONDARY_TEXTPAGE_BASE + VRAM_SECONDARY_TEXTPAGE_SIZE) - dst;
+	if (dst >= VRAM_SECONDARY_SLOT_BASE && dst < VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE) {
+		return (VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE) - dst;
 	}
 	if (dst >= VRAM_FRAMEBUFFER_BASE && dst < VRAM_FRAMEBUFFER_BASE + VRAM_FRAMEBUFFER_SIZE) {
 		return (VRAM_FRAMEBUFFER_BASE + VRAM_FRAMEBUFFER_SIZE) - dst;

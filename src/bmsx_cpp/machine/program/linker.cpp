@@ -15,7 +15,7 @@ constexpr int MAX_BASE_BX = (1 << (MAX_BX_BITS + EXT_BX_BITS)) - 1;
 constexpr int MAX_EXT_BX = (MAX_WIDE << (MAX_BX_BITS + EXT_BX_BITS)) | MAX_BASE_BX;
 
 struct ProgramLayout {
-	int engineBasePc;
+	int systemBasePc;
 	int cartBasePc;
 };
 
@@ -24,23 +24,23 @@ struct MergedNamedSlots {
 	std::vector<int> cartRemap;
 };
 
-ProgramLayout resolveProgramLayout(int engineCodeBytes, int engineBasePc, int cartBasePc) {
-	if (engineBasePc < 0) {
-		throw std::runtime_error("[ProgramLinker] Engine base PC must be >= 0.");
+ProgramLayout resolveProgramLayout(int systemCodeBytes, int systemBasePc, int cartBasePc) {
+	if (systemBasePc < 0) {
+		throw std::runtime_error("[ProgramLinker] System base PC must be >= 0.");
 	}
 	if (cartBasePc < 0) {
 		throw std::runtime_error("[ProgramLinker] Cart base PC must be >= 0.");
 	}
-	if (engineBasePc % INSTRUCTION_BYTES != 0) {
-		throw std::runtime_error("[ProgramLinker] Engine base PC must align to instruction bytes.");
+	if (systemBasePc % INSTRUCTION_BYTES != 0) {
+		throw std::runtime_error("[ProgramLinker] System base PC must align to instruction bytes.");
 	}
 	if (cartBasePc % INSTRUCTION_BYTES != 0) {
 		throw std::runtime_error("[ProgramLinker] Cart base PC must align to instruction bytes.");
 	}
-	if (engineBasePc + engineCodeBytes > cartBasePc) {
-		throw std::runtime_error("[ProgramLinker] Engine program overlaps cart base PC.");
+	if (systemBasePc + systemCodeBytes > cartBasePc) {
+		throw std::runtime_error("[ProgramLinker] System program overlaps cart base PC.");
 	}
-	return {engineBasePc, cartBasePc};
+	return {systemBasePc, cartBasePc};
 }
 
 uint32_t readInstructionWord(const std::vector<uint8_t>& code, int index) {
@@ -152,18 +152,18 @@ Value copyConstValue(const StringPool& sourceStrings, Value value, StringPool& o
 }
 
 MergedNamedSlots mergeNamedSlots(
-	const std::vector<std::string>& engineNames,
+	const std::vector<std::string>& systemNames,
 	const std::vector<std::string>& cartNames
 ) {
 	MergedNamedSlots merged;
-	merged.names.reserve(engineNames.size() + cartNames.size());
-	merged.names.insert(merged.names.end(), engineNames.begin(), engineNames.end());
+	merged.names.reserve(systemNames.size() + cartNames.size());
+	merged.names.insert(merged.names.end(), systemNames.begin(), systemNames.end());
 	merged.cartRemap.resize(cartNames.size(), -1);
 
 	std::unordered_map<std::string, int> nameToIndex;
-	nameToIndex.reserve(engineNames.size() + cartNames.size());
-	for (size_t index = 0; index < engineNames.size(); ++index) {
-		const std::string& name = engineNames[index];
+	nameToIndex.reserve(systemNames.size() + cartNames.size());
+	for (size_t index = 0; index < systemNames.size(); ++index) {
+		const std::string& name = systemNames[index];
 		if (nameToIndex.find(name) == nameToIndex.end()) {
 			nameToIndex.emplace(name, static_cast<int>(index));
 		}
@@ -189,26 +189,26 @@ struct MergedConstPool {
 };
 
 MergedConstPool mergeConstPools(
-	const Program& engineProgram,
+	const Program& systemProgram,
 	const Program& cartProgram,
 	StringPool& outPool
 ) {
-	const StringPool& engineStrings = *engineProgram.constPoolStringPool;
+	const StringPool& systemStrings = *systemProgram.constPoolStringPool;
 	const StringPool& cartStrings = *cartProgram.constPoolStringPool;
-	const size_t engineConstCount = engineProgram.constPool.size();
+	const size_t systemConstCount = systemProgram.constPool.size();
 	const size_t cartConstCount = cartProgram.constPool.size();
 	MergedConstPool merged;
-	merged.values.reserve(engineConstCount + cartConstCount);
+	merged.values.reserve(systemConstCount + cartConstCount);
 	merged.cartRemap.resize(cartConstCount, -1);
 
 	std::unordered_map<std::string, int> keyToIndex;
-	keyToIndex.reserve(engineConstCount + cartConstCount);
+	keyToIndex.reserve(systemConstCount + cartConstCount);
 
-	for (size_t i = 0; i < engineConstCount; ++i) {
-		const Value value = engineProgram.constPool[i];
-		const Value copied = copyConstValue(engineStrings, value, outPool);
+	for (size_t i = 0; i < systemConstCount; ++i) {
+		const Value value = systemProgram.constPool[i];
+		const Value copied = copyConstValue(systemStrings, value, outPool);
 		merged.values.push_back(copied);
-		const std::string key = makeConstKey(engineStrings, value);
+		const std::string key = makeConstKey(systemStrings, value);
 		if (keyToIndex.find(key) == keyToIndex.end()) {
 			keyToIndex.emplace(key, static_cast<int>(i));
 		}
@@ -288,7 +288,7 @@ void rewriteClosureIndices(std::vector<uint8_t>& code, int protoOffset) {
 
 void rewriteConstRelocations(
 	std::vector<uint8_t>& code,
-	const std::vector<ProgramAsset::ConstReloc>& relocs,
+	const std::vector<ProgramImage::ConstReloc>& relocs,
 	const std::vector<int>& cartConstRemap,
 	const std::vector<int>& cartGlobalRemap,
 	const std::vector<int>& cartSystemGlobalRemap,
@@ -298,7 +298,7 @@ void rewriteConstRelocations(
 	const std::vector<std::string>& mergedSystemGlobalNames
 ) {
 	for (size_t i = 0; i < relocs.size(); ++i) {
-		const ProgramAsset::ConstReloc& reloc = relocs[i];
+		const ProgramImage::ConstReloc& reloc = relocs[i];
 		const int wordIndex = reloc.wordIndex;
 		uint32_t word = readInstructionWord(code, wordIndex);
 		uint8_t op = static_cast<uint8_t>((word >> 18) & 0x3f);
@@ -318,9 +318,9 @@ void rewriteConstRelocations(
 		uint8_t cLow = static_cast<uint8_t>(word & 0x3f);
 		uint8_t ext = static_cast<uint8_t>(word >> 24);
 
-		const int mappedIndex = reloc.kind == ProgramAsset::ConstRelocKind::Gl
+		const int mappedIndex = reloc.kind == ProgramImage::ConstRelocKind::Gl
 			? cartGlobalRemap[static_cast<size_t>(reloc.constIndex)]
-			: reloc.kind == ProgramAsset::ConstRelocKind::Sys
+			: reloc.kind == ProgramImage::ConstRelocKind::Sys
 				? cartSystemGlobalRemap[static_cast<size_t>(reloc.constIndex)]
 				: cartConstRemap[static_cast<size_t>(reloc.constIndex)];
 
@@ -328,7 +328,7 @@ void rewriteConstRelocations(
 		// These store a string sentinel in the merged const pool of the form
 		// "modslot:<slotName>". Resolve that string to a merged global/system
 		// global slot index and rewrite the instruction into GETSYS/GETGL.
-		if (reloc.kind == ProgramAsset::ConstRelocKind::Module) {
+		if (reloc.kind == ProgramImage::ConstRelocKind::Module) {
 			if (mappedIndex < 0 || static_cast<size_t>(mappedIndex) >= mergedConstValues.size()) {
 				throw std::runtime_error("[ProgramLinker] Module const index out of range.");
 			}
@@ -380,9 +380,9 @@ void rewriteConstRelocations(
 			continue;
 		}
 
-		if (reloc.kind == ProgramAsset::ConstRelocKind::Bx
-			|| reloc.kind == ProgramAsset::ConstRelocKind::Gl
-			|| reloc.kind == ProgramAsset::ConstRelocKind::Sys) {
+		if (reloc.kind == ProgramImage::ConstRelocKind::Bx
+			|| reloc.kind == ProgramImage::ConstRelocKind::Gl
+			|| reloc.kind == ProgramImage::ConstRelocKind::Sys) {
 			const uint32_t nextWide = static_cast<uint32_t>(mappedIndex) >> (MAX_BX_BITS + EXT_BX_BITS);
 			if (!hasWide && nextWide != 0) {
 				throw std::runtime_error("[ProgramLinker] Const reloc requires WIDE prefix.");
@@ -400,12 +400,12 @@ void rewriteConstRelocations(
 				continue;
 		}
 
-		if (reloc.kind == ProgramAsset::ConstRelocKind::ConstB
-			|| reloc.kind == ProgramAsset::ConstRelocKind::ConstC) {
+		if (reloc.kind == ProgramImage::ConstRelocKind::ConstB
+			|| reloc.kind == ProgramImage::ConstRelocKind::ConstC) {
 			// These are direct const operands for specialized opcodes, not signed RK encodings.
 			// Rewriting them with the RK path silently mangles the operand bits and only shows up
 			// later in release/libretro when the linked program executes the wrong instruction data.
-			const bool relocOnB = reloc.kind == ProgramAsset::ConstRelocKind::ConstB;
+			const bool relocOnB = reloc.kind == ProgramImage::ConstRelocKind::ConstB;
 			const int extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
 			const int baseBits = MAX_OPERAND_BITS + extBits;
 			const uint32_t maxBase = (1u << baseBits) - 1u;
@@ -436,7 +436,7 @@ void rewriteConstRelocations(
 			continue;
 		}
 
-		const bool relocOnB = reloc.kind == ProgramAsset::ConstRelocKind::RkB;
+		const bool relocOnB = reloc.kind == ProgramImage::ConstRelocKind::RkB;
 		const int rkValue = -mappedIndex - 1;
 		const int extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
 		const int baseBits = MAX_OPERAND_BITS + extBits;
@@ -464,70 +464,64 @@ void rewriteConstRelocations(
 	}
 }
 
-Proto cloneProto(const Proto& proto, int entryOffset) {
-	Proto next = proto;
-	next.entryPC = proto.entryPC + entryOffset;
-	return next;
-}
-
 std::unique_ptr<ProgramMetadata> mergeMetadata(
-	const ProgramMetadata* engine,
+	const ProgramMetadata* system,
 	const ProgramMetadata* cart,
 	const ProgramLayout& layout,
-	int engineInstructionCount,
+	int systemInstructionCount,
 	int cartInstructionCount
 ) {
-	if (!engine && !cart) {
+	if (!system && !cart) {
 		return nullptr;
 	}
-	if (!engine || !cart) {
-		throw std::runtime_error("[ProgramLinker] Linking requires both engine and cart symbols.");
+	if (!system || !cart) {
+		throw std::runtime_error("[ProgramLinker] Linking requires both system and cart symbols.");
 	}
-	if (static_cast<int>(engine->debugRanges.size()) != engineInstructionCount) {
-		throw std::runtime_error("[ProgramLinker] Engine debug range length mismatch.");
+	if (static_cast<int>(system->debugRanges.size()) != systemInstructionCount) {
+		throw std::runtime_error("[ProgramLinker] System debug range length mismatch.");
 	}
 	if (static_cast<int>(cart->debugRanges.size()) != cartInstructionCount) {
 		throw std::runtime_error("[ProgramLinker] Cart debug range length mismatch.");
 	}
-	if (engine->localSlotsByProto.size() != engine->protoIds.size()) {
-		throw std::runtime_error("[ProgramLinker] Engine local slot metadata length mismatch.");
+	if (system->localSlotsByProto.size() != system->protoIds.size()) {
+		throw std::runtime_error("[ProgramLinker] System local slot metadata length mismatch.");
 	}
 	if (cart->localSlotsByProto.size() != cart->protoIds.size()) {
 		throw std::runtime_error("[ProgramLinker] Cart local slot metadata length mismatch.");
 	}
-	if (engine->upvalueNamesByProto.size() != engine->protoIds.size()) {
-		throw std::runtime_error("[ProgramLinker] Engine upvalue name metadata length mismatch.");
+	if (system->upvalueNamesByProto.size() != system->protoIds.size()) {
+		throw std::runtime_error("[ProgramLinker] System upvalue name metadata length mismatch.");
 	}
 	if (cart->upvalueNamesByProto.size() != cart->protoIds.size()) {
 		throw std::runtime_error("[ProgramLinker] Cart upvalue name metadata length mismatch.");
 	}
-	const int engineBaseWord = layout.engineBasePc / INSTRUCTION_BYTES;
+	const int systemBaseWord = layout.systemBasePc / INSTRUCTION_BYTES;
 	const int cartBaseWord = layout.cartBasePc / INSTRUCTION_BYTES;
-	const int totalInstructionCount = std::max(engineBaseWord + engineInstructionCount, cartBaseWord + cartInstructionCount);
+	const int totalInstructionCount = std::max(systemBaseWord + systemInstructionCount, cartBaseWord + cartInstructionCount);
 	auto merged = std::make_unique<ProgramMetadata>();
 	merged->debugRanges.assign(static_cast<size_t>(totalInstructionCount), std::nullopt);
-	for (int i = 0; i < engineInstructionCount; ++i) {
-		merged->debugRanges[static_cast<size_t>(engineBaseWord + i)] = engine->debugRanges[static_cast<size_t>(i)];
+	for (int i = 0; i < systemInstructionCount; ++i) {
+		merged->debugRanges[static_cast<size_t>(systemBaseWord + i)] = system->debugRanges[static_cast<size_t>(i)];
 	}
 	for (int i = 0; i < cartInstructionCount; ++i) {
 		merged->debugRanges[static_cast<size_t>(cartBaseWord + i)] = cart->debugRanges[static_cast<size_t>(i)];
 	}
-	merged->protoIds = engine->protoIds;
+	merged->protoIds = system->protoIds;
 	merged->protoIds.insert(merged->protoIds.end(), cart->protoIds.begin(), cart->protoIds.end());
-	merged->localSlotsByProto = engine->localSlotsByProto;
+	merged->localSlotsByProto = system->localSlotsByProto;
 	merged->localSlotsByProto.insert(
 		merged->localSlotsByProto.end(),
 		cart->localSlotsByProto.begin(),
 		cart->localSlotsByProto.end()
 	);
-	merged->upvalueNamesByProto = engine->upvalueNamesByProto;
+	merged->upvalueNamesByProto = system->upvalueNamesByProto;
 	merged->upvalueNamesByProto.insert(
 		merged->upvalueNamesByProto.end(),
 		cart->upvalueNamesByProto.begin(),
 		cart->upvalueNamesByProto.end()
 	);
-	const MergedNamedSlots systemGlobalNames = mergeNamedSlots(engine->systemGlobalNames, cart->systemGlobalNames);
-	const MergedNamedSlots globalNames = mergeNamedSlots(engine->globalNames, cart->globalNames);
+	const MergedNamedSlots systemGlobalNames = mergeNamedSlots(system->systemGlobalNames, cart->systemGlobalNames);
+	const MergedNamedSlots globalNames = mergeNamedSlots(system->globalNames, cart->globalNames);
 	merged->systemGlobalNames = systemGlobalNames.names;
 	merged->globalNames = globalNames.names;
 	return merged;
@@ -539,7 +533,7 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 /*
 	Fantasy-console linking note
 
-	- This codebase targets a fantasy-console ABI where some engine/BIOS modules are compile-time
+	- This codebase targets a fantasy-console ABI where some system ROM modules are compile-time
 	  descriptors (kept in metadata like `staticModulePaths` / `staticExternalModulePaths`) rather
 	  than live Lua runtime tables.
 	- The compiler enforces that these compile-time modules are not treated as runtime values and
@@ -554,42 +548,42 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 
 */
 
-LinkedProgramAsset linkProgramAssets(
-	const ProgramAsset& engineAsset,
-	const ProgramMetadata* engineSymbols,
-	const ProgramAsset& cartAsset,
+LinkedProgramImage linkProgramImages(
+	const ProgramImage& systemImage,
+	const ProgramMetadata* systemSymbols,
+	const ProgramImage& cartImage,
 	const ProgramMetadata* cartSymbols,
-	int engineBasePc,
+	int systemBasePc,
 	int cartBasePc
 ) {
-	if (!engineAsset.program || !cartAsset.program) {
-		throw std::runtime_error("[ProgramLinker] Missing program asset.");
+	if (!systemImage.program || !cartImage.program) {
+		throw std::runtime_error("[ProgramLinker] Missing program image.");
 	}
-	const Program& engineProgram = *engineAsset.program;
-	const Program& cartProgram = *cartAsset.program;
-	const int engineCodeBytes = static_cast<int>(engineProgram.code.size());
+	const Program& systemProgram = *systemImage.program;
+	const Program& cartProgram = *cartImage.program;
+	const int systemCodeBytes = static_cast<int>(systemProgram.code.size());
 	const int cartCodeBytes = static_cast<int>(cartProgram.code.size());
-	const size_t engineProtoSize = engineProgram.protos.size();
-	const int engineProtoCount = static_cast<int>(engineProtoSize);
-	ProgramLayout layout = resolveProgramLayout(engineCodeBytes, engineBasePc, cartBasePc);
+	const size_t systemProtoSize = systemProgram.protos.size();
+	const int systemProtoCount = static_cast<int>(systemProtoSize);
+	ProgramLayout layout = resolveProgramLayout(systemCodeBytes, systemBasePc, cartBasePc);
 
 	std::vector<uint8_t> cartCode = cartProgram.code;
-	rewriteClosureIndices(cartCode, engineProtoCount);
+	rewriteClosureIndices(cartCode, systemProtoCount);
 
 	auto linkedProgram = std::make_unique<Program>();
 	linkedProgram->constPoolStringPool = &linkedProgram->stringPool;
-	MergedConstPool merged = mergeConstPools(engineProgram, cartProgram, linkedProgram->stringPool);
+	MergedConstPool merged = mergeConstPools(systemProgram, cartProgram, linkedProgram->stringPool);
 	const MergedNamedSlots mergedSystemGlobals = mergeNamedSlots(
-		engineSymbols ? engineSymbols->systemGlobalNames : std::vector<std::string>{},
+		systemSymbols ? systemSymbols->systemGlobalNames : std::vector<std::string>{},
 		cartSymbols ? cartSymbols->systemGlobalNames : std::vector<std::string>{}
 	);
 	const MergedNamedSlots mergedGlobals = mergeNamedSlots(
-		engineSymbols ? engineSymbols->globalNames : std::vector<std::string>{},
+		systemSymbols ? systemSymbols->globalNames : std::vector<std::string>{},
 		cartSymbols ? cartSymbols->globalNames : std::vector<std::string>{}
-	);
+		);
 	rewriteConstRelocations(
 		cartCode,
-		cartAsset.link.constRelocs,
+		cartImage.link.constRelocs,
 		merged.cartRemap,
 		mergedGlobals.cartRemap,
 		mergedSystemGlobals.cartRemap,
@@ -600,44 +594,43 @@ LinkedProgramAsset linkProgramAssets(
 	);
 	linkedProgram->constPool = std::move(merged.values);
 
-	linkedProgram->protos.reserve(engineProtoSize + cartProgram.protos.size());
-	for (const auto& proto : engineProgram.protos) {
-		linkedProgram->protos.push_back(cloneProto(proto, layout.engineBasePc));
+	linkedProgram->protos.reserve(systemProtoSize + cartProgram.protos.size());
+	for (const auto& proto : systemProgram.protos) {
+		Proto& linkedProto = linkedProgram->protos.emplace_back(proto);
+		linkedProto.entryPC += layout.systemBasePc;
 	}
 	for (const auto& proto : cartProgram.protos) {
-		linkedProgram->protos.push_back(cloneProto(proto, layout.cartBasePc));
+		Proto& linkedProto = linkedProgram->protos.emplace_back(proto);
+		linkedProto.entryPC += layout.cartBasePc;
 	}
 
-	const int totalBytes = std::max(layout.engineBasePc + engineCodeBytes, layout.cartBasePc + cartCodeBytes);
+	const int totalBytes = std::max(layout.systemBasePc + systemCodeBytes, layout.cartBasePc + cartCodeBytes);
 	linkedProgram->code.assign(static_cast<size_t>(totalBytes), 0);
-	std::copy(engineProgram.code.begin(), engineProgram.code.end(), linkedProgram->code.begin() + layout.engineBasePc);
+	std::copy(systemProgram.code.begin(), systemProgram.code.end(), linkedProgram->code.begin() + layout.systemBasePc);
 	std::copy(cartCode.begin(), cartCode.end(), linkedProgram->code.begin() + layout.cartBasePc);
 	linkedProgram->constPoolCanonicalized = false;
 
-	auto linkedAsset = std::make_unique<ProgramAsset>();
-	linkedAsset->entryProtoIndex = cartAsset.entryProtoIndex + engineProtoCount;
-	linkedAsset->program = std::move(linkedProgram);
-	linkedAsset->moduleProtos.reserve(cartAsset.moduleProtos.size() + engineAsset.moduleProtos.size());
-	for (const auto& entry : cartAsset.moduleProtos) {
-		linkedAsset->moduleProtos.emplace_back(entry.first, entry.second + engineProtoCount);
+	auto linkedImage = std::make_unique<ProgramImage>();
+	linkedImage->entryProtoIndex = cartImage.entryProtoIndex + systemProtoCount;
+	linkedImage->program = std::move(linkedProgram);
+	linkedImage->moduleProtos.reserve(cartImage.moduleProtos.size() + systemImage.moduleProtos.size());
+	for (const auto& entry : cartImage.moduleProtos) {
+		linkedImage->moduleProtos.emplace_back(entry.first, entry.second + systemProtoCount);
 	}
-	for (const auto& entry : engineAsset.moduleProtos) {
-		linkedAsset->moduleProtos.emplace_back(entry.first, entry.second);
+	for (const auto& entry : systemImage.moduleProtos) {
+		linkedImage->moduleProtos.emplace_back(entry.first, entry.second);
 	}
-	linkedAsset->moduleAliases.reserve(cartAsset.moduleAliases.size() + engineAsset.moduleAliases.size());
-	linkedAsset->moduleAliases.insert(linkedAsset->moduleAliases.end(), cartAsset.moduleAliases.begin(), cartAsset.moduleAliases.end());
-	linkedAsset->moduleAliases.insert(linkedAsset->moduleAliases.end(), engineAsset.moduleAliases.begin(), engineAsset.moduleAliases.end());
-	linkedAsset->staticModulePaths.reserve(engineAsset.staticModulePaths.size() + cartAsset.staticModulePaths.size());
-	linkedAsset->staticModulePaths.insert(linkedAsset->staticModulePaths.end(), engineAsset.staticModulePaths.begin(), engineAsset.staticModulePaths.end());
-	linkedAsset->staticModulePaths.insert(linkedAsset->staticModulePaths.end(), cartAsset.staticModulePaths.begin(), cartAsset.staticModulePaths.end());
-	linkedAsset->link.constRelocs.clear();
+	linkedImage->staticModulePaths.reserve(systemImage.staticModulePaths.size() + cartImage.staticModulePaths.size());
+	linkedImage->staticModulePaths.insert(linkedImage->staticModulePaths.end(), systemImage.staticModulePaths.begin(), systemImage.staticModulePaths.end());
+	linkedImage->staticModulePaths.insert(linkedImage->staticModulePaths.end(), cartImage.staticModulePaths.begin(), cartImage.staticModulePaths.end());
+	linkedImage->link.constRelocs.clear();
 
-	const int engineInstructionCount = engineCodeBytes / INSTRUCTION_BYTES;
+	const int systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;
 	const int cartInstructionCount = cartCodeBytes / INSTRUCTION_BYTES;
-	std::unique_ptr<ProgramMetadata> mergedMetadata = mergeMetadata(engineSymbols, cartSymbols, layout, engineInstructionCount, cartInstructionCount);
+	std::unique_ptr<ProgramMetadata> mergedMetadata = mergeMetadata(systemSymbols, cartSymbols, layout, systemInstructionCount, cartInstructionCount);
 
-	LinkedProgramAsset output;
-	output.program = std::move(linkedAsset);
+	LinkedProgramImage output;
+	output.program = std::move(linkedImage);
 	output.metadata = std::move(mergedMetadata);
 	return output;
 }

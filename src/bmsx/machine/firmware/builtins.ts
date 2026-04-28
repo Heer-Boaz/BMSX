@@ -11,7 +11,7 @@ import { collectApiMembers } from './api/members';
 import { createInterpreterDevtoolsTable } from './devtools';
 import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,
-	ENGINE_LUA_BUILTIN_FUNCTIONS,
+	SYSTEM_LUA_BUILTIN_FUNCTIONS,
 } from './builtin_descriptors';
 import { buildMarshalContext, extendMarshalContext } from './js_bridge';
 import { api } from '../runtime/runtime';
@@ -153,23 +153,23 @@ export function registerApiBuiltins(runtime: Runtime, interpreter: LuaInterprete
 		}
 	}
 
-	registerEngineBuiltins(runtime, interpreter);
+	registerSystemBuiltins(runtime, interpreter);
 }
 
-function registerEngineBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
+function registerSystemBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
 	const env = interpreter.globalEnvironment;
-	const callEngineMember = (name: string, args: ReadonlyArray<LuaValue>): LuaCallResult => {
+	const callSystemMember = (name: string, args: ReadonlyArray<LuaValue>): LuaCallResult => {
 		const requireFn = interpreter.getGlobal('require') as LuaFunctionValue;
-		const engineValue = requireFn.call(['engine']);
-		if (isLuaCallSignal(engineValue)) {
-			return engineValue;
+		const systemValue = requireFn.call(['system']);
+		if (isLuaCallSignal(systemValue)) {
+			return systemValue;
 		}
-		const engineTable = engineValue[0] as LuaTable;
-		return (engineTable.get(name) as LuaFunctionValue).call(args);
+		const systemTable = systemValue[0] as LuaTable;
+		return (systemTable.get(name) as LuaFunctionValue).call(args);
 	};
-	for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
-		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
-		const native = new LuaNativeFunction(name, (args) => callEngineMember(name, args));
+	for (let index = 0; index < SYSTEM_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
+		const name = SYSTEM_LUA_BUILTIN_FUNCTIONS[index].name;
+		const native = new LuaNativeFunction(name, (args) => callSystemMember(name, args));
 		registerLuaGlobal(runtime, env, name, native);
 	}
 }

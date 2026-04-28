@@ -76,8 +76,8 @@
 
 local constants<const> = require('constants')
 local castle_map<const> = require('castle/map')
-local components<const> = require('components')
-local collision2d<const> = require('collision2d')
+local components<const> = require('bios/components')
+local collision2d<const> = require('bios/collision2d')
 local player_abilities<const> = require('player/abilities')
 
 local player<const> = {}

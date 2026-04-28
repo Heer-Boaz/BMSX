@@ -4,9 +4,35 @@
 
 #include "font.h"
 #include "core/utf8.h"
+#include <memory>
 #include <stdexcept>
 
 namespace bmsx {
+namespace {
+
+class RuntimeBitmapFontSource final : public BitmapFontSource {
+public:
+	explicit RuntimeBitmapFontSource(RuntimeRomPackage& romPackage)
+		: m_romPackage(romPackage) {
+	}
+
+	const ImgMeta& glyphMeta(const std::string& imgid) const override {
+		const ImgAsset* entry = m_romPackage.getImg(imgid);
+		if (!entry) {
+			throw BMSX_RUNTIME_ERROR("[BFont] Image '" + imgid + "' was not found.");
+		}
+		return entry->meta;
+	}
+
+	ImageAtlasRect glyphRect(const std::string& imgid) const override {
+		return resolveImageAtlasRectFromPackage(m_romPackage, imgid);
+	}
+
+private:
+	RuntimeRomPackage& m_romPackage;
+};
+
+} // namespace
 
 GlyphMap buildKonamiGlyphMap() {
 	GlyphMap map;
@@ -53,14 +79,21 @@ GlyphMap buildKonamiGlyphMap() {
 	return map;
 }
 
-BFont::BFont(RuntimeAssets& assets, i32 advancePadding)
-	: BFont(assets, buildKonamiGlyphMap(), advancePadding) {
+BFont::BFont(RuntimeRomPackage& romPackage, i32 advancePadding)
+	: BFont(romPackage, buildKonamiGlyphMap(), advancePadding) {
 }
 
-BFont::BFont(RuntimeAssets& assets, GlyphMap glyphmap, i32 advancePadding)
-	: m_assets(assets)
+BFont::BFont(RuntimeRomPackage& romPackage, GlyphMap glyphmap, i32 advancePadding)
+	: BFont(std::make_shared<RuntimeBitmapFontSource>(romPackage), std::move(glyphmap), advancePadding) {
+}
+
+BFont::BFont(std::shared_ptr<const BitmapFontSource> source, GlyphMap glyphmap, i32 advancePadding)
+	: m_source(std::move(source))
 	, m_letter_to_img(std::move(glyphmap))
 	, m_advance_padding(advancePadding) {
+	if (!m_source) {
+		throw BMSX_RUNTIME_ERROR("[BFont] Font source is missing.");
+	}
 	m_line_height = char_height('A');
 }
 
@@ -106,12 +139,12 @@ const FontGlyph& BFont::getGlyph(u32 codepoint) {
 	}
 
 	const std::string& imgid = char_to_img(codepoint);
-	ImgAsset* entry = m_assets.getImg(imgid);
+	const ImgMeta& meta = m_source->glyphMeta(imgid);
 	FontGlyph glyph;
 	glyph.imgid = imgid;
-	glyph.rect = resolveImageAtlasRectFromAssets(m_assets, imgid);
-	glyph.width = entry->meta.width;
-	glyph.height = entry->meta.height;
+	glyph.rect = m_source->glyphRect(imgid);
+	glyph.width = meta.width;
+	glyph.height = meta.height;
 	glyph.advance = glyph.width + m_advance_padding;
 
 	auto result = m_glyphs.emplace(codepoint, std::move(glyph));

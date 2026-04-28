@@ -1,8 +1,9 @@
 // Mesh pipeline (formerly glview.3d) inlined from legacy module.
 // Handles 3D mesh rendering, instancing, morph targets, skinning, fog, and lighting UBO management.
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 import type { Mesh } from './index';
 import { Float32ArrayPool } from '../../../common/pool';
+import { ScratchBatch } from '../../../common/scratchbatch';
 import type { vec3arr } from '../../../rompack/format';
 import { Identifier } from '../../../rompack/format';
 import meshFS from '../shaders/3d.frag.glsl';
@@ -65,8 +66,8 @@ let activeBackend: WebGLBackend = null;
 
 // Legacy direct submission array removed. Use submitMesh() with the shared render queue.
 let lightsDirty: boolean = true; // set to true on any light mutation; consumed by LightingSystem
-export let directionalLightList: ReadonlyArray<DirectionalLight> = [];
-export let pointLightList: ReadonlyArray<PointLight> = [];
+export const directionalLightList = new ScratchBatch<DirectionalLight>();
+export const pointLightList = new ScratchBatch<PointLight>();
 
 interface MeshBuffers {
 	vertex: WebGLBuffer;
@@ -126,6 +127,30 @@ export function getMorphTextureUsage(): { pos: number; norm: number } { return {
 
 const directionalLights: Map<string, DirectionalLight> = new Map();
 const pointLights: Map<string, PointLight> = new Map();
+
+function writeLightVec3(target: [number, number, number], source: readonly number[]): void {
+	target[0] = source[0];
+	target[1] = source[1];
+	target[2] = source[2];
+}
+
+function directionalLightRecord(id: Identifier): DirectionalLight {
+	let record = directionalLights.get(id);
+	if (!record) {
+		record = { type: 'directional', color: [0, 0, 0], intensity: 0, orientation: [0, 0, 0] };
+		directionalLights.set(id, record);
+	}
+	return record;
+}
+
+function pointLightRecord(id: Identifier): PointLight {
+	let record = pointLights.get(id);
+	if (!record) {
+		record = { type: 'point', color: [0, 0, 0], intensity: 0, pos: [0, 0, 0], range: 0 };
+		pointLights.set(id, record);
+	}
+	return record;
+}
 
 // Accessors for lighting system (decouple from internal maps / buffers)
 export function getDirectionalLightCount(): number { return directionalLights.size; }
@@ -379,59 +404,81 @@ function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
 }
 // Ambient lighting is supplied via FrameUniforms (u_ambient_frame) — no direct uniform updates here.
 export function uploadDirectionalLights(): void {
-	const lights = Array.from(directionalLights.values());
-	directionalLightList = lights;
+	directionalLightList.clear();
+	for (const light of directionalLights.values()) {
+		directionalLightList.push(light);
+	}
 	if (!activeBackend) { lightsDirty = true; return; }
 	ensureLightBuffersInitialized(activeBackend);
-	const count = Math.min(lights.length, MAX_DIR_LIGHTS);
+	const count = Math.min(directionalLightList.length, MAX_DIR_LIGHTS);
 	if (!dirLightData || !dirLightBuffer) { lightsDirty = true; return; }
 	dirLightData.fill(0);
 	dirLightCount[0] = count;
 	for (let i = 0; i < count; i++) {
+		const light = directionalLightList.get(i);
 		let base = DIR_LIGHT_DIRECTION_OFFSET + i * 4;
-		dirLightData.set(lights[i].orientation, base);
+		dirLightData.set(light.orientation, base);
 		dirLightData[base + 3] = 0;
 		base = DIR_LIGHT_COLOR_OFFSET + i * 4;
-		dirLightData.set(lights[i].color, base);
+		dirLightData.set(light.color, base);
 		dirLightData[base + 3] = 0;
 		base = DIR_LIGHT_INTENSITY_OFFSET + i * 4;
-		dirLightData[base] = lights[i].intensity;
+		dirLightData[base] = light.intensity;
 	}
 	activeBackend.updateUniformBuffer(dirLightBuffer, dirLightData);
 	lightsDirty = true;
 }
 export function uploadPointLights(): void {
-	const lights = Array.from(pointLights.values());
-	pointLightList = lights;
+	pointLightList.clear();
+	for (const light of pointLights.values()) {
+		pointLightList.push(light);
+	}
 	if (!activeBackend) { lightsDirty = true; return; }
 	ensureLightBuffersInitialized(activeBackend);
-	const count = Math.min(lights.length, MAX_POINT_LIGHTS);
+	const count = Math.min(pointLightList.length, MAX_POINT_LIGHTS);
 	if (!pointLightData || !pointLightBuffer) { lightsDirty = true; return; }
 	pointLightData.fill(0);
 	pointLightCount[0] = count;
 	for (let i = 0; i < count; i++) {
+		const light = pointLightList.get(i);
 		let base = POINT_LIGHT_POSITION_OFFSET + i * 4;
-		pointLightData.set(lights[i].pos!, base);
+		pointLightData.set(light.pos!, base);
 		pointLightData[base + 3] = 1;
 		base = POINT_LIGHT_COLOR_OFFSET + i * 4;
-		pointLightData.set(lights[i].color!, base);
+		pointLightData.set(light.color!, base);
 		pointLightData[base + 3] = 0;
 		base = POINT_LIGHT_PARAM_OFFSET + i * 4;
-		pointLightData[base] = lights[i].range!;
-		pointLightData[base + 1] = lights[i].intensity;
+		pointLightData[base] = light.range!;
+		pointLightData[base + 1] = light.intensity;
 	}
 	activeBackend.updateUniformBuffer(pointLightBuffer, pointLightData);
 	lightsDirty = true;
 }
-export function addDirectionalLight(id: Identifier, light: DirectionalLight): void { directionalLights.set(id, { type: 'directional', color: light.color, intensity: light.intensity, orientation: light.orientation }); uploadDirectionalLights(); }
+export function addDirectionalLight(id: Identifier, light: DirectionalLight): void {
+	const record = directionalLightRecord(id);
+	writeLightVec3(record.color, light.color);
+	writeLightVec3(record.orientation, light.orientation);
+	record.intensity = light.intensity;
+	uploadDirectionalLights();
+}
 export function removeDirectionalLight(id: string): void { if (directionalLights.delete(id)) uploadDirectionalLights(); }
-export function addPointLight(id: Identifier, light: PointLight): void { if (!light.pos) throw new Error('Point light must have a position'); if (!light.color) throw new Error('Point light must have a color'); if (light.range === undefined) throw new Error('Point light must have a range'); pointLights.set(id, { ...light, type: 'point' }); uploadPointLights(); }
+export function addPointLight(id: Identifier, light: PointLight): void {
+	if (!light.pos) throw new Error('Point light must have a position');
+	if (!light.color) throw new Error('Point light must have a color');
+	if (light.range === undefined) throw new Error('Point light must have a range');
+	const record = pointLightRecord(id);
+	writeLightVec3(record.color, light.color);
+	writeLightVec3(record.pos, light.pos);
+	record.intensity = light.intensity;
+	record.range = light.range;
+	uploadPointLights();
+}
 export function removePointLight(id: string): void { if (pointLights.delete(id)) uploadPointLights(); }
 export function clearLights(): void {
 	directionalLights.clear();
 	pointLights.clear();
-	directionalLightList = [];
-	pointLightList = [];
+	directionalLightList.clear();
+	pointLightList.clear();
 	if (activeBackend) ensureLightBuffersInitialized(activeBackend);
 	uploadDirectionalLights();
 	uploadPointLights();
@@ -693,7 +740,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 	const { context, gl } = runtime;
 	// Albedo: prefer mesh texture; otherwise use 1x1 white (no shared textpage fallback)
 	let tex = m.gpuTextureAlbedo
-		? engineCore.texmanager.getTexture(m.gpuTextureAlbedo)
+		? consoleCore.texmanager.getTexture(m.gpuTextureAlbedo)
 		: (context.textures['_default_albedo'] as WebGLTexture);
 	if (tex !== stateCache.albedo) {
 		context.activeTexUnit = TEXTURE_UNIT_ALBEDO;
@@ -703,7 +750,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 	}
 	stateCache.useAlbedo = tex ? 1 : 0;
 
-	tex = m.gpuTextureNormal ? engineCore.texmanager.getTexture(m.gpuTextureNormal) : (context.textures['_default_normal'] as WebGLTexture);
+	tex = m.gpuTextureNormal ? consoleCore.texmanager.getTexture(m.gpuTextureNormal) : (context.textures['_default_normal'] as WebGLTexture);
 	if (tex !== stateCache.normal) {
 		context.activeTexUnit = TEXTURE_UNIT_NORMAL;
 		context.bind2DTex(tex);
@@ -712,7 +759,7 @@ function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers
 	}
 	stateCache.useNormal = tex ? 1 : 0;
 
-	tex = m.gpuTextureMetallicRoughness ? engineCore.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (context.textures['_default_mr'] as WebGLTexture);
+	tex = m.gpuTextureMetallicRoughness ? consoleCore.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (context.textures['_default_mr'] as WebGLTexture);
 	if (tex !== stateCache.mr) {
 		context.activeTexUnit = TEXTURE_UNIT_METALLIC_ROUGHNESS;
 		context.bind2DTex(tex);
@@ -1018,10 +1065,10 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
 			activeBackend = webglBackend;
-			renderMeshBatch(webglBackend, engineCore.view, fbo as WebGLFramebuffer, s as MeshBatchPipelineState);
+			renderMeshBatch(webglBackend, consoleCore.view, fbo as WebGLFramebuffer, s as MeshBatchPipelineState);
 		},
 		prepare: (backend, _state) => {
-			const ctx = engineCore.view as RenderContext;
+			const ctx = consoleCore.view as RenderContext;
 			const cam = resolveActiveCamera3D();
 			if (!cam) {
 				console.warn('[Draw Meshes] No active 3D camera found, skipping mesh draw');
@@ -1029,13 +1076,12 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 			}
 			const frameShared = registry.getState('frame_shared');
 			const mats = cam.getMatrices();
-			const frustum = cam.frustumPlanesPacked.slice();
 			const meshState: MeshBatchPipelineState = {
 				width: ctx.offscreenCanvasSize.x,
 				height: ctx.offscreenCanvasSize.y,
 				camPos: cam.position,
 				viewProj: mats.vp,
-				cameraFrustum: frustum,
+				cameraFrustum: cam.frustumPlanesPacked,
 			};
 			if (frameShared) {
 				meshState.lighting = frameShared.lighting;

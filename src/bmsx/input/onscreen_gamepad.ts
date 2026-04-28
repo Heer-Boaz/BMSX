@@ -12,7 +12,7 @@ import type {
 	OnscreenGamepadPlatformSession,
 	OnscreenPointerEvent,
 } from '../platform';
-import { engineCore } from '../core/engine';
+import { consoleCore } from '../core/console';
 
 export type {
 	OnscreenGamepadControlKind,
@@ -57,7 +57,7 @@ export class OnscreenGamepad implements InputHandler {
 	}
 
 	public static hideButtons(gamepad_button_ids: string[]): void {
-		const platform = engineCore.platform.onscreenGamepad; // TODO: UGLY!!
+		const platform = consoleCore.platform.onscreenGamepad; // TODO: UGLY!!
 		const elementIds: string[] = [];
 		for (let i = 0; i < gamepad_button_ids.length; i++) {
 			const button = gamepad_button_ids[i];
@@ -76,7 +76,7 @@ export class OnscreenGamepad implements InputHandler {
 
 	public pollInput(): void {
 		const defaultState = makeButtonState();
-		const now = engineCore.platform.clock.now();
+		const now = consoleCore.platform.clock.now();
 		const newStates: KeyOrButtonId2ButtonState = {};
 		for (let i = 0; i < Input.BUTTON_IDS.length; i++) {
 			const button = Input.BUTTON_IDS[i];
@@ -486,7 +486,7 @@ export class OnscreenGamepad implements InputHandler {
 
 	private resolveHandles(): OnscreenGamepadHandles {
 		if (!this.handlesProvider) {
-			const host = engineCore.platform.gameviewHost;
+			const host = consoleCore.platform.gameviewHost;
 			if (!host) {
 				return null;
 			}

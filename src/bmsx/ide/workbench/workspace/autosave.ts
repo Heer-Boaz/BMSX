@@ -1,4 +1,4 @@
-import { engineCore } from '../../../core/engine';
+import { consoleCore } from '../../../core/console';
 import type { Runtime } from '../../../machine/runtime/runtime';
 import * as luaPipeline from '../../runtime/lua_pipeline';
 import { editorDocumentState } from '../../editor/editing/document_state';
@@ -73,7 +73,7 @@ export function buildWorkspaceAutosavePayload(runtime: Runtime, entries: Map<str
 		});
 	}
 	return {
-		savedAt: engineCore.platform.clock.dateNow(),
+		savedAt: consoleCore.platform.clock.dateNow(),
 		dirtyFiles,
 		breakpoints: serializeBreakpoints(),
 		fontVariant: editorViewState.fontVariant,

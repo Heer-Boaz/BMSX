@@ -10,7 +10,7 @@ export const WORKSPACE_METADATA_DIR = '.bmsx';
 export const WORKSPACE_DIRTY_DIR = 'dirty';
 export const WORKSPACE_STATE_FILE = 'ide-state.json';
 export const WORKSPACE_MARKER_FILE = '~workspace';
-export const DEFAULT_ENGINE_PROJECT_ROOT_PATH = 'src/bmsx';
+export const DEFAULT_SYSTEM_PROJECT_ROOT_PATH = 'src/bmsx';
 
 export type WorkspaceOverrideRecord = { source: string; path: string; cartPath: string; updatedAt?: number };
 type WorkspaceStoragePayload = { contents: string; updatedAt: number };

@@ -14,7 +14,8 @@ import { GeometryController } from './devices/geometry/controller';
 import { ImgDecController } from './devices/imgdec/controller';
 import { InputController, type InputControllerState } from './devices/input/controller';
 import { IrqController } from './devices/irq/controller';
-import { VDP, type VdpFrameBufferSize, type VdpSaveState, type VdpState } from './devices/vdp/vdp';
+import type { VdpFrameBufferSize } from './devices/vdp/contracts';
+import { VDP, type VdpSaveState, type VdpState } from './devices/vdp/vdp';
 import type { Api } from './firmware/api/api';
 import { Memory, type MemorySaveState, type MemoryState } from './memory/memory';
 import { StringHandleTable, type StringHandleTableState } from './memory/string/memory';
@@ -66,7 +67,7 @@ export class Machine {
 
 	public constructor(
 		public readonly memory: Memory,
-		frameBufferSize: VdpFrameBufferSize,
+		public readonly frameBufferSize: VdpFrameBufferSize,
 		input: Input,
 		soundMaster: SoundMaster,
 		api: Api,
@@ -82,7 +83,7 @@ export class Machine {
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
 		this.inputController = new InputController(this.memory, input);
-		this.resourceUsageDetector = new ResourceUsageDetector(this.memory, this.stringHandles, this.vdp);
+		this.resourceUsageDetector = new ResourceUsageDetector(this.stringHandles, this.vdp);
 	}
 
 	public initializeSystemIo(): void {

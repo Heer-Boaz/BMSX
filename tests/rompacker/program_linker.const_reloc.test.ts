@@ -7,8 +7,8 @@ import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
 import { CPU, OpCode, RunResult, Table, createNativeFunction, type Proto } from '../../src/bmsx/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../src/bmsx/machine/cpu/instruction_format';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
-import type { ProgramAsset, ProgramConstReloc } from '../../src/bmsx/machine/program/asset';
-import { linkProgramAssets } from '../../src/bmsx/machine/program/linker';
+import type { ProgramImage, ProgramConstReloc } from '../../src/bmsx/machine/program/loader';
+import { linkProgramImages } from '../../src/bmsx/machine/program/linker';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { isStringValue, stringValueToString } from '../../src/bmsx/machine/memory/string/pool';
 
@@ -46,11 +46,11 @@ function makeProto(codeLen: number): Proto {
 	};
 }
 
-function makeProgramAsset(
+function makeProgramImage(
 	words: ReadonlyArray<EncodedWord>,
 	constPool: ReadonlyArray<null | boolean | number | string>,
 	constRelocs: ReadonlyArray<ProgramConstReloc>,
-): ProgramAsset {
+): ProgramImage {
 	const code = buildCode(words);
 	return {
 		entryProtoIndex: 0,
@@ -58,21 +58,21 @@ function makeProgramAsset(
 			code,
 			constPool: Array.from(constPool),
 			protos: [makeProto(code.length)],
-		},
-		moduleProtos: [],
-		moduleAliases: [],
-		link: {
+			},
+			moduleProtos: [],
+			staticModulePaths: [],
+			link: {
 			constRelocs: Array.from(constRelocs),
 		},
 	};
 }
 
-function makeEngineAsset(constPoolSize: number): ProgramAsset {
+function makeSystemImage(constPoolSize: number): ProgramImage {
 	const constPool = new Array<null | boolean | number | string>(constPoolSize);
 	for (let index = 0; index < constPoolSize; index += 1) {
 		constPool[index] = index;
 	}
-	return makeProgramAsset(
+	return makeProgramImage(
 		[{ op: OpCode.RET, a: 0, b: 1, c: 0 }],
 		constPool,
 		[],
@@ -249,7 +249,7 @@ test('ProgramCompiler rejects undefined identifiers when source is provided', ()
 });
 
 test('ProgramCompiler accepts shared runtime globals when source is provided', () => {
-	const source = 'return assets, sys_vdp_stream_base, cart_manifest';
+	const source = 'return sys_rom_data, sys_vdp_stream_base, cart_manifest';
 	const chunk = parseChunk(source);
 	const compiled = compileLuaChunkToProgram(chunk, [], { entrySource: source });
 	assert.ok(compiled.program.code.length > 0);
@@ -284,7 +284,7 @@ test('ProgramCompiler rewrites const require member access to flattened GETGL sl
 	].join('\n');
 	const compiled = compileLuaChunkToProgram(
 		parseChunk(entrySource, 'cart.lua'),
-		[{ path: 'mod.lua', chunk: parseChunk(moduleSource, 'mod.lua'), source: moduleSource }],
+		[{ path: 'mod', chunk: parseChunk(moduleSource, 'mod'), source: moduleSource }],
 		{ entrySource },
 	);
 	const entryLoads = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, compiled.entryProtoIndex, OpCode.GETGL);
@@ -314,7 +314,7 @@ test('ProgramCompiler rewrites external const require member access inside closu
 		[],
 		{
 			entrySource,
-			externalModules: [{ path: 'mod.lua', chunk: parseChunk(moduleSource, 'mod.lua'), source: moduleSource }],
+			externalModules: [{ path: 'mod', chunk: parseChunk(moduleSource, 'mod'), source: moduleSource }],
 		},
 	);
 	const closureProtoIndex = compiled.metadata.protoIds.findIndex((id) => id.includes('read_foo'));
@@ -346,7 +346,7 @@ test('ProgramCompiler emits nil for missing direct external require fields insid
 		[],
 		{
 			entrySource,
-			externalModules: [{ path: 'mod.lua', chunk: parseChunk(moduleSource, 'mod.lua'), source: moduleSource }],
+			externalModules: [{ path: 'mod', chunk: parseChunk(moduleSource, 'mod'), source: moduleSource }],
 		},
 	);
 	const closureProtoIndex = compiled.metadata.protoIds.findIndex((id) => id.includes('read_missing'));
@@ -377,10 +377,10 @@ test('ProgramCompiler rejects external module roots captured as closure upvalues
 			[],
 			{
 				entrySource,
-				externalModules: [{ path: 'mod.lua', chunk: parseChunk(moduleSource, 'mod.lua'), source: moduleSource }],
+				externalModules: [{ path: 'mod', chunk: parseChunk(moduleSource, 'mod'), source: moduleSource }],
 			},
 		),
-		/External module 'mod\.lua' is compile-time only/,
+		/External module 'mod' is compile-time only/,
 	);
 });
 
@@ -397,10 +397,10 @@ test('ProgramCompiler emits module export slot stores from module returns', () =
 	].join('\n');
 	const compiled = compileLuaChunkToProgram(
 		parseChunk(entrySource, 'cart.lua'),
-		[{ path: 'constants.lua', chunk: parseChunk(moduleSource, 'constants.lua'), source: moduleSource }],
+		[{ path: 'constants', chunk: parseChunk(moduleSource, 'constants'), source: moduleSource }],
 		{ entrySource },
 	);
-	const moduleProtoIndex = compiled.moduleProtoMap.get('constants.lua');
+	const moduleProtoIndex = compiled.moduleProtoMap.get('constants');
 	assert.notEqual(moduleProtoIndex, undefined);
 	const moduleStores = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, moduleProtoIndex!, OpCode.SETGL);
 	const entryLoads = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, compiled.entryProtoIndex, OpCode.GETGL);
@@ -425,17 +425,17 @@ test('flattened module export slots stay in sync with runtime require results', 
 	].join('\n');
 	const compiled = compileLuaChunkToProgram(
 		parseChunk(entrySource, 'cart.lua'),
-		[{ path: 'constants.lua', chunk: parseChunk(moduleSource, 'constants.lua'), source: moduleSource }],
+		[{ path: 'constants', chunk: parseChunk(moduleSource, 'constants'), source: moduleSource }],
 		{ entrySource },
 	);
-	const memory = new Memory({ engineRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(compiled.program, compiled.metadata);
 	const requireFn = createNativeFunction('require', (args, out) => {
 		assert.ok(isStringValue(args[0]));
 		const moduleName = stringValueToString(args[0]);
 		assert.equal(moduleName, 'constants');
-		const protoIndex = compiled.moduleProtoMap.get('constants.lua');
+		const protoIndex = compiled.moduleProtoMap.get('constants');
 		assert.notEqual(protoIndex, undefined);
 		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
 		assert.equal(cpu.run(100000), RunResult.Halted);
@@ -463,16 +463,16 @@ test('flattened module export slots survive program append swaps', () => {
 	].join('\n');
 	const compiled = compileLuaChunkToProgram(
 		parseChunk(entrySource, 'cart.lua'),
-		[{ path: 'constants.lua', chunk: parseChunk(moduleSource, 'constants.lua'), source: moduleSource }],
+		[{ path: 'constants', chunk: parseChunk(moduleSource, 'constants'), source: moduleSource }],
 		{ entrySource },
 	);
-	const memory = new Memory({ engineRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(compiled.program, compiled.metadata);
 	const requireFn = createNativeFunction('require', (args, out) => {
 		assert.ok(isStringValue(args[0]));
 		assert.equal(stringValueToString(args[0]), 'constants');
-		const protoIndex = compiled.moduleProtoMap.get('constants.lua');
+		const protoIndex = compiled.moduleProtoMap.get('constants');
 		assert.notEqual(protoIndex, undefined);
 		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
 		assert.equal(cpu.run(100000), RunResult.Halted);
@@ -495,9 +495,9 @@ test('flattened module export slots survive program append swaps', () => {
 	assert.equal(cpu.getGlobalByKey(slotKey), 8);
 });
 
-test('ProgramLinker patches Bx relocations against large engine const pools', () => {
-	const engineAsset = makeEngineAsset(5000);
-	const cartAsset = makeProgramAsset(
+test('ProgramLinker patches Bx relocations against large system const pools', () => {
+	const systemImage = makeSystemImage(5000);
+	const cartAsset = makeProgramImage(
 		[
 			{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
 			{ op: OpCode.LOADK, a: 0, b: 0, c: 0, ext: 0 },
@@ -507,15 +507,15 @@ test('ProgramLinker patches Bx relocations against large engine const pools', ()
 		[{ wordIndex: 1, kind: 'bx', constIndex: 0 }],
 	);
 
-	const linked = linkProgramAssets(engineAsset, null, cartAsset, null);
-	const linkedCode = linked.programAsset.program.code;
+	const linked = linkProgramImages(systemImage, null, cartAsset, null);
+	const linkedCode = linked.programImage.program.code;
 	const cartBaseWord = (0x80000 / INSTRUCTION_BYTES);
 	assert.equal(decodeBx(linkedCode, cartBaseWord + 1), 5000);
 });
 
-test('ProgramLinker patches RK(B) relocations against large engine const pools', () => {
-	const engineAsset = makeEngineAsset(5000);
-	const cartAsset = makeProgramAsset(
+test('ProgramLinker patches RK(B) relocations against large system const pools', () => {
+	const systemImage = makeSystemImage(5000);
+	const cartAsset = makeProgramImage(
 		[
 			{ op: OpCode.WIDE, a: 0, b: 0x3f, c: 0 },
 			{ op: OpCode.ADD, a: 0, b: 0x3f, c: 0, ext: 0x38 },
@@ -525,15 +525,15 @@ test('ProgramLinker patches RK(B) relocations against large engine const pools',
 		[{ wordIndex: 1, kind: 'rk_b', constIndex: 0 }],
 	);
 
-	const linked = linkProgramAssets(engineAsset, null, cartAsset, null);
-	const linkedCode = linked.programAsset.program.code;
+	const linked = linkProgramImages(systemImage, null, cartAsset, null);
+	const linkedCode = linked.programImage.program.code;
 	const cartBaseWord = (0x80000 / INSTRUCTION_BYTES);
 	assert.equal(decodeSignedRkB(linkedCode, cartBaseWord + 1), -5001);
 });
 
-test('ProgramLinker patches direct field const relocations against large engine const pools', () => {
-	const engineAsset = makeEngineAsset(5000);
-	const cartAsset = makeProgramAsset(
+test('ProgramLinker patches direct field const relocations against large system const pools', () => {
+	const systemImage = makeSystemImage(5000);
+	const cartAsset = makeProgramImage(
 		[
 			{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
 			{ op: OpCode.GETFIELD, a: 0, b: 1, c: 0, ext: 0 },
@@ -551,8 +551,8 @@ test('ProgramLinker patches direct field const relocations against large engine 
 		],
 	);
 
-	const linked = linkProgramAssets(engineAsset, null, cartAsset, null);
-	const linkedCode = linked.programAsset.program.code;
+	const linked = linkProgramImages(systemImage, null, cartAsset, null);
+	const linkedCode = linked.programImage.program.code;
 	const cartBaseWord = (0x80000 / INSTRUCTION_BYTES);
 	assert.equal(decodeUnsignedC(linkedCode, cartBaseWord + 1), 5000);
 	assert.equal(decodeUnsignedB(linkedCode, cartBaseWord + 3), 5001);

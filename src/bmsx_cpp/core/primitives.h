@@ -1,7 +1,7 @@
 /*
  * primitives.h - Core type definitions for BMSX
  *
- * This header defines fundamental types used throughout the engine.
+ * This header defines fundamental types used throughout the console runtime.
  */
 
 #ifndef BMSX_TYPES_H

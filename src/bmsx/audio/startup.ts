@@ -1,6 +1,6 @@
-import { engineCore } from '../core/engine';
+import { consoleCore } from '../core/console';
 
 export function startEngineWithStartupAudio(): void {
-	engineCore.bootstrapStartupAudio();
-	engineCore.start();
+	consoleCore.bootstrapStartupAudio();
+	consoleCore.start();
 }

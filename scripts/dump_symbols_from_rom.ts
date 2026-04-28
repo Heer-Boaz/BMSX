@@ -1,5 +1,6 @@
 import fs from 'fs';
-import { decodeProgramSymbolsAsset } from '../src/bmsx/machine/program/asset';
+import { ProgramSymbolsImage } from '../src/bmsx/machine/program/loader';
+import { decodeBinary} from 'bmsx/common/serializer/binencoder';
 
 function dump(romPath: string, resourcesJson: string) {
 	const rom = fs.readFileSync(romPath);
@@ -16,7 +17,7 @@ function dump(romPath: string, resourcesJson: string) {
 		console.log(`Asset ${i}: start=${start} end=${end} size=${end - start}`);
 		const bytes = rom.slice(start, end);
 		try {
-			const obj = decodeProgramSymbolsAsset(bytes);
+			const obj = decodeBinary(bytes) as ProgramSymbolsImage;
 			const meta = obj.metadata;
 			console.log('protoIds length:', meta.protoIds?.length ?? 0);
 			console.log('systemGlobalNames length:', meta.systemGlobalNames?.length ?? 0);

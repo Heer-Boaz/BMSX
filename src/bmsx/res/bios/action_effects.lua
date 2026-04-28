@@ -35,8 +35,8 @@
 -- 4. CONTEXT: handler receives { owner, target, payload, args }.
 --    target defaults to owner but can be overridden for targeted effects.
 
-local eventemitter<const> = require('eventemitter')
-local components<const> = require('components')
+local eventemitter<const> = require('bios/eventemitter')
+local components<const> = require('bios/components')
 local component<const> = components.component
 
 local actioneffects<const> = {}

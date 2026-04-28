@@ -52,7 +52,10 @@ export function encodeRomMetadataSectionHeader(propNames: readonly string[]): Ui
 		pushVarUint(bytes, encoded.length);
 		for (let j = 0; j < encoded.length; j++) bytes.push(encoded[j]);
 	}
-	return Uint8Array.from([...header, ...bytes]);
+	const out = new Uint8Array(header.length + bytes.length);
+	out.set(header, 0);
+	out.set(bytes, header.length);
+	return out;
 }
 
 export function buildRomMetadataSection(values: readonly any[]): { header: Uint8Array; propNames: string[]; payloads: Uint8Array[] } {

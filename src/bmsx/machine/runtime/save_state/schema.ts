@@ -1,11 +1,10 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 4;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 1;
 
-// Append only. Existing indices are part of the runtime save-state byte ABI.
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
 	'array',
 	'arrayLength',
-	'textpageSlots',
+	'vramSlots',
 	'callSitePc',
 	'captureReturns',
 	'closureRef',
@@ -20,7 +19,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'enable_glow',
 	'enable_noise',
 	'enable_scanlines',
-	'engineProgramActive',
+	'systemProgramActive',
 	'entries',
 	'frameIndex',
 	'frameScheduler',
@@ -87,7 +86,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'sampleArmed',
 	'secondary',
 	'sequence',
-	'skyboxFaceIds',
 	'storageState',
 	'stringHandles',
 	'tag',
@@ -132,4 +130,5 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'surfaceId',
 	'pixels',
 	'displayFrameBufferPixels',
+	'skyboxFaceSources',
 ] as const;

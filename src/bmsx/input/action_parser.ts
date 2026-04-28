@@ -1037,6 +1037,10 @@ export class ActionDefinitionEvaluator {
 			}
 		};
 		walk(ast);
-		return Array.from(out);
+		const actions: string[] = [];
+		for (const action of out) {
+			actions.push(action);
+		}
+		return actions;
 	}
 }

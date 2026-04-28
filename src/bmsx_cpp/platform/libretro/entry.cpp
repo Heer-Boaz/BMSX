@@ -2,7 +2,7 @@
  * entry.cpp - Libretro core entry points
  *
  * This file implements all the required libretro callbacks that RetroArch
- * uses to communicate with the BMSX engine core.
+ * uses to communicate with the BMSX console core.
  */
 
 #include <cstdarg>
@@ -20,7 +20,9 @@
 #include "libretro.h"
 #include "platform.h"
 #include "core/taskgate.h"
-#include "core/engine.h"
+#include "core/console.h"
+#include "core/system.h"
+#include "machine/runtime/timing/index.h"
 #include "../../machine/runtime/runtime.h"
 
 // Core info
@@ -92,6 +94,20 @@ static bmsx::LibretroPlatform* g_platform = nullptr;
 static retro_system_av_info g_cached_av_info{};
 static bool g_cached_av_info_valid = false;
 
+static void apply_manifest_av_info(retro_system_av_info& av, const bmsx::MachineManifest& manifest, int64_t ufps_scaled) {
+	av.geometry.base_width = static_cast<unsigned>(manifest.viewportWidth);
+	av.geometry.base_height = static_cast<unsigned>(manifest.viewportHeight);
+	if (av.geometry.max_width < av.geometry.base_width) {
+		av.geometry.max_width = av.geometry.base_width;
+	}
+	if (av.geometry.max_height < av.geometry.base_height) {
+		av.geometry.max_height = av.geometry.base_height;
+	}
+	av.geometry.aspect_ratio = static_cast<float>(av.geometry.base_width)
+		/ static_cast<float>(av.geometry.base_height);
+	av.timing.fps = static_cast<double>(ufps_scaled) / static_cast<double>(bmsx::HZ_SCALE);
+}
+
 extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down) {
 	if (!g_platform || !code || !code[0]) {
 		return;
@@ -114,8 +130,8 @@ extern "C" RETRO_API void bmsx_focus_changed(bool focused) {
 }
 
 extern "C" RETRO_API bool bmsx_is_cart_program_active(void) {
-	auto* engine = g_platform ? g_platform->engine() : nullptr;
-	return engine && engine->hasRuntime() && !engine->runtime().isEngineProgramActive();
+	auto* console = g_platform ? g_platform->console() : nullptr;
+	return console && console->hasRuntime() && !console->runtime().isSystemProgramActive();
 }
 
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
@@ -1243,21 +1259,10 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 	if (g_cached_av_info_valid) {
 		*info = g_cached_av_info;
 	} else {
-		// Default resolution before content is loaded.
-		constexpr unsigned BASE_WIDTH = 100;
-		constexpr unsigned BASE_HEIGHT = 100;
-		constexpr unsigned MAX_WIDTH = 512;
-		constexpr unsigned MAX_HEIGHT = 448;
-		constexpr double FPS = 50.0;
 		constexpr double SAMPLE_RATE = 48000.0;
 
-		info->geometry.base_width = BASE_WIDTH;
-		info->geometry.base_height = BASE_HEIGHT;
-		info->geometry.max_width = MAX_WIDTH;
-		info->geometry.max_height = MAX_HEIGHT;
-		info->geometry.aspect_ratio =
-			static_cast<float>(BASE_WIDTH) / static_cast<float>(BASE_HEIGHT);
-		info->timing.fps = FPS;
+		std::memset(info, 0, sizeof(*info));
+		apply_manifest_av_info(*info, bmsx::defaultSystemMachineManifest(), bmsx::DEFAULT_UFPS_SCALED);
 		info->timing.sample_rate = SAMPLE_RATE;
 		g_cached_av_info = *info;
 		g_cached_av_info_valid = true;
@@ -1280,8 +1285,8 @@ extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
 }
 
 extern "C" int64_t bmsx_get_ufps(void) {
-	auto* engine = g_platform ? g_platform->engine() : nullptr;
-	return engine ? engine->machineManifest().ufpsScaled.value() : bmsx::DEFAULT_UFPS_SCALED;
+	auto* console = g_platform ? g_platform->console() : nullptr;
+	return console ? console->machineManifest().ufpsScaled.value() : bmsx::DEFAULT_UFPS_SCALED;
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {
@@ -1308,7 +1313,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 	bool loaded_ok = false;
 	if (game->data && game->size > 0) {
 		if (game->path) {
-			g_platform->tryLoadEngineAssets(game->path);
+			g_platform->tryLoadSystemRom(game->path);
 		}
 		loaded_ok = g_platform->loadRom(static_cast<const uint8_t*>(game->data),
 										game->size);
@@ -1328,19 +1333,10 @@ bool retro_load_game(const struct retro_game_info* game) {
 		memset(&av, 0, sizeof(av));
 		retro_get_system_av_info(&av);
 	}
-	const auto& manifest = g_platform->engine()->machineManifest();
-	av.geometry.base_width = static_cast<unsigned>(manifest.viewportWidth);
-	av.geometry.base_height = static_cast<unsigned>(manifest.viewportHeight);
-	if (av.geometry.max_width < av.geometry.base_width) {
-		av.geometry.max_width = av.geometry.base_width;
-	}
-	if (av.geometry.max_height < av.geometry.base_height) {
-		av.geometry.max_height = av.geometry.base_height;
-	}
-	av.geometry.aspect_ratio = static_cast<float>(av.geometry.base_width)
-		/ static_cast<float>(av.geometry.base_height);
-	av.timing.fps = (double)ufps_scaled / (double)bmsx::HZ_SCALE;
+	const auto& manifest = g_platform->console()->machineManifest();
+	apply_manifest_av_info(av, manifest, ufps_scaled);
 	environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
+	environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &av.geometry);
 	g_cached_av_info = av;
 	g_cached_av_info_valid = true;
 	g_platform->setAVInfo(av);
@@ -1540,8 +1536,8 @@ void retro_run(void) {
 	g_platform->runFrame();
 //   const auto runEnd = std::chrono::steady_clock::now();
 //   const double runMs = std::chrono::duration<double, std::milli>(runEnd - runStart).count();
-//   const auto& tickTiming = g_platform->engine()->lastTickTiming();
-//   const auto& renderTiming = g_platform->engine()->lastRenderTiming();
+//   const auto& tickTiming = g_platform->console()->lastTickTiming();
+//   const auto& renderTiming = g_platform->console()->lastRenderTiming();
 //   const double overheadMs = runMs - tickTiming.totalMs - renderTiming.totalMs;
 
 //   accRunMs += runMs;

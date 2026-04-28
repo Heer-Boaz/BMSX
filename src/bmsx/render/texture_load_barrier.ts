@@ -1,4 +1,4 @@
-import { type GateCategory, type GateGroup } from './taskgate';
+import { type GateCategory, type GateGroup } from '../core/taskgate';
 
 type LoaderFn<T> = () => Promise<T>;
 type Disposer<T> = (val: T) => void;
@@ -27,7 +27,7 @@ export interface AcquireOptions<T> {
 	signal?: AbortSignal;
 }
 
-export class AssetBarrier<T> {
+export class TextureLoadBarrier<T> {
 	private map = new Map<string, Entry<T>>();
 
 	constructor(private readonly group: GateGroup) { }
@@ -60,7 +60,7 @@ export class AssetBarrier<T> {
 			setTimeout(() => {
 				const m = this.map.get(key);
 				if (m?.promise && m.gen === genAtStart) {
-					console.warn(`[AssetBarrier] Slow load > ${opts.warnIfLongerMs}ms for key="${key}"`);
+					console.warn(`[TextureLoadBarrier] Slow load > ${opts.warnIfLongerMs}ms for key="${key}"`);
 				}
 			}, opts.warnIfLongerMs);
 		}
@@ -73,7 +73,7 @@ export class AssetBarrier<T> {
 					try {
 						(entry.disposer ?? opts.disposer)?.(val);
 					} catch (e) {
-						console.error('[AssetBarrier] disposer threw on late resolve', e);
+						console.error('[TextureLoadBarrier] disposer threw on late resolve', e);
 					}
 					return current?.value as T;
 				}
@@ -103,7 +103,7 @@ export class AssetBarrier<T> {
 	addRef(key: string): void {
 		const e = this.map.get(key);
 		if (!e) {
-			throw new Error(`[AssetBarrier] addRef called for unknown key "${key}".`);
+			throw new Error(`[TextureLoadBarrier] addRef called for unknown key "${key}".`);
 		}
 		e.refCount++;
 	}
@@ -111,16 +111,16 @@ export class AssetBarrier<T> {
 	release(key: string, disposer?: Disposer<T>): void {
 		const e = this.map.get(key);
 		if (!e) {
-			throw new Error(`[AssetBarrier] release called for unknown key "${key}".`);
+			throw new Error(`[TextureLoadBarrier] release called for unknown key "${key}".`);
 		}
 		e.refCount--;
 		if (e.refCount < 0) {
-			throw new Error(`[AssetBarrier] refCount underflow for key "${key}".`);
+			throw new Error(`[TextureLoadBarrier] refCount underflow for key "${key}".`);
 		}
 		if (e.refCount <= 0) {
 			e.gen++;
 			if (e.value !== undefined && !e.isFallback) {
-				try { (disposer ?? e.disposer)?.(e.value); } catch (err) { console.error('[AssetBarrier] disposer threw on release', err); }
+				try { (disposer ?? e.disposer)?.(e.value); } catch (err) { console.error('[TextureLoadBarrier] disposer threw on release', err); }
 			}
 			this.map.delete(key);
 		}
@@ -129,11 +129,11 @@ export class AssetBarrier<T> {
 	invalidate(key: string, disposer?: Disposer<T>): void {
 		const e = this.map.get(key);
 		if (!e) {
-			throw new Error(`[AssetBarrier] invalidate called for unknown key "${key}".`);
+			throw new Error(`[TextureLoadBarrier] invalidate called for unknown key "${key}".`);
 		}
 		e.gen++;
 		if (e.value !== undefined && !e.isFallback) {
-			try { (disposer ?? e.disposer)?.(e.value); } catch (err) { console.error('[AssetBarrier] disposer threw on invalidate', err); }
+			try { (disposer ?? e.disposer)?.(e.value); } catch (err) { console.error('[TextureLoadBarrier] disposer threw on invalidate', err); }
 		}
 		e.value = undefined;
 		e.isFallback = false;
@@ -145,7 +145,7 @@ export class AssetBarrier<T> {
 		for (const [k, e] of this.map) {
 			e.gen++;
 			if (e.value !== undefined && !e.isFallback) {
-				try { (disposer ?? e.disposer)?.(e.value); } catch (err) { console.error(`[AssetBarrier] disposer threw on clear for key="${k}"`, err); }
+				try { (disposer ?? e.disposer)?.(e.value); } catch (err) { console.error(`[TextureLoadBarrier] disposer threw on clear for key="${k}"`, err); }
 			}
 		}
 		this.map.clear();
@@ -154,7 +154,7 @@ export class AssetBarrier<T> {
 	replaceValue(key: string, value: T, disposer?: Disposer<T>): void {
 		const e = this.map.get(key);
 		if (!e) {
-			throw new Error(`[AssetBarrier] replaceValue called for unknown key "${key}".`);
+			throw new Error(`[TextureLoadBarrier] replaceValue called for unknown key "${key}".`);
 		}
 		const old = e.value;
 		const oldWasFallback = e.isFallback;

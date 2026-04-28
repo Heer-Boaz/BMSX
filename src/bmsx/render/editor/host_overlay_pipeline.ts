@@ -9,11 +9,6 @@ import type {
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../backend/frame_uniforms';
 import { WebGLBackend } from '../backend/webgl/backend';
 import {
-	TEXTURE_UNIT_TEXTPAGE_ENGINE,
-	TEXTURE_UNIT_TEXTPAGE_PRIMARY,
-	TEXTURE_UNIT_TEXTPAGE_SECONDARY,
-} from '../backend/webgl/constants';
-import {
 	bindWebGLInstancedQuadVertexArray,
 	createWebGLInstancedQuadRuntime,
 	ensureWebGLInstanceBufferCapacity,
@@ -21,25 +16,22 @@ import {
 	type WebGLInstancedFloatAttribute,
 	type WebGLSpriteQuadUniforms,
 } from '../backend/webgl/instanced_buffers';
-import { engineCore } from '../../core/engine';
+import { consoleCore } from '../../core/console';
+import { bootstrapAxisGizmo_WebGL, renderAxisGizmo_WebGL, shouldRenderAxisGizmo } from '../3d/axis_gizmo_pipeline';
 import { TAB_SPACES } from '../shared/bitmap_font';
 import type { GlyphRenderSubmission, color } from '../shared/submissions';
 import {
-	TEXTPAGE_PRIMARY_SLOT_ID,
-	TEXTPAGE_SECONDARY_SLOT_ID,
-	BIOS_ATLAS_ID,
-	BIOS_TEXTPAGE_TEXTURE_KEY,
-} from '../../rompack/format';
-import { VDP_SLOT_SYSTEM } from '../../machine/bus/io';
+	HOST_SYSTEM_ATLAS_HEIGHT,
+	HOST_SYSTEM_ATLAS_WIDTH,
+	hostSystemAtlasImage,
+	hostSystemAtlasPixels,
+} from '../../rompack/host_system_atlas';
 import type { BFont, FontGlyph } from '../shared/bitmap_font';
 import { consumeOverlayFrame, hasPendingOverlayFrame } from './overlay_queue';
 import vertexShaderCode from '../2d/shaders/2d.vert.glsl';
-import fragmentShaderCode from '../2d/shaders/2d.frag.glsl';
+import fragmentShaderCode from './shaders/host_overlay.frag.glsl';
 
 type HostOverlayImageSource = {
-	mode: 'slot' | 'single';
-	texture: WebGLTexture | null;
-	textpageId: number;
 	u0: number;
 	v0: number;
 	u1: number;
@@ -48,10 +40,7 @@ type HostOverlayImageSource = {
 	height: number;
 };
 
-type BoundTextureState =
-	| { mode: 'slot'; texture: null; }
-	| { mode: 'single'; texture: WebGLTexture; }
-	| { mode: 'none'; texture: null; };
+type BoundTextureState = WebGLTexture | null;
 
 type HostOverlayRuntime = {
 	gl: WebGL2RenderingContext;
@@ -64,6 +53,8 @@ type HostOverlayRuntime = {
 	textpageData: Uint8Array;
 	capacity: number;
 	whiteTexture: WebGLTexture;
+	hostAtlasTexture: WebGLTexture;
+	imageCache: Map<string, HostOverlayImageSource>;
 	uniforms: WebGLSpriteQuadUniforms;
 };
 
@@ -88,7 +79,16 @@ const INSTANCE_STRIDE_BYTES = INSTANCE_FLOATS * 4;
 const INITIAL_BATCH_CAPACITY = 256;
 const SOLID_TEXCOORD_0 = 0;
 const SOLID_TEXCOORD_1 = 1;
+const HOST_OVERLAY_TEXTURE_UNIT = 0;
+const HOST_OVERLAY_TEXTPAGE_ID = 0;
 const HOST_OVERLAY_DRAW_PASS: PassEncoder = { fbo: null, desc: { label: 'host_overlay' } as RenderPassDesc };
+const AXIS_GIZMO_LABEL_CAPACITY = 6;
+const axisLabelImgIds = new Array<string>(AXIS_GIZMO_LABEL_CAPACITY);
+const axisLabelX = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
+const axisLabelY = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
+const axisLabelZ = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
+const axisLabelScale = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
+const axisLabelColors = new Array<color>(AXIS_GIZMO_LABEL_CAPACITY);
 const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 	['i_origin', 2, 0],
 	['i_axis_x', 2, 2 * 4],
@@ -101,12 +101,18 @@ const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 ];
 
 let runtime: HostOverlayRuntime | null = null;
+let axisLabelCount = 0;
 
 function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverlayRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
 	const vao = backend.createVertexArray() as WebGLVertexArrayObject;
 	const quad = createWebGLInstancedQuadRuntime(backend, gl, program, INITIAL_BATCH_CAPACITY, INSTANCE_FLOATS);
 	const whiteTexture = backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]) as WebGLTexture;
+	const hostAtlasTexture = backend.createTexture({
+		width: HOST_SYSTEM_ATLAS_WIDTH,
+		height: HOST_SYSTEM_ATLAS_HEIGHT,
+		data: hostSystemAtlasPixels(),
+	}, {}) as WebGLTexture;
 	bindWebGLInstancedQuadVertexArray(backend, vao, program, quad, INSTANCE_STRIDE_BYTES, INSTANCE_FLOAT_ATTRIBUTES);
 	return {
 		gl,
@@ -114,6 +120,8 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverla
 		vao,
 		...quad,
 		whiteTexture,
+		hostAtlasTexture,
+		imageCache: new Map<string, HostOverlayImageSource>(),
 	};
 }
 
@@ -124,6 +132,7 @@ function destroyRuntime(runtimeToDestroy: HostOverlayRuntime): void {
 	gl.deleteBuffer(runtimeToDestroy.instanceTextpageBuffer);
 	gl.deleteVertexArray(runtimeToDestroy.vao);
 	gl.deleteTexture(runtimeToDestroy.whiteTexture);
+	gl.deleteTexture(runtimeToDestroy.hostAtlasTexture);
 }
 
 function bootstrapRuntime(backend: WebGLBackend): HostOverlayRuntime {
@@ -136,7 +145,7 @@ function bootstrapRuntime(backend: WebGLBackend): HostOverlayRuntime {
 	return runtime;
 }
 
-function writeQuad(state: HostOverlayRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, z: number, colorValue: color, textpageId: number): void {
+function writeQuad(state: HostOverlayRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, z: number, colorValue: color): void {
 	const base = index * INSTANCE_FLOATS;
 	const data = state.floatData;
 	data[base + 0] = originX;
@@ -155,34 +164,7 @@ function writeQuad(state: HostOverlayRuntime, index: number, originX: number, or
 	data[base + 13] = colorValue.g;
 	data[base + 14] = colorValue.b;
 	data[base + 15] = colorValue.a;
-	state.textpageData[index] = textpageId;
-}
-
-function writeAxisAlignedQuad(state: HostOverlayRuntime, index: number, x: number, y: number, width: number, height: number, u0: number, v0: number, u1: number, v1: number, z: number, colorValue: color, textpageId: number): void {
-	writeQuad(state, index, x, y, width, 0, 0, height, u0, v0, u1, v1, z, colorValue, textpageId);
-}
-
-function getUvExtents(coords: number[]): { u0: number; v0: number; u1: number; v1: number } {
-	let minU = coords[0];
-	let minV = coords[1];
-	let maxU = coords[0];
-	let maxV = coords[1];
-	for (let index = 2; index < coords.length; index += 2) {
-		const u = coords[index];
-		const v = coords[index + 1];
-		if (u < minU) minU = u;
-		if (u > maxU) maxU = u;
-		if (v < minV) minV = v;
-		if (v > maxV) maxV = v;
-	}
-	return { u0: minU, v0: minV, u1: maxU, v1: maxV };
-}
-
-function resolveShaderTextpageId(textpageId: number): number {
-	if (textpageId === BIOS_ATLAS_ID) {
-		return VDP_SLOT_SYSTEM;
-	}
-	throw new Error(`[HostOverlay] Atlas ${textpageId} is not an engine overlay source.`);
+	state.textpageData[index] = HOST_OVERLAY_TEXTPAGE_ID;
 }
 
 function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: string): HostOverlayImageSource {
@@ -190,86 +172,57 @@ function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: s
 	if (cached) {
 		return cached;
 	}
-	const runtime = engineCore.runtime;
-	const meta = runtime.assets.getImageAsset(imgid, runtime.engineAssetSource).imgmeta;
-	let source: HostOverlayImageSource;
-	if (meta.atlasid !== undefined && meta.texcoords) {
-		const uv = getUvExtents(meta.texcoords!);
-		source = {
-			mode: 'slot',
-			texture: null,
-			textpageId: resolveShaderTextpageId(meta.atlasid!),
-			u0: uv.u0,
-			v0: uv.v0,
-			u1: uv.u1,
-			v1: uv.v1,
-			width: meta.width,
-			height: meta.height,
-		};
-	} else {
-		const texture = engineCore.texmanager.getTextureByUri(imgid) as WebGLTexture;
-		if (!texture) {
-			throw new Error(`[HostOverlay] Texture '${imgid}' is not uploaded.`);
-		}
-		source = {
-			mode: 'single',
-			texture,
-			textpageId: 0,
-			u0: 0,
-			v0: 0,
-			u1: 1,
-			v1: 1,
-			width: meta.width,
-			height: meta.height,
-		};
-	}
+	const hostImage = hostSystemAtlasImage(imgid);
+	const source: HostOverlayImageSource = {
+		u0: hostImage.u / HOST_SYSTEM_ATLAS_WIDTH,
+		v0: hostImage.v / HOST_SYSTEM_ATLAS_HEIGHT,
+		u1: (hostImage.u + hostImage.w) / HOST_SYSTEM_ATLAS_WIDTH,
+		v1: (hostImage.v + hostImage.h) / HOST_SYSTEM_ATLAS_HEIGHT,
+		width: hostImage.width,
+		height: hostImage.height,
+	};
 	cache.set(imgid, source);
 	return source;
 }
 
-function bindTextureTriple(texture0: WebGLTexture, texture1: WebGLTexture, texture2: WebGLTexture): void {
-	engineCore.view.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_PRIMARY;
-	engineCore.view.bind2DTex(texture0);
-	engineCore.view.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_SECONDARY;
-	engineCore.view.bind2DTex(texture1);
-	engineCore.view.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_ENGINE;
-	engineCore.view.bind2DTex(texture2);
-}
-
-function bindSlotTextures(boundTextures: BoundTextureState): BoundTextureState {
-	if (boundTextures.mode === 'slot') {
+function bindHostTexture(texture: WebGLTexture, boundTextures: BoundTextureState): BoundTextureState {
+	if (boundTextures === texture) {
 		return boundTextures;
 	}
-	const primary = engineCore.texmanager.getTextureByUri(TEXTPAGE_PRIMARY_SLOT_ID) as WebGLTexture;
-	const secondary = engineCore.texmanager.getTextureByUri(TEXTPAGE_SECONDARY_SLOT_ID) as WebGLTexture;
-	const engine = engineCore.texmanager.getTextureByUri(BIOS_TEXTPAGE_TEXTURE_KEY) as WebGLTexture;
-	if (!primary || !secondary || !engine) {
-		throw new Error('[HostOverlay] VDP slot textures are not initialized.');
-	}
-	bindTextureTriple(primary, secondary, engine);
-	return { mode: 'slot', texture: null };
+	consoleCore.view.activeTexUnit = HOST_OVERLAY_TEXTURE_UNIT;
+	consoleCore.view.bind2DTex(texture);
+	return texture;
 }
 
-function bindSingleTexture(texture: WebGLTexture, boundTextures: BoundTextureState): BoundTextureState {
-	if (boundTextures.mode === 'single' && boundTextures.texture === texture) {
-		return boundTextures;
-	}
-	bindTextureTriple(texture, texture, texture);
-	return { mode: 'single', texture };
+function bindHostAtlasTexture(runtimeState: HostOverlayRuntime, boundTextures: BoundTextureState): BoundTextureState {
+	return bindHostTexture(runtimeState.hostAtlasTexture, boundTextures);
 }
 
 function bindSolidTexture(runtimeState: HostOverlayRuntime, boundTextures: BoundTextureState): BoundTextureState {
-	return bindSingleTexture(runtimeState.whiteTexture, boundTextures);
+	return bindHostTexture(runtimeState.whiteTexture, boundTextures);
 }
 
-function bindSourceTexture(source: HostOverlayImageSource, boundTextures: BoundTextureState): BoundTextureState {
-	if (source.mode === 'slot') {
-		return bindSlotTextures(boundTextures);
+function bindImageTexture(runtimeState: HostOverlayRuntime, boundTextures: BoundTextureState): BoundTextureState {
+	return bindHostAtlasTexture(runtimeState, boundTextures);
+}
+
+function captureAxisGizmoImage(imgid: string, x: number, y: number, z: number, scale: number, colorValue: color): void {
+	if (axisLabelCount >= AXIS_GIZMO_LABEL_CAPACITY) {
+		throw new Error('[AxisGizmo] Host label scratch capacity exhausted.');
 	}
-	return bindSingleTexture(source.texture!, boundTextures);
+	const index = axisLabelCount;
+	axisLabelImgIds[index] = imgid;
+	axisLabelX[index] = x;
+	axisLabelY[index] = y;
+	axisLabelZ[index] = z;
+	axisLabelScale[index] = scale;
+	axisLabelColors[index] = colorValue;
+	axisLabelCount += 1;
 }
 
-function applyFlip(source: HostOverlayImageSource, flipH: boolean, flipV: boolean): { u0: number; v0: number; u1: number; v1: number } {
+function drawHostImage(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, boundTextures: BoundTextureState): BoundTextureState {
+	const source = resolveImageSource(cache, imgid);
+	const nextBoundTextures = bindImageTexture(state, boundTextures);
 	let { u0, v0, u1, v1 } = source;
 	if (flipH) {
 		const swap = u0;
@@ -281,14 +234,36 @@ function applyFlip(source: HostOverlayImageSource, flipH: boolean, flipV: boolea
 		v0 = v1;
 		v1 = swap;
 	}
-	return { u0, v0, u1, v1 };
+	const width = source.width * scaleX;
+	const height = source.height * scaleY;
+	if (width === 0 || height === 0) {
+		return nextBoundTextures;
+	}
+	writeQuad(
+		state,
+		0,
+		x,
+		y,
+		width,
+		0,
+		0,
+		height,
+		u0,
+		v0,
+		u1,
+		v1,
+		z,
+		colorValue,
+	);
+	flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, 1, INSTANCE_FLOATS);
+	return nextBoundTextures;
 }
 
 function pushFillRect(state: HostOverlayRuntime, index: number, leftValue: number, topValue: number, rightValue: number, bottomValue: number, z: number, colorValue: color): number {
-	let left = Math.round(leftValue);
-	let top = Math.round(topValue);
-	let right = Math.round(rightValue);
-	let bottom = Math.round(bottomValue);
+	let left = leftValue;
+	let top = topValue;
+	let right = rightValue;
+	let bottom = bottomValue;
 	if (right < left) {
 		const swap = left;
 		left = right;
@@ -304,7 +279,7 @@ function pushFillRect(state: HostOverlayRuntime, index: number, leftValue: numbe
 	if (width === 0 || height === 0) {
 		return 0;
 	}
-	writeAxisAlignedQuad(state, index, left, top, width, height, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, z, colorValue, 0);
+	writeQuad(state, index, left, top, width, 0, 0, height, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, z, colorValue);
 	return 1;
 }
 
@@ -329,28 +304,33 @@ function drawRectCommand(backend: WebGLBackend, state: HostOverlayRuntime, comma
 }
 
 function drawImageCommand(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: Extract<RenderSubmission, { type: 'img' }>, boundTextures: BoundTextureState): BoundTextureState {
-	const source = resolveImageSource(cache, command.imgid);
-	const nextBoundTextures = bindSourceTexture(source, boundTextures);
-	const uv = applyFlip(source, command.flip!.flip_h, command.flip!.flip_v);
-	const width = Math.max(1, Math.round(source.width * command.scale!.x));
-	const height = Math.max(1, Math.round(source.height * command.scale!.y));
-	writeAxisAlignedQuad(
+	if (command.scale === undefined) {
+		throw new Error('[HostOverlay] Image command missing scale.');
+	}
+	if (command.flip === undefined) {
+		throw new Error('[HostOverlay] Image command missing flip.');
+	}
+	if (command.colorize === undefined) {
+		throw new Error('[HostOverlay] Image command missing color.');
+	}
+	if (command.pos.z === undefined) {
+		throw new Error('[HostOverlay] Image command missing z.');
+	}
+	return drawHostImage(
+		backend,
 		state,
-		0,
-		Math.round(command.pos.x),
-		Math.round(command.pos.y),
-		width,
-		height,
-		uv.u0,
-		uv.v0,
-		uv.u1,
-		uv.v1,
+		cache,
+		command.imgid,
+		command.pos.x,
+		command.pos.y,
 		command.pos.z,
-		command.colorize!,
-		source.textpageId,
+		command.scale.x,
+		command.scale.y,
+		command.flip.flip_h,
+		command.flip.flip_v,
+		command.colorize,
+		boundTextures,
 	);
-	flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, 1, INSTANCE_FLOATS);
-	return nextBoundTextures;
 }
 
 function createGlyphRunCursor(command: GlyphRenderSubmission, lines: string[]): GlyphRunCursor {
@@ -362,9 +342,9 @@ function createGlyphRunCursor(command: GlyphRenderSubmission, lines: string[]): 
 		fullLines,
 		start: fullLines ? 0 : command.glyph_start!,
 		end: fullLines ? 0 : command.glyph_end!,
-		baseX: Math.round(command.x),
-		originX: Math.round(command.x),
-		originY: Math.round(command.y),
+		baseX: command.x,
+		originX: command.x,
+		originY: command.y,
 		lineIndex: 0,
 		charIndex: 0,
 		glyph: font.getGlyph(' '),
@@ -426,35 +406,21 @@ function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntim
 }
 
 function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, lines: string[], boundTextures: BoundTextureState): BoundTextureState {
-	let currentBoundTextures = boundTextures;
-	let batchSource: HostOverlayImageSource | null = null;
+	const currentBoundTextures = bindHostAtlasTexture(state, boundTextures);
 	let count = 0;
-	const flushGlyphBatch = (): void => {
-		if (count === 0) {
-			return;
-		}
-		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
-		count = 0;
-	};
 	const cursor = createGlyphRunCursor(command, lines);
 	while (nextGlyphRunGlyph(cursor)) {
 		const glyph = cursor.glyph;
 		const source = resolveImageSource(cache, glyph.imgid);
-		if (batchSource === null
-			|| batchSource.mode !== source.mode
-			|| batchSource.texture !== source.texture
-			|| batchSource.textpageId !== source.textpageId) {
-			flushGlyphBatch();
-			currentBoundTextures = bindSourceTexture(source, currentBoundTextures);
-			batchSource = source;
-		}
 		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
-		writeAxisAlignedQuad(
+		writeQuad(
 			state,
 			count,
 			cursor.x,
 			cursor.y,
 			glyph.width,
+			0,
+			0,
 			glyph.height,
 			source.u0,
 			source.v0,
@@ -462,15 +428,31 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 			source.v1,
 			command.z!,
 			command.color!,
-			source.textpageId,
 		);
 		count += 1;
 	}
-	flushGlyphBatch();
+	if (count !== 0) {
+		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
+	}
 	return currentBoundTextures;
 }
 
 function drawGlyphRunCommand(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
+	if (command.font === undefined) {
+		throw new Error('[HostOverlay] Glyph command missing font.');
+	}
+	if (command.color === undefined) {
+		throw new Error('[HostOverlay] Glyph command missing color.');
+	}
+	if (command.z === undefined) {
+		throw new Error('[HostOverlay] Glyph command missing z.');
+	}
+	if (command.glyph_start === undefined) {
+		throw new Error('[HostOverlay] Glyph command missing glyph_start.');
+	}
+	if (command.glyph_end === undefined) {
+		throw new Error('[HostOverlay] Glyph command missing glyph_end.');
+	}
 	const lines = Array.isArray(command.glyphs) ? command.glyphs : [command.glyphs];
 	let currentBoundTextures = drawGlyphRunBackgrounds(backend, state, command, lines, boundTextures);
 	currentBoundTextures = drawGlyphRunGlyphs(backend, state, cache, command, lines, currentBoundTextures);
@@ -479,11 +461,12 @@ function drawGlyphRunCommand(backend: WebGLBackend, state: HostOverlayRuntime, c
 
 function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
 	const gl = backend.gl as WebGL2RenderingContext;
+	gl.useProgram(state.program);
 	updateAndBindFrameUniforms(backend, {
 		offscreen: { x: passState.width, y: passState.height },
 		logical: { x: passState.overlayWidth, y: passState.overlayHeight },
-		time: engineCore.runtime.frameLoop.currentTimeMs / 1000,
-		delta: engineCore.deltatime_seconds,
+		time: consoleCore.runtime.frameLoop.currentTimeMs / 1000,
+		delta: consoleCore.deltatime_seconds,
 	});
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	gl.uniform1f(state.uniforms.scale, 1);
@@ -503,8 +486,8 @@ function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 	const gl = backend.gl as WebGL2RenderingContext;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	bindPassState(backend, state, passState);
-	const imageCache = new Map<string, HostOverlayImageSource>();
-	let boundTextures: BoundTextureState = { mode: 'none', texture: null };
+	const imageCache = state.imageCache;
+	let boundTextures: BoundTextureState = null;
 	for (let index = 0; index < passState.commands.length; index += 1) {
 		const command = passState.commands[index];
 		switch (command.type) {
@@ -533,6 +516,48 @@ function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 	backend.setDepthMask(true);
 }
 
+function renderAxisGizmoLabels(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
+	const gl = backend.gl as WebGL2RenderingContext;
+	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+	bindPassState(backend, state, passState);
+	const imageCache = state.imageCache;
+	let boundTextures: BoundTextureState = null;
+	for (let index = 0; index < axisLabelCount; index += 1) {
+		boundTextures = drawHostImage(
+			backend,
+			state,
+			imageCache,
+			axisLabelImgIds[index],
+			axisLabelX[index],
+			axisLabelY[index],
+			axisLabelZ[index],
+			axisLabelScale[index],
+			axisLabelScale[index],
+			false,
+			false,
+			axisLabelColors[index],
+			boundTextures,
+		);
+	}
+	backend.bindVertexArray(null);
+	backend.setBlendEnabled(false);
+	backend.setDepthMask(true);
+}
+
+function renderHostPass(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
+	if (passState.commands.length !== 0) {
+		renderOverlay(backend, state, passState);
+	}
+	if (!shouldRenderAxisGizmo()) {
+		return;
+	}
+	axisLabelCount = 0;
+	renderAxisGizmo_WebGL(backend, captureAxisGizmoImage);
+	if (axisLabelCount !== 0) {
+		renderAxisGizmoLabels(backend, state, passState);
+	}
+}
+
 export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'host_overlay',
@@ -541,22 +566,24 @@ export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void
 		fsCode: fragmentShaderCode,
 		present: true,
 		bootstrap: (backend) => {
-			bootstrapRuntime(backend as WebGLBackend);
+			const webglBackend = backend as WebGLBackend;
+			bootstrapRuntime(webglBackend);
+			bootstrapAxisGizmo_WebGL(webglBackend);
 		},
-		shouldExecute: () => hasPendingOverlayFrame(),
+		shouldExecute: () => hasPendingOverlayFrame() || shouldRenderAxisGizmo(),
 		prepare: () => {
-			const frame = consumeOverlayFrame()!;
+			const frame = hasPendingOverlayFrame() ? consumeOverlayFrame() : null;
 			const state: HostOverlayPipelineState = {
-				width: engineCore.view.offscreenCanvasSize.x,
-				height: engineCore.view.offscreenCanvasSize.y,
-				overlayWidth: frame.width,
-				overlayHeight: frame.height,
-				commands: frame.commands,
+				width: consoleCore.view.offscreenCanvasSize.x,
+				height: consoleCore.view.offscreenCanvasSize.y,
+				overlayWidth: frame?.width ?? consoleCore.view.viewportSize.x,
+				overlayHeight: frame?.height ?? consoleCore.view.viewportSize.y,
+				commands: frame?.commands ?? [],
 			};
 			registry.setState('host_overlay', state);
 		},
 		exec: (backend: WebGLBackend, _fbo, state: RenderPassStateRegistry['host_overlay']) => {
-			renderOverlay(backend, runtime!, state);
+			renderHostPass(backend, runtime!, state);
 		},
 	});
 }

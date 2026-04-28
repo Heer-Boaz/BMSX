@@ -23,18 +23,18 @@ import {
 	RAM_BASE,
 	RAM_USED_END,
 	VDP_STREAM_BUFFER_SIZE,
-	VRAM_SYSTEM_TEXTPAGE_BASE,
-	VRAM_SYSTEM_TEXTPAGE_SIZE,
-	VRAM_PRIMARY_TEXTPAGE_BASE,
-	VRAM_PRIMARY_TEXTPAGE_SIZE,
+	VRAM_SYSTEM_SLOT_BASE,
+	VRAM_SYSTEM_SLOT_SIZE,
+	VRAM_PRIMARY_SLOT_BASE,
+	VRAM_PRIMARY_SLOT_SIZE,
 	VRAM_FRAMEBUFFER_BASE,
 	VRAM_FRAMEBUFFER_SIZE,
-	VRAM_SECONDARY_TEXTPAGE_BASE,
-	VRAM_SECONDARY_TEXTPAGE_SIZE,
+	VRAM_SECONDARY_SLOT_BASE,
+	VRAM_SECONDARY_SLOT_SIZE,
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
 } from '../../memory/map';
-import type { ImageWritePlan } from '../../memory/memory';
+import type { ImageCopyPlan } from './image_copy';
 import { Memory } from '../../memory/memory';
 import type { IrqController } from '../irq/controller';
 import type { VDP } from '../vdp/vdp';
@@ -65,7 +65,7 @@ type DmaIoJob = DmaJobBase & {
 
 type DmaImageJob = DmaJobBase & {
 	kind: 'image';
-	plan: ImageWritePlan;
+	plan: ImageCopyPlan;
 	pixels: Uint8Array;
 	row: number;
 	rowOffset: number;
@@ -152,14 +152,6 @@ export class DmaController {
 		return state.active !== null || state.queueHead !== state.queue.length;
 	}
 
-	public getPendingIsoBytes(): number {
-		return this.getPendingBytesForChannel(DMA_CH_ISO);
-	}
-
-	public getPendingBulkBytes(): number {
-		return this.getPendingBytesForChannel(DMA_CH_BULK);
-	}
-
 	private getPendingBytesForChannel(channel: DmaChannelId): number {
 		const state = this.channels[channel];
 		let pendingBytes = 0;
@@ -202,7 +194,7 @@ export class DmaController {
 		this.memory.writeValue(IO_DMA_WRITTEN, 0);
 	}
 
-	public enqueueImageCopy(plan: ImageWritePlan, pixels: Uint8Array, onComplete: (result: { error: boolean; clipped: boolean; fault: unknown }) => void): void {
+	public enqueueImageCopy(plan: ImageCopyPlan, pixels: Uint8Array, onComplete: (result: { error: boolean; clipped: boolean; fault: unknown }) => void): void {
 		const vramTarget = this.memory.isVramRange(plan.baseAddr, plan.writeSize > 0 ? plan.writeSize : 1);
 		const job: DmaImageJob = {
 			kind: 'image',
@@ -437,14 +429,14 @@ export class DmaController {
 		if (dst === IO_VDP_FIFO) {
 			return VDP_STREAM_BUFFER_SIZE;
 		}
-		if (dst >= VRAM_SYSTEM_TEXTPAGE_BASE && dst < VRAM_SYSTEM_TEXTPAGE_BASE + VRAM_SYSTEM_TEXTPAGE_SIZE) {
-			return (VRAM_SYSTEM_TEXTPAGE_BASE + VRAM_SYSTEM_TEXTPAGE_SIZE) - dst;
+		if (dst >= VRAM_SYSTEM_SLOT_BASE && dst < VRAM_SYSTEM_SLOT_BASE + VRAM_SYSTEM_SLOT_SIZE) {
+			return (VRAM_SYSTEM_SLOT_BASE + VRAM_SYSTEM_SLOT_SIZE) - dst;
 		}
-		if (dst >= VRAM_PRIMARY_TEXTPAGE_BASE && dst < VRAM_PRIMARY_TEXTPAGE_BASE + VRAM_PRIMARY_TEXTPAGE_SIZE) {
-			return (VRAM_PRIMARY_TEXTPAGE_BASE + VRAM_PRIMARY_TEXTPAGE_SIZE) - dst;
+		if (dst >= VRAM_PRIMARY_SLOT_BASE && dst < VRAM_PRIMARY_SLOT_BASE + VRAM_PRIMARY_SLOT_SIZE) {
+			return (VRAM_PRIMARY_SLOT_BASE + VRAM_PRIMARY_SLOT_SIZE) - dst;
 		}
-		if (dst >= VRAM_SECONDARY_TEXTPAGE_BASE && dst < VRAM_SECONDARY_TEXTPAGE_BASE + VRAM_SECONDARY_TEXTPAGE_SIZE) {
-			return (VRAM_SECONDARY_TEXTPAGE_BASE + VRAM_SECONDARY_TEXTPAGE_SIZE) - dst;
+		if (dst >= VRAM_SECONDARY_SLOT_BASE && dst < VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE) {
+			return (VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE) - dst;
 		}
 		if (dst >= VRAM_FRAMEBUFFER_BASE && dst < VRAM_FRAMEBUFFER_BASE + VRAM_FRAMEBUFFER_SIZE) {
 			return (VRAM_FRAMEBUFFER_BASE + VRAM_FRAMEBUFFER_SIZE) - dst;
