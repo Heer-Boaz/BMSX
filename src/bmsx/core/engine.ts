@@ -6,12 +6,13 @@ import { RenderPassLibrary } from "../render/backend/pass/library";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_factory";
 import { setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
-import { buildSystemRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex } from '../rompack/loader';
-import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
+import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
 import type { GPUBackend } from '../render/backend/interfaces';
-import { shallowcopy } from '../common/shallowcopy';
+import { installNativeGlobal, runConsoleChunkToNative } from '../machine/program/executor';
+import { raiseEngineIrq } from '../machine/runtime/engine_irq';
+import { IRQ_NEWGAME } from '../machine/bus/io';
 import { clearAllQueues } from '../render/shared/queues';
 import { clearOverlayFrame } from '../render/editor/overlay_queue';
 import { restoreVdpContextState } from '../render/vdp/context_state';
@@ -41,6 +42,7 @@ const DEFAULT_MASTER_VOLUME = 1;
  */
 export class EngineCore {
 	private initialized: boolean = false; // Indicates if the game has been initialized
+	private readonly romBootManager = new RomBootManager();
 
 	/**
 	 * Indicates whether debug mode is enabled.
@@ -106,6 +108,22 @@ export class EngineCore {
 		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
 	}
 
+	public is_cart_program_active(): boolean {
+		return Runtime.hasInstance && Runtime.instance.activeProgramSource !== 'engine';
+	}
+
+	public install_native_global(name: string, value: unknown): void {
+		installNativeGlobal(Runtime.instance, name, value);
+	}
+
+	public evaluate_lua(source: string): unknown[] {
+		return runConsoleChunkToNative(Runtime.instance, source);
+	}
+
+	public request_new_game(): void {
+		raiseEngineIrq(Runtime.instance, IRQ_NEWGAME);
+	}
+
 	/**
 	 * Inits the game on boot.
 	 * @param rom - The ROM pack containing game assets.
@@ -122,11 +140,8 @@ export class EngineCore {
 		if (!resolvedViewHost) {
 			throw new Error('[Game] Platform did not expose a GameViewHost. Provide one in GameInitArgs.');
 		}
-		const engineLayer = await buildSystemRuntimeAssetLayer({
-			blob: engineRom,
-			machine: SYSTEM_MACHINE_MANIFEST,
-			entry_path: SYSTEM_BOOT_ENTRY_PATH,
-		});
+		const bootPlan = await this.romBootManager.buildBootPlan({ engineRom, cartridge });
+		const { engineLayer, viewportSize } = bootPlan;
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
 		setMicrotaskQueue(platform.microtasks);
@@ -143,14 +158,6 @@ export class EngineCore {
 		if (typeof document !== 'undefined') {
 			ensureBrowserBackendFactory();
 		}
-		let viewport = engineLayer.index.machine.render_size;
-		if (cartridge) {
-			const cartNormalized = normalizeCartridgeBlob(cartridge);
-			const cartIndex = await parseCartridgeIndex(cartNormalized.payload);
-			viewport = cartIndex.machine.render_size;
-		}
-		const viewportInput = shallowcopy(viewport) as { width?: number; height?: number; x?: number; y?: number };
-		const viewportSize = { x: (viewportInput.width ?? viewportInput.x)!, y: (viewportInput.height ?? viewportInput.y)! }; // Ugly and needs to be refactored in the GameView
 		const gview = new GameView({
 			viewportSize,
 			host: resolvedViewHost,

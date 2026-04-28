@@ -3,27 +3,17 @@
  */
 
 #include "engine.h"
+#include "rom_boot_manager.h"
 #include "system.h"
 #include "input/manager.h"
 #include "render/texture_manager.h"
 #include "render/vdp/context_state.h"
 #include "render/vdp/texture_transfer.h"
 #include "../machine/runtime/runtime.h"
-#include "../machine/memory/asset_memory.h"
-#include "../machine/specs.h"
-#include "../machine/memory/specs.h"
-#include "../machine/runtime/boot_timing.h"
-#include "../machine/program/linker.h"
-#include "../machine/firmware/font.h"
-#include "rompack/format.h"
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
 #include <cstdarg>
-#include <fstream>
-#include <iostream>
-#include <vector>
-#include <stdexcept>
 
 namespace bmsx {
 
@@ -33,6 +23,7 @@ EngineCore::EngineCore() {
 	s_instance = this;
 	m_active_assets = &m_engine_assets;
 	m_machine_manifest = &m_engine_assets.machine;
+	m_rom_boot_manager = std::make_unique<RomBootManager>();
 }
 
 EngineCore::~EngineCore() {
@@ -115,7 +106,7 @@ void EngineCore::shutdown() {
 	}
 
 	stop();
-	unloadRom();
+	m_rom_boot_manager->unloadRom(*this);
 
 	if (m_texture_manager) {
 		m_texture_manager->dispose();
@@ -261,57 +252,6 @@ void EngineCore::log(LogLevel level, const char* fmt, ...) {
 	m_platform->log(level, message);
 }
 
-bool EngineCore::loadEngineAssets(const u8* data, size_t size) {
-	m_engine_rom_owned.clear();
-	m_engine_rom_data = data;
-	m_engine_rom_size = size;
-	return loadEngineAssetsInternal(data, size);
-}
-
-bool EngineCore::loadEngineAssetsOwned(std::vector<u8>&& data) {
-	m_engine_rom_owned = std::move(data);
-	m_engine_rom_data = m_engine_rom_owned.data();
-	m_engine_rom_size = m_engine_rom_owned.size();
-	return loadEngineAssetsInternal(m_engine_rom_data, m_engine_rom_size);
-}
-
-bool EngineCore::loadEngineAssetsInternal(const u8* data, size_t size) {
-	m_engine_assets.clear();
-	if (m_texture_manager) {
-		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
-	}
-
-	if (!loadSystemAssetsFromRom(data, size, m_engine_assets, nullptr, "system")) {
-		return false;
-	}
-
-	m_engine_assets_loaded = true;
-	m_engine_assets.machine = defaultSystemMachineManifest();
-	m_engine_assets.entryPoint = systemBootEntryPath();
-	m_active_assets = &m_engine_assets;
-	m_machine_manifest = &m_engine_assets.machine;
-	m_default_font = std::make_unique<Font>(m_engine_assets);
-	m_view->default_font = m_default_font.get();
-	return true;
-}
-
-bool EngineCore::loadEngineAssetsFromPath(const char* path) {
-	std::ifstream file(path, std::ios::binary | std::ios::ate);
-	if (!file) {
-		return false;
-	}
-
-	size_t size = file.tellg();
-	file.seekg(0);
-
-	std::vector<u8> data(size);
-	if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
-		return false;
-	}
-
-	return loadEngineAssetsOwned(std::move(data));
-}
-
 ImgAsset* EngineCore::resolveImgAsset(const AssetId& id) {
 	ImgAsset* asset = assets().getImg(id);
 	if (asset) {
@@ -327,346 +267,4 @@ const ImgAsset* EngineCore::resolveImgAsset(const AssetId& id) const {
 	}
 	return m_engine_assets.getImg(id);
 }
-
-void EngineCore::activateEngineAssets() {
-	m_active_assets = &m_engine_assets;
-}
-
-void EngineCore::activateCartAssets() {
-	m_active_assets = &m_cart_assets;
-}
-
-void EngineCore::setMachineManifest(const MachineManifest& manifest) {
-	m_machine_manifest = &manifest;
-}
-
-void EngineCore::configureViewForMachine(const MachineManifest& manifest) {
-	Vec2 viewportSize{
-		static_cast<f32>(manifest.viewportWidth),
-		static_cast<f32>(manifest.viewportHeight)
-	};
-	Vec2 offscreenSize{
-		viewportSize.x * 2.0f,
-		viewportSize.y * 2.0f
-	};
-	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
-}
-
-bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine, const RuntimeAssets& sizingAssets) {
-	if (!m_engine_assets_loaded) {
-		return false;
-	}
-	if (!m_engine_assets.programAsset || !m_engine_assets.programAsset->program) {
-		return false;
-	}
-
-	activateEngineAssets();
-	setMachineManifest(runtimeMachine);
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(runtimeMachine);
-	applyManifestMemorySpecs(runtimeMachine, m_engine_assets.machine, sizingAssets, m_engine_assets);
-	configureViewForMachine(runtimeMachine);
-
-	if (!Runtime::hasInstance()) {
-		Runtime::createInstance(RuntimeOptions{
-			1,
-			{ timing.viewportWidth, timing.viewportHeight },
-			&m_engine_assets,
-			&m_engine_assets,
-			m_cart_rom_size > 0 ? &m_cart_assets : nullptr,
-			{ m_engine_rom_data, m_engine_rom_size },
-			{ m_cart_rom_data, m_cart_rom_size },
-			&runtimeMachine,
-			timing.ufpsScaled,
-			timing.cpuHz,
-			timing.cycleBudgetPerFrame,
-			timing.vblankCycles,
-			timing.vdpWorkUnitsPerSec,
-			timing.geoWorkUnitsPerSec,
-		});
-	}
-	Runtime& runtime = Runtime::instance();
-	runtime.setRuntimeEnvironment(
-		m_engine_assets,
-		m_engine_assets,
-		runtimeMachine,
-		m_cart_rom_size > 0 ? &m_cart_assets : nullptr,
-		{ m_engine_rom_data, m_engine_rom_size },
-		{ m_cart_rom_data, m_cart_rom_size }
-	);
-	applyRuntimeTiming(runtime, timing);
-	runtime.refreshMemoryMap();
-	runtime.setProgramSource(Runtime::ProgramSource::Engine);
-	buildAssetMemory(runtime, m_engine_assets, m_engine_assets);
-	runtime.machine().memory().sealEngineAssets();
-	runtime.resetRuntimeForProgramReload();
-	refreshRenderAssets();
-	runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
-	runtime.cartBoot.reset(runtime);
-	return true;
-}
-
-Runtime& EngineCore::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine) {
-	if (!Runtime::hasInstance()) {
-		Runtime::createInstance(RuntimeOptions{
-			1,
-			{ timing.viewportWidth, timing.viewportHeight },
-			&m_engine_assets,
-			&m_cart_assets,
-			&m_cart_assets,
-			{ m_engine_rom_data, m_engine_rom_size },
-			{ m_cart_rom_data, m_cart_rom_size },
-			&machine,
-			timing.ufpsScaled,
-			timing.cpuHz,
-			timing.cycleBudgetPerFrame,
-			timing.vblankCycles,
-			timing.vdpWorkUnitsPerSec,
-			timing.geoWorkUnitsPerSec,
-		});
-	}
-	Runtime& runtime = Runtime::instance();
-	runtime.setRuntimeEnvironment(
-		m_engine_assets,
-		assets(),
-		assets().machine,
-		&m_cart_assets,
-		{ m_engine_rom_data, m_engine_rom_size },
-		{ m_cart_rom_data, m_cart_rom_size }
-	);
-	applyRuntimeTiming(runtime, timing);
-	runtime.refreshMemoryMap();
-	return runtime;
-}
-
-bool EngineCore::bootWithoutCart() {
-	// Boot engine with only engine assets (no cartridge)
-	// This runs bootrom.lua which displays the boot screen
-
-	if (!m_engine_assets_loaded) {
-		std::cerr << "[BMSX] bootWithoutCart: engine assets not loaded" << std::endl;
-		return false;
-	}
-
-	// Check if engine assets have a program
-	if (!m_engine_assets.hasProgram()) {
-		std::cerr << "[BMSX] bootWithoutCart: no program in engine assets" << std::endl;
-		return false;
-	}
-
-	std::cerr << "[BMSX] bootWithoutCart: program found, booting..." << std::endl;
-	if (!bootEngineStartupProgram(m_engine_assets.machine, m_engine_assets)) {
-		return false;
-	}
-
-	m_rom_loaded = true;  // Engine is running (with system program)
-	start();  // Start the engine tick/render loop
-	return true;
-}
-
-bool EngineCore::loadRom(const u8* data, size_t size) {
-	unloadRom();
-	m_cart_rom_owned.clear();
-	m_cart_rom_data = data;
-	m_cart_rom_size = size;
-	return loadRomInternal(data, size);
-}
-
-bool EngineCore::loadRomOwned(std::vector<u8>&& data) {
-	unloadRom();
-	m_cart_rom_owned = std::move(data);
-	m_cart_rom_data = m_cart_rom_owned.data();
-	m_cart_rom_size = m_cart_rom_owned.size();
-	return loadRomInternal(m_cart_rom_data, m_cart_rom_size);
-}
-
-bool EngineCore::loadRomInternal(const u8* data, size_t size) {
-	if (m_texture_manager) {
-		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
-	}
-
-	m_cart_assets.clear();
-	if (!loadCartAssetsFromRom(data, size, m_cart_assets, nullptr, "cart")) {
-		return false;
-	}
-	m_loaded_cart_has_program = m_cart_assets.programAsset && m_cart_assets.programAsset->program;
-
-	const MachineManifest& cartMachine = m_cart_assets.machine;
-	const i64 cartUfpsScaled = resolveUfpsScaled(cartMachine);
-	i64 cpuHz = 0;
-	const bool cartCpuValid = tryResolveCpuHz(cartMachine, cpuHz);
-	i64 runtimeUfpsScaled = cartUfpsScaled;
-	if (!cartCpuValid) {
-		i64 engineUfpsScaled = 0;
-		i64 engineCpuHz = 0;
-		if (!m_engine_assets_loaded
-			|| !tryResolveCpuHz(m_engine_assets.machine, engineCpuHz)
-			|| !tryResolveUfpsScaled(m_engine_assets.machine, engineUfpsScaled)) {
-			throw std::runtime_error("[EngineCore] machine.specs.cpu.cpu_freq_hz is required.");
-		}
-		std::cerr << "[EngineCore] Cart manifest machine.specs.cpu.cpu_freq_hz is required; booting BIOS only." << std::endl;
-		cpuHz = engineCpuHz;
-		runtimeUfpsScaled = engineUfpsScaled;
-	}
-	const MachineManifest& transferMachine = cartCpuValid ? cartMachine : m_engine_assets.machine;
-
-	configureViewForMachine(cartMachine);
-
-	const bool hasEngineProgram = m_engine_assets_loaded
-		&& m_engine_assets.programAsset
-		&& m_engine_assets.programAsset->program;
-	if (hasEngineProgram) {
-		if (!bootEngineStartupProgram(transferMachine, m_cart_assets)) {
-			return false;
-		}
-	} else {
-		if (!cartCpuValid) {
-			std::cerr << "[EngineCore] Cart manifest machine.specs.cpu.cpu_freq_hz is required; cannot boot cart without BIOS." << std::endl;
-			return false;
-		}
-		activateCartAssets();
-		setMachineManifest(cartMachine);
-		applyManifestMemorySpecs(assets().machine, m_engine_assets.machine, assets(), m_engine_assets);
-		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(assets().machine, transferMachine, cpuHz, runtimeUfpsScaled);
-			Runtime& runtime = prepareRuntimeForActiveCart(timing, cartMachine);
-			buildAssetMemory(runtime, m_engine_assets, assets());
-			if (assets().hasProgram()) {
-			bootRuntimeFromProgram();
-		}
-	}
-
-	m_rom_loaded = true;
-	return true;
-}
-
-bool EngineCore::bootLoadedCart() {
-	if (!m_rom_loaded) {
-		return false;
-	}
-
-	if (m_cart_rom_size == 0) {
-		return false;
-	}
-	activateCartAssets();
-	setMachineManifest(m_cart_assets.machine);
-
-	if (!assets().programAsset || !assets().programAsset->program) {
-		std::cerr << "[EngineCore] Loaded cart has no program asset." << std::endl;
-		return false;
-	}
-
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(assets().machine);
-	applyManifestMemorySpecs(assets().machine, m_engine_assets.machine, assets(), m_engine_assets);
-	configureViewForMachine(assets().machine);
-
-	Runtime& runtime = prepareRuntimeForActiveCart(timing, m_cart_assets.machine);
-	buildAssetMemory(runtime, m_engine_assets, assets(), RuntimeAssetBuildMode::Cart);
-	runtime.resetRuntimeForProgramReload();
-	refreshRenderAssets();
-	bootRuntimeFromProgram();
-	return true;
-}
-
-bool EngineCore::rebootLoadedRom() {
-	if (!m_rom_loaded) {
-		return false;
-	}
-
-	if (m_sound_master) {
-		m_sound_master->resetPlaybackState();
-	}
-	if (m_texture_manager) {
-		m_texture_manager->clear();
-	}
-	if (m_view) {
-		m_view->reset();
-		if (m_view->backend()->readyForTextureUpload()) {
-			m_view->initializeDefaultTextures();
-		}
-	}
-
-	const MachineManifest* runtimeMachine = &m_engine_assets.machine;
-	const RuntimeAssets* sizingAssets = &m_engine_assets;
-	if (m_cart_rom_size > 0 && m_cart_assets.programAsset && m_cart_assets.programAsset->program) {
-		runtimeMachine = &m_cart_assets.machine;
-		sizingAssets = &m_cart_assets;
-	}
-	return bootEngineStartupProgram(*runtimeMachine, *sizingAssets);
-}
-
-void EngineCore::unloadRom() {
-	if (m_rom_loaded) {
-		m_active_assets = &m_engine_assets;
-		m_machine_manifest = &m_engine_assets.machine;
-		m_cart_assets.clear();
-		m_linked_program.reset();
-		m_linked_program_symbols.reset();
-		m_cart_rom_owned.clear();
-		m_cart_rom_data = nullptr;
-		m_cart_rom_size = 0;
-		if (m_texture_manager) {
-			m_texture_manager->clear();
-		}
-		m_sound_master->resetPlaybackState();
-		registry().clear();
-		m_rom_loaded = false;
-		m_loaded_cart_has_program = false;
-	}
-}
-
-void EngineCore::bootRuntimeFromProgram() {
-	// Get the pre-compiled program from assets
-	if (!assets().programAsset || !assets().programAsset->program) {
-		return;
-	}
-	m_linked_program.reset();
-	m_linked_program_symbols.reset();
-	RuntimeAssets& activeAssets = assets();
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(activeAssets.machine);
-		if (!Runtime::hasInstance()) {
-			Runtime::createInstance(RuntimeOptions{
-				1,
-				{ timing.viewportWidth, timing.viewportHeight },
-				&m_engine_assets,
-				&activeAssets,
-				m_cart_rom_size > 0 ? &m_cart_assets : nullptr,
-				{ m_engine_rom_data, m_engine_rom_size },
-				{ m_cart_rom_data, m_cart_rom_size },
-				&activeAssets.machine,
-				timing.ufpsScaled,
-				timing.cpuHz,
-				timing.cycleBudgetPerFrame,
-				timing.vblankCycles,
-				timing.vdpWorkUnitsPerSec,
-				timing.geoWorkUnitsPerSec,
-			});
-	}
-	Runtime& runtime = Runtime::instance();
-	runtime.setRuntimeEnvironment(
-		m_engine_assets,
-		activeAssets,
-		activeAssets.machine,
-		m_cart_rom_size > 0 ? &m_cart_assets : nullptr,
-		{ m_engine_rom_data, m_engine_rom_size },
-		{ m_cart_rom_data, m_cart_rom_size }
-	);
-	applyRuntimeTiming(runtime, timing);
-	runtime.refreshMemoryMap();
-	runtime.setProgramSource(Runtime::ProgramSource::Cart);
-	runtime.resetRuntimeForProgramReload();
-	refreshRenderAssets();
-	if (m_engine_assets_loaded && m_engine_assets.programAsset && m_engine_assets.programAsset->program) {
-		auto linked = linkProgramAssets(
-			*m_engine_assets.programAsset,
-			m_engine_assets.programSymbols.get(),
-			*activeAssets.programAsset,
-			activeAssets.programSymbols.get()
-		);
-		m_linked_program = std::move(linked.program);
-		m_linked_program_symbols = std::move(linked.metadata);
-		runtime.boot(*m_linked_program, m_linked_program_symbols.get());
-		return;
-	}
-	runtime.boot(*activeAssets.programAsset, activeAssets.programSymbols.get());
-}
-
 } // namespace bmsx

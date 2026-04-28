@@ -1,6 +1,7 @@
 #include "machine/runtime/cart_boot.h"
 
 #include "core/engine.h"
+#include "core/rom_boot_manager.h"
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
 
@@ -44,7 +45,7 @@ bool CartBootState::processProgramReloadRequest(Runtime& runtime) {
 	}
 	runtime.m_rebootRequested = false;
 	runtime.frameScheduler.clearQueuedTime();
-	if (!EngineCore::instance().rebootLoadedRom()) {
+	if (!EngineCore::instance().romBootManager().rebootLoadedRom(EngineCore::instance())) {
 		EngineCore::instance().log(LogLevel::Error, "Runtime fault: reboot to bootrom failed.\n");
 	}
 	return true;
@@ -81,7 +82,7 @@ bool CartBootState::processPending(Runtime& runtime) {
 	runtime.frameScheduler.clearQueuedTime();
 	m_pending = false;
 	try {
-		if (!EngineCore::instance().bootLoadedCart()) {
+		if (!EngineCore::instance().romBootManager().bootLoadedCart(EngineCore::instance())) {
 			setReadyFlag(runtime, false);
 			EngineCore::instance().log(LogLevel::Error,
 				"Runtime fault: deferred cart boot request failed while leaving system boot screen active.\n");

@@ -95,6 +95,7 @@ add_library(bmsx_core STATIC
 	# Core systems
 	core/primitives.cpp
 	core/engine.cpp
+	core/rom_boot_manager.cpp
 	core/host_asset_sync.cpp
 	core/host_frame.cpp
 	core/system.cpp

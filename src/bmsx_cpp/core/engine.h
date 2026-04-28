@@ -21,6 +21,7 @@ namespace bmsx {
 
 class BFont;
 class EngineCore;
+class RomBootManager;
 class TextureManager;
 class Runtime;
 struct ProgramAsset;
@@ -47,6 +48,7 @@ class EngineCore {
 public:
 	friend class FrameLoopState;
 	friend class RenderPresentationState;
+	friend class RomBootManager;
 
 	struct TickTiming {
 		f64 totalMs = 0.0;
@@ -132,6 +134,7 @@ public:
 	Clock* clock() { return m_platform->clock(); }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
 	TextureManager* texmanager() { return m_texture_manager.get(); }
+	RomBootManager& romBootManager() { return *m_rom_boot_manager; }
 
 	// Time
 	f64 totalTime() const { return m_total_time; }
@@ -144,21 +147,9 @@ public:
 	void refreshRenderAssets();
 	void log(LogLevel level, const char* fmt, ...);
 
-	// ROM loading
-	bool loadEngineAssets(const u8* data, size_t size);  // Load bmsx-bios.rom first
-	bool loadEngineAssetsOwned(std::vector<u8>&& data);  // Load engine assets without extra copy
-	bool loadEngineAssetsFromPath(const char* path);     // Load engine assets from file
-	bool loadRom(const u8* data, size_t size);            // Load game cartridge ROM
-	bool loadRomOwned(std::vector<u8>&& data);            // Load game cartridge ROM without extra copy
-	void unloadRom();
-	bool bootLoadedCart();
-	bool rebootLoadedRom();
 	bool romLoaded() const { return m_rom_loaded; }
 	bool hasLoadedCartProgram() const { return m_loaded_cart_has_program; }
 	bool engineAssetsLoaded() const { return m_engine_assets_loaded; }
-
-	// Boot engine without cart - uses program from engine assets (bootrom.lua)
-	bool bootWithoutCart();
 
 	// Registry shortcuts
 	template<typename T = Registerable>
@@ -180,19 +171,12 @@ public:
 	static EngineCore* instancePtr();
 
 private:
-	void bootRuntimeFromProgram();  // Boot runtime with pre-compiled program from ROM
-	void activateEngineAssets();
-	void activateCartAssets();
-	void setMachineManifest(const MachineManifest& manifest);
-	void configureViewForMachine(const MachineManifest& manifest);
-	bool bootEngineStartupProgram(const MachineManifest& runtimeMachine, const RuntimeAssets& sizingAssets);
-	Runtime& prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine);
-
 	Platform* m_platform = nullptr;
 	std::unique_ptr<GameView> m_view;
 	std::unique_ptr<BFont> m_default_font;
 	std::unique_ptr<SoundMaster> m_sound_master;
 	std::unique_ptr<TextureManager> m_texture_manager;
+	std::unique_ptr<RomBootManager> m_rom_boot_manager;
 	RuntimeAssets* m_active_assets = nullptr;
 
 	EngineState m_state = EngineState::Uninitialized;
@@ -224,9 +208,6 @@ private:
 	RenderTiming m_last_render_timing;
 
 	static EngineCore* s_instance;
-
-	bool loadEngineAssetsInternal(const u8* data, size_t size);
-	bool loadRomInternal(const u8* data, size_t size);
 
 	f32 m_viewport_scale = 1.0f;
 	f32 m_canvas_scale = 1.0f;
