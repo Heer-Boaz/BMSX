@@ -22,6 +22,9 @@ export class CartBootState {
 	private deferredPreparationScheduled = false;
 	private deferredPreparationCompleted = false;
 
+	constructor(private readonly runtime: Runtime) {
+	}
+
 	public reset(): void {
 		this.pending = false;
 		this.preparedProgram = null;
@@ -39,7 +42,7 @@ export class CartBootState {
 	}
 
 	public scheduleDeferredPreparation(): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		if (this.deferredPreparationCompleted || this.deferredPreparationScheduled) {
 			return;
 		}
@@ -66,7 +69,7 @@ export class CartBootState {
 	}
 
 	public processPending(): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		this.pollSystemBootRequest();
 		if (!this.pending) {
 			return;
@@ -91,7 +94,7 @@ export class CartBootState {
 	}
 
 	private setReadyFlag(value: boolean): void {
-		Runtime.instance.machine.memory.writeValue(IO_SYS_CART_BOOTREADY, value ? 1 : 0);
+		this.runtime.machine.memory.writeValue(IO_SYS_CART_BOOTREADY, value ? 1 : 0);
 	}
 
 	private request(): void {
@@ -100,7 +103,7 @@ export class CartBootState {
 	}
 
 	private async prepare(): Promise<void> {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		this.setReadyFlag(false);
 		this.preparedProgram = null;
 		try {
@@ -121,7 +124,7 @@ export class CartBootState {
 	}
 
 	private pollSystemBootRequest(): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		if (runtime.activeProgramSource !== 'engine') {
 			return;
 		}

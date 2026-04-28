@@ -15,8 +15,11 @@ export class CpuExecutionState {
 	private debugCycleRunsTotal = 0;
 	public debugCycleYieldsTotal = 0;
 
+	constructor(private readonly runtime: Runtime) {
+	}
+
 	public runWithBudget(state: FrameState): RunResult {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		const debugCycle = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugCycle) {
 			if (this.debugCycleReportAtMs === 0) {
@@ -29,7 +32,7 @@ export class CpuExecutionState {
 		let result = RunResult.Yielded;
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
-		runDueRuntimeTimers();
+		runDueRuntimeTimers(runtime);
 		// start repeated-sequence-acceptable -- CPU scheduler loop mirrors external-call scheduling without extracting a callback-heavy helper.
 		while (remaining > 0) {
 			let sliceBudget = remaining;
@@ -37,7 +40,7 @@ export class CpuExecutionState {
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
-					runDueRuntimeTimers();
+					runDueRuntimeTimers(runtime);
 					continue;
 				}
 				if (deadlineBudget < sliceBudget) {
@@ -51,7 +54,7 @@ export class CpuExecutionState {
 			if (consumed > 0) {
 				remaining -= consumed;
 				state.activeCpuUsedCycles += consumed;
-				advanceRuntimeTime(consumed);
+				advanceRuntimeTime(runtime, consumed);
 			}
 			if (cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
 				break;
@@ -87,23 +90,20 @@ export class CpuExecutionState {
 	}
 }
 
-export function advanceRuntimeTime(cycles: number): void {
-	const runtime = Runtime.instance;
+export function advanceRuntimeTime(runtime: Runtime, cycles: number): void {
 	runtime.machine.advanceDevices(cycles);
-	runDueRuntimeTimers();
+	runDueRuntimeTimers(runtime);
 }
 
-export function runDueRuntimeTimers(): void {
-	const runtime = Runtime.instance;
+export function runDueRuntimeTimers(runtime: Runtime): void {
 	const scheduler = runtime.machine.scheduler;
 	while (scheduler.hasDueTimer()) {
 		const event = scheduler.popDueTimer();
-		dispatchRuntimeTimer(event >> 8, event & 0xff);
+		dispatchRuntimeTimer(runtime, event >> 8, event & 0xff);
 	}
 }
 
-function dispatchRuntimeTimer(kind: number, payload: number): void {
-	const runtime = Runtime.instance;
+function dispatchRuntimeTimer(runtime: Runtime, kind: number, payload: number): void {
 	switch (kind) {
 		case TIMER_KIND_VBLANK_BEGIN:
 			runtime.vblank.handleBeginTimer();

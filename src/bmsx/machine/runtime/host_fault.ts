@@ -12,6 +12,9 @@ import { Runtime } from './runtime';
 export class HostFaultState {
 	private message: string | null = null;
 
+	constructor(private readonly runtime: Runtime) {
+	}
+
 	public getMessage(): string | null {
 		return this.message;
 	}
@@ -27,14 +30,14 @@ export class HostFaultState {
 	}
 
 	public clear(): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		this.message = null;
 		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
 		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
 	}
 
 	private publish(flags: number, stage: number, message: string): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		this.message = message;
 		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, flags >>> 0);
 		runtime.machine.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, stage >>> 0);

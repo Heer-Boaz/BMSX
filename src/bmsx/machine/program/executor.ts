@@ -86,14 +86,14 @@ export function callClosureIntoWithScheduler(fn: Closure, args: Value[], out: Va
 	try {
 		cpu.callExternal(fn, args);
 		let remaining = budgetSentinel;
-		runDueRuntimeTimers();
+		runDueRuntimeTimers(runtime);
 		while (cpu.getFrameDepth() > depth) {
 			let sliceBudget = remaining;
 			const nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
-					runDueRuntimeTimers();
+					runDueRuntimeTimers(runtime);
 					continue;
 				}
 				if (deadlineBudget < sliceBudget) {
@@ -106,7 +106,7 @@ export function callClosureIntoWithScheduler(fn: Closure, args: Value[], out: Va
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
 			if (consumed > 0) {
 				remaining -= consumed;
-				advanceRuntimeTime(consumed);
+				advanceRuntimeTime(runtime, consumed);
 			}
 			if (cpu.getFrameDepth() <= depth) {
 				break;
@@ -115,7 +115,7 @@ export function callClosureIntoWithScheduler(fn: Closure, args: Value[], out: Va
 				break;
 			}
 			if (consumed <= 0) {
-				runDueRuntimeTimers();
+				runDueRuntimeTimers(runtime);
 			}
 		}
 	} catch (error) {

@@ -44,6 +44,9 @@ export class RenderPresentationState {
 		vdpFrameHeld: false,
 	};
 
+	constructor(private readonly runtime: Runtime) {
+	}
+
 	private recordTickCompletion(visualCommitted: boolean, vdpFrameHeld: boolean): void {
 		if (!Boolean((globalThis as any).__bmsx_debug_presentrate)) {
 			return;
@@ -92,7 +95,7 @@ export class RenderPresentationState {
 	}
 
 	private presentFrame(hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		engineCore.deltatime = hostDeltaMs;
 		commitVdpViewSnapshot(engineCore.view, runtime.machine.vdp, runtime.assets);
 		engineCore.view.configurePresentation(mode, commitFrame);
@@ -112,7 +115,7 @@ export class RenderPresentationState {
 		if (!this.pendingPresentation) {
 			return false;
 		}
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		const overlayActive = runtime.executionOverlayActive;
 		out.mode = this.presentationMode;
 		out.commitFrame = overlayActive ? false : this.presentationCommitFrame;
@@ -156,7 +159,7 @@ export class RenderPresentationState {
 	}
 
 	public runOverlay(): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		this.clearPresentation();
 		if (runtime.frameLoop.currentFrameState !== null) {
 			runtime.frameLoop.abandonFrameState();
@@ -168,7 +171,7 @@ export class RenderPresentationState {
 	}
 
 	public syncAfterRuntimeUpdate(previousTickSequence: number): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		if (runtime.executionOverlayActive) {
 			runtime.frameScheduler.clearQueuedTime();
 			this.markPresentation('completed', false);
@@ -183,7 +186,7 @@ export class RenderPresentationState {
 	}
 
 	public presentPausedFrame(hostDeltaMs: number): void {
-	const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		if (runtime.executionOverlayActive) {
 			this.runOverlay();
 			this.consumePresentation(this.presentationScratch);
@@ -204,7 +207,7 @@ export class RenderPresentationState {
 	}
 
 	public presentErrorOverlay(hostDeltaMs: number): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		if (!runtime.executionOverlayActive) {
 			return;
 		}

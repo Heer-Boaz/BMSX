@@ -162,16 +162,16 @@ export class Runtime {
 	}
 	private includeJsStackTraces = false;
 	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
-	public readonly frameScheduler = new FrameSchedulerState();
-	public readonly frameLoop = new FrameLoopState();
-	public readonly screen = new RenderPresentationState();
+	public readonly frameScheduler: FrameSchedulerState;
+	public readonly frameLoop: FrameLoopState;
+	public readonly screen: RenderPresentationState;
 	public readonly activeMachineManifest: MachineManifest;
 	public readonly cartManifest: CartManifest | null;
 	public readonly cartProjectRootPath: string | null;
 	public engineProjectRootPath: string = DEFAULT_ENGINE_PROJECT_ROOT_PATH;
 	public readonly gameViewState: GameViewState;
-	public readonly vblank = new VblankState();
-	public readonly cpuExecution = new CpuExecutionState();
+	public readonly vblank: VblankState;
+	public readonly cpuExecution: CpuExecutionState;
 	public pendingLuaWarnings: string[] = [];
 	public readonly moduleAliases: Map<string, string> = new Map();
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
@@ -205,7 +205,7 @@ export class Runtime {
 	public readonly luaGate = taskGate.group('console:lua');
 	private hasCompletedInitialBoot = false;
 	public cartEntryAvailable = true;
-	public readonly hostFault = new HostFaultState();
+	public readonly hostFault: HostFaultState;
 	public engineLuaSources: LuaSourceRegistry = null;
 	public cartLuaSources: LuaSourceRegistry = null;
 	public activeLuaSources: LuaSourceRegistry = null;
@@ -214,9 +214,9 @@ export class Runtime {
 	public cartAssetSource: RawAssetSource = null;
 	public activeAssetSource: RawAssetSource = null;
 	public activeAssets: RuntimeAssets = null;
-	public readonly assets = new RuntimeAssetState();
+	public readonly assets: RuntimeAssetState;
 	public readonly machine: Machine;
-	public readonly cartBoot = new CartBootState();
+	public readonly cartBoot: CartBootState;
 	public get interpreter(): LuaInterpreter {
 		return this.luaInterpreter;
 	}
@@ -448,6 +448,14 @@ export class Runtime {
 
 	private constructor(options: RuntimeOptions) {
 		Runtime._instance = this;
+		this.frameScheduler = new FrameSchedulerState(this);
+		this.frameLoop = new FrameLoopState(this);
+		this.screen = new RenderPresentationState(this);
+		this.vblank = new VblankState(this);
+		this.cpuExecution = new CpuExecutionState(this);
+		this.hostFault = new HostFaultState(this);
+		this.assets = new RuntimeAssetState(this);
+		this.cartBoot = new CartBootState(this);
 		this.timing = new TimingState(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame);
 		const initialVdpWorkUnits = options.vdpWorkUnitsPerSec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC;
 		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
@@ -459,7 +467,7 @@ export class Runtime {
 		this.activeMachineManifest = options.activeMachineManifest;
 		this.cartManifest = options.cartManifest;
 		this.cartProjectRootPath = options.cartProjectRootPath;
-		this.luaJsBridge = new LuaJsBridge(this.luaHandlerCache);
+		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.gameViewState = createGameViewState(engineCore.view);
 		api = new Api({
 			storage: this.storage,

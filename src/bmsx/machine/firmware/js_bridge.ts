@@ -27,16 +27,12 @@ function reserveTableHashSize(entryCount: number): number {
 }
 
 export class LuaJsBridge implements LuaInteropAdapter {
-	private readonly luaHandlerCache: LuaHandlerCache;
-	private readonly runtime: Runtime;
 	// Assign stable ids to Lua tables during a marshal pass so handler caches and snapshots don't collide on object identity
 	// across conversions; paths in marshal contexts stay deterministic.
 	private readonly tableIds = new WeakMap<LuaTable, number>();
 	private nextTableId = 1;
 
-	constructor(luaHandlerCache: LuaHandlerCache) {
-		this.runtime = Runtime.instance;
-		this.luaHandlerCache = luaHandlerCache;
+	constructor(private readonly runtime: Runtime, private readonly luaHandlerCache: LuaHandlerCache) {
 	}
 
 	public describeMarshalSegment(key: LuaValue): string {

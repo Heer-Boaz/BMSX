@@ -70,8 +70,11 @@ export class FrameSchedulerState {
 	private debugFrameCarryAcc = 0;
 	private debugTickYieldsBefore = 0;
 
+	constructor(private readonly runtime: Runtime) {
+	}
+
 	private accumulateHostTime(deltaMs: number): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		const maxAccumulatedMs = runtime.timing.frameDurationMs * MAX_CATCH_UP_FRAMES;
 		this.accumulatedHostTimeMs += deltaMs;
 		if (this.accumulatedHostTimeMs > maxAccumulatedMs) {
@@ -80,12 +83,12 @@ export class FrameSchedulerState {
 	}
 
 	private hasScheduledFrame(): boolean {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		return this.accumulatedHostTimeMs + FRAME_SLICE_EPSILON_MS >= runtime.timing.frameDurationMs;
 	}
 
 	private canRunScheduledUpdate(): boolean {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		if (!runtime.luaInitialized || !runtime.tickEnabled || runtime.luaRuntimeFailed) {
 			return false;
 		}
@@ -97,7 +100,7 @@ export class FrameSchedulerState {
 		if (!this.hasScheduledFrame()) {
 			return false;
 		}
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		this.accumulatedHostTimeMs -= runtime.timing.frameDurationMs;
 		if (this.accumulatedHostTimeMs < 0) {
 			this.accumulatedHostTimeMs = 0;
@@ -206,7 +209,7 @@ export class FrameSchedulerState {
 
 	public run(hostDeltaMs: number): void {
 		this.accumulateHostTime(hostDeltaMs);
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		while (this.canRunScheduledUpdate()) {
 			const progressed = runtime.frameLoop.tickUpdate();
 			if (runtime.executionOverlayActive) {
@@ -249,7 +252,7 @@ export class FrameSchedulerState {
 		const remaining = frameState.cycleBudgetRemaining;
 		const granted = frameState.cycleBudgetGranted;
 		const cpuUsed = frameState.activeCpuUsedCycles;
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		const vdp = runtime.machine.vdp;
 		slot.sequence = sequence;
 		slot.remaining = remaining;
@@ -302,7 +305,7 @@ export class FrameSchedulerState {
 		if (!this.consumeScheduledFrame()) {
 			return false;
 		}
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		const budget = runtime.timing.cycleBudgetPerFrame;
 		frameState.cycleBudgetRemaining += budget;
 		frameState.cycleBudgetGranted += budget;
@@ -313,7 +316,7 @@ export class FrameSchedulerState {
 		if (!this.consumeScheduledFrame()) {
 			return false;
 		}
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugTickRate) {
 			if (this.debugFrameReportAtMs === 0) {

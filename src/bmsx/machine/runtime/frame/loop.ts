@@ -9,6 +9,9 @@ export class FrameLoopState {
 	public currentFrameState: FrameState = null;
 	public drawFrameState: FrameState = null;
 
+	constructor(private readonly runtime: Runtime) {
+	}
+
 	public reset(): void {
 		this.currentTimeMs = 0;
 		this.frameDeltaMs = 0;
@@ -18,7 +21,7 @@ export class FrameLoopState {
 		if (this.currentFrameState) {
 			throw new Error('attempted to begin a new frame while another frame is active.');
 		}
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		this.frameDeltaMs = runtime.timing.frameDurationMs;
 		const budget = runtime.timing.cycleBudgetPerFrame;
 		const state: FrameState = {
@@ -38,7 +41,7 @@ export class FrameLoopState {
 	}
 
 	public tickUpdate(): boolean {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		if (!runtime.tickEnabled) {
 			return false;
 		}
@@ -82,12 +85,12 @@ export class FrameLoopState {
 
 	public abandonFrameState(): void {
 		this.currentFrameState = null;
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		runtime.vblank.abandonTick();
 	}
 
 	private runActiveFrameState(state: FrameState): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		if (runtime.pendingCall === 'entry') {
 			this.runUpdatePhase(state);
 			state.updateExecuted = runtime.pendingCall !== 'entry';
@@ -96,7 +99,7 @@ export class FrameLoopState {
 	}
 
 	private finalizeUpdateSlice(frameState: FrameState): void {
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		this.currentFrameState = frameState;
 		if (runtime.vblank.tickCompleted || runtime.pendingCall !== 'entry') {
 			this.abandonFrameState();
@@ -104,7 +107,7 @@ export class FrameLoopState {
 	}
 
 	private runUpdatePhase(state: FrameState): void {
-	const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		const cpu = runtime.machine.cpu;
 		const vblank = runtime.vblank;
 		if (!runtime.cartEntryAvailable) {

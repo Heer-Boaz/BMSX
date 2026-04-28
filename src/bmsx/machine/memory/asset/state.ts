@@ -56,12 +56,11 @@ export class RuntimeAssetState {
 
 	private readonly memoryGate = taskGate.group('asset:ram');
 
-	public setLayers(layers: ReadonlyArray<RuntimeAssetLayer>): void {
-		this.layerLookup = buildRuntimeLayerLookup(layers);
+	constructor(private readonly runtime: Runtime) {
 	}
 
-	public getImageAssetByEntry(entry: RomAsset): RomImgAsset {
-		return resolveRuntimeLayerAssetFromEntry<RomImgAsset>(this.layerLookup, 'img', entry);
+	public setLayers(layers: ReadonlyArray<RuntimeAssetLayer>): void {
+		this.layerLookup = buildRuntimeLayerLookup(layers);
 	}
 
 	public getImageAsset(id: string, source?: RawAssetSource): RomImgAsset {
@@ -83,7 +82,7 @@ export class RuntimeAssetState {
 			if (entry.type !== 'image' && entry.type !== 'atlas') {
 				continue;
 			}
-			assets.push(this.getImageAssetByEntry(entry));
+			assets.push(resolveRuntimeLayerAssetFromEntry<RomImgAsset>(this.layerLookup, 'img', entry));
 		}
 		return assets;
 	}
@@ -92,7 +91,7 @@ export class RuntimeAssetState {
 		const token = this.memoryGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		const renderToken = renderGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		const runToken = runGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
-		const runtime = Runtime.instance;
+		const runtime = this.runtime;
 		try {
 			const mode = params?.mode ?? 'full';
 			const engineSource = runtime.engineAssetSource;
