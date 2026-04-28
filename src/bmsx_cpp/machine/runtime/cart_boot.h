@@ -2,19 +2,17 @@
 
 namespace bmsx {
 
-class Runtime;
-
 class CartBootState {
 public:
-	void reset(Runtime& runtime);
-	bool processProgramReloadRequest(Runtime& runtime);
-	bool processPending(Runtime& runtime);
+	void reset();
+	bool processProgramReloadRequest();
+	bool processPending();
 
 private:
-	void prepareIfNeeded(Runtime& runtime);
-	bool pollSystemBootRequest(Runtime& runtime);
-	void setReadyFlag(Runtime& runtime, bool value);
-	void request(Runtime& runtime);
+	void prepareIfNeeded();
+	bool pollSystemBootRequest();
+	void setReadyFlag(bool value);
+	void request();
 
 	bool m_prepared = false;
 	bool m_pending = false;

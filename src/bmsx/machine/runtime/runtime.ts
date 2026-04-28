@@ -414,7 +414,7 @@ export class Runtime {
 		this.engineAssetSource = params.engineAssetSource;
 		this.cartAssetSource = params.cartAssetSource;
 		this.engineProjectRootPath = params.engineSources.projectRootPath || DEFAULT_ENGINE_PROJECT_ROOT_PATH;
-		this.cartBoot.reset(this);
+		this.cartBoot.reset();
 	}
 
 	public activateProgramSource(source: ProgramSource): void {
@@ -602,7 +602,7 @@ export class Runtime {
 			workbenchMode.deactivateTerminalMode(this);
 			workbenchMode.deactivateEditor(this);
 			this.clearLuaBootState();
-			this.cartBoot.reset(this);
+			this.cartBoot.reset();
 			await applyWorkspaceOverridesToRegistry({
 				registry: this.engineLuaSources,
 				storage: this.storageService,

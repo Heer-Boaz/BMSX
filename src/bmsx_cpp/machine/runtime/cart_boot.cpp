@@ -9,18 +9,19 @@
 
 namespace bmsx {
 
-void CartBootState::reset(Runtime& runtime) {
+void CartBootState::reset() {
 	m_prepared = false;
 	m_pending = false;
-	setReadyFlag(runtime, false);
+	setReadyFlag(false);
 }
 
 // disable-next-line single_line_method_pattern -- cart boot readiness is owned by this state and projected into SYS MMIO.
-void CartBootState::setReadyFlag(Runtime& runtime, bool value) {
-	runtime.machine().memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(value ? 1.0 : 0.0));
+void CartBootState::setReadyFlag(bool value) {
+	Runtime::instance().machine().memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(value ? 1.0 : 0.0));
 }
 
-void CartBootState::prepareIfNeeded(Runtime& runtime) {
+void CartBootState::prepareIfNeeded() {
+	Runtime& runtime = Runtime::instance();
 	if (!runtime.isEngineProgramActive()) {
 		return;
 	}
@@ -31,27 +32,29 @@ void CartBootState::prepareIfNeeded(Runtime& runtime) {
 		return;
 	}
 	m_prepared = true;
-	setReadyFlag(runtime, true);
+	setReadyFlag(true);
 }
 
-void CartBootState::request(Runtime& runtime) {
+void CartBootState::request() {
 	m_pending = true;
-	setReadyFlag(runtime, false);
+	setReadyFlag(false);
 }
 
-bool CartBootState::processProgramReloadRequest(Runtime& runtime) {
+bool CartBootState::processProgramReloadRequest() {
+	Runtime& runtime = Runtime::instance();
 	if (!runtime.m_rebootRequested) {
 		return false;
 	}
 	runtime.m_rebootRequested = false;
 	runtime.frameScheduler.clearQueuedTime();
-	if (!EngineCore::instance().romBootManager().rebootLoadedRom(EngineCore::instance())) {
-		EngineCore::instance().log(LogLevel::Error, "Runtime fault: reboot to bootrom failed.\n");
+	if (!EngineCore::instance().romBootManager().rebootLoadedRom()) {
+		throw std::runtime_error("Runtime fault: reboot to bootrom failed.");
 	}
 	return true;
 }
 
-bool CartBootState::pollSystemBootRequest(Runtime& runtime) {
+bool CartBootState::pollSystemBootRequest() {
+	Runtime& runtime = Runtime::instance();
 	if (!runtime.isEngineProgramActive()) {
 		return false;
 	}
@@ -60,13 +63,14 @@ bool CartBootState::pollSystemBootRequest(Runtime& runtime) {
 	}
 	runtime.machine().memory().writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	runtime.frameScheduler.clearQueuedTime();
-	request(runtime);
+	request();
 	return true;
 }
 
-bool CartBootState::processPending(Runtime& runtime) {
-	prepareIfNeeded(runtime);
-	if (pollSystemBootRequest(runtime)) {
+bool CartBootState::processPending() {
+	Runtime& runtime = Runtime::instance();
+	prepareIfNeeded();
+	if (pollSystemBootRequest()) {
 		return true;
 	}
 	if (!m_pending) {
@@ -82,16 +86,13 @@ bool CartBootState::processPending(Runtime& runtime) {
 	runtime.frameScheduler.clearQueuedTime();
 	m_pending = false;
 	try {
-		if (!EngineCore::instance().romBootManager().bootLoadedCart(EngineCore::instance())) {
-			setReadyFlag(runtime, false);
-			EngineCore::instance().log(LogLevel::Error,
-				"Runtime fault: deferred cart boot request failed while leaving system boot screen active.\n");
+		if (!EngineCore::instance().romBootManager().bootLoadedCart()) {
+			setReadyFlag(false);
+			throw std::runtime_error("Runtime fault: deferred cart boot request failed while leaving system boot screen active.");
 		}
 	} catch (const std::exception& error) {
-		setReadyFlag(runtime, false);
-		EngineCore::instance().log(LogLevel::Error,
-			"Runtime fault: deferred cart boot request failed while leaving system boot screen active: %s\n",
-			error.what());
+		setReadyFlag(false);
+		throw std::runtime_error(std::string("Runtime fault: deferred cart boot request failed while leaving system boot screen active: ") + error.what());
 	}
 	return true;
 }

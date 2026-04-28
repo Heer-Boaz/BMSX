@@ -106,7 +106,7 @@ void EngineCore::shutdown() {
 	}
 
 	stop();
-	m_rom_boot_manager->unloadRom(*this);
+	m_rom_boot_manager->unloadRom();
 
 	if (m_texture_manager) {
 		m_texture_manager->dispose();

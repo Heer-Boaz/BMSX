@@ -165,7 +165,7 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
-	cartBoot.reset(*this);
+	cartBoot.reset();
 	m_hostFaultMessage.reset();
 	m_moduleCache.clear();
 	m_machine.cpu().clearGlobalSlots();

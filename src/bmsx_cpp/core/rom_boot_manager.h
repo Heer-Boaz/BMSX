@@ -14,29 +14,29 @@ struct ResolvedRuntimeTiming;
 
 class RomBootManager {
 public:
-	bool loadEngineAssets(EngineCore& engine, const u8* data, size_t size);
-	bool loadEngineAssetsOwned(EngineCore& engine, std::vector<u8>&& data);
-	bool loadEngineAssetsFromPath(EngineCore& engine, const char* path);
+	bool loadEngineAssets(const u8* data, size_t size);
+	bool loadEngineAssetsOwned(std::vector<u8>&& data);
+	bool loadEngineAssetsFromPath(const char* path);
 
-	bool loadRom(EngineCore& engine, const u8* data, size_t size);
-	bool loadRomOwned(EngineCore& engine, std::vector<u8>&& data);
-	void unloadRom(EngineCore& engine);
+	bool loadRom(const u8* data, size_t size);
+	bool loadRomOwned(std::vector<u8>&& data);
+	void unloadRom();
 
-	bool bootLoadedCart(EngineCore& engine);
-	bool rebootLoadedRom(EngineCore& engine);
-	bool bootWithoutCart(EngineCore& engine);
+	bool bootLoadedCart();
+	bool rebootLoadedRom();
+	bool bootWithoutCart();
 
 private:
-	void activateEngineAssets(EngineCore& engine);
-	void activateCartAssets(EngineCore& engine);
-	void setMachineManifest(EngineCore& engine, const MachineManifest& manifest);
-	void configureViewForMachine(EngineCore& engine, const MachineManifest& manifest);
+	void activateEngineAssets();
+	void activateCartAssets();
+	void setMachineManifest(const MachineManifest& manifest);
+	void configureViewForMachine(const MachineManifest& manifest);
 
-	bool loadEngineAssetsInternal(EngineCore& engine, const u8* data, size_t size);
-	bool loadRomInternal(EngineCore& engine, const u8* data, size_t size);
-	bool bootEngineStartupProgram(EngineCore& engine, const MachineManifest& runtimeMachine, const RuntimeAssets& sizingAssets);
-	Runtime& prepareRuntimeForActiveCart(EngineCore& engine, const ResolvedRuntimeTiming& timing, const MachineManifest& machine);
-	void bootRuntimeFromProgram(EngineCore& engine);
+	bool loadEngineAssetsInternal(const u8* data, size_t size);
+	bool loadRomInternal(const u8* data, size_t size);
+	bool bootEngineStartupProgram(const MachineManifest& runtimeMachine, const RuntimeAssets& sizingAssets);
+	Runtime& prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine);
+	void bootRuntimeFromProgram();
 };
 
 } // namespace bmsx

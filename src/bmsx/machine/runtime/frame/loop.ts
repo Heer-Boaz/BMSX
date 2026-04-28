@@ -40,7 +40,7 @@ export class FrameLoopState {
 		if (!runtime.tickEnabled) {
 			return false;
 		}
-		runtime.cartBoot.processPending(runtime);
+		runtime.cartBoot.processPending();
 		if (runtime.executionOverlayActive) {
 			if (this.currentFrameState !== null) {
 				this.abandonFrameState(runtime);

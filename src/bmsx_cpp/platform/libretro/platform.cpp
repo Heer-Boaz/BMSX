@@ -426,7 +426,7 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		}
 	}
 
-	if (!m_engine->romBootManager().loadRomOwned(*m_engine, std::move(data))) {
+	if (!m_engine->romBootManager().loadRomOwned(std::move(data))) {
 		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM into engine\n");
 		return false;
 	}
@@ -529,7 +529,7 @@ bool LibretroPlatform::loadEmptyCart() {
 	}
 
 	// Boot engine with engine assets (runs bootrom.lua)
-	if (assetsLoaded && m_engine && m_engine->romBootManager().bootWithoutCart(*m_engine)) {
+	if (assetsLoaded && m_engine && m_engine->romBootManager().bootWithoutCart()) {
 		log(RETRO_LOG_INFO, "[BMSX] Booted with engine system program\n");
 		m_rom_loaded = true;
 		return true;
@@ -559,7 +559,7 @@ bool LibretroPlatform::loadEngineAssetsFromFile(const std::string& path) {
 		return false;
 	}
 
-	if (!m_engine->romBootManager().loadEngineAssetsOwned(*m_engine, std::move(data))) {
+	if (!m_engine->romBootManager().loadEngineAssetsOwned(std::move(data))) {
 		log(RETRO_LOG_WARN, "[BMSX] Failed to parse engine assets: %s\n", path.c_str());
 		return false;
 	}
@@ -572,7 +572,7 @@ void LibretroPlatform::unloadRom() {
 	if (m_rom_loaded) {
 		// Unload from engine
 		if (m_engine) {
-			m_engine->romBootManager().unloadRom(*m_engine);
+			m_engine->romBootManager().unloadRom();
 		}
 		m_rom_loaded = false;
 		log(RETRO_LOG_INFO, "[BMSX] ROM unloaded\n");
@@ -586,7 +586,7 @@ void LibretroPlatform::reset() {
 	m_has_wall_frame_timestamp = false;
 
 	if (m_engine && m_engine->romLoaded()) {
-		if (!m_engine->romBootManager().rebootLoadedRom(*m_engine)) {
+		if (!m_engine->romBootManager().rebootLoadedRom()) {
 			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: runtime reset failed\n");
 			return;
 		}

@@ -86,14 +86,14 @@ void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 
 bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	using PendingCall = Runtime::PendingCall;
-	if (runtime.cartBoot.processProgramReloadRequest(runtime)) {
+	if (runtime.cartBoot.processProgramReloadRequest()) {
 		return true;
 	}
 	if (!runtime.m_luaInitialized || !runtime.m_tickEnabled || runtime.m_runtimeFailed) {
 		return false;
 	}
 
-	if (runtime.cartBoot.processPending(runtime)) {
+	if (runtime.cartBoot.processPending()) {
 		return true;
 	}
 
