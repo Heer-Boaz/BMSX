@@ -394,10 +394,6 @@ export class Runtime {
 		return Runtime._instance!;
 	}
 
-	public static get hasInstance(): boolean {
-		return Runtime._instance !== null;
-	}
-
 	public static destroy(): void {
 		// No defense against multiple calls; let it throw if misused.
 		Runtime._instance.dispose();
