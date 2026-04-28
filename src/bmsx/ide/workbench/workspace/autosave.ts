@@ -139,7 +139,7 @@ export function loadCleanSrc(path: string): string {
 	if (context && context.mode === 'aem') {
 		return context.lastSavedSource;
 	}
-	return luaPipeline.resourceSourceForChunk(Runtime.instance, path);
+	return luaPipeline.resourceSourceForChunk(path);
 }
 
 export function clearWorkspaceDirtyBuffers(): void {

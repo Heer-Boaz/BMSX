@@ -1,10 +1,8 @@
 import type { ResourceDescriptor } from '../../../../rompack/resource';
-import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 
 export function findResourceDescriptorForChunk(path: string): ResourceDescriptor | null {
-	const runtime = Runtime.instance;
-	const registries = luaPipeline.listLuaSourceRegistries(runtime);
+	const registries = luaPipeline.listLuaSourceRegistries();
 	for (const entry of registries) {
 		const asset = entry.registry.path2lua[path];
 		if (asset) {

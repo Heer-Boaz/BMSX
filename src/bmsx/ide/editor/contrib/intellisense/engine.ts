@@ -1506,7 +1506,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 		const path = paths[index];
 		let model = models.get(path.path);
 		if (!model) {
-			const source = luaPipeline.resourceSourceForChunk(Runtime.instance, path.path);
+			const source = luaPipeline.resourceSourceForChunk(path.path);
 			if (!source) {
 				continue;
 			}
@@ -1625,7 +1625,7 @@ export function getStaticDefinitions(preferredChunk: string): { definitions: Rea
 
 export function buildSemanticModelForChunk(path: string): LuaSemanticModel {
 	const runtime = Runtime.instance;
-	const source = luaPipeline.resourceSourceForChunk(runtime, path);
+	const source = luaPipeline.resourceSourceForChunk(path);
 	const cached = runtime.pathSemanticCache.get(path);
 	const cachedMatch = cached && cached.source === source ? cached : null;
 	if (cachedMatch) {
@@ -1758,9 +1758,8 @@ function wrapRuntimeValueForIntellisense(value: Value): LuaValue {
 	if (isStringValue(value)) {
 		return stringValueToString(value);
 	}
-	const runtime = Runtime.instance;
-	const marshalContext = buildMarshalContext(runtime);
-	const native = toNativeValue(runtime, value, marshalContext, new WeakMap<Table, unknown>());
+	const marshalContext = buildMarshalContext();
+	const native = toNativeValue(value, marshalContext, new WeakMap<Table, unknown>());
 	return wrapHostValueForIntellisense(native);
 }
 
@@ -1808,8 +1807,7 @@ export function resolveSnapshotExpression(expression: string): LuaValue | null {
 	if (!parts || parts.length === 0) {
 		return null;
 	}
-	const runtime = Runtime.instance;
-	const snapshot = workbenchMode.getLastCpuFaultSnapshot(runtime);
+	const snapshot = workbenchMode.getLastCpuFaultSnapshot();
 	if (snapshot.length === 0) {
 		return null;
 	}
@@ -1877,7 +1875,7 @@ function resolveRuntimeLocalChainValue(
 	const cpu = runtime.machine.cpu;
 	// Use the fault snapshot when the fault overlay is active — by hover time, the crash
 	// frame has been popped from the live CPU stack, so we must use the saved registers.
-	const faultSnapshot = workbenchMode.hasFaultSnapshot(runtime) ? workbenchMode.getLastCpuFaultSnapshot(runtime) : null;
+	const faultSnapshot = workbenchMode.hasFaultSnapshot() ? workbenchMode.getLastCpuFaultSnapshot() : null;
 	const callStack = faultSnapshot ?? cpu.getCallStack();
 	if (callStack.length === 0) {
 		return null;

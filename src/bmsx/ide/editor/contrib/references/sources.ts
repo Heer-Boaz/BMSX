@@ -3,7 +3,6 @@ import type { LuaDefinitionLocation, LuaSymbolEntry } from '../../../../lua/sema
 import type { ResourceDescriptor } from '../../../../rompack/resource';
 import type { CodeTabContext, SearchMatch, SymbolSearchResult } from '../../../common/models';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
-import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { createEditorSemanticFrontend } from '../intellisense/frontend';
 import { LuaSemanticWorkspace } from '../intellisense/semantic/workspace';
@@ -232,7 +231,7 @@ function prepareProjectSemanticFrontend(
 		}
 		const source = environment.loadLuaResource && descriptor.asset_id
 			? environment.loadLuaResource(descriptor.asset_id)
-			: luaPipeline.resourceSourceForChunk(Runtime.instance, descriptor.path);
+			: luaPipeline.resourceSourceForChunk(descriptor.path);
 		const lines = splitText(source);
 		registerProjectFile(inputs, metadata, descriptor.path, source, lines, descriptor.asset_id);
 	}

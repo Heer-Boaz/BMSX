@@ -48,7 +48,7 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	const runtime = Runtime.instance;
 	if (payload.fontVariant) {
 		if (runtime) {
-			workbenchMode.setActiveIdeFontVariant(runtime, payload.fontVariant);
+			workbenchMode.setActiveIdeFontVariant(payload.fontVariant);
 		} else {
 			setFontVariant(payload.fontVariant);
 		}

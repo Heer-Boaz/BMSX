@@ -6,7 +6,7 @@ import {
 	prepareOverlayRenderQueues,
 	preparePartialRenderQueues,
 } from './shared/queues';
-import type { Runtime } from '../machine/runtime/runtime';
+import { Runtime } from '../machine/runtime/runtime';
 import type { TickCompletion } from '../machine/scheduler/frame';
 import * as workbenchMode from '../ide/workbench/mode';
 import { commitVdpViewSnapshot } from './vdp/view_snapshot';
@@ -91,7 +91,8 @@ export class RenderPresentationState {
 		this.debugPresentPausedPresents = 0;
 	}
 
-	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
+	private presentFrame(hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
+		const runtime = Runtime.instance;
 		engineCore.deltatime = hostDeltaMs;
 		commitVdpViewSnapshot(engineCore.view, runtime.machine.vdp, runtime.assets);
 		engineCore.view.configurePresentation(mode, commitFrame);
@@ -107,18 +108,19 @@ export class RenderPresentationState {
 		this.presentationCommitFrame = commitFrame;
 	}
 
-	private consumePresentation(runtime: Runtime, out: RenderPresentation): boolean {
+	private consumePresentation(out: RenderPresentation): boolean {
 		if (!this.pendingPresentation) {
 			return false;
 		}
+		const runtime = Runtime.instance;
 		const overlayActive = runtime.executionOverlayActive;
 		out.mode = this.presentationMode;
 		out.commitFrame = overlayActive ? false : this.presentationCommitFrame;
 		if (overlayActive) {
 			clearBackQueues();
 		}
-		workbenchMode.tickIDEDraw(runtime);
-		workbenchMode.tickTerminalModeDraw(runtime);
+		workbenchMode.tickIDEDraw();
+		workbenchMode.tickTerminalModeDraw();
 		if (overlayActive) {
 			prepareOverlayRenderQueues();
 		} else if (out.mode === 'completed' && out.commitFrame) {
@@ -153,24 +155,26 @@ export class RenderPresentationState {
 		this.resetDebugCounters(0);
 	}
 
-	public runOverlay(runtime: Runtime): void {
+	public runOverlay(): void {
+		const runtime = Runtime.instance;
 		this.clearPresentation();
 		if (runtime.frameLoop.currentFrameState !== null) {
-			runtime.frameLoop.abandonFrameState(runtime);
+			runtime.frameLoop.abandonFrameState();
 		}
 		runtime.frameScheduler.clearQueuedTime();
-		workbenchMode.tickIDE(runtime);
-		workbenchMode.tickTerminalMode(runtime);
+		workbenchMode.tickIDE();
+		workbenchMode.tickTerminalMode();
 		this.markPresentation('completed', false);
 	}
 
-	public syncAfterRuntimeUpdate(runtime: Runtime, previousTickSequence: number): void {
+	public syncAfterRuntimeUpdate(previousTickSequence: number): void {
+		const runtime = Runtime.instance;
 		if (runtime.executionOverlayActive) {
 			runtime.frameScheduler.clearQueuedTime();
 			this.markPresentation('completed', false);
 		} else if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
 			this.markPresentation('completed', runtime.frameScheduler.lastTickVisualFrameCommitted);
-		} else if (runtime.isDrawPending || workbenchMode.hasFaultSnapshot(runtime)) {
+		} else if (runtime.isDrawPending || workbenchMode.hasFaultSnapshot()) {
 			this.markPresentation('partial', false);
 		}
 		while (runtime.frameScheduler.consumeTickCompletion(this.tickCompletionScratch)) {
@@ -178,33 +182,35 @@ export class RenderPresentationState {
 		}
 	}
 
-	public presentPausedFrame(runtime: Runtime, hostDeltaMs: number): void {
+	public presentPausedFrame(hostDeltaMs: number): void {
+	const runtime = Runtime.instance;
 		if (runtime.executionOverlayActive) {
-			this.runOverlay(runtime);
-			this.consumePresentation(runtime, this.presentationScratch);
-			this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
+			this.runOverlay();
+			this.consumePresentation(this.presentationScratch);
+			this.presentFrame(hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 			return;
 		}
 		runtime.frameScheduler.clearQueuedTime();
 		this.clearPresentation();
 		prepareHeldRenderQueues();
-		this.presentFrame(runtime, hostDeltaMs, 'completed', false);
+		this.presentFrame(hostDeltaMs, 'completed', false);
 	}
 
-	public presentPending(runtime: Runtime, hostDeltaMs: number): void {
-		if (!this.consumePresentation(runtime, this.presentationScratch)) {
+	public presentPending(hostDeltaMs: number): void {
+		if (!this.consumePresentation(this.presentationScratch)) {
 			return;
 		}
-		this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
+		this.presentFrame(hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 	}
 
-	public presentErrorOverlay(runtime: Runtime, hostDeltaMs: number): void {
+	public presentErrorOverlay(hostDeltaMs: number): void {
+		const runtime = Runtime.instance;
 		if (!runtime.executionOverlayActive) {
 			return;
 		}
-		this.runOverlay(runtime);
-		this.consumePresentation(runtime, this.presentationScratch);
-		this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
+		this.runOverlay();
+		this.consumePresentation(this.presentationScratch);
+		this.presentFrame(hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 	}
 
 	public flushDebugReport(currentTime: number, runtime: Runtime): void {
@@ -226,9 +232,9 @@ export class RenderPresentationState {
 			+ `tick_completed=${this.debugPresentTickCompleted} tick_committed=${this.debugPresentTickCommitted} `
 			+ `tick_deferred=${this.debugPresentTickDeferred} tick_held=${this.debugPresentTickHeld} `
 			+ `present_partial=${this.debugPresentPartialPresents} present_commit=${this.debugPresentCommitPresents} `
-				+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
-					+ `draw_pending=${runtime.isDrawPending || workbenchMode.hasFaultSnapshot(runtime) ? 1 : 0} active_tick=${runtime.frameLoop.currentFrameState !== null ? 1 : 0}`
-				);
+			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
+			+ `draw_pending=${runtime.isDrawPending || workbenchMode.hasFaultSnapshot() ? 1 : 0} active_tick=${runtime.frameLoop.currentFrameState !== null ? 1 : 0}`
+		);
 		this.resetDebugCounters(currentTime);
 	}
 }

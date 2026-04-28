@@ -25,7 +25,7 @@ function buildRuntimeAemValidationLookup() {
 }
 
 function reloadAem(): void {
-	runConsoleChunkToNative(Runtime.instance, `rget('aem'):reload()`);
+	runConsoleChunkToNative(`rget('aem'):reload()`);
 }
 
 export function listAemResourceDescriptors(): ResourceDescriptor[] {

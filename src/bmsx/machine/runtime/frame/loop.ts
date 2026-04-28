@@ -1,4 +1,4 @@
-import type { FrameState, Runtime } from '../runtime';
+import { FrameState, Runtime } from '../runtime';
 import { RunResult } from '../../cpu/cpu';
 import { clearHardwareLighting } from '../../../render/shared/hardware/lighting';
 import { clearBackQueues } from '../../../render/shared/queues';
@@ -14,10 +14,11 @@ export class FrameLoopState {
 		this.frameDeltaMs = 0;
 	}
 
-	public beginFrameState(runtime: Runtime): FrameState {
+	public beginFrameState(): FrameState {
 		if (this.currentFrameState) {
 			throw new Error('attempted to begin a new frame while another frame is active.');
 		}
+		const runtime = Runtime.instance;
 		this.frameDeltaMs = runtime.timing.frameDurationMs;
 		const budget = runtime.timing.cycleBudgetPerFrame;
 		const state: FrameState = {
@@ -36,14 +37,15 @@ export class FrameLoopState {
 		return state;
 	}
 
-	public tickUpdate(runtime: Runtime): boolean {
+	public tickUpdate(): boolean {
+		const runtime = Runtime.instance;
 		if (!runtime.tickEnabled) {
 			return false;
 		}
 		runtime.cartBoot.processPending();
 		if (runtime.executionOverlayActive) {
 			if (this.currentFrameState !== null) {
-				this.abandonFrameState(runtime);
+				this.abandonFrameState();
 				return true;
 			}
 			return false;
@@ -54,15 +56,15 @@ export class FrameLoopState {
 		const previousPendingEntry = runtime.pendingCall === 'entry';
 		const previousSequence = frameScheduler.lastTickSequence;
 		if (this.currentFrameState === null) {
-			if (!frameScheduler.startScheduledFrame(runtime)) {
+			if (!frameScheduler.startScheduledFrame()) {
 				return false;
 			}
 		} else if (this.currentFrameState.cycleBudgetRemaining <= 0) {
-			if (!frameScheduler.refillFrameBudget(runtime, this.currentFrameState)) {
+			if (!frameScheduler.refillFrameBudget(this.currentFrameState)) {
 				return false;
 			}
 		}
-		this.runActiveFrameState(runtime, this.currentFrameState);
+		this.runActiveFrameState(this.currentFrameState);
 		const nextState = this.currentFrameState;
 		if (nextState !== previousState) {
 			return true;
@@ -78,27 +80,31 @@ export class FrameLoopState {
 		return nextSequence !== previousSequence;
 	}
 
-	public abandonFrameState(runtime: Runtime): void {
+	public abandonFrameState(): void {
 		this.currentFrameState = null;
+		const runtime = Runtime.instance;
 		runtime.vblank.abandonTick();
 	}
 
-	private runActiveFrameState(runtime: Runtime, state: FrameState): void {
+	private runActiveFrameState(state: FrameState): void {
+		const runtime = Runtime.instance;
 		if (runtime.pendingCall === 'entry') {
-			this.runUpdatePhase(runtime, state);
+			this.runUpdatePhase(state);
 			state.updateExecuted = runtime.pendingCall !== 'entry';
 		}
-		this.finalizeUpdateSlice(runtime, state);
+		this.finalizeUpdateSlice(state);
 	}
 
-	private finalizeUpdateSlice(runtime: Runtime, frameState: FrameState): void {
+	private finalizeUpdateSlice(frameState: FrameState): void {
+		const runtime = Runtime.instance;
 		this.currentFrameState = frameState;
 		if (runtime.vblank.tickCompleted || runtime.pendingCall !== 'entry') {
-			this.abandonFrameState(runtime);
+			this.abandonFrameState();
 		}
 	}
 
-	private runUpdatePhase(runtime: Runtime, state: FrameState): void {
+	private runUpdatePhase(state: FrameState): void {
+	const runtime = Runtime.instance;
 		const cpu = runtime.machine.cpu;
 		const vblank = runtime.vblank;
 		if (!runtime.cartEntryAvailable) {
@@ -116,7 +122,7 @@ export class FrameLoopState {
 		}
 		try {
 			while (true) {
-				if (cpu.isHaltedUntilIrq() && vblank.runHaltedUntilIrq(runtime, state)) {
+				if (cpu.isHaltedUntilIrq() && vblank.runHaltedUntilIrq(state)) {
 					return;
 				}
 				if (vblank.consumeBackQueueClearAfterIrqWake()) {
@@ -125,9 +131,9 @@ export class FrameLoopState {
 				if (runtime.pendingCall !== 'entry') {
 					return;
 				}
-				const result = runtime.cpuExecution.runWithBudget(runtime, state);
+				const result = runtime.cpuExecution.runWithBudget(state);
 				if (cpu.isHaltedUntilIrq()) {
-					if (vblank.runHaltedUntilIrq(runtime, state)) {
+					if (vblank.runHaltedUntilIrq(state)) {
 						return;
 					}
 					continue;
@@ -139,7 +145,7 @@ export class FrameLoopState {
 			}
 		} catch (error) {
 			state.luaFaulted = true;
-			runtime.vblank.clearHaltUntilIrq(runtime);
+			runtime.vblank.clearHaltUntilIrq();
 			runtime.pendingCall = null;
 			throw error;
 		}

@@ -12,7 +12,7 @@ namespace bmsx {
 
 RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 	RuntimeResumeSnapshot snapshot;
-	snapshot.machineState = captureRuntimeMachineState(runtime);
+	snapshot.machineState = captureRuntimeMachineState();
 	const_cast<CPU&>(runtime.m_machine.cpu()).syncGlobalSlotsToTable();
 	runtime.m_machine.cpu().globals->forEachEntry([&snapshot](Value key, Value value) {
 		snapshot.globals.emplace_back(key, value);
@@ -26,7 +26,7 @@ RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 }
 
 void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& snapshot) {
-	applyRuntimeMachineState(runtime, snapshot.machineState);
+	applyRuntimeMachineState(snapshot.machineState);
 	restoreVdpContextState(runtime.machine().vdp());
 	runtime.m_api->restoreStorageState(snapshot.storageState);
 	runtime.m_gameViewState = snapshot.gameViewState;
@@ -40,7 +40,7 @@ void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& s
 	for (const auto& [key, value] : snapshot.globals) {
 		runtime.m_machine.cpu().setGlobalByKey(key, value);
 	}
-	syncRuntimeGameViewStateToTable(runtime);
+	syncRuntimeGameViewStateToTable();
 	RenderQueues::clearBackQueues();
 }
 

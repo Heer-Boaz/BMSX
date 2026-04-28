@@ -16,12 +16,12 @@ void FrameLoopState::resetFrameState(Runtime& runtime) {
 	runtime.vblank.abandonTick();
 	runtime.machine().inputController().restoreSampleArmed(false);
 	frameState = FrameState{};
-	runtime.vblank.clearHaltUntilIrq(runtime);
+	runtime.vblank.clearHaltUntilIrq();
 	runtime.frameScheduler.reset();
 	reset();
 	runtime.screen.reset();
 	runtime.frameScheduler.resetTickTelemetry();
-	runtime.vblank.reset(runtime);
+	runtime.vblank.reset();
 }
 
 void FrameLoopState::beginFrameState(Runtime& runtime) {
@@ -49,13 +49,13 @@ void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry && !runtime.vblank.tickCompleted()) {
 		return;
 	}
-	abandonFrameState(runtime);
+	abandonFrameState();
 }
 
 void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 	try {
 		while (true) {
-			if (runtime.machine().cpu().isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
+			if (runtime.machine().cpu().isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(frameState)) {
 				return;
 			}
 			if (runtime.vblank.consumeBackQueueClearAfterIrqWake()) {
@@ -64,9 +64,9 @@ void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 			if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 				return;
 			}
-			const RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
+			const RunResult result = runtime.cpuExecution.runWithBudget(frameState);
 			if (runtime.machine().cpu().isHaltedUntilIrq()) {
-				if (runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
+				if (runtime.vblank.runHaltedUntilIrq(frameState)) {
 					return;
 				}
 				continue;
@@ -78,7 +78,7 @@ void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 		}
 	} catch (...) {
 		frameState.luaFaulted = true;
-		runtime.vblank.clearHaltUntilIrq(runtime);
+		runtime.vblank.clearHaltUntilIrq();
 		runtime.m_pendingCall = Runtime::PendingCall::None;
 		throw;
 	}
@@ -103,17 +103,17 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	const i64 previousSequence = runtime.frameScheduler.lastTickSequence;
 	const bool startedFrame = !frameActive;
 	if (frameActive) {
-		if (frameState.cycleBudgetRemaining <= 0 && !runtime.frameScheduler.refillFrameBudget(runtime, frameState)) {
+		if (frameState.cycleBudgetRemaining <= 0 && !runtime.frameScheduler.refillFrameBudget(frameState)) {
 			return false;
 		}
 	} else {
-		if (!runtime.frameScheduler.startScheduledFrame(runtime)) {
+		if (!runtime.frameScheduler.startScheduledFrame()) {
 			return false;
 		}
 	}
 
 	if (runtime.m_pendingCall == PendingCall::Entry) {
-		executeUpdateCallback(runtime);
+		executeUpdateCallback();
 	}
 
 	if (startedFrame) {
@@ -121,7 +121,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	}
 
 	frameState.updateExecuted = runtime.m_pendingCall != PendingCall::Entry;
-	finalizeUpdateSlice(runtime);
+	finalizeUpdateSlice();
 	const bool nextFrameActive = frameActive;
 	if (nextFrameActive != previousFrameActive) {
 		return true;

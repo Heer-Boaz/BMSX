@@ -1,4 +1,4 @@
-import type { RuntimeErrorOverlay } from '../../../common/models';
+import { RuntimeErrorOverlay } from '../../../common/models';
 
 type RuntimeErrorState = {
 	activeOverlay: RuntimeErrorOverlay;

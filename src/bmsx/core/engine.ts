@@ -202,10 +202,10 @@ export class EngineCore {
 			if (runtime) {
 				runtime.frameScheduler.clearQueuedTime();
 				runtime.screen.clearPresentation();
-				runtime.frameLoop.abandonFrameState(runtime);
+				runtime.frameLoop.abandonFrameState();
 				runtime.frameLoop.drawFrameState = null;
-				runtime.vblank.clearHaltUntilIrq(runtime);
-				runtime.vblank.reset(runtime);
+				runtime.vblank.clearHaltUntilIrq();
+				runtime.vblank.reset();
 				runtime.overlayRenderer.abandonFrame();
 			}
 
@@ -235,7 +235,7 @@ export class EngineCore {
 		runtime.frameLoop.currentTimeMs = now;
 		runtime.frameScheduler.clearQueuedTime();
 		platform.frames.start((currentTime: number) => {
-			runEngineHostFrame(this, runtime, currentTime, runGate.ready);
+			runEngineHostFrame(currentTime, runGate.ready);
 		});
 		this.running = true;
 	}

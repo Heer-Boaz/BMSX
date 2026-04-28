@@ -77,11 +77,11 @@ bool CartBootState::processPending() {
 		return false;
 	}
 	if (runtime.frameLoop.frameActive) {
-		runtime.frameLoop.resetFrameState(runtime);
+		runtime.frameLoop.resetFrameState();
 	}
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
 		runtime.m_pendingCall = Runtime::PendingCall::None;
-		runtime.vblank.clearHaltUntilIrq(runtime);
+		runtime.vblank.clearHaltUntilIrq();
 	}
 	runtime.frameScheduler.clearQueuedTime();
 	m_pending = false;

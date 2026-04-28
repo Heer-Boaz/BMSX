@@ -9,7 +9,7 @@ import {
 	getMachineMemorySpecs,
 	generateAtlasAssetId,
 } from '../../rompack/format';
-import type { RuntimeAssetLayer } from '../../rompack/loader';
+import { RuntimeAssetLayer } from '../../rompack/loader';
 import { ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE } from './memory';
 import {
 	DEFAULT_GEO_SCRATCH_SIZE,

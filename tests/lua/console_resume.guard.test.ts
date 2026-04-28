@@ -9,7 +9,7 @@ test('initializeLuaInterpreterFromSnapshot hot-resume path keeps integrations li
 	const nextExport = src.indexOf('\nexport function ', start + 1);
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('hotResumeProgramEntry'), true, 'hot-resume path should reuse the compiled entry');
-	assert.equal(snippet.includes('restoreRuntimeState(runtime, snapshot)'), true, 'hot-resume path should restore the live snapshot');
+	assert.equal(snippet.includes('restoreRuntimeState(snapshot)'), true, 'hot-resume path should restore the live snapshot');
 });
 
 test('reloadLuaProgramState applies hot-resume without reinitialising interpreter', () => {
@@ -29,6 +29,6 @@ test('hotResumeProgramEntry keeps interpreter resident', () => {
 	const nextExport = src.indexOf('\nexport function ', start + 1);
 	const snippet = src.slice(start, nextExport === -1 ? undefined : nextExport);
 	assert.equal(snippet.includes('createLuaInterpreter('), false, 'hotResumeProgramEntry should not create a new interpreter');
-	assert.equal(snippet.includes('beginEntryExecution(runtime, entryProtoIndex)'), true, 'hotResumeProgramEntry must execute the updated path');
+	assert.equal(snippet.includes('beginEntryExecution(entryProtoIndex)'), true, 'hotResumeProgramEntry must execute the updated path');
 	assert.equal(snippet.includes('clearCartModuleCacheForHotResume'), true, 'hotResumeProgramEntry should reuse the hot-resume cache path');
 });

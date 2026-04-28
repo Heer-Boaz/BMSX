@@ -1,6 +1,5 @@
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, VERSION as BINENC_VERSION } from '../../../common/serializer/binencoder';
-import type { RuntimeSaveState } from '../contracts';
-import type { Runtime } from '../runtime';
+import { RuntimeSaveState } from '../contracts';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../save_state';
 import { RUNTIME_SAVE_STATE_PROP_NAMES, RUNTIME_SAVE_STATE_WIRE_VERSION } from './schema';
 
@@ -31,10 +30,10 @@ export function decodeRuntimeSaveState(bytes: Uint8Array): RuntimeSaveState {
 	) as RuntimeSaveState;
 }
 
-export function captureRuntimeSaveStateBytes(runtime: Runtime): Uint8Array {
-	return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+export function captureRuntimeSaveStateBytes(): Uint8Array {
+	return encodeRuntimeSaveState(captureRuntimeSaveState());
 }
 
-export function applyRuntimeSaveStateBytes(runtime: Runtime, bytes: Uint8Array): void {
-	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(bytes));
+export function applyRuntimeSaveStateBytes(bytes: Uint8Array): void {
+	applyRuntimeSaveState(decodeRuntimeSaveState(bytes));
 }

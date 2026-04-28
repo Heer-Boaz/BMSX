@@ -7,7 +7,6 @@ import type {
 	EditorTabDescriptor,
 	ResourceDescriptor,
 } from '../../../common/models';
-import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
 import { listResources } from '../../../workspace/workspace';
@@ -16,8 +15,7 @@ import { codeTabSessionState } from './session_state';
 import { tabSessionState } from '../tab/session_state';
 
 function resolveLuaSource(descriptor: ResourceDescriptor): string {
-	const runtime = Runtime.instance;
-	return luaPipeline.resourceSourceForChunk(runtime, descriptor.path);
+	return luaPipeline.resourceSourceForChunk(descriptor.path);
 }
 
 function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: string, mode: CodeTabMode): CodeTabContext {
@@ -90,9 +88,8 @@ export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescripto
 }
 
 export function createEntryTabContext(): CodeTabContext {
-	const runtime = Runtime.instance;
 	const luaDescriptors = listResources().filter(r => r.type === 'lua');
-	const preferredRegistry = luaPipeline.listLuaSourceRegistries(runtime)[0].registry;
+	const preferredRegistry = luaPipeline.listLuaSourceRegistries()[0].registry;
 	const descriptor = luaDescriptors.find(r => r.path === preferredRegistry.entry_path)!;
 	return createLuaCodeTabContext(descriptor);
 }

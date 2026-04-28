@@ -1,6 +1,6 @@
 import type { RawAssetSource } from '../../../rompack/source';
 import type { CartridgeLayerId, RomAsset, RuntimeAssets } from '../../../rompack/format';
-import type { RuntimeAssetLayer } from '../../../rompack/loader';
+import { RuntimeAssetLayer } from '../../../rompack/loader';
 import {
 	CART_ROM_BASE,
 	OVERLAY_ROM_BASE,

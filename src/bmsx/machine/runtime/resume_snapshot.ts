@@ -1,7 +1,7 @@
 import type { LuaValue } from '../../lua/value';
 import { convertToError, isLuaFunctionValue, isLuaTable } from '../../lua/value';
 import type { LuaEntrySnapshot, RuntimeResumeSnapshot } from './contracts';
-import type { Runtime } from './runtime';
+import { Runtime } from './runtime';
 import { cloneGameViewState, copyGameViewState } from './game/view_state';
 import { captureRuntimeMachineState } from './machine_state';
 import { captureRuntimeRenderState } from '../../render/runtime_state';
@@ -47,16 +47,17 @@ function resumeSnapshotFault(message: string): Error {
 	return new Error(`Resume snapshot fault: ${message}`);
 }
 
-export function captureRuntimeResumeSnapshot(runtime: Runtime): RuntimeResumeSnapshot {
+export function captureRuntimeResumeSnapshot(): RuntimeResumeSnapshot {
+	const runtime = Runtime.instance;
 	const storageState = runtime.storage.dump();
-	const luaSnapshot = captureRuntimeLuaSnapshot(runtime);
+	const luaSnapshot = captureRuntimeLuaSnapshot();
 	const snapshot: RuntimeResumeSnapshot = {
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
 		luaPath: runtime.currentPath,
 		storageState,
 		gameViewState: cloneGameViewState(runtime.gameViewState),
 		renderState: captureRuntimeRenderState(),
-		machineState: captureRuntimeMachineState(runtime),
+		machineState: captureRuntimeMachineState(),
 	};
 	if (luaSnapshot) {
 		if (luaSnapshot.globals) {
@@ -75,10 +76,11 @@ export function captureRuntimeResumeSnapshot(runtime: Runtime): RuntimeResumeSna
 	return snapshot;
 }
 
-function captureRuntimeLuaSnapshot(runtime: Runtime): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number; programCounter?: number } {
+function captureRuntimeLuaSnapshot(): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number; programCounter?: number } {
+	const runtime = Runtime.instance;
 	const interpreter = runtime.interpreter;
-	const globals = captureLuaEntryCollection(runtime, interpreter.enumerateGlobalEntries());
-	const locals = captureLuaEntryCollection(runtime, interpreter.enumerateChunkEntries());
+	const globals = captureLuaEntryCollection(interpreter.enumerateGlobalEntries());
+	const locals = captureLuaEntryCollection(interpreter.enumerateChunkEntries());
 	return {
 		globals,
 		locals,
@@ -87,15 +89,16 @@ function captureRuntimeLuaSnapshot(runtime: Runtime): { globals?: LuaEntrySnapsh
 	};
 }
 
-function captureLuaEntryCollection(runtime: Runtime, entries: ReadonlyArray<[string, LuaValue]>): LuaEntrySnapshot {
+function captureLuaEntryCollection(entries: ReadonlyArray<[string, LuaValue]>): LuaEntrySnapshot {
 	if (!entries || entries.length === 0) {
 		return null;
 	}
+	const runtime = Runtime.instance;
 	const ctx = runtime.luaJsBridge.createLuaSnapshotContext();
 	const snapshotRoot: Record<string, unknown> = {};
 	let count = 0;
 	for (const [name, value] of entries) {
-		if (shouldSkipLuaResumeSnapshotEntry(runtime, name, value)) {
+		if (shouldSkipLuaResumeSnapshotEntry(name, value)) {
 			continue;
 		}
 		try {
@@ -109,7 +112,8 @@ function captureLuaEntryCollection(runtime: Runtime, entries: ReadonlyArray<[str
 	return count > 0 ? { root: snapshotRoot, objects: ctx.objects } : null;
 }
 
-function shouldSkipLuaResumeSnapshotEntry(runtime: Runtime, name: string, value: LuaValue): boolean {
+function shouldSkipLuaResumeSnapshotEntry(name: string, value: LuaValue): boolean {
+	const runtime = Runtime.instance;
 	if (!name || runtime.apiFunctionNames.has(name)) {
 		return true;
 	}
@@ -122,7 +126,8 @@ function shouldSkipLuaResumeSnapshotEntry(runtime: Runtime, name: string, value:
 	return false;
 }
 
-export function restoreRuntimeLuaSnapshot(runtime: Runtime, snapshot: RuntimeResumeSnapshot): void {
+export function restoreRuntimeLuaSnapshot(snapshot: RuntimeResumeSnapshot): void {
+	const runtime = Runtime.instance;
 	const interpreter = runtime.interpreter;
 	copyGameViewState(runtime.gameViewState, snapshot.gameViewState);
 	if (snapshot.luaRandomSeed !== undefined) {
@@ -132,14 +137,15 @@ export function restoreRuntimeLuaSnapshot(runtime: Runtime, snapshot: RuntimeRes
 		interpreter.programCounter = snapshot.luaProgramCounter;
 	}
 	if (snapshot.luaGlobals) {
-		restoreLuaGlobals(runtime, snapshot.luaGlobals);
+		restoreLuaGlobals(snapshot.luaGlobals);
 	}
 	if (snapshot.luaLocals) {
-		restoreLuaLocals(runtime, snapshot.luaLocals);
+		restoreLuaLocals(snapshot.luaLocals);
 	}
 }
 
-function restoreLuaGlobals(runtime: Runtime, globals: LuaEntrySnapshot): void {
+function restoreLuaGlobals(globals: LuaEntrySnapshot): void {
+	const runtime = Runtime.instance;
 	const interpreter = runtime.interpreter;
 	const entries = runtime.luaJsBridge.materializeLuaEntrySnapshot(globals);
 	for (const [name, value] of entries) {
@@ -160,7 +166,8 @@ function restoreLuaGlobals(runtime: Runtime, globals: LuaEntrySnapshot): void {
 	}
 }
 
-function restoreLuaLocals(runtime: Runtime, locals: LuaEntrySnapshot): void {
+function restoreLuaLocals(locals: LuaEntrySnapshot): void {
+	const runtime = Runtime.instance;
 	const interpreter = runtime.interpreter;
 	const entries = runtime.luaJsBridge.materializeLuaEntrySnapshot(locals);
 	for (const [name, value] of entries) {

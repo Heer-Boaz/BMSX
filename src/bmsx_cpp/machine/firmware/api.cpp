@@ -65,7 +65,7 @@ static u32 utf8SingleCodepoint(const std::string& text) {
 } // namespace
 
 Api::Api(Runtime& runtime)
-	: m_runtime(runtime)
+	: m_runtime()
 	, m_persistentData(PERSISTENT_DATA_SIZE, 0.0)
 {
 	m_font = std::make_unique<Font>(m_runtime.systemAssets());

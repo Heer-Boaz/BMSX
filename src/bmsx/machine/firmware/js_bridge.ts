@@ -3,7 +3,7 @@ import { LuaEnvironment } from '../../lua/environment';
 import { LuaHandlerCache, isLuaHandlerFunction } from '../../lua/handler_cache';
 import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../../lua/value';
 import { Table, type Closure, type NativeFunction, type NativeObject, type Value, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject } from '../cpu/cpu';
-import type { Runtime } from '../runtime/runtime';
+import { Runtime } from '../runtime/runtime';
 import type { LuaMarshalContext } from '../runtime/contracts';
 import { isStringValue, stringValueToString } from '../memory/string/pool';
 
@@ -34,8 +34,8 @@ export class LuaJsBridge implements LuaInteropAdapter {
 	private readonly tableIds = new WeakMap<LuaTable, number>();
 	private nextTableId = 1;
 
-	constructor(runtime: Runtime, luaHandlerCache: LuaHandlerCache) {
-		this.runtime = runtime;
+	constructor(luaHandlerCache: LuaHandlerCache) {
+		this.runtime = Runtime.instance;
 		this.luaHandlerCache = luaHandlerCache;
 	}
 
@@ -51,7 +51,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 
 	public convertFromLua(value: LuaValue, context?: LuaMarshalContext): unknown {
 		if (!context) {
-			context = buildMarshalContext(this.runtime);
+			context = buildMarshalContext();
 		}
 		return this.luaValueToJsWithVisited(value, context, new WeakMap<LuaTable, unknown>());
 	}
@@ -116,32 +116,32 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			hasOtherEntries = true;
 		});
 		// end repeated-sequence-acceptable
-			if (entryCount === 0) {
-				const empty: Record<string, unknown> = {};
-				visited.set(table, empty);
-				return empty;
-			}
-			if (!hasOtherEntries && numericCount > 0) {
-				const result: unknown[] = new Array(maxNumericIndex);
-				visited.set(table, result);
-				for (let index = 1; index <= maxNumericIndex; index += 1) {
+		if (entryCount === 0) {
+			const empty: Record<string, unknown> = {};
+			visited.set(table, empty);
+			return empty;
+		}
+		if (!hasOtherEntries && numericCount > 0) {
+			const result: unknown[] = new Array(maxNumericIndex);
+			visited.set(table, result);
+			for (let index = 1; index <= maxNumericIndex; index += 1) {
 				const nextContext = extendMarshalContext(tableContext, String(index));
 				result[index - 1] = this.luaValueToJsWithVisited(table.get(index), nextContext, visited);
 			}
 			return result;
-			}
-			const objectResult: Record<string, unknown> = {};
-			visited.set(table, objectResult);
-			table.forEachEntry((key, entryValue) => {
-				const segment = this.describeMarshalSegment(key);
-				objectResult[String(key)] = this.luaValueToJsWithVisited(
-					entryValue,
-					segment ? extendMarshalContext(tableContext, segment) : tableContext,
-					visited,
-				);
-			});
-			return objectResult;
 		}
+		const objectResult: Record<string, unknown> = {};
+		visited.set(table, objectResult);
+		table.forEachEntry((key, entryValue) => {
+			const segment = this.describeMarshalSegment(key);
+			objectResult[String(key)] = this.luaValueToJsWithVisited(
+				entryValue,
+				segment ? extendMarshalContext(tableContext, segment) : tableContext,
+				visited,
+			);
+		});
+		return objectResult;
+	}
 
 	public getOrAssignTableId(table: LuaTable): number {
 		const existing = this.tableIds.get(table);
@@ -305,7 +305,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 				this.applyLuaSnapshotPayload(table, record, value => this.deserializeLuaSnapshotValue(value, resolveRef));
 				return table;
 			}
-				if (record.__native_member_handle__) {
+			if (record.__native_member_handle__) {
 				const handleTarget = (record as { target: object | Function }).target;
 				const path = (record as { path: ReadonlyArray<string> }).path;
 				return this.runtime.interpreter.createNativeMemberHandle(handleTarget, path);
@@ -364,14 +364,14 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			? ensureTable(this.parseSnapshotReferenceId((rootRef as { r: unknown }).r))
 			: rootRef;
 
-			if (isLuaTable(resolvedRoot)) {
-				const entries: Array<[string, LuaValue]> = [];
-				resolvedRoot.forEachEntry((key, value) => {
-					const stringKey = typeof key === 'string' ? key : String(key);
-					entries.push([stringKey, value]);
-				});
-				return entries;
-			}
+		if (isLuaTable(resolvedRoot)) {
+			const entries: Array<[string, LuaValue]> = [];
+			resolvedRoot.forEachEntry((key, value) => {
+				const stringKey = typeof key === 'string' ? key : String(key);
+				entries.push([stringKey, value]);
+			});
+			return entries;
+		}
 		if (resolvedRoot && typeof resolvedRoot === 'object') {
 			const entries: Array<[string, LuaValue]> = [];
 			for (const [name, value] of Object.entries(resolvedRoot)) {
@@ -419,60 +419,60 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		if (visited.has(target)) {
 			return;
 		}
-			visited.add(target);
-			target.setMetatable(snapshot.getMetatable());
-			snapshot.forEachEntry((key, value) => {
-				if (isLuaTable(value)) {
-					const current = target.get(key);
-					if (isLuaTable(current)) {
-						this.applyLuaTableSnapshot(current, value, visited);
-						return;
-					}
+		visited.add(target);
+		target.setMetatable(snapshot.getMetatable());
+		snapshot.forEachEntry((key, value) => {
+			if (isLuaTable(value)) {
+				const current = target.get(key);
+				if (isLuaTable(current)) {
+					this.applyLuaTableSnapshot(current, value, visited);
+					return;
 				}
-				target.set(key, value);
-			});
-		}
+			}
+			target.set(key, value);
+		});
+	}
 
 	public mergeLuaTablePreservingState(target: LuaTable, fresh: LuaTable, visited: WeakSet<LuaTable> = new WeakSet()): void {
 		if (visited.has(target)) {
 			return;
 		}
-			visited.add(target);
-			target.setMetatable(fresh.getMetatable());
-			const seenKeys = new Set<LuaValue>();
-			fresh.forEachEntry((key, freshValue) => {
-				seenKeys.add(key);
-				const current = target.get(key);
-				if (isLuaFunctionValue(freshValue)) {
-					target.set(key, freshValue);
-					return;
-				}
-				if (isLuaTable(freshValue)) {
-					if (isLuaTable(current)) {
-						this.mergeLuaTablePreservingState(current, freshValue, visited);
-						return;
-					}
-					target.set(key, freshValue);
-					return;
-				}
-				if (current === null || isLuaFunctionValue(current)) {
-					target.set(key, freshValue);
-					return;
-				}
-				if (isLuaTable(current)) {
-					target.set(key, freshValue);
-				}
-			});
-			const staleKeys: LuaValue[] = [];
-			target.forEachEntry((key, value) => {
-				if (isLuaFunctionValue(value) && !seenKeys.has(key)) {
-					staleKeys.push(key);
-				}
-			});
-			for (let index = 0; index < staleKeys.length; index += 1) {
-				target.set(staleKeys[index], null);
+		visited.add(target);
+		target.setMetatable(fresh.getMetatable());
+		const seenKeys = new Set<LuaValue>();
+		fresh.forEachEntry((key, freshValue) => {
+			seenKeys.add(key);
+			const current = target.get(key);
+			if (isLuaFunctionValue(freshValue)) {
+				target.set(key, freshValue);
+				return;
 			}
+			if (isLuaTable(freshValue)) {
+				if (isLuaTable(current)) {
+					this.mergeLuaTablePreservingState(current, freshValue, visited);
+					return;
+				}
+				target.set(key, freshValue);
+				return;
+			}
+			if (current === null || isLuaFunctionValue(current)) {
+				target.set(key, freshValue);
+				return;
+			}
+			if (isLuaTable(current)) {
+				target.set(key, freshValue);
+			}
+		});
+		const staleKeys: LuaValue[] = [];
+		target.forEachEntry((key, value) => {
+			if (isLuaFunctionValue(value) && !seenKeys.has(key)) {
+				staleKeys.push(key);
+			}
+		});
+		for (let index = 0; index < staleKeys.length; index += 1) {
+			target.set(staleKeys[index], null);
 		}
+	}
 
 	public createLuaSnapshotContext(): LuaSnapshotContext {
 		return { ids: new WeakMap<LuaTable, number>(), objects: {}, nextId: 1 };
@@ -510,47 +510,47 @@ export class LuaJsBridge implements LuaInteropAdapter {
 		return { r: id };
 	}
 
-		public buildLuaTableSnapshotPayload(table: LuaTable, ctx: LuaSnapshotContext): unknown {
-			const numericEntries = new Map<number, unknown>();
-			const objectEntries: Record<string, unknown> = {};
-			const complexEntries: Array<{ key: unknown; value: unknown }> = [];
-			let hasEntries = false;
-			let hasStringKey = false;
-			let maxNumericIndex = 0;
-			let hasComplexKeys = false;
-			table.forEachEntry((key, entryValue) => {
-				hasEntries = true;
-				if (isLuaFunctionValue(entryValue)) {
-					return;
-				}
-				if (typeof key === 'string' && key.toLowerCase() === '__index') {
-					return;
-				}
-				const serializedEntry = entryValue instanceof LuaNativeValue
-					? entryValue.native
-					: this.serializeLuaValueForSnapshot(entryValue, ctx);
-				const serializedKey = this.serializeLuaSnapshotKey(key, ctx);
-				if (serializedKey === undefined) {
-					return;
-				}
-				complexEntries.push({ key: serializedKey, value: serializedEntry });
-				if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-					numericEntries.set(key, serializedEntry);
-					if (key > maxNumericIndex) {
-						maxNumericIndex = key;
-					}
-					return;
-				}
-				if (typeof key === 'string') {
-					hasStringKey = true;
-					objectEntries[key] = serializedEntry;
-					return;
-				}
-				hasComplexKeys = true;
-			});
-			if (!hasEntries) {
-				return {};
+	public buildLuaTableSnapshotPayload(table: LuaTable, ctx: LuaSnapshotContext): unknown {
+		const numericEntries = new Map<number, unknown>();
+		const objectEntries: Record<string, unknown> = {};
+		const complexEntries: Array<{ key: unknown; value: unknown }> = [];
+		let hasEntries = false;
+		let hasStringKey = false;
+		let maxNumericIndex = 0;
+		let hasComplexKeys = false;
+		table.forEachEntry((key, entryValue) => {
+			hasEntries = true;
+			if (isLuaFunctionValue(entryValue)) {
+				return;
 			}
+			if (typeof key === 'string' && key.toLowerCase() === '__index') {
+				return;
+			}
+			const serializedEntry = entryValue instanceof LuaNativeValue
+				? entryValue.native
+				: this.serializeLuaValueForSnapshot(entryValue, ctx);
+			const serializedKey = this.serializeLuaSnapshotKey(key, ctx);
+			if (serializedKey === undefined) {
+				return;
+			}
+			complexEntries.push({ key: serializedKey, value: serializedEntry });
+			if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+				numericEntries.set(key, serializedEntry);
+				if (key > maxNumericIndex) {
+					maxNumericIndex = key;
+				}
+				return;
+			}
+			if (typeof key === 'string') {
+				hasStringKey = true;
+				objectEntries[key] = serializedEntry;
+				return;
+			}
+			hasComplexKeys = true;
+		});
+		if (!hasEntries) {
+			return {};
+		}
 		const numericCount = numericEntries.size;
 		const isSequential = numericCount > 0 && !hasStringKey && numericCount === maxNumericIndex;
 		const needsMap = hasComplexKeys || (numericCount > 0 && (!isSequential || hasStringKey));
@@ -691,8 +691,8 @@ export function extendMarshalContext(ctx: LuaMarshalContext, segment: string): L
 	};
 }
 
-export function buildMarshalContext(runtime: Runtime): LuaMarshalContext {
-	return { moduleId: runtime.resolveCurrentModuleId(), path: [] };
+export function buildMarshalContext(): LuaMarshalContext {
+	return { moduleId: Runtime.instance.resolveCurrentModuleId(), path: [] };
 }
 
 export function describeMarshalSegment(key: Value): string {
@@ -715,12 +715,12 @@ function resolveNativeKey(key: Value): string {
 	return null;
 }
 
-function parseNativeKeyFromString(runtime: Runtime, key: string): Value {
+function parseNativeKeyFromString(key: string): Value {
 	const numeric = Number(key);
 	if (Number.isInteger(numeric) && String(numeric) === key) {
 		return numeric;
 	}
-	return runtime.internString(key);
+	return Runtime.instance.internString(key);
 }
 
 function nativeKeysEqual(left: Value, right: Value): boolean {
@@ -744,7 +744,7 @@ function isArrayIndexProperty(key: string, length: number): boolean {
 	return Number.isInteger(numeric) && String(numeric) === key && numeric >= 0 && numeric < length;
 }
 
-function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
+function collectNativeKeys(raw: object): Value[] {
 	const keys: Value[] = [];
 	if (Array.isArray(raw)) {
 		const arr = raw as unknown[];
@@ -767,7 +767,7 @@ function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
 			if (value == null) {
 				continue;
 			}
-			keys.push(parseNativeKeyFromString(runtime, key));
+			keys.push(parseNativeKeyFromString(key));
 		}
 		return keys;
 	}
@@ -780,12 +780,12 @@ function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
 		if (value == null) {
 			continue;
 		}
-		keys.push(parseNativeKeyFromString(runtime, key));
+		keys.push(parseNativeKeyFromString(key));
 	}
 	return keys;
 }
 
-function findNativePropertyAfter(runtime: Runtime, raw: Record<string, unknown>, after: Value, skipArrayLength: number): [Value, unknown] | null {
+function findNativePropertyAfter(raw: Record<string, unknown>, after: Value, skipArrayLength: number): [Value, unknown] | null {
 	let returnNext = after === null;
 	for (const prop in raw) {
 		if (!Object.prototype.hasOwnProperty.call(raw, prop)) {
@@ -798,7 +798,7 @@ function findNativePropertyAfter(runtime: Runtime, raw: Record<string, unknown>,
 		if (value == null) {
 			continue;
 		}
-		const key = parseNativeKeyFromString(runtime, prop);
+		const key = parseNativeKeyFromString(prop);
 		if (returnNext) {
 			return [key, value];
 		}
@@ -809,11 +809,11 @@ function findNativePropertyAfter(runtime: Runtime, raw: Record<string, unknown>,
 	return null;
 }
 
-function findNativeRawEntryAfter(runtime: Runtime, raw: object, after: Value): [Value, unknown] | null {
+function findNativeRawEntryAfter(raw: object, after: Value): [Value, unknown] | null {
 	if (Array.isArray(raw)) {
 		const arr = raw as unknown[];
 		if (after !== null && (typeof after !== 'number' || !Number.isInteger(after) || after < 1)) {
-			return findNativePropertyAfter(runtime, raw as unknown as Record<string, unknown>, after, arr.length);
+			return findNativePropertyAfter(raw as unknown as Record<string, unknown>, after, arr.length);
 		}
 		let startIndex = 0;
 		if (after !== null) {
@@ -825,9 +825,9 @@ function findNativeRawEntryAfter(runtime: Runtime, raw: object, after: Value): [
 				return [index + 1, value];
 			}
 		}
-		return findNativePropertyAfter(runtime, raw as unknown as Record<string, unknown>, null, arr.length);
+		return findNativePropertyAfter(raw as unknown as Record<string, unknown>, null, arr.length);
 	}
-	return findNativePropertyAfter(runtime, raw as Record<string, unknown>, after, -1);
+	return findNativePropertyAfter(raw as Record<string, unknown>, after, -1);
 }
 
 function stringifyKey(key: Value): string {
@@ -837,12 +837,12 @@ function stringifyKey(key: Value): string {
 	return String(key);
 }
 
-function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContext, visited: TableMarshalVisited): unknown {
+function tableToNative(table: Table, context: LuaMarshalContext, visited: TableMarshalVisited): unknown {
 	const cached = visited.get(table);
 	if (cached !== undefined) {
 		return cached;
 	}
-	const tableId = getOrAssignTableId(runtime, table);
+	const tableId = getOrAssignTableId(table);
 	const tableContext = extendMarshalContext(context, `table${tableId}`);
 	let entryCount = 0;
 	let numericCount = 0;
@@ -871,7 +871,7 @@ function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContex
 		visited.set(table, result);
 		for (let index = 1; index <= maxNumericIndex; index += 1) {
 			const nextContext = extendMarshalContext(tableContext, String(index));
-			result[index - 1] = toNativeValue(runtime, table.get(index), nextContext, visited);
+			result[index - 1] = toNativeValue(table.get(index), nextContext, visited);
 		}
 		return result;
 	}
@@ -880,12 +880,13 @@ function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContex
 	table.forEachEntry((key, entryValue) => {
 		const segment = describeMarshalSegment(key);
 		const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
-		objectResult[stringifyKey(key)] = toNativeValue(runtime, entryValue, nextContext, visited);
+		objectResult[stringifyKey(key)] = toNativeValue(entryValue, nextContext, visited);
 	});
 	return objectResult;
 }
 
-export function getOrAssignTableId(runtime: Runtime, table: Table): number {
+export function getOrAssignTableId(table: Table): number {
+	const runtime = Runtime.instance;
 	const existing = runtime.tableIds.get(table);
 	if (existing !== undefined) {
 		return existing;
@@ -896,15 +897,15 @@ export function getOrAssignTableId(runtime: Runtime, table: Table): number {
 	return id;
 }
 
-export function nextNativeEntry(runtime: Runtime, target: NativeObject, after: Value): [Value, Value] | null {
+export function nextNativeEntry(target: NativeObject, after: Value): [Value, Value] | null {
 	if (target.nextEntry) {
 		return target.nextEntry(after);
 	}
-	return buildNativeNextEntry(runtime, target.raw)(after);
+	return buildNativeNextEntry(target.raw)(after);
 }
 
-export function pushNativePairsIterator(runtime: Runtime, target: NativeObject, out: Value[]): void {
-	const keys = collectNativeKeys(runtime, target.raw);
+export function pushNativePairsIterator(target: NativeObject, out: Value[]): void {
+	const keys = collectNativeKeys(target.raw);
 	let pointer = 0;
 	const iterator = createNativeFunction('native.pairs.iterator', (args, iteratorOut) => {
 		const nativeTarget = args[0];
@@ -933,11 +934,11 @@ export function pushNativePairsIterator(runtime: Runtime, target: NativeObject, 
 	out.push(iterator, target, null);
 }
 
-export function getOrCreateAssetsNativeObject(runtime: Runtime, assets = runtime.activeAssets): NativeObject {
+export function getOrCreateAssetsNativeObject(assets = Runtime.instance.activeAssets): NativeObject {
 	if (!assets) {
 		throw new Error('Active runtime assets are not configured.');
 	}
-	const cached = runtime.nativeObjectCache.get(assets);
+	const cached = Runtime.instance.nativeObjectCache.get(assets);
 	if (cached) {
 		return cached;
 	}
@@ -953,12 +954,12 @@ export function getOrCreateAssetsNativeObject(runtime: Runtime, assets = runtime
 				throw new Error(`Asset '${prop}' does not exist.`);
 			}
 			if (assetMapKeys.has(prop)) {
-				return getOrCreateAssetMapNativeObject(runtime, rawValue as Record<string, unknown>, prop as 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents');
+				return getOrCreateAssetMapNativeObject(rawValue as Record<string, unknown>, prop as 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents');
 			}
 			if (typeof rawValue === 'function') {
-				return getOrCreateNativeMethod(runtime, assets, prop);
+				return getOrCreateNativeMethod(assets, prop);
 			}
-			return toRuntimeAssetEntryValue(runtime, rawValue);
+			return toRuntimeAssetEntryValue(rawValue);
 		},
 		set: (key, entryValue) => {
 			const prop = resolveNativeKey(key);
@@ -969,16 +970,17 @@ export function getOrCreateAssetsNativeObject(runtime: Runtime, assets = runtime
 				delete assets[prop];
 				return;
 			}
-			const ctx = buildMarshalContext(runtime);
-			assets[prop] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
+			const ctx = buildMarshalContext();
+			assets[prop] = toNativeValue(entryValue, ctx, new WeakMap());
 		},
-		nextEntry: buildNativeNextEntry(runtime, assets),
+		nextEntry: buildNativeNextEntry(assets),
 	});
-	runtime.nativeObjectCache.set(assets, wrapper);
+	Runtime.instance.nativeObjectCache.set(assets, wrapper);
 	return wrapper;
 }
 
-export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<string, unknown>, kind: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): NativeObject {
+export function getOrCreateAssetMapNativeObject(map: Record<string, unknown>, kind: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): NativeObject {
+	const runtime = Runtime.instance;
 	const cached = runtime.nativeObjectCache.get(map);
 	if (cached) {
 		return cached;
@@ -994,9 +996,9 @@ export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<st
 				throw new Error(`Asset '${prop}' does not exist.`);
 			}
 			if (typeof rawValue === 'function') {
-				return getOrCreateNativeMethod(runtime, map, prop);
+				return getOrCreateNativeMethod(map, prop);
 			}
-			return toRuntimeAssetEntryValue(runtime, rawValue, kind);
+			return toRuntimeAssetEntryValue(rawValue, kind);
 		},
 		set: (key, entryValue) => {
 			const prop = resolveNativeKey(key);
@@ -1007,54 +1009,56 @@ export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<st
 				delete map[prop];
 				return;
 			}
-			const ctx = buildMarshalContext(runtime);
-			map[prop] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
+			const ctx = buildMarshalContext();
+			map[prop] = toNativeValue(entryValue, ctx, new WeakMap());
 		},
-		nextEntry: buildNativeNextEntry(runtime, map, kind),
+		nextEntry: buildNativeNextEntry(map, kind),
 	});
 	runtime.nativeObjectCache.set(map, wrapper);
 	return wrapper;
 }
 
-function buildNativeNextEntry(runtime: Runtime, raw: object, kind?: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): (after: Value) => [Value, Value] | null {
+function buildNativeNextEntry(raw: object, kind?: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): (after: Value) => [Value, Value] | null {
 	return (after: Value): [Value, Value] | null => {
-		const entry = findNativeRawEntryAfter(runtime, raw, after);
+		const entry = findNativeRawEntryAfter(raw, after);
 		if (entry === null) {
 			return null;
 		}
 		const key = entry[0];
 		const value = entry[1];
-		return [key, toRuntimeAssetEntryValue(runtime, value, kind)];
+		return [key, toRuntimeAssetEntryValue(value, kind)];
 	};
 }
 
-function toRuntimeAssetEntryValue(runtime: Runtime, value: unknown, kind?: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): Value {
+function toRuntimeAssetEntryValue(value: unknown, kind?: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): Value {
 	switch (kind) {
 		case 'img':
 		case 'audio':
 		case 'model':
 			if (value !== undefined && value !== null && typeof value === 'object') {
-				return getOrCreateNativeObject(runtime, value as object);
+				return getOrCreateNativeObject(value as object);
 			}
-			return toRuntimeValue(runtime, value);
+			return toRuntimeValue(value);
 	}
 	if (value === undefined || value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
-		return toRuntimeValue(runtime, value);
+		return toRuntimeValue(value);
 	}
 	if (value instanceof Table || isNativeObject(value as Value) || isNativeFunction(value as Value)) {
 		return value as Value;
 	}
 	const objectValue = value as object;
+	const runtime = Runtime.instance;
 	const cached = runtime.luaAssetValueCache.get(objectValue);
 	if (cached !== undefined) {
 		return cached;
 	}
-	const converted = toRuntimeValue(runtime, value);
+	const converted = toRuntimeValue(value);
 	runtime.luaAssetValueCache.set(objectValue, converted);
 	return converted;
 }
 
-export function syncLuaAssetField(runtime: Runtime, asset: object, field: string, value: Value): void {
+export function syncLuaAssetField(asset: object, field: string, value: Value): void {
+	const runtime = Runtime.instance;
 	const cached = runtime.luaAssetValueCache.get(asset);
 	if (!(cached instanceof Table)) {
 		return;
@@ -1062,13 +1066,14 @@ export function syncLuaAssetField(runtime: Runtime, asset: object, field: string
 	cached.set(runtime.luaKey(field), value);
 }
 
-export function toRuntimeValue(runtime: Runtime, value: unknown): Value {
+export function toRuntimeValue(value: unknown): Value {
 	if (value === undefined || value === null) {
 		return null;
 	}
 	if (typeof value === 'boolean' || typeof value === 'number') {
 		return value;
 	}
+	const runtime = Runtime.instance;
 	if (typeof value === 'string') {
 		return runtime.internString(value);
 	}
@@ -1082,10 +1087,10 @@ export function toRuntimeValue(runtime: Runtime, value: unknown): Value {
 		return value;
 	}
 	if (Array.isArray(value)) {
-		return getOrCreateNativeObject(runtime, value);
+		return getOrCreateNativeObject(value);
 	}
 	if (typeof value === 'function') {
-		return getOrCreateNativeFunction(runtime, value);
+		return getOrCreateNativeFunction(value);
 	}
 	if (isPlainObject(value)) {
 		const record = value as Record<string, unknown>;
@@ -1109,21 +1114,21 @@ export function toRuntimeValue(runtime: Runtime, value: unknown): Value {
 			if (entry === undefined || entry === null) {
 				continue;
 			}
-			table.set(runtime.internString(prop), toRuntimeValue(runtime, entry));
+			table.set(runtime.internString(prop), toRuntimeValue(entry));
 		}
 		return table;
 	}
 	if (value instanceof Map) {
 		const table = new Table(0, reserveTableHashSize(value.size));
 		for (const [key, entry] of value.entries()) {
-			table.set(toRuntimeValue(runtime, key), toRuntimeValue(runtime, entry));
+			table.set(toRuntimeValue(key), toRuntimeValue(entry));
 		}
 		return table;
 	}
-	return getOrCreateNativeObject(runtime, value as object);
+	return getOrCreateNativeObject(value as object);
 }
 
-export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarshalContext, visited: TableMarshalVisited): unknown {
+export function toNativeValue(value: Value, context: LuaMarshalContext, visited: TableMarshalVisited): unknown {
 	if (value === null || typeof value === 'boolean' || typeof value === 'number') {
 		return value;
 	}
@@ -1131,11 +1136,12 @@ export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarsha
 		return stringValueToString(value);
 	}
 	if (value instanceof Table) {
-		return tableToNative(runtime, value, context, visited);
+		return tableToNative(value, context, visited);
 	}
 	if (isNativeObject(value)) {
 		return value.raw;
 	}
+	const runtime = Runtime.instance;
 	if (isNativeFunction(value)) {
 		return (...args: unknown[]) => {
 			const callArgs = runtime.luaScratch.acquireValue();
@@ -1143,13 +1149,13 @@ export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarsha
 			const resultVisited = runtime.luaScratch.acquireTableMarshal();
 			try {
 				for (let index = 0; index < args.length; index += 1) {
-					callArgs.push(toRuntimeValue(runtime, args[index]));
+					callArgs.push(toRuntimeValue(args[index]));
 				}
 				value.invoke(callArgs, results);
 				if (results.length === 0) {
 					return undefined;
 				}
-				return toNativeValue(runtime, results[0], context, resultVisited);
+				return toNativeValue(results[0], context, resultVisited);
 			} finally {
 				runtime.luaScratch.releaseTableMarshal(resultVisited);
 				runtime.luaScratch.releaseValue(results);
@@ -1164,20 +1170,21 @@ export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarsha
 	return handler;
 }
 
-export function wrapNativeResult(runtime: Runtime, result: unknown, out: Value[]): void {
+export function wrapNativeResult(result: unknown, out: Value[]): void {
 	if (Array.isArray(result)) {
 		for (let index = 0; index < result.length; index += 1) {
-			out.push(toRuntimeValue(runtime, result[index]));
+			out.push(toRuntimeValue(result[index]));
 		}
 		return;
 	}
 	if (result === undefined) {
 		return;
 	}
-	out.push(toRuntimeValue(runtime, result));
+	out.push(toRuntimeValue(result));
 }
 
-export function getOrCreateNativeObject(runtime: Runtime, value: object): NativeObject {
+export function getOrCreateNativeObject(value: object): NativeObject {
+	const runtime = Runtime.instance;
 	const cached = runtime.nativeObjectCache.get(value);
 	if (cached) {
 		return cached;
@@ -1192,7 +1199,7 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 					return null;
 				}
 				const rawValue = arrayValue[index];
-				return rawValue === undefined ? null : toRuntimeValue(runtime, rawValue);
+				return rawValue === undefined ? null : toRuntimeValue(rawValue);
 			}
 			const prop = resolveNativeKey(key);
 			if (!prop) {
@@ -1203,15 +1210,15 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 				return null;
 			}
 			if (typeof rawValue === 'function') {
-				return getOrCreateNativeMethod(runtime, value, prop);
+				return getOrCreateNativeMethod(value, prop);
 			}
-			return toRuntimeValue(runtime, rawValue);
+			return toRuntimeValue(rawValue);
 		},
 		set: (key, entryValue) => {
 			if (isArray && typeof key === 'number' && Number.isInteger(key) && key >= 1) {
 				const index = key - 1;
-				const ctx = buildMarshalContext(runtime);
-				arrayValue[index] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
+				const ctx = buildMarshalContext();
+				arrayValue[index] = toNativeValue(entryValue, ctx, new WeakMap());
 				return;
 			}
 			const prop = resolveNativeKey(key);
@@ -1222,32 +1229,33 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 				delete (value as Record<string, unknown>)[prop];
 				return;
 			}
-			const ctx = buildMarshalContext(runtime);
-			(value as Record<string, unknown>)[prop] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
+			const ctx = buildMarshalContext();
+			(value as Record<string, unknown>)[prop] = toNativeValue(entryValue, ctx, new WeakMap());
 		},
 		len: isArray ? () => arrayValue.length : undefined,
-		nextEntry: buildNativeNextEntry(runtime, value),
+		nextEntry: buildNativeNextEntry(value),
 	});
 	runtime.nativeObjectCache.set(value, wrapper);
 	return wrapper;
 }
 
-export function getOrCreateNativeFunction(runtime: Runtime, fn: Function): NativeFunction {
+export function getOrCreateNativeFunction(fn: Function): NativeFunction {
+	const runtime = Runtime.instance;
 	const cached = runtime.nativeFunctionCache.get(fn);
 	if (cached) {
 		return cached;
 	}
 	const name = resolveNativeTypeName(fn);
 	const wrapper = createNativeFunction(name, (args, out) => {
-		const ctx = buildMarshalContext(runtime);
+		const ctx = buildMarshalContext();
 		const visited = runtime.luaScratch.acquireTableMarshal();
 		const jsArgs = runtime.luaScratch.acquireValue() as unknown[];
 		try {
 			for (let index = 0; index < args.length; index += 1) {
-				jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
+				jsArgs.push(toNativeValue(args[index], ctx, visited));
 			}
 			const result = fn.apply(undefined, jsArgs);
-			wrapNativeResult(runtime, result, out);
+			wrapNativeResult(result, out);
 		} finally {
 			runtime.luaScratch.releaseValue(jsArgs as unknown as Value[]);
 			runtime.luaScratch.releaseTableMarshal(visited);
@@ -1257,7 +1265,8 @@ export function getOrCreateNativeFunction(runtime: Runtime, fn: Function): Nativ
 	return wrapper;
 }
 
-export function getOrCreateNativeMethod(runtime: Runtime, target: object, key: string): NativeFunction {
+export function getOrCreateNativeMethod(target: object, key: string): NativeFunction {
+	const runtime = Runtime.instance;
 	let bucket = runtime.nativeMemberCache.get(target);
 	if (!bucket) {
 		bucket = new Map<string, NativeFunction>();
@@ -1269,7 +1278,7 @@ export function getOrCreateNativeMethod(runtime: Runtime, target: object, key: s
 	}
 	const name = `${resolveNativeTypeName(target)}.${key}`;
 	const wrapper = createNativeFunction(name, (args, out) => {
-		const ctx = buildMarshalContext(runtime);
+		const ctx = buildMarshalContext();
 		const visited = runtime.luaScratch.acquireTableMarshal();
 		const jsArgs = runtime.luaScratch.acquireValue() as unknown[];
 		const member = (target as Record<string, unknown>)[key];
@@ -1280,27 +1289,27 @@ export function getOrCreateNativeMethod(runtime: Runtime, target: object, key: s
 				}
 				let startIndex = 0;
 				if (args.length > 0) {
-					const first = toNativeValue(runtime, args[0], ctx, visited);
+					const first = toNativeValue(args[0], ctx, visited);
 					if (first !== target) {
 						jsArgs.push(first);
 					}
 					startIndex = 1;
 				}
 				for (let index = startIndex; index < args.length; index += 1) {
-					jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
+					jsArgs.push(toNativeValue(args[index], ctx, visited));
 				}
 				const result = (member as (...inner: unknown[]) => unknown).apply(target, jsArgs);
-				wrapNativeResult(runtime, result, out);
+				wrapNativeResult(result, out);
 				return;
 			}
 			for (let index = 0; index < args.length; index += 1) {
-				jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
+				jsArgs.push(toNativeValue(args[index], ctx, visited));
 			}
 			if (typeof member !== 'function') {
 				throw new Error(`Property '${key}' is not callable.`);
 			}
 			const result = (member as (...inner: unknown[]) => unknown).apply(undefined, jsArgs);
-			wrapNativeResult(runtime, result, out);
+			wrapNativeResult(result, out);
 		} finally {
 			runtime.luaScratch.releaseValue(jsArgs as unknown as Value[]);
 			runtime.luaScratch.releaseTableMarshal(visited);

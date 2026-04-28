@@ -12,7 +12,7 @@ import {
 	type RuntimeLayerLookup,
 } from './layers';
 import { registerImageMemory } from './images';
-import type { Runtime } from '../../runtime/runtime';
+import { Runtime } from '../../runtime/runtime';
 import type { VdpAtlasDimensions } from '../../devices/vdp/vdp';
 
 const ATLAS_ASSET_ID_PATTERN = /^_atlas_(\d+)$/;
@@ -88,10 +88,11 @@ export class RuntimeAssetState {
 		return assets;
 	}
 
-	public async buildMemory(runtime: Runtime, params?: { source?: RawAssetSource; mode?: 'full' | 'cart' }): Promise<void> {
+	public async buildMemory(params?: { source?: RawAssetSource; mode?: 'full' | 'cart' }): Promise<void> {
 		const token = this.memoryGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		const renderToken = renderGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		const runToken = runGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
+		const runtime = Runtime.instance;
 		try {
 			const mode = params?.mode ?? 'full';
 			const engineSource = runtime.engineAssetSource;

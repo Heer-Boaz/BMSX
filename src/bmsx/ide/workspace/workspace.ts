@@ -64,7 +64,7 @@ export async function saveLuaResourceSource(path: string, source: string): Promi
 	asset.src = source;
 	asset.update_timestamp = runtime.clock.dateNow();
 	registry.path2lua[sourcePath] = asset;
-	luaPipeline.markSourceChunkAsDirty(runtime, sourcePath);
+	luaPipeline.markSourceChunkAsDirty(sourcePath);
 }
 
 export async function createLuaResource(request: LuaResourceCreationRequest): Promise<ResourceDescriptor> {
@@ -90,10 +90,10 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 		? runtime.engineLuaSources
 		: resolveEditableCartLuaSources();
 	registerAsset(registry);
-	luaPipeline.invalidateModuleAliases(runtime);
+	luaPipeline.invalidateModuleAliases();
 	const filesystemPath = asset.source_path;
 	await persistWorkspaceSourceFile(filesystemPath, contents, isEngineLuaSourcePath(filesystemPath) ? resolveEngineProjectRootPath() : runtime.cartProjectRootPath);
-	luaPipeline.markSourceChunkAsDirty(runtime, asset.source_path);
+	luaPipeline.markSourceChunkAsDirty(asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
 }
@@ -161,7 +161,7 @@ export async function nukeWorkspaceState(): Promise<void> {
 
 export function listResources(): ResourceDescriptor[] {
 	const descriptorsByPath = new Map<string, ResourceDescriptor>();
-	const registries = luaPipeline.listLuaSourceRegistries(Runtime.instance);
+	const registries = luaPipeline.listLuaSourceRegistries();
 	for (const entry of registries) {
 		const registry = entry.registry;
 		const readOnly = entry.readOnly;

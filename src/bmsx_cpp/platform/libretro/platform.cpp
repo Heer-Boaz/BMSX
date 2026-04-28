@@ -706,7 +706,7 @@ size_t LibretroPlatform::getStateSize() const {
 	if (!runtime.isInitialized()) {
 		return 0;
 	}
-	return captureRuntimeSaveStateBytes(runtime).size();
+	return captureRuntimeSaveStateBytes().size();
 }
 
 // start fallible-boundary -- libretro serialization callbacks report failure as false after logging.
@@ -719,7 +719,7 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 		return false;
 	}
 	try {
-		const std::vector<u8> state = captureRuntimeSaveStateBytes(runtime);
+		const std::vector<u8> state = captureRuntimeSaveStateBytes();
 		if (size < state.size()) {
 			return false;
 		}
@@ -744,7 +744,7 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 		return false;
 	}
 	try {
-		applyRuntimeSaveStateBytes(runtime, static_cast<const u8*>(data), size);
+		applyRuntimeSaveStateBytes(static_cast<const u8*>(data), size);
 		flushHostRuntimeAssetEdits(runtime.machine().memory(), *m_engine->texmanager(), *m_engine->view());
 		applyGameViewStateToHost(runtime.gameViewState(), *m_engine->view());
 		static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();

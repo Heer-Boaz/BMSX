@@ -221,12 +221,12 @@ export function activateRuntimeEditor(): void {
 	}
 	if (Runtime.instance.hasRuntimeFailed) {
 		const rendered = renderRuntimeFaultOverlay({
-			snapshot: workbenchMode.getFaultSnapshot(Runtime.instance),
+			snapshot: workbenchMode.getFaultSnapshot(),
 			luaRuntimeFailed: Runtime.instance.hasRuntimeFailed,
-			needsFlush: workbenchMode.doesFaultOverlayNeedFlush(Runtime.instance),
+			needsFlush: workbenchMode.doesFaultOverlayNeedFlush(),
 			force: false,
 		});
-		if (rendered) workbenchMode.flushedFaultOverlay(Runtime.instance);
+		if (rendered) workbenchMode.flushedFaultOverlay();
 	}
 }
 
@@ -268,7 +268,7 @@ export function deactivateRuntimeEditor(): void {
 export function handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
 	const errormsg = error instanceof Error ? error.message : String(error);
 	engineCore.paused = true;
-	workbenchMode.activateEditor(Runtime.instance);
+	workbenchMode.activateEditor();
 	const message = `${fallbackMessage}: ${errormsg}`;
 	Runtime.instance.terminal.appendStderr(message);
 	showEditorMessage(message, constants.COLOR_STATUS_ERROR, 2.0);

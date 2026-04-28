@@ -4,7 +4,6 @@ import * as constants from '../../../common/constants';
 import { clamp, clamp_wrap } from '../../../../common/clamp';
 import { getSelectionRange, getSelectionText } from '../../editing/text_editing_and_selection';
 import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch, TextField } from '../../../common/models';
-import { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { enqueueBackgroundTask } from '../../../common/background_tasks';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
@@ -302,7 +301,7 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 	while (job.descriptorIndex < job.descriptors.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {
 			if (job.currentLines === null) {
 				const descriptor = job.descriptors[job.descriptorIndex];
-				const source = luaPipeline.resourceSourceForChunk(Runtime.instance, descriptor.path);
+				const source = luaPipeline.resourceSourceForChunk(descriptor.path);
 				job.currentLines = splitText(source);
 				job.nextRow = 0;
 			}

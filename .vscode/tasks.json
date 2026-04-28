@@ -2,6 +2,34 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"label": "Compile Browser Engine",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"compile:engine",
+			],
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"icon": {
+				"id": "gear",
+				"color": "terminal.ansiWhite"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "FULL BUILD"
+			}
+		},
+		{
 			"label": "GAME/BIOS/LIBRETRO-WSL/CUSTOM-HOST (+force+debug)",
 			"type": "shell",
 			"command": "npm",

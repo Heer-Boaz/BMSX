@@ -3,7 +3,7 @@ import type { CartManifest, MachineManifest, asset_id, Viewport } from '../../ro
 import type { MachineSaveState, MachineState } from '../machine';
 import type { Memory } from '../memory/memory';
 import type { LuaEntrySnapshot } from '../firmware/js_bridge';
-import type { RuntimeStorageState } from '../firmware/cart_storage';
+import { RuntimeStorageState } from '../firmware/cart_storage';
 import type { FrameSchedulerStateSnapshot } from '../scheduler/frame';
 import type { CpuRuntimeState } from '../cpu/cpu';
 import type { SpriteParallaxRig } from '../../render/shared/submissions';

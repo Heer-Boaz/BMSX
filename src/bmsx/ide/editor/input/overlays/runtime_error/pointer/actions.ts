@@ -1,7 +1,7 @@
 import { navigateToRuntimeErrorFrameTarget } from '../../../../../workbench/contrib/debugger/controller';
 import { rebuildRuntimeErrorOverlayView } from '../../../../contrib/runtime_error/overlay';
-import type { RuntimeErrorOverlay } from '../../../../../common/models';
-import type { RuntimeErrorOverlayClickResult } from '../../../../render/error_overlay';
+import { RuntimeErrorOverlay } from '../../../../../common/models';
+import { RuntimeErrorOverlayClickResult } from '../../../../render/error_overlay';
 
 export function collapseRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
 	setRuntimeErrorOverlayExpanded(overlay, false);

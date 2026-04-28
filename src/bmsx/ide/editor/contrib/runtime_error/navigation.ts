@@ -1,4 +1,4 @@
-import type { RuntimeErrorOverlay } from '../../../common/models';
+import { RuntimeErrorOverlay } from '../../../common/models';
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
 import { runtimeErrorState } from './state';

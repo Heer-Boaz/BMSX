@@ -27,7 +27,7 @@ import {
 } from '../common/runtime_error_format';
 import { logDebugState } from '../../machine/runtime/debug';
 import { TerminalMode } from '../terminal/ui/mode';
-import type { FrameState, Runtime } from '../../machine/runtime/runtime';
+import { FrameState, Runtime } from '../../machine/runtime/runtime';
 import type { CpuFrameSnapshot } from '../../machine/cpu/cpu';
 import type { Viewport } from '../../rompack/format';
 import { resolveWorkspacePath } from '../workspace/path';
@@ -101,35 +101,35 @@ export function createRuntimeFaultState(): RuntimeFaultState {
 	};
 }
 
-export function resetHandledLuaErrors(runtime: Runtime): void {
-	runtime.workbenchFaultState.handledLuaErrors = new WeakSet<object>();
+export function resetHandledLuaErrors(): void {
+	Runtime.instance.workbenchFaultState.handledLuaErrors = new WeakSet<object>();
 }
 
-export function getFaultSnapshot(runtime: Runtime): FaultSnapshot {
-	return runtime.workbenchFaultState.faultSnapshot;
+export function getFaultSnapshot(): FaultSnapshot {
+	return Runtime.instance.workbenchFaultState.faultSnapshot;
 }
 
-export function hasFaultSnapshot(runtime: Runtime): boolean {
-	return runtime.workbenchFaultState.faultSnapshot !== null;
+export function hasFaultSnapshot(): boolean {
+	return Runtime.instance.workbenchFaultState.faultSnapshot !== null;
 }
 
-export function getLastCpuFaultSnapshot(runtime: Runtime): CpuFrameSnapshot[] {
-	return runtime.workbenchFaultState.lastCpuFaultSnapshot;
+export function getLastCpuFaultSnapshot(): CpuFrameSnapshot[] {
+	return Runtime.instance.workbenchFaultState.lastCpuFaultSnapshot;
 }
 
-export function doesFaultOverlayNeedFlush(runtime: Runtime): boolean {
-	return runtime.workbenchFaultState.faultOverlayNeedsFlush;
+export function doesFaultOverlayNeedFlush(): boolean {
+	return Runtime.instance.workbenchFaultState.faultOverlayNeedsFlush;
 }
 
-export function flushedFaultOverlay(runtime: Runtime): void {
-	runtime.workbenchFaultState.faultOverlayNeedsFlush = false;
+export function flushedFaultOverlay(): void {
+	Runtime.instance.workbenchFaultState.faultOverlayNeedsFlush = false;
 }
 
-function getRenderTargetState(runtime: Runtime): RenderTargetState {
-	let state = RT_STATE.get(runtime);
+function getRenderTargetState(): RenderTargetState {
+	let state = RT_STATE.get(Runtime.instance);
 	if (!state) {
 		state = { stack: [] };
-		RT_STATE.set(runtime, state);
+		RT_STATE.set(Runtime.instance, state);
 	}
 	return state;
 }
@@ -143,26 +143,26 @@ function captureCurrentTargets(): RenderTargetSnapshot {
 	};
 }
 
-function applyFixedEditorTargets(runtime: Runtime): void {
+function applyFixedEditorTargets(): void {
 	engineCore.view.configureRenderTargets({
 		viewportSize: EDITOR_TARGET,
 		canvasSize: EDITOR_TARGET,
 		offscreenSize: EDITOR_TARGET,
 	});
-	runtime.overlayResolutionMode = 'viewport';
+	Runtime.instance.overlayResolutionMode = 'viewport';
 }
 
-function restoreTargets(runtime: Runtime, snapshot: RenderTargetSnapshot): void {
+function restoreTargets(snapshot: RenderTargetSnapshot): void {
 	engineCore.view.configureRenderTargets({
 		viewportSize: snapshot.viewportSize,
 		canvasSize: snapshot.canvasSize,
 		offscreenSize: snapshot.offscreenSize,
 	});
-	runtime.overlayResolutionMode = 'viewport';
+	Runtime.instance.overlayResolutionMode = 'viewport';
 }
 
-function pushRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
-	const state = getRenderTargetState(runtime);
+function pushRenderTargetOwner(owner: TargetOwner): void {
+	const state = getRenderTargetState();
 	if (!state.baseline) {
 		state.baseline = captureCurrentTargets();
 	}
@@ -172,13 +172,13 @@ function pushRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
 	state.stack.push(owner);
 	switch (owner) {
 		case 'editor':
-			applyFixedEditorTargets(runtime);
+			applyFixedEditorTargets();
 			return;
 	}
 }
 
-function popRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
-	const state = RT_STATE.get(runtime);
+function popRenderTargetOwner(owner: TargetOwner): void {
+	const state = RT_STATE.get(Runtime.instance);
 	if (!state) {
 		return;
 	}
@@ -188,39 +188,39 @@ function popRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
 		}
 	}
 	if (state.stack.length === 0) {
-		restoreTargets(runtime, state.baseline!);
-		RT_STATE.delete(runtime);
+		restoreTargets(state.baseline!);
+		RT_STATE.delete(Runtime.instance);
 		return;
 	}
 	const top = state.stack[state.stack.length - 1];
 	switch (top) {
 		case 'editor':
-			applyFixedEditorTargets(runtime);
+			applyFixedEditorTargets();
 			return;
 	}
 }
 
-function editorBlocksRuntimePipeline(runtime: Runtime): boolean {
-	return runtime.editor !== null && runtime.editor.blocksRuntimePipeline;
+function editorBlocksRuntimePipeline(): boolean {
+	return Runtime.instance.editor !== null && Runtime.instance.editor.blocksRuntimePipeline;
 }
 
-function isManagedOverlayEditorActive(runtime: Runtime): boolean {
-	if (!editorBlocksRuntimePipeline(runtime)) {
+function isManagedOverlayEditorActive(): boolean {
+	if (!editorBlocksRuntimePipeline()) {
 		return false;
 	}
-	return runtime.editor!.isActive;
+	return Runtime.instance.editor!.isActive;
 }
 
-function resolveEditorSourceWorkspacePath(runtime: Runtime, source: string): string {
-	const cart = runtime.cartLuaSources;
+function resolveEditorSourceWorkspacePath(source: string): string {
+	const cart = Runtime.instance.cartLuaSources;
 	if (cart && cart.path2lua[source]) {
-		return resolveWorkspacePath(source, runtime.cartProjectRootPath);
+		return resolveWorkspacePath(source, Runtime.instance.cartProjectRootPath);
 	}
-	const engine = runtime.engineLuaSources;
+	const engine = Runtime.instance.engineLuaSources;
 	if (engine && engine.path2lua[source]) {
-		return resolveWorkspacePath(source, runtime.engineProjectRootPath);
+		return resolveWorkspacePath(source, Runtime.instance.engineProjectRootPath);
 	}
-	return resolveWorkspacePath(source, runtime.cartProjectRootPath);
+	return resolveWorkspacePath(source, Runtime.instance.cartProjectRootPath);
 }
 
 function luaErrorSourcePath(error: LuaError): string {
@@ -243,15 +243,15 @@ function runtimeStackFrameLocation(frame: StackTraceFrame): RuntimeErrorLocation
 	};
 }
 
-function resolveRuntimeErrorLocation(runtime: Runtime, error: Error): RuntimeErrorLocation {
-	const state = runtime.workbenchFaultState;
+function resolveRuntimeErrorLocation(error: Error): RuntimeErrorLocation {
+	const state = Runtime.instance.workbenchFaultState;
 	if (state.lastLuaCallStack.length > 0) {
 		return runtimeStackFrameLocation(state.lastLuaCallStack[0]);
 	}
 	if (error instanceof LuaError) {
 		return runtimeLuaErrorLocation(error);
 	}
-	return { path: runtime.currentPath, line: 0, column: 0 };
+	return { path: Runtime.instance.currentPath, line: 0, column: 0 };
 }
 
 function createLuaErrorStackFrame(error: LuaError, functionName: string): StackTraceFrame {
@@ -280,91 +280,95 @@ export function createPauseCoordinator(): DebugPauseCoordinator {
 	return new DebugPauseCoordinator();
 }
 
-export function initializeIdeFeatures(runtime: Runtime, viewport: Viewport): void {
+export function initializeIdeFeatures(viewport: Viewport): void {
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
-	runtime.terminal = new TerminalMode(runtime);
-	runtime.editor = createCartEditor(viewport);
-	runtime.overlayResolutionMode = 'viewport';
+	const runtime = Runtime.instance;
+	Runtime.instance.terminal = new TerminalMode(runtime);
+	Runtime.instance.editor = createCartEditor(viewport);
+	Runtime.instance.overlayResolutionMode = 'viewport';
 	Input.instance.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	seedDefaultLuaBuiltins();
-	flushLuaWarnings(runtime);
-	registerRuntimeShortcuts(runtime);
-	runtime.debuggerController.setBreakpoints(editorDebuggerState.breakpoints);
-	updateGamePipelineExts(runtime);
+	flushLuaWarnings();
+	registerRuntimeShortcuts();
+	Runtime.instance.debuggerController.setBreakpoints(editorDebuggerState.breakpoints);
+	updateGamePipelineExts();
 }
 
-export function setActiveIdeFontVariant(runtime: Runtime, variant: Runtime['activeIdeFontVariant']): void {
+export function setActiveIdeFontVariant(variant: Runtime['activeIdeFontVariant']): void {
+	const runtime = Runtime.instance;
 	runtime._activeIdeFontVariant = variant;
 	runtime.terminal.setFontVariant(variant);
 	runtime.editor!.setFontVariant(variant);
 }
 
-export function updateGamePipelineExts(runtime: Runtime): void {
-	const overlayActive = runtime.terminal.isActive || isManagedOverlayEditorActive(runtime);
+export function updateGamePipelineExts(): void {
+	const runtime = Runtime.instance;
+	const overlayActive = runtime.terminal.isActive || isManagedOverlayEditorActive();
 	runtime.executionOverlayActive = overlayActive;
 	Input.instance.setGameplayCaptureEnabled(!overlayActive);
-	updateOverlayAudioSuspension(runtime);
+	updateOverlayAudioSuspension();
 }
 
-export function updateOverlayAudioSuspension(runtime: Runtime): void {
+export function updateOverlayAudioSuspension(): void {
 	if (!engineCore.sndmaster.isRuntimeAudioReady()) {
 		return;
 	}
-	if (isOverlayActive(runtime)) {
+	if (isOverlayActive()) {
 		engineCore.sndmaster.suspendAll('overlay');
 	} else {
 		engineCore.sndmaster.resumeAll('overlay');
 	}
 }
 
-export function toggleTerminalMode(runtime: Runtime): void {
-	if (runtime.terminal.isActive) {
-		deactivateTerminalMode(runtime);
+export function toggleTerminalMode(): void {
+	if (Runtime.instance.terminal.isActive) {
+		deactivateTerminalMode();
 		return;
 	}
-	activateTerminalMode(runtime);
+	activateTerminalMode();
 }
 
-export function activateTerminalMode(runtime: Runtime): void {
-	if (runtime.terminal.isActive) {
+export function activateTerminalMode(): void {
+	if (Runtime.instance.terminal.isActive) {
 		return;
 	}
-	deactivateEditor(runtime);
-	runtime.terminal.activate();
-	updateGamePipelineExts(runtime);
+	deactivateEditor();
+	Runtime.instance.terminal.activate();
+	updateGamePipelineExts();
 }
 
-export function deactivateTerminalMode(runtime: Runtime): void {
+export function deactivateTerminalMode(): void {
+	const runtime = Runtime.instance;
 	if (!runtime.terminal.isActive) {
 		return;
 	}
 	runtime.terminal.deactivate();
-	updateGamePipelineExts(runtime);
+	updateGamePipelineExts();
 }
 
-export function isOverlayActive(runtime: Runtime): boolean {
-	return runtime.executionOverlayActive;
+export function isOverlayActive(): boolean {
+	return Runtime.instance.executionOverlayActive;
 }
 
-export function toggleEditor(runtime: Runtime): void {
-	if (runtime.editor!.isActive) {
-		deactivateEditor(runtime);
+export function toggleEditor(): void {
+	if (Runtime.instance.editor!.isActive) {
+		deactivateEditor();
 		return;
 	}
-	activateEditor(runtime);
+	activateEditor();
 }
 
-export function activateEditor(runtime: Runtime): void {
-	if (!runtime.hasProgramSymbols) {
+export function activateEditor(): void {
+	if (!Runtime.instance.hasProgramSymbols) {
 		return;
 	}
-	if (runtime.terminal.isActive) {
-		runtime.terminal.deactivate();
+	if (Runtime.instance.terminal.isActive) {
+		Runtime.instance.terminal.deactivate();
 	}
-	const editor = runtime.editor!;
+	const editor = Runtime.instance.editor!;
 	const wasActive = editor.isActive;
 	if (!wasActive) {
-		pushRenderTargetOwner(runtime, 'editor');
+		pushRenderTargetOwner('editor');
 	}
 	try {
 		if (!editor.isActive) {
@@ -372,104 +376,104 @@ export function activateEditor(runtime: Runtime): void {
 		}
 	} catch (error) {
 		if (!wasActive) {
-			popRenderTargetOwner(runtime, 'editor');
+			popRenderTargetOwner('editor');
 		}
 		throw error;
 	}
 	if (!editor.isActive && !wasActive) {
-		popRenderTargetOwner(runtime, 'editor');
+		popRenderTargetOwner('editor');
 	}
-	updateGamePipelineExts(runtime);
+	updateGamePipelineExts();
 }
 
-export function deactivateEditor(runtime: Runtime): void {
-	const editor = runtime.editor!;
+export function deactivateEditor(): void {
+	const editor = Runtime.instance.editor!;
 	if (editor.isActive) {
 		editor.deactivate();
 	}
-	popRenderTargetOwner(runtime, 'editor');
-	updateGamePipelineExts(runtime);
+	popRenderTargetOwner('editor');
+	updateGamePipelineExts();
 }
 
-export function registerRuntimeShortcuts(runtime: Runtime): void {
-	disposeShortcutHandlers(runtime);
+export function registerRuntimeShortcuts(): void {
+	disposeShortcutHandlers();
 	const registry = Input.instance.getGlobalShortcutRegistry();
 	const disposers: Array<() => void> = [];
 	disposers.push(registry.registerKeyboardShortcut(1, EDITOR_TOGGLE_KEY, () => {
 		Input.instance.getPlayerInput(1).consumeRawButton(EDITOR_TOGGLE_KEY, 'keyboard');
-		toggleEditor(runtime);
+		toggleEditor();
 	}));
-	disposers.push(registry.registerKeyboardShortcut(1, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode(runtime)));
-	disposers.push(registry.registerGamepadChord(1, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => toggleEditor(runtime)));
+	disposers.push(registry.registerKeyboardShortcut(1, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode()));
+	disposers.push(registry.registerGamepadChord(1, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => toggleEditor()));
 	disposers.push(registry.registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => toggleDebuggerControls()));
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
 		Input.instance.getPlayerInput(1).consumeRawButton('KeyT', 'keyboard');
-		const next = runtime._activeIdeFontVariant === 'tiny' ? 'msx' : 'tiny';
-		setActiveIdeFontVariant(runtime, next);
+		const next = Runtime.instance._activeIdeFontVariant === 'tiny' ? 'msx' : 'tiny';
+		setActiveIdeFontVariant(next);
 	}, KeyModifier.ctrl | KeyModifier.shift));
 	disposers.push(registry.registerKeyboardShortcut(1, 'F8', () => {
 		const modifiers = engineCore.input.getPlayerInput(1).getModifiersState();
 		if (modifiers.ctrl) {
 			return;
 		}
-		if (runtime.debuggerSuspendSignal) {
-			stepOverLuaDebugger(runtime);
+		if (Runtime.instance.debuggerSuspendSignal) {
+			stepOverLuaDebugger();
 		} else {
-			runtime.debuggerController.requestStepInto();
+			Runtime.instance.debuggerController.requestStepInto();
 		}
 	}));
-	runtime.shortcutDisposers = disposers;
+	Runtime.instance.shortcutDisposers = disposers;
 }
 
-export function disposeShortcutHandlers(runtime: Runtime): void {
-	if (runtime.shortcutDisposers.length === 0) {
+export function disposeShortcutHandlers(): void {
+	if (Runtime.instance.shortcutDisposers.length === 0) {
 		return;
 	}
-	for (let i = 0; i < runtime.shortcutDisposers.length; i++) {
-		runtime.shortcutDisposers[i]();
+	for (let i = 0; i < Runtime.instance.shortcutDisposers.length; i++) {
+		Runtime.instance.shortcutDisposers[i]();
 	}
-	runtime.shortcutDisposers = [];
+	Runtime.instance.shortcutDisposers = [];
 }
 
-export function tickIdeInput(runtime: Runtime): void {
-	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor!.isActive) {
+export function tickIdeInput(): void {
+	if (!editorBlocksRuntimePipeline() || !Runtime.instance.editor!.isActive) {
 		return;
 	}
 	const pollFrame = engineCore.input.getPlayerInput(1).pollFrame;
-	if (pollFrame === runtime.lastIdeInputFrame) {
+	if (pollFrame === Runtime.instance.lastIdeInputFrame) {
 		return;
 	}
-	runtime.lastIdeInputFrame = pollFrame;
-	runtime.editor!.tickInput();
+	Runtime.instance.lastIdeInputFrame = pollFrame;
+	Runtime.instance.editor!.tickInput();
 }
 
-export function tickTerminalInput(runtime: Runtime): void {
-	if (!runtime.terminal.isActive) {
+export function tickTerminalInput(): void {
+	if (!Runtime.instance.terminal.isActive) {
 		return;
 	}
 	const pollFrame = engineCore.input.getPlayerInput(1).pollFrame;
-	if (pollFrame === runtime.lastTerminalInputFrame) {
+	if (pollFrame === Runtime.instance.lastTerminalInputFrame) {
 		return;
 	}
-	runtime.lastTerminalInputFrame = pollFrame;
-	void runtime.terminal.handleInput();
+	Runtime.instance.lastTerminalInputFrame = pollFrame;
+	void Runtime.instance.terminal.handleInput();
 }
 
-export function flushLuaWarnings(runtime: Runtime): void {
-	if (runtime.pendingLuaWarnings.length === 0) {
+export function flushLuaWarnings(): void {
+	if (Runtime.instance.pendingLuaWarnings.length === 0) {
 		return;
 	}
-	const messages = runtime.pendingLuaWarnings;
-	runtime.pendingLuaWarnings = [];
+	const messages = Runtime.instance.pendingLuaWarnings;
+	Runtime.instance.pendingLuaWarnings = [];
 	for (const warning of messages) {
 		showEditorWarningBanner(warning, 6.0);
 	}
 }
 
-export function setDebuggerPaused(runtime: Runtime, paused: boolean): void {
-	runtime.debuggerPaused = paused;
+export function setDebuggerPaused(paused: boolean): void {
+	Runtime.instance.debuggerPaused = paused;
 	editorDebuggerState.controls.executionState = paused ? 'paused' : 'inactive';
-	editorDebuggerState.controls.sessionMetrics = runtime.debuggerMetrics;
+	editorDebuggerState.controls.sessionMetrics = Runtime.instance.debuggerMetrics;
 	if (!paused) {
 		clearExecutionStopHighlights();
 	}
@@ -479,46 +483,46 @@ export function applyDebuggerStopLocation(signal: LuaDebuggerPauseSignal): void 
 	setExecutionStopHighlight(signal.location.line - 1);
 }
 
-export function onLuaDebuggerPause(runtime: Runtime, signal: LuaDebuggerPauseSignal): void {
-	if (signal.reason === 'exception' && !isManagedOverlayEditorActive(runtime)) {
-		runtime.interpreter.markFaultEnvironment();
-		handleLuaError(runtime, signal.exception);
+export function onLuaDebuggerPause(signal: LuaDebuggerPauseSignal): void {
+	if (signal.reason === 'exception' && !isManagedOverlayEditorActive()) {
+		Runtime.instance.interpreter.markFaultEnvironment();
+		handleLuaError(signal.exception);
 		return;
 	}
-	runtime.debuggerController.handlePause(signal);
-	const pendingException = runtime.interpreter.pendingDebuggerException;
-	runtime.pauseCoordinator.capture(signal, pendingException);
-	runtime.debuggerSuspendSignal = signal;
-	runtime.debuggerMetrics = runtime.debuggerController.getSessionMetrics();
-	setDebuggerPaused(runtime, true);
+	Runtime.instance.debuggerController.handlePause(signal);
+	const pendingException = Runtime.instance.interpreter.pendingDebuggerException;
+	Runtime.instance.pauseCoordinator.capture(signal, pendingException);
+	Runtime.instance.debuggerSuspendSignal = signal;
+	Runtime.instance.debuggerMetrics = Runtime.instance.debuggerController.getSessionMetrics();
+	setDebuggerPaused(true);
 	applyDebuggerStopLocation(signal);
 	if (signal.reason === 'exception') {
-		recordDebuggerExceptionFault(runtime, signal);
-		if (runtime.programMetadata && isManagedOverlayEditorActive(runtime)) {
-			const faultSnapshot = getFaultSnapshot(runtime);
+		recordDebuggerExceptionFault(signal);
+		if (Runtime.instance.programMetadata && isManagedOverlayEditorActive()) {
+			const faultSnapshot = getFaultSnapshot();
 			const message = faultSnapshot.message;
-			runtime.editor!.showRuntimeErrorInChunk(faultSnapshot.path, faultSnapshot.line, faultSnapshot.column, message);
+			Runtime.instance.editor!.showRuntimeErrorInChunk(faultSnapshot.path, faultSnapshot.line, faultSnapshot.column, message);
 		}
 	}
 }
 
-export function clearActiveDebuggerPause(runtime: Runtime): void {
-	runtime.pauseCoordinator.clearSuspension();
-	runtime.debuggerSuspendSignal = null;
-	setDebuggerPaused(runtime, false);
-	clearRuntimeFault(runtime);
-	runtime.debuggerController.clearPauseContext();
-	if (runtime.editor !== null) {
-		runtime.editor.clearRuntimeErrorOverlay();
+export function clearActiveDebuggerPause(): void {
+	Runtime.instance.pauseCoordinator.clearSuspension();
+	Runtime.instance.debuggerSuspendSignal = null;
+	setDebuggerPaused(false);
+	clearRuntimeFault();
+	Runtime.instance.debuggerController.clearPauseContext();
+	if (Runtime.instance.editor !== null) {
+		Runtime.instance.editor.clearRuntimeErrorOverlay();
 	}
 }
 
-export function handleDebuggerResumeResult(runtime: Runtime, result: ExecutionSignal): void {
+export function handleDebuggerResumeResult(result: ExecutionSignal): void {
 	if (result && result.kind === 'pause') {
-		onLuaDebuggerPause(runtime, result as LuaDebuggerPauseSignal);
+		onLuaDebuggerPause(result as LuaDebuggerPauseSignal);
 		return;
 	}
-	clearActiveDebuggerPause(runtime);
+	clearActiveDebuggerPause();
 }
 
 function buildDebuggerStepOrigin(suspension: LuaDebuggerPauseSignal): DebuggerStepOrigin {
@@ -533,70 +537,70 @@ function resolveResumeStrategy(suspension: LuaDebuggerPauseSignal): 'propagate' 
 	return suspension.reason === 'exception' ? 'skip_statement' : 'propagate';
 }
 
-function resumeDebugger(runtime: Runtime, options: { mode: 'continue' | 'step_into' | 'step_over' | 'step_out'; strategy: 'propagate' | 'skip_statement' }): void {
-	const suspension = runtime.pauseCoordinator.getSuspension();
+function resumeDebugger(options: { mode: 'continue' | 'step_into' | 'step_over' | 'step_out'; strategy: 'propagate' | 'skip_statement' }): void {
+	const suspension = Runtime.instance.pauseCoordinator.getSuspension();
 	const stepOrigin = buildDebuggerStepOrigin(suspension);
 	if (options.mode === 'step_into') {
-		runtime.debuggerController.requestStepInto(stepOrigin);
+		Runtime.instance.debuggerController.requestStepInto(stepOrigin);
 	}
 	if (options.mode === 'step_over') {
-		runtime.debuggerController.requestStepOver(suspension.callStack.length, stepOrigin);
+		Runtime.instance.debuggerController.requestStepOver(suspension.callStack.length, stepOrigin);
 	}
 	if (options.mode === 'step_out') {
-		runtime.debuggerController.requestStepOut(suspension.callStack.length, stepOrigin);
+		Runtime.instance.debuggerController.requestStepOut(suspension.callStack.length, stepOrigin);
 	}
 	if (options.strategy === 'skip_statement' && suspension.reason === 'exception') {
-		runtime.debuggerController.markSkippedException();
+		Runtime.instance.debuggerController.markSkippedException();
 	}
-	runtime.interpreter.debuggerResumeStrategy = options.strategy;
+	Runtime.instance.interpreter.debuggerResumeStrategy = options.strategy;
 	const result = suspension.resume();
-	handleDebuggerResumeResult(runtime, result);
+	handleDebuggerResumeResult(result);
 }
 
-export function continueLuaDebugger(runtime: Runtime): void {
-	resumeDebugger(runtime, { mode: 'continue', strategy: 'propagate' });
+export function continueLuaDebugger(): void {
+	resumeDebugger({ mode: 'continue', strategy: 'propagate' });
 }
 
-export function stepOverLuaDebugger(runtime: Runtime): void {
-	const suspension = runtime.pauseCoordinator.getSuspension();
-	resumeDebugger(runtime, { mode: 'step_over', strategy: resolveResumeStrategy(suspension) });
+export function stepOverLuaDebugger(): void {
+	const suspension = Runtime.instance.pauseCoordinator.getSuspension();
+	resumeDebugger({ mode: 'step_over', strategy: resolveResumeStrategy(suspension) });
 }
 
-export function stepIntoLuaDebugger(runtime: Runtime): void {
-	const suspension = runtime.pauseCoordinator.getSuspension();
-	resumeDebugger(runtime, { mode: 'step_into', strategy: resolveResumeStrategy(suspension) });
+export function stepIntoLuaDebugger(): void {
+	const suspension = Runtime.instance.pauseCoordinator.getSuspension();
+	resumeDebugger({ mode: 'step_into', strategy: resolveResumeStrategy(suspension) });
 }
 
-export function stepOutLuaDebugger(runtime: Runtime): void {
-	const suspension = runtime.pauseCoordinator.getSuspension();
-	resumeDebugger(runtime, { mode: 'step_out', strategy: resolveResumeStrategy(suspension) });
+export function stepOutLuaDebugger(): void {
+	const suspension = Runtime.instance.pauseCoordinator.getSuspension();
+	resumeDebugger({ mode: 'step_out', strategy: resolveResumeStrategy(suspension) });
 }
 
-export function ignoreLuaException(runtime: Runtime): void {
-	resumeDebugger(runtime, { mode: 'continue', strategy: 'skip_statement' });
+export function ignoreLuaException(): void {
+	resumeDebugger({ mode: 'continue', strategy: 'skip_statement' });
 }
 
-export function clearEditorErrorOverlaysIfNoFault(runtime: Runtime): void {
-	if (runtime.luaRuntimeFailed) return;
-	if (runtime.editor !== null) {
-		runtime.editor.clearRuntimeErrorOverlay();
+export function clearEditorErrorOverlaysIfNoFault(): void {
+	if (Runtime.instance.luaRuntimeFailed) return;
+	if (Runtime.instance.editor !== null) {
+		Runtime.instance.editor.clearRuntimeErrorOverlay();
 	}
 	publishOverlayFrame(null);
 }
 
-export function clearFaultSnapshot(runtime: Runtime): void {
-	const state = runtime.workbenchFaultState;
+export function clearFaultSnapshot(): void {
+	const state = Runtime.instance.workbenchFaultState;
 	state.faultSnapshot = null;
 	state.lastCpuFaultSnapshot = [];
 	state.faultOverlayNeedsFlush = false;
 }
 
-export function clearRuntimeFault(runtime: Runtime): void {
-	runtime.luaRuntimeFailed = false;
-	clearFaultSnapshot(runtime);
+export function clearRuntimeFault(): void {
+	Runtime.instance.luaRuntimeFailed = false;
+	clearFaultSnapshot();
 }
 
-export function setRuntimeFault(runtime: Runtime, payload: {
+export function setRuntimeFault(payload: {
 	message: string;
 	path: string;
 	line: number;
@@ -604,71 +608,71 @@ export function setRuntimeFault(runtime: Runtime, payload: {
 	details: RuntimeErrorDetails;
 	fromDebugger: boolean;
 }): void {
-	const state = runtime.workbenchFaultState;
-	runtime.luaRuntimeFailed = true;
+	const state = Runtime.instance.workbenchFaultState;
+	Runtime.instance.luaRuntimeFailed = true;
 	state.faultSnapshot = payload;
-	state.faultSnapshot.timestampMs = runtime.clock.dateNow();
+	state.faultSnapshot.timestampMs = Runtime.instance.clock.dateNow();
 	state.faultOverlayNeedsFlush = true;
 }
 
-export function clearFaultState(runtime: Runtime): { cleared: boolean; resumedDebugger: boolean } {
-	const hadFault = runtime.luaRuntimeFailed || hasFaultSnapshot(runtime) || runtime.debuggerSuspendSignal !== null;
-	const wasPaused = runtime.debuggerSuspendSignal !== null || runtime.debuggerPaused;
-	clearRuntimeFault(runtime);
+export function clearFaultState(): { cleared: boolean; resumedDebugger: boolean } {
+	const hadFault = Runtime.instance.luaRuntimeFailed || hasFaultSnapshot() || Runtime.instance.debuggerSuspendSignal !== null;
+	const wasPaused = Runtime.instance.debuggerSuspendSignal !== null || Runtime.instance.debuggerPaused;
+	clearRuntimeFault();
 	if (wasPaused) {
-		clearActiveDebuggerPause(runtime);
+		clearActiveDebuggerPause();
 	}
 	return { cleared: hadFault, resumedDebugger: wasPaused };
 }
 
-export function recordDebuggerExceptionFault(runtime: Runtime, signal: LuaDebuggerPauseSignal): void {
-	const exception = runtime.pauseCoordinator.getPendingException();
-	const state = runtime.workbenchFaultState;
-	if (state.faultSnapshot && runtime.luaRuntimeFailed) {
+export function recordDebuggerExceptionFault(signal: LuaDebuggerPauseSignal): void {
+	const exception = Runtime.instance.pauseCoordinator.getPendingException();
+	const state = Runtime.instance.workbenchFaultState;
+	if (state.faultSnapshot && Runtime.instance.luaRuntimeFailed) {
 		state.faultOverlayNeedsFlush = true;
 		return;
 	}
 	if (!exception) {
-		setRuntimeFault(runtime, {
+		setRuntimeFault({
 			message: 'Runtime error',
 			path: signal.location.path,
 			line: signal.location.line,
 			column: signal.location.column,
-			details: buildRuntimeErrorDetailsForEditor(runtime, null, 'Runtime error', signal.callStack),
+			details: buildRuntimeErrorDetailsForEditor(null, 'Runtime error', signal.callStack),
 			fromDebugger: true,
 		});
 		return;
 	}
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(exception));
 	const location = runtimeLuaErrorLocation(exception);
-	setRuntimeFault(runtime, {
+	setRuntimeFault({
 		message,
 		path: location.path,
 		line: location.line,
 		column: location.column,
-		details: buildRuntimeErrorDetailsForEditor(runtime, exception, message, signal.callStack),
+		details: buildRuntimeErrorDetailsForEditor(exception, message, signal.callStack),
 		fromDebugger: true,
 	});
 }
 
-export function handleLuaError(runtime: Runtime, whatever: unknown): void {
+export function handleLuaError(whatever: unknown): void {
 	const error = convertToError(whatever);
-	const state = runtime.workbenchFaultState;
+	const state = Runtime.instance.workbenchFaultState;
 	if (state.handledLuaErrors.has(error)) {
 		return;
 	}
-	state.lastCpuFaultSnapshot = runtime.machine.cpu.snapshotCallStack();
-	state.lastLuaCallStack = buildLuaStackFrames(runtime);
+	state.lastCpuFaultSnapshot = Runtime.instance.machine.cpu.snapshotCallStack();
+	state.lastLuaCallStack = buildLuaStackFrames();
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
-	const location = resolveRuntimeErrorLocation(runtime, error);
-	const runtimeDetails = buildRuntimeErrorDetailsForEditor(runtime, error, message);
+	const location = resolveRuntimeErrorLocation(error);
+	const runtimeDetails = buildRuntimeErrorDetailsForEditor(error, message);
 	const stackText = buildErrorStackString(
 		error instanceof Error && error.name ? error.name : 'Error',
 		message,
 		runtimeDetails,
-		runtime.jsStackEnabled,
+		Runtime.instance.jsStackEnabled,
 	);
-	setRuntimeFault(runtime, {
+	setRuntimeFault({
 		message,
 		path: location.path,
 		line: location.line,
@@ -681,19 +685,19 @@ export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 		error.stack = stackText;
 	}
 	console.error(stackText);
-	logDebugState(runtime);
-	runtime.terminal.appendError(error);
-	activateTerminalMode(runtime);
+	logDebugState();
+	Runtime.instance.terminal.appendError(error);
+	activateTerminalMode();
 	state.handledLuaErrors.add(error);
 }
 
-export function surfaceHostFrameError(runtime: Runtime, error: unknown, hostDeltaMs: number): void {
-	runtime.frameLoop.abandonFrameState(runtime);
-	handleLuaError(runtime, error);
-	runtime.screen.presentErrorOverlay(runtime, hostDeltaMs);
+export function surfaceHostFrameError(error: unknown, hostDeltaMs: number): void {
+	Runtime.instance.frameLoop.abandonFrameState();
+	handleLuaError(error);
+	Runtime.instance.screen.presentErrorOverlay(hostDeltaMs);
 }
 
-export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unknown, message: string, callStack?: ReadonlyArray<LuaCallFrame>): RuntimeErrorDetails {
+export function buildRuntimeErrorDetailsForEditor(error: unknown, message: string, callStack?: ReadonlyArray<LuaCallFrame>): RuntimeErrorDetails {
 	if (error instanceof LuaSyntaxError) {
 		return null;
 	}
@@ -703,7 +707,7 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 	if (useInterpreterStack) {
 		luaFrames = callFrames.length > 0 ? convertLuaCallFrames(callFrames) : [];
 	} else {
-		const state = runtime.workbenchFaultState;
+		const state = Runtime.instance.workbenchFaultState;
 		if (state.lastLuaCallStack.length > 0) {
 			luaFrames = state.lastLuaCallStack.slice();
 		}
@@ -717,14 +721,14 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 			if (!source || source.length === 0) {
 				continue;
 			}
-			frame.pathPath = resolveEditorSourceWorkspacePath(runtime, source);
+			frame.pathPath = resolveEditorSourceWorkspacePath(source);
 		}
 	}
 	let stackText: string = null;
-	if (runtime.jsStackEnabled && error instanceof Error && typeof error.stack === 'string') {
+	if (Runtime.instance.jsStackEnabled && error instanceof Error && typeof error.stack === 'string') {
 		stackText = error.stack;
 	}
-	const jsFrames = runtime.jsStackEnabled ? parseJsStackFrames(stackText) : [];
+	const jsFrames = Runtime.instance.jsStackEnabled ? parseJsStackFrames(stackText) : [];
 	if (luaFrames.length === 0 && jsFrames.length === 0) {
 		return null;
 	}
@@ -735,115 +739,115 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 	};
 }
 
-export function tickTerminalMode(runtime: Runtime): void {
-	if (!runtime.terminal.isActive) {
+export function tickTerminalMode(): void {
+	if (!Runtime.instance.terminal.isActive) {
 		return;
 	}
-	const state = beginOverlayUpdateFrame(runtime);
+	const state = beginOverlayUpdateFrame();
 	if (state === null) {
 		return;
 	}
-	const deltaSeconds = runtime.frameLoop.frameDeltaMs / 1000;
-	runtime.terminal.update(deltaSeconds);
-	finishOverlayUpdateFrame(runtime, state);
+	const deltaSeconds = Runtime.instance.frameLoop.frameDeltaMs / 1000;
+	Runtime.instance.terminal.update(deltaSeconds);
+	finishOverlayUpdateFrame(state);
 }
 
-export function tickTerminalModeDraw(runtime: Runtime): void {
-	if (!runtime.terminal.isActive) {
+export function tickTerminalModeDraw(): void {
+	if (!Runtime.instance.terminal.isActive) {
 		return;
 	}
-	if (!runtime.tickEnabled) {
+	if (!Runtime.instance.tickEnabled) {
 		return;
 	}
-	const state = runtime.frameLoop.drawFrameState;
+	const state = Runtime.instance.frameLoop.drawFrameState;
 	if (state !== null) {
-		runtime.frameLoop.currentFrameState = state;
+		Runtime.instance.frameLoop.currentFrameState = state;
 	}
 	try {
-		drawTerminal(runtime);
+		drawTerminal();
 	} finally {
 		if (state !== null) {
-			runtime.frameLoop.drawFrameState = null;
-			runtime.frameLoop.abandonFrameState(runtime);
+			Runtime.instance.frameLoop.drawFrameState = null;
+			Runtime.instance.frameLoop.abandonFrameState();
 		}
 	}
 }
 
-export function tickIDE(runtime: Runtime): void {
-	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor!.isActive) {
+export function tickIDE(): void {
+	if (!editorBlocksRuntimePipeline() || !Runtime.instance.editor!.isActive) {
 		return;
 	}
-	const state = beginOverlayUpdateFrame(runtime);
+	const state = beginOverlayUpdateFrame();
 	if (state === null) {
 		return;
 	}
-	const deltaSeconds = runtime.frameLoop.frameDeltaMs / 1000;
-	runtime.editor!.update(deltaSeconds);
-	finishOverlayUpdateFrame(runtime, state);
+	const deltaSeconds = Runtime.instance.frameLoop.frameDeltaMs / 1000;
+	Runtime.instance.editor!.update(deltaSeconds);
+	finishOverlayUpdateFrame(state);
 }
 
-function beginOverlayUpdateFrame(runtime: Runtime): FrameState | null {
-	if (!runtime.tickEnabled) {
+function beginOverlayUpdateFrame(): FrameState | null {
+	if (!Runtime.instance.tickEnabled) {
 		return null;
 	}
-	if (runtime.frameLoop.currentFrameState !== null || runtime.frameLoop.drawFrameState !== null) {
+	if (Runtime.instance.frameLoop.currentFrameState !== null || Runtime.instance.frameLoop.drawFrameState !== null) {
 		return null;
 	}
-	return runtime.frameLoop.beginFrameState(runtime);
+	return Runtime.instance.frameLoop.beginFrameState();
 }
 
-function finishOverlayUpdateFrame(runtime: Runtime, state: FrameState): void {
-	flushHostRuntimeAssetEdits(runtime.machine.memory, engineCore.texmanager);
-	runtime.frameLoop.drawFrameState = state;
-	runtime.frameLoop.abandonFrameState(runtime);
+function finishOverlayUpdateFrame(state: FrameState): void {
+	flushHostRuntimeAssetEdits(Runtime.instance.machine.memory, engineCore.texmanager);
+	Runtime.instance.frameLoop.drawFrameState = state;
+	Runtime.instance.frameLoop.abandonFrameState();
 }
 
-export function tickIDEDraw(runtime: Runtime): void {
-	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor!.isActive) {
+export function tickIDEDraw(): void {
+	if (!editorBlocksRuntimePipeline() || !Runtime.instance.editor!.isActive) {
 		return;
 	}
-	if (!runtime.tickEnabled) {
+	if (!Runtime.instance.tickEnabled) {
 		return;
 	}
-	const state = runtime.frameLoop.drawFrameState;
+	const state = Runtime.instance.frameLoop.drawFrameState;
 	if (state !== null) {
-		runtime.frameLoop.currentFrameState = state;
+		Runtime.instance.frameLoop.currentFrameState = state;
 	}
 	try {
-		drawIde(runtime);
+		drawIde();
 	} finally {
 		if (state !== null) {
-			runtime.frameLoop.drawFrameState = null;
-			runtime.frameLoop.abandonFrameState(runtime);
+			Runtime.instance.frameLoop.drawFrameState = null;
+			Runtime.instance.frameLoop.abandonFrameState();
 		}
 	}
 }
 
-export function drawIde(runtime: Runtime): void {
+export function drawIde(): void {
 	try {
-		overlay_api.beginFrame(runtime.overlayRenderer);
-		runtime.overlayRenderer.beginFrame();
-		runtime.overlayRenderer.setDefaultLayer('ide');
-		runtime.editor!.draw();
+		overlay_api.beginFrame(Runtime.instance.overlayRenderer);
+		Runtime.instance.overlayRenderer.beginFrame();
+		Runtime.instance.overlayRenderer.setDefaultLayer('ide');
+		Runtime.instance.editor!.draw();
 	} catch (error) {
-		handleLuaError(runtime, error);
+		handleLuaError(error);
 	} finally {
 		overlay_api.endFrame();
-		runtime.overlayRenderer.endFrame();
+		Runtime.instance.overlayRenderer.endFrame();
 	}
 }
 
-export function drawTerminal(runtime: Runtime): void {
+export function drawTerminal(): void {
 	try {
-		overlay_api.beginFrame(runtime.overlayRenderer);
-		runtime.overlayRenderer.beginFrame();
-		runtime.overlayRenderer.setDefaultLayer('ide');
-		runtime.terminal.draw(runtime.overlayRenderer, runtime.overlayRenderer.viewportSize);
-		runtime.overlayRenderer.setDefaultLayer('world');
+		overlay_api.beginFrame(Runtime.instance.overlayRenderer);
+		Runtime.instance.overlayRenderer.beginFrame();
+		Runtime.instance.overlayRenderer.setDefaultLayer('ide');
+		Runtime.instance.terminal.draw(Runtime.instance.overlayRenderer, Runtime.instance.overlayRenderer.viewportSize);
+		Runtime.instance.overlayRenderer.setDefaultLayer('world');
 	} catch (error) {
-		handleLuaError(runtime, error);
+		handleLuaError(error);
 	} finally {
 		overlay_api.endFrame();
-		runtime.overlayRenderer.endFrame();
+		Runtime.instance.overlayRenderer.endFrame();
 	}
 }

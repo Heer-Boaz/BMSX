@@ -66,7 +66,7 @@ export class RuntimeDebuggerCommandExecutor {
 			this.logCommand(command, false, 'runtime_unavailable');
 			return false;
 		}
-		const handled = this.dispatchCommand(runtime, command);
+		const handled = this.dispatchCommand(command);
 		if (!handled) {
 			this.logCommand(command, false, 'unsupported_command');
 			return false;
@@ -75,27 +75,27 @@ export class RuntimeDebuggerCommandExecutor {
 		return true;
 	}
 
-	private dispatchCommand(runtime: Runtime, command: DebuggerResumeCommand): boolean {
+	private dispatchCommand(command: DebuggerResumeCommand): boolean {
 		try {
 			switch (command) {
 				case 'continue':
-					workbenchMode.continueLuaDebugger(runtime);
+					workbenchMode.continueLuaDebugger();
 					return true;
 				case 'step_over':
-					workbenchMode.stepOverLuaDebugger(runtime);
+					workbenchMode.stepOverLuaDebugger();
 					return true;
 				case 'step_into':
-					workbenchMode.stepIntoLuaDebugger(runtime);
+					workbenchMode.stepIntoLuaDebugger();
 					return true;
 				case 'step_out':
-					workbenchMode.stepOutLuaDebugger(runtime);
+					workbenchMode.stepOutLuaDebugger();
 					return true;
 				case 'ignore_exception':
-					workbenchMode.ignoreLuaException(runtime);
+					workbenchMode.ignoreLuaException();
 					return true;
 				case 'step_out_exception':
-					workbenchMode.stepOutLuaDebugger(runtime);
-					workbenchMode.ignoreLuaException(runtime);
+					workbenchMode.stepOutLuaDebugger();
+					workbenchMode.ignoreLuaException();
 					return true;
 				default:
 					return false;

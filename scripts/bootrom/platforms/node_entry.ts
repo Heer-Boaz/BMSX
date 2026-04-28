@@ -846,7 +846,7 @@ async function main(): Promise<void> {
 	const requestExit = (code: number): void => {
 		if (!cpuProfileDumped && cpuProfileActive) {
 			cpuProfileDumped = true;
-			printHeadlessCpuProfile(runtime, __BOOTROM_TARGET__);
+			printHeadlessCpuProfile(__BOOTROM_TARGET__);
 		}
 		baseRequestExit(code);
 	};
@@ -930,9 +930,9 @@ async function main(): Promise<void> {
 			frameIntervalMs: frameInterval,
 			logger: inputLogger,
 			isCartProgramActive: () => Runtime.hasInstance && Runtime.instance.activeProgramSource !== 'engine',
-			evaluateLua: (source) => runConsoleChunkToNative(Runtime.instance, source),
-			installNativeGlobal: (name, value) => installNativeGlobal(Runtime.instance, name, value),
-			requestNewGame: () => raiseEngineIrq(Runtime.instance, IRQ_NEWGAME),
+			evaluateLua: (source) => runConsoleChunkToNative(source),
+			installNativeGlobal: (name, value) => installNativeGlobal(name, value),
+			requestNewGame: () => raiseEngineIrq(IRQ_NEWGAME),
 			postInput,
 			requestExit,
 			scheduler,

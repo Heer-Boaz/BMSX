@@ -1,49 +1,51 @@
-import type { EngineCore } from './engine';
+import { engineCore } from './engine';
 import { flushHostRuntimeAssetEdits } from './host_asset_sync';
 import * as workbenchMode from '../ide/workbench/mode';
 import { applyRuntimeGameViewTableToState, syncRuntimeGameViewStateToTable } from '../machine/runtime/game/table';
 import { applyGameViewStateToHost, syncGameViewViewportSizeFromHost } from '../machine/runtime/game/view_state';
-import type { Runtime } from '../machine/runtime/runtime';
+import { Runtime } from '../machine/runtime/runtime';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;
 
-export function runEngineHostFrame(engine: EngineCore, runtime: Runtime, currentTime: number, runReady: boolean): void {
+export function runEngineHostFrame(currentTime: number, runReady: boolean): void {
+	const engine = engineCore;
 	if (!engine.running) {
 		return;
 	}
+	const runtime = Runtime.instance;
 	const screen = runtime.screen;
 	let hostDeltaMs = 0;
 	try {
 		engine.input.pollInput();
 		screen.beginHostFrame(currentTime);
-		workbenchMode.tickIdeInput(runtime);
-		workbenchMode.tickTerminalInput(runtime);
+		workbenchMode.tickIdeInput();
+		workbenchMode.tickTerminalInput();
 		syncGameViewViewportSizeFromHost(runtime.gameViewState, engine.view);
-		syncRuntimeGameViewStateToTable(runtime);
+		syncRuntimeGameViewStateToTable();
 		hostDeltaMs = Math.min(currentTime - runtime.frameLoop.currentTimeMs, MAX_HOST_FRAME_DELTA_MS);
 		runtime.frameLoop.currentTimeMs = currentTime;
 
 		if (engine.paused) {
-			screen.presentPausedFrame(runtime, hostDeltaMs);
+			screen.presentPausedFrame(hostDeltaMs);
 		} else {
 			screen.clearPresentation();
 			if (runtime.executionOverlayActive) {
-				screen.runOverlay(runtime);
+				screen.runOverlay();
 			} else if (!runReady) {
 				runtime.frameScheduler.clearQueuedTime();
 			} else {
 				const previousTickSequence = runtime.frameScheduler.lastTickSequence;
 				engine.deltatime = runtime.timing.frameDurationMs;
-				runtime.frameScheduler.run(runtime, hostDeltaMs);
-				applyRuntimeGameViewTableToState(runtime);
+				runtime.frameScheduler.run(hostDeltaMs);
+				applyRuntimeGameViewTableToState();
 				applyGameViewStateToHost(runtime.gameViewState, engine.view);
-				screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+				screen.syncAfterRuntimeUpdate(previousTickSequence);
 				flushHostRuntimeAssetEdits(runtime.machine.memory, engine.texmanager);
 			}
-			screen.presentPending(runtime, hostDeltaMs);
+			screen.presentPending(hostDeltaMs);
 		}
 	} catch (error) {
-		workbenchMode.surfaceHostFrameError(runtime, error, hostDeltaMs);
+		workbenchMode.surfaceHostFrameError(error, hostDeltaMs);
 	}
 	screen.flushDebugReport(currentTime, runtime);
 }

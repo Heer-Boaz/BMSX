@@ -10,7 +10,7 @@ import { ENGINE_SYSTEM_HELPER_NAMES } from '../../machine/firmware/system_global
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from '../../machine/program/compiler';
 import { linkProgramAssets } from '../../machine/program/linker';
 import { getWorkspaceCachedSource } from '../workspace/cache';
-import type { RuntimeResumeSnapshot, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
+import { RuntimeResumeSnapshot, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
 import { resolveLuaSourceRecordFromRegistries, type LuaSourceRegistry } from '../../machine/program/sources';
 import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
@@ -45,14 +45,12 @@ import {
 import { getMachinePerfSpecs } from '../../rompack/format';
 import type { RawAssetSource } from '../../rompack/source';
 import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
-import { StringValue, isStringValue, stringValueToString } from '../../machine/memory/string/pool';
+import { isStringValue, stringValueToString } from '../../machine/memory/string/pool';
 import { Runtime } from '../../machine/runtime/runtime';
 import { raiseEngineIrq } from '../../machine/runtime/engine_irq';
 import { callClosure, callClosureInto, callClosureIntoWithScheduler } from '../../machine/program/executor';
 
 const ENGINE_BUILTIN_PRELUDE_PATH = 'bios/engine_builtin_prelude.lua';
-const getRealtimeOptLevel = (runtime: Runtime): 0 | 1 | 2 | 3 =>
-	runtime.realtimeCompileOptLevel;
 const REQUIRED_ENGINE_SYSTEM_HELPERS: ReadonlyArray<string> = ['clock_now'];
 
 function resolvePositiveSafeInteger(value: number | undefined, label: string): number {
@@ -93,8 +91,8 @@ interface RuntimeAssetReloadPlan {
 	resetFreshWorldOptions: { preserve_textures: boolean };
 }
 
-function buildRuntimeAssetReloadPlan(runtime: Runtime): RuntimeAssetReloadPlan {
-	if (runtime.assets.cartLayer) {
+function buildRuntimeAssetReloadPlan(): RuntimeAssetReloadPlan {
+	if (Runtime.instance.assets.cartLayer) {
 		return {
 			mode: 'cart',
 			machineSource: 'cart',
@@ -110,39 +108,41 @@ function buildRuntimeAssetReloadPlan(runtime: Runtime): RuntimeAssetReloadPlan {
 	};
 }
 
-function resolveRuntimeMachineForPlan(runtime: Runtime, plan: RuntimeAssetReloadPlan) {
+function resolveRuntimeMachineForPlan(plan: RuntimeAssetReloadPlan) {
 	if (plan.machineSource === 'cart') {
-		return runtime.assets.cartLayer.index.machine;
+		return Runtime.instance.assets.cartLayer.index.machine;
 	}
-	return runtime.assets.biosLayer.index.machine;
+	return Runtime.instance.assets.biosLayer.index.machine;
 }
 
-export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeSnapshot, preserveEngineModules?: boolean): Promise<void> {
-	workbenchMode.clearActiveDebuggerPause(runtime);
+export async function resumeFromSnapshot(state: RuntimeResumeSnapshot, preserveEngineModules?: boolean): Promise<void> {
+	const runtime = Runtime.instance;
+	workbenchMode.clearActiveDebuggerPause();
 	if (!state) {
 		runtime.luaRuntimeFailed = false;
 		throw new Error('cannot resume from invalid state snapshot.');
 	}
 	const snapshot: RuntimeResumeSnapshot = { ...state, luaRuntimeFailed: false };
 	runtime.interpreter.clearLastFaultEnvironment();
-	workbenchMode.clearFaultSnapshot(runtime);
+	workbenchMode.clearFaultSnapshot();
 
-	workbenchMode.resetHandledLuaErrors(runtime);
+	workbenchMode.resetHandledLuaErrors();
 	runtime.luaRuntimeFailed = false;
 	publishOverlayFrame(null);
-	applyRuntimeMachineState(runtime, snapshot.machineState);
+	applyRuntimeMachineState(snapshot.machineState);
 	restoreVdpContextState(runtime.machine.vdp);
 	flushHostRuntimeAssetEdits(runtime.machine.memory, engineCore.texmanager);
 	runtime.storage.restore(snapshot.storageState);
-	resumeLuaProgramState(runtime, snapshot, preserveEngineModules);
+	resumeLuaProgramState(snapshot, preserveEngineModules);
 	applyRuntimeRenderState(snapshot.renderState);
 	clearBackQueues();
 	runtime.luaInitialized = true;
-	syncRuntimeGameViewStateToTable(runtime);
+	syncRuntimeGameViewStateToTable();
 	applyGameViewStateToHost(runtime.gameViewState, engineCore.view);
 }
 
-export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; source: string; preserveEngineModules?: boolean }): void {
+export function hotResumeProgramEntry(params: { path: string; source: string; preserveEngineModules?: boolean }): void {
+	const runtime = Runtime.instance;
 	const preserveRuntimeFailure = runtime.luaRuntimeFailed || (runtime.pauseCoordinator.hasSuspension() && runtime.pauseCoordinator.getPendingException() !== null);
 	const binding = params.path;
 	const baseMetadata = runtime.programMetadata;
@@ -152,7 +152,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	const interpreter = runtime.interpreter;
 	interpreter.clearLastFaultEnvironment();
 	const chunk = interpreter.compileChunk(params.source, binding);
-	const { modules, modulePaths } = buildModuleChunks(runtime, binding);
+	const { modules, modulePaths } = buildModuleChunks(binding);
 	const baseProgram = runtime.machine.cpu.getProgram();
 	if (!baseProgram) {
 		throw new Error('hot reload requires active program.');
@@ -160,29 +160,30 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
 		baseProgram,
 		baseMetadata,
-		optLevel: getRealtimeOptLevel(runtime),
+		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: params.source,
 	});
 	replaceMapEntries(runtime.moduleProtos, moduleProtoMap);
-	installModuleAliasEntries(runtime, buildModuleAliasesFromPaths(modulePaths));
+	installModuleAliasEntries(buildModuleAliasesFromPaths(modulePaths));
 	if (params.preserveEngineModules) {
-		clearCartModuleCacheForHotResume(runtime);
+		clearCartModuleCacheForHotResume();
 	} else {
 		runtime.moduleCache.clear();
 	}
 	runtime.machine.vdp.resetIngressState();
-	const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
+	const prelude = runEngineBuiltinPrelude(program, metadata);
 	const finalizedMetadata = prelude.metadata;
-	beginEntryExecution(runtime, entryProtoIndex);
+	beginEntryExecution(entryProtoIndex);
 	runtime.luaRuntimeFailed = preserveRuntimeFailure;
 	runtime._luaPath = binding;
 	runtime.programMetadata = finalizedMetadata;
 	runtime.luaInitialized = true;
-	clearEditorCompletionCache(runtime);
-	workbenchMode.clearEditorErrorOverlaysIfNoFault(runtime);
+	clearEditorCompletionCache();
+	workbenchMode.clearEditorErrorOverlaysIfNoFault();
 }
 
-export function clearCartModuleCacheForHotResume(runtime: Runtime): void {
+export function clearCartModuleCacheForHotResume(): void {
+	const runtime = Runtime.instance;
 	for (const path of Array.from(runtime.moduleCache.keys())) {
 		if (!runtime.engineLuaSources.path2lua[path]) {
 			runtime.moduleCache.delete(path);
@@ -197,54 +198,62 @@ function replaceMapEntries<TKey, TValue>(target: Map<TKey, TValue>, entries: Ite
 	}
 }
 
-function installModuleAliasEntries(runtime: Runtime, aliases: Iterable<{ alias: string; path: string }>): void {
+function installModuleAliasEntries(aliases: Iterable<{ alias: string; path: string }>): void {
+	const runtime = Runtime.instance;
 	runtime.moduleAliases.clear();
 	for (const entry of aliases) {
 		runtime.moduleAliases.set(entry.alias, entry.path);
 	}
 }
 
-function finishProgramModuleInstall(runtime: Runtime): void {
+function finishProgramModuleInstall(): void {
+	const runtime = Runtime.instance;
 	runtime.moduleCache.clear();
 	runtime.machine.vdp.resetIngressState();
 }
 
-function installFreshLuaInterpreter(runtime: Runtime): LuaInterpreter {
-	resetLuaInteroperabilityState(runtime);
+function installFreshLuaInterpreter(): LuaInterpreter {
+	resetLuaInteroperabilityState();
+	const runtime = Runtime.instance;
 	const interpreter = runtime.createLuaInterpreter();
 	runtime.assignInterpreter(interpreter);
 	return interpreter;
 }
 
-function installProgramModuleAliases(runtime: Runtime, moduleProtos: Iterable<[string, number]>, aliases: Iterable<{ alias: string; path: string }>): void {
+function installProgramModuleAliases(moduleProtos: Iterable<[string, number]>, aliases: Iterable<{ alias: string; path: string }>): void {
+	const runtime = Runtime.instance;
 	replaceMapEntries(runtime.moduleProtos, moduleProtos);
-	installModuleAliasEntries(runtime, aliases);
-	finishProgramModuleInstall(runtime);
+	installModuleAliasEntries(aliases);
+	finishProgramModuleInstall();
 }
 
-function installProgramModuleMaps(runtime: Runtime, moduleProtos: Iterable<[string, number]>, aliases: Iterable<[string, string]>): void {
+function installProgramModuleMaps(moduleProtos: Iterable<[string, number]>, aliases: Iterable<[string, string]>): void {
+	const runtime = Runtime.instance;
 	replaceMapEntries(runtime.moduleProtos, moduleProtos);
 	replaceMapEntries(runtime.moduleAliases, aliases);
-	finishProgramModuleInstall(runtime);
+	finishProgramModuleInstall();
 }
 
-function editorSourceForChunk(runtime: Runtime, path: string): string {
-	return runtime.editor !== null ? runtime.editor.getSourceForChunk(path) : resourceSourceForChunk(runtime, path);
+function editorSourceForChunk(path: string): string {
+	const runtime = Runtime.instance;
+	return runtime.editor !== null ? runtime.editor.getSourceForChunk(path) : resourceSourceForChunk(path);
 }
 
-function clearEditorCompletionCache(runtime: Runtime): void {
+function clearEditorCompletionCache(): void {
+	const runtime = Runtime.instance;
 	if (runtime.editor !== null) {
 		runtime.editor.clearNativeMemberCompletionCache();
 	}
 }
 
-export function beginEntryExecution(runtime: Runtime, entryProtoIndex: number): void {
-	resetFrameState(runtime);
+export function beginEntryExecution(entryProtoIndex: number): void {
+	const runtime = Runtime.instance;
+	resetFrameState();
 	runtime.machine.cpu.start(entryProtoIndex);
 	runtime.pendingCall = 'entry';
 }
 
-export function queueLifecycleHandlers(runtime: Runtime, options: { runInit: boolean; runNewGame: boolean }): void {
+export function queueLifecycleHandlers(options: { runInit: boolean; runNewGame: boolean }): void {
 	let irqMask = 0;
 	if (options.runInit) {
 		irqMask |= IRQ_REINIT;
@@ -253,20 +262,22 @@ export function queueLifecycleHandlers(runtime: Runtime, options: { runInit: boo
 		irqMask |= IRQ_NEWGAME;
 	}
 	if (irqMask !== 0) {
-		raiseEngineIrq(runtime, irqMask);
+		raiseEngineIrq(irqMask);
 	}
 }
 
-function finishEntryBoot(runtime: Runtime, runInit: boolean | undefined): boolean {
+function finishEntryBoot(runInit: boolean | undefined): boolean {
+	const runtime = Runtime.instance;
 	runtime.luaInitialized = true;
 	if (runInit === false) {
 		return true;
 	}
-	queueLifecycleHandlers(runtime, { runInit: true, runNewGame: true });
+	queueLifecycleHandlers({ runInit: true, runNewGame: true });
 	return true;
 }
 
-export function reloadLuaProgramState(runtime: Runtime, runInit = true): void {
+export function reloadLuaProgramState(runInit = true): void {
+	const runtime = Runtime.instance;
 	const binding = runtime.activeLuaSources.path2lua[runtime.activeLuaSources.entry_path];
 	if (!binding) {
 		console.info('No Lua entry point defined; cannot reload program. Please save the entry point and try again.');
@@ -274,74 +285,78 @@ export function reloadLuaProgramState(runtime: Runtime, runInit = true): void {
 	}
 	runtime._luaPath = binding.source_path;
 	if (!runtime.interpreter) {
-		if (!bootLuaProgram(runtime)) {
+		if (!bootLuaProgram()) {
 			console.info('Lua boot failed.');
 			return;
 		}
 	}
 	else {
-		hotResumeProgramEntry(runtime, { source: editorSourceForChunk(runtime, binding.source_path), path: binding.source_path });
+		hotResumeProgramEntry({ source: editorSourceForChunk(binding.source_path), path: binding.source_path });
 		if (runInit) {
-			queueLifecycleHandlers(runtime, { runInit: true, runNewGame: true });
+			queueLifecycleHandlers({ runInit: true, runNewGame: true });
 		}
 	}
 	runtime.luaInitialized = true;
 }
 
-export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeSnapshot, preserveEngineModules?: boolean): void {
+export function resumeLuaProgramState(snapshot: RuntimeResumeSnapshot, preserveEngineModules?: boolean): void {
 	const savedRuntimeFailed = !!snapshot.luaRuntimeFailed;
 	const binding = snapshot.luaPath;
 	let source: string;
 	try {
-		source = resourceSourceForChunk(runtime, binding);
+		source = resourceSourceForChunk(binding);
 	}
 	catch (error) {
 		throw convertToError(error);
 	}
+	const runtime = Runtime.instance;
 	runtime._luaPath = binding;
 	try {
 		const shouldPreserveEngineModules = preserveEngineModules ?? runtime.activeProgramSource !== 'engine';
-		hotResumeProgramEntry(runtime, { source, path: binding, preserveEngineModules: shouldPreserveEngineModules });
+		hotResumeProgramEntry({ source, path: binding, preserveEngineModules: shouldPreserveEngineModules });
 	}
 	catch (error) {
-		workbenchMode.handleLuaError(runtime, error);
+		workbenchMode.handleLuaError(error);
 		throw convertToError(error);
 	}
-	refreshLuaModulesOnResume(runtime, binding);
-	clearEditorCompletionCache(runtime);
-	queueLifecycleHandlers(runtime, { runInit: true, runNewGame: false });
-	restoreRuntimeLuaSnapshot(runtime, snapshot);
+	refreshLuaModulesOnResume(binding);
+	clearEditorCompletionCache();
+	queueLifecycleHandlers({ runInit: true, runNewGame: false });
+	restoreRuntimeLuaSnapshot(snapshot);
 	if (savedRuntimeFailed) {
 		runtime.luaRuntimeFailed = true;
 	}
 }
 
-export function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: string): void {
+export function refreshLuaModulesOnResume(resumeModuleId: string): void {
+	const runtime = Runtime.instance;
 	const paths = Object.keys(runtime.activeLuaSources.path2lua);
 	for (let index = 0; index < paths.length; index += 1) {
 		const moduleId = paths[index];
 		if (resumeModuleId && moduleId === resumeModuleId) {
 			continue;
 		}
-		refreshLuaHandlersForChunk(runtime, moduleId);
+		refreshLuaHandlersForChunk(moduleId);
 	}
 }
 
-export function markSourceChunkAsDirty(runtime: Runtime, path: string): void {
-	runtime.luaGenericChunksExecuted.delete(path);
+export function markSourceChunkAsDirty(path: string): void {
+	Runtime.instance.luaGenericChunksExecuted.delete(path);
 }
 
-export function resetLuaInteroperabilityState(runtime: Runtime): void {
+export function resetLuaInteroperabilityState(): void {
+	const runtime = Runtime.instance;
 	runtime.luaGenericChunksExecuted.clear();
-	workbenchMode.resetHandledLuaErrors(runtime);
+	workbenchMode.resetHandledLuaErrors();
 	runtime.luaFunctionRedirectCache.clear();
 }
 
-export function resetRuntimeState(runtime: Runtime): void {
-	resetFrameState(runtime);
+export function resetRuntimeState(): void {
+	resetFrameState();
+	const runtime = Runtime.instance;
 	runtime.pendingCall = null;
 	runtime.cartBoot.pending = false;
-	resetHardwareState(runtime);
+	resetHardwareState();
 	const cpu = runtime.machine.cpu;
 	cpu.globals.clear();
 	cpu.clearGlobalSlots();
@@ -349,27 +364,30 @@ export function resetRuntimeState(runtime: Runtime): void {
 	addTrackedLuaHeapBytes(cpu.globals.getTrackedHeapBytes());
 	runtime.moduleCache.clear();
 	runtime.moduleProtos.clear();
-	seedGlobals(runtime);
+	seedLuaGlobals();
 }
 
-export function resetFrameState(runtime: Runtime): void {
-	runtime.frameLoop.abandonFrameState(runtime);
+export function resetFrameState(): void {
+	const runtime = Runtime.instance;
+	runtime.frameLoop.abandonFrameState();
 	runtime.frameLoop.drawFrameState = null;
-	runtime.vblank.clearHaltUntilIrq(runtime);
+	runtime.vblank.clearHaltUntilIrq();
 	runtime.frameScheduler.reset();
 	runtime.frameLoop.reset();
 	runtime.screen.reset();
 	runtime.frameScheduler.resetTickTelemetry();
 }
 
-export function resetHardwareState(runtime: Runtime): void {
+export function resetHardwareState(): void {
+	const runtime = Runtime.instance;
 	runtime.machine.resetDevices();
-	runtime.vblank.reset(runtime);
+	runtime.vblank.reset();
 	resetRuntimeRenderState();
 	clearBackQueues();
 }
 
-export function registerGlobal(runtime: Runtime, name: string, value: Value): void {
+export function registerGlobal(name: string, value: Value): void {
+	const runtime = Runtime.instance;
 	runtime.machine.cpu.setGlobalByKey(runtime.luaKey(name), value);
 }
 
@@ -388,70 +406,70 @@ export function buildEngineBuiltinPreludeSource(): string {
 	return lines.join('\n');
 }
 
-export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, metadata: ProgramMetadata, staticModulePaths: ReadonlyArray<string> = []): { program: Program; metadata: ProgramMetadata } {
+export function runEngineBuiltinPrelude(program: Program, metadata: ProgramMetadata, staticModulePaths: ReadonlyArray<string> = []): { program: Program; metadata: ProgramMetadata } {
+	const runtime = Runtime.instance;
 	const source = buildEngineBuiltinPreludeSource();
 	const interpreter = runtime.interpreter;
 	interpreter.setReservedIdentifiers([]);
 	const chunk = interpreter.compileChunk(source, ENGINE_BUILTIN_PRELUDE_PATH);
 	interpreter.setReservedIdentifiers(runtime.getReservedLuaIdentifiers());
 	const compiled = appendLuaChunkToProgram(program, metadata, chunk, {
-		optLevel: getRealtimeOptLevel(runtime),
+		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: source,
 	});
 	runtime.machine.cpu.setProgram(compiled.program, compiled.metadata);
 	runtime.programMetadata = compiled.metadata;
-	callClosure(runtime, { protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
-	applyEngineBuiltinGlobals(runtime);
-	runStaticModuleInitializers(runtime, staticModulePaths);
+	callClosure({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
+	applyEngineBuiltinGlobals();
+	runStaticModuleInitializers(staticModulePaths);
 	return { program: compiled.program, metadata: compiled.metadata };
 }
 
-export function applyEngineBuiltinGlobals(runtime: Runtime): void {
+export function applyEngineBuiltinGlobals(): void {
+	const runtime = Runtime.instance;
 	const helperCount = ENGINE_SYSTEM_HELPER_NAMES.length;
 	for (let index = 0; index < REQUIRED_ENGINE_SYSTEM_HELPERS.length; index += 1) {
 		const name = REQUIRED_ENGINE_SYSTEM_HELPERS[index];
 		const key = runtime.luaKey(name);
 		if (runtime.machine.cpu.globals.get(key) === null) {
-			seedLuaGlobals(runtime);
+			seedLuaGlobals();
 			break;
 		}
 	}
-	const engine = requireModule(runtime, 'engine') as Table;
+	const engine = requireModule('engine') as Table;
 	for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
 		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
 		const member = engine.get(runtime.luaKey(name)) as Closure;
-		registerGlobal(runtime, name, member);
+		registerGlobal(name, member);
 	}
 	for (let index = 0; index < ENGINE_LUA_BUILTIN_GLOBALS.length; index += 1) {
 		const name = ENGINE_LUA_BUILTIN_GLOBALS[index].name;
-		registerGlobal(runtime, name, engine.get(runtime.luaKey(name)));
+		registerGlobal(name, engine.get(runtime.luaKey(name)));
 	}
 	for (let index = 0; index < helperCount; index += 1) {
 		const name = ENGINE_SYSTEM_HELPER_NAMES[index];
 		const key = runtime.luaKey(name);
 		const value = runtime.machine.cpu.globals.get(key);
 		if (value !== null) {
-			registerGlobal(runtime, name, value);
+			registerGlobal(name, value);
 		}
 	}
 }
 
-function runStaticModuleInitializers(runtime: Runtime, paths: ReadonlyArray<string>): void {
+function runStaticModuleInitializers(paths: ReadonlyArray<string>): void {
 	for (let index = 0; index < paths.length; index += 1) {
-		runStaticModuleInitializer(runtime, paths[index]);
+		runStaticModuleInitializer(paths[index]);
 	}
-	runtime.machine.cpu.syncGlobalSlotsToTable();
+	Runtime.instance.machine.cpu.syncGlobalSlotsToTable();
 }
 
-export function seedGlobals(runtime: Runtime): void {
-	seedLuaGlobals(runtime);
-}
-
-export function setRandomSeed(runtime: Runtime, seed: number): void {
+export function setRandomSeed(seed: number): void {
+	const runtime = Runtime.instance;
 	runtime.randomSeedValue = seed;
 }
 
-export function nextRandom(runtime: Runtime): number {
+export function nextRandom(): number {
+	const runtime = Runtime.instance;
 	runtime.randomSeedValue = (runtime.randomSeedValue * 1664525 + 1013904223) % 4294967296;
 	return runtime.randomSeedValue / 4294967296;
 }
@@ -511,7 +529,8 @@ function buildSymbolModuleSlotPrefix(modulePath: string): string {
 	return prefix;
 }
 
-function collectHiddenSymbolPrefixes(runtime: Runtime): Set<string> {
+function collectHiddenSymbolPrefixes(): Set<string> {
+	const runtime = Runtime.instance;
 	const prefixes = new Set<string>();
 	const registries = [runtime.engineLuaSources, runtime.cartLuaSources];
 	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
@@ -536,9 +555,10 @@ function shouldHideTerminalSymbolName(name: string, hiddenPrefixes: ReadonlySet<
 	return false;
 }
 
-export function listSymbols(runtime: Runtime): SymbolEntry[] {
+export function listSymbols(): SymbolEntry[] {
+	const runtime = Runtime.instance;
 	runtime.machine.cpu.syncGlobalSlotsToTable();
-	const hiddenPrefixes = collectHiddenSymbolPrefixes(runtime);
+	const hiddenPrefixes = collectHiddenSymbolPrefixes();
 	const symbolsByName = new Map<string, SymbolEntry>();
 	runtime.machine.cpu.globals.forEachEntry((key, value) => {
 		if (!isStringValue(key)) {
@@ -559,19 +579,12 @@ export function listSymbols(runtime: Runtime): SymbolEntry[] {
 	return Array.from(symbolsByName.values());
 }
 
-export function requireString(value: Value): string {
-	return stringValueToString(value as StringValue);
+export function shouldBootLuaProgramFromSources(): boolean {
+	return Runtime.instance.activeLuaSources.can_boot_from_source;
 }
 
-export function hasLuaAssets(runtime: Runtime): boolean {
-	return runtime.activeLuaSources.can_boot_from_source;
-}
-
-export function shouldBootLuaProgramFromSources(runtime: Runtime): boolean {
-	return hasLuaAssets(runtime);
-}
-
-export function resolveProgramAssetSourceFor(runtime: Runtime, source: 'engine' | 'cart'): RawAssetSource {
+export function resolveProgramAssetSourceFor(source: 'engine' | 'cart'): RawAssetSource {
+	const runtime = Runtime.instance;
 	if (source === 'engine') {
 		if (!runtime.engineAssetSource) {
 			throw new Error('engine asset source is not configured.');
@@ -584,8 +597,8 @@ export function resolveProgramAssetSourceFor(runtime: Runtime, source: 'engine' 
 	return runtime.cartAssetSource;
 }
 
-export function loadProgramAssetsForSource(runtime: Runtime, source: 'engine' | 'cart'): { program: ProgramAsset; symbols: ProgramSymbolsAsset | null } {
-	const assetSource = resolveProgramAssetSourceFor(runtime, source);
+export function loadProgramAssetsForSource(source: 'engine' | 'cart'): { program: ProgramAsset; symbols: ProgramSymbolsAsset | null } {
+	const assetSource = resolveProgramAssetSourceFor(source);
 	const programEntry = assetSource.getEntry(PROGRAM_ASSET_ID);
 	if (!programEntry) {
 		throw new Error('program asset not found.');
@@ -596,16 +609,13 @@ export function loadProgramAssetsForSource(runtime: Runtime, source: 'engine' | 
 	return { program, symbols };
 }
 
-export function loadProgramAssets(runtime: Runtime): { program: ProgramAsset; symbols: ProgramSymbolsAsset | null } {
-	return loadProgramAssetsForSource(runtime, runtime.activeProgramSource);
-}
-
 export function buildModuleChunks(
-	runtime: Runtime,
 	entryPath: string,
 	registries?: LuaSourceRegistry[],
-	interpreter: LuaInterpreter = runtime.interpreter,
+	interpreter: LuaInterpreter = Runtime.instance.interpreter,
 ): { modules: Array<{ path: string; chunk: LuaChunk; source: string }>; modulePaths: string[] } {
+	const runtime = Runtime.instance;
+
 	const entryAsset = resolveLuaSourceRecordFromRegistries(entryPath, [
 		runtime.activeLuaSources,
 		runtime.cartLuaSources,
@@ -615,7 +625,7 @@ export function buildModuleChunks(
 	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
 	const modulePaths: string[] = [];
 	const seen = new Set<string>();
-	const resolvedRegistries = registries ?? resolveModuleRegistries(runtime);
+	const resolvedRegistries = registries ?? resolveModuleRegistries();
 	for (const registry of resolvedRegistries) {
 		if (!registry) {
 			continue;
@@ -634,7 +644,7 @@ export function buildModuleChunks(
 			if (key === entryKey) {
 				continue;
 			}
-			const source = resourceSourceForChunk(runtime, key);
+			const source = resourceSourceForChunk(key);
 			const chunk = interpreter.compileChunk(source, key);
 			modules.push({ path: key, chunk, source });
 		}
@@ -642,7 +652,7 @@ export function buildModuleChunks(
 	return { modules, modulePaths };
 }
 
-export function compileCartLuaProgramForBoot(runtime: Runtime): {
+export function compileCartLuaProgramForBoot(): {
 	program: Program;
 	metadata: ProgramMetadata;
 	entryProtoIndex: number;
@@ -651,16 +661,17 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 	staticModulePaths: string[];
 	entryPath: string;
 } {
+	const runtime = Runtime.instance;
 	const entryAsset = runtime.cartLuaSources.path2lua[runtime.cartLuaSources.entry_path];
 	if (!entryAsset) {
 		throw new Error('cannot prepare cart boot: entry Lua source is missing.');
 	}
 	const entryPath = entryAsset.source_path;
-	const entrySource = resourceSourceForChunk(runtime, entryPath);
+	const entrySource = resourceSourceForChunk(entryPath);
 	const interpreter = runtime.createLuaInterpreter();
 	const entryChunk = interpreter.compileChunk(entrySource, entryPath);
-	const cartChunks = buildModuleChunks(runtime, entryPath, [runtime.cartLuaSources], interpreter);
-	const engineChunks = buildModuleChunks(runtime, entryPath, [runtime.engineLuaSources], interpreter);
+	const cartChunks = buildModuleChunks(entryPath, [runtime.cartLuaSources], interpreter);
+	const engineChunks = buildModuleChunks(entryPath, [runtime.engineLuaSources], interpreter);
 	const baseProgram = runtime.machine.cpu.getProgram();
 	if (!baseProgram || !runtime.programMetadata) {
 		throw new Error('cannot prepare cart boot: BIOS program is not active.');
@@ -668,7 +679,7 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 	const { program, metadata, entryProtoIndex, moduleProtoMap, staticModulePaths } = compileLuaChunkToProgram(entryChunk, cartChunks.modules, {
 		baseProgram,
 		baseMetadata: runtime.programMetadata,
-		optLevel: getRealtimeOptLevel(runtime),
+		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: entrySource,
 		externalModules: engineChunks.modules,
 	});
@@ -687,10 +698,11 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 	};
 }
 
-export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
-	const { program, symbols } = loadProgramAssets(runtime);
+export function bootProgramAsset(options?: { preserveState?: boolean; runInit?: boolean }): boolean {
+	const runtime = Runtime.instance;
+	const { program, symbols } = loadProgramAssetsForSource(runtime.activeProgramSource);
 	const engineActive = runtime.activeProgramSource === 'engine';
-	const engineAssets = engineActive ? null : loadProgramAssetsForSource(runtime, 'engine');
+	const engineAssets = engineActive ? null : loadProgramAssetsForSource('engine'); // ???????????????????
 	const linked = engineAssets ? linkProgramAssets(engineAssets.program, engineAssets.symbols, program, symbols) : null;
 	const programAsset = linked ? linked.programAsset : program;
 	let metadata: ProgramMetadata = null;
@@ -700,61 +712,63 @@ export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: b
 		metadata = symbols.metadata;
 	}
 	runtime.cartEntryAvailable = true;
-	installFreshLuaInterpreter(runtime);
+	installFreshLuaInterpreter();
 
 	runtime._luaPath = runtime.activeLuaSources.entry_path;
 	if (!options?.preserveState) {
-		resetRuntimeState(runtime);
+		resetRuntimeState();
 	}
 
 	const protoMap = buildModuleProtoMap(programAsset.moduleProtos);
-	installProgramModuleMaps(runtime, protoMap, buildModuleAliasMap(programAsset.moduleAliases));
+	installProgramModuleMaps(protoMap, buildModuleAliasMap(programAsset.moduleAliases));
 
 	const inflated = inflateProgram(programAsset.program);
 	try {
 		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;
-		applyEngineBuiltinGlobals(runtime);
-		runStaticModuleInitializers(runtime, programAsset.staticModulePaths);
+		applyEngineBuiltinGlobals();
+		runStaticModuleInitializers(programAsset.staticModulePaths);
 
-		beginEntryExecution(runtime, programAsset.entryProtoIndex);
-		return finishEntryBoot(runtime, options?.runInit);
+		beginEntryExecution(programAsset.entryProtoIndex);
+		return finishEntryBoot(options?.runInit);
 	} catch (error) {
 		console.info('Program-asset boot failed.');
-		logDebugState(runtime);
+		logDebugState();
 		throw error;
 	}
 }
 
-export function bootPreparedCartProgram(runtime: Runtime, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
+export function bootPreparedCartProgram(options?: { preserveState?: boolean; runInit?: boolean }): boolean {
+	const runtime = Runtime.instance;
 	const prepared = runtime.cartBoot.preparedProgram;
 	runtime.cartEntryAvailable = true;
-	installFreshLuaInterpreter(runtime);
+	installFreshLuaInterpreter();
 
 	runtime._luaPath = prepared.entryPath;
 	if (!options?.preserveState) {
-		resetRuntimeState(runtime);
+		resetRuntimeState();
 	}
 
-	installProgramModuleAliases(runtime, prepared.moduleProtoMap, prepared.moduleAliases);
-	const prelude = runEngineBuiltinPrelude(runtime, prepared.program, prepared.metadata, prepared.staticModulePaths);
+	installProgramModuleAliases(prepared.moduleProtoMap, prepared.moduleAliases);
+	const prelude = runEngineBuiltinPrelude(prepared.program, prepared.metadata, prepared.staticModulePaths);
 	runtime.programMetadata = prelude.metadata;
-	beginEntryExecution(runtime, prepared.entryProtoIndex);
-	return finishEntryBoot(runtime, options?.runInit);
+	beginEntryExecution(prepared.entryProtoIndex);
+	return finishEntryBoot(options?.runInit);
 }
 
-export function bootActiveProgram(runtime: Runtime, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
-	const ok = shouldBootLuaProgramFromSources(runtime)
-		? bootLuaProgram(runtime, { preserveState: options?.preserveState })
-		: bootProgramAsset(runtime, options);
+export function bootActiveProgram(options?: { preserveState?: boolean; runInit?: boolean }): boolean {
+	const ok = shouldBootLuaProgramFromSources()
+		? bootLuaProgram({ preserveState: options?.preserveState })
+		: bootProgramAsset(options);
 	return ok;
 }
 
-export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boolean; sourceOverride?: { path: string; source: string } }): boolean {
+export function bootLuaProgram(options?: { preserveState?: boolean; sourceOverride?: { path: string; source: string } }): boolean {
+	const runtime = Runtime.instance;
 	const entryAsset = runtime.activeLuaSources.path2lua[runtime.activeLuaSources.entry_path];
 	runtime.cartEntryAvailable = !!entryAsset;
 
-	const interpreter = installFreshLuaInterpreter(runtime);
+	const interpreter = installFreshLuaInterpreter();
 
 	if (!entryAsset) {
 		runtime._luaPath = null;
@@ -767,48 +781,49 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 
 	runtime._luaPath = path;
 	if (!options?.preserveState) {
-		resetRuntimeState(runtime);
+		resetRuntimeState();
 	}
 
 	try {
 		const entryPath = options?.sourceOverride?.path ?? path;
-		const entrySource = options?.sourceOverride?.source ?? resourceSourceForChunk(runtime, entryPath);
+		const entrySource = options?.sourceOverride?.source ?? resourceSourceForChunk(entryPath);
 		const entryChunk = interpreter.compileChunk(entrySource, entryPath);
-		const { modules, modulePaths } = buildModuleChunks(runtime, entryPath);
+		const { modules, modulePaths } = buildModuleChunks(entryPath);
 		const { program, metadata, entryProtoIndex, moduleProtoMap, staticModulePaths } = compileLuaChunkToProgram(entryChunk, modules, {
-			optLevel: getRealtimeOptLevel(runtime),
+			optLevel: runtime.realtimeCompileOptLevel,
 			entrySource: entrySource,
 		});
-		installProgramModuleAliases(runtime, moduleProtoMap, buildModuleAliasesFromPaths(modulePaths));
-		const prelude = runEngineBuiltinPrelude(runtime, program, metadata, staticModulePaths);
+		installProgramModuleAliases(moduleProtoMap, buildModuleAliasesFromPaths(modulePaths));
+		const prelude = runEngineBuiltinPrelude(program, metadata, staticModulePaths);
 		runtime.programMetadata = prelude.metadata;
-		beginEntryExecution(runtime, entryProtoIndex);
-		return finishEntryBoot(runtime, true);
+		beginEntryExecution(entryProtoIndex);
+		return finishEntryBoot(true);
 	}
 	catch (error) {
 		console.info(`Lua boot '${path}' failed.`);
-		logDebugState(runtime);
-		workbenchMode.handleLuaError(runtime, error);
+		logDebugState();
+		workbenchMode.handleLuaError(error);
 		throw convertToError(error);
 	}
 }
 
-export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = true): Promise<void> {
+export async function reloadProgramAndResetWorld(runInit = true): Promise<void> {
+	const runtime = Runtime.instance;
 	const gateToken = runtime.luaGate.begin({ blocking: true, tag: 'reload_and_reset' });
 	try {
 		const preservingSuspension = runtime.pauseCoordinator.hasSuspension();
 		if (!preservingSuspension) {
 			runtime.pauseCoordinator.clearSuspension();
-			workbenchMode.setDebuggerPaused(runtime, false);
-			workbenchMode.clearRuntimeFault(runtime);
+			workbenchMode.setDebuggerPaused(false);
+			workbenchMode.clearRuntimeFault();
 		}
 		runtime.luaInitialized = false;
 
 		runtime.luaChunkEnvironmentsByPath.clear();
 		runtime.luaGenericChunksExecuted.clear();
 
-		const reloadPlan = buildRuntimeAssetReloadPlan(runtime);
-		await runtime.assets.buildMemory(runtime, { mode: reloadPlan.mode });
+		const reloadPlan = buildRuntimeAssetReloadPlan();
+		await runtime.assets.buildMemory({ mode: reloadPlan.mode });
 		if (reloadPlan.sealSystemAssets) {
 			runtime.machine.memory.sealEngineAssets();
 		}
@@ -816,28 +831,28 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 		engineCore.bootstrapStartupAudio();
 		try {
 			runtime.activateCartProgramAssets();
-			resetRuntimeState(runtime);
-			if (shouldBootLuaProgramFromSources(runtime)) {
+			resetRuntimeState();
+			if (shouldBootLuaProgramFromSources()) {
 					if (runtime.cartBoot.preparedProgram) {
-						bootPreparedCartProgram(runtime, { runInit });
+						bootPreparedCartProgram({ runInit });
 						runtime.cartBoot.preparedProgram = null;
 					} else {
-						reloadLuaProgramState(runtime, runInit);
+						reloadLuaProgramState(runInit);
 					}
 				} else {
-					bootProgramAsset(runtime, { preserveState: true, runInit });
+					bootProgramAsset({ preserveState: true, runInit });
 				}
-			const machine = resolveRuntimeMachineForPlan(runtime, reloadPlan);
+			const machine = resolveRuntimeMachineForPlan(reloadPlan);
 			const perfSpecs = getMachinePerfSpecs(machine);
 			applyUfpsScaled(perfSpecs.ufps);
 			const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, runtime.timing.ufpsScaled);
 			const renderHeight = resolveRenderHeight(machine.render_size.height);
 			const vblankCycles = resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, renderHeight);
-			setFrameTiming(runtime, cpuHz, cycleBudgetPerFrame, vblankCycles);
-			setTransferRatesFromManifest(runtime, perfSpecs);
+			setFrameTiming(cpuHz, cycleBudgetPerFrame, vblankCycles);
+			setTransferRatesFromManifest(perfSpecs);
 		} catch (error) {
-			workbenchMode.handleLuaError(runtime, error);
+			workbenchMode.handleLuaError(error);
 		}
 	}
 	finally {
@@ -845,7 +860,8 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 	}
 }
 
-export function resourceSourceForChunk(runtime: Runtime, path: string): string {
+export function resourceSourceForChunk(path: string): string {
+	const runtime = Runtime.instance;
 	const binding = resolveLuaSourceRecordFromRegistries(path, [
 		runtime.activeLuaSources,
 		runtime.cartLuaSources,
@@ -861,7 +877,8 @@ export function resourceSourceForChunk(runtime: Runtime, path: string): string {
 	return binding.src;
 }
 
-export function listLuaSourceRegistries(runtime: Runtime): Array<{ registry: LuaSourceRegistry; readOnly: boolean }> {
+export function listLuaSourceRegistries(): Array<{ registry: LuaSourceRegistry; readOnly: boolean }> {
+	const runtime = Runtime.instance;
 	const registries: Array<{ registry: LuaSourceRegistry; readOnly: boolean }> = [];
 	if (runtime.cartLuaSources) {
 		registries.push({ registry: runtime.cartLuaSources, readOnly: false });
@@ -870,7 +887,8 @@ export function listLuaSourceRegistries(runtime: Runtime): Array<{ registry: Lua
 	return registries;
 }
 
-export function resolveModuleRegistries(runtime: Runtime): LuaSourceRegistry[] {
+export function resolveModuleRegistries(): LuaSourceRegistry[] {
+	const runtime = Runtime.instance;
 	const registries: LuaSourceRegistry[] = [];
 	if (runtime.activeLuaSources) {
 		registries.push(runtime.activeLuaSources);
@@ -881,20 +899,23 @@ export function resolveModuleRegistries(runtime: Runtime): LuaSourceRegistry[] {
 	return registries;
 }
 
-export function refreshLuaHandlersForChunk(runtime: Runtime, path: string, sourceOverride?: string): void {
+export function refreshLuaHandlersForChunk(path: string, sourceOverride?: string): void {
+	const runtime = Runtime.instance;
 	runtime.luaGenericChunksExecuted.delete(path);
-	reloadGenericLuaChunk(runtime, path, sourceOverride);
-	clearEditorCompletionCache(runtime);
-	workbenchMode.clearEditorErrorOverlaysIfNoFault(runtime);
+	reloadGenericLuaChunk(path, sourceOverride);
+	clearEditorCompletionCache();
+	workbenchMode.clearEditorErrorOverlaysIfNoFault();
 }
 
-export function reloadGenericLuaChunk(runtime: Runtime, path: string, sourceOverride?: string): void {
-	const source = sourceOverride ? sourceOverride : resourceSourceForChunk(runtime, path);
+export function reloadGenericLuaChunk(path: string, sourceOverride?: string): void {
+	const runtime = Runtime.instance;
+	const source = sourceOverride ? sourceOverride : resourceSourceForChunk(path);
 	runtime.interpreter.compileChunk(source, path);
 	runtime.luaGenericChunksExecuted.add(path);
 }
 
-export function requireLuaModule(runtime: Runtime, interpreter: LuaInterpreter, moduleName: string): LuaValue {
+export function requireLuaModule(interpreter: LuaInterpreter, moduleName: string): LuaValue {
+	const runtime = Runtime.instance;
 	const path = runtime.moduleAliases.get(moduleName);
 	if (!path) {
 		throw interpreter.runtimeError(`require('${moduleName}') failed: module not found.`);
@@ -904,7 +925,7 @@ export function requireLuaModule(runtime: Runtime, interpreter: LuaInterpreter, 
 		return loaded;
 	}
 	interpreter.packageLoadedTable.set(path, true);
-	const source = resourceSourceForChunk(runtime, path);
+	const source = resourceSourceForChunk(path);
 	if (!source) {
 		throw interpreter.runtimeError(`require('${moduleName}') failed: module source unavailable.`);
 	}
@@ -916,7 +937,8 @@ export function requireLuaModule(runtime: Runtime, interpreter: LuaInterpreter, 
 	return cachedValue;
 }
 
-export function requireModule(runtime: Runtime, moduleName: string): Value {
+export function requireModule(moduleName: string): Value {
+	const runtime = Runtime.instance;
 	const path = runtime.moduleAliases.get(moduleName);
 	if (!path) {
 		throw runtime.createApiRuntimeError(`require('${moduleName}') failed: module not found.`);
@@ -933,7 +955,7 @@ export function requireModule(runtime: Runtime, moduleName: string): Value {
 	const results = runtime.luaScratch.acquireValue();
 	let value: Value = null;
 	try {
-		callClosureInto(runtime, { protoIndex, upvalues: [] }, [], results);
+		callClosureInto({ protoIndex, upvalues: [] }, [], results);
 		value = results.length > 0 ? results[0] : null;
 	} finally {
 		runtime.luaScratch.releaseValue(results);
@@ -943,7 +965,8 @@ export function requireModule(runtime: Runtime, moduleName: string): Value {
 	return cachedValue;
 }
 
-function runStaticModuleInitializer(runtime: Runtime, path: string): void {
+function runStaticModuleInitializer(path: string): void {
+	const runtime = Runtime.instance;
 	if (runtime.moduleCache.has(path)) {
 		return;
 	}
@@ -954,7 +977,7 @@ function runStaticModuleInitializer(runtime: Runtime, path: string): void {
 	runtime.moduleCache.set(path, true);
 	const results = runtime.luaScratch.acquireValue();
 	try {
-		callClosureInto(runtime, { protoIndex, upvalues: [] }, [], results);
+		callClosureInto({ protoIndex, upvalues: [] }, [], results);
 	} catch (error) {
 		runtime.moduleCache.delete(path);
 		throw error;
@@ -964,7 +987,8 @@ function runStaticModuleInitializer(runtime: Runtime, path: string): void {
 	runtime.moduleCache.delete(path);
 }
 
-export function invalidateModuleAliases(runtime: Runtime): void {
+export function invalidateModuleAliases(): void {
+	const runtime = Runtime.instance;
 	runtime.moduleAliases.clear();
 	runtime.pathSemanticCache.clear();
 }
@@ -984,7 +1008,8 @@ export function buildConsoleMetadata(baseProgram: Program): ProgramMetadata {
 	return { debugRanges, protoIds, localSlotsByProto, globalNames: [], systemGlobalNames: [] };
 }
 
-export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
+export function runConsoleChunk(source: string): Value[] {
+	const runtime = Runtime.instance;
 	const chunk = runtime.interpreter.compileChunk(source, 'console');
 	const currentProgram = runtime.machine.cpu.getProgram();
 	if (!currentProgram) {
@@ -992,7 +1017,7 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	}
 	const baseMetadata = runtime.programMetadata ?? runtime.consoleMetadata ?? buildConsoleMetadata(currentProgram);
 	const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, {
-		optLevel: getRealtimeOptLevel(runtime),
+		optLevel: runtime.realtimeCompileOptLevel,
 		entrySource: source,
 	});
 	runtime.machine.cpu.setProgram(compiled.program, compiled.metadata);
@@ -1003,7 +1028,7 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	}
 	const results = runtime.luaScratch.acquireValue();
 	try {
-		callClosureIntoWithScheduler(runtime, { protoIndex: compiled.entryProtoIndex, upvalues: [] }, [], results);
+		callClosureIntoWithScheduler({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, [], results);
 		return results.slice();
 	} finally {
 		runtime.luaScratch.releaseValue(results);

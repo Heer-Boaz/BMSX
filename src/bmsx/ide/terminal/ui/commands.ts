@@ -94,7 +94,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'CONT') {
-			workbenchMode.deactivateTerminalMode(this.runtime);
+			workbenchMode.deactivateTerminalMode();
 			return true;
 		}
 		if (upper === 'REBOOT') {
@@ -241,7 +241,7 @@ export class TerminalCommandDispatcher {
 	}
 
 	private clearFaultState(): void {
-		const result = workbenchMode.clearFaultState(this.runtime);
+		const result = workbenchMode.clearFaultState();
 		if (!result.cleared) {
 			this.runtime.terminal.appendStderr('No fault to clear');
 			return;
@@ -273,7 +273,7 @@ export class TerminalCommandDispatcher {
 		if (root) {
 			lines.push(`Workspace root: ${root}`);
 		}
-		const snapshot = workbenchMode.getFaultSnapshot(this.runtime);
+		const snapshot = workbenchMode.getFaultSnapshot();
 		if (snapshot) {
 			const location = formatRuntimeErrorLocation(snapshot.path, snapshot.line, snapshot.column);
 			const when = new Date(snapshot.timestampMs).toISOString();
@@ -289,7 +289,7 @@ export class TerminalCommandDispatcher {
 	public getFaultStatusLines(): { lines: string[]; active: boolean } {
 		const lines: string[] = [];
 		const suspension = this.runtime.debuggerSuspendSignal;
-		const faultInfo = workbenchMode.getFaultSnapshot(this.runtime);
+		const faultInfo = workbenchMode.getFaultSnapshot();
 		const faultFlag = this.runtime.hasRuntimeFailed || (suspension !== null && suspension.reason === 'exception');
 		lines.push(`Faulted: ${faultFlag ? 'YES' : 'NO'}`);
 		if (suspension) {

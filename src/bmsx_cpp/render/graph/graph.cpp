@@ -57,7 +57,7 @@ void recordGraphRead(Resource& resource, std::vector<Handle>& passReads, Handle 
  * ============================================================================ */
 
 RenderGraphIO::RenderGraphIO(RenderGraphRuntime* runtime, i32 passIndex)
-	: m_runtime(runtime)
+	: m_runtime()
 	, m_passIndex(passIndex) {}
 
 RenderGraphTexHandle RenderGraphIO::createTex(const TexDesc& desc) {
@@ -98,7 +98,7 @@ void RenderGraphIO::readValue(RenderGraphValueHandle handle) {
 
 RenderGraphContext::RenderGraphContext(GPUBackend* backend, RenderGraphRuntime* runtime)
 	: m_backend(backend)
-	, m_runtime(runtime) {}
+	, m_runtime() {}
 
 TextureHandle RenderGraphContext::getTexture(RenderGraphTexHandle handle) const {
 	return m_runtime->getTexture(handle);

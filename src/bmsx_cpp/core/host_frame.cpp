@@ -43,14 +43,14 @@ void EngineCore::runHostFrame(
 
 		runtime.screen.clearPresentation();
 		syncGameViewViewportSizeFromHost(runtime.gameViewState(), *view());
-		syncRuntimeGameViewStateToTable(runtime);
+		syncRuntimeGameViewStateToTable();
 		if (!platformPaused) {
 			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
-			runtime.frameScheduler.run(runtime, hostDeltaMs);
-			applyRuntimeGameViewTableToState(runtime);
+			runtime.frameScheduler.run(hostDeltaMs);
+			applyRuntimeGameViewTableToState();
 			applyGameViewStateToHost(runtime.gameViewState(), *view());
-			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+			runtime.screen.syncAfterRuntimeUpdate(previousTickSequence);
 
 			flushHostRuntimeAssetEdits(runtime.machine().memory(), *texmanager(), *view());
 		}
@@ -63,10 +63,10 @@ void EngineCore::runHostFrame(
 			runtime.screen.render(*this, runtime);
 		}
 	} catch (const std::exception& e) {
-		runtime.frameLoop.abandonFrameState(runtime);
+		runtime.frameLoop.abandonFrameState();
 		runtime.handleLuaError(e.what());
 	} catch (...) {
-		runtime.frameLoop.abandonFrameState(runtime);
+		runtime.frameLoop.abandonFrameState();
 		runtime.handleLuaError("Unhandled host frame exception.");
 	}
 }

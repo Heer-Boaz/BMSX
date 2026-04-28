@@ -353,7 +353,7 @@ export class TerminalMode {
 			listCompletionCandidates: () => this.completion.listCompletionCandidates(),
 			closeCompletionSession: () => this.completion.closeSession(),
 			applyCompletionItem: (context, item) => this.completion.applyCompletionItem(context, item),
-			buildSymbolCatalog: () => luaPipeline.listSymbols(this.runtime),
+			buildSymbolCatalog: () => luaPipeline.listSymbols(),
 		});
 		this.suggestController = new TerminalSuggestController({
 			completion: this.completion,
@@ -512,7 +512,7 @@ export class TerminalMode {
 		if (source.length === 0) {
 			return;
 		}
-		if (workbenchMode.hasFaultSnapshot(this.runtime) && source.startsWith('return ')) {
+		if (workbenchMode.hasFaultSnapshot() && source.startsWith('return ')) {
 			const expr = source.slice(7).trim();
 			if (TerminalMode.SIMPLE_CHAIN.test(expr)) {
 				const resolved = resolveSnapshotExpression(expr);
@@ -526,7 +526,7 @@ export class TerminalMode {
 			}
 		}
 		try {
-			const results: Value[] = luaPipeline.runConsoleChunk(this.runtime, source);
+			const results: Value[] = luaPipeline.runConsoleChunk(source);
 			if (results.length > 0) {
 				const summary = results.map(value => valueToString(value)).join('\t');
 				this.appendStdout(summary);

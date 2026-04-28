@@ -1,16 +1,18 @@
-import type { RuntimeSaveMachineState } from './contracts';
-import type { Runtime } from './runtime';
+import { RuntimeSaveMachineState } from './contracts';
+import { Runtime } from './runtime';
 
-export function captureRuntimeSaveMachineState(runtime: Runtime): RuntimeSaveMachineState {
+export function captureRuntimeSaveMachineState(): RuntimeSaveMachineState {
+	const runtime = Runtime.instance;
 	return {
 		machine: runtime.machine.captureSaveState(),
 		frameScheduler: runtime.frameScheduler.captureState(),
-		vblank: runtime.vblank.capture(runtime),
+		vblank: runtime.vblank.capture(),
 	};
 }
 
-export function applyRuntimeSaveMachineState(runtime: Runtime, state: RuntimeSaveMachineState): void {
+export function applyRuntimeSaveMachineState(state: RuntimeSaveMachineState): void {
+	const runtime = Runtime.instance;
 	runtime.machine.restoreSaveState(state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
-	runtime.vblank.restore(runtime, state.vblank);
+	runtime.vblank.restore(state.vblank);
 }

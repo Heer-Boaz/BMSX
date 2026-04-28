@@ -25,11 +25,11 @@ bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 		return false;
 	}
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
-		|| hasScheduledFrame(runtime);
+		|| hasScheduledFrame();
 }
 
 bool FrameSchedulerState::consumeScheduledFrame(const Runtime& runtime) {
-	if (!hasScheduledFrame(runtime)) {
+	if (!hasScheduledFrame()) {
 		return false;
 	}
 	m_accumulatedHostTimeMs -= runtime.timing.frameDurationMs;
@@ -153,7 +153,7 @@ bool FrameSchedulerState::consumeTickCompletion(TickCompletion& outCompletion) {
 }
 
 bool FrameSchedulerState::refillFrameBudget(Runtime& runtime, FrameState& frameState) {
-	if (!consumeScheduledFrame(runtime)) {
+	if (!consumeScheduledFrame()) {
 		return false;
 	}
 	const int budget = runtime.timing.cycleBudgetPerFrame;
@@ -163,19 +163,19 @@ bool FrameSchedulerState::refillFrameBudget(Runtime& runtime, FrameState& frameS
 }
 
 bool FrameSchedulerState::startScheduledFrame(Runtime& runtime) {
-	if (!consumeScheduledFrame(runtime)) {
+	if (!consumeScheduledFrame()) {
 		return false;
 	}
 	lastTickCompleted = false;
-	runtime.frameLoop.beginFrameState(runtime);
+	runtime.frameLoop.beginFrameState();
 	return true;
 }
 
 void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
-	accumulateHostTime(runtime, hostDeltaMs);
-	while (canRunScheduledUpdate(runtime)) {
-		const bool progressed = runtime.frameLoop.tickUpdate(runtime);
-		if (runtime.frameLoop.hasActiveTick(runtime) && !progressed) {
+	accumulateHostTime(hostDeltaMs);
+	while (canRunScheduledUpdate()) {
+		const bool progressed = runtime.frameLoop.tickUpdate();
+		if (runtime.frameLoop.hasActiveTick() && !progressed) {
 			break;
 		}
 	}

@@ -12,11 +12,11 @@ Table* getRuntimeGameTable(Runtime& runtime) {
 }
 
 Table* getRuntimeViewportTable(Runtime& runtime) {
-	return asTable(getRuntimeGameTable(runtime)->get(runtime.luaKey("viewportsize")));
+	return asTable(getRuntimeGameTable()->get(runtime.luaKey("viewportsize")));
 }
 
 Table* getRuntimeViewTable(Runtime& runtime) {
-	return asTable(getRuntimeGameTable(runtime)->get(runtime.luaKey("view")));
+	return asTable(getRuntimeGameTable()->get(runtime.luaKey("view")));
 }
 
 bool readRuntimeViewBool(Runtime& runtime, Table& viewTable, const char* field) {
@@ -34,11 +34,11 @@ void syncRuntimeGameViewStateToTable(Runtime& runtime) {
 		return;
 	}
 	const GameViewState& state = runtime.gameViewState();
-	auto* const viewportTable = getRuntimeViewportTable(runtime);
+	auto* const viewportTable = getRuntimeViewportTable();
 	viewportTable->set(runtime.luaKey("x"), valueNumber(static_cast<double>(state.viewportSize.x)));
 	viewportTable->set(runtime.luaKey("y"), valueNumber(static_cast<double>(state.viewportSize.y)));
 
-	auto* const viewTable = getRuntimeViewTable(runtime);
+	auto* const viewTable = getRuntimeViewTable();
 	viewTable->set(runtime.luaKey("crt_postprocessing_enabled"), valueBool(state.crtPostprocessingEnabled));
 	viewTable->set(runtime.luaKey("enable_noise"), valueBool(state.enableNoise));
 	viewTable->set(runtime.luaKey("enable_colorbleed"), valueBool(state.enableColorBleed));
@@ -53,16 +53,16 @@ void applyRuntimeGameViewTableToState(Runtime& runtime) {
 	if (!runtime.isInitialized()) {
 		return;
 	}
-	auto* const viewTable = getRuntimeViewTable(runtime);
+	auto* const viewTable = getRuntimeViewTable();
 	GameViewState& state = runtime.gameViewState();
-	state.crtPostprocessingEnabled = readRuntimeViewBool(runtime, *viewTable, "crt_postprocessing_enabled");
-	state.enableNoise = readRuntimeViewBool(runtime, *viewTable, "enable_noise");
-	state.enableColorBleed = readRuntimeViewBool(runtime, *viewTable, "enable_colorbleed");
-	state.enableScanlines = readRuntimeViewBool(runtime, *viewTable, "enable_scanlines");
-	state.enableBlur = readRuntimeViewBool(runtime, *viewTable, "enable_blur");
-	state.enableGlow = readRuntimeViewBool(runtime, *viewTable, "enable_glow");
-	state.enableFringing = readRuntimeViewBool(runtime, *viewTable, "enable_fringing");
-	state.enableAperture = readRuntimeViewBool(runtime, *viewTable, "enable_aperture");
+	state.crtPostprocessingEnabled = readRuntimeViewBool(*viewTable, "crt_postprocessing_enabled");
+	state.enableNoise = readRuntimeViewBool(*viewTable, "enable_noise");
+	state.enableColorBleed = readRuntimeViewBool(*viewTable, "enable_colorbleed");
+	state.enableScanlines = readRuntimeViewBool(*viewTable, "enable_scanlines");
+	state.enableBlur = readRuntimeViewBool(*viewTable, "enable_blur");
+	state.enableGlow = readRuntimeViewBool(*viewTable, "enable_glow");
+	state.enableFringing = readRuntimeViewBool(*viewTable, "enable_fringing");
+	state.enableAperture = readRuntimeViewBool(*viewTable, "enable_aperture");
 }
 
 } // namespace bmsx

@@ -22,7 +22,7 @@ export function performEditorAction(action: ActionPromptAction): boolean {
 		case 'reboot':
 			return performReboot();
 		case 'close':
-			workbenchMode.deactivateEditor(Runtime.instance);
+			workbenchMode.deactivateEditor();
 			return true;
 		case 'theme-toggle':
 			toggleThemeMode();
@@ -32,7 +32,8 @@ export function performEditorAction(action: ActionPromptAction): boolean {
 	}
 }
 
-function hasPendingEngineModuleReload(runtime: Runtime): boolean {
+function hasPendingEngineModuleReload(): boolean {
+	const runtime = Runtime.instance;
 	if (!runtime.cartLuaSources) {
 		return false;
 	}
@@ -55,7 +56,7 @@ export function performHotResume(): boolean {
 	const targetGeneration = editorDocumentState.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
-	workbenchMode.deactivateEditor(Runtime.instance);
+	workbenchMode.deactivateEditor();
 	console.log('[IDE] Performing hot-resume');
 	scheduleRuntimeTask(async () => {
 		console.log('[IDE] Applying workspace overrides to cart before resume');
@@ -77,13 +78,13 @@ export function performHotResume(): boolean {
 		const preserveEngineModules =
 				runtime.activeProgramSource !== 'engine'
 			&& engineChanged.size === 0
-			&& !hasPendingEngineModuleReload(runtime);
+			&& !hasPendingEngineModuleReload();
 		console.log('[IDE] Capturing runtime snapshot for resume');
-		const snapshot = captureRuntimeResumeSnapshot(runtime);
+		const snapshot = captureRuntimeResumeSnapshot();
 		console.log('[IDE] Clear execution stop highlights before resume');
-		workbenchMode.clearFaultState(runtime);
+		workbenchMode.clearFaultState();
 		console.log('[IDE] Resuming from snapshot after hot-resume');
-			await luaPipeline.resumeFromSnapshot(runtime, snapshot, preserveEngineModules);
+			await luaPipeline.resumeFromSnapshot(snapshot, preserveEngineModules);
 		if (shouldUpdateGeneration) {
 			console.log('[IDE] Updating applied generation after resume');
 			editorDocumentState.appliedGeneration = targetGeneration;
@@ -100,7 +101,7 @@ export function performReboot(): boolean {
 	const runtime = Runtime.instance;
 	const targetGeneration = editorDocumentState.saveGeneration;
 	clearExecutionStopHighlights();
-	workbenchMode.deactivateEditor(Runtime.instance);
+	workbenchMode.deactivateEditor();
 	scheduleRuntimeTask(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		await runtime.rebootToBootRom();

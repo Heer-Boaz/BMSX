@@ -32,7 +32,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		const targetPlayer = args.length >= 2
 			? Number(args[1])
 			: 1;
-		const marshalCtx = buildMarshalContext(runtime);
+		const marshalCtx = buildMarshalContext();
 		const mappingValue = runtime.luaJsBridge.convertFromLua(mappingTable, marshalCtx) as InputMap;
 		if (!mappingValue || typeof mappingValue !== 'object') {
 			throw interpreter.runtimeError('set_input_map(mapping [, player]) requires mapping to be a table.');
@@ -62,7 +62,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		signature: 'set_input_map(mapping [, player])',
 		description: 'Replaces the input bindings for the console player. The optional player argument is zero-based.',
 	});
-	registerLuaGlobal(env, 'devtools', createInterpreterDevtoolsTable(runtime, interpreter));
+	registerLuaGlobal(env, 'devtools', createInterpreterDevtoolsTable(interpreter));
 
 	const members = collectApiMembers(api);
 	for (const { name, kind, descriptor } of members) {
@@ -110,7 +110,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 				continue;
 			}
 			const native = new LuaNativeFunction(`api.${name}`, (args) => {
-				const baseCtx = buildMarshalContext(runtime);
+				const baseCtx = buildMarshalContext();
 				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.convertFromLua(arg, extendMarshalContext(baseCtx, `arg${index}`)));
 				try {
 					const result = (api[name] as (...inner: unknown[]) => unknown).apply(api, jsArgs);

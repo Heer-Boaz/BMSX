@@ -32,7 +32,7 @@ import { registerApiBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
 import { LuaJsBridge } from '../firmware/js_bridge';
 import { RuntimeStorage } from '../firmware/cart_storage';
-import type { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion, GameViewState } from './contracts';
+import { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion, GameViewState } from './contracts';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_ENGINE_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import { buildLuaSources, resolveLuaSourceRecordFromRegistries, type LuaSourceRegistry } from '../program/sources';
 import * as workbenchMode from '../../ide/workbench/mode';
@@ -181,11 +181,11 @@ export class Runtime {
 	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
 	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-resume.
 	private readonly luaHandlerCache = new LuaHandlerCache(
-		(fn, thisArg, args) => invokeLuaHandler(this, fn, thisArg, args),
+		(fn, thisArg, args) => invokeLuaHandler(fn, thisArg, args),
 		(error, meta) => this.handleLuaHandlerError(error, meta),
 	);
 	public readonly closureHandlerCache = new HandlerCache(
-		(fn, thisArg, args) => invokeClosureHandler(this, fn, thisArg, args),
+		(fn, thisArg, args) => invokeClosureHandler(fn, thisArg, args),
 		(error, meta) => this.handleClosureHandlerError(error, meta),
 	);
 	public readonly moduleProtos = new Map<string, number>();
@@ -271,7 +271,7 @@ export class Runtime {
 				vdpWorkUnitsPerSec: enginePerfSpecs.work_units_per_sec,
 				geoWorkUnitsPerSec: enginePerfSpecs.geo_work_units_per_sec,
 			});
-			setTransferRatesFromManifest(runtime, enginePerfSpecs);
+			setTransferRatesFromManifest(enginePerfSpecs);
 			const runtimeAssets = runtime.assets;
 			runtimeAssets.biosLayer = engineLayer;
 			runtimeAssets.setLayers([engineLayer]);
@@ -279,7 +279,7 @@ export class Runtime {
 				engineSources: engineLuaSources,
 				engineAssetSource: engineSource,
 			});
-			await Runtime.startPreparedRuntime(runtime, engineLuaSources);
+			await Runtime.startPreparedRuntime(engineLuaSources);
 			return;
 		}
 
@@ -335,28 +335,28 @@ export class Runtime {
 		if (overlayLayer) {
 			overlayRom = new Uint8Array(overlayLayer.payload);
 		}
-			const memory = new Memory({
-				engineRom: new Uint8Array(engineLayer.payload),
-				cartRom: new Uint8Array(cartLayer.payload),
-				overlayRom,
-			});
-			const runtime = Runtime.createInstance({
-				playerIndex,
-				viewport: cartRenderSize,
-				memory,
+		const memory = new Memory({
+			engineRom: new Uint8Array(engineLayer.payload),
+			cartRom: new Uint8Array(cartLayer.payload),
+			overlayRom,
+		});
+		const runtime = Runtime.createInstance({
+			playerIndex,
+			viewport: cartRenderSize,
+			memory,
 			activeMachineManifest: cartLayer.index.machine,
 			cartManifest: cartLayer.index.cart_manifest,
 			cartProjectRootPath: cartLayer.index.projectRootPath,
 			ufpsScaled,
 			cpuHz,
-				cycleBudgetPerFrame,
-				vblankCycles,
-				vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
-				geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
-			});
-			setTransferRatesFromManifest(runtime, cartPerfSpecs);
-			const runtimeAssets = runtime.assets;
-			runtimeAssets.biosLayer = engineLayer;
+			cycleBudgetPerFrame,
+			vblankCycles,
+			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
+			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
+		});
+		setTransferRatesFromManifest(cartPerfSpecs);
+		const runtimeAssets = runtime.assets;
+		runtimeAssets.biosLayer = engineLayer;
 		runtimeAssets.setLayers(runtimeAssetLayers);
 		runtimeAssets.cartLayer = cartLayer;
 		runtimeAssets.overlayLayer = overlayLayer;
@@ -364,30 +364,31 @@ export class Runtime {
 			engineSources: engineLuaSources,
 			cartSources: cartLuaSources,
 			engineAssetSource: engineSource,
-				cartAssetSource: cartSource,
-			});
-			await applyWorkspaceOverridesToCart({
-				cart: cartLuaSources,
-				storage: runtime.storageService,
-				includeServer: true,
-				projectRootPath: cartLayer.index.projectRootPath,
-			});
-			await Runtime.startPreparedRuntime(runtime, engineLuaSources);
-		}
+			cartAssetSource: cartSource,
+		});
+		await applyWorkspaceOverridesToCart({
+			cart: cartLuaSources,
+			storage: runtime.storageService,
+			includeServer: true,
+			projectRootPath: cartLayer.index.projectRootPath,
+		});
+		await Runtime.startPreparedRuntime(engineLuaSources);
+	}
 
-		private static async startPreparedRuntime(runtime: Runtime, engineLuaSources: LuaSourceRegistry): Promise<void> {
-			await applyWorkspaceOverridesToRegistry({
-				registry: engineLuaSources,
-				storage: runtime.storageService,
-				includeServer: true,
-				projectRootPath: runtime.engineProjectRootPath,
-			});
-			await runtime.prepareBootRomStartupState();
-			await engineCore.refreshRenderAssets();
-			engineCore.view.default_font = new Font();
-			await runtime.boot();
-			startEngineWithStartupAudio();
-		}
+	private static async startPreparedRuntime(engineLuaSources: LuaSourceRegistry): Promise<void> {
+		const runtime = Runtime.instance;
+		await applyWorkspaceOverridesToRegistry({
+			registry: engineLuaSources,
+			storage: runtime.storageService,
+			includeServer: true,
+			projectRootPath: runtime.engineProjectRootPath,
+		});
+		await runtime.prepareBootRomStartupState();
+		await engineCore.refreshRenderAssets();
+		engineCore.view.default_font = new Font();
+		await runtime.boot();
+		startEngineWithStartupAudio();
+	}
 
 	public static get instance(): Runtime {
 		return Runtime._instance!;
@@ -462,7 +463,7 @@ export class Runtime {
 		this.activeMachineManifest = options.activeMachineManifest;
 		this.cartManifest = options.cartManifest;
 		this.cartProjectRootPath = options.cartProjectRootPath;
-		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
+		this.luaJsBridge = new LuaJsBridge(this.luaHandlerCache);
 		this.gameViewState = createGameViewState(engineCore.view);
 		api = new Api({
 			storage: this.storage,
@@ -494,13 +495,13 @@ export class Runtime {
 				}
 			},
 		});
-		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
-		this.vblank.setVblankCycles(this, options.vblankCycles);
+		refreshDeviceTimings(this.machine.scheduler.currentNowCycles());
+		this.vblank.setVblankCycles(options.vblankCycles);
 		this.randomSeedValue = this.clock.now();
 	}
 
 	private configureInterpreter(interpreter: LuaInterpreter): void {
-		interpreter.requireHandler = (ctx, module) => luaPipeline.requireLuaModule(this, ctx, module);
+		interpreter.requireHandler = (ctx, module) => luaPipeline.requireLuaModule(ctx, module);
 	}
 
 	public createLuaInterpreter(): LuaInterpreter {
@@ -524,7 +525,7 @@ export class Runtime {
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
 		this.machine.inputController.sampleArmed = false;
-		this.vblank.clearHaltUntilIrq(this);
+		this.vblank.clearHaltUntilIrq();
 	}
 
 	public get activeIdeFontVariant(): FontVariant {
@@ -542,7 +543,7 @@ export class Runtime {
 	public async boot(): Promise<void> {
 		const gateToken = this.luaGate.begin({ blocking: true, tag: 'new_game' });
 		try {
-			this.hostFault.clear(this);
+			this.hostFault.clear();
 			this.clearBootFaults();
 			this.clearLuaBootState();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset the runtime state
@@ -550,7 +551,7 @@ export class Runtime {
 				engineCore.bootstrapStartupAudio();
 			}
 			api.cartdata(this.activeLuaSources.namespace);
-			luaPipeline.bootActiveProgram(this);
+			luaPipeline.bootActiveProgram();
 			this.hasCompletedInitialBoot = true;
 		}
 		catch (error) {
@@ -562,13 +563,13 @@ export class Runtime {
 	}
 
 	private clearBootFaults(): void {
-		workbenchMode.clearActiveDebuggerPause(this);
-		workbenchMode.clearRuntimeFault(this);
+		workbenchMode.clearActiveDebuggerPause();
+		workbenchMode.clearRuntimeFault();
 	}
 
 	private clearLuaBootState(): void {
 		this.luaInitialized = false;
-		luaPipeline.invalidateModuleAliases(this);
+		luaPipeline.invalidateModuleAliases();
 		this.luaChunkEnvironmentsByPath.clear();
 		this.luaGenericChunksExecuted.clear();
 		if (this.editor !== null) {
@@ -576,17 +577,17 @@ export class Runtime {
 		}
 	}
 
-		private async prepareBootRomStartupState(): Promise<void> {
-			await this.assets.buildMemory(this, { source: this.engineAssetSource, mode: 'full' });
-			this.machine.memory.sealEngineAssets();
-			this.activateEngineProgramAssets();
-			if (!this.terminal) {
-				workbenchMode.initializeIdeFeatures(this, {
-					width: this.gameViewState.viewportSize.x,
-					height: this.gameViewState.viewportSize.y,
-				});
-			}
+	private async prepareBootRomStartupState(): Promise<void> {
+		await this.assets.buildMemory({ source: this.engineAssetSource, mode: 'full' });
+		this.machine.memory.sealEngineAssets();
+		this.activateEngineProgramAssets();
+		if (!this.terminal) {
+			workbenchMode.initializeIdeFeatures({
+				width: this.gameViewState.viewportSize.x,
+				height: this.gameViewState.viewportSize.y,
+			});
 		}
+	}
 
 	private async restartBootRomStartupState(): Promise<void> {
 		await engineCore.resetRuntime();
@@ -599,8 +600,8 @@ export class Runtime {
 		const gateToken = this.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
 		try {
 			this.clearBootFaults();
-			workbenchMode.deactivateTerminalMode(this);
-			workbenchMode.deactivateEditor(this);
+			workbenchMode.deactivateTerminalMode();
+			workbenchMode.deactivateEditor();
 			this.clearLuaBootState();
 			this.cartBoot.reset();
 			await applyWorkspaceOverridesToRegistry({
@@ -611,7 +612,7 @@ export class Runtime {
 			});
 			await this.restartBootRomStartupState();
 			api.cartdata(this.activeLuaSources.namespace);
-			luaPipeline.bootActiveProgram(this);
+			luaPipeline.bootActiveProgram();
 		}
 		finally {
 			this.luaGate.end(gateToken);
@@ -628,15 +629,15 @@ export class Runtime {
 		const perfSpecs = getMachinePerfSpecs(this.activeMachineManifest);
 		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
 		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
-		applyActiveMachineTiming(this, cpuHz);
-		setTransferRatesFromManifest(this, perfSpecs);
+		applyActiveMachineTiming(cpuHz);
+		setTransferRatesFromManifest(perfSpecs);
 	}
 
 	public dispose(): void {
 		this.cartBoot.resetDeferredPreparation();
-		workbenchMode.disposeShortcutHandlers(this);
+		workbenchMode.disposeShortcutHandlers();
 		this.terminal.deactivate();
-		workbenchMode.deactivateEditor(this);
+		workbenchMode.deactivateEditor();
 		this.luaInitialized = false;
 		if (this.editor) {
 			this.editor.shutdown();

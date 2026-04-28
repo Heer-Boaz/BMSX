@@ -5,7 +5,7 @@ import {
 	TIMER_KIND_VBLANK_END,
 } from '../scheduler/device';
 import { drainReadyVdpExecution } from '../../render/vdp/blitter';
-import type { FrameState, Runtime } from './runtime';
+import { FrameState, Runtime } from './runtime';
 
 export class CpuExecutionState {
 	private debugCycleReportAtMs = 0;
@@ -15,7 +15,8 @@ export class CpuExecutionState {
 	private debugCycleRunsTotal = 0;
 	public debugCycleYieldsTotal = 0;
 
-	public runWithBudget(runtime: Runtime, state: FrameState): RunResult {
+	public runWithBudget(state: FrameState): RunResult {
+		const runtime = Runtime.instance;
 		const debugCycle = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugCycle) {
 			if (this.debugCycleReportAtMs === 0) {
@@ -28,7 +29,7 @@ export class CpuExecutionState {
 		let result = RunResult.Yielded;
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
-		runDueRuntimeTimers(runtime);
+		runDueRuntimeTimers();
 		// start repeated-sequence-acceptable -- CPU scheduler loop mirrors external-call scheduling without extracting a callback-heavy helper.
 		while (remaining > 0) {
 			let sliceBudget = remaining;
@@ -36,7 +37,7 @@ export class CpuExecutionState {
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
-					runDueRuntimeTimers(runtime);
+					runDueRuntimeTimers();
 					continue;
 				}
 				if (deadlineBudget < sliceBudget) {
@@ -50,7 +51,7 @@ export class CpuExecutionState {
 			if (consumed > 0) {
 				remaining -= consumed;
 				state.activeCpuUsedCycles += consumed;
-				advanceRuntimeTime(runtime, consumed);
+				advanceRuntimeTime(consumed);
 			}
 			if (cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
 				break;
@@ -86,26 +87,29 @@ export class CpuExecutionState {
 	}
 }
 
-export function advanceRuntimeTime(runtime: Runtime, cycles: number): void {
+export function advanceRuntimeTime(cycles: number): void {
+	const runtime = Runtime.instance;
 	runtime.machine.advanceDevices(cycles);
-	runDueRuntimeTimers(runtime);
+	runDueRuntimeTimers();
 }
 
-export function runDueRuntimeTimers(runtime: Runtime): void {
+export function runDueRuntimeTimers(): void {
+	const runtime = Runtime.instance;
 	const scheduler = runtime.machine.scheduler;
 	while (scheduler.hasDueTimer()) {
 		const event = scheduler.popDueTimer();
-		dispatchRuntimeTimer(runtime, event >> 8, event & 0xff);
+		dispatchRuntimeTimer(event >> 8, event & 0xff);
 	}
 }
 
-function dispatchRuntimeTimer(runtime: Runtime, kind: number, payload: number): void {
+function dispatchRuntimeTimer(kind: number, payload: number): void {
+	const runtime = Runtime.instance;
 	switch (kind) {
 		case TIMER_KIND_VBLANK_BEGIN:
-			runtime.vblank.handleBeginTimer(runtime);
+			runtime.vblank.handleBeginTimer();
 			return;
 		case TIMER_KIND_VBLANK_END:
-			runtime.vblank.handleEndTimer(runtime);
+			runtime.vblank.handleEndTimer();
 			return;
 		case TIMER_KIND_DEVICE_SERVICE:
 			const renderVdp = runtime.machine.runDeviceService(payload);

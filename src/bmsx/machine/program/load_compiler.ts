@@ -15,7 +15,7 @@ import {
 import { LuaLexer } from '../../lua/syntax/lexer';
 import { createNativeFunction, isNativeObject, Table, type NativeFunction, type Value } from '../cpu/cpu';
 import { isStringValue, type StringValue } from '../memory/string/pool';
-import type { Runtime } from '../runtime/runtime';
+import { Runtime } from '../runtime/runtime';
 
 type LoadSubsetValueExpr =
 	| {
@@ -74,7 +74,7 @@ const describeValue = (value: Value): string => {
 	return 'function';
 };
 
-const getPathStepValue = (runtime: Runtime, target: Value, step: LoadSubsetPathStep): Value => {
+const getPathStepValue = (target: Value, step: LoadSubsetPathStep): Value => {
 	if (target instanceof Table) {
 		if (step.kind === 'index') {
 			return target.getInteger(step.index);
@@ -93,10 +93,10 @@ const getPathStepValue = (runtime: Runtime, target: Value, step: LoadSubsetPathS
 		}
 		return target.get(step.key);
 	}
-	throw runtime.createApiRuntimeError(`[loadstring] attempted to index a non-table value (${describeValue(target)}).`);
+	throw Runtime.instance.createApiRuntimeError(`[loadstring] attempted to index a non-table value (${describeValue(target)}).`);
 };
 
-const setPathStepValue = (runtime: Runtime, target: Value, step: LoadSubsetPathStep, value: Value): void => {
+const setPathStepValue = (target: Value, step: LoadSubsetPathStep, value: Value): void => {
 	if (target instanceof Table) {
 		if (step.kind === 'index') {
 			target.setInteger(step.index, value);
@@ -121,47 +121,45 @@ const setPathStepValue = (runtime: Runtime, target: Value, step: LoadSubsetPathS
 		target.set(step.key, value);
 		return;
 	}
-	throw runtime.createApiRuntimeError(`[loadstring] attempted to assign through a non-table value (${describeValue(target)}).`);
+	throw Runtime.instance.createApiRuntimeError(`[loadstring] attempted to assign through a non-table value (${describeValue(target)}).`);
 };
 
-const resolveValueExpr = (runtime: Runtime, args: ReadonlyArray<Value>, expr: LoadSubsetValueExpr): Value => {
+const resolveValueExpr = (args: ReadonlyArray<Value>, expr: LoadSubsetValueExpr): Value => {
 	if (expr.kind === 'literal') {
 		return expr.value;
 	}
 	let node: Value = expr.rootParamIndex < args.length ? args[expr.rootParamIndex]! : null;
 	for (let index = 0; index < expr.path.length; index += 1) {
-		node = getPathStepValue(runtime, node, expr.path[index]!);
+		node = getPathStepValue(node, expr.path[index]!);
 	}
 	return node;
 };
 
-const buildNativeFunction = (runtime: Runtime, compiled: LoadSubsetCompiledFunction, name: string): NativeFunction =>
+const buildNativeFunction = (compiled: LoadSubsetCompiledFunction, name: string): NativeFunction =>
 	createNativeFunction(name, (args, out) => {
 		out.length = 0;
 		for (let index = 0; index < compiled.ops.length; index += 1) {
 			const op = compiled.ops[index]!;
 			let node: Value = op.rootParamIndex < args.length ? args[op.rootParamIndex]! : null;
 			for (let pathIndex = 0; pathIndex < op.path.length - 1; pathIndex += 1) {
-				node = getPathStepValue(runtime, node, op.path[pathIndex]!);
+				node = getPathStepValue(node, op.path[pathIndex]!);
 			}
 			setPathStepValue(
-				runtime,
 				node,
 				op.path[op.path.length - 1]!,
-				resolveValueExpr(runtime, args, op.valueExpr),
+				resolveValueExpr(args, op.valueExpr),
 			);
 		}
 	});
 
-const fail = (runtime: Runtime, chunkName: string, message: string, range?: LuaSourceRange): never => {
+const fail = (chunkName: string, message: string, range?: LuaSourceRange): never => {
 	if (range !== undefined) {
-		throw runtime.createApiRuntimeError(`[loadstring:${chunkName}] ${message} at ${range.start.line}:${range.start.column}.`);
+		throw Runtime.instance.createApiRuntimeError(`[loadstring:${chunkName}] ${message} at ${range.start.line}:${range.start.column}.`);
 	}
-	throw runtime.createApiRuntimeError(`[loadstring:${chunkName}] ${message}`);
+	throw Runtime.instance.createApiRuntimeError(`[loadstring:${chunkName}] ${message}`);
 };
 
 const compileParamPath = (
-	runtime: Runtime,
 	chunkName: string,
 	expression: LuaExpression,
 	paramIndexByName: ReadonlyMap<string, number>,
@@ -169,7 +167,7 @@ const compileParamPath = (
 	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
 		const rootParamIndex = paramIndexByName.get(expression.name);
 		if (rootParamIndex === undefined) {
-			fail(runtime, chunkName, `unknown function parameter '${expression.name}'`, expression.range);
+			fail(chunkName, `unknown function parameter '${expression.name}'`, expression.range);
 		}
 		return {
 			rootParamIndex,
@@ -177,19 +175,19 @@ const compileParamPath = (
 		};
 	}
 	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		const base = compileParamPath(runtime, chunkName, expression.base, paramIndexByName);
-		base.path.push({ kind: 'field', key: runtime.internString(expression.identifier) });
+		const base = compileParamPath(chunkName, expression.base, paramIndexByName);
+		base.path.push({ kind: 'field', key: Runtime.instance.internString(expression.identifier) });
 		return base;
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
-		const base = compileParamPath(runtime, chunkName, expression.base, paramIndexByName);
-		base.path.push(compilePathStep(runtime, chunkName, expression.index));
+		const base = compileParamPath(chunkName, expression.base, paramIndexByName);
+		base.path.push(compilePathStep(chunkName, expression.index));
 		return base;
 	}
-	fail(runtime, chunkName, 'expected a parameter path expression', expression.range);
+	fail(chunkName, 'expected a parameter path expression', expression.range);
 };
 
-const compilePathStep = (runtime: Runtime, chunkName: string, expression: LuaExpression): LoadSubsetPathStep => {
+const compilePathStep = (chunkName: string, expression: LuaExpression): LoadSubsetPathStep => {
 	if (expression.kind === LuaSyntaxKind.UnaryExpression) {
 		if (expression.operator === LuaUnaryOperator.Negate) {
 			const operand = expression.operand;
@@ -197,7 +195,7 @@ const compilePathStep = (runtime: Runtime, chunkName: string, expression: LuaExp
 				return { kind: 'key', key: -operand.value };
 			}
 		}
-		fail(runtime, chunkName, 'index expressions must use string or numeric literals', expression.range);
+		fail(chunkName, 'index expressions must use string or numeric literals', expression.range);
 	}
 	if (expression.kind === LuaSyntaxKind.NumericLiteralExpression) {
 		if (Number.isSafeInteger(expression.value) && expression.value >= 1) {
@@ -206,12 +204,12 @@ const compilePathStep = (runtime: Runtime, chunkName: string, expression: LuaExp
 		return { kind: 'key', key: expression.value };
 	}
 	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
-		return { kind: 'field', key: runtime.internString(expression.value) };
+		return { kind: 'field', key: Runtime.instance.internString(expression.value) };
 	}
-	fail(runtime, chunkName, 'index expressions must use string or numeric literals', expression.range);
+	fail(chunkName, 'index expressions must use string or numeric literals', expression.range);
 };
 
-const compileLiteralExpr = (runtime: Runtime, chunkName: string, expression: LuaExpression): Value => {
+const compileLiteralExpr = (chunkName: string, expression: LuaExpression): Value => {
 	if (expression.kind === LuaSyntaxKind.UnaryExpression) {
 		if (expression.operator === LuaUnaryOperator.Negate) {
 			const operand = expression.operand;
@@ -219,7 +217,7 @@ const compileLiteralExpr = (runtime: Runtime, chunkName: string, expression: Lua
 				return -operand.value;
 			}
 		}
-		fail(runtime, chunkName, 'unsupported literal expression', expression.range);
+		fail(chunkName, 'unsupported literal expression', expression.range);
 	}
 	if (expression.kind === LuaSyntaxKind.NilLiteralExpression) {
 		return null;
@@ -231,13 +229,12 @@ const compileLiteralExpr = (runtime: Runtime, chunkName: string, expression: Lua
 		return expression.value;
 	}
 	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
-		return runtime.internString(expression.value);
+		return Runtime.instance.internString(expression.value);
 	}
-	fail(runtime, chunkName, 'unsupported literal expression', expression.range);
+	fail(chunkName, 'unsupported literal expression', expression.range);
 };
 
 const compileValueExpr = (
-	runtime: Runtime,
 	chunkName: string,
 	expression: LuaExpression,
 	paramIndexByName: ReadonlyMap<string, number>,
@@ -251,10 +248,10 @@ const compileValueExpr = (
 	) {
 		return {
 			kind: 'literal',
-			value: compileLiteralExpr(runtime, chunkName, expression),
+			value: compileLiteralExpr(chunkName, expression),
 		};
 	}
-	const paramPath = compileParamPath(runtime, chunkName, expression, paramIndexByName);
+	const paramPath = compileParamPath(chunkName, expression, paramIndexByName);
 	return {
 		kind: 'param',
 		rootParamIndex: paramPath.rootParamIndex,
@@ -263,37 +260,36 @@ const compileValueExpr = (
 };
 
 const compileAssignment = (
-	runtime: Runtime,
 	chunkName: string,
 	statement: LuaAssignmentStatement,
 	paramIndexByName: ReadonlyMap<string, number>,
 ): LoadSubsetOp => {
 	if (statement.operator !== LuaAssignmentOperator.Assign) {
-		fail(runtime, chunkName, 'only plain assignment statements are supported', statement.range);
+		fail(chunkName, 'only plain assignment statements are supported', statement.range);
 	}
 	if (statement.left.length !== 1 || statement.right.length !== 1) {
-		fail(runtime, chunkName, 'only single-target assignments are supported', statement.range);
+		fail(chunkName, 'only single-target assignments are supported', statement.range);
 	}
-	const target = compileParamPath(runtime, chunkName, statement.left[0]!, paramIndexByName);
+	const target = compileParamPath(chunkName, statement.left[0]!, paramIndexByName);
 	if (target.path.length === 0) {
-		fail(runtime, chunkName, 'direct parameter assignment is unsupported', statement.left[0]!.range);
+		fail(chunkName, 'direct parameter assignment is unsupported', statement.left[0]!.range);
 	}
 	return {
 		rootParamIndex: target.rootParamIndex,
 		path: target.path,
-		valueExpr: compileValueExpr(runtime, chunkName, statement.right[0]!, paramIndexByName),
+		valueExpr: compileValueExpr(chunkName, statement.right[0]!, paramIndexByName),
 	};
 };
 
-const compileFunctionExpression = (runtime: Runtime, chunkName: string, fn: LuaFunctionExpression): LoadSubsetCompiledFunction => {
+const compileFunctionExpression = (chunkName: string, fn: LuaFunctionExpression): LoadSubsetCompiledFunction => {
 	if (fn.hasVararg) {
-		fail(runtime, chunkName, 'vararg parameters are unsupported', fn.range);
+		fail(chunkName, 'vararg parameters are unsupported', fn.range);
 	}
 	const paramIndexByName = new Map<string, number>();
 	for (let index = 0; index < fn.parameters.length; index += 1) {
 		const parameter = fn.parameters[index]!;
 		if (paramIndexByName.has(parameter.name)) {
-			fail(runtime, chunkName, `duplicate function parameter '${parameter.name}'`, parameter.range);
+			fail(chunkName, `duplicate function parameter '${parameter.name}'`, parameter.range);
 		}
 		paramIndexByName.set(parameter.name, index);
 	}
@@ -301,42 +297,42 @@ const compileFunctionExpression = (runtime: Runtime, chunkName: string, fn: LuaF
 	for (let index = 0; index < fn.body.body.length; index += 1) {
 		const statement = fn.body.body[index]!;
 		if (statement.kind !== LuaSyntaxKind.AssignmentStatement) {
-			fail(runtime, chunkName, 'only assignment statements are supported inside loadstring functions', statement.range);
+			fail(chunkName, 'only assignment statements are supported inside loadstring functions', statement.range);
 		}
-		ops.push(compileAssignment(runtime, chunkName, statement as LuaAssignmentStatement, paramIndexByName));
+		ops.push(compileAssignment(chunkName, statement as LuaAssignmentStatement, paramIndexByName));
 	}
 	return { ops };
 };
 
-const compileReturnedFunction = (runtime: Runtime, chunkName: string, statement: LuaReturnStatement): LoadSubsetCompiledFunction => {
+const compileReturnedFunction = (chunkName: string, statement: LuaReturnStatement): LoadSubsetCompiledFunction => {
 	if (statement.expressions.length !== 1) {
-		fail(runtime, chunkName, 'chunk must return exactly one function expression', statement.range);
+		fail(chunkName, 'chunk must return exactly one function expression', statement.range);
 	}
 	const expression = statement.expressions[0]!;
 	if (expression.kind !== LuaSyntaxKind.FunctionExpression) {
-		fail(runtime, chunkName, 'chunk must return a function expression', expression.range);
+		fail(chunkName, 'chunk must return a function expression', expression.range);
 	}
-	return compileFunctionExpression(runtime, chunkName, expression as LuaFunctionExpression);
+	return compileFunctionExpression(chunkName, expression as LuaFunctionExpression);
 };
 
-const compileChunk = (runtime: Runtime, chunkName: string, chunk: LuaChunk): LoadSubsetCompiledFunction => {
+const compileChunk = (chunkName: string, chunk: LuaChunk): LoadSubsetCompiledFunction => {
 	if (chunk.body.length !== 1) {
-		fail(runtime, chunkName, 'chunk must contain exactly one return statement', chunk.range);
+		fail(chunkName, 'chunk must contain exactly one return statement', chunk.range);
 	}
 	const statement = chunk.body[0]!;
 	if (statement.kind !== LuaSyntaxKind.ReturnStatement) {
-		fail(runtime, chunkName, 'chunk must contain exactly one return statement', statement.range);
+		fail(chunkName, 'chunk must contain exactly one return statement', statement.range);
 	}
-	return compileReturnedFunction(runtime, chunkName, statement as LuaReturnStatement);
+	return compileReturnedFunction(chunkName, statement as LuaReturnStatement);
 };
 
-export function compileLoadChunk(runtime: Runtime, source: string, chunkName: string): NativeFunction {
+export function compileLoadChunk(source: string, chunkName: string): NativeFunction {
 	const lexer = new LuaLexer(source, chunkName);
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, chunkName, splitText(source));
 	const chunk = parser.parseChunk();
-	const compiled = compileChunk(runtime, chunkName, chunk);
-	const compiledFunction = buildNativeFunction(runtime, compiled, `${chunkName}:inner`);
+	const compiled = compileChunk(chunkName, chunk);
+	const compiledFunction = buildNativeFunction(compiled, `${chunkName}:inner`);
 	return createNativeFunction(`loadstring:${chunkName}`, (_args, out) => {
 		out.push(compiledFunction);
 	});

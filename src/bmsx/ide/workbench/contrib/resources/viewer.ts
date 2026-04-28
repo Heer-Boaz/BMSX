@@ -58,7 +58,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 	switch (descriptor.type) {
 		case 'lua': {
 			const path = descriptor.path ?? descriptor.asset_id;
-			const source = luaPipeline.resourceSourceForChunk(Runtime.instance, path);
+			const source = luaPipeline.resourceSourceForChunk(path);
 			if (typeof source === 'string') {
 				appendResourceViewerLine(lines, '-- Lua Source --');
 				lines.push('');

@@ -97,7 +97,7 @@ Runtime& RomBootManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming
 		{ engine.m_engine_rom_data, engine.m_engine_rom_size },
 		{ engine.m_cart_rom_data, engine.m_cart_rom_size }
 	);
-	applyRuntimeTiming(runtime, timing);
+	applyRuntimeTiming(timing);
 	runtime.refreshMemoryMap();
 	return runtime;
 }
@@ -138,7 +138,7 @@ void RomBootManager::bootRuntimeFromProgram() {
 		{ engine.m_engine_rom_data, engine.m_engine_rom_size },
 		{ engine.m_cart_rom_data, engine.m_cart_rom_size }
 	);
-	applyRuntimeTiming(runtime, timing);
+	applyRuntimeTiming(timing);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);
 	runtime.resetRuntimeForProgramReload();
@@ -200,10 +200,10 @@ bool RomBootManager::bootEngineStartupProgram(const MachineManifest& runtimeMach
 		{ engine.m_engine_rom_data, engine.m_engine_rom_size },
 		{ engine.m_cart_rom_data, engine.m_cart_rom_size }
 	);
-	applyRuntimeTiming(runtime, timing);
+	applyRuntimeTiming(timing);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Engine);
-	buildAssetMemory(runtime, engine.m_engine_assets, engine.m_engine_assets);
+	buildAssetMemory(engine.m_engine_assets, engine.m_engine_assets);
 	runtime.machine().memory().sealEngineAssets();
 	runtime.resetRuntimeForProgramReload();
 	engine.refreshRenderAssets();
@@ -262,7 +262,7 @@ bool RomBootManager::loadRomInternal(const u8* data, size_t size) {
 		applyManifestMemorySpecs(engine.assets().machine, engine.m_engine_assets.machine, engine.assets(), engine.m_engine_assets);
 		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(engine.assets().machine, transferMachine, cpuHz, runtimeUfpsScaled);
 		Runtime& runtime = prepareRuntimeForActiveCart(timing, cartMachine);
-		buildAssetMemory(runtime, engine.m_engine_assets, engine.assets());
+		buildAssetMemory(engine.m_engine_assets, engine.assets());
 		if (engine.assets().hasProgram()) {
 			bootRuntimeFromProgram();
 		}
@@ -366,7 +366,7 @@ bool RomBootManager::bootLoadedCart() {
 	configureViewForMachine(engine.assets().machine);
 
 	Runtime& runtime = prepareRuntimeForActiveCart(timing, engine.m_cart_assets.machine);
-	buildAssetMemory(runtime, engine.m_engine_assets, engine.assets(), RuntimeAssetBuildMode::Cart);
+	buildAssetMemory(engine.m_engine_assets, engine.assets(), RuntimeAssetBuildMode::Cart);
 	runtime.resetRuntimeForProgramReload();
 	engine.refreshRenderAssets();
 	bootRuntimeFromProgram();

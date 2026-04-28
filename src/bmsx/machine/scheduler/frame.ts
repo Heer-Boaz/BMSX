@@ -1,4 +1,4 @@
-import type { Runtime } from '../runtime/runtime';
+import { Runtime } from '../runtime/runtime';
 
 export type TickCompletion = {
 	sequence: number;
@@ -70,7 +70,8 @@ export class FrameSchedulerState {
 	private debugFrameCarryAcc = 0;
 	private debugTickYieldsBefore = 0;
 
-	private accumulateHostTime(runtime: Runtime, deltaMs: number): void {
+	private accumulateHostTime(deltaMs: number): void {
+		const runtime = Runtime.instance;
 		const maxAccumulatedMs = runtime.timing.frameDurationMs * MAX_CATCH_UP_FRAMES;
 		this.accumulatedHostTimeMs += deltaMs;
 		if (this.accumulatedHostTimeMs > maxAccumulatedMs) {
@@ -78,22 +79,25 @@ export class FrameSchedulerState {
 		}
 	}
 
-	private hasScheduledFrame(runtime: Runtime): boolean {
+	private hasScheduledFrame(): boolean {
+		const runtime = Runtime.instance;
 		return this.accumulatedHostTimeMs + FRAME_SLICE_EPSILON_MS >= runtime.timing.frameDurationMs;
 	}
 
-	private canRunScheduledUpdate(runtime: Runtime): boolean {
+	private canRunScheduledUpdate(): boolean {
+		const runtime = Runtime.instance;
 		if (!runtime.luaInitialized || !runtime.tickEnabled || runtime.luaRuntimeFailed) {
 			return false;
 		}
 		const state = runtime.frameLoop.currentFrameState;
-		return (state !== null && state.cycleBudgetRemaining > 0) || this.hasScheduledFrame(runtime);
+		return (state !== null && state.cycleBudgetRemaining > 0) || this.hasScheduledFrame();
 	}
 
-	private consumeScheduledFrame(runtime: Runtime): boolean {
-		if (!this.hasScheduledFrame(runtime)) {
+	private consumeScheduledFrame(): boolean {
+		if (!this.hasScheduledFrame()) {
 			return false;
 		}
+		const runtime = Runtime.instance;
 		this.accumulatedHostTimeMs -= runtime.timing.frameDurationMs;
 		if (this.accumulatedHostTimeMs < 0) {
 			this.accumulatedHostTimeMs = 0;
@@ -200,10 +204,11 @@ export class FrameSchedulerState {
 		this.debugTickYieldsBefore = 0;
 	}
 
-	public run(runtime: Runtime, hostDeltaMs: number): void {
-		this.accumulateHostTime(runtime, hostDeltaMs);
-		while (this.canRunScheduledUpdate(runtime)) {
-			const progressed = runtime.frameLoop.tickUpdate(runtime);
+	public run(hostDeltaMs: number): void {
+		this.accumulateHostTime(hostDeltaMs);
+		const runtime = Runtime.instance;
+		while (this.canRunScheduledUpdate()) {
+			const progressed = runtime.frameLoop.tickUpdate();
 			if (runtime.executionOverlayActive) {
 				this.clearQueuedTime();
 				break;
@@ -230,7 +235,7 @@ export class FrameSchedulerState {
 		return true;
 	}
 
-	public enqueueTickCompletion(runtime: Runtime, frameState: {
+	public enqueueTickCompletion(frameState: {
 		cycleBudgetRemaining: number;
 		cycleBudgetGranted: number;
 		cycleCarryGranted: number;
@@ -244,6 +249,7 @@ export class FrameSchedulerState {
 		const remaining = frameState.cycleBudgetRemaining;
 		const granted = frameState.cycleBudgetGranted;
 		const cpuUsed = frameState.activeCpuUsedCycles;
+		const runtime = Runtime.instance;
 		const vdp = runtime.machine.vdp;
 		slot.sequence = sequence;
 		slot.remaining = remaining;
@@ -292,20 +298,22 @@ export class FrameSchedulerState {
 		}
 	}
 
-	public refillFrameBudget(runtime: Runtime, frameState: BudgetFrameState): boolean {
-		if (!this.consumeScheduledFrame(runtime)) {
+	public refillFrameBudget(frameState: BudgetFrameState): boolean {
+		if (!this.consumeScheduledFrame()) {
 			return false;
 		}
+		const runtime = Runtime.instance;
 		const budget = runtime.timing.cycleBudgetPerFrame;
 		frameState.cycleBudgetRemaining += budget;
 		frameState.cycleBudgetGranted += budget;
 		return true;
 	}
 
-	public startScheduledFrame(runtime: Runtime): boolean {
-		if (!this.consumeScheduledFrame(runtime)) {
+	public startScheduledFrame(): boolean {
+		if (!this.consumeScheduledFrame()) {
 			return false;
 		}
+		const runtime = Runtime.instance;
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugTickRate) {
 			if (this.debugFrameReportAtMs === 0) {
@@ -314,7 +322,7 @@ export class FrameSchedulerState {
 			this.debugTickYieldsBefore = runtime.cpuExecution.debugCycleYieldsTotal;
 		}
 		this.lastTickCompleted = false;
-		runtime.frameLoop.beginFrameState(runtime);
+		runtime.frameLoop.beginFrameState();
 		return true;
 	}
 }

@@ -8,7 +8,6 @@ import type { FaultSnapshot, RuntimeErrorDetails, RuntimeErrorOverlay } from '..
 import type { StackTraceFrame } from '../../../lua/value';
 import type { RectBounds } from '../../../rompack/format';
 import { point_in_rect } from '../../../common/rect';
-import { Runtime } from '../../../machine/runtime/runtime';
 import * as workbenchMode from '../../workbench/mode';
 import { api } from '../../runtime/overlay_api';
 import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
@@ -489,19 +488,8 @@ export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverl
 	return -1;
 }
 
-export type FaultOverlayTarget = {
-	showRuntimeErrorInChunk: (
-		path: string,
-		line: number,
-		column: number,
-		message: string,
-		details: RuntimeErrorDetails
-	) => void;
-	showRuntimeError: (line: number, column: number, message: string, details: RuntimeErrorDetails, path?: string) => void;
-};
-
 export function renderFaultOverlay() {
-	const snapshot = workbenchMode.getFaultSnapshot(Runtime.instance);
+	const snapshot = workbenchMode.getFaultSnapshot();
 	if (!snapshot) return;
 	showRuntimeErrorInChunk(
 		snapshot.path,

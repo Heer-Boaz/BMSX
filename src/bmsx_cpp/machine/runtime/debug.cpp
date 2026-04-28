@@ -192,7 +192,7 @@ std::optional<Value> resolveRootExpressionValue(
 	const std::string& rootName
 ) {
 	const auto& cpu = runtime.machine().cpu();
-	const std::string rootKeyName = cpu.stringPool().toString(asStringId(debugKey(runtime, rootName)));
+	const std::string rootKeyName = cpu.stringPool().toString(asStringId(debugKey(rootName)));
 	if (metadata && protoIndex >= 0 && protoIndex < static_cast<int>(metadata->localSlotsByProto.size())) {
 		const std::vector<LocalSlotDebug>& slots = metadata->localSlotsByProto[static_cast<size_t>(protoIndex)];
 		if (const LocalSlotDebug* slot = selectLocalSlot(slots, rootKeyName, range)) {
@@ -214,7 +214,7 @@ std::optional<Value> resolveRootExpressionValue(
 			break;
 		}
 	}
-	const Value globalValue = cpu.getGlobalByKey(debugKey(runtime, rootName));
+	const Value globalValue = cpu.getGlobalByKey(debugKey(rootName));
 	if (!isNil(globalValue)) {
 		return globalValue;
 	}
@@ -231,7 +231,7 @@ std::optional<Value> resolveExpressionValue(
 ) {
 	const size_t firstDot = expression.find('.');
 	const std::string rootName = firstDot == std::string::npos ? expression : expression.substr(0, firstDot);
-	const std::optional<Value> root = resolveRootExpressionValue(runtime, metadata, frameIndex, protoIndex, range, rootName);
+	const std::optional<Value> root = resolveRootExpressionValue(metadata, frameIndex, protoIndex, range, rootName);
 	if (!root.has_value()) {
 		return std::nullopt;
 	}
@@ -244,9 +244,9 @@ std::optional<Value> resolveExpressionValue(
 			? std::string_view(expression).substr(nameStart)
 			: std::string_view(expression).substr(nameStart, nextDot - nameStart);
 		if (valueIsTable(current)) {
-			current = asTable(current)->get(debugKey(runtime, part));
+			current = asTable(current)->get(debugKey(part));
 		} else if (valueIsNativeObject(current) && asNativeObject(current)->get) {
-			current = asNativeObject(current)->get(debugKey(runtime, part));
+			current = asNativeObject(current)->get(debugKey(part));
 		} else {
 			return std::nullopt;
 		}
@@ -267,11 +267,11 @@ std::vector<std::string> collectSourceExpressionDebug(const Runtime& runtime, co
 	const int protoIndex = callStack.back().first;
 	std::vector<std::string> result;
 	for (const std::string& expression : extractExpressionCandidates(range, source)) {
-		const std::optional<Value> resolved = resolveExpressionValue(runtime, metadata, frameIndex, protoIndex, range, expression);
+		const std::optional<Value> resolved = resolveExpressionValue(metadata, frameIndex, protoIndex, range, expression);
 		if (!resolved.has_value()) {
 			continue;
 		}
-		result.push_back(expression + "=" + formatDebugValue(runtime, *resolved));
+		result.push_back(expression + "=" + formatDebugValue(*resolved));
 	}
 	return result;
 }

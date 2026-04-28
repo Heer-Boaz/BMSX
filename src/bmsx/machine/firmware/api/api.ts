@@ -213,7 +213,7 @@ export class Api {
 	}
 
 	public set_cpu_freq_hz(cpuHz: number): void {
-		applyActiveMachineTiming(this._runtime, cpuHz);
+		applyActiveMachineTiming(cpuHz);
 	}
 
 	public list_builtins(): LuaTable {
