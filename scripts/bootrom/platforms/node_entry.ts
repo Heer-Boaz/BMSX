@@ -11,6 +11,10 @@ import { HeadlessGameViewHost } from '../../../src/bmsx/render/headless/view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture } from './headless_capture';
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
+import { Runtime } from '../../../src/bmsx/machine/runtime/runtime';
+import { installNativeGlobal, runConsoleChunkToNative } from '../../../src/bmsx/machine/program/executor';
+import { raiseEngineIrq } from '../../../src/bmsx/machine/runtime/engine_irq';
+import { IRQ_NEWGAME } from '../../../src/bmsx/machine/bus/io';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
 declare const __BOOTROM_DEBUG__: boolean;
@@ -568,8 +572,7 @@ async function scheduleInputTimelineFromFile(
 	const source = `timeline:${path.basename(resolved)}`;
 	const entries = parsed as InputTimelineEntry[];
 	const pollCartActive = (): void => {
-		const engine = (globalThis as Record<string, any>).$;
-		if (!engine || !engine.initialized || !engine.is_cart_program_active()) {
+		if (!Runtime.hasInstance || Runtime.instance.activeProgramSource === 'engine') {
 			scheduler.scheduleOnce(frameIntervalMs, pollCartActive);
 			return;
 		}
@@ -926,7 +929,10 @@ async function main(): Promise<void> {
 			testPath: cliOptions.testPath,
 			frameIntervalMs: frameInterval,
 			logger: inputLogger,
-			getEngine: () => (globalThis as Record<string, any>).$,
+			isCartProgramActive: () => Runtime.hasInstance && Runtime.instance.activeProgramSource !== 'engine',
+			evaluateLua: (source) => runConsoleChunkToNative(Runtime.instance, source),
+			installNativeGlobal: (name, value) => installNativeGlobal(Runtime.instance, name, value),
+			requestNewGame: () => raiseEngineIrq(Runtime.instance, IRQ_NEWGAME),
 			postInput,
 			requestExit,
 			scheduler,

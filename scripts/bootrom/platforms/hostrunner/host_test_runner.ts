@@ -17,7 +17,10 @@ export interface HostTestRunnerOptions {
 	testPath: string;
 	frameIntervalMs: number;
 	logger: (msg: string) => void;
-	getEngine: () => any;
+	isCartProgramActive: () => boolean;
+	evaluateLua: (source: string) => unknown[];
+	installNativeGlobal: (name: string, value: unknown) => void;
+	requestNewGame: () => void;
 	postInput: (event: InputEvt) => void;
 	requestExit: (code: number) => void;
 	scheduler: HostTestRunnerClock;
@@ -67,33 +70,32 @@ class HostTestRunner {
 	}
 
 	private tickUnsafe(timestampMs: number): void {
-		const engine = this.options.getEngine();
 		if (!this.installed) {
-			if (!engine.is_cart_program_active()) {
+			if (!this.options.isCartProgramActive()) {
 				return;
 			}
-			this.install(engine);
+			this.install();
 		}
-		engine.evaluate_lua(`return ${HOST_RUNNER_GLOBAL}.tick(${timestampMs})`);
+		this.options.evaluateLua(`return ${HOST_RUNNER_GLOBAL}.tick(${timestampMs})`);
 	}
 
-	private install(engine: any): void {
+	private install(): void {
 		this.installHostBridge();
-		engine.evaluate_lua(`${this.runnerSource}\n${this.testSource}\n${HOST_RUNNER_GLOBAL}.install()`);
+		this.options.evaluateLua(`${this.runnerSource}\n${this.testSource}\n${HOST_RUNNER_GLOBAL}.install()`);
 		this.installed = true;
 	}
 
 	private installHostBridge(): void {
 		const bridge = {
 			log: (message: string) => this.options.logger(`test:${this.label} ${message}`),
-			request_new_game: () => this.options.getEngine().request_new_game(),
+			request_new_game: () => this.options.requestNewGame(),
 			post_key: (code: string, down: boolean, timestamp: number) => {
 				this.options.postInput(this.keyEvent(code, down, timestamp));
 			},
 			capture: (description: string) => this.capture(description),
 			pass: () => this.pass(),
 		};
-		this.options.getEngine().install_native_global(HOST_BRIDGE_GLOBAL, bridge);
+		this.options.installNativeGlobal(HOST_BRIDGE_GLOBAL, bridge);
 	}
 
 	private keyEvent(code: string, down: boolean, timestamp: number): InputEvt {

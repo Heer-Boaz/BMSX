@@ -10,9 +10,6 @@ import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
 import type { GPUBackend } from '../render/backend/interfaces';
-import { installNativeGlobal, runConsoleChunkToNative } from '../machine/program/executor';
-import { raiseEngineIrq } from '../machine/runtime/engine_irq';
-import { IRQ_NEWGAME } from '../machine/bus/io';
 import { clearAllQueues } from '../render/shared/queues';
 import { clearOverlayFrame } from '../render/editor/overlay_queue';
 import { restoreVdpContextState } from '../render/vdp/context_state';
@@ -106,22 +103,6 @@ export class EngineCore {
 			return;
 		}
 		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
-	}
-
-	public is_cart_program_active(): boolean {
-		return Runtime.hasInstance && Runtime.instance.activeProgramSource !== 'engine';
-	}
-
-	public install_native_global(name: string, value: unknown): void {
-		installNativeGlobal(Runtime.instance, name, value);
-	}
-
-	public evaluate_lua(source: string): unknown[] {
-		return runConsoleChunkToNative(Runtime.instance, source);
-	}
-
-	public request_new_game(): void {
-		raiseEngineIrq(Runtime.instance, IRQ_NEWGAME);
 	}
 
 	/**
