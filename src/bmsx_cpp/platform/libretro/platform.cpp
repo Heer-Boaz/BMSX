@@ -48,6 +48,9 @@ constexpr size_t kAudioTargetMaxFrames = 4096;
 constexpr const char* kReleaseSystemRomName = "bmsx-bios.rom";
 constexpr const char* kDebugSystemRomName = "bmsx-bios.debug.rom";
 constexpr const char* kDebugRomSuffix = ".debug.rom";
+constexpr const char* kKeyboardDeviceId = "keyboard:0";
+constexpr const char* kPointerDeviceId = "pointer:0";
+constexpr const char* kGamepadDevicePrefix = "gamepad:";
 
 static void installBuiltinRenderPipeline(GameView* view, GPUBackend* backend) {
 	auto registry = std::make_unique<RenderPassLibrary>(backend);
@@ -180,13 +183,13 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 		installBuiltinRenderPipeline(view, backend);
 	}
 
-	m_keyboard_input = std::make_unique<KeyboardInput>("keyboard:0");
-	Input::instance().registerKeyboard("keyboard:0", m_keyboard_input.get());
-	m_pointer_input = std::make_unique<PointerInput>("pointer:0");
-	Input::instance().registerPointer("pointer:0", m_pointer_input.get());
+	m_keyboard_input = std::make_unique<KeyboardInput>(kKeyboardDeviceId);
+	Input::instance().registerKeyboard(kKeyboardDeviceId, m_keyboard_input.get());
+	m_pointer_input = std::make_unique<PointerInput>(kPointerDeviceId);
+	Input::instance().registerPointer(kPointerDeviceId, m_pointer_input.get());
 
 	for (size_t i = 0; i < InputState::MAX_PLAYERS; i++) {
-		std::string deviceId = "gamepad:" + std::to_string(i);
+		std::string deviceId = std::string(kGamepadDevicePrefix) + std::to_string(i);
 		auto gamepad = std::make_unique<GamepadInput>(deviceId, "libretro");
 		Input::instance().registerGamepad(deviceId, gamepad.get());
 		Input::instance().assignGamepadToPlayer(gamepad.get(), static_cast<i32>(i + 1));
@@ -661,6 +664,7 @@ void LibretroPlatform::runFrame() {
 	if (auto* clock = dynamic_cast<LibretroClock*>(m_clock.get())) {
 		clock->advanceFrame(1.0 / dt);
 	}
+	static_cast<LibretroFrameLoop*>(m_frame_loop.get())->runPushedFrame(m_clock->now(), dt);
 
 	if (!m_platform_paused) {
 		m_console->startLoadedRuntimeFrame(m_rom_loaded);
@@ -827,6 +831,16 @@ size_t LibretroPlatform::getSystemRAMSize() const {
 
 LibretroInputHub::LibretroInputHub(LibretroPlatform* platform)
 	: m_platform(platform) {
+	for (size_t player = 0; player < InputState::MAX_PLAYERS; player++) {
+		m_gamepad_device_ids[player] = std::string(kGamepadDevicePrefix) + std::to_string(player);
+	}
+}
+
+void LibretroInputHub::emitEvent(const InputEvt& evt) {
+	m_event_queue.push_back(evt);
+	for (const auto& entry : m_handlers) {
+		entry.handler(evt);
+	}
 }
 
 namespace {
@@ -906,7 +920,7 @@ void LibretroInputHub::poll() {
 
 	// Poll all players
 	for (unsigned player = 0; player < InputState::MAX_PLAYERS; player++) {
-		const std::string deviceId = "gamepad:" + std::to_string(player); // TODO: UGLY STRING CONCATENATION IN POLL LOOP, FIX
+		const std::string& deviceId = m_gamepad_device_ids[player];
 		uint16_t buttons = 0;
 
 		// Poll digital buttons
@@ -940,14 +954,9 @@ void LibretroInputHub::poll() {
 				evt.code = kLibretroButtonIds[btn];
 				evt.value = pressed ? 1.0f : 0.0f;
 
-					m_event_queue.push_back(evt);
-
-					// Notify handlers
-					for (const auto& entry : m_handlers) {
-						entry.handler(evt);
-					}
-				}
+				emitEvent(evt);
 			}
+		}
 
 		const size_t analogBase = player * 4;
 		bool leftChanged = new_state.analog[analogBase] != m_prev_state.analog[analogBase] ||
@@ -958,12 +967,9 @@ void LibretroInputHub::poll() {
 			evt.deviceId = deviceId;
 			evt.code = "ls";
 			evt.x = normalizeAxis(new_state.analog[analogBase]);
-				evt.y = normalizeAxis(new_state.analog[analogBase + 1]);
-				m_event_queue.push_back(evt);
-				for (const auto& entry : m_handlers) {
-					entry.handler(evt);
-				}
-			}
+			evt.y = normalizeAxis(new_state.analog[analogBase + 1]);
+			emitEvent(evt);
+		}
 
 		bool rightChanged = new_state.analog[analogBase + 2] != m_prev_state.analog[analogBase + 2] ||
 			new_state.analog[analogBase + 3] != m_prev_state.analog[analogBase + 3];
@@ -973,21 +979,12 @@ void LibretroInputHub::poll() {
 			evt.deviceId = deviceId;
 			evt.code = "rs";
 			evt.x = normalizeAxis(new_state.analog[analogBase + 2]);
-				evt.y = normalizeAxis(new_state.analog[analogBase + 3]);
-				m_event_queue.push_back(evt);
-				for (const auto& entry : m_handlers) {
-					entry.handler(evt);
-				}
-			}
+			evt.y = normalizeAxis(new_state.analog[analogBase + 3]);
+			emitEvent(evt);
+		}
 	}
 
-	const char* pointerDeviceId = "pointer:0"; // TODO: UGLY STRING INSTANTIATION IN POLL LOOP, FIX
-		auto emitPointerEvent = [this](const InputEvt& evt) {
-			m_event_queue.push_back(evt);
-			for (const auto& entry : m_handlers) {
-				entry.handler(evt);
-			}
-		};
+	const char* pointerDeviceId = kPointerDeviceId;
 
 	const i16 mouseDeltaX = m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdX);
 	const i16 mouseDeltaY = m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdY);
@@ -1014,7 +1011,7 @@ void LibretroInputHub::poll() {
 		evt.deviceId = pointerDeviceId;
 		evt.code = kLibretroPointerButtonIds[i];
 		evt.value = pointerButtons[i] ? 1.0f : 0.0f;
-		emitPointerEvent(evt);
+		emitEvent(evt);
 	}
 
 	const bool hasAbsolutePointer = pointerRawX != 0 || pointerRawY != 0 || pointerPressed;
@@ -1046,7 +1043,7 @@ void LibretroInputHub::poll() {
 		evt.code = "pointer_position";
 		evt.x = static_cast<f32>(pointerX);
 		evt.y = static_cast<f32>(pointerY);
-		emitPointerEvent(evt);
+		emitEvent(evt);
 	}
 
 	const i32 wheelDelta = static_cast<i32>(mouseWheelDown) - static_cast<i32>(mouseWheelUp);
@@ -1056,7 +1053,7 @@ void LibretroInputHub::poll() {
 		evt.deviceId = pointerDeviceId;
 		evt.code = "pointer_wheel";
 		evt.value = static_cast<f32>(wheelDelta);
-		emitPointerEvent(evt);
+		emitEvent(evt);
 	}
 
 	m_prev_state = new_state;
@@ -1079,12 +1076,9 @@ void LibretroInputHub::postKeyboardEvent(std::string_view code, bool down) {
 	}
 	InputEvt evt;
 	evt.type = down ? InputEvtType::KeyDown : InputEvtType::KeyUp;
-	evt.deviceId = "keyboard:0"; // TODO: UGLY STRING INSTANTIATION IN POST KEYBOARD EVENT, FIX
+	evt.deviceId = kKeyboardDeviceId;
 	evt.code = std::move(key);
-	m_event_queue.push_back(evt);
-	for (const auto& entry : m_handlers) {
-		entry.handler(evt);
-	}
+	emitEvent(evt);
 }
 
 void LibretroInputHub::clearKeyboardState() {
@@ -1100,12 +1094,9 @@ void LibretroInputHub::clearKeyboardState() {
 	for (const std::string& code : pressedCodes) {
 		InputEvt evt;
 		evt.type = InputEvtType::KeyUp;
-		evt.deviceId = "keyboard:0"; // TODO: UGLY STRING INSTANTIATION IN CLEAR KEYBOARD STATE, FIX
+		evt.deviceId = kKeyboardDeviceId;
 		evt.code = code;
-		m_event_queue.push_back(evt);
-		for (const auto& entry : m_handlers) {
-			entry.handler(evt);
-		}
+		emitEvent(evt);
 	}
 }
 
@@ -1248,22 +1239,20 @@ void LibretroClock::advanceFrame(double fps) {
  * LibretroFrameLoop implementation
  * ============================================================================ */
 
-void LibretroFrameLoop::tick(std::function<void()> callback) {
-	if (m_running && callback) {
-		callback();
+void LibretroFrameLoop::runPushedFrame(f64 now, f64 deltaTime) {
+	if (!m_running) {
+		return;
 	}
-	if (m_running && m_callback) {
-		// TODO: Pass proper timestamps
-		m_callback(0.0, 1.0 / 50.0);
-	}
+	m_callback(now, deltaTime);
 }
 
 void LibretroFrameLoop::start(std::function<void(double, double)> callback) {
-	m_callback = callback;
+	m_callback = std::move(callback);
 	m_running = true;
 }
 
 void LibretroFrameLoop::stop() {
+	m_callback = {};
 	m_running = false;
 }
 

@@ -16,6 +16,7 @@
 #include <vector>
 #include <array>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -320,6 +321,8 @@ public:
 	void clearEvtQ() override;
 
 private:
+	void emitEvent(const InputEvt& evt);
+
 	LibretroPlatform* m_platform;
 	retro_input_poll_t m_input_poll_cb = nullptr;
 	retro_input_state_t m_input_state_cb = nullptr;
@@ -329,6 +332,7 @@ private:
 
 	// Previous state for edge detection
 	InputState m_prev_state;
+	std::array<std::string, InputState::MAX_PLAYERS> m_gamepad_device_ids;
 	std::array<bool, 5> m_prev_pointer_buttons{};
 	i32 m_prev_pointer_x = 0;
 	i32 m_prev_pointer_y = 0;
@@ -410,7 +414,7 @@ private:
 
 class LibretroFrameLoop : public FrameLoop {
 public:
-	void tick(std::function<void()> callback);
+	void runPushedFrame(f64 now, f64 deltaTime);
 
 	// FrameLoop interface
 	void start(std::function<void(double, double)> callback) override;
