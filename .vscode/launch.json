@@ -176,7 +176,21 @@
 		{
 			"type": "pwa-node",
 			"request": "launch",
-			"name": "LIBRETRO RUN: Custom Host (SDL)",
+			"name": "LIBRETRO DEBUG: Custom Host (SDL)",
+			"runtimeExecutable": "npm",
+			"runtimeArgs": [
+				"run",
+				"run:libretro-host:wsl:sdl",
+				"--",
+				"./dist/${input:romtobuild}.debug.rom",
+			],
+			"cwd": "${workspaceFolder}",
+			"console": "integratedTerminal"
+		},
+		{
+			"type": "pwa-node",
+			"request": "launch",
+			"name": "LIBRETRO RELEASE: Custom Host (SDL)",
 			"runtimeExecutable": "npm",
 			"runtimeArgs": [
 				"run",
@@ -186,18 +200,17 @@
 			],
 			"cwd": "${workspaceFolder}",
 			"console": "integratedTerminal"
-		}
-		,
+		},
 		{
 			"type": "pwa-node",
 			"request": "launch",
-			"name": "LIBRETRO RUN: Custom Host (FB)",
+			"name": "LIBRETRO DEBUG: Custom Host (FB)",
 			"runtimeExecutable": "npm",
 			"runtimeArgs": [
 				"run",
 				"run:libretro-host:wsl:fb",
 				"--",
-				"./dist/${input:romtobuild}.rom",
+				"./dist/${input:romtobuild}.debug.rom",
 			],
 			"cwd": "${workspaceFolder}",
 			"console": "integratedTerminal"
@@ -223,6 +236,7 @@
 			"id": "romtobuild",
 			"description": "Choose cart to debug/run",
 			"options": [
+				"bare_metal_cart",
 				"pietious",
 				"nemesis_s",
 				"esther",
@@ -236,7 +250,7 @@
 				"marlies2020",
 				"sintervania"
 			],
-			"default": "pietious"
+			"default": "bare_metal_cart"
 		}
 	],
 }

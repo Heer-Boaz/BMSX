@@ -753,6 +753,7 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
+				"bare_metal_cart",
 				"pietious",
 				"nemesis_s",
 				"esther",
@@ -766,7 +767,7 @@
 				"marlies2020",
 				"sintervania"
 			],
-			"default": "pietious"
+			"default": "bare_metal_cart"
 		}
 	]
 }
