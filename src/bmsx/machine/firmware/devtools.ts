@@ -20,12 +20,12 @@ function listRuntimeLuaRegistries(runtime: Runtime): LuaSourceRegistry[] {
 	return registries;
 }
 
-function resolveLuaSourceRecordByPath(registry: LuaSourceRegistry, path: string): LuaSourceRecord | null {
+function resolveLuaSourceRecordByPath(registry: LuaSourceRegistry, path: string): LuaSourceRecord {
 	const direct = registry.path2lua[path];
 	if (direct !== undefined) {
 		return direct;
 	}
-	return registry.module2lua[path] ?? null;
+	return registry.module2lua[path];
 }
 
 function summarizeLuaPaths(runtime: Runtime, limit: number): string {

@@ -1,5 +1,5 @@
 // start repeated-sequence-acceptable -- Program linker rewrites packed instruction fields directly to preserve bit-level clarity.
-import { OpCode, type ProgramMetadata, type Proto, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
+import { OpCode, type ProgramMetadata, type Proto, type SourceRange } from '../cpu/cpu';
 import {
 	BASE_BX_BITS,
 	EXT_B_BITS,
@@ -20,7 +20,6 @@ import type {
 	ProgramConstReloc,
 	ProgramSymbolsImage,
 } from './loader';
-import { cloneSourceRange } from './source_range';
 
 type LinkedProgramImage = {
 	programImage: ProgramImage;
@@ -349,38 +348,6 @@ const rewriteClosureIndices = (code: Uint8Array, protoOffset: number): void => {
 	}
 };
 
-const cloneLocalSlot = (slot: LocalSlotDebug): LocalSlotDebug => ({
-	name: slot.name,
-	register: slot.register,
-	definition: cloneSourceRange(slot.definition),
-	scope: cloneSourceRange(slot.scope),
-});
-
-const cloneLocalSlotsByProto = (
-	metadata: ProgramMetadata,
-	protoCount: number,
-): LocalSlotDebug[][] => {
-	const source = metadata.localSlotsByProto;
-	const out: LocalSlotDebug[][] = new Array(protoCount);
-	for (let index = 0; index < protoCount; index += 1) {
-		const slots = source && source[index] ? source[index] : [];
-		out[index] = slots.map(cloneLocalSlot);
-	}
-	return out;
-};
-
-const cloneUpvalueNamesByProto = (
-	metadata: ProgramMetadata,
-	protoCount: number,
-): string[][] => {
-	const source = metadata.upvalueNamesByProto;
-	const out: string[][] = new Array(protoCount);
-	for (let index = 0; index < protoCount; index += 1) {
-		const names = source && source[index] ? source[index] : [];
-		out[index] = Array.from(names);
-	}
-	return out;
-};
 
 const mergeMetadata = (
 	system: ProgramMetadata | undefined,
@@ -417,14 +384,16 @@ const mergeMetadata = (
 	for (let index = 0; index < cartInstructionCount; index += 1) {
 		debugRanges[cartBaseWord + index] = cart.debugRanges[index];
 	}
-	const localSlotsByProto = cloneLocalSlotsByProto(system, system.protoIds.length)
-		.concat(cloneLocalSlotsByProto(cart, cart.protoIds.length));
+	const localSlotsByProto = system.localSlotsByProto
+		? system.localSlotsByProto.concat(cart.localSlotsByProto ?? [])
+		: cart.localSlotsByProto ?? [];
 	return {
 		debugRanges,
 		protoIds: system.protoIds.concat(cart.protoIds),
 		localSlotsByProto,
-		upvalueNamesByProto: cloneUpvalueNamesByProto(system, system.protoIds.length)
-			.concat(cloneUpvalueNamesByProto(cart, cart.protoIds.length)),
+		upvalueNamesByProto: system.upvalueNamesByProto
+			? system.upvalueNamesByProto.concat(cart.upvalueNamesByProto ?? [])
+			: cart.upvalueNamesByProto ?? [],
 		systemGlobalNames: mergedSystemGlobals.names,
 		globalNames: mergedGlobals.names,
 	};
@@ -454,19 +423,26 @@ const mergeMetadata = (
 export const linkProgramImages = (
 	systemImage: ProgramImage,
 	systemSymbols: ProgramSymbolsImage | null,
-	cartImage: ProgramImage,
+	cartAsset: ProgramImage,
 	cartSymbols: ProgramSymbolsImage | null,
 	layout?: Partial<ProgramLayout>,
 ): LinkedProgramImage => {
 	const baseProtoCount = systemImage.program.protos.length;
 	const systemCodeBytes = systemImage.program.code.length;
-	const cartCodeBytes = cartImage.program.code.length;
+	const cartCodeBytes = cartAsset.program.code.length;
 	const systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;
 	const cartInstructionCount = cartCodeBytes / INSTRUCTION_BYTES;
 	const resolvedLayout = resolveProgramLayout(systemCodeBytes, layout);
-	const cartCode = cartImage.program.code.slice();
+	const totalBytes = Math.max(
+		resolvedLayout.systemBasePc + systemCodeBytes,
+		resolvedLayout.cartBasePc + cartCodeBytes,
+	);
+	const code = new Uint8Array(totalBytes);
+	code.set(systemImage.program.code, resolvedLayout.systemBasePc);
+	code.set(cartAsset.program.code, resolvedLayout.cartBasePc);
+	const cartCode = code.subarray(resolvedLayout.cartBasePc, resolvedLayout.cartBasePc + cartCodeBytes);
 	rewriteClosureIndices(cartCode, baseProtoCount);
-	const mergedConsts = mergeConstPools(systemImage.program.constPool, cartImage.program.constPool);
+	const mergedConsts = mergeConstPools(systemImage.program.constPool, cartAsset.program.constPool);
 	const systemMetadata = systemSymbols?.metadata;
 	const cartMetadata = cartSymbols?.metadata;
 
@@ -475,7 +451,7 @@ export const linkProgramImages = (
 	// name tables) can be resolved. Do not silently default to empty lists in that case;
 	// surface a clear diagnostic so the caller can fix the pipeline (compiler/rompacker)
 	// instead of letting the linker fabricate names.
-	const hasModuleRelocs = cartImage.link.constRelocs.some(r => r.kind === 'module');
+	const hasModuleRelocs = cartAsset.link.constRelocs.some(r => r.kind === 'module');
 	if (hasModuleRelocs) {
 		if (!systemMetadata || !cartMetadata) {
 			throw new Error('[ProgramLinker] Missing program symbols metadata required to resolve module relocations. Provide both systemSymbols and cartSymbols with metadata when linking a cart that contains module placeholders.');
@@ -493,7 +469,7 @@ export const linkProgramImages = (
 		: mergeNamedSlots(systemMetadata?.globalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.globalNames ?? EMPTY_SLOT_NAMES);
 	rewriteConstRelocations(
 		cartCode,
-		cartImage.link.constRelocs,
+		cartAsset.link.constRelocs,
 		mergedConsts.cartConstRemap,
 		mergedGlobals.cartRemap,
 		mergedSystemGlobals.cartRemap,
@@ -502,35 +478,34 @@ export const linkProgramImages = (
 		mergedSystemGlobals.names,
 	);
 
-	const protos: Proto[] = [];
-	for (const proto of systemImage.program.protos) {
-		protos.push({
+	const systemProtos = systemImage.program.protos;
+	const cartProtos = cartAsset.program.protos;
+	const protos: Proto[] = new Array(systemProtos.length + cartProtos.length);
+	let protoIndex = 0;
+	for (let index = 0; index < systemProtos.length; index += 1) {
+		const proto = systemProtos[index];
+		protos[protoIndex] = {
 			entryPC: proto.entryPC + resolvedLayout.systemBasePc,
 			codeLen: proto.codeLen,
 			numParams: proto.numParams,
 			isVararg: proto.isVararg,
 			maxStack: proto.maxStack,
 			upvalueDescs: proto.upvalueDescs,
-		});
+		};
+		protoIndex += 1;
 	}
-	for (const proto of cartImage.program.protos) {
-		protos.push({
+	for (let index = 0; index < cartProtos.length; index += 1) {
+		const proto = cartProtos[index];
+		protos[protoIndex] = {
 			entryPC: proto.entryPC + resolvedLayout.cartBasePc,
 			codeLen: proto.codeLen,
 			numParams: proto.numParams,
 			isVararg: proto.isVararg,
 			maxStack: proto.maxStack,
 			upvalueDescs: proto.upvalueDescs,
-		});
+		};
+		protoIndex += 1;
 	}
-
-	const totalBytes = Math.max(
-		resolvedLayout.systemBasePc + systemCodeBytes,
-		resolvedLayout.cartBasePc + cartCodeBytes,
-	);
-	const code = new Uint8Array(totalBytes);
-	code.set(systemImage.program.code, resolvedLayout.systemBasePc);
-	code.set(cartCode, resolvedLayout.cartBasePc);
 
 	const program: EncodedProgram = {
 		code,
@@ -539,14 +514,14 @@ export const linkProgramImages = (
 	};
 
 	const moduleProtos: Array<{ path: string; protoIndex: number }> = [];
-	for (const entry of cartImage.moduleProtos ?? []) {
+	for (const entry of cartAsset.moduleProtos ?? []) {
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex + baseProtoCount });
 	}
 	for (const entry of systemImage.moduleProtos ?? []) {
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex });
 	}
-	const staticModulePaths = (systemImage.staticModulePaths ?? []).concat(cartImage.staticModulePaths ?? []);
-	const entryProtoIndex = cartImage.entryProtoIndex + baseProtoCount;
+	const staticModulePaths = (systemImage.staticModulePaths ?? []).concat(cartAsset.staticModulePaths ?? []);
+	const entryProtoIndex = cartAsset.entryProtoIndex + baseProtoCount;
 	const metadata = mergeMetadata(
 		systemMetadata,
 		cartMetadata,

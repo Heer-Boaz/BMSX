@@ -279,7 +279,8 @@ function renderForcedTinyRegions(model: BufferBarModel, renderedCells: RenderedB
 		if (bestEntry === null) {
 			continue;
 		}
-		const companionRegion = widestHitRegion(model.cells[bestCellIndex].hitRegions, candidate => !sameRegion(candidate, region))?.region ?? null;
+		const companionHit = widestHitRegion(model.cells[bestCellIndex].hitRegions, candidate => !sameRegion(candidate, region));
+		const companionRegion = companionHit !== null ? companionHit.region : null;
 		renderedCells[bestCellIndex] = renderForcedTinyRegionCell(region, companionRegion, bestEntry.startFrac, bestEntry.endFrac);
 	}
 }

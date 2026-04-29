@@ -24,7 +24,8 @@ test('tracked heap bytes include rooted tables and native arrays', () => {
 	const nativeArray = createNativeObject(raw, {
 		get: (entryKey) => {
 			if (typeof entryKey === 'number' && Number.isInteger(entryKey) && entryKey >= 1) {
-				return raw[entryKey - 1] ?? null;
+				const value = raw[entryKey - 1];
+				return value !== undefined ? value : null;
 			}
 			return null;
 		},
@@ -78,7 +79,8 @@ test('tracked heap bytes do not include raw js array capacity without native ite
 			if (typeof entryKey !== 'number' || !Number.isInteger(entryKey) || entryKey < 1 || entryKey > raw.length) {
 				return null;
 			}
-			return raw[entryKey - 1] ?? null;
+			const value = raw[entryKey - 1];
+			return value !== undefined ? value : null;
 		},
 		set: (entryKey, value) => {
 			if (typeof entryKey !== 'number' || !Number.isInteger(entryKey) || entryKey < 1) {

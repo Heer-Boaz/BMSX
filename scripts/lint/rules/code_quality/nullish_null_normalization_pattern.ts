@@ -16,7 +16,7 @@ export function lintNullishNullNormalizationPattern(node: ts.BinaryExpression | 
 			sourceFile,
 			node.operatorToken,
 			nullishNullNormalizationPatternRule.name,
-			'`?? null`/`?? undefined` normalization is forbidden. Preserve undefined/null directly or handle the case explicitly.',
+			'Nullish-to-null or nullish-to-undefined normalization is forbidden. Preserve undefined/null directly or handle the case explicitly.',
 		);
 		return;
 	}

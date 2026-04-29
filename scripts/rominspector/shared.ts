@@ -130,6 +130,6 @@ export function disassembleProgramImage(
 		pcFormatter: assembly ? undefined : (pc, width) => formatNumberAsHex(pc, width),
 		pcBias: options.pcBias,
 		showSourceComments: metadata !== null && sourceTextForPath !== null,
-		sourceTextForPath: sourceTextForPath ?? undefined,
+		sourceTextForPath: sourceTextForPath !== null ? sourceTextForPath : undefined,
 	});
 }

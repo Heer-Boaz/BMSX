@@ -439,7 +439,8 @@ test('flattened module export slots stay in sync with runtime require results', 
 		assert.notEqual(protoIndex, undefined);
 		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
 		assert.equal(cpu.run(100000), RunResult.Halted);
-		out.push(cpu.lastReturnValues[0] ?? null);
+		const value = cpu.lastReturnValues[0];
+		out.push(value !== undefined ? value : null);
 	});
 	cpu.setGlobalByKey(cpu.getStringPool().intern('require'), requireFn);
 	cpu.start(compiled.entryProtoIndex);
@@ -476,7 +477,8 @@ test('flattened module export slots survive program append swaps', () => {
 		assert.notEqual(protoIndex, undefined);
 		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
 		assert.equal(cpu.run(100000), RunResult.Halted);
-		out.push(cpu.lastReturnValues[0] ?? null);
+		const value = cpu.lastReturnValues[0];
+		out.push(value !== undefined ? value : null);
 	});
 	cpu.setGlobalByKey(cpu.getStringPool().intern('require'), requireFn);
 	cpu.start(compiled.entryProtoIndex);

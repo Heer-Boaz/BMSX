@@ -37,13 +37,12 @@ import {
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
 import { stripLuaExtension, type ProgramConstReloc } from './loader';
-import { cloneSourceRange } from './source_range';
 import { StringPool, StringValue, isStringValue, stringValueToString } from '../memory/string/pool';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../cpu/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../../lua/semantic/frontend';
 import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from '../bus/registers';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compile_value_flow';
-import { SYSTEM_ROM_GLOBAL_NAME_SET } from '../firmware/system_globals';
+import { SYSTEM_ROM_GLOBAL_NAMES, SYSTEM_ROM_GLOBAL_NAME_SET } from '../firmware/system_globals';
 import { LuaSyntaxError } from '../../lua/errors';
 import { Decl } from '../../lua/semantic/model';
 import {
@@ -124,12 +123,12 @@ type LocalBinding = {
 
 type ModuleBinding = {
 	modulePath: string;
-	exportPath: string[];
+	exportPathKey: string;
+	exportDepth: number;
 	external: boolean;
 };
 
 type ModuleExportNode = {
-	slotName: string | null;
 	children: Map<string, ModuleExportNode>;
 };
 
@@ -143,7 +142,8 @@ type ModuleCompileInfo = {
 
 type ModuleCompileContext = {
 	modulesByPath: Map<string, ModuleCompileInfo>;
-	staticExternalModulePaths: Set<string>;
+	staticExternalModulePaths: string[];
+	staticExternalModulePathSet: Set<string>;
 };
 
 type AssignmentTarget =
@@ -206,7 +206,12 @@ class ProgramBuilder {
 		optLevel: OptimizationLevel = 0,
 		baseMetadata: ProgramMetadata | null = null,
 	) {
-		this.constPool = baseConstPool ? Array.from(baseConstPool) : [];
+		this.constPool = [];
+		if (baseConstPool) {
+			for (let index = 0; index < baseConstPool.length; index += 1) {
+				this.constPool.push(baseConstPool[index]);
+			}
+		}
 		this.stringPool = stringPool ?? new StringPool();
 		this.optLevel = optLevel;
 		this.constMap = new Map<string, number>();
@@ -305,8 +310,8 @@ class ProgramBuilder {
 			this.protoCode[existing] = code;
 			this.protoRanges[existing] = ranges;
 			this.protoConstRelocs[existing] = constRelocs;
-			this.protoLocalSlots[existing] = localSlots.map(cloneLocalSlotDebug);
-			this.protoUpvalueNames[existing] = Array.from(upvalueNames);
+			this.protoLocalSlots[existing] = localSlots;
+			this.protoUpvalueNames[existing] = upvalueNames;
 			this.protoInstructionSets[existing] = instructionSet;
 			this.protoIds[existing] = protoId;
 			return existing;
@@ -316,8 +321,8 @@ class ProgramBuilder {
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
 		this.protoConstRelocs.push(constRelocs);
-		this.protoLocalSlots.push(localSlots.map(cloneLocalSlotDebug));
-		this.protoUpvalueNames.push(Array.from(upvalueNames));
+		this.protoLocalSlots.push(localSlots);
+		this.protoUpvalueNames.push(upvalueNames);
 		this.protoInstructionSets.push(instructionSet);
 		this.protoIds.push(protoId);
 		this.protoIdMap.set(protoId, index);
@@ -338,8 +343,8 @@ class ProgramBuilder {
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
 		this.protoConstRelocs.push(constRelocs);
-		this.protoLocalSlots.push(localSlots.map(cloneLocalSlotDebug));
-		this.protoUpvalueNames.push(Array.from(upvalueNames));
+		this.protoLocalSlots.push(localSlots);
+		this.protoUpvalueNames.push(upvalueNames);
 		this.protoInstructionSets.push(null);
 		this.protoIds.push(protoId);
 		this.protoIdMap.set(protoId, index);
@@ -353,6 +358,7 @@ class ProgramBuilder {
 			totalWords += this.protoRanges[i].length;
 		}
 		const fullCode = new Uint8Array(totalBytes);
+		const protos: Proto[] = new Array(this.protos.length);
 		const fullRanges: Array<SourceRange | null> = new Array(totalWords);
 		const fullConstRelocs: ProgramConstReloc[] = [];
 		let offsetBytes = 0;
@@ -362,8 +368,16 @@ class ProgramBuilder {
 			if (!chunk) {
 				throw new Error(`[ProgramBuilder] Missing code for proto index ${i}.`);
 			}
+			const proto = this.protos[i];
 			const ranges = this.protoRanges[i];
-			this.protos[i].entryPC = offsetBytes;
+			protos[i] = {
+				entryPC: offsetBytes,
+				codeLen: proto.codeLen,
+				numParams: proto.numParams,
+				isVararg: proto.isVararg,
+				maxStack: proto.maxStack,
+				upvalueDescs: proto.upvalueDescs,
+			};
 			fullCode.set(chunk, offsetBytes);
 			for (let j = 0; j < ranges.length; j += 1) {
 				fullRanges[offsetWords + j] = ranges[j];
@@ -385,14 +399,14 @@ class ProgramBuilder {
 			protoIds: this.protoIds,
 			localSlotsByProto: this.protoLocalSlots,
 			upvalueNamesByProto: this.protoUpvalueNames,
-			globalNames: this.globalNames.slice(),
-			systemGlobalNames: this.systemGlobalNames.slice(),
+			globalNames: this.globalNames,
+			systemGlobalNames: this.systemGlobalNames,
 		};
 		return {
 			program: {
 				code: fullCode,
 				constPool: this.constPool,
-				protos: this.protos,
+				protos,
 				stringPool: this.stringPool,
 				constPoolStringPool: this.stringPool,
 			},
@@ -480,13 +494,6 @@ const buildProtoId = (parentId: string, hint: string): string => {
 	if (!hint) throw new Error('Proto hint is required and defensive programming is not allowed.');
 	return `${parentId}/${hint}`;
 }
-
-const cloneLocalSlotDebug = (slot: LocalSlotDebug): LocalSlotDebug => ({
-	name: slot.name,
-	register: slot.register,
-	definition: cloneSourceRange(slot.definition),
-	scope: cloneSourceRange(slot.scope),
-});
 
 class FunctionBuilder {
 	private readonly program: ProgramBuilder;
@@ -834,7 +841,7 @@ class FunctionBuilder {
 	private pushScope(range: LuaSourceRange): void {
 		this.scopeStack.push({
 			locals: [],
-			range: cloneSourceRange(range),
+			range,
 		});
 	}
 
@@ -907,8 +914,8 @@ class FunctionBuilder {
 		this.localDebugSlots.push({
 			name,
 			register: reg,
-			definition: cloneSourceRange(definitionRange),
-			scope: cloneSourceRange(effectiveScopeRange),
+			definition: definitionRange,
+			scope: effectiveScopeRange,
 		});
 		return reg;
 	}
@@ -1073,15 +1080,19 @@ class FunctionBuilder {
 	}
 
 	private markStaticExternalModulePath(path: string): void {
-		this.moduleCompileContext?.staticExternalModulePaths.add(path);
+		if (!this.moduleCompileContext || this.moduleCompileContext.staticExternalModulePathSet.has(path)) {
+			return;
+		}
+		this.moduleCompileContext.staticExternalModulePathSet.add(path);
+		this.moduleCompileContext.staticExternalModulePaths.push(path);
 	}
 
-	private resolveModuleExportSlotName(modulePath: string, exportPath: ReadonlyArray<string>): string | undefined {
+	private resolveModuleExportSlotNameByPathKey(modulePath: string, exportPathKey: string): string | undefined {
 		const moduleInfo = this.resolveModuleCompileInfo(modulePath);
 		if (!moduleInfo) {
 			return undefined;
 		}
-		return moduleInfo.exportSlotsByPathKey.get(buildModuleExportPathKey(exportPath));
+		return moduleInfo.exportSlotsByPathKey.get(exportPathKey);
 	}
 
 	private tryResolveRequireModuleBinding(expression: LuaExpression): ModuleBinding | null {
@@ -1105,7 +1116,8 @@ class FunctionBuilder {
 		}
 		return {
 			modulePath,
-			exportPath: [],
+			exportPathKey: '',
+			exportDepth: 0,
 			external: this.isExternalModulePath(modulePath),
 		};
 	}
@@ -1156,13 +1168,14 @@ class FunctionBuilder {
 		if (!key) {
 			return null;
 		}
-		const exportPath = baseBinding.exportPath.concat(key);
-		if (!this.resolveModuleExportSlotName(baseBinding.modulePath, exportPath)) {
+		const exportPathKey = appendModuleExportPathKey(baseBinding.exportPathKey, key);
+		if (!this.resolveModuleExportSlotNameByPathKey(baseBinding.modulePath, exportPathKey)) {
 			return null;
 		}
 		return {
 			modulePath: baseBinding.modulePath,
-			exportPath,
+			exportPathKey,
+			exportDepth: baseBinding.exportDepth + 1,
 			external: baseBinding.external,
 		};
 	}
@@ -1173,10 +1186,10 @@ class FunctionBuilder {
 
 	private tryResolveModuleExportSlotFromExpression(expression: LuaExpression): string | undefined {
 		const binding = this.tryResolveStaticModuleBinding(expression, false);
-		if (!binding || binding.exportPath.length === 0) {
+		if (!binding || binding.exportDepth === 0) {
 			return undefined;
 		}
-		return this.resolveModuleExportSlotName(binding.modulePath, binding.exportPath);
+		return this.resolveModuleExportSlotNameByPathKey(binding.modulePath, binding.exportPathKey);
 	}
 
 	private tryResolveModuleExportMethodSlot(baseExpression: LuaExpression, methodName: string): string | undefined {
@@ -1184,7 +1197,7 @@ class FunctionBuilder {
 		if (!binding) {
 			return undefined;
 		}
-		return this.resolveModuleExportSlotName(binding.modulePath, binding.exportPath.concat(methodName));
+		return this.resolveModuleExportSlotNameByPathKey(binding.modulePath, appendModuleExportPathKey(binding.exportPathKey, methodName));
 	}
 
 	/*
@@ -1203,12 +1216,12 @@ class FunctionBuilder {
 	  Detect a compile-time-only module root binding
 
 	  - Returns true when a local binding is associated with a moduleBinding and that module is
-		marked `external` (compile-time-only) and the moduleBinding has an empty exportPath (the module root).
+		marked `external` (compile-time-only) and the moduleBinding is the module root.
 	  - This detection prevents treating the module root as a runtime value (local or upvalue) under
 		the fantasy-console semantics used by this project.
 	*/
 	private isExternalModuleRootBinding(binding: LocalBinding | null | undefined): boolean {
-		return binding?.moduleBinding?.external === true && binding.moduleBinding.exportPath.length === 0;
+		return binding?.moduleBinding?.external === true && binding.moduleBinding.exportDepth === 0;
 	}
 
 	/*
@@ -1278,23 +1291,23 @@ class FunctionBuilder {
 		this.emitABx(access.system ? OpCode.SETSYS : OpCode.SETGL, valueReg, access.slot);
 	}
 
-	private emitModuleExportGlobalStores(baseReg: number, exportRoot: ModuleExportNode): void {
+	private emitModuleExportGlobalStores(baseReg: number, moduleInfo: ModuleCompileInfo): void {
 		const tempBase = this.tempTop;
-		this.emitModuleExportGlobalStoreChildren(baseReg, exportRoot);
+		this.emitModuleExportGlobalStoreChildren(baseReg, moduleInfo.exportRoot, moduleInfo.path, []);
 		this.tempTop = tempBase;
 	}
 
-	private emitModuleExportGlobalStoreChildren(baseReg: number, node: ModuleExportNode): void {
+	private emitModuleExportGlobalStoreChildren(baseReg: number, node: ModuleExportNode, modulePath: string, path: string[]): void {
 		for (const [key, child] of node.children) {
+			path.push(key);
 			const childReg = this.allocTemp();
 			const keyConst = this.program.constIndexString(key);
 			this.emitTableGetConst(childReg, baseReg, keyConst);
-			if (child.slotName !== null) {
-				this.emitModuleExportStore(child.slotName, childReg);
-			}
+			this.emitModuleExportStore(buildModuleExportSlotName(modulePath, path), childReg);
 			if (child.children.size > 0) {
-				this.emitModuleExportGlobalStoreChildren(childReg, child);
+				this.emitModuleExportGlobalStoreChildren(childReg, child, modulePath, path);
 			}
+			path.pop();
 		}
 	}
 
@@ -1821,7 +1834,7 @@ class FunctionBuilder {
 					const moduleBinding = this.tryResolveStaticModuleBinding(expr, true);
 					if (moduleBinding !== null) {
 						initializerModuleBindings[i] = moduleBinding;
-						if (moduleBinding.external && moduleBinding.exportPath.length === 0) {
+						if (moduleBinding.external && moduleBinding.exportDepth === 0) {
 							this.markStaticExternalModulePath(moduleBinding.modulePath);
 							initializerValues[i] = null;
 							continue;
@@ -1858,7 +1871,7 @@ class FunctionBuilder {
 				const moduleBinding = this.tryResolveStaticModuleBinding(lastExpr, true);
 				if (moduleBinding !== null) {
 					initializerModuleBindings[lastIndex] = moduleBinding;
-					if (moduleBinding.external && moduleBinding.exportPath.length === 0) {
+					if (moduleBinding.external && moduleBinding.exportDepth === 0) {
 						this.markStaticExternalModulePath(moduleBinding.modulePath);
 						initializerValues[lastIndex] = null;
 					}
@@ -1955,7 +1968,10 @@ class FunctionBuilder {
 				}
 			}
 		}
-		const targetPaths = statement.left.map((expr) => extractAssignmentPath(expr as LuaAssignableExpression));
+		const targetPaths: Array<string[] | null> = new Array(statement.left.length);
+		for (let index = 0; index < statement.left.length; index += 1) {
+			targetPaths[index] = extractAssignmentPath(statement.left[index] as LuaAssignableExpression);
+		}
 		const values = this.compileAssignmentValues(statement.right, targets.length, targetPaths);
 		for (let i = 0; i < targets.length; i += 1) {
 			const target = targets[i];
@@ -2161,7 +2177,7 @@ class FunctionBuilder {
 		if (expressions.length === 1) {
 			this.compileExpressionInto(expressions[0], base, wantsMulti ? 0 : 1);
 			if (!wantsMulti && this.moduleCompileInfo !== undefined && expressions[0] === this.moduleCompileInfo.returnExpression) {
-				this.emitModuleExportGlobalStores(base, this.moduleCompileInfo.exportRoot);
+				this.emitModuleExportGlobalStores(base, this.moduleCompileInfo);
 			}
 			this.emitABC(OpCode.RET, base, wantsMulti ? 0 : 1, 0);
 			return;
@@ -2502,10 +2518,10 @@ class FunctionBuilder {
 		*/
 		{
 			const binding = this.tryResolveStaticModuleBinding(expression.base, false);
-			if (binding && binding.external && binding.exportPath.length === 0) {
+			if (binding && binding.external && binding.exportDepth === 0) {
 				const key = expression.identifier;
-				if (this.resolveModuleExportSlotName(binding.modulePath, [key]) === undefined) {
-					const slotName = buildModuleExportSlotName(binding.modulePath, [key]);
+				if (this.resolveModuleExportSlotNameByPathKey(binding.modulePath, key) === undefined) {
+					const slotName = buildModuleRootFieldSlotName(binding.modulePath, key);
 					const placeholder = `modslot:${slotName}`;
 					const constIndex = this.program.constIndexString(placeholder);
 					this.emitABx(OpCode.LOADK, target, constIndex);
@@ -2532,9 +2548,9 @@ class FunctionBuilder {
 		{
 			const keyStatic = this.tryGetModuleExportStaticKey((expression as LuaIndexExpression).index);
 			const binding = this.tryResolveStaticModuleBinding(expression.base, false);
-			if (keyStatic && binding && binding.external && binding.exportPath.length === 0) {
-				if (this.resolveModuleExportSlotName(binding.modulePath, [keyStatic]) === undefined) {
-					const slotName = buildModuleExportSlotName(binding.modulePath, [keyStatic]);
+			if (keyStatic && binding && binding.external && binding.exportDepth === 0) {
+				if (this.resolveModuleExportSlotNameByPathKey(binding.modulePath, keyStatic) === undefined) {
+					const slotName = buildModuleRootFieldSlotName(binding.modulePath, keyStatic);
 					const placeholder = `modslot:${slotName}`;
 					const constIndex = this.program.constIndexString(placeholder);
 					this.emitABx(OpCode.LOADK, target, constIndex);
@@ -3056,11 +3072,11 @@ function opForAssignment(operator: LuaAssignmentOperator): OpCode {
 const buildNamePath = (parts: ReadonlyArray<string>): string => parts.join('.');
 
 const buildDeclarationHint = (identifiers: ReadonlyArray<string>, methodName: string | null): string => {
-	const parts = identifiers.length > 0 ? identifiers.slice() : [];
 	if (methodName && methodName.length > 0) {
-		parts.push(methodName);
+		const prefix = identifiers.length > 0 ? `${buildNamePath(identifiers)}.` : '';
+		return `decl:${prefix}${methodName}`;
 	}
-	return `decl:${buildNamePath(parts)}`;
+	return `decl:${buildNamePath(identifiers)}`;
 };
 
 const buildAssignmentHint = (path: ReadonlyArray<string>): string =>
@@ -3106,30 +3122,31 @@ const extractAssignmentPath = (expression: LuaAssignableExpression): string[] | 
 	}
 };
 
-const createModuleExportNode = (slotName: string | null = null): ModuleExportNode => ({
-	slotName,
+const createModuleExportNode = (): ModuleExportNode => ({
 	children: new Map<string, ModuleExportNode>(),
 });
 
-const cloneModuleExportNode = (node: ModuleExportNode): ModuleExportNode => {
-	const clone = createModuleExportNode(node.slotName);
-	for (const [key, child] of node.children) {
-		clone.children.set(key, cloneModuleExportNode(child));
-	}
-	return clone;
-};
-
 const buildModuleExportPathKey = (path: ReadonlyArray<string>): string =>
 	path.join('.');
+
+const appendModuleExportPathKey = (base: string, key: string): string =>
+	base.length === 0 ? key : `${base}.${key}`;
 
 const stripModuleSourcePrefix = (path: string): string => {
 	const normalized = stripLuaExtension(path.replace(/\\/g, '/'));
 	if (normalized.startsWith('src/carts/')) {
 		const parts = normalized.split('/');
-		return parts.length > 3 ? parts.slice(3).join('/') : parts[parts.length - 1];
+		if (parts.length <= 3) {
+			return parts[parts.length - 1];
+		}
+		let compact = parts[3];
+		for (let index = 4; index < parts.length; index += 1) {
+			compact += `/${parts[index]}`;
+		}
+		return compact;
 	}
 	if (normalized.startsWith('src/bmsx/res/')) {
-		return normalized.slice('src/bmsx/res/'.length);
+		return normalized.substring('src/bmsx/res/'.length);
 	}
 	return normalized;
 };
@@ -3139,16 +3156,31 @@ const sanitizeModuleSlotSegment = (value: string): string =>
 
 const buildModuleSlotPrefix = (modulePath: string): string => {
 	const compactPath = stripModuleSourcePrefix(modulePath);
-	const parts = compactPath.split('/').filter(part => part.length > 0);
-	const normalizedParts = parts.length > 0 ? parts : [compactPath];
-	return normalizedParts.map(sanitizeModuleSlotSegment).join('__');
+	const parts = compactPath.split('/');
+	let out = '';
+	for (let index = 0; index < parts.length; index += 1) {
+		const part = parts[index];
+		if (part.length === 0) {
+			continue;
+		}
+		out += out.length === 0 ? sanitizeModuleSlotSegment(part) : `__${sanitizeModuleSlotSegment(part)}`;
+	}
+	return out.length > 0 ? out : sanitizeModuleSlotSegment(compactPath);
 };
 
 const buildModuleExportSlotName = (
 	modulePath: string,
 	exportPath: ReadonlyArray<string>,
-): string =>
-	[buildModuleSlotPrefix(modulePath), ...exportPath.map(sanitizeModuleSlotSegment)].join('__');
+): string => {
+	let out = buildModuleSlotPrefix(modulePath);
+	for (let index = 0; index < exportPath.length; index += 1) {
+		out += `__${sanitizeModuleSlotSegment(exportPath[index])}`;
+	}
+	return out;
+};
+
+const buildModuleRootFieldSlotName = (modulePath: string, key: string): string =>
+	`${buildModuleSlotPrefix(modulePath)}__${sanitizeModuleSlotSegment(key)}`;
 
 const resolveStaticModuleShapePath = (
 	expression: LuaExpression,
@@ -3157,7 +3189,7 @@ const resolveStaticModuleShapePath = (
 	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
 		const identifier = expression as LuaIdentifierExpression;
 		const shape = localShapes.get(identifier.name);
-		return shape ? cloneModuleExportNode(shape) : null;
+		return shape !== undefined ? shape : null;
 	}
 	if (expression.kind === LuaSyntaxKind.MemberExpression) {
 		const member = expression as LuaMemberExpression;
@@ -3165,8 +3197,8 @@ const resolveStaticModuleShapePath = (
 		if (!baseShape) {
 			return null;
 		}
-		const child = baseShape.children.get(member.identifier);
-		return child ? cloneModuleExportNode(child) : null;
+		const shape = baseShape.children.get(member.identifier);
+		return shape !== undefined ? shape : null;
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
 		const indexExpr = expression as LuaIndexExpression;
@@ -3178,8 +3210,8 @@ const resolveStaticModuleShapePath = (
 		if (!key) {
 			return null;
 		}
-		const child = baseShape.children.get(key);
-		return child ? cloneModuleExportNode(child) : null;
+		const shape = baseShape.children.get(key);
+		return shape !== undefined ? shape : null;
 	}
 	return null;
 };
@@ -3219,14 +3251,17 @@ function buildModuleShapeOrEmpty(expression: LuaExpression, localShapes: Readonl
 const assignModuleShapePath = (
 	root: ModuleExportNode,
 	path: ReadonlyArray<string>,
+	startIndex: number,
 	value: ModuleExportNode,
+	methodName: string | null = null,
 ): void => {
-	if (path.length === 0) {
-		root.children = cloneModuleExportNode(value).children;
+	if (startIndex >= path.length && (!methodName || methodName.length === 0)) {
+		root.children = value.children;
 		return;
 	}
 	let cursor = root;
-	for (let index = 0; index < path.length - 1; index += 1) {
+	const endIndex = methodName && methodName.length > 0 ? path.length : path.length - 1;
+	for (let index = startIndex; index < endIndex; index += 1) {
 		const key = path[index];
 		let child = cursor.children.get(key);
 		if (!child) {
@@ -3235,7 +3270,7 @@ const assignModuleShapePath = (
 		}
 		cursor = child;
 	}
-	cursor.children.set(path[path.length - 1], cloneModuleExportNode(value));
+	cursor.children.set(methodName && methodName.length > 0 ? methodName : path[path.length - 1], value);
 };
 
 const buildTopLevelLocalModuleShapes = (
@@ -3281,7 +3316,7 @@ const buildTopLevelLocalModuleShapes = (
 					continue;
 				}
 				const shape = buildModuleShapeOrEmpty(right, localShapes);
-				assignModuleShapePath(rootShape, path.slice(1), shape);
+				assignModuleShapePath(rootShape, path, 1, shape);
 			}
 			continue;
 		}
@@ -3295,14 +3330,10 @@ const buildTopLevelLocalModuleShapes = (
 			if (!rootShape) {
 				continue;
 			}
-			const path = declaration.name.identifiers.slice(1);
-			if (declaration.name.methodName && declaration.name.methodName.length > 0) {
-				path.push(declaration.name.methodName);
-			}
-			if (path.length === 0) {
+			if (declaration.name.identifiers.length === 1 && (!declaration.name.methodName || declaration.name.methodName.length === 0)) {
 				continue;
 			}
-			assignModuleShapePath(rootShape, path, createModuleExportNode());
+			assignModuleShapePath(rootShape, declaration.name.identifiers, 1, createModuleExportNode(), declaration.name.methodName);
 			continue;
 		}
 		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
@@ -3340,10 +3371,10 @@ const buildModuleCompileInfo = (
 	const exportSlotsByPathKey = new Map<string, string>();
 	const assignSlots = (node: ModuleExportNode, path: string[]): void => {
 		for (const [key, child] of node.children) {
-			const childPath = path.concat(key);
-			child.slotName = buildModuleExportSlotName(modulePath, childPath);
-			exportSlotsByPathKey.set(buildModuleExportPathKey(childPath), child.slotName);
-			assignSlots(child, childPath);
+			path.push(key);
+			exportSlotsByPathKey.set(buildModuleExportPathKey(path), buildModuleExportSlotName(modulePath, path));
+			assignSlots(child, path);
+			path.pop();
 		}
 	};
 	assignSlots(exportRoot, []);
@@ -3377,7 +3408,8 @@ const buildModuleCompileContext = (
 	}
 	return {
 		modulesByPath,
-		staticExternalModulePaths: new Set<string>(),
+		staticExternalModulePaths: [],
+		staticExternalModulePathSet: new Set<string>(),
 	};
 };
 
@@ -3417,8 +3449,8 @@ function buildCompilerSemanticFrontend(
 	options: CompileOptions,
 ): LuaSemanticFrontend {
 	const extraGlobalNames = options.baseMetadata
-		? [...SYSTEM_ROM_GLOBAL_NAME_SET, ...options.baseMetadata.systemGlobalNames, ...options.baseMetadata.globalNames]
-		: Array.from(SYSTEM_ROM_GLOBAL_NAME_SET);
+		? [...SYSTEM_ROM_GLOBAL_NAMES, ...options.baseMetadata.systemGlobalNames, ...options.baseMetadata.globalNames]
+		: SYSTEM_ROM_GLOBAL_NAMES;
 	const sources = [{
 		path: entryChunk.range.path,
 		source: requireEntrySource(options, entryChunk.range.path),
@@ -3504,24 +3536,19 @@ function createProgramBuilderFromProgram(
 		const proto = base.protos[index];
 		const start = proto.entryPC;
 		const end = start + proto.codeLen;
-		const code = base.code.slice(start, end);
+		const code = base.code.subarray(start, end);
 		const startWord = Math.floor(start / INSTRUCTION_BYTES);
 		const endWord = Math.floor(end / INSTRUCTION_BYTES);
-		const ranges = metadata.debugRanges.slice(startWord, endWord);
+		const ranges: Array<SourceRange | null> = new Array(endWord - startWord);
+		for (let rangeIndex = startWord; rangeIndex < endWord; rangeIndex += 1) {
+			ranges[rangeIndex - startWord] = metadata.debugRanges[rangeIndex];
+		}
 		const localSlotsByProto = metadata.localSlotsByProto;
 		const localSlots = localSlotsByProto && localSlotsByProto[index]
 			? localSlotsByProto[index]
 			: EMPTY_LOCAL_SLOTS;
 		const upvalueNames = metadata.upvalueNamesByProto?.[index] ?? EMPTY_UPVALUE_NAMES;
-		const seededProto: Proto = {
-			entryPC: 0,
-			codeLen: proto.codeLen,
-			numParams: proto.numParams,
-			isVararg: proto.isVararg,
-			maxStack: proto.maxStack,
-			upvalueDescs: proto.upvalueDescs,
-		};
-		builder.seedProto(seededProto, code, ranges, [], localSlots, upvalueNames, protoIds[index]);
+		builder.seedProto(proto, code, ranges, [], localSlots, upvalueNames, protoIds[index]);
 	}
 	return builder;
 }
@@ -3641,7 +3668,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		metadata,
 		entryProtoIndex,
 		moduleProtoMap,
-		staticModulePaths: Array.from(moduleCompileContext.staticExternalModulePaths),
+		staticModulePaths: moduleCompileContext.staticExternalModulePaths,
 		constRelocs,
 	};
 }

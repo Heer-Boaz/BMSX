@@ -75,7 +75,7 @@ problems:
 - one-line forwarding wrappers, callback thunks, service/provider/facade
   shapes, and fake helpers that rename work without owning it;
 - lazy `ensure` initialization in steady-state code paths;
-- optional chaining, `typeof` checks, catch fallbacks, and `?? null`
+- optional chaining, `typeof` checks, catch fallbacks, and nullish-to-null
   normalization around values that should be guaranteed by design;
 - temporary arrays, objects, closures, or string work in hot emulator/runtime
   paths;
