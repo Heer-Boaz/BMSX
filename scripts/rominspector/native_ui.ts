@@ -4,7 +4,7 @@ import { parseCartHeader } from '../../src/bmsx/rompack/loader';
 import { parseRomMetadataSection } from '../../src/bmsx/rompack/metadata';
 import { clamp } from '../../src/bmsx/common/clamp';
 import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferHitRegion, type BufferLegendEntry, type BufferRegion } from './asciiart';
-import { buildAssetModalView, renderPreviewSectionWindow, type AssetModalView, type AssetPreviewSection } from './image_modal_view';
+import { buildAssetModalView, renderPreviewSectionWindow, type AssetModalView, type AssetPreviewSection } from './asset_modal_view';
 import { TuiInput, type TuiMouseEvent } from './tui_input';
 import { TuiScreen, TUI_COLORS, type TuiStyle } from './tui_screen';
 

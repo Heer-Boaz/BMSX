@@ -7,7 +7,7 @@ import {
 	PROGRAM_IMAGE_ID,
 	PROGRAM_SYMBOLS_IMAGE_ID,
 } from '../../src/bmsx/machine/program/loader';
-import { decodeBinary } from 'bmsx/common/serializer/binencoder';
+import { decodeBinary } from '../../src/bmsx/common/serializer/binencoder';
 
 export const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
 export const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';
