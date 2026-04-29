@@ -130,6 +130,7 @@ extern "C" RETRO_API void bmsx_focus_changed(bool focused) {
 }
 
 extern "C" RETRO_API bool bmsx_is_cart_program_active(void) {
+	// disable-next-line or_nil_fallback_pattern -- libretro may query this before platform creation; nullptr is the external host boundary.
 	auto* console = g_platform ? g_platform->console() : nullptr;
 	return console && console->hasRuntime() && console->runtime().isCartProgramStarted();
 }
@@ -1285,6 +1286,7 @@ extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
 }
 
 extern "C" int64_t bmsx_get_ufps(void) {
+	// disable-next-line or_nil_fallback_pattern -- libretro may ask timing before game load; nullptr means use default timing.
 	auto* console = g_platform ? g_platform->console() : nullptr;
 	return console ? console->machineManifest().ufpsScaled.value() : bmsx::DEFAULT_UFPS_SCALED;
 }
@@ -1637,8 +1639,10 @@ bool retro_unserialize(const void* data, size_t size) {
  * ============================================================================
  */
 
+// disable-next-line single_line_method_pattern -- libretro cheat reset is a public C ABI callback delegating to platform-owned cheat state.
 void retro_cheat_reset(void) { g_platform->resetCheats(); }
 
+// disable-next-line single_line_method_pattern -- libretro cheat set is a public C ABI callback delegating to platform-owned cheat state.
 void retro_cheat_set(unsigned index, bool enabled, const char* code) {
 	g_platform->setCheat(index, enabled, code);
 }

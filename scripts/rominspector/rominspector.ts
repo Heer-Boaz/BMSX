@@ -5,6 +5,7 @@
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import type { RomAsset, CartRomHeader, RomManifest } from '../../src/bmsx/rompack/format';
+import { PROGRAM_IMAGE_ID } from '../../src/bmsx/machine/program/loader';
 import { getZippedRomAndRomLabelFromBlob, loadRomAssetList, parseCartridgeIndex, parseCartHeader } from '../../src/bmsx/rompack/loader';
 import {
 	buildManifestAsset,
@@ -178,10 +179,9 @@ async function loadRompackFromFile(romfile: string): Promise<Uint8Array> {
 	let rombin: Uint8Array | null = null;
 	if (isCompressed) {
 		console.log('ROM is compressed, decompressing...');
-		let zipped = zippedView;
 		let decompressed: Uint8Array | null = null;
 		try {
-			decompressed = pako.inflate(zipped);
+			decompressed = pako.inflate(zippedView);
 		} catch (e: any) {
 			const msg = e && typeof e.message === 'string' ? e.message : String(e);
 			console.error(`Failed to decompress ROM: ${msg}`);
@@ -206,10 +206,11 @@ async function loadRompackFromFile(romfile: string): Promise<Uint8Array> {
  * Print asset list to stdout in a tabular format (CLI mode).
  */
 function printAssetList(assets: RomAsset[], romByteLength: number): void {
-	const offsetHexWidth = Math.max(1, Math.max(0, romByteLength - 1).toString(16).length);
+	const offsetHexWidth = romByteLength > 1 ? (romByteLength - 1).toString(16).length : 1;
 	const headers = ['id', 'type', 'path', 'size', 'buffer-start', 'buffer-end', 'metabuffer-start', 'metabuffer-end'];
 	const rows = sortAssetsById(assets).map(asset => {
-		const path = asset.source_path ?? asset.normalized_source_path ?? '';
+		const sourcePath = asset.source_path ?? asset.normalized_source_path;
+		const path = sourcePath === undefined ? '<none>' : sourcePath;
 		const hasBufferRange = typeof asset.start === 'number' && typeof asset.end === 'number';
 		const hasMetaRange = typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number';
 		const size = (hasBufferRange ? asset.end - asset.start : 0) + (hasMetaRange ? asset.metabuffer_end - asset.metabuffer_start : 0);
@@ -254,19 +255,61 @@ function printManifest(manifest: RomManifest | null, projectRootPath: string | n
 	console.log(JSON.stringify(payload, null, 2));
 }
 
+function formatConstPoolValue(value: unknown): string {
+	return typeof value === 'string' ? `'${value}'` : String(value);
+}
+
+function printProgramLinkInfo(rombin: Uint8Array, assets: RomAsset[]): void {
+	const programAsset = assets.find(asset => asset.resid === PROGRAM_IMAGE_ID);
+	if (!programAsset || programAsset.start === undefined || programAsset.end === undefined) {
+		throw new Error(`[RomInspector] Program asset '${PROGRAM_IMAGE_ID}' is missing or has no buffer range.`);
+	}
+	const { programImage } = loadProgramFromAssets(rombin, assets);
+	const constPool = programImage.program.constPool;
+	const constRelocs = programImage.link.constRelocs;
+	console.log(`Program asset: start=${programAsset.start} end=${programAsset.end} size=${programAsset.end - programAsset.start}`);
+	console.log(`constPool length: ${constPool.length}`);
+	let moduleConstCount = 0;
+	for (let index = 0; index < constPool.length; index += 1) {
+		const value = constPool[index];
+		if (typeof value === 'string' && value.startsWith('modslot:')) {
+			console.log(`const[${index}] = ${value}`);
+			moduleConstCount += 1;
+		}
+	}
+	if (moduleConstCount === 0) {
+		console.log('modslot constants: <none>');
+	}
+	console.log(`constRelocs length: ${constRelocs.length}`);
+	let moduleRelocCount = 0;
+	for (let index = 0; index < constRelocs.length; index += 1) {
+		const reloc = constRelocs[index];
+		if (reloc.kind === 'module') {
+			const value = constPool[reloc.constIndex];
+			console.log(`reloc[${index}] wordIndex=${reloc.wordIndex} kind=${reloc.kind} constIndex=${reloc.constIndex} -> const=${formatConstPoolValue(value)}`);
+			moduleRelocCount += 1;
+		}
+	}
+	if (moduleRelocCount === 0) {
+		console.log('module relocs: <none>');
+	}
+}
+
 async function main() {
 	const args = process.argv.slice(2);
-	const uiFlag = args.includes('--ui');
-	const nativeUiFlag = args.includes('--ui-native');
-	const listAssetsFlag = args.includes('--list-assets');
-	const manifestFlag = args.includes('--manifest');
-	const programAsmFlag = args.includes('--program-asm');
-	const cycleCostFlag = args.includes('--cycle-cost');
+	const argSet = new Set(args);
+	const uiFlag = argSet.has('--ui');
+	const nativeUiFlag = argSet.has('--ui-native');
+	const listAssetsFlag = argSet.has('--list-assets');
+	const manifestFlag = argSet.has('--manifest');
+	const programAsmFlag = argSet.has('--program-asm');
+	const programLinkInfoFlag = argSet.has('--program-link-info');
+	const cycleCostFlag = argSet.has('--cycle-cost');
 	const programAsmBias = parseProgramAsmBias(args);
 	const romfile = args.find(arg => !arg.startsWith('--'));
 
 	if (!romfile) {
-		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--ui-native] [--list-assets] [--program-asm] [--program-asm-bias <value>] [--cycle-cost]');
+		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--ui-native] [--list-assets] [--program-asm] [--program-asm-bias <value>] [--program-link-info] [--cycle-cost]');
 		console.error('Options:');
 		console.error('  --ui            Open the native interactive UI');
 		console.error('  --ui-native     Alias for the native interactive UI');
@@ -275,6 +318,7 @@ async function main() {
 		console.error('  --cycle-cost    Print fantasy CPU cycle cost analysis');
 		console.error('  --program-asm   Print program disassembly and exit');
 		console.error('  --program-asm-bias  Base PC to add (e.g. 0x80000 or 80000h)');
+		console.error('  --program-link-info  Print program const-pool module slots and module relocations');
 		process.exit(1);
 	}
 
@@ -312,6 +356,11 @@ async function main() {
 			console.warn(`[RomInspector] Source comments unavailable for ${missingSourcePaths.length} Lua path(s); ROM is stripped or partial.`);
 		}
 		console.log(disassembleProgramImage(program, metadata, sourceTextForPath, { assembly: true, pcBias }));
+		process.exit(0);
+	}
+
+	if (programLinkInfoFlag) {
+		printProgramLinkInfo(rombin, assetList);
 		process.exit(0);
 	}
 

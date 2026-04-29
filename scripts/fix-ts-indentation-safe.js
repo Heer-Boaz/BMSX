@@ -101,7 +101,8 @@ function listCandidateFiles(requestedPaths = []) {
 		throw new Error(`git ls-files --others failed: ${untracked.stderr ? untracked.stderr.toString('utf8') : untracked.status}`);
 	}
 	const files = new Set([...splitNullDelimited(tracked.stdout), ...splitNullDelimited(untracked.stdout)]);
-	const allFiles = Array.from(files);
+	const allFiles = Array.from(files)
+		.filter(file => fs.existsSync(path.join(ROOT, file)));
 	if (requestedPaths.length === 0) {
 		return allFiles;
 	}

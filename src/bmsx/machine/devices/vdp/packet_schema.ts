@@ -1,6 +1,7 @@
 import {
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
+	IO_CMD_VDP_CONFIG_SURFACE,
 	IO_CMD_VDP_DRAW_LINE,
 	IO_CMD_VDP_FILL_RECT,
 	IO_CMD_VDP_GLYPH_RUN,
@@ -107,12 +108,19 @@ const TILE_RUN_ARG_KINDS = [
 	VdpPacketWordKind.U32,
 ] as const;
 
+const CONFIG_SURFACE_ARG_KINDS = [
+	VdpPacketWordKind.U32,
+	VdpPacketWordKind.U32,
+	VdpPacketWordKind.U32,
+] as const;
+
 const CLEAR_PACKET_SCHEMA: VdpPacketSchema = { cmd: IO_CMD_VDP_CLEAR, name: 'clear', argWords: CLEAR_ARG_KINDS.length, argKinds: CLEAR_ARG_KINDS };
 const FILL_RECT_PACKET_SCHEMA: VdpPacketSchema = { cmd: IO_CMD_VDP_FILL_RECT, name: 'fill_rect', argWords: FILL_RECT_ARG_KINDS.length, argKinds: FILL_RECT_ARG_KINDS };
 const DRAW_LINE_PACKET_SCHEMA: VdpPacketSchema = { cmd: IO_CMD_VDP_DRAW_LINE, name: 'draw_line', argWords: DRAW_LINE_ARG_KINDS.length, argKinds: DRAW_LINE_ARG_KINDS };
 const BLIT_PACKET_SCHEMA: VdpPacketSchema = { cmd: IO_CMD_VDP_BLIT, name: 'blit', argWords: BLIT_ARG_KINDS.length, argKinds: BLIT_ARG_KINDS };
 const GLYPH_RUN_PACKET_SCHEMA: VdpPacketSchema = { cmd: IO_CMD_VDP_GLYPH_RUN, name: 'glyph_run', argWords: GLYPH_RUN_ARG_KINDS.length, argKinds: GLYPH_RUN_ARG_KINDS };
 const TILE_RUN_PACKET_SCHEMA: VdpPacketSchema = { cmd: IO_CMD_VDP_TILE_RUN, name: 'tile_run', argWords: TILE_RUN_ARG_KINDS.length, argKinds: TILE_RUN_ARG_KINDS };
+const CONFIG_SURFACE_PACKET_SCHEMA: VdpPacketSchema = { cmd: IO_CMD_VDP_CONFIG_SURFACE, name: 'config_surface', argWords: CONFIG_SURFACE_ARG_KINDS.length, argKinds: CONFIG_SURFACE_ARG_KINDS };
 
 export function findVdpPacketSchema(cmd: number): VdpPacketSchema | null {
 	switch (cmd >>> 0) {
@@ -128,6 +136,8 @@ export function findVdpPacketSchema(cmd: number): VdpPacketSchema | null {
 			return GLYPH_RUN_PACKET_SCHEMA;
 		case IO_CMD_VDP_TILE_RUN:
 			return TILE_RUN_PACKET_SCHEMA;
+		case IO_CMD_VDP_CONFIG_SURFACE:
+			return CONFIG_SURFACE_PACKET_SCHEMA;
 		default:
 			return null;
 	}

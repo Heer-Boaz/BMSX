@@ -98,6 +98,7 @@ struct AudioBuffer {
 		samples = num_samples;
 	}
 
+	// disable-next-line single_line_method_pattern -- audio buffer reserves stereo sample storage at the libretro audio boundary.
 	void reserve(size_t max_samples) {
 		buffer.resize(max_samples * 2); // stereo
 	}
@@ -190,7 +191,7 @@ public:
 	bool loadRomFromPath(const char* path);
 	bool loadEmptyCart();
 	void unloadRom();
-	void tryLoadSystemRom(const char* romPath);  // Try to load bmsx-bios.rom from ROM directory
+	void tryLoadSystemRom(const char* romPath);
 
 	// Emulation control
 	void reset();

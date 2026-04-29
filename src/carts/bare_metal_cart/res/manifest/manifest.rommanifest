@@ -1,0 +1,18 @@
+title: Bare Metal Cart
+short_name: 'bare_metal_cart'
+rom_name: 'bare_metal_cart'
+machine:
+    render_size:
+        width: 256
+        height: 212
+    namespace: 'bare_metal_cart'
+    ufps: 50000000
+    specs:
+        cpu:
+            cpu_freq_hz: 8000000
+            imgdec_bytes_per_sec: 26214400
+        dma:
+            dma_bytes_per_sec_iso: 8388608
+            dma_bytes_per_sec_bulk: 26214400
+lua:
+    entry_path: cart.lua

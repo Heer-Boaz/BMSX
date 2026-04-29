@@ -108,6 +108,12 @@ inline constexpr VdpPacketWordKind VDP_TILE_RUN_ARG_KINDS[] = {
 	VdpPacketWordKind::U32,
 };
 
+inline constexpr VdpPacketWordKind VDP_CONFIG_SURFACE_ARG_KINDS[] = {
+	VdpPacketWordKind::U32,
+	VdpPacketWordKind::U32,
+	VdpPacketWordKind::U32,
+};
+
 inline constexpr VdpPacketSchema VDP_CLEAR_PACKET_SCHEMA = {
 	IO_CMD_VDP_CLEAR,
 	"clear",
@@ -150,6 +156,13 @@ inline constexpr VdpPacketSchema VDP_TILE_RUN_PACKET_SCHEMA = {
 	VDP_TILE_RUN_ARG_KINDS,
 };
 
+inline constexpr VdpPacketSchema VDP_CONFIG_SURFACE_PACKET_SCHEMA = {
+	IO_CMD_VDP_CONFIG_SURFACE,
+	"config_surface",
+	static_cast<uint32_t>(sizeof(VDP_CONFIG_SURFACE_ARG_KINDS) / sizeof(VDP_CONFIG_SURFACE_ARG_KINDS[0])),
+	VDP_CONFIG_SURFACE_ARG_KINDS,
+};
+
 inline const VdpPacketSchema* findVdpPacketSchema(uint32_t cmd) {
 	switch (cmd) {
 		case IO_CMD_VDP_CLEAR:
@@ -164,6 +177,8 @@ inline const VdpPacketSchema* findVdpPacketSchema(uint32_t cmd) {
 			return &VDP_GLYPH_RUN_PACKET_SCHEMA;
 		case IO_CMD_VDP_TILE_RUN:
 			return &VDP_TILE_RUN_PACKET_SCHEMA;
+		case IO_CMD_VDP_CONFIG_SURFACE:
+			return &VDP_CONFIG_SURFACE_PACKET_SCHEMA;
 		default:
 			return nullptr;
 	}

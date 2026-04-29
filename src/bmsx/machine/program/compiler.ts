@@ -1151,20 +1151,20 @@ class FunctionBuilder {
 
 	private tryResolveStaticModuleBinding(expression: LuaExpression, allowRequireRoot: boolean): ModuleBinding | null {
 		/*
-		  Note: fantasy-console semantics and link-time placeholders
+			Note: fantasy-console semantics and link-time placeholders
 
-		  - This project targets a fantasy-console-style ABI based on flat machine instructions; Lua
+			- This project targets a fantasy-console-style ABI based on flat machine instructions; Lua
 			runtime concepts such as live module tables are not part of the ABI. The compiler treats
 			certain system ROM modules as compile-time descriptors and records their paths in metadata
 			(e.g. `staticModulePaths` / `staticExternalModulePaths`).
-		  - The compiler must not fabricate runtime tables. When a module export cannot be resolved at
+			- The compiler must not fabricate runtime tables. When a module export cannot be resolved at
 			compile time, the compiler emits an explicit link-time placeholder into the instruction
 			stream (current implementation uses a nil-load as the sentinel). That placeholder signals the
 			linker to resolve or rewrite the operand/instruction during linking. It is NOT intended to be
 			a silently returned runtime value.
-		  - This function detects static module bindings and marks them `external` so later compiler and
+			- This function detects static module bindings and marks them `external` so later compiler and
 			linker phases can preserve semantics and perform link-time resolution of placeholders.
-		*/
+		 */
 		if (allowRequireRoot) {
 			const requireBinding = this.tryResolveRequireModuleBinding(expression);
 			if (requireBinding !== null) {
@@ -1228,38 +1228,38 @@ class FunctionBuilder {
 	}
 
 	/*
-	  Check for direct fields on compile-time-only module roots
+		Check for direct fields on compile-time-only module roots
 
-	  - Detect patterns like `MODULE_ROOT.<key>` or `MODULE_ROOT['<key>']` where the module root is
+		- Detect patterns like `MODULE_ROOT.<key>` or `MODULE_ROOT['<key>']` where the module root is
 		flagged as compile-time-only and `<key>` is not exported.
-	  - The compiler does not emit runtime table-accesses for these cases. Instead it emits an
+		- The compiler does not emit runtime table-accesses for these cases. Instead it emits an
 		explicit link-time placeholder into the instruction stream (the current emitter uses a nil
 		load as the sentinel). The linker is responsible for resolving those placeholders into the
 		final relocated operand or emitting the appropriate machine-level access. The placeholder
 		SHOULD NOT be interpreted as a final runtime `nil` by downstream code.
-	*/
+	 */
 
 	/*
-	  Detect a compile-time-only module root binding
+		Detect a compile-time-only module root binding
 
-	  - Returns true when a local binding is associated with a moduleBinding and that module is
+		- Returns true when a local binding is associated with a moduleBinding and that module is
 		marked `external` (compile-time-only) and the moduleBinding is the module root.
-	  - This detection prevents treating the module root as a runtime value (local or upvalue) under
+		- This detection prevents treating the module root as a runtime value (local or upvalue) under
 		the fantasy-console semantics used by this project.
-	*/
+	 */
 	private isExternalModuleRootBinding(binding: LocalBinding | null | undefined): boolean {
 		return binding?.moduleBinding?.external === true && binding.moduleBinding.exportDepth === 0;
 	}
 
 	/*
-	  Error on attempts to use a compile-time-only module root as a runtime value
+		Error on attempts to use a compile-time-only module root as a runtime value
 
-	  - Under the fantasy-console semantics, external modules used for ABI/BIOS are compile-time-only
+		- Under the fantasy-console semantics, external modules used for ABI/BIOS are compile-time-only
 		descriptors and not runtime Lua tables. Storing or returning a whole module (for example
 		`local m = require('bios')`) is therefore invalid and is rejected with a compile-time error.
-	  - This makes the failure explicit and directs the developer to access specific exported slots
+		- This makes the failure explicit and directs the developer to access specific exported slots
 		instead of treating the module as a runtime table.
-	*/
+	 */
 	private failExternalModuleRootRuntimeUse(binding: LocalBinding): never {
 		throw new Error(`[Compiler] External module '${binding.moduleBinding!.modulePath}' is compile-time only; access an exported field instead of using the module table as a runtime value.`);
 	}
@@ -1268,13 +1268,13 @@ class FunctionBuilder {
 		const name = this.getReferenceName(reference);
 		const binding = this.resolveReferenceVisibleBinding(reference);
 		/*
-		  Prevent leaking a compile-time-only module root as a runtime value
+			Prevent leaking a compile-time-only module root as a runtime value
 
-		  - If `binding` refers to a compile-time-only module root, it must not be used as a runtime
+			- If `binding` refers to a compile-time-only module root, it must not be used as a runtime
 			value (stored in a local or captured as an upvalue) under the project's fantasy-console ABI.
-		  - We detect that here and raise a compile-time error via `failExternalModuleRootRuntimeUse` to
+			- We detect that here and raise a compile-time error via `failExternalModuleRootRuntimeUse` to
 			prevent generating runtime references to a non-existent module table.
-		*/
+		 */
 		if (this.isExternalModuleRootBinding(binding)) {
 			this.failExternalModuleRootRuntimeUse(binding!);
 		}
@@ -2544,10 +2544,10 @@ class FunctionBuilder {
 			return;
 		}
 		/*
-		  If a direct read targets a non-exported field on a compile-time-only module root,
-		  emit a link-time placeholder (const string 'modslot:<slotName>') that the linker will
-		  resolve into a GETGL/GETSYS instruction. Do not fabricate a runtime table.
-		*/
+			If a direct read targets a non-exported field on a compile-time-only module root,
+			emit a link-time placeholder (const string 'modslot:<slotName>') that the linker will
+			resolve into a GETGL/GETSYS instruction. Do not fabricate a runtime table.
+		 */
 		{
 			const binding = this.tryResolveStaticModuleBinding(expression.base, false);
 			if (binding && binding.external && binding.exportDepth === 0) {
@@ -2574,9 +2574,9 @@ class FunctionBuilder {
 			return;
 		}
 		/*
-		  For index access on compile-time-only module roots, if the key is statically known and not
-		  exported, emit a link-time placeholder so the linker can resolve it to a global slot.
-		*/
+			For index access on compile-time-only module roots, if the key is statically known and not
+			exported, emit a link-time placeholder so the linker can resolve it to a global slot.
+		 */
 		{
 			const keyStatic = this.tryGetModuleExportStaticKey((expression as LuaIndexExpression).index);
 			const binding = this.tryResolveStaticModuleBinding(expression.base, false);

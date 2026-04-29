@@ -191,6 +191,15 @@ void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t 
 			}
 			break;
 		}
+		case IO_CMD_VDP_CONFIG_SURFACE: {
+			assertVdpPacketArgWords(cmd, argWords);
+			vdp.configureVramSlotSurface(
+				readPacketArgU32(argReader, cmd, 0),
+				readPacketArgU32(argReader, cmd, 1),
+				readPacketArgU32(argReader, cmd, 2)
+			);
+			break;
+		}
 		default:
 			throw vdpFault("unknown I/O command " + std::to_string(cmd) + ".");
 	}

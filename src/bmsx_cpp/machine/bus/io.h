@@ -19,6 +19,7 @@ constexpr int IO_CMD_VDP_BLIT = 0x12;
 constexpr int IO_CMD_VDP_DRAW_LINE = 0x13;
 constexpr int IO_CMD_VDP_GLYPH_RUN = 0x14;
 constexpr int IO_CMD_VDP_TILE_RUN = 0x15;
+constexpr int IO_CMD_VDP_CONFIG_SURFACE = 0x16;
 
 constexpr uint32_t APU_SAMPLE_RATE_HZ = 44100u;
 constexpr uint32_t APU_RATE_STEP_Q16_ONE = 0x10000u;

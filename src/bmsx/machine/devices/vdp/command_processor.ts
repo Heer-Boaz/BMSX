@@ -2,6 +2,7 @@ import {
 	IO_ARG_STRIDE,
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
+	IO_CMD_VDP_CONFIG_SURFACE,
 	IO_CMD_VDP_DRAW_LINE,
 	IO_CMD_VDP_FILL_RECT,
 	IO_CMD_VDP_GLYPH_RUN,
@@ -217,6 +218,15 @@ function processVdpCommandCore(vdp: VDP, cpu: CPU, api: Api, params: {
 				z: readPacketArgF32(params.argReader, params.cmd, 9),
 				layer: readPacketArgU32(params.argReader, params.cmd, 10) as 0 | 1 | 2,
 			});
+			break;
+		}
+		case IO_CMD_VDP_CONFIG_SURFACE: {
+			assertVdpPacketArgWords(params.cmd, params.argWords);
+			vdp.configureVramSlotSurface(
+				readPacketArgU32(params.argReader, params.cmd, 0),
+				readPacketArgU32(params.argReader, params.cmd, 1),
+				readPacketArgU32(params.argReader, params.cmd, 2),
+			);
 			break;
 		}
 		default:

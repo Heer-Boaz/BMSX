@@ -6,6 +6,7 @@ export const IO_CMD_VDP_BLIT = 0x12;
 export const IO_CMD_VDP_DRAW_LINE = 0x13;
 export const IO_CMD_VDP_GLYPH_RUN = 0x14;
 export const IO_CMD_VDP_TILE_RUN = 0x15;
+export const IO_CMD_VDP_CONFIG_SURFACE = 0x16;
 
 export const APU_SAMPLE_RATE_HZ = 44100;
 export const APU_RATE_STEP_Q16_ONE = 0x1_0000;

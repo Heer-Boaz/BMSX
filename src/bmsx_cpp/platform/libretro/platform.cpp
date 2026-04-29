@@ -30,6 +30,8 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 #ifndef ENABLE_PERFORMANCE_LOGS
 #define ENABLE_PERFORMANCE_LOGS 0
@@ -43,6 +45,9 @@ constexpr size_t kAudioRefillMarginFrames = 128;
 constexpr size_t kAudioRequestAheadFrames = 256;
 constexpr size_t kAudioTargetMinFrames = 384;
 constexpr size_t kAudioTargetMaxFrames = 4096;
+constexpr const char* kReleaseSystemRomName = "bmsx-bios.rom";
+constexpr const char* kDebugSystemRomName = "bmsx-bios.debug.rom";
+constexpr const char* kDebugRomSuffix = ".debug.rom";
 
 static void installBuiltinRenderPipeline(GameView* view, GPUBackend* backend) {
 	auto registry = std::make_unique<RenderPassLibrary>(backend);
@@ -72,35 +77,64 @@ private:
 	f32 m_pitch = 1.0f;
 };
 
-std::string buildSystemRomPath(const std::string& directory) {
-	if (directory.empty()) {
-		return {};
-	}
-	std::string path = directory;
+void appendPathSeparator(std::string& path) {
 	const char last = path.back();
 	if (last != '/' && last != '\\') {
 		path.push_back('/');
 	}
-	path.append("bmsx-bios.rom");
+}
+
+std::string appendPathSegment(std::string path, const char* segment) {
+	if (path.empty()) {
+		return {};
+	}
+	appendPathSeparator(path);
+	path.append(segment);
 	return path;
 }
 
-std::string buildSystemRomPathInSubdir(const std::string& directory, const char* subdir) {
+std::string buildSystemRomPath(const std::string& directory, const char* fileName) {
+	return appendPathSegment(directory, fileName);
+}
+
+std::string buildSystemRomPathInSubdir(const std::string& directory, const char* subdir, const char* fileName) {
 	if (directory.empty()) {
 		return {};
 	}
-	std::string path = directory;
-	const char last = path.back();
-	if (last != '/' && last != '\\') {
-		path.push_back('/');
+	return buildSystemRomPath(appendPathSegment(directory, subdir), fileName);
+}
+
+bool hasSuffix(const std::string& value, const char* suffix) {
+	const size_t suffixLength = std::strlen(suffix);
+	return value.size() >= suffixLength && value.compare(value.size() - suffixLength, suffixLength, suffix) == 0;
+}
+
+bool isDebugRomPath(const char* path) {
+	return path != nullptr && hasSuffix(path, kDebugRomSuffix);
+}
+
+void appendUniquePath(std::vector<std::string>& paths, std::string path) {
+	if (path.empty()) {
+		return;
 	}
-	path.append(subdir);
-	const char subdirLast = path.back();
-	if (subdirLast != '/' && subdirLast != '\\') {
-		path.push_back('/');
+	if (std::find(paths.begin(), paths.end(), path) == paths.end()) {
+		paths.push_back(std::move(path));
 	}
-	path.append("bmsx-bios.rom");
-	return path;
+}
+
+void appendSystemRomCandidateSet(std::vector<std::string>& paths, const std::string& directory, const char* fileName, bool includeSubdirs) {
+	appendUniquePath(paths, buildSystemRomPath(directory, fileName));
+	if (includeSubdirs) {
+		appendUniquePath(paths, buildSystemRomPathInSubdir(directory, "BMSX", fileName));
+		appendUniquePath(paths, buildSystemRomPathInSubdir(directory, "bmsx", fileName));
+	}
+}
+
+void appendSystemRomCandidates(std::vector<std::string>& paths, const std::string& directory, bool preferDebug, bool includeSubdirs) {
+	const char* primary = preferDebug ? kDebugSystemRomName : kReleaseSystemRomName;
+	const char* fallback = preferDebug ? kReleaseSystemRomName : kDebugSystemRomName;
+	appendSystemRomCandidateSet(paths, directory, primary, includeSubdirs);
+	appendSystemRomCandidateSet(paths, directory, fallback, includeSubdirs);
 }
 }
 
@@ -185,14 +219,17 @@ void LibretroPlatform::setInputStateCallback(retro_input_state_t cb) {
 	static_cast<LibretroInputHub*>(m_input_hub.get())->setInputStateCallback(cb);
 }
 
+// disable-next-line single_line_method_pattern -- platform input API keeps the concrete libretro input hub hidden from C ABI callers.
 void LibretroPlatform::postKeyboardEvent(std::string_view code, bool down) {
 	static_cast<LibretroInputHub*>(m_input_hub.get())->postKeyboardEvent(code, down);
 }
 
+// disable-next-line single_line_method_pattern -- keyboard reset is part of the platform input boundary; the hub remains private.
 void LibretroPlatform::clearKeyboardState() {
 	static_cast<LibretroInputHub*>(m_input_hub.get())->clearKeyboardState();
 }
 
+// disable-next-line single_line_method_pattern -- focus reset is exposed as platform state while input hub owns the concrete key state.
 void LibretroPlatform::resetFocusState() {
 	static_cast<LibretroInputHub*>(m_input_hub.get())->resetFocusState();
 }
@@ -447,33 +484,25 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 }
 
 void LibretroPlatform::tryLoadSystemRom(const char* romPath) {
-	// Extract directory from ROM path
 	std::string pathStr(romPath);
 	size_t lastSlash = pathStr.find_last_of("/\\");
 	std::string directory = (lastSlash != std::string::npos) ? pathStr.substr(0, lastSlash + 1) : "";
-	std::string systemRomPath = buildSystemRomPath(directory);
+	const bool preferDebug = isDebugRomPath(romPath);
 	std::vector<std::string> systemRomPaths;
+	appendSystemRomCandidates(systemRomPaths, directory, preferDebug, false);
 	if (!m_system_dir.empty()) {
-		systemRomPaths.push_back(buildSystemRomPath(m_system_dir));
-		systemRomPaths.push_back(buildSystemRomPathInSubdir(m_system_dir, "BMSX"));
-		systemRomPaths.push_back(buildSystemRomPathInSubdir(m_system_dir, "bmsx"));
+		appendSystemRomCandidates(systemRomPaths, m_system_dir, preferDebug, true);
 	}
 
-	if (!systemRomPath.empty() && loadSystemRomFromFile(systemRomPath)) {
-		return;
-	}
 	for (const auto& path : systemRomPaths) {
 		if (!path.empty() && loadSystemRomFromFile(path)) {
 			return;
 		}
 	}
 
-	if (!systemRomPath.empty()) {
-		log(RETRO_LOG_INFO, "[BMSX] No system ROM found at: %s (continuing without)\n", systemRomPath.c_str());
-	}
 	for (const auto& path : systemRomPaths) {
 		if (!path.empty()) {
-			log(RETRO_LOG_INFO, "[BMSX] No system ROM found in system dir: %s (continuing without)\n", path.c_str());
+			log(RETRO_LOG_INFO, "[BMSX] No system ROM found at: %s (continuing without)\n", path.c_str());
 		}
 	}
 }
@@ -508,13 +537,11 @@ bool LibretroPlatform::loadEmptyCart() {
 	// TODO: Make this configurable via core options
 	std::vector<std::string> systemRomPaths;
 	if (!m_system_dir.empty()) {
-		systemRomPaths.push_back(buildSystemRomPath(m_system_dir));
-		systemRomPaths.push_back(buildSystemRomPathInSubdir(m_system_dir, "BMSX"));
-		systemRomPaths.push_back(buildSystemRomPathInSubdir(m_system_dir, "bmsx"));
+		appendSystemRomCandidates(systemRomPaths, m_system_dir, true, true);
 	}
-	systemRomPaths.emplace_back("dist/bmsx-bios.rom");
-	systemRomPaths.emplace_back("./bmsx-bios.rom");
-	systemRomPaths.emplace_back("../bmsx-bios.rom");
+	appendSystemRomCandidates(systemRomPaths, "dist", true, false);
+	appendSystemRomCandidates(systemRomPaths, ".", true, false);
+	appendSystemRomCandidates(systemRomPaths, "..", true, false);
 
 	bool systemRomLoaded = false;
 	for (const auto& path : systemRomPaths) {
@@ -661,6 +688,7 @@ void LibretroPlatform::setPlatformPaused(bool paused) {
 	m_console->setHostPaused(paused, m_rom_loaded);
 }
 
+// disable-next-line single_line_method_pattern -- frame input polling stays on the platform API while the libretro hub owns device polling.
 void LibretroPlatform::pollInput() {
 	static_cast<LibretroInputHub*>(m_input_hub.get())->poll();
 }
@@ -1104,6 +1132,7 @@ std::optional<InputEvt> LibretroInputHub::nextEvt() {
 	return evt;
 }
 
+// disable-next-line single_line_method_pattern -- event queue clear is the public input-hub lifecycle hook for focus/menu transitions.
 void LibretroInputHub::clearEvtQ() {
 	m_event_queue.clear();
 }

@@ -127,6 +127,11 @@ type VdpExecutionState = {
 };
 
 const VDP_SERVICE_BATCH_WORK_UNITS = 128;
+const VDP_SLOT_SURFACE_BINDINGS = [
+	{ slot: VDP_SLOT_SYSTEM, surfaceId: VDP_RD_SURFACE_SYSTEM },
+	{ slot: VDP_SLOT_PRIMARY, surfaceId: VDP_RD_SURFACE_PRIMARY },
+	{ slot: VDP_SLOT_SECONDARY, surfaceId: VDP_RD_SURFACE_SECONDARY },
+] as const;
 const BMSX_BASE_COLORS: color[] = [
 	{ r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 0 }, // 0 = Transparent
 	{ r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 1 }, // 1 = Black
@@ -157,6 +162,15 @@ function resolveAtlasSlotFromMemory(memory: Memory, atlasId: number): number {
 		return VDP_SLOT_SECONDARY;
 	}
 	throw vdpFault(`atlas ${atlasId} is not loaded in a VDP slot.`);
+}
+
+function resolveVdpSlotSurfaceBinding(value: number, from: 'slot' | 'surfaceId', to: 'slot' | 'surfaceId', faultMessage: string): number {
+	for (const binding of VDP_SLOT_SURFACE_BINDINGS) {
+		if (binding[from] === value) {
+			return binding[to];
+		}
+	}
+	throw vdpFault(faultMessage);
 }
 
 export const BmsxColors: color[] = [
@@ -1421,21 +1435,8 @@ export class VDP implements VramWriteSink {
 		this.refreshSubmitBusyStatus();
 	}
 
-	private resolveSurfaceIdForSlot(slot: number): number {
-		if (slot === VDP_SLOT_SYSTEM) {
-			return VDP_RD_SURFACE_SYSTEM;
-		}
-		if (slot === VDP_SLOT_PRIMARY) {
-			return VDP_RD_SURFACE_PRIMARY;
-		}
-		if (slot === VDP_SLOT_SECONDARY) {
-			return VDP_RD_SURFACE_SECONDARY;
-		}
-		throw vdpFault(`source slot ${slot} is not a VDP blitter slot.`);
-	}
-
 	public resolveBlitterSource(source: VdpSlotSource): VdpBlitterSource {
-		const surfaceId = this.resolveSurfaceIdForSlot(source.slot);
+		const surfaceId = resolveVdpSlotSurfaceBinding(source.slot, 'slot', 'surfaceId', `source slot ${source.slot} is not a VDP blitter slot.`);
 		return {
 			surfaceId,
 			srcX: source.u,
@@ -1452,7 +1453,7 @@ export class VDP implements VramWriteSink {
 			source,
 			surfaceWidth: surface.width,
 			surfaceHeight: surface.height,
-			slot: this.resolveSurfaceSlotBinding(source.surfaceId),
+			slot: resolveVdpSlotSurfaceBinding(source.surfaceId, 'surfaceId', 'slot', `surface ${source.surfaceId} cannot be sampled by the WebGL blitter.`),
 		};
 	}
 
@@ -1782,6 +1783,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public enqueueTileRun(desc: VdpSourceTileRunInput): void {
+		this.requireTileRunCount('enqueueTileRun', desc.sources.length, desc.cols, desc.rows);
 		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_DIRECT, 'VDP fault: enqueueTileRun tile size mismatch');
 	}
 
@@ -1801,19 +1803,6 @@ export class VDP implements VramWriteSink {
 			width: surface.surfaceWidth,
 			height: surface.surfaceHeight,
 		};
-	}
-
-	private resolveSurfaceSlotBinding(surfaceId: number): number {
-		if (surfaceId === VDP_RD_SURFACE_PRIMARY) {
-			return VDP_SLOT_PRIMARY;
-		}
-		if (surfaceId === VDP_RD_SURFACE_SECONDARY) {
-			return VDP_SLOT_SECONDARY;
-		}
-		if (surfaceId === VDP_RD_SURFACE_SYSTEM) {
-			return VDP_SLOT_SYSTEM;
-		}
-		throw vdpFault(`surface ${surfaceId} cannot be sampled by the WebGL blitter.`);
 	}
 
 	public get frameBufferWidth(): number {
@@ -2201,6 +2190,19 @@ export class VDP implements VramWriteSink {
 
 	public setDecodedVramSurfaceDimensions(baseAddr: number, width: number, height: number): void {
 		const slot = this.findVramSlot(baseAddr, 1);
+		this.setVramSlotLogicalDimensions(slot, width, height);
+	}
+
+	public configureVramSlotSurface(slotId: number, width: number, height: number): void {
+		if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+			throw vdpFault(`invalid VRAM surface dimensions ${width}x${height}.`);
+		}
+		const surfaceId = resolveVdpSlotSurfaceBinding(slotId, 'slot', 'surfaceId', `source slot ${slotId} is not a VDP blitter slot.`);
+		const slot = this.getVramSlotBySurfaceId(surfaceId);
+		const byteLength = width * height * 4;
+		if (byteLength > slot.capacity) {
+			throw vdpFault(`VRAM surface ${width}x${height} exceeds slot capacity ${slot.capacity}.`);
+		}
 		this.setVramSlotLogicalDimensions(slot, width, height);
 	}
 

@@ -197,6 +197,7 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int ent
 	boot(image.program.get(), metadata, entryProtoIndex, &staticModulePaths);
 }
 
+// disable-next-line single_line_method_pattern -- ProgramImage default boot keeps entry-proto/static-module ownership at the image boundary.
 void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata) {
 	boot(image, metadata, image.entryProtoIndex, image.staticModulePaths);
 }

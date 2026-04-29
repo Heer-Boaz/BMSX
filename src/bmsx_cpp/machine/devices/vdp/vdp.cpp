@@ -1746,7 +1746,8 @@ Value VDP::readVdpDataThunk(void* context, uint32_t) {
 }
 
 void VDP::onSlotAtlasWriteThunk(void* context, uint32_t addr, Value value) {
-	static_cast<VDP*>(context)->onSlotAtlasWrite(addr, value);
+	auto* vdp = static_cast<VDP*>(context);
+	vdp->onSlotAtlasWrite(addr, value);
 }
 // end hot-path
 
@@ -1985,6 +1986,19 @@ void VDP::setVramSlotLogicalDimensions(VramSlot& slot, uint32_t width, uint32_t 
 
 void VDP::setDecodedVramSurfaceDimensions(uint32_t baseAddr, uint32_t width, uint32_t height) {
 	VramSlot& slot = findVramSlot(baseAddr, 1u);
+	setVramSlotLogicalDimensions(slot, width, height);
+}
+
+void VDP::configureVramSlotSurface(uint32_t slotId, uint32_t width, uint32_t height) {
+	if (width == 0u || height == 0u) {
+		throw vdpFault("invalid VRAM surface dimensions " + std::to_string(width) + "x" + std::to_string(height) + ".");
+	}
+	const uint32_t surfaceId = resolveSurfaceIdForSlot(slotId);
+	VramSlot& slot = getVramSlotBySurfaceId(surfaceId);
+	const uint32_t byteLength = imageByteSize(width, height);
+	if (byteLength > slot.capacity) {
+		throw vdpFault("VRAM surface " + std::to_string(width) + "x" + std::to_string(height) + " exceeds slot capacity " + std::to_string(slot.capacity) + ".");
+	}
 	setVramSlotLogicalDimensions(slot, width, height);
 }
 

@@ -415,18 +415,18 @@ const mergeMetadata = (
 	Fantasy-console linking note
 
 	- This codebase targets a fantasy-console ABI where certain system ROM modules are compile-time
-	  descriptors (recorded in metadata like `staticModulePaths` / `staticExternalModulePaths`) rather
-	  than runtime Lua tables.
+		descriptors (recorded in metadata like `staticModulePaths` / `staticExternalModulePaths`) rather
+		than runtime Lua tables.
 	- The compiler enforces that these compile-time modules are not treated as runtime values and
-	  lowers/validates uses (for example rejecting `local m = require('bios')`). When the compiler
-	  cannot resolve an export it emits an explicit link-time placeholder into the instruction stream
-	  (the current emitter uses a nil-load sentinel). The linker MUST detect and resolve these
-	  placeholders into the final relocated operand or concrete machine-level access; they are not
-	  intended to be left as runtime `nil` values.
+		lowers/validates uses (for example rejecting `local m = require('bios')`). When the compiler
+		cannot resolve an export it emits an explicit link-time placeholder into the instruction stream
+		(the current emitter uses a nil-load sentinel). The linker MUST detect and resolve these
+		placeholders into the final relocated operand or concrete machine-level access; they are not
+		intended to be left as runtime `nil` values.
 	- The linker's responsibility is to combine system and cart images and remap proto/const/global
-	  indices to the final layout while preserving metadata. Functions such as `rewriteClosureIndices`
-	  and `rewriteConstRelocations` update indices/operands and must preserve encoding semantics when
-	  rewriting the linked buffer.
+		indices to the final layout while preserving metadata. Functions such as `rewriteClosureIndices`
+		and `rewriteConstRelocations` update indices/operands and must preserve encoding semantics when
+		rewriting the linked buffer.
 
 */
 

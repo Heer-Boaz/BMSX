@@ -124,6 +124,7 @@ public:
 
 	void initializeVramSurfaces();
 	void setDecodedVramSurfaceDimensions(uint32_t baseAddr, uint32_t width, uint32_t height);
+	void configureVramSlotSurface(uint32_t slotId, uint32_t width, uint32_t height);
 	void attachImgDecController(ImgDecController& controller);
 	void setSkyboxSources(const SkyboxFaceSources& sources);
 	void clearSkybox();
