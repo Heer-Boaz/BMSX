@@ -88,14 +88,14 @@ end
 local combat_director<const> = {}
 combat_director.__index = combat_director
 
-function combat_director:start_combat(node_id, opts)
+function combat_director:start_combat(node_id, skip_fade_in)
 	self.node_id = node_id
 	self.combat_node_id = node_id
 	local node<const> = story[node_id]
 	self.combat_monster_imgid = node.monster_imgid
 	self.combat_rewards = {}
 	self.skip_transition_fade = false
-	self.skip_combat_fade_in = opts.skip_fade_in
+	self.skip_combat_fade_in = skip_fade_in
 	self.events:emit('combat.start')
 end
 

@@ -2,7 +2,6 @@ import type { color } from '../../../common/color';
 import {
 	type Layer2D,
 	type SkyboxFaceSources,
-	type VdpAtlasDimensions,
 	type VdpFrameBufferSize,
 	type VdpSlotSource,
 	type VdpVramSurface,
@@ -54,6 +53,7 @@ import {
 	VDP_SLOT_PRIMARY,
 	VDP_SLOT_SECONDARY,
 	VDP_SLOT_SYSTEM,
+	VDP_SYSTEM_ATLAS_ID,
 	VDP_STATUS_SUBMIT_BUSY,
 	VDP_STATUS_SUBMIT_REJECTED,
 	VDP_STATUS_VBLANK,
@@ -67,8 +67,11 @@ import { DEVICE_SERVICE_VDP, type DeviceScheduler } from '../../scheduler/device
 import type { BFont } from '../../../render/shared/bitmap_font';
 import {
 	VRAM_SYSTEM_SLOT_SIZE,
+	VRAM_SYSTEM_SLOT_BASE,
 	VRAM_PRIMARY_SLOT_SIZE,
+	VRAM_PRIMARY_SLOT_BASE,
 	VRAM_FRAMEBUFFER_SIZE,
+	VRAM_FRAMEBUFFER_BASE,
 	VRAM_SECONDARY_SLOT_BASE,
 	VRAM_SECONDARY_SLOT_SIZE,
 	VRAM_STAGING_BASE,
@@ -83,7 +86,6 @@ import { processVdpBufferedCommand, processVdpCommand } from './command_processo
 import { vdpFault, vdpStreamFault } from './fault';
 import { getVdpPacketSchema } from './packet_schema';
 import { syncVdpSlotTextures } from '../../../render/vdp/slot_textures';
-import { resolveAtlasSlotFromMemory } from '../../../render/vdp/image_meta';
 
 export type VdpState = {
 	skyboxFaceSources: SkyboxFaceSources | null;
@@ -143,6 +145,19 @@ const BMSX_BASE_COLORS: color[] = [
 	{ r: 208 / 255, g: 208 / 255, b: 208 / 255, a: 1 }, // 14 = Grey
 	{ r: 255 / 255, g: 255 / 255, b: 255 / 255, a: 1 }, // 15 = White
 ];
+
+function resolveAtlasSlotFromMemory(memory: Memory, atlasId: number): number {
+	if (atlasId === VDP_SYSTEM_ATLAS_ID) {
+		return VDP_SLOT_SYSTEM;
+	}
+	if (memory.readIoU32(IO_VDP_SLOT_PRIMARY_ATLAS) === atlasId) {
+		return VDP_SLOT_PRIMARY;
+	}
+	if (memory.readIoU32(IO_VDP_SLOT_SECONDARY_ATLAS) === atlasId) {
+		return VDP_SLOT_SECONDARY;
+	}
+	throw vdpFault(`atlas ${atlasId} is not loaded in a VDP slot.`);
+}
 
 export const BmsxColors: color[] = [
 	...BMSX_BASE_COLORS,
@@ -702,7 +717,6 @@ export class VDP implements VramWriteSink {
 	private readonly tileEntryPool: VdpTileRunBlit[] = [];
 	private readonly clippedRectScratchA = { width: 0, height: 0, area: 0 };
 	private readonly clippedRectScratchB = { width: 0, height: 0, area: 0 };
-	private atlasDimensionsById = new Map<number, VdpAtlasDimensions>();
 	private blitterSequence = 0;
 	private cpuHz: bigint = 1n;
 	private workUnitsPerSec: bigint = 1n;
@@ -737,6 +751,39 @@ export class VDP implements VramWriteSink {
 		for (let index = 0; index < VDP_RD_SURFACE_COUNT; index += 1) {
 			this.readCaches.push({ x0: 0, y: 0, width: 0, data: new Uint8Array(0) });
 		}
+	}
+
+	public initializeVramSurfaces(): void {
+		this.registerVramSurfaces([
+			{
+				surfaceId: VDP_RD_SURFACE_SYSTEM,
+				baseAddr: VRAM_SYSTEM_SLOT_BASE,
+				capacity: VRAM_SYSTEM_SLOT_SIZE,
+				width: 1,
+				height: 1,
+			},
+			{
+				surfaceId: VDP_RD_SURFACE_PRIMARY,
+				baseAddr: VRAM_PRIMARY_SLOT_BASE,
+				capacity: VRAM_PRIMARY_SLOT_SIZE,
+				width: 1,
+				height: 1,
+			},
+			{
+				surfaceId: VDP_RD_SURFACE_SECONDARY,
+				baseAddr: VRAM_SECONDARY_SLOT_BASE,
+				capacity: VRAM_SECONDARY_SLOT_SIZE,
+				width: 1,
+				height: 1,
+			},
+			{
+				surfaceId: VDP_RD_SURFACE_FRAMEBUFFER,
+				baseAddr: VRAM_FRAMEBUFFER_BASE,
+				capacity: VRAM_FRAMEBUFFER_SIZE,
+				width: this.configuredFrameBufferSize.width,
+				height: this.configuredFrameBufferSize.height,
+			},
+		]);
 	}
 
 	public resetIngressState(): void {
@@ -1938,6 +1985,8 @@ export class VDP implements VramWriteSink {
 		this.memory.writeIoValue(IO_VDP_RD_Y, 0);
 		this.memory.writeIoValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
 		this.memory.writeIoValue(IO_VDP_DITHER, dither);
+		this.memory.writeIoValue(IO_VDP_SLOT_PRIMARY_ATLAS, VDP_SLOT_ATLAS_NONE);
+		this.memory.writeIoValue(IO_VDP_SLOT_SECONDARY_ATLAS, VDP_SLOT_ATLAS_NONE);
 		this.memory.writeIoValue(IO_VDP_CMD, 0);
 		for (let index = 0; index < IO_VDP_CMD_ARG_COUNT; index += 1) {
 			this.memory.writeIoValue(IO_VDP_CMD_ARG0 + index * 4, 0);
@@ -2079,9 +2128,8 @@ export class VDP implements VramWriteSink {
 		this.hasSkybox = false;
 	}
 
-	public registerVramSurfaces(surfaces: readonly VdpVramSurface[], atlasDimensions: ReadonlyMap<number, VdpAtlasDimensions>): void {
+	public registerVramSurfaces(surfaces: readonly VdpVramSurface[]): void {
 		this.resetQueuedFrameState();
-		this.atlasDimensionsById = new Map(atlasDimensions);
 		this.vramSlots = [];
 		this.readSurfaces = [null, null, null, null];
 		for (let index = 0; index < this.readCaches.length; index += 1) {
@@ -2121,11 +2169,6 @@ export class VDP implements VramWriteSink {
 			this.setVramSlotLogicalDimensions(slot, 1, 1);
 			return;
 		}
-		const dimensions = this.atlasDimensionsById.get(atlasId);
-		if (!dimensions) {
-			return;
-		}
-		this.setVramSlotLogicalDimensions(slot, dimensions.width, dimensions.height);
 	}
 
 	private setVramSlotLogicalDimensions(slot: VramSlot, width: number, height: number): void {
@@ -2154,6 +2197,11 @@ export class VDP implements VramWriteSink {
 		this.seedVramSlotTexture(slot);
 		const copyBytes = previous.byteLength < slot.cpuReadback.byteLength ? previous.byteLength : slot.cpuReadback.byteLength;
 		slot.cpuReadback.set(previous.subarray(0, copyBytes));
+	}
+
+	public setDecodedVramSurfaceDimensions(baseAddr: number, width: number, height: number): void {
+		const slot = this.findVramSlot(baseAddr, 1);
+		this.setVramSlotLogicalDimensions(slot, width, height);
 	}
 
 	private invalidateReadCache(surfaceId: number): void {

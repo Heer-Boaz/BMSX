@@ -134,7 +134,7 @@ local build_director_fsm<const> = function()
 					return '/fade'
 				end
 				if node.kind == 'combat' then
-					combat_director_instance:start_combat(self.node_id, { skip_fade_in = self.skip_combat_fade_in })
+					combat_director_instance:start_combat(self.node_id, self.skip_combat_fade_in)
 					world_events:emit('combat.start', { node_id = self.node_id, monster_imgid = node.monster_imgid, skip_fade_in = self.skip_combat_fade_in })
 					self.skip_combat_fade_in = false
 					return '/combat_wait'

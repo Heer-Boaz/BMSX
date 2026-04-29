@@ -2,6 +2,7 @@
 
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/dma/controller.h"
+#include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
 #include "machine/bus/io.h"
 #include "machine/memory/memory.h"
@@ -73,6 +74,7 @@ ImageCopyPlan ImgDecController::planImageCopy(const ImageDecodeTarget& target, c
 ImgDecController::ImgDecController(
 	Memory& memory,
 	DmaController& dma,
+	VDP& vdp,
 	IrqController& irq,
 	DeviceScheduler& scheduler,
 	MicrotaskQueue& microtasks
@@ -80,6 +82,7 @@ ImgDecController::ImgDecController(
 	: m_gate(imgdecGate().group("imgdec"))
 	, m_memory(memory)
 	, m_dma(dma)
+	, m_vdp(vdp)
 	, m_irq(irq)
 	, m_scheduler(scheduler)
 	, m_microtasks(microtasks) {
@@ -351,6 +354,9 @@ void ImgDecController::beginDecode(DecodedImage&& result, const ImageDecodeTarge
 	m_availableDecodeBytes = 0;
 	m_decodeActive = true;
 	m_decodeQueued = false;
+	if (m_decodePlan.writeWidth > 0u && m_decodePlan.writeHeight > 0u) {
+		m_vdp.setDecodedVramSurfaceDimensions(target.baseAddr, m_decodePlan.writeWidth, m_decodePlan.writeHeight);
+	}
 	if (m_decodePlan.writeLen == 0) {
 		finishSuccess(m_decodePlan.clipped);
 	}

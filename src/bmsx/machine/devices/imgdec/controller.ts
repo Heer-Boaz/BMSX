@@ -30,6 +30,7 @@ import type { DecodedImage } from '../../../common/image_decode';
 import { DmaController } from '../dma/controller';
 import type { ImageCopyPlan } from '../dma/image_copy';
 import type { IrqController } from '../irq/controller';
+import type { VDP } from '../vdp/vdp';
 import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_IMG, type DeviceScheduler } from '../../scheduler/device';
 
@@ -119,6 +120,7 @@ export class ImgDecController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly dma: DmaController,
+		private readonly vdp: VDP,
 		private readonly irq: IrqController,
 		private readonly scheduler: DeviceScheduler,
 	) {
@@ -345,6 +347,9 @@ export class ImgDecController {
 		this.decodePixels = result.pixels;
 		this.decodeResult = result;
 		this.decodeRemaining = plan.writeSize;
+		if (plan.writeWidth > 0 && plan.writeHeight > 0) {
+			this.vdp.setDecodedVramSurfaceDimensions(target.baseAddr, plan.writeWidth, plan.writeHeight);
+		}
 		this.decodeCarry = 0n;
 		this.availableDecodeBytes = 0;
 		this.decodeActive = true;

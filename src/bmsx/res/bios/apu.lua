@@ -22,10 +22,10 @@ function apu.ms_to_samples(ms)
 	return ms * apu_sample_rate_hz / 1000
 end
 
-local require_asset_number<const> = function(asset, field)
-	local value<const> = asset[field]
+local require_record_number<const> = function(record, field)
+	local value<const> = record[field]
 	if type(value) ~= 'number' then
-		error('audio asset ' .. tostring(asset.resid) .. ' missing field ' .. field)
+		error('audio ROM record ' .. tostring(record.resid) .. ' missing field ' .. field)
 	end
 	return value
 end
@@ -46,23 +46,23 @@ end
 
 local read_badp_source<const> = function(addr, source_bytes, resid)
 	if source_bytes < 48 or mem32le[addr] ~= 0x50444142 then
-		error('audio asset ' .. tostring(resid) .. ' is not BADP')
+		error('audio ROM record ' .. tostring(resid) .. ' is not BADP')
 	end
 	if read_u16le(addr + 4) ~= 1 then
-		error('audio asset ' .. tostring(resid) .. ' has unsupported BADP version')
+		error('audio ROM record ' .. tostring(resid) .. ' has unsupported BADP version')
 	end
 	local channels<const> = read_u16le(addr + 6)
 	local sample_rate_hz<const> = mem32le[addr + 8]
 	local frame_count<const> = mem32le[addr + 12]
 	local data_offset<const> = mem32le[addr + 36]
 	if channels < 1 or channels > 2 then
-		error('audio asset ' .. tostring(resid) .. ' has invalid channel count')
+		error('audio ROM record ' .. tostring(resid) .. ' has invalid channel count')
 	end
 	if sample_rate_hz <= 0 or frame_count <= 0 then
-		error('audio asset ' .. tostring(resid) .. ' has invalid BADP timing')
+		error('audio ROM record ' .. tostring(resid) .. ' has invalid BADP timing')
 	end
 	if data_offset < 48 or data_offset >= source_bytes then
-		error('audio asset ' .. tostring(resid) .. ' has invalid BADP data offset')
+		error('audio ROM record ' .. tostring(resid) .. ' has invalid BADP data offset')
 	end
 	return {
 		sample_rate_hz = sample_rate_hz,
@@ -74,17 +74,17 @@ local read_badp_source<const> = function(addr, source_bytes, resid)
 	}
 end
 
-function apu.source(asset)
-	local source = asset.__apu_source
+function apu.source(record)
+	local source = record.__apu_source
 	if source ~= nil then
 		return source
 	end
-	local source_addr<const> = rom_base_for_payload(asset.payload_id or 'cart') + require_asset_number(asset, 'start')
-	local source_bytes<const> = require_asset_number(asset, 'end') - require_asset_number(asset, 'start')
-	local format<const> = read_badp_source(source_addr, source_bytes, asset.resid)
+	local source_addr<const> = rom_base_for_payload(record.payload_id or 'cart') + require_record_number(record, 'start')
+	local source_bytes<const> = require_record_number(record, 'end') - require_record_number(record, 'start')
+	local format<const> = read_badp_source(source_addr, source_bytes, record.resid)
 	local loop_start_sample = 0
 	local loop_end_sample = 0
-	local meta<const> = asset.audiometa
+	local meta<const> = record.audiometa
 	if meta ~= nil and meta.loop ~= nil then
 		loop_start_sample = meta.loop * format.sample_rate_hz
 		local loop_end<const> = meta['loopEnd']
@@ -104,12 +104,12 @@ function apu.source(asset)
 		loop_start_sample = loop_start_sample,
 		loop_end_sample = loop_end_sample,
 	}
-	asset.__apu_source = source
+	record.__apu_source = source
 	return source
 end
 
-function apu.loop_start_sample(asset)
-	return apu.source(asset).loop_start_sample
+function apu.loop_start_sample(record)
+	return apu.source(record).loop_start_sample
 end
 
 function apu.play(source, slot, rate_step_q16, gain_q12, start_sample, filter_kind, filter_freq_hz, filter_q_milli, filter_gain_millidb)

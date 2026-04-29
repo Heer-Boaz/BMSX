@@ -5,6 +5,7 @@ local ecs<const> = require('bios/ecs/index')
 local action_effects<const> = require('bios/action_effects')
 local compiler<const> = require('bios/input/action_effect/compiler')
 local dsl<const> = require('bios/input/action_effect/dsl')
+local romdir<const> = require('bios/romdir')
 local scratchbatch<const> = require('bios/util/scratchbatch')
 local world_instance<const> = require('bios/world/index').instance
 local inputintentcomponent<const> = 'inputintentcomponent'
@@ -29,9 +30,11 @@ local validate_primary_rom_programs_on_boot<const> = function()
 	if rom_programs_validated then
 		return
 	end
-	for id, value in pairs(sys_rom_data) do
-		if dsl.is_input_action_effect_program(value) then
-			compiler.validate_program_effects(value, id)
+	local entries<const> = romdir.data_entries()
+	for index = 1, #entries do
+		local entry<const> = entries[index]
+		if dsl.is_input_action_effect_program(entry.value) then
+			compiler.validate_program_effects(entry.value, entry.id)
 		end
 	end
 	rom_programs_validated = true
@@ -385,7 +388,7 @@ function inputactioneffectsystem:resolve_program_by_id(program_id)
 	if self.missing_program_ids[program_id] then
 		error('[inputactioneffectsystem] program "' .. program_id .. '" is marked as missing.')
 	end
-	local data<const> = sys_rom_data[program_id]
+	local data<const> = romdir.data(program_id)
 	if not dsl.is_input_action_effect_program(data) then
 		self.missing_program_ids[program_id] = true
 		error('[inputactioneffectsystem] program "' .. program_id .. '" not found or invalid.')

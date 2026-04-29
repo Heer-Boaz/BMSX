@@ -1,4 +1,5 @@
 local round_to_nearest<const> = require('bios/util/round_to_nearest')
+local romdir<const> = require('bios/romdir')
 
 local vdp_image<const> = {}
 local cache<const> = {}
@@ -7,12 +8,8 @@ local atlas_name<const> = function(atlas_id)
 	return string.format('_atlas_%02d', atlas_id)
 end
 
-local resolve_img_asset<const> = function(imgid)
-	local asset<const> = sys_rom_img[imgid]
-	if asset ~= nil then
-		return asset
-	end
-	return sys_system_rom_img[imgid]
+local resolve_img_record<const> = function(imgid)
+	return romdir.image(imgid)
 end
 
 local slot_atlas_addr<const> = function(slot)
@@ -36,25 +33,25 @@ function vdp_image.bind_slot_atlas(slot, atlas_id)
 end
 
 local require_meta<const> = function(imgid)
-	local asset<const> = resolve_img_asset(imgid)
-	if asset == nil then
-		error('image asset "' .. tostring(imgid) .. '" was not found.')
+	local record<const> = resolve_img_record(imgid)
+	if record == nil then
+		error('image ROM entry "' .. tostring(imgid) .. '" was not found.')
 	end
-	local meta<const> = asset.imgmeta
+	local meta<const> = record.imgmeta
 	if meta == nil then
-		error('image asset "' .. tostring(imgid) .. '" missing imgmeta.')
+		error('image ROM entry "' .. tostring(imgid) .. '" missing imgmeta.')
 	end
 	if meta.atlasid == nil then
-		error('image asset "' .. tostring(imgid) .. '" missing atlasid.')
+		error('image ROM entry "' .. tostring(imgid) .. '" missing atlasid.')
 	end
 	if meta.texcoords == nil then
-		error('image asset "' .. tostring(imgid) .. '" missing texcoords.')
+		error('image ROM entry "' .. tostring(imgid) .. '" missing texcoords.')
 	end
 	return meta
 end
 
 local require_atlas_meta<const> = function(atlas_id, imgid)
-	local atlas<const> = resolve_img_asset(atlas_name(atlas_id))
+	local atlas<const> = resolve_img_record(atlas_name(atlas_id))
 	if atlas == nil or atlas.imgmeta == nil then
 		error('atlas ' .. tostring(atlas_id) .. ' for image "' .. tostring(imgid) .. '" was not found.')
 	end

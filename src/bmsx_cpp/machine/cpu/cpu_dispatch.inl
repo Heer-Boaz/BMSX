@@ -527,7 +527,8 @@ DISPATCH_LABEL(CALL) {
 
 DISPATCH_LABEL(RET) {
 	int count = b == 0 ? std::max(FRAME.top - a, 0) : b;
-	const Value* results = FRAME.registers + a;
+	const int resultOffset = FRAME.stackBase + a;
+	const Value* results = m_stack.data() + resultOffset;
 	closeUpvalues(FRAME);
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();
@@ -559,7 +560,7 @@ DISPATCH_LABEL(RET) {
 	const int writeCount = finished->returnCount == 0 ? count : finished->returnCount;
 	if (writeCount > 0) {
 		ensureRegisterCapacity(caller, finished->returnBase + writeCount - 1);
-		results = finished->registers + a;
+		results = m_stack.data() + resultOffset;
 	}
 	writeReturnValues(caller, finished->returnBase, finished->returnCount, results, count);
 	m_stackTop = finished->varargBase;

@@ -28,11 +28,6 @@ export type VdpFrameBufferSize = {
 	height: number;
 };
 
-export type VdpAtlasDimensions = {
-	width: number;
-	height: number;
-};
-
 export type VdpVramSurface = {
 	surfaceId: number;
 	baseAddr: number;

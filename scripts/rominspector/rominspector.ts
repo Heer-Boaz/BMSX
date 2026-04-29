@@ -5,7 +5,7 @@
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import type { RomAsset, CartRomHeader, RomManifest } from '../../src/bmsx/rompack/format';
-import { getZippedRomAndRomLabelFromBlob, loadRomEntryList, parseCartridgeIndex, parseCartHeader } from '../../src/bmsx/rompack/loader';
+import { getZippedRomAndRomLabelFromBlob, loadRomAssetList, parseCartridgeIndex, parseCartHeader } from '../../src/bmsx/rompack/loader';
 import {
 	buildManifestAsset,
 	disassembleProgramImage,
@@ -65,7 +65,7 @@ async function loadAssets(
 	let manifest: RomManifest | null = null;
 	let projectRootPath: string | null = null;
 	if (header.manifestLength === 0) {
-		const entriesAndRoot = await loadRomEntryList(rombin);
+		const entriesAndRoot = await loadRomAssetList(rombin);
 		assets = entriesAndRoot.entries;
 		projectRootPath = entriesAndRoot.projectRootPath;
 		console.log('ROM header has no manifest; loading TOC assets only.');

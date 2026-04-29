@@ -10,17 +10,15 @@ import {
 	convertToError,
 	type LuaDebuggerPauseSignal
 } from '../../lua/value';
-import type { Clock, StorageService } from '../../platform/platform';
+import type { Clock, FrameLoop, StorageService } from '../../platform/platform';
 import type { CartManifest, MachineManifest, RuntimeRomPackage, Viewport } from '../../rompack/format';
 import {
-	BIOS_ATLAS_ID,
 	CART_ROM_HEADER_SIZE,
 	DEFAULT_GEO_WORK_UNITS_PER_SEC,
 	DEFAULT_VDP_WORK_UNITS_PER_SEC,
-	generateAtlasAssetId,
 	getMachinePerfSpecs,
 } from '../../rompack/format';
-import { RomSourceStack, type RawRomSource } from '../../rompack/source';
+import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import { buildRuntimeRomLayer } from '../../rompack/loader';
 import { Api } from '../firmware/api/api';
 import { Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
@@ -55,8 +53,6 @@ import { LuaScratchState } from '../program/scratch';
 import { invokeClosureHandler, invokeLuaHandler } from '../program/executor';
 import { resolveCpuHz, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../specs';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
-import { RuntimeRomLayers } from '../../rompack/runtime_layers';
-import { configureVdpSlots } from '../../core/vdp_slot_bootstrap';
 import {
 	applyActiveMachineTiming,
 	refreshDeviceTimings,
@@ -66,6 +62,7 @@ import { HandlerCache } from './handler_cache';
 import { Machine } from '../machine';
 import { Memory } from '../memory/memory';
 import {
+	DEFAULT_VRAM_IMAGE_SLOT_SIZE,
 	configureMemoryMap,
 } from '../memory/map';
 
@@ -82,26 +79,14 @@ export type FrameState = {
 	activeCpuUsedCycles: number;
 };
 
-export type ProgramSource = 'system' | 'cart';
 type RuntimeRomLayer = Awaited<ReturnType<typeof buildRuntimeRomLayer>>;
 
 export var api: Api; // Initialized in Runtime constructor
 
-function resolveSystemSlotBytes(systemSource: RawRomSource): number {
-	const systemSlot = systemSource.getEntry(generateAtlasAssetId(BIOS_ATLAS_ID));
-	if (!systemSlot || !systemSlot.imgmeta) {
-		throw new Error('system ROM slot metadata is missing.');
-	}
-	const { width, height } = systemSlot.imgmeta;
-	if (!Number.isSafeInteger(width) || width <= 0 || !Number.isSafeInteger(height) || height <= 0) {
-		throw new Error('system ROM slot dimensions must be positive integers.');
-	}
-	return width * height * 4;
-}
-
 export class Runtime {
 	public readonly storage: RuntimeStorage;
 	public readonly storageService: StorageService;
+	public readonly frames: FrameLoop;
 	public readonly clock: Clock;
 	public readonly luaJsBridge!: LuaJsBridge;
 	public readonly apiFunctionNames = new Set<string>();
@@ -180,6 +165,20 @@ export class Runtime {
 	public readonly activeMachineManifest: MachineManifest;
 	public readonly cartManifest: CartManifest | null;
 	public readonly cartProjectRootPath: string | null;
+	public systemRom: RuntimeRomLayer = null;
+	public cartRom: RuntimeRomLayer | null = null;
+	public overlayRom: RuntimeRomLayer | null = null;
+	public systemPackage: RuntimeRomPackage = null;
+	public activePackage: RuntimeRomPackage = null;
+	public systemLuaSources: LuaSourceRegistry = null;
+	public cartLuaSources: LuaSourceRegistry | null = null;
+	public activeLuaSources: LuaSourceRegistry = null;
+	public cartProgramStarted = false;
+	public cartEntryProtoIndex: number | null = null;
+	public cartStaticModulePaths: ReadonlyArray<string> = [];
+	public systemRomSource: RawRomSource = null;
+	public cartRomSource: RawRomSource | null = null;
+	public activeRomSource: RawRomSource = null;
 	public systemProjectRootPath: string = DEFAULT_SYSTEM_PROJECT_ROOT_PATH;
 	public readonly vblank: VblankState;
 	public readonly cpuExecution: CpuExecutionState;
@@ -201,7 +200,6 @@ export class Runtime {
 	public readonly moduleProtos = new Map<string, number>();
 	public readonly moduleCache = new Map<string, Value>();
 	public readonly nativeObjectCache = new WeakMap<object, NativeObject>();
-	public readonly luaRomEntryValueCache = new WeakMap<object, Value>();
 	public readonly nativeFunctionCache = new WeakMap<Function, NativeFunction>();
 	public readonly nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
 	public readonly tableIds = new WeakMap<Table, number>();
@@ -216,15 +214,6 @@ export class Runtime {
 	private hasCompletedInitialBoot = false;
 	public cartEntryAvailable = true;
 	public readonly hostFault: HostFaultState;
-	public systemLuaSources: LuaSourceRegistry = null;
-	public cartLuaSources: LuaSourceRegistry = null;
-	public activeLuaSources: LuaSourceRegistry = null;
-	public activeProgramSource: ProgramSource = 'system';
-	public systemRomSource: RawRomSource = null;
-	public cartRomSource: RawRomSource = null;
-	public activeRomSource: RawRomSource = null;
-	public activePackage: RuntimeRomPackage = null;
-	public readonly rom: RuntimeRomLayers;
 	public readonly machine: Machine;
 	public readonly cartBoot: CartBootState;
 	public get interpreter(): LuaInterpreter {
@@ -245,14 +234,13 @@ export class Runtime {
 			allowedPayloadIds: ['system'],
 		});
 		const systemMachine = systemLayer.index.machine;
-
 		if (!cartridge) {
 			Input.instance.getPlayerInput(1).setInputMap({ keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
 			const systemMemorySpecs = resolveRuntimeMemoryMapSpecs({
 				machine: systemMachine,
 				systemMachine,
-				systemSlotBytes: resolveSystemSlotBytes(systemSource),
+				systemSlotBytes: DEFAULT_VRAM_IMAGE_SLOT_SIZE,
 			});
 			configureMemoryMap(systemMemorySpecs);
 			const systemPerfSpecs = getMachinePerfSpecs(systemMachine);
@@ -280,40 +268,41 @@ export class Runtime {
 				geoWorkUnitsPerSec: systemPerfSpecs.geo_work_units_per_sec,
 			});
 			setTransferRatesFromManifest(runtime, systemPerfSpecs);
-			const romLayers = runtime.rom;
-			romLayers.biosLayer = systemLayer;
-			romLayers.setLayers([systemLayer]);
 			runtime.configureProgramSources({
+				systemRom: systemLayer,
+				cartRom: null,
+				overlayRom: null,
 				systemSources: systemLuaSources,
+				cartSources: null,
 				systemRomSource: systemSource,
+				cartRomSource: null,
 			});
 			return runtime;
 		}
 
-		const cartLayer = await buildRuntimeRomLayer({ blob: cartridge, id: 'cart' });
+		const cartRom = await buildRuntimeRomLayer({ blob: cartridge, id: 'cart' });
 		const overlayBlob = workspaceOverlay;
-		let overlayLayer: RuntimeRomLayer | null = null;
+		let overlayRom: RuntimeRomLayer | null = null;
 		if (overlayBlob) {
-			overlayLayer = await buildRuntimeRomLayer({ blob: overlayBlob, id: 'overlay' });
+			overlayRom = await buildRuntimeRomLayer({ blob: overlayBlob, id: 'overlay' });
 		}
-		const runtimeRomLayers = overlayLayer ? [systemLayer, cartLayer, overlayLayer] : [systemLayer, cartLayer];
-		const layers = [];
-		if (overlayLayer) {
-			layers.push({ id: overlayLayer.id, index: overlayLayer.index, payload: overlayLayer.payload });
+		const sourceLayers: RomSourceLayer[] = [];
+		if (overlayRom) {
+			sourceLayers.push({ id: overlayRom.id, index: overlayRom.index, payload: overlayRom.payload });
 		}
-		layers.push({ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload });
-		layers.push({ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload });
-		const romSource = new RomSourceStack(layers);
+		sourceLayers.push({ id: cartRom.id, index: cartRom.index, payload: cartRom.payload });
+		sourceLayers.push({ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload });
+		const activeRomSource = new RomSourceStack(sourceLayers);
 
-		const cartSource = new RomSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
+		const cartSource = new RomSourceStack([{ id: cartRom.id, index: cartRom.index, payload: cartRom.payload }]);
 		const cartLuaSources = buildLuaSources({
 			cartSource,
-			romSource,
-			index: cartLayer.index,
-			allowedPayloadIds: overlayLayer ? ['overlay', 'cart'] : ['cart'],
+			romSource: activeRomSource,
+			index: cartRom.index,
+			allowedPayloadIds: overlayRom ? ['overlay', 'cart'] : ['cart'],
 		});
 
-		const inputMappingPerPlayer = cartLayer.index.input;
+		const inputMappingPerPlayer = cartRom.index.input;
 		if (inputMappingPerPlayer) {
 			for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
 				const mappedIndex = parseInt(playerIndexStr, 10);
@@ -325,33 +314,33 @@ export class Runtime {
 		}
 
 		const memoryLimits = resolveRuntimeMemoryMapSpecs({
-			machine: cartLayer.index.machine,
+			machine: cartRom.index.machine,
 			systemMachine,
-			systemSlotBytes: resolveSystemSlotBytes(systemSource),
+			systemSlotBytes: DEFAULT_VRAM_IMAGE_SLOT_SIZE,
 		});
 		configureMemoryMap(memoryLimits);
-		const cartPerfSpecs = getMachinePerfSpecs(cartLayer.index.machine);
+		const cartPerfSpecs = getMachinePerfSpecs(cartRom.index.machine);
 		const ufpsScaled = resolveUfpsScaled(cartPerfSpecs.ufps);
 		const cpuHz = resolveCpuHz(cartPerfSpecs.cpu_freq_hz);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
-		const cartRenderSize = resolveRuntimeRenderSize(cartLayer.index.machine);
+		const cartRenderSize = resolveRuntimeRenderSize(cartRom.index.machine);
 		const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, cartRenderSize.height);
-		let overlayRom: Uint8Array | undefined;
-		if (overlayLayer) {
-			overlayRom = new Uint8Array(overlayLayer.payload);
+		let overlayPayload: Uint8Array | undefined;
+		if (overlayRom) {
+			overlayPayload = new Uint8Array(overlayRom.payload);
 		}
 		const memory = new Memory({
 			systemRom: new Uint8Array(systemLayer.payload),
-			cartRom: new Uint8Array(cartLayer.payload),
-			overlayRom,
+			cartRom: new Uint8Array(cartRom.payload),
+			overlayRom: overlayPayload,
 		});
 		const runtime = new Runtime({
 			playerIndex,
 			viewport: cartRenderSize,
 			memory,
-			activeMachineManifest: cartLayer.index.machine,
-			cartManifest: cartLayer.index.cart_manifest,
-			cartProjectRootPath: cartLayer.index.projectRootPath,
+			activeMachineManifest: cartRom.index.machine,
+			cartManifest: cartRom.index.cart_manifest,
+			cartProjectRootPath: cartRom.index.projectRootPath,
 			ufpsScaled,
 			cpuHz,
 			cycleBudgetPerFrame,
@@ -360,12 +349,10 @@ export class Runtime {
 			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
 		});
 		setTransferRatesFromManifest(runtime, cartPerfSpecs);
-		const romLayers = runtime.rom;
-		romLayers.biosLayer = systemLayer;
-		romLayers.setLayers(runtimeRomLayers);
-		romLayers.cartLayer = cartLayer;
-		romLayers.overlayLayer = overlayLayer;
 		runtime.configureProgramSources({
+			systemRom: systemLayer,
+			cartRom,
+			overlayRom,
 			systemSources: systemLuaSources,
 			cartSources: cartLuaSources,
 			systemRomSource: systemSource,
@@ -375,56 +362,90 @@ export class Runtime {
 			cart: cartLuaSources,
 			storage: runtime.storageService,
 			includeServer: true,
-			projectRootPath: cartLayer.index.projectRootPath,
+			projectRootPath: cartRom.index.projectRootPath,
 		});
-			return runtime;
-		}
+		return runtime;
+	}
 
-		public async startPreparedRuntime(): Promise<void> {
-			await applyWorkspaceOverridesToRegistry(this, {
-				registry: this.systemLuaSources,
-				storage: this.storageService,
-				includeServer: true,
-				projectRootPath: this.systemProjectRootPath,
-			});
-			await this.prepareBootRomStartupState();
-			await consoleCore.refreshRenderSurfaces();
-			consoleCore.view.default_font = new Font();
-			await this.boot();
-		}
+	public async startPreparedRuntime(): Promise<void> {
+		await applyWorkspaceOverridesToRegistry(this, {
+			registry: this.systemLuaSources,
+			storage: this.storageService,
+			includeServer: true,
+			projectRootPath: this.systemProjectRootPath,
+		});
+		await this.prepareBootRomStartupState();
+		await consoleCore.refreshRenderSurfaces();
+		consoleCore.view.default_font = new Font();
+		await this.boot();
+	}
+
+	public refreshMemoryMap(): void {
+		this.machine.vdp.initializeVramSurfaces();
+	}
 
 	public static destroy(runtime: Runtime): void {
 		runtime.dispose();
 	}
 
 	private configureProgramSources(params: {
+		systemRom: RuntimeRomLayer;
+		cartRom: RuntimeRomLayer | null;
+		overlayRom: RuntimeRomLayer | null;
 		systemSources: LuaSourceRegistry;
-		cartSources?: LuaSourceRegistry;
+		cartSources: LuaSourceRegistry | null;
 		systemRomSource: RawRomSource;
-		cartRomSource?: RawRomSource;
+		cartRomSource: RawRomSource | null;
 	}): void {
+		this.systemRom = params.systemRom;
+		this.cartRom = params.cartRom;
+		this.overlayRom = params.overlayRom;
+		this.systemPackage = params.systemRom.package;
+		this.activePackage = params.systemRom.package;
 		this.systemLuaSources = params.systemSources;
 		this.cartLuaSources = params.cartSources;
+		this.activeLuaSources = params.systemSources;
+		this.cartProgramStarted = false;
+		this.cartEntryProtoIndex = null;
+		this.cartStaticModulePaths = [];
 		this.systemRomSource = params.systemRomSource;
 		this.cartRomSource = params.cartRomSource;
+		this.activeRomSource = params.systemRomSource;
 		this.systemProjectRootPath = params.systemSources.projectRootPath || DEFAULT_SYSTEM_PROJECT_ROOT_PATH;
 		this.cartBoot.reset();
 	}
 
-	public activateProgramSource(source: ProgramSource): void {
-		const luaSources = source === 'system' ? this.systemLuaSources : this.cartLuaSources;
-		const romSource = source === 'system' ? this.systemRomSource : this.cartRomSource;
-		if (!luaSources) {
-			throw new Error(`${source} Lua sources are not configured.`);
+	public setLinkedCartEntry(entryProtoIndex: number, staticModulePaths: ReadonlyArray<string>): void {
+		this.cartEntryProtoIndex = entryProtoIndex;
+		this.cartStaticModulePaths = staticModulePaths;
+	}
+
+	public enterSystemFirmware(): void {
+		this.cartProgramStarted = false;
+		this.activeLuaSources = this.systemLuaSources;
+		this.activeRomSource = this.systemRomSource;
+		this.activePackage = this.systemPackage;
+		api.cartdata(this.systemLuaSources.namespace);
+	}
+
+	public enterCartProgram(): void {
+		if (!this.cartLuaSources) {
+			throw new Error('cart Lua sources are not configured.');
 		}
-		if (!romSource) {
-			throw new Error(`${source} ROM source is not configured.`);
+		if (!this.cartRomSource) {
+			throw new Error('cart ROM source is not configured.');
 		}
-		this.activeProgramSource = source;
-		this.activeLuaSources = luaSources;
-		this.activeRomSource = romSource;
-		this.rom.activeSource = romSource;
-		api.cartdata(luaSources.namespace);
+		this.cartProgramStarted = true;
+		this.activeLuaSources = this.cartLuaSources;
+		this.activeRomSource = this.cartRomSource;
+		if (this.overlayRom) {
+			this.activePackage = this.overlayRom.package;
+		} else if (this.cartRom) {
+			this.activePackage = this.cartRom.package;
+		} else {
+			throw new Error('cart ROM is not configured.');
+		}
+		api.cartdata(this.cartLuaSources.namespace);
 	}
 
 	public resolveCurrentModuleId(): string {
@@ -450,7 +471,6 @@ export class Runtime {
 		this.vblank = new VblankState(this);
 		this.cpuExecution = new CpuExecutionState(this);
 		this.hostFault = new HostFaultState(this);
-		this.rom = new RuntimeRomLayers();
 		this.cartBoot = new CartBootState(this);
 		this.timing = new TimingState(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame);
 		Input.instance.setFrameDurationMs(this.timing.frameDurationMs);
@@ -459,6 +479,7 @@ export class Runtime {
 		this.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(initialVdpWorkUnits);
 		this.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(initialGeoWorkUnits);
 		this.storageService = consoleCore.platform.storage;
+		this.frames = consoleCore.platform.frames;
 		this.clock = consoleCore.platform.clock;
 		this.storage = new RuntimeStorage(this.storageService, options.activeMachineManifest.namespace);
 		this.activeMachineManifest = options.activeMachineManifest;
@@ -471,13 +492,15 @@ export class Runtime {
 		});
 		this.machine = new Machine(
 			options.memory,
-			{ width: options.viewport.width, height: options.viewport.height },
+			options.viewport,
 			Input.instance,
 			consoleCore.sndmaster,
 			api,
 		);
+		this.machine.memory.clearIoSlots();
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
+		this.refreshMemoryMap();
 		configureLuaHeapUsage({
 			getBaseRamUsedBytes: () => this.machine.resourceUsageDetector.getBaseRamUsedBytes(),
 			collectTrackedHeapBytes: () => {
@@ -579,12 +602,7 @@ export class Runtime {
 	}
 
 	private async prepareBootRomStartupState(): Promise<void> {
-		await configureVdpSlots({
-			machine: this.machine,
-			systemRecords: this.systemRomSource.list(),
-			layers: this.rom.listLayers(),
-		});
-		this.activateSystemProgram();
+		this.enterSystemFirmware();
 		if (!this.terminal) {
 			workbenchMode.initializeIdeFeatures(this, resolveRuntimeRenderSize(this.activeMachineManifest));
 		}
@@ -605,6 +623,14 @@ export class Runtime {
 			workbenchMode.deactivateEditor(this);
 			this.clearLuaBootState();
 			this.cartBoot.reset();
+			if (this.cartLuaSources && this.cartProjectRootPath) {
+				await applyWorkspaceOverridesToCart(this, {
+					cart: this.cartLuaSources,
+					storage: this.storageService,
+					includeServer: true,
+					projectRootPath: this.cartProjectRootPath,
+				});
+			}
 			await applyWorkspaceOverridesToRegistry(this, {
 				registry: this.systemLuaSources,
 				storage: this.storageService,
@@ -620,13 +646,7 @@ export class Runtime {
 		}
 	}
 
-	private activateSystemProgram(): void {
-		this.activePackage = this.rom.systemPackage();
-		this.activateProgramSource('system');
-	}
-
-	public activateCartProgram(): void {
-		this.activePackage = this.rom.activeCartPackage();
+	public applyCartProgramTiming(): void {
 		const perfSpecs = getMachinePerfSpecs(this.activeMachineManifest);
 		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
 		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
@@ -635,12 +655,11 @@ export class Runtime {
 	}
 
 	public dispose(): void {
-		this.cartBoot.resetDeferredPreparation();
 		workbenchMode.disposeShortcutHandlers(this);
 		this.terminal.deactivate();
 		workbenchMode.deactivateEditor(this);
 		this.luaInitialized = false;
-			this.editor.shutdown();
+		this.editor.shutdown();
 		this.luaInterpreter = null;
 	}
 

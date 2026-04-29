@@ -189,7 +189,7 @@ export function normalizeCartridgeBlob(blob: Uint8Array): { payload: Uint8Array;
 	return { payload, romlabel };
 }
 
-type RomEntryList = {
+type RomAssetList = {
 	entries: RomAsset[];
 	projectRootPath: string;
 };
@@ -219,7 +219,7 @@ function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): Cartri
 	};
 }
 
-async function loadRomEntryListFromHeader(rom: Uint8Array, header: CartRomHeader): Promise<RomEntryList> {
+async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader): Promise<RomAssetList> {
 	const sliced = rom.subarray(header.tocOffset, header.tocOffset + header.tocLength);
 	const decoded = decodeRomToc(sliced);
 	const entryList = decoded.entries;
@@ -367,14 +367,14 @@ async function loadRomEntryListFromHeader(rom: Uint8Array, header: CartRomHeader
 	};
 }
 
-export async function loadRomEntryList(rom: Uint8Array): Promise<RomEntryList> {
+export async function loadRomAssetList(rom: Uint8Array): Promise<RomAssetList> {
 	const header = parseCartHeader(rom);
-	return loadRomEntryListFromHeader(rom, header);
+	return loadRomAssetListFromHeader(rom, header);
 }
 
 export async function parseCartridgeIndex(payload: Uint8Array): Promise<CartridgeIndex> {
 	const header = parseCartHeader(payload);
-	const { entries, projectRootPath } = await loadRomEntryListFromHeader(payload, header);
+	const { entries, projectRootPath } = await loadRomAssetListFromHeader(payload, header);
 	const { cart_manifest, machine, entry_path, input } = decodeCartridgeMetadata(payload, header);
 	return {
 		entries,
@@ -620,7 +620,7 @@ export async function buildSystemRuntimeRomLayer(params: {
 	opts?: RomLoadOptions;
 }): Promise<RuntimeRomLayer> {
 	const normalized = normalizeCartridgeBlob(params.blob);
-	const { entries } = await loadRomEntryList(normalized.payload);
+	const { entries } = await loadRomAssetList(normalized.payload);
 	const index: CartridgeIndex = {
 		entries,
 		projectRootPath: '',

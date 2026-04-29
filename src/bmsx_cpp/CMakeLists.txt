@@ -97,7 +97,6 @@ add_library(bmsx_core STATIC
 	core/console.cpp
 	core/rom_boot_manager.cpp
 	core/host_frame.cpp
-	core/vdp_slot_bootstrap.cpp
 	core/system.cpp
 	core/registry.cpp
 	rompack/package.cpp
@@ -139,7 +138,6 @@ add_library(bmsx_core STATIC
 	render/vdp/blitter/software.cpp
 	render/vdp/context_state.cpp
 	render/vdp/framebuffer.cpp
-	render/vdp/image_meta.cpp
 	render/vdp/presentation.cpp
 	render/vdp/source_pixels.cpp
 	render/vdp/skybox.cpp

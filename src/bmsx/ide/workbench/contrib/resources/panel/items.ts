@@ -72,7 +72,7 @@ export function findResourcePanelIndexByCallHierarchyNodeId(items: readonly Reso
 function collectResourcePanelDescriptors(runtime: Runtime): ResourceDescriptor[] {
 	const descriptors = listResourcesStrict(runtime);
 	const augmented = descriptors.slice();
-	for (const record of runtime.rom.listImageRecords()) {
+	for (const record of Object.values(runtime.activePackage.img)) {
 		if (record.type !== 'atlas') {
 			continue;
 		}

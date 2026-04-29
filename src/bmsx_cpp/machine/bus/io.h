@@ -28,12 +28,11 @@ constexpr int IO_SYS_BASE_INDEX = 0;
 
 // System flag: should boot cartridge?
 constexpr int IO_SYS_BOOT_CART_INDEX = IO_SYS_BASE_INDEX;
-constexpr int IO_SYS_CART_BOOTREADY_INDEX = IO_SYS_BASE_INDEX + 1;
-constexpr int IO_SYS_HOST_FAULT_FLAGS_INDEX = IO_SYS_BASE_INDEX + 2;
-constexpr int IO_SYS_HOST_FAULT_STAGE_INDEX = IO_SYS_BASE_INDEX + 3;
+constexpr int IO_SYS_HOST_FAULT_FLAGS_INDEX = IO_SYS_BASE_INDEX + 1;
+constexpr int IO_SYS_HOST_FAULT_STAGE_INDEX = IO_SYS_BASE_INDEX + 2;
 
 // Number of system flag slots
-constexpr int IO_SYS_SIZE = 4;
+constexpr int IO_SYS_SIZE = 3;
 constexpr int IO_VDP_BASE_INDEX = IO_SYS_BASE_INDEX + IO_SYS_SIZE;
 constexpr int IO_VDP_DITHER_INDEX = IO_VDP_BASE_INDEX;
 constexpr int IO_VDP_SLOT_PRIMARY_ATLAS_INDEX = IO_VDP_BASE_INDEX + 1;
@@ -149,7 +148,6 @@ constexpr uint32_t IO_PAYLOAD_BUFFER_BASE = IO_BASE + IO_PAYLOAD_BUFFER_BASE_IND
 
 constexpr uint32_t IO_SYS_BASE = IO_BASE + IO_SYS_BASE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_SYS_BOOT_CART = IO_BASE + IO_SYS_BOOT_CART_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_SYS_CART_BOOTREADY = IO_BASE + IO_SYS_CART_BOOTREADY_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_SYS_HOST_FAULT_FLAGS = IO_BASE + IO_SYS_HOST_FAULT_FLAGS_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_SYS_HOST_FAULT_STAGE = IO_BASE + IO_SYS_HOST_FAULT_STAGE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_BASE = IO_BASE + IO_VDP_BASE_INDEX * IO_WORD_SIZE;
@@ -357,6 +355,7 @@ constexpr uint32_t INP_CTRL_RESET = 3u;
 constexpr uint32_t VDP_SLOT_PRIMARY = 0u;
 constexpr uint32_t VDP_SLOT_SECONDARY = 1u;
 constexpr uint32_t VDP_SLOT_SYSTEM = 2u;
+constexpr uint32_t VDP_SYSTEM_ATLAS_ID = 254u;
 constexpr uint32_t VDP_SLOT_NONE = 0xffffffffu;
 constexpr uint32_t VDP_SLOT_ATLAS_NONE = 0xffffffffu;
 constexpr uint32_t VDP_RD_MODE_RGBA8888 = 0u;

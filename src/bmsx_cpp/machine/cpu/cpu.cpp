@@ -1161,6 +1161,11 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 	// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
 	syncGlobalSlotsToTable();
 	m_program = program;
+	if (m_program) {
+		m_memory.setProgramCode(m_program->code.data(), m_program->code.size());
+	} else {
+		m_memory.setProgramCode(nullptr, 0);
+	}
 	m_metadata = metadata;
 	if (!m_program) {
 		initializeGlobalSlots(metadata);
@@ -1327,10 +1332,7 @@ void CPU::start(int entryProtoIndex, const std::vector<Value>& args) {
 
 void CPU::start(int entryProtoIndex, NativeArgsView args) {
 	lastReturnValues.clear();
-	m_frames.clear();
-	m_openUpvalues.clear();
-	m_stack.clear();
-	m_stackTop = 0;
+	clearCallStack();
 	m_haltedUntilIrq = false;
 	m_yieldRequested = false;
 	auto* closure = createRootClosure(entryProtoIndex);
@@ -1876,10 +1878,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	}
 
 	lastReturnValues.clear();
-	m_frames.clear();
-	m_openUpvalues.clear();
-	m_stack.clear();
-	m_stackTop = 0;
+	clearCallStack();
 	m_externalReturnSink = nullptr;
 	globals->clear();
 	for (Value& value : m_systemGlobalValues) {
@@ -2482,6 +2481,7 @@ void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
 void CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 	int returnBase, int returnCount, bool captureReturns, int callSitePc) {
 	const Proto& proto = m_program->protos[closure->protoIndex];
+	const int callerArgBase = caller.stackBase + argBase;
 	auto frame = acquireFrame();
 	frame->protoIndex = closure->protoIndex;
 	frame->pc = proto.entryPC;
@@ -2505,14 +2505,14 @@ void CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCou
 
 	for (int i = 0; i < proto.numParams; ++i) {
 		if (i < argCount) {
-			frame->registers[static_cast<size_t>(i)] = caller.registers[static_cast<size_t>(argBase + i)];
+			frame->registers[static_cast<size_t>(i)] = m_stack[static_cast<size_t>(callerArgBase + i)];
 		} else {
 			frame->registers[static_cast<size_t>(i)] = valueNil();
 		}
 	}
 	if (proto.isVararg) {
 		for (int i = 0; i < frame->varargCount; ++i) {
-			m_stack[static_cast<size_t>(frame->varargBase + i)] = caller.registers[static_cast<size_t>(argBase + proto.numParams + i)];
+			m_stack[static_cast<size_t>(frame->varargBase + i)] = m_stack[static_cast<size_t>(callerArgBase + proto.numParams + i)];
 		}
 	}
 	m_frames.push_back(std::move(frame));
@@ -2521,6 +2521,12 @@ void CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCou
 void CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	int returnBase, int returnCount, bool captureReturns, int callSitePc) {
 	const Proto& proto = m_program->protos[closure->protoIndex];
+	const uintptr_t stackBegin = reinterpret_cast<uintptr_t>(m_stack.data());
+	const uintptr_t stackEnd = stackBegin + m_stack.size() * sizeof(Value);
+	const uintptr_t argsBegin = reinterpret_cast<uintptr_t>(args);
+	const uintptr_t argsEnd = argsBegin + argCount * sizeof(Value);
+	const bool argsInStack = argCount > 0 && stackBegin != 0 && argsBegin >= stackBegin && argsEnd <= stackEnd;
+	const ptrdiff_t argsOffset = argsInStack ? static_cast<ptrdiff_t>((argsBegin - stackBegin) / sizeof(Value)) : 0;
 	auto frame = acquireFrame();
 	frame->protoIndex = closure->protoIndex;
 	frame->pc = proto.entryPC;
@@ -2541,17 +2547,18 @@ void CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	ensureStackSize(static_cast<size_t>(m_stackTop));
 	frame->registers = m_stack.data() + frame->stackBase;
 	frame->top = proto.numParams;
+	const Value* sourceArgs = argsInStack ? m_stack.data() + argsOffset : args;
 
 	for (int i = 0; i < proto.numParams; ++i) {
 		if (i < static_cast<int>(argCount)) {
-			frame->registers[static_cast<size_t>(i)] = args[i];
+			frame->registers[static_cast<size_t>(i)] = sourceArgs[i];
 		} else {
 			frame->registers[static_cast<size_t>(i)] = valueNil();
 		}
 	}
 	if (proto.isVararg) {
 		for (int i = 0; i < frame->varargCount; ++i) {
-			m_stack[static_cast<size_t>(frame->varargBase + i)] = args[static_cast<size_t>(proto.numParams + i)];
+			m_stack[static_cast<size_t>(frame->varargBase + i)] = sourceArgs[static_cast<size_t>(proto.numParams + i)];
 		}
 	}
 	m_frames.push_back(std::move(frame));
@@ -3039,6 +3046,19 @@ void CPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
 	if (m_framePool.size() < static_cast<size_t>(MAX_POOLED_FRAMES)) {
 		m_framePool.push_back(std::move(frame));
 	}
+}
+
+void CPU::clearCallStack() {
+	while (!m_frames.empty()) {
+		CallFrame* frame = m_frames.back().get();
+		closeUpvalues(*frame);
+		auto finished = std::move(m_frames.back());
+		m_frames.pop_back();
+		releaseFrame(std::move(finished));
+	}
+	m_openUpvalues.clear();
+	m_stack.clear();
+	m_stackTop = 0;
 }
 
 void CPU::ensureStackSize(size_t size) {

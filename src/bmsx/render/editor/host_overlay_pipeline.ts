@@ -316,6 +316,9 @@ function drawImageCommand(backend: WebGLBackend, state: HostOverlayRuntime, cach
 	if (command.pos.z === undefined) {
 		throw new Error('[HostOverlay] Image command missing z.');
 	}
+	if (command.imgid === undefined) {
+		throw new Error('[HostOverlay] Image command missing id.');
+	}
 	return drawHostImage(
 		backend,
 		state,

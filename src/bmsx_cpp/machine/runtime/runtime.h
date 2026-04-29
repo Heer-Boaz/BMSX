@@ -40,9 +40,9 @@ namespace bmsx {
 // Forward declarations
 class Api;
 struct ProgramImage;
-class RuntimeRomPackage;
 struct MachineManifest;
 struct CartManifest;
+class RuntimeRomPackage;
 class ResourceUsageDetector;
 class Clock;
 class GameView;
@@ -63,9 +63,6 @@ struct RuntimeOptions {
 
 	int playerIndex = 0;
 	Vec2 viewport{0.0f, 0.0f};
-	RuntimeRomPackage* systemRom = nullptr;
-	RuntimeRomPackage* activeRom = nullptr;
-	RuntimeRomPackage* cartRom = nullptr;
 	RomSpan systemRomBytes;
 	RomSpan cartRomBytes;
 	const MachineManifest* machineManifest = nullptr;
@@ -97,10 +94,6 @@ public:
 	friend CpuRuntimeState captureRuntimeCpuState(const Runtime& runtime);
 	friend void applyRuntimeCpuState(Runtime& runtime, const CpuRuntimeState& state);
 
-	enum class ProgramSource {
-		System,
-		Cart,
-	};
 	Runtime(
 		const RuntimeOptions& options,
 		Clock& clock,
@@ -120,6 +113,7 @@ public:
 	 */
 	void boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>* staticModulePaths = nullptr);
 	void boot(const ProgramImage& image, ProgramMetadata* metadata);
+	void boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>& staticModulePaths);
 	void handleLuaError(const std::string& message);
 
 	/**
@@ -143,8 +137,12 @@ public:
 	void setTickEnabled(bool enabled) { m_tickEnabled = enabled; }
 	bool isTickEnabled() const { return m_tickEnabled; }
 
-	void setProgramSource(ProgramSource source) { m_programSource = source; }
-	bool isSystemProgramActive() const { return m_programSource == ProgramSource::System; }
+	bool isCartProgramStarted() const { return m_cartProgramStarted; }
+	bool hasCartEntry() const { return m_cartEntryProtoIndex.has_value(); }
+	void setCartEntry(int entryProtoIndex, std::vector<std::string> staticModulePaths);
+	void enterSystemFirmware();
+	void enterCartProgram();
+	void startCartProgram();
 
 	void setVdpDitherType(i32 type) { m_machine.vdp().setDitherType(type); }
 
@@ -153,23 +151,23 @@ public:
 
 	GameView& view() { return m_view; }
 	const GameView& view() const { return m_view; }
-	RuntimeRomPackage& systemRom() { return *m_systemRom; }
-	const RuntimeRomPackage& systemRom() const { return *m_systemRom; }
-	RuntimeRomPackage& activeRom() { return *m_activeRom; }
-	const RuntimeRomPackage& activeRom() const { return *m_activeRom; }
-	RuntimeRomPackage* cartRom() { return m_cartRom; }
-	const RuntimeRomPackage* cartRom() const { return m_cartRom; }
 	const MachineManifest& machineManifest() const { return *m_machineManifest; }
 	const CartManifest* cartManifest() const;
 	const std::string* cartEntryPath() const;
 	const std::string* cartProjectRootPath() const;
+	RuntimeRomPackage& activeRom();
+	const RuntimeRomPackage& activeRom() const;
+	RuntimeRomPackage& systemRom();
+	const RuntimeRomPackage& systemRom() const;
+	RuntimeRomPackage* cartRom();
+	const RuntimeRomPackage* cartRom() const;
 	void setRuntimeEnvironment(
-		RuntimeRomPackage& systemRom,
-		RuntimeRomPackage& activeRom,
 		const MachineManifest& machineManifest,
-		RuntimeRomPackage* cartRom,
 		RuntimeOptions::RomSpan systemRomBytes,
-		RuntimeOptions::RomSpan cartRomBytes
+		RuntimeOptions::RomSpan cartRomBytes,
+		RuntimeRomPackage& activeRom,
+		RuntimeRomPackage& systemRom,
+		RuntimeRomPackage* cartRom
 	);
 
 	Machine& machine() { return m_machine; }
@@ -241,12 +239,12 @@ private:
 	void logLuaCallStack() const;
 	void refreshMemoryMapGlobals();
 
-	RuntimeRomPackage* m_systemRom = nullptr;
-	RuntimeRomPackage* m_activeRom = nullptr;
-	RuntimeRomPackage* m_cartRom = nullptr;
 	RuntimeOptions::RomSpan m_systemRomBytes;
 	RuntimeOptions::RomSpan m_cartRomBytes;
 	const MachineManifest* m_machineManifest = nullptr;
+	RuntimeRomPackage* m_activeRomPackage = nullptr;
+	RuntimeRomPackage* m_systemRomPackage = nullptr;
+	RuntimeRomPackage* m_cartRomPackage = nullptr;
 	Clock& m_clock;
 	GameView& m_view;
 
@@ -256,7 +254,9 @@ private:
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 
-	ProgramSource m_programSource = ProgramSource::Cart;
+	std::optional<int> m_cartEntryProtoIndex;
+	std::vector<std::string> m_cartStaticModulePaths;
+	bool m_cartProgramStarted = false;
 
 	// State flags
 	bool m_luaInitialized = false;

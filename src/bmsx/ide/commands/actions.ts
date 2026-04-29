@@ -73,7 +73,7 @@ export function performHotResume(runtime: Runtime): boolean {
 			projectRootPath: runtime.systemProjectRootPath,
 		});
 		const preserveSystemModules =
-				runtime.activeProgramSource !== 'system'
+				runtime.cartProgramStarted
 			&& engineChanged.size === 0
 			&& !hasPendingSystemModuleReload(runtime);
 		console.log('[IDE] Capturing runtime snapshot for resume');

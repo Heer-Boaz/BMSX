@@ -13,14 +13,11 @@ public:
 	bool processPending();
 
 private:
-	void prepareIfNeeded();
 	bool pollSystemBootRequest();
-	void setReadyFlag(bool value);
 	void request();
 
 	Runtime& m_runtime;
 	RomBootManager& m_bootManager;
-	bool m_prepared = false;
 	bool m_pending = false;
 };
 

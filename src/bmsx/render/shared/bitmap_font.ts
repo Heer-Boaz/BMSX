@@ -1,8 +1,14 @@
-import type { Runtime } from '../../machine/runtime/runtime';
-import type { ImageAtlasRect } from '../vdp/image_meta';
-import { resolveImageAtlasRect } from '../vdp/image_meta';
+import { BIOS_ATLAS_ID, generateAtlasAssetId, type RuntimeRomPackage } from '../../rompack/format';
 
 export type GlyphMap = Record<string, string>;
+
+export type ImageAtlasRect = {
+	atlasId: number;
+	u: number;
+	v: number;
+	w: number;
+	h: number;
+};
 
 export type FontGlyph = {
 	imgid: string;
@@ -214,12 +220,15 @@ export class BFont {
 	}
 }
 
-export class RuntimeBitmapFontSource implements BitmapFontSource {
-	constructor(private readonly runtime: Runtime) {
+export class RomPackageBitmapFontSource implements BitmapFontSource {
+	constructor(
+		private readonly romPackage: RuntimeRomPackage,
+		private readonly systemPackage: RuntimeRomPackage,
+	) {
 	}
 
 	public getGlyphRecord(imgid: string): BitmapFontGlyphRecord {
-		const record = this.runtime.rom.getImageRecord(imgid);
+		const record = this.romPackage.img[imgid] ?? this.systemPackage.img[imgid];
 		if (!record.imgmeta) {
 			throw new Error(`[BFont] Image '${imgid}' is missing font metadata.`);
 		}
@@ -227,6 +236,36 @@ export class RuntimeBitmapFontSource implements BitmapFontSource {
 	}
 
 	public getGlyphRect(imgid: string): ImageAtlasRect {
-		return resolveImageAtlasRect(this.runtime.rom, imgid);
+		const record = this.romPackage.img[imgid] ?? this.systemPackage.img[imgid];
+		const meta = record?.imgmeta;
+		if (!meta) {
+			throw new Error(`[BFont] Image '${imgid}' is missing font metadata.`);
+		}
+		const atlasId = meta.atlasid ?? BIOS_ATLAS_ID;
+		const atlas = (atlasId === BIOS_ATLAS_ID ? this.systemPackage : this.romPackage).img[generateAtlasAssetId(atlasId)];
+		const atlasMeta = atlas?.imgmeta;
+		if (!atlasMeta || !meta.texcoords) {
+			throw new Error(`[BFont] Image '${imgid}' is missing atlas metadata.`);
+		}
+		const coords = meta.texcoords;
+		let minU = coords[0];
+		let maxU = coords[0];
+		let minV = coords[1];
+		let maxV = coords[1];
+		for (let index = 2; index < coords.length; index += 2) {
+			const u = coords[index];
+			const v = coords[index + 1];
+			if (u < minU) minU = u;
+			if (u > maxU) maxU = u;
+			if (v < minV) minV = v;
+			if (v > maxV) maxV = v;
+		}
+		return {
+			atlasId,
+			u: Math.round(minU * atlasMeta.width),
+			v: Math.round(minV * atlasMeta.height),
+			w: meta.width,
+			h: meta.height,
+		};
 	}
 }

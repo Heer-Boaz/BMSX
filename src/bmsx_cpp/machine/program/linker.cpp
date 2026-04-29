@@ -610,8 +610,10 @@ LinkedProgramImage linkProgramImages(
 	std::copy(cartCode.begin(), cartCode.end(), linkedProgram->code.begin() + layout.cartBasePc);
 	linkedProgram->constPoolCanonicalized = false;
 
+	const int systemEntryProtoIndex = systemImage.entryProtoIndex;
+	const int cartEntryProtoIndex = cartImage.entryProtoIndex + systemProtoCount;
 	auto linkedImage = std::make_unique<ProgramImage>();
-	linkedImage->entryProtoIndex = cartImage.entryProtoIndex + systemProtoCount;
+	linkedImage->entryProtoIndex = cartEntryProtoIndex;
 	linkedImage->program = std::move(linkedProgram);
 	linkedImage->moduleProtos.reserve(cartImage.moduleProtos.size() + systemImage.moduleProtos.size());
 	for (const auto& entry : cartImage.moduleProtos) {
@@ -632,6 +634,10 @@ LinkedProgramImage linkProgramImages(
 	LinkedProgramImage output;
 	output.program = std::move(linkedImage);
 	output.metadata = std::move(mergedMetadata);
+	output.systemEntryProtoIndex = systemEntryProtoIndex;
+	output.cartEntryProtoIndex = cartEntryProtoIndex;
+	output.systemStaticModulePaths = systemImage.staticModulePaths;
+	output.cartStaticModulePaths = cartImage.staticModulePaths;
 	return output;
 }
 

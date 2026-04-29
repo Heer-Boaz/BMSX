@@ -36,9 +36,10 @@ public:
 	void setCartRom(const u8* data, size_t size);
 		void setOverlayRom(u8* data, size_t size);
 		size_t overlayRomSize() const;
-		void setVramWriter(VramWriter* writer);
+	void setVramWriter(VramWriter* writer);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
 	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler);
+	void setProgramCode(const u8* data, size_t size);
 
 	Value readValue(uint32_t addr) const;
 	Value readMappedValue(uint32_t addr) const;
@@ -99,9 +100,9 @@ private:
 			void* context = nullptr;
 			IoWriteHandler handler = nullptr;
 		};
-
 		RomSpan m_systemRom;
 		RomSpan m_cartRom;
+		RomSpan m_programCode;
 		MutableRomSpan m_overlayRom;
 		std::vector<u8> m_ram;
 		std::vector<Value> m_ioSlots;
@@ -113,6 +114,9 @@ private:
 	bool isIoRegionRange(uint32_t addr, size_t length) const;
 	size_t ioIndex(uint32_t addr) const;
 	size_t ramOffset(uint32_t addr, size_t length) const;
+	bool isProgramRomRange(uint32_t addr, size_t length) const;
+	bool isProgramCodeReadableRange(uint32_t addr, size_t length) const;
+	uint32_t readProgramCodeWord(uint32_t addr) const;
 	uint32_t readU32FromRegion(uint32_t addr) const;
 	const u8* readRegion(uint32_t addr, size_t length, size_t& outOffset) const;
 	u8* writeRegion(uint32_t addr, size_t length, size_t& outOffset);

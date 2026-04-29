@@ -6,6 +6,7 @@
 #include "../gameview.h"
 #include "core/font.h"
 #include "core/utf8.h"
+#include "machine/bus/io.h"
 #include <cctype>
 #include <stdexcept>
 
@@ -60,7 +61,14 @@ void renderGlyphSpan(GameView* view, const std::string& text, i32 start, i32 end
 
 		spriteOptions.pos.x = x;
 		spriteOptions.pos.y = y;
-		spriteOptions.imgid = glyph.imgid;
+		if (glyph.rect.atlasId != static_cast<i32>(VDP_SYSTEM_ATLAS_ID)) {
+			throw BMSX_RUNTIME_ERROR("Glyph atlas is not loaded in the system VDP slot.");
+		}
+		spriteOptions.slot = VDP_SLOT_SYSTEM;
+		spriteOptions.u = glyph.rect.u;
+		spriteOptions.v = glyph.rect.v;
+		spriteOptions.w = glyph.rect.w;
+		spriteOptions.h = glyph.rect.h;
 		view->renderer.submit.sprite(spriteOptions);
 
 		x += stepX;

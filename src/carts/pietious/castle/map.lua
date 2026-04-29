@@ -442,7 +442,7 @@ local build_draaideuren<const> = function(room_number, object_defs)
 end
 
 local load_room_templates<const> = function()
-	local data<const> = sys_rom_data['castle_map']
+	local data<const> = rom_data('castle_map')
 	local templates<const> = {}
 
 	for raw_room_number, room_def in pairs(data) do

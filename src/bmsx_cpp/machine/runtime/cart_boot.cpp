@@ -14,34 +14,11 @@ CartBootState::CartBootState(Runtime& runtime, RomBootManager& bootManager)
 }
 
 void CartBootState::reset() {
-	m_prepared = false;
 	m_pending = false;
-	setReadyFlag(false);
-}
-
-// disable-next-line single_line_method_pattern -- cart boot readiness is owned by this state and projected into SYS MMIO.
-void CartBootState::setReadyFlag(bool value) {
-	m_runtime.machine().memory().writeValue(IO_SYS_CART_BOOTREADY, valueNumber(value ? 1.0 : 0.0));
-}
-
-void CartBootState::prepareIfNeeded() {
-	Runtime& runtime = m_runtime;
-	if (!runtime.isSystemProgramActive()) {
-		return;
-	}
-	if (!m_bootManager.hasLoadedCartProgram()) {
-		return;
-	}
-	if (m_prepared) {
-		return;
-	}
-	m_prepared = true;
-	setReadyFlag(true);
 }
 
 void CartBootState::request() {
 	m_pending = true;
-	setReadyFlag(false);
 }
 
 bool CartBootState::processProgramReloadRequest() {
@@ -59,7 +36,7 @@ bool CartBootState::processProgramReloadRequest() {
 
 bool CartBootState::pollSystemBootRequest() {
 	Runtime& runtime = m_runtime;
-	if (!runtime.isSystemProgramActive()) {
+	if (runtime.isCartProgramStarted()) {
 		return false;
 	}
 	if (runtime.machine().memory().readIoU32(IO_SYS_BOOT_CART) == 0u) {
@@ -73,10 +50,7 @@ bool CartBootState::pollSystemBootRequest() {
 
 bool CartBootState::processPending() {
 	Runtime& runtime = m_runtime;
-	prepareIfNeeded();
-	if (pollSystemBootRequest()) {
-		return true;
-	}
+	pollSystemBootRequest();
 	if (!m_pending) {
 		return false;
 	}
@@ -90,12 +64,8 @@ bool CartBootState::processPending() {
 	runtime.frameScheduler.clearQueuedTime();
 	m_pending = false;
 	try {
-		if (!m_bootManager.bootLoadedCart()) {
-			setReadyFlag(false);
-			throw std::runtime_error("Runtime fault: deferred cart boot request failed while leaving system boot screen active.");
-		}
+		runtime.startCartProgram();
 	} catch (const std::exception& error) {
-		setReadyFlag(false);
 		throw std::runtime_error(std::string("Runtime fault: deferred cart boot request failed while leaving system boot screen active: ") + error.what());
 	}
 	return true;

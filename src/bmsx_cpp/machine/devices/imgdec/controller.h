@@ -16,12 +16,14 @@ namespace bmsx {
 class DmaController;
 class IrqController;
 class MicrotaskQueue;
+class VDP;
 
 class ImgDecController {
 public:
 	ImgDecController(
 		Memory& memory,
 		DmaController& dma,
+		VDP& vdp,
 		IrqController& irq,
 		DeviceScheduler& scheduler,
 		MicrotaskQueue& microtasks
@@ -95,6 +97,7 @@ public:
 	bool m_signalIrq = false;
 	Memory& m_memory;
 	DmaController& m_dma;
+	VDP& m_vdp;
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;
 	MicrotaskQueue& m_microtasks;

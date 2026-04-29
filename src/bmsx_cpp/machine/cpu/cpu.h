@@ -1159,6 +1159,7 @@ private:
 
 	std::unique_ptr<CallFrame> acquireFrame();
 	void releaseFrame(std::unique_ptr<CallFrame> frame);
+	void clearCallStack();
 	void ensureStackSize(size_t size);
 	void refreshFrameRegisterPointers();
 	NativeResultsScratchScope acquireNativeReturnScratch();

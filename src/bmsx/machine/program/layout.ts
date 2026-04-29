@@ -1,4 +1,5 @@
 import { INSTRUCTION_BYTES } from '../cpu/instruction_format';
+import { CART_PROGRAM_START_OFFSET } from '../memory/map';
 
 export type ProgramLayout = {
 	systemBasePc: number;
@@ -6,7 +7,7 @@ export type ProgramLayout = {
 };
 
 export const SYSTEM_BASE_PC = 0;
-export const CART_BASE_PC = 0x80000;
+export const CART_BASE_PC = CART_PROGRAM_START_OFFSET;
 
 export const resolveProgramLayout = (systemCodeBytes: number, layout?: Partial<ProgramLayout>): ProgramLayout => {
 	const systemBasePc = layout?.systemBasePc ?? SYSTEM_BASE_PC;

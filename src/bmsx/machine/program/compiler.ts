@@ -1297,18 +1297,23 @@ class FunctionBuilder {
 		this.tempTop = tempBase;
 	}
 
-	private emitModuleExportGlobalStoreChildren(baseReg: number, node: ModuleExportNode, modulePath: string, path: string[]): void {
+	private emitModuleExportGlobalStoreChildren(baseReg: number, node: ModuleExportNode, modulePath: string, path: string[], visiting: WeakSet<ModuleExportNode> = new WeakSet()): void {
+		if (visiting.has(node)) {
+			return;
+		}
+		visiting.add(node);
 		for (const [key, child] of node.children) {
 			path.push(key);
 			const childReg = this.allocTemp();
 			const keyConst = this.program.constIndexString(key);
 			this.emitTableGetConst(childReg, baseReg, keyConst);
 			this.emitModuleExportStore(buildModuleExportSlotName(modulePath, path), childReg);
-			if (child.children.size > 0) {
-				this.emitModuleExportGlobalStoreChildren(childReg, child, modulePath, path);
+			if (child.children.size > 0 && !visiting.has(child)) {
+				this.emitModuleExportGlobalStoreChildren(childReg, child, modulePath, path, visiting);
 			}
 			path.pop();
 		}
+		visiting.delete(node);
 	}
 
 	private emitReferenceStore(reference: LuaBoundReference, valueReg: number): void {
@@ -3103,7 +3108,8 @@ const extractAssignmentPath = (expression: LuaAssignableExpression): string[] | 
 			if (!basePath) {
 				return null;
 			}
-			return [...basePath, member.identifier];
+			basePath.push(member.identifier);
+			return basePath;
 		}
 		case LuaSyntaxKind.IndexExpression: {
 			const indexExpr = expression as LuaIndexExpression;
@@ -3115,7 +3121,8 @@ const extractAssignmentPath = (expression: LuaAssignableExpression): string[] | 
 			if (!key) {
 				return null;
 			}
-			return [...basePath, key];
+			basePath.push(key);
+			return basePath;
 		}
 		default:
 			return null;
@@ -3369,15 +3376,20 @@ const buildModuleCompileInfo = (
 		return null;
 	}
 	const exportSlotsByPathKey = new Map<string, string>();
-	const assignSlots = (node: ModuleExportNode, path: string[]): void => {
+	const assignSlots = (node: ModuleExportNode, path: string[], visiting: WeakSet<ModuleExportNode>): void => {
+		if (visiting.has(node)) {
+			return;
+		}
+		visiting.add(node);
 		for (const [key, child] of node.children) {
 			path.push(key);
 			exportSlotsByPathKey.set(buildModuleExportPathKey(path), buildModuleExportSlotName(modulePath, path));
-			assignSlots(child, path);
+			assignSlots(child, path, visiting);
 			path.pop();
 		}
+		visiting.delete(node);
 	};
-	assignSlots(exportRoot, []);
+	assignSlots(exportRoot, [], new WeakSet());
 	return {
 		path: modulePath,
 		external,
@@ -3448,9 +3460,20 @@ function buildCompilerSemanticFrontend(
 	modules: ReadonlyArray<ProgramModule>,
 	options: CompileOptions,
 ): LuaSemanticFrontend {
-	const extraGlobalNames = options.baseMetadata
-		? [...SYSTEM_ROM_GLOBAL_NAMES, ...options.baseMetadata.systemGlobalNames, ...options.baseMetadata.globalNames]
-		: SYSTEM_ROM_GLOBAL_NAMES;
+	let extraGlobalNames: ReadonlyArray<string> = SYSTEM_ROM_GLOBAL_NAMES;
+	if (options.baseMetadata) {
+		const mergedGlobalNames: string[] = [];
+		for (const name of SYSTEM_ROM_GLOBAL_NAMES) {
+			mergedGlobalNames.push(name);
+		}
+		for (const name of options.baseMetadata.systemGlobalNames) {
+			mergedGlobalNames.push(name);
+		}
+		for (const name of options.baseMetadata.globalNames) {
+			mergedGlobalNames.push(name);
+		}
+		extraGlobalNames = mergedGlobalNames;
+	}
 	const sources = [{
 		path: entryChunk.range.path,
 		source: requireEntrySource(options, entryChunk.range.path),
@@ -3675,7 +3698,13 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 
 export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): { program: Program; metadata: ProgramMetadata; entryProtoIndex: number } {
 	const optLevel = options.optLevel;
-	const frontend = buildCompilerSemanticFrontend(chunk, [], { ...options, baseMetadata: programMetadata });
+	const frontend = buildCompilerSemanticFrontend(chunk, [], {
+		baseProgram: options.baseProgram,
+		baseMetadata: programMetadata,
+		optLevel: options.optLevel,
+		entrySource: options.entrySource,
+		externalModules: options.externalModules,
+	});
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));

@@ -6,7 +6,7 @@ import {
 	ParticleRenderSubmission,
 } from '../../../render/shared/submissions';
 import { Font } from '../../../render/shared/bmsx_font';
-import { BFont, GlyphMap, RuntimeBitmapFontSource } from '../../../render/shared/bitmap_font';
+import { BFont, GlyphMap, RomPackageBitmapFontSource } from '../../../render/shared/bitmap_font';
 import { RuntimeStorage } from '../cart_storage';
 import type { vec3arr } from '../../../rompack/format';
 import { taskGate, GateGroup } from '../../../core/taskgate';
@@ -235,7 +235,7 @@ export class Api {
 			const glyphValue = entry[1];
 			glyphMap[glyphKey] = glyphValue;
 		}
-		const font = new BFont(new RuntimeBitmapFontSource(this.runtime), glyphMap, definition.advance_padding);
+		const font = new BFont(new RomPackageBitmapFontSource(this._runtime.activePackage, this._runtime.systemPackage), glyphMap, definition.advance_padding);
 		return this.buildFontDescriptor(font);
 	}
 

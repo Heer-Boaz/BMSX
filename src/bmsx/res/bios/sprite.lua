@@ -3,7 +3,7 @@
 -- DESIGN PRINCIPLES — image suffixes and collision geometry
 --
 -- 1. THE @cx / @cc FILENAME SUFFIX IS HOW POLYGON COLLISION IS ENABLED.
---    rombuilder strips it from the final asset name but processes it at pack-time:
+--    rombuilder strips it from the final ROM id but processes it at pack-time:
 --
 --      @cx  — bakes a CONVEX hull polygon (one polygon; fast, recommended default)
 --      @cc  — bakes a tighter multi-piece convex fit (multiple polygons; slower)
@@ -11,8 +11,8 @@
 --
 --    Examples:
 --      player.png          → AABB collision only
---      player@cx.png       → convex polygon; asset loads as 'player'
---      player@cc.png       → concave polygons; asset loads as 'player'
+--      player@cx.png       → convex polygon; ROM id becomes 'player'
+--      player@cc.png       → concave polygons; ROM id becomes 'player'
 --
 --    WRONG — no suffix, expecting polygon collision:
 --      self:gfx('enemy')           -- AABB only, regardless of sprite shape!
@@ -39,6 +39,7 @@
 local worldobject<const> = require('bios/world/object')
 local components<const> = require('bios/components')
 local vdp_image<const> = require('bios/vdp_image')
+local romdir<const> = require('bios/romdir')
 
 local spriteobject<const> = {}
 spriteobject.__index = spriteobject
@@ -48,11 +49,11 @@ spriteobject.base_sprite_id = 'base_sprite'
 spriteobject.primary_collider_id = 'primary'
 
 local apply_image_metadata<const> = function(self, id)
-	local asset<const> = sys_rom_img[id]
-	if asset == nil then
-		error('Image asset "' .. tostring(id) .. '" not found.')
+	local record<const> = romdir.image(id)
+	if record == nil then
+		error('Image ROM entry "' .. tostring(id) .. '" not found.')
 	end
-	local meta<const> = asset.imgmeta
+	local meta<const> = record.imgmeta
 	self.sx = meta.width
 	self.sy = meta.height
 end
@@ -79,9 +80,9 @@ function spriteobject.new(opts)
 end
 
 -- spriteobject:gfx(id, meta?)
---   Sets this object's sprite to the image with the given asset id.
+--   Sets this object's sprite to the image with the given ROM id.
 --   id should be the base name WITHOUT the @cx/@cc suffix (rombuilder strips it).
---   meta is optional; when omitted, imgmeta is fetched through host asset lookup.
+--   meta is optional; when omitted, imgmeta is read from the mapped ROM TOC.
 --   After loading, the linked collider2dcomponent (if one exists) will read the
 --   current imgmeta lazily when collision code asks for shape data.
 --   Must be called AFTER the object is spawned and has a collider2dcomponent.

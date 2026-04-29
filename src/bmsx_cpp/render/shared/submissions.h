@@ -88,7 +88,11 @@ struct RectRenderSubmission {
 
 // Image/sprite render
 struct ImgRenderSubmission {
-	std::string imgid;
+	std::optional<uint32_t> slot;
+	std::optional<uint32_t> u;
+	std::optional<uint32_t> v;
+	std::optional<uint32_t> w;
+	std::optional<uint32_t> h;
 	Vec3 pos{0.0f, 0.0f, 0.0f};  // x, y, z (z for depth sorting)
 	std::optional<Vec2> scale;
 	std::optional<FlipOptions> flip;

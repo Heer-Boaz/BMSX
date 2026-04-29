@@ -43,8 +43,7 @@ export type RectRenderSubmission = {
 	layer?: RenderLayer;
 };
 
-export type ImgRenderSubmission = {
-	imgid: string;
+type ImageRenderSubmissionBase = {
 	pos: vec2;
 	scale?: vec2;
 	flip?: FlipOptions;
@@ -54,6 +53,25 @@ export type ImgRenderSubmission = {
 	layer?: RenderLayer;
 	parallax_weight?: number;
 };
+
+export type ImgRenderSubmission = ImageRenderSubmissionBase & (
+	| {
+		imgid: string;
+		slot?: never;
+		u?: never;
+		v?: never;
+		w?: never;
+		h?: never;
+	}
+	| {
+		imgid?: never;
+		slot: number;
+		u: number;
+		v: number;
+		w: number;
+		h: number;
+	}
+);
 
 export type PolyRenderSubmission = {
 	points: Polygon;

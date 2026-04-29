@@ -16,20 +16,18 @@ import type { Runtime } from '../../machine/runtime/runtime';
 import { BFont } from './bitmap_font';
 import { setSpriteParallaxRigValues } from '../2d/sprite_parallax_rig';
 import { shallowcopy } from '../../common/shallowcopy';
-import { resolveImageSlotSource } from '../vdp/image_meta';
 
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
 let activeQueueSource: 'front' | 'back' = 'front';
 
-function submitSpriteDirect(runtime: Runtime, imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color, layer: RenderLayer, parallaxWeight: number, flipH = false, flipV = false): void {
-	const source = resolveImageSlotSource(runtime.machine.memory, runtime.rom, imgid);
+function submitSpriteDirect(runtime: Runtime, slot: number, u: number, v: number, w: number, h: number, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color, layer: RenderLayer, parallaxWeight: number, flipH = false, flipV = false): void {
 	runtime.machine.vdp.enqueueBlit(
-			source.slot,
-			source.u,
-			source.v,
-			source.w,
-			source.h,
+			slot,
+			u,
+			v,
+			w,
+			h,
 		x,
 		y,
 		z,
@@ -46,6 +44,9 @@ function submitSpriteDirect(runtime: Runtime, imgid: string, x: number, y: numbe
 // --- 2D framebuffer helpers -------------------------------------------------
 
 export function submitSprite(runtime: Runtime, options: ImgRenderSubmission): void {
+	if (options.slot === undefined || options.u === undefined || options.v === undefined || options.w === undefined || options.h === undefined) {
+		throw new Error('submitSprite requires slot/u/v/w/h.');
+	}
 	if (options.scale === undefined) {
 		throw new Error('submitSprite requires scale.');
 	}
@@ -60,7 +61,11 @@ export function submitSprite(runtime: Runtime, options: ImgRenderSubmission): vo
 	}
 	submitSpriteDirect(
 		runtime,
-		options.imgid,
+		options.slot,
+		options.u,
+		options.v,
+		options.w,
+		options.h,
 		options.pos.x,
 		options.pos.y,
 		options.pos.z,

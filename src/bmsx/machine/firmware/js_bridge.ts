@@ -929,45 +929,7 @@ export function pushNativePairsIterator(runtime: Runtime, target: NativeObject, 
 	out.push(iterator, target, null);
 }
 
-export function getOrCreateRomEntryMapNativeObject(runtime: Runtime, map: Record<string, unknown>, kind: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): NativeObject {
-	const cached = runtime.nativeObjectCache.get(map);
-	if (cached) {
-		return cached;
-	}
-	const wrapper = createNativeObject(map, {
-		get: (key) => {
-			const prop = resolveNativeKey(key);
-			if (!prop) {
-				throw new Error('Attempted to retrieve a ROM entry with a non-string key.');
-			}
-			const rawValue = map[prop];
-			if (rawValue === undefined) {
-				throw new Error(`ROM entry '${prop}' does not exist.`);
-			}
-			if (typeof rawValue === 'function') {
-				return getOrCreateNativeMethod(runtime, map, prop);
-			}
-			return toRomEntryValue(runtime, rawValue, kind);
-		},
-		set: (key, entryValue) => {
-			const prop = resolveNativeKey(key);
-			if (!prop) {
-				throw new Error('Attempted to index a ROM map with a non-string key.');
-			}
-			if (entryValue === null) {
-				delete map[prop];
-				return;
-			}
-			const ctx = buildMarshalContext(runtime);
-			map[prop] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
-		},
-		nextEntry: buildNativeNextEntry(runtime, map, kind),
-	});
-	runtime.nativeObjectCache.set(map, wrapper);
-	return wrapper;
-}
-
-function buildNativeNextEntry(runtime: Runtime, raw: object, kind?: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): (after: Value) => [Value, Value] | null {
+function buildNativeNextEntry(runtime: Runtime, raw: object): (after: Value) => [Value, Value] | null {
 	return (after: Value): [Value, Value] | null => {
 		const entry = findNativeRawEntryAfter(runtime, raw, after);
 		if (entry === null) {
@@ -975,42 +937,8 @@ function buildNativeNextEntry(runtime: Runtime, raw: object, kind?: 'img' | 'aud
 		}
 		const key = entry[0];
 		const value = entry[1];
-		return [key, toRomEntryValue(runtime, value, kind)];
+		return [key, toRuntimeValue(runtime, value)];
 	};
-}
-
-function toRomEntryValue(runtime: Runtime, value: unknown, kind?: 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents'): Value {
-	switch (kind) {
-		case 'img':
-		case 'audio':
-		case 'model':
-				if (value !== undefined && value !== null && typeof value === 'object') {
-					return getOrCreateNativeObject(runtime, value as object);
-				}
-				return toRuntimeValue(runtime, value);
-	}
-	if (value === undefined || value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
-		return toRuntimeValue(runtime, value);
-	}
-	if (value instanceof Table || isNativeObject(value as Value) || isNativeFunction(value as Value)) {
-		return value as Value;
-	}
-	const objectValue = value as object;
-	const cached = runtime.luaRomEntryValueCache.get(objectValue);
-	if (cached !== undefined) {
-		return cached;
-	}
-	const converted = toRuntimeValue(runtime, value);
-	runtime.luaRomEntryValueCache.set(objectValue, converted);
-	return converted;
-}
-
-export function syncLuaRomEntryField(runtime: Runtime, entry: object, field: string, value: Value): void {
-	const cached = runtime.luaRomEntryValueCache.get(entry);
-	if (!(cached instanceof Table)) {
-		return;
-	}
-	cached.set(runtime.luaKey(field), value);
 }
 
 export function toRuntimeValue(runtime: Runtime, value: unknown): Value {

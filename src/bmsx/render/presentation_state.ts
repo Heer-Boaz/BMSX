@@ -102,7 +102,6 @@ export class RenderPresentationState {
 		this.recordPresentation(mode, commitFrame);
 		consoleCore.sndmaster.finishFrame();
 		consoleCore.view.drawgame();
-		runtime.cartBoot.scheduleDeferredPreparation();
 	}
 
 	private markPresentation(mode: RenderPresentationMode, commitFrame: boolean): void {

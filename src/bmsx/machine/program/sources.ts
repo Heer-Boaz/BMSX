@@ -49,32 +49,30 @@ export function buildLuaSources(params: { cartSource: RawRomSource; romSource: R
 		const baseEntry = cartSource.getEntry(activeEntry.resid);
 		const src = decodeuint8arr(romSource.getBytes(activeEntry));
 		const baseSrc = baseEntry ? decodeuint8arr(cartSource.getBytes(baseEntry)) : src;
-		const luaAsset: LuaSourceRecord = {
-			...activeEntry,
-			src,
-			base_src: baseSrc,
-			module_path: toLuaModulePath(activeEntry.source_path),
-			update_timestamp: activeEntry.update_timestamp,
-		};
-		registry.path2lua[luaAsset.source_path] = luaAsset;
-		registry.module2lua[luaAsset.module_path] = luaAsset;
+		const luaRecord = activeEntry as LuaSourceRecord;
+		luaRecord.src = src;
+		luaRecord.base_src = baseSrc;
+		luaRecord.module_path = toLuaModulePath(activeEntry.source_path);
+		luaRecord.update_timestamp = typeof activeEntry.update_timestamp === 'number' ? activeEntry.update_timestamp : 0;
+		registry.path2lua[luaRecord.source_path] = luaRecord;
+		registry.module2lua[luaRecord.module_path] = luaRecord;
 	}
 
 	const entryPath = registry.entry_path;
 	if (entryPath.length > 0 && !registry.path2lua[entryPath] && !registry.module2lua[entryPath]) {
-		let entryAsset: LuaSourceRecord = null;
-		for (const asset of Object.values(registry.path2lua)) {
-			if (asset.source_path !== entryPath) {
+		let entryRecord: LuaSourceRecord = null;
+		for (const record of Object.values(registry.path2lua)) {
+			if (record.source_path !== entryPath) {
 				continue;
 			}
-			if (entryAsset !== null && entryAsset.source_path !== asset.source_path) {
+			if (entryRecord !== null && entryRecord.source_path !== record.source_path) {
 				throw new Error(`[LuaSources] Ambiguous lua.entry_path '${entryPath}'.`);
 			}
-			entryAsset = asset;
+			entryRecord = record;
 		}
-		if (entryAsset !== null) {
-			registry.path2lua[entryPath] = entryAsset;
-			registry.module2lua[entryAsset.module_path] = entryAsset;
+		if (entryRecord !== null) {
+			registry.path2lua[entryPath] = entryRecord;
+			registry.module2lua[entryRecord.module_path] = entryRecord;
 		}
 	}
 

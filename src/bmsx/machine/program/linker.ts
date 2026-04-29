@@ -24,6 +24,10 @@ import type {
 type LinkedProgramImage = {
 	programImage: ProgramImage;
 	metadata: ProgramMetadata | null;
+	systemEntryProtoIndex: number;
+	cartEntryProtoIndex: number;
+	systemStaticModulePaths: ReadonlyArray<string>;
+	cartStaticModulePaths: ReadonlyArray<string>;
 };
 
 const NUMBER_KEY_BUFFER = new ArrayBuffer(8);
@@ -423,13 +427,13 @@ const mergeMetadata = (
 export const linkProgramImages = (
 	systemImage: ProgramImage,
 	systemSymbols: ProgramSymbolsImage | null,
-	cartAsset: ProgramImage,
+	cartImage: ProgramImage,
 	cartSymbols: ProgramSymbolsImage | null,
 	layout?: Partial<ProgramLayout>,
 ): LinkedProgramImage => {
 	const baseProtoCount = systemImage.program.protos.length;
 	const systemCodeBytes = systemImage.program.code.length;
-	const cartCodeBytes = cartAsset.program.code.length;
+	const cartCodeBytes = cartImage.program.code.length;
 	const systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;
 	const cartInstructionCount = cartCodeBytes / INSTRUCTION_BYTES;
 	const resolvedLayout = resolveProgramLayout(systemCodeBytes, layout);
@@ -439,10 +443,10 @@ export const linkProgramImages = (
 	);
 	const code = new Uint8Array(totalBytes);
 	code.set(systemImage.program.code, resolvedLayout.systemBasePc);
-	code.set(cartAsset.program.code, resolvedLayout.cartBasePc);
+	code.set(cartImage.program.code, resolvedLayout.cartBasePc);
 	const cartCode = code.subarray(resolvedLayout.cartBasePc, resolvedLayout.cartBasePc + cartCodeBytes);
 	rewriteClosureIndices(cartCode, baseProtoCount);
-	const mergedConsts = mergeConstPools(systemImage.program.constPool, cartAsset.program.constPool);
+	const mergedConsts = mergeConstPools(systemImage.program.constPool, cartImage.program.constPool);
 	const systemMetadata = systemSymbols?.metadata;
 	const cartMetadata = cartSymbols?.metadata;
 
@@ -451,7 +455,7 @@ export const linkProgramImages = (
 	// name tables) can be resolved. Do not silently default to empty lists in that case;
 	// surface a clear diagnostic so the caller can fix the pipeline (compiler/rompacker)
 	// instead of letting the linker fabricate names.
-	const hasModuleRelocs = cartAsset.link.constRelocs.some(r => r.kind === 'module');
+	const hasModuleRelocs = cartImage.link.constRelocs.some(r => r.kind === 'module');
 	if (hasModuleRelocs) {
 		if (!systemMetadata || !cartMetadata) {
 			throw new Error('[ProgramLinker] Missing program symbols metadata required to resolve module relocations. Provide both systemSymbols and cartSymbols with metadata when linking a cart that contains module placeholders.');
@@ -469,7 +473,7 @@ export const linkProgramImages = (
 		: mergeNamedSlots(systemMetadata?.globalNames ?? EMPTY_SLOT_NAMES, cartMetadata?.globalNames ?? EMPTY_SLOT_NAMES);
 	rewriteConstRelocations(
 		cartCode,
-		cartAsset.link.constRelocs,
+		cartImage.link.constRelocs,
 		mergedConsts.cartConstRemap,
 		mergedGlobals.cartRemap,
 		mergedSystemGlobals.cartRemap,
@@ -479,7 +483,7 @@ export const linkProgramImages = (
 	);
 
 	const systemProtos = systemImage.program.protos;
-	const cartProtos = cartAsset.program.protos;
+	const cartProtos = cartImage.program.protos;
 	const protos: Proto[] = new Array(systemProtos.length + cartProtos.length);
 	let protoIndex = 0;
 	for (let index = 0; index < systemProtos.length; index += 1) {
@@ -514,14 +518,17 @@ export const linkProgramImages = (
 	};
 
 	const moduleProtos: Array<{ path: string; protoIndex: number }> = [];
-	for (const entry of cartAsset.moduleProtos ?? []) {
+	for (const entry of cartImage.moduleProtos ?? []) {
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex + baseProtoCount });
 	}
 	for (const entry of systemImage.moduleProtos ?? []) {
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex });
 	}
-	const staticModulePaths = (systemImage.staticModulePaths ?? []).concat(cartAsset.staticModulePaths ?? []);
-	const entryProtoIndex = cartAsset.entryProtoIndex + baseProtoCount;
+	const systemStaticModulePaths = systemImage.staticModulePaths ?? [];
+	const cartStaticModulePaths = cartImage.staticModulePaths ?? [];
+	const staticModulePaths = systemStaticModulePaths.concat(cartStaticModulePaths);
+	const systemEntryProtoIndex = systemImage.entryProtoIndex;
+	const cartEntryProtoIndex = cartImage.entryProtoIndex + baseProtoCount;
 	const metadata = mergeMetadata(
 		systemMetadata,
 		cartMetadata,
@@ -532,13 +539,17 @@ export const linkProgramImages = (
 
 	return {
 		programImage: {
-			entryProtoIndex,
+			entryProtoIndex: cartEntryProtoIndex,
 			program,
 			moduleProtos,
 			staticModulePaths,
 			link: { constRelocs: [] },
 		},
 		metadata,
+		systemEntryProtoIndex,
+		cartEntryProtoIndex,
+		systemStaticModulePaths,
+		cartStaticModulePaths,
 	};
 };
 // end repeated-sequence-acceptable

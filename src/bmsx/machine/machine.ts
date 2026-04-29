@@ -3,7 +3,6 @@ import type { Input } from '../input/manager';
 import {
 	HOST_FAULT_STAGE_NONE,
 	IO_SYS_BOOT_CART,
-	IO_SYS_CART_BOOTREADY,
 	IO_SYS_HOST_FAULT_FLAGS,
 	IO_SYS_HOST_FAULT_STAGE,
 } from './bus/io';
@@ -80,7 +79,7 @@ export class Machine {
 		this.vdp = new VDP(this.memory, this.cpu, api, this.scheduler, frameBufferSize);
 		this.audioController = new AudioController(this.memory, soundMaster, this.irqController);
 		this.dmaController = new DmaController(this.memory, this.irqController, this.vdp, this.scheduler);
-		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.irqController, this.scheduler);
+		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.vdp, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
 		this.inputController = new InputController(this.memory, input);
 		this.resourceUsageDetector = new ResourceUsageDetector(this.stringHandles, this.vdp);
@@ -88,7 +87,6 @@ export class Machine {
 
 	public initializeSystemIo(): void {
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
-		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
 	}

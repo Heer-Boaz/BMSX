@@ -4,6 +4,7 @@
 #include "machine/program/load_compiler.h"
 #include "machine/common/number_format.h"
 #include "machine/memory/lua_heap_usage.h"
+#include "machine/memory/map.h"
 #include "core/time.h"
 #include "core/utf8.h"
 #include "platform.h"
@@ -166,114 +167,11 @@ std::string utf8_to_lower(const std::string& text) {
 	});
 }
 
-template <typename KeyFn>
-Table* buildBoundingBoxTable(CPU& cpu, const ImgMeta& meta, const KeyFn& key) {
-	auto* table = cpu.createTable(0, 4);
-	const auto& originalRect = meta.boundingbox.original;
-	const auto& fliphRect = meta.boundingbox.fliph;
-	const auto& flipvRect = meta.boundingbox.flipv;
-	const auto& fliphvRect = meta.boundingbox.fliphv;
-
-	auto* original = cpu.createTable(0, 6);
-	original->set(key("left"), valueNumber(static_cast<double>(originalRect.x)));
-	original->set(key("right"), valueNumber(static_cast<double>(originalRect.x + originalRect.width)));
-	original->set(key("top"), valueNumber(static_cast<double>(originalRect.y)));
-	original->set(key("bottom"), valueNumber(static_cast<double>(originalRect.y + originalRect.height)));
-	original->set(key("width"), valueNumber(static_cast<double>(originalRect.width)));
-	original->set(key("height"), valueNumber(static_cast<double>(originalRect.height)));
-
-	auto* fliph = cpu.createTable(0, 6);
-	fliph->set(key("left"), valueNumber(static_cast<double>(fliphRect.x)));
-	fliph->set(key("right"), valueNumber(static_cast<double>(fliphRect.x + fliphRect.width)));
-	fliph->set(key("top"), valueNumber(static_cast<double>(fliphRect.y)));
-	fliph->set(key("bottom"), valueNumber(static_cast<double>(fliphRect.y + fliphRect.height)));
-	fliph->set(key("width"), valueNumber(static_cast<double>(fliphRect.width)));
-	fliph->set(key("height"), valueNumber(static_cast<double>(fliphRect.height)));
-
-	auto* flipv = cpu.createTable(0, 6);
-	flipv->set(key("left"), valueNumber(static_cast<double>(flipvRect.x)));
-	flipv->set(key("right"), valueNumber(static_cast<double>(flipvRect.x + flipvRect.width)));
-	flipv->set(key("top"), valueNumber(static_cast<double>(flipvRect.y)));
-	flipv->set(key("bottom"), valueNumber(static_cast<double>(flipvRect.y + flipvRect.height)));
-	flipv->set(key("width"), valueNumber(static_cast<double>(flipvRect.width)));
-	flipv->set(key("height"), valueNumber(static_cast<double>(flipvRect.height)));
-
-	auto* fliphv = cpu.createTable(0, 6);
-	fliphv->set(key("left"), valueNumber(static_cast<double>(fliphvRect.x)));
-	fliphv->set(key("right"), valueNumber(static_cast<double>(fliphvRect.x + fliphvRect.width)));
-	fliphv->set(key("top"), valueNumber(static_cast<double>(fliphvRect.y)));
-	fliphv->set(key("bottom"), valueNumber(static_cast<double>(fliphvRect.y + fliphvRect.height)));
-	fliphv->set(key("width"), valueNumber(static_cast<double>(fliphvRect.width)));
-	fliphv->set(key("height"), valueNumber(static_cast<double>(fliphvRect.height)));
-
-	table->set(key("original"), valueTable(original));
-	table->set(key("fliph"), valueTable(fliph));
-	table->set(key("flipv"), valueTable(flipv));
-	table->set(key("fliphv"), valueTable(fliphv));
-	return table;
-}
-
 template <typename Container>
 Table* buildNumericArrayTable(CPU& cpu, const Container& values);
 
 template <typename T, typename BuildFn>
 Table* buildTableArray(CPU& cpu, const std::vector<T>& values, const BuildFn& buildFn);
-
-template <typename KeyFn>
-Table* buildImgMetaTable(CPU& cpu, const ImgMeta& meta, const KeyFn& key) {
-	auto* table = cpu.createTable(0, 12);
-	if (meta.atlasid) {
-		table->set(key("atlasid"), valueNumber(static_cast<double>(*meta.atlasid)));
-	}
-	table->set(key("width"), valueNumber(static_cast<double>(meta.width)));
-	table->set(key("height"), valueNumber(static_cast<double>(meta.height)));
-	table->set(key("texcoords"), valueTable(buildNumericArrayTable(cpu, meta.texcoords)));
-	table->set(key("texcoords_fliph"), valueTable(buildNumericArrayTable(cpu, meta.texcoords_fliph)));
-	table->set(key("texcoords_flipv"), valueTable(buildNumericArrayTable(cpu, meta.texcoords_flipv)));
-	table->set(key("texcoords_fliphv"), valueTable(buildNumericArrayTable(cpu, meta.texcoords_fliphv)));
-	table->set(key("boundingbox"), valueTable(buildBoundingBoxTable(cpu, meta, key)));
-
-	if (meta.hasCenterpoint) {
-		auto* centerpoint = cpu.createTable(2, 0);
-		centerpoint->set(valueNumber(1.0), valueNumber(static_cast<double>(meta.centerX)));
-		centerpoint->set(valueNumber(2.0), valueNumber(static_cast<double>(meta.centerY)));
-		table->set(key("centerpoint"), valueTable(centerpoint));
-	}
-	if (meta.hitpolygons) {
-		auto* hitTable = cpu.createTable(0, 4);
-		hitTable->set(key("original"), valueTable(buildTableArray(cpu, meta.hitpolygons->original, [&cpu](const std::vector<f32>& poly) {
-			return buildNumericArrayTable(cpu, poly);
-		})));
-		hitTable->set(key("fliph"), valueTable(buildTableArray(cpu, meta.hitpolygons->fliph, [&cpu](const std::vector<f32>& poly) {
-			return buildNumericArrayTable(cpu, poly);
-		})));
-		hitTable->set(key("flipv"), valueTable(buildTableArray(cpu, meta.hitpolygons->flipv, [&cpu](const std::vector<f32>& poly) {
-			return buildNumericArrayTable(cpu, poly);
-		})));
-		hitTable->set(key("fliphv"), valueTable(buildTableArray(cpu, meta.hitpolygons->fliphv, [&cpu](const std::vector<f32>& poly) {
-			return buildNumericArrayTable(cpu, poly);
-		})));
-		table->set(key("hitpolygons"), valueTable(hitTable));
-	}
-	if (meta.collisionBlobId) {
-		table->set(key("collisionblob_id"), valueString(cpu.internString(*meta.collisionBlobId)));
-	}
-	return table;
-}
-
-template <typename KeyFn>
-Table* buildAudioMetaTable(CPU& cpu, const AudioMeta& meta, const KeyFn& key) {
-	auto* table = cpu.createTable(0, 4);
-	table->set(key("audiotype"), valueString(cpu.internString(audioTypeToString(meta.type))));
-	table->set(key("priority"), valueNumber(static_cast<double>(meta.priority)));
-	if (meta.loopStart) {
-		table->set(key("loop"), valueNumber(static_cast<double>(*meta.loopStart)));
-	}
-	if (meta.loopEnd) {
-		table->set(key("loopEnd"), valueNumber(static_cast<double>(*meta.loopEnd)));
-	}
-	return table;
-}
 
 template <typename Container>
 Table* buildNumericArrayTable(CPU& cpu, const Container& values) {
@@ -575,42 +473,6 @@ Table* buildModelAssetTable(CPU& cpu, const ModelAsset& asset, const KeyFn& key)
 	return table;
 }
 
-Value binValueToRuntimeValue(CPU& cpu, const BinValue& value) {
-	if (value.isNull()) {
-		return valueNil();
-	}
-	if (value.isBool()) {
-		return valueBool(value.asBool());
-	}
-	if (value.isNumber()) {
-		return valueNumber(static_cast<double>(value.toNumber()));
-	}
-	if (value.isString()) {
-		return valueString(cpu.internString(value.asString()));
-	}
-	if (value.isArray()) {
-		const auto& arr = value.asArray();
-		auto* table = cpu.createTable(static_cast<int>(arr.size()), 0);
-		for (size_t index = 0; index < arr.size(); ++index) {
-			table->set(valueNumber(static_cast<double>(index + 1)), binValueToRuntimeValue(cpu, arr[index]));
-		}
-		return valueTable(table);
-	}
-	if (value.isObject()) {
-		const auto& obj = value.asObject();
-		auto* table = cpu.createTable(0, static_cast<int>(obj.size()));
-		for (const auto& [key, entry] : obj) {
-			table->set(valueString(cpu.internString(key)), binValueToRuntimeValue(cpu, entry));
-		}
-		return valueTable(table);
-	}
-	const auto& bin = value.asBinary();
-	auto* table = cpu.createTable(static_cast<int>(bin.size()), 0);
-	for (size_t index = 0; index < bin.size(); ++index) {
-		table->set(valueNumber(static_cast<double>(index + 1)), valueNumber(static_cast<double>(bin[index])));
-	}
-	return valueTable(table);
-}
 }
 
 std::string Runtime::formatLuaString(const std::string& templateStr, NativeArgsView args, size_t argStart) const {
@@ -1364,7 +1226,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("math", valueTable(mathTable));
 	setGlobal("easing", valueTable(easingTable));
 	setGlobal("sys_boot_cart", valueNumber(static_cast<double>(IO_SYS_BOOT_CART)));
-	setGlobal("sys_cart_bootready", valueNumber(static_cast<double>(IO_SYS_CART_BOOTREADY)));
 	setGlobal("sys_host_fault_flags", valueNumber(static_cast<double>(IO_SYS_HOST_FAULT_FLAGS)));
 	setGlobal("sys_host_fault_stage", valueNumber(static_cast<double>(IO_SYS_HOST_FAULT_STAGE)));
 	setGlobal("sys_host_fault_flag_active", valueNumber(static_cast<double>(HOST_FAULT_FLAG_ACTIVE)));
@@ -1420,11 +1281,11 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_arg_stride", valueNumber(static_cast<double>(IO_ARG_STRIDE)));
 	setGlobal("sys_vdp_cmd_clear", valueNumber(static_cast<double>(IO_CMD_VDP_CLEAR)));
 	setGlobal("sys_vdp_cmd_fill_rect", valueNumber(static_cast<double>(IO_CMD_VDP_FILL_RECT)));
-		setGlobal("sys_vdp_cmd_blit", valueNumber(static_cast<double>(IO_CMD_VDP_BLIT)));
-		setGlobal("sys_vdp_cmd_draw_line", valueNumber(static_cast<double>(IO_CMD_VDP_DRAW_LINE)));
-		setGlobal("sys_vdp_cmd_glyph_run", valueNumber(static_cast<double>(IO_CMD_VDP_GLYPH_RUN)));
-		setGlobal("sys_vdp_cmd_tile_run", valueNumber(static_cast<double>(IO_CMD_VDP_TILE_RUN)));
-		setGlobal("sys_irq_flags", valueNumber(static_cast<double>(IO_IRQ_FLAGS)));
+	setGlobal("sys_vdp_cmd_blit", valueNumber(static_cast<double>(IO_CMD_VDP_BLIT)));
+	setGlobal("sys_vdp_cmd_draw_line", valueNumber(static_cast<double>(IO_CMD_VDP_DRAW_LINE)));
+	setGlobal("sys_vdp_cmd_glyph_run", valueNumber(static_cast<double>(IO_CMD_VDP_GLYPH_RUN)));
+	setGlobal("sys_vdp_cmd_tile_run", valueNumber(static_cast<double>(IO_CMD_VDP_TILE_RUN)));
+	setGlobal("sys_irq_flags", valueNumber(static_cast<double>(IO_IRQ_FLAGS)));
 	setGlobal("sys_irq_ack", valueNumber(static_cast<double>(IO_IRQ_ACK)));
 	setGlobal("sys_dma_src", valueNumber(static_cast<double>(IO_DMA_SRC)));
 	setGlobal("sys_dma_dst", valueNumber(static_cast<double>(IO_DMA_DST)));
@@ -3413,179 +3274,6 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 		out.push_back(target);
 		out.push_back(valueNumber(0.0));
 	});
-
-	struct RomNativeMaps {
-		Value img;
-		Value data;
-		Value audio;
-		Value audioevents;
-	};
-	auto buildRomNativeMaps = [&cpu, key, str](const RuntimeRomPackage& rom) -> RomNativeMaps {
-	auto formatRomKeyNumber = [](double value) -> std::string {
-		if (value == 0.0) {
-			return "0";
-		}
-		std::ostringstream oss;
-		oss << std::fixed << std::setprecision(0) << value;
-		return oss.str();
-	};
-	auto romIntegerKeyName = [formatRomKeyNumber](const Value& keyValue) -> std::optional<std::string> {
-		if (!valueIsNumber(keyValue)) {
-			return std::nullopt;
-		}
-		double n = valueToNumber(keyValue);
-		double intpart = 0.0;
-		if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
-			return formatRomKeyNumber(n);
-		}
-		return std::nullopt;
-	};
-	auto readRomMapValue = [&cpu, romIntegerKeyName](Table* table, const Value& keyValue) -> Value {
-		if (valueIsString(keyValue)) {
-			Value value = table->get(keyValue);
-			if (isNil(value)) {
-				const std::string& keyName = cpu.stringPool().toString(asStringId(keyValue));
-				throw BMSX_RUNTIME_ERROR("ROM entry '" + keyName + "' does not exist.");
-			}
-			return value;
-		}
-		if (const std::optional<std::string> keyName = romIntegerKeyName(keyValue)) {
-			Value resolvedKey = valueString(cpu.internString(*keyName));
-			Value value = table->get(resolvedKey);
-			if (isNil(value)) {
-				throw BMSX_RUNTIME_ERROR("ROM entry '" + *keyName + "' does not exist.");
-			}
-			return value;
-		}
-		throw BMSX_RUNTIME_ERROR("Attempted to retrieve a ROM entry with a non-string key.");
-	};
-	auto writeRomMapValue = [&cpu, romIntegerKeyName](Table* table, const Value& keyValue, const Value& value) {
-		if (valueIsString(keyValue)) {
-			table->set(keyValue, value);
-			return;
-		}
-		if (const std::optional<std::string> keyName = romIntegerKeyName(keyValue)) {
-			table->set(valueString(cpu.internString(*keyName)), value);
-			return;
-		}
-		throw BMSX_RUNTIME_ERROR("Attempted to index a ROM map with a non-string key.");
-	};
-	auto makeRomMapNativeObject = [&cpu, readRomMapValue, writeRomMapValue](Table* mapTable) -> Value {
-		return cpu.createNativeObject(
-			mapTable,
-			[mapTable, readRomMapValue](const Value& keyValue) -> Value {
-				return readRomMapValue(mapTable, keyValue);
-			},
-			[mapTable, writeRomMapValue](const Value& keyValue, const Value& value) {
-				writeRomMapValue(mapTable, keyValue, value);
-			},
-			nullptr,
-			[mapTable](const Value& after) -> std::optional<std::pair<Value, Value>> {
-				return mapTable->nextEntry(after);
-			},
-			[mapTable](GcHeap& heap) {
-				heap.markValue(valueTable(mapTable));
-			}
-			);
-		};
-	auto appendRomEntryFields = [key, str](Table* table, const RomAssetInfo& info, std::string_view resid) {
-		table->set(key("resid"), str(resid));
-		if (!info.type.empty()) {
-			table->set(key("type"), str(info.type));
-		}
-		if (info.op) {
-			table->set(key("op"), str(*info.op));
-		}
-		if (info.start) {
-			table->set(key("start"), valueNumber(static_cast<double>(*info.start)));
-		}
-		if (info.end) {
-			table->set(key("end"), valueNumber(static_cast<double>(*info.end)));
-		}
-		if (info.compiledStart) {
-			table->set(key("compiled_start"), valueNumber(static_cast<double>(*info.compiledStart)));
-		}
-		if (info.compiledEnd) {
-			table->set(key("compiled_end"), valueNumber(static_cast<double>(*info.compiledEnd)));
-		}
-		if (info.metabufferStart) {
-			table->set(key("metabuffer_start"), valueNumber(static_cast<double>(*info.metabufferStart)));
-		}
-		if (info.metabufferEnd) {
-			table->set(key("metabuffer_end"), valueNumber(static_cast<double>(*info.metabufferEnd)));
-		}
-		if (info.textureStart) {
-			table->set(key("texture_start"), valueNumber(static_cast<double>(*info.textureStart)));
-		}
-		if (info.textureEnd) {
-			table->set(key("texture_end"), valueNumber(static_cast<double>(*info.textureEnd)));
-		}
-		if (info.collisionBinStart) {
-			table->set(key("collision_bin_start"), valueNumber(static_cast<double>(*info.collisionBinStart)));
-		}
-		if (info.collisionBinEnd) {
-			table->set(key("collision_bin_end"), valueNumber(static_cast<double>(*info.collisionBinEnd)));
-		}
-		if (info.sourcePath) {
-			table->set(key("source_path"), str(*info.sourcePath));
-		}
-		if (info.updateTimestamp) {
-			table->set(key("update_timestamp"), valueNumber(static_cast<double>(*info.updateTimestamp)));
-		}
-		if (info.payloadId) {
-			table->set(key("payload_id"), str(*info.payloadId));
-		}
-	};
-	auto appendBinEntry = [&cpu, str](Table* table, const std::string& assetId, const BinValue& value) {
-		table->set(str(assetId), binValueToRuntimeValue(cpu, value));
-	};
-	const int imgCapacity = static_cast<int>(rom.img.size());
-	auto* imgTable = cpu.createTable(0, imgCapacity);
-	auto appendImgEntry = [&cpu, imgTable, key, str, appendRomEntryFields](const ImgAsset& imgAsset) {
-		auto* imgEntry = cpu.createTable(0, 8);
-		appendRomEntryFields(imgEntry, imgAsset.rom, imgAsset.id);
-		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(cpu, imgAsset.meta, key)));
-		imgTable->set(str(imgAsset.id), valueTable(imgEntry));
-	};
-	for (const auto& entry : rom.img) {
-		appendImgEntry(entry.second);
-	}
-
-	const int dataCapacity = static_cast<int>(rom.data.size());
-	auto* dataTable = cpu.createTable(0, dataCapacity);
-	for (const auto& entry : rom.data) {
-		appendBinEntry(dataTable, entry.second.id, entry.second.value);
-	}
-	const int audioCapacity = static_cast<int>(rom.audio.size());
-	auto* audioTable = cpu.createTable(0, audioCapacity);
-	auto appendAudioEntry = [&cpu, audioTable, key, str, appendRomEntryFields](const AudioAsset& audioAsset) {
-		auto* audioEntry = cpu.createTable(0, 6);
-		appendRomEntryFields(audioEntry, audioAsset.rom, audioAsset.id);
-		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(cpu, audioAsset.meta, key)));
-		audioTable->set(str(audioAsset.id), valueTable(audioEntry));
-	};
-	for (const auto& entry : rom.audio) {
-		appendAudioEntry(entry.second);
-	}
-	const int audioEventCapacity = static_cast<int>(rom.audioevents.size());
-	auto* audioEventsTable = cpu.createTable(0, audioEventCapacity);
-	for (const auto& entry : rom.audioevents) {
-		appendBinEntry(audioEventsTable, entry.second.id, entry.second.value);
-	}
-	return RomNativeMaps{
-		makeRomMapNativeObject(imgTable),
-		makeRomMapNativeObject(dataTable),
-		makeRomMapNativeObject(audioTable),
-		makeRomMapNativeObject(audioEventsTable),
-	};
-	};
-	const RomNativeMaps activeRomMaps = buildRomNativeMaps(activeRom());
-	setGlobal("sys_rom_img", activeRomMaps.img);
-	setGlobal("sys_rom_data", activeRomMaps.data);
-	setGlobal("sys_rom_audio", activeRomMaps.audio);
-	setGlobal("sys_rom_audioevents", activeRomMaps.audioevents);
-	const RomNativeMaps systemRomMaps = buildRomNativeMaps(systemRom());
-	setGlobal("sys_system_rom_img", systemRomMaps.img);
 
 	auto buildMachineManifestTable = [&cpu, key, str](const MachineManifest& manifest) -> Table* {
 		auto* machineTable = cpu.createTable(0, 5);

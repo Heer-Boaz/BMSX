@@ -922,7 +922,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		registerBadpClip(clipId, bytesBuffer) {
 			const bytes = new Uint8Array(bytesBuffer);
 			if (bytes.byteLength < BADP_HEADER_SIZE) {
-				throw new Error('[WorkerStreamingAudioService.worklet] BADP asset too small.');
+				throw new Error('[WorkerStreamingAudioService.worklet] BADP clip too small.');
 			}
 			if (bytes[0] !== 0x42 || bytes[1] !== 0x41 || bytes[2] !== 0x44 || bytes[3] !== 0x50) {
 				throw new Error('[WorkerStreamingAudioService.worklet] BADP signature invalid.');

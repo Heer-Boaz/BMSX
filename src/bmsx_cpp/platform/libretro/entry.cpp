@@ -131,7 +131,7 @@ extern "C" RETRO_API void bmsx_focus_changed(bool focused) {
 
 extern "C" RETRO_API bool bmsx_is_cart_program_active(void) {
 	auto* console = g_platform ? g_platform->console() : nullptr;
-	return console && console->hasRuntime() && !console->runtime().isSystemProgramActive();
+	return console && console->hasRuntime() && console->runtime().isCartProgramStarted();
 }
 
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";

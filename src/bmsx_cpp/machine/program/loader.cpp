@@ -55,6 +55,22 @@ LocalSlotDebug parseLocalSlotDebug(const BinValue& slotVal) {
 	return slot;
 }
 
+std::vector<std::string> readStringArray(const BinValue& value, const std::string& context) {
+	if (!value.isArray()) {
+		throw BMSX_RUNTIME_ERROR(context + " expected array.");
+	}
+	const auto& array = value.asArray();
+	std::vector<std::string> out;
+	out.reserve(array.size());
+	for (const auto& entry : array) {
+		if (!entry.isString()) {
+			throw BMSX_RUNTIME_ERROR(context + " expected string entries.");
+		}
+		out.push_back(entry.asString());
+	}
+	return out;
+}
+
 /**
  * Convert BinValue to runtime Value (for const pool).
  */
@@ -145,16 +161,18 @@ std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadata
 	const auto& upvalueNamesByProtoArr = metadataObj.require("upvalueNamesByProto").asArray();
 	metadata->upvalueNamesByProto.resize(upvalueNamesByProtoArr.size());
 	for (size_t protoIndex = 0; protoIndex < upvalueNamesByProtoArr.size(); ++protoIndex) {
-		metadata->upvalueNamesByProto[protoIndex] = upvalueNamesByProtoArr[protoIndex];
+		metadata->upvalueNamesByProto[protoIndex] = readStringArray(upvalueNamesByProtoArr[protoIndex], "ProgramLoader: upvalueNamesByProto entry");
 	}
 	if (metadata->upvalueNamesByProto.size() != metadata->protoIds.size()) {
 		throw BMSX_RUNTIME_ERROR("ProgramLoader: upvalueNamesByProto length does not match protoIds length.");
 	}
 
-	metadata->systemGlobalNames = metadataObj.require("systemGlobalNames");
-	metadata->globalNames = metadataObj.require("globalNames");
+	metadata->systemGlobalNames = readStringArray(metadataObj.require("systemGlobalNames"), "ProgramLoader: systemGlobalNames");
+	metadata->globalNames = readStringArray(metadataObj.require("globalNames"), "ProgramLoader: globalNames");
 	return metadata;
 }
+
+} // namespace
 
 std::unique_ptr<ProgramImage> ProgramLoader::load(const uint8_t* data, size_t size) {
 	// Decode binary format using binencoder
@@ -181,7 +199,7 @@ std::unique_ptr<ProgramImage> ProgramLoader::load(const uint8_t* data, size_t si
 		image->moduleProtos.emplace_back(std::move(path), protoIndex);
 	}
 
-	image->staticModulePaths = root.require("staticModulePaths");
+	image->staticModulePaths = readStringArray(root.require("staticModulePaths"), "ProgramLoader: staticModulePaths");
 
 	// Extract link metadata (required).
 	const auto& linkObj = root.require("link");

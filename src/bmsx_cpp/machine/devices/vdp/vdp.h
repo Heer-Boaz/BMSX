@@ -10,7 +10,6 @@
 #include <array>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace bmsx {
@@ -44,13 +43,6 @@ struct VdpFrameBufferSize {
 	uint32_t width = 0;
 	uint32_t height = 0;
 };
-
-struct VdpAtlasDimensions {
-	uint32_t width = 0;
-	uint32_t height = 0;
-};
-
-using VdpAtlasDimensionsById = std::unordered_map<i32, VdpAtlasDimensions>;
 
 struct VdpVramSurface {
 	uint32_t surfaceId = 0;
@@ -130,7 +122,8 @@ public:
 	uint32_t readVdpStatus();
 	uint32_t readVdpData();
 
-	void registerVramSurfaces(const std::vector<VdpVramSurface>& surfaces, VdpAtlasDimensionsById atlasDimensions);
+	void initializeVramSurfaces();
+	void setDecodedVramSurfaceDimensions(uint32_t baseAddr, uint32_t width, uint32_t height);
 	void attachImgDecController(ImgDecController& controller);
 	void setSkyboxSources(const SkyboxFaceSources& sources);
 	void clearSkybox();
@@ -287,7 +280,6 @@ public:
 			Api& m_api;
 		ImgDecController* m_imgDecController = nullptr;
 		std::vector<VramSlot> m_vramSlots;
-	VdpAtlasDimensionsById m_atlasDimensionsById;
 	std::vector<u8> m_vramStaging;
 	std::vector<u8> m_vramGarbageScratch;
 	std::array<u8, 4> m_vramSeedPixel{{0, 0, 0, 0}};

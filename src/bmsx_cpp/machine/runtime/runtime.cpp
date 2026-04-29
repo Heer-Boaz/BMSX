@@ -10,10 +10,12 @@
 #include "render/shared/queues.h"
 #include "machine/runtime/timing/config.h"
 #include "rompack/format.h"
+#include "rompack/package.h"
 #include "input/manager.h"
 #include "platform.h"
 #include <array>
 #include <stdexcept>
+#include <utility>
 
 namespace bmsx {
 namespace {
@@ -32,19 +34,18 @@ Runtime::Runtime(
 )
 	: timing(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame)
 	, cartBoot(*this, romBootManager)
-	, m_systemRom(options.systemRom)
-	, m_activeRom(options.activeRom)
-	, m_cartRom(options.cartRom)
 	, m_systemRomBytes(options.systemRomBytes)
 	, m_cartRomBytes(options.cartRomBytes)
 	, m_machineManifest(options.machineManifest)
 	, m_clock(clock)
 	, m_view(view)
 	, m_api(std::make_unique<Api>(*this))
-	, m_machine(*m_api, soundMaster, microtasks, VdpFrameBufferSize{
-		static_cast<uint32_t>(options.viewport.x),
-		static_cast<uint32_t>(options.viewport.y)
-	})
+	, m_machine(
+		*m_api,
+		soundMaster,
+		microtasks,
+		VdpFrameBufferSize{ static_cast<uint32_t>(options.viewport.x), static_cast<uint32_t>(options.viewport.y) }
+	)
 {
 	configureLuaHeapUsage({});
 	resetTrackedLuaHeapBytes();
@@ -92,49 +93,112 @@ Api& Runtime::api() {
 }
 
 const CartManifest* Runtime::cartManifest() const {
-	if (!m_cartRom || !m_cartRom->cartManifest) {
+	if (!m_cartRomPackage || !m_cartRomPackage->cartManifest) {
 		return nullptr;
 	}
-	return &*m_cartRom->cartManifest;
+	return &*m_cartRomPackage->cartManifest;
 }
 
 const std::string* Runtime::cartEntryPath() const {
-	if (!m_cartRom) {
+	if (!m_cartRomPackage || m_cartRomBytes.size == 0) {
 		return nullptr;
 	}
-	return &m_cartRom->entryPoint;
+	return &m_cartRomPackage->entryPoint;
 }
 
 const std::string* Runtime::cartProjectRootPath() const {
-	if (!m_cartRom) {
+	if (!m_cartRomPackage || m_cartRomBytes.size == 0) {
 		return nullptr;
 	}
-	return &m_cartRom->projectRootPath;
+	return &m_cartRomPackage->projectRootPath;
+}
+
+RuntimeRomPackage& Runtime::activeRom() {
+	return *m_activeRomPackage;
+}
+
+const RuntimeRomPackage& Runtime::activeRom() const {
+	return *m_activeRomPackage;
+}
+
+RuntimeRomPackage& Runtime::systemRom() {
+	return *m_systemRomPackage;
+}
+
+const RuntimeRomPackage& Runtime::systemRom() const {
+	return *m_systemRomPackage;
+}
+
+RuntimeRomPackage* Runtime::cartRom() {
+	return m_cartRomPackage;
+}
+
+const RuntimeRomPackage* Runtime::cartRom() const {
+	return m_cartRomPackage;
 }
 
 void Runtime::setRuntimeEnvironment(
-	RuntimeRomPackage& systemRom,
-	RuntimeRomPackage& activeRom,
 	const MachineManifest& machineManifest,
-	RuntimeRomPackage* cartRom,
 	RuntimeOptions::RomSpan systemRomBytes,
-	RuntimeOptions::RomSpan cartRomBytes
+	RuntimeOptions::RomSpan cartRomBytes,
+	RuntimeRomPackage& activeRom,
+	RuntimeRomPackage& systemRom,
+	RuntimeRomPackage* cartRom
 ) {
-	m_systemRom = &systemRom;
-	m_activeRom = &activeRom;
 	m_machineManifest = &machineManifest;
-	m_cartRom = cartRom;
 	m_systemRomBytes = systemRomBytes;
 	m_cartRomBytes = cartRomBytes;
+	m_activeRomPackage = &activeRom;
+	m_systemRomPackage = &systemRom;
+	m_cartRomPackage = cartRom;
 }
 
-void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata) {
+void Runtime::setCartEntry(int entryProtoIndex, std::vector<std::string> staticModulePaths) {
+	m_cartEntryProtoIndex = entryProtoIndex;
+	m_cartStaticModulePaths = std::move(staticModulePaths);
+}
+
+void Runtime::enterSystemFirmware() {
+	m_cartProgramStarted = false;
+	m_activeRomPackage = m_systemRomPackage;
+	if (m_systemRomPackage) {
+		m_api->cartdata(m_systemRomPackage->machine.namespaceName);
+	}
+}
+
+void Runtime::enterCartProgram() {
+	if (!m_cartRomPackage) {
+		throw std::runtime_error("cannot enter cart program: cart ROM is not installed.");
+	}
+	m_cartProgramStarted = true;
+	m_activeRomPackage = m_cartRomPackage;
+	m_api->cartdata(m_cartRomPackage->machine.namespaceName);
+}
+
+void Runtime::startCartProgram() {
+	if (!m_cartEntryProtoIndex) {
+		throw std::runtime_error("cannot start cart: no cart entry point is installed.");
+	}
+	enterCartProgram();
+	runStaticModuleInitializers(m_cartStaticModulePaths);
+	m_machine.cpu().start(*m_cartEntryProtoIndex);
+	enforceLuaHeapBudget();
+	m_pendingCall = PendingCall::Entry;
+	queueLifecycleHandlers(true, true);
+	m_luaInitialized = true;
+}
+
+void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>& staticModulePaths) {
 	m_moduleProtos.clear();
 	for (const auto& [path, protoIndex] : image.moduleProtos) {
 		m_moduleProtos[path] = protoIndex;
 	}
 	m_moduleCache.clear();
-	boot(image.program.get(), metadata, image.entryProtoIndex, &image.staticModulePaths);
+	boot(image.program.get(), metadata, entryProtoIndex, &staticModulePaths);
+}
+
+void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata) {
+	boot(image, metadata, image.entryProtoIndex, image.staticModulePaths);
 }
 
 void Runtime::resetRuntimeForProgramReload() {
@@ -142,6 +206,8 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
+	m_cartEntryProtoIndex.reset();
+	m_cartStaticModulePaths.clear();
 	cartBoot.reset();
 	m_hostFaultMessage.reset();
 	m_moduleCache.clear();
@@ -220,6 +286,7 @@ void Runtime::refreshMemoryMap() {
 		InputMap emptyMapping;
 		Input::instance().getPlayerInput(DEFAULT_KEYBOARD_PLAYER_INDEX)->setInputMap(emptyMapping);
 	}
+	m_machine.vdp().initializeVramSurfaces();
 	refreshMemoryMapGlobals();
 }
 

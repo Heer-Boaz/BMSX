@@ -1,5 +1,4 @@
-import type { ImageAtlasRect } from '../vdp/image_meta';
-import { BFont, GlyphMap } from './bitmap_font';
+import { BFont, GlyphMap, type ImageAtlasRect } from './bitmap_font';
 import { BIOS_ATLAS_ID } from '../../rompack/format';
 import { hostSystemAtlasImage } from '../../rompack/host_system_atlas';
 

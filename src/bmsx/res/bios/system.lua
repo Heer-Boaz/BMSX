@@ -5,6 +5,7 @@
 -- Do not `require('bios/system')` from cart code and do not call `system.*`.
 -- Carts must use cart-facing globals/helpers (`oget`, `rget`, `inst`,
 -- `update_world`, `draw_world`, `reset`, `add_space`, `set_space`, `get_space`,
+-- `rom_data`,
 -- `define_fsm`, `define_effect`, etc.) that are injected by the runtime.
 -- Keep cart identifier strings compact. Redundant long prefixes in tags/events/effects/
 -- timeline IDs are forbidden when short local IDs are sufficient (string memory + compare
@@ -307,6 +308,7 @@ system.vdp_img_rect = vdp_image.rect
 system.vdp_img_slot = vdp_image.slot
 system.vdp_img_source = vdp_image.source
 system.vdp_write_source_words = vdp_image.write_source_words
+system.rom_data = romdir.data
 system.consume_axis_accum = velocity.consume_axis_accum
 system.deep_clone = deep_clone
 system.set_velocity = velocity.set_velocity
@@ -628,7 +630,6 @@ function system.irq(flags)
 				newgame_handler(flags & irq_newgame, flags)
 			else
 				system.reset()
-				new_game()
 			end
 		end
 	end

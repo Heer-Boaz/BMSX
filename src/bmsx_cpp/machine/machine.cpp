@@ -18,7 +18,7 @@ Machine::Machine(Api& api, SoundMaster& soundMaster, MicrotaskQueue& microtasks,
 	, m_irqController(m_memory)
 	, m_dmaController(m_memory, m_irqController, m_vdp, m_deviceScheduler)
 	, m_geometryController(m_memory, m_irqController, m_deviceScheduler)
-	, m_imgDecController(m_memory, m_dmaController, m_irqController, m_deviceScheduler, microtasks)
+	, m_imgDecController(m_memory, m_dmaController, m_vdp, m_irqController, m_deviceScheduler, microtasks)
 	, m_inputController(m_memory, Input::instance(), m_cpu.stringPool())
 	, m_audioController(m_memory, soundMaster, m_irqController)
 	, m_resourceUsageDetector(m_stringHandles, m_vdp) {
@@ -27,7 +27,6 @@ Machine::Machine(Api& api, SoundMaster& soundMaster, MicrotaskQueue& microtasks,
 
 void Machine::initializeSystemIo() {
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
-	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_HOST_FAULT_STAGE, valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
 }

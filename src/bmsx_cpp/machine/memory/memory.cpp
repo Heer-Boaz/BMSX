@@ -53,6 +53,13 @@ void Memory::mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler) {
 	m_ioWriteHandlers[ioIndex(addr)] = { context, handler };
 }
 
+void Memory::setProgramCode(const u8* data, size_t size) {
+	if (size > PROGRAM_ROM_SIZE) {
+		throw std::runtime_error("[Memory] Program ROM exceeds mapped range.");
+	}
+	m_programCode = { data, size };
+}
+
 std::vector<u8> Memory::dumpMutableRam() const {
 	return m_ram;
 }
@@ -98,6 +105,9 @@ Value Memory::readValue(uint32_t addr) const {
 			return binding.handler(binding.context, addr);
 		}
 		return m_ioSlots[slot];
+	}
+	if (isProgramRomRange(addr, 4)) {
+		return valueNumber(static_cast<double>(readProgramCodeWord(addr)));
 	}
 	if (addr < RAM_BASE) {
 		return valueFromNumber(static_cast<double>(readU32FromRegion(addr)));
@@ -207,6 +217,9 @@ int32_t Memory::readIoI32(uint32_t addr) const {
 uint32_t Memory::readU32(uint32_t addr) const {
 	if (isVramRange(addr, 4)) {
 		throw std::runtime_error("VRAM read fault @ " + formatNumberAsHex(addr, 8) + ": write-only len=4.");
+	}
+	if (isProgramRomRange(addr, 4)) {
+		return readProgramCodeWord(addr);
 	}
 	if (addr < RAM_BASE) {
 		return readU32FromRegion(addr);
@@ -336,7 +349,8 @@ bool Memory::isVramRange(uint32_t addr, size_t length) const {
 }
 
 bool Memory::isReadableMainMemoryRange(uint32_t addr, size_t length) const {
-	return isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_systemRom.size))
+	return isProgramCodeReadableRange(addr, length)
+		|| isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_systemRom.size))
 		|| (m_cartRom.data != nullptr && isRangeWithinRegion(addr, length, CART_ROM_BASE, static_cast<uint32_t>(m_cartRom.size)))
 		|| (m_overlayRom.data != nullptr && isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, static_cast<uint32_t>(m_overlayRom.size)))
 		|| isRangeWithinRegion(addr, length, RAM_BASE, RAM_USED_END - RAM_BASE);
@@ -389,7 +403,6 @@ bool Memory::isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, ui
 
 bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 	switch (addr) {
-		case IO_SYS_CART_BOOTREADY:
 		case IO_SYS_HOST_FAULT_FLAGS:
 		case IO_SYS_HOST_FAULT_STAGE:
 		case IO_IRQ_FLAGS:
@@ -418,6 +431,9 @@ bool Memory::isMappedWritableRange(uint32_t addr, size_t length) const {
 	if (isIoRegionRange(addr, length)) {
 		return length == IO_WORD_SIZE && isIoAddress(addr) && !isLuaReadOnlyIoAddress(addr);
 	}
+	if (isProgramRomRange(addr, length)) {
+		return false;
+	}
 	if (isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_systemRom.size))) {
 		return false;
 	}
@@ -444,6 +460,10 @@ const u8* Memory::readRegion(uint32_t addr, size_t length, size_t& outOffset) co
 	if (isVramRange(addr, length)) {
 		throw std::runtime_error("VRAM read fault @ " + formatNumberAsHex(addr, 8) + ": write-only len=" + std::to_string(length) + ".");
 	}
+	if (isProgramCodeReadableRange(addr, length)) {
+		outOffset = static_cast<size_t>(addr - PROGRAM_ROM_BASE);
+		return m_programCode.data;
+	}
 	if (m_systemRom.size > 0 && addr >= SYSTEM_ROM_BASE && addr + length <= SYSTEM_ROM_BASE + m_systemRom.size) {
 		outOffset = static_cast<size_t>(addr - SYSTEM_ROM_BASE);
 		return m_systemRom.data;
@@ -467,6 +487,28 @@ u8* Memory::writeRegion(uint32_t addr, size_t length, size_t& outOffset) {
 	}
 	outOffset = ramOffset(addr, length);
 	return m_ram.data();
+}
+
+bool Memory::isProgramRomRange(uint32_t addr, size_t length) const {
+	return isRangeWithinRegion(addr, length, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE);
+}
+
+bool Memory::isProgramCodeReadableRange(uint32_t addr, size_t length) const {
+	return m_programCode.data != nullptr
+		&& addr >= PROGRAM_ROM_BASE
+		&& addr + length <= PROGRAM_ROM_BASE + m_programCode.size;
+}
+
+uint32_t Memory::readProgramCodeWord(uint32_t addr) const {
+	if (!isProgramCodeReadableRange(addr, 4)) {
+		return 0;
+	}
+	const size_t offset = static_cast<size_t>(addr - PROGRAM_ROM_BASE);
+	const u8* code = m_programCode.data;
+	return (static_cast<uint32_t>(code[offset]) << 24)
+		| (static_cast<uint32_t>(code[offset + 1]) << 16)
+		| (static_cast<uint32_t>(code[offset + 2]) << 8)
+		| static_cast<uint32_t>(code[offset + 3]);
 }
 
 } // namespace bmsx

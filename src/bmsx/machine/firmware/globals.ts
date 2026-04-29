@@ -188,7 +188,6 @@ import {
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
 	IO_SYS_BOOT_CART,
-	IO_SYS_CART_BOOTREADY,
 	IO_SYS_HOST_FAULT_FLAGS,
 	IO_SYS_HOST_FAULT_STAGE,
 	IO_VDP_DITHER,
@@ -233,7 +232,6 @@ import {
 	describeMarshalSegment,
 	extendMarshalContext,
 	getOrAssignTableId,
-	getOrCreateRomEntryMapNativeObject,
 	getOrCreateNativeObject,
 	nextNativeEntry,
 	pushNativePairsIterator,
@@ -987,11 +985,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		luaPipeline.registerGlobal(runtime, 'game', gameTable);
 		luaPipeline.registerGlobal(runtime, '$', gameTable);
 		luaPipeline.registerGlobal(runtime, 'devtools', createRuntimeDevtoolsTable(runtime));
-		luaPipeline.registerGlobal(runtime, 'sys_rom_img', getOrCreateRomEntryMapNativeObject(runtime, runtime.activePackage.img, 'img'));
-		luaPipeline.registerGlobal(runtime, 'sys_rom_data', getOrCreateRomEntryMapNativeObject(runtime, runtime.activePackage.data, 'data'));
-		luaPipeline.registerGlobal(runtime, 'sys_rom_audio', getOrCreateRomEntryMapNativeObject(runtime, runtime.activePackage.audio, 'audio'));
-		luaPipeline.registerGlobal(runtime, 'sys_rom_audioevents', getOrCreateRomEntryMapNativeObject(runtime, runtime.activePackage.audioevents, 'audioevents'));
-		luaPipeline.registerGlobal(runtime, 'sys_system_rom_img', getOrCreateRomEntryMapNativeObject(runtime, runtime.rom.systemPackage().img, 'img'));
 		const cartManifest = runtime.cartManifest;
 		luaPipeline.registerGlobal(runtime, 'cart_manifest', cartManifest === null ? null : buildCartManifestTable(runtime, cartManifest, cartManifest.machine, cartManifest.lua.entry_path));
 		luaPipeline.registerGlobal(runtime, 'machine_manifest', buildMachineManifestTable(runtime, runtime.activeMachineManifest));
@@ -1198,7 +1191,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'math', mathTable);
 	luaPipeline.registerGlobal(runtime, 'easing', easingTable);
 	luaPipeline.registerGlobal(runtime, 'sys_boot_cart', IO_SYS_BOOT_CART);
-	luaPipeline.registerGlobal(runtime, 'sys_cart_bootready', IO_SYS_CART_BOOTREADY);
 	luaPipeline.registerGlobal(runtime, 'sys_host_fault_flags', IO_SYS_HOST_FAULT_FLAGS);
 	luaPipeline.registerGlobal(runtime, 'sys_host_fault_stage', IO_SYS_HOST_FAULT_STAGE);
 	luaPipeline.registerGlobal(runtime, 'sys_host_fault_flag_active', HOST_FAULT_FLAG_ACTIVE);

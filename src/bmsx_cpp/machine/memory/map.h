@@ -21,6 +21,11 @@ constexpr uint32_t OVERLAY_ROM_SIZE = 0x02000000u; // 32 MB
 constexpr uint32_t RAM_BASE = 0x08000000u;
 constexpr uint32_t DEFAULT_RAM_SIZE = 0x08000000u; // 128 MB
 
+constexpr uint32_t PROGRAM_ROM_BASE = 0x10000000u;
+constexpr uint32_t PROGRAM_ROM_SIZE = 0x01000000u; // 16 MB
+constexpr uint32_t CART_PROGRAM_START_OFFSET = 0x00080000u;
+constexpr uint32_t CART_PROGRAM_START_ADDR = PROGRAM_ROM_BASE + CART_PROGRAM_START_OFFSET;
+
 constexpr uint32_t IO_WORD_SIZE = 4;
 constexpr uint32_t IO_REGION_SIZE = 0x00040000u; // 256 KB
 

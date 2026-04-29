@@ -21,8 +21,7 @@ ConsoleCore* ConsoleCore::s_instance = nullptr;
 
 ConsoleCore::ConsoleCore() {
 	s_instance = this;
-	m_active_rom = &m_system_rom;
-	m_machine_manifest = &m_system_rom.machine;
+	m_machine_manifest = &defaultSystemMachineManifest();
 	m_rom_boot_manager = std::make_unique<RomBootManager>(*this);
 }
 
@@ -253,22 +252,6 @@ void ConsoleCore::log(LogLevel level, const char* fmt, ...) {
 	m_platform->log(level, message);
 }
 
-ImgAsset* ConsoleCore::resolveImageRecord(const AssetId& id) {
-	ImgAsset* record = activeRom().getImg(id);
-	if (record) {
-		return record;
-	}
-	return m_system_rom.getImg(id);
-}
-
-const ImgAsset* ConsoleCore::resolveImageRecord(const AssetId& id) const {
-	const ImgAsset* record = activeRom().getImg(id);
-	if (record) {
-		return record;
-	}
-	return m_system_rom.getImg(id);
-}
-
 Runtime& ConsoleCore::runtime() {
 	return *m_runtime;
 }
@@ -291,4 +274,5 @@ Runtime& ConsoleCore::ensureRuntime(const RuntimeOptions& options) {
 	}
 	return *m_runtime;
 }
+
 } // namespace bmsx

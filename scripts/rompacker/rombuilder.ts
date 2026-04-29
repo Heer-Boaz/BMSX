@@ -560,6 +560,40 @@ function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: numb
 	};
 }
 
+function generateFlippedTexCoords(texcoords: number[]): { original: number[]; fliph: number[]; flipv: number[]; fliphv: number[] } {
+	const left = texcoords[0];
+	const top = texcoords[1];
+	const bottom = texcoords[3];
+	const right = texcoords[4];
+	return {
+		original: texcoords,
+		fliph: [
+			right, top,
+			right, bottom,
+			left, top,
+			left, top,
+			right, bottom,
+			left, bottom,
+		],
+		flipv: [
+			left, bottom,
+			left, top,
+			right, bottom,
+			right, bottom,
+			left, top,
+			right, top,
+		],
+		fliphv: [
+			right, bottom,
+			right, top,
+			left, bottom,
+			left, bottom,
+			right, top,
+			left, top,
+		],
+	};
+}
+
 function computePolyBounds(poly: Polygon): RectBounds {
 	let left = poly[0];
 	let top = poly[1];
@@ -699,23 +733,21 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 	let imgmeta: ImgMeta = {
 		width: img.width,
 		height: img.height,
-		boundingbox: {
-			original: collision.boundingbox.original,
-		},
+		boundingbox: collision.boundingbox,
 		centerpoint: collision.centerpoint,
-		hitpolygons: collision.hitpolygons
-			? {
-				original: collision.hitpolygons.original,
-			}
-			: undefined,
+		hitpolygons: collision.hitpolygons,
 	};
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		const targetAtlasId = res.targetAtlasId;
 		const texcoords = res.atlasTexcoords;
+		const flippedTexcoords = texcoords ? generateFlippedTexCoords(texcoords) : undefined;
 		imgmeta = {
 			...imgmeta,
 			atlasid: targetAtlasId !== undefined ? targetAtlasId : undefined,
-			texcoords: texcoords ? [...texcoords] : undefined,
+			texcoords: flippedTexcoords?.original,
+			texcoords_fliph: flippedTexcoords?.fliph,
+			texcoords_flipv: flippedTexcoords?.flipv,
+			texcoords_fliphv: flippedTexcoords?.fliphv,
 		};
 	}
 	return imgmeta;

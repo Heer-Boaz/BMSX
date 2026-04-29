@@ -588,7 +588,7 @@ void LibretroPlatform::reset() {
 	m_audio_buffer.clear();
 	m_has_wall_frame_timestamp = false;
 
-	if (m_console && m_console->romLoaded()) {
+	if (m_console && m_console->romBootManager().romLoaded()) {
 		if (!m_console->romBootManager().rebootLoadedRom()) {
 			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: runtime reset failed\n");
 			return;

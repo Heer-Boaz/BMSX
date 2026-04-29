@@ -1,5 +1,6 @@
 #include "render/presentation_state.h"
 #include "core/console.h"
+#include "core/rom_boot_manager.h"
 #include "core/time.h"
 #include "machine/runtime/runtime.h"
 #include "render/shared/queues.h"
@@ -192,7 +193,7 @@ void RenderPresentationState::render(ConsoleCore& console, Runtime& runtime) {
 		}
 		console.m_view->beginFrame();
 
-		if (!console.m_rom_loaded) {
+		if (!console.romBootManager().romLoaded()) {
 			renderTestPattern(*console.m_view, console.m_total_time);
 		}
 

@@ -8,8 +8,6 @@
 #include "glyphs.h"
 #include "hardware/camera.h"
 #include "hardware/lighting.h"
-#include "rompack/package.h"
-#include "render/vdp/image_meta.h"
 #include "core/font.h"
 #include "../../machine/runtime/runtime.h"
 #include "common/clamp.h"
@@ -40,22 +38,8 @@ f32 _skyExposure = 1.0f;
 // Default Z coordinate.
 static constexpr f32 DEFAULT_ZCOORD = 0.0f;
 
-struct ResolvedSpriteRecord {
-	VdpSlotSource source;
-};
-
-static ResolvedSpriteRecord resolveSpriteRecord(const RuntimeRomPackage& romPackage, const Memory& memory, const std::string& imgId, const char* context) {
-	const VdpSlotSource source = resolveVdpSlotSourceFromPackage(romPackage, memory, imgId);
-	if (source.w == 0 || source.h == 0) {
-		throw BMSX_RUNTIME_ERROR("[" + std::string(context) + "] Image '" + imgId + "' has invalid region size.");
-	}
-	return ResolvedSpriteRecord{
-		source,
-	};
-}
-
 static void submitResolvedSprite(Runtime& runtime,
-									const ResolvedSpriteRecord& resolved,
+									const VdpSlotSource& source,
 									f32 x,
 									f32 y,
 									f32 z,
@@ -66,11 +50,11 @@ static void submitResolvedSprite(Runtime& runtime,
 									const FlipOptions& flip,
 									f32 parallaxWeight) {
 	runtime.machine().vdp().enqueueBlit(
-		resolved.source.slot,
-		resolved.source.u,
-		resolved.source.v,
-		resolved.source.w,
-		resolved.source.h,
+		source.slot,
+		source.u,
+		source.v,
+		source.w,
+		source.h,
 		x,
 		y,
 		z,
@@ -101,6 +85,9 @@ static void forEachActiveQueue(FeatureQueue<T>& queue, Fn&& fn) {
 // --- 2D framebuffer API ---
 
 void submitSprite(Runtime& runtime, const ImgRenderSubmission& options) {
+	if (!options.slot.has_value() || !options.u.has_value() || !options.v.has_value() || !options.w.has_value() || !options.h.has_value()) {
+		throw BMSX_RUNTIME_ERROR("submitSprite requires slot/u/v/w/h.");
+	}
 	if (!options.scale.has_value()) {
 		throw BMSX_RUNTIME_ERROR("submitSprite requires scale.");
 	}
@@ -113,10 +100,10 @@ void submitSprite(Runtime& runtime, const ImgRenderSubmission& options) {
 	if (!options.layer.has_value()) {
 		throw BMSX_RUNTIME_ERROR("submitSprite requires layer.");
 	}
-	const ResolvedSpriteRecord resolved = resolveSpriteRecord(runtime.activeRom(), runtime.machine().memory(), options.imgid, "Sprite Queue");
+	const VdpSlotSource source{*options.slot, *options.u, *options.v, *options.w, *options.h};
 	submitResolvedSprite(
 		runtime,
-		resolved,
+		source,
 		options.pos.x,
 		options.pos.y,
 		options.pos.z,

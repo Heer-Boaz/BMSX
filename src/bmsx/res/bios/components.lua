@@ -7,6 +7,7 @@ local timeline_dispatch<const> = require('bios/timeline/dispatch')
 local collision_profiles<const> = require('bios/collision_profiles')
 local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 local font_module<const> = require('bios/font')
+local romdir<const> = require('bios/romdir')
 local world_instance<const> = require('bios/world/index').instance
 local eventemitter<const> = eventemitter_module.eventemitter
 local timeline<const> = timeline_module.timeline
@@ -195,23 +196,11 @@ local collider2dcomponent<const> = {}
 collider2dcomponent.__index = collider2dcomponent
 setmetatable(collider2dcomponent, { __index = component })
 
-local get_asset_rom_base<const> = function(asset)
-	local payload_id<const> = asset.payload_id
-	if payload_id == 'system' then
-		return sys_rom_system_base
-	end
-	if payload_id == 'overlay' then
-		return sys_rom_overlay_base
-	end
-	return sys_rom_cart_base
-end
-
-local get_sprite_collision_shape_ref<const> = function(image_asset, flip_h, flip_v)
-	local bin_start<const> = image_asset.collision_bin_start
-	if bin_start == nil then
+local get_sprite_collision_shape_ref<const> = function(image_record, flip_h, flip_v)
+	local bin_base<const> = image_record.collision_addr
+	if bin_base == nil or image_record.collision_len == 0 then
 		return nil
 	end
-	local bin_base<const> = get_asset_rom_base(image_asset) + bin_start
 	if flip_h and flip_v then
 		return bin_base + mem[bin_base + 20]
 	end
@@ -242,14 +231,14 @@ local get_sprite_collision_geometry<const> = function(sprite)
 	if sprite._collision_geometry_imgid == id and sprite._collision_geometry_flip_h == flip_h and sprite._collision_geometry_flip_v == flip_v then
 		return sprite._collision_geometry_area, sprite._collision_geometry_polys, sprite._collision_geometry_shape_ref
 	end
-	local image_asset<const> = sys_rom_img[id]
-	if image_asset == nil or image_asset.imgmeta == nil then
+	local image_record<const> = romdir.image(id)
+	if image_record == nil or image_record.imgmeta == nil then
 		error('[spritecomponent] image metadata missing for "' .. tostring(id) .. '"')
 	end
-	local imgmeta<const> = image_asset.imgmeta
+	local imgmeta<const> = image_record.imgmeta
 	local area<const> = select_bounding_box(flip_h, flip_v, imgmeta.boundingbox)
 	local polys<const> = select_hit_polygons(flip_h, flip_v, imgmeta.hitpolygons)
-	local shape_ref<const> = get_sprite_collision_shape_ref(image_asset, flip_h, flip_v)
+	local shape_ref<const> = get_sprite_collision_shape_ref(image_record, flip_h, flip_v)
 	sprite._collision_geometry_imgid = id
 	sprite._collision_geometry_flip_h = flip_h
 	sprite._collision_geometry_flip_v = flip_v

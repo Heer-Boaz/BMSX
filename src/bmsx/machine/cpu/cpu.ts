@@ -1835,12 +1835,23 @@ export class CPU {
 		}
 	}
 
+	private clearCallStack(): void {
+		while (this.frames.length > 0) {
+			const frame = this.frames.pop()!;
+			this.closeUpvalues(frame);
+			this.releaseFrame(frame);
+		}
+		this.openUpvalues.length = 0;
+		this.stackTop = 0;
+	}
+
 	public setProgram(program: Program, metadata: ProgramMetadata | null = null): void {
 		// Keep slot-backed globals materialized in the globals table before swapping programs.
 		// SETGL/SETSYS mutate the slot arrays directly, and append/reload paths rebuild the next
 		// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
 		this.syncGlobalSlotsToTable();
 		this.program = program;
+		this.memory.setProgramCode(program.code);
 		this.metadata = metadata;
 		const constPool = program.constPool;
 		for (let index = 0; index < constPool.length; index += 1) {
@@ -1970,9 +1981,7 @@ export class CPU {
 
 	public start(entryProtoIndex: number, args: Value[] = []): void {
 		this.lastReturnValues.length = 0;
-		this.frames.length = 0;
-		this.openUpvalues.length = 0;
-		this.stackTop = 0;
+		this.clearCallStack();
 		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
 		const closure: Closure = { protoIndex: entryProtoIndex, upvalues: [] };
@@ -3567,9 +3576,7 @@ export class CPU {
 		}
 
 		this.lastReturnValues.length = 0;
-		this.frames.length = 0;
-		this.openUpvalues.length = 0;
-		this.stackTop = 0;
+		this.clearCallStack();
 		this.externalReturnSink = null;
 		this.globals.clear();
 		for (let slot = 0; slot < this.systemGlobalValues.length; slot += 1) {

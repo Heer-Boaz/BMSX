@@ -8,7 +8,6 @@
 #include "machine/devices/imgdec/controller.h"
 #include "machine/scheduler/budget.h"
 #include "render/vdp/framebuffer.h"
-#include "render/vdp/image_meta.h"
 #include "render/vdp/surfaces.h"
 #include <algorithm>
 #include <array>
@@ -58,6 +57,41 @@ std::string dumpStreamWords(const Memory& memory, uint32_t baseAddr, uint32_t wo
 		out << memory.readU32(baseAddr + index * IO_WORD_SIZE);
 	}
 	return out.str();
+}
+
+uint32_t imageByteSize(uint32_t width, uint32_t height) {
+	const uint64_t byteSize = static_cast<uint64_t>(width) * static_cast<uint64_t>(height) * 4u;
+	if (byteSize > std::numeric_limits<uint32_t>::max()) {
+		throw vdpFault("image surface exceeds addressable VRAM span.");
+	}
+	return static_cast<uint32_t>(byteSize);
+}
+
+VdpVramSurface makeVramSurface(uint32_t surfaceId, uint32_t baseAddr, uint32_t capacity, uint32_t width, uint32_t height) {
+	if (imageByteSize(width, height) > capacity) {
+		throw vdpFault("VDP surface exceeds mapped VRAM capacity.");
+	}
+	VdpVramSurface surface;
+	surface.surfaceId = surfaceId;
+	surface.baseAddr = baseAddr;
+	surface.capacity = capacity;
+	surface.width = width;
+	surface.height = height;
+	return surface;
+}
+
+uint32_t resolveAtlasSlotFromMemory(const Memory& memory, int32_t atlasId) {
+	if (atlasId == static_cast<int32_t>(VDP_SYSTEM_ATLAS_ID)) {
+		return VDP_SLOT_SYSTEM;
+	}
+	const uint32_t atlas = static_cast<uint32_t>(atlasId);
+	if (memory.readIoU32(IO_VDP_SLOT_PRIMARY_ATLAS) == atlas) {
+		return VDP_SLOT_PRIMARY;
+	}
+	if (memory.readIoU32(IO_VDP_SLOT_SECONDARY_ATLAS) == atlas) {
+		return VDP_SLOT_SECONDARY;
+	}
+	throw vdpFault("atlas " + std::to_string(atlasId) + " is not loaded in a VDP slot.");
 }
 
 } // namespace
@@ -1735,6 +1769,8 @@ void VDP::initializeRegisters() {
 	m_memory.writeIoValue(IO_VDP_RD_Y, valueNumber(0.0));
 	m_memory.writeIoValue(IO_VDP_RD_MODE, valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
 	m_memory.writeIoValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
+	m_memory.writeIoValue(IO_VDP_SLOT_PRIMARY_ATLAS, valueNumber(static_cast<double>(VDP_SLOT_ATLAS_NONE)));
+	m_memory.writeIoValue(IO_VDP_SLOT_SECONDARY_ATLAS, valueNumber(static_cast<double>(VDP_SLOT_ATLAS_NONE)));
 	m_memory.writeIoValue(IO_VDP_CMD, valueNumber(0.0));
 	for (int index = 0; index < IO_VDP_CMD_ARG_COUNT; ++index) {
 		m_memory.writeIoValue(IO_VDP_CMD_ARG0 + static_cast<uint32_t>(index) * IO_WORD_SIZE, valueNumber(0.0));
@@ -1748,6 +1784,7 @@ void VDP::initializeRegisters() {
 	m_lastFrameCommitted = true;
 	m_lastFrameCost = 0;
 	m_lastFrameHeld = false;
+	syncAtlasSlotRegisters();
 }
 
 void VDP::syncRegisters() {
@@ -1762,9 +1799,14 @@ void VDP::setDitherType(i32 type) {
 	syncRegisters();
 }
 
-void VDP::registerVramSurfaces(const std::vector<VdpVramSurface>& surfaces, VdpAtlasDimensionsById atlasDimensions) {
+void VDP::initializeVramSurfaces() {
+	const std::array<VdpVramSurface, VDP_RD_SURFACE_COUNT> surfaces = {
+		makeVramSurface(VDP_RD_SURFACE_SYSTEM, VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE, 1u, 1u),
+		makeVramSurface(VDP_RD_SURFACE_PRIMARY, VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE, 1u, 1u),
+		makeVramSurface(VDP_RD_SURFACE_SECONDARY, VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE, 1u, 1u),
+		makeVramSurface(VDP_RD_SURFACE_FRAMEBUFFER, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE, m_configuredFrameBufferSize.width, m_configuredFrameBufferSize.height),
+	};
 	m_vramSlots.clear();
-	m_atlasDimensionsById = std::move(atlasDimensions);
 	m_readSurfaces = {};
 	for (auto& cache : m_readCaches) {
 		cache.width = 0;
@@ -1782,6 +1824,8 @@ void VDP::registerVramSurfaces(const std::vector<VdpVramSurface>& surfaces, VdpA
 	for (const auto& surface : surfaces) {
 		registerVramSlot(surface);
 	}
+	m_memory.writeIoValue(IO_VDP_SLOT_PRIMARY_ATLAS, valueNumber(static_cast<double>(VDP_SLOT_ATLAS_NONE)));
+	m_memory.writeIoValue(IO_VDP_SLOT_SECONDARY_ATLAS, valueNumber(static_cast<double>(VDP_SLOT_ATLAS_NONE)));
 	syncAtlasSlotRegisters();
 	syncRegisters();
 }
@@ -1903,11 +1947,6 @@ void VDP::syncAtlasSlotSurface(uint32_t slotId, uint32_t atlasId) {
 		setVramSlotLogicalDimensions(*slot, 1u, 1u);
 		return;
 	}
-	const auto it = m_atlasDimensionsById.find(static_cast<i32>(atlasId));
-	if (it == m_atlasDimensionsById.end()) {
-		return;
-	}
-	setVramSlotLogicalDimensions(*slot, it->second.width, it->second.height);
 }
 
 void VDP::setVramSlotLogicalDimensions(VramSlot& slot, uint32_t width, uint32_t height) {
@@ -1942,6 +1981,11 @@ void VDP::setVramSlotLogicalDimensions(VramSlot& slot, uint32_t width, uint32_t 
 	if (copyBytes > 0u) {
 		std::memcpy(slot.cpuReadback.data(), previous.data(), copyBytes);
 	}
+}
+
+void VDP::setDecodedVramSurfaceDimensions(uint32_t baseAddr, uint32_t width, uint32_t height) {
+	VramSlot& slot = findVramSlot(baseAddr, 1u);
+	setVramSlotLogicalDimensions(slot, width, height);
 }
 
 std::vector<VdpSurfacePixelsState> VDP::captureSurfacePixels() const {

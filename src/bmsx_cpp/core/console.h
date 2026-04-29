@@ -1,8 +1,8 @@
 /*
  * console.h - C++ host shell for BMSX
  *
- * Owns libretro-facing platform state, ROM packages, and runtime boot handoff.
- * Cart-visible hardware belongs under machine, not in ConsoleCore.
+ * Owns libretro-facing platform state and runtime boot handoff.
+ * ROM package loading belongs to RomBootManager; cart-visible hardware belongs under machine.
  */
 
 #ifndef BMSX_CONSOLE_CORE_H
@@ -10,7 +10,7 @@
 
 #include "primitives.h"
 #include "registry.h"
-#include "rompack/package.h"
+#include "rompack/format.h"
 #include "../platform.h"
 #include "render/gameview.h"
 #include "audio/soundmaster.h"
@@ -25,9 +25,6 @@ class RomBootManager;
 class TextureManager;
 class Runtime;
 struct RuntimeOptions;
-struct ProgramImage;
-struct ProgramMetadata;
-struct ResolvedRuntimeTiming;
 
 /* ============================================================================
  * Console state
@@ -109,33 +106,7 @@ public:
 	const Runtime& runtime() const;
 	Runtime& ensureRuntime(const RuntimeOptions& options);
 	Registry& registry() { return Registry::instance(); }
-	RuntimeRomPackage& activeRom() { return *m_active_rom; }
-	const RuntimeRomPackage& activeRom() const { return *m_active_rom; }
-	RuntimeRomPackage& systemRom() { return m_system_rom; }
-	const RuntimeRomPackage& systemRom() const { return m_system_rom; }
-	RuntimeRomPackage& cartRom() { return m_cart_rom; }
-	const RuntimeRomPackage& cartRom() const { return m_cart_rom; }
 	const MachineManifest& machineManifest() const { return *m_machine_manifest; }
-	const CartManifest* loadedCartManifest() const {
-		if (!m_cart_rom.cartManifest) {
-			return nullptr;
-		}
-		return &*m_cart_rom.cartManifest;
-	}
-	const std::string* loadedCartEntryPath() const {
-		if (m_cart_rom_size == 0) {
-			return nullptr;
-		}
-		return &m_cart_rom.entryPoint;
-	}
-	const std::string* cartProjectRootPath() const {
-		if (m_cart_rom_size == 0) {
-			return nullptr;
-		}
-		return &m_cart_rom.projectRootPath;
-	}
-	ImgAsset* resolveImageRecord(const AssetId& id);
-	const ImgAsset* resolveImageRecord(const AssetId& id) const;
 	Clock* clock() { return m_platform->clock(); }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
 	TextureManager* texmanager() { return m_texture_manager.get(); }
@@ -151,10 +122,6 @@ public:
 
 	void refreshRenderSurfaces();
 	void log(LogLevel level, const char* fmt, ...);
-
-	bool romLoaded() const { return m_rom_loaded; }
-	bool hasLoadedCartProgram() const { return m_loaded_cart_has_program; }
-	bool systemRomLoaded() const { return m_system_rom_loaded; }
 
 	// Registry shortcuts
 	template<typename T = Registerable>
@@ -183,7 +150,6 @@ private:
 	std::unique_ptr<TextureManager> m_texture_manager;
 	std::unique_ptr<RomBootManager> m_rom_boot_manager;
 	std::unique_ptr<Runtime> m_runtime;
-	RuntimeRomPackage* m_active_rom = nullptr;
 
 	ConsoleState m_state = ConsoleState::Uninitialized;
 
@@ -196,20 +162,7 @@ private:
 	u64 m_debugTickHostFrames = 0;
 	u64 m_debugTickUpdates = 0;
 	i64 m_debugLastUpdateCountTotal = 0;
-	bool m_rom_loaded = false;
-	bool m_loaded_cart_has_program = false;
-	bool m_system_rom_loaded = false;
-	RuntimeRomPackage m_system_rom;  // Base system ROM (fonts, UI sprites, etc.)
-	RuntimeRomPackage m_cart_rom;
 	const MachineManifest* m_machine_manifest = nullptr;
-	std::vector<u8> m_system_rom_owned;
-	const u8* m_system_rom_data = nullptr;
-	size_t m_system_rom_size = 0;
-	std::vector<u8> m_cart_rom_owned;
-	const u8* m_cart_rom_data = nullptr;
-	size_t m_cart_rom_size = 0;
-	std::unique_ptr<ProgramImage> m_linked_program;
-	std::unique_ptr<ProgramMetadata> m_linked_program_symbols;
 	TickTiming m_last_tick_timing;
 	RenderTiming m_last_render_timing;
 
@@ -224,7 +177,7 @@ private:
  * Global console accessor
  * ============================================================================ */
 
-// Usage: $().activeRom(), $().view(), etc.
+// Usage: $().view(), $().runtime(), etc.
 inline ConsoleCore& $() {
 	return ConsoleCore::instance();
 }
