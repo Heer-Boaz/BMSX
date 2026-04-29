@@ -373,7 +373,10 @@ async function awaitBootComplete(): Promise<void> {
 		};
 		msx.className = 'enter';
 		msx.hidden = false;
-		if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
+		if (bootrom.debug) {
+			bootrom.theshowsover = true;
+			resolve();
+		}
 	});
 	return result;
 }

@@ -5,10 +5,11 @@ import { splitText } from '../../src/bmsx/common/text_lines';
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
 import { CPU, OpCode, RunResult, Table, createNativeFunction, type Proto } from '../../src/bmsx/machine/cpu/cpu';
-import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../src/bmsx/machine/cpu/instruction_format';
+import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../src/bmsx/machine/cpu/instruction_format';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
-import type { ProgramImage, ProgramConstReloc } from '../../src/bmsx/machine/program/loader';
+import type { ProgramImage, ProgramConstReloc, ProgramSymbolsImage } from '../../src/bmsx/machine/program/loader';
 import { linkProgramImages } from '../../src/bmsx/machine/program/linker';
+import { CART_BASE_PC, CART_PROGRAM_VECTOR_PC, CART_PROGRAM_VECTOR_VALUE } from '../../src/bmsx/machine/program/layout';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { isStringValue, stringValueToString } from '../../src/bmsx/machine/memory/string/pool';
 
@@ -77,6 +78,19 @@ function makeSystemImage(constPoolSize: number): ProgramImage {
 		constPool,
 		[],
 	);
+}
+
+function makeProgramSymbols(protoId: string, instructionCount: number): ProgramSymbolsImage {
+	return {
+		metadata: {
+			debugRanges: new Array(instructionCount).fill(null),
+			protoIds: [protoId],
+			localSlotsByProto: [[]],
+			upvalueNamesByProto: [[]],
+			globalNames: [],
+			systemGlobalNames: [],
+		},
+	};
 }
 
 function decodeBx(code: Uint8Array, wordIndex: number): number {
@@ -249,7 +263,7 @@ test('ProgramCompiler rejects undefined identifiers when source is provided', ()
 });
 
 test('ProgramCompiler accepts shared runtime globals when source is provided', () => {
-	const source = 'return sys_rom_data, sys_vdp_stream_base, cart_manifest';
+	const source = 'return sys_boot_cart, sys_vdp_stream_base, cart_manifest';
 	const chunk = parseChunk(source);
 	const compiled = compileLuaChunkToProgram(chunk, [], { entrySource: source });
 	assert.ok(compiled.program.code.length > 0);
@@ -559,4 +573,35 @@ test('ProgramLinker patches direct field const relocations against large system 
 	assert.equal(decodeUnsignedC(linkedCode, cartBaseWord + 1), 5000);
 	assert.equal(decodeUnsignedB(linkedCode, cartBaseWord + 3), 5001);
 	assert.equal(decodeUnsignedC(linkedCode, cartBaseWord + 5), 5002);
+});
+
+test('appendLuaChunkToProgram preserves absolute program ROM bytes', () => {
+	const systemImage = makeSystemImage(1);
+	const cartImage = makeProgramImage(
+		[
+			{ op: OpCode.MOVE, a: 0, b: 0, c: 0 },
+			{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+		],
+		[],
+		[],
+	);
+	const systemSymbols = makeProgramSymbols('system', systemImage.program.code.length / INSTRUCTION_BYTES);
+	const cartSymbols = makeProgramSymbols('cart', cartImage.program.code.length / INSTRUCTION_BYTES);
+	const linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols);
+	const program = linked.programImage.program;
+	const metadata = linked.metadata;
+	assert.notEqual(metadata, null);
+
+	const vectorWord = CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES;
+	const freeWord = vectorWord - 1;
+	writeInstructionWord(program.code, freeWord, 0x12345678);
+	assert.equal(readInstructionWord(program.code, vectorWord), CART_PROGRAM_VECTOR_VALUE);
+	assert.equal(readInstructionWord(program.code, CART_BASE_PC / INSTRUCTION_BYTES), readInstructionWord(cartImage.program.code, 0));
+
+	const source = 'return 1';
+	const appended = appendLuaChunkToProgram(program, metadata!, parseChunk(source, 'console'), { entrySource: source });
+
+	assert.equal(readInstructionWord(appended.program.code, vectorWord), CART_PROGRAM_VECTOR_VALUE);
+	assert.equal(readInstructionWord(appended.program.code, freeWord), 0x12345678);
+	assert.equal(readInstructionWord(appended.program.code, CART_BASE_PC / INSTRUCTION_BYTES), readInstructionWord(cartImage.program.code, 0));
 });

@@ -184,6 +184,7 @@ class ProgramBuilder {
 	public readonly stringPool: StringPool;
 	public readonly optLevel: OptimizationLevel;
 	private readonly constMap: Map<string, number>;
+	private readonly baseCode: Uint8Array | null;
 	private readonly systemGlobalNameSet: Set<string>;
 	private readonly systemGlobalNames: string[] = [];
 	private readonly systemGlobalNameMap: Map<string, number> = new Map();
@@ -196,6 +197,7 @@ class ProgramBuilder {
 	public readonly protoLocalSlots: ReadonlyArray<LocalSlotDebug>[] = [];
 	public readonly protoUpvalueNames: ReadonlyArray<string>[] = [];
 	public readonly protoInstructionSets: Array<InstructionSet | null> = [];
+	public readonly protoFixedEntryPC: boolean[] = [];
 	public readonly protoIds: string[] = [];
 	private readonly protoIdMap: Map<string, number> = new Map();
 	private readonly assignedProtoIds: Set<string> = new Set();
@@ -205,6 +207,7 @@ class ProgramBuilder {
 		stringPool: StringPool | null = null,
 		optLevel: OptimizationLevel = 0,
 		baseMetadata: ProgramMetadata | null = null,
+		baseCode: Uint8Array | null = null,
 	) {
 		this.constPool = [];
 		if (baseConstPool) {
@@ -214,6 +217,10 @@ class ProgramBuilder {
 		}
 		this.stringPool = stringPool ?? new StringPool();
 		this.optLevel = optLevel;
+		if (baseCode !== null && baseCode.byteLength % INSTRUCTION_BYTES !== 0) {
+			throw new Error(`[ProgramBuilder] Base program code size must align to ${INSTRUCTION_BYTES}-byte words.`);
+		}
+		this.baseCode = baseCode;
 		this.constMap = new Map<string, number>();
 		this.systemGlobalNameSet = new Set(SYSTEM_ROM_GLOBAL_NAME_SET);
 		for (let index = 0; index < this.constPool.length; index += 1) {
@@ -313,6 +320,7 @@ class ProgramBuilder {
 			this.protoLocalSlots[existing] = localSlots;
 			this.protoUpvalueNames[existing] = upvalueNames;
 			this.protoInstructionSets[existing] = instructionSet;
+			this.protoFixedEntryPC[existing] = false;
 			this.protoIds[existing] = protoId;
 			return existing;
 		}
@@ -324,6 +332,7 @@ class ProgramBuilder {
 		this.protoLocalSlots.push(localSlots);
 		this.protoUpvalueNames.push(upvalueNames);
 		this.protoInstructionSets.push(instructionSet);
+		this.protoFixedEntryPC.push(false);
 		this.protoIds.push(protoId);
 		this.protoIdMap.set(protoId, index);
 		return index;
@@ -346,23 +355,35 @@ class ProgramBuilder {
 		this.protoLocalSlots.push(localSlots);
 		this.protoUpvalueNames.push(upvalueNames);
 		this.protoInstructionSets.push(null);
+		this.protoFixedEntryPC.push(true);
 		this.protoIds.push(protoId);
 		this.protoIdMap.set(protoId, index);
 	}
 
 	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[] } {
-		let totalBytes = 0;
-		let totalWords = 0;
+		let fixedEndBytes = this.baseCode ? this.baseCode.byteLength : 0;
+		let appendedBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
-			totalBytes += this.protos[i].codeLen;
-			totalWords += this.protoRanges[i].length;
+			const proto = this.protos[i];
+			if (this.protoFixedEntryPC[i]) {
+				fixedEndBytes = Math.max(fixedEndBytes, proto.entryPC + proto.codeLen);
+			} else {
+				appendedBytes += proto.codeLen;
+			}
 		}
+		const totalBytes = fixedEndBytes + appendedBytes;
+		if (totalBytes % INSTRUCTION_BYTES !== 0) {
+			throw new Error(`[ProgramBuilder] Program code size must align to ${INSTRUCTION_BYTES}-byte words.`);
+		}
+		const totalWords = totalBytes / INSTRUCTION_BYTES;
 		const fullCode = new Uint8Array(totalBytes);
+		if (this.baseCode) {
+			fullCode.set(this.baseCode, 0);
+		}
 		const protos: Proto[] = new Array(this.protos.length);
-		const fullRanges: Array<SourceRange | null> = new Array(totalWords);
+		const fullRanges: Array<SourceRange | null> = new Array(totalWords).fill(null);
 		const fullConstRelocs: ProgramConstReloc[] = [];
-		let offsetBytes = 0;
-		let offsetWords = 0;
+		let appendOffsetBytes = fixedEndBytes;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
 			const chunk = this.protoCode[i];
 			if (!chunk) {
@@ -370,29 +391,35 @@ class ProgramBuilder {
 			}
 			const proto = this.protos[i];
 			const ranges = this.protoRanges[i];
+			const targetOffsetBytes = this.protoFixedEntryPC[i] ? proto.entryPC : appendOffsetBytes;
+			if (targetOffsetBytes % INSTRUCTION_BYTES !== 0) {
+				throw new Error(`[ProgramBuilder] Proto ${i} entry PC must align to ${INSTRUCTION_BYTES}-byte words.`);
+			}
+			const targetOffsetWords = targetOffsetBytes / INSTRUCTION_BYTES;
 			protos[i] = {
-				entryPC: offsetBytes,
+				entryPC: targetOffsetBytes,
 				codeLen: proto.codeLen,
 				numParams: proto.numParams,
 				isVararg: proto.isVararg,
 				maxStack: proto.maxStack,
 				upvalueDescs: proto.upvalueDescs,
 			};
-			fullCode.set(chunk, offsetBytes);
+			fullCode.set(chunk, targetOffsetBytes);
 			for (let j = 0; j < ranges.length; j += 1) {
-				fullRanges[offsetWords + j] = ranges[j];
+				fullRanges[targetOffsetWords + j] = ranges[j];
 			}
 			const relocs = this.protoConstRelocs[i];
 			for (let j = 0; j < relocs.length; j += 1) {
 				const reloc = relocs[j];
 				fullConstRelocs.push({
-					wordIndex: offsetWords + reloc.wordIndex,
+					wordIndex: targetOffsetWords + reloc.wordIndex,
 					kind: reloc.kind,
 					constIndex: reloc.constIndex,
 				});
 			}
-			offsetBytes += chunk.length;
-			offsetWords += ranges.length;
+			if (!this.protoFixedEntryPC[i]) {
+				appendOffsetBytes += chunk.length;
+			}
 		}
 		const metadata: ProgramMetadata = {
 			debugRanges: fullRanges,
@@ -3550,7 +3577,7 @@ function createProgramBuilderFromProgram(
 	metadata: ProgramMetadata,
 	optLevel: OptimizationLevel,
 ): ProgramBuilder {
-	const builder = new ProgramBuilder(base.constPool, base.constPoolStringPool, optLevel, metadata);
+	const builder = new ProgramBuilder(base.constPool, base.constPoolStringPool, optLevel, metadata, base.code);
 	const protoIds = metadata.protoIds;
 	if (!protoIds || protoIds.length !== base.protos.length) {
 		throw new Error('[ProgramBuilder] Base program proto ids missing or mismatched.');

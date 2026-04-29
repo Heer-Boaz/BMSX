@@ -47,6 +47,24 @@ export interface WorkerStreamingAudioOptions {
 	frameTimeSec?: number;
 }
 
+export function supportsWorkerStreamingAudio(): boolean {
+	return globalThis.crossOriginIsolated === true
+		&& typeof globalThis.SharedArrayBuffer === 'function'
+		&& typeof AudioWorkletNode === 'function';
+}
+
+function requireWorkerStreamingAudioSupport(): void {
+	if (globalThis.crossOriginIsolated !== true) {
+		throw new Error('[WorkerStreamingAudioService] SharedArrayBuffer audio backend requires crossOriginIsolated=true.');
+	}
+	if (typeof globalThis.SharedArrayBuffer !== 'function') {
+		throw new Error('[WorkerStreamingAudioService] SharedArrayBuffer is not available.');
+	}
+	if (typeof AudioWorkletNode !== 'function') {
+		throw new Error('[WorkerStreamingAudioService] AudioWorkletNode is not available.');
+	}
+}
+
 type WorkletMessageToMain =
 	| {
 		type: 'need_port_connected';
@@ -275,12 +293,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	private readonly msgVoiceStop: { type: 'voice_stop'; voiceId: number } = { type: 'voice_stop', voiceId: 0 };
 
 	constructor(context: AudioContext, options: WorkerStreamingAudioOptions = {}) {
-		if (globalThis.crossOriginIsolated !== true) {
-			throw new Error('[WorkerStreamingAudioService] SharedArrayBuffer audio backend requires crossOriginIsolated=true.');
-		}
-		if (typeof AudioWorkletNode !== 'function') {
-			throw new Error('[WorkerStreamingAudioService] AudioWorkletNode is not available.');
-		}
+		requireWorkerStreamingAudioSupport();
 
 		const requestedCapacity = Math.floor(options.capacityFrames ?? DEFAULT_CAPACITY_FRAMES);
 		if (requestedCapacity < 2048) {

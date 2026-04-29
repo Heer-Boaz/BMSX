@@ -37,6 +37,9 @@ ProgramLayout resolveProgramLayout(int systemCodeBytes, int systemBasePc, int ca
 	if (cartBasePc % INSTRUCTION_BYTES != 0) {
 		throw std::runtime_error("[ProgramLinker] Cart base PC must align to instruction bytes.");
 	}
+	if (cartBasePc <= CART_PROGRAM_VECTOR_PC) {
+		throw std::runtime_error("[ProgramLinker] Cart base PC must leave room for the cart program vector.");
+	}
 	if (systemBasePc + systemCodeBytes > cartBasePc) {
 		throw std::runtime_error("[ProgramLinker] System program overlaps cart base PC.");
 	}
@@ -51,17 +54,21 @@ uint32_t readInstructionWord(const std::vector<uint8_t>& code, int index) {
 		| static_cast<uint32_t>(code[offset + 3]);
 }
 
+void writeInstructionWord(std::vector<uint8_t>& code, int index, uint32_t word) {
+	size_t offset = static_cast<size_t>(index) * INSTRUCTION_BYTES;
+	code[offset] = static_cast<uint8_t>((word >> 24) & 0xff);
+	code[offset + 1] = static_cast<uint8_t>((word >> 16) & 0xff);
+	code[offset + 2] = static_cast<uint8_t>((word >> 8) & 0xff);
+	code[offset + 3] = static_cast<uint8_t>(word & 0xff);
+}
+
 void writeInstruction(std::vector<uint8_t>& code, int index, uint8_t op, uint8_t a, uint8_t b, uint8_t c, uint8_t ext = 0) {
 	uint32_t word = (static_cast<uint32_t>(ext) << 24)
 		| (static_cast<uint32_t>(op & 0x3f) << 18)
 		| (static_cast<uint32_t>(a & 0x3f) << 12)
 		| (static_cast<uint32_t>(b & 0x3f) << 6)
 		| static_cast<uint32_t>(c & 0x3f);
-	size_t offset = static_cast<size_t>(index) * INSTRUCTION_BYTES;
-	code[offset] = static_cast<uint8_t>((word >> 24) & 0xff);
-	code[offset + 1] = static_cast<uint8_t>((word >> 16) & 0xff);
-	code[offset + 2] = static_cast<uint8_t>((word >> 8) & 0xff);
-	code[offset + 3] = static_cast<uint8_t>(word & 0xff);
+	writeInstructionWord(code, index, word);
 }
 
 void writeWideInstruction(std::vector<uint8_t>& code, int index, uint8_t a, uint8_t b, uint8_t c) {
@@ -608,6 +615,7 @@ LinkedProgramImage linkProgramImages(
 	linkedProgram->code.assign(static_cast<size_t>(totalBytes), 0);
 	std::copy(systemProgram.code.begin(), systemProgram.code.end(), linkedProgram->code.begin() + layout.systemBasePc);
 	std::copy(cartCode.begin(), cartCode.end(), linkedProgram->code.begin() + layout.cartBasePc);
+	writeInstructionWord(linkedProgram->code, CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES, CART_PROGRAM_VECTOR_VALUE);
 	linkedProgram->constPoolCanonicalized = false;
 
 	const int systemEntryProtoIndex = systemImage.entryProtoIndex;

@@ -48,6 +48,7 @@ local boot_status_labels<const> = { 'STATUS', 'BOOT STATUS' }
 local system_rom_base<const> = 0x00000000
 local cart_rom_base<const> = 0x01000000
 local cart_program_start_addr<const> = 0x10080000
+local cart_program_vector_addr<const> = cart_program_start_addr - 4
 local cart_rom_magic<const> = 0x58534d42
 
 local boot_start
@@ -206,7 +207,7 @@ local build_info<const> = function()
 	-- local cart_input = cart_manifest and cart_manifest.input or '--'
 	local cart_cpu_raw<const> = cart_manifest and cart_manifest.cpu_freq_hz
 	local cart_cpu_label<const> = format_cpu_mhz_from_hz(cart_cpu_raw)
-	local cart_entry_ready<const> = mem[cart_program_start_addr] ~= 0
+	local cart_entry_ready<const> = mem[cart_program_vector_addr] == cart_program_start_addr
 
 	local machine_view_label<const> = machine_manifest and machine_manifest.render_size or '--'
 	local machine_cpu_raw<const> = machine_manifest and machine_manifest.cpu_freq_hz
@@ -388,7 +389,7 @@ local update_boot_screen<const> = function()
 
 	local cart_present_and_ready<const> = cart_header
 		and mem[cart_rom_base] == cart_rom_magic
-		and mem[cart_program_start_addr] ~= 0
+		and mem[cart_program_vector_addr] == cart_program_start_addr
 
 	if cart_present_and_ready and not boot_requested and system_slot_ready and not system_slot_failed then
 		boot_requested = true

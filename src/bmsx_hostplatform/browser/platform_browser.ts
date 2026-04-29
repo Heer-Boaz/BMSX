@@ -37,7 +37,8 @@ import {
 	createSubscriptionHandle,
 	HZ_SCALE,
 } from 'bmsx/platform';
-import { WorkerStreamingAudioService } from './worker_audio';
+import { SilentAudioService } from '../common/silent_audio';
+import { supportsWorkerStreamingAudio, WorkerStreamingAudioService } from './worker_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
 import { type vec2 } from 'bmsx/rompack/format';
 
@@ -98,7 +99,9 @@ export class BrowserPlatform implements Platform {
 		} else {
 			this.hid = new UnsupportedHID();
 		}
-		this.audio = new WorkerStreamingAudioService(options.audioContext);
+		this.audio = supportsWorkerStreamingAudio()
+			? new WorkerStreamingAudioService(options.audioContext)
+			: new SilentAudioService();
 		if (this.ufpsScaled > 0) {
 			this.audio.setFrameTimeSec(HZ_SCALE / this.ufpsScaled);
 		}

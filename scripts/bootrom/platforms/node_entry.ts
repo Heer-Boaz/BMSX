@@ -931,7 +931,7 @@ async function main(): Promise<void> {
 		cpuProfileActive = true;
 		console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler enabled.`);
 	}
-	const isCartProgramActive = (): boolean => runtime.activeProgramSource !== 'system';
+	const isCartProgramActive = (): boolean => runtime.cartProgramStarted;
 	const autoTimelinePath = await resolveAutoTimelinePath(cartRoot, romFolder);
 	let scheduledTimeline = false;
 	if (cliOptions.testPath) {

@@ -1,8 +1,5 @@
 import { new_vec2 } from 'bmsx/common/vector';
 import {
-	AudioClipHandle,
-	AudioFilterParams,
-	AudioPlaybackParams,
 	AudioService,
 	Clock,
 	DeviceKind,
@@ -34,11 +31,11 @@ import {
 	GameViewHostCapabilityId,
 	GameViewHostCapabilityMap,
 	SubscriptionHandle,
-	VoiceHandle,
 	createSubscriptionHandle,
 	HZ_SCALE,
 } from 'bmsx/platform';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/view';
+import { SilentAudioService } from '../common/silent_audio';
 
 class RealtimeHeadlessClock implements Clock {
 	private readonly origin = performance.now();
@@ -323,60 +320,6 @@ class HeadlessOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 	updateDpadRing(_activeElementIds: string[]): void { }
 	supportsVibration(): boolean { return false; }
 	vibrate(_durationMs: number): void { }
-}
-
-class SilentClip implements AudioClipHandle {
-	duration = 0;
-	dispose(): void { }
-}
-
-class SilentVoice implements VoiceHandle {
-	readonly startedAt = 0;
-	readonly startOffset = 0;
-	private readonly endListeners = new Set<(e: { clippedAt: number; }) => void>();
-	constructor() {
-		queueMicrotask(() => this.end());
-	}
-	onEnded(cb: (e: { clippedAt: number; }) => void): SubscriptionHandle {
-		this.endListeners.add(cb);
-		return createSubscriptionHandle(() => { this.endListeners.delete(cb); });
-	}
-	setGainLinear(_v: number): void { }
-	rampGainLinear(_target: number, _durationSec: number): void { }
-	setFilter(_p: AudioFilterParams): void { }
-	setRate(_v: number): void { }
-	stop(): void {
-		this.end();
-	}
-	private end(): void {
-		for (const cb of this.endListeners) cb({ clippedAt: 0 });
-		this.endListeners.clear();
-	}
-	disconnect(): void { }
-}
-
-class SilentAudioService implements AudioService {
-	readonly available = true;
-	currentTime(): number { return 0; }
-	sampleRate(): number { return 44100; }
-	coreQueuedFrames(): number { return 0; }
-	setCoreNeedHandler(_handler: (() => void) | null): void { }
-	clearCoreStream(): void { }
-	async resume(): Promise<void> { }
-	async suspend(): Promise<void> { }
-	getMasterGain(): number { return 0; }
-	setMasterGain(_v: number): void { }
-	setFrameTimeSec(_seconds: number): void { }
-	async createClipFromBytes(_bytes: ArrayBuffer): Promise<AudioClipHandle> {
-		return new SilentClip();
-	}
-	pushCoreFrames(_samples: Int16Array, _channels: number, _sampleRate: number): void { }
-	createClipFromPcm(_samples: Int16Array, _sampleRate: number, _channels: number): AudioClipHandle {
-		return new SilentClip();
-	}
-	createVoice(_clip: AudioClipHandle, _params: AudioPlaybackParams): VoiceHandle {
-		return new SilentVoice();
-	}
 }
 
 class SeededRng implements RngService {

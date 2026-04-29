@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildLuaSemanticFrontend } from '../../src/bmsx/ide/editor/contrib/intellisense/lua_frontend';
+import { buildLuaSemanticFrontend } from '../../src/bmsx/lua/semantic/frontend';
 import { createLuaSemanticFrontendFromSnapshot } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic/workspace';
-import { LuaSemanticWorkspace } from '../../src/bmsx/ide/editor/contrib/intellisense/semantic_model';
+import { LuaSemanticWorkspace } from '../../src/bmsx/lua/semantic/model';
 
 test('LuaSemanticFrontend accepts shared runtime globals without diagnostics', () => {
-	const source = 'return sys_rom_data, sys_vdp_stream_base, cart_manifest';
+	const source = 'return sys_boot_cart, sys_vdp_stream_base, cart_manifest';
 	const frontend = buildLuaSemanticFrontend([{ path: 'globals.lua', source }]);
 	assert.deepEqual(frontend.getFile('globals.lua').diagnostics, []);
 });
@@ -147,8 +147,8 @@ test('LuaSemanticFrontend resolves require strings to their target module files'
 		'return util',
 	].join('\n');
 	const utilSource = [
-		'local M = {}',
-		'return M',
+		'local m = {}',
+		'return m',
 	].join('\n');
 	const frontend = buildLuaSemanticFrontend([
 		{ path: 'main.lua', source: entrySource },
@@ -175,8 +175,8 @@ test('LuaSemanticFrontend can build from immutable analysis snapshots without re
 		'return util.answer',
 	].join('\n');
 	const utilSource = [
-		'local M = { answer = 42 }',
-		'return M',
+		'local m = { answer = 42 }',
+		'return m',
 	].join('\n');
 	workspace.updateFile('main.lua', mainSource);
 	workspace.updateFile('lib/util.lua', utilSource);

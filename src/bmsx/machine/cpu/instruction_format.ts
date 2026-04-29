@@ -47,6 +47,10 @@ export function packInstructionWord(op: number, a: number, b: number, c: number,
 
 export function writeInstruction(code: Uint8Array, index: number, op: number, a: number, b: number, c: number, ext: number = 0): void {
 	const word = packInstructionWord(op, a, b, c, ext);
+	writeInstructionWord(code, index, word);
+}
+
+export function writeInstructionWord(code: Uint8Array, index: number, word: number): void {
 	const offset = index * INSTRUCTION_BYTES;
 	code[offset] = (word >>> 24) & 0xff;
 	code[offset + 1] = (word >>> 16) & 0xff;

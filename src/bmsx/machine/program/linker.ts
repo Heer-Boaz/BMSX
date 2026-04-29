@@ -11,8 +11,14 @@ import {
 	MAX_OPERAND_BITS,
 	readInstructionWord,
 	writeInstruction,
+	writeInstructionWord,
 } from '../cpu/instruction_format';
-import { resolveProgramLayout, type ProgramLayout } from './layout';
+import {
+	CART_PROGRAM_VECTOR_PC,
+	CART_PROGRAM_VECTOR_VALUE,
+	resolveProgramLayout,
+	type ProgramLayout,
+} from './layout';
 import type {
 	EncodedProgram,
 	EncodedValue,
@@ -444,6 +450,7 @@ export const linkProgramImages = (
 	const code = new Uint8Array(totalBytes);
 	code.set(systemImage.program.code, resolvedLayout.systemBasePc);
 	code.set(cartImage.program.code, resolvedLayout.cartBasePc);
+	writeInstructionWord(code, CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES, CART_PROGRAM_VECTOR_VALUE);
 	const cartCode = code.subarray(resolvedLayout.cartBasePc, resolvedLayout.cartBasePc + cartCodeBytes);
 	rewriteClosureIndices(cartCode, baseProtoCount);
 	const mergedConsts = mergeConstPools(systemImage.program.constPool, cartImage.program.constPool);
