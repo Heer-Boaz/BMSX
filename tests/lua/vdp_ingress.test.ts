@@ -6,7 +6,7 @@ import {
 	IO_VDP_DITHER,
 	IO_VDP_REG_BG_COLOR,
 	IO_VDP_REG_DRAW_COLOR,
-	IO_VDP_REG_DRAW_FLAGS,
+	IO_VDP_REG_DRAW_CTRL,
 	IO_VDP_REG_DRAW_LAYER_PRIO,
 	IO_VDP_REG_DRAW_SCALE_X,
 	IO_VDP_REG_DRAW_SCALE_Y,
@@ -95,8 +95,10 @@ test('VDP2D direct register faults preserve latches and do not cancel an open fr
 	const { memory, vdp } = createVdp();
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	assert.throws(() => memory.writeValue(IO_VDP_REG_DRAW_FLAGS, 0x4));
-	assert.equal(memory.readValue(IO_VDP_REG_DRAW_FLAGS), 0);
+	assert.throws(() => memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x4));
+	assert.equal(memory.readValue(IO_VDP_REG_DRAW_CTRL), 0);
+	assert.throws(() => memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x01000000));
+	assert.equal(memory.readValue(IO_VDP_REG_DRAW_CTRL), 0);
 	assert.equal(buildFrameOpen(vdp), true);
 	assert.throws(() => memory.writeValue(IO_VDP_REG_DRAW_SCALE_X, 0xffff0000));
 	assert.equal(memory.readValue(IO_VDP_REG_DRAW_SCALE_X), 0x00010000);
@@ -122,6 +124,27 @@ test('VDP2D direct draw doorbell snapshots latch state immutably', () => {
 
 	assert.equal(activeQueue(vdp).length, 1);
 	assert.deepEqual(activeQueue(vdp)[0].color, { r: 0x11, g: 0x22, b: 0x33, a: 0xff });
+});
+
+test('VDP2D BLIT snapshots DRAW_CTRL flip and parallax immutably', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_REG_SRC_SLOT, VDP_SLOT_PRIMARY);
+	memory.writeValue(IO_VDP_REG_SRC_UV, 0);
+	memory.writeValue(IO_VDP_REG_SRC_WH, 4 | (4 << 16));
+	memory.writeValue(IO_VDP_REG_DRAW_LAYER_PRIO, 9 << 8);
+	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x00ff0003);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+
+	const command = activeQueue(vdp)[0];
+	assert.equal(command.opcode, 'blit');
+	assert.equal(command.flipH, true);
+	assert.equal(command.flipV, true);
+	assert.equal(command.parallaxWeight, -1);
 });
 
 test('VDP2D FIFO replays registers, commands, and PKT_END frame sealing', () => {

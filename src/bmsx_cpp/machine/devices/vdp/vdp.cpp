@@ -33,7 +33,7 @@ constexpr uint32_t VDP_REG_GEOM_X1 = 7u;
 constexpr uint32_t VDP_REG_GEOM_Y1 = 8u;
 constexpr uint32_t VDP_REG_LINE_WIDTH = 9u;
 constexpr uint32_t VDP_REG_DRAW_LAYER_PRIO = 10u;
-constexpr uint32_t VDP_REG_DRAW_FLAGS = 11u;
+constexpr uint32_t VDP_REG_DRAW_CTRL = 11u;
 constexpr uint32_t VDP_REG_DRAW_SCALE_X = 12u;
 constexpr uint32_t VDP_REG_DRAW_SCALE_Y = 13u;
 constexpr uint32_t VDP_REG_DRAW_COLOR = 14u;
@@ -42,9 +42,9 @@ constexpr uint32_t VDP_REG_SLOT_INDEX = 16u;
 constexpr uint32_t VDP_REG_SLOT_DIM = 17u;
 constexpr uint32_t VDP_REGISTER_COUNT = IO_VDP_CMD_ARG_COUNT;
 constexpr uint32_t VDP_Q16_ONE = 0x00010000u;
-constexpr uint32_t VDP_DRAW_FLAGS_ALLOWED = 0x00000003u;
-constexpr uint32_t VDP_DRAW_FLAG_FLIP_H = 0x00000001u;
-constexpr uint32_t VDP_DRAW_FLAG_FLIP_V = 0x00000002u;
+constexpr uint32_t VDP_DRAW_CTRL_RESERVED_MASK = 0xff0000fcu;
+constexpr uint32_t VDP_DRAW_CTRL_FLIP_H = 0x00000001u;
+constexpr uint32_t VDP_DRAW_CTRL_FLIP_V = 0x00000002u;
 constexpr uint32_t VDP_PKT_KIND_MASK = 0xff000000u;
 constexpr uint32_t VDP_PKT_RESERVED_MASK = 0x00ff0000u;
 constexpr uint32_t VDP_PKT_END = 0x00000000u;
@@ -362,8 +362,8 @@ void VDP::writeVdpRegister(uint32_t index, u32 value) {
 		case VDP_REG_DRAW_LAYER_PRIO:
 			decodeLayerPriority(value);
 			break;
-		case VDP_REG_DRAW_FLAGS:
-			validateDrawFlags(value);
+		case VDP_REG_DRAW_CTRL:
+			decodeDrawCtrl(value);
 			break;
 		case VDP_REG_SLOT_DIM:
 			configureSelectedSlotDimension(value);
@@ -399,10 +399,17 @@ void VDP::configureSelectedSlotDimension(u32 word) {
 	configureVramSlotSurface(m_vdpRegisters[VDP_REG_SLOT_INDEX], width, height);
 }
 
-void VDP::validateDrawFlags(u32 flags) const {
-	if ((flags & ~VDP_DRAW_FLAGS_ALLOWED) != 0u) {
-		throw vdpFault("unsupported VDP draw flags " + std::to_string(flags) + ".");
+VDP::DrawCtrl VDP::decodeDrawCtrl(u32 value) const {
+	if ((value & VDP_DRAW_CTRL_RESERVED_MASK) != 0u) {
+		throw vdpFault("VDP DRAW_CTRL reserved bits are set (" + std::to_string(value) + ").");
 	}
+	const i32 rawQ8_8 = static_cast<i32>((value >> 8u) & 0xffffu);
+	const i32 signedQ8_8 = (rawQ8_8 & 0x8000) != 0 ? rawQ8_8 - 0x10000 : rawQ8_8;
+	DrawCtrl decoded;
+	decoded.flipH = (value & VDP_DRAW_CTRL_FLIP_H) != 0u;
+	decoded.flipV = (value & VDP_DRAW_CTRL_FLIP_V) != 0u;
+	decoded.parallaxWeight = static_cast<f32>(signedQ8_8) / 256.0f;
+	return decoded;
 }
 
 VDP::LayerPriority VDP::decodeLayerPriority(u32 value) const {
@@ -1034,8 +1041,7 @@ void VDP::enqueueLatchedDrawLine() {
 
 void VDP::enqueueLatchedBlit() {
 	const LayerPriority draw = decodeLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
-	const u32 flags = m_vdpRegisters[VDP_REG_DRAW_FLAGS];
-	validateDrawFlags(flags);
+	const DrawCtrl drawCtrl = decodeDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
 	const u32 slot = m_vdpRegisters[VDP_REG_SRC_SLOT];
 	validateVdpSlotRegister(slot);
 	const u32 u = packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]);
@@ -1075,10 +1081,10 @@ void VDP::enqueueLatchedBlit() {
 	command.dstY = dstY;
 	command.scaleX = scaleX;
 	command.scaleY = scaleY;
-	command.flipH = (flags & VDP_DRAW_FLAG_FLIP_H) != 0u;
-	command.flipV = (flags & VDP_DRAW_FLAG_FLIP_V) != 0u;
+	command.flipH = drawCtrl.flipH;
+	command.flipV = drawCtrl.flipV;
 	command.color = color;
-	command.parallaxWeight = 0.0f;
+	command.parallaxWeight = drawCtrl.parallaxWeight;
 	enqueueBlitterCommand(std::move(command));
 }
 

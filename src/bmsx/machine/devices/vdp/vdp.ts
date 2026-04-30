@@ -652,7 +652,7 @@ const VDP_REG_GEOM_X1 = 7;
 const VDP_REG_GEOM_Y1 = 8;
 const VDP_REG_LINE_WIDTH = 9;
 const VDP_REG_DRAW_LAYER_PRIO = 10;
-const VDP_REG_DRAW_FLAGS = 11;
+const VDP_REG_DRAW_CTRL = 11;
 const VDP_REG_DRAW_SCALE_X = 12;
 const VDP_REG_DRAW_SCALE_Y = 13;
 const VDP_REG_DRAW_COLOR = 14;
@@ -661,9 +661,9 @@ const VDP_REG_SLOT_INDEX = 16;
 const VDP_REG_SLOT_DIM = 17;
 const VDP_REGISTER_COUNT = IO_VDP_CMD_ARG_COUNT;
 const VDP_Q16_ONE = 0x00010000;
-const VDP_DRAW_FLAGS_ALLOWED = 0x00000003;
-const VDP_DRAW_FLAG_FLIP_H = 0x00000001;
-const VDP_DRAW_FLAG_FLIP_V = 0x00000002;
+const VDP_DRAW_CTRL_RESERVED_MASK = 0xff0000fc;
+const VDP_DRAW_CTRL_FLIP_H = 0x00000001;
+const VDP_DRAW_CTRL_FLIP_V = 0x00000002;
 const VDP_PKT_KIND_MASK = 0xff000000;
 const VDP_PKT_RESERVED_MASK = 0x00ff0000;
 const VDP_PKT_END = 0x00000000;
@@ -887,8 +887,8 @@ export class VDP implements VramWriteSink {
 			case VDP_REG_DRAW_LAYER_PRIO:
 				this.decodeLayerPriority(word);
 				break;
-			case VDP_REG_DRAW_FLAGS:
-				this.validateDrawFlags(word);
+			case VDP_REG_DRAW_CTRL:
+				this.decodeDrawCtrl(word);
 				break;
 			case VDP_REG_SLOT_DIM:
 				this.configureSelectedSlotDimension(word);
@@ -922,10 +922,17 @@ export class VDP implements VramWriteSink {
 		this.configureVramSlotSurface(this.vdpRegisters[VDP_REG_SLOT_INDEX], width, height);
 	}
 
-	private validateDrawFlags(flags: number): void {
-		if ((flags & ~VDP_DRAW_FLAGS_ALLOWED) !== 0) {
-			throw vdpFault(`unsupported VDP draw flags ${flags}.`);
+	private decodeDrawCtrl(value: number): { flipH: boolean; flipV: boolean; parallaxWeight: number } {
+		const ctrl = value >>> 0;
+		if ((ctrl & VDP_DRAW_CTRL_RESERVED_MASK) !== 0) {
+			throw vdpFault(`VDP DRAW_CTRL reserved bits are set (${ctrl}).`);
 		}
+		const signedQ8_8 = (ctrl << 8) >> 16;
+		return {
+			flipH: (ctrl & VDP_DRAW_CTRL_FLIP_H) !== 0,
+			flipV: (ctrl & VDP_DRAW_CTRL_FLIP_V) !== 0,
+			parallaxWeight: signedQ8_8 / 256,
+		};
 	}
 
 	private decodeLayerPriority(value: number): { layer: Layer2D; z: number } {
@@ -1448,8 +1455,7 @@ export class VDP implements VramWriteSink {
 
 	private enqueueLatchedBlit(): void {
 		const draw = this.decodeLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
-		const flags = this.vdpRegisters[VDP_REG_DRAW_FLAGS];
-		this.validateDrawFlags(flags);
+		const drawCtrl = this.decodeDrawCtrl(this.vdpRegisters[VDP_REG_DRAW_CTRL]);
 		const slot = this.vdpRegisters[VDP_REG_SRC_SLOT];
 		this.validateVdpSlotRegister(slot);
 		const u = this.packedLow16(this.vdpRegisters[VDP_REG_SRC_UV]);
@@ -1489,10 +1495,10 @@ export class VDP implements VramWriteSink {
 			dstY,
 			scaleX,
 			scaleY,
-			flipH: (flags & VDP_DRAW_FLAG_FLIP_H) !== 0,
-			flipV: (flags & VDP_DRAW_FLAG_FLIP_V) !== 0,
+			flipH: drawCtrl.flipH,
+			flipV: drawCtrl.flipV,
 			color,
-			parallaxWeight: 0,
+			parallaxWeight: drawCtrl.parallaxWeight,
 		});
 	}
 

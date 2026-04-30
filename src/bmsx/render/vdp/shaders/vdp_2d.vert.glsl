@@ -8,7 +8,6 @@ in vec2 i_axis_x;
 in vec2 i_axis_y;
 in vec2 i_uv0;
 in vec2 i_uv1;
-in float i_z;
 in uint i_textpage_id;
 in float i_fx;
 in float i_priority;
@@ -39,9 +38,8 @@ float wobble(float t) {
 }
 
 void main() {
-	float depth = smoothstep(0.0, 1.0, i_z);
 	float dir = sign(i_fx);
-	float weight = abs(i_fx) * depth;
+	float weight = abs(i_fx);
 	float wob = wobble(u_timeDelta.x);
 	float dy_px = (u_parallax_rig2.x + wob * u_parallax_rig.x) * weight * u_parallax_rig2.y * dir;
 	float flipWindowSeconds = max(u_parallax_flip_window, 0.0001);

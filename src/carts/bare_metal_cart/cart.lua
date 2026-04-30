@@ -195,7 +195,7 @@ local draw_frame<const> = function()
 
 	mem[wp], wp = vdp_pkt_regn | (5 << 16) | vdp_reg_draw_layer_prio, wp + 4
 	mem[wp], wp = (vdp_layer_world & 0xff) | (80 << 8), wp + 4
-	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4 -- DRAW_CTRL: no flip, no parallax
 	mem[wp], wp = 0x00030000, wp + 4
 	mem[wp], wp = 0x00030000, wp + 4
 	mem[wp], wp = 0xffffffff, wp + 4

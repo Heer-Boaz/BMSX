@@ -7,6 +7,7 @@
 #include "machine/memory/string_memory.h"
 #include "machine/scheduler/device.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -109,8 +110,10 @@ void testInvalidRegisterDoesNotCancelFrame() {
 	Harness h;
 
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_FLAGS, 4u); }, "invalid draw flags");
-	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_FLAGS) == 0u, "invalid draw flags should not mutate the latch");
+	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 4u); }, "invalid draw ctrl");
+	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_CTRL) == 0u, "invalid draw ctrl should not mutate the latch");
+	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x01000000u); }, "invalid draw ctrl high bits");
+	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_CTRL) == 0u, "invalid draw ctrl high bits should not mutate the latch");
 	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0xffff0000u); }, "negative Q16 scale");
 	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_SCALE_X) == 0x00010000u, "negative Q16 scale should not mutate the latch");
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
@@ -132,6 +135,32 @@ void testLatchSnapshotGeometry() {
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 
 	require(h.vdp.getPendingRenderWorkUnits() > 0, "queued rect should keep its captured geometry");
+}
+
+void testBlitDrawCtrlSnapshot() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_LAYER_PRIO, 9u << 8);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00ff0003u);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0u);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+
+	const int workUnits = h.vdp.getPendingRenderWorkUnits();
+	require(workUnits > 0, "BLIT should submit render work");
+	h.vdp.advanceWork(workUnits);
+	const auto* queue = h.vdp.takeReadyExecutionQueue();
+	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
+	const auto& command = queue->front();
+	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
+	require(command.flipH && command.flipV, "DRAW_CTRL flip bits should be snapshotted");
+	require(std::abs(command.parallaxWeight + 1.0f) < 0.0001f, "DRAW_CTRL signed Q8.8 parallax should be snapshotted");
+	h.vdp.completeReadyExecution(queue);
 }
 
 void testFifoReplayAndFaults() {
@@ -210,6 +239,7 @@ int main() {
 		{"direct lifecycle", testDirectLifecycle},
 		{"invalid register frame behavior", testInvalidRegisterDoesNotCancelFrame},
 		{"latch snapshot geometry", testLatchSnapshotGeometry},
+		{"BLIT DRAW_CTRL snapshot", testBlitDrawCtrlSnapshot},
 		{"FIFO replay and faults", testFifoReplayAndFaults},
 		{"slot registers", testSlotRegisters},
 		{"validation cancels direct draw", testValidationCancelsDirectDrawFrame},

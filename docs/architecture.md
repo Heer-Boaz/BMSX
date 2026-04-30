@@ -226,6 +226,10 @@ Current evidence:
   `Machine` constructs the VDP with the concrete CPU/API/memory owners, and
   packet decoding receives those owners directly instead of looking up
   a global runtime singleton from inside the device hot path.
+- The 18-word `IO_VDP_CMD_ARG0` latch bank is the DEX/2D blitter ingress, not
+  the whole VDP frontend. Direct MMIO writes and FIFO `REG1`/`REGN` replay feed
+  the same latches, `IO_VDP_CMD`/FIFO `CMD` doorbells snapshot those latches,
+  and register 11 is `DRAW_CTRL` for DEX flip/parallax control.
 - TS and C++ VDP render-surface texture binding no longer passes a fake VDP
   object into texture lookup. Surface-size resolution still asks the VDP, while
   texture-handle binding is an explicit render-side texture-memory operation.
@@ -253,6 +257,11 @@ Desired direction:
 - Keep VDP-owned state on the VDP side: registers, VRAM, DMA submit state,
   frame timing, framebuffer identity, atlas slot ids, skybox ids, committed
   visual state, and save-state pixel payloads.
+- Model VDP work as named hardware units rather than one universal register
+  frontend: DEX owns the 2D latch ingress/FIFO replay, SBX owns skybox face
+  state, MEX owns mesh/geometry submissions, PEX owns particle billboards, and
+  FBM owns framebuffer/present/readback. Existing render passes remain the
+  backend bridge outputs for those units.
 - Move backend ownership and host texture reads/writes to the render side.
 - Treat `render/vdp` as the native VDP video-hardware implementation, not as a
   generic host renderer and not as a callback sink installed into the device.

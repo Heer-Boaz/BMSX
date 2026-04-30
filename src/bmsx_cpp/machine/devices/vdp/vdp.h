@@ -366,12 +366,17 @@ public:
 	void onVdpRegisterWrite(uint32_t addr);
 	void validateVdpSlotRegister(u32 slot) const;
 	void configureSelectedSlotDimension(u32 word);
-	void validateDrawFlags(u32 flags) const;
 	struct LayerPriority {
 		Layer2D layer = Layer2D::World;
 		f32 z = 0.0f;
 	};
+	struct DrawCtrl {
+		bool flipH = false;
+		bool flipV = false;
+		f32 parallaxWeight = 0.0f;
+	};
 	LayerPriority decodeLayerPriority(u32 value) const;
+	DrawCtrl decodeDrawCtrl(u32 value) const;
 	f32 q16ToFloat(u32 value) const;
 	i32 q16ToPixel(u32 value) const;
 	FrameBufferColor unpackArgbColor(u32 value) const;

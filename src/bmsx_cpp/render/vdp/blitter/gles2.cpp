@@ -384,8 +384,7 @@ void computeBlitParallax(
 		outOffsetY = 0.0f;
 		return;
 	}
-	const f32 depth = smoothstep01(command.z);
-	const f32 weight = std::abs(command.parallaxWeight) * depth;
+	const f32 weight = std::abs(command.parallaxWeight);
 	const f32 wobble = std::sin(static_cast<f32>(host.timeSeconds) * 2.2f) * 0.5f
 		+ std::sin(static_cast<f32>(host.timeSeconds) * 1.1f + 1.7f) * 0.5f;
 	outOffsetY = (host.parallaxRig.bias_px + wobble * host.parallaxRig.vy) * weight * host.parallaxRig.parallax_strength * dir;
