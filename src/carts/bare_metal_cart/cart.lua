@@ -11,10 +11,24 @@ local vram_primary_slot_base<const> = 0x0b8d0000
 local atlas_ram_base<const> = 0x0a440000
 local io_vdp_fifo<const> = 0x0800007c
 
-local vdp_cmd_clear<const> = 0x10
-local vdp_cmd_fill_rect<const> = 0x11
-local vdp_cmd_blit<const> = 0x12
-local vdp_cmd_config_surface<const> = 0x16
+local vdp_pkt_end<const> = 0x00000000
+local vdp_pkt_cmd<const> = 0x01000000
+local vdp_pkt_reg1<const> = 0x02000000
+local vdp_pkt_regn<const> = 0x03000000
+
+local vdp_cmd_clear<const> = 1
+local vdp_cmd_fill_rect<const> = 2
+local vdp_cmd_blit<const> = 4
+
+local vdp_reg_src_slot<const> = 0
+local vdp_reg_src_uv<const> = 1
+local vdp_reg_src_wh<const> = 2
+local vdp_reg_dst_x<const> = 3
+local vdp_reg_geom_x0<const> = 5
+local vdp_reg_draw_layer_prio<const> = 10
+local vdp_reg_draw_color<const> = 14
+local vdp_reg_bg_color<const> = 15
+local vdp_reg_slot_index<const> = 16
 local vdp_slot_primary<const> = 0
 local vdp_layer_world<const> = 0
 
@@ -56,48 +70,6 @@ local wait_vblank<const> = function()
 		flags = mem[io_irq_flags]
 		mem[io_irq_ack] = flags
 	until (flags & irq_vblank) ~= 0
-end
-
-local emit_clear<const> = function(cursor, r, g, b, a)
-	memwrite(cursor, vdp_cmd_clear, 4, 0, r, g, b, a)
-	return cursor + 28
-end
-
-local emit_rect<const> = function(cursor, x0, y0, x1, y1, z, r, g, b, a)
-	memwrite(cursor, vdp_cmd_fill_rect, 10, 0, x0, y0, x1, y1, z, vdp_layer_world, r, g, b, a)
-	return cursor + 52
-end
-
-local emit_config_surface<const> = function(cursor, slot, width, height)
-	memwrite(cursor, vdp_cmd_config_surface, 3, 0, slot, width, height)
-	return cursor + 24
-end
-
-local emit_blit<const> = function(cursor, slot, u, v, w, h, x, y, z, scale)
-	memwrite(
-		cursor,
-		vdp_cmd_blit,
-		17,
-		0,
-		slot,
-		u,
-		v,
-		w,
-		h,
-		x,
-		y,
-		z,
-		vdp_layer_world,
-		scale,
-		scale,
-		0,
-		1.0,
-		1.0,
-		1.0,
-		1.0,
-		0.0
-	)
-	return cursor + 80
 end
 
 local build_lua_atlas<const> = function()
@@ -143,9 +115,12 @@ local build_lua_atlas<const> = function()
 end
 
 local configure_primary_surface<const> = function()
-	local config_cursor = vdp_stream_base
-	config_cursor = emit_config_surface(config_cursor, vdp_slot_primary, atlas_width, atlas_height)
-	submit_stream(config_cursor - vdp_stream_base)
+	local wp = vdp_stream_base
+	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_slot_index, wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4
+	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
+	mem[wp], wp = vdp_pkt_end, wp + 4
+	submit_stream(wp - vdp_stream_base)
 	wait_dma()
 end
 
@@ -158,21 +133,80 @@ local upload_atlas_to_vram<const> = function()
 end
 
 local draw_frame<const> = function()
-	local draw_cursor = vdp_stream_base
-	draw_cursor = emit_clear(draw_cursor, 0.02, 0.03, 0.05, 1.0)
-	draw_cursor = emit_rect(draw_cursor, 0, 82, 256, 126, 8, 0.08, 0.14, 0.22, 1.0)
-	draw_cursor = emit_rect(draw_cursor, 0, 126, 256, 212, 10, 0.05, 0.08, 0.09, 1.0)
-	draw_cursor = emit_rect(draw_cursor, 58, 126, 198, 212, 15, 0.16, 0.20, 0.23, 1.0)
+	local wp = vdp_stream_base
+
+	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_bg_color, wp + 4
+	mem[wp], wp = 0xff05080d, wp + 4
+	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_clear, wp + 4
+
+	mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4
+	mem[wp], wp = 0 << 16, wp + 4
+	mem[wp], wp = 82 << 16, wp + 4
+	mem[wp], wp = 256 << 16, wp + 4
+	mem[wp], wp = 126 << 16, wp + 4
+	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_layer_prio, wp + 4
+	mem[wp], wp = (vdp_layer_world & 0xff) | (8 << 8), wp + 4
+	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4
+	mem[wp], wp = 0xff142438, wp + 4
+	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4
+
+	mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4
+	mem[wp], wp = 0 << 16, wp + 4
+	mem[wp], wp = 126 << 16, wp + 4
+	mem[wp], wp = 256 << 16, wp + 4
+	mem[wp], wp = 212 << 16, wp + 4
+	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_layer_prio, wp + 4
+	mem[wp], wp = (vdp_layer_world & 0xff) | (10 << 8), wp + 4
+	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4
+	mem[wp], wp = 0xff0d1417, wp + 4
+	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4
+
+	mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4
+	mem[wp], wp = 58 << 16, wp + 4
+	mem[wp], wp = 126 << 16, wp + 4
+	mem[wp], wp = 198 << 16, wp + 4
+	mem[wp], wp = 212 << 16, wp + 4
+	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_layer_prio, wp + 4
+	mem[wp], wp = (vdp_layer_world & 0xff) | (15 << 8), wp + 4
+	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4
+	mem[wp], wp = 0xff29333b, wp + 4
+	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4
 
 	local line_y = 132 + ((frame * 2) % 28)
 	while line_y < 212 do
 		local half_width<const> = 4 + ((line_y - 126) // 6)
-		draw_cursor = emit_rect(draw_cursor, 128 - half_width, line_y, 128 + half_width, line_y + 2, 18, 0.82, 0.78, 0.58, 1.0)
+		mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4
+		mem[wp], wp = (128 - half_width) << 16, wp + 4
+		mem[wp], wp = line_y << 16, wp + 4
+		mem[wp], wp = (128 + half_width) << 16, wp + 4
+		mem[wp], wp = (line_y + 2) << 16, wp + 4
+		mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_layer_prio, wp + 4
+		mem[wp], wp = (vdp_layer_world & 0xff) | (18 << 8), wp + 4
+		mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4
+		mem[wp], wp = 0xffd1c794, wp + 4
+		mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4
 		line_y = line_y + 28
 	end
 
-	draw_cursor = emit_blit(draw_cursor, vdp_slot_primary, 0, 0, atlas_width, atlas_height, sprite_x, sprite_y, 80, 3.0)
-	submit_stream(draw_cursor - vdp_stream_base)
+	mem[wp], wp = vdp_pkt_regn | (3 << 16) | vdp_reg_src_slot, wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
+
+	mem[wp], wp = vdp_pkt_regn | (5 << 16) | vdp_reg_draw_layer_prio, wp + 4
+	mem[wp], wp = (vdp_layer_world & 0xff) | (80 << 8), wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0x00030000, wp + 4
+	mem[wp], wp = 0x00030000, wp + 4
+	mem[wp], wp = 0xffffffff, wp + 4
+
+	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_dst_x, wp + 4
+	mem[wp], wp = sprite_x << 16, wp + 4
+	mem[wp], wp = sprite_y << 16, wp + 4
+	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_blit, wp + 4
+
+	mem[wp], wp = vdp_pkt_end, wp + 4
+	submit_stream(wp - vdp_stream_base)
 	wait_dma()
 end
 

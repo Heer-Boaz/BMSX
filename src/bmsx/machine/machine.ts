@@ -15,7 +15,6 @@ import { InputController, type InputControllerState } from './devices/input/cont
 import { IrqController } from './devices/irq/controller';
 import type { VdpFrameBufferSize } from './devices/vdp/contracts';
 import { VDP, type VdpSaveState, type VdpState } from './devices/vdp/vdp';
-import type { Api } from './firmware/api/api';
 import { Memory, type MemorySaveState, type MemoryState } from './memory/memory';
 import { StringHandleTable, type StringHandleTableState } from './memory/string/memory';
 import { StringPool } from './memory/string/pool';
@@ -69,14 +68,13 @@ export class Machine {
 		public readonly frameBufferSize: VdpFrameBufferSize,
 		input: Input,
 		soundMaster: SoundMaster,
-		api: Api,
 	) {
 		this.stringHandles = new StringHandleTable(this.memory);
 		this.stringPool = new StringPool(this.stringHandles);
 		this.cpu = new CPU(this.memory, this.stringPool);
 		this.scheduler = new DeviceScheduler(this.cpu);
 		this.irqController = new IrqController(this.memory);
-		this.vdp = new VDP(this.memory, this.cpu, api, this.scheduler, frameBufferSize);
+		this.vdp = new VDP(this.memory, this.scheduler, frameBufferSize);
 		this.audioController = new AudioController(this.memory, soundMaster, this.irqController);
 		this.dmaController = new DmaController(this.memory, this.irqController, this.vdp, this.scheduler);
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.vdp, this.irqController, this.scheduler);

@@ -16,7 +16,6 @@ namespace bmsx {
 
 class ImgDecController;
 class BFont;
-class Api;
 class VDP;
 struct VdpGles2Blitter;
 struct VdpSoftwareBlitter;
@@ -67,8 +66,6 @@ class VDP : public Memory::VramWriter {
 public:
 		VDP(
 			Memory& memory,
-			CPU& cpu,
-			Api& api,
 			DeviceScheduler& scheduler,
 			VdpFrameBufferSize frameBufferSize
 		);
@@ -258,6 +255,7 @@ public:
 		static void onFifoWriteThunk(void* context, uint32_t addr, Value value);
 		static void onFifoCtrlWriteThunk(void* context, uint32_t addr, Value value);
 		static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
+		static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
 		static void onSlotAtlasWriteThunk(void* context, uint32_t addr, Value value);
 
 	struct ReadSurface {
@@ -277,8 +275,6 @@ public:
 		uint32_t addr = 0;
 	};
 		Memory& m_memory;
-			CPU& m_cpu;
-			Api& m_api;
 		ImgDecController* m_imgDecController = nullptr;
 		std::vector<VramSlot> m_vramSlots;
 	std::vector<u8> m_vramStaging;
@@ -300,6 +296,7 @@ public:
 		int m_availableWorkUnits = 0;
 		uint32_t m_vdpStatus = 0;
 		bool m_dmaSubmitActive = false;
+		std::array<u32, VDP_CMD_ARG_COUNT> m_vdpRegisters{};
 		std::array<u8, 4> m_vdpFifoWordScratch{{0, 0, 0, 0}};
 		int m_vdpFifoWordByteCount = 0;
 		std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
@@ -364,11 +361,42 @@ public:
 	bool hasBlockedSubmitPath() const;
 	void setStatusFlag(uint32_t mask, bool active);
 	void refreshSubmitBusyStatus();
+	void resetVdpRegisters();
+	void writeVdpRegister(uint32_t index, u32 value);
+	void onVdpRegisterWrite(uint32_t addr);
+	void validateVdpSlotRegister(u32 slot) const;
+	void configureSelectedSlotDimension(u32 word);
+	void validateDrawFlags(u32 flags) const;
+	struct LayerPriority {
+		Layer2D layer = Layer2D::World;
+		f32 z = 0.0f;
+	};
+	LayerPriority decodeLayerPriority(u32 value) const;
+	f32 q16ToFloat(u32 value) const;
+	i32 q16ToPixel(u32 value) const;
+	FrameBufferColor unpackArgbColor(u32 value) const;
+	u32 packedLow16(u32 value) const;
+	u32 packedHigh16(u32 value) const;
+	void enqueueLatchedClear();
+	void enqueueLatchedFillRect();
+	void enqueueLatchedDrawLine();
+	void enqueueLatchedBlit();
+	void enqueueLatchedCopyRect();
 	void pushVdpFifoWord(u32 word);
 	void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(u32 wordCount);
 	void sealVdpFifoTransfer();
+	uint32_t consumeReplayPacketFromMemory(u32 word, uint32_t cursor, uint32_t end);
+	u32 consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount);
+	u32 decodeReg1Packet(u32 word) const;
+	struct RegnPacket {
+		u32 firstRegister = 0;
+		u32 count = 0;
+	};
+	RegnPacket decodeRegnPacket(u32 word) const;
+	void consumeReplayCommandPacket(u32 word);
 	void consumeDirectVdpCommand(u32 cmd);
+	void executeVdpDrawDoorbell(u32 command);
 	void onVdpFifoWrite();
 	void onVdpFifoCtrlWrite();
 	void onVdpCommandWrite();

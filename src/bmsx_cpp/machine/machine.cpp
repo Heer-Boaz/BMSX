@@ -8,13 +8,13 @@
 #include <stdexcept>
 
 namespace bmsx {
-Machine::Machine(Api& api, SoundMaster& soundMaster, MicrotaskQueue& microtasks, VdpFrameBufferSize frameBufferSize)
+Machine::Machine(SoundMaster& soundMaster, MicrotaskQueue& microtasks, VdpFrameBufferSize frameBufferSize)
 	: m_memory()
 	, m_frameBufferSize(frameBufferSize)
 	, m_stringHandles(m_memory)
 	, m_cpu(m_memory, &m_stringHandles)
 	, m_deviceScheduler(m_cpu)
-	, m_vdp(m_memory, m_cpu, api, m_deviceScheduler, m_frameBufferSize)
+	, m_vdp(m_memory, m_deviceScheduler, m_frameBufferSize)
 	, m_irqController(m_memory)
 	, m_dmaController(m_memory, m_irqController, m_vdp, m_deviceScheduler)
 	, m_geometryController(m_memory, m_irqController, m_deviceScheduler)

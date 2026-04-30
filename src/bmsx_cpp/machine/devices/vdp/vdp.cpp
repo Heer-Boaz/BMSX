@@ -1,7 +1,5 @@
 #include "machine/devices/vdp/vdp.h"
-#include "machine/devices/vdp/command_processor.h"
 #include "machine/devices/vdp/fault.h"
-#include "machine/devices/vdp/packet_schema.h"
 #include "machine/memory/map.h"
 #include "core/font.h"
 #include "core/utf8.h"
@@ -15,7 +13,6 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
-#include <sstream>
 #include <string>
 
 namespace bmsx {
@@ -25,6 +22,43 @@ constexpr uint32_t VDP_RD_BUDGET_BYTES = 4096u;
 constexpr uint32_t VDP_RD_MAX_CHUNK_PIXELS = 256u;
 constexpr int VDP_SERVICE_BATCH_WORK_UNITS = 128;
 constexpr size_t BLITTER_FIFO_CAPACITY = 4096u;
+constexpr uint32_t VDP_REG_SRC_SLOT = 0u;
+constexpr uint32_t VDP_REG_SRC_UV = 1u;
+constexpr uint32_t VDP_REG_SRC_WH = 2u;
+constexpr uint32_t VDP_REG_DST_X = 3u;
+constexpr uint32_t VDP_REG_DST_Y = 4u;
+constexpr uint32_t VDP_REG_GEOM_X0 = 5u;
+constexpr uint32_t VDP_REG_GEOM_Y0 = 6u;
+constexpr uint32_t VDP_REG_GEOM_X1 = 7u;
+constexpr uint32_t VDP_REG_GEOM_Y1 = 8u;
+constexpr uint32_t VDP_REG_LINE_WIDTH = 9u;
+constexpr uint32_t VDP_REG_DRAW_LAYER_PRIO = 10u;
+constexpr uint32_t VDP_REG_DRAW_FLAGS = 11u;
+constexpr uint32_t VDP_REG_DRAW_SCALE_X = 12u;
+constexpr uint32_t VDP_REG_DRAW_SCALE_Y = 13u;
+constexpr uint32_t VDP_REG_DRAW_COLOR = 14u;
+constexpr uint32_t VDP_REG_BG_COLOR = 15u;
+constexpr uint32_t VDP_REG_SLOT_INDEX = 16u;
+constexpr uint32_t VDP_REG_SLOT_DIM = 17u;
+constexpr uint32_t VDP_REGISTER_COUNT = IO_VDP_CMD_ARG_COUNT;
+constexpr uint32_t VDP_Q16_ONE = 0x00010000u;
+constexpr uint32_t VDP_DRAW_FLAGS_ALLOWED = 0x00000003u;
+constexpr uint32_t VDP_DRAW_FLAG_FLIP_H = 0x00000001u;
+constexpr uint32_t VDP_DRAW_FLAG_FLIP_V = 0x00000002u;
+constexpr uint32_t VDP_PKT_KIND_MASK = 0xff000000u;
+constexpr uint32_t VDP_PKT_RESERVED_MASK = 0x00ff0000u;
+constexpr uint32_t VDP_PKT_END = 0x00000000u;
+constexpr uint32_t VDP_PKT_CMD = 0x01000000u;
+constexpr uint32_t VDP_PKT_REG1 = 0x02000000u;
+constexpr uint32_t VDP_PKT_REGN = 0x03000000u;
+constexpr uint32_t VDP_CMD_NOP = 0u;
+constexpr uint32_t VDP_CMD_CLEAR = 1u;
+constexpr uint32_t VDP_CMD_FILL_RECT = 2u;
+constexpr uint32_t VDP_CMD_DRAW_LINE = 3u;
+constexpr uint32_t VDP_CMD_BLIT = 4u;
+constexpr uint32_t VDP_CMD_COPY_RECT = 5u;
+constexpr uint32_t VDP_CMD_BEGIN_FRAME = 14u;
+constexpr uint32_t VDP_CMD_END_FRAME = 15u;
 constexpr size_t VRAM_GARBAGE_CHUNK_BYTES = 64u * 1024u;
 constexpr uint32_t VRAM_GARBAGE_SPACE_SALT = 0x5652414dU;
 constexpr int VRAM_GARBAGE_WEIGHT_BLOCK = 1;
@@ -46,17 +80,6 @@ std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
 
 u8 frameBufferColorByte(f32 value) {
 	return static_cast<u8>(std::round(value * 255.0f));
-}
-
-std::string dumpStreamWords(const Memory& memory, uint32_t baseAddr, uint32_t wordCount) {
-	std::ostringstream out;
-	for (uint32_t index = 0; index < wordCount; ++index) {
-		if (index != 0u) {
-			out << ' ';
-		}
-		out << memory.readU32(baseAddr + index * IO_WORD_SIZE);
-	}
-	return out.str();
 }
 
 uint32_t imageByteSize(uint32_t width, uint32_t height) {
@@ -260,14 +283,10 @@ uint32_t nextWord(BlockGen& gen) {
 
 VDP::VDP(
 	Memory& memory,
-	CPU& cpu,
-	Api& api,
 	DeviceScheduler& scheduler,
 	VdpFrameBufferSize frameBufferSize
 )
 	: m_memory(memory)
-	, m_cpu(cpu)
-	, m_api(api)
 	, m_vramStaging(VRAM_STAGING_SIZE)
 	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
 	, m_configuredFrameBufferSize(frameBufferSize)
@@ -278,6 +297,9 @@ VDP::VDP(
 	m_memory.mapIoWrite(IO_VDP_FIFO, this, &VDP::onFifoWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_FIFO_CTRL, this, &VDP::onFifoCtrlWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_CMD, this, &VDP::onCommandWriteThunk);
+	for (uint32_t index = 0; index < VDP_REGISTER_COUNT; ++index) {
+		m_memory.mapIoWrite(IO_VDP_REG0 + index * IO_WORD_SIZE, this, &VDP::onRegisterWriteThunk);
+	}
 	m_memory.mapIoWrite(IO_VDP_SLOT_PRIMARY_ATLAS, this, &VDP::onSlotAtlasWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_SLOT_SECONDARY_ATLAS, this, &VDP::onSlotAtlasWriteThunk);
 	m_buildFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
@@ -300,6 +322,130 @@ void VDP::resetStatus() {
 	m_vdpStatus = 0u;
 	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
 	refreshSubmitBusyStatus();
+}
+
+void VDP::resetVdpRegisters() {
+	uint32_t slotDim = 1u | (1u << 16u);
+	if (auto* primary = findRegisteredVramSlotBySurfaceId(VDP_RD_SURFACE_PRIMARY)) {
+		slotDim = (primary->surfaceWidth & 0xffffu) | ((primary->surfaceHeight & 0xffffu) << 16u);
+	}
+	m_vdpRegisters.fill(0u);
+	m_vdpRegisters[VDP_REG_SRC_SLOT] = VDP_SLOT_PRIMARY;
+	m_vdpRegisters[VDP_REG_LINE_WIDTH] = VDP_Q16_ONE;
+	m_vdpRegisters[VDP_REG_DRAW_SCALE_X] = VDP_Q16_ONE;
+	m_vdpRegisters[VDP_REG_DRAW_SCALE_Y] = VDP_Q16_ONE;
+	m_vdpRegisters[VDP_REG_DRAW_COLOR] = 0xffffffffu;
+	m_vdpRegisters[VDP_REG_BG_COLOR] = 0xff000000u;
+	m_vdpRegisters[VDP_REG_SLOT_INDEX] = VDP_SLOT_PRIMARY;
+	m_vdpRegisters[VDP_REG_SLOT_DIM] = slotDim;
+	for (uint32_t index = 0; index < VDP_REGISTER_COUNT; ++index) {
+		m_memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, valueNumber(static_cast<double>(m_vdpRegisters[index])));
+	}
+}
+
+void VDP::writeVdpRegister(uint32_t index, u32 value) {
+	if (index >= VDP_REGISTER_COUNT) {
+		throw vdpFault("VDP register " + std::to_string(index) + " is out of range.");
+	}
+	switch (index) {
+		case VDP_REG_SRC_SLOT:
+		case VDP_REG_SLOT_INDEX:
+			validateVdpSlotRegister(value);
+			break;
+		case VDP_REG_LINE_WIDTH:
+		case VDP_REG_DRAW_SCALE_X:
+		case VDP_REG_DRAW_SCALE_Y:
+			if (static_cast<i32>(value) <= 0) {
+				throw vdpFault("VDP register " + std::to_string(index) + " requires a positive Q16.16 value.");
+			}
+			break;
+		case VDP_REG_DRAW_LAYER_PRIO:
+			decodeLayerPriority(value);
+			break;
+		case VDP_REG_DRAW_FLAGS:
+			validateDrawFlags(value);
+			break;
+		case VDP_REG_SLOT_DIM:
+			configureSelectedSlotDimension(value);
+			break;
+		default:
+			break;
+	}
+	m_vdpRegisters[index] = value;
+	m_memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, valueNumber(static_cast<double>(value)));
+}
+
+void VDP::onVdpRegisterWrite(uint32_t addr) {
+	const uint32_t index = (addr - IO_VDP_REG0) / IO_WORD_SIZE;
+	const u32 previous = m_vdpRegisters[index];
+	try {
+		writeVdpRegister(index, m_memory.readIoU32(addr));
+	} catch (...) {
+		m_memory.writeIoValue(addr, valueNumber(static_cast<double>(previous)));
+		throw;
+	}
+}
+
+void VDP::validateVdpSlotRegister(u32 slot) const {
+	resolveSurfaceIdForSlot(slot);
+}
+
+void VDP::configureSelectedSlotDimension(u32 word) {
+	const uint32_t width = word & 0xffffu;
+	const uint32_t height = word >> 16u;
+	if (width == 0u || height == 0u) {
+		throw vdpFault("invalid VRAM surface dimensions " + std::to_string(width) + "x" + std::to_string(height) + ".");
+	}
+	configureVramSlotSurface(m_vdpRegisters[VDP_REG_SLOT_INDEX], width, height);
+}
+
+void VDP::validateDrawFlags(u32 flags) const {
+	if ((flags & ~VDP_DRAW_FLAGS_ALLOWED) != 0u) {
+		throw vdpFault("unsupported VDP draw flags " + std::to_string(flags) + ".");
+	}
+}
+
+VDP::LayerPriority VDP::decodeLayerPriority(u32 value) const {
+	if ((value & 0xff000000u) != 0u) {
+		throw vdpFault("VDP layer/priority reserved bits are set (" + std::to_string(value) + ").");
+	}
+	const u32 layer = value & 0xffu;
+	if (layer > 2u) {
+		throw vdpFault("invalid VDP layer " + std::to_string(layer) + ".");
+	}
+	LayerPriority decoded;
+	decoded.layer = static_cast<Layer2D>(layer);
+	decoded.z = static_cast<f32>((value >> 8u) & 0xffffu);
+	return decoded;
+}
+
+f32 VDP::q16ToFloat(u32 value) const {
+	return static_cast<f32>(static_cast<i32>(value)) / 65536.0f;
+}
+
+i32 VDP::q16ToPixel(u32 value) const {
+	const int64_t signedValue = static_cast<i32>(value);
+	if (signedValue >= 0) {
+		return static_cast<i32>(signedValue / 65536);
+	}
+	return static_cast<i32>(-(((-signedValue) + 65535) / 65536));
+}
+
+VDP::FrameBufferColor VDP::unpackArgbColor(u32 value) const {
+	FrameBufferColor color;
+	color.r = static_cast<u8>((value >> 16u) & 0xffu);
+	color.g = static_cast<u8>((value >> 8u) & 0xffu);
+	color.b = static_cast<u8>(value & 0xffu);
+	color.a = static_cast<u8>((value >> 24u) & 0xffu);
+	return color;
+}
+
+u32 VDP::packedLow16(u32 value) const {
+	return value & 0xffffu;
+}
+
+u32 VDP::packedHigh16(u32 value) const {
+	return (value >> 16u) & 0xffffu;
 }
 
 // start hot-path -- VDP status, command ingress, scheduler service, and VRAM row access run on frame-critical paths.
@@ -373,7 +519,7 @@ bool VDP::hasOpenDirectVdpFifoIngress() const {
 }
 
 bool VDP::hasBlockedSubmitPath() const {
-	return hasOpenDirectVdpFifoIngress() || m_dmaSubmitActive || !canAcceptSubmittedFrame();
+	return hasOpenDirectVdpFifoIngress() || m_dmaSubmitActive || m_buildFrame.open || !canAcceptSubmittedFrame();
 }
 
 // disable-next-line single_line_method_pattern -- submit-busy refresh owns the status-bit projection from current VDP ingress state.
@@ -399,61 +545,24 @@ void VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 	}
 	uint32_t cursor = baseAddr;
 	const uint32_t end = baseAddr + static_cast<uint32_t>(byteLength);
-	uint32_t packetIndex = 0u;
+	syncRegisters();
 	beginSubmittedFrame();
 	try {
+		bool ended = false;
 		while (cursor < end) {
-			if (cursor + VDP_STREAM_PACKET_HEADER_WORDS * IO_WORD_SIZE > end) {
-				throw vdpStreamFault("stream ended mid-packet header.");
+			const u32 word = m_memory.readU32(cursor);
+			cursor += IO_WORD_SIZE;
+			if (word == VDP_PKT_END) {
+				if (cursor != end) {
+					throw vdpStreamFault("stream has trailing words after PKT_END.");
+				}
+				ended = true;
+				break;
 			}
-			const u32 cmd = m_memory.readU32(cursor);
-			const u32 argWords = m_memory.readU32(cursor + IO_WORD_SIZE);
-			const u32 payloadWords = m_memory.readU32(cursor + IO_WORD_SIZE * 2u);
-			if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
-				const uint32_t dumpBase = cursor >= (IO_WORD_SIZE * 6u) ? (cursor - IO_WORD_SIZE * 6u) : baseAddr;
-				const uint32_t dumpWords = ((cursor + IO_WORD_SIZE * 6u) <= end) ? 12u : ((end - dumpBase) / IO_WORD_SIZE);
-				throw vdpStreamFault(
-					"submit payload overflow at addr="
-					+ std::to_string(cursor)
-					+ " cmd=" + std::to_string(cmd)
-					+ " argWords=" + std::to_string(argWords)
-					+ " payloadWords=" + std::to_string(payloadWords)
-					+ " dump=[" + dumpStreamWords(m_memory, dumpBase, dumpWords) + "]"
-					+ " (" + std::to_string(payloadWords)
-					+ " > " + std::to_string(VDP_STREAM_PAYLOAD_CAPACITY_WORDS) + ")."
-				);
-			}
-			const u32 packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
-			const u32 packetByteCount = packetWordCount * IO_WORD_SIZE;
-			if (cursor + packetByteCount > end) {
-				const uint32_t dumpBase = cursor >= (IO_WORD_SIZE * 6u) ? (cursor - IO_WORD_SIZE * 6u) : baseAddr;
-				const uint32_t dumpWords = ((cursor + IO_WORD_SIZE * 6u) <= end) ? 12u : ((end - dumpBase) / IO_WORD_SIZE);
-				throw vdpStreamFault(
-					"stream ended mid-packet payload at addr="
-					+ std::to_string(cursor)
-					+ " packet=" + std::to_string(packetIndex)
-					+ " cmd=" + std::to_string(cmd)
-					+ " argWords=" + std::to_string(argWords)
-					+ " payloadWords=" + std::to_string(payloadWords)
-					+ " packetWords=" + std::to_string(packetWordCount)
-					+ " remainingWords=" + std::to_string((end - cursor) / IO_WORD_SIZE)
-					+ " dump=[" + dumpStreamWords(m_memory, dumpBase, dumpWords) + "]"
-				);
-			}
-			syncRegisters();
-			processVdpCommand(
-				*this,
-				m_cpu,
-				m_api,
-				m_memory,
-				cmd,
-				argWords,
-				cursor + VDP_STREAM_PACKET_HEADER_WORDS * IO_WORD_SIZE,
-				cursor + (VDP_STREAM_PACKET_HEADER_WORDS + argWords) * IO_WORD_SIZE,
-				payloadWords
-			);
-			cursor += packetByteCount;
-			packetIndex += 1u;
+			cursor = consumeReplayPacketFromMemory(word, cursor, end);
+		}
+		if (!ended) {
+			throw vdpStreamFault("stream ended without PKT_END.");
 		}
 		sealSubmittedFrame();
 	} catch (...) {
@@ -465,43 +574,24 @@ void VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 
 void VDP::consumeSealedVdpWordStream(u32 wordCount) {
 	u32 cursor = 0u;
+	syncRegisters();
 	beginSubmittedFrame();
 	try {
+		bool ended = false;
 		while (cursor < wordCount) {
-			if (cursor + VDP_STREAM_PACKET_HEADER_WORDS > wordCount) {
-				throw vdpStreamFault("stream ended mid-packet header.");
+			const u32 word = m_vdpFifoStreamWords[static_cast<size_t>(cursor)];
+			cursor += 1u;
+			if (word == VDP_PKT_END) {
+				if (cursor != wordCount) {
+					throw vdpStreamFault("stream has trailing words after PKT_END.");
+				}
+				ended = true;
+				break;
 			}
-			const u32 cmd = m_vdpFifoStreamWords[static_cast<size_t>(cursor)];
-			const u32 argWords = m_vdpFifoStreamWords[static_cast<size_t>(cursor + 1u)];
-			const u32 payloadWords = m_vdpFifoStreamWords[static_cast<size_t>(cursor + 2u)];
-			if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
-				throw vdpStreamFault(
-					"submit payload overflow at word="
-					+ std::to_string(cursor)
-					+ " cmd=" + std::to_string(cmd)
-					+ " argWords=" + std::to_string(argWords)
-					+ " payloadWords=" + std::to_string(payloadWords)
-					+ " (" + std::to_string(payloadWords)
-					+ " > " + std::to_string(VDP_STREAM_PAYLOAD_CAPACITY_WORDS) + ")."
-				);
-			}
-			const u32 packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
-			if (cursor + packetWordCount > wordCount) {
-				throw vdpStreamFault("stream ended mid-packet payload.");
-			}
-			syncRegisters();
-			processVdpBufferedCommand(
-				*this,
-				m_cpu,
-				m_api,
-				m_vdpFifoStreamWords.data(),
-				cmd,
-				argWords,
-				cursor + VDP_STREAM_PACKET_HEADER_WORDS,
-				cursor + VDP_STREAM_PACKET_HEADER_WORDS + argWords,
-				payloadWords
-			);
-			cursor += packetWordCount;
+			cursor = consumeReplayPacketFromWords(word, cursor, wordCount);
+		}
+		if (!ended) {
+			throw vdpStreamFault("stream ended without PKT_END.");
 		}
 		sealSubmittedFrame();
 	} catch (...) {
@@ -522,13 +612,135 @@ void VDP::sealVdpFifoTransfer() {
 	resetIngressState();
 }
 
-void VDP::consumeDirectVdpCommand(u32 cmd) {
-	const VdpPacketSchema& schema = getVdpPacketSchema(cmd);
-	beginSubmittedFrame();
-	try {
+uint32_t VDP::consumeReplayPacketFromMemory(u32 word, uint32_t cursor, uint32_t end) {
+	const u32 kind = word & VDP_PKT_KIND_MASK;
+	switch (kind) {
+		case VDP_PKT_CMD:
+			consumeReplayCommandPacket(word);
+			return cursor;
+		case VDP_PKT_REG1: {
+			const u32 reg = decodeReg1Packet(word);
+			if (cursor + IO_WORD_SIZE > end) {
+				throw vdpStreamFault("stream ended mid-REG1 payload.");
+			}
+			writeVdpRegister(reg, m_memory.readU32(cursor));
+			return cursor + IO_WORD_SIZE;
+		}
+		case VDP_PKT_REGN: {
+			const RegnPacket packet = decodeRegnPacket(word);
+			const uint32_t byteCount = packet.count * IO_WORD_SIZE;
+			if (cursor + byteCount > end) {
+				throw vdpStreamFault("stream ended mid-REGN payload.");
+			}
+			for (uint32_t offset = 0; offset < packet.count; ++offset) {
+				writeVdpRegister(packet.firstRegister + offset, m_memory.readU32(cursor + offset * IO_WORD_SIZE));
+			}
+			return cursor + byteCount;
+		}
+		case 0u:
+			throw vdpStreamFault("invalid zero-kind packet word " + std::to_string(word) + ".");
+		default:
+			throw vdpStreamFault("unknown VDP replay packet kind " + std::to_string(kind) + ".");
+	}
+}
+
+u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
+	const u32 kind = word & VDP_PKT_KIND_MASK;
+	switch (kind) {
+		case VDP_PKT_CMD:
+			consumeReplayCommandPacket(word);
+			return cursor;
+		case VDP_PKT_REG1: {
+			const u32 reg = decodeReg1Packet(word);
+			if (cursor >= wordCount) {
+				throw vdpStreamFault("stream ended mid-REG1 payload.");
+			}
+			writeVdpRegister(reg, m_vdpFifoStreamWords[static_cast<size_t>(cursor)]);
+			return cursor + 1u;
+		}
+		case VDP_PKT_REGN: {
+			const RegnPacket packet = decodeRegnPacket(word);
+			if (cursor + packet.count > wordCount) {
+				throw vdpStreamFault("stream ended mid-REGN payload.");
+			}
+			for (uint32_t offset = 0; offset < packet.count; ++offset) {
+				writeVdpRegister(packet.firstRegister + offset, m_vdpFifoStreamWords[static_cast<size_t>(cursor + offset)]);
+			}
+			return cursor + packet.count;
+		}
+		case 0u:
+			throw vdpStreamFault("invalid zero-kind packet word " + std::to_string(word) + ".");
+		default:
+			throw vdpStreamFault("unknown VDP replay packet kind " + std::to_string(kind) + ".");
+	}
+}
+
+u32 VDP::decodeReg1Packet(u32 word) const {
+	if ((word & VDP_PKT_RESERVED_MASK) != 0u) {
+		throw vdpStreamFault("REG1 reserved bits are set (" + std::to_string(word) + ").");
+	}
+	const u32 reg = word & 0xffffu;
+	if (reg >= VDP_REGISTER_COUNT) {
+		throw vdpStreamFault("REG1 register " + std::to_string(reg) + " is out of range.");
+	}
+	return reg;
+}
+
+VDP::RegnPacket VDP::decodeRegnPacket(u32 word) const {
+	const u32 firstRegister = word & 0xffffu;
+	const u32 count = (word >> 16u) & 0xffu;
+	if (count == 0u || count > VDP_REGISTER_COUNT) {
+		throw vdpStreamFault("REGN count " + std::to_string(count) + " is out of range.");
+	}
+	if (firstRegister >= VDP_REGISTER_COUNT || firstRegister + count > VDP_REGISTER_COUNT) {
+		throw vdpStreamFault("REGN register range " + std::to_string(firstRegister) + "+" + std::to_string(count) + " is out of range.");
+	}
+	return RegnPacket{firstRegister, count};
+}
+
+void VDP::consumeReplayCommandPacket(u32 word) {
+	if ((word & VDP_PKT_RESERVED_MASK) != 0u) {
+		throw vdpStreamFault("CMD reserved bits are set (" + std::to_string(word) + ").");
+	}
+	const u32 command = word & 0xffffu;
+	if (command == VDP_CMD_BEGIN_FRAME || command == VDP_CMD_END_FRAME) {
+		throw vdpStreamFault("BEGIN_FRAME and END_FRAME are not valid in FIFO replay.");
+	}
+	if (command == VDP_CMD_NOP) {
+		return;
+	}
+	executeVdpDrawDoorbell(command);
+}
+
+void VDP::consumeDirectVdpCommand(u32 command) {
+	if (command == VDP_CMD_NOP) {
+		return;
+	}
+	if (command == VDP_CMD_BEGIN_FRAME) {
+		if (m_buildFrame.open) {
+			cancelSubmittedFrame();
+			throw vdpFault("direct VDP frame is already open.");
+		}
 		syncRegisters();
-		processVdpCommand(*this, m_cpu, m_api, m_memory, cmd, schema.argWords, IO_VDP_CMD_ARG0, 0u, 0u);
+		beginSubmittedFrame();
+		refreshSubmitBusyStatus();
+		return;
+	}
+	if (command == VDP_CMD_END_FRAME) {
+		if (!m_buildFrame.open) {
+			rejectSubmitAttempt();
+			throw vdpFault("no direct VDP frame is open.");
+		}
 		sealSubmittedFrame();
+		refreshSubmitBusyStatus();
+		return;
+	}
+	if (!m_buildFrame.open) {
+		rejectSubmitAttempt();
+		throw vdpFault("draw command requires an open direct VDP frame.");
+	}
+	try {
+		executeVdpDrawDoorbell(command);
 	} catch (...) {
 		cancelSubmittedFrame();
 		throw;
@@ -536,8 +748,30 @@ void VDP::consumeDirectVdpCommand(u32 cmd) {
 	refreshSubmitBusyStatus();
 }
 
+void VDP::executeVdpDrawDoorbell(u32 command) {
+	switch (command) {
+		case VDP_CMD_CLEAR:
+			enqueueLatchedClear();
+			break;
+		case VDP_CMD_FILL_RECT:
+			enqueueLatchedFillRect();
+			break;
+		case VDP_CMD_DRAW_LINE:
+			enqueueLatchedDrawLine();
+			break;
+		case VDP_CMD_BLIT:
+			enqueueLatchedBlit();
+			break;
+		case VDP_CMD_COPY_RECT:
+			enqueueLatchedCopyRect();
+			break;
+		default:
+			throw vdpFault("unknown VDP command " + std::to_string(command) + ".");
+	}
+}
+
 void VDP::onVdpFifoWrite() {
-	if (m_dmaSubmitActive || (!hasOpenDirectVdpFifoIngress() && !canAcceptSubmittedFrame())) {
+	if (m_dmaSubmitActive || m_buildFrame.open || (!hasOpenDirectVdpFifoIngress() && !canAcceptSubmittedFrame())) {
 		rejectSubmitAttempt();
 		return;
 	}
@@ -559,14 +793,23 @@ void VDP::onVdpFifoCtrlWrite() {
 
 void VDP::onVdpCommandWrite() {
 	const uint32_t command = m_memory.readIoU32(IO_VDP_CMD);
-	if (command == 0u) {
+	if (command == VDP_CMD_NOP) {
 		return;
 	}
-	if (hasBlockedSubmitPath()) {
+	const bool directFrameCommand = command == VDP_CMD_BEGIN_FRAME || command == VDP_CMD_END_FRAME || m_buildFrame.open;
+	if (!directFrameCommand && hasBlockedSubmitPath()) {
 		rejectSubmitAttempt();
 		return;
 	}
-	acceptSubmitAttempt();
+	if (command == VDP_CMD_BEGIN_FRAME && !m_buildFrame.open && hasBlockedSubmitPath()) {
+		rejectSubmitAttempt();
+		return;
+	}
+	if (command != VDP_CMD_BEGIN_FRAME && command != VDP_CMD_END_FRAME && !m_buildFrame.open) {
+		rejectSubmitAttempt();
+	} else {
+		acceptSubmitAttempt();
+	}
 	consumeDirectVdpCommand(command);
 }
 
@@ -583,6 +826,11 @@ void VDP::onFifoCtrlWriteThunk(void* context, uint32_t, Value) {
 // disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
 void VDP::onCommandWriteThunk(void* context, uint32_t, Value) {
 	static_cast<VDP*>(context)->onVdpCommandWrite();
+}
+
+// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
+void VDP::onRegisterWriteThunk(void* context, uint32_t addr, Value) {
+	static_cast<VDP*>(context)->onVdpRegisterWrite(addr);
 }
 
 void VDP::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
@@ -716,6 +964,156 @@ VDP::FrameBufferColor VDP::packFrameBufferColor(const Color& color) const {
 		frameBufferColorByte(color.b),
 		frameBufferColorByte(color.a),
 	};
+}
+
+void VDP::enqueueLatchedClear() {
+	// Clear stays a barrier command in the existing sorter/executor contract.
+	BlitterCommand command;
+	command.type = BlitterCommandType::Clear;
+	command.seq = nextBlitterSequence();
+	command.renderCost = VDP_RENDER_CLEAR_COST;
+	command.color = unpackArgbColor(m_vdpRegisters[VDP_REG_BG_COLOR]);
+	enqueueBlitterCommand(std::move(command));
+}
+
+void VDP::enqueueLatchedFillRect() {
+	const LayerPriority draw = decodeLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const f32 x0 = q16ToFloat(m_vdpRegisters[VDP_REG_GEOM_X0]);
+	const f32 y0 = q16ToFloat(m_vdpRegisters[VDP_REG_GEOM_Y0]);
+	const f32 x1 = q16ToFloat(m_vdpRegisters[VDP_REG_GEOM_X1]);
+	const f32 y1 = q16ToFloat(m_vdpRegisters[VDP_REG_GEOM_Y1]);
+	const VdpClippedRect clipped = computeClippedRect(x0, y0, x1, y1, m_frameBufferWidth, m_frameBufferHeight);
+	if (clipped.area == 0.0) {
+		return;
+	}
+	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
+	BlitterCommand command;
+	command.type = BlitterCommandType::FillRect;
+	command.seq = nextBlitterSequence();
+	command.renderCost = calculateVisibleRectCost(clipped.width, clipped.height) * calculateAlphaMultiplier(color);
+	command.layer = draw.layer;
+	command.z = draw.z;
+	command.x0 = x0;
+	command.y0 = y0;
+	command.x1 = x1;
+	command.y1 = y1;
+	command.color = color;
+	enqueueBlitterCommand(std::move(command));
+}
+
+void VDP::enqueueLatchedDrawLine() {
+	const LayerPriority draw = decodeLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const f32 thickness = q16ToFloat(m_vdpRegisters[VDP_REG_LINE_WIDTH]);
+	if (thickness <= 0.0f) {
+		throw vdpFault("VDP line width must be positive.");
+	}
+	const f32 x0 = q16ToFloat(m_vdpRegisters[VDP_REG_GEOM_X0]);
+	const f32 y0 = q16ToFloat(m_vdpRegisters[VDP_REG_GEOM_Y0]);
+	const f32 x1 = q16ToFloat(m_vdpRegisters[VDP_REG_GEOM_X1]);
+	const f32 y1 = q16ToFloat(m_vdpRegisters[VDP_REG_GEOM_Y1]);
+	const double span = computeClippedLineSpan(x0, y0, x1, y1, m_frameBufferWidth, m_frameBufferHeight);
+	if (span == 0.0) {
+		return;
+	}
+	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
+	const int thicknessMultiplier = thickness > 1.0f ? 2 : 1;
+	BlitterCommand command;
+	command.type = BlitterCommandType::DrawLine;
+	command.seq = nextBlitterSequence();
+	command.renderCost = blitSpanBucket(span) * thicknessMultiplier * calculateAlphaMultiplier(color);
+	command.layer = draw.layer;
+	command.z = draw.z;
+	command.x0 = x0;
+	command.y0 = y0;
+	command.x1 = x1;
+	command.y1 = y1;
+	command.thickness = thickness;
+	command.color = color;
+	enqueueBlitterCommand(std::move(command));
+}
+
+void VDP::enqueueLatchedBlit() {
+	const LayerPriority draw = decodeLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const u32 flags = m_vdpRegisters[VDP_REG_DRAW_FLAGS];
+	validateDrawFlags(flags);
+	const u32 slot = m_vdpRegisters[VDP_REG_SRC_SLOT];
+	validateVdpSlotRegister(slot);
+	const u32 u = packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]);
+	const u32 v = packedHigh16(m_vdpRegisters[VDP_REG_SRC_UV]);
+	const u32 w = packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]);
+	const u32 h = packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]);
+	if (w == 0u || h == 0u) {
+		throw vdpFault("VDP blit source dimensions must be positive.");
+	}
+	const BlitterSource source = resolveBlitterSource(VdpSlotSource{slot, u, v, w, h});
+	const VdpBlitterSurfaceSize surface = resolveBlitterSurfaceSize(source.surfaceId);
+	if (u + w > surface.width || v + h > surface.height) {
+		throw vdpFault("VDP blit source rectangle exceeds configured slot dimensions.");
+	}
+	const f32 scaleX = q16ToFloat(m_vdpRegisters[VDP_REG_DRAW_SCALE_X]);
+	const f32 scaleY = q16ToFloat(m_vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
+	if (scaleX <= 0.0f || scaleY <= 0.0f) {
+		throw vdpFault("VDP blit scale must be positive.");
+	}
+	const f32 dstX = q16ToFloat(m_vdpRegisters[VDP_REG_DST_X]);
+	const f32 dstY = q16ToFloat(m_vdpRegisters[VDP_REG_DST_Y]);
+	const double dstWidth = static_cast<double>(source.width) * static_cast<double>(scaleX);
+	const double dstHeight = static_cast<double>(source.height) * static_cast<double>(scaleY);
+	const VdpClippedRect clipped = computeClippedRect(dstX, dstY, dstX + dstWidth, dstY + dstHeight, m_frameBufferWidth, m_frameBufferHeight);
+	if (clipped.area == 0.0) {
+		return;
+	}
+	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
+	BlitterCommand command;
+	command.type = BlitterCommandType::Blit;
+	command.seq = nextBlitterSequence();
+	command.renderCost = calculateVisibleRectCost(clipped.width, clipped.height) * calculateAlphaMultiplier(color);
+	command.layer = draw.layer;
+	command.z = draw.z;
+	command.source = source;
+	command.dstX = dstX;
+	command.dstY = dstY;
+	command.scaleX = scaleX;
+	command.scaleY = scaleY;
+	command.flipH = (flags & VDP_DRAW_FLAG_FLIP_H) != 0u;
+	command.flipV = (flags & VDP_DRAW_FLAG_FLIP_V) != 0u;
+	command.color = color;
+	command.parallaxWeight = 0.0f;
+	enqueueBlitterCommand(std::move(command));
+}
+
+void VDP::enqueueLatchedCopyRect() {
+	// Copy-rect stays a barrier command in the existing sorter/executor contract.
+	const LayerPriority draw = decodeLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const i32 srcX = static_cast<i32>(packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]));
+	const i32 srcY = static_cast<i32>(packedHigh16(m_vdpRegisters[VDP_REG_SRC_UV]));
+	const i32 width = static_cast<i32>(packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]));
+	const i32 height = static_cast<i32>(packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]));
+	if (width == 0 || height == 0) {
+		throw vdpFault("VDP copy source dimensions must be positive.");
+	}
+	if (srcX + width > static_cast<i32>(m_frameBufferWidth) || srcY + height > static_cast<i32>(m_frameBufferHeight)) {
+		throw vdpFault("VDP copy source rectangle exceeds framebuffer dimensions.");
+	}
+	const i32 dstX = q16ToPixel(m_vdpRegisters[VDP_REG_DST_X]);
+	const i32 dstY = q16ToPixel(m_vdpRegisters[VDP_REG_DST_Y]);
+	const VdpClippedRect clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, m_frameBufferWidth, m_frameBufferHeight);
+	if (clipped.area == 0.0) {
+		return;
+	}
+	BlitterCommand command;
+	command.type = BlitterCommandType::CopyRect;
+	command.seq = nextBlitterSequence();
+	command.renderCost = calculateVisibleRectCost(clipped.width, clipped.height);
+	command.layer = draw.layer;
+	command.z = draw.z;
+	command.srcX = srcX;
+	command.srcY = srcY;
+	command.width = width;
+	command.height = height;
+	command.dstX = static_cast<f32>(dstX);
+	command.dstY = static_cast<f32>(dstY);
+	enqueueBlitterCommand(std::move(command));
 }
 
 u32 VDP::nextBlitterSequence() {
@@ -1773,9 +2171,7 @@ void VDP::initializeRegisters() {
 	m_memory.writeIoValue(IO_VDP_SLOT_PRIMARY_ATLAS, valueNumber(static_cast<double>(VDP_SLOT_ATLAS_NONE)));
 	m_memory.writeIoValue(IO_VDP_SLOT_SECONDARY_ATLAS, valueNumber(static_cast<double>(VDP_SLOT_ATLAS_NONE)));
 	m_memory.writeIoValue(IO_VDP_CMD, valueNumber(0.0));
-	for (int index = 0; index < IO_VDP_CMD_ARG_COUNT; ++index) {
-		m_memory.writeIoValue(IO_VDP_CMD_ARG0 + static_cast<uint32_t>(index) * IO_WORD_SIZE, valueNumber(0.0));
-	}
+	resetVdpRegisters();
 	m_lastDitherType = dither;
 	m_committedDitherType = dither;
 	m_skyboxFaceSources = {};

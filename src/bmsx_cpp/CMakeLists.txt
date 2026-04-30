@@ -327,7 +327,11 @@ endif()
 
 if(BMSX_BUILD_TESTS)
 	enable_testing()
-	# add_subdirectory(tests)
+	add_executable(bmsx_vdp_ingress_tests
+		tests/vdp_ingress_test.cpp
+	)
+	target_link_libraries(bmsx_vdp_ingress_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_vdp_ingress_tests COMMAND bmsx_vdp_ingress_tests)
 endif()
 
 # =============================================================================

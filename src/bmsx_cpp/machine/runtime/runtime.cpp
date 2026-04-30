@@ -41,7 +41,6 @@ Runtime::Runtime(
 	, m_view(view)
 	, m_api(std::make_unique<Api>(*this))
 	, m_machine(
-		*m_api,
 		soundMaster,
 		microtasks,
 		VdpFrameBufferSize{ static_cast<uint32_t>(options.viewport.x), static_cast<uint32_t>(options.viewport.y) }

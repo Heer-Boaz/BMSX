@@ -43,7 +43,7 @@ struct MachineSaveState {
 
 class Machine {
 public:
-	Machine(Api& api, SoundMaster& soundMaster, MicrotaskQueue& microtasks, VdpFrameBufferSize frameBufferSize);
+	Machine(SoundMaster& soundMaster, MicrotaskQueue& microtasks, VdpFrameBufferSize frameBufferSize);
 
 	Memory& memory() { return m_memory; }
 	const Memory& memory() const { return m_memory; }
