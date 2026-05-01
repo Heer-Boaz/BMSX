@@ -30,6 +30,7 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 import { isLuaCommentContext } from '../../../common/text';
 import { point_in_rect } from '../../../../common/rect';
 import { LuaLexer } from '../../../../lua/syntax/lexer';
+import { buildCanonicalCompletionItems, filterCompletionItems, resolveCompletionWordRange } from './completion_model';
 import { assignRowColumn } from '../../../common/state';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { getActiveCodeTabContext, isActiveLuaCodeTab } from '../../../workbench/ui/code_tab/contexts';
@@ -154,7 +155,6 @@ export class CompletionController {
 	private cachedGlobalCompletionItems: LuaCompletionItem[] = null;
 	private cachedGlobalCompletionVersion = -1;
 	private sharedCompletionItems: LuaCompletionItem[] = null;
-	private sharedCompletionMap: Map<string, LuaCompletionItem> = null;
 	private sharedCompletionVersion = -1;
 	private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } = null;
 	private suppressNextAutoCompletion = false;
@@ -185,7 +185,7 @@ export class CompletionController {
 		if (items.length === 0) {
 			return null;
 		}
-		const filteredItems = this.filterCompletionItems(items, context.prefix);
+		const filteredItems = this.filterCompletionItemsForContext(items, context);
 		return { context, items, filteredItems };
 	}
 
@@ -225,7 +225,7 @@ export class CompletionController {
 		}
 		const preview = this.inlineCompletionPreviewScratch;
 		preview.row = session.context.row;
-		preview.column = session.context.replaceToColumn;
+		preview.column = session.context.replaceFromColumn + prefix.length;
 		preview.suffix = insertion.slice(prefix.length);
 		return preview;
 	}
@@ -440,15 +440,14 @@ export class CompletionController {
 		const row = clamp(cursor.row, 0, lineCount - 1);
 		const line = buffer.getLineContent(row);
 		const column = clamp(cursor.column, 0, line.length);
-		let start = column;
-		while (start > 0 && LuaLexer.isIdentifierPart(line.charAt(start - 1))) start -= 1;
-		const prefix = line.slice(start, column);
-		const replaceFromColumn = start;
-		const replaceToColumn = column;
+		const wordRange = resolveCompletionWordRange(line, column);
+		const prefix = wordRange.prefix;
+		const replaceFromColumn = wordRange.replaceFromColumn;
+		const replaceToColumn = wordRange.replaceToColumn;
 		if (isLuaCommentContext(buffer, row, replaceFromColumn)) {
 			return null;
 		}
-		let probe = start - 1;
+		let probe = replaceFromColumn - 1;
 		while (probe >= 0 && LuaLexer.isWhitespace(line.charAt(probe))) probe -= 1;
 		if (probe >= 0) {
 			const operator = line.charAt(probe);
@@ -508,33 +507,25 @@ export class CompletionController {
 		return expression;
 	}
 
-	private getSharedCompletionEntries(): { list: LuaCompletionItem[]; map: Map<string, LuaCompletionItem> } {
+	private getSharedCompletionEntries(): LuaCompletionItem[] {
 		const globalItems = this.getGlobalCompletionItems();
 		const version = this.cachedGlobalCompletionVersion;
-		if (!this.sharedCompletionItems || !this.sharedCompletionMap || this.sharedCompletionVersion !== version) {
-			const map = new Map<string, LuaCompletionItem>();
-			const register = (item: LuaCompletionItem): void => {
-				if (!map.has(item.sortKey)) {
-					map.set(item.sortKey, item);
-				}
-			};
+		if (!this.sharedCompletionItems || this.sharedCompletionVersion !== version) {
+			const items: LuaCompletionItem[] = [];
 			for (let i = 0; i < KEYWORD_COMPLETION_ITEMS.length; i += 1) {
-				register(KEYWORD_COMPLETION_ITEMS[i]);
+				items.push(KEYWORD_COMPLETION_ITEMS[i]);
 			}
 			for (let i = 0; i < globalItems.length; i += 1) {
-				register(globalItems[i]);
+				items.push(globalItems[i]);
 			}
 			const builtinItems = this.getBuiltinCompletionItems();
 			for (let i = 0; i < builtinItems.length; i += 1) {
-				register(builtinItems[i]);
+				items.push(builtinItems[i]);
 			}
-			const sharedList = Array.from(map.values());
-			sharedList.sort((a, b) => a.label.localeCompare(b.label));
-			this.sharedCompletionItems = sharedList;
-			this.sharedCompletionMap = map;
+			this.sharedCompletionItems = buildCanonicalCompletionItems(items);
 			this.sharedCompletionVersion = version;
 		}
-		return { list: this.sharedCompletionItems!, map: this.sharedCompletionMap! };
+		return this.sharedCompletionItems!;
 	}
 
 	private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
@@ -543,17 +534,12 @@ export class CompletionController {
 				return getApiCompletionData().items.slice();
 			}
 			const merged: LuaCompletionItem[] = [];
-			const seen = new Map<string, LuaCompletionItem>();
 			const appendItems = (items: LuaCompletionItem[]): void => {
 				if (!items || items.length === 0) {
 					return;
 				}
 				for (let i = 0; i < items.length; i += 1) {
-					const item = items[i];
-					if (!seen.has(item.sortKey)) {
-						seen.set(item.sortKey, item);
-						merged.push(item);
-					}
+					merged.push(items[i]);
 				}
 			};
 			appendItems(this.getModuleMemberCompletionItems(context));
@@ -566,23 +552,33 @@ export class CompletionController {
 			});
 			appendItems(runtimeItems);
 			if (merged.length > 0) {
-				return merged;
+				return buildCanonicalCompletionItems(merged);
 			}
 			return [];
 		}
-		const shared = this.getSharedCompletionEntries();
+		const sharedItems = this.getSharedCompletionEntries();
 		const localItems = this.getLocalCompletionItems(context);
 		if (localItems.length === 0) {
-			return shared.list;
+			return sharedItems;
 		}
-		const combined = shared.list.slice();
-		for (let i = 0; i < localItems.length; i += 1) {
-			const item = localItems[i];
-			if (!shared.map.has(item.sortKey)) {
-				combined.push(item);
-			}
+		const combined = localItems.slice();
+		for (let i = 0; i < sharedItems.length; i += 1) {
+			combined.push(sharedItems[i]);
 		}
-		return combined;
+		return buildCanonicalCompletionItems(combined);
+	}
+
+	private getCompletionReplacementText(context: CompletionContext): string {
+		const buffer = this.getBuffer();
+		const row = clamp(context.row, 0, buffer.getLineCount() - 1);
+		const line = buffer.getLineContent(row);
+		const replaceStart = clamp(context.replaceFromColumn, 0, line.length);
+		const replaceEnd = clamp(context.replaceToColumn, replaceStart, line.length);
+		return line.slice(replaceStart, replaceEnd);
+	}
+
+	private filterCompletionItemsForContext(items: LuaCompletionItem[], context: CompletionContext): LuaCompletionItem[] {
+		return filterCompletionItems(items, context.prefix, this.getCompletionReplacementText(context));
 	}
 
 	private getLocalCompletionItems(context: CompletionContext): LuaCompletionItem[] {
@@ -638,7 +634,6 @@ export class CompletionController {
 		this.cachedGlobalCompletionItems = items;
 		this.cachedGlobalCompletionVersion = version;
 		this.sharedCompletionItems = null;
-		this.sharedCompletionMap = null;
 		this.sharedCompletionVersion = -1;
 		return items;
 	}
@@ -924,7 +919,6 @@ export class CompletionController {
 		this.builtinDescriptors = descriptors;
 		this.builtinDescriptorMap.clear();
 		this.sharedCompletionItems = null;
-		this.sharedCompletionMap = null;
 		const registerDescriptor = (descriptor: LuaBuiltinDescriptor): void => {
 			if (!descriptor || typeof descriptor.name !== 'string') return;
 			const normalized = descriptor.name.trim();
@@ -1115,7 +1109,7 @@ export class CompletionController {
 		const cacheKey = prefix;
 		let filtered = session.filterCache.get(cacheKey);
 		if (!filtered) {
-			filtered = this.filterCompletionItems(session.items, prefix);
+			filtered = this.filterCompletionItemsForContext(session.items, session.context);
 			session.filterCache.set(cacheKey, filtered);
 		}
 		if (filtered.length === 0) {
@@ -1128,34 +1122,6 @@ export class CompletionController {
 		session.filteredItems = filtered;
 		if (session.selectionIndex < 0 || session.selectionIndex >= session.filteredItems.length) session.selectionIndex = 0;
 		this.ensureCompletionSelectionVisible(session);
-	}
-
-	private filterCompletionItems(items: LuaCompletionItem[], prefix: string): LuaCompletionItem[] {
-		const lower = prefix;
-		const matches: Array<{ item: LuaCompletionItem; score: number; exact: boolean }> = [];
-		for (let i = 0; i < items.length; i += 1) {
-			const item = items[i];
-			const labelLower = item.label;
-			let score: number = null;
-			let exact = false;
-			if (labelLower.startsWith(lower)) { score = 0; exact = labelLower === lower; }
-			else if (lower.length > 0) {
-				const index = labelLower.indexOf(lower);
-				if (index !== -1) score = index + 10;
-			}
-			if (score === null) continue;
-			matches.push({ item, score, exact });
-		}
-		if (lower.length === 0) return items.slice();
-		if (matches.length === 0) return [];
-		matches.sort((a, b) => {
-			if (a.exact !== b.exact) return a.exact ? -1 : 1;
-			if (a.score !== b.score) return a.score - b.score;
-			return a.item.label.localeCompare(b.item.label);
-		});
-		const filtered: LuaCompletionItem[] = [];
-		for (let i = 0; i < matches.length; i += 1) filtered.push(matches[i].item);
-		return filtered;
 	}
 
 	private moveCompletionSelection(delta: number): void {
