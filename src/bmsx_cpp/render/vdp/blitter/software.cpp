@@ -21,7 +21,49 @@ struct VdpSoftwareRuntime {
 	std::vector<u32> prioritySeq;
 };
 
+struct BlitParallaxTransform {
+	f32 scale = 1.0f;
+	f32 offsetY = 0.0f;
+};
+
 VdpSoftwareRuntime g_vdpSoftwareRuntime{};
+
+f32 smoothstep01(f32 value) {
+	const f32 t = std::clamp(value, 0.0f, 1.0f);
+	return t * t * (3.0f - 2.0f * t);
+}
+
+f32 sign01(f32 value) {
+	if (value > 0.0f) return 1.0f;
+	if (value < 0.0f) return -1.0f;
+	return 0.0f;
+}
+
+BlitParallaxTransform computeBlitParallax(VDP& vdp, f32 parallaxWeight) {
+	const f32 dir = sign01(parallaxWeight);
+	if (dir == 0.0f) {
+		return {};
+	}
+	const auto& rig = vdp.executionParallaxRig();
+	const f32 weight = std::abs(parallaxWeight);
+	const f32 timeSeconds = static_cast<f32>(vdp.executionParallaxClockSeconds());
+	const f32 wobble = std::sin(timeSeconds * 2.2f) * 0.5f
+		+ std::sin(timeSeconds * 1.1f + 1.7f) * 0.5f;
+	BlitParallaxTransform transform;
+	transform.offsetY = (rig.bias_px + wobble * rig.vy) * weight * rig.parallax_strength * dir;
+	const f32 flipWindowSeconds = std::max(rig.flip_window, 0.0001f);
+	const f32 hold = 0.2f * flipWindowSeconds;
+	const f32 flipU = std::clamp((rig.impact_t - hold) / std::max(flipWindowSeconds - hold, 0.0001f), 0.0f, 1.0f);
+	const f32 flipWindow = 1.0f - smoothstep01(flipU);
+	const f32 flip = 1.0f + ((-1.0f - 1.0f) * (flipWindow * rig.flip_strength));
+	transform.offsetY *= flip;
+	const f32 baseScale = 1.0f + (rig.scale - 1.0f) * weight * rig.scale_strength;
+	const f32 impactSign = sign01(rig.impact);
+	const f32 impactMask = std::max(0.0f, dir * impactSign);
+	const f32 pulse = std::exp(-8.0f * rig.impact_t) * std::abs(rig.impact) * weight * impactMask;
+	transform.scale = baseScale + pulse;
+	return transform;
+}
 
 void resizeVdpSoftwareRuntime(u32 width, u32 height) {
 	if (g_vdpSoftwareRuntime.width == width && g_vdpSoftwareRuntime.height == height) {
@@ -74,7 +116,7 @@ void VdpSoftwareBlitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand
 				rasterizeFrameBufferLine(vdp, pixels, command.x0, command.y0, command.x1, command.y1, command.thickness, command.color, command.layer, command.z, command.seq);
 				break;
 			case VDP::BlitterCommandType::Blit:
-				rasterizeFrameBufferBlit(vdp, pixels, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.color, command.layer, command.z, command.seq);
+				rasterizeFrameBufferBlit(vdp, pixels, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.parallaxWeight, command.color, command.layer, command.z, command.seq);
 				break;
 			case VDP::BlitterCommandType::CopyRect:
 				copyFrameBufferRect(vdp, pixels, command.srcX, command.srcY, command.width, command.height, static_cast<i32>(std::round(command.dstX)), static_cast<i32>(std::round(command.dstY)), command.layer, command.z, command.seq);
@@ -97,12 +139,12 @@ void VdpSoftwareBlitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand
 					}
 				}
 				for (const auto& glyph : command.glyphs) {
-					rasterizeFrameBufferBlit(vdp, pixels, glyph, glyph.dstX, glyph.dstY, 1.0f, 1.0f, false, false, command.color, command.layer, command.z, command.seq);
+					rasterizeFrameBufferBlit(vdp, pixels, glyph, glyph.dstX, glyph.dstY, 1.0f, 1.0f, false, false, 0.0f, command.color, command.layer, command.z, command.seq);
 				}
 				break;
 			case VDP::BlitterCommandType::TileRun:
 				for (const auto& tile : command.tiles) {
-					rasterizeFrameBufferBlit(vdp, pixels, tile, tile.dstX, tile.dstY, 1.0f, 1.0f, false, false, BLITTER_WHITE, command.layer, command.z, command.seq);
+					rasterizeFrameBufferBlit(vdp, pixels, tile, tile.dstX, tile.dstY, 1.0f, 1.0f, false, false, 0.0f, BLITTER_WHITE, command.layer, command.z, command.seq);
 				}
 				break;
 		}
@@ -224,14 +266,19 @@ void VdpSoftwareBlitter::rasterizeFrameBufferLine(VDP& vdp, std::vector<u8>& pix
 	}
 }
 
-void VdpSoftwareBlitter::rasterizeFrameBufferBlit(VDP& vdp, std::vector<u8>& pixels, const VDP::BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const VDP::FrameBufferColor& color, Layer2D layer, f32 z, u32 seq) {
+void VdpSoftwareBlitter::rasterizeFrameBufferBlit(VDP& vdp, std::vector<u8>& pixels, const VDP::BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, f32 parallaxWeight, const VDP::FrameBufferColor& color, Layer2D layer, f32 z, u32 seq) {
 	const i32 frameBufferWidth = static_cast<i32>(vdp.frameBufferWidth());
 	const i32 frameBufferHeight = static_cast<i32>(vdp.frameBufferHeight());
 	const VdpSourcePixels sourcePixels = resolveVdpSurfacePixels(vdp, source.surfaceId);
-	const i32 dstW = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.width) * scaleX)));
-	const i32 dstH = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.height) * scaleY)));
-	const i32 dstX = static_cast<i32>(std::round(dstXValue));
-	const i32 dstY = static_cast<i32>(std::round(dstYValue));
+	const f32 baseDstW = static_cast<f32>(source.width) * scaleX;
+	const f32 baseDstH = static_cast<f32>(source.height) * scaleY;
+	const BlitParallaxTransform parallax = computeBlitParallax(vdp, parallaxWeight);
+	const i32 dstW = std::max(1, static_cast<i32>(std::round(baseDstW * parallax.scale)));
+	const i32 dstH = std::max(1, static_cast<i32>(std::round(baseDstH * parallax.scale)));
+	const f32 centerX = dstXValue + baseDstW * 0.5f;
+	const f32 centerY = dstYValue + baseDstH * 0.5f;
+	const i32 dstX = static_cast<i32>(std::round(centerX - static_cast<f32>(dstW) * 0.5f));
+	const i32 dstY = static_cast<i32>(std::round(centerY - static_cast<f32>(dstH) * 0.5f + parallax.offsetY));
 	for (i32 y = 0; y < dstH; ++y) {
 		const i32 targetY = dstY + y;
 		if (targetY < 0 || targetY >= frameBufferHeight) {

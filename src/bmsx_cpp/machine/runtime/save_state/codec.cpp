@@ -241,7 +241,7 @@ RuntimePointLightState decodeRuntimePointLightState(const BinValue& value, const
 	return state;
 }
 
-BinValue encodeSpriteParallaxRig(const SpriteParallaxRig& state) {
+BinValue encodeVdpParallaxRig(const VdpParallaxRig& state) {
 	BinObject object;
 	object["vy"] = state.vy;
 	object["scale"] = state.scale;
@@ -255,18 +255,18 @@ BinValue encodeSpriteParallaxRig(const SpriteParallaxRig& state) {
 	return BinValue(std::move(object));
 }
 
-SpriteParallaxRig decodeSpriteParallaxRig(const BinValue& value, const char* label) {
+VdpParallaxRig decodeVdpParallaxRig(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
-	SpriteParallaxRig state;
-	state.vy = static_cast<f32>(requireNumber(requireField(object, "vy", label), "renderState.spriteParallaxRig.vy"));
-	state.scale = static_cast<f32>(requireNumber(requireField(object, "scale", label), "renderState.spriteParallaxRig.scale"));
-	state.impact = static_cast<f32>(requireNumber(requireField(object, "impact", label), "renderState.spriteParallaxRig.impact"));
-	state.impact_t = static_cast<f32>(requireNumber(requireField(object, "impact_t", label), "renderState.spriteParallaxRig.impact_t"));
-	state.bias_px = static_cast<f32>(requireNumber(requireField(object, "bias_px", label), "renderState.spriteParallaxRig.bias_px"));
-	state.parallax_strength = static_cast<f32>(requireNumber(requireField(object, "parallax_strength", label), "renderState.spriteParallaxRig.parallax_strength"));
-	state.scale_strength = static_cast<f32>(requireNumber(requireField(object, "scale_strength", label), "renderState.spriteParallaxRig.scale_strength"));
-	state.flip_strength = static_cast<f32>(requireNumber(requireField(object, "flip_strength", label), "renderState.spriteParallaxRig.flip_strength"));
-	state.flip_window = static_cast<f32>(requireNumber(requireField(object, "flip_window", label), "renderState.spriteParallaxRig.flip_window"));
+	VdpParallaxRig state;
+	state.vy = static_cast<f32>(requireNumber(requireField(object, "vy", label), "machine.vdp.parallaxRig.vy"));
+	state.scale = static_cast<f32>(requireNumber(requireField(object, "scale", label), "machine.vdp.parallaxRig.scale"));
+	state.impact = static_cast<f32>(requireNumber(requireField(object, "impact", label), "machine.vdp.parallaxRig.impact"));
+	state.impact_t = static_cast<f32>(requireNumber(requireField(object, "impact_t", label), "machine.vdp.parallaxRig.impact_t"));
+	state.bias_px = static_cast<f32>(requireNumber(requireField(object, "bias_px", label), "machine.vdp.parallaxRig.bias_px"));
+	state.parallax_strength = static_cast<f32>(requireNumber(requireField(object, "parallax_strength", label), "machine.vdp.parallaxRig.parallax_strength"));
+	state.scale_strength = static_cast<f32>(requireNumber(requireField(object, "scale_strength", label), "machine.vdp.parallaxRig.scale_strength"));
+	state.flip_strength = static_cast<f32>(requireNumber(requireField(object, "flip_strength", label), "machine.vdp.parallaxRig.flip_strength"));
+	state.flip_window = static_cast<f32>(requireNumber(requireField(object, "flip_window", label), "machine.vdp.parallaxRig.flip_window"));
 	return state;
 }
 
@@ -284,7 +284,6 @@ BinValue encodeRuntimeRenderState(const RuntimeRenderState& state) {
 	object["pointLights"] = encodeVector(state.pointLights, [](const RuntimePointLightState& light) {
 		return encodeRuntimePointLightState(light);
 	});
-	object["spriteParallaxRig"] = encodeSpriteParallaxRig(state.spriteParallaxRig);
 	return BinValue(std::move(object));
 }
 
@@ -307,7 +306,6 @@ RuntimeRenderState decodeRuntimeRenderState(const BinValue& value, const char* l
 		[](const BinValue& entryValue, size_t) {
 			return decodeRuntimePointLightState(entryValue, "renderState.pointLights[]");
 		});
-	state.spriteParallaxRig = decodeSpriteParallaxRig(requireField(object, "spriteParallaxRig", label), "renderState.spriteParallaxRig");
 	return state;
 }
 
@@ -478,6 +476,8 @@ BinValue encodeVdpState(const VdpState& state) {
 		? encodeSkyboxFaceSources(*state.skyboxFaceSources)
 		: BinValue(nullptr);
 	object["ditherType"] = static_cast<i64>(state.ditherType);
+	object["parallaxRig"] = encodeVdpParallaxRig(state.parallaxRig);
+	object["parallaxClockSeconds"] = state.parallaxClockSeconds;
 	return BinValue(std::move(object));
 }
 
@@ -489,6 +489,8 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 		state.skyboxFaceSources = decodeSkyboxFaceSources(skybox, "machine.vdp.skyboxFaceSources");
 	}
 	state.ditherType = requireI32(requireField(object, "ditherType", label), "machine.vdp.ditherType");
+	state.parallaxRig = decodeVdpParallaxRig(requireField(object, "parallaxRig", label), "machine.vdp.parallaxRig");
+	state.parallaxClockSeconds = requireNumber(requireField(object, "parallaxClockSeconds", label), "machine.vdp.parallaxClockSeconds");
 	return state;
 }
 
@@ -521,6 +523,8 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	VdpSaveState state;
 	state.skyboxFaceSources = base.skyboxFaceSources;
 	state.ditherType = base.ditherType;
+	state.parallaxRig = base.parallaxRig;
+	state.parallaxClockSeconds = base.parallaxClockSeconds;
 	state.vramStaging = requireBinary(requireField(object, "vramStaging", label), "machine.vdp.vramStaging");
 	state.surfacePixels = decodeVector<VdpSurfacePixelsState>(
 		requireField(object, "surfacePixels", label),

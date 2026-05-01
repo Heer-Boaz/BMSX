@@ -28,6 +28,18 @@ struct SkyboxFaceSources {
 	VdpSlotSource negz;
 };
 
+struct VdpParallaxRig {
+	f32 vy = 0.0f;
+	f32 scale = 1.0f;
+	f32 impact = 0.0f;
+	f32 impact_t = 0.0f;
+	f32 bias_px = 0.0f;
+	f32 parallax_strength = 1.0f;
+	f32 scale_strength = 1.0f;
+	f32 flip_strength = 0.0f;
+	f32 flip_window = 0.6f;
+};
+
 constexpr size_t SKYBOX_FACE_COUNT = 6;
 
 } // namespace bmsx

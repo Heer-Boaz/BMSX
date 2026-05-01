@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 1;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 2;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
@@ -131,4 +131,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'pixels',
 	'displayFrameBufferPixels',
 	'skyboxFaceSources',
+	'parallaxRig',
+	'parallaxClockSeconds',
 ] as const;

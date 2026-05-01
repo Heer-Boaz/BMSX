@@ -228,10 +228,6 @@ public:
 	void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure = 1.0f);
 	void setParticlesAmbient(i32 mode, f32 factor = 1.0f);
 	void setSpritesAmbient(bool enabled, f32 factor = 1.0f);
-	void setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t,
-								f32 bias_px, f32 parallax_strength,
-								f32 scale_strength, f32 flip_strength,
-								f32 flip_window);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Convenience methods for drawing primitives

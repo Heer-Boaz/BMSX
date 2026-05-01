@@ -114,7 +114,7 @@ function dispatchRuntimeTimer(runtime: Runtime, kind: number, payload: number): 
 		case TIMER_KIND_DEVICE_SERVICE:
 			const renderVdp = runtime.machine.runDeviceService(payload);
 			if (renderVdp !== null) {
-				drainReadyVdpExecution(renderVdp, runtime.frameLoop.currentTimeMs / 1000, runtime.timing.frameDurationMs / 1000);
+				drainReadyVdpExecution(renderVdp);
 			}
 			return;
 		default:

@@ -135,6 +135,8 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"pixels",
 	"displayFrameBufferPixels",
 	"skyboxFaceSources",
+	"parallaxRig",
+	"parallaxClockSeconds",
 };
 
 } // namespace

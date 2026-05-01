@@ -2,7 +2,6 @@
 
 #include "render/shared/hardware/camera.h"
 #include "render/shared/hardware/lighting.h"
-#include "render/shared/queues.h"
 #include <algorithm>
 #include <unordered_map>
 #include <utility>
@@ -69,7 +68,6 @@ RuntimeRenderState captureRuntimeRenderState() {
 				light.range,
 			};
 		});
-	state.spriteParallaxRig = RenderQueues::spriteParallaxRig;
 	return state;
 }
 
@@ -102,22 +100,11 @@ void applyRuntimeRenderState(const RuntimeRenderState& state) {
 			light.range,
 		});
 	}
-	RenderQueues::setSpriteParallaxRig(
-		state.spriteParallaxRig.vy,
-		state.spriteParallaxRig.scale,
-		state.spriteParallaxRig.impact,
-		state.spriteParallaxRig.impact_t,
-		state.spriteParallaxRig.bias_px,
-		state.spriteParallaxRig.parallax_strength,
-		state.spriteParallaxRig.scale_strength,
-		state.spriteParallaxRig.flip_strength,
-		state.spriteParallaxRig.flip_window);
 }
 
 void resetRuntimeRenderState() {
 	clearHardwareCamera();
 	clearHardwareLighting();
-	RenderQueues::setSpriteParallaxRig(0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.6f);
 }
 
 } // namespace bmsx

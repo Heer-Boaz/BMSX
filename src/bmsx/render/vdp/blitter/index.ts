@@ -4,7 +4,7 @@ import { vdpTextureBackend } from '../texture_transfer';
 import { HeadlessVdpBlitterExecutor } from './headless';
 
 type VdpBlitterExecutorLike = {
-	execute(vdp: VDP, commands: readonly VdpBlitterCommand[], timeSeconds: number, deltaSeconds: number): void;
+	execute(vdp: VDP, commands: readonly VdpBlitterCommand[]): void;
 };
 
 let headlessExecutor: HeadlessVdpBlitterExecutor | null = null;
@@ -32,11 +32,11 @@ function getVdpBlitterExecutor(backend: GPUBackend): VdpBlitterExecutorLike {
 	return factory(backend);
 }
 
-export function drainReadyVdpExecution(vdp: VDP, timeSeconds: number, deltaSeconds: number): void {
+export function drainReadyVdpExecution(vdp: VDP): void {
 	const queue = vdp.takeReadyExecutionQueue();
 	if (queue === null) {
 		return;
 	}
-	getVdpBlitterExecutor(vdpTextureBackend()).execute(vdp, queue, timeSeconds, deltaSeconds);
+	getVdpBlitterExecutor(vdpTextureBackend()).execute(vdp, queue);
 	vdp.completeReadyExecution(queue);
 }

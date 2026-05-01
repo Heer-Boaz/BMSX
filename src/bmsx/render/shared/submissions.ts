@@ -16,18 +16,6 @@ export type FlipOptions = {
 	flip_v: boolean;
 };
 
-export type SpriteParallaxRig = {
-	vy: number;
-	scale: number;
-	impact: number;
-	impact_t: number;
-	bias_px: number;
-	parallax_strength: number;
-	scale_strength: number;
-	flip_strength: number;
-	flip_window: number;
-};
-
 export type RenderLayer = 'world' | 'ui' | 'ide';
 
 export function renderLayerTo2dLayer(layer: RenderLayer): Layer2D {

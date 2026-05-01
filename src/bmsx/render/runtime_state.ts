@@ -4,7 +4,6 @@ import type {
 	RuntimePointLightState,
 	RuntimeRenderState,
 } from '../machine/runtime/contracts';
-import { cloneSpriteParallaxRig, resetSpriteParallaxRig, setSpriteParallaxRigValues } from './2d/sprite_parallax_rig';
 import { clearHardwareCamera, resolveActiveCamera3D, setHardwareCamera } from './shared/hardware/camera';
 import {
 	clearHardwareLighting,
@@ -70,7 +69,6 @@ export function captureRuntimeRenderState(): RuntimeRenderState {
 		ambientLights: captureAmbientLights(),
 		directionalLights: captureDirectionalLights(),
 		pointLights: capturePointLights(),
-		spriteParallaxRig: cloneSpriteParallaxRig(),
 	};
 }
 
@@ -108,21 +106,9 @@ export function applyRuntimeRenderState(state: RuntimeRenderState): void {
 			range: light.range,
 		});
 	}
-	setSpriteParallaxRigValues(
-		state.spriteParallaxRig.vy,
-		state.spriteParallaxRig.scale,
-		state.spriteParallaxRig.impact,
-		state.spriteParallaxRig.impact_t,
-		state.spriteParallaxRig.bias_px,
-		state.spriteParallaxRig.parallax_strength,
-		state.spriteParallaxRig.scale_strength,
-		state.spriteParallaxRig.flip_strength,
-		state.spriteParallaxRig.flip_window,
-	);
 }
 
 export function resetRuntimeRenderState(): void {
 	clearHardwareCamera();
 	clearHardwareLighting();
-	resetSpriteParallaxRig();
 }

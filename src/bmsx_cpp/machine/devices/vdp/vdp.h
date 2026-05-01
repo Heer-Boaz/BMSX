@@ -25,6 +25,8 @@ void captureVdpContextState(VDP& vdp);
 struct VdpState {
 	std::optional<SkyboxFaceSources> skyboxFaceSources;
 	i32 ditherType = 0;
+	VdpParallaxRig parallaxRig;
+	f64 parallaxClockSeconds = 0.0;
 };
 
 struct VdpSurfacePixelsState {
@@ -125,6 +127,9 @@ public:
 	void attachImgDecController(ImgDecController& controller);
 	void setSkyboxSources(const SkyboxFaceSources& sources);
 	void clearSkybox();
+	void setParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t, f32 bias_px, f32 parallax_strength, f32 scale_strength, f32 flip_strength, f32 flip_window);
+	const VdpParallaxRig& executionParallaxRig() const;
+	f64 executionParallaxClockSeconds() const;
 	VdpState captureState() const;
 	void restoreState(const VdpState& state);
 	VdpSaveState captureSaveState() const;
@@ -219,6 +224,8 @@ public:
 			i32 ditherType = 0;
 			SkyboxFaceSources skyboxFaceSources;
 			bool hasSkybox = false;
+			VdpParallaxRig parallaxRig;
+			f64 parallaxClockSeconds = 0.0;
 		};
 		struct BuildingFrame {
 			std::vector<BlitterCommand> queue;
@@ -288,6 +295,8 @@ public:
 	bool m_hasSkybox = false;
 	SkyboxFaceSources m_committedSkyboxFaceSources;
 	bool m_committedHasSkybox = false;
+	VdpParallaxRig m_parallaxRig;
+	f64 m_parallaxClockSeconds = 0.0;
 	i32 m_lastDitherType = 0;
 	i32 m_committedDitherType = 0;
 	int64_t m_cpuHz = 1;
@@ -364,6 +373,9 @@ public:
 	void resetVdpRegisters();
 	void writeVdpRegister(uint32_t index, u32 value);
 	void onVdpRegisterWrite(uint32_t addr);
+	void resetParallaxPmu();
+	void setParallaxRigState(const VdpParallaxRig& rig);
+	void advanceParallaxClock(int cycles);
 	void validateVdpSlotRegister(u32 slot) const;
 	void configureSelectedSlotDimension(u32 word);
 	struct LayerPriority {

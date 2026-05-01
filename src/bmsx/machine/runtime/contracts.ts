@@ -6,7 +6,6 @@ import type { LuaEntrySnapshot } from '../firmware/js_bridge';
 import { RuntimeStorageState } from '../firmware/cart_storage';
 import type { FrameSchedulerStateSnapshot } from '../scheduler/frame';
 import type { CpuRuntimeState } from '../cpu/cpu';
-import type { SpriteParallaxRig } from '../../render/shared/submissions';
 
 export type { LuaEntrySnapshot };
 
@@ -156,7 +155,6 @@ export type RuntimeRenderState = {
 	ambientLights: RuntimeAmbientLightState[];
 	directionalLights: RuntimeDirectionalLightState[];
 	pointLights: RuntimePointLightState[];
-	spriteParallaxRig: SpriteParallaxRig;
 };
 
 export type RuntimeMachineState = {

@@ -14,7 +14,7 @@ import { Runtime } from '../../runtime/runtime';
 import { applyActiveMachineTiming } from '../../runtime/timing/config';
 import { setHardwareCamera } from '../../../render/shared/hardware/camera';
 import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../../../render/shared/hardware/lighting';
-import { setSpriteParallaxRig, submitMesh, submit_particle } from '../../../render/shared/queues';
+import { submitMesh, submit_particle } from '../../../render/shared/queues';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../builtin_descriptors';
 import { createLuaTable, type LuaTable } from '../../../lua/value';
 import { BmsxColors } from '../../devices/vdp/vdp';
@@ -252,7 +252,7 @@ export class Api {
 	}
 
 	public set_sprite_parallax_rig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
-		setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
+		this.runtime.machine.vdp.setParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 	}
 
 	public taskgate(name: string): GateGroup {

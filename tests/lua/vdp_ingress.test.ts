@@ -147,6 +147,48 @@ test('VDP2D BLIT snapshots DRAW_CTRL flip and parallax immutably', () => {
 	assert.equal(command.parallaxWeight, -1);
 });
 
+test('VDP PMU parallax rig and clock snapshot at frame seal', () => {
+	const { memory, vdp } = createVdp();
+
+	vdp.setTiming(1000, 1000, 0);
+	vdp.setParallaxRig(2, 1.5, 0.25, 0.75, 3, 0.8, 1.2, 0.4, 0.7);
+	vdp.accrueCycles(250, 250);
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_REG_SRC_SLOT, VDP_SLOT_PRIMARY);
+	memory.writeValue(IO_VDP_REG_SRC_UV, 0);
+	memory.writeValue(IO_VDP_REG_SRC_WH, 4 | (4 << 16));
+	memory.writeValue(IO_VDP_REG_DRAW_LAYER_PRIO, 9 << 8);
+	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x00008000);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+
+	vdp.setParallaxRig(-5, 2, 1, 1, 8, 2, 2, 2, 1.5);
+	vdp.accrueCycles(500, 750);
+
+	const workUnits = vdp.getPendingRenderWorkUnits();
+	assert.ok(workUnits > 0);
+	vdp.advanceWork(workUnits);
+	const queue = vdp.takeReadyExecutionQueue();
+	assert.ok(queue);
+	const command = queue[0];
+	assert.equal(command.opcode, 'blit');
+	assert.equal(command.parallaxWeight, 0.5);
+	const rig = vdp.executionParallaxRig;
+	assert.equal(rig.vy, 2);
+	assert.equal(rig.scale, 1.5);
+	assert.equal(rig.impact, 0.25);
+	assert.equal(rig.impact_t, 0.75);
+	assert.equal(rig.bias_px, 3);
+	assert.equal(rig.parallax_strength, 0.8);
+	assert.equal(rig.scale_strength, 1.2);
+	assert.equal(rig.flip_strength, 0.4);
+	assert.equal(rig.flip_window, 0.7);
+	assert.equal(vdp.executionParallaxClockSeconds, 0.25);
+	vdp.completeReadyExecution(queue);
+});
+
 test('VDP2D FIFO replays registers, commands, and PKT_END frame sealing', () => {
 	const { memory, vdp } = createVdp();
 

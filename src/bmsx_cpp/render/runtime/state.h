@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/shared/submissions.h"
+#include "core/primitives.h"
 #include <array>
 #include <optional>
 #include <string>
@@ -40,7 +40,6 @@ struct RuntimeRenderState {
 	std::vector<RuntimeAmbientLightState> ambientLights;
 	std::vector<RuntimeDirectionalLightState> directionalLights;
 	std::vector<RuntimePointLightState> pointLights;
-	SpriteParallaxRig spriteParallaxRig{};
 };
 
 RuntimeRenderState captureRuntimeRenderState();

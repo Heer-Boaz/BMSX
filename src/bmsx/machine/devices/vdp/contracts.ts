@@ -23,6 +23,18 @@ export type SkyboxFaceSources = {
 
 export const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const satisfies readonly (keyof SkyboxFaceSources)[];
 
+export type VdpParallaxRig = {
+	vy: number;
+	scale: number;
+	impact: number;
+	impact_t: number;
+	bias_px: number;
+	parallax_strength: number;
+	scale_strength: number;
+	flip_strength: number;
+	flip_window: number;
+};
+
 export type VdpFrameBufferSize = {
 	width: number;
 	height: number;

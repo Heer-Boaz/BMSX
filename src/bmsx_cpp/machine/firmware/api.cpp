@@ -499,9 +499,8 @@ void Api::set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t,
 									f32 bias_px, f32 parallax_strength,
 									f32 scale_strength, f32 flip_strength,
 									f32 flip_window) {
-	RenderQueues::setSpriteParallaxRig(
-		vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength,
-		flip_strength, flip_window);
+	m_runtime.machine().vdp().setParallaxRig(
+		vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 }
 
 void Api::reboot() {

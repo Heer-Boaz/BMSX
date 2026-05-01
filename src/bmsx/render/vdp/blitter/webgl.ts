@@ -26,7 +26,6 @@ import {
 	type WebGLInstancedFloatAttribute,
 	type WebGLSpriteQuadUniforms,
 } from '../../backend/webgl/instanced_buffers';
-import { spriteParallaxRig } from '../../2d/sprite_parallax_rig';
 import fragmentShaderCode from '../shaders/vdp_2d.frag.glsl';
 import vertexShaderCode from '../shaders/vdp_2d.vert.glsl';
 import { vdpRenderFrameBufferTexture } from '../framebuffer';
@@ -168,21 +167,22 @@ function compareByPriority(a: VdpWebGLBlitterCommand, b: VdpWebGLBlitterCommand)
 	return a.seq - b.seq;
 }
 
-function bindPassState(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, pass: PassEncoder, vdp: VDP, timeSeconds: number, deltaSeconds: number): void {
+function bindPassState(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, pass: PassEncoder, vdp: VDP): void {
 	const gl = backend.gl as WebGL2RenderingContext;
+	const parallaxRig = vdp.executionParallaxRig;
 	backend.setGraphicsPipeline(pass, state.pipeline);
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	updateAndBindFrameUniforms(backend, {
 		offscreen: { x: vdp.frameBufferWidth, y: vdp.frameBufferHeight },
 		logical: { x: vdp.frameBufferWidth, y: vdp.frameBufferHeight },
-		time: timeSeconds,
-		delta: deltaSeconds,
+		time: vdp.executionParallaxClockSeconds,
+		delta: 0,
 	});
 	gl.uniform1f(state.uniforms.scale, 1);
 	state.drawTargetHeight = vdp.frameBufferHeight;
-	gl.uniform4f(state.uniforms.parallaxRig, spriteParallaxRig.vy, spriteParallaxRig.scale, spriteParallaxRig.impact, spriteParallaxRig.impact_t);
-	gl.uniform4f(state.uniforms.parallaxRig2, spriteParallaxRig.bias_px, spriteParallaxRig.parallax_strength, spriteParallaxRig.scale_strength, spriteParallaxRig.flip_strength);
-	gl.uniform1f(state.uniforms.parallaxFlipWindow, spriteParallaxRig.flip_window);
+	gl.uniform4f(state.uniforms.parallaxRig, parallaxRig.vy, parallaxRig.scale, parallaxRig.impact, parallaxRig.impact_t);
+	gl.uniform4f(state.uniforms.parallaxRig2, parallaxRig.bias_px, parallaxRig.parallax_strength, parallaxRig.scale_strength, parallaxRig.flip_strength);
+	gl.uniform1f(state.uniforms.parallaxFlipWindow, parallaxRig.flip_window);
 	backend.setViewport({ x: 0, y: 0, w: vdp.frameBufferWidth, h: vdp.frameBufferHeight });
 	backend.setCullEnabled(false);
 	backend.setDepthTestEnabled(true);
@@ -398,7 +398,7 @@ function getPriorityDepth(priorityDepthBySeq: ReadonlyMap<number, number>, seq: 
 	return priorityDepth;
 }
 
-function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, commands: readonly VdpWebGLBlitterCommand[], start: number, end: number, timeSeconds: number, deltaSeconds: number): void {
+function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, commands: readonly VdpWebGLBlitterCommand[], start: number, end: number): void {
 	if (start >= end) {
 		return;
 	}
@@ -422,7 +422,7 @@ function drawSortedSegment(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 		color: { tex: frameBufferTexture },
 		depth: { tex: priorityDepthTexture },
 	});
-	bindPassState(backend, state, pass, vdp, timeSeconds, deltaSeconds);
+	bindPassState(backend, state, pass, vdp);
 	let boundMode: DrawMode | null = null;
 	let batchCount = 0;
 	for (let i = 0; i < sorted.length; i += 1) {
@@ -515,7 +515,7 @@ function clearFrameBuffer(backend: WebGLBackend, priorityDepthTexture: WebGLText
 	backend.endRenderPass(pass);
 }
 
-function copyFrameBufferRect(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, command: BlitterCopyRectCommand, timeSeconds: number, deltaSeconds: number): void {
+function copyFrameBufferRect(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitterRuntime, priorityDepthTexture: WebGLTexture, priorityDepthBySeq: ReadonlyMap<number, number>, command: BlitterCopyRectCommand): void {
 	const frameBufferTexture = vdpRenderFrameBufferTexture() as WebGLTexture;
 	const copySnapshotTexture = prepareCopySnapshotTexture(backend, state, vdp.frameBufferWidth, vdp.frameBufferHeight);
 	backend.copyTextureRegion(frameBufferTexture, copySnapshotTexture, command.srcX, command.srcY, command.srcX, command.srcY, command.width, command.height);
@@ -523,7 +523,7 @@ function copyFrameBufferRect(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBli
 		color: { tex: frameBufferTexture },
 		depth: { tex: priorityDepthTexture },
 	});
-	bindPassState(backend, state, pass, vdp, timeSeconds, deltaSeconds);
+	bindPassState(backend, state, pass, vdp);
 	bindVdpTexture(backend, TEXTURE_UNIT_TEXTPAGE_PRIMARY, copySnapshotTexture);
 	backend.setDepthFunc(backend.gl.ALWAYS);
 	backend.setBlendEnabled(false);
@@ -579,7 +579,7 @@ export class WebGLVdpBlitterExecutor {
 		this.runtime = createRuntime(backend);
 	}
 
-	public execute(vdp: VDP, commands: readonly VdpWebGLBlitterCommand[], timeSeconds: number, deltaSeconds: number): void {
+	public execute(vdp: VDP, commands: readonly VdpWebGLBlitterCommand[]): void {
 		if (commands.length === 0) {
 			return;
 		}
@@ -595,7 +595,7 @@ export class WebGLVdpBlitterExecutor {
 		for (let i = 0; i < commands.length; i += 1) {
 			const command = commands[i];
 			if (command.opcode === 'clear') {
-				drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, i, timeSeconds, deltaSeconds);
+				drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, i);
 				clearFrameBuffer(this.backend, priorityDepthTexture, command);
 				segmentStart = i + 1;
 				continue;
@@ -603,11 +603,11 @@ export class WebGLVdpBlitterExecutor {
 			if (command.opcode !== 'copy_rect') {
 				continue;
 			}
-			drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, i, timeSeconds, deltaSeconds);
-			copyFrameBufferRect(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, command, timeSeconds, deltaSeconds);
+			drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, i);
+			copyFrameBufferRect(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, command);
 			segmentStart = i + 1;
 		}
-		drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, commands.length, timeSeconds, deltaSeconds);
+		drawSortedSegment(vdp, this.backend, state, priorityDepthTexture, priorityDepthBySeq, commands, segmentStart, commands.length);
 	}
 }
 

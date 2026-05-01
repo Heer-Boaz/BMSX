@@ -2,6 +2,7 @@ import type { color } from '../../../common/color';
 import {
 	type Layer2D,
 	type SkyboxFaceSources,
+	type VdpParallaxRig,
 	type VdpFrameBufferSize,
 	type VdpSlotSource,
 	type VdpVramSurface,
@@ -85,6 +86,8 @@ import { syncVdpSlotTextures } from '../../../render/vdp/slot_textures';
 export type VdpState = {
 	skyboxFaceSources: SkyboxFaceSources | null;
 	ditherType: number;
+	parallaxRig: VdpParallaxRig;
+	parallaxClockSeconds: number;
 };
 
 export type VdpSurfacePixelsState = {
@@ -108,6 +111,8 @@ type VdpSubmittedFrameState = {
 	ditherType: number;
 	hasSkybox: boolean;
 	skyboxFaceSources: SkyboxFaceSources;
+	parallaxRig: VdpParallaxRig;
+	parallaxClockSeconds: number;
 };
 
 type VdpBuildingFrameState = {
@@ -690,6 +695,58 @@ function createSkyboxFaceSources(): SkyboxFaceSources {
 	};
 }
 
+function createDefaultParallaxRig(): VdpParallaxRig {
+	return {
+		vy: 0,
+		scale: 1,
+		impact: 0,
+		impact_t: 0,
+		bias_px: 0,
+		parallax_strength: 1,
+		scale_strength: 1,
+		flip_strength: 0,
+		flip_window: 0.6,
+	};
+}
+
+function cloneParallaxRig(source: VdpParallaxRig): VdpParallaxRig {
+	return {
+		vy: source.vy,
+		scale: source.scale,
+		impact: source.impact,
+		impact_t: source.impact_t,
+		bias_px: source.bias_px,
+		parallax_strength: source.parallax_strength,
+		scale_strength: source.scale_strength,
+		flip_strength: source.flip_strength,
+		flip_window: source.flip_window,
+	};
+}
+
+function copyParallaxRig(target: VdpParallaxRig, source: VdpParallaxRig): void {
+	target.vy = source.vy;
+	target.scale = source.scale;
+	target.impact = source.impact;
+	target.impact_t = source.impact_t;
+	target.bias_px = source.bias_px;
+	target.parallax_strength = source.parallax_strength;
+	target.scale_strength = source.scale_strength;
+	target.flip_strength = source.flip_strength;
+	target.flip_window = source.flip_window;
+}
+
+function resetParallaxRig(target: VdpParallaxRig): void {
+	target.vy = 0;
+	target.scale = 1;
+	target.impact = 0;
+	target.impact_t = 0;
+	target.bias_px = 0;
+	target.parallax_strength = 1;
+	target.scale_strength = 1;
+	target.flip_strength = 0;
+	target.flip_window = 0.6;
+}
+
 function copyVdpSlotSource(target: VdpSlotSource, source: VdpSlotSource): void {
 	target.slot = source.slot;
 	target.u = source.u;
@@ -723,6 +780,8 @@ export class VDP implements VramWriteSink {
 	private hasSkybox = false;
 	private readonly committedSkyboxFaceSources = createSkyboxFaceSources();
 	private committedHasSkybox = false;
+	private readonly parallaxRig = createDefaultParallaxRig();
+	private parallaxClockSeconds = 0;
 	private lastDitherType = 0;
 	private committedDitherType = 0;
 	private _frameBufferWidth = 0;
@@ -746,6 +805,8 @@ export class VDP implements VramWriteSink {
 		ditherType: 0,
 		hasSkybox: false,
 		skyboxFaceSources: createSkyboxFaceSources(),
+		parallaxRig: createDefaultParallaxRig(),
+		parallaxClockSeconds: 0,
 	};
 	private readonly pendingFrame: VdpSubmittedFrameState = {
 		queue: [],
@@ -757,6 +818,8 @@ export class VDP implements VramWriteSink {
 		ditherType: 0,
 		hasSkybox: false,
 		skyboxFaceSources: createSkyboxFaceSources(),
+		parallaxRig: createDefaultParallaxRig(),
+		parallaxClockSeconds: 0,
 	};
 	private readonly glyphBufferPool: VdpGlyphRunGlyph[][] = [];
 	private readonly tileBufferPool: VdpTileRunBlit[][] = [];
@@ -1346,6 +1409,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public accrueCycles(cycles: number, nowCycles: number): void {
+		this.advanceParallaxClock(cycles);
 		if (!this.hasPendingRenderWork() || cycles <= 0) {
 			return;
 		}
@@ -1359,6 +1423,17 @@ export class VDP implements VramWriteSink {
 			this.availableWorkUnits += Number(granted);
 		}
 		this.scheduleNextService(nowCycles);
+	}
+
+	private advanceParallaxClock(cycles: number): void {
+		if (cycles <= 0) {
+			return;
+		}
+		const cpuHz = Number(this.cpuHz);
+		if (cpuHz <= 0 || !Number.isFinite(cpuHz)) {
+			throw vdpFault('VDP PMU clock requires a positive CPU frequency.');
+		}
+		this.parallaxClockSeconds += cycles / cpuHz;
 	}
 
 	public onService(nowCycles: number): void {
@@ -1630,6 +1705,8 @@ export class VDP implements VramWriteSink {
 		this.pendingFrame.workRemaining = 0;
 		this.pendingFrame.ditherType = 0;
 		this.pendingFrame.hasSkybox = false;
+		resetParallaxRig(this.pendingFrame.parallaxRig);
+		this.pendingFrame.parallaxClockSeconds = 0;
 	}
 
 	private enqueueBlitterCommand(command: VdpBlitterCommand): void {
@@ -1711,6 +1788,8 @@ export class VDP implements VramWriteSink {
 		frame.workRemaining = frameCost;
 		frame.ditherType = this.lastDitherType;
 		frame.hasSkybox = this.hasSkybox;
+		copyParallaxRig(frame.parallaxRig, this.parallaxRig);
+		frame.parallaxClockSeconds = this.parallaxClockSeconds;
 		if (this.hasSkybox) {
 			copySkyboxFaceSources(frame.skyboxFaceSources, this.skyboxFaceSources);
 		}
@@ -1753,6 +1832,8 @@ export class VDP implements VramWriteSink {
 		activeFrame.workRemaining = pendingFrame.cost;
 		activeFrame.ditherType = pendingFrame.ditherType;
 		activeFrame.hasSkybox = pendingFrame.hasSkybox;
+		copyParallaxRig(activeFrame.parallaxRig, pendingFrame.parallaxRig);
+		activeFrame.parallaxClockSeconds = pendingFrame.parallaxClockSeconds;
 		if (pendingFrame.hasSkybox) {
 			copySkyboxFaceSources(activeFrame.skyboxFaceSources, pendingFrame.skyboxFaceSources);
 		}
@@ -1763,6 +1844,8 @@ export class VDP implements VramWriteSink {
 		pendingFrame.workRemaining = 0;
 		pendingFrame.ditherType = 0;
 		pendingFrame.hasSkybox = false;
+		resetParallaxRig(pendingFrame.parallaxRig);
+		pendingFrame.parallaxClockSeconds = 0;
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
@@ -1838,6 +1921,8 @@ export class VDP implements VramWriteSink {
 		this.activeFrame.workRemaining = 0;
 		this.activeFrame.ditherType = 0;
 		this.activeFrame.hasSkybox = false;
+		resetParallaxRig(this.activeFrame.parallaxRig);
+		this.activeFrame.parallaxClockSeconds = 0;
 	}
 
 	private commitActiveVisualState(): void {
@@ -2419,6 +2504,7 @@ export class VDP implements VramWriteSink {
 		this.memory.writeIoValue(IO_VDP_SLOT_SECONDARY_ATLAS, VDP_SLOT_ATLAS_NONE);
 		this.memory.writeIoValue(IO_VDP_CMD, 0);
 		this.resetVdpRegisters();
+		this.resetParallaxPmu();
 		this.lastDitherType = dither;
 		this.committedDitherType = dither;
 		this.hasSkybox = false;
@@ -2444,6 +2530,8 @@ export class VDP implements VramWriteSink {
 		return {
 			skyboxFaceSources: this.hasSkybox ? this.skyboxFaceSources : null,
 			ditherType: this.lastDitherType,
+			parallaxRig: cloneParallaxRig(this.parallaxRig),
+			parallaxClockSeconds: this.parallaxClockSeconds,
 		};
 	}
 
@@ -2464,6 +2552,11 @@ export class VDP implements VramWriteSink {
 			this.setSkyboxSources(state.skyboxFaceSources);
 		}
 		this.setDitherType(state.ditherType);
+		this.setParallaxRigState(state.parallaxRig);
+		if (!Number.isFinite(state.parallaxClockSeconds) || state.parallaxClockSeconds < 0) {
+			throw vdpFault(`invalid VDP PMU parallax clock ${state.parallaxClockSeconds}.`);
+		}
+		this.parallaxClockSeconds = state.parallaxClockSeconds;
 		this.syncAtlasSlotRegisters();
 		this.commitLiveVisualState();
 	}
@@ -2554,6 +2647,57 @@ export class VDP implements VramWriteSink {
 
 	public clearSkybox(): void {
 		this.hasSkybox = false;
+	}
+
+	private resetParallaxPmu(): void {
+		resetParallaxRig(this.parallaxRig);
+		this.parallaxClockSeconds = 0;
+	}
+
+	private setParallaxRigState(rig: VdpParallaxRig): void {
+		if (
+			!Number.isFinite(rig.vy)
+			|| !Number.isFinite(rig.scale)
+			|| !Number.isFinite(rig.impact)
+			|| !Number.isFinite(rig.impact_t)
+			|| !Number.isFinite(rig.bias_px)
+			|| !Number.isFinite(rig.parallax_strength)
+			|| !Number.isFinite(rig.scale_strength)
+			|| !Number.isFinite(rig.flip_strength)
+			|| !Number.isFinite(rig.flip_window)
+			|| rig.flip_window <= 0
+		) {
+			throw vdpFault('VDP PMU parallax rig requires finite values and flip_window > 0.');
+		}
+		copyParallaxRig(this.parallaxRig, rig);
+	}
+
+	public setParallaxRig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
+		this.setParallaxRigState({
+			vy,
+			scale,
+			impact,
+			impact_t,
+			bias_px,
+			parallax_strength,
+			scale_strength,
+			flip_strength,
+			flip_window,
+		});
+	}
+
+	public get executionParallaxRig(): Readonly<VdpParallaxRig> {
+		if (!this.execution.pending) {
+			throw vdpFault('no active VDP execution parallax rig.');
+		}
+		return this.activeFrame.parallaxRig;
+	}
+
+	public get executionParallaxClockSeconds(): number {
+		if (!this.execution.pending) {
+			throw vdpFault('no active VDP execution parallax clock.');
+		}
+		return this.activeFrame.parallaxClockSeconds;
 	}
 
 	public registerVramSurfaces(surfaces: readonly VdpVramSurface[]): void {

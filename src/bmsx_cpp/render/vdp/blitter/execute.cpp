@@ -6,12 +6,12 @@
 namespace bmsx {
 namespace {
 
-void executeVdpBlitterQueue(VDP& vdp, const std::vector<VDP::BlitterCommand>& queue, f64 timeSeconds) {
+void executeVdpBlitterQueue(VDP& vdp, const std::vector<VDP::BlitterCommand>& queue) {
 	if (queue.empty()) {
 		return;
 	}
 #if BMSX_ENABLE_GLES2
-	if (VdpGles2Blitter::execute(vdp, queue, timeSeconds)) {
+	if (VdpGles2Blitter::execute(vdp, queue)) {
 		return;
 	}
 #endif
@@ -20,12 +20,12 @@ void executeVdpBlitterQueue(VDP& vdp, const std::vector<VDP::BlitterCommand>& qu
 
 } // namespace
 
-void drainReadyVdpExecution(VDP& vdp, f64 timeSeconds) {
+void drainReadyVdpExecution(VDP& vdp) {
 	const auto* queue = vdp.takeReadyExecutionQueue();
 	if (queue == nullptr) {
 		return;
 	}
-	executeVdpBlitterQueue(vdp, *queue, timeSeconds);
+	executeVdpBlitterQueue(vdp, *queue);
 	vdp.completeReadyExecution(queue);
 }
 

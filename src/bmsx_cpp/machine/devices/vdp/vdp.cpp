@@ -849,6 +849,7 @@ void VDP::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
 }
 
 void VDP::accrueCycles(int cycles, int64_t nowCycles) {
+	advanceParallaxClock(cycles);
 	if (!hasPendingRenderWork() || cycles <= 0) {
 		return;
 	}
@@ -861,6 +862,16 @@ void VDP::accrueCycles(int cycles, int64_t nowCycles) {
 	}
 	scheduleNextService(nowCycles);
 	refreshSubmitBusyStatus();
+}
+
+void VDP::advanceParallaxClock(int cycles) {
+	if (cycles <= 0) {
+		return;
+	}
+	if (m_cpuHz <= 0) {
+		throw vdpFault("VDP PMU clock requires a positive CPU frequency.");
+	}
+	m_parallaxClockSeconds += static_cast<f64>(cycles) / static_cast<f64>(m_cpuHz);
 }
 
 void VDP::onService(int64_t nowCycles) {
@@ -1166,6 +1177,8 @@ void VDP::resetQueuedFrameState() {
 	m_pendingFrame.ditherType = 0;
 	m_pendingFrame.skyboxFaceSources = {};
 	m_pendingFrame.hasSkybox = false;
+	m_pendingFrame.parallaxRig = {};
+	m_pendingFrame.parallaxClockSeconds = 0.0;
 }
 
 void VDP::enqueueBlitterCommand(BlitterCommand&& command) {
@@ -1236,6 +1249,8 @@ void VDP::assignBuildToSlot(bool active) {
 	frame.ditherType = m_lastDitherType;
 	frame.skyboxFaceSources = m_skyboxFaceSources;
 	frame.hasSkybox = m_hasSkybox;
+	frame.parallaxRig = m_parallaxRig;
+	frame.parallaxClockSeconds = m_parallaxClockSeconds;
 	m_buildFrame.cost = 0;
 	m_buildFrame.open = false;
 	scheduleNextService(m_scheduler.currentNowCycles());
@@ -1273,6 +1288,8 @@ void VDP::promotePendingFrame() {
 	activeFrame.ditherType = pendingFrame.ditherType;
 	activeFrame.skyboxFaceSources = pendingFrame.skyboxFaceSources;
 	activeFrame.hasSkybox = pendingFrame.hasSkybox;
+	activeFrame.parallaxRig = pendingFrame.parallaxRig;
+	activeFrame.parallaxClockSeconds = pendingFrame.parallaxClockSeconds;
 	pendingFrame.occupied = false;
 	pendingFrame.hasCommands = false;
 	pendingFrame.ready = false;
@@ -1281,6 +1298,8 @@ void VDP::promotePendingFrame() {
 	pendingFrame.ditherType = 0;
 	pendingFrame.skyboxFaceSources = {};
 	pendingFrame.hasSkybox = false;
+	pendingFrame.parallaxRig = {};
+	pendingFrame.parallaxClockSeconds = 0.0;
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 }
@@ -1342,6 +1361,8 @@ void VDP::clearActiveFrame() {
 	m_activeFrame.ditherType = 0;
 	m_activeFrame.skyboxFaceSources = {};
 	m_activeFrame.hasSkybox = false;
+	m_activeFrame.parallaxRig = {};
+	m_activeFrame.parallaxClockSeconds = 0.0;
 }
 
 const std::vector<VDP::BlitterCommand>* VDP::takeReadyExecutionQueue() {
@@ -2178,6 +2199,7 @@ void VDP::initializeRegisters() {
 	m_memory.writeIoValue(IO_VDP_SLOT_SECONDARY_ATLAS, valueNumber(static_cast<double>(VDP_SLOT_ATLAS_NONE)));
 	m_memory.writeIoValue(IO_VDP_CMD, valueNumber(0.0));
 	resetVdpRegisters();
+	resetParallaxPmu();
 	m_lastDitherType = dither;
 	m_committedDitherType = dither;
 	m_skyboxFaceSources = {};
@@ -2259,12 +2281,63 @@ void VDP::clearSkybox() {
 	m_hasSkybox = false;
 }
 
+void VDP::resetParallaxPmu() {
+	m_parallaxRig = {};
+	m_parallaxClockSeconds = 0.0;
+}
+
+void VDP::setParallaxRigState(const VdpParallaxRig& rig) {
+	if (!std::isfinite(rig.vy)
+		|| !std::isfinite(rig.scale)
+		|| !std::isfinite(rig.impact)
+		|| !std::isfinite(rig.impact_t)
+		|| !std::isfinite(rig.bias_px)
+		|| !std::isfinite(rig.parallax_strength)
+		|| !std::isfinite(rig.scale_strength)
+		|| !std::isfinite(rig.flip_strength)
+		|| !std::isfinite(rig.flip_window)
+		|| rig.flip_window <= 0.0f) {
+		throw vdpFault("VDP PMU parallax rig requires finite values and flip_window > 0.");
+	}
+	m_parallaxRig = rig;
+}
+
+void VDP::setParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t, f32 bias_px, f32 parallax_strength, f32 scale_strength, f32 flip_strength, f32 flip_window) {
+	VdpParallaxRig rig;
+	rig.vy = vy;
+	rig.scale = scale;
+	rig.impact = impact;
+	rig.impact_t = impact_t;
+	rig.bias_px = bias_px;
+	rig.parallax_strength = parallax_strength;
+	rig.scale_strength = scale_strength;
+	rig.flip_strength = flip_strength;
+	rig.flip_window = flip_window;
+	setParallaxRigState(rig);
+}
+
+const VdpParallaxRig& VDP::executionParallaxRig() const {
+	if (!m_execution.pending) {
+		throw vdpFault("no active VDP execution parallax rig.");
+	}
+	return m_activeFrame.parallaxRig;
+}
+
+f64 VDP::executionParallaxClockSeconds() const {
+	if (!m_execution.pending) {
+		throw vdpFault("no active VDP execution parallax clock.");
+	}
+	return m_activeFrame.parallaxClockSeconds;
+}
+
 VdpState VDP::captureState() const {
 	VdpState state;
 	if (m_hasSkybox) {
 		state.skyboxFaceSources = m_skyboxFaceSources;
 	}
 	state.ditherType = m_lastDitherType;
+	state.parallaxRig = m_parallaxRig;
+	state.parallaxClockSeconds = m_parallaxClockSeconds;
 	return state;
 }
 
@@ -2275,6 +2348,11 @@ void VDP::restoreState(const VdpState& state) {
 		clearSkybox();
 	}
 	setDitherType(state.ditherType);
+	setParallaxRigState(state.parallaxRig);
+	if (!std::isfinite(state.parallaxClockSeconds) || state.parallaxClockSeconds < 0.0) {
+		throw vdpFault("invalid VDP PMU parallax clock " + std::to_string(state.parallaxClockSeconds) + ".");
+	}
+	m_parallaxClockSeconds = state.parallaxClockSeconds;
 	syncAtlasSlotRegisters();
 	commitLiveVisualState();
 }
@@ -2285,6 +2363,8 @@ VdpSaveState VDP::captureSaveState() const {
 		state.skyboxFaceSources = m_skyboxFaceSources;
 	}
 	state.ditherType = m_lastDitherType;
+	state.parallaxRig = m_parallaxRig;
+	state.parallaxClockSeconds = m_parallaxClockSeconds;
 	state.vramStaging = m_vramStaging;
 	state.surfacePixels = captureSurfacePixels();
 	state.displayFrameBufferPixels = m_displayFrameBufferCpuReadback;

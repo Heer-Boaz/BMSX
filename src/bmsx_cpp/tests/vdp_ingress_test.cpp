@@ -163,6 +163,48 @@ void testBlitDrawCtrlSnapshot() {
 	h.vdp.completeReadyExecution(queue);
 }
 
+void testPmuParallaxSnapshot() {
+	Harness h;
+
+	h.vdp.setTiming(1000, 1000, 0);
+	h.vdp.setParallaxRig(2.0f, 1.5f, 0.25f, 0.75f, 3.0f, 0.8f, 1.2f, 0.4f, 0.7f);
+	h.vdp.accrueCycles(250, 250);
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_LAYER_PRIO, 9u << 8);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00008000u);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+
+	h.vdp.setParallaxRig(-5.0f, 2.0f, 1.0f, 1.0f, 8.0f, 2.0f, 2.0f, 2.0f, 1.5f);
+	h.vdp.accrueCycles(500, 750);
+
+	const int workUnits = h.vdp.getPendingRenderWorkUnits();
+	require(workUnits > 0, "BLIT should submit render work");
+	h.vdp.advanceWork(workUnits);
+	const auto* queue = h.vdp.takeReadyExecutionQueue();
+	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
+	const auto& command = queue->front();
+	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
+	require(std::abs(command.parallaxWeight - 0.5f) < 0.0001f, "DRAW_CTRL parallax weight should remain per-BLIT state");
+	const auto& rig = h.vdp.executionParallaxRig();
+	require(std::abs(rig.vy - 2.0f) < 0.0001f, "PMU vy should be snapshotted at frame seal");
+	require(std::abs(rig.scale - 1.5f) < 0.0001f, "PMU scale should be snapshotted at frame seal");
+	require(std::abs(rig.impact - 0.25f) < 0.0001f, "PMU impact should be snapshotted at frame seal");
+	require(std::abs(rig.impact_t - 0.75f) < 0.0001f, "PMU impact_t should be snapshotted at frame seal");
+	require(std::abs(rig.bias_px - 3.0f) < 0.0001f, "PMU bias should be snapshotted at frame seal");
+	require(std::abs(rig.parallax_strength - 0.8f) < 0.0001f, "PMU parallax strength should be snapshotted at frame seal");
+	require(std::abs(rig.scale_strength - 1.2f) < 0.0001f, "PMU scale strength should be snapshotted at frame seal");
+	require(std::abs(rig.flip_strength - 0.4f) < 0.0001f, "PMU flip strength should be snapshotted at frame seal");
+	require(std::abs(rig.flip_window - 0.7f) < 0.0001f, "PMU flip window should be snapshotted at frame seal");
+	require(std::abs(h.vdp.executionParallaxClockSeconds() - 0.25) < 0.0001, "PMU clock should be snapshotted at frame seal");
+	h.vdp.completeReadyExecution(queue);
+}
+
 void testFifoReplayAndFaults() {
 	Harness replay;
 	sealStream(replay, {
@@ -240,6 +282,7 @@ int main() {
 		{"invalid register frame behavior", testInvalidRegisterDoesNotCancelFrame},
 		{"latch snapshot geometry", testLatchSnapshotGeometry},
 		{"BLIT DRAW_CTRL snapshot", testBlitDrawCtrlSnapshot},
+		{"PMU parallax snapshot", testPmuParallaxSnapshot},
 		{"FIFO replay and faults", testFifoReplayAndFaults},
 		{"slot registers", testSlotRegisters},
 		{"validation cancels direct draw", testValidationCancelsDirectDrawFrame},

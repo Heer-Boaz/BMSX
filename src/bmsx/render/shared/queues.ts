@@ -14,7 +14,6 @@ import type {
 } from './submissions';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { BFont } from './bitmap_font';
-import { setSpriteParallaxRigValues } from '../2d/sprite_parallax_rig';
 import { shallowcopy } from '../../common/shallowcopy';
 
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
@@ -275,10 +274,6 @@ export let particleAmbientFactorDefault = 1.0;
 export function setAmbientDefaults(mode: 0 | 1, factor = 1.0): void {
 	particleAmbientModeDefault = mode;
 	particleAmbientFactorDefault = factor;
-}
-
-export function setSpriteParallaxRig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
-	setSpriteParallaxRigValues(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 }
 
 export let _skyTint: [number, number, number] = [1, 1, 1];

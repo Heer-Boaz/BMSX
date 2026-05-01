@@ -3,7 +3,6 @@
 #if BMSX_ENABLE_GLES2
 #include "machine/devices/vdp/fault.h"
 #include "render/backend/gles2_backend.h"
-#include "render/shared/queues.h"
 #include "render/vdp/framebuffer.h"
 #include "render/vdp/slot_textures.h"
 #include "render/vdp/surfaces.h"
@@ -46,7 +45,7 @@ struct VdpGles2Host {
 	i32 width = 0;
 	i32 height = 0;
 	std::array<VdpGles2SurfaceInfo, VDP_RD_SURFACE_COUNT> surfaces{};
-	SpriteParallaxRig parallaxRig{};
+	VdpParallaxRig parallaxRig{};
 	f64 timeSeconds = 0.0;
 };
 
@@ -505,7 +504,7 @@ void VdpGles2Blitter::initialize() {
 	initializeVdpGles2Runtime(static_cast<OpenGLES2Backend*>(&backend));
 }
 
-bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& queue, f64 timeSeconds) {
+bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& queue) {
 	using CommandType = VDP::BlitterCommandType;
 	GPUBackend& textureBackend = vdpTextureBackend();
 	if (textureBackend.type() != BackendType::OpenGLES2) {
@@ -519,8 +518,8 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 	host.renderTexture = vdpRenderFrameBufferTexture();
 	host.width = static_cast<i32>(vdp.frameBufferWidth());
 	host.height = static_cast<i32>(vdp.frameBufferHeight());
-	host.parallaxRig = RenderQueues::spriteParallaxRig;
-	host.timeSeconds = timeSeconds;
+	host.parallaxRig = vdp.executionParallaxRig();
+	host.timeSeconds = vdp.executionParallaxClockSeconds();
 	auto prepareSurface = [&](uint32_t surfaceId, f32 textpageId) {
 		auto& info = host.surfaces[surfaceId];
 		info.textpageId = textpageId;
