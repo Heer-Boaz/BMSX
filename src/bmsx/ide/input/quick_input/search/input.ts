@@ -122,8 +122,6 @@ export function handleSearchInput(runtime: Runtime): void {
 	}
 	const textChanged = applyInlineFieldEditing(editorSearchState.field, {
 		allowSpace: true,
-		characterFilter: undefined,
-		maxLength: null,
 	});
 	editorSearchState.query = editorSearchState.field.text;
 	if (textChanged) {

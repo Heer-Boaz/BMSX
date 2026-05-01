@@ -30,7 +30,6 @@ export class RenameController {
 	private readonly inlineInputOptions: InlineInputOptions = {
 		allowSpace: false,
 		characterFilter: (value: string): boolean => this.identifierFilter(value),
-		maxLength: null,
 	};
 	private readonly identifierFilter = (value: string): boolean => {
 		if (value.length === 0) {

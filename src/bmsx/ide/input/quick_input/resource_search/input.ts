@@ -73,8 +73,6 @@ export function handleResourceSearchInput(runtime: Runtime): void {
 	}
 	const textChanged = applyInlineFieldEditing(resourceSearchState.field, {
 		allowSpace: true,
-		characterFilter: undefined,
-		maxLength: null,
 	});
 	resourceSearchState.query = resourceSearchState.field.text;
 	if (!textChanged) {

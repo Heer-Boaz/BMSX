@@ -63,8 +63,6 @@ export function handleSymbolSearchInput(runtime: Runtime): void {
 	}
 	const textChanged = applyInlineFieldEditing(symbolSearchState.field, {
 		allowSpace: true,
-		characterFilter: undefined,
-		maxLength: null,
 	});
 	symbolSearchState.query = symbolSearchState.field.text;
 	if (textChanged) {
