@@ -371,20 +371,6 @@ m_runtime.registerNativeFunction("dget", [this](NativeArgsView args, NativeResul
 	out.push_back(valueNumber(dget(index)));
 });
 
-m_runtime.registerNativeFunction("set_sprite_parallax_rig", [this](NativeArgsView args, NativeResults& out) {
-	float vy = static_cast<float>(asNumber(args.at(0)));
-	float scale = static_cast<float>(asNumber(args.at(1)));
-	float impact = static_cast<float>(asNumber(args.at(2)));
-	float impact_t = static_cast<float>(asNumber(args.at(3)));
-	float bias_px = static_cast<float>(asNumber(args.at(4)));
-	float parallax_strength = static_cast<float>(asNumber(args.at(5)));
-	float scale_strength = static_cast<float>(asNumber(args.at(6)));
-	float flip_strength = static_cast<float>(asNumber(args.at(7)));
-	float flip_window = static_cast<float>(asNumber(args.at(8)));
-	set_sprite_parallax_rig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
-	(void)out;
-});
-
 m_runtime.registerNativeFunction("reboot", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	reboot();
@@ -493,14 +479,6 @@ void Api::dset(int index, double value) {
 
 double Api::dget(int index) const {
 	return m_persistentData.at(static_cast<size_t>(index));
-}
-
-void Api::set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t,
-									f32 bias_px, f32 parallax_strength,
-									f32 scale_strength, f32 flip_strength,
-									f32 flip_window) {
-	m_runtime.machine().vdp().setParallaxRig(
-		vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 }
 
 void Api::reboot() {

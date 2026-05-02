@@ -114,12 +114,17 @@ u32 requireU32(const BinValue& value, const char* label) {
 	return static_cast<u32>(number);
 }
 
-template<size_t N>
-BinValue encodeNumberArray(const std::array<f32, N>& values) {
+template<typename Out, typename In>
+BinValue encodeScalar(In value) {
+	return BinValue(static_cast<Out>(value));
+}
+
+template<typename T, size_t N, typename EncodeFn>
+BinValue encodeFixedArray(const std::array<T, N>& values, EncodeFn&& encode) {
 	BinArray array;
 	array.reserve(N);
-	for (f32 value : values) {
-		array.push_back(static_cast<f64>(value));
+	for (const T& value : values) {
+		array.push_back(encode(value));
 	}
 	return BinValue(std::move(array));
 }
@@ -133,6 +138,19 @@ std::array<f32, N> decodeNumberArray(const BinValue& value, const char* label) {
 	std::array<f32, N> out{};
 	for (size_t index = 0; index < N; ++index) {
 		out[index] = static_cast<f32>(requireNumber(array[index], label));
+	}
+	return out;
+}
+
+template<size_t N>
+std::array<u32, N> decodeU32Array(const BinValue& value, const char* label) {
+	const BinArray& array = requireArray(value, label);
+	if (array.size() != N) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " must have " + std::to_string(N) + " entries.");
+	}
+	std::array<u32, N> out{};
+	for (size_t index = 0; index < N; ++index) {
+		out[index] = requireU32(array[index], label);
 	}
 	return out;
 }
@@ -169,9 +187,9 @@ RuntimeStorageState decodeRuntimeStorageState(const BinValue& value, const char*
 
 BinValue encodeRuntimeRenderCameraState(const RuntimeRenderCameraState& state) {
 	BinObject object;
-	object["view"] = encodeNumberArray(state.view);
-	object["proj"] = encodeNumberArray(state.proj);
-	object["eye"] = encodeNumberArray(state.eye);
+	object["view"] = encodeFixedArray(state.view, encodeScalar<f64, f32>);
+	object["proj"] = encodeFixedArray(state.proj, encodeScalar<f64, f32>);
+	object["eye"] = encodeFixedArray(state.eye, encodeScalar<f64, f32>);
 	return BinValue(std::move(object));
 }
 
@@ -187,7 +205,7 @@ RuntimeRenderCameraState decodeRuntimeRenderCameraState(const BinValue& value, c
 BinValue encodeRuntimeAmbientLightState(const RuntimeAmbientLightState& state) {
 	BinObject object;
 	object["id"] = state.id;
-	object["color"] = encodeNumberArray(state.color);
+	object["color"] = encodeFixedArray(state.color, encodeScalar<f64, f32>);
 	object["intensity"] = state.intensity;
 	return BinValue(std::move(object));
 }
@@ -204,9 +222,9 @@ RuntimeAmbientLightState decodeRuntimeAmbientLightState(const BinValue& value, c
 BinValue encodeRuntimeDirectionalLightState(const RuntimeDirectionalLightState& state) {
 	BinObject object;
 	object["id"] = state.id;
-	object["color"] = encodeNumberArray(state.color);
+	object["color"] = encodeFixedArray(state.color, encodeScalar<f64, f32>);
 	object["intensity"] = state.intensity;
-	object["orientation"] = encodeNumberArray(state.orientation);
+	object["orientation"] = encodeFixedArray(state.orientation, encodeScalar<f64, f32>);
 	return BinValue(std::move(object));
 }
 
@@ -223,9 +241,9 @@ RuntimeDirectionalLightState decodeRuntimeDirectionalLightState(const BinValue& 
 BinValue encodeRuntimePointLightState(const RuntimePointLightState& state) {
 	BinObject object;
 	object["id"] = state.id;
-	object["color"] = encodeNumberArray(state.color);
+	object["color"] = encodeFixedArray(state.color, encodeScalar<f64, f32>);
 	object["intensity"] = state.intensity;
-	object["pos"] = encodeNumberArray(state.pos);
+	object["pos"] = encodeFixedArray(state.pos, encodeScalar<f64, f32>);
 	object["range"] = state.range;
 	return BinValue(std::move(object));
 }
@@ -238,35 +256,6 @@ RuntimePointLightState decodeRuntimePointLightState(const BinValue& value, const
 	state.intensity = static_cast<f32>(requireNumber(requireField(object, "intensity", label), "renderState.pointLights[].intensity"));
 	state.pos = decodeNumberArray<3>(requireField(object, "pos", label), "renderState.pointLights[].pos");
 	state.range = static_cast<f32>(requireNumber(requireField(object, "range", label), "renderState.pointLights[].range"));
-	return state;
-}
-
-BinValue encodeVdpParallaxRig(const VdpParallaxRig& state) {
-	BinObject object;
-	object["vy"] = state.vy;
-	object["scale"] = state.scale;
-	object["impact"] = state.impact;
-	object["impact_t"] = state.impact_t;
-	object["bias_px"] = state.bias_px;
-	object["parallax_strength"] = state.parallax_strength;
-	object["scale_strength"] = state.scale_strength;
-	object["flip_strength"] = state.flip_strength;
-	object["flip_window"] = state.flip_window;
-	return BinValue(std::move(object));
-}
-
-VdpParallaxRig decodeVdpParallaxRig(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpParallaxRig state;
-	state.vy = static_cast<f32>(requireNumber(requireField(object, "vy", label), "machine.vdp.parallaxRig.vy"));
-	state.scale = static_cast<f32>(requireNumber(requireField(object, "scale", label), "machine.vdp.parallaxRig.scale"));
-	state.impact = static_cast<f32>(requireNumber(requireField(object, "impact", label), "machine.vdp.parallaxRig.impact"));
-	state.impact_t = static_cast<f32>(requireNumber(requireField(object, "impact_t", label), "machine.vdp.parallaxRig.impact_t"));
-	state.bias_px = static_cast<f32>(requireNumber(requireField(object, "bias_px", label), "machine.vdp.parallaxRig.bias_px"));
-	state.parallax_strength = static_cast<f32>(requireNumber(requireField(object, "parallax_strength", label), "machine.vdp.parallaxRig.parallax_strength"));
-	state.scale_strength = static_cast<f32>(requireNumber(requireField(object, "scale_strength", label), "machine.vdp.parallaxRig.scale_strength"));
-	state.flip_strength = static_cast<f32>(requireNumber(requireField(object, "flip_strength", label), "machine.vdp.parallaxRig.flip_strength"));
-	state.flip_window = static_cast<f32>(requireNumber(requireField(object, "flip_window", label), "machine.vdp.parallaxRig.flip_window"));
 	return state;
 }
 
@@ -426,71 +415,24 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 	return state;
 }
 
-BinValue encodeVdpSlotSource(const VdpSlotSource& source) {
-	BinObject object;
-	object["slot"] = static_cast<i64>(source.slot);
-	object["u"] = static_cast<i64>(source.u);
-	object["v"] = static_cast<i64>(source.v);
-	object["w"] = static_cast<i64>(source.w);
-	object["h"] = static_cast<i64>(source.h);
-	return BinValue(std::move(object));
-}
-
-VdpSlotSource decodeVdpSlotSource(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	return VdpSlotSource{
-		requireU32(requireField(object, "slot", label), "skyboxFaceSources.slot"),
-		requireU32(requireField(object, "u", label), "skyboxFaceSources.u"),
-		requireU32(requireField(object, "v", label), "skyboxFaceSources.v"),
-		requireU32(requireField(object, "w", label), "skyboxFaceSources.w"),
-		requireU32(requireField(object, "h", label), "skyboxFaceSources.h"),
-	};
-}
-
-BinValue encodeSkyboxFaceSources(const SkyboxFaceSources& state) {
-	BinObject object;
-	object["posx"] = encodeVdpSlotSource(state.posx);
-	object["negx"] = encodeVdpSlotSource(state.negx);
-	object["posy"] = encodeVdpSlotSource(state.posy);
-	object["negy"] = encodeVdpSlotSource(state.negy);
-	object["posz"] = encodeVdpSlotSource(state.posz);
-	object["negz"] = encodeVdpSlotSource(state.negz);
-	return BinValue(std::move(object));
-}
-
-SkyboxFaceSources decodeSkyboxFaceSources(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	SkyboxFaceSources state;
-	state.posx = decodeVdpSlotSource(requireField(object, "posx", label), "skyboxFaceSources.posx");
-	state.negx = decodeVdpSlotSource(requireField(object, "negx", label), "skyboxFaceSources.negx");
-	state.posy = decodeVdpSlotSource(requireField(object, "posy", label), "skyboxFaceSources.posy");
-	state.negy = decodeVdpSlotSource(requireField(object, "negy", label), "skyboxFaceSources.negy");
-	state.posz = decodeVdpSlotSource(requireField(object, "posz", label), "skyboxFaceSources.posz");
-	state.negz = decodeVdpSlotSource(requireField(object, "negz", label), "skyboxFaceSources.negz");
-	return state;
-}
-
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
-	object["skyboxFaceSources"] = state.skyboxFaceSources.has_value()
-		? encodeSkyboxFaceSources(*state.skyboxFaceSources)
-		: BinValue(nullptr);
+	object["skyboxControl"] = static_cast<i64>(state.skyboxControl);
+	object["skyboxFaceWords"] = encodeFixedArray(state.skyboxFaceWords, encodeScalar<i64, u32>);
+	object["pmuSelectedBank"] = static_cast<i64>(state.pmuSelectedBank);
+	object["pmuBankWords"] = encodeFixedArray(state.pmuBankWords, encodeScalar<i64, u32>);
 	object["ditherType"] = static_cast<i64>(state.ditherType);
-	object["parallaxRig"] = encodeVdpParallaxRig(state.parallaxRig);
-	object["parallaxClockSeconds"] = state.parallaxClockSeconds;
 	return BinValue(std::move(object));
 }
 
 VdpState decodeVdpState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpState state;
-	const BinValue& skybox = requireField(object, "skyboxFaceSources", label);
-	if (!skybox.isNull()) {
-		state.skyboxFaceSources = decodeSkyboxFaceSources(skybox, "machine.vdp.skyboxFaceSources");
-	}
+	state.skyboxControl = requireU32(requireField(object, "skyboxControl", label), "machine.vdp.skyboxControl");
+	state.skyboxFaceWords = decodeU32Array<SKYBOX_FACE_WORD_COUNT>(requireField(object, "skyboxFaceWords", label), "machine.vdp.skyboxFaceWords");
+	state.pmuSelectedBank = requireU32(requireField(object, "pmuSelectedBank", label), "machine.vdp.pmuSelectedBank");
+	state.pmuBankWords = decodeU32Array<VDP_PMU_BANK_WORD_COUNT>(requireField(object, "pmuBankWords", label), "machine.vdp.pmuBankWords");
 	state.ditherType = requireI32(requireField(object, "ditherType", label), "machine.vdp.ditherType");
-	state.parallaxRig = decodeVdpParallaxRig(requireField(object, "parallaxRig", label), "machine.vdp.parallaxRig");
-	state.parallaxClockSeconds = requireNumber(requireField(object, "parallaxClockSeconds", label), "machine.vdp.parallaxClockSeconds");
 	return state;
 }
 
@@ -521,10 +463,11 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	const VdpState base = decodeVdpState(value, label);
 	VdpSaveState state;
-	state.skyboxFaceSources = base.skyboxFaceSources;
+	state.skyboxControl = base.skyboxControl;
+	state.skyboxFaceWords = base.skyboxFaceWords;
+	state.pmuSelectedBank = base.pmuSelectedBank;
+	state.pmuBankWords = base.pmuBankWords;
 	state.ditherType = base.ditherType;
-	state.parallaxRig = base.parallaxRig;
-	state.parallaxClockSeconds = base.parallaxClockSeconds;
 	state.vramStaging = requireBinary(requireField(object, "vramStaging", label), "machine.vdp.vramStaging");
 	state.surfacePixels = decodeVector<VdpSurfacePixelsState>(
 		requireField(object, "surfacePixels", label),

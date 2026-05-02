@@ -1,22 +1,19 @@
 import type { VDP } from '../../machine/devices/vdp/vdp';
-import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
+import { SKYBOX_FACE_COUNT } from '../../machine/devices/vdp/contracts';
 import type { GameView } from '../gameview';
 
 export function commitVdpSkyboxViewState(view: GameView, vdp: VDP): void {
-	const sources = vdp.committedViewSkyboxFaceSources;
-	view.skyboxFaceSources = sources;
-	if (!sources) {
+	if (!vdp.committedSkyboxEnabled) {
 		view.skyboxFaceUvRects = null;
 		view.skyboxFaceTextpageBindings = null;
 		view.skyboxFaceSizes = null;
 		return;
 	}
-	const faceUvRects = view.skyboxFaceUvRects ?? (view.skyboxFaceUvRects = new Float32Array(SKYBOX_FACE_KEYS.length * 4));
-	const faceTextpageBindings = view.skyboxFaceTextpageBindings ?? (view.skyboxFaceTextpageBindings = new Int32Array(SKYBOX_FACE_KEYS.length));
-	const faceSizes = view.skyboxFaceSizes ?? (view.skyboxFaceSizes = new Int32Array(SKYBOX_FACE_KEYS.length * 2));
-	for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
-		const source = sources[SKYBOX_FACE_KEYS[index]];
-		const sample = vdp.resolveBlitterSample(source);
+	const faceUvRects = view.skyboxFaceUvRects ?? (view.skyboxFaceUvRects = new Float32Array(SKYBOX_FACE_COUNT * 4));
+	const faceTextpageBindings = view.skyboxFaceTextpageBindings ?? (view.skyboxFaceTextpageBindings = new Int32Array(SKYBOX_FACE_COUNT));
+	const faceSizes = view.skyboxFaceSizes ?? (view.skyboxFaceSizes = new Int32Array(SKYBOX_FACE_COUNT * 2));
+	for (let index = 0; index < SKYBOX_FACE_COUNT; index += 1) {
+		const sample = vdp.resolveCommittedSkyboxFaceSample(index);
 		const uvBase = index * 4;
 		faceUvRects[uvBase + 0] = sample.source.srcX / sample.surfaceWidth;
 		faceUvRects[uvBase + 1] = sample.source.srcY / sample.surfaceHeight;

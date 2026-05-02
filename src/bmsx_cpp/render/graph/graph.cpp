@@ -626,6 +626,7 @@ void RenderGraphRuntime::destroyResources() {
 }
 
 void* RenderGraphRuntime::ensureFBO(RenderGraphTexHandle color, RenderGraphTexHandle depth) {
+	(void)depth;
 	const BackendType backendType = m_backend->type();
 	if (backendType == BackendType::OpenGLES2) {
 #if !BMSX_ENABLE_GLES2

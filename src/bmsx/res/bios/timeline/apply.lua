@@ -178,21 +178,6 @@ local compile_track_runner<const> = function(track)
 		end
 		error('[timeline_apply] unknown wave "' .. tostring(track.wave) .. '".')
 	end
-	if kind == 'sprite_parallax_rig' then
-		return function(_target, params, _event, time_seconds)
-			set_sprite_parallax_rig(
-				params.vy,
-				params.scale,
-				params.impact,
-				time_seconds,
-				params.bias_px,
-				params.parallax_strength,
-				params.scale_strength,
-				params.flip_strength,
-				params.flip_window
-			)
-		end
-	end
 	error('[timeline_apply] unknown track kind "' .. tostring(kind) .. '".')
 end
 

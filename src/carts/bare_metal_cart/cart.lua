@@ -1,15 +1,15 @@
-local io_vdp_dither<const> = 0x0800000c -- VDP dithering control
-local io_irq_flags<const> = 0x08000084 -- IRQ flags: bit 0 = DMA done, bit 1 = DMA error, bit 4 = VBlank
-local io_irq_ack<const> = 0x08000088 -- IRQ acknowledge: write 1 to bits to acknowledge corresponding IRQs
-local io_dma_src<const> = 0x0800008c -- DMA source address
-local io_dma_dst<const> = 0x08000090 -- DMA destination address
-local io_dma_len<const> = 0x08000094 -- DMA length in bytes
-local io_dma_ctrl<const> = 0x08000098 -- DMA control: write 1 to bit 0 to start DMA
+local io_vdp_dither<const> = sys_vdp_dither -- VDP dithering control
+local io_irq_flags<const> = sys_irq_flags -- IRQ flags: bit 0 = DMA done, bit 1 = DMA error, bit 4 = VBlank
+local io_irq_ack<const> = sys_irq_ack -- IRQ acknowledge: write 1 to bits to acknowledge corresponding IRQs
+local io_dma_src<const> = sys_dma_src -- DMA source address
+local io_dma_dst<const> = sys_dma_dst -- DMA destination address
+local io_dma_len<const> = sys_dma_len -- DMA length in bytes
+local io_dma_ctrl<const> = sys_dma_ctrl -- DMA control: write 1 to bit 0 to start DMA
 
-local vdp_stream_base<const> = 0x0a4c0000 -- Base address for building VDP command streams in RAM before submitting via DMA
-local vram_primary_slot_base<const> = 0x0b8d0000 -- Base VRAM address for the primary surface slot (slot 0)
-local atlas_ram_base<const> = 0x0a440000 -- Base RAM address for building the sprite atlas before uploading to VRAM
-local io_vdp_fifo<const> = 0x0800007c -- VDP FIFO: write 32-bit command words here to send to VDP immediately (bypassing DMA)
+local vdp_stream_base<const> = sys_vdp_stream_base -- Base address for building VDP command streams in RAM before submitting via DMA
+local vram_primary_slot_base<const> = sys_vram_primary_slot_base -- Base VRAM address for the primary surface slot (slot 0)
+local atlas_ram_base<const> = sys_geo_scratch_base -- Base RAM address for building the sprite atlas before uploading to VRAM
+local io_vdp_fifo<const> = sys_vdp_fifo -- VDP FIFO: write 32-bit command words here to send to VDP immediately (bypassing DMA)
 
 local vdp_pkt_end<const> = 0x00000000 -- End of packet stream
 local vdp_pkt_cmd<const> = 0x01000000 -- Command packet: lower 16 bits = command ID, upper 8 bits = number of additional data words
@@ -31,6 +31,7 @@ local vdp_reg_bg_color<const> = 15 -- Background color register index (used for 
 local vdp_reg_slot_index<const> = 16 -- Slot index register (used for register packets to specify which VRAM slot to configure)
 local vdp_slot_primary<const> = 0 -- Primary surface slot index (the main VRAM slot used for drawing sprites and backgrounds)
 local vdp_layer_world<const> = 0 -- World layer index (the main layer used for drawing the game world, sprites should be drawn on this layer for correct priority handling)
+local draw_ctrl_parallax_half<const> = 0x00800000 -- DRAW_CTRL: PMU bank 0, parallax weight +0.5 in signed Q8.8
 
 local dma_ctrl_start<const> = 1 -- Control value to start a DMA transfer when written to the io_dma_ctrl register
 local irq_dma_done<const> = 0x01 -- IRQ flag bit for DMA transfer completion
@@ -195,10 +196,10 @@ local draw_frame<const> = function()
 
 	mem[wp], wp = vdp_pkt_regn | (5 << 16) | vdp_reg_draw_layer_prio, wp + 4 -- Set multiple registers starting at the draw layer and priority register for the blit command to draw the sprite
 	mem[wp], wp = (vdp_layer_world & 0xff) | (80 << 8), wp + 4 -- Draw on the world layer with priority 80 (higher than all the background elements to ensure the sprite is drawn on top)
-	mem[wp], wp = 0x00008000, wp + 4 -- DRAW_CTRL: parallax +0.5
-	mem[wp], wp = 0x00030000, wp + 4 -- DRAW_CTRL: priority mask to ensure the sprite's pixels are drawn over all background elements, but still allow for future sprites with higher priority to be drawn on top if needed
-	mem[wp], wp = 0x00030000, wp + 4 -- DRAW_CTRL: shadow/highlight mask to enable shadows and highlights for the sprite based on the colors in the atlas (this allows us to use the different colors in the atlas to create a sense of depth and lighting on the sprite without needing multiple draw calls or complex shaders)
-	mem[wp], wp = 0xffffffff, wp + 4 -- DRAW_CTRL: modulation color set to white with full alpha, so the colors from the atlas are not altered when drawn (if we wanted to tint the sprite we could change this modulation color)
+	mem[wp], wp = draw_ctrl_parallax_half, wp + 4 -- DRAW_CTRL: no flip, PMU bank 0, DEX parallax weight +0.5
+	mem[wp], wp = 0x00030000, wp + 4 -- DRAW_SCALE_X: 3.0 in Q16.16
+	mem[wp], wp = 0x00030000, wp + 4 -- DRAW_SCALE_Y: 3.0 in Q16.16
+	mem[wp], wp = 0xffffffff, wp + 4 -- DRAW_COLOR: modulation color set to white with full alpha
 
 	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_dst_x, wp + 4 -- Set multiple registers starting at the destination X coordinate register for the blit command to specify where to draw the sprite on the screen
 	mem[wp], wp = sprite_x << 16, wp + 4 -- Set the destination X coordinate for the sprite
@@ -211,7 +212,12 @@ local draw_frame<const> = function()
 end
 
 mem[io_vdp_dither] = 0
-set_sprite_parallax_rig(4, 1.15, 0, 0, 16, 1, 1, 0, 0.6)
+mem[sys_vdp_pmu_bank] = 0
+mem[sys_vdp_pmu_x] = 0
+mem[sys_vdp_pmu_y] = 16 << 16 -- VDP PMU bank 0: +16px Y, so DRAW_CTRL +0.5 resolves to +8px Y
+mem[sys_vdp_pmu_scale_x] = 0x00010000
+mem[sys_vdp_pmu_scale_y] = 0x00010000
+mem[sys_vdp_pmu_ctrl] = 0
 build_lua_atlas()
 configure_primary_surface()
 upload_atlas_to_vram()

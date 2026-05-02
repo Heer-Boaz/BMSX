@@ -1,0 +1,12 @@
+[
+	{
+		"description": "PMU-resolved parallax sprite, early frame",
+		"frame": 6,
+		"capture": true
+	},
+	{
+		"description": "PMU-resolved parallax sprite, later frame",
+		"frame": 14,
+		"capture": true
+	}
+]

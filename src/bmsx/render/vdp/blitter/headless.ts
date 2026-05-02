@@ -18,43 +18,6 @@ type HeadlessSurfacePixels = {
 	stride: number;
 };
 
-type BlitParallaxTransform = {
-	scale: number;
-	offsetY: number;
-};
-
-function clamp01(value: number): number {
-	return Math.min(1, Math.max(0, value));
-}
-
-function smoothstep01(value: number): number {
-	const t = clamp01(value);
-	return t * t * (3 - 2 * t);
-}
-
-function computeBlitParallax(vdp: VDP, parallaxWeight: number): BlitParallaxTransform {
-	const dir = Math.sign(parallaxWeight);
-	if (dir === 0) {
-		return { scale: 1, offsetY: 0 };
-	}
-	const rig = vdp.executionParallaxRig;
-	const weight = Math.abs(parallaxWeight);
-	const timeSeconds = vdp.executionParallaxClockSeconds;
-	const wobble = Math.sin(timeSeconds * 2.2) * 0.5 + Math.sin(timeSeconds * 1.1 + 1.7) * 0.5;
-	let offsetY = (rig.bias_px + wobble * rig.vy) * weight * rig.parallax_strength * dir;
-	const flipWindowSeconds = Math.max(rig.flip_window, 0.0001);
-	const hold = 0.2 * flipWindowSeconds;
-	const flipU = clamp01((rig.impact_t - hold) / Math.max(flipWindowSeconds - hold, 0.0001));
-	const flipWindow = 1 - smoothstep01(flipU);
-	const flip = 1 + (-2 * (flipWindow * rig.flip_strength));
-	offsetY *= flip;
-	const baseScale = 1 + (rig.scale - 1) * weight * rig.scale_strength;
-	const impactSign = Math.sign(rig.impact);
-	const impactMask = Math.max(0, dir * impactSign);
-	const pulse = Math.exp(-8 * rig.impact_t) * Math.abs(rig.impact) * weight * impactMask;
-	return { scale: baseScale + pulse, offsetY };
-}
-
 export class HeadlessVdpBlitterExecutor {
 	private frameBufferPriorityLayer = new Uint8Array(0);
 	private frameBufferPriorityZ = new Float32Array(0);
@@ -100,7 +63,7 @@ export class HeadlessVdpBlitterExecutor {
 				continue;
 			}
 			if (command.opcode === 'blit') {
-				this.rasterizeBlit(vdp, frameBufferPixels, frameBufferWidth, frameBufferHeight, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.parallaxWeight, command.color, command.layer, command.z, command.seq);
+				this.rasterizeBlit(vdp, frameBufferPixels, frameBufferWidth, frameBufferHeight, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.color, command.layer, command.z, command.seq);
 				continue;
 			}
 			if (command.opcode === 'copy_rect') {
@@ -116,13 +79,13 @@ export class HeadlessVdpBlitterExecutor {
 				}
 				for (let glyphIndex = 0; glyphIndex < command.glyphs.length; glyphIndex += 1) {
 					const glyph = command.glyphs[glyphIndex];
-					this.rasterizeBlit(vdp, frameBufferPixels, frameBufferWidth, frameBufferHeight, glyph, glyph.dstX, glyph.dstY, 1, 1, false, false, 0, command.color, command.layer, command.z, command.seq);
+					this.rasterizeBlit(vdp, frameBufferPixels, frameBufferWidth, frameBufferHeight, glyph, glyph.dstX, glyph.dstY, 1, 1, false, false, command.color, command.layer, command.z, command.seq);
 				}
 				continue;
 			}
 			for (let tileIndex = 0; tileIndex < command.tiles.length; tileIndex += 1) {
 				const tile = command.tiles[tileIndex];
-				this.rasterizeBlit(vdp, frameBufferPixels, frameBufferWidth, frameBufferHeight, tile, tile.dstX, tile.dstY, 1, 1, false, false, 0, BLITTER_WHITE, command.layer, command.z, command.seq);
+				this.rasterizeBlit(vdp, frameBufferPixels, frameBufferWidth, frameBufferHeight, tile, tile.dstX, tile.dstY, 1, 1, false, false, BLITTER_WHITE, command.layer, command.z, command.seq);
 			}
 		}
 		writeVdpRenderFrameBufferPixels(frameBufferPixels, frameBufferWidth, frameBufferHeight);
@@ -267,17 +230,12 @@ export class HeadlessVdpBlitterExecutor {
 		}
 	}
 
-	private rasterizeBlit(vdp: VDP, pixels: Uint8Array, frameWidth: number, frameHeight: number, source: VdpBlitterSource, dstXValue: number, dstYValue: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, parallaxWeight: number, color: VdpFrameBufferColor, layer: Layer2D, z: number, seq: number): void {
+	private rasterizeBlit(vdp: VDP, pixels: Uint8Array, frameWidth: number, frameHeight: number, source: VdpBlitterSource, dstXValue: number, dstYValue: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, color: VdpFrameBufferColor, layer: Layer2D, z: number, seq: number): void {
 		const sourcePixels = this.getSourcePixels(vdp, source);
-		const baseDstW = source.width * scaleX;
-		const baseDstH = source.height * scaleY;
-		const parallax = computeBlitParallax(vdp, parallaxWeight);
-		const dstW = Math.max(1, Math.round(baseDstW * parallax.scale));
-		const dstH = Math.max(1, Math.round(baseDstH * parallax.scale));
-		const centerX = dstXValue + baseDstW * 0.5;
-		const centerY = dstYValue + baseDstH * 0.5;
-		const dstX = Math.round(centerX - dstW * 0.5);
-		const dstY = Math.round(centerY - dstH * 0.5 + parallax.offsetY);
+		const dstW = Math.max(1, Math.round(source.width * scaleX));
+		const dstH = Math.max(1, Math.round(source.height * scaleY));
+		const dstX = Math.round(dstXValue);
+		const dstY = Math.round(dstYValue);
 		for (let y = 0; y < dstH; y += 1) {
 			const targetY = dstY + y;
 			if (targetY < 0 || targetY >= frameHeight) {

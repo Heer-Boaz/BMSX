@@ -7,6 +7,8 @@
 #include "machine/memory/map.h"
 #include "machine/scheduler/device.h"
 #include "machine/devices/vdp/budget.h"
+#include "machine/devices/vdp/pmu.h"
+#include "machine/devices/vdp/sbx.h"
 #include <array>
 #include <optional>
 #include <string>
@@ -23,10 +25,11 @@ void restoreVdpContextState(VDP& vdp);
 void captureVdpContextState(VDP& vdp);
 
 struct VdpState {
-	std::optional<SkyboxFaceSources> skyboxFaceSources;
+	u32 skyboxControl = 0;
+	VdpSbxUnit::FaceWords skyboxFaceWords{};
+	u32 pmuSelectedBank = 0;
+	VdpPmuUnit::BankWords pmuBankWords{};
 	i32 ditherType = 0;
-	VdpParallaxRig parallaxRig;
-	f64 parallaxClockSeconds = 0.0;
 };
 
 struct VdpSurfacePixelsState {
@@ -127,16 +130,13 @@ public:
 	void attachImgDecController(ImgDecController& controller);
 	void setSkyboxSources(const SkyboxFaceSources& sources);
 	void clearSkybox();
-	void setParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t, f32 bias_px, f32 parallax_strength, f32 scale_strength, f32 flip_strength, f32 flip_window);
-	const VdpParallaxRig& executionParallaxRig() const;
-	f64 executionParallaxClockSeconds() const;
+	void captureVisualStateFields(VdpState& state) const;
 	VdpState captureState() const;
 	void restoreState(const VdpState& state);
 	VdpSaveState captureSaveState() const;
 	void restoreSaveState(const VdpSaveState& state);
 	i32 committedDitherType() const { return m_committedDitherType; }
-	bool committedHasSkybox() const { return m_committedHasSkybox; }
-	const SkyboxFaceSources& committedSkyboxFaceSources() const { return m_committedSkyboxFaceSources; }
+	bool committedSkyboxEnabled() const { return m_sbx.visibleEnabled(); }
 	uint32_t trackedUsedVramBytes() const;
 	uint32_t trackedTotalVramBytes() const;
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
@@ -176,6 +176,7 @@ public:
 	};
 	BlitterSource resolveBlitterSource(const VdpSlotSource& source) const;
 	ResolvedBlitterSample resolveBlitterSample(const VdpSlotSource& source) const;
+	ResolvedBlitterSample resolveCommittedSkyboxFaceSample(size_t faceIndex) const;
 	enum class BlitterCommandType : u8 {
 		Clear,
 		Blit,
@@ -222,10 +223,8 @@ public:
 			int cost = 0;
 			int workRemaining = 0;
 			i32 ditherType = 0;
-			SkyboxFaceSources skyboxFaceSources;
-			bool hasSkybox = false;
-			VdpParallaxRig parallaxRig;
-			f64 parallaxClockSeconds = 0.0;
+			u32 skyboxControl = 0;
+			VdpSbxUnit::FaceWords skyboxFaceWords{};
 		};
 		struct BuildingFrame {
 			std::vector<BlitterCommand> queue;
@@ -263,7 +262,7 @@ public:
 		static void onFifoCtrlWriteThunk(void* context, uint32_t addr, Value value);
 		static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
 		static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
-		static void onSlotAtlasWriteThunk(void* context, uint32_t addr, Value value);
+		static void onPmuRegisterWriteThunk(void* context, uint32_t addr, Value value);
 
 	struct ReadSurface {
 		uint32_t surfaceId = 0;
@@ -291,12 +290,8 @@ public:
 	uint32_t m_vramBootSeed = 0;
 	uint32_t m_readBudgetBytes = 0;
 	bool m_readOverflow = false;
-	SkyboxFaceSources m_skyboxFaceSources;
-	bool m_hasSkybox = false;
-	SkyboxFaceSources m_committedSkyboxFaceSources;
-	bool m_committedHasSkybox = false;
-	VdpParallaxRig m_parallaxRig;
-	f64 m_parallaxClockSeconds = 0.0;
+	VdpSbxUnit m_sbx;
+	VdpPmuUnit m_pmu;
 	i32 m_lastDitherType = 0;
 	i32 m_committedDitherType = 0;
 	int64_t m_cpuHz = 1;
@@ -329,9 +324,6 @@ public:
 	DeviceScheduler& m_scheduler;
 
 	void registerVramSlot(const VdpVramSurface& surface);
-	void onSlotAtlasWrite(uint32_t addr, Value value);
-	void syncAtlasSlotRegisters();
-	void syncAtlasSlotSurface(uint32_t slotId, uint32_t atlasId);
 	void setVramSlotLogicalDimensions(VramSlot& slot, uint32_t width, uint32_t height);
 	std::vector<VdpSurfacePixelsState> captureSurfacePixels() const;
 	void restoreSurfacePixels(const VdpSurfacePixelsState& state);
@@ -355,10 +347,12 @@ public:
 	void seedVramSlotPixels(VramSlot& slot);
 	FrameBufferColor packFrameBufferColor(const Color& color) const;
 	u32 nextBlitterSequence();
+	void assignLayeredBlitterCommand(BlitterCommand& command, BlitterCommandType type, int renderCost, Layer2D layer, f32 z);
 	std::vector<GlyphRunGlyph> acquireGlyphBuffer();
 	std::vector<TileRunBlit> acquireTileBuffer();
 	void recycleBlitterBuffers(std::vector<BlitterCommand>& queue);
 	void resetBuildFrameState();
+	void resetSubmittedFrameSlot(SubmittedFrame& frame);
 	void resetQueuedFrameState();
 	void enqueueBlitterCommand(BlitterCommand&& command);
 	int calculateVisibleRectCost(double width, double height) const;
@@ -373,10 +367,10 @@ public:
 	void resetVdpRegisters();
 	void writeVdpRegister(uint32_t index, u32 value);
 	void onVdpRegisterWrite(uint32_t addr);
-	void resetParallaxPmu();
-	void setParallaxRigState(const VdpParallaxRig& rig);
-	void advanceParallaxClock(int cycles);
-	void validateVdpSlotRegister(u32 slot) const;
+	void writePmuBankSelect(u32 value);
+	void writeSelectedPmuBankValue(uint32_t addr, u32 value);
+	void onPmuRegisterWrite(uint32_t addr);
+	void syncPmuRegisterWindow();
 	void configureSelectedSlotDimension(u32 word);
 	struct LayerPriority {
 		Layer2D layer = Layer2D::World;
@@ -385,12 +379,20 @@ public:
 	struct DrawCtrl {
 		bool flipH = false;
 		bool flipV = false;
+		u32 blendMode = 0;
+		u32 pmuBank = 0;
 		f32 parallaxWeight = 0.0f;
+	};
+	struct LatchedGeometry {
+		f32 x0 = 0.0f;
+		f32 y0 = 0.0f;
+		f32 x1 = 0.0f;
+		f32 y1 = 0.0f;
 	};
 	LayerPriority decodeLayerPriority(u32 value) const;
 	DrawCtrl decodeDrawCtrl(u32 value) const;
-	f32 q16ToFloat(u32 value) const;
 	i32 q16ToPixel(u32 value) const;
+	LatchedGeometry readLatchedGeometry() const;
 	FrameBufferColor unpackArgbColor(u32 value) const;
 	u32 packedLow16(u32 value) const;
 	u32 packedHigh16(u32 value) const;
@@ -403,8 +405,12 @@ public:
 	void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(u32 wordCount);
 	void sealVdpFifoTransfer();
-	uint32_t consumeReplayPacketFromMemory(u32 word, uint32_t cursor, uint32_t end);
-	u32 consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount);
+	enum class ReplayPayloadSource : u8 {
+		Memory,
+		WordStream,
+	};
+	u32 consumeReplayPacket(u32 word, u32 cursor, u32 limit, ReplayPayloadSource source);
+	u32 readReplayPayloadWord(u32 cursor, u32 offset, ReplayPayloadSource source) const;
 	u32 decodeReg1Packet(u32 word) const;
 	struct RegnPacket {
 		u32 firstRegister = 0;

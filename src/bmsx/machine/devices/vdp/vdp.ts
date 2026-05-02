@@ -2,10 +2,16 @@ import type { color } from '../../../common/color';
 import {
 	type Layer2D,
 	type SkyboxFaceSources,
-	type VdpParallaxRig,
 	type VdpFrameBufferSize,
 	type VdpSlotSource,
 	type VdpVramSurface,
+	SKYBOX_FACE_H_WORD,
+	SKYBOX_FACE_SLOT_WORD,
+	SKYBOX_FACE_U_WORD,
+	SKYBOX_FACE_V_WORD,
+	SKYBOX_FACE_W_WORD,
+	SKYBOX_FACE_WORD_COUNT,
+	VDP_PMU_BANK_WORD_COUNT,
 	VDP_RD_SURFACE_COUNT,
 	VDP_RD_SURFACE_SYSTEM,
 	VDP_RD_SURFACE_FRAMEBUFFER,
@@ -35,6 +41,12 @@ import {
 	IO_VDP_CMD_ARG_COUNT,
 	IO_VDP_FIFO,
 	IO_VDP_FIFO_CTRL,
+	IO_VDP_PMU_BANK,
+	IO_VDP_PMU_CTRL,
+	IO_VDP_PMU_SCALE_X,
+	IO_VDP_PMU_SCALE_Y,
+	IO_VDP_PMU_X,
+	IO_VDP_PMU_Y,
 	IO_VDP_REG0,
 	IO_VDP_SLOT_PRIMARY_ATLAS,
 	IO_VDP_SLOT_SECONDARY_ATLAS,
@@ -82,12 +94,19 @@ import {
 import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../common/hash';
 import { vdpFault, vdpStreamFault } from './fault';
 import { syncVdpSlotTextures } from '../../../render/vdp/slot_textures';
+import {
+	VdpPmuRegister,
+	VdpPmuUnit,
+} from './pmu';
+import { VdpSbxUnit, readSkyboxFaceSource } from './sbx';
+import { decodeSignedQ16_16 } from './fixed_point';
 
 export type VdpState = {
-	skyboxFaceSources: SkyboxFaceSources | null;
+	skyboxControl: number;
+	skyboxFaceWords: number[];
+	pmuSelectedBank: number;
+	pmuBankWords: number[];
 	ditherType: number;
-	parallaxRig: VdpParallaxRig;
-	parallaxClockSeconds: number;
 };
 
 export type VdpSurfacePixelsState = {
@@ -109,10 +128,8 @@ type VdpSubmittedFrameState = {
 	cost: number;
 	workRemaining: number;
 	ditherType: number;
-	hasSkybox: boolean;
-	skyboxFaceSources: SkyboxFaceSources;
-	parallaxRig: VdpParallaxRig;
-	parallaxClockSeconds: number;
+	skyboxControl: number;
+	skyboxFaceWords: Uint32Array;
 };
 
 type VdpBuildingFrameState = {
@@ -125,6 +142,27 @@ type VdpExecutionState = {
 	queue: VdpBlitterCommand[];
 	pending: boolean;
 };
+
+type VdpLatchedGeometry = {
+	x0: number;
+	y0: number;
+	x1: number;
+	y1: number;
+};
+
+function allocateSubmittedFrameSlot(): VdpSubmittedFrameState {
+	return {
+		queue: [],
+		occupied: false,
+		hasCommands: false,
+		ready: false,
+		cost: 0,
+		workRemaining: 0,
+		ditherType: 0,
+		skyboxControl: 0,
+		skyboxFaceWords: new Uint32Array(SKYBOX_FACE_WORD_COUNT),
+	};
+}
 
 const VDP_SERVICE_BATCH_WORK_UNITS = 128;
 const VDP_SLOT_SURFACE_BINDINGS = [
@@ -455,7 +493,10 @@ function fillVramGarbageScratch(buffer: Uint8Array, s: VramGarbageStream): void 
 	s.addr = (startAddr + total) >>> 0;
 }
 
-type VdpReadSurface = VdpSurfaceUploadSlot;
+type VdpReadSurface = {
+	surfaceId: number;
+	registered: boolean;
+};
 
 type VdpReadCache = {
 	x0: number;
@@ -476,6 +517,14 @@ export type VdpSurfaceUploadSlot = {
 };
 
 type VramSlot = VdpSurfaceUploadSlot;
+
+function createReadSurfaceEntries(): VdpReadSurface[] {
+	const entries: VdpReadSurface[] = [];
+	for (let surfaceId = 0; surfaceId < VDP_RD_SURFACE_COUNT; surfaceId += 1) {
+		entries.push({ surfaceId, registered: false });
+	}
+	return entries;
+}
 
 export type VdpFrameBufferColor = {
 	r: number;
@@ -666,9 +715,13 @@ const VDP_REG_SLOT_INDEX = 16;
 const VDP_REG_SLOT_DIM = 17;
 const VDP_REGISTER_COUNT = IO_VDP_CMD_ARG_COUNT;
 const VDP_Q16_ONE = 0x00010000;
-const VDP_DRAW_CTRL_RESERVED_MASK = 0xff0000fc;
 const VDP_DRAW_CTRL_FLIP_H = 0x00000001;
 const VDP_DRAW_CTRL_FLIP_V = 0x00000002;
+const VDP_DRAW_CTRL_BLEND_SHIFT = 2;
+const VDP_DRAW_CTRL_BLEND_MASK = 0x000000fc;
+const VDP_DRAW_CTRL_PMU_BANK_SHIFT = 8;
+const VDP_DRAW_CTRL_PMU_BANK_MASK = 0x0000ff00;
+const VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT = 16;
 const VDP_PKT_KIND_MASK = 0xff000000;
 const VDP_PKT_RESERVED_MASK = 0x00ff0000;
 const VDP_PKT_END = 0x00000000;
@@ -684,86 +737,6 @@ const VDP_CMD_COPY_RECT = 5;
 const VDP_CMD_BEGIN_FRAME = 14;
 const VDP_CMD_END_FRAME = 15;
 
-function createSkyboxFaceSources(): SkyboxFaceSources {
-	return {
-		posx: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
-		negx: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
-		posy: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
-		negy: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
-		posz: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
-		negz: { slot: 0, u: 0, v: 0, w: 0, h: 0 },
-	};
-}
-
-function createDefaultParallaxRig(): VdpParallaxRig {
-	return {
-		vy: 0,
-		scale: 1,
-		impact: 0,
-		impact_t: 0,
-		bias_px: 0,
-		parallax_strength: 1,
-		scale_strength: 1,
-		flip_strength: 0,
-		flip_window: 0.6,
-	};
-}
-
-function cloneParallaxRig(source: VdpParallaxRig): VdpParallaxRig {
-	return {
-		vy: source.vy,
-		scale: source.scale,
-		impact: source.impact,
-		impact_t: source.impact_t,
-		bias_px: source.bias_px,
-		parallax_strength: source.parallax_strength,
-		scale_strength: source.scale_strength,
-		flip_strength: source.flip_strength,
-		flip_window: source.flip_window,
-	};
-}
-
-function copyParallaxRig(target: VdpParallaxRig, source: VdpParallaxRig): void {
-	target.vy = source.vy;
-	target.scale = source.scale;
-	target.impact = source.impact;
-	target.impact_t = source.impact_t;
-	target.bias_px = source.bias_px;
-	target.parallax_strength = source.parallax_strength;
-	target.scale_strength = source.scale_strength;
-	target.flip_strength = source.flip_strength;
-	target.flip_window = source.flip_window;
-}
-
-function resetParallaxRig(target: VdpParallaxRig): void {
-	target.vy = 0;
-	target.scale = 1;
-	target.impact = 0;
-	target.impact_t = 0;
-	target.bias_px = 0;
-	target.parallax_strength = 1;
-	target.scale_strength = 1;
-	target.flip_strength = 0;
-	target.flip_window = 0.6;
-}
-
-function copyVdpSlotSource(target: VdpSlotSource, source: VdpSlotSource): void {
-	target.slot = source.slot;
-	target.u = source.u;
-	target.v = source.v;
-	target.w = source.w;
-	target.h = source.h;
-}
-
-function copySkyboxFaceSources(target: SkyboxFaceSources, source: SkyboxFaceSources): void {
-	copyVdpSlotSource(target.posx, source.posx);
-	copyVdpSlotSource(target.negx, source.negx);
-	copyVdpSlotSource(target.posy, source.posy);
-	copyVdpSlotSource(target.negy, source.negy);
-	copyVdpSlotSource(target.posz, source.posz);
-	copyVdpSlotSource(target.negz, source.negz);
-}
-
 export class VDP implements VramWriteSink {
 	private vramSlots: VramSlot[] = [];
 	private vramStaging = new Uint8Array(VRAM_STAGING_SIZE);
@@ -771,17 +744,13 @@ export class VDP implements VramWriteSink {
 	private readonly vramSeedPixel = new Uint8Array(4);
 	private vramMachineSeed = 0;
 	private vramBootSeed = 0;
-	private readSurfaces: Array<VdpReadSurface | null> = [null, null, null, null];
+	private readSurfaces: VdpReadSurface[] = createReadSurfaceEntries();
 	private readCaches: VdpReadCache[] = [];
 	private readBudgetBytes = VDP_RD_BUDGET_BYTES;
 	private readOverflow = false;
 	private displayFrameBufferCpuReadback: Uint8Array = new Uint8Array(0);
-	private readonly skyboxFaceSources = createSkyboxFaceSources();
-	private hasSkybox = false;
-	private readonly committedSkyboxFaceSources = createSkyboxFaceSources();
-	private committedHasSkybox = false;
-	private readonly parallaxRig = createDefaultParallaxRig();
-	private parallaxClockSeconds = 0;
+	private readonly sbx = new VdpSbxUnit();
+	private readonly pmu = new VdpPmuUnit();
 	private lastDitherType = 0;
 	private committedDitherType = 0;
 	private _frameBufferWidth = 0;
@@ -795,38 +764,15 @@ export class VDP implements VramWriteSink {
 		queue: [],
 		pending: false,
 	};
-	private readonly activeFrame: VdpSubmittedFrameState = {
-		queue: [],
-		occupied: false,
-		hasCommands: false,
-		ready: false,
-		cost: 0,
-		workRemaining: 0,
-		ditherType: 0,
-		hasSkybox: false,
-		skyboxFaceSources: createSkyboxFaceSources(),
-		parallaxRig: createDefaultParallaxRig(),
-		parallaxClockSeconds: 0,
-	};
-	private readonly pendingFrame: VdpSubmittedFrameState = {
-		queue: [],
-		occupied: false,
-		hasCommands: false,
-		ready: false,
-		cost: 0,
-		workRemaining: 0,
-		ditherType: 0,
-		hasSkybox: false,
-		skyboxFaceSources: createSkyboxFaceSources(),
-		parallaxRig: createDefaultParallaxRig(),
-		parallaxClockSeconds: 0,
-	};
+	private activeFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
+	private pendingFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
 	private readonly glyphBufferPool: VdpGlyphRunGlyph[][] = [];
 	private readonly tileBufferPool: VdpTileRunBlit[][] = [];
 	private readonly glyphEntryPool: VdpGlyphRunGlyph[] = [];
 	private readonly tileEntryPool: VdpTileRunBlit[] = [];
 	private readonly clippedRectScratchA = { width: 0, height: 0, area: 0 };
 	private readonly clippedRectScratchB = { width: 0, height: 0, area: 0 };
+	private readonly latchedGeometryScratch: VdpLatchedGeometry = { x0: 0, y0: 0, x1: 0, y1: 0 };
 	private blitterSequence = 0;
 	private cpuHz: bigint = 1n;
 	private workUnitsPerSec: bigint = 1n;
@@ -856,8 +802,12 @@ export class VDP implements VramWriteSink {
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
 			this.memory.mapIoWrite(IO_VDP_REG0 + index * IO_WORD_SIZE, this.onVdpRegisterIoWrite.bind(this));
 		}
-		this.memory.mapIoWrite(IO_VDP_SLOT_PRIMARY_ATLAS, this.onSlotAtlasWrite.bind(this));
-		this.memory.mapIoWrite(IO_VDP_SLOT_SECONDARY_ATLAS, this.onSlotAtlasWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_PMU_BANK, this.onVdpPmuRegisterWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_PMU_X, this.onVdpPmuRegisterWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_PMU_Y, this.onVdpPmuRegisterWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_PMU_SCALE_X, this.onVdpPmuRegisterWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_PMU_SCALE_Y, this.onVdpPmuRegisterWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_PMU_CTRL, this.onVdpPmuRegisterWrite.bind(this));
 		this.vramMachineSeed = this.nextVramMachineSeed();
 		this.vramBootSeed = this.nextVramBootSeed();
 		for (let index = 0; index < VDP_RD_SURFACE_COUNT; index += 1) {
@@ -913,9 +863,11 @@ export class VDP implements VramWriteSink {
 
 	private resetVdpRegisters(): void {
 		const primarySurface = this.readSurfaces[VDP_RD_SURFACE_PRIMARY];
-		const slotDim = primarySurface === null
-			? (1 | (1 << 16))
-			: (primarySurface.surfaceWidth & 0xffff) | ((primarySurface.surfaceHeight & 0xffff) << 16);
+		let slotDim = 1 | (1 << 16);
+		if (primarySurface.registered) {
+			const primarySlot = this.getVramSlotBySurfaceId(primarySurface.surfaceId);
+			slotDim = (primarySlot.surfaceWidth & 0xffff) | ((primarySlot.surfaceHeight & 0xffff) << 16);
+		}
 		this.vdpRegisters.fill(0);
 		this.vdpRegisters[VDP_REG_SRC_SLOT] = VDP_SLOT_PRIMARY;
 		this.vdpRegisters[VDP_REG_LINE_WIDTH] = VDP_Q16_ONE;
@@ -939,13 +891,6 @@ export class VDP implements VramWriteSink {
 			case VDP_REG_SRC_SLOT:
 			case VDP_REG_SLOT_INDEX:
 				this.validateVdpSlotRegister(word);
-				break;
-			case VDP_REG_LINE_WIDTH:
-			case VDP_REG_DRAW_SCALE_X:
-			case VDP_REG_DRAW_SCALE_Y:
-				if ((word | 0) <= 0) {
-					throw vdpFault(`VDP register ${index} requires a positive Q16.16 value.`);
-				}
 				break;
 			case VDP_REG_DRAW_LAYER_PRIO:
 				this.decodeLayerPriority(word);
@@ -972,6 +917,56 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
+	private writePmuBankSelect(value: number): void {
+		this.pmu.selectBank(value);
+		this.syncPmuRegisterWindow();
+	}
+
+	private writeSelectedPmuBankValue(addr: number, value: number): void {
+		let register: VdpPmuRegister;
+		switch (addr) {
+			case IO_VDP_PMU_X:
+				register = VdpPmuRegister.X;
+				break;
+			case IO_VDP_PMU_Y:
+				register = VdpPmuRegister.Y;
+				break;
+			case IO_VDP_PMU_SCALE_X:
+				register = VdpPmuRegister.ScaleX;
+				break;
+			case IO_VDP_PMU_SCALE_Y:
+				register = VdpPmuRegister.ScaleY;
+				break;
+			case IO_VDP_PMU_CTRL:
+				register = VdpPmuRegister.Control;
+				break;
+			default:
+				throw vdpFault(`unknown VDP PMU register ${addr}.`);
+		}
+		const word = value >>> 0;
+		this.pmu.writeSelectedBankRegister(register, word);
+		this.memory.writeIoValue(addr, word);
+	}
+
+	private onVdpPmuRegisterWrite(addr: number): void {
+		const value = this.memory.readIoU32(addr);
+		if (addr === IO_VDP_PMU_BANK) {
+			this.writePmuBankSelect(value);
+			return;
+		}
+		this.writeSelectedPmuBankValue(addr, value);
+	}
+
+	private syncPmuRegisterWindow(): void {
+		const window = this.pmu.registerWindow();
+		this.memory.writeIoValue(IO_VDP_PMU_BANK, window.bank);
+		this.memory.writeIoValue(IO_VDP_PMU_X, window.x);
+		this.memory.writeIoValue(IO_VDP_PMU_Y, window.y);
+		this.memory.writeIoValue(IO_VDP_PMU_SCALE_X, window.scaleX);
+		this.memory.writeIoValue(IO_VDP_PMU_SCALE_Y, window.scaleY);
+		this.memory.writeIoValue(IO_VDP_PMU_CTRL, window.control);
+	}
+
 	private validateVdpSlotRegister(slot: number): void {
 		resolveVdpSlotSurfaceBinding(slot, 'slot', 'surfaceId', `VDP slot ${slot} is not a VDP blitter slot.`);
 	}
@@ -985,15 +980,20 @@ export class VDP implements VramWriteSink {
 		this.configureVramSlotSurface(this.vdpRegisters[VDP_REG_SLOT_INDEX], width, height);
 	}
 
-	private decodeDrawCtrl(value: number): { flipH: boolean; flipV: boolean; parallaxWeight: number } {
+	private decodeDrawCtrl(value: number): { flipH: boolean; flipV: boolean; blendMode: number; pmuBank: number; parallaxWeight: number } {
 		const ctrl = value >>> 0;
-		if ((ctrl & VDP_DRAW_CTRL_RESERVED_MASK) !== 0) {
-			throw vdpFault(`VDP DRAW_CTRL reserved bits are set (${ctrl}).`);
+		const blendMode = (ctrl & VDP_DRAW_CTRL_BLEND_MASK) >>> VDP_DRAW_CTRL_BLEND_SHIFT;
+		if (blendMode !== 0) {
+			throw vdpFault(`VDP DRAW_CTRL blend mode ${blendMode} is not supported.`);
 		}
-		const signedQ8_8 = (ctrl << 8) >> 16;
+		const pmuBank = ((ctrl & VDP_DRAW_CTRL_PMU_BANK_MASK) >>> VDP_DRAW_CTRL_PMU_BANK_SHIFT) & 0xff;
+		const rawQ8_8 = (ctrl >>> VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT) & 0xffff;
+		const signedQ8_8 = (rawQ8_8 & 0x8000) !== 0 ? rawQ8_8 - 0x10000 : rawQ8_8;
 		return {
 			flipH: (ctrl & VDP_DRAW_CTRL_FLIP_H) !== 0,
 			flipV: (ctrl & VDP_DRAW_CTRL_FLIP_V) !== 0,
+			blendMode,
+			pmuBank,
 			parallaxWeight: signedQ8_8 / 256,
 		};
 	}
@@ -1012,12 +1012,17 @@ export class VDP implements VramWriteSink {
 		};
 	}
 
-	private q16ToFloat(value: number): number {
-		return (value | 0) / 65536;
-	}
-
 	private q16ToPixel(value: number): number {
 		return (value | 0) >> 16;
+	}
+
+	private readLatchedGeometry(): VdpLatchedGeometry {
+		const geometry = this.latchedGeometryScratch;
+		geometry.x0 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_X0]);
+		geometry.y0 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_Y0]);
+		geometry.x1 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_X1]);
+		geometry.y1 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_Y1]);
+		return geometry;
 	}
 
 	private unpackArgbColor(value: number): VdpFrameBufferColor {
@@ -1409,7 +1414,6 @@ export class VDP implements VramWriteSink {
 	}
 
 	public accrueCycles(cycles: number, nowCycles: number): void {
-		this.advanceParallaxClock(cycles);
 		if (!this.hasPendingRenderWork() || cycles <= 0) {
 			return;
 		}
@@ -1423,17 +1427,6 @@ export class VDP implements VramWriteSink {
 			this.availableWorkUnits += Number(granted);
 		}
 		this.scheduleNextService(nowCycles);
-	}
-
-	private advanceParallaxClock(cycles: number): void {
-		if (cycles <= 0) {
-			return;
-		}
-		const cpuHz = Number(this.cpuHz);
-		if (cpuHz <= 0 || !Number.isFinite(cpuHz)) {
-			throw vdpFault('VDP PMU clock requires a positive CPU frequency.');
-		}
-		this.parallaxClockSeconds += cycles / cpuHz;
 	}
 
 	public onService(nowCycles: number): void {
@@ -1474,10 +1467,7 @@ export class VDP implements VramWriteSink {
 
 	private enqueueLatchedFillRect(): void {
 		const draw = this.decodeLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
-		const x0 = this.q16ToFloat(this.vdpRegisters[VDP_REG_GEOM_X0]);
-		const y0 = this.q16ToFloat(this.vdpRegisters[VDP_REG_GEOM_Y0]);
-		const x1 = this.q16ToFloat(this.vdpRegisters[VDP_REG_GEOM_X1]);
-		const y1 = this.q16ToFloat(this.vdpRegisters[VDP_REG_GEOM_Y1]);
+		const { x0, y0, x1, y1 } = this.readLatchedGeometry();
 		const clipped = computeClippedRect(x0, y0, x1, y1, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
 		if (clipped.area === 0) {
 			return;
@@ -1499,14 +1489,8 @@ export class VDP implements VramWriteSink {
 
 	private enqueueLatchedDrawLine(): void {
 		const draw = this.decodeLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
-		const thickness = this.q16ToFloat(this.vdpRegisters[VDP_REG_LINE_WIDTH]);
-		if (thickness <= 0) {
-			throw vdpFault('VDP line width must be positive.');
-		}
-		const x0 = this.q16ToFloat(this.vdpRegisters[VDP_REG_GEOM_X0]);
-		const y0 = this.q16ToFloat(this.vdpRegisters[VDP_REG_GEOM_Y0]);
-		const x1 = this.q16ToFloat(this.vdpRegisters[VDP_REG_GEOM_X1]);
-		const y1 = this.q16ToFloat(this.vdpRegisters[VDP_REG_GEOM_Y1]);
+		const thickness = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_LINE_WIDTH]);
+		const { x0, y0, x1, y1 } = this.readLatchedGeometry();
 		const span = computeClippedLineSpan(x0, y0, x1, y1, this._frameBufferWidth, this._frameBufferHeight);
 		if (span === 0) {
 			return;
@@ -1545,16 +1529,14 @@ export class VDP implements VramWriteSink {
 		if (u + w > surface.width || v + h > surface.height) {
 			throw vdpFault('VDP blit source rectangle exceeds configured slot dimensions.');
 		}
-		const scaleX = this.q16ToFloat(this.vdpRegisters[VDP_REG_DRAW_SCALE_X]);
-		const scaleY = this.q16ToFloat(this.vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
-		if (scaleX <= 0 || scaleY <= 0) {
-			throw vdpFault('VDP blit scale must be positive.');
-		}
-		const dstX = this.q16ToFloat(this.vdpRegisters[VDP_REG_DST_X]);
-		const dstY = this.q16ToFloat(this.vdpRegisters[VDP_REG_DST_Y]);
-		const dstWidth = source.width * scaleX;
-		const dstHeight = source.height * scaleY;
-		const clipped = computeClippedRect(dstX, dstY, dstX + dstWidth, dstY + dstHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
+		const scaleX = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DRAW_SCALE_X]);
+		const scaleY = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
+		const dstX = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DST_X]);
+		const dstY = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DST_Y]);
+		const resolved = this.pmu.resolveBlit(dstX, dstY, scaleX, scaleY, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
+		const dstWidth = source.width * resolved.scaleX;
+		const dstHeight = source.height * resolved.scaleY;
+		const clipped = computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
 		if (clipped.area === 0) {
 			return;
 		}
@@ -1566,10 +1548,10 @@ export class VDP implements VramWriteSink {
 			layer: draw.layer,
 			z: draw.z,
 			source,
-			dstX,
-			dstY,
-			scaleX,
-			scaleY,
+			dstX: resolved.dstX,
+			dstY: resolved.dstY,
+			scaleX: resolved.scaleX,
+			scaleY: resolved.scaleY,
 			flipH: drawCtrl.flipH,
 			flipV: drawCtrl.flipV,
 			color,
@@ -1690,6 +1672,17 @@ export class VDP implements VramWriteSink {
 		this.buildFrame.open = false;
 	}
 
+	private resetSubmittedFrameSlot(frame: VdpSubmittedFrameState): void {
+		frame.queue.length = 0;
+		frame.occupied = false;
+		frame.hasCommands = false;
+		frame.ready = false;
+		frame.cost = 0;
+		frame.workRemaining = 0;
+		frame.ditherType = 0;
+		frame.skyboxControl = 0;
+	}
+
 	private resetQueuedFrameState(): void {
 		this.resetBuildFrameState();
 		this.clearActiveFrame();
@@ -1697,16 +1690,7 @@ export class VDP implements VramWriteSink {
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
-		this.pendingFrame.queue.length = 0;
-		this.pendingFrame.occupied = false;
-		this.pendingFrame.hasCommands = false;
-		this.pendingFrame.ready = false;
-		this.pendingFrame.cost = 0;
-		this.pendingFrame.workRemaining = 0;
-		this.pendingFrame.ditherType = 0;
-		this.pendingFrame.hasSkybox = false;
-		resetParallaxRig(this.pendingFrame.parallaxRig);
-		this.pendingFrame.parallaxClockSeconds = 0;
+		this.resetSubmittedFrameSlot(this.pendingFrame);
 	}
 
 	private enqueueBlitterCommand(command: VdpBlitterCommand): void {
@@ -1787,12 +1771,7 @@ export class VDP implements VramWriteSink {
 		frame.cost = frameCost;
 		frame.workRemaining = frameCost;
 		frame.ditherType = this.lastDitherType;
-		frame.hasSkybox = this.hasSkybox;
-		copyParallaxRig(frame.parallaxRig, this.parallaxRig);
-		frame.parallaxClockSeconds = this.parallaxClockSeconds;
-		if (this.hasSkybox) {
-			copySkyboxFaceSources(frame.skyboxFaceSources, this.skyboxFaceSources);
-		}
+		frame.skyboxControl = this.sbx.latchFrame(frame.skyboxFaceWords);
 		this.buildFrame.queue.length = 0;
 		this.buildFrame.cost = 0;
 		this.buildFrame.open = false;
@@ -1819,33 +1798,10 @@ export class VDP implements VramWriteSink {
 		if (this.activeFrame.occupied || !this.pendingFrame.occupied) {
 			return;
 		}
-		const activeFrame = this.activeFrame;
-		const pendingFrame = this.pendingFrame;
-		const activeQueue = activeFrame.queue;
-		activeFrame.queue = pendingFrame.queue;
-		pendingFrame.queue = activeQueue;
-		pendingFrame.queue.length = 0;
-		activeFrame.occupied = true;
-		activeFrame.hasCommands = pendingFrame.hasCommands;
-		activeFrame.ready = pendingFrame.cost === 0;
-		activeFrame.cost = pendingFrame.cost;
-		activeFrame.workRemaining = pendingFrame.cost;
-		activeFrame.ditherType = pendingFrame.ditherType;
-		activeFrame.hasSkybox = pendingFrame.hasSkybox;
-		copyParallaxRig(activeFrame.parallaxRig, pendingFrame.parallaxRig);
-		activeFrame.parallaxClockSeconds = pendingFrame.parallaxClockSeconds;
-		if (pendingFrame.hasSkybox) {
-			copySkyboxFaceSources(activeFrame.skyboxFaceSources, pendingFrame.skyboxFaceSources);
-		}
-		pendingFrame.occupied = false;
-		pendingFrame.hasCommands = false;
-		pendingFrame.ready = false;
-		pendingFrame.cost = 0;
-		pendingFrame.workRemaining = 0;
-		pendingFrame.ditherType = 0;
-		pendingFrame.hasSkybox = false;
-		resetParallaxRig(pendingFrame.parallaxRig);
-		pendingFrame.parallaxClockSeconds = 0;
+		const emptyFrame = this.activeFrame;
+		this.activeFrame = this.pendingFrame;
+		this.pendingFrame = emptyFrame;
+		this.resetSubmittedFrameSlot(this.pendingFrame);
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
@@ -1912,25 +1868,13 @@ export class VDP implements VramWriteSink {
 	private clearActiveFrame(): void {
 		this.recycleBlitterBuffers(this.activeFrame.queue);
 		this.recycleBlitterBuffers(this.execution.queue);
-		this.activeFrame.queue.length = 0;
 		this.execution.pending = false;
-		this.activeFrame.occupied = false;
-		this.activeFrame.hasCommands = false;
-		this.activeFrame.ready = false;
-		this.activeFrame.cost = 0;
-		this.activeFrame.workRemaining = 0;
-		this.activeFrame.ditherType = 0;
-		this.activeFrame.hasSkybox = false;
-		resetParallaxRig(this.activeFrame.parallaxRig);
-		this.activeFrame.parallaxClockSeconds = 0;
+		this.resetSubmittedFrameSlot(this.activeFrame);
 	}
 
 	private commitActiveVisualState(): void {
 		this.committedDitherType = this.activeFrame.ditherType;
-		this.committedHasSkybox = this.activeFrame.hasSkybox;
-		if (this.activeFrame.hasSkybox) {
-			copySkyboxFaceSources(this.committedSkyboxFaceSources, this.activeFrame.skyboxFaceSources);
-		}
+		this.sbx.presentFrame(this.activeFrame.skyboxControl, this.activeFrame.skyboxFaceWords);
 	}
 
 	public presentReadyFrameOnVblankEdge(): void {
@@ -1994,9 +1938,10 @@ export class VDP implements VramWriteSink {
 
 	public enqueueBlit(slot: number, u: number, v: number, w: number, h: number, x: number, y: number, z: number, layer: Layer2D, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, parallaxWeight: number): void {
 		const source = this.resolveBlitterSource({ slot, u, v, w, h });
-		const dstWidth = source.width * Math.abs(scaleX);
-		const dstHeight = source.height * Math.abs(scaleY);
-		const clipped = computeClippedRect(x, y, x + dstWidth, y + dstHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
+		const resolved = this.pmu.resolveBlit(x, y, scaleX, scaleY, 0, parallaxWeight);
+		const dstWidth = source.width * Math.abs(resolved.scaleX);
+		const dstHeight = source.height * Math.abs(resolved.scaleY);
+		const clipped = computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
 		if (clipped.area === 0) {
 			return;
 		}
@@ -2008,10 +1953,10 @@ export class VDP implements VramWriteSink {
 			layer,
 			z,
 			source,
-			dstX: x,
-			dstY: y,
-			scaleX,
-			scaleY,
+			dstX: resolved.dstX,
+			dstY: resolved.dstY,
+			scaleX: resolved.scaleX,
+			scaleY: resolved.scaleY,
 			flipH,
 			flipV,
 			color,
@@ -2484,9 +2429,10 @@ export class VDP implements VramWriteSink {
 	public initializeRegisters(): void {
 		const dither = 0;
 		const frameBufferSurface = this.readSurfaces[VDP_RD_SURFACE_FRAMEBUFFER];
-		if (frameBufferSurface) {
-			this._frameBufferWidth = frameBufferSurface.surfaceWidth;
-			this._frameBufferHeight = frameBufferSurface.surfaceHeight;
+		if (frameBufferSurface.registered) {
+			const frameBufferSlot = this.getVramSlotBySurfaceId(frameBufferSurface.surfaceId);
+			this._frameBufferWidth = frameBufferSlot.surfaceWidth;
+			this._frameBufferHeight = frameBufferSlot.surfaceHeight;
 		} else {
 			this._frameBufferWidth = this.configuredFrameBufferSize.width;
 			this._frameBufferHeight = this.configuredFrameBufferSize.height;
@@ -2504,11 +2450,11 @@ export class VDP implements VramWriteSink {
 		this.memory.writeIoValue(IO_VDP_SLOT_SECONDARY_ATLAS, VDP_SLOT_ATLAS_NONE);
 		this.memory.writeIoValue(IO_VDP_CMD, 0);
 		this.resetVdpRegisters();
-		this.resetParallaxPmu();
+		this.pmu.reset();
+		this.syncPmuRegisterWindow();
 		this.lastDitherType = dither;
 		this.committedDitherType = dither;
-		this.hasSkybox = false;
-		this.committedHasSkybox = false;
+		this.sbx.reset();
 		this.lastFrameCommitted = true;
 		this.lastFrameCost = 0;
 		this.lastFrameHeld = false;
@@ -2528,10 +2474,11 @@ export class VDP implements VramWriteSink {
 
 	public captureState(): VdpState {
 		return {
-			skyboxFaceSources: this.hasSkybox ? this.skyboxFaceSources : null,
+			skyboxControl: this.sbx.liveControlWord,
+			skyboxFaceWords: this.sbx.captureLiveFaceWords(),
+			pmuSelectedBank: this.pmu.selectedBankIndex,
+			pmuBankWords: this.pmu.captureBankWords(),
 			ditherType: this.lastDitherType,
-			parallaxRig: cloneParallaxRig(this.parallaxRig),
-			parallaxClockSeconds: this.parallaxClockSeconds,
 		};
 	}
 
@@ -2546,18 +2493,13 @@ export class VDP implements VramWriteSink {
 	}
 
 	public restoreState(state: VdpState): void {
-		if (state.skyboxFaceSources === null) {
-			this.clearSkybox();
-		} else {
-			this.setSkyboxSources(state.skyboxFaceSources);
+		this.sbx.restoreLiveState(state.skyboxControl, state.skyboxFaceWords);
+		if (state.pmuBankWords.length !== VDP_PMU_BANK_WORD_COUNT) {
+			throw vdpFault(`PMU state requires ${VDP_PMU_BANK_WORD_COUNT} bank words.`);
 		}
+		this.pmu.restoreBankWords(state.pmuSelectedBank, state.pmuBankWords);
+		this.syncPmuRegisterWindow();
 		this.setDitherType(state.ditherType);
-		this.setParallaxRigState(state.parallaxRig);
-		if (!Number.isFinite(state.parallaxClockSeconds) || state.parallaxClockSeconds < 0) {
-			throw vdpFault(`invalid VDP PMU parallax clock ${state.parallaxClockSeconds}.`);
-		}
-		this.parallaxClockSeconds = state.parallaxClockSeconds;
-		this.syncAtlasSlotRegisters();
 		this.commitLiveVisualState();
 	}
 
@@ -2576,8 +2518,19 @@ export class VDP implements VramWriteSink {
 		return this.committedDitherType;
 	}
 
-	public get committedViewSkyboxFaceSources(): SkyboxFaceSources | null {
-		return this.committedHasSkybox ? this.committedSkyboxFaceSources : null;
+	public get committedSkyboxEnabled(): boolean {
+		return this.sbx.visibleEnabled;
+	}
+
+	public resolveCommittedSkyboxFaceSample(faceIndex: number): VdpResolvedBlitterSample {
+		const words = this.sbx.visibleFaceState;
+		return this.resolveBlitterSample({
+			slot: readSkyboxFaceSource(words, faceIndex, SKYBOX_FACE_SLOT_WORD),
+			u: readSkyboxFaceSource(words, faceIndex, SKYBOX_FACE_U_WORD),
+			v: readSkyboxFaceSource(words, faceIndex, SKYBOX_FACE_V_WORD),
+			w: readSkyboxFaceSource(words, faceIndex, SKYBOX_FACE_W_WORD),
+			h: readSkyboxFaceSource(words, faceIndex, SKYBOX_FACE_H_WORD),
+		});
 	}
 
 	public takeReadyExecutionQueue(): readonly VdpBlitterCommand[] | null {
@@ -2608,10 +2561,7 @@ export class VDP implements VramWriteSink {
 
 	private commitLiveVisualState(): void {
 		this.committedDitherType = this.lastDitherType;
-		this.committedHasSkybox = this.hasSkybox;
-		if (this.hasSkybox) {
-			copySkyboxFaceSources(this.committedSkyboxFaceSources, this.skyboxFaceSources);
-		}
+		this.sbx.presentLiveState();
 	}
 
 	private captureSurfacePixels(): VdpSurfacePixelsState[] {
@@ -2641,112 +2591,37 @@ export class VDP implements VramWriteSink {
 	}
 
 	public setSkyboxSources(sources: SkyboxFaceSources): void {
-		copySkyboxFaceSources(this.skyboxFaceSources, sources);
-		this.hasSkybox = true;
+		this.sbx.setSources(sources);
+		this.commitLiveVisualState();
 	}
 
 	public clearSkybox(): void {
-		this.hasSkybox = false;
-	}
-
-	private resetParallaxPmu(): void {
-		resetParallaxRig(this.parallaxRig);
-		this.parallaxClockSeconds = 0;
-	}
-
-	private setParallaxRigState(rig: VdpParallaxRig): void {
-		if (
-			!Number.isFinite(rig.vy)
-			|| !Number.isFinite(rig.scale)
-			|| !Number.isFinite(rig.impact)
-			|| !Number.isFinite(rig.impact_t)
-			|| !Number.isFinite(rig.bias_px)
-			|| !Number.isFinite(rig.parallax_strength)
-			|| !Number.isFinite(rig.scale_strength)
-			|| !Number.isFinite(rig.flip_strength)
-			|| !Number.isFinite(rig.flip_window)
-			|| rig.flip_window <= 0
-		) {
-			throw vdpFault('VDP PMU parallax rig requires finite values and flip_window > 0.');
-		}
-		copyParallaxRig(this.parallaxRig, rig);
-	}
-
-	public setParallaxRig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
-		this.setParallaxRigState({
-			vy,
-			scale,
-			impact,
-			impact_t,
-			bias_px,
-			parallax_strength,
-			scale_strength,
-			flip_strength,
-			flip_window,
-		});
-	}
-
-	public get executionParallaxRig(): Readonly<VdpParallaxRig> {
-		if (!this.execution.pending) {
-			throw vdpFault('no active VDP execution parallax rig.');
-		}
-		return this.activeFrame.parallaxRig;
-	}
-
-	public get executionParallaxClockSeconds(): number {
-		if (!this.execution.pending) {
-			throw vdpFault('no active VDP execution parallax clock.');
-		}
-		return this.activeFrame.parallaxClockSeconds;
+		this.sbx.clear();
+		this.commitLiveVisualState();
 	}
 
 	public registerVramSurfaces(surfaces: readonly VdpVramSurface[]): void {
 		this.resetQueuedFrameState();
 		this.vramSlots = [];
-		this.readSurfaces = [null, null, null, null];
+		this.readSurfaces = createReadSurfaceEntries();
 		for (let index = 0; index < this.readCaches.length; index += 1) {
 			this.readCaches[index].width = 0;
 		}
 		this.displayFrameBufferCpuReadback = new Uint8Array(0);
-		this.hasSkybox = false;
-		this.committedHasSkybox = false;
+		this.sbx.reset();
 		this.committedDitherType = this.lastDitherType;
 		this.vramBootSeed = this.nextVramBootSeed();
 		this.seedVramStaging();
 		for (let index = 0; index < surfaces.length; index += 1) {
 			this.registerVramSlot(surfaces[index]);
 		}
-		this.syncAtlasSlotRegisters();
 		this.syncRegisters();
-	}
-
-	private onSlotAtlasWrite(addr: number, value: unknown): void {
-		const slot = addr === IO_VDP_SLOT_PRIMARY_ATLAS ? VDP_SLOT_PRIMARY : VDP_SLOT_SECONDARY;
-		const atlasId = typeof value === 'number' ? (value >>> 0) : VDP_SLOT_ATLAS_NONE;
-		this.syncAtlasSlotSurface(slot, atlasId);
-	}
-
-	private syncAtlasSlotRegisters(): void {
-		this.syncAtlasSlotSurface(VDP_SLOT_PRIMARY, this.memory.readIoU32(IO_VDP_SLOT_PRIMARY_ATLAS));
-		this.syncAtlasSlotSurface(VDP_SLOT_SECONDARY, this.memory.readIoU32(IO_VDP_SLOT_SECONDARY_ATLAS));
-	}
-
-	private syncAtlasSlotSurface(slotId: number, atlasId: number): void {
-		const surfaceId = slotId === VDP_SLOT_PRIMARY ? VDP_RD_SURFACE_PRIMARY : VDP_RD_SURFACE_SECONDARY;
-		const slot = this.findRegisteredVramSlotBySurfaceId(surfaceId);
-		if (slot === null) {
-			return;
-		}
-		if (atlasId === VDP_SLOT_ATLAS_NONE) {
-			this.setVramSlotLogicalDimensions(slot, 1, 1);
-			return;
-		}
 	}
 
 	private setVramSlotLogicalDimensions(slot: VramSlot, width: number, height: number): void {
 		const byteLength = width * height * 4;
-		if (width <= 0 || height <= 0 || byteLength > slot.capacity) {
-			return;
+		if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 || byteLength > slot.capacity) {
+			throw vdpFault(`invalid VRAM surface dimensions ${width}x${height} for surface ${slot.surfaceId}.`);
 		}
 		if (slot.surfaceWidth === width && slot.surfaceHeight === height) {
 			return;
@@ -2809,19 +2684,20 @@ export class VDP implements VramWriteSink {
 	}
 
 	private registerReadSurface(slot: VramSlot): void {
-		this.readSurfaces[slot.surfaceId] = slot;
+		this.readSurfaces[slot.surfaceId].surfaceId = slot.surfaceId;
+		this.readSurfaces[slot.surfaceId].registered = true;
 		this.invalidateReadCache(slot.surfaceId);
 	}
 
-	private getReadSurface(surfaceId: number): VdpReadSurface {
+	private getReadSurface(surfaceId: number): VramSlot {
 		const surface = this.readSurfaces[surfaceId];
-		if (surface === null) {
+		if (!surface.registered) {
 			throw vdpFault(`read surface ${surfaceId} is not registered.`);
 		}
-		return surface;
+		return this.getVramSlotBySurfaceId(surface.surfaceId);
 	}
 
-	private getReadCache(surfaceId: number, surface: VdpReadSurface, x: number, y: number): VdpReadCache {
+	private getReadCache(surfaceId: number, surface: VramSlot, x: number, y: number): VdpReadCache {
 		const cache = this.readCaches[surfaceId];
 		if (cache.width === 0 || cache.y !== y || x < cache.x0 || x >= cache.x0 + cache.width) {
 			this.prefetchReadCache(cache, surfaceId, surface, x, y);
@@ -2829,7 +2705,7 @@ export class VDP implements VramWriteSink {
 		return cache;
 	}
 
-	private prefetchReadCache(cache: VdpReadCache, surfaceId: number, surface: VdpReadSurface, x: number, y: number): void {
+	private prefetchReadCache(cache: VdpReadCache, surfaceId: number, surface: VramSlot, x: number, y: number): void {
 		const width = surface.surfaceWidth;
 		const maxPixelsByBudget = this.readBudgetBytes >>> 2;
 		if (maxPixelsByBudget <= 0) {
@@ -2847,7 +2723,7 @@ export class VDP implements VramWriteSink {
 		cache.data = data;
 	}
 
-	private readSurfacePixels(cache: VdpReadCache, surfaceId: number, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
+	private readSurfacePixels(cache: VdpReadCache, surfaceId: number, surface: VramSlot, x: number, y: number, width: number, height: number): Uint8Array {
 		if (surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
 			const byteLength = width * height * 4;
 			const out = cache.data.byteLength < byteLength ? (cache.data = new Uint8Array(byteLength)) : cache.data;
@@ -2856,7 +2732,7 @@ export class VDP implements VramWriteSink {
 		return this.readCpuReadback(cache, surfaceId, surface, x, y, width, height);
 	}
 
-	private readCpuReadback(cache: VdpReadCache, surfaceId: number, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
+	private readCpuReadback(cache: VdpReadCache, surfaceId: number, surface: VramSlot, x: number, y: number, width: number, height: number): Uint8Array {
 		const buffer = this.getCpuReadbackBuffer(surfaceId);
 		const stride = surface.surfaceWidth * 4;
 		const rowBytes = width * 4;

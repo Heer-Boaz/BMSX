@@ -200,6 +200,8 @@ add_library(bmsx_core STATIC
 	machine/runtime/debug.cpp
 	machine/memory/memory.cpp
 	machine/memory/map.cpp
+	machine/devices/vdp/pmu.cpp
+	machine/devices/vdp/sbx.cpp
 	machine/devices/vdp/vdp.cpp
 	machine/devices/vdp/command_processor.cpp
 	machine/memory/string_memory.cpp

@@ -267,7 +267,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "require"
 		|| name == "print"
 		|| name == "set_camera"
-		|| name == "set_sprite_parallax_rig"
 		|| name == "cartdata"
 		|| name == "create_font"
 		|| name == "taskgate"

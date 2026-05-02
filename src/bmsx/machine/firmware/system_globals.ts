@@ -29,6 +29,7 @@ const SYSTEM_LUA_BUILTIN_FUNCTION_NAMES = [
 	'vdp_img_slot',
 	'vdp_img_source',
 	'vdp_write_source_words',
+	'vdp_pmu_write_bank',
 	'vdp_stream_claim_words',
 	'rom_data',
 	'irq',

@@ -25,7 +25,6 @@ import type {
 	GlyphRenderSubmission,
 } from './shared/submissions';
 import type { Runtime } from '../machine/runtime/runtime';
-import type { SkyboxFaceSources } from '../machine/devices/vdp/contracts';
 import {
 	VDP_PRIMARY_SLOT_TEXTURE_KEY,
 	VDP_SECONDARY_SLOT_TEXTURE_KEY,
@@ -87,7 +86,6 @@ export class GameView implements RenderContext {
 	private lightingSystem: LightingSystem = null;
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
-	public skyboxFaceSources: SkyboxFaceSources | null = null;
 	public skyboxFaceUvRects: Float32Array | null = null;
 	public skyboxFaceTextpageBindings: Int32Array | null = null;
 	public skyboxFaceSizes: Int32Array | null = null;
@@ -516,7 +514,6 @@ export class GameView implements RenderContext {
 		this.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY] = fallback; // Start with fallback to avoid undefined states and race conditions
 		this.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY] = fallback;
 		this.textures['_textpage_fallback'] = fallback;
-		this.skyboxFaceSources = null;
 		this.skyboxFaceUvRects = null;
 		this.skyboxFaceTextpageBindings = null;
 		this.skyboxFaceSizes = null;

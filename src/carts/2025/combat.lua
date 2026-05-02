@@ -122,55 +122,27 @@ function combat_director:apply_combat_round(node)
 end
 
 local refresh_combat_parallax<const> = function(self)
-	local rig_vy<const> = combat_parallax_vy_base + combat_parallax_vy_momentum
-	local rig_scale<const> = combat_parallax_scale_base + combat_parallax_scale_momentum
-	local rig_impact = 0
-	if self.combat_parallax_impact_side == 'hero' then
-		rig_impact = combat_parallax_impact_amp
-	elseif self.combat_parallax_impact_side == 'monster' then
-		rig_impact = -combat_parallax_impact_amp
-	end
-	local momentum<const> = self.combat_parallax_momentum
-	local hero_weight<const> = (combat_parallax_vy_base - (combat_parallax_vy_momentum * momentum)) / rig_vy
-	local monster_weight<const> = -(combat_parallax_vy_base + (combat_parallax_vy_momentum * momentum)) / rig_vy
-	local bias_px<const> = combat_parallax_bias_base - (combat_parallax_bias_momentum * momentum)
-	local flip_strength = 0
-	if self.combat_parallax_impact_side then
-		flip_strength = combat_parallax_flip_strength
-	end
+	local momentum<const> = self.combat_parallax_momentum_steps
+	local hero_weight<const> = (10 - momentum) / 15
+	local monster_weight<const> = -(10 + momentum) / 15
 	local hero<const> = oget(globals.combat_maya_a_id)
 	local hero_b<const> = oget(globals.combat_maya_b_id)
 	local monster<const> = oget(globals.combat_monster_id)
 	hero.sprite_component.parallax_weight = hero_weight
 	hero_b.sprite_component.parallax_weight = hero_weight
 	monster.sprite_component.parallax_weight = monster_weight
-	self:play_timeline(globals.combat_parallax_timeline_id, {
-		rewind = true,
-		snap_to_start = true,
-		params = {
-			vy = rig_vy,
-			scale = rig_scale,
-			impact = rig_impact,
-			bias_px = bias_px,
-			parallax_strength = combat_parallax_parallax_strength,
-			scale_strength = combat_parallax_scale_strength,
-			flip_strength = flip_strength,
-			flip_window = combat_parallax_flip_window_seconds,
-		},
-	})
+	vdp_pmu_write_bank(0, 0, ((11 - momentum) << 16) // 10, combat_parallax_pmu_scale_q16, combat_parallax_pmu_scale_q16, 0)
 end
 
 function combat_director:reset_combat_parallax()
 	self.combat_parallax_enabled = true
-	self.combat_parallax_momentum = 0
-	self.combat_parallax_impact_side = nil
+	self.combat_parallax_momentum_steps = 0
 	refresh_combat_parallax(self)
 end
 
 function combat_director:disable_combat_parallax()
 	self.combat_parallax_enabled = false
-	self:stop_timeline(globals.combat_parallax_timeline_id)
-	set_sprite_parallax_rig(0, 1, 0, 0, 0, 1, 1, 0, combat_parallax_flip_window_seconds)
+	vdp_pmu_write_bank(0, 0, 0, 0x00010000, 0x00010000, 0)
 	local hero<const> = oget(globals.combat_maya_a_id)
 	local hero_b<const> = oget(globals.combat_maya_b_id)
 	local monster<const> = oget(globals.combat_monster_id)
@@ -181,15 +153,14 @@ end
 
 function combat_director:push_combat_momentum(side, power)
 	local delta<const> = side == 'hero' and power or -power
-	local next = self.combat_parallax_momentum + delta
-	if next < -1 then
-		next = -1
+	local next = self.combat_parallax_momentum_steps + delta
+	if next < -combat_parallax_momentum_limit_steps then
+		next = -combat_parallax_momentum_limit_steps
 	end
-	if next > 1 then
-		next = 1
+	if next > combat_parallax_momentum_limit_steps then
+		next = combat_parallax_momentum_limit_steps
 	end
-	self.combat_parallax_momentum = next
-	self.combat_parallax_impact_side = side
+	self.combat_parallax_momentum_steps = next
 	if self.combat_parallax_enabled then
 		refresh_combat_parallax(self)
 	end
@@ -1384,16 +1355,6 @@ function combat.define_fsm()
 				},
 				autoplay = false,
 			},
-			[globals.combat_parallax_timeline_id] = {
-				def = {
-					playback_mode = 'once',
-					duration_seconds = combat_parallax_impact_duration_seconds,
-					tracks = {
-						{ kind = 'sprite_parallax_rig' },
-					},
-				},
-				autoplay = false,
-			},
 			-- Frame-driven applied animation timelines (frames built by builder fns)
 			-- These require a `target` and optional `params` at play time, so
 			-- individual states use autoplay = false + entering_state play calls.
@@ -1562,8 +1523,7 @@ function combat.register_director()
 			combat_results_text_target_x = 0,
 			combat_results_text_start_x = 0,
 			combat_parallax_enabled = false,
-			combat_parallax_momentum = 0,
-				combat_parallax_impact_side = nil,
+			combat_parallax_momentum_steps = 0,
 			skip_combat_fade_in = false,
 			skip_transition_fade = false,
 			combat_node_id = nil,

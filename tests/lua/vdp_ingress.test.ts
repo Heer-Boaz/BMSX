@@ -4,12 +4,19 @@ import { test } from 'node:test';
 import {
 	IO_VDP_CMD,
 	IO_VDP_DITHER,
+	IO_VDP_PMU_BANK,
+	IO_VDP_PMU_CTRL,
+	IO_VDP_PMU_SCALE_X,
+	IO_VDP_PMU_SCALE_Y,
+	IO_VDP_PMU_Y,
 	IO_VDP_REG_BG_COLOR,
 	IO_VDP_REG_DRAW_COLOR,
 	IO_VDP_REG_DRAW_CTRL,
 	IO_VDP_REG_DRAW_LAYER_PRIO,
 	IO_VDP_REG_DRAW_SCALE_X,
 	IO_VDP_REG_DRAW_SCALE_Y,
+	IO_VDP_REG_DST_X,
+	IO_VDP_REG_DST_Y,
 	IO_VDP_REG_GEOM_X0,
 	IO_VDP_REG_SLOT_DIM,
 	IO_VDP_REG_SLOT_INDEX,
@@ -97,11 +104,9 @@ test('VDP2D direct register faults preserve latches and do not cancel an open fr
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	assert.throws(() => memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x4));
 	assert.equal(memory.readValue(IO_VDP_REG_DRAW_CTRL), 0);
-	assert.throws(() => memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x01000000));
-	assert.equal(memory.readValue(IO_VDP_REG_DRAW_CTRL), 0);
 	assert.equal(buildFrameOpen(vdp), true);
-	assert.throws(() => memory.writeValue(IO_VDP_REG_DRAW_SCALE_X, 0xffff0000));
-	assert.equal(memory.readValue(IO_VDP_REG_DRAW_SCALE_X), 0x00010000);
+	memory.writeValue(IO_VDP_REG_DRAW_SCALE_X, 0xffff0000);
+	assert.equal(memory.readValue(IO_VDP_REG_DRAW_SCALE_X), 0xffff0000);
 	assert.equal(buildFrameOpen(vdp), true);
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
@@ -135,7 +140,7 @@ test('VDP2D BLIT snapshots DRAW_CTRL flip and parallax immutably', () => {
 	memory.writeValue(IO_VDP_REG_SRC_UV, 0);
 	memory.writeValue(IO_VDP_REG_SRC_WH, 4 | (4 << 16));
 	memory.writeValue(IO_VDP_REG_DRAW_LAYER_PRIO, 9 << 8);
-	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x00ff0003);
+	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0xff000003);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
 	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
@@ -147,11 +152,12 @@ test('VDP2D BLIT snapshots DRAW_CTRL flip and parallax immutably', () => {
 	assert.equal(command.parallaxWeight, -1);
 });
 
-test('VDP PMU parallax rig and clock snapshot at frame seal', () => {
+test('VDP PMU resolves parallax into BLIT geometry before backend execution', () => {
 	const { memory, vdp } = createVdp();
 
 	vdp.setTiming(1000, 1000, 0);
-	vdp.setParallaxRig(2, 1.5, 0.25, 0.75, 3, 0.8, 1.2, 0.4, 0.7);
+	memory.writeValue(IO_VDP_PMU_BANK, 0);
+	memory.writeValue(IO_VDP_PMU_Y, 16 << 16);
 	vdp.accrueCycles(250, 250);
 
 	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
@@ -159,12 +165,15 @@ test('VDP PMU parallax rig and clock snapshot at frame seal', () => {
 	memory.writeValue(IO_VDP_REG_SRC_SLOT, VDP_SLOT_PRIMARY);
 	memory.writeValue(IO_VDP_REG_SRC_UV, 0);
 	memory.writeValue(IO_VDP_REG_SRC_WH, 4 | (4 << 16));
+	memory.writeValue(IO_VDP_REG_DST_X, 32 << 16);
+	memory.writeValue(IO_VDP_REG_DST_Y, 40 << 16);
 	memory.writeValue(IO_VDP_REG_DRAW_LAYER_PRIO, 9 << 8);
-	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x00008000);
+	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x00800000);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	memory.writeValue(IO_VDP_PMU_Y, 100 << 16);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 
-	vdp.setParallaxRig(-5, 2, 1, 1, 8, 2, 2, 2, 1.5);
+	memory.writeValue(IO_VDP_PMU_Y, 8 << 16);
 	vdp.accrueCycles(500, 750);
 
 	const workUnits = vdp.getPendingRenderWorkUnits();
@@ -175,17 +184,49 @@ test('VDP PMU parallax rig and clock snapshot at frame seal', () => {
 	const command = queue[0];
 	assert.equal(command.opcode, 'blit');
 	assert.equal(command.parallaxWeight, 0.5);
-	const rig = vdp.executionParallaxRig;
-	assert.equal(rig.vy, 2);
-	assert.equal(rig.scale, 1.5);
-	assert.equal(rig.impact, 0.25);
-	assert.equal(rig.impact_t, 0.75);
-	assert.equal(rig.bias_px, 3);
-	assert.equal(rig.parallax_strength, 0.8);
-	assert.equal(rig.scale_strength, 1.2);
-	assert.equal(rig.flip_strength, 0.4);
-	assert.equal(rig.flip_window, 0.7);
-	assert.equal(vdp.executionParallaxClockSeconds, 0.25);
+	assert.equal(command.dstX, 32);
+	assert.equal(command.dstY, 48);
+	assert.equal(command.scaleX, 1);
+	assert.equal(command.scaleY, 1);
+	vdp.completeReadyExecution(queue);
+});
+
+test('VDP PMU bank registers resolve DRAW_CTRL bank and signed weight', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_PMU_BANK, 3);
+	memory.writeValue(IO_VDP_PMU_Y, 12 << 16);
+	memory.writeValue(IO_VDP_PMU_SCALE_X, 0x00018000);
+	memory.writeValue(IO_VDP_PMU_CTRL, 1);
+	assert.equal(memory.readValue(IO_VDP_PMU_CTRL), 1);
+	memory.writeValue(IO_VDP_PMU_BANK, 4);
+	memory.writeValue(IO_VDP_PMU_SCALE_Y, 0);
+	assert.equal(memory.readValue(IO_VDP_PMU_SCALE_Y), 0);
+	memory.writeValue(IO_VDP_PMU_BANK, 3);
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_REG_SRC_SLOT, VDP_SLOT_PRIMARY);
+	memory.writeValue(IO_VDP_REG_SRC_UV, 0);
+	memory.writeValue(IO_VDP_REG_SRC_WH, 4 | (4 << 16));
+	memory.writeValue(IO_VDP_REG_DST_X, 32 << 16);
+	memory.writeValue(IO_VDP_REG_DST_Y, 40 << 16);
+	memory.writeValue(IO_VDP_REG_DRAW_LAYER_PRIO, 9 << 8);
+	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x00800000 | (3 << 8));
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+
+	const workUnits = vdp.getPendingRenderWorkUnits();
+	assert.ok(workUnits > 0);
+	vdp.advanceWork(workUnits);
+	const queue = vdp.takeReadyExecutionQueue();
+	assert.ok(queue);
+	const command = queue[0];
+	assert.equal(command.opcode, 'blit');
+	assert.equal(command.parallaxWeight, 0.5);
+	assert.equal(command.dstY, 46);
+	assert.equal(command.scaleX, 1.25);
+	assert.equal(command.scaleY, 1);
 	vdp.completeReadyExecution(queue);
 });
 
@@ -264,7 +305,7 @@ test('VDP2D FIFO allows an empty PKT_END-only frame', () => {
 	assert.equal((vdp as any).activeFrame.hasCommands, false);
 });
 
-test('VDP2D BLIT validates source rect and scale', () => {
+test('VDP2D BLIT validates source rect bounds', () => {
 	const { memory, vdp } = createVdp();
 
 	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));

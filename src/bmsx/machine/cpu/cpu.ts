@@ -120,7 +120,6 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 		case 'cartdata':
 		case 'list_builtins':
 		case 'create_font':
-		case 'set_sprite_parallax_rig':
 		case 'taskgate':
 			return NATIVE_COST_TIER4;
 		default:

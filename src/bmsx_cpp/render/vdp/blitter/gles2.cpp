@@ -45,8 +45,6 @@ struct VdpGles2Host {
 	i32 width = 0;
 	i32 height = 0;
 	std::array<VdpGles2SurfaceInfo, VDP_RD_SURFACE_COUNT> surfaces{};
-	VdpParallaxRig parallaxRig{};
-	f64 timeSeconds = 0.0;
 };
 
 struct VdpGles2Runtime {
@@ -157,21 +155,6 @@ GLuint linkVdpGles2Program(GLuint vs, GLuint fs) {
 	glGetProgramInfoLog(program, logLength, nullptr, log.data());
 	glDeleteProgram(program);
 	throw vdpBackendFault("program link failed: " + log);
-}
-
-f32 smoothstep01(f32 value) {
-	const f32 t = std::clamp(value, 0.0f, 1.0f);
-	return t * t * (3.0f - 2.0f * t);
-}
-
-f32 sign01(f32 value) {
-	if (value > 0.0f) {
-		return 1.0f;
-	}
-	if (value < 0.0f) {
-		return -1.0f;
-	}
-	return 0.0f;
 }
 
 void destroyVdpGles2Runtime() {
@@ -315,23 +298,6 @@ void appendQuadVertices(
 	pushVertex(vertices, x11, y11, u1, v1, textpageId, color);
 }
 
-// disable-next-line single_line_method_pattern -- axis-aligned quads are the hot common case; this keeps zero-skew arguments out of every callsite.
-void appendAxisAlignedQuadVertices(
-	std::vector<VdpGles2Vertex>& vertices,
-	f32 x,
-	f32 y,
-	f32 width,
-	f32 height,
-	f32 u0,
-	f32 v0,
-	f32 u1,
-	f32 v1,
-	f32 textpageId,
-	const VDP::FrameBufferColor& color
-) {
-	appendQuadVertices(vertices, x, y, x, y + height, x + width, y, x + width, y + height, u0, v0, u1, v1, textpageId, color);
-}
-
 void appendLineQuadVertices(
 	std::vector<VdpGles2Vertex>& vertices,
 	const VDP::BlitterCommand& command,
@@ -342,7 +308,9 @@ void appendLineQuadVertices(
 	const f32 length = std::hypot(dx, dy);
 	if (length == 0.0f) {
 		const f32 half = command.thickness * 0.5f;
-		appendAxisAlignedQuadVertices(vertices, command.x0 - half, command.y0 - half, command.thickness, command.thickness, 0.0f, 0.0f, 1.0f, 1.0f, VDP_GLES2_PRIMARY_TEXTPAGE_ID, color);
+		const f32 x = command.x0 - half;
+		const f32 y = command.y0 - half;
+		appendQuadVertices(vertices, x, y, x, y + command.thickness, x + command.thickness, y, x + command.thickness, y + command.thickness, 0.0f, 0.0f, 1.0f, 1.0f, VDP_GLES2_PRIMARY_TEXTPAGE_ID, color);
 		return;
 	}
 	const f32 tangentX = dx / length;
@@ -371,35 +339,6 @@ void appendLineQuadVertices(
 	);
 }
 
-void computeBlitParallax(
-	const VdpGles2Host& host,
-	const VDP::BlitterCommand& command,
-	f32& outScale,
-	f32& outOffsetY
-) {
-	const f32 dir = sign01(command.parallaxWeight);
-	if (dir == 0.0f) {
-		outScale = 1.0f;
-		outOffsetY = 0.0f;
-		return;
-	}
-	const f32 weight = std::abs(command.parallaxWeight);
-	const f32 wobble = std::sin(static_cast<f32>(host.timeSeconds) * 2.2f) * 0.5f
-		+ std::sin(static_cast<f32>(host.timeSeconds) * 1.1f + 1.7f) * 0.5f;
-	outOffsetY = (host.parallaxRig.bias_px + wobble * host.parallaxRig.vy) * weight * host.parallaxRig.parallax_strength * dir;
-	const f32 flipWindowSeconds = std::max(host.parallaxRig.flip_window, 0.0001f);
-	const f32 hold = 0.2f * flipWindowSeconds;
-	const f32 flipU = std::clamp((host.parallaxRig.impact_t - hold) / std::max(flipWindowSeconds - hold, 0.0001f), 0.0f, 1.0f);
-	const f32 flipWindow = 1.0f - smoothstep01(flipU);
-	const f32 flip = 1.0f + ((-1.0f - 1.0f) * (flipWindow * host.parallaxRig.flip_strength));
-	outOffsetY *= flip;
-	const f32 baseScale = 1.0f + (host.parallaxRig.scale - 1.0f) * weight * host.parallaxRig.scale_strength;
-	const f32 impactSign = sign01(host.parallaxRig.impact);
-	const f32 impactMask = std::max(0.0f, dir * impactSign);
-	const f32 pulse = std::exp(-8.0f * host.parallaxRig.impact_t) * std::abs(host.parallaxRig.impact) * weight * impactMask;
-	outScale = baseScale + pulse;
-}
-
 void appendBlitVertices(
 	const VdpGles2Host& host,
 	std::vector<VdpGles2Vertex>& vertices,
@@ -423,15 +362,6 @@ void appendBlitVertices(
 	}
 	const f32 x0 = command.dstX;
 	const f32 y0 = command.dstY;
-	const f32 centerX = x0 + dstWidth * 0.5f;
-	const f32 centerY = y0 + dstHeight * 0.5f;
-	f32 scale = 1.0f;
-	f32 offsetY = 0.0f;
-	computeBlitParallax(host, command, scale, offsetY);
-	auto transformPoint = [&](f32 x, f32 y, f32& outX, f32& outY) {
-		outX = (x - centerX) * scale + centerX;
-		outY = (y - centerY) * scale + centerY + offsetY;
-	};
 	f32 px00 = 0.0f;
 	f32 py00 = 0.0f;
 	f32 px01 = 0.0f;
@@ -440,10 +370,14 @@ void appendBlitVertices(
 	f32 py10 = 0.0f;
 	f32 px11 = 0.0f;
 	f32 py11 = 0.0f;
-	transformPoint(x0, y0, px00, py00);
-	transformPoint(x0, y0 + dstHeight, px01, py01);
-	transformPoint(x0 + dstWidth, y0, px10, py10);
-	transformPoint(x0 + dstWidth, y0 + dstHeight, px11, py11);
+	px00 = x0;
+	py00 = y0;
+	px01 = x0;
+	py01 = y0 + dstHeight;
+	px10 = x0 + dstWidth;
+	py10 = y0;
+	px11 = x0 + dstWidth;
+	py11 = y0 + dstHeight;
 	appendQuadVertices(vertices, px00, py00, px01, py01, px10, py10, px11, py11, u0, v0, u1, v1, textpageId, color);
 }
 
@@ -518,8 +452,6 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 	host.renderTexture = vdpRenderFrameBufferTexture();
 	host.width = static_cast<i32>(vdp.frameBufferWidth());
 	host.height = static_cast<i32>(vdp.frameBufferHeight());
-	host.parallaxRig = vdp.executionParallaxRig();
-	host.timeSeconds = vdp.executionParallaxClockSeconds();
 	auto prepareSurface = [&](uint32_t surfaceId, f32 textpageId) {
 		auto& info = host.surfaces[surfaceId];
 		info.textpageId = textpageId;
@@ -641,12 +573,16 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 						std::swap(top, bottom);
 					}
 					if (left != right && top != bottom) {
-						appendAxisAlignedQuadVertices(
+						appendQuadVertices(
 							state.vertices,
 							left,
 							top,
-							right - left,
-							bottom - top,
+							left,
+							bottom,
+							right,
+							top,
+							right,
+							bottom,
 							0.0f,
 							0.0f,
 							1.0f,
@@ -666,12 +602,18 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 					if (command->backgroundColor.has_value()) {
 						bindMode(VdpDrawMode::Solid);
 						for (const auto& glyph : command->glyphs) {
-							appendAxisAlignedQuadVertices(
+							const f32 width = static_cast<f32>(glyph.advance);
+							const f32 height = static_cast<f32>(command->lineHeight);
+							appendQuadVertices(
 								state.vertices,
 								glyph.dstX,
 								glyph.dstY,
-								static_cast<f32>(glyph.advance),
-								static_cast<f32>(command->lineHeight),
+								glyph.dstX,
+								glyph.dstY + height,
+								glyph.dstX + width,
+								glyph.dstY,
+								glyph.dstX + width,
+								glyph.dstY + height,
 								0.0f,
 								0.0f,
 								1.0f,
@@ -688,12 +630,18 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 						const f32 v0 = static_cast<f32>(glyph.srcY) * surface.invHeight;
 						const f32 u1 = static_cast<f32>(glyph.srcX + glyph.width) * surface.invWidth;
 						const f32 v1 = static_cast<f32>(glyph.srcY + glyph.height) * surface.invHeight;
-						appendAxisAlignedQuadVertices(
+						const f32 width = static_cast<f32>(glyph.width);
+						const f32 height = static_cast<f32>(glyph.height);
+						appendQuadVertices(
 							state.vertices,
 							glyph.dstX,
 							glyph.dstY,
-							static_cast<f32>(glyph.width),
-							static_cast<f32>(glyph.height),
+							glyph.dstX,
+							glyph.dstY + height,
+							glyph.dstX + width,
+							glyph.dstY,
+							glyph.dstX + width,
+							glyph.dstY + height,
 							u0,
 							v0,
 							u1,
@@ -712,12 +660,18 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 						const f32 v0 = static_cast<f32>(tile.srcY) * surface.invHeight;
 						const f32 u1 = static_cast<f32>(tile.srcX + tile.width) * surface.invWidth;
 						const f32 v1 = static_cast<f32>(tile.srcY + tile.height) * surface.invHeight;
-						appendAxisAlignedQuadVertices(
+						const f32 width = static_cast<f32>(tile.width);
+						const f32 height = static_cast<f32>(tile.height);
+						appendQuadVertices(
 							state.vertices,
 							tile.dstX,
 							tile.dstY,
-							static_cast<f32>(tile.width),
-							static_cast<f32>(tile.height),
+							tile.dstX,
+							tile.dstY + height,
+							tile.dstX + width,
+							tile.dstY,
+							tile.dstX + width,
+							tile.dstY + height,
 							u0,
 							v0,
 							u1,
@@ -741,12 +695,18 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 		backend->copyTextureRegion(host.renderTexture, snapshot, command.srcX, command.srcY, command.srcX, command.srcY, command.width, command.height);
 		state.vertices.clear();
 		state.vertices.reserve(6u);
-		appendAxisAlignedQuadVertices(
+		const f32 width = static_cast<f32>(command.width);
+		const f32 height = static_cast<f32>(command.height);
+		appendQuadVertices(
 			state.vertices,
 			command.dstX,
 			command.dstY,
-			static_cast<f32>(command.width),
-			static_cast<f32>(command.height),
+			command.dstX,
+			command.dstY + height,
+			command.dstX + width,
+			command.dstY,
+			command.dstX + width,
+			command.dstY + height,
 			static_cast<f32>(command.srcX) / static_cast<f32>(host.width),
 			static_cast<f32>(command.srcY) / static_cast<f32>(host.height),
 			static_cast<f32>(command.srcX + command.width) / static_cast<f32>(host.width),

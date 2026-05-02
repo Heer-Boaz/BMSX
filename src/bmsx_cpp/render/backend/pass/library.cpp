@@ -49,6 +49,7 @@ Framebuffer2DPipelineState buildFramebuffer2DState(const RenderPassDef::RenderGr
 	return state;
 }
 
+#if BMSX_ENABLE_GLES2
 DeviceQuantizePipelineState buildDeviceQuantizeState(const RenderPassDef::RenderGraphPassContext& ctx) {
 	auto* view = ctx.view;
 	DeviceQuantizePipelineState state;
@@ -57,6 +58,7 @@ DeviceQuantizePipelineState buildDeviceQuantizeState(const RenderPassDef::Render
 	state.ditherType = static_cast<i32>(view->dither_type);
 	return state;
 }
+#endif
 
 CRTPipelineState buildCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx,
 										RenderPassDef::RenderPassGraphDef::PresentInput presentInput) {

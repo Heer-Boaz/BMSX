@@ -246,6 +246,7 @@ void GameView::setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry) 
 void GameView::setActiveTexUnit(i32 unit) {
 	if (backendType() != BackendType::OpenGLES2) return;
 #if !BMSX_ENABLE_GLES2
+	(void)unit;
 	throw BMSX_RUNTIME_ERROR("[GameView] OpenGLES2 backend disabled at compile time.");
 #else
 	m_activeTexUnit = unit;
@@ -256,6 +257,7 @@ void GameView::setActiveTexUnit(i32 unit) {
 void GameView::bind2DTex(TextureHandle tex) {
 	if (backendType() != BackendType::OpenGLES2) return;
 #if !BMSX_ENABLE_GLES2
+	(void)tex;
 	throw BMSX_RUNTIME_ERROR("[GameView] OpenGLES2 backend disabled at compile time.");
 #else
 	static_cast<OpenGLES2Backend*>(m_backend.get())->bindTexture2D(tex);
@@ -265,6 +267,7 @@ void GameView::bind2DTex(TextureHandle tex) {
 void GameView::bindCubemapTex(TextureHandle tex) {
 	if (backendType() != BackendType::OpenGLES2) return;
 #if !BMSX_ENABLE_GLES2
+	(void)tex;
 	throw BMSX_RUNTIME_ERROR("[GameView] OpenGLES2 backend disabled at compile time.");
 #else
 	(void)tex;

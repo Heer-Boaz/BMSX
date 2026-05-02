@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 2;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 4;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
@@ -115,7 +115,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'orientation',
 	'pos',
 	'range',
-	'spriteParallaxRig',
 	'vy',
 	'scale',
 	'impact',
@@ -130,7 +129,8 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'surfaceId',
 	'pixels',
 	'displayFrameBufferPixels',
-	'skyboxFaceSources',
-	'parallaxRig',
-	'parallaxClockSeconds',
+	'skyboxControl',
+	'skyboxFaceWords',
+	'pmuSelectedBank',
+	'pmuBankWords',
 ] as const;

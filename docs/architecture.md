@@ -231,11 +231,21 @@ Current evidence:
   the same latches, `IO_VDP_CMD`/FIFO `CMD` doorbells snapshot those latches,
   and register 11 is `DRAW_CTRL` for DEX flip/parallax control.
 - Current parallax status is DEX/PMU-owned parallax execution. Register 11
-  snapshots the per-BLIT parallax weight through the hardware-style latch path,
-  and VDP2D backend execution no longer derives that weight from z/priority.
-  The PMU parallax rig and clock are owned by `VDP`, serialized under
-  `machine.vdp`, and snapshotted onto the sealed execution frame before WebGL
-  or native GLES2 consumes them through the bridge.
+  snapshots the PMU bank and per-BLIT signed Q8.8 weight through the
+  hardware-style latch path, and VDP2D backend execution no longer derives that
+  weight from z/priority. PMU bank registers (`sys_vdp_pmu_bank`,
+  `sys_vdp_pmu_x`, `sys_vdp_pmu_y`, `sys_vdp_pmu_scale_x`,
+  `sys_vdp_pmu_scale_y`, `sys_vdp_pmu_ctrl`) are VDP-owned operational state.
+  DEX resolves the selected bank into per-BLIT `dstX`/`dstY`/scale geometry
+  before enqueueing renderer work. WebGL, headless, native GLES2, and software
+  blitters draw resolved geometry. There is no VDP parallax rig or clock state.
+- TS and C++ now split real VDP unit state out of the parent VDP object where
+  the ownership exists today. `VdpPmuUnit` owns PMU bank registers, selected
+  bank state, and PMU BLIT resolve. `VdpSbxUnit` owns live and committed SBX
+  skybox face sources. The parent `VDP` remains the bus interface, frame
+  lifecycle owner, and backend handoff point, matching the MAME-like shape where
+  a top-level video device coordinates child hardware state rather than becoming
+  one unstructured monolith.
 - TS and C++ VDP render-surface texture binding no longer passes a fake VDP
   object into texture lookup. Surface-size resolution still asks the VDP, while
   texture-handle binding is an explicit render-side texture-memory operation.
@@ -264,14 +274,14 @@ Desired direction:
   frame timing, framebuffer identity, atlas slot ids, skybox ids, committed
   visual state, and save-state pixel payloads.
 - Model VDP work as named hardware units rather than one universal register
-  frontend: DEX owns the 2D latch ingress/FIFO replay, SBX owns skybox face
-  state, MEX owns mesh/geometry submissions, PEX owns particle billboards, and
-  FBM owns framebuffer/present/readback. Existing render passes remain the
+  frontend: DEX owns the 2D latch ingress/FIFO replay, PMU owns parallax/motion
+  bank registers and BLIT resolve, SBX owns skybox face state, MSU owns mesh
+  submissions, BBU owns billboards, FBM owns framebuffer/present/readback, and
+  VOUT owns device quantize/CRT output. Existing render passes remain the
   backend bridge outputs for those units.
-- Keep PMU/parallax rig and clock state VDP-owned. API/timeline writes may
-  configure that state, but render backends must consume sealed VDP execution
-  snapshots and must not source parallax timing or rig values from host
-  renderer globals.
+- Keep PMU bank register state VDP-owned. DEX must resolve PMU output before
+  backend handoff. Render backends must consume resolved VDP command geometry
+  and must not source parallax timing or rig values from host renderer globals.
 - Move backend ownership and host texture reads/writes to the render side.
 - Treat `render/vdp` as the native VDP video-hardware implementation, not as a
   generic host renderer and not as a callback sink installed into the device.

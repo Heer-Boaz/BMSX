@@ -119,7 +119,6 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"orientation",
 	"pos",
 	"range",
-	"spriteParallaxRig",
 	"vy",
 	"scale",
 	"impact",
@@ -134,9 +133,10 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"surfaceId",
 	"pixels",
 	"displayFrameBufferPixels",
-	"skyboxFaceSources",
-	"parallaxRig",
-	"parallaxClockSeconds",
+	"skyboxControl",
+	"skyboxFaceWords",
+	"pmuSelectedBank",
+	"pmuBankWords",
 };
 
 } // namespace

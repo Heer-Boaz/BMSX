@@ -251,10 +251,6 @@ export class Api {
 		return this.storage.getValue(index);
 	}
 
-	public set_sprite_parallax_rig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
-		this.runtime.machine.vdp.setParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
-	}
-
 	public taskgate(name: string): GateGroup {
 		return taskGate.group(name);
 	}

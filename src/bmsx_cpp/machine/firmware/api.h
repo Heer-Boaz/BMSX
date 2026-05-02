@@ -64,10 +64,6 @@ public:
 	void dset(int index, double value);
 	double dget(int index) const;
 
-	void set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t,
-									f32 bias_px, f32 parallax_strength,
-									f32 scale_strength, f32 flip_strength,
-									f32 flip_window);
 	void reboot();
 
 private:

@@ -74,7 +74,7 @@ type GlyphRunCursor = {
 	y: number;
 };
 
-const INSTANCE_FLOATS = 16;
+const INSTANCE_FLOATS = 14;
 const INSTANCE_STRIDE_BYTES = INSTANCE_FLOATS * 4;
 const INITIAL_BATCH_CAPACITY = 256;
 const SOLID_TEXCOORD_0 = 0;
@@ -95,9 +95,7 @@ const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 	['i_axis_y', 2, 4 * 4],
 	['i_uv0', 2, 6 * 4],
 	['i_uv1', 2, 8 * 4],
-	['i_z', 1, 10 * 4],
-	['i_fx', 1, 11 * 4],
-	['i_color', 4, 12 * 4],
+	['i_color', 4, 10 * 4],
 ];
 
 let runtime: HostOverlayRuntime | null = null;
@@ -145,7 +143,7 @@ function bootstrapRuntime(backend: WebGLBackend): HostOverlayRuntime {
 	return runtime;
 }
 
-function writeQuad(state: HostOverlayRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, z: number, colorValue: color): void {
+function writeQuad(state: HostOverlayRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, _z: number, colorValue: color): void {
 	const base = index * INSTANCE_FLOATS;
 	const data = state.floatData;
 	data[base + 0] = originX;
@@ -158,12 +156,10 @@ function writeQuad(state: HostOverlayRuntime, index: number, originX: number, or
 	data[base + 7] = v0;
 	data[base + 8] = u1;
 	data[base + 9] = v1;
-	data[base + 10] = z;
-	data[base + 11] = 0;
-	data[base + 12] = colorValue.r;
-	data[base + 13] = colorValue.g;
-	data[base + 14] = colorValue.b;
-	data[base + 15] = colorValue.a;
+	data[base + 10] = colorValue.r;
+	data[base + 11] = colorValue.g;
+	data[base + 12] = colorValue.b;
+	data[base + 13] = colorValue.a;
 	state.textpageData[index] = HOST_OVERLAY_TEXTPAGE_ID;
 }
 
@@ -473,9 +469,6 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 	});
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	gl.uniform1f(state.uniforms.scale, 1);
-	gl.uniform4f(state.uniforms.parallaxRig, 0, 1, 0, 0);
-	gl.uniform4f(state.uniforms.parallaxRig2, 0, 0, 0, 0);
-	gl.uniform1f(state.uniforms.parallaxFlipWindow, 0);
 	backend.setViewport({ x: 0, y: 0, w: passState.width, h: passState.height });
 	backend.setCullEnabled(false);
 	backend.setDepthTestEnabled(false);

@@ -112,10 +112,8 @@ void testInvalidRegisterDoesNotCancelFrame() {
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 4u); }, "invalid draw ctrl");
 	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_CTRL) == 0u, "invalid draw ctrl should not mutate the latch");
-	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x01000000u); }, "invalid draw ctrl high bits");
-	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_CTRL) == 0u, "invalid draw ctrl high bits should not mutate the latch");
-	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0xffff0000u); }, "negative Q16 scale");
-	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_SCALE_X) == 0x00010000u, "negative Q16 scale should not mutate the latch");
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0xffff0000u);
+	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_SCALE_X) == 0xffff0000u, "negative Q16 scale should latch as a raw register word");
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 }
 
@@ -146,7 +144,7 @@ void testBlitDrawCtrlSnapshot() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_LAYER_PRIO, 9u << 8);
-	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00ff0003u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0xff000003u);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
@@ -163,11 +161,12 @@ void testBlitDrawCtrlSnapshot() {
 	h.vdp.completeReadyExecution(queue);
 }
 
-void testPmuParallaxSnapshot() {
+void testPmuParallaxResolvedBlitSnapshot() {
 	Harness h;
 
 	h.vdp.setTiming(1000, 1000, 0);
-	h.vdp.setParallaxRig(2.0f, 1.5f, 0.25f, 0.75f, 3.0f, 0.8f, 1.2f, 0.4f, 0.7f);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_BANK, 0u);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_Y, 16u << 16u);
 	h.vdp.accrueCycles(250, 250);
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
@@ -175,12 +174,15 @@ void testPmuParallaxSnapshot() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_REG_DST_X, 32u << 16);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DST_Y, 40u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_LAYER_PRIO, 9u << 8);
-	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00008000u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00800000u);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_Y, 100u << 16u);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 
-	h.vdp.setParallaxRig(-5.0f, 2.0f, 1.0f, 1.0f, 8.0f, 2.0f, 2.0f, 2.0f, 1.5f);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_Y, 8u << 16u);
 	h.vdp.accrueCycles(500, 750);
 
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
@@ -191,17 +193,49 @@ void testPmuParallaxSnapshot() {
 	const auto& command = queue->front();
 	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
 	require(std::abs(command.parallaxWeight - 0.5f) < 0.0001f, "DRAW_CTRL parallax weight should remain per-BLIT state");
-	const auto& rig = h.vdp.executionParallaxRig();
-	require(std::abs(rig.vy - 2.0f) < 0.0001f, "PMU vy should be snapshotted at frame seal");
-	require(std::abs(rig.scale - 1.5f) < 0.0001f, "PMU scale should be snapshotted at frame seal");
-	require(std::abs(rig.impact - 0.25f) < 0.0001f, "PMU impact should be snapshotted at frame seal");
-	require(std::abs(rig.impact_t - 0.75f) < 0.0001f, "PMU impact_t should be snapshotted at frame seal");
-	require(std::abs(rig.bias_px - 3.0f) < 0.0001f, "PMU bias should be snapshotted at frame seal");
-	require(std::abs(rig.parallax_strength - 0.8f) < 0.0001f, "PMU parallax strength should be snapshotted at frame seal");
-	require(std::abs(rig.scale_strength - 1.2f) < 0.0001f, "PMU scale strength should be snapshotted at frame seal");
-	require(std::abs(rig.flip_strength - 0.4f) < 0.0001f, "PMU flip strength should be snapshotted at frame seal");
-	require(std::abs(rig.flip_window - 0.7f) < 0.0001f, "PMU flip window should be snapshotted at frame seal");
-	require(std::abs(h.vdp.executionParallaxClockSeconds() - 0.25) < 0.0001, "PMU clock should be snapshotted at frame seal");
+	require(std::abs(command.dstX - 32.0f) < 0.0001f, "PMU should leave X unchanged for this rig");
+	require(std::abs(command.dstY - 48.0f) < 0.0001f, "PMU should resolve +8px Y before backend execution");
+	require(std::abs(command.scaleX - 1.0f) < 0.0001f, "PMU should leave scale X unchanged for this rig");
+	require(std::abs(command.scaleY - 1.0f) < 0.0001f, "PMU should leave scale Y unchanged for this rig");
+	h.vdp.completeReadyExecution(queue);
+}
+
+void testPmuBankRegistersResolveDrawCtrl() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_PMU_BANK, 3u);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_Y, 12u << 16u);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_SCALE_X, 0x00018000u);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_CTRL, 1u);
+	require(h.memory.readIoU32(bmsx::IO_VDP_PMU_CTRL) == 1u, "PMU control should store raw register bits");
+	writeIo(h.memory, bmsx::IO_VDP_PMU_BANK, 4u);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_SCALE_Y, 0u);
+	require(h.memory.readIoU32(bmsx::IO_VDP_PMU_SCALE_Y) == 0u, "PMU scale register should store zero as raw state");
+	writeIo(h.memory, bmsx::IO_VDP_PMU_BANK, 3u);
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_REG_DST_X, 32u << 16);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DST_Y, 40u << 16);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_LAYER_PRIO, 9u << 8);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00800000u | (3u << 8u));
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+
+	const int workUnits = h.vdp.getPendingRenderWorkUnits();
+	require(workUnits > 0, "BLIT should submit render work");
+	h.vdp.advanceWork(workUnits);
+	const auto* queue = h.vdp.takeReadyExecutionQueue();
+	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
+	const auto& command = queue->front();
+	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
+	require(std::abs(command.parallaxWeight - 0.5f) < 0.0001f, "DRAW_CTRL parallax weight should be snapshotted");
+	require(std::abs(command.dstY - 46.0f) < 0.0001f, "PMU bank Y should resolve into BLIT geometry");
+	require(std::abs(command.scaleX - 1.25f) < 0.0001f, "PMU bank scale X should resolve into BLIT geometry");
+	require(std::abs(command.scaleY - 1.0f) < 0.0001f, "PMU bank scale Y should remain unchanged");
 	h.vdp.completeReadyExecution(queue);
 }
 
@@ -282,7 +316,8 @@ int main() {
 		{"invalid register frame behavior", testInvalidRegisterDoesNotCancelFrame},
 		{"latch snapshot geometry", testLatchSnapshotGeometry},
 		{"BLIT DRAW_CTRL snapshot", testBlitDrawCtrlSnapshot},
-		{"PMU parallax snapshot", testPmuParallaxSnapshot},
+		{"PMU parallax resolved BLIT snapshot", testPmuParallaxResolvedBlitSnapshot},
+		{"PMU bank registers resolve DRAW_CTRL", testPmuBankRegistersResolveDrawCtrl},
 		{"FIFO replay and faults", testFifoReplayAndFaults},
 		{"slot registers", testSlotRegisters},
 		{"validation cancels direct draw", testValidationCancelsDirectDrawFrame},

@@ -197,6 +197,12 @@ import {
 	IO_VDP_CMD_ARG_COUNT,
 	IO_VDP_FIFO,
 	IO_VDP_FIFO_CTRL,
+	IO_VDP_PMU_BANK,
+	IO_VDP_PMU_CTRL,
+	IO_VDP_PMU_SCALE_X,
+	IO_VDP_PMU_SCALE_Y,
+	IO_VDP_PMU_X,
+	IO_VDP_PMU_Y,
 	IO_VDP_RD_DATA,
 	IO_VDP_RD_MODE,
 	IO_VDP_RD_STATUS,
@@ -1220,6 +1226,12 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo', IO_VDP_FIFO);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl', IO_VDP_FIFO_CTRL);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl_seal', VDP_FIFO_CTRL_SEAL);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_bank', IO_VDP_PMU_BANK);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_x', IO_VDP_PMU_X);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_y', IO_VDP_PMU_Y);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_scale_x', IO_VDP_PMU_SCALE_X);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_scale_y', IO_VDP_PMU_SCALE_Y);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_ctrl', IO_VDP_PMU_CTRL);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_primary', VDP_SLOT_PRIMARY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_secondary', VDP_SLOT_SECONDARY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_system', VDP_SLOT_SYSTEM);

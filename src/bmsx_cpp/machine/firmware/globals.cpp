@@ -1258,6 +1258,12 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_fifo", valueNumber(static_cast<double>(IO_VDP_FIFO)));
 	setGlobal("sys_vdp_fifo_ctrl", valueNumber(static_cast<double>(IO_VDP_FIFO_CTRL)));
 	setGlobal("sys_vdp_fifo_ctrl_seal", valueNumber(static_cast<double>(VDP_FIFO_CTRL_SEAL)));
+	setGlobal("sys_vdp_pmu_bank", valueNumber(static_cast<double>(IO_VDP_PMU_BANK)));
+	setGlobal("sys_vdp_pmu_x", valueNumber(static_cast<double>(IO_VDP_PMU_X)));
+	setGlobal("sys_vdp_pmu_y", valueNumber(static_cast<double>(IO_VDP_PMU_Y)));
+	setGlobal("sys_vdp_pmu_scale_x", valueNumber(static_cast<double>(IO_VDP_PMU_SCALE_X)));
+	setGlobal("sys_vdp_pmu_scale_y", valueNumber(static_cast<double>(IO_VDP_PMU_SCALE_Y)));
+	setGlobal("sys_vdp_pmu_ctrl", valueNumber(static_cast<double>(IO_VDP_PMU_CTRL)));
 	setGlobal("sys_vdp_slot_primary", valueNumber(static_cast<double>(VDP_SLOT_PRIMARY)));
 	setGlobal("sys_vdp_slot_secondary", valueNumber(static_cast<double>(VDP_SLOT_SECONDARY)));
 	setGlobal("sys_vdp_slot_system", valueNumber(static_cast<double>(VDP_SLOT_SYSTEM)));

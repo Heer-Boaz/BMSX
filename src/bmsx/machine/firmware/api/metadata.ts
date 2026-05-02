@@ -150,21 +150,6 @@ export const API_METHOD_METADATA = {
 		returnType: 'number',
 		returnDescription: 'Stored numeric value.',
 	},
-	set_sprite_parallax_rig: {
-		description: 'Sets global sprite parallax rig values for the current frame.',
-		parameters: [
-			{ name: 'vy', description: 'Vertical wobble amplitude in pixels.' },
-			{ name: 'scale', description: 'Base scale factor for parallax.' },
-			{ name: 'impact', description: 'Impact scale amplitude (sign selects side).' },
-			{ name: 'impact_t', description: 'Seconds since last impact.' },
-			{ name: 'bias_px', description: 'Signed baseline vertical bias in pixels.' },
-			{ name: 'parallax_strength', description: 'Global multiplier for vertical parallax offsets.' },
-			{ name: 'scale_strength', description: 'Global multiplier for parallax base scale response.' },
-			{ name: 'flip_strength', description: 'Bias flip amount (0..1) during the flip window.' },
-			{ name: 'flip_window', description: 'Seconds for the bias flip window.' },
-		],
-		returnType: 'void',
-	},
 	world: {
 		description: 'Returns the active World instance.',
 		parameters: [],

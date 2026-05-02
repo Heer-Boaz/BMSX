@@ -297,24 +297,24 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 		id: 'skybox',
 		name: 'HeadlessSkybox',
 		stateOnly: true,
-		shouldExecute: () => !!consoleCore.view.skyboxFaceSources,
+		shouldExecute: () => !!consoleCore.view.skyboxFaceUvRects,
 		exec: () => {
-			const sources = consoleCore.view.skyboxFaceSources;
+			const uvRects = consoleCore.view.skyboxFaceUvRects;
 			const sizes = consoleCore.view.skyboxFaceSizes;
 			const bindings = consoleCore.view.skyboxFaceTextpageBindings;
-			if (!sources || !sizes || !bindings) {
+			if (!uvRects || !sizes || !bindings) {
 				return;
 			}
-			const snapshot: Snapshot = [`faces=${SKYBOX_FACE_KEYS.map((key) => {
-				const source = sources[key];
-				return `${source.slot}:${source.u},${source.v},${source.w},${source.h}`;
+			const snapshot: Snapshot = [`faces=${SKYBOX_FACE_KEYS.map((_, index) => {
+				const uvBase = index * 4;
+				return `${bindings[index]}:${uvRects[uvBase]},${uvRects[uvBase + 1]},${uvRects[uvBase + 2]},${uvRects[uvBase + 3]}`;
 			}).join(',')}`];
 			for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
 				const key = SKYBOX_FACE_KEYS[index];
-				const source = sources[key];
+				const uvBase = index * 4;
 				const sizeBase = index * 2;
 				const slot = bindings[index] === 0 ? 'primary' : 'secondary';
-				snapshot.push(`[skybox:${key}] source=${source.slot}:${source.u},${source.v},${source.w},${source.h} size=${sizes[sizeBase]}x${sizes[sizeBase + 1]} slot=${slot}`);
+				snapshot.push(`[skybox:${key}] uv=${uvRects[uvBase]},${uvRects[uvBase + 1]},${uvRects[uvBase + 2]},${uvRects[uvBase + 3]} size=${sizes[sizeBase]}x${sizes[sizeBase + 1]} slot=${slot}`);
 			}
 			previousSkyboxSnapshot = emitDiff('skybox', previousSkyboxSnapshot, snapshot);
 		},

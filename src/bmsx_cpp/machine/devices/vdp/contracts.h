@@ -28,18 +28,31 @@ struct SkyboxFaceSources {
 	VdpSlotSource negz;
 };
 
-struct VdpParallaxRig {
-	f32 vy = 0.0f;
-	f32 scale = 1.0f;
-	f32 impact = 0.0f;
-	f32 impact_t = 0.0f;
-	f32 bias_px = 0.0f;
-	f32 parallax_strength = 1.0f;
-	f32 scale_strength = 1.0f;
-	f32 flip_strength = 0.0f;
-	f32 flip_window = 0.6f;
+struct VdpPmuBank {
+	u32 xQ16 = 0u;
+	u32 yQ16 = 0u;
+	u32 scaleXQ16 = 0x00010000u;
+	u32 scaleYQ16 = 0x00010000u;
+	u32 control = 0;
 };
 
 constexpr size_t SKYBOX_FACE_COUNT = 6;
+constexpr size_t SKYBOX_FACE_WORD_STRIDE = 5;
+constexpr size_t SKYBOX_FACE_WORD_COUNT = SKYBOX_FACE_COUNT * SKYBOX_FACE_WORD_STRIDE;
+constexpr size_t SKYBOX_FACE_SLOT_WORD = 0;
+constexpr size_t SKYBOX_FACE_U_WORD = 1;
+constexpr size_t SKYBOX_FACE_V_WORD = 2;
+constexpr size_t SKYBOX_FACE_W_WORD = 3;
+constexpr size_t SKYBOX_FACE_H_WORD = 4;
+constexpr u32 VDP_SBX_CONTROL_ENABLE = 1u;
+constexpr size_t VDP_PMU_BANK_COUNT = 256;
+constexpr size_t VDP_PMU_BANK_WORD_STRIDE = 5;
+constexpr size_t VDP_PMU_BANK_WORD_COUNT = VDP_PMU_BANK_COUNT * VDP_PMU_BANK_WORD_STRIDE;
+constexpr size_t VDP_PMU_BANK_X_WORD = 0;
+constexpr size_t VDP_PMU_BANK_Y_WORD = 1;
+constexpr size_t VDP_PMU_BANK_SCALE_X_WORD = 2;
+constexpr size_t VDP_PMU_BANK_SCALE_Y_WORD = 3;
+constexpr size_t VDP_PMU_BANK_CONTROL_WORD = 4;
+constexpr u32 VDP_PMU_Q16_ONE = 0x00010000u;
 
 } // namespace bmsx

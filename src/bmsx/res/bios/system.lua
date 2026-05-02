@@ -49,6 +49,7 @@ local aem<const> = require('bios/aem')
 local progression<const> = require('bios/progression')
 local romdir<const> = require('bios/romdir')
 local vdp_image<const> = require('bios/vdp_image')
+local vdp_pmu<const> = require('bios/vdp_pmu')
 
 local world_instance<const> = world_module.instance
 
@@ -308,6 +309,7 @@ system.vdp_img_rect = vdp_image.rect
 system.vdp_img_slot = vdp_image.slot
 system.vdp_img_source = vdp_image.source
 system.vdp_write_source_words = vdp_image.write_source_words
+system.vdp_pmu_write_bank = vdp_pmu.write_bank
 system.rom_data = romdir.data
 system.consume_axis_accum = velocity.consume_axis_accum
 system.deep_clone = deep_clone

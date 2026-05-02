@@ -21,9 +21,6 @@ export type WebGLSpriteQuadUniforms = {
 	texture0: WebGLUniformLocation;
 	texture1: WebGLUniformLocation;
 	texture2: WebGLUniformLocation;
-	parallaxRig: WebGLUniformLocation;
-	parallaxRig2: WebGLUniformLocation;
-	parallaxFlipWindow: WebGLUniformLocation;
 };
 
 export type WebGLInstancedQuadRuntime = WebGLInstancedBufferRuntime & {
@@ -60,9 +57,6 @@ export function getWebGLSpriteQuadUniforms(gl: WebGL2RenderingContext, program: 
 		texture0: gl.getUniformLocation(program, 'u_texture0')!,
 		texture1: gl.getUniformLocation(program, 'u_texture1')!,
 		texture2: gl.getUniformLocation(program, 'u_texture2')!,
-		parallaxRig: gl.getUniformLocation(program, 'u_parallax_rig')!,
-		parallaxRig2: gl.getUniformLocation(program, 'u_parallax_rig2')!,
-		parallaxFlipWindow: gl.getUniformLocation(program, 'u_parallax_flip_window')!,
 	};
 }
 

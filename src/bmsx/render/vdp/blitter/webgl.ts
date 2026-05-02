@@ -63,7 +63,7 @@ type WebGLVdpBlitterRuntime = {
 	priorityDepthBySeq: Map<number, number>;
 };
 
-const INSTANCE_FLOATS = 16;
+const INSTANCE_FLOATS = 15;
 const INSTANCE_STRIDE_BYTES = INSTANCE_FLOATS * 4;
 const INITIAL_BATCH_CAPACITY = 256;
 const SOLID_TEXCOORD_0 = 0;
@@ -82,9 +82,8 @@ const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 	['i_axis_y', 2, 4 * 4],
 	['i_uv0', 2, 6 * 4],
 	['i_uv1', 2, 8 * 4],
-	['i_fx', 1, 10 * 4],
-	['i_priority', 1, 11 * 4],
-	['i_color', 4, 12 * 4],
+	['i_priority', 1, 10 * 4],
+	['i_color', 4, 11 * 4],
 ];
 
 function createRuntime(backend: WebGLBackend): WebGLVdpBlitterRuntime {
@@ -169,20 +168,16 @@ function compareByPriority(a: VdpWebGLBlitterCommand, b: VdpWebGLBlitterCommand)
 
 function bindPassState(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, pass: PassEncoder, vdp: VDP): void {
 	const gl = backend.gl as WebGL2RenderingContext;
-	const parallaxRig = vdp.executionParallaxRig;
 	backend.setGraphicsPipeline(pass, state.pipeline);
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	updateAndBindFrameUniforms(backend, {
 		offscreen: { x: vdp.frameBufferWidth, y: vdp.frameBufferHeight },
 		logical: { x: vdp.frameBufferWidth, y: vdp.frameBufferHeight },
-		time: vdp.executionParallaxClockSeconds,
+		time: 0,
 		delta: 0,
 	});
 	gl.uniform1f(state.uniforms.scale, 1);
 	state.drawTargetHeight = vdp.frameBufferHeight;
-	gl.uniform4f(state.uniforms.parallaxRig, parallaxRig.vy, parallaxRig.scale, parallaxRig.impact, parallaxRig.impact_t);
-	gl.uniform4f(state.uniforms.parallaxRig2, parallaxRig.bias_px, parallaxRig.parallax_strength, parallaxRig.scale_strength, parallaxRig.flip_strength);
-	gl.uniform1f(state.uniforms.parallaxFlipWindow, parallaxRig.flip_window);
 	backend.setViewport({ x: 0, y: 0, w: vdp.frameBufferWidth, h: vdp.frameBufferHeight });
 	backend.setCullEnabled(false);
 	backend.setDepthTestEnabled(true);
@@ -218,7 +213,7 @@ function flushPendingBatch(backend: WebGLBackend, pass: PassEncoder, state: WebG
 	return 0;
 }
 
-function writeQuad(state: WebGLVdpBlitterRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, fx: number, priorityDepth: number, color: FrameBufferColor, textpageId: number): void {
+function writeQuad(state: WebGLVdpBlitterRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, priorityDepth: number, color: FrameBufferColor, textpageId: number): void {
 	const base = index * INSTANCE_FLOATS;
 	const data = state.floatData;
 	const drawOriginY = state.drawTargetHeight - originY;
@@ -234,18 +229,12 @@ function writeQuad(state: WebGLVdpBlitterRuntime, index: number, originX: number
 	data[base + 7] = v0;
 	data[base + 8] = u1;
 	data[base + 9] = v1;
-	data[base + 10] = fx;
-	data[base + 11] = priorityDepth;
-	data[base + 12] = color.r / 255;
-	data[base + 13] = color.g / 255;
-	data[base + 14] = color.b / 255;
-	data[base + 15] = color.a / 255;
+	data[base + 10] = priorityDepth;
+	data[base + 11] = color.r / 255;
+	data[base + 12] = color.g / 255;
+	data[base + 13] = color.b / 255;
+	data[base + 14] = color.a / 255;
 	state.textpageData[index] = textpageId;
-}
-
-// disable-next-line single_line_method_pattern -- axis-aligned quads are the hot common case; the wrapper keeps zero-skew arguments out of every callsite.
-function writeAxisAlignedQuad(state: WebGLVdpBlitterRuntime, index: number, x: number, y: number, width: number, height: number, u0: number, v0: number, u1: number, v1: number, fx: number, priorityDepth: number, color: FrameBufferColor, textpageId: number): void {
-	writeQuad(state, index, x, y, width, 0, 0, height, u0, v0, u1, v1, fx, priorityDepth, color, textpageId);
 }
 
 function appendFillCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, index: number, command: BlitterFillRectCommand, priorityDepth: number): number {
@@ -267,7 +256,7 @@ function appendFillCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime,
 		return 0;
 	}
 	ensureWebGLInstanceBufferCapacity(backend, state, index + 1, INSTANCE_FLOATS);
-	writeAxisAlignedQuad(state, index, left, top, right - left, bottom - top, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, 0, priorityDepth, command.color, 0);
+	writeQuad(state, index, left, top, right - left, 0, 0, bottom - top, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, priorityDepth, command.color, 0);
 	return 1;
 }
 
@@ -278,7 +267,7 @@ function appendLineCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime,
 	if (length === 0) {
 		const half = command.thickness * 0.5;
 		ensureWebGLInstanceBufferCapacity(backend, state, index + 1, INSTANCE_FLOATS);
-		writeAxisAlignedQuad(state, index, command.x0 - half, command.y0 - half, command.thickness, command.thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, 0, priorityDepth, command.color, 0);
+		writeQuad(state, index, command.x0 - half, command.y0 - half, command.thickness, 0, 0, command.thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, priorityDepth, command.color, 0);
 		return 1;
 	}
 	const tangentX = dx / length;
@@ -289,7 +278,7 @@ function appendLineCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime,
 	const originX = command.x0 - tangentX * half - normalX * half;
 	const originY = command.y0 - tangentY * half - normalY * half;
 	ensureWebGLInstanceBufferCapacity(backend, state, index + 1, INSTANCE_FLOATS);
-	writeQuad(state, index, originX, originY, dx + tangentX * command.thickness, dy + tangentY * command.thickness, normalX * command.thickness, normalY * command.thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, 0, priorityDepth, command.color, 0);
+	writeQuad(state, index, originX, originY, dx + tangentX * command.thickness, dy + tangentY * command.thickness, normalX * command.thickness, normalY * command.thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, priorityDepth, command.color, 0);
 	return 1;
 }
 
@@ -310,18 +299,19 @@ function appendBlitCommand(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBlitt
 		v1 = swap;
 	}
 	ensureWebGLInstanceBufferCapacity(backend, state, index + 1, INSTANCE_FLOATS);
-	writeAxisAlignedQuad(
+	writeQuad(
 		state,
 		index,
 		command.dstX,
 		command.dstY,
 		command.source.width * command.scaleX,
+		0,
+		0,
 		command.source.height * command.scaleY,
 		u0,
 		v0,
 		u1,
 		v1,
-		command.parallaxWeight,
 		priorityDepth,
 		command.color,
 		resolveVdpSurfaceSlotBinding(command.source.surfaceId),
@@ -336,18 +326,19 @@ function appendGlyphRunBackground(backend: WebGLBackend, state: WebGLVdpBlitterR
 	ensureWebGLInstanceBufferCapacity(backend, state, index + command.glyphs.length, INSTANCE_FLOATS);
 	for (let i = 0; i < command.glyphs.length; i += 1) {
 		const glyph = command.glyphs[i];
-		writeAxisAlignedQuad(
+		writeQuad(
 			state,
 			index + i,
 			glyph.dstX,
 			glyph.dstY,
 			glyph.advance,
+			0,
+			0,
 			command.lineHeight,
 			SOLID_TEXCOORD_0,
 			SOLID_TEXCOORD_0,
 			SOLID_TEXCOORD_1,
 			SOLID_TEXCOORD_1,
-			0,
 			priorityDepth,
 			command.backgroundColor,
 			0,
@@ -368,7 +359,7 @@ function appendGlyphRunGlyphs(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBl
 		const v0 = glyph.srcY / surface.height;
 		const u1 = (glyph.srcX + glyph.width) / surface.width;
 		const v1 = (glyph.srcY + glyph.height) / surface.height;
-		writeAxisAlignedQuad(state, index + i, glyph.dstX, glyph.dstY, glyph.width, glyph.height, u0, v0, u1, v1, 0, priorityDepth, command.color, resolveVdpSurfaceSlotBinding(glyph.surfaceId));
+		writeQuad(state, index + i, glyph.dstX, glyph.dstY, glyph.width, 0, 0, glyph.height, u0, v0, u1, v1, priorityDepth, command.color, resolveVdpSurfaceSlotBinding(glyph.surfaceId));
 	}
 	return command.glyphs.length;
 }
@@ -385,7 +376,7 @@ function appendTileRunCommand(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBl
 		const v0 = tile.srcY / surface.height;
 		const u1 = (tile.srcX + tile.width) / surface.width;
 		const v1 = (tile.srcY + tile.height) / surface.height;
-		writeAxisAlignedQuad(state, index + i, tile.dstX, tile.dstY, tile.width, tile.height, u0, v0, u1, v1, 0, priorityDepth, WHITE_COLOR, resolveVdpSurfaceSlotBinding(tile.surfaceId));
+		writeQuad(state, index + i, tile.dstX, tile.dstY, tile.width, 0, 0, tile.height, u0, v0, u1, v1, priorityDepth, WHITE_COLOR, resolveVdpSurfaceSlotBinding(tile.surfaceId));
 	}
 	return command.tiles.length;
 }
@@ -527,18 +518,19 @@ function copyFrameBufferRect(vdp: VDP, backend: WebGLBackend, state: WebGLVdpBli
 	bindVdpTexture(backend, TEXTURE_UNIT_TEXTPAGE_PRIMARY, copySnapshotTexture);
 	backend.setDepthFunc(backend.gl.ALWAYS);
 	backend.setBlendEnabled(false);
-	writeAxisAlignedQuad(
+	writeQuad(
 		state,
 		0,
 		command.dstX,
 		command.dstY,
 		command.width,
+		0,
+		0,
 		command.height,
 		command.srcX / vdp.frameBufferWidth,
 		command.srcY / vdp.frameBufferHeight,
 		(command.srcX + command.width) / vdp.frameBufferWidth,
 		(command.srcY + command.height) / vdp.frameBufferHeight,
-		0,
 		getPriorityDepth(priorityDepthBySeq, command.seq),
 		WHITE_COLOR,
 		0,
