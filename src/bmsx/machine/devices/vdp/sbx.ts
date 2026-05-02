@@ -10,7 +10,6 @@ import {
 	SKYBOX_FACE_WORD_STRIDE,
 	VDP_SBX_CONTROL_ENABLE,
 } from './contracts';
-import { vdpFault } from './fault';
 
 function writeFaceWords(target: Uint32Array, faceIndex: number, slot: number, u: number, v: number, w: number, h: number): void {
 	const base = faceIndex * SKYBOX_FACE_WORD_STRIDE;
@@ -70,9 +69,6 @@ export class VdpSbxUnit {
 	}
 
 	public restoreLiveState(control: number, faceWords: ArrayLike<number>): void {
-		if (faceWords.length !== SKYBOX_FACE_WORD_COUNT) {
-			throw vdpFault(`SBX state requires ${SKYBOX_FACE_WORD_COUNT} face words.`);
-		}
 		this.liveControl = control >>> 0;
 		this.liveFaceWords.set(faceWords);
 	}

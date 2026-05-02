@@ -149,8 +149,9 @@ export class VdpPmuUnit {
 		const bank = this.banks[pmuBank & 0xff]!;
 		const bankScaleX = decodeSignedQ16_16(bank.scaleXQ16);
 		const bankScaleY = decodeSignedQ16_16(bank.scaleYQ16);
-		const resolvedScaleFactorX = 1 + (bankScaleX - 1) * parallaxWeight;
-		const resolvedScaleFactorY = 1 + (bankScaleY - 1) * parallaxWeight;
+		const scaleWeight = parallaxWeight < 0 ? -parallaxWeight : parallaxWeight;
+		const resolvedScaleFactorX = 1 + (bankScaleX - 1) * scaleWeight;
+		const resolvedScaleFactorY = 1 + (bankScaleY - 1) * scaleWeight;
 		const resolvedScaleX = scaleX * resolvedScaleFactorX;
 		const resolvedScaleY = scaleY * resolvedScaleFactorY;
 		const resolvedDstX = dstX + decodeSignedQ16_16(bank.xQ16) * parallaxWeight;

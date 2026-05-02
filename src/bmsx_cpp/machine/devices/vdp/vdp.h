@@ -159,12 +159,13 @@ public:
 		u32 width = 0;
 		u32 height = 0;
 	};
-	struct ResolvedBlitterSample {
-		BlitterSource source{};
-		uint32_t surfaceWidth = 0;
-		uint32_t surfaceHeight = 0;
-		u32 slot = 0;
-	};
+		struct ResolvedBlitterSample {
+			BlitterSource source{};
+			uint32_t surfaceWidth = 0;
+			uint32_t surfaceHeight = 0;
+			u32 slot = 0;
+		};
+		using SkyboxSamples = std::array<ResolvedBlitterSample, SKYBOX_FACE_COUNT>;
 	struct GlyphRunGlyph : BlitterSource {
 		f32 dstX = 0.0f;
 		f32 dstY = 0.0f;
@@ -222,10 +223,11 @@ public:
 			bool ready = false;
 			int cost = 0;
 			int workRemaining = 0;
-			i32 ditherType = 0;
-			u32 skyboxControl = 0;
-			VdpSbxUnit::FaceWords skyboxFaceWords{};
-		};
+				i32 ditherType = 0;
+				u32 skyboxControl = 0;
+				VdpSbxUnit::FaceWords skyboxFaceWords{};
+				SkyboxSamples skyboxSamples{};
+			};
 		struct BuildingFrame {
 			std::vector<BlitterCommand> queue;
 			bool open = false;
@@ -262,7 +264,7 @@ public:
 		static void onFifoCtrlWriteThunk(void* context, uint32_t addr, Value value);
 		static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
 		static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
-		static void onPmuRegisterWriteThunk(void* context, uint32_t addr, Value value);
+		static void onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
 
 	struct ReadSurface {
 		uint32_t surfaceId = 0;
@@ -292,6 +294,7 @@ public:
 	bool m_readOverflow = false;
 	VdpSbxUnit m_sbx;
 	VdpPmuUnit m_pmu;
+	SkyboxSamples m_committedSkyboxSamples{};
 	i32 m_lastDitherType = 0;
 	i32 m_committedDitherType = 0;
 	int64_t m_cpuHz = 1;
@@ -368,8 +371,7 @@ public:
 	void writeVdpRegister(uint32_t index, u32 value);
 	void onVdpRegisterWrite(uint32_t addr);
 	void writePmuBankSelect(u32 value);
-	void writeSelectedPmuBankValue(uint32_t addr, u32 value);
-	void onPmuRegisterWrite(uint32_t addr);
+	void onPmuRegisterWindowWrite(uint32_t addr);
 	void syncPmuRegisterWindow();
 	void configureSelectedSlotDimension(u32 word);
 	struct LayerPriority {
@@ -424,11 +426,15 @@ public:
 	void onVdpFifoCtrlWrite();
 	void onVdpCommandWrite();
 		void clearActiveFrame();
-		void commitActiveVisualState();
-		void finishCommittedFrameOnVblankEdge();
-	uint32_t resolveSurfaceIdForSlot(u32 slot) const;
+			void commitActiveVisualState();
+			void finishCommittedFrameOnVblankEdge();
+		uint32_t resolveSurfaceIdForSlot(u32 slot) const;
+		VdpBlitterSurfaceSize validateResolvedBlitterSource(const BlitterSource& source) const;
+		void validateBlitScale(f32 scaleX, f32 scaleY) const;
+		void validateLineWidth(f32 thickness) const;
+		void resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples) const;
 
-	friend struct VdpGles2Blitter;
+		friend struct VdpGles2Blitter;
 	friend void restoreVdpContextState(VDP& vdp);
 	friend void captureVdpContextState(VDP& vdp);
 

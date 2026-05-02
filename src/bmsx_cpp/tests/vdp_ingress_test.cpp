@@ -22,6 +22,7 @@ namespace {
 constexpr uint32_t VDP_CMD_NOP = 0u;
 constexpr uint32_t VDP_CMD_CLEAR = 1u;
 constexpr uint32_t VDP_CMD_FILL_RECT = 2u;
+constexpr uint32_t VDP_CMD_DRAW_LINE = 3u;
 constexpr uint32_t VDP_CMD_BLIT = 4u;
 constexpr uint32_t VDP_CMD_BEGIN_FRAME = 14u;
 constexpr uint32_t VDP_CMD_END_FRAME = 15u;
@@ -92,6 +93,18 @@ void writeStream(bmsx::Memory& memory, const std::vector<uint32_t>& words) {
 void sealStream(Harness& harness, const std::vector<uint32_t>& words) {
 	writeStream(harness.memory, words);
 	harness.vdp.sealDmaTransfer(bmsx::VDP_STREAM_BUFFER_BASE, words.size() * bmsx::IO_WORD_SIZE);
+}
+
+bmsx::SkyboxFaceSources skyboxSources(uint32_t w = 1u, uint32_t h = 1u) {
+	const bmsx::VdpSlotSource source{bmsx::VDP_SLOT_PRIMARY, 0u, 0u, w, h};
+	return bmsx::SkyboxFaceSources{
+		source,
+		source,
+		source,
+		source,
+		source,
+		source,
+	};
 }
 
 void testDirectLifecycle() {
@@ -239,6 +252,39 @@ void testPmuBankRegistersResolveDrawCtrl() {
 	h.vdp.completeReadyExecution(queue);
 }
 
+void testPmuScaleUsesAbsoluteWeight() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_PMU_BANK, 3u);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_Y, 12u << 16u);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_SCALE_X, 0x00018000u);
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_REG_DST_X, 32u << 16);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DST_Y, 40u << 16);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_LAYER_PRIO, 9u << 8);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0xff800000u | (3u << 8u));
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+
+	const int workUnits = h.vdp.getPendingRenderWorkUnits();
+	require(workUnits > 0, "BLIT should submit render work");
+	h.vdp.advanceWork(workUnits);
+	const auto* queue = h.vdp.takeReadyExecutionQueue();
+	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
+	const auto& command = queue->front();
+	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
+	require(std::abs(command.parallaxWeight + 0.5f) < 0.0001f, "DRAW_CTRL negative parallax weight should be snapshotted");
+	require(std::abs(command.dstY - 34.0f) < 0.0001f, "negative PMU weight should invert offset");
+	require(std::abs(command.scaleX - 1.25f) < 0.0001f, "negative PMU weight should use absolute scale influence");
+	require(std::abs(command.scaleY - 1.0f) < 0.0001f, "PMU bank scale Y should remain unchanged");
+	h.vdp.completeReadyExecution(queue);
+}
+
 void testFifoReplayAndFaults() {
 	Harness replay;
 	sealStream(replay, {
@@ -301,6 +347,84 @@ void testValidationCancelsDirectDrawFrame() {
 	require(h.vdp.canAcceptVdpSubmit(), "invalid direct draw should cancel and close the build frame");
 }
 
+void testInvalidBlitAndLineGeometryFaultAtLatch() {
+	{
+		Harness h;
+		writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+		writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
+		writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
+		writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
+		writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0xffff0000u);
+		writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
+
+		expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT); }, "negative BLIT scale");
+		require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_SCALE_X) == 0xffff0000u, "raw negative Q16 scale should remain latched");
+		require(h.vdp.canAcceptVdpSubmit(), "invalid BLIT should cancel and close the build frame");
+	}
+	{
+		Harness h;
+		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+		writeIo(h.memory, bmsx::IO_VDP_REG_LINE_WIDTH, 0u);
+
+		expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_DRAW_LINE); }, "zero LINE width");
+		require(h.memory.readIoU32(bmsx::IO_VDP_REG_LINE_WIDTH) == 0u, "raw zero line width should remain latched");
+		require(h.vdp.canAcceptVdpSubmit(), "invalid LINE should cancel and close the build frame");
+	}
+}
+
+void testInvalidPmuResolvedScaleFaultsAtLatch() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_PMU_BANK, 0u);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_SCALE_X, 0u);
+	require(h.memory.readIoU32(bmsx::IO_VDP_PMU_SCALE_X) == 0u, "PMU scale register should store zero as raw state");
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0x00010000u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x01000000u);
+
+	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT); }, "PMU-resolved zero BLIT scale");
+	require(h.vdp.canAcceptVdpSubmit(), "invalid PMU BLIT should cancel and close the build frame");
+}
+
+void testSbxCommitsOnlyThroughFramePresent() {
+	Harness h;
+
+	require(!h.vdp.committedSkyboxEnabled(), "skybox starts disabled");
+	h.vdp.setSkyboxSources(skyboxSources());
+	require(!h.vdp.committedSkyboxEnabled(), "live SBX write should not commit visible skybox");
+
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	require(!h.vdp.committedSkyboxEnabled(), "sealed SBX frame should wait for VBlank present");
+	h.vdp.commitReadyFrameOnVblankEdge();
+	require(h.vdp.committedSkyboxEnabled(), "presented frame should commit visible SBX state");
+
+	h.vdp.clearSkybox();
+	require(h.vdp.committedSkyboxEnabled(), "live SBX clear should not change visible skybox immediately");
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	h.vdp.commitReadyFrameOnVblankEdge();
+	require(!h.vdp.committedSkyboxEnabled(), "presented clear frame should disable visible skybox");
+}
+
+void testSbxValidatesAtFrameSeal() {
+	Harness h;
+
+	h.vdp.setSkyboxSources(skyboxSources(2u, 1u));
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+
+	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME); }, "SBX source rect overflow");
+	require(h.vdp.canAcceptVdpSubmit(), "invalid SBX frame should cancel and close the build frame");
+	require(!h.vdp.committedSkyboxEnabled(), "invalid SBX state should not become visible");
+}
+
 void testEmptyFifoFrame() {
 	Harness h;
 
@@ -318,9 +442,14 @@ int main() {
 		{"BLIT DRAW_CTRL snapshot", testBlitDrawCtrlSnapshot},
 		{"PMU parallax resolved BLIT snapshot", testPmuParallaxResolvedBlitSnapshot},
 		{"PMU bank registers resolve DRAW_CTRL", testPmuBankRegistersResolveDrawCtrl},
+		{"PMU scale uses absolute weight", testPmuScaleUsesAbsoluteWeight},
 		{"FIFO replay and faults", testFifoReplayAndFaults},
 		{"slot registers", testSlotRegisters},
 		{"validation cancels direct draw", testValidationCancelsDirectDrawFrame},
+		{"invalid BLIT and LINE geometry latch faults", testInvalidBlitAndLineGeometryFaultAtLatch},
+		{"invalid PMU resolved scale latch fault", testInvalidPmuResolvedScaleFaultsAtLatch},
+		{"SBX commits through frame present", testSbxCommitsOnlyThroughFramePresent},
+		{"SBX validates at frame seal", testSbxValidatesAtFrameSeal},
 		{"empty FIFO frame", testEmptyFifoFrame},
 	};
 

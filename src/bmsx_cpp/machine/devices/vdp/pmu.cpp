@@ -94,8 +94,9 @@ VdpResolvedBlitPmu VdpPmuUnit::resolveBlit(f32 dstX, f32 dstY, f32 scaleX, f32 s
 	const VdpPmuBank& bank = m_banks[pmuBank & 0xffu];
 	const f32 bankScaleX = decodeSignedQ16_16(bank.scaleXQ16);
 	const f32 bankScaleY = decodeSignedQ16_16(bank.scaleYQ16);
-	const f32 resolvedScaleFactorX = 1.0f + (bankScaleX - 1.0f) * parallaxWeight;
-	const f32 resolvedScaleFactorY = 1.0f + (bankScaleY - 1.0f) * parallaxWeight;
+	const f32 scaleWeight = parallaxWeight < 0.0f ? -parallaxWeight : parallaxWeight;
+	const f32 resolvedScaleFactorX = 1.0f + (bankScaleX - 1.0f) * scaleWeight;
+	const f32 resolvedScaleFactorY = 1.0f + (bankScaleY - 1.0f) * scaleWeight;
 	const f32 resolvedScaleX = scaleX * resolvedScaleFactorX;
 	const f32 resolvedScaleY = scaleY * resolvedScaleFactorY;
 	const f32 resolvedDstX = dstX + decodeSignedQ16_16(bank.xQ16) * parallaxWeight;

@@ -229,23 +229,33 @@ Current evidence:
 - The 18-word `IO_VDP_CMD_ARG0` latch bank is the DEX/2D blitter ingress, not
   the whole VDP frontend. Direct MMIO writes and FIFO `REG1`/`REGN` replay feed
   the same latches, `IO_VDP_CMD`/FIFO `CMD` doorbells snapshot those latches,
-  and register 11 is `DRAW_CTRL` for DEX flip/parallax control.
-- Current parallax status is DEX/PMU-owned parallax execution. Register 11
-  snapshots the PMU bank and per-BLIT signed Q8.8 weight through the
-  hardware-style latch path, and VDP2D backend execution no longer derives that
-  weight from z/priority. PMU bank registers (`sys_vdp_pmu_bank`,
-  `sys_vdp_pmu_x`, `sys_vdp_pmu_y`, `sys_vdp_pmu_scale_x`,
-  `sys_vdp_pmu_scale_y`, `sys_vdp_pmu_ctrl`) are VDP-owned operational state.
-  DEX resolves the selected bank into per-BLIT `dstX`/`dstY`/scale geometry
-  before enqueueing renderer work. WebGL, headless, native GLES2, and software
-  blitters draw resolved geometry. There is no VDP parallax rig or clock state.
+  and register 11 is `DRAW_CTRL` for DEX flip/PMU control. `DRAW_CTRL` bits
+  0..1 are flips, bits 2..7 are blend mode, bits 8..15 select a PMU bank, and
+  bits 16..31 are signed Q8.8 PMU weight. Blend mode 0 is the current normal
+  mode; nonzero blend modes fault at DEX latch until the hardware contract
+  defines them.
+- Current parallax status is DEX/PMU-owned parallax execution. PMU register
+  writes latch raw bank words. The PMU bank selector mirrors through low 8 bits,
+  and PMU bank control words are stored/saved raw with no functional effect yet.
+  PMU X/Y are signed Q16.16 offsets and PMU scale X/Y are signed Q16.16 scale
+  targets. DEX uses the signed Q8.8 `DRAW_CTRL` weight for PMU offsets and the
+  absolute weight for PMU scale influence. DEX resolves the selected bank into
+  per-BLIT `dstX`/`dstY`/scale geometry at BLIT acceptance, faults invalid
+  input or resolved BLIT scales there, and faults invalid LINE width at LINE
+  acceptance. WebGL, headless, native GLES2, and software blitters draw resolved
+  geometry. There is no VDP parallax rig or clock state.
 - TS and C++ now split real VDP unit state out of the parent VDP object where
   the ownership exists today. `VdpPmuUnit` owns PMU bank registers, selected
-  bank state, and PMU BLIT resolve. `VdpSbxUnit` owns live and committed SBX
-  skybox face sources. The parent `VDP` remains the bus interface, frame
-  lifecycle owner, and backend handoff point, matching the MAME-like shape where
-  a top-level video device coordinates child hardware state rather than becoming
-  one unstructured monolith.
+  bank state, and PMU BLIT resolve. `VdpSbxUnit` owns live and visible SBX
+  skybox face words. The parent `VDP` owns the submitted-frame latch: CPU writes
+  update live SBX state only, frame seal copies live SBX face words into the
+  submitted frame and resolves/validates all referenced slots and UV rectangles,
+  and VBlank present makes that submitted SBX state visible. Render handoff
+  consumes already-resolved committed SBX samples and must not discover SBX
+  faults. The parent `VDP` remains the bus interface, frame lifecycle owner, and
+  backend handoff point, matching the MAME-like shape where a top-level video
+  device coordinates child hardware state rather than becoming one unstructured
+  monolith.
 - TS and C++ VDP render-surface texture binding no longer passes a fake VDP
   object into texture lookup. Surface-size resolution still asks the VDP, while
   texture-handle binding is an explicit render-side texture-memory operation.

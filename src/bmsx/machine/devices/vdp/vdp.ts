@@ -5,12 +5,14 @@ import {
 	type VdpFrameBufferSize,
 	type VdpSlotSource,
 	type VdpVramSurface,
+	SKYBOX_FACE_COUNT,
 	SKYBOX_FACE_H_WORD,
 	SKYBOX_FACE_SLOT_WORD,
 	SKYBOX_FACE_U_WORD,
 	SKYBOX_FACE_V_WORD,
 	SKYBOX_FACE_W_WORD,
 	SKYBOX_FACE_WORD_COUNT,
+	VDP_SBX_CONTROL_ENABLE,
 	VDP_PMU_BANK_WORD_COUNT,
 	VDP_RD_SURFACE_COUNT,
 	VDP_RD_SURFACE_SYSTEM,
@@ -19,6 +21,7 @@ import {
 	VDP_RD_SURFACE_SECONDARY,
 } from './contracts';
 import {
+	type VdpClippedRect,
 	VDP_RENDER_ALPHA_COST_MULTIPLIER,
 	VDP_RENDER_CLEAR_COST,
 	blitAreaBucket,
@@ -95,6 +98,7 @@ import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../common/ha
 import { vdpFault, vdpStreamFault } from './fault';
 import { syncVdpSlotTextures } from '../../../render/vdp/slot_textures';
 import {
+	type VdpResolvedBlitPmu,
 	VdpPmuRegister,
 	VdpPmuUnit,
 } from './pmu';
@@ -130,6 +134,7 @@ type VdpSubmittedFrameState = {
 	ditherType: number;
 	skyboxControl: number;
 	skyboxFaceWords: Uint32Array;
+	skyboxSamples: VdpResolvedBlitterSample[];
 };
 
 type VdpBuildingFrameState = {
@@ -150,6 +155,40 @@ type VdpLatchedGeometry = {
 	y1: number;
 };
 
+function createResolvedBlitterSample(): VdpResolvedBlitterSample {
+	return {
+		source: {
+			surfaceId: 0,
+			srcX: 0,
+			srcY: 0,
+			width: 0,
+			height: 0,
+		},
+		surfaceWidth: 0,
+		surfaceHeight: 0,
+		slot: 0,
+	};
+}
+
+function createResolvedBlitterSamples(): VdpResolvedBlitterSample[] {
+	const samples: VdpResolvedBlitterSample[] = [];
+	for (let index = 0; index < SKYBOX_FACE_COUNT; index += 1) {
+		samples.push(createResolvedBlitterSample());
+	}
+	return samples;
+}
+
+function copyResolvedBlitterSample(target: VdpResolvedBlitterSample, source: VdpResolvedBlitterSample): void {
+	target.source.surfaceId = source.source.surfaceId;
+	target.source.srcX = source.source.srcX;
+	target.source.srcY = source.source.srcY;
+	target.source.width = source.source.width;
+	target.source.height = source.source.height;
+	target.surfaceWidth = source.surfaceWidth;
+	target.surfaceHeight = source.surfaceHeight;
+	target.slot = source.slot;
+}
+
 function allocateSubmittedFrameSlot(): VdpSubmittedFrameState {
 	return {
 		queue: [],
@@ -161,6 +200,7 @@ function allocateSubmittedFrameSlot(): VdpSubmittedFrameState {
 		ditherType: 0,
 		skyboxControl: 0,
 		skyboxFaceWords: new Uint32Array(SKYBOX_FACE_WORD_COUNT),
+		skyboxSamples: createResolvedBlitterSamples(),
 	};
 }
 
@@ -764,6 +804,7 @@ export class VDP implements VramWriteSink {
 		queue: [],
 		pending: false,
 	};
+	private readonly committedSkyboxSamples = createResolvedBlitterSamples();
 	private activeFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
 	private pendingFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
 	private readonly glyphBufferPool: VdpGlyphRunGlyph[][] = [];
@@ -802,12 +843,13 @@ export class VDP implements VramWriteSink {
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
 			this.memory.mapIoWrite(IO_VDP_REG0 + index * IO_WORD_SIZE, this.onVdpRegisterIoWrite.bind(this));
 		}
-		this.memory.mapIoWrite(IO_VDP_PMU_BANK, this.onVdpPmuRegisterWrite.bind(this));
-		this.memory.mapIoWrite(IO_VDP_PMU_X, this.onVdpPmuRegisterWrite.bind(this));
-		this.memory.mapIoWrite(IO_VDP_PMU_Y, this.onVdpPmuRegisterWrite.bind(this));
-		this.memory.mapIoWrite(IO_VDP_PMU_SCALE_X, this.onVdpPmuRegisterWrite.bind(this));
-		this.memory.mapIoWrite(IO_VDP_PMU_SCALE_Y, this.onVdpPmuRegisterWrite.bind(this));
-		this.memory.mapIoWrite(IO_VDP_PMU_CTRL, this.onVdpPmuRegisterWrite.bind(this));
+		const pmuRegisterWindowWrite = this.onVdpPmuRegisterWindowWrite.bind(this);
+		this.memory.mapIoWrite(IO_VDP_PMU_BANK, pmuRegisterWindowWrite);
+		this.memory.mapIoWrite(IO_VDP_PMU_X, pmuRegisterWindowWrite);
+		this.memory.mapIoWrite(IO_VDP_PMU_Y, pmuRegisterWindowWrite);
+		this.memory.mapIoWrite(IO_VDP_PMU_SCALE_X, pmuRegisterWindowWrite);
+		this.memory.mapIoWrite(IO_VDP_PMU_SCALE_Y, pmuRegisterWindowWrite);
+		this.memory.mapIoWrite(IO_VDP_PMU_CTRL, pmuRegisterWindowWrite);
 		this.vramMachineSeed = this.nextVramMachineSeed();
 		this.vramBootSeed = this.nextVramBootSeed();
 		for (let index = 0; index < VDP_RD_SURFACE_COUNT; index += 1) {
@@ -922,39 +964,29 @@ export class VDP implements VramWriteSink {
 		this.syncPmuRegisterWindow();
 	}
 
-	private writeSelectedPmuBankValue(addr: number, value: number): void {
-		let register: VdpPmuRegister;
+	private onVdpPmuRegisterWindowWrite(addr: number): void {
+		const word = this.memory.readIoU32(addr) >>> 0;
 		switch (addr) {
+			case IO_VDP_PMU_BANK:
+				this.writePmuBankSelect(word);
+				return;
 			case IO_VDP_PMU_X:
-				register = VdpPmuRegister.X;
+				this.pmu.writeSelectedBankRegister(VdpPmuRegister.X, word);
 				break;
 			case IO_VDP_PMU_Y:
-				register = VdpPmuRegister.Y;
+				this.pmu.writeSelectedBankRegister(VdpPmuRegister.Y, word);
 				break;
 			case IO_VDP_PMU_SCALE_X:
-				register = VdpPmuRegister.ScaleX;
+				this.pmu.writeSelectedBankRegister(VdpPmuRegister.ScaleX, word);
 				break;
 			case IO_VDP_PMU_SCALE_Y:
-				register = VdpPmuRegister.ScaleY;
+				this.pmu.writeSelectedBankRegister(VdpPmuRegister.ScaleY, word);
 				break;
 			case IO_VDP_PMU_CTRL:
-				register = VdpPmuRegister.Control;
+				this.pmu.writeSelectedBankRegister(VdpPmuRegister.Control, word);
 				break;
-			default:
-				throw vdpFault(`unknown VDP PMU register ${addr}.`);
 		}
-		const word = value >>> 0;
-		this.pmu.writeSelectedBankRegister(register, word);
 		this.memory.writeIoValue(addr, word);
-	}
-
-	private onVdpPmuRegisterWrite(addr: number): void {
-		const value = this.memory.readIoU32(addr);
-		if (addr === IO_VDP_PMU_BANK) {
-			this.writePmuBankSelect(value);
-			return;
-		}
-		this.writeSelectedPmuBankValue(addr, value);
 	}
 
 	private syncPmuRegisterWindow(): void {
@@ -1323,7 +1355,12 @@ export class VDP implements VramWriteSink {
 				this.rejectSubmitAttempt();
 				throw vdpFault('no direct VDP frame is open.');
 			}
-			this.sealSubmittedFrame();
+			try {
+				this.sealSubmittedFrame();
+			} catch (error) {
+				this.cancelSubmittedFrame();
+				throw error;
+			}
 			this.refreshSubmitBusyStatus();
 			return;
 		}
@@ -1490,6 +1527,7 @@ export class VDP implements VramWriteSink {
 	private enqueueLatchedDrawLine(): void {
 		const draw = this.decodeLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
 		const thickness = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_LINE_WIDTH]);
+		this.validateLineWidth(thickness);
 		const { x0, y0, x1, y1 } = this.readLatchedGeometry();
 		const span = computeClippedLineSpan(x0, y0, x1, y1, this._frameBufferWidth, this._frameBufferHeight);
 		if (span === 0) {
@@ -1521,22 +1559,14 @@ export class VDP implements VramWriteSink {
 		const v = this.packedHigh16(this.vdpRegisters[VDP_REG_SRC_UV]);
 		const w = this.packedLow16(this.vdpRegisters[VDP_REG_SRC_WH]);
 		const h = this.packedHigh16(this.vdpRegisters[VDP_REG_SRC_WH]);
-		if (w === 0 || h === 0) {
-			throw vdpFault('VDP blit source dimensions must be positive.');
-		}
 		const source = this.resolveBlitterSource({ slot, u, v, w, h });
-		const surface = this.resolveBlitterSurfaceSize(source.surfaceId);
-		if (u + w > surface.width || v + h > surface.height) {
-			throw vdpFault('VDP blit source rectangle exceeds configured slot dimensions.');
-		}
+		this.validateResolvedBlitterSource(source);
 		const scaleX = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DRAW_SCALE_X]);
 		const scaleY = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
 		const dstX = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DST_X]);
 		const dstY = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DST_Y]);
-		const resolved = this.pmu.resolveBlit(dstX, dstY, scaleX, scaleY, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
-		const dstWidth = source.width * resolved.scaleX;
-		const dstHeight = source.height * resolved.scaleY;
-		const clipped = computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
+		const resolved = this.resolveAcceptedBlitGeometry(dstX, dstY, scaleX, scaleY, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
+		const clipped = this.computeAcceptedBlitClip(source, resolved);
 		if (clipped.area === 0) {
 			return;
 		}
@@ -1681,6 +1711,7 @@ export class VDP implements VramWriteSink {
 		frame.workRemaining = 0;
 		frame.ditherType = 0;
 		frame.skyboxControl = 0;
+		frame.skyboxFaceWords.fill(0);
 	}
 
 	private resetQueuedFrameState(): void {
@@ -1763,6 +1794,8 @@ export class VDP implements VramWriteSink {
 		const buildQueue = this.buildFrame.queue;
 		const frameHasCommands = buildQueue.length !== 0;
 		const frameCost = this.submittedFrameCost(buildQueue, this.buildFrame.cost);
+		frame.skyboxControl = this.sbx.latchFrame(frame.skyboxFaceWords);
+		this.resolveSkyboxFrameSamples(frame.skyboxControl, frame.skyboxFaceWords, frame.skyboxSamples);
 		this.buildFrame.queue = frame.queue;
 		frame.queue = buildQueue;
 		frame.occupied = true;
@@ -1771,7 +1804,6 @@ export class VDP implements VramWriteSink {
 		frame.cost = frameCost;
 		frame.workRemaining = frameCost;
 		frame.ditherType = this.lastDitherType;
-		frame.skyboxControl = this.sbx.latchFrame(frame.skyboxFaceWords);
 		this.buildFrame.queue.length = 0;
 		this.buildFrame.cost = 0;
 		this.buildFrame.open = false;
@@ -1875,6 +1907,9 @@ export class VDP implements VramWriteSink {
 	private commitActiveVisualState(): void {
 		this.committedDitherType = this.activeFrame.ditherType;
 		this.sbx.presentFrame(this.activeFrame.skyboxControl, this.activeFrame.skyboxFaceWords);
+		for (let index = 0; index < SKYBOX_FACE_COUNT; index += 1) {
+			copyResolvedBlitterSample(this.committedSkyboxSamples[index]!, this.activeFrame.skyboxSamples[index]!);
+		}
 	}
 
 	public presentReadyFrameOnVblankEdge(): void {
@@ -1916,15 +1951,74 @@ export class VDP implements VramWriteSink {
 		};
 	}
 
-	public resolveBlitterSample(sourceRect: VdpSlotSource): VdpResolvedBlitterSample {
-		const source = this.resolveBlitterSource(sourceRect);
+	private validateResolvedBlitterSource(source: VdpBlitterSource): VdpBlitterSurfaceSize {
+		if (source.width === 0 || source.height === 0) {
+			throw vdpFault('VDP source dimensions must be positive.');
+		}
 		const surface = this.resolveBlitterSurfaceSize(source.surfaceId);
-		return {
-			source,
-			surfaceWidth: surface.width,
-			surfaceHeight: surface.height,
-			slot: resolveVdpSlotSurfaceBinding(source.surfaceId, 'surfaceId', 'slot', `surface ${source.surfaceId} cannot be sampled by the WebGL blitter.`),
-		};
+		if (source.srcX + source.width > surface.width || source.srcY + source.height > surface.height) {
+			throw vdpFault('VDP source rectangle exceeds configured slot dimensions.');
+		}
+		return surface;
+	}
+
+	private validateBlitScale(scaleX: number, scaleY: number): void {
+		if (scaleX <= 0 || scaleY <= 0) {
+			throw vdpFault('VDP blit scale must be positive.');
+		}
+	}
+
+	private validateLineWidth(thickness: number): void {
+		if (thickness <= 0) {
+			throw vdpFault('VDP line width must be positive.');
+		}
+	}
+
+	private resolveAcceptedBlitGeometry(dstX: number, dstY: number, scaleX: number, scaleY: number, pmuBank: number, parallaxWeight: number): VdpResolvedBlitPmu {
+		this.validateBlitScale(scaleX, scaleY);
+		const resolved = this.pmu.resolveBlit(dstX, dstY, scaleX, scaleY, pmuBank, parallaxWeight);
+		this.validateBlitScale(resolved.scaleX, resolved.scaleY);
+		return resolved;
+	}
+
+	private computeAcceptedBlitClip(source: VdpBlitterSource, resolved: VdpResolvedBlitPmu): VdpClippedRect {
+		const dstWidth = source.width * resolved.scaleX;
+		const dstHeight = source.height * resolved.scaleY;
+		return computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
+	}
+
+	private resolveBlitterSampleInto(sourceRect: VdpSlotSource, target: VdpResolvedBlitterSample): void {
+		const source = this.resolveBlitterSource(sourceRect);
+		const surface = this.validateResolvedBlitterSource(source);
+		target.source.surfaceId = source.surfaceId;
+		target.source.srcX = source.srcX;
+		target.source.srcY = source.srcY;
+		target.source.width = source.width;
+		target.source.height = source.height;
+		target.surfaceWidth = surface.width;
+		target.surfaceHeight = surface.height;
+		target.slot = resolveVdpSlotSurfaceBinding(source.surfaceId, 'surfaceId', 'slot', `surface ${source.surfaceId} cannot be sampled by the WebGL blitter.`);
+	}
+
+	public resolveBlitterSample(sourceRect: VdpSlotSource): VdpResolvedBlitterSample {
+		const sample = createResolvedBlitterSample();
+		this.resolveBlitterSampleInto(sourceRect, sample);
+		return sample;
+	}
+
+	private resolveSkyboxFrameSamples(control: number, faceWords: Uint32Array, samples: VdpResolvedBlitterSample[]): void {
+		if ((control & VDP_SBX_CONTROL_ENABLE) === 0) {
+			return;
+		}
+		for (let index = 0; index < SKYBOX_FACE_COUNT; index += 1) {
+			this.resolveBlitterSampleInto({
+				slot: readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_SLOT_WORD),
+				u: readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_U_WORD),
+				v: readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_V_WORD),
+				w: readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_W_WORD),
+				h: readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_H_WORD),
+			}, samples[index]!);
+		}
 	}
 
 	public enqueueClear(colorValue: color): void {
@@ -1938,10 +2032,9 @@ export class VDP implements VramWriteSink {
 
 	public enqueueBlit(slot: number, u: number, v: number, w: number, h: number, x: number, y: number, z: number, layer: Layer2D, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, parallaxWeight: number): void {
 		const source = this.resolveBlitterSource({ slot, u, v, w, h });
-		const resolved = this.pmu.resolveBlit(x, y, scaleX, scaleY, 0, parallaxWeight);
-		const dstWidth = source.width * Math.abs(resolved.scaleX);
-		const dstHeight = source.height * Math.abs(resolved.scaleY);
-		const clipped = computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
+		this.validateResolvedBlitterSource(source);
+		const resolved = this.resolveAcceptedBlitGeometry(x, y, scaleX, scaleY, 0, parallaxWeight);
+		const clipped = this.computeAcceptedBlitClip(source, resolved);
 		if (clipped.area === 0) {
 			return;
 		}
@@ -2005,6 +2098,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public enqueueDrawLine(x0: number, y0: number, x1: number, y1: number, z: number, layer: Layer2D, colorValue: color, thickness: number): void {
+		this.validateLineWidth(thickness);
 		const span = computeClippedLineSpan(x0, y0, x1, y1, this._frameBufferWidth, this._frameBufferHeight);
 		if (span === 0) {
 			return;
@@ -2493,6 +2587,9 @@ export class VDP implements VramWriteSink {
 	}
 
 	public restoreState(state: VdpState): void {
+		if (state.skyboxFaceWords.length !== SKYBOX_FACE_WORD_COUNT) {
+			throw vdpFault(`SBX state requires ${SKYBOX_FACE_WORD_COUNT} face words.`);
+		}
 		this.sbx.restoreLiveState(state.skyboxControl, state.skyboxFaceWords);
 		if (state.pmuBankWords.length !== VDP_PMU_BANK_WORD_COUNT) {
 			throw vdpFault(`PMU state requires ${VDP_PMU_BANK_WORD_COUNT} bank words.`);
@@ -2523,14 +2620,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public resolveCommittedSkyboxFaceSample(faceIndex: number): VdpResolvedBlitterSample {
-		const words = this.sbx.visibleFaceState;
-		return this.resolveBlitterSample({
-			slot: readSkyboxFaceSource(words, faceIndex, SKYBOX_FACE_SLOT_WORD),
-			u: readSkyboxFaceSource(words, faceIndex, SKYBOX_FACE_U_WORD),
-			v: readSkyboxFaceSource(words, faceIndex, SKYBOX_FACE_V_WORD),
-			w: readSkyboxFaceSource(words, faceIndex, SKYBOX_FACE_W_WORD),
-			h: readSkyboxFaceSource(words, faceIndex, SKYBOX_FACE_H_WORD),
-		});
+		return this.committedSkyboxSamples[faceIndex]!;
 	}
 
 	public takeReadyExecutionQueue(): readonly VdpBlitterCommand[] | null {
@@ -2562,6 +2652,7 @@ export class VDP implements VramWriteSink {
 	private commitLiveVisualState(): void {
 		this.committedDitherType = this.lastDitherType;
 		this.sbx.presentLiveState();
+		this.resolveSkyboxFrameSamples(this.sbx.liveControlWord, this.sbx.visibleFaceState, this.committedSkyboxSamples);
 	}
 
 	private captureSurfacePixels(): VdpSurfacePixelsState[] {
@@ -2590,14 +2681,14 @@ export class VDP implements VramWriteSink {
 		this.markVramSlotDirty(slot, 0, slot.surfaceHeight);
 	}
 
+	// disable-next-line single_line_method_pattern -- public cart/runtime SBX register write enters the VDP through the parent bus-facing device.
 	public setSkyboxSources(sources: SkyboxFaceSources): void {
 		this.sbx.setSources(sources);
-		this.commitLiveVisualState();
 	}
 
+	// disable-next-line single_line_method_pattern -- public cart/runtime SBX register write enters the VDP through the parent bus-facing device.
 	public clearSkybox(): void {
 		this.sbx.clear();
-		this.commitLiveVisualState();
 	}
 
 	public registerVramSurfaces(surfaces: readonly VdpVramSurface[]): void {
