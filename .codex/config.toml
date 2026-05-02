@@ -1,0 +1,5 @@
+[profiles.bmsx]
+model = "gpt-5.5"
+model_reasoning_effort = "xhigh"
+personality = "pragmatic"
+model_instructions_file = "bmsx-codex-instructions.md"
