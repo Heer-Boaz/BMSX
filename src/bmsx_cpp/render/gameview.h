@@ -11,7 +11,9 @@
 #include "shared/submissions.h"
 #include "shared/queues.h"
 #include "core/registry.h"
+#include "machine/devices/vdp/camera.h"
 #include "../subscription.h"
+#include <array>
 #include <memory>
 #include <unordered_map>
 #include <functional>
@@ -116,7 +118,7 @@ public:
 	// - rect   -> RenderQueues::submitRectangle
 	// - poly   -> RenderQueues::submitDrawPolygon
 	// - glyphs -> RenderQueues::submitGlyphs
-	// - particle -> ParticlesPipeline.submit_particle
+	// - particle -> host/editor particle queue; BMSX machine billboards use VDP packets
 	// - mesh   -> MeshPipeline.submitMesh
 	// ─────────────────────────────────────────────────────────────────────────
 	struct Renderer {
@@ -143,6 +145,21 @@ public:
 	std::array<f32, SKYBOX_FACE_COUNT * 4> skyboxFaceUvRects{};
 	std::array<i32, SKYBOX_FACE_COUNT> skyboxFaceTextpageBindings{};
 	std::array<i32, SKYBOX_FACE_COUNT * 2> skyboxFaceSizes{};
+	VdpCameraSnapshot vdpCamera{};
+	struct VdpBillboardRenderEntry {
+		Vec3 position{0.0f, 0.0f, 0.0f};
+		f32 size = 0.0f;
+		Color color;
+		u32 slot = 0u;
+		u32 u = 0u;
+		u32 v = 0u;
+		u32 w = 0u;
+		u32 h = 0u;
+		std::array<f32, 2> uv0{0.0f, 0.0f};
+		std::array<f32, 2> uv1{0.0f, 0.0f};
+	};
+	std::array<VdpBillboardRenderEntry, VDP_BBU_BILLBOARD_LIMIT> vdpBillboards{};
+	size_t vdpBillboardCount = 0u;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Pipeline registry

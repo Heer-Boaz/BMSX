@@ -104,7 +104,6 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 		case 'runtime':
 			return NATIVE_COST_TIER0;
 		case 'put_mesh':
-		case 'put_particle':
 		case 'skybox':
 		case 'put_ambient_light':
 		case 'put_directional_light':

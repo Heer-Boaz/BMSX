@@ -3,7 +3,6 @@ import { consoleCore } from '../../../core/console';
 import {
 	color,
 	MeshRenderSubmission,
-	ParticleRenderSubmission,
 } from '../../../render/shared/submissions';
 import { Font } from '../../../render/shared/bmsx_font';
 import { BFont, GlyphMap, RomPackageBitmapFontSource } from '../../../render/shared/bitmap_font';
@@ -12,9 +11,8 @@ import type { vec3arr } from '../../../rompack/format';
 import { taskGate, GateGroup } from '../../../core/taskgate';
 import { Runtime } from '../../runtime/runtime';
 import { applyActiveMachineTiming } from '../../runtime/timing/config';
-import { setHardwareCamera } from '../../../render/shared/hardware/camera';
 import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../../../render/shared/hardware/lighting';
-import { submitMesh, submit_particle } from '../../../render/shared/queues';
+import { submitMesh } from '../../../render/shared/queues';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../builtin_descriptors';
 import { createLuaTable, type LuaTable } from '../../../lua/value';
 import { BmsxColors } from '../../devices/vdp/vdp';
@@ -41,16 +39,6 @@ type FirmwareFontDescriptor = {
 	advance_padding: number;
 	glyphs: Record<string, FirmwareFontGlyphDescriptor>;
 };
-type ParticleApiOptions = {
-	slot?: number;
-	u?: number;
-	v?: number;
-	w?: number;
-	h?: number;
-	ambient_mode?: 0 | 1;
-	ambient_factor?: number;
-};
-
 export class Api {
 	private readonly storage: RuntimeStorage;
 	private defaultFont: BFont | null = null;
@@ -147,27 +135,11 @@ export class Api {
 		submitMesh(submission);
 	}
 
-	public put_particle(position: vec3arr, size: number, colorvalue: number | color, options?: ParticleApiOptions): void {
-		const submission: ParticleRenderSubmission = {
-			position,
-			size,
-			color: this.resolve_color(colorvalue),
-			slot: options.slot,
-			u: options.u,
-			v: options.v,
-			w: options.w,
-			h: options.h,
-			ambient_mode: options.ambient_mode,
-			ambient_factor: options.ambient_factor,
-		};
-		submit_particle(this.runtime, submission);
-	}
-
 	public set_camera(view: Float32Array | number[], proj: Float32Array | number[], eye: vec3arr | number[]): void {
 		const viewMat = this.coerceMat4(view, this.cameraViewScratch, 'view');
 		const projMat = this.coerceMat4(proj, this.cameraProjScratch, 'proj');
 		const eyeVec = this.coerceVec3(eye, this.cameraEyeScratch, 'eye');
-		setHardwareCamera(viewMat, projMat, eyeVec[0], eyeVec[1], eyeVec[2]);
+		this.runtime.machine.vdp.setCameraBank0(viewMat, projMat, eyeVec[0], eyeVec[1], eyeVec[2]);
 	}
 
 	public skybox(posx: VdpSlotSource, negx: VdpSlotSource, posy: VdpSlotSource, negy: VdpSlotSource, posz: VdpSlotSource, negz: VdpSlotSource): void {

@@ -30,6 +30,8 @@ import {
 	VDP_SECONDARY_SLOT_TEXTURE_KEY,
 	SYSTEM_SLOT_TEXTURE_KEY,
 } from 'bmsx/rompack/format';
+import { VDP_BBU_BILLBOARD_LIMIT } from '../machine/devices/vdp/contracts';
+import { createVdpCameraSnapshot } from '../machine/devices/vdp/camera';
 import { renderGate } from 'bmsx/core/taskgate';
 
 const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay'];
@@ -89,6 +91,12 @@ export class GameView implements RenderContext {
 	public skyboxFaceUvRects: Float32Array | null = null;
 	public skyboxFaceTextpageBindings: Int32Array | null = null;
 	public skyboxFaceSizes: Int32Array | null = null;
+	public readonly vdpCamera = createVdpCameraSnapshot();
+	public readonly vdpBillboardPositionSize = new Float32Array(VDP_BBU_BILLBOARD_LIMIT * 4);
+	public readonly vdpBillboardColor = new Float32Array(VDP_BBU_BILLBOARD_LIMIT * 4);
+	public readonly vdpBillboardUvRect = new Float32Array(VDP_BBU_BILLBOARD_LIMIT * 4);
+	public readonly vdpBillboardSlot = new Int32Array(VDP_BBU_BILLBOARD_LIMIT);
+	public vdpBillboardCount = 0;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationEnabled = true;
 	// Active texture unit cache
@@ -129,7 +137,8 @@ export class GameView implements RenderContext {
 		enableAutoAnimation: false,
 	};
 
-	// Renderer submission facade
+	// Renderer submission surface. Particle submissions here are host/editor work;
+	// BMSX machine billboards enter through VDP command packets.
 	public renderer: {
 		submit: {
 			typed: (o: RenderSubmission) => void;
@@ -164,7 +173,7 @@ export class GameView implements RenderContext {
 						return;
 				}
 			},
-			particle: (item: ParticleRenderSubmission) => renderQueues.submit_particle(this.runtime, item),
+			particle: (item: ParticleRenderSubmission) => renderQueues.submit_particle(item),
 			sprite: (item: ImgRenderSubmission) => renderQueues.submitSprite(this.runtime, item),
 			mesh: renderQueues.submitMesh,
 			rect: (item: RectRenderSubmission) => queues.submitRectangle(this.runtime, item),

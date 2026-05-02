@@ -7,12 +7,45 @@ import {
 	IO_CMD_VDP_FILL_RECT,
 	IO_CMD_VDP_GLYPH_RUN,
 	IO_CMD_VDP_TILE_RUN,
+	IO_VDP_SLOT_PRIMARY_ATLAS,
+	IO_VDP_SLOT_SECONDARY_ATLAS,
+	VDP_SLOT_NONE,
+	VDP_SLOT_PRIMARY,
+	VDP_SLOT_SECONDARY,
+	VDP_SLOT_SYSTEM,
+	VDP_SYSTEM_ATLAS_ID,
 } from '../../bus/io';
+import { packLowHigh16 } from '../../common/word';
 import type { CPU } from '../../cpu/cpu';
 import type { Api } from '../../firmware/api/api';
 import type { Memory } from '../../memory/memory';
+import { packFrameBufferColorWordFromComponents } from './blitter';
 import { vdpFault } from './fault';
+import { FIX16_SCALE, toSignedWord } from '../../common/numeric';
 import { assertVdpPacketArgWords, getVdpPacketArgKind, VdpPacketWordKind } from './packet_schema';
+import {
+	encodeVdpDrawCtrl,
+	encodeVdpLayerPriority,
+	VDP_CMD_BLIT,
+	VDP_CMD_CLEAR,
+	VDP_CMD_DRAW_LINE,
+	VDP_CMD_FILL_RECT,
+	VDP_REG_DRAW_COLOR,
+	VDP_REG_DRAW_CTRL,
+	VDP_REG_DRAW_LAYER_PRIO,
+	VDP_REG_DRAW_SCALE_X,
+	VDP_REG_DRAW_SCALE_Y,
+	VDP_REG_DST_X,
+	VDP_REG_DST_Y,
+	VDP_REG_GEOM_X0,
+	VDP_REG_GEOM_X1,
+	VDP_REG_GEOM_Y0,
+	VDP_REG_GEOM_Y1,
+	VDP_REG_LINE_WIDTH,
+	VDP_REG_SRC_SLOT,
+	VDP_REG_SRC_UV,
+	VDP_REG_SRC_WH,
+} from './registers';
 import type { VDP } from './vdp';
 
 const VDP_PACKET_F32_BUFFER = new ArrayBuffer(4);
@@ -83,13 +116,50 @@ function readPacketArgF32(reader: PacketWordReader, cmd: number, index: number):
 	return VDP_PACKET_F32_VIEW.getFloat32(0, true);
 }
 
-function readPacketColor(reader: PacketWordReader, cmd: number, offset: number): { r: number; g: number; b: number; a: number } {
-	return {
-		r: readPacketArgF32(reader, cmd, offset + 0),
-		g: readPacketArgF32(reader, cmd, offset + 1),
-		b: readPacketArgF32(reader, cmd, offset + 2),
-		a: readPacketArgF32(reader, cmd, offset + 3),
-	};
+function readPacketColorWord(reader: PacketWordReader, cmd: number, offset: number): number {
+	return packFrameBufferColorWordFromComponents(
+		readPacketArgF32(reader, cmd, offset + 0),
+		readPacketArgF32(reader, cmd, offset + 1),
+		readPacketArgF32(reader, cmd, offset + 2),
+		readPacketArgF32(reader, cmd, offset + 3),
+	);
+}
+
+function writeVdpFillRectCommand(vdp: VDP, x0: number, y0: number, x1: number, y1: number, priority: number, layer: 0 | 1 | 2, colorWord: number): void {
+	vdp.writeVdpRegister(VDP_REG_GEOM_X0, toSignedWord(FIX16_SCALE * x0));
+	vdp.writeVdpRegister(VDP_REG_GEOM_Y0, toSignedWord(FIX16_SCALE * y0));
+	vdp.writeVdpRegister(VDP_REG_GEOM_X1, toSignedWord(FIX16_SCALE * x1));
+	vdp.writeVdpRegister(VDP_REG_GEOM_Y1, toSignedWord(FIX16_SCALE * y1));
+	vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(layer, priority));
+	vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, colorWord);
+	vdp.consumeDirectVdpCommand(VDP_CMD_FILL_RECT);
+}
+
+function writeVdpBlitCommand(vdp: VDP, slot: number, u: number, v: number, w: number, h: number, x: number, y: number, priority: number, layer: 0 | 1 | 2, scaleX: number, scaleY: number, flipFlags: number, colorWord: number, parallaxWeight: number): void {
+	vdp.writeVdpRegister(VDP_REG_SRC_SLOT, slot);
+	vdp.writeVdpRegister(VDP_REG_SRC_UV, packLowHigh16(u, v));
+	vdp.writeVdpRegister(VDP_REG_SRC_WH, packLowHigh16(w, h));
+	vdp.writeVdpRegister(VDP_REG_DST_X, toSignedWord(FIX16_SCALE * x));
+	vdp.writeVdpRegister(VDP_REG_DST_Y, toSignedWord(FIX16_SCALE * y));
+	vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(layer, priority));
+	vdp.writeVdpRegister(VDP_REG_DRAW_SCALE_X, toSignedWord(FIX16_SCALE * scaleX));
+	vdp.writeVdpRegister(VDP_REG_DRAW_SCALE_Y, toSignedWord(FIX16_SCALE * scaleY));
+	vdp.writeVdpRegister(VDP_REG_DRAW_CTRL, encodeVdpDrawCtrl((flipFlags & 1) !== 0, (flipFlags & 2) !== 0, 0, parallaxWeight));
+	vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, colorWord);
+	vdp.consumeDirectVdpCommand(VDP_CMD_BLIT);
+}
+
+function resolveAtlasSlotFromMemory(memory: Memory, atlasId: number): number {
+	if (atlasId === VDP_SYSTEM_ATLAS_ID) {
+		return VDP_SLOT_SYSTEM;
+	}
+	if (memory.readIoU32(IO_VDP_SLOT_PRIMARY_ATLAS) === atlasId) {
+		return VDP_SLOT_PRIMARY;
+	}
+	if (memory.readIoU32(IO_VDP_SLOT_SECONDARY_ATLAS) === atlasId) {
+		return VDP_SLOT_SECONDARY;
+	}
+	throw vdpFault(`atlas ${atlasId} is not loaded in a VDP slot.`);
 }
 
 function processVdpCommandCore(vdp: VDP, cpu: CPU, api: Api, params: {
@@ -102,74 +172,75 @@ function processVdpCommandCore(vdp: VDP, cpu: CPU, api: Api, params: {
 	switch (params.cmd) {
 		case IO_CMD_VDP_CLEAR: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
-			vdp.enqueueClear(readPacketColor(params.argReader, params.cmd, 0));
+			vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, readPacketColorWord(params.argReader, params.cmd, 0));
+			vdp.consumeDirectVdpCommand(VDP_CMD_CLEAR);
 			break;
 		}
 		case IO_CMD_VDP_FILL_RECT: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
-			vdp.enqueueFillRect(
-				readPacketArgF32(params.argReader, params.cmd, 0),
-				readPacketArgF32(params.argReader, params.cmd, 1),
-				readPacketArgF32(params.argReader, params.cmd, 2),
-				readPacketArgF32(params.argReader, params.cmd, 3),
-				readPacketArgF32(params.argReader, params.cmd, 4),
-				readPacketArgU32(params.argReader, params.cmd, 5) as 0 | 1 | 2,
-				readPacketColor(params.argReader, params.cmd, 6),
-			);
+			vdp.writeVdpRegister(VDP_REG_GEOM_X0, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 0)));
+			vdp.writeVdpRegister(VDP_REG_GEOM_Y0, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 1)));
+			vdp.writeVdpRegister(VDP_REG_GEOM_X1, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 2)));
+			vdp.writeVdpRegister(VDP_REG_GEOM_Y1, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 3)));
+			vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(readPacketArgU32(params.argReader, params.cmd, 5) as 0 | 1 | 2, readPacketArgF32(params.argReader, params.cmd, 4)));
+			vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, readPacketColorWord(params.argReader, params.cmd, 6));
+			vdp.consumeDirectVdpCommand(VDP_CMD_FILL_RECT);
 			break;
 		}
 		case IO_CMD_VDP_DRAW_LINE: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
-			vdp.enqueueDrawLine(
-				readPacketArgF32(params.argReader, params.cmd, 0),
-				readPacketArgF32(params.argReader, params.cmd, 1),
-				readPacketArgF32(params.argReader, params.cmd, 2),
-				readPacketArgF32(params.argReader, params.cmd, 3),
-				readPacketArgF32(params.argReader, params.cmd, 4),
-				readPacketArgU32(params.argReader, params.cmd, 5) as 0 | 1 | 2,
-				readPacketColor(params.argReader, params.cmd, 6),
-				readPacketArgF32(params.argReader, params.cmd, 10),
-			);
+			vdp.writeVdpRegister(VDP_REG_GEOM_X0, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 0)));
+			vdp.writeVdpRegister(VDP_REG_GEOM_Y0, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 1)));
+			vdp.writeVdpRegister(VDP_REG_GEOM_X1, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 2)));
+			vdp.writeVdpRegister(VDP_REG_GEOM_Y1, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 3)));
+			vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(readPacketArgU32(params.argReader, params.cmd, 5) as 0 | 1 | 2, readPacketArgF32(params.argReader, params.cmd, 4)));
+			vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, readPacketColorWord(params.argReader, params.cmd, 6));
+			vdp.writeVdpRegister(VDP_REG_LINE_WIDTH, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 10)));
+			vdp.consumeDirectVdpCommand(VDP_CMD_DRAW_LINE);
 			break;
 		}
 		case IO_CMD_VDP_BLIT: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
 			const flipFlags = readPacketArgU32(params.argReader, params.cmd, 11);
-			vdp.enqueueBlit(
-				readPacketArgU32(params.argReader, params.cmd, 0),
-				readPacketArgU32(params.argReader, params.cmd, 1),
-				readPacketArgU32(params.argReader, params.cmd, 2),
-				readPacketArgU32(params.argReader, params.cmd, 3),
-				readPacketArgU32(params.argReader, params.cmd, 4),
-				readPacketArgF32(params.argReader, params.cmd, 5),
-				readPacketArgF32(params.argReader, params.cmd, 6),
-				readPacketArgF32(params.argReader, params.cmd, 7),
-				readPacketArgU32(params.argReader, params.cmd, 8) as 0 | 1 | 2,
-				readPacketArgF32(params.argReader, params.cmd, 9),
-				readPacketArgF32(params.argReader, params.cmd, 10),
-				(flipFlags & 1) !== 0,
-				(flipFlags & 2) !== 0,
-				readPacketColor(params.argReader, params.cmd, 12),
-				readPacketArgF32(params.argReader, params.cmd, 16),
-			);
+			vdp.writeVdpRegister(VDP_REG_SRC_SLOT, readPacketArgU32(params.argReader, params.cmd, 0));
+			vdp.writeVdpRegister(VDP_REG_SRC_UV, packLowHigh16(readPacketArgU32(params.argReader, params.cmd, 1), readPacketArgU32(params.argReader, params.cmd, 2)));
+			vdp.writeVdpRegister(VDP_REG_SRC_WH, packLowHigh16(readPacketArgU32(params.argReader, params.cmd, 3), readPacketArgU32(params.argReader, params.cmd, 4)));
+			vdp.writeVdpRegister(VDP_REG_DST_X, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 5)));
+			vdp.writeVdpRegister(VDP_REG_DST_Y, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 6)));
+			vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(readPacketArgU32(params.argReader, params.cmd, 8) as 0 | 1 | 2, readPacketArgF32(params.argReader, params.cmd, 7)));
+			vdp.writeVdpRegister(VDP_REG_DRAW_SCALE_X, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 9)));
+			vdp.writeVdpRegister(VDP_REG_DRAW_SCALE_Y, toSignedWord(FIX16_SCALE * readPacketArgF32(params.argReader, params.cmd, 10)));
+			vdp.writeVdpRegister(VDP_REG_DRAW_CTRL, encodeVdpDrawCtrl((flipFlags & 1) !== 0, (flipFlags & 2) !== 0, 0, readPacketArgF32(params.argReader, params.cmd, 16)));
+			vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, readPacketColorWord(params.argReader, params.cmd, 12));
+			vdp.consumeDirectVdpCommand(VDP_CMD_BLIT);
 			break;
 		}
 		case IO_CMD_VDP_GLYPH_RUN: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
 			const text = cpu.getStringPool().getById(readPacketArgU32(params.argReader, params.cmd, 0)).text;
 			const backgroundEnabled = readPacketArgU32(params.argReader, params.cmd, 12) !== 0;
-			vdp.enqueueGlyphRun(
-				text,
-				readPacketArgF32(params.argReader, params.cmd, 1),
-				readPacketArgF32(params.argReader, params.cmd, 2),
-				readPacketArgF32(params.argReader, params.cmd, 3),
-				api.resolve_font(readPacketArgU32(params.argReader, params.cmd, 4)),
-				readPacketColor(params.argReader, params.cmd, 8),
-				backgroundEnabled ? readPacketColor(params.argReader, params.cmd, 13) : undefined,
-				readPacketArgI32(params.argReader, params.cmd, 5),
-				readPacketArgI32(params.argReader, params.cmd, 6),
-				readPacketArgU32(params.argReader, params.cmd, 7) as 0 | 1 | 2,
-			);
+			let cursorX = readPacketArgF32(params.argReader, params.cmd, 1);
+			const cursorY = readPacketArgF32(params.argReader, params.cmd, 2);
+			const priority = readPacketArgF32(params.argReader, params.cmd, 3);
+			const font = api.resolve_font(readPacketArgU32(params.argReader, params.cmd, 4));
+			const start = readPacketArgI32(params.argReader, params.cmd, 5);
+			const end = readPacketArgI32(params.argReader, params.cmd, 6);
+			const layer = readPacketArgU32(params.argReader, params.cmd, 7) as 0 | 1 | 2;
+			const colorWord = readPacketColorWord(params.argReader, params.cmd, 8);
+			const backgroundColorWord = backgroundEnabled ? readPacketColorWord(params.argReader, params.cmd, 13) : 0;
+			let glyphIndex = 0;
+			for (const char of text) {
+				const glyph = font.getGlyph(char);
+				if (glyphIndex >= start && glyphIndex < end) {
+					const rect = glyph.rect;
+					if (backgroundEnabled) {
+						writeVdpFillRectCommand(vdp, cursorX, cursorY, cursorX + rect.w, cursorY + rect.h, priority, layer, backgroundColorWord);
+					}
+					writeVdpBlitCommand(vdp, resolveAtlasSlotFromMemory(cpu.memory, rect.atlasId), rect.u, rect.v, rect.w, rect.h, cursorX, cursorY, priority, layer, 1, 1, 0, colorWord, 0);
+				}
+				cursorX += glyph.advance;
+				glyphIndex += 1;
+			}
 			break;
 		}
 		case IO_CMD_VDP_TILE_RUN: {
@@ -186,38 +257,55 @@ function processVdpCommandCore(vdp: VDP, cpu: CPU, api: Api, params: {
 			}
 			if (params.payloadReader.kind === 'memory') {
 				const payloadReader = params.payloadReader as MemoryPacketWordReader;
-				vdp.enqueuePayloadTileRun({
-					payload_base: payloadReader.base,
-					tile_count: tileCount,
-					cols,
-					rows,
-					tile_w: readPacketArgI32(params.argReader, params.cmd, 3),
-					tile_h: readPacketArgI32(params.argReader, params.cmd, 4),
-					origin_x: readPacketArgI32(params.argReader, params.cmd, 5),
-					origin_y: readPacketArgI32(params.argReader, params.cmd, 6),
-					scroll_x: readPacketArgI32(params.argReader, params.cmd, 7),
-					scroll_y: readPacketArgI32(params.argReader, params.cmd, 8),
-					z: readPacketArgF32(params.argReader, params.cmd, 9),
-					layer: readPacketArgU32(params.argReader, params.cmd, 10) as 0 | 1 | 2,
-				});
+				const tileW = readPacketArgI32(params.argReader, params.cmd, 3);
+				const tileH = readPacketArgI32(params.argReader, params.cmd, 4);
+				const originX = readPacketArgI32(params.argReader, params.cmd, 5);
+				const originY = readPacketArgI32(params.argReader, params.cmd, 6);
+				const scrollX = readPacketArgI32(params.argReader, params.cmd, 7);
+				const scrollY = readPacketArgI32(params.argReader, params.cmd, 8);
+				const priority = readPacketArgF32(params.argReader, params.cmd, 9);
+				const layer = readPacketArgU32(params.argReader, params.cmd, 10) as 0 | 1 | 2;
+				for (let row = 0; row < rows; row += 1) {
+					for (let col = 0; col < cols; col += 1) {
+						const payloadBase = payloadReader.base + (row * cols + col) * 5 * IO_ARG_STRIDE;
+						const slot = cpu.memory.readU32(payloadBase) >>> 0;
+						if (slot === VDP_SLOT_NONE) {
+							continue;
+						}
+						const w = cpu.memory.readU32(payloadBase + 3 * IO_ARG_STRIDE) >>> 0;
+						const h = cpu.memory.readU32(payloadBase + 4 * IO_ARG_STRIDE) >>> 0;
+						if (w !== tileW || h !== tileH) {
+							throw vdpFault('VDP tile payload tile size mismatch.');
+						}
+						writeVdpBlitCommand(vdp, slot, cpu.memory.readU32(payloadBase + IO_ARG_STRIDE) >>> 0, cpu.memory.readU32(payloadBase + 2 * IO_ARG_STRIDE) >>> 0, w, h, originX + col * tileW - scrollX, originY + row * tileH - scrollY, priority, layer, 1, 1, 0, 0xffffffff, 0);
+					}
+				}
 				break;
 			}
 			const payloadReader = params.payloadReader as BufferPacketWordReader;
-			vdp.enqueuePayloadTileRunWords({
-				payload_words: payloadReader.words,
-				payload_word_offset: payloadReader.wordOffset,
-				tile_count: tileCount,
-				cols,
-				rows,
-				tile_w: readPacketArgI32(params.argReader, params.cmd, 3),
-				tile_h: readPacketArgI32(params.argReader, params.cmd, 4),
-				origin_x: readPacketArgI32(params.argReader, params.cmd, 5),
-				origin_y: readPacketArgI32(params.argReader, params.cmd, 6),
-				scroll_x: readPacketArgI32(params.argReader, params.cmd, 7),
-				scroll_y: readPacketArgI32(params.argReader, params.cmd, 8),
-				z: readPacketArgF32(params.argReader, params.cmd, 9),
-				layer: readPacketArgU32(params.argReader, params.cmd, 10) as 0 | 1 | 2,
-			});
+			const tileW = readPacketArgI32(params.argReader, params.cmd, 3);
+			const tileH = readPacketArgI32(params.argReader, params.cmd, 4);
+			const originX = readPacketArgI32(params.argReader, params.cmd, 5);
+			const originY = readPacketArgI32(params.argReader, params.cmd, 6);
+			const scrollX = readPacketArgI32(params.argReader, params.cmd, 7);
+			const scrollY = readPacketArgI32(params.argReader, params.cmd, 8);
+			const priority = readPacketArgF32(params.argReader, params.cmd, 9);
+			const layer = readPacketArgU32(params.argReader, params.cmd, 10) as 0 | 1 | 2;
+			for (let row = 0; row < rows; row += 1) {
+				for (let col = 0; col < cols; col += 1) {
+					const payloadOffset = payloadReader.wordOffset + (row * cols + col) * 5;
+					const slot = payloadReader.words[payloadOffset] >>> 0;
+					if (slot === VDP_SLOT_NONE) {
+						continue;
+					}
+					const w = payloadReader.words[payloadOffset + 3] >>> 0;
+					const h = payloadReader.words[payloadOffset + 4] >>> 0;
+					if (w !== tileW || h !== tileH) {
+						throw vdpFault('VDP tile payload words tile size mismatch.');
+					}
+					writeVdpBlitCommand(vdp, slot, payloadReader.words[payloadOffset + 1] >>> 0, payloadReader.words[payloadOffset + 2] >>> 0, w, h, originX + col * tileW - scrollX, originY + row * tileH - scrollY, priority, layer, 1, 1, 0, 0xffffffff, 0);
+				}
+			}
 			break;
 		}
 		case IO_CMD_VDP_CONFIG_SURFACE: {

@@ -240,22 +240,43 @@ Current evidence:
   PMU X/Y are signed Q16.16 offsets and PMU scale X/Y are signed Q16.16 scale
   targets. DEX uses the signed Q8.8 `DRAW_CTRL` weight for PMU offsets and the
   absolute weight for PMU scale influence. DEX resolves the selected bank into
-  per-BLIT `dstX`/`dstY`/scale geometry at BLIT acceptance, faults invalid
+	  per-BLIT `dstX`/`dstY`/scale geometry when DEX latches the BLIT, faults invalid
   input or resolved BLIT scales there, and faults invalid LINE width at LINE
-  acceptance. WebGL, headless, native GLES2, and software blitters draw resolved
+	  command-latch state. WebGL, headless, native GLES2, and software blitters draw resolved
   geometry. There is no VDP parallax rig or clock state.
 - TS and C++ now split real VDP unit state out of the parent VDP object where
-  the ownership exists today. `VdpPmuUnit` owns PMU bank registers, selected
-  bank state, and PMU BLIT resolve. `VdpSbxUnit` owns live and visible SBX
-  skybox face words. The parent `VDP` owns the submitted-frame latch: CPU writes
-  update live SBX state only, frame seal copies live SBX face words into the
-  submitted frame and resolves/validates all referenced slots and UV rectangles,
-  and VBlank present makes that submitted SBX state visible. Render handoff
-  consumes already-resolved committed SBX samples and must not discover SBX
-  faults. The parent `VDP` remains the bus interface, frame lifecycle owner, and
-  backend handoff point, matching the MAME-like shape where a top-level video
-  device coordinates child hardware state rather than becoming one unstructured
-  monolith.
+  the ownership exists today. Camera bank 0 is always-present VDP state; reset
+  initializes it to the documented perspective projection, identity view, and
+  zero eye. `set_camera` programs that bank. SBX and BBU consume camera bank 0;
+  render backends never synthesize a camera. `VdpPmuUnit` owns PMU bank
+  registers, selected bank state, and PMU BLIT resolve. `VdpSbxUnit` owns live
+  and visible SBX skybox face words. SBX ingress is now either live API state or the sealed VDP
+  command stream: `SKYBOX` packets carry an enable control word plus six
+  slot/u/v/w/h face records as packed hardware words. The parent `VDP` owns the
+  submitted-frame latch: CPU writes update live SBX state only, frame seal
+  copies live SBX face words into the submitted frame and resolves/validates all
+  referenced slots and UV rectangles, and VBlank present makes that submitted
+  SBX state visible. Render handoff consumes already-resolved committed SBX
+  samples and must not discover SBX faults. The parent `VDP` remains the bus
+  interface, frame lifecycle owner, and backend handoff point, matching the
+  MAME-like shape where a top-level video device coordinates child hardware
+  state rather than becoming one unstructured monolith.
+- `VdpBbuUnit` is now the first real billboard-unit slice. BBU ingress is the
+  VDP sealed command stream. `BILLBOARD` packets are decoded by the BBU unit
+  from packed hardware words: UV/WH are two u16 fields, x/y/z are signed
+  Q16.16 words, size is unsigned Q16.16 in the active billboard coordinate
+  space, color is raw AARRGGBB, and the current control word must be zero. The
+  active BBU coordinate mode is camera-space through camera bank 0: x/y/z are
+  camera/world-space coordinates and size is billboard width in the same unit
+	  system. The parent VDP only routes the packet and resolves the BBU
+  source against configured VRAM slots before the entry is latched into
+  build/submitted/active frame billboard instance RAM. The 1024-entry limit is a
+  frame-local BBU hardware fault, not a render-queue guard. VBlank present
+  publishes those resolved entries as the presented-frame BBU draw list, and
+  renderer backends consume that list as output sinks; render queues do not call
+  back into the VDP to validate billboard source, size, or count. The old
+  high-level particle queue is not BMSX machine ingress; carts that want BBU
+  work must write `BILLBOARD` command packets.
 - TS and C++ VDP render-surface texture binding no longer passes a fake VDP
   object into texture lookup. Surface-size resolution still asks the VDP, while
   texture-handle binding is an explicit render-side texture-memory operation.
@@ -286,7 +307,8 @@ Desired direction:
 - Model VDP work as named hardware units rather than one universal register
   frontend: DEX owns the 2D latch ingress/FIFO replay, PMU owns parallax/motion
   bank registers and BLIT resolve, SBX owns skybox face state, MSU owns mesh
-  submissions, BBU owns billboards, FBM owns framebuffer/present/readback, and
+	  submissions, BBU owns billboard packet decode, source resolve, and per-frame instance
+  limits, FBM owns framebuffer/present/readback, and
   VOUT owns device quantize/CRT output. Existing render passes remain the
   backend bridge outputs for those units.
 - Keep PMU bank register state VDP-owned. DEX must resolve PMU output before

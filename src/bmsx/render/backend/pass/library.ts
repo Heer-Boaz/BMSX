@@ -360,7 +360,7 @@ export class RenderPassLibrary {
 					time: frameTime,
 					delta: frameDelta,
 				});
-				const camState = resolveCameraState(); if (!camState) return;
+				const camState = resolveCameraState();
 				const viewState = { camPos: camState.camPos, viewProj: camState.viewProj, skyboxView: camState.skyboxView, proj: camState.proj };
 				const lighting = lightingSystem.update();
 				// Build fog state alongside frame-shared so consumers can rely on it

@@ -1,7 +1,13 @@
 #include "machine/devices/vdp/command_processor.h"
 #include "machine/devices/vdp/vdp.h"
+#include "core/font.h"
+#include "core/utf8.h"
+#include "machine/common/word.h"
+#include "machine/devices/vdp/blitter.h"
 #include "machine/devices/vdp/fault.h"
+#include "machine/common/numeric.h"
 #include "machine/devices/vdp/packet_schema.h"
+#include "machine/devices/vdp/registers.h"
 #include "machine/firmware/api.h"
 #include "machine/memory/memory.h"
 #include "machine/bus/io.h"
@@ -68,46 +74,94 @@ inline Color readPacketColor(const Reader& reader, uint32_t cmd, int offset) {
 	};
 }
 
+template<typename Reader>
+inline u32 readPacketColorWord(const Reader& reader, uint32_t cmd, int offset) {
+	return packFrameBufferColorWord(
+		readPacketArgF32(reader, cmd, offset + 0),
+		readPacketArgF32(reader, cmd, offset + 1),
+		readPacketArgF32(reader, cmd, offset + 2),
+		readPacketArgF32(reader, cmd, offset + 3));
+}
+
+inline void writeVdpFillRectCommand(VDP& vdp, f32 x0, f32 y0, f32 x1, f32 y1, f32 priority, Layer2D layer, u32 colorWord) {
+	vdp.writeVdpRegister(VDP_REG_GEOM_X0, toSignedWord(FIX16_SCALE * x0));
+	vdp.writeVdpRegister(VDP_REG_GEOM_Y0, toSignedWord(FIX16_SCALE * y0));
+	vdp.writeVdpRegister(VDP_REG_GEOM_X1, toSignedWord(FIX16_SCALE * x1));
+	vdp.writeVdpRegister(VDP_REG_GEOM_Y1, toSignedWord(FIX16_SCALE * y1));
+	vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(layer, priority));
+	vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, colorWord);
+	vdp.consumeDirectVdpCommand(VDP_CMD_FILL_RECT);
+}
+
+inline void writeVdpBlitCommand(VDP& vdp, u32 slot, u32 u, u32 v, u32 w, u32 h, f32 x, f32 y, f32 priority, Layer2D layer, f32 scaleX, f32 scaleY, u32 flipFlags, u32 colorWord, f32 parallaxWeight) {
+	vdp.writeVdpRegister(VDP_REG_SRC_SLOT, slot);
+	vdp.writeVdpRegister(VDP_REG_SRC_UV, packLowHigh16(u, v));
+	vdp.writeVdpRegister(VDP_REG_SRC_WH, packLowHigh16(w, h));
+	vdp.writeVdpRegister(VDP_REG_DST_X, toSignedWord(FIX16_SCALE * x));
+	vdp.writeVdpRegister(VDP_REG_DST_Y, toSignedWord(FIX16_SCALE * y));
+	vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(layer, priority));
+	vdp.writeVdpRegister(VDP_REG_DRAW_SCALE_X, toSignedWord(FIX16_SCALE * scaleX));
+	vdp.writeVdpRegister(VDP_REG_DRAW_SCALE_Y, toSignedWord(FIX16_SCALE * scaleY));
+	vdp.writeVdpRegister(VDP_REG_DRAW_CTRL, encodeVdpDrawCtrl((flipFlags & 1u) != 0u, (flipFlags & 2u) != 0u, 0u, parallaxWeight));
+	vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, colorWord);
+	vdp.consumeDirectVdpCommand(VDP_CMD_BLIT);
+}
+
+inline u32 resolveAtlasSlotFromMemory(const Memory& memory, i32 atlasId) {
+	if (atlasId == static_cast<i32>(VDP_SYSTEM_ATLAS_ID)) {
+		return VDP_SLOT_SYSTEM;
+	}
+	const u32 atlas = static_cast<u32>(atlasId);
+	if (memory.readIoU32(IO_VDP_SLOT_PRIMARY_ATLAS) == atlas) {
+		return VDP_SLOT_PRIMARY;
+	}
+	if (memory.readIoU32(IO_VDP_SLOT_SECONDARY_ATLAS) == atlas) {
+		return VDP_SLOT_SECONDARY;
+	}
+	throw vdpFault("atlas " + std::to_string(atlasId) + " is not loaded in a VDP slot.");
+}
+
 template<typename ArgReader, typename PayloadReader>
 void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t argWords, const ArgReader& argReader, const PayloadReader& payloadReader, uint32_t payloadWords) {
 	switch (cmd) {
 		case IO_CMD_VDP_CLEAR: {
 			assertVdpPacketArgWords(cmd, argWords);
-			vdp.enqueueClear(readPacketColor(argReader, cmd, 0));
+			vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, readPacketColorWord(argReader, cmd, 0));
+			vdp.consumeDirectVdpCommand(VDP_CMD_CLEAR);
 			break;
 		}
 		case IO_CMD_VDP_FILL_RECT: {
 			assertVdpPacketArgWords(cmd, argWords);
-			vdp.enqueueFillRect(
+			writeVdpFillRectCommand(
+				vdp,
 				readPacketArgF32(argReader, cmd, 0),
 				readPacketArgF32(argReader, cmd, 1),
 				readPacketArgF32(argReader, cmd, 2),
 				readPacketArgF32(argReader, cmd, 3),
 				readPacketArgF32(argReader, cmd, 4),
 				static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 5)),
-				readPacketColor(argReader, cmd, 6)
+				readPacketColorWord(argReader, cmd, 6)
 			);
 			break;
 		}
 		case IO_CMD_VDP_DRAW_LINE: {
 			assertVdpPacketArgWords(cmd, argWords);
-			vdp.enqueueDrawLine(
-				readPacketArgF32(argReader, cmd, 0),
-				readPacketArgF32(argReader, cmd, 1),
-				readPacketArgF32(argReader, cmd, 2),
-				readPacketArgF32(argReader, cmd, 3),
-				readPacketArgF32(argReader, cmd, 4),
-				static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 5)),
-				readPacketColor(argReader, cmd, 6),
-				readPacketArgF32(argReader, cmd, 10)
-			);
+			vdp.writeVdpRegister(VDP_REG_GEOM_X0, toSignedWord(FIX16_SCALE * readPacketArgF32(argReader, cmd, 0)));
+			vdp.writeVdpRegister(VDP_REG_GEOM_Y0, toSignedWord(FIX16_SCALE * readPacketArgF32(argReader, cmd, 1)));
+			vdp.writeVdpRegister(VDP_REG_GEOM_X1, toSignedWord(FIX16_SCALE * readPacketArgF32(argReader, cmd, 2)));
+			vdp.writeVdpRegister(VDP_REG_GEOM_Y1, toSignedWord(FIX16_SCALE * readPacketArgF32(argReader, cmd, 3)));
+			vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 5)), readPacketArgF32(argReader, cmd, 4)));
+			vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, readPacketColorWord(argReader, cmd, 6));
+			vdp.writeVdpRegister(VDP_REG_LINE_WIDTH, toSignedWord(FIX16_SCALE * readPacketArgF32(argReader, cmd, 10)));
+			vdp.consumeDirectVdpCommand(VDP_CMD_DRAW_LINE);
 			break;
 		}
 		case IO_CMD_VDP_BLIT: {
 			assertVdpPacketArgWords(cmd, argWords);
-				const uint32_t flipFlags = readPacketArgU32(argReader, cmd, 11);
-				vdp.enqueueBlit(
-					readPacketArgU32(argReader, cmd, 0),
+			const uint32_t flipFlags = readPacketArgU32(argReader, cmd, 11);
+			writeVdpBlitCommand(
+				vdp,
+				readPacketArgU32(argReader, cmd, 0),
 				readPacketArgU32(argReader, cmd, 1),
 				readPacketArgU32(argReader, cmd, 2),
 				readPacketArgU32(argReader, cmd, 3),
@@ -118,9 +172,8 @@ void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t 
 				static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 8)),
 				readPacketArgF32(argReader, cmd, 9),
 				readPacketArgF32(argReader, cmd, 10),
-				(flipFlags & 1u) != 0u,
-				(flipFlags & 2u) != 0u,
-				readPacketColor(argReader, cmd, 12),
+				flipFlags,
+				readPacketColorWord(argReader, cmd, 12),
 				readPacketArgF32(argReader, cmd, 16)
 			);
 			break;
@@ -129,21 +182,29 @@ void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t 
 			assertVdpPacketArgWords(cmd, argWords);
 			const std::string& text = cpu.stringPool().toString(readPacketArgU32(argReader, cmd, 0));
 			const bool backgroundEnabled = readPacketArgU32(argReader, cmd, 12) != 0u;
-			const std::optional<Color> backgroundColor = backgroundEnabled
-				? std::optional<Color>(readPacketColor(argReader, cmd, 13))
-				: std::nullopt;
-			vdp.enqueueGlyphRun(
-				text,
-				readPacketArgF32(argReader, cmd, 1),
-				readPacketArgF32(argReader, cmd, 2),
-				readPacketArgF32(argReader, cmd, 3),
-				api.resolveFontId(readPacketArgU32(argReader, cmd, 4)),
-				readPacketColor(argReader, cmd, 8),
-				backgroundColor,
-				readPacketArgI32(argReader, cmd, 5),
-				readPacketArgI32(argReader, cmd, 6),
-				static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 7))
-			);
+			f32 cursorX = readPacketArgF32(argReader, cmd, 1);
+			const f32 cursorY = readPacketArgF32(argReader, cmd, 2);
+			const f32 priority = readPacketArgF32(argReader, cmd, 3);
+			BFont* font = api.resolveFontId(readPacketArgU32(argReader, cmd, 4));
+			const i32 start = readPacketArgI32(argReader, cmd, 5);
+			const i32 end = readPacketArgI32(argReader, cmd, 6);
+			const Layer2D layer = static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 7));
+			const u32 colorWord = readPacketColorWord(argReader, cmd, 8);
+			const u32 backgroundColorWord = backgroundEnabled ? readPacketColorWord(argReader, cmd, 13) : 0u;
+			size_t byteIndex = 0u;
+			i32 glyphIndex = 0;
+			while (byteIndex < text.size()) {
+				const u32 codepoint = readUtf8Codepoint(text, byteIndex);
+				const FontGlyph& glyph = font->getGlyph(codepoint);
+				if (glyphIndex >= start && glyphIndex < end) {
+					if (backgroundEnabled) {
+						writeVdpFillRectCommand(vdp, cursorX, cursorY, cursorX + static_cast<f32>(glyph.rect.w), cursorY + static_cast<f32>(glyph.rect.h), priority, layer, backgroundColorWord);
+					}
+					writeVdpBlitCommand(vdp, resolveAtlasSlotFromMemory(cpu.memory(), glyph.rect.atlasId), glyph.rect.u, glyph.rect.v, glyph.rect.w, glyph.rect.h, cursorX, cursorY, priority, layer, 1.0f, 1.0f, 0u, colorWord, 0.0f);
+				}
+				cursorX += static_cast<f32>(glyph.advance);
+				glyphIndex += 1;
+			}
 			break;
 		}
 		case IO_CMD_VDP_TILE_RUN: {

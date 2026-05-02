@@ -21,9 +21,9 @@ import {
 	VDP_RD_SURFACE_SECONDARY,
 } from './contracts';
 import {
-	type VdpClippedRect,
 	VDP_RENDER_ALPHA_COST_MULTIPLIER,
 	VDP_RENDER_CLEAR_COST,
+	VDP_RENDER_BILLBOARD_COST,
 	blitAreaBucket,
 	blitSpanBucket,
 	computeClippedLineSpan,
@@ -41,7 +41,6 @@ import {
 import {
 	IO_VDP_DITHER,
 	IO_VDP_CMD,
-	IO_VDP_CMD_ARG_COUNT,
 	IO_VDP_FIFO,
 	IO_VDP_FIFO_CTRL,
 	IO_VDP_PMU_BANK,
@@ -94,18 +93,124 @@ import {
 	VDP_STREAM_CAPACITY_WORDS,
 	IO_WORD_SIZE,
 } from '../../memory/map';
-import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../common/hash';
 import { vdpFault, vdpStreamFault } from './fault';
 import { syncVdpSlotTextures } from '../../../render/vdp/slot_textures';
 import {
-	type VdpResolvedBlitPmu,
 	VdpPmuRegister,
 	VdpPmuUnit,
 } from './pmu';
-import { VdpSbxUnit, readSkyboxFaceSource } from './sbx';
+import {
+	VdpSbxUnit,
+	VDP_SBX_PACKET_KIND,
+	VDP_SBX_PACKET_PAYLOAD_WORDS,
+	readSkyboxFaceSource,
+} from './sbx';
+import {
+	type VdpBbuPacket,
+	VdpBbuFrameBuffer,
+	VdpBbuUnit,
+	VDP_BBU_PACKET_KIND,
+	VDP_BBU_PACKET_PAYLOAD_WORDS,
+} from './bbu';
+import {
+	copyVdpCameraSnapshot,
+	createVdpCameraSnapshot,
+	VdpCameraUnit,
+	type VdpCameraState,
+	type VdpCameraSnapshot,
+} from './camera';
 import { decodeSignedQ16_16 } from './fixed_point';
+import { decodeVdpUnitPacketHeader } from './packet';
+import { packedHigh16, packedLow16 } from '../../common/word';
+import {
+	VdpBlitterCommandBuffer,
+	type VdpBlitterSource,
+	type VdpBlitterSurfaceSize,
+	type VdpPayloadTileRunInput,
+	type VdpPayloadWordsTileRunInput,
+	type VdpResolvedBlitterSample,
+	type VdpSourceTileRunInput,
+	type VdpTileRunInput,
+	type VdpTileRunSourceKind,
+	VDP_BLITTER_FIFO_CAPACITY,
+	VDP_BLITTER_OPCODE_BLIT,
+	VDP_BLITTER_OPCODE_CLEAR,
+	VDP_BLITTER_OPCODE_COPY_RECT,
+	VDP_BLITTER_OPCODE_DRAW_LINE,
+	VDP_BLITTER_OPCODE_FILL_RECT,
+	VDP_BLITTER_OPCODE_GLYPH_RUN,
+	VDP_BLITTER_OPCODE_TILE_RUN,
+	VDP_BLITTER_RUN_ENTRY_CAPACITY,
+	VDP_TILE_RUN_SOURCE_DIRECT,
+	VDP_TILE_RUN_SOURCE_PAYLOAD,
+	VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS,
+	packFrameBufferColorWord,
+	vdpColorAlphaByte,
+} from './blitter';
+import {
+	type VdpBuildingFrameState,
+	type VdpExecutionState,
+	type VdpSubmittedFrameState,
+	allocateSubmittedFrameSlot,
+	copyResolvedBlitterSample,
+	createResolvedBlitterSamples,
+} from './frame';
+import {
+	VDP_CMD_BEGIN_FRAME,
+	VDP_CMD_BLIT,
+	VDP_CMD_CLEAR,
+	VDP_CMD_COPY_RECT,
+	VDP_CMD_DRAW_LINE,
+	VDP_CMD_END_FRAME,
+	VDP_CMD_FILL_RECT,
+	VDP_CMD_NOP,
+	VDP_PKT_CMD,
+	VDP_PKT_END,
+	VDP_PKT_KIND_MASK,
+	VDP_PKT_REG1,
+	VDP_PKT_REGN,
+	VDP_PKT_RESERVED_MASK,
+	VDP_Q16_ONE,
+	VDP_REG_BG_COLOR,
+	VDP_REG_DRAW_COLOR,
+	VDP_REG_DRAW_CTRL,
+	VDP_REG_DRAW_LAYER_PRIO,
+	VDP_REG_DRAW_SCALE_X,
+	VDP_REG_DRAW_SCALE_Y,
+	VDP_REG_DST_X,
+	VDP_REG_DST_Y,
+	VDP_REG_GEOM_X0,
+	VDP_REG_GEOM_X1,
+	VDP_REG_GEOM_Y0,
+	VDP_REG_GEOM_Y1,
+	VDP_REG_LINE_WIDTH,
+	VDP_REG_SLOT_DIM,
+	VDP_REG_SLOT_INDEX,
+	VDP_REG_SRC_SLOT,
+	VDP_REG_SRC_UV,
+	VDP_REG_SRC_WH,
+	VDP_REGISTER_COUNT,
+	decodeVdpDrawCtrl,
+	decodeVdpLayerPriority,
+	type VdpDrawCtrl,
+	type VdpLayerPriority,
+} from './registers';
+import {
+	type VramGarbageStream,
+	VRAM_GARBAGE_CHUNK_BYTES,
+	VRAM_GARBAGE_SPACE_SALT,
+	fillVramGarbageScratch,
+} from './vram_garbage';
+
+export type {
+	VdpBlitterCommandBuffer as VdpBlitterCommand,
+	VdpBlitterSource,
+	VdpBlitterSurfaceSize,
+	VdpResolvedBlitterSample,
+} from './blitter';
 
 export type VdpState = {
+	camera: VdpCameraState;
 	skyboxControl: number;
 	skyboxFaceWords: number[];
 	pmuSelectedBank: number;
@@ -123,86 +228,6 @@ export type VdpSaveState = VdpState & {
 	surfacePixels: VdpSurfacePixelsState[];
 	displayFrameBufferPixels: Uint8Array;
 };
-
-type VdpSubmittedFrameState = {
-	queue: VdpBlitterCommand[];
-	occupied: boolean;
-	hasCommands: boolean;
-	ready: boolean;
-	cost: number;
-	workRemaining: number;
-	ditherType: number;
-	skyboxControl: number;
-	skyboxFaceWords: Uint32Array;
-	skyboxSamples: VdpResolvedBlitterSample[];
-};
-
-type VdpBuildingFrameState = {
-	queue: VdpBlitterCommand[];
-	open: boolean;
-	cost: number;
-};
-
-type VdpExecutionState = {
-	queue: VdpBlitterCommand[];
-	pending: boolean;
-};
-
-type VdpLatchedGeometry = {
-	x0: number;
-	y0: number;
-	x1: number;
-	y1: number;
-};
-
-function createResolvedBlitterSample(): VdpResolvedBlitterSample {
-	return {
-		source: {
-			surfaceId: 0,
-			srcX: 0,
-			srcY: 0,
-			width: 0,
-			height: 0,
-		},
-		surfaceWidth: 0,
-		surfaceHeight: 0,
-		slot: 0,
-	};
-}
-
-function createResolvedBlitterSamples(): VdpResolvedBlitterSample[] {
-	const samples: VdpResolvedBlitterSample[] = [];
-	for (let index = 0; index < SKYBOX_FACE_COUNT; index += 1) {
-		samples.push(createResolvedBlitterSample());
-	}
-	return samples;
-}
-
-function copyResolvedBlitterSample(target: VdpResolvedBlitterSample, source: VdpResolvedBlitterSample): void {
-	target.source.surfaceId = source.source.surfaceId;
-	target.source.srcX = source.source.srcX;
-	target.source.srcY = source.source.srcY;
-	target.source.width = source.source.width;
-	target.source.height = source.source.height;
-	target.surfaceWidth = source.surfaceWidth;
-	target.surfaceHeight = source.surfaceHeight;
-	target.slot = source.slot;
-}
-
-function allocateSubmittedFrameSlot(): VdpSubmittedFrameState {
-	return {
-		queue: [],
-		occupied: false,
-		hasCommands: false,
-		ready: false,
-		cost: 0,
-		workRemaining: 0,
-		ditherType: 0,
-		skyboxControl: 0,
-		skyboxFaceWords: new Uint32Array(SKYBOX_FACE_WORD_COUNT),
-		skyboxSamples: createResolvedBlitterSamples(),
-	};
-}
 
 const VDP_SERVICE_BATCH_WORK_UNITS = 128;
 const VDP_SLOT_SURFACE_BINDINGS = [
@@ -313,226 +338,6 @@ export function invertColorIndex(colorIndex: number): number {
 
 const VDP_RD_BUDGET_BYTES = 4096;
 const VDP_RD_MAX_CHUNK_PIXELS = 256;
-const VRAM_GARBAGE_CHUNK_BYTES = 64 * 1024;
-const VRAM_GARBAGE_SPACE_SALT = 0x5652414d;
-const VRAM_GARBAGE_WEIGHT_BLOCK = 1;
-const VRAM_GARBAGE_WEIGHT_ROW = 2;
-const VRAM_GARBAGE_WEIGHT_PAGE = 4;
-const VRAM_GARBAGE_OCTAVES = [
-	{ shift: 11, weight: 8, mul: 0x165667b1, mix: 0xd3a2646c },
-	{ shift: 15, weight: 12, mul: 0x27d4eb2f, mix: 0x6c8e9cf5 },
-	{ shift: 17, weight: 16, mul: 0x7f4a7c15, mix: 0x31415926 },
-	{ shift: 19, weight: 20, mul: 0xa24baed5, mix: 0x9e3779b9 },
-	{ shift: 21, weight: 24, mul: 0x6a09e667, mix: 0xbb67ae85 },
-] as const;
-const VRAM_GARBAGE_FORCE_T0 = 120;
-const VRAM_GARBAGE_FORCE_T1 = 280;
-const VRAM_GARBAGE_FORCE_T2 = 480;
-const VRAM_GARBAGE_FORCE_T_DEN = 1000;
-
-type VramGarbageStream = {
-	machineSeed: number;
-	bootSeed: number;
-	slotSalt: number;
-	addr: number;
-};
-
-type BlockGen = {
-	forceMask: number;
-	prefWord: number;
-	weakMask: number;
-	baseState: number;
-	bootState: number;
-	genWordPos: number;
-};
-
-type BiasConfig = {
-	activeOctaves: number;
-	threshold0: number;
-	threshold1: number;
-	threshold2: number;
-};
-
-function garbageForceThreshold(maxBias: number, threshold: number): number {
-	return ((maxBias * threshold) / VRAM_GARBAGE_FORCE_T_DEN) | 0;
-}
-
-function makeBiasConfig(vramBytes: number): BiasConfig {
-	const maxOctaveBytes = vramBytes >>> 1;
-	let weightSum = VRAM_GARBAGE_WEIGHT_BLOCK + VRAM_GARBAGE_WEIGHT_ROW + VRAM_GARBAGE_WEIGHT_PAGE;
-	let activeOctaves = 0;
-	for (let i = 0; i < VRAM_GARBAGE_OCTAVES.length; i += 1) {
-		const octave = VRAM_GARBAGE_OCTAVES[i];
-		const octaveBytes = (1 << (octave.shift + 5)) >>> 0;
-		if (octaveBytes > maxOctaveBytes) {
-			break;
-		}
-		weightSum += octave.weight;
-		activeOctaves = i + 1;
-	}
-	const maxBias = weightSum * 127;
-	const threshold0 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T0);
-	const threshold1 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T1);
-	const threshold2 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T2);
-	return {
-		activeOctaves,
-		threshold0,
-		threshold1,
-		threshold2,
-	};
-}
-
-function frameBufferColorByte(value: number): number {
-	return (value * 255 + 0.5) | 0;
-}
-
-function initBlockGen(biasSeed: number, bootSeedMix: number, blockIndex: number, biasConfig: BiasConfig): BlockGen {
-	const pageIndex = blockIndex >>> 7;
-	const rowIndex = blockIndex >>> 3;
-
-	const pageH = fmix32((biasSeed ^ Math.imul(pageIndex, 0xc2b2ae35) ^ 0xa5a5a5a5) >>> 0);
-	const rowH = fmix32((biasSeed ^ Math.imul(rowIndex, 0x85ebca6b) ^ 0x1b873593) >>> 0);
-	const blkH = fmix32((biasSeed ^ Math.imul(blockIndex, 0x9e3779b9) ^ 0x85ebca77) >>> 0);
-
-	let bias =
-		signed8FromHash(pageH) * VRAM_GARBAGE_WEIGHT_PAGE +
-		signed8FromHash(rowH) * VRAM_GARBAGE_WEIGHT_ROW +
-		signed8FromHash(blkH) * VRAM_GARBAGE_WEIGHT_BLOCK;
-
-	let macroH = pageH;
-	for (let i = 0; i < biasConfig.activeOctaves; i += 1) {
-		const octave = VRAM_GARBAGE_OCTAVES[i];
-		const octaveIndex = blockIndex >>> octave.shift;
-		const octaveH = fmix32((biasSeed ^ Math.imul(octaveIndex, octave.mul) ^ octave.mix) >>> 0);
-		bias += signed8FromHash(octaveH) * octave.weight;
-		macroH = octaveH;
-	}
-
-	const absBias = bias < 0 ? -bias : bias;
-
-	const forceLevel =
-		absBias < biasConfig.threshold0 ? 0 :
-			absBias < biasConfig.threshold1 ? 1 :
-				absBias < biasConfig.threshold2 ? 2 : 3;
-
-	const jitterLevel = 3 - forceLevel;
-
-	let ps = (blkH ^ rowH ^ 0xdeadbeef) >>> 0;
-	ps |= 1;
-
-	ps = xorshift32(ps); const m1 = scramble32(ps);
-	ps = xorshift32(ps); const m2 = scramble32(ps);
-	ps = xorshift32(ps);
-	const prefWord = scramble32(macroH);
-	ps = xorshift32(ps); const w1 = scramble32(ps);
-	ps = xorshift32(ps); const w2 = scramble32(ps);
-	ps = xorshift32(ps); const w3 = scramble32(ps);
-	ps = xorshift32(ps); const w4 = scramble32(ps);
-
-	let forceMask = 0;
-	switch (forceLevel) {
-		case 0: forceMask = 0; break;
-		case 1: forceMask = (m1 & m2) >>> 0; break;
-		case 2: forceMask = m1 >>> 0; break;
-		default: forceMask = (m1 | m2) >>> 0; break;
-	}
-
-	let weak = (w1 & w2 & w3) >>> 0;
-	if (jitterLevel <= 2) weak &= w4;
-	if (jitterLevel <= 1) weak &= (weak >>> 1);
-	if (jitterLevel <= 0) weak = 0;
-	weak &= (~forceMask) >>> 0;
-
-	const baseState = ((blkH ^ 0xa1b2c3d4) >>> 0) | 1;
-	const bootState = (fmix32((bootSeedMix ^ Math.imul(blockIndex, 0x7f4a7c15) ^ 0x31415926) >>> 0) | 1) >>> 0;
-
-	return {
-		forceMask,
-		prefWord,
-		weakMask: weak >>> 0,
-		baseState,
-		bootState,
-		genWordPos: 0,
-	};
-}
-
-function nextWord(gen: BlockGen): number {
-	gen.baseState = xorshift32(gen.baseState);
-	gen.bootState = xorshift32(gen.bootState);
-	gen.genWordPos += 1;
-
-	const baseWord = scramble32(gen.baseState);
-	const bootWord = scramble32(gen.bootState);
-
-	let word = (baseWord & ~gen.forceMask) | (gen.prefWord & gen.forceMask);
-	word ^= (bootWord & gen.weakMask);
-	return word >>> 0;
-}
-
-function fillVramGarbageScratch(buffer: Uint8Array, s: VramGarbageStream): void {
-	const total = buffer.byteLength;
-	const startAddr = s.addr >>> 0;
-
-	const biasSeed = (s.machineSeed ^ s.slotSalt) >>> 0;
-	const bootSeedMix = (s.bootSeed ^ s.slotSalt) >>> 0;
-	const vramBytes = (VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE - VRAM_STAGING_BASE) >>> 0;
-	const biasConfig = makeBiasConfig(vramBytes);
-
-	const BLOCK_BYTES = 32;
-	const BLOCK_SHIFT = 5;
-
-	let out = 0;
-
-	const aligned4 = (((startAddr | total) & 3) === 0);
-
-	while (out < total) {
-		const addr = (startAddr + out) >>> 0;
-		const blockIndex = addr >>> BLOCK_SHIFT;
-		const blockBase = (blockIndex << BLOCK_SHIFT) >>> 0;
-
-		const startOff = (addr - blockBase) >>> 0;
-		const blockRemaining = BLOCK_BYTES - startOff;
-		const writeRemaining = total - out;
-		const maxBytesThisBlock = blockRemaining < writeRemaining ? blockRemaining : writeRemaining;
-
-		const gen = initBlockGen(biasSeed, bootSeedMix, blockIndex, biasConfig);
-
-		if (aligned4 && startOff === 0 && maxBytesThisBlock === BLOCK_BYTES) {
-			for (let w = 0; w < 8; w += 1) {
-				const word = nextWord(gen);
-				const p = out + (w << 2);
-				buffer[p] = word & 0xff;
-				buffer[p + 1] = (word >>> 8) & 0xff;
-				buffer[p + 2] = (word >>> 16) & 0xff;
-				buffer[p + 3] = (word >>> 24) & 0xff;
-			}
-		} else {
-			const rangeStart = startOff;
-			const rangeEnd = startOff + maxBytesThisBlock;
-
-			for (let w = 0; w < 8; w += 1) {
-				const word = nextWord(gen);
-				const wordByteStart = w << 2;
-				const wordByteEnd = wordByteStart + 4;
-				const a0 = wordByteStart > rangeStart ? wordByteStart : rangeStart;
-				const a1 = wordByteEnd < rangeEnd ? wordByteEnd : rangeEnd;
-				if (a0 >= a1) {
-					continue;
-				}
-				let tmp = word >>> ((a0 - wordByteStart) << 3);
-				for (let k = a0; k < a1; k += 1) {
-					buffer[out + (k - rangeStart)] = tmp & 0xff;
-					tmp >>>= 8;
-				}
-			}
-		}
-
-		out += maxBytesThisBlock;
-	}
-
-	s.addr = (startAddr + total) >>> 0;
-}
-
 type VdpReadSurface = {
 	surfaceId: number;
 	registered: boolean;
@@ -566,217 +371,6 @@ function createReadSurfaceEntries(): VdpReadSurface[] {
 	return entries;
 }
 
-export type VdpFrameBufferColor = {
-	r: number;
-	g: number;
-	b: number;
-	a: number;
-};
-
-export type VdpBlitterSource = {
-	surfaceId: number;
-	srcX: number;
-	srcY: number;
-	width: number;
-	height: number;
-};
-
-export type VdpResolvedBlitterSample = {
-	source: VdpBlitterSource;
-	surfaceWidth: number;
-	surfaceHeight: number;
-	slot: number;
-};
-
-export type VdpBlitterSurfaceSize = {
-	width: number;
-	height: number;
-};
-
-export type VdpGlyphRunGlyph = VdpBlitterSource & {
-	dstX: number;
-	dstY: number;
-	advance: number;
-};
-
-export type VdpTileRunBlit = VdpBlitterSource & {
-	dstX: number;
-	dstY: number;
-};
-
-export type VdpTileRunInputBase = {
-	cols: number;
-	rows: number;
-	tile_w: number;
-	tile_h: number;
-	origin_x: number;
-	origin_y: number;
-	scroll_x: number;
-	scroll_y: number;
-	z: number;
-	layer: Layer2D;
-};
-
-export type VdpSourceTileRunInput = VdpTileRunInputBase & {
-	sources: Array<VdpSlotSource | false>;
-};
-
-export type VdpPayloadTileRunInput = VdpTileRunInputBase & {
-	payload_base: number;
-	tile_count: number;
-};
-
-export type VdpPayloadWordsTileRunInput = VdpTileRunInputBase & {
-	payload_words: Uint32Array;
-	payload_word_offset: number;
-	tile_count: number;
-};
-
-type VdpTileRunInput = VdpSourceTileRunInput | VdpPayloadTileRunInput | VdpPayloadWordsTileRunInput;
-const VDP_TILE_RUN_SOURCE_DIRECT = 0;
-const VDP_TILE_RUN_SOURCE_PAYLOAD = 1;
-const VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS = 2;
-type VdpTileRunSourceKind = typeof VDP_TILE_RUN_SOURCE_DIRECT | typeof VDP_TILE_RUN_SOURCE_PAYLOAD | typeof VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS;
-
-export type VdpBlitterClearCommand = {
-	opcode: 'clear';
-	seq: number;
-	renderCost: number;
-	color: VdpFrameBufferColor;
-};
-
-export type VdpBlitterBlitCommand = {
-	opcode: 'blit';
-	seq: number;
-	renderCost: number;
-	layer: Layer2D;
-	z: number;
-	source: VdpBlitterSource;
-	dstX: number;
-	dstY: number;
-	scaleX: number;
-	scaleY: number;
-	flipH: boolean;
-	flipV: boolean;
-	color: VdpFrameBufferColor;
-	parallaxWeight: number;
-};
-
-export type VdpBlitterCopyRectCommand = {
-	opcode: 'copy_rect';
-	seq: number;
-	renderCost: number;
-	layer: Layer2D;
-	z: number;
-	srcX: number;
-	srcY: number;
-	width: number;
-	height: number;
-	dstX: number;
-	dstY: number;
-};
-
-export type VdpBlitterFillRectCommand = {
-	opcode: 'fill_rect';
-	seq: number;
-	renderCost: number;
-	layer: Layer2D;
-	z: number;
-	x0: number;
-	y0: number;
-	x1: number;
-	y1: number;
-	color: VdpFrameBufferColor;
-};
-
-export type VdpBlitterDrawLineCommand = {
-	opcode: 'draw_line';
-	seq: number;
-	renderCost: number;
-	layer: Layer2D;
-	z: number;
-	x0: number;
-	y0: number;
-	x1: number;
-	y1: number;
-	thickness: number;
-	color: VdpFrameBufferColor;
-};
-
-export type VdpBlitterGlyphRunCommand = {
-	opcode: 'glyph_run';
-	seq: number;
-	renderCost: number;
-	layer: Layer2D;
-	z: number;
-	lineHeight: number;
-	color: VdpFrameBufferColor;
-	backgroundColor: VdpFrameBufferColor | null;
-	glyphs: VdpGlyphRunGlyph[];
-};
-
-export type VdpBlitterTileRunCommand = {
-	opcode: 'tile_run';
-	seq: number;
-	renderCost: number;
-	layer: Layer2D;
-	z: number;
-	tiles: VdpTileRunBlit[];
-};
-
-export type VdpBlitterCommand =
-	| VdpBlitterClearCommand
-	| VdpBlitterBlitCommand
-	| VdpBlitterCopyRectCommand
-	| VdpBlitterFillRectCommand
-	| VdpBlitterDrawLineCommand
-	| VdpBlitterGlyphRunCommand
-	| VdpBlitterTileRunCommand;
-
-const BLITTER_FIFO_CAPACITY = 4096;
-
-const VDP_REG_SRC_SLOT = 0;
-const VDP_REG_SRC_UV = 1;
-const VDP_REG_SRC_WH = 2;
-const VDP_REG_DST_X = 3;
-const VDP_REG_DST_Y = 4;
-const VDP_REG_GEOM_X0 = 5;
-const VDP_REG_GEOM_Y0 = 6;
-const VDP_REG_GEOM_X1 = 7;
-const VDP_REG_GEOM_Y1 = 8;
-const VDP_REG_LINE_WIDTH = 9;
-const VDP_REG_DRAW_LAYER_PRIO = 10;
-const VDP_REG_DRAW_CTRL = 11;
-const VDP_REG_DRAW_SCALE_X = 12;
-const VDP_REG_DRAW_SCALE_Y = 13;
-const VDP_REG_DRAW_COLOR = 14;
-const VDP_REG_BG_COLOR = 15;
-const VDP_REG_SLOT_INDEX = 16;
-const VDP_REG_SLOT_DIM = 17;
-const VDP_REGISTER_COUNT = IO_VDP_CMD_ARG_COUNT;
-const VDP_Q16_ONE = 0x00010000;
-const VDP_DRAW_CTRL_FLIP_H = 0x00000001;
-const VDP_DRAW_CTRL_FLIP_V = 0x00000002;
-const VDP_DRAW_CTRL_BLEND_SHIFT = 2;
-const VDP_DRAW_CTRL_BLEND_MASK = 0x000000fc;
-const VDP_DRAW_CTRL_PMU_BANK_SHIFT = 8;
-const VDP_DRAW_CTRL_PMU_BANK_MASK = 0x0000ff00;
-const VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT = 16;
-const VDP_PKT_KIND_MASK = 0xff000000;
-const VDP_PKT_RESERVED_MASK = 0x00ff0000;
-const VDP_PKT_END = 0x00000000;
-const VDP_PKT_CMD = 0x01000000;
-const VDP_PKT_REG1 = 0x02000000;
-const VDP_PKT_REGN = 0x03000000;
-const VDP_CMD_NOP = 0;
-const VDP_CMD_CLEAR = 1;
-const VDP_CMD_FILL_RECT = 2;
-const VDP_CMD_DRAW_LINE = 3;
-const VDP_CMD_BLIT = 4;
-const VDP_CMD_COPY_RECT = 5;
-const VDP_CMD_BEGIN_FRAME = 14;
-const VDP_CMD_END_FRAME = 15;
-
 export class VDP implements VramWriteSink {
 	private vramSlots: VramSlot[] = [];
 	private vramStaging = new Uint8Array(VRAM_STAGING_SIZE);
@@ -790,30 +384,34 @@ export class VDP implements VramWriteSink {
 	private readOverflow = false;
 	private displayFrameBufferCpuReadback: Uint8Array = new Uint8Array(0);
 	private readonly sbx = new VdpSbxUnit();
+	private readonly sbxPacketFaceWords = new Uint32Array(SKYBOX_FACE_WORD_COUNT);
+	private readonly camera = new VdpCameraUnit();
 	private readonly pmu = new VdpPmuUnit();
+	private readonly bbu = new VdpBbuUnit();
 	private lastDitherType = 0;
 	private committedDitherType = 0;
 	private _frameBufferWidth = 0;
 	private _frameBufferHeight = 0;
 	private readonly buildFrame: VdpBuildingFrameState = {
-		queue: [],
+		queue: new VdpBlitterCommandBuffer(),
+		billboards: new VdpBbuFrameBuffer(),
 		open: false,
 		cost: 0,
 	};
 	private readonly execution: VdpExecutionState = {
-		queue: [],
+		queue: new VdpBlitterCommandBuffer(),
 		pending: false,
 	};
+	private committedBillboards: VdpBbuFrameBuffer = new VdpBbuFrameBuffer();
 	private readonly committedSkyboxSamples = createResolvedBlitterSamples();
+	private readonly committedCamera = createVdpCameraSnapshot();
 	private activeFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
 	private pendingFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
-	private readonly glyphBufferPool: VdpGlyphRunGlyph[][] = [];
-	private readonly tileBufferPool: VdpTileRunBlit[][] = [];
-	private readonly glyphEntryPool: VdpGlyphRunGlyph[] = [];
-	private readonly tileEntryPool: VdpTileRunBlit[] = [];
 	private readonly clippedRectScratchA = { width: 0, height: 0, area: 0 };
 	private readonly clippedRectScratchB = { width: 0, height: 0, area: 0 };
-	private readonly latchedGeometryScratch: VdpLatchedGeometry = { x0: 0, y0: 0, x1: 0, y1: 0 };
+	private readonly latchedSourceScratch: VdpBlitterSource = { surfaceId: 0, srcX: 0, srcY: 0, width: 0, height: 0 };
+	private readonly layerPriorityScratch: VdpLayerPriority = { layer: 0, priority: 0, z: 0 };
+	private readonly drawCtrlScratch: VdpDrawCtrl = { flipH: false, flipV: false, blendMode: 0, pmuBank: 0, parallaxWeight: 0 };
 	private blitterSequence = 0;
 	private cpuHz: bigint = 1n;
 	private workUnitsPerSec: bigint = 1n;
@@ -924,22 +522,12 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	private writeVdpRegister(index: number, value: number): void {
+	public writeVdpRegister(index: number, value: number): void {
 		if (index < 0 || index >= VDP_REGISTER_COUNT) {
 			throw vdpFault(`VDP register ${index} is out of range.`);
 		}
 		const word = value >>> 0;
 		switch (index) {
-			case VDP_REG_SRC_SLOT:
-			case VDP_REG_SLOT_INDEX:
-				this.validateVdpSlotRegister(word);
-				break;
-			case VDP_REG_DRAW_LAYER_PRIO:
-				this.decodeLayerPriority(word);
-				break;
-			case VDP_REG_DRAW_CTRL:
-				this.decodeDrawCtrl(word);
-				break;
 			case VDP_REG_SLOT_DIM:
 				this.configureSelectedSlotDimension(word);
 				break;
@@ -999,80 +587,15 @@ export class VDP implements VramWriteSink {
 		this.memory.writeIoValue(IO_VDP_PMU_CTRL, window.control);
 	}
 
-	private validateVdpSlotRegister(slot: number): void {
-		resolveVdpSlotSurfaceBinding(slot, 'slot', 'surfaceId', `VDP slot ${slot} is not a VDP blitter slot.`);
-	}
-
 	private configureSelectedSlotDimension(word: number): void {
-		const width = word & 0xffff;
-		const height = word >>> 16;
+		const width = packedLow16(word);
+		const height = packedHigh16(word);
 		if (width === 0 || height === 0) {
 			throw vdpFault(`invalid VRAM surface dimensions ${width}x${height}.`);
 		}
 		this.configureVramSlotSurface(this.vdpRegisters[VDP_REG_SLOT_INDEX], width, height);
 	}
 
-	private decodeDrawCtrl(value: number): { flipH: boolean; flipV: boolean; blendMode: number; pmuBank: number; parallaxWeight: number } {
-		const ctrl = value >>> 0;
-		const blendMode = (ctrl & VDP_DRAW_CTRL_BLEND_MASK) >>> VDP_DRAW_CTRL_BLEND_SHIFT;
-		if (blendMode !== 0) {
-			throw vdpFault(`VDP DRAW_CTRL blend mode ${blendMode} is not supported.`);
-		}
-		const pmuBank = ((ctrl & VDP_DRAW_CTRL_PMU_BANK_MASK) >>> VDP_DRAW_CTRL_PMU_BANK_SHIFT) & 0xff;
-		const rawQ8_8 = (ctrl >>> VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT) & 0xffff;
-		const signedQ8_8 = (rawQ8_8 & 0x8000) !== 0 ? rawQ8_8 - 0x10000 : rawQ8_8;
-		return {
-			flipH: (ctrl & VDP_DRAW_CTRL_FLIP_H) !== 0,
-			flipV: (ctrl & VDP_DRAW_CTRL_FLIP_V) !== 0,
-			blendMode,
-			pmuBank,
-			parallaxWeight: signedQ8_8 / 256,
-		};
-	}
-
-	private decodeLayerPriority(value: number): { layer: Layer2D; z: number } {
-		if ((value & 0xff000000) !== 0) {
-			throw vdpFault(`VDP layer/priority reserved bits are set (${value}).`);
-		}
-		const layer = value & 0xff;
-		if (layer < 0 || layer > 2) {
-			throw vdpFault(`invalid VDP layer ${layer}.`);
-		}
-		return {
-			layer: layer as Layer2D,
-			z: (value >>> 8) & 0xffff,
-		};
-	}
-
-	private q16ToPixel(value: number): number {
-		return (value | 0) >> 16;
-	}
-
-	private readLatchedGeometry(): VdpLatchedGeometry {
-		const geometry = this.latchedGeometryScratch;
-		geometry.x0 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_X0]);
-		geometry.y0 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_Y0]);
-		geometry.x1 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_X1]);
-		geometry.y1 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_Y1]);
-		return geometry;
-	}
-
-	private unpackArgbColor(value: number): VdpFrameBufferColor {
-		return {
-			r: (value >>> 16) & 0xff,
-			g: (value >>> 8) & 0xff,
-			b: value & 0xff,
-			a: (value >>> 24) & 0xff,
-		};
-	}
-
-	private packedLow16(value: number): number {
-		return value & 0xffff;
-	}
-
-	private packedHigh16(value: number): number {
-		return (value >>> 16) & 0xffff;
-	}
 
 	// disable-next-line single_line_method_pattern -- VBLANK status is the public device pin; status register bit ownership stays here.
 	public setVblankStatus(active: boolean): void {
@@ -1253,13 +776,49 @@ export class VDP implements VramWriteSink {
 			case VDP_PKT_REGN: {
 				const packet = this.decodeRegnPacket(word);
 				const byteCount = packet.count * IO_WORD_SIZE;
-				if (cursor + byteCount > end) {
+				const payloadEnd = cursor + byteCount;
+				if (payloadEnd > end) {
 					throw vdpStreamFault('stream ended mid-REGN payload.');
 				}
 				for (let offset = 0; offset < packet.count; offset += 1) {
 					this.writeVdpRegister(packet.firstRegister + offset, this.memory.readU32(cursor + offset * IO_WORD_SIZE));
 				}
-				return cursor + byteCount;
+				return payloadEnd;
+			}
+			case VDP_BBU_PACKET_KIND: {
+				decodeVdpUnitPacketHeader('BILLBOARD', word, VDP_BBU_PACKET_PAYLOAD_WORDS);
+				const byteCount = VDP_BBU_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
+				const payloadEnd = cursor + byteCount;
+				if (payloadEnd > end) {
+					throw vdpStreamFault('stream ended mid-BILLBOARD payload.');
+				}
+				this.latchBillboardPacket(this.bbu.decodePacket(
+					this.memory.readU32(cursor),
+					this.memory.readU32(cursor + IO_WORD_SIZE),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 2),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 3),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 4),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 5),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 6),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 7),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 8),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 9),
+				));
+				return payloadEnd;
+			}
+			case VDP_SBX_PACKET_KIND: {
+				decodeVdpUnitPacketHeader('SKYBOX', word, VDP_SBX_PACKET_PAYLOAD_WORDS);
+				const byteCount = VDP_SBX_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
+				const payloadEnd = cursor + byteCount;
+				if (payloadEnd > end) {
+					throw vdpStreamFault('stream ended mid-SKYBOX payload.');
+				}
+				const control = this.memory.readU32(cursor);
+				for (let index = 0; index < SKYBOX_FACE_WORD_COUNT; index += 1) {
+					this.sbxPacketFaceWords[index] = this.memory.readU32(cursor + IO_WORD_SIZE * (index + 1));
+				}
+				this.sbx.writePacket(control, this.sbxPacketFaceWords);
+				return payloadEnd;
 			}
 			case 0:
 				throw vdpStreamFault(`invalid zero-kind packet word ${word}.`);
@@ -1292,6 +851,34 @@ export class VDP implements VramWriteSink {
 				}
 				return cursor + packet.count;
 			}
+			case VDP_BBU_PACKET_KIND:
+				decodeVdpUnitPacketHeader('BILLBOARD', word, VDP_BBU_PACKET_PAYLOAD_WORDS);
+				if (cursor + VDP_BBU_PACKET_PAYLOAD_WORDS > wordCount) {
+					throw vdpStreamFault('stream ended mid-BILLBOARD payload.');
+				}
+				this.latchBillboardPacket(this.bbu.decodePacket(
+					this.vdpFifoStreamWords[cursor],
+					this.vdpFifoStreamWords[cursor + 1],
+					this.vdpFifoStreamWords[cursor + 2],
+					this.vdpFifoStreamWords[cursor + 3],
+					this.vdpFifoStreamWords[cursor + 4],
+					this.vdpFifoStreamWords[cursor + 5],
+					this.vdpFifoStreamWords[cursor + 6],
+					this.vdpFifoStreamWords[cursor + 7],
+					this.vdpFifoStreamWords[cursor + 8],
+					this.vdpFifoStreamWords[cursor + 9],
+				));
+				return cursor + VDP_BBU_PACKET_PAYLOAD_WORDS;
+			case VDP_SBX_PACKET_KIND:
+				decodeVdpUnitPacketHeader('SKYBOX', word, VDP_SBX_PACKET_PAYLOAD_WORDS);
+				if (cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
+					throw vdpStreamFault('stream ended mid-SKYBOX payload.');
+				}
+				for (let index = 0; index < SKYBOX_FACE_WORD_COUNT; index += 1) {
+					this.sbxPacketFaceWords[index] = this.vdpFifoStreamWords[cursor + index + 1];
+				}
+				this.sbx.writePacket(this.vdpFifoStreamWords[cursor], this.sbxPacketFaceWords);
+				return cursor + VDP_SBX_PACKET_PAYLOAD_WORDS;
 			case 0:
 				throw vdpStreamFault(`invalid zero-kind packet word ${word}.`);
 			default:
@@ -1303,7 +890,7 @@ export class VDP implements VramWriteSink {
 		if ((word & VDP_PKT_RESERVED_MASK) !== 0) {
 			throw vdpStreamFault(`REG1 reserved bits are set (${word}).`);
 		}
-		const register = word & 0xffff;
+		const register = packedLow16(word);
 		if (register >= VDP_REGISTER_COUNT) {
 			throw vdpStreamFault(`REG1 register ${register} is out of range.`);
 		}
@@ -1311,7 +898,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	private decodeRegnPacket(word: number): { firstRegister: number; count: number } {
-		const firstRegister = word & 0xffff;
+		const firstRegister = packedLow16(word);
 		const count = (word >>> 16) & 0xff;
 		if (count === 0 || count > VDP_REGISTER_COUNT) {
 			throw vdpStreamFault(`REGN count ${count} is out of range.`);
@@ -1326,7 +913,7 @@ export class VDP implements VramWriteSink {
 		if ((word & VDP_PKT_RESERVED_MASK) !== 0) {
 			throw vdpStreamFault(`CMD reserved bits are set (${word}).`);
 		}
-		const command = word & 0xffff;
+		const command = packedLow16(word);
 		if (command === VDP_CMD_BEGIN_FRAME || command === VDP_CMD_END_FRAME) {
 			throw vdpStreamFault('BEGIN_FRAME and END_FRAME are not valid in FIFO replay.');
 		}
@@ -1336,7 +923,7 @@ export class VDP implements VramWriteSink {
 		this.executeVdpDrawDoorbell(command);
 	}
 
-	private consumeDirectVdpCommand(command: number): void {
+	public consumeDirectVdpCommand(command: number): void {
 		if (command === VDP_CMD_NOP) {
 			return;
 		}
@@ -1483,256 +1070,168 @@ export class VDP implements VramWriteSink {
 		this.refreshSubmitBusyStatus();
 	}
 
-	private packFrameBufferColor(source: color): VdpFrameBufferColor {
-		return {
-			r: frameBufferColorByte(source.r),
-			g: frameBufferColorByte(source.g),
-			b: frameBufferColorByte(source.b),
-			a: frameBufferColorByte(source.a),
-		};
-	}
 
 	private enqueueLatchedClear(): void {
-		// Clear stays a barrier command in the existing sorter/executor contract.
-		this.enqueueBlitterCommand({
-			opcode: 'clear',
-			seq: this.nextBlitterSequence(),
-			renderCost: VDP_RENDER_CLEAR_COST,
-			color: this.unpackArgbColor(this.vdpRegisters[VDP_REG_BG_COLOR]),
-		});
+		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_CLEAR, VDP_RENDER_CLEAR_COST);
+		this.buildFrame.queue.colorWord[index] = this.vdpRegisters[VDP_REG_BG_COLOR] >>> 0;
 	}
 
 	private enqueueLatchedFillRect(): void {
-		const draw = this.decodeLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
-		const { x0, y0, x1, y1 } = this.readLatchedGeometry();
+		const layerPriority = this.layerPriorityScratch;
+		decodeVdpLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO], layerPriority);
+		const x0 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_X0]);
+		const y0 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_Y0]);
+		const x1 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_X1]);
+		const y1 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_Y1]);
 		const clipped = computeClippedRect(x0, y0, x1, y1, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
 		if (clipped.area === 0) {
 			return;
 		}
-		const color = this.unpackArgbColor(this.vdpRegisters[VDP_REG_DRAW_COLOR]);
-		this.enqueueBlitterCommand({
-			opcode: 'fill_rect',
-			seq: this.nextBlitterSequence(),
-			renderCost: this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(color),
-			layer: draw.layer,
-			z: draw.z,
-			x0,
-			y0,
-			x1,
-			y1,
-			color,
-		});
+		const colorWord = this.vdpRegisters[VDP_REG_DRAW_COLOR] >>> 0;
+		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_FILL_RECT, this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(colorWord));
+		const queue = this.buildFrame.queue;
+		queue.layer[index] = layerPriority.layer;
+		queue.priority[index] = layerPriority.z;
+		queue.x0[index] = x0;
+		queue.y0[index] = y0;
+		queue.x1[index] = x1;
+		queue.y1[index] = y1;
+		queue.colorWord[index] = colorWord;
 	}
 
 	private enqueueLatchedDrawLine(): void {
-		const draw = this.decodeLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+		const layerPriority = this.layerPriorityScratch;
+		decodeVdpLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO], layerPriority);
 		const thickness = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_LINE_WIDTH]);
-		this.validateLineWidth(thickness);
-		const { x0, y0, x1, y1 } = this.readLatchedGeometry();
+		const x0 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_X0]);
+		const y0 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_Y0]);
+		const x1 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_X1]);
+		const y1 = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_GEOM_Y1]);
 		const span = computeClippedLineSpan(x0, y0, x1, y1, this._frameBufferWidth, this._frameBufferHeight);
 		if (span === 0) {
 			return;
 		}
-		const color = this.unpackArgbColor(this.vdpRegisters[VDP_REG_DRAW_COLOR]);
+		const colorWord = this.vdpRegisters[VDP_REG_DRAW_COLOR] >>> 0;
 		const thicknessMultiplier = thickness > 1 ? 2 : 1;
-		this.enqueueBlitterCommand({
-			opcode: 'draw_line',
-			seq: this.nextBlitterSequence(),
-			renderCost: blitSpanBucket(span) * thicknessMultiplier * this.calculateAlphaMultiplier(color),
-			layer: draw.layer,
-			z: draw.z,
-			x0,
-			y0,
-			x1,
-			y1,
-			thickness,
-			color,
-		});
+		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_DRAW_LINE, blitSpanBucket(span) * thicknessMultiplier * this.calculateAlphaMultiplier(colorWord));
+		const queue = this.buildFrame.queue;
+		queue.layer[index] = layerPriority.layer;
+		queue.priority[index] = layerPriority.z;
+		queue.x0[index] = x0;
+		queue.y0[index] = y0;
+		queue.x1[index] = x1;
+		queue.y1[index] = y1;
+		queue.thickness[index] = thickness;
+		queue.colorWord[index] = colorWord;
 	}
 
 	private enqueueLatchedBlit(): void {
-		const draw = this.decodeLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
-		const drawCtrl = this.decodeDrawCtrl(this.vdpRegisters[VDP_REG_DRAW_CTRL]);
+		const layerPriority = this.layerPriorityScratch;
+		decodeVdpLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO], layerPriority);
+		const drawCtrl = this.drawCtrlScratch;
+		decodeVdpDrawCtrl(this.vdpRegisters[VDP_REG_DRAW_CTRL], drawCtrl);
 		const slot = this.vdpRegisters[VDP_REG_SRC_SLOT];
-		this.validateVdpSlotRegister(slot);
-		const u = this.packedLow16(this.vdpRegisters[VDP_REG_SRC_UV]);
-		const v = this.packedHigh16(this.vdpRegisters[VDP_REG_SRC_UV]);
-		const w = this.packedLow16(this.vdpRegisters[VDP_REG_SRC_WH]);
-		const h = this.packedHigh16(this.vdpRegisters[VDP_REG_SRC_WH]);
-		const source = this.resolveBlitterSource({ slot, u, v, w, h });
-		this.validateResolvedBlitterSource(source);
+		const u = packedLow16(this.vdpRegisters[VDP_REG_SRC_UV]);
+		const v = packedHigh16(this.vdpRegisters[VDP_REG_SRC_UV]);
+		const w = packedLow16(this.vdpRegisters[VDP_REG_SRC_WH]);
+		const h = packedHigh16(this.vdpRegisters[VDP_REG_SRC_WH]);
+		const source = this.latchedSourceScratch;
+		this.resolveBlitterSourceWordsInto(slot, u, v, w, h, source);
 		const scaleX = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DRAW_SCALE_X]);
 		const scaleY = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
 		const dstX = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DST_X]);
 		const dstY = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DST_Y]);
-		const resolved = this.resolveAcceptedBlitGeometry(dstX, dstY, scaleX, scaleY, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
-		const clipped = this.computeAcceptedBlitClip(source, resolved);
+		const resolved = this.pmu.resolveBlit(dstX, dstY, scaleX, scaleY, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
+		const dstWidth = source.width * resolved.scaleX;
+		const dstHeight = source.height * resolved.scaleY;
+		const clipped = computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
 		if (clipped.area === 0) {
 			return;
 		}
-		const color = this.unpackArgbColor(this.vdpRegisters[VDP_REG_DRAW_COLOR]);
-		this.enqueueBlitterCommand({
-			opcode: 'blit',
-			seq: this.nextBlitterSequence(),
-			renderCost: this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(color),
-			layer: draw.layer,
-			z: draw.z,
-			source,
-			dstX: resolved.dstX,
-			dstY: resolved.dstY,
-			scaleX: resolved.scaleX,
-			scaleY: resolved.scaleY,
-			flipH: drawCtrl.flipH,
-			flipV: drawCtrl.flipV,
-			color,
-			parallaxWeight: drawCtrl.parallaxWeight,
-		});
+		const colorWord = this.vdpRegisters[VDP_REG_DRAW_COLOR] >>> 0;
+		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_BLIT, this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(colorWord));
+		const queue = this.buildFrame.queue;
+		queue.layer[index] = layerPriority.layer;
+		queue.priority[index] = layerPriority.z;
+		queue.sourceSurfaceId[index] = source.surfaceId;
+		queue.sourceSrcX[index] = source.srcX;
+		queue.sourceSrcY[index] = source.srcY;
+		queue.sourceWidth[index] = source.width;
+		queue.sourceHeight[index] = source.height;
+		queue.dstX[index] = resolved.dstX;
+		queue.dstY[index] = resolved.dstY;
+		queue.scaleX[index] = resolved.scaleX;
+		queue.scaleY[index] = resolved.scaleY;
+		queue.flipH[index] = drawCtrl.flipH ? 1 : 0;
+		queue.flipV[index] = drawCtrl.flipV ? 1 : 0;
+		queue.colorWord[index] = colorWord;
+		queue.parallaxWeight[index] = drawCtrl.parallaxWeight;
 	}
 
 	private enqueueLatchedCopyRect(): void {
-		// Copy-rect stays a barrier command in the existing sorter/executor contract.
-		const draw = this.decodeLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
-		const srcX = this.packedLow16(this.vdpRegisters[VDP_REG_SRC_UV]);
-		const srcY = this.packedHigh16(this.vdpRegisters[VDP_REG_SRC_UV]);
-		const width = this.packedLow16(this.vdpRegisters[VDP_REG_SRC_WH]);
-		const height = this.packedHigh16(this.vdpRegisters[VDP_REG_SRC_WH]);
-		if (width === 0 || height === 0) {
-			throw vdpFault('VDP copy source dimensions must be positive.');
-		}
-		if (srcX + width > this._frameBufferWidth || srcY + height > this._frameBufferHeight) {
-			throw vdpFault('VDP copy source rectangle exceeds framebuffer dimensions.');
-		}
-		const dstX = this.q16ToPixel(this.vdpRegisters[VDP_REG_DST_X]);
-		const dstY = this.q16ToPixel(this.vdpRegisters[VDP_REG_DST_Y]);
-		const clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
-		if (clipped.area === 0) {
-			return;
-		}
-		this.enqueueBlitterCommand({
-			opcode: 'copy_rect',
-			seq: this.nextBlitterSequence(),
-			renderCost: this.calculateVisibleRectCost(clipped.width, clipped.height),
-			layer: draw.layer,
-			z: draw.z,
-			srcX,
-			srcY,
-			width,
-			height,
-			dstX,
-			dstY,
-		});
+		const layerPriority = this.layerPriorityScratch;
+		decodeVdpLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO], layerPriority);
+		const srcX = packedLow16(this.vdpRegisters[VDP_REG_SRC_UV]);
+		const srcY = packedHigh16(this.vdpRegisters[VDP_REG_SRC_UV]);
+		const width = packedLow16(this.vdpRegisters[VDP_REG_SRC_WH]);
+		const height = packedHigh16(this.vdpRegisters[VDP_REG_SRC_WH]);
+		const dstX = (this.vdpRegisters[VDP_REG_DST_X] | 0) >> 16;
+		const dstY = (this.vdpRegisters[VDP_REG_DST_Y] | 0) >> 16;
+		this.enqueueCopyRectWords(srcX, srcY, width, height, dstX, dstY, layerPriority.z, layerPriority.layer);
 	}
 
 	private nextBlitterSequence(): number {
 		return this.blitterSequence++;
 	}
 
-	private acquireGlyphBuffer(): VdpGlyphRunGlyph[] {
-		const glyphs = this.glyphBufferPool.pop();
-		if (glyphs) {
-			return glyphs;
-		}
-		return [];
-	}
-
-	private acquireGlyphEntry(): VdpGlyphRunGlyph {
-		const glyph = this.glyphEntryPool.pop();
-		if (glyph) {
-			return glyph;
-		}
-		return {
-			surfaceId: 0,
-			srcX: 0,
-			srcY: 0,
-			width: 0,
-			height: 0,
-			dstX: 0,
-			dstY: 0,
-			advance: 0,
-		};
-	}
-
-	private acquireTileBuffer(): VdpTileRunBlit[] {
-		const tiles = this.tileBufferPool.pop();
-		if (tiles) {
-			return tiles;
-		}
-		return [];
-	}
-
-	private acquireTileEntry(): VdpTileRunBlit {
-		const tile = this.tileEntryPool.pop();
-		if (tile) {
-			return tile;
-		}
-		return {
-			surfaceId: 0,
-			srcX: 0,
-			srcY: 0,
-			width: 0,
-			height: 0,
-			dstX: 0,
-			dstY: 0,
-		};
-	}
-
-	private recycleBlitterBuffers(queue: VdpBlitterCommand[]): void {
-		for (let index = 0; index < queue.length; index += 1) {
-			const command = queue[index];
-			if (command.opcode === 'glyph_run') {
-				for (let glyphIndex = 0; glyphIndex < command.glyphs.length; glyphIndex += 1) {
-					this.glyphEntryPool.push(command.glyphs[glyphIndex]);
-				}
-				command.glyphs.length = 0;
-				this.glyphBufferPool.push(command.glyphs);
-			} else if (command.opcode === 'tile_run') {
-				for (let tileIndex = 0; tileIndex < command.tiles.length; tileIndex += 1) {
-					this.tileEntryPool.push(command.tiles[tileIndex]);
-				}
-				command.tiles.length = 0;
-				this.tileBufferPool.push(command.tiles);
-			}
-		}
-		queue.length = 0;
-	}
-
 	private resetBuildFrameState(): void {
-		this.recycleBlitterBuffers(this.buildFrame.queue);
+		this.buildFrame.queue.reset();
+		this.buildFrame.billboards.reset();
 		this.buildFrame.cost = 0;
 		this.buildFrame.open = false;
 	}
 
 	private resetSubmittedFrameSlot(frame: VdpSubmittedFrameState): void {
-		frame.queue.length = 0;
+		frame.queue.reset();
 		frame.occupied = false;
 		frame.hasCommands = false;
+		frame.hasFrameBufferCommands = false;
 		frame.ready = false;
 		frame.cost = 0;
 		frame.workRemaining = 0;
 		frame.ditherType = 0;
 		frame.skyboxControl = 0;
 		frame.skyboxFaceWords.fill(0);
+		frame.billboards.reset();
 	}
 
 	private resetQueuedFrameState(): void {
 		this.resetBuildFrameState();
 		this.clearActiveFrame();
-		this.recycleBlitterBuffers(this.pendingFrame.queue);
+		this.committedBillboards.reset();
+		this.pendingFrame.queue.reset();
+		this.pendingFrame.billboards.reset();
 		this.workCarry = 0n;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
 		this.resetSubmittedFrameSlot(this.pendingFrame);
 	}
 
-	private enqueueBlitterCommand(command: VdpBlitterCommand): void {
+	private reserveBlitterCommand(opcode: number, renderCost: number): number {
 		if (!this.buildFrame.open) {
 			throw vdpFault('no submitted frame is open.');
 		}
-		if (this.buildFrame.queue.length >= BLITTER_FIFO_CAPACITY) {
-			throw vdpFault(`blitter FIFO overflow (${BLITTER_FIFO_CAPACITY} commands).`);
+		const queue = this.buildFrame.queue;
+		const index = queue.length;
+		if (index >= VDP_BLITTER_FIFO_CAPACITY) {
+			throw vdpFault(`blitter FIFO overflow (${VDP_BLITTER_FIFO_CAPACITY} commands).`);
 		}
-		this.buildFrame.cost += command.renderCost;
-		this.buildFrame.queue.push(command);
+		queue.opcode[index] = opcode;
+		queue.seq[index] = this.nextBlitterSequence();
+		queue.renderCost[index] = renderCost;
+		queue.length = index + 1;
+		this.buildFrame.cost += renderCost;
+		return index;
 	}
 
 	private calculateVisibleRectCost(width: number, height: number): number {
@@ -1740,12 +1239,12 @@ export class VDP implements VramWriteSink {
 		return blitAreaBucket(area);
 	}
 
-	private calculateAlphaMultiplier(color: VdpFrameBufferColor): number {
-		return color.a < 255 ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
+	private calculateAlphaMultiplier(colorWord: number): number {
+		return vdpColorAlphaByte(colorWord) < 255 ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
 	}
 
-	private submittedFrameCost(queue: readonly VdpBlitterCommand[], baseCost: number): number {
-		if (queue.length === 0 || queue[0].opcode === 'clear') {
+	private submittedFrameCost(queue: VdpBlitterCommandBuffer, baseCost: number): number {
+		if (queue.length === 0 || queue.opcode[0] === VDP_BLITTER_OPCODE_CLEAR) {
 			return baseCost;
 		}
 		return baseCost + VDP_RENDER_CLEAR_COST;
@@ -1792,19 +1291,26 @@ export class VDP implements VramWriteSink {
 			throw vdpFault(`${slot} frame queue is not empty.`);
 		}
 		const buildQueue = this.buildFrame.queue;
-		const frameHasCommands = buildQueue.length !== 0;
+			const buildBillboards = this.buildFrame.billboards;
+		const frameHasFrameBufferCommands = buildQueue.length !== 0;
+		const frameHasCommands = frameHasFrameBufferCommands || buildBillboards.length !== 0;
 		const frameCost = this.submittedFrameCost(buildQueue, this.buildFrame.cost);
 		frame.skyboxControl = this.sbx.latchFrame(frame.skyboxFaceWords);
 		this.resolveSkyboxFrameSamples(frame.skyboxControl, frame.skyboxFaceWords, frame.skyboxSamples);
+		this.camera.latchFrame(frame.camera);
 		this.buildFrame.queue = frame.queue;
 		frame.queue = buildQueue;
+		this.buildFrame.billboards = frame.billboards;
+		frame.billboards = buildBillboards;
 		frame.occupied = true;
 		frame.hasCommands = frameHasCommands;
+		frame.hasFrameBufferCommands = frameHasFrameBufferCommands;
 		frame.ready = frameCost === 0;
 		frame.cost = frameCost;
 		frame.workRemaining = frameCost;
 		frame.ditherType = this.lastDitherType;
-		this.buildFrame.queue.length = 0;
+		this.buildFrame.queue.reset();
+		this.buildFrame.billboards.reset();
 		this.buildFrame.cost = 0;
 		this.buildFrame.open = false;
 		this.scheduleNextService(this.scheduler.currentNowCycles());
@@ -1850,7 +1356,7 @@ export class VDP implements VramWriteSink {
 			const activeQueue = this.activeFrame.queue;
 			this.activeFrame.queue = this.execution.queue;
 			this.execution.queue = activeQueue;
-			this.activeFrame.queue.length = 0;
+			this.activeFrame.queue.reset();
 			this.execution.pending = true;
 			this.scheduleNextService(this.scheduler.currentNowCycles());
 			return;
@@ -1898,8 +1404,8 @@ export class VDP implements VramWriteSink {
 	}
 
 	private clearActiveFrame(): void {
-		this.recycleBlitterBuffers(this.activeFrame.queue);
-		this.recycleBlitterBuffers(this.execution.queue);
+		this.activeFrame.queue.reset();
+		this.execution.queue.reset();
 		this.execution.pending = false;
 		this.resetSubmittedFrameSlot(this.activeFrame);
 	}
@@ -1907,9 +1413,14 @@ export class VDP implements VramWriteSink {
 	private commitActiveVisualState(): void {
 		this.committedDitherType = this.activeFrame.ditherType;
 		this.sbx.presentFrame(this.activeFrame.skyboxControl, this.activeFrame.skyboxFaceWords);
+		copyVdpCameraSnapshot(this.committedCamera, this.activeFrame.camera);
 		for (let index = 0; index < SKYBOX_FACE_COUNT; index += 1) {
 			copyResolvedBlitterSample(this.committedSkyboxSamples[index]!, this.activeFrame.skyboxSamples[index]!);
 		}
+		const previousBillboards = this.committedBillboards;
+		this.committedBillboards = this.activeFrame.billboards;
+		this.activeFrame.billboards = previousBillboards;
+		this.activeFrame.billboards.reset();
 	}
 
 	public presentReadyFrameOnVblankEdge(): void {
@@ -1928,7 +1439,7 @@ export class VDP implements VramWriteSink {
 			this.lastFrameHeld = true;
 			return;
 		}
-		if (this.activeFrame.hasCommands) {
+		if (this.activeFrame.hasFrameBufferCommands) {
 			presentVdpFrameBufferPages(this);
 		}
 		this.commitActiveVisualState();
@@ -1940,18 +1451,16 @@ export class VDP implements VramWriteSink {
 		this.refreshSubmitBusyStatus();
 	}
 
-	public resolveBlitterSource(source: VdpSlotSource): VdpBlitterSource {
-		const surfaceId = resolveVdpSlotSurfaceBinding(source.slot, 'slot', 'surfaceId', `source slot ${source.slot} is not a VDP blitter slot.`);
-		return {
-			surfaceId,
-			srcX: source.u,
-			srcY: source.v,
-			width: source.w,
-			height: source.h,
-		};
+	private resolveBlitterSourceWordsInto(slot: number, u: number, v: number, w: number, h: number, target: VdpBlitterSource): void {
+		const surfaceId = resolveVdpSlotSurfaceBinding(slot, 'slot', 'surfaceId', `source slot ${slot} is not a VDP blitter slot.`);
+		target.surfaceId = surfaceId;
+		target.srcX = u;
+		target.srcY = v;
+		target.width = w;
+		target.height = h;
 	}
 
-	private validateResolvedBlitterSource(source: VdpBlitterSource): VdpBlitterSurfaceSize {
+	private resolveBlitterSurfaceForSource(source: VdpBlitterSource): VdpBlitterSurfaceSize {
 		if (source.width === 0 || source.height === 0) {
 			throw vdpFault('VDP source dimensions must be positive.');
 		}
@@ -1962,48 +1471,22 @@ export class VDP implements VramWriteSink {
 		return surface;
 	}
 
-	private validateBlitScale(scaleX: number, scaleY: number): void {
-		if (scaleX <= 0 || scaleY <= 0) {
-			throw vdpFault('VDP blit scale must be positive.');
-		}
-	}
-
-	private validateLineWidth(thickness: number): void {
-		if (thickness <= 0) {
-			throw vdpFault('VDP line width must be positive.');
-		}
-	}
-
-	private resolveAcceptedBlitGeometry(dstX: number, dstY: number, scaleX: number, scaleY: number, pmuBank: number, parallaxWeight: number): VdpResolvedBlitPmu {
-		this.validateBlitScale(scaleX, scaleY);
-		const resolved = this.pmu.resolveBlit(dstX, dstY, scaleX, scaleY, pmuBank, parallaxWeight);
-		this.validateBlitScale(resolved.scaleX, resolved.scaleY);
-		return resolved;
-	}
-
-	private computeAcceptedBlitClip(source: VdpBlitterSource, resolved: VdpResolvedBlitPmu): VdpClippedRect {
-		const dstWidth = source.width * resolved.scaleX;
-		const dstHeight = source.height * resolved.scaleY;
-		return computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
-	}
-
-	private resolveBlitterSampleInto(sourceRect: VdpSlotSource, target: VdpResolvedBlitterSample): void {
-		const source = this.resolveBlitterSource(sourceRect);
-		const surface = this.validateResolvedBlitterSource(source);
-		target.source.surfaceId = source.surfaceId;
-		target.source.srcX = source.srcX;
-		target.source.srcY = source.srcY;
-		target.source.width = source.width;
-		target.source.height = source.height;
+	private resolveBlitterSampleWordsInto(slot: number, u: number, v: number, w: number, h: number, target: VdpResolvedBlitterSample): void {
+		const source = target.source;
+		this.resolveBlitterSourceWordsInto(slot, u, v, w, h, source);
+		const surface = this.resolveBlitterSurfaceForSource(source);
 		target.surfaceWidth = surface.width;
 		target.surfaceHeight = surface.height;
-		target.slot = resolveVdpSlotSurfaceBinding(source.surfaceId, 'surfaceId', 'slot', `surface ${source.surfaceId} cannot be sampled by the WebGL blitter.`);
+		target.slot = resolveVdpSlotSurfaceBinding(source.surfaceId, 'surfaceId', 'slot', `surface ${source.surfaceId} is not a VDP sample slot.`);
 	}
 
-	public resolveBlitterSample(sourceRect: VdpSlotSource): VdpResolvedBlitterSample {
-		const sample = createResolvedBlitterSample();
-		this.resolveBlitterSampleInto(sourceRect, sample);
-		return sample;
+	private latchBillboardPacket(packet: VdpBbuPacket): void {
+		const source = this.latchedSourceScratch;
+		this.resolveBlitterSourceWordsInto(packet.sourceRect.slot, packet.sourceRect.u, packet.sourceRect.v, packet.sourceRect.w, packet.sourceRect.h, source);
+		const surface = this.resolveBlitterSurfaceForSource(source);
+		const slot = resolveVdpSlotSurfaceBinding(source.surfaceId, 'surfaceId', 'slot', `surface ${source.surfaceId} is not a VDP sample slot.`);
+		this.bbu.latchBillboard(this.buildFrame.billboards, packet, this.nextBlitterSequence(), source.surfaceId, source.srcX, source.srcY, source.width, source.height, surface.width, surface.height, slot);
+		this.buildFrame.cost += VDP_RENDER_BILLBOARD_COST;
 	}
 
 	private resolveSkyboxFrameSamples(control: number, faceWords: Uint32Array, samples: VdpResolvedBlitterSample[]): void {
@@ -2011,355 +1494,32 @@ export class VDP implements VramWriteSink {
 			return;
 		}
 		for (let index = 0; index < SKYBOX_FACE_COUNT; index += 1) {
-			this.resolveBlitterSampleInto({
-				slot: readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_SLOT_WORD),
-				u: readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_U_WORD),
-				v: readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_V_WORD),
-				w: readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_W_WORD),
-				h: readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_H_WORD),
-			}, samples[index]!);
+			this.resolveBlitterSampleWordsInto(
+				readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_SLOT_WORD),
+				readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_U_WORD),
+				readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_V_WORD),
+				readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_W_WORD),
+				readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_H_WORD),
+				samples[index]!,
+			);
 		}
 	}
 
-	public enqueueClear(colorValue: color): void {
-		this.enqueueBlitterCommand({
-			opcode: 'clear',
-			seq: this.nextBlitterSequence(),
-			renderCost: VDP_RENDER_CLEAR_COST,
-			color: this.packFrameBufferColor(colorValue),
-		});
-	}
-
-	public enqueueBlit(slot: number, u: number, v: number, w: number, h: number, x: number, y: number, z: number, layer: Layer2D, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, parallaxWeight: number): void {
-		const source = this.resolveBlitterSource({ slot, u, v, w, h });
-		this.validateResolvedBlitterSource(source);
-		const resolved = this.resolveAcceptedBlitGeometry(x, y, scaleX, scaleY, 0, parallaxWeight);
-		const clipped = this.computeAcceptedBlitClip(source, resolved);
-		if (clipped.area === 0) {
-			return;
-		}
-		const color = this.packFrameBufferColor(colorValue);
-		this.enqueueBlitterCommand({
-			opcode: 'blit',
-			seq: this.nextBlitterSequence(),
-			renderCost: this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(color),
-			layer,
-			z,
-			source,
-			dstX: resolved.dstX,
-			dstY: resolved.dstY,
-			scaleX: resolved.scaleX,
-			scaleY: resolved.scaleY,
-			flipH,
-			flipV,
-			color,
-			parallaxWeight,
-		});
-	}
-
-	public enqueueCopyRect(srcX: number, srcY: number, width: number, height: number, dstX: number, dstY: number, z: number, layer: Layer2D): void {
+	private enqueueCopyRectWords(srcX: number, srcY: number, width: number, height: number, dstX: number, dstY: number, z: number, layer: Layer2D): void {
 		const clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
 		if (clipped.area === 0) {
 			return;
 		}
-		this.enqueueBlitterCommand({
-			opcode: 'copy_rect',
-			seq: this.nextBlitterSequence(),
-			renderCost: this.calculateVisibleRectCost(clipped.width, clipped.height),
-			layer,
-			z,
-			srcX,
-			srcY,
-			width,
-			height,
-			dstX,
-			dstY,
-		});
-	}
-
-	public enqueueFillRect(x0: number, y0: number, x1: number, y1: number, z: number, layer: Layer2D, colorValue: color): void {
-		const clipped = computeClippedRect(x0, y0, x1, y1, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
-		if (clipped.area === 0) {
-			return;
-		}
-		const color = this.packFrameBufferColor(colorValue);
-		this.enqueueBlitterCommand({
-			opcode: 'fill_rect',
-			seq: this.nextBlitterSequence(),
-			renderCost: this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(color),
-			layer,
-			z,
-			x0,
-			y0,
-			x1,
-			y1,
-			color,
-		});
-	}
-
-	public enqueueDrawLine(x0: number, y0: number, x1: number, y1: number, z: number, layer: Layer2D, colorValue: color, thickness: number): void {
-		this.validateLineWidth(thickness);
-		const span = computeClippedLineSpan(x0, y0, x1, y1, this._frameBufferWidth, this._frameBufferHeight);
-		if (span === 0) {
-			return;
-		}
-		const color = this.packFrameBufferColor(colorValue);
-		const thicknessMultiplier = thickness > 1 ? 2 : 1;
-		this.enqueueBlitterCommand({
-			opcode: 'draw_line',
-			seq: this.nextBlitterSequence(),
-			renderCost: blitSpanBucket(span) * thicknessMultiplier * this.calculateAlphaMultiplier(color),
-			layer,
-			z,
-			x0,
-			y0,
-			x1,
-			y1,
-			thickness,
-			color,
-		});
-	}
-
-	public enqueueDrawRect(x0: number, y0: number, x1: number, y1: number, z: number, layer: Layer2D, colorValue: color): void {
-		this.enqueueDrawLine(x0, y0, x1, y0, z, layer, colorValue, 1);
-		this.enqueueDrawLine(x0, y1, x1, y1, z, layer, colorValue, 1);
-		this.enqueueDrawLine(x0, y0, x0, y1, z, layer, colorValue, 1);
-		this.enqueueDrawLine(x1, y0, x1, y1, z, layer, colorValue, 1);
-	}
-
-	public enqueueDrawPoly(points: number[], z: number, colorValue: color, thickness: number, layer: Layer2D): void {
-		for (let index = 0; index < points.length; index += 2) {
-			const next = (index + 2) % points.length;
-			this.enqueueDrawLine(points[index], points[index + 1], points[next], points[next + 1], z, layer, colorValue, thickness);
-		}
-	}
-
-	public enqueueGlyphRun(text: string | string[], x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: Layer2D): void {
-		const glyphs = this.acquireGlyphBuffer();
-		const color = this.packFrameBufferColor(colorValue);
-		const background = backgroundColor ? this.packFrameBufferColor(backgroundColor) : null;
-		let renderCost = 0;
-		let cursorY = y;
-
-		const enqueueGlyphLine = (line: string, baseIndex: number, lineLength: number): void => {
-			if (lineLength === 0) {
-				cursorY += font.lineHeight;
-				return;
-			}
-			let cursorX = x;
-			for (let glyphIndex = start; glyphIndex < lineLength && glyphIndex < end; glyphIndex += 1) {
-				const glyph = font.getGlyph(line.charAt(baseIndex + glyphIndex));
-				const source = this.resolveBlitterSource({
-					slot: resolveAtlasSlotFromMemory(this.memory, glyph.rect.atlasId),
-					u: glyph.rect.u,
-					v: glyph.rect.v,
-					w: glyph.rect.w,
-					h: glyph.rect.h,
-				});
-				const clipped = computeClippedRect(cursorX, cursorY, cursorX + source.width, cursorY + source.height, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
-				if (clipped.area > 0) {
-					renderCost += this.calculateVisibleRectCost(clipped.width, clipped.height);
-					if (background !== null) {
-						const backgroundRect = computeClippedRect(cursorX, cursorY, cursorX + glyph.advance, cursorY + font.lineHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchB);
-						if (backgroundRect.area > 0) {
-							renderCost += this.calculateVisibleRectCost(backgroundRect.width, backgroundRect.height) * this.calculateAlphaMultiplier(background);
-						}
-					}
-					const glyphEntry = this.acquireGlyphEntry();
-					glyphEntry.surfaceId = source.surfaceId;
-					glyphEntry.srcX = source.srcX;
-					glyphEntry.srcY = source.srcY;
-					glyphEntry.width = source.width;
-					glyphEntry.height = source.height;
-					glyphEntry.dstX = cursorX;
-					glyphEntry.dstY = cursorY;
-					glyphEntry.advance = glyph.advance;
-					glyphs.push(glyphEntry);
-				}
-				cursorX += glyph.advance;
-			}
-			cursorY += font.lineHeight;
-		};
-
-		if (Array.isArray(text)) {
-			for (let lineIndex = 0; lineIndex < text.length; lineIndex += 1) {
-				const line = text[lineIndex];
-				enqueueGlyphLine(line, 0, line.length);
-			}
-		} else {
-			let lineStart = 0;
-			while (lineStart <= text.length) {
-				const lineEnd = text.indexOf('\n', lineStart);
-				if (lineEnd === -1) {
-					enqueueGlyphLine(text, lineStart, text.length - lineStart);
-					break;
-				}
-				enqueueGlyphLine(text, lineStart, lineEnd - lineStart);
-				lineStart = lineEnd + 1;
-			}
-		}
-		if (glyphs.length === 0) {
-			this.glyphBufferPool.push(glyphs);
-			return;
-		}
-		this.enqueueBlitterCommand({
-			opcode: 'glyph_run',
-			seq: this.nextBlitterSequence(),
-			renderCost,
-			layer,
-			z,
-			lineHeight: font.lineHeight,
-			color,
-			backgroundColor: background,
-			glyphs,
-		});
-	}
-
-	private requireTileRunCount(label: string, tileCount: number, cols: number, rows: number): void {
-		const expected = cols * rows;
-		if (tileCount !== expected) {
-			throw vdpFault(`${label} size mismatch (${tileCount} != ${expected}).`);
-		}
-	}
-
-	private enqueueTileRunInternal(desc: VdpTileRunInput, sourceKind: VdpTileRunSourceKind, mismatchLabel: string): void {
-		const frameWidth = this._frameBufferWidth;
-		const frameHeight = this._frameBufferHeight;
-		const totalWidth = desc.cols * desc.tile_w;
-		const totalHeight = desc.rows * desc.tile_h;
-		let dstX = desc.origin_x - desc.scroll_x;
-		let dstY = desc.origin_y - desc.scroll_y;
-		let srcClipX = 0;
-		let srcClipY = 0;
-		let writeWidth = totalWidth;
-		let writeHeight = totalHeight;
-		if (dstX < 0) {
-			srcClipX = -dstX;
-			writeWidth += dstX;
-			dstX = 0;
-		}
-		if (dstY < 0) {
-			srcClipY = -dstY;
-			writeHeight += dstY;
-			dstY = 0;
-		}
-		const overflowX = (dstX + writeWidth) - frameWidth;
-		if (overflowX > 0) {
-			writeWidth -= overflowX;
-		}
-		const overflowY = (dstY + writeHeight) - frameHeight;
-		if (overflowY > 0) {
-			writeHeight -= overflowY;
-		}
-		if (writeWidth <= 0 || writeHeight <= 0) {
-			return;
-		}
-		const tiles = this.acquireTileBuffer();
-		let visibleRowCount = 0;
-		let visibleNonEmptyTileCount = 0;
-		for (let row = 0; row < desc.rows; row += 1) {
-			const base = row * desc.cols;
-			let rowHasVisibleTile = false;
-			for (let col = 0; col < desc.cols; col += 1) {
-				const index = base + col;
-				let tileSource: VdpSlotSource | false;
-				switch (sourceKind) {
-					case VDP_TILE_RUN_SOURCE_DIRECT:
-						tileSource = (desc as VdpSourceTileRunInput).sources[index]!;
-						break;
-					case VDP_TILE_RUN_SOURCE_PAYLOAD:
-						tileSource = this.readPayloadTileSource((desc as VdpPayloadTileRunInput).payload_base + index * 20);
-						break;
-					case VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS: {
-						const payload = desc as VdpPayloadWordsTileRunInput;
-						tileSource = this.readPayloadWordsTileSource(payload.payload_words, payload.payload_word_offset + index * 5);
-						break;
-					}
-				}
-				if (tileSource === false) {
-					continue;
-				}
-				const source = this.resolveBlitterSource(tileSource);
-				if (source.width !== desc.tile_w || source.height !== desc.tile_h) {
-					throw new Error(`${mismatchLabel} (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`);
-				}
-				const tileX = dstX + (col * desc.tile_w) - srcClipX;
-				const tileY = dstY + (row * desc.tile_h) - srcClipY;
-				const clipped = computeClippedRect(tileX, tileY, tileX + desc.tile_w, tileY + desc.tile_h, frameWidth, frameHeight, this.clippedRectScratchA);
-				if (clipped.area === 0) {
-					continue;
-				}
-				visibleNonEmptyTileCount += 1;
-				if (!rowHasVisibleTile) {
-					rowHasVisibleTile = true;
-					visibleRowCount += 1;
-				}
-				const tileEntry = this.acquireTileEntry();
-				tileEntry.surfaceId = source.surfaceId;
-				tileEntry.srcX = source.srcX;
-				tileEntry.srcY = source.srcY;
-				tileEntry.width = source.width;
-				tileEntry.height = source.height;
-				tileEntry.dstX = tileX;
-				tileEntry.dstY = tileY;
-				tiles.push(tileEntry);
-			}
-		}
-		if (tiles.length === 0) {
-			this.tileBufferPool.push(tiles);
-			return;
-		}
-		this.enqueueBlitterCommand({
-			opcode: 'tile_run',
-			seq: this.nextBlitterSequence(),
-			renderCost: tileRunCost(visibleRowCount, visibleNonEmptyTileCount),
-			layer: desc.layer,
-			z: desc.z,
-			tiles,
-		});
-	}
-
-	private readPayloadTileSource(base: number): VdpSlotSource | false {
-		const slot = this.memory.readU32(base) >>> 0;
-		if (slot === VDP_SLOT_NONE) {
-			return false;
-		}
-		return {
-			slot,
-			u: this.memory.readU32(base + 4) >>> 0,
-			v: this.memory.readU32(base + 8) >>> 0,
-			w: this.memory.readU32(base + 12) >>> 0,
-			h: this.memory.readU32(base + 16) >>> 0,
-		};
-	}
-
-	private readPayloadWordsTileSource(words: Uint32Array, offset: number): VdpSlotSource | false {
-		const slot = words[offset] >>> 0;
-		if (slot === VDP_SLOT_NONE) {
-			return false;
-		}
-		return {
-			slot,
-			u: words[offset + 1] >>> 0,
-			v: words[offset + 2] >>> 0,
-			w: words[offset + 3] >>> 0,
-			h: words[offset + 4] >>> 0,
-		};
-	}
-
-	public enqueueTileRun(desc: VdpSourceTileRunInput): void {
-		this.requireTileRunCount('enqueueTileRun', desc.sources.length, desc.cols, desc.rows);
-		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_DIRECT, 'VDP fault: enqueueTileRun tile size mismatch');
-	}
-
-	public enqueuePayloadTileRun(desc: VdpPayloadTileRunInput): void {
-		this.requireTileRunCount('enqueuePayloadTileRun', desc.tile_count, desc.cols, desc.rows);
-		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_PAYLOAD, 'VDP fault: enqueuePayloadTileRun tile size mismatch');
-	}
-
-	public enqueuePayloadTileRunWords(desc: VdpPayloadWordsTileRunInput): void {
-		this.requireTileRunCount('enqueuePayloadTileRunWords', desc.tile_count, desc.cols, desc.rows);
-		this.enqueueTileRunInternal(desc, VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS, 'VDP fault: enqueuePayloadTileRunWords tile size mismatch');
+		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_COPY_RECT, this.calculateVisibleRectCost(clipped.width, clipped.height));
+		const queue = this.buildFrame.queue;
+		queue.layer[index] = layer;
+		queue.priority[index] = z;
+		queue.srcX[index] = srcX;
+		queue.srcY[index] = srcY;
+		queue.width[index] = width;
+		queue.height[index] = height;
+		queue.dstX[index] = dstX;
+		queue.dstY[index] = dstY;
 	}
 
 	public resolveBlitterSurfaceSize(surfaceId: number): VdpBlitterSurfaceSize {
@@ -2546,6 +1706,7 @@ export class VDP implements VramWriteSink {
 		this.resetVdpRegisters();
 		this.pmu.reset();
 		this.syncPmuRegisterWindow();
+		this.camera.reset();
 		this.lastDitherType = dither;
 		this.committedDitherType = dither;
 		this.sbx.reset();
@@ -2568,6 +1729,7 @@ export class VDP implements VramWriteSink {
 
 	public captureState(): VdpState {
 		return {
+			camera: this.camera.captureState(),
 			skyboxControl: this.sbx.liveControlWord,
 			skyboxFaceWords: this.sbx.captureLiveFaceWords(),
 			pmuSelectedBank: this.pmu.selectedBankIndex,
@@ -2590,6 +1752,7 @@ export class VDP implements VramWriteSink {
 		if (state.skyboxFaceWords.length !== SKYBOX_FACE_WORD_COUNT) {
 			throw vdpFault(`SBX state requires ${SKYBOX_FACE_WORD_COUNT} face words.`);
 		}
+		this.camera.restoreState(state.camera);
 		this.sbx.restoreLiveState(state.skyboxControl, state.skyboxFaceWords);
 		if (state.pmuBankWords.length !== VDP_PMU_BANK_WORD_COUNT) {
 			throw vdpFault(`PMU state requires ${VDP_PMU_BANK_WORD_COUNT} bank words.`);
@@ -2619,24 +1782,36 @@ export class VDP implements VramWriteSink {
 		return this.sbx.visibleEnabled;
 	}
 
+	public get committedCameraBank0(): VdpCameraSnapshot {
+		return this.committedCamera;
+	}
+
 	public resolveCommittedSkyboxFaceSample(faceIndex: number): VdpResolvedBlitterSample {
 		return this.committedSkyboxSamples[faceIndex]!;
 	}
 
-	public takeReadyExecutionQueue(): readonly VdpBlitterCommand[] | null {
+	public takeReadyExecutionQueue(): VdpBlitterCommandBuffer | null {
 		if (!this.execution.pending) {
 			return null;
 		}
 		return this.execution.queue;
 	}
 
-	public completeReadyExecution(queue: readonly VdpBlitterCommand[]): void {
-		if (!this.execution.pending || queue !== this.execution.queue || this.execution.queue.length === 0) {
+	public takeReadyExecutionBillboards(): VdpBbuFrameBuffer {
+		return this.activeFrame.billboards;
+	}
+
+	public completeReadyExecution(queue: VdpBlitterCommandBuffer): void {
+		if (!this.execution.pending || queue !== this.execution.queue) {
 			throw vdpFault('no active frame execution pending.');
 		}
 		this.execution.pending = false;
 		this.activeFrame.ready = true;
-		this.recycleBlitterBuffers(this.execution.queue);
+		this.execution.queue.reset();
+	}
+
+	public get committedBillboardEntries(): VdpBbuFrameBuffer {
+		return this.committedBillboards;
 	}
 
 	public get surfaceUploadSlots(): readonly VdpSurfaceUploadSlot[] {
@@ -2651,7 +1826,9 @@ export class VDP implements VramWriteSink {
 
 	private commitLiveVisualState(): void {
 		this.committedDitherType = this.lastDitherType;
+		this.committedBillboards.reset();
 		this.sbx.presentLiveState();
+		this.camera.latchFrame(this.committedCamera);
 		this.resolveSkyboxFrameSamples(this.sbx.liveControlWord, this.sbx.visibleFaceState, this.committedSkyboxSamples);
 	}
 
@@ -2689,6 +1866,10 @@ export class VDP implements VramWriteSink {
 	// disable-next-line single_line_method_pattern -- public cart/runtime SBX register write enters the VDP through the parent bus-facing device.
 	public clearSkybox(): void {
 		this.sbx.clear();
+	}
+
+	public setCameraBank0(view: Float32Array, proj: Float32Array, eyeX: number, eyeY: number, eyeZ: number): void {
+		this.camera.writeCameraBank0(view, proj, eyeX, eyeY, eyeZ);
 	}
 
 	public registerVramSurfaces(surfaces: readonly VdpVramSurface[]): void {

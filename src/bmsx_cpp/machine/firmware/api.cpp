@@ -6,7 +6,6 @@
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"
 #include "render/gameview.h"
-#include "render/shared/hardware/camera.h"
 #include "render/shared/hardware/lighting.h"
 #include "render/shared/queues.h"
 #include <algorithm>
@@ -266,39 +265,6 @@ m_runtime.registerNativeFunction("put_mesh", [this, key](NativeArgsView args, Na
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("put_particle", [this, key](NativeArgsView args, NativeResults& out) {
-	ParticleRenderSubmission submission;
-	submission.position = read_vec3(args.at(0));
-	submission.size = static_cast<float>(asNumber(args.at(1)));
-	submission.color = resolve_color(args.at(2));
-		if (args.size() > 3 && valueIsTable(args[3])) {
-			auto* options = asTable(args[3]);
-			Value ambientMode = options->get(key("ambient_mode"));
-			Value ambientFactor = options->get(key("ambient_factor"));
-			Value slot = options->get(key("slot"));
-			Value u = options->get(key("u"));
-			Value v = options->get(key("v"));
-			Value w = options->get(key("w"));
-			Value h = options->get(key("h"));
-			if (isNil(slot) || isNil(u) || isNil(v) || isNil(w) || isNil(h)) {
-				throw BMSX_RUNTIME_ERROR("put_particle requires source slot/u/v/w/h.");
-			}
-			submission.slot = static_cast<uint32_t>(slot);
-			submission.u = static_cast<uint32_t>(u);
-			submission.v = static_cast<uint32_t>(v);
-			submission.w = static_cast<uint32_t>(w);
-			submission.h = static_cast<uint32_t>(h);
-			if (!isNil(ambientMode)) {
-				submission.ambient_mode = static_cast<int>(ambientMode);
-			}
-			if (!isNil(ambientFactor)) {
-				submission.ambient_factor = static_cast<float>(ambientFactor);
-			}
-	}
-	put_particle(submission);
-	(void)out;
-});
-
 m_runtime.registerNativeFunction("skybox", [this](NativeArgsView args, NativeResults& out) {
 	skybox(
 		read_image_slot_source(args.at(0), "skybox posx"),
@@ -421,10 +387,6 @@ void Api::put_mesh(const MeshRenderSubmission& submission) {
 	RenderQueues::submitMesh(submission);
 }
 
-void Api::put_particle(const ParticleRenderSubmission& submission) {
-	RenderQueues::submit_particle(submission);
-}
-
 void Api::skybox(const VdpSlotSource& posx,
 				const VdpSlotSource& negx,
 				const VdpSlotSource& posy,
@@ -442,7 +404,7 @@ void Api::skybox(const VdpSlotSource& posx,
 }
 
 void Api::set_camera(const std::array<f32, 16>& view, const std::array<f32, 16>& proj, const Vec3& eye) {
-	::bmsx::setHardwareCamera(view, proj, eye.x, eye.y, eye.z);
+	m_runtime.machine().vdp().setCameraBank0(view, proj, eye.x, eye.y, eye.z);
 }
 
 void Api::put_ambient_light(const std::string& id, const std::array<f32, 3>& color, f32 intensity) {
@@ -630,7 +592,7 @@ Vec3 Api::read_vec3(const Value& value) {
 		out.z = static_cast<f32>(asNumber(obj->get(valueNumber(3.0))));
 		return out;
 	}
-	throw BMSX_RUNTIME_ERROR("put_particle expects a table or native object.");
+	throw BMSX_RUNTIME_ERROR("vec3 expects a table or native object.");
 }
 
 std::array<f32, 3> Api::read_light_color(const Value& value) {

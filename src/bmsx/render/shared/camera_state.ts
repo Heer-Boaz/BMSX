@@ -1,5 +1,5 @@
 import type { vec3 } from '../../rompack/format';
-import { resolveActiveCamera3D } from './hardware/camera';
+import { hardwareCameraBank0 } from './hardware/camera';
 
 export type ResolvedCameraState = {
 	view: Float32Array;
@@ -9,11 +9,8 @@ export type ResolvedCameraState = {
 	camPos: vec3;
 };
 
-export function resolveCameraState(): ResolvedCameraState | null {
-	const cam = resolveActiveCamera3D();
-	if (!cam) {
-		return null;
-	}
+export function resolveCameraState(): ResolvedCameraState {
+	const cam = hardwareCameraBank0;
 	const mats = cam.getMatrices();
 	return {
 		view: mats.view,

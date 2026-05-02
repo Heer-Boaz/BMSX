@@ -5,7 +5,7 @@ import type { color } from '../shared/submissions';
 import { M4 } from './math';
 import { WebGLBackend } from '../backend/webgl/backend';
 import { clamp } from '../../common/clamp';
-import { resolveActiveCamera3D } from '../shared/hardware/camera';
+import { hardwareCameraBank0 } from '../shared/hardware/camera';
 
 let vao: WebGLVertexArrayObject = null;
 let program: WebGLProgram = null;
@@ -112,7 +112,7 @@ export function bootstrapAxisGizmo_WebGL(backend: WebGLBackend): void {
 }
 
 export function shouldRenderAxisGizmo(): boolean {
-	return enabled && !!resolveActiveCamera3D();
+	return enabled;
 }
 
 export function renderAxisGizmo_WebGL(backend: WebGLBackend, emitHostImage: AxisGizmoHostImageSink): void {
@@ -123,7 +123,7 @@ export function renderAxisGizmo_WebGL(backend: WebGLBackend, emitHostImage: Axis
 		throw new Error('[AxisGizmo] Pipeline was not bootstrapped.');
 	}
 	const gl = backend.gl as WebGL2RenderingContext;
-	const cam = resolveActiveCamera3D()!;
+	const cam = hardwareCameraBank0;
 	const view = cam.view;
 	const gv = consoleCore.view;
 	if (gv.offscreenCanvasSize.y === 0 || gv.viewportSize.x === 0 || gv.viewportSize.y === 0) {

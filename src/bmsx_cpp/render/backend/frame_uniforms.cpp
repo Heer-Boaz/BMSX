@@ -7,15 +7,6 @@
 namespace bmsx {
 namespace RenderUniforms {
 
-std::array<f32, 16> makeIdentityMat4() {
-	std::array<f32, 16> m{};
-	m[0] = 1.0f;
-	m[5] = 1.0f;
-	m[10] = 1.0f;
-	m[15] = 1.0f;
-	return m;
-}
-
 FrameUniformsData buildFrameUniforms(const Vec2& offscreen,
 										const Vec2& logical,
 										f32 time,

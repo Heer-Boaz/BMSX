@@ -48,7 +48,6 @@ public:
 	BFont* resolveFontHandle(const Value& value);
 	uint32_t getFontId(BFont* font) const;
 	void put_mesh(const MeshRenderSubmission& submission);
-	void put_particle(const ParticleRenderSubmission& submission);
 	void skybox(const VdpSlotSource& posx,
 				const VdpSlotSource& negx,
 				const VdpSlotSource& posy,

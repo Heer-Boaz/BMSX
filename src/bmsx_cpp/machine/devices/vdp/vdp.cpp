@@ -1,6 +1,8 @@
 #include "machine/devices/vdp/vdp.h"
+#include "machine/common/word.h"
 #include "machine/devices/vdp/fault.h"
 #include "machine/devices/vdp/fixed_point.h"
+#include "machine/devices/vdp/packet.h"
 #include "machine/memory/map.h"
 #include "core/font.h"
 #include "core/utf8.h"
@@ -24,56 +26,6 @@ constexpr uint32_t VDP_RD_BUDGET_BYTES = 4096u;
 constexpr uint32_t VDP_RD_MAX_CHUNK_PIXELS = 256u;
 constexpr int VDP_SERVICE_BATCH_WORK_UNITS = 128;
 constexpr size_t BLITTER_FIFO_CAPACITY = 4096u;
-constexpr uint32_t VDP_REG_SRC_SLOT = 0u;
-constexpr uint32_t VDP_REG_SRC_UV = 1u;
-constexpr uint32_t VDP_REG_SRC_WH = 2u;
-constexpr uint32_t VDP_REG_DST_X = 3u;
-constexpr uint32_t VDP_REG_DST_Y = 4u;
-constexpr uint32_t VDP_REG_GEOM_X0 = 5u;
-constexpr uint32_t VDP_REG_GEOM_Y0 = 6u;
-constexpr uint32_t VDP_REG_GEOM_X1 = 7u;
-constexpr uint32_t VDP_REG_GEOM_Y1 = 8u;
-constexpr uint32_t VDP_REG_LINE_WIDTH = 9u;
-constexpr uint32_t VDP_REG_DRAW_LAYER_PRIO = 10u;
-constexpr uint32_t VDP_REG_DRAW_CTRL = 11u;
-constexpr uint32_t VDP_REG_DRAW_SCALE_X = 12u;
-constexpr uint32_t VDP_REG_DRAW_SCALE_Y = 13u;
-constexpr uint32_t VDP_REG_DRAW_COLOR = 14u;
-constexpr uint32_t VDP_REG_BG_COLOR = 15u;
-constexpr uint32_t VDP_REG_SLOT_INDEX = 16u;
-constexpr uint32_t VDP_REG_SLOT_DIM = 17u;
-constexpr uint32_t VDP_REGISTER_COUNT = IO_VDP_CMD_ARG_COUNT;
-constexpr uint32_t VDP_Q16_ONE = 0x00010000u;
-constexpr uint32_t VDP_DRAW_CTRL_FLIP_H = 0x00000001u;
-constexpr uint32_t VDP_DRAW_CTRL_FLIP_V = 0x00000002u;
-constexpr uint32_t VDP_DRAW_CTRL_BLEND_SHIFT = 2u;
-constexpr uint32_t VDP_DRAW_CTRL_BLEND_MASK = 0x000000fcu;
-constexpr uint32_t VDP_DRAW_CTRL_PMU_BANK_SHIFT = 8u;
-constexpr uint32_t VDP_DRAW_CTRL_PMU_BANK_MASK = 0x0000ff00u;
-constexpr uint32_t VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT = 16u;
-constexpr uint32_t VDP_PKT_KIND_MASK = 0xff000000u;
-constexpr uint32_t VDP_PKT_RESERVED_MASK = 0x00ff0000u;
-constexpr uint32_t VDP_PKT_END = 0x00000000u;
-constexpr uint32_t VDP_PKT_CMD = 0x01000000u;
-constexpr uint32_t VDP_PKT_REG1 = 0x02000000u;
-constexpr uint32_t VDP_PKT_REGN = 0x03000000u;
-constexpr uint32_t VDP_CMD_NOP = 0u;
-constexpr uint32_t VDP_CMD_CLEAR = 1u;
-constexpr uint32_t VDP_CMD_FILL_RECT = 2u;
-constexpr uint32_t VDP_CMD_DRAW_LINE = 3u;
-constexpr uint32_t VDP_CMD_BLIT = 4u;
-constexpr uint32_t VDP_CMD_COPY_RECT = 5u;
-constexpr uint32_t VDP_CMD_BEGIN_FRAME = 14u;
-constexpr uint32_t VDP_CMD_END_FRAME = 15u;
-constexpr size_t VRAM_GARBAGE_CHUNK_BYTES = 64u * 1024u;
-constexpr uint32_t VRAM_GARBAGE_SPACE_SALT = 0x5652414dU;
-constexpr int VRAM_GARBAGE_WEIGHT_BLOCK = 1;
-constexpr int VRAM_GARBAGE_WEIGHT_ROW = 2;
-constexpr int VRAM_GARBAGE_WEIGHT_PAGE = 4;
-constexpr int VRAM_GARBAGE_FORCE_T0 = 120;
-constexpr int VRAM_GARBAGE_FORCE_T1 = 280;
-constexpr int VRAM_GARBAGE_FORCE_T2 = 480;
-constexpr int VRAM_GARBAGE_FORCE_T_DEN = 1000;
 template <typename T>
 std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
 	if (pool.empty()) {
@@ -82,10 +34,6 @@ std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
 	std::vector<T> values = std::move(pool.back());
 	pool.pop_back();
 	return values;
-}
-
-u8 frameBufferColorByte(f32 value) {
-	return static_cast<u8>(std::round(value * 255.0f));
 }
 
 uint32_t imageByteSize(uint32_t width, uint32_t height) {
@@ -124,168 +72,6 @@ uint32_t resolveAtlasSlotFromMemory(const Memory& memory, int32_t atlasId) {
 }
 
 } // namespace
-
-
-namespace {
-
-struct OctaveSpec {
-	uint32_t shift;
-	int weight;
-	uint32_t mul;
-	uint32_t mix;
-};
-
-constexpr OctaveSpec VRAM_GARBAGE_OCTAVES[] = {
-	{11u, 8, 0x165667b1U, 0xd3a2646cU},
-	{15u, 12, 0x27d4eb2fU, 0x6c8e9cf5U},
-	{17u, 16, 0x7f4a7c15U, 0x31415926U},
-	{19u, 20, 0xa24baed5U, 0x9e3779b9U},
-	{21u, 24, 0x6a09e667U, 0xbb67ae85U},
-};
-
-uint32_t fmix32(uint32_t h) {
-	h ^= h >> 16u;
-	h *= 0x85ebca6bU;
-	h ^= h >> 13u;
-	h *= 0xc2b2ae35U;
-	h ^= h >> 16u;
-	return h;
-}
-
-uint32_t xorshift32(uint32_t x) {
-	x ^= x << 13u;
-	x ^= x >> 17u;
-	x ^= x << 5u;
-	return x;
-}
-
-uint32_t scramble32(uint32_t x) {
-	return x * 0x9e3779bbU;
-}
-
-int signed8FromHash(uint32_t h) {
-	return static_cast<int>((h >> 24u) & 0xFFu) - 128;
-}
-
-struct BlockGen {
-	uint32_t forceMask = 0;
-	uint32_t prefWord = 0;
-	uint32_t weakMask = 0;
-	uint32_t baseState = 0;
-	uint32_t bootState = 0;
-	uint32_t genWordPos = 0;
-};
-
-struct BiasConfig {
-	uint32_t activeOctaves = 0;
-	int threshold0 = 0;
-	int threshold1 = 0;
-	int threshold2 = 0;
-};
-
-BiasConfig makeBiasConfig(uint32_t vramBytes) {
-	const uint32_t maxOctaveBytes = vramBytes >> 1u;
-	int weightSum = VRAM_GARBAGE_WEIGHT_BLOCK + VRAM_GARBAGE_WEIGHT_ROW + VRAM_GARBAGE_WEIGHT_PAGE;
-	uint32_t activeOctaves = 0;
-	for (uint32_t i = 0; i < (sizeof(VRAM_GARBAGE_OCTAVES) / sizeof(VRAM_GARBAGE_OCTAVES[0])); ++i) {
-		const uint32_t octaveBytes = 1u << (VRAM_GARBAGE_OCTAVES[i].shift + 5u);
-		if (octaveBytes > maxOctaveBytes) {
-			break;
-		}
-		weightSum += VRAM_GARBAGE_OCTAVES[i].weight;
-		activeOctaves = i + 1u;
-	}
-	const int maxBias = weightSum * 127;
-	BiasConfig config;
-	config.activeOctaves = activeOctaves;
-	config.threshold0 = (maxBias * VRAM_GARBAGE_FORCE_T0) / VRAM_GARBAGE_FORCE_T_DEN;
-	config.threshold1 = (maxBias * VRAM_GARBAGE_FORCE_T1) / VRAM_GARBAGE_FORCE_T_DEN;
-	config.threshold2 = (maxBias * VRAM_GARBAGE_FORCE_T2) / VRAM_GARBAGE_FORCE_T_DEN;
-	return config;
-}
-
-BlockGen initBlockGen(uint32_t biasSeed, uint32_t bootSeedMix, uint32_t blockIndex, const BiasConfig& biasConfig) {
-	const uint32_t pageIndex = blockIndex >> 7u;
-	const uint32_t rowIndex = blockIndex >> 3u;
-
-	const uint32_t pageH = fmix32((biasSeed ^ (pageIndex * 0xc2b2ae35U) ^ 0xa5a5a5a5U));
-	const uint32_t rowH = fmix32((biasSeed ^ (rowIndex * 0x85ebca6bU) ^ 0x1b873593U));
-	const uint32_t blkH = fmix32((biasSeed ^ (blockIndex * 0x9e3779b9U) ^ 0x85ebca77U));
-
-	int bias =
-		signed8FromHash(pageH) * VRAM_GARBAGE_WEIGHT_PAGE +
-		signed8FromHash(rowH) * VRAM_GARBAGE_WEIGHT_ROW +
-		signed8FromHash(blkH) * VRAM_GARBAGE_WEIGHT_BLOCK;
-
-	uint32_t macroH = pageH;
-	for (uint32_t i = 0; i < biasConfig.activeOctaves; ++i) {
-		const OctaveSpec& octave = VRAM_GARBAGE_OCTAVES[i];
-		const uint32_t octaveIndex = blockIndex >> octave.shift;
-		const uint32_t octaveH = fmix32((biasSeed ^ (octaveIndex * octave.mul) ^ octave.mix));
-		bias += signed8FromHash(octaveH) * octave.weight;
-		macroH = octaveH;
-	}
-
-	const int absBias = bias < 0 ? -bias : bias;
-
-	const int forceLevel =
-		(absBias < biasConfig.threshold0) ? 0 :
-		(absBias < biasConfig.threshold1) ? 1 :
-		(absBias < biasConfig.threshold2) ? 2 : 3;
-
-	const int jitterLevel = 3 - forceLevel;
-
-	uint32_t ps = (blkH ^ rowH ^ 0xdeadbeefU) | 1u;
-	ps = xorshift32(ps); const uint32_t m1 = scramble32(ps);
-	ps = xorshift32(ps); const uint32_t m2 = scramble32(ps);
-	ps = xorshift32(ps);
-	const uint32_t prefWord = scramble32(macroH);
-	ps = xorshift32(ps); const uint32_t w1 = scramble32(ps);
-	ps = xorshift32(ps); const uint32_t w2 = scramble32(ps);
-	ps = xorshift32(ps); const uint32_t w3 = scramble32(ps);
-	ps = xorshift32(ps); const uint32_t w4 = scramble32(ps);
-
-	uint32_t forceMask = 0;
-	switch (forceLevel) {
-		case 0: forceMask = 0; break;
-		case 1: forceMask = (m1 & m2); break;
-		case 2: forceMask = m1; break;
-		default: forceMask = (m1 | m2); break;
-	}
-
-	uint32_t weak = (w1 & w2 & w3);
-	if (jitterLevel <= 2) weak &= w4;
-	if (jitterLevel <= 1) weak &= (weak >> 1);
-	if (jitterLevel <= 0) weak = 0;
-	weak &= ~forceMask;
-
-	const uint32_t baseState = (blkH ^ 0xa1b2c3d4U) | 1u;
-	const uint32_t bootState = (fmix32((bootSeedMix ^ (blockIndex * 0x7f4a7c15U) ^ 0x31415926U)) | 1u);
-
-	BlockGen gen;
-	gen.forceMask = forceMask;
-	gen.prefWord = prefWord;
-	gen.weakMask = weak;
-	gen.baseState = baseState;
-	gen.bootState = bootState;
-	gen.genWordPos = 0;
-	return gen;
-}
-
-uint32_t nextWord(BlockGen& gen) {
-	gen.baseState = xorshift32(gen.baseState);
-	gen.bootState = xorshift32(gen.bootState);
-	gen.genWordPos += 1;
-
-	const uint32_t baseWord = scramble32(gen.baseState);
-	const uint32_t bootWord = scramble32(gen.bootState);
-
-	uint32_t word = (baseWord & ~gen.forceMask) | (gen.prefWord & gen.forceMask);
-	word ^= (bootWord & gen.weakMask);
-	return word;
-}
-
-}
 
 VDP::VDP(
 	Memory& memory,
@@ -358,16 +144,6 @@ void VDP::writeVdpRegister(uint32_t index, u32 value) {
 		throw vdpFault("VDP register " + std::to_string(index) + " is out of range.");
 	}
 	switch (index) {
-	case VDP_REG_SRC_SLOT:
-	case VDP_REG_SLOT_INDEX:
-		resolveSurfaceIdForSlot(value);
-		break;
-	case VDP_REG_DRAW_LAYER_PRIO:
-		decodeLayerPriority(value);
-		break;
-	case VDP_REG_DRAW_CTRL:
-		decodeDrawCtrl(value);
-		break;
 	case VDP_REG_SLOT_DIM:
 		configureSelectedSlotDimension(value);
 		break;
@@ -430,77 +206,21 @@ void VDP::syncPmuRegisterWindow() {
 }
 
 void VDP::configureSelectedSlotDimension(u32 word) {
-	const uint32_t width = word & 0xffffu;
-	const uint32_t height = word >> 16u;
+	const uint32_t width = packedLow16(word);
+	const uint32_t height = packedHigh16(word);
 	if (width == 0u || height == 0u) {
 		throw vdpFault("invalid VRAM surface dimensions " + std::to_string(width) + "x" + std::to_string(height) + ".");
 	}
 	configureVramSlotSurface(m_vdpRegisters[VDP_REG_SLOT_INDEX], width, height);
 }
 
-VDP::DrawCtrl VDP::decodeDrawCtrl(u32 value) const {
-	const u32 blendMode = (value & VDP_DRAW_CTRL_BLEND_MASK) >> VDP_DRAW_CTRL_BLEND_SHIFT;
-	if (blendMode != 0u) {
-		throw vdpFault("VDP DRAW_CTRL blend mode " + std::to_string(blendMode) + " is not supported.");
-	}
-	const u32 pmuBank = ((value & VDP_DRAW_CTRL_PMU_BANK_MASK) >> VDP_DRAW_CTRL_PMU_BANK_SHIFT) & 0xffu;
-	const i32 rawQ8_8 = static_cast<i32>((value >> VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT) & 0xffffu);
-	const i32 signedQ8_8 = (rawQ8_8 & 0x8000) != 0 ? rawQ8_8 - 0x10000 : rawQ8_8;
-	DrawCtrl decoded;
-	decoded.flipH = (value & VDP_DRAW_CTRL_FLIP_H) != 0u;
-	decoded.flipV = (value & VDP_DRAW_CTRL_FLIP_V) != 0u;
-	decoded.blendMode = blendMode;
-	decoded.pmuBank = pmuBank;
-	decoded.parallaxWeight = static_cast<f32>(signedQ8_8) / 256.0f;
-	return decoded;
-}
-
-VDP::LayerPriority VDP::decodeLayerPriority(u32 value) const {
-	if ((value & 0xff000000u) != 0u) {
-		throw vdpFault("VDP layer/priority reserved bits are set (" + std::to_string(value) + ").");
-	}
-	const u32 layer = value & 0xffu;
-	if (layer > 2u) {
-		throw vdpFault("invalid VDP layer " + std::to_string(layer) + ".");
-	}
-	LayerPriority decoded;
-	decoded.layer = static_cast<Layer2D>(layer);
-	decoded.z = static_cast<f32>((value >> 8u) & 0xffffu);
-	return decoded;
-}
-
-i32 VDP::q16ToPixel(u32 value) const {
-	const int64_t signedValue = static_cast<i32>(value);
-	if (signedValue >= 0) {
-		return static_cast<i32>(signedValue / 65536);
-	}
-	return static_cast<i32>(-(((-signedValue) + 65535) / 65536));
-}
-
-VDP::LatchedGeometry VDP::readLatchedGeometry() const {
-	LatchedGeometry geometry;
+VdpLatchedGeometry VDP::readLatchedGeometry() const {
+	VdpLatchedGeometry geometry;
 	geometry.x0 = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_GEOM_X0]);
 	geometry.y0 = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_GEOM_Y0]);
 	geometry.x1 = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_GEOM_X1]);
 	geometry.y1 = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_GEOM_Y1]);
 	return geometry;
-}
-
-VDP::FrameBufferColor VDP::unpackArgbColor(u32 value) const {
-	FrameBufferColor color;
-	color.r = static_cast<u8>((value >> 16u) & 0xffu);
-	color.g = static_cast<u8>((value >> 8u) & 0xffu);
-	color.b = static_cast<u8>(value & 0xffu);
-	color.a = static_cast<u8>((value >> 24u) & 0xffu);
-	return color;
-}
-
-u32 VDP::packedLow16(u32 value) const {
-	return value & 0xffffu;
-}
-
-u32 VDP::packedHigh16(u32 value) const {
-	return (value >> 16u) & 0xffffu;
 }
 
 // start hot-path -- VDP status, command ingress, scheduler service, and VRAM row access run on frame-critical paths.
@@ -700,6 +420,37 @@ u32 VDP::consumeReplayPacket(u32 word, u32 cursor, u32 limit, ReplayPayloadSourc
 			}
 			return cursor + payloadCount;
 		}
+		case VDP_BBU_PACKET_KIND: {
+			decodeVdpUnitPacketHeader("BILLBOARD", word, VDP_BBU_PACKET_PAYLOAD_WORDS);
+			const u32 payloadCount = VDP_BBU_PACKET_PAYLOAD_WORDS * payloadUnit;
+			if (cursor + payloadCount > limit) {
+				throw vdpStreamFault("stream ended mid-BILLBOARD payload.");
+			}
+			latchBillboardPacket(m_bbu.decodePacket(
+				readReplayPayloadWord(cursor, 0u, source),
+				readReplayPayloadWord(cursor, 1u, source),
+				readReplayPayloadWord(cursor, 2u, source),
+				readReplayPayloadWord(cursor, 3u, source),
+				readReplayPayloadWord(cursor, 4u, source),
+				readReplayPayloadWord(cursor, 5u, source),
+				readReplayPayloadWord(cursor, 6u, source),
+				readReplayPayloadWord(cursor, 7u, source),
+				readReplayPayloadWord(cursor, 8u, source),
+				readReplayPayloadWord(cursor, 9u, source)));
+			return cursor + payloadCount;
+		}
+		case VDP_SBX_PACKET_KIND: {
+			decodeVdpUnitPacketHeader("SKYBOX", word, VDP_SBX_PACKET_PAYLOAD_WORDS);
+			const u32 payloadCount = VDP_SBX_PACKET_PAYLOAD_WORDS * payloadUnit;
+			if (cursor + payloadCount > limit) {
+				throw vdpStreamFault("stream ended mid-SKYBOX payload.");
+			}
+			for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
+				m_sbxPacketFaceWords[index] = readReplayPayloadWord(cursor, static_cast<u32>(index + 1u), source);
+			}
+			m_sbx.writePacket(readReplayPayloadWord(cursor, 0u, source), m_sbxPacketFaceWords);
+			return cursor + payloadCount;
+		}
 		case 0u:
 			throw vdpStreamFault("invalid zero-kind packet word " + std::to_string(word) + ".");
 		default:
@@ -711,15 +462,16 @@ u32 VDP::decodeReg1Packet(u32 word) const {
 	if ((word & VDP_PKT_RESERVED_MASK) != 0u) {
 		throw vdpStreamFault("REG1 reserved bits are set (" + std::to_string(word) + ").");
 	}
-	const u32 reg = word & 0xffffu;
+	const u32 reg = packedLow16(word);
 	if (reg >= VDP_REGISTER_COUNT) {
 		throw vdpStreamFault("REG1 register " + std::to_string(reg) + " is out of range.");
 	}
 	return reg;
 }
 
+
 VDP::RegnPacket VDP::decodeRegnPacket(u32 word) const {
-	const u32 firstRegister = word & 0xffffu;
+	const u32 firstRegister = packedLow16(word);
 	const u32 count = (word >> 16u) & 0xffu;
 	if (count == 0u || count > VDP_REGISTER_COUNT) {
 		throw vdpStreamFault("REGN count " + std::to_string(count) + " is out of range.");
@@ -734,7 +486,7 @@ void VDP::consumeReplayCommandPacket(u32 word) {
 	if ((word & VDP_PKT_RESERVED_MASK) != 0u) {
 		throw vdpStreamFault("CMD reserved bits are set (" + std::to_string(word) + ").");
 	}
-	const u32 command = word & 0xffffu;
+	const u32 command = packedLow16(word);
 	if (command == VDP_CMD_BEGIN_FRAME || command == VDP_CMD_END_FRAME) {
 		throw vdpStreamFault("BEGIN_FRAME and END_FRAME are not valid in FIFO replay.");
 	}
@@ -999,17 +751,7 @@ void VDP::beginFrame() {
 	m_readOverflow = false;
 }
 
-VDP::FrameBufferColor VDP::packFrameBufferColor(const Color& color) const {
-	return FrameBufferColor{
-		frameBufferColorByte(color.r),
-		frameBufferColorByte(color.g),
-		frameBufferColorByte(color.b),
-		frameBufferColorByte(color.a),
-	};
-}
-
 void VDP::enqueueLatchedClear() {
-	// Clear stays a barrier command in the existing sorter/executor contract.
 	BlitterCommand command;
 	command.type = BlitterCommandType::Clear;
 	command.seq = nextBlitterSequence();
@@ -1019,15 +761,15 @@ void VDP::enqueueLatchedClear() {
 }
 
 void VDP::enqueueLatchedFillRect() {
-	const LayerPriority draw = decodeLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
-	const LatchedGeometry geometry = readLatchedGeometry();
+	const VdpLayerPriority layerPriority = decodeVdpLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const VdpLatchedGeometry geometry = readLatchedGeometry();
 	const VdpClippedRect clipped = computeClippedRect(geometry.x0, geometry.y0, geometry.x1, geometry.y1, m_frameBufferWidth, m_frameBufferHeight);
 	if (clipped.area == 0.0) {
 		return;
 	}
 	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
 	BlitterCommand command;
-	assignLayeredBlitterCommand(command, BlitterCommandType::FillRect, calculateVisibleRectCost(clipped.width, clipped.height) * calculateAlphaMultiplier(color), draw.layer, draw.z);
+	assignLayeredBlitterCommand(command, BlitterCommandType::FillRect, calculateVisibleRectCost(clipped.width, clipped.height) * calculateAlphaMultiplier(color), layerPriority.layer, layerPriority.z);
 	command.x0 = geometry.x0;
 	command.y0 = geometry.y0;
 	command.x1 = geometry.x1;
@@ -1037,10 +779,9 @@ void VDP::enqueueLatchedFillRect() {
 }
 
 void VDP::enqueueLatchedDrawLine() {
-	const LayerPriority draw = decodeLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const VdpLayerPriority layerPriority = decodeVdpLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
 	const f32 thickness = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_LINE_WIDTH]);
-	validateLineWidth(thickness);
-	const LatchedGeometry geometry = readLatchedGeometry();
+	const VdpLatchedGeometry geometry = readLatchedGeometry();
 	const double span = computeClippedLineSpan(geometry.x0, geometry.y0, geometry.x1, geometry.y1, m_frameBufferWidth, m_frameBufferHeight);
 	if (span == 0.0) {
 		return;
@@ -1048,7 +789,7 @@ void VDP::enqueueLatchedDrawLine() {
 	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
 	const int thicknessMultiplier = thickness > 1.0f ? 2 : 1;
 	BlitterCommand command;
-	assignLayeredBlitterCommand(command, BlitterCommandType::DrawLine, blitSpanBucket(span) * thicknessMultiplier * calculateAlphaMultiplier(color), draw.layer, draw.z);
+	assignLayeredBlitterCommand(command, BlitterCommandType::DrawLine, blitSpanBucket(span) * thicknessMultiplier * calculateAlphaMultiplier(color), layerPriority.layer, layerPriority.z);
 	command.x0 = geometry.x0;
 	command.y0 = geometry.y0;
 	command.x1 = geometry.x1;
@@ -1059,23 +800,20 @@ void VDP::enqueueLatchedDrawLine() {
 }
 
 void VDP::enqueueLatchedBlit() {
-	const LayerPriority draw = decodeLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
-	const DrawCtrl drawCtrl = decodeDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
+	const VdpLayerPriority layerPriority = decodeVdpLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const VdpDrawCtrl drawCtrl = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
 	const u32 slot = m_vdpRegisters[VDP_REG_SRC_SLOT];
-	resolveSurfaceIdForSlot(slot);
 	const u32 u = packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]);
 	const u32 v = packedHigh16(m_vdpRegisters[VDP_REG_SRC_UV]);
 	const u32 w = packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]);
 	const u32 h = packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]);
-	const BlitterSource source = resolveBlitterSource(VdpSlotSource{slot, u, v, w, h});
-	validateResolvedBlitterSource(source);
+	BlitterSource source;
+	resolveBlitterSourceWordsInto(slot, u, v, w, h, source);
 	const f32 scaleX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DRAW_SCALE_X]);
 	const f32 scaleY = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
-	validateBlitScale(scaleX, scaleY);
 	const f32 dstX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_X]);
 	const f32 dstY = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_Y]);
 	const VdpResolvedBlitPmu resolved = m_pmu.resolveBlit(dstX, dstY, scaleX, scaleY, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
-	validateBlitScale(resolved.scaleX, resolved.scaleY);
 	const double dstWidth = static_cast<double>(source.width) * static_cast<double>(resolved.scaleX);
 	const double dstHeight = static_cast<double>(source.height) * static_cast<double>(resolved.scaleY);
 	const VdpClippedRect clipped = computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, m_frameBufferWidth, m_frameBufferHeight);
@@ -1084,7 +822,7 @@ void VDP::enqueueLatchedBlit() {
 	}
 	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
 	BlitterCommand command;
-	assignLayeredBlitterCommand(command, BlitterCommandType::Blit, calculateVisibleRectCost(clipped.width, clipped.height) * calculateAlphaMultiplier(color), draw.layer, draw.z);
+	assignLayeredBlitterCommand(command, BlitterCommandType::Blit, calculateVisibleRectCost(clipped.width, clipped.height) * calculateAlphaMultiplier(color), layerPriority.layer, layerPriority.z);
 	command.source = source;
 	command.dstX = resolved.dstX;
 	command.dstY = resolved.dstY;
@@ -1098,33 +836,14 @@ void VDP::enqueueLatchedBlit() {
 }
 
 void VDP::enqueueLatchedCopyRect() {
-	// Copy-rect stays a barrier command in the existing sorter/executor contract.
-	const LayerPriority draw = decodeLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const VdpLayerPriority layerPriority = decodeVdpLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
 	const i32 srcX = static_cast<i32>(packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]));
 	const i32 srcY = static_cast<i32>(packedHigh16(m_vdpRegisters[VDP_REG_SRC_UV]));
 	const i32 width = static_cast<i32>(packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]));
 	const i32 height = static_cast<i32>(packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]));
-	if (width == 0 || height == 0) {
-		throw vdpFault("VDP copy source dimensions must be positive.");
-	}
-	if (srcX + width > static_cast<i32>(m_frameBufferWidth) || srcY + height > static_cast<i32>(m_frameBufferHeight)) {
-		throw vdpFault("VDP copy source rectangle exceeds framebuffer dimensions.");
-	}
-	const i32 dstX = q16ToPixel(m_vdpRegisters[VDP_REG_DST_X]);
-	const i32 dstY = q16ToPixel(m_vdpRegisters[VDP_REG_DST_Y]);
-	const VdpClippedRect clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, m_frameBufferWidth, m_frameBufferHeight);
-	if (clipped.area == 0.0) {
-		return;
-	}
-	BlitterCommand command;
-	assignLayeredBlitterCommand(command, BlitterCommandType::CopyRect, calculateVisibleRectCost(clipped.width, clipped.height), draw.layer, draw.z);
-	command.srcX = srcX;
-	command.srcY = srcY;
-	command.width = width;
-	command.height = height;
-	command.dstX = static_cast<f32>(dstX);
-	command.dstY = static_cast<f32>(dstY);
-	enqueueBlitterCommand(std::move(command));
+	const i32 dstX = static_cast<i32>(m_vdpRegisters[VDP_REG_DST_X]) >> 16;
+	const i32 dstY = static_cast<i32>(m_vdpRegisters[VDP_REG_DST_Y]) >> 16;
+	enqueueCopyRect(srcX, srcY, width, height, dstX, dstY, layerPriority.z, layerPriority.layer);
 }
 
 u32 VDP::nextBlitterSequence() {
@@ -1162,26 +881,17 @@ void VDP::recycleBlitterBuffers(std::vector<BlitterCommand>& queue) {
 void VDP::resetBuildFrameState() {
 	recycleBlitterBuffers(m_buildFrame.queue);
 	m_buildFrame.queue.clear();
+	m_buildFrame.billboards.clear();
 	m_buildFrame.cost = 0;
 	m_buildFrame.open = false;
-}
-
-void VDP::resetSubmittedFrameSlot(SubmittedFrame& frame) {
-	frame.queue.clear();
-	frame.occupied = false;
-	frame.hasCommands = false;
-	frame.ready = false;
-	frame.cost = 0;
-	frame.workRemaining = 0;
-	frame.ditherType = 0;
-	frame.skyboxControl = 0u;
-	frame.skyboxFaceWords.fill(0u);
 }
 
 void VDP::resetQueuedFrameState() {
 	resetBuildFrameState();
 	clearActiveFrame();
+	m_committedBillboards.clear();
 	recycleBlitterBuffers(m_pendingFrame.queue);
+	m_pendingFrame.billboards.clear();
 	resetSubmittedFrameSlot(m_pendingFrame);
 }
 
@@ -1240,19 +950,24 @@ void VDP::assignBuildToSlot(bool active) {
 			? "active frame queue is not empty."
 			: "pending frame queue is not empty.");
 	}
-	const bool frameHasCommands = !m_buildFrame.queue.empty();
+	const bool frameHasFrameBufferCommands = !m_buildFrame.queue.empty();
+	const bool frameHasCommands = frameHasFrameBufferCommands || !m_buildFrame.billboards.empty();
 	const int frameCost = (!m_buildFrame.queue.empty() && m_buildFrame.queue.front().type != BlitterCommandType::Clear)
 		? (m_buildFrame.cost + VDP_RENDER_CLEAR_COST)
 		: m_buildFrame.cost;
 	frame.skyboxControl = m_sbx.latchFrame(frame.skyboxFaceWords);
 	resolveSkyboxFrameSamples(frame.skyboxControl, frame.skyboxFaceWords, frame.skyboxSamples);
+	m_camera.latchFrame(frame.camera);
 	frame.queue.swap(m_buildFrame.queue);
+	frame.billboards.swap(m_buildFrame.billboards);
 	frame.occupied = true;
 	frame.hasCommands = frameHasCommands;
+	frame.hasFrameBufferCommands = frameHasFrameBufferCommands;
 	frame.ready = frameCost == 0;
 	frame.cost = frameCost;
 	frame.workRemaining = frameCost;
 	frame.ditherType = m_lastDitherType;
+	m_buildFrame.billboards.clear();
 	m_buildFrame.cost = 0;
 	m_buildFrame.open = false;
 	scheduleNextService(m_scheduler.currentNowCycles());
@@ -1342,8 +1057,12 @@ const std::vector<VDP::BlitterCommand>* VDP::takeReadyExecutionQueue() {
 	return &m_execution.queue;
 }
 
+const std::vector<VdpBbuBillboardEntry>& VDP::takeReadyExecutionBillboards() const {
+	return m_activeFrame.billboards;
+}
+
 void VDP::completeReadyExecution(const std::vector<BlitterCommand>* queue) {
-	if (!m_execution.pending || queue != &m_execution.queue || m_execution.queue.empty()) {
+	if (!m_execution.pending || queue != &m_execution.queue) {
 		throw vdpFault("no active frame execution pending.");
 	}
 	m_execution.pending = false;
@@ -1355,7 +1074,10 @@ void VDP::completeReadyExecution(const std::vector<BlitterCommand>* queue) {
 void VDP::commitActiveVisualState() {
 	m_committedDitherType = m_activeFrame.ditherType;
 	m_sbx.presentFrame(m_activeFrame.skyboxControl, m_activeFrame.skyboxFaceWords);
+	m_committedCamera = m_activeFrame.camera;
 	m_committedSkyboxSamples = m_activeFrame.skyboxSamples;
+	m_committedBillboards.swap(m_activeFrame.billboards);
+	m_activeFrame.billboards.clear();
 }
 
 void VDP::finishCommittedFrameOnVblankEdge() {
@@ -1384,7 +1106,7 @@ bool VDP::commitReadyFrameOnVblankEdge() {
 		m_lastFrameHeld = true;
 		return false;
 	}
-	if (m_activeFrame.hasCommands) {
+	if (m_activeFrame.hasFrameBufferCommands) {
 		finishCommittedFrameOnVblankEdge();
 		return true;
 	}
@@ -1406,15 +1128,12 @@ uint32_t VDP::resolveSurfaceIdForSlot(u32 slot) const {
 	throw vdpFault("source slot " + std::to_string(slot) + " is not a VDP blitter slot.");
 }
 
-VDP::BlitterSource VDP::resolveBlitterSource(const VdpSlotSource& source) const {
-	const uint32_t surfaceId = resolveSurfaceIdForSlot(source.slot);
-	return BlitterSource{
-		surfaceId,
-		source.u,
-		source.v,
-		source.w,
-		source.h,
-	};
+void VDP::resolveBlitterSourceWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, BlitterSource& target) const {
+	target.surfaceId = resolveSurfaceIdForSlot(slot);
+	target.srcX = u;
+	target.srcY = v;
+	target.width = w;
+	target.height = h;
 }
 
 VdpBlitterSurfaceSize VDP::resolveBlitterSurfaceSize(uint32_t surfaceId) const {
@@ -1425,7 +1144,7 @@ VdpBlitterSurfaceSize VDP::resolveBlitterSurfaceSize(uint32_t surfaceId) const {
 	};
 }
 
-VdpBlitterSurfaceSize VDP::validateResolvedBlitterSource(const BlitterSource& source) const {
+VdpBlitterSurfaceSize VDP::resolveBlitterSurfaceForSource(const BlitterSource& source) const {
 	if (source.width == 0u || source.height == 0u) {
 		throw vdpFault("VDP source dimensions must be positive.");
 	}
@@ -1436,27 +1155,28 @@ VdpBlitterSurfaceSize VDP::validateResolvedBlitterSource(const BlitterSource& so
 	return surface;
 }
 
-void VDP::validateBlitScale(f32 scaleX, f32 scaleY) const {
-	if (scaleX <= 0.0f || scaleY <= 0.0f) {
-		throw vdpFault("VDP blit scale must be positive.");
-	}
+void VDP::resolveBlitterSampleWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, ResolvedBlitterSample& target) const {
+	BlitterSource source;
+	resolveBlitterSourceWordsInto(slot, u, v, w, h, source);
+	const VdpBlitterSurfaceSize surface = resolveBlitterSurfaceForSource(source);
+	target.source = source;
+	target.surfaceWidth = surface.width;
+	target.surfaceHeight = surface.height;
+	target.slot = resolveVdpSurfaceSlotBinding(source.surfaceId);
 }
 
-void VDP::validateLineWidth(f32 thickness) const {
-	if (thickness <= 0.0f) {
-		throw vdpFault("VDP line width must be positive.");
-	}
-}
-
-VDP::ResolvedBlitterSample VDP::resolveBlitterSample(const VdpSlotSource& sourceRect) const {
-	const BlitterSource source = resolveBlitterSource(sourceRect);
-	const VdpBlitterSurfaceSize surface = validateResolvedBlitterSource(source);
-	return ResolvedBlitterSample{
-		source,
-		surface.width,
-		surface.height,
-		resolveVdpSurfaceSlotBinding(source.surfaceId),
-	};
+void VDP::latchBillboardPacket(const VdpBbuPacket& packet) {
+	BlitterSource source;
+	resolveBlitterSourceWordsInto(packet.sourceRect.slot, packet.sourceRect.u, packet.sourceRect.v, packet.sourceRect.w, packet.sourceRect.h, source);
+	const VdpBlitterSurfaceSize surface = resolveBlitterSurfaceForSource(source);
+	m_bbu.latchBillboard(
+		m_buildFrame.billboards,
+		packet,
+		nextBlitterSequence(),
+		VdpBbuSource{source.surfaceId, source.srcX, source.srcY, source.width, source.height},
+		VdpBbuSurfaceSize{surface.width, surface.height},
+		resolveVdpSurfaceSlotBinding(source.surfaceId));
+	m_buildFrame.cost += VDP_RENDER_BILLBOARD_COST;
 }
 
 void VDP::resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples) const {
@@ -1464,14 +1184,13 @@ void VDP::resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& fa
 		return;
 	}
 	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
-		const VdpSlotSource source{
+		resolveBlitterSampleWordsInto(
 			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_SLOT_WORD),
 			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_U_WORD),
 			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_V_WORD),
 			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_W_WORD),
 			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_H_WORD),
-		};
-		samples[index] = resolveBlitterSample(source);
+			samples[index]);
 	}
 }
 
@@ -1489,17 +1208,9 @@ void VDP::enqueueClear(const Color& color) {
 }
 
 void VDP::enqueueBlit(u32 slot, u32 u, u32 v, u32 w, u32 h, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight) {
-	const BlitterSource source = resolveBlitterSource(VdpSlotSource{
-		slot,
-		u,
-		v,
-		w,
-		h,
-	});
-	validateResolvedBlitterSource(source);
-	validateBlitScale(scaleX, scaleY);
+	BlitterSource source;
+	resolveBlitterSourceWordsInto(slot, u, v, w, h, source);
 	const VdpResolvedBlitPmu resolved = m_pmu.resolveBlit(x, y, scaleX, scaleY, 0u, parallaxWeight);
-	validateBlitScale(resolved.scaleX, resolved.scaleY);
 	const auto clipped = computeClippedRect(
 		static_cast<double>(resolved.dstX),
 		static_cast<double>(resolved.dstY),
@@ -1531,14 +1242,7 @@ void VDP::enqueueBlit(u32 slot, u32 u, u32 v, u32 w, u32 h, f32 x, f32 y, f32 z,
 }
 
 void VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 z, Layer2D layer) {
-	const auto clipped = computeClippedRect(
-		static_cast<double>(dstX),
-		static_cast<double>(dstY),
-		static_cast<double>(dstX + width),
-		static_cast<double>(dstY + height),
-		static_cast<double>(m_frameBufferWidth),
-		static_cast<double>(m_frameBufferHeight)
-	);
+	const VdpClippedRect clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, m_frameBufferWidth, m_frameBufferHeight);
 	if (clipped.area == 0.0) {
 		return;
 	}
@@ -1581,7 +1285,6 @@ void VDP::enqueueFillRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, 
 }
 
 void VDP::enqueueDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness) {
-	validateLineWidth(thickness);
 	const double span = computeClippedLineSpan(
 		static_cast<double>(x0),
 		static_cast<double>(y0),
@@ -1662,13 +1365,8 @@ void VDP::enqueueGlyphRun(const std::string& text, f32 x, f32 y, f32 z, BFont* f
 				continue;
 			}
 			const FontGlyph& glyph = font->getGlyph(codepoint);
-			const BlitterSource sourceBlit = resolveBlitterSource(VdpSlotSource{
-				resolveAtlasSlotFromMemory(m_memory, glyph.rect.atlasId),
-				glyph.rect.u,
-				glyph.rect.v,
-				glyph.rect.w,
-				glyph.rect.h,
-			});
+			BlitterSource sourceBlit;
+			resolveBlitterSourceWordsInto(resolveAtlasSlotFromMemory(m_memory, glyph.rect.atlasId), glyph.rect.u, glyph.rect.v, glyph.rect.w, glyph.rect.h, sourceBlit);
 			const auto clipped = computeClippedRect(
 				static_cast<double>(cursorX),
 				static_cast<double>(cursorY),
@@ -1762,13 +1460,8 @@ void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f
 				continue;
 			}
 			const FontGlyph& glyph = font->getGlyph(codepoint);
-			const BlitterSource source = resolveBlitterSource(VdpSlotSource{
-				resolveAtlasSlotFromMemory(m_memory, glyph.rect.atlasId),
-				glyph.rect.u,
-				glyph.rect.v,
-				glyph.rect.w,
-				glyph.rect.h,
-			});
+			BlitterSource source;
+			resolveBlitterSourceWordsInto(resolveAtlasSlotFromMemory(m_memory, glyph.rect.atlasId), glyph.rect.u, glyph.rect.v, glyph.rect.w, glyph.rect.h, source);
 			const auto clipped = computeClippedRect(
 				static_cast<double>(cursorX),
 				static_cast<double>(cursorY),
@@ -1868,7 +1561,8 @@ void VDP::enqueueTileRun(const std::vector<std::optional<VdpSlotSource>>& source
 			if (!tileSource.has_value()) {
 				continue;
 			}
-			const BlitterSource source = resolveBlitterSource(*tileSource);
+			BlitterSource source;
+			resolveBlitterSourceWordsInto(tileSource->slot, tileSource->u, tileSource->v, tileSource->w, tileSource->h, source);
 			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
 				throw vdpFault("enqueueTileRun tile size mismatch.");
 			}
@@ -1962,13 +1656,14 @@ void VDP::enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 co
 			if (slot == VDP_SLOT_NONE) {
 				continue;
 			}
-			const BlitterSource source = resolveBlitterSource(VdpSlotSource{
+			BlitterSource source;
+			resolveBlitterSourceWordsInto(
 				slot,
 				m_memory.readU32(payloadBase + payloadOffset + IO_WORD_SIZE),
 				m_memory.readU32(payloadBase + payloadOffset + (2u * IO_WORD_SIZE)),
 				m_memory.readU32(payloadBase + payloadOffset + (3u * IO_WORD_SIZE)),
 				m_memory.readU32(payloadBase + payloadOffset + (4u * IO_WORD_SIZE)),
-			});
+				source);
 			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
 				throw vdpFault("enqueuePayloadTileRun tile size mismatch.");
 			}
@@ -2062,13 +1757,14 @@ void VDP::enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount
 			if (slot == VDP_SLOT_NONE) {
 				continue;
 			}
-			const BlitterSource source = resolveBlitterSource(VdpSlotSource{
+			BlitterSource source;
+			resolveBlitterSourceWordsInto(
 				slot,
 				payloadWords[payloadOffset + 1u],
 				payloadWords[payloadOffset + 2u],
 				payloadWords[payloadOffset + 3u],
 				payloadWords[payloadOffset + 4u],
-			});
+				source);
 			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
 				throw vdpFault("enqueuePayloadTileRunWords tile size mismatch.");
 			}
@@ -2113,7 +1809,9 @@ void VDP::enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount
 
 void VDP::commitLiveVisualState() {
 	m_committedDitherType = m_lastDitherType;
+	m_committedBillboards.clear();
 	m_sbx.presentLiveState();
+	m_camera.latchFrame(m_committedCamera);
 	resolveSkyboxFrameSamples(m_sbx.visibleControl(), m_sbx.visibleFaceWords(), m_committedSkyboxSamples);
 }
 
@@ -2201,6 +1899,7 @@ void VDP::initializeRegisters() {
 	resetVdpRegisters();
 	m_pmu.reset();
 	syncPmuRegisterWindow();
+	m_camera.reset();
 	m_lastDitherType = dither;
 	m_committedDitherType = dither;
 	m_sbx.reset();
@@ -2264,15 +1963,22 @@ void VDP::attachImgDecController(ImgDecController& controller) {
 	m_imgDecController = &controller;
 }
 
+// disable-next-line single_line_method_pattern -- public cart/runtime SBX register write enters the VDP through the parent bus-facing device.
 void VDP::setSkyboxSources(const SkyboxFaceSources& sources) {
 	m_sbx.setSources(sources);
 }
 
+// disable-next-line single_line_method_pattern -- public cart/runtime SBX register write enters the VDP through the parent bus-facing device.
 void VDP::clearSkybox() {
 	m_sbx.clear();
 }
 
+void VDP::setCameraBank0(const std::array<f32, 16>& view, const std::array<f32, 16>& proj, f32 eyeX, f32 eyeY, f32 eyeZ) {
+	m_camera.writeCameraBank0(view, proj, eyeX, eyeY, eyeZ);
+}
+
 void VDP::captureVisualStateFields(VdpState& state) const {
+	state.camera = m_camera.captureState();
 	state.skyboxControl = m_sbx.liveControl();
 	state.skyboxFaceWords = m_sbx.liveFaceWords();
 	state.pmuSelectedBank = m_pmu.selectedBank();
@@ -2287,6 +1993,7 @@ VdpState VDP::captureState() const {
 }
 
 void VDP::restoreState(const VdpState& state) {
+	m_camera.restoreState(state.camera);
 	m_sbx.restoreLiveState(state.skyboxControl, state.skyboxFaceWords);
 	setDitherType(state.ditherType);
 	m_pmu.restoreBankWords(state.pmuSelectedBank, state.pmuBankWords);
@@ -2520,67 +2227,6 @@ uint32_t VDP::nextVramBootSeed() const {
 		^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this))
 		^ (static_cast<uint64_t>(counter) << 1u);
 	return static_cast<uint32_t>(mixed ^ (mixed >> 32) ^ (mixed >> 17));
-}
-
-void VDP::fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& s) const {
-	const size_t total = length;
-	const uint32_t startAddr = s.addr;
-
-	const uint32_t biasSeed = s.machineSeed ^ s.slotSalt;
-	const uint32_t bootSeedMix = s.bootSeed ^ s.slotSalt;
-	const uint32_t vramBytes = (VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE) - VRAM_STAGING_BASE;
-	const BiasConfig biasConfig = makeBiasConfig(vramBytes);
-
-	const size_t BLOCK_BYTES = 32u;
-	const uint32_t BLOCK_SHIFT = 5u;
-
-	size_t out = 0;
-	const bool aligned4 = (((startAddr | static_cast<uint32_t>(total)) & 3u) == 0u);
-
-	while (out < total) {
-		const uint32_t addr = startAddr + static_cast<uint32_t>(out);
-		const uint32_t blockIndex = addr >> BLOCK_SHIFT;
-		const uint32_t blockBase = blockIndex << BLOCK_SHIFT;
-
-		const uint32_t startOff = addr - blockBase;
-		const size_t maxBytesThisBlock = std::min<size_t>(BLOCK_BYTES - startOff, total - out);
-
-		BlockGen gen = initBlockGen(biasSeed, bootSeedMix, blockIndex, biasConfig);
-
-		if (aligned4 && startOff == 0u && maxBytesThisBlock == BLOCK_BYTES) {
-			for (uint32_t w = 0; w < 8u; ++w) {
-				const uint32_t word = nextWord(gen);
-				const size_t p = out + (static_cast<size_t>(w) << 2u);
-				buffer[p] = static_cast<u8>(word & 0xFFu);
-				buffer[p + 1] = static_cast<u8>((word >> 8u) & 0xFFu);
-				buffer[p + 2] = static_cast<u8>((word >> 16u) & 0xFFu);
-				buffer[p + 3] = static_cast<u8>((word >> 24u) & 0xFFu);
-			}
-		} else {
-			const uint32_t rangeStart = startOff;
-			const uint32_t rangeEnd = startOff + static_cast<uint32_t>(maxBytesThisBlock);
-
-			for (uint32_t w = 0; w < 8u; ++w) {
-				const uint32_t word = nextWord(gen);
-				const uint32_t wordByteStart = w << 2u;
-				const uint32_t wordByteEnd = wordByteStart + 4u;
-				const uint32_t a0 = std::max<uint32_t>(wordByteStart, rangeStart);
-				const uint32_t a1 = std::min<uint32_t>(wordByteEnd, rangeEnd);
-				if (a0 >= a1) {
-					continue;
-				}
-				uint32_t tmp = word >> ((a0 - wordByteStart) << 3u);
-				for (uint32_t k = a0; k < a1; ++k) {
-					buffer[out + static_cast<size_t>(k - rangeStart)] = static_cast<u8>(tmp & 0xFFu);
-					tmp >>= 8u;
-				}
-			}
-		}
-
-		out += maxBytesThisBlock;
-	}
-
-	s.addr = startAddr + static_cast<uint32_t>(total);
 }
 
 void VDP::seedVramStaging() {

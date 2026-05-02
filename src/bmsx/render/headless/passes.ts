@@ -8,27 +8,40 @@ import {
 	beginParticleQueue,
 	forEachParticleQueue,
 	meshQueueBackSize,
-	particleQueueBackSize,
 } from '../shared/queues';
 import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/submissions';
 import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
-import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
-import { resolveActiveCamera3D } from '../shared/hardware/camera';
+import type { VdpResolvedBlitterSample } from '../../machine/devices/vdp/vdp';
+import { hardwareCameraBank0 } from '../shared/hardware/camera';
 import { VDP_SLOT_PRIMARY, VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../machine/bus/io';
+import {
+	VDP_RD_SURFACE_PRIMARY,
+	VDP_RD_SURFACE_SECONDARY,
+	VDP_RD_SURFACE_SYSTEM,
+} from '../../machine/devices/vdp/contracts';
 import type { Mesh } from '../3d/mesh';
 import { readVdpDisplayFrameBufferPixels, vdpDisplayFrameBufferTexture } from '../vdp/framebuffer';
+import { resolveVdpSurfacePixels } from '../vdp/source_pixels';
 import type { HeadlessPresentHost } from './view';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
 	registerSkyboxPass(registry);
-	registerFrameBuffer2DPass(registry);
 	registerMeshPass(registry);
 	registerParticlePass(registry);
+	registerFrameBuffer2DPass(registry);
 }
 
 function registerFramePasses(registry: RenderPassLibrary): void {
-	registry.register({ id: 'frame_resolve', name: 'HeadlessFrameResolve', stateOnly: true, graph: { skip: true }, exec: () => { /* noop */ } });
+	registry.register({
+		id: 'frame_resolve',
+		name: 'HeadlessFrameResolve',
+		stateOnly: true,
+		graph: { skip: true },
+		exec: () => {
+			beginHeadlessScene(consoleCore.runtime.machine.vdp.frameBufferWidth, consoleCore.runtime.machine.vdp.frameBufferHeight);
+		},
+	});
 	registry.register({ id: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, graph: { skip: true }, exec: () => { /* noop */ } });
 }
 
@@ -40,14 +53,14 @@ let previousSkyboxSnapshot: Snapshot = [];
 let previousFrameBufferSnapshot: Snapshot = [];
 
 let diffMatrix = new Uint32Array(0);
-
-const headlessFallbackParticleState: ParticlePipelineState = {
-	width: FALLBACK_CAMERA.width,
-	height: FALLBACK_CAMERA.height,
-	viewProj: FALLBACK_CAMERA.viewProj,
-	camRight: FALLBACK_CAMERA.camRight,
-	camUp: FALLBACK_CAMERA.camUp,
-};
+let headlessScenePixels = new Uint8Array(0);
+let headlessCompositePixels = new Uint8Array(0);
+let headlessSceneWidth = 0;
+let headlessSceneHeight = 0;
+let headlessSceneActive = false;
+const headlessSkyboxSamples = new Array<VdpResolvedBlitterSample>(SKYBOX_FACE_KEYS.length);
+const headlessSkyboxTextures = new Array<SlotTexturePixels>(SKYBOX_FACE_KEYS.length);
+const headlessSkyboxFaceUv = new Float32Array(2);
 
 const validatedMesh = new WeakMap<Mesh, boolean>();
 const MAX_MORPH_TARGETS = 8;
@@ -244,6 +257,287 @@ function emitDiff(label: string, previous: Snapshot, current: Snapshot): Snapsho
 	return current;
 }
 
+function resizeHeadlessScene(width: number, height: number): void {
+	const byteLength = width * height * 4;
+	if (headlessScenePixels.byteLength !== byteLength) {
+		headlessScenePixels = new Uint8Array(byteLength);
+		headlessCompositePixels = new Uint8Array(byteLength);
+		headlessSceneWidth = width;
+		headlessSceneHeight = height;
+	}
+}
+
+function beginHeadlessScene(width: number, height: number): void {
+	resizeHeadlessScene(width, height);
+	headlessScenePixels.fill(0);
+	headlessSceneActive = false;
+}
+
+function slotSurfaceId(slot: number): number {
+	if (slot === VDP_SLOT_PRIMARY) {
+		return VDP_RD_SURFACE_PRIMARY;
+	}
+	if (slot === VDP_SLOT_SECONDARY) {
+		return VDP_RD_SURFACE_SECONDARY;
+	}
+	return VDP_RD_SURFACE_SYSTEM;
+}
+
+type SlotTexturePixels = {
+	pixels: Uint8Array;
+	width: number;
+	height: number;
+	stride: number;
+};
+
+function readSlotTexturePixels(slot: number): SlotTexturePixels {
+	return resolveVdpSurfacePixels(consoleCore.runtime.machine.vdp, slotSurfaceId(slot));
+}
+
+function resolveSkyboxFaceInto(dirX: number, dirY: number, dirZ: number): number {
+	const absX = dirX < 0 ? -dirX : dirX;
+	const absY = dirY < 0 ? -dirY : dirY;
+	const absZ = dirZ < 0 ? -dirZ : dirZ;
+	if (absX >= absY && absX >= absZ) {
+		if (dirX >= 0) {
+			headlessSkyboxFaceUv[0] = (-dirZ / absX) * 0.5 + 0.5;
+			headlessSkyboxFaceUv[1] = (-dirY / absX) * 0.5 + 0.5;
+			return 0;
+		}
+		headlessSkyboxFaceUv[0] = (dirZ / absX) * 0.5 + 0.5;
+		headlessSkyboxFaceUv[1] = (-dirY / absX) * 0.5 + 0.5;
+		return 1;
+	}
+	if (absY >= absZ) {
+		if (dirY >= 0) {
+			headlessSkyboxFaceUv[0] = (dirX / absY) * 0.5 + 0.5;
+			headlessSkyboxFaceUv[1] = (dirZ / absY) * 0.5 + 0.5;
+			return 2;
+		}
+		headlessSkyboxFaceUv[0] = (dirX / absY) * 0.5 + 0.5;
+		headlessSkyboxFaceUv[1] = (-dirZ / absY) * 0.5 + 0.5;
+		return 3;
+	}
+	if (dirZ >= 0) {
+		headlessSkyboxFaceUv[0] = (dirX / absZ) * 0.5 + 0.5;
+		headlessSkyboxFaceUv[1] = (-dirY / absZ) * 0.5 + 0.5;
+		return 4;
+	}
+	headlessSkyboxFaceUv[0] = (-dirX / absZ) * 0.5 + 0.5;
+	headlessSkyboxFaceUv[1] = (-dirY / absZ) * 0.5 + 0.5;
+	return 5;
+}
+
+function colorByte(value: number): number {
+	if (value <= 0) {
+		return 0;
+	}
+	if (value >= 1) {
+		return 255;
+	}
+	return (value * 255 + 0.5) | 0;
+}
+
+function blendPixel(target: Uint8Array, offset: number, r: number, g: number, b: number, a: number): void {
+	if (a <= 0) {
+		return;
+	}
+	if (a >= 255) {
+		target[offset + 0] = r;
+		target[offset + 1] = g;
+		target[offset + 2] = b;
+		target[offset + 3] = 255;
+		return;
+	}
+	const inverse = 255 - a;
+	target[offset + 0] = ((r * a) + (target[offset + 0] * inverse) + 127) / 255;
+	target[offset + 1] = ((g * a) + (target[offset + 1] * inverse) + 127) / 255;
+	target[offset + 2] = ((b * a) + (target[offset + 2] * inverse) + 127) / 255;
+	target[offset + 3] = a + ((target[offset + 3] * inverse) + 127) / 255;
+}
+
+function compositeFrameBufferOverScene(frameBufferPixels: Uint8Array, width: number, height: number): Uint8Array {
+	if (!headlessSceneActive || headlessSceneWidth !== width || headlessSceneHeight !== height) {
+		return frameBufferPixels;
+	}
+	headlessCompositePixels.set(headlessScenePixels);
+	for (let offset = 0; offset < frameBufferPixels.byteLength; offset += 4) {
+		blendPixel(
+			headlessCompositePixels,
+			offset,
+			frameBufferPixels[offset + 0],
+			frameBufferPixels[offset + 1],
+			frameBufferPixels[offset + 2],
+			frameBufferPixels[offset + 3],
+		);
+	}
+	return headlessCompositePixels;
+}
+
+function rasterizeSkyboxBackground(width: number, height: number): void {
+	const vdp = consoleCore.runtime.machine.vdp;
+	for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
+		const sample = vdp.resolveCommittedSkyboxFaceSample(index);
+		headlessSkyboxSamples[index] = sample;
+		headlessSkyboxTextures[index] = readSlotTexturePixels(sample.slot);
+	}
+	const cam = hardwareCameraBank0;
+	const view = cam.skyboxView;
+	for (let y = 0; y < height; y += 1) {
+		const rayY = 1 - (((y * 2) + 1) / height);
+		for (let x = 0; x < width; x += 1) {
+			const rayX = (((x * 2) + 1) / width) - 1;
+			const dirX = view[0] * rayX + view[4] * rayY + view[8];
+			const dirY = view[1] * rayX + view[5] * rayY + view[9];
+			const dirZ = view[2] * rayX + view[6] * rayY + view[10];
+			const faceIndex = resolveSkyboxFaceInto(dirX, dirY, dirZ);
+			const sample = headlessSkyboxSamples[faceIndex]!;
+			const source = sample.source;
+			const texture = headlessSkyboxTextures[faceIndex]!;
+			let faceX = (headlessSkyboxFaceUv[0] * source.width) | 0;
+			let faceY = (headlessSkyboxFaceUv[1] * source.height) | 0;
+			if (faceX >= source.width) {
+				faceX = source.width - 1;
+			}
+			if (faceY >= source.height) {
+				faceY = source.height - 1;
+			}
+			const srcX = source.srcX + faceX;
+			const srcY = source.srcY + faceY;
+			const srcOffset = srcY * texture.stride + srcX * 4;
+			const dstOffset = (y * width + x) * 4;
+			headlessScenePixels[dstOffset + 0] = texture.pixels[srcOffset + 0];
+			headlessScenePixels[dstOffset + 1] = texture.pixels[srcOffset + 1];
+			headlessScenePixels[dstOffset + 2] = texture.pixels[srcOffset + 2];
+			headlessScenePixels[dstOffset + 3] = texture.pixels[srcOffset + 3];
+		}
+	}
+	headlessSceneActive = true;
+}
+
+function rasterizeHeadlessParticle(submission: ParticleRenderSubmission, state: ParticlePipelineState): void {
+	const slot = submission.slot as number;
+	const texture = readSlotTexturePixels(slot);
+	const uv0 = submission.uv0 as [number, number];
+	const uv1 = submission.uv1 as [number, number];
+	const position = submission.position;
+	rasterizeHeadlessParticleSample(
+		texture,
+		(uv0[0] * texture.width) | 0,
+		(uv0[1] * texture.height) | 0,
+		((uv1[0] - uv0[0]) * texture.width) | 0,
+		((uv1[1] - uv0[1]) * texture.height) | 0,
+		position[0],
+		position[1],
+		position[2],
+		submission.size,
+		submission.color.r,
+		submission.color.g,
+		submission.color.b,
+		submission.color.a,
+		state,
+	);
+}
+
+function rasterizeHeadlessParticleSample(texture: SlotTexturePixels,
+	sourceX: number,
+	sourceY: number,
+	sourceW: number,
+	sourceH: number,
+	positionX: number,
+	positionY: number,
+	positionZ: number,
+	size: number,
+	colorFloatR: number,
+	colorFloatG: number,
+	colorFloatB: number,
+	colorFloatA: number,
+	state: ParticlePipelineState): void {
+	const viewProj = state.viewProj;
+	const clipX = viewProj[0] * positionX + viewProj[4] * positionY + viewProj[8] * positionZ + viewProj[12];
+	const clipY = viewProj[1] * positionX + viewProj[5] * positionY + viewProj[9] * positionZ + viewProj[13];
+	const clipW = viewProj[3] * positionX + viewProj[7] * positionY + viewProj[11] * positionZ + viewProj[15];
+	if (clipW <= 0) {
+		return;
+	}
+	const ndcX = clipX / clipW;
+	const ndcY = clipY / clipW;
+	const centerX = ((ndcX * 0.5 + 0.5) * state.width) | 0;
+	const centerY = ((0.5 - ndcY * 0.5) * state.height) | 0;
+	const halfWorld = size * 0.5;
+	const edgePositionX = positionX + state.camRight[0] * halfWorld;
+	const edgePositionY = positionY + state.camRight[1] * halfWorld;
+	const edgePositionZ = positionZ + state.camRight[2] * halfWorld;
+	const edgeClipX = viewProj[0] * edgePositionX + viewProj[4] * edgePositionY + viewProj[8] * edgePositionZ + viewProj[12];
+	const edgeClipY = viewProj[1] * edgePositionX + viewProj[5] * edgePositionY + viewProj[9] * edgePositionZ + viewProj[13];
+	const edgeClipW = viewProj[3] * edgePositionX + viewProj[7] * edgePositionY + viewProj[11] * edgePositionZ + viewProj[15];
+	if (edgeClipW <= 0) {
+		return;
+	}
+	const edgeNdcX = edgeClipX / edgeClipW;
+	const edgeNdcY = edgeClipY / edgeClipW;
+	const edgeScreenX = ((edgeNdcX * 0.5 + 0.5) * state.width) | 0;
+	const edgeScreenY = ((0.5 - edgeNdcY * 0.5) * state.height) | 0;
+	let halfX = edgeScreenX - centerX;
+	let halfY = edgeScreenY - centerY;
+	if (halfX < 0) halfX = -halfX;
+	if (halfY < 0) halfY = -halfY;
+	let half = halfX > halfY ? halfX : halfY;
+	if (half < 1) half = 1;
+	const colorR = colorByte(colorFloatR);
+	const colorG = colorByte(colorFloatG);
+	const colorB = colorByte(colorFloatB);
+	const colorA = colorByte(colorFloatA);
+	const startX = centerX - half < 0 ? 0 : centerX - half;
+	const startY = centerY - half < 0 ? 0 : centerY - half;
+	const endX = centerX + half > state.width ? state.width : centerX + half;
+	const endY = centerY + half > state.height ? state.height : centerY + half;
+	for (let y = startY; y < endY; y += 1) {
+		const srcY = sourceY + (((y - startY) * sourceH) / (endY - startY) | 0);
+		for (let x = startX; x < endX; x += 1) {
+			const srcX = sourceX + (((x - startX) * sourceW) / (endX - startX) | 0);
+			const srcOffset = srcY * texture.stride + srcX * 4;
+			const sourceAlpha = (texture.pixels[srcOffset + 3] * colorA + 127) / 255;
+			const dstOffset = (y * state.width + x) * 4;
+			blendPixel(
+				headlessScenePixels,
+				dstOffset,
+				(texture.pixels[srcOffset + 0] * colorR + 127) / 255,
+				(texture.pixels[srcOffset + 1] * colorG + 127) / 255,
+				(texture.pixels[srcOffset + 2] * colorB + 127) / 255,
+				sourceAlpha,
+			);
+		}
+	}
+	headlessSceneActive = true;
+}
+
+function rasterizeHeadlessVdpBillboard(index: number, state: ParticlePipelineState): void {
+	const view = consoleCore.view;
+	const sourceBase = index * 4;
+	const positionSize = view.vdpBillboardPositionSize;
+	const uvRect = view.vdpBillboardUvRect;
+	const color = view.vdpBillboardColor;
+	const slot = view.vdpBillboardSlot[index];
+	const texture = readSlotTexturePixels(slot);
+	rasterizeHeadlessParticleSample(
+		texture,
+		(uvRect[sourceBase + 0] * texture.width) | 0,
+		(uvRect[sourceBase + 1] * texture.height) | 0,
+		((uvRect[sourceBase + 2] - uvRect[sourceBase + 0]) * texture.width) | 0,
+		((uvRect[sourceBase + 3] - uvRect[sourceBase + 1]) * texture.height) | 0,
+		positionSize[sourceBase + 0],
+		positionSize[sourceBase + 1],
+		positionSize[sourceBase + 2],
+		positionSize[sourceBase + 3],
+		color[sourceBase + 0],
+		color[sourceBase + 1],
+		color[sourceBase + 2],
+		color[sourceBase + 3],
+		state,
+	);
+}
+
 function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 	const pass: RenderPassDef<Framebuffer2DPipelineState> = {
 		id: 'framebuffer_2d',
@@ -261,6 +555,7 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 		exec: (_backend, _fbo, state: Framebuffer2DPipelineState) => {
 			const frameBufferWidth = consoleCore.runtime.machine.vdp.frameBufferWidth;
 			const frameBufferHeight = consoleCore.runtime.machine.vdp.frameBufferHeight;
+			resizeHeadlessScene(frameBufferWidth, frameBufferHeight);
 			if (frameBufferWidth <= 0 || frameBufferHeight <= 0) {
 				throw new Error(`[HeadlessFramebuffer2D] Invalid framebuffer dimensions ${frameBufferWidth}x${frameBufferHeight}.`);
 			}
@@ -269,17 +564,18 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			if (pixels.byteLength !== expectedByteLength) {
 				throw new Error(`[HeadlessFramebuffer2D] Framebuffer byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);
 			}
+			const presentedPixels = compositeFrameBufferOverScene(pixels, frameBufferWidth, frameBufferHeight);
 			const host = consoleCore.view.host as unknown as HeadlessPresentHost;
 			host.presentFrameBuffer({
-				pixels,
+				pixels: presentedPixels,
 				srcWidth: frameBufferWidth,
 				srcHeight: frameBufferHeight,
 				dstWidth: state.width,
 				dstHeight: state.height,
 			});
 			let active = 0;
-			for (let index = 3; index < pixels.length; index += 4) {
-				if (pixels[index] !== 0) {
+			for (let index = 3; index < presentedPixels.length; index += 4) {
+				if (presentedPixels[index] !== 0) {
 					active += 1;
 				}
 			}
@@ -305,6 +601,7 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 			if (!uvRects || !sizes || !bindings) {
 				return;
 			}
+			rasterizeSkyboxBackground(consoleCore.runtime.machine.vdp.frameBufferWidth, consoleCore.runtime.machine.vdp.frameBufferHeight);
 			const snapshot: Snapshot = [`faces=${SKYBOX_FACE_KEYS.map((_, index) => {
 				const uvBase = index * 4;
 				return `${bindings[index]}:${uvRects[uvBase]},${uvRects[uvBase + 1]},${uvRects[uvBase + 2]},${uvRects[uvBase + 3]}`;
@@ -324,10 +621,7 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 
 function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
 	const gv = consoleCore.view;
-	const cam = resolveActiveCamera3D();
-	if (!cam) {
-		throw new Error('[HeadlessMeshes] No active 3D camera found.');
-	}
+	const cam = hardwareCameraBank0;
 	const mats = cam.getMatrices();
 	return {
 		width: gv.offscreenCanvasSize.x,
@@ -410,15 +704,9 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 
 function makeParticleState(): ParticlePipelineState {
 	const gv = consoleCore.view;
+	const cam = hardwareCameraBank0;
 	const width = gv.offscreenCanvasSize.x;
 	const height = gv.offscreenCanvasSize.y;
-	const cam = resolveActiveCamera3D();
-	if (!cam) {
-		const fallback = updateFallbackCamera(width, height);
-		headlessFallbackParticleState.width = fallback.width;
-		headlessFallbackParticleState.height = fallback.height;
-		return headlessFallbackParticleState;
-	}
 	const camRight = new Float32Array(3);
 	const camUp = new Float32Array(3);
 	M4.viewRightUpInto(cam.view, camRight, camUp);
@@ -436,18 +724,18 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 		id: 'particles',
 		name: 'HeadlessParticles',
 		stateOnly: true,
-		shouldExecute: () => particleQueueBackSize() > 0,
+		shouldExecute: () => beginParticleQueue() > 0 || consoleCore.view.vdpBillboardCount > 0,
 		prepare: () => {
 			registry.setState('particles', makeParticleState());
 		},
 		exec: (_backend, _fbo, state: unknown) => {
 			const particleState = state as ParticlePipelineState;
-			const count = beginParticleQueue();
+			const count = beginParticleQueue() + consoleCore.view.vdpBillboardCount;
 			if (count <= 0) {
 				return;
 			}
 			const snapshot: Snapshot = [`draws=${count} viewport=${particleState.width}x${particleState.height}`];
-			if (count > 0) {
+			if (beginParticleQueue() > 0) {
 				let index = 0;
 				forEachParticleQueue((submission: ParticleRenderSubmission) => {
 					const uv0 = submission.uv0;
@@ -468,9 +756,17 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 					if (uv0[0] < 0 || uv0[1] < 0 || uv1[0] > 1 || uv1[1] > 1 || uv0[0] > uv1[0] || uv0[1] > uv1[1]) {
 						throw new Error(`[HeadlessParticles] Particle UVs out of range (${uv0[0]}, ${uv0[1]})..(${uv1[0]}, ${uv1[1]}).`);
 					}
+					rasterizeHeadlessParticle(submission, particleState);
 					snapshot.push(`[particle#${index}] pos=${formatVec3(submission.position)} size=${formatNumber(submission.size)} slot=${slot}`);
 					index += 1;
 				});
+			}
+			const vdpBillboardCount = consoleCore.view.vdpBillboardCount;
+			const positionSize = consoleCore.view.vdpBillboardPositionSize;
+			for (let index = 0; index < vdpBillboardCount; index += 1) {
+				rasterizeHeadlessVdpBillboard(index, particleState);
+				const base = index * 4;
+				snapshot.push(`[vdp-particle#${index}] pos=(${formatNumber(positionSize[base + 0])}, ${formatNumber(positionSize[base + 1])}, ${formatNumber(positionSize[base + 2])}) size=${formatNumber(positionSize[base + 3])} slot=${consoleCore.view.vdpBillboardSlot[index]}`);
 			}
 			previousParticleSnapshot = emitDiff('particles', previousParticleSnapshot, snapshot);
 		},

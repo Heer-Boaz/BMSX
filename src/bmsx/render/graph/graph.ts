@@ -14,7 +14,7 @@ import { RenderPassBuilder } from '../backend/pass/builder';
 import { checkWebGLError } from '../backend/webgl/helpers';
 import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/backend';
 import { GameView } from '../gameview';
-import { resolveActiveCamera3D } from '../shared/hardware/camera';
+import { hardwareCameraBank0 } from '../shared/hardware/camera';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;
@@ -72,24 +72,22 @@ export function updateExternalFrameTiming(frameIndex: number, timeSeconds: numbe
 }
 
 export function buildFrameData(view: GameView): FrameData {
-	const mainCam = resolveActiveCamera3D();
+	const mainCam = hardwareCameraBank0;
 	const views: View[] = [];
-	if (mainCam) {
-		const invView = mainCam.inverseView;
-		const invProj = mainCam.inverseProjection;
-		const cameraPos = mainCam.position;
-		views.push({
-			name: 'Main',
-			viewport: { x: 0, y: 0, w: view.offscreenCanvasSize.x, h: view.offscreenCanvasSize.y },
-			viewMatrix: mainCam.view,
-			projMatrix: mainCam.projection,
-			viewProj: mainCam.viewProjection,
-			invView,
-			invProj,
-			cameraPos,
-			flags: 0,
-		});
-	}
+	const invView = mainCam.inverseView;
+	const invProj = mainCam.inverseProjection;
+	const cameraPos = mainCam.position;
+	views.push({
+		name: 'Main',
+		viewport: { x: 0, y: 0, w: view.offscreenCanvasSize.x, h: view.offscreenCanvasSize.y },
+		viewMatrix: mainCam.view,
+		projMatrix: mainCam.projection,
+		viewProj: mainCam.viewProjection,
+		invView,
+		invProj,
+		cameraPos,
+		flags: 0,
+	});
 	const frame: FrameData = {
 		frameIndex: extFrameIndex,
 		time: extTimeSeconds,

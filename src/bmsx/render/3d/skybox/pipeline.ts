@@ -8,7 +8,7 @@ import { TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '
 import { WebGLBackend } from '../../backend/webgl/backend';
 import { VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
 import { _skyTint, _skyExposure } from '../../shared/queues';
-import { resolveActiveCamera3D } from '../../shared/hardware/camera';
+import { hardwareCameraBank0 } from '../../shared/hardware/camera';
 
 let vaoSkybox: WebGLVertexArrayObject = null;
 let skyboxProgram: WebGLProgram;
@@ -131,7 +131,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			initSkyboxPipeline(backend as WebGLBackend);
 		},
 		writesDepth: false,
-		shouldExecute: () => !!resolveActiveCamera3D() && !!consoleCore.view.skyboxFaceUvRects,
+		shouldExecute: () => !!consoleCore.view.skyboxFaceUvRects,
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
 			const runtime: SkyboxRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: consoleCore.view };
@@ -141,8 +141,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			const gv = consoleCore.view;
 			if (!gv.skyboxFaceUvRects || !gv.skyboxFaceTextpageBindings) return;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
-			const cam = resolveActiveCamera3D();
-			if (!cam) return;
+			const cam = hardwareCameraBank0;
 			const textpagePrimaryTex = gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY];
 			if (!textpagePrimaryTex) {
 				throw new Error(`[Skybox] Texture '${VDP_PRIMARY_SLOT_TEXTURE_KEY}' missing from view textures.`);

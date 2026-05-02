@@ -866,18 +866,6 @@ end
 -- 	put_mesh(desc.mesh, desc.matrix, customvisual_mesh_options)
 -- end
 
--- function customvisualcomponent:submit_particle(desc)
--- 	local rect<const> = vdp_img_rect(desc.texture)
--- 	customvisual_particle_options.slot = vdp_img_slot(rect)
--- 	customvisual_particle_options.u = rect.u
--- 	customvisual_particle_options.v = rect.v
--- 	customvisual_particle_options.w = rect.w
--- 	customvisual_particle_options.h = rect.h
--- 	customvisual_particle_options.ambient_mode = desc.ambient_mode
--- 	customvisual_particle_options.ambient_factor = desc.ambient_factor
--- 	put_particle(desc.position, desc.size, desc.color, customvisual_particle_options)
--- end
-
 -- inputintentcomponent: declarative input -> state bindings
 local inputintentcomponent<const> = {}
 inputintentcomponent.__index = inputintentcomponent

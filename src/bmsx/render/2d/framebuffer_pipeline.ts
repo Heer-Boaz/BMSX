@@ -44,11 +44,13 @@ function renderFrameBuffer(runtime: FrameBuffer2DRuntime, fbo: WebGLFramebuffer,
 		}
 		fsq = createFullscreenQuad(gl, state.width, state.height, FRAMEBUFFER_TEXCOORDS, 'Framebuffer2D');
 	}
-	backend.setBlendEnabled(false);
+	backend.setBlendEnabled(true);
+	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	bindFullscreenQuad(gl, fsq);
 	context.activeTexUnit = TEXTURE_UNIT_POST_PROCESSING_SOURCE;
 	context.bind2DTex(state.colorTex);
 	gl.drawArrays(gl.TRIANGLES, 0, 6);
+	backend.setBlendEnabled(false);
 	backend.setDepthMask(true);
 }
 

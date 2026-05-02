@@ -120,6 +120,8 @@ struct ParticleRenderSubmission {
 	std::optional<uint32_t> v;
 	std::optional<uint32_t> w;
 	std::optional<uint32_t> h;
+	std::array<f32, 2> uv0{0.0f, 0.0f};
+	std::array<f32, 2> uv1{0.0f, 0.0f};
 	std::optional<i32> ambient_mode;  // 0 or 1
 	std::optional<f32> ambient_factor;
 	std::optional<RenderLayer> layer;

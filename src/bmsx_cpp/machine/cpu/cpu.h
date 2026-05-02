@@ -1057,6 +1057,8 @@ public:
 	StringId internString(std::string_view value) { return m_stringPool.intern(value); }
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
+	Memory& memory() { return m_memory; }
+	const Memory& memory() const { return m_memory; }
 	void reserveStringHandles(StringId minHandle);
 	void setExternalRootMarker(std::function<void(GcHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }

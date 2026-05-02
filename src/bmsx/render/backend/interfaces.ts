@@ -246,6 +246,11 @@ export interface RenderContext {
 	commitPresentationFrame: boolean;
 	presentationHistorySourceIndex: 0 | 1;
 	presentationHistoryDestinationIndex: 0 | 1;
+	vdpBillboardCount: number;
+	vdpBillboardPositionSize: Float32Array;
+	vdpBillboardColor: Float32Array;
+	vdpBillboardUvRect: Float32Array;
+	vdpBillboardSlot: Int32Array;
 	activeTexUnit: number;
 	bind2DTex(tex: TextureHandle): void;
 	bindCubemapTex(tex: TextureHandle): void;

@@ -14,31 +14,23 @@ import {
 	forEachParticleQueue,
 	particleAmbientFactorDefault,
 	particleAmbientModeDefault,
-	particleQueueBackSize
 } from '../../shared/queues';
 import type { ParticleRenderSubmission } from '../../shared/submissions';
-import { updateFallbackCamera, FALLBACK_CAMERA } from '../../shared/fallback_camera';
 import { SYSTEM_SLOT_TEXTURE_KEY, VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
 import { VDP_SLOT_PRIMARY, VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../../machine/bus/io';
-import { resolveActiveCamera3D } from '../../shared/hardware/camera';
+import { hardwareCameraBank0 } from '../../shared/hardware/camera';
 import { clamp } from '../../../common/clamp';
+import { VDP_BBU_BILLBOARD_LIMIT } from '../../../machine/devices/vdp/contracts';
 
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);
-const MAX_PARTICLES = 1000;
+const HOST_PARTICLE_LIMIT = 1000;
+const PARTICLE_INSTANCE_LIMIT = VDP_BBU_BILLBOARD_LIMIT;
 const INSTANCE_FLOATS = 13; // vec4(position+size) + vec4(color) + vec4(uvrect) + textpageId
 const BYTES_PER_FLOAT = 4;
 const INSTANCE_BYTES = INSTANCE_FLOATS * BYTES_PER_FLOAT;
-let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffers: WebGLBuffer[] = []; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let texture0Location: WebGLUniformLocation; let texture1Location: WebGLUniformLocation; let texture2Location: WebGLUniformLocation; let ambientModeLocation: WebGLUniformLocation; let ambientFactorLocation: WebGLUniformLocation; const instanceData = new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS);
+let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffers: WebGLBuffer[] = []; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let texture0Location: WebGLUniformLocation; let texture1Location: WebGLUniformLocation; let texture2Location: WebGLUniformLocation; let ambientModeLocation: WebGLUniformLocation; let ambientFactorLocation: WebGLUniformLocation; const instanceData = new Float32Array(PARTICLE_INSTANCE_LIMIT * INSTANCE_FLOATS);
 let framePage = 0;
-
-const fallbackParticleState: ParticlePipelineState = {
-	width: FALLBACK_CAMERA.width,
-	height: FALLBACK_CAMERA.height,
-	viewProj: FALLBACK_CAMERA.viewProj,
-	camRight: FALLBACK_CAMERA.camRight,
-	camUp: FALLBACK_CAMERA.camUp,
-};
 
 const cameraParticleState: ParticlePipelineState = {
 	width: 1,
@@ -48,17 +40,7 @@ const cameraParticleState: ParticlePipelineState = {
 	camUp: new Float32Array(3),
 };
 
-function updateOrthographicParticleState(width: number, height: number): ParticlePipelineState {
-	const fallback = updateFallbackCamera(width, height);
-	fallbackParticleState.width = fallback.width;
-	fallbackParticleState.height = fallback.height;
-	return fallbackParticleState;
-}
-
 function updateCameraParticleState(width: number, height: number, cam: Camera): ParticlePipelineState {
-	if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
-		throw new Error(`[ParticlesPipeline] Invalid particle camera dimensions (${width}x${height}).`);
-	}
 	cameraParticleState.width = width;
 	cameraParticleState.height = height;
 	cameraParticleState.viewProj = cam.viewProjection;
@@ -66,21 +48,18 @@ function updateCameraParticleState(width: number, height: number, cam: Camera): 
 	return cameraParticleState;
 }
 
-function resolveParticleState(state: ParticlePipelineState, context: RenderContext): ParticlePipelineState {
-	if (!state) {
-		return updateOrthographicParticleState(context.offscreenCanvasSize.x, context.offscreenCanvasSize.y);
-	}
-	if (!Number.isFinite(state.width) || state.width <= 0 || !Number.isFinite(state.height) || state.height <= 0) {
-		throw new Error('[ParticlesPipeline] Pipeline state has invalid dimensions; ensure GameView sizes are initialized before rendering particles.');
-	}
-	return state;
+function drawPreparedParticleInstances(backend: WebGLBackend, instBuf: WebGLBuffer, framebuffer: WebGLFramebuffer, batchCount: number): void {
+	backend.bindArrayBuffer(instBuf);
+	backend.updateVertexBuffer(instBuf, instanceData.subarray(0, batchCount * INSTANCE_FLOATS), 0);
+	const passStub: PassEncoder = { fbo: framebuffer, desc: { label: 'particles' } };
+	backend.drawInstanced(passStub, 6, batchCount, 0, 0);
 }
 
 export function initParticlePipeline(backend: WebGLBackend): void {
 	vao = backend.createVertexArray() as WebGLVertexArrayObject;
 	const quad = new Float32Array([-0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5]);
 	quadBuffer = backend.createVertexBuffer(quad, 'static') as WebGLBuffer;
-	instanceBuffers = [0, 1, 2].map(() => backend.createVertexBuffer(new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS), 'dynamic') as WebGLBuffer);
+	instanceBuffers = [0, 1, 2].map(() => backend.createVertexBuffer(new Float32Array(PARTICLE_INSTANCE_LIMIT * INSTANCE_FLOATS), 'dynamic') as WebGLBuffer);
 }
 
 export function setupParticleUniforms(backend: WebGLBackend): void {
@@ -124,46 +103,57 @@ interface ParticleRuntime {
 export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGLFramebuffer, state: ParticlePipelineState): void {
 	const { backend, gl, context } = runtime;
 	const pending = beginParticleQueue();
-	if (pending === 0) return;
-	const resolvedState = resolveParticleState(state, context);
-	camRight.set(resolvedState.camRight);
-	camUp.set(resolvedState.camUp);
-	const batches = new Map<string, ParticleRenderSubmission[]>();
+	const vdpPending = context.vdpBillboardCount;
+	if (pending === 0 && vdpPending === 0) return;
+	camRight.set(state.camRight);
+	camUp.set(state.camUp);
 	let needsSystemSlot = false;
 	let needsSecondaryTextpage = false;
-	forEachParticleQueue((p) => {
-		if (!p) return;
-		const slot = p.slot ?? VDP_SLOT_PRIMARY;
-		if (slot === VDP_SLOT_SYSTEM) {
-			needsSystemSlot = true;
-		} else if (slot === VDP_SLOT_SECONDARY) {
-			needsSecondaryTextpage = true;
-		}
-		const mode = (p.ambient_mode ?? particleAmbientModeDefault) | 0;
+	let batches: Map<string, ParticleRenderSubmission[]> | null = null;
+	if (pending !== 0) {
+		batches = new Map<string, ParticleRenderSubmission[]>();
+		forEachParticleQueue((p) => {
+			if (!p) return;
+			const slot = p.slot ?? VDP_SLOT_PRIMARY;
+			if (slot === VDP_SLOT_SYSTEM) {
+				needsSystemSlot = true;
+			} else if (slot === VDP_SLOT_SECONDARY) {
+				needsSecondaryTextpage = true;
+			}
+			const mode = (p.ambient_mode ?? particleAmbientModeDefault) | 0;
 			const factor = clamp(p.ambient_factor ?? particleAmbientFactorDefault, 0, 1);
-		const key = mode + ':' + factor.toFixed(2);
-		let arr = batches.get(key);
-		if (!arr) { arr = []; batches.set(key, arr); }
-		arr.push(p);
-	});
-	if (!Number.isFinite(resolvedState.width) || !Number.isFinite(resolvedState.height)) {
-		throw new Error(`[ParticlesPipeline] Invalid viewport dimensions (${resolvedState.width}x${resolvedState.height}).`);
+			const key = mode + ':' + factor.toFixed(2);
+			let arr = batches.get(key);
+			if (!arr) { arr = []; batches.set(key, arr); }
+			arr.push(p);
+		});
 	}
-	backend.setViewport({ x: 0, y: 0, w: resolvedState.width, h: resolvedState.height });
+	if (vdpPending !== 0) {
+		const vdpSlots = context.vdpBillboardSlot;
+		for (let index = 0; index < vdpPending; index += 1) {
+			const slot = vdpSlots[index];
+			if (slot === VDP_SLOT_SYSTEM) {
+				needsSystemSlot = true;
+			} else if (slot === VDP_SLOT_SECONDARY) {
+				needsSecondaryTextpage = true;
+			}
+		}
+	}
+	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
 	gl.enable(gl.BLEND);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	gl.depthMask(false);
-	gl.uniformMatrix4fv(viewProjLocation, false, resolvedState.viewProj);
+	gl.uniformMatrix4fv(viewProjLocation, false, state.viewProj);
 	gl.uniform3fv(cameraRightLocation, camRight);
 	gl.uniform3fv(cameraUpLocation, camUp);
 	gl.uniform1i(ambientModeLocation, 0);
 	gl.uniform1f(ambientFactorLocation, 1.0);
-	const textpagePrimaryTex = resolvedState.textpagePrimaryTex;
+	const textpagePrimaryTex = state.textpagePrimaryTex;
 	if (!textpagePrimaryTex) {
 		throw new Error(`[ParticlesPipeline] Texture '${VDP_PRIMARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
 	}
-	const textpageSecondaryTex = resolvedState.textpageSecondaryTex;
-	const systemSlotTex = resolvedState.systemSlotTex;
+	const textpageSecondaryTex = state.textpageSecondaryTex;
+	const systemSlotTex = state.systemSlotTex;
 	if (needsSecondaryTextpage && !textpageSecondaryTex) {
 		throw new Error(`[ParticlesPipeline] Texture '${VDP_SECONDARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
 	}
@@ -193,35 +183,61 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	backend.vertexAttribDivisor(3, 1);
 	backend.vertexAttribPointer(4, 1, gl.FLOAT, false, INSTANCE_BYTES, 12 * BYTES_PER_FLOAT);
 	backend.vertexAttribDivisor(4, 1);
-	for (const [ambKey, arr] of batches) {
-		const batchCount = Math.min(arr.length, MAX_PARTICLES);
-		const [modeStr, factorStr] = ambKey.split(':');
-		gl.uniform1i(ambientModeLocation, parseInt(modeStr, 10) | 0);
-		gl.uniform1f(ambientFactorLocation, parseFloat(factorStr));
-		for (let i = 0; i < batchCount; i++) {
-			const p = arr[i]; if (!p) continue;
-			if (!p.uv0 || !p.uv1 || p.slot === undefined || p.slot === null) {
-				throw new Error('[ParticlesPipeline] Particle missing textpage UV data.');
+	if (batches !== null) {
+		for (const [ambKey, arr] of batches) {
+			const batchCount = arr.length < HOST_PARTICLE_LIMIT ? arr.length : HOST_PARTICLE_LIMIT;
+			const [modeStr, factorStr] = ambKey.split(':');
+			gl.uniform1i(ambientModeLocation, parseInt(modeStr, 10) | 0);
+			gl.uniform1f(ambientFactorLocation, parseFloat(factorStr));
+			for (let i = 0; i < batchCount; i++) {
+				const p = arr[i]; if (!p) continue;
+				if (!p.uv0 || !p.uv1 || p.slot === undefined || p.slot === null) {
+					throw new Error('[ParticlesPipeline] Particle missing textpage UV data.');
+				}
+				const base = i * INSTANCE_FLOATS;
+				instanceData[base] = p.position[0];
+				instanceData[base + 1] = p.position[1];
+				instanceData[base + 2] = p.position[2];
+				instanceData[base + 3] = p.size;
+				instanceData[base + 4] = p.color.r;
+				instanceData[base + 5] = p.color.g;
+				instanceData[base + 6] = p.color.b;
+				instanceData[base + 7] = p.color.a;
+				instanceData[base + 8] = p.uv0[0];
+				instanceData[base + 9] = p.uv0[1];
+				instanceData[base + 10] = p.uv1[0];
+				instanceData[base + 11] = p.uv1[1];
+				instanceData[base + 12] = p.slot;
 			}
-			const base = i * INSTANCE_FLOATS;
-			instanceData[base] = p.position[0];
-			instanceData[base + 1] = p.position[1];
-			instanceData[base + 2] = p.position[2];
-			instanceData[base + 3] = p.size;
-			instanceData[base + 4] = p.color.r;
-			instanceData[base + 5] = p.color.g;
-			instanceData[base + 6] = p.color.b;
-			instanceData[base + 7] = p.color.a;
-			instanceData[base + 8] = p.uv0[0];
-			instanceData[base + 9] = p.uv0[1];
-			instanceData[base + 10] = p.uv1[0];
-			instanceData[base + 11] = p.uv1[1];
-			instanceData[base + 12] = p.slot;
+			drawPreparedParticleInstances(backend, instBuf, framebuffer, batchCount);
 		}
-		backend.bindArrayBuffer(instBuf);
-		backend.updateVertexBuffer(instBuf, instanceData.subarray(0, batchCount * INSTANCE_FLOATS), 0);
-		const passStub: PassEncoder = { fbo: framebuffer, desc: { label: 'particles' } };
-		backend.drawInstanced(passStub, 6, batchCount, 0, 0);
+	}
+	if (vdpPending !== 0) {
+		const batchCount = vdpPending;
+		const positionSize = context.vdpBillboardPositionSize;
+		const color = context.vdpBillboardColor;
+		const uvRect = context.vdpBillboardUvRect;
+		const slots = context.vdpBillboardSlot;
+		gl.uniform1i(ambientModeLocation, 0);
+		gl.uniform1f(ambientFactorLocation, 1.0);
+		for (let index = 0; index < batchCount; index += 1) {
+			const base = index * INSTANCE_FLOATS;
+			const sourceBase = index * 4;
+			instanceData[base + 0] = positionSize[sourceBase + 0];
+			instanceData[base + 1] = positionSize[sourceBase + 1];
+			instanceData[base + 2] = positionSize[sourceBase + 2];
+			instanceData[base + 3] = positionSize[sourceBase + 3];
+			instanceData[base + 4] = color[sourceBase + 0];
+			instanceData[base + 5] = color[sourceBase + 1];
+			instanceData[base + 6] = color[sourceBase + 2];
+			instanceData[base + 7] = color[sourceBase + 3];
+			instanceData[base + 8] = uvRect[sourceBase + 0];
+			instanceData[base + 9] = uvRect[sourceBase + 1];
+			instanceData[base + 10] = uvRect[sourceBase + 2];
+			instanceData[base + 11] = uvRect[sourceBase + 3];
+			instanceData[base + 12] = slots[index];
+		}
+		drawPreparedParticleInstances(backend, instBuf, framebuffer, batchCount);
 	}
 	backend.bindVertexArray(null);
 	gl.depthMask(true);
@@ -245,7 +261,7 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 			setupParticleUniforms(webglBackend);
 		},
 		writesDepth: true,
-		shouldExecute: () => !!particleQueueBackSize(),
+		shouldExecute: () => beginParticleQueue() !== 0 || consoleCore.view.vdpBillboardCount !== 0,
 		exec: (backend, fbo, s: RenderPassStateRegistry['particles']) => {
 			const webglBackend = backend as WebGLBackend;
 			const runtime: ParticleRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: consoleCore.view };
@@ -254,20 +270,17 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 		prepare: (_backend, _state) => {
 			const gv = consoleCore.view;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
-			const cam = resolveActiveCamera3D();
 			const textpagePrimaryTex = gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY];
 			if (!textpagePrimaryTex) {
 				throw new Error(`[ParticlesPipeline] Texture '${VDP_PRIMARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
 			}
 			const textpageSecondaryTex = gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY];
 			const systemSlotTex = gv.textures[SYSTEM_SLOT_TEXTURE_KEY];
-				const state = cam
-					? updateCameraParticleState(width, height, cam)
-					: updateOrthographicParticleState(width, height);
-				state.textpagePrimaryTex = textpagePrimaryTex;
-				state.textpageSecondaryTex = textpageSecondaryTex;
-				state.systemSlotTex = systemSlotTex;
-				registry.setState('particles', state);
-			},
-		});
-	}
+			const state = updateCameraParticleState(width, height, hardwareCameraBank0);
+			state.textpagePrimaryTex = textpagePrimaryTex;
+			state.textpageSecondaryTex = textpageSecondaryTex;
+			state.systemSlotTex = systemSlotTex;
+			registry.setState('particles', state);
+		},
+	});
+}

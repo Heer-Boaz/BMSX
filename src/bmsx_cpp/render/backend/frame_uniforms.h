@@ -20,8 +20,6 @@ struct FrameUniformsData {
 	std::array<f32, kFrameUniformFloatCount> values{};
 };
 
-std::array<f32, 16> makeIdentityMat4();
-
 FrameUniformsData buildFrameUniforms(const Vec2& offscreen,
 										const Vec2& logical,
 										f32 time,

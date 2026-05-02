@@ -1,20 +1,19 @@
 import { Camera } from '../../3d/camera';
+import { Q, V3 } from '../../3d/math';
 
-const hardwareCamera = new Camera();
-let hardwareCameraActive = false;
+const RESET_CAMERA_ASPECT = 256 / 212;
+const RESET_CAMERA_FOV_DEGREES = 60;
+const RESET_CAMERA_NEAR = 0.1;
+const RESET_CAMERA_FAR = 50;
+export const hardwareCameraBank0 = new Camera();
 
-export function setHardwareCamera(view: Float32Array, proj: Float32Array, eyeX: number, eyeY: number, eyeZ: number): void {
-	hardwareCamera.setExternalMatrices(view, proj, eyeX, eyeY, eyeZ);
-	hardwareCameraActive = true;
-}
+resetHardwareCameraBank0();
 
-export function clearHardwareCamera(): void {
-	hardwareCameraActive = false;
-}
-
-export function resolveActiveCamera3D(): Camera | null {
-	if (hardwareCameraActive) {
-		return hardwareCamera;
-	}
-	return null;
+export function resetHardwareCameraBank0(): void {
+	hardwareCameraBank0.position = V3.of(0, 0, 0);
+	hardwareCameraBank0.setRotationQ(Q.ident(), true);
+	hardwareCameraBank0.projectionType = 'perspective';
+	hardwareCameraBank0.setAspect(RESET_CAMERA_ASPECT);
+	hardwareCameraBank0.setFov(RESET_CAMERA_FOV_DEGREES);
+	hardwareCameraBank0.setClip(RESET_CAMERA_NEAR, RESET_CAMERA_FAR);
 }

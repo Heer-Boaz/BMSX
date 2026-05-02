@@ -31,7 +31,10 @@ import {
 } from '../../src/bmsx/machine/bus/io';
 import { CPU } from '../../src/bmsx/machine/cpu/cpu';
 import { VDP } from '../../src/bmsx/machine/devices/vdp/vdp';
-import { VDP_RD_SURFACE_PRIMARY } from '../../src/bmsx/machine/devices/vdp/contracts';
+import { VDP_BBU_BILLBOARD_LIMIT, VDP_RD_SURFACE_PRIMARY, VDP_SBX_CONTROL_ENABLE } from '../../src/bmsx/machine/devices/vdp/contracts';
+import { VDP_BBU_PACKET_KIND, VDP_BBU_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/bbu';
+import { VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
+import { VDP_SBX_PACKET_KIND, VDP_SBX_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/sbx';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE } from '../../src/bmsx/machine/memory/map';
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
@@ -48,6 +51,8 @@ const VDP_PKT_END = 0x00000000;
 const VDP_PKT_CMD = 0x01000000;
 const VDP_PKT_REG1 = 0x02000000;
 const VDP_PKT_REGN = 0x03000000;
+const VDP_BILLBOARD_HEADER = VDP_BBU_PACKET_KIND | (VDP_BBU_PACKET_PAYLOAD_WORDS << 16);
+const VDP_SKYBOX_HEADER = VDP_SBX_PACKET_KIND | (VDP_SBX_PACKET_PAYLOAD_WORDS << 16);
 
 const VDP_REG_BG_COLOR = 15;
 const VDP_REG_SLOT_INDEX = 16;
@@ -66,7 +71,7 @@ function createVdp(): { memory: Memory; vdp: VDP } {
 	return { memory, vdp };
 }
 
-function activeQueue(vdp: VDP): any[] {
+function activeQueue(vdp: VDP): any {
 	return (vdp as any).activeFrame.queue;
 }
 
@@ -80,6 +85,14 @@ function skyboxSources(w = 1, h = 1) {
 		posz: source,
 		negz: source,
 	};
+}
+
+function skyboxPacket(control = VDP_SBX_CONTROL_ENABLE, w = 4, h = 5): number[] {
+	const words = [VDP_SKYBOX_HEADER, control];
+	for (let face = 0; face < 6; face += 1) {
+		words.push(VDP_SLOT_PRIMARY, 0, 0, w, h);
+	}
+	return words;
 }
 
 function buildFrameOpen(vdp: VDP): boolean {
@@ -112,12 +125,12 @@ test('VDP2D direct lifecycle opens, seals, and rejects invalid edges', () => {
 	assert.equal(buildFrameOpen(vdp), false);
 });
 
-test('VDP2D direct register faults preserve latches and do not cancel an open frame', () => {
+test('VDP2D direct registers latch raw representable words without closing an open frame', () => {
 	const { memory, vdp } = createVdp();
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	assert.throws(() => memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x4));
-	assert.equal(memory.readValue(IO_VDP_REG_DRAW_CTRL), 0);
+	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x4);
+	assert.equal(memory.readValue(IO_VDP_REG_DRAW_CTRL), 0x4);
 	assert.equal(buildFrameOpen(vdp), true);
 	memory.writeValue(IO_VDP_REG_DRAW_SCALE_X, 0xffff0000);
 	assert.equal(memory.readValue(IO_VDP_REG_DRAW_SCALE_X), 0xffff0000);
@@ -142,7 +155,7 @@ test('VDP2D direct draw doorbell snapshots latch state immutably', () => {
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 
 	assert.equal(activeQueue(vdp).length, 1);
-	assert.deepEqual(activeQueue(vdp)[0].color, { r: 0x11, g: 0x22, b: 0x33, a: 0xff });
+	assert.equal(activeQueue(vdp).colorWord[0], 0xff112233);
 });
 
 test('VDP2D BLIT snapshots DRAW_CTRL flip and parallax immutably', () => {
@@ -159,11 +172,11 @@ test('VDP2D BLIT snapshots DRAW_CTRL flip and parallax immutably', () => {
 	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 
-	const command = activeQueue(vdp)[0];
-	assert.equal(command.opcode, 'blit');
-	assert.equal(command.flipH, true);
-	assert.equal(command.flipV, true);
-	assert.equal(command.parallaxWeight, -1);
+	const command = activeQueue(vdp);
+	assert.equal(command.opcode[0], VDP_BLITTER_OPCODE_BLIT);
+	assert.equal(command.flipH[0], 1);
+	assert.equal(command.flipV[0], 1);
+	assert.equal(command.parallaxWeight[0], -1);
 });
 
 test('VDP PMU resolves parallax into BLIT geometry before backend execution', () => {
@@ -195,13 +208,13 @@ test('VDP PMU resolves parallax into BLIT geometry before backend execution', ()
 	vdp.advanceWork(workUnits);
 	const queue = vdp.takeReadyExecutionQueue();
 	assert.ok(queue);
-	const command = queue[0];
-	assert.equal(command.opcode, 'blit');
-	assert.equal(command.parallaxWeight, 0.5);
-	assert.equal(command.dstX, 32);
-	assert.equal(command.dstY, 48);
-	assert.equal(command.scaleX, 1);
-	assert.equal(command.scaleY, 1);
+	const command = queue;
+	assert.equal(command.opcode[0], VDP_BLITTER_OPCODE_BLIT);
+	assert.equal(command.parallaxWeight[0], 0.5);
+	assert.equal(command.dstX[0], 32);
+	assert.equal(command.dstY[0], 48);
+	assert.equal(command.scaleX[0], 1);
+	assert.equal(command.scaleY[0], 1);
 	vdp.completeReadyExecution(queue);
 });
 
@@ -235,12 +248,12 @@ test('VDP PMU bank registers resolve DRAW_CTRL bank and signed weight', () => {
 	vdp.advanceWork(workUnits);
 	const queue = vdp.takeReadyExecutionQueue();
 	assert.ok(queue);
-	const command = queue[0];
-	assert.equal(command.opcode, 'blit');
-	assert.equal(command.parallaxWeight, 0.5);
-	assert.equal(command.dstY, 46);
-	assert.equal(command.scaleX, 1.25);
-	assert.equal(command.scaleY, 1);
+	const command = queue;
+	assert.equal(command.opcode[0], VDP_BLITTER_OPCODE_BLIT);
+	assert.equal(command.parallaxWeight[0], 0.5);
+	assert.equal(command.dstY[0], 46);
+	assert.equal(command.scaleX[0], 1.25);
+	assert.equal(command.scaleY[0], 1);
 	vdp.completeReadyExecution(queue);
 });
 
@@ -263,12 +276,12 @@ test('VDP PMU scale influence uses absolute signed DRAW_CTRL weight', () => {
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 
-	const command = activeQueue(vdp)[0];
-	assert.equal(command.opcode, 'blit');
-	assert.equal(command.parallaxWeight, -0.5);
-	assert.equal(command.dstY, 34);
-	assert.equal(command.scaleX, 1.25);
-	assert.equal(command.scaleY, 1);
+	const command = activeQueue(vdp);
+	assert.equal(command.opcode[0], VDP_BLITTER_OPCODE_BLIT);
+	assert.equal(command.parallaxWeight[0], -0.5);
+	assert.equal(command.dstY[0], 34);
+	assert.equal(command.scaleX[0], 1.25);
+	assert.equal(command.scaleY[0], 1);
 });
 
 test('VDP2D FIFO replays registers, commands, and PKT_END frame sealing', () => {
@@ -282,7 +295,7 @@ test('VDP2D FIFO replays registers, commands, and PKT_END frame sealing', () => 
 	]);
 
 	assert.equal(activeQueue(vdp).length, 1);
-	assert.deepEqual(activeQueue(vdp)[0].color, { r: 1, g: 2, b: 3, a: 0xff });
+	assert.equal(activeQueue(vdp).colorWord[0], 0xff010203);
 });
 
 test('VDP2D FIFO packet faults cancel the frame while preserving prior register side effects', () => {
@@ -307,11 +320,12 @@ test('VDP2D FIFO rejects reserved bits and register ranges', () => {
 	assert.throws(() => sealStream(memory, vdp, [VDP_PKT_REGN | (2 << 16) | 17, 0, 0, VDP_PKT_END]));
 });
 
-test('VDP2D SLOT_INDEX and SLOT_DIM validate and apply in-order through REGN', () => {
+test('VDP2D SLOT_INDEX latches raw words and SLOT_DIM applies in-order through REGN', () => {
 	const { memory, vdp } = createVdp();
 
-	assert.throws(() => memory.writeValue(IO_VDP_REG_SLOT_INDEX, 3));
-	assert.equal(memory.readValue(IO_VDP_REG_SLOT_INDEX), VDP_SLOT_PRIMARY);
+	memory.writeValue(IO_VDP_REG_SLOT_INDEX, 3);
+	assert.equal(memory.readValue(IO_VDP_REG_SLOT_INDEX), 3);
+	memory.writeValue(IO_VDP_REG_SLOT_INDEX, VDP_SLOT_PRIMARY);
 
 	sealStream(memory, vdp, [
 		VDP_PKT_REGN | (2 << 16) | VDP_REG_SLOT_INDEX,
@@ -325,18 +339,18 @@ test('VDP2D SLOT_INDEX and SLOT_DIM validate and apply in-order through REGN', (
 	assert.deepEqual(vdp.resolveBlitterSurfaceSize(VDP_RD_SURFACE_PRIMARY), { width: 16, height: 16 });
 });
 
-test('VDP2D validation failures cancel direct draw frames', () => {
+test('VDP2D BLIT representable source geometry enters the frame datapath', () => {
 	const { memory, vdp } = createVdp();
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	memory.writeValue(IO_VDP_REG_DRAW_SCALE_X, 0x00010000);
-	assert.throws(() => memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT));
-
-	assert.equal(buildFrameOpen(vdp), false);
-	assert.equal(activeQueue(vdp).length, 0);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	assert.equal(buildFrameOpen(vdp), true);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	assert.equal((vdp as any).activeFrame.occupied, true);
 });
 
-test('VDP2D faults invalid BLIT and LINE geometry at command latch', () => {
+test('VDP2D BLIT and LINE consume representable register geometry directly', () => {
 	{
 		const { memory, vdp } = createVdp();
 		memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
@@ -347,22 +361,24 @@ test('VDP2D faults invalid BLIT and LINE geometry at command latch', () => {
 		memory.writeValue(IO_VDP_REG_DRAW_SCALE_X, 0xffff0000);
 		memory.writeValue(IO_VDP_REG_DRAW_SCALE_Y, 0x00010000);
 
-		assert.throws(() => memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT));
+		memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
 		assert.equal(memory.readValue(IO_VDP_REG_DRAW_SCALE_X), 0xffff0000);
-		assert.equal(buildFrameOpen(vdp), false);
+		assert.equal(buildFrameOpen(vdp), true);
+		memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 	}
 	{
 		const { memory, vdp } = createVdp();
 		memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 		memory.writeValue(IO_VDP_REG_LINE_WIDTH, 0);
 
-		assert.throws(() => memory.writeValue(IO_VDP_CMD, VDP_CMD_DRAW_LINE));
+		memory.writeValue(IO_VDP_CMD, VDP_CMD_DRAW_LINE);
 		assert.equal(memory.readValue(IO_VDP_REG_LINE_WIDTH), 0);
-		assert.equal(buildFrameOpen(vdp), false);
+		assert.equal(buildFrameOpen(vdp), true);
+		memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 	}
 });
 
-test('VDP2D faults invalid PMU-resolved BLIT scale at command latch', () => {
+test('VDP2D PMU-resolved representable scale flows through BLIT datapath', () => {
 	const { memory, vdp } = createVdp();
 
 	memory.writeValue(IO_VDP_PMU_BANK, 0);
@@ -378,8 +394,9 @@ test('VDP2D faults invalid PMU-resolved BLIT scale at command latch', () => {
 	memory.writeValue(IO_VDP_REG_DRAW_SCALE_Y, 0x00010000);
 	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x01000000);
 
-	assert.throws(() => memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT));
-	assert.equal(buildFrameOpen(vdp), false);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	assert.equal(buildFrameOpen(vdp), true);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 });
 
 test('VDP2D FIFO allows an empty PKT_END-only frame', () => {
@@ -392,7 +409,7 @@ test('VDP2D FIFO allows an empty PKT_END-only frame', () => {
 	assert.equal((vdp as any).activeFrame.hasCommands, false);
 });
 
-test('VDP2D BLIT validates source rect bounds', () => {
+test('VDP2D BLIT source rect words flow through the datapath', () => {
 	const { memory, vdp } = createVdp();
 
 	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
@@ -404,8 +421,9 @@ test('VDP2D BLIT validates source rect bounds', () => {
 	memory.writeValue(IO_VDP_REG_SRC_UV, 15 | (0 << 16));
 	memory.writeValue(IO_VDP_REG_SRC_WH, 2 | (16 << 16));
 
-	assert.throws(() => memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT));
-	assert.equal(buildFrameOpen(vdp), false);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	assert.equal(buildFrameOpen(vdp), true);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 });
 
 test('VDP SBX live state commits only through frame present', () => {
@@ -438,4 +456,93 @@ test('VDP SBX validates face words during frame seal', () => {
 	assert.throws(() => memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME));
 	assert.equal(buildFrameOpen(vdp), false);
 	assert.equal(vdp.committedSkyboxEnabled, false);
+});
+
+test('VDP SBX accepts SKYBOX packets into frame-latched state', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	sealStream(memory, vdp, [...skyboxPacket(VDP_SBX_CONTROL_ENABLE, 4, 5), VDP_PKT_END]);
+	vdp.presentReadyFrameOnVblankEdge();
+	assert.equal(vdp.committedSkyboxEnabled, true);
+	const sample = vdp.resolveCommittedSkyboxFaceSample(0);
+	assert.equal(sample.source.surfaceId, VDP_RD_SURFACE_PRIMARY);
+	assert.equal(sample.surfaceWidth, 16);
+	assert.equal(sample.surfaceHeight, 16);
+	assert.equal(sample.source.width, 4);
+	assert.equal(sample.source.height, 5);
+});
+
+test('VDP SBX faults only at SKYBOX packet latch and frame seal', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	assert.throws(() => sealStream(memory, vdp, [...skyboxPacket(2, 4, 5), VDP_PKT_END]));
+	assert.equal(vdp.committedSkyboxEnabled, false);
+	assert.throws(() => sealStream(memory, vdp, [...skyboxPacket(VDP_SBX_CONTROL_ENABLE, 17, 1), VDP_PKT_END]));
+	assert.equal(vdp.committedSkyboxEnabled, false);
+});
+
+function billboardPacket(sizeWord: number, u = 2, v = 3, w = 4, h = 5, control = 0): number[] {
+	return [
+		VDP_BILLBOARD_HEADER,
+		0,
+		VDP_SLOT_PRIMARY,
+		u | (v << 16),
+		w | (h << 16),
+		10 << 16,
+		20 << 16,
+		30 << 16,
+		sizeWord,
+		0xff112233,
+		control,
+	];
+}
+
+test('VDP BBU accepts BILLBOARD packets into frame-latched instance RAM', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	sealStream(memory, vdp, [...billboardPacket(2 << 16), VDP_PKT_END]);
+	assert.equal(vdp.getPendingRenderWorkUnits(), 1);
+	assert.equal((vdp as any).activeFrame.hasCommands, true);
+	assert.equal((vdp as any).activeFrame.hasFrameBufferCommands, false);
+	vdp.advanceWork(1);
+	const queue = vdp.takeReadyExecutionQueue();
+	assert.notEqual(queue, null);
+	const billboards = vdp.takeReadyExecutionBillboards();
+	assert.equal(billboards.length, 1);
+	assert.equal(billboards.slot[0], VDP_SLOT_PRIMARY);
+	assert.equal(billboards.surfaceWidth[0], 16);
+	assert.equal(billboards.surfaceHeight[0], 16);
+	assert.equal(billboards.sourceSrcX[0], 2);
+	assert.equal(billboards.sourceSrcY[0], 3);
+	assert.equal(billboards.sourceWidth[0], 4);
+	assert.equal(billboards.sourceHeight[0], 5);
+	assert.equal(billboards.positionX[0], 10);
+	assert.equal(billboards.positionY[0], 20);
+	assert.equal(billboards.positionZ[0], 30);
+	assert.equal(billboards.size[0], 2);
+	assert.equal(billboards.colorWord[0], 0xff112233);
+	vdp.completeReadyExecution(queue!);
+});
+
+test('VDP BBU faults only at BILLBOARD packet latch', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	assert.throws(() => sealStream(memory, vdp, [...billboardPacket(0), VDP_PKT_END]));
+	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
+	assert.throws(() => sealStream(memory, vdp, [...billboardPacket(1 << 16, 0, 0, 1, 1, 1), VDP_PKT_END]));
+	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
+	assert.throws(() => sealStream(memory, vdp, [...billboardPacket(1 << 16, 15, 0, 2, 1), VDP_PKT_END]));
+	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
+
+	const stream: number[] = [];
+	for (let index = 0; index <= VDP_BBU_BILLBOARD_LIMIT; index += 1) {
+		stream.push(...billboardPacket(1 << 16, 0, 0, 1, 1));
+	}
+	stream.push(VDP_PKT_END);
+	assert.throws(() => sealStream(memory, vdp, stream));
+	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
 });

@@ -251,7 +251,6 @@ public:
 
 	// Pass list access
 	const std::vector<RenderPassDef>& getPipelinePasses() const { return m_passes; }
-	void appendPipelinePass(const RenderPassDef& pass);
 	i32 findPipelinePassIndex(const std::string& id) const;
 
 	// Enable/disable passes

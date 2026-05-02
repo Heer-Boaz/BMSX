@@ -207,7 +207,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "dget"
 		|| name == "get_player_input"
 		|| name == "put_mesh"
-		|| name == "put_particle"
 		|| name == "skybox"
 		|| name == "put_ambient_light"
 		|| name == "put_directional_light"

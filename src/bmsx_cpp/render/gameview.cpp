@@ -84,7 +84,7 @@ void GameView::initializeRenderer() {
 		RenderQueues::submitGlyphs(runtime(), s);
 	};
 
-	// particle -> ParticlesPipeline (TODO)
+	// host/editor particle queue; BMSX machine billboards use VDP packets
 	renderer.submit.particle = [](const ParticleRenderSubmission& s) {
 		RenderQueues::submit_particle(s);
 	};

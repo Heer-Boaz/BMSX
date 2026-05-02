@@ -1,4 +1,37 @@
 import { FeatureQueue } from '../../common/feature_queue';
+import { packLowHigh16 } from '../../machine/common/word';
+import {
+	IO_VDP_SLOT_PRIMARY_ATLAS,
+	IO_VDP_SLOT_SECONDARY_ATLAS,
+	VDP_SLOT_PRIMARY,
+	VDP_SLOT_SECONDARY,
+	VDP_SLOT_SYSTEM,
+	VDP_SYSTEM_ATLAS_ID,
+} from '../../machine/bus/io';
+import { packFrameBufferColorWord } from '../../machine/devices/vdp/blitter';
+import { FIX16_SCALE, toSignedWord } from '../../machine/common/numeric';
+import {
+	encodeVdpDrawCtrl,
+	encodeVdpLayerPriority,
+	VDP_CMD_BLIT,
+	VDP_CMD_DRAW_LINE,
+	VDP_CMD_FILL_RECT,
+	VDP_REG_DRAW_COLOR,
+	VDP_REG_DRAW_CTRL,
+	VDP_REG_DRAW_LAYER_PRIO,
+	VDP_REG_DRAW_SCALE_X,
+	VDP_REG_DRAW_SCALE_Y,
+	VDP_REG_DST_X,
+	VDP_REG_DST_Y,
+	VDP_REG_GEOM_X0,
+	VDP_REG_GEOM_X1,
+	VDP_REG_GEOM_Y0,
+	VDP_REG_GEOM_Y1,
+	VDP_REG_LINE_WIDTH,
+	VDP_REG_SRC_SLOT,
+	VDP_REG_SRC_UV,
+	VDP_REG_SRC_WH,
+} from '../../machine/devices/vdp/registers';
 import {
 	renderLayerTo2dLayer,
 } from './submissions';
@@ -21,23 +54,41 @@ const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
 let activeQueueSource: 'front' | 'back' = 'front';
 
 function submitSpriteDirect(runtime: Runtime, slot: number, u: number, v: number, w: number, h: number, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color, layer: RenderLayer, parallaxWeight: number, flipH = false, flipV = false): void {
-	runtime.machine.vdp.enqueueBlit(
-			slot,
-			u,
-			v,
-			w,
-			h,
-		x,
-		y,
-		z,
-		renderLayerTo2dLayer(layer),
-		scaleX,
-		scaleY,
-		flipH,
-		flipV,
-		colorize,
-		parallaxWeight,
-	);
+	const vdp = runtime.machine.vdp;
+	vdp.writeVdpRegister(VDP_REG_SRC_SLOT, slot);
+	vdp.writeVdpRegister(VDP_REG_SRC_UV, packLowHigh16(u, v));
+	vdp.writeVdpRegister(VDP_REG_SRC_WH, packLowHigh16(w, h));
+	vdp.writeVdpRegister(VDP_REG_DST_X, toSignedWord(FIX16_SCALE * x));
+	vdp.writeVdpRegister(VDP_REG_DST_Y, toSignedWord(FIX16_SCALE * y));
+	vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(renderLayerTo2dLayer(layer), z));
+	vdp.writeVdpRegister(VDP_REG_DRAW_SCALE_X, toSignedWord(FIX16_SCALE * scaleX));
+	vdp.writeVdpRegister(VDP_REG_DRAW_SCALE_Y, toSignedWord(FIX16_SCALE * scaleY));
+	vdp.writeVdpRegister(VDP_REG_DRAW_CTRL, encodeVdpDrawCtrl(flipH, flipV, 0, parallaxWeight));
+	vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, packFrameBufferColorWord(colorize));
+	vdp.consumeDirectVdpCommand(VDP_CMD_BLIT);
+}
+
+function submitFillRectDirect(runtime: Runtime, x0: number, y0: number, x1: number, y1: number, z: number, layer: RenderLayer, colorValue: color): void {
+	const vdp = runtime.machine.vdp;
+	vdp.writeVdpRegister(VDP_REG_GEOM_X0, toSignedWord(FIX16_SCALE * x0));
+	vdp.writeVdpRegister(VDP_REG_GEOM_Y0, toSignedWord(FIX16_SCALE * y0));
+	vdp.writeVdpRegister(VDP_REG_GEOM_X1, toSignedWord(FIX16_SCALE * x1));
+	vdp.writeVdpRegister(VDP_REG_GEOM_Y1, toSignedWord(FIX16_SCALE * y1));
+	vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(renderLayerTo2dLayer(layer), z));
+	vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, packFrameBufferColorWord(colorValue));
+	vdp.consumeDirectVdpCommand(VDP_CMD_FILL_RECT);
+}
+
+function submitLineDirect(runtime: Runtime, x0: number, y0: number, x1: number, y1: number, z: number, layer: RenderLayer, colorValue: color, thickness: number): void {
+	const vdp = runtime.machine.vdp;
+	vdp.writeVdpRegister(VDP_REG_GEOM_X0, toSignedWord(FIX16_SCALE * x0));
+	vdp.writeVdpRegister(VDP_REG_GEOM_Y0, toSignedWord(FIX16_SCALE * y0));
+	vdp.writeVdpRegister(VDP_REG_GEOM_X1, toSignedWord(FIX16_SCALE * x1));
+	vdp.writeVdpRegister(VDP_REG_GEOM_Y1, toSignedWord(FIX16_SCALE * y1));
+	vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(renderLayerTo2dLayer(layer), z));
+	vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, packFrameBufferColorWord(colorValue));
+	vdp.writeVdpRegister(VDP_REG_LINE_WIDTH, toSignedWord(FIX16_SCALE * thickness));
+	vdp.consumeDirectVdpCommand(VDP_CMD_DRAW_LINE);
 }
 
 // --- 2D framebuffer helpers -------------------------------------------------
@@ -154,24 +205,7 @@ export function meshQueueFrontSize(): number {
 
 // --- Particle queue helpers -------------------------------------------------
 
-export function submit_particle(runtime: Runtime, item: ParticleRenderSubmission): void {
-	if (item.slot === undefined || item.u === undefined || item.v === undefined || item.w === undefined || item.h === undefined) {
-		throw new Error('submit_particle requires slot/u/v/w/h.');
-	}
-	const sample = runtime.machine.vdp.resolveBlitterSample({
-		slot: item.slot,
-		u: item.u,
-		v: item.v,
-		w: item.w,
-		h: item.h,
-	});
-	const u0 = sample.source.srcX / sample.surfaceWidth;
-	const v0 = sample.source.srcY / sample.surfaceHeight;
-	const u1 = (sample.source.srcX + sample.source.width) / sample.surfaceWidth;
-	const v1 = (sample.source.srcY + sample.source.height) / sample.surfaceHeight;
-	item.uv0 = [u0, v0];
-	item.uv1 = [u1, v1];
-	item.slot = sample.slot;
+export function submit_particle(item: ParticleRenderSubmission): void {
 	particleQueue.submit(item);
 }
 
@@ -202,10 +236,13 @@ export function submitRectangle(runtime: Runtime, options: RectRenderSubmission)
 	let { left: x, top: y, z, right: ex, bottom: ey } = options.area;
 	[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
 	if (options.kind === 'fill') {
-		runtime.machine.vdp.enqueueFillRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
+		submitFillRectDirect(runtime, x, y, ex, ey, z, options.layer, options.color);
 		return;
 	}
-	runtime.machine.vdp.enqueueDrawRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
+	submitLineDirect(runtime, x, y, ex, y, z, options.layer, options.color, 1);
+	submitLineDirect(runtime, ex, y, ex, ey, z, options.layer, options.color, 1);
+	submitLineDirect(runtime, ex, ey, x, ey, z, options.layer, options.color, 1);
+	submitLineDirect(runtime, x, ey, x, y, z, options.layer, options.color, 1);
 }
 
 export function submitDrawPolygon(runtime: Runtime, options: PolyRenderSubmission): void {
@@ -215,7 +252,9 @@ export function submitDrawPolygon(runtime: Runtime, options: PolyRenderSubmissio
 	if (options.layer === undefined) {
 		throw new Error('submitDrawPolygon requires layer.');
 	}
-	runtime.machine.vdp.enqueueDrawPoly(options.points, options.z, options.color, options.thickness, renderLayerTo2dLayer(options.layer));
+	for (let index = 0; index + 3 < options.points.length; index += 2) {
+		submitLineDirect(runtime, options.points[index], options.points[index + 1], options.points[index + 2], options.points[index + 3], options.z, options.layer, options.color, options.thickness);
+	}
 }
 
 export function submitGlyphs(runtime: Runtime, o: GlyphRenderSubmission) {
@@ -286,18 +325,45 @@ export function setSkyboxTintExposure(tint: [number, number, number], exposure =
  * Text rendering utility (engine-level). Preferred UE-style usage is via TextComponent + TextRenderSystem, which uses this internally.
  */
 export function renderGlyphs(runtime: Runtime, x: number, y: number, textToWrite: string | string[], start: number, end: number, z: number, font: BFont, color: color, backgroundColor: color | undefined, layer: RenderLayer): void {
-	runtime.machine.vdp.enqueueGlyphRun(
-		textToWrite,
-		x,
-		y,
-		z,
-		font,
-		color,
-		backgroundColor,
-		start,
-		end,
-		renderLayerTo2dLayer(layer),
-	);
+	let cursorY = y;
+	if (typeof textToWrite === 'string') {
+		renderGlyphLine(runtime, x, cursorY, textToWrite, start, end, z, font, color, backgroundColor, layer);
+		return;
+	}
+	for (const line of textToWrite) {
+		renderGlyphLine(runtime, x, cursorY, line, start, end, z, font, color, backgroundColor, layer);
+		cursorY += font.lineHeight;
+	}
+}
+
+function renderGlyphLine(runtime: Runtime, x: number, y: number, line: string, start: number, end: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, layer: RenderLayer): void {
+	let cursorX = x;
+	let glyphIndex = 0;
+	for (const char of line) {
+		const glyph = font.getGlyph(char);
+		if (glyphIndex >= start && glyphIndex < end) {
+			const rect = glyph.rect;
+			if (backgroundColor !== undefined) {
+				submitFillRectDirect(runtime, cursorX, y, cursorX + rect.w, y + rect.h, z, layer, backgroundColor);
+			}
+			submitSpriteDirect(runtime, resolveAtlasSlot(runtime, rect.atlasId), rect.u, rect.v, rect.w, rect.h, cursorX, y, z, 1, 1, colorValue, layer, 0);
+		}
+		cursorX += glyph.advance;
+		glyphIndex += 1;
+	}
+}
+
+function resolveAtlasSlot(runtime: Runtime, atlasId: number): number {
+	if (atlasId === VDP_SYSTEM_ATLAS_ID) {
+		return VDP_SLOT_SYSTEM;
+	}
+	if (runtime.machine.memory.readIoU32(IO_VDP_SLOT_PRIMARY_ATLAS) === atlasId) {
+		return VDP_SLOT_PRIMARY;
+	}
+	if (runtime.machine.memory.readIoU32(IO_VDP_SLOT_SECONDARY_ATLAS) === atlasId) {
+		return VDP_SLOT_SECONDARY;
+	}
+	throw new Error(`atlas ${atlasId} is not loaded in a VDP slot.`);
 }
 
 /**

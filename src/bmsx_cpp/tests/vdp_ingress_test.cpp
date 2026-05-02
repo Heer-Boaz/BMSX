@@ -1,5 +1,6 @@
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/devices/vdp/bbu.h"
 #include "machine/devices/vdp/contracts.h"
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
@@ -31,6 +32,8 @@ constexpr uint32_t VDP_PKT_END = 0x00000000u;
 constexpr uint32_t VDP_PKT_CMD = 0x01000000u;
 constexpr uint32_t VDP_PKT_REG1 = 0x02000000u;
 constexpr uint32_t VDP_PKT_REGN = 0x03000000u;
+constexpr uint32_t VDP_BILLBOARD_HEADER = bmsx::VDP_BBU_PACKET_KIND | (bmsx::VDP_BBU_PACKET_PAYLOAD_WORDS << 16u);
+constexpr uint32_t VDP_SKYBOX_HEADER = bmsx::VDP_SBX_PACKET_KIND | (bmsx::VDP_SBX_PACKET_PAYLOAD_WORDS << 16u);
 
 constexpr uint32_t regIndex(uint32_t addr) {
 	return (addr - bmsx::IO_VDP_REG0) / bmsx::IO_WORD_SIZE;
@@ -95,6 +98,22 @@ void sealStream(Harness& harness, const std::vector<uint32_t>& words) {
 	harness.vdp.sealDmaTransfer(bmsx::VDP_STREAM_BUFFER_BASE, words.size() * bmsx::IO_WORD_SIZE);
 }
 
+std::vector<uint32_t> billboardPacket(uint32_t sizeWord, uint32_t u = 2u, uint32_t v = 3u, uint32_t w = 4u, uint32_t h = 5u, uint32_t control = 0u) {
+	return {
+		VDP_BILLBOARD_HEADER,
+		0u,
+		bmsx::VDP_SLOT_PRIMARY,
+		u | (v << 16u),
+		w | (h << 16u),
+		10u << 16u,
+		20u << 16u,
+		30u << 16u,
+		sizeWord,
+		0xff112233u,
+		control,
+	};
+}
+
 bmsx::SkyboxFaceSources skyboxSources(uint32_t w = 1u, uint32_t h = 1u) {
 	const bmsx::VdpSlotSource source{bmsx::VDP_SLOT_PRIMARY, 0u, 0u, w, h};
 	return bmsx::SkyboxFaceSources{
@@ -105,6 +124,21 @@ bmsx::SkyboxFaceSources skyboxSources(uint32_t w = 1u, uint32_t h = 1u) {
 		source,
 		source,
 	};
+}
+
+std::vector<uint32_t> skyboxPacket(uint32_t control = bmsx::VDP_SBX_CONTROL_ENABLE, uint32_t w = 4u, uint32_t h = 5u) {
+	std::vector<uint32_t> words;
+	words.reserve(2u + bmsx::SKYBOX_FACE_WORD_COUNT);
+	words.push_back(VDP_SKYBOX_HEADER);
+	words.push_back(control);
+	for (size_t face = 0; face < bmsx::SKYBOX_FACE_COUNT; ++face) {
+		words.push_back(bmsx::VDP_SLOT_PRIMARY);
+		words.push_back(0u);
+		words.push_back(0u);
+		words.push_back(w);
+		words.push_back(h);
+	}
+	return words;
 }
 
 void testDirectLifecycle() {
@@ -119,12 +153,12 @@ void testDirectLifecycle() {
 	require(h.vdp.canAcceptVdpSubmit(), "double BEGIN should cancel and close the frame");
 }
 
-void testInvalidRegisterDoesNotCancelFrame() {
+void testRawRegisterWordsDoNotCancelFrame() {
 	Harness h;
 
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 4u); }, "invalid draw ctrl");
-	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_CTRL) == 0u, "invalid draw ctrl should not mutate the latch");
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 4u);
+	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_CTRL) == 4u, "DRAW_CTRL should latch raw representable bits");
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0xffff0000u);
 	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_SCALE_X) == 0xffff0000u, "negative Q16 scale should latch as a raw register word");
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
@@ -315,8 +349,9 @@ void testFifoReplayAndFaults() {
 void testSlotRegisters() {
 	Harness h;
 
-	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_INDEX, 3u); }, "invalid slot index");
-	require(h.memory.readIoU32(bmsx::IO_VDP_REG_SLOT_INDEX) == bmsx::VDP_SLOT_PRIMARY, "invalid slot index should not mutate");
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_INDEX, 3u);
+	require(h.memory.readIoU32(bmsx::IO_VDP_REG_SLOT_INDEX) == 3u, "SLOT_INDEX should latch raw representable words");
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_INDEX, bmsx::VDP_SLOT_PRIMARY);
 
 	sealStream(h, {
 		VDP_PKT_REGN | (2u << 16) | VDP_REG_SLOT_INDEX,
@@ -332,7 +367,7 @@ void testSlotRegisters() {
 	require(afterFault.width == 16u && afterFault.height == 16u, "invalid SLOT_DIM should not change the slot");
 }
 
-void testValidationCancelsDirectDrawFrame() {
+void testBlitSourceGeometryEntersFrameDatapath() {
 	Harness h;
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
@@ -343,11 +378,11 @@ void testValidationCancelsDirectDrawFrame() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 15u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 2u | (16u << 16));
 
-	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT); }, "BLIT source rect overflow");
-	require(h.vdp.canAcceptVdpSubmit(), "invalid direct draw should cancel and close the build frame");
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 }
 
-void testInvalidBlitAndLineGeometryFaultAtLatch() {
+void testBlitAndLineConsumeRepresentableGeometry() {
 	{
 		Harness h;
 		writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
@@ -358,22 +393,22 @@ void testInvalidBlitAndLineGeometryFaultAtLatch() {
 		writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0xffff0000u);
 		writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
 
-		expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT); }, "negative BLIT scale");
+		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
 		require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_SCALE_X) == 0xffff0000u, "raw negative Q16 scale should remain latched");
-		require(h.vdp.canAcceptVdpSubmit(), "invalid BLIT should cancel and close the build frame");
+		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 	}
 	{
 		Harness h;
 		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 		writeIo(h.memory, bmsx::IO_VDP_REG_LINE_WIDTH, 0u);
 
-		expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_DRAW_LINE); }, "zero LINE width");
+		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_DRAW_LINE);
 		require(h.memory.readIoU32(bmsx::IO_VDP_REG_LINE_WIDTH) == 0u, "raw zero line width should remain latched");
-		require(h.vdp.canAcceptVdpSubmit(), "invalid LINE should cancel and close the build frame");
+		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 	}
 }
 
-void testInvalidPmuResolvedScaleFaultsAtLatch() {
+void testPmuResolvedScaleFlowsThroughBlitDatapath() {
 	Harness h;
 
 	writeIo(h.memory, bmsx::IO_VDP_PMU_BANK, 0u);
@@ -389,8 +424,8 @@ void testInvalidPmuResolvedScaleFaultsAtLatch() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x01000000u);
 
-	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT); }, "PMU-resolved zero BLIT scale");
-	require(h.vdp.canAcceptVdpSubmit(), "invalid PMU BLIT should cancel and close the build frame");
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 }
 
 void testSbxCommitsOnlyThroughFramePresent() {
@@ -425,6 +460,94 @@ void testSbxValidatesAtFrameSeal() {
 	require(!h.vdp.committedSkyboxEnabled(), "invalid SBX state should not become visible");
 }
 
+void testSbxSkyboxPacketLatchesFrameState() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
+	auto stream = skyboxPacket(bmsx::VDP_SBX_CONTROL_ENABLE, 4u, 5u);
+	stream.push_back(VDP_PKT_END);
+	sealStream(h, stream);
+	h.vdp.commitReadyFrameOnVblankEdge();
+	require(h.vdp.committedSkyboxEnabled(), "SKYBOX packet should present visible SBX state");
+	const auto sample = h.vdp.resolveCommittedSkyboxFaceSample(0u);
+	require(sample.source.surfaceId == bmsx::VDP_RD_SURFACE_PRIMARY, "SKYBOX should resolve primary slot");
+	require(sample.surfaceWidth == 16u && sample.surfaceHeight == 16u, "SKYBOX should resolve surface size");
+	require(sample.source.width == 4u && sample.source.height == 5u, "SKYBOX should resolve face dimensions");
+}
+
+void testSbxSkyboxPacketFaultsAtAcceptanceAndFrameSeal() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
+	auto badControl = skyboxPacket(2u, 4u, 5u);
+	badControl.push_back(VDP_PKT_END);
+	expectThrow([&] { sealStream(h, badControl); }, "SKYBOX reserved control");
+	require(!h.vdp.committedSkyboxEnabled(), "bad-control SKYBOX should not become visible");
+
+	auto badSource = skyboxPacket(bmsx::VDP_SBX_CONTROL_ENABLE, 17u, 1u);
+	badSource.push_back(VDP_PKT_END);
+	expectThrow([&] { sealStream(h, badSource); }, "SBX source rect overflow");
+	require(!h.vdp.committedSkyboxEnabled(), "bad-source SKYBOX should not become visible");
+}
+
+void testBbuBillboardPacketLatchesInstanceRam() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
+	auto stream = billboardPacket(2u << 16u);
+	stream.push_back(VDP_PKT_END);
+	sealStream(h, stream);
+	require(h.vdp.getPendingRenderWorkUnits() == 1, "BILLBOARD should submit BBU render work");
+	h.vdp.advanceWork(1);
+	const auto* queue = h.vdp.takeReadyExecutionQueue();
+	require(queue != nullptr, "BILLBOARD should produce ready execution state");
+	const auto& billboards = h.vdp.takeReadyExecutionBillboards();
+	require(billboards.size() == 1u, "BILLBOARD should latch one instance");
+	const auto& entry = billboards.front();
+	require(entry.slot == bmsx::VDP_SLOT_PRIMARY, "BBU should resolve source slot");
+	require(entry.surfaceWidth == 16u && entry.surfaceHeight == 16u, "BBU should resolve source surface dimensions");
+	require(entry.source.srcX == 2u && entry.source.srcY == 3u, "BBU should resolve source origin");
+	require(entry.source.width == 4u && entry.source.height == 5u, "BBU should resolve source dimensions");
+	require(std::abs(entry.positionX - 10.0f) < 0.0001f, "BBU should decode X");
+	require(std::abs(entry.positionY - 20.0f) < 0.0001f, "BBU should decode Y");
+	require(std::abs(entry.positionZ - 30.0f) < 0.0001f, "BBU should decode Z");
+	require(std::abs(entry.size - 2.0f) < 0.0001f, "BBU should decode size");
+	require(std::abs(entry.color.r - (0x11 / 255.0f)) < 0.0001f, "BBU should decode color R");
+	require(std::abs(entry.color.g - (0x22 / 255.0f)) < 0.0001f, "BBU should decode color G");
+	require(std::abs(entry.color.b - (0x33 / 255.0f)) < 0.0001f, "BBU should decode color B");
+	require(std::abs(entry.color.a - 1.0f) < 0.0001f, "BBU should decode color A");
+	h.vdp.completeReadyExecution(queue);
+}
+
+void testBbuFaultsAtBillboardPacketAcceptance() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
+	auto zeroSize = billboardPacket(0u);
+	zeroSize.push_back(VDP_PKT_END);
+	expectThrow([&] { sealStream(h, zeroSize); }, "zero billboard size");
+	require(h.vdp.getPendingRenderWorkUnits() == 0, "zero-size BILLBOARD should cancel the build frame");
+
+	auto badControl = billboardPacket(1u << 16u, 0u, 0u, 1u, 1u, 1u);
+	badControl.push_back(VDP_PKT_END);
+	expectThrow([&] { sealStream(h, badControl); }, "BILLBOARD reserved control");
+	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad-control BILLBOARD should cancel the build frame");
+
+	auto badSource = billboardPacket(1u << 16u, 15u, 0u, 2u, 1u);
+	badSource.push_back(VDP_PKT_END);
+	expectThrow([&] { sealStream(h, badSource); }, "BBU source rect overflow");
+	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad-source BILLBOARD should cancel the build frame");
+
+	std::vector<uint32_t> overflow;
+	for (size_t index = 0; index <= bmsx::VDP_BBU_BILLBOARD_LIMIT; ++index) {
+		auto packet = billboardPacket(1u << 16u, 0u, 0u, 1u, 1u);
+		overflow.insert(overflow.end(), packet.begin(), packet.end());
+	}
+	overflow.push_back(VDP_PKT_END);
+	expectThrow([&] { sealStream(h, overflow); }, "BBU billboard overflow");
+	require(h.vdp.getPendingRenderWorkUnits() == 0, "overflow BILLBOARD should cancel the build frame");
+}
+
 void testEmptyFifoFrame() {
 	Harness h;
 
@@ -437,7 +560,7 @@ void testEmptyFifoFrame() {
 int main() {
 	const std::vector<std::pair<const char*, void (*)()>> tests = {
 		{"direct lifecycle", testDirectLifecycle},
-		{"invalid register frame behavior", testInvalidRegisterDoesNotCancelFrame},
+		{"raw register frame behavior", testRawRegisterWordsDoNotCancelFrame},
 		{"latch snapshot geometry", testLatchSnapshotGeometry},
 		{"BLIT DRAW_CTRL snapshot", testBlitDrawCtrlSnapshot},
 		{"PMU parallax resolved BLIT snapshot", testPmuParallaxResolvedBlitSnapshot},
@@ -445,11 +568,15 @@ int main() {
 		{"PMU scale uses absolute weight", testPmuScaleUsesAbsoluteWeight},
 		{"FIFO replay and faults", testFifoReplayAndFaults},
 		{"slot registers", testSlotRegisters},
-		{"validation cancels direct draw", testValidationCancelsDirectDrawFrame},
-		{"invalid BLIT and LINE geometry latch faults", testInvalidBlitAndLineGeometryFaultAtLatch},
-		{"invalid PMU resolved scale latch fault", testInvalidPmuResolvedScaleFaultsAtLatch},
+		{"BLIT source geometry datapath", testBlitSourceGeometryEntersFrameDatapath},
+		{"BLIT and LINE representable geometry", testBlitAndLineConsumeRepresentableGeometry},
+		{"PMU resolved scale datapath", testPmuResolvedScaleFlowsThroughBlitDatapath},
 		{"SBX commits through frame present", testSbxCommitsOnlyThroughFramePresent},
 		{"SBX validates at frame seal", testSbxValidatesAtFrameSeal},
+		{"SBX SKYBOX packet latches frame state", testSbxSkyboxPacketLatchesFrameState},
+		{"SBX SKYBOX packet faults", testSbxSkyboxPacketFaultsAtAcceptanceAndFrameSeal},
+		{"BBU BILLBOARD packet latches instance RAM", testBbuBillboardPacketLatchesInstanceRam},
+		{"BBU faults at BILLBOARD packet acceptance", testBbuFaultsAtBillboardPacketAcceptance},
 		{"empty FIFO frame", testEmptyFifoFrame},
 	};
 

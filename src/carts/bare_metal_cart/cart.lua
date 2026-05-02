@@ -15,6 +15,10 @@ local vdp_pkt_end<const> = 0x00000000 -- End of packet stream
 local vdp_pkt_cmd<const> = 0x01000000 -- Command packet: lower 16 bits = command ID, upper 8 bits = number of additional data words
 local vdp_pkt_reg1<const> = 0x02000000 -- Register packet: lower 16 bits = register index, upper 8 bits = number of additional data words
 local vdp_pkt_regn<const> = 0x03000000 -- Register packet with N registers: lower 16 bits = starting register index, upper 8 bits = number of registers to set (data words must be in register order)
+local vdp_pkt_billboard<const> = 0x11000000 -- BILLBOARD packet: BBU command-stream packet, followed by fixed hardware words
+local vdp_pkt_skybox<const> = 0x12000000 -- SKYBOX packet: SBX command-stream packet, followed by control and six face-source records
+local vdp_billboard_payload_words<const> = 10 -- BILLBOARD payload: layer/priority, slot, uv, wh, x, y, z, size, color, control
+local vdp_skybox_payload_words<const> = 31 -- SKYBOX payload: control plus six faces of slot/u/v/w/h
 
 local vdp_cmd_clear<const> = 1 -- Clear command: clears a rectangle to the current background color, parameters are in registers (see draw_frame function below)
 local vdp_cmd_fill_rect<const> = 2 -- Fill rectangle command: fills a rectangle with the current draw color, parameters are in registers (see draw_frame function below)
@@ -31,7 +35,9 @@ local vdp_reg_bg_color<const> = 15 -- Background color register index (used for 
 local vdp_reg_slot_index<const> = 16 -- Slot index register (used for register packets to specify which VRAM slot to configure)
 local vdp_slot_primary<const> = 0 -- Primary surface slot index (the main VRAM slot used for drawing sprites and backgrounds)
 local vdp_layer_world<const> = 0 -- World layer index (the main layer used for drawing the game world, sprites should be drawn on this layer for correct priority handling)
+local vdp_sbx_control_enable<const> = 1 -- SBX control bit: enable the live skybox face state when latched into a frame
 local draw_ctrl_parallax_half<const> = 0x00800000 -- DRAW_CTRL: PMU bank 0, parallax weight +0.5 in signed Q8.8
+local q16_one<const> = 0x00010000 -- Q16.16 value 1.0, used directly in VDP command words
 
 local dma_ctrl_start<const> = 1 -- Control value to start a DMA transfer when written to the io_dma_ctrl register
 local irq_dma_done<const> = 0x01 -- IRQ flag bit for DMA transfer completion
@@ -47,6 +53,19 @@ local sprite_x = 112 -- Initial X coordinate of the sprite
 local sprite_y = 92 -- Initial Y coordinate of the sprite
 local sprite_step<const> = 2 -- Number of pixels the sprite moves horizontally each frame
 local sprite_direction = 1 -- Initial horizontal movement direction of the sprite (1 = right, -1 = left)
+local camera_view<const> = { -- Active 3D camera view matrix; updated in-place so SBX skybox lookup visibly rotates.
+	1, 0, 0, 0,
+	0, 1, 0, 0,
+	0, 0, 1, 0,
+	0, 0, 0, 1,
+}
+local camera_proj<const> = { -- Perspective projection for SBX/BBU demonstration; command ABI remains raw VDP words.
+	1.4342, 0, 0, 0,
+	0, 1.7321, 0, 0,
+	0, 0, -1.0040, -1,
+	0, 0, -0.2004, 0,
+}
+local camera_eye<const> = { 0, 0, 0 }
 
 local submit_stream<const> = function(byte_length)
 	mem[io_dma_src] = vdp_stream_base
@@ -73,8 +92,34 @@ local wait_vblank<const> = function()
 	until (flags & irq_vblank) ~= 0
 end
 
+local update_skybox_camera<const> = function()
+	local angle<const> = frame * 0.035
+	local c<const> = math.cos(angle)
+	local s<const> = math.sin(angle)
+	camera_view[1] = c
+	camera_view[2] = 0
+	camera_view[3] = -s
+	camera_view[4] = 0
+	camera_view[5] = 0
+	camera_view[6] = 1
+	camera_view[7] = 0
+	camera_view[8] = 0
+	camera_view[9] = s
+	camera_view[10] = 0
+	camera_view[11] = c
+	camera_view[12] = 0
+	camera_view[13] = 0
+	camera_view[14] = 0
+	camera_view[15] = 0
+	camera_view[16] = 1
+	set_camera(camera_view, camera_proj, camera_eye)
+end
+
 local build_lua_atlas<const> = function()
-	local transparent<const> = 0x00000000 -- Fully transparent pixel (used for the background of the sprite atlas)
+	local sky_top<const> = 0xff071a3a -- Opaque sky color used by SBX and BBU samples
+	local sky_mid<const> = 0xff124b7d -- Opaque mid-tone color used by SBX and BBU samples
+	local sky_low<const> = 0xff321a3c -- Opaque lower atlas color used by SBX and BBU samples
+	local star<const> = 0xfffff2a6 -- Bright atlas pixels so the skybox and billboards show high-contrast texels
 	local outline<const> = 0xff18121c -- Dark outline color (used for the outer edge of the sprite)
 	local body<const> = 0xffe64824 -- Main body color (used for the inner area of the sprite)
 	local light<const> = 0xffffdc62 -- Highlight color (used for the top area of the sprite to give a sense of lighting)
@@ -93,7 +138,16 @@ local build_lua_atlas<const> = function()
 				dy = -dy
 			end
 
-			local color = transparent
+			local color = sky_top
+			if py >= 5 then
+				color = sky_mid
+			end
+			if py >= 11 then
+				color = sky_low
+			end
+			if ((px * 3 + py * 5) & 15) == 0 then
+				color = star
+			end
 			local distance<const> = dx + dy
 			if distance <= 8 then
 				color = outline
@@ -136,8 +190,41 @@ end
 local draw_frame<const> = function()
 	local wp = vdp_stream_base -- Write pointer for building the VDP command stream in RAM for this frame
 
+	mem[wp], wp = vdp_pkt_skybox | (vdp_skybox_payload_words << 16), wp + 4 -- SBX SKYBOX packet: live face words are latched and validated when the frame is sealed
+	mem[wp], wp = vdp_sbx_control_enable, wp + 4 -- Enable the six-face skybox for this frame
+	mem[wp], wp = vdp_slot_primary, wp + 4 -- +X: upper-left atlas quadrant
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4 -- -X: upper-right atlas quadrant
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4 -- +Y: lower-left atlas quadrant
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4 -- -Y: lower-right atlas quadrant
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4 -- +Z: whole atlas
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = atlas_width, wp + 4
+	mem[wp], wp = atlas_height, wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4 -- -Z: center atlas sample
+	mem[wp], wp = 4, wp + 4
+	mem[wp], wp = 4, wp + 4
+	mem[wp], wp = 8, wp + 4
+	mem[wp], wp = 8, wp + 4
+
 	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_bg_color, wp + 4 -- Set the background color register for the clear command
-	mem[wp], wp = 0xff05080d, wp + 4 -- Set the background color to a dark reddish color for the clear command
+	mem[wp], wp = 0x0005080d, wp + 4 -- Transparent DEX clear: the SBX skybox remains visible behind 2D framebuffer work
 	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_clear, wp + 4 -- Issue a clear command to clear the entire screen to the background color we just set, parameters for the clear command are specified in registers (see below)
 
 	mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4 -- Set multiple geometry registers for the first filled rectangle (the dark red background area)
@@ -206,6 +293,31 @@ local draw_frame<const> = function()
 	mem[wp], wp = sprite_y << 16, wp + 4 -- Set the destination Y coordinate for the sprite
 	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_blit, wp + 4 -- Issue the blit command to draw the sprite
 
+		local billboard_shift<const> = ((frame % 64) - 32) * 1024 -- Visible Q16.16 animation term around the active 3D camera center
+	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4 -- BBU BILLBOARD packet: fixed-point position and size in the active billboard coordinate space
+	mem[wp], wp = (vdp_layer_world & 0xff) | (32 << 8), wp + 4 -- Layer/priority word
+	mem[wp], wp = vdp_slot_primary, wp + 4 -- Texture slot sampled by the billboard
+	mem[wp], wp = 0, wp + 4 -- Source U/V packed as two u16 words
+	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4 -- Source W/H packed as two u16 words
+		mem[wp], wp = 0xffff0000 + billboard_shift, wp + 4 -- X = -1.0 plus a small Q16.16 animation offset
+		mem[wp], wp = 0x00006000, wp + 4 -- Y = +0.375 in signed Q16.16
+		mem[wp], wp = 0xfffc0000, wp + 4 -- Z = -4.0 in signed Q16.16, in front of the perspective camera
+		mem[wp], wp = 0x0000c000, wp + 4 -- Size = 0.75 in unsigned Q16.16 under the active camera
+	mem[wp], wp = 0xffffd060, wp + 4 -- AARRGGBB billboard modulation color
+	mem[wp], wp = 0, wp + 4 -- Reserved BBU control word
+
+	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4 -- Second BBU billboard, same atlas slot but different fixed-point world position
+	mem[wp], wp = (vdp_layer_world & 0xff) | (36 << 8), wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
+		mem[wp], wp = 0x00010000 - billboard_shift, wp + 4 -- X = +1.0 minus the same Q16.16 animation offset
+		mem[wp], wp = 0xffffe000, wp + 4 -- Y = -0.125 in signed Q16.16
+		mem[wp], wp = 0xfffc8000, wp + 4 -- Z = -3.5 in signed Q16.16
+		mem[wp], wp = 0x0000a000, wp + 4 -- Size = 0.625 in unsigned Q16.16 under the active camera
+	mem[wp], wp = 0xff60e6ff, wp + 4
+	mem[wp], wp = 0, wp + 4
+
 	mem[wp], wp = vdp_pkt_end, wp + 4 -- End of packet stream
 	submit_stream(wp - vdp_stream_base) -- Submit the command stream via DMA to draw the frame, which includes clearing the screen, drawing the background rectangles and lines, and finally drawing the sprite on top
 	wait_dma() -- Wait for the DMA transfer to complete before proceeding, ensuring the entire frame is drawn before we try to draw the next frame or update any variables for animation (like sprite_x)
@@ -224,6 +336,7 @@ upload_atlas_to_vram()
 
 while true do
 	frame = frame + 1
+	update_skybox_camera()
 	sprite_x = sprite_x + (sprite_direction * sprite_step)
 	if sprite_x >= 184 then
 		sprite_x = 184

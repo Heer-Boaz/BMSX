@@ -25,7 +25,7 @@ import {
 	forEachMeshQueue,
 	meshQueueBackSize,
 } from '../../shared/queues';
-import { resolveActiveCamera3D } from '../../shared/hardware/camera';
+import { hardwareCameraBank0 } from '../../shared/hardware/camera';
 import { clamp } from '../../../common/clamp';
 
 const BYTES_PER_FLOAT = 4;
@@ -1069,11 +1069,7 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 		},
 		prepare: (backend, _state) => {
 			const ctx = consoleCore.view as RenderContext;
-			const cam = resolveActiveCamera3D();
-			if (!cam) {
-				console.warn('[Draw Meshes] No active 3D camera found, skipping mesh draw');
-				return;
-			}
+			const cam = hardwareCameraBank0;
 			const frameShared = registry.getState('frame_shared');
 			const mats = cam.getMatrices();
 			const meshState: MeshBatchPipelineState = {

@@ -3,8 +3,9 @@
  */
 
 #include "library.h"
+#include "software_scene.h"
 #include "../../gameview.h"
-#include "../../shared/camera_state.h"
+#include "../../shared/hardware/camera.h"
 #include "../../vdp/framebuffer.h"
 #if BMSX_ENABLE_GLES2
 #include "../../post/crt_pipeline_gles2.h"
@@ -42,9 +43,8 @@ void setSkippedStatePass(RenderPassDef& desc, const char* id, const char* name) 
 }
 
 Framebuffer2DPipelineState buildFramebuffer2DState(const RenderPassDef::RenderGraphPassContext& ctx) {
-	auto* view = ctx.view;
 	Framebuffer2DPipelineState state;
-	setPassViewportSize(state, view);
+	setPassViewportSize(state, ctx.view);
 	state.colorTex = vdpDisplayFrameBufferTexture();
 	return state;
 }
@@ -162,6 +162,8 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		desc.exec = noopRenderPass;
 		registerPass(desc);
 	}
+
+	registerSoftwareScenePasses(*this);
 
 	{
 		RenderPassDef desc;
@@ -373,10 +375,6 @@ void RenderPassLibrary::execute(const std::string& id, void* fbo) {
 	}
 }
 
-void RenderPassLibrary::appendPipelinePass(const RenderPassDef& pass) {
-	registerPass(pass);
-}
-
 i32 RenderPassLibrary::findPipelinePassIndex(const std::string& id) const {
 	for (size_t i = 0; i < m_passes.size(); ++i) {
 		if (m_passes[i].id == id) {
@@ -520,19 +518,16 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 			return std::any{};
 		};
 		pass.execute = [this, view, &lightingSystem](RenderGraphContext&, FrameData* frame, const std::any&) {
-			const std::optional<ResolvedCameraState> cameraState = resolveCameraState();
-			if (!cameraState.has_value()) {
-				return;
-			}
+			const HardwareCameraState& cameraState = resolveActiveHardwareCamera();
 			FrameSharedState frameShared;
 			frameShared.view.camPos = {
-				cameraState->camPos.x,
-				cameraState->camPos.y,
-				cameraState->camPos.z,
+				cameraState.eye.x,
+				cameraState.eye.y,
+				cameraState.eye.z,
 			};
-			frameShared.view.viewProj = cameraState->viewProj;
-			frameShared.view.skyboxView = cameraState->skyboxView;
-			frameShared.view.proj = cameraState->proj;
+			frameShared.view.viewProj = cameraState.viewProj;
+			frameShared.view.skyboxView = cameraState.skyboxView;
+			frameShared.view.proj = cameraState.proj;
 			frameShared.lighting = lightingSystem.update();
 			frameShared.fog.fogD50 = view->atmosphere.fogD50;
 			frameShared.fog.fogStart = view->atmosphere.fogStart;

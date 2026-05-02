@@ -10,6 +10,11 @@ import {
 	SKYBOX_FACE_WORD_STRIDE,
 	VDP_SBX_CONTROL_ENABLE,
 } from './contracts';
+import { vdpFault } from './fault';
+
+export const VDP_SBX_PACKET_KIND = 0x12000000;
+export const VDP_SBX_PACKET_PAYLOAD_WORDS = 1 + SKYBOX_FACE_WORD_COUNT;
+const VDP_SBX_CONTROL_RESERVED_MASK = 0xfffffffe;
 
 function writeFaceWords(target: Uint32Array, faceIndex: number, slot: number, u: number, v: number, w: number, h: number): void {
 	const base = faceIndex * SKYBOX_FACE_WORD_STRIDE;
@@ -43,6 +48,14 @@ export class VdpSbxUnit {
 
 	public clear(): void {
 		this.liveControl &= ~VDP_SBX_CONTROL_ENABLE;
+	}
+
+	public writePacket(control: number, faceWords: ArrayLike<number>): void {
+		if ((control & VDP_SBX_CONTROL_RESERVED_MASK) !== 0) {
+			throw vdpFault(`VDP SBX control reserved bits are set (${control}).`);
+		}
+		this.liveControl = control >>> 0;
+		this.liveFaceWords.set(faceWords);
 	}
 
 	public latchFrame(targetFaceWords: Uint32Array): number {

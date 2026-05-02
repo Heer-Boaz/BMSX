@@ -11,7 +11,6 @@ struct HardwareCameraState {
 	std::array<f32, 16> viewProj{};
 	std::array<f32, 16> skyboxView{};
 	Vec3 eye{};
-	bool active = false;
 };
 
 void setHardwareCamera(const std::array<f32, 16>& view,
@@ -19,7 +18,7 @@ void setHardwareCamera(const std::array<f32, 16>& view,
 						f32 eyeX,
 						f32 eyeY,
 						f32 eyeZ);
-void clearHardwareCamera();
-const HardwareCameraState* resolveActiveHardwareCamera();
+void resetHardwareCameraBank0();
+const HardwareCameraState& resolveActiveHardwareCamera();
 
 } // namespace bmsx

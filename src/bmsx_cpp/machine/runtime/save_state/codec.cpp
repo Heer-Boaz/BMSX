@@ -202,6 +202,28 @@ RuntimeRenderCameraState decodeRuntimeRenderCameraState(const BinValue& value, c
 	return state;
 }
 
+BinValue encodeVdpCameraState(const VdpCameraState& state) {
+	BinObject object;
+	object["view"] = encodeFixedArray(state.view, encodeScalar<f64, f32>);
+	object["proj"] = encodeFixedArray(state.proj, encodeScalar<f64, f32>);
+	object["eye"] = BinArray{
+		BinValue(static_cast<f64>(state.eye.x)),
+		BinValue(static_cast<f64>(state.eye.y)),
+		BinValue(static_cast<f64>(state.eye.z)),
+	};
+	return BinValue(std::move(object));
+}
+
+VdpCameraState decodeVdpCameraState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	const std::array<f32, 3> eye = decodeNumberArray<3>(requireField(object, "eye", label), "machine.vdp.camera.eye");
+	return VdpCameraState{
+		decodeNumberArray<16>(requireField(object, "view", label), "machine.vdp.camera.view"),
+		decodeNumberArray<16>(requireField(object, "proj", label), "machine.vdp.camera.proj"),
+		Vec3{ eye[0], eye[1], eye[2] },
+	};
+}
+
 BinValue encodeRuntimeAmbientLightState(const RuntimeAmbientLightState& state) {
 	BinObject object;
 	object["id"] = state.id;
@@ -417,6 +439,7 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
+	object["camera"] = encodeVdpCameraState(state.camera);
 	object["skyboxControl"] = static_cast<i64>(state.skyboxControl);
 	object["skyboxFaceWords"] = encodeFixedArray(state.skyboxFaceWords, encodeScalar<i64, u32>);
 	object["pmuSelectedBank"] = static_cast<i64>(state.pmuSelectedBank);
@@ -428,6 +451,7 @@ BinValue encodeVdpState(const VdpState& state) {
 VdpState decodeVdpState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpState state;
+	state.camera = decodeVdpCameraState(requireField(object, "camera", label), "machine.vdp.camera");
 	state.skyboxControl = requireU32(requireField(object, "skyboxControl", label), "machine.vdp.skyboxControl");
 	state.skyboxFaceWords = decodeU32Array<SKYBOX_FACE_WORD_COUNT>(requireField(object, "skyboxFaceWords", label), "machine.vdp.skyboxFaceWords");
 	state.pmuSelectedBank = requireU32(requireField(object, "pmuSelectedBank", label), "machine.vdp.pmuSelectedBank");

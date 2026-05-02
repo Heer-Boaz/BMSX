@@ -4,7 +4,7 @@ import type {
 	RuntimePointLightState,
 	RuntimeRenderState,
 } from '../machine/runtime/contracts';
-import { clearHardwareCamera, resolveActiveCamera3D, setHardwareCamera } from './shared/hardware/camera';
+import { hardwareCameraBank0, resetHardwareCameraBank0 } from './shared/hardware/camera';
 import {
 	clearHardwareLighting,
 	getHardwareAmbientLights,
@@ -59,13 +59,13 @@ function capturePointLights(): RuntimePointLightState[] {
 }
 
 export function captureRuntimeRenderState(): RuntimeRenderState {
-	const camera = resolveActiveCamera3D();
+	const camera = hardwareCameraBank0;
 	return {
-		camera: camera ? {
+		camera: {
 			view: Array.from(camera.view),
 			proj: Array.from(camera.projection),
 			eye: [camera.position.x, camera.position.y, camera.position.z],
-		} : null,
+		},
 		ambientLights: captureAmbientLights(),
 		directionalLights: captureDirectionalLights(),
 		pointLights: capturePointLights(),
@@ -74,9 +74,9 @@ export function captureRuntimeRenderState(): RuntimeRenderState {
 
 export function applyRuntimeRenderState(state: RuntimeRenderState): void {
 	if (state.camera) {
-		setHardwareCamera(Float32Array.from(state.camera.view), Float32Array.from(state.camera.proj), state.camera.eye[0], state.camera.eye[1], state.camera.eye[2]);
+		hardwareCameraBank0.setExternalMatrices(Float32Array.from(state.camera.view), Float32Array.from(state.camera.proj), state.camera.eye[0], state.camera.eye[1], state.camera.eye[2]);
 	} else {
-		clearHardwareCamera();
+		resetHardwareCameraBank0();
 	}
 	clearHardwareLighting();
 	for (let index = 0; index < state.ambientLights.length; index += 1) {
@@ -109,6 +109,6 @@ export function applyRuntimeRenderState(state: RuntimeRenderState): void {
 }
 
 export function resetRuntimeRenderState(): void {
-	clearHardwareCamera();
+	resetHardwareCameraBank0();
 	clearHardwareLighting();
 }

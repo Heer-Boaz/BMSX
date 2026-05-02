@@ -31,13 +31,12 @@ std::vector<T> captureSortedLightEntries(const Map& map, BuildFn&& build) {
 
 RuntimeRenderState captureRuntimeRenderState() {
 	RuntimeRenderState state;
-	if (const HardwareCameraState* camera = resolveActiveHardwareCamera()) {
-		state.camera = RuntimeRenderCameraState{
-			camera->view,
-			camera->proj,
-			{ camera->eye.x, camera->eye.y, camera->eye.z },
-		};
-	}
+	const HardwareCameraState& camera = resolveActiveHardwareCamera();
+	state.camera = RuntimeRenderCameraState{
+		camera.view,
+		camera.proj,
+		{ camera.eye.x, camera.eye.y, camera.eye.z },
+	};
 	state.ambientLights = captureSortedLightEntries<std::unordered_map<std::string, AmbientLight>, RuntimeAmbientLightState>(
 		getHardwareAmbientLights(),
 		[](const std::string& id, const AmbientLight& light) {
@@ -76,7 +75,7 @@ void applyRuntimeRenderState(const RuntimeRenderState& state) {
 		const RuntimeRenderCameraState& camera = *state.camera;
 		setHardwareCamera(camera.view, camera.proj, camera.eye[0], camera.eye[1], camera.eye[2]);
 	} else {
-		clearHardwareCamera();
+		resetHardwareCameraBank0();
 	}
 	clearHardwareLighting();
 	for (const RuntimeAmbientLightState& light : state.ambientLights) {
@@ -103,7 +102,7 @@ void applyRuntimeRenderState(const RuntimeRenderState& state) {
 }
 
 void resetRuntimeRenderState() {
-	clearHardwareCamera();
+	resetHardwareCameraBank0();
 	clearHardwareLighting();
 }
 

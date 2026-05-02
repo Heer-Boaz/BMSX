@@ -2,7 +2,6 @@ local mesh = nil
 local t = 0
 local render_hw = require("bios/render_hw")
 local put_mesh = render_hw.put_mesh
-local put_particle = render_hw.put_particle
 local set_camera = render_hw.set_camera
 local put_ambient_light = render_hw.put_ambient_light
 local put_directional_light = render_hw.put_directional_light
@@ -91,18 +90,6 @@ local draw_cart<const> = function()
 
 	local model = rotate_y(t * 0.7)
 	put_mesh(mesh, model, { receive_shadow = false })
-
-	for i = 1, 24 do
-		local a = (i / 24) * math.pi * 2 + t * 1.4
-		local x = math.cos(a) * 2.2
-		local z = math.sin(a) * 2.2
-		local y = math.sin(t * 2 + i * 0.3) * 0.4 + 0.6
-		put_particle({ x, y, z }, 0.18, { r = 1, g = 0.7, b = 0.2, a = 0.9 }, {
-			texture = 'whitepixel',
-			ambient_mode = 0,
-			ambient_factor = 1,
-		})
-	end
 end
 
 local dispatch_irqs<const> = function()

@@ -5,6 +5,9 @@
 
 namespace bmsx {
 
+constexpr u32 VDP_SBX_PACKET_KIND = 0x12000000u;
+constexpr u32 VDP_SBX_PACKET_PAYLOAD_WORDS = 1u + static_cast<u32>(SKYBOX_FACE_WORD_COUNT);
+
 class VdpSbxUnit {
 public:
 	using FaceWords = std::array<u32, SKYBOX_FACE_WORD_COUNT>;
@@ -12,6 +15,7 @@ public:
 	void reset();
 	void setSources(const SkyboxFaceSources& sources);
 	void clear();
+	void writePacket(u32 control, const FaceWords& faceWords);
 	u32 latchFrame(FaceWords& target) const;
 	void presentFrame(u32 control, const FaceWords& faceWords);
 	void presentLiveState();

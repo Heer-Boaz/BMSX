@@ -54,5 +54,6 @@ constexpr size_t VDP_PMU_BANK_SCALE_X_WORD = 2;
 constexpr size_t VDP_PMU_BANK_SCALE_Y_WORD = 3;
 constexpr size_t VDP_PMU_BANK_CONTROL_WORD = 4;
 constexpr u32 VDP_PMU_Q16_ONE = 0x00010000u;
+constexpr size_t VDP_BBU_BILLBOARD_LIMIT = 1024;
 
 } // namespace bmsx

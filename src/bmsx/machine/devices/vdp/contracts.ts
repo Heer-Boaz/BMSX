@@ -50,6 +50,8 @@ export const VDP_PMU_BANK_SCALE_Y_WORD = 3;
 export const VDP_PMU_BANK_CONTROL_WORD = 4;
 export const VDP_PMU_Q16_ONE = 0x00010000;
 
+export const VDP_BBU_BILLBOARD_LIMIT = 1024;
+
 export type VdpFrameBufferSize = {
 	width: number;
 	height: number;

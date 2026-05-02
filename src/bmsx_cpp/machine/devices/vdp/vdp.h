@@ -6,9 +6,15 @@
 #include "machine/memory/memory.h"
 #include "machine/memory/map.h"
 #include "machine/scheduler/device.h"
+#include "machine/devices/vdp/bbu.h"
+#include "machine/devices/vdp/blitter.h"
 #include "machine/devices/vdp/budget.h"
+#include "machine/devices/vdp/camera.h"
+#include "machine/devices/vdp/frame.h"
 #include "machine/devices/vdp/pmu.h"
+#include "machine/devices/vdp/registers.h"
 #include "machine/devices/vdp/sbx.h"
+#include "machine/devices/vdp/vram_garbage.h"
 #include <array>
 #include <optional>
 #include <string>
@@ -25,6 +31,7 @@ void restoreVdpContextState(VDP& vdp);
 void captureVdpContextState(VDP& vdp);
 
 struct VdpState {
+	VdpCameraState camera{};
 	u32 skyboxControl = 0;
 	VdpSbxUnit::FaceWords skyboxFaceWords{};
 	u32 pmuSelectedBank = 0;
@@ -79,6 +86,8 @@ public:
 	void resetIngressState();
 	void resetStatus();
 	void setVblankStatus(bool active);
+	void writeVdpRegister(uint32_t index, u32 value);
+	void consumeDirectVdpCommand(u32 cmd);
 	bool canAcceptVdpSubmit() const;
 	void acceptSubmitAttempt();
 	void rejectSubmitAttempt();
@@ -130,6 +139,7 @@ public:
 	void attachImgDecController(ImgDecController& controller);
 	void setSkyboxSources(const SkyboxFaceSources& sources);
 	void clearSkybox();
+	void setCameraBank0(const std::array<f32, 16>& view, const std::array<f32, 16>& proj, f32 eyeX, f32 eyeY, f32 eyeZ);
 	void captureVisualStateFields(VdpState& state) const;
 	VdpState captureState() const;
 	void restoreState(const VdpState& state);
@@ -146,99 +156,18 @@ public:
 	bool hasPendingRenderWork() const { return m_activeFrame.occupied ? (!m_activeFrame.ready && !m_execution.pending) : (m_pendingFrame.occupied && m_pendingFrame.cost > 0); }
 	int getPendingRenderWorkUnits() const;
 
-	struct FrameBufferColor {
-		u8 r = 255;
-		u8 g = 255;
-		u8 b = 255;
-		u8 a = 255;
-	};
-	struct BlitterSource {
-		u32 surfaceId = 0;
-		u32 srcX = 0;
-		u32 srcY = 0;
-		u32 width = 0;
-		u32 height = 0;
-	};
-		struct ResolvedBlitterSample {
-			BlitterSource source{};
-			uint32_t surfaceWidth = 0;
-			uint32_t surfaceHeight = 0;
-			u32 slot = 0;
-		};
-		using SkyboxSamples = std::array<ResolvedBlitterSample, SKYBOX_FACE_COUNT>;
-	struct GlyphRunGlyph : BlitterSource {
-		f32 dstX = 0.0f;
-		f32 dstY = 0.0f;
-		u32 advance = 0;
-	};
-	struct TileRunBlit : BlitterSource {
-		f32 dstX = 0.0f;
-		f32 dstY = 0.0f;
-	};
-	BlitterSource resolveBlitterSource(const VdpSlotSource& source) const;
-	ResolvedBlitterSample resolveBlitterSample(const VdpSlotSource& source) const;
-	ResolvedBlitterSample resolveCommittedSkyboxFaceSample(size_t faceIndex) const;
-	enum class BlitterCommandType : u8 {
-		Clear,
-		Blit,
-		CopyRect,
-		FillRect,
-		DrawLine,
-		GlyphRun,
-		TileRun,
-	};
-	struct BlitterCommand {
-		BlitterCommandType type = BlitterCommandType::Clear;
-		u32 seq = 0;
-		int renderCost = 0;
-		f32 z = 0.0f;
-		Layer2D layer = Layer2D::World;
-		BlitterSource source{};
-		f32 dstX = 0.0f;
-		f32 dstY = 0.0f;
-		f32 scaleX = 1.0f;
-		f32 scaleY = 1.0f;
-		f32 parallaxWeight = 0.0f;
-		bool flipH = false;
-		bool flipV = false;
-		i32 srcX = 0;
-		i32 srcY = 0;
-		i32 width = 0;
-		i32 height = 0;
-		f32 x0 = 0.0f;
-		f32 y0 = 0.0f;
-		f32 x1 = 0.0f;
-		f32 y1 = 0.0f;
-		f32 thickness = 1.0f;
-		FrameBufferColor color{};
-		std::optional<FrameBufferColor> backgroundColor;
-		u32 lineHeight = 0;
-		std::vector<GlyphRunGlyph> glyphs;
-		std::vector<TileRunBlit> tiles;
-	};
-		struct SubmittedFrame {
-			std::vector<BlitterCommand> queue;
-			bool occupied = false;
-			bool hasCommands = false;
-			bool ready = false;
-			int cost = 0;
-			int workRemaining = 0;
-				i32 ditherType = 0;
-				u32 skyboxControl = 0;
-				VdpSbxUnit::FaceWords skyboxFaceWords{};
-				SkyboxSamples skyboxSamples{};
-			};
-		struct BuildingFrame {
-			std::vector<BlitterCommand> queue;
-			bool open = false;
-			int cost = 0;
-		};
-	struct ExecutionState {
-		std::vector<BlitterCommand> queue;
-		bool pending = false;
-	};
-	const std::vector<BlitterCommand>* takeReadyExecutionQueue();
-	void completeReadyExecution(const std::vector<BlitterCommand>* queue);
+	using FrameBufferColor = VdpFrameBufferColor;
+	using BlitterSource = VdpBlitterSource;
+	using ResolvedBlitterSample = VdpResolvedBlitterSample;
+	using SkyboxSamples = VdpSkyboxSamples;
+	using GlyphRunGlyph = VdpGlyphRunGlyph;
+	using TileRunBlit = VdpTileRunBlit;
+	using BlitterCommandType = VdpBlitterCommandType;
+	using BlitterCommand = VdpBlitterCommand;
+	using SubmittedFrame = VdpSubmittedFrame;
+	using BuildingFrame = VdpBuildingFrame;
+	using ExecutionState = VdpExecutionState;
+
 	struct VramSlot {
 		struct DirtySpan {
 			uint32_t xStart = 0;
@@ -246,25 +175,32 @@ public:
 		};
 		uint32_t baseAddr = 0;
 		uint32_t capacity = 0;
-			uint32_t surfaceId = 0;
-			uint32_t surfaceWidth = 0;
-			uint32_t surfaceHeight = 0;
-			std::vector<u8> cpuReadback;
-			uint32_t dirtyRowStart = 0;
-			uint32_t dirtyRowEnd = 0;
-			std::vector<DirtySpan> dirtySpansByRow;
+		uint32_t surfaceId = 0;
+		uint32_t surfaceWidth = 0;
+		uint32_t surfaceHeight = 0;
+		std::vector<u8> cpuReadback;
+		uint32_t dirtyRowStart = 0;
+		uint32_t dirtyRowEnd = 0;
+		std::vector<DirtySpan> dirtySpansByRow;
 	};
+
 	const std::vector<VramSlot>& surfaceUploadSlots() const { return m_vramSlots; }
 	void clearSurfaceUploadDirty(uint32_t surfaceId);
+	const std::vector<BlitterCommand>* takeReadyExecutionQueue();
+	const std::vector<VdpBbuBillboardEntry>& takeReadyExecutionBillboards() const;
+	const std::vector<VdpBbuBillboardEntry>& committedBillboards() const { return m_committedBillboards; }
+	void completeReadyExecution(const std::vector<BlitterCommand>* queue);
+	ResolvedBlitterSample resolveCommittedSkyboxFaceSample(size_t faceIndex) const;
+	const VdpCameraSnapshot& committedCameraBank0() const { return m_committedCamera; }
 
-				private:
-			static Value readVdpStatusThunk(void* context, uint32_t addr);
-		static Value readVdpDataThunk(void* context, uint32_t addr);
-		static void onFifoWriteThunk(void* context, uint32_t addr, Value value);
-		static void onFifoCtrlWriteThunk(void* context, uint32_t addr, Value value);
-		static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
-		static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
-		static void onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
+private:
+	static Value readVdpStatusThunk(void* context, uint32_t addr);
+	static Value readVdpDataThunk(void* context, uint32_t addr);
+	static void onFifoWriteThunk(void* context, uint32_t addr, Value value);
+	static void onFifoCtrlWriteThunk(void* context, uint32_t addr, Value value);
+	static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
+	static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
+	static void onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
 
 	struct ReadSurface {
 		uint32_t surfaceId = 0;
@@ -276,15 +212,9 @@ public:
 		uint32_t width = 0;
 		std::vector<u8> data;
 	};
-	struct VramGarbageStream {
-		uint32_t machineSeed = 0;
-		uint32_t bootSeed = 0;
-		uint32_t slotSalt = 0;
-		uint32_t addr = 0;
-	};
-		Memory& m_memory;
-		ImgDecController* m_imgDecController = nullptr;
-		std::vector<VramSlot> m_vramSlots;
+	Memory& m_memory;
+	ImgDecController* m_imgDecController = nullptr;
+	std::vector<VramSlot> m_vramSlots;
 	std::vector<u8> m_vramStaging;
 	std::vector<u8> m_vramGarbageScratch;
 	std::array<u8, 4> m_vramSeedPixel{{0, 0, 0, 0}};
@@ -293,29 +223,34 @@ public:
 	uint32_t m_readBudgetBytes = 0;
 	bool m_readOverflow = false;
 	VdpSbxUnit m_sbx;
+	VdpSbxUnit::FaceWords m_sbxPacketFaceWords{};
+	VdpCameraUnit m_camera;
 	VdpPmuUnit m_pmu;
+	VdpBbuUnit m_bbu;
 	SkyboxSamples m_committedSkyboxSamples{};
+	VdpCameraSnapshot m_committedCamera{};
+	std::vector<VdpBbuBillboardEntry> m_committedBillboards;
 	i32 m_lastDitherType = 0;
 	i32 m_committedDitherType = 0;
 	int64_t m_cpuHz = 1;
-		int64_t m_workUnitsPerSec = 1;
-		int64_t m_workCarry = 0;
-		int m_availableWorkUnits = 0;
-		uint32_t m_vdpStatus = 0;
-		bool m_dmaSubmitActive = false;
-		std::array<u32, VDP_CMD_ARG_COUNT> m_vdpRegisters{};
-		std::array<u8, 4> m_vdpFifoWordScratch{{0, 0, 0, 0}};
-		int m_vdpFifoWordByteCount = 0;
-		std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
-		u32 m_vdpFifoStreamWordCount = 0;
-		BuildingFrame m_buildFrame;
+	int64_t m_workUnitsPerSec = 1;
+	int64_t m_workCarry = 0;
+	int m_availableWorkUnits = 0;
+	uint32_t m_vdpStatus = 0;
+	bool m_dmaSubmitActive = false;
+	std::array<u32, VDP_CMD_ARG_COUNT> m_vdpRegisters{};
+	std::array<u8, 4> m_vdpFifoWordScratch{{0, 0, 0, 0}};
+	int m_vdpFifoWordByteCount = 0;
+	std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
+	u32 m_vdpFifoStreamWordCount = 0;
+	BuildingFrame m_buildFrame;
 	ExecutionState m_execution;
 	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
 	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
-		std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
-		u32 m_blitterSequence = 0;
-		bool m_lastFrameCommitted = true;
+	std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
+	u32 m_blitterSequence = 0;
+	bool m_lastFrameCommitted = true;
 	int m_lastFrameCost = 0;
 	bool m_lastFrameHeld = false;
 	uint32_t m_frameBufferWidth = 0;
@@ -343,19 +278,16 @@ public:
 	VramSlot* findRegisteredVramSlotBySurfaceId(uint32_t surfaceId);
 	VramSlot& getVramSlotBySurfaceId(uint32_t surfaceId);
 	const VramSlot& getVramSlotBySurfaceId(uint32_t surfaceId) const;
-			uint32_t nextVramMachineSeed() const;
+	uint32_t nextVramMachineSeed() const;
 	uint32_t nextVramBootSeed() const;
-	void fillVramGarbageScratch(u8* data, size_t length, VramGarbageStream& stream) const;
 	void seedVramStaging();
 	void seedVramSlotPixels(VramSlot& slot);
-	FrameBufferColor packFrameBufferColor(const Color& color) const;
 	u32 nextBlitterSequence();
 	void assignLayeredBlitterCommand(BlitterCommand& command, BlitterCommandType type, int renderCost, Layer2D layer, f32 z);
 	std::vector<GlyphRunGlyph> acquireGlyphBuffer();
 	std::vector<TileRunBlit> acquireTileBuffer();
 	void recycleBlitterBuffers(std::vector<BlitterCommand>& queue);
 	void resetBuildFrameState();
-	void resetSubmittedFrameSlot(SubmittedFrame& frame);
 	void resetQueuedFrameState();
 	void enqueueBlitterCommand(BlitterCommand&& command);
 	int calculateVisibleRectCost(double width, double height) const;
@@ -368,36 +300,12 @@ public:
 	void setStatusFlag(uint32_t mask, bool active);
 	void refreshSubmitBusyStatus();
 	void resetVdpRegisters();
-	void writeVdpRegister(uint32_t index, u32 value);
 	void onVdpRegisterWrite(uint32_t addr);
 	void writePmuBankSelect(u32 value);
 	void onPmuRegisterWindowWrite(uint32_t addr);
 	void syncPmuRegisterWindow();
 	void configureSelectedSlotDimension(u32 word);
-	struct LayerPriority {
-		Layer2D layer = Layer2D::World;
-		f32 z = 0.0f;
-	};
-	struct DrawCtrl {
-		bool flipH = false;
-		bool flipV = false;
-		u32 blendMode = 0;
-		u32 pmuBank = 0;
-		f32 parallaxWeight = 0.0f;
-	};
-	struct LatchedGeometry {
-		f32 x0 = 0.0f;
-		f32 y0 = 0.0f;
-		f32 x1 = 0.0f;
-		f32 y1 = 0.0f;
-	};
-	LayerPriority decodeLayerPriority(u32 value) const;
-	DrawCtrl decodeDrawCtrl(u32 value) const;
-	i32 q16ToPixel(u32 value) const;
-	LatchedGeometry readLatchedGeometry() const;
-	FrameBufferColor unpackArgbColor(u32 value) const;
-	u32 packedLow16(u32 value) const;
-	u32 packedHigh16(u32 value) const;
+	VdpLatchedGeometry readLatchedGeometry() const;
 	void enqueueLatchedClear();
 	void enqueueLatchedFillRect();
 	void enqueueLatchedDrawLine();
@@ -419,22 +327,22 @@ public:
 		u32 count = 0;
 	};
 	RegnPacket decodeRegnPacket(u32 word) const;
+	void latchBillboardPacket(const VdpBbuPacket& packet);
 	void consumeReplayCommandPacket(u32 word);
-	void consumeDirectVdpCommand(u32 cmd);
 	void executeVdpDrawDoorbell(u32 command);
 	void onVdpFifoWrite();
 	void onVdpFifoCtrlWrite();
 	void onVdpCommandWrite();
-		void clearActiveFrame();
-			void commitActiveVisualState();
-			void finishCommittedFrameOnVblankEdge();
-		uint32_t resolveSurfaceIdForSlot(u32 slot) const;
-		VdpBlitterSurfaceSize validateResolvedBlitterSource(const BlitterSource& source) const;
-		void validateBlitScale(f32 scaleX, f32 scaleY) const;
-		void validateLineWidth(f32 thickness) const;
-		void resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples) const;
+	void clearActiveFrame();
+	void commitActiveVisualState();
+	void finishCommittedFrameOnVblankEdge();
+	uint32_t resolveSurfaceIdForSlot(u32 slot) const;
+	void resolveBlitterSourceWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, BlitterSource& target) const;
+	VdpBlitterSurfaceSize resolveBlitterSurfaceForSource(const BlitterSource& source) const;
+	void resolveBlitterSampleWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, ResolvedBlitterSample& target) const;
+	void resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples) const;
 
-		friend struct VdpGles2Blitter;
+	friend struct VdpGles2Blitter;
 	friend void restoreVdpContextState(VDP& vdp);
 	friend void captureVdpContextState(VDP& vdp);
 

@@ -125,18 +125,19 @@ add_library(bmsx_core STATIC
 
 	# Render systems
 	render/backend/backend.cpp
+	render/3d/math.cpp
 	render/gameview.cpp
 	render/backend/frame_uniforms.cpp
 	render/lighting/system.cpp
 	render/shared/queues.cpp
 	render/runtime/state.cpp
-	render/shared/camera_state.cpp
 	render/shared/hardware/camera.cpp
 	render/shared/hardware/lighting.cpp
 	render/vdp/blitter/execute.cpp
 	render/vdp/blitter/gles2.cpp
 	render/vdp/blitter/software.cpp
 	render/vdp/context_state.cpp
+	render/vdp/billboards.cpp
 	render/vdp/framebuffer.cpp
 	render/vdp/presentation.cpp
 	render/vdp/source_pixels.cpp
@@ -147,6 +148,7 @@ add_library(bmsx_core STATIC
 	render/vdp/view_snapshot.cpp
 	render/texture_manager.cpp
 	render/backend/pass/library.cpp
+	render/backend/pass/software_scene.cpp
 	render/graph/graph.cpp
 	render/shared/glyphs.cpp
 	render/test_pattern.cpp
@@ -200,8 +202,14 @@ add_library(bmsx_core STATIC
 	machine/runtime/debug.cpp
 	machine/memory/memory.cpp
 	machine/memory/map.cpp
+	machine/devices/vdp/bbu.cpp
+	machine/devices/vdp/blitter.cpp
+	machine/devices/vdp/camera.cpp
+	machine/devices/vdp/frame.cpp
 	machine/devices/vdp/pmu.cpp
+	machine/devices/vdp/registers.cpp
 	machine/devices/vdp/sbx.cpp
+	machine/devices/vdp/vram_garbage.cpp
 	machine/devices/vdp/vdp.cpp
 	machine/devices/vdp/command_processor.cpp
 	machine/memory/string_memory.cpp
