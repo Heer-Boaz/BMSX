@@ -431,7 +431,7 @@ end
 --   Affects the default world query helpers (objects(), objects_with_components()).
 function world_class:set_space(space_id)
 	if self.active_space_id ~= space_id then
-		vdp_stream.clear_rgba(0, 0, 0, 1)
+		vdp_stream.clear_color(0xff000000)
 	end
 	self.active_space_id = space_id
 	self.active_space = self._spaces[space_id]

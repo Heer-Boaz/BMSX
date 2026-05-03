@@ -2,18 +2,6 @@
 
 namespace bmsx {
 
-VdpLayerPriority decodeVdpLayerPriority(u32 value) {
-	const u32 priority = (value >> 8u) & 0xffffu;
-	return {
-		static_cast<Layer2D>(value & 0xffu),
-		priority,
-		static_cast<f32>(priority),
-	};
-}
-
-u32 encodeVdpLayerPriority(Layer2D layer, f32 priority) {
-	return ((static_cast<u32>(static_cast<i32>(priority)) & 0xffffu) << 8u) | (static_cast<u32>(layer) & 0xffu);
-}
 
 VdpDrawCtrl decodeVdpDrawCtrl(u32 value) {
 	const u32 rawQ8_8 = (value >> VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT) & 0xffffu;

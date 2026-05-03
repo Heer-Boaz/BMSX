@@ -113,7 +113,7 @@ function vdp_image.source(rect)
 	}
 end
 
-function vdp_image.write_source_words(dst, rect)
+function vdp_image.write_source(dst, rect)
 	mem[dst] = vdp_image.slot(rect)
 	mem[dst + sys_vdp_arg_stride] = rect.u
 	mem[dst + (sys_vdp_arg_stride * 2)] = rect.v
@@ -121,22 +121,13 @@ function vdp_image.write_source_words(dst, rect)
 	mem[dst + (sys_vdp_arg_stride * 4)] = rect.h
 end
 
-function vdp_image.write_blit_rgba(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, r, g, b, a, parallax_weight)
+function vdp_image.write_blit_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color, parallax_weight)
 	local rect<const> = vdp_image.rect(imgid)
-	vdp_stream.blit_source_rgba(vdp_image.slot(rect), rect.u, rect.v, rect.w, rect.h, x, y, z, layer, scale_x, scale_y, flip_flags, r, g, b, a, parallax_weight)
+	vdp_stream.blit_source_color(vdp_image.slot(rect), rect.u, rect.v, rect.w, rect.h, x, y, z, layer, scale_x, scale_y, flip_flags, color, parallax_weight)
 end
 
-function vdp_image.write_glyph_line_rgba(font, line, x, y, z, layer, r, g, b, a, background_enabled, bg_r, bg_g, bg_b, bg_a)
-	local cursor_x = x
-	local line_length<const> = string.len(line)
-	for i = 1, line_length do
-		local glyph<const> = font.glyphs[line:sub(i, i)] or font.glyphs['?']
-		if background_enabled ~= 0 then
-			vdp_stream.fill_rect_rgba(cursor_x, y, cursor_x + glyph.width, y + glyph.height, z - 1, layer, bg_r, bg_g, bg_b, bg_a)
-		end
-		vdp_image.write_blit_rgba(glyph.imgid, cursor_x, y, z, layer, 1, 1, 0, r, g, b, a, 0)
-		cursor_x = cursor_x + glyph.advance
-	end
+function vdp_image.write_glyph_color(glyph, x, y, z, layer, color)
+	vdp_image.write_blit_color(glyph.imgid, x, y, z, layer, 1, 1, 0, color, 0)
 end
 
 return vdp_image

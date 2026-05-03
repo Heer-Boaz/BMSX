@@ -1,5 +1,4 @@
 import { IO_VDP_CMD_ARG_COUNT } from '../../bus/io';
-import type { Layer2D } from './contracts';
 
 export const VDP_REGISTER_COUNT = IO_VDP_CMD_ARG_COUNT;
 
@@ -13,14 +12,15 @@ export const VDP_REG_GEOM_Y0 = 6;
 export const VDP_REG_GEOM_X1 = 7;
 export const VDP_REG_GEOM_Y1 = 8;
 export const VDP_REG_LINE_WIDTH = 9;
-export const VDP_REG_DRAW_LAYER_PRIO = 10;
-export const VDP_REG_DRAW_CTRL = 11;
-export const VDP_REG_DRAW_SCALE_X = 12;
-export const VDP_REG_DRAW_SCALE_Y = 13;
-export const VDP_REG_DRAW_COLOR = 14;
-export const VDP_REG_BG_COLOR = 15;
-export const VDP_REG_SLOT_INDEX = 16;
-export const VDP_REG_SLOT_DIM = 17;
+export const VDP_REG_DRAW_LAYER = 10;
+export const VDP_REG_DRAW_PRIORITY = 11;
+export const VDP_REG_DRAW_CTRL = 12;
+export const VDP_REG_DRAW_SCALE_X = 13;
+export const VDP_REG_DRAW_SCALE_Y = 14;
+export const VDP_REG_DRAW_COLOR = 15;
+export const VDP_REG_BG_COLOR = 16;
+export const VDP_REG_SLOT_INDEX = 17;
+export const VDP_REG_SLOT_DIM = 18;
 
 export const VDP_Q16_ONE = 0x00010000;
 
@@ -55,12 +55,6 @@ export type VdpLatchedGeometry = {
 	y1: number;
 };
 
-export type VdpLayerPriority = {
-	layer: Layer2D;
-	priority: number;
-	z: number;
-};
-
 export type VdpDrawCtrl = {
 	flipH: boolean;
 	flipV: boolean;
@@ -69,16 +63,6 @@ export type VdpDrawCtrl = {
 	parallaxWeight: number;
 };
 
-export function decodeVdpLayerPriority(value: number, target: VdpLayerPriority): void {
-	const priority = (value >>> 8) & 0xffff;
-	target.layer = (value & 0xff) as Layer2D;
-	target.priority = priority;
-	target.z = priority;
-}
-
-export function encodeVdpLayerPriority(layer: Layer2D, priority: number): number {
-	return (((priority & 0xffff) << 8) | (layer & 0xff)) >>> 0;
-}
 
 export function decodeVdpDrawCtrl(value: number, target: VdpDrawCtrl): void {
 	const rawQ8_8 = (value >>> VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT) & 0xffff;

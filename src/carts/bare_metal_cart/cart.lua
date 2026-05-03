@@ -17,7 +17,7 @@ local vdp_pkt_reg1<const> = 0x02000000 -- Register packet: lower 16 bits = regis
 local vdp_pkt_regn<const> = 0x03000000 -- Register packet with N registers: lower 16 bits = starting register index, upper 8 bits = number of registers to set (data words must be in register order)
 local vdp_pkt_billboard<const> = 0x11000000 -- BILLBOARD packet: BBU command-stream packet, followed by fixed hardware words
 local vdp_pkt_skybox<const> = 0x12000000 -- SKYBOX packet: SBX command-stream packet, followed by control and six face-source records
-local vdp_billboard_payload_words<const> = 10 -- BILLBOARD payload: layer/priority, slot, uv, wh, x, y, z, size, color, control
+local vdp_billboard_payload_words<const> = 11 -- BILLBOARD payload: layer, priority, slot, uv, wh, x, y, z, size, color, control
 local vdp_skybox_payload_words<const> = 31 -- SKYBOX payload: control plus six faces of slot/u/v/w/h
 
 local vdp_cmd_clear<const> = 1 -- Clear command: clears a rectangle to the current background color, parameters are in registers (see draw_frame function below)
@@ -29,10 +29,10 @@ local vdp_reg_src_uv<const> = 1 -- Source UV register index (used for blit comma
 local vdp_reg_src_wh<const> = 2 -- Source width/height register index (used for blit commands to specify the width and height of the sprite to draw from the source slot)
 local vdp_reg_dst_x<const> = 3 -- Destination X coordinate register index (used for blit commands to specify the X coordinate on the screen to draw the sprite)
 local vdp_reg_geom_x0<const> = 5 -- Geometry X0 register index (used for clear and fill_rect commands to specify the left edge of the rectangle)
-local vdp_reg_draw_layer_prio<const> = 10 -- Draw layer and priority register index (used for all draw commands to specify which layer to draw on and the priority of the draw call)
-local vdp_reg_draw_color<const> = 14 -- Draw color register index (used for fill_rect commands to specify the color to fill with, and for blit commands to specify modulation color)
-local vdp_reg_bg_color<const> = 15 -- Background color register index (used for clear commands to specify the color to clear with)
-local vdp_reg_slot_index<const> = 16 -- Slot index register (used for register packets to specify which VRAM slot to configure)
+local vdp_reg_draw_layer<const> = 10 -- Draw layer register index
+local vdp_reg_draw_color<const> = 15 -- Draw color register index (used for fill_rect commands to specify the color to fill with, and for blit commands to specify modulation color)
+local vdp_reg_bg_color<const> = 16 -- Background color register index (used for clear commands to specify the color to clear with)
+local vdp_reg_slot_index<const> = 17 -- Slot index register (used for register packets to specify which VRAM slot to configure)
 local vdp_slot_primary<const> = 0 -- Primary surface slot index (the main VRAM slot used for drawing sprites and backgrounds)
 local vdp_layer_world<const> = 0 -- World layer index (the main layer used for drawing the game world, sprites should be drawn on this layer for correct priority handling)
 local vdp_sbx_control_enable<const> = 1 -- SBX control bit: enable the live skybox face state when latched into a frame
@@ -243,8 +243,9 @@ local draw_frame<const> = function()
 	mem[wp], wp = 82 << 16, wp + 4 -- Y0 = 82 (top edge of the rectangle)
 	mem[wp], wp = 256 << 16, wp + 4 -- X1 = 256 (right edge of the rectangle, covering the entire width of the screen)
 	mem[wp], wp = 126 << 16, wp + 4 -- Y1 = 126 (bottom edge of the rectangle, creating a horizontal band across the screen)
-	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_layer_prio, wp + 4 -- Set the draw layer and priority for this rectangle
-	mem[wp], wp = (vdp_layer_world & 0xff) | (8 << 8), wp + 4 -- Draw on the world layer with priority 8 (lower priority than the sprite which will be drawn later)
+	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4 -- Set the draw layer and priority for this rectangle
+	mem[wp], wp = vdp_layer_world, wp + 4 -- Draw on the world layer
+	mem[wp], wp = 8, wp + 4 -- Priority 8 (lower priority than the sprite which will be drawn later)
 	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4 -- Set the draw color register for the fill_rect command
 	mem[wp], wp = 0xff142438, wp + 4 -- Set the draw color to a slightly lighter dark red for the filled rectangle
 	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4 -- Issue a fill rectangle command to draw the dark red background area, parameters for the fill_rect command are specified in registers (see above)
@@ -254,8 +255,9 @@ local draw_frame<const> = function()
 	mem[wp], wp = 126 << 16, wp + 4 -- Y0 = 126 (top edge of the rectangle, starting where the red band ends)
 	mem[wp], wp = 256 << 16, wp + 4 -- X1 = 256 (right edge of the rectangle, covering the entire width of the screen)
 	mem[wp], wp = 212 << 16, wp + 4 -- Y1 = 212 (bottom edge of the rectangle, creating a horizontal band across the screen below the red band)
-	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_layer_prio, wp + 4 -- Set the draw layer and priority for this rectangle
-	mem[wp], wp = (vdp_layer_world & 0xff) | (10 << 8), wp + 4 -- Draw on the world layer with priority 10 (lower priority than the sprite which will be drawn later)
+	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4 -- Set the draw layer and priority for this rectangle
+	mem[wp], wp = vdp_layer_world, wp + 4 -- Draw on the world layer
+	mem[wp], wp = 10, wp + 4 -- Priority 10 (lower priority than the sprite which will be drawn later)
 	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4 -- Set the draw color register for the fill_rect command
 	mem[wp], wp = 0xff0d1417, wp + 4 -- Set the draw color to a slightly lighter dark blue for the filled rectangle
 	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4 -- Issue a fill rectangle command to draw the dark blue background area, parameters for the fill_rect command are specified in registers (see above)
@@ -265,8 +267,9 @@ local draw_frame<const> = function()
 	mem[wp], wp = 126 << 16, wp + 4 -- Y0 = 126 (top edge of the rectangle, starting where the red band ends)
 	mem[wp], wp = 198 << 16, wp + 4 -- X1 = 198 (right edge of the rectangle, creating a gap on the right side of the screen)
 	mem[wp], wp = 212 << 16, wp + 4 -- Y1 = 212 (bottom edge of the rectangle, matching the bottom edge of the blue band)
-	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_layer_prio, wp + 4 -- Set the draw layer and priority for this rectangle
-	mem[wp], wp = (vdp_layer_world & 0xff) | (15 << 8), wp + 4 -- Draw on the world layer with priority 15 (higher priority than the other background rectangles, but still lower than the sprite which will be drawn later)
+	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4 -- Set the draw layer and priority for this rectangle
+	mem[wp], wp = vdp_layer_world, wp + 4 -- Draw on the world layer
+	mem[wp], wp = 15, wp + 4 -- Priority 15 (higher priority than the other background rectangles, but still lower than the sprite which will be drawn later)
 	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4 -- Set the draw color register for the fill_rect command
 	mem[wp], wp = 0xff29333b, wp + 4 -- Set the draw color to a dark blue-gray for the thin line separating the red and blue areas
 	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4 -- Issue a fill rectangle command to draw the thin line separating the red and blue areas, parameters for the fill_rect command are specified in registers (see above)
@@ -279,8 +282,9 @@ local draw_frame<const> = function()
 		mem[wp], wp = line_y << 16, wp + 4 -- Y0 = line_y (the current Y coordinate of the line)
 		mem[wp], wp = (128 + half_width) << 16, wp + 4 -- X1 = center of the screen plus half the width of the line, creating a line that expands outward from the center as it moves down the screen
 		mem[wp], wp = (line_y + 2) << 16, wp + 4 -- Y1 = line_y + 2 (the line is 2 pixels tall)
-		mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_layer_prio, wp + 4 -- Set the draw layer and priority for the moving horizontal line
-		mem[wp], wp = (vdp_layer_world & 0xff) | (18 << 8), wp + 4 -- Draw on the world layer with priority 18 (higher than all the background rectangles, but still lower than the sprite which will be drawn later)
+		mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4 -- Set the draw layer and priority for the moving horizontal line
+		mem[wp], wp = vdp_layer_world, wp + 4 -- Draw on the world layer
+		mem[wp], wp = 18, wp + 4 -- Priority 18 (higher than all the background rectangles, but still lower than the sprite which will be drawn later)
 		mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4 -- Set the draw color register for the fill_rect command
 		mem[wp], wp = 0xffd1c794, wp + 4 -- Set the draw color to a light tan for the moving horizontal lines to create a sense of depth and movement on the background
 		mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4 -- Issue a fill rectangle command to draw the moving horizontal line, parameters for the fill_rect command are specified in registers (see above)
@@ -292,8 +296,9 @@ local draw_frame<const> = function()
 	mem[wp], wp = 0, wp + 4 -- Set the source UV coordinates to (0,0) to start drawing from the top-left corner of the atlas
 	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4 -- Set the source width and height to match the dimensions of the sprite atlas, so we draw the entire atlas as a single sprite
 
-	mem[wp], wp = vdp_pkt_regn | (5 << 16) | vdp_reg_draw_layer_prio, wp + 4 -- Set multiple registers starting at the draw layer and priority register for the blit command to draw the sprite
-	mem[wp], wp = (vdp_layer_world & 0xff) | (80 << 8), wp + 4 -- Draw on the world layer with priority 80 (higher than all the background elements to ensure the sprite is drawn on top)
+	mem[wp], wp = vdp_pkt_regn | (6 << 16) | vdp_reg_draw_layer, wp + 4 -- Set draw layer through draw color registers for the blit command
+	mem[wp], wp = vdp_layer_world, wp + 4 -- Draw on the world layer
+	mem[wp], wp = 80, wp + 4 -- Priority 80 (higher than all the background elements to ensure the sprite is drawn on top)
 	mem[wp], wp = draw_ctrl_parallax_half, wp + 4 -- DRAW_CTRL: no flip, PMU bank 0, DEX parallax weight +0.5
 	mem[wp], wp = 0x00030000, wp + 4 -- DRAW_SCALE_X: 3.0 in Q16.16
 	mem[wp], wp = 0x00030000, wp + 4 -- DRAW_SCALE_Y: 3.0 in Q16.16
@@ -304,9 +309,10 @@ local draw_frame<const> = function()
 	mem[wp], wp = sprite_y << 16, wp + 4 -- Set the destination Y coordinate for the sprite
 	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_blit, wp + 4 -- Issue the blit command to draw the sprite
 
-		local billboard_shift<const> = ((frame % 64) - 32) * 1024 -- Visible Q16.16 animation term around the active 3D camera center
+	local billboard_shift<const> = ((frame % 64) - 32) * 1024 -- Visible Q16.16 animation term around the active 3D camera center
 	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4 -- BBU BILLBOARD packet: fixed-point position and size in the active billboard coordinate space
-	mem[wp], wp = (vdp_layer_world & 0xff) | (32 << 8), wp + 4 -- Layer/priority word
+	mem[wp], wp = vdp_layer_world, wp + 4 -- Billboard layer
+	mem[wp], wp = 32, wp + 4 -- Billboard priority
 	mem[wp], wp = vdp_slot_primary, wp + 4 -- Texture slot sampled by the billboard
 	mem[wp], wp = 0, wp + 4 -- Source U/V packed as two u16 words
 	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4 -- Source W/H packed as two u16 words
@@ -318,7 +324,8 @@ local draw_frame<const> = function()
 	mem[wp], wp = 0, wp + 4 -- Reserved BBU control word
 
 	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4 -- Second BBU billboard, same atlas slot but different fixed-point world position
-	mem[wp], wp = (vdp_layer_world & 0xff) | (36 << 8), wp + 4
+	mem[wp], wp = vdp_layer_world, wp + 4
+	mem[wp], wp = 36, wp + 4
 	mem[wp], wp = vdp_slot_primary, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4

@@ -25,7 +25,7 @@ import {
 	IO_VDP_REG_BG_COLOR,
 	IO_VDP_REG_DRAW_COLOR,
 	IO_VDP_REG_DRAW_CTRL,
-	IO_VDP_REG_DRAW_LAYER_PRIO,
+	IO_VDP_REG_DRAW_PRIORITY,
 	IO_VDP_REG_DRAW_SCALE_X,
 	IO_VDP_REG_DRAW_SCALE_Y,
 	IO_VDP_REG_DST_X,
@@ -101,8 +101,8 @@ const VDP_PKT_REGN = 0x03000000;
 const VDP_BILLBOARD_HEADER = VDP_BBU_PACKET_KIND | (VDP_BBU_PACKET_PAYLOAD_WORDS << 16);
 const VDP_SKYBOX_HEADER = VDP_SBX_PACKET_KIND | (VDP_SBX_PACKET_PAYLOAD_WORDS << 16);
 
-const VDP_REG_BG_COLOR = 15;
-const VDP_REG_SLOT_INDEX = 16;
+const VDP_REG_BG_COLOR = 16;
+const VDP_REG_SLOT_INDEX = 17;
 
 function createVdp(): { memory: Memory; vdp: VDP } {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
@@ -239,14 +239,14 @@ test('VDP2D direct draw doorbell snapshots latch state immutably', () => {
 	memory.writeValue(IO_VDP_REG_GEOM_X0 + IO_WORD_SIZE, 0 << 16);
 	memory.writeValue(IO_VDP_REG_GEOM_X0 + 2 * IO_WORD_SIZE, 8 << 16);
 	memory.writeValue(IO_VDP_REG_GEOM_X0 + 3 * IO_WORD_SIZE, 8 << 16);
-	memory.writeValue(IO_VDP_REG_DRAW_LAYER_PRIO, 7 << 8);
+	memory.writeValue(IO_VDP_REG_DRAW_PRIORITY, 7);
 	memory.writeValue(IO_VDP_REG_DRAW_COLOR, 0xff112233);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_FILL_RECT);
 	memory.writeValue(IO_VDP_REG_DRAW_COLOR, 0xff445566);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 
 	assert.equal(activeQueue(vdp).length, 1);
-	assert.equal(activeQueue(vdp).colorWord[0], 0xff112233);
+	assert.equal(activeQueue(vdp).color[0], 0xff112233);
 });
 
 test('VDP framebuffer VRAM dirty rows upload to the render texture before page present', () => {
@@ -271,7 +271,7 @@ test('VDP2D BLIT snapshots DRAW_CTRL flip and parallax immutably', () => {
 	memory.writeValue(IO_VDP_REG_SRC_SLOT, VDP_SLOT_PRIMARY);
 	memory.writeValue(IO_VDP_REG_SRC_UV, 0);
 	memory.writeValue(IO_VDP_REG_SRC_WH, 4 | (4 << 16));
-	memory.writeValue(IO_VDP_REG_DRAW_LAYER_PRIO, 9 << 8);
+	memory.writeValue(IO_VDP_REG_DRAW_PRIORITY, 9);
 	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0xff000003);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
 	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0);
@@ -299,7 +299,7 @@ test('VDP PMU resolves parallax into BLIT geometry before backend execution', ()
 	memory.writeValue(IO_VDP_REG_SRC_WH, 4 | (4 << 16));
 	memory.writeValue(IO_VDP_REG_DST_X, 32 << 16);
 	memory.writeValue(IO_VDP_REG_DST_Y, 40 << 16);
-	memory.writeValue(IO_VDP_REG_DRAW_LAYER_PRIO, 9 << 8);
+	memory.writeValue(IO_VDP_REG_DRAW_PRIORITY, 9);
 	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x00800000);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
 	memory.writeValue(IO_VDP_PMU_Y, 100 << 16);
@@ -347,7 +347,7 @@ test('VDP PMU bank registers resolve DRAW_CTRL bank and signed weight', () => {
 	memory.writeValue(IO_VDP_REG_SRC_WH, 4 | (4 << 16));
 	memory.writeValue(IO_VDP_REG_DST_X, 32 << 16);
 	memory.writeValue(IO_VDP_REG_DST_Y, 40 << 16);
-	memory.writeValue(IO_VDP_REG_DRAW_LAYER_PRIO, 9 << 8);
+	memory.writeValue(IO_VDP_REG_DRAW_PRIORITY, 9);
 	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x00800000 | (3 << 8));
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
@@ -381,7 +381,7 @@ test('VDP PMU scale influence uses absolute signed DRAW_CTRL weight', () => {
 	memory.writeValue(IO_VDP_REG_SRC_WH, 4 | (4 << 16));
 	memory.writeValue(IO_VDP_REG_DST_X, 32 << 16);
 	memory.writeValue(IO_VDP_REG_DST_Y, 40 << 16);
-	memory.writeValue(IO_VDP_REG_DRAW_LAYER_PRIO, 9 << 8);
+	memory.writeValue(IO_VDP_REG_DRAW_PRIORITY, 9);
 	memory.writeValue(IO_VDP_REG_DRAW_CTRL, (0xff800000 | (3 << 8)) >>> 0);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
@@ -405,7 +405,7 @@ test('VDP2D FIFO replays registers, commands, and PKT_END frame sealing', () => 
 	]);
 
 	assert.equal(activeQueue(vdp).length, 1);
-	assert.equal(activeQueue(vdp).colorWord[0], 0xff010203);
+	assert.equal(activeQueue(vdp).color[0], 0xff010203);
 });
 
 test('VDP2D FIFO packet faults cancel the frame while preserving prior register side effects', () => {
@@ -429,10 +429,10 @@ test('VDP2D FIFO rejects reserved bits and register ranges', () => {
 	sealStream(memory, vdp, [VDP_PKT_CMD | (1 << 16) | VDP_CMD_CLEAR, VDP_PKT_END]);
 	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
 	clearVdpFault(memory);
-	sealStream(memory, vdp, [VDP_PKT_REG1 | 18, 0, VDP_PKT_END]);
+	sealStream(memory, vdp, [VDP_PKT_REG1 | 19, 0, VDP_PKT_END]);
 	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
 	clearVdpFault(memory);
-	sealStream(memory, vdp, [VDP_PKT_REGN | (2 << 16) | 17, 0, 0, VDP_PKT_END]);
+	sealStream(memory, vdp, [VDP_PKT_REGN | (2 << 16) | 18, 0, 0, VDP_PKT_END]);
 	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
 });
 
@@ -576,7 +576,7 @@ test('VDP2D BLIT source rect OOB latches a DEX source fault', () => {
 
 	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	memory.writeValue(IO_VDP_REG_DRAW_LAYER_PRIO, 1 << 8);
+	memory.writeValue(IO_VDP_REG_DRAW_PRIORITY, 1);
 	memory.writeValue(IO_VDP_REG_DRAW_SCALE_X, 0x00010000);
 	memory.writeValue(IO_VDP_REG_DRAW_SCALE_Y, 0x00010000);
 	memory.writeValue(IO_VDP_REG_SRC_SLOT, VDP_SLOT_PRIMARY);
@@ -724,6 +724,7 @@ function billboardPacket(sizeWord: number, u = 2, v = 3, w = 4, h = 5, control =
 	return [
 		VDP_BILLBOARD_HEADER,
 		0,
+		0,
 		VDP_SLOT_PRIMARY,
 		u | (v << 16),
 		w | (h << 16),
@@ -761,7 +762,7 @@ test('VDP BBU accepts BILLBOARD packets into frame-latched instance RAM', () => 
 	assert.equal(billboards.positionY[0], 20);
 	assert.equal(billboards.positionZ[0], 30);
 	assert.equal(billboards.size[0], 2);
-	assert.equal(billboards.colorWord[0], 0xff112233);
+	assert.equal(billboards.color[0], 0xff112233);
 	vdp.completeHostExecution(output);
 });
 

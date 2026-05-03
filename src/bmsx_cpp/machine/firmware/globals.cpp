@@ -3,6 +3,7 @@
 #include "machine/firmware/input_state_tables.h"
 #include "machine/program/load_compiler.h"
 #include "machine/common/number_format.h"
+#include "machine/devices/vdp/blitter.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
 #include "core/time.h"
@@ -1398,6 +1399,11 @@ void Runtime::setupBuiltins() {
 		key("b"),
 		key("a"),
 	};
+	Table* paletteColors = m_machine.cpu().createTable(0, 16);
+	for (int index = 0; index < 16; ++index) {
+		paletteColors->set(valueNumber(static_cast<double>(index)), valueNumber(static_cast<double>(packFrameBufferColor(api().palette_color(index)))));
+	}
+	setGlobal("sys_palette_colors", valueTable(paletteColors));
 	registerNativeFunction("sys_palette_color", [this, paletteKeys](NativeArgsView args, NativeResults& out) {
 		const int index = floorIntArg(args, 0);
 		const Color color = api().palette_color(index);
@@ -1985,6 +1991,46 @@ void Runtime::setupBuiltins() {
 		}
 		std::cerr << text << std::endl;
 		(void)out;
+	});
+
+	const Value fontGlyphsKey = key("glyphs");
+	const Value fontAdvanceKey = key("advance");
+	const Value fontFallbackGlyphKey = str("?");
+	auto resolveFontGlyph = [&cpu, fontFallbackGlyphKey](Table* glyphs, u32 codepoint) {
+		std::string glyphKey;
+		appendUtf8Codepoint(glyphKey, codepoint);
+		const Value glyph = glyphs->get(valueString(cpu.internString(glyphKey)));
+		return isNil(glyph) ? glyphs->get(fontFallbackGlyphKey) : glyph;
+	};
+	registerNativeFunction("font_for_each_glyph", [this, callClosureValue, fontGlyphsKey, resolveFontGlyph, asText](NativeArgsView args, NativeResults& out) {
+		Table* descriptor = asTable(args.at(0));
+		const std::string& line = asText(args.at(1));
+		Value callback = args.at(2);
+		Table* glyphs = asTable(descriptor->get(fontGlyphsKey));
+		std::array<Value, 1> callArgsStorage;
+		NativeArgsView callArgs(callArgsStorage.data(), callArgsStorage.size());
+		NativeResults callbackOut;
+		size_t index = 0;
+		while (index < line.size()) {
+			const u32 codepoint = readUtf8Codepoint(line, index);
+			callArgsStorage[0] = resolveFontGlyph(glyphs, codepoint);
+			callbackOut.clear();
+			callClosureValue(callback, callArgs, callbackOut);
+		}
+		(void)out;
+	});
+	registerNativeFunction("font_measure_line_width", [fontGlyphsKey, fontAdvanceKey, resolveFontGlyph, asText](NativeArgsView args, NativeResults& out) {
+		Table* descriptor = asTable(args.at(0));
+		const std::string& line = asText(args.at(1));
+		Table* glyphs = asTable(descriptor->get(fontGlyphsKey));
+		double width = 0.0;
+		size_t index = 0;
+		while (index < line.size()) {
+			const u32 codepoint = readUtf8Codepoint(line, index);
+			Table* glyph = asTable(resolveFontGlyph(glyphs, codepoint));
+			width += asNumber(glyph->get(fontAdvanceKey));
+		}
+		out.push_back(valueNumber(width));
 	});
 
 	registerNativeFunction("wrap_text_lines", [this](NativeArgsView args, NativeResults& out) {

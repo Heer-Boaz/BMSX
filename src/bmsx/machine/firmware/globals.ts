@@ -35,6 +35,7 @@ import {
 } from '../memory/map';
 import { CART_ROM_MAGIC, DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../../rompack/format';
 import { BmsxColors } from '../devices/vdp/vdp';
+import { packFrameBufferColor } from '../devices/vdp/blitter';
 import {
 	APU_GAIN_Q12_ONE,
 	APU_RATE_STEP_Q16_ONE,
@@ -1419,6 +1420,11 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_size', VRAM_FRAMEBUFFER_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.machine.resourceUsageDetector.getVramTotalBytes());
+	const paletteColors = new Table(0, BmsxColors.length);
+	for (let index = 0; index < BmsxColors.length; index += 1) {
+		paletteColors.set(index, packFrameBufferColor(BmsxColors[index]));
+	}
+	luaPipeline.registerGlobal(runtime, 'sys_palette_colors', paletteColors);
 	luaPipeline.registerGlobal(runtime, 'sys_palette_color', createNativeFunction('sys_palette_color', (args, out) => {
 		const index = args[0] as number;
 		if (!Number.isInteger(index)) {
@@ -1779,6 +1785,45 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		// eslint-disable-next-line no-console
 		console.log(text);
 		out.length = 0;
+	}));
+
+	const fontGlyphsKey = key('glyphs');
+	const fontAdvanceKey = key('advance');
+	const fontFallbackGlyphKey = key('?');
+	const resolveFontGlyph = (glyphs: Table, char: string): Value => {
+		const glyph = glyphs.get(runtime.internString(char));
+		return glyph === null ? glyphs.get(fontFallbackGlyphKey) : glyph;
+	};
+	luaPipeline.registerGlobal(runtime, 'font_for_each_glyph', createNativeFunction('font_for_each_glyph', (args, out) => {
+		const fontDescriptor = args[0] as Table;
+		const line = stringValueToString(args[1] as StringValue);
+		const callback = args[2];
+		const glyphs = fontDescriptor.get(fontGlyphsKey) as Table;
+		const callArgs = runtime.luaScratch.acquireValue();
+		const callbackOut = runtime.luaScratch.acquireValue();
+		try {
+			callArgs.length = 1;
+			for (const char of line) {
+				callArgs[0] = resolveFontGlyph(glyphs, char);
+				callbackOut.length = 0;
+				callClosureValue(callback, callArgs, callbackOut);
+			}
+		} finally {
+			runtime.luaScratch.releaseValue(callbackOut);
+			runtime.luaScratch.releaseValue(callArgs);
+		}
+		out.length = 0;
+	}));
+	luaPipeline.registerGlobal(runtime, 'font_measure_line_width', createNativeFunction('font_measure_line_width', (args, out) => {
+		const fontDescriptor = args[0] as Table;
+		const line = stringValueToString(args[1] as StringValue);
+		const glyphs = fontDescriptor.get(fontGlyphsKey) as Table;
+		let width = 0;
+		for (const char of line) {
+			const glyph = resolveFontGlyph(glyphs, char) as Table;
+			width += glyph.get(fontAdvanceKey) as number;
+		}
+		out.push(width);
 	}));
 
 	const utf8CodepointCount = (text: string): number => {

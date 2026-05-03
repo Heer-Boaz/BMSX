@@ -84,7 +84,7 @@ function director:bind_visual()
 		if not self.seal_flash_on then
 			return
 		end
-		local c<const> = {r=1,g=1,b=1,a=0.7};vdp_fill_rect_rgba(0, constants.room.tile_origin_y, display_width(), display_height(), 500, sys_vdp_layer_ui, c.r, c.g, c.b, c.a)
+		vdp_fill_rect_color(0, constants.room.tile_origin_y, display_width(), display_height(), 500, sys_vdp_layer_ui, 0xb3ffffff)
 	end
 end
 

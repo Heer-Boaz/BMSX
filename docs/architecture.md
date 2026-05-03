@@ -182,7 +182,7 @@ Current evidence:
 - Exceptions are reserved for emulator bugs and impossible internal states, such as broken save-state schema, impossible host transaction invariants, null host buffers, or internal surface registration mistakes.
 - `IO_VDP_DITHER` is a live VDP register. MMIO writes update the live latch directly in both runtimes; the old `syncRegisters()` read-self-back pass is gone.
 - VDP VRAM power-on garbage is seeded from explicit machine/boot entropy words instead of `Math.random`, `Date.now`, or host wall-clock state.
-- The 18-word `IO_VDP_CMD_ARG0` latch bank is the DEX/2D blitter ingress, not the whole VDP frontend. Direct MMIO writes and FIFO `REG1`/`REGN` replay feed the same latches, `IO_VDP_CMD`/FIFO `CMD` doorbells snapshot those latches, and register 11 is `DRAW_CTRL` for DEX flip/PMU control.
+- The 19-word `IO_VDP_CMD_ARG0` latch bank is the DEX/2D blitter ingress, not the whole VDP frontend. Direct MMIO writes and FIFO `REG1`/`REGN` replay feed the same latches, `IO_VDP_CMD`/FIFO `CMD` doorbells snapshot those latches, registers 10 and 11 are raw `DRAW_LAYER`/`DRAW_PRIORITY`, and register 12 is `DRAW_CTRL` for DEX flip/PMU control.
 - Current parallax status is DEX/PMU-owned parallax execution. PMU register writes latch raw bank words. DEX resolves the selected bank into per-BLIT `dstX`/`dstY`/scale geometry when it latches BLIT work, and DEX/LINE faults are surfaced through VDP fault latches.
 - Camera, PMU, SBX, and BBU state are real VDP unit state. SBX ingress is either the `IO_VDP_SBX_*` register window plus commit doorbell or a sealed `SKYBOX` packet. BBU ingress is the sealed `BILLBOARD` packet stream. Render backends consume resolved host-output state; they do not validate or program VDP device state.
 - `src/bmsx/render/vdp` and `src/bmsx_cpp/render/vdp` remain the renderer/backend side of the VDP host bridge. They may upload textures, execute ready blitter queues, present framebuffer pages, and clear dirty-surface pins through the explicit VDP host-output contract; they must not be imported by `machine/devices/vdp`.
@@ -196,7 +196,7 @@ through CPU shadow memory before the backend sees them. Both are rejected. The
 clean boundary must preserve direct backend texture writes and move discovery
 to initialization time.
 
-The legacy high-level VDP scene-packet ABI is gone. BIOS and cart code that still wants to submit VDP work must emit raw `VDP_PKT_REG*` plus `VDP_PKT_CMD` register/doorbell streams or use BIOS helpers that emit those raw packets.
+The legacy high-level VDP scene-packet ABI is gone. BIOS and cart code that still wants to submit DEX work must emit raw `VDP_PKT_REG*` plus `VDP_PKT_CMD` register/doorbell streams or use BIOS helpers that emit those raw packets. BIOS helpers accept raw framebuffer colors and write split layer/priority registers; they do not convert RGBA components or pack layer/priority values.
 
 Desired direction:
 

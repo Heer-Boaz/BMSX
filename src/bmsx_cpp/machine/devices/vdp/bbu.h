@@ -7,7 +7,7 @@
 namespace bmsx {
 
 constexpr u32 VDP_BBU_PACKET_KIND = 0x11000000u;
-constexpr u32 VDP_BBU_PACKET_PAYLOAD_WORDS = 10u;
+constexpr u32 VDP_BBU_PACKET_PAYLOAD_WORDS = 11u;
 
 struct VdpBbuSource {
 	u32 surfaceId = 0u;
@@ -30,7 +30,7 @@ struct VdpBbuPacket {
 	u32 yWord = 0u;
 	u32 zWord = 0u;
 	u32 sizeWord = 0u;
-	u32 colorWord = 0u;
+	u32 color = 0u;
 };
 
 struct VdpBbuBillboardEntry {
@@ -51,7 +51,8 @@ struct VdpBbuBillboardEntry {
 class VdpBbuUnit {
 public:
 	VdpBbuPacket decodePacket(
-		u32 layerPriorityWord,
+		u32 layerWord,
+		u32 priority,
 		u32 slot,
 		u32 uvWord,
 		u32 whWord,
@@ -59,7 +60,7 @@ public:
 		u32 yWord,
 		u32 zWord,
 		u32 sizeWord,
-		u32 colorWord,
+		u32 color,
 		u32 controlWord) const;
 	void latchBillboard(std::vector<VdpBbuBillboardEntry>& target, const VdpBbuPacket& packet, u32 seq, VdpBbuSource source, VdpBbuSurfaceSize surface, u32 slot) const;
 };

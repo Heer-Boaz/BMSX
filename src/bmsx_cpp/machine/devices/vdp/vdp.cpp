@@ -542,7 +542,7 @@ u32 VDP::consumeReplayPacket(u32 word, u32 cursor, u32 limit, ReplayPayloadSourc
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			const u32 controlWord = readReplayPayloadWord(cursor, 9u, source);
+			const u32 controlWord = readReplayPayloadWord(cursor, 10u, source);
 			if (controlWord != 0u) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, controlWord);
 				return VDP_REPLAY_PACKET_FAULT;
@@ -557,6 +557,7 @@ u32 VDP::consumeReplayPacket(u32 word, u32 cursor, u32 limit, ReplayPayloadSourc
 				readReplayPayloadWord(cursor, 6u, source),
 				readReplayPayloadWord(cursor, 7u, source),
 				readReplayPayloadWord(cursor, 8u, source),
+				readReplayPayloadWord(cursor, 9u, source),
 				controlWord)) ? cursor + payloadCount : VDP_REPLAY_PACKET_FAULT;
 		}
 		case VDP_SBX_PACKET_KIND: {
@@ -903,7 +904,8 @@ bool VDP::enqueueLatchedClear() {
 }
 
 bool VDP::enqueueLatchedFillRect() {
-	const VdpLayerPriority layerPriority = decodeVdpLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
+	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
 	const VdpLatchedGeometry geometry = readLatchedGeometry();
 	const VdpClippedRect clipped = computeClippedRect(geometry.x0, geometry.y0, geometry.x1, geometry.y1, m_frameBufferWidth, m_frameBufferHeight);
 	if (clipped.area == 0.0) {
@@ -911,7 +913,7 @@ bool VDP::enqueueLatchedFillRect() {
 	}
 	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
 	BlitterCommand command;
-	assignLayeredBlitterCommand(command, BlitterCommandType::FillRect, calculateVisibleRectCost(clipped.width, clipped.height) * calculateAlphaMultiplier(color), layerPriority.layer, layerPriority.z);
+	assignLayeredBlitterCommand(command, BlitterCommandType::FillRect, calculateVisibleRectCost(clipped.width, clipped.height) * calculateAlphaMultiplier(color), layer, priority);
 	command.x0 = geometry.x0;
 	command.y0 = geometry.y0;
 	command.x1 = geometry.x1;
@@ -922,7 +924,8 @@ bool VDP::enqueueLatchedFillRect() {
 }
 
 bool VDP::enqueueLatchedDrawLine() {
-	const VdpLayerPriority layerPriority = decodeVdpLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
+	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
 	const f32 thickness = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_LINE_WIDTH]);
 	if (thickness <= 0.0f) {
 		raiseFault(VDP_FAULT_DEX_INVALID_LINE_WIDTH, m_vdpRegisters[VDP_REG_LINE_WIDTH]);
@@ -936,7 +939,7 @@ bool VDP::enqueueLatchedDrawLine() {
 	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
 	const int thicknessMultiplier = thickness > 1.0f ? 2 : 1;
 	BlitterCommand command;
-	assignLayeredBlitterCommand(command, BlitterCommandType::DrawLine, blitSpanBucket(span) * thicknessMultiplier * calculateAlphaMultiplier(color), layerPriority.layer, layerPriority.z);
+	assignLayeredBlitterCommand(command, BlitterCommandType::DrawLine, blitSpanBucket(span) * thicknessMultiplier * calculateAlphaMultiplier(color), layer, priority);
 	command.x0 = geometry.x0;
 	command.y0 = geometry.y0;
 	command.x1 = geometry.x1;
@@ -948,7 +951,8 @@ bool VDP::enqueueLatchedDrawLine() {
 }
 
 bool VDP::enqueueLatchedBlit() {
-	const VdpLayerPriority layerPriority = decodeVdpLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
+	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
 	const VdpDrawCtrl drawCtrl = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
 	const u32 slot = m_vdpRegisters[VDP_REG_SRC_SLOT];
 	const u32 u = packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]);
@@ -984,7 +988,7 @@ bool VDP::enqueueLatchedBlit() {
 	}
 	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
 	BlitterCommand command;
-	assignLayeredBlitterCommand(command, BlitterCommandType::Blit, calculateVisibleRectCost(clipped.width, clipped.height) * calculateAlphaMultiplier(color), layerPriority.layer, layerPriority.z);
+	assignLayeredBlitterCommand(command, BlitterCommandType::Blit, calculateVisibleRectCost(clipped.width, clipped.height) * calculateAlphaMultiplier(color), layer, priority);
 	command.source = source;
 	command.dstX = resolved.dstX;
 	command.dstY = resolved.dstY;
@@ -999,14 +1003,15 @@ bool VDP::enqueueLatchedBlit() {
 }
 
 bool VDP::enqueueLatchedCopyRect() {
-	const VdpLayerPriority layerPriority = decodeVdpLayerPriority(m_vdpRegisters[VDP_REG_DRAW_LAYER_PRIO]);
+	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
+	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
 	const i32 srcX = static_cast<i32>(packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]));
 	const i32 srcY = static_cast<i32>(packedHigh16(m_vdpRegisters[VDP_REG_SRC_UV]));
 	const i32 width = static_cast<i32>(packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]));
 	const i32 height = static_cast<i32>(packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]));
 	const i32 dstX = static_cast<i32>(m_vdpRegisters[VDP_REG_DST_X]) >> 16;
 	const i32 dstY = static_cast<i32>(m_vdpRegisters[VDP_REG_DST_Y]) >> 16;
-	enqueueCopyRect(srcX, srcY, width, height, dstX, dstY, layerPriority.z, layerPriority.layer);
+	enqueueCopyRect(srcX, srcY, width, height, dstX, dstY, priority, layer);
 	return true;
 }
 

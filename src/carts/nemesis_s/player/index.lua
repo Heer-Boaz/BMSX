@@ -184,7 +184,7 @@ function player:draw_lasers()
 		end
 		local x = start_x
 		while x < end_x do
-			vdp_blit_img_rgba(constants.assets.laser, x, visual_y, 122, sys_vdp_layer_world, 1, 1, 0, 1, 1, 1, 1, 0)
+			vdp_blit_img_color(constants.assets.laser, x, visual_y, 122, sys_vdp_layer_world, 1, 1, 0, 0xffffffff, 0)
 			x = x + constants.weapons.laser.tile_width
 		end
 	end
@@ -193,7 +193,7 @@ end
 function player:draw_missiles()
 	for i = 1, #self.missiles do
 		local missile<const> = self.missiles[i]
-		vdp_blit_img_rgba(missile.sprite_imgid, missile.x, missile.y, 122, sys_vdp_layer_world, 1, 1, 0, 1, 1, 1, 1, 0)
+		vdp_blit_img_color(missile.sprite_imgid, missile.x, missile.y, 122, sys_vdp_layer_world, 1, 1, 0, 0xffffffff, 0)
 	end
 end
 
@@ -203,7 +203,7 @@ function player:draw_uplasers()
 		local base_x<const> = self:get_laser_visual_x(uplaser.x, constants.weapons.uplaser)
 		local visual_y<const> = self:get_laser_visual_y(uplaser.y, constants.weapons.uplaser)
 		for tile_index = 0, uplaser.tile_count - 1 do
-			vdp_blit_img_rgba(constants.assets.laser, base_x + (tile_index * constants.weapons.uplaser.tile_width), visual_y, 122, sys_vdp_layer_world, 1, 1, 0, 1, 1, 1, 1, 0)
+			vdp_blit_img_color(constants.assets.laser, base_x + (tile_index * constants.weapons.uplaser.tile_width), visual_y, 122, sys_vdp_layer_world, 1, 1, 0, 0xffffffff, 0)
 		end
 	end
 end
@@ -212,9 +212,9 @@ function player:draw_visual()
 	local option_imgid<const> = self:get_option_imgid()
 	for i = 1, #self.options do
 		local option<const> = self.options[i]
-		vdp_blit_img_rgba(option_imgid, option.x, option.y, 119, sys_vdp_layer_world, 1, 1, 0, 1, 1, 1, 1, 0)
+		vdp_blit_img_color(option_imgid, option.x, option.y, 119, sys_vdp_layer_world, 1, 1, 0, 0xffffffff, 0)
 	end
-	vdp_blit_img_rgba(self.sprite_imgid, self.x, self.y, 120, sys_vdp_layer_world, 1, 1, 0, 1, 1, 1, 1, 0)
+	vdp_blit_img_color(self.sprite_imgid, self.x, self.y, 120, sys_vdp_layer_world, 1, 1, 0, 0xffffffff, 0)
 	self:draw_lasers()
 	self:draw_missiles()
 	self:draw_uplasers()

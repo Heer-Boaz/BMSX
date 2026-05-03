@@ -194,7 +194,7 @@ function flushPendingBatch(backend: WebGLBackend, pass: PassEncoder, state: WebG
 	return 0;
 }
 
-function writeQuad(state: WebGLVdpBlitterRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, priorityDepth: number, colorWord: number, textpageId: number): void {
+function writeQuad(state: WebGLVdpBlitterRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, priorityDepth: number, color: number, textpageId: number): void {
 	const base = index * INSTANCE_FLOATS;
 	const data = state.floatData;
 	data[base + 0] = originX;
@@ -208,10 +208,10 @@ function writeQuad(state: WebGLVdpBlitterRuntime, index: number, originX: number
 	data[base + 8] = u1;
 	data[base + 9] = v1;
 	data[base + 10] = priorityDepth;
-	data[base + 11] = ((colorWord >>> 16) & 0xff) / 255;
-	data[base + 12] = ((colorWord >>> 8) & 0xff) / 255;
-	data[base + 13] = (colorWord & 0xff) / 255;
-	data[base + 14] = ((colorWord >>> 24) & 0xff) / 255;
+	data[base + 11] = ((color >>> 16) & 0xff) / 255;
+	data[base + 12] = ((color >>> 8) & 0xff) / 255;
+	data[base + 13] = (color & 0xff) / 255;
+	data[base + 14] = ((color >>> 24) & 0xff) / 255;
 	state.textpageData[index] = textpageId;
 }
 
@@ -234,7 +234,7 @@ function appendFillCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime,
 		return 0;
 	}
 	ensureWebGLInstanceBufferCapacity(backend, state, batchIndex + 1, INSTANCE_FLOATS);
-	writeQuad(state, batchIndex, left, top, right - left, 0, 0, bottom - top, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, priorityDepth, commands.colorWord[commandIndex], 0);
+	writeQuad(state, batchIndex, left, top, right - left, 0, 0, bottom - top, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, priorityDepth, commands.color[commandIndex], 0);
 	return 1;
 }
 
@@ -246,7 +246,7 @@ function appendLineCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime,
 	ensureWebGLInstanceBufferCapacity(backend, state, batchIndex + 1, INSTANCE_FLOATS);
 	if (length === 0) {
 		const half = thickness * 0.5;
-		writeQuad(state, batchIndex, commands.x0[commandIndex] - half, commands.y0[commandIndex] - half, thickness, 0, 0, thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, priorityDepth, commands.colorWord[commandIndex], 0);
+		writeQuad(state, batchIndex, commands.x0[commandIndex] - half, commands.y0[commandIndex] - half, thickness, 0, 0, thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, priorityDepth, commands.color[commandIndex], 0);
 		return 1;
 	}
 	const tangentX = dx / length;
@@ -254,7 +254,7 @@ function appendLineCommand(backend: WebGLBackend, state: WebGLVdpBlitterRuntime,
 	const normalX = -tangentY;
 	const normalY = tangentX;
 	const half = thickness * 0.5;
-	writeQuad(state, batchIndex, commands.x0[commandIndex] - tangentX * half - normalX * half, commands.y0[commandIndex] - tangentY * half - normalY * half, dx + tangentX * thickness, dy + tangentY * thickness, normalX * thickness, normalY * thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, priorityDepth, commands.colorWord[commandIndex], 0);
+	writeQuad(state, batchIndex, commands.x0[commandIndex] - tangentX * half - normalX * half, commands.y0[commandIndex] - tangentY * half - normalY * half, dx + tangentX * thickness, dy + tangentY * thickness, normalX * thickness, normalY * thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, priorityDepth, commands.color[commandIndex], 0);
 	return 1;
 }
 
@@ -276,7 +276,7 @@ function appendBlitCommand(output: VdpHostOutput, backend: WebGLBackend, state: 
 		v1 = swap;
 	}
 	ensureWebGLInstanceBufferCapacity(backend, state, batchIndex + 1, INSTANCE_FLOATS);
-	writeQuad(state, batchIndex, commands.dstX[commandIndex], commands.dstY[commandIndex], commands.sourceWidth[commandIndex] * commands.scaleX[commandIndex], 0, 0, commands.sourceHeight[commandIndex] * commands.scaleY[commandIndex], u0, v0, u1, v1, priorityDepth, commands.colorWord[commandIndex], resolveVdpSurfaceSlotBinding(surfaceId));
+	writeQuad(state, batchIndex, commands.dstX[commandIndex], commands.dstY[commandIndex], commands.sourceWidth[commandIndex] * commands.scaleX[commandIndex], 0, 0, commands.sourceHeight[commandIndex] * commands.scaleY[commandIndex], u0, v0, u1, v1, priorityDepth, commands.color[commandIndex], resolveVdpSurfaceSlotBinding(surfaceId));
 	return 1;
 }
 
@@ -287,7 +287,7 @@ function appendGlyphBackground(backend: WebGLBackend, state: WebGLVdpBlitterRunt
 	ensureWebGLInstanceBufferCapacity(backend, state, batchIndex + glyphCount, INSTANCE_FLOATS);
 	let written = 0;
 	for (let glyphIndex = firstGlyph; glyphIndex < glyphEnd; glyphIndex += 1) {
-		writeQuad(state, batchIndex + written, commands.glyphDstX[glyphIndex], commands.glyphDstY[glyphIndex], commands.glyphAdvance[glyphIndex], 0, 0, commands.lineHeight[commandIndex], SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, priorityDepth, commands.backgroundColorWord[commandIndex], 0);
+		writeQuad(state, batchIndex + written, commands.glyphDstX[glyphIndex], commands.glyphDstY[glyphIndex], commands.glyphAdvance[glyphIndex], 0, 0, commands.lineHeight[commandIndex], SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, priorityDepth, commands.backgroundColor[commandIndex], 0);
 		written += 1;
 	}
 	return written;
@@ -303,7 +303,7 @@ function appendGlyphs(output: VdpHostOutput, backend: WebGLBackend, state: WebGL
 		const v0 = commands.glyphSrcY[glyphIndex] / surface.height;
 		const u1 = (commands.glyphSrcX[glyphIndex] + commands.glyphWidth[glyphIndex]) / surface.width;
 		const v1 = (commands.glyphSrcY[glyphIndex] + commands.glyphHeight[glyphIndex]) / surface.height;
-		writeQuad(state, batchIndex + written, commands.glyphDstX[glyphIndex], commands.glyphDstY[glyphIndex], commands.glyphWidth[glyphIndex], 0, 0, commands.glyphHeight[glyphIndex], u0, v0, u1, v1, priorityDepth, commands.colorWord[commandIndex], resolveVdpSurfaceSlotBinding(surfaceId));
+		writeQuad(state, batchIndex + written, commands.glyphDstX[glyphIndex], commands.glyphDstY[glyphIndex], commands.glyphWidth[glyphIndex], 0, 0, commands.glyphHeight[glyphIndex], u0, v0, u1, v1, priorityDepth, commands.color[commandIndex], resolveVdpSurfaceSlotBinding(surfaceId));
 		written += 1;
 	}
 	return written;
@@ -353,16 +353,16 @@ function getPriorityDepth(priorityDepthBySeq: ReadonlyMap<number, number>, seq: 
 	return priorityDepth;
 }
 
-function clearFrameBuffer(backend: WebGLBackend, priorityDepthTexture: WebGLTexture, colorWord: number): void {
+function clearFrameBuffer(backend: WebGLBackend, priorityDepthTexture: WebGLTexture, color: number): void {
 	const frameBufferTexture = vdpRenderFrameBufferTexture();
 	const pass = backend.beginRenderPass({
 		color: {
 			tex: frameBufferTexture,
 			clear: [
-				((colorWord >>> 16) & 0xff) / 255,
-				((colorWord >>> 8) & 0xff) / 255,
-				(colorWord & 0xff) / 255,
-				((colorWord >>> 24) & 0xff) / 255,
+				((color >>> 16) & 0xff) / 255,
+				((color >>> 8) & 0xff) / 255,
+				(color & 0xff) / 255,
+				((color >>> 24) & 0xff) / 255,
 			],
 		},
 		depth: { tex: priorityDepthTexture, clearDepth: 1 },
@@ -454,7 +454,7 @@ export class WebGLVdpBlitterExecutor {
 		const state = this.runtime;
 		const priorityDepthTexture = preparePriorityDepthTexture(this.backend, state, output.frameBufferWidth, output.frameBufferHeight);
 		const priorityDepthBySeq = buildPriorityDepthBySequence(state, commands);
-		clearFrameBuffer(this.backend, priorityDepthTexture, commands.opcode[0] === VDP_BLITTER_OPCODE_CLEAR ? commands.colorWord[0] : VDP_BLITTER_IMPLICIT_CLEAR);
+		clearFrameBuffer(this.backend, priorityDepthTexture, commands.opcode[0] === VDP_BLITTER_OPCODE_CLEAR ? commands.color[0] : VDP_BLITTER_IMPLICIT_CLEAR);
 		const frameBufferTexture = vdpRenderFrameBufferTexture();
 		let pass = this.backend.beginRenderPass({
 			color: { tex: frameBufferTexture },
@@ -467,7 +467,7 @@ export class WebGLVdpBlitterExecutor {
 				boundMode.batchCount = flushPendingBatch(this.backend, pass, state, boundMode.batchCount);
 				this.backend.bindVertexArray(null);
 				this.backend.endRenderPass(pass);
-				clearFrameBuffer(this.backend, priorityDepthTexture, commands.colorWord[index]);
+				clearFrameBuffer(this.backend, priorityDepthTexture, commands.color[index]);
 				boundMode.mode = null;
 				boundMode.batchCount = 0;
 				pass = this.backend.beginRenderPass({ color: { tex: frameBufferTexture }, depth: { tex: priorityDepthTexture } });

@@ -4,6 +4,14 @@
 local constants<const> = require('constants')
 local font_module<const> = require('bios/font')
 
+local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
+	local cursor_x = x
+	font_module.for_each_glyph(font, line, function(glyph)
+		vdp_glyph_color(glyph, cursor_x, y, z, layer, color)
+		cursor_x = cursor_x + glyph.advance
+	end)
+end
+
 local shrine<const> = {}
 shrine.__index = shrine
 
@@ -21,11 +29,11 @@ function shrine:ctor()
 end
 
 function shrine:render()
-	vdp_blit_img_rgba('shrine_inside', 0, constants.room.tile_origin_y, 340, sys_vdp_layer_ui, 1, 1, 0, 1, 1, 1, 1, 0)
+	vdp_blit_img_color('shrine_inside', 0, constants.room.tile_origin_y, 340, sys_vdp_layer_ui, 1, 1, 0, 0xffffffff, 0)
 	local lines<const> = self.lines
 	for i = 1, #lines do
 		local text_font<const> = self.text_font
-		vdp_glyph_line_rgba(text_font, lines[i], constants.shrine.text_x, constants.shrine.text_y + ((i - 1) * constants.room.tile_size), 341, sys_vdp_layer_ui, 1, 1, 1, 1, 0, 0, 0, 0, 0)
+		draw_glyph_line_color(text_font, lines[i], constants.shrine.text_x, constants.shrine.text_y + ((i - 1) * constants.room.tile_size), 341, sys_vdp_layer_ui, 0xffffffff)
 	end
 end
 

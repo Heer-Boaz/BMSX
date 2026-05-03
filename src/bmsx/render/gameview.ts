@@ -23,7 +23,6 @@ import type {
 	ParticleRenderSubmission,
 	GlyphRenderSubmission,
 } from './shared/submissions';
-import type { Runtime } from '../machine/runtime/runtime';
 import {
 	VDP_PRIMARY_SLOT_TEXTURE_KEY,
 	VDP_SECONDARY_SLOT_TEXTURE_KEY,
@@ -36,7 +35,6 @@ import { renderGate } from 'bmsx/core/taskgate';
 const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay'];
 
 interface GameViewOpts {
-	runtime: Runtime;
 	host: GameViewHost;
 	viewportSize: vec2; // If not provided, defaults to 256x212 (MSX2) TODO: CHECK WHETHER THIS IS TRUE!
 	canvasSize?: vec2; // If not provided, defaults to 2x viewport size
@@ -61,7 +59,6 @@ export class GameView implements RenderContext {
 
 	public readonly host: GameViewHost;
 	public readonly surface: GameViewCanvas;
-	private readonly runtime: Runtime;
 	private static fullscreenKeyListenerUnsub: SubscriptionHandle = null;
 	private static windowedKeyListenerUnsub: SubscriptionHandle = null;
 	public accessor default_font: BFont;
@@ -230,13 +227,9 @@ export class GameView implements RenderContext {
 		if (!opts || !opts.host) {
 			throw new Error('[GameView] Missing GameViewHost dependency.');
 		}
-		if (!opts.runtime) {
-			throw new Error('[GameView] Missing Runtime dependency.');
-		}
 		if (!opts.host.surface) {
 			throw new Error('[GameView] GameViewHost did not provide a render surface.');
 		}
-		this.runtime = opts.runtime;
 		this.host = opts.host;
 		this.surface = this.host.surface;
 		this.viewportSize = shallowcopy(opts.viewportSize) as vec2;

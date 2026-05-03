@@ -112,6 +112,7 @@ std::vector<uint32_t> billboardPacket(uint32_t sizeWord, uint32_t u = 2u, uint32
 	return {
 		VDP_BILLBOARD_HEADER,
 		0u,
+		0u,
 		bmsx::VDP_SLOT_PRIMARY,
 		u | (v << 16u),
 		w | (h << 16u),
@@ -200,7 +201,7 @@ void testLatchSnapshotGeometry() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_Y0, 0u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_X1, 8u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_Y1, 8u << 16);
-	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_LAYER_PRIO, 7u << 8);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_PRIORITY, 7u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_COLOR, 0xff112233u);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_FILL_RECT);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_X1, 0u);
@@ -218,7 +219,7 @@ void testBlitDrawCtrlSnapshot() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
-	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_LAYER_PRIO, 9u << 8);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_PRIORITY, 9u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0xff000003u);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0u);
@@ -253,7 +254,7 @@ void testPmuParallaxResolvedBlitSnapshot() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
 	writeIo(h.memory, bmsx::IO_VDP_REG_DST_X, 32u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DST_Y, 40u << 16);
-	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_LAYER_PRIO, 9u << 8);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_PRIORITY, 9u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00800000u);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
 	writeIo(h.memory, bmsx::IO_VDP_PMU_Y, 100u << 16u);
@@ -299,7 +300,7 @@ void testPmuBankRegistersResolveDrawCtrl() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
 	writeIo(h.memory, bmsx::IO_VDP_REG_DST_X, 32u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DST_Y, 40u << 16);
-	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_LAYER_PRIO, 9u << 8);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_PRIORITY, 9u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00800000u | (3u << 8u));
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
@@ -333,7 +334,7 @@ void testPmuScaleUsesAbsoluteWeight() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
 	writeIo(h.memory, bmsx::IO_VDP_REG_DST_X, 32u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DST_Y, 40u << 16);
-	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_LAYER_PRIO, 9u << 8);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_PRIORITY, 9u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0xff800000u | (3u << 8u));
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
@@ -377,10 +378,10 @@ void testFifoReplayAndFaults() {
 	sealStream(range, {VDP_PKT_CMD | (1u << 16) | VDP_CMD_CLEAR, VDP_PKT_END});
 	expectVdpFault(range, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "CMD reserved bits should latch stream fault");
 	clearVdpFault(range);
-	sealStream(range, {VDP_PKT_REG1 | 18u, 0u, VDP_PKT_END});
+	sealStream(range, {VDP_PKT_REG1 | 19u, 0u, VDP_PKT_END});
 	expectVdpFault(range, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "REG1 range should latch stream fault");
 	clearVdpFault(range);
-	sealStream(range, {VDP_PKT_REGN | (2u << 16) | 17u, 0u, 0u, VDP_PKT_END});
+	sealStream(range, {VDP_PKT_REGN | (2u << 16) | 18u, 0u, 0u, VDP_PKT_END});
 	expectVdpFault(range, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "REGN range should latch stream fault");
 }
 

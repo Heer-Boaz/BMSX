@@ -100,7 +100,7 @@ export class VdpBlitterCommandBuffer {
 	public readonly scaleY = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly flipH = new Uint8Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly flipV = new Uint8Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly colorWord = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
+	public readonly color = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly parallaxWeight = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly srcX = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly srcY = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
@@ -111,7 +111,7 @@ export class VdpBlitterCommandBuffer {
 	public readonly x1 = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly y1 = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly thickness = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly backgroundColorWord = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
+	public readonly backgroundColor = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly hasBackgroundColor = new Uint8Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly lineHeight = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly glyphRunFirstEntry = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
@@ -149,7 +149,7 @@ export function frameBufferColorByte(value: number): number {
 	return (value * 255 + 0.5) | 0;
 }
 
-export function packFrameBufferColorWordFromComponents(r: number, g: number, b: number, a: number): number {
+export function packFrameBufferColorFromComponents(r: number, g: number, b: number, a: number): number {
 	return (
 		(frameBufferColorByte(a) << 24)
 		| (frameBufferColorByte(r) << 16)
@@ -158,7 +158,7 @@ export function packFrameBufferColorWordFromComponents(r: number, g: number, b: 
 	) >>> 0;
 }
 
-export function packFrameBufferColorWord(source: { r: number; g: number; b: number; a: number }): number {
+export function packFrameBufferColor(source: { r: number; g: number; b: number; a: number }): number {
 	return (
 		(frameBufferColorByte(source.a) << 24)
 		| (frameBufferColorByte(source.r) << 16)
@@ -167,6 +167,6 @@ export function packFrameBufferColorWord(source: { r: number; g: number; b: numb
 	) >>> 0;
 }
 
-export function vdpColorAlphaByte(colorWord: number): number {
-	return (colorWord >>> 24) & 0xff;
+export function vdpColorAlphaByte(color: number): number {
+	return (color >>> 24) & 0xff;
 }

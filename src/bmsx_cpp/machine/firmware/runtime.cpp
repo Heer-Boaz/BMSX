@@ -118,7 +118,7 @@ void Runtime::runSystemBuiltinPrelude() {
 		"trigger_effect",
 		"vdp_load_slot",
 		"vdp_load_system_slot",
-		"vdp_blit_img_rgba",
+		"vdp_blit_img_color",
 		"vdp_img_rect",
 		"vdp_img_slot",
 		"vdp_img_source",

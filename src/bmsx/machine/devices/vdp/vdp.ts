@@ -184,7 +184,8 @@ import {
 	VDP_REG_BG_COLOR,
 	VDP_REG_DRAW_COLOR,
 	VDP_REG_DRAW_CTRL,
-	VDP_REG_DRAW_LAYER_PRIO,
+	VDP_REG_DRAW_LAYER,
+	VDP_REG_DRAW_PRIORITY,
 	VDP_REG_DRAW_SCALE_X,
 	VDP_REG_DRAW_SCALE_Y,
 	VDP_REG_DST_X,
@@ -201,10 +202,8 @@ import {
 	VDP_REG_SRC_WH,
 	VDP_REGISTER_COUNT,
 	decodeVdpDrawCtrl,
-	decodeVdpLayerPriority,
 	type VdpDrawCtrl,
 	type VdpLatchedGeometry,
-	type VdpLayerPriority,
 } from './registers';
 import {
 	type VramGarbageStream,
@@ -443,7 +442,6 @@ export class VDP implements VramWriteSink {
 	private readonly clippedRectScratchA = { width: 0, height: 0, area: 0 };
 	private readonly latchedSourceScratch: VdpBlitterSource = { surfaceId: 0, srcX: 0, srcY: 0, width: 0, height: 0 };
 	private readonly latchedGeometryScratch: VdpLatchedGeometry = { x0: 0, y0: 0, x1: 0, y1: 0 };
-	private readonly layerPriorityScratch: VdpLayerPriority = { layer: 0, priority: 0, z: 0 };
 	private readonly drawCtrlScratch: VdpDrawCtrl = { flipH: false, flipV: false, blendMode: 0, pmuBank: 0, parallaxWeight: 0 };
 	private blitterSequence = 0;
 	private cpuHz: bigint = 1n;
@@ -977,7 +975,7 @@ export class VDP implements VramWriteSink {
 					this.latchStreamFault(word);
 					return -1;
 				}
-				const controlWord = this.memory.readU32(cursor + IO_WORD_SIZE * 9);
+				const controlWord = this.memory.readU32(cursor + IO_WORD_SIZE * 10);
 				if (controlWord !== 0) {
 					this.latchStreamFault(controlWord);
 					return -1;
@@ -992,6 +990,7 @@ export class VDP implements VramWriteSink {
 					this.memory.readU32(cursor + IO_WORD_SIZE * 6),
 					this.memory.readU32(cursor + IO_WORD_SIZE * 7),
 					this.memory.readU32(cursor + IO_WORD_SIZE * 8),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 9),
 					controlWord,
 				)) ? payloadEnd : -1;
 			}
@@ -1049,8 +1048,8 @@ export class VDP implements VramWriteSink {
 					this.latchStreamFault(word);
 					return -1;
 				}
-				if (this.vdpFifoStreamWords[cursor + 9] !== 0) {
-					this.latchStreamFault(this.vdpFifoStreamWords[cursor + 9]);
+				if (this.vdpFifoStreamWords[cursor + 10] !== 0) {
+					this.latchStreamFault(this.vdpFifoStreamWords[cursor + 10]);
 					return -1;
 				}
 				return this.latchBillboardPacket(this.bbu.decodePacket(
@@ -1064,6 +1063,7 @@ export class VDP implements VramWriteSink {
 					this.vdpFifoStreamWords[cursor + 7],
 					this.vdpFifoStreamWords[cursor + 8],
 					this.vdpFifoStreamWords[cursor + 9],
+					this.vdpFifoStreamWords[cursor + 10],
 				)) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : -1;
 			case VDP_SBX_PACKET_KIND:
 				if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
@@ -1257,28 +1257,28 @@ export class VDP implements VramWriteSink {
 
 	private enqueueLatchedClear(): boolean {
 		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_CLEAR, VDP_RENDER_CLEAR_COST);
-		this.buildFrame.queue.colorWord[index] = this.vdpRegisters[VDP_REG_BG_COLOR] >>> 0;
+		this.buildFrame.queue.color[index] = this.vdpRegisters[VDP_REG_BG_COLOR] >>> 0;
 		return true;
 	}
 
 	private enqueueLatchedFillRect(): boolean {
-		const layerPriority = this.layerPriorityScratch;
-		decodeVdpLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO], layerPriority);
+		const layer = this.vdpRegisters[VDP_REG_DRAW_LAYER] as Layer2D;
+		const priority = this.vdpRegisters[VDP_REG_DRAW_PRIORITY];
 		const geometry = this.readLatchedGeometry(this.latchedGeometryScratch);
 		const clipped = computeClippedRect(geometry.x0, geometry.y0, geometry.x1, geometry.y1, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
 		if (clipped.area === 0) {
 			return true;
 		}
-		const colorWord = this.vdpRegisters[VDP_REG_DRAW_COLOR] >>> 0;
-		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_FILL_RECT, this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(colorWord));
+		const color = this.vdpRegisters[VDP_REG_DRAW_COLOR] >>> 0;
+		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_FILL_RECT, this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(color));
 		const queue = this.buildFrame.queue;
-		this.writeGeometryColorCommand(queue, index, layerPriority, geometry, colorWord);
+		this.writeGeometryColorCommand(queue, index, layer, priority, geometry, color);
 		return true;
 	}
 
 	private enqueueLatchedDrawLine(): boolean {
-		const layerPriority = this.layerPriorityScratch;
-		decodeVdpLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO], layerPriority);
+		const layer = this.vdpRegisters[VDP_REG_DRAW_LAYER] as Layer2D;
+		const priority = this.vdpRegisters[VDP_REG_DRAW_PRIORITY];
 		const thickness = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_LINE_WIDTH]);
 		if (thickness <= 0) {
 			this.raiseFault(VDP_FAULT_DEX_INVALID_LINE_WIDTH, this.vdpRegisters[VDP_REG_LINE_WIDTH]);
@@ -1289,18 +1289,18 @@ export class VDP implements VramWriteSink {
 		if (span === 0) {
 			return true;
 		}
-		const colorWord = this.vdpRegisters[VDP_REG_DRAW_COLOR] >>> 0;
+		const color = this.vdpRegisters[VDP_REG_DRAW_COLOR] >>> 0;
 		const thicknessMultiplier = thickness > 1 ? 2 : 1;
-		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_DRAW_LINE, blitSpanBucket(span) * thicknessMultiplier * this.calculateAlphaMultiplier(colorWord));
+		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_DRAW_LINE, blitSpanBucket(span) * thicknessMultiplier * this.calculateAlphaMultiplier(color));
 		const queue = this.buildFrame.queue;
-		this.writeGeometryColorCommand(queue, index, layerPriority, geometry, colorWord);
+		this.writeGeometryColorCommand(queue, index, layer, priority, geometry, color);
 		queue.thickness[index] = thickness;
 		return true;
 	}
 
 	private enqueueLatchedBlit(): boolean {
-		const layerPriority = this.layerPriorityScratch;
-		decodeVdpLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO], layerPriority);
+		const layer = this.vdpRegisters[VDP_REG_DRAW_LAYER] as Layer2D;
+		const priority = this.vdpRegisters[VDP_REG_DRAW_PRIORITY];
 		const drawCtrl = this.drawCtrlScratch;
 		decodeVdpDrawCtrl(this.vdpRegisters[VDP_REG_DRAW_CTRL], drawCtrl);
 		const slot = this.vdpRegisters[VDP_REG_SRC_SLOT];
@@ -1334,11 +1334,11 @@ export class VDP implements VramWriteSink {
 		if (clipped.area === 0) {
 			return true;
 		}
-		const colorWord = this.vdpRegisters[VDP_REG_DRAW_COLOR] >>> 0;
-		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_BLIT, this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(colorWord));
+		const color = this.vdpRegisters[VDP_REG_DRAW_COLOR] >>> 0;
+		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_BLIT, this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(color));
 		const queue = this.buildFrame.queue;
-		queue.layer[index] = layerPriority.layer;
-		queue.priority[index] = layerPriority.z;
+		queue.layer[index] = layer;
+		queue.priority[index] = priority;
 		queue.sourceSurfaceId[index] = source.surfaceId;
 		queue.sourceSrcX[index] = source.srcX;
 		queue.sourceSrcY[index] = source.srcY;
@@ -1350,21 +1350,21 @@ export class VDP implements VramWriteSink {
 		queue.scaleY[index] = resolved.scaleY;
 		queue.flipH[index] = drawCtrl.flipH ? 1 : 0;
 		queue.flipV[index] = drawCtrl.flipV ? 1 : 0;
-		queue.colorWord[index] = colorWord;
+		queue.color[index] = color;
 		queue.parallaxWeight[index] = drawCtrl.parallaxWeight;
 		return true;
 	}
 
 	private enqueueLatchedCopyRect(): boolean {
-		const layerPriority = this.layerPriorityScratch;
-		decodeVdpLayerPriority(this.vdpRegisters[VDP_REG_DRAW_LAYER_PRIO], layerPriority);
+		const layer = this.vdpRegisters[VDP_REG_DRAW_LAYER] as Layer2D;
+		const priority = this.vdpRegisters[VDP_REG_DRAW_PRIORITY];
 		const srcX = packedLow16(this.vdpRegisters[VDP_REG_SRC_UV]);
 		const srcY = packedHigh16(this.vdpRegisters[VDP_REG_SRC_UV]);
 		const width = packedLow16(this.vdpRegisters[VDP_REG_SRC_WH]);
 		const height = packedHigh16(this.vdpRegisters[VDP_REG_SRC_WH]);
 		const dstX = (this.vdpRegisters[VDP_REG_DST_X] | 0) >> 16;
 		const dstY = (this.vdpRegisters[VDP_REG_DST_Y] | 0) >> 16;
-		this.enqueueCopyRectWords(srcX, srcY, width, height, dstX, dstY, layerPriority.z, layerPriority.layer);
+		this.enqueueCopyRectWords(srcX, srcY, width, height, dstX, dstY, priority, layer);
 		return true;
 	}
 
@@ -1422,14 +1422,14 @@ export class VDP implements VramWriteSink {
 		return index;
 	}
 
-	private writeGeometryColorCommand(queue: VdpBlitterCommandBuffer, index: number, layerPriority: VdpLayerPriority, geometry: VdpLatchedGeometry, colorWord: number): void {
-		queue.layer[index] = layerPriority.layer;
-		queue.priority[index] = layerPriority.z;
+	private writeGeometryColorCommand(queue: VdpBlitterCommandBuffer, index: number, layer: Layer2D, priority: number, geometry: VdpLatchedGeometry, color: number): void {
+		queue.layer[index] = layer;
+		queue.priority[index] = priority;
 		queue.x0[index] = geometry.x0;
 		queue.y0[index] = geometry.y0;
 		queue.x1[index] = geometry.x1;
 		queue.y1[index] = geometry.y1;
-		queue.colorWord[index] = colorWord;
+		queue.color[index] = color;
 	}
 
 	private calculateVisibleRectCost(width: number, height: number): number {
@@ -1437,8 +1437,8 @@ export class VDP implements VramWriteSink {
 		return blitAreaBucket(area);
 	}
 
-	private calculateAlphaMultiplier(colorWord: number): number {
-		return vdpColorAlphaByte(colorWord) < 255 ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
+	private calculateAlphaMultiplier(color: number): number {
+		return vdpColorAlphaByte(color) < 255 ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
 	}
 
 	private submittedFrameCost(queue: VdpBlitterCommandBuffer, baseCost: number): number {

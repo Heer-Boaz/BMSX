@@ -18,6 +18,14 @@
 local constants<const> = require('constants')
 local font_module<const> = require('bios/font')
 
+local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
+	local cursor_x = x
+	font_module.for_each_glyph(font, line, function(glyph)
+		vdp_glyph_color(glyph, cursor_x, y, z, layer, color)
+		cursor_x = cursor_x + glyph.advance
+	end)
+end
+
 local transition<const> = {}
 transition.__index = transition
 
@@ -38,7 +46,7 @@ function transition:bind_visual()
 end
 
 function transition:draw_transition_overlay()
-	vdp_fill_rect_rgba(0, 0, display_width(), display_height(), 340, sys_vdp_layer_ui, 0, 0, 0, 1)
+	vdp_fill_rect_color(0, 0, display_width(), display_height(), 340, sys_vdp_layer_ui, 0xff000000)
 	if not oget('d'):has_tag('d.bt') then
 		return
 	end
@@ -50,7 +58,7 @@ function transition:draw_transition_overlay()
 		for i = 1, #lines do
 			local line<const> = lines[i]
 			if string.len(line) > 0 then
-				vdp_glyph_line_rgba(banner_font, line, (screen_width - font_module.measure_line_width(banner_font, line)) // 2, base_y + ((i - 1) * banner_font.line_height), 341, sys_vdp_layer_ui, 1, 1, 1, 1, 0, 0, 0, 0, 0)
+				draw_glyph_line_color(banner_font, line, (screen_width - font_module.measure_line_width(banner_font, line)) // 2, base_y + ((i - 1) * banner_font.line_height), 341, sys_vdp_layer_ui, 0xffffffff)
 			end
 		end
 	end

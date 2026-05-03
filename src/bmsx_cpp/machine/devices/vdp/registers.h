@@ -2,7 +2,6 @@
 
 #include "core/primitives.h"
 #include "machine/bus/io.h"
-#include "machine/devices/vdp/contracts.h"
 
 namespace bmsx {
 
@@ -16,14 +15,15 @@ constexpr u32 VDP_REG_GEOM_Y0 = 6u;
 constexpr u32 VDP_REG_GEOM_X1 = 7u;
 constexpr u32 VDP_REG_GEOM_Y1 = 8u;
 constexpr u32 VDP_REG_LINE_WIDTH = 9u;
-constexpr u32 VDP_REG_DRAW_LAYER_PRIO = 10u;
-constexpr u32 VDP_REG_DRAW_CTRL = 11u;
-constexpr u32 VDP_REG_DRAW_SCALE_X = 12u;
-constexpr u32 VDP_REG_DRAW_SCALE_Y = 13u;
-constexpr u32 VDP_REG_DRAW_COLOR = 14u;
-constexpr u32 VDP_REG_BG_COLOR = 15u;
-constexpr u32 VDP_REG_SLOT_INDEX = 16u;
-constexpr u32 VDP_REG_SLOT_DIM = 17u;
+constexpr u32 VDP_REG_DRAW_LAYER = 10u;
+constexpr u32 VDP_REG_DRAW_PRIORITY = 11u;
+constexpr u32 VDP_REG_DRAW_CTRL = 12u;
+constexpr u32 VDP_REG_DRAW_SCALE_X = 13u;
+constexpr u32 VDP_REG_DRAW_SCALE_Y = 14u;
+constexpr u32 VDP_REG_DRAW_COLOR = 15u;
+constexpr u32 VDP_REG_BG_COLOR = 16u;
+constexpr u32 VDP_REG_SLOT_INDEX = 17u;
+constexpr u32 VDP_REG_SLOT_DIM = 18u;
 constexpr u32 VDP_REGISTER_COUNT = IO_VDP_CMD_ARG_COUNT;
 
 constexpr u32 VDP_Q16_ONE = 0x00010000u;
@@ -59,12 +59,6 @@ struct VdpLatchedGeometry {
 	f32 y1 = 0.0f;
 };
 
-struct VdpLayerPriority {
-	Layer2D layer = Layer2D::World;
-	u32 priority = 0u;
-	f32 z = 0.0f;
-};
-
 struct VdpDrawCtrl {
 	bool flipH = false;
 	bool flipV = false;
@@ -73,8 +67,6 @@ struct VdpDrawCtrl {
 	f32 parallaxWeight = 0.0f;
 };
 
-VdpLayerPriority decodeVdpLayerPriority(u32 value);
-u32 encodeVdpLayerPriority(Layer2D layer, f32 priority);
 VdpDrawCtrl decodeVdpDrawCtrl(u32 value);
 u32 encodeVdpDrawCtrl(bool flipH, bool flipV, u32 pmuBank, f32 parallaxWeight);
 

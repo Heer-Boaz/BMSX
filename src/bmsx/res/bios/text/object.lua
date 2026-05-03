@@ -6,6 +6,7 @@ local components<const> = require('bios/components')
 local fsmlibrary<const> = require('bios/fsm/library')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 local vdp_stream<const> = require('bios/vdp_stream')
+local font_module<const> = require('bios/font')
 
 local textobject<const> = {}
 textobject.__index = textobject
@@ -37,13 +38,7 @@ local state_tags<const> = {
 }
 
 local measure_line_width<const> = function(font, line)
-	local width = 0
-	local line_length<const> = string.len(line)
-	for i = 1, line_length do
-		local glyph<const> = font.glyphs[line:sub(i, i)] or font.glyphs['?']
-		width = width + glyph.advance
-	end
-	return width
+	return font_module.measure_line_width(font, line)
 end
 
 local append_wrapped_logical_line<const> = function(wrapped_lines, wrapped_line_to_logical_line, logical_line_index, line, max_chars)
@@ -331,6 +326,9 @@ function textobject.new(opts)
 	self.highlight_color = { r = 0, g = 0, b = 0.5, a = 0.7 }
 	self.normal_bg_color = { r = 0, g = 0, b = 0, a = 1 }
 	self.highlight_bg_color = { r = 0, g = 0, b = 0.5, a = 0.7 }
+	self.text_color = 0xffffffff
+	self.normal_bg_color = 0xff000000
+	self.highlight_bg_color = 0xb3000080
 	self.font = opts.font or get_default_font()
 	self.dimensions = opts.dimensions or { left = 0, top = 0, right = display_width(), bottom = display_height() }
 	self.centered_block_x = 0
@@ -548,9 +546,6 @@ function textobject:type_next()
 end
 
 function textobject:sync_text_component()
-	local text_color<const> = self.text_color
-	local normal_bg_color<const> = self.normal_bg_color
-	normal_bg_color.a = text_color.a
 	self.text_offset.x = self.centered_block_x - self.x
 	self.text_offset.y = self.dimensions.top - self.y
 	self.text_component.text = self.text
@@ -558,8 +553,8 @@ function textobject:sync_text_component()
 	self.text_component.line_height = self.line_height
 	self.text_component.line_offsets = self.wrapped_line_y_offsets
 	self.text_component.line_widths = self.displayed_line_widths
-	self.text_component.color = text_color
-	self.text_component.background_color = normal_bg_color
+	self.text_component.color = self.text_color
+	self.text_component.background_color = self.normal_bg_color
 	self.text_component.layer = self.layer
 end
 
@@ -583,7 +578,7 @@ function textobject:submit_text_background_lines(x, y, z, glyphs)
 			elseif tc.center_block_width ~= nil then
 				line_x = x + ((tc.center_block_width - line_width) / 2)
 			end
-			vdp_stream.fill_rect_rgba(line_x, line_y, line_x + line_width, line_y + tc.font.line_height, z, tc.layer, background_color.r, background_color.g, background_color.b, background_color.a)
+			vdp_stream.fill_rect_color(line_x, line_y, line_x + line_width, line_y + tc.font.line_height, z, tc.layer, background_color)
 		end
 		if line_offsets == nil then
 			cursor_y = cursor_y + tc.line_height
@@ -593,22 +588,15 @@ end
 
 function textobject:submit_text_lines(x, y, z, glyphs)
 	local tc<const> = self.text_component
-	if tc.background_color ~= nil and tc.background_color.a > 0 then
+	if tc.background_color ~= nil then
 		self:submit_text_background_lines(x, y, z - 1, glyphs)
 	end
-	tc:submit_glyph_lines(x, y, z, glyphs, 0, 0, 0, 0, 0)
+	tc:submit_glyph_lines(x, y, z, glyphs)
 end
 
 function textobject:submit_highlight()
 	self:update_highlight_animation()
 	local dims<const> = self.dimensions
-	local text_color<const> = self.text_color
-	local highlight<const> = self.highlight_color
-	local highlight_bg_color<const> = self.highlight_bg_color
-	highlight_bg_color.r = highlight.r
-	highlight_bg_color.g = highlight.g
-	highlight_bg_color.b = highlight.b
-	highlight_bg_color.a = highlight.a * text_color.a
 	local highlighted_logical_line<const> = self.highlighted_line_index
 	if highlighted_logical_line ~= nil and self.highlight_anim_y ~= nil then
 		local horizontal_margin<const> = self.char_width / 2
@@ -617,7 +605,7 @@ function textobject:submit_highlight()
 		local offset_y<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
 		local padded_x<const> = horizontal_margin * scale
 		local highlight_z<const> = self.z + self.text_offset.z - 0.5
-		vdp_stream.fill_rect_rgba(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, highlight_z, self.layer, highlight_bg_color.r, highlight_bg_color.g, highlight_bg_color.b, highlight_bg_color.a)
+		vdp_stream.fill_rect_color(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, highlight_z, self.layer, self.highlight_bg_color)
 	end
 end
 

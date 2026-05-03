@@ -154,7 +154,7 @@ function spritecomponent.new(opts)
 	local self<const> = setmetatable(component.new(opts), spritecomponent)
 	self.layer = opts.layer or sys_vdp_layer_world
 	self.flip = { flip_h = false, flip_v = false }
-	self.colorize = opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
+	self.color = opts.color or 0xffffffff
 	self.scale = opts.scale or { x = 1, y = 1 }
 	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
 	self.parallax_weight = opts.parallax_weight or 0
@@ -672,7 +672,7 @@ function textcomponent.new(opts)
 	self.text = (opts.text)
 	self.font = opts.font or get_default_font()
 	self.line_height = opts.line_height or self.font.line_height
-	self.color = opts.color or { r = 1, g = 1, b = 1, a = 1 }
+	self.color = opts.color or 0xffffffff
 	self.background_color = opts.background_color
 	self.wrap_chars = opts.wrap_chars
 	self.line_offsets = opts.line_offsets
@@ -690,7 +690,7 @@ function textcomponent:prepare_render()
 end
 
 
-function textcomponent:submit_glyph_lines(x, y, z, glyphs, background_enabled, bg_r, bg_g, bg_b, bg_a)
+function textcomponent:submit_glyph_lines(x, y, z, glyphs)
 	local cursor_y = y
 	local line_offsets<const> = self.line_offsets
 	local line_widths<const> = self.line_widths
@@ -698,7 +698,8 @@ function textcomponent:submit_glyph_lines(x, y, z, glyphs, background_enabled, b
 	for i = 1, #glyphs do
 		local line<const> = glyphs[i]
 		local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
-		if string.len(line) > 0 then
+		local line_length<const> = string.len(line)
+		if line_length > 0 then
 			local line_x = x
 			if line_x_offsets ~= nil then
 				line_x = x + line_x_offsets[i]
@@ -706,7 +707,14 @@ function textcomponent:submit_glyph_lines(x, y, z, glyphs, background_enabled, b
 				local line_width<const> = line_widths ~= nil and line_widths[i] or font_module.measure_line_width(self.font, line)
 				line_x = x + ((self.center_block_width - line_width) / 2)
 			end
-			vdp_image.write_glyph_line_rgba(self.font, line, line_x, line_y, z, self.layer, self.color.r, self.color.g, self.color.b, self.color.a, background_enabled, bg_r, bg_g, bg_b, bg_a)
+			local cursor_x = line_x
+			font_module.for_each_glyph(self.font, line, function(glyph)
+				if self.background_color ~= nil then
+					vdp_stream.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, z - 1, self.layer, self.background_color)
+				end
+				vdp_image.write_glyph_color(glyph, cursor_x, line_y, z, self.layer, self.color)
+				cursor_x = cursor_x + glyph.advance
+			end)
 		end
 		if line_offsets == nil then
 			cursor_y = cursor_y + self.line_height
@@ -715,12 +723,7 @@ function textcomponent:submit_glyph_lines(x, y, z, glyphs, background_enabled, b
 end
 
 function textcomponent:render(x, y, z, glyphs)
-	local background_enabled<const> = self.background_color ~= nil and 1 or 0
-	local bg_r<const> = background_enabled ~= 0 and self.background_color.r or 0
-	local bg_g<const> = background_enabled ~= 0 and self.background_color.g or 0
-	local bg_b<const> = background_enabled ~= 0 and self.background_color.b or 0
-	local bg_a<const> = background_enabled ~= 0 and self.background_color.a or 0
-	self:submit_glyph_lines(x, y, z, glyphs, background_enabled, bg_r, bg_g, bg_b, bg_a)
+	self:submit_glyph_lines(x, y, z, glyphs)
 end
 
 -- meshcomponent: minimal render descriptor

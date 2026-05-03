@@ -3,13 +3,13 @@
 #include "machine/common/word.h"
 #include "machine/devices/vdp/fault.h"
 #include "machine/devices/vdp/fixed_point.h"
-#include "machine/devices/vdp/registers.h"
 #include <string>
 
 namespace bmsx {
 
 VdpBbuPacket VdpBbuUnit::decodePacket(
-	u32 layerPriorityWord,
+	u32 layerWord,
+	u32 priority,
 	u32 slot,
 	u32 uvWord,
 	u32 whWord,
@@ -17,15 +17,14 @@ VdpBbuPacket VdpBbuUnit::decodePacket(
 	u32 yWord,
 	u32 zWord,
 	u32 sizeWord,
-	u32 colorWord,
+	u32 color,
 	u32 controlWord) const {
 	if (controlWord != 0u) {
 		throw vdpFault("VDP BBU control reserved bits are set (" + std::to_string(controlWord) + ").");
 	}
-	const VdpLayerPriority layerPriority = decodeVdpLayerPriority(layerPriorityWord);
 	VdpBbuPacket packet;
-	packet.layer = layerPriority.layer;
-	packet.priority = layerPriority.priority;
+	packet.layer = static_cast<Layer2D>(layerWord);
+	packet.priority = priority;
 	packet.sourceRect = VdpSlotSource{
 		slot,
 		packedLow16(uvWord),
@@ -37,7 +36,7 @@ VdpBbuPacket VdpBbuUnit::decodePacket(
 	packet.yWord = yWord;
 	packet.zWord = zWord;
 	packet.sizeWord = sizeWord;
-	packet.colorWord = colorWord;
+	packet.color = color;
 	return packet;
 }
 
@@ -58,10 +57,10 @@ void VdpBbuUnit::latchBillboard(std::vector<VdpBbuBillboardEntry>& target, const
 	entry.positionZ = decodeSignedQ16_16(packet.zWord);
 	entry.size = size;
 	entry.color = Color::fromRGBA8(
-		static_cast<u8>((packet.colorWord >> 16u) & 0xffu),
-		static_cast<u8>((packet.colorWord >> 8u) & 0xffu),
-		static_cast<u8>(packet.colorWord & 0xffu),
-		static_cast<u8>((packet.colorWord >> 24u) & 0xffu));
+		static_cast<u8>((packet.color >> 16u) & 0xffu),
+		static_cast<u8>((packet.color >> 8u) & 0xffu),
+		static_cast<u8>(packet.color & 0xffu),
+		static_cast<u8>((packet.color >> 24u) & 0xffu));
 	entry.source = source;
 	entry.surfaceWidth = surface.width;
 	entry.surfaceHeight = surface.height;

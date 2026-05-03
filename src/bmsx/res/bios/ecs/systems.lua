@@ -517,7 +517,7 @@ function spriterendersystem:update()
 		if sc.flip.flip_v then
 			flip_flags = flip_flags | 2
 		end
-		vdp_image.write_blit_rgba(sc.imgid, x, y, z, sc.layer, sc.scale.x, sc.scale.y, flip_flags, sc.colorize.r, sc.colorize.g, sc.colorize.b, sc.colorize.a, sc.parallax_weight)
+		vdp_image.write_blit_color(sc.imgid, x, y, z, sc.layer, sc.scale.x, sc.scale.y, flip_flags, sc.color, sc.parallax_weight)
 		::continue_sprite_render::
 	end
 end

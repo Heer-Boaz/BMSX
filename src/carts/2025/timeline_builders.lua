@@ -595,7 +595,7 @@ function builders.build_combat_hit_frames(params)
 		local slash_active<const> = frame_index >= globals.combat_hit_stop_frames and frame_index <= slash_end
 		local slash_points = { 0, 0, 0, 0 }
 		local slash_thickness = 0
-		local slash_color = { r = 1, g = 1, b = 1, a = 0 }
+		local slash_color = 0x00ffffff
 		if slash_active then
 			local u<const> = (frame_index - globals.combat_hit_stop_frames) / (slash_end - globals.combat_hit_stop_frames)
 			local arc<const> = easing.arc01(u)
@@ -609,7 +609,7 @@ function builders.build_combat_hit_frames(params)
 			local y1<const> = center_y + (path_ny * half)
 			slash_points = { x0, y0, x1, y1 }
 			slash_thickness = base_thickness * (globals.combat_hit_slash_taper_floor + ((1 - globals.combat_hit_slash_taper_floor) * arc))
-			slash_color = { r = 1, g = 1, b = 1, a = globals.combat_hit_slash_alpha * arc }
+			slash_color = (((globals.combat_hit_slash_alpha * arc * 255 + 0.5) // 1) << 24) | 0x00ffffff
 		end
 
 		frames[#frames + 1] = {

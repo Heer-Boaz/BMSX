@@ -184,7 +184,7 @@ function combat.define_fsm()
 				slash_active = false,
 				slash_points = { 0, 0, 0, 0 },
 				slash_thickness = 0,
-				slash_color = { r = 1, g = 1, b = 1, a = 0 },
+				slash_color = 0x00ffffff,
 				slash_z = globals.combat_hit_slash_z,
 			}
 				self.combat_hit_slash_rc = attach_component(self, 'customvisualcomponent')
@@ -201,7 +201,7 @@ function combat.define_fsm()
 					local z<const> = frame.slash_z
 					local color<const> = frame.slash_color
 					local thickness<const> = frame.slash_thickness
-					vdp_draw_line_rgba(x0, y0, x1, y1, z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, thickness)
+					vdp_draw_line_color(x0, y0, x1, y1, z, sys_vdp_layer_world, color, thickness)
 				end)
 			globals.hide_combat_sprites()
 			return '/idle'

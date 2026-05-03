@@ -31,6 +31,7 @@ local create_rect_state<const> = function(z)
 		g = 0,
 		b = 0,
 		a = 0,
+		color = 0x00000000,
 	}
 end
 
@@ -38,7 +39,7 @@ local submit_rect_state<const> = function(rect)
 	if not rect.visible or rect.a <= 0 or rect.width <= 0 or rect.height <= 0 then
 		return
 	end
-	vdp_fill_rect_rgba(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, rect.z, sys_vdp_layer_world, rect.r, rect.g, rect.b, rect.a)
+	vdp_fill_rect_color(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, rect.z, sys_vdp_layer_world, rect.color)
 end
 
 local create_transition_visuals<const> = function()

@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 const root = process.cwd();
+const oldColorSnake = 'color' + '_word';
+const oldPrioritySnake = 'priority' + '_word';
 
 function collectFiles(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir)) {
@@ -107,6 +109,68 @@ test('old high-level VDP scene command ABI is gone', () => {
 		/VDP_STREAM_PACKET_HEADER_WORDS/,
 		/VDP_STREAM_PAYLOAD_CAPACITY_WORDS/,
 		/sys_vdp_cmd_(clear|fill_rect|blit|draw_line|glyph_run|tile_run)/,
+	]);
+});
+
+test('VDP stream helpers use raw split registers and raw colors', () => {
+	assertNoMatches([
+		'src/bmsx/res/bios',
+		'src/carts',
+	], [
+		/vdp_\w*_rgba/,
+		/write_\w*_rgba/,
+		/blit_source_rgba/,
+		/fill_rect_rgba/,
+		/draw_line_rgba/,
+		/clear_rgba/,
+		/layer_priority/,
+		/(?:sys_vdp_layer|vdp_layer)_\w+\s*&\s*0xff/,
+		/color_byte/,
+		new RegExp(`local\\s+${oldColorSnake}\\s*<const>\\s*=\\s*function`),
+		/sys_palette_color\s*\(/,
+	]);
+	assertNoMatches([
+		'src/bmsx/machine',
+		'src/bmsx_cpp/machine',
+	], [
+		/VDP_REG_DRAW_LAYER_PRIO/,
+		/IO_VDP_REG_DRAW_LAYER_PRIO/,
+		/decodeVdpLayerPriority/,
+		/encodeVdpLayerPriority/,
+		/layerPriority/,
+	]);
+	assertFileDoesNotMatch('src/bmsx/res/bios/vdp_image.lua', [
+		/write_glyph_line/,
+		/string\.len\s*\(\s*line\s*\)/,
+		/line:sub/,
+	]);
+	assertFileDoesNotMatch('src/bmsx/res/bios/font.lua', [
+		/string\.len\s*\(\s*line\s*\)/,
+		/line:sub/,
+	]);
+});
+
+test('VDP color and priority APIs do not use word-postfixed names', () => {
+	assertNoMatches([
+		'src/bmsx',
+		'src/bmsx_cpp',
+		'src/carts',
+	], [
+		new RegExp(oldColorSnake),
+		new RegExp('color' + 'Word'),
+		new RegExp('Color' + 'Word'),
+		new RegExp(oldPrioritySnake),
+		new RegExp('priority' + 'Word'),
+		new RegExp('Priority' + 'Word'),
+		new RegExp('palette' + '_color' + '_words'),
+		new RegExp('colorize' + '_word'),
+		new RegExp(`_${oldColorSnake}`),
+	]);
+	assertFileDoesNotMatch('docs/architecture.md', [
+		new RegExp('color ' + 'word'),
+		new RegExp('color ' + 'words'),
+		new RegExp('priority ' + 'word'),
+		new RegExp('priority ' + 'words'),
 	]);
 });
 

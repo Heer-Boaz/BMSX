@@ -532,7 +532,7 @@ local draw_tile_sources<const> = function(sources, tile_count, cols, tile_size, 
 			local tile_index<const> = i - 1
 			local tile_x<const> = tile_index % cols
 			local tile_y<const> = tile_index // cols
-			vdp_stream.blit_source_rgba(source.slot, source.u, source.v, source.w, source.h, origin_x + (tile_x * tile_size), origin_y + (tile_y * tile_size), 0, sys_vdp_layer_world, 1, 1, 0, 1, 1, 1, 1, 0)
+			vdp_stream.blit_source_color(source.slot, source.u, source.v, source.w, source.h, origin_x + (tile_x * tile_size), origin_y + (tile_y * tile_size), 0, sys_vdp_layer_world, 1, 1, 0, 0xffffffff, 0)
 		end
 	end
 end
@@ -1041,7 +1041,7 @@ function room_object:render_room()
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	vdp_fill_rect_rgba(0, constants.room.tile_origin_y, display_width(), display_height(), 342, sys_vdp_layer_world, 1, 1, 1, 0.5)
+	vdp_fill_rect_color(0, constants.room.tile_origin_y, display_width(), display_height(), 342, sys_vdp_layer_world, 0x80ffffff)
 end
 
 local room_runtime_state_name<const> = function(room_state)

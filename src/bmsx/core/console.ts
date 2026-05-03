@@ -132,7 +132,6 @@ export class ConsoleCore {
 		const runtime = await Runtime.init(systemLayer, workspaceOverlay, cartridge);
 		this._runtime = runtime;
 		const gview = new GameView({
-			runtime,
 			viewportSize,
 			host: resolvedViewHost,
 		});

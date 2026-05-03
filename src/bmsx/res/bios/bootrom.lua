@@ -5,8 +5,17 @@ local clamp_int<const> = require('bios/util/clamp_int')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 local vdp_stream<const> = require('bios/vdp_stream')
 local vdp_image<const> = require('bios/vdp_image')
+local font_module<const> = require('bios/font')
 
 local reset_scroll_state<const> = function(state) state.top = 0 end
+
+local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
+	local cursor_x = x
+	font_module.for_each_glyph(font, line, function(glyph)
+		vdp_image.write_glyph_color(glyph, cursor_x, y, z, layer, color)
+		cursor_x = cursor_x + glyph.advance
+	end)
+end
 local scroll_window<const> = function(lines, top, window_size)
 	local visible_lines<const> = {}
 	local max_scroll<const> = math.max(0, #lines - window_size)
@@ -407,8 +416,8 @@ render_boot_screen = function(scroll_delta)
 	local top<const> = content_top
 	local font<const> = get_default_font()
 
-	do local c<const> = sys_palette_color(color_bg);vdp_stream.clear_rgba(c.r, c.g, c.b, c.a) end
-	do local c<const> = sys_palette_color(color_header_bg);vdp_stream.fill_rect_rgba(0, 0, width, 24, 0, sys_vdp_layer_world, c.r, c.g, c.b, c.a) end
+	vdp_stream.clear_color(sys_palette_colors[color_bg])
+	vdp_stream.fill_rect_color(0, 0, width, 24, 0, sys_vdp_layer_world, sys_palette_colors[color_header_bg])
 	local info<const> = build_info()
 	local cart_present<const> = mem[cart_rom_base] == cart_rom_magic
 	local elapsed<const> = os.clock() - boot_start
@@ -432,8 +441,8 @@ render_boot_screen = function(scroll_delta)
 			line_color = color_text
 		end
 		if string.len(text) > 0 then
-			local color<const> = sys_palette_color(line_color or color_text)
-			vdp_image.write_glyph_line_rgba(font, text, left, y, text_z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, 0, 0, 0, 0, 0)
+			local color<const> = sys_palette_colors[line_color or color_text]
+			draw_glyph_line_color(font, text, left, y, text_z, sys_vdp_layer_world, color)
 		end
 		y = y + line_height
 	end
