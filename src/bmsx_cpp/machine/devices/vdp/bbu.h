@@ -60,8 +60,7 @@ public:
 		u32 yWord,
 		u32 zWord,
 		u32 sizeWord,
-		u32 color,
-		u32 controlWord) const;
+		u32 color) const;
 	void latchBillboard(std::vector<VdpBbuBillboardEntry>& target, const VdpBbuPacket& packet, u32 seq, VdpBbuSource source, VdpBbuSurfaceSize surface, u32 slot) const;
 };
 

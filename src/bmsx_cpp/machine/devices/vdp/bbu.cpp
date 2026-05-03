@@ -1,9 +1,7 @@
 #include "machine/devices/vdp/bbu.h"
 
 #include "machine/common/word.h"
-#include "machine/devices/vdp/fault.h"
 #include "machine/devices/vdp/fixed_point.h"
-#include <string>
 
 namespace bmsx {
 
@@ -17,11 +15,7 @@ VdpBbuPacket VdpBbuUnit::decodePacket(
 	u32 yWord,
 	u32 zWord,
 	u32 sizeWord,
-	u32 color,
-	u32 controlWord) const {
-	if (controlWord != 0u) {
-		throw vdpFault("VDP BBU control reserved bits are set (" + std::to_string(controlWord) + ").");
-	}
+	u32 color) const {
 	VdpBbuPacket packet;
 	packet.layer = static_cast<Layer2D>(layerWord);
 	packet.priority = priority;
@@ -41,13 +35,7 @@ VdpBbuPacket VdpBbuUnit::decodePacket(
 }
 
 void VdpBbuUnit::latchBillboard(std::vector<VdpBbuBillboardEntry>& target, const VdpBbuPacket& packet, u32 seq, VdpBbuSource source, VdpBbuSurfaceSize surface, u32 slot) const {
-	if (target.size() >= VDP_BBU_BILLBOARD_LIMIT) {
-		throw vdpFault("VDP billboard FIFO overflow (" + std::to_string(VDP_BBU_BILLBOARD_LIMIT) + " entries).");
-	}
 	const f32 size = decodeUnsignedQ16_16(packet.sizeWord);
-	if (size <= 0.0f) {
-		throw vdpFault("VDP billboard size must be positive.");
-	}
 	VdpBbuBillboardEntry entry;
 	entry.seq = seq;
 	entry.layer = packet.layer;

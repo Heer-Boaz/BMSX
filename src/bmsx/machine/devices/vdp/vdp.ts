@@ -592,9 +592,10 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	private writeVdpRegister(index: number, value: number): void {
+	private writeVdpRegister(index: number, value: number): boolean {
 		if (index < 0 || index >= VDP_REGISTER_COUNT) {
-			throw vdpFault(`VDP register ${index} is out of range.`);
+			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, index);
+			return false;
 		}
 		const word = value >>> 0;
 		switch (index) {
@@ -604,6 +605,7 @@ export class VDP implements VramWriteSink {
 		}
 		this.vdpRegisters[index] = word;
 		this.memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, word);
+		return true;
 	}
 
 	private onVdpRegisterIoWrite(addr: number): void {
@@ -944,8 +946,7 @@ export class VDP implements VramWriteSink {
 					this.latchStreamFault(word);
 					return -1;
 				}
-				this.writeVdpRegister(register, this.memory.readU32(cursor));
-				return cursor + IO_WORD_SIZE;
+				return this.writeVdpRegister(register, this.memory.readU32(cursor)) ? cursor + IO_WORD_SIZE : -1;
 			}
 			case VDP_PKT_REGN: {
 				const packet = this.decodeRegnPacket(word);
@@ -960,7 +961,9 @@ export class VDP implements VramWriteSink {
 					return -1;
 				}
 				for (let offset = 0; offset < packet.count; offset += 1) {
-					this.writeVdpRegister(packet.firstRegister + offset, this.memory.readU32(cursor + offset * IO_WORD_SIZE));
+					if (!this.writeVdpRegister(packet.firstRegister + offset, this.memory.readU32(cursor + offset * IO_WORD_SIZE))) {
+						return -1;
+					}
 				}
 				return payloadEnd;
 			}
@@ -991,7 +994,6 @@ export class VDP implements VramWriteSink {
 					this.memory.readU32(cursor + IO_WORD_SIZE * 7),
 					this.memory.readU32(cursor + IO_WORD_SIZE * 8),
 					this.memory.readU32(cursor + IO_WORD_SIZE * 9),
-					controlWord,
 				)) ? payloadEnd : -1;
 			}
 			case VDP_SBX_PACKET_KIND: {
@@ -1029,8 +1031,7 @@ export class VDP implements VramWriteSink {
 					this.latchStreamFault(word);
 					return -1;
 				}
-				this.writeVdpRegister(register, this.vdpFifoStreamWords[cursor]);
-				return cursor + 1;
+				return this.writeVdpRegister(register, this.vdpFifoStreamWords[cursor]) ? cursor + 1 : -1;
 			}
 			case VDP_PKT_REGN: {
 				const packet = this.decodeRegnPacket(word);
@@ -1039,7 +1040,9 @@ export class VDP implements VramWriteSink {
 					return -1;
 				}
 				for (let offset = 0; offset < packet.count; offset += 1) {
-					this.writeVdpRegister(packet.firstRegister + offset, this.vdpFifoStreamWords[cursor + offset]);
+					if (!this.writeVdpRegister(packet.firstRegister + offset, this.vdpFifoStreamWords[cursor + offset])) {
+						return -1;
+					}
 				}
 				return cursor + packet.count;
 			}
@@ -1063,7 +1066,6 @@ export class VDP implements VramWriteSink {
 					this.vdpFifoStreamWords[cursor + 7],
 					this.vdpFifoStreamWords[cursor + 8],
 					this.vdpFifoStreamWords[cursor + 9],
-					this.vdpFifoStreamWords[cursor + 10],
 				)) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : -1;
 			case VDP_SBX_PACKET_KIND:
 				if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
@@ -1085,8 +1087,7 @@ export class VDP implements VramWriteSink {
 		if ((word & VDP_PKT_RESERVED_MASK) !== 0) {
 			return -1;
 		}
-		const register = packedLow16(word);
-		return register >= VDP_REGISTER_COUNT ? -1 : register;
+		return packedLow16(word);
 	}
 
 	private decodeRegnPacket(word: number): { firstRegister: number; count: number } | null {

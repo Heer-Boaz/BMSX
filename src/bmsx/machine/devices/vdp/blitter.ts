@@ -149,15 +149,6 @@ export function frameBufferColorByte(value: number): number {
 	return (value * 255 + 0.5) | 0;
 }
 
-export function packFrameBufferColorFromComponents(r: number, g: number, b: number, a: number): number {
-	return (
-		(frameBufferColorByte(a) << 24)
-		| (frameBufferColorByte(r) << 16)
-		| (frameBufferColorByte(g) << 8)
-		| frameBufferColorByte(b)
-	) >>> 0;
-}
-
 export function packFrameBufferColor(source: { r: number; g: number; b: number; a: number }): number {
 	return (
 		(frameBufferColorByte(source.a) << 24)

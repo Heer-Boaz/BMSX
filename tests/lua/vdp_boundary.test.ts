@@ -6,6 +6,8 @@ import { test } from 'node:test';
 const root = process.cwd();
 const oldColorSnake = 'color' + '_word';
 const oldPrioritySnake = 'priority' + '_word';
+const streamFaultName = 'vdp' + 'Stream' + 'Fault';
+const componentColorPackerName = 'packFrameBufferColor' + 'FromComponents';
 
 function collectFiles(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir)) {
@@ -171,6 +173,45 @@ test('VDP color and priority APIs do not use word-postfixed names', () => {
 		new RegExp('color ' + 'words'),
 		new RegExp('priority ' + 'word'),
 		new RegExp('priority ' + 'words'),
+	]);
+});
+
+test('VDP unit internals do not duplicate cart fault guards', () => {
+	assertFileDoesNotMatch('src/bmsx/machine/devices/vdp/bbu.ts', [
+		/throw/,
+		/vdpFault/,
+		/controlWord/,
+		/size\s*<=/,
+		/index\s*>=/,
+	]);
+	assertFileDoesNotMatch('src/bmsx_cpp/machine/devices/vdp/bbu.cpp', [
+		/throw/,
+		/vdpFault/,
+		/controlWord/,
+		/size\s*<=/,
+		/target\.size\(\)\s*>=/,
+	]);
+	assertFileDoesNotMatch('src/bmsx/machine/devices/vdp/fault.ts', [
+		new RegExp(streamFaultName),
+	]);
+	assertFileDoesNotMatch('src/bmsx_cpp/machine/devices/vdp/fault.h', [
+		new RegExp(streamFaultName),
+	]);
+	assertFileDoesNotMatch('src/bmsx/machine/devices/vdp/blitter.ts', [
+		new RegExp(componentColorPackerName),
+	]);
+	assertFileDoesNotMatch('src/bmsx_cpp/machine/devices/vdp/blitter.h', [
+		/packFrameBufferColor\s*\(\s*f32/,
+	]);
+	assertFileDoesNotMatch('src/bmsx_cpp/machine/devices/vdp/blitter.cpp', [
+		/packFrameBufferColor\s*\(\s*f32/,
+	]);
+	assertFileDoesNotMatch('src/bmsx_cpp/machine/devices/vdp/blitter.h', [
+		/\bf32\s+z\s*=/,
+	]);
+	assertFileDoesNotMatch('src/bmsx_cpp/machine/devices/vdp/vdp.cpp', [
+		new RegExp('VDP register .*out of ' + 'range'),
+		/command\.z/,
 	]);
 });
 

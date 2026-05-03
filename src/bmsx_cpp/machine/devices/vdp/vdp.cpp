@@ -140,9 +140,10 @@ void VDP::resetVdpRegisters() {
 	}
 }
 
-void VDP::writeVdpRegister(uint32_t index, u32 value) {
+bool VDP::writeVdpRegister(uint32_t index, u32 value) {
 	if (index >= VDP_REGISTER_COUNT) {
-		throw vdpFault("VDP register " + std::to_string(index) + " is out of range.");
+		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, index);
+		return false;
 	}
 	switch (index) {
 	case VDP_REG_SLOT_DIM:
@@ -153,6 +154,7 @@ void VDP::writeVdpRegister(uint32_t index, u32 value) {
 	}
 	m_vdpRegisters[index] = value;
 	m_memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, valueNumber(static_cast<double>(value)));
+	return true;
 }
 
 void VDP::onVdpRegisterWrite(uint32_t addr) {
@@ -513,8 +515,7 @@ u32 VDP::consumeReplayPacket(u32 word, u32 cursor, u32 limit, ReplayPayloadSourc
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			writeVdpRegister(reg, readReplayPayloadWord(cursor, 0u, source));
-			return cursor + payloadUnit;
+			return writeVdpRegister(reg, readReplayPayloadWord(cursor, 0u, source)) ? cursor + payloadUnit : VDP_REPLAY_PACKET_FAULT;
 		}
 		case VDP_PKT_REGN: {
 			RegnPacket packet;
@@ -528,7 +529,9 @@ u32 VDP::consumeReplayPacket(u32 word, u32 cursor, u32 limit, ReplayPayloadSourc
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			for (uint32_t offset = 0; offset < packet.count; ++offset) {
-				writeVdpRegister(packet.firstRegister + offset, readReplayPayloadWord(cursor, offset, source));
+				if (!writeVdpRegister(packet.firstRegister + offset, readReplayPayloadWord(cursor, offset, source))) {
+					return VDP_REPLAY_PACKET_FAULT;
+				}
 			}
 			return cursor + payloadCount;
 		}
@@ -557,8 +560,7 @@ u32 VDP::consumeReplayPacket(u32 word, u32 cursor, u32 limit, ReplayPayloadSourc
 				readReplayPayloadWord(cursor, 6u, source),
 				readReplayPayloadWord(cursor, 7u, source),
 				readReplayPayloadWord(cursor, 8u, source),
-				readReplayPayloadWord(cursor, 9u, source),
-				controlWord)) ? cursor + payloadCount : VDP_REPLAY_PACKET_FAULT;
+				readReplayPayloadWord(cursor, 9u, source))) ? cursor + payloadCount : VDP_REPLAY_PACKET_FAULT;
 		}
 		case VDP_SBX_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS)) {
@@ -586,11 +588,7 @@ u32 VDP::decodeReg1Packet(u32 word) const {
 	if ((word & VDP_PKT_RESERVED_MASK) != 0u) {
 		return VDP_REPLAY_PACKET_FAULT;
 	}
-	const u32 reg = packedLow16(word);
-	if (reg >= VDP_REGISTER_COUNT) {
-		return VDP_REPLAY_PACKET_FAULT;
-	}
-	return reg;
+	return packedLow16(word);
 }
 
 
@@ -1019,12 +1017,12 @@ u32 VDP::nextBlitterSequence() {
 	return m_blitterSequence++;
 }
 
-void VDP::assignLayeredBlitterCommand(BlitterCommand& command, BlitterCommandType type, int renderCost, Layer2D layer, f32 z) {
+void VDP::assignLayeredBlitterCommand(BlitterCommand& command, BlitterCommandType type, int renderCost, Layer2D layer, f32 priority) {
 	command.type = type;
 	command.seq = nextBlitterSequence();
 	command.renderCost = renderCost;
 	command.layer = layer;
-	command.z = z;
+	command.priority = priority;
 }
 
 std::vector<VDP::GlyphRunGlyph> VDP::acquireGlyphBuffer() {
@@ -1475,13 +1473,13 @@ bool VDP::resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& fa
 	return true;
 }
 
-void VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 z, Layer2D layer) {
+void VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 priority, Layer2D layer) {
 	const VdpClippedRect clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, m_frameBufferWidth, m_frameBufferHeight);
 	if (clipped.area == 0.0) {
 		return;
 	}
 	BlitterCommand command;
-	assignLayeredBlitterCommand(command, BlitterCommandType::CopyRect, calculateVisibleRectCost(clipped.width, clipped.height), layer, z);
+	assignLayeredBlitterCommand(command, BlitterCommandType::CopyRect, calculateVisibleRectCost(clipped.width, clipped.height), layer, priority);
 	command.srcX = srcX;
 	command.srcY = srcY;
 	command.width = width;
@@ -1561,7 +1559,7 @@ void VDP::appendTileRunSource(BlitterCommand& command, const BlitterSource& sour
 	blit.dstY = static_cast<f32>(tileY);
 }
 
-void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, const char* sourceName, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
+void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, const char* sourceName, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer) {
 	if (tileCount != static_cast<uint32_t>(cols * rows)) {
 		throw vdpFault(std::string(sourceName) + " size mismatch.");
 	}
@@ -1573,7 +1571,7 @@ void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, const char* sou
 	command.type = BlitterCommandType::TileRun;
 	command.seq = nextBlitterSequence();
 	command.tiles = acquireTileBuffer();
-	command.z = z;
+	command.priority = priority;
 	command.layer = layer;
 	int visibleRowCount = 0;
 	int visibleNonEmptyTileCount = 0;
@@ -1608,14 +1606,14 @@ void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, const char* sou
 	enqueueBlitterCommand(std::move(command));
 }
 
-void VDP::latchPayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
+void VDP::latchPayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer) {
 	const TileRunPayload payload{TileRunPayloadSource::Memory, payloadBase, nullptr};
-	latchPayloadTileRunFrom(payload, "latchPayloadTileRun", tileCount, cols, rows, tileW, tileH, originX, originY, scrollX, scrollY, z, layer);
+	latchPayloadTileRunFrom(payload, "latchPayloadTileRun", tileCount, cols, rows, tileW, tileH, originX, originY, scrollX, scrollY, priority, layer);
 }
 
-void VDP::latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
+void VDP::latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer) {
 	const TileRunPayload payload{TileRunPayloadSource::WordStream, 0u, payloadWords};
-	latchPayloadTileRunFrom(payload, "latchPayloadTileRunWords", tileCount, cols, rows, tileW, tileH, originX, originY, scrollX, scrollY, z, layer);
+	latchPayloadTileRunFrom(payload, "latchPayloadTileRunWords", tileCount, cols, rows, tileW, tileH, originX, originY, scrollX, scrollY, priority, layer);
 }
 
 void VDP::commitLiveVisualState() {

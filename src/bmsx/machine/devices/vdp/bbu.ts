@@ -1,5 +1,4 @@
 import { VDP_BBU_BILLBOARD_LIMIT, type Layer2D, type VdpSlotSource } from './contracts';
-import { vdpFault } from './fault';
 import { decodeSignedQ16_16, decodeUnsignedQ16_16 } from './fixed_point';
 import { packedHigh16, packedLow16 } from '../../common/word';
 
@@ -65,11 +64,7 @@ export class VdpBbuUnit {
 		zWord: number,
 		sizeWord: number,
 		color: number,
-		controlWord: number,
 	): VdpBbuPacket {
-		if (controlWord !== 0) {
-			throw vdpFault(`VDP BBU control reserved bits are set (${controlWord}).`);
-		}
 		const sourceRect = this.sourceRectScratch;
 		sourceRect.slot = slot;
 		sourceRect.u = packedLow16(uvWord);
@@ -102,13 +97,7 @@ export class VdpBbuUnit {
 		slot: number,
 	): void {
 		const index = target.length;
-		if (index >= VDP_BBU_BILLBOARD_LIMIT) {
-			throw vdpFault(`VDP billboard FIFO overflow (${VDP_BBU_BILLBOARD_LIMIT} entries).`);
-		}
 		const size = decodeUnsignedQ16_16(packet.sizeWord);
-		if (size <= 0) {
-			throw vdpFault('VDP billboard size must be positive.');
-		}
 		target.seq[index] = seq;
 		target.layer[index] = packet.layer;
 		target.priority[index] = packet.priority;

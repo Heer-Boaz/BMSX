@@ -209,7 +209,7 @@ private:
 	static void onCameraCommitWriteThunk(void* context, uint32_t addr, Value value);
 	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value);
 
-	void writeVdpRegister(uint32_t index, u32 value);
+	bool writeVdpRegister(uint32_t index, u32 value);
 	void consumeDirectVdpCommand(u32 cmd);
 	void rejectBusySubmitAttempt(uint32_t detail);
 
@@ -300,7 +300,7 @@ private:
 	void seedVramStaging();
 	void seedVramSlotPixels(VramSlot& slot);
 	u32 nextBlitterSequence();
-	void assignLayeredBlitterCommand(BlitterCommand& command, BlitterCommandType type, int renderCost, Layer2D layer, f32 z);
+	void assignLayeredBlitterCommand(BlitterCommand& command, BlitterCommandType type, int renderCost, Layer2D layer, f32 priority);
 	std::vector<GlyphRunGlyph> acquireGlyphBuffer();
 	std::vector<TileRunBlit> acquireTileBuffer();
 	void recycleBlitterBuffers(std::vector<BlitterCommand>& queue);
@@ -335,14 +335,14 @@ private:
 		bool enqueueLatchedFillRect();
 		bool enqueueLatchedDrawLine();
 		bool enqueueLatchedBlit();
-		void enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 z, Layer2D layer);
+		void enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 priority, Layer2D layer);
 		bool enqueueLatchedCopyRect();
 	void pushVdpFifoWord(u32 word);
 	void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(u32 wordCount);
 	void sealVdpFifoTransfer();
-	void latchPayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
-	void latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
+	void latchPayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
+	void latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
 	enum class TileRunPayloadSource : u8 {
 		Memory,
 		WordStream,
@@ -363,7 +363,7 @@ private:
 	};
 	TileRunClipWindow clipTileRun(i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY) const;
 	u32 readTileRunPayloadWord(const TileRunPayload& payload, u32 wordOffset) const;
-	void latchPayloadTileRunFrom(const TileRunPayload& payload, const char* sourceName, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
+	void latchPayloadTileRunFrom(const TileRunPayload& payload, const char* sourceName, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
 	void appendTileRunSource(BlitterCommand& command, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, const char* sourceName, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow);
 	enum class ReplayPayloadSource : u8 {
 		Memory,

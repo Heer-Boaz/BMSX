@@ -57,7 +57,7 @@ struct VdpBlitterCommand {
 	VdpBlitterCommandType type = VdpBlitterCommandType::Clear;
 	u32 seq = 0;
 	int renderCost = 0;
-	f32 z = 0.0f;
+	f32 priority = 0.0f;
 	Layer2D layer = Layer2D::World;
 	VdpBlitterSource source{};
 	f32 dstX = 0.0f;
@@ -84,7 +84,6 @@ struct VdpBlitterCommand {
 };
 
 u8 frameBufferColorByte(f32 value);
-u32 packFrameBufferColor(f32 r, f32 g, f32 b, f32 a);
 u32 packFrameBufferColor(const Color& color);
 VdpFrameBufferColor unpackArgbColor(u32 value);
 

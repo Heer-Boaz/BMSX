@@ -17,7 +17,7 @@ struct VdpSoftwareRuntime {
 	u32 width = 0;
 	u32 height = 0;
 	std::vector<u8> priorityLayer;
-	std::vector<f32> priorityZ;
+	std::vector<f32> priorityValue;
 	std::vector<u32> prioritySeq;
 };
 
@@ -31,7 +31,7 @@ void resizeVdpSoftwareRuntime(u32 width, u32 height) {
 	g_vdpSoftwareRuntime.height = height;
 	const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
 	g_vdpSoftwareRuntime.priorityLayer.resize(pixelCount);
-	g_vdpSoftwareRuntime.priorityZ.resize(pixelCount);
+	g_vdpSoftwareRuntime.priorityValue.resize(pixelCount);
 	g_vdpSoftwareRuntime.prioritySeq.resize(pixelCount);
 }
 
@@ -68,16 +68,16 @@ void VdpSoftwareBlitter::execute(const VDP::VdpHostOutput& output, const std::ve
 				resetFrameBufferPriority();
 				break;
 			case VDP::BlitterCommandType::FillRect:
-				rasterizeFrameBufferFill(output, pixels, command.x0, command.y0, command.x1, command.y1, command.color, command.layer, command.z, command.seq);
+				rasterizeFrameBufferFill(output, pixels, command.x0, command.y0, command.x1, command.y1, command.color, command.layer, command.priority, command.seq);
 				break;
 			case VDP::BlitterCommandType::DrawLine:
-				rasterizeFrameBufferLine(output, pixels, command.x0, command.y0, command.x1, command.y1, command.thickness, command.color, command.layer, command.z, command.seq);
+				rasterizeFrameBufferLine(output, pixels, command.x0, command.y0, command.x1, command.y1, command.thickness, command.color, command.layer, command.priority, command.seq);
 				break;
 			case VDP::BlitterCommandType::Blit:
-				rasterizeFrameBufferBlit(output, pixels, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.color, command.layer, command.z, command.seq);
+				rasterizeFrameBufferBlit(output, pixels, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.color, command.layer, command.priority, command.seq);
 				break;
 			case VDP::BlitterCommandType::CopyRect:
-				copyFrameBufferRect(output, pixels, command.srcX, command.srcY, command.width, command.height, static_cast<i32>(std::round(command.dstX)), static_cast<i32>(std::round(command.dstY)), command.layer, command.z, command.seq);
+				copyFrameBufferRect(output, pixels, command.srcX, command.srcY, command.width, command.height, static_cast<i32>(std::round(command.dstX)), static_cast<i32>(std::round(command.dstY)), command.layer, command.priority, command.seq);
 				break;
 			case VDP::BlitterCommandType::GlyphRun:
 				if (command.backgroundColor.has_value()) {
@@ -91,18 +91,18 @@ void VdpSoftwareBlitter::execute(const VDP::VdpHostOutput& output, const std::ve
 							glyph.dstY + static_cast<f32>(command.lineHeight),
 							*command.backgroundColor,
 							command.layer,
-							command.z,
+							command.priority,
 							command.seq
 						);
 					}
 				}
 				for (const auto& glyph : command.glyphs) {
-					rasterizeFrameBufferBlit(output, pixels, glyph, glyph.dstX, glyph.dstY, 1.0f, 1.0f, false, false, command.color, command.layer, command.z, command.seq);
+					rasterizeFrameBufferBlit(output, pixels, glyph, glyph.dstX, glyph.dstY, 1.0f, 1.0f, false, false, command.color, command.layer, command.priority, command.seq);
 				}
 				break;
 			case VDP::BlitterCommandType::TileRun:
 				for (const auto& tile : command.tiles) {
-					rasterizeFrameBufferBlit(output, pixels, tile, tile.dstX, tile.dstY, 1.0f, 1.0f, false, false, BLITTER_WHITE, command.layer, command.z, command.seq);
+					rasterizeFrameBufferBlit(output, pixels, tile, tile.dstX, tile.dstY, 1.0f, 1.0f, false, false, BLITTER_WHITE, command.layer, command.priority, command.seq);
 				}
 				break;
 		}
@@ -112,11 +112,11 @@ void VdpSoftwareBlitter::execute(const VDP::VdpHostOutput& output, const std::ve
 
 void VdpSoftwareBlitter::resetFrameBufferPriority() {
 	std::fill(g_vdpSoftwareRuntime.priorityLayer.begin(), g_vdpSoftwareRuntime.priorityLayer.end(), static_cast<u8>(Layer2D::World));
-	std::fill(g_vdpSoftwareRuntime.priorityZ.begin(), g_vdpSoftwareRuntime.priorityZ.end(), -std::numeric_limits<f32>::infinity());
+	std::fill(g_vdpSoftwareRuntime.priorityValue.begin(), g_vdpSoftwareRuntime.priorityValue.end(), -std::numeric_limits<f32>::infinity());
 	std::fill(g_vdpSoftwareRuntime.prioritySeq.begin(), g_vdpSoftwareRuntime.prioritySeq.end(), 0u);
 }
 
-void VdpSoftwareBlitter::blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a, Layer2D layer, f32 z, u32 seq) {
+void VdpSoftwareBlitter::blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a, Layer2D layer, f32 priority, u32 seq) {
 	if (a == 0u) {
 		return;
 	}
@@ -126,11 +126,11 @@ void VdpSoftwareBlitter::blendFrameBufferPixel(std::vector<u8>& pixels, size_t i
 		return;
 	}
 	if (layer == currentLayer) {
-		const f32 currentZ = g_vdpSoftwareRuntime.priorityZ[pixelIndex];
-		if (z < currentZ) {
+		const f32 currentPriority = g_vdpSoftwareRuntime.priorityValue[pixelIndex];
+		if (priority < currentPriority) {
 			return;
 		}
-		if (z == currentZ && seq < g_vdpSoftwareRuntime.prioritySeq[pixelIndex]) {
+		if (priority == currentPriority && seq < g_vdpSoftwareRuntime.prioritySeq[pixelIndex]) {
 			return;
 		}
 	}
@@ -140,7 +140,7 @@ void VdpSoftwareBlitter::blendFrameBufferPixel(std::vector<u8>& pixels, size_t i
 		pixels[index + 2u] = b;
 		pixels[index + 3u] = 255u;
 		g_vdpSoftwareRuntime.priorityLayer[pixelIndex] = static_cast<u8>(layer);
-		g_vdpSoftwareRuntime.priorityZ[pixelIndex] = z;
+		g_vdpSoftwareRuntime.priorityValue[pixelIndex] = priority;
 		g_vdpSoftwareRuntime.prioritySeq[pixelIndex] = seq;
 		return;
 	}
@@ -150,11 +150,11 @@ void VdpSoftwareBlitter::blendFrameBufferPixel(std::vector<u8>& pixels, size_t i
 	pixels[index + 2u] = static_cast<u8>(((static_cast<u32>(b) * a) + (static_cast<u32>(pixels[index + 2u]) * inverse) + 127u) / 255u);
 	pixels[index + 3u] = static_cast<u8>(a + ((static_cast<u32>(pixels[index + 3u]) * inverse) + 127u) / 255u);
 	g_vdpSoftwareRuntime.priorityLayer[pixelIndex] = static_cast<u8>(layer);
-	g_vdpSoftwareRuntime.priorityZ[pixelIndex] = z;
+	g_vdpSoftwareRuntime.priorityValue[pixelIndex] = priority;
 	g_vdpSoftwareRuntime.prioritySeq[pixelIndex] = seq;
 }
 
-void VdpSoftwareBlitter::rasterizeFrameBufferFill(const VDP::VdpHostOutput& output, std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, const VDP::FrameBufferColor& color, Layer2D layer, f32 z, u32 seq) {
+void VdpSoftwareBlitter::rasterizeFrameBufferFill(const VDP::VdpHostOutput& output, std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, const VDP::FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
 	const i32 frameBufferWidth = static_cast<i32>(output.frameBufferWidth);
 	const i32 frameBufferHeight = static_cast<i32>(output.frameBufferHeight);
 	i32 left = static_cast<i32>(std::round(x0));
@@ -174,13 +174,13 @@ void VdpSoftwareBlitter::rasterizeFrameBufferFill(const VDP::VdpHostOutput& outp
 	for (i32 y = top; y < bottom; ++y) {
 		size_t index = (static_cast<size_t>(y) * static_cast<size_t>(frameBufferWidth) + static_cast<size_t>(left)) * 4u;
 		for (i32 x = left; x < right; ++x) {
-			blendFrameBufferPixel(pixels, index, color.r, color.g, color.b, color.a, layer, z, seq);
+			blendFrameBufferPixel(pixels, index, color.r, color.g, color.b, color.a, layer, priority, seq);
 			index += 4u;
 		}
 	}
 }
 
-void VdpSoftwareBlitter::rasterizeFrameBufferLine(const VDP::VdpHostOutput& output, std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, f32 thicknessValue, const VDP::FrameBufferColor& color, Layer2D layer, f32 z, u32 seq) {
+void VdpSoftwareBlitter::rasterizeFrameBufferLine(const VDP::VdpHostOutput& output, std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, f32 thicknessValue, const VDP::FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
 	const i32 frameBufferWidth = static_cast<i32>(output.frameBufferWidth);
 	const i32 frameBufferHeight = static_cast<i32>(output.frameBufferHeight);
 	i32 currentX = static_cast<i32>(std::round(x0));
@@ -204,7 +204,7 @@ void VdpSoftwareBlitter::rasterizeFrameBufferLine(const VDP::VdpHostOutput& outp
 					continue;
 				}
 				const size_t index = (static_cast<size_t>(yy) * static_cast<size_t>(frameBufferWidth) + static_cast<size_t>(xx)) * 4u;
-				blendFrameBufferPixel(pixels, index, color.r, color.g, color.b, color.a, layer, z, seq);
+				blendFrameBufferPixel(pixels, index, color.r, color.g, color.b, color.a, layer, priority, seq);
 			}
 		}
 		if (currentX == targetX && currentY == targetY) {
@@ -222,7 +222,7 @@ void VdpSoftwareBlitter::rasterizeFrameBufferLine(const VDP::VdpHostOutput& outp
 	}
 }
 
-void VdpSoftwareBlitter::rasterizeFrameBufferBlit(const VDP::VdpHostOutput& output, std::vector<u8>& pixels, const VDP::BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const VDP::FrameBufferColor& color, Layer2D layer, f32 z, u32 seq) {
+void VdpSoftwareBlitter::rasterizeFrameBufferBlit(const VDP::VdpHostOutput& output, std::vector<u8>& pixels, const VDP::BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const VDP::FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
 	const i32 frameBufferWidth = static_cast<i32>(output.frameBufferWidth);
 	const i32 frameBufferHeight = static_cast<i32>(output.frameBufferHeight);
 	const VdpSourcePixels sourcePixels = resolveVdpSurfacePixels(output, source.surfaceId);
@@ -262,12 +262,12 @@ void VdpSoftwareBlitter::rasterizeFrameBufferBlit(const VDP::VdpHostOutput& outp
 			const u8 outG = static_cast<u8>((static_cast<u32>(sourcePixels.pixels[srcIndex + 1u]) * static_cast<u32>(color.g) + 127u) / 255u);
 			const u8 outB = static_cast<u8>((static_cast<u32>(sourcePixels.pixels[srcIndex + 2u]) * static_cast<u32>(color.b) + 127u) / 255u);
 			const size_t dstIndex = (static_cast<size_t>(targetY) * static_cast<size_t>(frameBufferWidth) + static_cast<size_t>(targetX)) * 4u;
-			blendFrameBufferPixel(pixels, dstIndex, outR, outG, outB, outA, layer, z, seq);
+			blendFrameBufferPixel(pixels, dstIndex, outR, outG, outB, outA, layer, priority, seq);
 		}
 	}
 }
 
-void VdpSoftwareBlitter::copyFrameBufferRect(const VDP::VdpHostOutput& output, std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 z, u32 seq) {
+void VdpSoftwareBlitter::copyFrameBufferRect(const VDP::VdpHostOutput& output, std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 priority, u32 seq) {
 	const size_t frameBufferWidth = static_cast<size_t>(output.frameBufferWidth);
 	const size_t rowBytes = static_cast<size_t>(width) * 4u;
 	const bool overlapping =
@@ -286,7 +286,7 @@ void VdpSoftwareBlitter::copyFrameBufferRect(const VDP::VdpHostOutput& output, s
 		for (i32 col = 0; col < width; ++col) {
 			const size_t pixelIndex = targetPixel + static_cast<size_t>(col);
 			g_vdpSoftwareRuntime.priorityLayer[pixelIndex] = static_cast<u8>(layer);
-			g_vdpSoftwareRuntime.priorityZ[pixelIndex] = z;
+			g_vdpSoftwareRuntime.priorityValue[pixelIndex] = priority;
 			g_vdpSoftwareRuntime.prioritySeq[pixelIndex] = seq;
 		}
 	}

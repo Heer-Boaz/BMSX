@@ -6,15 +6,11 @@ u8 frameBufferColorByte(f32 value) {
 	return static_cast<u8>(value * 255.0f + 0.5f);
 }
 
-u32 packFrameBufferColor(f32 r, f32 g, f32 b, f32 a) {
-	return (static_cast<u32>(frameBufferColorByte(a)) << 24u)
-		| (static_cast<u32>(frameBufferColorByte(r)) << 16u)
-		| (static_cast<u32>(frameBufferColorByte(g)) << 8u)
-		| static_cast<u32>(frameBufferColorByte(b));
-}
-
 u32 packFrameBufferColor(const Color& color) {
-	return packFrameBufferColor(color.r, color.g, color.b, color.a);
+	return (static_cast<u32>(frameBufferColorByte(color.a)) << 24u)
+		| (static_cast<u32>(frameBufferColorByte(color.r)) << 16u)
+		| (static_cast<u32>(frameBufferColorByte(color.g)) << 8u)
+		| static_cast<u32>(frameBufferColorByte(color.b));
 }
 
 VdpFrameBufferColor unpackArgbColor(u32 value) {
