@@ -99,14 +99,7 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "sys_vdp_work_units_last"
 		|| name == "sys_vdp_frame_held"
 		|| name == "clock_now"
-		|| name == "display_width"
-		|| name == "display_height"
-		|| name == "get_cpu_freq_hz"
-		|| name == "get_default_font"
-		|| name == "devtools.get_lua_entry_path"
-		|| name == "platform.clock.now"
-		|| name == "platform.clock.perf_now"
-		|| name == "game.get_frame_delta_ms") {
+		|| name == "devtools.get_lua_entry_path") {
 		return kNativeCostTier0;
 	}
 	if (name == "math.abs"
@@ -151,10 +144,7 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "u64_to_f64"
 		|| name == "os.clock"
 		|| name == "os.difftime"
-		|| name == "get_player_input"
-		|| name == "reboot"
-		|| name == "game.get_action_state"
-		|| name == "game.emit") {
+		|| name == "get_player_input") {
 		return kNativeCostTier1;
 	}
 	if (name == "pairs"
@@ -180,7 +170,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "error"
 		|| name == "math.modf"
 		|| name == "math.randomseed"
-		|| name == "set_cpu_freq_hz"
 		|| name == "os.time"
 		|| name == "player_input.getModifiersState"
 		|| name == "player_input.getButtonState"
@@ -205,13 +194,10 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "load"
 		|| name == "require"
 		|| name == "print"
-		|| name == "cartdata"
-		|| name == "create_font"
-		|| name == "taskgate"
 		|| name == "os.date"
 		|| name == "devtools.list_lua_resources"
 		|| name == "devtools.get_lua_resource_source"
-		|| name == "list_builtins") {
+) {
 		return kNativeCostTier4;
 	}
 	return kDefaultNativeCost;

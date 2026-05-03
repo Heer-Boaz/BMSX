@@ -12,58 +12,6 @@ export type ApiMethodMetadata = {
 };
 
 export const API_METHOD_METADATA = {
-	display_width: {
-		description: 'Returns the current display width in pixels.',
-		parameters: [],
-		returnType: 'number',
-		returnDescription: 'Viewport width in pixels.',
-	},
-	display_height: {
-		description: 'Returns the current display height in pixels.',
-		parameters: [],
-		returnType: 'number',
-		returnDescription: 'Viewport height in pixels.',
-	},
-	get_cpu_freq_hz: {
-		description: 'Returns the current runtime CPU frequency in hertz.',
-		parameters: [],
-		returnType: 'number',
-		returnDescription: 'The active runtime CPU frequency in hertz.',
-	},
-	set_cpu_freq_hz: {
-		description: 'Sets the runtime CPU frequency in hertz and immediately updates the per-frame cycle budget.',
-		parameters: [
-			{ name: 'cpuHz', description: 'Positive safe integer CPU frequency in hertz.' },
-		],
-		returnType: 'void',
-	},
-	create_font: {
-		description: 'Creates a runtime bitmap font from a Lua definition table.',
-		parameters: [
-			{ name: 'definition', description: 'Font definition table: { glyphs = { ["A"]="imgid", ... }, advance_padding? = number }' },
-		],
-		returnType: 'Font',
-		returnDescription: 'Native font handle for direct glyph-submission code.',
-	},
-	cartdata: {
-		description: 'Sets the persistent storage namespace for this cart (used by dget/dset).',
-		parameters: [
-			{ name: 'namespace', description: 'Storage namespace key.' },
-		],
-		returnType: 'void',
-	},
-	list_builtins: {
-		description: 'Returns the list of builtin Lua identifiers used by the runtime.',
-		parameters: [],
-		returnType: 'table',
-		returnDescription: 'Array-like table of builtin identifier names.',
-	},
-	get_default_font: {
-		description: 'Returns the default runtime font handle.',
-		parameters: [],
-		returnType: 'Font',
-		returnDescription: 'Native Font instance.',
-	},
 	world: {
 		description: 'Returns the active World instance.',
 		parameters: [],
@@ -107,29 +55,29 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-		define_prefab: {
-			description: 'Registers a prefab descriptor that can be spawned later.',
-			parameters: [
-				{ name: 'descriptor', description: 'Prefab descriptor (def_id, class/defaults, optional fsms/components/effects/bts).' },
-			],
-			returnType: 'void',
-		},
-		define_subsystem: {
-			description: 'Registers a world-owned subsystem descriptor that can be instantiated later.',
-			parameters: [
-				{ name: 'descriptor', description: 'Subsystem descriptor (def_id, class/defaults, optional fsms). Subsystems do not declare components, effects, or behaviour trees.' },
-			],
-			returnType: 'void',
-		},
-		inst_subsystem: {
-			description: 'Creates a subsystem instance from a previously registered subsystem descriptor.',
-			parameters: [
-				{ name: 'definition_id', description: 'Id of the subsystem definition registered via define_subsystem.' },
-				{ name: 'overrides', optional: true, description: 'Optional overrides applied after the descriptor defaults/overrides.' },
-			],
-			returnType: 'Subsystem',
-			returnDescription: 'The created subsystem instance.',
-		},
+	define_prefab: {
+		description: 'Registers a prefab descriptor that can be spawned later.',
+		parameters: [
+			{ name: 'descriptor', description: 'Prefab descriptor (def_id, class/defaults, optional fsms/components/effects/bts).' },
+		],
+		returnType: 'void',
+	},
+	define_subsystem: {
+		description: 'Registers a world-owned subsystem descriptor that can be instantiated later.',
+		parameters: [
+			{ name: 'descriptor', description: 'Subsystem descriptor (def_id, class/defaults, optional fsms). Subsystems do not declare components, effects, or behaviour trees.' },
+		],
+		returnType: 'void',
+	},
+	inst_subsystem: {
+		description: 'Creates a subsystem instance from a previously registered subsystem descriptor.',
+		parameters: [
+			{ name: 'definition_id', description: 'Id of the subsystem definition registered via define_subsystem.' },
+			{ name: 'overrides', optional: true, description: 'Optional overrides applied after the descriptor defaults/overrides.' },
+		],
+		returnType: 'Subsystem',
+		returnDescription: 'The created subsystem instance.',
+	},
 	attach_component: {
 		description: 'Attaches a component instance or component type (by id) to a world object.',
 		parameters: [
@@ -186,14 +134,14 @@ export const API_METHOD_METADATA = {
 		returnType: 'Registerable | nil',
 		returnDescription: 'Registered object, or nil when not found.',
 	},
-		subsystem: {
-			description: 'Fetches a registered subsystem by id.',
-			parameters: [
-				{ name: 'id', description: 'Subsystem identifier.' },
-			],
-			returnType: 'Subsystem | nil',
-			returnDescription: 'Subsystem instance, or nil when not found.',
-		},
+	subsystem: {
+		description: 'Fetches a registered subsystem by id.',
+		parameters: [
+			{ name: 'id', description: 'Subsystem identifier.' },
+		],
+		returnType: 'Subsystem | nil',
+		returnDescription: 'Subsystem instance, or nil when not found.',
+	},
 	emit: {
 		description: 'Broadcasts a runtime event via the global event bus.',
 		parameters: [
@@ -208,31 +156,6 @@ export const API_METHOD_METADATA = {
 		parameters: [],
 		returnType: 'EventTimeline[]',
 		returnDescription: 'Array of EventTimeline instances.',
-	},
-	taskgate: {
-		description: 'Fetches or creates a named gate group for task coordination.',
-		parameters: [
-			{ name: 'name', description: 'Gate group identifier.' },
-		],
-		returnType: 'GateGroup',
-		returnDescription: 'Gate group instance.',
-	},
-	rungate: {
-		description: 'Returns the global run gate group for coarse execution control.',
-		parameters: [],
-		returnType: 'GateGroup',
-		returnDescription: 'Global run gate group.',
-	},
-	runtime: {
-		description: 'Returns the active runtime instance.',
-		parameters: [],
-		returnType: 'Runtime',
-		returnDescription: 'Runtime singleton.',
-	},
-	reboot: {
-		description: 'Reboots the runtime: reloads the program and resets the world.',
-		parameters: [],
-		returnType: 'void',
 	},
 	define_fsm: {
 		description: 'Registers a finite-state machine blueprint.',

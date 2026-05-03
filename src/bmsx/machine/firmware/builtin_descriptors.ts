@@ -169,7 +169,6 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'os.date', params: ['format?', 'time?'], signature: 'os.date([format [, time]])' },
 	{ name: 'os.difftime', params: ['t2', 't1?'], signature: 'os.difftime(t2 [, t1])' },
 	{ name: 'os.time', params: ['table?'], signature: 'os.time([table])' },
-	{ name: 'game', params: [], signature: 'game', description: 'Native console object.' },
 	{ name: '$', params: [], signature: '$', description: 'Native host core object.' },
 	{ name: 'devtools', params: [], signature: 'devtools', description: 'Devtool-only runtime source inspection table (devtools.list_lua_resources, devtools.get_lua_entry_path, devtools.get_lua_resource_source).' },
 	{ name: 'cart_manifest', params: [], signature: 'cart_manifest', description: 'Flattened cart manifest table, or nil when unavailable.' },
@@ -423,12 +422,6 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'inp_ctrl_commit', params: [], signature: 'inp_ctrl_commit', description: 'Input Controller command: commit sys_inp_action plus sys_inp_bind into the chip context.' },
 	{ name: 'inp_ctrl_arm', params: [], signature: 'inp_ctrl_arm', description: 'Input Controller command: arm the next VBLANK input sample.' },
 	{ name: 'inp_ctrl_reset', params: [], signature: 'inp_ctrl_reset', description: 'Input Controller command: pop the chip context for the current player and clear its actions.' },
-	{ name: 'inp_pressed', params: [], signature: 'inp_pressed', description: 'Action-state flag bit for pressed.' },
-	{ name: 'inp_justpressed', params: [], signature: 'inp_justpressed', description: 'Action-state flag bit for just-pressed.' },
-	{ name: 'inp_justreleased', params: [], signature: 'inp_justreleased', description: 'Action-state flag bit for just-released.' },
-	{ name: 'inp_consumed', params: [], signature: 'inp_consumed', description: 'Action-state flag bit for consumed.' },
-	{ name: 'inp_guardedjustpressed', params: [], signature: 'inp_guardedjustpressed', description: 'Action-state flag bit for guarded-just-pressed.' },
-	{ name: 'inp_repeatpressed', params: [], signature: 'inp_repeatpressed', description: 'Action-state flag bit for repeat-pressed.' },
 ];
 
 const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = [

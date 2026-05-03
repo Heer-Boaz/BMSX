@@ -1,3 +1,4 @@
+local frame_delta_ms<const> = 1000 / machine_manifest.ufps
 -- world.lua
 -- central world: owns all objects, spaces, and the ECS system manager
 --
@@ -374,8 +375,8 @@ function world_class.new()
 	self.active_space = nil
 	self.systems = ecs.ecsystemmanager.new()
 	self.current_phase = nil
-	self.gamewidth = display_width()
-	self.gameheight = display_height()
+	self.gamewidth = machine_manifest.render_size.width
+	self.gameheight = machine_manifest.render_size.height
 	-- id counter for unique id generation
 	self.idcounter = 0
 	self:add_space('main')
@@ -839,7 +840,7 @@ local run_phase<const> = function(self, group, dt_ms)
 end
 
 function world_class:update()
-	local dt_ms<const> = $.get_frame_delta_ms()
+	local dt_ms<const> = frame_delta_ms
 	run_phase(self, tickgroup.input, dt_ms)
 	run_phase(self, tickgroup.actioneffect, dt_ms)
 	run_phase(self, tickgroup.moderesolution, dt_ms)
@@ -875,7 +876,7 @@ function world_class:update()
 end
 
 function world_class:draw()
-	local dt_ms<const> = $.get_frame_delta_ms()
+	local dt_ms<const> = frame_delta_ms
 	run_phase(self, tickgroup.presentation, dt_ms)
 	run_phase(self, tickgroup.eventflush, dt_ms)
 end

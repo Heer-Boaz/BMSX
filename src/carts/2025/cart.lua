@@ -261,8 +261,8 @@ end
 
 function new_game()
 	mem[sys_inp_player] = 1
-	local w<const> = display_width()
-	local h<const> = display_height()
+	local w<const> = machine_manifest.render_size.width
+	local h<const> = machine_manifest.render_size.height
 	local line_height<const> = 16
 	local prompt_lines<const> = 1
 	local choice_lines<const> = 4

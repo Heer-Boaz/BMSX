@@ -1,4 +1,9 @@
 -- clock.lua
--- thin wrapper around the platform clock
+-- BIOS clock module backed by the machine clock builtin.
 
-return $.platform.clock
+local clock<const> = {
+	now = clock_now,
+	perf_now = clock_now,
+}
+
+return clock

@@ -105,6 +105,7 @@ export class GameView implements RenderContext {
 	public enable_glow = true;
 	public enable_fringing = true;
 	public enable_aperture = false; // Whether to apply an aperture mask in the CRT shader; This is a stylistic choice that can be toggled independently of the other CRT effects
+	public show_resource_usage_gizmo = false;
 	public dither_type: number = DitherType.None;
 	public noiseIntensity = 0.3;
 	public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];
@@ -350,6 +351,25 @@ export class GameView implements RenderContext {
 	 * Rendering should be guarded by a global {@link renderGate}. When the gate is blocked (e.g. while the game state is being
 	 * revived), this method immediately returns so no WebGL state is touched prematurely.
 	 */
+	public drawHostMenuFrame(hostDeltaMs: number): void {
+		if (!renderGate.ready) return;
+		const token = renderGate.begin({ blocking: true, category: 'host-menu', tag: 'host-menu' });
+		const backend = this.backend;
+		const registry = this.pipelineRegistry;
+		if (!registry) {
+			renderGate.end(token);
+			throw new Error('[GameView] Pipeline registry not configured before host menu render.');
+		}
+		try {
+			consoleCore.deltatime = hostDeltaMs;
+			backend.beginFrame();
+			registry.execute('host_menu', null);
+		} finally {
+			backend.endFrame();
+			renderGate.end(token);
+		}
+	}
+
 	public drawgame(): void {
 		if (!renderGate.ready) return;
 		const token = renderGate.begin({ blocking: true, category: 'frame', tag: 'frame' });

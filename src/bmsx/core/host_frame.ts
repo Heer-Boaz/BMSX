@@ -1,6 +1,6 @@
 import { consoleCore } from './console';
+import { hostOverlayMenu } from './host_overlay_menu';
 import * as workbenchMode from '../ide/workbench/mode';
-import { applyRuntimeGameViewTableToHost, syncRuntimeGameViewToTable } from '../machine/runtime/game/table';
 import type { Runtime } from '../machine/runtime/runtime';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;
@@ -17,9 +17,15 @@ export function runConsoleHostFrame(runtime: Runtime, currentTime: number, runRe
 		screen.beginHostFrame(currentTime);
 		workbenchMode.tickIdeInput(runtime);
 		workbenchMode.tickTerminalInput(runtime);
-		syncRuntimeGameViewToTable(runtime, console.view);
 		hostDeltaMs = Math.min(currentTime - runtime.frameLoop.currentTimeMs, MAX_HOST_FRAME_DELTA_MS);
 		runtime.frameLoop.currentTimeMs = currentTime;
+		if (hostOverlayMenu.tickInput()) {
+			runtime.frameScheduler.clearQueuedTime();
+			screen.clearPresentation();
+			hostOverlayMenu.queueRenderCommands();
+			console.view.drawHostMenuFrame(hostDeltaMs);
+			return;
+		}
 
 		if (console.paused) {
 			screen.presentPausedFrame(hostDeltaMs);
@@ -33,7 +39,6 @@ export function runConsoleHostFrame(runtime: Runtime, currentTime: number, runRe
 				const previousTickSequence = runtime.frameScheduler.lastTickSequence;
 				console.deltatime = runtime.timing.frameDurationMs;
 				runtime.frameScheduler.run(hostDeltaMs);
-				applyRuntimeGameViewTableToHost(runtime, console.view);
 				screen.syncAfterRuntimeUpdate(previousTickSequence);
 			}
 			screen.presentPending(hostDeltaMs);

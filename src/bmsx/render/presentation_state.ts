@@ -184,6 +184,7 @@ export class RenderPresentationState {
 		}
 	}
 
+
 	public presentPausedFrame(hostDeltaMs: number): void {
 		const runtime = this.runtime;
 		if (runtime.executionOverlayActive) {

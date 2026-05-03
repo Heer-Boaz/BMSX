@@ -20,7 +20,6 @@ import {
 } from '../../rompack/format';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import { buildRuntimeRomLayer } from '../../rompack/loader';
-import { Api } from '../firmware/api/api';
 import { Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
 import { type StringValue } from '../memory/string/pool';
 import type { TerminalMode } from '../../ide/terminal/ui/mode';
@@ -28,10 +27,9 @@ import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { Font, type FontVariant } from '../../render/shared/bmsx_font';
 import type { CartEditor } from '../../ide/cart_editor';
 import { type LuaSemanticModel, type FileSemanticData } from '../../lua/semantic/model';
-import { registerApiBuiltins } from '../firmware/builtins';
+import { registerFirmwareBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
 import { LuaJsBridge } from '../firmware/js_bridge';
-import { RuntimeStorage } from '../firmware/cart_storage';
 import { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion } from './contracts';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_SYSTEM_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import { buildLuaSources, resolveLuaSourceRecordFromRegistries, type LuaSourceRegistry } from '../program/sources';
@@ -81,19 +79,13 @@ export type FrameState = {
 
 type RuntimeRomLayer = Awaited<ReturnType<typeof buildRuntimeRomLayer>>;
 
-export var api: Api; // Initialized in Runtime constructor
-
 export class Runtime {
-	public readonly storage: RuntimeStorage;
 	public readonly storageService: StorageService;
 	public readonly frames: FrameLoop;
 	public readonly clock: Clock;
 	public readonly luaJsBridge!: LuaJsBridge;
 	public readonly apiFunctionNames = new Set<string>();
 	public readonly luaBuiltinMetadata = new Map<string, LuaBuiltinDescriptor>();
-	public get api(): Api {
-		return api;
-	}
 	public _activeIdeFontVariant: FontVariant = EDITOR_FONT_VARIANT;
 	public tickEnabled: boolean = true;
 	public editor!: CartEditor;
@@ -425,7 +417,6 @@ export class Runtime {
 		this.activeLuaSources = this.systemLuaSources;
 		this.activeRomSource = this.systemRomSource;
 		this.activePackage = this.systemPackage;
-		api.cartdata(this.systemLuaSources.namespace);
 	}
 
 	public enterCartProgram(): void {
@@ -445,7 +436,6 @@ export class Runtime {
 		} else {
 			throw new Error('cart ROM is not configured.');
 		}
-		api.cartdata(this.cartLuaSources.namespace);
 	}
 
 	public resolveCurrentModuleId(): string {
@@ -481,15 +471,10 @@ export class Runtime {
 		this.storageService = consoleCore.platform.storage;
 		this.frames = consoleCore.platform.frames;
 		this.clock = consoleCore.platform.clock;
-		this.storage = new RuntimeStorage(this.storageService, options.activeMachineManifest.namespace);
 		this.activeMachineManifest = options.activeMachineManifest;
 		this.cartManifest = options.cartManifest;
 		this.cartProjectRootPath = options.cartProjectRootPath;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
-		api = new Api({
-			storage: this.storage,
-			runtime: this,
-		});
 		this.machine = new Machine(
 			options.memory,
 			options.viewport,
@@ -532,7 +517,7 @@ export class Runtime {
 		this.configureInterpreter(interpreter);
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
-		registerApiBuiltins(this, interpreter);
+		registerFirmwareBuiltins(this, interpreter);
 		interpreter.setReservedIdentifiers(this.getReservedLuaIdentifiers());
 		return interpreter;
 	}
@@ -573,7 +558,6 @@ export class Runtime {
 				await consoleCore.resetRuntime();
 				consoleCore.bootstrapStartupAudio();
 			}
-			api.cartdata(this.activeLuaSources.namespace);
 			luaPipeline.bootActiveProgram(this);
 			this.hasCompletedInitialBoot = true;
 		}
@@ -637,7 +621,6 @@ export class Runtime {
 				projectRootPath: this.systemProjectRootPath,
 			});
 			await this.restartBootRomStartupState();
-			api.cartdata(this.activeLuaSources.namespace);
 			luaPipeline.bootActiveProgram(this);
 		}
 		finally {

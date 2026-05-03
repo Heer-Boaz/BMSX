@@ -1,7 +1,6 @@
 #pragma once
 
 #include "machine/cpu/cpu.h"
-#include "machine/firmware/api.h"
 #include "render/runtime/state.h"
 #include "machine/runtime/save_machine_state.h"
 
@@ -12,7 +11,6 @@ class Runtime;
 struct RuntimeSaveState {
 	RuntimeSaveMachineState machineState;
 	CpuRuntimeState cpuState;
-	RuntimeStorageState storageState;
 	RuntimeRenderState renderState;
 	uint32_t randomSeed = 0;
 	bool pendingEntryCall = false;

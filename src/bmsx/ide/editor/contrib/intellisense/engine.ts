@@ -7,8 +7,7 @@ import type { LuaSyntaxError } from '../../../../lua/errors';
 import { getCachedLuaParse } from '../../../../lua/analysis/cache';
 import { LuaInterpreter } from '../../../../lua/runtime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../../lua/value';
-import { Api } from '../../../../machine/firmware/api/api';
-import { API_METHOD_METADATA } from '../../../../machine/firmware/api/metadata';
+import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../machine/firmware/api/metadata';
 import { Table, type CpuFrameSnapshot, type LocalSlotDebug, type SourceRange, type Value } from '../../../../machine/cpu/cpu';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../machine/firmware/builtin_descriptors';
 import { buildMarshalContext, toNativeValue } from '../../../../machine/firmware/js_bridge';
@@ -235,98 +234,40 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 	}
 	const items: LuaCompletionItem[] = [];
 	const signatures: Map<string, ApiCompletionMetadata> = new Map();
-	const processed = new Set<string>();
-	let prototype: object = Api.prototype;
-	while (prototype && prototype !== Object.prototype) {
-		const propertyNames = Object.getOwnPropertyNames(prototype);
-		for (let index = 0; index < propertyNames.length; index += 1) {
-			const name = propertyNames[index];
-			if (name === 'constructor' || processed.has(name)) {
-				continue;
-			}
-			const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
-			if (!descriptor) {
-				continue;
-			}
-			const method = descriptor.value as ((...args: unknown[]) => unknown) | undefined;
-			if (method) {
-				const params = extractFunctionParameters(method);
-				const metadata = API_METHOD_METADATA[name];
-				const optionalSources = new Set<string>();
-				const parameterDescriptionMap: Map<string, string> = new Map();
-				if (metadata?.parameters) {
-					for (let paramIndex = 0; paramIndex < metadata.parameters.length; paramIndex += 1) {
-						const paramMeta = metadata.parameters[paramIndex];
-						if (!paramMeta || typeof paramMeta.name !== 'string') {
-							continue;
-						}
-						if (paramMeta.optional) {
-							optionalSources.add(paramMeta.name);
-						}
-						if (paramMeta.description !== undefined) {
-							parameterDescriptionMap.set(paramMeta.name, paramMeta.description);
-						}
-					}
-				}
-				const optionalParams = optionalSources.size > 0 ? Array.from(optionalSources) : [];
-				const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param));
-				const displayParams = params.map(param => (optionalSources.has(param) ? `${param}?` : param));
-				const returnTypeSuffix = formatApiReturnTypeSuffix(metadata?.returnType);
-				const baseDetail = displayParams.length > 0
-					? `api.${name}(${displayParams.join(', ')})${returnTypeSuffix}`
-					: `api.${name}()${returnTypeSuffix}`;
-				const methodDescription = metadata?.description;
-				const detail = methodDescription && methodDescription.length > 0 ? `${baseDetail} • ${methodDescription}` : baseDetail;
-				const item: LuaCompletionItem = {
-					label: name,
-					insertText: name,
-					sortKey: `api:${name}`,
-					kind: 'api_method',
-					detail,
-					parameters: displayParams,
-				};
-				items.push(item);
-				const metadataEntry: ApiCompletionMetadata = {
-					params: params.slice(),
-					signature: baseDetail,
-					kind: 'method',
-					optionalParams,
-					parameterDescriptions,
-					description: methodDescription,
-					returnType: metadata?.returnType,
-					returnDescription: metadata?.returnDescription,
-				};
-				signatures.set(name, metadataEntry);
-				processed.add(name);
-				continue;
-			}
-			if (descriptor.get) {
-				const metadata = API_METHOD_METADATA[name];
-				const returnTypeSuffix = formatApiReturnTypeSuffix(metadata?.returnType);
-				const baseDetail = `api.${name}${returnTypeSuffix}`;
-				const description = metadata?.description;
-				const detail = description && description.length > 0 ? `${baseDetail} • ${description}` : baseDetail;
-				const item: LuaCompletionItem = {
-					label: name,
-					insertText: name,
-					sortKey: `api:${name}`,
-					kind: 'api_property',
-					detail,
-				};
-				items.push(item);
-				const metadataEntry: ApiCompletionMetadata = {
-					params: [],
-					signature: baseDetail,
-					kind: 'getter',
-					description,
-					returnType: metadata?.returnType,
-					returnDescription: metadata?.returnDescription,
-				};
-				signatures.set(name, metadataEntry);
-				processed.add(name);
-			}
-		}
-		prototype = Object.getPrototypeOf(prototype);
+	const metadataMap: Record<string, ApiMethodMetadata> = API_METHOD_METADATA;
+	const entries = Object.entries(metadataMap);
+	for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+		const [name, metadata] = entries[entryIndex];
+		const params = metadata.parameters ? metadata.parameters.map(parameter => parameter.name) : [];
+		const optionalParams = metadata.parameters ? metadata.parameters.filter(parameter => parameter.optional).map(parameter => parameter.name) : [];
+		const optionalSet = optionalParams.length > 0 ? new Set(optionalParams) : null;
+		const parameterDescriptions = metadata.parameters ? metadata.parameters.map(parameter => parameter.description) : undefined;
+		const displayParams = optionalSet ? params.map(param => (optionalSet.has(param) ? `${param}?` : param)) : params;
+		const isProperty = metadata.parameters === undefined;
+		const returnTypeSuffix = formatApiReturnTypeSuffix(metadata.returnType);
+		const baseDetail = isProperty
+			? `api.${name}${returnTypeSuffix}`
+			: `api.${name}(${displayParams.join(', ')})${returnTypeSuffix}`;
+		const detail = metadata.description && metadata.description.length > 0 ? `${baseDetail} • ${metadata.description}` : baseDetail;
+		items.push({
+			label: name,
+			insertText: name,
+			sortKey: `api:${name}`,
+			kind: isProperty ? 'api_property' : 'api_method',
+			detail,
+			parameters: displayParams,
+		});
+		const metadataEntry: ApiCompletionMetadata = {
+			params: params.slice(),
+			signature: baseDetail,
+			kind: isProperty ? 'getter' : 'method',
+			optionalParams,
+			parameterDescriptions,
+			description: metadata.description,
+			returnType: metadata.returnType,
+			returnDescription: metadata.returnDescription,
+		};
+		signatures.set(name, metadataEntry);
 	}
 	items.sort((a, b) => a.label.localeCompare(b.label));
 	cachedApiCompletionData = { items, signatures };

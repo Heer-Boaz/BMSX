@@ -5,6 +5,7 @@
 #include "machine/runtime/timing/config.h"
 #include "machine/specs.h"
 #include "rompack/format.h"
+#include "rompack/package.h"
 
 namespace bmsx {
 

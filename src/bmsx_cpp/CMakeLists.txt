@@ -164,9 +164,7 @@ add_library(bmsx_core STATIC
 	machine/devices/input/controller.cpp
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp
-	machine/firmware/api.cpp
 	machine/firmware/devtools.cpp
-	machine/firmware/input_state_tables.cpp
 	machine/cpu/disassembler.cpp
 	machine/program/load_compiler.cpp
 	machine/firmware/globals.cpp
@@ -183,7 +181,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/save_state/schema.cpp
 	machine/runtime/save_state/codec.cpp
 	machine/runtime/resume_snapshot.cpp
-	machine/runtime/game/table.cpp
 	machine/runtime/cart_boot.cpp
 	machine/runtime/cpu_executor.cpp
 	machine/runtime/system_irq.cpp

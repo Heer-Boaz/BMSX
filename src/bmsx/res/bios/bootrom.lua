@@ -409,11 +409,11 @@ local update_boot_screen<const> = function()
 end
 
 render_boot_screen = function(scroll_delta)
-	local width<const> = display_width()
-	local height<const> = display_height()
+	local width<const> = machine_manifest.render_size.width
+	local height<const> = machine_manifest.render_size.height
 	local left<const> = 8
 	local top<const> = content_top
-	local font<const> = get_default_font()
+	local font<const> = font_module.get('default')
 
 	vdp_stream.clear_color(color_bg)
 	vdp_stream.fill_rect_color(0, 0, width, 24, 0, sys_vdp_layer_world, color_header_bg)
@@ -423,7 +423,7 @@ render_boot_screen = function(scroll_delta)
 	local cursor<const> = ((elapsed * 2) % 2 == 0) and '█' or ' '
 	local line_slots<const> = line_slots(width, left, font_width)
 	local content_lines<const> = build_boot_content_lines(info, cart_present, cursor, elapsed, line_slots)
-	local window_size<const> = window_size(display_height(), top, line_height, 1, 1)
+	local window_size<const> = window_size(machine_manifest.render_size.height, top, line_height, 1, 1)
 	local scroll_top<const>, max_scroll<const>, visible_lines<const> = scroll_boot_lines(content_lines, window_size, scroll_delta)
 	local y = top + 1
 	local text_z<const> = 1

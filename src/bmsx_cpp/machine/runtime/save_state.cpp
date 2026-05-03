@@ -1,8 +1,6 @@
 #include "machine/runtime/save_state.h"
 
-#include "machine/firmware/api.h"
 #include "machine/runtime/cpu_state.h"
-#include "machine/runtime/game/table.h"
 #include "render/runtime/state.h"
 #include "render/shared/queues.h"
 #include "machine/runtime/save_machine_state.h"
@@ -16,7 +14,6 @@ RuntimeSaveState captureRuntimeSaveState(Runtime& runtime) {
 	RuntimeSaveState state;
 	state.machineState = captureRuntimeSaveMachineState(runtime);
 	state.cpuState = captureRuntimeCpuState(runtime);
-	state.storageState = runtime.m_api->captureStorageState();
 	state.renderState = captureRuntimeRenderState();
 	state.randomSeed = runtime.m_randomSeedValue;
 	state.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
@@ -34,14 +31,12 @@ void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state) {
 	}
 	applyRuntimeSaveMachineState(runtime, state.machineState);
 	applyRuntimeCpuState(runtime, state.cpuState);
-	runtime.m_api->restoreStorageState(state.storageState);
 	applyRuntimeRenderState(state.renderState);
 	restoreVdpContextState(runtime.machine().vdp());
 	runtime.m_randomSeedValue = state.randomSeed;
 	runtime.m_pendingCall = state.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
 	runtime.m_runtimeFailed = state.runtimeFailed;
 	runtime.m_luaInitialized = state.luaInitialized;
-	syncRuntimeGameViewToTable(runtime);
 	RenderQueues::clearBackQueues();
 }
 

@@ -15,7 +15,6 @@
 
 namespace bmsx {
 
-class Api;
 class MicrotaskQueue;
 class SoundMaster;
 

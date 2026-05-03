@@ -1,6 +1,4 @@
 #include "machine/runtime/runtime.h"
-#include "machine/firmware/api.h"
-#include "machine/firmware/input_state_tables.h"
 #include "machine/program/load_compiler.h"
 #include "machine/common/number_format.h"
 #include "machine/memory/lua_heap_usage.h"
@@ -11,9 +9,7 @@
 #include "rompack/format.h"
 #include "rompack/package.h"
 #include "common/serializer/binencoder.h"
-#include "input/manager.h"
 #include "common/clamp.h"
-#include "render/gameview.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -1468,12 +1464,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("inp_ctrl_commit", valueNumber(static_cast<double>(INP_CTRL_COMMIT)));
 	setGlobal("inp_ctrl_arm", valueNumber(static_cast<double>(INP_CTRL_ARM)));
 	setGlobal("inp_ctrl_reset", valueNumber(static_cast<double>(INP_CTRL_RESET)));
-	setGlobal("inp_pressed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_PRESSED)));
-	setGlobal("inp_justpressed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_JUSTPRESSED)));
-	setGlobal("inp_justreleased", valueNumber(static_cast<double>(ACTION_STATE_FLAG_JUSTRELEASED)));
-	setGlobal("inp_consumed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_CONSUMED)));
-	setGlobal("inp_guardedjustpressed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_GUARDEDJUSTPRESSED)));
-	setGlobal("inp_repeatpressed", valueNumber(static_cast<double>(ACTION_STATE_FLAG_REPEATPRESSED)));
 
 	registerNativeFunction("u32_to_f32", [](NativeArgsView args, NativeResults& out) {
 		const uint32_t bits = toU32(asNumber(args.at(0)));
@@ -3414,72 +3404,6 @@ m_ipairsIterator = m_machine.cpu().createNativeFunction("ipairs.iterator", [](Na
 	const std::string* cartProjectRootPath = this->cartProjectRootPath();
 	setGlobal("cart_project_root_path", cartProjectRootPath ? str(*cartProjectRootPath) : valueNil());
 
-	const GameView& gameView = this->view();
-	const Vec2& viewSize = gameView.viewportSize;
-	auto* viewportTable = cpu.createTable(0, 2);
-	viewportTable->set(key("x"), valueNumber(static_cast<double>(viewSize.x)));
-	viewportTable->set(key("y"), valueNumber(static_cast<double>(viewSize.y)));
-	auto* viewTable = cpu.createTable(0, 8);
-	viewTable->set(key("crt_postprocessing_enabled"), valueBool(gameView.crt_postprocessing_enabled));
-	viewTable->set(key("enable_noise"), valueBool(gameView.applyNoise));
-	viewTable->set(key("enable_colorbleed"), valueBool(gameView.applyColorBleed));
-	viewTable->set(key("enable_scanlines"), valueBool(gameView.applyScanlines));
-	viewTable->set(key("enable_blur"), valueBool(gameView.applyBlur));
-	viewTable->set(key("enable_glow"), valueBool(gameView.applyGlow));
-	viewTable->set(key("enable_fringing"), valueBool(gameView.applyFringing));
-	viewTable->set(key("enable_aperture"), valueBool(gameView.applyAperture));
-
-auto clockNowFn = m_machine.cpu().createNativeFunction("platform.clock.now", [runtimeClock](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	out.push_back(valueNumber(runtimeClock->now()));
-});
-auto clockPerfNowFn = m_machine.cpu().createNativeFunction("platform.clock.perf_now", [](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	out.push_back(valueNumber(to_ms(std::chrono::steady_clock::now().time_since_epoch())));
-});
-		auto* clockTable = cpu.createTable(0, 2);
-	clockTable->set(key("now"), clockNowFn);
-	clockTable->set(key("perf_now"), clockPerfNowFn);
-		auto* platformTable = cpu.createTable(0, 1);
-	platformTable->set(key("clock"), valueTable(clockTable));
-
-	auto getActionStateFn = m_machine.cpu().createNativeFunction("game.get_action_state", [this](NativeArgsView args, NativeResults& out) {
-		int playerIndex = 1;
-		std::string action;
-		std::optional<f64> windowFrames;
-		if (args.size() == 1) {
-			action = m_machine.cpu().stringPool().toString(asStringId(args.at(0)));
-		} else {
-			playerIndex = floorIntArg(args, 0);
-			action = m_machine.cpu().stringPool().toString(asStringId(args.at(1)));
-			if (args.size() > 2 && !isNil(args.at(2))) {
-				windowFrames = asNumber(args.at(2));
-			}
-		}
-		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
-		ActionState state = input->getActionState(action, windowFrames);
-		out.push_back(valueNumber(static_cast<double>(packActionStateFlags(state))));
-	});
-
-auto emitFn = m_machine.cpu().createNativeFunction("game.emit", [](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	(void)out;
-});
-
-auto getFrameDeltaMsFn = m_machine.cpu().createNativeFunction("game.get_frame_delta_ms", [this](NativeArgsView args, NativeResults& out) {
-	(void)args;
-	out.push_back(valueNumber(frameDeltaMs()));
-});
-
-	auto* gameTable = cpu.createTable(0, 10);
-	gameTable->set(key("platform"), valueTable(platformTable));
-	gameTable->set(key("viewportsize"), valueTable(viewportTable));
-	gameTable->set(key("view"), valueTable(viewTable));
-	gameTable->set(key("emit"), emitFn);
-	gameTable->set(key("get_frame_delta_ms"), getFrameDeltaMsFn);
-	gameTable->set(key("get_action_state"), getActionStateFn);
-	setGlobal("game", valueTable(gameTable));
-	setGlobal("$", valueTable(gameTable));
 
 }
 

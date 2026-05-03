@@ -87,30 +87,6 @@ const NATIVE_COST_TIER2: NativeFnCost = { base: 2, perArg: 0, perRet: 0 };
 const NATIVE_COST_TIER4: NativeFnCost = { base: 4, perArg: 0, perRet: 0 };
 const DEFAULT_NATIVE_COST = NATIVE_COST_TIER1;
 
-function resolveApiNativeCost(name: string): NativeFnCost {
-	switch (name) {
-		case 'display_width':
-		case 'display_height':
-		case 'get_cpu_freq_hz':
-		case 'get_default_font':
-		case 'rungate':
-		case 'runtime':
-			return NATIVE_COST_TIER0;
-		case 'resolveFontId':
-		case 'reboot':
-			return NATIVE_COST_TIER1;
-		case 'set_cpu_freq_hz':
-			return NATIVE_COST_TIER2;
-		case 'cartdata':
-		case 'list_builtins':
-		case 'create_font':
-		case 'taskgate':
-			return NATIVE_COST_TIER4;
-		default:
-			return DEFAULT_NATIVE_COST;
-	}
-}
-
 function resolveNativeFunctionCost(name: string): NativeFnCost {
 	switch (name) {
 		case 'sys_cpu_cycles_used':
@@ -212,9 +188,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'devtools.get_lua_resource_source':
 			return NATIVE_COST_TIER4;
 		default:
-			if (name.startsWith('api.')) {
-				return resolveApiNativeCost(name.slice(4));
-			}
 			return DEFAULT_NATIVE_COST;
 	}
 }

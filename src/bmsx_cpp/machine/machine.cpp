@@ -2,7 +2,6 @@
 
 #include "audio/soundmaster.h"
 #include "input/manager.h"
-#include "machine/firmware/api.h"
 #include "rompack/format.h"
 
 #include <stdexcept>

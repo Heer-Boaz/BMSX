@@ -1,7 +1,5 @@
 #include "machine/runtime/resume_snapshot.h"
 
-#include "machine/firmware/api.h"
-#include "machine/runtime/game/table.h"
 #include "machine/runtime/machine_state.h"
 #include "render/runtime/state.h"
 #include "render/shared/queues.h"
@@ -17,7 +15,6 @@ RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 	runtime.m_machine.cpu().globals->forEachEntry([&snapshot](Value key, Value value) {
 		snapshot.globals.emplace_back(key, value);
 	});
-	snapshot.storageState = runtime.m_api->captureStorageState();
 	snapshot.renderState = captureRuntimeRenderState();
 	snapshot.randomSeed = runtime.m_randomSeedValue;
 	snapshot.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
@@ -27,7 +24,6 @@ RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& snapshot) {
 	applyRuntimeMachineState(runtime, snapshot.machineState);
 	restoreVdpContextState(runtime.machine().vdp());
-	runtime.m_api->restoreStorageState(snapshot.storageState);
 	applyRuntimeRenderState(snapshot.renderState);
 	runtime.m_randomSeedValue = snapshot.randomSeed;
 	runtime.m_pendingCall = snapshot.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
@@ -38,7 +34,6 @@ void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& s
 	for (const auto& [key, value] : snapshot.globals) {
 		runtime.m_machine.cpu().setGlobalByKey(key, value);
 	}
-	syncRuntimeGameViewToTable(runtime);
 	RenderQueues::clearBackQueues();
 }
 

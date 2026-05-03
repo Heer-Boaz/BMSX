@@ -1,5 +1,6 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
 import type {
+	Host2DPipelineState,
 	HostOverlayPipelineState,
 	PassEncoder,
 	RenderPassDesc,
@@ -49,7 +50,7 @@ type HostOverlayImageSource = {
 
 type BoundTextureState = WebGLTexture | null;
 
-type HostOverlayRuntime = {
+export type HostOverlayRuntime = {
 	gl: WebGL2RenderingContext;
 	program: WebGLProgram;
 	vao: WebGLVertexArrayObject;
@@ -131,7 +132,7 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverla
 	};
 }
 
-function destroyRuntime(runtimeToDestroy: HostOverlayRuntime): void {
+export function destroyHostOverlayRuntime_WebGL(runtimeToDestroy: HostOverlayRuntime): void {
 	const gl = runtimeToDestroy.gl;
 	gl.deleteBuffer(runtimeToDestroy.cornerBuffer);
 	gl.deleteBuffer(runtimeToDestroy.instanceFloatBuffer);
@@ -145,10 +146,16 @@ function bootstrapRuntime(backend: WebGLBackend): HostOverlayRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
 	const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
 	if (runtime !== null) {
-		destroyRuntime(runtime);
+		destroyHostOverlayRuntime_WebGL(runtime);
 	}
 	runtime = createRuntime(backend, program);
 	return runtime;
+}
+
+export function createHostOverlayRuntime_WebGL(backend: WebGLBackend): HostOverlayRuntime {
+	const gl = backend.gl as WebGL2RenderingContext;
+	const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
+	return createRuntime(backend, program);
 }
 
 function writeQuad(state: HostOverlayRuntime, index: number, originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, _z: number, colorValue: color): void {
@@ -509,14 +516,14 @@ function drawGlyphRunCommand(backend: WebGLBackend, state: HostOverlayRuntime, c
 	return currentBoundTextures;
 }
 
-function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
+function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	gl.useProgram(state.program);
 	updateAndBindFrameUniforms(backend, {
 		offscreen: { x: passState.width, y: passState.height },
 		logical: { x: passState.overlayWidth, y: passState.overlayHeight },
-		time: consoleCore.runtime.frameLoop.currentTimeMs / 1000,
-		delta: consoleCore.deltatime_seconds,
+		time: passState.time,
+		delta: passState.delta,
 	});
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	gl.uniform1f(state.uniforms.scale, 1);
@@ -577,18 +584,22 @@ function drawHost2DCommand(backend: WebGLBackend, state: HostOverlayRuntime, ima
 	}
 }
 
-function renderHost2DQueue(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
+export function renderHost2DEntries_WebGL(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState, forEachEntry: (fn: (kind: Host2DKind, command: Host2DRef, index: number) => void) => void): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	bindPassState(backend, state, passState);
 	const imageCache = state.imageCache;
 	let boundTextures: BoundTextureState = null;
-	forEachHost2DQueue((kind, command) => {
+	forEachEntry((kind, command, _index) => {
 		boundTextures = drawHost2DCommand(backend, state, imageCache, kind, command, boundTextures);
 	});
 	backend.bindVertexArray(null);
 	backend.setBlendEnabled(false);
 	backend.setDepthMask(true);
+}
+
+function renderHost2DQueue(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
+	renderHost2DEntries_WebGL(backend, state, passState, forEachHost2DQueue);
 }
 
 function renderAxisGizmoLabels(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
@@ -656,6 +667,8 @@ export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void
 				height: consoleCore.view.offscreenCanvasSize.y,
 				overlayWidth: frame?.width ?? consoleCore.view.viewportSize.x,
 				overlayHeight: frame?.height ?? consoleCore.view.viewportSize.y,
+				time: consoleCore.platform.clock.now() / 1000,
+				delta: consoleCore.deltatime_seconds,
 				commands: frame?.commands ?? EMPTY_HOST_OVERLAY_COMMANDS,
 			};
 			registry.setState('host_overlay', state);

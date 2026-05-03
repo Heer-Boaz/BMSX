@@ -1041,7 +1041,7 @@ function room_object:render_room()
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	vdp_fill_rect_color(0, constants.room.tile_origin_y, display_width(), display_height(), 342, sys_vdp_layer_world, 0x80ffffff)
+	vdp_fill_rect_color(0, constants.room.tile_origin_y, machine_manifest.render_size.width, machine_manifest.render_size.height, 342, sys_vdp_layer_world, 0x80ffffff)
 end
 
 local room_runtime_state_name<const> = function(room_state)

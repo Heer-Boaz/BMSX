@@ -404,6 +404,10 @@ void LibretroPlatform::setDitherType(i32 type) {
 	m_console->runtime().setVdpDitherType(m_dither_type);
 }
 
+void LibretroPlatform::setResourceUsageGizmo(bool enabled) {
+	m_console->view()->showResourceUsageGizmo = enabled;
+}
+
 void LibretroPlatform::setFrameSkipOptions(bool enabled) {
 	m_frameskip_enabled = enabled;
 	m_frameskip_next = false;

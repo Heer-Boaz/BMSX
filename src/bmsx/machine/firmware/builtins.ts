@@ -1,26 +1,20 @@
 import { Input } from '../../input/manager';
 import { InputMap } from '../../input/models';
 import { LuaEnvironment } from '../../lua/environment';
-import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../../lua/errors';
 import { LuaInterpreter, LuaNativeFunction } from '../../lua/runtime';
-import { extractErrorMessage, isLuaCallSignal, LuaFunctionValue, LuaNativeValue, type LuaCallResult } from '../../lua/value';
+import { isLuaCallSignal, LuaFunctionValue, type LuaCallResult } from '../../lua/value';
 import { isLuaTable, LuaTable, LuaValue } from '../../lua/value';
 import { arrayify } from '../../common/arrayify';
-import { API_METHOD_METADATA } from './api/metadata';
-import { collectApiMembers } from './api/members';
 import { createInterpreterDevtoolsTable } from './devtools';
 import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,
 	SYSTEM_LUA_BUILTIN_FUNCTIONS,
 } from './builtin_descriptors';
-import { buildMarshalContext, extendMarshalContext } from './js_bridge';
-import { api } from '../runtime/runtime';
+import { buildMarshalContext } from './js_bridge';
 import type { Runtime } from '../runtime/runtime';
 import type { LuaBuiltinDescriptor } from '../runtime/contracts';
 
-const FIRMWARE_LUA_GLOBAL_METHODS = new Set<string>();
-
-export function registerApiBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
+export function registerFirmwareBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
 	runtime.apiFunctionNames.clear();
 
 	const env = interpreter.globalEnvironment;
@@ -64,94 +58,6 @@ export function registerApiBuiltins(runtime: Runtime, interpreter: LuaInterprete
 	});
 	registerLuaGlobal(runtime, env, 'devtools', createInterpreterDevtoolsTable(runtime, interpreter));
 
-	const members = collectApiMembers(api);
-	for (const { name, kind, descriptor } of members) {
-		if (!descriptor) {
-			continue;
-		}
-		if (kind === 'method') {
-			const callable = descriptor.value as (...args: unknown[]) => unknown;
-			const params = extractFunctionParameters(callable);
-			const apiMetadata = API_METHOD_METADATA[name];
-			const optionalSet: Set<string> = new Set();
-			const parameterDescriptionMap: Map<string, string> = new Map();
-			if (apiMetadata?.parameters) {
-				for (let index = 0; index < apiMetadata.parameters.length; index += 1) {
-						const metadataParam = apiMetadata.parameters[index];
-						if (!metadataParam || typeof metadataParam.name !== 'string') {
-							throw interpreter.runtimeError(`API method '${name}' has invalid parameter metadata.`);
-					}
-					if (metadataParam.optional) {
-						optionalSet.add(metadataParam.name);
-					}
-					if (metadataParam.description !== undefined) {
-						parameterDescriptionMap.set(metadataParam.name, metadataParam.description);
-					}
-				}
-			}
-			const optionalArray = optionalSet.size > 0 ? Array.from(optionalSet) : undefined;
-			const parameterDescriptions = params.map(param => parameterDescriptionMap.get(param));
-			const displayParams = params.map(param => (optionalSet.has(param) ? `${param}?` : param));
-			const returnTypeSuffix = apiMetadata?.returnType && apiMetadata.returnType !== 'void'
-				? ` -> ${apiMetadata.returnType}`
-				: '';
-			const signature = displayParams.length > 0
-				? `${name}(${displayParams.join(', ')})${returnTypeSuffix}`
-				: `${name}()${returnTypeSuffix}`;
-			if (FIRMWARE_LUA_GLOBAL_METHODS.has(name)) {
-				registerLuaBuiltin(runtime, {
-					name,
-					params,
-					signature,
-					optionalParams: optionalArray,
-					parameterDescriptions,
-					description: apiMetadata?.description,
-				});
-				continue;
-			}
-			const native = new LuaNativeFunction(`api.${name}`, (args) => {
-				const baseCtx = buildMarshalContext(runtime);
-				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.convertFromLua(arg, extendMarshalContext(baseCtx, `arg${index}`)));
-				try {
-					const result = (api[name] as (...inner: unknown[]) => unknown).apply(api, jsArgs);
-					return wrapResultValue(runtime, result);
-				} catch (error) {
-					if (isLuaScriptError(error)) {
-						throw error;
-						}
-						const message = extractErrorMessage(error);
-						throw interpreter.runtimeError(`[api.${name}] ${message}`);
-				}
-			});
-			registerLuaGlobal(runtime, env, name, native);
-			registerLuaBuiltin(runtime, {
-				name,
-				params,
-				signature,
-				optionalParams: optionalArray,
-				parameterDescriptions,
-				description: apiMetadata?.description,
-			});
-			continue;
-		}
-
-		if (descriptor.get) {
-			const getter = descriptor.get;
-			const native = new LuaNativeFunction(`api.${name}`, () => {
-				try {
-					const value = getter.call(api);
-					return wrapResultValue(runtime, value);
-				} catch (error) {
-					if (isLuaScriptError(error)) {
-						throw error;
-						}
-						const message = extractErrorMessage(error);
-						throw interpreter.runtimeError(`[api.${name}] ${message}`);
-				}
-			});
-			registerLuaGlobal(runtime, env, name, native);
-		}
-	}
 
 	registerSystemBuiltins(runtime, interpreter);
 }
@@ -229,73 +135,6 @@ export function registerLuaBuiltin(runtime: Runtime, metadata: LuaBuiltinDescrip
 	runtime.luaBuiltinMetadata.set(name, descriptor);
 }
 
-function extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
-	const source = Function.prototype.toString.call(fn);
-	const openIndex = source.indexOf('(');
-	if (openIndex === -1) {
-		return [];
-	}
-	let index = openIndex + 1;
-	let depth = 1;
-	let closeIndex = source.length;
-	while (index < source.length) {
-		const ch = source.charAt(index);
-		if (ch === '(') {
-			depth += 1;
-		} else if (ch === ')') {
-			depth -= 1;
-			if (depth === 0) {
-				closeIndex = index;
-				break;
-			}
-		}
-		index += 1;
-	}
-	if (depth !== 0 || closeIndex <= openIndex) {
-		return [];
-	}
-	const slice = source.slice(openIndex + 1, closeIndex);
-	const withoutBlockComments = slice.replace(/\/\*[\s\S]*?\*\//g, '');
-	const withoutLineComments = withoutBlockComments.replace(/\/\/.*$/gm, '');
-	const rawTokens = withoutLineComments.split(',');
-	const names: string[] = [];
-	for (let i = 0; i < rawTokens.length; i += 1) {
-		const token = rawTokens[i].trim();
-		if (token.length === 0) {
-			continue;
-		}
-		names.push(sanitizeParameterName(token, i));
-	}
-	return names;
-}
-
-function sanitizeParameterName(token: string, index: number): string {
-	let candidate = token.trim();
-	if (candidate.length === 0) {
-		return `arg${index + 1}`;
-	}
-	if (candidate.startsWith('...')) {
-		return '...';
-	}
-	const equalsIndex = candidate.indexOf('=');
-	if (equalsIndex >= 0) {
-		candidate = candidate.slice(0, equalsIndex).trim();
-	}
-	const colonIndex = candidate.indexOf(':');
-	if (colonIndex >= 0) {
-		candidate = candidate.slice(0, colonIndex).trim();
-	}
-	const bracketIndex = Math.max(candidate.indexOf('{'), candidate.indexOf('['));
-	if (bracketIndex !== -1) {
-		return `arg${index + 1}`;
-	}
-	const sanitized = candidate.replace(/[^A-Za-z0-9_]/g, '');
-	if (sanitized.length === 0) {
-		return `arg${index + 1}`;
-	}
-	return sanitized;
-}
-
 export function seedDefaultLuaBuiltins(runtime: Runtime): void {
 	for (let index = 0; index < DEFAULT_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
 		registerLuaBuiltin(runtime, DEFAULT_LUA_BUILTIN_FUNCTIONS[index]);
@@ -305,43 +144,4 @@ export function seedDefaultLuaBuiltins(runtime: Runtime): void {
 export function registerLuaGlobal(runtime: Runtime, env: LuaEnvironment, name: string, value: LuaValue): void {
 	env.set(name, value);
 	runtime.apiFunctionNames.add(name);
-}
-
-function wrapResultValue(runtime: Runtime, value: unknown): ReadonlyArray<LuaValue> {
-	if (Array.isArray(value)) {
-		if (value.every((entry) => isLuaValue(entry))) {
-			return value as LuaValue[];
-		}
-		return value.map((entry) => runtime.luaJsBridge.toLua(entry));
-	}
-	if (value === undefined) {
-		return [];
-	}
-	const luaValue = runtime.luaJsBridge.toLua(value);
-	return [luaValue];
-}
-
-function isLuaValue(value: unknown): value is LuaValue {
-	if (value === null) {
-		return true;
-	}
-	if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
-		return true;
-	}
-	if (isLuaTable(value)) {
-		return true;
-	}
-	if (value instanceof LuaNativeValue) {
-		return true;
-	}
-	if (value && typeof value === 'object' && 'call' in (value as Record<string, unknown>)) {
-		const candidate = value as { call?: unknown };
-		// disable-next-line defensive_typeof_function_pattern -- LuaFunctionValue guard validates arbitrary script-thrown values.
-		return typeof candidate.call === 'function';
-	}
-	return false;
-}
-
-export function isLuaScriptError(error: unknown): error is LuaError | LuaRuntimeError | LuaSyntaxError {
-	return error instanceof LuaError || error instanceof LuaRuntimeError || error instanceof LuaSyntaxError;
 }

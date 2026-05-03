@@ -670,7 +670,7 @@ function textcomponent.new(opts)
 	opts.type_name = 'textcomponent'
 	local self<const> = setmetatable(component.new(opts), textcomponent)
 	self.text = (opts.text)
-	self.font = opts.font or get_default_font()
+	self.font = opts.font or font_module.get('default')
 	self.line_height = opts.line_height or self.font.line_height
 	self.color = opts.color or 0xffffffff
 	self.background_color = opts.background_color
@@ -1018,8 +1018,8 @@ local init_screenboundary_fields<const> = function(self, opts)
 	local bounds<const> = opts.bounds
 	self.boundary_left = bounds and bounds.left or 0
 	self.boundary_top = bounds and bounds.top or 0
-	self.boundary_right = bounds and bounds.right or $.viewportsize.x
-	self.boundary_bottom = bounds and bounds.bottom or $.viewportsize.y
+	self.boundary_right = bounds and bounds.right or machine_manifest.render_size.width
+	self.boundary_bottom = bounds and bounds.bottom or machine_manifest.render_size.height
 	return self
 end
 

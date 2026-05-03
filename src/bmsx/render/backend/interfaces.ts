@@ -43,6 +43,7 @@ export type RenderPassId =
 	| 'particles'
 	| 'framebuffer_2d'
 	| 'host_overlay'
+	| 'host_menu'
 	| 'device_quantize'
 	| 'crt'
 	| 'frame_shared'
@@ -208,6 +209,7 @@ export interface RenderPassStateRegistry {
 	['particles']: ParticlePipelineState;
 	['framebuffer_2d']: Framebuffer2DPipelineState;
 	['host_overlay']: HostOverlayPipelineState;
+	['host_menu']: HostMenuPipelineState;
 	['device_quantize']: DeviceQuantizePipelineState;
 	['crt']: CRTPipelineState;
 	['frame_shared']: FrameSharedState;
@@ -226,13 +228,20 @@ export type Framebuffer2DPipelineState = {
 	colorTex: TextureHandle;
 };
 
-export type HostOverlayPipelineState = {
+export type Host2DPipelineState = {
 	width: number;
 	height: number;
 	overlayWidth: number;
 	overlayHeight: number;
+	time: number;
+	delta: number;
+};
+
+export type HostOverlayPipelineState = Host2DPipelineState & {
 	commands: RenderSubmission[];
 };
+
+export type HostMenuPipelineState = Host2DPipelineState;
 
 export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);
 export type RenderSubmitQueue = Pick<Pick<RenderContext, 'renderer'>['renderer'], 'submit'>;

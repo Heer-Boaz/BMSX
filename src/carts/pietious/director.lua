@@ -84,7 +84,7 @@ function director:bind_visual()
 		if not self.seal_flash_on then
 			return
 		end
-		vdp_fill_rect_color(0, constants.room.tile_origin_y, display_width(), display_height(), 500, sys_vdp_layer_ui, 0xb3ffffff)
+		vdp_fill_rect_color(0, constants.room.tile_origin_y, machine_manifest.render_size.width, machine_manifest.render_size.height, 500, sys_vdp_layer_ui, 0xb3ffffff)
 	end
 end
 

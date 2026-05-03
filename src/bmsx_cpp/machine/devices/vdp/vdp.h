@@ -20,7 +20,6 @@
 
 namespace bmsx {
 
-class Api;
 class ImgDecController;
 class VDP;
 

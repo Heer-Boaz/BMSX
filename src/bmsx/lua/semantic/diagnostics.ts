@@ -12,7 +12,7 @@ import {
 	type LuaStatement,
 	type LuaStringLiteralExpression,
 } from '../syntax/ast';
-import { API_METHOD_METADATA } from '../../machine/firmware/api/metadata';
+import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../machine/firmware/api/metadata';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../machine/firmware/builtin_descriptors';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../semantic_contracts';
 import {
@@ -137,8 +137,11 @@ export function getStaticLuaApiSignatureMap(): ReadonlyMap<string, LuaApiSignatu
 	if (cachedStaticApiSignatureMap.size > 0) {
 		return cachedStaticApiSignatureMap;
 	}
-	for (const [name, metadata] of Object.entries(API_METHOD_METADATA)) {
-		const parameters = 'parameters' in metadata && metadata.parameters ? metadata.parameters : [];
+	const metadataMap: Record<string, ApiMethodMetadata> = API_METHOD_METADATA;
+	const entries = Object.entries(metadataMap);
+	for (let index = 0; index < entries.length; index += 1) {
+		const [name, metadata] = entries[index];
+		const parameters = metadata.parameters ?? [];
 		const params = parameters.map(parameter => parameter.name);
 		const optionalParams = parameters.filter(parameter => parameter.optional).map(parameter => parameter.name);
 		const optionalList = optionalParams.length > 0 ? optionalParams : undefined;

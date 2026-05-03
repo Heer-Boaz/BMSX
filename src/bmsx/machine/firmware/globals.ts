@@ -1,5 +1,4 @@
 import { extractErrorMessage, type StackTraceFrame } from '../../lua/value';
-import { consoleCore } from '../../core/console';
 import { clamp01 } from '../../common/clamp';
 import {
 	createNativeFunction,
@@ -269,27 +268,18 @@ import {
 	pushNativePairsIterator,
 	toNativeValue,
 	toRuntimeValue,
-	wrapNativeResult,
 } from './js_bridge';
-import { collectApiMembers } from './api/members';
 import { buildLuaFrameRawLabel } from '../../lua/stack_frame_label';
 import { isStringValue, stringValueToString } from '../memory/string/pool';
 
 import type { StringValue } from '../memory/string/pool';
 import type { LuaMarshalContext } from '../runtime/contracts';
 import type { Runtime } from '../runtime/runtime';
-import { createRuntimeGameTable } from '../runtime/game/table';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';
 import { callClosureInto } from '../program/executor';
 import { compileLoadChunk } from '../program/load_compiler';
 import { createRuntimeDevtoolsTable } from './devtools';
 
-const ACTION_STATE_FLAG_PRESSED = 1 << 0;
-const ACTION_STATE_FLAG_JUSTPRESSED = 1 << 1;
-const ACTION_STATE_FLAG_JUSTRELEASED = 1 << 2;
-const ACTION_STATE_FLAG_CONSUMED = 1 << 5;
-const ACTION_STATE_FLAG_GUARDEDJUSTPRESSED = 1 << 9;
-const ACTION_STATE_FLAG_REPEATPRESSED = 1 << 10;
 
 // start repeated-sequence-acceptable -- Lua tostring semantics live in firmware; disassembler formatting is intentionally separate.
 export function valueToString(value: Value): string {
@@ -1009,9 +999,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	};
 
 	const exposeObjects = (): void => {
-		const gameTable = createRuntimeGameTable(runtime, consoleCore.view);
-		luaPipeline.registerGlobal(runtime, 'game', gameTable);
-		luaPipeline.registerGlobal(runtime, '$', gameTable);
 		luaPipeline.registerGlobal(runtime, 'devtools', createRuntimeDevtoolsTable(runtime));
 		const cartManifest = runtime.cartManifest;
 		luaPipeline.registerGlobal(runtime, 'cart_manifest', cartManifest === null ? null : buildCartManifestTable(runtime, cartManifest, cartManifest.machine, cartManifest.lua.entry_path));
@@ -1393,12 +1380,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'inp_ctrl_commit', INP_CTRL_COMMIT);
 	luaPipeline.registerGlobal(runtime, 'inp_ctrl_arm', INP_CTRL_ARM);
 	luaPipeline.registerGlobal(runtime, 'inp_ctrl_reset', INP_CTRL_RESET);
-	luaPipeline.registerGlobal(runtime, 'inp_pressed', ACTION_STATE_FLAG_PRESSED);
-	luaPipeline.registerGlobal(runtime, 'inp_justpressed', ACTION_STATE_FLAG_JUSTPRESSED);
-	luaPipeline.registerGlobal(runtime, 'inp_justreleased', ACTION_STATE_FLAG_JUSTRELEASED);
-	luaPipeline.registerGlobal(runtime, 'inp_consumed', ACTION_STATE_FLAG_CONSUMED);
-	luaPipeline.registerGlobal(runtime, 'inp_guardedjustpressed', ACTION_STATE_FLAG_GUARDEDJUSTPRESSED);
-	luaPipeline.registerGlobal(runtime, 'inp_repeatpressed', ACTION_STATE_FLAG_REPEATPRESSED);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_system_base', SYSTEM_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);
@@ -2600,46 +2581,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(ipairsIterator, target, 0);
 	}));
 
-	const members = collectApiMembers(runtime.api);
-	for (const { name, kind, descriptor } of members) {
-		if (kind === 'method') {
-			const callable = descriptor.value as (...args: unknown[]) => unknown;
-			const native = createNativeFunction(`api.${name}`, (args, out) => {
-				const ctxBase = buildMarshalContext(runtime);
-				const visited = runtime.luaScratch.acquireTableMarshal();
-				const jsArgs = runtime.luaScratch.acquireValue() as unknown[];
-				try {
-					for (let index = 0; index < args.length; index += 1) {
-						const nextCtx = extendMarshalContext(ctxBase, `arg${index}`);
-						jsArgs.push(toNativeValue(runtime, args[index], nextCtx, visited));
-					}
-					const result = callable.apply(runtime.api, jsArgs);
-					wrapNativeResult(runtime, result, out);
-				} catch (error) {
-					const message = extractErrorMessage(error);
-					throw runtime.createApiRuntimeError(`[api.${name}] ${message}`);
-				} finally {
-					runtime.luaScratch.releaseValue(jsArgs as unknown as Value[]);
-					runtime.luaScratch.releaseTableMarshal(visited);
-				}
-			});
-			luaPipeline.registerGlobal(runtime, name, native);
-			continue;
-		}
-		if (descriptor.get) {
-			const getter = descriptor.get;
-			const native = createNativeFunction(`api.${name}`, (_args, out) => {
-				try {
-					const result = getter.call(runtime.api);
-					wrapNativeResult(runtime, result, out);
-				} catch (error) {
-					const message = extractErrorMessage(error);
-					throw runtime.createApiRuntimeError(`[api.${name}] ${message}`);
-				}
-			});
-			luaPipeline.registerGlobal(runtime, name, native);
-		}
-	}
 
 	exposeObjects();
 }

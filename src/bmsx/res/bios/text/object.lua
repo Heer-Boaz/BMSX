@@ -329,8 +329,8 @@ function textobject.new(opts)
 	self.text_color = 0xffffffff
 	self.normal_bg_color = 0xff000000
 	self.highlight_bg_color = 0xb3000080
-	self.font = opts.font or get_default_font()
-	self.dimensions = opts.dimensions or { left = 0, top = 0, right = display_width(), bottom = display_height() }
+	self.font = opts.font or font_module.get('default')
+	self.dimensions = opts.dimensions or { left = 0, top = 0, right = machine_manifest.render_size.width, bottom = machine_manifest.render_size.height }
 	self.centered_block_x = 0
 	self.char_width = opts.char_width or self.font.glyphs['a'].width
 	self.blank_lines = opts.blank_lines or 0

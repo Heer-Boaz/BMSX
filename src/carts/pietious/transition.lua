@@ -46,7 +46,7 @@ function transition:bind_visual()
 end
 
 function transition:draw_transition_overlay()
-	vdp_fill_rect_color(0, 0, display_width(), display_height(), 340, sys_vdp_layer_ui, 0xff000000)
+	vdp_fill_rect_color(0, 0, machine_manifest.render_size.width, machine_manifest.render_size.height, 340, sys_vdp_layer_ui, 0xff000000)
 	if not oget('d'):has_tag('d.bt') then
 		return
 	end
@@ -54,7 +54,7 @@ function transition:draw_transition_overlay()
 	if #lines > 0 then
 		local banner_font<const> = self.banner_font
 		local base_y<const> = constants.room.tile_origin_y + (constants.room.tile_size * 9)
-		local screen_width<const> = display_width()
+		local screen_width<const> = machine_manifest.render_size.width
 		for i = 1, #lines do
 			local line<const> = lines[i]
 			if string.len(line) > 0 then

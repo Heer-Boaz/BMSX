@@ -158,33 +158,6 @@ std::array<u32, N> decodeU32Array(const BinValue& value, const char* label) {
 BinValue encodeCpuValueState(const CpuValueState& state);
 CpuValueState decodeCpuValueState(const BinValue& value, const char* label);
 
-BinValue encodeRuntimeStorageState(const RuntimeStorageState& state) {
-	BinObject object;
-	object["namespace"] = state.storageNamespace;
-	object["entries"] = encodeVector(state.entries, [](const RuntimeStorageStateEntry& entry) {
-		BinObject encoded;
-		encoded["index"] = static_cast<i64>(entry.index);
-		encoded["value"] = entry.value;
-		return BinValue(std::move(encoded));
-	});
-	return BinValue(std::move(object));
-}
-
-RuntimeStorageState decodeRuntimeStorageState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	RuntimeStorageState state;
-	state.storageNamespace = requireString(requireField(object, "namespace", label), "storageState.namespace");
-	state.entries = decodeVector<RuntimeStorageStateEntry>(requireField(object, "entries", label), "storageState.entries",
-		[](const BinValue& entryValue, size_t) {
-			const BinObject& entry = requireObject(entryValue, "storageState.entries[]");
-			RuntimeStorageStateEntry decoded;
-			decoded.index = requireI32(requireField(entry, "index", "storageState.entries[]"), "storageState.entries[].index");
-			decoded.value = requireNumber(requireField(entry, "value", "storageState.entries[]"), "storageState.entries[].value");
-			return decoded;
-		});
-	return state;
-}
-
 BinValue encodeRuntimeRenderCameraState(const RuntimeRenderCameraState& state) {
 	BinObject object;
 	object["view"] = encodeFixedArray(state.view, encodeScalar<f64, f32>);
@@ -843,7 +816,6 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 
 BinValue encodeRuntimeSaveStateValue(const RuntimeSaveState& state) {
 	BinObject object;
-	object["storageState"] = encodeRuntimeStorageState(state.storageState);
 	object["machineState"] = encodeRuntimeSaveMachineState(state.machineState);
 	object["cpuState"] = encodeCpuRuntimeState(state.cpuState);
 	object["renderState"] = encodeRuntimeRenderState(state.renderState);
@@ -858,7 +830,6 @@ BinValue encodeRuntimeSaveStateValue(const RuntimeSaveState& state) {
 RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	RuntimeSaveState state;
-	state.storageState = decodeRuntimeStorageState(requireField(object, "storageState", label), "runtimeSaveState.storageState");
 	state.machineState = decodeRuntimeSaveMachineState(requireField(object, "machineState", label), "runtimeSaveState.machineState");
 	state.cpuState = decodeCpuRuntimeState(requireField(object, "cpuState", label), "runtimeSaveState.cpuState");
 	state.renderState = decodeRuntimeRenderState(requireField(object, "renderState", label), "runtimeSaveState.renderState");

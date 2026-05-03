@@ -1,11 +1,12 @@
 #pragma once
 
 #include "machine/cpu/cpu.h"
-#include "machine/firmware/api.h"
+#include "machine/runtime/save_state.h"
 #include "machine/runtime/machine_state.h"
 #include "render/runtime/state.h"
 
 #include <utility>
+#include <vector>
 
 namespace bmsx {
 
@@ -14,7 +15,6 @@ class Runtime;
 struct RuntimeResumeSnapshot {
 	RuntimeMachineState machineState;
 	std::vector<std::pair<Value, Value>> globals;
-	RuntimeStorageState storageState;
 	RuntimeRenderState renderState;
 	uint32_t randomSeed = 0;
 	bool pendingEntryCall = false;

@@ -120,7 +120,7 @@ end
 
 function director:update_camera(player)
 	local cam = constants.camera
-	local view_w = display_width()
+	local view_w = machine_manifest.render_size.width
 	local target_x = player.camera_anchor_x - (view_w * 0.5)
 
 	if target_x < (self.camera_x - cam.deadzone_px) then
@@ -400,7 +400,7 @@ end
 
 function director:draw_parallax_layer(blocks, factor, color, z)
 	local cam = self.camera_x * factor
-	local view_w = display_width()
+	local view_w = machine_manifest.render_size.width
 	for i = 1, #blocks do
 		local block = blocks[i]
 		local left = (block.x - cam) // 1
@@ -412,7 +412,7 @@ function director:draw_parallax_layer(blocks, factor, color, z)
 end
 
 function director:draw_trunks()
-	local view_w = display_width()
+	local view_w = machine_manifest.render_size.width
 	for i = 1, #self.level.trunks do
 		local trunk = self.level.trunks[i]
 		local left = (trunk.x - (self.camera_x * 0.62)) // 1
@@ -425,7 +425,7 @@ end
 
 function director:draw_level_solids()
 	local solids = self.level.solids
-	local view_w = display_width()
+	local view_w = machine_manifest.render_size.width
 	for i = 1, #solids do
 		local solid = solids[i]
 		local left = (solid.x - self.camera_x) // 1
@@ -443,7 +443,7 @@ function director:draw_goal()
 	local goal = self.level.goal
 	local left = (goal.x - self.camera_x) // 1
 	local right = left + goal.w
-	local view_w = display_width()
+	local view_w = machine_manifest.render_size.width
 	if right <= 0 or left >= view_w then
 		return
 	end
@@ -458,7 +458,7 @@ function director:draw_goal()
 end
 
 function director:draw_barrel(barrel, z_base)
-	local view_w = display_width()
+	local view_w = machine_manifest.render_size.width
 	local left = (barrel.x - self.camera_x) // 1
 	local right = left + barrel.w
 	if right <= 0 or left >= view_w then
@@ -499,7 +499,7 @@ function director:draw_stomp_target(target, z_base)
 	if target.dkc1_sprite_id == 0 then
 		return
 	end
-	local view_w = display_width()
+	local view_w = machine_manifest.render_size.width
 	local left = (target.x - self.camera_x) // 1
 	local right = left + target.w
 	if right <= 0 or left >= view_w then
@@ -532,7 +532,7 @@ function director:draw_stomp_targets()
 end
 
 function director:draw_player(player, draw_shadow)
-	local view_w = display_width()
+	local view_w = machine_manifest.render_size.width
 	local px = player.x - self.camera_x
 	if (px + player.width) < -12 or px > (view_w + 12) then
 		return
@@ -567,8 +567,8 @@ end
 function director:render_frame()
 	local render_cfg = constants.render
 	if render_cfg.objects_only_mode then
-		local view_w = display_width()
-		local view_h = display_height()
+		local view_w = machine_manifest.render_size.width
+		local view_h = machine_manifest.render_size.height
 		fill_rect_color(0, 0, view_w, view_h, 0, { r = 0, g = 0, b = 0, a = 1 })
 		self:draw_level_solids()
 		self:draw_stomp_targets()
@@ -579,8 +579,8 @@ function director:render_frame()
 		return
 	end
 
-	local view_w = display_width()
-	local view_h = display_height()
+	local view_w = machine_manifest.render_size.width
+	local view_h = machine_manifest.render_size.height
 	fill_rect_color(0, 0, view_w, view_h, 0, { r = 0, g = 0, b = 0, a = 1 })
 	self:draw_level_solids()
 	self:draw_stomp_targets()

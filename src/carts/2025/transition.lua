@@ -42,8 +42,8 @@ function transition.register_states(states)
 	end
 
 	local build_transition_layout<const> = function(style, palette, layout)
-		local w<const> = display_width()
-		local h<const> = display_height()
+		local w<const> = machine_manifest.render_size.width
+		local h<const> = machine_manifest.render_size.height
 		local swap_frame<const> = globals.overgang_fade_out_frames - 1
 		local center_x<const> = layout.center_x
 		local text_top<const> = layout.text_top
@@ -146,14 +146,14 @@ function transition.register_states(states)
 			local transition_text<const> = oget(globals.text_transition_id)
 			self.transition_center_x = transition_text.centered_block_x
 			self.transition_target_bg = story[node.next].bg
-			transition_text.centered_block_x = display_width()
+			transition_text.centered_block_x = machine_manifest.render_size.width
 			self.transition_needs_post_fade = false
 			local next_node<const> = story[node.next]
 			local style<const> = resolve_transition_style(node, next_node.kind)
 			self.transition_style = style
 			self.transition_palette = build_transition_palette(style)
 			local layout<const> = {
-				center_x = display_width() / 2,
+				center_x = machine_manifest.render_size.width / 2,
 				text_top = transition_text.dimensions.top,
 				line_height = transition_text.line_height,
 			}
@@ -199,8 +199,8 @@ function transition.register_states(states)
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
-			overlay.width = display_width()
-			overlay.height = display_height()
+			overlay.width = machine_manifest.render_size.width
+			overlay.height = machine_manifest.render_size.height
 			overlay.r = base.r
 			overlay.g = base.g
 			overlay.b = base.b
@@ -231,7 +231,7 @@ function transition.register_states(states)
 			if self.skip_transition_fade then
 				globals.apply_background(self.transition_target_bg)
 			end
-			local w<const> = display_width()
+			local w<const> = machine_manifest.render_size.width
 			local target<const> = {
 				overlay = overlay,
 				panels = self.transition_visual.panels,
@@ -308,8 +308,8 @@ function transition.register_states(states)
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
-			overlay.width = display_width()
-			overlay.height = display_height()
+			overlay.width = machine_manifest.render_size.width
+			overlay.height = machine_manifest.render_size.height
 			overlay.r = base.r
 			overlay.g = base.g
 			overlay.b = base.b
@@ -373,8 +373,8 @@ function transition.register_states(states)
 			overlay.visible = true
 			overlay.x = 0
 			overlay.y = 0
-			overlay.width = display_width()
-			overlay.height = display_height()
+			overlay.width = machine_manifest.render_size.width
+			overlay.height = machine_manifest.render_size.height
 			overlay.r = base.r
 			overlay.g = base.g
 			overlay.b = base.b
@@ -425,8 +425,8 @@ function transition.register_states(states)
 				overlay.visible = true
 				overlay.x = 0
 				overlay.y = 0
-				overlay.width = display_width()
-				overlay.height = display_height()
+				overlay.width = machine_manifest.render_size.width
+				overlay.height = machine_manifest.render_size.height
 				overlay.r = base.r
 				overlay.g = base.g
 				overlay.b = base.b

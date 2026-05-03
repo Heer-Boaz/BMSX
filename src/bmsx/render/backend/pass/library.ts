@@ -1,6 +1,7 @@
 import { consoleCore } from '../../../core/console';
 import { registerFramebuffer2DPass_WebGL } from '../../2d/framebuffer_pipeline';
 import { registerHostOverlayPass_Headless, registerHostOverlayPass_WebGL, registerHostOverlayPass_WebGPU } from '../../editor/host_overlay_pipeline';
+import { registerHostMenuPass_Headless, registerHostMenuPass_WebGL, registerHostMenuPass_WebGPU } from '../../host_menu/pipeline';
 import * as MeshPipeline from '../../3d/mesh/pipeline';
 import { registerMeshBatchPass_WebGL } from '../../3d/mesh/pipeline';
 import { registerMeshBatchPass_WebGPU } from '../../3d/mesh/pipeline.wgpu';
@@ -15,7 +16,7 @@ import { registerCRT_WebGL } from '../../post/crt/pipeline';
 import { registerDeviceQuantize_WebGL } from '../../post/device_quantize_pipeline';
 import { registerCRT_WebGPU } from '../../post/crt/pipeline.wgpu';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
-import { AnyBackend, CRTPipelineState, DeviceQuantizePipelineState, FogUniforms, FrameSharedState, Framebuffer2DPipelineState, GPUBackend, HostOverlayPipelineState, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry, SkyboxPipelineState } from '../interfaces';
+import { AnyBackend, CRTPipelineState, DeviceQuantizePipelineState, FogUniforms, FrameSharedState, Framebuffer2DPipelineState, GPUBackend, HostMenuPipelineState, HostOverlayPipelineState, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry, SkyboxPipelineState } from '../interfaces';
 import { checkWebGLError } from '../webgl/helpers';
 import { WebGLBackend } from '../webgl/backend';
 import { registerHeadlessPasses } from '../../headless/passes';
@@ -28,6 +29,7 @@ type PassStateTypes = {
 	particles: ParticlePipelineState;
 	framebuffer_2d: Framebuffer2DPipelineState;
 	host_overlay: HostOverlayPipelineState;
+	host_menu: HostMenuPipelineState;
 	device_quantize: DeviceQuantizePipelineState;
 	crt: CRTPipelineState;
 	frame_shared: FrameSharedState;
@@ -88,6 +90,7 @@ export class RenderPassLibrary {
 		registerSolidColorPass_WebGPU(this);
 		registerCRT_WebGPU(this);
 		registerHostOverlayPass_WebGPU(this);
+		registerHostMenuPass_WebGPU(this);
 	}
 
 	private registerBuiltinPassesWebGL() {
@@ -129,6 +132,7 @@ export class RenderPassLibrary {
 		// CRT (WebGL)
 		registerCRT_WebGL(this); // Registers program + execution
 		registerHostOverlayPass_WebGL(this);
+		registerHostMenuPass_WebGL(this);
 
 		// FrameShared
 		this.register({
@@ -143,6 +147,7 @@ export class RenderPassLibrary {
 	private registerBuiltinPassesHeadless() {
 		registerHeadlessPasses(this);
 		registerHostOverlayPass_Headless(this);
+		registerHostMenuPass_Headless(this);
 	}
 
 	public validatePassResources(passId: string, backend: GPUBackend): void {

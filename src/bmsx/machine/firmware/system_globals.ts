@@ -70,7 +70,6 @@ const SYSTEM_LUA_BUILTIN_GLOBAL_NAMES = [
 ] as const;
 
 export const SYSTEM_ROM_HELPER_NAMES = [
-	'game',
 	'$',
 	'cart_manifest',
 	'machine_manifest',
@@ -155,12 +154,6 @@ const SYSTEM_ROM_INPUT_GLOBAL_NAMES = [
 	'inp_ctrl_commit',
 	'inp_ctrl_arm',
 	'inp_ctrl_reset',
-	'inp_pressed',
-	'inp_justpressed',
-	'inp_justreleased',
-	'inp_consumed',
-	'inp_guardedjustpressed',
-	'inp_repeatpressed',
 ] as const;
 
 export const SYSTEM_ROM_GLOBAL_NAMES: ReadonlyArray<string> = [

@@ -3,7 +3,6 @@ import type { CartManifest, MachineManifest, asset_id, Viewport } from '../../ro
 import type { MachineSaveState, MachineState } from '../machine';
 import type { Memory } from '../memory/memory';
 import type { LuaEntrySnapshot } from '../firmware/js_bridge';
-import { RuntimeStorageState } from '../firmware/cart_storage';
 import type { FrameSchedulerStateSnapshot } from '../scheduler/frame';
 import type { CpuRuntimeState } from '../cpu/cpu';
 
@@ -176,7 +175,6 @@ export type RuntimeSaveMachineState = {
 export type RuntimeResumeSnapshot = {
 	luaRuntimeFailed: boolean;
 	luaPath: string;
-	storageState: RuntimeStorageState;
 	luaGlobals?: LuaEntrySnapshot;
 	luaLocals?: LuaEntrySnapshot;
 	luaRandomSeed?: number;
@@ -186,7 +184,6 @@ export type RuntimeResumeSnapshot = {
 };
 
 export type RuntimeSaveState = {
-	storageState: RuntimeStorageState;
 	machineState: RuntimeSaveMachineState;
 	cpuState: CpuRuntimeState;
 	renderState: RuntimeRenderState;

@@ -29,8 +29,6 @@ local eventemitter_module<const> = require('bios/eventemitter')
 local eventemitter<const> = eventemitter_module.eventemitter
 eventemitter_module.eventemitter = eventemitter
 eventemitter_module.instance = eventemitter.instance
-local quickmenu<const> = require('bios/quickmenu')
-local resource_usage_gizmo<const> = require('bios/resource_usage_gizmo')
 -- local ide_editor = require('ide_editor')
 local bool01<const> = require('bios/util/bool01')
 local deep_clone<const> = require('bios/util/deep_clone')
@@ -568,18 +566,11 @@ function system.update_world()
 	-- 		return
 	-- 	end
 	-- end
-	quickmenu.update()
-	if not quickmenu.is_open() then
-		world_instance:update()
-	end
+	world_instance:update()
 end
 
 function system.draw_world()
 	world_instance:draw()
-	if not quickmenu.is_open() then
-		resource_usage_gizmo.draw()
-	end
-	quickmenu.draw()
 end
 
 function system.irq(flags)

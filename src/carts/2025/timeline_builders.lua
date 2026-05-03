@@ -148,10 +148,10 @@ function builders.build_combat_focus_frames(params)
 	local monster_sx<const> = params.monster_sx
 	local monster_sy<const> = params.monster_sy
 
-	local zoom_target_x<const> = (display_width() - (monster_sx * globals.combat_focus_zoom_scale)) / 2
-	local zoom_target_y<const> = (display_height() - (monster_sy * globals.combat_focus_zoom_scale)) / 2
+	local zoom_target_x<const> = (machine_manifest.render_size.width - (monster_sx * globals.combat_focus_zoom_scale)) / 2
+	local zoom_target_y<const> = (machine_manifest.render_size.height - (monster_sy * globals.combat_focus_zoom_scale)) / 2
 
-	local vanish_center_x<const> = display_width() / 2
+	local vanish_center_x<const> = machine_manifest.render_size.width / 2
 	local vanish_bottom_y<const> = zoom_target_y + (monster_sy * globals.combat_focus_zoom_scale)
 
 	for i = 0, globals.combat_focus_zoom_frames - 1 do

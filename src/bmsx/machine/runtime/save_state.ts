@@ -8,7 +8,6 @@ import { applyRuntimeSaveMachineState, captureRuntimeSaveMachineState } from './
 
 export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 	return {
-		storageState: runtime.storage.dump(),
 		machineState: captureRuntimeSaveMachineState(runtime),
 		cpuState: captureRuntimeCpuState(runtime),
 		renderState: captureRuntimeRenderState(),
@@ -29,7 +28,6 @@ export function applyRuntimeSaveState(runtime: Runtime, state: RuntimeSaveState)
 	applyRuntimeSaveMachineState(runtime, state.machineState);
 	restoreVdpContextState(runtime.machine.vdp);
 	applyRuntimeCpuState(runtime, state.cpuState);
-	runtime.storage.restore(state.storageState);
 	applyRuntimeRenderState(state.renderState);
 	runtime.luaInitialized = state.luaInitialized;
 	runtime.luaRuntimeFailed = state.luaRuntimeFailed;

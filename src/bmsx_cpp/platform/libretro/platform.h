@@ -175,6 +175,7 @@ public:
 								bool applyFringing,
 								bool applyAperture);
 	void setDitherType(i32 type);
+	void setResourceUsageGizmo(bool enabled);
 	void setFrameSkipOptions(bool enabled);
 	void setFrameSkipNext(bool skip);
 	void setPlatformPaused(bool paused);

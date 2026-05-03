@@ -47,12 +47,10 @@ function resumeSnapshotFault(message: string): Error {
 }
 
 export function captureRuntimeResumeSnapshot(runtime: Runtime): RuntimeResumeSnapshot {
-	const storageState = runtime.storage.dump();
 	const luaSnapshot = captureRuntimeLuaSnapshot(runtime);
 	const snapshot: RuntimeResumeSnapshot = {
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
 		luaPath: runtime.currentPath,
-		storageState,
 		renderState: captureRuntimeRenderState(),
 		machineState: captureRuntimeMachineState(runtime),
 	};

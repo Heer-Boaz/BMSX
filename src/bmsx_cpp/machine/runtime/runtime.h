@@ -37,7 +37,6 @@
 namespace bmsx {
 
 // Forward declarations
-class Api;
 struct ProgramImage;
 struct MachineManifest;
 struct CartManifest;
@@ -171,13 +170,9 @@ public:
 		RuntimeRomPackage* cartRom
 	);
 
+
 	Machine& machine() { return m_machine; }
 	const Machine& machine() const { return m_machine; }
-
-	/**
-	 * Get the API instance.
-	 */
-	Api& api();
 
 	/**
 	 * Call a Lua function from native code.
@@ -249,9 +244,8 @@ private:
 	Clock& m_clock;
 	GameView& m_view;
 
-		// Runtime core
-		std::unique_ptr<Api> m_api;
-		Machine m_machine;
+	// Runtime core
+	Machine m_machine;
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 

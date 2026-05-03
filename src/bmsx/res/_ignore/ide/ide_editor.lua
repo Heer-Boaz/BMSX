@@ -168,7 +168,7 @@ end
 
 local function compute_wrap_width()
 	local gutter_space = state.gutter_width + 2
-	local available = display_width() - gutter_space - constants.code_area_right_margin
+	local available = machine_manifest.render_size.width - gutter_space - constants.code_area_right_margin
 	return math.max(state.char_advance, available - 2)
 end
 
@@ -188,9 +188,9 @@ local function refresh_view_metrics()
 	update_gutter_width()
 	update_layout()
 	view_metrics.code_top = state.header_height
-	view_metrics.code_bottom = display_height() - state.status_height
+	view_metrics.code_bottom = machine_manifest.render_size.height - state.status_height
 	view_metrics.code_left = 0
-	view_metrics.code_right = display_width()
+	view_metrics.code_right = machine_manifest.render_size.width
 	view_metrics.gutter_left = view_metrics.code_left
 	view_metrics.gutter_right = view_metrics.gutter_left + state.gutter_width
 	view_metrics.text_left = view_metrics.gutter_right + 2
@@ -546,7 +546,7 @@ local function clear_redo_stack()
 end
 
 local function prepare_undo(key, allow_merge)
-	local now = $.platform.clock.now()
+	local now = clock_now()
 	local should_merge = allow_merge
 		and state.last_history_key == key
 		and now - state.last_history_timestamp <= undo_coalesce_interval_ms
@@ -1598,7 +1598,7 @@ local function draw_code_area()
 end
 
 local function draw_header()
-	local width = display_width()
+	local width = machine_manifest.render_size.width
 	fill_rect(0, 0, width, state.header_height, 0, constants.color_top_bar)
 	local left = truncate_for_width("Lua IDE", (width * 0.25) // 1)
 	local right = truncate_for_width(state.active_path, (width * 0.7) // 1)
@@ -1607,9 +1607,9 @@ local function draw_header()
 end
 
 local function draw_status()
-	local width = display_width()
-	local top = display_height() - state.status_height
-	fill_rect(0, top, width, display_height(), 0, constants.color_status_bar)
+	local width = machine_manifest.render_size.width
+	local top = machine_manifest.render_size.height - state.status_height
+	fill_rect(0, top, width, machine_manifest.render_size.height, 0, constants.color_status_bar)
 
 	local line_info = string.format("Ln %d  Col %d", state.cursor_row + 1, state.cursor_column + 1)
 	local selection_info = ""
@@ -1642,7 +1642,7 @@ function editor.init(path)
 	if type(path) ~= "string" then
 		path = nil
 	end
-	state.font = get_default_font()
+	state.font = require('bios/font').get('default')
 	state.line_height = state.font.lineheight
 	state.char_advance = state.font:advance("M")
 	state.header_height = state.line_height + 4
@@ -1674,7 +1674,7 @@ function editor.init(path)
 	state.buffer = piece_tree_buffer.new(source)
 	state.layout = code_layout.new(state.font, {
 		max_highlight_cache = 512,
-		builtin_identifiers = list_builtins(),
+		builtin_identifiers = {},
 	})
 	state.analysis_entry = nil
 	state.analysis_version = -1
@@ -1703,8 +1703,6 @@ function editor.open()
 	if state.open then
 		return
 	end
-	state.cpu_hz_before_open = get_cpu_freq_hz()
-	set_cpu_freq_hz(math.max(state.cpu_hz_before_open, editor_cpu_hz))
 	state.open = true
 end
 
@@ -1713,7 +1711,6 @@ function editor.close()
 		return
 	end
 	state.pointer_selecting = false
-	set_cpu_freq_hz(state.cpu_hz_before_open)
 	state.cpu_hz_before_open = nil
 	state.open = false
 end

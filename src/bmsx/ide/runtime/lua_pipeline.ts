@@ -14,7 +14,6 @@ import { RuntimeResumeSnapshot, SymbolEntry, SymbolKind } from '../../machine/ru
 import { resolveLuaSourceRecordFromRegistries, type LuaSourceRegistry } from '../../machine/program/sources';
 import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
-import { applyRuntimeGameViewTableToHost, syncRuntimeGameViewToTable } from '../../machine/runtime/game/table';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
 import { applyRuntimeRenderState, resetRuntimeRenderState } from '../../render/runtime_state';
@@ -120,13 +119,10 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 	publishOverlayFrame(null);
 	applyRuntimeMachineState(runtime, snapshot.machineState);
 	restoreVdpContextState(runtime.machine.vdp);
-	runtime.storage.restore(snapshot.storageState);
 	resumeLuaProgramState(runtime, snapshot, preserveSystemModules);
 	applyRuntimeRenderState(snapshot.renderState);
 	clearBackQueues();
 	runtime.luaInitialized = true;
-	syncRuntimeGameViewToTable(runtime, consoleCore.view);
-	applyRuntimeGameViewTableToHost(runtime, consoleCore.view);
 }
 
 export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; source: string; preserveSystemModules?: boolean }): void {

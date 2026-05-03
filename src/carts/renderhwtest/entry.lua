@@ -77,7 +77,7 @@ local update_cart<const> = function()
 end
 
 local draw_cart<const> = function()
-	local aspect = display_width() / display_height()
+	local aspect = machine_manifest.render_size.width / machine_manifest.render_size.height
 	local eye = { math.cos(t) * 4, 2.5, math.sin(t) * 4 }
 	local target = { 0, 0, 0 }
 	local up = { 0, 1, 0 }

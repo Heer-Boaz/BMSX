@@ -2,7 +2,6 @@
 
 #include "core/time.h"
 #include "input/manager.h"
-#include "machine/runtime/game/table.h"
 #include "machine/runtime/runtime.h"
 
 #include <chrono>
@@ -40,12 +39,10 @@ void ConsoleCore::runHostFrame(
 		Input::instance().pollInput();
 
 		runtime.screen.clearPresentation();
-		syncRuntimeGameViewToTable(runtime);
 		if (!platformPaused) {
 			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 			runtime.frameScheduler.run(runtime, hostDeltaMs);
-			applyRuntimeGameViewTableToHost(runtime);
 			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 		}
 		m_delta_time = hostDeltaSeconds;

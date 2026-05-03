@@ -1,14 +1,13 @@
 #include "machine/runtime/runtime.h"
-#include "machine/firmware/api.h"
 #include "machine/firmware/devtools.h"
 #include "machine/bus/io.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/program/loader.h"
 #include "machine/runtime/resource_usage_detector.h"
 #include "machine/runtime/system_irq.h"
+#include "machine/runtime/timing/config.h"
 #include "render/runtime/state.h"
 #include "render/shared/queues.h"
-#include "machine/runtime/timing/config.h"
 #include "rompack/format.h"
 #include "rompack/package.h"
 #include "input/manager.h"
@@ -39,7 +38,6 @@ Runtime::Runtime(
 	, m_machineManifest(options.machineManifest)
 	, m_clock(clock)
 	, m_view(view)
-	, m_api(std::make_unique<Api>(*this))
 	, m_machine(
 		soundMaster,
 		microtasks,
@@ -49,7 +47,6 @@ Runtime::Runtime(
 	configureLuaHeapUsage({});
 	resetTrackedLuaHeapBytes();
 	Input::instance().setFrameDurationMs(timing.frameDurationMs);
-	m_api->initializeRuntimeKeys();
 	m_machine.memory().clearIoSlots();
 	m_machine.initializeSystemIo();
 	m_machine.resetDevices();
@@ -63,7 +60,6 @@ Runtime::Runtime(
 		}
 		heap.markValue(m_pairsIterator);
 		heap.markValue(m_ipairsIterator);
-		m_api->markRoots(heap);
 	});
 
 	configureLuaHeapUsage({
@@ -85,10 +81,6 @@ Runtime::Runtime(
 Runtime::~Runtime() {
 	configureLuaHeapUsage({});
 	resetTrackedLuaHeapBytes();
-}
-
-Api& Runtime::api() {
-	return *m_api;
 }
 
 const CartManifest* Runtime::cartManifest() const {
@@ -160,9 +152,6 @@ void Runtime::setCartEntry(int entryProtoIndex, std::vector<std::string> staticM
 void Runtime::enterSystemFirmware() {
 	m_cartProgramStarted = false;
 	m_activeRomPackage = m_systemRomPackage;
-	if (m_systemRomPackage) {
-		m_api->cartdata(m_systemRomPackage->machine.namespaceName);
-	}
 }
 
 void Runtime::enterCartProgram() {
@@ -171,7 +160,6 @@ void Runtime::enterCartProgram() {
 	}
 	m_cartProgramStarted = true;
 	m_activeRomPackage = m_cartRomPackage;
-	m_api->cartdata(m_cartRomPackage->machine.namespaceName);
 }
 
 void Runtime::startCartProgram() {
@@ -222,7 +210,6 @@ void Runtime::resetRuntimeForProgramReload() {
 void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>* staticModulePaths) {
 	try {
 		setupBuiltins();
-		m_api->registerAllFunctions();
 		registerRuntimeDevtoolsTable(*this);
 		enforceLuaHeapBudget();
 		m_program = program;

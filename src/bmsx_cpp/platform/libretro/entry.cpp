@@ -153,6 +153,7 @@ static constexpr const char* kOptionCrtFringing = "bmsx_crt_fringing";
 static constexpr const char* kOptionCrtAperture = "bmsx_crt_aperture";
 static constexpr const char* kOptionDither = "bmsx_dither";
 static constexpr const char* kOptionFrameSkip = "bmsx_frameskip";
+static constexpr const char* kOptionHostShowUsageGizmo = "bmsx_host_show_usage_gizmo";
 static constexpr const char* kToggleOff = "off";
 static constexpr const char* kToggleOn = "on";
 static constexpr const char* kDitherOff = "off";
@@ -178,6 +179,7 @@ static bool g_crt_fringing_enabled = false;
 static bool g_crt_aperture_enabled = false;
 static int g_dither_type = 0;
 static bool g_frameskip_enabled = false;
+static bool g_resource_usage_gizmo_enabled = false;
 static bool g_frameskip_next = false;
 
 static retro_core_option_v2_category g_option_categories_us[] = {
@@ -343,6 +345,20 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		kDitherOff
 	},
 	{
+		kOptionHostShowUsageGizmo,
+		"Show Usage Gizmo",
+		"Show Usage Gizmo",
+		"Toggle the CPU/RAM/VRAM/VDP usage overlay.",
+		"Toggle the CPU/RAM/VRAM/VDP usage overlay.",
+		"video",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOff
+	},
+	{
 		kOptionFrameSkip,
 		"Frame Skip",
 		"Frame Skip",
@@ -489,6 +505,17 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		kDitherOff
 	},
 	{
+		kOptionHostShowUsageGizmo,
+		"Show Usage Gizmo",
+		"Toggle the CPU/RAM/VRAM/VDP usage overlay.",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOff
+	},
+	{
 		kOptionFrameSkip,
 		"Frame Skip",
 		"Automatically skip video frames when rendering exceeds the frame budget.",
@@ -514,6 +541,7 @@ static char g_option_crt_fringing_var[128] = {};
 static char g_option_crt_aperture_var[128] = {};
 static char g_option_dither_var[128] = {};
 static char g_option_frameskip_var[128] = {};
+static char g_option_host_show_usage_gizmo_var[128] = {};
 static retro_variable g_option_vars[] = {
 	{kOptionRenderBackend, nullptr},
 	{kOptionCrtPostprocessing, nullptr},
@@ -526,6 +554,7 @@ static retro_variable g_option_vars[] = {
 	{kOptionCrtFringing, nullptr},
 	{kOptionCrtAperture, nullptr},
 	{kOptionDither, nullptr},
+	{kOptionHostShowUsageGizmo, nullptr},
 	{kOptionFrameSkip, nullptr},
 	{nullptr, nullptr}
 };
@@ -556,6 +585,7 @@ static bool read_crt_aperture_enabled();
 static int read_dither_type();
 static bool read_toggle_option(const char* key, const char* label, bool default_value);
 static bool read_frameskip_enabled();
+static bool read_resource_usage_gizmo_enabled();
 
 /* ============================================================================
  * Libretro callback setters
@@ -734,6 +764,15 @@ static void set_core_options(bool default_gles2) {
 	g_option_defs_v1_us[10].values[3] = {kDitherMSX10, "MSX10 3:4:3"};
 	g_option_defs_v1_us[10].values[4] = {nullptr, nullptr};
 
+	g_option_defs_us[11].default_value = kToggleOff;
+	g_option_defs_v1_us[11].default_value = kToggleOff;
+	g_option_defs_us[11].values[0] = {kToggleOff, "Off"};
+	g_option_defs_us[11].values[1] = {kToggleOn, "On"};
+	g_option_defs_us[11].values[2] = {nullptr, nullptr};
+	g_option_defs_v1_us[11].values[0] = {kToggleOff, "Off"};
+	g_option_defs_v1_us[11].values[1] = {kToggleOn, "On"};
+	g_option_defs_v1_us[11].values[2] = {nullptr, nullptr};
+
 #if BMSX_ENABLE_GLES2
 	if (default_gles2) {
 		std::snprintf(g_option_render_backend_var, sizeof(g_option_render_backend_var),
@@ -786,9 +825,12 @@ static void set_core_options(bool default_gles2) {
 	std::snprintf(g_option_dither_var, sizeof(g_option_dither_var),
 					"Dither; %s|%s|%s|%s", kDitherOff, kDitherPSX, kDitherRGB777Output, kDitherMSX10);
 	g_option_vars[10].value = g_option_dither_var;
+	std::snprintf(g_option_host_show_usage_gizmo_var, sizeof(g_option_host_show_usage_gizmo_var),
+					"Show Usage Gizmo; %s|%s", kToggleOff, kToggleOn);
+	g_option_vars[11].value = g_option_host_show_usage_gizmo_var;
 	std::snprintf(g_option_frameskip_var, sizeof(g_option_frameskip_var),
 					"Frame Skip; %s|%s", kToggleOn, kToggleOff);
-	g_option_vars[11].value = g_option_frameskip_var;
+	g_option_vars[12].value = g_option_frameskip_var;
 
 	unsigned version = 0;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
@@ -857,6 +899,10 @@ static bool read_postprocess_detail_enabled() {
 
 static bool read_frameskip_enabled() {
 	return read_toggle_option(kOptionFrameSkip, "Frame Skip", true);
+}
+
+static bool read_resource_usage_gizmo_enabled() {
+	return read_toggle_option(kOptionHostShowUsageGizmo, "Show Usage Gizmo", false);
 }
 
 static bool read_toggle_option(const char* key, const char* label, bool default_value) {
@@ -1151,6 +1197,7 @@ void retro_init(void) {
 	g_crt_aperture_enabled = read_crt_aperture_enabled();
 	g_dither_type = read_dither_type();
 	g_frameskip_enabled = read_frameskip_enabled();
+	g_resource_usage_gizmo_enabled = read_resource_usage_gizmo_enabled();
 	g_frameskip_next = false;
 	request_hw_context_for_backend(desired_backend);
 	apply_backend_preference(preference);
@@ -1209,6 +1256,7 @@ void retro_init(void) {
 									g_crt_fringing_enabled,
 									g_crt_aperture_enabled);
 	g_platform->setDitherType(g_dither_type);
+	g_platform->setResourceUsageGizmo(g_resource_usage_gizmo_enabled);
 	g_platform->setFrameSkipOptions(g_frameskip_enabled);
 	if (isHardwareBackendActive()) {
 	try {
@@ -1466,6 +1514,11 @@ void retro_run(void) {
 	if (new_dither != g_dither_type) {
 		g_dither_type = new_dither;
 		g_platform->setDitherType(g_dither_type);
+	}
+	const bool new_resource_usage_gizmo = read_resource_usage_gizmo_enabled();
+	if (new_resource_usage_gizmo != g_resource_usage_gizmo_enabled) {
+		g_resource_usage_gizmo_enabled = new_resource_usage_gizmo;
+		g_platform->setResourceUsageGizmo(g_resource_usage_gizmo_enabled);
 	}
 	const bool new_frameskip = read_frameskip_enabled();
 	if (new_frameskip != g_frameskip_enabled) {
