@@ -8,6 +8,11 @@ const oldColorSnake = 'color' + '_word';
 const oldPrioritySnake = 'priority' + '_word';
 const streamFaultName = 'vdp' + 'Stream' + 'Fault';
 const componentColorPackerName = 'packFrameBufferColor' + 'FromComponents';
+const oldPaletteColorsName = 'sys' + '_palette' + '_colors';
+const oldPaletteColorFnName = 'sys' + '_palette' + '_color';
+const oldMachineIdePaletteName = 'Bmsx' + 'Colors';
+const oldResolvePaletteIndexName = 'resolve' + 'Palette' + 'Index';
+const oldInvertColorIndexName = 'invert' + 'Color' + 'Index';
 
 function collectFiles(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir)) {
@@ -114,6 +119,37 @@ test('old high-level VDP scene command ABI is gone', () => {
 	]);
 });
 
+
+test('firmware palette API is removed and IDE colors are IDE-owned tokens', () => {
+	assertNoMatches([
+		'src/bmsx/machine',
+		'src/bmsx/ide',
+		'src/bmsx_cpp/machine',
+		'src/bmsx/res/bios',
+		'src/carts',
+	], [
+		new RegExp(oldPaletteColorsName),
+		new RegExp(oldPaletteColorFnName),
+		new RegExp(oldMachineIdePaletteName),
+		new RegExp(oldResolvePaletteIndexName),
+		new RegExp(oldInvertColorIndexName),
+	]);
+	assertNoMatches([
+		'src/bmsx/machine/devices/vdp',
+		'src/bmsx_cpp/machine/devices/vdp',
+	], [
+		/THEME_TOKEN_/,
+	]);
+	assertFileDoesNotMatch('src/bmsx/ide/theme/tokens.ts', [
+		/MSX_COLOR_/,
+		/BMSX_COLOR_/,
+	]);
+	const msxColors = readFileSync(join(root, 'src/bmsx/res/bios/msx_colors.lua'), 'utf8');
+	assert.doesNotMatch(msxColors, /\{\s*\[/);
+	assert.doesNotMatch(msxColors, /MSX_COLOR_/);
+	assert.equal((msxColors.match(/msx_color_/g) ?? []).length, 16);
+});
+
 test('VDP stream helpers use raw split registers and raw colors', () => {
 	assertNoMatches([
 		'src/bmsx/res/bios',
@@ -129,10 +165,12 @@ test('VDP stream helpers use raw split registers and raw colors', () => {
 		/(?:sys_vdp_layer|vdp_layer)_\w+\s*&\s*0xff/,
 		/color_byte/,
 		new RegExp(`local\\s+${oldColorSnake}\\s*<const>\\s*=\\s*function`),
-		/sys_palette_color\s*\(/,
+		new RegExp(oldPaletteColorsName),
+		new RegExp(oldPaletteColorFnName + '\\s*\\('),
 	]);
 	assertNoMatches([
 		'src/bmsx/machine',
+		'src/bmsx/ide',
 		'src/bmsx_cpp/machine',
 	], [
 		/VDP_REG_DRAW_LAYER_PRIO/,

@@ -9,7 +9,7 @@ import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../runtime/overlay_api';
 import { measureText, writeWrappedOverlayLine } from '../../editor/common/text/layout';
 import * as constants from '../../common/constants';
-import { BmsxColors } from '../../../machine/devices/vdp/vdp';
+import { resolveThemeTokenColor } from '../../theme/tokens';
 import { renderErrorOverlayText } from '../../editor/render/error_overlay';
 import { drawRectOutlineColor } from '../../editor/render/caret';
 import { writeCenteredDialogBounds } from '../../editor/render/dialog_layout';
@@ -94,7 +94,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	const highlightIndex = controller.hoverIndex >= 0 ? controller.hoverIndex : controller.selectionIndex;
 	const panelActive = controller.focused;
 	const scrollX = controller.hscroll;
-	const highlightColor = BmsxColors[constants.COLOR_RESOURCE_PANEL_HIGHLIGHT];
+	const highlightColor = resolveThemeTokenColor(constants.COLOR_RESOURCE_PANEL_HIGHLIGHT);
 
 	for (let itemIndex = scrollStart, drawIndex = 0; itemIndex < scrollEnd; itemIndex += 1, drawIndex += 1) {
 		const y = contentTop + drawIndex * controller.lineHeight;

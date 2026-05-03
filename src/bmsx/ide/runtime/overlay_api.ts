@@ -1,6 +1,6 @@
 import type { BFont } from '../../render/shared/bitmap_font';
 import type { color, RenderLayer } from '../../render/shared/submissions';
-import { BmsxColors } from '../../machine/devices/vdp/vdp';
+import { resolveThemeTokenColor } from '../theme/tokens';
 import { OverlayRenderer } from './overlay_renderer';
 
 type OverlayBlitOptions = {
@@ -31,27 +31,16 @@ export class OverlayApi {
 
 	private resolveColor(value: number | color): color {
 		if (typeof value === 'number') {
-			return this.resolvePaletteIndex(value);
+			return resolveThemeTokenColor(value);
 		}
 		return value;
-	}
-
-	private resolvePaletteIndex(value: number): color {
-		if (!Number.isFinite(value) || value < 0 || value > 255) {
-			throw new Error(`[overlay_api] Invalid palette index: ${value}`);
-		}
-		const color = BmsxColors[value];
-		if (!color) {
-			throw new Error(`[overlay_api] Palette index has no color: ${value}`);
-		}
-		return color;
 	}
 
 	public fill_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
 		this.activeRenderer.rect({
 			kind: 'fill',
 			area: { left: x0, top: y0, right: x1, bottom: y1, z },
-			color: this.resolvePaletteIndex(colorindex),
+			color: resolveThemeTokenColor(colorindex),
 			layer: 'ide',
 		});
 	}
@@ -69,7 +58,7 @@ export class OverlayApi {
 		this.activeRenderer.rect({
 			kind: 'rect',
 			area: { left: x0, top: y0, right: x1, bottom: y1, z },
-			color: this.resolvePaletteIndex(colorindex),
+			color: resolveThemeTokenColor(colorindex),
 			layer: 'ide',
 		});
 	}
@@ -88,12 +77,12 @@ export class OverlayApi {
 		}
 		this.activeRenderer.sprite({
 			imgid,
-				pos: { x, y, z },
-				scale: { x: scaleX, y: scaleY },
-				flip: {
-					flip_h: options !== undefined && !!options.flip_h,
-					flip_v: options !== undefined && !!options.flip_v,
-				},
+			pos: { x, y, z },
+			scale: { x: scaleX, y: scaleY },
+			flip: {
+				flip_h: options !== undefined && !!options.flip_h,
+				flip_v: options !== undefined && !!options.flip_v,
+			},
 			colorize: options !== undefined && options.colorize !== undefined
 				? options.colorize
 				: { r: 1, g: 1, b: 1, a: 1 },
@@ -107,7 +96,7 @@ export class OverlayApi {
 			x,
 			y,
 			z,
-			color: this.resolvePaletteIndex(colorindex),
+			color: resolveThemeTokenColor(colorindex),
 			font,
 			layer: 'ide',
 		});
@@ -121,7 +110,7 @@ export class OverlayApi {
 			x,
 			y,
 			z,
-			color: this.resolvePaletteIndex(colorindex),
+			color: resolveThemeTokenColor(colorindex),
 			font,
 			layer: 'ide',
 		});

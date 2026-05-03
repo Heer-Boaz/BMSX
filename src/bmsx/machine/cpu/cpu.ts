@@ -163,7 +163,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 		case 'rawset':
 		case 'select':
 		case 'next':
-		case 'sys_palette_color':
 		case 'u32_to_f32':
 		case 'u64_to_f64':
 		case 'os.clock':

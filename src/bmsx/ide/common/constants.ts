@@ -1,26 +1,53 @@
 import type { BGamepadButton } from '../../input/models';
-
-/**
- * IMPORTANT: MSX PALETTE INDEX DESCRIPTIONS!
- * 0: Transparent
- * 1: Black
- * 2: Green
- * 3: Light green
- * 4: Dark blue
- * 5: Blue
- * 6: Dark red
- * 7: Light blue
- * 8: Red
- * 9: Light red
- * 10: Dark yellow
- * 11: Light yellow
- * 12: Dark green
- * 13: Magenta
- * 14: Grey
- * 15: White
- * 16: Brown (Extended palette color)
- * 17: Very dark blue (Extended palette color)
- */
+import {
+	THEME_TOKEN_ACCENT_BLUE,
+	THEME_TOKEN_ACCENT_RED,
+	THEME_TOKEN_ACTION_OVERLAY,
+	THEME_TOKEN_BLACK,
+	THEME_TOKEN_BORDER_GREY,
+	THEME_TOKEN_BROWN,
+	THEME_TOKEN_COMMENT_GREY,
+	THEME_TOKEN_CYAN_BLUE,
+	THEME_TOKEN_DARK_NAVY,
+	THEME_TOKEN_DEEP_GREY,
+	THEME_TOKEN_ERROR_OVERLAY_BACKGROUND,
+	THEME_TOKEN_ERROR_OVERLAY_BACKGROUND_HOVER,
+	THEME_TOKEN_ERROR_OVERLAY_LINE_HOVER,
+	THEME_TOKEN_EXECUTION_STOP_OVERLAY,
+	THEME_TOKEN_FUNCTION_BLUE,
+	THEME_TOKEN_GENTLE_WHITE,
+	THEME_TOKEN_HOVER_TOOLTIP_BACKGROUND,
+	THEME_TOKEN_KEYWORD_MAGENTA,
+	THEME_TOKEN_LINE_HIGHLIGHT_OVERLAY,
+	THEME_TOKEN_LIST_TEXT_GREY,
+	THEME_TOKEN_MID_GREY,
+	THEME_TOKEN_NUMBER_BROWN,
+	THEME_TOKEN_PANEL_GREY,
+	THEME_TOKEN_REFERENCES_MATCH_ACTIVE_OVERLAY,
+	THEME_TOKEN_REFERENCES_MATCH_OVERLAY,
+	THEME_TOKEN_SCROLLBAR_BASE,
+	THEME_TOKEN_SEARCH_MATCH_ACTIVE_OVERLAY,
+	THEME_TOKEN_SEARCH_MATCH_OVERLAY,
+	THEME_TOKEN_SELECTION_OVERLAY,
+	THEME_TOKEN_SOFT_WHITE,
+	THEME_TOKEN_STATUS_TEXT_GREY,
+	THEME_TOKEN_STRING_GREEN,
+	THEME_TOKEN_SUCCESS_GREEN,
+	THEME_TOKEN_TERMINAL_BLUE,
+	THEME_TOKEN_TERMINAL_CYAN,
+	THEME_TOKEN_TERMINAL_DARK_BLUE,
+	THEME_TOKEN_TERMINAL_DARK_GREEN,
+	THEME_TOKEN_TERMINAL_DARK_RED,
+	THEME_TOKEN_TERMINAL_DARK_YELLOW,
+	THEME_TOKEN_TERMINAL_GREY,
+	THEME_TOKEN_TERMINAL_LIGHT_GREEN,
+	THEME_TOKEN_TERMINAL_LIGHT_RED,
+	THEME_TOKEN_TERMINAL_LIGHT_YELLOW,
+	THEME_TOKEN_TERMINAL_MAGENTA,
+	THEME_TOKEN_TERMINAL_RED,
+	THEME_TOKEN_WARNING_AMBER,
+	THEME_TOKEN_WHITE,
+} from '../theme/tokens';
 
 export const TAB_SPACES = 2;
 export const CURSOR_BLINK_INTERVAL = 0.45;
@@ -29,58 +56,6 @@ export const UNDO_COALESCE_INTERVAL_MS = 550;
 export const WHEEL_SCROLL_STEP = 40;
 export const DOUBLE_CLICK_MAX_INTERVAL_MS = 320;
 export const DEFAULT_THEME = 'light';
-
-const PALETTE = {
-	transparent: 0,
-	black: 1,
-	green: 2,
-	lightGreen: 3,
-	darkBlue: 4,
-	blue: 5,
-	darkRed: 6,
-	lightBlue: 7,
-	red: 8,
-	lightRed: 9,
-	darkYellow: 10,
-	lightYellow: 11,
-	darkGreen: 12,
-	magenta: 13,
-	grey: 14,
-	white: 15,
-	brown: 16, // Extended palette color
-	veryDarkBlue: 17, // Extended palette color
-	softWhite: 18,
-	panelGrey: 19,
-	borderGrey: 20,
-	accentBlue: 21,
-	deepGrey: 22,
-	nearBlack: 23,
-	lightBorderGrey: 24,
-	midGrey: 25,
-	gentleWhite: 26,
-	hintGrey: 27,
-	statusTextGrey: 28,
-	listTextGrey: 29,
-	buttonBlue: 30,
-	buttonBlueHover: 31,
-	successGreen: 32,
-	successGreenHover: 33,
-	diffInserted: 34,
-	scrollbarBase: 35,
-	scrollbarHover: 36,
-	scrollbarActive: 37,
-	keywordMagenta: 38,
-	stringGreen: 39,
-	numberBrown: 40,
-	cyanBlue: 41,
-	accentRed: 42,
-	functionBlue: 43,
-	commentGrey: 44,
-	warningAmber: 45,
-	infoBlue: 46,
-	lineHighlightOverlay: 47,
-	selectionOverlay: 48,
-};
 
 type ThemeDefinition = {
 	surfaces: {
@@ -198,220 +173,220 @@ type ThemeOverlays = {
 const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	dark: {
 		surfaces: {
-			frame: PALETTE.white,
-			topBar: PALETTE.grey,
-			editor: PALETTE.veryDarkBlue,
-			gutter: PALETTE.grey,
-			resourcePanel: PALETTE.grey,
-			resourcePanelHighlight: PALETTE.black,
-			resourceViewer: PALETTE.black,
-			tabInactive: PALETTE.grey,
-			tabActive: PALETTE.black,
+			frame: THEME_TOKEN_WHITE,
+			topBar: THEME_TOKEN_TERMINAL_GREY,
+			editor: THEME_TOKEN_DARK_NAVY,
+			gutter: THEME_TOKEN_TERMINAL_GREY,
+			resourcePanel: THEME_TOKEN_TERMINAL_GREY,
+			resourcePanelHighlight: THEME_TOKEN_BLACK,
+			resourceViewer: THEME_TOKEN_BLACK,
+			tabInactive: THEME_TOKEN_TERMINAL_GREY,
+			tabActive: THEME_TOKEN_BLACK,
 		},
 		text: {
-			topBar: PALETTE.black,
-			primary: PALETTE.white,
-			secondary: PALETTE.black,
-			keyword: PALETTE.brown,
-			string: PALETTE.lightRed,
-			number: PALETTE.lightBlue,
-			comment: PALETTE.darkGreen,
-			operator: PALETTE.white,
-			dim: PALETTE.lightRed,
-			builtin: PALETTE.darkYellow,
-			functionName: PALETTE.white,
-			parameter: PALETTE.red,
-			globalVar: PALETTE.lightYellow,
-			label: PALETTE.darkRed,
-			localTop: PALETTE.cyanBlue,
-			localFunction: PALETTE.functionBlue,
-			functionHandle: PALETTE.lightGreen,
-			selection: PALETTE.darkBlue,
-			selectionBorder: PALETTE.blue,
-			errorOverlayText: PALETTE.white,
+			topBar: THEME_TOKEN_BLACK,
+			primary: THEME_TOKEN_WHITE,
+			secondary: THEME_TOKEN_BLACK,
+			keyword: THEME_TOKEN_BROWN,
+			string: THEME_TOKEN_TERMINAL_LIGHT_RED,
+			number: THEME_TOKEN_TERMINAL_CYAN,
+			comment: THEME_TOKEN_TERMINAL_DARK_GREEN,
+			operator: THEME_TOKEN_WHITE,
+			dim: THEME_TOKEN_TERMINAL_LIGHT_RED,
+			builtin: THEME_TOKEN_TERMINAL_DARK_YELLOW,
+			functionName: THEME_TOKEN_WHITE,
+			parameter: THEME_TOKEN_TERMINAL_RED,
+			globalVar: THEME_TOKEN_TERMINAL_LIGHT_YELLOW,
+			label: THEME_TOKEN_TERMINAL_DARK_RED,
+			localTop: THEME_TOKEN_CYAN_BLUE,
+			localFunction: THEME_TOKEN_FUNCTION_BLUE,
+			functionHandle: THEME_TOKEN_TERMINAL_LIGHT_GREEN,
+			selection: THEME_TOKEN_TERMINAL_DARK_BLUE,
+			selectionBorder: THEME_TOKEN_TERMINAL_BLUE,
+			errorOverlayText: THEME_TOKEN_WHITE,
 		},
 		status: {
-			background: PALETTE.grey,
-			text: PALETTE.black,
-			warning: PALETTE.lightRed,
-			success: PALETTE.darkBlue,
-			error: PALETTE.white,
-			alert: PALETTE.red,
+			background: THEME_TOKEN_TERMINAL_GREY,
+			text: THEME_TOKEN_BLACK,
+			warning: THEME_TOKEN_TERMINAL_LIGHT_RED,
+			success: THEME_TOKEN_TERMINAL_DARK_BLUE,
+			error: THEME_TOKEN_WHITE,
+			alert: THEME_TOKEN_TERMINAL_RED,
 		},
 		input: {
-			text: PALETTE.black,
-			secondaryText: PALETTE.magenta,
-			placeholder: PALETTE.lightRed,
-			outline: PALETTE.black,
+			text: THEME_TOKEN_BLACK,
+			secondaryText: THEME_TOKEN_TERMINAL_MAGENTA,
+			placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
+			outline: THEME_TOKEN_BLACK,
 		},
 		tab: {
-			border: PALETTE.darkBlue,
-			activeText: PALETTE.grey,
-			inactiveText: PALETTE.black,
+			border: THEME_TOKEN_TERMINAL_DARK_BLUE,
+			activeText: THEME_TOKEN_TERMINAL_GREY,
+			inactiveText: THEME_TOKEN_BLACK,
 		},
 		server_status: {
-			connected: PALETTE.darkGreen,
-			disconnected: PALETTE.red,
+			connected: THEME_TOKEN_TERMINAL_DARK_GREEN,
+			disconnected: THEME_TOKEN_TERMINAL_RED,
 		},
-		searchBackground: PALETTE.lightBlue,
-		highlightOverlay: PALETTE.veryDarkBlue,
+		searchBackground: THEME_TOKEN_TERMINAL_CYAN,
+		highlightOverlay: THEME_TOKEN_DARK_NAVY,
 		caret: {
-			editor: PALETTE.white,
-			inline: PALETTE.black,
+			editor: THEME_TOKEN_WHITE,
+			inline: THEME_TOKEN_BLACK,
 		},
 		overlays: {
 			search: {
-				background: PALETTE.lightBlue,
-				text: PALETTE.black,
-				secondaryText: PALETTE.magenta,
-				placeholder: PALETTE.lightRed,
-				outline: PALETTE.black,
+				background: THEME_TOKEN_TERMINAL_CYAN,
+				text: THEME_TOKEN_BLACK,
+				secondaryText: THEME_TOKEN_TERMINAL_MAGENTA,
+				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
+				outline: THEME_TOKEN_BLACK,
 			},
 			completion: {
-				background: PALETTE.lightBlue,
-				border: PALETTE.black,
-				text: PALETTE.black,
-				detail: PALETTE.magenta,
-				previewText: PALETTE.commentGrey,
-				highlight: PALETTE.black,
-				highlightText: PALETTE.grey,
+				background: THEME_TOKEN_TERMINAL_CYAN,
+				border: THEME_TOKEN_BLACK,
+				text: THEME_TOKEN_BLACK,
+				detail: THEME_TOKEN_TERMINAL_MAGENTA,
+				previewText: THEME_TOKEN_COMMENT_GREY,
+				highlight: THEME_TOKEN_BLACK,
+				highlightText: THEME_TOKEN_TERMINAL_GREY,
 			},
 			parameterHint: {
-				background: PALETTE.lightBlue,
-				border: PALETTE.black,
-				text: PALETTE.black,
-				active: PALETTE.lightRed,
+				background: THEME_TOKEN_TERMINAL_CYAN,
+				border: THEME_TOKEN_BLACK,
+				text: THEME_TOKEN_BLACK,
+				active: THEME_TOKEN_TERMINAL_LIGHT_RED,
 			},
 			action: {
-				dialogBackground: PALETTE.lightBlue,
-				dialogBorder: PALETTE.black,
-				dialogText: PALETTE.black,
-				buttonBackground: PALETTE.grey,
-				buttonText: PALETTE.black,
+				dialogBackground: THEME_TOKEN_TERMINAL_CYAN,
+				dialogBorder: THEME_TOKEN_BLACK,
+				dialogText: THEME_TOKEN_BLACK,
+				buttonBackground: THEME_TOKEN_TERMINAL_GREY,
+				buttonText: THEME_TOKEN_BLACK,
 			},
 			symbolSearch: {
-				background: PALETTE.lightBlue,
-				text: PALETTE.black,
-				placeholder: PALETTE.lightRed,
-				outline: PALETTE.black,
-				kind: PALETTE.magenta,
+				background: THEME_TOKEN_TERMINAL_CYAN,
+				text: THEME_TOKEN_BLACK,
+				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
+				outline: THEME_TOKEN_BLACK,
+				kind: THEME_TOKEN_TERMINAL_MAGENTA,
 			},
 			quickOpen: {
-				background: PALETTE.lightBlue,
-				text: PALETTE.black,
-				placeholder: PALETTE.lightRed,
-				outline: PALETTE.black,
-				kind: PALETTE.magenta,
+				background: THEME_TOKEN_TERMINAL_CYAN,
+				text: THEME_TOKEN_BLACK,
+				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
+				outline: THEME_TOKEN_BLACK,
+				kind: THEME_TOKEN_TERMINAL_MAGENTA,
 			},
 		},
 	},
 	light: {
 		surfaces: {
-			frame: PALETTE.softWhite,
-			topBar: PALETTE.panelGrey,
-			editor: PALETTE.softWhite,
-			gutter: PALETTE.panelGrey,
-			resourcePanel: PALETTE.panelGrey,
-			resourcePanelHighlight: PALETTE.borderGrey,
-			resourceViewer: PALETTE.gentleWhite,
-			tabInactive: PALETTE.panelGrey,
-			tabActive: PALETTE.softWhite,
+			frame: THEME_TOKEN_SOFT_WHITE,
+			topBar: THEME_TOKEN_PANEL_GREY,
+			editor: THEME_TOKEN_SOFT_WHITE,
+			gutter: THEME_TOKEN_PANEL_GREY,
+			resourcePanel: THEME_TOKEN_PANEL_GREY,
+			resourcePanelHighlight: THEME_TOKEN_BORDER_GREY,
+			resourceViewer: THEME_TOKEN_GENTLE_WHITE,
+			tabInactive: THEME_TOKEN_PANEL_GREY,
+			tabActive: THEME_TOKEN_SOFT_WHITE,
 		},
 		text: {
-			topBar: PALETTE.statusTextGrey,
-			primary: PALETTE.deepGrey,
-			secondary: PALETTE.listTextGrey,
-			keyword: PALETTE.keywordMagenta,
-			string: PALETTE.stringGreen,
-			number: PALETTE.numberBrown,
-			comment: PALETTE.commentGrey,
-			operator: PALETTE.deepGrey,
-			dim: PALETTE.commentGrey,
-			builtin: PALETTE.cyanBlue,
-			functionName: PALETTE.functionBlue,
-			parameter: PALETTE.deepGrey,
-			globalVar: PALETTE.numberBrown,
-			label: PALETTE.accentRed,
-			localTop: PALETTE.cyanBlue,
-			localFunction: PALETTE.functionBlue,
-			functionHandle: PALETTE.functionBlue,
-			selection: PALETTE.selectionOverlay,
-			selectionBorder: PALETTE.midGrey,
-			errorOverlayText: PALETTE.white,
+			topBar: THEME_TOKEN_STATUS_TEXT_GREY,
+			primary: THEME_TOKEN_DEEP_GREY,
+			secondary: THEME_TOKEN_LIST_TEXT_GREY,
+			keyword: THEME_TOKEN_KEYWORD_MAGENTA,
+			string: THEME_TOKEN_STRING_GREEN,
+			number: THEME_TOKEN_NUMBER_BROWN,
+			comment: THEME_TOKEN_COMMENT_GREY,
+			operator: THEME_TOKEN_DEEP_GREY,
+			dim: THEME_TOKEN_COMMENT_GREY,
+			builtin: THEME_TOKEN_CYAN_BLUE,
+			functionName: THEME_TOKEN_FUNCTION_BLUE,
+			parameter: THEME_TOKEN_DEEP_GREY,
+			globalVar: THEME_TOKEN_NUMBER_BROWN,
+			label: THEME_TOKEN_ACCENT_RED,
+			localTop: THEME_TOKEN_CYAN_BLUE,
+			localFunction: THEME_TOKEN_FUNCTION_BLUE,
+			functionHandle: THEME_TOKEN_FUNCTION_BLUE,
+			selection: THEME_TOKEN_SELECTION_OVERLAY,
+			selectionBorder: THEME_TOKEN_MID_GREY,
+			errorOverlayText: THEME_TOKEN_WHITE,
 		},
 		status: {
-			background: PALETTE.panelGrey,
-			text: PALETTE.statusTextGrey,
-			warning: PALETTE.warningAmber,
-			success: PALETTE.successGreen,
-			error: PALETTE.accentRed,
-			alert: PALETTE.accentRed,
+			background: THEME_TOKEN_PANEL_GREY,
+			text: THEME_TOKEN_STATUS_TEXT_GREY,
+			warning: THEME_TOKEN_WARNING_AMBER,
+			success: THEME_TOKEN_SUCCESS_GREEN,
+			error: THEME_TOKEN_ACCENT_RED,
+			alert: THEME_TOKEN_ACCENT_RED,
 		},
 		input: {
-			text: PALETTE.deepGrey,
-			secondaryText: PALETTE.commentGrey,
-			placeholder: PALETTE.commentGrey,
-			outline: PALETTE.borderGrey,
+			text: THEME_TOKEN_DEEP_GREY,
+			secondaryText: THEME_TOKEN_COMMENT_GREY,
+			placeholder: THEME_TOKEN_COMMENT_GREY,
+			outline: THEME_TOKEN_BORDER_GREY,
 		},
 		tab: {
-			border: PALETTE.borderGrey,
-			activeText: PALETTE.deepGrey,
-			inactiveText: PALETTE.listTextGrey,
+			border: THEME_TOKEN_BORDER_GREY,
+			activeText: THEME_TOKEN_DEEP_GREY,
+			inactiveText: THEME_TOKEN_LIST_TEXT_GREY,
 		},
 		server_status: {
-			connected: PALETTE.successGreen,
-			disconnected: PALETTE.accentRed,
+			connected: THEME_TOKEN_SUCCESS_GREEN,
+			disconnected: THEME_TOKEN_ACCENT_RED,
 		},
-		searchBackground: PALETTE.panelGrey,
-		highlightOverlay: PALETTE.lineHighlightOverlay,
-		scrollbarThumb: PALETTE.scrollbarBase,
+		searchBackground: THEME_TOKEN_PANEL_GREY,
+		highlightOverlay: THEME_TOKEN_LINE_HIGHLIGHT_OVERLAY,
+		scrollbarThumb: THEME_TOKEN_SCROLLBAR_BASE,
 		caret: {
-			editor: PALETTE.accentBlue,
-			inline: PALETTE.deepGrey,
+			editor: THEME_TOKEN_ACCENT_BLUE,
+			inline: THEME_TOKEN_DEEP_GREY,
 		},
 		overlays: {
 			search: {
-				background: PALETTE.lightBlue,
-				text: PALETTE.black,
-				secondaryText: PALETTE.magenta,
-				placeholder: PALETTE.lightRed,
-				outline: PALETTE.black,
+				background: THEME_TOKEN_TERMINAL_CYAN,
+				text: THEME_TOKEN_BLACK,
+				secondaryText: THEME_TOKEN_TERMINAL_MAGENTA,
+				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
+				outline: THEME_TOKEN_BLACK,
 			},
 			completion: {
-				background: PALETTE.lightBlue,
-				border: PALETTE.black,
-				text: PALETTE.black,
-				detail: PALETTE.magenta,
-				previewText: PALETTE.commentGrey,
-				highlight: PALETTE.black,
-				highlightText: PALETTE.grey,
+				background: THEME_TOKEN_TERMINAL_CYAN,
+				border: THEME_TOKEN_BLACK,
+				text: THEME_TOKEN_BLACK,
+				detail: THEME_TOKEN_TERMINAL_MAGENTA,
+				previewText: THEME_TOKEN_COMMENT_GREY,
+				highlight: THEME_TOKEN_BLACK,
+				highlightText: THEME_TOKEN_TERMINAL_GREY,
 			},
 			parameterHint: {
-				background: PALETTE.lightBlue,
-				border: PALETTE.black,
-				text: PALETTE.black,
-				active: PALETTE.lightRed,
+				background: THEME_TOKEN_TERMINAL_CYAN,
+				border: THEME_TOKEN_BLACK,
+				text: THEME_TOKEN_BLACK,
+				active: THEME_TOKEN_TERMINAL_LIGHT_RED,
 			},
 			action: {
-				dialogBackground: PALETTE.lightBlue,
-				dialogBorder: PALETTE.black,
-				dialogText: PALETTE.black,
-				buttonBackground: PALETTE.grey,
-				buttonText: PALETTE.black,
+				dialogBackground: THEME_TOKEN_TERMINAL_CYAN,
+				dialogBorder: THEME_TOKEN_BLACK,
+				dialogText: THEME_TOKEN_BLACK,
+				buttonBackground: THEME_TOKEN_TERMINAL_GREY,
+				buttonText: THEME_TOKEN_BLACK,
 			},
 			symbolSearch: {
-				background: PALETTE.lightBlue,
-				text: PALETTE.black,
-				placeholder: PALETTE.lightRed,
-				outline: PALETTE.black,
-				kind: PALETTE.magenta,
+				background: THEME_TOKEN_TERMINAL_CYAN,
+				text: THEME_TOKEN_BLACK,
+				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
+				outline: THEME_TOKEN_BLACK,
+				kind: THEME_TOKEN_TERMINAL_MAGENTA,
 			},
 			quickOpen: {
-				background: PALETTE.lightBlue,
-				text: PALETTE.black,
-				placeholder: PALETTE.lightRed,
-				outline: PALETTE.black,
-				kind: PALETTE.magenta,
+				background: THEME_TOKEN_TERMINAL_CYAN,
+				text: THEME_TOKEN_BLACK,
+				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
+				outline: THEME_TOKEN_BLACK,
+				kind: THEME_TOKEN_TERMINAL_MAGENTA,
 			},
 		},
 	},
@@ -506,7 +481,7 @@ export let COLOR_STATUS_WARNING: number;
 export let COLOR_STATUS_SUCCESS: number;
 export let COLOR_STATUS_ERROR: number;
 export let COLOR_STATUS_ALERT: number;
-export let COLOR_DIAGNOSTIC_ERROR: number = PALETTE.lightRed;
+export let COLOR_DIAGNOSTIC_ERROR: number = THEME_TOKEN_TERMINAL_LIGHT_RED;
 export let COLOR_DIAGNOSTIC_WARNING: number;
 export let COLOR_PROBLEMS_PANEL_BACKGROUND: number;
 export let COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND: number;
@@ -527,26 +502,26 @@ export let COLOR_SEARCH_TEXT: number;
 export let COLOR_SEARCH_PLACEHOLDER: number;
 export let COLOR_SEARCH_OUTLINE: number;
 export let COLOR_SEARCH_BACKGROUND: number;
-export const SEARCH_MATCH_OVERLAY = 49;
-export const SEARCH_MATCH_ACTIVE_OVERLAY = 50;
-export const REFERENCES_MATCH_OVERLAY = 51;
-export const REFERENCES_MATCH_ACTIVE_OVERLAY = 52;
+export const SEARCH_MATCH_OVERLAY = THEME_TOKEN_SEARCH_MATCH_OVERLAY;
+export const SEARCH_MATCH_ACTIVE_OVERLAY = THEME_TOKEN_SEARCH_MATCH_ACTIVE_OVERLAY;
+export const REFERENCES_MATCH_OVERLAY = THEME_TOKEN_REFERENCES_MATCH_OVERLAY;
+export const REFERENCES_MATCH_ACTIVE_OVERLAY = THEME_TOKEN_REFERENCES_MATCH_ACTIVE_OVERLAY;
 export const SEARCH_BAR_MARGIN_Y = 2;
 export let COLOR_LINE_JUMP_BACKGROUND: number;
 export let COLOR_LINE_JUMP_TEXT: number;
 export let COLOR_LINE_JUMP_PLACEHOLDER: number;
 export let COLOR_LINE_JUMP_OUTLINE: number;
-export const ERROR_OVERLAY_BACKGROUND = 53;
-export const ERROR_OVERLAY_BACKGROUND_HOVER = 54;
-export const ERROR_OVERLAY_LINE_HOVER = 55;
+export const ERROR_OVERLAY_BACKGROUND = THEME_TOKEN_ERROR_OVERLAY_BACKGROUND;
+export const ERROR_OVERLAY_BACKGROUND_HOVER = THEME_TOKEN_ERROR_OVERLAY_BACKGROUND_HOVER;
+export const ERROR_OVERLAY_LINE_HOVER = THEME_TOKEN_ERROR_OVERLAY_LINE_HOVER;
 export const ERROR_OVERLAY_PADDING_X = 4;
 export const ERROR_OVERLAY_PADDING_Y = 2;
 export const ERROR_OVERLAY_CONNECTOR_OFFSET = 6;
 export let ERROR_OVERLAY_TEXT_COLOR: number;
-export const EXECUTION_STOP_OVERLAY = 56;
+export const EXECUTION_STOP_OVERLAY = THEME_TOKEN_EXECUTION_STOP_OVERLAY;
 export const HOVER_TOOLTIP_PADDING_X = 4;
 export const HOVER_TOOLTIP_PADDING_Y = 2;
-export const HOVER_TOOLTIP_BACKGROUND = 57;
+export const HOVER_TOOLTIP_BACKGROUND = THEME_TOKEN_HOVER_TOOLTIP_BACKGROUND;
 export let HOVER_TOOLTIP_BORDER: number;
 export const HOVER_TOOLTIP_MAX_VISIBLE_LINES = 10;
 export const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
@@ -756,7 +731,7 @@ export const DEFAULT_NEW_LUA_RESOURCE_CONTENT = '\n';
 export const HEADER_BUTTON_PADDING_X = 5;
 export const HEADER_BUTTON_PADDING_Y = 1;
 export const HEADER_BUTTON_SPACING = 4;
-export const ACTION_OVERLAY_COLOR = 58;
+export const ACTION_OVERLAY_COLOR = THEME_TOKEN_ACTION_OVERLAY;
 export const TAB_BUTTON_PADDING_X = 4;
 export const TAB_BUTTON_PADDING_Y = 1;
 export const TAB_BUTTON_SPACING = 3;

@@ -5,7 +5,6 @@
 #include "machine/firmware/input_state_tables.h"
 #include "input/models.h"
 #include "core/primitives.h"
-#include "render/shared/submissions.h"
 #include <array>
 #include <memory>
 #include <optional>
@@ -42,7 +41,6 @@ public:
 	int display_height() const;
 	double get_cpu_freq_hz() const;
 	void set_cpu_freq_hz(double cpuHz);
-	Color palette_color(int index) const;
 
 	BFont* resolveFontId(uint32_t id) const;
 	BFont* resolveFontHandle(const Value& value);

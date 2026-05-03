@@ -66,7 +66,7 @@ export function renderInlineBarField(
 
 	const caretLeft = decoration.caretBaseX;
 	const caretRight = Math.max(caretLeft + 1, decoration.caretBaseX + caretAdvance);
-	drawInlineCaret(api, field, caretLeft, labelY, caretRight, labelY + editorViewState.lineHeight, decoration.caretBaseX, caretActive, constants.INLINE_CARET_COLOR, displayColor);
+	drawInlineCaret(api, field, caretLeft, labelY, caretRight, labelY + editorViewState.lineHeight, decoration.caretBaseX, caretActive, constants.INLINE_CARET_COLOR);
 
 	out.fieldText = fieldText;
 	out.displayText = displayText;

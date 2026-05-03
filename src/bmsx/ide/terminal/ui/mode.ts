@@ -1,5 +1,5 @@
 import type { color } from '../../../render/shared/submissions';
-import { BmsxColors } from '../../../machine/devices/vdp/vdp';
+import { resolveThemeTokenColor, THEME_TOKEN_TERMINAL_LIGHT_YELLOW, THEME_TOKEN_WHITE } from '../../theme/tokens';
 import { EditorFont } from '../../editor/ui/view/font';
 import type { FontVariant } from '../../../render/shared/bmsx_font';
 import { applyCaseOutsideStrings, invalidateLuaCommentContextFromRow } from '../../common/text';
@@ -209,8 +209,8 @@ export class TerminalMode {
 	private readonly uppercaseDisplayOverride = true;
 	private readonly maxEntries: number;
 	private readonly characterBackgroundColor = { r: 0, g: 0, b: 0, a: CHARACTER_TILE_ALPHA } as color;
-	private readonly caretColor = BmsxColors[15];
-	private readonly selectionColor = BmsxColors[11];
+	private readonly caretColor = resolveThemeTokenColor(THEME_TOKEN_WHITE);
+	private readonly selectionColor = resolveThemeTokenColor(THEME_TOKEN_TERMINAL_LIGHT_YELLOW);
 	private readonly field: TextField = createInlineTextField();
 	private readonly output: TerminalOutputEntry[] = [];
 	private readonly history: string[] = [];
@@ -597,11 +597,11 @@ export class TerminalMode {
 			emptyMessageNoFilter: 'No symbols',
 			emptyMessageWithFilter: 'No matches',
 			paddingX: PADDING_X,
-			backgroundColor: BmsxColors[constants.COLOR_COMPLETION_BACKGROUND],
-			borderColor: BmsxColors[constants.COLOR_COMPLETION_BORDER],
-			highlightColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT],
-			textColor: BmsxColors[constants.COLOR_COMPLETION_TEXT],
-			highlightTextColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT_TEXT],
+			backgroundColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_BACKGROUND),
+			borderColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_BORDER),
+			highlightColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_HIGHLIGHT),
+			textColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_TEXT),
+			highlightTextColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_HIGHLIGHT_TEXT),
 			drawText: (text, x, y, color) => this.drawGlyphRun(this.currentRenderer, text, x, y, color, params.uppercaseDisplay),
 		});
 	}
@@ -629,11 +629,11 @@ export class TerminalMode {
 			emptyMessageNoFilter: 'No completions',
 			emptyMessageWithFilter: 'No matches',
 			paddingX: PADDING_X,
-			backgroundColor: BmsxColors[constants.COLOR_COMPLETION_BACKGROUND],
-			borderColor: BmsxColors[constants.COLOR_COMPLETION_BORDER],
-			highlightColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT],
-			textColor: BmsxColors[constants.COLOR_COMPLETION_TEXT],
-			highlightTextColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT_TEXT],
+			backgroundColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_BACKGROUND),
+			borderColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_BORDER),
+			highlightColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_HIGHLIGHT),
+			textColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_TEXT),
+			highlightTextColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_HIGHLIGHT_TEXT),
 			drawText: (text, x, y, color) => this.drawGlyphRun(this.currentRenderer, text, x, y, color, params.uppercaseDisplay),
 		});
 	}
@@ -700,7 +700,7 @@ export class TerminalMode {
 			for (const line of visibleLines) {
 				const color = line.color;
 				this.drawGlyphBackgrounds(renderer, line.text, PADDING_X, y, uppercaseDisplay);
-				this.drawGlyphRun(renderer, line.text, PADDING_X, y, BmsxColors[color], uppercaseDisplay);
+				this.drawGlyphRun(renderer, line.text, PADDING_X, y, resolveThemeTokenColor(color), uppercaseDisplay);
 				y += lineHeight;
 			}
 
@@ -727,7 +727,7 @@ export class TerminalMode {
 			}
 
 			// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
-			const promptColor = BmsxColors[OUTPUT_COLORS.prompt];
+			const promptColor = resolveThemeTokenColor(OUTPUT_COLORS.prompt);
 			this.drawGlyphBackgrounds(renderer, this.promptPrefix, PADDING_X, inputStartY, uppercaseDisplay);
 			this.drawGlyphRun(renderer, this.promptPrefix, PADDING_X, inputStartY, promptColor, uppercaseDisplay);
 
@@ -1083,7 +1083,7 @@ export class TerminalMode {
 			color: this.characterBackgroundColor,
 		});
 		this.drawGlyphBackgrounds(renderer, text, PADDING_X, y, uppercaseDisplay);
-		this.drawGlyphRun(renderer, text, PADDING_X, y, BmsxColors[OUTPUT_COLORS.system], uppercaseDisplay);
+		this.drawGlyphRun(renderer, text, PADDING_X, y, resolveThemeTokenColor(OUTPUT_COLORS.system), uppercaseDisplay);
 	}
 
 	private getLinesSnapshot(): string[] {
@@ -1212,7 +1212,7 @@ export class TerminalMode {
 
 	// Replace single-line drawInputField with multi-line aware renderer
 	private drawMultilineInput(renderer: OverlayRenderer, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
-		const inputColor = BmsxColors[OUTPUT_COLORS.stdout];
+		const inputColor = resolveThemeTokenColor(OUTPUT_COLORS.stdout);
 		const selectionState = resolveInlineFieldSelectionState(this.field);
 		const uppercaseDisplay = this.useUppercaseDisplay();
 		const displayText = this.toDisplayText(this.field.text);
@@ -1261,7 +1261,7 @@ export class TerminalMode {
 
 				// draw glyph runs (ghost inserted at caret)
 				this.drawGlyphRun(renderer, prefixText, x, y, inputColor, uppercaseDisplay);
-				this.drawGlyphRun(renderer, inlinePreview.suffix, x + prefixWidth, y, BmsxColors[COLOR_COMPLETION_PREVIEW_TEXT], uppercaseDisplay);
+				this.drawGlyphRun(renderer, inlinePreview.suffix, x + prefixWidth, y, resolveThemeTokenColor(COLOR_COMPLETION_PREVIEW_TEXT), uppercaseDisplay);
 				this.drawGlyphRun(renderer, suffixText, x + prefixWidth + ghostWidth, y, inputColor, uppercaseDisplay);
 			} else {
 				// draw glyph backgrounds before overlays/text so selection remains visible

@@ -13,7 +13,7 @@ import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../con
 import { resetBlink } from './caret';
 import { formatRuntimeErrorLocation } from '../../common/runtime_error_format';
 import { splitText } from '../../../common/text_lines';
-import { BmsxColors } from '../../../machine/devices/vdp/vdp';
+import { resolveThemeTokenColor } from '../../theme/tokens';
 import { editorPointerState } from '../../input/pointer/state';
 import { editorCaretState } from '../ui/view/caret/state';
 import { runtimeErrorState } from '../contrib/runtime_error/state';
@@ -462,7 +462,7 @@ export function renderRuntimeErrorOverlayBubble(
 	api.blit_rect(layout.copyButtonRect.left, layout.copyButtonRect.top, layout.copyButtonRect.right, layout.copyButtonRect.bottom, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
 	const iconX = layout.copyButtonRect.left + (layout.copyButtonRect.right - layout.copyButtonRect.left - COPY_ICON_WIDTH) / 2;
 	const iconY = layout.copyButtonRect.top + (layout.copyButtonRect.bottom - layout.copyButtonRect.top - COPY_ICON_HEIGHT) / 2;
-	api.blit(COPY_ICON_ID, iconX, iconY, undefined, { colorize: BmsxColors[constants.ERROR_OVERLAY_TEXT_COLOR] });
+	api.blit(COPY_ICON_ID, iconX, iconY, undefined, { colorize: resolveThemeTokenColor(constants.ERROR_OVERLAY_TEXT_COLOR) });
 }
 
 export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverlay, x: number, y: number): number {

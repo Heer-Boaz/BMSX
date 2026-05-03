@@ -3,7 +3,6 @@
 #include "machine/firmware/input_state_tables.h"
 #include "machine/program/load_compiler.h"
 #include "machine/common/number_format.h"
-#include "machine/devices/vdp/blitter.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
 #include "core/time.h"
@@ -1388,32 +1387,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_rom_cart_base", valueNumber(static_cast<double>(CART_ROM_BASE)));
 	setGlobal("sys_rom_overlay_base", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
 	setGlobal("sys_rom_overlay_size", valueNumber(static_cast<double>(m_machine.memory().overlayRomSize())));
-	const struct PaletteKeys {
-		Value r;
-		Value g;
-		Value b;
-		Value a;
-	} paletteKeys {
-		key("r"),
-		key("g"),
-		key("b"),
-		key("a"),
-	};
-	Table* paletteColors = m_machine.cpu().createTable(0, 16);
-	for (int index = 0; index < 16; ++index) {
-		paletteColors->set(valueNumber(static_cast<double>(index)), valueNumber(static_cast<double>(packFrameBufferColor(api().palette_color(index)))));
-	}
-	setGlobal("sys_palette_colors", valueTable(paletteColors));
-	registerNativeFunction("sys_palette_color", [this, paletteKeys](NativeArgsView args, NativeResults& out) {
-		const int index = floorIntArg(args, 0);
-		const Color color = api().palette_color(index);
-		Table* table = m_machine.cpu().createTable(0, 4);
-		table->set(paletteKeys.r, valueNumber(static_cast<double>(color.r)));
-		table->set(paletteKeys.g, valueNumber(static_cast<double>(color.g)));
-		table->set(paletteKeys.b, valueNumber(static_cast<double>(color.b)));
-		table->set(paletteKeys.a, valueNumber(static_cast<double>(color.a)));
-		out.push_back(valueTable(table));
-	});
 	refreshMemoryMapGlobals();
 	setGlobal("irq_dma_done", valueNumber(static_cast<double>(IRQ_DMA_DONE)));
 	setGlobal("irq_dma_error", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));

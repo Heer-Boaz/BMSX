@@ -1,3 +1,4 @@
+require('bios/msx_colors')
 local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 local vdp_stream<const> = require('bios/vdp_stream')
 local vdp_image<const> = require('bios/vdp_image')
@@ -17,12 +18,12 @@ local row_h<const> = 10
 local font<const> = get_default_font()
 
 local colors<const> = {
-	panel = sys_palette_colors[1],
-	text = sys_palette_colors[15],
-	text_dim = sys_palette_colors[14],
-	ok = sys_palette_colors[12],
-	warn = sys_palette_colors[10],
-	danger = sys_palette_colors[8],
+	panel = msx_color_black,
+	text = msx_color_white,
+	text_dim = msx_color_grey,
+	ok = msx_color_dark_green,
+	warn = msx_color_dark_yellow,
+	danger = msx_color_medium_red,
 }
 
 local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)

@@ -68,6 +68,16 @@ return value
 	assert.equal(filtered[5].type, LuaTokenType.Identifier);
 });
 
+
+test('bans uppercase identifiers including palette-style constants', () => {
+	assert.throws(() => {
+		lex('local color = MSX_COLOR_BLACK');
+	}, LuaSyntaxError);
+	assert.throws(() => {
+		lex('local color = BAD_CONSTANT');
+	}, LuaSyntaxError);
+});
+
 test('parses numeric literals', () => {
 	const tokens = lex('0 42 3.14 .25 6e1 7.5E-2');
 	const numberTokens = tokens.filter((token) => token.type === LuaTokenType.Number);

@@ -1,6 +1,7 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
+require('bios/msx_colors')
 local clamp_int<const> = require('bios/util/clamp_int')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 local vdp_stream<const> = require('bios/vdp_stream')
@@ -43,16 +44,14 @@ local line_height<const> = 8
 local content_top<const> = 32
 local cart_rom_base_header_size<const> = 32
 
-local color_bg<const> = 4
-local color_header_bg<const> = 7
-local color_header_text<const> = 1
-local color_text<const> = 15
-local color_muted<const> = 14
-local color_accent<const> = 15
-local color_section<const> = 1
-local color_warn<const> = 9
-local color_ok<const> = 15
-local color_info_total<const> = 15
+local color_bg<const> = msx_color_dark_blue
+local color_header_bg<const> = msx_color_cyan
+local color_text<const> = msx_color_white
+local color_accent<const> = msx_color_white
+local color_section<const> = msx_color_black
+local color_warn<const> = msx_color_light_red
+local color_ok<const> = msx_color_white
+local color_info_total<const> = msx_color_white
 
 local boot_status_labels<const> = { 'STATUS', 'BOOT STATUS' }
 
@@ -416,8 +415,8 @@ render_boot_screen = function(scroll_delta)
 	local top<const> = content_top
 	local font<const> = get_default_font()
 
-	vdp_stream.clear_color(sys_palette_colors[color_bg])
-	vdp_stream.fill_rect_color(0, 0, width, 24, 0, sys_vdp_layer_world, sys_palette_colors[color_header_bg])
+	vdp_stream.clear_color(color_bg)
+	vdp_stream.fill_rect_color(0, 0, width, 24, 0, sys_vdp_layer_world, color_header_bg)
 	local info<const> = build_info()
 	local cart_present<const> = mem[cart_rom_base] == cart_rom_magic
 	local elapsed<const> = os.clock() - boot_start
@@ -441,7 +440,7 @@ render_boot_screen = function(scroll_delta)
 			line_color = color_text
 		end
 		if string.len(text) > 0 then
-			local color<const> = sys_palette_colors[line_color or color_text]
+			local color<const> = line_color or color_text
 			draw_glyph_line_color(font, text, left, y, text_z, sys_vdp_layer_world, color)
 		end
 		y = y + line_height

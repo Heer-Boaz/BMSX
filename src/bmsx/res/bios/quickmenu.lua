@@ -1,17 +1,18 @@
 -- quickmenu.lua
 -- system quick menu (select+start)
 
+require('bios/msx_colors')
 local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 local vdp_stream<const> = require('bios/vdp_stream')
 local vdp_image<const> = require('bios/vdp_image')
 local font_module<const> = require('bios/font')
 
 local colors<const> = {
-	panel = sys_palette_colors[1],
-	text = sys_palette_colors[15],
-	text_dim = sys_palette_colors[14],
-	title = sys_palette_colors[11],
-	highlight = sys_palette_colors[5],
+	panel = msx_color_black,
+	text = msx_color_white,
+	text_dim = msx_color_grey,
+	title = msx_color_light_yellow,
+	highlight = msx_color_light_blue,
 }
 
 local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)

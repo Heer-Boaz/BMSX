@@ -350,8 +350,6 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'sys_vram_framebuffer_size', params: [], signature: 'sys_vram_framebuffer_size', description: 'VRAM framebuffer size in bytes.' },
 	{ name: 'sys_vram_staging_size', params: [], signature: 'sys_vram_staging_size', description: 'VRAM staging buffer size in bytes.' },
 	{ name: 'sys_vram_size', params: [], signature: 'sys_vram_size', description: 'Tracked total VRAM capacity in bytes.' },
-	{ name: 'sys_palette_colors', params: [], signature: 'sys_palette_colors', description: 'Raw framebuffer colors for BMSX palette entries.' },
-	{ name: 'sys_palette_color', params: ['index'], signature: 'sys_palette_color(index)', description: 'Returns palette color components for a BMSX palette index as { r, g, b, a }.' },
 	{ name: 'irq_dma_done', params: [], signature: 'irq_dma_done', description: 'IRQ flag for DMA completion.' },
 	{ name: 'irq_dma_error', params: [], signature: 'irq_dma_error', description: 'IRQ flag for DMA error.' },
 	{ name: 'irq_geo_done', params: [], signature: 'irq_geo_done', description: 'IRQ flag for GEO completion.' },

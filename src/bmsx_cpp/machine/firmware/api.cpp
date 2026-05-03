@@ -295,8 +295,5 @@ BFont* Api::create_font(const Value& definition) {
 	return handle;
 }
 
-Color Api::palette_color(int index) const {
-	return MSX1_PALETTE[static_cast<size_t>(index)];
-}
 
 } // namespace bmsx

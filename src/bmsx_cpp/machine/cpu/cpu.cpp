@@ -147,7 +147,6 @@ static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
 		|| name == "rawset"
 		|| name == "select"
 		|| name == "next"
-		|| name == "sys_palette_color"
 		|| name == "u32_to_f32"
 		|| name == "u64_to_f64"
 		|| name == "os.clock"

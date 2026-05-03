@@ -34,8 +34,6 @@ import {
 	VRAM_SYSTEM_SLOT_SIZE,
 } from '../memory/map';
 import { CART_ROM_MAGIC, DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../../rompack/format';
-import { BmsxColors } from '../devices/vdp/vdp';
-import { packFrameBufferColor } from '../devices/vdp/blitter';
 import {
 	APU_GAIN_Q12_ONE,
 	APU_RATE_STEP_Q16_ONE,
@@ -832,10 +830,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	const setKey = (table: Table, name: string, value: Value): void => {
 		table.set(key(name), value);
 	};
-	const paletteRKey = key('r');
-	const paletteGKey = key('g');
-	const paletteBKey = key('b');
-	const paletteAKey = key('a');
 	const smoothstep01 = (value: number): number => {
 		const x = clamp01(value);
 		return x * x * (3 - (2 * x));
@@ -1420,27 +1414,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_size', VRAM_FRAMEBUFFER_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.machine.resourceUsageDetector.getVramTotalBytes());
-	const paletteColors = new Table(0, BmsxColors.length);
-	for (let index = 0; index < BmsxColors.length; index += 1) {
-		paletteColors.set(index, packFrameBufferColor(BmsxColors[index]));
-	}
-	luaPipeline.registerGlobal(runtime, 'sys_palette_colors', paletteColors);
-	luaPipeline.registerGlobal(runtime, 'sys_palette_color', createNativeFunction('sys_palette_color', (args, out) => {
-		const index = args[0] as number;
-		if (!Number.isInteger(index)) {
-			throw runtime.createApiRuntimeError('sys_palette_color(index) requires an integer palette index.');
-		}
-		const color = BmsxColors[index];
-		if (color === undefined) {
-			throw runtime.createApiRuntimeError(`sys_palette_color(index) index ${index} is outside the palette range.`);
-		}
-		const table = new Table(0, 4);
-		table.set(paletteRKey, color.r);
-		table.set(paletteGKey, color.g);
-		table.set(paletteBKey, color.b);
-		table.set(paletteAKey, color.a);
-		out.push(table);
-	}));
 	luaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_used', createNativeFunction('sys_cpu_cycles_used', (_args, out) => {
 		out.push(runtime.frameScheduler.lastTickCpuUsedCycles);
 	}));

@@ -1,4 +1,5 @@
-import { BmsxColors, resolvePaletteIndex, invertColorIndex } from '../../../machine/devices/vdp/vdp';
+import type { color } from '../../../common/color';
+import { invertThemeToken, resolveThemeTokenColor } from '../../theme/tokens';
 import type { OverlayApi as Api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from './text_renderer';
@@ -19,18 +20,15 @@ export function drawInlineCaret(
 	bottom: number,
 	cursorX: number,
 	active: boolean,
-	caretColor: { r: number; g: number; b: number; a: number; } | number = constants.CARET_COLOR,
-	baseTextColor: number = constants.COLOR_STATUS_TEXT
+	caretColor: number = constants.CARET_COLOR
 ): void {
 	if (!editorCaretState.cursorVisible) return;
 	const text = field.text;
 	const cursorIndex = getCursorOffset(field);
 	const rawGlyph = cursorIndex < text.length ? text.charAt(cursorIndex) : ' ';
 	const caretGlyph = getCaretGlyphForDisplay(rawGlyph);
-	const caretIndex = resolvePaletteIndex(caretColor);
-	const caretColorIndex = caretIndex ?? baseTextColor;
-	const caretValue = BmsxColors[caretColorIndex];
-	const inverseColorIndex = invertColorIndex(caretColorIndex);
+	const caretValue = resolveThemeTokenColor(caretColor);
+	const inverseColorIndex = invertThemeToken(caretColor);
 	if (active) {
 		api.fill_rect_color(left, top, right, bottom, undefined, caretValue);
 		drawEditorText(editorViewState.font, caretGlyph, cursorX, top, undefined, inverseColorIndex, { preserveCase: true });
@@ -57,7 +55,7 @@ export function drawCursor(info: CursorScreenInfo, textX: number, active: boolea
 	const caretTop = cursorY;
 	const caretBottom = caretTop + info.height;
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
-	const caretValue = BmsxColors[constants.CARET_COLOR];
+	const caretValue = resolveThemeTokenColor(constants.CARET_COLOR);
 	if (active) {
 		api.fill_rect_color(caretLeft, caretTop, caretRight, caretBottom, undefined, caretValue);
 		drawEditorText(editorViewState.font, caretGlyph, cursorX, caretTop, undefined, 1, { preserveCase: true });
@@ -70,11 +68,11 @@ export function resetBlink(): void {
 	resetBlinkState(editorCaretState);
 }
 
-export function drawRectOutlineColor(left: number, top: number, right: number, bottom: number, z: number, color: { r: number; g: number; b: number; a: number; } | number): void {
+export function drawRectOutlineColor(left: number, top: number, right: number, bottom: number, z: number, color: color | number): void {
 	if (right <= left || bottom <= top) {
 		return;
 	}
-	const resolved = typeof color === 'number' ? BmsxColors[color] : color;
+	const resolved = typeof color === 'number' ? resolveThemeTokenColor(color) : color;
 	api.fill_rect_color(left, top, right, top + 1, z, resolved);
 	api.fill_rect_color(left, bottom - 1, right, bottom, z, resolved);
 	api.fill_rect_color(left, top, left + 1, bottom, z, resolved);

@@ -1,8 +1,5 @@
 import { runGate } from '../../../core/taskgate';
 import { consoleCore } from '../../../core/console';
-import {
-	color,
-} from '../../../render/shared/submissions';
 import { Font } from '../../../render/shared/bmsx_font';
 import { BFont, GlyphMap, RomPackageBitmapFontSource } from '../../../render/shared/bitmap_font';
 import { RuntimeStorage } from '../cart_storage';
@@ -11,7 +8,6 @@ import { Runtime } from '../../runtime/runtime';
 import { applyActiveMachineTiming } from '../../runtime/timing/config';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../builtin_descriptors';
 import { createLuaTable, type LuaTable } from '../../../lua/value';
-import { BmsxColors } from '../../devices/vdp/vdp';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;
@@ -176,7 +172,4 @@ export class Api {
 		this.runtime.rebootToBootRom();
 	}
 
-	public palette_color(index: number): color {
-		return BmsxColors[index];
-	}
 }
