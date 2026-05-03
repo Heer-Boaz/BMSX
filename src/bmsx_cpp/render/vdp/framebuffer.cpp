@@ -86,7 +86,7 @@ void initializeVdpFrameBufferTextures(VDP& vdp) {
 }
 
 void applyVdpFrameBufferTextureWrites(VDP& vdp) {
-	const VDP::VdpHostOutput output = vdp.hostOutput();
+	const VDP::VdpHostOutput output = vdp.readHostOutput();
 	for (const auto& slot : *output.surfaceUploadSlots) {
 		if (!isVdpFrameBufferSurface(slot.surfaceId)) {
 			continue;
@@ -113,10 +113,8 @@ void applyVdpFrameBufferTextureWrites(VDP& vdp) {
 	}
 }
 
-void presentVdpFrameBufferPages(VDP& vdp) {
-	applyVdpFrameBufferTextureWrites(vdp);
+void presentVdpFrameBufferPages() {
 	swapVdpFrameBufferTexturePages();
-	vdp.swapFrameBufferReadbackPages();
 }
 
 } // namespace bmsx

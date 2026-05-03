@@ -44,7 +44,7 @@ void initializeVdpSlotTexture(VDP& vdp, const VDP::VdpHostOutput& output, const 
 } // namespace
 
 void initializeVdpSlotTextures(VDP& vdp) {
-	const VDP::VdpHostOutput output = vdp.hostOutput();
+	const VDP::VdpHostOutput output = vdp.readHostOutput();
 	for (const auto& slot : *output.surfaceUploadSlots) {
 		if (isVdpFrameBufferSurface(slot.surfaceId)) {
 			continue;
@@ -54,7 +54,7 @@ void initializeVdpSlotTextures(VDP& vdp) {
 }
 
 void syncVdpSlotTextures(VDP& vdp) {
-	const VDP::VdpHostOutput output = vdp.hostOutput();
+	const VDP::VdpHostOutput output = vdp.readHostOutput();
 	for (const auto& slot : *output.surfaceUploadSlots) {
 		if (isVdpFrameBufferSurface(slot.surfaceId)) {
 			continue;

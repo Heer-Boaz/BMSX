@@ -157,13 +157,7 @@ void VDP::writeVdpRegister(uint32_t index, u32 value) {
 
 void VDP::onVdpRegisterWrite(uint32_t addr) {
 	const uint32_t index = (addr - IO_VDP_REG0) / IO_WORD_SIZE;
-	const u32 previous = m_vdpRegisters[index];
-	try {
-		writeVdpRegister(index, m_memory.readIoU32(addr));
-	} catch (...) {
-		m_memory.writeIoValue(addr, valueNumber(static_cast<double>(previous)));
-		throw;
-	}
+	writeVdpRegister(index, m_memory.readIoU32(addr));
 }
 
 void VDP::onDitherWrite(Value value) {
@@ -259,9 +253,20 @@ void VDP::configureSelectedSlotDimension(u32 word) {
 	const uint32_t width = packedLow16(word);
 	const uint32_t height = packedHigh16(word);
 	if (width == 0u || height == 0u) {
-		throw vdpFault("invalid VRAM surface dimensions " + std::to_string(width) + "x" + std::to_string(height) + ".");
+		raiseFault(VDP_FAULT_VRAM_SLOT_DIM, word);
+		return;
 	}
-	configureVramSlotSurface(m_vdpRegisters[VDP_REG_SLOT_INDEX], width, height);
+	uint32_t surfaceId = 0u;
+	if (!tryResolveSurfaceIdForSlot(m_vdpRegisters[VDP_REG_SLOT_INDEX], surfaceId, VDP_FAULT_VRAM_SLOT_DIM)) {
+		return;
+	}
+	VramSlot& slot = getVramSlotBySurfaceId(surfaceId);
+	const uint64_t byteLength = static_cast<uint64_t>(width) * static_cast<uint64_t>(height) * 4u;
+	if (byteLength > slot.capacity) {
+		raiseFault(VDP_FAULT_VRAM_SLOT_DIM, word);
+		return;
+	}
+	setVramSlotLogicalDimensions(slot, width, height);
 }
 
 VdpLatchedGeometry VDP::readLatchedGeometry() const {
@@ -289,6 +294,9 @@ void VDP::setStatusFlag(uint32_t mask, bool active) {
 }
 
 void VDP::raiseFault(uint32_t code, uint32_t detail) {
+	if ((m_vdpStatus & VDP_STATUS_FAULT) != 0u) {
+		return;
+	}
 	m_faultCode = code;
 	m_faultDetail = detail;
 	m_memory.writeIoValue(IO_VDP_FAULT_CODE, valueNumber(static_cast<double>(m_faultCode)));
@@ -316,6 +324,11 @@ void VDP::acceptSubmitAttempt() {
 void VDP::rejectSubmitAttempt() {
 	setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, true);
 	refreshSubmitBusyStatus();
+}
+
+void VDP::rejectBusySubmitAttempt(uint32_t detail) {
+	rejectSubmitAttempt();
+	raiseFault(VDP_FAULT_SUBMIT_BUSY, detail);
 }
 
 void VDP::beginDmaSubmit() {
@@ -616,7 +629,7 @@ void VDP::consumeDirectVdpCommand(u32 command) {
 	}
 	if (command == VDP_CMD_BEGIN_FRAME) {
 		if (m_buildFrame.open) {
-			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, command);
+			raiseFault(VDP_FAULT_SUBMIT_STATE, command);
 			cancelSubmittedFrame();
 			return;
 		}
@@ -627,7 +640,7 @@ void VDP::consumeDirectVdpCommand(u32 command) {
 	if (command == VDP_CMD_END_FRAME) {
 		if (!m_buildFrame.open) {
 			rejectSubmitAttempt();
-			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, command);
+			raiseFault(VDP_FAULT_SUBMIT_STATE, command);
 			return;
 		}
 		if (!sealSubmittedFrame()) {
@@ -638,12 +651,10 @@ void VDP::consumeDirectVdpCommand(u32 command) {
 	}
 	if (!m_buildFrame.open) {
 		rejectSubmitAttempt();
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, command);
+		raiseFault(VDP_FAULT_SUBMIT_STATE, command);
 		return;
 	}
-	if (!executeVdpDrawDoorbell(command)) {
-		cancelSubmittedFrame();
-	}
+	executeVdpDrawDoorbell(command);
 	refreshSubmitBusyStatus();
 }
 
@@ -660,14 +671,14 @@ bool VDP::executeVdpDrawDoorbell(u32 command) {
 		case VDP_CMD_COPY_RECT:
 			return enqueueLatchedCopyRect();
 		default:
-			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, command);
+			raiseFault(VDP_FAULT_CMD_BAD_DOORBELL, command);
 			return false;
 	}
 }
 
 void VDP::onVdpFifoWrite() {
 	if (m_dmaSubmitActive || m_buildFrame.open || (!hasOpenDirectVdpFifoIngress() && !canAcceptSubmittedFrame())) {
-		rejectSubmitAttempt();
+		rejectBusySubmitAttempt(m_memory.readIoU32(IO_VDP_FIFO));
 		return;
 	}
 	acceptSubmitAttempt();
@@ -679,7 +690,7 @@ void VDP::onVdpFifoCtrlWrite() {
 		return;
 	}
 	if (m_dmaSubmitActive) {
-		rejectSubmitAttempt();
+		rejectBusySubmitAttempt(VDP_FIFO_CTRL_SEAL);
 		return;
 	}
 	sealVdpFifoTransfer();
@@ -693,11 +704,11 @@ void VDP::onVdpCommandWrite() {
 	}
 	const bool directFrameCommand = command == VDP_CMD_BEGIN_FRAME || command == VDP_CMD_END_FRAME || m_buildFrame.open;
 	if (!directFrameCommand && hasBlockedSubmitPath()) {
-		rejectSubmitAttempt();
+		rejectBusySubmitAttempt(command);
 		return;
 	}
 	if (command == VDP_CMD_BEGIN_FRAME && !m_buildFrame.open && hasBlockedSubmitPath()) {
-		rejectSubmitAttempt();
+		rejectBusySubmitAttempt(command);
 		return;
 	}
 	if (command != VDP_CMD_BEGIN_FRAME && command != VDP_CMD_END_FRAME && !m_buildFrame.open) {
@@ -945,7 +956,11 @@ bool VDP::enqueueLatchedBlit() {
 	const u32 w = packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]);
 	const u32 h = packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]);
 	BlitterSource source;
-	if (!tryResolveBlitterSourceWordsInto(slot, u, v, w, h, source, VDP_FAULT_STREAM_BAD_PACKET)) {
+	if (!tryResolveBlitterSourceWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
+		return false;
+	}
+	VdpBlitterSurfaceSize surface;
+	if (!tryResolveBlitterSurfaceForSource(source, surface, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB)) {
 		return false;
 	}
 	const f32 scaleX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DRAW_SCALE_X]);
@@ -1136,7 +1151,7 @@ bool VDP::sealSubmittedFrame() {
 	if (!m_pendingFrame.occupied) {
 		return assignBuildToSlot(false);
 	}
-	raiseFault(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_END_FRAME);
+	raiseFault(VDP_FAULT_SUBMIT_BUSY, VDP_CMD_END_FRAME);
 	return false;
 }
 
@@ -1206,7 +1221,7 @@ void VDP::clearActiveFrame() {
 	resetSubmittedFrameSlot(m_activeFrame);
 }
 
-VDP::VdpHostOutput VDP::hostOutput() {
+VDP::VdpHostOutput VDP::readHostOutput() {
 	VdpHostOutput output;
 	if (m_execution.pending) {
 		output.executionToken = m_hostOutputToken;

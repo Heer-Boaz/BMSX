@@ -176,7 +176,6 @@ add_library(bmsx_core STATIC
 	machine/scheduler/device.cpp
 	machine/runtime/resource_usage_detector.cpp
 	machine/runtime/runtime.cpp
-	machine/runtime/vdp_submissions.cpp
 	machine/runtime/machine_state.cpp
 	machine/runtime/save_machine_state.cpp
 	machine/runtime/cpu_state.cpp
@@ -211,7 +210,6 @@ add_library(bmsx_core STATIC
 	machine/devices/vdp/sbx.cpp
 	machine/devices/vdp/vram_garbage.cpp
 	machine/devices/vdp/vdp.cpp
-	machine/devices/vdp/command_processor.cpp
 	machine/memory/string_memory.cpp
 	machine/program/loader.cpp
 	machine/program/linker.cpp

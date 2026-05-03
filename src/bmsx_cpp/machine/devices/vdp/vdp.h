@@ -99,8 +99,6 @@ public:
 	void resetIngressState();
 	void resetStatus();
 	void setVblankStatus(bool active);
-	void writeVdpRegister(uint32_t index, u32 value);
-	void consumeDirectVdpCommand(u32 cmd);
 	bool canAcceptVdpSubmit() const;
 	void acceptSubmitAttempt();
 	void rejectSubmitAttempt();
@@ -194,25 +192,26 @@ public:
 		std::vector<u8>* frameBufferRenderReadback = nullptr;
 	};
 
-	VdpHostOutput hostOutput();
+	VdpHostOutput readHostOutput();
 	void clearSurfaceUploadDirty(uint32_t surfaceId);
 	void completeHostExecution(const VdpHostOutput& output);
 
 private:
-	template<typename ArgReader, typename PayloadReader>
-	friend void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t argWords, const ArgReader& argReader, const PayloadReader& payloadReader, uint32_t payloadWords);
-
 	static Value readVdpStatusThunk(void* context, uint32_t addr);
 	static Value readVdpDataThunk(void* context, uint32_t addr);
 	static void onFifoWriteThunk(void* context, uint32_t addr, Value value);
 	static void onFifoCtrlWriteThunk(void* context, uint32_t addr, Value value);
 	static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
 	static void onDitherWriteThunk(void* context, uint32_t addr, Value value);
-		static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
-		static void onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
-		static void onSbxCommitWriteThunk(void* context, uint32_t addr, Value value);
-		static void onCameraCommitWriteThunk(void* context, uint32_t addr, Value value);
-		static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value);
+	static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
+	static void onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
+	static void onSbxCommitWriteThunk(void* context, uint32_t addr, Value value);
+	static void onCameraCommitWriteThunk(void* context, uint32_t addr, Value value);
+	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value);
+
+	void writeVdpRegister(uint32_t index, u32 value);
+	void consumeDirectVdpCommand(u32 cmd);
+	void rejectBusySubmitAttempt(uint32_t detail);
 
 	struct ReadSurface {
 		uint32_t surfaceId = 0;

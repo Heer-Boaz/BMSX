@@ -44,13 +44,17 @@ import {
 	VDP_CAMERA_COMMIT_WRITE,
 	VDP_FAULT_RD_OOB,
 	VDP_FAULT_RD_UNSUPPORTED_MODE,
+	VDP_FAULT_SUBMIT_STATE,
 	VDP_FAULT_STREAM_BAD_PACKET,
+	VDP_FAULT_DEX_SOURCE_OOB,
+	VDP_FAULT_DEX_SOURCE_SLOT,
 	VDP_FAULT_DEX_INVALID_LINE_WIDTH,
 	VDP_FAULT_DEX_INVALID_SCALE,
 	VDP_FAULT_SBX_SOURCE_OOB,
 	VDP_FAULT_BBU_OVERFLOW,
 	VDP_FAULT_BBU_SOURCE_OOB,
 	VDP_FAULT_BBU_ZERO_SIZE,
+	VDP_FAULT_VRAM_SLOT_DIM,
 	VDP_FAULT_VRAM_WRITE_UNALIGNED,
 	VDP_RD_MODE_RGBA8888,
 	VDP_SLOT_ATLAS_NONE,
@@ -169,16 +173,16 @@ test('VDP2D direct lifecycle opens, seals, and rejects invalid edges', () => {
 	const { memory, vdp } = createVdp();
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
-	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	assertVdpFault(memory, VDP_FAULT_SUBMIT_STATE);
 	clearVdpFault(memory);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_FILL_RECT);
-	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	assertVdpFault(memory, VDP_FAULT_SUBMIT_STATE);
 	clearVdpFault(memory);
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	assert.equal(buildFrameOpen(vdp), true);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	assertVdpFault(memory, VDP_FAULT_SUBMIT_STATE);
 	assert.equal(buildFrameOpen(vdp), false);
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_NOP);
@@ -267,6 +271,7 @@ test('VDP PMU resolves parallax into BLIT geometry before backend execution', ()
 	assert.ok(workUnits > 0);
 	vdp.advanceWork(workUnits);
 	const output = vdp.readHostOutput();
+	assert.notEqual(output, vdp.readHostOutput());
 	assert.notEqual(output.executionToken, 0);
 	const queue = output.executionQueue;
 	assert.ok(queue);
@@ -405,16 +410,26 @@ test('VDP2D SLOT_INDEX latches raw words and SLOT_DIM applies in-order through R
 	]);
 	assert.deepEqual(vdp.resolveBlitterSurfaceSize(VDP_RD_SURFACE_PRIMARY), { width: 16, height: 16 });
 
-	assert.throws(() => memory.writeValue(IO_VDP_REG_SLOT_DIM, 0xffff | (0xffff << 16)));
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 0xffff | (0xffff << 16));
+	assertVdpFault(memory, VDP_FAULT_VRAM_SLOT_DIM);
 	assert.deepEqual(vdp.resolveBlitterSurfaceSize(VDP_RD_SURFACE_PRIMARY), { width: 16, height: 16 });
 });
 
-test('VDP2D BLIT representable source geometry enters the frame datapath', () => {
+test('VDP2D BLIT source faults latch without closing a direct frame', () => {
 	const { memory, vdp } = createVdp();
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_REG_SRC_SLOT, 99);
 	memory.writeValue(IO_VDP_REG_DRAW_SCALE_X, 0x00010000);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	assertVdpFault(memory, VDP_FAULT_DEX_SOURCE_SLOT);
+	assert.equal(buildFrameOpen(vdp), true);
+	clearVdpFault(memory);
+	memory.writeValue(IO_VDP_REG_SRC_SLOT, VDP_SLOT_PRIMARY);
+	memory.writeValue(IO_VDP_REG_SRC_UV, 0);
+	memory.writeValue(IO_VDP_REG_SRC_WH, 0);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	assertVdpFault(memory, VDP_FAULT_DEX_SOURCE_OOB);
 	assert.equal(buildFrameOpen(vdp), true);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 	assert.equal((vdp as any).activeFrame.occupied, true);
@@ -434,7 +449,7 @@ test('VDP2D BLIT and LINE latch cart-visible DEX faults without register rollbac
 		memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
 		assert.equal(memory.readValue(IO_VDP_REG_DRAW_SCALE_X), 0xffff0000);
 		assertVdpFault(memory, VDP_FAULT_DEX_INVALID_SCALE);
-		assert.equal(buildFrameOpen(vdp), false);
+		assert.equal(buildFrameOpen(vdp), true);
 	}
 	{
 		const { memory, vdp } = createVdp();
@@ -444,7 +459,7 @@ test('VDP2D BLIT and LINE latch cart-visible DEX faults without register rollbac
 		memory.writeValue(IO_VDP_CMD, VDP_CMD_DRAW_LINE);
 		assert.equal(memory.readValue(IO_VDP_REG_LINE_WIDTH), 0);
 		assertVdpFault(memory, VDP_FAULT_DEX_INVALID_LINE_WIDTH);
-		assert.equal(buildFrameOpen(vdp), false);
+		assert.equal(buildFrameOpen(vdp), true);
 	}
 });
 
@@ -479,7 +494,7 @@ test('VDP2D FIFO allows an empty PKT_END-only frame', () => {
 	assert.equal((vdp as any).activeFrame.hasCommands, false);
 });
 
-test('VDP2D BLIT source rect words flow through the datapath', () => {
+test('VDP2D BLIT source rect OOB latches a DEX source fault', () => {
 	const { memory, vdp } = createVdp();
 
 	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
@@ -492,6 +507,7 @@ test('VDP2D BLIT source rect words flow through the datapath', () => {
 	memory.writeValue(IO_VDP_REG_SRC_WH, 2 | (16 << 16));
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	assertVdpFault(memory, VDP_FAULT_DEX_SOURCE_OOB);
 	assert.equal(buildFrameOpen(vdp), true);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 });
@@ -506,6 +522,19 @@ test('VDP readback faults latch status instead of throwing', () => {
 	assert.equal(memory.readIoU32(IO_VDP_FAULT_DETAIL), 99);
 	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_FAULT) !== 0, true);
 	clearVdpFault(memory);
+});
+
+test('VDP fault latch is sticky-first until FAULT_ACK', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_RD_MODE, 99);
+	assert.equal(memory.readValue(IO_VDP_RD_DATA), 0);
+	assertVdpFault(memory, VDP_FAULT_RD_UNSUPPORTED_MODE);
+	vdp.writeVram(VRAM_PRIMARY_SLOT_BASE + 1, new Uint8Array([1, 2, 3, 4]));
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_RD_UNSUPPORTED_MODE);
+	clearVdpFault(memory);
+	vdp.writeVram(VRAM_PRIMARY_SLOT_BASE + 1, new Uint8Array([1, 2, 3, 4]));
+	assertVdpFault(memory, VDP_FAULT_VRAM_WRITE_UNALIGNED);
 });
 
 test('VDP readback OOB faults latch status instead of throwing', () => {

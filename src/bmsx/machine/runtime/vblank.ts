@@ -260,7 +260,8 @@ export class VblankState {
 		const runtime = this.runtime;
 		const vdp = runtime.machine.vdp;
 		if (vdp.presentReadyFrameOnVblankEdge()) {
-			presentVdpFrameBufferPages(vdp);
+			presentVdpFrameBufferPages();
+			vdp.swapFrameBufferReadbackPages();
 		}
 	}
 

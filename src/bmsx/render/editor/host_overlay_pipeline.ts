@@ -28,6 +28,7 @@ import {
 } from '../../rompack/host_system_atlas';
 import type { BFont, FontGlyph } from '../shared/bitmap_font';
 import { consumeOverlayFrame, hasPendingOverlayFrame } from './overlay_queue';
+import { beginHost2DQueue, forEachHost2DQueue } from '../shared/queues';
 import vertexShaderCode from '../2d/shaders/2d.vert.glsl';
 import fragmentShaderCode from './shaders/host_overlay.frag.glsl';
 
@@ -100,6 +101,7 @@ const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 
 let runtime: HostOverlayRuntime | null = null;
 let axisLabelCount = 0;
+const host2DCommandsScratch: RenderSubmission[] = [];
 
 function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverlayRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
@@ -293,6 +295,49 @@ function drawRectCommand(backend: WebGLBackend, state: HostOverlayRuntime, comma
 	count += pushFillRect(state, count, command.area.left, command.area.bottom - 1, command.area.right, command.area.bottom, command.area.z, command.color);
 	count += pushFillRect(state, count, command.area.left, command.area.top, command.area.left + 1, command.area.bottom, command.area.z, command.color);
 	count += pushFillRect(state, count, command.area.right - 1, command.area.top, command.area.right, command.area.bottom, command.area.z, command.color);
+	if (count !== 0) {
+		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
+	}
+	return nextBoundTextures;
+}
+
+function pushLine(state: HostOverlayRuntime, index: number, x0: number, y0: number, x1: number, y1: number, z: number, colorValue: color, thickness: number): number {
+	const dx = x1 - x0;
+	const dy = y1 - y0;
+	if (dx === 0 && dy === 0) {
+		return pushFillRect(state, index, x0, y0, x0 + thickness, y0 + thickness, z, colorValue);
+	}
+	const length = Math.sqrt(dx * dx + dy * dy);
+	const half = thickness * 0.5;
+	const normalX = -dy / length;
+	const normalY = dx / length;
+	writeQuad(
+		state,
+		index,
+		x0 - normalX * half,
+		y0 - normalY * half,
+		dx,
+		dy,
+		normalX * thickness,
+		normalY * thickness,
+		SOLID_TEXCOORD_0,
+		SOLID_TEXCOORD_0,
+		SOLID_TEXCOORD_1,
+		SOLID_TEXCOORD_1,
+		z,
+		colorValue,
+	);
+	return 1;
+}
+
+function drawPolyCommand(backend: WebGLBackend, state: HostOverlayRuntime, command: Extract<RenderSubmission, { type: 'poly' }>, boundTextures: BoundTextureState): BoundTextureState {
+	const nextBoundTextures = bindSolidTexture(state, boundTextures);
+	let count = 0;
+	const points = command.points;
+	for (let index = 0; index + 3 < points.length; index += 2) {
+		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
+		count += pushLine(state, count, points[index], points[index + 1], points[index + 2], points[index + 3], command.z, command.color, command.thickness!);
+	}
 	if (count !== 0) {
 		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
 	}
@@ -500,7 +545,8 @@ function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 				boundTextures = drawGlyphRunCommand(backend, state, imageCache, command, boundTextures);
 				break;
 			case 'poly':
-				throw new Error('[HostOverlay] Poly overlay rendering is not implemented.');
+				boundTextures = drawPolyCommand(backend, state, command, boundTextures);
+				break;
 			case 'mesh':
 				throw new Error('[HostOverlay] Mesh submissions are invalid in host overlay.');
 			case 'particle':
@@ -566,15 +612,26 @@ export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void
 			bootstrapRuntime(webglBackend);
 			bootstrapAxisGizmo_WebGL(webglBackend);
 		},
-		shouldExecute: () => hasPendingOverlayFrame() || shouldRenderAxisGizmo(),
+		shouldExecute: () => hasPendingOverlayFrame() || beginHost2DQueue() !== 0 || shouldRenderAxisGizmo(),
 		prepare: () => {
 			const frame = hasPendingOverlayFrame() ? consumeOverlayFrame() : null;
+			let commands: RenderSubmission[] = host2DCommandsScratch;
+			if (frame) {
+				commands = frame.commands;
+			} else {
+				host2DCommandsScratch.length = 0;
+			}
+			if (beginHost2DQueue() !== 0) {
+				forEachHost2DQueue((command) => {
+					commands.push(command);
+				});
+			}
 			const state: HostOverlayPipelineState = {
 				width: consoleCore.view.offscreenCanvasSize.x,
 				height: consoleCore.view.offscreenCanvasSize.y,
 				overlayWidth: frame?.width ?? consoleCore.view.viewportSize.x,
 				overlayHeight: frame?.height ?? consoleCore.view.viewportSize.y,
-				commands: frame?.commands ?? [],
+				commands,
 			};
 			registry.setState('host_overlay', state);
 		},
@@ -603,7 +660,10 @@ export function registerHostOverlayPass_Headless(registry: RenderPassLibrary): v
 			if (hasPendingOverlayFrame()) {
 				consumeOverlayFrame();
 			}
-			return false;
+			return beginHost2DQueue() !== 0;
+		},
+		prepare: () => {
+			forEachHost2DQueue(() => {});
 		},
 		exec: () => { },
 	});

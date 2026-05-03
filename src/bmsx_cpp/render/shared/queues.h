@@ -1,8 +1,8 @@
 /*
  * queues.h - Render submission queues
  *
- * Host mesh and particle queues only. 2D fantasy-framebuffer submissions enter
- * the machine through VDP MMIO, not through render/shared.
+ * Host/editor feature queues only. Fantasy-console VDP submissions enter the
+ * machine through VDP MMIO/FIFO/DMA, not through render/shared.
  */
 
 #ifndef BMSX_RENDER_QUEUES_H
@@ -23,6 +23,15 @@ void prepareHeldRenderQueues();
 bool hasPendingBackQueueContent();
 void clearBackQueues();
 void clearAllQueues();
+
+void submitSprite(const ImgRenderSubmission& item);
+void submitRectangle(const RectRenderSubmission& item);
+void submitDrawPolygon(const PolyRenderSubmission& item);
+void submitGlyphs(const GlyphRenderSubmission& item);
+i32 beginHost2DQueue();
+void forEachHost2DQueue(const std::function<void(const RenderSubmission&, size_t)>& fn);
+size_t host2DQueueBackSize();
+size_t host2DQueueFrontSize();
 
 void submitMesh(const MeshRenderSubmission& item);
 i32 beginMeshQueue();

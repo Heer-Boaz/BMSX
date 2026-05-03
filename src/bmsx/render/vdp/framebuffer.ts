@@ -25,13 +25,12 @@ export function vdpRenderFrameBufferTexture(): TextureHandle {
 	return renderFrameBufferTexture;
 }
 
-export function presentVdpFrameBufferPages(vdp: VDP): void {
+export function presentVdpFrameBufferPages(): void {
 	swapVdpTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
 	// disable-next-line single_use_local_pattern -- texture page swap needs one temporary handle without allocating a pair object.
 	const renderTexture = renderFrameBufferTexture;
 	renderFrameBufferTexture = displayFrameBufferTexture;
 	displayFrameBufferTexture = renderTexture;
-	vdp.swapFrameBufferReadbackPages();
 }
 
 export function writeVdpRenderFrameBufferPixels(pixels: Uint8Array, width: number, height: number): void {

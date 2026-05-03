@@ -12,6 +12,7 @@ namespace RenderQueues {
 
 static FeatureQueue<MeshRenderSubmission> s_meshQueue(256);
 static FeatureQueue<ParticleRenderSubmission> s_particleQueue(1024);
+static FeatureQueue<RenderSubmission> s_host2DQueue(512);
 enum class QueueSource : u8 {
 	Front = 0,
 	Back = 1,
@@ -25,7 +26,8 @@ f32 _skyExposure = 1.0f;
 
 static bool hasCommittedFrontQueueContent() {
 	return s_meshQueue.sizeFront() > 0
-		|| s_particleQueue.sizeFront() > 0;
+		|| s_particleQueue.sizeFront() > 0
+		|| s_host2DQueue.sizeFront() > 0;
 }
 
 template<typename T, typename Fn>
@@ -40,6 +42,7 @@ static void forEachActiveQueue(FeatureQueue<T>& queue, Fn&& fn) {
 void prepareCompletedRenderQueues() {
 	s_meshQueue.swap();
 	s_particleQueue.swap();
+	s_host2DQueue.swap();
 	s_activeQueueSource = QueueSource::Front;
 }
 
@@ -59,20 +62,64 @@ void prepareHeldRenderQueues() {
 
 bool hasPendingBackQueueContent() {
 	return s_meshQueue.sizeBack() > 0
-		|| s_particleQueue.sizeBack() > 0;
+		|| s_particleQueue.sizeBack() > 0
+		|| s_host2DQueue.sizeBack() > 0;
 }
 
 void clearBackQueues() {
 	s_meshQueue.clearBack();
 	s_particleQueue.clearBack();
+	s_host2DQueue.clearBack();
 	s_activeQueueSource = QueueSource::Front;
 }
 
 void clearAllQueues() {
 	s_meshQueue.clearAll();
 	s_particleQueue.clearAll();
+	s_host2DQueue.clearAll();
 	s_activeQueueSource = QueueSource::Front;
 }
+
+void submitSprite(const ImgRenderSubmission& item) {
+	RenderSubmission submission;
+	submission.type = RenderSubmissionType::Img;
+	submission.img = item;
+	s_host2DQueue.submit(std::move(submission));
+}
+
+void submitRectangle(const RectRenderSubmission& item) {
+	RenderSubmission submission;
+	submission.type = RenderSubmissionType::Rect;
+	submission.rect = item;
+	s_host2DQueue.submit(std::move(submission));
+}
+
+void submitDrawPolygon(const PolyRenderSubmission& item) {
+	RenderSubmission submission;
+	submission.type = RenderSubmissionType::Poly;
+	submission.poly = item;
+	s_host2DQueue.submit(std::move(submission));
+}
+
+void submitGlyphs(const GlyphRenderSubmission& item) {
+	RenderSubmission submission;
+	submission.type = RenderSubmissionType::Glyphs;
+	submission.glyphs = item;
+	s_host2DQueue.submit(std::move(submission));
+}
+
+i32 beginHost2DQueue() {
+	return static_cast<i32>(s_activeQueueSource == QueueSource::Back ? s_host2DQueue.sizeBack() : s_host2DQueue.sizeFront());
+}
+
+void forEachHost2DQueue(const std::function<void(const RenderSubmission&, size_t)>& fn) {
+	forEachActiveQueue(s_host2DQueue, [&fn](const RenderSubmission& item, size_t index) {
+		fn(item, index);
+	});
+}
+
+size_t host2DQueueBackSize() { return s_host2DQueue.sizeBack(); }
+size_t host2DQueueFrontSize() { return s_host2DQueue.sizeFront(); }
 
 void submitMesh(const MeshRenderSubmission& item) {
 	s_meshQueue.submit(item);

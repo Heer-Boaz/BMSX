@@ -236,12 +236,18 @@ import {
 	VDP_FAULT_RD_SURFACE,
 	VDP_FAULT_RD_UNSUPPORTED_MODE,
 	VDP_FAULT_STREAM_BAD_PACKET,
+	VDP_FAULT_SUBMIT_STATE,
+	VDP_FAULT_CMD_BAD_DOORBELL,
+	VDP_FAULT_SUBMIT_BUSY,
 	VDP_FAULT_DEX_INVALID_LINE_WIDTH,
 	VDP_FAULT_DEX_INVALID_SCALE,
+	VDP_FAULT_DEX_SOURCE_OOB,
+	VDP_FAULT_DEX_SOURCE_SLOT,
 	VDP_FAULT_SBX_SOURCE_OOB,
 	VDP_FAULT_BBU_OVERFLOW,
 	VDP_FAULT_BBU_SOURCE_OOB,
 	VDP_FAULT_BBU_ZERO_SIZE,
+	VDP_FAULT_VRAM_SLOT_DIM,
 	VDP_FAULT_VRAM_WRITE_OOB,
 	VDP_FAULT_VRAM_WRITE_UNALIGNED,
 	VDP_FAULT_VRAM_WRITE_UNINITIALIZED,
@@ -1298,9 +1304,15 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_vram_write_uninitialized', VDP_FAULT_VRAM_WRITE_UNINITIALIZED);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_vram_write_oob', VDP_FAULT_VRAM_WRITE_OOB);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_vram_write_unaligned', VDP_FAULT_VRAM_WRITE_UNALIGNED);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_vram_slot_dim', VDP_FAULT_VRAM_SLOT_DIM);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_stream_bad_packet', VDP_FAULT_STREAM_BAD_PACKET);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_submit_state', VDP_FAULT_SUBMIT_STATE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_cmd_bad_doorbell', VDP_FAULT_CMD_BAD_DOORBELL);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_submit_busy', VDP_FAULT_SUBMIT_BUSY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_dex_invalid_scale', VDP_FAULT_DEX_INVALID_SCALE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_dex_invalid_line_width', VDP_FAULT_DEX_INVALID_LINE_WIDTH);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_dex_source_slot', VDP_FAULT_DEX_SOURCE_SLOT);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_dex_source_oob', VDP_FAULT_DEX_SOURCE_OOB);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_sbx_source_oob', VDP_FAULT_SBX_SOURCE_OOB);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_bbu_zero_size', VDP_FAULT_BBU_ZERO_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_bbu_overflow', VDP_FAULT_BBU_OVERFLOW);

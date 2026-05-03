@@ -110,7 +110,7 @@ void writeSkyboxToFramebuffer(SoftwareBackend& backend, Runtime& runtime, const 
 	std::array<VDP::ResolvedBlitterSample, SKYBOX_FACE_COUNT> samples{};
 	std::array<VdpSourcePixels, SKYBOX_FACE_COUNT> textures{};
 	VDP& vdp = runtime.machine().vdp();
-	const VDP::VdpHostOutput output = vdp.hostOutput();
+	const VDP::VdpHostOutput output = vdp.readHostOutput();
 	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
 		samples[index] = (*output.skyboxSamples)[index];
 		textures[index] = resolveVdpSurfacePixels(output, samples[index].source.surfaceId);
@@ -286,7 +286,7 @@ void renderSoftwareParticles(SoftwareBackend& backend, const GameView& view, Run
 	if (RenderQueues::beginParticleQueue() == 0 && view.vdpBillboardCount == 0u) {
 		return;
 	}
-	VDP::VdpHostOutput output = runtime.machine().vdp().hostOutput();
+	VDP::VdpHostOutput output = runtime.machine().vdp().readHostOutput();
 	RenderQueues::forEachParticleQueue([&backend, &output, &state](const ParticleRenderSubmission& submission, size_t) {
 		drawSoftwareBillboardSample(backend,
 			output,

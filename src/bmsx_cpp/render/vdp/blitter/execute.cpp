@@ -8,7 +8,7 @@
 
 namespace bmsx {
 void drainReadyVdpExecution(VDP& vdp) {
-	const VDP::VdpHostOutput output = vdp.hostOutput();
+	const VDP::VdpHostOutput output = vdp.readHostOutput();
 	const auto* queue = output.executionQueue;
 	if (queue == nullptr) {
 		return;

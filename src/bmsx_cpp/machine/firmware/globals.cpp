@@ -1302,9 +1302,15 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_fault_vram_write_uninitialized", valueNumber(static_cast<double>(VDP_FAULT_VRAM_WRITE_UNINITIALIZED)));
 	setGlobal("sys_vdp_fault_vram_write_oob", valueNumber(static_cast<double>(VDP_FAULT_VRAM_WRITE_OOB)));
 	setGlobal("sys_vdp_fault_vram_write_unaligned", valueNumber(static_cast<double>(VDP_FAULT_VRAM_WRITE_UNALIGNED)));
+	setGlobal("sys_vdp_fault_vram_slot_dim", valueNumber(static_cast<double>(VDP_FAULT_VRAM_SLOT_DIM)));
 	setGlobal("sys_vdp_fault_stream_bad_packet", valueNumber(static_cast<double>(VDP_FAULT_STREAM_BAD_PACKET)));
+	setGlobal("sys_vdp_fault_submit_state", valueNumber(static_cast<double>(VDP_FAULT_SUBMIT_STATE)));
+	setGlobal("sys_vdp_fault_cmd_bad_doorbell", valueNumber(static_cast<double>(VDP_FAULT_CMD_BAD_DOORBELL)));
+	setGlobal("sys_vdp_fault_submit_busy", valueNumber(static_cast<double>(VDP_FAULT_SUBMIT_BUSY)));
 	setGlobal("sys_vdp_fault_dex_invalid_scale", valueNumber(static_cast<double>(VDP_FAULT_DEX_INVALID_SCALE)));
 	setGlobal("sys_vdp_fault_dex_invalid_line_width", valueNumber(static_cast<double>(VDP_FAULT_DEX_INVALID_LINE_WIDTH)));
+	setGlobal("sys_vdp_fault_dex_source_slot", valueNumber(static_cast<double>(VDP_FAULT_DEX_SOURCE_SLOT)));
+	setGlobal("sys_vdp_fault_dex_source_oob", valueNumber(static_cast<double>(VDP_FAULT_DEX_SOURCE_OOB)));
 	setGlobal("sys_vdp_fault_sbx_source_oob", valueNumber(static_cast<double>(VDP_FAULT_SBX_SOURCE_OOB)));
 	setGlobal("sys_vdp_fault_bbu_zero_size", valueNumber(static_cast<double>(VDP_FAULT_BBU_ZERO_SIZE)));
 	setGlobal("sys_vdp_fault_bbu_overflow", valueNumber(static_cast<double>(VDP_FAULT_BBU_OVERFLOW)));

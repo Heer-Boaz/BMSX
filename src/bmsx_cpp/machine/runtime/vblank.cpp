@@ -229,7 +229,9 @@ bool VblankState::isFrameBoundaryHalt(Runtime& runtime) const {
 void VblankState::commitFrameOnVblankEdge(Runtime& runtime) {
 	auto& vdp = runtime.m_machine.vdp();
 	if (vdp.commitReadyFrameOnVblankEdge()) {
-		presentVdpFrameBufferPages(vdp);
+		applyVdpFrameBufferTextureWrites(vdp);
+		presentVdpFrameBufferPages();
+		vdp.swapFrameBufferReadbackPages();
 	}
 }
 

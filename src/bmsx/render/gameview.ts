@@ -10,7 +10,6 @@ import { CRTDitherType as DitherType } from './backend/interfaces';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/graph';
 import { LightingSystem } from './lighting/system';
 import * as renderQueues from './shared/queues';
-import * as vdpSubmissions from '../machine/runtime/vdp_submissions';
 import type {
 	GameViewHost,
 	GameViewCanvas,
@@ -137,8 +136,8 @@ export class GameView implements RenderContext {
 		enableAutoAnimation: false,
 	};
 
-	// Renderer submission surface. Particle submissions here are host/editor work;
-	// BMSX machine billboards enter through VDP command packets.
+	// Renderer submission surface. Host/editor submissions stay in render queues;
+	// BMSX machine 2D and billboards enter through VDP MMIO/FIFO/DMA packets.
 	public renderer: {
 		submit: {
 			typed: (o: RenderSubmission) => void;
@@ -174,11 +173,11 @@ export class GameView implements RenderContext {
 				}
 			},
 			particle: (item: ParticleRenderSubmission) => renderQueues.submit_particle(item),
-			sprite: (item: ImgRenderSubmission) => vdpSubmissions.submitSprite(this.runtime, item),
+			sprite: renderQueues.submitSprite,
 			mesh: renderQueues.submitMesh,
-			rect: (item: RectRenderSubmission) => vdpSubmissions.submitRectangle(this.runtime, item),
-			poly: (item: PolyRenderSubmission) => vdpSubmissions.submitDrawPolygon(this.runtime, item),
-			glyphs: (item: GlyphRenderSubmission) => vdpSubmissions.submitGlyphs(this.runtime, item),
+			rect: renderQueues.submitRectangle,
+			poly: renderQueues.submitDrawPolygon,
+			glyphs: renderQueues.submitGlyphs,
 		},
 	} as RenderSubmitQueue;
 

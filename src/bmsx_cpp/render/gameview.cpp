@@ -1,7 +1,8 @@
 /*
  * gameview.cpp - GameView implementation
  *
- * Uses VDP MMIO submissions for 2D and RenderQueues for mesh/particle submission.
+ * Routes host/editor render submissions to render queues. BMSX machine VDP work
+ * enters through VDP MMIO/FIFO/DMA, not renderer submissions.
  */
 
 #include "gameview.h"
@@ -13,7 +14,6 @@
 #include "lighting/system.h"
 #include "core/console.h"
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/vdp_submissions.h"
 #include "rompack/format.h"
 #include "texture_manager.h"
 #include "common/clamp.h"
@@ -62,27 +62,24 @@ GameView::~GameView() {
 /**
  * Initialize the renderer submit functions.
  *
- * 2D submit functions enter through machine MMIO; host/editor queues keep mesh and particles.
+ * Renderer submissions are host/editor render work. Machine-visible 2D work is
+ * produced by cart/firmware MMIO and VDP packet streams.
  */
 void GameView::initializeRenderer() {
-	// sprite -> VdpSubmissions::submitSprite
-	renderer.submit.sprite = [this](const ImgRenderSubmission& s) {
-		VdpSubmissions::submitSprite(runtime(), s);
+	renderer.submit.sprite = [](const ImgRenderSubmission& s) {
+		RenderQueues::submitSprite(s);
 	};
 
-	// rect -> VdpSubmissions::submitRectangle
-	renderer.submit.rect = [this](const RectRenderSubmission& s) {
-		VdpSubmissions::submitRectangle(runtime(), s);
+	renderer.submit.rect = [](const RectRenderSubmission& s) {
+		RenderQueues::submitRectangle(s);
 	};
 
-	// poly -> VdpSubmissions::submitDrawPolygon
-	renderer.submit.poly = [this](const PolyRenderSubmission& s) {
-		VdpSubmissions::submitDrawPolygon(runtime(), s);
+	renderer.submit.poly = [](const PolyRenderSubmission& s) {
+		RenderQueues::submitDrawPolygon(s);
 	};
 
-	// glyphs -> VdpSubmissions::submitGlyphs
-	renderer.submit.glyphs = [this](const GlyphRenderSubmission& s) {
-		VdpSubmissions::submitGlyphs(runtime(), s);
+	renderer.submit.glyphs = [](const GlyphRenderSubmission& s) {
+		RenderQueues::submitGlyphs(s);
 	};
 
 	// host/editor particle queue; BMSX machine billboards use VDP packets

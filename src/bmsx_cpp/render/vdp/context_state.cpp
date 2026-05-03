@@ -14,7 +14,7 @@ void restoreVdpContextState(VDP& vdp) {
 }
 
 void captureVdpContextState(VDP& vdp) {
-	const VDP::VdpHostOutput output = vdp.hostOutput();
+	const VDP::VdpHostOutput output = vdp.readHostOutput();
 	const size_t bytes = static_cast<size_t>(output.frameBufferWidth) * static_cast<size_t>(output.frameBufferHeight) * 4u;
 	output.frameBufferRenderReadback->resize(bytes);
 	readVdpRenderFrameBufferPixels(

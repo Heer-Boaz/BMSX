@@ -113,13 +113,8 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Render submission
 	//
-	// These functions route to queues helpers:
-	// - sprite -> VdpSubmissions::submitSprite
-	// - rect   -> VdpSubmissions::submitRectangle
-	// - poly   -> VdpSubmissions::submitDrawPolygon
-	// - glyphs -> VdpSubmissions::submitGlyphs
-	// - particle -> host/editor particle queue; BMSX machine billboards use VDP packets
-	// - mesh   -> MeshPipeline.submitMesh
+	// These functions route host/editor work to render queues. Machine-visible
+	// VDP 2D and billboard work is produced by cart/firmware MMIO/FIFO/DMA.
 	// ─────────────────────────────────────────────────────────────────────────
 	struct Renderer {
 		struct Submit {
