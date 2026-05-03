@@ -114,10 +114,10 @@ public:
 	// Render submission
 	//
 	// These functions route to queues helpers:
-	// - sprite -> RenderQueues::submitSprite
-	// - rect   -> RenderQueues::submitRectangle
-	// - poly   -> RenderQueues::submitDrawPolygon
-	// - glyphs -> RenderQueues::submitGlyphs
+	// - sprite -> VdpSubmissions::submitSprite
+	// - rect   -> VdpSubmissions::submitRectangle
+	// - poly   -> VdpSubmissions::submitDrawPolygon
+	// - glyphs -> VdpSubmissions::submitGlyphs
 	// - particle -> host/editor particle queue; BMSX machine billboards use VDP packets
 	// - mesh   -> MeshPipeline.submitMesh
 	// ─────────────────────────────────────────────────────────────────────────

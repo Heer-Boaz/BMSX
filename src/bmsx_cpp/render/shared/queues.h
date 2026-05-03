@@ -1,7 +1,8 @@
 /*
  * queues.h - Render submission queues
  *
- * 2D submissions are rasterized into the live fantasy framebuffer; mesh/particles still use FeatureQueue.
+ * Host mesh and particle queues only. 2D fantasy-framebuffer submissions enter
+ * the machine through VDP MMIO, not through render/shared.
  */
 
 #ifndef BMSX_RENDER_QUEUES_H
@@ -12,92 +13,16 @@
 #include <functional>
 
 namespace bmsx {
-class Runtime;
-/* ============================================================================
- * Mesh Queue Item (for 3D meshes)
- * ============================================================================ */
-
-// MeshRenderSubmission is defined in submissions.h
-
-/* ============================================================================
- * Particle Queue Item
- * ============================================================================ */
-
-// ParticleRenderSubmission is defined in submissions.h
-
-/* ============================================================================
- * Render Queues Module
- *
- * 2D submissions write straight into the framebuffer path.
- * Only mesh and particle submissions stay queued between frames.
- * ============================================================================ */
 
 namespace RenderQueues {
 
-// --- 2D framebuffer helpers ---
-
-/**
- * Submit one image blit to the framebuffer path.
- */
-void submitSprite(Runtime& runtime, const ImgRenderSubmission& options);
-
-/**
- * Submit a rectangle (filled or outline) to the framebuffer path.
- */
-void submitRectangle(Runtime& runtime, const RectRenderSubmission& options);
-
-/**
- * Submit a polygon outline to the framebuffer path.
- */
-void submitDrawPolygon(Runtime& runtime, const PolyRenderSubmission& options);
-
-/**
- * Submit glyphs for framebuffer text rendering.
- */
-void submitGlyphs(Runtime& runtime, const GlyphRenderSubmission& options);
-
-/**
- * Correct area start/end to ensure positive dimensions.
- */
-void correctAreaStartEnd(f32& x, f32& y, f32& ex, f32& ey);
-
-/**
- * Prepare completed-frame render queues by committing back -> front.
- */
 void prepareCompletedRenderQueues();
-
-/**
- * Prepare partial-frame rendering. Prefer the last committed front queue; only
- * fall back to the live back queue before the first completed frame exists.
- */
 void preparePartialRenderQueues();
-
-/**
- * Force live back-queue rendering. Reserved for overlay/live-debug paths.
- */
 void prepareOverlayRenderQueues();
-
-/**
- * Hold the last committed front queues without swapping.
- */
 void prepareHeldRenderQueues();
-
-/**
- * Returns whether the back queues contain pending submissions.
- */
 bool hasPendingBackQueueContent();
-
-/**
- * Clear all back queues and reset submission counters.
- */
 void clearBackQueues();
-
-/**
- * Clear both front and back queues and reset VDP queue state to power-on values.
- */
-void clearAllQueues(Runtime& runtime);
-
-// --- Mesh queue helpers ---
+void clearAllQueues();
 
 void submitMesh(const MeshRenderSubmission& item);
 i32 beginMeshQueue();
@@ -105,39 +30,19 @@ void forEachMeshQueue(const std::function<void(const MeshRenderSubmission&, size
 size_t meshQueueBackSize();
 size_t meshQueueFrontSize();
 
-// --- Particle queue helpers ---
-
 void submit_particle(const ParticleRenderSubmission& item);
 i32 beginParticleQueue();
 void forEachParticleQueue(const std::function<void(const ParticleRenderSubmission&, size_t)>& fn);
 size_t particleQueueBackSize();
 size_t particleQueueFrontSize();
 
-// --- Ambient defaults (particles) ---
-
 extern i32 particleAmbientModeDefault;
 extern f32 particleAmbientFactorDefault;
 void setAmbientDefaults(i32 mode, f32 factor = 1.0f);
 
-// --- Skybox exposure defaults ---
-
 extern std::array<f32, 3> _skyTint;
 extern f32 _skyExposure;
 void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure = 1.0f);
-
-// --- Glyph helpers ---
-
-void renderGlyphs(Runtime& runtime,
-					f32 x,
-					f32 y,
-					const std::vector<std::string>& lines,
-					i32 start,
-					i32 end,
-					f32 z,
-					BFont* font,
-					const Color& color,
-					const std::optional<Color>& backgroundColor,
-					RenderLayer layer);
 
 } // namespace RenderQueues
 

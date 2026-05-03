@@ -4,13 +4,13 @@ import { clamp01 } from '../common/clamp';
 import { multiply_vec2 } from '../common/vector';
 import { shallowcopy } from '../common/shallowcopy';
 import type { vec2 } from '../rompack/format';
-import * as queues from './shared/queues';
 import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/interfaces';
 import { RenderPassLibrary } from './backend/pass/library';
 import { CRTDitherType as DitherType } from './backend/interfaces';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/graph';
 import { LightingSystem } from './lighting/system';
 import * as renderQueues from './shared/queues';
+import * as vdpSubmissions from '../machine/runtime/vdp_submissions';
 import type {
 	GameViewHost,
 	GameViewCanvas,
@@ -174,11 +174,11 @@ export class GameView implements RenderContext {
 				}
 			},
 			particle: (item: ParticleRenderSubmission) => renderQueues.submit_particle(item),
-			sprite: (item: ImgRenderSubmission) => renderQueues.submitSprite(this.runtime, item),
+			sprite: (item: ImgRenderSubmission) => vdpSubmissions.submitSprite(this.runtime, item),
 			mesh: renderQueues.submitMesh,
-			rect: (item: RectRenderSubmission) => queues.submitRectangle(this.runtime, item),
-			poly: (item: PolyRenderSubmission) => queues.submitDrawPolygon(this.runtime, item),
-			glyphs: (item: GlyphRenderSubmission) => queues.submitGlyphs(this.runtime, item),
+			rect: (item: RectRenderSubmission) => vdpSubmissions.submitRectangle(this.runtime, item),
+			poly: (item: PolyRenderSubmission) => vdpSubmissions.submitDrawPolygon(this.runtime, item),
+			glyphs: (item: GlyphRenderSubmission) => vdpSubmissions.submitGlyphs(this.runtime, item),
 		},
 	} as RenderSubmitQueue;
 

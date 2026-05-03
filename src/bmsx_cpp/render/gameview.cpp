@@ -1,7 +1,7 @@
 /*
  * gameview.cpp - GameView implementation
  *
- * Uses RenderQueues for sprite/mesh/particle submission.
+ * Uses VDP MMIO submissions for 2D and RenderQueues for mesh/particle submission.
  */
 
 #include "gameview.h"
@@ -13,6 +13,7 @@
 #include "lighting/system.h"
 #include "core/console.h"
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/vdp_submissions.h"
 #include "rompack/format.h"
 #include "texture_manager.h"
 #include "common/clamp.h"
@@ -61,27 +62,27 @@ GameView::~GameView() {
 /**
  * Initialize the renderer submit functions.
  *
- * Each submit function routes to queues helpers.
+ * 2D submit functions enter through machine MMIO; host/editor queues keep mesh and particles.
  */
 void GameView::initializeRenderer() {
-	// sprite -> RenderQueues::submitSprite
+	// sprite -> VdpSubmissions::submitSprite
 	renderer.submit.sprite = [this](const ImgRenderSubmission& s) {
-		RenderQueues::submitSprite(runtime(), s);
+		VdpSubmissions::submitSprite(runtime(), s);
 	};
 
-	// rect -> RenderQueues::submitRectangle
+	// rect -> VdpSubmissions::submitRectangle
 	renderer.submit.rect = [this](const RectRenderSubmission& s) {
-		RenderQueues::submitRectangle(runtime(), s);
+		VdpSubmissions::submitRectangle(runtime(), s);
 	};
 
-	// poly -> RenderQueues::submitDrawPolygon
+	// poly -> VdpSubmissions::submitDrawPolygon
 	renderer.submit.poly = [this](const PolyRenderSubmission& s) {
-		RenderQueues::submitDrawPolygon(runtime(), s);
+		VdpSubmissions::submitDrawPolygon(runtime(), s);
 	};
 
-	// glyphs -> RenderQueues::submitGlyphs
+	// glyphs -> VdpSubmissions::submitGlyphs
 	renderer.submit.glyphs = [this](const GlyphRenderSubmission& s) {
-		RenderQueues::submitGlyphs(runtime(), s);
+		VdpSubmissions::submitGlyphs(runtime(), s);
 	};
 
 	// host/editor particle queue; BMSX machine billboards use VDP packets

@@ -89,6 +89,18 @@ void expectThrow(const std::function<void()>& fn, const char* label) {
 	throw std::runtime_error(std::string("expected throw: ") + label);
 }
 
+void expectVdpFault(Harness& h, uint32_t code, const char* label) {
+	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == code, label);
+	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_FAULT) != 0u, label);
+}
+
+void clearVdpFault(Harness& h) {
+	writeIo(h.memory, bmsx::IO_VDP_FAULT_ACK, 1u);
+	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "FAULT_ACK should clear VDP fault code");
+	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_FAULT) == 0u, "FAULT_ACK should clear VDP fault status bit");
+	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_ACK) == 0u, "FAULT_ACK write should self-clear");
+}
+
 void writeStream(bmsx::Memory& memory, const std::vector<uint32_t>& words) {
 	for (size_t index = 0; index < words.size(); ++index) {
 		memory.writeU32(bmsx::VDP_STREAM_BUFFER_BASE + static_cast<uint32_t>(index * bmsx::IO_WORD_SIZE), words[index]);
@@ -159,11 +171,16 @@ void writeCameraMmio(bmsx::Memory& memory, const std::array<bmsx::f32, 16>& view
 void testDirectLifecycle() {
 	Harness h;
 
-	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME); }, "END without BEGIN");
-	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_FILL_RECT); }, "draw without BEGIN");
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "END without BEGIN should latch stream fault");
+	clearVdpFault(h);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_FILL_RECT);
+	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "draw without BEGIN should latch stream fault");
+	clearVdpFault(h);
 
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME); }, "double BEGIN");
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "double BEGIN should latch stream fault");
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_NOP);
 	require(h.vdp.canAcceptVdpSubmit(), "double BEGIN should cancel and close the frame");
 }
@@ -215,6 +232,7 @@ void testBlitDrawCtrlSnapshot() {
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
 	const auto output = h.vdp.hostOutput();
+	require(output.executionToken != 0u, "host output should expose an execution token");
 	const auto* queue = output.executionQueue;
 	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
 	const auto& command = queue->front();
@@ -262,6 +280,7 @@ void testPmuParallaxResolvedBlitSnapshot() {
 	require(std::abs(command.scaleX - 1.0f) < 0.0001f, "PMU should leave scale X unchanged for this rig");
 	require(std::abs(command.scaleY - 1.0f) < 0.0001f, "PMU should leave scale Y unchanged for this rig");
 	h.vdp.completeHostExecution(output);
+	require(h.vdp.hostOutput().executionToken == 0u, "host execution ack should clear token");
 }
 
 void testPmuBankRegistersResolveDrawCtrl() {
@@ -349,20 +368,24 @@ void testFifoReplayAndFaults() {
 	require(replay.vdp.getPendingRenderWorkUnits() > 0, "FIFO clear should submit render work");
 
 	Harness fault;
-	expectThrow([&] {
-		sealStream(fault, {
-			VDP_PKT_REG1 | VDP_REG_BG_COLOR,
-			0xff102030u,
-			0x04000000u,
-			VDP_PKT_END,
-		});
-	}, "unknown packet kind");
+	sealStream(fault, {
+		VDP_PKT_REG1 | VDP_REG_BG_COLOR,
+		0xff102030u,
+		0x04000000u,
+		VDP_PKT_END,
+	});
+	expectVdpFault(fault, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "unknown packet kind should latch stream fault");
 	require(fault.memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff102030u, "prior FIFO register write should remain after fault");
 
 	Harness range;
-	expectThrow([&] { sealStream(range, {VDP_PKT_CMD | (1u << 16) | VDP_CMD_CLEAR, VDP_PKT_END}); }, "CMD reserved bits");
-	expectThrow([&] { sealStream(range, {VDP_PKT_REG1 | 18u, 0u, VDP_PKT_END}); }, "REG1 range");
-	expectThrow([&] { sealStream(range, {VDP_PKT_REGN | (2u << 16) | 17u, 0u, 0u, VDP_PKT_END}); }, "REGN range");
+	sealStream(range, {VDP_PKT_CMD | (1u << 16) | VDP_CMD_CLEAR, VDP_PKT_END});
+	expectVdpFault(range, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "CMD reserved bits should latch stream fault");
+	clearVdpFault(range);
+	sealStream(range, {VDP_PKT_REG1 | 18u, 0u, VDP_PKT_END});
+	expectVdpFault(range, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "REG1 range should latch stream fault");
+	clearVdpFault(range);
+	sealStream(range, {VDP_PKT_REGN | (2u << 16) | 17u, 0u, 0u, VDP_PKT_END});
+	expectVdpFault(range, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "REGN range should latch stream fault");
 }
 
 void testSlotRegisters() {
@@ -401,7 +424,7 @@ void testBlitSourceGeometryEntersFrameDatapath() {
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 }
 
-void testBlitAndLineConsumeRepresentableGeometry() {
+void testBlitAndLineLatchDexFaults() {
 	{
 		Harness h;
 		writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
@@ -414,7 +437,8 @@ void testBlitAndLineConsumeRepresentableGeometry() {
 
 		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
 		require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_SCALE_X) == 0xffff0000u, "raw negative Q16 scale should remain latched");
-		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+		expectVdpFault(h, bmsx::VDP_FAULT_DEX_INVALID_SCALE, "invalid DEX scale should latch a device fault");
+		require(h.vdp.canAcceptVdpSubmit(), "invalid DEX scale should cancel the build frame");
 	}
 	{
 		Harness h;
@@ -423,7 +447,8 @@ void testBlitAndLineConsumeRepresentableGeometry() {
 
 		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_DRAW_LINE);
 		require(h.memory.readIoU32(bmsx::IO_VDP_REG_LINE_WIDTH) == 0u, "raw zero line width should remain latched");
-		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+		expectVdpFault(h, bmsx::VDP_FAULT_DEX_INVALID_LINE_WIDTH, "invalid LINE width should latch a device fault");
+		require(h.vdp.canAcceptVdpSubmit(), "invalid LINE width should cancel the build frame");
 	}
 }
 
@@ -474,7 +499,8 @@ void testSbxValidatesAtFrameSeal() {
 	writeSbxMmio(h.memory, bmsx::VDP_SBX_CONTROL_ENABLE, 2u, 1u);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 
-	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME); }, "SBX source rect overflow");
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	expectVdpFault(h, bmsx::VDP_FAULT_SBX_SOURCE_OOB, "SBX source rect overflow should latch a device fault");
 	require(h.vdp.canAcceptVdpSubmit(), "invalid SBX frame should cancel and close the build frame");
 	require(!h.vdp.hostOutput().skyboxEnabled, "invalid SBX state should not become visible");
 }
@@ -506,7 +532,8 @@ void testSbxSkyboxPacketRawControlAndFrameSealFault() {
 
 	auto badSource = skyboxPacket(bmsx::VDP_SBX_CONTROL_ENABLE, 17u, 1u);
 	badSource.push_back(VDP_PKT_END);
-	expectThrow([&] { sealStream(h, badSource); }, "SBX source rect overflow");
+	sealStream(h, badSource);
+	expectVdpFault(h, bmsx::VDP_FAULT_SBX_SOURCE_OOB, "bad-source SKYBOX should latch a device fault");
 	require(!h.vdp.hostOutput().skyboxEnabled, "bad-source SKYBOX should not become visible");
 }
 
@@ -565,18 +592,24 @@ void testBbuFaultsAtBillboardPacketAcceptance() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
 	auto zeroSize = billboardPacket(0u);
 	zeroSize.push_back(VDP_PKT_END);
-	expectThrow([&] { sealStream(h, zeroSize); }, "zero billboard size");
+	sealStream(h, zeroSize);
+	expectVdpFault(h, bmsx::VDP_FAULT_BBU_ZERO_SIZE, "zero billboard size should latch a device fault");
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "zero-size BILLBOARD should cancel the build frame");
+	clearVdpFault(h);
 
 	auto badControl = billboardPacket(1u << 16u, 0u, 0u, 1u, 1u, 1u);
 	badControl.push_back(VDP_PKT_END);
-	expectThrow([&] { sealStream(h, badControl); }, "BILLBOARD reserved control");
+	sealStream(h, badControl);
+	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "BILLBOARD reserved control should latch a stream fault");
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad-control BILLBOARD should cancel the build frame");
+	clearVdpFault(h);
 
 	auto badSource = billboardPacket(1u << 16u, 15u, 0u, 2u, 1u);
 	badSource.push_back(VDP_PKT_END);
-	expectThrow([&] { sealStream(h, badSource); }, "BBU source rect overflow");
+	sealStream(h, badSource);
+	expectVdpFault(h, bmsx::VDP_FAULT_BBU_SOURCE_OOB, "BBU source rect overflow should latch a device fault");
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad-source BILLBOARD should cancel the build frame");
+	clearVdpFault(h);
 
 	std::vector<uint32_t> overflow;
 	for (size_t index = 0; index <= bmsx::VDP_BBU_BILLBOARD_LIMIT; ++index) {
@@ -584,7 +617,8 @@ void testBbuFaultsAtBillboardPacketAcceptance() {
 		overflow.insert(overflow.end(), packet.begin(), packet.end());
 	}
 	overflow.push_back(VDP_PKT_END);
-	expectThrow([&] { sealStream(h, overflow); }, "BBU billboard overflow");
+	sealStream(h, overflow);
+	expectVdpFault(h, bmsx::VDP_FAULT_BBU_OVERFLOW, "BBU billboard overflow should latch a device fault");
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "overflow BILLBOARD should cancel the build frame");
 }
 
@@ -604,6 +638,7 @@ void testReadbackFaultsLatchStatus() {
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_RD_UNSUPPORTED_MODE, "unsupported read mode should latch fault code");
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_DETAIL) == 99u, "unsupported read mode should latch mode detail");
 	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_FAULT) != 0u, "unsupported read mode should set VDP fault status");
+	clearVdpFault(h);
 }
 
 void testReadbackOobFaultsLatchStatus() {
@@ -649,7 +684,7 @@ int main() {
 		{"FIFO replay and faults", testFifoReplayAndFaults},
 		{"slot registers", testSlotRegisters},
 		{"BLIT source geometry datapath", testBlitSourceGeometryEntersFrameDatapath},
-		{"BLIT and LINE representable geometry", testBlitAndLineConsumeRepresentableGeometry},
+		{"BLIT and LINE DEX faults", testBlitAndLineLatchDexFaults},
 		{"PMU resolved scale datapath", testPmuResolvedScaleFlowsThroughBlitDatapath},
 		{"SBX commits through frame present", testSbxCommitsOnlyThroughFramePresent},
 		{"SBX validates at frame seal", testSbxValidatesAtFrameSeal},

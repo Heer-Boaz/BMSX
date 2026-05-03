@@ -176,6 +176,7 @@ add_library(bmsx_core STATIC
 	machine/scheduler/device.cpp
 	machine/runtime/resource_usage_detector.cpp
 	machine/runtime/runtime.cpp
+	machine/runtime/vdp_submissions.cpp
 	machine/runtime/machine_state.cpp
 	machine/runtime/save_machine_state.cpp
 	machine/runtime/cpu_state.cpp

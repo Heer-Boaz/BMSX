@@ -194,7 +194,8 @@ export class ConsoleCore {
 			const runtime = this.runtime;
 			this.sndmaster.resetPlaybackState();
 			this.debug_runSingleFrameAndPause = false;
-			clearAllQueues(runtime);
+			runtime.machine.vdp.initializeRegisters();
+			clearAllQueues();
 			clearOverlayFrame();
 
 			runtime.frameScheduler.clearQueuedTime();

@@ -1286,6 +1286,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_status", valueNumber(static_cast<double>(IO_VDP_STATUS)));
 	setGlobal("sys_vdp_fault_code", valueNumber(static_cast<double>(IO_VDP_FAULT_CODE)));
 	setGlobal("sys_vdp_fault_detail", valueNumber(static_cast<double>(IO_VDP_FAULT_DETAIL)));
+	setGlobal("sys_vdp_fault_ack", valueNumber(static_cast<double>(IO_VDP_FAULT_ACK)));
 	setGlobal("sys_vdp_rd_mode_rgba8888", valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
 	setGlobal("sys_vdp_rd_status_ready", valueNumber(static_cast<double>(VDP_RD_STATUS_READY)));
 	setGlobal("sys_vdp_rd_status_overflow", valueNumber(static_cast<double>(VDP_RD_STATUS_OVERFLOW)));
@@ -1301,6 +1302,13 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_fault_vram_write_uninitialized", valueNumber(static_cast<double>(VDP_FAULT_VRAM_WRITE_UNINITIALIZED)));
 	setGlobal("sys_vdp_fault_vram_write_oob", valueNumber(static_cast<double>(VDP_FAULT_VRAM_WRITE_OOB)));
 	setGlobal("sys_vdp_fault_vram_write_unaligned", valueNumber(static_cast<double>(VDP_FAULT_VRAM_WRITE_UNALIGNED)));
+	setGlobal("sys_vdp_fault_stream_bad_packet", valueNumber(static_cast<double>(VDP_FAULT_STREAM_BAD_PACKET)));
+	setGlobal("sys_vdp_fault_dex_invalid_scale", valueNumber(static_cast<double>(VDP_FAULT_DEX_INVALID_SCALE)));
+	setGlobal("sys_vdp_fault_dex_invalid_line_width", valueNumber(static_cast<double>(VDP_FAULT_DEX_INVALID_LINE_WIDTH)));
+	setGlobal("sys_vdp_fault_sbx_source_oob", valueNumber(static_cast<double>(VDP_FAULT_SBX_SOURCE_OOB)));
+	setGlobal("sys_vdp_fault_bbu_zero_size", valueNumber(static_cast<double>(VDP_FAULT_BBU_ZERO_SIZE)));
+	setGlobal("sys_vdp_fault_bbu_overflow", valueNumber(static_cast<double>(VDP_FAULT_BBU_OVERFLOW)));
+	setGlobal("sys_vdp_fault_bbu_source_oob", valueNumber(static_cast<double>(VDP_FAULT_BBU_SOURCE_OOB)));
 	setGlobal("sys_vdp_layer_world", valueNumber(0.0));
 	setGlobal("sys_vdp_layer_ui", valueNumber(1.0));
 	setGlobal("sys_vdp_layer_ide", valueNumber(2.0));

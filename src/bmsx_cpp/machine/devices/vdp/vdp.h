@@ -42,7 +42,6 @@ struct VdpState {
 	u32 pmuSelectedBank = 0;
 	VdpPmuUnit::BankWords pmuBankWords{};
 	i32 ditherType = 0;
-	u32 vdpStatus = 0;
 	u32 vdpFaultCode = VDP_FAULT_NONE;
 	u32 vdpFaultDetail = 0;
 };
@@ -115,7 +114,7 @@ public:
 	bool canAcceptSubmittedFrame() const { return !m_pendingFrame.occupied; }
 	void beginSubmittedFrame();
 	void cancelSubmittedFrame();
-	void sealSubmittedFrame();
+	bool sealSubmittedFrame();
 	void setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles);
 	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
@@ -180,6 +179,7 @@ public:
 	};
 
 	struct VdpHostOutput {
+		uint32_t executionToken = 0;
 		const std::vector<BlitterCommand>* executionQueue = nullptr;
 		const std::vector<VdpBbuBillboardEntry>* executionBillboards = nullptr;
 		bool executionWritesFrameBuffer = false;
@@ -208,10 +208,11 @@ private:
 	static void onFifoCtrlWriteThunk(void* context, uint32_t addr, Value value);
 	static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
 	static void onDitherWriteThunk(void* context, uint32_t addr, Value value);
-	static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
-	static void onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
-	static void onSbxCommitWriteThunk(void* context, uint32_t addr, Value value);
-	static void onCameraCommitWriteThunk(void* context, uint32_t addr, Value value);
+		static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
+		static void onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
+		static void onSbxCommitWriteThunk(void* context, uint32_t addr, Value value);
+		static void onCameraCommitWriteThunk(void* context, uint32_t addr, Value value);
+		static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value);
 
 	struct ReadSurface {
 		uint32_t surfaceId = 0;
@@ -260,9 +261,10 @@ private:
 	int m_vdpFifoWordByteCount = 0;
 	std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
 	u32 m_vdpFifoStreamWordCount = 0;
-	BuildingFrame m_buildFrame;
-	ExecutionState m_execution;
-	SubmittedFrame m_activeFrame;
+		BuildingFrame m_buildFrame;
+		ExecutionState m_execution;
+		uint32_t m_hostOutputToken = 0;
+		SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
 	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
 	std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
@@ -308,17 +310,19 @@ private:
 	void enqueueBlitterCommand(BlitterCommand&& command);
 	int calculateVisibleRectCost(double width, double height) const;
 	int calculateAlphaMultiplier(const FrameBufferColor& color) const;
-	void assignBuildToSlot(bool active);
+		bool assignBuildToSlot(bool active);
 	void promotePendingFrame();
 	void scheduleNextService(int64_t nowCycles);
 	bool hasOpenDirectVdpFifoIngress() const;
 	bool hasBlockedSubmitPath() const;
-	void setStatusFlag(uint32_t mask, bool active);
-	void raiseFault(uint32_t code, uint32_t detail);
-	void refreshSubmitBusyStatus();
-	void resetVdpRegisters();
-	void onDitherWrite(Value value);
-	void onVdpRegisterWrite(uint32_t addr);
+		void setStatusFlag(uint32_t mask, bool active);
+		void raiseFault(uint32_t code, uint32_t detail);
+		void clearFault();
+		void refreshSubmitBusyStatus();
+		void resetVdpRegisters();
+		void onDitherWrite(Value value);
+		void onVdpRegisterWrite(uint32_t addr);
+		void onVdpFaultAckWrite();
 	void writePmuBankSelect(u32 value);
 	void onPmuRegisterWindowWrite(uint32_t addr);
 	void syncPmuRegisterWindow();
@@ -328,12 +332,12 @@ private:
 	void syncCameraRegisterWindow();
 	void configureSelectedSlotDimension(u32 word);
 	VdpLatchedGeometry readLatchedGeometry() const;
-	void enqueueLatchedClear();
-	void enqueueLatchedFillRect();
-	void enqueueLatchedDrawLine();
-	void enqueueLatchedBlit();
-	void enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 z, Layer2D layer);
-	void enqueueLatchedCopyRect();
+		bool enqueueLatchedClear();
+		bool enqueueLatchedFillRect();
+		bool enqueueLatchedDrawLine();
+		bool enqueueLatchedBlit();
+		void enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 z, Layer2D layer);
+		bool enqueueLatchedCopyRect();
 	void pushVdpFifoWord(u32 word);
 	void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(u32 wordCount);
@@ -373,21 +377,26 @@ private:
 		u32 firstRegister = 0;
 		u32 count = 0;
 	};
-	RegnPacket decodeRegnPacket(u32 word) const;
-	void latchBillboardPacket(const VdpBbuPacket& packet);
-	void consumeReplayCommandPacket(u32 word);
-	void executeVdpDrawDoorbell(u32 command);
+		bool decodeRegnPacket(u32 word, RegnPacket& packet) const;
+		bool latchBillboardPacket(const VdpBbuPacket& packet);
+		bool consumeReplayCommandPacket(u32 word);
+		bool executeVdpDrawDoorbell(u32 command);
 	void onVdpFifoWrite();
 	void onVdpFifoCtrlWrite();
 	void onVdpCommandWrite();
 	void clearActiveFrame();
 	void commitActiveVisualState();
 	void finishCommittedFrameOnVblankEdge();
-	uint32_t resolveSurfaceIdForSlot(u32 slot) const;
-	void resolveBlitterSourceWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, BlitterSource& target) const;
-	VdpBlitterSurfaceSize resolveBlitterSurfaceForSource(const BlitterSource& source) const;
-	void resolveBlitterSampleWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, ResolvedBlitterSample& target) const;
-	void resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples) const;
+		uint32_t resolveSurfaceIdForSlot(u32 slot) const;
+		bool tryResolveSurfaceIdForSlot(u32 slot, uint32_t& surfaceId, uint32_t faultCode);
+		void resolveBlitterSourceWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, BlitterSource& target) const;
+		uint32_t resolveSlotForSurfaceId(uint32_t surfaceId) const;
+		VdpBlitterSurfaceSize resolveBlitterSurfaceForSource(const BlitterSource& source) const;
+		void resolveBlitterSampleWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, ResolvedBlitterSample& target) const;
+		bool tryResolveBlitterSourceWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, BlitterSource& target, uint32_t faultCode);
+		bool tryResolveBlitterSurfaceForSource(const BlitterSource& source, VdpBlitterSurfaceSize& target, uint32_t faultCode, uint32_t zeroSizeFaultCode);
+		bool tryResolveBlitterSampleWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, ResolvedBlitterSample& target, uint32_t faultCode);
+		bool resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples);
 
 	void commitLiveVisualState();
 };

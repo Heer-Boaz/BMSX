@@ -8,6 +8,7 @@ import {
 	IO_VDP_CAMERA_VIEW,
 	IO_VDP_CMD,
 	IO_VDP_DITHER,
+	IO_VDP_FAULT_ACK,
 	IO_VDP_FAULT_CODE,
 	IO_VDP_FAULT_DETAIL,
 	IO_VDP_PMU_BANK,
@@ -43,6 +44,13 @@ import {
 	VDP_CAMERA_COMMIT_WRITE,
 	VDP_FAULT_RD_OOB,
 	VDP_FAULT_RD_UNSUPPORTED_MODE,
+	VDP_FAULT_STREAM_BAD_PACKET,
+	VDP_FAULT_DEX_INVALID_LINE_WIDTH,
+	VDP_FAULT_DEX_INVALID_SCALE,
+	VDP_FAULT_SBX_SOURCE_OOB,
+	VDP_FAULT_BBU_OVERFLOW,
+	VDP_FAULT_BBU_SOURCE_OOB,
+	VDP_FAULT_BBU_ZERO_SIZE,
 	VDP_FAULT_VRAM_WRITE_UNALIGNED,
 	VDP_RD_MODE_RGBA8888,
 	VDP_SLOT_ATLAS_NONE,
@@ -145,15 +153,32 @@ function sealStream(memory: Memory, vdp: VDP, words: number[]): void {
 	vdp.sealDmaTransfer(VDP_STREAM_BUFFER_BASE, words.length * IO_WORD_SIZE);
 }
 
+function assertVdpFault(memory: Memory, code: number): void {
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), code);
+	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_FAULT) !== 0, true);
+}
+
+function clearVdpFault(memory: Memory): void {
+	memory.writeValue(IO_VDP_FAULT_ACK, 1);
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), 0);
+	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_FAULT), 0);
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_ACK), 0);
+}
+
 test('VDP2D direct lifecycle opens, seals, and rejects invalid edges', () => {
 	const { memory, vdp } = createVdp();
 
-	assert.throws(() => memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME));
-	assert.throws(() => memory.writeValue(IO_VDP_CMD, VDP_CMD_FILL_RECT));
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	clearVdpFault(memory);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_FILL_RECT);
+	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	clearVdpFault(memory);
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	assert.equal(buildFrameOpen(vdp), true);
-	assert.throws(() => memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME));
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
 	assert.equal(buildFrameOpen(vdp), false);
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_NOP);
@@ -242,6 +267,7 @@ test('VDP PMU resolves parallax into BLIT geometry before backend execution', ()
 	assert.ok(workUnits > 0);
 	vdp.advanceWork(workUnits);
 	const output = vdp.readHostOutput();
+	assert.notEqual(output.executionToken, 0);
 	const queue = output.executionQueue;
 	assert.ok(queue);
 	const command = queue;
@@ -252,6 +278,7 @@ test('VDP PMU resolves parallax into BLIT geometry before backend execution', ()
 	assert.equal(command.scaleX[0], 1);
 	assert.equal(command.scaleY[0], 1);
 	vdp.completeHostExecution(output);
+	assert.equal(vdp.readHostOutput().executionToken, 0);
 });
 
 test('VDP PMU bank registers resolve DRAW_CTRL bank and signed weight', () => {
@@ -338,13 +365,14 @@ test('VDP2D FIFO replays registers, commands, and PKT_END frame sealing', () => 
 test('VDP2D FIFO packet faults cancel the frame while preserving prior register side effects', () => {
 	const { memory, vdp } = createVdp();
 
-	assert.throws(() => sealStream(memory, vdp, [
+	sealStream(memory, vdp, [
 		VDP_PKT_REG1 | VDP_REG_BG_COLOR,
 		0xff102030,
 		0x04000000,
 		VDP_PKT_END,
-	]));
+	]);
 
+	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
 	assert.equal(memory.readValue(IO_VDP_REG_BG_COLOR), 0xff102030);
 	assert.equal(activeQueue(vdp).length, 0);
 });
@@ -352,9 +380,14 @@ test('VDP2D FIFO packet faults cancel the frame while preserving prior register 
 test('VDP2D FIFO rejects reserved bits and register ranges', () => {
 	const { memory, vdp } = createVdp();
 
-	assert.throws(() => sealStream(memory, vdp, [VDP_PKT_CMD | (1 << 16) | VDP_CMD_CLEAR, VDP_PKT_END]));
-	assert.throws(() => sealStream(memory, vdp, [VDP_PKT_REG1 | 18, 0, VDP_PKT_END]));
-	assert.throws(() => sealStream(memory, vdp, [VDP_PKT_REGN | (2 << 16) | 17, 0, 0, VDP_PKT_END]));
+	sealStream(memory, vdp, [VDP_PKT_CMD | (1 << 16) | VDP_CMD_CLEAR, VDP_PKT_END]);
+	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	clearVdpFault(memory);
+	sealStream(memory, vdp, [VDP_PKT_REG1 | 18, 0, VDP_PKT_END]);
+	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	clearVdpFault(memory);
+	sealStream(memory, vdp, [VDP_PKT_REGN | (2 << 16) | 17, 0, 0, VDP_PKT_END]);
+	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
 });
 
 test('VDP2D SLOT_INDEX latches raw words and SLOT_DIM applies in-order through REGN', () => {
@@ -387,7 +420,7 @@ test('VDP2D BLIT representable source geometry enters the frame datapath', () =>
 	assert.equal((vdp as any).activeFrame.occupied, true);
 });
 
-test('VDP2D BLIT and LINE consume representable register geometry directly', () => {
+test('VDP2D BLIT and LINE latch cart-visible DEX faults without register rollback', () => {
 	{
 		const { memory, vdp } = createVdp();
 		memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
@@ -400,8 +433,8 @@ test('VDP2D BLIT and LINE consume representable register geometry directly', () 
 
 		memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
 		assert.equal(memory.readValue(IO_VDP_REG_DRAW_SCALE_X), 0xffff0000);
-		assert.equal(buildFrameOpen(vdp), true);
-		memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+		assertVdpFault(memory, VDP_FAULT_DEX_INVALID_SCALE);
+		assert.equal(buildFrameOpen(vdp), false);
 	}
 	{
 		const { memory, vdp } = createVdp();
@@ -410,8 +443,8 @@ test('VDP2D BLIT and LINE consume representable register geometry directly', () 
 
 		memory.writeValue(IO_VDP_CMD, VDP_CMD_DRAW_LINE);
 		assert.equal(memory.readValue(IO_VDP_REG_LINE_WIDTH), 0);
-		assert.equal(buildFrameOpen(vdp), true);
-		memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+		assertVdpFault(memory, VDP_FAULT_DEX_INVALID_LINE_WIDTH);
+		assert.equal(buildFrameOpen(vdp), false);
 	}
 });
 
@@ -472,6 +505,7 @@ test('VDP readback faults latch status instead of throwing', () => {
 	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_RD_UNSUPPORTED_MODE);
 	assert.equal(memory.readIoU32(IO_VDP_FAULT_DETAIL), 99);
 	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_FAULT) !== 0, true);
+	clearVdpFault(memory);
 });
 
 test('VDP readback OOB faults latch status instead of throwing', () => {
@@ -528,7 +562,8 @@ test('VDP SBX validates face words during frame seal', () => {
 	writeSkyboxMmio(memory, VDP_SBX_CONTROL_ENABLE, 2, 1);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 
-	assert.throws(() => memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME));
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	assertVdpFault(memory, VDP_FAULT_SBX_SOURCE_OOB);
 	assert.equal(buildFrameOpen(vdp), false);
 	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
 });
@@ -555,7 +590,8 @@ test('VDP SBX stores raw control bits and faults bad face words at frame seal', 
 	assert.doesNotThrow(() => sealStream(memory, vdp, [...skyboxPacket(2, 4, 5), VDP_PKT_END]));
 	vdp.presentReadyFrameOnVblankEdge();
 	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
-	assert.throws(() => sealStream(memory, vdp, [...skyboxPacket(VDP_SBX_CONTROL_ENABLE, 17, 1), VDP_PKT_END]));
+	sealStream(memory, vdp, [...skyboxPacket(VDP_SBX_CONTROL_ENABLE, 17, 1), VDP_PKT_END]);
+	assertVdpFault(memory, VDP_FAULT_SBX_SOURCE_OOB);
 	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
 });
 
@@ -627,18 +663,25 @@ test('VDP BBU faults only at BILLBOARD packet latch', () => {
 	const { memory, vdp } = createVdp();
 
 	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
-	assert.throws(() => sealStream(memory, vdp, [...billboardPacket(0), VDP_PKT_END]));
+	sealStream(memory, vdp, [...billboardPacket(0), VDP_PKT_END]);
+	assertVdpFault(memory, VDP_FAULT_BBU_ZERO_SIZE);
 	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
-	assert.throws(() => sealStream(memory, vdp, [...billboardPacket(1 << 16, 0, 0, 1, 1, 1), VDP_PKT_END]));
+	clearVdpFault(memory);
+	sealStream(memory, vdp, [...billboardPacket(1 << 16, 0, 0, 1, 1, 1), VDP_PKT_END]);
+	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
 	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
-	assert.throws(() => sealStream(memory, vdp, [...billboardPacket(1 << 16, 15, 0, 2, 1), VDP_PKT_END]));
+	clearVdpFault(memory);
+	sealStream(memory, vdp, [...billboardPacket(1 << 16, 15, 0, 2, 1), VDP_PKT_END]);
+	assertVdpFault(memory, VDP_FAULT_BBU_SOURCE_OOB);
 	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
+	clearVdpFault(memory);
 
 	const stream: number[] = [];
 	for (let index = 0; index <= VDP_BBU_BILLBOARD_LIMIT; index += 1) {
 		stream.push(...billboardPacket(1 << 16, 0, 0, 1, 1));
 	}
 	stream.push(VDP_PKT_END);
-	assert.throws(() => sealStream(memory, vdp, stream));
+	sealStream(memory, vdp, stream);
+	assertVdpFault(memory, VDP_FAULT_BBU_OVERFLOW);
 	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
 });

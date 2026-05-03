@@ -445,7 +445,6 @@ BinValue encodeVdpState(const VdpState& state) {
 	object["pmuSelectedBank"] = static_cast<i64>(state.pmuSelectedBank);
 	object["pmuBankWords"] = encodeFixedArray(state.pmuBankWords, encodeScalar<i64, u32>);
 	object["ditherType"] = static_cast<i64>(state.ditherType);
-	object["vdpStatus"] = static_cast<i64>(state.vdpStatus);
 	object["vdpFaultCode"] = static_cast<i64>(state.vdpFaultCode);
 	object["vdpFaultDetail"] = static_cast<i64>(state.vdpFaultDetail);
 	return BinValue(std::move(object));
@@ -460,7 +459,6 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 	state.pmuSelectedBank = requireU32(requireField(object, "pmuSelectedBank", label), "machine.vdp.pmuSelectedBank");
 	state.pmuBankWords = decodeU32Array<VDP_PMU_BANK_WORD_COUNT>(requireField(object, "pmuBankWords", label), "machine.vdp.pmuBankWords");
 	state.ditherType = requireI32(requireField(object, "ditherType", label), "machine.vdp.ditherType");
-	state.vdpStatus = requireU32(requireField(object, "vdpStatus", label), "machine.vdp.vdpStatus");
 	state.vdpFaultCode = requireU32(requireField(object, "vdpFaultCode", label), "machine.vdp.vdpFaultCode");
 	state.vdpFaultDetail = requireU32(requireField(object, "vdpFaultDetail", label), "machine.vdp.vdpFaultDetail");
 	return state;
@@ -499,7 +497,6 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	state.pmuSelectedBank = base.pmuSelectedBank;
 	state.pmuBankWords = base.pmuBankWords;
 	state.ditherType = base.ditherType;
-	state.vdpStatus = base.vdpStatus;
 	state.vdpFaultCode = base.vdpFaultCode;
 	state.vdpFaultDetail = base.vdpFaultDetail;
 	state.vramStaging = requireBinary(requireField(object, "vramStaging", label), "machine.vdp.vramStaging");

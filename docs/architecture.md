@@ -166,162 +166,24 @@ must reach the backend texture directly, without adding a mandatory CPU
 write-through pass, while still keeping the cart-visible contract as MMIO/VRAM
 instead of host texture APIs.
 
-Status: complete for the VDP/render singleton-discovery and framebuffer-page
-ownership slice. `render/vdp` remains the VDP video-hardware implementation,
-but it no longer discovers host/runtime singletons from inside the VDP video
-path, and framebuffer texture pages are owned as concrete VDP video state
-rather than as string-key forwarding wrappers.
+Status: current cleanup target. The VDP/render singleton-discovery and renderer-callback leaks are being replaced by a stricter device/host-output boundary: the VDP device owns registers, latches, VRAM slot state, frame submission, fault latches, and explicit host-output transactions; render code consumes those transactions and acks execution tokens.
 
 Current evidence:
 
-- `VDP::initializeFrameBufferSurface()` still creates a framebuffer-backed
-  image slot and initializes display readback state from inside the device, but
-  framebuffer texture creation and upload are now render-owned.
-- In the TS runtime, direct framebuffer VRAM writes call the owned render-page
-  texture-region write immediately. The hot path does not probe for a texture
-  and does not write through a CPU framebuffer mirror first.
-- In the C++ runtime, direct framebuffer VRAM writes call the native VDP
-  framebuffer texture-region write immediately. There is no installed callback,
-  service, provider, lazy initializer, or function-pointer facade on the write
-  path.
-- Framebuffer texture creation is an explicit runtime/render initialization
-  step in both TS and C++. Render context restore creates/seeds render and
-  display framebuffer textures, then VDP execution/presentation paths assume
-  that contract.
-- Framebuffer render/display texture handles are concrete owned page state in
-  both TS and C++. Page presentation swaps those handles along with the
-  texture-manager entries; framebuffer read/write helpers hit the owned handles
-  directly instead of rediscovering them through a generic key lookup per call.
-- VDP atlas/slot textures follow the same split: setup initializes the textures
-  and uploads full slot contents; render sync resizes only on surface-size
-  changes and otherwise uploads dirty rows directly to existing backend
-  textures.
-- `VDP::captureSaveState()` and `VDP::restoreSaveState()` now correctly include
-  VDP surface pixels, VRAM staging, render framebuffer pixels, and display
-  framebuffer pixels. Because direct framebuffer VRAM writes bypass the CPU
-  mirror, save/readback captures framebuffer pages from the backend texture at
-  the boundary where serialized state is requested.
-- The GLES2 blitter now syncs rendered framebuffer pixels back into VDP-owned
-  readback state after execution, so MMIO readback and save-state capture no
-  longer depend on render backend reads from inside the VDP device.
-- VBLANK frame commit remains a direct VDP video-hardware path. The VDP device
-  calls the render-side VDP framebuffer owner directly for page swaps and
-  framebuffer texture-region writes; this preserves the hot-path performance
-  property instead of staging sparse writes through an indirect dirty-row flush.
-- The native VDP fault helper no longer includes `core/engine.h`; it depends on
-  the shared primitive fault macro only, so device-side validation does not pull
-  the host shell into VDP compilation.
-- `render/vdp/texture_transfer` now owns concrete VDP texture memory installed
-  during render setup. Framebuffer and atlas upload/readback helpers use that
-  texture memory directly instead of looking up `engineCore` or
-  `EngineCore::instance()`.
-- The quality scanner no longer skips single-line wrappers because their names
-  look boundary-like or because call usage is high. Legitimate tiny boundary
-  functions now require explicit local `single_line_method_pattern` comments;
-  the VDP framebuffer/readback exceptions are visible in the owning files.
-- TS and C++ VDP blitter execution receive frame timing explicitly from the
-  runtime execution edge. They no longer import runtime singletons for frame
-  time or backend discovery.
-- TS VDP command ingestion now mirrors the native command processor shape:
-  `Machine` constructs the VDP with the concrete CPU/API/memory owners, and
-  packet decoding receives those owners directly instead of looking up
-  a global runtime singleton from inside the device hot path.
-- TS and C++ VDP now expose cart-visible fault latches as VDP status registers:
-    `IO_VDP_STATUS` carries the fault bit and `IO_VDP_FAULT_CODE` /
-    `IO_VDP_FAULT_DETAIL` carry the machine-visible reason. VRAM write/readback
-    faults caused by cart-visible addresses or read modes latch these registers
-    and return/drop like device behavior instead of using host exceptions as the
-    primary semantic.
-- `IO_VDP_DITHER` is a live VDP register. MMIO writes update the live latch
-    directly in both runtimes; the old `syncRegisters()` read-self-back pass is
-    gone.
-- VDP VRAM power-on garbage is seeded from explicit machine/boot entropy words
-    instead of `Math.random`, `Date.now`, or host wall-clock state. Save-state
-    schema version 5 includes the VDP status/fault latch words so replay/load can
-    restore the same device-visible state.
-- The 18-word `IO_VDP_CMD_ARG0` latch bank is the DEX/2D blitter ingress, not
-  the whole VDP frontend. Direct MMIO writes and FIFO `REG1`/`REGN` replay feed
-  the same latches, `IO_VDP_CMD`/FIFO `CMD` doorbells snapshot those latches,
-  and register 11 is `DRAW_CTRL` for DEX flip/PMU control. `DRAW_CTRL` bits
-  0..1 are flips, bits 2..7 are blend mode, bits 8..15 select a PMU bank, and
-  bits 16..31 are signed Q8.8 PMU weight. Blend mode 0 is the current normal
-  mode; nonzero blend modes fault at DEX latch until the hardware contract
-  defines them.
-- Current parallax status is DEX/PMU-owned parallax execution. PMU register
-  writes latch raw bank words. The PMU bank selector mirrors through low 8 bits,
-  and PMU bank control words are stored/saved raw with no functional effect yet.
-  PMU X/Y are signed Q16.16 offsets and PMU scale X/Y are signed Q16.16 scale
-  targets. DEX uses the signed Q8.8 `DRAW_CTRL` weight for PMU offsets and the
-  absolute weight for PMU scale influence. DEX resolves the selected bank into
-      per-BLIT `dstX`/`dstY`/scale geometry when DEX latches the BLIT, faults invalid
-  input or resolved BLIT scales there, and faults invalid LINE width at LINE
-      command-latch state. WebGL, headless, native GLES2, and software blitters draw resolved
-  geometry. There is no VDP parallax rig or clock state.
-- Native render shared 2D submissions now match the TS ingress shape: sprite,
-  rect, polygon, and glyph rendering programs raw `VDP_REG_*` latches and rings
-  the direct DEX command doorbell. `VDP::enqueueBlit`, `enqueueFillRect`,
-  `enqueueDrawLine`, `enqueueDrawPoly`, `enqueueGlyphRun`, and related
-  high-level scene-entry methods are gone from the native public VDP surface.
-  Payload tile-run routing is also private VDP command-processor ingress for
-  sealed command payloads, with shared tile clipping/source replay owned by the
-  VDP instead of duplicated memory-vs-word-stream loops.
-- TS and C++ now split real VDP unit state out of the parent VDP object where
-  the ownership exists today. Camera bank 0 is always-present VDP state; reset
-  initializes it to the documented perspective projection, identity view, and
-  zero eye. Firmware `set_camera` writes raw float32 words into the
-  `IO_VDP_CAMERA_*` register window and commits them through the camera
-  doorbell. SBX and BBU consume camera bank 0; render backends never synthesize
-  a camera. `VdpPmuUnit` owns PMU bank registers, selected bank state, and PMU
-  BLIT resolve. `VdpSbxUnit` owns live and visible SBX skybox face words. SBX
-  ingress is now either the `IO_VDP_SBX_*` register window plus commit doorbell
-  or the sealed VDP command stream: `SKYBOX` packets carry a raw control word
-  plus six slot/u/v/w/h face records as packed hardware words. The parent `VDP`
-  owns the submitted-frame latch: CPU writes update live SBX state only, frame
-  seal copies live SBX face words into the submitted frame and
-  resolves/validates all referenced slots and UV rectangles, and VBlank present
-  makes that submitted SBX state visible. Render handoff consumes one
-  host-output latch containing ready DEX commands, execution BBU RAM, visible
-  dither, camera bank 0, committed SBX samples, committed BBU RAM, and dirty
-  surface slots. Render code no longer pulls those pieces through scattered
-  committed-state accessors or `takeReadyExecution*` calls, and it must not
-  discover SBX/BBU faults. TS and C++ DEX blitter backends consume that
-  host-output latch instead of receiving the whole VDP object during command
-  execution; the render bridge owns texture uploads/readbacks and only acks
-  execution completion back to the device. The parent `VDP` remains the bus
-  interface, frame lifecycle owner, and backend handoff point, matching the
-  MAME-like shape where a top-level video device coordinates child hardware
-  state rather than becoming one unstructured monolith.
-- Native render-context capture uses the same host-output/public readback
-  boundary for framebuffer pixels. It no longer has friend access to VDP
-  private VRAM slot or display readback storage.
-- `VdpBbuUnit` is now the first real billboard-unit slice. BBU ingress is the
-  VDP sealed command stream. `BILLBOARD` packets are decoded by the BBU unit
-  from packed hardware words: UV/WH are two u16 fields, x/y/z are signed
-  Q16.16 words, size is unsigned Q16.16 in the active billboard coordinate
-  space, color is raw AARRGGBB, and the current control word must be zero. The
-  active BBU coordinate mode is camera-space through camera bank 0: x/y/z are
-  camera/world-space coordinates and size is billboard width in the same unit
-      system. The parent VDP only routes the packet and resolves the BBU
-  source against configured VRAM slots before the entry is latched into
-  build/submitted/active frame billboard instance RAM. The 1024-entry limit is a
-  frame-local BBU hardware fault, not a render-queue guard. VBlank present
-  publishes those resolved entries as the presented-frame BBU draw list, and
-  renderer backends consume that list as output sinks; render queues do not call
-  back into the VDP to validate billboard source, size, or count. The old
-  high-level particle queue is not BMSX machine ingress; carts that want BBU
-  work must write `BILLBOARD` command packets.
-- TS and C++ VDP render-surface texture binding no longer passes a fake VDP
-  object into texture lookup. Surface-size resolution still asks the VDP, while
-  texture-handle binding is an explicit render-side texture-memory operation.
-- `src/bmsx/render/vdp` and `src/bmsx_cpp/render/vdp` no longer contain
-  `engineCore`, runtime singleton access, `EngineCore::instance()`,
-  `Runtime::instance()`, `core/engine`, or `machine/runtime/runtime`
-  dependencies.
-- `src/bmsx/machine/devices/vdp` and `src/bmsx_cpp/machine/devices/vdp` still
-  depend on the concrete `render/vdp` video-hardware owner for direct
-  framebuffer texture mutation/readback. That dependency is intentional:
-  `render/vdp` is not a generic host renderer here; it is the accelerated VDP
-  video-memory backend.
+- Cart-visible VDP ingress is MMIO/VRAM/DMA/VBlank only. Firmware/runtime 2D submissions program raw `IO_VDP_REG_*` words through `Memory.writeValue()` and ring `IO_VDP_CMD`; render/shared queues no longer import VDP registers or call device methods.
+- `src/bmsx/render/shared` and `src/bmsx_cpp/render/shared` are render-side feature queues only. Boundary tests fail on `writeVdpRegister`, `consumeDirectVdpCommand`, `VDP_REG_`, or VDP register-file imports in those directories.
+- The VDP device code does not import framebuffer or host render modules. Framebuffer/texture upload, page presentation, and backend synchronization sit on the render/runtime side of the host bridge.
+- VDP host output is one explicit transaction: a ready execution queue, BBU RAM, camera/SBX/dither state, dirty surface slots, framebuffer readback handle, and an execution token. The renderer acks with the same token; stale or impossible acks remain emulator bugs.
+- TS and C++ VDP expose the same public contract shape: MMIO/DMA/VRAM entry points, frame/VBlank progression, save-state capture/restore, host-output read, surface-dirty clear, and tokened host execution ack.
+- TS and C++ VDP expose cart-visible fault latches as VDP status registers: `IO_VDP_STATUS` carries the fault bit, `IO_VDP_FAULT_CODE` / `IO_VDP_FAULT_DETAIL` carry the sticky reason, and `IO_VDP_FAULT_ACK` is write-one-to-clear. Save-state stores the sticky fault code/detail plus device state, not raw transient status pins.
+- Cart-originating VDP faults latch and cancel/drop device work instead of throwing host exceptions. Packet/header/count problems use `VDP_FAULT_STREAM_BAD_PACKET`; invalid DEX scale uses `VDP_FAULT_DEX_INVALID_SCALE`; invalid LINE width uses `VDP_FAULT_DEX_INVALID_LINE_WIDTH`; SBX source overflow uses `VDP_FAULT_SBX_SOURCE_OOB`; BBU zero size, FIFO overflow, and source overflow use `VDP_FAULT_BBU_ZERO_SIZE`, `VDP_FAULT_BBU_OVERFLOW`, and `VDP_FAULT_BBU_SOURCE_OOB`.
+- Exceptions are reserved for emulator bugs and impossible internal states, such as broken save-state schema, impossible host transaction invariants, or internal surface registration mistakes.
+- `IO_VDP_DITHER` is a live VDP register. MMIO writes update the live latch directly in both runtimes; the old `syncRegisters()` read-self-back pass is gone.
+- VDP VRAM power-on garbage is seeded from explicit machine/boot entropy words instead of `Math.random`, `Date.now`, or host wall-clock state.
+- The 18-word `IO_VDP_CMD_ARG0` latch bank is the DEX/2D blitter ingress, not the whole VDP frontend. Direct MMIO writes and FIFO `REG1`/`REGN` replay feed the same latches, `IO_VDP_CMD`/FIFO `CMD` doorbells snapshot those latches, and register 11 is `DRAW_CTRL` for DEX flip/PMU control.
+- Current parallax status is DEX/PMU-owned parallax execution. PMU register writes latch raw bank words. DEX resolves the selected bank into per-BLIT `dstX`/`dstY`/scale geometry when it latches BLIT work, and DEX/LINE faults are surfaced through VDP fault latches.
+- Camera, PMU, SBX, and BBU state are real VDP unit state. SBX ingress is either the `IO_VDP_SBX_*` register window plus commit doorbell or a sealed `SKYBOX` packet. BBU ingress is the sealed `BILLBOARD` packet stream. Render backends consume resolved host-output state; they do not validate or program VDP device state.
+- `src/bmsx/render/vdp` and `src/bmsx_cpp/render/vdp` remain the renderer/backend side of the VDP host bridge. They may upload textures, execute ready blitter queues, present framebuffer pages, and clear dirty-surface pins through the explicit VDP host-output contract; they must not be imported by `machine/devices/vdp`.
 
 Risk:
 
