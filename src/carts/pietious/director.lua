@@ -84,7 +84,7 @@ function director:bind_visual()
 		if not self.seal_flash_on then
 			return
 		end
-		local c<const> = {r=1,g=1,b=1,a=0.7};memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),sys_vdp_cmd_fill_rect,10,0,0,constants.room.tile_origin_y,display_width(),display_height(),500,sys_vdp_layer_ui,c.r,c.g,c.b,c.a)
+		local c<const> = {r=1,g=1,b=1,a=0.7};vdp_fill_rect_rgba(0, constants.room.tile_origin_y, display_width(), display_height(), 500, sys_vdp_layer_ui, c.r, c.g, c.b, c.a)
 	end
 end
 

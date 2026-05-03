@@ -2,6 +2,8 @@
 -- system quick menu (select+start)
 
 local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
+local vdp_stream<const> = require('bios/vdp_stream')
+local vdp_image<const> = require('bios/vdp_image')
 
 local colors<const> = {
 	panel = sys_palette_color(1),
@@ -234,74 +236,21 @@ function menu.draw()
 	if x < 0 then x = 0 end
 	if y < 0 then y = 0 end
 	local z<const> = 10000
-	memwrite(
-		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
-		sys_vdp_cmd_fill_rect,
-		10,
-		0,
-		x,
-		y + box_y,
-		x + menu_w,
-		y + box_y + box_h,
-		z,
-		sys_vdp_layer_ui,
-		colors.panel.r,
-		colors.panel.g,
-		colors.panel.b,
-		colors.panel.a
-	)
+	vdp_stream.fill_rect_rgba(x, y + box_y, x + menu_w, y + box_y + box_h, z, sys_vdp_layer_ui, colors.panel.r, colors.panel.g, colors.panel.b, colors.panel.a)
 	local font<const> = get_default_font()
-	local font_id<const> = font.id
 	local text_z<const> = z + 1
 	local title_len<const> = string.len(title)
 	local title_x<const> = x + ((menu_w - (title_len * font_w)) // 2)
 	local title_y<const> = y + ((title_h - font_h) // 2)
 	if title_len > 0 then
-		memwrite(
-			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
-			sys_vdp_cmd_glyph_run,
-			17,
-			0,
-			title,
-			title_x,
-			title_y,
-			text_z,
-			font_id,
-			0,
-			0x7fffffff,
-			sys_vdp_layer_ui,
-			colors.title.r,
-			colors.title.g,
-			colors.title.b,
-			colors.title.a,
-			0,
-			0,
-			0,
-			0,
-			0
-		)
+		vdp_image.write_glyph_line_rgba(font, title, title_x, title_y, text_z, sys_vdp_layer_ui, colors.title.r, colors.title.g, colors.title.b, colors.title.a, 0, 0, 0, 0, 0)
 	end
 
 	local row_y = y + box_y + padding
 	for i = 1, #entries do
 		local entry<const> = entries[i]
 		if i == state.selected then
-			memwrite(
-				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
-				sys_vdp_cmd_fill_rect,
-				10,
-				0,
-				x,
-				row_y - 2,
-				x + menu_w,
-				row_y + line_h,
-				z,
-				sys_vdp_layer_ui,
-				colors.highlight.r,
-				colors.highlight.g,
-				colors.highlight.b,
-				colors.highlight.a
-			)
+			vdp_stream.fill_rect_rgba(x, row_y - 2, x + menu_w, row_y + line_h, z, sys_vdp_layer_ui, colors.highlight.r, colors.highlight.g, colors.highlight.b, colors.highlight.a)
 		end
 		local value<const> = entry_value_label(entry)
 		local line = entry.label
@@ -313,29 +262,7 @@ function menu.draw()
 		local text_y<const> = row_y + ((line_h - font_h) // 2)
 		local line_len<const> = string.len(line)
 		if line_len > 0 then
-			memwrite(
-				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
-				sys_vdp_cmd_glyph_run,
-				17,
-				0,
-				line,
-				text_x,
-				text_y,
-				text_z,
-				font_id,
-				0,
-				0x7fffffff,
-				sys_vdp_layer_ui,
-				text_color.r,
-				text_color.g,
-				text_color.b,
-				text_color.a,
-				0,
-				0,
-				0,
-				0,
-				0
-			)
+			vdp_image.write_glyph_line_rgba(font, line, text_x, text_y, text_z, sys_vdp_layer_ui, text_color.r, text_color.g, text_color.b, text_color.a, 0, 0, 0, 0, 0)
 		end
 		row_y = row_y + line_h
 	end

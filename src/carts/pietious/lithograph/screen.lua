@@ -34,29 +34,7 @@ function lithograph_screen:draw_screen()
 		for i = 1, #lines do
 			local line<const> = lines[i]
 			if string.len(line) > 0 then
-				memwrite(
-					vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
-					sys_vdp_cmd_glyph_run,
-					17,
-					0,
-					line,
-					(screen_width - font_module.measure_line_width(text_font, line)) // 2,
-					base_y + ((i - 1) * text_font.line_height),
-					341,
-					text_font.id,
-					0,
-					0x7fffffff,
-					sys_vdp_layer_ui,
-					1,
-					1,
-					1,
-					1,
-					0,
-					0,
-					0,
-					0,
-					0
-				)
+				vdp_glyph_line_rgba(text_font, line, (screen_width - font_module.measure_line_width(text_font, line)) // 2, base_y + ((i - 1) * text_font.line_height), 341, sys_vdp_layer_ui, 1, 1, 1, 1, 0, 0, 0, 0, 0)
 			end
 		end
 	end

@@ -38,22 +38,7 @@ local submit_rect_state<const> = function(rect)
 	if not rect.visible or rect.a <= 0 or rect.width <= 0 or rect.height <= 0 then
 		return
 	end
-	memwrite(
-		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
-		sys_vdp_cmd_fill_rect,
-		10,
-		0,
-		rect.x,
-		rect.y,
-		rect.x + rect.width,
-		rect.y + rect.height,
-		rect.z,
-		sys_vdp_layer_world,
-		rect.r,
-		rect.g,
-		rect.b,
-		rect.a
-	)
+	vdp_fill_rect_rgba(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, rect.z, sys_vdp_layer_world, rect.r, rect.g, rect.b, rect.a)
 end
 
 local create_transition_visuals<const> = function()
@@ -386,6 +371,7 @@ while true do
 	until (flags & irq_vblank) ~= 0
 	vdp_stream_cursor = sys_vdp_stream_base
 	draw_world()
+	vdp_stream_finish()
 	do
 		local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
 		if used_bytes ~= 0 then

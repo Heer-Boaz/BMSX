@@ -1,5 +1,6 @@
 local round_to_nearest<const> = require('bios/util/round_to_nearest')
 local romdir<const> = require('bios/romdir')
+local vdp_stream<const> = require('bios/vdp_stream')
 
 local vdp_image<const> = {}
 local cache<const> = {}
@@ -122,29 +123,20 @@ end
 
 function vdp_image.write_blit_rgba(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, r, g, b, a, parallax_weight)
 	local rect<const> = vdp_image.rect(imgid)
-	memwrite(
-		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
-		sys_vdp_cmd_blit,
-		17,
-		0,
-			vdp_image.slot(rect),
-			rect.u,
-			rect.v,
-			rect.w,
-			rect.h,
-		x,
-		y,
-		z,
-		layer,
-		scale_x,
-		scale_y,
-		flip_flags,
-		r,
-		g,
-		b,
-		a,
-		parallax_weight
-	)
+	vdp_stream.blit_source_rgba(vdp_image.slot(rect), rect.u, rect.v, rect.w, rect.h, x, y, z, layer, scale_x, scale_y, flip_flags, r, g, b, a, parallax_weight)
+end
+
+function vdp_image.write_glyph_line_rgba(font, line, x, y, z, layer, r, g, b, a, background_enabled, bg_r, bg_g, bg_b, bg_a)
+	local cursor_x = x
+	local line_length<const> = string.len(line)
+	for i = 1, line_length do
+		local glyph<const> = font.glyphs[line:sub(i, i)] or font.glyphs['?']
+		if background_enabled ~= 0 then
+			vdp_stream.fill_rect_rgba(cursor_x, y, cursor_x + glyph.width, y + glyph.height, z - 1, layer, bg_r, bg_g, bg_b, bg_a)
+		end
+		vdp_image.write_blit_rgba(glyph.imgid, cursor_x, y, z, layer, 1, 1, 0, r, g, b, a, 0)
+		cursor_x = cursor_x + glyph.advance
+	end
 end
 
 return vdp_image

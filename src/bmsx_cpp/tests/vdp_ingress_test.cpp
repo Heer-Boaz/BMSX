@@ -101,6 +101,13 @@ void sealStream(Harness& harness, const std::vector<uint32_t>& words) {
 	harness.vdp.sealDmaTransfer(bmsx::VDP_STREAM_BUFFER_BASE, words.size() * bmsx::IO_WORD_SIZE);
 }
 
+void sealFifo(Harness& harness, const std::vector<uint32_t>& words) {
+	for (const uint32_t word : words) {
+		writeIo(harness.memory, bmsx::IO_VDP_FIFO, word);
+	}
+	writeIo(harness.memory, bmsx::IO_VDP_FIFO_CTRL, bmsx::VDP_FIFO_CTRL_SEAL);
+}
+
 std::vector<uint32_t> billboardPacket(uint32_t sizeWord, uint32_t u = 2u, uint32_t v = 3u, uint32_t w = 4u, uint32_t h = 5u, uint32_t control = 0u) {
 	return {
 		VDP_BILLBOARD_HEADER,
@@ -375,6 +382,32 @@ void testFifoReplayAndFaults() {
 	clearVdpFault(range);
 	sealStream(range, {VDP_PKT_REGN | (2u << 16) | 17u, 0u, 0u, VDP_PKT_END});
 	expectVdpFault(range, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "REGN range should latch stream fault");
+}
+
+void testStreamDexFaultsAbortSealedFrame() {
+	Harness fifo;
+	writeIo(fifo.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writeIo(fifo.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
+	writeIo(fifo.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
+	writeIo(fifo.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
+	writeIo(fifo.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0u);
+	writeIo(fifo.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
+	sealFifo(fifo, {VDP_PKT_CMD | VDP_CMD_BLIT, VDP_PKT_END});
+	expectVdpFault(fifo, bmsx::VDP_FAULT_DEX_INVALID_SCALE, "FIFO DEX invalid scale should latch a DEX fault");
+	require(fifo.vdp.getPendingRenderWorkUnits() == 0, "FIFO DEX fault should abort the sealed stream frame");
+	require(fifo.vdp.canAcceptVdpSubmit(), "FIFO DEX fault should leave the submit path open");
+
+	Harness dma;
+	writeIo(dma.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writeIo(dma.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
+	writeIo(dma.memory, bmsx::IO_VDP_REG_SRC_UV, 15u);
+	writeIo(dma.memory, bmsx::IO_VDP_REG_SRC_WH, 2u | (16u << 16));
+	writeIo(dma.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0x00010000u);
+	writeIo(dma.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
+	sealStream(dma, {VDP_PKT_CMD | VDP_CMD_BLIT, VDP_PKT_END});
+	expectVdpFault(dma, bmsx::VDP_FAULT_DEX_SOURCE_OOB, "DMA DEX source OOB should latch a DEX fault");
+	require(dma.vdp.getPendingRenderWorkUnits() == 0, "DMA DEX fault should abort the sealed stream frame");
+	require(dma.vdp.canAcceptVdpSubmit(), "DMA DEX fault should leave the submit path open");
 }
 
 void testSlotRegisters() {
@@ -693,6 +726,7 @@ int main() {
 		{"PMU bank registers resolve DRAW_CTRL", testPmuBankRegistersResolveDrawCtrl},
 		{"PMU scale uses absolute weight", testPmuScaleUsesAbsoluteWeight},
 		{"FIFO replay and faults", testFifoReplayAndFaults},
+		{"sealed stream DEX faults", testStreamDexFaultsAbortSealedFrame},
 		{"slot registers", testSlotRegisters},
 		{"BLIT source DEX faults", testBlitSourceFaultsLatchDexFaults},
 		{"BLIT and LINE DEX faults", testBlitAndLineLatchDexFaults},

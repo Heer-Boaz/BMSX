@@ -3,6 +3,8 @@
 
 local clamp_int<const> = require('bios/util/clamp_int')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
+local vdp_stream<const> = require('bios/vdp_stream')
+local vdp_image<const> = require('bios/vdp_image')
 
 local reset_scroll_state<const> = function(state) state.top = 0 end
 local scroll_window<const> = function(lines, top, window_size)
@@ -404,10 +406,9 @@ render_boot_screen = function(scroll_delta)
 	local left<const> = 8
 	local top<const> = content_top
 	local font<const> = get_default_font()
-	local font_id<const> = font.id
 
-	do local c<const> = sys_palette_color(color_bg);memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 4), sys_vdp_cmd_clear, 4, 0, c.r, c.g, c.b, c.a) end
-	do local c<const> = sys_palette_color(color_header_bg);memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10), sys_vdp_cmd_fill_rect, 10, 0, 0, 0, width, 24, 0, sys_vdp_layer_world, c.r, c.g, c.b, c.a) end
+	do local c<const> = sys_palette_color(color_bg);vdp_stream.clear_rgba(c.r, c.g, c.b, c.a) end
+	do local c<const> = sys_palette_color(color_header_bg);vdp_stream.fill_rect_rgba(0, 0, width, 24, 0, sys_vdp_layer_world, c.r, c.g, c.b, c.a) end
 	local info<const> = build_info()
 	local cart_present<const> = mem[cart_rom_base] == cart_rom_magic
 	local elapsed<const> = os.clock() - boot_start
@@ -432,29 +433,7 @@ render_boot_screen = function(scroll_delta)
 		end
 		if string.len(text) > 0 then
 			local color<const> = sys_palette_color(line_color or color_text)
-			memwrite(
-				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
-				sys_vdp_cmd_glyph_run,
-				17,
-				0,
-				text,
-				left,
-				y,
-				text_z,
-				font_id,
-				0,
-				0x7fffffff,
-				sys_vdp_layer_world,
-				color.r,
-				color.g,
-				color.b,
-				color.a,
-				0,
-				0,
-				0,
-				0,
-				0
-			)
+			vdp_image.write_glyph_line_rgba(font, text, left, y, text_z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, 0, 0, 0, 0, 0)
 		end
 		y = y + line_height
 	end
@@ -483,6 +462,7 @@ while true do
 	mem[sys_inp_player] = 1
 	vdp_stream_cursor = sys_vdp_stream_base
 	update_boot_screen()
+	vdp_stream.finish()
 	do local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
 		if used_bytes ~= 0 then
 			mem[sys_dma_src] = sys_vdp_stream_base

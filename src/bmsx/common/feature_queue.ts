@@ -25,6 +25,8 @@ export class FeatureQueue<T> {
 	submit(item: T): void { this._back.push(item); }
 	sizeBack(): number { return this._back.size; }
 	sizeFront(): number { return this._front.size; }
+	getBack(index: number): T { return this._back.get(index); }
+	getFront(index: number): T { return this._front.get(index); }
 
 	swap(): void {
 		const tmp = this._front; this._front = this._back; this._back = tmp;

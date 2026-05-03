@@ -19,7 +19,13 @@ import {
 import { consoleCore } from '../../core/console';
 import { bootstrapAxisGizmo_WebGL, renderAxisGizmo_WebGL, shouldRenderAxisGizmo } from '../3d/axis_gizmo_pipeline';
 import { TAB_SPACES } from '../shared/bitmap_font';
-import type { GlyphRenderSubmission, color } from '../shared/submissions';
+import type {
+	GlyphRenderSubmission,
+	ImgRenderSubmission,
+	PolyRenderSubmission,
+	RectRenderSubmission,
+	color,
+} from '../shared/submissions';
 import {
 	HOST_SYSTEM_ATLAS_HEIGHT,
 	HOST_SYSTEM_ATLAS_WIDTH,
@@ -28,7 +34,7 @@ import {
 } from '../../rompack/host_system_atlas';
 import type { BFont, FontGlyph } from '../shared/bitmap_font';
 import { consumeOverlayFrame, hasPendingOverlayFrame } from './overlay_queue';
-import { beginHost2DQueue, forEachHost2DQueue } from '../shared/queues';
+import { beginHost2DQueue, forEachHost2DQueue, type Host2DKind, type Host2DRef } from '../shared/queues';
 import vertexShaderCode from '../2d/shaders/2d.vert.glsl';
 import fragmentShaderCode from './shaders/host_overlay.frag.glsl';
 
@@ -84,6 +90,7 @@ const HOST_OVERLAY_TEXTURE_UNIT = 0;
 const HOST_OVERLAY_TEXTPAGE_ID = 0;
 const HOST_OVERLAY_DRAW_PASS: PassEncoder = { fbo: null, desc: { label: 'host_overlay' } as RenderPassDesc };
 const AXIS_GIZMO_LABEL_CAPACITY = 6;
+const EMPTY_HOST_OVERLAY_COMMANDS: RenderSubmission[] = [];
 const axisLabelImgIds = new Array<string>(AXIS_GIZMO_LABEL_CAPACITY);
 const axisLabelX = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
 const axisLabelY = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
@@ -101,7 +108,6 @@ const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 
 let runtime: HostOverlayRuntime | null = null;
 let axisLabelCount = 0;
-const host2DCommandsScratch: RenderSubmission[] = [];
 
 function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverlayRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
@@ -281,7 +287,7 @@ function pushFillRect(state: HostOverlayRuntime, index: number, leftValue: numbe
 	return 1;
 }
 
-function drawRectCommand(backend: WebGLBackend, state: HostOverlayRuntime, command: Extract<RenderSubmission, { type: 'rect' }>, boundTextures: BoundTextureState): BoundTextureState {
+function drawRectCommand(backend: WebGLBackend, state: HostOverlayRuntime, command: RectRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
 	const nextBoundTextures = bindSolidTexture(state, boundTextures);
 	if (command.kind === 'fill') {
 		const written = pushFillRect(state, 0, command.area.left, command.area.top, command.area.right, command.area.bottom, command.area.z, command.color);
@@ -330,7 +336,7 @@ function pushLine(state: HostOverlayRuntime, index: number, x0: number, y0: numb
 	return 1;
 }
 
-function drawPolyCommand(backend: WebGLBackend, state: HostOverlayRuntime, command: Extract<RenderSubmission, { type: 'poly' }>, boundTextures: BoundTextureState): BoundTextureState {
+function drawPolyCommand(backend: WebGLBackend, state: HostOverlayRuntime, command: PolyRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
 	const nextBoundTextures = bindSolidTexture(state, boundTextures);
 	let count = 0;
 	const points = command.points;
@@ -344,7 +350,7 @@ function drawPolyCommand(backend: WebGLBackend, state: HostOverlayRuntime, comma
 	return nextBoundTextures;
 }
 
-function drawImageCommand(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: Extract<RenderSubmission, { type: 'img' }>, boundTextures: BoundTextureState): BoundTextureState {
+function drawImageCommand(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: ImgRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
 	if (command.scale === undefined) {
 		throw new Error('[HostOverlay] Image command missing scale.');
 	}
@@ -558,6 +564,33 @@ function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 	backend.setDepthMask(true);
 }
 
+function drawHost2DCommand(backend: WebGLBackend, state: HostOverlayRuntime, imageCache: Map<string, HostOverlayImageSource>, kind: Host2DKind, command: Host2DRef, boundTextures: BoundTextureState): BoundTextureState {
+	switch (kind) {
+		case 'rect':
+			return drawRectCommand(backend, state, command as RectRenderSubmission, boundTextures);
+		case 'img':
+			return drawImageCommand(backend, state, imageCache, command as ImgRenderSubmission, boundTextures);
+		case 'glyphs':
+			return drawGlyphRunCommand(backend, state, imageCache, command as GlyphRenderSubmission, boundTextures);
+		case 'poly':
+			return drawPolyCommand(backend, state, command as PolyRenderSubmission, boundTextures);
+	}
+}
+
+function renderHost2DQueue(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
+	const gl = backend.gl as WebGL2RenderingContext;
+	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+	bindPassState(backend, state, passState);
+	const imageCache = state.imageCache;
+	let boundTextures: BoundTextureState = null;
+	forEachHost2DQueue((kind, command) => {
+		boundTextures = drawHost2DCommand(backend, state, imageCache, kind, command, boundTextures);
+	});
+	backend.bindVertexArray(null);
+	backend.setBlendEnabled(false);
+	backend.setDepthMask(true);
+}
+
 function renderAxisGizmoLabels(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -590,6 +623,9 @@ function renderHostPass(backend: WebGLBackend, state: HostOverlayRuntime, passSt
 	if (passState.commands.length !== 0) {
 		renderOverlay(backend, state, passState);
 	}
+	if (beginHost2DQueue() !== 0) {
+		renderHost2DQueue(backend, state, passState);
+	}
 	if (!shouldRenderAxisGizmo()) {
 		return;
 	}
@@ -615,23 +651,12 @@ export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void
 		shouldExecute: () => hasPendingOverlayFrame() || beginHost2DQueue() !== 0 || shouldRenderAxisGizmo(),
 		prepare: () => {
 			const frame = hasPendingOverlayFrame() ? consumeOverlayFrame() : null;
-			let commands: RenderSubmission[] = host2DCommandsScratch;
-			if (frame) {
-				commands = frame.commands;
-			} else {
-				host2DCommandsScratch.length = 0;
-			}
-			if (beginHost2DQueue() !== 0) {
-				forEachHost2DQueue((command) => {
-					commands.push(command);
-				});
-			}
 			const state: HostOverlayPipelineState = {
 				width: consoleCore.view.offscreenCanvasSize.x,
 				height: consoleCore.view.offscreenCanvasSize.y,
 				overlayWidth: frame?.width ?? consoleCore.view.viewportSize.x,
 				overlayHeight: frame?.height ?? consoleCore.view.viewportSize.y,
-				commands,
+				commands: frame?.commands ?? EMPTY_HOST_OVERLAY_COMMANDS,
 			};
 			registry.setState('host_overlay', state);
 		},

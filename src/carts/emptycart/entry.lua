@@ -34,6 +34,7 @@ while true do
 	until (flags & irq_vblank) ~= 0
 	vdp_stream_cursor = sys_vdp_stream_base
 	draw_cart()
+	vdp_stream_finish()
 	do
 		local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
 		if used_bytes ~= 0 then

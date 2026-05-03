@@ -201,23 +201,7 @@ function combat.define_fsm()
 					local z<const> = frame.slash_z
 					local color<const> = frame.slash_color
 					local thickness<const> = frame.slash_thickness
-					memwrite(
-						vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11),
-						sys_vdp_cmd_draw_line,
-						11,
-						0,
-						x0,
-						y0,
-						x1,
-						y1,
-						z,
-						sys_vdp_layer_world,
-						color.r,
-						color.g,
-						color.b,
-						color.a,
-						thickness
-					)
+					vdp_draw_line_rgba(x0, y0, x1, y1, z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, thickness)
 				end)
 			globals.hide_combat_sprites()
 			return '/idle'

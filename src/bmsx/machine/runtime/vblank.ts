@@ -3,7 +3,7 @@ import { FrameState, Runtime } from './runtime';
 import { advanceRuntimeTime, runDueRuntimeTimers } from './cpu_executor';
 import { refreshDeviceTimings } from './timing/config';
 import { TIMER_KIND_VBLANK_BEGIN, TIMER_KIND_VBLANK_END } from '../scheduler/device';
-import { presentVdpFrameBufferPages } from '../../render/vdp/framebuffer';
+import { applyVdpFrameBufferTextureWrites, presentVdpFrameBufferPages } from '../../render/vdp/framebuffer';
 
 export type RuntimeVblankSnapshot = {
 	cyclesIntoFrame: number;
@@ -260,6 +260,7 @@ export class VblankState {
 		const runtime = this.runtime;
 		const vdp = runtime.machine.vdp;
 		if (vdp.presentReadyFrameOnVblankEdge()) {
+			applyVdpFrameBufferTextureWrites(vdp);
 			presentVdpFrameBufferPages();
 			vdp.swapFrameBufferReadbackPages();
 		}

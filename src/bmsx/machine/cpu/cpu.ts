@@ -11,11 +11,6 @@ import { BASE_CYCLES, OpCode } from './opcode_info';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions, type CpuProfilerSnapshot } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { MEMORY_ACCESS_KIND_NAMES, MemoryAccessKind } from '../memory/access_kind';
-import { findVdpPacketSchema, getVdpPacketArgKind, VdpPacketWordKind } from '../devices/vdp/packet_schema';
-import {
-	VDP_STREAM_BUFFER_BASE,
-	VDP_STREAM_BUFFER_SIZE,
-} from '../memory/map';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
 import { luaModulo } from '../../lua/numeric';
@@ -91,8 +86,6 @@ const NATIVE_COST_TIER1: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
 const NATIVE_COST_TIER2: NativeFnCost = { base: 2, perArg: 0, perRet: 0 };
 const NATIVE_COST_TIER4: NativeFnCost = { base: 4, perArg: 0, perRet: 0 };
 const DEFAULT_NATIVE_COST = NATIVE_COST_TIER1;
-const VDP_PACKET_F32_BUFFER = new ArrayBuffer(4);
-const VDP_PACKET_F32_VIEW = new DataView(VDP_PACKET_F32_BUFFER);
 
 function resolveApiNativeCost(name: string): NativeFnCost {
 	switch (name) {
@@ -225,55 +218,6 @@ function resolveNativeFunctionCost(name: string): NativeFnCost {
 			}
 			return DEFAULT_NATIVE_COST;
 	}
-}
-
-function isVdpPacketSequenceWrite(baseAddr: number, wordCount: number): boolean {
-	const byteLength = wordCount * 4;
-	return baseAddr >= VDP_STREAM_BUFFER_BASE && (baseAddr + byteLength) <= (VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE);
-}
-
-function encodeVdpPacketU32Word(value: Value, label: string): number {
-	if (typeof value === 'number') {
-		return value >>> 0;
-	}
-	if (typeof value === 'boolean') {
-		return value ? 1 : 0;
-	}
-	if (value === null) {
-		return 0;
-	}
-	if (isStringValue(value)) {
-		return value.id >>> 0;
-	}
-	throw new Error(`[VDP] ${label} expects a numeric or string word.`);
-}
-
-function encodeVdpPacketF32Word(value: Value, label: string): number {
-	if (typeof value !== 'number') {
-		throw new Error(`[VDP] ${label} expects a numeric word.`);
-	}
-	VDP_PACKET_F32_VIEW.setFloat32(0, value, true);
-	return VDP_PACKET_F32_VIEW.getUint32(0, true) >>> 0;
-}
-
-function encodeVdpPacketArgWord(cmd: number, index: number, value: Value): number {
-	return getVdpPacketArgKind(cmd, index) === VdpPacketWordKind.F32
-		? encodeVdpPacketF32Word(value, `packet arg ${index}`)
-		: encodeVdpPacketU32Word(value, `packet arg ${index}`);
-}
-
-function tryGetVdpPacketPrefixWordCounts(registers: { get(index: number): Value; }, valueBase: number): { cmd: number; argWords: number; payloadWords: number; } | null {
-	const cmd = encodeVdpPacketU32Word(registers.get(valueBase), 'packet cmd');
-	const schema = findVdpPacketSchema(cmd);
-	if (schema === null) {
-		return null;
-	}
-	const argWords = encodeVdpPacketU32Word(registers.get(valueBase + 1), 'packet arg_words');
-	if (argWords !== schema.argWords) {
-		return null;
-	}
-	const payloadWords = encodeVdpPacketU32Word(registers.get(valueBase + 2), 'packet payload_words');
-	return { cmd, argWords, payloadWords };
 }
 
 export function createNativeFunction(
@@ -3095,33 +3039,6 @@ export class CPU {
 	}
 
 	private writeMappedWordSequence(frame: CallFrame, addr: number, valueBase: number, valueCount: number): void {
-		if (valueCount >= 3 && isVdpPacketSequenceWrite(addr, valueCount)) {
-			const counts = tryGetVdpPacketPrefixWordCounts(frame.registers, valueBase);
-			if (counts !== null) {
-				const { cmd, argWords, payloadWords } = counts;
-				const packetWordCount = 3 + argWords + payloadWords;
-				if (valueCount > packetWordCount) {
-					throw new Error(`[VDP] Packet prefix overflow (${valueCount} > ${packetWordCount}).`);
-				}
-				this.memory.writeMappedU32LE(addr, cmd);
-				this.memory.writeMappedU32LE(addr + 4, argWords);
-				this.memory.writeMappedU32LE(addr + 8, payloadWords);
-				let writeAddr = addr + 12;
-				const encodedArgWords = Math.min(argWords, valueCount - 3);
-				for (let index = 0; index < encodedArgWords; index += 1) {
-					const raw = encodeVdpPacketArgWord(cmd, index, frame.registers.get(valueBase + 3 + index));
-					this.memory.writeMappedU32LE(writeAddr, raw);
-					writeAddr += 4;
-				}
-				const encodedPayloadWords = valueCount - 3 - encodedArgWords;
-				for (let index = 0; index < encodedPayloadWords; index += 1) {
-					const raw = encodeVdpPacketU32Word(frame.registers.get(valueBase + 3 + argWords + index), `packet payload ${index}`);
-					this.memory.writeMappedU32LE(writeAddr, raw);
-					writeAddr += 4;
-				}
-				return;
-			}
-		}
 		let writeAddr = addr;
 		for (let offset = 0; offset < valueCount; offset += 1) {
 			this.memory.writeMappedValue(writeAddr, frame.registers.get(valueBase + offset));

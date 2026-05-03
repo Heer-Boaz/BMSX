@@ -5,6 +5,7 @@ local worldobject<const> = require('bios/world/object')
 local components<const> = require('bios/components')
 local fsmlibrary<const> = require('bios/fsm/library')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
+local vdp_stream<const> = require('bios/vdp_stream')
 
 local textobject<const> = {}
 textobject.__index = textobject
@@ -582,22 +583,7 @@ function textobject:submit_text_background_lines(x, y, z, glyphs)
 			elseif tc.center_block_width ~= nil then
 				line_x = x + ((tc.center_block_width - line_width) / 2)
 			end
-			memwrite(
-				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
-				sys_vdp_cmd_fill_rect,
-				10,
-				0,
-				line_x,
-				line_y,
-				line_x + line_width,
-				line_y + tc.font.line_height,
-				z,
-				tc.layer,
-				background_color.r,
-				background_color.g,
-				background_color.b,
-				background_color.a
-			)
+			vdp_stream.fill_rect_rgba(line_x, line_y, line_x + line_width, line_y + tc.font.line_height, z, tc.layer, background_color.r, background_color.g, background_color.b, background_color.a)
 		end
 		if line_offsets == nil then
 			cursor_y = cursor_y + tc.line_height
@@ -631,22 +617,7 @@ function textobject:submit_highlight()
 		local offset_y<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
 		local padded_x<const> = horizontal_margin * scale
 		local highlight_z<const> = self.z + self.text_offset.z - 0.5
-		memwrite(
-			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
-			sys_vdp_cmd_fill_rect,
-			10,
-			0,
-			dims.left - padded_x + offset_x,
-			self.highlight_anim_y + offset_y,
-			dims.right + padded_x + offset_x,
-			self.highlight_anim_y + self.highlight_anim_h + offset_y,
-			highlight_z,
-			self.layer,
-			highlight_bg_color.r,
-			highlight_bg_color.g,
-			highlight_bg_color.b,
-			highlight_bg_color.a
-		)
+		vdp_stream.fill_rect_rgba(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, highlight_z, self.layer, highlight_bg_color.r, highlight_bg_color.g, highlight_bg_color.b, highlight_bg_color.a)
 	end
 end
 

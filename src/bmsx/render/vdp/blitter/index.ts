@@ -2,6 +2,7 @@ import type { VDP, VdpBlitterCommand, VdpHostOutput } from '../../../machine/dev
 import type { GPUBackend } from '../../backend/interfaces';
 import { vdpTextureBackend } from '../texture_transfer';
 import { syncVdpSlotTextures } from '../slot_textures';
+import { applyVdpFrameBufferTextureWrites } from '../framebuffer';
 import { HeadlessVdpBlitterExecutor } from './headless';
 
 type VdpBlitterExecutorLike = {
@@ -43,6 +44,7 @@ export function drainReadyVdpExecution(vdp: VDP): void {
 	const backend = vdpTextureBackend();
 	if (backend.type !== 'headless') {
 		syncVdpSlotTextures(vdp);
+		applyVdpFrameBufferTextureWrites(vdp);
 	}
 	if (queue.length !== 0) {
 		getVdpBlitterExecutor(backend).execute(output, queue);

@@ -1,13 +1,11 @@
 local constants<const> = require('constants')
 local castle_map<const> = require('castle/map')
 local timeline<const> = require('bios/timeline/index')
+local vdp_stream<const> = require('bios/vdp_stream')
 
 local room<const> = {}
 local water_surface_timeline_id<const> = 'r.ws'
 local empty_tile_source<const> = false
-local tile_run_arg_words<const> = 11
-local tile_run_payload_word_offset<const> = sys_vdp_stream_packet_header_words + tile_run_arg_words
-local tile_run_source_words<const> = 5
 local water_surface_frame_imgids<const> = {
 	'water_surface_msx',
 }
@@ -527,124 +525,14 @@ local refresh_room_geometry<const> = function(room_state)
 	room_state:rebuild_room_tiles()
 end
 
---[[
-Room tile-run caching
-=====================
-
-This room renderer does NOT own a private "reserved" RAM region for its tile
-payloads. The persistent state lives in normal Lua tables on the room object:
-
-	- self.room_tile_sources
-	- self.water_tile_sources
-	- self.water_surface_tile_indices
-
-Those tables are the real cache. They survive across frames, room visibility
-changes, water animation frames, and room-geometry rebuilds until we explicitly
-rebuild them.
-
-The VDP packet memory is different:
-
-	- every game tick, the cart resets vdp_stream_cursor back to sys_vdp_stream_base
-	- draw code then claims packet space again in the same tick order
-	- the stream is therefore a transient submission buffer, not a stable object
-		store owned by this room
-
-However, resetting the cursor does NOT zero the underlying RAM. That gives us a
-useful optimization:
-
-	1. claim the same amount of stream space every game tick
-	2. remember the previously claimed packet_base
-	3. if the new claim returns the same packet_base and our cached tile data is
-		still valid, do not rewrite the packet payload
-	4. if the base moved, or the tile data changed, rewrite the packet
-
-So the trick is:
-
-	- persistent tile state in Lua
-	- opportunistic reuse of the same VDP stream slot
-	- explicit dirty tracking whenever room/water data changes
-
-This is why we keep:
-
-	- *_packet_base       -> last claimed stream address
-	- *_packet_dirty      -> full payload/header must be rewritten
-	- water_surface_dirty -> only the animated water-surface slice must be patched
-
-This also explains why hide_room_tiles() invalidates the remembered packet base:
-
-	- once the room stops submitting those packets, other draw code is free to
-		claim that part of the stream
-	- so when the room becomes visible again, we must assume nothing about the old
-		address and force a fresh write if needed
-
-The important consequence is that we no longer pay the expensive per-frame work
-that the old code did:
-
-	- no per-frame create_tile_id(...) over the whole room
-	- no per-frame image lookup over the whole room
-	- no per-frame rebuild of full room/water tile arrays
-	- no per-frame rewrite of the entire tile-run payload when nothing moved
-
-The only always-on work left in the hot path is:
-
-	- claim the stream slot
-	- compare packet_base
-	- submit nothing if the old packet contents are still valid
-
-For water animation we go even smaller:
-
-	- rebuild_room_tiles() precalculates exactly which tile indices are water
-		surface tiles
-	- sync_water_surface_frame() only updates those cached handles in Lua
-	- render_water() then patches only those payload words when the frame changed
-
-This is not a general engine feature or a RAM allocator. It is a cart-level
-optimization that exploits the current VDP stream behavior in a controlled way.
-If the engine later gets a true persistent tile-run API, that would be the
-cleaner long-term abstraction. For now, this keeps the current design fast
-without inventing new infrastructure.
-]]
-local write_tile_run_header<const> = function(base, tile_count, cols, rows, tile_size, origin_x, origin_y)
-	memwrite(
-		base,
-		sys_vdp_cmd_tile_run,
-		tile_run_arg_words,
-		tile_count * tile_run_source_words,
-		tile_count,
-		cols,
-		rows,
-		tile_size,
-		tile_size,
-		origin_x,
-		origin_y,
-		0,
-		0,
-		0,
-		sys_vdp_layer_world
-	)
-end
-
-local write_tile_run_payload<const> = function(payload_dst, sources, tile_count)
+local draw_tile_sources<const> = function(sources, tile_count, cols, tile_size, origin_x, origin_y)
 	for i = 1, tile_count do
-		local dst<const> = payload_dst + ((i - 1) * tile_run_source_words * sys_vdp_arg_stride)
 		local source<const> = sources[i]
-		if source == empty_tile_source then
-			mem[dst] = sys_vdp_slot_none
-		else
-			vdp_write_source_words(dst, source)
-		end
-	end
-end
-
-local patch_tile_run_payload<const> = function(payload_dst, sources, indices, count)
-	for i = 1, count do
-		local tile_index<const> = indices[i]
-		local dst<const> = payload_dst + ((tile_index - 1) * tile_run_source_words * sys_vdp_arg_stride)
-		local source<const> = sources[tile_index]
-		if source == empty_tile_source then
-			mem[dst] = sys_vdp_slot_none
-		else
-			vdp_write_source_words(dst, source)
+		if source ~= empty_tile_source then
+			local tile_index<const> = i - 1
+			local tile_x<const> = tile_index % cols
+			local tile_y<const> = tile_index // cols
+			vdp_stream.blit_source_rgba(source.slot, source.u, source.v, source.w, source.h, origin_x + (tile_x * tile_size), origin_y + (tile_y * tile_size), 0, sys_vdp_layer_world, 1, 1, 0, 1, 1, 1, 1, 0)
 		end
 	end
 end
@@ -988,19 +876,12 @@ function room_object:ctor()
 	self.room_tile_sources = {}
 	self.room_tile_source_count = 0
 	self.room_tile_count = 0
-	self.room_tile_packet_words = 0
-	self.room_tile_packet_base = nil
-	self.room_tile_packet_dirty = true
 	self.water_tile_sources = {}
 	self.water_tile_source_count = 0
 	self.water_tile_count = 0
 	self.water_rows = 0
-	self.water_tile_packet_words = 0
-	self.water_tile_packet_base = nil
-	self.water_tile_packet_dirty = true
 	self.water_surface_tile_indices = {}
 	self.water_surface_tile_count = 0
-	self.water_surface_dirty = false
 	self.last_water_surface_frame = 1
 	self.water_surface_sources = {}
 	for i = 1, #water_surface_frame_imgids do
@@ -1013,11 +894,6 @@ end
 
 function room_object:hide_room_tiles()
 	self.tiles_visible = false
-	-- The stream cursor resets every frame, but other draws may reuse this slot
-	-- while the room is hidden. Forget the old base so the next visible submit
-	-- always treats the packet as needing a fresh write at its new claim site.
-	self.room_tile_packet_base = nil
-	self.water_tile_packet_base = nil
 end
 
 function room_object:show_room_tiles()
@@ -1073,19 +949,13 @@ function room_object:rebuild_room_tiles()
 	end
 	self.room_tile_source_count = tile_count
 	self.room_tile_count = tile_count
-	self.room_tile_packet_words = tile_run_payload_word_offset + (tile_count * tile_run_source_words)
-	self.room_tile_packet_dirty = true
 
 	if self.water == nil then
 		self.water_tile_count = 0
 		self.water_rows = 0
-		self.water_tile_packet_words = 0
-		self.water_tile_source_count = 0
+			self.water_tile_source_count = 0
 		self.water_surface_tile_count = 0
-		self.water_tile_packet_dirty = false
-		self.water_surface_dirty = false
-		self.water_tile_packet_base = nil
-		self.last_water_surface_frame = 1
+				self.last_water_surface_frame = 1
 		return
 	end
 	local prev_water_tile_source_count<const> = self.water_tile_source_count
@@ -1122,10 +992,7 @@ function room_object:rebuild_room_tiles()
 	self.water_tile_source_count = water_tile_count
 	self.water_tile_count = water_tile_count
 	self.water_rows = water_rows
-	self.water_tile_packet_words = tile_run_payload_word_offset + (water_tile_count * tile_run_source_words)
 	self.water_surface_tile_count = water_surface_tile_count
-	self.water_tile_packet_dirty = true
-	self.water_surface_dirty = false
 	self.last_water_surface_frame = 1
 end
 
@@ -1133,9 +1000,6 @@ function room_object:sync_water_surface_frame(water_surface_frame)
 	if self.water == nil or self.last_water_surface_frame == water_surface_frame then
 		return
 	end
-	-- Only the surface strip animates. Update the cached atlas rects in Lua, then let
-	-- render_water() patch exactly those payload words if the stream address stayed
-	-- stable this frame.
 	local water_surface_source<const> = self.water_surface_sources[water_surface_frame]
 	local water_tile_sources<const> = self.water_tile_sources
 	local water_surface_tile_indices<const> = self.water_surface_tile_indices
@@ -1144,7 +1008,6 @@ function room_object:sync_water_surface_frame(water_surface_frame)
 		water_tile_sources[tile_index] = water_surface_source
 	end
 	self.last_water_surface_frame = water_surface_frame
-	self.water_surface_dirty = true
 end
 
 function room_object:render_tiles()
@@ -1152,21 +1015,7 @@ function room_object:render_tiles()
 	if tile_count == 0 then
 		return
 	end
-	local packet_base<const> = vdp_stream_claim_words(self.room_tile_packet_words)
-	if self.room_tile_packet_base ~= packet_base then
-		-- Same cached tile data, different stream slot. The payload must be copied
-		-- into the new packet location because the remembered RAM address changed.
-		self.room_tile_packet_base = packet_base
-		self.room_tile_packet_dirty = true
-	end
-	if not self.room_tile_packet_dirty then
-		-- Fast path: same claim site, same cached content, so the old packet bytes
-		-- in stream RAM are still valid and we do not touch them again.
-		return
-	end
-	write_tile_run_header(packet_base, tile_count, self.tile_columns, self.tile_rows, self.tile_size, self.tile_origin_x, self.tile_origin_y)
-	write_tile_run_payload(packet_base + (tile_run_payload_word_offset * sys_vdp_arg_stride), self.room_tile_sources, tile_count)
-	self.room_tile_packet_dirty = false
+	draw_tile_sources(self.room_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y)
 end
 
 function room_object:render_water()
@@ -1174,37 +1023,7 @@ function room_object:render_water()
 	if tile_count == 0 then
 		return
 	end
-	local packet_base<const> = vdp_stream_claim_words(self.water_tile_packet_words)
-	local payload_dst<const> = packet_base + (tile_run_payload_word_offset * sys_vdp_arg_stride)
-	if self.water_tile_packet_base ~= packet_base then
-		-- Same idea as the room tile layer: if the claim moves, the cached packet
-		-- contents are no longer at the correct address, so force a full rewrite.
-		self.water_tile_packet_base = packet_base
-		self.water_tile_packet_dirty = true
-	end
-	if self.water_tile_packet_dirty then
-		write_tile_run_header(
-			packet_base,
-			tile_count,
-			self.tile_columns,
-			self.water_rows,
-			self.tile_size,
-			self.tile_origin_x,
-			self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size)
-		)
-		write_tile_run_payload(payload_dst, self.water_tile_sources, tile_count)
-		self.water_tile_packet_dirty = false
-		self.water_surface_dirty = false
-		return
-	end
-	if not self.water_surface_dirty then
-		-- Fast path: full water packet is already valid at this address and the
-		-- animated surface frame did not change.
-		return
-	end
-	-- Micro-update path: only rewrite the payload words for the surface strip.
-	patch_tile_run_payload(payload_dst, self.water_tile_sources, self.water_surface_tile_indices, self.water_surface_tile_count)
-	self.water_surface_dirty = false
+	draw_tile_sources(self.water_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size))
 end
 
 function room_object:render_room()
@@ -1222,7 +1041,7 @@ function room_object:render_room()
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10), sys_vdp_cmd_fill_rect, 10, 0, 0, constants.room.tile_origin_y, display_width(), display_height(), 342, sys_vdp_layer_world, 1, 1, 1, 0.5)
+	vdp_fill_rect_rgba(0, constants.room.tile_origin_y, display_width(), display_height(), 342, sys_vdp_layer_world, 1, 1, 1, 0.5)
 end
 
 local room_runtime_state_name<const> = function(room_state)

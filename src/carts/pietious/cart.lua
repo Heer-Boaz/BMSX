@@ -197,6 +197,7 @@ while true do
 	until (flags & irq_vblank) ~= 0
 	vdp_stream_cursor = sys_vdp_stream_base
 	draw_world()
+	vdp_stream_finish()
 	mem[sys_dma_src] = sys_vdp_stream_base
 	mem[sys_dma_dst] = sys_vdp_fifo
 	mem[sys_dma_len] = vdp_stream_cursor - sys_vdp_stream_base

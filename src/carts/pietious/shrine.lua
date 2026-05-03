@@ -25,29 +25,7 @@ function shrine:render()
 	local lines<const> = self.lines
 	for i = 1, #lines do
 		local text_font<const> = self.text_font
-		memwrite(
-			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
-			sys_vdp_cmd_glyph_run,
-			17,
-			0,
-			lines[i],
-			constants.shrine.text_x,
-			constants.shrine.text_y + ((i - 1) * constants.room.tile_size),
-			341,
-			text_font.id,
-			0,
-			0x7fffffff,
-			sys_vdp_layer_ui,
-			1,
-			1,
-			1,
-			1,
-			0,
-			0,
-			0,
-			0,
-			0
-		)
+		vdp_glyph_line_rgba(text_font, lines[i], constants.shrine.text_x, constants.shrine.text_y + ((i - 1) * constants.room.tile_size), 341, sys_vdp_layer_ui, 1, 1, 1, 1, 0, 0, 0, 0, 0)
 	end
 end
 

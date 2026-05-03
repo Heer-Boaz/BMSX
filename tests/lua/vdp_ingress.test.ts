@@ -11,6 +11,8 @@ import {
 	IO_VDP_FAULT_ACK,
 	IO_VDP_FAULT_CODE,
 	IO_VDP_FAULT_DETAIL,
+	IO_VDP_FIFO,
+	IO_VDP_FIFO_CTRL,
 	IO_VDP_PMU_BANK,
 	IO_VDP_PMU_CTRL,
 	IO_VDP_PMU_SCALE_X,
@@ -42,6 +44,7 @@ import {
 	IO_VDP_SBX_FACE0,
 	IO_VDP_STATUS,
 	VDP_CAMERA_COMMIT_WRITE,
+	VDP_FIFO_CTRL_SEAL,
 	VDP_FAULT_RD_OOB,
 	VDP_FAULT_RD_UNSUPPORTED_MODE,
 	VDP_FAULT_SUBMIT_STATE,
@@ -69,9 +72,19 @@ import { VDP_BBU_PACKET_KIND, VDP_BBU_PACKET_PAYLOAD_WORDS } from '../../src/bms
 import { VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
 import { VDP_SBX_PACKET_KIND, VDP_SBX_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/sbx';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
+import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
 import { numberToF32Bits } from '../../src/bmsx/machine/common/numeric';
+import { HeadlessGPUBackend } from '../../src/bmsx/render/headless/backend';
+import { TextureManager } from '../../src/bmsx/render/texture_manager';
+import { initializeVdpTextureTransfer } from '../../src/bmsx/render/vdp/texture_transfer';
+import {
+	applyVdpFrameBufferTextureWrites,
+	initializeVdpFrameBufferTextures,
+	presentVdpFrameBufferPages,
+	readVdpDisplayFrameBufferPixels,
+	readVdpRenderFrameBufferPixels,
+} from '../../src/bmsx/render/vdp/framebuffer';
 
 const VDP_CMD_NOP = 0;
 const VDP_CMD_CLEAR = 1;
@@ -157,6 +170,20 @@ function sealStream(memory: Memory, vdp: VDP, words: number[]): void {
 	vdp.sealDmaTransfer(VDP_STREAM_BUFFER_BASE, words.length * IO_WORD_SIZE);
 }
 
+function sealFifo(memory: Memory, words: number[]): void {
+	for (let index = 0; index < words.length; index += 1) {
+		memory.writeValue(IO_VDP_FIFO, words[index] >>> 0);
+	}
+	memory.writeValue(IO_VDP_FIFO_CTRL, VDP_FIFO_CTRL_SEAL);
+}
+
+function initializeHeadlessVdpTextures(vdp: VDP): void {
+	const backend = new HeadlessGPUBackend();
+	const textureManager = new TextureManager(backend);
+	initializeVdpTextureTransfer(textureManager, { backend, textures: {} } as any);
+	initializeVdpFrameBufferTextures(vdp);
+}
+
 function assertVdpFault(memory: Memory, code: number): void {
 	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), code);
 	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_FAULT) !== 0, true);
@@ -220,6 +247,20 @@ test('VDP2D direct draw doorbell snapshots latch state immutably', () => {
 
 	assert.equal(activeQueue(vdp).length, 1);
 	assert.equal(activeQueue(vdp).colorWord[0], 0xff112233);
+});
+
+test('VDP framebuffer VRAM dirty rows upload to the render texture before page present', () => {
+	const { vdp } = createVdp();
+	initializeHeadlessVdpTextures(vdp);
+	const pixel = new Uint8Array([0x11, 0x22, 0x33, 0xff]);
+
+	vdp.writeVram(VRAM_FRAMEBUFFER_BASE, pixel);
+	applyVdpFrameBufferTextureWrites(vdp);
+
+	assert.deepEqual(Array.from(readVdpRenderFrameBufferPixels(0, 0, 1, 1)), Array.from(pixel));
+	presentVdpFrameBufferPages();
+	vdp.swapFrameBufferReadbackPages();
+	assert.deepEqual(Array.from(readVdpDisplayFrameBufferPixels(0, 0, 1, 1)), Array.from(pixel));
 });
 
 test('VDP2D BLIT snapshots DRAW_CTRL flip and parallax immutably', () => {
@@ -393,6 +434,42 @@ test('VDP2D FIFO rejects reserved bits and register ranges', () => {
 	clearVdpFault(memory);
 	sealStream(memory, vdp, [VDP_PKT_REGN | (2 << 16) | 17, 0, 0, VDP_PKT_END]);
 	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+});
+
+test('VDP2D FIFO DEX command faults abort the sealed stream frame', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	memory.writeValue(IO_VDP_REG_SRC_SLOT, VDP_SLOT_PRIMARY);
+	memory.writeValue(IO_VDP_REG_SRC_UV, 0);
+	memory.writeValue(IO_VDP_REG_SRC_WH, 4 | (4 << 16));
+	memory.writeValue(IO_VDP_REG_DRAW_SCALE_X, 0);
+	memory.writeValue(IO_VDP_REG_DRAW_SCALE_Y, 0x00010000);
+
+	sealFifo(memory, [VDP_PKT_CMD | VDP_CMD_BLIT, VDP_PKT_END]);
+
+	assertVdpFault(memory, VDP_FAULT_DEX_INVALID_SCALE);
+	assert.equal(buildFrameOpen(vdp), false);
+	assert.equal((vdp as any).activeFrame.occupied, false);
+	assert.equal(activeQueue(vdp).length, 0);
+});
+
+test('VDP2D DMA DEX command faults abort the sealed stream frame', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	memory.writeValue(IO_VDP_REG_SRC_SLOT, VDP_SLOT_PRIMARY);
+	memory.writeValue(IO_VDP_REG_SRC_UV, 15 | (0 << 16));
+	memory.writeValue(IO_VDP_REG_SRC_WH, 2 | (16 << 16));
+	memory.writeValue(IO_VDP_REG_DRAW_SCALE_X, 0x00010000);
+	memory.writeValue(IO_VDP_REG_DRAW_SCALE_Y, 0x00010000);
+
+	sealStream(memory, vdp, [VDP_PKT_CMD | VDP_CMD_BLIT, VDP_PKT_END]);
+
+	assertVdpFault(memory, VDP_FAULT_DEX_SOURCE_OOB);
+	assert.equal(buildFrameOpen(vdp), false);
+	assert.equal((vdp as any).activeFrame.occupied, false);
+	assert.equal(activeQueue(vdp).length, 0);
 });
 
 test('VDP2D SLOT_INDEX latches raw words and SLOT_DIM applies in-order through REGN', () => {

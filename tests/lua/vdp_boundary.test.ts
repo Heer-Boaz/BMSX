@@ -92,6 +92,24 @@ test('GameView does not route renderer submissions into VDP MMIO adapters', () =
 	]);
 });
 
+test('old high-level VDP scene command ABI is gone', () => {
+	assertNoMatches([
+		'src/bmsx',
+		'src/bmsx_cpp',
+		'src/carts',
+	], [
+		/processVdpCommand/,
+		/processVdpBufferedCommand/,
+		/command_processor/,
+		/packet_schema/,
+		/IO_CMD_VDP_/,
+		/sys_vdp_stream_packet_header_words/,
+		/VDP_STREAM_PACKET_HEADER_WORDS/,
+		/VDP_STREAM_PAYLOAD_CAPACITY_WORDS/,
+		/sys_vdp_cmd_(clear|fill_rect|blit|draw_line|glyph_run|tile_run)/,
+	]);
+});
+
 test('machine runtime does not import render submission or font types for VDP emission', () => {
 	assertNoMatches([
 		'src/bmsx/machine/runtime',
@@ -101,6 +119,43 @@ test('machine runtime does not import render submission or font types for VDP em
 		/render\/shared\/bitmap_font/,
 		/core\/font/,
 		/vdp_submissions/,
+	]);
+});
+
+test('TS host 2D queue tags submissions without mutating or copying payloads', () => {
+	assertFileDoesNotMatch('src/bmsx/render/shared/queues.ts', [
+		/\.type\s*=/,
+		/\{\s*\.\.\.item/,
+		/Object\.assign/,
+	]);
+	const text = readFileSync(join(root, 'src/bmsx/render/shared/queues.ts'), 'utf8');
+	assert.match(text, /host2dKindQueue/);
+	assert.match(text, /host2dRefQueue/);
+});
+
+test('native host 2D submissions do not disappear into an unconsumed C++ queue', () => {
+	assertFileDoesNotMatch('src/bmsx_cpp/render/shared/queues.h', [
+		/Host2D/,
+		/submitSprite/,
+		/submitRectangle/,
+		/submitDrawPolygon/,
+		/submitGlyphs/,
+		/\bRenderSubmission\b/,
+	]);
+	assertFileDoesNotMatch('src/bmsx_cpp/render/shared/queues.cpp', [
+		/s_host2DQueue/,
+		/Host2D/,
+		/RenderSubmission\s+submission/,
+		/submitSprite/,
+		/submitRectangle/,
+		/submitDrawPolygon/,
+		/submitGlyphs/,
+	]);
+	assertFileDoesNotMatch('src/bmsx_cpp/render/gameview.cpp', [
+		/RenderQueues::submitSprite/,
+		/RenderQueues::submitRectangle/,
+		/RenderQueues::submitDrawPolygon/,
+		/RenderQueues::submitGlyphs/,
 	]);
 });
 

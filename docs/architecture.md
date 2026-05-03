@@ -162,23 +162,23 @@ survive is VDP/video code reaching through `engineCore`, `EngineCore::instance()
 it needs to render.
 
 The important contract now is performance-sensitive: framebuffer VRAM writes
-must reach the backend texture directly, without adding a mandatory CPU
-write-through pass, while still keeping the cart-visible contract as MMIO/VRAM
-instead of host texture APIs.
+dirty VDP-owned rows and the render bridge uploads those rows before execution
+or page present, without reintroducing a generic scene API or host texture API
+as cart-visible ingress.
 
 Status: current cleanup target. The VDP/render singleton-discovery and renderer-callback leaks are being replaced by a stricter device/host-output boundary: the VDP device owns registers, latches, VRAM slot state, frame submission, fault latches, and explicit host-output transactions; render code consumes those transactions and acks execution tokens.
 
 Current evidence:
 
-- Cart-visible VDP ingress is MMIO/VRAM/DMA/VBlank only. The old runtime-side scene adapter `machine/runtime/vdp_submissions` has been removed in both TS and C++; `GameView` host/editor sprite/rect/poly/glyph submissions now stay in render queues instead of being translated into VDP register writes.
+- Cart-visible VDP ingress is MMIO/VRAM/DMA/VBlank only. The old runtime-side scene adapter `machine/runtime/vdp_submissions` has been removed in both TS and C++; TS `GameView` host/editor sprite/rect/poly/glyph submissions stay in a zero-copy render queue instead of being translated into VDP register writes. The native C++ host/editor 2D overlay path has no consumer, so those submissions do not enter a black-hole render queue and are not counted as VDP/machine output.
 - `src/bmsx/render/shared` and `src/bmsx_cpp/render/shared` are render-side feature queues only. Boundary tests fail on `writeVdpRegister`, `consumeDirectVdpCommand`, `VDP_REG_`, or VDP register-file imports in those directories, and they also fail if renderer-side code writes `IO_VDP_REG_*` or `IO_VDP_CMD`.
 - `machine/runtime` no longer imports render submission/font types for VDP command emission. Boundary tests fail on `render/shared/submissions`, `render/shared/bitmap_font`, `core/font`, or `vdp_submissions` in the runtime VDP path.
-- The VDP device code does not import framebuffer or host render modules. Framebuffer/texture upload, page presentation, and backend synchronization sit on the render/runtime side of the host bridge. Presentation helpers no longer receive a raw VDP object just to flip framebuffer pages.
+- The VDP device code does not import framebuffer or host render modules. Framebuffer/texture upload, page presentation, and backend synchronization sit on the render/runtime side of the host bridge. TS and C++ upload dirty framebuffer rows before page presentation; presentation helpers no longer receive a raw VDP object just to flip framebuffer pages.
 - VDP host output is an explicit `VdpHostOutput` read/ack transaction: the renderer reads one output object/value, consumes the ready execution queue/BBU RAM/camera/SBX/dither/dirty-surface/framebuffer handles from that output, and acks execution with the same token. TS no longer returns a reused mutable singleton output object; C++ returns a value. The renderer still receives handles to VDP-owned buffers, so future hardening should add generation/frozen-snapshot semantics only if a concrete race appears.
 - TS and C++ VDP expose the same public host-bridge names for this contract: `readHostOutput()` and `completeHostExecution(...)`, alongside the MMIO/DMA/VRAM entry points, frame/VBlank progression, save-state capture/restore, and surface-dirty clear.
 - TS and C++ VDP expose cart-visible fault latches as VDP status registers: `IO_VDP_STATUS` carries the fault bit, `IO_VDP_FAULT_CODE` / `IO_VDP_FAULT_DETAIL` carry the sticky-first reason, and `IO_VDP_FAULT_ACK` is write-one-to-clear. Save-state stores the sticky fault code/detail plus device state, not raw transient status pins.
 - Cart-originating VDP faults latch and cancel/drop device work instead of throwing host exceptions. Packet/header/count problems use `VDP_FAULT_STREAM_BAD_PACKET`; direct submit state errors use `VDP_FAULT_SUBMIT_STATE`; unknown command doorbells use `VDP_FAULT_CMD_BAD_DOORBELL`; busy submit rejection uses `VDP_FAULT_SUBMIT_BUSY`; DEX source faults use `VDP_FAULT_DEX_SOURCE_SLOT` or `VDP_FAULT_DEX_SOURCE_OOB`; invalid DEX scale and LINE width use their DEX fault codes; SBX/BBU faults use their unit-specific codes.
-- Current per-unit fault policy is explicit and test-covered: direct DEX command faults drop the command and keep the open direct frame; FIFO/DMA stream parser faults abort the stream frame; SBX frame-seal faults reject the frame; BBU packet faults reject the packet/stream frame; submit-busy faults reject the attempt without mutating the visible frame.
+- Current per-unit fault policy is explicit and test-covered: direct DEX command faults drop the command and keep the open direct frame; DEX faults reached while replaying a sealed FIFO/DMA stream abort that sealed stream frame; FIFO/DMA stream parser faults abort the stream frame; SBX frame-seal faults reject the frame; BBU packet faults reject the packet/stream frame; submit-busy faults reject the attempt without mutating the visible frame.
 - Exceptions are reserved for emulator bugs and impossible internal states, such as broken save-state schema, impossible host transaction invariants, null host buffers, or internal surface registration mistakes.
 - `IO_VDP_DITHER` is a live VDP register. MMIO writes update the live latch directly in both runtimes; the old `syncRegisters()` read-self-back pass is gone.
 - VDP VRAM power-on garbage is seeded from explicit machine/boot entropy words instead of `Math.random`, `Date.now`, or host wall-clock state.
@@ -195,6 +195,8 @@ other wrong fix is a pretty ownership diagram that forces framebuffer writes
 through CPU shadow memory before the backend sees them. Both are rejected. The
 clean boundary must preserve direct backend texture writes and move discovery
 to initialization time.
+
+The legacy high-level VDP scene-packet ABI is gone. BIOS and cart code that still wants to submit VDP work must emit raw `VDP_PKT_REG*` plus `VDP_PKT_CMD` register/doorbell streams or use BIOS helpers that emit those raw packets.
 
 Desired direction:
 

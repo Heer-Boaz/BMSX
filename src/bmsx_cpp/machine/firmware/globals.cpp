@@ -1254,7 +1254,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_cmd_arg_count", valueNumber(static_cast<double>(IO_VDP_CMD_ARG_COUNT)));
 	setGlobal("sys_vdp_stream_base", valueNumber(static_cast<double>(VDP_STREAM_BUFFER_BASE)));
 	setGlobal("sys_vdp_stream_capacity_words", valueNumber(static_cast<double>(VDP_STREAM_CAPACITY_WORDS)));
-	setGlobal("sys_vdp_stream_packet_header_words", valueNumber(static_cast<double>(VDP_STREAM_PACKET_HEADER_WORDS)));
 	setGlobal("sys_vdp_fifo", valueNumber(static_cast<double>(IO_VDP_FIFO)));
 	setGlobal("sys_vdp_fifo_ctrl", valueNumber(static_cast<double>(IO_VDP_FIFO_CTRL)));
 	setGlobal("sys_vdp_fifo_ctrl_seal", valueNumber(static_cast<double>(VDP_FIFO_CTRL_SEAL)));
@@ -1319,12 +1318,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_layer_ui", valueNumber(1.0));
 	setGlobal("sys_vdp_layer_ide", valueNumber(2.0));
 	setGlobal("sys_vdp_arg_stride", valueNumber(static_cast<double>(IO_ARG_STRIDE)));
-	setGlobal("sys_vdp_cmd_clear", valueNumber(static_cast<double>(IO_CMD_VDP_CLEAR)));
-	setGlobal("sys_vdp_cmd_fill_rect", valueNumber(static_cast<double>(IO_CMD_VDP_FILL_RECT)));
-	setGlobal("sys_vdp_cmd_blit", valueNumber(static_cast<double>(IO_CMD_VDP_BLIT)));
-	setGlobal("sys_vdp_cmd_draw_line", valueNumber(static_cast<double>(IO_CMD_VDP_DRAW_LINE)));
-	setGlobal("sys_vdp_cmd_glyph_run", valueNumber(static_cast<double>(IO_CMD_VDP_GLYPH_RUN)));
-	setGlobal("sys_vdp_cmd_tile_run", valueNumber(static_cast<double>(IO_CMD_VDP_TILE_RUN)));
 	setGlobal("sys_irq_flags", valueNumber(static_cast<double>(IO_IRQ_FLAGS)));
 	setGlobal("sys_irq_ack", valueNumber(static_cast<double>(IO_IRQ_ACK)));
 	setGlobal("sys_dma_src", valueNumber(static_cast<double>(IO_DMA_SRC)));

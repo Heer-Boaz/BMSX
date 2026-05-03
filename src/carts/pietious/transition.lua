@@ -38,22 +38,7 @@ function transition:bind_visual()
 end
 
 function transition:draw_transition_overlay()
-	memwrite(
-		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
-		sys_vdp_cmd_fill_rect,
-		10,
-		0,
-		0,
-		0,
-		display_width(),
-		display_height(),
-		340,
-		sys_vdp_layer_ui,
-		0,
-		0,
-		0,
-		1
-	)
+	vdp_fill_rect_rgba(0, 0, display_width(), display_height(), 340, sys_vdp_layer_ui, 0, 0, 0, 1)
 	if not oget('d'):has_tag('d.bt') then
 		return
 	end
@@ -65,29 +50,7 @@ function transition:draw_transition_overlay()
 		for i = 1, #lines do
 			local line<const> = lines[i]
 			if string.len(line) > 0 then
-				memwrite(
-					vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
-					sys_vdp_cmd_glyph_run,
-					17,
-					0,
-					line,
-					(screen_width - font_module.measure_line_width(banner_font, line)) // 2,
-					base_y + ((i - 1) * banner_font.line_height),
-					341,
-					banner_font.id,
-					0,
-					0x7fffffff,
-					sys_vdp_layer_ui,
-					1,
-					1,
-					1,
-					1,
-					0,
-					0,
-					0,
-					0,
-					0
-				)
+				vdp_glyph_line_rgba(banner_font, line, (screen_width - font_module.measure_line_width(banner_font, line)) // 2, base_y + ((i - 1) * banner_font.line_height), 341, sys_vdp_layer_ui, 1, 1, 1, 1, 0, 0, 0, 0, 0)
 			end
 		end
 	end

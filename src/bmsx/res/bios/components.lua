@@ -7,6 +7,7 @@ local timeline_dispatch<const> = require('bios/timeline/dispatch')
 local collision_profiles<const> = require('bios/collision_profiles')
 local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 local font_module<const> = require('bios/font')
+local vdp_image<const> = require('bios/vdp_image')
 local romdir<const> = require('bios/romdir')
 local world_instance<const> = require('bios/world/index').instance
 local eventemitter<const> = eventemitter_module.eventemitter
@@ -705,29 +706,7 @@ function textcomponent:submit_glyph_lines(x, y, z, glyphs, background_enabled, b
 				local line_width<const> = line_widths ~= nil and line_widths[i] or font_module.measure_line_width(self.font, line)
 				line_x = x + ((self.center_block_width - line_width) / 2)
 			end
-			memwrite(
-				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
-				sys_vdp_cmd_glyph_run,
-				17,
-				0,
-				line,
-				line_x,
-				line_y,
-				z,
-				self.font.id,
-				0,
-				0x7fffffff,
-				self.layer,
-				self.color.r,
-				self.color.g,
-				self.color.b,
-				self.color.a,
-				background_enabled,
-				bg_r,
-				bg_g,
-				bg_b,
-				bg_a
-			)
+			vdp_image.write_glyph_line_rgba(self.font, line, line_x, line_y, z, self.layer, self.color.r, self.color.g, self.color.b, self.color.a, background_enabled, bg_r, bg_g, bg_b, bg_a)
 		end
 		if line_offsets == nil then
 			cursor_y = cursor_y + self.line_height
@@ -855,7 +834,6 @@ end
 -- 		local y0<const> = points[i * 2 + 2]
 -- 		local x1<const> = points[((i + 1) % n) * 2 + 1]
 -- 		local y1<const> = points[((i + 1) % n) * 2 + 2]
--- 		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x0, y0, x1, y1, z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, thickness)
 -- 	end
 -- end
 

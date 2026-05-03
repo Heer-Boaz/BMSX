@@ -24,15 +24,6 @@ bool hasPendingBackQueueContent();
 void clearBackQueues();
 void clearAllQueues();
 
-void submitSprite(const ImgRenderSubmission& item);
-void submitRectangle(const RectRenderSubmission& item);
-void submitDrawPolygon(const PolyRenderSubmission& item);
-void submitGlyphs(const GlyphRenderSubmission& item);
-i32 beginHost2DQueue();
-void forEachHost2DQueue(const std::function<void(const RenderSubmission&, size_t)>& fn);
-size_t host2DQueueBackSize();
-size_t host2DQueueFrontSize();
-
 void submitMesh(const MeshRenderSubmission& item);
 i32 beginMeshQueue();
 void forEachMeshQueue(const std::function<void(const MeshRenderSubmission&, size_t)>& fn);

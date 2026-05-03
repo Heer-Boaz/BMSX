@@ -63,24 +63,18 @@ GameView::~GameView() {
  * Initialize the renderer submit functions.
  *
  * Renderer submissions are host/editor render work. Machine-visible 2D work is
- * produced by cart/firmware MMIO and VDP packet streams.
+ * produced by cart/firmware MMIO and VDP packet streams. The native host/editor
+ * 2D overlay path has no C++ consumer, so sprite/rect/poly/glyph submits do not
+ * enter a render queue.
  */
 void GameView::initializeRenderer() {
-	renderer.submit.sprite = [](const ImgRenderSubmission& s) {
-		RenderQueues::submitSprite(s);
-	};
+	renderer.submit.sprite = [](const ImgRenderSubmission&) {};
 
-	renderer.submit.rect = [](const RectRenderSubmission& s) {
-		RenderQueues::submitRectangle(s);
-	};
+	renderer.submit.rect = [](const RectRenderSubmission&) {};
 
-	renderer.submit.poly = [](const PolyRenderSubmission& s) {
-		RenderQueues::submitDrawPolygon(s);
-	};
+	renderer.submit.poly = [](const PolyRenderSubmission&) {};
 
-	renderer.submit.glyphs = [](const GlyphRenderSubmission& s) {
-		RenderQueues::submitGlyphs(s);
-	};
+	renderer.submit.glyphs = [](const GlyphRenderSubmission&) {};
 
 	// host/editor particle queue; BMSX machine billboards use VDP packets
 	renderer.submit.particle = [](const ParticleRenderSubmission& s) {

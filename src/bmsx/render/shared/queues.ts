@@ -9,28 +9,27 @@ import type {
 } from './submissions';
 import { shallowcopy } from '../../common/shallowcopy';
 
-type Host2DSubmission =
-	| ({ type: 'img'; } & ImgRenderSubmission)
-	| ({ type: 'poly'; } & PolyRenderSubmission)
-	| ({ type: 'rect'; } & RectRenderSubmission)
-	| ({ type: 'glyphs'; } & GlyphRenderSubmission);
+export type Host2DKind = 'img' | 'poly' | 'rect' | 'glyphs';
+export type Host2DRef = ImgRenderSubmission | PolyRenderSubmission | RectRenderSubmission | GlyphRenderSubmission;
 
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
-const host2dQueue = new FeatureQueue<Host2DSubmission>(512);
+const host2dKindQueue = new FeatureQueue<Host2DKind>(512);
+const host2dRefQueue = new FeatureQueue<Host2DRef>(512);
 let activeQueueSource: 'front' | 'back' = 'front';
 
 export function prepareCompletedRenderQueues(): void {
 	meshQueue.swap();
 	particleQueue.swap();
-	host2dQueue.swap();
+	host2dKindQueue.swap();
+	host2dRefQueue.swap();
 	prepareHeldRenderQueues();
 }
 
 function hasCommittedFrontQueueContent(): boolean {
 	return meshQueue.sizeFront() > 0
 		|| particleQueue.sizeFront() > 0
-		|| host2dQueue.sizeFront() > 0;
+		|| host2dRefQueue.sizeFront() > 0;
 }
 
 export function preparePartialRenderQueues(): void {
@@ -50,57 +49,55 @@ export function prepareHeldRenderQueues(): void {
 export function hasPendingBackQueueContent(): boolean {
 	return meshQueue.sizeBack() > 0
 		|| particleQueue.sizeBack() > 0
-		|| host2dQueue.sizeBack() > 0;
+		|| host2dRefQueue.sizeBack() > 0;
 }
 
 export function clearBackQueues(): void {
 	meshQueue.clearBack();
 	particleQueue.clearBack();
-	host2dQueue.clearBack();
+	host2dKindQueue.clearBack();
+	host2dRefQueue.clearBack();
 	prepareHeldRenderQueues();
 }
 
 export function clearAllQueues(): void {
 	meshQueue.clearAll();
 	particleQueue.clearAll();
-	host2dQueue.clearAll();
+	host2dKindQueue.clearAll();
+	host2dRefQueue.clearAll();
 	prepareHeldRenderQueues();
 }
 
 export function submitSprite(item: ImgRenderSubmission): void {
-	const submission = item as Host2DSubmission;
-	submission.type = 'img';
-	host2dQueue.submit(submission);
+	host2dKindQueue.submit('img');
+	host2dRefQueue.submit(item);
 }
 
 export function submitRectangle(item: RectRenderSubmission): void {
-	const submission = item as Host2DSubmission;
-	submission.type = 'rect';
-	host2dQueue.submit(submission);
+	host2dKindQueue.submit('rect');
+	host2dRefQueue.submit(item);
 }
 
 export function submitDrawPolygon(item: PolyRenderSubmission): void {
-	const submission = item as Host2DSubmission;
-	submission.type = 'poly';
-	host2dQueue.submit(submission);
+	host2dKindQueue.submit('poly');
+	host2dRefQueue.submit(item);
 }
 
 export function submitGlyphs(item: GlyphRenderSubmission): void {
-	const submission = item as Host2DSubmission;
-	submission.type = 'glyphs';
-	host2dQueue.submit(submission);
+	host2dKindQueue.submit('glyphs');
+	host2dRefQueue.submit(item);
 }
 
 export function beginHost2DQueue(): number {
-	return activeQueueSource === 'back' ? host2dQueue.sizeBack() : host2dQueue.sizeFront();
+	return activeQueueSource === 'back' ? host2dRefQueue.sizeBack() : host2dRefQueue.sizeFront();
 }
 
-export function forEachHost2DQueue(fn: (item: Host2DSubmission, index: number) => void): void {
+export function forEachHost2DQueue(fn: (kind: Host2DKind, item: Host2DRef, index: number) => void): void {
 	if (activeQueueSource === 'back') {
-		host2dQueue.forEachBack(fn);
+		host2dRefQueue.forEachBack((item, index) => fn(host2dKindQueue.getBack(index), item, index));
 		return;
 	}
-	host2dQueue.forEachFront(fn);
+	host2dRefQueue.forEachFront((item, index) => fn(host2dKindQueue.getFront(index), item, index));
 }
 
 export function submitMesh(item: MeshRenderSubmission): void {

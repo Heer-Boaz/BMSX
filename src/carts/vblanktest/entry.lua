@@ -139,6 +139,7 @@ while true do
 	vdp_stream_cursor = sys_vdp_stream_base
 	update_cart()
 	draw_cart()
+	vdp_stream_finish()
 	do
 		local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
 		if used_bytes ~= 0 then

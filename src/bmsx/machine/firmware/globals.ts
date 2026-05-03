@@ -22,7 +22,6 @@ import {
 	SYSTEM_ROM_BASE,
 	VDP_STREAM_BUFFER_BASE,
 	VDP_STREAM_CAPACITY_WORDS,
-	VDP_STREAM_PACKET_HEADER_WORDS,
 	VRAM_FRAMEBUFFER_BASE,
 	VRAM_FRAMEBUFFER_SIZE,
 	VRAM_PRIMARY_SLOT_BASE,
@@ -137,12 +136,6 @@ import {
 	IO_APU_SOURCE_LOOP_START_SAMPLE,
 	IO_APU_SOURCE_SAMPLE_RATE_HZ,
 	IO_APU_TARGET_GAIN_Q12,
-	IO_CMD_VDP_BLIT,
-	IO_CMD_VDP_CLEAR,
-	IO_CMD_VDP_DRAW_LINE,
-	IO_CMD_VDP_FILL_RECT,
-	IO_CMD_VDP_GLYPH_RUN,
-	IO_CMD_VDP_TILE_RUN,
 	IO_CMD_GEO_OVERLAP2D_PASS,
 	IO_CMD_GEO_PROJECT3_BATCH,
 	IO_CMD_GEO_SAT2_BATCH,
@@ -1256,7 +1249,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_arg_count', IO_VDP_CMD_ARG_COUNT);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_stream_base', VDP_STREAM_BUFFER_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_stream_capacity_words', VDP_STREAM_CAPACITY_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_stream_packet_header_words', VDP_STREAM_PACKET_HEADER_WORDS);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo', IO_VDP_FIFO);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl', IO_VDP_FIFO_CTRL);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl_seal', VDP_FIFO_CTRL_SEAL);
@@ -1321,12 +1313,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ui', 1);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ide', 2);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_arg_stride', IO_ARG_STRIDE);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_clear', IO_CMD_VDP_CLEAR);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_fill_rect', IO_CMD_VDP_FILL_RECT);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_blit', IO_CMD_VDP_BLIT);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_draw_line', IO_CMD_VDP_DRAW_LINE);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_glyph_run', IO_CMD_VDP_GLYPH_RUN);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_tile_run', IO_CMD_VDP_TILE_RUN);
 	luaPipeline.registerGlobal(runtime, 'sys_irq_flags', IO_IRQ_FLAGS);
 	luaPipeline.registerGlobal(runtime, 'sys_irq_ack', IO_IRQ_ACK);
 	luaPipeline.registerGlobal(runtime, 'sys_dma_src', IO_DMA_SRC);

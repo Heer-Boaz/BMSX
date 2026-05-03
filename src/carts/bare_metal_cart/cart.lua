@@ -358,6 +358,6 @@ while true do
 		sprite_direction = -sprite_direction
 	end
 	sprite_y = 88 + ((frame // 12) % 4)
-	draw_frame()
 	wait_vblank()
+	draw_frame()
 end

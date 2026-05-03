@@ -30,6 +30,7 @@
 
 local ecs<const> = require('bios/ecs/index')
 local registry<const> = require('bios/registry')
+local vdp_stream<const> = require('bios/vdp_stream')
 
 local tickgroup<const> = ecs.tickgroup
 local world_instance
@@ -430,7 +431,7 @@ end
 --   Affects the default world query helpers (objects(), objects_with_components()).
 function world_class:set_space(space_id)
 	if self.active_space_id ~= space_id then
-		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 4), sys_vdp_cmd_clear, 4, 0, 0, 0, 0, 1)
+		vdp_stream.clear_rgba(0, 0, 0, 1)
 	end
 	self.active_space_id = space_id
 	self.active_space = self._spaces[space_id]
