@@ -11,6 +11,6 @@ struct VdpSourcePixels {
 	u32 stride = 0;
 };
 
-VdpSourcePixels resolveVdpSurfacePixels(const VDP& vdp, u32 surfaceId);
+VdpSourcePixels resolveVdpSurfacePixels(const VDP::VdpHostOutput& output, u32 surfaceId);
 
 } // namespace bmsx

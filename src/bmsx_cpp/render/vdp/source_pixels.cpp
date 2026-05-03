@@ -1,22 +1,17 @@
 #include "render/vdp/source_pixels.h"
 
-#include "machine/devices/vdp/fault.h"
-#include <string>
+#include "render/vdp/surfaces.h"
 
 namespace bmsx {
 
-VdpSourcePixels resolveVdpSurfacePixels(const VDP& vdp, u32 surfaceId) {
-	for (const auto& slot : vdp.surfaceUploadSlots()) {
-		if (slot.surfaceId == surfaceId) {
-			return VdpSourcePixels{
-				slot.cpuReadback.data(),
-				slot.surfaceWidth,
-				slot.surfaceHeight,
-				slot.surfaceWidth * 4u,
-			};
-		}
-	}
-	throw vdpFault("surface " + std::to_string(surfaceId) + " is not registered for CPU readback.");
+VdpSourcePixels resolveVdpSurfacePixels(const VDP::VdpHostOutput& output, u32 surfaceId) {
+	const VDP::VramSlot& slot = resolveVdpHostSurfaceSlot(output, surfaceId);
+	return VdpSourcePixels{
+		slot.cpuReadback.data(),
+		slot.surfaceWidth,
+		slot.surfaceHeight,
+		slot.surfaceWidth * 4u,
+	};
 }
 
 } // namespace bmsx

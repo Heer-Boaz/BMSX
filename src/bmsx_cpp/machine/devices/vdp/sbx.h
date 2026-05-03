@@ -13,8 +13,6 @@ public:
 	using FaceWords = std::array<u32, SKYBOX_FACE_WORD_COUNT>;
 
 	void reset();
-	void setSources(const SkyboxFaceSources& sources);
-	void clear();
 	void writePacket(u32 control, const FaceWords& faceWords);
 	u32 latchFrame(FaceWords& target) const;
 	void presentFrame(u32 control, const FaceWords& faceWords);

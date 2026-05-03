@@ -1,5 +1,5 @@
 import type { TextureHandle } from '../backend/interfaces';
-import type { VDP } from '../../machine/devices/vdp/vdp';
+import type { VdpHostOutput, VdpSurfaceUploadSlot } from '../../machine/devices/vdp/vdp';
 import {
 	VDP_PRIMARY_SLOT_TEXTURE_KEY,
 	VDP_SECONDARY_SLOT_TEXTURE_KEY,
@@ -26,12 +26,23 @@ export type VdpRenderSurface = {
 	height: number;
 };
 
-export function resolveVdpRenderSurface(vdp: VDP, surfaceId: number): VdpRenderSurface {
-	const size = vdp.resolveBlitterSurfaceSize(surfaceId);
+export function resolveVdpHostSurfaceSlot(output: VdpHostOutput, surfaceId: number): VdpSurfaceUploadSlot {
+	const slots = output.surfaceUploadSlots;
+	for (let index = 0; index < slots.length; index += 1) {
+		const slot = slots[index]!;
+		if (slot.surfaceId === surfaceId) {
+			return slot;
+		}
+	}
+	throw new Error(`[VDPSurfaces] Surface ${surfaceId} is not registered for host output.`);
+}
+
+export function resolveVdpRenderSurface(output: VdpHostOutput, surfaceId: number): VdpRenderSurface {
+	const slot = resolveVdpHostSurfaceSlot(output, surfaceId);
 	return {
 		textureKey: resolveVdpSurfaceTextureKey(surfaceId),
-		width: size.width,
-		height: size.height,
+		width: slot.surfaceWidth,
+		height: slot.surfaceHeight,
 	};
 }
 

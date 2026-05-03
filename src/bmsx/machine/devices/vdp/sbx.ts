@@ -1,29 +1,11 @@
 import {
-	type SkyboxFaceSources,
-	SKYBOX_FACE_H_WORD,
-	SKYBOX_FACE_KEYS,
-	SKYBOX_FACE_SLOT_WORD,
-	SKYBOX_FACE_U_WORD,
-	SKYBOX_FACE_V_WORD,
-	SKYBOX_FACE_W_WORD,
 	SKYBOX_FACE_WORD_COUNT,
 	SKYBOX_FACE_WORD_STRIDE,
 	VDP_SBX_CONTROL_ENABLE,
 } from './contracts';
-import { vdpFault } from './fault';
 
 export const VDP_SBX_PACKET_KIND = 0x12000000;
 export const VDP_SBX_PACKET_PAYLOAD_WORDS = 1 + SKYBOX_FACE_WORD_COUNT;
-const VDP_SBX_CONTROL_RESERVED_MASK = 0xfffffffe;
-
-function writeFaceWords(target: Uint32Array, faceIndex: number, slot: number, u: number, v: number, w: number, h: number): void {
-	const base = faceIndex * SKYBOX_FACE_WORD_STRIDE;
-	target[base + SKYBOX_FACE_SLOT_WORD] = slot >>> 0;
-	target[base + SKYBOX_FACE_U_WORD] = u >>> 0;
-	target[base + SKYBOX_FACE_V_WORD] = v >>> 0;
-	target[base + SKYBOX_FACE_W_WORD] = w >>> 0;
-	target[base + SKYBOX_FACE_H_WORD] = h >>> 0;
-}
 
 export class VdpSbxUnit {
 	private readonly liveFaceWords = new Uint32Array(SKYBOX_FACE_WORD_COUNT);
@@ -38,22 +20,7 @@ export class VdpSbxUnit {
 		this.visibleControl = 0;
 	}
 
-	public setSources(sources: SkyboxFaceSources): void {
-		for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
-			const source = sources[SKYBOX_FACE_KEYS[index]];
-			writeFaceWords(this.liveFaceWords, index, source.slot, source.u, source.v, source.w, source.h);
-		}
-		this.liveControl |= VDP_SBX_CONTROL_ENABLE;
-	}
-
-	public clear(): void {
-		this.liveControl &= ~VDP_SBX_CONTROL_ENABLE;
-	}
-
 	public writePacket(control: number, faceWords: ArrayLike<number>): void {
-		if ((control & VDP_SBX_CONTROL_RESERVED_MASK) !== 0) {
-			throw vdpFault(`VDP SBX control reserved bits are set (${control}).`);
-		}
 		this.liveControl = control >>> 0;
 		this.liveFaceWords.set(faceWords);
 	}

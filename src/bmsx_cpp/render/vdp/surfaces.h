@@ -11,7 +11,8 @@ struct VdpRenderSurfaceInfo {
 	uint32_t height = 0;
 };
 
-VdpRenderSurfaceInfo resolveVdpRenderSurface(const VDP& vdp, uint32_t surfaceId);
+const VDP::VramSlot& resolveVdpHostSurfaceSlot(const VDP::VdpHostOutput& output, uint32_t surfaceId);
+VdpRenderSurfaceInfo resolveVdpRenderSurface(const VDP::VdpHostOutput& output, uint32_t surfaceId);
 u32 resolveVdpSurfaceSlotBinding(uint32_t surfaceId);
 bool isVdpFrameBufferSurface(uint32_t surfaceId);
 TextureHandle getVdpRenderSurfaceTexture(uint32_t surfaceId);

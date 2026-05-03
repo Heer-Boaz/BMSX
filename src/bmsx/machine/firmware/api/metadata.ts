@@ -37,76 +37,6 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	mesh: {
-		description: 'Submits a 3D mesh render request.',
-		parameters: [
-			{ name: 'mesh', description: 'Mesh resource/handle.' },
-			{ name: 'matrix', description: 'Transform matrix.' },
-			{ name: 'options', optional: true, description: 'Optional mesh render options (joint_matrices, morph_weights, receive_shadow).' },
-		],
-		returnType: 'void',
-	},
-	particle: {
-		description: 'Submits a particle render request.',
-		parameters: [
-			{ name: 'position', description: 'Particle position as a vec3 array.' },
-			{ name: 'size', description: 'Particle size in pixels.' },
-			{ name: 'colorvalue', description: 'Palette index (number) or a color object.' },
-			{ name: 'options', description: 'Particle source and options (slot, u, v, w, h, ambient_mode, ambient_factor).' },
-		],
-		returnType: 'void',
-	},
-	set_camera: {
-		description: 'Sets the active 3D camera matrices for rendering.',
-		parameters: [
-			{ name: 'view', description: 'View matrix (16 numbers).' },
-			{ name: 'proj', description: 'Projection matrix (16 numbers).' },
-			{ name: 'eye', description: 'Camera position as a vec3 array.' },
-		],
-		returnType: 'void',
-	},
-	skybox: {
-		description: 'Sets the skybox face image ids (posx, negx, posy, negy, posz, negz). Faces must be slot-backed and mapped into the primary or secondary image slot.',
-		parameters: [
-			{ name: 'posx', description: 'Positive X face image id.' },
-			{ name: 'negx', description: 'Negative X face image id.' },
-			{ name: 'posy', description: 'Positive Y face image id.' },
-			{ name: 'negy', description: 'Negative Y face image id.' },
-			{ name: 'posz', description: 'Positive Z face image id.' },
-			{ name: 'negz', description: 'Negative Z face image id.' },
-		],
-		returnType: 'void',
-	},
-	put_ambient_light: {
-		description: 'Submits an ambient light contribution for the current frame.',
-		parameters: [
-			{ name: 'id', description: 'Stable light identifier for this frame.' },
-			{ name: 'colorvalue', description: 'Palette index, color object, or vec3 RGB array.' },
-			{ name: 'intensity', description: 'Ambient light intensity scalar.' },
-		],
-		returnType: 'void',
-	},
-	put_directional_light: {
-		description: 'Submits a directional light for the current frame.',
-		parameters: [
-			{ name: 'id', description: 'Stable light identifier for this frame.' },
-			{ name: 'orientation', description: 'Light direction as a vec3 array or { x, y, z } object.' },
-			{ name: 'colorvalue', description: 'Palette index, color object, or vec3 RGB array.' },
-			{ name: 'intensity', description: 'Directional light intensity scalar.' },
-		],
-		returnType: 'void',
-	},
-	put_point_light: {
-		description: 'Submits a point light for the current frame.',
-		parameters: [
-			{ name: 'id', description: 'Stable light identifier for this frame.' },
-			{ name: 'position', description: 'Light position as a vec3 array or { x, y, z } object.' },
-			{ name: 'colorvalue', description: 'Palette index, color object, or vec3 RGB array.' },
-			{ name: 'range', description: 'Point light range in world units.' },
-			{ name: 'intensity', description: 'Point light intensity scalar.' },
-		],
-		returnType: 'void',
-	},
 	create_font: {
 		description: 'Creates a runtime bitmap font from a Lua definition table.',
 		parameters: [
@@ -133,22 +63,6 @@ export const API_METHOD_METADATA = {
 		parameters: [],
 		returnType: 'Font',
 		returnDescription: 'Native Font instance.',
-	},
-	dset: {
-		description: 'Writes a number to persistent cart storage.',
-		parameters: [
-			{ name: 'index', description: 'Storage slot index (integer).' },
-			{ name: 'value', description: 'Numeric value to persist.' },
-		],
-		returnType: 'void',
-	},
-	dget: {
-		description: 'Reads a number from persistent cart storage.',
-		parameters: [
-			{ name: 'index', description: 'Storage slot index (integer).' },
-		],
-		returnType: 'number',
-		returnDescription: 'Stored numeric value.',
 	},
 	world: {
 		description: 'Returns the active World instance.',

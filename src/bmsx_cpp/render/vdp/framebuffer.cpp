@@ -79,17 +79,6 @@ void readVdpDisplayFrameBufferPixels(u8* out, i32 width, i32 height, i32 x, i32 
 	);
 }
 
-void syncVdpRenderFrameBufferReadback(VDP& vdp) {
-	readVdpRenderFrameBufferPixels(
-		vdp.frameBufferRenderReadback().data(),
-		static_cast<i32>(vdp.frameBufferWidth()),
-		static_cast<i32>(vdp.frameBufferHeight()),
-		0,
-		0
-	);
-	vdp.invalidateFrameBufferReadCache();
-}
-
 void initializeVdpFrameBufferTextures(VDP& vdp) {
 	renderFrameBufferTexture = createVdpTextureFromPixels(FRAMEBUFFER_RENDER_TEXTURE_KEY, vdp.frameBufferRenderReadback().data(), vdp.frameBufferWidth(), vdp.frameBufferHeight());
 	vdp.clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
@@ -97,7 +86,8 @@ void initializeVdpFrameBufferTextures(VDP& vdp) {
 }
 
 void applyVdpFrameBufferTextureWrites(VDP& vdp) {
-	for (const auto& slot : vdp.surfaceUploadSlots()) {
+	const VDP::VdpHostOutput output = vdp.hostOutput();
+	for (const auto& slot : *output.surfaceUploadSlots) {
 		if (!isVdpFrameBufferSurface(slot.surfaceId)) {
 			continue;
 		}

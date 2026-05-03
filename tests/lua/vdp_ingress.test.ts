@@ -2,13 +2,23 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+	IO_VDP_CAMERA_COMMIT,
+	IO_VDP_CAMERA_EYE,
+	IO_VDP_CAMERA_PROJ,
+	IO_VDP_CAMERA_VIEW,
 	IO_VDP_CMD,
 	IO_VDP_DITHER,
+	IO_VDP_FAULT_CODE,
+	IO_VDP_FAULT_DETAIL,
 	IO_VDP_PMU_BANK,
 	IO_VDP_PMU_CTRL,
 	IO_VDP_PMU_SCALE_X,
 	IO_VDP_PMU_SCALE_Y,
 	IO_VDP_PMU_Y,
+	IO_VDP_RD_DATA,
+	IO_VDP_RD_MODE,
+	IO_VDP_RD_X,
+	IO_VDP_RD_Y,
 	IO_VDP_REG_BG_COLOR,
 	IO_VDP_REG_DRAW_COLOR,
 	IO_VDP_REG_DRAW_CTRL,
@@ -26,8 +36,19 @@ import {
 	IO_VDP_REG_SRC_WH,
 	IO_VDP_SLOT_PRIMARY_ATLAS,
 	IO_VDP_SLOT_SECONDARY_ATLAS,
+	IO_VDP_SBX_COMMIT,
+	IO_VDP_SBX_CONTROL,
+	IO_VDP_SBX_FACE0,
+	IO_VDP_STATUS,
+	VDP_CAMERA_COMMIT_WRITE,
+	VDP_FAULT_RD_OOB,
+	VDP_FAULT_RD_UNSUPPORTED_MODE,
+	VDP_FAULT_VRAM_WRITE_UNALIGNED,
+	VDP_RD_MODE_RGBA8888,
 	VDP_SLOT_ATLAS_NONE,
 	VDP_SLOT_PRIMARY,
+	VDP_SBX_COMMIT_WRITE,
+	VDP_STATUS_FAULT,
 } from '../../src/bmsx/machine/bus/io';
 import { CPU } from '../../src/bmsx/machine/cpu/cpu';
 import { VDP } from '../../src/bmsx/machine/devices/vdp/vdp';
@@ -36,8 +57,9 @@ import { VDP_BBU_PACKET_KIND, VDP_BBU_PACKET_PAYLOAD_WORDS } from '../../src/bms
 import { VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
 import { VDP_SBX_PACKET_KIND, VDP_SBX_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/sbx';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE } from '../../src/bmsx/machine/memory/map';
+import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
+import { numberToF32Bits } from '../../src/bmsx/machine/common/numeric';
 
 const VDP_CMD_NOP = 0;
 const VDP_CMD_CLEAR = 1;
@@ -75,24 +97,37 @@ function activeQueue(vdp: VDP): any {
 	return (vdp as any).activeFrame.queue;
 }
 
-function skyboxSources(w = 1, h = 1) {
-	const source = { slot: VDP_SLOT_PRIMARY, u: 0, v: 0, w, h };
-	return {
-		posx: source,
-		negx: source,
-		posy: source,
-		negy: source,
-		posz: source,
-		negz: source,
-	};
-}
-
 function skyboxPacket(control = VDP_SBX_CONTROL_ENABLE, w = 4, h = 5): number[] {
 	const words = [VDP_SKYBOX_HEADER, control];
 	for (let face = 0; face < 6; face += 1) {
 		words.push(VDP_SLOT_PRIMARY, 0, 0, w, h);
 	}
 	return words;
+}
+
+function writeSkyboxMmio(memory: Memory, control = VDP_SBX_CONTROL_ENABLE, w = 1, h = 1): void {
+	let addr = IO_VDP_SBX_FACE0;
+	for (let face = 0; face < 6; face += 1) {
+		memory.writeValue(addr + 0 * IO_WORD_SIZE, VDP_SLOT_PRIMARY);
+		memory.writeValue(addr + 1 * IO_WORD_SIZE, 0);
+		memory.writeValue(addr + 2 * IO_WORD_SIZE, 0);
+		memory.writeValue(addr + 3 * IO_WORD_SIZE, w);
+		memory.writeValue(addr + 4 * IO_WORD_SIZE, h);
+		addr += 5 * IO_WORD_SIZE;
+	}
+	memory.writeValue(IO_VDP_SBX_CONTROL, control);
+	memory.writeValue(IO_VDP_SBX_COMMIT, VDP_SBX_COMMIT_WRITE);
+}
+
+function writeCameraMmio(memory: Memory, view: Float32Array, proj: Float32Array, eye: Float32Array): void {
+	for (let index = 0; index < 16; index += 1) {
+		memory.writeValue(IO_VDP_CAMERA_VIEW + index * IO_WORD_SIZE, numberToF32Bits(view[index]));
+		memory.writeValue(IO_VDP_CAMERA_PROJ + index * IO_WORD_SIZE, numberToF32Bits(proj[index]));
+	}
+	for (let index = 0; index < 3; index += 1) {
+		memory.writeValue(IO_VDP_CAMERA_EYE + index * IO_WORD_SIZE, numberToF32Bits(eye[index]));
+	}
+	memory.writeValue(IO_VDP_CAMERA_COMMIT, VDP_CAMERA_COMMIT_WRITE);
 }
 
 function buildFrameOpen(vdp: VDP): boolean {
@@ -206,7 +241,8 @@ test('VDP PMU resolves parallax into BLIT geometry before backend execution', ()
 	const workUnits = vdp.getPendingRenderWorkUnits();
 	assert.ok(workUnits > 0);
 	vdp.advanceWork(workUnits);
-	const queue = vdp.takeReadyExecutionQueue();
+	const output = vdp.readHostOutput();
+	const queue = output.executionQueue;
 	assert.ok(queue);
 	const command = queue;
 	assert.equal(command.opcode[0], VDP_BLITTER_OPCODE_BLIT);
@@ -215,7 +251,7 @@ test('VDP PMU resolves parallax into BLIT geometry before backend execution', ()
 	assert.equal(command.dstY[0], 48);
 	assert.equal(command.scaleX[0], 1);
 	assert.equal(command.scaleY[0], 1);
-	vdp.completeReadyExecution(queue);
+	vdp.completeHostExecution(output);
 });
 
 test('VDP PMU bank registers resolve DRAW_CTRL bank and signed weight', () => {
@@ -246,7 +282,8 @@ test('VDP PMU bank registers resolve DRAW_CTRL bank and signed weight', () => {
 	const workUnits = vdp.getPendingRenderWorkUnits();
 	assert.ok(workUnits > 0);
 	vdp.advanceWork(workUnits);
-	const queue = vdp.takeReadyExecutionQueue();
+	const output = vdp.readHostOutput();
+	const queue = output.executionQueue;
 	assert.ok(queue);
 	const command = queue;
 	assert.equal(command.opcode[0], VDP_BLITTER_OPCODE_BLIT);
@@ -254,7 +291,7 @@ test('VDP PMU bank registers resolve DRAW_CTRL bank and signed weight', () => {
 	assert.equal(command.dstY[0], 46);
 	assert.equal(command.scaleX[0], 1.25);
 	assert.equal(command.scaleY[0], 1);
-	vdp.completeReadyExecution(queue);
+	vdp.completeHostExecution(output);
 });
 
 test('VDP PMU scale influence uses absolute signed DRAW_CTRL weight', () => {
@@ -426,36 +463,74 @@ test('VDP2D BLIT source rect words flow through the datapath', () => {
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 });
 
+test('VDP readback faults latch status instead of throwing', () => {
+	const { memory } = createVdp();
+
+	memory.writeValue(IO_VDP_RD_MODE, 99);
+
+	assert.equal(memory.readValue(IO_VDP_RD_DATA), 0);
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_RD_UNSUPPORTED_MODE);
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_DETAIL), 99);
+	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_FAULT) !== 0, true);
+});
+
+test('VDP readback OOB faults latch status instead of throwing', () => {
+	const { memory } = createVdp();
+
+	memory.writeValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
+	memory.writeValue(IO_VDP_RD_X, 999);
+	memory.writeValue(IO_VDP_RD_Y, 0);
+
+	assert.equal(memory.readValue(IO_VDP_RD_DATA), 0);
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_RD_OOB);
+});
+
+test('VDP VRAM write faults latch status instead of throwing', () => {
+	const { memory, vdp } = createVdp();
+
+	assert.doesNotThrow(() => vdp.writeVram(VRAM_PRIMARY_SLOT_BASE + 1, new Uint8Array([1, 2, 3, 4])));
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_VRAM_WRITE_UNALIGNED);
+	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_FAULT) !== 0, true);
+});
+
+test('VDP dither register writes update the live latch directly', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_DITHER, 3);
+
+	assert.equal(vdp.captureState().ditherType, 3);
+});
+
 test('VDP SBX live state commits only through frame present', () => {
 	const { memory, vdp } = createVdp();
 
-	assert.equal(vdp.committedSkyboxEnabled, false);
-	vdp.setSkyboxSources(skyboxSources());
-	assert.equal(vdp.committedSkyboxEnabled, false);
+	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
+	writeSkyboxMmio(memory);
+	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
-	assert.equal(vdp.committedSkyboxEnabled, false);
+	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
 	vdp.presentReadyFrameOnVblankEdge();
-	assert.equal(vdp.committedSkyboxEnabled, true);
+	assert.equal(vdp.readHostOutput().skyboxEnabled, true);
 
-	vdp.clearSkybox();
-	assert.equal(vdp.committedSkyboxEnabled, true);
+	writeSkyboxMmio(memory, 0);
+	assert.equal(vdp.readHostOutput().skyboxEnabled, true);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 	vdp.presentReadyFrameOnVblankEdge();
-	assert.equal(vdp.committedSkyboxEnabled, false);
+	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
 });
 
 test('VDP SBX validates face words during frame seal', () => {
 	const { memory, vdp } = createVdp();
 
-	vdp.setSkyboxSources(skyboxSources(2, 1));
+	writeSkyboxMmio(memory, VDP_SBX_CONTROL_ENABLE, 2, 1);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 
 	assert.throws(() => memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME));
 	assert.equal(buildFrameOpen(vdp), false);
-	assert.equal(vdp.committedSkyboxEnabled, false);
+	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
 });
 
 test('VDP SBX accepts SKYBOX packets into frame-latched state', () => {
@@ -464,8 +539,8 @@ test('VDP SBX accepts SKYBOX packets into frame-latched state', () => {
 	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
 	sealStream(memory, vdp, [...skyboxPacket(VDP_SBX_CONTROL_ENABLE, 4, 5), VDP_PKT_END]);
 	vdp.presentReadyFrameOnVblankEdge();
-	assert.equal(vdp.committedSkyboxEnabled, true);
-	const sample = vdp.resolveCommittedSkyboxFaceSample(0);
+	assert.equal(vdp.readHostOutput().skyboxEnabled, true);
+	const sample = vdp.readHostOutput().skyboxSamples[0]!;
 	assert.equal(sample.source.surfaceId, VDP_RD_SURFACE_PRIMARY);
 	assert.equal(sample.surfaceWidth, 16);
 	assert.equal(sample.surfaceHeight, 16);
@@ -473,14 +548,34 @@ test('VDP SBX accepts SKYBOX packets into frame-latched state', () => {
 	assert.equal(sample.source.height, 5);
 });
 
-test('VDP SBX faults only at SKYBOX packet latch and frame seal', () => {
+test('VDP SBX stores raw control bits and faults bad face words at frame seal', () => {
 	const { memory, vdp } = createVdp();
 
 	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
-	assert.throws(() => sealStream(memory, vdp, [...skyboxPacket(2, 4, 5), VDP_PKT_END]));
-	assert.equal(vdp.committedSkyboxEnabled, false);
+	assert.doesNotThrow(() => sealStream(memory, vdp, [...skyboxPacket(2, 4, 5), VDP_PKT_END]));
+	vdp.presentReadyFrameOnVblankEdge();
+	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
 	assert.throws(() => sealStream(memory, vdp, [...skyboxPacket(VDP_SBX_CONTROL_ENABLE, 17, 1), VDP_PKT_END]));
-	assert.equal(vdp.committedSkyboxEnabled, false);
+	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
+});
+
+test('VDP camera MMIO commits live bank sampled at frame present', () => {
+	const { memory, vdp } = createVdp();
+	const view = new Float32Array(16);
+	const proj = new Float32Array(16);
+	view[0] = 1; view[5] = 1; view[10] = 1; view[15] = 1;
+	proj[0] = 1; proj[5] = 1; proj[10] = 1; proj[15] = 1;
+	const eye = new Float32Array([3, 4, 5]);
+
+	writeCameraMmio(memory, view, proj, eye);
+
+	assert.equal(vdp.readHostOutput().camera.eye[0], 0);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	vdp.presentReadyFrameOnVblankEdge();
+	assert.equal(vdp.readHostOutput().camera.eye[0], 3);
+	assert.equal(vdp.readHostOutput().camera.eye[1], 4);
+	assert.equal(vdp.readHostOutput().camera.eye[2], 5);
 });
 
 function billboardPacket(sizeWord: number, u = 2, v = 3, w = 4, h = 5, control = 0): number[] {
@@ -508,9 +603,10 @@ test('VDP BBU accepts BILLBOARD packets into frame-latched instance RAM', () => 
 	assert.equal((vdp as any).activeFrame.hasCommands, true);
 	assert.equal((vdp as any).activeFrame.hasFrameBufferCommands, false);
 	vdp.advanceWork(1);
-	const queue = vdp.takeReadyExecutionQueue();
+	const output = vdp.readHostOutput();
+	const queue = output.executionQueue;
 	assert.notEqual(queue, null);
-	const billboards = vdp.takeReadyExecutionBillboards();
+	const billboards = output.executionBillboards;
 	assert.equal(billboards.length, 1);
 	assert.equal(billboards.slot[0], VDP_SLOT_PRIMARY);
 	assert.equal(billboards.surfaceWidth[0], 16);
@@ -524,7 +620,7 @@ test('VDP BBU accepts BILLBOARD packets into frame-latched instance RAM', () => 
 	assert.equal(billboards.positionZ[0], 30);
 	assert.equal(billboards.size[0], 2);
 	assert.equal(billboards.colorWord[0], 0xff112233);
-	vdp.completeReadyExecution(queue!);
+	vdp.completeHostExecution(output);
 });
 
 test('VDP BBU faults only at BILLBOARD packet latch', () => {

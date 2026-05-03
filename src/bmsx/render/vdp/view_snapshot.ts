@@ -5,8 +5,9 @@ import { commitVdpBillboardViewState } from './billboards';
 import { commitVdpSkyboxViewState } from './skybox';
 
 export function commitVdpViewSnapshot(view: GameView, vdp: VDP): void {
-	view.dither_type = vdp.committedViewDitherType;
-	copyVdpCameraSnapshot(view.vdpCamera, vdp.committedCameraBank0);
-	commitVdpSkyboxViewState(view, vdp);
-	commitVdpBillboardViewState(view, vdp);
+	const output = vdp.readHostOutput();
+	view.dither_type = output.ditherType;
+	copyVdpCameraSnapshot(view.vdpCamera, output.camera);
+	commitVdpSkyboxViewState(view, output);
+	commitVdpBillboardViewState(view, output);
 }

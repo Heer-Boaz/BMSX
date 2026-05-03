@@ -11,7 +11,7 @@ import {
 } from '../shared/queues';
 import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/submissions';
 import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
-import type { VdpResolvedBlitterSample } from '../../machine/devices/vdp/vdp';
+import type { VdpHostOutput, VdpResolvedBlitterSample } from '../../machine/devices/vdp/vdp';
 import { hardwareCameraBank0 } from '../shared/hardware/camera';
 import { VDP_SLOT_PRIMARY, VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../machine/bus/io';
 import {
@@ -39,7 +39,8 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 		stateOnly: true,
 		graph: { skip: true },
 		exec: () => {
-			beginHeadlessScene(consoleCore.runtime.machine.vdp.frameBufferWidth, consoleCore.runtime.machine.vdp.frameBufferHeight);
+			const output = consoleCore.runtime.machine.vdp.readHostOutput();
+			beginHeadlessScene(output.frameBufferWidth, output.frameBufferHeight);
 		},
 	});
 	registry.register({ id: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, graph: { skip: true }, exec: () => { /* noop */ } });
@@ -290,8 +291,8 @@ type SlotTexturePixels = {
 	stride: number;
 };
 
-function readSlotTexturePixels(slot: number): SlotTexturePixels {
-	return resolveVdpSurfacePixels(consoleCore.runtime.machine.vdp, slotSurfaceId(slot));
+function readSlotTexturePixels(output: VdpHostOutput, slot: number): SlotTexturePixels {
+	return resolveVdpSurfacePixels(output, slotSurfaceId(slot));
 }
 
 function resolveSkyboxFaceInto(dirX: number, dirY: number, dirZ: number): number {
@@ -376,10 +377,12 @@ function compositeFrameBufferOverScene(frameBufferPixels: Uint8Array, width: num
 
 function rasterizeSkyboxBackground(width: number, height: number): void {
 	const vdp = consoleCore.runtime.machine.vdp;
+	const output = vdp.readHostOutput();
+	const skyboxSamples = output.skyboxSamples;
 	for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
-		const sample = vdp.resolveCommittedSkyboxFaceSample(index);
+		const sample = skyboxSamples[index]!;
 		headlessSkyboxSamples[index] = sample;
-		headlessSkyboxTextures[index] = readSlotTexturePixels(sample.slot);
+		headlessSkyboxTextures[index] = readSlotTexturePixels(output, sample.slot);
 	}
 	const cam = hardwareCameraBank0;
 	const view = cam.skyboxView;
@@ -415,9 +418,9 @@ function rasterizeSkyboxBackground(width: number, height: number): void {
 	headlessSceneActive = true;
 }
 
-function rasterizeHeadlessParticle(submission: ParticleRenderSubmission, state: ParticlePipelineState): void {
+function rasterizeHeadlessParticle(output: VdpHostOutput, submission: ParticleRenderSubmission, state: ParticlePipelineState): void {
 	const slot = submission.slot as number;
-	const texture = readSlotTexturePixels(slot);
+	const texture = readSlotTexturePixels(output, slot);
 	const uv0 = submission.uv0 as [number, number];
 	const uv1 = submission.uv1 as [number, number];
 	const position = submission.position;
@@ -512,14 +515,14 @@ function rasterizeHeadlessParticleSample(texture: SlotTexturePixels,
 	headlessSceneActive = true;
 }
 
-function rasterizeHeadlessVdpBillboard(index: number, state: ParticlePipelineState): void {
+function rasterizeHeadlessVdpBillboard(output: VdpHostOutput, index: number, state: ParticlePipelineState): void {
 	const view = consoleCore.view;
 	const sourceBase = index * 4;
 	const positionSize = view.vdpBillboardPositionSize;
 	const uvRect = view.vdpBillboardUvRect;
 	const color = view.vdpBillboardColor;
 	const slot = view.vdpBillboardSlot[index];
-	const texture = readSlotTexturePixels(slot);
+	const texture = readSlotTexturePixels(output, slot);
 	rasterizeHeadlessParticleSample(
 		texture,
 		(uvRect[sourceBase + 0] * texture.width) | 0,
@@ -553,8 +556,9 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			} as Framebuffer2DPipelineState);
 		},
 		exec: (_backend, _fbo, state: Framebuffer2DPipelineState) => {
-			const frameBufferWidth = consoleCore.runtime.machine.vdp.frameBufferWidth;
-			const frameBufferHeight = consoleCore.runtime.machine.vdp.frameBufferHeight;
+			const output = consoleCore.runtime.machine.vdp.readHostOutput();
+			const frameBufferWidth = output.frameBufferWidth;
+			const frameBufferHeight = output.frameBufferHeight;
 			resizeHeadlessScene(frameBufferWidth, frameBufferHeight);
 			if (frameBufferWidth <= 0 || frameBufferHeight <= 0) {
 				throw new Error(`[HeadlessFramebuffer2D] Invalid framebuffer dimensions ${frameBufferWidth}x${frameBufferHeight}.`);
@@ -601,7 +605,8 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 			if (!uvRects || !sizes || !bindings) {
 				return;
 			}
-			rasterizeSkyboxBackground(consoleCore.runtime.machine.vdp.frameBufferWidth, consoleCore.runtime.machine.vdp.frameBufferHeight);
+			const output = consoleCore.runtime.machine.vdp.readHostOutput();
+			rasterizeSkyboxBackground(output.frameBufferWidth, output.frameBufferHeight);
 			const snapshot: Snapshot = [`faces=${SKYBOX_FACE_KEYS.map((_, index) => {
 				const uvBase = index * 4;
 				return `${bindings[index]}:${uvRects[uvBase]},${uvRects[uvBase + 1]},${uvRects[uvBase + 2]},${uvRects[uvBase + 3]}`;
@@ -735,6 +740,7 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 				return;
 			}
 			const snapshot: Snapshot = [`draws=${count} viewport=${particleState.width}x${particleState.height}`];
+			const output = consoleCore.runtime.machine.vdp.readHostOutput();
 			if (beginParticleQueue() > 0) {
 				let index = 0;
 				forEachParticleQueue((submission: ParticleRenderSubmission) => {
@@ -756,7 +762,7 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 					if (uv0[0] < 0 || uv0[1] < 0 || uv1[0] > 1 || uv1[1] > 1 || uv0[0] > uv1[0] || uv0[1] > uv1[1]) {
 						throw new Error(`[HeadlessParticles] Particle UVs out of range (${uv0[0]}, ${uv0[1]})..(${uv1[0]}, ${uv1[1]}).`);
 					}
-					rasterizeHeadlessParticle(submission, particleState);
+					rasterizeHeadlessParticle(output, submission, particleState);
 					snapshot.push(`[particle#${index}] pos=${formatVec3(submission.position)} size=${formatNumber(submission.size)} slot=${slot}`);
 					index += 1;
 				});
@@ -764,7 +770,7 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 			const vdpBillboardCount = consoleCore.view.vdpBillboardCount;
 			const positionSize = consoleCore.view.vdpBillboardPositionSize;
 			for (let index = 0; index < vdpBillboardCount; index += 1) {
-				rasterizeHeadlessVdpBillboard(index, particleState);
+				rasterizeHeadlessVdpBillboard(output, index, particleState);
 				const base = index * 4;
 				snapshot.push(`[vdp-particle#${index}] pos=(${formatNumber(positionSize[base + 0])}, ${formatNumber(positionSize[base + 1])}, ${formatNumber(positionSize[base + 2])}) size=${formatNumber(positionSize[base + 3])} slot=${consoleCore.view.vdpBillboardSlot[index]}`);
 			}

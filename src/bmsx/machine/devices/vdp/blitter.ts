@@ -159,7 +159,12 @@ export function packFrameBufferColorWordFromComponents(r: number, g: number, b: 
 }
 
 export function packFrameBufferColorWord(source: { r: number; g: number; b: number; a: number }): number {
-	return packFrameBufferColorWordFromComponents(source.r, source.g, source.b, source.a);
+	return (
+		(frameBufferColorByte(source.a) << 24)
+		| (frameBufferColorByte(source.r) << 16)
+		| (frameBufferColorByte(source.g) << 8)
+		| frameBufferColorByte(source.b)
+	) >>> 0;
 }
 
 export function vdpColorAlphaByte(colorWord: number): number {

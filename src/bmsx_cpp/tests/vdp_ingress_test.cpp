@@ -1,4 +1,5 @@
 #include "machine/bus/io.h"
+#include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/vdp/bbu.h"
 #include "machine/devices/vdp/contracts.h"
@@ -8,6 +9,7 @@
 #include "machine/memory/string_memory.h"
 #include "machine/scheduler/device.h"
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -114,18 +116,6 @@ std::vector<uint32_t> billboardPacket(uint32_t sizeWord, uint32_t u = 2u, uint32
 	};
 }
 
-bmsx::SkyboxFaceSources skyboxSources(uint32_t w = 1u, uint32_t h = 1u) {
-	const bmsx::VdpSlotSource source{bmsx::VDP_SLOT_PRIMARY, 0u, 0u, w, h};
-	return bmsx::SkyboxFaceSources{
-		source,
-		source,
-		source,
-		source,
-		source,
-		source,
-	};
-}
-
 std::vector<uint32_t> skyboxPacket(uint32_t control = bmsx::VDP_SBX_CONTROL_ENABLE, uint32_t w = 4u, uint32_t h = 5u) {
 	std::vector<uint32_t> words;
 	words.reserve(2u + bmsx::SKYBOX_FACE_WORD_COUNT);
@@ -139,6 +129,31 @@ std::vector<uint32_t> skyboxPacket(uint32_t control = bmsx::VDP_SBX_CONTROL_ENAB
 		words.push_back(h);
 	}
 	return words;
+}
+
+void writeSbxMmio(bmsx::Memory& memory, uint32_t control = bmsx::VDP_SBX_CONTROL_ENABLE, uint32_t w = 1u, uint32_t h = 1u) {
+	uint32_t addr = bmsx::IO_VDP_SBX_FACE0;
+	for (size_t face = 0; face < bmsx::SKYBOX_FACE_COUNT; ++face) {
+		writeIo(memory, addr + 0u * bmsx::IO_WORD_SIZE, bmsx::VDP_SLOT_PRIMARY);
+		writeIo(memory, addr + 1u * bmsx::IO_WORD_SIZE, 0u);
+		writeIo(memory, addr + 2u * bmsx::IO_WORD_SIZE, 0u);
+		writeIo(memory, addr + 3u * bmsx::IO_WORD_SIZE, w);
+		writeIo(memory, addr + 4u * bmsx::IO_WORD_SIZE, h);
+		addr += 5u * bmsx::IO_WORD_SIZE;
+	}
+	writeIo(memory, bmsx::IO_VDP_SBX_CONTROL, control);
+	writeIo(memory, bmsx::IO_VDP_SBX_COMMIT, bmsx::VDP_SBX_COMMIT_WRITE);
+}
+
+void writeCameraMmio(bmsx::Memory& memory, const std::array<bmsx::f32, 16>& view, const std::array<bmsx::f32, 16>& proj, const std::array<bmsx::f32, 3>& eye) {
+	for (size_t index = 0; index < 16u; ++index) {
+		writeIo(memory, bmsx::IO_VDP_CAMERA_VIEW + static_cast<uint32_t>(index * bmsx::IO_WORD_SIZE), bmsx::numberToF32Bits(view[index]));
+		writeIo(memory, bmsx::IO_VDP_CAMERA_PROJ + static_cast<uint32_t>(index * bmsx::IO_WORD_SIZE), bmsx::numberToF32Bits(proj[index]));
+	}
+	for (size_t index = 0; index < 3u; ++index) {
+		writeIo(memory, bmsx::IO_VDP_CAMERA_EYE + static_cast<uint32_t>(index * bmsx::IO_WORD_SIZE), bmsx::numberToF32Bits(eye[index]));
+	}
+	writeIo(memory, bmsx::IO_VDP_CAMERA_COMMIT, bmsx::VDP_CAMERA_COMMIT_WRITE);
 }
 
 void testDirectLifecycle() {
@@ -199,13 +214,14 @@ void testBlitDrawCtrlSnapshot() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
-	const auto* queue = h.vdp.takeReadyExecutionQueue();
+	const auto output = h.vdp.hostOutput();
+	const auto* queue = output.executionQueue;
 	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
 	const auto& command = queue->front();
 	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
 	require(command.flipH && command.flipV, "DRAW_CTRL flip bits should be snapshotted");
 	require(std::abs(command.parallaxWeight + 1.0f) < 0.0001f, "DRAW_CTRL signed Q8.8 parallax should be snapshotted");
-	h.vdp.completeReadyExecution(queue);
+	h.vdp.completeHostExecution(output);
 }
 
 void testPmuParallaxResolvedBlitSnapshot() {
@@ -235,7 +251,8 @@ void testPmuParallaxResolvedBlitSnapshot() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
-	const auto* queue = h.vdp.takeReadyExecutionQueue();
+	const auto output = h.vdp.hostOutput();
+	const auto* queue = output.executionQueue;
 	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
 	const auto& command = queue->front();
 	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
@@ -244,7 +261,7 @@ void testPmuParallaxResolvedBlitSnapshot() {
 	require(std::abs(command.dstY - 48.0f) < 0.0001f, "PMU should resolve +8px Y before backend execution");
 	require(std::abs(command.scaleX - 1.0f) < 0.0001f, "PMU should leave scale X unchanged for this rig");
 	require(std::abs(command.scaleY - 1.0f) < 0.0001f, "PMU should leave scale Y unchanged for this rig");
-	h.vdp.completeReadyExecution(queue);
+	h.vdp.completeHostExecution(output);
 }
 
 void testPmuBankRegistersResolveDrawCtrl() {
@@ -275,7 +292,8 @@ void testPmuBankRegistersResolveDrawCtrl() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
-	const auto* queue = h.vdp.takeReadyExecutionQueue();
+	const auto output = h.vdp.hostOutput();
+	const auto* queue = output.executionQueue;
 	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
 	const auto& command = queue->front();
 	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
@@ -283,7 +301,7 @@ void testPmuBankRegistersResolveDrawCtrl() {
 	require(std::abs(command.dstY - 46.0f) < 0.0001f, "PMU bank Y should resolve into BLIT geometry");
 	require(std::abs(command.scaleX - 1.25f) < 0.0001f, "PMU bank scale X should resolve into BLIT geometry");
 	require(std::abs(command.scaleY - 1.0f) < 0.0001f, "PMU bank scale Y should remain unchanged");
-	h.vdp.completeReadyExecution(queue);
+	h.vdp.completeHostExecution(output);
 }
 
 void testPmuScaleUsesAbsoluteWeight() {
@@ -308,7 +326,8 @@ void testPmuScaleUsesAbsoluteWeight() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
-	const auto* queue = h.vdp.takeReadyExecutionQueue();
+	const auto output = h.vdp.hostOutput();
+	const auto* queue = output.executionQueue;
 	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
 	const auto& command = queue->front();
 	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
@@ -316,7 +335,7 @@ void testPmuScaleUsesAbsoluteWeight() {
 	require(std::abs(command.dstY - 34.0f) < 0.0001f, "negative PMU weight should invert offset");
 	require(std::abs(command.scaleX - 1.25f) < 0.0001f, "negative PMU weight should use absolute scale influence");
 	require(std::abs(command.scaleY - 1.0f) < 0.0001f, "PMU bank scale Y should remain unchanged");
-	h.vdp.completeReadyExecution(queue);
+	h.vdp.completeHostExecution(output);
 }
 
 void testFifoReplayAndFaults() {
@@ -431,33 +450,33 @@ void testPmuResolvedScaleFlowsThroughBlitDatapath() {
 void testSbxCommitsOnlyThroughFramePresent() {
 	Harness h;
 
-	require(!h.vdp.committedSkyboxEnabled(), "skybox starts disabled");
-	h.vdp.setSkyboxSources(skyboxSources());
-	require(!h.vdp.committedSkyboxEnabled(), "live SBX write should not commit visible skybox");
+	require(!h.vdp.hostOutput().skyboxEnabled, "skybox starts disabled");
+	writeSbxMmio(h.memory);
+	require(!h.vdp.hostOutput().skyboxEnabled, "live SBX write should not commit visible skybox");
 
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
-	require(!h.vdp.committedSkyboxEnabled(), "sealed SBX frame should wait for VBlank present");
+	require(!h.vdp.hostOutput().skyboxEnabled, "sealed SBX frame should wait for VBlank present");
 	h.vdp.commitReadyFrameOnVblankEdge();
-	require(h.vdp.committedSkyboxEnabled(), "presented frame should commit visible SBX state");
+	require(h.vdp.hostOutput().skyboxEnabled, "presented frame should commit visible SBX state");
 
-	h.vdp.clearSkybox();
-	require(h.vdp.committedSkyboxEnabled(), "live SBX clear should not change visible skybox immediately");
+	writeSbxMmio(h.memory, 0u);
+	require(h.vdp.hostOutput().skyboxEnabled, "live SBX clear should not change visible skybox immediately");
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 	h.vdp.commitReadyFrameOnVblankEdge();
-	require(!h.vdp.committedSkyboxEnabled(), "presented clear frame should disable visible skybox");
+	require(!h.vdp.hostOutput().skyboxEnabled, "presented clear frame should disable visible skybox");
 }
 
 void testSbxValidatesAtFrameSeal() {
 	Harness h;
 
-	h.vdp.setSkyboxSources(skyboxSources(2u, 1u));
+	writeSbxMmio(h.memory, bmsx::VDP_SBX_CONTROL_ENABLE, 2u, 1u);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 
 	expectThrow([&] { writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME); }, "SBX source rect overflow");
 	require(h.vdp.canAcceptVdpSubmit(), "invalid SBX frame should cancel and close the build frame");
-	require(!h.vdp.committedSkyboxEnabled(), "invalid SBX state should not become visible");
+	require(!h.vdp.hostOutput().skyboxEnabled, "invalid SBX state should not become visible");
 }
 
 void testSbxSkyboxPacketLatchesFrameState() {
@@ -468,26 +487,46 @@ void testSbxSkyboxPacketLatchesFrameState() {
 	stream.push_back(VDP_PKT_END);
 	sealStream(h, stream);
 	h.vdp.commitReadyFrameOnVblankEdge();
-	require(h.vdp.committedSkyboxEnabled(), "SKYBOX packet should present visible SBX state");
-	const auto sample = h.vdp.resolveCommittedSkyboxFaceSample(0u);
+	require(h.vdp.hostOutput().skyboxEnabled, "SKYBOX packet should present visible SBX state");
+	const auto sample = (*h.vdp.hostOutput().skyboxSamples)[0u];
 	require(sample.source.surfaceId == bmsx::VDP_RD_SURFACE_PRIMARY, "SKYBOX should resolve primary slot");
 	require(sample.surfaceWidth == 16u && sample.surfaceHeight == 16u, "SKYBOX should resolve surface size");
 	require(sample.source.width == 4u && sample.source.height == 5u, "SKYBOX should resolve face dimensions");
 }
 
-void testSbxSkyboxPacketFaultsAtAcceptanceAndFrameSeal() {
+void testSbxSkyboxPacketRawControlAndFrameSealFault() {
 	Harness h;
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
 	auto badControl = skyboxPacket(2u, 4u, 5u);
 	badControl.push_back(VDP_PKT_END);
-	expectThrow([&] { sealStream(h, badControl); }, "SKYBOX reserved control");
-	require(!h.vdp.committedSkyboxEnabled(), "bad-control SKYBOX should not become visible");
+	sealStream(h, badControl);
+	h.vdp.commitReadyFrameOnVblankEdge();
+	require(!h.vdp.hostOutput().skyboxEnabled, "raw control without enable bit should not show SKYBOX");
 
 	auto badSource = skyboxPacket(bmsx::VDP_SBX_CONTROL_ENABLE, 17u, 1u);
 	badSource.push_back(VDP_PKT_END);
 	expectThrow([&] { sealStream(h, badSource); }, "SBX source rect overflow");
-	require(!h.vdp.committedSkyboxEnabled(), "bad-source SKYBOX should not become visible");
+	require(!h.vdp.hostOutput().skyboxEnabled, "bad-source SKYBOX should not become visible");
+}
+
+void testCameraMmioCommitsLiveBankAtFramePresent() {
+	Harness h;
+	std::array<bmsx::f32, 16> view{};
+	std::array<bmsx::f32, 16> proj{};
+	view[0] = 1.0f; view[5] = 1.0f; view[10] = 1.0f; view[15] = 1.0f;
+	proj[0] = 1.0f; proj[5] = 1.0f; proj[10] = 1.0f; proj[15] = 1.0f;
+	const std::array<bmsx::f32, 3> eye{3.0f, 4.0f, 5.0f};
+
+	writeCameraMmio(h.memory, view, proj, eye);
+
+	require(h.vdp.hostOutput().camera->eye.x == 0.0f, "camera MMIO should not update visible camera before present");
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	h.vdp.commitReadyFrameOnVblankEdge();
+	require(h.vdp.hostOutput().camera->eye.x == 3.0f, "camera eye X should commit on present");
+	require(h.vdp.hostOutput().camera->eye.y == 4.0f, "camera eye Y should commit on present");
+	require(h.vdp.hostOutput().camera->eye.z == 5.0f, "camera eye Z should commit on present");
 }
 
 void testBbuBillboardPacketLatchesInstanceRam() {
@@ -499,9 +538,10 @@ void testBbuBillboardPacketLatchesInstanceRam() {
 	sealStream(h, stream);
 	require(h.vdp.getPendingRenderWorkUnits() == 1, "BILLBOARD should submit BBU render work");
 	h.vdp.advanceWork(1);
-	const auto* queue = h.vdp.takeReadyExecutionQueue();
+	const auto output = h.vdp.hostOutput();
+	const auto* queue = output.executionQueue;
 	require(queue != nullptr, "BILLBOARD should produce ready execution state");
-	const auto& billboards = h.vdp.takeReadyExecutionBillboards();
+	const auto& billboards = *output.executionBillboards;
 	require(billboards.size() == 1u, "BILLBOARD should latch one instance");
 	const auto& entry = billboards.front();
 	require(entry.slot == bmsx::VDP_SLOT_PRIMARY, "BBU should resolve source slot");
@@ -516,7 +556,7 @@ void testBbuBillboardPacketLatchesInstanceRam() {
 	require(std::abs(entry.color.g - (0x22 / 255.0f)) < 0.0001f, "BBU should decode color G");
 	require(std::abs(entry.color.b - (0x33 / 255.0f)) < 0.0001f, "BBU should decode color B");
 	require(std::abs(entry.color.a - 1.0f) < 0.0001f, "BBU should decode color A");
-	h.vdp.completeReadyExecution(queue);
+	h.vdp.completeHostExecution(output);
 }
 
 void testBbuFaultsAtBillboardPacketAcceptance() {
@@ -555,6 +595,46 @@ void testEmptyFifoFrame() {
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "empty FIFO frame should submit no render work");
 }
 
+void testReadbackFaultsLatchStatus() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_RD_MODE, 99u);
+
+	require(h.vdp.readVdpData() == 0u, "unsupported read mode should return open bus");
+	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_RD_UNSUPPORTED_MODE, "unsupported read mode should latch fault code");
+	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_DETAIL) == 99u, "unsupported read mode should latch mode detail");
+	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_FAULT) != 0u, "unsupported read mode should set VDP fault status");
+}
+
+void testReadbackOobFaultsLatchStatus() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_RD_MODE, bmsx::VDP_RD_MODE_RGBA8888);
+	writeIo(h.memory, bmsx::IO_VDP_RD_X, 999u);
+	writeIo(h.memory, bmsx::IO_VDP_RD_Y, 0u);
+
+	require(h.vdp.readVdpData() == 0u, "OOB read should return open bus");
+	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_RD_OOB, "OOB read should latch fault code");
+}
+
+void testVramWriteFaultsLatchStatus() {
+	Harness h;
+	const uint8_t bytes[4] = {1u, 2u, 3u, 4u};
+
+	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 1u, bytes, sizeof(bytes));
+
+	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_VRAM_WRITE_UNALIGNED, "unaligned VRAM write should latch fault code");
+	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_FAULT) != 0u, "unaligned VRAM write should set VDP fault status");
+}
+
+void testDitherRegisterWritesUpdateLiveLatch() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_DITHER, 3u);
+
+	require(h.vdp.captureState().ditherType == 3, "DITHER write should update live VDP latch directly");
+}
+
 } // namespace
 
 int main() {
@@ -574,10 +654,15 @@ int main() {
 		{"SBX commits through frame present", testSbxCommitsOnlyThroughFramePresent},
 		{"SBX validates at frame seal", testSbxValidatesAtFrameSeal},
 		{"SBX SKYBOX packet latches frame state", testSbxSkyboxPacketLatchesFrameState},
-		{"SBX SKYBOX packet faults", testSbxSkyboxPacketFaultsAtAcceptanceAndFrameSeal},
+		{"SBX SKYBOX packet raw control", testSbxSkyboxPacketRawControlAndFrameSealFault},
+		{"VDP camera MMIO frame latch", testCameraMmioCommitsLiveBankAtFramePresent},
 		{"BBU BILLBOARD packet latches instance RAM", testBbuBillboardPacketLatchesInstanceRam},
 		{"BBU faults at BILLBOARD packet acceptance", testBbuFaultsAtBillboardPacketAcceptance},
 		{"empty FIFO frame", testEmptyFifoFrame},
+		{"VDP readback fault status", testReadbackFaultsLatchStatus},
+		{"VDP readback OOB fault status", testReadbackOobFaultsLatchStatus},
+		{"VDP VRAM write fault status", testVramWriteFaultsLatchStatus},
+		{"VDP dither live latch", testDitherRegisterWritesUpdateLiveLatch},
 	};
 
 	for (const auto& test : tests) {

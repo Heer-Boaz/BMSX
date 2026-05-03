@@ -190,7 +190,13 @@ import {
 	IO_SYS_BOOT_CART,
 	IO_SYS_HOST_FAULT_FLAGS,
 	IO_SYS_HOST_FAULT_STAGE,
+	IO_VDP_CAMERA_COMMIT,
+	IO_VDP_CAMERA_EYE,
+	IO_VDP_CAMERA_PROJ,
+	IO_VDP_CAMERA_VIEW,
 	IO_VDP_DITHER,
+	IO_VDP_FAULT_CODE,
+	IO_VDP_FAULT_DETAIL,
 	IO_VDP_SLOT_PRIMARY_ATLAS,
 	IO_VDP_SLOT_SECONDARY_ATLAS,
 	IO_VDP_CMD,
@@ -210,6 +216,9 @@ import {
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_STATUS,
+	IO_VDP_SBX_COMMIT,
+	IO_VDP_SBX_CONTROL,
+	IO_VDP_SBX_FACE0,
 	IRQ_DMA_DONE,
 	IRQ_DMA_ERROR,
 	IRQ_APU,
@@ -221,6 +230,14 @@ import {
 	IRQ_REINIT,
 	IRQ_VBLANK,
 	VDP_FIFO_CTRL_SEAL,
+	VDP_FAULT_NONE,
+	VDP_FAULT_RD_OOB,
+	VDP_FAULT_RD_SURFACE,
+	VDP_FAULT_RD_UNSUPPORTED_MODE,
+	VDP_FAULT_VRAM_WRITE_OOB,
+	VDP_FAULT_VRAM_WRITE_UNALIGNED,
+	VDP_FAULT_VRAM_WRITE_UNINITIALIZED,
+	VDP_FAULT_VRAM_WRITE_UNMAPPED,
 	VDP_RD_MODE_RGBA8888,
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
@@ -229,9 +246,12 @@ import {
 	VDP_SLOT_PRIMARY,
 	VDP_SLOT_SECONDARY,
 	VDP_SLOT_SYSTEM,
+	VDP_CAMERA_COMMIT_WRITE,
+	VDP_STATUS_FAULT,
 	VDP_STATUS_SUBMIT_BUSY,
 	VDP_STATUS_SUBMIT_REJECTED,
 	VDP_STATUS_VBLANK,
+	VDP_SBX_COMMIT_WRITE,
 } from '../bus/io';
 import {
 	buildMarshalContext,
@@ -1232,6 +1252,15 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_scale_x', IO_VDP_PMU_SCALE_X);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_scale_y', IO_VDP_PMU_SCALE_Y);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_ctrl', IO_VDP_PMU_CTRL);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_sbx_control', IO_VDP_SBX_CONTROL);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_sbx_faces', IO_VDP_SBX_FACE0);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_sbx_commit', IO_VDP_SBX_COMMIT);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_sbx_commit_write', VDP_SBX_COMMIT_WRITE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_camera_view', IO_VDP_CAMERA_VIEW);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_camera_proj', IO_VDP_CAMERA_PROJ);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_camera_eye', IO_VDP_CAMERA_EYE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_camera_commit', IO_VDP_CAMERA_COMMIT);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_camera_commit_write', VDP_CAMERA_COMMIT_WRITE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_primary', VDP_SLOT_PRIMARY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_secondary', VDP_SLOT_SECONDARY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_system', VDP_SLOT_SYSTEM);
@@ -1243,12 +1272,23 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status', IO_VDP_RD_STATUS);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_data', IO_VDP_RD_DATA);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_status', IO_VDP_STATUS);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_code', IO_VDP_FAULT_CODE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_detail', IO_VDP_FAULT_DETAIL);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_mode_rgba8888', VDP_RD_MODE_RGBA8888);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_ready', VDP_RD_STATUS_READY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_overflow', VDP_RD_STATUS_OVERFLOW);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_status_vblank', VDP_STATUS_VBLANK);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_status_submit_busy', VDP_STATUS_SUBMIT_BUSY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_status_submit_rejected', VDP_STATUS_SUBMIT_REJECTED);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_status_fault', VDP_STATUS_FAULT);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_none', VDP_FAULT_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_rd_unsupported_mode', VDP_FAULT_RD_UNSUPPORTED_MODE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_rd_surface', VDP_FAULT_RD_SURFACE);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_rd_oob', VDP_FAULT_RD_OOB);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_vram_write_unmapped', VDP_FAULT_VRAM_WRITE_UNMAPPED);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_vram_write_uninitialized', VDP_FAULT_VRAM_WRITE_UNINITIALIZED);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_vram_write_oob', VDP_FAULT_VRAM_WRITE_OOB);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_vram_write_unaligned', VDP_FAULT_VRAM_WRITE_UNALIGNED);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_world', 0);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ui', 1);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ide', 2);

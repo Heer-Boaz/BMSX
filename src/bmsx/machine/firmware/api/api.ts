@@ -2,21 +2,16 @@ import { runGate } from '../../../core/taskgate';
 import { consoleCore } from '../../../core/console';
 import {
 	color,
-	MeshRenderSubmission,
 } from '../../../render/shared/submissions';
 import { Font } from '../../../render/shared/bmsx_font';
 import { BFont, GlyphMap, RomPackageBitmapFontSource } from '../../../render/shared/bitmap_font';
 import { RuntimeStorage } from '../cart_storage';
-import type { vec3arr } from '../../../rompack/format';
 import { taskGate, GateGroup } from '../../../core/taskgate';
 import { Runtime } from '../../runtime/runtime';
 import { applyActiveMachineTiming } from '../../runtime/timing/config';
-import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../../../render/shared/hardware/lighting';
-import { submitMesh } from '../../../render/shared/queues';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../builtin_descriptors';
 import { createLuaTable, type LuaTable } from '../../../lua/value';
 import { BmsxColors } from '../../devices/vdp/vdp';
-import type { VdpSlotSource } from '../../devices/vdp/contracts';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;
@@ -45,11 +40,6 @@ export class Api {
 	private readonly runtimeFonts: BFont[] = [];
 	private readonly fontIds = new WeakMap<BFont, number>();
 	private readonly fontDescriptors = new WeakMap<BFont, FirmwareFontDescriptor>();
-	private readonly cameraViewScratch = new Float32Array(16);
-	private readonly cameraProjScratch = new Float32Array(16);
-	private readonly cameraEyeScratch: vec3arr = [0, 0, 0];
-	private readonly lightColorScratch: vec3arr = [0, 0, 0];
-	private readonly lightVecScratch: vec3arr = [0, 0, 0];
 	private _runtime: Runtime;
 
 	constructor(options: ApiOptions) {
@@ -124,60 +114,6 @@ export class Api {
 		return consoleCore.view.viewportSize.y;
 	}
 
-	public put_mesh(mesh: MeshRenderSubmission['mesh'], matrix: MeshRenderSubmission['matrix'], options?: Omit<MeshRenderSubmission, 'mesh' | 'matrix'>): void {
-		const submission: MeshRenderSubmission = {
-			mesh,
-			matrix,
-			joint_matrices: options?.joint_matrices,
-			morph_weights: options?.morph_weights,
-			receive_shadow: options?.receive_shadow !== false,
-		};
-		submitMesh(submission);
-	}
-
-	public set_camera(view: Float32Array | number[], proj: Float32Array | number[], eye: vec3arr | number[]): void {
-		const viewMat = this.coerceMat4(view, this.cameraViewScratch, 'view');
-		const projMat = this.coerceMat4(proj, this.cameraProjScratch, 'proj');
-		const eyeVec = this.coerceVec3(eye, this.cameraEyeScratch, 'eye');
-		this.runtime.machine.vdp.setCameraBank0(viewMat, projMat, eyeVec[0], eyeVec[1], eyeVec[2]);
-	}
-
-	public skybox(posx: VdpSlotSource, negx: VdpSlotSource, posy: VdpSlotSource, negy: VdpSlotSource, posz: VdpSlotSource, negz: VdpSlotSource): void {
-		this.runtime.machine.vdp.setSkyboxSources({ posx, negx, posy, negy, posz, negz });
-	}
-
-	public put_ambient_light(id: string, colorvalue: number | color | vec3arr | number[], intensity: number): void {
-		const colorVec = this.coerceLightColor(colorvalue, this.lightColorScratch, 'put_ambient_light color');
-		putHardwareAmbientLight(id, {
-			type: 'ambient',
-			color: [colorVec[0], colorVec[1], colorVec[2]],
-			intensity,
-		});
-	}
-
-	public put_directional_light(id: string, orientation: vec3arr | number[] | { x: number; y: number; z: number }, colorvalue: number | color | vec3arr | number[], intensity: number): void {
-		const direction = this.coerceVec3(orientation, this.lightVecScratch, 'directional_light orientation');
-		const colorVec = this.coerceLightColor(colorvalue, this.lightColorScratch, 'put_directional_light color');
-		putHardwareDirectionalLight(id, {
-			type: 'directional',
-			orientation: [direction[0], direction[1], direction[2]],
-			color: [colorVec[0], colorVec[1], colorVec[2]],
-			intensity,
-		});
-	}
-
-	public put_point_light(id: string, position: vec3arr | number[] | { x: number; y: number; z: number }, colorvalue: number | color | vec3arr | number[], range: number, intensity: number): void {
-		const point = this.coerceVec3(position, this.lightVecScratch, 'point_light position');
-		const colorVec = this.coerceLightColor(colorvalue, this.lightColorScratch, 'put_point_light color');
-		putHardwarePointLight(id, {
-			type: 'point',
-			pos: [point[0], point[1], point[2]],
-			color: [colorVec[0], colorVec[1], colorVec[2]],
-			range,
-			intensity,
-		});
-	}
-
 	public cartdata(namespace: string): void {
 		this.storage.setNamespace(namespace);
 	}
@@ -240,81 +176,7 @@ export class Api {
 		this.runtime.rebootToBootRom();
 	}
 
-	private palette_color(index: number): color {
+	public palette_color(index: number): color {
 		return BmsxColors[index];
-	}
-
-	private resolve_color(value: number | color): color {
-		return typeof value === 'number' ? this.palette_color(value) : value;
-	}
-
-	private coerceLightColor(value: number | color | vec3arr | number[], out: vec3arr, label: string): vec3arr {
-		if (typeof value === 'number') {
-			const resolved = this.palette_color(value);
-			out[0] = resolved.r;
-			out[1] = resolved.g;
-			out[2] = resolved.b;
-			return out;
-		}
-		if (Array.isArray(value) || ArrayBuffer.isView(value)) {
-			const arr = value as ArrayLike<number>;
-			const r = arr[0];
-			const g = arr[1];
-			const b = arr[2];
-			out[0] = r;
-			out[1] = g;
-			out[2] = b;
-			return out;
-		}
-		if (value && typeof value === 'object' && 'r' in value && 'g' in value && 'b' in value) {
-			const colorValue = value as color;
-			out[0] = colorValue.r;
-			out[1] = colorValue.g;
-			out[2] = colorValue.b;
-			return out;
-		}
-		throw new Error(`${label} must be a palette index, color object, or vec3 array.`);
-	}
-
-	private coerceMat4(value: Float32Array | number[], out: Float32Array, label: string): Float32Array {
-		if (ArrayBuffer.isView(value)) {
-			const arr = value as ArrayLike<number>;
-			for (let i = 0; i < 16; i += 1) {
-				const n = arr[i];
-				out[i] = n;
-			}
-			return out;
-		}
-		if (Array.isArray(value)) {
-			for (let i = 0; i < 16; i += 1) {
-				const n = value[i];
-				out[i] = n;
-			}
-			return out;
-		}
-		throw new Error(`set_camera ${label} matrix must be a Float32Array or number[] with 16 elements.`);
-	}
-
-	private coerceVec3(value: vec3arr | number[] | { x: number; y: number; z: number }, out: vec3arr, label: string): vec3arr {
-		let x: number;
-		let y: number;
-		let z: number;
-		if (Array.isArray(value) || ArrayBuffer.isView(value)) {
-			const arr = value as ArrayLike<number>;
-			x = arr[0];
-			y = arr[1];
-			z = arr[2];
-		} else if (value && typeof value === 'object' && 'x' in value && 'y' in value && 'z' in value) {
-			const vec = value as { x: number; y: number; z: number };
-			x = vec.x;
-			y = vec.y;
-			z = vec.z;
-		} else {
-			throw new Error(`${label} must be a vec3 array or xyz object.`);
-		}
-		out[0] = x;
-		out[1] = y;
-		out[2] = z;
-		return out;
 	}
 }

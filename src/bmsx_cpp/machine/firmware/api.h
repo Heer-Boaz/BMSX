@@ -47,21 +47,8 @@ public:
 	BFont* resolveFontId(uint32_t id) const;
 	BFont* resolveFontHandle(const Value& value);
 	uint32_t getFontId(BFont* font) const;
-	void put_mesh(const MeshRenderSubmission& submission);
-	void skybox(const VdpSlotSource& posx,
-				const VdpSlotSource& negx,
-				const VdpSlotSource& posy,
-				const VdpSlotSource& negy,
-				const VdpSlotSource& posz,
-				const VdpSlotSource& negz);
-	void set_camera(const std::array<f32, 16>& view, const std::array<f32, 16>& proj, const Vec3& eye);
-	void put_ambient_light(const std::string& id, const std::array<f32, 3>& color, f32 intensity);
-	void put_directional_light(const std::string& id, const Vec3& orientation, const std::array<f32, 3>& color, f32 intensity);
-	void put_point_light(const std::string& id, const Vec3& position, const std::array<f32, 3>& color, f32 range, f32 intensity);
 
 	void cartdata(const std::string& ns);
-	void dset(int index, double value);
-	double dget(int index) const;
 
 	void reboot();
 
@@ -99,17 +86,11 @@ private:
 
 	Value build_font_descriptor(BFont* font);
 	Value make_font_handle(BFont* font);
-	Value get_player_input_handle(int playerIndex);
 	BFont* resolve_font(const Value& value);
 	BFont* create_font(const Value& definition);
 
 	std::string pointer_button_code(int button) const;
 	uint32_t fontId(BFont* font) const;
-	Color resolve_color(const Value& value);
-	VdpSlotSource read_image_slot_source(const Value& value, const char* label);
-	Vec3 read_vec3(const Value& value);
-	std::array<f32, 3> read_light_color(const Value& value);
-	std::array<f32, 16> read_matrix(const Value& value);
 
 	std::array<Value, PLAYERS_MAX> m_playerInputHandles = {
 		valueNil(),

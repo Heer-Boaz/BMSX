@@ -103,19 +103,11 @@ function resolveApiNativeCost(name: string): NativeFnCost {
 		case 'rungate':
 		case 'runtime':
 			return NATIVE_COST_TIER0;
-		case 'put_mesh':
-		case 'skybox':
-		case 'put_ambient_light':
-		case 'put_directional_light':
-		case 'put_point_light':
 		case 'resolveFontId':
-		case 'dget':
 		case 'reboot':
 			return NATIVE_COST_TIER1;
 		case 'set_cpu_freq_hz':
-		case 'dset':
 			return NATIVE_COST_TIER2;
-		case 'set_camera':
 		case 'cartdata':
 		case 'list_builtins':
 		case 'create_font':

@@ -7,11 +7,12 @@
 
 namespace bmsx {
 
-void commitVdpViewSnapshot(GameView& view, const VDP& vdp) {
-	view.dither_type = static_cast<GameView::DitherType>(vdp.committedDitherType());
-	view.vdpCamera = vdp.committedCameraBank0();
-	commitVdpSkyboxViewState(view, vdp);
-	commitVdpBillboardViewState(view, vdp);
+void commitVdpViewSnapshot(GameView& view, VDP& vdp) {
+	const VDP::VdpHostOutput output = vdp.hostOutput();
+	view.dither_type = static_cast<GameView::DitherType>(output.ditherType);
+	view.vdpCamera = *output.camera;
+	commitVdpSkyboxViewState(view, output);
+	commitVdpBillboardViewState(view, output);
 }
 
 } // namespace bmsx

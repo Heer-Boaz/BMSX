@@ -258,7 +258,6 @@ export class VblankState {
 	private commitFrameOnVblankEdge(): void {
 		const runtime = this.runtime;
 		const vdp = runtime.machine.vdp;
-		vdp.syncRegisters();
 		vdp.presentReadyFrameOnVblankEdge();
 	}
 

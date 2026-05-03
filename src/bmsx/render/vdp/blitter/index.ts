@@ -1,10 +1,11 @@
-import type { VDP, VdpBlitterCommand } from '../../../machine/devices/vdp/vdp';
+import type { VDP, VdpBlitterCommand, VdpHostOutput } from '../../../machine/devices/vdp/vdp';
 import type { GPUBackend } from '../../backend/interfaces';
 import { vdpTextureBackend } from '../texture_transfer';
+import { syncVdpSlotTextures } from '../slot_textures';
 import { HeadlessVdpBlitterExecutor } from './headless';
 
 type VdpBlitterExecutorLike = {
-	execute(vdp: VDP, commands: VdpBlitterCommand): void;
+	execute(output: VdpHostOutput, commands: VdpBlitterCommand): void;
 };
 
 let headlessExecutor: HeadlessVdpBlitterExecutor | null = null;
@@ -34,12 +35,17 @@ function getVdpBlitterExecutor(backend: GPUBackend): VdpBlitterExecutorLike {
 
 
 export function drainReadyVdpExecution(vdp: VDP): void {
-	const queue = vdp.takeReadyExecutionQueue();
+	const output = vdp.readHostOutput();
+	const queue = output.executionQueue;
 	if (queue === null) {
 		return;
 	}
-	if (queue.length !== 0) {
-		getVdpBlitterExecutor(vdpTextureBackend()).execute(vdp, queue);
+	const backend = vdpTextureBackend();
+	if (backend.type !== 'headless') {
+		syncVdpSlotTextures(vdp);
 	}
-	vdp.completeReadyExecution(queue);
+	if (queue.length !== 0) {
+		getVdpBlitterExecutor(backend).execute(output, queue);
+	}
+	vdp.completeHostExecution(output);
 }

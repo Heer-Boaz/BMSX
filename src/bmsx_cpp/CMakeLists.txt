@@ -139,7 +139,6 @@ add_library(bmsx_core STATIC
 	render/vdp/context_state.cpp
 	render/vdp/billboards.cpp
 	render/vdp/framebuffer.cpp
-	render/vdp/presentation.cpp
 	render/vdp/source_pixels.cpp
 	render/vdp/skybox.cpp
 	render/vdp/surfaces.cpp

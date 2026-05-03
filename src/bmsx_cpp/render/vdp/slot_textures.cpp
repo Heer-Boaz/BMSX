@@ -33,8 +33,8 @@ void uploadVdpSlotRows(const std::string& textureKey, const VDP::VramSlot& slot,
 	);
 }
 
-void initializeVdpSlotTexture(VDP& vdp, const VDP::VramSlot& slot) {
-	const VdpRenderSurfaceInfo surface = resolveVdpRenderSurface(vdp, slot.surfaceId);
+void initializeVdpSlotTexture(VDP& vdp, const VDP::VdpHostOutput& output, const VDP::VramSlot& slot) {
+	const VdpRenderSurfaceInfo surface = resolveVdpRenderSurface(output, slot.surfaceId);
 	createVdpTextureFromSeed(surface.textureKey, EMPTY_TEXTURE_SEED.data(), slot.surfaceWidth, slot.surfaceHeight);
 	noteSyncedTextureSize(surface.textureKey, slot.surfaceWidth, slot.surfaceHeight);
 	uploadVdpSlotRows(surface.textureKey, slot, 0u, slot.surfaceHeight);
@@ -44,20 +44,22 @@ void initializeVdpSlotTexture(VDP& vdp, const VDP::VramSlot& slot) {
 } // namespace
 
 void initializeVdpSlotTextures(VDP& vdp) {
-	for (const auto& slot : vdp.surfaceUploadSlots()) {
+	const VDP::VdpHostOutput output = vdp.hostOutput();
+	for (const auto& slot : *output.surfaceUploadSlots) {
 		if (isVdpFrameBufferSurface(slot.surfaceId)) {
 			continue;
 		}
-		initializeVdpSlotTexture(vdp, slot);
+		initializeVdpSlotTexture(vdp, output, slot);
 	}
 }
 
 void syncVdpSlotTextures(VDP& vdp) {
-	for (const auto& slot : vdp.surfaceUploadSlots()) {
+	const VDP::VdpHostOutput output = vdp.hostOutput();
+	for (const auto& slot : *output.surfaceUploadSlots) {
 		if (isVdpFrameBufferSurface(slot.surfaceId)) {
 			continue;
 		}
-		const VdpRenderSurfaceInfo surface = resolveVdpRenderSurface(vdp, slot.surfaceId);
+		const VdpRenderSurfaceInfo surface = resolveVdpRenderSurface(output, slot.surfaceId);
 		const uint32_t width = slot.surfaceWidth;
 		const uint32_t height = slot.surfaceHeight;
 		const uint64_t packedSize = packTextureSize(width, height);

@@ -144,7 +144,9 @@ public:
 	void enterCartProgram();
 	void startCartProgram();
 
-	void setVdpDitherType(i32 type) { m_machine.vdp().setDitherType(type); }
+	void setVdpDitherType(i32 type) {
+		m_machine.memory().writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(type)));
+	}
 
 	f64 frameDeltaMs() const { return frameLoop.frameDeltaMs; }
 	Clock& clock() const { return m_clock; }

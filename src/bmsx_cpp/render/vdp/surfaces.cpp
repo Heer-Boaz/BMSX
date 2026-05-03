@@ -23,12 +23,21 @@ const char* resolveVdpSurfaceTextureKey(uint32_t surfaceId) {
 
 } // namespace
 
-VdpRenderSurfaceInfo resolveVdpRenderSurface(const VDP& vdp, uint32_t surfaceId) {
-	const VdpBlitterSurfaceSize size = vdp.resolveBlitterSurfaceSize(surfaceId);
+const VDP::VramSlot& resolveVdpHostSurfaceSlot(const VDP::VdpHostOutput& output, uint32_t surfaceId) {
+	for (const auto& slot : *output.surfaceUploadSlots) {
+		if (slot.surfaceId == surfaceId) {
+			return slot;
+		}
+	}
+	throw vdpFault("surface " + std::to_string(surfaceId) + " is not registered for host output.");
+}
+
+VdpRenderSurfaceInfo resolveVdpRenderSurface(const VDP::VdpHostOutput& output, uint32_t surfaceId) {
+	const VDP::VramSlot& slot = resolveVdpHostSurfaceSlot(output, surfaceId);
 	return VdpRenderSurfaceInfo{
 		resolveVdpSurfaceTextureKey(surfaceId),
-		size.width,
-		size.height,
+		slot.surfaceWidth,
+		slot.surfaceHeight,
 	};
 }
 

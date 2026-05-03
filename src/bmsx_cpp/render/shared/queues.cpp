@@ -8,7 +8,13 @@
 #include "glyphs.h"
 #include "hardware/camera.h"
 #include "hardware/lighting.h"
+#include "core/utf8.h"
 #include "core/font.h"
+#include "machine/bus/io.h"
+#include "machine/common/numeric.h"
+#include "machine/common/word.h"
+#include "machine/devices/vdp/blitter.h"
+#include "machine/devices/vdp/registers.h"
 #include "../../machine/runtime/runtime.h"
 #include "common/clamp.h"
 #include <algorithm>
@@ -48,23 +54,83 @@ static void submitResolvedSprite(Runtime& runtime,
 									RenderLayer layer,
 									const FlipOptions& flip,
 									f32 parallaxWeight) {
-	runtime.machine().vdp().enqueueBlit(
-		source.slot,
-		source.u,
-		source.v,
-		source.w,
-		source.h,
-		x,
-		y,
-		z,
-		renderLayerTo2dLayer(layer),
-		scaleX,
-		scaleY,
-		flip.flip_h,
-		flip.flip_v,
-		color,
-		parallaxWeight
-	);
+	auto& vdp = runtime.machine().vdp();
+	vdp.writeVdpRegister(VDP_REG_SRC_SLOT, source.slot);
+	vdp.writeVdpRegister(VDP_REG_SRC_UV, packLowHigh16(source.u, source.v));
+	vdp.writeVdpRegister(VDP_REG_SRC_WH, packLowHigh16(source.w, source.h));
+	vdp.writeVdpRegister(VDP_REG_DST_X, toSignedWord(FIX16_SCALE * x));
+	vdp.writeVdpRegister(VDP_REG_DST_Y, toSignedWord(FIX16_SCALE * y));
+	vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(renderLayerTo2dLayer(layer), z));
+	vdp.writeVdpRegister(VDP_REG_DRAW_SCALE_X, toSignedWord(FIX16_SCALE * scaleX));
+	vdp.writeVdpRegister(VDP_REG_DRAW_SCALE_Y, toSignedWord(FIX16_SCALE * scaleY));
+	vdp.writeVdpRegister(VDP_REG_DRAW_CTRL, encodeVdpDrawCtrl(flip.flip_h, flip.flip_v, 0u, parallaxWeight));
+	vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, packFrameBufferColorWord(color));
+	vdp.consumeDirectVdpCommand(VDP_CMD_BLIT);
+}
+
+static void writeGeometryRegisters(VDP& vdp, f32 x0, f32 y0, f32 x1, f32 y1, f32 z, RenderLayer layer, const Color& color) {
+	vdp.writeVdpRegister(VDP_REG_GEOM_X0, toSignedWord(FIX16_SCALE * x0));
+	vdp.writeVdpRegister(VDP_REG_GEOM_Y0, toSignedWord(FIX16_SCALE * y0));
+	vdp.writeVdpRegister(VDP_REG_GEOM_X1, toSignedWord(FIX16_SCALE * x1));
+	vdp.writeVdpRegister(VDP_REG_GEOM_Y1, toSignedWord(FIX16_SCALE * y1));
+	vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(renderLayerTo2dLayer(layer), z));
+	vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, packFrameBufferColorWord(color));
+}
+
+static void submitFillRectDirect(Runtime& runtime, f32 x0, f32 y0, f32 x1, f32 y1, f32 z, RenderLayer layer, const Color& color) {
+	auto& vdp = runtime.machine().vdp();
+	writeGeometryRegisters(vdp, x0, y0, x1, y1, z, layer, color);
+	vdp.consumeDirectVdpCommand(VDP_CMD_FILL_RECT);
+}
+
+static void submitLineDirect(Runtime& runtime, f32 x0, f32 y0, f32 x1, f32 y1, f32 z, RenderLayer layer, const Color& color, f32 thickness) {
+	auto& vdp = runtime.machine().vdp();
+	writeGeometryRegisters(vdp, x0, y0, x1, y1, z, layer, color);
+	vdp.writeVdpRegister(VDP_REG_LINE_WIDTH, toSignedWord(FIX16_SCALE * thickness));
+	vdp.consumeDirectVdpCommand(VDP_CMD_DRAW_LINE);
+}
+
+static u32 resolveAtlasSlot(Runtime& runtime, i32 atlasId) {
+	if (atlasId == static_cast<i32>(VDP_SYSTEM_ATLAS_ID)) {
+		return VDP_SLOT_SYSTEM;
+	}
+	const u32 atlas = static_cast<u32>(atlasId);
+	if (runtime.machine().memory().readIoU32(IO_VDP_SLOT_PRIMARY_ATLAS) == atlas) {
+		return VDP_SLOT_PRIMARY;
+	}
+	if (runtime.machine().memory().readIoU32(IO_VDP_SLOT_SECONDARY_ATLAS) == atlas) {
+		return VDP_SLOT_SECONDARY;
+	}
+	throw BMSX_RUNTIME_ERROR("atlas " + std::to_string(atlasId) + " is not loaded in a VDP slot.");
+}
+
+static void renderGlyphLineDirect(Runtime& runtime, f32 x, f32 y, const std::string& line, i32 start, i32 end, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, RenderLayer layer) {
+	f32 cursorX = x;
+	size_t byteIndex = 0u;
+	i32 glyphIndex = 0;
+	FlipOptions flip;
+	while (byteIndex < line.size()) {
+		const u32 codepoint = readUtf8Codepoint(line, byteIndex);
+		if (glyphIndex >= end) {
+			break;
+		}
+		const FontGlyph& glyph = font->getGlyph(codepoint);
+		if (glyphIndex >= start) {
+			if (backgroundColor.has_value()) {
+				submitFillRectDirect(runtime, cursorX, y, cursorX + static_cast<f32>(glyph.rect.w), y + static_cast<f32>(glyph.rect.h), z, layer, *backgroundColor);
+			}
+			const VdpSlotSource source{
+				resolveAtlasSlot(runtime, glyph.rect.atlasId),
+				glyph.rect.u,
+				glyph.rect.v,
+				glyph.rect.w,
+				glyph.rect.h,
+			};
+			submitResolvedSprite(runtime, source, cursorX, y, z, 1.0f, 1.0f, color, layer, flip, 0.0f);
+		}
+		cursorX += static_cast<f32>(glyph.advance);
+		glyphIndex += 1;
+	}
 }
 
 static bool hasCommittedFrontQueueContent() {
@@ -146,10 +212,6 @@ void clearBackQueues() {
 	s_activeQueueSource = QueueSource::Front;
 }
 
-void resetTransientState() {
-	clearBackQueues();
-}
-
 void clearAllQueues(Runtime& runtime) {
 	auto& vdp = runtime.machine().vdp();
 	vdp.initializeRegisters();
@@ -176,10 +238,13 @@ void submitRectangle(Runtime& runtime, const RectRenderSubmission& options) {
 
 	correctAreaStartEnd(x, y, ex, ey);
 	if (options.kind == RectRenderSubmission::Kind::Fill) {
-		runtime.machine().vdp().enqueueFillRect(x, y, ex, ey, z, renderLayerTo2dLayer(*options.layer), c);
+		submitFillRectDirect(runtime, x, y, ex, ey, z, *options.layer, c);
 		return;
 	}
-	runtime.machine().vdp().enqueueDrawRect(x, y, ex, ey, z, renderLayerTo2dLayer(*options.layer), c);
+	submitLineDirect(runtime, x, y, ex, y, z, *options.layer, c, 1.0f);
+	submitLineDirect(runtime, ex, y, ex, ey, z, *options.layer, c, 1.0f);
+	submitLineDirect(runtime, ex, ey, x, ey, z, *options.layer, c, 1.0f);
+	submitLineDirect(runtime, x, ey, x, y, z, *options.layer, c, 1.0f);
 }
 
 void submitDrawPolygon(Runtime& runtime, const PolyRenderSubmission& options) {
@@ -189,7 +254,9 @@ void submitDrawPolygon(Runtime& runtime, const PolyRenderSubmission& options) {
 	if (!options.layer.has_value()) {
 		throw BMSX_RUNTIME_ERROR("submitDrawPolygon requires layer.");
 	}
-	runtime.machine().vdp().enqueueDrawPoly(options.points, options.z, options.color, *options.thickness, renderLayerTo2dLayer(*options.layer));
+	for (size_t index = 0; index + 3u < options.points.size(); index += 2u) {
+		submitLineDirect(runtime, options.points[index], options.points[index + 1u], options.points[index + 2u], options.points[index + 3u], options.z, *options.layer, options.color, *options.thickness);
+	}
 }
 
 void submitGlyphs(Runtime& runtime, const GlyphRenderSubmission& options) {
@@ -240,7 +307,11 @@ void renderGlyphs(Runtime& runtime,
 					const Color& color,
 					const std::optional<Color>& backgroundColor,
 					RenderLayer layer) {
-	runtime.machine().vdp().enqueueGlyphRun(lines, x, y, z, font, color, backgroundColor, start, end, renderLayerTo2dLayer(layer));
+	f32 cursorY = y;
+	for (const auto& line : lines) {
+		renderGlyphLineDirect(runtime, x, cursorY, line, start, end, z, font, color, backgroundColor, layer);
+		cursorY += static_cast<f32>(font->lineHeight());
+	}
 }
 
 // --- Mesh queue API ---

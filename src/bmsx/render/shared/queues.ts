@@ -70,23 +70,22 @@ function submitSpriteDirect(runtime: Runtime, slot: number, u: number, v: number
 
 function submitFillRectDirect(runtime: Runtime, x0: number, y0: number, x1: number, y1: number, z: number, layer: RenderLayer, colorValue: color): void {
 	const vdp = runtime.machine.vdp;
+	writeGeometryRegisters(vdp, x0, y0, x1, y1, z, layer, colorValue);
+	vdp.consumeDirectVdpCommand(VDP_CMD_FILL_RECT);
+}
+
+function writeGeometryRegisters(vdp: Runtime['machine']['vdp'], x0: number, y0: number, x1: number, y1: number, z: number, layer: RenderLayer, colorValue: color): void {
 	vdp.writeVdpRegister(VDP_REG_GEOM_X0, toSignedWord(FIX16_SCALE * x0));
 	vdp.writeVdpRegister(VDP_REG_GEOM_Y0, toSignedWord(FIX16_SCALE * y0));
 	vdp.writeVdpRegister(VDP_REG_GEOM_X1, toSignedWord(FIX16_SCALE * x1));
 	vdp.writeVdpRegister(VDP_REG_GEOM_Y1, toSignedWord(FIX16_SCALE * y1));
 	vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(renderLayerTo2dLayer(layer), z));
 	vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, packFrameBufferColorWord(colorValue));
-	vdp.consumeDirectVdpCommand(VDP_CMD_FILL_RECT);
 }
 
 function submitLineDirect(runtime: Runtime, x0: number, y0: number, x1: number, y1: number, z: number, layer: RenderLayer, colorValue: color, thickness: number): void {
 	const vdp = runtime.machine.vdp;
-	vdp.writeVdpRegister(VDP_REG_GEOM_X0, toSignedWord(FIX16_SCALE * x0));
-	vdp.writeVdpRegister(VDP_REG_GEOM_Y0, toSignedWord(FIX16_SCALE * y0));
-	vdp.writeVdpRegister(VDP_REG_GEOM_X1, toSignedWord(FIX16_SCALE * x1));
-	vdp.writeVdpRegister(VDP_REG_GEOM_Y1, toSignedWord(FIX16_SCALE * y1));
-	vdp.writeVdpRegister(VDP_REG_DRAW_LAYER_PRIO, encodeVdpLayerPriority(renderLayerTo2dLayer(layer), z));
-	vdp.writeVdpRegister(VDP_REG_DRAW_COLOR, packFrameBufferColorWord(colorValue));
+	writeGeometryRegisters(vdp, x0, y0, x1, y1, z, layer, colorValue);
 	vdp.writeVdpRegister(VDP_REG_LINE_WIDTH, toSignedWord(FIX16_SCALE * thickness));
 	vdp.consumeDirectVdpCommand(VDP_CMD_DRAW_LINE);
 }
@@ -163,10 +162,6 @@ export function clearBackQueues(): void {
 	meshQueue.clearBack();
 	particleQueue.clearBack();
 	prepareHeldRenderQueues();
-}
-
-export function resetTransientState(): void {
-	clearBackQueues();
 }
 
 export function clearAllQueues(runtime: Runtime): void {

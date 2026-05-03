@@ -96,6 +96,11 @@ local update_skybox_camera<const> = function()
 	local angle<const> = frame * 0.035
 	local c<const> = math.cos(angle)
 	local s<const> = math.sin(angle)
+	local wp_view<const> = sys_vdp_camera_view - 4
+	local wp_proj<const> = sys_vdp_camera_proj - 4
+	local wp_eye<const> = sys_vdp_camera_eye - 4
+
+
 	camera_view[1] = c
 	camera_view[2] = 0
 	camera_view[3] = -s
@@ -112,7 +117,13 @@ local update_skybox_camera<const> = function()
 	camera_view[14] = 0
 	camera_view[15] = 0
 	camera_view[16] = 1
-	set_camera(camera_view, camera_proj, camera_eye)
+
+	for i = 1, 16 do
+		mem[wp_view + i * 4], mem[wp_proj + i * 4] = camera_view[i], camera_proj[i]
+	end
+	for i = 1, 3 do mem[wp_eye + i * 4] = camera_eye[i] end
+	mem[sys_vdp_camera_commit] = 1
+
 end
 
 local build_lua_atlas<const> = function()

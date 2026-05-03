@@ -5,8 +5,8 @@
 
 namespace bmsx {
 
-void commitVdpSkyboxViewState(GameView& view, const VDP& vdp) {
-	if (!vdp.committedSkyboxEnabled()) {
+void commitVdpSkyboxViewState(GameView& view, const VDP::VdpHostOutput& output) {
+	if (!output.skyboxEnabled) {
 		view.skyboxRenderReady = false;
 		view.skyboxFaceUvRects = {};
 		view.skyboxFaceTextpageBindings = {};
@@ -14,7 +14,7 @@ void commitVdpSkyboxViewState(GameView& view, const VDP& vdp) {
 		return;
 	}
 	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
-		const VDP::ResolvedBlitterSample sample = vdp.resolveCommittedSkyboxFaceSample(index);
+		const VDP::ResolvedBlitterSample& sample = (*output.skyboxSamples)[index];
 		const VDP::BlitterSource& source = sample.source;
 		const size_t uvBase = index * 4u;
 		view.skyboxFaceUvRects[uvBase + 0u] = static_cast<f32>(source.srcX) / static_cast<f32>(sample.surfaceWidth);

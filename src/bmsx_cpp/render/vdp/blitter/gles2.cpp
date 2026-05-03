@@ -4,7 +4,6 @@
 #include "machine/devices/vdp/fault.h"
 #include "render/backend/gles2_backend.h"
 #include "render/vdp/framebuffer.h"
-#include "render/vdp/slot_textures.h"
 #include "render/vdp/surfaces.h"
 #include "render/vdp/texture_transfer.h"
 #include <algorithm>
@@ -438,24 +437,22 @@ void VdpGles2Blitter::initialize() {
 	initializeVdpGles2Runtime(static_cast<OpenGLES2Backend*>(&backend));
 }
 
-bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& queue) {
+bool VdpGles2Blitter::execute(const VDP::VdpHostOutput& output, const std::vector<VDP::BlitterCommand>& queue) {
 	using CommandType = VDP::BlitterCommandType;
 	GPUBackend& textureBackend = vdpTextureBackend();
 	if (textureBackend.type() != BackendType::OpenGLES2) {
 		return false;
 	}
-	syncVdpSlotTextures(vdp);
 	auto* backend = static_cast<OpenGLES2Backend*>(&textureBackend);
-	applyVdpFrameBufferTextureWrites(vdp);
 	VdpGles2Host host;
 	host.backend = backend;
 	host.renderTexture = vdpRenderFrameBufferTexture();
-	host.width = static_cast<i32>(vdp.frameBufferWidth());
-	host.height = static_cast<i32>(vdp.frameBufferHeight());
+	host.width = static_cast<i32>(output.frameBufferWidth);
+	host.height = static_cast<i32>(output.frameBufferHeight);
 	auto prepareSurface = [&](uint32_t surfaceId, f32 textpageId) {
 		auto& info = host.surfaces[surfaceId];
 		info.textpageId = textpageId;
-		const auto surface = resolveVdpRenderSurface(vdp, surfaceId);
+		const auto surface = resolveVdpRenderSurface(output, surfaceId);
 		info.texture = getVdpRenderSurfaceTexture(surfaceId);
 		info.invWidth = 1.0f / static_cast<f32>(surface.width);
 		info.invHeight = 1.0f / static_cast<f32>(surface.height);
@@ -750,7 +747,13 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 		}
 	}
 	drawSortedSegment(segmentStart, queue.size());
-	syncVdpRenderFrameBufferReadback(vdp);
+	readVdpRenderFrameBufferPixels(
+		output.frameBufferRenderReadback->data(),
+		host.width,
+		host.height,
+		0,
+		0
+	);
 	return true;
 }
 

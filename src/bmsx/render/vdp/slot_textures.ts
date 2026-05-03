@@ -1,4 +1,4 @@
-import type { VDP, VdpSurfaceUploadSlot } from '../../machine/devices/vdp/vdp';
+import type { VDP, VdpHostOutput, VdpSurfaceUploadSlot } from '../../machine/devices/vdp/vdp';
 import {
 	createVdpTextureFromSeed,
 	resizeVdpTextureForKey,
@@ -29,8 +29,8 @@ function uploadVdpSlotRows(textureKey: string, slot: VdpSurfaceUploadSlot, rowSt
 	);
 }
 
-function initializeVdpSlotTexture(vdp: VDP, slot: VdpSurfaceUploadSlot): void {
-	const surface = resolveVdpRenderSurface(vdp, slot.surfaceId);
+function initializeVdpSlotTexture(vdp: VDP, output: VdpHostOutput, slot: VdpSurfaceUploadSlot): void {
+	const surface = resolveVdpRenderSurface(output, slot.surfaceId);
 	const textureKey = surface.textureKey;
 	const width = slot.surfaceWidth;
 	const height = slot.surfaceHeight;
@@ -41,24 +41,26 @@ function initializeVdpSlotTexture(vdp: VDP, slot: VdpSurfaceUploadSlot): void {
 }
 
 export function initializeVdpSlotTextures(vdp: VDP): void {
-	const slots = vdp.surfaceUploadSlots;
+	const output = vdp.readHostOutput();
+	const slots = output.surfaceUploadSlots;
 	for (let index = 0; index < slots.length; index += 1) {
 		const slot = slots[index];
 		if (isVdpFrameBufferSurface(slot.surfaceId)) {
 			continue;
 		}
-		initializeVdpSlotTexture(vdp, slot);
+		initializeVdpSlotTexture(vdp, output, slot);
 	}
 }
 
 export function syncVdpSlotTextures(vdp: VDP): void {
-	const slots = vdp.surfaceUploadSlots;
+	const output = vdp.readHostOutput();
+	const slots = output.surfaceUploadSlots;
 	for (let index = 0; index < slots.length; index += 1) {
 		const slot = slots[index];
 		if (isVdpFrameBufferSurface(slot.surfaceId)) {
 			continue;
 		}
-		const surface = resolveVdpRenderSurface(vdp, slot.surfaceId);
+		const surface = resolveVdpRenderSurface(output, slot.surfaceId);
 		const width = slot.surfaceWidth;
 		const height = slot.surfaceHeight;
 		const textureKey = surface.textureKey;

@@ -1,8 +1,8 @@
-import type { VDP } from '../../machine/devices/vdp/vdp';
+import type { VdpHostOutput } from '../../machine/devices/vdp/vdp';
 import type { GameView } from '../gameview';
 
-export function commitVdpBillboardViewState(view: GameView, vdp: VDP): void {
-	const billboards = vdp.committedBillboardEntries;
+export function commitVdpBillboardViewState(view: GameView, output: VdpHostOutput): void {
+	const billboards = output.billboards;
 	view.vdpBillboardCount = billboards.length;
 	const positionSize = view.vdpBillboardPositionSize;
 	const color = view.vdpBillboardColor;

@@ -83,8 +83,4 @@ VdpCameraState VdpCameraUnit::captureState() const {
 	};
 }
 
-void VdpCameraUnit::restoreState(const VdpCameraState& state) {
-	writeCameraBank0(state.view, state.proj, state.eye.x, state.eye.y, state.eye.z);
-}
-
 } // namespace bmsx

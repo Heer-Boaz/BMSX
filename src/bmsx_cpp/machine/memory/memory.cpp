@@ -421,6 +421,8 @@ bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 		case IO_VDP_RD_STATUS:
 		case IO_VDP_RD_DATA:
 		case IO_VDP_STATUS:
+		case IO_VDP_FAULT_CODE:
+		case IO_VDP_FAULT_DETAIL:
 			return true;
 		default:
 			return false;

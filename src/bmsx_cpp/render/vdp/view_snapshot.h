@@ -5,6 +5,6 @@ namespace bmsx {
 class GameView;
 class VDP;
 
-void commitVdpViewSnapshot(GameView& view, const VDP& vdp);
+void commitVdpViewSnapshot(GameView& view, VDP& vdp);
 
 } // namespace bmsx

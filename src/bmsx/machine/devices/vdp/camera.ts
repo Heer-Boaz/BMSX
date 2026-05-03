@@ -89,7 +89,7 @@ export class VdpCameraUnit {
 		this.live.eye[2] = 0;
 	}
 
-	public writeCameraBank0(view: Float32Array, proj: Float32Array, eyeX: number, eyeY: number, eyeZ: number): void {
+	public writeCameraBank0(view: ArrayLike<number>, proj: ArrayLike<number>, eyeX: number, eyeY: number, eyeZ: number): void {
 		this.live.view.set(view);
 		this.live.proj.set(proj);
 		multiplyMat4Into(this.live.viewProj, this.live.proj, this.live.view);
@@ -100,7 +100,11 @@ export class VdpCameraUnit {
 	}
 
 	public latchFrame(target: VdpCameraSnapshot): void {
-		copyVdpCameraSnapshot(target, this.live);
+		target.view.set(this.live.view);
+		target.proj.set(this.live.proj);
+		target.viewProj.set(this.live.viewProj);
+		target.skyboxView.set(this.live.skyboxView);
+		target.eye.set(this.live.eye);
 	}
 
 	public captureState(): VdpCameraState {
@@ -111,13 +115,4 @@ export class VdpCameraUnit {
 		};
 	}
 
-	public restoreState(state: VdpCameraState): void {
-		this.live.view.set(state.view);
-		this.live.proj.set(state.proj);
-		multiplyMat4Into(this.live.viewProj, this.live.proj, this.live.view);
-		skyboxFromViewInto(this.live.skyboxView, this.live.view);
-		this.live.eye[0] = state.eye[0];
-		this.live.eye[1] = state.eye[1];
-		this.live.eye[2] = state.eye[2];
-	}
 }

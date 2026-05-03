@@ -121,6 +121,8 @@ inline u32 resolveAtlasSlotFromMemory(const Memory& memory, i32 atlasId) {
 	throw vdpFault("atlas " + std::to_string(atlasId) + " is not loaded in a VDP slot.");
 }
 
+} // namespace
+
 template<typename ArgReader, typename PayloadReader>
 void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t argWords, const ArgReader& argReader, const PayloadReader& payloadReader, uint32_t payloadWords) {
 	switch (cmd) {
@@ -220,7 +222,7 @@ void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t 
 				throw vdpFault("tile payload size mismatch (" + std::to_string(tileCount) + " != " + std::to_string(cols * rows) + ").");
 			}
 			if constexpr (PayloadReader::kMemoryBacked) {
-				vdp.enqueuePayloadTileRun(
+				vdp.latchPayloadTileRun(
 					payloadReader.base,
 					tileCount,
 					cols,
@@ -235,7 +237,7 @@ void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t 
 					static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 10))
 				);
 			} else {
-				vdp.enqueuePayloadTileRunWords(
+				vdp.latchPayloadTileRunWords(
 					payloadReader.words + payloadReader.wordOffset,
 					tileCount,
 					cols,
@@ -265,8 +267,6 @@ void processVdpCommandImpl(VDP& vdp, CPU& cpu, Api& api, uint32_t cmd, uint32_t 
 			throw vdpFault("unknown I/O command " + std::to_string(cmd) + ".");
 	}
 }
-
-} // namespace
 
 void processVdpCommand(
 	VDP& vdp,

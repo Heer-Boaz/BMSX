@@ -19,15 +19,6 @@ struct VdpSlotSource {
 	u32 h = 0;
 };
 
-struct SkyboxFaceSources {
-	VdpSlotSource posx;
-	VdpSlotSource negx;
-	VdpSlotSource posy;
-	VdpSlotSource negy;
-	VdpSlotSource posz;
-	VdpSlotSource negz;
-};
-
 struct VdpPmuBank {
 	u32 xQ16 = 0u;
 	u32 yQ16 = 0u;

@@ -93,11 +93,6 @@ bool hasPendingBackQueueContent();
 void clearBackQueues();
 
 /**
- * Reset transient queued render submissions after machine/runtime restore or reset.
- */
-void resetTransientState();
-
-/**
  * Clear both front and back queues and reset VDP queue state to power-on values.
  */
 void clearAllQueues(Runtime& runtime);

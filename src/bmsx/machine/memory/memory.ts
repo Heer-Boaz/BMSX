@@ -28,6 +28,8 @@ import {
 	IO_SLOT_COUNT,
 	IO_SYS_HOST_FAULT_FLAGS,
 	IO_SYS_HOST_FAULT_STAGE,
+	IO_VDP_FAULT_CODE,
+	IO_VDP_FAULT_DETAIL,
 	IO_VDP_RD_DATA,
 	IO_VDP_RD_STATUS,
 	IO_VDP_STATUS,
@@ -497,6 +499,8 @@ export class Memory {
 			case IO_VDP_RD_STATUS:
 			case IO_VDP_RD_DATA:
 			case IO_VDP_STATUS:
+			case IO_VDP_FAULT_CODE:
+			case IO_VDP_FAULT_DETAIL:
 				return true;
 			default:
 				return false;

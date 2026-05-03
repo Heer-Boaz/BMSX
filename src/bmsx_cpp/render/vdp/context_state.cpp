@@ -14,28 +14,25 @@ void restoreVdpContextState(VDP& vdp) {
 }
 
 void captureVdpContextState(VDP& vdp) {
-	for (auto& slot : vdp.m_vramSlots) {
-		if (slot.surfaceId != VDP_RD_SURFACE_FRAMEBUFFER) {
-			continue;
-		}
-		const size_t bytes = static_cast<size_t>(slot.surfaceWidth) * static_cast<size_t>(slot.surfaceHeight) * 4u;
-		slot.cpuReadback.resize(bytes);
-		readVdpRenderFrameBufferPixels(
-			slot.cpuReadback.data(),
-			static_cast<i32>(slot.surfaceWidth),
-			static_cast<i32>(slot.surfaceHeight),
-			0,
-			0
-		);
-		vdp.m_displayFrameBufferCpuReadback.resize(bytes);
-		readVdpDisplayFrameBufferPixels(
-			vdp.m_displayFrameBufferCpuReadback.data(),
-			static_cast<i32>(slot.surfaceWidth),
-			static_cast<i32>(slot.surfaceHeight),
-			0,
-			0
-		);
-	}
+	const VDP::VdpHostOutput output = vdp.hostOutput();
+	const size_t bytes = static_cast<size_t>(output.frameBufferWidth) * static_cast<size_t>(output.frameBufferHeight) * 4u;
+	output.frameBufferRenderReadback->resize(bytes);
+	readVdpRenderFrameBufferPixels(
+		output.frameBufferRenderReadback->data(),
+		static_cast<i32>(output.frameBufferWidth),
+		static_cast<i32>(output.frameBufferHeight),
+		0,
+		0
+	);
+	auto& displayReadback = vdp.frameBufferDisplayReadback();
+	displayReadback.resize(bytes);
+	readVdpDisplayFrameBufferPixels(
+		displayReadback.data(),
+		static_cast<i32>(output.frameBufferWidth),
+		static_cast<i32>(output.frameBufferHeight),
+		0,
+		0
+	);
 }
 
 void shutdownVdpContextState() {

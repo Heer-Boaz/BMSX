@@ -110,9 +110,10 @@ void writeSkyboxToFramebuffer(SoftwareBackend& backend, Runtime& runtime, const 
 	std::array<VDP::ResolvedBlitterSample, SKYBOX_FACE_COUNT> samples{};
 	std::array<VdpSourcePixels, SKYBOX_FACE_COUNT> textures{};
 	VDP& vdp = runtime.machine().vdp();
+	const VDP::VdpHostOutput output = vdp.hostOutput();
 	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
-		samples[index] = vdp.resolveCommittedSkyboxFaceSample(index);
-		textures[index] = resolveVdpSurfacePixels(vdp, samples[index].source.surfaceId);
+		samples[index] = (*output.skyboxSamples)[index];
+		textures[index] = resolveVdpSurfacePixels(output, samples[index].source.surfaceId);
 	}
 	u32* framebuffer = backend.framebuffer();
 	const i32 width = backend.width();
@@ -149,7 +150,7 @@ void writeSkyboxToFramebuffer(SoftwareBackend& backend, Runtime& runtime, const 
 }
 
 void drawSoftwareBillboardSample(SoftwareBackend& backend,
-	Runtime& runtime,
+	const VDP::VdpHostOutput& output,
 	const SoftwareParticleViewState& state,
 	u32 slot,
 	u32 u,
@@ -160,7 +161,7 @@ void drawSoftwareBillboardSample(SoftwareBackend& backend,
 	f32 size,
 	const Color& color) {
 	const u32 surfaceId = surfaceIdForParticleSlot(slot);
-	const VdpSourcePixels texture = resolveVdpSurfacePixels(runtime.machine().vdp(), surfaceId);
+	const VdpSourcePixels texture = resolveVdpSurfacePixels(output, surfaceId);
 	const i32 sourceX = static_cast<i32>(u);
 	const i32 sourceY = static_cast<i32>(v);
 	const i32 sourceW = static_cast<i32>(w);
@@ -285,9 +286,10 @@ void renderSoftwareParticles(SoftwareBackend& backend, const GameView& view, Run
 	if (RenderQueues::beginParticleQueue() == 0 && view.vdpBillboardCount == 0u) {
 		return;
 	}
-	RenderQueues::forEachParticleQueue([&backend, &runtime, &state](const ParticleRenderSubmission& submission, size_t) {
+	VDP::VdpHostOutput output = runtime.machine().vdp().hostOutput();
+	RenderQueues::forEachParticleQueue([&backend, &output, &state](const ParticleRenderSubmission& submission, size_t) {
 		drawSoftwareBillboardSample(backend,
-			runtime,
+			output,
 			state,
 			*submission.slot,
 			*submission.u,
@@ -301,7 +303,7 @@ void renderSoftwareParticles(SoftwareBackend& backend, const GameView& view, Run
 	for (size_t index = 0; index < view.vdpBillboardCount; ++index) {
 		const GameView::VdpBillboardRenderEntry& submission = view.vdpBillboards[index];
 		drawSoftwareBillboardSample(backend,
-			runtime,
+			output,
 			state,
 			submission.slot,
 			submission.u,

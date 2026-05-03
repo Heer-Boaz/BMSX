@@ -5,8 +5,8 @@
 
 namespace bmsx {
 
-void commitVdpBillboardViewState(GameView& view, const VDP& vdp) {
-	const auto& billboards = vdp.committedBillboards();
+void commitVdpBillboardViewState(GameView& view, const VDP::VdpHostOutput& output) {
+	const auto& billboards = *output.billboards;
 	view.vdpBillboardCount = billboards.size();
 	for (size_t index = 0; index < billboards.size(); ++index) {
 		const VdpBbuBillboardEntry& entry = billboards[index];

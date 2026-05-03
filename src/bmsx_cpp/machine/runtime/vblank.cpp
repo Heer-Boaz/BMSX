@@ -5,7 +5,7 @@
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/timing/config.h"
 #include "machine/scheduler/device.h"
-#include "render/vdp/presentation.h"
+#include "render/vdp/framebuffer.h"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -227,7 +227,10 @@ bool VblankState::isFrameBoundaryHalt(Runtime& runtime) const {
 
 // disable-next-line single_line_method_pattern -- VBLANK owns the frame-commit timing edge into the VDP.
 void VblankState::commitFrameOnVblankEdge(Runtime& runtime) {
-	commitVdpFrameOnVblankEdge(runtime.m_machine.vdp());
+	auto& vdp = runtime.m_machine.vdp();
+	if (vdp.commitReadyFrameOnVblankEdge()) {
+		presentVdpFrameBufferPages(vdp);
+	}
 }
 
 void VblankState::completeTickIfPending(Runtime& runtime, FrameState& frameState, uint64_t vblankSequence) {

@@ -554,7 +554,7 @@ function lightrendersystem:update()
 		local lc<const> = ambient_components[i]
 		local obj<const> = lc.parent
 		if obj.visible then
-			put_ambient_light(lc.id, lc.color, lc.intensity)
+			-- put_ambient_light(lc.id, lc.color, lc.intensity)
 		end
 	end
 
@@ -563,7 +563,7 @@ function lightrendersystem:update()
 		local lc<const> = directional_components[i]
 		local obj<const> = lc.parent
 		if obj.visible then
-			put_directional_light(lc.id, lc.orientation, lc.color, lc.intensity)
+			-- put_directional_light(lc.id, lc.orientation, lc.color, lc.intensity)
 		end
 	end
 
@@ -576,7 +576,7 @@ function lightrendersystem:update()
 			point_light_position.x = x
 			point_light_position.y = y
 			point_light_position.z = z
-			put_point_light(lc.id, point_light_position, lc.color, lc.range, lc.intensity)
+			-- put_point_light(lc.id, point_light_position, lc.color, lc.range, lc.intensity)
 		end
 	end
 end
@@ -599,7 +599,7 @@ function meshrendersystem:update()
 			mesh_render_options.joint_matrices = mc.joint_matrices
 			mesh_render_options.morph_weights = mc.morph_weights
 			mesh_render_options.receive_shadow = mc.receive_shadow
-			put_mesh(mc.mesh, mc.matrix, mesh_render_options)
+			-- put_mesh(mc.mesh, mc.matrix, mesh_render_options)
 		end
 	end
 end

@@ -1,4 +1,5 @@
-import type { VDP, VdpSurfaceUploadSlot } from '../../machine/devices/vdp/vdp';
+import type { VdpHostOutput } from '../../machine/devices/vdp/vdp';
+import { resolveVdpHostSurfaceSlot } from './surfaces';
 
 export type VdpSurfacePixels = {
 	pixels: Uint8Array;
@@ -7,19 +8,8 @@ export type VdpSurfacePixels = {
 	stride: number;
 };
 
-function resolveVdpSurfaceUploadSlot(vdp: VDP, surfaceId: number): VdpSurfaceUploadSlot {
-	const slots = vdp.surfaceUploadSlots;
-	for (let index = 0; index < slots.length; index += 1) {
-		const slot = slots[index]!;
-		if (slot.surfaceId === surfaceId) {
-			return slot;
-		}
-	}
-	throw new Error(`[VDPSourcePixels] Surface ${surfaceId} is not registered for CPU readback.`);
-}
-
-export function resolveVdpSurfacePixels(vdp: VDP, surfaceId: number): VdpSurfacePixels {
-	const slot = resolveVdpSurfaceUploadSlot(vdp, surfaceId);
+export function resolveVdpSurfacePixels(output: VdpHostOutput, surfaceId: number): VdpSurfacePixels {
+	const slot = resolveVdpHostSurfaceSlot(output, surfaceId);
 	return {
 		pixels: slot.cpuReadback,
 		width: slot.surfaceWidth,

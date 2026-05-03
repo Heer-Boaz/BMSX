@@ -12,17 +12,8 @@ export type VdpSlotSource = {
 	h: number;
 };
 
-export type SkyboxFaceSources = {
-	posx: VdpSlotSource;
-	negx: VdpSlotSource;
-	posy: VdpSlotSource;
-	negy: VdpSlotSource;
-	posz: VdpSlotSource;
-	negz: VdpSlotSource;
-};
-
-export const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const satisfies readonly (keyof SkyboxFaceSources)[];
 export const SKYBOX_FACE_COUNT = 6;
+export const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const;
 export const SKYBOX_FACE_WORD_STRIDE = 5;
 export const SKYBOX_FACE_WORD_COUNT = SKYBOX_FACE_COUNT * SKYBOX_FACE_WORD_STRIDE;
 export const SKYBOX_FACE_SLOT_WORD = 0;

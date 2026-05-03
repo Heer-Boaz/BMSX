@@ -26,7 +26,6 @@ public:
 	void writeCameraBank0(const std::array<f32, 16>& view, const std::array<f32, 16>& proj, f32 eyeX, f32 eyeY, f32 eyeZ);
 	void latchFrame(VdpCameraSnapshot& target) const;
 	VdpCameraState captureState() const;
-	void restoreState(const VdpCameraState& state);
 
 private:
 	VdpCameraSnapshot m_live{};
