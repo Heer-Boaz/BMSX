@@ -2,7 +2,7 @@
  * platform.cpp - Platform abstraction implementation
  */
 
-#include "platform.h"
+#include "platform/platform.h"
 
 namespace bmsx {
 

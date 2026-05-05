@@ -1,7 +1,7 @@
 #include "machine/firmware/devtools.h"
 
 #include "machine/runtime/runtime.h"
-#include "rompack/package.h"
+#include "rompack/loader.h"
 
 #include <unordered_set>
 #include <vector>

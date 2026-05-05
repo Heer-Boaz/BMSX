@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include "machine/devices/vdp/contracts.h"
 #include <vector>
 

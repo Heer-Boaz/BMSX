@@ -2,7 +2,7 @@
  * primitives.cpp - Implementation of core types
  */
 
-#include "primitives.h"
+#include "common/primitives.h"
 #include <cmath>
 
 namespace bmsx {

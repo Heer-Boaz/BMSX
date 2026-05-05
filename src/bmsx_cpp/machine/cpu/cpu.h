@@ -16,9 +16,9 @@
 #include <vector>
 
 #include "common/scratchbuffer.h"
-#include "core/primitives.h"
-#include "core/utf8.h"
-#include "machine/memory/string_memory.h"
+#include "common/primitives.h"
+#include "common/utf8.h"
+#include "machine/memory/string/memory.h"
 
 namespace bmsx {
 

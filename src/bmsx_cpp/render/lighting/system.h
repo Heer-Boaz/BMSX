@@ -1,7 +1,7 @@
 #pragma once
 
 #include "render/shared/hardware/lighting.h"
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include <optional>
 
 namespace bmsx {

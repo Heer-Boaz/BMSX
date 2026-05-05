@@ -5,7 +5,7 @@
 #ifndef BMSX_ROMPACK_H
 #define BMSX_ROMPACK_H
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include <optional>
 #include <string>
 

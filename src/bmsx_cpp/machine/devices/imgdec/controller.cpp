@@ -7,7 +7,7 @@
 #include "machine/bus/io.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/budget.h"
-#include "platform.h"
+#include "platform/platform.h"
 #include "vendor/stb_image.h"
 
 #include <cstring>

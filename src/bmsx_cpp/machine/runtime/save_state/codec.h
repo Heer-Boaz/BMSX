@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include "machine/runtime/save_state.h"
 #include <cstddef>
 #include <vector>

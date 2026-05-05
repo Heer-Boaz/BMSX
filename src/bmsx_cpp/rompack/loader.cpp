@@ -2,7 +2,7 @@
  * romPackage.cpp - Runtime asset management implementation
  */
 
-#include "package.h"
+#include "rompack/loader.h"
 #include "common/serializer/binencoder.h"
 #include "../machine/program/loader.h"
 #include "common/endian.h"

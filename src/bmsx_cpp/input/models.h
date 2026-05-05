@@ -5,7 +5,7 @@
 #ifndef BMSX_INPUTTYPES_H
 #define BMSX_INPUTTYPES_H
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include <string>
 #include <unordered_map>
 #include <vector>

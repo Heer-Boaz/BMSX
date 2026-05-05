@@ -9,7 +9,7 @@
 #ifndef BMSX_SCRATCHBATCH_H
 #define BMSX_SCRATCHBATCH_H
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include <vector>
 #include <utility>
 

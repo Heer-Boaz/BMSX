@@ -10,7 +10,7 @@
 #define BMSX_LIBRETRO_PLATFORM_H
 
 #include "libretro.h"
-#include "../../platform.h"
+#include "platform/platform.h"
 #include "render/backend/backend.h"
 #include <chrono>
 #include <vector>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "machine/scheduler/frame.h"
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include "render/gameview.h"
 #include <chrono>
 

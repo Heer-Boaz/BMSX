@@ -1,5 +1,5 @@
 #include "parser.h"
-#include "core/primitives.h"
+#include "common/primitives.h"
 
 namespace bmsx {
 

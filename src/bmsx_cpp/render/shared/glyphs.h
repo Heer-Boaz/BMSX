@@ -6,8 +6,8 @@
 #define BMSX_GLYPHS_H
 
 #include "submissions.h"
-#include "core/font.h"
-#include "core/utf8.h"
+#include "render/shared/bitmap_font.h"
+#include "common/utf8.h"
 #include <string>
 #include <utility>
 #include <vector>

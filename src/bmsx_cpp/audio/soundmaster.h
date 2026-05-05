@@ -8,8 +8,8 @@
 #pragma once
 
 #include "biquad_filter.h"
-#include "core/registry.h"
-#include "../subscription.h"
+#include "common/registry.h"
+#include "common/subscription.h"
 #include <functional>
 #include <optional>
 #include <string>

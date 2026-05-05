@@ -1,4 +1,4 @@
-#include "machine/program/load_compiler.h"
+#include "machine/program/compiler.h"
 #include "machine/runtime/runtime.h"
 #include "lua/syntax/lexer.h"
 #include "lua/syntax/parser.h"

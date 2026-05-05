@@ -6,7 +6,7 @@
  * that can be managed without heap-allocated closures.
  */
 
-#include "subscription.h"
+#include "common/subscription.h"
 #include <atomic>
 
 namespace bmsx {

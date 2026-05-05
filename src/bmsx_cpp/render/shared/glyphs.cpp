@@ -3,7 +3,7 @@
  */
 
 #include "glyphs.h"
-#include "core/font.h"
+#include "render/shared/bitmap_font.h"
 #include <cctype>
 
 namespace bmsx {

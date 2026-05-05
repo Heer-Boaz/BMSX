@@ -10,9 +10,9 @@
 #include "backend/backend.h"
 #include "shared/submissions.h"
 #include "shared/queues.h"
-#include "core/registry.h"
+#include "common/registry.h"
 #include "machine/devices/vdp/camera.h"
-#include "../subscription.h"
+#include "common/subscription.h"
 #include <array>
 #include <memory>
 #include <unordered_map>

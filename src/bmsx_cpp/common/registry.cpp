@@ -2,7 +2,7 @@
  * registry.cpp - Global object registry implementation
  */
 
-#include "registry.h"
+#include "common/registry.h"
 
 namespace bmsx {
 

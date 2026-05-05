@@ -8,10 +8,10 @@
 #ifndef BMSX_CONSOLE_CORE_H
 #define BMSX_CONSOLE_CORE_H
 
-#include "primitives.h"
-#include "registry.h"
+#include "common/primitives.h"
+#include "common/registry.h"
 #include "rompack/format.h"
-#include "../platform.h"
+#include "platform/platform.h"
 #include "render/gameview.h"
 #include "audio/soundmaster.h"
 #include <chrono>

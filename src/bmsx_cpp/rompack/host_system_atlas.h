@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include "rompack/host_system_atlas_generated.h"
 
 #include <cstdint>

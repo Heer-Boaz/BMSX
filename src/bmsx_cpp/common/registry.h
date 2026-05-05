@@ -5,7 +5,7 @@
 #ifndef BMSX_REGISTRY_H
 #define BMSX_REGISTRY_H
 
-#include "primitives.h"
+#include "common/primitives.h"
 #include <string>
 #include <unordered_map>
 #include <vector>

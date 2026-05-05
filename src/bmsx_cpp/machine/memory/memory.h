@@ -7,7 +7,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/memory/map.h"
 #include "machine/bus/io.h"
-#include "core/primitives.h"
+#include "common/primitives.h"
 
 namespace bmsx {
 

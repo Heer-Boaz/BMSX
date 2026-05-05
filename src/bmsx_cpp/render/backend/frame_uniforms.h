@@ -7,7 +7,7 @@
 #ifndef BMSX_FRAME_UNIFORMS_H
 #define BMSX_FRAME_UNIFORMS_H
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include <array>
 
 namespace bmsx {

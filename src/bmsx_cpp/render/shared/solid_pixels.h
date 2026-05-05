@@ -5,7 +5,7 @@
 #ifndef BMSX_RENDER_SHARED_SOLID_PIXELS_H
 #define BMSX_RENDER_SHARED_SOLID_PIXELS_H
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include <vector>
 
 namespace bmsx {

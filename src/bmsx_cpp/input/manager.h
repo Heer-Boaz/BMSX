@@ -9,7 +9,7 @@
 
 #include "models.h"
 #include "player.h"
-#include "../subscription.h"
+#include "common/subscription.h"
 #include <array>
 #include <memory>
 #include <unordered_map>

@@ -1,7 +1,7 @@
 #include "render/presentation_state.h"
 #include "core/console.h"
 #include "core/rom_boot_manager.h"
-#include "core/time.h"
+#include "common/time.h"
 #include "machine/runtime/runtime.h"
 #include "render/shared/queues.h"
 #include "render/test_pattern.h"

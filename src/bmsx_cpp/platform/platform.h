@@ -7,8 +7,8 @@
 #ifndef BMSX_PLATFORM_H
 #define BMSX_PLATFORM_H
 
-#include "subscription.h"
-#include "core/primitives.h"
+#include "common/subscription.h"
+#include "common/primitives.h"
 #include "render/backend/backend.h"
 #include <functional>
 #include <optional>

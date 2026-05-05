@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include "render/backend/backend.h"
 
 namespace bmsx {

@@ -100,26 +100,30 @@ configure_file(
 
 add_library(bmsx_core STATIC
 	# Platform abstraction
-	platform.cpp
-	subscription.cpp
+	platform/platform.cpp
+	common/subscription.cpp
 
 	# Vendor (header-only implementations)
 	vendor/stb_impl.c
 
 	# Core systems
-	core/primitives.cpp
+	common/primitives.cpp
 	core/console.cpp
 	core/rom_boot_manager.cpp
 	core/host_frame.cpp
 	core/host_overlay_menu.cpp
 	core/system.cpp
-	core/registry.cpp
-	rompack/package.cpp
+    machine/runtime/contracts.cpp
+    machine/runtime/host_fault.cpp
+    machine/runtime/handler_cache.cpp
+    machine/terminal/terminal.cpp
+	common/registry.cpp
+	rompack/loader.cpp
 	rompack/host_system_atlas.cpp
 	rompack/host_system_atlas_generated.cpp
 	common/serializer/binencoder.cpp
 	rompack/format.cpp
-	core/font.cpp
+	render/shared/bitmap_font.cpp
 	core/taskgate.cpp
 	common/byte_hex_string.cpp
 	common/mem_snapshot.cpp
@@ -184,7 +188,7 @@ add_library(bmsx_core STATIC
 	machine/devices/irq/controller.cpp
 	machine/firmware/devtools.cpp
 	machine/cpu/disassembler.cpp
-	machine/program/load_compiler.cpp
+	machine/program/compiler.cpp
 	machine/firmware/globals.cpp
 	machine/memory/lua_heap_usage.cpp
 	machine/firmware/runtime.cpp
@@ -224,7 +228,7 @@ add_library(bmsx_core STATIC
 	machine/devices/vdp/sbx.cpp
 	machine/devices/vdp/vram_garbage.cpp
 	machine/devices/vdp/vdp.cpp
-	machine/memory/string_memory.cpp
+	machine/memory/string/memory.cpp
 	machine/program/loader.cpp
 	machine/program/linker.cpp
 )

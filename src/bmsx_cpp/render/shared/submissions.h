@@ -7,7 +7,7 @@
 #ifndef BMSX_RENDER_TYPES_H
 #define BMSX_RENDER_TYPES_H
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include "machine/devices/vdp/contracts.h"
 #include <cstddef>
 #include <optional>

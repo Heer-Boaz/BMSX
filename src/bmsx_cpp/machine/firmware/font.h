@@ -5,7 +5,7 @@
 #ifndef BMSX_MACHINE_FONT_H
 #define BMSX_MACHINE_FONT_H
 
-#include "core/font.h"
+#include "render/shared/bitmap_font.h"
 
 namespace bmsx {
 

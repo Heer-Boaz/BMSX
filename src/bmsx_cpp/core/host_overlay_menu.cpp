@@ -1,12 +1,12 @@
 #include "core/host_overlay_menu.h"
 
 #include "core/console.h"
-#include "core/font.h"
+#include "render/shared/bitmap_font.h"
 #include "core/rom_boot_manager.h"
 #include "input/manager.h"
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
-#include "platform.h"
+#include "platform/platform.h"
 #include "render/gameview.h"
 #include <array>
 #include <cstdio>

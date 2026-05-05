@@ -1,8 +1,8 @@
 #ifndef BMSX_ROM_BOOT_MANAGER_H
 #define BMSX_ROM_BOOT_MANAGER_H
 
-#include "primitives.h"
-#include "rompack/package.h"
+#include "common/primitives.h"
+#include "rompack/loader.h"
 #include <memory>
 #include <vector>
 

@@ -3,7 +3,7 @@
  */
 
 #include "console.h"
-#include "font.h"
+#include "render/shared/bitmap_font.h"
 #include "rom_boot_manager.h"
 #include "system.h"
 #include "input/manager.h"

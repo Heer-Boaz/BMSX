@@ -4,7 +4,7 @@
 
 #include "platform.h"
 #include "core/console.h"
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include "core/rom_boot_manager.h"
 #include "core/system.h"
 #include "input/manager.h"

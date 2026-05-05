@@ -2,7 +2,7 @@
 
 #include "audio/soundmaster.h"
 #include "machine/memory/memory.h"
-#include "subscription.h"
+#include "common/subscription.h"
 
 #include <cstdint>
 #include <string>

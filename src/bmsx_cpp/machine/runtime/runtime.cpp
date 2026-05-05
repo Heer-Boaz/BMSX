@@ -9,9 +9,9 @@
 #include "render/runtime/state.h"
 #include "render/shared/queues.h"
 #include "rompack/format.h"
-#include "rompack/package.h"
+#include "rompack/loader.h"
 #include "input/manager.h"
-#include "platform.h"
+#include "platform/platform.h"
 #include <array>
 #include <stdexcept>
 #include <utility>

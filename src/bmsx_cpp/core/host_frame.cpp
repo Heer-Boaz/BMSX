@@ -1,7 +1,7 @@
 #include "core/console.h"
 
 #include "core/host_overlay_menu.h"
-#include "core/time.h"
+#include "common/time.h"
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"
 

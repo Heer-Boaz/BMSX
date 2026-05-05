@@ -1,8 +1,8 @@
 #pragma once
 
 #include "render/texture_load_barrier.h"
-#include "rompack/package.h"
-#include "core/registry.h"
+#include "rompack/loader.h"
+#include "common/registry.h"
 #include "core/taskgate.h"
 #include "backend/backend.h"
 #include <functional>

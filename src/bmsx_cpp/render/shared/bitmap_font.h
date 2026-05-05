@@ -5,8 +5,8 @@
 #ifndef BMSX_FONT_H
 #define BMSX_FONT_H
 
-#include "rompack/package.h"
-#include "primitives.h"
+#include "rompack/loader.h"
+#include "common/primitives.h"
 #include <memory>
 #include <string>
 #include <unordered_map>

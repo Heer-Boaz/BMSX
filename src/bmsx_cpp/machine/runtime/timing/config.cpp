@@ -2,7 +2,7 @@
 
 #include "machine/runtime/runtime.h"
 #include "rompack/format.h"
-#include "rompack/package.h"
+#include "rompack/loader.h"
 
 #include <stdexcept>
 

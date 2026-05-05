@@ -5,7 +5,7 @@
 #ifndef BMSX_ROMPACK_PACKAGE_H
 #define BMSX_ROMPACK_PACKAGE_H
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include "rompack/format.h"
 #include "common/serializer/binencoder.h"
 #include "../machine/program/loader.h"

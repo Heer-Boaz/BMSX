@@ -23,7 +23,7 @@
 #include "machine/runtime/frame/loop.h"
 #include "machine/scheduler/frame.h"
 #include "machine/devices/vdp/vdp.h"
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include <cstddef>
 #include <memory>
 #include <optional>

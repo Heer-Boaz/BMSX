@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/primitives.h"
+#include "common/primitives.h"
 #include "render/shared/host_2d_commands.h"
 #include <array>
 #include <cstddef>
