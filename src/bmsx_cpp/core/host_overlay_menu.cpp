@@ -8,7 +8,6 @@
 #include "machine/runtime/runtime.h"
 #include "platform.h"
 #include "render/gameview.h"
-#include "render/host_menu/queue.h"
 #include <array>
 #include <cstdio>
 
@@ -105,13 +104,14 @@ constexpr std::array<HostMenuOptionDef, kMenuOptionCount> kOptions{{
 }};
 
 bool buttonPressed(PlayerInput& player, const HostMenuButton& button) {
-	return player.getRawButtonState(button.gamepad, InputSource::Gamepad).pressed ||
-		player.getRawButtonState(button.keyboard, InputSource::Keyboard).pressed;
+	if (player.getRawButtonState(button.gamepad, InputSource::Gamepad).pressed) {
+		return true;
+	}
+	return player.getRawButtonState(button.keyboard, InputSource::Keyboard).pressed;
 }
 
 bool buttonJustPressed(PlayerInput& player, const HostMenuButton& button) {
-	return player.getRawButtonState(button.gamepad, InputSource::Gamepad).justpressed ||
-		player.getRawButtonState(button.keyboard, InputSource::Keyboard).justpressed;
+	return player.getRawButtonState(button.gamepad, InputSource::Gamepad).justpressed || player.getRawButtonState(button.keyboard, InputSource::Keyboard).justpressed;
 }
 
 bool buttonEdge(PlayerInput& player, const HostMenuButton& button) {
@@ -158,7 +158,7 @@ void setOptionIndex(ConsoleCore& console, GameView& view, i32 option, i32 value)
 		case HostMenuOptionId::CrtGlow: view.applyGlow = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtFringing: view.applyFringing = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtAperture: view.applyAperture = boolFromIndex(value); break;
-		case HostMenuOptionId::Dither: console.runtime().setVdpDitherType(value); break;
+		case HostMenuOptionId::Dither: console.runtime().machine().memory().writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(value))); break;
 		case HostMenuOptionId::HostShowFps: console.hostShowFps = boolFromIndex(value); break;
 		case HostMenuOptionId::RebootCart: break;
 		case HostMenuOptionId::ExitGame: break;
@@ -287,6 +287,28 @@ HostOverlayMenu& hostOverlayMenu() {
 	return menu;
 }
 
+size_t HostOverlayMenu::queuedCommandCount() const {
+	return m_commandCount;
+}
+
+RenderQueues::Host2DEntry HostOverlayMenu::commandAt(size_t index) const {
+	return m_commands[index];
+}
+
+void HostOverlayMenu::clearRenderCommands() {
+	m_commandCount = 0;
+}
+
+void HostOverlayMenu::queueCommand(RenderQueues::Host2DKind kind, const RectRenderSubmission* rect, const GlyphRenderSubmission* glyphs) {
+	RenderQueues::Host2DEntry& entry = m_commands[m_commandCount];
+	entry.kind = kind;
+	entry.img = nullptr;
+	entry.poly = nullptr;
+	entry.rect = rect;
+	entry.glyphs = glyphs;
+	m_commandCount += 1;
+}
+
 bool HostOverlayMenu::tickInput(ConsoleCore& console) {
 	GameView* view = console.view();
 	PlayerInput& player = *Input::instance().getPlayerInput(1);
@@ -332,7 +354,9 @@ bool HostOverlayMenu::tickInput(ConsoleCore& console) {
 }
 
 void HostOverlayMenu::queueRenderCommands(ConsoleCore& console, GameView& view) {
-	HostMenuQueue::clear();
+	clearRenderCommands();
+	const RenderQueues::Host2DKind rectKind = RenderQueues::Host2DKind::Rect;
+	const RenderQueues::Host2DKind glyphsKind = RenderQueues::Host2DKind::Glyphs;
 	if (m_dirtyText) {
 		rebuildText(console, view);
 	}
@@ -355,28 +379,30 @@ void HostOverlayMenu::queueRenderCommands(ConsoleCore& console, GameView& view) 
 	const i32 top = (static_cast<i32>(view.viewportSize.y) - totalHeight) / 2;
 	const i32 boxTop = top + titleHeight + titleGap;
 	m_panelRect.area = RectBounds{static_cast<f32>(left), static_cast<f32>(boxTop), static_cast<f32>(left + boxWidth), static_cast<f32>(boxTop + boxHeight), 920.0f};
-	HostMenuQueue::submitRectangle(m_panelRect);
+	queueCommand(rectKind, &m_panelRect, nullptr);
 	m_titleGlyphs.font = font;
 	m_titleGlyphs.x = static_cast<f32>(left + padding);
 	m_titleGlyphs.y = static_cast<f32>(top);
-	HostMenuQueue::submitGlyphs(m_titleGlyphs);
+	queueCommand(glyphsKind, nullptr, &m_titleGlyphs);
 	for (i32 index = 0; index < kMenuOptionCount; index += 1) {
 		const i32 y = boxTop + padding + index * lineHeight;
 		if (index == m_selected) {
 			m_highlightRect.area = RectBounds{static_cast<f32>(left), static_cast<f32>(y - 2), static_cast<f32>(left + boxWidth), static_cast<f32>(y + lineHeight - 2), 921.0f};
-			HostMenuQueue::submitRectangle(m_highlightRect);
+			queueCommand(rectKind, &m_highlightRect, nullptr);
 		}
 		GlyphRenderSubmission& glyphs = m_optionGlyphs[static_cast<size_t>(index)];
 		glyphs.font = font;
 		glyphs.x = static_cast<f32>(left + padding);
 		glyphs.y = static_cast<f32>(y);
 		glyphs.color = index == m_selected ? kTextColor : kDimColor;
-		HostMenuQueue::submitGlyphs(glyphs);
+		queueCommand(glyphsKind, nullptr, &glyphs);
 	}
 }
 
 bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& view) {
-	HostMenuQueue::clear();
+	clearRenderCommands();
+	const RenderQueues::Host2DKind rectKind = RenderQueues::Host2DKind::Rect;
+	const RenderQueues::Host2DKind glyphsKind = RenderQueues::Host2DKind::Glyphs;
 	if (m_active) {
 		return false;
 	}
@@ -397,7 +423,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& 
 		}
 		m_fpsGlyphs.x = view.viewportSize.x - 8.0f - static_cast<f32>(m_fpsTextWidth);
 		m_fpsGlyphs.y = 8.0f;
-		HostMenuQueue::submitGlyphs(m_fpsGlyphs);
+		queueCommand(glyphsKind, nullptr, &m_fpsGlyphs);
 		queued = true;
 	}
 	if (view.showResourceUsageGizmo) {
@@ -417,7 +443,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& 
 			static_cast<double>(runtime.vramTotalBytes()),
 			static_cast<double>(vdpBudget),
 		};
-		HostMenuQueue::submitRectangle(m_usagePanelRect);
+		queueCommand(rectKind, &m_usagePanelRect, nullptr);
 		for (i32 index = 0; index < UsageBarCount; index += 1) {
 			const size_t offset = static_cast<size_t>(index);
 			const double ratio = used[offset] / total[offset];
@@ -437,12 +463,12 @@ bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& 
 				percent.glyphs[0] = buffer;
 				percent.glyph_end = static_cast<i32>(percent.glyphs[0].size());
 			}
-			HostMenuQueue::submitRectangle(m_usageBarBackgrounds[offset]);
+			queueCommand(rectKind, &m_usageBarBackgrounds[offset], nullptr);
 			if (fillWidth > 0) {
-				HostMenuQueue::submitRectangle(fill);
+				queueCommand(rectKind, &fill, nullptr);
 			}
-			HostMenuQueue::submitGlyphs(label);
-			HostMenuQueue::submitGlyphs(percent);
+			queueCommand(glyphsKind, nullptr, &label);
+			queueCommand(glyphsKind, nullptr, &percent);
 		}
 		queued = true;
 	}

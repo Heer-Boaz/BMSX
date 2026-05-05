@@ -9,26 +9,12 @@
 #define BMSX_RENDER_QUEUES_H
 
 #include "common/feature_queue.h"
+#include "render/shared/host_2d_commands.h"
 #include "submissions.h"
 
 namespace bmsx {
 
 namespace RenderQueues {
-
-enum class Host2DKind : u8 {
-	Img,
-	Poly,
-	Rect,
-	Glyphs,
-};
-
-struct Host2DEntry {
-	Host2DKind kind = Host2DKind::Rect;
-	const HostImageRenderSubmission* img = nullptr;
-	const PolyRenderSubmission* poly = nullptr;
-	const RectRenderSubmission* rect = nullptr;
-	const GlyphRenderSubmission* glyphs = nullptr;
-};
 
 void prepareCompletedRenderQueues();
 void preparePartialRenderQueues();
@@ -48,14 +34,10 @@ Host2DEntry host2DQueueEntry(size_t index);
 void submitMesh(const MeshRenderSubmission& item);
 i32 beginMeshQueue();
 const MeshRenderSubmission& meshQueueEntry(size_t index);
-size_t meshQueueBackSize();
-size_t meshQueueFrontSize();
 
 void submit_particle(const ParticleRenderSubmission& item);
 i32 beginParticleQueue();
 const ParticleRenderSubmission& particleQueueEntry(size_t index);
-size_t particleQueueBackSize();
-size_t particleQueueFrontSize();
 
 extern i32 particleAmbientModeDefault;
 extern f32 particleAmbientFactorDefault;

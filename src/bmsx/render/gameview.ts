@@ -4,25 +4,16 @@ import { clamp01 } from '../common/clamp';
 import { multiply_vec2 } from '../common/vector';
 import { shallowcopy } from '../common/shallowcopy';
 import type { vec2 } from '../rompack/format';
-import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/interfaces';
+import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, TextureHandle } from './backend/interfaces';
 import { RenderPassLibrary } from './backend/pass/library';
 import { CRTDitherType as DitherType } from './backend/interfaces';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/graph';
 import { LightingSystem } from './lighting/system';
-import * as renderQueues from './shared/queues';
 import type {
 	GameViewHost,
 	GameViewCanvas,
 	SubscriptionHandle,
 } from '../platform';
-import type {
-	RectRenderSubmission,
-	HostImageRenderSubmission,
-	PolyRenderSubmission,
-	MeshRenderSubmission,
-	ParticleRenderSubmission,
-	GlyphRenderSubmission,
-} from './shared/submissions';
 import {
 	VDP_PRIMARY_SLOT_TEXTURE_KEY,
 	VDP_SECONDARY_SLOT_TEXTURE_KEY,
@@ -32,7 +23,8 @@ import { VDP_BBU_BILLBOARD_LIMIT } from '../machine/devices/vdp/contracts';
 import { createVdpCameraSnapshot } from '../machine/devices/vdp/camera';
 import { renderGate } from 'bmsx/core/taskgate';
 
-const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay'];
+const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
+const VDP_BBU_BILLBOARD_VEC4_CAPACITY = VDP_BBU_BILLBOARD_LIMIT * 4;
 
 interface GameViewOpts {
 	host: GameViewHost;
@@ -88,9 +80,9 @@ export class GameView implements RenderContext {
 	public skyboxFaceTextpageBindings: Int32Array | null = null;
 	public skyboxFaceSizes: Int32Array | null = null;
 	public readonly vdpCamera = createVdpCameraSnapshot();
-	public readonly vdpBillboardPositionSize = new Float32Array(VDP_BBU_BILLBOARD_LIMIT * 4);
-	public readonly vdpBillboardColor = new Float32Array(VDP_BBU_BILLBOARD_LIMIT * 4);
-	public readonly vdpBillboardUvRect = new Float32Array(VDP_BBU_BILLBOARD_LIMIT * 4);
+	public readonly vdpBillboardPositionSize = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
+	public readonly vdpBillboardColor = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
+	public readonly vdpBillboardUvRect = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
 	public readonly vdpBillboardSlot = new Int32Array(VDP_BBU_BILLBOARD_LIMIT);
 	public vdpBillboardCount = 0;
 	public pipelineRegistry?: RenderPassLibrary;
@@ -133,51 +125,6 @@ export class GameView implements RenderContext {
 		progressFactor: 0,
 		enableAutoAnimation: false,
 	};
-
-	// Renderer submission surface. Host/editor submissions stay in render queues;
-	// BMSX machine 2D and billboards enter through VDP MMIO/FIFO/DMA packets.
-	public renderer: {
-		submit: {
-			typed: (o: RenderSubmission) => void;
-			particle: (o: ParticleRenderSubmission) => void;
-			sprite: (o: HostImageRenderSubmission) => void;
-			mesh: (o: MeshRenderSubmission) => void;
-			rect: (o: RectRenderSubmission) => void;
-			poly: (o: PolyRenderSubmission) => void;
-			glyphs: (o: GlyphRenderSubmission) => void;
-		};
-	} = {
-		submit: {
-			typed: (o: RenderSubmission) => {
-				switch (o.type) {
-					case 'img':
-						this.renderer.submit.sprite(o);
-						return;
-					case 'mesh':
-						this.renderer.submit.mesh(o);
-						return;
-					case 'particle':
-						this.renderer.submit.particle(o);
-						return;
-					case 'rect':
-						this.renderer.submit.rect(o);
-						return;
-					case 'poly':
-						this.renderer.submit.poly(o);
-						return;
-					case 'glyphs':
-						this.renderer.submit.glyphs(o);
-						return;
-				}
-			},
-			particle: (item: ParticleRenderSubmission) => renderQueues.submit_particle(item),
-			sprite: renderQueues.submitSprite,
-			mesh: renderQueues.submitMesh,
-			rect: renderQueues.submitRectangle,
-			poly: renderQueues.submitDrawPolygon,
-			glyphs: renderQueues.submitGlyphs,
-		},
-	} as RenderSubmitQueue;
 
 	public setSpritesAmbient(enabled: boolean, factor = 1.0): void {
 		this.spriteAmbientEnabledDefault = !!enabled;
@@ -365,9 +312,6 @@ export class GameView implements RenderContext {
 			backend.endFrame();
 			renderGate.end(token);
 		}
-	}
-
-	public reset(): void {
 	}
 
 	public toFullscreen(): void {

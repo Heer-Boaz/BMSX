@@ -210,7 +210,6 @@ export class ConsoleCore {
 
 			if (!preserveTextures) {
 				this.texmanager.clear();
-				this.view.reset();
 				await this.refreshRenderSurfaces();
 			}
 		}
@@ -239,9 +238,6 @@ export class ConsoleCore {
 		this.running = true;
 	}
 
-	public request_shutdown(): void {
-		this.platform.requestShutdown();
-	}
 }
 
 export var consoleCore: ConsoleCore = new ConsoleCore()!;

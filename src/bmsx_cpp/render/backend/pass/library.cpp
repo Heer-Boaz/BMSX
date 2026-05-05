@@ -11,8 +11,9 @@
 #include "../../post/crt_pipeline_gles2.h"
 #endif
 #include "../../graph/graph.h"
-#include "../../host_overlay/gles2/pipeline.h"
-#include "../../host_overlay/software/pipeline.h"
+#include "../../host_overlay/gles2/renderer.h"
+#include "../../host_overlay/pass_registration.h"
+#include "../../host_overlay/software/renderer.h"
 #include "core/console.h"
 #include "machine/runtime/runtime.h"
 #include <algorithm>
@@ -221,8 +222,7 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		registerPass(desc);
 	}
 
-	registerHostOverlayPassesSoftware(*this);
-	registerHostMenuPassesSoftware(*this);
+	registerHostOverlayBackendPasses<SoftwareBackend, nullptr, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(*this);
 }
 
 void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
@@ -333,8 +333,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		registerPass(desc);
 	}
 
-	registerHostOverlayPassesGLES2(*this);
-	registerHostMenuPassesGLES2(*this);
+	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2>(*this);
 #endif
 }
 

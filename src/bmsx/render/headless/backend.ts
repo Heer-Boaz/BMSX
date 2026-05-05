@@ -1,5 +1,5 @@
-import { clamp } from '../../common/clamp';
 import type { color_arr, TextureSource } from '../../rompack/format';
+import { colorByte } from './pixel_ops';
 import type {
 	GPUBackend,
 	TextureHandle,
@@ -68,16 +68,12 @@ function textureByteLength(width: number, height: number): number {
 	return width * height * 4;
 }
 
-function colorChannelToByte(value: number): number {
-	return Math.round(clamp(value, 0, 1) * 255);
-}
-
 function createSolidPixels(width: number, height: number, rgba: color_arr): Uint8Array {
 	const pixels = new Uint8Array(textureByteLength(width, height));
-	const r = colorChannelToByte(rgba[0]);
-	const g = colorChannelToByte(rgba[1]);
-	const b = colorChannelToByte(rgba[2]);
-	const a = colorChannelToByte(rgba[3]);
+	const r = colorByte(rgba[0]);
+	const g = colorByte(rgba[1]);
+	const b = colorByte(rgba[2]);
+	const a = colorByte(rgba[3]);
 	for (let i = 0; i < pixels.byteLength; i += 4) {
 		pixels[i] = r;
 		pixels[i + 1] = g;

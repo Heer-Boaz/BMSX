@@ -358,7 +358,6 @@ bool RomBootManager::rebootLoadedRom() {
 		console.m_texture_manager->clear();
 	}
 	if (console.m_view) {
-		console.m_view->reset();
 		if (console.m_view->backend()->readyForTextureUpload()) {
 			console.m_view->initializeDefaultTextures();
 		}

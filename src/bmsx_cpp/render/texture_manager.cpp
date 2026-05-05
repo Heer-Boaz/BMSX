@@ -71,10 +71,6 @@ const Identifier& TextureManager::registryId() const {
 	return id;
 }
 
-void TextureManager::bind() {
-	Registry::instance().registerObject(this);
-}
-
 void TextureManager::setBackend(GPUBackend* backend) {
 	if (m_backend != backend) {
 		m_textureBarrier.clear();

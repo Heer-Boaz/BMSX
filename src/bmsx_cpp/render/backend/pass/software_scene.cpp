@@ -8,6 +8,7 @@
 #include "render/gameview.h"
 #include "render/shared/hardware/camera.h"
 #include "render/shared/queues.h"
+#include "render/shared/software_pixels.h"
 #include "render/vdp/source_pixels.h"
 #include <array>
 
@@ -26,32 +27,6 @@ struct SoftwareSkyboxFaceUv {
 	f32 v = 0.0f;
 };
 
-u32 packArgb(u8 r, u8 g, u8 b, u8 a) {
-	return (static_cast<u32>(a) << 24u)
-		| (static_cast<u32>(r) << 16u)
-		| (static_cast<u32>(g) << 8u)
-		| static_cast<u32>(b);
-}
-
-void blendArgb(u32& target, u8 r, u8 g, u8 b, u8 a) {
-	if (a == 0u) {
-		return;
-	}
-	if (a == 255u) {
-		target = packArgb(r, g, b, 255u);
-		return;
-	}
-	const u32 invA = 255u - static_cast<u32>(a);
-	const u32 dr = (target >> 16u) & 0xffu;
-	const u32 dg = (target >> 8u) & 0xffu;
-	const u32 db = target & 0xffu;
-	const u32 da = (target >> 24u) & 0xffu;
-	const u32 outR = (static_cast<u32>(r) * a + dr * invA + 127u) / 255u;
-	const u32 outG = (static_cast<u32>(g) * a + dg * invA + 127u) / 255u;
-	const u32 outB = (static_cast<u32>(b) * a + db * invA + 127u) / 255u;
-	const u32 outA = static_cast<u32>(a) + (da * invA + 127u) / 255u;
-	target = (outA << 24u) | (outR << 16u) | (outG << 8u) | outB;
-}
 
 SoftwareParticleViewState resolveParticleViewState(const GameView& view) {
 	SoftwareParticleViewState state;
@@ -144,7 +119,7 @@ void writeSkyboxToFramebuffer(SoftwareBackend& backend, Runtime& runtime, const 
 			const u32 srcY = source.srcY + faceY;
 			const u8* sourceRow = texture.pixels + static_cast<size_t>(srcY) * texture.stride;
 			const u8* pixel = sourceRow + static_cast<size_t>(srcX) * 4u;
-			targetRow[x] = packArgb(pixel[0], pixel[1], pixel[2], pixel[3]);
+			targetRow[x] = packSoftwareArgb(pixel[0], pixel[1], pixel[2], pixel[3]);
 		}
 	}
 }
@@ -212,10 +187,7 @@ void drawSoftwareBillboardSample(SoftwareBackend& backend,
 		return;
 	}
 
-	const u8 colorR = Color::channelToByte(color.r);
-	const u8 colorG = Color::channelToByte(color.g);
-	const u8 colorB = Color::channelToByte(color.b);
-	const u8 colorA = Color::channelToByte(color.a);
+	const SoftwareColorBytes tint = softwareColorBytes(color);
 	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
 	u32* framebuffer = backend.framebuffer();
 	const i32 dstW = endX - startX;
@@ -227,11 +199,7 @@ void drawSoftwareBillboardSample(SoftwareBackend& backend,
 		for (i32 x = startX; x < endX; ++x) {
 			const i32 srcX = sourceX + ((x - startX) * sourceW) / dstW;
 			const u8* sourcePixel = sourceRow + static_cast<size_t>(srcX) * 4u;
-			const u8 srcA = static_cast<u8>((static_cast<u32>(sourcePixel[3]) * colorA + 127u) / 255u);
-			const u8 srcR = static_cast<u8>((static_cast<u32>(sourcePixel[0]) * colorR + 127u) / 255u);
-			const u8 srcG = static_cast<u8>((static_cast<u32>(sourcePixel[1]) * colorG + 127u) / 255u);
-			const u8 srcB = static_cast<u8>((static_cast<u32>(sourcePixel[2]) * colorB + 127u) / 255u);
-			blendArgb(targetRow[x], srcR, srcG, srcB, srcA);
+			blendTintedSoftwarePixel(targetRow[x], sourcePixel, tint);
 		}
 	}
 }

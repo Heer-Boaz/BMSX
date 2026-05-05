@@ -58,8 +58,6 @@ public:
 	const Identifier& registryId() const override;
 	bool isRegistryPersistent() const override { return true; }
 
-	void bind();
-
 	void setBackend(GPUBackend* backend);
 	GPUBackend* backend() const { return m_backend; }
 

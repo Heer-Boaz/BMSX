@@ -709,19 +709,11 @@ void GameView::applyCRTPostProcessing(const u32* src,
 // Lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
 
-void GameView::bind() {
-	Registry::instance().registerObject(this);
-}
-
 void GameView::dispose() {
 	Registry::instance().deregister(this);
 	m_renderGraph.reset();
 	m_pipelineRegistry.reset();
 	m_backend.reset();
-}
-
-void GameView::reset() {
-	// Nothing to reset - queues are managed by RenderQueues module
 }
 
 } // namespace bmsx

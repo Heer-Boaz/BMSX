@@ -24,7 +24,7 @@ import type { Mesh } from '../3d/mesh';
 import { readVdpDisplayFrameBufferPixels, vdpDisplayFrameBufferTexture } from '../vdp/framebuffer';
 import { resolveVdpSurfacePixels } from '../vdp/source_pixels';
 import type { HeadlessPresentHost } from './view';
-import { beginHostMenuQueue, hostMenuQueueKind, hostMenuQueueRef } from '../host_menu/queue';
+import { hostOverlayMenu } from '../../core/host_overlay_menu';
 import { renderHeadlessHost2DEntries, renderHeadlessHost2DEntry, renderHeadlessSubmissions } from './host_2d';
 import { blendPixel, colorByte } from './pixel_ops';
 
@@ -391,9 +391,9 @@ export function drawHeadlessHostMenuLayer(): void {
 	if (!headlessFrameReady) {
 		throw new Error('[HeadlessPresent] Host menu pass ran before framebuffer pass.');
 	}
-	const count = beginHostMenuQueue();
+	const count = hostOverlayMenu.queuedCommandCount();
 	for (let index = 0; index < count; index += 1) {
-		renderHeadlessHost2DEntry(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, hostMenuQueueKind(index), hostMenuQueueRef(index));
+		renderHeadlessHost2DEntry(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, hostOverlayMenu.commandKind(index), hostOverlayMenu.commandRef(index));
 	}
 }
 

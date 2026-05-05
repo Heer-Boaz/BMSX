@@ -15,7 +15,6 @@ export class RenderPassBuilder {
 	constructor(private backend: GPUBackend) { }
 	label(l: string): this { this._label = l; return this; }
 	color(tex: TextureHandle, clear?: color_arr, discardAfter?: boolean): this { this._colors.push({ tex, clear, discardAfter }); return this; }
-	addColor(tex: TextureHandle, clear?: color_arr, discardAfter?: boolean): this { return this.color(tex, clear, discardAfter); }
 	colors(specs: BuilderColorAttachmentSpec[]): this { this._colors.push(...specs); return this; }
 	depth(tex: TextureHandle, clearDepth?: number, discardAfter?: boolean): this { this._depth = { tex, clearDepth, discardAfter }; return this; }
 	buildDesc(): RenderPassDesc {

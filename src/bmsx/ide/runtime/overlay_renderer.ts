@@ -9,8 +9,16 @@ import type {
 } from '../../render/shared/submissions';
 import type { Host2DSubmission } from '../../render/shared/queues';
 import { consoleCore } from '../../core/console';
-import { publishOverlayFrame, type HostOverlayFrame } from '../../render/host_overlay/overlay_queue';
+import { clearOverlayFrame, publishOverlayFrame, type HostOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import type { GameView } from '../../render/gameview';
+import {
+	submitDrawPolygon,
+	submitGlyphs,
+	submitMesh,
+	submit_particle,
+	submitRectangle,
+	submitSprite,
+} from '../../render/shared/queues';
 import type { Viewport } from '../../rompack/format';
 
 export type RenderCommand = Host2DSubmission;
@@ -141,20 +149,32 @@ export class OverlayRenderer {
 		if (this.capturingFrame) {
 			throw new Error('[OverlayRenderer] mesh submissions are not Host2D overlay commands.');
 		}
-		consoleCore.view.renderer.submit.mesh(command);
+		submitMesh(command);
 	}
 
 	public particle(command: ParticleRenderSubmission): void {
 		if (this.capturingFrame) {
 			throw new Error('[OverlayRenderer] particle submissions are not Host2D overlay commands.');
 		}
-		consoleCore.view.renderer.submit.particle(command);
+		submit_particle(command);
 	}
 
 	private submit(submission: Host2DSubmission): void {
 		if (!this.capturingFrame) {
-			consoleCore.view.renderer.submit.typed(submission);
-			return;
+			switch (submission.type) {
+				case 'img':
+					submitSprite(submission);
+					return;
+				case 'rect':
+					submitRectangle(submission);
+					return;
+				case 'poly':
+					submitDrawPolygon(submission);
+					return;
+				case 'glyphs':
+					submitGlyphs(submission);
+					return;
+			}
 		}
 		this.commands.push(submission);
 	}
@@ -162,7 +182,7 @@ export class OverlayRenderer {
 	public endFrame(): void {
 		this.capturingFrame = false;
 		if (this.commands.length === 0) {
-			publishOverlayFrame(null);
+			clearOverlayFrame();
 			return;
 		}
 		const frameCommands = this.commands;

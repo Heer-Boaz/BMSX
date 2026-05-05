@@ -1,6 +1,5 @@
 /// <reference types="@webgpu/types" />
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
-import { GlyphRenderSubmission, HostImageRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, PolyRenderSubmission, RectRenderSubmission } from '../shared/submissions';
 import type { Host2DSubmission } from '../shared/queues';
 import { LightingFrameState } from '../lighting/system';
 import type { WebGLBackend } from './webgl/backend';
@@ -245,9 +244,6 @@ export type HostOverlayPipelineState = Host2DPipelineState & {
 
 export type HostMenuPipelineState = Host2DPipelineState;
 
-export type RenderSubmission = Host2DSubmission | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission);
-export type RenderSubmitQueue = Pick<Pick<RenderContext, 'renderer'>['renderer'], 'submit'>;
-
 export interface RenderContext {
 	viewportSize: { x: number; y: number };
 	backendType: 'webgl2' | 'webgpu' | 'headless';
@@ -266,19 +262,6 @@ export interface RenderContext {
 	bind2DTex(tex: TextureHandle): void;
 	bindCubemapTex(tex: TextureHandle): void;
 
-
-	// Optional centralized renderer submission + queues (lightweight, backend-agnostic)
-	renderer: {
-		submit: {
-			typed: (o: RenderSubmission) => void;
-			particle: (o: ParticleRenderSubmission) => void;
-			sprite: (o: HostImageRenderSubmission) => void;
-			mesh: (o: MeshRenderSubmission) => void;
-			rect: (o: RectRenderSubmission) => void;
-			poly: (o: PolyRenderSubmission) => void;
-			glyphs: (o: GlyphRenderSubmission) => void;
-		};
-	};
 }
 
 export type FogUniforms = {

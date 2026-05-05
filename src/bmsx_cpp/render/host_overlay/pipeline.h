@@ -19,7 +19,6 @@ struct Host2DPipelineState {
 };
 
 struct HostOverlayPipelineState : Host2DPipelineState {
-	size_t commandCount = 0;
 };
 
 using HostMenuPipelineState = Host2DPipelineState;

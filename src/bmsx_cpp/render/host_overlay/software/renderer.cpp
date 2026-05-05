@@ -1,44 +1,20 @@
 #include "render/host_overlay/software/renderer.h"
 
 #include "render/shared/glyphs.h"
+#include "render/shared/software_pixels.h"
 #include "rompack/host_system_atlas.h"
 
 namespace bmsx {
 namespace {
 
-u32 packArgb(u8 r, u8 g, u8 b, u8 a) {
-	return (static_cast<u32>(a) << 24u)
-		| (static_cast<u32>(r) << 16u)
-		| (static_cast<u32>(g) << 8u)
-		| static_cast<u32>(b);
-}
-
-void blendArgb(u32& target, u8 r, u8 g, u8 b, u8 a) {
-	if (a == 0u) {
-		return;
-	}
-	if (a == 255u) {
-		target = packArgb(r, g, b, 255u);
-		return;
-	}
-	const u32 invA = 255u - static_cast<u32>(a);
-	const u32 dr = (target >> 16u) & 0xffu;
-	const u32 dg = (target >> 8u) & 0xffu;
-	const u32 db = target & 0xffu;
-	const u32 da = (target >> 24u) & 0xffu;
-	const u32 outR = (static_cast<u32>(r) * a + dr * invA + 127u) / 255u;
-	const u32 outG = (static_cast<u32>(g) * a + dg * invA + 127u) / 255u;
-	const u32 outB = (static_cast<u32>(b) * a + db * invA + 127u) / 255u;
-	const u32 outA = static_cast<u32>(a) + (da * invA + 127u) / 255u;
-	target = (outA << 24u) | (outR << 16u) | (outG << 8u) | outB;
-}
 
 void drawRectSoftware(SoftwareBackend& backend, const RectRenderSubmission& command) {
-	const RectBounds& area = command.area;
-	const i32 left = static_cast<i32>(area.left);
-	const i32 top = static_cast<i32>(area.top);
-	const i32 width = static_cast<i32>(area.right - area.left);
-	const i32 height = static_cast<i32>(area.bottom - area.top);
+	const i32 left = static_cast<i32>(command.area.left);
+	const i32 top = static_cast<i32>(command.area.top);
+	const i32 right = static_cast<i32>(command.area.right);
+	const i32 bottom = static_cast<i32>(command.area.bottom);
+	const i32 width = right - left;
+	const i32 height = bottom - top;
 	if (command.kind == RectRenderSubmission::Kind::Fill) {
 		backend.fillRect(left, top, width, height, command.color);
 		return;
@@ -82,21 +58,21 @@ void drawPolySoftware(SoftwareBackend& backend, const PolyRenderSubmission& comm
 	}
 }
 
-void drawImageSoftware(SoftwareBackend& backend, const HostImageRenderSubmission& command) {
-	const HostSystemAtlasGeneratedImage& source = hostSystemAtlasImage(command.imgid);
-	const Vec2& scale = command.scale;
-	const FlipOptions& flip = command.flip;
-	const Color& color = command.colorize;
-	const i32 dstX = static_cast<i32>(command.pos.x);
-	const i32 dstY = static_cast<i32>(command.pos.y);
-	const i32 dstW = static_cast<i32>(static_cast<f32>(source.width) * scale.x);
-	const i32 dstH = static_cast<i32>(static_cast<f32>(source.height) * scale.y);
-	const u8 colorR = Color::channelToByte(color.r);
-	const u8 colorG = Color::channelToByte(color.g);
-	const u8 colorB = Color::channelToByte(color.b);
-	const u8 colorA = Color::channelToByte(color.a);
-	const std::vector<u8>& atlasPixels = hostSystemAtlasPixels();
-	const i32 atlasWidth = static_cast<i32>(hostSystemAtlasWidth());
+void drawAtlasPixelsSoftware(SoftwareBackend& backend,
+							const std::vector<u8>& atlasPixels,
+							i32 atlasWidth,
+							u32 sourceU,
+							u32 sourceV,
+							u32 sourceW,
+							u32 sourceH,
+							i32 dstX,
+							i32 dstY,
+							i32 dstW,
+							i32 dstH,
+							bool flipH,
+							bool flipV,
+							const Color& color) {
+	const SoftwareColorBytes tint = softwareColorBytes(color);
 	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
 	u32* framebuffer = backend.framebuffer();
 	for (i32 y = 0; y < dstH; y += 1) {
@@ -104,7 +80,8 @@ void drawImageSoftware(SoftwareBackend& backend, const HostImageRenderSubmission
 		if (targetY < 0 || targetY >= backend.height()) {
 			continue;
 		}
-		const i32 sourceY = static_cast<i32>(source.v) + (flip.flip_v ? (dstH - 1 - y) * source.h / dstH : y * source.h / dstH);
+		const i32 sampleY = flipV ? dstH - 1 - y : y;
+		const i32 sourceY = static_cast<i32>(sourceV) + sampleY * static_cast<i32>(sourceH) / dstH;
 		const u8* sourceRow = atlasPixels.data() + static_cast<size_t>(sourceY) * static_cast<size_t>(atlasWidth) * 4u;
 		u32* targetRow = framebuffer + static_cast<size_t>(targetY) * static_cast<size_t>(pixelsPerRow);
 		for (i32 x = 0; x < dstW; x += 1) {
@@ -112,49 +89,53 @@ void drawImageSoftware(SoftwareBackend& backend, const HostImageRenderSubmission
 			if (targetX < 0 || targetX >= backend.width()) {
 				continue;
 			}
-			const i32 sourceX = static_cast<i32>(source.u) + (flip.flip_h ? (dstW - 1 - x) * source.w / dstW : x * source.w / dstW);
+			const i32 sampleX = flipH ? dstW - 1 - x : x;
+			const i32 sourceX = static_cast<i32>(sourceU) + sampleX * static_cast<i32>(sourceW) / dstW;
 			const u8* sourcePixel = sourceRow + static_cast<size_t>(sourceX) * 4u;
-			const u8 srcA = static_cast<u8>((static_cast<u32>(sourcePixel[3]) * colorA + 127u) / 255u);
-			const u8 srcR = static_cast<u8>((static_cast<u32>(sourcePixel[0]) * colorR + 127u) / 255u);
-			const u8 srcG = static_cast<u8>((static_cast<u32>(sourcePixel[1]) * colorG + 127u) / 255u);
-			const u8 srcB = static_cast<u8>((static_cast<u32>(sourcePixel[2]) * colorB + 127u) / 255u);
-			blendArgb(targetRow[targetX], srcR, srcG, srcB, srcA);
+			blendTintedSoftwarePixel(targetRow[targetX], sourcePixel, tint);
 		}
 	}
 }
 
+void drawImageSoftware(SoftwareBackend& backend, const HostImageRenderSubmission& command) {
+	const HostSystemAtlasGeneratedImage& source = hostSystemAtlasImage(command.imgid);
+	const Vec2& scale = command.scale;
+	drawAtlasPixelsSoftware(
+		backend,
+		hostSystemAtlasPixels(),
+		static_cast<i32>(hostSystemAtlasWidth()),
+		source.u,
+		source.v,
+		source.w,
+		source.h,
+		static_cast<i32>(command.pos.x),
+		static_cast<i32>(command.pos.y),
+		static_cast<i32>(static_cast<f32>(source.width) * scale.x),
+		static_cast<i32>(static_cast<f32>(source.height) * scale.y),
+		command.flip.flip_h,
+		command.flip.flip_v,
+		command.colorize
+	);
+}
+
 void drawGlyphImageSoftware(SoftwareBackend& backend, const std::vector<u8>& atlasPixels, i32 atlasWidth, const FontGlyph& glyph, f32 imageX, f32 imageY, const Color& color) {
 	const ImageAtlasRect& rect = glyph.rect;
-	const i32 dstX = static_cast<i32>(imageX);
-	const i32 dstY = static_cast<i32>(imageY);
-	const i32 width = static_cast<i32>(rect.w);
-	const i32 height = static_cast<i32>(rect.h);
-	const u8 colorR = Color::channelToByte(color.r);
-	const u8 colorG = Color::channelToByte(color.g);
-	const u8 colorB = Color::channelToByte(color.b);
-	const u8 colorA = Color::channelToByte(color.a);
-	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
-	u32* framebuffer = backend.framebuffer();
-	for (i32 y = 0; y < height; y += 1) {
-		const i32 targetY = dstY + y;
-		if (targetY < 0 || targetY >= backend.height()) {
-			continue;
-		}
-		const u8* sourceRow = atlasPixels.data() + (static_cast<size_t>(rect.v + static_cast<u32>(y)) * static_cast<size_t>(atlasWidth) + rect.u) * 4u;
-		u32* targetRow = framebuffer + static_cast<size_t>(targetY) * static_cast<size_t>(pixelsPerRow);
-		for (i32 x = 0; x < width; x += 1) {
-			const i32 targetX = dstX + x;
-			if (targetX < 0 || targetX >= backend.width()) {
-				continue;
-			}
-			const u8* sourcePixel = sourceRow + static_cast<size_t>(x) * 4u;
-			const u8 srcA = static_cast<u8>((static_cast<u32>(sourcePixel[3]) * colorA + 127u) / 255u);
-			const u8 srcR = static_cast<u8>((static_cast<u32>(sourcePixel[0]) * colorR + 127u) / 255u);
-			const u8 srcG = static_cast<u8>((static_cast<u32>(sourcePixel[1]) * colorG + 127u) / 255u);
-			const u8 srcB = static_cast<u8>((static_cast<u32>(sourcePixel[2]) * colorB + 127u) / 255u);
-			blendArgb(targetRow[targetX], srcR, srcG, srcB, srcA);
-		}
-	}
+	drawAtlasPixelsSoftware(
+		backend,
+		atlasPixels,
+		atlasWidth,
+		rect.u,
+		rect.v,
+		rect.w,
+		rect.h,
+		static_cast<i32>(imageX),
+		static_cast<i32>(imageY),
+		static_cast<i32>(rect.w),
+		static_cast<i32>(rect.h),
+		false,
+		false,
+		color
+	);
 }
 
 void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& command) {

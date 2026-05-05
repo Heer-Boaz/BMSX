@@ -133,11 +133,6 @@ public:
 		return registry().has(id);
 	}
 
-		// disable-next-line single_line_method_pattern -- console object registration is the public core registry pin.
-		void registerObj(Registerable* obj) {
-			registry().registerObject(obj);
-		}
-
 	// Singleton access
 	static ConsoleCore& instance();
 	static ConsoleCore* instancePtr();

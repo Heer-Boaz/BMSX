@@ -101,7 +101,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'EXIT' || upper === 'QUIT') {
-			consoleCore.request_shutdown();
+			consoleCore.platform.requestShutdown();
 			return true;
 		}
 		if (upper === 'IDE') {

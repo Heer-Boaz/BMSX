@@ -1,5 +1,5 @@
-import { clearHostMenuQueue, submitHostMenuGlyphs, submitHostMenuRectangle } from '../render/host_menu/queue';
 import type { GlyphRenderSubmission, RectRenderSubmission } from '../render/shared/submissions';
+import type { Host2DKind, Host2DRef } from '../render/shared/queues';
 import { consoleCore } from './console';
 import { Input } from '../input/manager';
 import type { PlayerInput } from '../input/player';
@@ -61,6 +61,7 @@ const USAGE_LABELS = ['CPU', 'RAM', 'VRAM', 'VDP'] as const;
 const USAGE_LOW_PERCENT_TENTHS_LIMIT = 100;
 const USAGE_PERCENT_TENTHS_FLAG = 1000000;
 const FPS_TEXT_TENTHS_INVALID = -1;
+const HOST_MENU_COMMAND_CAPACITY = 128;
 
 const TOGGLE_VALUES: readonly HostMenuValue[] = [{ label: 'OFF' }, { label: 'ON' }];
 const DITHER_VALUES: readonly HostMenuValue[] = [
@@ -91,7 +92,10 @@ function boolFromIndex(index: number): boolean {
 }
 
 function buttonPressed(player: PlayerInput, button: HostMenuButton): boolean {
-	return player.getRawButtonState(button.gamepad, 'gamepad').pressed || player.getRawButtonState(button.keyboard, 'keyboard').pressed;
+	if (player.getRawButtonState(button.gamepad, 'gamepad').pressed) {
+		return true;
+	}
+	return player.getRawButtonState(button.keyboard, 'keyboard').pressed;
 }
 
 function buttonJustPressed(player: PlayerInput, button: HostMenuButton): boolean {
@@ -113,14 +117,6 @@ function consumeButtons(player: PlayerInput, buttons: readonly HostMenuButton[])
 	for (let index = 0; index < buttons.length; index += 1) {
 		consumeButton(player, buttons[index]);
 	}
-}
-
-function writeDitherType(value: number): void {
-	consoleCore.runtime.machine.memory.writeValue(IO_VDP_DITHER, value);
-}
-
-function readDitherIndex(): number {
-	return consoleCore.runtime.machine.memory.readIoU32(IO_VDP_DITHER);
 }
 
 function usageColor(ratio: number): typeof COLOR_USAGE_OK {
@@ -179,6 +175,9 @@ export class HostOverlayMenu {
 	private readonly usagePercents: GlyphRenderSubmission[] = new Array(USAGE_BAR_COUNT);
 	private readonly usagePercentCode: number[] = new Array(USAGE_BAR_COUNT);
 	private readonly optionGlyphs: GlyphRenderSubmission[];
+	private readonly commandKinds = new Array<Host2DKind>(HOST_MENU_COMMAND_CAPACITY);
+	private readonly commandRefs = new Array<Host2DRef>(HOST_MENU_COMMAND_CAPACITY);
+	private commandCount = 0;
 	private fpsTextTenths = FPS_TEXT_TENTHS_INVALID;
 	private fpsTextWidth = 0;
 	private readonly options: readonly HostMenuOption[] = [
@@ -249,8 +248,8 @@ export class HostOverlayMenu {
 			kind: 'value',
 			label: 'Dither',
 			values: DITHER_VALUES,
-			getIndex: readDitherIndex,
-			setIndex: index => { writeDitherType(index); },
+			getIndex: () => consoleCore.runtime.machine.memory.readIoU32(IO_VDP_DITHER),
+			setIndex: index => { consoleCore.runtime.machine.memory.writeValue(IO_VDP_DITHER, index); },
 		},
 		{
 			kind: 'value',
@@ -267,7 +266,7 @@ export class HostOverlayMenu {
 		{
 			kind: 'action',
 			label: 'EXIT GAME',
-			execute: () => { consoleCore.request_shutdown(); },
+			execute: () => { consoleCore.platform.requestShutdown(); },
 		},
 	];
 
@@ -290,6 +289,18 @@ export class HostOverlayMenu {
 
 	public get isActive(): boolean {
 		return this.active;
+	}
+
+	public queuedCommandCount(): number {
+		return this.commandCount;
+	}
+
+	public commandKind(index: number): Host2DKind {
+		return this.commandKinds[index];
+	}
+
+	public commandRef(index: number): Host2DRef {
+		return this.commandRefs[index];
 	}
 
 	public tickInput(): boolean {
@@ -339,8 +350,21 @@ export class HostOverlayMenu {
 		return true;
 	}
 
+	private clearRenderCommands(): void {
+		this.commandCount = 0;
+	}
+
+	private queueCommand(kind: Host2DKind, ref: Host2DRef): void {
+		if (this.commandCount === HOST_MENU_COMMAND_CAPACITY) {
+			throw new Error('[HostOverlayMenu] Command buffer capacity exhausted.');
+		}
+		this.commandKinds[this.commandCount] = kind;
+		this.commandRefs[this.commandCount] = ref;
+		this.commandCount += 1;
+	}
+
 	public queueRenderCommands(): void {
-		clearHostMenuQueue();
+		this.clearRenderCommands();
 		if (this.dirtyText) {
 			this.rebuildText();
 		}
@@ -367,11 +391,11 @@ export class HostOverlayMenu {
 		this.panelRect.area.top = boxTop;
 		this.panelRect.area.right = left + boxWidth;
 		this.panelRect.area.bottom = boxTop + boxHeight;
-		submitHostMenuRectangle(this.panelRect);
+		this.queueCommand('rect', this.panelRect);
 		this.titleGlyphs.font = font;
 		this.titleGlyphs.x = left + padding;
 		this.titleGlyphs.y = top;
-		submitHostMenuGlyphs(this.titleGlyphs);
+		this.queueCommand('glyphs', this.titleGlyphs);
 		for (let index = 0; index < this.options.length; index += 1) {
 			const y = boxTop + padding + index * lineHeight;
 			if (index === this.selected) {
@@ -379,19 +403,19 @@ export class HostOverlayMenu {
 				this.highlightRect.area.top = y - 2;
 				this.highlightRect.area.right = left + boxWidth;
 				this.highlightRect.area.bottom = y + lineHeight - 2;
-				submitHostMenuRectangle(this.highlightRect);
+				this.queueCommand('rect', this.highlightRect);
 			}
 			const line = this.optionGlyphs[index];
 			line.font = font;
 			line.x = left + padding;
 			line.y = y;
 			line.color = index === this.selected ? COLOR_TEXT : COLOR_DIM;
-			submitHostMenuGlyphs(line);
+			this.queueCommand('glyphs', line);
 		}
 	}
 
 	public queueFrameOverlayCommands(): boolean {
-		clearHostMenuQueue();
+		this.clearRenderCommands();
 		if (this.active) {
 			return false;
 		}
@@ -413,13 +437,13 @@ export class HostOverlayMenu {
 			}
 			this.fpsGlyphs.x = view.viewportSize.x - 8 - this.fpsTextWidth;
 			this.fpsGlyphs.y = 8;
-			submitHostMenuGlyphs(this.fpsGlyphs);
+			this.queueCommand('glyphs', this.fpsGlyphs);
 			queued = true;
 		}
 		if (view.show_resource_usage_gizmo) {
 			const runtime = consoleCore.runtime;
 			const vdpBudget = ((runtime.timing.vdpWorkUnitsPerSec * 1000000 / runtime.timing.ufpsScaled) + 0.5) | 0;
-			submitHostMenuRectangle(this.usagePanelRect);
+			this.queueCommand('rect', this.usagePanelRect);
 			this.queueUsageBar(0, runtime.cpuUsageCyclesUsed(), runtime.cpuUsageCyclesGranted(), font);
 			this.queueUsageBar(1, runtime.ramUsedBytes(), runtime.ramTotalBytes(), font);
 			this.queueUsageBar(2, runtime.vramUsedBytes(), runtime.vramTotalBytes(), font);
@@ -446,12 +470,12 @@ export class HostOverlayMenu {
 			pct.glyph_start = 0;
 			pct.glyph_end = percentText.length;
 		}
-		submitHostMenuRectangle(this.usageBarBackgrounds[index]);
+		this.queueCommand('rect', this.usageBarBackgrounds[index]);
 		if (fillWidth > 0) {
-			submitHostMenuRectangle(fill);
+			this.queueCommand('rect', fill);
 		}
-		submitHostMenuGlyphs(this.usageLabels[index]);
-		submitHostMenuGlyphs(pct);
+		this.queueCommand('glyphs', this.usageLabels[index]);
+		this.queueCommand('glyphs', pct);
 	}
 
 	private toggle(): void {

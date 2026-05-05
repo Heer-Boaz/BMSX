@@ -12,10 +12,6 @@ namespace bmsx {
 namespace RenderQueues {
 
 namespace {
-struct Host2DRef {
-	size_t index = 0;
-};
-
 enum class QueueSource : u8 {
 	Front = 0,
 	Back = 1,
@@ -23,117 +19,9 @@ enum class QueueSource : u8 {
 
 FeatureQueue<MeshRenderSubmission> s_meshQueue(256);
 FeatureQueue<ParticleRenderSubmission> s_particleQueue(1024);
+Host2DCommandList s_host2dFront(512);
+Host2DCommandList s_host2dBack(512);
 QueueSource s_activeQueueSource = QueueSource::Front;
-
-class Host2DQueue {
-public:
-	explicit Host2DQueue(size_t capacity)
-		: m_kindQueue(capacity)
-		, m_refQueue(capacity)
-		, m_imgQueue(capacity)
-		, m_polyQueue(capacity)
-		, m_rectQueue(capacity)
-		, m_glyphsQueue(capacity) {}
-
-	void swap() {
-		m_kindQueue.swap();
-		m_refQueue.swap();
-		m_imgQueue.swap();
-		m_polyQueue.swap();
-		m_rectQueue.swap();
-		m_glyphsQueue.swap();
-	}
-
-	void clearBack() {
-		m_kindQueue.clearBack();
-		m_refQueue.clearBack();
-		m_imgQueue.clearBack();
-		m_polyQueue.clearBack();
-		m_rectQueue.clearBack();
-		m_glyphsQueue.clearBack();
-	}
-
-	void clearAll() {
-		m_kindQueue.clearAll();
-		m_refQueue.clearAll();
-		m_imgQueue.clearAll();
-		m_polyQueue.clearAll();
-		m_rectQueue.clearAll();
-		m_glyphsQueue.clearAll();
-	}
-
-	bool hasFront() const { return m_refQueue.sizeFront() > 0; }
-	bool hasBack() const { return m_refQueue.sizeBack() > 0; }
-	size_t activeSize() const { return activeRefs().size(); }
-
-	void submit(HostImageRenderSubmission item) {
-		const Host2DRef ref{m_imgQueue.sizeBack()};
-		m_imgQueue.submit(std::move(item));
-		submitRef(Host2DKind::Img, ref);
-	}
-
-	void submit(RectRenderSubmission item) {
-		const Host2DRef ref{m_rectQueue.sizeBack()};
-		m_rectQueue.submit(std::move(item));
-		submitRef(Host2DKind::Rect, ref);
-	}
-
-	void submit(PolyRenderSubmission item) {
-		const Host2DRef ref{m_polyQueue.sizeBack()};
-		m_polyQueue.submit(std::move(item));
-		submitRef(Host2DKind::Poly, ref);
-	}
-
-	void submit(GlyphRenderSubmission item) {
-		const Host2DRef ref{m_glyphsQueue.sizeBack()};
-		m_glyphsQueue.submit(std::move(item));
-		submitRef(Host2DKind::Glyphs, ref);
-	}
-
-	Host2DEntry at(size_t index) const {
-		Host2DEntry entry;
-		entry.kind = activeKinds().get(index);
-		const Host2DRef& ref = activeRefs().get(index);
-		switch (entry.kind) {
-			case Host2DKind::Img:
-				entry.img = &activeQueue(m_imgQueue).get(ref.index);
-				return entry;
-			case Host2DKind::Poly:
-				entry.poly = &activeQueue(m_polyQueue).get(ref.index);
-				return entry;
-			case Host2DKind::Rect:
-				entry.rect = &activeQueue(m_rectQueue).get(ref.index);
-				return entry;
-			case Host2DKind::Glyphs:
-				entry.glyphs = &activeQueue(m_glyphsQueue).get(ref.index);
-				return entry;
-		}
-		return entry;
-	}
-
-private:
-	FeatureQueue<Host2DKind> m_kindQueue;
-	FeatureQueue<Host2DRef> m_refQueue;
-	FeatureQueue<HostImageRenderSubmission> m_imgQueue;
-	FeatureQueue<PolyRenderSubmission> m_polyQueue;
-	FeatureQueue<RectRenderSubmission> m_rectQueue;
-	FeatureQueue<GlyphRenderSubmission> m_glyphsQueue;
-
-	template<typename T>
-	const ScratchBatch<T>& activeQueue(const FeatureQueue<T>& queue) const {
-		return s_activeQueueSource == QueueSource::Back ? queue.back() : queue.front();
-	}
-
-	const ScratchBatch<Host2DKind>& activeKinds() const { return activeQueue(m_kindQueue); }
-	const ScratchBatch<Host2DRef>& activeRefs() const { return activeQueue(m_refQueue); }
-
-	void submitRef(Host2DKind kind, Host2DRef ref) {
-		m_kindQueue.submit(kind);
-		m_refQueue.submit(ref);
-	}
-};
-
-Host2DQueue s_host2dQueue(512);
 
 struct RenderQueueLifecycle {
 	bool (*hasFront)();
@@ -155,11 +43,17 @@ void particleSwap() { s_particleQueue.swap(); }
 void particleClearBack() { s_particleQueue.clearBack(); }
 void particleClearAll() { s_particleQueue.clearAll(); }
 
-bool host2DHasFront() { return s_host2dQueue.hasFront(); }
-bool host2DHasBack() { return s_host2dQueue.hasBack(); }
-void host2DSwap() { s_host2dQueue.swap(); }
-void host2DClearBack() { s_host2dQueue.clearBack(); }
-void host2DClearAll() { s_host2dQueue.clearAll(); }
+bool host2DHasFront() { return s_host2dFront.size() > 0; }
+bool host2DHasBack() { return s_host2dBack.size() > 0; }
+void host2DSwap() {
+	std::swap(s_host2dFront, s_host2dBack);
+	s_host2dBack.clear();
+}
+void host2DClearBack() { s_host2dBack.clear(); }
+void host2DClearAll() {
+	s_host2dFront.clear();
+	s_host2dBack.clear();
+}
 
 const std::array<RenderQueueLifecycle, 3> s_renderQueueLifecycles{{
 	{meshHasFront, meshHasBack, meshSwap, meshClearBack, meshClearAll},
@@ -170,6 +64,10 @@ const std::array<RenderQueueLifecycle, 3> s_renderQueueLifecycles{{
 template<typename T>
 const ScratchBatch<T>& activeQueue(FeatureQueue<T>& queue) {
 	return s_activeQueueSource == QueueSource::Back ? queue.back() : queue.front();
+}
+
+const Host2DCommandList& activeHost2DCommands() {
+	return s_activeQueueSource == QueueSource::Back ? s_host2dBack : s_host2dFront;
 }
 
 } // namespace
@@ -229,27 +127,27 @@ void clearAllQueues() {
 }
 
 void submitImage(HostImageRenderSubmission item) {
-	s_host2dQueue.submit(std::move(item));
+	s_host2dBack.submit(std::move(item));
 }
 
 void submitRectangle(RectRenderSubmission item) {
-	s_host2dQueue.submit(std::move(item));
+	s_host2dBack.submit(std::move(item));
 }
 
 void submitDrawPolygon(PolyRenderSubmission item) {
-	s_host2dQueue.submit(std::move(item));
+	s_host2dBack.submit(std::move(item));
 }
 
 void submitGlyphs(GlyphRenderSubmission item) {
-	s_host2dQueue.submit(std::move(item));
+	s_host2dBack.submit(std::move(item));
 }
 
 size_t beginHost2DQueue() {
-	return s_host2dQueue.activeSize();
+	return activeHost2DCommands().size();
 }
 
 Host2DEntry host2DQueueEntry(size_t index) {
-	return s_host2dQueue.at(index);
+	return activeHost2DCommands().entry(index);
 }
 
 void submitMesh(const MeshRenderSubmission& item) {
@@ -264,8 +162,6 @@ const MeshRenderSubmission& meshQueueEntry(size_t index) {
 	return activeQueue(s_meshQueue).get(index);
 }
 
-size_t meshQueueBackSize() { return s_meshQueue.sizeBack(); }
-size_t meshQueueFrontSize() { return s_meshQueue.sizeFront(); }
 
 void submit_particle(const ParticleRenderSubmission& item) {
 	s_particleQueue.submit(item);
@@ -279,8 +175,6 @@ const ParticleRenderSubmission& particleQueueEntry(size_t index) {
 	return activeQueue(s_particleQueue).get(index);
 }
 
-size_t particleQueueBackSize() { return s_particleQueue.sizeBack(); }
-size_t particleQueueFrontSize() { return s_particleQueue.sizeFront(); }
 
 void setAmbientDefaults(i32 mode, f32 factor) {
 	particleAmbientModeDefault = mode;

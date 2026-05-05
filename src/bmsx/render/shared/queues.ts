@@ -155,9 +155,6 @@ export function meshQueueBackSize(): number {
 	return meshQueue.sizeBack();
 }
 
-export function meshQueueFrontSize(): number {
-	return meshQueue.sizeFront();
-}
 
 export function submit_particle(item: ParticleRenderSubmission): void {
 	particleQueue.submit(item);
@@ -175,15 +172,8 @@ export function forEachParticleQueue(fn: (item: ParticleRenderSubmission, index:
 	particleQueue.forEachFront(fn);
 }
 
-export function particleQueueBackSize(): number {
-	return particleQueue.sizeBack();
-}
 
-export function particleQueueFrontSize(): number {
-	return particleQueue.sizeFront();
-}
 
-export function getQueuedParticleCount(): number { return particleQueueBackSize(); }
 export let particleAmbientModeDefault: 0 | 1 = 0;
 export let particleAmbientFactorDefault = 1.0;
 

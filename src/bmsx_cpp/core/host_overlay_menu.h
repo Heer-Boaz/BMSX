@@ -1,8 +1,9 @@
 #pragma once
 
 #include "core/primitives.h"
-#include "render/shared/submissions.h"
+#include "render/shared/host_2d_commands.h"
 #include <array>
+#include <cstddef>
 #include <string>
 
 namespace bmsx {
@@ -16,12 +17,17 @@ public:
 	bool tickInput(ConsoleCore& console);
 	void queueRenderCommands(ConsoleCore& console, GameView& view);
 	bool queueFrameOverlayCommands(ConsoleCore& console, GameView& view);
+	size_t queuedCommandCount() const;
+	RenderQueues::Host2DEntry commandAt(size_t index) const;
 	bool active() const { return m_active; }
 
 private:
 	static constexpr i32 OptionCount = 13;
 	static constexpr i32 UsageBarCount = 4;
+	static constexpr size_t CommandCapacity = 128;
 
+	void clearRenderCommands();
+	void queueCommand(RenderQueues::Host2DKind kind, const RectRenderSubmission* rect, const GlyphRenderSubmission* glyphs);
 	void toggle();
 	void close();
 	void changeSelected(ConsoleCore& console, GameView& view, i32 direction);
@@ -43,6 +49,8 @@ private:
 	std::array<GlyphRenderSubmission, UsageBarCount> m_usagePercents;
 	std::array<i32, UsageBarCount> m_usagePercentCode;
 	std::array<GlyphRenderSubmission, OptionCount> m_optionGlyphs;
+	std::array<RenderQueues::Host2DEntry, CommandCapacity> m_commands;
+	size_t m_commandCount = 0;
 	std::string m_fpsText;
 	i32 m_fpsTextTenths = -1;
 	i32 m_fpsTextWidth = 0;

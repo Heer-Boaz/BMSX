@@ -63,6 +63,16 @@ void bindTexture(OpenGLES2Backend& backend, TextureHandle texture) {
 	glUniform1i(g_gles2.uniformTexture, 0);
 }
 
+void drawVerticesGLES2(const float (&vertices)[24]) {
+	glBindBuffer(GL_ARRAY_BUFFER, g_gles2.vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STREAM_DRAW);
+	glEnableVertexAttribArray(static_cast<GLuint>(g_gles2.attribPos));
+	glVertexAttribPointer(static_cast<GLuint>(g_gles2.attribPos), 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, nullptr);
+	glEnableVertexAttribArray(static_cast<GLuint>(g_gles2.attribUv));
+	glVertexAttribPointer(static_cast<GLuint>(g_gles2.attribUv), 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, reinterpret_cast<const void*>(sizeof(float) * 2));
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
 void drawQuadGLES2(OpenGLES2Backend& backend, TextureHandle texture, i32 x, i32 y, i32 w, i32 h, f32 u0, f32 v0, f32 u1, f32 v1, const Color& color) {
 	const float left = static_cast<float>(x);
 	const float top = static_cast<float>(y);
@@ -78,21 +88,14 @@ void drawQuadGLES2(OpenGLES2Backend& backend, TextureHandle texture, i32 x, i32 
 	};
 	bindTexture(backend, texture);
 	glUniform4f(g_gles2.uniformColor, color.r, color.g, color.b, color.a);
-	glBindBuffer(GL_ARRAY_BUFFER, g_gles2.vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STREAM_DRAW);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_gles2.attribPos));
-	glVertexAttribPointer(static_cast<GLuint>(g_gles2.attribPos), 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, nullptr);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_gles2.attribUv));
-	glVertexAttribPointer(static_cast<GLuint>(g_gles2.attribUv), 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, reinterpret_cast<const void*>(sizeof(float) * 2));
-	glDrawArrays(GL_TRIANGLES, 0, 6);
+	drawVerticesGLES2(vertices);
 }
 
 void drawRectGLES2(OpenGLES2Backend& backend, const RectRenderSubmission& command) {
-	const RectBounds& area = command.area;
-	const i32 left = static_cast<i32>(area.left);
-	const i32 top = static_cast<i32>(area.top);
-	const i32 width = static_cast<i32>(area.right - area.left);
-	const i32 height = static_cast<i32>(area.bottom - area.top);
+	const i32 left = static_cast<i32>(command.area.left);
+	const i32 top = static_cast<i32>(command.area.top);
+	const i32 width = static_cast<i32>(command.area.right - command.area.left);
+	const i32 height = static_cast<i32>(command.area.bottom - command.area.top);
 	if (command.kind == RectRenderSubmission::Kind::Fill) {
 		drawQuadGLES2(backend, g_gles2.whiteTexture, left, top, width, height, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
 		return;
@@ -124,13 +127,7 @@ void drawLineGLES2(OpenGLES2Backend& backend, f32 x0, f32 y0, f32 x1, f32 y1, co
 	};
 	bindTexture(backend, g_gles2.whiteTexture);
 	glUniform4f(g_gles2.uniformColor, color.r, color.g, color.b, color.a);
-	glBindBuffer(GL_ARRAY_BUFFER, g_gles2.vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STREAM_DRAW);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_gles2.attribPos));
-	glVertexAttribPointer(static_cast<GLuint>(g_gles2.attribPos), 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, nullptr);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_gles2.attribUv));
-	glVertexAttribPointer(static_cast<GLuint>(g_gles2.attribUv), 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, reinterpret_cast<const void*>(sizeof(float) * 2));
-	glDrawArrays(GL_TRIANGLES, 0, 6);
+	drawVerticesGLES2(vertices);
 }
 
 void drawPolyGLES2(OpenGLES2Backend& backend, const PolyRenderSubmission& command) {

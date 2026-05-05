@@ -400,7 +400,7 @@ void LibretroPlatform::setDitherType(i32 type) {
 	if (!m_console->hasRuntime()) {
 		return;
 	}
-	m_console->runtime().setVdpDitherType(m_dither_type);
+	m_console->runtime().machine().memory().writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(m_dither_type)));
 }
 
 void LibretroPlatform::setResourceUsageGizmo(bool enabled) {
@@ -471,7 +471,7 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM\n");
 		return false;
 	}
-	m_console->runtime().setVdpDitherType(m_dither_type);
+	setDitherType(m_dither_type);
 	{
 		const std::string line = memSnapshotLine("libretro:after_loadRom");
 		if (!line.empty()) {

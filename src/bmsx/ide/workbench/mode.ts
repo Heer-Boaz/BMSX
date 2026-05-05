@@ -9,7 +9,7 @@ import {
 	type LuaDebuggerPauseSignal,
 	type StackTraceFrame,
 } from '../../lua/value';
-import { publishOverlayFrame } from '../../render/host_overlay/overlay_queue';
+import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import * as constants from '../common/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
 import { editorDebuggerState } from './contrib/debugger/state';
@@ -568,7 +568,7 @@ export function clearEditorErrorOverlaysIfNoFault(runtime: Runtime): void {
 	if (runtime.editor) {
 		runtime.editor.clearRuntimeErrorOverlay();
 	}
-	publishOverlayFrame(null);
+	clearOverlayFrame();
 }
 
 export function clearFaultSnapshot(runtime: Runtime): void {

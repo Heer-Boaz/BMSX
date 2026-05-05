@@ -1,7 +1,7 @@
 import { consoleCore } from '../../../core/console';
 import { registerFramebuffer2DPass_WebGL } from '../../2d/framebuffer_pipeline';
-import { registerHostOverlayPass_Headless, registerHostOverlayPass_WebGL, registerHostOverlayPass_WebGPU } from '../../host_overlay/pipeline';
-import { registerHostMenuPass_Headless, registerHostMenuPass_WebGL, registerHostMenuPass_WebGPU } from '../../host_menu/pipeline';
+import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../../host_overlay/headless/pipeline';
+import { registerHostOverlayPass_WebGL, registerHostMenuPass_WebGL } from '../../host_overlay/webgl/pipeline';
 import * as MeshPipeline from '../../3d/mesh/pipeline';
 import { registerMeshBatchPass_WebGL } from '../../3d/mesh/pipeline';
 import { registerMeshBatchPass_WebGPU } from '../../3d/mesh/pipeline.wgpu';
@@ -75,8 +75,22 @@ export class RenderPassLibrary {
 		registerParticlesPass_WebGPU(this);
 		registerSolidColorPass_WebGPU(this);
 		registerCRT_WebGPU(this);
-		registerHostOverlayPass_WebGPU(this);
-		registerHostMenuPass_WebGPU(this);
+		this.register({
+			id: 'host_overlay',
+			name: 'HostOverlay',
+			stateOnly: true,
+			exec: () => {
+				throw new Error('[HostOverlay/WebGPU] Host overlay rendering is not implemented for WebGPU.');
+			},
+		});
+		this.register({
+			id: 'host_menu',
+			name: 'HostMenu',
+			stateOnly: true,
+			exec: () => {
+				throw new Error('[HostMenu/WebGPU] Host menu rendering is not implemented for WebGPU.');
+			},
+		});
 	}
 
 	private registerBuiltinPassesWebGL() {

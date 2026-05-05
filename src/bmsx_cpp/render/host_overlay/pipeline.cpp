@@ -1,7 +1,6 @@
 #include "render/host_overlay/pipeline.h"
 
 #include "render/gameview.h"
-#include "render/host_overlay/overlay_queue.h"
 
 namespace bmsx {
 namespace {
@@ -18,12 +17,6 @@ void fillHost2DState(Host2DPipelineState& state, GameView& view) {
 HostOverlayPipelineState buildHostOverlayState(GameView& view) {
 	HostOverlayPipelineState state;
 	fillHost2DState(state, view);
-	if (HostOverlayQueue::hasPendingOverlayFrame()) {
-		const HostOverlayFrame& frame = HostOverlayQueue::consumeOverlayFrame();
-		state.overlayWidth = frame.width;
-		state.overlayHeight = frame.height;
-		state.commandCount = frame.commandCount;
-	}
 	return state;
 }
 

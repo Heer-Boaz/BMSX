@@ -496,7 +496,7 @@ export class RenderGraphRuntime {
 							if (idx === 0 && ct === colorRes && isFirstColorWriter) {
 								clear = ct.clearOnWrite?.color;
 							}
-							builder.addColor(ct.tex as TextureHandle, clear, !!ct.desc.transient);
+							builder.color(ct.tex as TextureHandle, clear, !!ct.desc.transient);
 					}
 				}
 				if (depthRes) {

@@ -80,13 +80,13 @@ bool ConsoleCore::initialize(Platform* platform) {
 			m_view->setBackend(std::move(backend));
 		}
 	}
-	m_view->bind();
+	registry().registerObject(m_view.get());
 
 	// Update view with initial size (after backend is set)
 	m_view->configureRenderTargets(nullptr, nullptr, nullptr, &m_viewport_scale, &m_canvas_scale);
 
 	m_texture_manager = std::make_unique<TextureManager>(m_view->backend());
-	m_texture_manager->bind();
+	registry().registerObject(m_texture_manager.get());
 	initializeVdpTextureTransfer(*m_texture_manager, *m_view);
 	if (m_view->backend()->readyForTextureUpload()) {
 		m_view->initializeDefaultTextures();
