@@ -612,8 +612,8 @@ async function main() {
 		setAtlasFlag(useTextureAtlas);
 
 		const resourceRoots = isBIOSMode
-			? [respath || commonResPath]
-			: [respath || commonResPath, commonResPath];
+			? [respath || commonResPath, "bios"]
+			: [respath || commonResPath, commonResPath, "bios"];
 		const extraLuaPathSet = new Set<string>(extraLuaRoots.map(normalizePathKey));
 
 		if (!rom_name && !isBIOSMode) {
