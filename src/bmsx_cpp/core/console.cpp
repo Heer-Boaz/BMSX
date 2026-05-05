@@ -276,8 +276,7 @@ Runtime& ConsoleCore::ensureRuntime(const RuntimeOptions& options) {
 			*clock(),
 			*soundMaster(),
 			*platform()->microtaskQueue(),
-			*view(),
-			*this
+			*view()
 		);
 		m_view->bindRuntime(*m_runtime);
 	}
@@ -394,11 +393,11 @@ void ConsoleCore::bootRuntimeFromProgram() {
 		m_linked_program_symbols = std::move(linked.metadata);
 		rt.setCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
 		rt.enterCartProgram();
-		rt.boot(*m_linked_program, m_linked_program_symbols.get());
+		rt.boot(*m_linked_program, m_linked_program_symbols.get(), m_linked_program->entryProtoIndex, m_linked_program->staticModulePaths);
 		return;
 	}
 	rt.enterCartProgram();
-	rt.boot(*romPackage.programImage, romPackage.programSymbols.get());
+	rt.boot(*romPackage.programImage, romPackage.programSymbols.get(), romPackage.programImage->entryProtoIndex, romPackage.programImage->staticModulePaths);
 }
 
 bool ConsoleCore::bootSystemStartupProgram(const MachineManifest& runtimeMachine) {
@@ -451,7 +450,7 @@ bool ConsoleCore::bootSystemStartupProgram(const MachineManifest& runtimeMachine
 		rt.setCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
 		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.systemEntryProtoIndex, linked.systemStaticModulePaths);
 	} else {
-		rt.boot(*m_system_rom.programImage, m_system_rom.programSymbols.get());
+		rt.boot(*m_system_rom.programImage, m_system_rom.programSymbols.get(), m_system_rom.programImage->entryProtoIndex, m_system_rom.programImage->staticModulePaths);
 	}
 	rt.cartBoot.reset();
 	return true;

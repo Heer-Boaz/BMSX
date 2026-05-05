@@ -400,10 +400,6 @@ export class Runtime {
 		this.machine.vdp.initializeVramSurfaces();
 	}
 
-	public static destroy(runtime: Runtime): void {
-		runtime.dispose();
-	}
-
 	private configureProgramSources(params: {
 		systemRom: RuntimeRomLayer;
 		cartRom: RuntimeRomLayer | null;

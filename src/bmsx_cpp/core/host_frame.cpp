@@ -43,6 +43,15 @@ void ConsoleCore::runHostFrame(
 		if (!platformPaused && !hostMenuActive) {
 			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
+			// Handle program reload request at the frame boundary (TS parity: no ConsoleCore in CartBootState)
+			if (runtime.isRebootRequested()) {
+				runtime.clearRebootRequest();
+				runtime.frameScheduler.clearQueuedTime();
+				if (!rebootLoadedRom()) {
+					runtime.handleLuaError("Runtime fault: reboot to bootrom failed.");
+					return;
+				}
+			}
 			runtime.frameScheduler.run(runtime, hostDeltaMs);
 			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 		} else {

@@ -42,7 +42,6 @@ struct MachineManifest;
 struct CartManifest;
 class RuntimeRomPackage;
 class Clock;
-class ConsoleCore;
 class GameView;
 class MicrotaskQueue;
 class SoundMaster;
@@ -96,8 +95,7 @@ public:
 		Clock& clock,
 		SoundMaster& soundMaster,
 		MicrotaskQueue& microtasks,
-		GameView& view,
-		ConsoleCore& console
+			GameView& view
 	);
 	~Runtime();
 
@@ -109,7 +107,6 @@ public:
 	 * Boot the runtime with a compiled program.
 	 */
 	void boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>* staticModulePaths = nullptr);
-	void boot(const ProgramImage& image, ProgramMetadata* metadata);
 	void boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>& staticModulePaths);
 	void handleLuaError(const std::string& message);
 
@@ -135,6 +132,8 @@ public:
 	bool isTickEnabled() const { return m_tickEnabled; }
 
 	bool isCartProgramStarted() const { return m_cartProgramStarted; }
+	bool isRebootRequested() const { return m_rebootRequested; }
+	void clearRebootRequest() { m_rebootRequested = false; }
 	bool hasCartEntry() const { return m_cartEntryProtoIndex.has_value(); }
 	void setCartEntry(int entryProtoIndex, std::vector<std::string> staticModulePaths);
 	void enterSystemFirmware();
