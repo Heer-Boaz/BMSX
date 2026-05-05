@@ -2,7 +2,8 @@
  * console.h - C++ host shell for BMSX
  *
  * Owns libretro-facing platform state and runtime boot handoff.
- * ROM package loading belongs to RomBootManager; cart-visible hardware belongs under machine.
+ * ROM loading and boot orchestration live here; RomBootManager is a stateless plan builder.
+ * Cart-visible hardware belongs under machine.
  */
 
 #ifndef BMSX_CONSOLE_CORE_H
@@ -11,11 +12,13 @@
 #include "common/primitives.h"
 #include "common/registry.h"
 #include "rompack/format.h"
+#include "rompack/loader.h"
 #include "platform/platform.h"
 #include "render/gameview.h"
 #include "audio/soundmaster.h"
 #include <chrono>
 #include <memory>
+#include <vector>
 
 namespace bmsx {
 
@@ -25,6 +28,9 @@ class RomBootManager;
 class TextureManager;
 class Runtime;
 struct RuntimeOptions;
+struct ProgramImage;
+struct ProgramMetadata;
+struct ResolvedRuntimeTiming;
 
 /* ============================================================================
  * Console state
@@ -46,7 +52,6 @@ class ConsoleCore {
 public:
 	friend class FrameLoopState;
 	friend class RenderPresentationState;
-	friend class RomBootManager;
 
 	struct TickTiming {
 		f64 totalMs = 0.0;
@@ -111,6 +116,23 @@ public:
 	TextureManager* texmanager() { return m_texture_manager.get(); }
 	RomBootManager& romBootManager() { return *m_rom_boot_manager; }
 
+	// ROM loading and boot orchestration
+	bool loadSystemRomOwned(std::vector<u8>&& data);
+	bool loadRom(const u8* data, size_t size);
+	bool loadRomOwned(std::vector<u8>&& data);
+	void unloadRom();
+	bool rebootLoadedRom();
+	bool bootWithoutCart();
+	bool romLoaded() const { return m_rom_loaded; }
+	bool systemRomLoaded() const { return m_system_rom_loaded; }
+	bool hasLoadedCartProgram() const { return m_loaded_cart_has_program; }
+	RuntimeRomPackage& activeRom() { return *m_active_rom; }
+	const RuntimeRomPackage& activeRom() const { return *m_active_rom; }
+	RuntimeRomPackage& systemRom() { return m_system_rom; }
+	const RuntimeRomPackage& systemRom() const { return m_system_rom; }
+	RuntimeRomPackage& cartRom() { return m_cart_rom; }
+	const RuntimeRomPackage& cartRom() const { return m_cart_rom; }
+
 	// Time
 	f64 totalTime() const { return m_total_time; }
 	f64 deltaTime() const { return m_delta_time; }
@@ -145,6 +167,33 @@ private:
 	std::unique_ptr<TextureManager> m_texture_manager;
 	std::unique_ptr<RomBootManager> m_rom_boot_manager;
 	std::unique_ptr<Runtime> m_runtime;
+
+	// ROM state (orchestration moved from RomBootManager)
+	RuntimeRomPackage m_system_rom;
+	RuntimeRomPackage m_cart_rom;
+	RuntimeRomPackage* m_active_rom = nullptr;
+	std::vector<u8> m_system_rom_owned;
+	const u8* m_system_rom_data = nullptr;
+	size_t m_system_rom_size = 0;
+	std::vector<u8> m_cart_rom_owned;
+	const u8* m_cart_rom_data = nullptr;
+	size_t m_cart_rom_size = 0;
+	bool m_rom_loaded = false;
+	bool m_loaded_cart_has_program = false;
+	bool m_system_rom_loaded = false;
+	std::unique_ptr<ProgramImage> m_linked_program;
+	std::unique_ptr<ProgramMetadata> m_linked_program_symbols;
+
+	// Boot helpers (moved from RomBootManager)
+	void activateSystemRom();
+	void activateCartRom();
+	void setMachineManifest(const MachineManifest& manifest);
+	void configureViewForMachine(const MachineManifest& manifest);
+	bool loadSystemRomInternal(const u8* data, size_t size);
+	bool loadRomInternal(const u8* data, size_t size);
+	bool bootSystemStartupProgram(const MachineManifest& runtimeMachine);
+	Runtime& prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing, const MachineManifest& machine);
+	void bootRuntimeFromProgram();
 
 	ConsoleState m_state = ConsoleState::Uninitialized;
 

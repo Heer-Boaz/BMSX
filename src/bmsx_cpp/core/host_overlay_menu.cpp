@@ -502,7 +502,7 @@ void HostOverlayMenu::activateSelected(ConsoleCore& console) {
 	switch (kOptions[static_cast<size_t>(m_selected)].id) {
 		case HostMenuOptionId::RebootCart:
 			close();
-			console.romBootManager().rebootLoadedRom();
+			console.rebootLoadedRom();
 			return;
 		case HostMenuOptionId::ExitGame:
 			close();

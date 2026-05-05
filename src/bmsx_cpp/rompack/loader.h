@@ -354,6 +354,8 @@ class RuntimeRomPackage {
 public:
 	RuntimeRomPackage() = default;
 	~RuntimeRomPackage() = default;
+	RuntimeRomPackage(RuntimeRomPackage&&) = default;
+	RuntimeRomPackage& operator=(RuntimeRomPackage&&) = default;
 
 	// Decoded ROM record storage.
 	std::unordered_map<AssetToken, ImgAsset> img;
@@ -434,6 +436,10 @@ bool loadSystemRomPackageFromRom(const u8* buffer,
 				RuntimeRomPackage& romPackage,
 				const AssetLoadCallbacks* callbacks = nullptr,
 				const char* payloadId = "system");
+
+// Parse only the cart manifest (machine specs, viewport size) without loading assets.
+// Equivalent to TypeScript's parseCartridgeIndex — lightweight, no asset allocation.
+MachineManifest peekCartMachineManifest(const u8* buffer, size_t size);
 
 ImageAtlasRect resolveImageAtlasRectFromPackage(const RuntimeRomPackage& romPackage, const std::string& imgId);
 

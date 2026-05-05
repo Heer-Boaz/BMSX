@@ -1,6 +1,6 @@
 #include "machine/runtime/cart_boot.h"
 
-#include "core/rom_boot_manager.h"
+#include "core/console.h"
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
 
@@ -8,9 +8,9 @@
 
 namespace bmsx {
 
-CartBootState::CartBootState(Runtime& runtime, RomBootManager& bootManager)
+CartBootState::CartBootState(Runtime& runtime, ConsoleCore& console)
 	: m_runtime(runtime)
-	, m_bootManager(bootManager) {
+	, m_console(console) {
 }
 
 void CartBootState::reset() {
@@ -28,7 +28,7 @@ bool CartBootState::processProgramReloadRequest() {
 	}
 	runtime.m_rebootRequested = false;
 	runtime.frameScheduler.clearQueuedTime();
-	if (!m_bootManager.rebootLoadedRom()) {
+	if (!m_console.rebootLoadedRom()) {
 		throw std::runtime_error("Runtime fault: reboot to bootrom failed.");
 	}
 	return true;

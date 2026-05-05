@@ -199,7 +199,7 @@ bool RenderPresentationState::render(ConsoleCore& console, Runtime& runtime, boo
 		}
 		console.m_view->beginFrame();
 
-		if (!console.romBootManager().romLoaded()) {
+		if (!console.romLoaded()) {
 			renderTestPattern(*console.m_view, console.m_total_time);
 		}
 

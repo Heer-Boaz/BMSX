@@ -42,9 +42,9 @@ struct MachineManifest;
 struct CartManifest;
 class RuntimeRomPackage;
 class Clock;
+class ConsoleCore;
 class GameView;
 class MicrotaskQueue;
-class RomBootManager;
 class SoundMaster;
 
 constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
@@ -97,7 +97,7 @@ public:
 		SoundMaster& soundMaster,
 		MicrotaskQueue& microtasks,
 		GameView& view,
-		RomBootManager& romBootManager
+		ConsoleCore& console
 	);
 	~Runtime();
 

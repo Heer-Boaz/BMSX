@@ -29,10 +29,10 @@ Runtime::Runtime(
 	SoundMaster& soundMaster,
 	MicrotaskQueue& microtasks,
 	GameView& view,
-	RomBootManager& romBootManager
+	ConsoleCore& console
 )
 	: timing(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame)
-	, cartBoot(*this, romBootManager)
+	, cartBoot(*this, console)
 	, m_systemRomBytes(options.systemRomBytes)
 	, m_cartRomBytes(options.cartRomBytes)
 	, m_machineManifest(options.machineManifest)

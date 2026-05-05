@@ -467,7 +467,7 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		}
 	}
 
-	if (!m_console->romBootManager().loadRomOwned(std::move(data))) {
+	if (!m_console->loadRomOwned(std::move(data))) {
 		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM\n");
 		return false;
 	}
@@ -560,7 +560,7 @@ bool LibretroPlatform::loadEmptyCart() {
 	}
 
 	// Boot system ROM (runs bootrom.lua)
-	if (systemRomLoaded && m_console && m_console->romBootManager().bootWithoutCart()) {
+	if (systemRomLoaded && m_console && m_console->bootWithoutCart()) {
 		log(RETRO_LOG_INFO, "[BMSX] Booted system ROM program\n");
 		m_rom_loaded = true;
 		return true;
@@ -590,7 +590,7 @@ bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
 		return false;
 	}
 
-	if (!m_console->romBootManager().loadSystemRomOwned(std::move(data))) {
+	if (!m_console->loadSystemRomOwned(std::move(data))) {
 		log(RETRO_LOG_WARN, "[BMSX] Failed to parse system ROM: %s\n", path.c_str());
 		return false;
 	}
@@ -603,7 +603,7 @@ void LibretroPlatform::unloadRom() {
 	if (m_rom_loaded) {
 		// Unload ROM from host core
 		if (m_console) {
-			m_console->romBootManager().unloadRom();
+			m_console->unloadRom();
 		}
 		m_rom_loaded = false;
 		log(RETRO_LOG_INFO, "[BMSX] ROM unloaded\n");
@@ -616,8 +616,8 @@ void LibretroPlatform::reset() {
 	m_audio_buffer.clear();
 	m_has_wall_frame_timestamp = false;
 
-	if (m_console && m_console->romBootManager().romLoaded()) {
-		if (!m_console->romBootManager().rebootLoadedRom()) {
+	if (m_console && m_console->romLoaded()) {
+		if (!m_console->rebootLoadedRom()) {
 			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: runtime reset failed\n");
 			return;
 		}

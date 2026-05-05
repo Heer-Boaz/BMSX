@@ -1858,4 +1858,15 @@ bool loadSystemRomPackageFromRom(const u8* buffer,
 	return loadRomPackageFromPayload(buffer, size, romPackage, callbacks, payloadId, false, false);
 }
 
+MachineManifest peekCartMachineManifest(const u8* buffer, size_t size) {
+	const u8* romData = nullptr;
+	size_t romSize = 0;
+	std::vector<u8> decompressed;
+	normalizeRomPayload(buffer, size, romData, romSize, decompressed);
+	const CartRomHeader header = parseCartHeader(romData, romSize);
+	RuntimeRomPackage pkg;
+	decodeCartridgeMetadata(romData, header, pkg);
+	return pkg.machine;
+}
+
 } // namespace bmsx

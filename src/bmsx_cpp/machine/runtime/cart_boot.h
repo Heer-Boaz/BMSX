@@ -2,23 +2,24 @@
 
 namespace bmsx {
 
-class RomBootManager;
+class ConsoleCore;
 class Runtime;
 
 class CartBootState {
 public:
-	CartBootState(Runtime& runtime, RomBootManager& bootManager);
-	void reset();
-	bool processProgramReloadRequest();
-	bool processPending();
+        CartBootState(Runtime& runtime, ConsoleCore& console);
+        void reset();
+        bool processProgramReloadRequest();
+        bool processPending();
 
 private:
-	bool pollSystemBootRequest();
-	void request();
+        bool pollSystemBootRequest();
+        void request();
 
-	Runtime& m_runtime;
-	RomBootManager& m_bootManager;
-	bool m_pending = false;
+        Runtime& m_runtime;
+        ConsoleCore& m_console;
+
+        bool m_pending = false;
 };
 
 } // namespace bmsx
