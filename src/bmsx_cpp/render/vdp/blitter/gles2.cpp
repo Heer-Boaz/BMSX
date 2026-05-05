@@ -508,8 +508,8 @@ bool VdpGles2Blitter::execute(const VDP::VdpHostOutput& output, const std::vecto
 				if (a->layer != b->layer) {
 					return a->layer < b->layer;
 				}
-				if (a->z != b->z) {
-					return a->z < b->z;
+				if (a->priority != b->priority) {
+					return a->priority < b->priority;
 				}
 				return a->seq < b->seq;
 			}

@@ -37,7 +37,7 @@ import * as workbenchMode from '../../ide/workbench/mode';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/debugger';
 import type { ParsedLuaChunk } from '../../lua/analysis/parse';
-import { configureLuaHeapUsage } from '../memory/lua_heap_usage';
+import { configureLuaHeapUsage, getTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { FrameLoopState } from './frame/loop';
 import { FrameSchedulerState } from '../scheduler/frame';
 import { RenderPresentationState } from '../../render/presentation_state';
@@ -61,6 +61,10 @@ import { Machine } from '../machine';
 import { Memory } from '../memory/memory';
 import {
 	DEFAULT_VRAM_IMAGE_SLOT_SIZE,
+	IO_REGION_SIZE,
+	RAM_SIZE,
+	STRING_HANDLE_COUNT,
+	STRING_HANDLE_ENTRY_SIZE,
 	configureMemoryMap,
 } from '../memory/map';
 
@@ -124,6 +128,26 @@ export class Runtime {
 
 	public get overlayViewportSize(): Viewport {
 		return this.overlayRenderer.viewportSize;
+	}
+
+	public cpuUsageCyclesUsed(): number {
+		const frameState = this.frameLoop.currentFrameState;
+		return frameState === null ? this.frameScheduler.lastTickCpuUsedCycles : frameState.activeCpuUsedCycles;
+	}
+
+	public cpuUsageCyclesGranted(): number {
+		const frameState = this.frameLoop.currentFrameState;
+		return frameState === null
+			? (this.frameScheduler.lastTickSequence === 0 ? this.timing.cycleBudgetPerFrame : this.frameScheduler.lastTickCpuBudgetGranted)
+			: frameState.cycleBudgetGranted;
+	}
+
+	public vdpUsageWorkUnitsLast(): number {
+		return this.machine.vdp.lastFrameCost;
+	}
+
+	public vdpUsageFrameHeld(): boolean {
+		return this.machine.vdp.lastFrameHeld;
 	}
 
 	public shortcutDisposers: Array<() => void> = [];
@@ -486,7 +510,7 @@ export class Runtime {
 		this.machine.resetDevices();
 		this.refreshMemoryMap();
 		configureLuaHeapUsage({
-			getBaseRamUsedBytes: () => this.machine.resourceUsageDetector.getBaseRamUsedBytes(),
+			getBaseRamUsedBytes: () => this.baseRamUsedBytes(),
 			collectTrackedHeapBytes: () => {
 				const extraRoots = this.luaScratch.acquireValue();
 				try {
@@ -505,6 +529,28 @@ export class Runtime {
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.vblank.setVblankCycles(options.vblankCycles);
 		this.randomSeedValue = this.clock.now();
+	}
+
+	public baseRamUsedBytes(): number {
+		return IO_REGION_SIZE
+			+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
+			+ this.machine.stringHandles.usedHeapBytes();
+	}
+
+	public ramUsedBytes(): number {
+		return this.baseRamUsedBytes() + getTrackedLuaHeapBytes();
+	}
+
+	public ramTotalBytes(): number {
+		return RAM_SIZE;
+	}
+
+	public vramUsedBytes(): number {
+		return this.machine.vdp.trackedUsedVramBytes;
+	}
+
+	public vramTotalBytes(): number {
+		return this.machine.vdp.trackedTotalVramBytes;
 	}
 
 	private configureInterpreter(interpreter: LuaInterpreter): void {

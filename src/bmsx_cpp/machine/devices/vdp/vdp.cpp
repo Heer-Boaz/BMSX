@@ -889,6 +889,7 @@ void VDP::readVram(uint32_t addr, u8* out, size_t length) const {
 void VDP::beginFrame() {
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
 	m_readOverflow = false;
+	scheduleNextService(m_scheduler.currentNowCycles());
 }
 
 bool VDP::enqueueLatchedClear() {
@@ -1184,6 +1185,7 @@ void VDP::advanceWork(int workUnits) {
 		if (m_hostOutputToken == 0u) {
 			m_hostOutputToken = 1u;
 		}
+		refreshSubmitBusyStatus();
 		scheduleNextService(m_scheduler.currentNowCycles());
 		return;
 	}
@@ -1256,6 +1258,7 @@ void VDP::completeHostExecution(const VdpHostOutput& output) {
 	recycleBlitterBuffers(m_execution.queue);
 	m_execution.queue.clear();
 	m_hostOutputToken = 0u;
+	refreshSubmitBusyStatus();
 }
 
 void VDP::commitActiveVisualState() {

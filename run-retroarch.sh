@@ -2,11 +2,21 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_KIND="${BMSX_LIBRETRO_BUILD:-release}"
-CORE_SRC="$ROOT_DIR/build-${BUILD_KIND}/bmsx_libretro.so"
-RETROARCH_BIN="$ROOT_DIR/tools/retroarch-gles2/retroarch"
-CORES_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/retroarch/cores"
-CORE_DST="$CORES_DIR/bmsx_libretro.so"
+
+# Gebruik direct het gebouwde core bestand in dist, geen rare copy of build folder referenties meer
+CORE_PATH="$ROOT_DIR/dist/bmsx_libretro.so"
+
+# Zoek naar retroarch lokaal of op het systeem
+if [[ -f "$ROOT_DIR/tools/retroarch-gles2/retroarch" ]]; then
+	RETROARCH_BIN="$ROOT_DIR/tools/retroarch-gles2/retroarch"
+elif command -v retroarch >/dev/null 2>&1; then
+	RETROARCH_BIN="$(command -v retroarch)"
+else
+	echo "Error: RetroArch executable not found!" >&2
+	echo "Please install retroarch or provide it in tools/retroarch-gles2/" >&2
+	exit 1
+fi
+
 ROM_ARG="${1:-}"
 ROM_PATH=""
 if [[ -n "$ROM_ARG" ]]; then
@@ -32,11 +42,10 @@ if [[ -n "$ROM_ARG" ]]; then
 		exit 1
 	fi
 fi
-LOCAL_CFG="$ROOT_DIR/scripts/retroarch.local.cfg"
 
-mkdir -p "$CORES_DIR"
-cp "$CORE_SRC" "$CORE_DST"
+LOCAL_CFG="$ROOT_DIR/scripts/retroarch.local.cfg"
 
 export LIBRETRO_SYSTEM_DIRECTORY="${LIBRETRO_SYSTEM_DIRECTORY:-$ROOT_DIR/dist}"
 
-gdb --batch --return-child-result -ex "set debuginfod enabled off" -ex "set pagination off" -ex "run" --args "$RETROARCH_BIN" --appendconfig="$LOCAL_CFG" -L "$CORE_DST" ${ROM_PATH:+"$ROM_PATH"}
+# Run retroarch directly using the local core, no copying needed!
+gdb --batch --return-child-result -ex "set debuginfod enabled off" -ex "set pagination off" -ex "run" --args "$RETROARCH_BIN" --appendconfig="$LOCAL_CFG" -L "$CORE_PATH" ${ROM_PATH:+"$ROM_PATH"}

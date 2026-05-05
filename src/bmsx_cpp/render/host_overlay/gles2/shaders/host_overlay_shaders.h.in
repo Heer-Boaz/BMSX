@@ -1,0 +1,8 @@
+#pragma once
+
+namespace bmsx {
+
+inline constexpr const char kHostOverlayVertexShader[] = R"bmsxshader(@BMSX_HOST_OVERLAY_VERTEX_SHADER@)bmsxshader";
+inline constexpr const char kHostOverlayFragmentShader[] = R"bmsxshader(@BMSX_HOST_OVERLAY_FRAGMENT_SHADER@)bmsxshader";
+
+} // namespace bmsx

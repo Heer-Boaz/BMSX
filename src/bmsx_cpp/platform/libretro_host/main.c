@@ -146,24 +146,40 @@ static char g_save_dir[1024] = "";
 static char g_opt_render_backend[16] = "software";
 static char g_opt_crt_postprocessing[8] = "off";
 static char g_opt_postprocess_detail[8] = "off";
-static bool g_vars_updated = false;
+static char g_opt_crt_noise[8] = "off";
+static char g_opt_crt_color_bleed[8] = "off";
+static char g_opt_crt_scanlines[8] = "off";
+static char g_opt_crt_blur[8] = "off";
+static char g_opt_crt_glow[8] = "off";
+static char g_opt_crt_fringing[8] = "off";
+static char g_opt_crt_aperture[8] = "off";
+static char g_opt_dither[16] = "off";
+static char g_opt_host_show_usage_gizmo[8] = "off";
 static LibretroCore* g_core = NULL;
+
+typedef struct CoreOptionVar {
+	const char* key;
+	char* value;
+	size_t capacity;
+} CoreOptionVar;
+
+static CoreOptionVar g_core_option_vars[] = {
+	{"bmsx_render_backend", g_opt_render_backend, sizeof(g_opt_render_backend)},
+	{"bmsx_crt_postprocessing", g_opt_crt_postprocessing, sizeof(g_opt_crt_postprocessing)},
+	{"bmsx_postprocess_detail", g_opt_postprocess_detail, sizeof(g_opt_postprocess_detail)},
+	{"bmsx_crt_noise", g_opt_crt_noise, sizeof(g_opt_crt_noise)},
+	{"bmsx_crt_color_bleed", g_opt_crt_color_bleed, sizeof(g_opt_crt_color_bleed)},
+	{"bmsx_crt_scanlines", g_opt_crt_scanlines, sizeof(g_opt_crt_scanlines)},
+	{"bmsx_crt_blur", g_opt_crt_blur, sizeof(g_opt_crt_blur)},
+	{"bmsx_crt_glow", g_opt_crt_glow, sizeof(g_opt_crt_glow)},
+	{"bmsx_crt_fringing", g_opt_crt_fringing, sizeof(g_opt_crt_fringing)},
+	{"bmsx_crt_aperture", g_opt_crt_aperture, sizeof(g_opt_crt_aperture)},
+	{"bmsx_dither", g_opt_dither, sizeof(g_opt_dither)},
+	{"bmsx_host_show_usage_gizmo", g_opt_host_show_usage_gizmo, sizeof(g_opt_host_show_usage_gizmo)},
+};
 
 static uint32_t g_frame_number = 0;
 
-#define kMenuKeyRenderBackend "bmsx_render_backend"
-#define kMenuKeyCrtPostprocessing "bmsx_crt_postprocessing"
-#define kMenuKeyPostprocessDetail "bmsx_postprocess_detail"
-#define kMenuKeyCrtNoise "bmsx_crt_noise"
-#define kMenuKeyCrtColorBleed "bmsx_crt_color_bleed"
-#define kMenuKeyCrtScanlines "bmsx_crt_scanlines"
-#define kMenuKeyCrtBlur "bmsx_crt_blur"
-#define kMenuKeyCrtGlow "bmsx_crt_glow"
-#define kMenuKeyCrtFringing "bmsx_crt_fringing"
-#define kMenuKeyCrtAperture "bmsx_crt_aperture"
-#define kMenuKeyDither "bmsx_dither"
-#define kMenuKeyFrameSkip "bmsx_frameskip"
-#define kMenuKeyHostShowFps "bmsx_host_show_fps"
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static bool g_use_sdl = false;
@@ -219,64 +235,6 @@ struct fbdev_window {
 };
 
 static struct fbdev_window g_fbwin;
-
-#define MENU_MAX_OPTIONS 32
-#define MENU_MAX_VALUES 16
-#define MENU_MAX_KEY 64
-#define MENU_MAX_LABEL 96
-#define MENU_MAX_INFO 192
-
-typedef struct MenuOptionValue {
-	char value[MENU_MAX_KEY];
-	char label[MENU_MAX_LABEL];
-} MenuOptionValue;
-
-typedef struct MenuOption {
-	char key[MENU_MAX_KEY];
-	char label[MENU_MAX_LABEL];
-	char info[MENU_MAX_INFO];
-	size_t value_count;
-	size_t current_index;
-	MenuOptionValue values[MENU_MAX_VALUES];
-} MenuOption;
-
-static MenuOption g_menu_options[MENU_MAX_OPTIONS];
-static size_t g_menu_option_count = 0;
-static bool g_menu_active = false;
-static bool g_menu_dirty = false;
-static bool g_menu_gl_dirty = false;
-static size_t g_menu_selected = 0;
-static uint16_t g_menu_prev_pad = 0;
-
-static uint8_t* g_menu_surface = NULL;
-static int g_menu_surface_w = 0;
-static int g_menu_surface_h = 0;
-static int g_menu_surface_stride = 0;
-static int g_menu_x = 0;
-static int g_menu_y = 0;
-
-static GLuint g_menu_tex = 0;
-static GLuint g_menu_vbo = 0;
-static int g_menu_tex_w = 0;
-static int g_menu_tex_h = 0;
-
-static bool g_show_fps = false;
-static uint64_t g_fps_last_ms = 0;
-static uint32_t g_fps_frames = 0;
-static float g_fps_value = 0.0f;
-static char g_fps_text[32] = "FPS: --";
-static bool g_fps_dirty = true;
-static bool g_fps_gl_dirty = true;
-static uint8_t* g_fps_surface = NULL;
-static int g_fps_surface_w = 0;
-static int g_fps_surface_h = 0;
-static int g_fps_surface_stride = 0;
-static int g_fps_x = 8;
-static int g_fps_y = 8;
-static GLuint g_fps_tex = 0;
-static GLuint g_fps_vbo = 0;
-static int g_fps_tex_w = 0;
-static int g_fps_tex_h = 0;
 
 static double g_target_fps = 50.0;
 
@@ -545,11 +503,6 @@ static void host_log(enum retro_log_level level, const char* fmt, ...) {
 
 static bool hw_ensure_fbo(unsigned width, unsigned height);
 static bool hw_present_frame(unsigned src_w, unsigned src_h);
-static void menu_render_software(void);
-static void menu_render_hw(void);
-static void fps_render_software(void);
-static void fps_render_hw(void);
-static void fps_update(void);
 static void msg_render_software(void);
 static void msg_render_hw(void);
 static void msg_tick(void);
@@ -901,12 +854,12 @@ static void compute_dst_rect(int fb_w, int fb_h, unsigned src_w, unsigned src_h,
 	*out_h = dst_h;
 }
 
-typedef struct MenuGlyph {
+typedef struct OverlayGlyph {
 	char c;
 	uint8_t rows[7];
-} MenuGlyph;
+} OverlayGlyph;
 
-static const MenuGlyph kMenuGlyphs[] = {
+static const OverlayGlyph kOverlayGlyphs[] = {
 	{' ', {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},
 	{'+', {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00}},
 	{'-', {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00}},
@@ -955,507 +908,14 @@ static const MenuGlyph kMenuGlyphs[] = {
 	{'_', {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F}},
 };
 
-static const uint8_t* menu_glyph_rows(char c) {
+static const uint8_t* overlay_glyph_rows(char c) {
 	static const uint8_t k_unknown[7] = {0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04};
-	for (size_t i = 0; i < sizeof(kMenuGlyphs) / sizeof(kMenuGlyphs[0]); ++i) {
-		if (kMenuGlyphs[i].c == c) {
-			return kMenuGlyphs[i].rows;
+	for (size_t i = 0; i < sizeof(kOverlayGlyphs) / sizeof(kOverlayGlyphs[0]); ++i) {
+		if (kOverlayGlyphs[i].c == c) {
+			return kOverlayGlyphs[i].rows;
 		}
 	}
 	return k_unknown;
-}
-
-static void menu_mark_dirty(void) {
-	g_menu_dirty = true;
-	g_menu_gl_dirty = true;
-}
-
-static void menu_copy_str(char* dst, size_t dst_size, const char* src) {
-	if (!dst || dst_size == 0) {
-		return;
-	}
-	if (!src) {
-		dst[0] = '\0';
-		return;
-	}
-	snprintf(dst, dst_size, "%s", src);
-}
-
-static void menu_trim(char* s) {
-	if (!s) return;
-	char* start = s;
-	while (*start == ' ' || *start == '\t') {
-		++start;
-	}
-	char* end = start + strlen(start);
-	while (end > start && (end[-1] == ' ' || end[-1] == '\t')) {
-		--end;
-	}
-	size_t len = (size_t)(end - start);
-	if (start != s) {
-		memmove(s, start, len);
-	}
-	s[len] = '\0';
-}
-
-static bool menu_is_crt_detail_key(const char* key) {
-	if (!key) {
-		return false;
-	}
-	return strcmp(key, kMenuKeyPostprocessDetail) == 0 ||
-			strcmp(key, kMenuKeyCrtNoise) == 0 ||
-			strcmp(key, kMenuKeyCrtColorBleed) == 0 ||
-			strcmp(key, kMenuKeyCrtScanlines) == 0 ||
-			strcmp(key, kMenuKeyCrtBlur) == 0 ||
-			strcmp(key, kMenuKeyCrtGlow) == 0 ||
-			strcmp(key, kMenuKeyCrtFringing) == 0 ||
-			strcmp(key, kMenuKeyCrtAperture) == 0;
-}
-
-typedef struct MenuKnownOption {
-	const char* key;
-	const char* label;
-	const char* info;
-} MenuKnownOption;
-
-static const MenuKnownOption kMenuKnownOptions[] = {
-	{ kMenuKeyRenderBackend, "Render Backend", "Switch renderer backend (restart required)." },
-	{ kMenuKeyCrtPostprocessing, "CRT Post-processing", "Enable CRT post-processing." },
-	{ kMenuKeyPostprocessDetail, "Post-processing Detail", "Increase post-processing detail (higher offscreen scale)." },
-	{ kMenuKeyCrtNoise, "CRT Noise", "Toggle CRT noise/grain." },
-	{ kMenuKeyCrtColorBleed, "CRT Color Bleed", "Toggle CRT color bleed." },
-	{ kMenuKeyCrtScanlines, "CRT Scanlines", "Toggle CRT scanlines." },
-	{ kMenuKeyCrtBlur, "CRT Blur", "Toggle CRT blur." },
-	{ kMenuKeyCrtGlow, "CRT Glow", "Toggle CRT glow." },
-	{ kMenuKeyCrtFringing, "CRT Fringing", "Toggle CRT fringing." },
-	{ kMenuKeyCrtAperture, "CRT Aperture", "Toggle CRT aperture grille." },
-	{ kMenuKeyDither, "Dither", "Select dithering mode." },
-	{ kMenuKeyFrameSkip, "Frame Skip", "Skip frames when rendering exceeds frame budget." },
-	{ kMenuKeyHostShowFps, "Show FPS", "Toggle FPS overlay." },
-};
-
-static const MenuKnownOption* menu_find_known_option(const char* key) {
-	if (!key) return NULL;
-	for (size_t i = 0; i < sizeof(kMenuKnownOptions) / sizeof(kMenuKnownOptions[0]); ++i) {
-		if (strcmp(key, kMenuKnownOptions[i].key) == 0) {
-			return &kMenuKnownOptions[i];
-		}
-	}
-	return NULL;
-}
-
-static const char* menu_known_label(const char* key) {
-	const MenuKnownOption* option = menu_find_known_option(key);
-	if (!option) {
-		return NULL;
-	}
-	return option->label;
-}
-
-static const char* menu_known_info(const char* key) {
-	const MenuKnownOption* option = menu_find_known_option(key);
-	if (!option) {
-		return NULL;
-	}
-	return option->info;
-}
-
-static const char* menu_resolve_label(const char* key, const char* preferred) {
-	if (preferred && preferred[0]) {
-		return preferred;
-	}
-	const char* known = menu_known_label(key);
-	if (known && known[0]) {
-		return known;
-	}
-	if (key) {
-		return key;
-	}
-	return "";
-}
-
-static const char* menu_resolve_info(const char* key, const char* preferred) {
-	if (preferred && preferred[0]) {
-		return preferred;
-	}
-	return menu_known_info(key);
-}
-
-static size_t menu_copy_option_values(MenuOptionValue* values, const struct retro_core_option_value* source) {
-	size_t count = 0;
-	for (size_t i = 0; source[i].value && count < MENU_MAX_VALUES; ++i) {
-		const char* label = source[i].label;
-		if (!label) {
-			label = source[i].value;
-		}
-		menu_copy_str(values[count].value, sizeof(values[count].value), source[i].value);
-		menu_copy_str(values[count].label, sizeof(values[count].label), label);
-		++count;
-	}
-	return count;
-}
-
-static void menu_set_option_values(MenuOption* opt, const char* label, const char* info,
-		const MenuOptionValue* values, size_t count, const char* default_value);
-
-static void menu_apply_core_option_values(
-		MenuOption* opt,
-		const char* key,
-		const char* label,
-		const char* info,
-		const struct retro_core_option_value* source,
-		const char* default_value) {
-	MenuOptionValue values[MENU_MAX_VALUES];
-	const size_t count = menu_copy_option_values(values, source);
-	menu_set_option_values(
-			opt,
-			menu_resolve_label(key, label),
-			menu_resolve_info(key, info),
-			values,
-			count,
-			default_value);
-}
-
-static const struct retro_core_option_v2_category* menu_find_v2_category(
-		const struct retro_core_options_v2* opts,
-		const char* category_key) {
-	if (!opts || !opts->categories || !category_key || !category_key[0]) {
-		return NULL;
-	}
-	for (const struct retro_core_option_v2_category* cat = opts->categories; cat->key; ++cat) {
-		if (strcmp(cat->key, category_key) == 0) {
-			return cat;
-		}
-	}
-	return NULL;
-}
-
-static const char* menu_builtin_value(const char* key) {
-	if (!key) return NULL;
-	if (strcmp(key, kMenuKeyRenderBackend) == 0) return g_opt_render_backend;
-	if (strcmp(key, kMenuKeyCrtPostprocessing) == 0) return g_opt_crt_postprocessing;
-	if (strcmp(key, kMenuKeyPostprocessDetail) == 0) return g_opt_postprocess_detail;
-	if (strcmp(key, kMenuKeyHostShowFps) == 0) return g_show_fps ? "on" : "off";
-	return NULL;
-}
-
-static void menu_sync_builtin(const char* key, const char* value) {
-	if (!key || !value) return;
-	if (strcmp(key, kMenuKeyRenderBackend) == 0) {
-		snprintf(g_opt_render_backend, sizeof(g_opt_render_backend), "%s", value);
-	} else if (strcmp(key, kMenuKeyCrtPostprocessing) == 0) {
-		snprintf(g_opt_crt_postprocessing, sizeof(g_opt_crt_postprocessing), "%s", value);
-	} else if (strcmp(key, kMenuKeyPostprocessDetail) == 0) {
-		snprintf(g_opt_postprocess_detail, sizeof(g_opt_postprocess_detail), "%s", value);
-	} else if (strcmp(key, kMenuKeyHostShowFps) == 0) {
-		bool enable = strcmp(value, "on") == 0;
-		if (g_show_fps != enable) {
-			g_show_fps = enable;
-			g_fps_last_ms = 0;
-			g_fps_frames = 0;
-			snprintf(g_fps_text, sizeof(g_fps_text), "FPS: --");
-			g_fps_dirty = true;
-			g_fps_gl_dirty = true;
-		}
-	}
-}
-
-static MenuOption* menu_find_option(const char* key) {
-	if (!key) return NULL;
-	for (size_t i = 0; i < g_menu_option_count; ++i) {
-		if (strcmp(g_menu_options[i].key, key) == 0) {
-			return &g_menu_options[i];
-		}
-	}
-	return NULL;
-}
-
-static MenuOption* menu_get_option(const char* key) {
-	MenuOption* opt = menu_find_option(key);
-	if (opt) return opt;
-	if (!key || g_menu_option_count >= MENU_MAX_OPTIONS) return NULL;
-	opt = &g_menu_options[g_menu_option_count++];
-	memset(opt, 0, sizeof(*opt));
-	menu_copy_str(opt->key, sizeof(opt->key), key);
-	menu_copy_str(opt->label, sizeof(opt->label), menu_resolve_label(key, NULL));
-	const char* known_info = menu_known_info(key);
-	if (known_info && known_info[0]) {
-		menu_copy_str(opt->info, sizeof(opt->info), known_info);
-	}
-	return opt;
-}
-
-static bool menu_option_is_action(const MenuOption* opt) {
-	return opt && strncmp(opt->key, "__action_", 9) == 0;
-}
-
-static bool menu_option_is_disabled(const MenuOption* opt) {
-	if (!opt || menu_option_is_action(opt)) {
-		return false;
-	}
-	if (strcmp(g_opt_crt_postprocessing, "on") == 0) {
-		return false;
-	}
-	return menu_is_crt_detail_key(opt->key);
-}
-
-static size_t menu_next_selectable(size_t index, int dir) {
-	if (g_menu_option_count == 0) {
-		return 0;
-	}
-	size_t cur = index;
-	for (;;) {
-		if (!menu_option_is_disabled(&g_menu_options[cur])) {
-			return cur;
-		}
-		if (dir > 0) {
-			cur = (cur + 1) % g_menu_option_count;
-		} else {
-			cur = (cur == 0) ? (g_menu_option_count - 1) : (cur - 1);
-		}
-		if (cur == index) {
-			return index;
-		}
-	}
-}
-
-static void menu_execute_action(const char* key) {
-	if (!key) return;
-	if (strcmp(key, "__action_reboot") == 0) {
-		if (g_core && g_core->retro_reset) {
-			fprintf(stderr, "[libretro-host] menu: reboot cart\n");
-			g_core->retro_reset();
-		}
-		g_menu_active = false;
-		menu_mark_dirty();
-		return;
-	}
-	if (strcmp(key, "__action_exit") == 0) {
-		fprintf(stderr, "[libretro-host] menu: exit game\n");
-		g_should_quit = 1;
-		g_menu_active = false;
-		menu_mark_dirty();
-		return;
-	}
-}
-
-static void menu_append_action(const char* key, const char* label) {
-	if (!key || menu_find_option(key) || g_menu_option_count >= MENU_MAX_OPTIONS) return;
-	MenuOption* opt = &g_menu_options[g_menu_option_count++];
-	memset(opt, 0, sizeof(*opt));
-	menu_copy_str(opt->key, sizeof(opt->key), key);
-	menu_copy_str(opt->label, sizeof(opt->label), label);
-	opt->value_count = 0;
-	opt->current_index = 0;
-}
-
-static void menu_append_host_options(void) {
-	MenuOption* opt = menu_get_option(kMenuKeyHostShowFps);
-	if (!opt) return;
-	MenuOptionValue values[2];
-	menu_copy_str(values[0].value, sizeof(values[0].value), "off");
-	menu_copy_str(values[0].label, sizeof(values[0].label), "OFF");
-	menu_copy_str(values[1].value, sizeof(values[1].value), "on");
-	menu_copy_str(values[1].label, sizeof(values[1].label), "ON");
-	menu_set_option_values(opt, "HOST: SHOW FPS", "Toggle FPS overlay", values, 2,
-		g_show_fps ? "on" : "off");
-}
-
-static void menu_append_actions(void) {
-	menu_append_action("__action_reboot", "REBOOT CART");
-	menu_append_action("__action_exit", "EXIT GAME");
-}
-
-static bool menu_set_current_value(MenuOption* opt, const char* value) {
-	if (!opt || !value || !value[0]) return false;
-	for (size_t i = 0; i < opt->value_count; ++i) {
-		if (strcmp(opt->values[i].value, value) == 0) {
-			opt->current_index = i;
-			return true;
-		}
-	}
-	return false;
-}
-
-static void menu_set_option_values(MenuOption* opt, const char* label, const char* info,
-		const MenuOptionValue* values, size_t count, const char* default_value) {
-	if (!opt) return;
-	char prev_value[MENU_MAX_KEY] = "";
-	if (opt->value_count > 0 && opt->current_index < opt->value_count) {
-		menu_copy_str(prev_value, sizeof(prev_value), opt->values[opt->current_index].value);
-	}
-	if (label && label[0]) menu_copy_str(opt->label, sizeof(opt->label), label);
-	if (info && info[0]) menu_copy_str(opt->info, sizeof(opt->info), info);
-	opt->value_count = 0;
-	for (size_t i = 0; i < count && i < MENU_MAX_VALUES; ++i) {
-		menu_copy_str(opt->values[i].value, sizeof(opt->values[i].value), values[i].value);
-		if (values[i].label[0]) {
-			menu_copy_str(opt->values[i].label, sizeof(opt->values[i].label), values[i].label);
-		} else {
-			menu_copy_str(opt->values[i].label, sizeof(opt->values[i].label), values[i].value);
-		}
-		++opt->value_count;
-	}
-	const char* initial = menu_builtin_value(opt->key);
-	if (!menu_set_current_value(opt, initial) &&
-		!menu_set_current_value(opt, prev_value) &&
-		!menu_set_current_value(opt, default_value)) {
-		opt->current_index = 0;
-	}
-	if (opt->value_count > 0) {
-		menu_sync_builtin(opt->key, opt->values[opt->current_index].value);
-	}
-	menu_mark_dirty();
-}
-
-static const char* menu_option_value_label(const MenuOption* opt) {
-	if (!opt || opt->value_count == 0) return "-";
-	const MenuOptionValue* val = &opt->values[opt->current_index];
-	return val->label[0] ? val->label : val->value;
-}
-
-static void menu_enable_option(MenuOption* opt, size_t index, bool mark_update) {
-	if (!opt || opt->value_count == 0 || index >= opt->value_count) return;
-	opt->current_index = index;
-	menu_sync_builtin(opt->key, opt->values[index].value);
-	if (mark_update) {
-		g_vars_updated = true;
-	}
-	menu_mark_dirty();
-}
-
-static void menu_set_option_value(MenuOption* opt, const char* value, bool mark_update) {
-	if (!opt || !value) return;
-	for (size_t i = 0; i < opt->value_count; ++i) {
-		if (strcmp(opt->values[i].value, value) == 0) {
-			menu_enable_option(opt, i, mark_update);
-			return;
-		}
-	}
-}
-
-static void menu_clear_options(void) {
-	g_menu_option_count = 0;
-	g_menu_selected = 0;
-	menu_mark_dirty();
-}
-
-static void menu_ingest_options_v2(const struct retro_core_options_v2* opts) {
-	if (!opts || !opts->definitions) return;
-	for (const struct retro_core_option_v2_definition* def = opts->definitions; def->key; ++def) {
-		MenuOption* opt = menu_get_option(def->key);
-		if (!opt) continue;
-		const struct retro_core_option_v2_category* category = menu_find_v2_category(opts, def->category_key);
-		const char* label = def->desc_categorized && def->desc_categorized[0]
-				? def->desc_categorized
-				: def->desc;
-		const char* info = def->info_categorized && def->info_categorized[0]
-				? def->info_categorized
-				: def->info;
-		if ((!label || !label[0]) && category && category->desc && category->desc[0]) {
-			label = category->desc;
-		}
-		if ((!info || !info[0]) && category && category->info && category->info[0]) {
-			info = category->info;
-		}
-		menu_apply_core_option_values(opt, def->key, label, info, def->values, def->default_value);
-	}
-	menu_append_host_options();
-	menu_append_actions();
-}
-
-static void menu_ingest_options_v1(const struct retro_core_option_definition* defs) {
-	if (!defs) return;
-	for (const struct retro_core_option_definition* def = defs; def->key; ++def) {
-		MenuOption* opt = menu_get_option(def->key);
-		if (!opt) continue;
-		menu_apply_core_option_values(opt, def->key, def->desc, def->info, def->values, def->default_value);
-	}
-	menu_append_host_options();
-	menu_append_actions();
-}
-
-static void menu_ingest_variables(const struct retro_variable* vars) {
-	if (!vars) return;
-	for (const struct retro_variable* var = vars; var->key; ++var) {
-		if (!var->value) continue;
-		MenuOption* opt = menu_get_option(var->key);
-		if (!opt) continue;
-		char buf[256];
-		char label_buf[MENU_MAX_LABEL];
-		menu_copy_str(buf, sizeof(buf), var->value);
-		char* semicolon = strchr(buf, ';');
-		char* values_str = NULL;
-		if (semicolon) {
-			*semicolon = '\0';
-			menu_copy_str(label_buf, sizeof(label_buf), buf);
-			values_str = semicolon + 1;
-		} else {
-			menu_copy_str(label_buf, sizeof(label_buf),
-				menu_resolve_label(var->key, opt->label[0] ? opt->label : NULL));
-			values_str = buf;
-		}
-		menu_trim(label_buf);
-		menu_trim(values_str);
-		MenuOptionValue values[MENU_MAX_VALUES];
-		size_t count = 0;
-		char* saveptr = NULL;
-		for (char* tok = strtok_r(values_str, "|", &saveptr);
-				tok && count < MENU_MAX_VALUES;
-				tok = strtok_r(NULL, "|", &saveptr)) {
-			menu_trim(tok);
-			menu_copy_str(values[count].value, sizeof(values[count].value), tok);
-			menu_copy_str(values[count].label, sizeof(values[count].label), tok);
-			++count;
-		}
-			const char* default_value = NULL;
-			if (count > 0) {
-				default_value = values[0].value;
-			}
-			const char* info = NULL;
-			if (opt->info[0]) {
-				info = opt->info;
-			}
-			info = menu_resolve_info(var->key, info);
-		menu_set_option_values(opt, label_buf, info, values, count, default_value);
-	}
-	menu_append_host_options();
-	menu_append_actions();
-}
-
-static const char* menu_get_variable_value(const char* key) {
-	MenuOption* opt = menu_find_option(key);
-	if (opt && opt->value_count > 0) {
-		return opt->values[opt->current_index].value;
-	}
-	return menu_builtin_value(key);
-}
-
-static bool menu_set_variable_value(const char* key, const char* value, bool mark_update) {
-	MenuOption* opt = menu_find_option(key);
-	if (opt) {
-		menu_set_option_value(opt, value, mark_update);
-		return true;
-	}
-	if (menu_builtin_value(key)) {
-		menu_sync_builtin(key, value);
-		if (mark_update) g_vars_updated = true;
-		return true;
-	}
-	return false;
-}
-
-static void menu_toggle(void) {
-	g_menu_active = !g_menu_active;
-	if (g_menu_active && g_menu_selected >= g_menu_option_count) {
-		g_menu_selected = 0;
-	}
-	if (g_menu_active) {
-		menu_append_host_options();
-		menu_append_actions();
-		g_menu_selected = menu_next_selectable(g_menu_selected, 1);
-	}
-	menu_mark_dirty();
 }
 
 static void surface_draw_pixel(uint8_t* surface, int surface_w, int surface_h, int surface_stride, int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
@@ -1481,7 +941,7 @@ static void surface_draw_char(uint8_t* surface, int surface_w, int surface_h, in
 	if (c >= 'a' && c <= 'z') {
 		c = (char)(c - ('a' - 'A'));
 	}
-	const uint8_t* rows = menu_glyph_rows(c);
+	const uint8_t* rows = overlay_glyph_rows(c);
 	for (int row = 0; row < 7; ++row) {
 		uint8_t bits = rows[row];
 		for (int col = 0; col < 5; ++col) {
@@ -1598,92 +1058,6 @@ static void blit_rgba_surface_software(
 	}
 }
 
-static int menu_text_width(const char* text, int scale) {
-	if (!text) return 0;
-	return (int)strlen(text) * (5 + 1) * scale;
-}
-
-static void menu_write_line(char* line, size_t line_size, const char* label, const char* value) {
-	const size_t max_line = line_size - 1;
-	size_t label_len = strlen(label);
-	if (!value || !value[0] || strcmp(value, "-") == 0) {
-		if (label_len > max_line) {
-			label_len = max_line;
-		}
-		snprintf(line, line_size, "%.*s", (int)label_len, label);
-		return;
-	}
-	size_t value_len = strlen(value);
-	if (max_line <= 2) {
-		line[0] = '\0';
-		return;
-	}
-	size_t label_cap = max_line - 2;
-	if (label_len > label_cap) {
-		label_len = label_cap;
-	}
-	size_t remaining = max_line - (label_len + 2);
-	if (value_len > remaining) {
-		value_len = remaining;
-	}
-	snprintf(line, line_size, "%.*s: %.*s", (int)label_len, label, (int)value_len, value);
-}
-
-static void fps_mark_dirty(void) {
-	g_fps_dirty = true;
-	g_fps_gl_dirty = true;
-}
-
-static void fps_rebuild_surface(void) {
-	if (!g_show_fps || g_fb.width <= 0 || g_fb.height <= 0) {
-		return;
-	}
-	int scale = 1;
-	int padding = 4;
-	int line_h = (7 * scale) + 2;
-	int text_w = menu_text_width(g_fps_text, scale);
-	int surf_w = text_w + padding * 2;
-	int surf_h = line_h + padding * 2;
-	if (surf_w > g_fb.width - 4) surf_w = g_fb.width - 4;
-	if (surf_h > g_fb.height - 4) surf_h = g_fb.height - 4;
-	if (surf_w < 1 || surf_h < 1) return;
-
-	if (surf_w != g_fps_surface_w || surf_h != g_fps_surface_h) {
-		free(g_fps_surface);
-		g_fps_surface = (uint8_t*)malloc((size_t)surf_w * (size_t)surf_h * 4u);
-		if (!g_fps_surface) {
-			g_fps_surface_w = 0;
-			g_fps_surface_h = 0;
-			g_fps_surface_stride = 0;
-			return;
-		}
-		g_fps_surface_w = surf_w;
-		g_fps_surface_h = surf_h;
-		g_fps_surface_stride = surf_w * 4;
-	}
-
-	memset(g_fps_surface, 0, (size_t)g_fps_surface_stride * (size_t)g_fps_surface_h);
-
-	g_fps_x = g_fb.width - g_fps_surface_w - 8;
-	g_fps_y = 8;
-	if (g_fps_x < 0) g_fps_x = 0;
-	if (g_fps_y < 0) g_fps_y = 0;
-
-	const uint8_t text_r = 80, text_g = 220, text_b = 80, text_a = 255;
-	surface_draw_text(g_fps_surface, g_fps_surface_w, g_fps_surface_h, g_fps_surface_stride, padding, padding, g_fps_text, text_r, text_g, text_b, text_a, scale);
-
-	g_fps_dirty = false;
-	g_fps_gl_dirty = true;
-}
-
-static void fps_render_software(void) {
-	if (!g_show_fps || g_menu_active) return;
-	if (g_fps_dirty) fps_rebuild_surface();
-	if (!g_fps_surface) return;
-
-	blit_rgba_surface_software(g_fps_surface, g_fps_surface_w, g_fps_surface_h, g_fps_surface_stride, g_fps_x, g_fps_y);
-}
-
 static void hw_begin_blit(GLuint tex, float flip_y) {
 	glUseProgram_ptr(g_blit_program);
 	glActiveTexture_ptr(GL_TEXTURE0);
@@ -1768,35 +1142,6 @@ static void hw_draw_rgba_overlay(GLuint tex, GLuint* vbo, int x, int y, int widt
 	hw_upload_dynamic_blit_vbo(*vbo, quad);
 	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
 	glDisable_ptr(GL_BLEND);
-}
-
-static void fps_render_hw(void) {
-	if (!g_show_fps || g_menu_active) return;
-	if (g_fps_dirty) fps_rebuild_surface();
-	if (!g_fps_surface) return;
-	if (!hw_init_blitter()) return;
-
-	hw_update_rgba_overlay_texture(&g_fps_tex, &g_fps_tex_w, &g_fps_tex_h, &g_fps_gl_dirty, g_fps_surface_w, g_fps_surface_h, g_fps_surface);
-	hw_draw_rgba_overlay(g_fps_tex, &g_fps_vbo, g_fps_x, g_fps_y, g_fps_surface_w, g_fps_surface_h);
-}
-
-static void fps_update(void) {
-	if (!g_show_fps) return;
-	uint64_t now = monotonic_ms();
-	if (g_fps_last_ms == 0) {
-		g_fps_last_ms = now;
-		g_fps_frames = 0;
-	}
-	++g_fps_frames;
-	const uint64_t elapsed = now - g_fps_last_ms;
-	// Host-side FPS estimate; uses monotonic clock (no vsync or GPU timing).
-	if (elapsed >= 500) {
-		g_fps_value = (float)g_fps_frames * 1000.0f / (float)elapsed;
-		snprintf(g_fps_text, sizeof(g_fps_text), "FPS: %.1f", g_fps_value);
-		g_fps_frames = 0;
-		g_fps_last_ms = now;
-		fps_mark_dirty();
-	}
 }
 
 static void msg_mark_dirty(void) {
@@ -1979,7 +1324,7 @@ static void msg_rebuild_surface(void) {
 }
 
 static void msg_render_software(void) {
-	if (g_msg_frames_left == 0 || g_menu_active) return;
+	if (g_msg_frames_left == 0) return;
 	if (g_msg_dirty) msg_rebuild_surface();
 	if (!g_msg_surface) return;
 
@@ -1987,164 +1332,13 @@ static void msg_render_software(void) {
 }
 
 static void msg_render_hw(void) {
-	if (g_msg_frames_left == 0 || g_menu_active) return;
+	if (g_msg_frames_left == 0) return;
 	if (g_msg_dirty) msg_rebuild_surface();
 	if (!g_msg_surface) return;
 	if (!hw_init_blitter()) return;
 
 	hw_update_rgba_overlay_texture(&g_msg_tex, &g_msg_tex_w, &g_msg_tex_h, &g_msg_gl_dirty, g_msg_surface_w, g_msg_surface_h, g_msg_surface);
 	hw_draw_rgba_overlay(g_msg_tex, &g_msg_vbo, g_msg_x, g_msg_y, g_msg_surface_w, g_msg_surface_h);
-}
-
-static void menu_rebuild_surface(void) {
-	if (!g_menu_active || g_fb.width <= 0 || g_fb.height <= 0) {
-		return;
-	}
-	if (g_menu_option_count > 0 && g_menu_selected >= g_menu_option_count) {
-		g_menu_selected = menu_next_selectable(0, 1);
-	}
-	const char* title = "CORE OPTIONS";
-	char footer_buf[MENU_MAX_INFO];
-	if (g_menu_option_count == 0) {
-		menu_copy_str(footer_buf, sizeof(footer_buf), "B: CLOSE");
-	} else {
-		const MenuOption* selected = &g_menu_options[g_menu_selected];
-		if (menu_option_is_action(selected)) {
-			menu_copy_str(footer_buf, sizeof(footer_buf), "A/START: EXECUTE  B: CLOSE");
-		} else if (menu_option_is_disabled(selected)) {
-			menu_copy_str(footer_buf, sizeof(footer_buf), "LOCKED: ENABLE CRT POST-PROCESSING  B: CLOSE");
-		} else {
-			menu_copy_str(footer_buf, sizeof(footer_buf), "D-PAD: NAV  L/R: CHANGE  B: CLOSE");
-		}
-	}
-	const char* footer = footer_buf;
-	size_t max_chars = strlen(title);
-	if (strlen(footer) > max_chars) {
-		max_chars = strlen(footer);
-	}
-	for (size_t i = 0; i < g_menu_option_count; ++i) {
-		const MenuOption* opt = &g_menu_options[i];
-		const char* label = opt->label[0] ? opt->label : opt->key;
-		size_t len = strlen(label);
-		if (!menu_option_is_action(opt)) {
-			const char* value = menu_option_value_label(opt);
-			if (value && value[0] && strcmp(value, "-") != 0) {
-				len = strlen(label) + 2 + strlen(value);
-			}
-		}
-		if (len > max_chars) {
-			max_chars = len;
-		}
-	}
-	int scale = 2;
-	int padding = 8;
-	int line_h = (7 * scale) + 4;
-	int title_h = line_h;
-	int title_gap = 6;
-	int lines = (int)(g_menu_option_count ? g_menu_option_count : 1);
-	int box_lines = lines + 1;
-	int menu_w = (int)(max_chars * (5 + 1) * scale) + padding * 2;
-	int box_h = box_lines * line_h + padding * 2;
-	int menu_h = title_h + title_gap + box_h;
-	if (menu_w > g_fb.width - 20 || menu_h > g_fb.height - 20) {
-		scale = 1;
-		line_h = (7 * scale) + 3;
-		title_h = line_h;
-		title_gap = 4;
-		menu_w = (int)(max_chars * (5 + 1) * scale) + padding * 2;
-		box_h = box_lines * line_h + padding * 2;
-		menu_h = title_h + title_gap + box_h;
-	}
-	if (menu_w > g_fb.width - 10) menu_w = g_fb.width - 10;
-	if (menu_h > g_fb.height - 10) menu_h = g_fb.height - 10;
-	if (menu_w < 1 || menu_h < 1) return;
-	const int box_y = title_h + title_gap;
-
-	if (menu_w != g_menu_surface_w || menu_h != g_menu_surface_h) {
-		free(g_menu_surface);
-		g_menu_surface = (uint8_t*)malloc((size_t)menu_w * (size_t)menu_h * 4u);
-		if (!g_menu_surface) {
-			g_menu_surface_w = 0;
-			g_menu_surface_h = 0;
-			g_menu_surface_stride = 0;
-			return;
-		}
-		g_menu_surface_w = menu_w;
-		g_menu_surface_h = menu_h;
-		g_menu_surface_stride = menu_w * 4;
-	}
-
-	memset(g_menu_surface, 0, (size_t)g_menu_surface_stride * (size_t)g_menu_surface_h);
-
-	g_menu_x = (g_fb.width - g_menu_surface_w) / 2;
-	g_menu_y = (g_fb.height - box_h) / 2 - box_y;
-	if (g_menu_x < 0) g_menu_x = 0;
-	if (g_menu_y < 0) g_menu_y = 0;
-
-	const uint8_t bg_r = 8, bg_g = 8, bg_b = 8, bg_a = 200;
-	const uint8_t hl_r = 32, hl_g = 64, hl_b = 96, hl_a = 220;
-	const uint8_t text_r = 240, text_g = 240, text_b = 240, text_a = 255;
-	const uint8_t dim_r = 180, dim_g = 180, dim_b = 180, dim_a = 255;
-	const uint8_t title_r = 96, title_g = 200, title_b = 255, title_a = 255;
-
-	surface_draw_rect(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, 0, box_y, g_menu_surface_w, box_h, bg_r, bg_g, bg_b, bg_a);
-	surface_draw_text(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, padding, 0, title, title_r, title_g, title_b, title_a, scale);
-
-	int cursor_y = box_y + padding;
-
-	if (g_menu_option_count == 0) {
-		surface_draw_text(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, padding, cursor_y, "NO OPTIONS", dim_r, dim_g, dim_b, dim_a, scale);
-		cursor_y += line_h;
-	} else {
-		for (size_t i = 0; i < g_menu_option_count; ++i) {
-			if (i == g_menu_selected) {
-				surface_draw_rect(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, 0, cursor_y - 2, g_menu_surface_w, line_h, hl_r, hl_g, hl_b, hl_a);
-			}
-			const MenuOption* opt = &g_menu_options[i];
-			const bool disabled = menu_option_is_disabled(opt);
-			const char* label = opt->label[0] ? opt->label : opt->key;
-			char line[256];
-			if (menu_option_is_action(opt)) {
-				menu_write_line(line, sizeof(line), label, NULL);
-			} else {
-				const char* value = menu_option_value_label(opt);
-				menu_write_line(line, sizeof(line), label, value);
-			}
-			const uint8_t line_r = disabled ? dim_r : text_r;
-			const uint8_t line_g = disabled ? dim_g : text_g;
-			const uint8_t line_b = disabled ? dim_b : text_b;
-			surface_draw_text(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, padding, cursor_y, line, line_r, line_g, line_b, text_a, scale);
-			cursor_y += line_h;
-		}
-	}
-	{
-		int footer_w = menu_text_width(footer, scale);
-		int footer_x = g_menu_surface_w - padding - footer_w;
-		if (footer_x < padding) footer_x = padding;
-		int footer_y = box_y + box_h - padding - line_h;
-		surface_draw_text(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, footer_x, footer_y, footer, dim_r, dim_g, dim_b, dim_a, scale);
-	}
-
-	g_menu_dirty = false;
-	g_menu_gl_dirty = true;
-}
-
-static void menu_render_software(void) {
-	if (!g_menu_active) return;
-	if (g_menu_dirty) menu_rebuild_surface();
-	if (!g_menu_surface) return;
-
-	blit_rgba_surface_software(g_menu_surface, g_menu_surface_w, g_menu_surface_h, g_menu_surface_stride, g_menu_x, g_menu_y);
-}
-
-static void menu_render_hw(void) {
-	if (!g_menu_active) return;
-	if (g_menu_dirty) menu_rebuild_surface();
-	if (!g_menu_surface) return;
-	if (!hw_init_blitter()) return;
-
-	hw_update_rgba_overlay_texture(&g_menu_tex, &g_menu_tex_w, &g_menu_tex_h, &g_menu_gl_dirty, g_menu_surface_w, g_menu_surface_h, g_menu_surface);
-	hw_draw_rgba_overlay(g_menu_tex, &g_menu_vbo, g_menu_x, g_menu_y, g_menu_surface_w, g_menu_surface_h);
 }
 
 static bool hw_present_frame(unsigned src_w, unsigned src_h) {
@@ -2181,8 +1375,6 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	hw_bind_static_blit_vbo(g_blit_vbo);
 	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
 	msg_render_hw();
-	fps_render_hw();
-	menu_render_hw();
 	
 	// Capture screenshot if requested by the active input timeline.
 	if (core_cart_program_active() && input_timeline_should_capture_frame(g_frame_number)) {
@@ -2450,9 +1642,7 @@ static void sdl_sync_gl_drawable_size(void) {
 	g_fb.height = drawable_h;
 	g_fb.bpp = 32;
 	g_fb.stride = drawable_w * 4;
-	fps_mark_dirty();
 	msg_mark_dirty();
-	menu_mark_dirty();
 }
 
 static void sdl_resize(unsigned width, unsigned height) {
@@ -2465,9 +1655,7 @@ static void sdl_resize(unsigned width, unsigned height) {
 	g_fb.bpp = 32;
 	g_fb.stride = (int)(width * 4u);
 	if (g_sdl_use_gl) {
-		fps_mark_dirty();
 		msg_mark_dirty();
-		menu_mark_dirty();
 		return;
 	}
 	g_fb.map_size = (size_t)g_fb.stride * (size_t)g_fb.height;
@@ -2486,9 +1674,7 @@ static void sdl_resize(unsigned width, unsigned height) {
 		die("SDL_CreateTexture failed: %s", SDL_GetError());
 	}
 	SDL_RenderSetLogicalSize(g_sdl_renderer, g_fb.width, g_fb.height);
-	fps_mark_dirty();
 	msg_mark_dirty();
-	menu_mark_dirty();
 }
 
 static void sdl_update_mouse_position(void) {
@@ -2642,50 +1828,42 @@ static bool environ_cb(unsigned cmd, void* data) {
 			*version = 2;
 			return true;
 		}
-		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2: {
-			menu_clear_options();
-			menu_ingest_options_v2((const struct retro_core_options_v2*)data);
-			return true;
-		}
-		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL: {
-			const struct retro_core_options_intl* intl = (const struct retro_core_options_intl*)data;
-			menu_clear_options();
-			if (intl && intl->us) {
-				menu_ingest_options_v1(intl->us);
-			}
-			return true;
-		}
-		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS: {
-			menu_clear_options();
-			menu_ingest_options_v1((const struct retro_core_option_definition*)data);
-			return true;
-		}
+		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2:
+		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL:
+		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS:
 		case RETRO_ENVIRONMENT_SET_VARIABLES:
-			menu_ingest_variables((const struct retro_variable*)data);
 			return true;
 		case RETRO_ENVIRONMENT_SET_VARIABLE: {
 			const struct retro_variable* var = (const struct retro_variable*)data;
 			if (!var || !var->key || !var->value) {
 				return false;
 			}
-			return menu_set_variable_value(var->key, var->value, true);
+			for (size_t index = 0; index < sizeof(g_core_option_vars) / sizeof(g_core_option_vars[0]); index += 1) {
+				CoreOptionVar* option = &g_core_option_vars[index];
+				if (strcmp(var->key, option->key) == 0) {
+					snprintf(option->value, option->capacity, "%s", var->value);
+					return true;
+				}
+			}
+			return false;
 		}
 		case RETRO_ENVIRONMENT_GET_VARIABLE: {
 			struct retro_variable* var = (struct retro_variable*)data;
 			if (!var || !var->key) {
 				return false;
 			}
-			const char* value = menu_get_variable_value(var->key);
-			if (!value) {
-				return false;
+			for (size_t index = 0; index < sizeof(g_core_option_vars) / sizeof(g_core_option_vars[0]); index += 1) {
+				CoreOptionVar* option = &g_core_option_vars[index];
+				if (strcmp(var->key, option->key) == 0) {
+					var->value = option->value;
+					return true;
+				}
 			}
-			var->value = value;
-			return true;
+			return false;
 		}
 		case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: {
 			bool* updated = (bool*)data;
-			*updated = g_vars_updated;
-			g_vars_updated = false;
+			*updated = false;
 			return true;
 		}
 		case RETRO_ENVIRONMENT_SET_MESSAGE: {
@@ -2850,9 +2028,6 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				g_geom_dirty = true;
 			}
 		}
-			if (!g_menu_active) {
-				fps_update();
-			}
 			hw_present_frame(width, height);
 #ifdef BMSX_LIBRETRO_HOST_SDL
 			if (g_use_sdl) {
@@ -2874,9 +2049,6 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 #endif
 	g_last_video_w = width;
 	g_last_video_h = height;
-	if (!g_menu_active) {
-		fps_update();
-	}
 
 	const int fb_w = g_fb.width;
 	const int fb_h = g_fb.height;
@@ -2943,8 +2115,6 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 			}
 		}
 		msg_render_software();
-		fps_render_software();
-		menu_render_software();
 		step_software_frame_capture();
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
@@ -2994,8 +2164,6 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 			}
 		}
 		msg_render_software();
-		fps_render_software();
-		menu_render_software();
 		step_software_frame_capture();
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
@@ -4074,98 +3242,6 @@ static void input_open_default_devices(void) {
 	}
 }
 
-static bool menu_pad_pressed(uint16_t state, uint16_t prev, unsigned id) {
-	const uint16_t bit = (uint16_t)(1u << id);
-	return (state & bit) && !(prev & bit);
-}
-
-static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
-	const uint16_t start_bit = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START);
-	const uint16_t select_bit = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
-	const uint16_t l_bit = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L);
-	const uint16_t r_bit = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R);
-
-	const bool combo_now = (state & start_bit) && (state & select_bit) && (state & l_bit) && (state & r_bit);
-	const bool combo_prev = (prev & start_bit) && (prev & select_bit) && (prev & l_bit) && (prev & r_bit);
-	if (combo_now && !combo_prev) {
-		menu_toggle();
-		skip_nav = true;
-	}
-
-	if (!g_menu_active || skip_nav) {
-		return;
-	}
-
-		MenuOption* selected = NULL;
-		if (g_menu_option_count) {
-			selected = &g_menu_options[g_menu_selected];
-		}
-	const bool is_action = menu_option_is_action(selected);
-	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_B)) {
-		menu_toggle();
-		return;
-	}
-
-	if (is_action && (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_A) ||
-						menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_START))) {
-		menu_execute_action(selected->key);
-		return;
-	}
-
-	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_UP)) {
-		if (g_menu_option_count > 0) {
-			size_t next = (g_menu_selected == 0) ? (g_menu_option_count - 1) : (g_menu_selected - 1);
-			next = menu_next_selectable(next, -1);
-			if (next != g_menu_selected) {
-				g_menu_selected = next;
-				menu_mark_dirty();
-			}
-		}
-	}
-	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_DOWN)) {
-		if (g_menu_option_count > 0) {
-			size_t next = (g_menu_selected + 1) % g_menu_option_count;
-			next = menu_next_selectable(next, 1);
-			if (next != g_menu_selected) {
-				g_menu_selected = next;
-				menu_mark_dirty();
-			}
-		}
-	}
-	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_LEFT)) {
-		if (g_menu_option_count > 0) {
-			MenuOption* opt = &g_menu_options[g_menu_selected];
-			if (menu_option_is_action(opt)) {
-				menu_execute_action(opt->key);
-				return;
-			}
-			if (menu_option_is_disabled(opt)) {
-				return;
-			}
-			if (opt->value_count > 0) {
-				size_t next = (opt->current_index == 0) ? (opt->value_count - 1) : (opt->current_index - 1);
-				menu_enable_option(opt, next, true);
-			}
-		}
-	}
-	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_RIGHT)) {
-		if (g_menu_option_count > 0) {
-			MenuOption* opt = &g_menu_options[g_menu_selected];
-			if (menu_option_is_action(opt)) {
-				menu_execute_action(opt->key);
-				return;
-			}
-			if (menu_option_is_disabled(opt)) {
-				return;
-			}
-			if (opt->value_count > 0) {
-				size_t next = (opt->current_index + 1) % opt->value_count;
-				menu_enable_option(opt, next, true);
-			}
-		}
-	}
-}
-
 static void input_finalize(uint16_t merged) {
 	g_pad_state_raw = merged;
 	static uint64_t combo_start_ms = 0;
@@ -4187,13 +3263,7 @@ static void input_finalize(uint16_t merged) {
 	} else {
 		combo_start_ms = 0;
 	}
-	menu_handle_input(g_pad_state_raw, g_menu_prev_pad, combo_down);
-	if (g_menu_active) {
-		g_pad_state_port0 = 0;
-	} else {
-		g_pad_state_port0 = g_pad_state_raw;
-	}
-	g_menu_prev_pad = g_pad_state_raw;
+	g_pad_state_port0 = g_pad_state_raw;
 }
 
 static void poll_input_devices(void) {
@@ -4460,9 +3530,6 @@ static uint64_t frame_time_ns_from_scaled(int64_t hz_scaled) {
 static int16_t input_state_cb(unsigned port, unsigned device, unsigned index, unsigned id) {
 	(void)index;
 	if (port != 0) {
-		return 0;
-	}
-	if (g_menu_active) {
 		return 0;
 	}
 	if (device == RETRO_DEVICE_JOYPAD) {
@@ -4787,57 +3854,30 @@ int main(int argc, char** argv) {
 			nanosleep(&ts, NULL);
 		}
 		now_ns = monotonic_ns();
-		if (!unpaced_timeline && !g_menu_active && now_ns > next_frame_ns) {
+		if (!unpaced_timeline && now_ns > next_frame_ns) {
 			const uint64_t lag_ns = now_ns - next_frame_ns;
 			if (lag_ns > kFrameScheduleResyncNs) {
 				next_frame_ns = now_ns;
 			}
 		}
-		if (g_menu_active) {
-			input_poll_cb();
-				if (g_use_hw_render) {
-#ifdef BMSX_LIBRETRO_HOST_SDL
-					if (g_use_sdl) {
-						sdl_sync_gl_drawable_size();
-					}
-#endif
-					menu_render_hw();
-#ifdef BMSX_LIBRETRO_HOST_SDL
-					if (g_use_sdl) {
-						SDL_GL_SwapWindow(g_sdl_window);
-					} else
-#endif
-					{
-						eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
-					}
-				} else {
-					menu_render_software();
-#ifdef BMSX_LIBRETRO_HOST_SDL
-				if (g_use_sdl) {
-					sdl_present();
+		if (g_has_frame_time_cb) {
+			retro_usec_t frame_time_usec = (retro_usec_t)g_frame_usec;
+			if (!unpaced_timeline && last_core_frame_ns != 0) {
+				const uint64_t elapsed_ns = now_ns - last_core_frame_ns;
+				if (elapsed_ns > 0) {
+					frame_time_usec = (retro_usec_t)(elapsed_ns / 1000ull);
 				}
-#endif
 			}
-		} else {
-			if (g_has_frame_time_cb) {
-				retro_usec_t frame_time_usec = (retro_usec_t)g_frame_usec;
-				if (!unpaced_timeline && last_core_frame_ns != 0) {
-					const uint64_t elapsed_ns = now_ns - last_core_frame_ns;
-					if (elapsed_ns > 0) {
-						frame_time_usec = (retro_usec_t)(elapsed_ns / 1000ull);
-					}
-				}
-				g_frame_time_cb.callback(frame_time_usec);
-			}
-			last_core_frame_ns = now_ns;
-			if (core_cart_program_active()) {
-				input_timeline_tick_frame();
-			}
-			core.retro_run();
-			if (core_cart_program_active() && input_timeline_should_auto_quit(kInputTimelineAutoQuitGraceFrames)) {
-				fprintf(stderr, "[libretro-host] input timeline completed, exiting\n");
-				g_should_quit = 1;
-			}
+			g_frame_time_cb.callback(frame_time_usec);
+		}
+		last_core_frame_ns = now_ns;
+		if (core_cart_program_active()) {
+			input_timeline_tick_frame();
+		}
+		core.retro_run();
+		if (core_cart_program_active() && input_timeline_should_auto_quit(kInputTimelineAutoQuitGraceFrames)) {
+			fprintf(stderr, "[libretro-host] input timeline completed, exiting\n");
+			g_should_quit = 1;
 		}
 		g_drop_video = false;
 		now_ns = monotonic_ns();
@@ -4868,10 +3908,6 @@ int main(int argc, char** argv) {
 #else
 	fb_shutdown(&g_fb);
 #endif
-	free(g_menu_surface);
-	g_menu_surface = NULL;
-	free(g_fps_surface);
-	g_fps_surface = NULL;
 	free(g_msg_surface);
 	g_msg_surface = NULL;
 	if (game_buf) {

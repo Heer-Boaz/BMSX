@@ -11,7 +11,7 @@ import { renderGate, runGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
 import type { GPUBackend } from '../render/backend/interfaces';
 import { clearAllQueues } from '../render/shared/queues';
-import { clearOverlayFrame } from '../render/editor/overlay_queue';
+import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { restoreVdpContextState } from '../render/vdp/context_state';
 import { initializeVdpTextureTransfer } from '../render/vdp/texture_transfer';
 import { registerWebGLVdpBlitterExecutorFactory } from '../render/vdp/blitter/webgl';
@@ -50,6 +50,9 @@ export class ConsoleCore {
 	public deltatime: number = 0;
 
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
+
+	public host_show_fps = false;
+	public host_fps = 50;
 
 	/**
 	 * The ID of the animation frame request.

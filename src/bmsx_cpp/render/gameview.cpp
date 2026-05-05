@@ -22,13 +22,13 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <utility>
 
 namespace bmsx {
 
 namespace {
 
-void submitRectPrimitive(GameView::Renderer& renderer,
-							RectRenderSubmission::Kind kind,
+void submitRectPrimitive(RectRenderSubmission::Kind kind,
 							const RectBounds& area,
 							const Color& color,
 							RenderLayer layer) {
@@ -37,7 +37,7 @@ void submitRectPrimitive(GameView::Renderer& renderer,
 	submission.area = area;
 	submission.color = color;
 	submission.layer = layer;
-	renderer.submit.rect(submission);
+	RenderQueues::submitRectangle(std::move(submission));
 }
 
 } // namespace
@@ -52,39 +52,10 @@ GameView::GameView(GameViewHost* host, i32 viewportWidth, i32 viewportHeight)
 	, offscreenCanvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 	, m_host(host)
 {
-	initializeRenderer();
 }
 
 GameView::~GameView() {
 	dispose();
-}
-
-/**
- * Initialize the renderer submit functions.
- *
- * Renderer submissions are host/editor render work. Machine-visible 2D work is
- * produced by cart/firmware MMIO and VDP packet streams. The native host/editor
- * 2D overlay path has no C++ consumer, so sprite/rect/poly/glyph submits do not
- * enter a render queue.
- */
-void GameView::initializeRenderer() {
-	renderer.submit.sprite = [](const ImgRenderSubmission&) {};
-
-	renderer.submit.rect = [](const RectRenderSubmission&) {};
-
-	renderer.submit.poly = [](const PolyRenderSubmission&) {};
-
-	renderer.submit.glyphs = [](const GlyphRenderSubmission&) {};
-
-	// host/editor particle queue; BMSX machine billboards use VDP packets
-	renderer.submit.particle = [](const ParticleRenderSubmission& s) {
-		RenderQueues::submit_particle(s);
-	};
-
-	// mesh -> MeshPipeline (TODO)
-	renderer.submit.mesh = [](const MeshRenderSubmission& s) {
-		RenderQueues::submitMesh(s);
-	};
 }
 
 void GameView::bindRuntime(Runtime& runtime) {
@@ -284,17 +255,15 @@ void GameView::setSpritesAmbient(bool enabled, f32 factor) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Convenience methods for drawing primitives
-//
-// These use renderer.submit internally.
+// Convenience methods for host/editor drawing primitives.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::fillRectangle(const RectBounds& area, const Color& color, RenderLayer layer) {
-	submitRectPrimitive(renderer, RectRenderSubmission::Kind::Fill, area, color, layer);
+	submitRectPrimitive(RectRenderSubmission::Kind::Fill, area, color, layer);
 }
 
 void GameView::drawRectangle(const RectBounds& area, const Color& color, RenderLayer layer) {
-	submitRectPrimitive(renderer, RectRenderSubmission::Kind::Rect, area, color, layer);
+	submitRectPrimitive(RectRenderSubmission::Kind::Rect, area, color, layer);
 }
 
 void GameView::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color, RenderLayer layer) {
@@ -307,7 +276,7 @@ void GameView::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color, Rend
 	submission.color = color;
 	submission.thickness = 1.0f;
 	submission.layer = layer;
-	renderer.submit.poly(submission);
+	RenderQueues::submitDrawPolygon(std::move(submission));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

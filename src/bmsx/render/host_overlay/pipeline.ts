@@ -5,7 +5,6 @@ import type {
 	PassEncoder,
 	RenderPassDesc,
 	RenderPassStateRegistry,
-	RenderSubmission,
 } from '../backend/interfaces';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../backend/frame_uniforms';
 import { WebGLBackend } from '../backend/webgl/backend';
@@ -19,10 +18,9 @@ import {
 } from '../backend/webgl/instanced_buffers';
 import { consoleCore } from '../../core/console';
 import { bootstrapAxisGizmo_WebGL, renderAxisGizmo_WebGL, shouldRenderAxisGizmo } from '../3d/axis_gizmo_pipeline';
-import { TAB_SPACES } from '../shared/bitmap_font';
 import type {
 	GlyphRenderSubmission,
-	ImgRenderSubmission,
+	HostImageRenderSubmission,
 	PolyRenderSubmission,
 	RectRenderSubmission,
 	color,
@@ -33,9 +31,10 @@ import {
 	hostSystemAtlasImage,
 	hostSystemAtlasPixels,
 } from '../../rompack/host_system_atlas';
-import type { BFont, FontGlyph } from '../shared/bitmap_font';
+import { forEachGlyphRunGlyph } from '../shared/glyph_runs';
 import { consumeOverlayFrame, hasPendingOverlayFrame } from './overlay_queue';
-import { beginHost2DQueue, forEachHost2DQueue, type Host2DKind, type Host2DRef } from '../shared/queues';
+import { beginHost2DQueue, host2DQueueKind, host2DQueueRef, type Host2DKind, type Host2DRef, type Host2DSubmission } from '../shared/queues';
+import { drawHeadlessHost2DLayer, drawHeadlessHostOverlayFrame } from '../headless/passes';
 import vertexShaderCode from '../2d/shaders/2d.vert.glsl';
 import fragmentShaderCode from './shaders/host_overlay.frag.glsl';
 
@@ -49,6 +48,7 @@ type HostOverlayImageSource = {
 };
 
 type BoundTextureState = WebGLTexture | null;
+export type Host2DBoundTextureState = BoundTextureState;
 
 export type HostOverlayRuntime = {
 	gl: WebGL2RenderingContext;
@@ -66,22 +66,6 @@ export type HostOverlayRuntime = {
 	uniforms: WebGLSpriteQuadUniforms;
 };
 
-type GlyphRunCursor = {
-	font: BFont;
-	lines: string[];
-	fullLines: boolean;
-	start: number;
-	end: number;
-	baseX: number;
-	originX: number;
-	originY: number;
-	lineIndex: number;
-	charIndex: number;
-	glyph: FontGlyph;
-	x: number;
-	y: number;
-};
-
 const INSTANCE_FLOATS = 14;
 const INSTANCE_STRIDE_BYTES = INSTANCE_FLOATS * 4;
 const INITIAL_BATCH_CAPACITY = 256;
@@ -91,7 +75,7 @@ const HOST_OVERLAY_TEXTURE_UNIT = 0;
 const HOST_OVERLAY_TEXTPAGE_ID = 0;
 const HOST_OVERLAY_DRAW_PASS: PassEncoder = { fbo: null, desc: { label: 'host_overlay' } as RenderPassDesc };
 const AXIS_GIZMO_LABEL_CAPACITY = 6;
-const EMPTY_HOST_OVERLAY_COMMANDS: RenderSubmission[] = [];
+const EMPTY_HOST_OVERLAY_COMMANDS: Host2DSubmission[] = [];
 const axisLabelImgIds = new Array<string>(AXIS_GIZMO_LABEL_CAPACITY);
 const axisLabelX = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
 const axisLabelY = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
@@ -357,7 +341,7 @@ function drawPolyCommand(backend: WebGLBackend, state: HostOverlayRuntime, comma
 	return nextBoundTextures;
 }
 
-function drawImageCommand(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: ImgRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
+function drawImageCommand(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: HostImageRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
 	if (command.scale === undefined) {
 		throw new Error('[HostOverlay] Image command missing scale.');
 	}
@@ -369,9 +353,6 @@ function drawImageCommand(backend: WebGLBackend, state: HostOverlayRuntime, cach
 	}
 	if (command.pos.z === undefined) {
 		throw new Error('[HostOverlay] Image command missing z.');
-	}
-	if (command.imgid === undefined) {
-		throw new Error('[HostOverlay] Image command missing id.');
 	}
 	return drawHostImage(
 		backend,
@@ -390,60 +371,7 @@ function drawImageCommand(backend: WebGLBackend, state: HostOverlayRuntime, cach
 	);
 }
 
-function createGlyphRunCursor(command: GlyphRenderSubmission, lines: string[]): GlyphRunCursor {
-	const fullLines = Array.isArray(command.glyphs);
-	const font = command.font!;
-	return {
-		font,
-		lines,
-		fullLines,
-		start: fullLines ? 0 : command.glyph_start!,
-		end: fullLines ? 0 : command.glyph_end!,
-		baseX: command.x,
-		originX: command.x,
-		originY: command.y,
-		lineIndex: 0,
-		charIndex: 0,
-		glyph: font.getGlyph(' '),
-		x: 0,
-		y: 0,
-	};
-}
-
-function nextGlyphRunGlyph(cursor: GlyphRunCursor): boolean {
-	while (cursor.lineIndex < cursor.lines.length) {
-		const line = cursor.lines[cursor.lineIndex];
-		const end = cursor.fullLines ? line.length : cursor.end;
-		if (cursor.charIndex === 0) {
-			cursor.charIndex = cursor.fullLines ? 0 : cursor.start;
-		}
-		while (cursor.charIndex < line.length && cursor.charIndex < end) {
-			const char = line.charAt(cursor.charIndex);
-			cursor.charIndex += 1;
-			if (char === '\n') {
-				cursor.originX = cursor.baseX;
-				cursor.originY += cursor.font.lineHeight;
-				continue;
-			}
-			if (char === '\t') {
-				cursor.originX += cursor.font.advance(' ') * TAB_SPACES;
-				continue;
-			}
-			cursor.glyph = cursor.font.getGlyph(char);
-			cursor.x = cursor.originX;
-			cursor.y = cursor.originY;
-			cursor.originX += cursor.glyph.advance;
-			return true;
-		}
-		cursor.lineIndex += 1;
-		cursor.charIndex = 0;
-		cursor.originX = cursor.baseX;
-		cursor.originY += cursor.font.lineHeight;
-	}
-	return false;
-}
-
-function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntime, command: GlyphRenderSubmission, lines: string[], boundTextures: BoundTextureState): BoundTextureState {
+function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntime, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
 	if (command.background_color === undefined) {
 		return boundTextures;
 	}
@@ -451,30 +379,27 @@ function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntim
 	const lineHeight = font.lineHeight;
 	const nextBoundTextures = bindSolidTexture(state, boundTextures);
 	let count = 0;
-	const cursor = createGlyphRunCursor(command, lines);
-	while (nextGlyphRunGlyph(cursor)) {
+	forEachGlyphRunGlyph(command, (glyph, x, y) => {
 		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
-		count += pushFillRect(state, count, cursor.x, cursor.y, cursor.x + cursor.glyph.advance, cursor.y + lineHeight, command.z!, command.background_color);
-	}
+		count += pushFillRect(state, count, x, y, x + glyph.advance, y + lineHeight, command.z!, command.background_color);
+	});
 	if (count !== 0) {
 		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
 	}
 	return nextBoundTextures;
 }
 
-function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, lines: string[], boundTextures: BoundTextureState): BoundTextureState {
+function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
 	const currentBoundTextures = bindHostAtlasTexture(state, boundTextures);
 	let count = 0;
-	const cursor = createGlyphRunCursor(command, lines);
-	while (nextGlyphRunGlyph(cursor)) {
-		const glyph = cursor.glyph;
+	forEachGlyphRunGlyph(command, (glyph, x, y) => {
 		const source = resolveImageSource(cache, glyph.imgid);
 		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
 		writeQuad(
 			state,
 			count,
-			cursor.x,
-			cursor.y,
+			x,
+			y,
 			glyph.width,
 			0,
 			0,
@@ -487,7 +412,7 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 			command.color!,
 		);
 		count += 1;
-	}
+	});
 	if (count !== 0) {
 		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
 	}
@@ -510,9 +435,8 @@ function drawGlyphRunCommand(backend: WebGLBackend, state: HostOverlayRuntime, c
 	if (command.glyph_end === undefined) {
 		throw new Error('[HostOverlay] Glyph command missing glyph_end.');
 	}
-	const lines = Array.isArray(command.glyphs) ? command.glyphs : [command.glyphs];
-	let currentBoundTextures = drawGlyphRunBackgrounds(backend, state, command, lines, boundTextures);
-	currentBoundTextures = drawGlyphRunGlyphs(backend, state, cache, command, lines, currentBoundTextures);
+	let currentBoundTextures = drawGlyphRunBackgrounds(backend, state, command, boundTextures);
+	currentBoundTextures = drawGlyphRunGlyphs(backend, state, cache, command, currentBoundTextures);
 	return currentBoundTextures;
 }
 
@@ -537,46 +461,34 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 }
 
 function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
-	const gl = backend.gl as WebGL2RenderingContext;
-	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-	bindPassState(backend, state, passState);
-	const imageCache = state.imageCache;
-	let boundTextures: BoundTextureState = null;
+	let boundTextures = beginHost2DEntries_WebGL(backend, state, passState);
 	for (let index = 0; index < passState.commands.length; index += 1) {
-		const command = passState.commands[index];
-		switch (command.type) {
-			case 'rect':
-				boundTextures = drawRectCommand(backend, state, command, boundTextures);
-				break;
-			case 'img':
-				boundTextures = drawImageCommand(backend, state, imageCache, command, boundTextures);
-				break;
-			case 'glyphs':
-				if (command.font === undefined) {
-					throw new Error('[HostOverlay] Glyph submission missing font.');
-				}
-				boundTextures = drawGlyphRunCommand(backend, state, imageCache, command, boundTextures);
-				break;
-			case 'poly':
-				boundTextures = drawPolyCommand(backend, state, command, boundTextures);
-				break;
-			case 'mesh':
-				throw new Error('[HostOverlay] Mesh submissions are invalid in host overlay.');
-			case 'particle':
-				throw new Error('[HostOverlay] Particle submissions are invalid in host overlay.');
-		}
+		boundTextures = drawHost2DSubmission_WebGL(backend, state, passState.commands[index], boundTextures);
 	}
-	backend.bindVertexArray(null);
-	backend.setBlendEnabled(false);
-	backend.setDepthMask(true);
+	endHost2DEntries_WebGL(backend);
 }
 
-function drawHost2DCommand(backend: WebGLBackend, state: HostOverlayRuntime, imageCache: Map<string, HostOverlayImageSource>, kind: Host2DKind, command: Host2DRef, boundTextures: BoundTextureState): BoundTextureState {
+export function drawHost2DSubmission_WebGL(backend: WebGLBackend, state: HostOverlayRuntime, command: Host2DSubmission, boundTextures: BoundTextureState): BoundTextureState {
+	const imageCache = state.imageCache;
+	switch (command.type) {
+		case 'rect':
+			return drawRectCommand(backend, state, command, boundTextures);
+		case 'img':
+			return drawImageCommand(backend, state, imageCache, command, boundTextures);
+		case 'glyphs':
+			return drawGlyphRunCommand(backend, state, imageCache, command, boundTextures);
+		case 'poly':
+			return drawPolyCommand(backend, state, command, boundTextures);
+	}
+}
+
+export function drawHost2DCommand_WebGL(backend: WebGLBackend, state: HostOverlayRuntime, kind: Host2DKind, command: Host2DRef, boundTextures: BoundTextureState): BoundTextureState {
+	const imageCache = state.imageCache;
 	switch (kind) {
 		case 'rect':
 			return drawRectCommand(backend, state, command as RectRenderSubmission, boundTextures);
 		case 'img':
-			return drawImageCommand(backend, state, imageCache, command as ImgRenderSubmission, boundTextures);
+			return drawImageCommand(backend, state, imageCache, command as HostImageRenderSubmission, boundTextures);
 		case 'glyphs':
 			return drawGlyphRunCommand(backend, state, imageCache, command as GlyphRenderSubmission, boundTextures);
 		case 'poly':
@@ -584,22 +496,30 @@ function drawHost2DCommand(backend: WebGLBackend, state: HostOverlayRuntime, ima
 	}
 }
 
-export function renderHost2DEntries_WebGL(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState, forEachEntry: (fn: (kind: Host2DKind, command: Host2DRef, index: number) => void) => void): void {
+export function beginHost2DEntries_WebGL(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): BoundTextureState {
 	const gl = backend.gl as WebGL2RenderingContext;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	bindPassState(backend, state, passState);
-	const imageCache = state.imageCache;
-	let boundTextures: BoundTextureState = null;
-	forEachEntry((kind, command, _index) => {
-		boundTextures = drawHost2DCommand(backend, state, imageCache, kind, command, boundTextures);
-	});
+	return null;
+}
+
+export function endHost2DEntries_WebGL(backend: WebGLBackend): void {
 	backend.bindVertexArray(null);
 	backend.setBlendEnabled(false);
 	backend.setDepthMask(true);
 }
 
+export function renderHost2DEntries_WebGL(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): void {
+	let boundTextures = beginHost2DEntries_WebGL(backend, state, passState);
+	const count = beginHost2DQueue();
+	for (let index = 0; index < count; index += 1) {
+		boundTextures = drawHost2DCommand_WebGL(backend, state, host2DQueueKind(index), host2DQueueRef(index), boundTextures);
+	}
+	endHost2DEntries_WebGL(backend);
+}
+
 function renderHost2DQueue(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
-	renderHost2DEntries_WebGL(backend, state, passState, forEachHost2DQueue);
+	renderHost2DEntries_WebGL(backend, state, passState);
 }
 
 function renderAxisGizmoLabels(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
@@ -694,15 +614,16 @@ export function registerHostOverlayPass_Headless(registry: RenderPassLibrary): v
 		id: 'host_overlay',
 		name: 'HeadlessHostOverlay',
 		stateOnly: true,
-		shouldExecute: () => {
+		graph: { writes: ['frame_color'] },
+		shouldExecute: () => hasPendingOverlayFrame() || beginHost2DQueue() !== 0,
+		exec: () => {
 			if (hasPendingOverlayFrame()) {
-				consumeOverlayFrame();
+				const frame = consumeOverlayFrame();
+				drawHeadlessHostOverlayFrame(frame.commands);
 			}
-			return beginHost2DQueue() !== 0;
+			if (beginHost2DQueue() !== 0) {
+				drawHeadlessHost2DLayer();
+			}
 		},
-		prepare: () => {
-			forEachHost2DQueue(() => {});
-		},
-		exec: () => { },
 	});
 }

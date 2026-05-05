@@ -2,14 +2,18 @@ import type { RenderPassLibrary } from '../backend/pass/library';
 import type { HostMenuPipelineState } from '../backend/interfaces';
 import { WebGLBackend } from '../backend/webgl/backend';
 import { consoleCore } from '../../core/console';
-import { beginHostMenuQueue, forEachHostMenuQueue } from './queue';
+import { beginHostMenuQueue, hostMenuQueueKind, hostMenuQueueRef } from './queue';
 import {
+	beginHost2DEntries_WebGL,
 	createHostOverlayRuntime_WebGL,
-	renderHost2DEntries_WebGL,
+	drawHost2DCommand_WebGL,
+	endHost2DEntries_WebGL,
+	type Host2DBoundTextureState,
 	type HostOverlayRuntime,
-} from '../editor/host_overlay_pipeline';
+} from '../host_overlay/pipeline';
+import { drawHeadlessHostMenuLayer } from '../headless/passes';
 import vertexShaderCode from '../2d/shaders/2d.vert.glsl';
-import fragmentShaderCode from '../editor/shaders/host_overlay.frag.glsl';
+import fragmentShaderCode from '../host_overlay/shaders/host_overlay.frag.glsl';
 
 let runtime: HostOverlayRuntime | null = null;
 
@@ -20,7 +24,6 @@ export function registerHostMenuPass_WebGL(registry: RenderPassLibrary): void {
 		vsCode: vertexShaderCode,
 		fsCode: fragmentShaderCode,
 		present: true,
-		graph: { skip: true },
 		bootstrap: (backend) => {
 			runtime = createHostOverlayRuntime_WebGL(backend as WebGLBackend);
 		},
@@ -37,7 +40,12 @@ export function registerHostMenuPass_WebGL(registry: RenderPassLibrary): void {
 			registry.setState('host_menu', state);
 		},
 		exec: (backend: WebGLBackend, _fbo, state: HostMenuPipelineState) => {
-			renderHost2DEntries_WebGL(backend, runtime!, state, forEachHostMenuQueue);
+			let boundTextures: Host2DBoundTextureState = beginHost2DEntries_WebGL(backend, runtime!, state);
+			const count = beginHostMenuQueue();
+			for (let index = 0; index < count; index += 1) {
+				boundTextures = drawHost2DCommand_WebGL(backend, runtime!, hostMenuQueueKind(index), hostMenuQueueRef(index), boundTextures);
+			}
+			endHost2DEntries_WebGL(backend);
 		},
 	});
 }
@@ -58,8 +66,10 @@ export function registerHostMenuPass_Headless(registry: RenderPassLibrary): void
 		id: 'host_menu',
 		name: 'HeadlessHostMenu',
 		stateOnly: true,
-		graph: { skip: true },
-		shouldExecute: () => false,
-		exec: () => { },
+		graph: { writes: ['frame_color'] },
+		shouldExecute: () => beginHostMenuQueue() !== 0,
+		exec: () => {
+			drawHeadlessHostMenuLayer();
+		},
 	});
 }

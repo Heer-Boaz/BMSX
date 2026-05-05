@@ -10,11 +10,25 @@
 
 #include "common/feature_queue.h"
 #include "submissions.h"
-#include <functional>
 
 namespace bmsx {
 
 namespace RenderQueues {
+
+enum class Host2DKind : u8 {
+	Img,
+	Poly,
+	Rect,
+	Glyphs,
+};
+
+struct Host2DEntry {
+	Host2DKind kind = Host2DKind::Rect;
+	const HostImageRenderSubmission* img = nullptr;
+	const PolyRenderSubmission* poly = nullptr;
+	const RectRenderSubmission* rect = nullptr;
+	const GlyphRenderSubmission* glyphs = nullptr;
+};
 
 void prepareCompletedRenderQueues();
 void preparePartialRenderQueues();
@@ -24,15 +38,22 @@ bool hasPendingBackQueueContent();
 void clearBackQueues();
 void clearAllQueues();
 
+void submitImage(HostImageRenderSubmission item);
+void submitRectangle(RectRenderSubmission item);
+void submitDrawPolygon(PolyRenderSubmission item);
+void submitGlyphs(GlyphRenderSubmission item);
+size_t beginHost2DQueue();
+Host2DEntry host2DQueueEntry(size_t index);
+
 void submitMesh(const MeshRenderSubmission& item);
 i32 beginMeshQueue();
-void forEachMeshQueue(const std::function<void(const MeshRenderSubmission&, size_t)>& fn);
+const MeshRenderSubmission& meshQueueEntry(size_t index);
 size_t meshQueueBackSize();
 size_t meshQueueFrontSize();
 
 void submit_particle(const ParticleRenderSubmission& item);
 i32 beginParticleQueue();
-void forEachParticleQueue(const std::function<void(const ParticleRenderSubmission&, size_t)>& fn);
+const ParticleRenderSubmission& particleQueueEntry(size_t index);
 size_t particleQueueBackSize();
 size_t particleQueueFrontSize();
 

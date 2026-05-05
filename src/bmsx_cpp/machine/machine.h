@@ -10,7 +10,6 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/memory.h"
-#include "machine/runtime/resource_usage_detector.h"
 #include "machine/scheduler/device.h"
 
 namespace bmsx {
@@ -67,9 +66,6 @@ public:
 	const InputController& inputController() const { return m_inputController; }
 	AudioController& audioController() { return m_audioController; }
 	const AudioController& audioController() const { return m_audioController; }
-	ResourceUsageDetector& resourceUsageDetector() { return m_resourceUsageDetector; }
-	const ResourceUsageDetector& resourceUsageDetector() const { return m_resourceUsageDetector; }
-
 	void initializeSystemIo();
 	void resetDevices();
 	void refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles);
@@ -93,7 +89,6 @@ private:
 	ImgDecController m_imgDecController;
 	InputController m_inputController;
 	AudioController m_audioController;
-	ResourceUsageDetector m_resourceUsageDetector;
 };
 
 } // namespace bmsx

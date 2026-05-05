@@ -64,7 +64,7 @@ local vdp_load_handler
 local cart_irq_handlers<const> = {}
 local sys_atlas_id<const> = 254
 vdp_stream_cursor = sys_vdp_stream_base
-vdp_stream_limit = sys_vdp_stream_base + (sys_vdp_stream_capacity_words * sys_vdp_arg_stride)
+vdp_stream_limit = sys_vdp_stream_base + (sys_vdp_stream_capacity * sys_vdp_arg_stride)
 mem[sys_vdp_slot_primary_atlas] = sys_vdp_atlas_none
 mem[sys_vdp_slot_secondary_atlas] = sys_vdp_atlas_none
 
@@ -193,10 +193,10 @@ local vdp_try_start_next_job<const> = function()
 	vdp_start_job(job)
 end
 
-local vdp_stream_capacity_bytes<const> = sys_vdp_stream_capacity_words * sys_vdp_arg_stride
-local vdp_stream_claim_words<const> = function(word_count)
+local vdp_stream_capacity_bytes<const> = sys_vdp_stream_capacity * sys_vdp_arg_stride
+local vdp_stream_claim<const> = function(count)
 	local base<const> = vdp_stream_cursor
-	local bytes<const> = word_count * sys_vdp_arg_stride
+	local bytes<const> = count * sys_vdp_arg_stride
 	local next<const> = base + bytes
 	if next > sys_vdp_stream_base + vdp_stream_capacity_bytes then
 		error('vdp_stream overflow (' .. tostring(next - sys_vdp_stream_base) .. ' > ' .. tostring(vdp_stream_capacity_bytes) .. ')')
@@ -302,7 +302,7 @@ system.bool01 = bool01
 system.clear_map = clear_map
 system.scratchbatch = scratchbatch
 system.sorted_scratchbatch = sorted_scratchbatch
-system.vdp_stream_claim_words = vdp_stream_claim_words
+system.vdp_stream_claim = vdp_stream_claim
 system.vdp_stream_finish = vdp_stream.finish
 system.vdp_clear_color = vdp_stream.clear_color
 system.vdp_fill_rect_color = vdp_stream.fill_rect_color

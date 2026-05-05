@@ -17,7 +17,7 @@ import type {
 } from '../platform';
 import type {
 	RectRenderSubmission,
-	ImgRenderSubmission,
+	HostImageRenderSubmission,
 	PolyRenderSubmission,
 	MeshRenderSubmission,
 	ParticleRenderSubmission,
@@ -140,7 +140,7 @@ export class GameView implements RenderContext {
 		submit: {
 			typed: (o: RenderSubmission) => void;
 			particle: (o: ParticleRenderSubmission) => void;
-			sprite: (o: ImgRenderSubmission) => void;
+			sprite: (o: HostImageRenderSubmission) => void;
 			mesh: (o: MeshRenderSubmission) => void;
 			rect: (o: RectRenderSubmission) => void;
 			poly: (o: PolyRenderSubmission) => void;
@@ -341,33 +341,6 @@ export class GameView implements RenderContext {
 		// Backend resources are configured externally via setBackend()
 		this.rebuildGraph();
 		renderGate.endCategory('init'); // End the init scope without a token, assuming the category is unique for init.
-	}
-
-	/**
-	 * Draws the game on the canvas. If `clearCanvas` is set to `true`, the canvas will be cleared before drawing.
-	 * The method sorts the objects in the current space by depth and then iterates over them, calling their `paint` method
-	 * if they are visible and not flagged for disposal.
-	 *
-	 * Rendering should be guarded by a global {@link renderGate}. When the gate is blocked (e.g. while the game state is being
-	 * revived), this method immediately returns so no WebGL state is touched prematurely.
-	 */
-	public drawHostMenuFrame(hostDeltaMs: number): void {
-		if (!renderGate.ready) return;
-		const token = renderGate.begin({ blocking: true, category: 'host-menu', tag: 'host-menu' });
-		const backend = this.backend;
-		const registry = this.pipelineRegistry;
-		if (!registry) {
-			renderGate.end(token);
-			throw new Error('[GameView] Pipeline registry not configured before host menu render.');
-		}
-		try {
-			consoleCore.deltatime = hostDeltaMs;
-			backend.beginFrame();
-			registry.execute('host_menu', null);
-		} finally {
-			backend.endFrame();
-			renderGate.end(token);
-		}
 	}
 
 	public drawgame(): void {

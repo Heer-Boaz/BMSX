@@ -1,6 +1,7 @@
 /// <reference types="@webgpu/types" />
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
-import { GlyphRenderSubmission, ImgRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, PolyRenderSubmission, RectRenderSubmission } from '../shared/submissions';
+import { GlyphRenderSubmission, HostImageRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, PolyRenderSubmission, RectRenderSubmission } from '../shared/submissions';
+import type { Host2DSubmission } from '../shared/queues';
 import { LightingFrameState } from '../lighting/system';
 import type { WebGLBackend } from './webgl/backend';
 import type { WebGPUBackend } from './webgpu/backend';
@@ -214,6 +215,7 @@ export interface RenderPassStateRegistry {
 	['crt']: CRTPipelineState;
 	['frame_shared']: FrameSharedState;
 	['frame_resolve']: never;
+	['headless_present']: never;
 	['axis_gizmo']: never;
 	['sprites']: never;
 	['debug_solid']: never;
@@ -238,12 +240,12 @@ export type Host2DPipelineState = {
 };
 
 export type HostOverlayPipelineState = Host2DPipelineState & {
-	commands: RenderSubmission[];
+	commands: Host2DSubmission[];
 };
 
 export type HostMenuPipelineState = Host2DPipelineState;
 
-export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);
+export type RenderSubmission = Host2DSubmission | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission);
 export type RenderSubmitQueue = Pick<Pick<RenderContext, 'renderer'>['renderer'], 'submit'>;
 
 export interface RenderContext {
@@ -270,7 +272,7 @@ export interface RenderContext {
 		submit: {
 			typed: (o: RenderSubmission) => void;
 			particle: (o: ParticleRenderSubmission) => void;
-			sprite: (o: ImgRenderSubmission) => void;
+			sprite: (o: HostImageRenderSubmission) => void;
 			mesh: (o: MeshRenderSubmission) => void;
 			rect: (o: RectRenderSubmission) => void;
 			poly: (o: PolyRenderSubmission) => void;

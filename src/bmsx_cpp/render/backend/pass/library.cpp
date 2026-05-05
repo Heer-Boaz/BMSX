@@ -11,6 +11,8 @@
 #include "../../post/crt_pipeline_gles2.h"
 #endif
 #include "../../graph/graph.h"
+#include "../../host_overlay/gles2/pipeline.h"
+#include "../../host_overlay/software/pipeline.h"
 #include "core/console.h"
 #include "machine/runtime/runtime.h"
 #include <algorithm>
@@ -218,6 +220,9 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		desc.prepare = noopPreparePass;
 		registerPass(desc);
 	}
+
+	registerHostOverlayPassesSoftware(*this);
+	registerHostMenuPassesSoftware(*this);
 }
 
 void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
@@ -327,6 +332,9 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.prepare = noopPreparePass;
 		registerPass(desc);
 	}
+
+	registerHostOverlayPassesGLES2(*this);
+	registerHostMenuPassesGLES2(*this);
 #endif
 }
 

@@ -2,8 +2,8 @@
 #include "machine/firmware/devtools.h"
 #include "machine/bus/io.h"
 #include "machine/memory/lua_heap_usage.h"
+#include "machine/memory/map.h"
 #include "machine/program/loader.h"
-#include "machine/runtime/resource_usage_detector.h"
 #include "machine/runtime/system_irq.h"
 #include "machine/runtime/timing/config.h"
 #include "render/runtime/state.h"
@@ -67,12 +67,7 @@ Runtime::Runtime(
 			m_machine.cpu().collectHeap();
 		},
 		.getBaseRamUsedBytes = [this]() {
-			const auto& usage = m_machine.resourceUsageDetector();
-			return static_cast<size_t>(
-				IO_REGION_SIZE
-					+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
-					+ usage.m_stringHandles.usedHeapBytes()
-			);
+			return static_cast<size_t>(baseRamUsedBytes());
 		},
 	});
 
@@ -81,6 +76,28 @@ Runtime::Runtime(
 Runtime::~Runtime() {
 	configureLuaHeapUsage({});
 	resetTrackedLuaHeapBytes();
+}
+
+uint32_t Runtime::baseRamUsedBytes() const {
+	return IO_REGION_SIZE
+		+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
+		+ m_machine.stringHandles().usedHeapBytes();
+}
+
+uint32_t Runtime::ramUsedBytes() const {
+	return baseRamUsedBytes() + static_cast<uint32_t>(trackedLuaHeapBytes());
+}
+
+uint32_t Runtime::ramTotalBytes() const {
+	return RAM_SIZE;
+}
+
+uint32_t Runtime::vramUsedBytes() const {
+	return m_machine.vdp().trackedUsedVramBytes();
+}
+
+uint32_t Runtime::vramTotalBytes() const {
+	return m_machine.vdp().trackedTotalVramBytes();
 }
 
 const CartManifest* Runtime::cartManifest() const {

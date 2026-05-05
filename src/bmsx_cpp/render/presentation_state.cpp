@@ -139,6 +139,12 @@ void RenderPresentationState::markPresentation(GameView::PresentationMode mode, 
 	m_presentationCommitFrame = commitFrame;
 }
 
+void RenderPresentationState::requestHeldPresentation() {
+	if (!m_pendingPresentation) {
+		markPresentation(GameView::PresentationMode::Completed, false);
+	}
+}
+
 bool RenderPresentationState::consumePresentation(RenderPresentation& outPresentation) {
 	if (!m_pendingPresentation) {
 		return false;
@@ -168,16 +174,16 @@ void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previ
 	}
 }
 
-void RenderPresentationState::render(ConsoleCore& console, Runtime& runtime) {
+bool RenderPresentationState::render(ConsoleCore& console, Runtime& runtime, bool heldPresent) {
 	if (console.m_state != ConsoleState::Running && console.m_state != ConsoleState::Paused) {
-		return;
+		return false;
 	}
 
-	const bool pausedPresent = console.m_state == ConsoleState::Paused;
+	const bool pausedPresent = console.m_state == ConsoleState::Paused || heldPresent;
 	const bool runtimePresentPending = !pausedPresent && consumePresentation(m_presentationScratch);
 	const bool shouldPresent = pausedPresent || runtimePresentPending;
 	if (!shouldPresent) {
-		return;
+		return false;
 	}
 
 	if (console.m_view) {
@@ -204,6 +210,7 @@ void RenderPresentationState::render(ConsoleCore& console, Runtime& runtime) {
 	}
 
 	flushDebugReport(runtime);
+	return console.m_view != nullptr;
 }
 
 } // namespace bmsx

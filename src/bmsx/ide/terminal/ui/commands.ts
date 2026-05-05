@@ -6,7 +6,6 @@ import { clearWorkspaceSessionState } from '../../workbench/workspace/storage';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from '../../workspace/workspace';
 import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from '../../common/runtime_error_format';
 import type { LuaSourceRecord } from '../../../machine/program/sources';
-import { RAM_SIZE } from '../../../machine/memory/map';
 import { formatByteSize, lenAndHash } from '../../../common/byte_hex_string';
 import { getCodeTabContexts } from '../../workbench/ui/code_tab/contexts';
 
@@ -327,8 +326,8 @@ export class TerminalCommandDispatcher {
 	}
 
 	public getMemoryStatusLines(): string[] {
-		const totalRamBytes = RAM_SIZE;
-		const usedRamBytes = this.runtime.machine.resourceUsageDetector.getRamUsedBytes();
+		const totalRamBytes = this.runtime.ramTotalBytes();
+		const usedRamBytes = this.runtime.ramUsedBytes();
 		const luaHeapBytes = getTrackedLuaHeapBytes();
 		const baseRamBytes = usedRamBytes - luaHeapBytes;
 		const freeRamBytes = totalRamBytes - usedRamBytes;

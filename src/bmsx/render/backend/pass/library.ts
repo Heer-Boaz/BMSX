@@ -1,6 +1,6 @@
 import { consoleCore } from '../../../core/console';
 import { registerFramebuffer2DPass_WebGL } from '../../2d/framebuffer_pipeline';
-import { registerHostOverlayPass_Headless, registerHostOverlayPass_WebGL, registerHostOverlayPass_WebGPU } from '../../editor/host_overlay_pipeline';
+import { registerHostOverlayPass_Headless, registerHostOverlayPass_WebGL, registerHostOverlayPass_WebGPU } from '../../host_overlay/pipeline';
 import { registerHostMenuPass_Headless, registerHostMenuPass_WebGL, registerHostMenuPass_WebGPU } from '../../host_menu/pipeline';
 import * as MeshPipeline from '../../3d/mesh/pipeline';
 import { registerMeshBatchPass_WebGL } from '../../3d/mesh/pipeline';
@@ -16,25 +16,11 @@ import { registerCRT_WebGL } from '../../post/crt/pipeline';
 import { registerDeviceQuantize_WebGL } from '../../post/device_quantize_pipeline';
 import { registerCRT_WebGPU } from '../../post/crt/pipeline.wgpu';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
-import { AnyBackend, CRTPipelineState, DeviceQuantizePipelineState, FogUniforms, FrameSharedState, Framebuffer2DPipelineState, GPUBackend, HostMenuPipelineState, HostOverlayPipelineState, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry, SkyboxPipelineState } from '../interfaces';
+import { AnyBackend, CRTPipelineState, FogUniforms, GPUBackend, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry } from '../interfaces';
 import { checkWebGLError } from '../webgl/helpers';
 import { WebGLBackend } from '../webgl/backend';
-import { registerHeadlessPasses } from '../../headless/passes';
+import { registerHeadlessPasses, registerHeadlessPresentPass } from '../../headless/passes';
 import { resolveCameraState } from '../../shared/camera_state';
-
-// Type-safe pass state map used by this registry (compile-time only)
-type PassStateTypes = {
-	skybox: SkyboxPipelineState;
-	meshbatch: MeshBatchPipelineState;
-	particles: ParticlePipelineState;
-	framebuffer_2d: Framebuffer2DPipelineState;
-	host_overlay: HostOverlayPipelineState;
-	host_menu: HostMenuPipelineState;
-	device_quantize: DeviceQuantizePipelineState;
-	crt: CRTPipelineState;
-	frame_shared: FrameSharedState;
-	frame_resolve: undefined;
-}
 
 interface RegisteredPassRec {
 	id: string;
@@ -148,6 +134,7 @@ export class RenderPassLibrary {
 		registerHeadlessPasses(this);
 		registerHostOverlayPass_Headless(this);
 		registerHostMenuPass_Headless(this);
+		registerHeadlessPresentPass(this);
 	}
 
 	public validatePassResources(passId: string, backend: GPUBackend): void {
@@ -215,12 +202,12 @@ export class RenderPassLibrary {
 		this.passes.push(desc);
 	}
 
-	setState<PState extends keyof PassStateTypes & RenderPassStateId>(id: PState, state: PassStateTypes[PState]): void {
+	setState<PState extends RenderPassStateId>(id: PState, state: RenderPassStateRegistry[PState]): void {
 		const p = this.registered.get(String(id)); if (!p) throw new Error(`Pipeline '${String(id)}' not found`);
 		p.state = state;
 	}
-	getState<PState extends keyof PassStateTypes & RenderPassStateId>(id: PState): PassStateTypes[PState] {
-		return this.registered.get(String(id))?.state as PassStateTypes[PState];
+	getState<PState extends RenderPassStateId>(id: PState): RenderPassStateRegistry[PState] {
+		return this.registered.get(String(id))?.state as RenderPassStateRegistry[PState];
 	}
 
 	execute(id: string, fbo: unknown): void {
@@ -440,8 +427,8 @@ export class RenderPassLibrary {
 								getTex: (slot: RenderGraphSlot) => ctx.getTex(getHandle(slot)),
 							};
 						const builtState = graph.buildState(graphCtx) as RenderPassStateRegistry[RenderPassStateId];
-						const passId = desc.id as keyof PassStateTypes & RenderPassStateId;
-						this.setState(passId, builtState as PassStateTypes[typeof passId]);
+						const passId = desc.id as RenderPassStateId;
+						this.setState(passId, builtState);
 					}
 						if (data.present) {
 							// Execute the pass; PipelineRegistry ensures the program/pipeline is bound.

@@ -8,6 +8,7 @@ import {
 	beginParticleQueue,
 	forEachParticleQueue,
 	meshQueueBackSize,
+	type Host2DSubmission,
 } from '../shared/queues';
 import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/submissions';
 import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
@@ -23,6 +24,9 @@ import type { Mesh } from '../3d/mesh';
 import { readVdpDisplayFrameBufferPixels, vdpDisplayFrameBufferTexture } from '../vdp/framebuffer';
 import { resolveVdpSurfacePixels } from '../vdp/source_pixels';
 import type { HeadlessPresentHost } from './view';
+import { beginHostMenuQueue, hostMenuQueueKind, hostMenuQueueRef } from '../host_menu/queue';
+import { renderHeadlessHost2DEntries, renderHeadlessHost2DEntry, renderHeadlessSubmissions } from './host_2d';
+import { blendPixel, colorByte } from './pixel_ops';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
@@ -30,6 +34,18 @@ export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerMeshPass(registry);
 	registerParticlePass(registry);
 	registerFrameBuffer2DPass(registry);
+}
+
+export function registerHeadlessPresentPass(registry: RenderPassLibrary): void {
+	registry.register({
+		id: 'headless_present',
+		name: 'HeadlessPresent',
+		stateOnly: true,
+		graph: { reads: ['frame_color'] },
+		exec: () => {
+			presentHeadlessFrame();
+		},
+	});
 }
 
 function registerFramePasses(registry: RenderPassLibrary): void {
@@ -58,6 +74,11 @@ let headlessScenePixels = new Uint8Array(0);
 let headlessCompositePixels = new Uint8Array(0);
 let headlessSceneWidth = 0;
 let headlessSceneHeight = 0;
+let headlessFrameWidth = 0;
+let headlessFrameHeight = 0;
+let headlessPresentWidth = 0;
+let headlessPresentHeight = 0;
+let headlessFrameReady = false;
 let headlessSceneActive = false;
 const headlessSkyboxSamples = new Array<VdpResolvedBlitterSample>(SKYBOX_FACE_KEYS.length);
 const headlessSkyboxTextures = new Array<SlotTexturePixels>(SKYBOX_FACE_KEYS.length);
@@ -272,6 +293,7 @@ function beginHeadlessScene(width: number, height: number): void {
 	resizeHeadlessScene(width, height);
 	headlessScenePixels.fill(0);
 	headlessSceneActive = false;
+	headlessFrameReady = false;
 }
 
 function slotSurfaceId(slot: number): number {
@@ -329,37 +351,10 @@ function resolveSkyboxFaceInto(dirX: number, dirY: number, dirZ: number): number
 	return 5;
 }
 
-function colorByte(value: number): number {
-	if (value <= 0) {
-		return 0;
-	}
-	if (value >= 1) {
-		return 255;
-	}
-	return (value * 255 + 0.5) | 0;
-}
-
-function blendPixel(target: Uint8Array, offset: number, r: number, g: number, b: number, a: number): void {
-	if (a <= 0) {
-		return;
-	}
-	if (a >= 255) {
-		target[offset + 0] = r;
-		target[offset + 1] = g;
-		target[offset + 2] = b;
-		target[offset + 3] = 255;
-		return;
-	}
-	const inverse = 255 - a;
-	target[offset + 0] = ((r * a) + (target[offset + 0] * inverse) + 127) / 255;
-	target[offset + 1] = ((g * a) + (target[offset + 1] * inverse) + 127) / 255;
-	target[offset + 2] = ((b * a) + (target[offset + 2] * inverse) + 127) / 255;
-	target[offset + 3] = a + ((target[offset + 3] * inverse) + 127) / 255;
-}
-
 function compositeFrameBufferOverScene(frameBufferPixels: Uint8Array, width: number, height: number): Uint8Array {
 	if (!headlessSceneActive || headlessSceneWidth !== width || headlessSceneHeight !== height) {
-		return frameBufferPixels;
+		headlessCompositePixels.set(frameBufferPixels);
+		return headlessCompositePixels;
 	}
 	headlessCompositePixels.set(headlessScenePixels);
 	for (let offset = 0; offset < frameBufferPixels.byteLength; offset += 4) {
@@ -373,6 +368,54 @@ function compositeFrameBufferOverScene(frameBufferPixels: Uint8Array, width: num
 		);
 	}
 	return headlessCompositePixels;
+}
+
+function writeHeadlessFrame(frameBufferPixels: Uint8Array, frameBufferWidth: number, frameBufferHeight: number, presentWidth: number, presentHeight: number): Uint8Array {
+	const pixels = compositeFrameBufferOverScene(frameBufferPixels, frameBufferWidth, frameBufferHeight);
+	headlessFrameWidth = frameBufferWidth;
+	headlessFrameHeight = frameBufferHeight;
+	headlessPresentWidth = presentWidth;
+	headlessPresentHeight = presentHeight;
+	headlessFrameReady = true;
+	return pixels;
+}
+
+export function drawHeadlessHost2DLayer(): void {
+	if (!headlessFrameReady) {
+		throw new Error('[HeadlessPresent] Host 2D pass ran before framebuffer pass.');
+	}
+	renderHeadlessHost2DEntries(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight);
+}
+
+export function drawHeadlessHostMenuLayer(): void {
+	if (!headlessFrameReady) {
+		throw new Error('[HeadlessPresent] Host menu pass ran before framebuffer pass.');
+	}
+	const count = beginHostMenuQueue();
+	for (let index = 0; index < count; index += 1) {
+		renderHeadlessHost2DEntry(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, hostMenuQueueKind(index), hostMenuQueueRef(index));
+	}
+}
+
+export function drawHeadlessHostOverlayFrame(commands: readonly Host2DSubmission[]): void {
+	if (!headlessFrameReady) {
+		throw new Error('[HeadlessPresent] Host overlay pass ran before framebuffer pass.');
+	}
+	renderHeadlessSubmissions(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, commands);
+}
+
+function presentHeadlessFrame(): void {
+	if (!headlessFrameReady) {
+		throw new Error('[HeadlessPresent] Present pass ran before framebuffer pass.');
+	}
+	const host = consoleCore.view.host as unknown as HeadlessPresentHost;
+	host.presentFrameBuffer({
+		pixels: headlessCompositePixels,
+		srcWidth: headlessFrameWidth,
+		srcHeight: headlessFrameHeight,
+		dstWidth: headlessPresentWidth,
+		dstHeight: headlessPresentHeight,
+	});
 }
 
 function rasterizeSkyboxBackground(width: number, height: number): void {
@@ -546,6 +589,7 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 		id: 'framebuffer_2d',
 		name: 'HeadlessFramebuffer2D',
 		stateOnly: true,
+		graph: { writes: ['frame_color'] },
 		prepare: () => {
 			registry.setState('framebuffer_2d', {
 				width: consoleCore.view.canvasSize.x,
@@ -568,15 +612,7 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			if (pixels.byteLength !== expectedByteLength) {
 				throw new Error(`[HeadlessFramebuffer2D] Framebuffer byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);
 			}
-			const presentedPixels = compositeFrameBufferOverScene(pixels, frameBufferWidth, frameBufferHeight);
-			const host = consoleCore.view.host as unknown as HeadlessPresentHost;
-			host.presentFrameBuffer({
-				pixels: presentedPixels,
-				srcWidth: frameBufferWidth,
-				srcHeight: frameBufferHeight,
-				dstWidth: state.width,
-				dstHeight: state.height,
-			});
+			const presentedPixels = writeHeadlessFrame(pixels, frameBufferWidth, frameBufferHeight, state.width, state.height);
 			let active = 0;
 			for (let index = 3; index < presentedPixels.length; index += 4) {
 				if (presentedPixels[index] !== 0) {

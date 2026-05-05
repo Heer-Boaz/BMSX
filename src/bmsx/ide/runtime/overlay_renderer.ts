@@ -1,23 +1,23 @@
 import type {
 	GlyphRenderSubmission,
-	ImgRenderSubmission,
+	HostImageRenderSubmission,
 	MeshRenderSubmission,
 	ParticleRenderSubmission,
 	PolyRenderSubmission,
 	RectRenderSubmission,
 	RenderLayer
 } from '../../render/shared/submissions';
+import type { Host2DSubmission } from '../../render/shared/queues';
 import { consoleCore } from '../../core/console';
-import { publishOverlayFrame, type EditorOverlayFrame } from '../../render/editor/overlay_queue';
+import { publishOverlayFrame, type HostOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import type { GameView } from '../../render/gameview';
 import type { Viewport } from '../../rompack/format';
-import { RenderSubmission } from '../../render/backend/interfaces';
 
-export type RenderCommand = RenderSubmission;
-type RectSubmission = Extract<RenderSubmission, { type: 'rect' }>;
-type ImgSubmission = Extract<RenderSubmission, { type: 'img' }>;
-type GlyphSubmission = Extract<RenderSubmission, { type: 'glyphs' }>;
-type PolySubmission = Extract<RenderSubmission, { type: 'poly' }>;
+export type RenderCommand = Host2DSubmission;
+type RectSubmission = Extract<Host2DSubmission, { type: 'rect' }>;
+type ImgSubmission = Extract<Host2DSubmission, { type: 'img' }>;
+type GlyphSubmission = Extract<Host2DSubmission, { type: 'glyphs' }>;
+type PolySubmission = Extract<Host2DSubmission, { type: 'poly' }>;
 
 export class OverlayRenderer {
 	private defaultLayer: RenderLayer = 'world';
@@ -104,7 +104,7 @@ export class OverlayRenderer {
 		this.submit(submission);
 	}
 
-	public sprite(command: ImgRenderSubmission): void {
+	public sprite(command: HostImageRenderSubmission): void {
 		if (command.pos.z === undefined) {
 			command.pos.z = OverlayRenderer.SPRITE_Z;
 		}
@@ -138,18 +138,20 @@ export class OverlayRenderer {
 	}
 
 	public mesh(command: MeshRenderSubmission): void {
-		const submission = command as RenderSubmission;
-		submission.type = 'mesh';
-		this.submit(submission);
+		if (this.capturingFrame) {
+			throw new Error('[OverlayRenderer] mesh submissions are not Host2D overlay commands.');
+		}
+		consoleCore.view.renderer.submit.mesh(command);
 	}
 
 	public particle(command: ParticleRenderSubmission): void {
-		const submission = command as RenderSubmission;
-		submission.type = 'particle';
-		this.submit(submission);
+		if (this.capturingFrame) {
+			throw new Error('[OverlayRenderer] particle submissions are not Host2D overlay commands.');
+		}
+		consoleCore.view.renderer.submit.particle(command);
 	}
 
-	private submit(submission: RenderSubmission): void {
+	private submit(submission: Host2DSubmission): void {
 		if (!this.capturingFrame) {
 			consoleCore.view.renderer.submit.typed(submission);
 			return;
@@ -166,7 +168,7 @@ export class OverlayRenderer {
 		const frameCommands = this.commands;
 		this.commands = this.commandBuffer;
 		this.commandBuffer = frameCommands;
-		const frame: EditorOverlayFrame = {
+		const frame: HostOverlayFrame = {
 			width: this.frameRenderWidth,
 			height: this.frameRenderHeight,
 			logicalWidth: this.frameLogicalWidth,

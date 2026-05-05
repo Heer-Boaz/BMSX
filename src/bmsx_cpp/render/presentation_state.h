@@ -23,8 +23,9 @@ public:
 	void recordHostFrame();
 	void clearPresentation();
 	void reset();
+	void requestHeldPresentation();
 	void syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence);
-	void render(ConsoleCore& console, Runtime& runtime);
+	bool render(ConsoleCore& console, Runtime& runtime, bool heldPresent = false);
 
 private:
 	void recordTickCompletion(bool visualCommitted, bool vdpFrameHeld);

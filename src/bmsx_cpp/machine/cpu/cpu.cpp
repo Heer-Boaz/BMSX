@@ -89,16 +89,7 @@ static constexpr NativeFnCost kNativeCostTier4 { 4, 0, 0 };
 static constexpr NativeFnCost kDefaultNativeCost = kNativeCostTier1;
 
 static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
-	if (name == "sys_cpu_cycles_used"
-		|| name == "sys_cpu_cycles_granted"
-		|| name == "sys_cpu_active_cycles_used"
-		|| name == "sys_cpu_active_cycles_granted"
-		|| name == "sys_ram_used"
-		|| name == "sys_vram_used"
-		|| name == "sys_vdp_work_units_per_sec"
-		|| name == "sys_vdp_work_units_last"
-		|| name == "sys_vdp_frame_held"
-		|| name == "clock_now"
+	if (name == "clock_now"
 		|| name == "devtools.get_lua_entry_path") {
 		return kNativeCostTier0;
 	}

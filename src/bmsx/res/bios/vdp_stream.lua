@@ -43,13 +43,13 @@ end
 
 function vdp_stream.finish()
 	if vdp_stream_cursor ~= sys_vdp_stream_base then
-		mem[vdp_stream_claim_words(1)] = vdp_pkt_end
+		mem[vdp_stream_claim(1)] = vdp_pkt_end
 	end
 end
 
 function vdp_stream.clear_color(color)
 	memwrite(
-		vdp_stream_claim_words(3),
+		vdp_stream_claim(3),
 		vdp_pkt_reg1 | vdp_reg_bg_color,
 		color,
 		vdp_pkt_cmd | vdp_cmd_clear
@@ -58,7 +58,7 @@ end
 
 function vdp_stream.fill_rect_color(x0, y0, x1, y1, z, layer, color)
 	memwrite(
-		vdp_stream_claim_words(11),
+		vdp_stream_claim(11),
 		vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0,
 		q16(x0),
 		q16(y0),
@@ -75,7 +75,7 @@ end
 
 function vdp_stream.draw_line_color(x0, y0, x1, y1, z, layer, color, thickness)
 	memwrite(
-		vdp_stream_claim_words(12),
+		vdp_stream_claim(12),
 		vdp_pkt_regn | (5 << 16) | vdp_reg_geom_x0,
 		q16(x0),
 		q16(y0),
@@ -93,7 +93,7 @@ end
 
 function vdp_stream.blit_source_color(slot, u, v, w, h, x, y, z, layer, scale_x, scale_y, flip_flags, color, parallax_weight)
 	memwrite(
-		vdp_stream_claim_words(17),
+		vdp_stream_claim(17),
 		vdp_pkt_regn | (3 << 16) | vdp_reg_src_slot,
 		slot,
 		pack_low_high(u, v),

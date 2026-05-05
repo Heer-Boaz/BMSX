@@ -1,16 +1,20 @@
 import { FeatureQueue } from '../../common/feature_queue';
 import type {
 	GlyphRenderSubmission,
-	ImgRenderSubmission,
+	HostImageRenderSubmission,
 	MeshRenderSubmission,
 	ParticleRenderSubmission,
 	PolyRenderSubmission,
 	RectRenderSubmission,
 } from './submissions';
 import { shallowcopy } from '../../common/shallowcopy';
-
 export type Host2DKind = 'img' | 'poly' | 'rect' | 'glyphs';
-export type Host2DRef = ImgRenderSubmission | PolyRenderSubmission | RectRenderSubmission | GlyphRenderSubmission;
+export type Host2DRef = HostImageRenderSubmission | PolyRenderSubmission | RectRenderSubmission | GlyphRenderSubmission;
+export type Host2DSubmission =
+	| ({ type: 'img' } & HostImageRenderSubmission)
+	| ({ type: 'poly' } & PolyRenderSubmission)
+	| ({ type: 'rect' } & RectRenderSubmission)
+	| ({ type: 'glyphs' } & GlyphRenderSubmission);
 
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
@@ -18,18 +22,50 @@ const host2dKindQueue = new FeatureQueue<Host2DKind>(512);
 const host2dRefQueue = new FeatureQueue<Host2DRef>(512);
 let activeQueueSource: 'front' | 'back' = 'front';
 
+type RenderQueueLifecycle = {
+	hasFront(): boolean;
+	hasBack(): boolean;
+	swap(): void;
+	clearBack(): void;
+	clearAll(): void;
+};
+
+const renderQueueLifecycles: readonly RenderQueueLifecycle[] = [
+	{
+		hasFront: () => meshQueue.sizeFront() > 0,
+		hasBack: () => meshQueue.sizeBack() > 0,
+		swap: () => { meshQueue.swap(); },
+		clearBack: () => { meshQueue.clearBack(); },
+		clearAll: () => { meshQueue.clearAll(); },
+	},
+	{
+		hasFront: () => particleQueue.sizeFront() > 0,
+		hasBack: () => particleQueue.sizeBack() > 0,
+		swap: () => { particleQueue.swap(); },
+		clearBack: () => { particleQueue.clearBack(); },
+		clearAll: () => { particleQueue.clearAll(); },
+	},
+	{
+		hasFront: () => host2dRefQueue.sizeFront() > 0,
+		hasBack: () => host2dRefQueue.sizeBack() > 0,
+		swap: () => { host2dKindQueue.swap(); host2dRefQueue.swap(); },
+		clearBack: () => { host2dKindQueue.clearBack(); host2dRefQueue.clearBack(); },
+		clearAll: () => { host2dKindQueue.clearAll(); host2dRefQueue.clearAll(); },
+	},
+];
+
 export function prepareCompletedRenderQueues(): void {
-	meshQueue.swap();
-	particleQueue.swap();
-	host2dKindQueue.swap();
-	host2dRefQueue.swap();
+	for (let index = 0; index < renderQueueLifecycles.length; index += 1) {
+		renderQueueLifecycles[index].swap();
+	}
 	prepareHeldRenderQueues();
 }
 
 function hasCommittedFrontQueueContent(): boolean {
-	return meshQueue.sizeFront() > 0
-		|| particleQueue.sizeFront() > 0
-		|| host2dRefQueue.sizeFront() > 0;
+	for (let index = 0; index < renderQueueLifecycles.length; index += 1) {
+		if (renderQueueLifecycles[index].hasFront()) return true;
+	}
+	return false;
 }
 
 export function preparePartialRenderQueues(): void {
@@ -47,28 +83,27 @@ export function prepareHeldRenderQueues(): void {
 }
 
 export function hasPendingBackQueueContent(): boolean {
-	return meshQueue.sizeBack() > 0
-		|| particleQueue.sizeBack() > 0
-		|| host2dRefQueue.sizeBack() > 0;
+	for (let index = 0; index < renderQueueLifecycles.length; index += 1) {
+		if (renderQueueLifecycles[index].hasBack()) return true;
+	}
+	return false;
 }
 
 export function clearBackQueues(): void {
-	meshQueue.clearBack();
-	particleQueue.clearBack();
-	host2dKindQueue.clearBack();
-	host2dRefQueue.clearBack();
+	for (let index = 0; index < renderQueueLifecycles.length; index += 1) {
+		renderQueueLifecycles[index].clearBack();
+	}
 	prepareHeldRenderQueues();
 }
 
 export function clearAllQueues(): void {
-	meshQueue.clearAll();
-	particleQueue.clearAll();
-	host2dKindQueue.clearAll();
-	host2dRefQueue.clearAll();
+	for (let index = 0; index < renderQueueLifecycles.length; index += 1) {
+		renderQueueLifecycles[index].clearAll();
+	}
 	prepareHeldRenderQueues();
 }
 
-export function submitSprite(item: ImgRenderSubmission): void {
+export function submitSprite(item: HostImageRenderSubmission): void {
 	host2dKindQueue.submit('img');
 	host2dRefQueue.submit(item);
 }
@@ -92,12 +127,12 @@ export function beginHost2DQueue(): number {
 	return activeQueueSource === 'back' ? host2dRefQueue.sizeBack() : host2dRefQueue.sizeFront();
 }
 
-export function forEachHost2DQueue(fn: (kind: Host2DKind, item: Host2DRef, index: number) => void): void {
-	if (activeQueueSource === 'back') {
-		host2dRefQueue.forEachBack((item, index) => fn(host2dKindQueue.getBack(index), item, index));
-		return;
-	}
-	host2dRefQueue.forEachFront((item, index) => fn(host2dKindQueue.getFront(index), item, index));
+export function host2DQueueKind(index: number): Host2DKind {
+	return activeQueueSource === 'back' ? host2dKindQueue.getBack(index) : host2dKindQueue.getFront(index);
+}
+
+export function host2DQueueRef(index: number): Host2DRef {
+	return activeQueueSource === 'back' ? host2dRefQueue.getBack(index) : host2dRefQueue.getFront(index);
 }
 
 export function submitMesh(item: MeshRenderSubmission): void {

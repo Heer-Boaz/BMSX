@@ -1230,7 +1230,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd', IO_VDP_CMD);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_arg_count', IO_VDP_CMD_ARG_COUNT);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_stream_base', VDP_STREAM_BUFFER_BASE);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_stream_capacity_words', VDP_STREAM_CAPACITY_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_stream_capacity', VDP_STREAM_CAPACITY_WORDS);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo', IO_VDP_FIFO);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl', IO_VDP_FIFO_CTRL);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl_seal', VDP_FIFO_CTRL_SEAL);
@@ -1394,34 +1394,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_slot_size', VRAM_SECONDARY_SLOT_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_size', VRAM_FRAMEBUFFER_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.machine.resourceUsageDetector.getVramTotalBytes());
-	luaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_used', createNativeFunction('sys_cpu_cycles_used', (_args, out) => {
-		out.push(runtime.frameScheduler.lastTickCpuUsedCycles);
-	}));
-	luaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_granted', createNativeFunction('sys_cpu_cycles_granted', (_args, out) => {
-		out.push(runtime.frameScheduler.lastTickCpuBudgetGranted);
-	}));
-	luaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_used', createNativeFunction('sys_cpu_active_cycles_used', (_args, out) => {
-		out.push(runtime.frameScheduler.lastTickCpuUsedCycles);
-	}));
-	luaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_granted', createNativeFunction('sys_cpu_active_cycles_granted', (_args, out) => {
-		out.push(runtime.frameScheduler.lastTickCpuBudgetGranted);
-	}));
-	luaPipeline.registerGlobal(runtime, 'sys_ram_used', createNativeFunction('sys_ram_used', (_args, out) => {
-		out.push(runtime.machine.resourceUsageDetector.getRamUsedBytes());
-	}));
-	luaPipeline.registerGlobal(runtime, 'sys_vram_used', createNativeFunction('sys_vram_used', (_args, out) => {
-		out.push(runtime.machine.resourceUsageDetector.getVramUsedBytes());
-	}));
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_per_sec', createNativeFunction('sys_vdp_work_units_per_sec', (_args, out) => {
-		out.push(runtime.timing.vdpWorkUnitsPerSec);
-	}));
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_last', createNativeFunction('sys_vdp_work_units_last', (_args, out) => {
-		out.push(runtime.frameScheduler.lastTickVdpFrameCost);
-	}));
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_frame_held', createNativeFunction('sys_vdp_frame_held', (_args, out) => {
-		out.push(runtime.frameScheduler.lastTickVdpFrameHeld ? 1 : 0);
-	}));
+	luaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.vramTotalBytes());
 	luaPipeline.registerGlobal(runtime, 'irq_dma_done', IRQ_DMA_DONE);
 	luaPipeline.registerGlobal(runtime, 'irq_dma_error', IRQ_DMA_ERROR);
 	luaPipeline.registerGlobal(runtime, 'irq_geo_done', IRQ_GEO_DONE);

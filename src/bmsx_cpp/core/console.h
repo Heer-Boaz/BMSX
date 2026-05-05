@@ -89,8 +89,7 @@ public:
 		Runtime& runtime,
 		MicrotaskQueue& microtasks,
 		f64 deltaTime,
-		bool platformPaused,
-		bool skipRender
+		bool platformPaused
 	);
 
 	// State accessors
@@ -117,6 +116,7 @@ public:
 	f64 deltaTime() const { return m_delta_time; }
 	u64 frameCount() const { return m_frame_count; }
 	f64 fps() const { return m_fps; }
+	bool hostShowFps = false;
 	const TickTiming& lastTickTiming() const { return m_last_tick_timing; }
 	const RenderTiming& lastRenderTiming() const { return m_last_render_timing; }
 

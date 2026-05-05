@@ -19,8 +19,7 @@ Machine::Machine(SoundMaster& soundMaster, MicrotaskQueue& microtasks, VdpFrameB
 	, m_geometryController(m_memory, m_irqController, m_deviceScheduler)
 	, m_imgDecController(m_memory, m_dmaController, m_vdp, m_irqController, m_deviceScheduler, microtasks)
 	, m_inputController(m_memory, Input::instance(), m_cpu.stringPool())
-	, m_audioController(m_memory, soundMaster, m_irqController)
-	, m_resourceUsageDetector(m_stringHandles, m_vdp) {
+	, m_audioController(m_memory, soundMaster, m_irqController) {
 	m_vdp.attachImgDecController(m_imgDecController);
 }
 

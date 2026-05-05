@@ -287,7 +287,9 @@ void renderSoftwareParticles(SoftwareBackend& backend, const GameView& view, Run
 		return;
 	}
 	VDP::VdpHostOutput output = runtime.machine().vdp().readHostOutput();
-	RenderQueues::forEachParticleQueue([&backend, &output, &state](const ParticleRenderSubmission& submission, size_t) {
+	const i32 particleCount = RenderQueues::beginParticleQueue();
+	for (i32 particleIndex = 0; particleIndex < particleCount; particleIndex += 1) {
+		const ParticleRenderSubmission& submission = RenderQueues::particleQueueEntry(static_cast<size_t>(particleIndex));
 		drawSoftwareBillboardSample(backend,
 			output,
 			state,
@@ -299,7 +301,7 @@ void renderSoftwareParticles(SoftwareBackend& backend, const GameView& view, Run
 			submission.position,
 			submission.size,
 			submission.color);
-	});
+	}
 	for (size_t index = 0; index < view.vdpBillboardCount; ++index) {
 		const GameView::VdpBillboardRenderEntry& submission = view.vdpBillboards[index];
 		drawSoftwareBillboardSample(backend,

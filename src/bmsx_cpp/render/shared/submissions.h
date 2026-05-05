@@ -91,6 +91,15 @@ struct ImgRenderSubmission {
 	std::optional<f32> parallax_weight;
 };
 
+struct HostImageRenderSubmission {
+	std::string imgid;
+	Vec3 pos{0.0f, 0.0f, 0.0f};
+	Vec2 scale{1.0f, 1.0f};
+	FlipOptions flip;
+	Color colorize{1.0f, 1.0f, 1.0f, 1.0f};
+	RenderLayer layer = RenderLayer::IDE;
+};
+
 // Polygon render (outline)
 struct PolyRenderSubmission {
 	std::vector<f32> points;
@@ -159,7 +168,7 @@ enum class RenderSubmissionType {
 
 struct RenderSubmission {
 	RenderSubmissionType type = RenderSubmissionType::Img;
-	ImgRenderSubmission img;
+	HostImageRenderSubmission img;
 	MeshRenderSubmission mesh;
 	ParticleRenderSubmission particle;
 	PolyRenderSubmission poly;

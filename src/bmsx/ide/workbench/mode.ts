@@ -9,7 +9,7 @@ import {
 	type LuaDebuggerPauseSignal,
 	type StackTraceFrame,
 } from '../../lua/value';
-import { publishOverlayFrame } from '../../render/editor/overlay_queue';
+import { publishOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import * as constants from '../common/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
 import { editorDebuggerState } from './contrib/debugger/state';

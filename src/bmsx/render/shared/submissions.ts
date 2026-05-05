@@ -42,24 +42,17 @@ type ImageRenderSubmissionBase = {
 	parallax_weight?: number;
 };
 
-export type ImgRenderSubmission = ImageRenderSubmissionBase & (
-	| {
-		imgid: string;
-		slot?: never;
-		u?: never;
-		v?: never;
-		w?: never;
-		h?: never;
-	}
-	| {
-		imgid?: never;
-		slot: number;
-		u: number;
-		v: number;
-		w: number;
-		h: number;
-	}
-);
+export type ImgRenderSubmission = ImageRenderSubmissionBase & {
+	slot: number;
+	u: number;
+	v: number;
+	w: number;
+	h: number;
+};
+
+export type HostImageRenderSubmission = ImageRenderSubmissionBase & {
+	imgid: string;
+};
 
 export type PolyRenderSubmission = {
 	points: Polygon;

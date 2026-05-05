@@ -41,7 +41,6 @@ struct ProgramImage;
 struct MachineManifest;
 struct CartManifest;
 class RuntimeRomPackage;
-class ResourceUsageDetector;
 class Clock;
 class GameView;
 class MicrotaskQueue;
@@ -148,6 +147,11 @@ public:
 
 	f64 frameDeltaMs() const { return frameLoop.frameDeltaMs; }
 	Clock& clock() const { return m_clock; }
+	uint32_t baseRamUsedBytes() const;
+	uint32_t ramUsedBytes() const;
+	uint32_t ramTotalBytes() const;
+	uint32_t vramUsedBytes() const;
+	uint32_t vramTotalBytes() const;
 
 	GameView& view() { return m_view; }
 	const GameView& view() const { return m_view; }
@@ -196,14 +200,20 @@ public:
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
 	i64 lastTickSequence() const { return frameScheduler.lastTickSequence; }
 	int lastTickBudgetRemaining() const { return frameScheduler.lastTickBudgetRemaining; }
-	int lastTickBudgetGranted() const { return frameScheduler.lastTickSequence == 0 ? timing.cycleBudgetPerFrame : frameScheduler.lastTickBudgetGranted; }
-	int cpuUsedCyclesLastTick() const { return frameScheduler.lastTickSequence == 0 ? 0 : frameScheduler.lastTickCpuUsedCycles; }
-	int activeCpuCyclesGrantedLastTick() const { return lastTickBudgetGranted(); }
-	int activeCpuUsedCyclesLastTick() const { return cpuUsedCyclesLastTick(); }
+	int cpuUsageCyclesUsed() const {
+		return frameLoop.frameActive
+			? frameLoop.frameState.activeCpuUsedCycles
+			: frameScheduler.lastTickCpuUsedCycles;
+	}
+	int cpuUsageCyclesGranted() const {
+		return frameLoop.frameActive
+			? frameLoop.frameState.cycleBudgetGranted
+			: (frameScheduler.lastTickSequence == 0 ? timing.cycleBudgetPerFrame : frameScheduler.lastTickCpuBudgetGranted);
+	}
 	int vdpWorkUnitsPerSec() const { return timing.vdpWorkUnitsPerSec; }
 	bool lastTickVisualFrameCommitted() const { return frameScheduler.lastTickVisualFrameCommitted; }
-	int lastTickVdpFrameCost() const { return frameScheduler.lastTickVdpFrameCost; }
-	bool lastTickVdpFrameHeld() const { return frameScheduler.lastTickVdpFrameHeld; }
+	int vdpUsageWorkUnitsLast() const { return m_machine.vdp().lastFrameCost(); }
+	bool vdpUsageFrameHeld() const { return m_machine.vdp().lastFrameHeld(); }
 	bool isDrawPending() const { return m_runtimeFailed || m_pendingCall == PendingCall::Entry; }
 	void refreshMemoryMap();
 	RenderPresentationState screen;

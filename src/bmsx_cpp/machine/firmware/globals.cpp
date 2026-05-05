@@ -1249,7 +1249,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_cmd", valueNumber(static_cast<double>(IO_VDP_CMD)));
 	setGlobal("sys_vdp_cmd_arg_count", valueNumber(static_cast<double>(IO_VDP_CMD_ARG_COUNT)));
 	setGlobal("sys_vdp_stream_base", valueNumber(static_cast<double>(VDP_STREAM_BUFFER_BASE)));
-	setGlobal("sys_vdp_stream_capacity_words", valueNumber(static_cast<double>(VDP_STREAM_CAPACITY_WORDS)));
+	setGlobal("sys_vdp_stream_capacity", valueNumber(static_cast<double>(VDP_STREAM_CAPACITY_WORDS)));
 	setGlobal("sys_vdp_fifo", valueNumber(static_cast<double>(IO_VDP_FIFO)));
 	setGlobal("sys_vdp_fifo_ctrl", valueNumber(static_cast<double>(IO_VDP_FIFO_CTRL)));
 	setGlobal("sys_vdp_fifo_ctrl_seal", valueNumber(static_cast<double>(VDP_FIFO_CTRL_SEAL)));
@@ -1488,48 +1488,6 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("clock_now", [runtimeClock](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		out.push_back(valueNumber(runtimeClock->now()));
-	});
-	registerNativeFunction("sys_cpu_cycles_used", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		out.push_back(valueNumber(static_cast<double>(cpuUsedCyclesLastTick())));
-	});
-	registerNativeFunction("sys_cpu_cycles_granted", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		out.push_back(valueNumber(static_cast<double>(lastTickBudgetGranted())));
-	});
-	registerNativeFunction("sys_cpu_active_cycles_used", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		out.push_back(valueNumber(static_cast<double>(activeCpuUsedCyclesLastTick())));
-	});
-	registerNativeFunction("sys_cpu_active_cycles_granted", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		out.push_back(valueNumber(static_cast<double>(activeCpuCyclesGrantedLastTick())));
-	});
-	registerNativeFunction("sys_ram_used", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		const auto& usage = m_machine.resourceUsageDetector();
-		out.push_back(valueNumber(static_cast<double>(
-			IO_REGION_SIZE
-				+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
-				+ usage.m_stringHandles.usedHeapBytes()
-				+ static_cast<uint32_t>(trackedLuaHeapBytes())
-		)));
-	});
-	registerNativeFunction("sys_vram_used", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		out.push_back(valueNumber(static_cast<double>(m_machine.resourceUsageDetector().m_vdp.trackedUsedVramBytes())));
-		});
-	registerNativeFunction("sys_vdp_work_units_per_sec", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		out.push_back(valueNumber(static_cast<double>(vdpWorkUnitsPerSec())));
-	});
-	registerNativeFunction("sys_vdp_work_units_last", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		out.push_back(valueNumber(static_cast<double>(frameScheduler.lastTickVdpFrameCost)));
-	});
-	registerNativeFunction("sys_vdp_frame_held", [this](NativeArgsView args, NativeResults& out) {
-		(void)args;
-		out.push_back(valueNumber(frameScheduler.lastTickVdpFrameHeld ? 1.0 : 0.0));
 	});
 	registerNativeFunction("type", [str](NativeArgsView args, NativeResults& out) {
 		const Value& v = args.empty() ? valueNil() : args.at(0);

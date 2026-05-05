@@ -176,11 +176,10 @@ public:
 								bool applyAperture);
 	void setDitherType(i32 type);
 	void setResourceUsageGizmo(bool enabled);
-	void setFrameSkipOptions(bool enabled);
-	void setFrameSkipNext(bool skip);
 	void setPlatformPaused(bool paused);
 	bool platformPaused() const { return m_platform_paused; }
 	void notifyFocusChange(bool focused);
+	void requestShutdown() override;
 
 	// Configuration
 	void setAVInfo(const retro_system_av_info& info);
@@ -268,8 +267,6 @@ private:
 	bool m_crt_postprocessing_enabled = false;
 	i32 m_postprocess_scale = 1;
 	i32 m_dither_type = 0;
-	bool m_frameskip_enabled = false;
-	bool m_frameskip_next = false;
 	bool m_render_surfaces_need_refresh = true;
 
 	// Controller configuration

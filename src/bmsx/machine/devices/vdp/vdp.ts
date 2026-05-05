@@ -1483,6 +1483,7 @@ export class VDP implements VramWriteSink {
 			if (this.hostOutputToken === 0) {
 				this.hostOutputToken = 1;
 			}
+			this.refreshSubmitBusyStatus();
 			this.scheduleNextService(this.scheduler.currentNowCycles());
 			return;
 		}
@@ -1975,6 +1976,7 @@ export class VDP implements VramWriteSink {
 		this.activeFrame.ready = true;
 		this.execution.queue.reset();
 		this.hostOutputToken = 0;
+		this.refreshSubmitBusyStatus();
 	}
 
 	public clearSurfaceUploadDirty(surfaceId: number): void {

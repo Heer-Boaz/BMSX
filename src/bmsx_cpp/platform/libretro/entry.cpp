@@ -46,6 +46,7 @@ extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down);
 extern "C" RETRO_API void bmsx_keyboard_reset(void);
 extern "C" RETRO_API void bmsx_focus_changed(bool focused);
 extern "C" RETRO_API bool bmsx_is_cart_program_active(void);
+extern "C" int64_t bmsx_get_ufps(void);
 
 static void frame_time_cb(retro_usec_t usec) {
 	if (usec == 0) {
@@ -108,6 +109,12 @@ static void apply_manifest_av_info(retro_system_av_info& av, const bmsx::Machine
 	av.timing.fps = static_cast<double>(ufps_scaled) / static_cast<double>(bmsx::HZ_SCALE);
 }
 
+static void initialize_default_av_info(retro_system_av_info& av) {
+	std::memset(&av, 0, sizeof(av));
+	av.timing.sample_rate = 48000.0;
+	apply_manifest_av_info(av, bmsx::defaultSystemMachineManifest(), bmsx::DEFAULT_UFPS_SCALED);
+}
+
 extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down) {
 	if (!g_platform || !code || !code[0]) {
 		return;
@@ -152,7 +159,6 @@ static constexpr const char* kOptionCrtGlow = "bmsx_crt_glow";
 static constexpr const char* kOptionCrtFringing = "bmsx_crt_fringing";
 static constexpr const char* kOptionCrtAperture = "bmsx_crt_aperture";
 static constexpr const char* kOptionDither = "bmsx_dither";
-static constexpr const char* kOptionFrameSkip = "bmsx_frameskip";
 static constexpr const char* kOptionHostShowUsageGizmo = "bmsx_host_show_usage_gizmo";
 static constexpr const char* kToggleOff = "off";
 static constexpr const char* kToggleOn = "on";
@@ -178,9 +184,7 @@ static bool g_crt_glow_enabled = false;
 static bool g_crt_fringing_enabled = false;
 static bool g_crt_aperture_enabled = false;
 static int g_dither_type = 0;
-static bool g_frameskip_enabled = false;
 static bool g_resource_usage_gizmo_enabled = false;
-static bool g_frameskip_next = false;
 
 static retro_core_option_v2_category g_option_categories_us[] = {
 	{"video", "Video", "Video settings."},
@@ -358,20 +362,6 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		},
 		kToggleOff
 	},
-	{
-		kOptionFrameSkip,
-		"Frame Skip",
-		"Frame Skip",
-		"Automatically skip video frames when rendering exceeds the frame budget.",
-		"Automatically skip video frames when rendering exceeds the frame budget.",
-		"video",
-		{
-			{kToggleOff, "Off"},
-			{kToggleOn, "On"},
-			{nullptr, nullptr},
-		},
-		kToggleOn
-	},
 	{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
@@ -515,17 +505,6 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		},
 		kToggleOff
 	},
-	{
-		kOptionFrameSkip,
-		"Frame Skip",
-		"Automatically skip video frames when rendering exceeds the frame budget.",
-		{
-			{kToggleOff, "Off"},
-			{kToggleOn, "On"},
-			{nullptr, nullptr},
-		},
-		kToggleOn
-	},
 	{nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
@@ -540,7 +519,6 @@ static char g_option_crt_glow_var[128] = {};
 static char g_option_crt_fringing_var[128] = {};
 static char g_option_crt_aperture_var[128] = {};
 static char g_option_dither_var[128] = {};
-static char g_option_frameskip_var[128] = {};
 static char g_option_host_show_usage_gizmo_var[128] = {};
 static retro_variable g_option_vars[] = {
 	{kOptionRenderBackend, nullptr},
@@ -555,7 +533,6 @@ static retro_variable g_option_vars[] = {
 	{kOptionCrtAperture, nullptr},
 	{kOptionDither, nullptr},
 	{kOptionHostShowUsageGizmo, nullptr},
-	{kOptionFrameSkip, nullptr},
 	{nullptr, nullptr}
 };
 
@@ -584,7 +561,6 @@ static bool read_crt_fringing_enabled();
 static bool read_crt_aperture_enabled();
 static int read_dither_type();
 static bool read_toggle_option(const char* key, const char* label, bool default_value);
-static bool read_frameskip_enabled();
 static bool read_resource_usage_gizmo_enabled();
 
 /* ============================================================================
@@ -828,9 +804,6 @@ static void set_core_options(bool default_gles2) {
 	std::snprintf(g_option_host_show_usage_gizmo_var, sizeof(g_option_host_show_usage_gizmo_var),
 					"Show Usage Gizmo; %s|%s", kToggleOff, kToggleOn);
 	g_option_vars[11].value = g_option_host_show_usage_gizmo_var;
-	std::snprintf(g_option_frameskip_var, sizeof(g_option_frameskip_var),
-					"Frame Skip; %s|%s", kToggleOn, kToggleOff);
-	g_option_vars[12].value = g_option_frameskip_var;
 
 	unsigned version = 0;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
@@ -895,10 +868,6 @@ static bool read_crt_postprocessing_enabled() {
 
 static bool read_postprocess_detail_enabled() {
 	return read_toggle_option(kOptionPostprocessDetail, "post-processing detail", false);
-}
-
-static bool read_frameskip_enabled() {
-	return read_toggle_option(kOptionFrameSkip, "Frame Skip", true);
 }
 
 static bool read_resource_usage_gizmo_enabled() {
@@ -1196,9 +1165,7 @@ void retro_init(void) {
 	g_crt_fringing_enabled = read_crt_fringing_enabled();
 	g_crt_aperture_enabled = read_crt_aperture_enabled();
 	g_dither_type = read_dither_type();
-	g_frameskip_enabled = read_frameskip_enabled();
 	g_resource_usage_gizmo_enabled = read_resource_usage_gizmo_enabled();
-	g_frameskip_next = false;
 	request_hw_context_for_backend(desired_backend);
 	apply_backend_preference(preference);
 	set_core_options(BMSX_ENABLE_GLES2);
@@ -1257,7 +1224,6 @@ void retro_init(void) {
 									g_crt_aperture_enabled);
 	g_platform->setDitherType(g_dither_type);
 	g_platform->setResourceUsageGizmo(g_resource_usage_gizmo_enabled);
-	g_platform->setFrameSkipOptions(g_frameskip_enabled);
 	if (isHardwareBackendActive()) {
 	try {
 		g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
@@ -1305,17 +1271,11 @@ void retro_get_system_info(struct retro_system_info* info) {
 }
 
 void retro_get_system_av_info(struct retro_system_av_info* info) {
-	if (g_cached_av_info_valid) {
-		*info = g_cached_av_info;
-	} else {
-		constexpr double SAMPLE_RATE = 48000.0;
-
-		std::memset(info, 0, sizeof(*info));
-		apply_manifest_av_info(*info, bmsx::defaultSystemMachineManifest(), bmsx::DEFAULT_UFPS_SCALED);
-		info->timing.sample_rate = SAMPLE_RATE;
-		g_cached_av_info = *info;
+	if (!g_cached_av_info_valid) {
+		initialize_default_av_info(g_cached_av_info);
 		g_cached_av_info_valid = true;
 	}
+	*info = g_cached_av_info;
 
 	logging.log(
 		RETRO_LOG_INFO,
@@ -1352,9 +1312,9 @@ void retro_set_controller_port_device(unsigned port, unsigned device) {
 
 bool retro_load_game(const struct retro_game_info* game) {
 	if (!game) {
-	logging.log(RETRO_LOG_INFO,
-				"[BMSX] No game provided, loading empty cart\n");
-	return g_platform->loadEmptyCart();
+		logging.log(RETRO_LOG_INFO,
+					"[BMSX] No game provided, loading empty cart\n");
+		return g_platform->loadEmptyCart();
 	}
 
 	logging.log(RETRO_LOG_INFO, "[BMSX] Loading game: %s\n",
@@ -1385,8 +1345,6 @@ bool retro_load_game(const struct retro_game_info* game) {
 	}
 	const auto& manifest = g_platform->console()->machineManifest();
 	apply_manifest_av_info(av, manifest, ufps_scaled);
-	environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
-	environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &av.geometry);
 	g_cached_av_info = av;
 	g_cached_av_info_valid = true;
 	g_platform->setAVInfo(av);
@@ -1520,12 +1478,6 @@ void retro_run(void) {
 		g_resource_usage_gizmo_enabled = new_resource_usage_gizmo;
 		g_platform->setResourceUsageGizmo(g_resource_usage_gizmo_enabled);
 	}
-	const bool new_frameskip = read_frameskip_enabled();
-	if (new_frameskip != g_frameskip_enabled) {
-		g_frameskip_enabled = new_frameskip;
-		g_frameskip_next = false;
-		g_platform->setFrameSkipOptions(g_frameskip_enabled);
-	}
 	}
 //   static auto lastFrameTime = std::chrono::steady_clock::now();
 //   static double accSec = 0.0;
@@ -1584,9 +1536,6 @@ void retro_run(void) {
 	// }
 
 	// Run one frame
-	const auto frameStart = std::chrono::steady_clock::now();
-	g_platform->setFrameSkipNext(g_frameskip_enabled && g_frameskip_next);
-	g_frameskip_next = false;
 //   const auto runStart = std::chrono::steady_clock::now();
 	g_platform->runFrame();
 //   const auto runEnd = std::chrono::steady_clock::now();
@@ -1660,16 +1609,6 @@ void retro_run(void) {
 	const auto& audio = g_platform->getAudioBuffer();
 	if (audio_batch_cb && audio.samples > 0) {
 	audio_batch_cb(audio.data, audio.samples);
-	}
-
-	const auto frameEnd = std::chrono::steady_clock::now();
-	if (g_frameskip_enabled) {
-	const double budgetMs = g_platform->frameTimeSec() * 1000.0;
-	const double frameMs =
-		std::chrono::duration<double, std::milli>(frameEnd - frameStart).count();
-	if (frameMs > budgetMs) {
-		g_frameskip_next = true;
-	}
 	}
 }
 

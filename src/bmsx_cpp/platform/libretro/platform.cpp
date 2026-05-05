@@ -397,7 +397,6 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 
 void LibretroPlatform::setDitherType(i32 type) {
 	m_dither_type = type;
-	m_console->view()->dither_type = static_cast<GameView::DitherType>(type);
 	if (!m_console->hasRuntime()) {
 		return;
 	}
@@ -408,13 +407,8 @@ void LibretroPlatform::setResourceUsageGizmo(bool enabled) {
 	m_console->view()->showResourceUsageGizmo = enabled;
 }
 
-void LibretroPlatform::setFrameSkipOptions(bool enabled) {
-	m_frameskip_enabled = enabled;
-	m_frameskip_next = false;
-}
-
-void LibretroPlatform::setFrameSkipNext(bool skip) {
-	m_frameskip_next = skip;
+void LibretroPlatform::requestShutdown() {
+	m_environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
 }
 
 void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
@@ -678,9 +672,7 @@ void LibretroPlatform::runFrame() {
 	// input for this host frame.
 	pollInput();
 
-	bool skipRender = m_frameskip_enabled && m_frameskip_next;
-	m_frameskip_next = false;
-	m_console->runHostFrame(m_console->runtime(), *m_microtask_queue, dt, m_platform_paused, skipRender);
+	m_console->runHostFrame(m_console->runtime(), *m_microtask_queue, dt, m_platform_paused);
 	processAudio();
 }
 

@@ -84,6 +84,20 @@ endif()
 # Core engine library (static)
 # =============================================================================
 
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.vert.glsl"
+	BMSX_HOST_OVERLAY_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.frag.glsl"
+	BMSX_HOST_OVERLAY_FRAGMENT_SHADER
+)
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay_shaders.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/host_overlay/gles2/host_overlay_shaders.h"
+	@ONLY
+)
+
 add_library(bmsx_core STATIC
 	# Platform abstraction
 	platform.cpp
@@ -97,6 +111,7 @@ add_library(bmsx_core STATIC
 	core/console.cpp
 	core/rom_boot_manager.cpp
 	core/host_frame.cpp
+	core/host_overlay_menu.cpp
 	core/system.cpp
 	core/registry.cpp
 	rompack/package.cpp
@@ -130,6 +145,13 @@ add_library(bmsx_core STATIC
 	render/backend/frame_uniforms.cpp
 	render/lighting/system.cpp
 	render/shared/queues.cpp
+	render/host_overlay/overlay_queue.cpp
+	render/host_overlay/pipeline.cpp
+	render/host_overlay/software/renderer.cpp
+	render/host_overlay/software/pipeline.cpp
+	render/host_overlay/gles2/renderer.cpp
+	render/host_overlay/gles2/pipeline.cpp
+	render/host_menu/queue.cpp
 	render/runtime/state.cpp
 	render/shared/hardware/camera.cpp
 	render/shared/hardware/lighting.cpp
@@ -172,7 +194,6 @@ add_library(bmsx_core STATIC
 	machine/firmware/runtime.cpp
 	machine/machine.cpp
 	machine/scheduler/device.cpp
-	machine/runtime/resource_usage_detector.cpp
 	machine/runtime/runtime.cpp
 	machine/runtime/machine_state.cpp
 	machine/runtime/save_machine_state.cpp
@@ -220,6 +241,7 @@ set_target_properties(bmsx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(bmsx_core PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}
 	${CMAKE_CURRENT_SOURCE_DIR}/..
+	${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 target_compile_definitions(bmsx_core PUBLIC

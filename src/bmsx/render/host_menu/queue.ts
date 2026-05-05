@@ -24,6 +24,10 @@ export function beginHostMenuQueue(): number {
 	return hostMenuRefQueue.sizeBack();
 }
 
-export function forEachHostMenuQueue(fn: (kind: Host2DKind, item: Host2DRef, index: number) => void): void {
-	hostMenuRefQueue.forEachBack((item, index) => fn(hostMenuKindQueue.getBack(index), item, index));
+export function hostMenuQueueKind(index: number): Host2DKind {
+	return hostMenuKindQueue.getBack(index);
+}
+
+export function hostMenuQueueRef(index: number): Host2DRef {
+	return hostMenuRefQueue.getBack(index);
 }

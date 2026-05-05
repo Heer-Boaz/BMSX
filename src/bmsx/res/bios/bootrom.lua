@@ -391,20 +391,22 @@ local update_boot_screen<const> = function()
 			scroll_delta = -1
 		end
 	end
-	render_boot_screen(scroll_delta)
-	if not boot_screen_presented then
-		boot_screen_presented = true
-	end
 	local cart_header<const> = read_cart_header(cart_rom_base)
-
 	local cart_present_and_ready<const> = cart_header
 		and mem[cart_rom_base] == cart_rom_magic
 		and mem[cart_program_vector_addr] == cart_program_start_addr
 
 	if cart_present_and_ready and not boot_requested and system_slot_ready and not system_slot_failed then
-		boot_requested = true
-		print('Cart boot requested.')
-		mem[sys_boot_cart] = 1
+		if (mem[sys_vdp_status] & sys_vdp_status_submit_busy) == 0 then
+			boot_requested = true
+			print('Cart boot requested.')
+			mem[sys_boot_cart] = 1
+		end
+		return
+	end
+	render_boot_screen(scroll_delta)
+	if not boot_screen_presented then
+		boot_screen_presented = true
 	end
 end
 

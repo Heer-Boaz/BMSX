@@ -16,7 +16,6 @@
 #include <array>
 #include <memory>
 #include <unordered_map>
-#include <functional>
 #include <string>
 
 namespace bmsx {
@@ -45,9 +44,6 @@ struct AtmosphereParams {
 
 /* ============================================================================
  * GameView - Main rendering view
- *
- * The renderer.submit functions route to the appropriate pipeline
- * (e.g., framebuffer 2D, MeshPipeline, etc.).
  *
  * For libretro, viewportSize IS the framebuffer size.
  * ============================================================================ */
@@ -109,24 +105,6 @@ public:
 	void endFrame();
 	void configurePresentation(PresentationMode mode, bool commitFrame);
 	u8 presentationHistoryDestinationIndex() const { return presentationHistorySourceIndex == 0 ? 1 : 0; }
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// Render submission
-	//
-	// These functions route host/editor work to render queues. Machine-visible
-	// VDP 2D and billboard work is produced by cart/firmware MMIO/FIFO/DMA.
-	// ─────────────────────────────────────────────────────────────────────────
-	struct Renderer {
-		struct Submit {
-			std::function<void(const ImgRenderSubmission&)> sprite;
-			std::function<void(const RectRenderSubmission&)> rect;
-			std::function<void(const PolyRenderSubmission&)> poly;
-			std::function<void(const GlyphRenderSubmission&)> glyphs;
-			std::function<void(const ParticleRenderSubmission&)> particle;
-			std::function<void(const MeshRenderSubmission&)> mesh;
-		} submit;
-	};
-	Renderer renderer;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Textures map
@@ -243,15 +221,13 @@ public:
 	void setSpritesAmbient(bool enabled, f32 factor = 1.0f);
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Convenience methods for drawing primitives
-	// These use renderer.submit internally.
+	// Convenience methods for host/editor drawing primitives.
 	// ─────────────────────────────────────────────────────────────────────────
 	void fillRectangle(const RectBounds& area, const Color& color, RenderLayer layer = RenderLayer::World);
 	void drawRectangle(const RectBounds& area, const Color& color, RenderLayer layer = RenderLayer::World);
 	void drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color, RenderLayer layer = RenderLayer::World);
 
 private:
-	void initializeRenderer();
 	void finalizePresentation();
 	void resetPresentationHistory();
 	Runtime& runtime();

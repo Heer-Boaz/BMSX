@@ -3,7 +3,7 @@ import type { LuaChunk } from '../../lua/syntax/ast';
 import { LuaInterpreter } from '../../lua/runtime';
 import { convertToError } from '../../lua/value';
 import type { LuaValue } from '../../lua/value';
-import { publishOverlayFrame } from '../../render/editor/overlay_queue';
+import { publishOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import { SYSTEM_LUA_BUILTIN_FUNCTIONS, SYSTEM_LUA_BUILTIN_GLOBALS } from '../../machine/firmware/builtin_descriptors';
 import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { SYSTEM_ROM_HELPER_NAMES } from '../../machine/firmware/system_globals';

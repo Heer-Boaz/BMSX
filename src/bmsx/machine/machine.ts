@@ -18,7 +18,6 @@ import { VDP, type VdpSaveState, type VdpState } from './devices/vdp/vdp';
 import { Memory, type MemorySaveState, type MemoryState } from './memory/memory';
 import { StringHandleTable, type StringHandleTableState } from './memory/string/memory';
 import { StringPool } from './memory/string/pool';
-import { ResourceUsageDetector } from './runtime/resource_usage_detector';
 import {
 	DEVICE_SERVICE_DMA,
 	DEVICE_SERVICE_GEO,
@@ -61,7 +60,6 @@ export class Machine {
 	public readonly imgDecController: ImgDecController;
 	public readonly inputController: InputController;
 	public readonly audioController: AudioController;
-	public readonly resourceUsageDetector: ResourceUsageDetector;
 
 	public constructor(
 		public readonly memory: Memory,
@@ -80,7 +78,6 @@ export class Machine {
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.vdp, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
 		this.inputController = new InputController(this.memory, input);
-		this.resourceUsageDetector = new ResourceUsageDetector(this.stringHandles, this.vdp);
 	}
 
 	public initializeSystemIo(): void {

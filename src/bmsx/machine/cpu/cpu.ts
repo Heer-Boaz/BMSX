@@ -89,15 +89,6 @@ const DEFAULT_NATIVE_COST = NATIVE_COST_TIER1;
 
 function resolveNativeFunctionCost(name: string): NativeFnCost {
 	switch (name) {
-		case 'sys_cpu_cycles_used':
-		case 'sys_cpu_cycles_granted':
-		case 'sys_cpu_active_cycles_used':
-		case 'sys_cpu_active_cycles_granted':
-		case 'sys_ram_used':
-		case 'sys_vram_used':
-		case 'sys_vdp_work_units_per_sec':
-		case 'sys_vdp_work_units_last':
-		case 'sys_vdp_frame_held':
 		case 'clock_now':
 		case 'devtools.get_lua_entry_path':
 			return NATIVE_COST_TIER0;

@@ -162,13 +162,13 @@
 		{
 			"type": "pwa-node",
 			"request": "launch",
-			"name": "LIBRETRO RUN: RetroArch",
+			"name": "LIBRETRO DEBUG: RetroArch",
 			"runtimeExecutable": "npm",
 			"runtimeArgs": [
 				"run",
 				"run:retroarch",
 				"--",
-				"./dist/${input:romtobuild}.rom"
+				"./dist/${input:romtobuild}.debug.rom"
 			],
 			"cwd": "${workspaceFolder}",
 			"console": "integratedTerminal"

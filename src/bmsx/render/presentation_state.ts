@@ -110,6 +110,12 @@ export class RenderPresentationState {
 		this.presentationCommitFrame = commitFrame;
 	}
 
+	public requestHeldPresentation(): void {
+		if (!this.pendingPresentation) {
+			this.markPresentation('completed', false);
+		}
+	}
+
 	private consumePresentation(out: RenderPresentation): boolean {
 		if (!this.pendingPresentation) {
 			return false;
@@ -199,11 +205,12 @@ export class RenderPresentationState {
 		this.presentFrame(hostDeltaMs, 'completed', false);
 	}
 
-	public presentPending(hostDeltaMs: number): void {
+	public presentPending(hostDeltaMs: number): boolean {
 		if (!this.consumePresentation(this.presentationScratch)) {
-			return;
+			return false;
 		}
 		this.presentFrame(hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
+		return true;
 	}
 
 	public presentErrorOverlay(hostDeltaMs: number): void {

@@ -1,5 +1,6 @@
 #include "core/console.h"
 
+#include "core/host_overlay_menu.h"
 #include "core/time.h"
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"
@@ -15,8 +16,7 @@ void ConsoleCore::runHostFrame(
 	Runtime& runtime,
 	MicrotaskQueue& microtasks,
 	f64 deltaTime,
-	bool platformPaused,
-	bool skipRender
+	bool platformPaused
 ) {
 	if (!acceptHostFrame(deltaTime)) {
 		return;
@@ -37,22 +37,35 @@ void ConsoleCore::runHostFrame(
 		m_fps = 1.0 / hostDeltaSeconds;
 
 		Input::instance().pollInput();
+		const bool hostMenuActive = hostOverlayMenu().tickInput(*this);
 
 		runtime.screen.clearPresentation();
-		if (!platformPaused) {
+		if (!platformPaused && !hostMenuActive) {
 			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 			runtime.frameScheduler.run(runtime, hostDeltaMs);
 			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+		} else {
+			runtime.frameScheduler.clearQueuedTime();
 		}
 		m_delta_time = hostDeltaSeconds;
 
 		microtasks.flush();
 
 		m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
-		if (!skipRender) {
-			runtime.screen.render(*this, runtime);
+
+		if (hostMenuActive && m_view) {
+			hostOverlayMenu().queueRenderCommands(*this, *m_view);
+		} else {
+			const bool hostOverlayQueued = m_view && hostOverlayMenu().queueFrameOverlayCommands(*this, *m_view);
+			if (hostOverlayQueued) {
+				runtime.screen.requestHeldPresentation();
+			}
 		}
+		if (hostMenuActive) {
+			runtime.screen.requestHeldPresentation();
+		}
+		runtime.screen.render(*this, runtime, platformPaused);
 	} catch (const std::exception& e) {
 		runtime.frameLoop.abandonFrameState(runtime);
 		runtime.handleLuaError(e.what());

@@ -4,7 +4,6 @@ import { test } from 'node:test';
 import { createNativeFunction } from '../../src/bmsx/machine/cpu/cpu';
 
 test('native cost resolution uses flat tiers by function category', () => {
-	assert.deepEqual(createNativeFunction('sys_cpu_cycles_used', () => {}).cost, { base: 0, perArg: 0, perRet: 0 });
 	assert.deepEqual(createNativeFunction('clock_now', () => {}).cost, { base: 0, perArg: 0, perRet: 0 });
 	assert.deepEqual(createNativeFunction('math.abs', () => {}).cost, { base: 1, perArg: 0, perRet: 0 });
 	assert.deepEqual(createNativeFunction('os.clock', () => {}).cost, { base: 1, perArg: 0, perRet: 0 });

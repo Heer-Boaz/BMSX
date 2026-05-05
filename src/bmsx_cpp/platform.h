@@ -198,6 +198,7 @@ public:
 	virtual AudioService* audioService() = 0;
 	virtual GameViewHost* gameviewHost() = 0;
 	virtual MicrotaskQueue* microtaskQueue() = 0;
+	virtual void requestShutdown() = 0;
 	virtual std::string_view type() = 0;
 	virtual void log(LogLevel level, std::string_view message) = 0;
 };

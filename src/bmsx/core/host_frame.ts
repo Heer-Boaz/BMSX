@@ -19,17 +19,20 @@ export function runConsoleHostFrame(runtime: Runtime, currentTime: number, runRe
 		workbenchMode.tickTerminalInput(runtime);
 		hostDeltaMs = Math.min(currentTime - runtime.frameLoop.currentTimeMs, MAX_HOST_FRAME_DELTA_MS);
 		runtime.frameLoop.currentTimeMs = currentTime;
-		if (hostOverlayMenu.tickInput()) {
-			runtime.frameScheduler.clearQueuedTime();
-			screen.clearPresentation();
-			hostOverlayMenu.queueRenderCommands();
-			console.view.drawHostMenuFrame(hostDeltaMs);
-			return;
-		}
+		console.host_fps = 1000 / hostDeltaMs;
+		const hostMenuActive = hostOverlayMenu.tickInput();
 
-		if (console.paused) {
+		if (hostMenuActive) {
+			screen.clearPresentation();
+			runtime.frameScheduler.clearQueuedTime();
+			hostOverlayMenu.queueRenderCommands();
+			screen.requestHeldPresentation();
+			screen.presentPending(hostDeltaMs);
+		} else if (console.paused) {
+			hostOverlayMenu.queueFrameOverlayCommands();
 			screen.presentPausedFrame(hostDeltaMs);
 		} else {
+			const hostOverlayQueued = hostOverlayMenu.queueFrameOverlayCommands();
 			screen.clearPresentation();
 			if (runtime.executionOverlayActive) {
 				screen.runOverlay();
@@ -40,6 +43,9 @@ export function runConsoleHostFrame(runtime: Runtime, currentTime: number, runRe
 				console.deltatime = runtime.timing.frameDurationMs;
 				runtime.frameScheduler.run(hostDeltaMs);
 				screen.syncAfterRuntimeUpdate(previousTickSequence);
+			}
+			if (hostOverlayQueued) {
+				screen.requestHeldPresentation();
 			}
 			screen.presentPending(hostDeltaMs);
 		}
