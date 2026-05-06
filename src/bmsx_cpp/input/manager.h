@@ -8,9 +8,9 @@
 #define BMSX_INPUT_H
 
 #include "models.h"
-#include "player.h"
 #include "common/subscription.h"
 #include <array>
+#include <deque>
 #include <memory>
 #include <unordered_map>
 
@@ -20,6 +20,59 @@ namespace bmsx {
 class KeyboardInput;
 class GamepadInput;
 class PointerInput;
+class PlayerInput;
+
+class InputStateManager {
+public:
+	InputStateManager();
+	~InputStateManager() = default;
+
+	void beginFrame(f64 currentTimeMs);
+	void update(f64 currentTimeMs);
+	void addInputEvent(InputEvent evt);
+	void recordAxis1Sample(const std::string& button, f32 value, f64 timestamp);
+	void recordAxis2Sample(const std::string& button, f32 x, f32 y, f64 timestamp);
+	void latchButtonState(const std::string& button, const ButtonState& rawState, f64 currentTimeMs);
+	void consumeBufferedEvent(const std::string& identifier, std::optional<i32> pressId);
+	ButtonState getButtonState(const std::string& button, std::optional<i32> windowFrames = std::nullopt) const;
+	std::optional<i32> getLatestUnconsumedPressId(const std::string& button) const;
+	std::optional<i32> getLatestUnconsumedReleaseId(const std::string& button) const;
+	bool hasTrackedButton(const std::string& button) const;
+	i64 frame() const { return m_currentFrame; }
+	void resetEdgeState();
+	void clear();
+
+private:
+	struct BufferedInputEvent {
+		InputEvent event;
+		i64 frame = -1;
+	};
+
+	struct BufferedEdgeRecord {
+		i32 edgeId = -1;
+		i64 frame = -1;
+		bool consumed = false;
+	};
+
+	std::deque<BufferedInputEvent> m_inputBuffer;
+	std::unordered_map<std::string, ButtonState> m_buttonStates;
+	std::unordered_map<std::string, ButtonState> m_pendingFrameStates;
+	std::unordered_map<std::string, BufferedEdgeRecord> m_bufferedPressEdges;
+	std::unordered_map<std::string, BufferedEdgeRecord> m_bufferedReleaseEdges;
+	i64 m_currentFrame = 0;
+	f64 m_currentTimeMs = 0.0;
+
+	static constexpr i32 BUFFER_FRAME_RETENTION = 150;
+	static constexpr i32 RECENT_BUFFERED_EDGE_FRAMES = 2;
+
+	std::optional<i32> getLatestUnconsumedEdgeId(const std::string& button, InputEvent::Type eventType) const;
+	std::optional<BufferedEdgeRecord> getBufferedEdgeRecord(const std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const std::string& button, i32 windowFrames) const;
+	bool isBufferedFrameInWindow(i64 frame, i32 windowFrames) const;
+	void bufferEdge(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const BufferedInputEvent& event);
+	void consumeBufferedEdge(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const std::string& identifier, std::optional<i32> pressId);
+	void pruneOldEvents();
+	void pruneBufferedEdges(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap);
+};
 
 /* ============================================================================
  * Device binding information
@@ -52,11 +105,8 @@ public:
 	
 	static constexpr i32 DEFAULT_KEYBOARD_PLAYER_INDEX = 1;
 	
-	// Standard gamepad button IDs
-	static const std::vector<std::string>& BUTTON_IDS();
-	
 	// Keyboard key to gamepad button mapping
-	static const std::unordered_map<std::string, std::string>& KEYBOARD_TO_GAMEPAD();
+	static const std::unordered_map<std::string, std::string> KEYBOARD_TO_GAMEPAD;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Singleton access
@@ -78,29 +128,14 @@ public:
 	// Get player input for a specific player index
 	PlayerInput* getPlayerInput(i32 playerIndex);
 	
-	// Get all player inputs
-	const std::array<std::unique_ptr<PlayerInput>, PLAYERS_MAX>& playerInputs() const {
-		return m_playerInputs;
-	}
-	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Device management
 	// ─────────────────────────────────────────────────────────────────────────
-	
-	// Register a keyboard handler
-	void registerKeyboard(const std::string& deviceId, InputHandler* handler);
-	
-	// Register a gamepad handler
-	void registerGamepad(const std::string& deviceId, InputHandler* handler);
-	
-	// Register a pointer handler
-	void registerPointer(const std::string& deviceId, InputHandler* handler);
+
+	void registerDeviceBinding(const std::string& deviceId, InputHandler* handler, InputSource source, std::optional<i32> assignedPlayer);
 	
 	// Unregister a device
 	void unregisterDevice(const std::string& deviceId);
-	
-	// Get binding for device
-	DeviceBinding* getDeviceBinding(const std::string& deviceId);
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Gamepad assignment
@@ -110,17 +145,15 @@ public:
 	void assignGamepadToPlayer(InputHandler* gamepad, i32 playerIndex);
 	
 	// Get first available player index for gamepad
-	std::optional<i32> getFirstAvailablePlayerIndexForGamepad(i32 from = 1, bool reverse = false);
+	std::optional<i32> getFirstAvailablePlayerIndexForGamepadAssignment(i32 from = 1, bool reverse = false);
 	
 	// Check if player index is available for gamepad assignment
-	bool isPlayerIndexAvailableForGamepad(i32 playerIndex);
+	bool isPlayerIndexAvailableForGamepadAssignment(i32 playerIndex);
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Input mapping
 	// ─────────────────────────────────────────────────────────────────────────
-	
-	// Get default input mapping
-	static InputMap getDefaultInputMapping();
+	static const InputMap DEFAULT_INPUT_MAPPING;
 	void setFrameDurationMs(f64 frameDurationMs);
 	
 	// ─────────────────────────────────────────────────────────────────────────
@@ -194,12 +227,10 @@ private:
 	// ─────────────────────────────────────────────────────────────────────────
 	
 	void handleFocusChange(bool focused);
-	void registerDeviceBinding(const std::string& deviceId, InputHandler* handler, InputSource source, std::optional<i32> assignedPlayer);
 	void enqueueButtonEvent(i32 playerIndex, InputSource source, const std::string& code, 
 							InputEvent::Type type, f64 timestamp, 
 							std::optional<i32> pressId);
-	i32 assignPressId(const std::string& deviceId, const std::string& code, bool down);
-	i32 toInternalPlayerIndex(i32 playerIndex) const { return playerIndex - 1; }
+	i32 resolvePlatformPressId(const std::string& deviceId, const std::string& code, bool down);
 };
 
 /* ============================================================================
@@ -216,7 +247,7 @@ ActionState makeActionState(const std::string& action, const ButtonState& state)
 
 // Reset an object map, optionally excluding certain keys
 template<typename MapType>
-void resetObjectMap(MapType& map, const std::vector<std::string>* except = nullptr) {
+void resetObject(MapType& map, const std::vector<std::string>* except = nullptr) {
 	if (!except) {
 		map.clear();
 		return;

@@ -11,8 +11,8 @@ namespace bmsx {
 RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 	RuntimeResumeSnapshot snapshot;
 	snapshot.machineState = captureRuntimeMachineState(runtime);
-	const_cast<CPU&>(runtime.m_machine.cpu()).syncGlobalSlotsToTable();
-	runtime.m_machine.cpu().globals->forEachEntry([&snapshot](Value key, Value value) {
+	const_cast<CPU&>(runtime.machine.cpu).syncGlobalSlotsToTable();
+	runtime.machine.cpu.globals->forEachEntry([&snapshot](Value key, Value value) {
 		snapshot.globals.emplace_back(key, value);
 	});
 	snapshot.renderState = captureRuntimeRenderState();
@@ -23,16 +23,16 @@ RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 
 void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& snapshot) {
 	applyRuntimeMachineState(runtime, snapshot.machineState);
-	restoreVdpContextState(runtime.machine().vdp());
+	restoreVdpContextState(runtime.machine.vdp);
 	applyRuntimeRenderState(snapshot.renderState);
 	runtime.m_randomSeedValue = snapshot.randomSeed;
 	runtime.m_pendingCall = snapshot.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
 
-	runtime.m_machine.cpu().globals->clear();
-	runtime.m_machine.cpu().clearGlobalSlots();
-	runtime.m_machine.cpu().setProgram(runtime.m_program, runtime.m_programMetadata);
+	runtime.machine.cpu.globals->clear();
+	runtime.machine.cpu.clearGlobalSlots();
+	runtime.machine.cpu.setProgram(runtime.m_program, runtime.m_programMetadata);
 	for (const auto& [key, value] : snapshot.globals) {
-		runtime.m_machine.cpu().setGlobalByKey(key, value);
+		runtime.machine.cpu.setGlobalByKey(key, value);
 	}
 	RenderQueues::clearBackQueues();
 }

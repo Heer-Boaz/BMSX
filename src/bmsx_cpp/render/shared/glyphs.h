@@ -19,10 +19,10 @@ class GameView;
 template<typename Fn>
 void forEachGlyphImage(const GlyphRenderSubmission& submission, Fn&& fn) {
 	BFont& font = *submission.font;
-	const i32 start = *submission.glyph_start;
-	const i32 end = *submission.glyph_end;
-	const f32 z = *submission.z;
-	const Color& color = *submission.color;
+	const i32 start = submission.glyph_start;
+	const i32 end = submission.glyph_end;
+	const f32 z = submission.z;
+	const Color& color = submission.color;
 	f32 y = submission.y;
 	for (const std::string& line : submission.glyphs) {
 		f32 x = submission.x;

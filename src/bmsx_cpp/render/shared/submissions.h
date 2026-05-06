@@ -10,7 +10,7 @@
 #include "common/primitives.h"
 #include "machine/devices/vdp/contracts.h"
 #include <cstddef>
-#include <optional>
+#include <limits>
 #include <string>
 #include <vector>
 #include <array>
@@ -71,24 +71,24 @@ struct RectRenderSubmission {
 	Kind kind = Kind::Rect;
 	RectBounds area;
 	Color color;
-	std::optional<RenderLayer> layer;
+	RenderLayer layer = RenderLayer::World;
 };
 
 // Image/sprite render
 struct ImgRenderSubmission {
-	std::optional<uint32_t> slot;
-	std::optional<uint32_t> u;
-	std::optional<uint32_t> v;
-	std::optional<uint32_t> w;
-	std::optional<uint32_t> h;
+	uint32_t slot = 0;
+	uint32_t u = 0;
+	uint32_t v = 0;
+	uint32_t w = 0;
+	uint32_t h = 0;
 	Vec3 pos{0.0f, 0.0f, 0.0f};  // x, y, z (z for depth sorting)
-	std::optional<Vec2> scale;
-	std::optional<FlipOptions> flip;
-	std::optional<Color> colorize;  // Tint color (white = no tint)
-	std::optional<bool> ambient_affected;
-	std::optional<f32> ambient_factor;
-	std::optional<RenderLayer> layer;
-	std::optional<f32> parallax_weight;
+	Vec2 scale{1.0f, 1.0f};
+	FlipOptions flip;
+	Color colorize{1.0f, 1.0f, 1.0f, 1.0f};  // Tint color (white = no tint)
+	bool ambient_affected = false;
+	f32 ambient_factor = 1.0f;
+	RenderLayer layer = RenderLayer::World;
+	f32 parallax_weight = 0.0f;
 };
 
 struct HostImageRenderSubmission {
@@ -97,7 +97,10 @@ struct HostImageRenderSubmission {
 	Vec2 scale{1.0f, 1.0f};
 	FlipOptions flip;
 	Color colorize{1.0f, 1.0f, 1.0f, 1.0f};
-	RenderLayer layer = RenderLayer::IDE;
+	bool ambient_affected = false;
+	f32 ambient_factor = 1.0f;
+	RenderLayer layer = RenderLayer::World;
+	f32 parallax_weight = 0.0f;
 };
 
 // Polygon render (outline)
@@ -105,18 +108,18 @@ struct PolyRenderSubmission {
 	std::vector<f32> points;
 	f32 z = 0.0f;
 	Color color;
-	std::optional<f32> thickness;
-	std::optional<RenderLayer> layer;
+	f32 thickness = 1.0f;
+	RenderLayer layer = RenderLayer::World;
 };
 
 // Mesh render (3D)
 struct MeshRenderSubmission {
 	Mesh* mesh = nullptr;
 	std::array<f32, 16> matrix;
-	std::optional<std::vector<std::array<f32, 16>>> joint_matrices;
-	std::optional<std::vector<f32>> morph_weights;
-	std::optional<bool> receive_shadow;
-	std::optional<RenderLayer> layer;
+	std::vector<std::array<f32, 16>> joint_matrices;
+	std::vector<f32> morph_weights;
+	bool receive_shadow = false;
+	RenderLayer layer = RenderLayer::World;
 };
 
 // Particle render
@@ -124,16 +127,16 @@ struct ParticleRenderSubmission {
 	Vec3 position{0.0f, 0.0f, 0.0f};
 	f32 size = 1.0f;
 	Color color;
-	std::optional<uint32_t> slot;
-	std::optional<uint32_t> u;
-	std::optional<uint32_t> v;
-	std::optional<uint32_t> w;
-	std::optional<uint32_t> h;
+	uint32_t slot = 0;
+	uint32_t u = 0;
+	uint32_t v = 0;
+	uint32_t w = 0;
+	uint32_t h = 0;
 	std::array<f32, 2> uv0{0.0f, 0.0f};
 	std::array<f32, 2> uv1{0.0f, 0.0f};
-	std::optional<i32> ambient_mode;  // 0 or 1
-	std::optional<f32> ambient_factor;
-	std::optional<RenderLayer> layer;
+	i32 ambient_mode = 0;  // 0 or 1
+	f32 ambient_factor = 1.0f;
+	RenderLayer layer = RenderLayer::World;
 };
 
 enum class TextAlign { Left, Right, Center, Start, End };
@@ -143,37 +146,19 @@ enum class TextBaseline { Top, Hanging, Middle, Alphabetic, Ideographic, Bottom 
 struct GlyphRenderSubmission {
 	f32 x = 0.0f;
 	f32 y = 0.0f;
-	std::optional<f32> z;
+	f32 z = 0.0f;
 	std::vector<std::string> glyphs;
-	std::optional<i32> glyph_start;
-	std::optional<i32> glyph_end;
+	i32 glyph_start = 0;
+	i32 glyph_end = std::numeric_limits<i32>::max();
 	BFont* font = nullptr;
-	std::optional<Color> color;
-	std::optional<Color> background_color;
-	std::optional<i32> wrap_chars;
-	std::optional<i32> center_block_width;
-	std::optional<TextAlign> align;
-	std::optional<TextBaseline> baseline;
-	std::optional<RenderLayer> layer;
-};
-
-enum class RenderSubmissionType {
-	Img,
-	Mesh,
-	Particle,
-	Poly,
-	Rect,
-	Glyphs,
-};
-
-struct RenderSubmission {
-	RenderSubmissionType type = RenderSubmissionType::Img;
-	HostImageRenderSubmission img;
-	MeshRenderSubmission mesh;
-	ParticleRenderSubmission particle;
-	PolyRenderSubmission poly;
-	RectRenderSubmission rect;
-	GlyphRenderSubmission glyphs;
+	Color color;
+	bool has_background_color = false;
+	Color background_color;
+	i32 wrap_chars = 0;
+	i32 center_block_width = 0;
+	TextAlign align = TextAlign::Start;
+	TextBaseline baseline = TextBaseline::Alphabetic;
+	RenderLayer layer = RenderLayer::World;
 };
 
 
@@ -183,8 +168,11 @@ struct RenderSubmission {
 
 struct TextureParams {
 	Vec2 size{0.0f, 0.0f};
+	i32 wrapS = 0;
+	i32 wrapT = 0;
+	i32 minFilter = 0;
+	i32 magFilter = 0;
 	bool srgb = true;
-	// Wrap modes, filters, etc.
 };
 
 } // namespace bmsx

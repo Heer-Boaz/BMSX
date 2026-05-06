@@ -5,9 +5,9 @@
 #include "machine/scheduler/device.h"
 
 #include <cstdint>
-#include <deque>
 #include <exception>
 #include <functional>
+#include <optional>
 #include <vector>
 
 namespace bmsx {
@@ -66,14 +66,14 @@ public:
 
 	struct DmaChannelState {
 		uint32_t budget = 0;
-		std::deque<DmaJob> queue;
-		bool hasActive = false;
-		DmaJob active;
+		std::vector<DmaJob> queue;
+		size_t queueHead = 0;
+		std::optional<DmaJob> active;
 	};
 
 	void accrueChannel(Channel channel, int64_t bytesPerSec, int64_t& carry, int cycles);
 	void scheduleNextService(int64_t nowCycles);
-	void tickChannel(Channel channel, bool& ioWrittenDirty, bool& imgWrittenDirty);
+	void tickChannel(Channel channel);
 	uint32_t processJob(DmaJob& job, uint32_t budget);
 	uint32_t processImageJob(DmaJob& job, uint32_t budget);
 	bool isJobComplete(const DmaJob& job) const;
@@ -92,7 +92,9 @@ public:
 	int64_t m_isoCarry = 0;
 	int64_t m_bulkCarry = 0;
 	uint32_t m_ioWrittenValue = 0;
+	bool m_ioWrittenDirty = false;
 	uint32_t m_imgWrittenValue = 0;
+	bool m_imgWrittenDirty = false;
 			Memory& m_memory;
 			VDP& m_vdp;
 			IrqController& m_irq;

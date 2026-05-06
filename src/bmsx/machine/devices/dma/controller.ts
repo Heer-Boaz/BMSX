@@ -87,11 +87,11 @@ export class DmaController {
 		{ budget: 0, queue: [], queueHead: 0, active: null },
 		{ budget: 0, queue: [], queueHead: 0, active: null },
 	];
-	private cpuHz: bigint = 1n;
-	private isoBytesPerSec: bigint = 1n;
-	private bulkBytesPerSec: bigint = 1n;
-	private isoCarry: bigint = 0n;
-	private bulkCarry: bigint = 0n;
+	private cpuHz = 1;
+	private isoBytesPerSec = 1;
+	private bulkBytesPerSec = 1;
+	private isoCarry = 0;
+	private bulkCarry = 0;
 	private ioWrittenValue = 0;
 	private ioWrittenDirty = false;
 	private imgWrittenValue = 0;
@@ -107,11 +107,11 @@ export class DmaController {
 	}
 
 	public setTiming(cpuHz: number, isoBytesPerSec: number, bulkBytesPerSec: number, nowCycles: number): void {
-		this.cpuHz = BigInt(cpuHz);
-		this.isoBytesPerSec = BigInt(isoBytesPerSec);
-		this.bulkBytesPerSec = BigInt(bulkBytesPerSec);
-		this.isoCarry = 0n;
-		this.bulkCarry = 0n;
+		this.cpuHz = cpuHz;
+		this.isoBytesPerSec = isoBytesPerSec;
+		this.bulkBytesPerSec = bulkBytesPerSec;
+		this.isoCarry = 0;
+		this.bulkCarry = 0;
 		this.channels[DMA_CH_ISO].budget = 0;
 		this.channels[DMA_CH_BULK].budget = 0;
 		this.scheduleNextService(nowCycles);
@@ -171,8 +171,8 @@ export class DmaController {
 	}
 
 	public reset(): void {
-		this.isoCarry = 0n;
-		this.bulkCarry = 0n;
+		this.isoCarry = 0;
+		this.bulkCarry = 0;
 		this.channels[DMA_CH_ISO].queue.length = 0;
 		this.channels[DMA_CH_ISO].queueHead = 0;
 		this.channels[DMA_CH_ISO].budget = 0;
@@ -495,33 +495,32 @@ export class DmaController {
 		this.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_REJECTED);
 	}
 
-	private accrueChannel(channel: DmaChannelId, bytesPerSec: bigint, carryKey: 'isoCarry' | 'bulkCarry', cycles: number): void {
+	private accrueChannel(channel: DmaChannelId, bytesPerSec: number, carryKey: 'isoCarry' | 'bulkCarry', cycles: number): void {
 		const pendingBytes = this.getPendingBytesForChannel(channel);
 		if (pendingBytes <= 0) {
 			if (carryKey === 'isoCarry') {
-				this.isoCarry = 0n;
+				this.isoCarry = 0;
 			} else {
-				this.bulkCarry = 0n;
+				this.bulkCarry = 0;
 			}
 			this.channels[channel].budget = 0;
 			return;
 		}
 		const state = this.channels[channel];
 		const carry = carryKey === 'isoCarry' ? this.isoCarry : this.bulkCarry;
-		const numerator = bytesPerSec * BigInt(cycles) + carry;
-		const wholeBytes = numerator / this.cpuHz;
+		const numerator = bytesPerSec * cycles + carry;
 		const nextCarry = numerator % this.cpuHz;
+		const wholeBytes = (numerator - nextCarry) / this.cpuHz;
 		if (carryKey === 'isoCarry') {
 			this.isoCarry = nextCarry;
 		} else {
 			this.bulkCarry = nextCarry;
 		}
-		if (wholeBytes <= 0n) {
+		if (wholeBytes <= 0) {
 			return;
 		}
-		const maxGrant = BigInt(pendingBytes - state.budget);
-		const granted = wholeBytes > maxGrant ? maxGrant : wholeBytes;
-		state.budget += Number(granted);
+		const maxGrant = pendingBytes - state.budget;
+		state.budget += wholeBytes > maxGrant ? maxGrant : wholeBytes;
 	}
 
 	private scheduleNextService(nowCycles: number): void {

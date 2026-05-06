@@ -121,7 +121,7 @@ void PointerInput::reset(const std::vector<std::string>* except) {
 		m_lastWheelTimestamp = 0.0;
 		return;
 	}
-	resetObjectMap(m_buttonStates, except);
+	resetObject(m_buttonStates, except);
 }
 
 void PointerInput::dispose() {

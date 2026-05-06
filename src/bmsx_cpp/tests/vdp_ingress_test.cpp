@@ -513,14 +513,14 @@ void testSbxCommitsOnlyThroughFramePresent() {
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 	require(!h.vdp.readHostOutput().skyboxEnabled, "sealed SBX frame should wait for VBlank present");
-	h.vdp.commitReadyFrameOnVblankEdge();
+	h.vdp.presentReadyFrameOnVblankEdge();
 	require(h.vdp.readHostOutput().skyboxEnabled, "presented frame should commit visible SBX state");
 
 	writeSbxMmio(h.memory, 0u);
 	require(h.vdp.readHostOutput().skyboxEnabled, "live SBX clear should not change visible skybox immediately");
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
-	h.vdp.commitReadyFrameOnVblankEdge();
+	h.vdp.presentReadyFrameOnVblankEdge();
 	require(!h.vdp.readHostOutput().skyboxEnabled, "presented clear frame should disable visible skybox");
 }
 
@@ -543,7 +543,7 @@ void testSbxSkyboxPacketLatchesFrameState() {
 	auto stream = skyboxPacket(bmsx::VDP_SBX_CONTROL_ENABLE, 4u, 5u);
 	stream.push_back(VDP_PKT_END);
 	sealStream(h, stream);
-	h.vdp.commitReadyFrameOnVblankEdge();
+	h.vdp.presentReadyFrameOnVblankEdge();
 	require(h.vdp.readHostOutput().skyboxEnabled, "SKYBOX packet should present visible SBX state");
 	const auto sample = (*h.vdp.readHostOutput().skyboxSamples)[0u];
 	require(sample.source.surfaceId == bmsx::VDP_RD_SURFACE_PRIMARY, "SKYBOX should resolve primary slot");
@@ -558,7 +558,7 @@ void testSbxSkyboxPacketRawControlAndFrameSealFault() {
 	auto badControl = skyboxPacket(2u, 4u, 5u);
 	badControl.push_back(VDP_PKT_END);
 	sealStream(h, badControl);
-	h.vdp.commitReadyFrameOnVblankEdge();
+	h.vdp.presentReadyFrameOnVblankEdge();
 	require(!h.vdp.readHostOutput().skyboxEnabled, "raw control without enable bit should not show SKYBOX");
 
 	auto badSource = skyboxPacket(bmsx::VDP_SBX_CONTROL_ENABLE, 17u, 1u);
@@ -581,7 +581,7 @@ void testCameraMmioCommitsLiveBankAtFramePresent() {
 	require(h.vdp.readHostOutput().camera->eye.x == 0.0f, "camera MMIO should not update visible camera before present");
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
-	h.vdp.commitReadyFrameOnVblankEdge();
+	h.vdp.presentReadyFrameOnVblankEdge();
 	require(h.vdp.readHostOutput().camera->eye.x == 3.0f, "camera eye X should commit on present");
 	require(h.vdp.readHostOutput().camera->eye.y == 4.0f, "camera eye Y should commit on present");
 	require(h.vdp.readHostOutput().camera->eye.z == 5.0f, "camera eye Z should commit on present");

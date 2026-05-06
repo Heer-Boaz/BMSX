@@ -4,6 +4,7 @@
 #include "render/shared/bitmap_font.h"
 #include "core/rom_boot_manager.h"
 #include "input/manager.h"
+#include "input/player.h"
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
 #include "platform/platform.h"
@@ -139,7 +140,7 @@ i32 optionIndex(ConsoleCore& console, GameView& view, i32 option) {
 		case HostMenuOptionId::CrtGlow: return boolIndex(view.applyGlow);
 		case HostMenuOptionId::CrtFringing: return boolIndex(view.applyFringing);
 		case HostMenuOptionId::CrtAperture: return boolIndex(view.applyAperture);
-		case HostMenuOptionId::Dither: return static_cast<i32>(console.runtime().machine().memory().readIoU32(IO_VDP_DITHER));
+		case HostMenuOptionId::Dither: return static_cast<i32>(console.runtime().machine.memory.readIoU32(IO_VDP_DITHER));
 		case HostMenuOptionId::HostShowFps: return boolIndex(console.hostShowFps);
 		case HostMenuOptionId::RebootCart: return 0;
 		case HostMenuOptionId::ExitGame: return 0;
@@ -158,7 +159,7 @@ void setOptionIndex(ConsoleCore& console, GameView& view, i32 option, i32 value)
 		case HostMenuOptionId::CrtGlow: view.applyGlow = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtFringing: view.applyFringing = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtAperture: view.applyAperture = boolFromIndex(value); break;
-		case HostMenuOptionId::Dither: console.runtime().machine().memory().writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(value))); break;
+		case HostMenuOptionId::Dither: console.runtime().machine.memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(value))); break;
 		case HostMenuOptionId::HostShowFps: console.hostShowFps = boolFromIndex(value); break;
 		case HostMenuOptionId::RebootCart: break;
 		case HostMenuOptionId::ExitGame: break;
@@ -291,21 +292,21 @@ size_t HostOverlayMenu::queuedCommandCount() const {
 	return m_commandCount;
 }
 
-RenderQueues::Host2DEntry HostOverlayMenu::commandAt(size_t index) const {
-	return m_commands[index];
+RenderQueues::Host2DKind HostOverlayMenu::commandKind(size_t index) const {
+	return m_commandKinds[index];
+}
+
+RenderQueues::Host2DRef HostOverlayMenu::commandRef(size_t index) const {
+	return m_commandRefs[index];
 }
 
 void HostOverlayMenu::clearRenderCommands() {
 	m_commandCount = 0;
 }
 
-void HostOverlayMenu::queueCommand(RenderQueues::Host2DKind kind, const RectRenderSubmission* rect, const GlyphRenderSubmission* glyphs) {
-	RenderQueues::Host2DEntry& entry = m_commands[m_commandCount];
-	entry.kind = kind;
-	entry.img = nullptr;
-	entry.poly = nullptr;
-	entry.rect = rect;
-	entry.glyphs = glyphs;
+void HostOverlayMenu::queueCommand(RenderQueues::Host2DKind kind, RenderQueues::Host2DRef ref) {
+	m_commandKinds[m_commandCount] = kind;
+	m_commandRefs[m_commandCount] = ref;
 	m_commandCount += 1;
 }
 
@@ -379,23 +380,23 @@ void HostOverlayMenu::queueRenderCommands(ConsoleCore& console, GameView& view) 
 	const i32 top = (static_cast<i32>(view.viewportSize.y) - totalHeight) / 2;
 	const i32 boxTop = top + titleHeight + titleGap;
 	m_panelRect.area = RectBounds{static_cast<f32>(left), static_cast<f32>(boxTop), static_cast<f32>(left + boxWidth), static_cast<f32>(boxTop + boxHeight), 920.0f};
-	queueCommand(rectKind, &m_panelRect, nullptr);
+	queueCommand(rectKind, &m_panelRect);
 	m_titleGlyphs.font = font;
 	m_titleGlyphs.x = static_cast<f32>(left + padding);
 	m_titleGlyphs.y = static_cast<f32>(top);
-	queueCommand(glyphsKind, nullptr, &m_titleGlyphs);
+	queueCommand(glyphsKind, &m_titleGlyphs);
 	for (i32 index = 0; index < kMenuOptionCount; index += 1) {
 		const i32 y = boxTop + padding + index * lineHeight;
 		if (index == m_selected) {
 			m_highlightRect.area = RectBounds{static_cast<f32>(left), static_cast<f32>(y - 2), static_cast<f32>(left + boxWidth), static_cast<f32>(y + lineHeight - 2), 921.0f};
-			queueCommand(rectKind, &m_highlightRect, nullptr);
+			queueCommand(rectKind, &m_highlightRect);
 		}
 		GlyphRenderSubmission& glyphs = m_optionGlyphs[static_cast<size_t>(index)];
 		glyphs.font = font;
 		glyphs.x = static_cast<f32>(left + padding);
 		glyphs.y = static_cast<f32>(y);
 		glyphs.color = index == m_selected ? kTextColor : kDimColor;
-		queueCommand(glyphsKind, nullptr, &glyphs);
+		queueCommand(glyphsKind, &glyphs);
 	}
 }
 
@@ -423,7 +424,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& 
 		}
 		m_fpsGlyphs.x = view.viewportSize.x - 8.0f - static_cast<f32>(m_fpsTextWidth);
 		m_fpsGlyphs.y = 8.0f;
-		queueCommand(glyphsKind, nullptr, &m_fpsGlyphs);
+		queueCommand(glyphsKind, &m_fpsGlyphs);
 		queued = true;
 	}
 	if (view.showResourceUsageGizmo) {
@@ -443,7 +444,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& 
 			static_cast<double>(runtime.vramTotalBytes()),
 			static_cast<double>(vdpBudget),
 		};
-		queueCommand(rectKind, &m_usagePanelRect, nullptr);
+		queueCommand(rectKind, &m_usagePanelRect);
 		for (i32 index = 0; index < UsageBarCount; index += 1) {
 			const size_t offset = static_cast<size_t>(index);
 			const double ratio = used[offset] / total[offset];
@@ -463,12 +464,12 @@ bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& 
 				percent.glyphs[0] = buffer;
 				percent.glyph_end = static_cast<i32>(percent.glyphs[0].size());
 			}
-			queueCommand(rectKind, &m_usageBarBackgrounds[offset], nullptr);
+			queueCommand(rectKind, &m_usageBarBackgrounds[offset]);
 			if (fillWidth > 0) {
-				queueCommand(rectKind, &fill, nullptr);
+				queueCommand(rectKind, &fill);
 			}
-			queueCommand(glyphsKind, nullptr, &label);
-			queueCommand(glyphsKind, nullptr, &percent);
+			queueCommand(glyphsKind, &label);
+			queueCommand(glyphsKind, &percent);
 		}
 		queued = true;
 	}

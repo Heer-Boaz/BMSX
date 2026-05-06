@@ -53,8 +53,6 @@ public:
 
 	void tryStart(int64_t nowCycles);
 	void scheduleNextService(int64_t nowCycles);
-	bool validateWordAlignedJobRegisters(const GeoJob& job, bool includeDst1);
-	bool validateSourceTriplet(const GeoJob& job);
 	bool validateXform2Submission(const GeoJob& job);
 	bool validateSat2Submission(const GeoJob& job);
 	bool validateOverlap2dSubmission(const GeoJob& job);
@@ -84,12 +82,7 @@ public:
 	void finishError(uint32_t code, uint32_t recordIndex, bool signalIrq = true);
 	void finishRejected(uint32_t code);
 	std::optional<uint32_t> resolveIndexedSpan(uint32_t base, uint32_t index, uint32_t stride, uint32_t byteLength) const;
-	void writeRegister(uint32_t addr, uint32_t value);
 	void writeSat2Result(uint32_t addr, uint32_t hit, int32_t nx, int32_t ny, int32_t depth, uint32_t meta);
-	static uint32_t packFault(uint32_t code, uint32_t recordIndex);
-	static uint32_t packSat2Meta(uint32_t axisIndex, uint32_t shapeSelector);
-	static int32_t roundToI32Clamped(double value);
-	static int32_t transformFixed16(int32_t m0, int32_t m1, int32_t tx, int32_t x, int32_t y);
 
 	int64_t m_cpuHz = 1;
 	int64_t m_workUnitsPerSec = 1;

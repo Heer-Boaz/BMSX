@@ -110,7 +110,7 @@ public:
 	const Runtime& runtime() const;
 	Runtime& ensureRuntime(const RuntimeOptions& options);
 	Registry& registry() { return Registry::instance(); }
-	const MachineManifest& machineManifest() const { return *m_machine_manifest; }
+	const MachineManifest& machineManifest() const { return *machine_manifest; }
 	Clock* clock() { return m_platform->clock(); }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
 	TextureManager* texmanager() { return m_texture_manager.get(); }
@@ -157,7 +157,6 @@ public:
 
 	// Singleton access
 	static ConsoleCore& instance();
-	static ConsoleCore* instancePtr();
 
 private:
 	Platform* m_platform = nullptr;
@@ -206,7 +205,7 @@ private:
 	u64 m_debugTickHostFrames = 0;
 	u64 m_debugTickUpdates = 0;
 	i64 m_debugLastUpdateCountTotal = 0;
-	const MachineManifest* m_machine_manifest = nullptr;
+	const MachineManifest* machine_manifest = nullptr;
 	TickTiming m_last_tick_timing;
 	RenderTiming m_last_render_timing;
 

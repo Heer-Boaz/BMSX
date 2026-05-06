@@ -134,7 +134,6 @@ add_library(bmsx_core STATIC
 	audio/soundmaster.cpp
 
 	# Input systems
-	input/state_manager.cpp
 	input/player.cpp
 	input/action_parser.cpp
 	input/manager.cpp
@@ -359,6 +358,12 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_vdp_ingress_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_vdp_ingress_tests COMMAND bmsx_vdp_ingress_tests)
+
+	add_executable(bmsx_core_golden_tests
+		tests/core_golden_test.cpp
+	)
+	target_link_libraries(bmsx_core_golden_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_core_golden_tests COMMAND bmsx_core_golden_tests)
 endif()
 
 # =============================================================================

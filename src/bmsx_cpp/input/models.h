@@ -383,6 +383,11 @@ struct RawActionRepeatRecord {
  * ============================================================================ */
 
 struct PressedActionsQuery {
+	std::vector<std::string> filter;
+	std::optional<bool> pressed;
+	std::optional<bool> justPressed;
+	std::optional<bool> consumed;
+	std::optional<f64> pressTime;
 	std::vector<std::string> actionsByPriority;
 };
 

@@ -6,7 +6,6 @@
 #include "machine/scheduler/device.h"
 #include <cstdint>
 #include <exception>
-#include <deque>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -92,7 +91,8 @@ public:
 	uint32_t m_decodeHeight = 0;
 	bool m_decodeQueued = false;
 	uint64_t m_decodeToken = 0;
-	std::deque<ImgDecJob> m_queuedJobs;
+	std::vector<ImgDecJob> m_queuedJobs;
+	size_t m_queuedJobHead = 0;
 	std::optional<ImgDecJob> m_activeJob;
 	bool m_signalIrq = false;
 	Memory& m_memory;

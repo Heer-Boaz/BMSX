@@ -14,7 +14,7 @@ void FrameLoopState::reset() {
 void FrameLoopState::resetFrameState(Runtime& runtime) {
 	frameActive = false;
 	runtime.vblank.abandonTick();
-	runtime.machine().inputController().restoreSampleArmed(false);
+	runtime.machine.inputController.sampleArmed = false;
 	frameState = FrameState{};
 	runtime.vblank.clearHaltUntilIrq(runtime);
 	runtime.frameScheduler.reset();
@@ -33,11 +33,7 @@ void FrameLoopState::beginFrameState(Runtime& runtime) {
 	frameState.cycleCarryGranted = 0;
 	frameDeltaMs = runtime.timing.frameDurationMs;
 	clearHardwareLighting();
-	runtime.machine().vdp().beginFrame();
-}
-
-bool FrameLoopState::hasActiveTick(const Runtime& runtime) const {
-	return frameActive && runtime.m_luaInitialized && runtime.m_tickEnabled && !runtime.m_runtimeFailed;
+	runtime.machine.vdp.beginFrame();
 }
 
 void FrameLoopState::abandonFrameState(Runtime& runtime) {
@@ -52,10 +48,10 @@ void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 	abandonFrameState(runtime);
 }
 
-void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
+void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 	try {
 		while (true) {
-			if (runtime.machine().cpu().isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
+			if (runtime.machine.cpu.isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
 				return;
 			}
 			if (runtime.vblank.consumeBackQueueClearAfterIrqWake()) {
@@ -65,7 +61,7 @@ void FrameLoopState::executeUpdateCallback(Runtime& runtime) {
 				return;
 			}
 			const RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
-			if (runtime.machine().cpu().isHaltedUntilIrq()) {
+			if (runtime.machine.cpu.isHaltedUntilIrq()) {
 				if (runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
 					return;
 				}
@@ -110,7 +106,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	}
 
 	if (runtime.m_pendingCall == PendingCall::Entry) {
-		executeUpdateCallback(runtime);
+		runUpdatePhase(runtime);
 	}
 
 	if (startedFrame) {

@@ -13,7 +13,6 @@ public:
 	void resetFrameState(Runtime& runtime);
 	void beginFrameState(Runtime& runtime);
 	bool tickUpdate(Runtime& runtime);
-	bool hasActiveTick(const Runtime& runtime) const;
 	void abandonFrameState(Runtime& runtime);
 
 	FrameState frameState;
@@ -22,7 +21,7 @@ public:
 	f64 currentTimeSeconds = 0.0;
 
 private:
-	void executeUpdateCallback(Runtime& runtime);
+	void runUpdatePhase(Runtime& runtime);
 	void finalizeUpdateSlice(Runtime& runtime);
 };
 

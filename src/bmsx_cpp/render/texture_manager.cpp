@@ -21,7 +21,11 @@ std::string textureParamsKey(const TextureParams& desc) {
 	std::ostringstream oss;
 	oss << "size=" << std::fixed << std::setprecision(3)
 		<< desc.size.x << "x" << desc.size.y
-		<< "|srgb=" << (desc.srgb ? "1" : "0");
+		<< "|srgb=" << (desc.srgb ? "1" : "0")
+		<< "|wrapS=" << desc.wrapS
+		<< "|wrapT=" << desc.wrapT
+		<< "|minFilter=" << desc.minFilter
+		<< "|magFilter=" << desc.magFilter;
 	return oss.str();
 }
 
@@ -55,10 +59,6 @@ TextureManager::~TextureManager() {
 	}
 }
 
-TextureManager* TextureManager::instancePtr() {
-	return s_instance;
-}
-
 TextureManager& TextureManager::instance() {
 	if (!s_instance) {
 		throw BMSX_RUNTIME_ERROR("TextureManager::instance() called before instance was created.");
@@ -82,10 +82,6 @@ void TextureManager::setBackend(GPUBackend* backend) {
 
 TextureKey TextureManager::makeKey(const std::string& uri, const TextureParams& desc) const {
 	return uri + "|" + textureParamsKey(desc);
-}
-
-TextureKey TextureManager::makeModelBufferKey(const ModelTextureIdentifier& identifier) const {
-	return "buf:" + identifier.modelName + ":" + std::to_string(identifier.modelImageIndex);
 }
 
 TextureKey TextureManager::acquireTexture(const TextureKey& key,
@@ -112,7 +108,10 @@ TextureKey TextureManager::acquireTexture(const TextureKey& key,
 		key,
 		[this, &loadBitmapFn, &desc]() {
 			TextureSource src = loadBitmapFn();
-			return createTextureFromSource(src, desc);
+			if (!src.valid()) {
+				throw BMSX_RUNTIME_ERROR("TextureManager: invalid texture source");
+			}
+			return m_backend->createTexture(src.pixels, src.width, src.height, desc);
 		},
 		BarrierAcquireOptions<TextureHandle>{
 			{},
@@ -197,11 +196,12 @@ void TextureManager::releaseByUri(const std::string& uri, const TextureParams& d
 	releaseByKey(makeKey(uri, desc));
 }
 
-TextureHandle TextureManager::getOrCreateTexture(const TextureKey& key,
-													const u8* pixels,
-													i32 width,
-													i32 height,
-													const TextureParams& desc) {
+TextureHandle TextureManager::createTextureFromPixelsSync(const std::string& keyBase,
+															const u8* pixels,
+															i32 width,
+															i32 height,
+															const TextureParams& desc) {
+	const TextureKey key = makeKey(keyBase, desc);
 	TextureSource src = TextureSource::fromView(pixels, width, height);
 	ensureTextureReady(key, [src]() { return src; }, desc);
 	return getTexture(key);
@@ -219,35 +219,6 @@ void TextureManager::updateTexture(TextureHandle handle,
 		throw BMSX_RUNTIME_ERROR("TextureManager: invalid texture handle");
 	}
 	m_backend->updateTexture(handle, pixels, width, height, desc);
-}
-
-void TextureManager::updateTexturesForImageId(const AssetId& imageId,
-												const u8* pixels,
-												i32 width,
-												i32 height) {
-	if (!m_backend) {
-		throw BMSX_RUNTIME_ERROR("TextureManager backend not set");
-	}
-	if (imageId.empty()) {
-		throw BMSX_RUNTIME_ERROR("TextureManager: image id missing for texture update");
-	}
-	if (!pixels || width <= 0 || height <= 0) {
-		throw BMSX_RUNTIME_ERROR("TextureManager: image record missing pixel data");
-	}
-	const std::string prefix = imageId + "|";
-	for (auto& [key, gpuEntry] : m_gpuCache) {
-		if (key.rfind(prefix, 0) != 0) {
-			continue;
-		}
-		if (!gpuEntry.handle) {
-			continue;
-		}
-		m_backend->updateTexture(gpuEntry.handle,
-									pixels,
-									width,
-									height,
-									gpuEntry.params);
-	}
 }
 
 TextureHandle TextureManager::resizeTextureForKey(const std::string& keyBase, i32 width, i32 height) {
@@ -320,28 +291,6 @@ void TextureManager::updateTextureRegionForKey(const std::string& keyBase,
 	}
 }
 
-TextureHandle TextureManager::replaceTexture(const TextureKey& key,
-												const u8* pixels,
-												i32 width,
-												i32 height,
-												const TextureParams& desc) {
-	// Force remove existing texture regardless of refcount
-	auto it = m_gpuCache.find(key);
-	if (it != m_gpuCache.end()) {
-		GPUCacheEntry& entry = it->second;
-		m_textureBarrier.release(key, [this](const TextureHandle& h) {
-			if (m_backend) m_backend->destroyTexture(h);
-		});
-		if (entry.ownedFallback && entry.handle && m_backend) {
-			m_backend->destroyTexture(entry.handle);
-		}
-		m_gpuCache.erase(it);
-	}
-	// Create new texture with the new pixel data
-	return getOrCreateTexture(key, pixels, width, height, desc);
-}
-
-
 TextureSource TextureManager::fromBuffer(const ImageKey& key,
 											const u8* buffer,
 											size_t size,
@@ -383,17 +332,6 @@ TextureSource TextureManager::fromBuffer(const ImageKey& key,
 TextureSource TextureManager::createSolid(i32 size, const Color& color) {
 	auto pixels = createSolidRgba8Pixels(size, size, color);
 	return TextureSource::fromOwned(std::move(pixels), size, size);
-}
-
-TextureHandle TextureManager::createTextureFromSource(const TextureSource& source,
-														const TextureParams& desc) {
-	if (!m_backend) {
-		throw BMSX_RUNTIME_ERROR("TextureManager backend not set");
-	}
-	if (!source.valid()) {
-		throw BMSX_RUNTIME_ERROR("TextureManager: invalid texture source");
-	}
-	return m_backend->createTexture(source.pixels, source.width, source.height, desc);
 }
 
 void TextureManager::releaseByKey(const TextureKey& key) {

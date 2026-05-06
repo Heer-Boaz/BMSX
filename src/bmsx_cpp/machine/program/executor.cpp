@@ -5,7 +5,7 @@
 namespace bmsx {
 
 void Runtime::callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResults& out) {
-	CPU& cpu = m_machine.cpu();
+	CPU& cpu = machine.cpu;
 	int depthBefore = cpu.getFrameDepth();
 	const int previousBudget = cpu.instructionBudgetRemaining;
 	const int budgetSentinel = std::numeric_limits<int>::max();

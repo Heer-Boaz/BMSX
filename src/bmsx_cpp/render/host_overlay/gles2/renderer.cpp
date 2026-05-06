@@ -131,9 +131,8 @@ void drawLineGLES2(OpenGLES2Backend& backend, f32 x0, f32 y0, f32 x1, f32 y1, co
 }
 
 void drawPolyGLES2(OpenGLES2Backend& backend, const PolyRenderSubmission& command) {
-	const f32 thickness = command.thickness.value();
 	for (size_t index = 0; index + 3u < command.points.size(); index += 2u) {
-		drawLineGLES2(backend, command.points[index], command.points[index + 1u], command.points[index + 2u], command.points[index + 3u], command.color, thickness);
+		drawLineGLES2(backend, command.points[index], command.points[index + 1u], command.points[index + 2u], command.points[index + 3u], command.color, command.thickness);
 	}
 }
 
@@ -190,8 +189,8 @@ void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& glyph, f32 
 }
 
 void drawGlyphsGLES2(OpenGLES2Backend& backend, const GlyphRenderSubmission& command) {
-	if (command.background_color.has_value()) {
-		const Color& background = *command.background_color;
+	if (command.has_background_color) {
+		const Color& background = command.background_color;
 		const i32 lineHeight = command.font->lineHeight();
 		forEachGlyphImage(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, const Color&) {
 			drawQuadGLES2(
@@ -244,12 +243,12 @@ void beginHostOverlayGLES2(OpenGLES2Backend& backend, const Host2DPipelineState&
 	glUniform2f(g_gles2.uniformResolution, static_cast<float>(state.overlayWidth), static_cast<float>(state.overlayHeight));
 }
 
-void renderHost2DEntryGLES2(OpenGLES2Backend& backend, const RenderQueues::Host2DEntry& entry) {
-	switch (entry.kind) {
-		case RenderQueues::Host2DKind::Img: drawImageGLES2(backend, *entry.img); return;
-		case RenderQueues::Host2DKind::Rect: drawRectGLES2(backend, *entry.rect); return;
-		case RenderQueues::Host2DKind::Poly: drawPolyGLES2(backend, *entry.poly); return;
-		case RenderQueues::Host2DKind::Glyphs: drawGlyphsGLES2(backend, *entry.glyphs); return;
+void renderHost2DEntryGLES2(OpenGLES2Backend& backend, RenderQueues::Host2DKind kind, RenderQueues::Host2DRef ref) {
+	switch (kind) {
+		case RenderQueues::Host2DKind::Img: drawImageGLES2(backend, *static_cast<const HostImageRenderSubmission*>(ref)); return;
+		case RenderQueues::Host2DKind::Rect: drawRectGLES2(backend, *static_cast<const RectRenderSubmission*>(ref)); return;
+		case RenderQueues::Host2DKind::Poly: drawPolyGLES2(backend, *static_cast<const PolyRenderSubmission*>(ref)); return;
+		case RenderQueues::Host2DKind::Glyphs: drawGlyphsGLES2(backend, *static_cast<const GlyphRenderSubmission*>(ref)); return;
 	}
 }
 

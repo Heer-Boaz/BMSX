@@ -18,7 +18,8 @@ public:
 	void queueRenderCommands(ConsoleCore& console, GameView& view);
 	bool queueFrameOverlayCommands(ConsoleCore& console, GameView& view);
 	size_t queuedCommandCount() const;
-	RenderQueues::Host2DEntry commandAt(size_t index) const;
+	RenderQueues::Host2DKind commandKind(size_t index) const;
+	RenderQueues::Host2DRef commandRef(size_t index) const;
 	bool active() const { return m_active; }
 
 private:
@@ -27,7 +28,7 @@ private:
 	static constexpr size_t CommandCapacity = 128;
 
 	void clearRenderCommands();
-	void queueCommand(RenderQueues::Host2DKind kind, const RectRenderSubmission* rect, const GlyphRenderSubmission* glyphs);
+	void queueCommand(RenderQueues::Host2DKind kind, RenderQueues::Host2DRef ref);
 	void toggle();
 	void close();
 	void changeSelected(ConsoleCore& console, GameView& view, i32 direction);
@@ -49,7 +50,8 @@ private:
 	std::array<GlyphRenderSubmission, UsageBarCount> m_usagePercents;
 	std::array<i32, UsageBarCount> m_usagePercentCode;
 	std::array<GlyphRenderSubmission, OptionCount> m_optionGlyphs;
-	std::array<RenderQueues::Host2DEntry, CommandCapacity> m_commands;
+	std::array<RenderQueues::Host2DKind, CommandCapacity> m_commandKinds;
+	std::array<RenderQueues::Host2DRef, CommandCapacity> m_commandRefs;
 	size_t m_commandCount = 0;
 	std::string m_fpsText;
 	i32 m_fpsTextTenths = -1;

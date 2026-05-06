@@ -37,10 +37,11 @@ void DmaController::onCtrlWriteThunk(void* context, uint32_t, Value) {
 
 bool DmaController::hasPendingVdpSubmit() const {
 	for (const auto& state : m_channels) {
-		if (state.hasActive && state.active.kind == DmaJob::Kind::Io && state.active.dst == IO_VDP_FIFO) {
+		if (state.active.has_value() && state.active->kind == DmaJob::Kind::Io && state.active->dst == IO_VDP_FIFO) {
 			return true;
 		}
-		for (const auto& job : state.queue) {
+		for (size_t index = state.queueHead; index < state.queue.size(); index += 1) {
+			const DmaJob& job = state.queue[index];
 			if (job.kind == DmaJob::Kind::Io && job.dst == IO_VDP_FIFO) {
 				return true;
 			}
@@ -51,12 +52,12 @@ bool DmaController::hasPendingVdpSubmit() const {
 
 bool DmaController::hasPendingIsoTransfer() const {
 	const auto& state = m_channels[static_cast<int>(Channel::Iso)];
-	return state.hasActive || !state.queue.empty();
+	return state.active.has_value() || state.queueHead != state.queue.size();
 }
 
 bool DmaController::hasPendingBulkTransfer() const {
 	const auto& state = m_channels[static_cast<int>(Channel::Bulk)];
-	return state.hasActive || !state.queue.empty();
+	return state.active.has_value() || state.queueHead != state.queue.size();
 }
 
 void DmaController::setTiming(int64_t cpuHz, int64_t isoBytesPerSec, int64_t bulkBytesPerSec, int64_t nowCycles) {
@@ -84,15 +85,15 @@ void DmaController::onService(int64_t nowCycles) {
 		m_scheduler.cancelDeviceService(DeviceServiceDma);
 		return;
 	}
-	bool ioWrittenDirty = false;
-	bool imgWrittenDirty = false;
-	tickChannel(Channel::Iso, ioWrittenDirty, imgWrittenDirty);
-	tickChannel(Channel::Bulk, ioWrittenDirty, imgWrittenDirty);
-	if (ioWrittenDirty) {
+	tickChannel(Channel::Iso);
+	tickChannel(Channel::Bulk);
+	if (m_ioWrittenDirty) {
 		m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(static_cast<double>(m_ioWrittenValue)));
+		m_ioWrittenDirty = false;
 	}
-	if (imgWrittenDirty) {
+	if (m_imgWrittenDirty) {
 		m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(static_cast<double>(m_imgWrittenValue)));
+		m_imgWrittenDirty = false;
 	}
 	scheduleNextService(nowCycles);
 }
@@ -100,13 +101,14 @@ void DmaController::onService(int64_t nowCycles) {
 uint32_t DmaController::pendingBytesForChannel(Channel channel) const {
 	const auto& state = m_channels[static_cast<int>(channel)];
 	uint32_t pendingBytes = 0u;
-	if (state.hasActive) {
-		const DmaJob& job = state.active;
+	if (state.active.has_value()) {
+		const DmaJob& job = *state.active;
 		pendingBytes += job.kind == DmaJob::Kind::Io
 			? job.remaining
 			: (static_cast<uint32_t>(job.plan.writeLen) - job.written);
 	}
-	for (const DmaJob& job : state.queue) {
+	for (size_t index = state.queueHead; index < state.queue.size(); index += 1) {
+		const DmaJob& job = state.queue[index];
 		pendingBytes += job.kind == DmaJob::Kind::Io
 			? job.remaining
 			: (static_cast<uint32_t>(job.plan.writeLen) - job.written);
@@ -137,11 +139,14 @@ void DmaController::reset() {
 	m_bulkCarry = 0;
 	for (int i = 0; i < 2; i += 1) {
 		m_channels[i].queue.clear();
-		m_channels[i].hasActive = false;
+		m_channels[i].queueHead = 0;
+		m_channels[i].active.reset();
 		m_channels[i].budget = 0;
 	}
 	m_ioWrittenValue = 0;
+	m_ioWrittenDirty = false;
 	m_imgWrittenValue = 0;
+	m_imgWrittenDirty = false;
 	m_buffer.clear();
 	m_scheduler.cancelDeviceService(DeviceServiceDma);
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
@@ -152,32 +157,35 @@ void DmaController::reset() {
 	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
 }
 
-void DmaController::tickChannel(Channel channel, bool& ioWrittenDirty, bool& imgWrittenDirty) {
+void DmaController::tickChannel(Channel channel) {
 	auto& state = m_channels[static_cast<int>(channel)];
 	uint32_t budget = state.budget;
 	while (budget > 0) {
-		if (!state.hasActive) {
-			if (state.queue.empty()) {
+		if (!state.active.has_value()) {
+			if (state.queueHead == state.queue.size()) {
 				return;
 			}
-			state.active = std::move(state.queue.front());
-			state.queue.pop_front();
-			state.hasActive = true;
+			state.active = std::move(state.queue[state.queueHead]);
+			state.queueHead += 1;
+			if (state.queueHead == state.queue.size()) {
+				state.queue.clear();
+				state.queueHead = 0;
+			}
 		}
-		auto& job = state.active;
+		auto& job = *state.active;
 		const uint32_t written = processJob(job, budget);
 		budget -= written;
 		if (job.kind == DmaJob::Kind::Io) {
 			m_ioWrittenValue = job.written;
-			ioWrittenDirty = true;
+			m_ioWrittenDirty = true;
 		}
 		if (job.kind == DmaJob::Kind::Image) {
 			m_imgWrittenValue = job.written;
-			imgWrittenDirty = true;
+			m_imgWrittenDirty = true;
 		}
 		if (isJobComplete(job)) {
 			finishJob(job);
-			state.hasActive = false;
+			state.active.reset();
 			continue;
 		}
 		if (written == 0) {
@@ -341,6 +349,7 @@ void DmaController::tryStartIo() {
 	job.strict = strict;
 	job.error = false;
 	m_ioWrittenValue = 0;
+	m_ioWrittenDirty = true;
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
 	scheduleNextService(m_scheduler.currentNowCycles());
 }

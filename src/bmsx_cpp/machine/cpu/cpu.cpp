@@ -1388,11 +1388,11 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 		path.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
 		traverseStableValue(path, value);
 	});
-	for (size_t index = 0; index < m_memory.ioSlots().size(); ++index) {
+	for (size_t index = 0; index < m_memory.getIoSlots().size(); ++index) {
 		std::vector<CpuRuntimeRefSegment> path;
 		path.push_back(CpuRuntimeRefSegment{ false, "ioMemory", 0 });
 		path.push_back(CpuRuntimeRefSegment{ true, {}, static_cast<int>(index) });
-		traverseStableValue(path, m_memory.ioSlots()[index]);
+		traverseStableValue(path, m_memory.getIoSlots()[index]);
 	}
 	for (const auto& [name, value] : moduleCache) {
 		std::vector<CpuRuntimeRefSegment> path;
@@ -1536,8 +1536,8 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	for (const auto& [name, value] : moduleCache) {
 		state.moduleCache.push_back(CpuRootValueState{ name, captureValueState(value) });
 	}
-	state.ioMemory.reserve(m_memory.ioSlots().size());
-	for (const Value& value : m_memory.ioSlots()) {
+	state.ioMemory.reserve(m_memory.getIoSlots().size());
+	for (const Value& value : m_memory.getIoSlots()) {
 		state.ioMemory.push_back(captureValueState(value));
 	}
 	state.frames.reserve(m_frames.size());
@@ -1673,11 +1673,11 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 		path.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
 		traverseStableValue(path, value);
 	});
-	for (size_t index = 0; index < m_memory.ioSlots().size(); ++index) {
+	for (size_t index = 0; index < m_memory.getIoSlots().size(); ++index) {
 		std::vector<CpuRuntimeRefSegment> path;
 		path.push_back(CpuRuntimeRefSegment{ false, "ioMemory", 0 });
 		path.push_back(CpuRuntimeRefSegment{ true, {}, static_cast<int>(index) });
-		traverseStableValue(path, m_memory.ioSlots()[index]);
+		traverseStableValue(path, m_memory.getIoSlots()[index]);
 	}
 	for (const auto& [name, value] : moduleCache) {
 		std::vector<CpuRuntimeRefSegment> path;
@@ -2983,7 +2983,7 @@ void CPU::markRoots(GcHeap& heap) {
 	if (m_stringIndexTable) {
 		heap.markObject(m_stringIndexTable);
 	}
-	for (const auto& value : m_memory.ioSlots()) {
+	for (const auto& value : m_memory.getIoSlots()) {
 		heap.markValue(value);
 	}
 	for (const auto& value : lastReturnValues) {

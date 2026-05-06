@@ -11,12 +11,28 @@
 
 namespace bmsx {
 
+class AudioController;
+
 struct MemoryState {
 	std::vector<Value> ioMemory;
 };
 
 struct MemorySaveState {
 	std::vector<u8> ram;
+};
+
+struct MemoryInit {
+	struct RomSpan {
+		const u8* data = nullptr;
+		size_t size = 0;
+	};
+	struct MutableRomSpan {
+		u8* data = nullptr;
+		size_t size = 0;
+	};
+	RomSpan systemRom;
+	RomSpan cartRom;
+	MutableRomSpan overlayRom;
 };
 
 class Memory {
@@ -31,11 +47,12 @@ public:
 		using IoWriteHandler = void (*)(void* context, uint32_t addr, Value value);
 
 	Memory();
+	explicit Memory(const MemoryInit& init);
 
 	void setSystemRom(const u8* data, size_t size);
 	void setCartRom(const u8* data, size_t size);
 		void setOverlayRom(u8* data, size_t size);
-		size_t overlayRomSize() const;
+		size_t getOverlayRomSize() const;
 	void setVramWriter(VramWriter* writer);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
 	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler);
@@ -67,7 +84,6 @@ public:
 
 	void writeBytes(uint32_t addr, const u8* data, size_t length);
 	void readBytes(uint32_t addr, u8* out, size_t length) const;
-	const u8* readBytesView(uint32_t addr, size_t length) const;
 	bool isVramRange(uint32_t addr, size_t length) const;
 	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
 	bool isRamRange(uint32_t addr, size_t length) const;
@@ -79,11 +95,13 @@ public:
 	MemorySaveState captureSaveState() const;
 	void restoreSaveState(const MemorySaveState& state);
 
-	const std::vector<Value>& ioSlots() const { return m_ioSlots; }
+	const std::vector<Value>& getIoSlots() const { return m_ioSlots; }
 	void loadIoSlots(const std::vector<Value>& slots);
 	void clearIoSlots();
 
 private:
+	friend class AudioController;
+
 	struct RomSpan {
 		const u8* data = nullptr;
 		size_t size = 0;
@@ -118,6 +136,7 @@ private:
 	bool isProgramCodeReadableRange(uint32_t addr, size_t length) const;
 	uint32_t readProgramCodeWord(uint32_t addr) const;
 	uint32_t readU32FromRegion(uint32_t addr) const;
+	const u8* readBytesView(uint32_t addr, size_t length) const;
 	const u8* readRegion(uint32_t addr, size_t length, size_t& outOffset) const;
 	u8* writeRegion(uint32_t addr, size_t length, size_t& outOffset);
 	bool isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, uint32_t size) const;

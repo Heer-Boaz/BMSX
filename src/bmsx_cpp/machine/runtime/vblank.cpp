@@ -38,11 +38,11 @@ void VblankState::setVblankCycles(Runtime& runtime, int cycles) {
 }
 
 int VblankState::getCyclesIntoFrame(const Runtime& runtime) const {
-	return static_cast<int>(runtime.m_machine.scheduler().nowCycles() - m_frameStartCycle);
+	return static_cast<int>(runtime.machine.scheduler.nowCycles() - m_frameStartCycle);
 }
 
 void VblankState::resetScheduler(Runtime& runtime) {
-	runtime.m_machine.scheduler().reset();
+	runtime.machine.scheduler.reset();
 	m_frameStartCycle = 0;
 }
 
@@ -51,15 +51,15 @@ void VblankState::reset(Runtime& runtime) {
 	m_vblankActive = false;
 	m_vblankSequence = 0;
 	m_lastCompletedVblankSequence = 0;
-	runtime.m_machine.inputController().restoreSampleArmed(false);
-	runtime.m_machine.irqController().postLoad();
+	runtime.machine.inputController.sampleArmed = false;
+	runtime.machine.irqController.postLoad();
 	resetHaltIrqWait();
-	runtime.m_machine.vdp().resetStatus();
+	runtime.machine.vdp.resetStatus();
 	if (m_vblankStartCycle == 0) {
 		setVblankStatus(runtime, true);
 	}
 	scheduleCurrentFrameTimers(runtime);
-	refreshDeviceTimings(runtime, runtime.m_machine.scheduler().nowCycles());
+	refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles());
 }
 
 RuntimeVblankSnapshot VblankState::capture(const Runtime& runtime) const {
@@ -74,15 +74,15 @@ void VblankState::restore(Runtime& runtime, const RuntimeVblankSnapshot& state) 
 	runtime.frameLoop.reset();
 	runtime.screen.reset();
 	resetScheduler(runtime);
-	runtime.m_machine.scheduler().setNowCycles(state.cyclesIntoFrame);
+	runtime.machine.scheduler.setNowCycles(state.cyclesIntoFrame);
 	m_frameStartCycle = 0;
 	m_vblankSequence = 0;
 	m_lastCompletedVblankSequence = 0;
 	m_activeTickCompleted = false;
-	runtime.m_machine.irqController().postLoad();
+	runtime.machine.irqController.postLoad();
 	setVblankStatus(runtime, m_vblankStartCycle == 0 || getCyclesIntoFrame(runtime) >= m_vblankStartCycle);
 	scheduleCurrentFrameTimers(runtime);
-	refreshDeviceTimings(runtime, runtime.m_machine.scheduler().nowCycles());
+	refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles());
 }
 
 void VblankState::beginTick() {
@@ -103,7 +103,7 @@ void VblankState::handleEndTimer(Runtime& runtime) {
 	if (m_vblankActive) {
 		setVblankStatus(runtime, false);
 	}
-	m_frameStartCycle = runtime.m_machine.scheduler().nowCycles();
+	m_frameStartCycle = runtime.machine.scheduler.nowCycles();
 	scheduleCurrentFrameTimers(runtime);
 	if (m_vblankStartCycle == 0) {
 		enterVblank(runtime);
@@ -111,7 +111,7 @@ void VblankState::handleEndTimer(Runtime& runtime) {
 }
 
 void VblankState::clearHaltUntilIrq(Runtime& runtime) {
-	runtime.m_machine.cpu().clearHaltUntilIrq();
+	runtime.machine.cpu.clearHaltUntilIrq();
 	resetHaltIrqWait();
 	m_clearBackQueuesAfterIrqWake = false;
 }
@@ -125,9 +125,9 @@ bool VblankState::consumeBackQueueClearAfterIrqWake() {
 }
 
 bool VblankState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameState) {
-	auto& cpu = runtime.m_machine.cpu();
-	auto& irqController = runtime.m_machine.irqController();
-	auto& scheduler = runtime.m_machine.scheduler();
+	auto& cpu = runtime.machine.cpu;
+	auto& irqController = runtime.machine.irqController;
+	auto& scheduler = runtime.machine.scheduler;
 	int& cycleBudgetRemaining = frameState.cycleBudgetRemaining;
 	runDueRuntimeTimers(runtime);
 	if (!cpu.isHaltedUntilIrq()) {
@@ -170,7 +170,7 @@ bool VblankState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameState) {
 }
 
 void VblankState::scheduleCurrentFrameTimers(Runtime& runtime) {
-	auto& scheduler = runtime.m_machine.scheduler();
+	auto& scheduler = runtime.machine.scheduler;
 	scheduler.scheduleVblankTimer(TimerKindVblankEnd, m_frameStartCycle + runtime.timing.cycleBudgetPerFrame);
 	if (m_vblankStartCycle > 0 && getCyclesIntoFrame(runtime) < m_vblankStartCycle) {
 		scheduler.scheduleVblankTimer(TimerKindVblankBegin, m_frameStartCycle + m_vblankStartCycle);
@@ -179,15 +179,15 @@ void VblankState::scheduleCurrentFrameTimers(Runtime& runtime) {
 
 void VblankState::setVblankStatus(Runtime& runtime, bool active) {
 	m_vblankActive = active;
-	runtime.m_machine.vdp().setVblankStatus(active);
+	runtime.machine.vdp.setVblankStatus(active);
 }
 
 void VblankState::enterVblank(Runtime& runtime) {
 	m_vblankSequence += 1;
 	commitFrameOnVblankEdge(runtime);
-	runtime.m_machine.inputController().onVblankEdge();
+	runtime.machine.inputController.onVblankEdge();
 	setVblankStatus(runtime, true);
-	runtime.m_machine.irqController().raise(IRQ_VBLANK);
+	runtime.machine.irqController.raise(IRQ_VBLANK);
 	if (runtime.frameLoop.frameActive && isFrameBoundaryHalt(runtime)) {
 		completeTickIfPending(runtime, runtime.frameLoop.frameState, m_vblankSequence);
 		m_clearBackQueuesAfterIrqWake = true;
@@ -206,7 +206,7 @@ bool VblankState::tryCompleteTickOnPendingVblankIrq(Runtime& runtime, FrameState
 	if (m_vblankSequence == 0) {
 		return false;
 	}
-	if ((runtime.m_machine.irqController().pendingFlags() & IRQ_VBLANK) == 0u) {
+	if ((runtime.machine.irqController.pendingFlags() & IRQ_VBLANK) == 0u) {
 		return false;
 	}
 	if (m_lastCompletedVblankSequence == m_vblankSequence) {
@@ -214,21 +214,21 @@ bool VblankState::tryCompleteTickOnPendingVblankIrq(Runtime& runtime, FrameState
 	}
 	completeTickIfPending(runtime, frameState, m_vblankSequence);
 	m_clearBackQueuesAfterIrqWake = true;
-	runtime.m_machine.cpu().clearHaltUntilIrq();
+	runtime.machine.cpu.clearHaltUntilIrq();
 	resetHaltIrqWait();
 	return true;
 }
 
 bool VblankState::isFrameBoundaryHalt(Runtime& runtime) const {
-	return runtime.m_machine.cpu().getFrameDepth() == 1
+	return runtime.machine.cpu.getFrameDepth() == 1
 		&& runtime.m_pendingCall == Runtime::PendingCall::Entry
-		&& runtime.m_machine.cpu().isHaltedUntilIrq();
+		&& runtime.machine.cpu.isHaltedUntilIrq();
 }
 
 // disable-next-line single_line_method_pattern -- VBLANK owns the frame-commit timing edge into the VDP.
 void VblankState::commitFrameOnVblankEdge(Runtime& runtime) {
-	auto& vdp = runtime.m_machine.vdp();
-	if (vdp.commitReadyFrameOnVblankEdge()) {
+	auto& vdp = runtime.machine.vdp;
+	if (vdp.presentReadyFrameOnVblankEdge()) {
 		applyVdpFrameBufferTextureWrites(vdp);
 		presentVdpFrameBufferPages();
 		vdp.swapFrameBufferReadbackPages();

@@ -82,7 +82,7 @@ void GamepadInput::reset(const std::vector<std::string>* except) {
 		m_lastPollTimeMs = 0.0;
 		return;
 	}
-	resetObjectMap(m_buttonStates, except);
+	resetObject(m_buttonStates, except);
 }
 
 i32 GamepadInput::gamepadIndex() const {

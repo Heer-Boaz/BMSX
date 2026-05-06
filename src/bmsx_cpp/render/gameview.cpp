@@ -13,7 +13,6 @@
 #include "graph/graph.h"
 #include "lighting/system.h"
 #include "core/console.h"
-#include "machine/runtime/runtime.h"
 #include "rompack/format.h"
 #include "texture_manager.h"
 #include "common/clamp.h"
@@ -25,22 +24,6 @@
 #include <utility>
 
 namespace bmsx {
-
-namespace {
-
-void submitRectPrimitive(RectRenderSubmission::Kind kind,
-							const RectBounds& area,
-							const Color& color,
-							RenderLayer layer) {
-	RectRenderSubmission submission;
-	submission.kind = kind;
-	submission.area = area;
-	submission.color = color;
-	submission.layer = layer;
-	RenderQueues::submitRectangle(std::move(submission));
-}
-
-} // namespace
 
 /* ============================================================================
  * GameView implementation
@@ -56,17 +39,6 @@ GameView::GameView(GameViewHost* host, i32 viewportWidth, i32 viewportHeight)
 
 GameView::~GameView() {
 	dispose();
-}
-
-void GameView::bindRuntime(Runtime& runtime) {
-	m_runtime = &runtime;
-}
-
-Runtime& GameView::runtime() {
-	if (!m_runtime) {
-		throw BMSX_RUNTIME_ERROR("[GameView] Runtime dependency is not bound.");
-	}
-	return *m_runtime;
 }
 
 void GameView::setBackend(std::unique_ptr<GPUBackend> backend) {
@@ -149,12 +121,6 @@ void GameView::initializeDefaultTextures() {
 	textures["_default_mr"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
 }
 
-void GameView::beginFrame() {
-	if (!m_backend) return;
-	m_activeTexUnit = -1;
-	m_backend->beginFrame();
-}
-
 void GameView::configurePresentation(PresentationMode mode, bool commitFrame) {
 	presentationMode = mode;
 	commitPresentationFrame = commitFrame;
@@ -182,6 +148,9 @@ void GameView::finalizePresentation() {
 void GameView::drawGame() {
 	if (!m_backend) return;
 
+	m_activeTexUnit = -1;
+	m_backend->beginFrame();
+
 	// Increment frame timing
 	m_renderFrameIndex++;
 
@@ -191,10 +160,6 @@ void GameView::drawGame() {
 	frame.delta = ConsoleCore::instance().deltaTime();
 	m_renderGraph->execute(&frame);
 	finalizePresentation();
-}
-
-void GameView::endFrame() {
-	if (!m_backend) return;
 	m_backend->endFrame();
 }
 
@@ -241,42 +206,9 @@ void GameView::bindCubemapTex(TextureHandle tex) {
 // Ambient control API
 // ─────────────────────────────────────────────────────────────────────────────
 
-void GameView::setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure) {
-	RenderQueues::setSkyboxTintExposure(tint, exposure);
-}
-
-void GameView::setParticlesAmbient(i32 mode, f32 factor) {
-	RenderQueues::setAmbientDefaults(mode, factor);
-}
-
 void GameView::setSpritesAmbient(bool enabled, f32 factor) {
 	spriteAmbientEnabledDefault = enabled;
 	spriteAmbientFactorDefault = clamp(factor, 0.0f, 1.0f);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Convenience methods for host/editor drawing primitives.
-// ─────────────────────────────────────────────────────────────────────────────
-
-void GameView::fillRectangle(const RectBounds& area, const Color& color, RenderLayer layer) {
-	submitRectPrimitive(RectRenderSubmission::Kind::Fill, area, color, layer);
-}
-
-void GameView::drawRectangle(const RectBounds& area, const Color& color, RenderLayer layer) {
-	submitRectPrimitive(RectRenderSubmission::Kind::Rect, area, color, layer);
-}
-
-void GameView::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color, RenderLayer layer) {
-	PolyRenderSubmission submission;
-	submission.points.push_back(static_cast<f32>(x0));
-	submission.points.push_back(static_cast<f32>(y0));
-	submission.points.push_back(static_cast<f32>(x1));
-	submission.points.push_back(static_cast<f32>(y1));
-	submission.z = 0.0f;
-	submission.color = color;
-	submission.thickness = 1.0f;
-	submission.layer = layer;
-	RenderQueues::submitDrawPolygon(std::move(submission));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

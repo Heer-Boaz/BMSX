@@ -9,7 +9,7 @@
 #define BMSX_PLAYERINPUT_H
 
 #include "models.h"
-#include "state_manager.h"
+#include "manager.h"
 #include "context.h"
 #include <memory>
 #include <array>
@@ -36,26 +36,16 @@ public:
 	PlayerInput(const PlayerInput&) = delete;
 	PlayerInput& operator=(const PlayerInput&) = delete;
 	
-	// ─────────────────────────────────────────────────────────────────────────
-	// Player identity
-	// ─────────────────────────────────────────────────────────────────────────
-	i32 index() const { return m_playerIndex; }
-	
+
 	// ─────────────────────────────────────────────────────────────────────────
 	// Input handlers
 	// ─────────────────────────────────────────────────────────────────────────
 	
-	// Get handler for a source
-	InputHandler* getHandler(InputSource source) const;
-	
-	// Set handler for a source
-	void setHandler(InputSource source, InputHandler* handler);
-	
-	// Clear handler for a source
-	void clearHandler(InputSource source);
+	i32 playerIndex;
+	std::array<InputHandler*, INPUT_SOURCE_COUNT> inputHandlers = {nullptr, nullptr, nullptr};
 	
 	// Assign gamepad to this player
-	void assignGamepad(InputHandler* gamepad);
+	void assignGamepadToPlayer(InputHandler* gamepad);
 	
 	// Clear gamepad if it matches
 	void clearGamepad(InputHandler* handler);
@@ -64,8 +54,7 @@ public:
 	// Input mapping
 	// ─────────────────────────────────────────────────────────────────────────
 	
-	// Get current input map
-	const InputMap* inputMap() const { return &m_inputMap; }
+	InputMap inputMap;
 	
 	// Set input map
 	void setInputMap(const InputMap& map);
@@ -75,13 +64,18 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	
 	// Push a mapping context
-	void pushContext(const std::string& id, i32 priority, const InputMap& map);
+	void pushContext(const std::string& id, const KeyboardInputMapping& keyboard, const GamepadInputMapping& gamepad, const PointerInputMapping& pointer, i32 priority = 100, bool enabled = true);
 	
 	// Pop a mapping context
 	void popContext(const std::string& id);
 	
 	// Enable/disable a context
 	void enableContext(const std::string& id, bool enabled);
+
+	void setContextPriority(const std::string& id, i32 priority);
+
+	bool supportsVibrationEffect() const;
+	void applyVibrationEffect(const VibrationParams& params);
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Action state
@@ -156,6 +150,7 @@ public:
 
 	// Poll all input sources
 	void pollInput(f64 currentTimeMs);
+	i64 pollFrame() const { return m_frameCounter; }
 	void setFrameDurationMs(f64 frameDurationMs) { m_frameDurationMs = frameDurationMs; }
 	
 	// Update state (called after polling)
@@ -176,14 +171,6 @@ private:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Data members
 	// ─────────────────────────────────────────────────────────────────────────
-	
-	i32 m_playerIndex;
-	
-	// Input handlers by source
-	std::array<InputHandler*, INPUT_SOURCE_COUNT> m_handlers = {nullptr, nullptr, nullptr};
-	
-	// Input mapping
-	InputMap m_inputMap;
 	
 	// Context stack for layered mappings
 	ContextStack m_contexts;
@@ -215,9 +202,9 @@ private:
 		return static_cast<size_t>(source);
 	}
 
-	InputStateManager& stateManager(InputSource source) { return m_stateManagers[sourceIndex(source)]; }
-	const InputStateManager& stateManager(InputSource source) const { return m_stateManagers[sourceIndex(source)]; }
-	i64 simFrame() const { return m_stateManagers[sourceIndex(InputSource::Keyboard)].currentFrame(); }
+	InputStateManager& getStateManager(InputSource source) { return m_stateManagers[sourceIndex(source)]; }
+	const InputStateManager& getStateManager(InputSource source) const { return m_stateManagers[sourceIndex(source)]; }
+	i64 simFrame() const { return m_stateManagers[sourceIndex(InputSource::Keyboard)].frame(); }
 	void trackButton(InputSource source, const std::string& button);
 	void trackInputMapBindings(const InputMap& map);
 	void consumeGameplayButton(const std::string& button, InputSource source);
@@ -243,9 +230,6 @@ private:
 	SimActionRepeatRecord& ensureSimRepeatState(const std::string& action);
 	RawActionRepeatRecord& ensureRawRepeatState(const std::string& action);
 	
-	// Get bindings for action from input map + contexts
-	template<InputSource Source>
-	auto getBindingsForAction(const std::string& action) const;
 };
 
 } // namespace bmsx

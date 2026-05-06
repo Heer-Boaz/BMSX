@@ -16,6 +16,7 @@ namespace bmsx {
 
 class MicrotaskQueue;
 class SoundMaster;
+class Input;
 
 struct MachineTiming {
 	i64 cpuHz = 0;
@@ -41,31 +42,21 @@ struct MachineSaveState {
 
 class Machine {
 public:
-	Machine(SoundMaster& soundMaster, MicrotaskQueue& microtasks, VdpFrameBufferSize frameBufferSize);
+	Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, SoundMaster& soundMaster, MicrotaskQueue& microtasks);
 
-	Memory& memory() { return m_memory; }
-	const Memory& memory() const { return m_memory; }
-	StringHandleTable& stringHandles() { return m_stringHandles; }
-	const StringHandleTable& stringHandles() const { return m_stringHandles; }
-	CPU& cpu() { return m_cpu; }
-	const CPU& cpu() const { return m_cpu; }
-	DeviceScheduler& scheduler() { return m_deviceScheduler; }
-	const DeviceScheduler& scheduler() const { return m_deviceScheduler; }
-	const VdpFrameBufferSize& frameBufferSize() const { return m_frameBufferSize; }
-	VDP& vdp() { return m_vdp; }
-	const VDP& vdp() const { return m_vdp; }
-	IrqController& irqController() { return m_irqController; }
-	const IrqController& irqController() const { return m_irqController; }
-	DmaController& dmaController() { return m_dmaController; }
-	const DmaController& dmaController() const { return m_dmaController; }
-	GeometryController& geometryController() { return m_geometryController; }
-	const GeometryController& geometryController() const { return m_geometryController; }
-	ImgDecController& imgDecController() { return m_imgDecController; }
-	const ImgDecController& imgDecController() const { return m_imgDecController; }
-	InputController& inputController() { return m_inputController; }
-	const InputController& inputController() const { return m_inputController; }
-	AudioController& audioController() { return m_audioController; }
-	const AudioController& audioController() const { return m_audioController; }
+	Memory& memory;
+	VdpFrameBufferSize frameBufferSize;
+	StringHandleTable stringHandles;
+	CPU cpu;
+	DeviceScheduler scheduler;
+	IrqController irqController;
+	VDP vdp;
+	AudioController audioController;
+	DmaController dmaController;
+	ImgDecController imgDecController;
+	GeometryController geometryController;
+	InputController inputController;
+
 	void initializeSystemIo();
 	void resetDevices();
 	void refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles);
@@ -75,20 +66,6 @@ public:
 	void restoreState(const MachineState& state);
 	MachineSaveState captureSaveState() const;
 	void restoreSaveState(const MachineSaveState& state);
-
-private:
-	Memory m_memory;
-	VdpFrameBufferSize m_frameBufferSize;
-	StringHandleTable m_stringHandles;
-	CPU m_cpu;
-	DeviceScheduler m_deviceScheduler;
-	VDP m_vdp;
-	IrqController m_irqController;
-	DmaController m_dmaController;
-	GeometryController m_geometryController;
-	ImgDecController m_imgDecController;
-	InputController m_inputController;
-	AudioController m_audioController;
 };
 
 } // namespace bmsx

@@ -20,7 +20,7 @@ void raiseSystemIrq(Runtime& runtime, uint32_t mask) {
 	if (unsupported != 0u) {
 		throw BMSX_RUNTIME_ERROR("unsupported system IRQ mask " + std::to_string(unsupported) + ".");
 	}
-	runtime.machine().irqController().raise(mask);
+	runtime.machine.irqController.raise(mask);
 }
 
 } // namespace bmsx

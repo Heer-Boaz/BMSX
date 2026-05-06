@@ -184,14 +184,14 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 	}
 
 	m_keyboard_input = std::make_unique<KeyboardInput>(kKeyboardDeviceId);
-	Input::instance().registerKeyboard(kKeyboardDeviceId, m_keyboard_input.get());
+	Input::instance().registerDeviceBinding(kKeyboardDeviceId, m_keyboard_input.get(), InputSource::Keyboard, DEFAULT_KEYBOARD_PLAYER_INDEX);
 	m_pointer_input = std::make_unique<PointerInput>(kPointerDeviceId);
-	Input::instance().registerPointer(kPointerDeviceId, m_pointer_input.get());
+	Input::instance().registerDeviceBinding(kPointerDeviceId, m_pointer_input.get(), InputSource::Pointer, DEFAULT_KEYBOARD_PLAYER_INDEX);
 
 	for (size_t i = 0; i < InputState::MAX_PLAYERS; i++) {
 		std::string deviceId = std::string(kGamepadDevicePrefix) + std::to_string(i);
 		auto gamepad = std::make_unique<GamepadInput>(deviceId, "libretro");
-		Input::instance().registerGamepad(deviceId, gamepad.get());
+		Input::instance().registerDeviceBinding(deviceId, gamepad.get(), InputSource::Gamepad, std::nullopt);
 		Input::instance().assignGamepadToPlayer(gamepad.get(), static_cast<i32>(i + 1));
 		m_gamepad_inputs[i] = std::move(gamepad);
 	}
@@ -285,7 +285,7 @@ void LibretroPlatform::onContextDestroy() {
 	auto* view = m_console->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
 	if (m_console->hasRuntime()) {
-		auto& vdp = m_console->runtime().machine().vdp();
+		auto& vdp = m_console->runtime().machine.vdp;
 		if (!m_render_surfaces_need_refresh) {
 			captureVdpContextState(vdp);
 		}
@@ -400,7 +400,7 @@ void LibretroPlatform::setDitherType(i32 type) {
 	if (!m_console->hasRuntime()) {
 		return;
 	}
-	m_console->runtime().machine().memory().writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(m_dither_type)));
+	m_console->runtime().machine.memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(m_dither_type)));
 }
 
 void LibretroPlatform::setResourceUsageGizmo(bool enabled) {

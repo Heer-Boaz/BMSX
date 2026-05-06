@@ -146,8 +146,12 @@ size_t beginHost2DQueue() {
 	return activeHost2DCommands().size();
 }
 
-Host2DEntry host2DQueueEntry(size_t index) {
-	return activeHost2DCommands().entry(index);
+Host2DKind host2DQueueKind(size_t index) {
+	return activeHost2DCommands().kind(index);
+}
+
+Host2DRef host2DQueueRef(size_t index) {
+	return activeHost2DCommands().ref(index);
 }
 
 void submitMesh(const MeshRenderSubmission& item) {

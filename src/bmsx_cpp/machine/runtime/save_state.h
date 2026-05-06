@@ -12,11 +12,11 @@ struct RuntimeSaveState {
 	RuntimeSaveMachineState machineState;
 	CpuRuntimeState cpuState;
 	RuntimeRenderState renderState;
+	bool systemProgramActive = false;
+	bool luaInitialized = false;
+	bool runtimeFailed = false;
 	uint32_t randomSeed = 0;
 	bool pendingEntryCall = false;
-	bool runtimeFailed = false;
-	bool luaInitialized = false;
-	bool systemProgramActive = false;
 };
 
 RuntimeSaveState captureRuntimeSaveState(Runtime& runtime);

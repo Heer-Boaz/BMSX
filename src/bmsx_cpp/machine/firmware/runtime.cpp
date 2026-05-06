@@ -14,7 +14,7 @@ Value Runtime::requireModule(const std::string& moduleName) {
 		throw BMSX_RUNTIME_ERROR("require('" + moduleName + "') failed: module not found.");
 	}
 	m_moduleCache[moduleName] = valueBool(true);
-	auto* closure = m_machine.cpu().createRootClosure(protoIt->second);
+	auto* closure = machine.cpu.createRootClosure(protoIt->second);
 	NativeResults results;
 	callLuaFunctionInto(closure, NativeArgsView(), results);
 	Value value = results.empty() ? valueNil() : results[0];
@@ -32,7 +32,7 @@ void Runtime::runStaticModuleInitializer(const std::string& path) {
 		throw BMSX_RUNTIME_ERROR("static module init failed: module '" + path + "' is not compiled.");
 	}
 	m_moduleCache[path] = valueBool(true);
-	auto* closure = m_machine.cpu().createRootClosure(protoIt->second);
+	auto* closure = machine.cpu.createRootClosure(protoIt->second);
 	NativeResults results;
 	try {
 		callLuaFunctionInto(closure, NativeArgsView(), results);
@@ -47,7 +47,7 @@ void Runtime::runStaticModuleInitializers(const std::vector<std::string>& paths)
 	for (const std::string& path : paths) {
 		runStaticModuleInitializer(path);
 	}
-	m_machine.cpu().syncGlobalSlotsToTable();
+	machine.cpu.syncGlobalSlotsToTable();
 }
 
 void Runtime::logLuaCallStack() const {
@@ -55,20 +55,20 @@ void Runtime::logLuaCallStack() const {
 	if (!metadata) {
 		return;
 	}
-	auto stack = m_machine.cpu().getCallStack();
+	auto stack = machine.cpu.getCallStack();
 	if (stack.empty()) {
-		auto range = m_machine.cpu().getDebugRange(m_machine.cpu().lastPc);
+		auto range = machine.cpu.getDebugRange(machine.cpu.lastPc);
 		if (range.has_value()) {
 			std::cout << "  at <current> (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
 						<< std::endl;
 		} else {
-			std::cout << "  at <current> (pc=" << m_machine.cpu().lastPc << ")" << std::endl;
+			std::cout << "  at <current> (pc=" << machine.cpu.lastPc << ")" << std::endl;
 		}
 		return;
 	}
 	for (const auto& [protoIndex, pc] : stack) {
 		const std::string& protoId = metadata->protoIds[protoIndex];
-		auto range = m_machine.cpu().getDebugRange(pc);
+		auto range = machine.cpu.getDebugRange(pc);
 		if (range.has_value()) {
 			std::cout << "  at " << protoId << " (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
 						<< std::endl;
@@ -84,7 +84,7 @@ void Runtime::handleLuaError(const std::string& message) {
 	logDebugState();
 	logLuaCallStack();
 	vblank.clearHaltUntilIrq(*this);
-	m_machine.inputController().restoreSampleArmed(false);
+	machine.inputController.sampleArmed = false;
 	m_pendingCall = PendingCall::None;
 	frameLoop.frameActive = false;
 	m_runtimeFailed = true;
@@ -161,18 +161,18 @@ void Runtime::runSystemBuiltinPrelude() {
 	};
 	const Value systemValue = requireModule("bios/system");
 	Table* systemModule = valueIsTable(systemValue) ? asTable(systemValue) : nullptr;
-	m_machine.cpu().syncGlobalSlotsToTable();
+	machine.cpu.syncGlobalSlotsToTable();
 	for (const char* name : systemBuiltinNames) {
 		std::string exportName = "res__bios__system__";
 		exportName += name;
-		Value value = m_machine.cpu().getGlobalByKey(luaKey(exportName));
+		Value value = machine.cpu.getGlobalByKey(luaKey(exportName));
 		if (isNil(value) && systemModule) {
 			value = systemModule->get(luaKey(name));
 		}
 		if (isNil(value)) {
 			throw BMSX_RUNTIME_ERROR("System ROM builtin export '" + exportName + "' is missing.");
 		}
-		m_machine.cpu().setGlobalByKey(luaKey(name), value);
+		machine.cpu.setGlobalByKey(luaKey(name), value);
 	}
 	std::cout << "[Runtime] prelude: system ROM builtins bound" << std::endl;
 }

@@ -1,9 +1,10 @@
-const FIX16_SHIFT = 16n;
-const FIX16_ONE = 1n << FIX16_SHIFT;
-const I32_MIN = -0x8000_0000n;
-const I32_MAX = 0x7fff_ffffn;
+const FIX16_SHIFT = 16;
 const I32_MIN_NUMBER = -0x8000_0000;
 const I32_MAX_NUMBER = 0x7fff_ffff;
+const I64_MIN_HI = 0x8000_0000 | 0;
+const I64_MIN_LO = 0;
+const I64_MAX_HI = 0x7fff_ffff;
+const I64_MAX_LO = 0xffff_ffff;
 const F32_BITS_BUFFER = new ArrayBuffer(4);
 const F32_BITS_VIEW = new DataView(F32_BITS_BUFFER);
 
@@ -23,20 +24,7 @@ export function numberToF32Bits(value: number): number {
 	return F32_BITS_VIEW.getUint32(0, true);
 }
 
-export function saturateI32(value: bigint): number {
-	if (value < I32_MIN) {
-		return I32_MIN_NUMBER;
-	}
-	if (value > I32_MAX) {
-		return I32_MAX_NUMBER;
-	}
-	return Number(value);
-}
-
 export function saturateRoundedI32(value: number): number {
-	if (!Number.isFinite(value)) {
-		throw new Error('expected finite value');
-	}
 	const rounded = Math.round(value);
 	if (rounded <= I32_MIN_NUMBER) {
 		return I32_MIN_NUMBER;
@@ -47,7 +35,65 @@ export function saturateRoundedI32(value: number): number {
 	return rounded | 0;
 }
 
+function multiplyHighI32(lhs: number, rhs: number): number {
+	const lhsLow = lhs & 0xffff;
+	const lhsHigh = lhs >> 16;
+	const rhsLow = rhs & 0xffff;
+	const rhsHigh = rhs >> 16;
+	const lowProduct = Math.imul(lhsLow, rhsLow);
+	let middle = (lowProduct >>> 16) + Math.imul(lhsHigh, rhsLow);
+	const highCarry = middle >> 16;
+	middle = (middle & 0xffff) + Math.imul(lhsLow, rhsHigh);
+	return (highCarry + (middle >> 16) + Math.imul(lhsHigh, rhsHigh)) | 0;
+}
+
+function signedAdd64Overflowed(lhsNegative: boolean, rhsNegative: boolean, sumHi: number): boolean {
+	if (lhsNegative !== rhsNegative) {
+		return false;
+	}
+	return (sumHi < 0) !== lhsNegative;
+}
+
 export function transformFixed16(m0: number, m1: number, tx: number, x: number, y: number): number {
-	const accum = (BigInt(m0) * BigInt(x)) + (BigInt(m1) * BigInt(y)) + (BigInt(tx) * FIX16_ONE);
-	return saturateI32(accum >> FIX16_SHIFT);
+	let accumHi = multiplyHighI32(m0, x);
+	let accumLo = Math.imul(m0, x) >>> 0;
+	let termHi = multiplyHighI32(m1, y);
+	let termLo = Math.imul(m1, y) >>> 0;
+	let sumLo = (accumLo + termLo) >>> 0;
+	let carry = sumLo < accumLo ? 1 : 0;
+	let sumHi = (accumHi + termHi + carry) | 0;
+	let accumNegative = accumHi < 0;
+	let termNegative = termHi < 0;
+	if (signedAdd64Overflowed(accumNegative, termNegative, sumHi)) {
+		accumHi = accumNegative ? I64_MIN_HI : I64_MAX_HI;
+		accumLo = accumNegative ? I64_MIN_LO : I64_MAX_LO;
+	} else {
+		accumHi = sumHi;
+		accumLo = sumLo;
+	}
+
+	termHi = tx >> FIX16_SHIFT;
+	termLo = (tx << FIX16_SHIFT) >>> 0;
+	sumLo = (accumLo + termLo) >>> 0;
+	carry = sumLo < accumLo ? 1 : 0;
+	sumHi = (accumHi + termHi + carry) | 0;
+	accumNegative = accumHi < 0;
+	termNegative = termHi < 0;
+	if (signedAdd64Overflowed(accumNegative, termNegative, sumHi)) {
+		accumHi = accumNegative ? I64_MIN_HI : I64_MAX_HI;
+		accumLo = accumNegative ? I64_MIN_LO : I64_MAX_LO;
+	} else {
+		accumHi = sumHi;
+		accumLo = sumLo;
+	}
+
+	const shiftedHi = accumHi >> FIX16_SHIFT;
+	const shiftedLo = ((accumHi << FIX16_SHIFT) | (accumLo >>> FIX16_SHIFT)) >>> 0;
+	if (shiftedHi > 0 || (shiftedHi === 0 && shiftedLo > I32_MAX_NUMBER)) {
+		return I32_MAX_NUMBER;
+	}
+	if (shiftedHi < -1 || (shiftedHi === -1 && shiftedLo < 0x8000_0000)) {
+		return I32_MIN_NUMBER;
+	}
+	return shiftedLo | 0;
 }

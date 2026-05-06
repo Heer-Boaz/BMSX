@@ -18,7 +18,7 @@ void initializeVdpTextureTransfer(TextureManager& textureManager, GameView& view
 }
 
 GPUBackend& vdpTextureBackend() {
-	return *g_vdpTextureManager->backend();
+	return *g_vdpTextureView->backend();
 }
 
 TextureHandle vdpTextureByUri(const std::string& textureKey) {
@@ -27,8 +27,7 @@ TextureHandle vdpTextureByUri(const std::string& textureKey) {
 
 TextureHandle createVdpTextureFromSeed(const std::string& textureKey, const u8* seedPixel, u32 width, u32 height) {
 	auto& texmanager = *g_vdpTextureManager;
-	const TextureKey key = texmanager.makeKey(textureKey, DEFAULT_TEXTURE_PARAMS);
-	texmanager.getOrCreateTexture(key, seedPixel, 1, 1, DEFAULT_TEXTURE_PARAMS);
+	texmanager.createTextureFromPixelsSync(textureKey, seedPixel, 1, 1, DEFAULT_TEXTURE_PARAMS);
 	TextureHandle handle = vdpTextureByUri(textureKey);
 	handle = texmanager.resizeTextureForKey(textureKey, static_cast<i32>(width), static_cast<i32>(height));
 	g_vdpTextureView->textures[textureKey] = handle;
@@ -37,8 +36,7 @@ TextureHandle createVdpTextureFromSeed(const std::string& textureKey, const u8* 
 
 TextureHandle createVdpTextureFromPixels(const std::string& textureKey, const u8* pixels, u32 width, u32 height) {
 	auto& texmanager = *g_vdpTextureManager;
-	const TextureKey key = texmanager.makeKey(textureKey, DEFAULT_TEXTURE_PARAMS);
-	TextureHandle handle = texmanager.getOrCreateTexture(key, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
+	TextureHandle handle = texmanager.createTextureFromPixelsSync(textureKey, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
 	handle = texmanager.resizeTextureForKey(textureKey, static_cast<i32>(width), static_cast<i32>(height));
 	texmanager.updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
 	g_vdpTextureView->textures[textureKey] = handle;
@@ -61,17 +59,8 @@ TextureHandle updateVdpTexturePixels(const std::string& textureKey, const u8* pi
 	return handle;
 }
 
-// disable-next-line single_line_method_pattern -- VDP slot uploads use texture keys while texture memory keeps manager/backend access private.
 void updateVdpTextureRegion(const std::string& textureKey, const u8* pixels, i32 width, i32 height, i32 x, i32 y) {
-	vdpTextureBackend().updateTextureRegion(
-		vdpTextureByUri(textureKey),
-		pixels,
-		width,
-		height,
-		x,
-		y,
-		DEFAULT_TEXTURE_PARAMS
-	);
+	g_vdpTextureManager->updateTextureRegionForKey(textureKey, pixels, width, height, x, y);
 }
 
 void swapVdpTextureHandlesByUri(const std::string& textureKeyA, const std::string& textureKeyB) {

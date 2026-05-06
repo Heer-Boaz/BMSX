@@ -33,7 +33,7 @@ ConsoleCore* ConsoleCore::s_instance = nullptr;
 
 ConsoleCore::ConsoleCore() {
 	s_instance = this;
-	m_machine_manifest = &defaultSystemMachineManifest();
+	machine_manifest = &defaultSystemMachineManifest();
         m_active_rom = &m_system_rom;
         m_rom_boot_manager = std::make_unique<RomBootManager>();
 	shutdown();
@@ -44,10 +44,6 @@ ConsoleCore::ConsoleCore() {
 
 ConsoleCore& ConsoleCore::instance() {
 	return *s_instance;
-}
-
-ConsoleCore* ConsoleCore::instancePtr() {
-	return s_instance;
 }
 
 bool ConsoleCore::initialize(Platform* platform) {
@@ -230,7 +226,7 @@ void ConsoleCore::refreshRenderSurfaces() {
 	}
 	initializeVdpTextureTransfer(*m_texture_manager, *m_view);
 	m_view->initializeDefaultTextures();
-	restoreVdpContextState(runtime().machine().vdp());
+	restoreVdpContextState(runtime().machine.vdp);
 }
 
 void ConsoleCore::log(LogLevel level, const char* fmt, ...) {
@@ -278,7 +274,6 @@ Runtime& ConsoleCore::ensureRuntime(const RuntimeOptions& options) {
 			*platform()->microtaskQueue(),
 			*view()
 		);
-		m_view->bindRuntime(*m_runtime);
 	}
 	return *m_runtime;
 }
@@ -296,7 +291,7 @@ void ConsoleCore::activateCartRom() {
 }
 
 void ConsoleCore::setMachineManifest(const MachineManifest& manifest) {
-	m_machine_manifest = &manifest;
+	machine_manifest = &manifest;
 }
 
 void ConsoleCore::configureViewForMachine(const MachineManifest& manifest) {
@@ -316,7 +311,7 @@ bool ConsoleCore::loadSystemRomInternal(const u8* data, size_t size) {
         if (!plan) return false;
         m_system_rom = std::move(plan->systemLayer);
         m_system_rom_loaded = true;
-	m_machine_manifest = &m_system_rom.machine;
+	machine_manifest = &m_system_rom.machine;
 	m_default_font = std::make_unique<Font>();
 	m_view->default_font = m_default_font.get();
 	return true;
@@ -391,7 +386,7 @@ void ConsoleCore::bootRuntimeFromProgram() {
 		);
 		m_linked_program = std::move(linked.program);
 		m_linked_program_symbols = std::move(linked.metadata);
-		rt.setCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
+		rt.setLinkedCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
 		rt.enterCartProgram();
 		rt.boot(*m_linked_program, m_linked_program_symbols.get(), m_linked_program->entryProtoIndex, m_linked_program->staticModulePaths);
 		return;
@@ -447,7 +442,7 @@ bool ConsoleCore::bootSystemStartupProgram(const MachineManifest& runtimeMachine
 		);
 		m_linked_program = std::move(linked.program);
 		m_linked_program_symbols = std::move(linked.metadata);
-		rt.setCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
+		rt.setLinkedCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
 		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.systemEntryProtoIndex, linked.systemStaticModulePaths);
 	} else {
 		rt.boot(*m_system_rom.programImage, m_system_rom.programSymbols.get(), m_system_rom.programImage->entryProtoIndex, m_system_rom.programImage->staticModulePaths);
@@ -539,7 +534,7 @@ bool ConsoleCore::loadRomOwned(std::vector<u8>&& data) {
 void ConsoleCore::unloadRom() {
 	if (m_rom_loaded) {
 		m_active_rom = &m_system_rom;
-		m_machine_manifest = &m_system_rom.machine;
+		machine_manifest = &m_system_rom.machine;
 		m_cart_rom.clear();
 		m_linked_program.reset();
 		m_linked_program_symbols.reset();

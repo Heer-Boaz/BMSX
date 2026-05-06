@@ -1,10 +1,8 @@
-const MAX_SAFE_CYCLES = BigInt(Number.MAX_SAFE_INTEGER);
-
-export function cyclesUntilBudgetUnits(cpuHz: bigint, unitsPerSecond: bigint, carry: bigint, targetUnits: number): number {
-	const needed = BigInt(targetUnits) * cpuHz - carry;
-	if (needed <= 0n) {
+export function cyclesUntilBudgetUnits(cpuHz: number, unitsPerSecond: number, carry: number, targetUnits: number): number {
+	const needed = targetUnits * cpuHz - carry;
+	if (needed <= 0) {
 		return 1;
 	}
-	const cycles = (needed + unitsPerSecond - 1n) / unitsPerSecond;
-	return Number(cycles > MAX_SAFE_CYCLES ? MAX_SAFE_CYCLES : cycles);
+	const numerator = needed + unitsPerSecond - 1;
+	return (numerator - (numerator % unitsPerSecond)) / unitsPerSecond;
 }

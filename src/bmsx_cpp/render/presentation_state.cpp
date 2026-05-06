@@ -99,7 +99,7 @@ void RenderPresentationState::flushDebugReport(const Runtime& runtime) {
 		static_cast<unsigned long long>(m_debugPresentHoldPresents),
 		static_cast<unsigned long long>(m_debugPresentPausedPresents),
 		runtime.isDrawPending() ? 1 : 0,
-		runtime.frameLoop.hasActiveTick(runtime) ? 1 : 0
+		runtime.frameLoop.frameActive ? 1 : 0
 	);
 	m_debugPresentReportAt = now;
 	m_debugPresentHostFrames = 0;
@@ -197,16 +197,13 @@ bool RenderPresentationState::render(ConsoleCore& console, Runtime& runtime, boo
 		if (pausedPresent) {
 			RenderQueues::prepareHeldRenderQueues();
 		}
-		console.m_view->beginFrame();
-
 		if (!console.romLoaded()) {
 			renderTestPattern(*console.m_view, console.m_total_time);
 		}
 
-		commitVdpViewSnapshot(*console.m_view, runtime.machine().vdp());
+		commitVdpViewSnapshot(*console.m_view, runtime.machine.vdp);
 		console.m_view->configurePresentation(presentMode, commitFrame);
 		console.m_view->drawGame();
-		console.m_view->endFrame();
 	}
 
 	flushDebugReport(runtime);

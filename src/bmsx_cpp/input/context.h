@@ -23,11 +23,11 @@ struct MappingContext {
 	std::string id;
 	i32 priority = 0;
 	bool enabled = true;
-	
+
 	KeyboardInputMapping keyboard;
 	GamepadInputMapping gamepad;
 	PointerInputMapping pointer;
-	
+
 	MappingContext() = default;
 	MappingContext(const std::string& id_, i32 priority_, bool enabled_ = true)
 		: id(id_), priority(priority_), enabled(enabled_) {}
@@ -45,7 +45,7 @@ public:
 	void push(const MappingContext& ctx) {
 		m_contexts.push_back(ctx);
 	}
-	
+
 	// Pop a context by ID (or most recent if no ID)
 	std::optional<MappingContext> pop(const std::string& id = "") {
 		if (id.empty()) {
@@ -54,17 +54,17 @@ public:
 			m_contexts.pop_back();
 			return ctx;
 		}
-		
+
 		auto it = std::find_if(m_contexts.begin(), m_contexts.end(),
 			[&id](const MappingContext& c) { return c.id == id; });
-		
+
 		if (it == m_contexts.end()) return std::nullopt;
-		
+
 		auto ctx = std::move(*it);
 		m_contexts.erase(it);
 		return ctx;
 	}
-	
+
 	// Enable/disable a context by ID
 	void enable(const std::string& id, bool enabled) {
 		for (auto& ctx : m_contexts) {
@@ -74,7 +74,7 @@ public:
 			}
 		}
 	}
-	
+
 	// Set priority of a context by ID
 	void setPriority(const std::string& id, i32 priority) {
 		for (auto& ctx : m_contexts) {
@@ -84,36 +84,8 @@ public:
 			}
 		}
 	}
-	
-	// Get merged keyboard bindings for an action
-	std::vector<KeyboardBinding> getKeyboardBindings(const std::string& action) const {
-		return getBindings<KeyboardBinding>(action, &MappingContext::keyboard);
-	}
-	
-	// Get merged gamepad bindings for an action
-	std::vector<GamepadBinding> getGamepadBindings(const std::string& action) const {
-		return getBindings<GamepadBinding>(action, &MappingContext::gamepad);
-	}
-	
-	// Get merged pointer bindings for an action
-	std::vector<PointerBinding> getPointerBindings(const std::string& action) const {
-		return getBindings<PointerBinding>(action, &MappingContext::pointer);
-	}
-	
-	// Check if stack is empty
-	bool empty() const { return m_contexts.empty(); }
-	
-	// Get context count
-	size_t size() const { return m_contexts.size(); }
-	
-	// Clear all contexts
-	void clear() { m_contexts.clear(); }
-	
-private:
-	std::vector<MappingContext> m_contexts;
-	
-	// Get active contexts sorted by priority (ascending)
-	std::vector<const MappingContext*> getActiveContexts() const {
+
+	std::vector<InputBinding> getBindings(const std::string& action, InputSource device) const {
 		std::vector<const MappingContext*> active;
 		for (const auto& ctx : m_contexts) {
 			if (ctx.enabled) {
@@ -124,33 +96,57 @@ private:
 			[](const MappingContext* a, const MappingContext* b) {
 				return a->priority < b->priority;
 			});
-		return active;
-	}
-	
-	// Generic binding retrieval with deduplication
-	template<typename BindingType, typename MappingType>
-	std::vector<BindingType> getBindings(
-		const std::string& action,
-		MappingType MappingContext::*mapping) const 
-	{
-		std::vector<BindingType> out;
+
+		std::vector<InputBinding> out;
 		std::set<std::string> seen;
-		
-		for (const auto* ctx : getActiveContexts()) {
-			const auto& map = ctx->*mapping;
-			auto it = map.find(action);
-			if (it == map.end()) continue;
-			
-			for (const auto& binding : it->second) {
-				if (seen.find(binding.id) == seen.end()) {
-					out.push_back(binding);
-					seen.insert(binding.id);
+		for (const auto* ctx : active) {
+			switch (device) {
+				case InputSource::Keyboard: {
+					auto it = ctx->keyboard.find(action);
+					if (it == ctx->keyboard.end()) {
+						break;
+					}
+					for (const auto& binding : it->second) {
+						if (seen.find(binding.id) == seen.end()) {
+							out.emplace_back(binding);
+							seen.insert(binding.id);
+						}
+					}
+					break;
+				}
+				case InputSource::Gamepad: {
+					auto it = ctx->gamepad.find(action);
+					if (it == ctx->gamepad.end()) {
+						break;
+					}
+					for (const auto& binding : it->second) {
+						if (seen.find(binding.id) == seen.end()) {
+							out.emplace_back(binding);
+							seen.insert(binding.id);
+						}
+					}
+					break;
+				}
+				case InputSource::Pointer: {
+					auto it = ctx->pointer.find(action);
+					if (it == ctx->pointer.end()) {
+						break;
+					}
+					for (const auto& binding : it->second) {
+						if (seen.find(binding.id) == seen.end()) {
+							out.emplace_back(binding);
+							seen.insert(binding.id);
+						}
+					}
+					break;
 				}
 			}
 		}
-		
 		return out;
 	}
+
+private:
+	std::vector<MappingContext> m_contexts;
 };
 
 } // namespace bmsx

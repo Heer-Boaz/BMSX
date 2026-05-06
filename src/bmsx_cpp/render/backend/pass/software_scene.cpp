@@ -84,7 +84,7 @@ size_t resolveSkyboxFace(f32 dirX, f32 dirY, f32 dirZ, SoftwareSkyboxFaceUv& uv)
 void writeSkyboxToFramebuffer(SoftwareBackend& backend, Runtime& runtime, const std::array<f32, 16>& skyboxView) {
 	std::array<VDP::ResolvedBlitterSample, SKYBOX_FACE_COUNT> samples{};
 	std::array<VdpSourcePixels, SKYBOX_FACE_COUNT> textures{};
-	VDP& vdp = runtime.machine().vdp();
+	VDP& vdp = runtime.machine.vdp;
 	const VDP::VdpHostOutput output = vdp.readHostOutput();
 	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
 		samples[index] = (*output.skyboxSamples)[index];
@@ -254,18 +254,18 @@ void renderSoftwareParticles(SoftwareBackend& backend, const GameView& view, Run
 	if (RenderQueues::beginParticleQueue() == 0 && view.vdpBillboardCount == 0u) {
 		return;
 	}
-	VDP::VdpHostOutput output = runtime.machine().vdp().readHostOutput();
+	VDP::VdpHostOutput output = runtime.machine.vdp.readHostOutput();
 	const i32 particleCount = RenderQueues::beginParticleQueue();
 	for (i32 particleIndex = 0; particleIndex < particleCount; particleIndex += 1) {
 		const ParticleRenderSubmission& submission = RenderQueues::particleQueueEntry(static_cast<size_t>(particleIndex));
 		drawSoftwareBillboardSample(backend,
 			output,
 			state,
-			*submission.slot,
-			*submission.u,
-			*submission.v,
-			*submission.w,
-			*submission.h,
+			submission.slot,
+			submission.u,
+			submission.v,
+			submission.w,
+			submission.h,
 			submission.position,
 			submission.size,
 			submission.color);

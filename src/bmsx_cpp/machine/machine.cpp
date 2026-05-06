@@ -7,69 +7,70 @@
 #include <stdexcept>
 
 namespace bmsx {
-Machine::Machine(SoundMaster& soundMaster, MicrotaskQueue& microtasks, VdpFrameBufferSize frameBufferSize)
-	: m_memory()
-	, m_frameBufferSize(frameBufferSize)
-	, m_stringHandles(m_memory)
-	, m_cpu(m_memory, &m_stringHandles)
-	, m_deviceScheduler(m_cpu)
-	, m_vdp(m_memory, m_deviceScheduler, m_frameBufferSize)
-	, m_irqController(m_memory)
-	, m_dmaController(m_memory, m_irqController, m_vdp, m_deviceScheduler)
-	, m_geometryController(m_memory, m_irqController, m_deviceScheduler)
-	, m_imgDecController(m_memory, m_dmaController, m_vdp, m_irqController, m_deviceScheduler, microtasks)
-	, m_inputController(m_memory, Input::instance(), m_cpu.stringPool())
-	, m_audioController(m_memory, soundMaster, m_irqController) {
-	m_vdp.attachImgDecController(m_imgDecController);
+Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, SoundMaster& soundMaster, MicrotaskQueue& microtasks)
+	: memory(memoryRef)
+	, frameBufferSize(frameBufferSizeValue)
+	, stringHandles(memory)
+	, cpu(memory, &stringHandles)
+	, scheduler(cpu)
+	, irqController(memory)
+	, vdp(memory, scheduler, frameBufferSize)
+	, audioController(memory, soundMaster, irqController)
+	, dmaController(memory, irqController, vdp, scheduler)
+	, imgDecController(memory, dmaController, vdp, irqController, scheduler, microtasks)
+	, geometryController(memory, irqController, scheduler)
+	, inputController(memory, input, cpu.stringPool())
+{
+	vdp.attachImgDecController(imgDecController);
 }
 
 void Machine::initializeSystemIo() {
-	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
-	m_memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, valueNumber(0.0));
-	m_memory.writeValue(IO_SYS_HOST_FAULT_STAGE, valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
+	memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
+	memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, valueNumber(0.0));
+	memory.writeValue(IO_SYS_HOST_FAULT_STAGE, valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
 }
 
 void Machine::resetDevices() {
-	m_irqController.reset();
-	m_dmaController.reset();
-	m_geometryController.reset();
-	m_imgDecController.reset();
-	m_inputController.reset();
-	m_audioController.reset();
-	m_vdp.initializeRegisters();
+	irqController.reset();
+	inputController.reset();
+	dmaController.reset();
+	geometryController.reset();
+	imgDecController.reset();
+	audioController.reset();
+	vdp.initializeRegisters();
 }
 
 void Machine::refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles) {
-	m_dmaController.setTiming(timing.cpuHz, timing.dmaBytesPerSecIso, timing.dmaBytesPerSecBulk, nowCycles);
-	m_imgDecController.setTiming(timing.cpuHz, timing.imgDecBytesPerSec, nowCycles);
-	m_geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
-	m_vdp.setTiming(timing.cpuHz, timing.vdpWorkUnitsPerSec, nowCycles);
+	dmaController.setTiming(timing.cpuHz, timing.dmaBytesPerSecIso, timing.dmaBytesPerSecBulk, nowCycles);
+	imgDecController.setTiming(timing.cpuHz, timing.imgDecBytesPerSec, nowCycles);
+	geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
+	vdp.setTiming(timing.cpuHz, timing.vdpWorkUnitsPerSec, nowCycles);
 }
 
 void Machine::advanceDevices(int cycles) {
-	const i64 nextNow = m_deviceScheduler.nowCycles() + cycles;
-	m_dmaController.accrueCycles(cycles, nextNow);
-	m_imgDecController.accrueCycles(cycles, nextNow);
-	m_geometryController.accrueCycles(cycles, nextNow);
-	m_vdp.accrueCycles(cycles, nextNow);
-	m_deviceScheduler.advanceTo(nextNow);
+	const i64 nextNow = scheduler.nowCycles() + cycles;
+	dmaController.accrueCycles(cycles, nextNow);
+	imgDecController.accrueCycles(cycles, nextNow);
+	geometryController.accrueCycles(cycles, nextNow);
+	vdp.accrueCycles(cycles, nextNow);
+	scheduler.advanceTo(nextNow);
 }
 
 VDP* Machine::runDeviceService(uint8_t deviceKind) {
-	const i64 nowCycles = m_deviceScheduler.nowCycles();
+	const i64 nowCycles = scheduler.nowCycles();
 	switch (deviceKind) {
 		case DeviceServiceGeo:
-			m_geometryController.onService(nowCycles);
+			geometryController.onService(nowCycles);
 			return nullptr;
 		case DeviceServiceDma:
-			m_dmaController.onService(nowCycles);
+			dmaController.onService(nowCycles);
 			return nullptr;
 		case DeviceServiceImg:
-			m_imgDecController.onService(nowCycles);
+			imgDecController.onService(nowCycles);
 			return nullptr;
 		case DeviceServiceVdp:
-			m_vdp.onService(nowCycles);
-			return &m_vdp;
+			vdp.onService(nowCycles);
+			return &vdp;
 		default:
 			throw BMSX_RUNTIME_ERROR("unknown device service kind " + std::to_string(deviceKind) + ".");
 	}
@@ -77,37 +78,37 @@ VDP* Machine::runDeviceService(uint8_t deviceKind) {
 
 MachineState Machine::captureState() const {
 	MachineState state;
-	state.memory = m_memory.captureState();
-	state.input = m_inputController.captureState();
-	state.vdp = m_vdp.captureState();
+	state.memory = memory.captureState();
+	state.input = inputController.captureState();
+	state.vdp = vdp.captureState();
 	return state;
 }
 
 void Machine::restoreState(const MachineState& state) {
-	m_memory.restoreState(state.memory);
-	m_geometryController.postLoad();
-	m_irqController.postLoad();
-	m_inputController.restoreState(state.input);
-	m_vdp.restoreState(state.vdp);
+	memory.restoreState(state.memory);
+	geometryController.postLoad();
+	irqController.postLoad();
+	inputController.restoreState(state.input);
+	vdp.restoreState(state.vdp);
 }
 
 MachineSaveState Machine::captureSaveState() const {
 	MachineSaveState state;
-	state.memory = m_memory.captureSaveState();
-	state.stringHandles = m_stringHandles.captureState();
-	state.input = m_inputController.captureState();
-	state.vdp = m_vdp.captureSaveState();
+	state.memory = memory.captureSaveState();
+	state.stringHandles = stringHandles.captureState();
+	state.input = inputController.captureState();
+	state.vdp = vdp.captureSaveState();
 	return state;
 }
 
 void Machine::restoreSaveState(const MachineSaveState& state) {
-	m_memory.restoreSaveState(state.memory);
-	m_stringHandles.restoreState(state.stringHandles);
-	m_cpu.stringPool().rehydrateFromHandleTable(state.stringHandles);
-	m_geometryController.postLoad();
-	m_irqController.postLoad();
-	m_inputController.restoreState(state.input);
-	m_vdp.restoreSaveState(state.vdp);
+	memory.restoreSaveState(state.memory);
+	stringHandles.restoreState(state.stringHandles);
+	cpu.stringPool().rehydrateFromHandleTable(state.stringHandles);
+	geometryController.postLoad();
+	irqController.postLoad();
+	inputController.restoreState(state.input);
+	vdp.restoreSaveState(state.vdp);
 }
 
 } // namespace bmsx

@@ -105,7 +105,7 @@ public:
 	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
 	void advanceWork(int workUnits);
-	bool commitReadyFrameOnVblankEdge();
+	bool presentReadyFrameOnVblankEdge();
 	uint32_t frameBufferWidth() const { return m_frameBufferWidth; }
 	uint32_t frameBufferHeight() const { return m_frameBufferHeight; }
 	std::vector<u8>& frameBufferRenderReadback() { return getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER).cpuReadback; }

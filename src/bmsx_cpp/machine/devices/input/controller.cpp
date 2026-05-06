@@ -1,4 +1,5 @@
 #include "machine/devices/input/controller.h"
+#include "input/player.h"
 
 namespace bmsx {
 namespace {
@@ -10,8 +11,7 @@ constexpr const char* INP_CONTEXT_ID = "inp_chip";
 InputController::InputController(Memory& memory, Input& input, const StringPool& strings)
 	: m_memory(memory)
 		, m_input(input)
-		, m_strings(strings)
-		, m_defaultInputMapping(Input::getDefaultInputMapping()) {
+		, m_strings(strings) {
 	m_memory.mapIoWrite(IO_INP_CTRL, this, &InputController::onCtrlWriteThunk);
 	m_memory.mapIoWrite(IO_INP_QUERY, this, &InputController::onQueryWriteThunk);
 	m_memory.mapIoWrite(IO_INP_CONSUME, this, &InputController::onConsumeWriteThunk);
@@ -33,9 +33,9 @@ void InputController::onConsumeWriteThunk(void* context, uint32_t, Value) {
 }
 
 void InputController::reset() {
-	m_sampleArmed = false;
+	sampleArmed = false;
 	for (i32 playerIndex = 1; playerIndex <= PLAYERS_MAX; playerIndex += 1) {
-		PlayerChipState& state = playerState(playerIndex);
+		PlayerChipState& state = m_playerStates[static_cast<size_t>(playerIndex - 1)];
 		clearPlayerActions(playerIndex, state);
 	}
 	m_memory.writeValue(IO_INP_PLAYER, valueNumber(1.0));
@@ -50,7 +50,7 @@ void InputController::onCtrlWrite() {
 			commitAction();
 			return;
 		case INP_CTRL_ARM:
-			m_sampleArmed = true;
+			sampleArmed = true;
 			return;
 		case INP_CTRL_RESET:
 			resetActions();
@@ -59,27 +59,27 @@ void InputController::onCtrlWrite() {
 }
 
 void InputController::onVblankEdge() {
-	if (!m_sampleArmed) {
+	if (!sampleArmed) {
 		return;
 	}
 	m_input.beginFrame();
-	m_sampleArmed = false;
+	sampleArmed = false;
 }
 
 InputControllerState InputController::captureState() const {
 	InputControllerState state;
-	state.sampleArmed = m_sampleArmed;
+	state.sampleArmed = sampleArmed;
 	return state;
 }
 
 void InputController::restoreState(const InputControllerState& state) {
-	m_sampleArmed = state.sampleArmed;
+	sampleArmed = state.sampleArmed;
 }
 
 void InputController::onQueryWrite() {
 	const Value queryValue = m_memory.readValue(IO_INP_QUERY);
 	const std::string& queryText = m_strings.toString(asStringId(queryValue));
-	PlayerInput* const playerInput = m_input.getPlayerInput(currentPlayerIndex());
+	PlayerInput* const playerInput = m_input.getPlayerInput(static_cast<i32>(m_memory.readIoU32(IO_INP_PLAYER)));
 	const bool triggered = playerInput->checkActionTriggered(queryText);
 	m_memory.writeValue(IO_INP_STATUS, valueNumber(triggered ? 1.0 : 0.0));
 	m_memory.writeValue(IO_INP_VALUE, valueNumber(0.0));
@@ -87,7 +87,7 @@ void InputController::onQueryWrite() {
 
 void InputController::onConsumeWrite() {
 	const std::string& actionNames = m_strings.toString(asStringId(m_memory.readValue(IO_INP_CONSUME)));
-	PlayerInput* const playerInput = m_input.getPlayerInput(currentPlayerIndex());
+	PlayerInput* const playerInput = m_input.getPlayerInput(static_cast<i32>(m_memory.readIoU32(IO_INP_PLAYER)));
 	size_t start = 0;
 	for (size_t index = 0; index <= actionNames.size(); index += 1) {
 		if (index != actionNames.size() && actionNames[index] != ',') {
@@ -98,21 +98,9 @@ void InputController::onConsumeWrite() {
 	}
 }
 
-InputController::PlayerChipState& InputController::playerState(i32 playerIndex) {
-	return m_playerStates[static_cast<size_t>(playerIndex - 1)];
-}
-
-const InputController::PlayerChipState& InputController::playerState(i32 playerIndex) const {
-	return m_playerStates[static_cast<size_t>(playerIndex - 1)];
-}
-
-i32 InputController::currentPlayerIndex() const {
-	return static_cast<i32>(m_memory.readIoU32(IO_INP_PLAYER));
-}
-
 void InputController::commitAction() {
-	const i32 playerIndex = currentPlayerIndex();
-	PlayerChipState& state = playerState(playerIndex);
+	const i32 playerIndex = static_cast<i32>(m_memory.readIoU32(IO_INP_PLAYER));
+	PlayerChipState& state = m_playerStates[static_cast<size_t>(playerIndex - 1)];
 	const std::string& actionName = m_strings.toString(asStringId(m_memory.readValue(IO_INP_ACTION)));
 	const std::string& bindingsText = m_strings.toString(asStringId(m_memory.readValue(IO_INP_BIND)));
 	std::vector<KeyboardBinding> keyboardBindings;
@@ -124,16 +112,13 @@ void InputController::commitAction() {
 	if (state.contextPushed) {
 		playerInput->popContext(INP_CONTEXT_ID);
 	}
-	InputMap map;
-	map.keyboard = state.keyboard;
-	map.gamepad = state.gamepad;
-	playerInput->pushContext(INP_CONTEXT_ID, 100, map);
+	playerInput->pushContext(INP_CONTEXT_ID, state.keyboard, state.gamepad, {});
 	state.contextPushed = true;
 }
 
 void InputController::resetActions() {
-	const i32 playerIndex = currentPlayerIndex();
-	PlayerChipState& state = playerState(playerIndex);
+	const i32 playerIndex = static_cast<i32>(m_memory.readIoU32(IO_INP_PLAYER));
+	PlayerChipState& state = m_playerStates[static_cast<size_t>(playerIndex - 1)];
 	clearPlayerActions(playerIndex, state);
 	m_memory.writeValue(IO_INP_STATUS, valueNumber(0.0));
 	m_memory.writeValue(IO_INP_VALUE, valueNumber(0.0));
@@ -159,8 +144,8 @@ void InputController::appendBindings(
 			continue;
 		}
 		const std::string binding = bindingsText.substr(start, index - start);
-		const auto keyboardIt = m_defaultInputMapping.keyboard.find(binding);
-		if (keyboardIt != m_defaultInputMapping.keyboard.end()) {
+		const auto keyboardIt = Input::DEFAULT_INPUT_MAPPING.keyboard.find(binding);
+		if (keyboardIt != Input::DEFAULT_INPUT_MAPPING.keyboard.end()) {
 			const std::vector<KeyboardBinding>& defaultBindings = keyboardIt->second;
 			keyboardBindings.insert(keyboardBindings.end(), defaultBindings.begin(), defaultBindings.end());
 		}

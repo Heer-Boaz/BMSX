@@ -26,7 +26,7 @@ void drawRectSoftware(SoftwareBackend& backend, const RectRenderSubmission& comm
 }
 
 void drawPolySoftware(SoftwareBackend& backend, const PolyRenderSubmission& command) {
-	const i32 thickness = static_cast<i32>(command.thickness.value());
+	const i32 thickness = static_cast<i32>(command.thickness);
 	const i32 half = thickness / 2;
 	for (size_t index = 0; index + 3u < command.points.size(); index += 2u) {
 		i32 x0 = static_cast<i32>(command.points[index]);
@@ -141,8 +141,8 @@ void drawGlyphImageSoftware(SoftwareBackend& backend, const std::vector<u8>& atl
 void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& command) {
 	const std::vector<u8>& atlasPixels = hostSystemAtlasPixels();
 	const i32 atlasWidth = static_cast<i32>(hostSystemAtlasWidth());
-	if (command.background_color.has_value()) {
-		const Color& background = *command.background_color;
+	if (command.has_background_color) {
+		const Color& background = command.background_color;
 		const i32 lineHeight = command.font->lineHeight();
 		forEachGlyphImage(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, const Color&) {
 			backend.fillRect(
@@ -166,12 +166,12 @@ void beginHostOverlaySoftware(SoftwareBackend& backend, const Host2DPipelineStat
 	(void)state;
 }
 
-void renderHost2DEntrySoftware(SoftwareBackend& backend, const RenderQueues::Host2DEntry& entry) {
-	switch (entry.kind) {
-		case RenderQueues::Host2DKind::Img: drawImageSoftware(backend, *entry.img); return;
-		case RenderQueues::Host2DKind::Rect: drawRectSoftware(backend, *entry.rect); return;
-		case RenderQueues::Host2DKind::Poly: drawPolySoftware(backend, *entry.poly); return;
-		case RenderQueues::Host2DKind::Glyphs: drawGlyphsSoftware(backend, *entry.glyphs); return;
+void renderHost2DEntrySoftware(SoftwareBackend& backend, RenderQueues::Host2DKind kind, RenderQueues::Host2DRef ref) {
+	switch (kind) {
+		case RenderQueues::Host2DKind::Img: drawImageSoftware(backend, *static_cast<const HostImageRenderSubmission*>(ref)); return;
+		case RenderQueues::Host2DKind::Rect: drawRectSoftware(backend, *static_cast<const RectRenderSubmission*>(ref)); return;
+		case RenderQueues::Host2DKind::Poly: drawPolySoftware(backend, *static_cast<const PolyRenderSubmission*>(ref)); return;
+		case RenderQueues::Host2DKind::Glyphs: drawGlyphsSoftware(backend, *static_cast<const GlyphRenderSubmission*>(ref)); return;
 	}
 }
 

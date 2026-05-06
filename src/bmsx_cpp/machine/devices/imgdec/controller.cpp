@@ -160,6 +160,7 @@ void ImgDecController::reset() {
 	m_decodeHeight = 0;
 	m_signalIrq = false;
 	m_queuedJobs.clear();
+	m_queuedJobHead = 0;
 	m_activeJob.reset();
 	m_scheduler.cancelDeviceService(DeviceServiceImg);
 	m_memory.writeValue(IO_IMG_SRC, valueNumber(0.0));
@@ -231,11 +232,15 @@ void ImgDecController::tryStartQueued() {
 	if (m_active) {
 		return;
 	}
-	if (m_queuedJobs.empty()) {
+	if (m_queuedJobHead == m_queuedJobs.size()) {
 		return;
 	}
-	ImgDecJob job = std::move(m_queuedJobs.front());
-	m_queuedJobs.pop_front();
+	ImgDecJob job = std::move(m_queuedJobs[m_queuedJobHead]);
+	m_queuedJobHead += 1;
+	if (m_queuedJobHead == m_queuedJobs.size()) {
+		m_queuedJobs.clear();
+		m_queuedJobHead = 0;
+	}
 	const uint32_t len = static_cast<uint32_t>(job.buffer.size());
 	startJob(std::move(job.buffer), job.dst, job.cap, 0u, len, std::move(job), false);
 }
@@ -441,7 +446,7 @@ void ImgDecController::finishError(std::exception_ptr error) {
 
 void ImgDecController::scheduleNextService(int64_t nowCycles) {
 	if (!m_active) {
-		if (!m_queuedJobs.empty()) {
+		if (m_queuedJobHead != m_queuedJobs.size()) {
 			m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles);
 			return;
 		}

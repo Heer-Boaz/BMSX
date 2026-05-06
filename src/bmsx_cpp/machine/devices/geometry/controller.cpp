@@ -1,11 +1,11 @@
 #include "machine/devices/geometry/controller.h"
 
 #include "machine/bus/io.h"
+#include "machine/common/numeric.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/scheduler/budget.h"
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <limits>
 #include <utility>
 
@@ -37,40 +37,13 @@ constexpr uint32_t OVERLAP2D_DESC_BYTES = 16u;
 constexpr uint32_t OVERLAP2D_BOUNDS_BYTES = 16u;
 constexpr uint32_t OVERLAP2D_KIND_COMPOUND = 4u;
 constexpr uint32_t GEO_SERVICE_BATCH_RECORDS = 1u;
-constexpr int FIX16_SHIFT = 16;
-constexpr double FIX16_SCALE = 65536.0;
 
-inline int32_t saturateI32(int64_t value) {
-	if (value < static_cast<int64_t>(std::numeric_limits<int32_t>::min())) {
-		return std::numeric_limits<int32_t>::min();
-	}
-	if (value > static_cast<int64_t>(std::numeric_limits<int32_t>::max())) {
-		return std::numeric_limits<int32_t>::max();
-	}
-	return static_cast<int32_t>(value);
+uint32_t packFault(uint32_t code, uint32_t recordIndex) {
+	return ((code & 0xffffu) << 16u) | (recordIndex & 0xffffu);
 }
 
-inline int64_t saturatingAdd64(int64_t lhs, int64_t rhs) {
-	if (rhs > 0 && lhs > (std::numeric_limits<int64_t>::max() - rhs)) {
-		return std::numeric_limits<int64_t>::max();
-	}
-	if (rhs < 0 && lhs < (std::numeric_limits<int64_t>::min() - rhs)) {
-		return std::numeric_limits<int64_t>::min();
-	}
-	return lhs + rhs;
-}
-
-inline float f32BitsToNumber(uint32_t bits) {
-	float value = 0.0f;
-	std::memcpy(&value, &bits, sizeof(value));
-	return value;
-}
-
-inline uint32_t numberToF32Bits(double value) {
-	const float narrowed = static_cast<float>(value);
-	uint32_t bits = 0u;
-	std::memcpy(&bits, &narrowed, sizeof(bits));
-	return bits;
+uint32_t packSat2Meta(uint32_t axisIndex, uint32_t shapeSelector) {
+	return ((shapeSelector & 0xffffu) << GEO_SAT_META_SHAPE_SHIFT) | (axisIndex & GEO_SAT_META_AXIS_MASK);
 }
 
 } // namespace
@@ -135,22 +108,22 @@ void GeometryController::reset() {
 	m_availableWorkUnits = 0;
 	m_activeJob.reset();
 	m_scheduler.cancelDeviceService(DeviceServiceGeo);
-	writeRegister(IO_GEO_SRC0, 0);
-	writeRegister(IO_GEO_SRC1, 0);
-	writeRegister(IO_GEO_SRC2, 0);
-	writeRegister(IO_GEO_DST0, 0);
-	writeRegister(IO_GEO_DST1, 0);
-	writeRegister(IO_GEO_COUNT, 0);
-	writeRegister(IO_GEO_CMD, 0);
-	writeRegister(IO_GEO_CTRL, 0);
-	writeRegister(IO_GEO_STATUS, 0);
-	writeRegister(IO_GEO_PARAM0, 0);
-	writeRegister(IO_GEO_PARAM1, 0);
-	writeRegister(IO_GEO_STRIDE0, 0);
-	writeRegister(IO_GEO_STRIDE1, 0);
-	writeRegister(IO_GEO_STRIDE2, 0);
-	writeRegister(IO_GEO_PROCESSED, 0);
-	writeRegister(IO_GEO_FAULT, 0);
+	m_memory.writeValue(IO_GEO_SRC0, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_SRC1, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_SRC2, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_DST0, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_DST1, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_COUNT, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_CMD, valueNumber(static_cast<double>(0)));
+	m_memory.writeIoValue(IO_GEO_CTRL, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_PARAM0, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_PARAM1, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_STRIDE0, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_STRIDE1, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_STRIDE2, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(0)));
+	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(0)));
 }
 
 void GeometryController::postLoad() {
@@ -161,11 +134,11 @@ void GeometryController::postLoad() {
 	const uint32_t ctrl = m_memory.readIoU32(IO_GEO_CTRL);
 	const uint32_t status = m_memory.readIoU32(IO_GEO_STATUS);
 	const uint32_t processed = m_memory.readIoU32(IO_GEO_PROCESSED);
-	writeRegister(IO_GEO_CTRL, ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT));
+	m_memory.writeIoValue(IO_GEO_CTRL, valueNumber(static_cast<double>(ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT))));
 	if ((status & GEO_STATUS_BUSY) != 0u) {
-		writeRegister(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
-		writeRegister(IO_GEO_PROCESSED, processed);
-		writeRegister(IO_GEO_FAULT, packFault(GEO_FAULT_ABORTED_BY_HOST, processed));
+		m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_DONE | GEO_STATUS_ERROR)));
+		m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(processed)));
+		m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(packFault(GEO_FAULT_ABORTED_BY_HOST, processed))));
 	}
 }
 
@@ -176,7 +149,7 @@ void GeometryController::onCtrlWrite(int64_t nowCycles) {
 	if (!start && !abort) {
 		return;
 	}
-	writeRegister(IO_GEO_CTRL, ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT));
+	m_memory.writeIoValue(IO_GEO_CTRL, valueNumber(static_cast<double>(ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT))));
 	if (start && abort) {
 		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 		return;
@@ -256,9 +229,9 @@ void GeometryController::tryStart(int64_t nowCycles) {
 			finishRejected(GEO_FAULT_REJECT_BAD_CMD);
 			return;
 	}
-	writeRegister(IO_GEO_STATUS, 0u);
-	writeRegister(IO_GEO_PROCESSED, 0u);
-	writeRegister(IO_GEO_FAULT, 0u);
+	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(0u)));
+	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(0u)));
+	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(0u)));
 	if (job.cmd == IO_CMD_GEO_OVERLAP2D_PASS) {
 		job.resultCount = 0u;
 		job.exactPairCount = 0u;
@@ -272,7 +245,7 @@ void GeometryController::tryStart(int64_t nowCycles) {
 	m_workCarry = 0;
 	m_availableWorkUnits = 0;
 	m_activeJob = job;
-	writeRegister(IO_GEO_STATUS, GEO_STATUS_BUSY);
+	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_BUSY)));
 	scheduleNextService(nowCycles);
 }
 
@@ -290,28 +263,6 @@ void GeometryController::scheduleNextService(int64_t nowCycles) {
 	m_scheduler.scheduleDeviceService(DeviceServiceGeo, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, targetUnits - m_availableWorkUnits));
 }
 
-bool GeometryController::validateSourceTriplet(const GeoJob& job) {
-	if (!m_memory.isReadableMainMemoryRange(job.src0, job.stride0)
-		|| !m_memory.isReadableMainMemoryRange(job.src1, job.stride1)
-		|| !m_memory.isReadableMainMemoryRange(job.src2, job.stride2)) {
-		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
-		return false;
-	}
-	return true;
-}
-
-bool GeometryController::validateWordAlignedJobRegisters(const GeoJob& job, bool includeDst1) {
-	if ((job.src0 & WORD_ALIGN_MASK) != 0u
-		|| (job.src1 & WORD_ALIGN_MASK) != 0u
-		|| (job.src2 & WORD_ALIGN_MASK) != 0u
-		|| (job.dst0 & WORD_ALIGN_MASK) != 0u
-		|| (includeDst1 && (job.dst1 & WORD_ALIGN_MASK) != 0u)) {
-		finishRejected(GEO_FAULT_REJECT_MISALIGNED_REGS);
-		return false;
-	}
-	return true;
-}
-
 bool GeometryController::validateXform2Submission(const GeoJob& job) {
 	if (job.param0 != 0u || job.param1 != 0u) {
 		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
@@ -321,13 +272,21 @@ bool GeometryController::validateXform2Submission(const GeoJob& job) {
 		finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
 		return false;
 	}
-	if (!validateWordAlignedJobRegisters(job, true)) {
+	if ((job.src0 & WORD_ALIGN_MASK) != 0u
+		|| (job.src1 & WORD_ALIGN_MASK) != 0u
+		|| (job.src2 & WORD_ALIGN_MASK) != 0u
+		|| (job.dst0 & WORD_ALIGN_MASK) != 0u
+		|| (job.dst1 & WORD_ALIGN_MASK) != 0u) {
+		finishRejected(GEO_FAULT_REJECT_MISALIGNED_REGS);
 		return false;
 	}
 	if (job.count == 0u) {
 		return true;
 	}
-	if (!validateSourceTriplet(job)) {
+	if (!m_memory.isReadableMainMemoryRange(job.src0, job.stride0)
+		|| !m_memory.isReadableMainMemoryRange(job.src1, job.stride1)
+		|| !m_memory.isReadableMainMemoryRange(job.src2, job.stride2)) {
+		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 		return false;
 	}
 	if (!m_memory.isRamRange(job.dst0, XFORM2_VERTEX_BYTES)) {
@@ -350,13 +309,20 @@ bool GeometryController::validateSat2Submission(const GeoJob& job) {
 		finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
 		return false;
 	}
-	if (!validateWordAlignedJobRegisters(job, false)) {
+	if ((job.src0 & WORD_ALIGN_MASK) != 0u
+		|| (job.src1 & WORD_ALIGN_MASK) != 0u
+		|| (job.src2 & WORD_ALIGN_MASK) != 0u
+		|| (job.dst0 & WORD_ALIGN_MASK) != 0u) {
+		finishRejected(GEO_FAULT_REJECT_MISALIGNED_REGS);
 		return false;
 	}
 	if (job.count == 0u) {
 		return true;
 	}
-	if (!validateSourceTriplet(job)) {
+	if (!m_memory.isReadableMainMemoryRange(job.src0, job.stride0)
+		|| !m_memory.isReadableMainMemoryRange(job.src1, job.stride1)
+		|| !m_memory.isReadableMainMemoryRange(job.src2, job.stride2)) {
+		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 		return false;
 	}
 	if (!m_memory.isRamRange(job.dst0, SAT2_RESULT_BYTES)) {
@@ -680,12 +646,12 @@ void GeometryController::processXform2Record(GeoJob& job) {
 		}
 		aabbAddr = *resolvedAabbAddr;
 	}
-	const int32_t m00 = static_cast<int32_t>(m_memory.readU32(*matrixAddr + 0u));
-	const int32_t m01 = static_cast<int32_t>(m_memory.readU32(*matrixAddr + 4u));
-	const int32_t tx = static_cast<int32_t>(m_memory.readU32(*matrixAddr + 8u));
-	const int32_t m10 = static_cast<int32_t>(m_memory.readU32(*matrixAddr + 12u));
-	const int32_t m11 = static_cast<int32_t>(m_memory.readU32(*matrixAddr + 16u));
-	const int32_t ty = static_cast<int32_t>(m_memory.readU32(*matrixAddr + 20u));
+	const int32_t m00 = toSignedWord(m_memory.readU32(*matrixAddr + 0u));
+	const int32_t m01 = toSignedWord(m_memory.readU32(*matrixAddr + 4u));
+	const int32_t tx = toSignedWord(m_memory.readU32(*matrixAddr + 8u));
+	const int32_t m10 = toSignedWord(m_memory.readU32(*matrixAddr + 12u));
+	const int32_t m11 = toSignedWord(m_memory.readU32(*matrixAddr + 16u));
+	const int32_t ty = toSignedWord(m_memory.readU32(*matrixAddr + 20u));
 	int32_t minX = 0;
 	int32_t minY = 0;
 	int32_t maxX = 0;
@@ -693,8 +659,8 @@ void GeometryController::processXform2Record(GeoJob& job) {
 	for (uint32_t vertexIndex = 0; vertexIndex < vertexCount; vertexIndex += 1u) {
 		const uint32_t localAddr = *srcAddr + vertexIndex * XFORM2_VERTEX_BYTES;
 		const uint32_t worldAddr = *dstAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-		const int32_t localX = static_cast<int32_t>(m_memory.readU32(localAddr + 0u));
-		const int32_t localY = static_cast<int32_t>(m_memory.readU32(localAddr + 4u));
+		const int32_t localX = toSignedWord(m_memory.readU32(localAddr + 0u));
+		const int32_t localY = toSignedWord(m_memory.readU32(localAddr + 4u));
 		const int32_t worldX = transformFixed16(m00, m01, tx, localX, localY);
 		const int32_t worldY = transformFixed16(m10, m11, ty, localX, localY);
 		m_memory.writeU32(worldAddr + 0u, static_cast<uint32_t>(worldX));
@@ -809,15 +775,15 @@ void GeometryController::processSat2Record(GeoJob& job) {
 	double centerAY = 0.0;
 	for (uint32_t vertexIndex = 0; vertexIndex < shapeAVertexCount; vertexIndex += 1u) {
 		const uint32_t vertexAddr = *shapeAVertexAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-		centerAX += static_cast<int32_t>(m_memory.readU32(vertexAddr + 0u));
-		centerAY += static_cast<int32_t>(m_memory.readU32(vertexAddr + 4u));
+		centerAX += toSignedWord(m_memory.readU32(vertexAddr + 0u));
+		centerAY += toSignedWord(m_memory.readU32(vertexAddr + 4u));
 	}
 	double centerBX = 0.0;
 	double centerBY = 0.0;
 	for (uint32_t vertexIndex = 0; vertexIndex < shapeBVertexCount; vertexIndex += 1u) {
 		const uint32_t vertexAddr = *shapeBVertexAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-		centerBX += static_cast<int32_t>(m_memory.readU32(vertexAddr + 0u));
-		centerBY += static_cast<int32_t>(m_memory.readU32(vertexAddr + 4u));
+		centerBX += toSignedWord(m_memory.readU32(vertexAddr + 0u));
+		centerBY += toSignedWord(m_memory.readU32(vertexAddr + 4u));
 	}
 	centerAX /= static_cast<double>(shapeAVertexCount);
 	centerAY /= static_cast<double>(shapeAVertexCount);
@@ -836,10 +802,10 @@ void GeometryController::processSat2Record(GeoJob& job) {
 			const uint32_t currentAddr = axisBase + edgeIndex * XFORM2_VERTEX_BYTES;
 			const uint32_t nextIndex = edgeIndex + 1u == axisCount ? 0u : edgeIndex + 1u;
 			const uint32_t nextAddr = axisBase + nextIndex * XFORM2_VERTEX_BYTES;
-			const double x0 = static_cast<int32_t>(m_memory.readU32(currentAddr + 0u));
-			const double y0 = static_cast<int32_t>(m_memory.readU32(currentAddr + 4u));
-			const double x1 = static_cast<int32_t>(m_memory.readU32(nextAddr + 0u));
-			const double y1 = static_cast<int32_t>(m_memory.readU32(nextAddr + 4u));
+			const double x0 = toSignedWord(m_memory.readU32(currentAddr + 0u));
+			const double y0 = toSignedWord(m_memory.readU32(currentAddr + 4u));
+			const double x1 = toSignedWord(m_memory.readU32(nextAddr + 0u));
+			const double y1 = toSignedWord(m_memory.readU32(nextAddr + 4u));
 			const double nx = -(y1 - y0);
 			const double ny = x1 - x0;
 			const double axisLength = std::sqrt((nx * nx) + (ny * ny));
@@ -853,8 +819,8 @@ void GeometryController::processSat2Record(GeoJob& job) {
 			double maxA = -std::numeric_limits<double>::infinity();
 			for (uint32_t vertexIndex = 0; vertexIndex < shapeAVertexCount; vertexIndex += 1u) {
 				const uint32_t vertexAddr = *shapeAVertexAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-				const double px = static_cast<int32_t>(m_memory.readU32(vertexAddr + 0u));
-				const double py = static_cast<int32_t>(m_memory.readU32(vertexAddr + 4u));
+				const double px = toSignedWord(m_memory.readU32(vertexAddr + 0u));
+				const double py = toSignedWord(m_memory.readU32(vertexAddr + 4u));
 				const double projection = (px * ax) + (py * ay);
 				if (projection < minA) {
 					minA = projection;
@@ -867,8 +833,8 @@ void GeometryController::processSat2Record(GeoJob& job) {
 			double maxB = -std::numeric_limits<double>::infinity();
 			for (uint32_t vertexIndex = 0; vertexIndex < shapeBVertexCount; vertexIndex += 1u) {
 				const uint32_t vertexAddr = *shapeBVertexAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-				const double px = static_cast<int32_t>(m_memory.readU32(vertexAddr + 0u));
-				const double py = static_cast<int32_t>(m_memory.readU32(vertexAddr + 4u));
+				const double px = toSignedWord(m_memory.readU32(vertexAddr + 0u));
+				const double py = toSignedWord(m_memory.readU32(vertexAddr + 4u));
 				const double projection = (px * ax) + (py * ay);
 				if (projection < minB) {
 					minB = projection;
@@ -898,10 +864,6 @@ void GeometryController::processSat2Record(GeoJob& job) {
 		finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
 		return;
 	}
-	if (!std::isfinite(bestOverlap) || !std::isfinite(bestAxisX) || !std::isfinite(bestAxisY)) {
-		finishError(GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL, recordIndex);
-		return;
-	}
 	const double deltaX = centerBX - centerAX;
 	const double deltaY = centerBY - centerAY;
 	if (((deltaX * bestAxisX) + (deltaY * bestAxisY)) < 0.0) {
@@ -911,9 +873,9 @@ void GeometryController::processSat2Record(GeoJob& job) {
 	writeSat2Result(
 		*resultAddr,
 		1u,
-		roundToI32Clamped(bestAxisX * FIX16_SCALE),
-		roundToI32Clamped(bestAxisY * FIX16_SCALE),
-		roundToI32Clamped(bestOverlap),
+		saturateRoundedI32(bestAxisX * FIX16_SCALE),
+		saturateRoundedI32(bestAxisY * FIX16_SCALE),
+		saturateRoundedI32(bestOverlap),
 		packSat2Meta(bestAxisIndex, bestShapeSelector)
 	);
 	completeRecord(job);
@@ -1190,7 +1152,7 @@ float GeometryController::readF32(uint32_t addr) const {
 
 void GeometryController::completeRecord(GeoJob& job) {
 	job.processed += 1u;
-	writeRegister(IO_GEO_PROCESSED, job.processed);
+	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(job.processed)));
 	if (job.processed >= job.count) {
 		finishSuccess(job.processed);
 	}
@@ -1201,9 +1163,9 @@ void GeometryController::finishSuccess(uint32_t processed) {
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
 	m_scheduler.cancelDeviceService(DeviceServiceGeo);
-	writeRegister(IO_GEO_STATUS, GEO_STATUS_DONE);
-	writeRegister(IO_GEO_PROCESSED, processed);
-	writeRegister(IO_GEO_FAULT, 0u);
+	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_DONE)));
+	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(processed)));
+	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(0u)));
 	m_irq.raise(IRQ_GEO_DONE);
 }
 
@@ -1212,8 +1174,8 @@ void GeometryController::finishError(uint32_t code, uint32_t recordIndex, bool s
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
 	m_scheduler.cancelDeviceService(DeviceServiceGeo);
-	writeRegister(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
-	writeRegister(IO_GEO_FAULT, packFault(code, recordIndex));
+	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_DONE | GEO_STATUS_ERROR)));
+	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(packFault(code, recordIndex))));
 	if (signalIrq) {
 		m_irq.raise(IRQ_GEO_ERROR);
 	}
@@ -1224,9 +1186,9 @@ void GeometryController::finishRejected(uint32_t code) {
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
 	m_scheduler.cancelDeviceService(DeviceServiceGeo);
-	writeRegister(IO_GEO_STATUS, GEO_STATUS_REJECTED);
-	writeRegister(IO_GEO_PROCESSED, 0u);
-	writeRegister(IO_GEO_FAULT, packFault(code, GEO_RECORD_INDEX_NONE));
+	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_REJECTED)));
+	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(0u)));
+	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(packFault(code, GEO_RECORD_INDEX_NONE))));
 	m_irq.raise(IRQ_GEO_ERROR);
 }
 
@@ -1246,43 +1208,12 @@ std::optional<uint32_t> GeometryController::resolveIndexedSpan(uint32_t base, ui
 	return static_cast<uint32_t>(addr);
 }
 
-// disable-next-line single_line_method_pattern -- geometry status updates repeatedly write U32 values through numeric MMIO registers.
-void GeometryController::writeRegister(uint32_t addr, uint32_t value) {
-	m_memory.writeIoValue(addr, valueNumber(static_cast<double>(value)));
-}
-
 void GeometryController::writeSat2Result(uint32_t addr, uint32_t hit, int32_t nx, int32_t ny, int32_t depth, uint32_t meta) {
 	m_memory.writeU32(addr + 0u, hit);
 	m_memory.writeU32(addr + 4u, static_cast<uint32_t>(nx));
 	m_memory.writeU32(addr + 8u, static_cast<uint32_t>(ny));
 	m_memory.writeU32(addr + 12u, static_cast<uint32_t>(depth));
 	m_memory.writeU32(addr + 16u, meta);
-}
-
-uint32_t GeometryController::packFault(uint32_t code, uint32_t recordIndex) {
-	return ((code & 0xffffu) << 16u) | (recordIndex & 0xffffu);
-}
-
-uint32_t GeometryController::packSat2Meta(uint32_t axisIndex, uint32_t shapeSelector) {
-	return ((shapeSelector & 0xffffu) << GEO_SAT_META_SHAPE_SHIFT) | (axisIndex & GEO_SAT_META_AXIS_MASK);
-}
-
-int32_t GeometryController::roundToI32Clamped(double value) {
-	if (value <= static_cast<double>(std::numeric_limits<int32_t>::min())) {
-		return std::numeric_limits<int32_t>::min();
-	}
-	if (value >= static_cast<double>(std::numeric_limits<int32_t>::max())) {
-		return std::numeric_limits<int32_t>::max();
-	}
-	return static_cast<int32_t>(std::llround(value));
-}
-
-int32_t GeometryController::transformFixed16(int32_t m0, int32_t m1, int32_t tx, int32_t x, int32_t y) {
-	int64_t accum = 0;
-	accum = saturatingAdd64(accum, static_cast<int64_t>(m0) * static_cast<int64_t>(x));
-	accum = saturatingAdd64(accum, static_cast<int64_t>(m1) * static_cast<int64_t>(y));
-	accum = saturatingAdd64(accum, static_cast<int64_t>(tx) * (static_cast<int64_t>(1) << FIX16_SHIFT));
-	return saturateI32(accum >> FIX16_SHIFT);
 }
 
 } // namespace bmsx

@@ -25,7 +25,6 @@ class GameViewHost;
 class RenderPassLibrary;
 class RenderGraphRuntime;
 class LightingSystem;
-class Runtime;
 
 /* ============================================================================
  * Atmosphere parameters (fog, etc.)
@@ -81,7 +80,6 @@ public:
 	GPUBackend* backend() { return m_backend.get(); }
 	const GPUBackend* backend() const { return m_backend.get(); }
 	BackendType backendType() const;
-	void bindRuntime(Runtime& runtime);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Viewport and canvas sizes
@@ -100,9 +98,7 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	void init();
 	void initializeDefaultTextures();
-	void beginFrame();
 	void drawGame();
-	void endFrame();
 	void configurePresentation(PresentationMode mode, bool commitFrame);
 	u8 presentationHistoryDestinationIndex() const { return presentationHistorySourceIndex == 0 ? 1 : 0; }
 
@@ -214,24 +210,13 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Ambient control API
 	// ─────────────────────────────────────────────────────────────────────────
-	void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure = 1.0f);
-	void setParticlesAmbient(i32 mode, f32 factor = 1.0f);
 	void setSpritesAmbient(bool enabled, f32 factor = 1.0f);
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// Convenience methods for host/editor drawing primitives.
-	// ─────────────────────────────────────────────────────────────────────────
-	void fillRectangle(const RectBounds& area, const Color& color, RenderLayer layer = RenderLayer::World);
-	void drawRectangle(const RectBounds& area, const Color& color, RenderLayer layer = RenderLayer::World);
-	void drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color, RenderLayer layer = RenderLayer::World);
 
 private:
 	void finalizePresentation();
 	void resetPresentationHistory();
-	Runtime& runtime();
 
 	GameViewHost* m_host;
-	Runtime* m_runtime = nullptr;
 	std::unique_ptr<GPUBackend> m_backend;
 	std::unique_ptr<RenderPassLibrary> m_pipelineRegistry;
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;

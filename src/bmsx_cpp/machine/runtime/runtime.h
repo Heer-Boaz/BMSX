@@ -95,7 +95,7 @@ public:
 		Clock& clock,
 		SoundMaster& soundMaster,
 		MicrotaskQueue& microtasks,
-			GameView& view
+		GameView& view
 	);
 	~Runtime();
 
@@ -135,7 +135,7 @@ public:
 	bool isRebootRequested() const { return m_rebootRequested; }
 	void clearRebootRequest() { m_rebootRequested = false; }
 	bool hasCartEntry() const { return m_cartEntryProtoIndex.has_value(); }
-	void setCartEntry(int entryProtoIndex, std::vector<std::string> staticModulePaths);
+	void setLinkedCartEntry(int entryProtoIndex, std::vector<std::string> staticModulePaths);
 	void enterSystemFirmware();
 	void enterCartProgram();
 	void startCartProgram();
@@ -170,8 +170,6 @@ public:
 	);
 
 
-	Machine& machine() { return m_machine; }
-	const Machine& machine() const { return m_machine; }
 
 	/**
 	 * Call a Lua function from native code.
@@ -183,7 +181,7 @@ public:
 	 */
 	void setGlobal(std::string_view name, const Value& value);
 
-	Value luaKey(std::string_view name) const { return valueString(const_cast<CPU&>(m_machine.cpu()).internString(name)); }
+	Value luaKey(std::string_view name) const { return valueString(const_cast<CPU&>(machine.cpu).internString(name)); }
 
 	/**
 	 * Register a native function as a global.
@@ -207,8 +205,8 @@ public:
 	}
 	int vdpWorkUnitsPerSec() const { return timing.vdpWorkUnitsPerSec; }
 	bool lastTickVisualFrameCommitted() const { return frameScheduler.lastTickVisualFrameCommitted; }
-	int vdpUsageWorkUnitsLast() const { return m_machine.vdp().lastFrameCost(); }
-	bool vdpUsageFrameHeld() const { return m_machine.vdp().lastFrameHeld(); }
+	int vdpUsageWorkUnitsLast() const { return machine.vdp.lastFrameCost(); }
+	bool vdpUsageFrameHeld() const { return machine.vdp.lastFrameHeld(); }
 	bool isDrawPending() const { return m_runtimeFailed || m_pendingCall == PendingCall::Entry; }
 	void refreshMemoryMap();
 	RenderPresentationState screen;
@@ -250,7 +248,12 @@ private:
 	GameView& m_view;
 
 	// Runtime core
-	Machine m_machine;
+	Memory m_memory;
+
+public:
+	Machine machine;
+
+private:
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 

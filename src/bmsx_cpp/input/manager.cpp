@@ -3,41 +3,376 @@
  */
 
 #include "manager.h"
+#include "player.h"
 #include "gamepad.h"
 #include "keyboard.h"
 #include "pointer.h"
 #include "core/console.h"
+#include <cmath>
 
 namespace bmsx {
 
 /* ============================================================================
- * Static data
+ * Constructor
  * ============================================================================ */
 
-const std::vector<std::string>& Input::BUTTON_IDS() {
-	static const std::vector<std::string> ids = {
-		"a", "b", "x", "y",
-		"lb", "rb", "lt", "rt",
-		"select", "start", "ls", "rs",
-		"up", "down", "left", "right",
-		"home", "touch"
-	};
-	return ids;
+InputStateManager::InputStateManager() = default;
+
+/* ============================================================================
+ * Frame lifecycle
+ * ============================================================================ */
+
+void InputStateManager::beginFrame(f64 currentTimeMs) {
+	m_currentTimeMs = currentTimeMs;
+	m_currentFrame += 1;
+
+	for (auto& [id, state] : m_buttonStates) {
+		(void)id;
+		state.justpressed = false;
+		state.justreleased = false;
+		if (state.pressed) {
+			const f64 pressedAt = buttonPressedAtOr(state, currentTimeMs);
+			state.presstime = currentTimeMs - pressedAt;
+		} else {
+			state.presstime = std::nullopt;
+		}
+	}
 }
 
-const std::unordered_map<std::string, std::string>& Input::KEYBOARD_TO_GAMEPAD() {
-	static const std::unordered_map<std::string, std::string> mapping = []() {
-		const auto defaultMapping = getDefaultInputMapping();
-		std::unordered_map<std::string, std::string> inverse;
-		for (const auto& [action, bindings] : defaultMapping.keyboard) {
-			for (const auto& binding : bindings) {
-				inverse[binding.id] = action;
+void InputStateManager::update(f64 currentTimeMs) {
+	m_currentTimeMs = currentTimeMs;
+	pruneOldEvents();
+	pruneBufferedEdges(m_bufferedPressEdges);
+	pruneBufferedEdges(m_bufferedReleaseEdges);
+}
+
+/* ============================================================================
+ * Event handling
+ * ============================================================================ */
+
+void InputStateManager::addInputEvent(InputEvent evt) {
+	const i64 bufferedFrame = m_currentFrame + 1;
+	BufferedInputEvent bufferedEvent{
+		.event = std::move(evt),
+		.frame = bufferedFrame,
+	};
+	const InputEvent& event = bufferedEvent.event;
+	if (event.eventType == InputEvent::Type::Press) {
+		bufferEdge(m_bufferedPressEdges, bufferedEvent);
+	} else {
+		bufferEdge(m_bufferedReleaseEdges, bufferedEvent);
+	}
+
+	m_inputBuffer.push_back(std::move(bufferedEvent));
+}
+
+void InputStateManager::recordAxis1Sample(const std::string& button, f32 value, f64 timestamp) {
+	auto& state = m_pendingFrameStates[button];
+	if (button == "pointer_wheel") {
+		const f32 accumulated = state.value + value;
+		state.value = accumulated;
+		state.pressed = accumulated != 0.0f;
+		state.justpressed = accumulated != 0.0f;
+		state.timestamp = timestamp;
+		if (!state.pressedAtMs.has_value()) {
+			state.pressedAtMs = timestamp;
+		}
+		state.consumed = false;
+		return;
+	}
+	const f32 magnitude = std::abs(value);
+	state.value = value;
+	state.pressed = magnitude > 0.0f;
+	state.justpressed = state.justpressed || state.pressed;
+	state.timestamp = timestamp;
+	if (state.pressed && !state.pressedAtMs.has_value()) {
+		state.pressedAtMs = timestamp;
+	}
+	state.consumed = false;
+}
+
+void InputStateManager::recordAxis2Sample(const std::string& button, f32 x, f32 y, f64 timestamp) {
+	auto& state = m_pendingFrameStates[button];
+	if (button == "pointer_delta") {
+		const Vec2 previous = state.value2d.has_value()
+			? state.value2d.value()
+			: Vec2(0.0f, 0.0f);
+		const f32 nextX = previous.x + x;
+		const f32 nextY = previous.y + y;
+		state.value2d = Vec2(nextX, nextY);
+		state.value = std::hypot(nextX, nextY);
+		state.pressed = state.value > 0.0f;
+		state.justpressed = state.justpressed || state.pressed;
+		state.timestamp = timestamp;
+		if (!state.pressedAtMs.has_value()) {
+			state.pressedAtMs = timestamp;
+		}
+		state.consumed = false;
+		return;
+	}
+	state.value2d = Vec2(x, y);
+	state.value = std::hypot(x, y);
+	state.timestamp = timestamp;
+	if (button == "pointer_position") {
+		state.consumed = false;
+		return;
+	}
+	state.pressed = state.value > 0.0f;
+	state.justpressed = state.justpressed || state.pressed;
+	if (state.pressed && !state.pressedAtMs.has_value()) {
+		state.pressedAtMs = timestamp;
+	}
+	state.consumed = false;
+}
+
+void InputStateManager::latchButtonState(const std::string& button, const ButtonState& rawState, f64 currentTimeMs) {
+	auto& state = m_buttonStates[button];
+	auto pendingIt = m_pendingFrameStates.find(button);
+	ButtonState* pending = nullptr;
+	if (pendingIt != m_pendingFrameStates.end()) {
+		pending = &pendingIt->second;
+	}
+	const auto bufferedPress = getBufferedEdgeRecord(m_bufferedPressEdges, button, 1);
+	const auto bufferedRelease = getBufferedEdgeRecord(m_bufferedReleaseEdges, button, 1);
+	const bool previousPressed = state.pressed;
+	const bool nextPressed = pending ? pending->pressed : rawState.pressed;
+	f64 nextTimestamp = buttonTimestampOr(rawState, buttonTimestampOr(state, currentTimeMs));
+	if (pending && pending->timestamp.has_value()) {
+		nextTimestamp = pending->timestamp.value();
+	}
+	std::optional<i32> nextPressId;
+	if (rawState.pressId.has_value()) {
+		nextPressId = rawState.pressId;
+	} else if (state.pressId.has_value()) {
+		nextPressId = state.pressId;
+	} else if (pending && pending->pressId.has_value()) {
+		nextPressId = pending->pressId;
+	}
+	std::optional<f64> nextPressedAtMs;
+	if (nextPressed) {
+		if (rawState.pressedAtMs.has_value()) {
+			nextPressedAtMs = rawState.pressedAtMs;
+		} else if (pending && pending->pressedAtMs.has_value()) {
+			nextPressedAtMs = pending->pressedAtMs;
+		} else if (state.pressedAtMs.has_value()) {
+			nextPressedAtMs = state.pressedAtMs;
+		} else {
+			nextPressedAtMs = nextTimestamp;
+		}
+	}
+	std::optional<f64> nextReleasedAtMs;
+	if (!nextPressed) {
+		if (rawState.releasedAtMs.has_value()) {
+			nextReleasedAtMs = rawState.releasedAtMs;
+		} else if (state.releasedAtMs.has_value()) {
+			nextReleasedAtMs = state.releasedAtMs;
+		} else if (bufferedRelease.has_value()) {
+			nextReleasedAtMs = nextTimestamp;
+		}
+	}
+	state.pressed = nextPressed;
+	state.justpressed = bufferedPress.has_value() || (pending && pending->justpressed && !previousPressed);
+	state.justreleased = bufferedRelease.has_value() || (pending && pending->justreleased && previousPressed);
+	state.consumed = nextPressed && state.consumed;
+	state.timestamp = nextTimestamp;
+	state.pressedAtMs = nextPressedAtMs;
+	state.releasedAtMs = nextReleasedAtMs;
+	state.pressId = nextPressId;
+	state.value = pending ? pending->value : rawState.value;
+	if (!pending) {
+		state.value2d = rawState.value2d;
+	} else {
+		state.value2d = pending->value2d.has_value() ? pending->value2d : rawState.value2d;
+	}
+	state.presstime = nextPressed
+		? std::optional<f64>(currentTimeMs - nextPressedAtMs.value())
+		: std::nullopt;
+	if (pendingIt != m_pendingFrameStates.end()) {
+		m_pendingFrameStates.erase(pendingIt);
+	}
+}
+
+void InputStateManager::consumeBufferedEvent(const std::string& identifier, std::optional<i32> pressId) {
+	for (auto& bufferedEvent : m_inputBuffer) {
+		if (bufferedEvent.event.identifier == identifier) {
+			if (!pressId.has_value() || bufferedEvent.event.pressId == pressId) {
+				bufferedEvent.event.consumed = true;
 			}
 		}
-		return inverse;
-	}();
-	return mapping;
+	}
+	consumeBufferedEdge(m_bufferedPressEdges, identifier, pressId);
+	consumeBufferedEdge(m_bufferedReleaseEdges, identifier, pressId);
+	auto stateIt = m_buttonStates.find(identifier);
+	if (stateIt != m_buttonStates.end()) {
+		stateIt->second.consumed = true;
+	}
 }
+
+/* ============================================================================
+ * State queries
+ * ============================================================================ */
+
+ButtonState InputStateManager::getButtonState(const std::string& button, std::optional<i32> windowFrames) const {
+	ButtonState state;
+	auto it = m_buttonStates.find(button);
+	if (it != m_buttonStates.end()) {
+		state = it->second;
+	}
+
+	i32 effectiveWindow = BUFFER_FRAME_RETENTION;
+	if (windowFrames.has_value()) {
+		effectiveWindow = windowFrames.value();
+	}
+	state.justpressed = state.justpressed || getBufferedEdgeRecord(m_bufferedPressEdges, button, 1).has_value();
+	state.justreleased = state.justreleased || getBufferedEdgeRecord(m_bufferedReleaseEdges, button, 1).has_value();
+	state.waspressed = state.pressed;
+	state.wasreleased = state.justreleased;
+	for (const auto& bufferedEvent : m_inputBuffer) {
+		if (bufferedEvent.event.identifier == button &&
+			bufferedEvent.frame <= m_currentFrame &&
+			isBufferedFrameInWindow(bufferedEvent.frame, effectiveWindow)) {
+			if (bufferedEvent.event.eventType == InputEvent::Type::Press) {
+				state.waspressed = true;
+			}
+			if (bufferedEvent.event.eventType == InputEvent::Type::Release) {
+				state.wasreleased = true;
+			}
+			if (bufferedEvent.event.consumed &&
+				(!state.pressId.has_value() || (bufferedEvent.event.pressId.has_value() && bufferedEvent.event.pressId.value() == state.pressId.value()))) {
+				state.consumed = true;
+			}
+		}
+	}
+
+	return state;
+}
+
+std::optional<i32> InputStateManager::getLatestUnconsumedPressId(const std::string& button) const {
+	return getLatestUnconsumedEdgeId(button, InputEvent::Type::Press);
+}
+
+std::optional<i32> InputStateManager::getLatestUnconsumedReleaseId(const std::string& button) const {
+	return getLatestUnconsumedEdgeId(button, InputEvent::Type::Release);
+}
+
+bool InputStateManager::hasTrackedButton(const std::string& button) const {
+	return m_buttonStates.find(button) != m_buttonStates.end();
+}
+
+/* ============================================================================
+ * State management
+ * ============================================================================ */
+
+void InputStateManager::resetEdgeState() {
+	for (auto& [id, state] : m_buttonStates) {
+		(void)id;
+		state.justpressed = false;
+		state.justreleased = false;
+		state.consumed = false;
+		if (!state.pressed) {
+			state.presstime = std::nullopt;
+			state.pressedAtMs = std::nullopt;
+			state.pressId = std::nullopt;
+			state.value = 0.0f;
+			state.value2d = std::nullopt;
+		}
+	}
+	m_inputBuffer.clear();
+	m_bufferedPressEdges.clear();
+	m_bufferedReleaseEdges.clear();
+	m_pendingFrameStates.clear();
+	m_currentFrame = 0;
+}
+
+void InputStateManager::clear() {
+	m_buttonStates.clear();
+	m_pendingFrameStates.clear();
+	m_inputBuffer.clear();
+	m_bufferedPressEdges.clear();
+	m_bufferedReleaseEdges.clear();
+	m_currentFrame = 0;
+	m_currentTimeMs = 0.0;
+}
+
+/* ============================================================================
+ * Helpers
+ * ============================================================================ */
+
+std::optional<i32> InputStateManager::getLatestUnconsumedEdgeId(const std::string& button, InputEvent::Type eventType) const {
+	const auto& edgeMap = eventType == InputEvent::Type::Press
+		? m_bufferedPressEdges
+		: m_bufferedReleaseEdges;
+	auto edge = getBufferedEdgeRecord(edgeMap, button, RECENT_BUFFERED_EDGE_FRAMES);
+	if (!edge.has_value()) {
+		return std::nullopt;
+	}
+	return edge->edgeId;
+}
+
+std::optional<InputStateManager::BufferedEdgeRecord> InputStateManager::getBufferedEdgeRecord(
+	const std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap,
+	const std::string& button,
+	i32 windowFrames
+) const {
+	auto it = edgeMap.find(button);
+	if (it == edgeMap.end()) {
+		return std::nullopt;
+	}
+	const BufferedEdgeRecord& edge = it->second;
+	if (edge.consumed || edge.frame > m_currentFrame || !isBufferedFrameInWindow(edge.frame, windowFrames)) {
+		return std::nullopt;
+	}
+	return edge;
+}
+
+bool InputStateManager::isBufferedFrameInWindow(i64 frame, i32 windowFrames) const {
+	if (windowFrames <= 0) {
+		return false;
+	}
+	return m_currentFrame - frame < windowFrames;
+}
+
+void InputStateManager::bufferEdge(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const BufferedInputEvent& event) {
+	if (!event.event.pressId.has_value()) {
+		return;
+	}
+	edgeMap[event.event.identifier] = BufferedEdgeRecord{
+		.edgeId = event.event.pressId.value(),
+		.frame = event.frame,
+		.consumed = event.event.consumed,
+	};
+}
+
+void InputStateManager::consumeBufferedEdge(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const std::string& identifier, std::optional<i32> pressId) {
+	auto it = edgeMap.find(identifier);
+	if (it == edgeMap.end()) {
+		return;
+	}
+	if (!pressId.has_value() || it->second.edgeId == pressId.value()) {
+		it->second.consumed = true;
+	}
+}
+
+void InputStateManager::pruneOldEvents() {
+	while (!m_inputBuffer.empty() && !isBufferedFrameInWindow(m_inputBuffer.front().frame, BUFFER_FRAME_RETENTION)) {
+		m_inputBuffer.pop_front();
+	}
+}
+
+void InputStateManager::pruneBufferedEdges(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap) {
+	for (auto it = edgeMap.begin(); it != edgeMap.end();) {
+		if (!isBufferedFrameInWindow(it->second.frame, BUFFER_FRAME_RETENTION)) {
+			it = edgeMap.erase(it);
+			continue;
+		}
+		++it;
+	}
+}
+
+
+/* ============================================================================
+ * Static data
+ * ============================================================================ */
 
 /* ============================================================================
  * Singleton
@@ -66,14 +401,13 @@ Input::~Input() {
 
 void Input::initialize() {
 	if (m_initialized) return;
-	
+
 	// Set up default input mapping for keyboard player
-	auto defaultMapping = getDefaultInputMapping();
-	m_playerInputs[toInternalPlayerIndex(DEFAULT_KEYBOARD_PLAYER_INDEX)]->setInputMap(defaultMapping);
+	m_playerInputs[DEFAULT_KEYBOARD_PLAYER_INDEX - 1]->setInputMap(DEFAULT_INPUT_MAPPING);
 	m_focusChangeSub = ConsoleCore::instance().platform()->gameviewHost()->onFocusChange([this](bool focused) {
 		handleFocusChange(focused);
 	});
-	
+
 	m_initialized = true;
 }
 
@@ -83,19 +417,19 @@ void Input::shutdown() {
 	if (m_focusChangeSub.active) {
 		m_focusChangeSub.unsubscribe();
 	}
-	
+
 	// Clear device bindings
 	m_deviceBindings.clear();
 	m_activePressIds.clear();
 	m_nextPressId = 1;
-	
+
 	// Reset player inputs
 	for (auto& player : m_playerInputs) {
 		if (player) {
 			player->reset();
 		}
 	}
-	
+
 	m_initialized = false;
 }
 
@@ -104,7 +438,7 @@ void Input::shutdown() {
  * ============================================================================ */
 
 PlayerInput* Input::getPlayerInput(i32 playerIndex) {
-	return m_playerInputs[toInternalPlayerIndex(playerIndex)].get();
+	return m_playerInputs[playerIndex - 1].get();
 }
 
 void Input::setFrameDurationMs(f64 frameDurationMs) {
@@ -120,50 +454,32 @@ void Input::setFrameDurationMs(f64 frameDurationMs) {
  * Device management
  * ============================================================================ */
 
-void Input::registerKeyboard(const std::string& deviceId, InputHandler* handler) {
-	registerDeviceBinding(deviceId, handler, InputSource::Keyboard, DEFAULT_KEYBOARD_PLAYER_INDEX);
-}
-
-void Input::registerGamepad(const std::string& deviceId, InputHandler* handler) {
-	registerDeviceBinding(deviceId, handler, InputSource::Gamepad, std::nullopt);
-}
-
-void Input::registerPointer(const std::string& deviceId, InputHandler* handler) {
-	registerDeviceBinding(deviceId, handler, InputSource::Pointer, DEFAULT_KEYBOARD_PLAYER_INDEX);
-}
-
 void Input::unregisterDevice(const std::string& deviceId) {
 	auto it = m_deviceBindings.find(deviceId);
 	if (it == m_deviceBindings.end()) return;
-	
+
 	auto& binding = it->second;
-	
+
 	// Clear from assigned player
 	if (binding.assignedPlayer.has_value()) {
-		auto* player = m_playerInputs[toInternalPlayerIndex(binding.assignedPlayer.value())].get();
+		auto* player = m_playerInputs[binding.assignedPlayer.value() - 1].get();
 		if (player) {
 			if (binding.source == InputSource::Gamepad) {
-				player->clearHandler(InputSource::Gamepad);
+				player->inputHandlers[static_cast<size_t>(InputSource::Gamepad)] = nullptr;
 			} else if (binding.source == InputSource::Keyboard) {
-				player->clearHandler(InputSource::Keyboard);
+				player->inputHandlers[static_cast<size_t>(InputSource::Keyboard)] = nullptr;
 			} else if (binding.source == InputSource::Pointer) {
-				player->clearHandler(InputSource::Pointer);
+				player->inputHandlers[static_cast<size_t>(InputSource::Pointer)] = nullptr;
 			}
 		}
 	}
-	
+
 	// Reset handler
 	if (binding.handler) {
 		binding.handler->reset();
 	}
-	
-	m_deviceBindings.erase(it);
-}
 
-DeviceBinding* Input::getDeviceBinding(const std::string& deviceId) {
-	auto it = m_deviceBindings.find(deviceId);
-	if (it == m_deviceBindings.end()) return nullptr;
-	return &it->second;
+	m_deviceBindings.erase(it);
 }
 
 void Input::handleFocusChange(bool /*focused*/) {
@@ -193,7 +509,7 @@ void Input::registerDeviceBinding(const std::string& deviceId, InputHandler* han
 	if (!assignedPlayer.has_value()) {
 		return;
 	}
-	m_playerInputs[toInternalPlayerIndex(assignedPlayer.value())]->setHandler(source, handler);
+	m_playerInputs[assignedPlayer.value() - 1]->inputHandlers[static_cast<size_t>(source)] = handler;
 }
 
 /* ============================================================================
@@ -201,9 +517,9 @@ void Input::registerDeviceBinding(const std::string& deviceId, InputHandler* han
  * ============================================================================ */
 
 void Input::assignGamepadToPlayer(InputHandler* gamepad, i32 playerIndex) {
-	auto* player = m_playerInputs[toInternalPlayerIndex(playerIndex)].get();
-	player->assignGamepad(gamepad);
-	
+	auto* player = m_playerInputs[playerIndex - 1].get();
+	player->assignGamepadToPlayer(gamepad);
+
 	// Update binding
 	for (auto& [id, binding] : m_deviceBindings) {
 		if (binding.handler == gamepad) {
@@ -211,22 +527,21 @@ void Input::assignGamepadToPlayer(InputHandler* gamepad, i32 playerIndex) {
 			break;
 		}
 	}
-	
+
 	// Set default input mapping if not already set
-	auto defaultMapping = getDefaultInputMapping();
-	player->setInputMap(defaultMapping);
+	player->setInputMap(DEFAULT_INPUT_MAPPING);
 }
 
-std::optional<i32> Input::getFirstAvailablePlayerIndexForGamepad(i32 from, bool reverse) {
+std::optional<i32> Input::getFirstAvailablePlayerIndexForGamepadAssignment(i32 from, bool reverse) {
 	if (reverse) {
 		for (i32 i = from; i >= 1; i--) {
-			if (isPlayerIndexAvailableForGamepad(i)) {
+			if (isPlayerIndexAvailableForGamepadAssignment(i)) {
 				return i;
 			}
 		}
 	} else {
 		for (i32 i = from; i <= PLAYERS_MAX; i++) {
-			if (isPlayerIndexAvailableForGamepad(i)) {
+			if (isPlayerIndexAvailableForGamepadAssignment(i)) {
 				return i;
 			}
 		}
@@ -234,18 +549,18 @@ std::optional<i32> Input::getFirstAvailablePlayerIndexForGamepad(i32 from, bool 
 	return std::nullopt;
 }
 
-bool Input::isPlayerIndexAvailableForGamepad(i32 playerIndex) {
-	auto* player = m_playerInputs[toInternalPlayerIndex(playerIndex)].get();
-	return player->getHandler(InputSource::Gamepad) == nullptr;
+bool Input::isPlayerIndexAvailableForGamepadAssignment(i32 playerIndex) {
+	auto* player = m_playerInputs[playerIndex - 1].get();
+	return player->inputHandlers[static_cast<size_t>(InputSource::Gamepad)] == nullptr;
 }
 
 /* ============================================================================
  * Input mapping
  * ============================================================================ */
 
-InputMap Input::getDefaultInputMapping() {
+static InputMap createDefaultInputMapping() {
 	InputMap map;
-	
+
 	// Keyboard mappings
 	map.pointer["pointer_primary"] = {PointerBinding{"pointer_primary"}};
 	map.pointer["pointer_secondary"] = {PointerBinding{"pointer_secondary"}};
@@ -274,7 +589,7 @@ InputMap Input::getDefaultInputMapping() {
 	map.keyboard["right"] = {KeyboardBinding{"ArrowRight", std::nullopt}};
 	map.keyboard["home"] = {KeyboardBinding{"Escape", std::nullopt}};
 	map.keyboard["touch"] = {KeyboardBinding{"Space", std::nullopt}};
-	
+
 	// Gamepad mappings (direct 1:1)
 	map.gamepad["up"] = {GamepadBinding{"up", std::nullopt}};
 	map.gamepad["down"] = {GamepadBinding{"down", std::nullopt}};
@@ -294,9 +609,21 @@ InputMap Input::getDefaultInputMapping() {
 	map.gamepad["rs"] = {GamepadBinding{"rs", std::nullopt}};
 	map.gamepad["home"] = {GamepadBinding{"home", std::nullopt}};
 	map.gamepad["touch"] = {GamepadBinding{"touch", std::nullopt}};
-	
+
 	return map;
 }
+
+const InputMap Input::DEFAULT_INPUT_MAPPING = createDefaultInputMapping();
+
+const std::unordered_map<std::string, std::string> Input::KEYBOARD_TO_GAMEPAD = []() {
+	std::unordered_map<std::string, std::string> inverse;
+	for (const auto& [action, bindings] : Input::DEFAULT_INPUT_MAPPING.keyboard) {
+		for (const auto& binding : bindings) {
+			inverse[binding.id] = action;
+		}
+	}
+	return inverse;
+}();
 
 /* ============================================================================
  * Frame update
@@ -340,14 +667,14 @@ void Input::pollInput() {
 		}
 		evt = hub->nextEvt();
 	}
-	
+
 	// 2. Poll handlers - they read updated keyStates set by events above
 	for (auto& player : m_playerInputs) {
 		if (player) {
 			player->pollInput(m_currentTimeMs);
 		}
 	}
-	
+
 	// 3. Finally, update player input buffers
 	for (auto& player : m_playerInputs) {
 		if (player) {
@@ -372,69 +699,69 @@ void Input::beginFrame() {
  * ============================================================================ */
 
 void Input::handleKeyboardEvent(const std::string& deviceId, const std::string& keyCode, bool down) {
-	auto* binding = getDeviceBinding(deviceId);
-	auto* handler = static_cast<KeyboardInput*>(binding->handler);
-	i32 pressId = assignPressId(deviceId, keyCode, down);
+	DeviceBinding& binding = m_deviceBindings.find(deviceId)->second;
+	auto* handler = static_cast<KeyboardInput*>(binding.handler);
+	i32 pressId = resolvePlatformPressId(deviceId, keyCode, down);
 	if (down) {
-	handler->keydown(keyCode, pressId, m_currentTimeMs);
+		handler->keydown(keyCode, pressId, m_currentTimeMs);
 	} else {
 		handler->keyup(keyCode, pressId, m_currentTimeMs);
 	}
-	enqueueButtonEvent(binding->assignedPlayer.value(), InputSource::Keyboard, keyCode,
+	enqueueButtonEvent(binding.assignedPlayer.value(), InputSource::Keyboard, keyCode,
 						down ? InputEvent::Type::Press : InputEvent::Type::Release,
 						m_currentTimeMs, pressId);
 }
 
 void Input::handleGamepadButtonEvent(const std::string& deviceId, const std::string& button,
 										bool down, f32 value) {
-	auto* binding = getDeviceBinding(deviceId);
-	auto* handler = static_cast<GamepadInput*>(binding->handler);
-	i32 pressId = assignPressId(deviceId, button, down);
+	DeviceBinding& binding = m_deviceBindings.find(deviceId)->second;
+	auto* handler = static_cast<GamepadInput*>(binding.handler);
+	i32 pressId = resolvePlatformPressId(deviceId, button, down);
 	handler->ingestButton(button, down, value, m_currentTimeMs, pressId);
-	enqueueButtonEvent(binding->assignedPlayer.value(), InputSource::Gamepad, button,
+	enqueueButtonEvent(binding.assignedPlayer.value(), InputSource::Gamepad, button,
 						down ? InputEvent::Type::Press : InputEvent::Type::Release,
 						m_currentTimeMs, pressId);
 }
 
 void Input::handleGamepadAxisEvent(const std::string& deviceId, const std::string& axis,
 									f32 x, f32 y) {
-	auto* binding = getDeviceBinding(deviceId);
-	auto* handler = static_cast<GamepadInput*>(binding->handler);
+	DeviceBinding& binding = m_deviceBindings.find(deviceId)->second;
+	auto* handler = static_cast<GamepadInput*>(binding.handler);
 	handler->ingestAxis2(axis, x, y, m_currentTimeMs);
-	if (binding->assignedPlayer.has_value()) {
-		getPlayerInput(binding->assignedPlayer.value())->recordAxis2Input(InputSource::Gamepad, axis, x, y, m_currentTimeMs);
+	if (binding.assignedPlayer.has_value()) {
+		getPlayerInput(binding.assignedPlayer.value())->recordAxis2Input(InputSource::Gamepad, axis, x, y, m_currentTimeMs);
 	}
 }
 
 void Input::handlePointerButtonEvent(const std::string& deviceId, const std::string& button, bool down) {
-	auto* binding = getDeviceBinding(deviceId);
-	auto* handler = static_cast<PointerInput*>(binding->handler);
-	i32 pressId = assignPressId(deviceId, button, down);
+	DeviceBinding& binding = m_deviceBindings.find(deviceId)->second;
+	auto* handler = static_cast<PointerInput*>(binding.handler);
+	i32 pressId = resolvePlatformPressId(deviceId, button, down);
 	handler->ingestButton(button, down, down ? 1.0f : 0.0f, m_currentTimeMs, pressId);
-	enqueueButtonEvent(binding->assignedPlayer.value(), InputSource::Pointer, button,
+	enqueueButtonEvent(binding.assignedPlayer.value(), InputSource::Pointer, button,
 						down ? InputEvent::Type::Press : InputEvent::Type::Release,
 						m_currentTimeMs, pressId);
 }
 
 void Input::handlePointerMoveEvent(const std::string& deviceId, f32 x, f32 y) {
-	auto* binding = getDeviceBinding(deviceId);
-	auto* handler = static_cast<PointerInput*>(binding->handler);
+	DeviceBinding& binding = m_deviceBindings.find(deviceId)->second;
+	auto* handler = static_cast<PointerInput*>(binding.handler);
 	handler->ingestAxis2("pointer_position", x, y, m_currentTimeMs);
-	if (binding->assignedPlayer.has_value()) {
-			auto* player = getPlayerInput(binding->assignedPlayer.value());
-			player->recordAxis2Input(InputSource::Pointer, "pointer_position", x, y, m_currentTimeMs);
-			const ButtonState delta = handler->getButtonState("pointer_delta");
-			const Vec2 value = delta.value2d.value();
-			player->recordAxis2Input(InputSource::Pointer, "pointer_delta", value.x, value.y, m_currentTimeMs);
-		}
+	if (binding.assignedPlayer.has_value()) {
+		auto* player = getPlayerInput(binding.assignedPlayer.value());
+		player->recordAxis2Input(InputSource::Pointer, "pointer_position", x, y, m_currentTimeMs);
+		const ButtonState delta = handler->getButtonState("pointer_delta");
+		const Vec2 value = delta.value2d.value();
+		player->recordAxis2Input(InputSource::Pointer, "pointer_delta", value.x, value.y, m_currentTimeMs);
 	}
+}
 
 void Input::handlePointerWheelEvent(const std::string& deviceId, f32 value) {
-	auto* binding = getDeviceBinding(deviceId);
-	auto* handler = static_cast<PointerInput*>(binding->handler);
+	DeviceBinding& binding = m_deviceBindings.find(deviceId)->second;
+	auto* handler = static_cast<PointerInput*>(binding.handler);
 	handler->ingestAxis1("pointer_wheel", value, m_currentTimeMs);
-	if (binding->assignedPlayer.has_value()) {
-		getPlayerInput(binding->assignedPlayer.value())->recordAxis1Input(InputSource::Pointer, "pointer_wheel", value, m_currentTimeMs);
+	if (binding.assignedPlayer.has_value()) {
+		getPlayerInput(binding.assignedPlayer.value())->recordAxis1Input(InputSource::Pointer, "pointer_wheel", value, m_currentTimeMs);
 	}
 }
 
@@ -446,7 +773,7 @@ void Input::enqueueButtonEvent(i32 playerIndex, InputSource source, const std::s
 								InputEvent::Type type, f64 timestamp,
 								std::optional<i32> pressId) {
 	auto* player = getPlayerInput(playerIndex);
-	
+
 	InputEvent evt;
 	evt.eventType = type;
 	evt.identifier = code;
@@ -456,7 +783,7 @@ void Input::enqueueButtonEvent(i32 playerIndex, InputSource source, const std::s
 	player->recordButtonEvent(source, code, std::move(evt));
 }
 
-i32 Input::assignPressId(const std::string& deviceId, const std::string& code, bool down) {
+i32 Input::resolvePlatformPressId(const std::string& deviceId, const std::string& code, bool down) {
 	std::string key = deviceId + ":" + code;
 	if (down) {
 		i32 pressId = m_nextPressId++;

@@ -37,11 +37,6 @@ int32_t apuSamplesToMilliseconds(uint32_t samples) {
 	return static_cast<int32_t>((static_cast<uint64_t>(samples) * 1000ull) / APU_SAMPLE_RATE_HZ);
 }
 
-// disable-next-line single_line_method_pattern -- APU register resets write numeric MMIO values repeatedly; this keeps the value conversion local.
-void writeNumber(Memory& memory, uint32_t addr, double value) {
-	memory.writeValue(addr, valueNumber(value));
-}
-
 } // namespace
 
 AudioController::AudioController(Memory& memory, SoundMaster& soundMaster, IrqController& irq)
@@ -57,11 +52,11 @@ AudioController::AudioController(Memory& memory, SoundMaster& soundMaster, IrqCo
 void AudioController::reset() {
 	m_eventSequence = 0;
 	clearCommandLatch();
-	writeNumber(m_memory, IO_APU_STATUS, 0.0);
-	writeNumber(m_memory, IO_APU_EVENT_KIND, static_cast<double>(APU_EVENT_NONE));
-	writeNumber(m_memory, IO_APU_EVENT_SLOT, 0.0);
-	writeNumber(m_memory, IO_APU_EVENT_SOURCE_ADDR, 0.0);
-	writeNumber(m_memory, IO_APU_EVENT_SEQ, 0.0);
+	m_memory.writeValue(IO_APU_STATUS, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_EVENT_KIND, valueNumber(static_cast<double>(APU_EVENT_NONE)));
+	m_memory.writeValue(IO_APU_EVENT_SLOT, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_EVENT_SEQ, valueNumber(0.0));
 }
 
 void AudioController::clearCommandLatch() {
@@ -70,26 +65,26 @@ void AudioController::clearCommandLatch() {
 }
 
 void AudioController::resetCommandLatch() {
-	writeNumber(m_memory, IO_APU_SOURCE_ADDR, 0.0);
-	writeNumber(m_memory, IO_APU_SOURCE_BYTES, 0.0);
-	writeNumber(m_memory, IO_APU_SOURCE_SAMPLE_RATE_HZ, 0.0);
-	writeNumber(m_memory, IO_APU_SOURCE_CHANNELS, 0.0);
-	writeNumber(m_memory, IO_APU_SOURCE_BITS_PER_SAMPLE, 0.0);
-	writeNumber(m_memory, IO_APU_SOURCE_FRAME_COUNT, 0.0);
-	writeNumber(m_memory, IO_APU_SOURCE_DATA_OFFSET, 0.0);
-	writeNumber(m_memory, IO_APU_SOURCE_DATA_BYTES, 0.0);
-	writeNumber(m_memory, IO_APU_SOURCE_LOOP_START_SAMPLE, 0.0);
-	writeNumber(m_memory, IO_APU_SOURCE_LOOP_END_SAMPLE, 0.0);
-	writeNumber(m_memory, IO_APU_SLOT, 0.0);
-	writeNumber(m_memory, IO_APU_RATE_STEP_Q16, static_cast<double>(APU_RATE_STEP_Q16_ONE));
-	writeNumber(m_memory, IO_APU_GAIN_Q12, static_cast<double>(APU_GAIN_Q12_ONE));
-	writeNumber(m_memory, IO_APU_START_SAMPLE, 0.0);
-	writeNumber(m_memory, IO_APU_FILTER_KIND, static_cast<double>(APU_FILTER_NONE));
-	writeNumber(m_memory, IO_APU_FILTER_FREQ_HZ, 0.0);
-	writeNumber(m_memory, IO_APU_FILTER_Q_MILLI, 1000.0);
-	writeNumber(m_memory, IO_APU_FILTER_GAIN_MILLIDB, 0.0);
-	writeNumber(m_memory, IO_APU_FADE_SAMPLES, 0.0);
-	writeNumber(m_memory, IO_APU_TARGET_GAIN_Q12, static_cast<double>(APU_GAIN_Q12_ONE));
+	m_memory.writeValue(IO_APU_SOURCE_ADDR, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_SOURCE_BYTES, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_SOURCE_CHANNELS, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_SOURCE_DATA_BYTES, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_SOURCE_LOOP_START_SAMPLE, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_SOURCE_LOOP_END_SAMPLE, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_SLOT, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_RATE_STEP_Q16, valueNumber(static_cast<double>(APU_RATE_STEP_Q16_ONE)));
+	m_memory.writeValue(IO_APU_GAIN_Q12, valueNumber(static_cast<double>(APU_GAIN_Q12_ONE)));
+	m_memory.writeValue(IO_APU_START_SAMPLE, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_FILTER_KIND, valueNumber(static_cast<double>(APU_FILTER_NONE)));
+	m_memory.writeValue(IO_APU_FILTER_FREQ_HZ, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_FILTER_Q_MILLI, valueNumber(1000.0));
+	m_memory.writeValue(IO_APU_FILTER_GAIN_MILLIDB, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_FADE_SAMPLES, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_TARGET_GAIN_Q12, valueNumber(static_cast<double>(APU_GAIN_Q12_ONE)));
 }
 
 void AudioController::onCommandWrite() {
@@ -216,10 +211,10 @@ SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest(const So
 
 void AudioController::emitSlotEvent(uint32_t kind, AudioSlot slot, uint32_t sourceAddr) {
 	m_eventSequence += 1u;
-	writeNumber(m_memory, IO_APU_EVENT_KIND, static_cast<double>(kind));
-	writeNumber(m_memory, IO_APU_EVENT_SLOT, static_cast<double>(slot));
-	writeNumber(m_memory, IO_APU_EVENT_SOURCE_ADDR, static_cast<double>(sourceAddr));
-	writeNumber(m_memory, IO_APU_EVENT_SEQ, static_cast<double>(m_eventSequence));
+	m_memory.writeValue(IO_APU_EVENT_KIND, valueNumber(static_cast<double>(kind)));
+	m_memory.writeValue(IO_APU_EVENT_SLOT, valueNumber(static_cast<double>(slot)));
+	m_memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, valueNumber(static_cast<double>(sourceAddr)));
+	m_memory.writeValue(IO_APU_EVENT_SEQ, valueNumber(static_cast<double>(m_eventSequence)));
 	m_irq.raise(IRQ_APU);
 }
 

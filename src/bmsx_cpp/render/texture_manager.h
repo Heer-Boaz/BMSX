@@ -13,11 +13,6 @@
 
 namespace bmsx {
 
-struct ModelTextureIdentifier {
-	std::string modelName;
-	i32 modelImageIndex = 0;
-};
-
 using TextureKey = std::string;
 using ImageKey = std::string;
 
@@ -52,17 +47,14 @@ public:
 	explicit TextureManager(GPUBackend* backend);
 	~TextureManager() override;
 
-	static TextureManager* instancePtr();
 	static TextureManager& instance();
 
 	const Identifier& registryId() const override;
 	bool isRegistryPersistent() const override { return true; }
 
 	void setBackend(GPUBackend* backend);
-	GPUBackend* backend() const { return m_backend; }
 
 	TextureKey makeKey(const std::string& uri, const TextureParams& desc) const;
-	TextureKey makeModelBufferKey(const ModelTextureIdentifier& identifier) const;
 
 	TextureKey acquireTexture(const TextureKey& key,
 								const std::function<TextureSource()>& loadBitmapFn,
@@ -75,20 +67,16 @@ public:
 	void copyTextureByUri(const std::string& sourceUri, const std::string& destinationUri, i32 width, i32 height, const TextureParams& sourceDesc = {}, const TextureParams& destinationDesc = {});
 	void releaseByUri(const std::string& uri, const TextureParams& desc = {});
 
-	TextureHandle getOrCreateTexture(const TextureKey& key,
-										const u8* pixels,
-										i32 width,
-										i32 height,
-										const TextureParams& desc = {});
+	TextureHandle createTextureFromPixelsSync(const std::string& keyBase,
+												const u8* pixels,
+												i32 width,
+												i32 height,
+												const TextureParams& desc = {});
 	void updateTexture(TextureHandle handle,
 						const u8* pixels,
 						i32 width,
 						i32 height,
 						const TextureParams& desc = {});
-	void updateTexturesForImageId(const AssetId& imageId,
-									const u8* pixels,
-									i32 width,
-									i32 height);
 	TextureHandle resizeTextureForKey(const std::string& keyBase, i32 width, i32 height);
 	void updateTextureRegionForKey(const std::string& keyBase,
 									const u8* pixels,
@@ -97,13 +85,6 @@ public:
 									i32 x,
 									i32 y);
 
-	/// Replace an existing texture with new pixel data, or create if not exists.
-	/// This is used when cart ROM entries override system ROM entries with the same key.
-	TextureHandle replaceTexture(const TextureKey& key,
-									const u8* pixels,
-									i32 width,
-									i32 height,
-									const TextureParams& desc = {});
 
 	TextureSource fromBuffer(const ImageKey& key,
 								const u8* buffer,
@@ -131,9 +112,6 @@ private:
 	TextureKey ensureTextureReady(const TextureKey& key,
 									const std::function<TextureSource()>& loadBitmapFn,
 									const TextureParams& desc);
-
-	TextureHandle createTextureFromSource(const TextureSource& source,
-											const TextureParams& desc);
 
 	GPUBackend* m_backend = nullptr;
 	GateGroup m_group;

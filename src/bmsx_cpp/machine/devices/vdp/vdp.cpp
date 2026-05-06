@@ -718,50 +718,15 @@ void VDP::onVdpCommandWrite() {
 	consumeDirectVdpCommand(command);
 }
 
-// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
-void VDP::onFifoWriteThunk(void* context, uint32_t, Value) {
-	static_cast<VDP*>(context)->onVdpFifoWrite();
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
-void VDP::onFifoCtrlWriteThunk(void* context, uint32_t, Value) {
-	static_cast<VDP*>(context)->onVdpFifoCtrlWrite();
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
-void VDP::onCommandWriteThunk(void* context, uint32_t, Value) {
-	static_cast<VDP*>(context)->onVdpCommandWrite();
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
-void VDP::onDitherWriteThunk(void* context, uint32_t, Value value) {
-	static_cast<VDP*>(context)->onDitherWrite(value);
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
-void VDP::onRegisterWriteThunk(void* context, uint32_t addr, Value) {
-	static_cast<VDP*>(context)->onVdpRegisterWrite(addr);
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
-void VDP::onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value) {
-	static_cast<VDP*>(context)->onPmuRegisterWindowWrite(addr);
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
-void VDP::onSbxCommitWriteThunk(void* context, uint32_t, Value) {
-	static_cast<VDP*>(context)->onSbxCommitWrite();
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
-void VDP::onCameraCommitWriteThunk(void* context, uint32_t, Value) {
-	static_cast<VDP*>(context)->onCameraCommitWrite();
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require C-style thunks back into the VDP instance.
-void VDP::onFaultAckWriteThunk(void* context, uint32_t, Value) {
-	static_cast<VDP*>(context)->onVdpFaultAckWrite();
-}
+void VDP::onFifoWriteThunk(void* context, uint32_t, Value) { static_cast<VDP*>(context)->onVdpFifoWrite(); }
+void VDP::onFifoCtrlWriteThunk(void* context, uint32_t, Value) { static_cast<VDP*>(context)->onVdpFifoCtrlWrite(); }
+void VDP::onCommandWriteThunk(void* context, uint32_t, Value) { static_cast<VDP*>(context)->onVdpCommandWrite(); }
+void VDP::onDitherWriteThunk(void* context, uint32_t, Value value) { static_cast<VDP*>(context)->onDitherWrite(value); }
+void VDP::onRegisterWriteThunk(void* context, uint32_t addr, Value) { static_cast<VDP*>(context)->onVdpRegisterWrite(addr); }
+void VDP::onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value) { static_cast<VDP*>(context)->onPmuRegisterWindowWrite(addr); }
+void VDP::onSbxCommitWriteThunk(void* context, uint32_t, Value) { static_cast<VDP*>(context)->onSbxCommitWrite(); }
+void VDP::onCameraCommitWriteThunk(void* context, uint32_t, Value) { static_cast<VDP*>(context)->onCameraCommitWrite(); }
+void VDP::onFaultAckWriteThunk(void* context, uint32_t, Value) { static_cast<VDP*>(context)->onVdpFaultAckWrite(); }
 
 void VDP::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
 	m_cpuHz = cpuHz;
@@ -1280,7 +1245,7 @@ void VDP::finishCommittedFrameOnVblankEdge() {
 	refreshSubmitBusyStatus();
 }
 
-bool VDP::commitReadyFrameOnVblankEdge() {
+bool VDP::presentReadyFrameOnVblankEdge() {
 	if (!m_activeFrame.occupied) {
 		m_lastFrameCommitted = false;
 		m_lastFrameCost = 0;
@@ -1639,9 +1604,7 @@ uint32_t VDP::readVdpStatus() {
 	return status;
 }
 
-Value VDP::readVdpStatusThunk(void* context, uint32_t) {
-	return valueNumber(static_cast<double>(static_cast<VDP*>(context)->readVdpStatus()));
-}
+Value VDP::readVdpStatusThunk(void* context, uint32_t) { return valueNumber(static_cast<double>(static_cast<VDP*>(context)->readVdpStatus())); }
 
 uint32_t VDP::readVdpData() {
 	const uint32_t surfaceId = m_memory.readIoU32(IO_VDP_RD_SURFACE);
@@ -1691,9 +1654,7 @@ uint32_t VDP::readVdpData() {
 	return (r | (g << 8u) | (b << 16u) | (a << 24u));
 }
 
-Value VDP::readVdpDataThunk(void* context, uint32_t) {
-	return valueNumber(static_cast<double>(static_cast<VDP*>(context)->readVdpData()));
-}
+Value VDP::readVdpDataThunk(void* context, uint32_t) { return valueNumber(static_cast<double>(static_cast<VDP*>(context)->readVdpData())); }
 
 // end hot-path
 

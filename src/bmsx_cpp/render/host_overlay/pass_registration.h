@@ -31,7 +31,7 @@ void registerHostOverlayPass(RenderPassLibrary& registry) {
 		Begin(typedBackend, state);
 		const size_t queueSize = RenderQueues::beginHost2DQueue();
 		for (size_t index = 0; index < queueSize; index += 1) {
-			RenderEntry(typedBackend, RenderQueues::host2DQueueEntry(index));
+			RenderEntry(typedBackend, RenderQueues::host2DQueueKind(index), RenderQueues::host2DQueueRef(index));
 		}
 		End(typedBackend);
 	};
@@ -58,7 +58,7 @@ void registerHostMenuPass(RenderPassLibrary& registry) {
 		Begin(typedBackend, std::any_cast<HostMenuPipelineState&>(stateAny));
 		const size_t commandCount = menu.queuedCommandCount();
 		for (size_t index = 0; index < commandCount; index += 1) {
-			RenderEntry(typedBackend, menu.commandAt(index));
+			RenderEntry(typedBackend, menu.commandKind(index), menu.commandRef(index));
 		}
 		End(typedBackend);
 	};

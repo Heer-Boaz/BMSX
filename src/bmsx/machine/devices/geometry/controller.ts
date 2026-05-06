@@ -7,7 +7,6 @@ import {
 	GEO_FAULT_BAD_VERTEX_COUNT,
 	GEO_FAULT_DESCRIPTOR_KIND,
 	GEO_FAULT_DST_RANGE,
-	GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL,
 	GEO_FAULT_RESULT_CAPACITY,
 	GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB,
 	GEO_FAULT_REJECT_BAD_CMD,
@@ -128,9 +127,9 @@ function packSat2Meta(axisIndex: number, shapeSelector: number): number {
 
 export class GeometryController {
 	private activeJob: GeoJob | null = null;
-	private cpuHz: bigint = 1n;
-	private workUnitsPerSec: bigint = 1n;
-	private workCarry: bigint = 0n;
+	private cpuHz = 1;
+	private workUnitsPerSec = 1;
+	private workCarry = 0;
 	private availableWorkUnits = 0;
 	private readonly overlapWorldPolyA: number[] = [];
 	private readonly overlapWorldPolyB: number[] = [];
@@ -160,9 +159,9 @@ export class GeometryController {
 	}
 
 	public setTiming(cpuHz: number, workUnitsPerSec: number, nowCycles: number): void {
-		this.cpuHz = BigInt(cpuHz);
-		this.workUnitsPerSec = BigInt(workUnitsPerSec);
-		this.workCarry = 0n;
+		this.cpuHz = cpuHz;
+		this.workUnitsPerSec = workUnitsPerSec;
+		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduleNextService(nowCycles);
 	}
@@ -172,14 +171,14 @@ export class GeometryController {
 		if (job === null || cycles <= 0) {
 			return;
 		}
-		const numerator = this.workUnitsPerSec * BigInt(cycles) + this.workCarry;
-		const wholeUnits = numerator / this.cpuHz;
-		this.workCarry = numerator % this.cpuHz;
-		if (wholeUnits > 0n) {
+		const numerator = this.workUnitsPerSec * cycles + this.workCarry;
+		const nextCarry = numerator % this.cpuHz;
+		const wholeUnits = (numerator - nextCarry) / this.cpuHz;
+		this.workCarry = nextCarry;
+		if (wholeUnits > 0) {
 			const remainingRecords = job.count - job.processed;
-			const maxGrant = BigInt(remainingRecords - this.availableWorkUnits);
-			const granted = wholeUnits > maxGrant ? maxGrant : wholeUnits;
-			this.availableWorkUnits += Number(granted);
+			const maxGrant = remainingRecords - this.availableWorkUnits;
+			this.availableWorkUnits += wholeUnits > maxGrant ? maxGrant : wholeUnits;
 		}
 		this.scheduleNextService(nowCycles);
 	}
@@ -223,7 +222,7 @@ export class GeometryController {
 	}
 
 	public reset(): void {
-		this.workCarry = 0n;
+		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.activeJob = null;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
@@ -246,7 +245,7 @@ export class GeometryController {
 	}
 
 	public postLoad(): void {
-		this.workCarry = 0n;
+		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.activeJob = null;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
@@ -335,7 +334,7 @@ export class GeometryController {
 			this.finishSuccess(0);
 			return;
 		}
-		this.workCarry = 0n;
+		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.activeJob = job;
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_BUSY);
@@ -961,10 +960,6 @@ export class GeometryController {
 			this.finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
 			return;
 		}
-		if (!Number.isFinite(bestOverlap) || !Number.isFinite(bestAxisX) || !Number.isFinite(bestAxisY)) {
-			this.finishError(GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL, recordIndex);
-			return;
-		}
 		const deltaX = centerBX - centerAX;
 		const deltaY = centerBY - centerAY;
 		if (((deltaX * bestAxisX) + (deltaY * bestAxisY)) < 0) {
@@ -1253,7 +1248,7 @@ export class GeometryController {
 
 	private finishSuccess(processed: number): void {
 		this.activeJob = null;
-		this.workCarry = 0n;
+		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE);
@@ -1264,7 +1259,7 @@ export class GeometryController {
 
 	private finishError(code: number, recordIndex: number): void {
 		this.activeJob = null;
-		this.workCarry = 0n;
+		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
@@ -1274,7 +1269,7 @@ export class GeometryController {
 
 	private finishRejected(code: number): void {
 		this.activeJob = null;
-		this.workCarry = 0n;
+		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_REJECTED);

@@ -42,10 +42,20 @@ export class TextureManager {
 	}
 	public setBackend(backend: GPUBackend): void { this.backend = backend; }
 
+	private textureParamsKey(desc: TextureParams): string {
+		const size = desc.size;
+		const width = size ? size.x : 0;
+		const height = size ? size.y : 0;
+		const srgb = desc.srgb === false ? 0 : 1;
+		const wrapS = desc.wrapS === undefined ? 0 : desc.wrapS;
+		const wrapT = desc.wrapT === undefined ? 0 : desc.wrapT;
+		const minFilter = desc.minFilter === undefined ? 0 : desc.minFilter;
+		const magFilter = desc.magFilter === undefined ? 0 : desc.magFilter;
+		return `size=${width.toFixed(3)}x${height.toFixed(3)}|srgb=${srgb}|wrapS=${wrapS}|wrapT=${wrapT}|minFilter=${minFilter}|magFilter=${magFilter}`;
+	}
+
 	private makeKey(uri: string, desc: TextureParams): TextureKey {
-		// TODO: canonicalize desc if field order may vary
-		const descKey = JSON.stringify(desc);
-		return `${uri}|${descKey}`;
+		return `${uri}|${this.textureParamsKey(desc)}`;
 	}
 	private makeModelBufferKey(identifier: ModelTextureIdentifier): TextureKey {
 		return `buf:${identifier.modelName}:${identifier.modelImageIndex}`;
@@ -53,8 +63,7 @@ export class TextureManager {
 
 	// allow nullable face ids and nullable face loaders
 	private makeCubemapKey(name: string, faceIds: readonly (string)[], desc: TextureParams): TextureKey {
-		const descKey = JSON.stringify(desc);
-		return `cubemap:${name}|faces:${faceIds.join(',')}|${descKey}`;
+		return `cubemap:${name}|faces:${faceIds.join(',')}|${this.textureParamsKey(desc)}`;
 	}
 
 	/** Ensure real GPU texture exists; returns the key. */

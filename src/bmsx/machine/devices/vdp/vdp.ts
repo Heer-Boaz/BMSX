@@ -364,9 +364,9 @@ export class VDP implements VramWriteSink {
 	private readonly latchedGeometryScratch: VdpLatchedGeometry = { x0: 0, y0: 0, x1: 0, y1: 0 };
 	private readonly drawCtrlScratch: VdpDrawCtrl = { flipH: false, flipV: false, blendMode: 0, pmuBank: 0, parallaxWeight: 0 };
 	private blitterSequence = 0;
-	private cpuHz: bigint = 1n;
-	private workUnitsPerSec: bigint = 1n;
-	private workCarry: bigint = 0n;
+	private cpuHz = 1;
+	private workUnitsPerSec = 1;
+	private workCarry = 0;
 	private availableWorkUnits = 0;
 	private vdpStatus = 0;
 	private faultCode = VDP_FAULT_NONE;
@@ -1135,9 +1135,9 @@ export class VDP implements VramWriteSink {
 	}
 
 	public setTiming(cpuHz: number, workUnitsPerSec: number, nowCycles: number): void {
-		this.cpuHz = BigInt(cpuHz);
-		this.workUnitsPerSec = BigInt(workUnitsPerSec);
-		this.workCarry = 0n;
+		this.cpuHz = cpuHz;
+		this.workUnitsPerSec = workUnitsPerSec;
+		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduleNextService(nowCycles);
 	}
@@ -1146,14 +1146,14 @@ export class VDP implements VramWriteSink {
 		if (!this.hasPendingRenderWork() || cycles <= 0) {
 			return;
 		}
-		const numerator = this.workUnitsPerSec * BigInt(cycles) + this.workCarry;
-		const wholeUnits = numerator / this.cpuHz;
-		this.workCarry = numerator % this.cpuHz;
-		if (wholeUnits > 0n) {
+		const numerator = this.workUnitsPerSec * cycles + this.workCarry;
+		const nextCarry = numerator % this.cpuHz;
+		const wholeUnits = (numerator - nextCarry) / this.cpuHz;
+		this.workCarry = nextCarry;
+		if (wholeUnits > 0) {
 			const remainingWork = this.getPendingRenderWorkUnits() - this.availableWorkUnits;
-			const maxGrant = BigInt(remainingWork <= 0 ? 0 : remainingWork);
-			const granted = wholeUnits > maxGrant ? maxGrant : wholeUnits;
-			this.availableWorkUnits += Number(granted);
+			const maxGrant = remainingWork <= 0 ? 0 : remainingWork;
+			this.availableWorkUnits += wholeUnits > maxGrant ? maxGrant : wholeUnits;
 		}
 		this.scheduleNextService(nowCycles);
 	}
@@ -1320,7 +1320,7 @@ export class VDP implements VramWriteSink {
 		this.committedBillboards.reset();
 		this.pendingFrame.queue.reset();
 		this.pendingFrame.billboards.reset();
-		this.workCarry = 0n;
+		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
 		this.resetSubmittedFrameSlot(this.pendingFrame);

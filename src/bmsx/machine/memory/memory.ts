@@ -232,10 +232,7 @@ export class Memory {
 		}
 		if (this.isIoAddress(addr)) {
 			const value = this.readValue(addr);
-			if (typeof value !== 'number') {
-				throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: non-numeric register.`);
-			}
-			return value & 0xff;
+			return (value as number) & 0xff;
 		}
 		if (this.isIoRegionRange(addr, 1)) {
 			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: unaligned.`);
@@ -272,10 +269,7 @@ export class Memory {
 			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: invalid register.`);
 		}
 		const value = this.readValue(addr);
-		if (typeof value !== 'number') {
-			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: non-numeric register.`);
-		}
-		return value >>> 0;
+		return (value as number) >>> 0;
 	}
 
 	public readIoI32(addr: number): number {

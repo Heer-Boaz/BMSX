@@ -24,10 +24,10 @@ bool CartBootState::pollSystemBootRequest() {
 	if (runtime.isCartProgramStarted()) {
 		return false;
 	}
-	if (runtime.machine().memory().readIoU32(IO_SYS_BOOT_CART) == 0u) {
+	if (runtime.machine.memory.readIoU32(IO_SYS_BOOT_CART) == 0u) {
 		return false;
 	}
-	runtime.machine().memory().writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
+	runtime.machine.memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	runtime.frameScheduler.clearQueuedTime();
 	request();
 	return true;

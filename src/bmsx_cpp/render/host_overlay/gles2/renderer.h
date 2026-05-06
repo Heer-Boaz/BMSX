@@ -13,7 +13,7 @@ namespace bmsx {
 #if BMSX_ENABLE_GLES2
 void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend);
 void beginHostOverlayGLES2(OpenGLES2Backend& backend, const Host2DPipelineState& state);
-void renderHost2DEntryGLES2(OpenGLES2Backend& backend, const RenderQueues::Host2DEntry& entry);
+void renderHost2DEntryGLES2(OpenGLES2Backend& backend, RenderQueues::Host2DKind kind, RenderQueues::Host2DRef ref);
 void endHostOverlayGLES2(OpenGLES2Backend& backend);
 #endif
 

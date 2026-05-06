@@ -29,7 +29,8 @@ void submitRectangle(RectRenderSubmission item);
 void submitDrawPolygon(PolyRenderSubmission item);
 void submitGlyphs(GlyphRenderSubmission item);
 size_t beginHost2DQueue();
-Host2DEntry host2DQueueEntry(size_t index);
+Host2DKind host2DQueueKind(size_t index);
+Host2DRef host2DQueueRef(size_t index);
 
 void submitMesh(const MeshRenderSubmission& item);
 i32 beginMeshQueue();

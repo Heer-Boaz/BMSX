@@ -91,7 +91,7 @@ std::string getRuntimeLuaResourceSource(Runtime& runtime, const std::string& pat
 } // namespace
 
 void registerRuntimeDevtoolsTable(Runtime& runtime) {
-	CPU& cpu = runtime.machine().cpu();
+	CPU& cpu = runtime.machine.cpu;
 	auto key = [&runtime](std::string_view name) {
 		return runtime.luaKey(name);
 	};
@@ -130,11 +130,11 @@ void registerRuntimeDevtoolsTable(Runtime& runtime) {
 	}));
 	devtools->set(key("get_lua_entry_path"), cpu.createNativeFunction("devtools.get_lua_entry_path", [&runtime](NativeArgsView args, NativeResults& out) {
 		(void)args;
-		out.push_back(valueString(runtime.machine().cpu().internString(getRuntimeLuaEntryPath(runtime))));
+		out.push_back(valueString(runtime.machine.cpu.internString(getRuntimeLuaEntryPath(runtime))));
 	}));
 	devtools->set(key("get_lua_resource_source"), cpu.createNativeFunction("devtools.get_lua_resource_source", [&runtime](NativeArgsView args, NativeResults& out) {
-		const std::string& path = runtime.machine().cpu().stringPool().toString(asStringId(args.at(0)));
-		out.push_back(valueString(runtime.machine().cpu().internString(getRuntimeLuaResourceSource(runtime, path))));
+		const std::string& path = runtime.machine.cpu.stringPool().toString(asStringId(args.at(0)));
+		out.push_back(valueString(runtime.machine.cpu.internString(getRuntimeLuaResourceSource(runtime, path))));
 	}));
 	runtime.setGlobal("devtools", valueTable(devtools));
 }

@@ -27,12 +27,12 @@ void refreshDeviceTimings(Runtime& runtime, i64 nowCycles) {
 		runtime.timing.geoWorkUnitsPerSec,
 		runtime.timing.vdpWorkUnitsPerSec,
 	};
-	runtime.machine().refreshDeviceTimings(machineTiming, nowCycles);
+	runtime.machine.refreshDeviceTimings(machineTiming, nowCycles);
 }
 
 void setCpuHz(Runtime& runtime, i64 value) {
 	runtime.timing.cpuHz = value;
-	refreshDeviceTimings(runtime, runtime.machine().scheduler().currentNowCycles());
+	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 }
 
 void setCycleBudgetPerFrame(Runtime& runtime, int value) {
@@ -41,7 +41,7 @@ void setCycleBudgetPerFrame(Runtime& runtime, int value) {
 	}
 	runtime.timing.cycleBudgetPerFrame = value;
 	runtime.setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(value)));
-	refreshDeviceTimings(runtime, runtime.machine().scheduler().currentNowCycles());
+	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 	runtime.vblank.configureCycleBudget(runtime);
 }
 
@@ -57,7 +57,7 @@ void setFrameTiming(Runtime& runtime, i64 cpuHz, int cycleBudgetPerFrame, int vb
 void setRenderWorkUnitsPerSec(Runtime& runtime, int vdpValue, int geoValue) {
 	runtime.timing.vdpWorkUnitsPerSec = resolvePositiveWorkUnits(vdpValue, "work_units_per_sec");
 	runtime.timing.geoWorkUnitsPerSec = resolvePositiveWorkUnits(geoValue, "geo_work_units_per_sec");
-	refreshDeviceTimings(runtime, runtime.machine().scheduler().currentNowCycles());
+	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 }
 
 void setTransferRatesFromManifest(Runtime& runtime, const RuntimeTransferRates& rates) {
@@ -66,7 +66,7 @@ void setTransferRatesFromManifest(Runtime& runtime, const RuntimeTransferRates& 
 	runtime.timing.dmaBytesPerSecBulk = rates.dmaBytesPerSecBulk;
 	runtime.timing.vdpWorkUnitsPerSec = resolvePositiveWorkUnits(rates.vdpWorkUnitsPerSec, "work_units_per_sec");
 	runtime.timing.geoWorkUnitsPerSec = resolvePositiveWorkUnits(rates.geoWorkUnitsPerSec, "geo_work_units_per_sec");
-	refreshDeviceTimings(runtime, runtime.machine().scheduler().currentNowCycles());
+	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 }
 
 void applyActiveMachineTiming(Runtime& runtime, i64 cpuHz) {

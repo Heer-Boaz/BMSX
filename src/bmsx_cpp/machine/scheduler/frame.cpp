@@ -122,7 +122,7 @@ void FrameSchedulerState::enqueueTickCompletion(Runtime& runtime, FrameState& fr
 	const i64 sequence = lastTickSequence + 1;
 	const int remaining = frameState.cycleBudgetRemaining;
 	const int granted = frameState.cycleBudgetGranted;
-	const auto& vdp = runtime.machine().vdp();
+	const auto& vdp = runtime.machine.vdp;
 	slot.sequence = sequence;
 	slot.remaining = remaining;
 	slot.visualCommitted = vdp.lastFrameCommitted();
@@ -175,7 +175,7 @@ void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
 	accumulateHostTime(runtime, hostDeltaMs);
 	while (canRunScheduledUpdate(runtime)) {
 		const bool progressed = runtime.frameLoop.tickUpdate(runtime);
-		if (runtime.frameLoop.hasActiveTick(runtime) && !progressed) {
+		if (runtime.frameLoop.frameActive && !progressed) {
 			break;
 		}
 	}

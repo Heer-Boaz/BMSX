@@ -88,7 +88,7 @@ void KeyboardInput::pollInput() {
 		m_gamepadButtonStates[keyCode] = state;
 		
 		// Map to gamepad button if applicable
-		const auto& mapping = Input::KEYBOARD_TO_GAMEPAD();
+		const auto& mapping = Input::KEYBOARD_TO_GAMEPAD;
 		auto it = mapping.find(keyCode);
 		if (it != mapping.end()) {
 			const std::string& mappedButton = it->second;
@@ -133,7 +133,7 @@ void KeyboardInput::consumeButton(const ButtonId& button) {
 	}
 	
 	// Also consume any keyboard key that maps to this gamepad button
-	const auto& mapping = Input::KEYBOARD_TO_GAMEPAD();
+	const auto& mapping = Input::KEYBOARD_TO_GAMEPAD;
 	for (const auto& [keyCode, mappedButton] : mapping) {
 		if (mappedButton == button) {
 			auto keyIt = m_gamepadButtonStates.find(keyCode);
@@ -151,8 +151,8 @@ void KeyboardInput::reset(const std::vector<std::string>* except) {
 		m_pendingPresses.clear();
 		m_pendingReleases.clear();
 	} else {
-		resetObjectMap(m_keyStates, except);
-		resetObjectMap(m_gamepadButtonStates, except);
+		resetObject(m_keyStates, except);
+		resetObject(m_gamepadButtonStates, except);
 		for (auto it = m_pendingPresses.begin(); it != m_pendingPresses.end();) {
 			if (std::find(except->begin(), except->end(), *it) == except->end()) {
 				it = m_pendingPresses.erase(it);

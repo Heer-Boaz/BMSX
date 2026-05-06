@@ -19,7 +19,7 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 			runtime.vblank.handleEndTimer(runtime);
 			return;
 		case TimerKindDeviceService:
-			if (auto* renderVdp = runtime.machine().runDeviceService(payload); renderVdp != nullptr) {
+			if (auto* renderVdp = runtime.machine.runDeviceService(payload); renderVdp != nullptr) {
 				drainReadyVdpExecution(*renderVdp);
 			}
 			return;
@@ -31,9 +31,9 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 } // namespace
 
 RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameState) {
-	auto& machine = runtime.machine();
-	auto& scheduler = machine.scheduler();
-	auto& cpu = machine.cpu();
+	auto& machine = runtime.machine;
+	auto& scheduler = machine.scheduler;
+	auto& cpu = machine.cpu;
 	int remaining = frameState.cycleBudgetRemaining;
 	RunResult result = RunResult::Yielded;
 	runDueRuntimeTimers(runtime);
@@ -71,12 +71,12 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 }
 
 void advanceRuntimeTime(Runtime& runtime, int cycles) {
-	runtime.machine().advanceDevices(cycles);
+	runtime.machine.advanceDevices(cycles);
 	runDueRuntimeTimers(runtime);
 }
 
 void runDueRuntimeTimers(Runtime& runtime) {
-	auto& scheduler = runtime.machine().scheduler();
+	auto& scheduler = runtime.machine.scheduler;
 	while (scheduler.hasDueTimer()) {
 		const uint16_t event = scheduler.popDueTimer();
 		dispatchRuntimeTimer(runtime, static_cast<uint8_t>(event >> 8u), static_cast<uint8_t>(event & 0xffu));

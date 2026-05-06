@@ -38,7 +38,7 @@ type ImgDecJob = {
 	buffer: Uint8Array;
 	dst: number;
 	cap: number;
-	resolve: (result: { pixels: Uint8Array; width: number; height: number; clipped: boolean }) => void;
+	resolve: (result: { width: number; height: number; clipped: boolean }) => void;
 	reject: (error: unknown) => void;
 };
 
@@ -95,9 +95,9 @@ function planImageCopy(target: ImageDecodeTarget, result: DecodedImage, capacity
 
 export class ImgDecController {
 	private readonly gate = taskGate.group('imgdec');
-	private cpuHz: bigint = 1n;
-	private decodeBytesPerSec: bigint = 1n;
-	private decodeCarry: bigint = 0n;
+	private cpuHz = 1;
+	private decodeBytesPerSec = 1;
+	private decodeCarry = 0;
 	private availableDecodeBytes = 0;
 	private active = false;
 	private status = 0;
@@ -109,7 +109,8 @@ export class ImgDecController {
 	private decodeRemaining = 0;
 	private decodePlan: ImageCopyPlan | null = null;
 	private decodePixels: Uint8Array | null = null;
-	private decodeResult: DecodedImage | null = null;
+	private decodeWidth = 0;
+	private decodeHeight = 0;
 	private decodeQueued = false;
 	private decodeToken = 0;
 	private readonly queuedJobs: Array<ImgDecJob | null> = [];
@@ -132,9 +133,9 @@ export class ImgDecController {
 	}
 
 	public setTiming(cpuHz: number, decodeBytesPerSec: number, nowCycles: number): void {
-		this.cpuHz = BigInt(cpuHz);
-		this.decodeBytesPerSec = BigInt(decodeBytesPerSec);
-		this.decodeCarry = 0n;
+		this.cpuHz = cpuHz;
+		this.decodeBytesPerSec = decodeBytesPerSec;
+		this.decodeCarry = 0;
 		this.availableDecodeBytes = 0;
 		this.scheduleNextService(nowCycles);
 	}
@@ -143,13 +144,13 @@ export class ImgDecController {
 		if (!this.active || !this.decodeActive || this.decodeQueued || this.decodeRemaining <= 0 || cycles <= 0) {
 			return;
 		}
-		const numerator = this.decodeBytesPerSec * BigInt(cycles) + this.decodeCarry;
-		const wholeBytes = numerator / this.cpuHz;
-		this.decodeCarry = numerator % this.cpuHz;
-		if (wholeBytes > 0n) {
-			const maxGrant = BigInt(this.decodeRemaining - this.availableDecodeBytes);
-			const granted = wholeBytes > maxGrant ? maxGrant : wholeBytes;
-			this.availableDecodeBytes += Number(granted);
+		const numerator = this.decodeBytesPerSec * cycles + this.decodeCarry;
+		const nextCarry = numerator % this.cpuHz;
+		const wholeBytes = (numerator - nextCarry) / this.cpuHz;
+		this.decodeCarry = nextCarry;
+		if (wholeBytes > 0) {
+			const maxGrant = this.decodeRemaining - this.availableDecodeBytes;
+			this.availableDecodeBytes += wholeBytes > maxGrant ? maxGrant : wholeBytes;
 		}
 		this.scheduleNextService(nowCycles);
 	}
@@ -162,7 +163,7 @@ export class ImgDecController {
 		return this.decodeRemaining;
 	}
 
-	public decodeToVram(params: { bytes: Uint8Array; dst: number; cap: number }): Promise<{ pixels: Uint8Array; width: number; height: number; clipped: boolean }> {
+	public decodeToVram(params: { bytes: Uint8Array; dst: number; cap: number }): Promise<{ width: number; height: number; clipped: boolean }> {
 		return new Promise((resolve, reject) => {
 			this.queuedJobs.push({ buffer: params.bytes, dst: params.dst, cap: params.cap, resolve, reject });
 			this.scheduleNextService(this.scheduler.currentNowCycles());
@@ -171,7 +172,7 @@ export class ImgDecController {
 
 	public reset(): void {
 		this.decodeToken += 1;
-		this.decodeCarry = 0n;
+		this.decodeCarry = 0;
 		this.availableDecodeBytes = 0;
 		this.active = false;
 		this.status = 0;
@@ -183,7 +184,8 @@ export class ImgDecController {
 		this.decodeRemaining = 0;
 		this.decodePlan = null;
 		this.decodePixels = null;
-		this.decodeResult = null;
+		this.decodeWidth = 0;
+		this.decodeHeight = 0;
 		this.decodeQueued = false;
 		this.signalIrq = false;
 		this.queuedJobs.length = 0;
@@ -317,7 +319,8 @@ export class ImgDecController {
 		this.decodeRemaining = 0;
 		this.decodePlan = null;
 		this.decodePixels = null;
-		this.decodeResult = null;
+		this.decodeWidth = 0;
+		this.decodeHeight = 0;
 		this.decodeQueued = false;
 		this.activeJob = params.job;
 		const token = this.decodeToken + 1;
@@ -345,12 +348,13 @@ export class ImgDecController {
 		const plan = planImageCopy(target, result, cap);
 		this.decodePlan = plan;
 		this.decodePixels = result.pixels;
-		this.decodeResult = result;
+		this.decodeWidth = result.width;
+		this.decodeHeight = result.height;
 		this.decodeRemaining = plan.writeSize;
 		if (plan.writeWidth > 0 && plan.writeHeight > 0) {
 			this.vdp.setDecodedVramSurfaceDimensions(target.baseAddr, plan.writeWidth, plan.writeHeight);
 		}
-		this.decodeCarry = 0n;
+		this.decodeCarry = 0;
 		this.availableDecodeBytes = 0;
 		this.decodeActive = true;
 		this.decodeQueued = false;
@@ -385,15 +389,17 @@ export class ImgDecController {
 
 	private finishSuccess(clipped: boolean): void {
 		const job = this.activeJob;
-		const decoded = this.decodeResult;
+		const width = this.decodeWidth;
+		const height = this.decodeHeight;
 		this.activeJob = null;
-		this.decodeResult = null;
 		this.active = false;
 		this.decodeActive = false;
 		this.availableDecodeBytes = 0;
 		this.decodePlan = null;
 		this.decodePixels = null;
 		this.decodeRemaining = 0;
+		this.decodeWidth = 0;
+		this.decodeHeight = 0;
 		this.decodeQueued = false;
 		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | (clipped ? IMG_STATUS_CLIPPED : 0);
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
@@ -401,8 +407,8 @@ export class ImgDecController {
 			this.irq.raise(IRQ_IMG_DONE);
 		}
 		this.signalIrq = false;
-		if (job && decoded) {
-			job.resolve({ pixels: decoded.pixels, width: decoded.width, height: decoded.height, clipped });
+		if (job) {
+			job.resolve({ width, height, clipped });
 		}
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 	}
@@ -410,13 +416,14 @@ export class ImgDecController {
 	private finishError(error?: unknown): void {
 		const job = this.activeJob;
 		this.activeJob = null;
-		this.decodeResult = null;
 		this.active = false;
 		this.decodeActive = false;
 		this.availableDecodeBytes = 0;
 		this.decodePlan = null;
 		this.decodePixels = null;
 		this.decodeRemaining = 0;
+		this.decodeWidth = 0;
+		this.decodeHeight = 0;
 		this.decodeQueued = false;
 		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | IMG_STATUS_ERROR;
 		this.memory.writeValue(IO_IMG_STATUS, this.status);

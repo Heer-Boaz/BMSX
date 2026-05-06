@@ -11,6 +11,7 @@
 #include "rompack/format.h"
 #include "rompack/loader.h"
 #include "input/manager.h"
+#include "input/player.h"
 #include "platform/platform.h"
 #include <array>
 #include <stdexcept>
@@ -28,7 +29,7 @@ Runtime::Runtime(
 	Clock& clock,
 	SoundMaster& soundMaster,
 	MicrotaskQueue& microtasks,
-		GameView& view
+	GameView& view
 )
 	: timing(options.ufpsScaled, options.cpuHz, options.cycleBudgetPerFrame)
 	, cartBoot(*this)
@@ -37,23 +38,32 @@ Runtime::Runtime(
 	, m_machineManifest(options.machineManifest)
 	, m_clock(clock)
 	, m_view(view)
-	, m_machine(
+	, m_memory(MemoryInit{
+		{ options.systemRomBytes.data, options.systemRomBytes.size },
+		options.cartRomBytes.size > 0
+			? MemoryInit::RomSpan{ options.cartRomBytes.data, options.cartRomBytes.size }
+			: MemoryInit::RomSpan{ CART_ROM_EMPTY_HEADER.data(), CART_ROM_EMPTY_HEADER.size() },
+		{}
+	})
+	, machine(
+		m_memory,
+		VdpFrameBufferSize{ static_cast<uint32_t>(options.viewport.x), static_cast<uint32_t>(options.viewport.y) },
+		Input::instance(),
 		soundMaster,
-		microtasks,
-		VdpFrameBufferSize{ static_cast<uint32_t>(options.viewport.x), static_cast<uint32_t>(options.viewport.y) }
+		microtasks
 	)
 {
 	configureLuaHeapUsage({});
 	resetTrackedLuaHeapBytes();
 	Input::instance().setFrameDurationMs(timing.frameDurationMs);
-	m_machine.memory().clearIoSlots();
-	m_machine.initializeSystemIo();
-	m_machine.resetDevices();
+	machine.memory.clearIoSlots();
+	machine.initializeSystemIo();
+	machine.resetDevices();
 	vblank.setVblankCycles(*this, options.vblankCycles);
 	setRenderWorkUnitsPerSec(*this, options.vdpWorkUnitsPerSec, options.geoWorkUnitsPerSec);
 	m_randomSeedValue = static_cast<uint32_t>(m_clock.now());
 	refreshMemoryMap();
-	m_machine.cpu().setExternalRootMarker([this](GcHeap& heap) {
+	machine.cpu.setExternalRootMarker([this](GcHeap& heap) {
 		for (const auto& entry : m_moduleCache) {
 			heap.markValue(entry.second);
 		}
@@ -63,7 +73,7 @@ Runtime::Runtime(
 
 	configureLuaHeapUsage({
 		.collect = [this]() {
-			m_machine.cpu().collectHeap();
+			machine.cpu.collectHeap();
 		},
 		.getBaseRamUsedBytes = [this]() {
 			return static_cast<size_t>(baseRamUsedBytes());
@@ -80,7 +90,7 @@ Runtime::~Runtime() {
 uint32_t Runtime::baseRamUsedBytes() const {
 	return IO_REGION_SIZE
 		+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
-		+ m_machine.stringHandles().usedHeapBytes();
+		+ machine.stringHandles.usedHeapBytes();
 }
 
 uint32_t Runtime::ramUsedBytes() const {
@@ -92,11 +102,11 @@ uint32_t Runtime::ramTotalBytes() const {
 }
 
 uint32_t Runtime::vramUsedBytes() const {
-	return m_machine.vdp().trackedUsedVramBytes();
+	return machine.vdp.trackedUsedVramBytes();
 }
 
 uint32_t Runtime::vramTotalBytes() const {
-	return m_machine.vdp().trackedTotalVramBytes();
+	return machine.vdp.trackedTotalVramBytes();
 }
 
 const CartManifest* Runtime::cartManifest() const {
@@ -160,7 +170,7 @@ void Runtime::setRuntimeEnvironment(
 	m_cartRomPackage = cartRom;
 }
 
-void Runtime::setCartEntry(int entryProtoIndex, std::vector<std::string> staticModulePaths) {
+void Runtime::setLinkedCartEntry(int entryProtoIndex, std::vector<std::string> staticModulePaths) {
 	m_cartEntryProtoIndex = entryProtoIndex;
 	m_cartStaticModulePaths = std::move(staticModulePaths);
 }
@@ -184,7 +194,7 @@ void Runtime::startCartProgram() {
 	}
 	enterCartProgram();
 	runStaticModuleInitializers(m_cartStaticModulePaths);
-	m_machine.cpu().start(*m_cartEntryProtoIndex);
+	machine.cpu.start(*m_cartEntryProtoIndex);
 	enforceLuaHeapBudget();
 	m_pendingCall = PendingCall::Entry;
 	queueLifecycleHandlers(true, true);
@@ -211,10 +221,10 @@ void Runtime::resetRuntimeForProgramReload() {
 	cartBoot.reset();
 	m_hostFaultMessage.reset();
 	m_moduleCache.clear();
-	m_machine.cpu().clearGlobalSlots();
-	m_machine.cpu().globals->clear();
-	m_machine.memory().clearIoSlots();
-	m_machine.initializeSystemIo();
+	machine.cpu.clearGlobalSlots();
+	machine.cpu.globals->clear();
+	machine.memory.clearIoSlots();
+	machine.initializeSystemIo();
 	resetHardwareState();
 	m_randomSeedValue = static_cast<uint32_t>(m_clock.now());
 }
@@ -226,14 +236,14 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 		enforceLuaHeapBudget();
 		m_program = program;
 		m_programMetadata = metadata;
-		m_machine.cpu().setProgram(program, metadata);
+		machine.cpu.setProgram(program, metadata);
 		runSystemBuiltinPrelude();
 		if (staticModulePaths) {
 			runStaticModuleInitializers(*staticModulePaths);
 		}
 		enforceLuaHeapBudget();
 
-		m_machine.cpu().start(entryProtoIndex);
+		machine.cpu.start(entryProtoIndex);
 		enforceLuaHeapBudget();
 		m_pendingCall = PendingCall::Entry;
 		queueLifecycleHandlers(true, true);
@@ -259,16 +269,16 @@ void Runtime::requestProgramReload() {
 
 // disable-next-line single_line_method_pattern -- runtime global writes keep CPU string-key encoding inside Runtime.
 void Runtime::setGlobal(std::string_view name, const Value& value) {
-	m_machine.cpu().setGlobalByKey(valueString(m_machine.cpu().internString(name)), value);
+	machine.cpu.setGlobalByKey(valueString(machine.cpu.internString(name)), value);
 }
 
 void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
-	const auto nativeFn = m_machine.cpu().createNativeFunction(name, std::move(fn), cost);
-	m_machine.cpu().setGlobalByKey(valueString(m_machine.cpu().internString(name)), nativeFn);
+	const auto nativeFn = machine.cpu.createNativeFunction(name, std::move(fn), cost);
+	machine.cpu.setGlobalByKey(valueString(machine.cpu.internString(name)), nativeFn);
 }
 
 void Runtime::resetHardwareState() {
-	m_machine.resetDevices();
+	machine.resetDevices();
 	vblank.reset(*this);
 	resetRuntimeRenderState();
 	RenderQueues::clearBackQueues();
@@ -276,16 +286,16 @@ void Runtime::resetHardwareState() {
 
 void Runtime::refreshMemoryMap() {
 	if (m_systemRomBytes.size > 0) {
-		m_machine.memory().setSystemRom(m_systemRomBytes.data, m_systemRomBytes.size);
+		machine.memory.setSystemRom(m_systemRomBytes.data, m_systemRomBytes.size);
 	}
 	if (m_cartRomBytes.size > 0) {
-		m_machine.memory().setCartRom(m_cartRomBytes.data, m_cartRomBytes.size);
+		machine.memory.setCartRom(m_cartRomBytes.data, m_cartRomBytes.size);
 	} else {
-		m_machine.memory().setCartRom(CART_ROM_EMPTY_HEADER.data(), CART_ROM_EMPTY_HEADER.size());
+		machine.memory.setCartRom(CART_ROM_EMPTY_HEADER.data(), CART_ROM_EMPTY_HEADER.size());
 		InputMap emptyMapping;
 		Input::instance().getPlayerInput(DEFAULT_KEYBOARD_PLAYER_INDEX)->setInputMap(emptyMapping);
 	}
-	m_machine.vdp().initializeVramSurfaces();
+	machine.vdp.initializeVramSurfaces();
 	refreshMemoryMapGlobals();
 }
 
@@ -300,7 +310,7 @@ void Runtime::refreshMemoryMapGlobals() {
 	setGlobal("sys_vram_secondary_slot_size", valueNumber(static_cast<double>(VRAM_SECONDARY_SLOT_SIZE)));
 	setGlobal("sys_vram_framebuffer_size", valueNumber(static_cast<double>(VRAM_FRAMEBUFFER_SIZE)));
 	setGlobal("sys_vram_staging_size", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
-	setGlobal("sys_vram_size", valueNumber(static_cast<double>(m_machine.vdp().trackedTotalVramBytes())));
+	setGlobal("sys_vram_size", valueNumber(static_cast<double>(machine.vdp.trackedTotalVramBytes())));
 }
 
 } // namespace bmsx
