@@ -101,15 +101,16 @@ export function renderTabBar(context: ChromeRenderContext): number {
 	const spacing = constants.TAB_BUTTON_SPACING;
 	const minTabRowWidth = TAB_DIRTY_LEFT_MARGIN + TAB_DIRTY_RIGHT_MARGIN + 1;
 	const availableTabRowWidth = viewportWidth - TAB_DIRTY_RIGHT_MARGIN;
-	const maxWidth = availableTabRowWidth > minTabRowWidth ? availableTabRowWidth : minTabRowWidth;
-	const costs = costsScratch;
-	const nextBreak = nextBreakScratch;
-	costs[n] = 0;
+		const maxWidth = availableTabRowWidth > minTabRowWidth ? availableTabRowWidth : minTabRowWidth;
+		const costs = costsScratch;
+		const nextBreak = nextBreakScratch;
+		costs[n] = 0;
 
 	for (let i = n - 1; i >= 0; i -= 1) {
 		let bestRows = Number.POSITIVE_INFINITY;
 		let bestPenalty = Number.POSITIVE_INFINITY;
 		let bestBreak = i + 1;
+		let foundBreak = false;
 		let cursor = TAB_DIRTY_LEFT_MARGIN;
 		for (let j = i; j < n; j += 1) {
 			const entry = tabMetricsScratch.peek(j);
@@ -129,10 +130,11 @@ export function renderTabBar(context: ChromeRenderContext): number {
 				bestRows = rows;
 				bestPenalty = penalty;
 				bestBreak = j + 1;
+				foundBreak = true;
 			}
 			cursor = candidateRight + spacing;
 		}
-		if (!Number.isFinite(bestRows)) {
+		if (!foundBreak) {
 			bestRows = 1 + costs[i + 1];
 			bestBreak = i + 1;
 		}
@@ -174,7 +176,7 @@ export function renderTabBar(context: ChromeRenderContext): number {
 
 			const textX = bounds.left + constants.TAB_BUTTON_PADDING_X;
 			const textY = bounds.top + constants.TAB_BUTTON_PADDING_Y;
-			context.drawText(tab.title, textX, textY, undefined, textColor);
+			context.drawText(tab.title, textX, textY, 0, textColor);
 
 			const indicatorLeft = bounds.right - entry.indicatorWidth;
 			const indicatorWidth = entry.indicatorWidth;
@@ -186,7 +188,7 @@ export function renderTabBar(context: ChromeRenderContext): number {
 				if (hovered) {
 					const closeX = closeBounds.left + constants.TAB_CLOSE_BUTTON_PADDING_X;
 					const closeY = closeBounds.top + constants.TAB_CLOSE_BUTTON_PADDING_Y;
-					context.drawText(constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, undefined, textColor);
+					context.drawText(constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, 0, textColor);
 				} else {
 					clear_rect_bounds(closeBounds);
 					if (entry.dirty && entry.markerWidth > 0) {

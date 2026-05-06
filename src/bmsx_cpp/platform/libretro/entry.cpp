@@ -1493,14 +1493,12 @@ void retro_run(void) {
 	static double accOverheadMs = 0.0;
 	static double accRuntimeUpdateMs = 0.0;
 	static double accRuntimeDrawMs = 0.0;
-	static double accDrawGameMs = 0.0;
 	static double maxRunMs = 0.0;
 	static double maxTickMs = 0.0;
 	static double maxRenderMs = 0.0;
 	static double maxOverheadMs = 0.0;
 	static double maxRuntimeUpdateMs = 0.0;
 	static double maxRuntimeDrawMs = 0.0;
-	static double maxDrawGameMs = 0.0;
 	static uint64_t perfFrames = 0;
 #endif
 
@@ -1550,14 +1548,12 @@ void retro_run(void) {
 //   accOverheadMs += overheadMs;
 //   accRuntimeUpdateMs += tickTiming.runtimeUpdateMs;
 //   accRuntimeDrawMs += renderTiming.runtimeDrawMs;
-//   accDrawGameMs += renderTiming.drawGameMs;
 //   if (runMs > maxRunMs) maxRunMs = runMs;
 //   if (tickTiming.totalMs > maxTickMs) maxTickMs = tickTiming.totalMs;
 //   if (renderTiming.totalMs > maxRenderMs) maxRenderMs = renderTiming.totalMs;
 //   if (overheadMs > maxOverheadMs) maxOverheadMs = overheadMs;
 //   if (tickTiming.runtimeUpdateMs > maxRuntimeUpdateMs) maxRuntimeUpdateMs = tickTiming.runtimeUpdateMs;
 //   if (renderTiming.runtimeDrawMs > maxRuntimeDrawMs) maxRuntimeDrawMs = renderTiming.runtimeDrawMs;
-//   if (renderTiming.drawGameMs > maxDrawGameMs) maxDrawGameMs = renderTiming.drawGameMs;
 //   perfFrames += 1;
 
 //   const double perfSec = std::chrono::duration<double>(runEnd - perfStart).count();
@@ -1572,13 +1568,11 @@ void retro_run(void) {
 // 				accOverheadMs * invFrames,
 // 				static_cast<unsigned long long>(perfFrames));
 // 	logging.log(RETRO_LOG_WARN,
-// 				"[BMSX] runtime avg update=%.2f draw=%.2f draw_game=%.2f max_update=%.2f max_draw=%.2f max_draw_game=%.2f\n",
+// 				"[BMSX] runtime avg update=%.2f draw=%.2f max_update=%.2f max_draw=%.2f\n",
 // 				accRuntimeUpdateMs * invFrames,
 // 				accRuntimeDrawMs * invFrames,
-// 				accDrawGameMs * invFrames,
 // 				maxRuntimeUpdateMs,
-// 				maxRuntimeDrawMs,
-// 				maxDrawGameMs);
+// 				maxRuntimeDrawMs);
 // 	perfStart = runEnd;
 // 	accRunMs = 0.0;
 // 	accTickMs = 0.0;
@@ -1586,14 +1580,12 @@ void retro_run(void) {
 // 	accOverheadMs = 0.0;
 // 	accRuntimeUpdateMs = 0.0;
 // 	accRuntimeDrawMs = 0.0;
-// 	accDrawGameMs = 0.0;
 // 	maxRunMs = 0.0;
 // 	maxTickMs = 0.0;
 // 	maxRenderMs = 0.0;
 // 	maxOverheadMs = 0.0;
 // 	maxRuntimeUpdateMs = 0.0;
 // 	maxRuntimeDrawMs = 0.0;
-// 	maxDrawGameMs = 0.0;
 // 	perfFrames = 0;
 //   }
 

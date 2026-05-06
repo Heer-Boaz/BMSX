@@ -164,7 +164,7 @@ class RuntimeCartEditor implements CartEditor {
 		get lineHeight(): number { return editorViewState.lineHeight; },
 		get tabBarHeight(): number { return editorViewState.tabBarHeight; },
 		measureText,
-		drawText(text: string, x: number, y: number, z: number | undefined, color: number): void {
+		drawText(text: string, x: number, y: number, z: number, color: number): void {
 			const font = editorViewState.font;
 			drawEditorText(font, text, x, y, z, color);
 		},

@@ -71,7 +71,6 @@ public:
 		f64 runtimeDrawMs = 0.0;
 		f64 workbenchModeDrawMs = 0.0;
 		f64 runtimeTerminalDrawMs = 0.0;
-		f64 drawGameMs = 0.0;
 		f64 endFrameMs = 0.0;
 	};
 

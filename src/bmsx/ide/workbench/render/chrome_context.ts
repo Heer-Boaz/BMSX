@@ -4,5 +4,5 @@ export type ChromeRenderContext = {
 	readonly lineHeight: number;
 	readonly tabBarHeight: number;
 	measureText(text: string): number;
-	drawText(text: string, x: number, y: number, z: number | undefined, color: number): void;
+	drawText(text: string, x: number, y: number, z: number, color: number): void;
 };
