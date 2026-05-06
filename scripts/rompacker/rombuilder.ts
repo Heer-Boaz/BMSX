@@ -2008,3 +2008,4 @@ export function setAtlasFlag(enabled: boolean): void {
 export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 // Define common assets path
 export const commonResPath = `./src/bmsx/res`;
+export const biosLuaPath = './bios';
