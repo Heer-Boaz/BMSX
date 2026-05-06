@@ -30,11 +30,11 @@ export function drawInlineCaret(
 	const caretValue = resolveThemeTokenColor(caretColor);
 	const inverseColorIndex = invertThemeToken(caretColor);
 	if (active) {
-		api.fill_rect_color(left, top, right, bottom, undefined, caretValue);
-		drawEditorText(editorViewState.font, caretGlyph, cursorX, top, undefined, inverseColorIndex, { preserveCase: true });
+		api.fill_rect_color(left, top, right, bottom, 0, caretValue);
+		drawEditorText(editorViewState.font, caretGlyph, cursorX, top, 0, inverseColorIndex, { preserveCase: true });
 		return;
 	}
-	drawRectOutlineColor(left, top, right, bottom, undefined, caretValue);
+	drawRectOutlineColor(left, top, right, bottom, 0, caretValue);
 }
 
 export function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): string {
@@ -57,11 +57,11 @@ export function drawCursor(info: CursorScreenInfo, textX: number, active: boolea
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
 	const caretValue = resolveThemeTokenColor(constants.CARET_COLOR);
 	if (active) {
-		api.fill_rect_color(caretLeft, caretTop, caretRight, caretBottom, undefined, caretValue);
-		drawEditorText(editorViewState.font, caretGlyph, cursorX, caretTop, undefined, 1, { preserveCase: true });
+		api.fill_rect_color(caretLeft, caretTop, caretRight, caretBottom, 0, caretValue);
+		drawEditorText(editorViewState.font, caretGlyph, cursorX, caretTop, 0, 1, { preserveCase: true });
 		return;
 	}
-	drawRectOutlineColor(caretLeft, caretTop, caretRight, caretBottom, undefined, caretValue);
+	drawRectOutlineColor(caretLeft, caretTop, caretRight, caretBottom, 0, caretValue);
 }
 
 export function resetBlink(): void {

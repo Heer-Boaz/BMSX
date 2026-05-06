@@ -1583,7 +1583,9 @@ void Runtime::setupBuiltins() {
 
 		const Value target = args.at(0);
 		if (valueIsTable(target)) {
-			asTable(target)->metatable = metatable;
+			Table* table = asTable(target);
+			table->metatable = metatable;
+			table->bumpVersion();
 			out.push_back(target);
 			return;
 		}

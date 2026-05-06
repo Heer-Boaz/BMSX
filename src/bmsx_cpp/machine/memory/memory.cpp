@@ -154,9 +154,6 @@ u8 Memory::readMappedU8(uint32_t addr) const {
 	}
 	if (isIoAddress(addr)) {
 		const Value value = readValue(addr);
-		// if (!valueIsNumber(value)) {
-		// 	throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric register.");
-		// }
 		return static_cast<u8>(toU32(value) & 0xffu);
 	}
 	if (isIoRegionRange(addr, 1)) {
@@ -191,9 +188,6 @@ uint32_t Memory::readIoU32(uint32_t addr) const {
 		throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": invalid register.");
 	}
 	const Value value = readValue(addr);
-	// if (!valueIsNumber(value)) {
-	// 	throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric register.");
-	// }
 	return toU32(value);
 }
 

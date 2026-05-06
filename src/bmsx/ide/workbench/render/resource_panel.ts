@@ -85,7 +85,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	);
 	controller.hscroll = horizontalScrollbar.getScroll() | 0;
 
-	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
+	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
 
 	const contentTop = layout.contentTop;
 	const scrollStart = controller.scroll;
@@ -106,7 +106,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 		const contentText = metrics.contentText;
 		const indentX = contentLeft - scrollX;
 		if (indentText.length > 0) {
-			drawEditorText(editorViewState.font, indentText, indentX, y, undefined, constants.COLOR_RESOURCE_PANEL_TEXT);
+			drawEditorText(editorViewState.font, indentText, indentX, y, 0, constants.COLOR_RESOURCE_PANEL_TEXT);
 		}
 		const contentX = indentX + metrics.indentWidth;
 		const isHighlighted = itemIndex === highlightIndex;
@@ -121,17 +121,17 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 			const caretBottom = caretTop + controller.lineHeight;
 			if (panelActive) {
 				if (visibleRight > visibleLeft) {
-					api.fill_rect_color(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
+					api.fill_rect_color(visibleLeft, caretTop, visibleRight, caretBottom, 0, highlightColor);
 				}
 				if (contentText.length > 0) {
-					drawEditorText(editorViewState.font, contentText, contentX, y, undefined, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
+					drawEditorText(editorViewState.font, contentText, contentX, y, 0, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
 				}
 			} else if (visibleRight > visibleLeft) {
-				drawRectOutlineColor(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
+				drawRectOutlineColor(visibleLeft, caretTop, visibleRight, caretBottom, 0, highlightColor);
 			}
 		}
 		if (!isHighlighted || contentText.length === 0 || !panelActive) {
-			drawEditorText(editorViewState.font, contentText, contentX, y, undefined, constants.COLOR_RESOURCE_PANEL_TEXT);
+			drawEditorText(editorViewState.font, contentText, contentX, y, 0, constants.COLOR_RESOURCE_PANEL_TEXT);
 		}
 	}
 
@@ -142,7 +142,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 		horizontalScrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 	if (dividerLeft >= bounds.left && dividerLeft < bounds.right) {
-		api.fill_rect(dividerLeft, bounds.top, bounds.right, bounds.bottom, undefined, constants.RESOURCE_PANEL_DIVIDER_COLOR);
+		api.fill_rect(dividerLeft, bounds.top, bounds.right, bounds.bottom, 0, constants.RESOURCE_PANEL_DIVIDER_COLOR);
 	}
 }
 
@@ -167,7 +167,7 @@ export function drawResourceViewer(): void {
 	const verticalVisible = verticalScrollbar.isVisible();
 	applyResourceViewerScroll(viewer, capacity, verticalScrollbar.getScroll());
 
-	api.fill_rect(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
+	api.fill_rect(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, 0, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 
 	const textTop = layout.textTop;
 	if (layout.hasImage && viewer.image) {
@@ -181,9 +181,9 @@ export function drawResourceViewer(): void {
 			const line = viewer.lines[lineIndex] ?? '';
 			const bottomLineY = bounds.codeBottom - editorViewState.lineHeight;
 			const fallbackY = textTop < bottomLineY ? textTop : bottomLineY;
-			drawEditorText(editorViewState.font, line, contentLeft, fallbackY, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(editorViewState.font, line, contentLeft, fallbackY, 0, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		} else {
-			drawEditorText(editorViewState.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(editorViewState.font, '<empty>', contentLeft, textTop, 0, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		}
 		if (verticalVisible) {
 			verticalScrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
@@ -194,7 +194,7 @@ export function drawResourceViewer(): void {
 	const endCandidate = start + capacity;
 	const end = endCandidate < totalLines ? endCandidate : totalLines;
 	if (viewer.lines.length === 0) {
-		drawEditorText(editorViewState.font, '<empty>', contentLeft, textTop, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		drawEditorText(editorViewState.font, '<empty>', contentLeft, textTop, 0, constants.COLOR_RESOURCE_VIEWER_TEXT);
 	} else {
 		for (let lineIndex = start, drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
 			const line = viewer.lines[lineIndex] ?? '';
@@ -202,7 +202,7 @@ export function drawResourceViewer(): void {
 			if (y >= bounds.codeBottom) {
 				break;
 			}
-			drawEditorText(editorViewState.font, line, contentLeft, y, undefined, constants.COLOR_RESOURCE_VIEWER_TEXT);
+			drawEditorText(editorViewState.font, line, contentLeft, y, 0, constants.COLOR_RESOURCE_VIEWER_TEXT);
 		}
 	}
 	if (verticalVisible) {
@@ -233,8 +233,8 @@ export function drawCreateResourceErrorDialog(message: string): void {
 	const requestedDialogHeight = lines.length * editorViewState.lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16;
 	const dialogHeight = viewportDialogMaxHeight < requestedDialogHeight ? viewportDialogMaxHeight : requestedDialogHeight;
 	writeCenteredDialogBounds(createResourceErrorDialogBounds, dialogWidth, dialogHeight, 8);
-	api.fill_rect(createResourceErrorDialogBounds.left, createResourceErrorDialogBounds.top, createResourceErrorDialogBounds.right, createResourceErrorDialogBounds.bottom, undefined, constants.COLOR_STATUS_BACKGROUND);
-	api.blit_rect(createResourceErrorDialogBounds.left, createResourceErrorDialogBounds.top, createResourceErrorDialogBounds.right, createResourceErrorDialogBounds.bottom, undefined, constants.COLOR_CREATE_RESOURCE_ERROR);
+	api.fill_rect(createResourceErrorDialogBounds.left, createResourceErrorDialogBounds.top, createResourceErrorDialogBounds.right, createResourceErrorDialogBounds.bottom, 0, constants.COLOR_STATUS_BACKGROUND);
+	api.blit_rect(createResourceErrorDialogBounds.left, createResourceErrorDialogBounds.top, createResourceErrorDialogBounds.right, createResourceErrorDialogBounds.bottom, 0, constants.COLOR_CREATE_RESOURCE_ERROR);
 	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
 	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
 	renderErrorOverlayText(

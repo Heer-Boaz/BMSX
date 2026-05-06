@@ -26,7 +26,7 @@ struct HostOverlayPipelineState : Host2DPipelineState {
 
 using HostMenuPipelineState = Host2DPipelineState;
 
-HostOverlayPipelineState buildHostOverlayState(GameView& view);
+HostOverlayPipelineState buildHostOverlayState();
 HostMenuPipelineState buildHostMenuState(GameView& view);
 
 } // namespace bmsx

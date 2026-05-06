@@ -26,7 +26,7 @@ type CompletionTextMeasure = (text: string) => number;
 type CompletionTextDraw = (text: string, x: number, y: number, color: number) => void;
 
 function drawCompletionText(text: string, x: number, y: number, color: number): void {
-	drawEditorText(editorViewState.font, text, x, y, undefined, color);
+	drawEditorText(editorViewState.font, text, x, y, 0, color);
 }
 
 function drawCompletionPopupCore(
@@ -96,8 +96,8 @@ function drawCompletionPopupCore(
 	}
 	const popupRight = popupLeft + popupWidth;
 	const popupBottom = popupTop + popupHeight;
-	api.fill_rect(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_COMPLETION_BACKGROUND);
-	api.blit_rect(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_COMPLETION_BORDER);
+	api.fill_rect(popupLeft, popupTop, popupRight, popupBottom, 0, constants.COLOR_COMPLETION_BACKGROUND);
+	api.blit_rect(popupLeft, popupTop, popupRight, popupBottom, 0, constants.COLOR_COMPLETION_BORDER);
 	outBounds.left = popupLeft;
 	outBounds.top = popupTop;
 	outBounds.right = popupRight;
@@ -112,7 +112,7 @@ function drawCompletionPopupCore(
 		if (isSelected) {
 			const highlightTop = lineTop - 1;
 			const highlightBottom = highlightTop + lineHeight + 2;
-			api.fill_rect(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, undefined, constants.COLOR_COMPLETION_HIGHLIGHT);
+			api.fill_rect(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, 0, constants.COLOR_COMPLETION_HIGHLIGHT);
 		}
 		const textX = popupLeft + constants.COMPLETION_POPUP_PADDING_X;
 		const label = truncateWithMeasure(item.label, maxLabelWidth, measure);
@@ -233,8 +233,8 @@ function drawParameterHintOverlayCore(
 	}
 	const popupRight = popupLeft + popupWidth;
 	const popupBottom = popupTop + popupHeight;
-	api.blit_rect(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_PARAMETER_HINT_BORDER);
-	api.fill_rect(popupLeft, popupTop, popupRight, popupBottom, undefined, constants.COLOR_PARAMETER_HINT_BACKGROUND);
+	api.blit_rect(popupLeft, popupTop, popupRight, popupBottom, 0, constants.COLOR_PARAMETER_HINT_BORDER);
+	api.fill_rect(popupLeft, popupTop, popupRight, popupBottom, 0, constants.COLOR_PARAMETER_HINT_BACKGROUND);
 	let textX = popupLeft + constants.PARAMETER_HINT_PADDING_X;
 	let currentY = popupTop + constants.PARAMETER_HINT_PADDING_Y;
 	for (let i = 0; i < clippedSegments.length; i += 1) {

@@ -1072,7 +1072,7 @@ export class TerminalMode {
 			}
 		}
 		const y = Math.max(PADDING_Y, surface.height - PADDING_Y - lineHeight);
-		renderer.fillRect(PADDING_X, y, Math.max(PADDING_X, surface.width - PADDING_X), y + lineHeight, undefined, this.characterBackgroundColor, 'ide');
+		renderer.fillRect(PADDING_X, y, Math.max(PADDING_X, surface.width - PADDING_X), y + lineHeight, 0, this.characterBackgroundColor, 'ide');
 		this.drawGlyphBackgrounds(renderer, text, PADDING_X, y, uppercaseDisplay);
 		this.drawGlyphRun(renderer, text, PADDING_X, y, resolveThemeTokenColor(OUTPUT_COLORS.system), uppercaseDisplay);
 	}
@@ -1141,7 +1141,7 @@ export class TerminalMode {
 		const uppercaseDisplay = this.useUppercaseDisplay();
 		const measure = (text: string): number => this.measureDisplayText(text, uppercaseDisplay);
 		const draw = (text: string, x: number, y: number, color: number): void => {
-			drawEditorText(this.font, this.toRenderedGlyphText(text, uppercaseDisplay), x, y, undefined, color);
+			drawEditorText(this.font, this.toRenderedGlyphText(text, uppercaseDisplay), x, y, 0, color);
 		};
 		this.completion.popupBounds = drawCompletionPopupWithRenderer(this.completion.session, this.cursorScreenInfo, this.font.lineHeight, bounds, measure, draw, this.completion.popupBoundsScratch);
 		drawParameterHintOverlayWithRenderer(this.completion.hint, this.cursorScreenInfo, this.font.lineHeight, bounds, measure, draw);
@@ -1260,7 +1260,7 @@ export class TerminalMode {
 
 				// draw selection background for this segment if selection overlaps
 				if (segmentDecoration.hasSelection && segmentDecoration.selectionWidth > 0) {
-					renderer.fillRect(segmentDecoration.selectionLeft, y, segmentDecoration.selectionLeft + segmentDecoration.selectionWidth, y + this.font.lineHeight, undefined, this.selectionColor, 'ide');
+					renderer.fillRect(segmentDecoration.selectionLeft, y, segmentDecoration.selectionLeft + segmentDecoration.selectionWidth, y + this.font.lineHeight, 0, this.selectionColor, 'ide');
 				}
 
 				// draw the glyph run for this segment
@@ -1283,7 +1283,7 @@ export class TerminalMode {
 				nextCursorInfo.baseColor = OUTPUT_COLORS.stdout;
 				if (this.blink.cursorVisible) {
 					const renderFont = this.font.renderFont();
-					renderer.fillRect(left, topY, right, bottom, undefined, this.caretColor, 'ide');
+					renderer.fillRect(left, topY, right, bottom, 0, this.caretColor, 'ide');
 					renderer.glyphRun(nextChar, 0, nextChar.length, left, topY, 0, renderFont, this.characterBackgroundColor, 'ide');
 				}
 			}
@@ -1299,7 +1299,7 @@ export class TerminalMode {
 		if (width <= 0) {
 			return;
 		}
-		renderer.fillRect(originX, originY, originX + width, originY + this.font.lineHeight, undefined, this.characterBackgroundColor, 'ide');
+		renderer.fillRect(originX, originY, originX + width, originY + this.font.lineHeight, 0, this.characterBackgroundColor, 'ide');
 	}
 
 	private drawGlyphRun(renderer: OverlayRenderer, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {

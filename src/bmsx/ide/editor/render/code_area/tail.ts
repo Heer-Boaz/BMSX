@@ -44,13 +44,13 @@ function drawRuntimeErrorOverlayIndicator(
 	const bottom = top + indicatorHeight;
 	const accentHeight = 2;
 	const accentTop = direction === 'above' ? top : bottom - accentHeight;
-	api.fill_rect(left, top, left + indicatorWidth, bottom, undefined, constants.ERROR_OVERLAY_BACKGROUND);
-	api.fill_rect(left, accentTop, left + indicatorWidth, accentTop + accentHeight, undefined, constants.ERROR_OVERLAY_LINE_HOVER);
+	api.fill_rect(left, top, left + indicatorWidth, bottom, 0, constants.ERROR_OVERLAY_BACKGROUND);
+	api.fill_rect(left, accentTop, left + indicatorWidth, accentTop + accentHeight, 0, constants.ERROR_OVERLAY_LINE_HOVER);
 	const notchWidth = 6;
 	const notchLeft = left + Math.max(2, (indicatorWidth - notchWidth) / 2);
 	const notchTop = direction === 'above' ? top - 1 : bottom;
-	api.fill_rect(notchLeft, notchTop, notchLeft + notchWidth, notchTop + 1, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
-	api.blit_rect(left, top, left + indicatorWidth, bottom, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
+	api.fill_rect(notchLeft, notchTop, notchLeft + notchWidth, notchTop + 1, 0, constants.ERROR_OVERLAY_TEXT_COLOR);
+	api.blit_rect(left, top, left + indicatorWidth, bottom, 0, constants.ERROR_OVERLAY_TEXT_COLOR);
 }
 
 export function finalizeCodeAreaRender(

@@ -39,12 +39,12 @@ export function drawCodeAreaRows(
 			break;
 		}
 		if (visualIndex >= viewport.visualCount) {
-			drawEditorText(editorViewState.font, '~', viewport.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
+			drawEditorText(editorViewState.font, '~', viewport.textLeft, rowY, 0, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
 			continue;
 		}
 		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (!segment) {
-			drawEditorText(editorViewState.font, '~', viewport.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
+			drawEditorText(editorViewState.font, '~', viewport.textLeft, rowY, 0, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
 			continue;
 		}
 		const lineIndex = segment.row;
@@ -89,7 +89,7 @@ export function drawCodeAreaRows(
 			const drawLeft = selectionStartX < viewport.textLeft ? viewport.textLeft : selectionStartX;
 			const drawRight = selectionEndX > viewport.contentRight ? viewport.contentRight : selectionEndX;
 			if (drawRight > drawLeft) {
-				api.fill_rect(drawLeft, rowY, drawRight, rowY + editorViewState.lineHeight, undefined, constants.SELECTION_OVERLAY);
+				api.fill_rect(drawLeft, rowY, drawRight, rowY + editorViewState.lineHeight, 0, constants.SELECTION_OVERLAY);
 			}
 		}
 		drawCodeRowText(

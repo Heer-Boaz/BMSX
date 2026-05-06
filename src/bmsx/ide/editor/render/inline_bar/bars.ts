@@ -56,15 +56,15 @@ const drawSearchResultRow = (entry: InlineSearchResultEntry, rowTop: number): vo
 	const paddingX = constants.QUICK_OPEN_RESULT_PADDING_X;
 	const secondaryY = rowTop + editorViewState.lineHeight;
 	if (entry.primary) {
-		drawEditorText(editorViewState.font, entry.primary, paddingX, rowTop, undefined, constants.COLOR_SEARCH_TEXT);
+		drawEditorText(editorViewState.font, entry.primary, paddingX, rowTop, 0, constants.COLOR_SEARCH_TEXT);
 	}
 	if (entry.detail) {
 		const detailWidth = measureText(entry.detail);
 		const detailX = editorViewState.viewportWidth - detailWidth - paddingX;
-		drawEditorText(editorViewState.font, entry.detail, detailX, rowTop, undefined, constants.COLOR_SEARCH_SECONDARY_TEXT);
+		drawEditorText(editorViewState.font, entry.detail, detailX, rowTop, 0, constants.COLOR_SEARCH_SECONDARY_TEXT);
 	}
 	if (entry.secondary) {
-		drawEditorText(editorViewState.font, entry.secondary, paddingX, secondaryY, undefined, constants.COLOR_SEARCH_SECONDARY_TEXT);
+		drawEditorText(editorViewState.font, entry.secondary, paddingX, secondaryY, 0, constants.COLOR_SEARCH_SECONDARY_TEXT);
 	}
 };
 
@@ -73,19 +73,19 @@ const drawResourceSearchResultRow = (match: InlineResourceSearchResult, rowTop: 
 	const kindText = match.entry.typeLabel;
 	const detail = match.entry.assetLabel ?? '';
 	if (kindText.length > 0) {
-		drawEditorText(editorViewState.font, kindText, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
+		drawEditorText(editorViewState.font, kindText, textX, rowTop, 0, constants.COLOR_QUICK_OPEN_KIND);
 		textX += measureText(kindText) + editorViewState.spaceAdvance;
 	}
-	drawEditorText(editorViewState.font, match.entry.displayPath, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_TEXT);
+	drawEditorText(editorViewState.font, match.entry.displayPath, textX, rowTop, 0, constants.COLOR_QUICK_OPEN_TEXT);
 	if (isResourceSearchCompactMode()) {
 		const secondaryY = rowTop + editorViewState.lineHeight;
 		if (detail.length > 0) {
-			drawEditorText(editorViewState.font, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_QUICK_OPEN_KIND);
+			drawEditorText(editorViewState.font, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, 0, constants.COLOR_QUICK_OPEN_KIND);
 		}
 	} else if (detail.length > 0) {
 		const detailWidth = measureText(detail);
 		const detailX = editorViewState.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
-		drawEditorText(editorViewState.font, detail, detailX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
+		drawEditorText(editorViewState.font, detail, detailX, rowTop, 0, constants.COLOR_QUICK_OPEN_KIND);
 	}
 };
 
@@ -104,27 +104,27 @@ const drawSymbolSearchResultRow = (match: InlineSymbolSearchResult, rowTop: numb
 		: `:${lineValue}`;
 	const lineWidth = measureText(lineText);
 	if (kindText.length > 0) {
-		drawEditorText(editorViewState.font, kindText, textX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
+		drawEditorText(editorViewState.font, kindText, textX, rowTop, 0, constants.COLOR_SYMBOL_SEARCH_KIND);
 		textX += measureText(kindText) + editorViewState.spaceAdvance;
 	}
-	drawEditorText(editorViewState.font, match.entry.displayName, textX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
+	drawEditorText(editorViewState.font, match.entry.displayName, textX, rowTop, 0, constants.COLOR_SYMBOL_SEARCH_TEXT);
 	if (compactMode) {
 		const secondaryY = rowTop + editorViewState.lineHeight;
 		const lineX = editorViewState.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-		drawEditorText(editorViewState.font, lineText, lineX, secondaryY, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
+		drawEditorText(editorViewState.font, lineText, lineX, secondaryY, 0, constants.COLOR_SYMBOL_SEARCH_TEXT);
 		const sourceLabel = match.entry.sourceLabel ?? '';
 		if (sourceLabel) {
-			drawEditorText(editorViewState.font, sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
+			drawEditorText(editorViewState.font, sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, 0, constants.COLOR_SYMBOL_SEARCH_KIND);
 		}
 	} else {
 		const lineX = editorViewState.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-		drawEditorText(editorViewState.font, lineText, lineX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
+		drawEditorText(editorViewState.font, lineText, lineX, rowTop, 0, constants.COLOR_SYMBOL_SEARCH_TEXT);
 		const sourceLabel = match.entry.sourceLabel ?? '';
 		if (sourceLabel) {
 			const sourceWidth = measureText(sourceLabel);
 			const sourceXCandidate = lineX - editorViewState.spaceAdvance - sourceWidth;
 			const sourceX = sourceXCandidate > textX ? sourceXCandidate : textX;
-			drawEditorText(editorViewState.font, sourceLabel, sourceX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
+			drawEditorText(editorViewState.font, sourceLabel, sourceX, rowTop, 0, constants.COLOR_SYMBOL_SEARCH_KIND);
 		}
 	}
 };
@@ -155,7 +155,7 @@ export function renderCreateResourceBar(): void {
 		const fieldRight = fieldState.textX + fieldState.displayWidth + editorViewState.spaceAdvance;
 		const statusRightX = bounds.right - statusWidth - 4;
 		const statusX = fieldRight > statusRightX ? fieldRight : statusRightX;
-		drawEditorText(editorViewState.font, status, statusX, bounds.top + constants.CREATE_RESOURCE_BAR_MARGIN_Y, undefined, constants.COLOR_CREATE_RESOURCE_TEXT);
+		drawEditorText(editorViewState.font, status, statusX, bounds.top + constants.CREATE_RESOURCE_BAR_MARGIN_Y, 0, constants.COLOR_CREATE_RESOURCE_TEXT);
 	} else if (createResourceState.error && createResourceState.error.length > 0) {
 		drawCreateResourceErrorDialog(createResourceState.error);
 	}
@@ -190,12 +190,12 @@ export function renderSearchBar(): void {
 	if (searchWorking) {
 		const workingText = 'SEARCHING...';
 		const workingWidth = measureText(workingText);
-		drawEditorText(editorViewState.font, workingText, infoX - workingWidth, labelY, undefined, constants.COLOR_SEARCH_TEXT);
+		drawEditorText(editorViewState.font, workingText, infoX - workingWidth, labelY, 0, constants.COLOR_SEARCH_TEXT);
 	} else if (total > 0 || (editorSearchState.query && editorSearchState.query.length > 0)) {
 		const infoText = total === 0 ? '0/0' : `${(current >= 0 ? current + 1 : 0)}/${total}`;
 		const infoColor = total === 0 ? constants.COLOR_STATUS_WARNING : constants.COLOR_SEARCH_TEXT;
 		const infoWidth = measureText(infoText);
-		drawEditorText(editorViewState.font, infoText, infoX - infoWidth, labelY, undefined, infoColor);
+		drawEditorText(editorViewState.font, infoText, infoX - infoWidth, labelY, 0, infoColor);
 	}
 
 	const visible = searchVisibleResultCount();
@@ -204,7 +204,7 @@ export function renderSearchBar(): void {
 	}
 	const baseHeight = editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 	const separatorTop = bounds.top + baseHeight;
-	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.SEARCH_RESULT_SPACING, undefined, constants.COLOR_SEARCH_OUTLINE);
+	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.SEARCH_RESULT_SPACING, 0, constants.COLOR_SEARCH_OUTLINE);
 	const resultsTop = separatorTop + constants.SEARCH_RESULT_SPACING;
 	const rowHeight = searchResultEntryHeight();
 
@@ -233,7 +233,7 @@ export function renderResourceSearchBar(): void {
 	if (visible <= 0) return;
 	const baseHeight = editorViewState.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
 	const separatorTop = bounds.top + baseHeight;
-	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.QUICK_OPEN_RESULT_SPACING, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
+	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.QUICK_OPEN_RESULT_SPACING, 0, constants.COLOR_QUICK_OPEN_OUTLINE);
 	const resultsTop = separatorTop + constants.QUICK_OPEN_RESULT_SPACING;
 	const rowHeight = resourceSearchEntryHeight();
 
@@ -266,7 +266,7 @@ export function renderSymbolSearchBar(): void {
 	}
 	const baseHeight = editorViewState.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
 	const separatorTop = bounds.top + baseHeight;
-	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
+	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, 0, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 	const resultsTop = separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING;
 	const entryHeight = symbolSearchEntryHeight();
 	renderResultList(symbolSearchState.matches, visible, symbolSearchState.displayOffset ?? 0, 0, entryHeight, resultsTop, bounds.right, symbolSearchState.selectionIndex ?? -1, symbolSearchState.hoverIndex ?? -1, drawSymbolSearchResultRow);
@@ -300,9 +300,9 @@ function renderResultList<T>(
 		const rowTopValue = rowTop + i * rowHeight;
 		const rowBottom = rowTopValue + rowHeight;
 		if (matchIndex === selectionIndex) {
-			api.fill_rect(0, rowTopValue, viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_SELECTION_OVERLAY);
+			api.fill_rect(0, rowTopValue, viewportWidth, rowBottom, 0, constants.SEARCH_RESULT_SELECTION_OVERLAY);
 		} else if (matchIndex === hoverIndex) {
-			api.fill_rect(0, rowTopValue, viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_HOVER_OVERLAY);
+			api.fill_rect(0, rowTopValue, viewportWidth, rowBottom, 0, constants.SEARCH_RESULT_HOVER_OVERLAY);
 		}
 		drawRow(entry, rowTopValue);
 	}
@@ -343,7 +343,7 @@ export function renderRenameBar(): void {
 		const fieldRight = fieldState.textX + fieldState.displayWidth + editorViewState.spaceAdvance;
 		const statusRightX = bounds.right - statusWidth - 4;
 		const statusX = fieldRight > statusRightX ? fieldRight : statusRightX;
-		drawEditorText(editorViewState.font, status, statusX, labelY, undefined, constants.COLOR_SEARCH_TEXT);
+		drawEditorText(editorViewState.font, status, statusX, labelY, 0, constants.COLOR_SEARCH_TEXT);
 	}
 }
 

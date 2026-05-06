@@ -29,9 +29,9 @@ export function renderInlineBarFrame(
 	backgroundColor: number,
 	outlineColor: number,
 ): void {
-	api.fill_rect(left, top, right, bottom, undefined, backgroundColor);
-	api.fill_rect(left, top, right, top + 1, undefined, outlineColor);
-	api.fill_rect(left, bottom - 1, right, bottom, undefined, outlineColor);
+	api.fill_rect(left, top, right, bottom, 0, backgroundColor);
+	api.fill_rect(left, top, right, top + 1, 0, outlineColor);
+	api.fill_rect(left, bottom - 1, right, bottom, 0, outlineColor);
 }
 
 export function renderInlineBarField(
@@ -47,7 +47,7 @@ export function renderInlineBarField(
 	caretAdvance: number,
 	out: InlineBarFieldRenderState = scratchInlineBarFieldRenderState,
 ): InlineBarFieldRenderState {
-	drawEditorText(editorViewState.font, label, labelX, labelY, undefined, textColor);
+	drawEditorText(editorViewState.font, label, labelX, labelY, 0, textColor);
 
 	const fieldText = field.text;
 	const displayText = fieldText.length === 0 && !placeholderActive
@@ -59,10 +59,10 @@ export function renderInlineBarField(
 	const textX = labelX + measureText(label) + editorViewState.spaceAdvance;
 	const decoration = measureInlineFieldDecoration(field, editorViewState.inlineFieldMetricsRef, textX);
 	if (fieldText.length > 0 && decoration.hasSelection && decoration.selectionWidth > 0) {
-		api.fill_rect(decoration.selectionLeft, labelY, decoration.selectionLeft + decoration.selectionWidth, labelY + editorViewState.lineHeight, undefined, constants.SELECTION_OVERLAY);
+		api.fill_rect(decoration.selectionLeft, labelY, decoration.selectionLeft + decoration.selectionWidth, labelY + editorViewState.lineHeight, 0, constants.SELECTION_OVERLAY);
 	}
 
-	drawEditorText(editorViewState.font, displayText, textX, labelY, undefined, displayColor);
+	drawEditorText(editorViewState.font, displayText, textX, labelY, 0, displayColor);
 
 	const caretLeft = decoration.caretBaseX;
 	const caretRight = Math.max(caretLeft + 1, decoration.caretBaseX + caretAdvance);

@@ -30,11 +30,11 @@ export function drawCodeRowText(
 		const insertDisplay = editorViewState.layout.columnToDisplay(highlight, inlineCompletionPreview.column);
 		if (insertDisplay >= sliceStartDisplay && insertDisplay <= sliceEndDisplay) {
 			const ghost = inlineCompletionPreview.suffix;
-			drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, insertDisplay, textLeft, rowY, undefined);
+			drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, insertDisplay, textLeft, rowY, 0);
 			const prefixWidth = entry.advancePrefix[insertDisplay] - entry.advancePrefix[sliceStartDisplay];
 			const ghostText = useUppercase ? ghost.toUpperCase() : ghost;
 			if (ghostText.length > 0) {
-				api.blit_text_inline_with_font(ghostText, textLeft + prefixWidth, rowY, undefined, constants.COLOR_COMPLETION_PREVIEW_TEXT, renderFont);
+				api.blit_text_inline_with_font(ghostText, textLeft + prefixWidth, rowY, 0, constants.COLOR_COMPLETION_PREVIEW_TEXT, renderFont);
 			}
 			const ghostWidth = ghostText.length > 0 ? editorViewState.font.measure(ghostText) : 0;
 			drawHighlightSlice(
@@ -46,12 +46,12 @@ export function drawCodeRowText(
 				sliceEndDisplay,
 				textLeft + prefixWidth + ghostWidth,
 				rowY,
-				undefined
+				0
 			);
 			return;
 		}
 	}
-	drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, sliceEndDisplay, textLeft, rowY, undefined);
+	drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, sliceEndDisplay, textLeft, rowY, 0);
 }
 
 export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {

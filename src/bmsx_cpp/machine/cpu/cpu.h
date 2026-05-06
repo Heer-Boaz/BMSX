@@ -153,9 +153,6 @@ public:
 private:
 	const InternedString& entry(StringId id) const {
 		const auto* entry = m_entries.at(static_cast<size_t>(id)).get();
-		// if (!entry) {
-		// 	throw std::runtime_error("StringPool: missing string entry.");
-		// }
 		return *entry;
 	}
 
@@ -929,6 +926,12 @@ public:
 
 	Table* metatable = nullptr;
 	uint32_t version() const { return m_version; }
+	void bumpVersion() {
+		++m_version;
+		if (m_version == 0) {
+			m_version = 1;
+		}
+	}
 
 private:
 	struct HashNode {
@@ -951,12 +954,6 @@ private:
 	void rawSet(const Value& key, const Value& value);
 	void insertHash(const Value& key, const Value& value);
 	void removeFromHash(const Value& key);
-	void bumpVersion() {
-		++m_version;
-		if (m_version == 0) {
-			m_version = 1;
-		}
-	}
 
 	std::vector<Value> m_array;
 	size_t m_arrayLength = 0;

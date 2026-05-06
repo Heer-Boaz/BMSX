@@ -238,31 +238,31 @@ export function drawActionPromptOverlay(): void {
 	if (!prompt) {
 		return;
 	}
-	api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, undefined, constants.ACTION_OVERLAY_COLOR);
+	api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.ACTION_OVERLAY_COLOR);
 	const { messageLines, primaryLabel, secondaryLabel } = getActionPromptText(prompt.action);
 	updateActionPromptLayout();
 	const layout = prompt.layout!;
 
-	api.fill_rect(layout.bounds.left, layout.bounds.top, layout.bounds.right, layout.bounds.bottom, undefined, constants.ACTION_DIALOG_BACKGROUND_COLOR);
-	api.blit_rect(layout.bounds.left, layout.bounds.top, layout.bounds.right, layout.bounds.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
+	api.fill_rect(layout.bounds.left, layout.bounds.top, layout.bounds.right, layout.bounds.bottom, 0, constants.ACTION_DIALOG_BACKGROUND_COLOR);
+	api.blit_rect(layout.bounds.left, layout.bounds.top, layout.bounds.right, layout.bounds.bottom, 0, constants.ACTION_DIALOG_BORDER_COLOR);
 
 	const buttonY = layout.bounds.bottom - ACTION_PROMPT_PADDING_Y - (editorViewState.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2);
 	let textY = layout.bounds.top + ACTION_PROMPT_PADDING_Y;
 	const textX = layout.bounds.left + ACTION_PROMPT_PADDING_X;
 	for (let i = 0; i < messageLines.length; i += 1) {
-		drawEditorText(editorViewState.font, messageLines[i], textX, textY, undefined, constants.ACTION_DIALOG_TEXT_COLOR);
+		drawEditorText(editorViewState.font, messageLines[i], textX, textY, 0, constants.ACTION_DIALOG_TEXT_COLOR);
 		textY += editorViewState.lineHeight + 2;
 	}
 
-	api.fill_rect(layout.saveAndContinue.left, layout.saveAndContinue.top, layout.saveAndContinue.right, layout.saveAndContinue.bottom, undefined, constants.ACTION_BUTTON_BACKGROUND);
-	api.blit_rect(layout.saveAndContinue.left, layout.saveAndContinue.top, layout.saveAndContinue.right, layout.saveAndContinue.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(editorViewState.font, primaryLabel, layout.saveAndContinue.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.ACTION_BUTTON_TEXT);
+	api.fill_rect(layout.saveAndContinue.left, layout.saveAndContinue.top, layout.saveAndContinue.right, layout.saveAndContinue.bottom, 0, constants.ACTION_BUTTON_BACKGROUND);
+	api.blit_rect(layout.saveAndContinue.left, layout.saveAndContinue.top, layout.saveAndContinue.right, layout.saveAndContinue.bottom, 0, constants.ACTION_DIALOG_BORDER_COLOR);
+	drawEditorText(editorViewState.font, primaryLabel, layout.saveAndContinue.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, 0, constants.ACTION_BUTTON_TEXT);
 
-	api.fill_rect(layout.continue.left, layout.continue.top, layout.continue.right, layout.continue.bottom, undefined, constants.ACTION_BUTTON_BACKGROUND);
-	api.blit_rect(layout.continue.left, layout.continue.top, layout.continue.right, layout.continue.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(editorViewState.font, secondaryLabel, layout.continue.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.ACTION_BUTTON_TEXT);
+	api.fill_rect(layout.continue.left, layout.continue.top, layout.continue.right, layout.continue.bottom, 0, constants.ACTION_BUTTON_BACKGROUND);
+	api.blit_rect(layout.continue.left, layout.continue.top, layout.continue.right, layout.continue.bottom, 0, constants.ACTION_DIALOG_BORDER_COLOR);
+	drawEditorText(editorViewState.font, secondaryLabel, layout.continue.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, 0, constants.ACTION_BUTTON_TEXT);
 
-	api.fill_rect(layout.cancel.left, layout.cancel.top, layout.cancel.right, layout.cancel.bottom, undefined, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
-	api.blit_rect(layout.cancel.left, layout.cancel.top, layout.cancel.right, layout.cancel.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(editorViewState.font, CANCEL_LABEL, layout.cancel.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.COLOR_HEADER_BUTTON_TEXT);
+	api.fill_rect(layout.cancel.left, layout.cancel.top, layout.cancel.right, layout.cancel.bottom, 0, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
+	api.blit_rect(layout.cancel.left, layout.cancel.top, layout.cancel.right, layout.cancel.bottom, 0, constants.ACTION_DIALOG_BORDER_COLOR);
+	drawEditorText(editorViewState.font, CANCEL_LABEL, layout.cancel.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, 0, constants.COLOR_HEADER_BUTTON_TEXT);
 }

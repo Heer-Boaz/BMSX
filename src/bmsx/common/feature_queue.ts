@@ -15,6 +15,10 @@ export class FeatureQueue<T> {
 	sizeBack(): number { return this._back.size; }
 	sizeFront(): number { return this._front.size; }
 
+	submit(item: T): void {
+		this._back.push(item);
+	}
+
 	swap(): void {
 		const tmp = this._front; this._front = this._back; this._back = tmp;
 		this._back.clear(); // reset active window for next frame submissions

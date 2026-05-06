@@ -30,7 +30,7 @@ function drawUnderline(entry: CachedHighlight, textLeft: number, rowY: number, c
 	if (underlineY < rowY || underlineY >= contentBottom) {
 		return;
 	}
-	api.fill_rect(drawLeft, underlineY, drawRight, underlineY + 1, undefined, color);
+	api.fill_rect(drawLeft, underlineY, drawRight, underlineY + 1, 0, color);
 }
 
 export function drawDiagnosticUnderlinesForRow(

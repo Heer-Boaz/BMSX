@@ -65,8 +65,8 @@ export function renderTabBar(context: ChromeRenderContext): number {
 		const barTop = context.headerHeight;
 		const barBottom = barTop + rowHeightTotal;
 		write_rect_bounds(editorChromeState.tabBarBounds, 0, barTop, viewportWidth, barBottom);
-		api.fill_rect(0, barTop, viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
-		api.fill_rect(0, barBottom - 1, viewportWidth, barBottom, undefined, borderColor);
+		api.fill_rect(0, barTop, viewportWidth, barBottom, 0, constants.COLOR_TAB_BAR_BACKGROUND);
+		api.fill_rect(0, barBottom - 1, viewportWidth, barBottom, 0, borderColor);
 		return 1;
 	}
 
@@ -146,8 +146,8 @@ export function renderTabBar(context: ChromeRenderContext): number {
 	const barBottom = barTop + totalHeight;
 	write_rect_bounds(editorChromeState.tabBarBounds, 0, barTop, viewportWidth, barBottom);
 
-	api.fill_rect(0, barTop, viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
-	api.fill_rect(0, barBottom - 1, viewportWidth, barBottom, undefined, borderColor);
+	api.fill_rect(0, barTop, viewportWidth, barBottom, 0, constants.COLOR_TAB_BAR_BACKGROUND);
+	api.fill_rect(0, barBottom - 1, viewportWidth, barBottom, 0, borderColor);
 
 	let rowStart = 0;
 	let rowIndex = 0;
@@ -169,8 +169,8 @@ export function renderTabBar(context: ChromeRenderContext): number {
 			const fillColor = active ? constants.COLOR_TAB_ACTIVE_BACKGROUND : constants.COLOR_TAB_INACTIVE_BACKGROUND;
 			const textColor = active ? constants.COLOR_TAB_ACTIVE_TEXT : constants.COLOR_TAB_INACTIVE_TEXT;
 
-			api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, fillColor);
-			api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, borderColor);
+			api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, fillColor);
+			api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, borderColor);
 
 			const textX = bounds.left + constants.TAB_BUTTON_PADDING_X;
 			const textY = bounds.top + constants.TAB_BUTTON_PADDING_Y;
@@ -209,7 +209,7 @@ export function renderTabBar(context: ChromeRenderContext): number {
 			}
 
 			if (active) {
-				api.fill_rect(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, undefined, fillColor);
+				api.fill_rect(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, 0, fillColor);
 			}
 
 			cursor = right + spacing;
@@ -226,5 +226,5 @@ function centeredDirtyMarkerTop(bounds: RectBounds, markerHeight: number): numbe
 }
 
 function drawDirtyMarker(left: number, top: number, width: number, height: number): void {
-	api.fill_rect(left, top, left + width - 1, top + height - 1, undefined, constants.COLOR_TAB_DIRTY_MARKER);
+	api.fill_rect(left, top, left + width - 1, top + height - 1, 0, constants.COLOR_TAB_DIRTY_MARKER);
 }

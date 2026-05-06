@@ -21,13 +21,13 @@ export function renderStatusBar(runtime: Runtime): void {
 	const statusTop = editorViewState.viewportHeight - statusAreaHeight();
 	const statusBottom = editorViewState.viewportHeight;
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;
-	api.fill_rect(0, statusTop, editorViewState.viewportWidth, statusBottom, undefined, statusBackground);
+	api.fill_rect(0, statusTop, editorViewState.viewportWidth, statusBottom, 0, statusBackground);
 	if (runtimeFaulted) {
 		const accentHeightCandidate = (editorViewState.lineHeight / 6) | 0;
 		const accentHeight = accentHeightCandidate > 2 ? accentHeightCandidate : 2;
 		const accentBottomCandidate = statusTop + accentHeight;
 		const accentBottom = accentBottomCandidate < statusBottom ? accentBottomCandidate : statusBottom;
-		api.fill_rect(0, statusTop, editorViewState.viewportWidth, accentBottom, undefined, constants.COLOR_STATUS_WARNING);
+		api.fill_rect(0, statusTop, editorViewState.viewportWidth, accentBottom, 0, constants.COLOR_STATUS_WARNING);
 	}
 	const statusTextColor = runtimeFaulted ? constants.COLOR_STATUS_ALERT : constants.COLOR_STATUS_TEXT;
 
@@ -36,7 +36,7 @@ export function renderStatusBar(runtime: Runtime): void {
 		let textY = statusTop + 2;
 		const textX = 4;
 		for (let i = 0; i < lines.length; i += 1) {
-			drawEditorText(editorViewState.font, lines[i], textX, textY, undefined, constants.COLOR_STATUS_ALERT);
+			drawEditorText(editorViewState.font, lines[i], textX, textY, 0, constants.COLOR_STATUS_ALERT);
 			textY += editorViewState.lineHeight;
 		}
 		return;
@@ -44,7 +44,7 @@ export function renderStatusBar(runtime: Runtime): void {
 	const statusLeftInfo = buildStatusLeftInfo();
 	// When Problems panel owns the status (focused), show its info and stop
 	if (problemsPanel.isVisible && problemsPanel.isFocused && statusLeftInfo && statusLeftInfo.length > 0) {
-		drawEditorText(editorViewState.font, statusLeftInfo, 4, statusTop + 2, undefined, statusTextColor);
+		drawEditorText(editorViewState.font, statusLeftInfo, 4, statusTop + 2, 0, statusTextColor);
 		return;
 	}
 
@@ -63,7 +63,7 @@ export function renderStatusBar(runtime: Runtime): void {
 		const maxPathWidthCandidate = editorViewState.viewportWidth - 8;
 		const maxPathWidth = maxPathWidthCandidate > 0 ? maxPathWidthCandidate : 0;
 		const pathText = truncateTextToWidth(fullText, maxPathWidth);
-		drawEditorText(editorViewState.font, pathText, 4, statusTop + 2, undefined, statusTextColor);
+		drawEditorText(editorViewState.font, pathText, 4, statusTop + 2, 0, statusTextColor);
 		return;
 	}
 
@@ -71,15 +71,15 @@ export function renderStatusBar(runtime: Runtime): void {
 		if (resourcePanel.getMode() === 'command') {
 			const info = 'CALL HIERARCHY';
 			const hint = 'ENTER toggle/open • LEFT/RIGHT collapse/expand';
-			drawEditorText(editorViewState.font, info, 4, statusTop + 2, undefined, statusTextColor);
-			drawEditorText(editorViewState.font, hint, editorViewState.viewportWidth - measureText(hint) - 4, statusTop + 2, undefined, statusTextColor);
+			drawEditorText(editorViewState.font, info, 4, statusTop + 2, 0, statusTextColor);
+			drawEditorText(editorViewState.font, hint, editorViewState.viewportWidth - measureText(hint) - 4, statusTop + 2, 0, statusTextColor);
 			return;
 		}
 		const filterLabel = resourcePanel.getFilterMode() === 'lua_only' ? 'LUA' : 'ALL';
 		const fileInfo = `FILES ${resourcePanel.getFilterMode()} (${filterLabel})`;
 		const hint = 'CTRL+SHIFT+L TOGGLE FILTER';
-		drawEditorText(editorViewState.font, fileInfo, 4, statusTop + 2, undefined, statusTextColor);
-		drawEditorText(editorViewState.font, hint, editorViewState.viewportWidth - measureText(hint) - 4, statusTop + 2, undefined, statusTextColor);
+		drawEditorText(editorViewState.font, fileInfo, 4, statusTop + 2, 0, statusTextColor);
+		drawEditorText(editorViewState.font, hint, editorViewState.viewportWidth - measureText(hint) - 4, statusTop + 2, 0, statusTextColor);
 		return;
 	}
 
@@ -87,9 +87,9 @@ export function renderStatusBar(runtime: Runtime): void {
 		const viewer = getActiveResourceViewer();
 		const info = viewer ? `${viewer.descriptor.type.toUpperCase()} ${viewer.descriptor.asset_id}` : 'RESOURCE';
 		const detail = viewer ? viewer.descriptor.path : '';
-		drawEditorText(editorViewState.font, info, 4, statusTop + 2, undefined, statusTextColor);
+		drawEditorText(editorViewState.font, info, 4, statusTop + 2, 0, statusTextColor);
 		if (detail.length > 0) {
-			drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, undefined, statusTextColor);
+			drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, 0, statusTextColor);
 		}
 		return;
 	}
@@ -99,10 +99,10 @@ export function renderStatusBar(runtime: Runtime): void {
 	const leftX = 0;
 	const glyphSize = measureText('•');
 	const indicatorColor = workspaceState.serverConnected ? constants.COLOR_SERVER_STATUS_CONNECTED : constants.COLOR_SERVER_STATUS_DISCONNECTED;
-	drawEditorText(editorViewState.font, '•', leftX, statusTop + 2, undefined, indicatorColor);
+	drawEditorText(editorViewState.font, '•', leftX, statusTop + 2, 0, indicatorColor);
 	let textX = leftX + glyphSize;
 	if (statusLeftInfo && statusLeftInfo.length > 0) {
-		drawEditorText(editorViewState.font, statusLeftInfo, textX, statusTop + 2, undefined, statusTextColor);
+		drawEditorText(editorViewState.font, statusLeftInfo, textX, statusTop + 2, 0, statusTextColor);
 	}
 	if (isCodeTabActive()) {
 		const context = getActiveCodeTabContext();
@@ -115,10 +115,9 @@ export function renderStatusBar(runtime: Runtime): void {
 			detail = 'RESTART PENDING';
 		}
 		if (detail.length > 0) {
-			drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, undefined, detailColor);
+			drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, 0, detailColor);
 		}
 	}
-	// drawEditorText(api, editorViewState.font, filenameInfo, editorViewState.viewportWidth - measureText(filenameInfo) - 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 }
 
 export function buildStatusLeftInfo(): string {

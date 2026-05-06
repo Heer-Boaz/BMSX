@@ -15,8 +15,8 @@ void registerHostOverlayPass(RenderPassLibrary& registry) {
 	desc.present = true;
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
-	desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-		return buildHostOverlayState(*ctx.view);
+	desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext&) -> std::any {
+		return buildHostOverlayState();
 	};
 	if constexpr (Bootstrap != nullptr) {
 		desc.bootstrap = [](GPUBackend* backend) {

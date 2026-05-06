@@ -42,20 +42,20 @@ export function drawProblemsPanelSurface(
 	const hoverIndex = controller.getHoverIndex();
 	const focused = controller.isFocused;
 	const scrollIndex = controller.getScrollIndex();
-	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_PROBLEMS_PANEL_BACKGROUND);
-	api.fill_rect(bounds.left, layout.headerTop, bounds.right, layout.headerBottom, undefined, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
-	api.fill_rect(bounds.left, layout.headerBottom - 1, bounds.right, layout.headerBottom, undefined, constants.COLOR_PROBLEMS_PANEL_BORDER);
+	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_PROBLEMS_PANEL_BACKGROUND);
+	api.fill_rect(bounds.left, layout.headerTop, bounds.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
+	api.fill_rect(bounds.left, layout.headerBottom - 1, bounds.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_BORDER);
 
 	const headerX = bounds.left + constants.PROBLEMS_PANEL_HEADER_PADDING_X;
 	const headerY = layout.headerTop + constants.PROBLEMS_PANEL_HEADER_PADDING_Y;
-	drawEditorText(editorViewState.font, controller.getHeaderLabel(), headerX, headerY, undefined, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
+	drawEditorText(editorViewState.font, controller.getHeaderLabel(), headerX, headerY, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
 
 	const contentLeft = bounds.left + constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
 	const contentRight = bounds.right - constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
 	const availableWidth = contentRight - contentLeft;
 
 	if (diagnostics.length === 0) {
-		drawEditorText(editorViewState.font, getEmptyProblemsMessage(availableWidth), contentLeft, layout.contentTop, undefined, constants.COLOR_PROBLEMS_PANEL_TEXT);
+		drawEditorText(editorViewState.font, getEmptyProblemsMessage(availableWidth), contentLeft, layout.contentTop, 0, constants.COLOR_PROBLEMS_PANEL_TEXT);
 		return;
 	}
 
@@ -73,15 +73,15 @@ export function drawProblemsPanelSurface(
 
 		if (isSelected) {
 			if (focused) {
-				api.fill_rect(bounds.left, rowTop, bounds.right, rowBottom, undefined, constants.SELECTION_OVERLAY);
+				api.fill_rect(bounds.left, rowTop, bounds.right, rowBottom, 0, constants.SELECTION_OVERLAY);
 			} else {
-				api.blit_rect(bounds.left, rowTop, bounds.right, rowBottom, undefined, constants.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
+				api.blit_rect(bounds.left, rowTop, bounds.right, rowBottom, 0, constants.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
 			}
 		}
 
 		let textCursorX = contentLeft;
 		const color = isHovered && !isSelected ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : severityColor(diagnostic.severity);
-		drawEditorText(editorViewState.font, itemLayout.severityLabel, textCursorX, rowTop, undefined, color);
+		drawEditorText(editorViewState.font, itemLayout.severityLabel, textCursorX, rowTop, 0, color);
 		textCursorX += itemLayout.severityWidth;
 
 		const messageColor = isSelected && focused
@@ -90,11 +90,11 @@ export function drawProblemsPanelSurface(
 		for (let lineIndex = 0; lineIndex < wrapped.length; lineIndex += 1) {
 			const x = lineIndex === 0 ? textCursorX : contentLeft;
 			const y = rowTop + lineIndex * editorViewState.lineHeight;
-			drawEditorText(editorViewState.font, wrapped[lineIndex], x, y, undefined, messageColor);
+			drawEditorText(editorViewState.font, wrapped[lineIndex], x, y, 0, messageColor);
 		}
 
 		cursorY = rowBottom;
 	}
 
-	api.fill_rect(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, undefined, constants.COLOR_PROBLEMS_PANEL_BORDER);
+	api.fill_rect(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, 0, constants.COLOR_PROBLEMS_PANEL_BORDER);
 }

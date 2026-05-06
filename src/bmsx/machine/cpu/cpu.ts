@@ -1958,9 +1958,6 @@ export class CPU {
 	private skipNextInstruction(frame: CallFrame): void {
 		const decodedWidths = this.decodedWidths!;
 		const wordIndex = frame.pc / INSTRUCTION_BYTES;
-		// if (wordIndex >= decodedWidths.length) {
-		// 	throw new Error('Attempted to skip beyond end of program.');
-		// }
 		frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
 	}
 
@@ -2859,14 +2856,7 @@ export class CPU {
 
 	private readRegisterNumber(frame: CallFrame, index: number): number {
 		const registers = frame.registers;
-		// if (registers.isNumber(index)) {
-			return registers.getNumber(index);
-		// }
-		// const value = registers.get(index);
-		// if (typeof value !== 'number') {
-		// 	throw new Error(`Register ${index} expected a number, got ${valueTypeName(value)}.`);
-		// }
-		// return value;
+		return registers.getNumber(index);
 	}
 
 	private readMappedMemoryValue(addr: number, accessKind: number): Value {
@@ -2932,9 +2922,6 @@ export class CPU {
 		if (rk < 0) {
 			const index = -1 - rk;
 			const value = this.program.constPool[index];
-			// if (typeof value !== 'number') {
-			// 	throw new Error(`RK constant ${index} expected a number, got ${valueTypeName(value)}.`);
-			// }
 			return value as number;
 		}
 		return this.readRegisterNumber(frame, rk);

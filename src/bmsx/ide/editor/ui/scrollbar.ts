@@ -76,12 +76,12 @@ export class Scrollbar {
 		if (!this.track) {
 			return;
 		}
-		api.fill_rect(this.track.left, this.track.top, this.track.right, this.track.bottom, undefined, trackColor);
+		api.fill_rect(this.track.left, this.track.top, this.track.right, this.track.bottom, 0, trackColor);
 		const thumbRect = this.thumb;
 		if (!thumbRect) {
 			return;
 		}
-		api.fill_rect(thumbRect.left, thumbRect.top, thumbRect.right, thumbRect.bottom, undefined, thumbColor);
+		api.fill_rect(thumbRect.left, thumbRect.top, thumbRect.right, thumbRect.bottom, 0, thumbColor);
 	}
 
 	public isVisible(): boolean {
