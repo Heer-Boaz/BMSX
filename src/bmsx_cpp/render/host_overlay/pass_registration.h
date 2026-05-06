@@ -2,6 +2,7 @@
 
 #include "core/host_overlay_menu.h"
 #include "render/backend/pass/library.h"
+#include "render/host_overlay/overlay_queue.h"
 #include "render/host_overlay/pipeline.h"
 
 namespace bmsx {
@@ -23,15 +24,14 @@ void registerHostOverlayPass(RenderPassLibrary& registry) {
 		};
 	}
 	desc.shouldExecute = []() {
-		return RenderQueues::beginHost2DQueue() != 0u;
+		return hasPendingOverlayFrame();
 	};
 	desc.exec = [](GPUBackend* backend, void*, std::any& stateAny) {
 		Backend& typedBackend = *static_cast<Backend*>(backend);
 		const HostOverlayPipelineState& state = std::any_cast<HostOverlayPipelineState&>(stateAny);
 		Begin(typedBackend, state);
-		const size_t queueSize = RenderQueues::beginHost2DQueue();
-		for (size_t index = 0; index < queueSize; index += 1) {
-			RenderEntry(typedBackend, RenderQueues::host2DQueueKind(index), RenderQueues::host2DQueueRef(index));
+		for (size_t index = 0; index < state.commandCount; index += 1) {
+			RenderEntry(typedBackend, state.commandKinds[index], state.commandRefs[index]);
 		}
 		End(typedBackend);
 	};

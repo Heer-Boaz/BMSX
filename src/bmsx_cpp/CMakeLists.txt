@@ -149,6 +149,7 @@ add_library(bmsx_core STATIC
 	render/lighting/system.cpp
 	render/shared/queues.cpp
 	render/host_overlay/pipeline.cpp
+	render/host_overlay/overlay_queue.cpp
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/renderer.cpp
 	render/runtime/state.cpp

@@ -1583,7 +1583,7 @@ void Runtime::setupBuiltins() {
 
 		const Value target = args.at(0);
 		if (valueIsTable(target)) {
-			asTable(target)->setMetatable(metatable);
+			asTable(target)->metatable = metatable;
 			out.push_back(target);
 			return;
 		}
@@ -1599,7 +1599,7 @@ void Runtime::setupBuiltins() {
 		}
 		const Value target = args.at(0);
 		if (valueIsTable(target)) {
-			auto* mt = asTable(target)->getMetatable();
+			auto* mt = asTable(target)->metatable;
 			out.push_back(mt ? valueTable(mt) : valueNil());
 			return;
 		}

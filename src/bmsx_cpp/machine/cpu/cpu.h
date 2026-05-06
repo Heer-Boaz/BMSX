@@ -927,11 +927,7 @@ public:
 	void restoreRuntimeState(const TableRuntimeState& state);
 	size_t trackedHeapBytes() const;
 
-	Table* getMetatable() const { return m_metatable; }
-	void setMetatable(Table* mt) {
-		m_metatable = mt;
-		bumpVersion();
-	}
+	Table* metatable = nullptr;
 	uint32_t version() const { return m_version; }
 
 private:
@@ -966,7 +962,6 @@ private:
 	size_t m_arrayLength = 0;
 	std::vector<HashNode> m_hash;
 	int m_hashFree = -1;
-	Table* m_metatable = nullptr;
 	uint32_t m_version = 1;
 };
 

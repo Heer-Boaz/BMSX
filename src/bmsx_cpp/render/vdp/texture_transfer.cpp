@@ -38,7 +38,7 @@ TextureHandle createVdpTextureFromPixels(const std::string& textureKey, const u8
 	auto& texmanager = *g_vdpTextureManager;
 	TextureHandle handle = texmanager.createTextureFromPixelsSync(textureKey, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
 	handle = texmanager.resizeTextureForKey(textureKey, static_cast<i32>(width), static_cast<i32>(height));
-	texmanager.updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
+	vdpTextureBackend().updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
 	g_vdpTextureView->textures[textureKey] = handle;
 	return handle;
 }
@@ -55,12 +55,12 @@ TextureHandle resizeVdpTextureForKey(const std::string& textureKey, u32 width, u
 
 TextureHandle updateVdpTexturePixels(const std::string& textureKey, const u8* pixels, u32 width, u32 height) {
 	TextureHandle handle = resizeVdpTextureForKey(textureKey, width, height);
-	g_vdpTextureManager->updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
+	vdpTextureBackend().updateTexture(handle, pixels, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
 	return handle;
 }
 
 void updateVdpTextureRegion(const std::string& textureKey, const u8* pixels, i32 width, i32 height, i32 x, i32 y) {
-	g_vdpTextureManager->updateTextureRegionForKey(textureKey, pixels, width, height, x, y);
+	vdpTextureBackend().updateTextureRegion(vdpTextureByUri(textureKey), pixels, width, height, x, y, DEFAULT_TEXTURE_PARAMS);
 }
 
 void swapVdpTextureHandlesByUri(const std::string& textureKeyA, const std::string& textureKeyB) {

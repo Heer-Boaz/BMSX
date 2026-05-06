@@ -810,7 +810,7 @@ TableRuntimeState Table::captureRuntimeState() const {
 		state.hash.push_back(TableHashNodeState{ node.key, node.value, node.next });
 	}
 	state.hashFree = m_hashFree;
-	state.metatable = m_metatable;
+	state.metatable = metatable;
 	return state;
 }
 
@@ -824,7 +824,7 @@ void Table::restoreRuntimeState(const TableRuntimeState& state) {
 		m_hash.push_back(HashNode{ node.key, node.value, node.next });
 	}
 	m_hashFree = state.hashFree;
-	m_metatable = state.metatable;
+	metatable = state.metatable;
 	bumpVersion();
 	replaceTrackedLuaHeapBytes(previousBytes, trackedHeapBytes());
 }
@@ -875,8 +875,8 @@ void GcHeap::trace() {
 		switch (obj->type) {
 			case ObjType::Table: {
 				auto* table = static_cast<Table*>(obj);
-				if (table->getMetatable()) {
-					markObject(table->getMetatable());
+				if (table->metatable) {
+					markObject(table->metatable);
 				}
 				table->forEachEntry([this](Value key, Value value) {
 					markValue(key);
@@ -1304,10 +1304,10 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 			if (!stableTables.insert(table).second) {
 				return;
 			}
-			if (table->getMetatable()) {
+			if (table->metatable) {
 				auto nextPath = path;
 				nextPath.push_back(CpuRuntimeRefSegment{ false, std::string(kCpuRuntimeMetatableSegment), 0 });
-				traverseStableValue(nextPath, valueTable(table->getMetatable()));
+				traverseStableValue(nextPath, valueTable(table->metatable));
 			}
 			for (int arrayIndex = 1; arrayIndex <= table->length(); ++arrayIndex) {
 				const Value entryValue = table->getInteger(arrayIndex);
@@ -1589,10 +1589,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 			if (!stableTables.insert(table).second) {
 				return;
 			}
-			if (table->getMetatable()) {
+			if (table->metatable) {
 				auto nextPath = path;
 				nextPath.push_back(CpuRuntimeRefSegment{ false, std::string(kCpuRuntimeMetatableSegment), 0 });
-				traverseStableValue(nextPath, valueTable(table->getMetatable()));
+				traverseStableValue(nextPath, valueTable(table->metatable));
 			}
 			for (int arrayIndex = 1; arrayIndex <= table->length(); ++arrayIndex) {
 				const Value entryValue = table->getInteger(arrayIndex);
@@ -2627,7 +2627,7 @@ Value CPU::resolveTableIndexChain(Table* table, Getter get) {
 		if (!isNil(value)) {
 			return value;
 		}
-		Table* metatable = current->getMetatable();
+		Table* metatable = current->metatable;
 		if (!metatable) {
 			return valueNil();
 		}
@@ -2661,7 +2661,7 @@ Value CPU::resolveTableFieldIndex(Table* table, StringId key) {
 Value CPU::loadTableIndex(const Value& base, const Value& key) {
 	if (valueIsTable(base)) {
 		Table* table = asTable(base);
-		if (!table->getMetatable()) {
+		if (!table->metatable) {
 			return table->get(key);
 		}
 		return resolveTableIndex(table, key);
@@ -2670,7 +2670,7 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 		if (!m_stringIndexTable) {
 			return valueNil();
 		}
-		if (!m_stringIndexTable->getMetatable()) {
+		if (!m_stringIndexTable->metatable) {
 			return m_stringIndexTable->get(key);
 		}
 		return resolveTableIndex(m_stringIndexTable, key);
@@ -2693,7 +2693,7 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 Value CPU::loadTableIntegerIndexCached(int cacheIndex, const Value& base, int index) {
 	if (valueIsTable(base)) {
 		Table* table = asTable(base);
-		if (!table->getMetatable()) {
+		if (!table->metatable) {
 			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == table && cache.version == table->version()) {
 				return cache.value;
@@ -2710,7 +2710,7 @@ Value CPU::loadTableIntegerIndexCached(int cacheIndex, const Value& base, int in
 		if (!m_stringIndexTable) {
 			return valueNil();
 		}
-		if (!m_stringIndexTable->getMetatable()) {
+		if (!m_stringIndexTable->metatable) {
 			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
 				return cache.value;
@@ -2741,7 +2741,7 @@ Value CPU::loadTableIntegerIndexCached(int cacheIndex, const Value& base, int in
 Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 	if (valueIsTable(base)) {
 		Table* table = asTable(base);
-		if (!table->getMetatable()) {
+		if (!table->metatable) {
 			return table->getInteger(index);
 		}
 		return resolveTableIntegerIndex(table, index);
@@ -2750,7 +2750,7 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 		if (!m_stringIndexTable) {
 			return valueNil();
 		}
-		if (!m_stringIndexTable->getMetatable()) {
+		if (!m_stringIndexTable->metatable) {
 			return m_stringIndexTable->getInteger(index);
 		}
 		return resolveTableIntegerIndex(m_stringIndexTable, index);
@@ -2773,7 +2773,7 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 Value CPU::loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId key) {
 	if (valueIsTable(base)) {
 		Table* table = asTable(base);
-		if (!table->getMetatable()) {
+		if (!table->metatable) {
 			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == table && cache.version == table->version()) {
 				return cache.value;
@@ -2790,7 +2790,7 @@ Value CPU::loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId
 		if (!m_stringIndexTable) {
 			return valueNil();
 		}
-		if (!m_stringIndexTable->getMetatable()) {
+		if (!m_stringIndexTable->metatable) {
 			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
 				return cache.value;
@@ -2821,7 +2821,7 @@ Value CPU::loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId
 Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
 	if (valueIsTable(base)) {
 		Table* table = asTable(base);
-		if (!table->getMetatable()) {
+		if (!table->metatable) {
 			return table->getStringKey(key);
 		}
 		return resolveTableFieldIndex(table, key);
@@ -2830,7 +2830,7 @@ Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
 		if (!m_stringIndexTable) {
 			return valueNil();
 		}
-		if (!m_stringIndexTable->getMetatable()) {
+		if (!m_stringIndexTable->metatable) {
 			return m_stringIndexTable->getStringKey(key);
 		}
 		return resolveTableFieldIndex(m_stringIndexTable, key);

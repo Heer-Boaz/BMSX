@@ -166,12 +166,12 @@ void beginHostOverlaySoftware(SoftwareBackend& backend, const Host2DPipelineStat
 	(void)state;
 }
 
-void renderHost2DEntrySoftware(SoftwareBackend& backend, RenderQueues::Host2DKind kind, RenderQueues::Host2DRef ref) {
+void renderHost2DEntrySoftware(SoftwareBackend& backend, Host2DKind kind, Host2DRef ref) {
 	switch (kind) {
-		case RenderQueues::Host2DKind::Img: drawImageSoftware(backend, *static_cast<const HostImageRenderSubmission*>(ref)); return;
-		case RenderQueues::Host2DKind::Rect: drawRectSoftware(backend, *static_cast<const RectRenderSubmission*>(ref)); return;
-		case RenderQueues::Host2DKind::Poly: drawPolySoftware(backend, *static_cast<const PolyRenderSubmission*>(ref)); return;
-		case RenderQueues::Host2DKind::Glyphs: drawGlyphsSoftware(backend, *static_cast<const GlyphRenderSubmission*>(ref)); return;
+		case Host2DKind::Img: drawImageSoftware(backend, *static_cast<const HostImageRenderSubmission*>(ref)); return;
+		case Host2DKind::Rect: drawRectSoftware(backend, *static_cast<const RectRenderSubmission*>(ref)); return;
+		case Host2DKind::Poly: drawPolySoftware(backend, *static_cast<const PolyRenderSubmission*>(ref)); return;
+		case Host2DKind::Glyphs: drawGlyphsSoftware(backend, *static_cast<const GlyphRenderSubmission*>(ref)); return;
 	}
 }
 

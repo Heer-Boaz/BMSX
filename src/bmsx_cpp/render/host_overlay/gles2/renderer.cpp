@@ -243,12 +243,12 @@ void beginHostOverlayGLES2(OpenGLES2Backend& backend, const Host2DPipelineState&
 	glUniform2f(g_gles2.uniformResolution, static_cast<float>(state.overlayWidth), static_cast<float>(state.overlayHeight));
 }
 
-void renderHost2DEntryGLES2(OpenGLES2Backend& backend, RenderQueues::Host2DKind kind, RenderQueues::Host2DRef ref) {
+void renderHost2DEntryGLES2(OpenGLES2Backend& backend, Host2DKind kind, Host2DRef ref) {
 	switch (kind) {
-		case RenderQueues::Host2DKind::Img: drawImageGLES2(backend, *static_cast<const HostImageRenderSubmission*>(ref)); return;
-		case RenderQueues::Host2DKind::Rect: drawRectGLES2(backend, *static_cast<const RectRenderSubmission*>(ref)); return;
-		case RenderQueues::Host2DKind::Poly: drawPolyGLES2(backend, *static_cast<const PolyRenderSubmission*>(ref)); return;
-		case RenderQueues::Host2DKind::Glyphs: drawGlyphsGLES2(backend, *static_cast<const GlyphRenderSubmission*>(ref)); return;
+		case Host2DKind::Img: drawImageGLES2(backend, *static_cast<const HostImageRenderSubmission*>(ref)); return;
+		case Host2DKind::Rect: drawRectGLES2(backend, *static_cast<const RectRenderSubmission*>(ref)); return;
+		case Host2DKind::Poly: drawPolyGLES2(backend, *static_cast<const PolyRenderSubmission*>(ref)); return;
+		case Host2DKind::Glyphs: drawGlyphsGLES2(backend, *static_cast<const GlyphRenderSubmission*>(ref)); return;
 	}
 }
 

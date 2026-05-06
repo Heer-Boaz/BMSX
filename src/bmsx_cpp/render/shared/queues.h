@@ -9,7 +9,6 @@
 #define BMSX_RENDER_QUEUES_H
 
 #include "common/feature_queue.h"
-#include "render/shared/host_2d_commands.h"
 #include "submissions.h"
 
 namespace bmsx {
@@ -24,15 +23,7 @@ bool hasPendingBackQueueContent();
 void clearBackQueues();
 void clearAllQueues();
 
-void submitImage(HostImageRenderSubmission item);
-void submitRectangle(RectRenderSubmission item);
-void submitDrawPolygon(PolyRenderSubmission item);
-void submitGlyphs(GlyphRenderSubmission item);
-size_t beginHost2DQueue();
-Host2DKind host2DQueueKind(size_t index);
-Host2DRef host2DQueueRef(size_t index);
-
-void submitMesh(const MeshRenderSubmission& item);
+void submit_mesh(const MeshRenderSubmission& item);
 i32 beginMeshQueue();
 const MeshRenderSubmission& meshQueueEntry(size_t index);
 

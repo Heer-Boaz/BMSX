@@ -64,7 +64,6 @@ interface MeshDrawLists {
 
 let activeBackend: WebGLBackend = null;
 
-// Legacy direct submission array removed. Use submitMesh() with the shared render queue.
 let lightsDirty: boolean = true; // set to true on any light mutation; consumed by LightingSystem
 export const directionalLightList = new ScratchBatch<DirectionalLight>();
 export const pointLightList = new ScratchBatch<PointLight>();

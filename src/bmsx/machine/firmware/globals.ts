@@ -1542,7 +1542,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 		const target = args[0];
 		if (target instanceof Table) {
-			target.setMetatable(metatable);
+			target.metatable = metatable;
 			out.push(target);
 			return;
 		}
@@ -1555,7 +1555,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 		const target = args[0];
 		if (target instanceof Table) {
-			out.push(target.getMetatable());
+			out.push(target.metatable);
 			return;
 		}
 		out.push(target.metatable);

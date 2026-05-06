@@ -109,6 +109,10 @@ export function meshQueueBackSize(): number {
 	return meshQueue.sizeBack();
 }
 
+export function submit_mesh(item: MeshRenderSubmission): void {
+	meshQueue.submit(item);
+}
+
 export function beginParticleQueue(): number {
 	return activeQueueSource === 'back' ? particleQueue.sizeBack() : particleQueue.sizeFront();
 }
@@ -119,6 +123,10 @@ export function forEachParticleQueue(fn: (item: ParticleRenderSubmission, index:
 		return;
 	}
 	particleQueue.forEachFront(fn);
+}
+
+export function submit_particle(item: ParticleRenderSubmission): void {
+	particleQueue.submit(item);
 }
 
 export let _skyTint: [number, number, number] = [1, 1, 1];

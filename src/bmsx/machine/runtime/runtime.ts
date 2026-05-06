@@ -622,7 +622,7 @@ export class Runtime {
 
 	private async prepareBootRomStartupState(): Promise<void> {
 		this.enterSystemFirmware();
-		if (!this.terminal) { // ????????????????????????????????
+		if (!this.terminal) {
 			workbenchMode.initializeIdeFeatures(this, resolveRuntimeRenderSize(this.activeMachineManifest));
 		}
 	}
@@ -692,9 +692,8 @@ export class Runtime {
 		return this.machine.cpu.stringPool.intern(value);
 	}
 
-	// disable-next-line single_line_method_pattern -- Lua keys intentionally share runtime string interning.
 	public luaKey(name: string): StringValue {
-		return this.machine.cpu.stringPool.intern(name); /// ???????????????????????????
+		return this.machine.cpu.stringPool.intern(name);
 	}
 
 	private prepareHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): Error {

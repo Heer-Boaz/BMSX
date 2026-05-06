@@ -399,7 +399,7 @@ export class Table {
 	public arrayLength = 0;
 	private hash: HashNode[];
 	private hashFree = -1;
-	private metatable: Table | null = null;
+	private tableMetatable: Table | null = null;
 	private version = 1;
 
 	private static readonly numberBuffer = new ArrayBuffer(8);
@@ -418,6 +418,15 @@ export class Table {
 		}
 		this.hashFree = size > 0 ? size - 1 : -1;
 		addTrackedLuaHeapBytes(this.getTrackedHeapBytes());
+	}
+
+	public get metatable(): Table | null {
+		return this.tableMetatable;
+	}
+
+	public set metatable(metatable: Table | null) {
+		this.tableMetatable = metatable;
+		this.bumpVersion();
 	}
 
 	public get(key: Value): Value {
@@ -602,10 +611,6 @@ export class Table {
 		}
 	}
 
-	public getMetatable(): Table | null {
-		return this.metatable;
-	}
-
 	public getVersion(): number {
 		return this.version;
 	}
@@ -622,7 +627,7 @@ export class Table {
 			arrayLength: this.arrayLength,
 			hash,
 			hashFree: this.hashFree,
-			metatable: this.metatable,
+			metatable: this.tableMetatable,
 		};
 	}
 
@@ -636,13 +641,13 @@ export class Table {
 			this.hash[index] = { key: node.key, value: node.value, next: node.next };
 		}
 		this.hashFree = state.hashFree;
-		this.metatable = state.metatable;
+		this.tableMetatable = state.metatable;
 		this.bumpVersion();
 		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
 	}
 
 	public walkTrackedValues(visitor: (value: Value) => void): void {
-		visitor(this.metatable);
+		visitor(this.tableMetatable);
 		for (let index = 0; index < this.array.length; index += 1) {
 			visitor(this.array[index]);
 		}
@@ -657,14 +662,6 @@ export class Table {
 		return 32
 			+ (this.array.length * 8)
 			+ (this.hash.length * 24);
-	}
-
-	public setMetatable(metatable: Table | null): void {
-		if (metatable !== null && !(metatable instanceof Table)) {
-			throw new Error('setmetatable expects a table or nil as the second argument.');
-		}
-		this.metatable = metatable;
-		this.bumpVersion();
 	}
 
 	public nextEntry(after: Value): [Value, Value] | null {
@@ -1476,7 +1473,7 @@ export class CPU {
 			if (value !== null) {
 				return value;
 			}
-			const metatable = current.getMetatable();
+			const metatable = current.metatable;
 			if (metatable === null) {
 				return null;
 			}
@@ -1503,7 +1500,7 @@ export class CPU {
 
 	private loadTableIndex(base: Value, key: Value): Value {
 		if (base instanceof Table) {
-			if (base.getMetatable() === null) {
+			if (base.metatable === null) {
 				return base.get(key);
 			}
 			return this.resolveTableIndex(base, key);
@@ -1513,7 +1510,7 @@ export class CPU {
 			if (indexTable === null) {
 				return null;
 			}
-			if (indexTable.getMetatable() === null) {
+			if (indexTable.metatable === null) {
 				return indexTable.get(key);
 			}
 			return this.resolveTableIndex(indexTable, key);
@@ -1535,7 +1532,7 @@ export class CPU {
 
 	private loadTableIntegerIndexCached(cacheIndex: number, base: Value, index: number): Value {
 		if (base instanceof Table) {
-			if (base.getMetatable() === null) {
+			if (base.metatable === null) {
 				const cache = this.tableLoadCaches[cacheIndex];
 				const version = base.getVersion();
 				if (cache.table === base && cache.version === version) {
@@ -1554,7 +1551,7 @@ export class CPU {
 			if (table === null) {
 				return null;
 			}
-			if (table.getMetatable() === null) {
+			if (table.metatable === null) {
 				const cache = this.tableLoadCaches[cacheIndex];
 				const version = table.getVersion();
 				if (cache.table === table && cache.version === version) {
@@ -1584,7 +1581,7 @@ export class CPU {
 
 	private loadTableFieldIndexCached(cacheIndex: number, base: Value, key: StringValue): Value {
 		if (base instanceof Table) {
-			if (base.getMetatable() === null) {
+			if (base.metatable === null) {
 				const cache = this.tableLoadCaches[cacheIndex];
 				const version = base.getVersion();
 				if (cache.table === base && cache.version === version) {
@@ -1603,7 +1600,7 @@ export class CPU {
 			if (table === null) {
 				return null;
 			}
-			if (table.getMetatable() === null) {
+			if (table.metatable === null) {
 				const cache = this.tableLoadCaches[cacheIndex];
 				const version = table.getVersion();
 				if (cache.table === table && cache.version === version) {
@@ -2990,7 +2987,7 @@ export class CPU {
 					return;
 				}
 				stableTables.add(value);
-				const metatable = value.getMetatable();
+				const metatable = value.metatable;
 				if (metatable !== null) {
 					traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], metatable);
 				}
@@ -3234,7 +3231,7 @@ export class CPU {
 					return;
 				}
 				stableTables.add(value);
-				const metatable = value.getMetatable();
+				const metatable = value.metatable;
 				if (metatable !== null) {
 					traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], metatable);
 				}

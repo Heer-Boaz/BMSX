@@ -1,6 +1,6 @@
 import type { BFont } from './bitmap_font';
 import type { Mesh } from '../3d/mesh';
-import type { RectBounds, Polygon, vec2, vec2arr, vec3arr } from '../../rompack/format';
+import type { Polygon, vec2arr, vec3arr } from '../../rompack/format';
 import type { color } from '../../common/color';
 import {
 	LAYER_2D_IDE,
@@ -24,18 +24,37 @@ export function renderLayerTo2dLayer(layer: RenderLayer): Layer2D {
 	return LAYER_2D_WORLD;
 }
 
+export type RenderRectBounds = {
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+	z: number;
+};
+
+export type RenderVec2 = {
+	x: number;
+	y: number;
+	z: number;
+};
+
+export type RenderScale2 = {
+	x: number;
+	y: number;
+};
+
 export type RectRenderSubmission = {
 	kind: 'rect' | 'fill';
-	area: RectBounds;
-	color: color;
+	area: RenderRectBounds;
+	color: color | null;
 	layer: RenderLayer;
 };
 
 type ImageRenderSubmissionBase = {
-	pos: vec2;
-	scale: vec2;
+	pos: RenderVec2;
+	scale: RenderScale2;
 	flip: FlipOptions;
-	colorize: color;
+	colorize: color | null;
 	ambient_affected: boolean;
 	ambient_factor: number;
 	layer: RenderLayer;
@@ -57,7 +76,7 @@ export type HostImageRenderSubmission = ImageRenderSubmissionBase & {
 export type PolyRenderSubmission = {
 	points: Polygon;
 	z: number;
-	color: color;
+	color: color | null;
 	thickness: number;
 	layer: RenderLayer;
 };
@@ -74,7 +93,7 @@ export type MeshRenderSubmission = {
 export type ParticleRenderSubmission = {
 	position: vec3arr;
 	size: number;
-	color: color;
+	color: color | null;
 	slot: number;
 	u: number;
 	v: number;
@@ -94,8 +113,8 @@ export type GlyphRenderSubmission = {
 	glyphs: string | string[];
 	glyph_start: number;
 	glyph_end: number;
-	font: BFont;
-	color: color;
+	font: BFont | null;
+	color: color | null;
 	background_color: color | null;
 	wrap_chars: number;
 	center_block_width: number;

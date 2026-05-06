@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "render/shared/queues.h"
+#include "render/host_overlay/commands.h"
 #include <cstddef>
 
 namespace bmsx {
@@ -19,6 +19,9 @@ struct Host2DPipelineState {
 };
 
 struct HostOverlayPipelineState : Host2DPipelineState {
+	const Host2DKind* commandKinds = nullptr;
+	const Host2DRef* commandRefs = nullptr;
+	size_t commandCount = 0;
 };
 
 using HostMenuPipelineState = Host2DPipelineState;

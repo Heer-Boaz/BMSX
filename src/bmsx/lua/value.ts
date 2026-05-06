@@ -86,8 +86,7 @@ type LuaTableMethods = {
 	forEachEntry(visitor: LuaTableEntryVisitor): void;
 	nextEntry(after: LuaValue): [LuaValue, LuaValue] | null;
 	numericLength(): number;
-	setMetatable(table: LuaTable): void;
-	metatable: LuaTable;
+	metatable: LuaTable | null;
 };
 
 type LuaTableEntryVisitor = (key: LuaValue, value: LuaValue) => void;
@@ -99,7 +98,7 @@ export type LuaTable = {
 } & LuaTableMethods & { [LUA_TABLE_BRAND]?: true };
 
 type TableState = {
-	metatable: LuaTable;
+	metatable: LuaTable | null;
 	stringKeys: Map<string, { key: string }>;
 	stringValues: Map<string, LuaValue>;
 	nonPrimitiveKeys?: Map<LuaValue, LuaValue>;
@@ -310,12 +309,11 @@ function tableNumericLength(this: LuaTable): number {
 	return index - 1;
 }
 
-function tableSetMetatable(this: LuaTable, table: LuaTable): void {
-	const state = getState(this);
-	state.metatable = table;
+function tableSetMetatable(this: LuaTable, table: LuaTable | null): void {
+	getState(this).metatable = table;
 }
 
-function tableGetMetatable(this: LuaTable): LuaTable {
+function tableGetMetatable(this: LuaTable): LuaTable | null {
 	return getState(this).metatable;
 }
 
@@ -328,8 +326,7 @@ Object.defineProperties(luaTablePrototype, {
 	forEachEntry: { value: tableForEachEntry, enumerable: false, configurable: false },
 	nextEntry: { value: tableNextEntry, enumerable: false, configurable: false },
 	numericLength: { value: tableNumericLength, enumerable: false, configurable: false },
-	setMetatable: { value: tableSetMetatable, enumerable: false, configurable: false },
-	getMetatable: { value: tableGetMetatable, enumerable: false, configurable: false },
+	metatable: { get: tableGetMetatable, set: tableSetMetatable, enumerable: false, configurable: false },
 });
 
 export type LuaDebuggerPauseSignal = Extract<ExecutionSignal, { kind: 'pause'; }>;

@@ -6,7 +6,6 @@
 #include "common/clamp.h"
 #include <array>
 #include <algorithm>
-#include <utility>
 
 namespace bmsx {
 namespace RenderQueues {
@@ -19,8 +18,6 @@ enum class QueueSource : u8 {
 
 FeatureQueue<MeshRenderSubmission> s_meshQueue(256);
 FeatureQueue<ParticleRenderSubmission> s_particleQueue(1024);
-Host2DCommandList s_host2dFront(512);
-Host2DCommandList s_host2dBack(512);
 QueueSource s_activeQueueSource = QueueSource::Front;
 
 struct RenderQueueLifecycle {
@@ -43,31 +40,14 @@ void particleSwap() { s_particleQueue.swap(); }
 void particleClearBack() { s_particleQueue.clearBack(); }
 void particleClearAll() { s_particleQueue.clearAll(); }
 
-bool host2DHasFront() { return s_host2dFront.size() > 0; }
-bool host2DHasBack() { return s_host2dBack.size() > 0; }
-void host2DSwap() {
-	std::swap(s_host2dFront, s_host2dBack);
-	s_host2dBack.clear();
-}
-void host2DClearBack() { s_host2dBack.clear(); }
-void host2DClearAll() {
-	s_host2dFront.clear();
-	s_host2dBack.clear();
-}
-
-const std::array<RenderQueueLifecycle, 3> s_renderQueueLifecycles{{
+const std::array<RenderQueueLifecycle, 2> s_renderQueueLifecycles{{
 	{meshHasFront, meshHasBack, meshSwap, meshClearBack, meshClearAll},
 	{particleHasFront, particleHasBack, particleSwap, particleClearBack, particleClearAll},
-	{host2DHasFront, host2DHasBack, host2DSwap, host2DClearBack, host2DClearAll},
 }};
 
 template<typename T>
 const ScratchBatch<T>& activeQueue(FeatureQueue<T>& queue) {
 	return s_activeQueueSource == QueueSource::Back ? queue.back() : queue.front();
-}
-
-const Host2DCommandList& activeHost2DCommands() {
-	return s_activeQueueSource == QueueSource::Back ? s_host2dBack : s_host2dFront;
 }
 
 } // namespace
@@ -126,35 +106,7 @@ void clearAllQueues() {
 	s_activeQueueSource = QueueSource::Front;
 }
 
-void submitImage(HostImageRenderSubmission item) {
-	s_host2dBack.submit(std::move(item));
-}
-
-void submitRectangle(RectRenderSubmission item) {
-	s_host2dBack.submit(std::move(item));
-}
-
-void submitDrawPolygon(PolyRenderSubmission item) {
-	s_host2dBack.submit(std::move(item));
-}
-
-void submitGlyphs(GlyphRenderSubmission item) {
-	s_host2dBack.submit(std::move(item));
-}
-
-size_t beginHost2DQueue() {
-	return activeHost2DCommands().size();
-}
-
-Host2DKind host2DQueueKind(size_t index) {
-	return activeHost2DCommands().kind(index);
-}
-
-Host2DRef host2DQueueRef(size_t index) {
-	return activeHost2DCommands().ref(index);
-}
-
-void submitMesh(const MeshRenderSubmission& item) {
+void submit_mesh(const MeshRenderSubmission& item) {
 	s_meshQueue.submit(item);
 }
 

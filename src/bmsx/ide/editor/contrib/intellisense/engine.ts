@@ -128,7 +128,7 @@ function resolveTableChain(table: LuaTable): LuaTable[] {
 	while (current && !visited.has(current)) {
 		visited.add(current);
 		chain.push(current);
-		const metatable = current.getMetatable();
+		const metatable = current.metatable;
 		if (metatable) {
 			const metaIndex = metatable.get('__index');
 			if (isLuaTable(metaIndex)) {

@@ -292,11 +292,11 @@ size_t HostOverlayMenu::queuedCommandCount() const {
 	return m_commandCount;
 }
 
-RenderQueues::Host2DKind HostOverlayMenu::commandKind(size_t index) const {
+Host2DKind HostOverlayMenu::commandKind(size_t index) const {
 	return m_commandKinds[index];
 }
 
-RenderQueues::Host2DRef HostOverlayMenu::commandRef(size_t index) const {
+Host2DRef HostOverlayMenu::commandRef(size_t index) const {
 	return m_commandRefs[index];
 }
 
@@ -304,7 +304,7 @@ void HostOverlayMenu::clearRenderCommands() {
 	m_commandCount = 0;
 }
 
-void HostOverlayMenu::queueCommand(RenderQueues::Host2DKind kind, RenderQueues::Host2DRef ref) {
+void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
 	m_commandKinds[m_commandCount] = kind;
 	m_commandRefs[m_commandCount] = ref;
 	m_commandCount += 1;
@@ -356,8 +356,8 @@ bool HostOverlayMenu::tickInput(ConsoleCore& console) {
 
 void HostOverlayMenu::queueRenderCommands(ConsoleCore& console, GameView& view) {
 	clearRenderCommands();
-	const RenderQueues::Host2DKind rectKind = RenderQueues::Host2DKind::Rect;
-	const RenderQueues::Host2DKind glyphsKind = RenderQueues::Host2DKind::Glyphs;
+	const Host2DKind rectKind = Host2DKind::Rect;
+	const Host2DKind glyphsKind = Host2DKind::Glyphs;
 	if (m_dirtyText) {
 		rebuildText(console, view);
 	}
@@ -402,8 +402,8 @@ void HostOverlayMenu::queueRenderCommands(ConsoleCore& console, GameView& view) 
 
 bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& view) {
 	clearRenderCommands();
-	const RenderQueues::Host2DKind rectKind = RenderQueues::Host2DKind::Rect;
-	const RenderQueues::Host2DKind glyphsKind = RenderQueues::Host2DKind::Glyphs;
+	const Host2DKind rectKind = Host2DKind::Rect;
+	const Host2DKind glyphsKind = Host2DKind::Glyphs;
 	if (m_active) {
 		return false;
 	}

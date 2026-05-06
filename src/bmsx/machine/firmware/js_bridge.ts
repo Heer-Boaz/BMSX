@@ -416,7 +416,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			return;
 		}
 		visited.add(target);
-		target.setMetatable(snapshot.metatable);
+		target.metatable = snapshot.metatable;
 		snapshot.forEachEntry((key, value) => {
 			if (isLuaTable(value)) {
 				const current = target.get(key);
@@ -434,7 +434,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			return;
 		}
 		visited.add(target);
-		target.setMetatable(fresh.metatable);
+		target.metatable = fresh.metatable;
 		const seenKeys = new Set<LuaValue>();
 		fresh.forEachEntry((key, freshValue) => {
 			seenKeys.add(key);

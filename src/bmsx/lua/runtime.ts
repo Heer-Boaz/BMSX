@@ -1340,7 +1340,7 @@ export class LuaInterpreter {
 					if (Array.isArray(native)) {
 						return native.length;
 					}
-					const metatable = this.getMetatableForValue(operand);
+					const metatable = operand.metatable;
 					if (metatable !== null) {
 						const handler = metatable.get('__len');
 						if (handler !== null) {
@@ -1801,7 +1801,7 @@ export class LuaInterpreter {
 				if (!(isLuaTable(deserializedMetatable))) {
 					throw this.runtimeError('Serialized metatable must resolve to a table.');
 				}
-				table.setMetatable(deserializedMetatable);
+				table.metatable = deserializedMetatable;
 			}
 			return table;
 		}
@@ -2025,19 +2025,19 @@ export class LuaInterpreter {
 		return this.expectFunction(handler, LuaInterpreter.buildMetamethodMustBeFunctionMessage, name, range);
 	}
 
-	private getMetatableForValue(value: LuaValue): LuaTable {
-		if (isLuaTable(value)) {
-			return value.metatable;
-		}
-		if (value instanceof LuaNativeValue) {
-			return value.metatable;
-		}
-		return null;
-	}
-
 	private extractSharedMetamethodFunction(left: LuaValue, right: LuaValue, name: string, range: LuaSourceRange): LuaFunctionValue {
-		const leftMetatable = this.getMetatableForValue(left);
-		const rightMetatable = this.getMetatableForValue(right);
+		let leftMetatable: LuaTable = null;
+		if (isLuaTable(left)) {
+			leftMetatable = left.metatable;
+		} else if (left instanceof LuaNativeValue) {
+			leftMetatable = left.metatable;
+		}
+		let rightMetatable: LuaTable = null;
+		if (isLuaTable(right)) {
+			rightMetatable = right.metatable;
+		} else if (right instanceof LuaNativeValue) {
+			rightMetatable = right.metatable;
+		}
 		if (leftMetatable === null || rightMetatable === null || leftMetatable !== rightMetatable) {
 			return null;
 		}
@@ -3066,7 +3066,7 @@ export class LuaInterpreter {
 				}
 			}
 			if (isLuaTable(targetValue)) {
-				targetValue.setMetatable(metatable);
+				targetValue.metatable = metatable;
 				return [targetValue];
 			}
 			const nativeTarget = targetValue as LuaNativeValue;
