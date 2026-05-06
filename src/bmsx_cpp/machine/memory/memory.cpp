@@ -24,30 +24,6 @@ Memory::Memory(const MemoryInit& init)
 	, m_ioWriteHandlers(IO_SLOT_COUNT) {
 }
 
-void Memory::setSystemRom(const u8* data, size_t size) {
-	if (size == 0) {
-		m_systemRom = {};
-		return;
-	}
-	m_systemRom = { data, size };
-}
-
-void Memory::setCartRom(const u8* data, size_t size) {
-	if (size == 0) {
-		m_cartRom = {};
-		return;
-	}
-	m_cartRom = { data, size };
-}
-
-void Memory::setOverlayRom(u8* data, size_t size) {
-	if (size == 0) {
-		m_overlayRom = {};
-		return;
-	}
-	m_overlayRom = { data, size };
-}
-
 size_t Memory::getOverlayRomSize() const {
 	return m_overlayRom.size;
 }

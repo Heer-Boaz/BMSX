@@ -138,14 +138,15 @@ void InputController::appendBindings(
 	std::vector<KeyboardBinding>& keyboardBindings,
 	std::vector<GamepadBinding>& gamepadBindings
 ) const {
+	const auto& defaultKeyboard = *Input::DEFAULT_INPUT_MAPPING.keyboard;
 	size_t start = 0;
 	for (size_t index = 0; index <= bindingsText.size(); index += 1) {
 		if (index != bindingsText.size() && bindingsText[index] != ',') {
 			continue;
 		}
 		const std::string binding = bindingsText.substr(start, index - start);
-		const auto keyboardIt = Input::DEFAULT_INPUT_MAPPING.keyboard.find(binding);
-		if (keyboardIt != Input::DEFAULT_INPUT_MAPPING.keyboard.end()) {
+		const auto keyboardIt = defaultKeyboard.find(binding);
+		if (keyboardIt != defaultKeyboard.end()) {
 			const std::vector<KeyboardBinding>& defaultBindings = keyboardIt->second;
 			keyboardBindings.insert(keyboardBindings.end(), defaultBindings.begin(), defaultBindings.end());
 		}

@@ -63,7 +63,7 @@ export function drawReferenceHighlightsForRow(api: Api, rowIndex: number, entry:
 		const startX = originX + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
 		const endX = originX + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
 		const overlay = i === activeIndex ? constants.REFERENCES_MATCH_ACTIVE_OVERLAY : constants.REFERENCES_MATCH_OVERLAY;
-		api.fill_rect_color(startX, originY, endX, originY + editorViewState.lineHeight, undefined, overlay);
+		api.fill_rect(startX, originY, endX, originY + editorViewState.lineHeight, undefined, overlay);
 	}
 }
 
@@ -88,6 +88,6 @@ export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: Ca
 		const startX = originX + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
 		const endX = originX + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
 		const overlay = i === editorSearchState.currentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
-		api.fill_rect_color(startX, originY, endX, originY + editorViewState.lineHeight, undefined, overlay);
+		api.fill_rect(startX, originY, endX, originY + editorViewState.lineHeight, undefined, overlay);
 	}
 }

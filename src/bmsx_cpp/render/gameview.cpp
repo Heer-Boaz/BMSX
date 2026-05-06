@@ -145,7 +145,7 @@ void GameView::finalizePresentation() {
  * The render graph calls individual pipelines (sprites, meshes, particles, CRT, etc.)
  * in the correct order.
  */
-void GameView::drawGame() {
+void GameView::drawgame() {
 	if (!m_backend) return;
 
 	m_activeTexUnit = -1;

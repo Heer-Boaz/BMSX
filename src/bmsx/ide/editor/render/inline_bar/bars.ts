@@ -300,9 +300,9 @@ function renderResultList<T>(
 		const rowTopValue = rowTop + i * rowHeight;
 		const rowBottom = rowTopValue + rowHeight;
 		if (matchIndex === selectionIndex) {
-			api.fill_rect_color(0, rowTopValue, viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_SELECTION_OVERLAY);
+			api.fill_rect(0, rowTopValue, viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_SELECTION_OVERLAY);
 		} else if (matchIndex === hoverIndex) {
-			api.fill_rect_color(0, rowTopValue, viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_HOVER_OVERLAY);
+			api.fill_rect(0, rowTopValue, viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_HOVER_OVERLAY);
 		}
 		drawRow(entry, rowTopValue);
 	}

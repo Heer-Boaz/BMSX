@@ -325,7 +325,7 @@ DISPATCH_LABEL(EQ) {
 	const Value& right = readRK(FRAME, rkC);
 	bool eq = false;
 	if (valueIsNumber(left) && valueIsNumber(right)) {
-		eq = valueToNumber(left) == valueToNumber(right);
+		eq = asNumber(left) == asNumber(right);
 	} else if (valueIsTagged(left) && valueIsTagged(right)) {
 		eq = left == right;
 	}
@@ -344,7 +344,7 @@ DISPATCH_LABEL(LT) {
 	} else {
 		auto toNumber = [this](const Value& value) -> double {
 			if (valueIsNumber(value)) {
-				return valueToNumber(value);
+				return asNumber(value);
 			}
 			if (valueIsTagged(value)) {
 				switch (valueTag(value)) {
@@ -385,7 +385,7 @@ DISPATCH_LABEL(LE) {
 	} else {
 		auto toNumber = [this](const Value& value) -> double {
 			if (valueIsNumber(value)) {
-				return valueToNumber(value);
+				return asNumber(value);
 			}
 			if (valueIsTagged(value)) {
 				switch (valueTag(value)) {

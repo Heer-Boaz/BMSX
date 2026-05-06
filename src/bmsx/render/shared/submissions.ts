@@ -28,18 +28,18 @@ export type RectRenderSubmission = {
 	kind: 'rect' | 'fill';
 	area: RectBounds;
 	color: color;
-	layer?: RenderLayer;
+	layer: RenderLayer;
 };
 
 type ImageRenderSubmissionBase = {
 	pos: vec2;
-	scale?: vec2;
-	flip?: FlipOptions;
-	colorize?: color;
-	ambient_affected?: boolean;
-	ambient_factor?: number;
-	layer?: RenderLayer;
-	parallax_weight?: number;
+	scale: vec2;
+	flip: FlipOptions;
+	colorize: color;
+	ambient_affected: boolean;
+	ambient_factor: number;
+	layer: RenderLayer;
+	parallax_weight: number;
 };
 
 export type ImgRenderSubmission = ImageRenderSubmissionBase & {
@@ -58,48 +58,48 @@ export type PolyRenderSubmission = {
 	points: Polygon;
 	z: number;
 	color: color;
-	thickness?: number;
-	layer?: RenderLayer;
+	thickness: number;
+	layer: RenderLayer;
 };
 
 export type MeshRenderSubmission = {
 	mesh: Mesh;
 	matrix: Float32Array;
-	joint_matrices?: Float32Array[];
-	morph_weights?: number[];
+	joint_matrices: Float32Array[];
+	morph_weights: number[];
 	receive_shadow: boolean;
-	layer?: RenderLayer; // Currently unused
+	layer: RenderLayer;
 };
 
 export type ParticleRenderSubmission = {
 	position: vec3arr;
 	size: number;
 	color: color;
-	slot?: number;
-	u?: number;
-	v?: number;
-	w?: number;
-	h?: number;
-	uv0?: vec2arr;
-	uv1?: vec2arr;
-	ambient_mode?: 0 | 1;
-	ambient_factor?: number;
-	layer?: RenderLayer; // Currently unused
+	slot: number;
+	u: number;
+	v: number;
+	w: number;
+	h: number;
+	uv0: vec2arr;
+	uv1: vec2arr;
+	ambient_mode: 0 | 1;
+	ambient_factor: number;
+	layer: RenderLayer;
 };
 
 export type GlyphRenderSubmission = {
 	x: number;
 	y: number;
-	z?: number;
+	z: number;
 	glyphs: string | string[];
-	glyph_start?: number;
-	glyph_end?: number;
-	font?: BFont;
-	color?: color;
-	background_color?: color;
-	wrap_chars?: number;
-	center_block_width?: number;
-	align?: CanvasTextAlign;
-	baseline?: CanvasTextBaseline;
-	layer?: RenderLayer;
+	glyph_start: number;
+	glyph_end: number;
+	font: BFont;
+	color: color;
+	background_color: color | null;
+	wrap_chars: number;
+	center_block_width: number;
+	align: CanvasTextAlign;
+	baseline: CanvasTextBaseline;
+	layer: RenderLayer;
 };

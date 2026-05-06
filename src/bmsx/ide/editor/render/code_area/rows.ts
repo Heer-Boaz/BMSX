@@ -89,7 +89,7 @@ export function drawCodeAreaRows(
 			const drawLeft = selectionStartX < viewport.textLeft ? viewport.textLeft : selectionStartX;
 			const drawRight = selectionEndX > viewport.contentRight ? viewport.contentRight : selectionEndX;
 			if (drawRight > drawLeft) {
-				api.fill_rect_color(drawLeft, rowY, drawRight, rowY + editorViewState.lineHeight, undefined, constants.SELECTION_OVERLAY);
+				api.fill_rect(drawLeft, rowY, drawRight, rowY + editorViewState.lineHeight, undefined, constants.SELECTION_OVERLAY);
 			}
 		}
 		drawCodeRowText(

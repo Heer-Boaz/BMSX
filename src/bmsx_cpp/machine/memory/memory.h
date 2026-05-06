@@ -49,9 +49,6 @@ public:
 	Memory();
 	explicit Memory(const MemoryInit& init);
 
-	void setSystemRom(const u8* data, size_t size);
-	void setCartRom(const u8* data, size_t size);
-		void setOverlayRom(u8* data, size_t size);
 		size_t getOverlayRomSize() const;
 	void setVramWriter(VramWriter* writer);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);

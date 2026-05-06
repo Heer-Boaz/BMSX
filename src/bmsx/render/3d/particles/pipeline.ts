@@ -9,17 +9,11 @@ import { TEXTURE_UNIT_TEXTPAGE_ENGINE, TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UN
 import { WebGLBackend } from '../../backend/webgl/backend';
 import type { Camera } from '../camera';
 import { M4 } from '../math';
-import {
-	beginParticleQueue,
-	forEachParticleQueue,
-	particleAmbientFactorDefault,
-	particleAmbientModeDefault,
-} from '../../shared/queues';
+import { beginParticleQueue, forEachParticleQueue } from '../../shared/queues';
 import type { ParticleRenderSubmission } from '../../shared/submissions';
 import { SYSTEM_SLOT_TEXTURE_KEY, VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
-import { VDP_SLOT_PRIMARY, VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../../machine/bus/io';
+import { VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../../machine/bus/io';
 import { hardwareCameraBank0 } from '../../shared/hardware/camera';
-import { clamp } from '../../../common/clamp';
 import { VDP_BBU_BILLBOARD_LIMIT } from '../../../machine/devices/vdp/contracts';
 
 const camRight = new Float32Array(3);
@@ -113,15 +107,14 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	if (pending !== 0) {
 		batches = new Map<string, ParticleRenderSubmission[]>();
 		forEachParticleQueue((p) => {
-			if (!p) return;
-			const slot = p.slot ?? VDP_SLOT_PRIMARY;
+			const slot = p.slot;
 			if (slot === VDP_SLOT_SYSTEM) {
 				needsSystemSlot = true;
 			} else if (slot === VDP_SLOT_SECONDARY) {
 				needsSecondaryTextpage = true;
 			}
-			const mode = (p.ambient_mode ?? particleAmbientModeDefault) | 0;
-			const factor = clamp(p.ambient_factor ?? particleAmbientFactorDefault, 0, 1);
+			const mode = p.ambient_mode | 0;
+			const factor = p.ambient_factor;
 			const key = mode + ':' + factor.toFixed(2);
 			let arr = batches.get(key);
 			if (!arr) { arr = []; batches.set(key, arr); }
@@ -190,10 +183,7 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 			gl.uniform1i(ambientModeLocation, parseInt(modeStr, 10) | 0);
 			gl.uniform1f(ambientFactorLocation, parseFloat(factorStr));
 			for (let i = 0; i < batchCount; i++) {
-				const p = arr[i]; if (!p) continue;
-				if (!p.uv0 || !p.uv1 || p.slot === undefined || p.slot === null) {
-					throw new Error('[ParticlesPipeline] Particle missing textpage UV data.');
-				}
+				const p = arr[i];
 				const base = i * INSTANCE_FLOATS;
 				instanceData[base] = p.position[0];
 				instanceData[base + 1] = p.position[1];

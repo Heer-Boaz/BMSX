@@ -87,7 +87,7 @@ type LuaTableMethods = {
 	nextEntry(after: LuaValue): [LuaValue, LuaValue] | null;
 	numericLength(): number;
 	setMetatable(table: LuaTable): void;
-	getMetatable(): LuaTable;
+	metatable: LuaTable;
 };
 
 type LuaTableEntryVisitor = (key: LuaValue, value: LuaValue) => void;

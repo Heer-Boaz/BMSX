@@ -59,7 +59,7 @@ export function renderInlineBarField(
 	const textX = labelX + measureText(label) + editorViewState.spaceAdvance;
 	const decoration = measureInlineFieldDecoration(field, editorViewState.inlineFieldMetricsRef, textX);
 	if (fieldText.length > 0 && decoration.hasSelection && decoration.selectionWidth > 0) {
-		api.fill_rect_color(decoration.selectionLeft, labelY, decoration.selectionLeft + decoration.selectionWidth, labelY + editorViewState.lineHeight, undefined, constants.SELECTION_OVERLAY);
+		api.fill_rect(decoration.selectionLeft, labelY, decoration.selectionLeft + decoration.selectionWidth, labelY + editorViewState.lineHeight, undefined, constants.SELECTION_OVERLAY);
 	}
 
 	drawEditorText(editorViewState.font, displayText, textX, labelY, undefined, displayColor);

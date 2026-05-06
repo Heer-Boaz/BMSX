@@ -4,7 +4,7 @@ import {
 	hostSystemAtlasPixels,
 } from '../../rompack/host_system_atlas';
 import { forEachGlyphRunGlyph } from '../shared/glyph_runs';
-import { beginHost2DQueue, host2DQueueKind, host2DQueueRef, type Host2DKind, type Host2DRef, type Host2DSubmission } from '../shared/queues';
+import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/queues';
 import type {
 	GlyphRenderSubmission,
 	HostImageRenderSubmission,
@@ -13,13 +13,6 @@ import type {
 	color,
 } from '../shared/submissions';
 import { blendPixel, colorByte } from './pixel_ops';
-
-export function renderHeadlessHost2DEntries(target: Uint8Array, width: number, height: number): void {
-	const count = beginHost2DQueue();
-	for (let index = 0; index < count; index += 1) {
-		renderHeadlessHost2DEntry(target, width, height, host2DQueueKind(index), host2DQueueRef(index));
-	}
-}
 
 export function renderHeadlessSubmissions(target: Uint8Array, width: number, height: number, commands: readonly Host2DSubmission[]): void {
 	for (let index = 0; index < commands.length; index += 1) {
@@ -77,7 +70,7 @@ function drawRect(target: Uint8Array, width: number, height: number, command: Re
 function drawPoly(target: Uint8Array, width: number, height: number, command: PolyRenderSubmission): void {
 	const points = command.points;
 	for (let index = 0; index + 3 < points.length; index += 2) {
-		drawLine(target, width, height, points[index], points[index + 1], points[index + 2], points[index + 3], command.thickness!, command.color);
+		drawLine(target, width, height, points[index], points[index + 1], points[index + 2], points[index + 3], command.thickness, command.color);
 	}
 }
 
@@ -113,8 +106,8 @@ function drawLine(target: Uint8Array, width: number, height: number, x0: number,
 
 function drawImage(target: Uint8Array, width: number, height: number, command: HostImageRenderSubmission): void {
 	const source = hostSystemAtlasImage(command.imgid);
-	const scale = command.scale!;
-	const flip = command.flip!;
+	const scale = command.scale;
+	const flip = command.flip;
 	drawHostAtlasRect(
 		target,
 		width,
@@ -129,16 +122,16 @@ function drawImage(target: Uint8Array, width: number, height: number, command: H
 		(source.h * scale.y) | 0,
 		flip.flip_h,
 		flip.flip_v,
-		command.colorize!,
+		command.colorize,
 	);
 }
 
 function drawGlyphRun(target: Uint8Array, width: number, height: number, command: GlyphRenderSubmission): void {
-	const colorValue = command.color!;
+	const colorValue = command.color;
 	const backgroundColor = command.background_color;
-	const lineHeight = command.font!.lineHeight;
+	const lineHeight = command.font.lineHeight;
 	forEachGlyphRunGlyph(command, (glyph, x, y) => {
-		if (backgroundColor !== undefined) {
+		if (backgroundColor !== null) {
 			fillRect(
 				target,
 				width,

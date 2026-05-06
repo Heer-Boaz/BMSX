@@ -238,7 +238,7 @@ export function drawActionPromptOverlay(): void {
 	if (!prompt) {
 		return;
 	}
-	api.fill_rect_color(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, undefined, constants.ACTION_OVERLAY_COLOR);
+	api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, undefined, constants.ACTION_OVERLAY_COLOR);
 	const { messageLines, primaryLabel, secondaryLabel } = getActionPromptText(prompt.action);
 	updateActionPromptLayout();
 	const layout = prompt.layout!;

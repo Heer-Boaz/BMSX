@@ -25,7 +25,7 @@ import { readVdpDisplayFrameBufferPixels, vdpDisplayFrameBufferTexture } from '.
 import { resolveVdpSurfacePixels } from '../vdp/source_pixels';
 import type { HeadlessPresentHost } from './view';
 import { hostOverlayMenu } from '../../core/host_overlay_menu';
-import { renderHeadlessHost2DEntries, renderHeadlessHost2DEntry, renderHeadlessSubmissions } from './host_2d';
+import { renderHeadlessHost2DEntry, renderHeadlessSubmissions } from './host_2d';
 import { blendPixel, colorByte } from './pixel_ops';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
@@ -380,13 +380,6 @@ function writeHeadlessFrame(frameBufferPixels: Uint8Array, frameBufferWidth: num
 	return pixels;
 }
 
-export function drawHeadlessHost2DLayer(): void {
-	if (!headlessFrameReady) {
-		throw new Error('[HeadlessPresent] Host 2D pass ran before framebuffer pass.');
-	}
-	renderHeadlessHost2DEntries(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight);
-}
-
 export function drawHeadlessHostMenuLayer(): void {
 	if (!headlessFrameReady) {
 		throw new Error('[HeadlessPresent] Host menu pass ran before framebuffer pass.');
@@ -462,10 +455,10 @@ function rasterizeSkyboxBackground(width: number, height: number): void {
 }
 
 function rasterizeHeadlessParticle(output: VdpHostOutput, submission: ParticleRenderSubmission, state: ParticlePipelineState): void {
-	const slot = submission.slot as number;
+	const slot = submission.slot;
 	const texture = readSlotTexturePixels(output, slot);
-	const uv0 = submission.uv0 as [number, number];
-	const uv1 = submission.uv1 as [number, number];
+	const uv0 = submission.uv0;
+	const uv1 = submission.uv1;
 	const position = submission.position;
 	rasterizeHeadlessParticleSample(
 		texture,
@@ -732,7 +725,7 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 						}
 						const translation = translationFromMatrix(submission.matrix);
 						const shadow = submission.receive_shadow ? 'yes' : 'no';
-					const morphCount = submission.morph_weights ? submission.morph_weights.length : 0;
+					const morphCount = submission.morph_weights.length;
 					snapshot.push(`[mesh#${index}] mesh=${submission.mesh.name} translate=${translation} shadow=${shadow} morphs=${morphCount}`);
 					index += 1;
 				});
@@ -782,13 +775,7 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 				forEachParticleQueue((submission: ParticleRenderSubmission) => {
 					const uv0 = submission.uv0;
 					const uv1 = submission.uv1;
-					if (!uv0 || !uv1) {
-						throw new Error('[HeadlessParticles] Particle missing textpage UVs.');
-					}
 					const slot = submission.slot;
-					if (slot === undefined || slot === null) {
-						throw new Error('[HeadlessParticles] Particle missing slot binding.');
-					}
 					if (slot !== VDP_SLOT_PRIMARY && slot !== VDP_SLOT_SECONDARY && slot !== VDP_SLOT_SYSTEM) {
 						throw new Error(`[HeadlessParticles] Particle has invalid slot binding (${slot}).`);
 					}

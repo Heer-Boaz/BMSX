@@ -68,13 +68,12 @@ export function resetBlink(): void {
 	resetBlinkState(editorCaretState);
 }
 
-export function drawRectOutlineColor(left: number, top: number, right: number, bottom: number, z: number, color: color | number): void {
+export function drawRectOutlineColor(left: number, top: number, right: number, bottom: number, z: number, color: color): void {
 	if (right <= left || bottom <= top) {
 		return;
 	}
-	const resolved = typeof color === 'number' ? resolveThemeTokenColor(color) : color;
-	api.fill_rect_color(left, top, right, top + 1, z, resolved);
-	api.fill_rect_color(left, bottom - 1, right, bottom, z, resolved);
-	api.fill_rect_color(left, top, left + 1, bottom, z, resolved);
-	api.fill_rect_color(right - 1, top, right, bottom, z, resolved);
+	api.fill_rect_color(left, top, right, top + 1, z, color);
+	api.fill_rect_color(left, bottom - 1, right, bottom, z, color);
+	api.fill_rect_color(left, top, left + 1, bottom, z, color);
+	api.fill_rect_color(right - 1, top, right, bottom, z, color);
 }

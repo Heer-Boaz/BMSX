@@ -23,11 +23,11 @@ export function drawCodeAreaRowChrome(
 	breakpointLaneWidth: number,
 ): void {
 	if (isExecutionStopRow) {
-		api.fill_rect_color(viewport.gutterLeft, rowY, viewport.gutterRight, rowY + editorViewState.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
-		api.fill_rect_color(viewport.gutterRight, rowY, viewport.contentRight, rowY + editorViewState.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
+		api.fill_rect(viewport.gutterLeft, rowY, viewport.gutterRight, rowY + editorViewState.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
+		api.fill_rect(viewport.gutterRight, rowY, viewport.contentRight, rowY + editorViewState.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
 	} else if (isCursorLine) {
-		api.fill_rect_color(viewport.gutterLeft, rowY, viewport.gutterRight, rowY + editorViewState.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
-		api.fill_rect_color(viewport.gutterRight, rowY, viewport.contentRight, rowY + editorViewState.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
+		api.fill_rect(viewport.gutterLeft, rowY, viewport.gutterRight, rowY + editorViewState.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
+		api.fill_rect(viewport.gutterRight, rowY, viewport.contentRight, rowY + editorViewState.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
 	}
 	if (viewport.gutterRight > viewport.gutterLeft && isPrimaryVisualSegment) {
 		const lineNumberText = `${lineIndex + 1}`;
@@ -42,7 +42,7 @@ export function drawCodeAreaRowChrome(
 		const markerRight = viewport.gutterLeft + breakpointLaneWidth - 1;
 		const markerTop = rowY + 1;
 		const markerBottom = rowY + editorViewState.lineHeight - 1;
-		api.fill_rect_color(markerLeft, markerTop, markerRight, markerBottom, undefined, constants.COLOR_BREAKPOINT_BORDER);
-		api.fill_rect_color(markerLeft + 1, markerTop + 1, markerRight - 1, markerBottom - 1, undefined, constants.COLOR_BREAKPOINT_FILL);
+		api.fill_rect(markerLeft, markerTop, markerRight, markerBottom, undefined, constants.COLOR_BREAKPOINT_BORDER);
+		api.fill_rect(markerLeft + 1, markerTop + 1, markerRight - 1, markerBottom - 1, undefined, constants.COLOR_BREAKPOINT_FILL);
 	}
 }

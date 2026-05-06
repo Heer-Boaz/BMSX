@@ -285,16 +285,6 @@ void Runtime::resetHardwareState() {
 }
 
 void Runtime::refreshMemoryMap() {
-	if (m_systemRomBytes.size > 0) {
-		machine.memory.setSystemRom(m_systemRomBytes.data, m_systemRomBytes.size);
-	}
-	if (m_cartRomBytes.size > 0) {
-		machine.memory.setCartRom(m_cartRomBytes.data, m_cartRomBytes.size);
-	} else {
-		machine.memory.setCartRom(CART_ROM_EMPTY_HEADER.data(), CART_ROM_EMPTY_HEADER.size());
-		InputMap emptyMapping;
-		Input::instance().getPlayerInput(DEFAULT_KEYBOARD_PLAYER_INDEX)->setInputMap(emptyMapping);
-	}
 	machine.vdp.initializeVramSurfaces();
 	refreshMemoryMapGlobals();
 }

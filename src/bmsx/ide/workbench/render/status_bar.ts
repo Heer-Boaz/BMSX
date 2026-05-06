@@ -27,7 +27,7 @@ export function renderStatusBar(runtime: Runtime): void {
 		const accentHeight = accentHeightCandidate > 2 ? accentHeightCandidate : 2;
 		const accentBottomCandidate = statusTop + accentHeight;
 		const accentBottom = accentBottomCandidate < statusBottom ? accentBottomCandidate : statusBottom;
-		api.fill_rect_color(0, statusTop, editorViewState.viewportWidth, accentBottom, undefined, constants.COLOR_STATUS_WARNING);
+		api.fill_rect(0, statusTop, editorViewState.viewportWidth, accentBottom, undefined, constants.COLOR_STATUS_WARNING);
 	}
 	const statusTextColor = runtimeFaulted ? constants.COLOR_STATUS_ALERT : constants.COLOR_STATUS_TEXT;
 

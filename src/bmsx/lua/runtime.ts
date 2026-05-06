@@ -1568,7 +1568,7 @@ export class LuaInterpreter {
 			if (direct !== null) {
 				return direct;
 			}
-			const metatable = table.getMetatable();
+			const metatable = table.metatable;
 			if (metatable === null) {
 				return null;
 			}
@@ -1593,7 +1593,7 @@ export class LuaInterpreter {
 					if (currentDirect !== null) {
 						return currentDirect;
 					}
-					const currentMetatable = current.getMetatable();
+					const currentMetatable = current.metatable;
 					if (currentMetatable === null) {
 						return null;
 					}
@@ -1623,7 +1623,7 @@ export class LuaInterpreter {
 				table.set(key, value);
 				return;
 		}
-		const metatable = table.getMetatable();
+		const metatable = table.metatable;
 			if (metatable === null) {
 				table.set(key, value);
 				return;
@@ -1651,7 +1651,7 @@ export class LuaInterpreter {
 						current.set(key, value);
 						return;
 					}
-					const currentMetatable = current.getMetatable();
+					const currentMetatable = current.metatable;
 					if (currentMetatable === null) {
 						current.set(key, value);
 						return;
@@ -1728,7 +1728,7 @@ export class LuaInterpreter {
 	}
 
 	private invokeMetamethod(table: LuaTable, name: string, args: ReadonlyArray<LuaValue>): LuaCallResult {
-		const metatable = table.getMetatable();
+		const metatable = table.metatable;
 		if (metatable === null) {
 			return null;
 		}
@@ -1760,7 +1760,7 @@ export class LuaInterpreter {
 					const serializedValue = this.serializeValueInternal(entryValue, visited);
 					entriesData.push({ key: serializedKey, value: serializedValue });
 				});
-				const metatable = value.getMetatable();
+				const metatable = value.metatable;
 				const serializedMetatable = metatable !== null ? this.serializeValueInternal(metatable, visited) : null;
 				visited.delete(value);
 			return { type: 'table', entries: entriesData, metatable: serializedMetatable };
@@ -2009,7 +2009,7 @@ export class LuaInterpreter {
 	private extractMetamethodFunction(value: LuaValue, name: string, range: LuaSourceRange): LuaFunctionValue {
 		let metatable: LuaTable = null;
 		if (isLuaTable(value)) {
-			metatable = value.getMetatable();
+			metatable = value.metatable;
 		} else if (value instanceof LuaNativeValue) {
 			metatable = value.metatable;
 		} else {
@@ -2027,7 +2027,7 @@ export class LuaInterpreter {
 
 	private getMetatableForValue(value: LuaValue): LuaTable {
 		if (isLuaTable(value)) {
-			return value.getMetatable();
+			return value.metatable;
 		}
 		if (value instanceof LuaNativeValue) {
 			return value.metatable;
@@ -3081,7 +3081,7 @@ export class LuaInterpreter {
 			const targetValue = args[0];
 			let metatable: LuaTable = null;
 			if (isLuaTable(targetValue)) {
-				metatable = targetValue.getMetatable();
+				metatable = targetValue.metatable;
 			} else {
 				metatable = (targetValue as LuaNativeValue).metatable as LuaTable;
 			}

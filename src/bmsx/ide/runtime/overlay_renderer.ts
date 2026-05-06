@@ -1,45 +1,91 @@
-import type {
-	GlyphRenderSubmission,
-	HostImageRenderSubmission,
-	MeshRenderSubmission,
-	ParticleRenderSubmission,
-	PolyRenderSubmission,
-	RectRenderSubmission,
-	RenderLayer
-} from '../../render/shared/submissions';
+import type { BFont } from '../../render/shared/bitmap_font';
+import type { RenderLayer, color } from '../../render/shared/submissions';
 import type { Host2DSubmission } from '../../render/shared/queues';
 import { consoleCore } from '../../core/console';
 import { clearOverlayFrame, publishOverlayFrame, type HostOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import type { GameView } from '../../render/gameview';
-import {
-	submitDrawPolygon,
-	submitGlyphs,
-	submitMesh,
-	submit_particle,
-	submitRectangle,
-	submitSprite,
-} from '../../render/shared/queues';
 import type { Viewport } from '../../rompack/format';
 
 export type RenderCommand = Host2DSubmission;
 type RectSubmission = Extract<Host2DSubmission, { type: 'rect' }>;
 type ImgSubmission = Extract<Host2DSubmission, { type: 'img' }>;
 type GlyphSubmission = Extract<Host2DSubmission, { type: 'glyphs' }>;
-type PolySubmission = Extract<Host2DSubmission, { type: 'poly' }>;
+
+type OverlayCommandBuffer = {
+	commands: RenderCommand[];
+	rectPool: RectSubmission[];
+	imagePool: ImgSubmission[];
+	glyphPool: GlyphSubmission[];
+	rectCount: number;
+	imageCount: number;
+	glyphCount: number;
+};
+
+function createRectSubmission(): RectSubmission {
+	return {
+		type: 'rect',
+		kind: 'fill',
+		area: { left: 0, top: 0, right: 0, bottom: 0, z: 0 },
+		color: null,
+		layer: 'ide',
+	};
+}
+
+function createImageSubmission(): ImgSubmission {
+	return {
+		type: 'img',
+		imgid: '',
+		pos: { x: 0, y: 0, z: 0 },
+		scale: { x: 1, y: 1 },
+		flip: { flip_h: false, flip_v: false },
+		colorize: null,
+		ambient_affected: false,
+		ambient_factor: 1,
+		layer: 'ide',
+		parallax_weight: 0,
+	};
+}
+
+function createGlyphSubmission(): GlyphSubmission {
+	return {
+		type: 'glyphs',
+		glyphs: '',
+		x: 0,
+		y: 0,
+		z: 0,
+		glyph_start: 0,
+		glyph_end: 0,
+		font: null,
+		color: null,
+		background_color: null,
+		wrap_chars: 0,
+		center_block_width: 0,
+		align: 'start',
+		baseline: 'alphabetic',
+		layer: 'ide',
+	};
+}
+
+function createOverlayCommandBuffer(): OverlayCommandBuffer {
+	return {
+		commands: [],
+		rectPool: [],
+		imagePool: [],
+		glyphPool: [],
+		rectCount: 0,
+		imageCount: 0,
+		glyphCount: 0,
+	};
+}
 
 export class OverlayRenderer {
-	private defaultLayer: RenderLayer = 'world';
-
-	private commands: RenderCommand[] = [];
-	private commandBuffer: RenderCommand[] = [];
+	private activeBuffer = createOverlayCommandBuffer();
+	private standbyBuffer = createOverlayCommandBuffer();
 	private frameLogicalWidth = 0;
 	private frameLogicalHeight = 0;
 	private frameRenderWidth = 0;
 	private frameRenderHeight = 0;
 	private overrideSize: Viewport = null;
-	private capturingFrame = false;
-	private static readonly RECT_Z = 0;
-	private static readonly SPRITE_Z = 0;
 
 	public setViewportSize(viewport: Viewport): void {
 		this.overrideSize = { width: viewport.width, height: viewport.height };
@@ -66,7 +112,11 @@ export class OverlayRenderer {
 	}
 
 	public beginFrame(): void {
-		this.capturingFrame = true;
+		const buffer = this.activeBuffer;
+		buffer.commands.length = 0;
+		buffer.rectCount = 0;
+		buffer.imageCount = 0;
+		buffer.glyphCount = 0;
 		const view = consoleCore.view;
 		const offscreen = view.offscreenCanvasSize;
 		const logical = view.viewportSize;
@@ -76,118 +126,120 @@ export class OverlayRenderer {
 		this.frameLogicalHeight = logical.y;
 		this.frameRenderWidth = renderWidth;
 		this.frameRenderHeight = renderHeight;
-		this.commands.length = 0;
 	}
 
-	public setDefaultLayer(layer: RenderLayer): void {
-		this.defaultLayer = layer;
+	public fillRect(left: number, top: number, right: number, bottom: number, z: number, color: color, layer: RenderLayer): void {
+		const submission = this.nextRectSubmission();
+		submission.kind = 'fill';
+		const area = submission.area;
+		area.left = left;
+		area.top = top;
+		area.right = right;
+		area.bottom = bottom;
+		area.z = z;
+		submission.color = color;
+		submission.layer = layer;
+		this.activeBuffer.commands.push(submission);
 	}
 
-	public rect(command: RectRenderSubmission): void {
-		const area = command.area;
-		if (area.z === undefined) area.z = OverlayRenderer.RECT_Z;
-		if (command.layer === undefined) {
-			command.layer = this.defaultLayer;
-		}
-		const submission = command as RectSubmission;
-		submission.type = 'rect';
-		this.submit(submission);
+	public strokeRect(left: number, top: number, right: number, bottom: number, z: number, color: color, layer: RenderLayer): void {
+		const submission = this.nextRectSubmission();
+		submission.kind = 'rect';
+		const area = submission.area;
+		area.left = left;
+		area.top = top;
+		area.right = right;
+		area.bottom = bottom;
+		area.z = z;
+		submission.color = color;
+		submission.layer = layer;
+		this.activeBuffer.commands.push(submission);
 	}
 
-	public glyphs(command: GlyphRenderSubmission): void {
-		if (command.z === undefined) {
-			command.z = OverlayRenderer.SPRITE_Z;
-		}
-		if (command.glyph_start === undefined) {
-			command.glyph_start = 0;
-		}
-		if (command.glyph_end === undefined) {
-			command.glyph_end = Number.MAX_SAFE_INTEGER;
-		}
-		if (command.layer === undefined) {
-			command.layer = this.defaultLayer;
-		}
-		const submission = command as GlyphSubmission;
-		submission.type = 'glyphs';
-		this.submit(submission);
+	public spriteColorized(imgid: string, x: number, y: number, z: number, colorize: color, layer: RenderLayer): void {
+		const submission = this.nextImageSubmission();
+		submission.imgid = imgid;
+		const pos = submission.pos;
+		pos.x = x;
+		pos.y = y;
+		pos.z = z;
+		const scale = submission.scale;
+		scale.x = 1;
+		scale.y = 1;
+		const flip = submission.flip;
+		flip.flip_h = false;
+		flip.flip_v = false;
+		submission.colorize = colorize;
+		submission.ambient_affected = false;
+		submission.ambient_factor = 1;
+		submission.layer = layer;
+		submission.parallax_weight = 0;
+		this.activeBuffer.commands.push(submission);
 	}
 
-	public sprite(command: HostImageRenderSubmission): void {
-		if (command.pos.z === undefined) {
-			command.pos.z = OverlayRenderer.SPRITE_Z;
-		}
-		if (command.scale === undefined) {
-			command.scale = { x: 1, y: 1 };
-		}
-		if (command.flip === undefined) {
-			command.flip = { flip_h: false, flip_v: false };
-		}
-		if (command.colorize === undefined) {
-			command.colorize = { r: 1, g: 1, b: 1, a: 1 };
-		}
-		if (command.layer === undefined) {
-			command.layer = this.defaultLayer;
-		}
-		const submission = command as ImgSubmission;
-		submission.type = 'img';
-		this.submit(submission);
+	public glyphRun(glyphs: string | string[], glyphStart: number, glyphEnd: number, x: number, y: number, z: number, font: BFont, color: color, layer: RenderLayer): void {
+		const submission = this.nextGlyphSubmission();
+		submission.glyphs = glyphs;
+		submission.glyph_start = glyphStart;
+		submission.glyph_end = glyphEnd;
+		submission.x = x;
+		submission.y = y;
+		submission.z = z;
+		submission.font = font;
+		submission.color = color;
+		submission.background_color = null;
+		submission.wrap_chars = 0;
+		submission.center_block_width = 0;
+		submission.align = 'start';
+		submission.baseline = 'alphabetic';
+		submission.layer = layer;
+		this.activeBuffer.commands.push(submission);
 	}
 
-	public poly(command: PolyRenderSubmission): void {
-		if (command.thickness === undefined) {
-			command.thickness = 1;
+	private nextRectSubmission(): RectSubmission {
+		const buffer = this.activeBuffer;
+		const index = buffer.rectCount;
+		buffer.rectCount = index + 1;
+		let submission = buffer.rectPool[index];
+		if (submission === undefined) {
+			submission = createRectSubmission();
+			buffer.rectPool[index] = submission;
 		}
-		if (command.layer === undefined) {
-			command.layer = this.defaultLayer;
-		}
-		const submission = command as PolySubmission;
-		submission.type = 'poly';
-		this.submit(submission);
+		return submission;
 	}
 
-	public mesh(command: MeshRenderSubmission): void {
-		if (this.capturingFrame) {
-			throw new Error('[OverlayRenderer] mesh submissions are not Host2D overlay commands.');
+	private nextImageSubmission(): ImgSubmission {
+		const buffer = this.activeBuffer;
+		const index = buffer.imageCount;
+		buffer.imageCount = index + 1;
+		let submission = buffer.imagePool[index];
+		if (submission === undefined) {
+			submission = createImageSubmission();
+			buffer.imagePool[index] = submission;
 		}
-		submitMesh(command);
+		return submission;
 	}
 
-	public particle(command: ParticleRenderSubmission): void {
-		if (this.capturingFrame) {
-			throw new Error('[OverlayRenderer] particle submissions are not Host2D overlay commands.');
+	private nextGlyphSubmission(): GlyphSubmission {
+		const buffer = this.activeBuffer;
+		const index = buffer.glyphCount;
+		buffer.glyphCount = index + 1;
+		let submission = buffer.glyphPool[index];
+		if (submission === undefined) {
+			submission = createGlyphSubmission();
+			buffer.glyphPool[index] = submission;
 		}
-		submit_particle(command);
-	}
-
-	private submit(submission: Host2DSubmission): void {
-		if (!this.capturingFrame) {
-			switch (submission.type) {
-				case 'img':
-					submitSprite(submission);
-					return;
-				case 'rect':
-					submitRectangle(submission);
-					return;
-				case 'poly':
-					submitDrawPolygon(submission);
-					return;
-				case 'glyphs':
-					submitGlyphs(submission);
-					return;
-			}
-		}
-		this.commands.push(submission);
+		return submission;
 	}
 
 	public endFrame(): void {
-		this.capturingFrame = false;
-		if (this.commands.length === 0) {
+		const publishedBuffer = this.activeBuffer;
+		if (publishedBuffer.commands.length === 0) {
 			clearOverlayFrame();
 			return;
 		}
-		const frameCommands = this.commands;
-		this.commands = this.commandBuffer;
-		this.commandBuffer = frameCommands;
+		this.activeBuffer = this.standbyBuffer;
+		this.standbyBuffer = publishedBuffer;
 		const frame: HostOverlayFrame = {
 			width: this.frameRenderWidth,
 			height: this.frameRenderHeight,
@@ -195,13 +247,16 @@ export class OverlayRenderer {
 			logicalHeight: this.frameLogicalHeight,
 			renderWidth: this.frameRenderWidth,
 			renderHeight: this.frameRenderHeight,
-			commands: frameCommands,
+			commands: publishedBuffer.commands,
 		};
 		publishOverlayFrame(frame);
 	}
 
 	public abandonFrame(): void {
-		this.capturingFrame = false;
-		this.commands.length = 0;
+		const buffer = this.activeBuffer;
+		buffer.commands.length = 0;
+		buffer.rectCount = 0;
+		buffer.imageCount = 0;
+		buffer.glyphCount = 0;
 	}
 }

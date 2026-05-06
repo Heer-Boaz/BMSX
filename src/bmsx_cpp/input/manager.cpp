@@ -560,55 +560,58 @@ bool Input::isPlayerIndexAvailableForGamepadAssignment(i32 playerIndex) {
 
 static InputMap createDefaultInputMapping() {
 	InputMap map;
+	auto& pointer = map.pointer.emplace();
+	auto& keyboard = map.keyboard.emplace();
+	auto& gamepad = map.gamepad.emplace();
 
 	// Keyboard mappings
-	map.pointer["pointer_primary"] = {PointerBinding{"pointer_primary"}};
-	map.pointer["pointer_secondary"] = {PointerBinding{"pointer_secondary"}};
-	map.pointer["pointer_aux"] = {PointerBinding{"pointer_aux"}};
-	map.pointer["pointer_back"] = {PointerBinding{"pointer_back"}};
-	map.pointer["pointer_forward"] = {PointerBinding{"pointer_forward"}};
-	map.pointer["pointer_delta"] = {PointerBinding{"pointer_delta"}};
-	map.pointer["pointer_position"] = {PointerBinding{"pointer_position"}};
-	map.pointer["pointer_wheel"] = {PointerBinding{"pointer_wheel"}};
+	pointer["pointer_primary"] = {PointerBinding{"pointer_primary"}};
+	pointer["pointer_secondary"] = {PointerBinding{"pointer_secondary"}};
+	pointer["pointer_aux"] = {PointerBinding{"pointer_aux"}};
+	pointer["pointer_back"] = {PointerBinding{"pointer_back"}};
+	pointer["pointer_forward"] = {PointerBinding{"pointer_forward"}};
+	pointer["pointer_delta"] = {PointerBinding{"pointer_delta"}};
+	pointer["pointer_position"] = {PointerBinding{"pointer_position"}};
+	pointer["pointer_wheel"] = {PointerBinding{"pointer_wheel"}};
 
-	map.keyboard["a"] = {KeyboardBinding{"KeyX", std::nullopt}};
-	map.keyboard["b"] = {KeyboardBinding{"KeyC", std::nullopt}};
-	map.keyboard["x"] = {KeyboardBinding{"KeyZ", std::nullopt}};
-	map.keyboard["y"] = {KeyboardBinding{"KeyS", std::nullopt}};
-	map.keyboard["lb"] = {KeyboardBinding{"ShiftLeft", std::nullopt}};
-	map.keyboard["rb"] = {KeyboardBinding{"ShiftRight", std::nullopt}};
-	map.keyboard["lt"] = {KeyboardBinding{"CtrlLeft", std::nullopt}};
-	map.keyboard["rt"] = {KeyboardBinding{"CtrlRight", std::nullopt}};
-	map.keyboard["select"] = {KeyboardBinding{"Backspace", std::nullopt}};
-	map.keyboard["start"] = {KeyboardBinding{"Enter", std::nullopt}};
-	map.keyboard["ls"] = {KeyboardBinding{"KeyQ", std::nullopt}};
-	map.keyboard["rs"] = {KeyboardBinding{"KeyE", std::nullopt}};
-	map.keyboard["up"] = {KeyboardBinding{"ArrowUp", std::nullopt}};
-	map.keyboard["down"] = {KeyboardBinding{"ArrowDown", std::nullopt}};
-	map.keyboard["left"] = {KeyboardBinding{"ArrowLeft", std::nullopt}};
-	map.keyboard["right"] = {KeyboardBinding{"ArrowRight", std::nullopt}};
-	map.keyboard["home"] = {KeyboardBinding{"Escape", std::nullopt}};
-	map.keyboard["touch"] = {KeyboardBinding{"Space", std::nullopt}};
+	keyboard["a"] = {KeyboardBinding{"KeyX", std::nullopt}};
+	keyboard["b"] = {KeyboardBinding{"KeyC", std::nullopt}};
+	keyboard["x"] = {KeyboardBinding{"KeyZ", std::nullopt}};
+	keyboard["y"] = {KeyboardBinding{"KeyS", std::nullopt}};
+	keyboard["lb"] = {KeyboardBinding{"ShiftLeft", std::nullopt}};
+	keyboard["rb"] = {KeyboardBinding{"ShiftRight", std::nullopt}};
+	keyboard["lt"] = {KeyboardBinding{"CtrlLeft", std::nullopt}};
+	keyboard["rt"] = {KeyboardBinding{"CtrlRight", std::nullopt}};
+	keyboard["select"] = {KeyboardBinding{"Backspace", std::nullopt}};
+	keyboard["start"] = {KeyboardBinding{"Enter", std::nullopt}};
+	keyboard["ls"] = {KeyboardBinding{"KeyQ", std::nullopt}};
+	keyboard["rs"] = {KeyboardBinding{"KeyE", std::nullopt}};
+	keyboard["up"] = {KeyboardBinding{"ArrowUp", std::nullopt}};
+	keyboard["down"] = {KeyboardBinding{"ArrowDown", std::nullopt}};
+	keyboard["left"] = {KeyboardBinding{"ArrowLeft", std::nullopt}};
+	keyboard["right"] = {KeyboardBinding{"ArrowRight", std::nullopt}};
+	keyboard["home"] = {KeyboardBinding{"Escape", std::nullopt}};
+	keyboard["touch"] = {KeyboardBinding{"Space", std::nullopt}};
 
 	// Gamepad mappings (direct 1:1)
-	map.gamepad["up"] = {GamepadBinding{"up", std::nullopt}};
-	map.gamepad["down"] = {GamepadBinding{"down", std::nullopt}};
-	map.gamepad["left"] = {GamepadBinding{"left", std::nullopt}};
-	map.gamepad["right"] = {GamepadBinding{"right", std::nullopt}};
-	map.gamepad["a"] = {GamepadBinding{"a", std::nullopt}};
-	map.gamepad["b"] = {GamepadBinding{"b", std::nullopt}};
-	map.gamepad["x"] = {GamepadBinding{"x", std::nullopt}};
-	map.gamepad["y"] = {GamepadBinding{"y", std::nullopt}};
-	map.gamepad["lb"] = {GamepadBinding{"lb", std::nullopt}};
-	map.gamepad["rb"] = {GamepadBinding{"rb", std::nullopt}};
-	map.gamepad["lt"] = {GamepadBinding{"lt", std::nullopt}};
-	map.gamepad["rt"] = {GamepadBinding{"rt", std::nullopt}};
-	map.gamepad["start"] = {GamepadBinding{"start", std::nullopt}};
-	map.gamepad["select"] = {GamepadBinding{"select", std::nullopt}};
-	map.gamepad["ls"] = {GamepadBinding{"ls", std::nullopt}};
-	map.gamepad["rs"] = {GamepadBinding{"rs", std::nullopt}};
-	map.gamepad["home"] = {GamepadBinding{"home", std::nullopt}};
-	map.gamepad["touch"] = {GamepadBinding{"touch", std::nullopt}};
+	gamepad["up"] = {GamepadBinding{"up", std::nullopt}};
+	gamepad["down"] = {GamepadBinding{"down", std::nullopt}};
+	gamepad["left"] = {GamepadBinding{"left", std::nullopt}};
+	gamepad["right"] = {GamepadBinding{"right", std::nullopt}};
+	gamepad["a"] = {GamepadBinding{"a", std::nullopt}};
+	gamepad["b"] = {GamepadBinding{"b", std::nullopt}};
+	gamepad["x"] = {GamepadBinding{"x", std::nullopt}};
+	gamepad["y"] = {GamepadBinding{"y", std::nullopt}};
+	gamepad["lb"] = {GamepadBinding{"lb", std::nullopt}};
+	gamepad["rb"] = {GamepadBinding{"rb", std::nullopt}};
+	gamepad["lt"] = {GamepadBinding{"lt", std::nullopt}};
+	gamepad["rt"] = {GamepadBinding{"rt", std::nullopt}};
+	gamepad["start"] = {GamepadBinding{"start", std::nullopt}};
+	gamepad["select"] = {GamepadBinding{"select", std::nullopt}};
+	gamepad["ls"] = {GamepadBinding{"ls", std::nullopt}};
+	gamepad["rs"] = {GamepadBinding{"rs", std::nullopt}};
+	gamepad["home"] = {GamepadBinding{"home", std::nullopt}};
+	gamepad["touch"] = {GamepadBinding{"touch", std::nullopt}};
 
 	return map;
 }
@@ -617,7 +620,7 @@ const InputMap Input::DEFAULT_INPUT_MAPPING = createDefaultInputMapping();
 
 const std::unordered_map<std::string, std::string> Input::KEYBOARD_TO_GAMEPAD = []() {
 	std::unordered_map<std::string, std::string> inverse;
-	for (const auto& [action, bindings] : Input::DEFAULT_INPUT_MAPPING.keyboard) {
+	for (const auto& [action, bindings] : *Input::DEFAULT_INPUT_MAPPING.keyboard) {
 		for (const auto& binding : bindings) {
 			inverse[binding.id] = action;
 		}

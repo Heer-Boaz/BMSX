@@ -1,8 +1,7 @@
 import type { RenderPassLibrary } from '../../backend/pass/library';
-import { beginHost2DQueue } from '../../shared/queues';
 import { hostOverlayMenu } from '../../../core/host_overlay_menu';
 import { consumeOverlayFrame, hasPendingOverlayFrame } from '../overlay_queue';
-import { drawHeadlessHost2DLayer, drawHeadlessHostMenuLayer, drawHeadlessHostOverlayFrame } from '../../headless/passes';
+import { drawHeadlessHostMenuLayer, drawHeadlessHostOverlayFrame } from '../../headless/passes';
 
 export function registerHostOverlayPass_Headless(registry: RenderPassLibrary): void {
 	registry.register({
@@ -10,14 +9,9 @@ export function registerHostOverlayPass_Headless(registry: RenderPassLibrary): v
 		name: 'HeadlessHostOverlay',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: () => hasPendingOverlayFrame() || beginHost2DQueue() !== 0,
+		shouldExecute: () => hasPendingOverlayFrame(),
 		exec: () => {
-			if (hasPendingOverlayFrame()) {
-				drawHeadlessHostOverlayFrame(consumeOverlayFrame().commands);
-			}
-			if (beginHost2DQueue() !== 0) {
-				drawHeadlessHost2DLayer();
-			}
+			drawHeadlessHostOverlayFrame(consumeOverlayFrame().commands);
 		},
 	});
 }

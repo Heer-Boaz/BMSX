@@ -1,6 +1,5 @@
 import { StringPool, StringValue, isStringValue, stringValueToString } from '../memory/string/pool';
 import type { Memory } from '../memory/memory';
-import type { StringHandleTableState } from '../memory/string/memory';
 import {
 	addTrackedLuaHeapBytes,
 	collectTrackedLuaHeapBytes as refreshTrackedLuaHeapBytes,
@@ -14,6 +13,7 @@ import { MEMORY_ACCESS_KIND_NAMES, MemoryAccessKind } from '../memory/access_kin
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
 import { luaModulo } from '../../lua/numeric';
+import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 
 export { OpCode } from './opcode_info';
 
@@ -396,7 +396,7 @@ export type TableRuntimeState = {
 
 export class Table {
 	private array: Value[];
-	private arrayLength = 0;
+	public arrayLength = 0;
 	private hash: HashNode[];
 	private hashFree = -1;
 	private metatable: Table | null = null;
@@ -411,7 +411,7 @@ export class Table {
 	constructor(arraySize: number, hashSize: number) {
 		this.array = new Array<Value>(arraySize);
 		this.array.fill(null);
-		const size = hashSize > 0 ? Table.nextPowerOfTwo(hashSize) : 0;
+		const size = hashSize > 0 ? nextPowerOfTwo(hashSize) : 0;
 		this.hash = new Array<HashNode>(size);
 		for (let i = 0; i < size; i += 1) {
 			this.hash[i] = { key: null, value: null, next: -1 };
@@ -576,10 +576,6 @@ export class Table {
 		this.bumpVersion();
 	}
 
-	public length(): number {
-		return this.arrayLength;
-	}
-
 	public clear(): void {
 		const previousBytes = this.getTrackedHeapBytes();
 		this.array.length = 0;
@@ -588,14 +584,6 @@ export class Table {
 		this.hashFree = -1;
 		this.bumpVersion();
 		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
-	}
-
-	public entriesArray(): ReadonlyArray<[Value, Value]> {
-		const entries: Array<[Value, Value]> = [];
-		this.forEachEntry((key, value) => {
-			entries.push([key, value]);
-		});
-		return entries;
 	}
 
 	public forEachEntry(visitor: (key: Value, value: Value) => void): void {
@@ -747,27 +735,6 @@ export class Table {
 		return null;
 	}
 
-	private static nextPowerOfTwo(value: number): number {
-		if (value <= 0) {
-			return 0;
-		}
-		let power = 1;
-		while (power < value) {
-			power *= 2;
-		}
-		return power;
-	}
-
-	private static ceilLog2(value: number): number {
-		let log = 0;
-		let power = 1;
-		while (power < value) {
-			power *= 2;
-			log += 1;
-		}
-		return log;
-	}
-
 	private static getObjectId(value: object): number {
 		const existing = Table.objectIds.get(value);
 		if (existing !== undefined) {
@@ -843,7 +810,7 @@ export class Table {
 		const counts: number[] = [];
 
 		const countIntegerKey = (index: number): void => {
-			const log = Table.ceilLog2(index);
+			const log = ceilLog2(index);
 			while (counts.length <= log) {
 				counts.push(0);
 			}
@@ -888,7 +855,7 @@ export class Table {
 		}
 
 		const hashKeys = totalKeys - arrayKeys;
-		const hashSize = hashKeys > 0 ? Table.nextPowerOfTwo(hashKeys) : 0;
+		const hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
 		this.resize(arraySize, hashSize);
 	}
 
@@ -1397,9 +1364,9 @@ export class CPU {
 	public readonly globals: Table;
 	public readonly memory: Memory;
 
-	private program: Program = null;
+	public program: Program = null;
 	private metadata: ProgramMetadata | null = null;
-	private readonly stringPool: StringPool;
+	public readonly stringPool: StringPool;
 	private indexKey: StringValue = null;
 	private haltedUntilIrq = false;
 	private yieldRequested = false;
@@ -1426,7 +1393,7 @@ export class CPU {
 	private decodedRkC: Int32Array | null = null;
 	private decodedWords: Uint32Array | null = null;
 	private tableLoadCaches: TableLoadInlineCache[] = [];
-	private stringIndexTable: Table | null = null;
+	public stringIndexTable: Table | null = null;
 	private systemGlobalNames: StringValue[] = [];
 	private systemGlobalValues: Value[] = [];
 	private systemGlobalSlotByKey: Map<StringValue, number> = new Map();
@@ -1860,22 +1827,6 @@ export class CPU {
 		}
 	}
 
-	public getStringPool(): StringPool {
-		return this.stringPool;
-	}
-
-	public rehydrateStringPoolFromHandleTable(state: StringHandleTableState): void {
-		this.stringPool.rehydrateFromHandleTable(state);
-	}
-
-	public setStringIndexTable(table: Table | null): void {
-		this.stringIndexTable = table;
-	}
-
-	public getProgram(): Program | null {
-		return this.program;
-	}
-
 	public start(entryProtoIndex: number, args: Value[] = []): void {
 		this.lastReturnValues.length = 0;
 		this.clearCallStack();
@@ -1916,10 +1867,6 @@ export class CPU {
 		this.yieldRequested = true;
 	}
 
-	public clearYieldRequest(): void {
-		this.yieldRequested = false;
-	}
-
 	public haltUntilIrq(): void {
 		this.haltedUntilIrq = true;
 		this.yieldRequested = false;
@@ -1942,14 +1889,6 @@ export class CPU {
 
 	public getFrameDepth(): number {
 		return this.frames.length;
-	}
-
-	public hasFrames(): boolean {
-		return this.frames.length > 0;
-	}
-
-	public run(instructionBudget: number): RunResult {
-		return this.runUntilDepth(0, instructionBudget);
 	}
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
@@ -2157,17 +2096,11 @@ export class CPU {
 
 	public readFrameRegister(frameIndex: number, registerIndex: number): Value {
 		const frame = this.frames[frameIndex];
-		if (!frame) {
-			throw new Error(`[CPU] Frame index out of range: ${frameIndex}.`);
-		}
 		return frame.registers.get(registerIndex);
 	}
 
 	public readFrameUpvalue(frameIndex: number, upvalueIndex: number): Value {
 		const frame = this.frames[frameIndex];
-		if (!frame) {
-			throw new Error(`[CPU] Frame index out of range: ${frameIndex}.`);
-		}
 		const upvalue = frame.closure.upvalues[upvalueIndex];
 		if (upvalue.open) {
 			return upvalue.frame.registers.get(upvalue.index);
@@ -2177,14 +2110,7 @@ export class CPU {
 
 	public hasFrameUpvalue(frameIndex: number, upvalueIndex: number): boolean {
 		const frame = this.frames[frameIndex];
-		if (!frame) {
-			throw new Error(`[CPU] Frame index out of range: ${frameIndex}.`);
-		}
 		return frame.closure.upvalues[upvalueIndex] !== undefined;
-	}
-
-	public getConst(index: number): Value {
-		return this.program.constPool[index];
 	}
 
 	public setGlobalByKey(key: StringValue, value: Value): void {
@@ -2460,7 +2386,7 @@ export class CPU {
 						return;
 					}
 					if (value instanceof Table) {
-						this.setRegisterNumberFast(frame, registers, a, value.length());
+						this.setRegisterNumberFast(frame, registers, a, value.arrayLength);
 						return;
 					}
 					if (isNativeObject(value)) {
@@ -2632,7 +2558,7 @@ export class CPU {
 						if (this.externalReturnSink !== null) {
 							this.captureValuesIntoArrayFromRegisters(this.externalReturnSink, registers, a, total);
 						} else {
-							this.captureLastReturnValuesFromRegisters(registers, a, total);
+							this.captureValuesIntoArrayFromRegisters(this.lastReturnValues, registers, a, total);
 						}
 						this.frames.pop();
 						this.stackTop = frame.varargBase;
@@ -2643,7 +2569,7 @@ export class CPU {
 						if (this.externalReturnSink !== null) {
 							this.captureValuesIntoArrayFromRegisters(this.externalReturnSink, registers, a, total);
 						} else {
-							this.captureLastReturnValuesFromRegisters(registers, a, total);
+							this.captureValuesIntoArrayFromRegisters(this.lastReturnValues, registers, a, total);
 						}
 						this.frames.pop();
 						this.stackTop = frame.varargBase;
@@ -2826,10 +2752,6 @@ export class CPU {
 		frame.top = base + targetCount;
 	}
 
-	private captureLastReturnValuesFromRegisters(source: RegisterFile, sourceBase: number, sourceCount: number): void {
-		this.captureValuesIntoArrayFromRegisters(this.lastReturnValues, source, sourceBase, sourceCount);
-	}
-
 	private captureValuesIntoArrayFromRegisters(target: Value[], source: RegisterFile, sourceBase: number, sourceCount: number): void {
 		target.length = sourceCount;
 		for (let index = 0; index < sourceCount; index += 1) {
@@ -2940,14 +2862,14 @@ export class CPU {
 
 	private readRegisterNumber(frame: CallFrame, index: number): number {
 		const registers = frame.registers;
-		if (registers.isNumber(index)) {
+		// if (registers.isNumber(index)) {
 			return registers.getNumber(index);
-		}
-		const value = registers.get(index);
-		if (typeof value !== 'number') {
-			throw new Error(`Register ${index} expected a number, got ${valueTypeName(value)}.`);
-		}
-		return value;
+		// }
+		// const value = registers.get(index);
+		// if (typeof value !== 'number') {
+		// 	throw new Error(`Register ${index} expected a number, got ${valueTypeName(value)}.`);
+		// }
+		// return value;
 	}
 
 	private readMappedMemoryValue(addr: number, accessKind: number): Value {
@@ -3013,10 +2935,10 @@ export class CPU {
 		if (rk < 0) {
 			const index = -1 - rk;
 			const value = this.program.constPool[index];
-			if (typeof value !== 'number') {
-				throw new Error(`RK constant ${index} expected a number, got ${valueTypeName(value)}.`);
-			}
-			return value;
+			// if (typeof value !== 'number') {
+			// 	throw new Error(`RK constant ${index} expected a number, got ${valueTypeName(value)}.`);
+			// }
+			return value as number;
 		}
 		return this.readRegisterNumber(frame, rk);
 	}
@@ -3072,7 +2994,7 @@ export class CPU {
 				if (metatable !== null) {
 					traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], metatable);
 				}
-				for (let arrayIndex = 1; arrayIndex <= value.length(); arrayIndex += 1) {
+				for (let arrayIndex = 1; arrayIndex <= value.arrayLength; arrayIndex += 1) {
 					const arrayValue = value.getInteger(arrayIndex);
 					if (arrayValue !== null) {
 						traverseStableValue([...path, arrayIndex], arrayValue);
@@ -3316,7 +3238,7 @@ export class CPU {
 				if (metatable !== null) {
 					traverseStableValue([...path, CPU_RUNTIME_METATABLE_SEGMENT], metatable);
 				}
-				for (let arrayIndex = 1; arrayIndex <= value.length(); arrayIndex += 1) {
+				for (let arrayIndex = 1; arrayIndex <= value.arrayLength; arrayIndex += 1) {
 					const arrayValue = value.getInteger(arrayIndex);
 					if (arrayValue !== null) {
 						traverseStableValue([...path, arrayIndex], arrayValue);
@@ -3631,10 +3553,6 @@ export class CPU {
 			}
 		}
 		return total;
-	}
-
-	public getTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
-		return this.collectTrackedHeapBytes(extraRoots);
 	}
 
 	private valueToString(value: Value): string {

@@ -319,7 +319,7 @@ class RuntimeCartEditor implements CartEditor {
 		const runtime = this.runtime;
 		editorViewState.codeVerticalScrollbarVisible = false;
 		editorViewState.codeHorizontalScrollbarVisible = false;
-		api.fill_rect_color(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, undefined, constants.COLOR_FRAME);
+		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, undefined, constants.COLOR_FRAME);
 
 		renderTopBar(runtime.editor.commands, this.chromeRenderContext);
 

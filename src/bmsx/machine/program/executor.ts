@@ -49,7 +49,7 @@ export function buildConsoleMetadata(baseProgram: Program): ProgramMetadata {
 
 export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	const chunk = runtime.interpreter.compileChunk(source, 'console');
-	const currentProgram = runtime.machine.cpu.getProgram();
+	const currentProgram = runtime.machine.cpu.program;
 	if (!currentProgram) {
 		throw new Error('console execution requires active program.');
 	}

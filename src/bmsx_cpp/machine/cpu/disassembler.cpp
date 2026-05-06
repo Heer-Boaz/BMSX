@@ -1,4 +1,5 @@
 #include "machine/cpu/disassembler.h"
+#include "machine/cpu/instruction_format.h"
 #include "machine/cpu/source_text.h"
 #include "machine/common/number_format.h"
 
@@ -29,19 +30,6 @@ struct RkDebugValue {
 	std::string text;
 	std::optional<int> registerIndex;
 };
-
-inline uint32_t readInstructionWordAt(const std::vector<uint8_t>& code, int wordIndex) {
-	const size_t offset = static_cast<size_t>(wordIndex) * INSTRUCTION_BYTES;
-	return (static_cast<uint32_t>(code[offset]) << 24)
-		| (static_cast<uint32_t>(code[offset + 1]) << 16)
-		| (static_cast<uint32_t>(code[offset + 2]) << 8)
-		| static_cast<uint32_t>(code[offset + 3]);
-}
-
-inline int signExtendDebug(uint32_t value, int bits) {
-	const int shift = 32 - bits;
-	return static_cast<int>(value << shift) >> shift;
-}
 
 bool opUsesBx(OpCode op) {
 	return op == OpCode::LOADK
@@ -160,7 +148,7 @@ std::string formatConstValue(const Program& program, int index) {
 }
 
 RkDebugValue describeRkValue(const Program& program, uint32_t raw, int bits) {
-	const int rk = signExtendDebug(raw, bits);
+	const int rk = signExtend(raw, bits);
 	if (rk < 0) {
 		return { formatConstValue(program, -1 - rk), std::nullopt };
 	}
@@ -221,7 +209,7 @@ InstructionOperandDebugInfo rkOperand(const char* label, const Program& program,
 DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int pc) {
 	const std::vector<uint8_t>& code = program.code;
 	const int wordIndex = pc / INSTRUCTION_BYTES;
-	const uint32_t word = readInstructionWordAt(code, wordIndex);
+	const uint32_t word = readInstructionWord(code, wordIndex);
 	const uint32_t ext = word >> 24;
 	const auto op = static_cast<OpCode>((word >> 18) & 0x3f);
 	const int aLow = static_cast<int>((word >> 12) & 0x3f);
@@ -229,7 +217,7 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 	const int cLow = static_cast<int>(word & 0x3f);
 	if (op == OpCode::WIDE) {
 		const int wideB = bLow;
-		const uint32_t nextWord = readInstructionWordAt(code, wordIndex + 1);
+		const uint32_t nextWord = readInstructionWord(code, wordIndex + 1);
 		const uint32_t nextExt = nextWord >> 24;
 		const auto nextOp = static_cast<OpCode>((nextWord >> 18) & 0x3f);
 		const int nextA = static_cast<int>((nextWord >> 12) & 0x3f);
@@ -254,7 +242,7 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 			b,
 			c,
 			static_cast<int>(bx),
-			signExtendDebug(bx, sbxBits),
+			signExtend(bx, sbxBits),
 			MAX_OPERAND_BITS + EXT_B_BITS + MAX_OPERAND_BITS,
 			MAX_OPERAND_BITS + EXT_C_BITS + MAX_OPERAND_BITS,
 		};
@@ -276,7 +264,7 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 		b,
 		c,
 		static_cast<int>(bx),
-		signExtendDebug(bx, MAX_BX_BITS + EXT_BX_BITS),
+		signExtend(bx, MAX_BX_BITS + EXT_BX_BITS),
 		MAX_OPERAND_BITS + EXT_B_BITS,
 		MAX_OPERAND_BITS + EXT_C_BITS,
 	};
@@ -290,13 +278,13 @@ DecodedDebugInstruction decodeInstructionAtPcInternal(const Program& program, in
 		throw BMSX_RUNTIME_ERROR("[Disassembler] Instruction pc " + std::to_string(pc) + " is out of bounds.");
 	}
 	const int wordIndex = pc / INSTRUCTION_BYTES;
-	const uint32_t word = readInstructionWordAt(program.code, wordIndex);
+	const uint32_t word = readInstructionWord(program.code, wordIndex);
 	const auto op = static_cast<OpCode>((word >> 18) & 0x3f);
 	if (op == OpCode::WIDE) {
 		return decodeInstructionFromStart(program, pc);
 	}
 	if (wordIndex > 0) {
-		const uint32_t previous = readInstructionWordAt(program.code, wordIndex - 1);
+		const uint32_t previous = readInstructionWord(program.code, wordIndex - 1);
 		const auto previousOp = static_cast<OpCode>((previous >> 18) & 0x3f);
 		if (previousOp == OpCode::WIDE) {
 			return decodeInstructionFromStart(program, pc - INSTRUCTION_BYTES);

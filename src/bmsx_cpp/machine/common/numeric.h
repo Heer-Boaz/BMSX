@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include <cstddef>
 #include <cstring>
 #include <limits>
 
@@ -12,6 +13,31 @@ constexpr double FIX16_SCALE = 65536.0;
 
 inline i32 toSignedWord(u32 value) {
 	return static_cast<i32>(value);
+}
+
+inline size_t nextPowerOfTwo(size_t value) {
+	if (value == 0) {
+		return 0;
+	}
+	size_t power = 1;
+	while (power < value) {
+		power <<= 1;
+	}
+	return power;
+}
+
+inline size_t ceilLog2(size_t value) {
+	size_t log = 0;
+	size_t power = 1;
+	while (power < value) {
+		power <<= 1;
+		++log;
+	}
+	return log;
+}
+
+inline int ceilDiv4(int value) {
+	return (value + 3) >> 2;
 }
 
 inline f32 f32BitsToNumber(u32 bits) {

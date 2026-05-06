@@ -1868,7 +1868,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	setKey(stringTable, 'len', createNativeFunction('string.len', (args, out) => {
 		const value = args[0] as StringValue;
-		out.push(runtime.machine.cpu.getStringPool().codepointCount(value));
+		out.push(runtime.machine.cpu.stringPool.codepointCount(value));
 	}));
 	setKey(stringTable, 'upper', createNativeFunction('string.upper', (args, out) => {
 		const text = stringValueToString(args[0] as StringValue);
@@ -1905,7 +1905,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	setKey(stringTable, 'sub', createNativeFunction('string.sub', (args, out) => {
 		const value = args[0] as StringValue;
 		const text = stringValueToString(value);
-		const length = runtime.machine.cpu.getStringPool().codepointCount(value);
+		const length = runtime.machine.cpu.stringPool.codepointCount(value);
 		const startArg = args.length > 1 ? (args[1] as number) : 1;
 		const endArg = args.length > 2 ? (args[2] as number) : length;
 		let startIndex = normalizeLuaIndex(startArg, length, 1);
@@ -1929,7 +1929,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const sourceValue = args[0] as StringValue;
 		const source = stringValueToString(sourceValue);
 		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
-		const length = runtime.machine.cpu.getStringPool().codepointCount(sourceValue);
+		const length = runtime.machine.cpu.stringPool.codepointCount(sourceValue);
 		const startIndex = args.length > 2 ? normalizeLuaIndex(args[2] as number, length, 1) : 1;
 		if (startIndex > length) {
 			out.push(null);
@@ -1973,7 +1973,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const sourceValue = args[0] as StringValue;
 		const source = stringValueToString(sourceValue);
 		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
-		const length = runtime.machine.cpu.getStringPool().codepointCount(sourceValue);
+		const length = runtime.machine.cpu.stringPool.codepointCount(sourceValue);
 		const startIndex = args.length > 2 ? normalizeLuaIndex(args[2] as number, length, 1) : 1;
 		if (startIndex > length) {
 			out.push(null);
@@ -2166,7 +2166,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const formatted = formatLuaString(runtime, template, args, 1);
 		out.push(runtime.internString(formatted));
 	}));
-	runtime.machine.cpu.setStringIndexTable(stringTable);
+	runtime.machine.cpu.stringIndexTable = stringTable;
 	luaPipeline.registerGlobal(runtime, 'string', stringTable);
 
 	const tableLibrary = new Table(0, 0);
@@ -2176,12 +2176,12 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		let value: Value;
 		if (args.length === 2) {
 			value = args[1];
-			position = target.length() + 1;
+			position = target.arrayLength + 1;
 		} else {
 			position = Math.floor(args[1] as number);
 			value = args[2];
 		}
-		const length = target.length();
+		const length = target.arrayLength;
 		for (let index = length; index >= position; index -= 1) {
 			target.set(index + 1, target.get(index));
 		}
@@ -2190,8 +2190,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	setKey(tableLibrary, 'remove', createNativeFunction('table.remove', (args, out) => {
 		const target = args[0] as Table;
-		const position = args.length > 1 ? Math.floor(args[1] as number) : target.length();
-		const length = target.length();
+		const position = args.length > 1 ? Math.floor(args[1] as number) : target.arrayLength;
+		const length = target.arrayLength;
 		const removed = target.get(position);
 		for (let index = position; index < length; index += 1) {
 			target.set(index, target.get(index + 1));
@@ -2204,7 +2204,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	setKey(tableLibrary, 'concat', createNativeFunction('table.concat', (args, out) => {
 		const target = args[0] as Table;
 		const separator = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
-		const length = target.length();
+		const length = target.arrayLength;
 		const startIndex = args.length > 2 ? normalizeLuaIndex(args[2] as number, length, 1) : 1;
 		const endIndex = args.length > 3 ? normalizeLuaIndex(args[3] as number, length, length) : length;
 		if (endIndex < startIndex) {
@@ -2232,7 +2232,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	setKey(tableLibrary, 'unpack', createNativeFunction('table.unpack', (args, out) => {
 		const target = args[0] as Table;
-		const length = target.length();
+		const length = target.arrayLength;
 		const startIndex = args.length > 1 ? normalizeLuaIndex(args[1] as number, length, 1) : 1;
 		const endIndex = args.length > 2 ? normalizeLuaIndex(args[2] as number, length, length) : length;
 		if (endIndex < startIndex) {
@@ -2245,7 +2245,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	setKey(tableLibrary, 'sort', createNativeFunction('table.sort', (args, out) => {
 		const target = args[0] as Table;
 		const comparator = args.length > 1 ? args[1] : null;
-		const length = target.length();
+		const length = target.arrayLength;
 		const values = runtime.luaScratch.acquireValue();
 		const comparatorArgs = runtime.luaScratch.acquireValue();
 		const comparatorResults = runtime.luaScratch.acquireValue();

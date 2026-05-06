@@ -14,6 +14,27 @@ export function toSignedWord(value: number): number {
 	return value | 0;
 }
 
+export function nextPowerOfTwo(value: number): number {
+	if (value <= 0) {
+		return 0;
+	}
+	let power = 1;
+	while (power < value) {
+		power *= 2;
+	}
+	return power;
+}
+
+export function ceilLog2(value: number): number {
+	let log = 0;
+	let power = 1;
+	while (power < value) {
+		power *= 2;
+		log += 1;
+	}
+	return log;
+}
+
 export function f32BitsToNumber(bits: number): number {
 	F32_BITS_VIEW.setUint32(0, bits >>> 0, true);
 	return F32_BITS_VIEW.getFloat32(0, true);

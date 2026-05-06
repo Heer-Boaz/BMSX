@@ -353,12 +353,8 @@ private:
 	u32 readTileRunPayloadWord(const TileRunPayload& payload, u32 wordOffset) const;
 	void latchPayloadTileRunFrom(const TileRunPayload& payload, const char* sourceName, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
 	void appendTileRunSource(BlitterCommand& command, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, const char* sourceName, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow);
-	enum class ReplayPayloadSource : u8 {
-		Memory,
-		WordStream,
-	};
-	u32 consumeReplayPacket(u32 word, u32 cursor, u32 limit, ReplayPayloadSource source);
-	u32 readReplayPayloadWord(u32 cursor, u32 offset, ReplayPayloadSource source) const;
+	u32 consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end);
+	u32 consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount);
 	u32 decodeReg1Packet(u32 word) const;
 	struct RegnPacket {
 		u32 firstRegister = 0;

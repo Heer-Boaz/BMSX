@@ -22,9 +22,10 @@ struct ActionAggregation {
 	bool allJustPressed = true;
 	bool allJustReleased = true;
 	bool allWasPressed = true;
+	bool allWasReleased = true;
 	i32 bindingCount = 0;
-	f64 latestPressedAt = 0.0;
-	f64 latestTimestamp = 0.0;
+	std::optional<f64> latestTimestamp;
+	std::optional<f64> latestPressTimestamp;
 	std::optional<f64> leastPressTime;
 	std::optional<i32> latestPressId;
 	std::optional<i32> bufferedPressId;
@@ -33,6 +34,17 @@ struct ActionAggregation {
 	std::optional<Vec2> best2DValue;
 	f32 best2DAbs = -1.0f;
 };
+
+void finishActionAggregation(ActionAggregation& aggregation) {
+	if (aggregation.bindingCount != 0) {
+		aggregation.anyJustReleased = aggregation.anyJustReleased && !aggregation.anyPressed;
+		return;
+	}
+	aggregation.allJustPressed = false;
+	aggregation.allJustReleased = false;
+	aggregation.allWasPressed = false;
+	aggregation.allWasReleased = false;
+}
 
 void addActionBindingState(ActionAggregation& aggregation, const ButtonState& state) {
 	aggregation.anyPressed = aggregation.anyPressed || state.pressed;
@@ -44,17 +56,16 @@ void addActionBindingState(ActionAggregation& aggregation, const ButtonState& st
 	aggregation.allJustPressed = aggregation.allJustPressed && state.justpressed;
 	aggregation.allJustReleased = aggregation.allJustReleased && state.justreleased;
 	aggregation.allWasPressed = aggregation.allWasPressed && state.waspressed;
+	aggregation.allWasReleased = aggregation.allWasReleased && state.wasreleased;
 	if (state.presstime.has_value() && (!aggregation.leastPressTime.has_value() || state.presstime.value() < aggregation.leastPressTime.value())) {
 		aggregation.leastPressTime = state.presstime;
 	}
-	if (state.pressedAtMs.has_value() && state.pressedAtMs.value() > aggregation.latestPressedAt) {
-		aggregation.latestPressedAt = state.pressedAtMs.value();
+	if (state.timestamp.has_value() && (!aggregation.latestTimestamp.has_value() || state.timestamp.value() > aggregation.latestTimestamp.value())) {
+		aggregation.latestTimestamp = state.timestamp;
 	}
-	if (state.pressId.has_value() && (state.justpressed || !aggregation.latestPressId.has_value() || (state.timestamp.has_value() && state.timestamp.value() >= aggregation.latestTimestamp))) {
+	if (state.pressId.has_value() && (state.justpressed || !aggregation.latestPressId.has_value() || (state.timestamp.has_value() && aggregation.latestTimestamp.has_value() && state.timestamp.value() >= aggregation.latestTimestamp.value()))) {
 		aggregation.latestPressId = state.pressId;
-	}
-	if (state.timestamp.has_value() && state.timestamp.value() > aggregation.latestTimestamp) {
-		aggregation.latestTimestamp = state.timestamp.value();
+		aggregation.latestPressTimestamp = aggregation.latestTimestamp;
 	}
 	const f32 valueAbs = std::abs(state.value);
 	if (valueAbs > aggregation.best1DAbs) {
@@ -69,6 +80,48 @@ void addActionBindingState(ActionAggregation& aggregation, const ButtonState& st
 		}
 	}
 	aggregation.bindingCount++;
+}
+
+void addBufferedPressId(ActionAggregation& aggregation, const InputStateManager& stateManager, const std::string& id) {
+	auto pressId = stateManager.getLatestUnconsumedPressId(id);
+	if (pressId.has_value() && (!aggregation.bufferedPressId.has_value() || pressId.value() > aggregation.bufferedPressId.value())) {
+		aggregation.bufferedPressId = pressId;
+	}
+}
+
+void mergeActionAggregation(ActionAggregation& merged, const ActionAggregation& source) {
+	merged.anyPressed = merged.anyPressed || source.anyPressed;
+	merged.anyJustPressed = merged.anyJustPressed || source.anyJustPressed;
+	merged.anyJustReleased = merged.anyJustReleased || source.anyJustReleased;
+	merged.anyWasPressed = merged.anyWasPressed || source.anyWasPressed;
+	merged.anyWasReleased = merged.anyWasReleased || source.anyWasReleased;
+	merged.anyConsumed = merged.anyConsumed || source.anyConsumed;
+	merged.allJustPressed = merged.allJustPressed || source.allJustPressed;
+	merged.allJustReleased = merged.allJustReleased || source.allJustReleased;
+	merged.allWasPressed = merged.allWasPressed || source.allWasPressed;
+	merged.allWasReleased = merged.allWasReleased || source.allWasReleased;
+	merged.bindingCount += source.bindingCount;
+	if (source.leastPressTime.has_value() && (!merged.leastPressTime.has_value() || source.leastPressTime.value() < merged.leastPressTime.value())) {
+		merged.leastPressTime = source.leastPressTime;
+	}
+	if (source.latestTimestamp.has_value() && (!merged.latestTimestamp.has_value() || source.latestTimestamp.value() > merged.latestTimestamp.value())) {
+		merged.latestTimestamp = source.latestTimestamp;
+	}
+	if (source.bufferedPressId.has_value() && (!merged.bufferedPressId.has_value() || source.bufferedPressId.value() > merged.bufferedPressId.value())) {
+		merged.bufferedPressId = source.bufferedPressId;
+	}
+	if (source.latestPressId.has_value() && source.latestPressTimestamp.has_value() && (!merged.latestPressId.has_value() || !merged.latestPressTimestamp.has_value() || source.latestPressTimestamp.value() >= merged.latestPressTimestamp.value())) {
+		merged.latestPressId = source.latestPressId;
+		merged.latestPressTimestamp = source.latestPressTimestamp;
+	}
+	if (source.best1DAbs > merged.best1DAbs) {
+		merged.best1DAbs = source.best1DAbs;
+		merged.best1DValue = source.best1DValue;
+	}
+	if (source.best2DAbs > merged.best2DAbs) {
+		merged.best2DAbs = source.best2DAbs;
+		merged.best2DValue = source.best2DValue;
+	}
 }
 
 } // namespace
@@ -108,12 +161,31 @@ void PlayerInput::clearGamepad(InputHandler* handler) {
  * ============================================================================ */
 
 void PlayerInput::setInputMap(const InputMap& map) {
-	inputMap = map;
-	trackInputMapBindings(map);
+	KeyboardInputMapping keyboard;
+	if (map.keyboard.has_value()) {
+		keyboard = map.keyboard.value();
+	} else if (inputMap.keyboard.has_value()) {
+		keyboard = inputMap.keyboard.value();
+	} else if (playerIndex == DEFAULT_KEYBOARD_PLAYER_INDEX) {
+		keyboard = *Input::DEFAULT_INPUT_MAPPING.keyboard;
+	}
+
+	GamepadInputMapping gamepad = map.gamepad.has_value()
+		? map.gamepad.value()
+		: (inputMap.gamepad.has_value() ? inputMap.gamepad.value() : *Input::DEFAULT_INPUT_MAPPING.gamepad);
+
+	PointerInputMapping pointer = map.pointer.has_value()
+		? map.pointer.value()
+		: (inputMap.pointer.has_value() ? inputMap.pointer.value() : *Input::DEFAULT_INPUT_MAPPING.pointer);
+
+	inputMap.keyboard = keyboard;
+	inputMap.gamepad = gamepad;
+	inputMap.pointer = pointer;
+	trackInputMapBindings(keyboard, gamepad, pointer);
 	MappingContext base("base", 0, true);
-	base.keyboard = inputMap.keyboard;
-	base.gamepad = inputMap.gamepad;
-	base.pointer = inputMap.pointer;
+	base.keyboard = keyboard;
+	base.gamepad = gamepad;
+	base.pointer = pointer;
 	m_contexts = ContextStack();
 	m_contexts.push(base);
 }
@@ -123,7 +195,7 @@ void PlayerInput::setInputMap(const InputMap& map) {
  * ============================================================================ */
 
 void PlayerInput::pushContext(const std::string& id, const KeyboardInputMapping& keyboard, const GamepadInputMapping& gamepad, const PointerInputMapping& pointer, i32 priority, bool enabled) {
-	trackInputMapBindings(InputMap{keyboard, gamepad, pointer});
+	trackInputMapBindings(keyboard, gamepad, pointer);
 	MappingContext ctx(id, priority, enabled);
 	ctx.keyboard = keyboard;
 	ctx.gamepad = gamepad;
@@ -164,20 +236,20 @@ void PlayerInput::trackButton(InputSource source, const std::string& button) {
 	m_trackedButtons[sourceIndex(source)].insert(button);
 }
 
-void PlayerInput::trackInputMapBindings(const InputMap& map) {
-	for (const auto& [action, bindings] : map.keyboard) {
+void PlayerInput::trackInputMapBindings(const KeyboardInputMapping& keyboard, const GamepadInputMapping& gamepad, const PointerInputMapping& pointer) {
+	for (const auto& [action, bindings] : keyboard) {
 		(void)action;
 		for (const auto& binding : bindings) {
 			trackButton(InputSource::Keyboard, binding.id);
 		}
 	}
-	for (const auto& [action, bindings] : map.gamepad) {
+	for (const auto& [action, bindings] : gamepad) {
 		(void)action;
 		for (const auto& binding : bindings) {
 			trackButton(InputSource::Gamepad, binding.id);
 		}
 	}
-	for (const auto& [action, bindings] : map.pointer) {
+	for (const auto& [action, bindings] : pointer) {
 		(void)action;
 		for (const auto& binding : bindings) {
 			trackButton(InputSource::Pointer, binding.id);
@@ -190,93 +262,63 @@ void PlayerInput::trackInputMapBindings(const InputMap& map) {
  * ============================================================================ */
 
 ActionState PlayerInput::getActionState(const std::string& action, std::optional<f64> windowFrames) {
-	// Result state - aggregate from all sources
 	ActionState result(action);
-	ActionAggregation aggregation;
+	const std::optional<i32> frameWindow = windowFrames.has_value()
+		? std::optional<i32>(static_cast<i32>(windowFrames.value()))
+		: std::nullopt;
 
-	const auto updateBufferedIds = [&](InputSource source, const std::string& id) {
-		auto pressId = getStateManager(source).getLatestUnconsumedPressId(id);
-		if (pressId.has_value() && (!aggregation.bufferedPressId.has_value() || pressId.value() > aggregation.bufferedPressId.value())) {
-			aggregation.bufferedPressId = pressId;
+	const auto aggregateSource = [&](InputSource source) {
+		ActionAggregation aggregation;
+		const auto bindings = m_contexts.getBindings(action, source);
+		for (const auto& binding : bindings) {
+			const std::string* id = nullptr;
+			switch (source) {
+				case InputSource::Keyboard:
+					id = &std::get<KeyboardBinding>(binding).id;
+					break;
+				case InputSource::Gamepad:
+					id = &std::get<GamepadBinding>(binding).id;
+					break;
+				case InputSource::Pointer:
+					id = &std::get<PointerBinding>(binding).id;
+					break;
+			}
+			const ButtonState state = getSimButtonState(*id, source, frameWindow);
+			addActionBindingState(aggregation, state);
+			addBufferedPressId(aggregation, getStateManager(source), *id);
 		}
+		finishActionAggregation(aggregation);
+		return aggregation;
 	};
 
-	{
-		const auto bindings = m_contexts.getBindings(action, InputSource::Keyboard);
-		for (const auto& binding : bindings) {
-			const auto& keyboardBinding = std::get<KeyboardBinding>(binding);
-			ButtonState state = getSimButtonState(
-				keyboardBinding.id,
-				InputSource::Keyboard,
-				windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
-			);
+	const ActionAggregation keyboardState = aggregateSource(InputSource::Keyboard);
+	const ActionAggregation gamepadState = aggregateSource(InputSource::Gamepad);
+	const ActionAggregation pointerState = aggregateSource(InputSource::Pointer);
 
-			addActionBindingState(aggregation, state);
-			updateBufferedIds(InputSource::Keyboard, keyboardBinding.id);
-		}
-	}
+	ActionAggregation aggregation;
+	aggregation.allJustPressed = false;
+	aggregation.allJustReleased = false;
+	aggregation.allWasPressed = false;
+	aggregation.allWasReleased = false;
+	mergeActionAggregation(aggregation, keyboardState);
+	mergeActionAggregation(aggregation, gamepadState);
+	mergeActionAggregation(aggregation, pointerState);
 
-	{
-		const auto bindings = m_contexts.getBindings(action, InputSource::Gamepad);
-		for (const auto& binding : bindings) {
-			const auto& gamepadBinding = std::get<GamepadBinding>(binding);
-			ButtonState state = getSimButtonState(
-				gamepadBinding.id,
-				InputSource::Gamepad,
-				windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
-			);
-
-			addActionBindingState(aggregation, state);
-			updateBufferedIds(InputSource::Gamepad, gamepadBinding.id);
-		}
-	}
-
-	{
-		const auto bindings = m_contexts.getBindings(action, InputSource::Pointer);
-		for (const auto& binding : bindings) {
-			const auto& pointerBinding = std::get<PointerBinding>(binding);
-			ButtonState state = getSimButtonState(
-				pointerBinding.id,
-				InputSource::Pointer,
-				windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
-			);
-
-			addActionBindingState(aggregation, state);
-			updateBufferedIds(InputSource::Pointer, pointerBinding.id);
-		}
-	}
-
-	// If no bindings, return empty state
-	if (aggregation.bindingCount == 0) {
-		return result;
-	}
-
-	// Parity with TS: don't treat as just released while any binding is still pressed
-	if (aggregation.anyPressed) {
-		aggregation.anyJustReleased = false;
-	}
-
-	// Aggregate results
-	result.pressed = aggregation.anyPressed;
-	// Keep jp/jr sourced directly from the button-level simframe buffer.
-	// Re-surfacing edges at action level lets host-side reads steal a future simframe edge during slowdown.
 	if (aggregation.anyJustPressed && aggregation.bufferedPressId.has_value() && (!aggregation.latestPressId.has_value() || aggregation.bufferedPressId.value() > aggregation.latestPressId.value())) {
 		aggregation.latestPressId = aggregation.bufferedPressId;
 	}
 
+	result.pressed = aggregation.anyPressed;
 	result.justpressed = aggregation.anyJustPressed;
-	result.justreleased = aggregation.anyJustReleased && !aggregation.anyPressed;
+	result.justreleased = aggregation.anyJustReleased;
 	result.waspressed = aggregation.anyWasPressed;
 	result.wasreleased = aggregation.anyWasReleased;
-	result.alljustpressed = aggregation.allJustPressed && aggregation.anyJustPressed;
-	result.alljustreleased = aggregation.allJustReleased && aggregation.anyJustReleased;
-	result.allwaspressed = aggregation.allWasPressed && aggregation.anyWasPressed;
+	result.alljustpressed = aggregation.allJustPressed;
+	result.alljustreleased = aggregation.allJustReleased;
+	result.allwaspressed = aggregation.allWasPressed;
 	result.consumed = aggregation.anyConsumed;
 
-	if (aggregation.latestPressedAt > 0.0) {
-		result.pressedAtMs = aggregation.latestPressedAt;
-	}
-	if (aggregation.latestTimestamp > 0.0) {
+	if (aggregation.latestTimestamp.has_value()) {
 		result.timestamp = aggregation.latestTimestamp;
 	}
 	result.pressId = aggregation.latestPressId;
@@ -291,7 +333,6 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 		result.value2d = aggregation.best2DValue;
 	}
 
-	// Evaluate guard and repeat
 	result.guardedjustpressed = evaluateActionGuard(action, result);
 	auto repeat = evaluateActionRepeat(action, result, simFrame());
 	result.repeatpressed = repeat.triggered;
@@ -328,15 +369,15 @@ std::vector<ActionState> PlayerInput::getPressedActions(const PressedActionsQuer
 		}
 	};
 
-	for (const auto& [action, _] : inputMap.keyboard) {
+	for (const auto& [action, _] : *inputMap.keyboard) {
 		(void)_;
 		considerAction(action);
 	}
-	for (const auto& [action, _] : inputMap.gamepad) {
+	for (const auto& [action, _] : *inputMap.gamepad) {
 		(void)_;
 		considerAction(action);
 	}
-	for (const auto& [action, _] : inputMap.pointer) {
+	for (const auto& [action, _] : *inputMap.pointer) {
 		(void)_;
 		considerAction(action);
 	}
@@ -458,8 +499,8 @@ void PlayerInput::consumeAction(const std::string& action) {
 	{
 		auto* handler = inputHandlers[sourceIndex(InputSource::Keyboard)];
 		if (handler) {
-			auto it = inputMap.keyboard.find(action);
-			if (it != inputMap.keyboard.end()) {
+			auto it = inputMap.keyboard->find(action);
+			if (it != inputMap.keyboard->end()) {
 				for (const auto& binding : it->second) {
 					auto state = getButtonState(binding.id, InputSource::Keyboard);
 					if (state.pressed && !state.consumed) {
@@ -474,8 +515,8 @@ void PlayerInput::consumeAction(const std::string& action) {
 	{
 		auto* handler = inputHandlers[sourceIndex(InputSource::Gamepad)];
 		if (handler) {
-			auto it = inputMap.gamepad.find(action);
-			if (it != inputMap.gamepad.end()) {
+			auto it = inputMap.gamepad->find(action);
+			if (it != inputMap.gamepad->end()) {
 				for (const auto& binding : it->second) {
 					auto state = getButtonState(binding.id, InputSource::Gamepad);
 					if (state.pressed && !state.consumed) {
@@ -490,8 +531,8 @@ void PlayerInput::consumeAction(const std::string& action) {
 	{
 		auto* handler = inputHandlers[sourceIndex(InputSource::Pointer)];
 		if (handler) {
-			auto it = inputMap.pointer.find(action);
-			if (it != inputMap.pointer.end()) {
+			auto it = inputMap.pointer->find(action);
+			if (it != inputMap.pointer->end()) {
 				for (const auto& binding : it->second) {
 					auto state = getButtonState(binding.id, InputSource::Pointer);
 					if (state.pressed && !state.consumed) {

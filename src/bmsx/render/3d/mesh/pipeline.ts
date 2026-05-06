@@ -947,7 +947,7 @@ function renderSingleMeshes(runtime: MeshPassRuntime, singles: MeshRenderSubmiss
 	setUseInstancing(gl, false);
 		for (const { mesh: m, matrix, joint_matrices: jointMatrices, morph_weights: morphWeights, receive_shadow: receiveShadow } of singles) {
 			const buffers = getMeshBuffers(runtime, m);
-			const srcWeights = morphWeights ?? m.morphWeights;
+			const srcWeights = morphWeights.length !== 0 ? morphWeights : m.morphWeights;
 			const hasMorph = m.hasMorphTargets && srcWeights.some(w => w !== 0);
 			const sig = getVAOSignature(m, false, hasMorph);
 			let vao: WebGLVertexArrayObject;

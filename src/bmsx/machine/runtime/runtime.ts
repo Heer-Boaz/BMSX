@@ -109,17 +109,13 @@ export class Runtime {
 	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
 		this._overlayResolutionMode = value;
 		this.overlayRenderer.setRenderingViewportType(consoleCore.view, value);
-		if (this.editor) {
-			this.editor.updateViewport(this.overlayRenderer.viewportSize);
-		}
+		this.editor.updateViewport(this.overlayRenderer.viewportSize);
 	}
 
 	public initializeOverlayViewport(viewport: Viewport): void {
 		this._overlayResolutionMode = 'viewport';
 		this.overlayRenderer.setViewportSize(viewport);
-		if (this.editor) {
-			this.editor.updateViewport(viewport);
-		}
+		this.editor.updateViewport(viewport);
 	}
 
 	public get overlayResolutionMode() {
@@ -621,14 +617,12 @@ export class Runtime {
 		luaPipeline.invalidateModuleLookups(this);
 		this.luaChunkEnvironmentsByPath.clear();
 		this.luaGenericChunksExecuted.clear();
-		if (this.editor) {
-			this.editor.clearRuntimeErrorOverlay();
-		}
+		this.editor.clearRuntimeErrorOverlay();
 	}
 
 	private async prepareBootRomStartupState(): Promise<void> {
 		this.enterSystemFirmware();
-		if (!this.terminal) {
+		if (!this.terminal) { // ????????????????????????????????
 			workbenchMode.initializeIdeFeatures(this, resolveRuntimeRenderSize(this.activeMachineManifest));
 		}
 	}
@@ -695,12 +689,12 @@ export class Runtime {
 
 	// disable-next-line single_line_method_pattern -- runtime string interning is the public CPU string-pool boundary.
 	public internString(value: string): StringValue {
-		return this.machine.cpu.getStringPool().intern(value);
+		return this.machine.cpu.stringPool.intern(value);
 	}
 
 	// disable-next-line single_line_method_pattern -- Lua keys intentionally share runtime string interning.
 	public luaKey(name: string): StringValue {
-		return this.internString(name);
+		return this.machine.cpu.stringPool.intern(name); /// ???????????????????????????
 	}
 
 	private prepareHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): Error {

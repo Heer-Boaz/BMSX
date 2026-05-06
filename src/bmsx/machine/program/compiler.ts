@@ -3440,6 +3440,9 @@ const buildModuleCompileContext = (
 	}
 	for (let index = 0; index < externalModules.length; index += 1) {
 		const module = externalModules[index];
+		if (modulesByPath.has(module.path)) {
+			continue;
+		}
 		const info = buildModuleCompileInfo(module.path, module.chunk, true);
 		if (info) {
 			modulesByPath.set(module.path, info);
@@ -3505,16 +3508,21 @@ function buildCompilerSemanticFrontend(
 		path: entryChunk.range.path,
 		source: requireEntrySource(options, entryChunk.range.path),
 	}];
+	const sourcePathSet = new Set<string>([entryChunk.range.path]);
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
 		sources.push({
 			path: module.path,
 			source: requireModuleSource(module),
 		});
+		sourcePathSet.add(module.path);
 	}
 	const externalModules = options.externalModules ?? [];
 	for (let index = 0; index < externalModules.length; index += 1) {
 		const module = externalModules[index];
+		if (sourcePathSet.has(module.path)) {
+			continue;
+		}
 		sources.push({
 			path: module.path,
 			source: requireModuleSource(module),

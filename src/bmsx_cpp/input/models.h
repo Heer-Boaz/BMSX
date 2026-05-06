@@ -325,9 +325,9 @@ using GamepadInputMapping = std::unordered_map<std::string, std::vector<GamepadB
 using PointerInputMapping = std::unordered_map<std::string, std::vector<PointerBinding>>;
 
 struct InputMap {
-	KeyboardInputMapping keyboard;
-	GamepadInputMapping gamepad;
-	PointerInputMapping pointer;
+	std::optional<KeyboardInputMapping> keyboard;
+	std::optional<GamepadInputMapping> gamepad;
+	std::optional<PointerInputMapping> pointer;
 };
 
 /* ============================================================================

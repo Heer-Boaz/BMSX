@@ -100,7 +100,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	if (bubbleTop + bubbleHeight > codeBottom) {
 		bubbleTop = Math.max(codeTop, codeBottom - bubbleHeight);
 	}
-	api.fill_rect_color(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BACKGROUND);
+	api.fill_rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BACKGROUND);
 	api.blit_rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BORDER);
 	for (let i = 0; i < visibleCount; i += 1) {
 		const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * editorViewState.lineHeight;

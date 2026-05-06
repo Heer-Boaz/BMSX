@@ -73,7 +73,7 @@ export function drawProblemsPanelSurface(
 
 		if (isSelected) {
 			if (focused) {
-				api.fill_rect_color(bounds.left, rowTop, bounds.right, rowBottom, undefined, constants.SELECTION_OVERLAY);
+				api.fill_rect(bounds.left, rowTop, bounds.right, rowBottom, undefined, constants.SELECTION_OVERLAY);
 			} else {
 				api.blit_rect(bounds.left, rowTop, bounds.right, rowBottom, undefined, constants.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
 			}

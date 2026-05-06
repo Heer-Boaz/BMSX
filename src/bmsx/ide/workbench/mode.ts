@@ -807,29 +807,24 @@ export function tickIDEDraw(runtime: Runtime): void {
 
 export function drawIde(runtime: Runtime): void {
 	try {
-		overlay_api.beginFrame(runtime.overlayRenderer);
 		runtime.overlayRenderer.beginFrame();
-		runtime.overlayRenderer.setDefaultLayer('ide');
+		overlay_api.beginFrame(runtime.overlayRenderer);
 		runtime.editor.draw();
 	} catch (error) {
 		handleLuaError(runtime, error);
 	} finally {
-		overlay_api.endFrame();
 		runtime.overlayRenderer.endFrame();
 	}
 }
 
 export function drawTerminal(runtime: Runtime): void {
 	try {
-		overlay_api.beginFrame(runtime.overlayRenderer);
 		runtime.overlayRenderer.beginFrame();
-		runtime.overlayRenderer.setDefaultLayer('ide');
+		overlay_api.beginFrame(runtime.overlayRenderer);
 		runtime.terminal.draw(runtime.overlayRenderer, runtime.overlayRenderer.viewportSize);
-		runtime.overlayRenderer.setDefaultLayer('world');
 	} catch (error) {
 		handleLuaError(runtime, error);
 	} finally {
-		overlay_api.endFrame();
 		runtime.overlayRenderer.endFrame();
 	}
 }

@@ -1072,16 +1072,7 @@ export class TerminalMode {
 			}
 		}
 		const y = Math.max(PADDING_Y, surface.height - PADDING_Y - lineHeight);
-		renderer.rect({
-			kind: 'fill',
-			area: {
-				left: PADDING_X,
-				top: y,
-				right: Math.max(PADDING_X, surface.width - PADDING_X),
-				bottom: y + lineHeight,
-			},
-			color: this.characterBackgroundColor,
-		});
+		renderer.fillRect(PADDING_X, y, Math.max(PADDING_X, surface.width - PADDING_X), y + lineHeight, undefined, this.characterBackgroundColor, 'ide');
 		this.drawGlyphBackgrounds(renderer, text, PADDING_X, y, uppercaseDisplay);
 		this.drawGlyphRun(renderer, text, PADDING_X, y, resolveThemeTokenColor(OUTPUT_COLORS.system), uppercaseDisplay);
 	}
@@ -1269,16 +1260,7 @@ export class TerminalMode {
 
 				// draw selection background for this segment if selection overlaps
 				if (segmentDecoration.hasSelection && segmentDecoration.selectionWidth > 0) {
-					renderer.rect({
-						kind: 'fill',
-						area: {
-							left: segmentDecoration.selectionLeft,
-							top: y,
-							right: segmentDecoration.selectionLeft + segmentDecoration.selectionWidth,
-							bottom: y + this.font.lineHeight,
-						},
-						color: this.selectionColor,
-					});
+					renderer.fillRect(segmentDecoration.selectionLeft, y, segmentDecoration.selectionLeft + segmentDecoration.selectionWidth, y + this.font.lineHeight, undefined, this.selectionColor, 'ide');
 				}
 
 				// draw the glyph run for this segment
@@ -1301,12 +1283,8 @@ export class TerminalMode {
 				nextCursorInfo.baseColor = OUTPUT_COLORS.stdout;
 				if (this.blink.cursorVisible) {
 					const renderFont = this.font.renderFont();
-					renderer.rect({
-						kind: 'fill',
-						area: { left, top: topY, right, bottom },
-						color: this.caretColor,
-					});
-					renderer.glyphs({ glyphs: nextChar, x: left, y: topY, z: 0, color: this.characterBackgroundColor, font: renderFont });
+					renderer.fillRect(left, topY, right, bottom, undefined, this.caretColor, 'ide');
+					renderer.glyphRun(nextChar, 0, nextChar.length, left, topY, 0, renderFont, this.characterBackgroundColor, 'ide');
 				}
 			}
 		}
@@ -1321,16 +1299,7 @@ export class TerminalMode {
 		if (width <= 0) {
 			return;
 		}
-		renderer.rect({
-			kind: 'fill',
-			area: {
-				left: originX,
-				top: originY,
-				right: originX + width,
-				bottom: originY + this.font.lineHeight,
-			},
-			color: this.characterBackgroundColor,
-		});
+		renderer.fillRect(originX, originY, originX + width, originY + this.font.lineHeight, undefined, this.characterBackgroundColor, 'ide');
 	}
 
 	private drawGlyphRun(renderer: OverlayRenderer, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {
@@ -1338,7 +1307,7 @@ export class TerminalMode {
 		if (!/[^\s]/.test(display)) {
 			return;
 		}
-		renderer.glyphs({ glyphs: display, x: originX, y: originY, z: 0, color: tint, font: this.font.renderFont() });
+		renderer.glyphRun(display, 0, display.length, originX, originY, 0, this.font.renderFont(), tint, 'ide');
 	}
 
 	private toDisplayText(value: string): string {

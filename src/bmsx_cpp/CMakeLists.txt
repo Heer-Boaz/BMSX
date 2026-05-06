@@ -175,6 +175,7 @@ add_library(bmsx_core STATIC
 
 	# Machine runtime (Lua bytecode interpreter)
 	machine/cpu/cpu.cpp
+	machine/cpu/instruction_format.cpp
 	machine/firmware/font.cpp
 	machine/cpu/source_text.cpp
 	lua/syntax/lexer.cpp
@@ -270,6 +271,9 @@ endif()
 		)
 
 	target_link_libraries(bmsx_libretro PRIVATE bmsx_core)
+	if(UNIX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+		target_link_options(bmsx_libretro PRIVATE "-Wl,--no-undefined")
+	endif()
 	if(BMSX_ENABLE_GLES2)
 		find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
 		target_link_libraries(bmsx_libretro PRIVATE ${GLESV2_LIBRARY})

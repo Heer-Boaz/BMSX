@@ -934,7 +934,7 @@ std::string Runtime::valueToString(const Value& value) const {
 		return valueToBool(value) ? "true" : "false";
 	}
 	if (valueIsNumber(value)) {
-		double n = valueToNumber(value);
+		double n = asNumber(value);
 		if (!std::isfinite(n)) {
 			return "nan";
 		}
@@ -1113,7 +1113,7 @@ void Runtime::setupBuiltins() {
 			out.push_back(valueNil());
 			return;
 		}
-		double value = valueToNumber(v);
+		double value = asNumber(v);
 		if (!std::isfinite(value)) {
 			out.push_back(valueNil());
 			return;
@@ -1131,7 +1131,7 @@ void Runtime::setupBuiltins() {
 			out.push_back(valueNil());
 			return;
 		}
-		double value = valueToNumber(v);
+		double value = asNumber(v);
 		if (std::trunc(value) == value) {
 			out.push_back(str("integer"));
 			return;
@@ -1766,7 +1766,7 @@ void Runtime::setupBuiltins() {
 				if (!valueIsNumber(key)) {
 					return std::nullopt;
 				}
-				double n = valueToNumber(key);
+				double n = asNumber(key);
 				double intpart = 0.0;
 				if (std::modf(n, &intpart) == 0.0 && n >= 1.0) {
 					return static_cast<size_t>(static_cast<int>(n) - 1);
@@ -1840,7 +1840,7 @@ void Runtime::setupBuiltins() {
 				bool scanValues = true;
 				if (!isNil(after)) {
 					if (valueIsNumber(after)) {
-						double n = valueToNumber(after);
+						double n = asNumber(after);
 						double intpart = 0.0;
 						if (std::modf(n, &intpart) != 0.0 || n < 1.0) {
 							return std::nullopt;
@@ -2311,7 +2311,7 @@ auto* stringTable = cpu.createTable();
 		return offset + padding;
 	};
 	auto packReadInteger = [maxSafeInteger](const Value& value) -> int64_t {
-		double num = valueToNumber(value);
+		double num = asNumber(value);
 		if (!std::isfinite(num) || std::floor(num) != num) {
 			throw BMSX_RUNTIME_ERROR("string.pack integer value must be a finite integer.");
 		}
@@ -3089,7 +3089,7 @@ tableLib->set(key("sort"), machine.cpu.createNativeFunction("table.sort", [this,
 			return !comparatorResults.empty() && valueIsBool(comparatorResults[0]) && valueToBool(comparatorResults[0]);
 		}
 		if (valueIsNumber(left) && valueIsNumber(right)) {
-			return valueToNumber(left) < valueToNumber(right);
+			return asNumber(left) < asNumber(right);
 		}
 		if (valueIsString(left) && valueIsString(right)) {
 			return machine.cpu.stringPool().toString(asStringId(left))
@@ -3218,7 +3218,7 @@ m_ipairsIterator = machine.cpu.createNativeFunction("ipairs.iterator", [](Native
 	const Value& target = args.at(0);
 	double index = 0.0;
 	if (args.size() > 1 && valueIsNumber(args.at(1))) {
-		index = valueToNumber(args.at(1));
+		index = asNumber(args.at(1));
 	}
 	double nextIndex = index + 1.0;
 	if (valueIsTable(target)) {

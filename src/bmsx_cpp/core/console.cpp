@@ -7,6 +7,7 @@
 #include "rom_boot_manager.h"
 #include "system.h"
 #include "input/manager.h"
+#include "input/player.h"
 #include "render/texture_manager.h"
 #include "render/vdp/context_state.h"
 #include "render/vdp/texture_transfer.h"
@@ -34,8 +35,11 @@ ConsoleCore* ConsoleCore::s_instance = nullptr;
 ConsoleCore::ConsoleCore() {
 	s_instance = this;
 	machine_manifest = &defaultSystemMachineManifest();
-        m_active_rom = &m_system_rom;
-        m_rom_boot_manager = std::make_unique<RomBootManager>();
+	m_active_rom = &m_system_rom;
+	m_rom_boot_manager = std::make_unique<RomBootManager>();
+}
+
+ConsoleCore::~ConsoleCore() {
 	shutdown();
 	if (s_instance == this) {
 		s_instance = nullptr;
@@ -399,6 +403,9 @@ bool ConsoleCore::bootSystemStartupProgram(const MachineManifest& runtimeMachine
 	if (!m_system_rom_loaded) return false;
 	if (!m_system_rom.programImage || !m_system_rom.programImage->program) return false;
 
+	if (m_cart_rom_size == 0) {
+		Input::instance().getPlayerInput(DEFAULT_KEYBOARD_PLAYER_INDEX)->setInputMap(Input::DEFAULT_INPUT_MAPPING);
+	}
 	activateSystemRom();
 	setMachineManifest(runtimeMachine);
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(runtimeMachine);
@@ -509,6 +516,7 @@ bool ConsoleCore::loadRomInternal(const u8* data, size_t size) {
 }
 
 bool ConsoleCore::loadSystemRomOwned(std::vector<u8>&& data) {
+	m_runtime.reset();
 	m_system_rom_owned = std::move(data);
 	m_system_rom_data = m_system_rom_owned.data();
 	m_system_rom_size = m_system_rom_owned.size();
@@ -517,6 +525,7 @@ bool ConsoleCore::loadSystemRomOwned(std::vector<u8>&& data) {
 
 bool ConsoleCore::loadRom(const u8* data, size_t size) {
 	unloadRom();
+	m_runtime.reset();
 	m_cart_rom_owned.clear();
 	m_cart_rom_data = data;
 	m_cart_rom_size = size;
@@ -525,6 +534,7 @@ bool ConsoleCore::loadRom(const u8* data, size_t size) {
 
 bool ConsoleCore::loadRomOwned(std::vector<u8>&& data) {
 	unloadRom();
+	m_runtime.reset();
 	m_cart_rom_owned = std::move(data);
 	m_cart_rom_data = m_cart_rom_owned.data();
 	m_cart_rom_size = m_cart_rom_owned.size();
@@ -533,6 +543,7 @@ bool ConsoleCore::loadRomOwned(std::vector<u8>&& data) {
 
 void ConsoleCore::unloadRom() {
 	if (m_rom_loaded) {
+		m_runtime.reset();
 		m_active_rom = &m_system_rom;
 		machine_manifest = &m_system_rom.machine;
 		m_cart_rom.clear();

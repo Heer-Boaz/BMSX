@@ -1,4 +1,5 @@
 #include "machine/program/linker.h"
+#include "machine/cpu/instruction_format.h"
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
@@ -8,11 +9,6 @@
 namespace bmsx {
 
 namespace {
-
-constexpr int MAX_LOW_BX = (1 << MAX_BX_BITS) - 1;
-constexpr int MAX_WIDE = (1 << MAX_OPERAND_BITS) - 1;
-constexpr int MAX_BASE_BX = (1 << (MAX_BX_BITS + EXT_BX_BITS)) - 1;
-constexpr int MAX_EXT_BX = (MAX_WIDE << (MAX_BX_BITS + EXT_BX_BITS)) | MAX_BASE_BX;
 
 struct ProgramLayout {
 	int systemBasePc;
@@ -44,31 +40,6 @@ ProgramLayout resolveProgramLayout(int systemCodeBytes, int systemBasePc, int ca
 		throw std::runtime_error("[ProgramLinker] System program overlaps cart base PC.");
 	}
 	return {systemBasePc, cartBasePc};
-}
-
-uint32_t readInstructionWord(const std::vector<uint8_t>& code, int index) {
-	size_t offset = static_cast<size_t>(index) * INSTRUCTION_BYTES;
-	return (static_cast<uint32_t>(code[offset]) << 24)
-		| (static_cast<uint32_t>(code[offset + 1]) << 16)
-		| (static_cast<uint32_t>(code[offset + 2]) << 8)
-		| static_cast<uint32_t>(code[offset + 3]);
-}
-
-void writeInstructionWord(std::vector<uint8_t>& code, int index, uint32_t word) {
-	size_t offset = static_cast<size_t>(index) * INSTRUCTION_BYTES;
-	code[offset] = static_cast<uint8_t>((word >> 24) & 0xff);
-	code[offset + 1] = static_cast<uint8_t>((word >> 16) & 0xff);
-	code[offset + 2] = static_cast<uint8_t>((word >> 8) & 0xff);
-	code[offset + 3] = static_cast<uint8_t>(word & 0xff);
-}
-
-void writeInstruction(std::vector<uint8_t>& code, int index, uint8_t op, uint8_t a, uint8_t b, uint8_t c, uint8_t ext = 0) {
-	uint32_t word = (static_cast<uint32_t>(ext) << 24)
-		| (static_cast<uint32_t>(op & 0x3f) << 18)
-		| (static_cast<uint32_t>(a & 0x3f) << 12)
-		| (static_cast<uint32_t>(b & 0x3f) << 6)
-		| static_cast<uint32_t>(c & 0x3f);
-	writeInstructionWord(code, index, word);
 }
 
 // disable-next-line single_line_method_pattern -- WIDE is the named prefix encoder used by relocation rewriting.

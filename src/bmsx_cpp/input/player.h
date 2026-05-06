@@ -206,7 +206,7 @@ private:
 	const InputStateManager& getStateManager(InputSource source) const { return m_stateManagers[sourceIndex(source)]; }
 	i64 simFrame() const { return m_stateManagers[sourceIndex(InputSource::Keyboard)].frame(); }
 	void trackButton(InputSource source, const std::string& button);
-	void trackInputMapBindings(const InputMap& map);
+	void trackInputMapBindings(const KeyboardInputMapping& keyboard, const GamepadInputMapping& gamepad, const PointerInputMapping& pointer);
 	void consumeGameplayButton(const std::string& button, InputSource source);
 	
 	// Evaluate action guard (debouncing)

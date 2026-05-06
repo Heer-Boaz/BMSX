@@ -221,7 +221,7 @@ function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, sour
 }
 
 export function logDebugState(runtime: Runtime): void {
-	const program = runtime.machine.cpu.getProgram();
+	const program = runtime.machine.cpu.program;
 	if (!program || program.code.length === 0) {
 		return;
 	}

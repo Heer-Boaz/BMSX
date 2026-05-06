@@ -424,7 +424,7 @@ void VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 			ended = true;
 			break;
 		}
-		cursor = consumeReplayPacket(word, cursor, end, ReplayPayloadSource::Memory);
+		cursor = consumeReplayPacketFromMemory(word, cursor, end);
 		if (cursor == VDP_REPLAY_PACKET_FAULT) {
 			cancelSubmittedFrame();
 			return;
@@ -462,7 +462,7 @@ void VDP::consumeSealedVdpWordStream(u32 wordCount) {
 			ended = true;
 			break;
 		}
-		cursor = consumeReplayPacket(word, cursor, wordCount, ReplayPayloadSource::WordStream);
+		cursor = consumeReplayPacketFromWords(word, cursor, wordCount);
 		if (cursor == VDP_REPLAY_PACKET_FAULT) {
 			cancelSubmittedFrame();
 			return;
@@ -492,30 +492,18 @@ void VDP::sealVdpFifoTransfer() {
 	resetIngressState();
 }
 
-u32 VDP::readReplayPayloadWord(u32 cursor, u32 offset, ReplayPayloadSource source) const {
-	if (source == ReplayPayloadSource::Memory) {
-		return m_memory.readU32(cursor + offset * IO_WORD_SIZE);
-	}
-	return m_vdpFifoStreamWords[static_cast<size_t>(cursor + offset)];
-}
-
-u32 VDP::consumeReplayPacket(u32 word, u32 cursor, u32 limit, ReplayPayloadSource source) {
-	const u32 payloadUnit = source == ReplayPayloadSource::Memory ? IO_WORD_SIZE : 1u;
+u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 	const u32 kind = word & VDP_PKT_KIND_MASK;
 	switch (kind) {
 		case VDP_PKT_CMD:
 			return consumeReplayCommandPacket(word) ? cursor : VDP_REPLAY_PACKET_FAULT;
 		case VDP_PKT_REG1: {
 			const u32 reg = decodeReg1Packet(word);
-			if (cursor + payloadUnit > limit) {
+			if (reg == VDP_REPLAY_PACKET_FAULT || cursor + IO_WORD_SIZE > end) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			if (reg == VDP_REPLAY_PACKET_FAULT) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-				return VDP_REPLAY_PACKET_FAULT;
-			}
-			return writeVdpRegister(reg, readReplayPayloadWord(cursor, 0u, source)) ? cursor + payloadUnit : VDP_REPLAY_PACKET_FAULT;
+			return writeVdpRegister(reg, m_memory.readU32(cursor)) ? cursor + IO_WORD_SIZE : VDP_REPLAY_PACKET_FAULT;
 		}
 		case VDP_PKT_REGN: {
 			RegnPacket packet;
@@ -523,61 +511,126 @@ u32 VDP::consumeReplayPacket(u32 word, u32 cursor, u32 limit, ReplayPayloadSourc
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			const u32 payloadCount = packet.count * payloadUnit;
-			if (cursor + payloadCount > limit) {
+			const u32 byteCount = packet.count * IO_WORD_SIZE;
+			const u32 payloadEnd = cursor + byteCount;
+			if (payloadEnd > end) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			for (uint32_t offset = 0; offset < packet.count; ++offset) {
-				if (!writeVdpRegister(packet.firstRegister + offset, readReplayPayloadWord(cursor, offset, source))) {
+				if (!writeVdpRegister(packet.firstRegister + offset, m_memory.readU32(cursor + offset * IO_WORD_SIZE))) {
 					return VDP_REPLAY_PACKET_FAULT;
 				}
 			}
-			return cursor + payloadCount;
+			return payloadEnd;
 		}
 		case VDP_BBU_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_BBU_PACKET_PAYLOAD_WORDS)) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			const u32 payloadCount = VDP_BBU_PACKET_PAYLOAD_WORDS * payloadUnit;
-			if (cursor + payloadCount > limit) {
+			const u32 byteCount = VDP_BBU_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
+			const u32 payloadEnd = cursor + byteCount;
+			if (payloadEnd > end) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			const u32 controlWord = readReplayPayloadWord(cursor, 10u, source);
+			const u32 controlWord = m_memory.readU32(cursor + IO_WORD_SIZE * 10u);
 			if (controlWord != 0u) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, controlWord);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			return latchBillboardPacket(m_bbu.decodePacket(
-				readReplayPayloadWord(cursor, 0u, source),
-				readReplayPayloadWord(cursor, 1u, source),
-				readReplayPayloadWord(cursor, 2u, source),
-				readReplayPayloadWord(cursor, 3u, source),
-				readReplayPayloadWord(cursor, 4u, source),
-				readReplayPayloadWord(cursor, 5u, source),
-				readReplayPayloadWord(cursor, 6u, source),
-				readReplayPayloadWord(cursor, 7u, source),
-				readReplayPayloadWord(cursor, 8u, source),
-				readReplayPayloadWord(cursor, 9u, source))) ? cursor + payloadCount : VDP_REPLAY_PACKET_FAULT;
+				m_memory.readU32(cursor),
+				m_memory.readU32(cursor + IO_WORD_SIZE),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 2u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 3u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 4u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 5u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 6u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 7u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 8u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 9u))) ? payloadEnd : VDP_REPLAY_PACKET_FAULT;
 		}
 		case VDP_SBX_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS)) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			const u32 payloadCount = VDP_SBX_PACKET_PAYLOAD_WORDS * payloadUnit;
-			if (cursor + payloadCount > limit) {
+			const u32 byteCount = VDP_SBX_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
+			const u32 payloadEnd = cursor + byteCount;
+			if (payloadEnd > end) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
-				m_sbxPacketFaceWords[index] = readReplayPayloadWord(cursor, static_cast<u32>(index + 1u), source);
+				m_sbxPacketFaceWords[index] = m_memory.readU32(cursor + IO_WORD_SIZE * static_cast<u32>(index + 1u));
 			}
-			m_sbx.writePacket(readReplayPayloadWord(cursor, 0u, source), m_sbxPacketFaceWords);
-			return cursor + payloadCount;
+			m_sbx.writePacket(m_memory.readU32(cursor), m_sbxPacketFaceWords);
+			return payloadEnd;
 		}
+		default:
+			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			return VDP_REPLAY_PACKET_FAULT;
+	}
+}
+
+u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
+	const u32 kind = word & VDP_PKT_KIND_MASK;
+	switch (kind) {
+		case VDP_PKT_CMD:
+			return consumeReplayCommandPacket(word) ? cursor : VDP_REPLAY_PACKET_FAULT;
+		case VDP_PKT_REG1: {
+			const u32 reg = decodeReg1Packet(word);
+			if (reg == VDP_REPLAY_PACKET_FAULT || cursor >= wordCount) {
+				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				return VDP_REPLAY_PACKET_FAULT;
+			}
+			return writeVdpRegister(reg, m_vdpFifoStreamWords[static_cast<size_t>(cursor)]) ? cursor + 1u : VDP_REPLAY_PACKET_FAULT;
+		}
+		case VDP_PKT_REGN: {
+			RegnPacket packet;
+			if (!decodeRegnPacket(word, packet) || cursor + packet.count > wordCount) {
+				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				return VDP_REPLAY_PACKET_FAULT;
+			}
+			for (uint32_t offset = 0; offset < packet.count; ++offset) {
+				if (!writeVdpRegister(packet.firstRegister + offset, m_vdpFifoStreamWords[static_cast<size_t>(cursor + offset)])) {
+					return VDP_REPLAY_PACKET_FAULT;
+				}
+			}
+			return cursor + packet.count;
+		}
+		case VDP_BBU_PACKET_KIND:
+			if (!isVdpUnitPacketHeaderValid(word, VDP_BBU_PACKET_PAYLOAD_WORDS) || cursor + VDP_BBU_PACKET_PAYLOAD_WORDS > wordCount) {
+				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				return VDP_REPLAY_PACKET_FAULT;
+			}
+			if (m_vdpFifoStreamWords[static_cast<size_t>(cursor + 10u)] != 0u) {
+				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, m_vdpFifoStreamWords[static_cast<size_t>(cursor + 10u)]);
+				return VDP_REPLAY_PACKET_FAULT;
+			}
+			return latchBillboardPacket(m_bbu.decodePacket(
+				m_vdpFifoStreamWords[static_cast<size_t>(cursor)],
+				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 1u)],
+				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 2u)],
+				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 3u)],
+				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 4u)],
+				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 5u)],
+				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 6u)],
+				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 7u)],
+				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 8u)],
+				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 9u)])) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : VDP_REPLAY_PACKET_FAULT;
+		case VDP_SBX_PACKET_KIND:
+			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
+				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				return VDP_REPLAY_PACKET_FAULT;
+			}
+			for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
+				m_sbxPacketFaceWords[index] = m_vdpFifoStreamWords[static_cast<size_t>(cursor + static_cast<u32>(index + 1u))];
+			}
+			m_sbx.writePacket(m_vdpFifoStreamWords[static_cast<size_t>(cursor)], m_sbxPacketFaceWords);
+			return cursor + VDP_SBX_PACKET_PAYLOAD_WORDS;
 		default:
 			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return VDP_REPLAY_PACKET_FAULT;

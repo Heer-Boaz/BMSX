@@ -35,7 +35,7 @@ import { forEachGlyphRunGlyph } from '../../shared/glyph_runs';
 import { hasPendingOverlayFrame } from '../overlay_queue';
 import { buildHostMenuState, buildHostOverlayState } from '../pipeline';
 import { hostOverlayMenu } from '../../../core/host_overlay_menu';
-import { beginHost2DQueue, host2DQueueKind, host2DQueueRef, type Host2DKind, type Host2DRef, type Host2DSubmission } from '../../shared/queues';
+import type { Host2DKind, Host2DRef, Host2DSubmission } from '../../shared/queues';
 import vertexShaderCode from '../../2d/shaders/2d.vert.glsl';
 import fragmentShaderCode from '../shaders/host_overlay.frag.glsl';
 
@@ -321,7 +321,7 @@ function drawPolyCommand(backend: WebGLBackend, state: HostOverlayRuntime, comma
 	const points = command.points;
 	for (let index = 0; index + 3 < points.length; index += 2) {
 		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
-		count += pushLine(state, count, points[index], points[index + 1], points[index + 2], points[index + 3], command.z, command.color, command.thickness!);
+		count += pushLine(state, count, points[index], points[index + 1], points[index + 2], points[index + 3], command.z, command.color, command.thickness);
 	}
 	if (count !== 0) {
 		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
@@ -330,16 +330,16 @@ function drawPolyCommand(backend: WebGLBackend, state: HostOverlayRuntime, comma
 }
 
 function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntime, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	if (command.background_color === undefined) {
+	if (command.background_color === null) {
 		return boundTextures;
 	}
-	const font = command.font!;
+	const font = command.font;
 	const lineHeight = font.lineHeight;
 	const nextBoundTextures = bindHostTexture(state.whiteTexture, boundTextures);
 	let count = 0;
 	forEachGlyphRunGlyph(command, (glyph, x, y) => {
 		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
-		count += pushFillRect(state, count, x, y, x + glyph.advance, y + lineHeight, command.z!, command.background_color);
+		count += pushFillRect(state, count, x, y, x + glyph.advance, y + lineHeight, command.z, command.background_color);
 	});
 	if (count !== 0) {
 		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
@@ -366,8 +366,8 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 			source.v0,
 			source.u1,
 			source.v1,
-			command.z!,
-			command.color!,
+			command.z,
+			command.color,
 		);
 		count += 1;
 	});
@@ -454,15 +454,6 @@ export function endHost2DEntries_WebGL(backend: WebGLBackend): void {
 	backend.setDepthMask(true);
 }
 
-export function renderHost2DEntries_WebGL(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): void {
-	let boundTextures = beginHost2DEntries_WebGL(backend, state, passState);
-	const count = beginHost2DQueue();
-	for (let index = 0; index < count; index += 1) {
-		boundTextures = drawHost2DCommand_WebGL(backend, state, host2DQueueKind(index), host2DQueueRef(index), boundTextures);
-	}
-	endHost2DEntries_WebGL(backend);
-}
-
 function renderAxisGizmoLabels(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -495,9 +486,6 @@ function renderHostPass(backend: WebGLBackend, state: HostOverlayRuntime, passSt
 	if (passState.commands.length !== 0) {
 		renderOverlay(backend, state, passState);
 	}
-	if (beginHost2DQueue() !== 0) {
-		renderHost2DEntries_WebGL(backend, state, passState);
-	}
 	if (!shouldRenderAxisGizmo()) {
 		return;
 	}
@@ -520,7 +508,7 @@ export function registerHostOverlayPass_WebGL(registry: RenderPassLibrary): void
 			bootstrapRuntime(webglBackend);
 			bootstrapAxisGizmo_WebGL(webglBackend);
 		},
-		shouldExecute: () => hasPendingOverlayFrame() || beginHost2DQueue() !== 0 || shouldRenderAxisGizmo(),
+		shouldExecute: () => hasPendingOverlayFrame() || shouldRenderAxisGizmo(),
 		prepare: () => {
 			registry.setState('host_overlay', buildHostOverlayState());
 		},

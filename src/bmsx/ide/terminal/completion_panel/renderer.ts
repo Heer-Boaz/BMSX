@@ -30,16 +30,8 @@ export function drawTerminalGridPanel(params: TerminalGridPanelRenderParams): vo
 	const panelLeft = params.paddingX;
 	const panelRight = panelLeft + params.contentWidth;
 	const panelBottom = params.panelTop + panelRows * params.lineHeight;
-	params.renderer.rect({
-		kind: 'fill',
-		area: { left: panelLeft, top: params.panelTop, right: panelRight, bottom: panelBottom },
-		color: params.backgroundColor,
-	});
-	params.renderer.rect({
-		kind: 'rect',
-		area: { left: panelLeft, top: params.panelTop, right: panelRight, bottom: panelBottom },
-		color: params.borderColor,
-	});
+	params.renderer.fillRect(panelLeft, params.panelTop, panelRight, panelBottom, undefined, params.backgroundColor, 'ide');
+	params.renderer.strokeRect(panelLeft, params.panelTop, panelRight, panelBottom, undefined, params.borderColor, 'ide');
 
 	const gridStartX = panelLeft + params.layout.paddingX * params.charWidth;
 	const gridStartY = params.panelTop + params.layout.paddingY * params.lineHeight;
@@ -65,16 +57,7 @@ export function drawTerminalGridPanel(params: TerminalGridPanelRenderParams): vo
 			const cellX = gridStartX + col * strideX;
 			const isSelected = index === params.selectionIndex;
 			if (isSelected) {
-				params.renderer.rect({
-					kind: 'fill',
-					area: {
-						left: cellX - 1,
-						top: cellY - 1,
-						right: cellX + cellWidthPx + 1,
-						bottom: cellY + params.lineHeight + 1,
-					},
-					color: params.highlightColor,
-				});
+				params.renderer.fillRect(cellX - 1, cellY - 1, cellX + cellWidthPx + 1, cellY + params.lineHeight + 1, undefined, params.highlightColor, 'ide');
 			}
 			const color = isSelected ? params.highlightTextColor : params.textColor;
 			params.drawText(label, cellX, cellY, color);

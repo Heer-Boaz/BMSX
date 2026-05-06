@@ -128,7 +128,7 @@ export class Machine {
 				this.vdp.onService(nowCycles);
 				return this.vdp;
 			default:
-			throw new Error(`Runtime fault: unknown device service kind ${deviceKind}.`);
+				throw new Error(`Runtime fault: unknown device service kind ${deviceKind}.`);
 		}
 	}
 
@@ -160,7 +160,7 @@ export class Machine {
 	public restoreSaveState(state: MachineSaveState): void {
 		this.memory.restoreSaveState(state.memory);
 		this.stringHandles.restoreState(state.stringHandles);
-		this.cpu.rehydrateStringPoolFromHandleTable(state.stringHandles);
+		this.cpu.stringPool.rehydrateFromHandleTable(state.stringHandles);
 		this.geometryController.postLoad();
 		this.irqController.postLoad();
 		this.inputController.restoreState(state.input);

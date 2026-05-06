@@ -2,14 +2,14 @@ import { TAB_SPACES, type FontGlyph } from './bitmap_font';
 import type { GlyphRenderSubmission } from './submissions';
 
 export function forEachGlyphRunGlyph(command: GlyphRenderSubmission, fn: (glyph: FontGlyph, x: number, y: number) => void): void {
-	const font = command.font!;
+	const font = command.font;
 	const arrayLines = Array.isArray(command.glyphs);
 	const lineCount = arrayLines ? command.glyphs.length : 1;
 	let originY = command.y;
 	for (let lineIndex = 0; lineIndex < lineCount; lineIndex += 1) {
 		const line = arrayLines ? command.glyphs[lineIndex] : command.glyphs;
-		const start = arrayLines ? 0 : command.glyph_start!;
-		const end = arrayLines ? line.length : command.glyph_end!;
+		const start = arrayLines ? 0 : command.glyph_start;
+		const end = arrayLines ? line.length : command.glyph_end;
 		let originX = command.x;
 		let glyphIndex = 0;
 		for (const char of line) {

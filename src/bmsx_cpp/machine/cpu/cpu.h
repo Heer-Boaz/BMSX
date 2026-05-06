@@ -18,6 +18,7 @@
 #include "common/scratchbuffer.h"
 #include "common/primitives.h"
 #include "common/utf8.h"
+#include "machine/cpu/instruction_format.h"
 #include "machine/memory/string/memory.h"
 
 namespace bmsx {
@@ -152,9 +153,9 @@ public:
 private:
 	const InternedString& entry(StringId id) const {
 		const auto* entry = m_entries.at(static_cast<size_t>(id)).get();
-		if (!entry) {
-			throw std::runtime_error("StringPool: missing string entry.");
-		}
+		// if (!entry) {
+		// 	throw std::runtime_error("StringPool: missing string entry.");
+		// }
 		return *entry;
 	}
 
@@ -233,7 +234,7 @@ inline Value valueFromNumber(double value) {
 	return out;
 }
 
-inline double valueToNumber(Value v) {
+inline double asNumber(Value v) {
 	double out = 0.0;
 	std::memcpy(&out, &v, sizeof(double));
 	return out;
@@ -285,10 +286,6 @@ inline bool isTruthy(Value v) {
 	return true;
 }
 
-inline double asNumber(Value v) {
-	return valueToNumber(v);
-}
-
 inline uint32_t toU32(double value) {
 	const double truncated = std::trunc(value);
 	const double mod = std::fmod(truncated, 4294967296.0);
@@ -297,7 +294,7 @@ inline uint32_t toU32(double value) {
 }
 
 inline uint32_t toU32(Value value) {
-	return toU32(valueToNumber(value));
+	return toU32(asNumber(value));
 }
 
 inline int32_t toI32(double value) {
@@ -364,27 +361,10 @@ inline bool valueIsUpvalue(Value v) {
 	return valueIsTagged(v) && valueTag(v) == ValueTag::Upvalue;
 }
 
-inline const char* valueTypeNameInline(Value v) {
-	if (valueIsNumber(v)) return "number";
-	if (!valueIsTagged(v)) return "unknown";
-	switch (valueTag(v)) {
-		case ValueTag::Nil: return "nil";
-		case ValueTag::False: return "boolean";
-		case ValueTag::True: return "boolean";
-		case ValueTag::String: return "string";
-		case ValueTag::Table: return "table";
-		case ValueTag::Closure: return "closure";
-		case ValueTag::NativeFunction: return "native_function";
-		case ValueTag::NativeObject: return "native_object";
-		case ValueTag::Upvalue: return "upvalue";
-		default: return "unknown";
-	}
-}
-
 struct ValueHash {
 	size_t operator()(Value v) const noexcept {
 		if (valueIsNumber(v)) {
-			double num = valueToNumber(v);
+			double num = asNumber(v);
 			if (num == 0.0) {
 				num = 0.0;
 			}
@@ -412,8 +392,8 @@ struct ValueHash {
 struct ValueEq {
 	bool operator()(Value lhs, Value rhs) const noexcept {
 		if (valueIsNumber(lhs) && valueIsNumber(rhs)) {
-			double leftNum = valueToNumber(lhs);
-			double rightNum = valueToNumber(rhs);
+			double leftNum = asNumber(lhs);
+			double rightNum = asNumber(rhs);
 			if (leftNum != leftNum && rightNum != rightNum) {
 				return true;
 			}
@@ -680,14 +660,6 @@ struct ProgramMetadata {
 	std::vector<std::string> globalNames;
 	std::vector<std::string> systemGlobalNames;
 };
-
-constexpr int INSTRUCTION_BYTES = 4;
-constexpr int MAX_OPERAND_BITS = 6;
-constexpr int MAX_BX_BITS = 12;
-constexpr int EXT_A_BITS = 2;
-constexpr int EXT_B_BITS = 3;
-constexpr int EXT_C_BITS = 3;
-constexpr int EXT_BX_BITS = 8;
 
 struct DecodedInstruction {
 	uint32_t word = 0;

@@ -98,7 +98,7 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	void init();
 	void initializeDefaultTextures();
-	void drawGame();
+	void drawgame();
 	void configurePresentation(PresentationMode mode, bool commitFrame);
 	u8 presentationHistoryDestinationIndex() const { return presentationHistorySourceIndex == 0 ? 1 : 0; }
 

@@ -136,7 +136,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	interpreter.clearLastFaultEnvironment();
 	const chunk = interpreter.compileChunk(params.source, binding);
 	const { modules } = buildModuleChunks(runtime, binding);
-	const baseProgram = runtime.machine.cpu.getProgram();
+	const baseProgram = runtime.machine.cpu.program;
 	if (!baseProgram) {
 		throw new Error('hot reload requires active program.');
 	}

@@ -1,7 +1,8 @@
 #include "machine/cpu/cpu.h"
+#include "machine/common/numeric.h"
+#include "machine/common/number_format.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/memory.h"
-#include "machine/common/number_format.h"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -23,44 +24,6 @@ namespace bmsx {
 // start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
 
 namespace {
-static inline uint32_t readInstructionWord(const std::vector<uint8_t>& code, int pc) {
-	size_t offset = static_cast<size_t>(pc) * INSTRUCTION_BYTES;
-	return (static_cast<uint32_t>(code[offset]) << 24)
-		| (static_cast<uint32_t>(code[offset + 1]) << 16)
-		| (static_cast<uint32_t>(code[offset + 2]) << 8)
-		| static_cast<uint32_t>(code[offset + 3]);
-}
-
-static inline int signExtend(uint32_t value, int bits) {
-	int shift = 32 - bits;
-	return static_cast<int>(value << shift) >> shift;
-}
-
-static inline size_t nextPowerOfTwo(size_t value) {
-	if (value == 0) {
-		return 0;
-	}
-	size_t power = 1;
-	while (power < value) {
-		power <<= 1;
-	}
-	return power;
-}
-
-static inline size_t ceilLog2(size_t value) {
-	size_t log = 0;
-	size_t power = 1;
-	while (power < value) {
-		power <<= 1;
-		++log;
-	}
-	return log;
-}
-
-static inline int ceilDiv4(int value) {
-	return (value + 3) >> 2;
-}
-
 static constexpr std::array<uint8_t, 64> makeUsesBxTable() {
 	std::array<uint8_t, 64> usesBx = {};
 	usesBx[static_cast<size_t>(OpCode::LOADK)] = 1;
@@ -286,15 +249,28 @@ std::string valueToString(const Value& v, const StringPool& stringPool) {
 			default: return "unknown";
 		}
 	}
-	double num = valueToNumber(v);
+	double num = asNumber(v);
 	if (!std::isfinite(num)) {
 		return std::isnan(num) ? "nan" : (num < 0 ? "-inf" : "inf");
 	}
 	return formatNumber(num);
 }
 
-const char* valueTypeName(Value v) {
-	return valueTypeNameInline(v);
+const inline char* valueTypeName(Value v) {
+	if (valueIsNumber(v)) return "number";
+	if (!valueIsTagged(v)) return "unknown";
+	switch (valueTag(v)) {
+		case ValueTag::Nil: return "nil";
+		case ValueTag::False: return "boolean";
+		case ValueTag::True: return "boolean";
+		case ValueTag::String: return "string";
+		case ValueTag::Table: return "table";
+		case ValueTag::Closure: return "closure";
+		case ValueTag::NativeFunction: return "native_function";
+		case ValueTag::NativeObject: return "native_object";
+		case ValueTag::Upvalue: return "upvalue";
+		default: return "unknown";
+	}
 }
 
 Table::Table(int arraySize, int hashSize) {
@@ -313,7 +289,7 @@ bool Table::tryGetArrayIndex(const Value& key, int& outIndex) const {
 	if (!valueIsNumber(key)) {
 		return false;
 	}
-	double n = valueToNumber(key);
+	double n = asNumber(key);
 	if (!std::isfinite(n)) {
 		return false;
 	}
@@ -1351,7 +1327,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 				if (!valueIsNumber(key)) {
 					return;
 				}
-				const double numberKey = valueToNumber(key);
+				const double numberKey = asNumber(key);
 				if (!std::isfinite(numberKey)) {
 					return;
 				}
@@ -1434,7 +1410,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 		}
 		if (valueIsNumber(value)) {
 			state.tag = CpuValueStateTag::Number;
-			state.numberValue = valueToNumber(value);
+			state.numberValue = asNumber(value);
 			return state;
 		}
 		if (valueIsString(value)) {
@@ -1636,7 +1612,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 				if (!valueIsNumber(key)) {
 					return;
 				}
-				const double numberKey = valueToNumber(key);
+				const double numberKey = asNumber(key);
 				if (!std::isfinite(numberKey)) {
 					return;
 				}
@@ -1880,10 +1856,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 
 void CPU::requestYield() {
 	m_yieldRequested = true;
-}
-
-void CPU::clearYieldRequest() {
-	m_yieldRequested = false;
 }
 
 void CPU::haltUntilIrq() {
@@ -2599,13 +2571,13 @@ void CPU::writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, con
 			if (!valueIsNumber(value)) {
 				throw std::runtime_error("[Memory] memf32le[addr] expects a number.");
 			}
-			m_memory.writeMappedF32LE(addr, static_cast<float>(valueToNumber(value)));
+			m_memory.writeMappedF32LE(addr, static_cast<float>(asNumber(value)));
 			return;
 		case MemoryAccessKind::F64LE:
 			if (!valueIsNumber(value)) {
 				throw std::runtime_error("[Memory] memf64le[addr] expects a number.");
 			}
-			m_memory.writeMappedF64LE(addr, valueToNumber(value));
+			m_memory.writeMappedF64LE(addr, asNumber(value));
 			return;
 	}
 	throw std::runtime_error("Unknown memory access kind.");
@@ -2624,7 +2596,7 @@ double CPU::requireRegisterNumber(CallFrame& frame, int index) const {
 	if (!valueIsNumber(value)) {
 		throw BMSX_RUNTIME_ERROR("Register " + std::to_string(index) + " expected a number, got " + valueTypeName(value) + ".");
 	}
-	return valueToNumber(value);
+	return asNumber(value);
 }
 
 double CPU::requireRKNumber(CallFrame& frame, int rk) const {
@@ -2634,7 +2606,7 @@ double CPU::requireRKNumber(CallFrame& frame, int rk) const {
 		if (!valueIsNumber(value)) {
 			throw BMSX_RUNTIME_ERROR("RK constant " + std::to_string(index) + " expected a number, got " + valueTypeName(value) + ".");
 		}
-		return valueToNumber(value);
+		return asNumber(value);
 	}
 	return requireRegisterNumber(frame, rk);
 }

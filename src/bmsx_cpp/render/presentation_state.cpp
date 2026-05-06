@@ -203,7 +203,7 @@ bool RenderPresentationState::render(ConsoleCore& console, Runtime& runtime, boo
 
 		commitVdpViewSnapshot(*console.m_view, runtime.machine.vdp);
 		console.m_view->configurePresentation(presentMode, commitFrame);
-		console.m_view->drawGame();
+		console.m_view->drawgame();
 	}
 
 	flushDebugReport(runtime);

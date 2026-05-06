@@ -48,7 +48,7 @@ export class CpuExecutionState {
 				}
 			}
 			scheduler.beginCpuSlice(sliceBudget);
-			result = cpu.run(sliceBudget);
+			result = cpu.runUntilDepth(0, sliceBudget);
 			scheduler.endCpuSlice();
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
 			if (consumed > 0) {
