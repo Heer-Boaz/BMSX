@@ -1,4 +1,4 @@
-import type { ResourceDescriptor } from '../../../../rompack/resource';
+import type { ResourceDescriptor } from '../../../../rompack/tooling/resource';
 import type { EditorTabId, ResourceViewerState } from '../../../common/models';
 import { setActiveTab } from '../../ui/tabs';
 import { tabSessionState } from '../../ui/tab/session_state';

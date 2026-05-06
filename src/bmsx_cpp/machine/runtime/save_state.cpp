@@ -1,7 +1,7 @@
 #include "machine/runtime/save_state.h"
 
 #include "machine/runtime/cpu_state.h"
-#include "render/runtime/state.h"
+#include "render/runtime_state.h"
 #include "render/shared/queues.h"
 #include "machine/runtime/save_machine_state.h"
 #include "machine/runtime/runtime.h"

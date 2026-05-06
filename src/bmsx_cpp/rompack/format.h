@@ -11,6 +11,7 @@
 
 namespace bmsx {
 
+constexpr u32 CART_ROM_MAGIC = 0x58534D42u;
 constexpr i32 BIOS_ATLAS_ID = 254;
 constexpr const char* SYSTEM_SLOT_TEXTURE_KEY = "_system_slot";
 constexpr const char* FRAMEBUFFER_TEXTURE_KEY = "_framebuffer_2d";

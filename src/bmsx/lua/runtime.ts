@@ -51,7 +51,7 @@ import {
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger';
 import { consoleCore } from '../core/console';
 import { isLuaHandlerFunction } from './handler_cache';
-import { LuaInteropAdapter } from '../machine/firmware/js_bridge';
+import { LuaInteropAdapter } from '../machine/runtime/host/native_bridge';
 import { getCachedLuaParse } from './analysis/cache';
 import { ScratchBuffer } from '../common/scratchbuffer';
 import { luaModulo } from './numeric';

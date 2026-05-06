@@ -7,8 +7,6 @@
 #ifndef BMSX_TYPES_H
 #define BMSX_TYPES_H
 
-#include <cstdint>
-#include <cstddef>
 #include <string>
 #include <string_view>
 #include <optional>
@@ -19,6 +17,7 @@
 #include <unordered_map>
 #include <array>
 #include <stdexcept>
+#include <utility>
 
 #if defined(BMSX_SNESMINI_LEGACY)
 #define BMSX_RUNTIME_ERROR(message) std::runtime_error(std::string(message))
@@ -26,182 +25,12 @@
 #define BMSX_RUNTIME_ERROR(message) std::runtime_error(message)
 #endif
 
+#include "common/color.h"
+#include "common/rect.h"
+#include "common/types.h"
+#include "common/vector.h"
+
 namespace bmsx {
-
-/* ============================================================================
- * Basic numeric types
- * ============================================================================ */
-
-using i8  = int8_t;
-using i16 = int16_t;
-using i32 = int32_t;
-using i64 = int64_t;
-
-using u8  = uint8_t;
-using u16 = uint16_t;
-using u32 = uint32_t;
-using u64 = uint64_t;
-
-using f32 = float;
-using f64 = double;
-
-/* ============================================================================
- * Vector types
- * ============================================================================ */
-
-struct Vec2 {
-	f32 x = 0.0f;
-	f32 y = 0.0f;
-
-	Vec2() = default;
-	Vec2(f32 x_, f32 y_) : x(x_), y(y_) {}
-
-	Vec2 operator+(const Vec2& other) const { return {x + other.x, y + other.y}; }
-	Vec2 operator-(const Vec2& other) const { return {x - other.x, y - other.y}; }
-	Vec2 operator*(f32 scalar) const { return {x * scalar, y * scalar}; }
-	Vec2 operator/(f32 scalar) const { return {x / scalar, y / scalar}; }
-
-	Vec2& operator+=(const Vec2& other) { x += other.x; y += other.y; return *this; }
-	Vec2& operator-=(const Vec2& other) { x -= other.x; y -= other.y; return *this; }
-	Vec2& operator*=(f32 scalar) { x *= scalar; y *= scalar; return *this; }
-	Vec2& operator/=(f32 scalar) { x /= scalar; y /= scalar; return *this; }
-
-	f32 length() const;
-	f32 lengthSquared() const { return x * x + y * y; }
-	Vec2 normalized() const;
-	f32 dot(const Vec2& other) const { return x * other.x + y * other.y; }
-};
-
-struct Vec3 {
-	f32 x = 0.0f;
-	f32 y = 0.0f;
-	f32 z = 0.0f;
-
-	Vec3() = default;
-	Vec3(f32 x_, f32 y_, f32 z_) : x(x_), y(y_), z(z_) {}
-
-	Vec3 operator+(const Vec3& other) const { return {x + other.x, y + other.y, z + other.z}; }
-	Vec3 operator-(const Vec3& other) const { return {x - other.x, y - other.y, z - other.z}; }
-	Vec3 operator*(f32 scalar) const { return {x * scalar, y * scalar, z * scalar}; }
-
-	f32 length() const;
-	f32 lengthSquared() const { return x * x + y * y + z * z; }
-	Vec3 normalized() const;
-	f32 dot(const Vec3& other) const { return x * other.x + y * other.y + z * other.z; }
-	Vec3 cross(const Vec3& other) const;
-};
-
-struct Vec4 {
-	f32 x = 0.0f;
-	f32 y = 0.0f;
-	f32 z = 0.0f;
-	f32 w = 0.0f;
-
-	Vec4() = default;
-	Vec4(f32 x_, f32 y_, f32 z_, f32 w_) : x(x_), y(y_), z(z_), w(w_) {}
-};
-
-/* ============================================================================
- * Rectangle types
- * ============================================================================ */
-
-struct Rect {
-	f32 x = 0.0f;
-	f32 y = 0.0f;
-	f32 width = 0.0f;
-	f32 height = 0.0f;
-
-	Rect() = default;
-	Rect(f32 x_, f32 y_, f32 w_, f32 h_) : x(x_), y(y_), width(w_), height(h_) {}
-
-	f32 left() const { return x; }
-	f32 right() const { return x + width; }
-	f32 top() const { return y; }
-	f32 bottom() const { return y + height; }
-
-	Vec2 center() const { return {x + width * 0.5f, y + height * 0.5f}; }
-	Vec2 size() const { return {width, height}; }
-
-	bool contains(const Vec2& point) const {
-		return point.x >= x && point.x < x + width &&
-				point.y >= y && point.y < y + height;
-	}
-
-	bool intersects(const Rect& other) const {
-		return x < other.x + other.width && x + width > other.x &&
-				y < other.y + other.height && y + height > other.y;
-	}
-};
-
-struct IntRect {
-	i32 x = 0;
-	i32 y = 0;
-	i32 width = 0;
-	i32 height = 0;
-
-	IntRect() = default;
-	IntRect(i32 x_, i32 y_, i32 w_, i32 h_) : x(x_), y(y_), width(w_), height(h_) {}
-};
-
-/* ============================================================================
- * Color types
- * ============================================================================ */
-
-struct Color {
-	f32 r = 1.0f;
-	f32 g = 1.0f;
-	f32 b = 1.0f;
-	f32 a = 1.0f;
-
-	Color() = default;
-	Color(f32 r_, f32 g_, f32 b_, f32 a_ = 1.0f) : r(r_), g(g_), b(b_), a(a_) {}
-
-	static Color fromRGBA8(u8 r, u8 g, u8 b, u8 a = 255) {
-		return {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f};
-	}
-
-	static Color fromHex(u32 hex) {
-		return fromRGBA8(
-			(hex >> 24) & 0xFF,
-			(hex >> 16) & 0xFF,
-			(hex >> 8) & 0xFF,
-			hex & 0xFF
-		);
-	}
-
-	static u8 channelToByte(f32 value) {
-		return static_cast<u8>(value * 255.0f);
-	}
-
-	u32 toRGBA8() const {
-		return (static_cast<u32>(channelToByte(r)) << 24) |
-				(static_cast<u32>(channelToByte(g)) << 16) |
-				(static_cast<u32>(channelToByte(b)) << 8) |
-				static_cast<u32>(channelToByte(a));
-	}
-
-	// Convert to ARGB32 format (common for framebuffers)
-	u32 toARGB32() const {
-		const u8 ai = channelToByte(a);
-		const u8 ri = channelToByte(r);
-		const u8 gi = channelToByte(g);
-		const u8 bi = channelToByte(b);
-		return (ai << 24) | (ri << 16) | (gi << 8) | bi;
-	}
-
-	// Convert to RGBA32 format
-	u32 toRGBA32() const {
-		return toRGBA8();
-	}
-
-	// Predefined colors
-	static Color white() { return {1.0f, 1.0f, 1.0f, 1.0f}; }
-	static Color black() { return {0.0f, 0.0f, 0.0f, 1.0f}; }
-	static Color red() { return {1.0f, 0.0f, 0.0f, 1.0f}; }
-	static Color green() { return {0.0f, 1.0f, 0.0f, 1.0f}; }
-	static Color blue() { return {0.0f, 0.0f, 1.0f, 1.0f}; }
-	static Color transparent() { return {0.0f, 0.0f, 0.0f, 0.0f}; }
-};
 
 /* ============================================================================
  * Transform

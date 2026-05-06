@@ -2,8 +2,8 @@
  * font.h - font variants
  */
 
-#ifndef BMSX_MACHINE_FONT_H
-#define BMSX_MACHINE_FONT_H
+#ifndef BMSX_BMSX_FONT_H
+#define BMSX_BMSX_FONT_H
 
 #include "render/shared/bitmap_font.h"
 
@@ -23,4 +23,4 @@ public:
 
 } // namespace bmsx
 
-#endif // BMSX_MACHINE_FONT_H
+#endif // BMSX_BMSX_FONT_H

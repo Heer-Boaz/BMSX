@@ -8,6 +8,8 @@
 #include "common/endian.h"
 #include "common/mem_snapshot.h"
 #include "rompack/format.h"
+#include "rompack/metadata.h"
+#include "rompack/toc.h"
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
@@ -149,120 +151,6 @@ static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& mani
 			manifest.stagingBytes = vramObj.at("staging_bytes").toI32();
 		}
 	}
-}
-
-static constexpr u32 ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
-static constexpr u32 ROM_TOC_HEADER_SIZE = 48;
-static constexpr u32 ROM_TOC_ENTRY_SIZE = 88;
-static constexpr u32 ROM_TOC_INVALID_U32 = 0xffffffff;
-
-enum class AssetTypeKind {
-	ImageAtlas,
-	Audio,
-	Model,
-	Aem,
-	Bin,
-	Lua,
-	Data,
-	Skip,
-	Unknown,
-};
-
-static std::string assetTypeFromId(u32 id) {
-	switch (id) {
-		case 1: return "image";
-		case 2: return "audio";
-		case 3: return "data";
-		case 4: return "bin";
-		case 5: return "atlas";
-		case 6: return "romlabel";
-		case 7: return "model";
-		case 8: return "aem";
-		case 9: return "lua";
-		case 10: return "code";
-		default:
-			throw BMSX_RUNTIME_ERROR("Unknown asset type id: " + std::to_string(id));
-	}
-}
-
-static AssetTypeKind resolveAssetTypeKind(std::string_view assetType) {
-	switch (assetType[0]) {
-		case 'i':
-			if (assetType == "image") {
-				return AssetTypeKind::ImageAtlas;
-			}
-			break;
-		case 'a':
-			if (assetType == "atlas") {
-				return AssetTypeKind::ImageAtlas;
-			}
-			if (assetType == "audio") {
-				return AssetTypeKind::Audio;
-			}
-			if (assetType == "aem") {
-				return AssetTypeKind::Aem;
-			}
-			break;
-		case 'm':
-			if (assetType == "model") {
-				return AssetTypeKind::Model;
-			}
-			break;
-		case 'b':
-			if (assetType == "bin") {
-				return AssetTypeKind::Bin;
-			}
-			break;
-		case 'l':
-			if (assetType == "lua") {
-				return AssetTypeKind::Lua;
-			}
-			break;
-		case 'd':
-			if (assetType == "data") {
-				return AssetTypeKind::Data;
-			}
-			break;
-		case 'r':
-			if (assetType == "romlabel") {
-				return AssetTypeKind::Skip;
-			}
-			break;
-		case 'c':
-			if (assetType == "code") {
-				return AssetTypeKind::Skip;
-			}
-			break;
-	}
-	return AssetTypeKind::Unknown;
-}
-
-static AssetToken makeAssetToken(u32 lo, u32 hi) {
-	return (static_cast<AssetToken>(hi) << 32) | static_cast<AssetToken>(lo);
-}
-
-static std::optional<i32> optionalI32FromU32(u32 value) {
-	if (value == ROM_TOC_INVALID_U32) {
-		return std::nullopt;
-	}
-	return static_cast<i32>(value);
-}
-
-static std::optional<i64> optionalI64FromU64(u64 value) {
-	if (value == 0) {
-		return std::nullopt;
-	}
-	return static_cast<i64>(value);
-}
-
-static std::string readStringFromTable(const u8* table, size_t tableSize, u32 offset, u32 length) {
-	if (offset == ROM_TOC_INVALID_U32 || length == 0) {
-		return {};
-	}
-	if (static_cast<size_t>(offset) + static_cast<size_t>(length) > tableSize) {
-		throw BMSX_RUNTIME_ERROR("ROM TOC string table entry out of bounds.");
-	}
-	return std::string(reinterpret_cast<const char*>(table + offset), static_cast<size_t>(length));
 }
 
 static void logMemSnapshot(const char* label) {
@@ -1090,70 +978,15 @@ struct CartRomHeader {
 	u32 metadataLength = 0;
 };
 
-static constexpr u8 CART_ROM_MAGIC[4] = { 0x42, 0x4d, 0x53, 0x58 };
+static constexpr u8 CART_ROM_MAGIC_BYTES[4] = { 0x42, 0x4d, 0x53, 0x58 };
 static constexpr size_t CART_ROM_BASE_HEADER_SIZE = 32;
 static constexpr size_t CART_ROM_PROGRAM_HEADER_SIZE = 64;
 static constexpr size_t CART_ROM_HEADER_SIZE = 72;
-static constexpr u32 ROM_METADATA_MAGIC = 0x44544d42; // 'BMTD' little-endian
-static constexpr u32 ROM_METADATA_VERSION = 1;
-static constexpr size_t ROM_METADATA_HEADER_SIZE = 12;
-
-struct RomMetadataSection {
-	std::vector<std::string> propNames;
-	size_t payloadOffset = 0;
-};
-
-static u32 readVarUint(const u8* data, size_t size, size_t& pos) {
-	u32 value = 0;
-	u32 shift = 0;
-	int count = 0;
-	while (true) {
-		if (pos >= size) {
-			throw BMSX_RUNTIME_ERROR("ROM metadata varuint truncated.");
-		}
-		const u8 byte = data[pos++];
-		value |= static_cast<u32>(byte & 0x7f) << shift;
-		if ((byte & 0x80) == 0) {
-			return value;
-		}
-		shift += 7;
-		if (++count > 4) {
-			throw BMSX_RUNTIME_ERROR("ROM metadata varuint overflow.");
-		}
-	}
-}
-
-static RomMetadataSection parseRomMetadataSection(const u8* data, size_t size) {
-	if (size < ROM_METADATA_HEADER_SIZE) {
-		throw BMSX_RUNTIME_ERROR("ROM metadata section too small.");
-	}
-	if (readLE32(data + 0) != ROM_METADATA_MAGIC) {
-		throw BMSX_RUNTIME_ERROR("Invalid ROM metadata magic.");
-	}
-	if (readLE32(data + 4) != ROM_METADATA_VERSION) {
-		throw BMSX_RUNTIME_ERROR("Unsupported ROM metadata version.");
-	}
-	const u32 propCount = readLE32(data + 8);
-	size_t pos = ROM_METADATA_HEADER_SIZE;
-	RomMetadataSection section;
-	section.propNames.reserve(propCount);
-	for (u32 i = 0; i < propCount; ++i) {
-		const u32 length = readVarUint(data, size, pos);
-		if (pos + length > size) {
-			throw BMSX_RUNTIME_ERROR("ROM metadata property string truncated.");
-		}
-		section.propNames.emplace_back(reinterpret_cast<const char*>(data + pos), length);
-		pos += length;
-	}
-	section.payloadOffset = pos;
-	return section;
-}
-
 static bool hasCartHeader(const u8* data, size_t size) {
 	if (size < CART_ROM_BASE_HEADER_SIZE) {
 		return false;
 	}
-	if (std::memcmp(data, CART_ROM_MAGIC, sizeof(CART_ROM_MAGIC)) != 0) {
+	if (std::memcmp(data, CART_ROM_MAGIC_BYTES, sizeof(CART_ROM_MAGIC_BYTES)) != 0) {
 		return false;
 	}
 	const u32 headerSize = readLE32(data + 4);
@@ -1170,7 +1003,7 @@ static CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	if (size < CART_ROM_BASE_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("ROM payload is too small for cart header.");
 	}
-	if (std::memcmp(data, CART_ROM_MAGIC, sizeof(CART_ROM_MAGIC)) != 0) {
+	if (std::memcmp(data, CART_ROM_MAGIC_BYTES, sizeof(CART_ROM_MAGIC_BYTES)) != 0) {
 		throw BMSX_RUNTIME_ERROR("Invalid ROM cart header.");
 	}
 	CartRomHeader header{};
@@ -1456,44 +1289,9 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						bool loadProjectRoot) {
 	const u8* tocData = romData + header.tocOffset;
 	const size_t tocSize = header.tocLength;
-	if (tocSize < ROM_TOC_HEADER_SIZE) {
-		throw BMSX_RUNTIME_ERROR("ROM TOC is too small.");
-	}
-	const u32 tocMagic = readLE32(tocData + 0);
-	if (tocMagic != ROM_TOC_MAGIC) {
-		throw BMSX_RUNTIME_ERROR("Invalid ROM TOC magic.");
-	}
-	const u32 tocHeaderSize = readLE32(tocData + 4);
-	if (tocHeaderSize != ROM_TOC_HEADER_SIZE) {
-		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC header size.");
-	}
-	const u32 entrySize = readLE32(tocData + 8);
-	if (entrySize != ROM_TOC_ENTRY_SIZE) {
-		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC entry size.");
-	}
-	const u32 entryCount = readLE32(tocData + 12);
-	const u32 entryOffset = readLE32(tocData + 16);
-	if (entryOffset != ROM_TOC_HEADER_SIZE) {
-		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC entry offset.");
-	}
-	const u32 stringTableOffset = readLE32(tocData + 20);
-	const u32 stringTableLength = readLE32(tocData + 24);
-	const u32 projectRootOffset = readLE32(tocData + 28);
-	const u32 projectRootLength = readLE32(tocData + 32);
-	const size_t entriesBytes = static_cast<size_t>(entryCount) * static_cast<size_t>(entrySize);
-	const size_t expectedStringOffset = static_cast<size_t>(entryOffset) + entriesBytes;
-	if (static_cast<size_t>(stringTableOffset) != expectedStringOffset) {
-		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC string table offset.");
-	}
-
-	assertSectionRange(static_cast<size_t>(entryOffset), entriesBytes, tocSize, "toc entries");
-	assertSectionRange(static_cast<size_t>(stringTableOffset), static_cast<size_t>(stringTableLength), tocSize, "toc string table");
-
-	const u8* stringTable = tocData + stringTableOffset;
-	const size_t stringTableSize = stringTableLength;
-	const std::string projectRootPath = readStringFromTable(stringTable, stringTableSize, projectRootOffset, projectRootLength);
-	if (loadProjectRoot && !projectRootPath.empty()) {
-		romPackage.projectRootPath = projectRootPath;
+	const RomTocPayload toc = decodeRomToc(tocData, tocSize);
+	if (loadProjectRoot && toc.projectRootPath.has_value()) {
+		romPackage.projectRootPath = *toc.projectRootPath;
 	}
 
 	RomMetadataSection sharedMetadata;
@@ -1507,6 +1305,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 	}
 
 	// Step 5: Load ROM TOC records.
+	const size_t entryCount = toc.entries.size();
 	if (entryCount == 0) {
 		return true;
 	}
@@ -1514,67 +1313,12 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 	logMemSnapshot("rom-package:begin");
 	std::cerr << "[BMSX] Loading " << entryCount << " ROM entries" << std::endl;
 
-	for (u32 index = 0; index < entryCount; index += 1) {
-		const u8* entry = tocData + entryOffset + (index * entrySize);
-		const u32 tokenLo = readLE32(entry + 0);
-		const u32 tokenHi = readLE32(entry + 4);
-		const AssetToken assetToken = makeAssetToken(tokenLo, tokenHi);
-		const u32 typeId = readLE32(entry + 8);
-		const u32 opId = readLE32(entry + 12);
-		const u32 residOffset = readLE32(entry + 16);
-		const u32 residLength = readLE32(entry + 20);
-		const u32 sourceOffset = readLE32(entry + 24);
-		const u32 sourceLength = readLE32(entry + 28);
-		const u32 normalizedOffset = readLE32(entry + 32);
-		const u32 normalizedLength = readLE32(entry + 36);
-		const u32 bufStartRaw = readLE32(entry + 40);
-		const u32 bufEndRaw = readLE32(entry + 44);
-		const u32 compiledStartRaw = readLE32(entry + 48);
-		const u32 compiledEndRaw = readLE32(entry + 52);
-		const u32 metaBufStartRaw = readLE32(entry + 56);
-		const u32 metaBufEndRaw = readLE32(entry + 60);
-		const u32 textureBufStartRaw = readLE32(entry + 64);
-		const u32 textureBufEndRaw = readLE32(entry + 68);
-		const u32 collisionBinStartRaw = readLE32(entry + 72);
-		const u32 collisionBinEndRaw = readLE32(entry + 76);
-		const u32 updateLo = readLE32(entry + 80);
-		const u32 updateHi = readLE32(entry + 84);
+	for (const RomSourceEntry& sourceEntry : toc.entries) {
+		const std::string& assetId = sourceEntry.resid;
+		const AssetToken assetToken = hashAssetToken(assetId);
+		const std::string& assetType = sourceEntry.rom.type;
 
-		const std::string assetId = readStringFromTable(stringTable, stringTableSize, residOffset, residLength);
-		if (assetId.empty()) {
-			throw BMSX_RUNTIME_ERROR("ROM TOC entry missing asset id.");
-		}
-		const AssetToken expectedToken = hashAssetToken(assetId);
-		if (expectedToken != assetToken) {
-			throw BMSX_RUNTIME_ERROR("ROM TOC entry token mismatch for asset '" + assetId + "'.");
-		}
-		const std::string assetType = assetTypeFromId(typeId);
-
-		RomAssetInfo romInfo;
-		romInfo.type = assetType;
-		if (opId == 1) {
-			romInfo.op = std::string("delete");
-		}
-		romInfo.start = optionalI32FromU32(bufStartRaw);
-		romInfo.end = optionalI32FromU32(bufEndRaw);
-		romInfo.compiledStart = optionalI32FromU32(compiledStartRaw);
-		romInfo.compiledEnd = optionalI32FromU32(compiledEndRaw);
-		romInfo.metabufferStart = optionalI32FromU32(metaBufStartRaw);
-		romInfo.metabufferEnd = optionalI32FromU32(metaBufEndRaw);
-		romInfo.textureStart = optionalI32FromU32(textureBufStartRaw);
-		romInfo.textureEnd = optionalI32FromU32(textureBufEndRaw);
-		romInfo.collisionBinStart = optionalI32FromU32(collisionBinStartRaw);
-		romInfo.collisionBinEnd = optionalI32FromU32(collisionBinEndRaw);
-		const std::string sourcePath = readStringFromTable(stringTable, stringTableSize, sourceOffset, sourceLength);
-		if (!sourcePath.empty()) {
-			romInfo.sourcePath = sourcePath;
-		}
-		const std::string normalizedSourcePath = readStringFromTable(stringTable, stringTableSize, normalizedOffset, normalizedLength);
-		if (!normalizedSourcePath.empty()) {
-			romInfo.normalizedSourcePath = normalizedSourcePath;
-		}
-		const u64 updateTimestampRaw = (static_cast<u64>(updateHi) << 32) | updateLo;
-		romInfo.updateTimestamp = optionalI64FromU64(updateTimestampRaw);
+		RomAssetInfo romInfo = sourceEntry.rom;
 		if (payloadId && payloadId[0] != '\0') {
 			romInfo.payloadId = std::string(payloadId);
 		}

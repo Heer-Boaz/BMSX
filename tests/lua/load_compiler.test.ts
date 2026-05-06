@@ -15,7 +15,7 @@ test('compileLoadChunk supports negative numeric literals in generated assignmen
 			return stringPool.intern(value);
 		},
 	} as any;
-	const loader = compileLoadChunk([
+	const loader = compileLoadChunk(runtime, [
 		'return function(target)',
 		'\ttarget["sprite_component"]["offset"]["x"] = -8',
 		'end',
@@ -43,7 +43,7 @@ test('compileLoadChunk keeps negative numeric indices on the generic table path'
 			return stringPool.intern(value);
 		},
 	} as any;
-	const loader = compileLoadChunk([
+	const loader = compileLoadChunk(runtime, [
 		'return function(target)',
 		'\ttarget[-1] = 42',
 		'end',

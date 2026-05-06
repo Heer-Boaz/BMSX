@@ -6,7 +6,7 @@ import { KeyboardInput } from './keyboard';
 import { OnscreenGamepad } from './onscreen_gamepad';
 import { GlobalShortcutRegistry } from './shortcuts';
 
-import { PendingAssignmentProcessor } from './assignment_processor';
+import { PendingAssignmentProcessor } from './host/assignment_processor';
 import { PlayerInput, InputSource } from './player';
 import { PointerInput } from './pointer';
 import type { DeviceKind, InputDevice, InputEvt, SubscriptionHandle, GameViewCanvas } from '../platform';

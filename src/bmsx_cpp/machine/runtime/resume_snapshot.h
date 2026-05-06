@@ -3,7 +3,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/machine_state.h"
-#include "render/runtime/state.h"
+#include "render/runtime_state.h"
 
 #include <utility>
 #include <vector>

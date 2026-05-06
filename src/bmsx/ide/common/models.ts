@@ -4,13 +4,13 @@ import type {
 	LuaDefinitionLocation,
 	LuaSymbolEntry,
 } from '../../lua/semantic_contracts';
-import type { ResourceDescriptor } from '../../rompack/resource';
+import type { ResourceDescriptor } from '../../rompack/tooling/resource';
 import type { StackTraceFrame } from '../../lua/value';
 import type { EditorCommandId } from './commands';
 import { RectBounds } from '../../rompack/format';
 import type { TextBuffer } from '../editor/text/text_buffer';
 import type { EditorUndoRecord } from '../editor/text/undo';
-export type { ResourceDescriptor } from '../../rompack/resource';
+export type { ResourceDescriptor } from '../../rompack/tooling/resource';
 
 export type Position = { row: number; column: number };
 

@@ -1,4 +1,5 @@
 #include "machine/devices/vdp/vram_garbage.h"
+#include "machine/common/hash.h"
 #include "machine/memory/map.h"
 #include <algorithm>
 
@@ -27,30 +28,6 @@ constexpr OctaveSpec VRAM_GARBAGE_OCTAVES[] = {
 	{19u, 20, 0xa24baed5U, 0x9e3779b9U},
 	{21u, 24, 0x6a09e667U, 0xbb67ae85U},
 };
-
-uint32_t fmix32(uint32_t h) {
-	h ^= h >> 16u;
-	h *= 0x85ebca6bU;
-	h ^= h >> 13u;
-	h *= 0xc2b2ae35U;
-	h ^= h >> 16u;
-	return h;
-}
-
-uint32_t xorshift32(uint32_t x) {
-	x ^= x << 13u;
-	x ^= x >> 17u;
-	x ^= x << 5u;
-	return x;
-}
-
-uint32_t scramble32(uint32_t x) {
-	return x * 0x9e3779bbU;
-}
-
-int signed8FromHash(uint32_t h) {
-	return static_cast<int>((h >> 24u) & 0xFFu) - 128;
-}
 
 struct BlockGen {
 	uint32_t forceMask = 0;

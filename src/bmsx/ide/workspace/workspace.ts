@@ -3,7 +3,7 @@ import { toLuaModulePath } from '../../machine/program/loader';
 import type { StorageService } from '../../platform';
 import type { Runtime } from '../../machine/runtime/runtime';
 import * as luaPipeline from '../runtime/lua_pipeline';
-import type { LuaResourceCreationRequest, ResourceDescriptor } from '../../rompack/resource';
+import type { LuaResourceCreationRequest, ResourceDescriptor } from '../../rompack/tooling/resource';
 import {
 	applyWorkspaceSourceOverrides,
 	collectScratchWorkspaceDirtyPaths,

@@ -4,7 +4,7 @@ import type { Stats } from 'fs';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/format';
 import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../src/bmsx/rompack/format';
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../src/bmsx/core/system';
-import { encodeRomToc } from '../../src/bmsx/rompack/toc';
+import { encodeRomToc } from '../../src/bmsx/rompack/tooling/toc_encode';
 import type { LuaChunk } from '../../src/bmsx/lua/syntax/ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { resolveTargetAtlasId, createOptimizedAtlas, generateAtlasAssetId } from './atlasbuilder';
@@ -32,7 +32,7 @@ const { finished } = require('stream/promises');
 // @ts-ignore
 const { encodeBinary, decodeBinary } = require('../../src/bmsx/common/serializer/binencoder');
 // @ts-ignore
-const { buildRomMetadataSection } = require('../../src/bmsx/rompack/metadata');
+const { buildRomMetadataSection } = require('../../src/bmsx/rompack/tooling/metadata_encode');
 // @ts-ignore
 const { LuaLexer } = require('../../src/bmsx/lua/syntax/lexer');
 // @ts-ignore

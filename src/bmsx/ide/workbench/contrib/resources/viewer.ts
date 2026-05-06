@@ -1,6 +1,6 @@
 import { clamp } from '../../../../common/clamp';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import type { ResourceDescriptor } from '../../../../rompack/resource';
+import type { ResourceDescriptor } from '../../../../rompack/tooling/resource';
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
 import { appendTextLines } from '../../../../common/text_lines';

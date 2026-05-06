@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "rompack/host_system_atlas_generated.h"
+#include "rompack/host_system_atlas.generated.h"
 
 #include <cstdint>
 #include <string_view>

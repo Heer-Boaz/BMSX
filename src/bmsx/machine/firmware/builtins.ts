@@ -10,7 +10,7 @@ import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,
 	SYSTEM_LUA_BUILTIN_FUNCTIONS,
 } from './builtin_descriptors';
-import { buildMarshalContext } from './js_bridge';
+import { buildMarshalContext } from '../runtime/host/native_bridge';
 import type { Runtime } from '../runtime/runtime';
 import type { LuaBuiltinDescriptor } from '../runtime/contracts';
 

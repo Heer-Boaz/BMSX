@@ -1,8 +1,7 @@
-#include "machine/program/compiler.h"
+#include "machine/program/load_compiler.h"
 #include "machine/runtime/runtime.h"
 #include "lua/syntax/lexer.h"
 #include "lua/syntax/parser.h"
-#include <cmath>
 #include <limits>
 #include <unordered_map>
 #include <vector>
@@ -155,14 +154,16 @@ LoadSubsetPathStep compilePathStep(Runtime& runtime, const std::string& chunkNam
 	}
 	if (expression.kind == LuaSyntaxKind::NumericLiteralExpression) {
 		if (
-			std::floor(expression.numberValue) == expression.numberValue
-			&& expression.numberValue >= 1.0
+			expression.numberValue >= 1.0
 			&& expression.numberValue <= static_cast<double>(std::numeric_limits<int>::max())
 		) {
-			return {
-				.kind = LoadSubsetPathStep::Kind::Index,
-				.index = static_cast<int>(expression.numberValue),
-			};
+			const int index = static_cast<int>(expression.numberValue);
+			if (static_cast<double>(index) == expression.numberValue) {
+				return {
+					.kind = LoadSubsetPathStep::Kind::Index,
+					.index = index,
+				};
+			}
 		}
 		return {
 			.kind = LoadSubsetPathStep::Kind::Key,

@@ -59,19 +59,4 @@ i64 resolveVblankCycles(i64 cpuHz, i64 refreshHzScaled, i32 renderHeight) {
 	return vblankCycles;
 }
 
-TimingState::TimingState(i64 ufpsScaledValue, i64 cpuHzValue, int cycleBudgetPerFrameValue)
-	: cpuHz(cpuHzValue)
-	, cycleBudgetPerFrame(cycleBudgetPerFrameValue) {
-	applyUfpsScaled(ufpsScaledValue);
-}
-
-void TimingState::applyUfpsScaled(i64 value) {
-	if (value <= HZ_SCALE) {
-		throw std::runtime_error("[RuntimeTiming] machine.ufps must be greater than 1 Hz.");
-	}
-	ufpsScaled = value;
-	ufps = static_cast<f64>(ufpsScaled) / static_cast<f64>(HZ_SCALE);
-	frameDurationMs = 1000.0 / ufps;
-}
-
 } // namespace bmsx

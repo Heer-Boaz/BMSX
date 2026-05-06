@@ -1,5 +1,6 @@
 #include "machine/cpu/disassembler.h"
 #include "machine/cpu/instruction_format.h"
+#include "machine/cpu/opcode_info.h"
 #include "machine/cpu/source_text.h"
 #include "machine/common/number_format.h"
 
@@ -30,93 +31,6 @@ struct RkDebugValue {
 	std::string text;
 	std::optional<int> registerIndex;
 };
-
-bool opUsesBx(OpCode op) {
-	return op == OpCode::LOADK
-		|| op == OpCode::KSMI
-		|| op == OpCode::GETG
-		|| op == OpCode::SETG
-		|| op == OpCode::GETSYS
-		|| op == OpCode::SETSYS
-		|| op == OpCode::GETGL
-		|| op == OpCode::SETGL
-		|| op == OpCode::CLOSURE
-		|| op == OpCode::JMP
-		|| op == OpCode::JMPIF
-		|| op == OpCode::JMPIFNOT
-		|| op == OpCode::BR_TRUE
-		|| op == OpCode::BR_FALSE;
-}
-
-const char* opCodeName(OpCode op) {
-	switch (op) {
-		case OpCode::WIDE: return "WIDE";
-		case OpCode::MOV: return "MOV";
-		case OpCode::LOADK: return "LOADK";
-		case OpCode::LOADNIL: return "LOADNIL";
-		case OpCode::LOADBOOL: return "LOADBOOL";
-		case OpCode::KNIL: return "KNIL";
-		case OpCode::KFALSE: return "KFALSE";
-		case OpCode::KTRUE: return "KTRUE";
-		case OpCode::K0: return "K0";
-		case OpCode::K1: return "K1";
-		case OpCode::KM1: return "KM1";
-		case OpCode::KSMI: return "KSMI";
-		case OpCode::GETG: return "GETG";
-		case OpCode::SETG: return "SETG";
-		case OpCode::GETI: return "GETI";
-		case OpCode::SETI: return "SETI";
-		case OpCode::GETFIELD: return "GETFIELD";
-		case OpCode::SETFIELD: return "SETFIELD";
-		case OpCode::SELF: return "SELF";
-		case OpCode::HALT: return "HALT";
-		case OpCode::GETT: return "GETT";
-		case OpCode::SETT: return "SETT";
-		case OpCode::NEWT: return "NEWT";
-		case OpCode::ADD: return "ADD";
-		case OpCode::SUB: return "SUB";
-		case OpCode::MUL: return "MUL";
-		case OpCode::DIV: return "DIV";
-		case OpCode::MOD: return "MOD";
-		case OpCode::FLOORDIV: return "FLOORDIV";
-		case OpCode::POW: return "POW";
-		case OpCode::BAND: return "BAND";
-		case OpCode::BOR: return "BOR";
-		case OpCode::BXOR: return "BXOR";
-		case OpCode::SHL: return "SHL";
-		case OpCode::SHR: return "SHR";
-		case OpCode::CONCAT: return "CONCAT";
-		case OpCode::CONCATN: return "CONCATN";
-		case OpCode::UNM: return "UNM";
-		case OpCode::NOT: return "NOT";
-		case OpCode::LEN: return "LEN";
-		case OpCode::BNOT: return "BNOT";
-		case OpCode::EQ: return "EQ";
-		case OpCode::LT: return "LT";
-		case OpCode::LE: return "LE";
-		case OpCode::TEST: return "TEST";
-		case OpCode::TESTSET: return "TESTSET";
-		case OpCode::JMP: return "JMP";
-		case OpCode::JMPIF: return "JMPIF";
-		case OpCode::JMPIFNOT: return "JMPIFNOT";
-		case OpCode::CLOSURE: return "CLOSURE";
-		case OpCode::GETUP: return "GETUP";
-		case OpCode::SETUP: return "SETUP";
-		case OpCode::VARARG: return "VARARG";
-		case OpCode::CALL: return "CALL";
-		case OpCode::RET: return "RET";
-		case OpCode::LOAD_MEM: return "LOAD_MEM";
-		case OpCode::STORE_MEM: return "STORE_MEM";
-		case OpCode::STORE_MEM_WORDS: return "STORE_MEM_WORDS";
-		case OpCode::BR_TRUE: return "BR_TRUE";
-		case OpCode::BR_FALSE: return "BR_FALSE";
-		case OpCode::GETSYS: return "GETSYS";
-		case OpCode::SETSYS: return "SETSYS";
-		case OpCode::GETGL: return "GETGL";
-		case OpCode::SETGL: return "SETGL";
-	}
-	return "UNKNOWN";
-}
 
 int hexWidth(int value) {
 	int width = 1;
@@ -223,7 +137,7 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 		const int nextA = static_cast<int>((nextWord >> 12) & 0x3f);
 		const int nextB = static_cast<int>((nextWord >> 6) & 0x3f);
 		const int nextC = static_cast<int>(nextWord & 0x3f);
-		const bool usesBx = opUsesBx(nextOp);
+		const bool usesBx = opCodeUsesBx(nextOp);
 		const int extA = usesBx ? 0 : static_cast<int>((nextExt >> 6) & 0x3);
 		const int extB = usesBx ? 0 : static_cast<int>((nextExt >> 3) & 0x7);
 		const int extC = usesBx ? 0 : static_cast<int>(nextExt & 0x7);
@@ -247,7 +161,7 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 			MAX_OPERAND_BITS + EXT_C_BITS + MAX_OPERAND_BITS,
 		};
 	}
-	const bool usesBx = opUsesBx(op);
+	const bool usesBx = opCodeUsesBx(op);
 	const int extA = usesBx ? 0 : static_cast<int>((ext >> 6) & 0x3);
 	const int extB = usesBx ? 0 : static_cast<int>((ext >> 3) & 0x7);
 	const int extC = usesBx ? 0 : static_cast<int>(ext & 0x7);

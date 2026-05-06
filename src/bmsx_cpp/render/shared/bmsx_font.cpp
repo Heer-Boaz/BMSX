@@ -2,7 +2,7 @@
  * font.cpp - font variants
  */
 
-#include "machine/firmware/font.h"
+#include "render/shared/bmsx_font.h"
 
 #include "rompack/host_system_atlas.h"
 #include "rompack/format.h"

@@ -29,7 +29,7 @@ import type { CartEditor } from '../../ide/cart_editor';
 import { type LuaSemanticModel, type FileSemanticData } from '../../lua/semantic/model';
 import { registerFirmwareBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
-import { LuaJsBridge } from '../firmware/js_bridge';
+import { LuaJsBridge } from './host/native_bridge';
 import { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion } from './contracts';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_SYSTEM_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import { buildLuaSources, resolveLuaSourceRecordFromRegistries, type LuaSourceRegistry } from '../program/sources';

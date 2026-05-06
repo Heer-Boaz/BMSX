@@ -17,7 +17,7 @@
 #include "machine/memory/specs.h"
 #include "machine/runtime/boot_timing.h"
 #include "machine/program/linker.h"
-#include "machine/firmware/font.h"
+#include "render/shared/bmsx_font.h"
 #include "rompack/format.h"
 #include <cstdio>
 #include <cstdlib>

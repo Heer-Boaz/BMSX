@@ -24,27 +24,6 @@ namespace bmsx {
 // start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
 
 namespace {
-static constexpr std::array<uint8_t, 64> makeUsesBxTable() {
-	std::array<uint8_t, 64> usesBx = {};
-	usesBx[static_cast<size_t>(OpCode::LOADK)] = 1;
-	usesBx[static_cast<size_t>(OpCode::KSMI)] = 1;
-	usesBx[static_cast<size_t>(OpCode::GETG)] = 1;
-	usesBx[static_cast<size_t>(OpCode::SETG)] = 1;
-	usesBx[static_cast<size_t>(OpCode::GETSYS)] = 1;
-	usesBx[static_cast<size_t>(OpCode::SETSYS)] = 1;
-	usesBx[static_cast<size_t>(OpCode::GETGL)] = 1;
-	usesBx[static_cast<size_t>(OpCode::SETGL)] = 1;
-	usesBx[static_cast<size_t>(OpCode::CLOSURE)] = 1;
-	usesBx[static_cast<size_t>(OpCode::JMP)] = 1;
-	usesBx[static_cast<size_t>(OpCode::JMPIF)] = 1;
-	usesBx[static_cast<size_t>(OpCode::JMPIFNOT)] = 1;
-	usesBx[static_cast<size_t>(OpCode::BR_TRUE)] = 1;
-	usesBx[static_cast<size_t>(OpCode::BR_FALSE)] = 1;
-	return usesBx;
-}
-
-static constexpr std::array<uint8_t, 64> kUsesBx = makeUsesBxTable();
-
 static constexpr NativeFnCost kNativeCostTier0 { 0, 0, 0 };
 static constexpr NativeFnCost kNativeCostTier1 { 1, 0, 0 };
 static constexpr NativeFnCost kNativeCostTier2 { 2, 0, 0 };
@@ -166,64 +145,6 @@ static std::string formatNonFunctionCallError(Value callee, const StringPool& st
 	}
 	return message;
 }
-
-static constexpr void setCycle(std::array<uint8_t, 64>& table, OpCode op, uint8_t cost) {
-	table[static_cast<size_t>(op)] = cost;
-}
-
-static constexpr std::array<uint8_t, 64> makeBaseCycles() {
-	std::array<uint8_t, 64> table{};
-	table.fill(1);
-	setCycle(table, OpCode::WIDE, 0);
-
-	setCycle(table, OpCode::MOV, 1);
-	setCycle(table, OpCode::LOADK, 1);
-	setCycle(table, OpCode::LOADBOOL, 1);
-	setCycle(table, OpCode::LOADNIL, 1);
-	setCycle(table, OpCode::KNIL, 1);
-	setCycle(table, OpCode::KFALSE, 1);
-	setCycle(table, OpCode::KTRUE, 1);
-	setCycle(table, OpCode::K0, 1);
-	setCycle(table, OpCode::K1, 1);
-	setCycle(table, OpCode::KM1, 1);
-	setCycle(table, OpCode::KSMI, 1);
-
-	setCycle(table, OpCode::GETG, 1);
-	setCycle(table, OpCode::SETG, 2);
-	setCycle(table, OpCode::GETT, 1);
-	setCycle(table, OpCode::SETT, 2);
-	setCycle(table, OpCode::NEWT, 1);
-
-	setCycle(table, OpCode::CONCATN, 2);
-
-	setCycle(table, OpCode::TESTSET, 2);
-
-	setCycle(table, OpCode::CLOSURE, 1);
-	setCycle(table, OpCode::GETUP, 1);
-	setCycle(table, OpCode::SETUP, 2);
-	setCycle(table, OpCode::VARARG, 2);
-
-	setCycle(table, OpCode::CALL, 2);
-	setCycle(table, OpCode::RET, 2);
-
-	setCycle(table, OpCode::LOAD_MEM, 1);
-	setCycle(table, OpCode::STORE_MEM, 2);
-	setCycle(table, OpCode::STORE_MEM_WORDS, 2);
-	setCycle(table, OpCode::GETSYS, 1);
-	setCycle(table, OpCode::SETSYS, 2);
-	setCycle(table, OpCode::GETGL, 1);
-	setCycle(table, OpCode::SETGL, 2);
-	setCycle(table, OpCode::GETI, 1);
-	setCycle(table, OpCode::SETI, 2);
-	setCycle(table, OpCode::GETFIELD, 1);
-	setCycle(table, OpCode::SETFIELD, 2);
-	setCycle(table, OpCode::SELF, 1);
-	setCycle(table, OpCode::HALT, 1);
-
-	return table;
-}
-
-static constexpr std::array<uint8_t, 64> kBaseCycles = makeBaseCycles();
 
 static inline size_t trackedClosureBytes(const Closure& closure) {
 	return 16 + (closure.upvalues.size() * sizeof(Upvalue*));
@@ -1185,7 +1106,7 @@ void CPU::decodeProgram() {
 		const uint8_t aLow = static_cast<uint8_t>((instr >> 12) & 0x3f);
 		const uint8_t bLow = static_cast<uint8_t>((instr >> 6) & 0x3f);
 		const uint8_t cLow = static_cast<uint8_t>(instr & 0x3f);
-		const bool usesBx = kUsesBx[static_cast<size_t>(op)] != 0;
+		const bool usesBx = opCodeUsesBx(static_cast<OpCode>(op));
 		const uint8_t extA = usesBx ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
 		const uint8_t extB = usesBx ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
 		const uint8_t extC = usesBx ? 0 : static_cast<uint8_t>(ext & 0x7);
@@ -1918,7 +1839,7 @@ dispatch_loop_check:
 	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
-	instructionBudgetRemaining -= static_cast<int>(kBaseCycles[decoded->op]);
+	instructionBudgetRemaining -= static_cast<int>(opCodeBaseCycles(static_cast<OpCode>(decoded->op)));
 	a = decoded->a;
 	b = decoded->b;
 	c = decoded->c;
@@ -2058,7 +1979,7 @@ dispatch_loop_check:
 	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
-	instructionBudgetRemaining -= static_cast<int>(kBaseCycles[decoded->op]);
+	instructionBudgetRemaining -= static_cast<int>(opCodeBaseCycles(static_cast<OpCode>(decoded->op)));
 	a = decoded->a;
 	b = decoded->b;
 	c = decoded->c;
@@ -2190,7 +2111,7 @@ void CPU::step() {
 	frame.pc = pc + (static_cast<int>(decoded.width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded.width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded.word;
-	instructionBudgetRemaining -= static_cast<int>(kBaseCycles[decoded.op]);
+	instructionBudgetRemaining -= static_cast<int>(opCodeBaseCycles(static_cast<OpCode>(decoded.op)));
 	executeInstruction(frame, decoded);
 }
 

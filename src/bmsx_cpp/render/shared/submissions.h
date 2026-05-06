@@ -47,21 +47,6 @@ inline Layer2D renderLayerTo2dLayer(RenderLayer layer) {
 }
 
 /* ============================================================================
- * Rect bounds (for rectangles and hitboxes)
- * ============================================================================ */
-
-struct RectBounds {
-	f32 left = 0.0f;
-	f32 top = 0.0f;
-	f32 right = 0.0f;
-	f32 bottom = 0.0f;
-	f32 z = 0.0f;
-
-	f32 width() const { return right - left; }
-	f32 height() const { return bottom - top; }
-};
-
-/* ============================================================================
  * Render submissions - data for each render type
  * ============================================================================ */
 

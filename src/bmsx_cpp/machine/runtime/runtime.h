@@ -89,6 +89,8 @@ public:
 	friend void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& state);
 	friend CpuRuntimeState captureRuntimeCpuState(const Runtime& runtime);
 	friend void applyRuntimeCpuState(Runtime& runtime, const CpuRuntimeState& state);
+	friend void registerMathAndEasingBuiltins(Runtime& runtime);
+	friend void seedSystemGlobals(Runtime& runtime);
 
 	Runtime(
 		const RuntimeOptions& options,

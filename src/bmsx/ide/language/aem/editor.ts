@@ -1,6 +1,6 @@
 import { extractErrorMessage } from '../../../lua/value';
-import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../../rompack/aem';
-import type { ResourceDescriptor } from '../../../rompack/resource';
+import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../../rompack/tooling/aem';
+import type { ResourceDescriptor } from '../../../rompack/tooling/resource';
 import { formatAemYamlDocument } from './yaml_formatter';
 import type { Runtime } from '../../../machine/runtime/runtime';
 import { runConsoleChunkToNative } from '../../../machine/program/executor';

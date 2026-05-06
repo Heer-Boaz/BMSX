@@ -17,9 +17,11 @@
 
 #include "common/scratchbuffer.h"
 #include "common/primitives.h"
-#include "common/utf8.h"
 #include "machine/cpu/instruction_format.h"
+#include "machine/cpu/opcode_info.h"
+#include "machine/memory/access_kind.h"
 #include "machine/memory/string/memory.h"
+#include "machine/memory/string/pool.h"
 
 namespace bmsx {
 
@@ -45,131 +47,10 @@ struct SourceRange {
 	int endColumn = 0;
 };
 
-using StringId = uint32_t;
-
 struct NativeFnCost {
 	uint16_t base = 1;
 	uint8_t perArg = 0;
 	uint8_t perRet = 0;
-};
-
-struct InternedString {
-	StringId id = 0;
-	std::string value;
-	int codepointCount = 0;
-};
-
-struct StringKeyHash {
-	using is_transparent = void;
-	size_t operator()(std::string_view key) const noexcept {
-		return std::hash<std::string_view>{}(key);
-	}
-	size_t operator()(const std::string& key) const noexcept {
-		return std::hash<std::string_view>{}(key);
-	}
-};
-
-struct StringKeyEq {
-	using is_transparent = void;
-	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
-	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
-	bool operator()(const std::string& lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
-	bool operator()(std::string_view lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
-};
-
-class StringPool {
-public:
-	explicit StringPool(StringHandleTable* handleTable = nullptr)
-		: m_handleTable(handleTable) {
-	}
-
-	StringId intern(std::string_view value) {
-		auto it = m_stringMap.find(value);
-		if (it != m_stringMap.end()) {
-			return it->second;
-		}
-		auto entry = std::make_unique<InternedString>();
-		StringId id = m_nextId;
-		if (m_handleTable) {
-			id = static_cast<StringId>(m_handleTable->allocateHandle(value));
-		}
-		entry->id = id;
-		entry->value.assign(value.data(), value.size());
-		entry->codepointCount = countCodepoints(entry->value);
-		if (id >= m_entries.size()) {
-			m_entries.resize(static_cast<size_t>(id) + 1);
-		}
-		m_entries[id] = std::move(entry);
-		m_stringMap.emplace(std::string_view(m_entries[id]->value), id);
-		if (id >= m_nextId) {
-			m_nextId = id + 1;
-		}
-		return id;
-	}
-
-	const std::string& toString(StringId id) const {
-		return entry(id).value;
-	}
-
-	int codepointCount(StringId id) const {
-		return entry(id).codepointCount;
-	}
-
-	void reserveHandles(StringId minHandle) {
-		if (m_handleTable) {
-			m_handleTable->reserveHandles(minHandle);
-		}
-		if (minHandle > m_nextId) {
-			if (m_entries.size() < static_cast<size_t>(minHandle)) {
-				m_entries.resize(static_cast<size_t>(minHandle));
-			}
-			m_nextId = minHandle;
-		}
-	}
-
-	void rehydrateFromHandleTable(const StringHandleTableState& state) {
-		m_stringMap.clear();
-		m_entries.clear();
-		m_nextId = 0;
-		if (!m_handleTable) {
-			throw std::runtime_error("StringPool: missing string handle table.");
-		}
-		for (StringId id = 0; id < state.nextHandle; ++id) {
-			const StringHandleEntry entry = m_handleTable->readEntry(id);
-			auto restored = std::make_unique<InternedString>();
-			restored->id = id;
-			restored->value = m_handleTable->readText(entry);
-			restored->codepointCount = countCodepoints(restored->value);
-			if (id >= m_entries.size()) {
-				m_entries.resize(static_cast<size_t>(id) + 1);
-			}
-			m_entries[id] = std::move(restored);
-			m_stringMap.emplace(std::string_view(m_entries[id]->value), id);
-		}
-		reserveHandles(state.nextHandle);
-		m_nextId = state.nextHandle;
-	}
-
-private:
-	const InternedString& entry(StringId id) const {
-		const auto* entry = m_entries.at(static_cast<size_t>(id)).get();
-		return *entry;
-	}
-
-	static int countCodepoints(std::string_view text) {
-		int count = 0;
-		size_t index = 0;
-		while (index < text.size()) {
-			index = nextUtf8Index(text, index);
-			count += 1;
-		}
-		return count;
-	}
-
-	StringHandleTable* m_handleTable = nullptr;
-	StringId m_nextId = 0;
-	std::unordered_map<std::string_view, StringId, StringKeyHash, StringKeyEq> m_stringMap;
-	std::vector<std::unique_ptr<InternedString>> m_entries;
 };
 
 using Value = uint64_t;
@@ -693,85 +574,6 @@ struct TableLoadInlineCache {
 	Table* table = nullptr;
 	uint32_t version = 0;
 	Value value = valueNil();
-};
-
-/**
- * Runtime opcodes - instruction set for the bytecode interpreter.
- */
-enum class OpCode : uint8_t {
-	WIDE,
-	MOV,
-	LOADK,
-	LOADNIL,
-	LOADBOOL,
-	KNIL,
-	KFALSE,
-	KTRUE,
-	K0,
-	K1,
-	KM1,
-	KSMI,
-	GETG,
-	SETG,
-	GETT,
-	SETT,
-	NEWT,
-	ADD,
-	SUB,
-	MUL,
-	DIV,
-	MOD,
-	FLOORDIV,
-	POW,
-	BAND,
-	BOR,
-	BXOR,
-	SHL,
-	SHR,
-	CONCAT,
-	CONCATN,
-	UNM,
-	NOT,
-	LEN,
-	BNOT,
-	EQ,
-	LT,
-	LE,
-	TEST,
-	TESTSET,
-	JMP,
-	JMPIF,
-	JMPIFNOT,
-	CLOSURE,
-	GETUP,
-	SETUP,
-	VARARG,
-	CALL,
-	RET,
-	LOAD_MEM,
-	STORE_MEM,
-	STORE_MEM_WORDS,
-	BR_TRUE,
-	BR_FALSE,
-	GETSYS,
-	SETSYS,
-	GETGL,
-	SETGL,
-	GETI,
-	SETI,
-	GETFIELD,
-	SETFIELD,
-	SELF,
-	HALT,
-};
-
-enum class MemoryAccessKind : uint8_t {
-	Word = 0,
-	U8 = 1,
-	U16LE = 2,
-	U32LE = 3,
-	F32LE = 4,
-	F64LE = 5,
 };
 
 enum class RunResult {

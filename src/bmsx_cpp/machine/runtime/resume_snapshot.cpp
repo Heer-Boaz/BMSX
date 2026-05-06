@@ -1,7 +1,7 @@
 #include "machine/runtime/resume_snapshot.h"
 
 #include "machine/runtime/machine_state.h"
-#include "render/runtime/state.h"
+#include "render/runtime_state.h"
 #include "render/shared/queues.h"
 #include "render/vdp/context_state.h"
 #include "machine/runtime/runtime.h"

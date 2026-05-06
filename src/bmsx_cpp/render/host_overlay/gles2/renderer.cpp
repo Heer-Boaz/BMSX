@@ -2,7 +2,7 @@
 
 #if BMSX_ENABLE_GLES2
 #include "render/host_overlay/gles2/host_overlay_shaders.h"
-#include "render/shared/glyphs.h"
+#include "render/shared/glyph_runs.h"
 #include "rompack/host_system_atlas.h"
 #include <cmath>
 #include <stdexcept>

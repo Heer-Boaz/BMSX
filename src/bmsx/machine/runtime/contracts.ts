@@ -2,7 +2,7 @@ import type { LuaFunctionValue } from '../../lua/value';
 import type { CartManifest, MachineManifest, asset_id, Viewport } from '../../rompack/format';
 import type { MachineSaveState, MachineState } from '../machine';
 import type { Memory } from '../memory/memory';
-import type { LuaEntrySnapshot } from '../firmware/js_bridge';
+import type { LuaEntrySnapshot } from './host/native_bridge';
 import type { FrameSchedulerStateSnapshot } from '../scheduler/frame';
 import type { CpuRuntimeState } from '../cpu/cpu';
 

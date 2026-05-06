@@ -1,11 +1,11 @@
-import { LuaSourceRange } from '../../lua/syntax/ast';
-import { LuaEnvironment } from '../../lua/environment';
-import { LuaHandlerCache, isLuaHandlerFunction } from '../../lua/handler_cache';
-import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../../lua/value';
-import { Table, type Closure, type NativeFunction, type NativeObject, type Value, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject } from '../cpu/cpu';
-import { Runtime } from '../runtime/runtime';
-import type { LuaMarshalContext } from '../runtime/contracts';
-import { isStringValue, stringValueToString } from '../memory/string/pool';
+import { LuaSourceRange } from '../../../lua/syntax/ast';
+import { LuaEnvironment } from '../../../lua/environment';
+import { LuaHandlerCache, isLuaHandlerFunction } from '../../../lua/handler_cache';
+import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../../../lua/value';
+import { Table, type Closure, type NativeFunction, type NativeObject, type Value, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject } from '../../cpu/cpu';
+import { Runtime } from '../runtime';
+import type { LuaMarshalContext } from '../contracts';
+import { isStringValue, stringValueToString } from '../../memory/string/pool';
 
 // disable defensive_typeof_function_pattern -- JS bridge marshals arbitrary host values; callable probes are explicit interop boundaries.
 export type LuaSnapshotObjects = Record<number, unknown>;

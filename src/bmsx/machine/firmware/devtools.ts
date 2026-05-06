@@ -1,7 +1,7 @@
 import { createNativeFunction, Table } from '../cpu/cpu';
 import { createLuaTable, type LuaTable } from '../../lua/value';
 import { LuaNativeFunction, type LuaInterpreter } from '../../lua/runtime';
-import type { ResourceDescriptor } from '../../rompack/resource';
+import type { ResourceDescriptor } from '../../rompack/tooling/resource';
 import type { Runtime } from '../runtime/runtime';
 import type { LuaSourceRecord, LuaSourceRegistry } from '../program/sources';
 import { StringValue } from '../memory/string/pool';

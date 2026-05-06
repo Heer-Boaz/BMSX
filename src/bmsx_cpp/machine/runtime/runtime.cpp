@@ -6,7 +6,7 @@
 #include "machine/program/loader.h"
 #include "machine/runtime/system_irq.h"
 #include "machine/runtime/timing/config.h"
-#include "render/runtime/state.h"
+#include "render/runtime_state.h"
 #include "render/shared/queues.h"
 #include "rompack/format.h"
 #include "rompack/loader.h"

@@ -1,6 +1,6 @@
 #include "render/host_overlay/software/renderer.h"
 
-#include "render/shared/glyphs.h"
+#include "render/shared/glyph_runs.h"
 #include "render/shared/software_pixels.h"
 #include "rompack/host_system_atlas.h"
 

@@ -1,0 +1,357 @@
+{
+	"patterns": [
+		{
+			"pattern": "src/bmsx/ide/terminal/**",
+			"category": "terminal",
+			"reason": "terminal_ui_not_core"
+		},
+		{
+			"pattern": "src/bmsx/ide/language/**",
+			"category": "language",
+			"reason": "language_tooling"
+		},
+		{
+			"pattern": "src/bmsx/ide/**",
+			"category": "ide",
+			"reason": "ide_only"
+		},
+		{
+			"pattern": "src/bmsx/language/**",
+			"category": "language",
+			"reason": "language_tooling"
+		},
+		{
+			"pattern": "src/bmsx/lua/**",
+			"category": "cpu_interpreter_exception",
+			"reason": "cpu_interpreter_exception; semantics tested, file parity not required"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/optimizer/**",
+			"category": "compiler_tooling",
+			"reason": "compiler_optimizer_excluded"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/compiler.ts",
+			"category": "compiler_tooling",
+			"reason": "full_compiler_excluded"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/compile_value_flow.ts",
+			"category": "compiler_tooling",
+			"reason": "compiler_tooling_excluded"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/control_flow.ts",
+			"category": "compiler_tooling",
+			"reason": "compiler_tooling_excluded"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/bound_reference.ts",
+			"category": "compiler_tooling",
+			"reason": "compiler_tooling_excluded"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/layout.ts",
+			"category": "compiler_tooling",
+			"reason": "compiler_tooling_excluded"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/source_range.ts",
+			"category": "compiler_tooling",
+			"reason": "compiler_tooling_excluded"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/sourcemap_minimal.ts",
+			"category": "compiler_tooling",
+			"reason": "compiler_tooling_excluded"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/target_semantics.ts",
+			"category": "compiler_tooling",
+			"reason": "compiler_tooling_excluded"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/console_entry.ts",
+			"category": "compiler_tooling",
+			"reason": "compiler_tooling_console_entry_not_runtime_core"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/sources.ts",
+			"category": "compiler_tooling",
+			"reason": "compiler_source_registry_not_native_core"
+		},
+		{
+			"pattern": "src/bmsx/machine/program/start_cart.ts",
+			"category": "host",
+			"reason": "browser_console_bootstrap_not_native_core"
+		},
+		{
+			"pattern": "src/bmsx/input/host/assignment_processor.ts",
+			"category": "host",
+			"reason": "host_input_assignment_ui_not_core"
+		},
+		{
+			"pattern": "src/bmsx/input/dualsense_hid.ts",
+			"category": "host",
+			"reason": "host_input_hid_not_core"
+		},
+		{
+			"pattern": "src/bmsx/input/onscreen_gamepad.ts",
+			"category": "host",
+			"reason": "browser_ui_not_core"
+		},
+		{
+			"pattern": "src/bmsx/input/shortcuts.ts",
+			"category": "host",
+			"reason": "host_input_shortcuts_not_core"
+		},
+		{
+			"pattern": "src/bmsx/platform/index.ts",
+			"category": "barrel",
+			"reason": "ts_barrel"
+		},
+		{
+			"pattern": "src/bmsx/platform/**",
+			"category": "host",
+			"reason": "host_platform_not_core"
+		},
+		{
+			"pattern": "src/bmsx/audio/startup.ts",
+			"category": "host",
+			"reason": "browser_audio_unlock_not_core"
+		},
+		{
+			"pattern": "src/bmsx/audio/**",
+			"category": "host",
+			"reason": "host_audio_not_core"
+		},
+		{
+			"pattern": "src/bmsx/common/rect.ts",
+			"category": "ide",
+			"reason": "ide_geometry_helper_not_runtime_core"
+		},
+		{
+			"pattern": "src/bmsx/common/pool.ts",
+			"category": "host",
+			"reason": "host_render_pool_not_runtime_core"
+		},
+		{
+			"pattern": "src/bmsx/common/image_decode.ts",
+			"category": "host",
+			"reason": "host_or_tooling_image_decode_not_core"
+		},
+		{
+			"pattern": "src/bmsx/common/wav.ts",
+			"category": "host",
+			"reason": "host_or_tooling_audio_decode_not_core"
+		},
+		{
+			"pattern": "src/bmsx/common/text_lines.ts",
+			"category": "host",
+			"reason": "host_text_layout_not_core"
+		},
+		{
+			"pattern": "src/bmsx/common/arrayify.ts",
+			"category": "host",
+			"reason": "host_or_tooling_collection_helper_not_core"
+		},
+		{
+			"pattern": "src/bmsx/common/shallowcopy.ts",
+			"category": "host",
+			"reason": "host_or_tooling_collection_helper_not_core"
+		},
+		{
+			"pattern": "src/bmsx/runtime/assets/**",
+			"category": "host",
+			"reason": "host_asset_runtime_not_machine_core"
+		},
+		{
+			"pattern": "src/bmsx/render/backend/webgl/**",
+			"category": "host",
+			"reason": "browser_render_backend_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/backend/**",
+			"category": "host",
+			"reason": "host_render_backend_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/headless/**",
+			"category": "host",
+			"reason": "headless_host_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/debug/**",
+			"category": "host",
+			"reason": "debug_render_host_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/post/**",
+			"category": "host",
+			"reason": "host_postprocess_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/host_overlay/webgl/**",
+			"category": "host",
+			"reason": "browser_host_overlay_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/host_overlay/headless/**",
+			"category": "host",
+			"reason": "headless_host_overlay_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/2d/**/*.wgpu.ts",
+			"category": "host",
+			"reason": "webgpu_render_backend_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/2d/**",
+			"category": "host",
+			"reason": "host_2d_render_pipeline_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/3d/**/*.wgpu.ts",
+			"category": "host",
+			"reason": "webgpu_render_backend_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/3d/mesh/**",
+			"category": "host",
+			"reason": "browser_mesh_pipeline_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/3d/particles/**",
+			"category": "host",
+			"reason": "browser_particles_pipeline_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/3d/axis_gizmo_pipeline.ts",
+			"category": "host",
+			"reason": "debug_render_gizmo_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/3d/material.ts",
+			"category": "host",
+			"reason": "host_render_material_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/3d/shadowmap.ts",
+			"category": "host",
+			"reason": "host_render_shadowmap_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/3d/skybox/**",
+			"category": "host",
+			"reason": "host_render_skybox_pipeline_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/texture_load_barrier.ts",
+			"category": "host",
+			"reason": "host_texture_loading_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/vdp/blitter/webgl.ts",
+			"category": "host",
+			"reason": "browser_vdp_blitter_backend_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/vdp/blitter/headless.ts",
+			"category": "host",
+			"reason": "headless_vdp_blitter_backend_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/vdp/blitter/index.ts",
+			"category": "host",
+			"reason": "ts_blitter_backend_selector_not_core"
+		},
+		{
+			"pattern": "src/bmsx/render/graph/**",
+			"category": "host",
+			"reason": "host_render_graph_not_core"
+		},
+		{
+			"pattern": "src/bmsx/machine/runtime/handler_cache.ts",
+			"category": "host",
+			"reason": "ts_js_handler_cache_host_bridge_not_core"
+		},
+		{
+			"pattern": "src/bmsx/machine/runtime/contracts.ts",
+			"category": "host",
+			"reason": "ts_type_contracts_not_cpp_file_parity_surface"
+		},
+		{
+			"pattern": "src/bmsx/machine/runtime/host_fault.ts",
+			"category": "host",
+			"reason": "ts_host_fault_bridge_not_cpp_file_parity_surface"
+		},
+		{
+			"pattern": "src/bmsx/machine/bus/registers.ts",
+			"category": "compiler_tooling",
+			"reason": "compiler_mmio_metadata_not_runtime_core"
+		},
+		{
+			"pattern": "src/bmsx/machine/cpu/profiler.ts",
+			"category": "host",
+			"reason": "devtool_cpu_profiler_not_core_parity_surface"
+		},
+		{
+			"pattern": "src/bmsx/rompack/tooling/**",
+			"category": "rompacker_tooling",
+			"reason": "rompacker_authoring_schema_not_runtime_core"
+		},
+		{
+			"pattern": "src/bmsx/.bmsx/**",
+			"category": "host",
+			"reason": "workspace_data_not_source"
+		},
+		{
+			"pattern": "src/bmsx/glsl.d.ts",
+			"category": "barrel",
+			"reason": "ambient_declaration_not_core"
+		}
+	],
+	"core_roots": [
+		"src/bmsx/input/manager.ts",
+		"src/bmsx/machine/cpu/disassembler.ts",
+		"src/bmsx/machine/firmware/globals.ts",
+		"src/bmsx/machine/firmware/system_globals.ts",
+		"src/bmsx/machine/machine.ts",
+		"src/bmsx/machine/runtime/cpu_state.ts",
+		"src/bmsx/machine/runtime/debug.ts",
+		"src/bmsx/machine/runtime/machine_state.ts",
+		"src/bmsx/machine/runtime/resume_snapshot.ts",
+		"src/bmsx/machine/runtime/runtime.ts",
+		"src/bmsx/machine/runtime/save_machine_state.ts",
+		"src/bmsx/machine/runtime/save_state.ts",
+		"src/bmsx/machine/runtime/save_state/codec.ts",
+		"src/bmsx/machine/runtime/save_state/schema.ts",
+		"src/bmsx/machine/runtime/system_irq.ts",
+		"src/bmsx/render/host_overlay/pipeline.ts",
+		"src/bmsx/render/runtime_state.ts",
+		"src/bmsx/render/shared/camera_state.ts",
+		"src/bmsx/render/shared/glyph_runs.ts",
+		"src/bmsx/render/vdp/source_pixels.ts",
+		"src/bmsx/rompack/format.ts",
+		"src/bmsx/machine/program/linker.ts",
+		"src/bmsx/machine/program/loader.ts",
+		"src/bmsx/render/shared/submissions.ts"
+	],
+	"must_have_cpp": [
+		"src/bmsx/common/arrays_equal.ts",
+		"src/bmsx/common/color.ts",
+		"src/bmsx/common/vector.ts",
+		"src/bmsx/common/lower_bound.ts",
+		"src/bmsx/common/scratchstack.ts",
+		"src/bmsx/machine/common/hash.ts",
+		"src/bmsx/machine/memory/access_kind.ts",
+		"src/bmsx/machine/memory/string/pool.ts",
+		"src/bmsx/machine/cpu/opcode_info.ts",
+		"src/bmsx/machine/runtime/timing/state.ts",
+		"src/bmsx/render/runtime_state.ts",
+		"src/bmsx/rompack/tokens.ts",
+		"src/bmsx/rompack/toc.ts",
+		"src/bmsx/rompack/source.ts",
+		"src/bmsx/rompack/metadata.ts"
+	]
+}

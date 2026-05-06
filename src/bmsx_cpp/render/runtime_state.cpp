@@ -1,4 +1,4 @@
-#include "render/runtime/state.h"
+#include "render/runtime_state.h"
 
 #include "render/shared/hardware/camera.h"
 #include "render/shared/hardware/lighting.h"

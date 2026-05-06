@@ -107,20 +107,22 @@ add_library(bmsx_core STATIC
 	vendor/stb_impl.c
 
 	# Core systems
-	common/primitives.cpp
+	common/color.cpp
+	common/vector.cpp
 	core/console.cpp
 	core/rom_boot_manager.cpp
 	core/host_frame.cpp
 	core/host_overlay_menu.cpp
 	core/system.cpp
-    machine/runtime/contracts.cpp
-    machine/runtime/host_fault.cpp
-    machine/runtime/handler_cache.cpp
-    machine/terminal/terminal.cpp
+	machine/terminal/terminal.cpp
 	common/registry.cpp
 	rompack/loader.cpp
+	rompack/tokens.cpp
+	rompack/toc.cpp
+	rompack/metadata.cpp
+	rompack/source.cpp
 	rompack/host_system_atlas.cpp
-	rompack/host_system_atlas_generated.cpp
+	rompack/host_system_atlas.generated.cpp
 	common/serializer/binencoder.cpp
 	rompack/format.cpp
 	render/shared/bitmap_font.cpp
@@ -144,15 +146,17 @@ add_library(bmsx_core STATIC
 	# Render systems
 	render/backend/backend.cpp
 	render/3d/math.cpp
+	render/3d/camera.cpp
 	render/gameview.cpp
 	render/backend/frame_uniforms.cpp
 	render/lighting/system.cpp
 	render/shared/queues.cpp
+	render/shared/camera_state.cpp
 	render/host_overlay/pipeline.cpp
 	render/host_overlay/overlay_queue.cpp
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/renderer.cpp
-	render/runtime/state.cpp
+	render/runtime_state.cpp
 	render/shared/hardware/camera.cpp
 	render/shared/hardware/lighting.cpp
 	render/vdp/blitter/execute.cpp
@@ -176,8 +180,9 @@ add_library(bmsx_core STATIC
 
 	# Machine runtime (Lua bytecode interpreter)
 	machine/cpu/cpu.cpp
+	machine/cpu/opcode_info.cpp
 	machine/cpu/instruction_format.cpp
-	machine/firmware/font.cpp
+	render/shared/bmsx_font.cpp
 	machine/cpu/source_text.cpp
 	lua/syntax/lexer.cpp
 	lua/syntax/parser.cpp
@@ -188,8 +193,12 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp
 	machine/firmware/devtools.cpp
+	machine/firmware/builtin_descriptors.cpp
+	machine/firmware/builtins.cpp
+	machine/firmware/system_globals.cpp
+	machine/firmware/handler_registry.cpp
 	machine/cpu/disassembler.cpp
-	machine/program/compiler.cpp
+	machine/program/load_compiler.cpp
 	machine/firmware/globals.cpp
 	machine/memory/lua_heap_usage.cpp
 	machine/firmware/runtime.cpp
@@ -215,9 +224,12 @@ add_library(bmsx_core STATIC
 	machine/memory/specs.cpp
 	render/presentation_state.cpp
 	machine/runtime/timing/index.cpp
+	machine/runtime/timing/state.cpp
 	machine/runtime/timing/config.cpp
 	machine/runtime/vblank.cpp
 	machine/runtime/debug.cpp
+	machine/runtime/host/native_bridge.cpp
+	machine/memory/access_kind.cpp
 	machine/memory/memory.cpp
 	machine/memory/map.cpp
 	machine/devices/vdp/bbu.cpp
@@ -227,9 +239,11 @@ add_library(bmsx_core STATIC
 	machine/devices/vdp/pmu.cpp
 	machine/devices/vdp/registers.cpp
 	machine/devices/vdp/sbx.cpp
+	machine/common/hash.cpp
 	machine/devices/vdp/vram_garbage.cpp
 	machine/devices/vdp/vdp.cpp
 	machine/memory/string/memory.cpp
+	machine/memory/string/pool.cpp
 	machine/program/loader.cpp
 	machine/program/linker.cpp
 )

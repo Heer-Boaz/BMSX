@@ -2,7 +2,7 @@ import type { LuaFunctionValue, LuaValue } from '../../lua/value';
 import { isLuaCallSignal } from '../../lua/value';
 import { Closure, RunResult, type Program, type ProgramMetadata, type Value } from '../cpu/cpu';
 import { INSTRUCTION_BYTES } from '../cpu/instruction_format';
-import { buildMarshalContext, extendMarshalContext, toNativeValue, toRuntimeValue } from '../firmware/js_bridge';
+import { buildMarshalContext, extendMarshalContext, toNativeValue, toRuntimeValue } from '../runtime/host/native_bridge';
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../runtime/cpu_executor';
 import type { Runtime } from '../runtime/runtime';
 import { appendLuaChunkToProgram } from './compiler';

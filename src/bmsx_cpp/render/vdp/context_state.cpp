@@ -10,7 +10,9 @@ namespace bmsx {
 void restoreVdpContextState(VDP& vdp) {
 	initializeVdpFrameBufferTextures(vdp);
 	initializeVdpSlotTextures(vdp);
+	#if BMSX_ENABLE_GLES2
 	VdpGles2Blitter::initialize();
+#endif
 }
 
 void captureVdpContextState(VDP& vdp) {

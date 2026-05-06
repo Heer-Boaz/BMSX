@@ -1,6 +1,6 @@
 import { clamp } from '../../../../common/clamp';
 import type { LuaDefinitionLocation, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
-import type { ResourceDescriptor } from '../../../../rompack/resource';
+import type { ResourceDescriptor } from '../../../../rompack/tooling/resource';
 import type { CodeTabContext, SearchMatch, SymbolSearchResult } from '../../../common/models';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
 import * as luaPipeline from '../../../runtime/lua_pipeline';

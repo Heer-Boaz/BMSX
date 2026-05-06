@@ -1,4 +1,4 @@
-import type { ResourceDescriptor } from '../../../../../rompack/resource';
+import type { ResourceDescriptor } from '../../../../../rompack/tooling/resource';
 import { measureTextRange } from '../../../../editor/common/text/layout';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import { listResourcesStrict } from '../catalog';

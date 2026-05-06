@@ -268,7 +268,7 @@ import {
 	pushNativePairsIterator,
 	toNativeValue,
 	toRuntimeValue,
-} from './js_bridge';
+} from '../runtime/host/native_bridge';
 import { buildLuaFrameRawLabel } from '../../lua/stack_frame_label';
 import { isStringValue, stringValueToString } from '../memory/string/pool';
 

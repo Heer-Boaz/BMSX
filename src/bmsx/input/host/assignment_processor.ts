@@ -1,6 +1,6 @@
-import { GamepadInput } from './gamepad';
-import { Input } from './manager';
-import type { BGamepadButton, InputHandler } from './models';
+import { GamepadInput } from '../gamepad';
+import { Input } from '../manager';
+import type { BGamepadButton, InputHandler } from '../models';
 
 /**
  * Represents a processor for handling pending gamepad assignments.

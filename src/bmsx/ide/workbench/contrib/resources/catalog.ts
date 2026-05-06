@@ -1,4 +1,4 @@
-import type { ResourceDescriptor } from '../../../../rompack/resource';
+import type { ResourceDescriptor } from '../../../../rompack/tooling/resource';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 import { listResources } from '../../../workspace/workspace';
 import { listAemResourceDescriptors } from '../../../language/aem/editor';

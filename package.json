@@ -84,7 +84,8 @@
 		"clean:dist": "node scripts/clean-dist.mjs",
 		"fix:indent": "node scripts/fix-ts-indentation-safe.js",
 		"check:indent": "node scripts/fix-ts-indentation-safe.js --check",
-		"analyze:code-quality": "npx tsx scripts/analysis/code_quality.ts"
+		"analyze:code-quality": "npx tsx scripts/analysis/code_quality.ts",
+		"audit:core-parity": "tsx scripts/audit_core_parity.ts"
 	},
 	"repository": {
 		"type": "git",
