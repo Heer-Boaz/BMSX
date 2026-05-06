@@ -3,6 +3,7 @@ import type { Memory } from '../memory/memory';
 import {
 	addTrackedLuaHeapBytes,
 	collectTrackedLuaHeapBytes as refreshTrackedLuaHeapBytes,
+	enforceLuaHeapBudget,
 	replaceTrackedLuaHeapBytes
 } from '../memory/lua_heap_usage';
 import { formatNumber } from '../common/number_format';
@@ -1832,6 +1833,7 @@ export class CPU {
 		const closure: Closure = { protoIndex: entryProtoIndex, upvalues: [] };
 		addTrackedLuaHeapBytes(16);
 		this.pushFrame(closure, args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
+		enforceLuaHeapBudget();
 	}
 
 	public call(closure: Closure, args: Value[] = [], returnCount: number = 0): void {
@@ -2274,6 +2276,7 @@ export class CPU {
 					return;
 				case OpCode.NEWT:
 					this.setRegisterTableFast(frame, registers, a, new Table(b, c));
+					enforceLuaHeapBudget();
 					return;
 				case OpCode.ADD: {
 					const left = this.readRKNumber(frame, rkB);
@@ -2490,6 +2493,7 @@ export class CPU {
 				}
 				case OpCode.CLOSURE: {
 					this.setRegisterClosureFast(frame, registers, a, this.createClosure(frame, bx));
+					enforceLuaHeapBudget();
 					return;
 				}
 				case OpCode.GETUP: {
@@ -2526,6 +2530,7 @@ export class CPU {
 							if (this.frames.length > 0 && this.frames[this.frames.length - 1] === frame) {
 								this.writeReturnValues(frame, a, c, results);
 							}
+							enforceLuaHeapBudget();
 						} finally {
 							this.releaseNativeArgsProxy(argsHandle);
 							this.releaseNativeReturnScratch(results);

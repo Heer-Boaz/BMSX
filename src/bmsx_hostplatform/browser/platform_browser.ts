@@ -35,8 +35,8 @@ import {
 	GameViewHostCapabilityMap,
 	SubscriptionHandle,
 	createSubscriptionHandle,
-	HZ_SCALE,
 } from 'bmsx/platform';
+import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
 import { SilentAudioService } from '../common/silent_audio';
 import { supportsWorkerStreamingAudio, WorkerStreamingAudioService } from './worker_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';

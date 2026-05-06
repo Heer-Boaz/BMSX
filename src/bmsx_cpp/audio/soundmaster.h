@@ -65,6 +65,13 @@ struct ActiveVoiceInfo {
 	f64 startOffset = 0.0;
 };
 
+enum class MixLatencyProfile {
+	Minimal,
+	Low,
+	Balanced,
+	Safe,
+};
+
 class SoundMaster final : public Registerable {
 public:
 	SoundMaster();
@@ -99,6 +106,10 @@ public:
 	void renderSamples(i16* output, size_t frameCount, i32 outputSampleRate);
 
 	f64 currentTimeSec() const { return m_audioTimeSec; }
+	void setMixerUfpsScaled(i64 ufpsScaled);
+	void setLatencyProfile(MixLatencyProfile profile);
+	f64 mixFrameTimeSec() const { return m_mixFrameTimeSec; }
+	f64 mixTargetAheadSec() const { return m_mixTargetAheadSec; }
 
 private:
 	struct BadpDecoderState {
@@ -169,9 +180,15 @@ private:
 
 	f32 clampVolume(f32 value) const;
 	f64 effectivePlaybackRate(const ModulationParams& params) const;
+	f64 profileOverheadSec() const;
+	void recomputeMixTarget();
 
 	f32 m_masterVolume = 1.0f;
 	f64 m_audioTimeSec = 0.0;
+	i64 m_mixUfpsScaled;
+	f64 m_mixFrameTimeSec;
+	f64 m_mixTargetAheadSec;
+	MixLatencyProfile m_mixLatencyProfile = MixLatencyProfile::Low;
 
 	std::vector<VoiceRecord> m_voices;
 	std::vector<std::pair<u32, std::function<void(const ActiveVoiceInfo&)>>> m_endedListeners;

@@ -138,7 +138,7 @@ void testTimingAndHashGolden() {
 	require(timing.ufps == 60.0, "TimingState should derive FPS");
 	require(std::abs(timing.frameDurationMs - (1000.0 / 60.0)) < 0.000001, "TimingState should derive frame duration");
 	timing.applyUfpsScaled(50 * bmsx::HZ_SCALE);
-	require(timing.ufps == 50.0, "TimingState apply should update FPS");
+	require(timing.ufps == bmsx::DEFAULT_UFPS, "TimingState apply should update FPS");
 	require(bmsx::fmix32(0u) == 0u, "fmix32 zero should stay zero");
 	require(bmsx::xorshift32(0x12345678u) == 0x87985aa5u, "xorshift32 golden value should match TS");
 	require(bmsx::scramble32(0x12345678u) == 0xace1e1a8u, "scramble32 golden value should match TS");

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/runtime/timing/state.h"
+#include "machine/runtime/timing/constants.h"
 
 namespace bmsx {
 

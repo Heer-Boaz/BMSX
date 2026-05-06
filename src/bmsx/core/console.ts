@@ -6,6 +6,7 @@ import { RenderPassLibrary } from "../render/backend/pass/library";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_factory";
 import { setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
+import { DEFAULT_UFPS } from '../machine/runtime/timing/constants';
 import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
@@ -52,7 +53,7 @@ export class ConsoleCore {
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
 	public host_show_fps = false;
-	public host_fps = 50;
+	public host_fps = DEFAULT_UFPS;
 
 	/**
 	 * The ID of the animation frame request.
@@ -102,7 +103,7 @@ export class ConsoleCore {
 		if (!this.platform.audio.available) {
 			return;
 		}
-		this.sndmaster.bootstrapRuntimeAudio(this.runtime.timing.ufps, DEFAULT_MASTER_VOLUME);
+		this.sndmaster.bootstrapRuntimeAudio(this.runtime.timing.ufpsScaled, DEFAULT_MASTER_VOLUME);
 	}
 
 	public async init(init: ConsoleStartupOptions): Promise<Runtime> {

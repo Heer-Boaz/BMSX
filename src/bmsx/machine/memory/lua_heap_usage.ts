@@ -9,6 +9,7 @@ const MIN_COLLECTION_BYTES = 1024 * 1024;
 
 let trackedLuaHeapBytes = 0;
 let nextCollectionBytes = MIN_COLLECTION_BYTES;
+let pendingLuaHeapCollection = false;
 let luaHeapUsageHooks: LuaHeapUsageHooks | null = null;
 
 export function configureLuaHeapUsage(hooks: LuaHeapUsageHooks): void {
@@ -18,6 +19,7 @@ export function configureLuaHeapUsage(hooks: LuaHeapUsageHooks): void {
 export function resetTrackedLuaHeapBytes(): void {
 	trackedLuaHeapBytes = 0;
 	nextCollectionBytes = MIN_COLLECTION_BYTES;
+	pendingLuaHeapCollection = false;
 }
 
 export function addTrackedLuaHeapBytes(delta: number): void {
@@ -26,7 +28,7 @@ export function addTrackedLuaHeapBytes(delta: number): void {
 		throw new Error('[LuaHeapUsage] Tracked heap bytes underflow.');
 	}
 	if (delta > 0) {
-		collectIfHeapPressureExceeded();
+		requestLuaHeapCollectionIfNeeded();
 	}
 }
 
@@ -42,13 +44,18 @@ export function enforceLuaHeapBudget(): void {
 	if (luaHeapUsageHooks === null) {
 		return;
 	}
-	collectIfHeapPressureExceeded();
+	const totalRamUsedBytes = luaHeapUsageHooks.getBaseRamUsedBytes() + trackedLuaHeapBytes;
+	if (!pendingLuaHeapCollection && totalRamUsedBytes < RAM_SIZE) {
+		return;
+	}
+	collectTrackedLuaHeapBytes();
 }
 
 export function collectTrackedLuaHeapBytes(): void {
 	if (luaHeapUsageHooks === null) {
 		return;
 	}
+	pendingLuaHeapCollection = false;
 	trackedLuaHeapBytes = luaHeapUsageHooks.collectTrackedHeapBytes();
 	nextCollectionBytes = Math.max(MIN_COLLECTION_BYTES, trackedLuaHeapBytes * 2);
 	const totalRamUsedBytes = luaHeapUsageHooks.getBaseRamUsedBytes() + trackedLuaHeapBytes;
@@ -57,7 +64,7 @@ export function collectTrackedLuaHeapBytes(): void {
 	}
 }
 
-function collectIfHeapPressureExceeded(): void {
+function requestLuaHeapCollectionIfNeeded(): void {
 	if (luaHeapUsageHooks === null) {
 		return;
 	}
@@ -65,5 +72,5 @@ function collectIfHeapPressureExceeded(): void {
 	if (trackedLuaHeapBytes <= nextCollectionBytes && totalRamUsedBytes < RAM_SIZE) {
 		return;
 	}
-	collectTrackedLuaHeapBytes();
+	pendingLuaHeapCollection = true;
 }

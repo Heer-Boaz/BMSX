@@ -22,7 +22,7 @@
 #include "core/taskgate.h"
 #include "core/console.h"
 #include "core/system.h"
-#include "machine/runtime/timing/index.h"
+#include "machine/runtime/timing/constants.h"
 #include "../../machine/runtime/runtime.h"
 
 // Core info
@@ -47,13 +47,6 @@ extern "C" RETRO_API void bmsx_keyboard_reset(void);
 extern "C" RETRO_API void bmsx_focus_changed(bool focused);
 extern "C" RETRO_API bool bmsx_is_cart_program_active(void);
 extern "C" int64_t bmsx_get_ufps(void);
-
-static void frame_time_cb(retro_usec_t usec) {
-	if (usec == 0) {
-		return;
-	}
-	bmsx_set_frame_time_usec(usec);
-}
 
 static retro_hw_render_callback g_hw_render;
 static bool g_hw_render_supported = false;
@@ -111,7 +104,7 @@ static void apply_manifest_av_info(retro_system_av_info& av, const bmsx::Machine
 
 static void initialize_default_av_info(retro_system_av_info& av) {
 	std::memset(&av, 0, sizeof(av));
-	av.timing.sample_rate = 48000.0;
+	av.timing.sample_rate = bmsx::DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
 	apply_manifest_av_info(av, bmsx::defaultSystemMachineManifest(), bmsx::DEFAULT_UFPS_SCALED);
 }
 
@@ -538,7 +531,6 @@ static retro_variable g_option_vars[] = {
 
 // Forward declarations
 static void fallback_log(enum retro_log_level level, const char* fmt, ...);
-// static void frame_time_cb(retro_usec_t usec);
 static void hw_context_reset();
 static void hw_context_destroy();
 static void set_core_options(bool default_gles2);
@@ -1111,14 +1103,6 @@ void retro_set_environment(retro_environment_t cb) {
 		{0, 0, 0, 0, nullptr}};
 	cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_desc);
 
-	retro_frame_time_callback frame_time{};
-	frame_time.callback = frame_time_cb;
-	frame_time.reference = 0;
-	if (!cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time)) {
-		logging.log(RETRO_LOG_WARN,
-					"[BMSX] RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK rejected by frontend; using AV timing only.\n");
-	}
-
 	set_core_options(BMSX_ENABLE_GLES2);
 }
 
@@ -1675,19 +1659,6 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
 	vfprintf(stderr, fmt, args);
 	va_end(args);
 }
-
-// static void frame_time_cb(retro_usec_t usec) {
-//   logging.log(RETRO_LOG_WARN, "[BMSX] frame_time_cb: %llu usec (%.3fms, %.2f fps)\n",
-// 			  static_cast<unsigned long long>(usec),
-// 			  static_cast<double>(usec) / 1000.0,
-// 			  1000000.0 / static_cast<double>(usec));
-//   if (g_platform) {
-// 	g_platform->setFrameTimeUsec(usec);
-// 	return;
-//   }
-//   g_pending_frame_time_usec = usec;
-//   g_has_pending_frame_time = true;
-// }
 
 static void hw_context_reset() {
 	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset called. g_platform=%p\n", g_platform);

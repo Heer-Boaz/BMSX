@@ -1,4 +1,4 @@
-import { HZ_SCALE } from '../../../platform/platform';
+import { HZ_SCALE } from './constants';
 
 const PAL_TOTAL_SCANLINES = 313;
 const NTSC_TOTAL_SCANLINES = 262;

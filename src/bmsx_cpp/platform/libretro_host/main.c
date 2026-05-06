@@ -34,6 +34,14 @@
 #include "input_timeline.h"
 #include "screenshot.h"
 
+#define BMSX_HOST_HZ_SCALE 1000000ll
+#define BMSX_HOST_USEC_PER_SECOND 1000000ull
+#define BMSX_HOST_NSEC_PER_SECOND 1000000000ull
+#define BMSX_HOST_DEFAULT_UFPS_SCALED (50ll * BMSX_HOST_HZ_SCALE)
+#define BMSX_HOST_DEFAULT_TARGET_FPS ((double)BMSX_HOST_DEFAULT_UFPS_SCALED / (double)BMSX_HOST_HZ_SCALE)
+#define BMSX_HOST_DEFAULT_FRAME_USEC (BMSX_HOST_USEC_PER_SECOND * (uint64_t)BMSX_HOST_HZ_SCALE / (uint64_t)BMSX_HOST_DEFAULT_UFPS_SCALED)
+#define BMSX_HOST_DEFAULT_FRAME_NS (BMSX_HOST_NSEC_PER_SECOND * (uint64_t)BMSX_HOST_HZ_SCALE / (uint64_t)BMSX_HOST_DEFAULT_UFPS_SCALED)
+
 typedef struct LibretroCore {
 	void* handle;
 
@@ -139,7 +147,7 @@ static const int kAudioThreadPriority = 20;
 static const unsigned kAudioRecoverMaxAttempts = 8;
 static const uint64_t kAudioRecoverSleepNs = 1000000ull;
 static const uint64_t kFrameScheduleResyncNs = 100000000ull;
-static const int64_t kHzScale = 1000000ll;
+static const int64_t kHzScale = BMSX_HOST_HZ_SCALE;
 
 static char g_system_dir[1024] = "";
 static char g_save_dir[1024] = "";
@@ -209,8 +217,8 @@ static unsigned g_render_target_w = 0;
 static unsigned g_render_target_h = 0;
 static float g_geom_aspect = 0.0f;
 static bool g_geom_dirty = false;
-static uint64_t g_frame_usec = 20000;
-static uint64_t g_frame_ns = 20000000;
+static uint64_t g_frame_usec = BMSX_HOST_DEFAULT_FRAME_USEC;
+static uint64_t g_frame_ns = BMSX_HOST_DEFAULT_FRAME_NS;
 static struct retro_frame_time_callback g_frame_time_cb = {0};
 static bool g_has_frame_time_cb = false;
 static unsigned g_last_video_w = 0;
@@ -236,7 +244,7 @@ struct fbdev_window {
 
 static struct fbdev_window g_fbwin;
 
-static double g_target_fps = 50.0;
+static double g_target_fps = BMSX_HOST_DEFAULT_TARGET_FPS;
 
 #define MSG_MAX_TEXT 256
 #define MSG_MAX_LINES 4
@@ -1152,7 +1160,7 @@ static void msg_mark_dirty(void) {
 static unsigned msg_default_frames(void) {
 	double fps = g_target_fps;
 	if (fps <= 1.0) {
-		fps = 50.0;
+		fps = BMSX_HOST_DEFAULT_TARGET_FPS;
 	}
 	unsigned frames = (unsigned)(fps * 2.0 + 0.5);
 	if (frames < 60) {
@@ -1892,8 +1900,8 @@ static bool environ_cb(unsigned cmd, void* data) {
 			update_geometry(&info->geometry);
 			g_target_fps = info->timing.fps > 0.0 ? info->timing.fps : g_target_fps;
 			if (g_target_fps > 0.0) {
-				g_frame_usec = (uint64_t)(1000000.0 / g_target_fps + 0.5);
-				g_frame_ns = (uint64_t)(1000000000.0 / g_target_fps + 0.5);
+				g_frame_usec = (uint64_t)((double)BMSX_HOST_USEC_PER_SECOND / g_target_fps + 0.5);
+				g_frame_ns = (uint64_t)((double)BMSX_HOST_NSEC_PER_SECOND / g_target_fps + 0.5);
 			}
 			return true;
 		}
@@ -2449,7 +2457,7 @@ static unsigned audio_compute_sdl_queue_cap_frames(void) {
 	if (g_audio_sample_rate <= 0 || g_frame_usec == 0) {
 		return g_audio_buffer_frames;
 	}
-	const double frame_time_sec = (double)g_frame_usec / 1000000.0;
+	const double frame_time_sec = (double)g_frame_usec / (double)BMSX_HOST_USEC_PER_SECOND;
 	const unsigned frames_per_frame = (unsigned)ceil((double)g_audio_sample_rate * frame_time_sec);
 	const unsigned requested = (unsigned)ceil((double)g_audio_sample_rate * (frame_time_sec + kAudioMixOverheadSec))
 		+ kAudioRequestAheadFrames
@@ -3504,13 +3512,13 @@ static void input_poll_cb(void) {
 static uint64_t monotonic_ns(void) {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+	return (uint64_t)ts.tv_sec * BMSX_HOST_NSEC_PER_SECOND + (uint64_t)ts.tv_nsec;
 }
 
 static uint64_t monotonic_ms(void) {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / 1000000ull;
+	return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / BMSX_HOST_USEC_PER_SECOND;
 }
 
 static uint64_t frame_time_from_scaled(int64_t hz_scaled, uint64_t units_per_second) {
@@ -3520,11 +3528,11 @@ static uint64_t frame_time_from_scaled(int64_t hz_scaled, uint64_t units_per_sec
 }
 
 static uint64_t frame_time_usec_from_scaled(int64_t hz_scaled) {
-	return frame_time_from_scaled(hz_scaled, 1000000ull);
+	return frame_time_from_scaled(hz_scaled, BMSX_HOST_USEC_PER_SECOND);
 }
 
 static uint64_t frame_time_ns_from_scaled(int64_t hz_scaled) {
-	return frame_time_from_scaled(hz_scaled, 1000000000ull);
+	return frame_time_from_scaled(hz_scaled, BMSX_HOST_NSEC_PER_SECOND);
 }
 
 static int16_t input_state_cb(unsigned port, unsigned device, unsigned index, unsigned id) {
@@ -3849,8 +3857,8 @@ int main(int argc, char** argv) {
 		if (!unpaced_timeline && now_ns < next_frame_ns) {
 			const uint64_t sleep_ns = next_frame_ns - now_ns;
 			struct timespec ts;
-			ts.tv_sec = (time_t)(sleep_ns / 1000000000ull);
-			ts.tv_nsec = (long)(sleep_ns % 1000000000ull);
+			ts.tv_sec = (time_t)(sleep_ns / BMSX_HOST_NSEC_PER_SECOND);
+			ts.tv_nsec = (long)(sleep_ns % BMSX_HOST_NSEC_PER_SECOND);
 			nanosleep(&ts, NULL);
 		}
 		now_ns = monotonic_ns();

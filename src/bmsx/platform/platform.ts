@@ -99,12 +99,6 @@ export interface Platform {
 export type MonoTime = number;
 
 /**
- * Scale factor for representing Hz as integers (micro-Hz).
- * Example: 59.94 Hz => 59_940_000.
- */
-export const HZ_SCALE = 1_000_000;
-
-/**
  * Generic handle returned by the platform when scheduling a delayed callback.
  * Intentionally minimal and non-browser-like (no IDs or global timer names).
  */

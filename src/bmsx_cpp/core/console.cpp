@@ -340,6 +340,7 @@ Runtime& ConsoleCore::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& t
 		m_cart_rom_size > 0 ? &m_cart_rom : nullptr
 	);
 	applyRuntimeTiming(runtime, timing);
+	m_sound_master->setMixerUfpsScaled(runtime.timing.ufpsScaled);
 	runtime.refreshMemoryMap();
 	return runtime;
 }
@@ -374,6 +375,7 @@ void ConsoleCore::bootRuntimeFromProgram() {
 		m_cart_rom_size > 0 ? &m_cart_rom : nullptr
 	);
 	applyRuntimeTiming(rt, timing);
+	m_sound_master->setMixerUfpsScaled(rt.timing.ufpsScaled);
 	rt.refreshMemoryMap();
 	rt.resetRuntimeForProgramReload();
 	refreshRenderSurfaces();
@@ -430,6 +432,7 @@ bool ConsoleCore::bootSystemStartupProgram(const MachineManifest& runtimeMachine
 		m_cart_rom_size > 0 ? &m_cart_rom : nullptr
 	);
 	applyRuntimeTiming(rt, timing);
+	m_sound_master->setMixerUfpsScaled(rt.timing.ufpsScaled);
 	rt.refreshMemoryMap();
 	rt.resetRuntimeForProgramReload();
 	rt.enterSystemFirmware();

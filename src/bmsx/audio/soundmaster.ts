@@ -1,5 +1,6 @@
 import { consoleCore } from '../core/console';
 import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, VoiceEndedEvent, AudioFilterParams, SubscriptionHandle, createSubscriptionHandle } from '../platform';
+import { DEFAULT_UFPS_SCALED, HZ_SCALE } from '../machine/runtime/timing/constants';
 import { clamp01 } from '../common/clamp';
 
 export type VoiceId = number;
@@ -162,7 +163,7 @@ export class SoundMaster {
 	private voiceRecordByHandle: WeakMap<VoiceHandle, ActiveVoiceRecord>;
 	private playGeneration: number;
 	private slotPlaySequence: Record<number, number>;
-	private mixFps: number;
+	private mixUfpsScaled: number;
 	private mixLatencyProfile: MixLatencyProfile;
 	private mixTargetAheadSec: number;
 
@@ -177,7 +178,7 @@ export class SoundMaster {
 		this.endedListeners = new Set();
 		this.nextVoiceId = 1;
 		this.voiceRecordByHandle = new WeakMap();
-		this.mixFps = 50;
+		this.mixUfpsScaled = DEFAULT_UFPS_SCALED;
 		this.mixLatencyProfile = 'low';
 		this.mixTargetAheadSec = 0;
 		this.setLatencyProfile(isIOSAudioTarget() ? 'safe' : 'low');
@@ -198,13 +199,13 @@ export class SoundMaster {
 		this.currentPlayParamsBySlot = {};
 	}
 
-	public bootstrapRuntimeAudio(ufps: number, startingVolume: number): void {
+	public bootstrapRuntimeAudio(ufpsScaled: number, startingVolume: number): void {
 		this.audio = consoleCore.platform.audio;
 		const sampleRate = this.A.sampleRate();
 		if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
 			throw new Error('[SoundMaster] Audio sample rate must be a positive finite value.');
 		}
-		this.setMixerFps(ufps);
+		this.setMixerUfpsScaled(ufpsScaled);
 		this.volume = clamp01(startingVolume);
 		this.startMixer();
 		void this.A.resume();
@@ -619,11 +620,8 @@ export class SoundMaster {
 		this.stopVoiceRecord(record, fade_ms);
 	}
 
-	public setMixerFps(fps: number): void {
-		if (!Number.isFinite(fps) || fps <= 0) {
-			throw new Error('[SoundMaster] Mixer FPS must be a positive finite value.');
-		}
-		this.mixFps = fps;
+	public setMixerUfpsScaled(ufpsScaled: number): void {
+		this.mixUfpsScaled = ufpsScaled;
 		this.recomputeMixTarget();
 	}
 
@@ -642,7 +640,7 @@ export class SoundMaster {
 	}
 
 	private recomputeMixTarget(): void {
-		const frameTimeSec = 1 / this.mixFps;
+		const frameTimeSec = HZ_SCALE / this.mixUfpsScaled;
 		this.mixTargetAheadSec = frameTimeSec + this.profileOverheadSec();
 		if (this.audio && this.globalSuspensions.size === 0) {
 			this.A.setFrameTimeSec(this.mixTargetAheadSec);

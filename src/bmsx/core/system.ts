@@ -1,4 +1,5 @@
 import { DEFAULT_GEO_WORK_UNITS_PER_SEC, type MachineManifest } from '../rompack/format';
+import { DEFAULT_UFPS_SCALED } from '../machine/runtime/timing/constants';
 
 export const SYSTEM_ROM_NAME = 'bmsx-bios';
 export const SYSTEM_BOOT_ENTRY_PATH = 'bios/bootrom';
@@ -9,7 +10,7 @@ export const SYSTEM_MACHINE_MANIFEST: MachineManifest = {
 		height: 212,
 	},
 	namespace: 'bmsx',
-	ufps: 50_000_000,
+	ufps: DEFAULT_UFPS_SCALED,
 	specs: {
 		cpu: {
 			cpu_freq_hz: 1_000_000,

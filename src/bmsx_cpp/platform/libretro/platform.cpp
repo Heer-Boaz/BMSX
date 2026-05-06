@@ -40,11 +40,12 @@
 namespace bmsx {
 namespace {
 constexpr double kFrameSpikeMultiplier = 1.2;
-constexpr double kAudioMixOverheadSec = 0.004;
 constexpr size_t kAudioRefillMarginFrames = 128;
 constexpr size_t kAudioRequestAheadFrames = 256;
 constexpr size_t kAudioTargetMinFrames = 384;
 constexpr size_t kAudioTargetMaxFrames = 4096;
+constexpr size_t kAudioReserveVideoFrames = 10;
+constexpr size_t kAudioReserveFrames = static_cast<size_t>(DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE * DEFAULT_FRAME_TIME_SEC) * kAudioReserveVideoFrames;
 constexpr const char* kReleaseSystemRomName = "bmsx-bios.rom";
 constexpr const char* kDebugSystemRomName = "bmsx-bios.debug.rom";
 constexpr const char* kDebugRomSuffix = ".debug.rom";
@@ -158,8 +159,7 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 		static_cast<unsigned>(systemMachine.viewportHeight)
 	);
 
-	// Reserve audio buffer for ten frames at 48000Hz / 50fps = 9600 samples
-	m_audio_buffer.reserve(9600);
+	m_audio_buffer.reserve(kAudioReserveFrames);
 
 	// Create platform components
 	m_clock = std::make_unique<LibretroClock>();
@@ -333,7 +333,6 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 	}
 
 	m_frame_time_sec = 1.0 / info.timing.fps;
-	m_has_wall_frame_timestamp = false;
 	m_framebuffer.resize(baseWidth, baseHeight);
 	log(RETRO_LOG_INFO, "[BMSX] AV Info set: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
 		baseWidth,
@@ -361,7 +360,7 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 	static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackend(backend);
 
 	if (auto* audioService = dynamic_cast<LibretroAudioService*>(m_audio_service.get())) {
-		audioService->setTiming(info.timing.sample_rate, info.timing.fps);
+		audioService->setTiming(info.timing.sample_rate);
 	}
 }
 
@@ -417,7 +416,6 @@ void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
 	}
 	const double nextFrameTimeSec = static_cast<double>(usec) / 1000000.0;
 	m_frame_time_sec = nextFrameTimeSec;
-	m_has_frame_time_callback = true;
 }
 
 void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
@@ -614,7 +612,6 @@ void LibretroPlatform::reset() {
 	m_console->stop();
 	static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
 	m_audio_buffer.clear();
-	m_has_wall_frame_timestamp = false;
 
 	if (m_console && m_console->romLoaded()) {
 		if (!m_console->rebootLoadedRom()) {
@@ -640,23 +637,7 @@ void LibretroPlatform::runFrame() {
 	// Clear audio buffer
 	m_audio_buffer.clear();
 
-	const auto wallFrameAt = std::chrono::steady_clock::now();
-	f64 dt = m_frame_time_sec;
-	if (!m_has_frame_time_callback) {
-		if (m_has_wall_frame_timestamp) {
-			dt = std::chrono::duration<f64>(wallFrameAt - m_last_wall_frame_at).count();
-		}
-		m_last_wall_frame_at = wallFrameAt;
-		m_has_wall_frame_timestamp = true;
-	} else {
-		m_last_wall_frame_at = wallFrameAt;
-		m_has_wall_frame_timestamp = true;
-	}
-	if (dt <= 0.0) {
-		dt = m_frame_time_sec;
-	} else if (dt > 0.25) {
-		dt = 0.25;
-	}
+	const f64 dt = m_frame_time_sec;
 
 	// Advance clock
 	if (auto* clock = dynamic_cast<LibretroClock*>(m_clock.get())) {
@@ -681,7 +662,6 @@ void LibretroPlatform::setPlatformPaused(bool paused) {
 		return;
 	}
 	m_platform_paused = paused;
-	m_has_wall_frame_timestamp = false;
 	if (!m_console) {
 		return;
 	}
@@ -778,7 +758,6 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 		applyRuntimeSaveStateBytes(runtime, static_cast<const u8*>(data), size);
 		static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
 		m_audio_buffer.clear();
-		m_has_wall_frame_timestamp = false;
 		return true;
 	}
 	catch (const std::exception& error) {
@@ -1132,9 +1111,8 @@ LibretroAudioService::LibretroAudioService(LibretroPlatform* platform)
 	: m_platform(platform) {
 }
 
-void LibretroAudioService::setTiming(double sampleRate, double fps) {
+void LibretroAudioService::setTiming(double sampleRate) {
 	m_sample_rate = sampleRate;
-	m_nominal_frame_time_sec = 1.0 / fps;
 	m_sample_accumulator = 0.0;
 	m_queue_start_samples = 0;
 	m_queue_samples = 0;
@@ -1142,8 +1120,7 @@ void LibretroAudioService::setTiming(double sampleRate, double fps) {
 	refreshTargetBufferFrames();
 }
 
-void LibretroAudioService::setFrameTimeSec(double seconds) {
-	m_nominal_frame_time_sec = seconds;
+void LibretroAudioService::setFrameTimeSec(double) {
 	refreshTargetBufferFrames();
 }
 
@@ -1155,8 +1132,9 @@ void LibretroAudioService::resetQueue() {
 }
 
 void LibretroAudioService::refreshTargetBufferFrames() {
-	const size_t framesPerFrame = static_cast<size_t>(std::ceil(m_sample_rate * m_nominal_frame_time_sec));
-	const size_t requested = static_cast<size_t>(std::ceil(m_sample_rate * (m_nominal_frame_time_sec + kAudioMixOverheadSec)))
+	const SoundMaster* soundMaster = m_platform->console()->soundMaster();
+	const size_t framesPerFrame = static_cast<size_t>(std::ceil(m_sample_rate * soundMaster->mixFrameTimeSec()));
+	const size_t requested = static_cast<size_t>(std::ceil(m_sample_rate * soundMaster->mixTargetAheadSec()))
 		+ kAudioRequestAheadFrames
 		+ kAudioRefillMarginFrames;
 	const size_t targetFillFrames = std::clamp(requested, kAudioTargetMinFrames, kAudioTargetMaxFrames);
@@ -1164,7 +1142,8 @@ void LibretroAudioService::refreshTargetBufferFrames() {
 }
 
 void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
-	const double samplesPerFrame = m_sample_rate * m_nominal_frame_time_sec;
+	SoundMaster* soundMaster = m_platform->console()->soundMaster();
+	const double samplesPerFrame = m_sample_rate * soundMaster->mixFrameTimeSec();
 	m_sample_accumulator += samplesPerFrame;
 	const size_t frames = static_cast<size_t>(m_sample_accumulator);
 	if (frames == 0) {
@@ -1181,7 +1160,7 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
 		if (m_mix_buffer.size() < renderSamples) {
 			m_mix_buffer.resize(renderSamples);
 		}
-		m_platform->console()->soundMaster()->renderSamples(m_mix_buffer.data(), renderFrames, static_cast<i32>(m_sample_rate));
+		soundMaster->renderSamples(m_mix_buffer.data(), renderFrames, static_cast<i32>(m_sample_rate));
 
 		size_t neededSamples = m_queue_start_samples + m_queue_samples + renderSamples;
 		if (m_queue_start_samples > 0 && neededSamples > m_sample_queue.size()) {

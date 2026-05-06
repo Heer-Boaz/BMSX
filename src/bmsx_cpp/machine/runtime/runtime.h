@@ -12,6 +12,7 @@
 #include "render/presentation_state.h"
 #include "machine/scheduler/device.h"
 #include "machine/runtime/timing/index.h"
+#include "machine/runtime/timing/state.h"
 #include "machine/runtime/vblank.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/cpu_state.h"

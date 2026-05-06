@@ -32,8 +32,8 @@ import {
 	GameViewHostCapabilityMap,
 	SubscriptionHandle,
 	createSubscriptionHandle,
-	HZ_SCALE,
 } from 'bmsx/platform';
+import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/view';
 import { SilentAudioService } from '../common/silent_audio';
 

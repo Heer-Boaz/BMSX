@@ -18,8 +18,8 @@ const CORE_CTRL_SEQ = 4;
 const CORE_CTRL_LENGTH = 5;
 
 const DEFAULT_CAPACITY_FRAMES = 16384;
-const DEFAULT_FRAME_TIME_SEC = 0.024;
-const IOS_FRAME_TIME_SEC = 0.036;
+const DEFAULT_AUDIO_TARGET_AHEAD_SEC = 0.024;
+const IOS_AUDIO_TARGET_AHEAD_SEC = 0.036;
 const WORKLET_TARGET_MIN_DEFAULT = 384;
 const WORKLET_TARGET_MAX_DEFAULT = 4096;
 const WORKLET_TARGET_MIN_IOS = 768;
@@ -275,7 +275,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	private readonly clipReadyRejects = new Map<number, (error: Error) => void>();
 	private readonly voices = new Map<number, WorkerVoice>();
 	private readonly msgSetMasterGain: { type: 'set_master_gain'; gain: number } = { type: 'set_master_gain', gain: 1 };
-	private readonly msgSetFrameTimeSec: { type: 'set_frame_time'; frameTimeSec: number } = { type: 'set_frame_time', frameTimeSec: DEFAULT_FRAME_TIME_SEC };
+	private readonly msgSetFrameTimeSec: { type: 'set_frame_time'; frameTimeSec: number } = { type: 'set_frame_time', frameTimeSec: DEFAULT_AUDIO_TARGET_AHEAD_SEC };
 	private readonly msgDisposeClip: { type: 'dispose_clip'; clipId: number } = { type: 'dispose_clip', clipId: 0 };
 	private readonly msgVoiceSetGain: { type: 'voice_set_gain'; voiceId: number; gain: number } = { type: 'voice_set_gain', voiceId: 0, gain: 1 };
 	private readonly msgVoiceRampGain: { type: 'voice_ramp_gain'; voiceId: number; targetGain: number; seconds: number } = {
@@ -304,7 +304,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		if (initialFrameTimeSec !== undefined && (!Number.isFinite(initialFrameTimeSec) || initialFrameTimeSec <= 0)) {
 			throw new Error('[WorkerStreamingAudioService] frameTimeSec must be a positive finite value.');
 		}
-		this.frameTimeSec = initialFrameTimeSec ?? (this.preferHighLead ? IOS_FRAME_TIME_SEC : DEFAULT_FRAME_TIME_SEC);
+		this.frameTimeSec = initialFrameTimeSec ?? (this.preferHighLead ? IOS_AUDIO_TARGET_AHEAD_SEC : DEFAULT_AUDIO_TARGET_AHEAD_SEC);
 
 		this.ctx = context;
 		this.coreStreamCapacityFrames = requestedCapacity;
