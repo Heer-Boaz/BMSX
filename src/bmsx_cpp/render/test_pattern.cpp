@@ -49,10 +49,10 @@ void queueCommand(Host2DKind kind, Host2DRef ref) {
 	s_commandCount += 1;
 }
 
-void queueRect(const RectBounds& rect, RectRenderSubmission::Kind kind, u32 color) {
+void queueRect(const RectBounds& rect, RectRenderKind kind, u32 color) {
 	RectRenderSubmission& submission = nextRect();
 	submission.kind = kind;
-	submission.layer = RenderLayer::World;
+	submission.layer = Layer2D::World;
 	submission.area = rect;
 	submission.color = color;
 	queueCommand(Host2DKind::Rect, &submission);
@@ -67,7 +67,7 @@ void renderTestPattern(GameView& view, f64 totalTime) {
 	const f32 t = static_cast<f32>(totalTime);
 	const i32 w = static_cast<i32>(view.viewportSize.x);
 	const i32 h = static_cast<i32>(view.viewportSize.y);
-	const auto fillKind = RectRenderSubmission::Kind::Fill;
+	const auto fillKind = RectRenderKind::Fill;
 	RectBounds rect;
 
 	for (i32 y = 0; y < h; y += 8) {
@@ -93,7 +93,7 @@ void renderTestPattern(GameView& view, f64 totalTime) {
 		| static_cast<u32>((0.5f + 0.5f * std::sin(t * 2.0f + 4.0f)) * 255.0f);
 	setRect(rect, boxX - boxSize / 2, boxY - boxSize / 2, boxX + boxSize / 2, boxY + boxSize / 2);
 	queueRect(rect, fillKind, boxColor);
-	queueRect(rect, RectRenderSubmission::Kind::Rect, 0xffffffffu);
+	queueRect(rect, RectRenderKind::Rect, 0xffffffffu);
 
 	const f32 cornerSize = 16.0f;
 	setRect(rect, 0.0f, 0.0f, cornerSize, cornerSize);
@@ -119,7 +119,7 @@ void renderTestPattern(GameView& view, f64 totalTime) {
 		line.z = 0.0f;
 		line.color = (static_cast<u32>((0.3f + 0.2f * std::sin(t + static_cast<f32>(index))) * 255.0f) << 24u) | 0x00ffffffu;
 		line.thickness = 1.0f;
-		line.layer = RenderLayer::World;
+		line.layer = Layer2D::World;
 		queueCommand(Host2DKind::Poly, &line);
 	}
 

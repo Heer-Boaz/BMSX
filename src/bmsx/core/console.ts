@@ -10,7 +10,7 @@ import { DEFAULT_UFPS } from '../machine/runtime/timing/constants';
 import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
-import type { GPUBackend } from '../render/backend/interfaces';
+import type { GPUBackend } from '../render/backend/backend';
 import { clearAllQueues } from '../render/shared/queues';
 import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { restoreVdpContextState } from '../render/vdp/context_state';

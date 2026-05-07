@@ -2,10 +2,11 @@
 import { color_arr, type TextureSource } from '../../../rompack/format';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
-import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, TextureParams } from '../interfaces';
+import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle } from '../backend';
+import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
 import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './helpers';
-import { createSolidRgba8Pixels } from '../solid_pixels';
+import { createSolidRgba8Pixels } from '../../shared/solid_pixels';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
 
@@ -48,85 +49,63 @@ export class WebGLBackend implements GPUBackend {
 		this.readbackFbo = gl.createFramebuffer()!;
 	}
 
-	createTexture(src: TextureSource | Promise<TextureSource>, desc: TextureParams): WebGLTexture {
-		const source = src as TextureSource;
-		const data = source.data;
-		const srgb = desc.srgb ?? true;
-		const internalFormat = srgb ? this.gl.SRGB8_ALPHA8 : this.gl.RGBA8;
-		if (data) {
-			const gl = this.gl;
-			const tex = gl.createTexture()!;
-			gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
-			gl.bindTexture(gl.TEXTURE_2D, tex);
-			gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, source.width, source.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
-			GLR.glSetTexture2DParams(gl, desc);
-			gl.bindTexture(gl.TEXTURE_2D, null);
-			this.texInfo.set(tex, { w: source.width, h: source.height, srgb });
-			this.accountUpload('texture', source.width * source.height * 4);
-			return tex;
-		}
-		const img = source as ImageBitmap;
-		const t = GLR.glCreateTextureFromImage(this.gl, img, desc, null);
-		this.texInfo.set(t, { w: img.width, h: img.height, srgb });
-		this.accountUpload('texture', img.width * img.height * 4);
-		return t;
+	private bindTexture2DForUpload(texture: WebGLTexture, desc: TextureParams): void {
+		const gl = this.gl;
+		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
+		gl.bindTexture(gl.TEXTURE_2D, texture);
+		GLR.glSetTexture2DParams(gl, desc);
 	}
 
-	updateTexture(handle: WebGLTexture, src: TextureSource): void {
+	createTexture(data: Uint8Array, width: number, height: number, desc: TextureParams): WebGLTexture {
+		const srgb = desc.srgb;
+		const internalFormat = srgb ? this.gl.SRGB8_ALPHA8 : this.gl.RGBA8;
 		const gl = this.gl;
-		const data = src.data;
+		const tex = gl.createTexture()!;
+		this.bindTexture2DForUpload(tex, desc);
+		gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+		gl.bindTexture(gl.TEXTURE_2D, null);
+		this.texInfo.set(tex, { w: width, h: height, srgb });
+		this.accountUpload('texture', width * height * 4);
+		return tex;
+	}
+
+	updateTexture(handle: WebGLTexture, data: Uint8Array, width: number, height: number, desc: TextureParams): void {
+		const gl = this.gl;
 		const info = this.texInfo.get(handle);
-		const srgb = info?.srgb ?? true;
+		const srgb = desc.srgb;
 		const internalFormat = srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
-		gl.bindTexture(gl.TEXTURE_2D, handle);
-		const needsResize = !info || info.w !== src.width || info.h !== src.height;
-		if (data) {
-			if (needsResize) {
-				gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
-			} else {
-				gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, src.width, src.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
-			}
+		this.bindTexture2DForUpload(handle, desc);
+		const needsRecreate = !info || info.w !== width || info.h !== height || info.srgb !== srgb;
+		if (needsRecreate) {
+			gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 		} else {
-			if (needsResize) {
-				gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
-			} else {
-				gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
-			}
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
 		}
-		this.texInfo.set(handle, { w: src.width, h: src.height, srgb });
-		this.accountUpload('texture', src.width * src.height * 4);
+		this.texInfo.set(handle, { w: width, h: height, srgb });
+		this.accountUpload('texture', width * height * 4);
 		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
 
-	resizeTexture(handle: WebGLTexture, width: number, height: number, _desc: TextureParams): WebGLTexture {
+	resizeTexture(handle: WebGLTexture, width: number, height: number, desc: TextureParams): WebGLTexture {
 		const gl = this.gl;
-		const info = this.texInfo.get(handle);
-		const srgb = _desc.srgb ?? info?.srgb ?? true;
+		const srgb = desc.srgb;
 		const internalFormat = srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
-		gl.bindTexture(gl.TEXTURE_2D, handle);
+		this.bindTexture2DForUpload(handle, desc);
 		gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 		this.texInfo.set(handle, { w: width, h: height, srgb });
 		gl.bindTexture(gl.TEXTURE_2D, null);
 		return handle;
 	}
 
-	updateTextureRegion(handle: WebGLTexture, src: TextureSource, x: number, y: number): void {
+	updateTextureRegion(handle: WebGLTexture, data: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams): void {
 		const gl = this.gl;
-		const data = src.data;
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
-		gl.bindTexture(gl.TEXTURE_2D, handle);
-		if (data) {
-			gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, src.width, src.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
-		} else {
-			gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
-		}
-		this.accountUpload('texture', src.width * src.height * 4);
+		this.bindTexture2DForUpload(handle, desc);
+		gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+		this.accountUpload('texture', width * height * 4);
 		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
 
-	readTextureRegion(handle: WebGLTexture, x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array {
+	readTextureRegion(handle: WebGLTexture, out: Uint8Array, width: number, height: number, x: number, y: number, _desc: TextureParams): void {
 		const gl = this.gl;
 		const size = this.texInfo.get(handle);
 		if (!size) {
@@ -139,20 +118,17 @@ export class WebGLBackend implements GPUBackend {
 		if (glY < 0) {
 			throw new Error('[WebGLBackend] Readback Y coordinate out of bounds.');
 		}
-		const byteLength = width * height * 4;
-		const buffer = out && out.byteLength >= byteLength ? out : new Uint8Array(byteLength);
 		gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
-		gl.readPixels(x, glY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
+		gl.readPixels(x, glY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, out);
 		gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
-		return buffer;
 	}
 
-	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc: TextureParams = {}): WebGLTexture {
+	createSolidTexture2D(width: number, height: number, color: number, desc: TextureParams = DEFAULT_TEXTURE_PARAMS): WebGLTexture {
 		const gl = this.gl;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		const tex = gl.createTexture()!;
 		gl.bindTexture(gl.TEXTURE_2D, tex);
-		const data = createSolidRgba8Pixels(width, height, rgba);
+		const data = createSolidRgba8Pixels(width, height, color);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 		this.accountUpload('texture', width * height * 4);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_BASE_LEVEL, 0);
@@ -212,20 +188,10 @@ export class WebGLBackend implements GPUBackend {
 		this.finishSkyboxCubemap(desc);
 		return tex;
 	}
-	createSolidCubemap(size: number, rgba: color_arr, desc: TextureParams): WebGLTexture {
+	createSolidCubemap(size: number, color: number, desc: TextureParams): WebGLTexture {
 		const gl = this.gl;
 		const tex = this.createSkyboxCubemap();
-		const data = new Uint8Array(size * size * 4);
-		const red = Math.round(rgba[0] * 255);
-		const green = Math.round(rgba[1] * 255);
-		const blue = Math.round(rgba[2] * 255);
-		const alpha = Math.round(rgba[3] * 255);
-		for (let offset = 0; offset < data.length; offset += 4) {
-			data[offset + 0] = red;
-			data[offset + 1] = green;
-			data[offset + 2] = blue;
-			data[offset + 3] = alpha;
-		}
+		const data = createSolidRgba8Pixels(size, size, color);
 		for (let face = 0; face < 6; face += 1) {
 			gl.texImage2D(this.cubemapFaceTarget(face), 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 		}
@@ -306,11 +272,11 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 		return fbo;
 	}
-	clear(opts: { color?: color_arr; depth?: number }): void {
+	clear(color: color_arr | undefined, depth: number | undefined): void {
 		const gl = this.gl;
 		let mask = 0;
-		if (opts.color !== undefined) { gl.clearColor(...opts.color); mask |= gl.COLOR_BUFFER_BIT; }
-		if (opts.depth !== undefined) { gl.clearDepth(opts.depth); mask |= gl.DEPTH_BUFFER_BIT; }
+		if (color !== undefined) { gl.clearColor(...color); mask |= gl.COLOR_BUFFER_BIT; }
+		if (depth !== undefined) { gl.clearDepth(depth); mask |= gl.DEPTH_BUFFER_BIT; }
 		if (mask !== 0) gl.clear(mask);
 	}
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {
@@ -356,7 +322,7 @@ export class WebGLBackend implements GPUBackend {
 				clearDepth = desc.depth.clearDepth;
 			}
 			if (clearColor !== undefined || clearDepth !== undefined) {
-				this.clear({ color: clearColor, depth: clearDepth });
+				this.clear(clearColor, clearDepth);
 			}
 		}
 		// Set the program related to this render-pass (if defined)
@@ -367,7 +333,12 @@ export class WebGLBackend implements GPUBackend {
 		this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
 	}
 	getCaps() {
-		return { maxColorAttachments: 1 };
+		return {
+			maxColorAttachments: 1,
+			maxTextureSize: this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE) as number,
+			supportsInstancing: true,
+			supportsDepthTexture: true,
+		};
 	}
 	transitionTexture(): void {
 		// No-op in WebGL
@@ -393,11 +364,11 @@ export class WebGLBackend implements GPUBackend {
 		this.frameStats.draws++;
 		this.gl.drawArrays(this.gl.TRIANGLES, first, count); // Assume TRIANGLES; customize if needed
 	}
-	drawIndexed(_pass: PassEncoder, indexCount: number, firstIndex?: number, indexType?: number): void {
+	drawIndexed(_pass: PassEncoder, indexCount: number, firstIndex: number, indexType?: number): void {
 		this.frameStats.drawIndexed++;
 		const type = (indexType ?? this.gl.UNSIGNED_SHORT);
 		const bytesPerIndex = (type === this.gl.UNSIGNED_INT) ? 4 : (type === this.gl.UNSIGNED_BYTE ? 1 : 2);
-		this.gl.drawElements(this.gl.TRIANGLES, indexCount, type, (firstIndex ?? 0) * bytesPerIndex);
+		this.gl.drawElements(this.gl.TRIANGLES, indexCount, type, firstIndex * bytesPerIndex);
 	}
 	// Remove registerCustomPipeline; use PipelineManager.register directly
 	private hashString(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0; return h >>> 0; }

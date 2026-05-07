@@ -1,14 +1,44 @@
 /// <reference types="@webgpu/types" />
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { Host2DSubmission } from '../shared/queues';
-import type { TextureParams } from '../shared/submissions';
 import { LightingFrameState } from '../lighting/system';
 import type { WebGLBackend } from './webgl/backend';
 import type { WebGPUBackend } from './webgpu/backend';
+import type { TextureParams } from './texture_params';
 
-export type { TextureParams } from '../shared/submissions';
-
-// Minimal, unified render interfaces for both backends
+/*
+ * TS/C++ parity boundary:
+ * - Shared runtime contract in this file: TextureHandle, BackendCaps,
+ *   ColorAttachmentSpec, DepthAttachmentSpec, RenderPassDesc, PassEncoder,
+ *   GPUBackend texture methods, render-pass methods, draw methods except TS
+ *   drawIndexed indexType, frame lifecycle, getCaps(), and stats.
+ * - TS-only public symbols here are browser/WebGL/WebGPU render-graph plumbing:
+ *   TextureFormat, BufferHandle, BackendContext, RenderTargetHandle,
+ *   PresentationMode, GraphicsPipelineBindingLayout, RenderGraphSlot,
+ *   RenderGraphPassContext, RenderPassGraphDef, RenderPassDef,
+ *   GraphicsPipelineBuildDesc, RenderPassInstanceHandle, AnyBackend,
+ *   RenderPassStateRegistry, RenderPassStateId, pipeline-state types,
+ *   RenderContext, FogUniforms, AtmosphereParams, and CRTDitherType.
+ *   C++ owns the equivalent native pass scheduling in render/backend/pass files.
+ * - TS-only GPUBackend methods here are browser/backend-resource controls:
+ *   setActiveTexture(), bindTexture2D(), bindTextureCube(),
+ *   createImageBitmapFromSource(), createCubemapFromSources(),
+ *   createSolidCubemap(), createCubemapEmpty(), uploadCubemapFace(),
+ *   createColorTexture(), createDepthTexture(), createRenderTarget(),
+ *   transitionTexture(), createRenderPassInstance(),
+ *   destroyRenderPassInstance(), setGraphicsPipeline(), setPassState(),
+ *   getPassState(), createVertexBuffer(), updateVertexBuffer(),
+ *   bindArrayBuffer(), createVertexArray(), bindVertexArray(),
+ *   deleteVertexArray(), drawInstanced(), drawIndexedInstanced(),
+ *   createUniformBuffer(), updateUniformBuffer(), bindUniformBufferBase(), and
+ *   accountUpload(). TS drawIndexed also carries WebGL indexType because WebGL
+ *   drawElements needs the index-buffer scalar format at the backend boundary.
+ *   C++ exposes these responsibilities on concrete native backends and pass
+ *   owners instead of the common interface.
+ * - C++-only public symbols in backend.h are native/libretro backend storage
+ *   and ownership: BackendType, FrameStats, SoftwareTexture, DitherParams,
+ *   SoftwareBackend, and readyForTextureUpload().
+ */
 
 export type TextureFormat = 'rgba8unorm' | 'bgra8unorm' | 'rgb8unorm' | 'depth24plus' | 'depth32float' | string | number;
 export type TextureHandle = WebGLTexture | GPUTexture;
@@ -45,7 +75,12 @@ export type RenderPassId =
 	| 'axis_gizmo'
 	| 'sprites';
 
-export interface BackendCaps { maxColorAttachments: number; }
+export interface BackendCaps {
+	maxColorAttachments: number;
+	maxTextureSize: number;
+	supportsInstancing: boolean;
+	supportsDepthTexture: boolean;
+}
 export type PresentationMode = 'partial' | 'completed';
 
 // Optional shader resource layout description (for WebGPU or future WebGL wrappers)
@@ -144,14 +179,14 @@ export interface GPUBackend {
 	bindTexture2D?(tex: TextureHandle): void;
 	bindTextureCube?(tex: TextureHandle): void;
 	createImageBitmapFromSource?(src: TextureSource): Promise<ImageBitmap>;
-	createTexture(src: TextureSource | Promise<TextureSource>, desc: TextureParams): TextureHandle;
-	updateTexture(handle: TextureHandle, src: TextureSource): void;
+	createTexture(data: Uint8Array, width: number, height: number, desc: TextureParams): TextureHandle;
+	updateTexture(handle: TextureHandle, data: Uint8Array, width: number, height: number, desc: TextureParams): void;
 	resizeTexture(handle: TextureHandle, width: number, height: number, desc: TextureParams): TextureHandle;
-	updateTextureRegion(handle: TextureHandle, src: TextureSource, x: number, y: number): void;
-	readTextureRegion(handle: TextureHandle, x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array;
-	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc?: TextureParams): TextureHandle;
+	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams): void;
+	readTextureRegion(handle: TextureHandle, out: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams): void;
+	createSolidTexture2D(width: number, height: number, color: number, desc?: TextureParams): TextureHandle;
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): TextureHandle;
-	createSolidCubemap(size: number, rgba: color_arr, desc: TextureParams): TextureHandle;
+	createSolidCubemap(size: number, color: number, desc: TextureParams): TextureHandle;
 	createCubemapEmpty(size: number, desc: TextureParams): TextureHandle;
 	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void;
 	destroyTexture(handle: TextureHandle): void;
@@ -159,7 +194,7 @@ export interface GPUBackend {
 	createColorTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): RenderTargetHandle;
-	clear(opts: { color?: color_arr; depth?: number }): void;
+	clear(color: color_arr | undefined, depth: number | undefined): void;
 	beginRenderPass(desc: RenderPassDesc): PassEncoder;
 	endRenderPass(pass: PassEncoder): void;
 	getCaps(): BackendCaps;
@@ -168,7 +203,7 @@ export interface GPUBackend {
 	destroyRenderPassInstance?(p: RenderPassInstanceHandle): void;
 	setGraphicsPipeline?(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void;
 	draw(pass: PassEncoder, first: number, count: number): void;
-	drawIndexed(pass: PassEncoder, indexCount: number, firstIndex?: number, indexType?: number): void;
+	drawIndexed(pass: PassEncoder, indexCount: number, firstIndex: number, indexType?: number): void;
 	setPassState<S = unknown>(label: RenderPassId, state: S): void;
 	getPassState<S = unknown>(label: RenderPassId): S;
 

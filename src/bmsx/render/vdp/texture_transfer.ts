@@ -1,9 +1,8 @@
-import type { GPUBackend, TextureHandle } from '../backend/interfaces';
+import type { GPUBackend, TextureHandle } from '../backend/backend';
+import { DEFAULT_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { TextureManager } from '../texture_manager';
 import type { GameView } from '../gameview';
-import type { TextureSource } from '../../rompack/format';
 
-const textureRegionSource: TextureSource = { width: 0, height: 0, data: new Uint8Array(0) };
 let textureManager: TextureManager;
 let textureView: GameView;
 
@@ -31,7 +30,7 @@ export function createVdpTextureFromSeed(textureKey: string, seedPixel: Uint8Arr
 export function createVdpTextureFromPixels(textureKey: string, pixels: Uint8Array, width: number, height: number): TextureHandle {
 	textureManager.createTextureFromPixelsSync(textureKey, pixels, width, height);
 	const handle = textureManager.resizeTextureForKey(textureKey, width, height);
-	vdpTextureBackend().updateTexture(handle, { width, height, data: pixels });
+	vdpTextureBackend().updateTexture(handle, pixels, width, height, DEFAULT_TEXTURE_PARAMS);
 	textureView.textures[textureKey] = handle;
 	return handle;
 }
@@ -44,15 +43,12 @@ export function resizeVdpTextureForKey(textureKey: string, width: number, height
 
 export function updateVdpTexturePixels(textureKey: string, pixels: Uint8Array, width: number, height: number): TextureHandle {
 	const handle = resizeVdpTextureForKey(textureKey, width, height);
-	vdpTextureBackend().updateTexture(handle, { width, height, data: pixels });
+	vdpTextureBackend().updateTexture(handle, pixels, width, height, DEFAULT_TEXTURE_PARAMS);
 	return handle;
 }
 
 export function updateVdpTextureRegion(textureKey: string, pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
-	textureRegionSource.width = width;
-	textureRegionSource.height = height;
-	textureRegionSource.data = pixels;
-	vdpTextureBackend().updateTextureRegion(vdpTextureByUri(textureKey), textureRegionSource, x, y);
+	vdpTextureBackend().updateTextureRegion(vdpTextureByUri(textureKey), pixels, width, height, x, y, DEFAULT_TEXTURE_PARAMS);
 }
 
 export function swapVdpTextureHandlesByUri(textureKeyA: string, textureKeyB: string): void {

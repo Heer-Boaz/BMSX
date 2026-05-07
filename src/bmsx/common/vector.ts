@@ -1,69 +1,12 @@
-import type { vec2 as FormatVec2, vec2arr as FormatVec2Arr, vec3 as FormatVec3, vec3arr as FormatVec3Arr } from '../rompack/format';
+import type { vec2arr as FormatVec2Arr, vec3arr as FormatVec3Arr } from '../rompack/format';
 
-export class Vec2 {
-	constructor(public x = 0, public y = 0) {}
-
-	length(): number {
-		return Math.sqrt(this.x * this.x + this.y * this.y);
-	}
-
-	lengthSquared(): number {
-		return this.x * this.x + this.y * this.y;
-	}
-
-	normalized(): Vec2 {
-		const len = this.length();
-		if (len > 0) {
-			return new Vec2(this.x / len, this.y / len);
-		}
-		return new Vec2(0, 0);
-	}
-
-	dot(other: Vec2): number {
-		return this.x * other.x + this.y * other.y;
-	}
-}
-
-export class Vec3 {
-	constructor(public x = 0, public y = 0, public z = 0) {}
-
-	length(): number {
-		return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
-	}
-
-	lengthSquared(): number {
-		return this.x * this.x + this.y * this.y + this.z * this.z;
-	}
-
-	normalized(): Vec3 {
-		const len = this.length();
-		if (len > 0) {
-			return new Vec3(this.x / len, this.y / len, this.z / len);
-		}
-		return new Vec3(0, 0, 0);
-	}
-
-	dot(other: Vec3): number {
-		return this.x * other.x + this.y * other.y + this.z * other.z;
-	}
-
-	cross(other: Vec3): Vec3 {
-		return new Vec3(
-			this.y * other.z - this.z * other.y,
-			this.z * other.x - this.x * other.z,
-			this.x * other.y - this.y * other.x,
-		);
-	}
-}
-
-export class Vec4 {
-	constructor(public x = 0, public y = 0, public z = 0, public w = 0) {}
-}
-
-export type vec2 = FormatVec2;
-export type vec3 = FormatVec3;
+export type vec2 = { x: number; y: number };
+export type vec3 = { x: number; y: number; z: number };
 export type vec2arr = FormatVec2Arr;
 export type vec3arr = FormatVec3Arr;
+export type Vec2 = vec2;
+export type Vec3 = vec3;
+export type Vec4 = { x: number; y: number; z: number; w: number };
 
 /**
  * Translates a 2D vector by adding another vector to it.
@@ -81,7 +24,8 @@ export function translate_vec2(a: vec2, b: vec2): vec2 {
  * @param b - The vector containing the translation values.
  */
 export function translate_inplace_vec2(a: vec2, b: vec2): void {
-	set_inplace_vec2(a, { x: a.x + b.x, y: a.y + b.y });
+	a.x += b.x;
+	a.y += b.y;
 }
 
 /**
@@ -222,7 +166,7 @@ export function div_vec2(toDivide: vec2, divide_by: number): vec2 {
 }
 
 /// Alternative implementation for Point.Set()
-export function set_vec2(p: vec2, new_x: number, new_y: number) {
+export function set_vec2(p: vec2, new_x: number, new_y: number): void {
 	p.x = new_x;
 	p.y = new_y;
 }
@@ -252,7 +196,7 @@ export function vec3arr_equals(a: vec3arr, b: vec3arr): boolean {
  * @param p - The vec2 to be overwritten.
  * @param n - The vec2 containing the new values.
  */
-export function set_inplace_vec2(p: vec2, n: vec2) {
+export function set_inplace_vec2(p: vec2, n: vec2): void {
 	p.x = n.x;
 	p.y = n.y;
 }
@@ -264,7 +208,7 @@ export function set_inplace_vec2(p: vec2, n: vec2) {
  * @param new_y - The new value for the y coordinate.
  * @param new_z - The new value for the z coordinate.
  */
-export function set_vec3(p: vec3, new_x: number, new_y: number, new_z: number) {
+export function set_vec3(p: vec3, new_x: number, new_y: number, new_z: number): void {
 	p.x = new_x;
 	p.y = new_y;
 	p.z = new_z;
@@ -275,7 +219,7 @@ export function set_vec3(p: vec3, new_x: number, new_y: number, new_z: number) {
  * @param to_overwrite - The vec3 to be overwritten.
  * @param data - The vec3 containing the new values.
  */
-export function set_inplace_vec3(to_overwrite: vec3, data: vec3) {
+export function set_inplace_vec3(to_overwrite: vec3, data: vec3): void {
 	to_overwrite.x = data.x;
 	to_overwrite.y = data.y;
 	to_overwrite.z = data.z;

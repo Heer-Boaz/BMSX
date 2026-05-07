@@ -9,7 +9,7 @@
 import { consoleCore } from '../../core/console';
 import { taskGate } from '../../core/taskgate';
 import { color_arr } from '../../rompack/format';
-import { GPUBackend, TextureHandle } from '../backend/interfaces';
+import { GPUBackend, TextureHandle } from '../backend/backend';
 import { RenderPassBuilder } from '../backend/pass/builder';
 import { checkWebGLError } from '../backend/webgl/helpers';
 import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/backend';

@@ -23,7 +23,6 @@ AssetTokenParts hashAssetId(std::string_view id);
 AssetToken makeAssetToken(u32 lo, u32 hi);
 AssetTokenParts splitAssetToken(AssetToken token);
 std::string tokenKey(u32 lo, u32 hi);
-std::string tokenKey(AssetToken token);
 std::string tokenKeyFromId(std::string_view id);
 
 } // namespace bmsx

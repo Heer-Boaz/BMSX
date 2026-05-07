@@ -1,6 +1,6 @@
 import { consoleCore } from '../../core/console';
 import { RenderPassLibrary } from '../backend/pass/library';
-import { Framebuffer2DPipelineState, MeshBatchPipelineState, ParticlePipelineState, type RenderPassDef } from '../backend/interfaces';
+import { Framebuffer2DPipelineState, MeshBatchPipelineState, ParticlePipelineState, type RenderPassDef } from '../backend/backend';
 import { M4 } from '../3d/math';
 import {
 	beginMeshQueue,
@@ -70,6 +70,7 @@ let previousSkyboxSnapshot: Snapshot = [];
 let previousFrameBufferSnapshot: Snapshot = [];
 
 let diffMatrix = new Uint32Array(0);
+let headlessFrameBufferReadbackPixels = new Uint8Array(0);
 let headlessScenePixels = new Uint8Array(0);
 let headlessCompositePixels = new Uint8Array(0);
 let headlessSceneWidth = 0;
@@ -282,6 +283,7 @@ function emitDiff(label: string, previous: Snapshot, current: Snapshot): Snapsho
 function resizeHeadlessScene(width: number, height: number): void {
 	const byteLength = width * height * 4;
 	if (headlessScenePixels.byteLength !== byteLength) {
+		headlessFrameBufferReadbackPixels = new Uint8Array(byteLength);
 		headlessScenePixels = new Uint8Array(byteLength);
 		headlessCompositePixels = new Uint8Array(byteLength);
 		headlessSceneWidth = width;
@@ -588,7 +590,8 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			if (frameBufferWidth <= 0 || frameBufferHeight <= 0) {
 				throw new Error(`[HeadlessFramebuffer2D] Invalid framebuffer dimensions ${frameBufferWidth}x${frameBufferHeight}.`);
 			}
-			const pixels = readVdpDisplayFrameBufferPixels(0, 0, frameBufferWidth, frameBufferHeight);
+			readVdpDisplayFrameBufferPixels(0, 0, frameBufferWidth, frameBufferHeight, headlessFrameBufferReadbackPixels);
+			const pixels = headlessFrameBufferReadbackPixels;
 			const expectedByteLength = frameBufferWidth * frameBufferHeight * 4;
 			if (pixels.byteLength !== expectedByteLength) {
 				throw new Error(`[HeadlessFramebuffer2D] Framebuffer byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);

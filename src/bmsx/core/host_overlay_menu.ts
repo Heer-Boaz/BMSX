@@ -1,4 +1,5 @@
-import type { GlyphRenderSubmission, RectRenderSubmission } from '../render/shared/submissions';
+import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../render/shared/submissions';
+import { LAYER_2D_IDE } from '../machine/devices/vdp/contracts';
 import type { Host2DKind, Host2DRef } from '../render/shared/queues';
 import { consoleCore } from './console';
 import { Input } from '../input/manager';
@@ -164,11 +165,11 @@ export class HostOverlayMenu {
 	private selected = 0;
 	private dirtyText = true;
 	private readonly lineText: string[] = [];
-	private readonly panelRect: RectRenderSubmission = { kind: 'fill', area: { left: 0, top: 0, right: 1, bottom: 1, z: 920 }, color: COLOR_PANEL, layer: 'ide' };
-	private readonly highlightRect: RectRenderSubmission = { kind: 'fill', area: { left: 0, top: 0, right: 1, bottom: 1, z: 921 }, color: COLOR_HIGHLIGHT, layer: 'ide' };
-	private readonly titleGlyphs: GlyphRenderSubmission = { x: 0, y: 0, z: 922, glyphs: TITLE_TEXT, glyph_start: 0, glyph_end: TITLE_TEXT.length, font: null, color: COLOR_TITLE, background_color: null, wrap_chars: 0, center_block_width: 0, align: 'start', baseline: 'alphabetic', layer: 'ide' };
-	private readonly fpsGlyphs: GlyphRenderSubmission = { x: 0, y: 0, z: 922, glyphs: '', glyph_start: 0, glyph_end: 0, font: null, color: COLOR_TITLE, background_color: null, wrap_chars: 0, center_block_width: 0, align: 'start', baseline: 'alphabetic', layer: 'ide' };
-	private readonly usagePanelRect: RectRenderSubmission = { kind: 'fill', area: { left: USAGE_X - 4, top: USAGE_Y - 4, right: USAGE_X - 4 + USAGE_PANEL_WIDTH, bottom: USAGE_Y - 4 + USAGE_PANEL_HEIGHT, z: USAGE_Z }, color: COLOR_USAGE_PANEL, layer: 'ide' };
+	private readonly panelRect: RectRenderSubmission = { kind: RectRenderKind.Fill, area: { left: 0, top: 0, right: 1, bottom: 1, z: 920 }, color: COLOR_PANEL, layer: LAYER_2D_IDE };
+	private readonly highlightRect: RectRenderSubmission = { kind: RectRenderKind.Fill, area: { left: 0, top: 0, right: 1, bottom: 1, z: 921 }, color: COLOR_HIGHLIGHT, layer: LAYER_2D_IDE };
+	private readonly titleGlyphs: GlyphRenderSubmission = { x: 0, y: 0, z: 922, glyphs: TITLE_TEXT, glyph_start: 0, glyph_end: TITLE_TEXT.length, font: null, color: COLOR_TITLE, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
+	private readonly fpsGlyphs: GlyphRenderSubmission = { x: 0, y: 0, z: 922, glyphs: '', glyph_start: 0, glyph_end: 0, font: null, color: COLOR_TITLE, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
+	private readonly usagePanelRect: RectRenderSubmission = { kind: RectRenderKind.Fill, area: { left: USAGE_X - 4, top: USAGE_Y - 4, right: USAGE_X - 4 + USAGE_PANEL_WIDTH, bottom: USAGE_Y - 4 + USAGE_PANEL_HEIGHT, z: USAGE_Z }, color: COLOR_USAGE_PANEL, layer: LAYER_2D_IDE };
 	private readonly usageBarBackgrounds: RectRenderSubmission[] = new Array(USAGE_BAR_COUNT);
 	private readonly usageBarFills: RectRenderSubmission[] = new Array(USAGE_BAR_COUNT);
 	private readonly usageLabels: GlyphRenderSubmission[] = new Array(USAGE_BAR_COUNT);
@@ -273,16 +274,16 @@ export class HostOverlayMenu {
 	constructor() {
 		this.optionGlyphs = new Array(this.options.length);
 		for (let index = 0; index < this.options.length; index += 1) {
-			this.optionGlyphs[index] = { x: 0, y: 0, z: 922, glyphs: '', glyph_start: 0, glyph_end: 0, font: null, color: COLOR_TEXT, background_color: null, wrap_chars: 0, center_block_width: 0, align: 'start', baseline: 'alphabetic', layer: 'ide' };
+			this.optionGlyphs[index] = { x: 0, y: 0, z: 922, glyphs: '', glyph_start: 0, glyph_end: 0, font: null, color: COLOR_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
 			this.lineText[index] = '';
 		}
 		for (let index = 0; index < USAGE_BAR_COUNT; index += 1) {
 			const rowY = USAGE_Y + index * USAGE_ROW_HEIGHT;
 			const label = USAGE_LABELS[index];
-			this.usageBarBackgrounds[index] = { kind: 'fill', area: { left: USAGE_BAR_X, top: rowY + 1, right: USAGE_BAR_X + USAGE_BAR_WIDTH, bottom: rowY + 1 + USAGE_BAR_HEIGHT, z: USAGE_Z + 1 }, color: COLOR_USAGE_DIM, layer: 'ide' };
-			this.usageBarFills[index] = { kind: 'fill', area: { left: USAGE_BAR_X, top: rowY + 1, right: USAGE_BAR_X, bottom: rowY + 1 + USAGE_BAR_HEIGHT, z: USAGE_Z + 2 }, color: COLOR_USAGE_OK, layer: 'ide' };
-			this.usageLabels[index] = { x: USAGE_X, y: rowY + 1, z: USAGE_Z + 3, glyphs: label, glyph_start: 0, glyph_end: label.length, font: null, color: COLOR_USAGE_DIM, background_color: null, wrap_chars: 0, center_block_width: 0, align: 'start', baseline: 'alphabetic', layer: 'ide' };
-			this.usagePercents[index] = { x: USAGE_BAR_X + USAGE_BAR_WIDTH + 1, y: rowY + 1, z: USAGE_Z + 3, glyphs: '', glyph_start: 0, glyph_end: 0, font: null, color: COLOR_USAGE_TEXT, background_color: null, wrap_chars: 0, center_block_width: 0, align: 'start', baseline: 'alphabetic', layer: 'ide' };
+			this.usageBarBackgrounds[index] = { kind: RectRenderKind.Fill, area: { left: USAGE_BAR_X, top: rowY + 1, right: USAGE_BAR_X + USAGE_BAR_WIDTH, bottom: rowY + 1 + USAGE_BAR_HEIGHT, z: USAGE_Z + 1 }, color: COLOR_USAGE_DIM, layer: LAYER_2D_IDE };
+			this.usageBarFills[index] = { kind: RectRenderKind.Fill, area: { left: USAGE_BAR_X, top: rowY + 1, right: USAGE_BAR_X, bottom: rowY + 1 + USAGE_BAR_HEIGHT, z: USAGE_Z + 2 }, color: COLOR_USAGE_OK, layer: LAYER_2D_IDE };
+			this.usageLabels[index] = { x: USAGE_X, y: rowY + 1, z: USAGE_Z + 3, glyphs: label, glyph_start: 0, glyph_end: label.length, font: null, color: COLOR_USAGE_DIM, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
+			this.usagePercents[index] = { x: USAGE_BAR_X + USAGE_BAR_WIDTH + 1, y: rowY + 1, z: USAGE_Z + 3, glyphs: '', glyph_start: 0, glyph_end: 0, font: null, color: COLOR_USAGE_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
 			this.usagePercentCode[index] = -1;
 		}
 	}

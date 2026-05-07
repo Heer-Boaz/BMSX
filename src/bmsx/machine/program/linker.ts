@@ -17,6 +17,8 @@ import {
 	CART_PROGRAM_VECTOR_PC,
 	CART_PROGRAM_VECTOR_VALUE,
 	resolveProgramLayout,
+	SYSTEM_BASE_PC,
+	CART_BASE_PC,
 	type ProgramLayout,
 } from './layout';
 import type {
@@ -438,7 +440,8 @@ export const linkProgramImages = (
 	systemSymbols: ProgramSymbolsImage | null,
 	cartImage: ProgramImage,
 	cartSymbols: ProgramSymbolsImage | null,
-	layout?: Partial<ProgramLayout>,
+	systemBasePc: number = SYSTEM_BASE_PC,
+	cartBasePc: number = CART_BASE_PC,
 ): LinkedProgramImage => {
 	const systemText = systemImage.sections.text;
 	const cartText = cartImage.sections.text;
@@ -449,7 +452,7 @@ export const linkProgramImages = (
 	const cartCodeBytes = cartText.code.length;
 	const systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;
 	const cartInstructionCount = cartCodeBytes / INSTRUCTION_BYTES;
-	const resolvedLayout = resolveProgramLayout(systemCodeBytes, layout);
+	const resolvedLayout = resolveProgramLayout(systemCodeBytes, systemBasePc, cartBasePc);
 	const totalBytes = Math.max(
 		resolvedLayout.systemBasePc + systemCodeBytes,
 		resolvedLayout.cartBasePc + cartCodeBytes,
@@ -461,8 +464,8 @@ export const linkProgramImages = (
 	const cartCode = code.subarray(resolvedLayout.cartBasePc, resolvedLayout.cartBasePc + cartCodeBytes);
 	rewriteClosureIndices(cartCode, baseProtoCount);
 	const mergedConsts = mergeConstPools(systemRodata.constPool, cartRodata.constPool);
-	const systemMetadata = systemSymbols?.metadata;
-	const cartMetadata = cartSymbols?.metadata;
+	const systemMetadata = systemSymbols;
+	const cartMetadata = cartSymbols;
 
 	// If the cart contains any 'module' const-relocs we must have full symbol metadata
 	// available from both system and cart so module export slot names (in global/system

@@ -34,11 +34,6 @@ std::string tokenKey(u32 lo, u32 hi) {
 	return std::string(buffer);
 }
 
-std::string tokenKey(AssetToken token) {
-	const AssetTokenParts parts = splitAssetToken(token);
-	return tokenKey(parts.lo, parts.hi);
-}
-
 std::string tokenKeyFromId(std::string_view id) {
 	const AssetTokenParts token = hashAssetId(id);
 	return tokenKey(token.lo, token.hi);

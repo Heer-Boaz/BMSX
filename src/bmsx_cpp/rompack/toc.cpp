@@ -64,6 +64,9 @@ u32 assetTypeToId(std::string_view type) {
 }
 
 AssetTypeKind resolveAssetTypeKind(std::string_view assetType) {
+	if (assetType.empty()) {
+		return AssetTypeKind::Unknown;
+	}
 	switch (assetType[0]) {
 		case 'i':
 			if (assetType == "image") return AssetTypeKind::ImageAtlas;

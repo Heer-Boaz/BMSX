@@ -1,7 +1,8 @@
 /// <reference types="@webgpu/types" />
 import { color_arr, type TextureSource } from '../../../rompack/format';
-import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureFormat, TextureHandle, TextureParams } from '../interfaces';
-import { createSolidRgba8Pixels } from '../solid_pixels';
+import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureFormat, TextureHandle } from '../backend';
+import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
+import { createSolidRgba8Pixels, writeSolidRgba8Pixels } from '../../shared/solid_pixels';
 
 export type WebGPUPassEncoder = PassEncoder & { encoder: GPURenderPassEncoder };
 
@@ -41,64 +42,38 @@ export class WebGPUBackend implements GPUBackend {
 		this._bytesUploaded += bytes;
 	}
 
-	createTexture(src: TextureSource | Promise<TextureSource>, _desc: TextureParams): TextureHandle {
-		const format = _desc.srgb === false ? 'rgba8unorm' : 'rgba8unorm-srgb';
-		const source = src as TextureSource;
-		const data = source.data;
+	createTexture(data: Uint8Array, width: number, height: number, _desc: TextureParams): TextureHandle {
+		const format = _desc.srgb ? 'rgba8unorm-srgb' : 'rgba8unorm';
 		const texture = this.device.createTexture({
-			size: { width: source.width, height: source.height, depthOrArrayLayers: 1 },
+			size: { width, height, depthOrArrayLayers: 1 },
 			format,
 			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
 			mipLevelCount: 1,
 			dimension: '2d',
 		});
 
-		if (data) {
-			const upload = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
-			this.device.queue.writeTexture(
-				{ texture },
-				upload,
-				{ bytesPerRow: source.width * 4 },
-				{ width: source.width, height: source.height, depthOrArrayLayers: 1 },
-			);
-			this.accountUpload('texture', source.width * source.height * 4);
-			return texture;
-		}
-
-		const img = source as ImageBitmap;
-		this.device.queue.copyExternalImageToTexture(
-			{ source: img, flipY: false },
+		this.device.queue.writeTexture(
 			{ texture },
-			{ width: img.width, height: img.height }
+			data as Uint8Array<ArrayBuffer>,
+			{ bytesPerRow: width * 4 },
+			{ width, height, depthOrArrayLayers: 1 },
 		);
-		this.accountUpload('texture', img.width * img.height * 4);
+		this.accountUpload('texture', width * height * 4);
 		return texture;
 	}
 
-	updateTexture(handle: TextureHandle, src: TextureSource): void {
-		const data = src.data;
-		if (data) {
-			const upload = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
-			this.device.queue.writeTexture(
-				{ texture: handle as GPUTexture },
-				upload,
-				{ bytesPerRow: src.width * 4 },
-				{ width: src.width, height: src.height, depthOrArrayLayers: 1 },
-			);
-			this.accountUpload('texture', src.width * src.height * 4);
-			return;
-		}
-		const img = src as ImageBitmap;
-		this.device.queue.copyExternalImageToTexture(
-			{ source: img, flipY: false },
+	updateTexture(handle: TextureHandle, data: Uint8Array, width: number, height: number, _desc: TextureParams): void {
+		this.device.queue.writeTexture(
 			{ texture: handle as GPUTexture },
-			{ width: img.width, height: img.height }
+			data as Uint8Array<ArrayBuffer>,
+			{ bytesPerRow: width * 4 },
+			{ width, height, depthOrArrayLayers: 1 },
 		);
-		this.accountUpload('texture', img.width * img.height * 4);
+		this.accountUpload('texture', width * height * 4);
 	}
 
 	resizeTexture(_handle: TextureHandle, width: number, height: number, _desc: TextureParams): TextureHandle {
-		const format = _desc.srgb === false ? 'rgba8unorm' : 'rgba8unorm-srgb';
+		const format = _desc.srgb ? 'rgba8unorm-srgb' : 'rgba8unorm';
 		return this.device.createTexture({
 			size: { width, height, depthOrArrayLayers: 1 },
 			format,
@@ -108,33 +83,21 @@ export class WebGPUBackend implements GPUBackend {
 		});
 	}
 
-	updateTextureRegion(handle: TextureHandle, src: TextureSource, x: number, y: number): void {
-		const data = src.data;
-		if (data) {
-			const upload = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
-			this.device.queue.writeTexture(
-				{ texture: handle as GPUTexture, origin: { x, y, z: 0 } },
-				upload,
-				{ bytesPerRow: src.width * 4 },
-				{ width: src.width, height: src.height, depthOrArrayLayers: 1 },
-			);
-			this.accountUpload('texture', src.width * src.height * 4);
-			return;
-		}
-		const img = src as ImageBitmap;
-		this.device.queue.copyExternalImageToTexture(
-			{ source: img, flipY: false },
+	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, _desc: TextureParams): void {
+		this.device.queue.writeTexture(
 			{ texture: handle as GPUTexture, origin: { x, y, z: 0 } },
-			{ width: img.width, height: img.height }
+			data as Uint8Array<ArrayBuffer>,
+			{ bytesPerRow: width * 4 },
+			{ width, height, depthOrArrayLayers: 1 },
 		);
-		this.accountUpload('texture', img.width * img.height * 4);
+		this.accountUpload('texture', width * height * 4);
 	}
 
-	readTextureRegion(_handle: TextureHandle, _x: number, _y: number, _width: number, _height: number, _out?: Uint8Array): Uint8Array {
+	readTextureRegion(_handle: TextureHandle, _out: Uint8Array, _width: number, _height: number, _x: number, _y: number, _desc: TextureParams): void {
 		throw new Error('[WebGPUBackend] Texture readback is not yet supported, but it will be implemented in the future.');
 	}
 
-	createSolidTexture2D(width: number, height: number, rgba: color_arr, _desc: TextureParams = {}): TextureHandle {
+	createSolidTexture2D(width: number, height: number, color: number, _desc: TextureParams = DEFAULT_TEXTURE_PARAMS): TextureHandle {
 		const texture = this.device.createTexture({
 			size: { width, height, depthOrArrayLayers: 1 },
 			format: 'rgba8unorm',
@@ -142,7 +105,7 @@ export class WebGPUBackend implements GPUBackend {
 			mipLevelCount: 1,
 			dimension: '2d',
 		});
-			const data = createSolidRgba8Pixels(width, height, rgba);
+		const data = createSolidRgba8Pixels(width, height, color);
 		this.device.queue.writeTexture(
 			{ texture },
 			data,
@@ -188,7 +151,7 @@ export class WebGPUBackend implements GPUBackend {
 		return texture;
 	}
 
-	createSolidCubemap(size: number, rgba: color_arr, _desc: TextureParams): TextureHandle {
+	createSolidCubemap(size: number, color: number, _desc: TextureParams): TextureHandle {
 		const texture = this.device.createTexture({
 			size: { width: size, height: size, depthOrArrayLayers: 6 },
 			format: 'rgba8unorm',
@@ -200,15 +163,7 @@ export class WebGPUBackend implements GPUBackend {
 		// Create a buffer with the color repeated for each pixel per face
 		const pixelCountPerFace = size * size;
 		const data = new Uint8Array(pixelCountPerFace * 4 * 6);
-		for (let face = 0; face < 6; face++) {
-			for (let i = 0; i < pixelCountPerFace; i++) {
-				const offset = (face * pixelCountPerFace + i) * 4;
-				data[offset + 0] = ~~(rgba[0] * 255);
-				data[offset + 1] = ~~(rgba[1] * 255);
-				data[offset + 2] = ~~(rgba[2] * 255);
-				data[offset + 3] = ~~(rgba[3] * 255);
-			}
-		}
+		writeSolidRgba8Pixels(data, data.byteLength, color);
 
 		const buffer = this.device.createBuffer({
 			size: data.byteLength,
@@ -322,16 +277,16 @@ export class WebGPUBackend implements GPUBackend {
 		return { color, depth };
 	}
 
-	clear(opts: { color?: color_arr; depth?: number }): void {
+	clear(color: color_arr | undefined, _depth: number | undefined): void {
 		// To clear outside a pass, create a temporary render pass for clearing
 		const commandEncoder = this.device.createCommandEncoder();
 		let colorAttachments: GPURenderPassColorAttachment[] = [];
 
-		if (this.context && opts.color) {
+		if (this.context && color) {
 			const view = this.context.getCurrentTexture().createView();
 			colorAttachments = [{
 				view,
-				clearValue: opts.color,
+				clearValue: color,
 				loadOp: 'clear',
 				storeOp: 'store',
 			}];
@@ -391,7 +346,12 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	getCaps(): BackendCaps {
-		return { maxColorAttachments: this.limits.maxColorAttachments };
+		return {
+			maxColorAttachments: this.limits.maxColorAttachments,
+			maxTextureSize: this.limits.maxTextureDimension2D,
+			supportsInstancing: true,
+			supportsDepthTexture: true,
+		};
 	}
 
 	transitionTexture(_tex: TextureHandle, _fromLayout: string, _toLayout: string): void {
@@ -526,7 +486,7 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	draw(pass: WebGPUPassEncoder, first: number, count: number): void { const enc = pass.encoder ?? this._activePassEncoder; if (enc) enc.draw(count, 1, first, 0); }
-	drawIndexed(pass: WebGPUPassEncoder, indexCount: number, firstIndex?: number, _indexType?: number): void { const enc = pass.encoder ?? this._activePassEncoder; if (enc) enc.drawIndexed(indexCount, 1, firstIndex ?? 0, 0, 0); }
+	drawIndexed(pass: WebGPUPassEncoder, indexCount: number, firstIndex: number, _indexType?: number): void { const enc = pass.encoder ?? this._activePassEncoder; if (enc) enc.drawIndexed(indexCount, 1, firstIndex, 0, 0); }
 	drawInstanced(pass: WebGPUPassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void { const enc = pass.encoder ?? this._activePassEncoder; if (enc) enc.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
 	drawIndexedInstanced(pass: WebGPUPassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, baseVertex = 0, firstInstance = 0, _indexType?: number): void { const enc = pass.encoder ?? this._activePassEncoder; if (enc) enc.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance); }
 

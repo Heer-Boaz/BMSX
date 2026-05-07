@@ -1,5 +1,5 @@
 import type { VDP, VdpBlitterCommand, VdpHostOutput } from '../../../machine/devices/vdp/vdp';
-import type { GPUBackend } from '../../backend/interfaces';
+import type { GPUBackend } from '../../backend/backend';
 import { vdpTextureBackend } from '../texture_transfer';
 import { syncVdpSlotTextures } from '../slot_textures';
 import { applyVdpFrameBufferTextureWrites } from '../framebuffer';

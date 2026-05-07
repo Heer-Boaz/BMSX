@@ -212,70 +212,28 @@ export const BASE_CYCLES = new Uint8Array([
 	1, 2, 1, 2, 1, 2, 1, 1,
 ]);
 
-export const OPCODE_USES_BX = new Uint8Array(OPCODE_COUNT);
-OPCODE_USES_BX[OpCode.LOADK] = 1;
-OPCODE_USES_BX[OpCode.KSMI] = 1;
-OPCODE_USES_BX[OpCode.GETG] = 1;
-OPCODE_USES_BX[OpCode.SETG] = 1;
-OPCODE_USES_BX[OpCode.GETSYS] = 1;
-OPCODE_USES_BX[OpCode.SETSYS] = 1;
-OPCODE_USES_BX[OpCode.GETGL] = 1;
-OPCODE_USES_BX[OpCode.SETGL] = 1;
-OPCODE_USES_BX[OpCode.CLOSURE] = 1;
-OPCODE_USES_BX[OpCode.JMP] = 1;
-OPCODE_USES_BX[OpCode.JMPIF] = 1;
-OPCODE_USES_BX[OpCode.JMPIFNOT] = 1;
-OPCODE_USES_BX[OpCode.BR_TRUE] = 1;
-OPCODE_USES_BX[OpCode.BR_FALSE] = 1;
+export const OPCODE_USES_BX = new Uint8Array([
+	0, 0, 1, 0, 0, 0, 0, 0,
+	0, 0, 0, 1, 1, 1, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	1, 1, 1, 1, 0, 0, 0, 0,
+	0, 0, 0, 0, 1, 1, 1, 1,
+	1, 1, 0, 0, 0, 0, 0, 0,
+]);
 
-export const OPCODE_CATEGORY: ReadonlyArray<string> = (() => {
-	const categories = new Array<string>(OPCODE_COUNT).fill('?');
+export const OPCODE_CATEGORY: ReadonlyArray<string> = [
+	'wide prefix', 'load/move', 'load/move', 'load/move', 'load/move', 'load/move', 'load/move', 'load/move',
+	'load/move', 'load/move', 'load/move', 'load/move', 'table get/set', 'table get/set', 'table get/set', 'table get/set',
+	'table creation', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic', 'arithmetic',
+	'bitwise', 'bitwise', 'bitwise', 'bitwise', 'bitwise', 'string concat', 'string concat', 'arithmetic',
+	'logical', 'length', 'bitwise', 'comparison', 'comparison', 'comparison', 'comparison', 'comparison',
+	'branch/jump', 'branch/jump', 'branch/jump', 'closure creation', 'upvalue', 'upvalue', 'vararg', 'call/return',
+	'call/return', 'memory I/O', 'memory I/O', 'memory I/O', 'branch/jump', 'branch/jump', 'global/sys access', 'global/sys access',
+	'global/sys access', 'global/sys access', 'table get/set', 'table get/set', 'table get/set', 'table get/set', 'table get/set', 'sleep/halt',
+];
 
-	for (const op of [OpCode.MOV, OpCode.LOADK, OpCode.LOADBOOL, OpCode.LOADNIL, OpCode.KNIL, OpCode.KFALSE, OpCode.KTRUE, OpCode.K0, OpCode.K1, OpCode.KM1, OpCode.KSMI]) {
-		categories[op] = 'load/move';
-	}
-	for (const op of [OpCode.GETG, OpCode.SETG, OpCode.GETT, OpCode.SETT, OpCode.GETI, OpCode.SETI, OpCode.GETFIELD, OpCode.SETFIELD, OpCode.SELF]) {
-		categories[op] = 'table get/set';
-	}
-	for (const op of [OpCode.GETGL, OpCode.SETGL, OpCode.GETSYS, OpCode.SETSYS]) {
-		categories[op] = 'global/sys access';
-	}
-	for (const op of [OpCode.GETUP, OpCode.SETUP]) {
-		categories[op] = 'upvalue';
-	}
-	for (const op of [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW, OpCode.UNM]) {
-		categories[op] = 'arithmetic';
-	}
-	for (const op of [OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.SHL, OpCode.SHR, OpCode.BNOT]) {
-		categories[op] = 'bitwise';
-	}
-	for (const op of [OpCode.CONCAT, OpCode.CONCATN]) {
-		categories[op] = 'string concat';
-	}
-	for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE, OpCode.TEST, OpCode.TESTSET]) {
-		categories[op] = 'comparison';
-	}
-	for (const op of [OpCode.JMP, OpCode.JMPIF, OpCode.JMPIFNOT, OpCode.BR_TRUE, OpCode.BR_FALSE]) {
-		categories[op] = 'branch/jump';
-	}
-	for (const op of [OpCode.CALL, OpCode.RET]) {
-		categories[op] = 'call/return';
-	}
-	categories[OpCode.HALT] = 'sleep/halt';
-	for (const op of [OpCode.LOAD_MEM, OpCode.STORE_MEM, OpCode.STORE_MEM_WORDS]) {
-		categories[op] = 'memory I/O';
-	}
-
-	categories[OpCode.WIDE] = 'wide prefix';
-	categories[OpCode.CLOSURE] = 'closure creation';
-	categories[OpCode.NEWT] = 'table creation';
-	categories[OpCode.LEN] = 'length';
-	categories[OpCode.NOT] = 'logical';
-	categories[OpCode.VARARG] = 'vararg';
-
-	return categories;
-})();
-
-export function getOpcodeName(opcode: number): string {
-	return opcode >= 0 && opcode < OPCODE_NAMES.length ? OPCODE_NAMES[opcode] : `OP_${opcode}`;
+export function getOpcodeName(opcode: OpCode): string {
+	return OPCODE_NAMES[opcode];
 }

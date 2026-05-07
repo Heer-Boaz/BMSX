@@ -15,9 +15,11 @@ export const CART_BASE_PC = CART_PROGRAM_START_OFFSET;
 export const CART_PROGRAM_VECTOR_PC = CART_PROGRAM_VECTOR_OFFSET;
 export const CART_PROGRAM_VECTOR_VALUE = CART_PROGRAM_START_ADDR;
 
-export const resolveProgramLayout = (systemCodeBytes: number, layout?: Partial<ProgramLayout>): ProgramLayout => {
-	const systemBasePc = layout?.systemBasePc ?? SYSTEM_BASE_PC;
-	const cartBasePc = layout?.cartBasePc ?? CART_BASE_PC;
+export function resolveProgramLayout(
+	systemCodeBytes: number,
+	systemBasePc: number = SYSTEM_BASE_PC,
+	cartBasePc: number = CART_BASE_PC,
+): ProgramLayout {
 	if (systemBasePc < 0) {
 		throw new Error(`[ProgramLayout] System base PC must be >= 0 (got ${systemBasePc}).`);
 	}
@@ -37,4 +39,4 @@ export const resolveProgramLayout = (systemCodeBytes: number, layout?: Partial<P
 		throw new Error(`[ProgramLayout] System program (${systemCodeBytes} bytes) overlaps cart base PC ${cartBasePc}.`);
 	}
 	return { systemBasePc, cartBasePc };
-};
+}

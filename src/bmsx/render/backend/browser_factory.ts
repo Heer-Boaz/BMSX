@@ -1,7 +1,7 @@
 import type { GameViewHost } from '../../platform';
 import { WebGLBackend } from './webgl/backend';
 import { WebGPUBackend } from './webgpu/backend';
-import type { GPUBackend } from './interfaces';
+import type { GPUBackend } from './backend';
 
 const FACTORY_KEY = '__bmsxCreateBackend';
 interface BackendFactoryHolder {

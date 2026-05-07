@@ -838,7 +838,7 @@ BinValue encodeRuntimeSaveStateValue(const RuntimeSaveState& state) {
 	object["renderState"] = encodeRuntimeRenderState(state.renderState);
 	object["systemProgramActive"] = state.systemProgramActive;
 	object["luaInitialized"] = state.luaInitialized;
-	object["luaRuntimeFailed"] = state.runtimeFailed;
+	object["luaRuntimeFailed"] = state.luaRuntimeFailed;
 	object["randomSeed"] = static_cast<i64>(state.randomSeed);
 	object["pendingEntryCall"] = state.pendingEntryCall;
 	return BinValue(std::move(object));
@@ -852,7 +852,7 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 	state.renderState = decodeRuntimeRenderState(requireField(object, "renderState", label), "runtimeSaveState.renderState");
 	state.systemProgramActive = requireBool(requireField(object, "systemProgramActive", label), "runtimeSaveState.systemProgramActive");
 	state.luaInitialized = requireBool(requireField(object, "luaInitialized", label), "runtimeSaveState.luaInitialized");
-	state.runtimeFailed = requireBool(requireField(object, "luaRuntimeFailed", label), "runtimeSaveState.luaRuntimeFailed");
+	state.luaRuntimeFailed = requireBool(requireField(object, "luaRuntimeFailed", label), "runtimeSaveState.luaRuntimeFailed");
 	state.randomSeed = requireU32(requireField(object, "randomSeed", label), "runtimeSaveState.randomSeed");
 	state.pendingEntryCall = requireBool(requireField(object, "pendingEntryCall", label), "runtimeSaveState.pendingEntryCall");
 	return state;

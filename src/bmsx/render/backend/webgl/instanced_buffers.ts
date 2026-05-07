@@ -4,7 +4,7 @@ import {
 	TEXTURE_UNIT_TEXTPAGE_PRIMARY,
 	TEXTURE_UNIT_TEXTPAGE_SECONDARY,
 } from './constants';
-import type { PassEncoder } from '../interfaces';
+import type { PassEncoder } from '../backend';
 
 export type WebGLInstancedBufferRuntime = {
 	instanceFloatBuffer: WebGLBuffer;

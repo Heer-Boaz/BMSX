@@ -2,9 +2,9 @@ import { consoleCore } from '../../../core/console';
 
 import particleFS from '../shaders/particle.frag.glsl';
 import particleVS from '../shaders/particle.vert.glsl';
-import type { PassEncoder, RenderContext, RenderPassStateRegistry } from '../../backend/interfaces';
+import type { PassEncoder, RenderContext, RenderPassStateRegistry } from '../../backend/backend';
 import { RenderPassLibrary } from '../../backend/pass/library';
-import { ParticlePipelineState } from '../../backend/interfaces';
+import { ParticlePipelineState } from '../../backend/backend';
 import { TEXTURE_UNIT_TEXTPAGE_ENGINE, TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '../../backend/webgl/constants';
 import { WebGLBackend } from '../../backend/webgl/backend';
 import type { Camera } from '../camera';

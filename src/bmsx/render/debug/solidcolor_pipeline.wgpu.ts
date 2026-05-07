@@ -1,4 +1,4 @@
-import { GPUBackend } from '../backend/interfaces';
+import { GPUBackend } from '../backend/backend';
 import { RenderPassLibrary } from '../backend/pass/library';
 import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/backend';
 

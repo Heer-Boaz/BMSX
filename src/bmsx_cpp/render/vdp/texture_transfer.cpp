@@ -6,7 +6,6 @@
 namespace bmsx {
 namespace {
 
-const TextureParams DEFAULT_TEXTURE_PARAMS{};
 TextureManager* g_vdpTextureManager = nullptr;
 GameView* g_vdpTextureView = nullptr;
 

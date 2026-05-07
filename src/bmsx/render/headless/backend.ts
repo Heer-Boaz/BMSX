@@ -1,14 +1,15 @@
 import type { color_arr, TextureSource } from '../../rompack/format';
-import { colorByte } from './pixel_ops';
 import type {
 	GPUBackend,
+	BackendCaps,
 	TextureHandle,
-	TextureParams,
 	RenderPassDesc,
 	PassEncoder,
 	RenderPassInstanceHandle,
 	RenderPassId,
-} from '../backend/interfaces';
+} from '../backend/backend';
+import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../backend/texture_params';
+import { createSolidRgba8Pixels } from '../shared/solid_pixels';
 
 type HeadlessTextureRecord = {
 	id: number;
@@ -66,28 +67,6 @@ function toBytes(data: ArrayBufferView): Uint8Array {
 
 function textureByteLength(width: number, height: number): number {
 	return width * height * 4;
-}
-
-function createSolidPixels(width: number, height: number, rgba: color_arr): Uint8Array {
-	const pixels = new Uint8Array(textureByteLength(width, height));
-	const r = colorByte(rgba[0]);
-	const g = colorByte(rgba[1]);
-	const b = colorByte(rgba[2]);
-	const a = colorByte(rgba[3]);
-	for (let i = 0; i < pixels.byteLength; i += 4) {
-		pixels[i] = r;
-		pixels[i + 1] = g;
-		pixels[i + 2] = b;
-		pixels[i + 3] = a;
-	}
-	return pixels;
-}
-
-function asTextureSourcePromise(src: TextureSource | Promise<TextureSource>): Promise<TextureSource> | null {
-	if (src instanceof Promise) {
-		return src;
-	}
-	return null;
 }
 
 export class HeadlessGPUBackend implements GPUBackend {
@@ -149,14 +128,6 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return normalized;
 	}
 
-	private applyTextureSource(record: HeadlessTextureRecord, src: TextureSource): void {
-		record.width = src.width;
-		record.height = src.height;
-		record.pixels = this.normalizeTextureSource(src);
-		record.cubemapFaces = null;
-		this.accountUpload('texture', textureByteLength(src.width, src.height));
-	}
-
 	private ensureTexturePixels(record: HeadlessTextureRecord): Uint8Array {
 		if (!record.pixels || record.pixels.byteLength !== textureByteLength(record.width, record.height)) {
 			record.pixels = new Uint8Array(textureByteLength(record.width, record.height));
@@ -176,22 +147,19 @@ export class HeadlessGPUBackend implements GPUBackend {
 		this.boundCubeByUnit.set(this.activeTextureUnit, tex);
 	}
 
-	createTexture(src: TextureSource | Promise<TextureSource>, desc: TextureParams): TextureHandle {
-		const width = desc.size ? desc.size.x : 1;
-		const height = desc.size ? desc.size.y : 1;
-		const handle = this.createTextureRecord('texture', width, height, new Uint8Array(textureByteLength(width, height)), null);
-		const promise = asTextureSourcePromise(src);
-		if (promise) {
-			void promise.then(this.updateTexture.bind(this, handle));
-			return handle;
-		}
-		this.updateTexture(handle, src as TextureSource);
-		return handle;
+	createTexture(data: Uint8Array, width: number, height: number, _desc: TextureParams): TextureHandle {
+		const pixels = new Uint8Array(data);
+		this.accountUpload('texture', textureByteLength(width, height));
+		return this.createTextureRecord('texture', width, height, pixels, null);
 	}
 
-	updateTexture(handle: TextureHandle, src: TextureSource): void {
+	updateTexture(handle: TextureHandle, data: Uint8Array, width: number, height: number, _desc: TextureParams): void {
 		const record = this.getTextureRecord(handle);
-		this.applyTextureSource(record, src);
+		record.width = width;
+		record.height = height;
+		record.pixels = new Uint8Array(data);
+		record.cubemapFaces = null;
+		this.accountUpload('texture', textureByteLength(width, height));
 	}
 
 	resizeTexture(handle: TextureHandle, width: number, height: number, _desc: TextureParams): TextureHandle {
@@ -203,29 +171,26 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return handle;
 	}
 
-	updateTextureRegion(handle: TextureHandle, src: TextureSource, x: number, y: number): void {
+	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, _desc: TextureParams): void {
 		const record = this.getTextureRecord(handle);
 		if (record.cubemapFaces) {
 			throw new Error('[HeadlessBackend] Cannot write 2D texture region into cubemap texture.');
 		}
-		const srcWidth = src.width;
-		const srcHeight = src.height;
-		if (x < 0 || y < 0 || x + srcWidth > record.width || y + srcHeight > record.height) {
-			throw new Error(`[HeadlessBackend] Texture region ${srcWidth}x${srcHeight}@${x},${y} out of bounds for ${record.width}x${record.height}.`);
+		if (x < 0 || y < 0 || x + width > record.width || y + height > record.height) {
+			throw new Error(`[HeadlessBackend] Texture region ${width}x${height}@${x},${y} out of bounds for ${record.width}x${record.height}.`);
 		}
 		const dstPixels = this.ensureTexturePixels(record);
-		const srcPixels = this.normalizeTextureSource(src);
 		const dstStride = record.width * 4;
-		const srcStride = srcWidth * 4;
-		for (let row = 0; row < srcHeight; row += 1) {
+		const srcStride = width * 4;
+		for (let row = 0; row < height; row += 1) {
 			const srcOffset = row * srcStride;
 			const dstOffset = (y + row) * dstStride + x * 4;
-			dstPixels.set(srcPixels.subarray(srcOffset, srcOffset + srcStride), dstOffset);
+			dstPixels.set(data.subarray(srcOffset, srcOffset + srcStride), dstOffset);
 		}
-		this.accountUpload('texture', textureByteLength(srcWidth, srcHeight));
+		this.accountUpload('texture', textureByteLength(width, height));
 	}
 
-	readTextureRegion(handle: TextureHandle, x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array {
+	readTextureRegion(handle: TextureHandle, out: Uint8Array, width: number, height: number, x: number, y: number, _desc: TextureParams): void {
 		const record = this.getTextureRecord(handle);
 		if (record.cubemapFaces) {
 			throw new Error('[HeadlessBackend] readTextureRegion only supports 2D textures.');
@@ -234,20 +199,17 @@ export class HeadlessGPUBackend implements GPUBackend {
 			throw new Error(`[HeadlessBackend] Texture read ${width}x${height}@${x},${y} out of bounds for ${record.width}x${record.height}.`);
 		}
 		const src = this.ensureTexturePixels(record);
-		const byteLength = textureByteLength(width, height);
-		const pixels = out && out.byteLength >= byteLength ? out : new Uint8Array(byteLength);
 		const srcStride = record.width * 4;
 		const outStride = width * 4;
 		for (let row = 0; row < height; row += 1) {
 			const srcOffset = (y + row) * srcStride + x * 4;
 			const outOffset = row * outStride;
-			pixels.set(src.subarray(srcOffset, srcOffset + outStride), outOffset);
+			out.set(src.subarray(srcOffset, srcOffset + outStride), outOffset);
 		}
-		return pixels;
 	}
 
-	createSolidTexture2D(width: number, height: number, rgba: color_arr, _desc: TextureParams = {}): TextureHandle {
-		const pixels = createSolidPixels(width, height, rgba);
+	createSolidTexture2D(width: number, height: number, color: number, _desc: TextureParams = DEFAULT_TEXTURE_PARAMS): TextureHandle {
+		const pixels = createSolidRgba8Pixels(width, height, color);
 		this.accountUpload('texture', pixels.byteLength);
 		return this.createTextureRecord('solid2d', width, height, pixels, null);
 	}
@@ -266,8 +228,8 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return this.createTextureRecord('cubemap', width, height, null, facePixels);
 	}
 
-	createSolidCubemap(size: number, rgba: color_arr, _desc: TextureParams): TextureHandle {
-		const face = createSolidPixels(size, size, rgba);
+	createSolidCubemap(size: number, color: number, _desc: TextureParams): TextureHandle {
+		const face = createSolidRgba8Pixels(size, size, color);
 		const faces: Array<Uint8Array> = [];
 		for (let i = 0; i < 6; i += 1) {
 			faces.push(new Uint8Array(face));
@@ -351,7 +313,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return { size: { x: 0, y: 0 }, colors, depth };
 	}
 
-	clear(_opts: { color?: color_arr; depth?: number }): void { }
+	clear(_color: color_arr | undefined, _depth: number | undefined): void { }
 
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {
 		return { fbo: null, desc };
@@ -359,8 +321,13 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	endRenderPass(_pass: PassEncoder): void { }
 
-	getCaps(): { maxColorAttachments: number } {
-		return { maxColorAttachments: 1 };
+	getCaps(): BackendCaps {
+		return {
+			maxColorAttachments: 1,
+			maxTextureSize: 4096,
+			supportsInstancing: false,
+			supportsDepthTexture: true,
+		};
 	}
 
 	transitionTexture(_tex: TextureHandle, _fromLayout: string, _toLayout: string): void { }
@@ -377,7 +344,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		this.frameStats.draws += 1;
 	}
 
-	drawIndexed(_pass: PassEncoder, _indexCount: number): void {
+	drawIndexed(_pass: PassEncoder, _indexCount: number, _firstIndex: number): void {
 		this.frameStats.drawIndexed += 1;
 	}
 

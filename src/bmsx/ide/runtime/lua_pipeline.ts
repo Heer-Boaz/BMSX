@@ -629,7 +629,7 @@ function compileRegistryProgramImage(
 	});
 	return {
 		image: programImageFromCompiled(compiled),
-		symbols: { metadata: compiled.metadata },
+		symbols: compiled.metadata,
 		entryPath,
 		modules,
 	};
@@ -638,7 +638,7 @@ function compileRegistryProgramImage(
 function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
 	const system = compileRegistryProgramImage(runtime, runtime.systemLuaSources, interpreter);
 	let programImage = system.image;
-	let metadata: ProgramMetadata = system.symbols.metadata;
+	let metadata: ProgramMetadata = system.symbols;
 	let entryProtoIndex = system.image.entryProtoIndex;
 	let staticModulePaths: ReadonlyArray<string> = system.image.sections.rodata.staticModulePaths;
 	runtime.cartEntryProtoIndex = null;
@@ -680,7 +680,7 @@ export function bootProgramImage(runtime: Runtime, options?: { preserveState?: b
 	let programImage = systemImages.program;
 	let metadata: ProgramMetadata | null = null;
 	if (systemImages.symbols) {
-		metadata = systemImages.symbols.metadata;
+		metadata = systemImages.symbols;
 	}
 	let entryProtoIndex = systemImages.program.entryProtoIndex;
 	let staticModulePaths: ReadonlyArray<string> = systemImages.program.sections.rodata.staticModulePaths;

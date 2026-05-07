@@ -1,4 +1,4 @@
-import type { TextureHandle } from '../backend/interfaces';
+import type { TextureHandle } from '../backend/backend';
 import type { VdpHostOutput, VdpSurfaceUploadSlot } from '../../machine/devices/vdp/vdp';
 import {
 	VDP_PRIMARY_SLOT_TEXTURE_KEY,

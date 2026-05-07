@@ -175,9 +175,9 @@ void consumeButtons(PlayerInput& player, const std::array<HostMenuButton, N>& bu
 }
 
 void configureRect(RectRenderSubmission& submission, u32 color) {
-	submission.kind = RectRenderSubmission::Kind::Fill;
+	submission.kind = RectRenderKind::Fill;
 	submission.color = color;
-	submission.layer = RenderLayer::IDE;
+	submission.layer = Layer2D::IDE;
 }
 
 void configureGlyphs(GlyphRenderSubmission& submission, const char* text, u32 color) {
@@ -187,7 +187,7 @@ void configureGlyphs(GlyphRenderSubmission& submission, const char* text, u32 co
 	submission.glyph_end = static_cast<i32>(submission.glyphs[0].size());
 	submission.z = 922.0f;
 	submission.color = color;
-	submission.layer = RenderLayer::IDE;
+	submission.layer = Layer2D::IDE;
 }
 
 u32 usageColor(double ratio) {

@@ -20,6 +20,20 @@ constexpr bool kGLES2FinishFrame = false;
 #define GL_SRGB_ALPHA_EXT 0x8C42
 #endif
 
+
+void applyGLES2TextureParams(const bmsx::TextureParams& params) {
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, static_cast<GLint>(params.minFilter));
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, static_cast<GLint>(params.magFilter));
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, static_cast<GLint>(params.wrapS));
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, static_cast<GLint>(params.wrapT));
+}
+
+void bindGLES2TextureForUpload(GLuint texture, const bmsx::TextureParams& params) {
+	glBindTexture(GL_TEXTURE_2D, texture);
+	applyGLES2TextureParams(params);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+}
+
 bool hasExtensionToken(const char* extensions, const char* needle) {
 	if (extensions == nullptr || needle == nullptr || *needle == '\0') {
 		return false;
@@ -107,12 +121,7 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 
 	const GLint internalFormat = tex->srgb ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
 	glGenTextures(1, &tex->id);
-	glBindTexture(GL_TEXTURE_2D, tex->id);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	bindGLES2TextureForUpload(tex->id, params);
 	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA,
 					GL_UNSIGNED_BYTE, uploadData);
 	invalidateTextureBindingCache();
@@ -141,8 +150,7 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 	std::vector<u8> linearized;
 	const u8* uploadData = prepareGLES2UploadData(data, width, height, logicalSrgb, useSrgbTexture, linearized);
 
-	glBindTexture(GL_TEXTURE_2D, tex->id);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	bindGLES2TextureForUpload(tex->id, params);
 	if (needsRecreate) {
 		const GLint internalFormat = useSrgbTexture ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
 		glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
@@ -170,8 +178,7 @@ TextureHandle OpenGLES2Backend::resizeTexture(TextureHandle handle, i32 width, i
 	const bool logicalSrgb = params.srgb;
 	const bool useSrgbTexture = logicalSrgb && m_supports_srgb_textures;
 	std::vector<u8> zeroed(rgba8ByteCount(width, height), 0);
-	glBindTexture(GL_TEXTURE_2D, tex->id);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	bindGLES2TextureForUpload(tex->id, params);
 	const GLint internalFormat = useSrgbTexture ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
 	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, zeroed.data());
 	tex->width = width;
@@ -187,15 +194,14 @@ TextureHandle OpenGLES2Backend::resizeTexture(TextureHandle handle, i32 width, i
 	return handle;
 }
 
-void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams&) {
+void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) {
 	if (!m_context_ready) {
 		throw std::runtime_error("[GLES2] updateTextureRegion called before context reset.");
 	}
 	auto* tex = static_cast<GLES2Texture*>(handle);
 	std::vector<u8> linearized;
 	const u8* uploadData = prepareGLES2UploadData(data, width, height, tex->logicalSrgb, tex->srgb, linearized);
-	glBindTexture(GL_TEXTURE_2D, tex->id);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	bindGLES2TextureForUpload(tex->id, params);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
 	invalidateTextureBindingCache();
 	if (kGLES2VerboseLog) {
@@ -236,12 +242,11 @@ void OpenGLES2Backend::readTextureRegion(TextureHandle handle, u8* out, i32 widt
 	}
 }
 
-TextureHandle OpenGLES2Backend::createSolidTexture2D(i32 width, i32 height,
-														u32 color) {
+TextureHandle OpenGLES2Backend::createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) {
 	auto pixels = createSolidRgba8Pixels(width, height, color);
-	TextureParams params;
-	params.srgb = false;
-	return createTexture(pixels.data(), width, height, params);
+	TextureParams solidParams = params;
+	solidParams.srgb = false;
+	return createTexture(pixels.data(), width, height, solidParams);
 }
 
 void OpenGLES2Backend::destroyTexture(TextureHandle handle) {

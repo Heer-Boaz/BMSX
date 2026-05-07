@@ -330,7 +330,8 @@
 		"src/bmsx/rompack/format.ts",
 		"src/bmsx/machine/program/linker.ts",
 		"src/bmsx/machine/program/loader.ts",
-		"src/bmsx/render/shared/submissions.ts"
+		"src/bmsx/render/shared/submissions.ts",
+		"src/bmsx/render/shared/solid_pixels.ts"
 	],
 	"must_have_cpp": [
 		"src/bmsx/common/arrays_equal.ts",
@@ -346,13 +347,30 @@
 		"src/bmsx/rompack/tokens.ts",
 		"src/bmsx/rompack/toc.ts",
 		"src/bmsx/rompack/source.ts",
-		"src/bmsx/rompack/metadata.ts"
+		"src/bmsx/rompack/metadata.ts",
+		"src/bmsx/render/shared/solid_pixels.ts"
 	],
 	"public_symbol_parity": [
 		{
 			"ts": "src/bmsx/rompack/toc.ts",
 			"cpp": [
 				"src/bmsx_cpp/rompack/toc.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "decodeRomToc",
+					"reason": "TS passes a Uint8Array byte view as one value; C++ receives the same ROM TOC byte span as pointer plus size at the native ABI boundary."
+				},
+				{
+					"symbol": "RomTocPayload",
+					"field": "entries",
+					"reason": "TS TOC payload exposes RomAsset format records; C++ stores the same decoded entries as RomSourceEntry records at the native source-stack boundary."
+				},
+				{
+					"symbol": "RomTocPayload",
+					"field": "projectRootPath",
+					"reason": "TS uses null for an absent project root; C++ stores the same absence with std::optional."
+				}
 			]
 		},
 		{
@@ -406,6 +424,33 @@
 					"symbol": "RomSourceEntry",
 					"reason": "C++ source.h owns these source-stack record carriers because they embed C++ RomAssetInfo; TS owns the same wire-format types in rompack/format.ts."
 				}
+			],
+			"shape_exclude": [
+				{
+					"symbol": "RomSourceLayer",
+					"field": "payload",
+					"reason": "TS source layers carry payload bytes as Uint8Array; C++ stores the same layer payload bytes through the native vector owner pointer."
+				},
+				{
+					"symbol": "RomSourceStack.getBytes",
+					"reason": "TS source stack methods expose RomAsset records; C++ exposes the same decoded payload access through RomSourceEntry/RomAssetInfo native records."
+				},
+				{
+					"symbol": "RomSourceStack.getBytesView",
+					"reason": "TS source stack methods expose RomAsset records; C++ exposes the same decoded payload view through RomSourceEntry/RomAssetInfo native records."
+				},
+				{
+					"symbol": "RomSourceStack.getEntry",
+					"reason": "TS source stack returns RomAsset or null at the rompack format boundary; C++ returns optional RomSourceEntry at the native source-stack boundary."
+				},
+				{
+					"symbol": "RomSourceStack.getEntryByPath",
+					"reason": "TS source stack returns RomAsset or null at the rompack format boundary; C++ returns optional RomSourceEntry at the native source-stack boundary."
+				},
+				{
+					"symbol": "RomSourceStack.list",
+					"reason": "TS source stack lists RomAsset records and accepts optional asset_type; C++ lists RomSourceEntry records and accepts optional string_view at the native boundary."
+				}
 			]
 		},
 		{
@@ -418,6 +463,22 @@
 			"ts": "src/bmsx/machine/program/linker.ts",
 			"cpp": [
 				"src/bmsx_cpp/machine/program/linker.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "LinkedProgramImage",
+					"field": "programImage",
+					"reason": "TS linked images own the ProgramImage object directly; C++ owns the same linked image through unique_ptr at the native ownership boundary."
+				},
+				{
+					"symbol": "LinkedProgramImage",
+					"field": "metadata",
+					"reason": "TS uses null for absent program metadata; C++ owns the same optional metadata through unique_ptr at the native ownership boundary."
+				},
+				{
+					"symbol": "linkProgramImages",
+					"reason": "TS passes nullable ProgramSymbolsImage references; C++ passes the same optional metadata as native pointers at the linker ABI boundary."
+				}
 			]
 		},
 		{
@@ -436,12 +497,24 @@
 			"ts": "src/bmsx/machine/machine.ts",
 			"cpp": [
 				"src/bmsx_cpp/machine/machine.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "Machine.constructor",
+					"reason": "C++ Machine receives the native MicrotaskQueue owner explicitly; TS owns the same microtask runtime outside the Machine constructor in the host event loop."
+				}
 			]
 		},
 		{
 			"ts": "src/bmsx/machine/cpu/string_pool.ts",
 			"cpp": [
 				"src/bmsx_cpp/machine/cpu/string_pool.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "StringId",
+					"reason": "TS stores string pool ids as number values; C++ stores the same ids as uint32_t words at the native ABI boundary."
+				}
 			]
 		},
 		{
@@ -455,18 +528,75 @@
 					"symbol": "encodeProgramObjectSections",
 					"reason": "TS compiler emits object-image sections; C++ runtime consumes linked images and has no compiler producer surface."
 				}
+			],
+			"shape_exclude": [
+				{
+					"symbol": "decodeProgramImage",
+					"reason": "TS passes a Uint8Array byte view as one value; C++ receives the same program-image byte span as pointer plus size at the native ABI boundary."
+				},
+				{
+					"symbol": "decodeProgramSymbolsImage",
+					"reason": "TS passes a Uint8Array byte view as one value; C++ receives the same program-symbol byte span as pointer plus size at the native ABI boundary."
+				},
+				{
+					"symbol": "EncodedValue",
+					"reason": "TS represents encoded constants as a JavaScript union; C++ stores the same linked-image values in a native variant carrier."
+				},
+				{
+					"symbol": "ProgramSymbolsImage",
+					"reason": "TS aliases ProgramSymbolsImage to imported ProgramMetadata; C++ aliases to the same metadata owner but the parity scanner resolves the included C++ struct fields locally."
+				},
+				{
+					"symbol": "ProgramDataSection",
+					"field": "bytes",
+					"reason": "TS object-image data bytes are Uint8Array; C++ stores the same bytes in std::vector<u8>."
+				},
+				{
+					"symbol": "ProgramRodataSection",
+					"field": "moduleProtos",
+					"reason": "TS module proto records use object literals; C++ stores the same path/proto pairs as std::pair in the native rodata vector."
+				},
+				{
+					"symbol": "ProgramTextSection",
+					"field": "code",
+					"reason": "TS text section code bytes are Uint8Array; C++ stores the same instruction bytes in std::vector<u8>."
+				},
+				{
+					"symbol": "ProgramConstRelocKind",
+					"reason": "TS keeps const relocation kind as the ROM object-image string token emitted by the compiler; C++ decodes the same token into a scoped native enum at the loader boundary."
+				},
+				{
+					"symbol": "buildModuleProtoMap",
+					"reason": "TS module proto entries are object records; C++ module proto entries are the same path/proto pairs as native std::pair records."
+				},
+				{
+					"symbol": "inflateProgram",
+					"reason": "TS returns the owned Program object directly; C++ returns the same Program owner through unique_ptr at the native ownership boundary."
+				}
 			]
 		},
 		{
 			"ts": "src/bmsx/common/arrays_equal.ts",
 			"cpp": [
 				"src/bmsx_cpp/common/arrays_equal.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "arrays_equal",
+					"reason": "C++ exposes an additional pointer-plus-length overload for native buffers; TS ArrayLike covers the JS runtime array-like boundary."
+				}
 			]
 		},
 		{
 			"ts": "src/bmsx/common/lower_bound.ts",
 			"cpp": [
 				"src/bmsx_cpp/common/lower_bound.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "lower_bound",
+					"reason": "TS represents the two-argument and four-argument lower_bound forms with default parameters; C++ exposes the same contract as overloads."
+				}
 			]
 		},
 		{
@@ -498,6 +628,12 @@
 			"ts": "src/bmsx/rompack/metadata.ts",
 			"cpp": [
 				"src/bmsx_cpp/rompack/metadata.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "parseRomMetadataSection",
+					"reason": "TS passes a Uint8Array byte view as one value; C++ receives the same ROM metadata byte span as pointer plus size at the native ABI boundary."
+				}
 			]
 		},
 		{
@@ -556,6 +692,16 @@
 					"symbol": "splitAssetToken",
 					"reason": "C++ keeps packed 64-bit token helpers for unordered_map keys; TS public token surface uses lo/hi parts."
 				}
+			],
+			"shape_exclude": [
+				{
+					"symbol": "AssetToken",
+					"reason": "TS stores public asset tokens as lo/hi words because JavaScript cannot represent the full 64-bit token exactly; C++ owns the same token as native uint64_t and exposes split/make helpers at the ABI edge."
+				},
+				{
+					"symbol": "hashAssetId",
+					"reason": "TS returns the public lo/hi AssetToken record; C++ returns the same token lanes as AssetTokenParts for native hashing."
+				}
 			]
 		},
 		{
@@ -574,6 +720,28 @@
 			"ts": "src/bmsx/render/runtime_state.ts",
 			"cpp": [
 				"src/bmsx_cpp/render/runtime_state.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "RuntimeRenderCameraState",
+					"field": "view",
+					"reason": "TS render camera view matrix is a number array; C++ stores the same matrix lanes in a fixed native array."
+				},
+				{
+					"symbol": "RuntimeRenderCameraState",
+					"field": "proj",
+					"reason": "TS render camera projection matrix is a number array; C++ stores the same matrix lanes in a fixed native array."
+				},
+				{
+					"symbol": "RuntimeRenderCameraState",
+					"field": "eye",
+					"reason": "TS render camera eye vector is a fixed tuple; C++ stores the same three lanes in a fixed native array."
+				},
+				{
+					"symbol": "RuntimeRenderState",
+					"field": "camera",
+					"reason": "TS uses null for absent camera state; C++ uses std::optional for the same absence contract."
+				}
 			]
 		},
 		{
@@ -581,36 +749,137 @@
 			"cpp": [
 				"src/bmsx_cpp/render/shared/submissions.h"
 			],
-			"exclude": [
+			"shape_exclude": [
 				{
-					"side": "cpp",
-					"symbol": "RectRenderSubmission.Kind",
-					"reason": "TS RectRenderSubmission encodes kind as a string-literal union field; C++ uses a scoped enum to store the same closed command kind without adding a wrapper namespace."
+					"symbol": "GlyphRenderSubmission",
+					"field": "glyphs",
+					"reason": "TS glyph submissions allow a single string without allocating a string array; C++ stores the same glyph run payload as a native vector of strings."
+				},
+				{
+					"symbol": "GlyphRenderSubmission",
+					"field": "font",
+					"reason": "TS uses null for absent font at the JS object boundary; C++ stores the same optional font owner as a native pointer."
+				},
+				{
+					"symbol": "MeshRenderSubmission",
+					"field": "matrix",
+					"reason": "TS mesh submissions use Float32Array lanes; C++ stores the same matrix lanes in a fixed native array."
+				},
+				{
+					"symbol": "MeshRenderSubmission",
+					"field": "joint_matrices",
+					"reason": "TS mesh submissions use Float32Array joint matrices; C++ stores the same matrices in native fixed-array vectors."
+				},
+				{
+					"symbol": "ParticleRenderSubmission",
+					"field": "position",
+					"reason": "TS particle submissions use the vec3arr tuple alias; C++ stores the same three lanes in the native Vec3 carrier."
+				},
+				{
+					"symbol": "ParticleRenderSubmission",
+					"field": "uv0",
+					"reason": "TS particle submissions use the vec2arr tuple alias; C++ stores the same two lanes in a native fixed array."
+				},
+				{
+					"symbol": "ParticleRenderSubmission",
+					"field": "uv1",
+					"reason": "TS particle submissions use the vec2arr tuple alias; C++ stores the same two lanes in a native fixed array."
+				},
+				{
+					"symbol": "ParticleRenderSubmission",
+					"field": "ambient_mode",
+					"reason": "TS narrows particle ambient mode with a literal numeric union; C++ stores the same hardware word as a native integer."
+				},
+				{
+					"symbol": "PolyRenderSubmission",
+					"field": "points",
+					"reason": "TS polygon points use the rompack Polygon tuple stream alias; C++ stores the same numeric point stream in std::vector<f32>."
+				},
+				{
+					"symbol": "MeshRenderSubmission",
+					"field": "mesh",
+					"reason": "TS mesh submissions carry a required Mesh object; C++ stores the same mesh owner as a native pointer in the submission struct."
 				}
+			]
+		},
+		{
+			"ts": "src/bmsx/render/shared/solid_pixels.ts",
+			"cpp": [
+				"src/bmsx_cpp/render/shared/solid_pixels.h"
 			]
 		},
 		{
 			"ts": "src/bmsx/common/vector.ts",
 			"cpp": [
 				"src/bmsx_cpp/common/vector.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "vec2arr",
+					"reason": "TS uses fixed tuple arrays for vec2arr; C++ uses std::array with the same two f32 lanes."
+				},
+				{
+					"symbol": "vec3arr",
+					"reason": "TS uses fixed tuple arrays for vec3arr; C++ uses std::array with the same three f32 lanes."
+				}
 			]
 		},
 		{
 			"ts": "src/bmsx/render/shared/camera_state.ts",
 			"cpp": [
 				"src/bmsx_cpp/render/shared/camera_state.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "ResolvedCameraState",
+					"field": "view",
+					"reason": "TS resolved camera view matrix is a Float32Array view; C++ exposes the same matrix as a native Mat4 reference."
+				},
+				{
+					"symbol": "ResolvedCameraState",
+					"field": "proj",
+					"reason": "TS resolved camera projection matrix is a Float32Array view; C++ exposes the same matrix as a native Mat4 reference."
+				},
+				{
+					"symbol": "ResolvedCameraState",
+					"field": "viewProj",
+					"reason": "TS resolved camera view-projection matrix is a Float32Array view; C++ exposes the same matrix as a native Mat4 reference."
+				},
+				{
+					"symbol": "ResolvedCameraState",
+					"field": "skyboxView",
+					"reason": "TS resolved skybox matrix is a Float32Array view; C++ exposes the same matrix as a native Mat4 reference."
+				},
+				{
+					"symbol": "ResolvedCameraState",
+					"field": "camPos",
+					"reason": "TS resolved camera position uses the rompack vec3 alias; C++ exposes the same vector as a native Vec3 reference."
+				}
 			]
 		},
 		{
 			"ts": "src/bmsx/render/shared/glyph_runs.ts",
 			"cpp": [
 				"src/bmsx_cpp/render/shared/glyph_runs.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "forEachGlyphRunGlyph",
+					"reason": "TS receives a typed glyph callback function; C++ keeps the same callback contract as a template parameter to avoid std::function allocation in the hot glyph path."
+				}
 			]
 		},
 		{
 			"ts": "src/bmsx/render/vdp/source_pixels.ts",
 			"cpp": [
 				"src/bmsx_cpp/render/vdp/source_pixels.h"
+			],
+			"shape_exclude": [
+				{
+					"symbol": "VdpSurfacePixels",
+					"field": "pixels",
+					"reason": "TS VDP surface pixels are a Uint8Array view; C++ stores the same pixel buffer as a native u8 pointer."
+				}
 			]
 		},
 		{
@@ -641,6 +910,12 @@
 			"ts": "src/bmsx/machine/runtime/save_state.ts",
 			"cpp": [
 				"src/bmsx_cpp/machine/runtime/save_state.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/render/backend/texture_params.ts",
+			"cpp": [
+				"src/bmsx_cpp/render/backend/texture_params.h"
 			]
 		}
 	]

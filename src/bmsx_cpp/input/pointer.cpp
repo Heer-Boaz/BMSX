@@ -59,7 +59,7 @@ void PointerInput::pollInput() {
 		if (key == kPointerDelta) {
 			const f64 timestamp = buttonTimestampOr(state, 0.0);
 			if (timestamp == m_lastDeltaTimestamp) {
-				state.value2d = Vec2(0.0f, 0.0f);
+				state.value2d = Vec2{0.0f, 0.0f};
 				state.value = 0.0f;
 				state.pressed = false;
 				state.justpressed = false;
@@ -169,13 +169,13 @@ void PointerInput::ingestAxis2(const std::string& code, f32 x, f32 y, f64 timest
 	m_lastPositionY = y;
 	m_lastPositionValid = true;
 
-	state.value2d = Vec2(x, y);
+	state.value2d = Vec2{x, y};
 	state.timestamp = timestamp;
 
 	auto& delta = m_buttonStates[kPointerDelta];
 	const bool moved = dx != 0.0f || dy != 0.0f;
 	const bool wasPressed = delta.pressed;
-	delta.value2d = Vec2(dx, dy);
+	delta.value2d = Vec2{dx, dy};
 	delta.value = std::hypot(dx, dy);
 	delta.timestamp = timestamp;
 	delta.justreleased = !moved && wasPressed;

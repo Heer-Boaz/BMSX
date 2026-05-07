@@ -197,7 +197,7 @@ function collectTopOpcodesFromCounts(counts: Uint32Array, totalInstructions: num
 }
 
 export function getCpuProfilerOpcodeName(opcode: number): string {
-	return getOpcodeName(opcode);
+	return getOpcodeName(opcode as OpCode);
 }
 
 export class CpuExecutionProfiler {

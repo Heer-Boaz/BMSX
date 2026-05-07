@@ -1,4 +1,4 @@
-import type { HostMenuPipelineState, HostOverlayPipelineState } from '../backend/interfaces';
+import type { HostMenuPipelineState, HostOverlayPipelineState } from '../backend/backend';
 import { consoleCore } from '../../core/console';
 import type { Host2DSubmission } from '../shared/queues';
 import { consumeOverlayFrame, hasPendingOverlayFrame } from './overlay_queue';

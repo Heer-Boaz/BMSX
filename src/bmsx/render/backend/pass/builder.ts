@@ -1,6 +1,6 @@
 import { color_arr } from '../../../rompack/format';
-import type { TextureHandle } from '../interfaces';
-import { GPUBackend, PassEncoder, RenderPassDesc } from '../interfaces';
+import type { TextureHandle } from '../backend';
+import { GPUBackend, PassEncoder, RenderPassDesc } from '../backend';
 
 // NOTE: Renamed to avoid clashing with similarly named interfaces exported from interfaces.
 // Keep shape identical; external code should prefer the canonical types from interfaces.

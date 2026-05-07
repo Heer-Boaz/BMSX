@@ -17,7 +17,7 @@ RuntimeSaveState captureRuntimeSaveState(Runtime& runtime) {
 	state.renderState = captureRuntimeRenderState();
 	state.systemProgramActive = !runtime.m_cartProgramStarted;
 	state.luaInitialized = runtime.m_luaInitialized;
-	state.runtimeFailed = runtime.m_runtimeFailed;
+	state.luaRuntimeFailed = runtime.m_runtimeFailed;
 	state.randomSeed = runtime.m_randomSeedValue;
 	state.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
 	return state;
@@ -34,7 +34,7 @@ void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state) {
 	applyRuntimeCpuState(runtime, state.cpuState);
 	applyRuntimeRenderState(state.renderState);
 	runtime.m_luaInitialized = state.luaInitialized;
-	runtime.m_runtimeFailed = state.runtimeFailed;
+	runtime.m_runtimeFailed = state.luaRuntimeFailed;
 	runtime.m_randomSeedValue = state.randomSeed;
 	runtime.m_pendingCall = state.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
 	RenderQueues::clearBackQueues();

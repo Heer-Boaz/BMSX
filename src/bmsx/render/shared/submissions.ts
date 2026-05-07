@@ -1,12 +1,7 @@
 import type { BFont } from './bitmap_font';
 import type { Mesh } from '../3d/mesh';
 import type { Polygon, vec2arr, vec3arr } from '../../rompack/format';
-import {
-	LAYER_2D_IDE,
-	LAYER_2D_UI,
-	LAYER_2D_WORLD,
-	type Layer2D,
-} from '../../machine/devices/vdp/contracts';
+import type { Layer2D } from '../../machine/devices/vdp/contracts';
 
 export type color = number;
 
@@ -14,14 +9,6 @@ export type FlipOptions = {
 	flip_h: boolean;
 	flip_v: boolean;
 };
-
-export type RenderLayer = 'world' | 'ui' | 'ide';
-
-export function renderLayerTo2dLayer(layer: RenderLayer): Layer2D {
-	if (layer === 'ui') return LAYER_2D_UI;
-	if (layer === 'ide') return LAYER_2D_IDE;
-	return LAYER_2D_WORLD;
-}
 
 export type RenderRectBounds = {
 	left: number;
@@ -42,33 +29,25 @@ export type RenderScale2 = {
 	y: number;
 };
 
-export type TextAlign = CanvasTextAlign;
-export type TextBaseline = CanvasTextBaseline;
-
-export type TextureParams = {
-	size?: RenderScale2;
-	wrapS?: number;
-	wrapT?: number;
-	minFilter?: number;
-	magFilter?: number;
-	srgb?: boolean;
-};
+export const enum TextAlign { Left, Right, Center, Start, End }
+export const enum TextBaseline { Top, Hanging, Middle, Alphabetic, Ideographic, Bottom }
+export const enum RectRenderKind { Rect, Fill }
 
 export type RectRenderSubmission = {
-	kind: 'rect' | 'fill';
+	kind: RectRenderKind;
 	area: RenderRectBounds;
-	color: color | null;
-	layer: RenderLayer;
+	color: color;
+	layer: Layer2D;
 };
 
 type ImageRenderSubmissionBase = {
 	pos: RenderVec2;
 	scale: RenderScale2;
 	flip: FlipOptions;
-	colorize: color | null;
+	colorize: color;
 	ambient_affected: boolean;
 	ambient_factor: number;
-	layer: RenderLayer;
+	layer: Layer2D;
 	parallax_weight: number;
 };
 
@@ -87,9 +66,9 @@ export type HostImageRenderSubmission = ImageRenderSubmissionBase & {
 export type PolyRenderSubmission = {
 	points: Polygon;
 	z: number;
-	color: color | null;
+	color: color;
 	thickness: number;
-	layer: RenderLayer;
+	layer: Layer2D;
 };
 
 export type MeshRenderSubmission = {
@@ -98,13 +77,13 @@ export type MeshRenderSubmission = {
 	joint_matrices: Float32Array[];
 	morph_weights: number[];
 	receive_shadow: boolean;
-	layer: RenderLayer;
+	layer: Layer2D;
 };
 
 export type ParticleRenderSubmission = {
 	position: vec3arr;
 	size: number;
-	color: color | null;
+	color: color;
 	slot: number;
 	u: number;
 	v: number;
@@ -114,7 +93,7 @@ export type ParticleRenderSubmission = {
 	uv1: vec2arr;
 	ambient_mode: 0 | 1;
 	ambient_factor: number;
-	layer: RenderLayer;
+	layer: Layer2D;
 };
 
 export type GlyphRenderSubmission = {
@@ -125,11 +104,12 @@ export type GlyphRenderSubmission = {
 	glyph_start: number;
 	glyph_end: number;
 	font: BFont | null;
-	color: color | null;
-	background_color: color | null;
+	color: color;
+	has_background_color: boolean;
+	background_color: color;
 	wrap_chars: number;
 	center_block_width: number;
 	align: TextAlign;
 	baseline: TextBaseline;
-	layer: RenderLayer;
+	layer: Layer2D;
 };

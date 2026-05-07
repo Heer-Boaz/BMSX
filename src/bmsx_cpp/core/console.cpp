@@ -64,7 +64,7 @@ bool ConsoleCore::initialize(Platform* platform) {
 		static_cast<f32>(systemMachine.viewportWidth),
 		static_cast<f32>(systemMachine.viewportHeight)
 	};
-	ViewportDimensions dims = host->getSize(defaultViewport, defaultViewport * 2.0f);
+	ViewportDimensions dims = host->getSize(defaultViewport, {defaultViewport.x * 2.0f, defaultViewport.y * 2.0f});
 
 	// Create GameView with logical viewport
 	m_view = std::make_unique<GameView>(host, static_cast<i32>(defaultViewport.x), static_cast<i32>(defaultViewport.y));

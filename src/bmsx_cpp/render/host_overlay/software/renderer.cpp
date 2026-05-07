@@ -15,7 +15,7 @@ void drawRectSoftware(SoftwareBackend& backend, const RectRenderSubmission& comm
 	const i32 bottom = static_cast<i32>(command.area.bottom);
 	const i32 width = right - left;
 	const i32 height = bottom - top;
-	if (command.kind == RectRenderSubmission::Kind::Fill) {
+	if (command.kind == RectRenderKind::Fill) {
 		backend.fillRect(left, top, width, height, command.color);
 		return;
 	}

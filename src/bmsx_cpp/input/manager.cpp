@@ -96,10 +96,10 @@ void InputStateManager::recordAxis2Sample(const std::string& button, f32 x, f32 
 	if (button == "pointer_delta") {
 		const Vec2 previous = state.value2d.has_value()
 			? state.value2d.value()
-			: Vec2(0.0f, 0.0f);
+			: Vec2{0.0f, 0.0f};
 		const f32 nextX = previous.x + x;
 		const f32 nextY = previous.y + y;
-		state.value2d = Vec2(nextX, nextY);
+		state.value2d = Vec2{nextX, nextY};
 		state.value = std::hypot(nextX, nextY);
 		state.pressed = state.value > 0.0f;
 		state.justpressed = state.justpressed || state.pressed;
@@ -110,7 +110,7 @@ void InputStateManager::recordAxis2Sample(const std::string& button, f32 x, f32 
 		state.consumed = false;
 		return;
 	}
-	state.value2d = Vec2(x, y);
+	state.value2d = Vec2{x, y};
 	state.value = std::hypot(x, y);
 	state.timestamp = timestamp;
 	if (button == "pointer_position") {

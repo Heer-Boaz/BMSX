@@ -153,7 +153,7 @@ void GamepadInput::ingestButton(const std::string& code, bool down, f32 value,
 
 void GamepadInput::ingestAxis2(const std::string& code, f32 x, f32 y, f64 timestamp) {
 	auto& state = m_buttonStates[code];
-	state.value2d = Vec2(x, y);
+	state.value2d = Vec2{x, y};
 	state.value = std::hypot(x, y);
 	state.timestamp = timestamp;
 }

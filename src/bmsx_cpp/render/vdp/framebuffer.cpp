@@ -10,7 +10,6 @@
 namespace bmsx {
 namespace {
 
-const TextureParams DEFAULT_TEXTURE_PARAMS{};
 TextureHandle renderFrameBufferTexture = nullptr;
 TextureHandle displayFrameBufferTexture = nullptr;
 

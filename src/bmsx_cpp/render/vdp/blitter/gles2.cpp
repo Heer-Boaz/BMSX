@@ -70,8 +70,6 @@ struct VdpGles2Runtime {
 
 VdpGles2Runtime g_vdpGles2Runtime{};
 
-const TextureParams DEFAULT_TEXTURE_PARAMS{};
-
 constexpr const char* kVdpGles2VertexShader = R"(
 precision mediump float;
 

@@ -1,6 +1,7 @@
 import type { OverlayRenderer } from '../../runtime/overlay_renderer';
 import type { TerminalPanelGridLayout } from './model';
-import type { color } from '../../../render/shared/submissions';
+import { type color } from '../../../render/shared/submissions';
+import { LAYER_2D_IDE } from '../../../machine/devices/vdp/contracts';
 
 export type TerminalGridPanelRenderParams = {
 	renderer: OverlayRenderer;
@@ -30,8 +31,8 @@ export function drawTerminalGridPanel(params: TerminalGridPanelRenderParams): vo
 	const panelLeft = params.paddingX;
 	const panelRight = panelLeft + params.contentWidth;
 	const panelBottom = params.panelTop + panelRows * params.lineHeight;
-	params.renderer.fillRect(panelLeft, params.panelTop, panelRight, panelBottom, 0, params.backgroundColor, 'ide');
-	params.renderer.strokeRect(panelLeft, params.panelTop, panelRight, panelBottom, 0, params.borderColor, 'ide');
+	params.renderer.fillRect(panelLeft, params.panelTop, panelRight, panelBottom, 0, params.backgroundColor, LAYER_2D_IDE);
+	params.renderer.strokeRect(panelLeft, params.panelTop, panelRight, panelBottom, 0, params.borderColor, LAYER_2D_IDE);
 
 	const gridStartX = panelLeft + params.layout.paddingX * params.charWidth;
 	const gridStartY = params.panelTop + params.layout.paddingY * params.lineHeight;
@@ -57,7 +58,7 @@ export function drawTerminalGridPanel(params: TerminalGridPanelRenderParams): vo
 			const cellX = gridStartX + col * strideX;
 			const isSelected = index === params.selectionIndex;
 			if (isSelected) {
-				params.renderer.fillRect(cellX - 1, cellY - 1, cellX + cellWidthPx + 1, cellY + params.lineHeight + 1, 0, params.highlightColor, 'ide');
+				params.renderer.fillRect(cellX - 1, cellY - 1, cellX + cellWidthPx + 1, cellY + params.lineHeight + 1, 0, params.highlightColor, LAYER_2D_IDE);
 			}
 			const color = isSelected ? params.highlightTextColor : params.textColor;
 			params.drawText(label, cellX, cellY, color);

@@ -24,16 +24,16 @@ export type RomTocPayload = {
 };
 
 export enum AssetTypeKind {
-	ImageAtlas = 'ImageAtlas',
-	Audio = 'Audio',
-	Model = 'Model',
-	Aem = 'Aem',
-	Bin = 'Bin',
-	Lua = 'Lua',
-	Data = 'Data',
-	Code = 'Code',
-	Skip = 'Skip',
-	Unknown = 'Unknown',
+	ImageAtlas,
+	Audio,
+	Model,
+	Aem,
+	Bin,
+	Lua,
+	Data,
+	Code,
+	Skip,
+	Unknown,
 }
 
 const ASSET_TYPE_IDS: Record<asset_type, number> = {

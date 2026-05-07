@@ -4,38 +4,6 @@
 
 namespace bmsx {
 
-f32 Vec2::length() const {
-	return std::sqrt(x * x + y * y);
-}
-
-Vec2 Vec2::normalized() const {
-	const f32 len = length();
-	if (len > 0.0f) {
-		return {x / len, y / len};
-	}
-	return {0.0f, 0.0f};
-}
-
-f32 Vec3::length() const {
-	return std::sqrt(x * x + y * y + z * z);
-}
-
-Vec3 Vec3::normalized() const {
-	const f32 len = length();
-	if (len > 0.0f) {
-		return {x / len, y / len, z / len};
-	}
-	return {0.0f, 0.0f, 0.0f};
-}
-
-Vec3 Vec3::cross(const Vec3& other) const {
-	return {
-		y * other.z - z * other.y,
-		z * other.x - x * other.z,
-		x * other.y - y * other.x
-	};
-}
-
 Vec2 translate_vec2(const Vec2& a, const Vec2& b) {
 	return {a.x + b.x, a.y + b.y};
 }
@@ -131,7 +99,7 @@ Vec3 cross_vec3(const Vec3& a, const Vec3& b) {
 }
 
 Vec3 norm_vec3(const Vec3& a) {
-	const f32 len = a.length();
+	const f32 len = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
 	if (len > 0.0f) {
 		return {a.x / len, a.y / len, a.z / len};
 	}

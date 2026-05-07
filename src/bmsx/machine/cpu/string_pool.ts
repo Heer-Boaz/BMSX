@@ -21,7 +21,7 @@ export class StringPool {
 	private nextId = 0;
 	private trackedBytes = 0;
 
-	public constructor(private readonly trackLuaHeap = false) {}
+	public constructor(private readonly trackLuaHeap: boolean = false) {}
 
 	public intern(text: string): StringId {
 		return this.internWithOwnership(text, this.trackLuaHeap);

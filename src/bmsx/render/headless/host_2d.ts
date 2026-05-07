@@ -12,6 +12,7 @@ import type {
 	RectRenderSubmission,
 	color,
 } from '../shared/submissions';
+import { RectRenderKind } from '../shared/submissions';
 import { blendPixel } from './pixel_ops';
 
 export function renderHeadlessSubmissions(target: Uint8Array, width: number, height: number, commands: readonly Host2DSubmission[]): void {
@@ -57,7 +58,7 @@ export function renderHeadlessHost2DEntry(target: Uint8Array, width: number, hei
 function drawRect(target: Uint8Array, width: number, height: number, command: RectRenderSubmission): void {
 	const area = command.area;
 	const colorValue = command.color;
-	if (command.kind === 'fill') {
+	if (command.kind === RectRenderKind.Fill) {
 		fillRect(target, width, height, area.left | 0, area.top | 0, area.right | 0, area.bottom | 0, colorValue);
 		return;
 	}
@@ -128,10 +129,11 @@ function drawImage(target: Uint8Array, width: number, height: number, command: H
 
 function drawGlyphRun(target: Uint8Array, width: number, height: number, command: GlyphRenderSubmission): void {
 	const colorValue = command.color;
+	const hasBackgroundColor = command.has_background_color;
 	const backgroundColor = command.background_color;
 	const lineHeight = command.font.lineHeight;
 	forEachGlyphRunGlyph(command, (glyph, x, y) => {
-		if (backgroundColor !== null) {
+		if (hasBackgroundColor) {
 			fillRect(
 				target,
 				width,

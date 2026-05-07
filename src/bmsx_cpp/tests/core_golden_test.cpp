@@ -190,7 +190,7 @@ void testRompackSchemaGolden() {
 	const bmsx::AssetTokenParts parts = bmsx::splitAssetToken(token);
 	require(parts.lo == 0x4a2a0873u, "asset token low word should match TS golden vector");
 	require(parts.hi == 0x4dc5355fu, "asset token high word should match TS golden vector");
-	require(bmsx::tokenKey(token) == "4dc5355f4a2a0873", "asset token key should match TS order");
+	require(bmsx::tokenKey(parts.lo, parts.hi) == "4dc5355f4a2a0873", "asset token key should match TS order");
 	require(bmsx::assetTypeToId("lua") == bmsx::ROM_TOC_ASSET_TYPE_LUA, "lua asset type id should match ROM TOC schema");
 	require(bmsx::assetTypeFromId(bmsx::ROM_TOC_ASSET_TYPE_AEM) == "aem", "aem asset type id should decode");
 	require(bmsx::resolveAssetTypeKind("atlas") == bmsx::AssetTypeKind::ImageAtlas, "atlas should load through image-atlas path");

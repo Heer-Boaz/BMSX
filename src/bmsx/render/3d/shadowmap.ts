@@ -12,6 +12,7 @@ export class ShadowMap {
 			wrapT: gl.CLAMP_TO_EDGE,
 			minFilter: gl.NEAREST,
 			magFilter: gl.NEAREST,
+			srgb: true,
 		});
 		this.texture = texture;
 		this.framebuffer = framebuffer;

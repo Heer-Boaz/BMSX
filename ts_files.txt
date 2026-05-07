@@ -10,8 +10,8 @@ render/shared/glyph_runs.ts
 render/shared/submissions.ts
 render/texture_manager.ts
 render/gameview.ts
-render/backend/interfaces.ts
-render/backend/solid_pixels.ts
+render/backend/backend.ts
+render/shared/solid_pixels.ts
 render/backend/browser_factory.ts
 render/backend/webgl/backend.ts
 render/backend/webgl/gl_resources.ts

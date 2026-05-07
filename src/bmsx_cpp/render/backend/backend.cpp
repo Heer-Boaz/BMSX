@@ -311,7 +311,8 @@ void SoftwareBackend::readTextureRegion(TextureHandle handle, u8* out, i32 width
 	readSoftwareTextureRegionPixels<false>(*tex, out, width, height, x, y, nullptr);
 }
 
-TextureHandle SoftwareBackend::createSolidTexture2D(i32 width, i32 height, u32 color) {
+TextureHandle SoftwareBackend::createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) {
+	(void)params;
 	auto tex = std::make_unique<SoftwareTexture>();
 	tex->width = width;
 	tex->height = height;

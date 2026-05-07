@@ -169,11 +169,11 @@ render/3d/skybox/pipeline.ts
 render/3d/skybox/pipeline.wgpu.ts
 render/backend/browser_factory.ts
 render/backend/frame_uniforms.ts
-render/backend/interfaces.ts
+render/backend/backend.ts
 render/backend/pass/builder.ts
 render/backend/pass/library.ts
 render/backend/shader_module.ts
-render/backend/solid_pixels.ts
+render/shared/solid_pixels.ts
 render/backend/webgl/backend.ts
 render/backend/webgl/constants.ts
 render/backend/webgl/fullscreen_quad.ts

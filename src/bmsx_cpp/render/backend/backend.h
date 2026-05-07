@@ -2,15 +2,49 @@
  * backend.h - GPU Backend interface for BMSX
  *
  * For libretro, we implement a software framebuffer backend.
+ *
+ * TS/C++ parity boundary:
+ * - Shared runtime contract in this file: TextureHandle, BackendCaps,
+ *   ColorAttachmentSpec, DepthAttachmentSpec, RenderPassDesc, PassEncoder,
+ *   GPUBackend texture methods, render-pass methods, draw methods except TS
+ *   drawIndexed indexType, frame lifecycle, getCaps(), and stats.
+ * - TS-only public symbols in render/backend/backend.ts are browser/WebGL/WebGPU
+ *   render-graph plumbing: TextureFormat, BufferHandle, BackendContext,
+ *   RenderTargetHandle, PresentationMode, GraphicsPipelineBindingLayout,
+ *   RenderGraphSlot, RenderGraphPassContext, RenderPassGraphDef, RenderPassDef,
+ *   GraphicsPipelineBuildDesc, RenderPassInstanceHandle, AnyBackend,
+ *   RenderPassStateRegistry, RenderPassStateId, pipeline-state types,
+ *   RenderContext, FogUniforms, AtmosphereParams, and CRTDitherType. C++ owns
+ *   the equivalent native pass scheduling in render/backend/pass files.
+ * - TS-only GPUBackend methods in render/backend/backend.ts are
+ *   browser/backend-resource controls: setActiveTexture(), bindTexture2D(),
+ *   bindTextureCube(), createImageBitmapFromSource(),
+ *   createCubemapFromSources(), createSolidCubemap(), createCubemapEmpty(),
+ *   uploadCubemapFace(), createColorTexture(), createDepthTexture(),
+ *   createRenderTarget(), transitionTexture(), createRenderPassInstance(),
+ *   destroyRenderPassInstance(), setGraphicsPipeline(), setPassState(),
+ *   getPassState(), createVertexBuffer(), updateVertexBuffer(),
+ *   bindArrayBuffer(), createVertexArray(), bindVertexArray(),
+ *   deleteVertexArray(), drawInstanced(), drawIndexedInstanced(),
+ *   createUniformBuffer(), updateUniformBuffer(), bindUniformBufferBase(), and
+ *   accountUpload(). TS drawIndexed also carries WebGL indexType because WebGL
+ *   drawElements needs the index-buffer scalar format at the backend boundary.
+ *   C++ exposes these responsibilities on concrete native backends and pass
+ *   owners instead of the common interface.
+ * - C++-only public symbols here are native/libretro backend storage and
+ *   ownership: BackendType, FrameStats, SoftwareTexture, DitherParams,
+ *   SoftwareBackend, and readyForTextureUpload().
  */
 
 #ifndef BMSX_BACKEND_H
 #define BMSX_BACKEND_H
 
-#include "../shared/submissions.h"
+#include "texture_params.h"
 #include <array>
 #include <memory>
 #include <functional>
+#include <optional>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -127,7 +161,7 @@ public:
 	virtual TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) = 0;
 	virtual void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) = 0;
 	virtual void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) = 0;
-	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color) = 0;
+	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) = 0;
 	virtual void destroyTexture(TextureHandle handle) = 0;
 	virtual void copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) = 0;
 
@@ -177,7 +211,7 @@ class SoftwareBackend : public GPUBackend {
 	TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) override;
 	void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
 	void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
-	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color) override;
+	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) override;
 	void destroyTexture(TextureHandle handle) override;
 	void copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) override;
 

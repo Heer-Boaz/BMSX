@@ -1,5 +1,5 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
-import type { RenderContext, RenderPassStateRegistry } from '../backend/interfaces';
+import type { RenderContext, RenderPassStateRegistry } from '../backend/backend';
 import { WebGLBackend } from '../backend/webgl/backend';
 import { consoleCore } from '../../core/console';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/constants';

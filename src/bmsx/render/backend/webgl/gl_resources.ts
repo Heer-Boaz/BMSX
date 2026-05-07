@@ -2,7 +2,7 @@
 // Moved out of backend.ts to keep backend focused on orchestration.
 import { consoleCore } from '../../../core/console';
 import { formatNumberAsHex } from '../../../common/byte_hex_string';
-import { TextureParams } from '../interfaces';
+import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
 import { TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD } from './constants';
 
 function getRenderContext() {
@@ -110,20 +110,20 @@ export function glCreateTexture(
 	return tex;
 }
 
-export function glSetTexture2DParams(gl: WebGL2RenderingContext, desc?: TextureParams): void {
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc?.wrapS ?? gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc?.wrapT ?? gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc?.minFilter ?? gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, desc?.magFilter ?? gl.NEAREST);
+export function glSetTexture2DParams(gl: WebGL2RenderingContext, desc: TextureParams = DEFAULT_TEXTURE_PARAMS): void {
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, desc.magFilter);
 }
 
 export function glSetTextureCubeParams(gl: WebGL2RenderingContext, desc: TextureParams): void {
 	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0);
 	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
+	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, desc.minFilter);
+	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, desc.magFilter);
+	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, desc.wrapS);
+	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, desc.wrapT);
 	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
 }
 
@@ -149,7 +149,7 @@ export function glCreateShadowMapTextureAndFramebuffer(
 	const backendShadow = getRenderContext().backend;
 	backendShadow.accountUpload('texture', desc.size.x * desc.size.y * 2);
 
-	glSetTexture2DParams(gl);
+	glSetTexture2DParams(gl, desc);
 
 	const fbo = gl.createFramebuffer()!;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
@@ -177,7 +177,7 @@ export function glCreateTextureFromImage(
 	if (img.width === 0 || img.height === 0) throw new Error(`Image has invalid dimensions: ${img.width}x${img.height}`);
 	if (unit != null) gl.activeTexture(gl.TEXTURE0 + unit);
 	gl.bindTexture(gl.TEXTURE_2D, tex);
-	gl.texImage2D(gl.TEXTURE_2D, 0, desc.srgb === false ? gl.RGBA8 : gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+	gl.texImage2D(gl.TEXTURE_2D, 0, desc.srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
 	glSetTexture2DParams(gl, desc);
 	return tex;
 }

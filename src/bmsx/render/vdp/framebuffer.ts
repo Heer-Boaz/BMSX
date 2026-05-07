@@ -1,7 +1,8 @@
-import type { TextureHandle } from '../backend/interfaces';
+import type { TextureHandle } from '../backend/backend';
+import { DEFAULT_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { VDP } from '../../machine/devices/vdp/vdp';
 import { VDP_RD_SURFACE_FRAMEBUFFER } from '../../machine/devices/vdp/contracts';
-import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, type TextureSource } from '../../rompack/format';
+import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY } from '../../rompack/format';
 import {
 	createVdpTextureFromPixels,
 	swapVdpTextureHandlesByUri,
@@ -9,7 +10,6 @@ import {
 	vdpTextureBackend,
 } from './texture_transfer';
 
-const frameBufferRegionSource: TextureSource = { width: 0, height: 0, data: new Uint8Array(0) };
 let renderFrameBufferTexture: TextureHandle;
 let displayFrameBufferTexture: TextureHandle;
 
@@ -44,10 +44,7 @@ export function writeVdpDisplayFrameBufferPixels(pixels: Uint8Array, width: numb
 }
 
 export function writeVdpRenderFrameBufferPixelRegion(pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
-	frameBufferRegionSource.width = width;
-	frameBufferRegionSource.height = height;
-	frameBufferRegionSource.data = pixels;
-	vdpTextureBackend().updateTextureRegion(renderFrameBufferTexture, frameBufferRegionSource, x, y);
+	vdpTextureBackend().updateTextureRegion(renderFrameBufferTexture, pixels, width, height, x, y, DEFAULT_TEXTURE_PARAMS);
 }
 
 export function applyVdpFrameBufferTextureWrites(vdp: VDP): void {
@@ -77,11 +74,11 @@ export function applyVdpFrameBufferTextureWrites(vdp: VDP): void {
 }
 
 // disable-next-line single_line_method_pattern -- framebuffer readback is the concrete VDP texture boundary for save-state and MMIO reads.
-export function readVdpRenderFrameBufferPixels(x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array {
-	return vdpTextureBackend().readTextureRegion(renderFrameBufferTexture, x, y, width, height, out);
+export function readVdpRenderFrameBufferPixels(x: number, y: number, width: number, height: number, out: Uint8Array): void {
+	vdpTextureBackend().readTextureRegion(renderFrameBufferTexture, out, width, height, x, y, DEFAULT_TEXTURE_PARAMS);
 }
 
 // disable-next-line single_line_method_pattern -- display-page readback is the concrete VDP texture boundary for headless presentation and save-state.
-export function readVdpDisplayFrameBufferPixels(x: number, y: number, width: number, height: number, out?: Uint8Array): Uint8Array {
-	return vdpTextureBackend().readTextureRegion(displayFrameBufferTexture, x, y, width, height, out);
+export function readVdpDisplayFrameBufferPixels(x: number, y: number, width: number, height: number, out: Uint8Array): void {
+	vdpTextureBackend().readTextureRegion(displayFrameBufferTexture, out, width, height, x, y, DEFAULT_TEXTURE_PARAMS);
 }

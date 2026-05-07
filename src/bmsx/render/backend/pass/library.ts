@@ -16,7 +16,7 @@ import { registerCRT_WebGL } from '../../post/crt/pipeline';
 import { registerDeviceQuantize_WebGL } from '../../post/device_quantize_pipeline';
 import { registerCRT_WebGPU } from '../../post/crt/pipeline.wgpu';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
-import { AnyBackend, CRTPipelineState, FogUniforms, GPUBackend, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry } from '../interfaces';
+import { AnyBackend, CRTPipelineState, FogUniforms, GPUBackend, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry } from '../backend';
 import { checkWebGLError } from '../webgl/helpers';
 import { WebGLBackend } from '../webgl/backend';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from '../../headless/passes';

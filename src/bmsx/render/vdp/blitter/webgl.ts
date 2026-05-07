@@ -9,7 +9,8 @@ import {
 	VDP_BLITTER_OPCODE_GLYPH_RUN,
 	VDP_BLITTER_WHITE,
 } from '../../../machine/devices/vdp/blitter';
-import type { PassEncoder, RenderPassInstanceHandle, TextureParams } from '../../backend/interfaces';
+import type { PassEncoder, RenderPassInstanceHandle } from '../../backend/backend';
+import { DEFAULT_TEXTURE_PARAMS } from '../../backend/texture_params';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../../backend/frame_uniforms';
 import { WebGLBackend } from '../../backend/webgl/backend';
 import {
@@ -65,7 +66,6 @@ const INSTANCE_STRIDE_BYTES = INSTANCE_FLOATS * 4;
 const INITIAL_BATCH_CAPACITY = 256;
 const SOLID_TEXCOORD_0 = 0;
 const SOLID_TEXCOORD_1 = 1;
-const DEFAULT_TEXTURE_PARAMS: TextureParams = {};
 const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 	['i_origin', 2, 0],
 	['i_axis_x', 2, 2 * 4],
@@ -89,7 +89,7 @@ function createRuntime(backend: WebGLBackend): WebGLVdpBlitterRuntime {
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	const program = pipeline.backendData as WebGLProgram;
 	const quad = createWebGLInstancedQuadRuntime(backend, gl, program, INITIAL_BATCH_CAPACITY, INSTANCE_FLOATS);
-	const whiteTexture = backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]) as WebGLTexture;
+	const whiteTexture = backend.createSolidTexture2D(1, 1, 0xffffffff) as WebGLTexture;
 	bindWebGLInstancedQuadVertexArray(backend, vao, program, quad, INSTANCE_STRIDE_BYTES, INSTANCE_FLOAT_ATTRIBUTES);
 	return {
 		gl,

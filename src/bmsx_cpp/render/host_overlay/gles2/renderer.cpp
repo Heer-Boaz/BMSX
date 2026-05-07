@@ -102,7 +102,7 @@ void drawRectGLES2(OpenGLES2Backend& backend, const RectRenderSubmission& comman
 	const i32 top = static_cast<i32>(command.area.top);
 	const i32 width = static_cast<i32>(command.area.right - command.area.left);
 	const i32 height = static_cast<i32>(command.area.bottom - command.area.top);
-	if (command.kind == RectRenderSubmission::Kind::Fill) {
+	if (command.kind == RectRenderKind::Fill) {
 		drawQuadGLES2(backend, g_gles2.whiteTexture, left, top, width, height, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
 		return;
 	}

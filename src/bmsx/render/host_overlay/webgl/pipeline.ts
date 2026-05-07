@@ -5,8 +5,9 @@ import type {
 	PassEncoder,
 	RenderPassDesc,
 	RenderPassStateRegistry,
-} from '../../backend/interfaces';
+} from '../../backend/backend';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../../backend/frame_uniforms';
+import { DEFAULT_TEXTURE_PARAMS } from '../../backend/texture_params';
 import { WebGLBackend } from '../../backend/webgl/backend';
 import {
 	bindWebGLInstancedQuadVertexArray,
@@ -25,6 +26,7 @@ import type {
 	RectRenderSubmission,
 	color,
 } from '../../shared/submissions';
+import { RectRenderKind } from '../../shared/submissions';
 import {
 	HOST_SYSTEM_ATLAS_HEIGHT,
 	HOST_SYSTEM_ATLAS_WIDTH,
@@ -98,12 +100,8 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverla
 	const gl = backend.gl as WebGL2RenderingContext;
 	const vao = backend.createVertexArray() as WebGLVertexArrayObject;
 	const quad = createWebGLInstancedQuadRuntime(backend, gl, program, INITIAL_BATCH_CAPACITY, INSTANCE_FLOATS);
-	const whiteTexture = backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]) as WebGLTexture;
-	const hostAtlasTexture = backend.createTexture({
-		width: HOST_SYSTEM_ATLAS_WIDTH,
-		height: HOST_SYSTEM_ATLAS_HEIGHT,
-		data: hostSystemAtlasPixels(),
-	}, {}) as WebGLTexture;
+	const whiteTexture = backend.createSolidTexture2D(1, 1, 0xffffffff) as WebGLTexture;
+	const hostAtlasTexture = backend.createTexture(hostSystemAtlasPixels(), HOST_SYSTEM_ATLAS_WIDTH, HOST_SYSTEM_ATLAS_HEIGHT, DEFAULT_TEXTURE_PARAMS) as WebGLTexture;
 	bindWebGLInstancedQuadVertexArray(backend, vao, program, quad, INSTANCE_STRIDE_BYTES, INSTANCE_FLOAT_ATTRIBUTES);
 	return {
 		gl,
@@ -268,7 +266,7 @@ function pushFillRect(state: HostOverlayRuntime, index: number, leftValue: numbe
 
 function drawRectCommand(backend: WebGLBackend, state: HostOverlayRuntime, command: RectRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
 	const nextBoundTextures = bindHostTexture(state.whiteTexture, boundTextures);
-	if (command.kind === 'fill') {
+	if (command.kind === RectRenderKind.Fill) {
 		const written = pushFillRect(state, 0, command.area.left, command.area.top, command.area.right, command.area.bottom, command.area.z, command.color);
 		if (written !== 0) {
 			flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, written, INSTANCE_FLOATS);
@@ -330,7 +328,7 @@ function drawPolyCommand(backend: WebGLBackend, state: HostOverlayRuntime, comma
 }
 
 function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntime, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	if (command.background_color === null) {
+	if (!command.has_background_color) {
 		return boundTextures;
 	}
 	const font = command.font;

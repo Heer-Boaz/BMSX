@@ -54,9 +54,7 @@ export type ProgramImage = {
 	link: ProgramLink;
 };
 
-export type ProgramSymbolsImage = {
-	metadata: ProgramMetadata;
-};
+export type ProgramSymbolsImage = ProgramMetadata;
 
 export type ProgramBootHeader = {
 	version: number;
@@ -119,9 +117,7 @@ export function decodeProgramImage(bytes: Uint8Array): ProgramImage {
 
 export function decodeProgramSymbolsImage(bytes: Uint8Array): ProgramSymbolsImage {
 	const root = requireObject(decodeBinary(bytes), 'ProgramSymbolsImage');
-	return {
-		metadata: requireObjectKey(root, 'metadata', 'ProgramSymbolsImage', 'ProgramSymbolsImage.metadata') as ProgramMetadata,
-	};
+	return requireObjectKey(root, 'metadata', 'ProgramSymbolsImage', 'ProgramSymbolsImage.metadata') as ProgramMetadata;
 }
 
 export function buildProgramBootHeader(asset: ProgramImage): ProgramBootHeader {

@@ -1,9 +1,9 @@
 import { consoleCore } from '../../../core/console';
 import skyboxFS from '../shaders/skybox.frag.glsl';
 import skyboxVS from '../shaders/skybox.vert.glsl';
-import type { RenderContext } from '../../backend/interfaces';
+import type { RenderContext } from '../../backend/backend';
 import { RenderPassLibrary } from '../../backend/pass/library';
-import { SkyboxPipelineState } from '../../backend/interfaces';
+import { SkyboxPipelineState } from '../../backend/backend';
 import { TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '../../backend/webgl/constants';
 import { WebGLBackend } from '../../backend/webgl/backend';
 import { VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';

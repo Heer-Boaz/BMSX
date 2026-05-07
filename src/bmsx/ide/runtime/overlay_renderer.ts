@@ -1,5 +1,6 @@
 import type { BFont } from '../../render/shared/bitmap_font';
-import type { RenderLayer, color } from '../../render/shared/submissions';
+import { RectRenderKind, TextAlign, TextBaseline, type color } from '../../render/shared/submissions';
+import { LAYER_2D_IDE, type Layer2D } from '../../machine/devices/vdp/contracts';
 import type { Host2DSubmission } from '../../render/shared/queues';
 import { consoleCore } from '../../core/console';
 import { clearOverlayFrame, publishOverlayFrame, type HostOverlayFrame } from '../../render/host_overlay/overlay_queue';
@@ -24,10 +25,10 @@ type OverlayCommandBuffer = {
 function createRectSubmission(): RectSubmission {
 	return {
 		type: 'rect',
-		kind: 'fill',
+		kind: RectRenderKind.Fill,
 		area: { left: 0, top: 0, right: 0, bottom: 0, z: 0 },
-		color: null,
-		layer: 'ide',
+		color: 0xffffffff,
+		layer: LAYER_2D_IDE,
 	};
 }
 
@@ -38,10 +39,10 @@ function createImageSubmission(): ImgSubmission {
 		pos: { x: 0, y: 0, z: 0 },
 		scale: { x: 1, y: 1 },
 		flip: { flip_h: false, flip_v: false },
-		colorize: null,
+		colorize: 0xffffffff,
 		ambient_affected: false,
 		ambient_factor: 1,
-		layer: 'ide',
+		layer: LAYER_2D_IDE,
 		parallax_weight: 0,
 	};
 }
@@ -56,13 +57,14 @@ function createGlyphSubmission(): GlyphSubmission {
 		glyph_start: 0,
 		glyph_end: 0,
 		font: null,
-		color: null,
-		background_color: null,
+		color: 0xffffffff,
+		has_background_color: false,
+		background_color: 0xff000000,
 		wrap_chars: 0,
 		center_block_width: 0,
-		align: 'start',
-		baseline: 'alphabetic',
-		layer: 'ide',
+		align: TextAlign.Start,
+		baseline: TextBaseline.Alphabetic,
+		layer: LAYER_2D_IDE,
 	};
 }
 
@@ -128,9 +130,9 @@ export class OverlayRenderer {
 		this.frameRenderHeight = renderHeight;
 	}
 
-	public fillRect(left: number, top: number, right: number, bottom: number, z: number, color: color, layer: RenderLayer): void {
+	public fillRect(left: number, top: number, right: number, bottom: number, z: number, color: color, layer: Layer2D): void {
 		const submission = this.nextRectSubmission();
-		submission.kind = 'fill';
+		submission.kind = RectRenderKind.Fill;
 		const area = submission.area;
 		area.left = left;
 		area.top = top;
@@ -142,9 +144,9 @@ export class OverlayRenderer {
 		this.activeBuffer.commands.push(submission);
 	}
 
-	public strokeRect(left: number, top: number, right: number, bottom: number, z: number, color: color, layer: RenderLayer): void {
+	public strokeRect(left: number, top: number, right: number, bottom: number, z: number, color: color, layer: Layer2D): void {
 		const submission = this.nextRectSubmission();
-		submission.kind = 'rect';
+		submission.kind = RectRenderKind.Rect;
 		const area = submission.area;
 		area.left = left;
 		area.top = top;
@@ -156,7 +158,7 @@ export class OverlayRenderer {
 		this.activeBuffer.commands.push(submission);
 	}
 
-	public spriteColorized(imgid: string, x: number, y: number, z: number, colorize: color, layer: RenderLayer): void {
+	public spriteColorized(imgid: string, x: number, y: number, z: number, colorize: color, layer: Layer2D): void {
 		const submission = this.nextImageSubmission();
 		submission.imgid = imgid;
 		const pos = submission.pos;
@@ -177,7 +179,7 @@ export class OverlayRenderer {
 		this.activeBuffer.commands.push(submission);
 	}
 
-	public glyphRun(glyphs: string | string[], glyphStart: number, glyphEnd: number, x: number, y: number, z: number, font: BFont, color: color, layer: RenderLayer): void {
+	public glyphRun(glyphs: string | string[], glyphStart: number, glyphEnd: number, x: number, y: number, z: number, font: BFont, color: color, layer: Layer2D): void {
 		const submission = this.nextGlyphSubmission();
 		submission.glyphs = glyphs;
 		submission.glyph_start = glyphStart;
@@ -187,11 +189,12 @@ export class OverlayRenderer {
 		submission.z = z;
 		submission.font = font;
 		submission.color = color;
-		submission.background_color = null;
+		submission.has_background_color = false;
+		submission.background_color = 0xff000000;
 		submission.wrap_chars = 0;
 		submission.center_block_width = 0;
-		submission.align = 'start';
-		submission.baseline = 'alphabetic';
+		submission.align = TextAlign.Start;
+		submission.baseline = TextBaseline.Alphabetic;
 		submission.layer = layer;
 		this.activeBuffer.commands.push(submission);
 	}

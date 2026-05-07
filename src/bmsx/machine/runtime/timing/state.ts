@@ -3,15 +3,15 @@ import { DEFAULT_FRAME_TIME_MS, DEFAULT_UFPS, DEFAULT_UFPS_SCALED, HZ_SCALE } fr
 import { resolveUfpsScaled } from './index';
 
 export class TimingState {
-	public ufps = DEFAULT_UFPS;
-	public frameDurationMs = DEFAULT_FRAME_TIME_MS;
-	public vdpWorkUnitsPerSec = 0;
-	public geoWorkUnitsPerSec = 0;
-	public imgDecBytesPerSec = 0;
-	public dmaBytesPerSecIso = 0;
-	public dmaBytesPerSecBulk = 0;
+	public ufps: number = DEFAULT_UFPS;
+	public frameDurationMs: number = DEFAULT_FRAME_TIME_MS;
+	public vdpWorkUnitsPerSec: number = 0;
+	public geoWorkUnitsPerSec: number = 0;
+	public imgDecBytesPerSec: number = 0;
+	public dmaBytesPerSecIso: number = 0;
+	public dmaBytesPerSecBulk: number = 0;
 
-	constructor(public ufpsScaled = DEFAULT_UFPS_SCALED, public cpuHz = 0, public cycleBudgetPerFrame = 0) {
+	constructor(public ufpsScaled: number = DEFAULT_UFPS_SCALED, public cpuHz: number = 0, public cycleBudgetPerFrame: number = 0) {
 		this.applyUfpsScaled(ufpsScaled);
 	}
 

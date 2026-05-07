@@ -1,4 +1,4 @@
-import type { GPUBackend } from './interfaces';
+import type { GPUBackend } from './backend';
 import { WebGLBackend } from './webgl/backend';
 
 // Minimal per-frame uniform buffer (foundation for future shader blocks)
