@@ -19,7 +19,7 @@ Rules used for the frame tables:
 - Every case is simulated until `speed_subpx == target_speed_subpx`.
 
 Generated frame-by-frame output:
-- `src/carts/esther/test/dkc_motion_frame_table.csv`
+- `tests/carts/esther/dkc_motion_frame_table.csv`
 
 Case summaries:
 - `ground_walk_accel` profile=3, start=0, target=512, frames_to_target=166, final_speed=512 (2.000000 px/f), first_delta1=8, first_delta2=58, first_delta3=null, first_negative_delta=null, delta_counts={0:21, 1:89, 2:56}

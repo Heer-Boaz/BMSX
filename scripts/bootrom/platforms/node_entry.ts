@@ -224,7 +224,7 @@ function printHelp(): void {
 	console.log('romFolder:');
 	console.log('  If --rom is omitted, a romFolder positional argument resolves to');
 	console.log('  dist/<romFolder>(.debug).rom and auto-looks for timeline under');
-	console.log('  src/carts/<romFolder>/test/.');
+	console.log('  tests/carts/<romFolder>/.');
 }
 
 function parseArgs(argv: string[]): LaunchOptions {
@@ -513,11 +513,11 @@ async function fileExists(filePath: string): Promise<boolean> {
 	}
 }
 
-async function resolveAutoTimelinePath(cartRoot: string | null, romFolder: string | undefined): Promise<string | null> {
-	if (!cartRoot || !romFolder) {
+async function resolveAutoTimelinePath(romFolder: string | undefined): Promise<string | null> {
+	if (!romFolder) {
 		return null;
 	}
-	const demoPath = path.join(cartRoot, 'test', `${romFolder}_demo.json`);
+	const demoPath = path.resolve('tests', 'carts', romFolder, `${romFolder}_demo.json`);
 	if (await fileExists(demoPath)) {
 		return demoPath;
 	}
@@ -932,7 +932,7 @@ async function main(): Promise<void> {
 		console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler enabled.`);
 	}
 	const isCartProgramActive = (): boolean => runtime.cartProgramStarted;
-	const autoTimelinePath = await resolveAutoTimelinePath(cartRoot, romFolder);
+	const autoTimelinePath = await resolveAutoTimelinePath(romFolder);
 	let scheduledTimeline = false;
 	if (cliOptions.testPath) {
 		hostTestRunState = {

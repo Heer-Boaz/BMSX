@@ -617,6 +617,7 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 		id: 'skybox',
 		name: 'HeadlessSkybox',
 		stateOnly: true,
+		graph: { writes: ['frame_color'] },
 		shouldExecute: () => !!consoleCore.view.skyboxFaceUvRects,
 		exec: () => {
 			const uvRects = consoleCore.view.skyboxFaceUvRects;
@@ -749,6 +750,7 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 		id: 'particles',
 		name: 'HeadlessParticles',
 		stateOnly: true,
+		graph: { writes: ['frame_color'] },
 		shouldExecute: () => beginParticleQueue() > 0 || consoleCore.view.vdpBillboardCount > 0,
 		prepare: () => {
 			registry.setState('particles', makeParticleState());

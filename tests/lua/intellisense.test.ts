@@ -1,90 +1,81 @@
 import assert from 'node:assert/strict';
-import { createRequire, register } from 'node:module';
 import { test } from 'node:test';
 
-import type { CodeTabContext } from '../../src/bmsx/ide/common/models';
-import type { ProjectReferenceEnvironment } from '../../src/bmsx/ide/sources';
-import type { ResourceDescriptor } from '../../src/bmsx/machine/runtime/contracts';
-import type { CodeLayout } from '../../src/bmsx/ide/code_layout';
-import { normalizeEndingsAndSplitLines } from 'bmsx/ide/text';
+import type { CodeTabContext, ResourceDescriptor } from '../../src/bmsx/ide/common/models';
+import { splitText } from '../../src/bmsx/common/text_lines';
+import { PieceTreeBuffer } from '../../src/bmsx/ide/editor/text/piece_tree_buffer';
+import type { ProjectReferenceEnvironment } from '../../src/bmsx/ide/editor/contrib/references/sources';
 
-register('./glsl-loader.mjs', import.meta.url);
-
-const require = createRequire(import.meta.url);
-
-require.extensions['.glsl'] = () => {};
-
-function registerStubModule(resolvedPath: string, exports: Record<string, unknown>): void {
-	require.cache[resolvedPath] = {
-		id: resolvedPath,
-		filename: resolvedPath,
-		loaded: true,
-		exports,
-		children: [],
-		path: resolvedPath,
-		require,
-		isPreloading: false,
-		parent: null,
-		paths: [],
-	};
-}
-
-const gameserializerPath = require.resolve('../../src/bmsx/common/serializer/gameserializer.ts');
-registerStubModule(gameserializerPath, (() => {
-	class SerializerStub {
-		public static onSaves: Record<string, ((...args: any[]) => any)[]> = {};
-		public static excludedProperties: Record<string, Record<string, boolean>> = {};
-		public static excludedObjectTypes: Set<string> = new Set();
-		public static propertyIncludeExcludeMap: Map<string, Map<string, boolean>> = new Map();
-		public static classExcludeMap: Map<string, boolean> = new Map();
-	}
-
-	class ReviverStub {
-		public static constructors: Record<string, new () => any> = {};
-		public static onLoads: Record<string, ((...args: any[]) => any)[]> = {};
-		public static excludedProperties: Record<string, Record<string, boolean>> = {};
-	}
-
-	type ConstructorWithSaveGameStub<T = unknown> = new (...args: any[]) => T;
-
-	return {
-		Serializer: SerializerStub,
-		Reviver: ReviverStub,
-		ConstructorWithSaveGame: undefined as unknown as ConstructorWithSaveGameStub,
-	};
-})());
-
-const consoleApiPath = require.resolve('../../src/bmsx/machine/api.ts');
-const consoleApiExports = {
-	Api: class {
-		public emit(eventName: string, payload?: unknown, emitterId?: unknown): void {
-			void eventName;
-			void payload;
-			void emitterId;
-		}
-	},
-};
-registerStubModule(consoleApiPath, consoleApiExports);
-registerStubModule(consoleApiPath.replace(/\.ts$/, ''), consoleApiExports);
-registerStubModule(consoleApiPath.replace(/\.ts$/, '.js'), consoleApiExports);
-
-function registerEmptyModule(relativePath: string): void {
-	const fileUrl = new URL(relativePath, import.meta.url);
-	registerStubModule(fileUrl.pathname, { default: '' });
-	registerStubModule(fileUrl.href, { default: '' });
-}
-
-registerEmptyModule('../../src/bmsx/render/2d/shaders/2d.frag.glsl');
-registerEmptyModule('../../src/bmsx/render/2d/shaders/2d.vert.glsl');
-registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.frag.glsl');
-registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.vert.glsl');
-
-const intellisenseModulePromise = import('../../src/bmsx/ide/intellisense');
-const luaStaticDiagnosticsModulePromise = import('../../src/bmsx/machine/static_diagnostics');
-const semanticModelModulePromise = import('../../src/bmsx/ide/editor/contrib/intellisense/semantic_model');
-const referenceSourcesModulePromise = import('../../src/bmsx/ide/sources');
+const semanticFrontendModulePromise = import('../../src/bmsx/lua/semantic/frontend');
+const semanticDiagnosticsModulePromise = import('../../src/bmsx/lua/semantic/diagnostics');
+const semanticModelModulePromise = import('../../src/bmsx/lua/semantic/model');
+const referenceSourcesModulePromise = import('../../src/bmsx/ide/editor/contrib/references/sources');
 const workspaceModulePromise = import('../../src/bmsx/ide/editor/contrib/intellisense/semantic/workspace');
-const referenceNavigationModulePromise = import('../../src/bmsx/ide/reference_navigation');
+const workspaceStateModulePromise = import('../../src/bmsx/ide/editor/contrib/intellisense/semantic/workspace/state');
+const referenceNavigationModulePromise = import('../../src/bmsx/ide/editor/contrib/references/lookup');
+
+function runtimeStub(files: Record<string, string> = {}) {
+	const path2lua: Record<string, any> = {};
+	const module2lua: Record<string, any> = {};
+	for (const path in files) {
+		const source = files[path];
+		const modulePath = path.replace(/\.lua$/, '').replace(/\\/g, '/');
+		const record = {
+			resid: path,
+			type: 'lua',
+			src: source,
+			base_src: source,
+			source_path: path,
+			module_path: modulePath,
+			update_timestamp: 0,
+		};
+		path2lua[path] = record;
+		module2lua[modulePath] = record;
+	}
+	return {
+		pathSemanticCache: new Map(),
+		interpreter: { globalEnvironment: new Map() },
+		systemLuaSources: {
+			path2lua,
+			module2lua,
+			entry_path: '',
+			namespace: 'tests',
+			projectRootPath: '',
+			can_boot_from_source: true,
+		},
+		cartLuaSources: null,
+		activeLuaSources: null,
+	} as any;
+}
+
+function codeContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
+	return {
+		id: descriptor.asset_id ?? descriptor.path,
+		title: descriptor.path,
+		descriptor,
+		mode: 'lua',
+		buffer: new PieceTreeBuffer(source),
+		cursorRow: 0,
+		cursorColumn: 0,
+		scrollRow: 0,
+		scrollColumn: 0,
+		selectionAnchor: null,
+		lastSavedSource: source,
+		saveGeneration: 0,
+		appliedGeneration: 0,
+		undoStack: [],
+		redoStack: [],
+		lastHistoryKey: '',
+		lastHistoryTimestamp: 0,
+		savePointDepth: 0,
+		dirty: false,
+		runtimeErrorOverlay: null,
+		executionStopRow: null,
+		runtimeSyncState: 'synced',
+		runtimeSyncMessage: '',
+		textVersion: 1,
+	};
+}
 
 function luaRangeToSearchMatch(range: { start: { line: number; column: number }; end: { line: number; column: number } }, lines: readonly string[]): { row: number; start: number; end: number } {
 	const rowIndex = range.start.line - 1;
@@ -104,16 +95,8 @@ function luaRangeToSearchMatch(range: { start: { line: number; column: number };
 }
 
 async function runDiagnostics(source: string) {
-	const { computeLuaDiagnostics, getApiCompletionData } = await intellisenseModulePromise;
-	const apiData = getApiCompletionData();
-	return computeLuaDiagnostics({
-		source,
-		path: 'testpath',
-		localSymbols: [],
-		globalSymbols: [],
-		builtinDescriptors: [],
-		apiSignatures: apiData.signatures,
-	});
+	const { buildLuaSemanticFrontend } = await semanticFrontendModulePromise;
+	return buildLuaSemanticFrontend([{ path: 'testpath', source }], { builtinDescriptors: [] }).getFile('testpath').diagnostics;
 }
 
 // Diagnostic tests remain unchanged
@@ -162,17 +145,12 @@ return add(1, 2)
 });
 
 test('intellisense recognizes shared runtime globals without false positives', async () => {
-	const { computeLuaDiagnostics, getApiCompletionData } = await intellisenseModulePromise;
-	const { getDefaultLuaBuiltinDescriptors } = await luaStaticDiagnosticsModulePromise;
-	const apiData = getApiCompletionData();
-	const diagnostics = computeLuaDiagnostics({
-		source: 'return sys_boot_cart, cart_manifest, sys_vdp_stream_base',
-		path: 'testpath',
-		localSymbols: [],
-		globalSymbols: [],
-		builtinDescriptors: getDefaultLuaBuiltinDescriptors(),
-		apiSignatures: apiData.signatures,
-	});
+	const { buildLuaSemanticFrontend } = await semanticFrontendModulePromise;
+	const { getDefaultLuaBuiltinDescriptors } = await semanticDiagnosticsModulePromise;
+	const diagnostics = buildLuaSemanticFrontend(
+		[{ path: 'testpath', source: 'return sys_boot_cart, cart_manifest, sys_vdp_stream_base' }],
+		{ builtinDescriptors: getDefaultLuaBuiltinDescriptors() },
+	).getFile('testpath').diagnostics;
 	assert.equal(diagnostics.length, 0);
 });
 
@@ -201,7 +179,7 @@ local function create_ball(seed)
 end
 `;
 	const model = buildLuaSemanticModel(source, 'testpath');
-	const lines = normalizeEndingsAndSplitLines(source);
+	const lines = splitText(source);
 	const targetLine = lines[3];
 	const leftZeroBased = targetLine.indexOf('seed');
 	const rightZeroBased = targetLine.indexOf('seed', leftZeroBased + 1);
@@ -325,24 +303,14 @@ test('project reference catalog resolves globals across paths', async () => {
 	const parameterDescriptor: ResourceDescriptor = { path: 'parameter.lua', type: 'lua', asset_id: 'parameter' };
 	const localDescriptor: ResourceDescriptor = { path: 'local.lua', type: 'lua', asset_id: 'local' };
 
-	const usageContext: CodeTabContext = {
-		id: 'usage',
-		title: 'usage.lua',
-		descriptor: usageDescriptor,
-		load: () => usageSource,
-		save: async () => {},
-		snapshot: null,
-		lastSavedSource: usageSource,
-		saveGeneration: 0,
-		appliedGeneration: 0,
-		dirty: false,
-		runtimeErrorOverlay: null,
-		executionStopRow: null,
-	};
+	const usageContext = codeContext(usageDescriptor, usageSource);
 
 	const usageLines = usageSource.split('\n');
+	const runtime = runtimeStub();
 	const environment: ProjectReferenceEnvironment = {
+		runtime,
 		activeContext: usageContext,
+		activeSource: usageSource,
 		activeLines: usageLines,
 		codeTabContexts: [usageContext],
 		listResources: () => [usageDescriptor, globalDescriptor, parameterDescriptor, localDescriptor],
@@ -381,11 +349,10 @@ test('project reference catalog resolves globals across paths', async () => {
 	const catalog = buildReferenceCatalogForExpression({
 		workspace,
 		info,
+		source: usageSource,
 		lines: usageLines,
 		path: 'usage.lua',
-		asset_id: 'usage',
 		environment,
-		sourceLabelPath: 'usage.lua',
 	});
 
 	assert.ok(catalog.some(entry => entry.symbol.location.path === 'global.lua'), 'global path included in reference catalog');
@@ -418,25 +385,15 @@ test('project definition resolver locates global across paths', async () => {
 	const usageDescriptor: ResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
 	const globalDescriptor: ResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
 
-	const usageContext: CodeTabContext = {
-		id: 'usage',
-		title: 'usage.lua',
-		descriptor: usageDescriptor,
-		load: () => usageSource,
-		save: async () => {},
-		snapshot: null,
-		lastSavedSource: usageSource,
-		saveGeneration: 0,
-		appliedGeneration: 0,
-		dirty: false,
-		runtimeErrorOverlay: null,
-		executionStopRow: null,
-	};
+	const usageContext = codeContext(usageDescriptor, usageSource);
 
 	const usageLines = usageSource.split('\n');
 
+	const runtime = runtimeStub();
 	const environment: ProjectReferenceEnvironment = {
+		runtime,
 		activeContext: usageContext,
+		activeSource: usageSource,
 		activeLines: usageLines,
 		codeTabContexts: [usageContext],
 		listResources: () => [usageDescriptor, globalDescriptor],
@@ -452,9 +409,8 @@ test('project definition resolver locates global across paths', async () => {
 		environment,
 		workspace,
 		currentPath: 'usage.lua',
+		currentSource: usageSource,
 		currentLines: usageLines,
-		currentasset_id: 'usage',
-		sourceLabelPath: 'usage.lua',
 	});
 
 	assert.ok(location, 'global definition location resolved');
@@ -467,6 +423,7 @@ test('project definition resolver locates global across paths', async () => {
 test('reference lookup resolves global definition across paths', async () => {
 	const { resolveReferenceLookup } = await referenceNavigationModulePromise;
 	const { LuaSemanticWorkspace, createLuaSemanticFrontendFromSnapshot } = await workspaceModulePromise;
+	const { resetSemanticWorkspace } = await workspaceStateModulePromise;
 
 	const usageSource = [
 		'function dummy_handler(self)',
@@ -489,11 +446,7 @@ test('reference lookup resolves global definition across paths', async () => {
 	workspace.updateFile('global.lua', globalSource);
 
 	const usageLines = usageSource.split('\n');
-	const { buildLuaSemanticModel } = await semanticModelModulePromise;
-	const model = buildLuaSemanticModel(usageSource, 'usage.lua');
-	const layout = {
-		getSemanticModel: () => model,
-	} as unknown as CodeLayout;
+	resetSemanticWorkspace();
 
 	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
 	assert.ok(stateRow >= 0);
@@ -501,9 +454,8 @@ test('reference lookup resolves global definition across paths', async () => {
 	assert.ok(stateColumn >= 0);
 
 	const result = resolveReferenceLookup({
-		layout,
-		workspace,
-		lines: usageLines,
+		runtime: runtimeStub({ 'global.lua': globalSource }),
+		buffer: new PieceTreeBuffer(usageSource),
 		textVersion: 1,
 		cursorRow: stateRow,
 		cursorColumn: stateColumn,
@@ -533,7 +485,7 @@ test('reference lookup resolves global definition across paths', async () => {
 test('reference lookup prefers local parameter over global', async () => {
 	const { resolveReferenceLookup } = await referenceNavigationModulePromise;
 	const { LuaSemanticWorkspace, createLuaSemanticFrontendFromSnapshot } = await workspaceModulePromise;
-	const { buildLuaSemanticModel } = await semanticModelModulePromise;
+	const { resetSemanticWorkspace } = await workspaceStateModulePromise;
 
 	const globalSource = 'state = {}';
 	const usageSource = [
@@ -549,19 +501,15 @@ test('reference lookup prefers local parameter over global', async () => {
 	workspace.updateFile('global.lua', globalSource);
 
 	const usageLines = usageSource.split('\n');
-	const model = buildLuaSemanticModel(usageSource, 'usage.lua');
-	const layout = {
-		getSemanticModel: () => model,
-	} as unknown as CodeLayout;
+	resetSemanticWorkspace();
 
 	const helperLineIndex = usageLines.findIndex(line => line.includes('helper'));
 	assert.ok(helperLineIndex >= 0);
 	const parameterColumn = usageLines[helperLineIndex]!.indexOf('state');
 
 	const parameterResult = resolveReferenceLookup({
-		layout,
-		workspace,
-		lines: usageLines,
+		runtime: runtimeStub({ 'global.lua': globalSource }),
+		buffer: new PieceTreeBuffer(usageSource),
 		textVersion: 1,
 		cursorRow: helperLineIndex,
 		cursorColumn: parameterColumn,
@@ -587,7 +535,7 @@ test('reference lookup prefers local parameter over global', async () => {
 });
 
 test('intellisense recognizes global variable from another file', async () => {
-	const { computeLuaDiagnostics, getApiCompletionData } = await intellisenseModulePromise;
+	const { buildLuaSemanticFrontend } = await semanticFrontendModulePromise;
 	const { buildReferenceCatalogForExpression } = await referenceSourcesModulePromise;
 	const { LuaSemanticWorkspace, createLuaSemanticFrontendFromSnapshot } = await workspaceModulePromise;
 
@@ -611,25 +559,15 @@ test('intellisense recognizes global variable from another file', async () => {
 	const usageDescriptor: ResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
 	const globalDescriptor: ResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
 
-	const usageContext: CodeTabContext = {
-		id: 'usage',
-		title: 'usage.lua',
-		descriptor: usageDescriptor,
-		load: () => usageSource,
-		save: async () => {},
-		snapshot: null,
-		lastSavedSource: usageSource,
-		saveGeneration: 0,
-		appliedGeneration: 0,
-		dirty: false,
-		runtimeErrorOverlay: null,
-		executionStopRow: null,
-	};
+	const usageContext = codeContext(usageDescriptor, usageSource);
 
 	const usageLines = usageSource.split('\n');
 
+	const runtime = runtimeStub();
 	const environment: ProjectReferenceEnvironment = {
+		runtime,
 		activeContext: usageContext,
+		activeSource: usageSource,
 		activeLines: usageLines,
 		codeTabContexts: [usageContext],
 		listResources: () => [usageDescriptor, globalDescriptor],
@@ -663,22 +601,16 @@ test('intellisense recognizes global variable from another file', async () => {
 	const catalog = buildReferenceCatalogForExpression({
 		workspace,
 		info,
+		source: usageSource,
 		lines: usageLines,
 		path: 'usage.lua',
-		asset_id: 'usage',
 		environment,
-		sourceLabelPath: 'usage.lua',
 	});
 
-	const apiData = getApiCompletionData();
-	const diagnostics = computeLuaDiagnostics({
-		source: usageSource,
-		path: 'usage.lua',
-		localSymbols: [],
-		globalSymbols: catalog.map(entry => entry.symbol),
-		builtinDescriptors: [],
-		apiSignatures: apiData.signatures,
-	});
+	const diagnostics = buildLuaSemanticFrontend(
+		[{ path: 'usage.lua', source: usageSource }],
+		{ builtinDescriptors: [], externalGlobalSymbols: catalog.map(entry => entry.symbol) },
+	).getFile('usage.lua').diagnostics;
 
 	assert.ok(!diagnostics.some(d => /'state' is not defined/.test(d.message)), 'no undefined error for global state');
 });

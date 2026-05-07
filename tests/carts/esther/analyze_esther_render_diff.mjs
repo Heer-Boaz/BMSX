@@ -2,7 +2,7 @@ import fs from 'node:fs';
 
 const logPath = process.argv[2];
 if (!logPath) {
-	throw new Error('Usage: node src/carts/esther/test/analyze_esther_render_diff.mjs <headless-log-path>');
+	throw new Error('Usage: node tests/carts/esther/analyze_esther_render_diff.mjs <headless-log-path>');
 }
 
 const lines = fs.readFileSync(logPath, 'utf8').split(/\r?\n/);

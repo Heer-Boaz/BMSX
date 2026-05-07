@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { splitText } from '../../src/bmsx/common/text_lines';
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
-import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../src/bmsx/lua/ast';
+import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../src/bmsx/lua/syntax/ast';
 import type {
 	LuaChunk,
 	LuaCallStatement,
@@ -23,7 +23,7 @@ import type {
 	LuaStringLiteralExpression,
 	LuaTableConstructorExpression,
 	LuaIndexExpression,
-} from '../../src/bmsx/lua/ast';
+} from '../../src/bmsx/lua/syntax/ast';
 
 function parseChunk(source: string): LuaChunk {
 	const lexer = new LuaLexer(source, 'path');

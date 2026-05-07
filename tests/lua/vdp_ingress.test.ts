@@ -257,10 +257,13 @@ test('VDP framebuffer VRAM dirty rows upload to the render texture before page p
 	vdp.writeVram(VRAM_FRAMEBUFFER_BASE, pixel);
 	applyVdpFrameBufferTextureWrites(vdp);
 
-	assert.deepEqual(Array.from(readVdpRenderFrameBufferPixels(0, 0, 1, 1)), Array.from(pixel));
+	const readback = new Uint8Array(4);
+	readVdpRenderFrameBufferPixels(0, 0, 1, 1, readback);
+	assert.deepEqual(Array.from(readback), Array.from(pixel));
 	presentVdpFrameBufferPages();
 	vdp.swapFrameBufferReadbackPages();
-	assert.deepEqual(Array.from(readVdpDisplayFrameBufferPixels(0, 0, 1, 1)), Array.from(pixel));
+	readVdpDisplayFrameBufferPixels(0, 0, 1, 1, readback);
+	assert.deepEqual(Array.from(readback), Array.from(pixel));
 });
 
 test('VDP2D BLIT snapshots DRAW_CTRL flip and parallax immutably', () => {

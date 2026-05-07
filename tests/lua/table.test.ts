@@ -1,23 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { splitText } from '../../src/bmsx/common/text_lines';
-import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
-import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
-import { CPU, RunResult, Table, type Value } from '../../src/bmsx/machine/cpu/cpu';
-import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
-
-function runCompiledLua(source: string): Value[] {
-	const lexer = new LuaLexer(source, 'table_semantics.lua');
-	const parser = new LuaParser(lexer.scanTokens(), 'table_semantics.lua', splitText(source));
-	const compiled = compileLuaChunkToProgram(parser.parseChunk(), [], { entrySource: source });
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0) }));
-	cpu.setProgram(compiled.program, compiled.metadata);
-	cpu.start(compiled.entryProtoIndex);
-	assert.equal(cpu.run(100000), RunResult.Halted);
-	return Array.from(cpu.lastReturnValues);
-}
+import { Table } from '../../src/bmsx/machine/cpu/cpu';
+import { runCompiledLua } from './cpu_test_harness';
 
 test('Table stores sparse unsigned integer keys in the hash part', () => {
 	const table = new Table(0, 0);
@@ -29,7 +14,7 @@ test('Table stores sparse unsigned integer keys in the hash part', () => {
 
 	assert.equal(table.get(highKey), 11);
 	assert.equal(table.get(tokenKey), 22);
-	assert.equal(table.length(), 0);
+	assert.equal(table.arrayLength, 0);
 	assert.ok(table.getTrackedHeapBytes() < 4096);
 });
 

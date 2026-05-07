@@ -1,8 +1,8 @@
 import { promises as fs } from 'fs';
-import { encodeWavToAacLc } from './rompacker/audioencoder';
+import { encodeWavToAacLc } from '../../scripts/rompacker/audioencoder';
 
 (async () => {
-	const path = '../src/carts/2025/res/m16@m@l=0.wav';
+	const path = 'src/carts/2025/res/m16@m@l=0.wav';
 	const wav = await fs.readFile(path);
 	const aac = await encodeWavToAacLc(wav, path, {
 		bitrate: 16,
@@ -11,5 +11,5 @@ import { encodeWavToAacLc } from './rompacker/audioencoder';
 		// gainBiasSteps: 2,      // optioneel: override
 	});
 
-	await fs.writeFile("../output.aac", aac);
+	await fs.writeFile('tmp/output.aac', aac);
 })();

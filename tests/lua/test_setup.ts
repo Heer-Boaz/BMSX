@@ -64,7 +64,7 @@ const gameStub = {
 	emitGameplay: () => {},
 };
 
-const gameExports = { Game: class {}, default: gameStub, $: gameStub };
+const gameExports = { Game: class {}, ConsoleCore: class {}, consoleCore: gameStub, default: gameStub, $: gameStub };
 const worldExports = {
 	World: class {},
 	WorldConfiguration: class {},

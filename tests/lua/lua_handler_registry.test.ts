@@ -1,137 +1,48 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createLuaInterpreter } from '../../src/bmsx/lua/runtime';
-import type { LuaSourceRange } from '../../src/bmsx/lua/ast';
-import type { LuaFunctionValue } from '../../src/bmsx/lua/value';
-import { LuaHandlerRegistry, type LuaHandlerBindContext } from '../../src/bmsx/machine/firmware/handler_registry';
-import type { LuaValue } from '../../src/bmsx/lua/value';
 
-test('LuaHandlerRegistry tracks registration and path mapping', () => {
-	const registry = new LuaHandlerRegistry();
-	const interpreter = createLuaInterpreter();
-	const range: LuaSourceRange = {
-		path: '@test/path.lua',
-		start: { line: 1, column: 0 },
-		end: { line: 1, column: 10 },
+import { LuaFunctionRedirectCache } from '../../src/bmsx/machine/firmware/handler_registry';
+import type { LuaFunctionValue, LuaValue } from '../../src/bmsx/lua/value';
+
+function handler(name: string, value: LuaValue): LuaFunctionValue {
+	return {
+		name,
+		call: () => [value],
 	};
-	const fn: LuaFunctionValue = {
-		name: 'handlerA',
-		call: () => [] as LuaValue[],
-	};
+}
 
-	let createCalls = 0;
-	let updateCalls = 0;
-	let disposeCalls = 0;
-	let lastContext: LuaHandlerBindContext = null;
-	let lastDisposedContext: LuaHandlerBindContext = null;
+test('LuaFunctionRedirectCache preserves redirect identity while rebinding current function', () => {
+	const cache = new LuaFunctionRedirectCache();
+	const first = handler('first', 1);
+	const redirect = cache.getOrCreate('main', ['handlers', 'tick'], first);
+	assert.deepEqual(redirect.call([]), [1]);
 
-	const descriptor = registry.register({
-		id: 'lua.handlers.ability:jump.activation',
-		category: 'ability',
-		targetId: 'jump',
-		hook: 'activation',
-		functionName: fn.name,
-		sourceRange: range,
-		path: range.path,
-		onCreate(context) {
-		createCalls += 1;
-		lastContext = context;
-	},
-	onUpdate(context) {
-		updateCalls += 1;
-		lastContext = context;
-	},
-	onDispose(context) {
-		disposeCalls += 1;
-		lastDisposedContext = context;
-	},
-}, { fn, interpreter });
-
-	assert.equal(descriptor.normalizedPath, 'test/path.lua');
-	assert.equal(registry.listByChunk('@test/path.lua').length, 1);
-	assert.equal(createCalls, 1);
-	assert.equal(updateCalls, 0);
-	assert.ok(lastContext);
-assert.equal(lastContext?.fn, fn);
-assert.equal(disposeCalls, 0);
-
-
-	const nextRange: LuaSourceRange = {
-		path: '@test/path.lua',
-		start: { line: 5, column: 0 },
-		end: { line: 5, column: 16 },
-	};
-	const updatedFn: LuaFunctionValue = {
-		name: 'handlerA',
-		call: () => [] as LuaValue[],
-	};
-
-	registry.register({
-		id: 'lua.handlers.ability:jump.activation',
-		category: 'ability',
-		targetId: 'jump',
-		hook: 'activation',
-		functionName: updatedFn.name,
-		sourceRange: nextRange,
-		path: nextRange.path,
-	onCreate(context) {
-		createCalls += 1;
-		lastContext = context;
-	},
-	onUpdate(context) {
-		updateCalls += 1;
-		lastContext = context;
-	},
-	onDispose(context) {
-		disposeCalls += 1;
-		lastDisposedContext = context;
-	},
-}, { fn: updatedFn, interpreter });
-
-	const after = registry.get('lua.handlers.ability:jump.activation');
-	assert.ok(after, 'descriptor should exist after update');
-	assert.equal(after?.sourceRange?.start.line, 5);
-assert.equal(createCalls, 1, 'onCreate should not run on update');
-assert.equal(updateCalls, 1, 'onUpdate should run exactly once');
-assert.equal(lastContext?.fn, updatedFn);
-assert.equal(lastContext?.interpreter, interpreter);
-assert.equal(disposeCalls, 0, 'Handler should still be registered');
-assert.strictEqual(lastDisposedContext, null);
+	const second = handler('second', 2);
+	const rebound = cache.getOrCreate('main', ['handlers', 'tick'], second);
+	assert.equal(rebound, redirect);
+	assert.deepEqual(redirect.call([]), [2]);
 });
 
-test('LuaHandlerRegistry unregister removes path association', () => {
-	const registry = new LuaHandlerRegistry();
-	const interpreter = createLuaInterpreter();
-	const range: LuaSourceRange = {
-		path: '@demo/main.lua',
-		start: { line: 1, column: 0 },
-		end: { line: 1, column: 12 },
-	};
-	const fn: LuaFunctionValue = {
-		name: 'handlerB',
-		call: () => [] as LuaValue[],
-	};
+test('LuaFunctionRedirectCache keys redirects by module and handler path', () => {
+	const cache = new LuaFunctionRedirectCache();
+	const left = cache.getOrCreate('main', ['handlers', 'tick'], handler('left', 'left'));
+	const right = cache.getOrCreate('main', ['handlers', 'draw'], handler('right', 'right'));
+	const otherModule = cache.getOrCreate('other', ['handlers', 'tick'], handler('other', 'other'));
 
-	let disposeCalled = false;
-	let disposedContext: LuaHandlerBindContext = null;
+	assert.notEqual(left, right);
+	assert.notEqual(left, otherModule);
+	assert.deepEqual(left.call([]), ['left']);
+	assert.deepEqual(right.call([]), ['right']);
+	assert.deepEqual(otherModule.call([]), ['other']);
+});
 
-	registry.register({
-		id: 'lua.handlers.component:demo.onattach',
-		category: 'component',
-		targetId: 'demo',
-		hook: 'onattach',
-		functionName: fn.name,
-		sourceRange: range,
-		path: range.path,
-	onCreate() {},
-	onUpdate() {},
-	onDispose: (context) => { disposeCalled = true; disposedContext = context; },
-}, { fn, interpreter });
+test('LuaFunctionRedirectCache clear drops redirect ownership', () => {
+	const cache = new LuaFunctionRedirectCache();
+	const before = cache.getOrCreate('main', ['handlers', 'tick'], handler('before', 1));
+	cache.clear();
+	const after = cache.getOrCreate('main', ['handlers', 'tick'], handler('after', 2));
 
-	assert.equal(registry.listByChunk('demo/main.lua').length, 1);
-	registry.unregister('lua.handlers.component:demo.onattach');
-assert.equal(registry.listByChunk('demo/main.lua').length, 0);
-assert.equal(registry.get('lua.handlers.component:demo.onattach'), null);
-assert.equal(disposeCalled, true);
-assert.equal(disposedContext?.fn, fn);
+	assert.notEqual(after, before);
+	assert.deepEqual(before.call([]), [1]);
+	assert.deepEqual(after.call([]), [2]);
 });

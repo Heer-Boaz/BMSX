@@ -245,7 +245,7 @@ notes.push('  - `0=/8`, `1=/16`, `2=/32`, `3=/64`, `4=/128`, `5=/256`, `6=/4`, `
 notes.push('- Every case is simulated until `speed_subpx == target_speed_subpx`.');
 notes.push('');
 notes.push('Generated frame-by-frame output:');
-notes.push('- `src/carts/esther/test/dkc_motion_frame_table.csv`');
+notes.push('- `tests/carts/esther/dkc_motion_frame_table.csv`');
 notes.push('');
 notes.push('Case summaries:');
 for (let i = 0; i < summaries.length; i += 1) {
@@ -260,9 +260,9 @@ for (let i = 0; i < summaries.length; i += 1) {
 	);
 }
 
-fs.writeFileSync('src/carts/esther/test/dkc_motion_frame_table.csv', `${csvLines.join('\n')}\n`);
-fs.writeFileSync('src/carts/esther/test/dkc_motion_notes.md', `${notes.join('\n')}\n`);
+fs.writeFileSync('tests/carts/esther/dkc_motion_frame_table.csv', `${csvLines.join('\n')}\n`);
+fs.writeFileSync('tests/carts/esther/dkc_motion_notes.md', `${notes.join('\n')}\n`);
 
 console.log(
-	`generated rows=${allRows.length} csv=src/carts/esther/test/dkc_motion_frame_table.csv notes=src/carts/esther/test/dkc_motion_notes.md`
+	`generated rows=${allRows.length} csv=tests/carts/esther/dkc_motion_frame_table.csv notes=tests/carts/esther/dkc_motion_notes.md`
 );

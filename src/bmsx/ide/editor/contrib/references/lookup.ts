@@ -4,7 +4,7 @@ import type { TextBuffer } from '../../text/text_buffer';
 import type { SearchMatch } from '../../../common/models';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export type ExtractIdentifierExpression = (row: number, column: number) => { expression: string; startColumn: number; endColumn: number };
+export type ExtractIdentifierExpression = (row: number, column: number) => { expression: string; startColumn: number; endColumn: number } | null;
 
 export type ReferenceLookupOptions = {
 	runtime: Runtime;

@@ -13,8 +13,8 @@
 
 - Tool: Python package `z80dis` in `.external/py`.
 - Script:
-  - `src/carts/nemesis_s/test/disassemble_nemesis2.py`
-  - Run with: `.external/py/bin/python src/carts/nemesis_s/test/disassemble_nemesis2.py`
+  - `tests/carts/nemesis_s/disassemble_nemesis2.py`
+  - Run with: `.external/py/bin/python tests/carts/nemesis_s/disassemble_nemesis2.py`
 - Entry disassembly output:
   - `.external/nemesis2rom/disasm_entry_0x4090.txt`
 - Targeted segment disassembly output:

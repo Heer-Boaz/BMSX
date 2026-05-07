@@ -783,7 +783,7 @@ static bool derive_input_timeline_path(const char* rom_folder, char* out, size_t
 	if (!rom_folder || !out || out_size == 0) {
 		return false;
 	}
-	int written = snprintf(out, out_size, "src/carts/%s/test/%s_demo.json", rom_folder, rom_folder);
+	int written = snprintf(out, out_size, "tests/carts/%s/%s_demo.json", rom_folder, rom_folder);
 	return snprintf_wrote_buffer(written, out_size) && access(out, F_OK) == 0;
 }
 

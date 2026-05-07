@@ -132,7 +132,7 @@ npm run headless:game -- pietious
 Run an explicit host test:
 
 ```bash
-npm run headless:test -- pietious src/carts/pietious/test/pietious_enter_world_assert.lua
+npm run headless:test -- pietious tests/carts/pietious/pietious_enter_world_assert.lua
 ```
 
 Important:
@@ -180,7 +180,7 @@ Important:
 - the silent SDL path uses the software backend on purpose
 - the libretro core loads `dist/bmsx-bios.rom`, not `dist/bmsx-bios.debug.rom`
 - the ROM argument must be the non-debug cart ROM, for example `./dist/pietious.rom`
-- the custom libretro host falls back to `src/carts/<cart>/test/<cart>_demo.json` when no explicit timeline is provided
+- the custom libretro host falls back to `tests/carts/<cart>/<cart>_demo.json` when no explicit timeline is provided
 - libretro timelines also run unpaced while the input timeline is active
 
 ## Input Timelines And Screenshots

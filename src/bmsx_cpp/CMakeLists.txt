@@ -371,13 +371,13 @@ endif()
 if(BMSX_BUILD_TESTS)
 	enable_testing()
 	add_executable(bmsx_vdp_ingress_tests
-		tests/vdp_ingress_test.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/vdp_ingress_test.cpp
 	)
 	target_link_libraries(bmsx_vdp_ingress_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_vdp_ingress_tests COMMAND bmsx_vdp_ingress_tests)
 
 	add_executable(bmsx_core_golden_tests
-		tests/core_golden_test.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/core_golden_test.cpp
 	)
 	target_link_libraries(bmsx_core_golden_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_core_golden_tests COMMAND bmsx_core_golden_tests)
