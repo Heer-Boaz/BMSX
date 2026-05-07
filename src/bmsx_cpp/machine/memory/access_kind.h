@@ -3,6 +3,7 @@
 #include "common/types.h"
 
 #include <array>
+#include <optional>
 #include <string_view>
 
 namespace bmsx {
@@ -25,8 +26,6 @@ inline constexpr std::array<std::string_view, 6> MEMORY_ACCESS_KIND_NAMES{
 	"memf64le",
 };
 
-const char* memoryAccessKindName(MemoryAccessKind kind);
-MemoryAccessKind memoryAccessKindForName(std::string_view name);
-bool isMemoryAccessKindName(std::string_view name);
+std::optional<MemoryAccessKind> getMemoryAccessKindForName(std::string_view name);
 
 } // namespace bmsx

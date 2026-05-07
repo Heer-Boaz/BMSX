@@ -44,11 +44,7 @@ void VdpBbuUnit::latchBillboard(std::vector<VdpBbuBillboardEntry>& target, const
 	entry.positionY = decodeSignedQ16_16(packet.yWord);
 	entry.positionZ = decodeSignedQ16_16(packet.zWord);
 	entry.size = size;
-	entry.color = Color::fromRGBA8(
-		static_cast<u8>((packet.color >> 16u) & 0xffu),
-		static_cast<u8>((packet.color >> 8u) & 0xffu),
-		static_cast<u8>(packet.color & 0xffu),
-		static_cast<u8>((packet.color >> 24u) & 0xffu));
+	entry.color = packet.color;
 	entry.source = source;
 	entry.surfaceWidth = surface.width;
 	entry.surfaceHeight = surface.height;

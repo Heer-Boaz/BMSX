@@ -71,17 +71,17 @@ const DITHER_VALUES: readonly HostMenuValue[] = [
 	{ label: 'MSX10 3:4:3' },
 ];
 
-const COLOR_PANEL = { r: 0.03, g: 0.03, b: 0.03, a: 0.80 };
-const COLOR_HIGHLIGHT = { r: 0.12, g: 0.25, b: 0.38, a: 0.86 };
-const COLOR_TEXT = { r: 0.94, g: 0.94, b: 0.94, a: 1.0 };
-const COLOR_DIM = { r: 0.70, g: 0.70, b: 0.70, a: 1.0 };
-const COLOR_TITLE = { r: 0.36, g: 0.78, b: 1.0, a: 1.0 };
-const COLOR_USAGE_PANEL = { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
-const COLOR_USAGE_TEXT = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-const COLOR_USAGE_DIM = { r: 208 / 255, g: 208 / 255, b: 208 / 255, a: 1.0 };
-const COLOR_USAGE_OK = { r: 4 / 255, g: 212 / 255, b: 19 / 255, a: 1.0 };
-const COLOR_USAGE_WARN = { r: 226 / 255, g: 210 / 255, b: 4 / 255, a: 1.0 };
-const COLOR_USAGE_DANGER = { r: 1.0, g: 81 / 255, b: 52 / 255, a: 1.0 };
+const COLOR_PANEL = 0xcc070707;
+const COLOR_HIGHLIGHT = 0xdb1e3f60;
+const COLOR_TEXT = 0xffefefef;
+const COLOR_DIM = 0xffb2b2b2;
+const COLOR_TITLE = 0xff5bc6ff;
+const COLOR_USAGE_PANEL = 0xff000000;
+const COLOR_USAGE_TEXT = 0xffffffff;
+const COLOR_USAGE_DIM = 0xffd0d0d0;
+const COLOR_USAGE_OK = 0xff04d413;
+const COLOR_USAGE_WARN = 0xffe2d204;
+const COLOR_USAGE_DANGER = 0xffff5134;
 
 function boolIndex(value: boolean): number {
 	return value ? 1 : 0;
@@ -119,7 +119,7 @@ function consumeButtons(player: PlayerInput, buttons: readonly HostMenuButton[])
 	}
 }
 
-function usageColor(ratio: number): typeof COLOR_USAGE_OK {
+function usageColor(ratio: number): number {
 	if (ratio >= 0.9) return COLOR_USAGE_DANGER;
 	if (ratio >= 0.7) return COLOR_USAGE_WARN;
 	return COLOR_USAGE_OK;
@@ -453,7 +453,7 @@ export class HostOverlayMenu {
 		return queued;
 	}
 
-	private queueUsageBar(index: number, used: number, total: number, font: NonNullable<GlyphRenderSubmission['font']>, colorOverride?: typeof COLOR_USAGE_OK): void {
+	private queueUsageBar(index: number, used: number, total: number, font: NonNullable<GlyphRenderSubmission['font']>, colorOverride?: number): void {
 		const ratio = used / total;
 		const fillWidth = usageFillWidth(used, total);
 		const fill = this.usageBarFills[index];

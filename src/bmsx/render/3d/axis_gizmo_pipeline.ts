@@ -36,12 +36,12 @@ const AXIS_VERTEX_DATA = new Float32Array([
 	0, 0, 1, 0, 0, 1,
 ]);
 const axisInvRot = new Float32Array(16);
-const AXIS_LABEL_X_COLOR: color = { r: 1, g: 0, b: 0, a: 1 };
-const AXIS_LABEL_Y_COLOR: color = { r: 0, g: 1, b: 0, a: 1 };
-const AXIS_LABEL_Z_COLOR: color = { r: 0, g: 0, b: 1, a: 1 };
-const AXIS_LABEL_R_COLOR: color = { r: 1, g: 0.5, b: 0.5, a: 1 };
-const AXIS_LABEL_U_COLOR: color = { r: 0.5, g: 1, b: 0.5, a: 1 };
-const AXIS_LABEL_F_COLOR: color = { r: 0.5, g: 0.5, b: 1, a: 1 };
+const AXIS_LABEL_X_COLOR: color = 0xffff0000;
+const AXIS_LABEL_Y_COLOR: color = 0xff00ff00;
+const AXIS_LABEL_Z_COLOR: color = 0xff0000ff;
+const AXIS_LABEL_R_COLOR: color = 0xffff7f7f;
+const AXIS_LABEL_U_COLOR: color = 0xff7fff7f;
+const AXIS_LABEL_F_COLOR: color = 0xff7f7fff;
 
 type AxisGizmoHostImageSink = (imgid: string, x: number, y: number, z: number, scale: number, color: color) => void;
 

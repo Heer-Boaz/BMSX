@@ -23,6 +23,19 @@ export type RomTocPayload = {
 	projectRootPath: string | null;
 };
 
+export enum AssetTypeKind {
+	ImageAtlas = 'ImageAtlas',
+	Audio = 'Audio',
+	Model = 'Model',
+	Aem = 'Aem',
+	Bin = 'Bin',
+	Lua = 'Lua',
+	Data = 'Data',
+	Code = 'Code',
+	Skip = 'Skip',
+	Unknown = 'Unknown',
+}
+
 const ASSET_TYPE_IDS: Record<asset_type, number> = {
 	image: ROM_TOC_ASSET_TYPE_IMAGE,
 	audio: ROM_TOC_ASSET_TYPE_AUDIO,
@@ -59,6 +72,38 @@ export function assetTypeFromId(id: number): asset_type {
 		default:
 			throw new Error(`Unknown asset type id "${id}".`);
 	}
+}
+
+export function resolveAssetTypeKind(assetType: asset_type): AssetTypeKind {
+	switch (assetType[0]) {
+		case 'i':
+			if (assetType === 'image') return AssetTypeKind.ImageAtlas;
+			break;
+		case 'a':
+			if (assetType === 'atlas') return AssetTypeKind.ImageAtlas;
+			if (assetType === 'audio') return AssetTypeKind.Audio;
+			if (assetType === 'aem') return AssetTypeKind.Aem;
+			break;
+		case 'm':
+			if (assetType === 'model') return AssetTypeKind.Model;
+			break;
+		case 'b':
+			if (assetType === 'bin') return AssetTypeKind.Bin;
+			break;
+		case 'l':
+			if (assetType === 'lua') return AssetTypeKind.Lua;
+			break;
+		case 'd':
+			if (assetType === 'data') return AssetTypeKind.Data;
+			break;
+		case 'r':
+			if (assetType === 'romlabel') return AssetTypeKind.Skip;
+			break;
+		case 'c':
+			if (assetType === 'code') return AssetTypeKind.Code;
+			break;
+	}
+	return AssetTypeKind.Unknown;
 }
 
 function decodeString(table: Uint8Array, offset: number, length: number, decoder: TextDecoder): string | null {

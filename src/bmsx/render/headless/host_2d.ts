@@ -12,7 +12,7 @@ import type {
 	RectRenderSubmission,
 	color,
 } from '../shared/submissions';
-import { blendPixel, colorByte } from './pixel_ops';
+import { blendPixel } from './pixel_ops';
 
 export function renderHeadlessSubmissions(target: Uint8Array, width: number, height: number, commands: readonly Host2DSubmission[]): void {
 	for (let index = 0; index < commands.length; index += 1) {
@@ -168,10 +168,7 @@ function fillRect(target: Uint8Array, width: number, height: number, left: numbe
 	if (top < 0) top = 0;
 	if (right > width) right = width;
 	if (bottom > height) bottom = height;
-	const r = colorByte(colorValue.r);
-	const g = colorByte(colorValue.g);
-	const b = colorByte(colorValue.b);
-	const a = colorByte(colorValue.a);
+	const r = (colorValue >>> 16) & 0xff, g = (colorValue >>> 8) & 0xff, b = colorValue & 0xff, a = (colorValue >>> 24) & 0xff;
 	for (let y = top; y < bottom; y += 1) {
 		let offset = (y * width + left) * 4;
 		for (let x = left; x < right; x += 1) {
@@ -196,10 +193,7 @@ function drawHostAtlasRect(target: Uint8Array,
 	flipV: boolean,
 	colorValue: color): void {
 	const atlas = hostSystemAtlasPixels();
-	const colorR = colorByte(colorValue.r);
-	const colorG = colorByte(colorValue.g);
-	const colorB = colorByte(colorValue.b);
-	const colorA = colorByte(colorValue.a);
+	const colorR = (colorValue >>> 16) & 0xff, colorG = (colorValue >>> 8) & 0xff, colorB = colorValue & 0xff, colorA = (colorValue >>> 24) & 0xff;
 	let startX = dstX;
 	let startY = dstY;
 	let endX = dstX + dstW;

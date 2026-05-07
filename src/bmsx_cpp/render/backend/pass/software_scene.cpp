@@ -83,7 +83,7 @@ size_t resolveSkyboxFace(f32 dirX, f32 dirY, f32 dirZ, SoftwareSkyboxFaceUv& uv)
 
 void writeSkyboxToFramebuffer(SoftwareBackend& backend, Runtime& runtime, const std::array<f32, 16>& skyboxView) {
 	std::array<VDP::ResolvedBlitterSample, SKYBOX_FACE_COUNT> samples{};
-	std::array<VdpSourcePixels, SKYBOX_FACE_COUNT> textures{};
+	std::array<VdpSurfacePixels, SKYBOX_FACE_COUNT> textures{};
 	VDP& vdp = runtime.machine.vdp;
 	const VDP::VdpHostOutput output = vdp.readHostOutput();
 	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
@@ -106,7 +106,7 @@ void writeSkyboxToFramebuffer(SoftwareBackend& backend, Runtime& runtime, const 
 			const size_t faceIndex = resolveSkyboxFace(dirX, dirY, dirZ, faceUv);
 			const VDP::ResolvedBlitterSample& sample = samples[faceIndex];
 			const VDP::BlitterSource& source = sample.source;
-			const VdpSourcePixels& texture = textures[faceIndex];
+			const VdpSurfacePixels& texture = textures[faceIndex];
 			u32 faceX = static_cast<u32>(faceUv.u * static_cast<f32>(source.width));
 			u32 faceY = static_cast<u32>(faceUv.v * static_cast<f32>(source.height));
 			if (faceX >= source.width) {
@@ -134,9 +134,9 @@ void drawSoftwareBillboardSample(SoftwareBackend& backend,
 	u32 h,
 	const Vec3& position,
 	f32 size,
-	const Color& color) {
+	u32 color) {
 	const u32 surfaceId = surfaceIdForParticleSlot(slot);
-	const VdpSourcePixels texture = resolveVdpSurfacePixels(output, surfaceId);
+	const VdpSurfacePixels texture = resolveVdpSurfacePixels(output, surfaceId);
 	const i32 sourceX = static_cast<i32>(u);
 	const i32 sourceY = static_cast<i32>(v);
 	const i32 sourceW = static_cast<i32>(w);
@@ -187,7 +187,12 @@ void drawSoftwareBillboardSample(SoftwareBackend& backend,
 		return;
 	}
 
-	const SoftwareColorBytes tint = softwareColorBytes(color);
+	const SoftwareColorBytes tint{
+		static_cast<u8>((color >> 16u) & 0xffu),
+		static_cast<u8>((color >> 8u) & 0xffu),
+		static_cast<u8>(color & 0xffu),
+		static_cast<u8>((color >> 24u) & 0xffu),
+	};
 	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
 	u32* framebuffer = backend.framebuffer();
 	const i32 dstW = endX - startX;

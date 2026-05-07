@@ -157,18 +157,18 @@ void testProgramRomAccountingGolden() {
 }
 
 void testAccessKindAndOpcodeGolden() {
-	require(bmsx::memoryAccessKindForName("mem") == bmsx::MemoryAccessKind::Word, "mem should map to word access");
-	require(bmsx::memoryAccessKindForName("memf32le") == bmsx::MemoryAccessKind::F32LE, "memf32le should map to F32LE access");
-	require(std::string_view(bmsx::memoryAccessKindName(bmsx::MemoryAccessKind::U16LE)) == "mem16le", "U16LE should expose mem16le name");
-	require(bmsx::isMemoryAccessKindName("memf64le"), "memf64le should be recognized");
-	require(!bmsx::isMemoryAccessKindName("mem128le"), "unknown memory access name should not be recognized");
+	require(bmsx::getMemoryAccessKindForName("mem") == bmsx::MemoryAccessKind::Word, "mem should map to word access");
+	require(bmsx::getMemoryAccessKindForName("memf32le") == bmsx::MemoryAccessKind::F32LE, "memf32le should map to F32LE access");
+	require(bmsx::MEMORY_ACCESS_KIND_NAMES[static_cast<size_t>(bmsx::MemoryAccessKind::U16LE)] == "mem16le", "U16LE should expose mem16le name");
+	require(bmsx::getMemoryAccessKindForName("memf64le").has_value(), "memf64le should be recognized");
+	require(!bmsx::getMemoryAccessKindForName("mem128le").has_value(), "unknown memory access name should not be recognized");
 	require(bmsx::OPCODE_COUNT == 64u, "opcode count should remain 64");
 	require(static_cast<int>(bmsx::OpCode::HALT) == 63, "HALT opcode should stay at index 63");
-	require(std::string_view(bmsx::opCodeName(bmsx::OpCode::LOAD_MEM)) == "LOAD_MEM", "LOAD_MEM opcode name should match TS");
-	require(bmsx::opCodeBaseCycles(bmsx::OpCode::WIDE) == 0u, "WIDE base cycles should match TS");
-	require(bmsx::opCodeBaseCycles(bmsx::OpCode::STORE_MEM) == 2u, "STORE_MEM base cycles should match TS");
-	require(bmsx::opCodeUsesBx(bmsx::OpCode::JMPIF), "JMPIF should use Bx metadata");
-	require(!bmsx::opCodeUsesBx(bmsx::OpCode::ADD), "ADD should not use Bx metadata");
+	require(std::string_view(bmsx::getOpcodeName(bmsx::OpCode::LOAD_MEM)) == "LOAD_MEM", "LOAD_MEM opcode name should match TS");
+	require(bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::WIDE)] == 0u, "WIDE base cycles should match TS");
+	require(bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::STORE_MEM)] == 2u, "STORE_MEM base cycles should match TS");
+	require(bmsx::OPCODE_USES_BX[static_cast<size_t>(bmsx::OpCode::JMPIF)] != 0u, "JMPIF should use Bx metadata");
+	require(bmsx::OPCODE_USES_BX[static_cast<size_t>(bmsx::OpCode::ADD)] == 0u, "ADD should not use Bx metadata");
 }
 
 void testTimingAndHashGolden() {
@@ -274,9 +274,6 @@ void testRompackSchemaGolden() {
 	require(view.data() == payload.data() + 2 && view.size() == 3u, "source stack should expose entry byte view");
 	const std::vector<bmsx::RomSourceEntry> listed = stack.list(std::optional<std::string_view>("lua"));
 	require(listed.size() == 1u && listed[0].resid == resid, "source stack should list typed entries");
-	require(std::string_view(bmsx::cartridgeLayerIdName(layer.id)) == "overlay", "source layer id should expose overlay name");
-	require(bmsx::romSourceLayerBytes(layer, sourceEntry->rom) == payload.data() + 2, "source layer bytes should point at entry start");
-	require(bmsx::romSourceLayerByteLength(sourceEntry->rom) == 3u, "source layer byte length should use entry range");
 }
 
 void testFirmwareDescriptorGolden() {

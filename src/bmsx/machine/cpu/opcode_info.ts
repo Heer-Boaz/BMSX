@@ -212,6 +212,22 @@ export const BASE_CYCLES = new Uint8Array([
 	1, 2, 1, 2, 1, 2, 1, 1,
 ]);
 
+export const OPCODE_USES_BX = new Uint8Array(OPCODE_COUNT);
+OPCODE_USES_BX[OpCode.LOADK] = 1;
+OPCODE_USES_BX[OpCode.KSMI] = 1;
+OPCODE_USES_BX[OpCode.GETG] = 1;
+OPCODE_USES_BX[OpCode.SETG] = 1;
+OPCODE_USES_BX[OpCode.GETSYS] = 1;
+OPCODE_USES_BX[OpCode.SETSYS] = 1;
+OPCODE_USES_BX[OpCode.GETGL] = 1;
+OPCODE_USES_BX[OpCode.SETGL] = 1;
+OPCODE_USES_BX[OpCode.CLOSURE] = 1;
+OPCODE_USES_BX[OpCode.JMP] = 1;
+OPCODE_USES_BX[OpCode.JMPIF] = 1;
+OPCODE_USES_BX[OpCode.JMPIFNOT] = 1;
+OPCODE_USES_BX[OpCode.BR_TRUE] = 1;
+OPCODE_USES_BX[OpCode.BR_FALSE] = 1;
+
 export const OPCODE_CATEGORY: ReadonlyArray<string> = (() => {
 	const categories = new Array<string>(OPCODE_COUNT).fill('?');
 

@@ -99,26 +99,20 @@ void GameView::configureRenderTargets(const Vec2* viewport, const Vec2* canvas, 
 	rebuildGraph();
 }
 
-void GameView::init() {
-	// Backend resources are configured externally via setBackend()
-	rebuildGraph();
-}
-
 void GameView::initializeDefaultTextures() {
 	if (!m_backend) {
 		throw BMSX_RUNTIME_ERROR("[GameView] initializeDefaultTextures called before backend was configured.");
 	}
 
-	const Color fallbackColor{1.0f, 1.0f, 1.0f, 1.0f};
-	TextureHandle fallback = m_backend->createSolidTexture2D(1, 1, fallbackColor);
+	TextureHandle fallback = m_backend->createSolidTexture2D(1, 1, 0xffffffffu);
 	textures[VDP_PRIMARY_SLOT_TEXTURE_KEY] = fallback;
 	textures[VDP_SECONDARY_SLOT_TEXTURE_KEY] = fallback;
 	skyboxRenderReady = false;
 	textures[SYSTEM_SLOT_TEXTURE_KEY] = fallback;
 
-	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
-	textures["_default_normal"] = m_backend->createSolidTexture2D(1, 1, {0.5f, 0.5f, 1.0f, 1.0f});
-	textures["_default_mr"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
+	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, 0xffffffffu);
+	textures["_default_normal"] = m_backend->createSolidTexture2D(1, 1, 0xff7f7fffu);
+	textures["_default_mr"] = m_backend->createSolidTexture2D(1, 1, 0xffffffffu);
 }
 
 void GameView::configurePresentation(PresentationMode mode, bool commitFrame) {
@@ -293,14 +287,20 @@ const std::array<f32, 256>& byteToLinearTable() {
 	return table;
 }
 
-inline Color unpackLinear(u32 pixel, const std::array<f32, 256>& table) {
+struct LinearRgb {
+	f32 r = 0.0f;
+	f32 g = 0.0f;
+	f32 b = 0.0f;
+};
+
+inline LinearRgb unpackLinear(u32 pixel, const std::array<f32, 256>& table) {
 	const u8 r = (pixel >> 16) & 0xFF;
 	const u8 g = (pixel >> 8) & 0xFF;
 	const u8 b = pixel & 0xFF;
-	return {table[r], table[g], table[b], 1.0f};
+	return {table[r], table[g], table[b]};
 }
 
-inline Color sampleLinear(const u32* src, i32 width, i32 height, f32 x, f32 y,
+inline LinearRgb sampleLinear(const u32* src, i32 width, i32 height, f32 x, f32 y,
 							const std::array<f32, 256>& table) {
 	const i32 xi = static_cast<i32>(std::floor(x + 0.5f));
 	const i32 yi = static_cast<i32>(std::floor(y + 0.5f));
@@ -309,12 +309,12 @@ inline Color sampleLinear(const u32* src, i32 width, i32 height, f32 x, f32 y,
 	return unpackLinear(src[clampedY * width + clampedX], table);
 }
 
-inline f32 luminance(const Color& c) {
+inline f32 luminance(const LinearRgb& c) {
 	return c.r * kLumaR + c.g * kLumaG + c.b * kLumaB;
 }
 
 struct BlurContrast {
-	Color blurred;
+	LinearRgb blurred;
 	f32 contrast = 0.0f;
 };
 
@@ -333,7 +333,7 @@ inline BlurContrast applyBlurAndContrast(const u32* src, i32 width, i32 height,
 		for (i32 ox = -2; ox <= 2; ++ox, ++idx) {
 			const f32 sampleX = x + static_cast<f32>(ox) * kBlurFootprintPx;
 			const f32 sampleY = y + static_cast<f32>(oy) * kBlurFootprintPx;
-			const Color s = sampleLinear(src, width, height, sampleX, sampleY, table);
+			const LinearRgb s = sampleLinear(src, width, height, sampleX, sampleY, table);
 			const f32 w = kKernel5x5[idx] * kKernelNorm;
 			accumR += s.r * w;
 			accumG += s.g * w;
@@ -353,7 +353,7 @@ inline BlurContrast applyBlurAndContrast(const u32* src, i32 width, i32 height,
 
 	const f32 neighAvg = (neighCount > 0.0f) ? (neighLum / neighCount) : centerLum;
 	BlurContrast out;
-	out.blurred = {accumR, accumG, accumB, 1.0f};
+	out.blurred = {accumR, accumG, accumB};
 	out.contrast = std::abs(centerLum - neighAvg);
 	return out;
 }
@@ -472,8 +472,8 @@ void GameView::applyCRTPostProcessing(const u32* src,
 			const f32 srcX = uvX * srcMaxX;
 			const i32 dstIdx = y * dstPixelsPerRow + x;
 
-			const Color baseTex = sampleLinear(scratch, srcWidth, srcHeight, srcX, srcY, table);
-			Color color = baseTex;
+			const LinearRgb baseTex = sampleLinear(scratch, srcWidth, srcHeight, srcX, srcY, table);
+			LinearRgb color = baseTex;
 
 			if (useDither) {
 				const i32 sx = static_cast<i32>(std::floor(srcX + 0.5f));
@@ -545,11 +545,11 @@ void GameView::applyCRTPostProcessing(const u32* src,
 				const f32 shiftX = dirX * shiftPx;
 				const f32 shiftY = dirY * shiftPx;
 
-				const Color rSample = sampleLinear(scratch, srcWidth, srcHeight,
+				const LinearRgb rSample = sampleLinear(scratch, srcWidth, srcHeight,
 													srcX + shiftX, srcY + shiftY, table);
-				const Color bSample = sampleLinear(scratch, srcWidth, srcHeight,
+				const LinearRgb bSample = sampleLinear(scratch, srcWidth, srcHeight,
 													srcX - shiftX, srcY - shiftY, table);
-				const Color fringed{rSample.r, baseTex.g, bSample.b, 1.0f};
+				const LinearRgb fringed{rSample.r, baseTex.g, bSample.b};
 				color.r += (fringed.r - color.r) * mixK;
 				color.g += (fringed.g - color.g) * mixK;
 				color.b += (fringed.b - color.b) * mixK;

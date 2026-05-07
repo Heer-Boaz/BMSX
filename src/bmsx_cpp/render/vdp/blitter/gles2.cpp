@@ -211,7 +211,7 @@ void initializeVdpGles2Runtime(OpenGLES2Backend* backend) {
 	}
 	glGenBuffers(1, &state.vertexBuffer);
 	glGenFramebuffers(1, &state.frameBufferObject);
-	state.whiteTexture = backend->createSolidTexture2D(1, 1, Color{1.0f, 1.0f, 1.0f, 1.0f});
+	state.whiteTexture = backend->createSolidTexture2D(1, 1, 0xffffffffu);
 	glUseProgram(state.program);
 	glUniform1i(state.uniformTexture0, 0);
 	glUniform1i(state.uniformTexture1, 1);

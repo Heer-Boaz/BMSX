@@ -199,10 +199,7 @@ void Runtime::startCartProgram() {
 }
 
 void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>& staticModulePaths) {
-	m_moduleProtos.clear();
-	for (const auto& [path, protoIndex] : image.sections.rodata.moduleProtos) {
-		m_moduleProtos[path] = protoIndex;
-	}
+	m_moduleProtos = buildModuleProtoMap(image.sections.rodata.moduleProtos);
 	m_moduleCache.clear();
 	m_programStorage = inflateProgram(image.sections);
 	try {

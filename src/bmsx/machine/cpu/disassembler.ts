@@ -1,5 +1,6 @@
 import { OpCode, Table, asStringId, isNativeFunction, isNativeObject, valueIsString, type Program, type ProgramMetadata, type Proto, type SourceRange, type Value } from './cpu';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
+import { OPCODE_USES_BX } from './opcode_info';
 import { formatNumber } from '../common/number_format';
 
 export type DisassemblyOptions = {
@@ -363,19 +364,7 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 		const nextA = (nextWord >>> 12) & 0x3f;
 		const nextB = (nextWord >>> 6) & 0x3f;
 		const nextC = nextWord & 0x3f;
-		const usesBx = nextOp === OpCode.LOADK
-			|| nextOp === OpCode.GETG
-			|| nextOp === OpCode.SETG
-			|| nextOp === OpCode.GETSYS
-			|| nextOp === OpCode.SETSYS
-			|| nextOp === OpCode.GETGL
-			|| nextOp === OpCode.SETGL
-			|| nextOp === OpCode.CLOSURE
-			|| nextOp === OpCode.JMP
-			|| nextOp === OpCode.JMPIF
-			|| nextOp === OpCode.JMPIFNOT
-			|| nextOp === OpCode.BR_TRUE
-			|| nextOp === OpCode.BR_FALSE;
+		const usesBx = OPCODE_USES_BX[nextOp] !== 0;
 		const extA = usesBx ? 0 : (nextExt >>> 6) & 0x3;
 		const extB = usesBx ? 0 : (nextExt >>> 3) & 0x7;
 		const extC = usesBx ? 0 : (nextExt & 0x7);
@@ -403,20 +392,7 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 			rawWords: [word, nextWord],
 		};
 	}
-	const usesBx = op === OpCode.LOADK
-		|| op === OpCode.KSMI
-		|| op === OpCode.GETG
-		|| op === OpCode.SETG
-		|| op === OpCode.GETSYS
-		|| op === OpCode.SETSYS
-		|| op === OpCode.GETGL
-		|| op === OpCode.SETGL
-		|| op === OpCode.CLOSURE
-		|| op === OpCode.JMP
-		|| op === OpCode.JMPIF
-		|| op === OpCode.JMPIFNOT
-		|| op === OpCode.BR_TRUE
-		|| op === OpCode.BR_FALSE;
+	const usesBx = OPCODE_USES_BX[op] !== 0;
 	const extA = usesBx ? 0 : (ext >>> 6) & 0x3;
 	const extB = usesBx ? 0 : (ext >>> 3) & 0x7;
 	const extC = usesBx ? 0 : (ext & 0x7);

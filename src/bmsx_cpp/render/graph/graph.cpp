@@ -475,7 +475,7 @@ bool RenderGraphRuntime::beginClearPass(RenderGraphTexHandle colorHandle,
 	if (clearColor) {
 		const auto& clear = *colorRes.clearOnWrite.color;
 		ColorAttachmentSpec colorSpec;
-		colorSpec.clear = Color{clear[0], clear[1], clear[2], clear[3]};
+		colorSpec.clear = clear;
 		desc.color = colorSpec;
 	}
 	if (clearDepth) {

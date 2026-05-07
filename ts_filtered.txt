@@ -4,7 +4,6 @@ common/arrayify.ts
 common/arrays_equal.ts
 common/byte_hex_string.ts
 common/clamp.ts
-common/color.ts
 common/feature_queue.ts
 common/image_decode.ts
 common/lower_bound.ts

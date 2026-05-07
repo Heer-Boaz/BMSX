@@ -10,12 +10,6 @@ export const PROGRAM_BOOT_HEADER_VERSION = 1;
 
 export type EncodedValue = null | boolean | number | string;
 
-export type EncodedProgram = {
-	code: Uint8Array;
-	constPool: EncodedValue[];
-	protos: Proto[];
-};
-
 export type ProgramTextSection = {
 	code: Uint8Array;
 	protos: Proto[];
@@ -91,14 +85,6 @@ function encodeProgramRodataConstPool(program: Program): EncodedValue[] {
 	return constPool;
 }
 
-export function encodeProgram(program: Program): EncodedProgram {
-	return {
-		code: program.code,
-		constPool: encodeProgramRodataConstPool(program),
-		protos: program.protos,
-	};
-}
-
 export function encodeProgramObjectSections(
 	program: Program,
 	moduleProtos: Array<{ path: string; protoIndex: number }>,
@@ -128,6 +114,13 @@ export function decodeProgramImage(bytes: Uint8Array): ProgramImage {
 		entryProtoIndex,
 		sections,
 		link,
+	};
+}
+
+export function decodeProgramSymbolsImage(bytes: Uint8Array): ProgramSymbolsImage {
+	const root = requireObject(decodeBinary(bytes), 'ProgramSymbolsImage');
+	return {
+		metadata: requireObjectKey(root, 'metadata', 'ProgramSymbolsImage', 'ProgramSymbolsImage.metadata') as ProgramMetadata,
 	};
 }
 
@@ -201,20 +194,11 @@ function decodeProgramLink(value: unknown): ProgramLink {
 	return { constRelocs };
 }
 
-export function encodedProgramFromSections(sections: ProgramObjectSections): EncodedProgram {
-	return {
-		code: sections.text.code,
-		constPool: sections.rodata.constPool,
-		protos: sections.text.protos,
-	};
-}
-
 export function inflateProgram(sections: ProgramObjectSections): Program {
-	const encoded = encodedProgramFromSections(sections);
 	const stringPool = new StringPool();
-	const constPool: Value[] = new Array(encoded.constPool.length);
-	for (let index = 0; index < encoded.constPool.length; index += 1) {
-		const value = encoded.constPool[index];
+	const constPool: Value[] = new Array(sections.rodata.constPool.length);
+	for (let index = 0; index < sections.rodata.constPool.length; index += 1) {
+		const value = sections.rodata.constPool[index];
 		if (typeof value === 'string') {
 			constPool[index] = valueString(stringPool.intern(value));
 			continue;
@@ -222,9 +206,9 @@ export function inflateProgram(sections: ProgramObjectSections): Program {
 		constPool[index] = value;
 	}
 	return {
-		code: encoded.code,
+		code: sections.text.code,
 		constPool,
-		protos: encoded.protos,
+		protos: sections.text.protos,
 		stringPool,
 		constPoolStringPool: stringPool,
 	};

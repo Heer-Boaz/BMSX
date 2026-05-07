@@ -479,7 +479,6 @@ common/shallowcopy.ts
 common/arrays_equal.ts
 common/byte_hex_string.ts
 common/feature_queue.ts
-common/color.ts
 common/vector.ts
 common/clamp.ts
 common/scratchbatch.ts

@@ -76,12 +76,10 @@ enum class OpCode : u8 {
 inline constexpr size_t OPCODE_COUNT = 64u;
 
 extern const std::array<const char*, OPCODE_COUNT> OPCODE_NAMES;
-extern const std::array<u8, OPCODE_COUNT> OPCODE_BASE_CYCLES;
-extern const std::array<const char*, OPCODE_COUNT> OPCODE_CATEGORIES;
+extern const std::array<u8, OPCODE_COUNT> BASE_CYCLES;
+extern const std::array<u8, OPCODE_COUNT> OPCODE_USES_BX;
+extern const std::array<const char*, OPCODE_COUNT> OPCODE_CATEGORY;
 
-const char* opCodeName(OpCode op);
-const char* opCodeCategory(OpCode op);
-u8 opCodeBaseCycles(OpCode op);
-bool opCodeUsesBx(OpCode op);
+const char* getOpcodeName(OpCode op);
 
 } // namespace bmsx

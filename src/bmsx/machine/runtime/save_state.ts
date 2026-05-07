@@ -1,10 +1,23 @@
-import { RuntimeSaveState } from './contracts';
+import type { CpuRuntimeState } from '../cpu/cpu';
+import type { RuntimeRenderState } from '../../render/runtime_state';
+import type { RuntimeSaveMachineState } from './save_machine_state';
 import type { Runtime } from './runtime';
 import { applyRuntimeCpuState, captureRuntimeCpuState } from './cpu_state';
 import { applyRuntimeRenderState, captureRuntimeRenderState } from '../../render/runtime_state';
 import { clearBackQueues } from '../../render/shared/queues';
 import { restoreVdpContextState } from '../../render/vdp/context_state';
 import { applyRuntimeSaveMachineState, captureRuntimeSaveMachineState } from './save_machine_state';
+
+export type RuntimeSaveState = {
+	machineState: RuntimeSaveMachineState;
+	cpuState: CpuRuntimeState;
+	renderState: RuntimeRenderState;
+	systemProgramActive: boolean;
+	luaInitialized: boolean;
+	luaRuntimeFailed: boolean;
+	randomSeed: number;
+	pendingEntryCall: boolean;
+};
 
 export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 	return {

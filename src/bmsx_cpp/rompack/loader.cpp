@@ -13,7 +13,6 @@
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
-#include <string_view>
 #include <utility>
 #if BMSX_ENABLE_ZLIB
 #include <zlib.h>
@@ -31,31 +30,6 @@ static void updateFlippedTexcoords(ImgMeta& meta) {
 	meta.texcoords_fliph = {right, top, right, bottom, left, top, left, top, right, bottom, left, bottom};
 	meta.texcoords_flipv = {left, bottom, left, top, right, bottom, right, bottom, left, top, right, top};
 	meta.texcoords_fliphv = {right, bottom, right, top, left, bottom, left, bottom, right, top, left, top};
-}
-
-static bool startsWith(std::string_view value, std::string_view prefix) {
-	return value.size() >= prefix.size() && value.compare(0, prefix.size(), prefix) == 0;
-}
-
-static std::string stripLuaExtension(std::string_view path) {
-	static constexpr std::string_view LUA_EXTENSION = ".lua";
-	if (path.size() >= LUA_EXTENSION.size() && path.substr(path.size() - LUA_EXTENSION.size()) == LUA_EXTENSION) {
-		path.remove_suffix(LUA_EXTENSION.size());
-	}
-	return std::string(path);
-}
-
-static std::string toLuaModulePath(std::string_view sourcePath) {
-	static constexpr std::string_view BIOS_SYSTEM_RES_PREFIX = "src/bmsx/res/";
-	static constexpr std::string_view BIOS_RES_PREFIX = "res/";
-	const std::string path = stripLuaExtension(sourcePath);
-	std::string_view modulePath = path;
-	if (startsWith(path, BIOS_SYSTEM_RES_PREFIX)) {
-		modulePath.remove_prefix(BIOS_SYSTEM_RES_PREFIX.size());
-	} else if (startsWith(path, BIOS_RES_PREFIX)) {
-		modulePath.remove_prefix(BIOS_RES_PREFIX.size());
-	}
-	return std::string(modulePath);
 }
 
 static void updateFlippedBoundingBox(ImgMeta& meta) {
@@ -1506,9 +1480,9 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 					throw BMSX_RUNTIME_ERROR("Code ROM entry missing payload: " + assetId);
 				}
 				if (assetId == PROGRAM_IMAGE_ID) {
-					romPackage.programImage = ProgramLoader::load(romData + bufStart, bufEnd - bufStart);
+					romPackage.programImage = decodeProgramImage(romData + bufStart, bufEnd - bufStart);
 				} else if (assetId == PROGRAM_SYMBOLS_IMAGE_ID) {
-					romPackage.programSymbols = ProgramLoader::loadSymbols(romData + bufStart, bufEnd - bufStart);
+					romPackage.programSymbols = decodeProgramSymbolsImage(romData + bufStart, bufEnd - bufStart);
 				}
 				break;
 			}

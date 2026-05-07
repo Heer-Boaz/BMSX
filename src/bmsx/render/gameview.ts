@@ -81,7 +81,7 @@ export class GameView implements RenderContext {
 	public skyboxFaceSizes: Int32Array | null = null;
 	public readonly vdpCamera = createVdpCameraSnapshot();
 	public readonly vdpBillboardPositionSize = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
-	public readonly vdpBillboardColor = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
+	public readonly vdpBillboardColor = new Uint32Array(VDP_BBU_BILLBOARD_LIMIT);
 	public readonly vdpBillboardUvRect = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
 	public readonly vdpBillboardSlot = new Int32Array(VDP_BBU_BILLBOARD_LIMIT);
 	public vdpBillboardCount = 0;

@@ -1,5 +1,6 @@
 import type { vec3, vec3arr, vec4, vec4arr } from '../../rompack/format';
 import { clamp } from '../../common/clamp';
+import { new_vec3, norm_vec3 } from '../../common/vector';
 
 export type Mat4Float32 = Float32Array;
 
@@ -505,82 +506,6 @@ export const V4 = {
 	fromF32ArrToArr(arr: Float32Array): vec4arr { return (arr as unknown as vec4arr); },
 };
 
-// ====== Vec helpers ======
-// Quaternion helpers consolidated into lower section (Q)
-export const V3 = {
-	of(x = 0, y = 0, z = 0): vec3 { return { x, y, z }; },
-	ofArr(arr: vec3arr): vec3 { return { x: arr[0], y: arr[1], z: arr[2] }; },
-	// Convert union to vec3 object (no allocation if already object)
-	toVec3(v: vec3 | vec3arr): vec3 { return Array.isArray(v) ? { x: v[0], y: v[1], z: v[2] } : v; },
-	// Convert vec3 or vec3arr to array form
-	toArr(v: vec3 | vec3arr): vec3arr { return Array.isArray(v) ? v : [v.x, v.y, v.z]; },
-	fromF32ArrToArr(arr: Float32Array): vec3arr { return arr as unknown as vec3arr; },
-	copy(p: vec3): vec3 { return { x: p.x, y: p.y, z: p.z }; },
-	set(p: vec3, x: number, y: number, z: number): void { p.x = x; p.y = y; p.z = z; },
-	assign(out: vec3, data: vec3): void { out.x = data.x; out.y = data.y; out.z = data.z; },
-	add(a: vec3, b: vec3): vec3 { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; },
-	addSelf(out: vec3, b: vec3): vec3 { out.x += b.x; out.y += b.y; out.z += b.z; return out; },
-	sub(a: vec3, b: vec3): vec3 { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; },
-	subSelf(out: vec3, b: vec3): vec3 { out.x -= b.x; out.y -= b.y; out.z -= b.z; return out; },
-	scale(a: vec3, s: number): vec3 { return { x: a.x * s, y: a.y * s, z: a.z * s }; },
-	scaleSelf(out: vec3, s: number): vec3 { out.x *= s; out.y *= s; out.z *= s; return out; },
-	dot(a: vec3, b: vec3): number { return a.x * b.x + a.y * b.y + a.z * b.z; },
-	cross(a: vec3, b: vec3): vec3 {
-		return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
-	},
-	len(a: vec3): number { const x = a.x, y = a.y, z = a.z; return Math.sqrt(x * x + y * y + z * z); },
-	norm(a: vec3): vec3 {
-		const L = V3.len(a) || 1; return { x: a.x / L, y: a.y / L, z: a.z / L };
-	},
-	trunc(a: vec3): vec3 { return { x: Math.trunc(a.x), y: Math.trunc(a.y), z: Math.trunc(a.z) }; },
-	toArrInto(out: Float32Array, v: vec3 | vec3arr): Float32Array {
-		if (Array.isArray(v)) { out[0] = v[0]; out[1] = v[1]; out[2] = v[2]; }
-		else { out[0] = v.x; out[1] = v.y; out[2] = v.z; }
-		return out;
-	},
-	equalsArr(a: vec3arr, b: vec3arr): boolean {
-		if (!a || !b) {
-			throw new Error('[Math3D] equalsArr received invalid vector data.');
-		}
-		return a.length === b.length && a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
-	},
-	rotateAroundAxis(v: vec3, axis: vec3, angle: number): vec3 {
-		// as = genormaliseerde as
-		const L = Math.hypot(axis.x, axis.y, axis.z) || 1;
-		const ax = axis.x / L, ay = axis.y / L, az = axis.z / L;
-		const c = Math.cos(angle), s = Math.sin(angle);
-		// v' = v*c + (a×v)*s + a*(a·v)*(1-c)
-		const crossX = ay * v.z - az * v.y;
-		const crossY = az * v.x - ax * v.z;
-		const crossZ = ax * v.y - ay * v.x;
-		const dot = ax * v.x + ay * v.y + az * v.z;
-		return {
-			x: v.x * c + crossX * s + ax * dot * (1 - c),
-			y: v.y * c + crossY * s + ay * dot * (1 - c),
-			z: v.z * c + crossZ * s + az * dot * (1 - c),
-		};
-	}
-
-};
-
-
-// ====== In-place Vec3 helpers (no allocations) ======
-export const V3i = {
-	set(out: vec3, x: number, y: number, z: number): vec3 { out.x = x; out.y = y; out.z = z; return out; },
-	assign(out: vec3, a: vec3): vec3 { out.x = a.x; out.y = a.y; out.z = a.z; return out; },
-	add(out: vec3, a: vec3, b: vec3): vec3 { out.x = a.x + b.x; out.y = a.y + b.y; out.z = a.z + b.z; return out; },
-	addSelf(out: vec3, b: vec3): vec3 { out.x += b.x; out.y += b.y; out.z += b.z; return out; },
-	sub(out: vec3, a: vec3, b: vec3): vec3 { out.x = a.x - b.x; out.y = a.y - b.y; out.z = a.z - b.z; return out; },
-	subSelf(out: vec3, b: vec3): vec3 { out.x -= b.x; out.y -= b.y; out.z -= b.z; return out; },
-	scale(out: vec3, a: vec3, s: number): vec3 { out.x = a.x * s; out.y = a.y * s; out.z = a.z * s; return out; },
-	scaleSelf(out: vec3, s: number): vec3 { out.x *= s; out.y *= s; out.z *= s; return out; },
-	cross(out: vec3, a: vec3, b: vec3): vec3 { out.x = a.y * b.z - a.z * b.y; out.y = a.z * b.x - a.x * b.z; out.z = a.x * b.y - a.y * b.x; return out; },
-	dot(a: vec3, b: vec3): number { return a.x * b.x + a.y * b.y + a.z * b.z; },
-	len(a: vec3): number { const x = a.x, y = a.y, z = a.z; return Math.sqrt(x * x + y * y + z * z); },
-	normalize(out: vec3, a: vec3): vec3 { const l = V3i.len(a) || 1; out.x = a.x / l; out.y = a.y / l; out.z = a.z / l; return out; },
-};
-
-
 // ====== Frustum helpers ======
 export type Plane = vec4arr;
 export function extractFrustumPlanes(vp: Mat4Float32): Plane[] {
@@ -632,7 +557,7 @@ export function extractFrustumPlanesInto(out: Float32Array, vp: Mat4Float32): Fl
 }
 
 // Packed frustum test against Float32Array planes (24 floats)
-export function sphereInFrustumPacked(planes: Float32Array, center: [number, number, number], radius: number): boolean {
+export function sphereInFrustumPacked(planes: Float32Array, center: ArrayLike<number>, radius: number): boolean {
 	const x = center[0], y = center[1], z = center[2];
 	const bias = radius * 0.01;
 	for (let i = 0; i < 24; i += 4) {
@@ -646,7 +571,9 @@ export function sphereInFrustumPacked(planes: Float32Array, center: [number, num
 export type quat = vec4;
 
 export const Q = {
-	ident(): quat { return V4.of(0, 0, 0, 1); },
+	ident(): quat {
+		return { x: 0, y: 0, z: 0, w: 1 };
+	},
 	fromEuler(rx: number, ry: number, rz: number): quat { // XYZ order (same as rotateX, then Y, then Z in paint legacy path)
 		const cx = Math.cos(rx * 0.5), sx = Math.sin(rx * 0.5);
 		const cy = Math.cos(ry * 0.5), sy = Math.sin(ry * 0.5);
@@ -677,7 +604,7 @@ export const Q = {
 	},
 
 	fromAxisAngle(axis: vec3, ang: number): quat {
-		const a = V3.norm(axis); const h = ang * 0.5, s = Math.sin(h);
+		const a = norm_vec3(axis); const h = ang * 0.5, s = Math.sin(h);
 		return { x: a.x * s, y: a.y * s, z: a.z * s, w: Math.cos(h) };
 	},
 
@@ -716,10 +643,10 @@ export const Q = {
 
 	// basisvectoren uit q (rechts-handig, -Z is forward)
 	basis(q: quat): { r: vec3; u: vec3; f: vec3 } {
-		const r = Q.rotateVec(q, V3.of(1, 0, 0));
-		const u = Q.rotateVec(q, V3.of(0, 1, 0));
-		const f = Q.rotateVec(q, V3.of(0, 0, -1)); // -Z kijkrichting
-		return { r: V3.norm(r), u: V3.norm(u), f: V3.norm(f) };
+		const r = Q.rotateVec(q, new_vec3(1, 0, 0));
+		const u = Q.rotateVec(q, new_vec3(0, 1, 0));
+		const f = Q.rotateVec(q, new_vec3(0, 0, -1)); // -Z kijkrichting
+		return { r: norm_vec3(r), u: norm_vec3(u), f: norm_vec3(f) };
 	},
 
 	fromBasis(fwd: vec3, up: vec3): quat { // replicate previous QuatUtil.fromBasis

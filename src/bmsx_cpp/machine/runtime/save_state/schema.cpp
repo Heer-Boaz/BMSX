@@ -1,7 +1,6 @@
 #include "machine/runtime/save_state/schema.h"
 
 namespace bmsx {
-namespace {
 
 // Property indices are scoped to RUNTIME_SAVE_STATE_WIRE_VERSION.
 const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
@@ -137,11 +136,5 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"vdpFaultDetail",
 	"tracked",
 };
-
-} // namespace
-
-const std::vector<std::string>& runtimeSaveStatePropNames() {
-	return RUNTIME_SAVE_STATE_PROP_NAMES;
-}
 
 } // namespace bmsx

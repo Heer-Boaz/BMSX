@@ -155,10 +155,10 @@ function writeQuad(state: HostOverlayRuntime, index: number, originX: number, or
 	data[base + 7] = v0;
 	data[base + 8] = u1;
 	data[base + 9] = v1;
-	data[base + 10] = colorValue.r;
-	data[base + 11] = colorValue.g;
-	data[base + 12] = colorValue.b;
-	data[base + 13] = colorValue.a;
+	data[base + 10] = ((colorValue >>> 16) & 0xff) / 255;
+	data[base + 11] = ((colorValue >>> 8) & 0xff) / 255;
+	data[base + 12] = (colorValue & 0xff) / 255;
+	data[base + 13] = ((colorValue >>> 24) & 0xff) / 255;
 	state.textpageData[index] = HOST_OVERLAY_TEXTPAGE_ID;
 }
 

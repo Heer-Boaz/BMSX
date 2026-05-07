@@ -49,7 +49,7 @@ void queueCommand(Host2DKind kind, Host2DRef ref) {
 	s_commandCount += 1;
 }
 
-void queueRect(const RectBounds& rect, RectRenderSubmission::Kind kind, const Color& color) {
+void queueRect(const RectBounds& rect, RectRenderSubmission::Kind kind, u32 color) {
 	RectRenderSubmission& submission = nextRect();
 	submission.kind = kind;
 	submission.layer = RenderLayer::World;
@@ -67,12 +67,17 @@ void renderTestPattern(GameView& view, f64 totalTime) {
 	const f32 t = static_cast<f32>(totalTime);
 	const i32 w = static_cast<i32>(view.viewportSize.x);
 	const i32 h = static_cast<i32>(view.viewportSize.y);
+	const auto fillKind = RectRenderSubmission::Kind::Fill;
 	RectBounds rect;
 
 	for (i32 y = 0; y < h; y += 8) {
 		const f32 intensity = static_cast<f32>(y) / static_cast<f32>(h);
 		setRect(rect, 0.0f, static_cast<f32>(y), static_cast<f32>(w), static_cast<f32>(y + 8));
-		queueRect(rect, RectRenderSubmission::Kind::Fill, {0.1f, 0.1f * intensity, 0.2f + 0.1f * intensity, 1.0f});
+		const u32 gradientColor = 0xff000000u
+			| (static_cast<u32>(0.1f * 255.0f) << 16u)
+			| (static_cast<u32>(0.1f * intensity * 255.0f) << 8u)
+			| static_cast<u32>((0.2f + 0.1f * intensity) * 255.0f);
+		queueRect(rect, fillKind, gradientColor);
 	}
 
 	const f32 boxX = (w / 2.0f) + std::sin(t * 2.0f) * (w / 3.0f);
@@ -80,27 +85,25 @@ void renderTestPattern(GameView& view, f64 totalTime) {
 	const f32 boxSize = 32.0f + std::sin(t * 3.0f) * 8.0f;
 
 	setRect(rect, boxX - boxSize / 2 + 4, boxY - boxSize / 2 + 4, boxX + boxSize / 2 + 4, boxY + boxSize / 2 + 4);
-	queueRect(rect, RectRenderSubmission::Kind::Fill, {0.0f, 0.0f, 0.0f, 0.5f});
+	queueRect(rect, fillKind, 0x7f000000u);
 
-	const Color boxColor{
-		0.5f + 0.5f * std::sin(t * 2.0f),
-		0.5f + 0.5f * std::sin(t * 2.0f + 2.0f),
-		0.5f + 0.5f * std::sin(t * 2.0f + 4.0f),
-		1.0f
-	};
+	const u32 boxColor = 0xff000000u
+		| (static_cast<u32>((0.5f + 0.5f * std::sin(t * 2.0f)) * 255.0f) << 16u)
+		| (static_cast<u32>((0.5f + 0.5f * std::sin(t * 2.0f + 2.0f)) * 255.0f) << 8u)
+		| static_cast<u32>((0.5f + 0.5f * std::sin(t * 2.0f + 4.0f)) * 255.0f);
 	setRect(rect, boxX - boxSize / 2, boxY - boxSize / 2, boxX + boxSize / 2, boxY + boxSize / 2);
-	queueRect(rect, RectRenderSubmission::Kind::Fill, boxColor);
-	queueRect(rect, RectRenderSubmission::Kind::Rect, Color::white());
+	queueRect(rect, fillKind, boxColor);
+	queueRect(rect, RectRenderSubmission::Kind::Rect, 0xffffffffu);
 
 	const f32 cornerSize = 16.0f;
 	setRect(rect, 0.0f, 0.0f, cornerSize, cornerSize);
-	queueRect(rect, RectRenderSubmission::Kind::Fill, Color::red());
+	queueRect(rect, fillKind, 0xffff0000u);
 	setRect(rect, static_cast<f32>(w) - cornerSize, 0.0f, static_cast<f32>(w), cornerSize);
-	queueRect(rect, RectRenderSubmission::Kind::Fill, Color::green());
+	queueRect(rect, fillKind, 0xff00ff00u);
 	setRect(rect, 0.0f, static_cast<f32>(h) - cornerSize, cornerSize, static_cast<f32>(h));
-	queueRect(rect, RectRenderSubmission::Kind::Fill, Color::blue());
+	queueRect(rect, fillKind, 0xff0000ffu);
 	setRect(rect, static_cast<f32>(w) - cornerSize, static_cast<f32>(h) - cornerSize, static_cast<f32>(w), static_cast<f32>(h));
-	queueRect(rect, RectRenderSubmission::Kind::Fill, {1.0f, 1.0f, 0.0f, 1.0f});
+	queueRect(rect, fillKind, 0xffffff00u);
 
 	for (i32 index = 0; index < 8; index += 1) {
 		const f32 angle = t + static_cast<f32>(index) * 0.8f;
@@ -114,7 +117,7 @@ void renderTestPattern(GameView& view, f64 totalTime) {
 		line.points[2] = cx + std::cos(angle) * len;
 		line.points[3] = cy + std::sin(angle) * len;
 		line.z = 0.0f;
-		line.color = {1.0f, 1.0f, 1.0f, 0.3f + 0.2f * std::sin(t + static_cast<f32>(index))};
+		line.color = (static_cast<u32>((0.3f + 0.2f * std::sin(t + static_cast<f32>(index))) * 255.0f) << 24u) | 0x00ffffffu;
 		line.thickness = 1.0f;
 		line.layer = RenderLayer::World;
 		queueCommand(Host2DKind::Poly, &line);
@@ -125,7 +128,7 @@ void renderTestPattern(GameView& view, f64 totalTime) {
 	for (i32 index = 0; index < 4; index += 1) {
 		const f32 left = textX + static_cast<f32>(index) * 14.0f;
 		setRect(rect, left, textY, left + 10.0f, textY + 12.0f);
-		queueRect(rect, RectRenderSubmission::Kind::Fill, Color::white());
+		queueRect(rect, fillKind, 0xffffffffu);
 	}
 
 	HostOverlayFrame frame;

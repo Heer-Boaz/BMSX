@@ -607,10 +607,7 @@ void testBbuBillboardPacketLatchesInstanceRam() {
 	require(std::abs(entry.positionY - 20.0f) < 0.0001f, "BBU should decode Y");
 	require(std::abs(entry.positionZ - 30.0f) < 0.0001f, "BBU should decode Z");
 	require(std::abs(entry.size - 2.0f) < 0.0001f, "BBU should decode size");
-	require(std::abs(entry.color.r - (0x11 / 255.0f)) < 0.0001f, "BBU should decode color R");
-	require(std::abs(entry.color.g - (0x22 / 255.0f)) < 0.0001f, "BBU should decode color G");
-	require(std::abs(entry.color.b - (0x33 / 255.0f)) < 0.0001f, "BBU should decode color B");
-	require(std::abs(entry.color.a - 1.0f) < 0.0001f, "BBU should decode color A");
+	require(entry.color == 0xff112233u, "BBU should preserve packed ARGB color");
 	h.vdp.completeHostExecution(output);
 }
 

@@ -1,6 +1,6 @@
-import { color } from '../../shared/submissions';
+import type { color } from '../../shared/submissions';
 
-export const DEFAULT_VERTEX_COLOR: color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+export const DEFAULT_VERTEX_COLOR: color = 0xffffffff;
 
 // Canonical GPU-side sprite batch size for the shared 2D path.
 export const MAX_SPRITES = 5000;

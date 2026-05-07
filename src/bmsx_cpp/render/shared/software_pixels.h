@@ -18,15 +18,6 @@ struct SoftwareColorBytes {
 	u8 a = 0u;
 };
 
-inline SoftwareColorBytes softwareColorBytes(const Color& color) {
-	return {
-		Color::channelToByte(color.r),
-		Color::channelToByte(color.g),
-		Color::channelToByte(color.b),
-		Color::channelToByte(color.a),
-	};
-}
-
 inline u8 modulateSoftwareChannel(u8 source, u8 tint) {
 	return static_cast<u8>((static_cast<u32>(source) * tint + 127u) / 255u);
 }

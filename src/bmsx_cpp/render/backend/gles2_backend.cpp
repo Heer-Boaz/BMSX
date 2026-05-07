@@ -237,7 +237,7 @@ void OpenGLES2Backend::readTextureRegion(TextureHandle handle, u8* out, i32 widt
 }
 
 TextureHandle OpenGLES2Backend::createSolidTexture2D(i32 width, i32 height,
-														const Color& color) {
+														u32 color) {
 	auto pixels = createSolidRgba8Pixels(width, height, color);
 	TextureParams params;
 	params.srgb = false;
@@ -253,10 +253,6 @@ void OpenGLES2Backend::destroyTexture(TextureHandle handle) {
 	glDeleteTextures(1, &tex->id);
 	invalidateTextureBindingCache();
 	delete tex;
-}
-
-void OpenGLES2Backend::copyTexture(TextureHandle source, TextureHandle destination, i32 width, i32 height) {
-	copyTextureRegion(source, destination, 0, 0, 0, 0, width, height);
 }
 
 void OpenGLES2Backend::copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) {
@@ -280,10 +276,10 @@ void OpenGLES2Backend::copyTextureRegion(TextureHandle source, TextureHandle des
 	invalidateTextureBindingCache();
 }
 
-void OpenGLES2Backend::clear(const Color* color, const f32* depth) {
+void OpenGLES2Backend::clear(const std::array<f32, 4>* color, const f32* depth) {
 	GLbitfield mask = 0;
 	if (color) {
-	glClearColor(color->r, color->g, color->b, color->a);
+	glClearColor((*color)[0], (*color)[1], (*color)[2], (*color)[3]);
 	mask |= GL_COLOR_BUFFER_BIT;
 	}
 	if (depth) {
@@ -304,11 +300,9 @@ PassEncoder OpenGLES2Backend::beginRenderPass(const RenderPassDesc& desc) {
 	colorSpec = &desc.colors.front();
 	}
 
-	const Color* clearColor = nullptr;
-	Color colorValue;
+	const std::array<f32, 4>* clearColor = nullptr;
 	if (colorSpec && colorSpec->clear) {
-	colorValue = *colorSpec->clear;
-	clearColor = &colorValue;
+	clearColor = &*colorSpec->clear;
 	}
 
 	const f32* clearDepth = nullptr;

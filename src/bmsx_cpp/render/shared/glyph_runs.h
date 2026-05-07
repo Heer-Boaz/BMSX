@@ -7,12 +7,10 @@
 namespace bmsx {
 
 template<typename Fn>
-void forEachGlyphImage(const GlyphRenderSubmission& submission, Fn&& fn) {
+void forEachGlyphRunGlyph(const GlyphRenderSubmission& submission, Fn&& fn) {
 	BFont& font = *submission.font;
 	const i32 start = submission.glyph_start;
 	const i32 end = submission.glyph_end;
-	const f32 z = submission.z;
-	const Color& color = submission.color;
 	f32 y = submission.y;
 	for (const std::string& line : submission.glyphs) {
 		f32 x = submission.x;
@@ -39,7 +37,7 @@ void forEachGlyphImage(const GlyphRenderSubmission& submission, Fn&& fn) {
 				continue;
 			}
 			const FontGlyph& glyph = font.getGlyph(codepoint);
-			fn(glyph, x, y, z, color);
+			fn(glyph, x, y, submission.z, submission.color);
 			x += static_cast<f32>(glyph.advance);
 			glyphIndex += 1;
 		}

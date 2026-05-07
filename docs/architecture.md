@@ -61,11 +61,26 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   empty `.data`/`.bss` sections until mutable image data is introduced, and
   explicit relocation metadata. The symbols asset `__program_symbols__` remains
   debug/code metadata and never counts as RAM.
-- The TS/C++ ownership map for this slice is intentionally mirrored:
+- The TS/C++ ownership map for this slice is intentionally mirrored and audited
+  by `npm run audit:core-parity`: core TS files must have the same relative
+  basename in C++, and selected mirrored files must expose the same public
+  constants/functions/classes/methods unless `scripts/core_parity_manifest.json`
+  carries a narrow exclusion with a reason. This is a real surface audit, not a
+  basename-only placeholder check.
+  `src/bmsx/machine/program/layout.ts` and
+  `src/bmsx_cpp/machine/program/layout.h` own program placement constants and
+  `resolveProgramLayout()`.
   `src/bmsx/machine/program/loader.ts` and
   `src/bmsx_cpp/machine/program/loader.h/.cpp` own the `PROGRAM_IMAGE_ID`,
   `PROGRAM_SYMBOLS_IMAGE_ID`, `PROGRAM_BOOT_HEADER_VERSION`, `ProgramImage`,
-  `EncodedValue`, section structs, and `inflateProgram()` contracts; `src/bmsx/machine/program/linker.ts`
+  `ProgramSymbolsImage`, `ProgramBootHeader`, `ProgramConstRelocKind`,
+  `ProgramConstReloc`, `ProgramLink`, `EncodedValue`, section structs,
+  `decodeProgramImage()`, `decodeProgramSymbolsImage()`,
+  `buildProgramBootHeader()`, `inflateProgram()`, `buildModuleProtoMap()`,
+  `stripLuaExtension()`, and `toLuaModulePath()` contracts. The remaining TS
+  `encodeProgramObjectSections()` surface is a compiler/rompacker producer edge;
+  C++ consumes linked images and does not expose a compiler producer API.
+  `src/bmsx/machine/program/linker.ts`
   and `src/bmsx_cpp/machine/program/linker.h/.cpp` merge the same sections and
   return `LinkedProgramImage.programImage`; `src/bmsx/ide/runtime/lua_pipeline.ts`
   and `src/bmsx_cpp/machine/runtime/runtime.cpp` inflate sections at boot and
@@ -84,6 +99,11 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   `src/bmsx_cpp/rompack/source.h/.cpp`: both build id/path maps to entry
   indexes, resolve overlays through the same delete-blocking rule, and return
   payload-tagged records plus direct byte views from the owning cartridge layer.
+  The public-symbol audit records the remaining source-surface exclusions:
+  TS `RawRomSource` is a structural type contract and C++ deliberately keeps the
+  concrete `RomSourceStack` public API instead of adding a virtual facade;
+  C++ source-stack record carriers embed C++ `RomAssetInfo`, while TS owns the
+  same wire-format record types in `rompack/format.ts`.
   Generated host atlas artifacts follow the same filename contract in TS/C++:
   `host_system_atlas.generated.ts`, `host_system_atlas.generated.h`, and
   `host_system_atlas.generated.cpp`.

@@ -1134,7 +1134,7 @@ void CPU::decodeProgram() {
 		const uint8_t aLow = static_cast<uint8_t>((instr >> 12) & 0x3f);
 		const uint8_t bLow = static_cast<uint8_t>((instr >> 6) & 0x3f);
 		const uint8_t cLow = static_cast<uint8_t>(instr & 0x3f);
-		const bool usesBx = opCodeUsesBx(static_cast<OpCode>(op));
+		const bool usesBx = OPCODE_USES_BX[op] != 0u;
 		const uint8_t extA = usesBx ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
 		const uint8_t extB = usesBx ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
 		const uint8_t extC = usesBx ? 0 : static_cast<uint8_t>(ext & 0x7);
@@ -1869,7 +1869,7 @@ dispatch_loop_check:
 	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
-	instructionBudgetRemaining -= static_cast<int>(opCodeBaseCycles(static_cast<OpCode>(decoded->op)));
+	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded->op]);
 	a = decoded->a;
 	b = decoded->b;
 	c = decoded->c;
@@ -2009,7 +2009,7 @@ dispatch_loop_check:
 	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
-	instructionBudgetRemaining -= static_cast<int>(opCodeBaseCycles(static_cast<OpCode>(decoded->op)));
+	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded->op]);
 	a = decoded->a;
 	b = decoded->b;
 	c = decoded->c;
@@ -2141,7 +2141,7 @@ void CPU::step() {
 	frame.pc = pc + (static_cast<int>(decoded.width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<int>(decoded.width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded.word;
-	instructionBudgetRemaining -= static_cast<int>(opCodeBaseCycles(static_cast<OpCode>(decoded.op)));
+	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded.op]);
 	executeInstruction(frame, decoded);
 }
 

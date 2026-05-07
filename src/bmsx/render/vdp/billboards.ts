@@ -15,10 +15,7 @@ export function commitVdpBillboardViewState(view: GameView, output: VdpHostOutpu
 		positionSize[base + 1] = billboards.positionY[index];
 		positionSize[base + 2] = billboards.positionZ[index];
 		positionSize[base + 3] = billboards.size[index];
-		colors[base + 0] = ((color >>> 16) & 0xff) / 255;
-		colors[base + 1] = ((color >>> 8) & 0xff) / 255;
-		colors[base + 2] = (color & 0xff) / 255;
-		colors[base + 3] = ((color >>> 24) & 0xff) / 255;
+		colors[index] = color;
 		uvRect[base + 0] = billboards.sourceSrcX[index] / billboards.surfaceWidth[index];
 		uvRect[base + 1] = billboards.sourceSrcY[index] / billboards.surfaceHeight[index];
 		uvRect[base + 2] = (billboards.sourceSrcX[index] + billboards.sourceWidth[index]) / billboards.surfaceWidth[index];

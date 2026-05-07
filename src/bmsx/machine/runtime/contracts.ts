@@ -1,12 +1,31 @@
 import type { LuaFunctionValue } from '../../lua/value';
 import type { CartManifest, MachineManifest, asset_id, Viewport } from '../../rompack/format';
-import type { MachineSaveState, MachineState } from '../machine';
 import type { Memory } from '../memory/memory';
 import type { LuaEntrySnapshot } from './host/native_bridge';
-import type { FrameSchedulerStateSnapshot } from '../scheduler/frame';
-import type { CpuRuntimeState } from '../cpu/cpu';
+import type { RuntimeMachineState } from './machine_state';
+import type { RuntimeSaveMachineState } from './save_machine_state';
+import type { RuntimeSaveState } from './save_state';
+import type {
+	RuntimeRenderCameraState,
+	RuntimeAmbientLightState,
+	RuntimeDirectionalLightState,
+	RuntimePointLightState,
+	RuntimeRenderState,
+} from '../../render/runtime_state';
 
 export type { LuaEntrySnapshot };
+export type {
+	RuntimeRenderCameraState,
+	RuntimeAmbientLightState,
+	RuntimeDirectionalLightState,
+	RuntimePointLightState,
+	RuntimeRenderState,
+};
+export type {
+	RuntimeMachineState,
+	RuntimeSaveMachineState,
+	RuntimeSaveState,
+};
 
 export type ResourceDescriptor = {
 	path: string;
@@ -122,56 +141,6 @@ export type RuntimeOptions = {
 	geoWorkUnitsPerSec?: number;
 };
 
-export type RuntimeRenderCameraState = {
-	view: number[];
-	proj: number[];
-	eye: [number, number, number];
-};
-
-export type RuntimeAmbientLightState = {
-	id: string;
-	color: [number, number, number];
-	intensity: number;
-};
-
-export type RuntimeDirectionalLightState = {
-	id: string;
-	color: [number, number, number];
-	intensity: number;
-	orientation: [number, number, number];
-};
-
-export type RuntimePointLightState = {
-	id: string;
-	color: [number, number, number];
-	intensity: number;
-	pos: [number, number, number];
-	range: number;
-};
-
-export type RuntimeRenderState = {
-	camera: RuntimeRenderCameraState | null;
-	ambientLights: RuntimeAmbientLightState[];
-	directionalLights: RuntimeDirectionalLightState[];
-	pointLights: RuntimePointLightState[];
-};
-
-export type RuntimeMachineState = {
-	machine: MachineState;
-	frameScheduler: FrameSchedulerStateSnapshot;
-	vblank: {
-		cyclesIntoFrame: number;
-	};
-};
-
-export type RuntimeSaveMachineState = {
-	machine: MachineSaveState;
-	frameScheduler: FrameSchedulerStateSnapshot;
-	vblank: {
-		cyclesIntoFrame: number;
-	};
-};
-
 export type RuntimeResumeSnapshot = {
 	luaRuntimeFailed: boolean;
 	luaPath: string;
@@ -181,17 +150,6 @@ export type RuntimeResumeSnapshot = {
 	luaProgramCounter?: number;
 	renderState: RuntimeRenderState;
 	machineState: RuntimeMachineState;
-};
-
-export type RuntimeSaveState = {
-	machineState: RuntimeSaveMachineState;
-	cpuState: CpuRuntimeState;
-	renderState: RuntimeRenderState;
-	systemProgramActive: boolean;
-	luaInitialized: boolean;
-	luaRuntimeFailed: boolean;
-	randomSeed: number;
-	pendingEntryCall: boolean;
 };
 
 export type LuaMarshalContext = {

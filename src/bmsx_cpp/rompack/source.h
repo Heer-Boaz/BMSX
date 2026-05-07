@@ -55,10 +55,4 @@ private:
 	RomSourceEntry attachPayloadId(const RomSourceEntry& asset, CartridgeLayerId payloadId) const;
 };
 
-const char* cartridgeLayerIdName(CartridgeLayerId id);
-std::string cartridgeLayerIdString(CartridgeLayerId id);
-CartridgeLayerId cartridgeLayerIdFromString(std::string_view id);
-const u8* romSourceLayerBytes(const RomSourceLayer& layer, const RomAssetInfo& entry);
-size_t romSourceLayerByteLength(const RomAssetInfo& entry);
-
 } // namespace bmsx

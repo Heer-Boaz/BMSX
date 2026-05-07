@@ -78,7 +78,7 @@ struct DitherParams {
 
 struct ColorAttachmentSpec {
 	TextureHandle tex = nullptr;
-	std::optional<Color> clear;
+	std::optional<std::array<f32, 4>> clear;
 	bool discardAfter = false;
 };
 
@@ -127,15 +127,14 @@ public:
 	virtual TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) = 0;
 	virtual void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) = 0;
 	virtual void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) = 0;
-	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, const Color& color) = 0;
+	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color) = 0;
 	virtual void destroyTexture(TextureHandle handle) = 0;
-	virtual void copyTexture(TextureHandle source, TextureHandle destination, i32 width, i32 height) = 0;
 	virtual void copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Render pass management
 	// ─────────────────────────────────────────────────────────────────────────
-	virtual void clear(const Color* color, const f32* depth) = 0;
+	virtual void clear(const std::array<f32, 4>* color, const f32* depth) = 0;
 	virtual PassEncoder beginRenderPass(const RenderPassDesc& desc) = 0;
 	virtual void endRenderPass(PassEncoder& pass) = 0;
 
@@ -178,13 +177,12 @@ class SoftwareBackend : public GPUBackend {
 	TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) override;
 	void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
 	void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
-	TextureHandle createSolidTexture2D(i32 width, i32 height, const Color& color) override;
+	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color) override;
 	void destroyTexture(TextureHandle handle) override;
-	void copyTexture(TextureHandle source, TextureHandle destination, i32 width, i32 height) override;
 	void copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) override;
 
 	// Render pass management
-	void clear(const Color* color, const f32* depth) override;
+	void clear(const std::array<f32, 4>* color, const f32* depth) override;
 	PassEncoder beginRenderPass(const RenderPassDesc& desc) override;
 	void endRenderPass(PassEncoder& pass) override;
 
@@ -203,13 +201,13 @@ class SoftwareBackend : public GPUBackend {
 	// ─────────────────────────────────────────────────────────────────────────
 	// Software-specific drawing primitives
 	// ─────────────────────────────────────────────────────────────────────────
-	void setPixel(i32 x, i32 y, const Color& color);
-	void drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color);
-	void fillRect(i32 x, i32 y, i32 w, i32 h, const Color& color);
-	void drawRect(i32 x, i32 y, i32 w, i32 h, const Color& color);
+	void setPixel(i32 x, i32 y, u32 color);
+	void drawLine(i32 x0, i32 y0, i32 x1, i32 y1, u32 color);
+	void fillRect(i32 x, i32 y, i32 w, i32 h, u32 color);
+	void drawRect(i32 x, i32 y, i32 w, i32 h, u32 color);
 	void blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 srcW, i32 srcH,
 						i32 dstX, i32 dstY, i32 dstW, i32 dstH, f32 depth,
-						const Color& tint, bool flipH, bool flipV,
+						u32 tint, bool flipH, bool flipV,
 						const DitherParams& dither, bool useDepth);
 
 	// Framebuffer access
@@ -236,7 +234,7 @@ private:
 	std::vector<f32> m_depthBuffer;
 
 	// Helpers
-	void blendPixel(i32 x, i32 y, const Color& color);
+	void blendPixel(i32 x, i32 y, u32 color);
 };
 
 } // namespace bmsx

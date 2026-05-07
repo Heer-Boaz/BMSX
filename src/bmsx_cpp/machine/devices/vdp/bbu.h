@@ -41,7 +41,7 @@ struct VdpBbuBillboardEntry {
 	f32 positionY = 0.0f;
 	f32 positionZ = 0.0f;
 	f32 size = 1.0f;
-	Color color;
+	u32 color = 0u;
 	VdpBbuSource source;
 	u32 surfaceWidth = 0u;
 	u32 surfaceHeight = 0u;

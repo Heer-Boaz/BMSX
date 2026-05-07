@@ -9,21 +9,21 @@ namespace {
 
 struct ConstRelocKindEntry {
 	const char* name;
-	ProgramImage::ConstRelocKind kind;
+	ProgramConstRelocKind kind;
 };
 
 constexpr ConstRelocKindEntry CONST_RELOC_KIND_ENTRIES[] = {
-	{"bx", ProgramImage::ConstRelocKind::Bx},
-	{"rk_b", ProgramImage::ConstRelocKind::RkB},
-	{"rk_c", ProgramImage::ConstRelocKind::RkC},
-	{"const_b", ProgramImage::ConstRelocKind::ConstB},
-	{"const_c", ProgramImage::ConstRelocKind::ConstC},
-	{"gl", ProgramImage::ConstRelocKind::Gl},
-	{"sys", ProgramImage::ConstRelocKind::Sys},
-	{"module", ProgramImage::ConstRelocKind::Module},
+	{"bx", ProgramConstRelocKind::Bx},
+	{"rk_b", ProgramConstRelocKind::RkB},
+	{"rk_c", ProgramConstRelocKind::RkC},
+	{"const_b", ProgramConstRelocKind::ConstB},
+	{"const_c", ProgramConstRelocKind::ConstC},
+	{"gl", ProgramConstRelocKind::Gl},
+	{"sys", ProgramConstRelocKind::Sys},
+	{"module", ProgramConstRelocKind::Module},
 };
 
-ProgramImage::ConstRelocKind parseConstRelocKind(const std::string& kind) {
+ProgramConstRelocKind parseConstRelocKind(const std::string& kind) {
 	for (const auto& entry : CONST_RELOC_KIND_ENTRIES) {
 		if (kind == entry.name) {
 			return entry.kind;
@@ -31,7 +31,7 @@ ProgramImage::ConstRelocKind parseConstRelocKind(const std::string& kind) {
 	}
 	// Lua 5.4-style specialized table ops such as GETFIELD/SETFIELD/GETI/SETI patch a plain
 	// const operand in B/C. Treating them as legacy RK relocations corrupts the linked bytecode.
-	throw BMSX_RUNTIME_ERROR("ProgramLoader: unknown const reloc kind '" + kind + "'.");
+	throw BMSX_RUNTIME_ERROR("ProgramImage: unknown const reloc kind '" + kind + "'.");
 }
 
 SourceRange parseSourceRange(const BinValue& rangeVal) {
@@ -76,7 +76,7 @@ EncodedValue binValueToEncodedValue(const BinValue& value) {
 	if (value.isBool()) return value.asBool();
 	if (value.isNumber()) return value.toNumber();
 	if (value.isString()) return value.asString();
-	throw BMSX_RUNTIME_ERROR("ProgramLoader: unsupported ProgramImage.sections.rodata.constPool value.");
+	throw BMSX_RUNTIME_ERROR("ProgramImage: unsupported ProgramImage.sections.rodata.constPool value.");
 }
 
 Value encodedValueToRuntimeValue(const EncodedValue& value, StringPool& stringPool) {
@@ -84,7 +84,7 @@ Value encodedValueToRuntimeValue(const EncodedValue& value, StringPool& stringPo
 	if (const auto* boolValue = std::get_if<bool>(&value)) return valueBool(*boolValue);
 	if (const auto* numberValue = std::get_if<double>(&value)) return valueNumber(*numberValue);
 	if (const auto* stringValue = std::get_if<std::string>(&value)) return valueString(stringPool.intern(*stringValue));
-	throw BMSX_RUNTIME_ERROR("ProgramLoader: unsupported encoded const pool value.");
+	throw BMSX_RUNTIME_ERROR("ProgramImage: unsupported encoded const pool value.");
 }
 
 ProgramTextSection extractTextSection(const BinValue& textObj) {
@@ -133,7 +133,7 @@ ProgramRodataSection extractRodataSection(const BinValue& rodataObj) {
 		rodata.moduleProtos.emplace_back(std::move(path), protoIndex);
 	}
 
-	rodata.staticModulePaths = readStringArray(rodataObj.require("staticModulePaths"), "ProgramLoader: ProgramImage.sections.rodata.staticModulePaths");
+	rodata.staticModulePaths = readStringArray(rodataObj.require("staticModulePaths"), "ProgramImage: ProgramImage.sections.rodata.staticModulePaths");
 	return rodata;
 }
 
@@ -187,21 +187,36 @@ std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadata
 		}
 	}
 	if (metadata->localSlotsByProto.size() != metadata->protoIds.size()) {
-		throw BMSX_RUNTIME_ERROR("ProgramLoader: localSlotsByProto length does not match protoIds length.");
+		throw BMSX_RUNTIME_ERROR("ProgramImage: localSlotsByProto length does not match protoIds length.");
 	}
 
 	const auto& upvalueNamesByProtoArr = metadataObj.require("upvalueNamesByProto").asArray();
 	metadata->upvalueNamesByProto.resize(upvalueNamesByProtoArr.size());
 	for (size_t protoIndex = 0; protoIndex < upvalueNamesByProtoArr.size(); ++protoIndex) {
-		metadata->upvalueNamesByProto[protoIndex] = readStringArray(upvalueNamesByProtoArr[protoIndex], "ProgramLoader: upvalueNamesByProto entry");
+		metadata->upvalueNamesByProto[protoIndex] = readStringArray(upvalueNamesByProtoArr[protoIndex], "ProgramImage: upvalueNamesByProto entry");
 	}
 	if (metadata->upvalueNamesByProto.size() != metadata->protoIds.size()) {
-		throw BMSX_RUNTIME_ERROR("ProgramLoader: upvalueNamesByProto length does not match protoIds length.");
+		throw BMSX_RUNTIME_ERROR("ProgramImage: upvalueNamesByProto length does not match protoIds length.");
 	}
 
-	metadata->systemGlobalNames = readStringArray(metadataObj.require("systemGlobalNames"), "ProgramLoader: systemGlobalNames");
-	metadata->globalNames = readStringArray(metadataObj.require("globalNames"), "ProgramLoader: globalNames");
+	metadata->systemGlobalNames = readStringArray(metadataObj.require("systemGlobalNames"), "ProgramImage: systemGlobalNames");
+	metadata->globalNames = readStringArray(metadataObj.require("globalNames"), "ProgramImage: globalNames");
 	return metadata;
+}
+
+bool startsWith(std::string_view value, std::string_view prefix) {
+	return value.size() >= prefix.size() && value.compare(0, prefix.size(), prefix) == 0;
+}
+
+bool hasLuaExtension(std::string_view candidate) {
+	if (candidate.size() < 4) {
+		return false;
+	}
+	const size_t dotIndex = candidate.size() - 4;
+	return candidate[dotIndex] == '.'
+		&& (candidate[dotIndex + 1] == 'l' || candidate[dotIndex + 1] == 'L')
+		&& (candidate[dotIndex + 2] == 'u' || candidate[dotIndex + 2] == 'U')
+		&& (candidate[dotIndex + 3] == 'a' || candidate[dotIndex + 3] == 'A');
 }
 
 } // namespace
@@ -218,12 +233,12 @@ std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections) {
 	return program;
 }
 
-std::unique_ptr<ProgramImage> ProgramLoader::load(const uint8_t* data, size_t size) {
+std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t size) {
 	// Decode binary format using binencoder
 	BinValue root = decodeBinary(data, size);
 
 	if (!root.isObject()) {
-		throw BMSX_RUNTIME_ERROR("ProgramLoader: expected object at root");
+		throw BMSX_RUNTIME_ERROR("ProgramImage: expected object at root");
 	}
 
 	auto image = std::make_unique<ProgramImage>();
@@ -238,7 +253,7 @@ std::unique_ptr<ProgramImage> ProgramLoader::load(const uint8_t* data, size_t si
 	const auto& constRelocsArr = linkObj.require("constRelocs").asArray();
 	image->link.constRelocs.reserve(constRelocsArr.size());
 	for (const auto& relocObj : constRelocsArr) {
-		ProgramImage::ConstReloc reloc;
+		ProgramConstReloc reloc;
 		reloc.wordIndex = relocObj.require("wordIndex").toI32();
 		reloc.constIndex = relocObj.require("constIndex").toI32();
 		reloc.kind = parseConstRelocKind(relocObj.require("kind").asString());
@@ -248,14 +263,55 @@ std::unique_ptr<ProgramImage> ProgramLoader::load(const uint8_t* data, size_t si
 	return image;
 }
 
-std::unique_ptr<ProgramMetadata> ProgramLoader::loadSymbols(const uint8_t* data, size_t size) {
+std::unique_ptr<ProgramMetadata> decodeProgramSymbolsImage(const uint8_t* data, size_t size) {
 	BinValue root = decodeBinary(data, size);
 
 	if (!root.isObject()) {
-		throw BMSX_RUNTIME_ERROR("ProgramLoader: expected object at root");
+		throw BMSX_RUNTIME_ERROR("ProgramImage: expected object at root");
 	}
 
 	return extractProgramMetadata(root.require("metadata"));
+}
+
+ProgramBootHeader buildProgramBootHeader(const ProgramImage& asset) {
+	ProgramBootHeader header;
+	header.version = PROGRAM_BOOT_HEADER_VERSION;
+	header.flags = 0;
+	header.entryProtoIndex = asset.entryProtoIndex;
+	header.codeByteCount = asset.sections.text.code.size();
+	header.constPoolCount = asset.sections.rodata.constPool.size();
+	header.protoCount = asset.sections.text.protos.size();
+	header.constRelocCount = asset.link.constRelocs.size();
+	return header;
+}
+
+std::unordered_map<std::string, int> buildModuleProtoMap(const std::vector<std::pair<std::string, int>>& entries) {
+	std::unordered_map<std::string, int> map;
+	map.reserve(entries.size());
+	for (const auto& entry : entries) {
+		map[entry.first] = entry.second;
+	}
+	return map;
+}
+
+std::string stripLuaExtension(std::string_view candidate) {
+	if (hasLuaExtension(candidate)) {
+		candidate.remove_suffix(4);
+	}
+	return std::string(candidate);
+}
+
+std::string toLuaModulePath(std::string_view sourcePath) {
+	static constexpr std::string_view BIOS_SYSTEM_RES_PREFIX = "src/bmsx/res/";
+	static constexpr std::string_view BIOS_RES_PREFIX = "res/";
+	const std::string path = stripLuaExtension(sourcePath);
+	std::string_view modulePath = path;
+	if (startsWith(path, BIOS_SYSTEM_RES_PREFIX)) {
+		modulePath.remove_prefix(BIOS_SYSTEM_RES_PREFIX.size());
+	} else if (startsWith(path, BIOS_RES_PREFIX)) {
+		modulePath.remove_prefix(BIOS_RES_PREFIX.size());
+	}
+	return std::string(modulePath);
 }
 
 } // namespace bmsx

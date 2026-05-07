@@ -1,4 +1,4 @@
-import type { color } from '../../../common/color';
+import type { color } from '../../../render/shared/submissions';
 import { invertThemeToken, resolveThemeTokenColor } from '../../theme/tokens';
 import type { OverlayApi as Api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';

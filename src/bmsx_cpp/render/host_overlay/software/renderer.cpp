@@ -71,8 +71,13 @@ void drawAtlasPixelsSoftware(SoftwareBackend& backend,
 							i32 dstH,
 							bool flipH,
 							bool flipV,
-							const Color& color) {
-	const SoftwareColorBytes tint = softwareColorBytes(color);
+							u32 color) {
+	const SoftwareColorBytes tint{
+		static_cast<u8>((color >> 16u) & 0xffu),
+		static_cast<u8>((color >> 8u) & 0xffu),
+		static_cast<u8>(color & 0xffu),
+		static_cast<u8>((color >> 24u) & 0xffu),
+	};
 	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
 	u32* framebuffer = backend.framebuffer();
 	for (i32 y = 0; y < dstH; y += 1) {
@@ -118,7 +123,7 @@ void drawImageSoftware(SoftwareBackend& backend, const HostImageRenderSubmission
 	);
 }
 
-void drawGlyphImageSoftware(SoftwareBackend& backend, const std::vector<u8>& atlasPixels, i32 atlasWidth, const FontGlyph& glyph, f32 imageX, f32 imageY, const Color& color) {
+void drawGlyphImageSoftware(SoftwareBackend& backend, const std::vector<u8>& atlasPixels, i32 atlasWidth, const FontGlyph& glyph, f32 imageX, f32 imageY, u32 color) {
 	const ImageAtlasRect& rect = glyph.rect;
 	drawAtlasPixelsSoftware(
 		backend,
@@ -142,19 +147,18 @@ void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& c
 	const std::vector<u8>& atlasPixels = hostSystemAtlasPixels();
 	const i32 atlasWidth = static_cast<i32>(hostSystemAtlasWidth());
 	if (command.has_background_color) {
-		const Color& background = command.background_color;
 		const i32 lineHeight = command.font->lineHeight();
-		forEachGlyphImage(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, const Color&) {
+		forEachGlyphRunGlyph(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, u32) {
 			backend.fillRect(
 				static_cast<i32>(imageX),
 				static_cast<i32>(imageY),
 				glyph.advance,
 				lineHeight,
-				background
+				command.background_color
 			);
 		});
 	}
-	forEachGlyphImage(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, const Color& color) {
+	forEachGlyphRunGlyph(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, u32 color) {
 		drawGlyphImageSoftware(backend, atlasPixels, atlasWidth, glyph, imageX, imageY, color);
 	});
 }

@@ -190,7 +190,7 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 				fbState.width,
 				fbState.height,
 				0.0f,
-				Color{1.0f, 1.0f, 1.0f, 1.0f},
+				0xffffffffu,
 				false,
 				false,
 				DitherParams{},
@@ -488,7 +488,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 			RenderPassDesc clearDesc;
 			ColorAttachmentSpec colorSpec;
 			colorSpec.tex = ctx.getTexture(handles->color);
-			colorSpec.clear = Color{ 0.0f, 0.0f, 0.0f, 1.0f };
+			colorSpec.clear = std::array<f32, 4>{0.0f, 0.0f, 0.0f, 1.0f};
 			clearDesc.color = colorSpec;
 			DepthAttachmentSpec depthSpec;
 			depthSpec.tex = ctx.getTexture(handles->depth);

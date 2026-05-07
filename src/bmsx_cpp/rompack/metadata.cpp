@@ -35,12 +35,14 @@ RomMetadataSection parseRomMetadataSection(const u8* data, size_t size) {
 	if (readLE32(data + 0) != ROM_METADATA_MAGIC) {
 		throw BMSX_RUNTIME_ERROR("Invalid ROM metadata magic.");
 	}
-	if (readLE32(data + 4) != ROM_METADATA_VERSION) {
+	const u32 version = readLE32(data + 4);
+	if (version != ROM_METADATA_VERSION) {
 		throw BMSX_RUNTIME_ERROR("Unsupported ROM metadata version.");
 	}
 	const u32 propCount = readLE32(data + 8);
 	size_t pos = ROM_METADATA_HEADER_SIZE;
 	RomMetadataSection section;
+	section.version = version;
 	section.propNames.reserve(propCount);
 	for (u32 i = 0; i < propCount; ++i) {
 		const u32 length = readMetadataVarUint(data, size, pos);

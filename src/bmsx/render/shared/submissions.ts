@@ -1,7 +1,6 @@
 import type { BFont } from './bitmap_font';
 import type { Mesh } from '../3d/mesh';
 import type { Polygon, vec2arr, vec3arr } from '../../rompack/format';
-import type { color } from '../../common/color';
 import {
 	LAYER_2D_IDE,
 	LAYER_2D_UI,
@@ -9,7 +8,7 @@ import {
 	type Layer2D,
 } from '../../machine/devices/vdp/contracts';
 
-export type { color } from '../../common/color';
+export type color = number;
 
 export type FlipOptions = {
 	flip_h: boolean;
@@ -41,6 +40,18 @@ export type RenderVec2 = {
 export type RenderScale2 = {
 	x: number;
 	y: number;
+};
+
+export type TextAlign = CanvasTextAlign;
+export type TextBaseline = CanvasTextBaseline;
+
+export type TextureParams = {
+	size?: RenderScale2;
+	wrapS?: number;
+	wrapT?: number;
+	minFilter?: number;
+	magFilter?: number;
+	srgb?: boolean;
 };
 
 export type RectRenderSubmission = {
@@ -118,7 +129,7 @@ export type GlyphRenderSubmission = {
 	background_color: color | null;
 	wrap_chars: number;
 	center_block_width: number;
-	align: CanvasTextAlign;
-	baseline: CanvasTextBaseline;
+	align: TextAlign;
+	baseline: TextBaseline;
 	layer: RenderLayer;
 };

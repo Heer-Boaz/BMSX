@@ -6,6 +6,12 @@ export const ROM_METADATA_HEADER_SIZE = 12;
 
 const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
 
+export type RomMetadataSection = {
+	version: number;
+	propNames: string[];
+	payloadOffset: number;
+};
+
 function readVarUint(buffer: Uint8Array, offsetRef: { offset: number }): number {
 	let value = 0;
 	let shift = 0;
@@ -25,7 +31,7 @@ function readVarUint(buffer: Uint8Array, offsetRef: { offset: number }): number 
 	return value >>> 0;
 }
 
-export function parseRomMetadataSection(buffer: Uint8Array): { version: number; propNames: string[]; payloadOffset: number } {
+export function parseRomMetadataSection(buffer: Uint8Array): RomMetadataSection {
 	if (buffer.byteLength < ROM_METADATA_HEADER_SIZE) {
 		throw new Error('parseRomMetadataSection: section too small');
 	}

@@ -12,6 +12,7 @@ constexpr u32 ROM_METADATA_VERSION = 1;
 constexpr size_t ROM_METADATA_HEADER_SIZE = 12;
 
 struct RomMetadataSection {
+	u32 version = 0;
 	std::vector<std::string> propNames;
 	size_t payloadOffset = 0;
 };

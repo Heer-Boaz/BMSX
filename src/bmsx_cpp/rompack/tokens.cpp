@@ -13,6 +13,10 @@ AssetToken hashAssetToken(std::string_view id) {
 	return hash;
 }
 
+AssetTokenParts hashAssetId(std::string_view id) {
+	return splitAssetToken(hashAssetToken(id));
+}
+
 AssetToken makeAssetToken(u32 lo, u32 hi) {
 	return (static_cast<AssetToken>(hi) << 32) | static_cast<AssetToken>(lo);
 }
@@ -24,11 +28,20 @@ AssetTokenParts splitAssetToken(AssetToken token) {
 	};
 }
 
+std::string tokenKey(u32 lo, u32 hi) {
+	char buffer[17];
+	std::snprintf(buffer, sizeof(buffer), "%08x%08x", hi, lo);
+	return std::string(buffer);
+}
+
 std::string tokenKey(AssetToken token) {
 	const AssetTokenParts parts = splitAssetToken(token);
-	char buffer[17];
-	std::snprintf(buffer, sizeof(buffer), "%08x%08x", parts.hi, parts.lo);
-	return std::string(buffer);
+	return tokenKey(parts.lo, parts.hi);
+}
+
+std::string tokenKeyFromId(std::string_view id) {
+	const AssetTokenParts token = hashAssetId(id);
+	return tokenKey(token.lo, token.hi);
 }
 
 } // namespace bmsx

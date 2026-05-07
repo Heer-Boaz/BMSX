@@ -114,6 +114,30 @@ Vec2 multiply_vec2(const Vec2& toMult, f32 factor) {
 	return {toMult.x * factor, toMult.y * factor};
 }
 
+Vec3 multiply_vec3(const Vec3& toMult, f32 factor) {
+	return {toMult.x * factor, toMult.y * factor, toMult.z * factor};
+}
+
+f32 dot_vec3(const Vec3& a, const Vec3& b) {
+	return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+Vec3 cross_vec3(const Vec3& a, const Vec3& b) {
+	return {
+		a.y * b.z - a.z * b.y,
+		a.z * b.x - a.x * b.z,
+		a.x * b.y - a.y * b.x
+	};
+}
+
+Vec3 norm_vec3(const Vec3& a) {
+	const f32 len = a.length();
+	if (len > 0.0f) {
+		return {a.x / len, a.y / len, a.z / len};
+	}
+	return {0.0f, 0.0f, 0.0f};
+}
+
 Vec2 div_vec2(const Vec2& toDivide, f32 divideBy) {
 	return {toDivide.x / divideBy, toDivide.y / divideBy};
 }

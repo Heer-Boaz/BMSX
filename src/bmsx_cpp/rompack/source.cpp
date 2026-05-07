@@ -15,6 +15,19 @@ const std::vector<u8>& payloadForEntry(const std::unordered_map<std::string, con
 	return *it->second;
 }
 
+const char* cartridgeLayerIdName(CartridgeLayerId id) {
+	switch (id) {
+		case CartridgeLayerId::System: return "system";
+		case CartridgeLayerId::Cart: return "cart";
+		case CartridgeLayerId::Overlay: return "overlay";
+	}
+	throw BMSX_RUNTIME_ERROR("Invalid cartridge layer id.");
+}
+
+std::string cartridgeLayerIdString(CartridgeLayerId id) {
+	return cartridgeLayerIdName(id);
+}
+
 } // namespace
 
 RomSourceStack::RomSourceStack(std::vector<RomSourceLayer> layers)
@@ -108,33 +121,6 @@ RomSourceEntry RomSourceStack::attachPayloadId(const RomSourceEntry& asset, Cart
 	RomSourceEntry copy = asset;
 	copy.rom.payloadId = cartridgeLayerIdString(payloadId);
 	return copy;
-}
-
-const char* cartridgeLayerIdName(CartridgeLayerId id) {
-	switch (id) {
-		case CartridgeLayerId::System: return "system";
-		case CartridgeLayerId::Cart: return "cart";
-		case CartridgeLayerId::Overlay: return "overlay";
-	}
-	throw BMSX_RUNTIME_ERROR("Invalid cartridge layer id.");
-}
-
-std::string cartridgeLayerIdString(CartridgeLayerId id) {
-	return cartridgeLayerIdName(id);
-}
-
-CartridgeLayerId cartridgeLayerIdFromString(std::string_view id) {
-	if (id == "system") return CartridgeLayerId::System;
-	if (id == "overlay") return CartridgeLayerId::Overlay;
-	return CartridgeLayerId::Cart;
-}
-
-const u8* romSourceLayerBytes(const RomSourceLayer& layer, const RomAssetInfo& entry) {
-	return layer.payload->data() + static_cast<size_t>(*entry.start);
-}
-
-size_t romSourceLayerByteLength(const RomAssetInfo& entry) {
-	return static_cast<size_t>(*entry.end - *entry.start);
 }
 
 } // namespace bmsx

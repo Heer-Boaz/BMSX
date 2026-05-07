@@ -4,9 +4,9 @@
 
 namespace bmsx {
 
-VdpSourcePixels resolveVdpSurfacePixels(const VDP::VdpHostOutput& output, u32 surfaceId) {
+VdpSurfacePixels resolveVdpSurfacePixels(const VDP::VdpHostOutput& output, u32 surfaceId) {
 	const VDP::VramSlot& slot = resolveVdpHostSurfaceSlot(output, surfaceId);
-	return VdpSourcePixels{
+	return VdpSurfacePixels{
 		slot.cpuReadback.data(),
 		slot.surfaceWidth,
 		slot.surfaceHeight,

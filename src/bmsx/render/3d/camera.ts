@@ -1,6 +1,7 @@
 import { Oriented, vec3 } from '../../rompack/format';
 import { clamp } from '../../common/clamp';
-import { extractFrustumPlanesInto, M4, Mat4Float32, Q, quat, sphereInFrustumPacked, V3 } from './math';
+import { cross_vec3, dot_vec3, multiply_vec3, new_vec3, translate_vec3 } from '../../common/vector';
+import { extractFrustumPlanesInto, M4, Mat4Float32, Q, quat, sphereInFrustumPacked } from './math';
 
 // +-------------------------------------------------------------------------------------------------------------------------------------------------------------+
 // | Projectie                   | Type                    | Dieptevervorming      | Gebruikscase                 | Matrixelementen                              |
@@ -17,7 +18,7 @@ import { extractFrustumPlanesInto, M4, Mat4Float32, Q, quat, sphereInFrustumPack
 export type CameraProjectionType = 'perspective' | 'orthographic' | 'fisheye' | 'panorama' | 'oblique' | 'asymmetricFrustum' | 'isometric' | 'infinitePerspective' | 'viewFromBasis';
 
 export class Camera implements Oriented {
-	position: vec3 = V3.of(0, 0, 0);
+	position: vec3 = new_vec3(0, 0, 0);
 
 	// Bewaar deze voor UI/serialisatie; intern sturen we met _q
 	yaw = 0;
@@ -68,15 +69,10 @@ export class Camera implements Oriented {
 	}
 
 	public setExternalMatrices(view: Mat4Float32, proj: Mat4Float32, eyeX: number, eyeY: number, eyeZ: number): void {
-		this.position = V3.of(eyeX, eyeY, eyeZ);
+		this.position = new_vec3(eyeX, eyeY, eyeZ);
 		this._view.set(view);
 		this._proj.set(proj);
 		this.updateMatrixCaches();
-	}
-
-	// --- basis zonder direct Euler te gebruiken (exposed for read-only access)
-	public basis(): { r: vec3; u: vec3; f: vec3 } {
-		return Q.basis(this._q);
 	}
 
 	public set projectionType(type: CameraProjectionType) {
@@ -123,7 +119,7 @@ export class Camera implements Oriented {
 	/** Screen-space: rond actuele scherm-assen; roll delta optioneel. */
 	screenLook(dYaw: number, dPitch: number, dRoll: number = 0): void {
 		// Zelfde strategie: eerst yaw/pitch over huidige body-assen
-		const { r, u } = this.basis();
+		const { r, u } = Q.basis(this._q);
 		const qYaw = Q.fromAxisAngle(u, dYaw);
 		const qPitch = Q.fromAxisAngle(r, dPitch);
 
@@ -141,16 +137,30 @@ export class Camera implements Oriented {
 		this._dirty = true;
 	}
 
-	moveForward(d: number): void { const { f } = this.basis(); this.position = V3.add(this.position, V3.scale(f, d)); this._dirty = true; }
-	strafeRight(d: number): void { const { r } = this.basis(); this.position = V3.add(this.position, V3.scale(r, d)); this._dirty = true; }
-	strafeUp(d: number): void { const { u } = this.basis(); this.position = V3.add(this.position, V3.scale(u, d)); this._dirty = true; }
+	moveForward(d: number): void {
+		const { f } = Q.basis(this._q);
+		this.position = translate_vec3(this.position, multiply_vec3(f, d));
+		this._dirty = true;
+	}
+
+	strafeRight(d: number): void {
+		const { r } = Q.basis(this._q);
+		this.position = translate_vec3(this.position, multiply_vec3(r, d));
+		this._dirty = true;
+	}
+
+	strafeUp(d: number): void {
+		const { u } = Q.basis(this._q);
+		this.position = translate_vec3(this.position, multiply_vec3(u, d));
+		this._dirty = true;
+	}
 
 	setAspect(a: number) { this.aspect = a; this._dirty = true; }
 	setFov(deg: number) { this.fovDeg = deg; this._dirty = true; }
 	setClip(n: number, f: number) { this.near = n; this.far = f; this._dirty = true; }
 
 	/** Orient the camera to look at a world-space target using an up vector. */
-	public lookAt(target: vec3, up: vec3 = V3.of(0, 1, 0)): void {
+	public lookAt(target: vec3, up: vec3 = new_vec3(0, 1, 0)): void {
 		// Build temporary view matrix and extract basis to compute quaternion
 		M4.lookAtInto(this._tmpLookAt, this.position, target, up);
 		// Columns are [right, up, back]; forward = -back
@@ -162,8 +172,8 @@ export class Camera implements Oriented {
 
 	// ====== Matrices ======
 	private rebuild(): void {
-		const { r, u, f } = this.basis();
-		const back = V3.scale(f, -1);
+		const { r, u, f } = Q.basis(this._q);
+		const back = multiply_vec3(f, -1);
 		M4.viewFromBasisInto(this._view, this.position, r, u, back);
 
 		switch (this._projectionType) {
@@ -260,16 +270,16 @@ export class Camera implements Oriented {
 
 		// 2) Roll: verschil tussen "roll‑loze up" en echte up, gemeten om de forward‑as
 		// Bouw q_y en q_yp (yaw dan pitch) om een referentie‑up (u0) zonder roll te krijgen
-		const worldUp = V3.of(0, 1, 0);
+		const worldUp = new_vec3(0, 1, 0);
 		const q_y = Q.fromAxisAngle(worldUp, yawUnwrapped);
 		const r_y = Q.basis(q_y).r; // right na yaw
 		const q_yp = Q.mul(Q.fromAxisAngle(r_y, pitchClamped), q_y);
 
 		const u0 = Q.basis(q_yp).u;      // "up" zonder roll
 		// Signed angle tussen u0 en u om de f‑as:
-		const cross = V3.cross(u0, u);
-		const dot = V3.dot(u0, u);
-		const s = V3.dot(f, cross);  // teken volgens forward
+		const cross = cross_vec3(u0, u);
+		const dot = dot_vec3(u0, u);
+		const s = dot_vec3(f, cross);  // teken volgens forward
 		const newRoll = Math.atan2(s, dot);
 
 		this.roll = unwrapAngle(this.roll, newRoll);

@@ -5,7 +5,7 @@
 namespace bmsx {
 
 template<typename Values, typename T>
-size_t lowerBound(const Values& values, const T& target, size_t lo, size_t hi) {
+size_t lower_bound(const Values& values, const T& target, size_t lo, size_t hi) {
 	size_t left = lo;
 	size_t right = hi;
 	while (left < right) {
@@ -20,8 +20,8 @@ size_t lowerBound(const Values& values, const T& target, size_t lo, size_t hi) {
 }
 
 template<typename Values, typename T>
-size_t lowerBound(const Values& values, const T& target) {
-	return lowerBound(values, target, 0u, values.size());
+size_t lower_bound(const Values& values, const T& target) {
+	return lower_bound(values, target, 0u, values.size());
 }
 
 } // namespace bmsx

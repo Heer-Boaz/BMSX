@@ -1,9 +1,3 @@
-import type {
-	RuntimeAmbientLightState,
-	RuntimeDirectionalLightState,
-	RuntimePointLightState,
-	RuntimeRenderState,
-} from '../machine/runtime/contracts';
 import { hardwareCameraBank0, resetHardwareCameraBank0 } from './shared/hardware/camera';
 import {
 	clearHardwareLighting,
@@ -14,6 +8,40 @@ import {
 	putHardwareDirectionalLight,
 	putHardwarePointLight,
 } from './shared/hardware/lighting';
+
+export type RuntimeRenderCameraState = {
+	view: number[];
+	proj: number[];
+	eye: [number, number, number];
+};
+
+export type RuntimeAmbientLightState = {
+	id: string;
+	color: [number, number, number];
+	intensity: number;
+};
+
+export type RuntimeDirectionalLightState = {
+	id: string;
+	color: [number, number, number];
+	intensity: number;
+	orientation: [number, number, number];
+};
+
+export type RuntimePointLightState = {
+	id: string;
+	color: [number, number, number];
+	intensity: number;
+	pos: [number, number, number];
+	range: number;
+};
+
+export type RuntimeRenderState = {
+	camera: RuntimeRenderCameraState | null;
+	ambientLights: RuntimeAmbientLightState[];
+	directionalLights: RuntimeDirectionalLightState[];
+	pointLights: RuntimePointLightState[];
+};
 
 function compareEntryId<T extends { id: string }>(left: T, right: T): number {
 	if (left.id < right.id) {

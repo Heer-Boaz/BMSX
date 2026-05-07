@@ -10,11 +10,11 @@
 
 namespace bmsx {
 
-inline void writeSolidRgba8Pixels(u8* pixels, size_t byteCount, const Color& color) {
-	const u8 r = static_cast<u8>(color.r * 255.0f);
-	const u8 g = static_cast<u8>(color.g * 255.0f);
-	const u8 b = static_cast<u8>(color.b * 255.0f);
-	const u8 a = static_cast<u8>(color.a * 255.0f);
+inline void writeSolidRgba8Pixels(u8* pixels, size_t byteCount, u32 argb) {
+	const u8 r = static_cast<u8>((argb >> 16u) & 0xffu);
+	const u8 g = static_cast<u8>((argb >> 8u) & 0xffu);
+	const u8 b = static_cast<u8>(argb & 0xffu);
+	const u8 a = static_cast<u8>((argb >> 24u) & 0xffu);
 	for (size_t i = 0; i < byteCount; i += 4) {
 		pixels[i + 0] = r;
 		pixels[i + 1] = g;
@@ -23,9 +23,9 @@ inline void writeSolidRgba8Pixels(u8* pixels, size_t byteCount, const Color& col
 	}
 }
 
-inline std::vector<u8> createSolidRgba8Pixels(i32 width, i32 height, const Color& color) {
+inline std::vector<u8> createSolidRgba8Pixels(i32 width, i32 height, u32 argb) {
 	std::vector<u8> pixels(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
-	writeSolidRgba8Pixels(pixels.data(), pixels.size(), color);
+	writeSolidRgba8Pixels(pixels.data(), pixels.size(), argb);
 	return pixels;
 }
 

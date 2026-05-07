@@ -7,7 +7,7 @@ import {
 	replaceTrackedLuaHeapBytes
 } from '../memory/lua_heap_usage';
 import { formatNumber } from '../common/number_format';
-import { BASE_CYCLES, OpCode } from './opcode_info';
+import { BASE_CYCLES, OPCODE_USES_BX, OpCode } from './opcode_info';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions, type CpuProfilerSnapshot } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { MEMORY_ACCESS_KIND_NAMES, MemoryAccessKind } from '../memory/access_kind';
@@ -1395,22 +1395,6 @@ type TableLoadInlineCache = {
 
 // Pool constant for frame reuse
 const MAX_POOLED_FRAMES = 32;
-const USES_BX = new Uint8Array(64);
-USES_BX[OpCode.LOADK] = 1;
-USES_BX[OpCode.KSMI] = 1;
-USES_BX[OpCode.GETG] = 1;
-USES_BX[OpCode.SETG] = 1;
-USES_BX[OpCode.GETSYS] = 1;
-USES_BX[OpCode.SETSYS] = 1;
-USES_BX[OpCode.GETGL] = 1;
-USES_BX[OpCode.SETGL] = 1;
-USES_BX[OpCode.CLOSURE] = 1;
-USES_BX[OpCode.JMP] = 1;
-USES_BX[OpCode.JMPIF] = 1;
-USES_BX[OpCode.JMPIFNOT] = 1;
-USES_BX[OpCode.BR_TRUE] = 1;
-USES_BX[OpCode.BR_FALSE] = 1;
-
 export class CPU {
 	public instructionBudgetRemaining: number = 0;
 	public lastReturnValues: Value[] = [];
@@ -1848,7 +1832,7 @@ export class CPU {
 			const aLow = (instr >>> 12) & 0x3f;
 			const bLow = (instr >>> 6) & 0x3f;
 			const cLow = instr & 0x3f;
-			const usesBx = USES_BX[op] !== 0;
+			const usesBx = OPCODE_USES_BX[op] !== 0;
 			const extA = usesBx ? 0 : (ext >>> 6) & 0x3;
 			const extB = usesBx ? 0 : (ext >>> 3) & 0x7;
 			const extC = usesBx ? 0 : (ext & 0x7);

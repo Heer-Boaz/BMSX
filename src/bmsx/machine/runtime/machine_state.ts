@@ -1,5 +1,13 @@
-import { RuntimeMachineState } from './contracts';
+import type { MachineState } from '../machine';
+import type { FrameSchedulerStateSnapshot } from '../scheduler/frame';
+import type { RuntimeVblankSnapshot } from './vblank';
 import type { Runtime } from './runtime';
+
+export type RuntimeMachineState = {
+	machine: MachineState;
+	frameScheduler: FrameSchedulerStateSnapshot;
+	vblank: RuntimeVblankSnapshot;
+};
 
 export function captureRuntimeMachineState(runtime: Runtime): RuntimeMachineState {
 	return {

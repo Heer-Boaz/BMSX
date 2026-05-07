@@ -25,6 +25,7 @@ import { setFrameTiming, setTransferRatesFromManifest } from '../../machine/runt
 import {
 	buildModuleProtoMap,
 	decodeProgramImage,
+	decodeProgramSymbolsImage,
 	encodeProgramObjectSections,
 	inflateProgram,
 	PROGRAM_IMAGE_ID,
@@ -44,7 +45,6 @@ import { asStringId, valueIsString } from '../../machine/cpu/cpu';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { raiseSystemIrq } from '../../machine/runtime/system_irq';
 import { callClosure, callClosureInto } from '../../machine/program/executor';
-import { decodeBinary } from '../../common/serializer/binencoder';
 
 const SYSTEM_BUILTIN_PRELUDE_PATH = 'bios/system_builtin_prelude.lua';
 const REQUIRED_SYSTEM_ROM_HELPERS: ReadonlyArray<string> = ['clock_now'];
@@ -57,10 +57,6 @@ function resolvePositiveSafeInteger(value: number | undefined, label: string): n
 		throw new Error(`${label} must be a positive safe integer.`);
 	}
 	return value;
-}
-
-function resolveCpuHz(value: number | undefined): number {
-	return resolvePositiveSafeInteger(value, 'machine.specs.cpu.cpu_freq_hz');
 }
 
 function applyUfpsScaled(runtime: Runtime, ufps: number): number {
@@ -545,7 +541,7 @@ export function resolveProgramImageSourceFor(runtime: Runtime, source: 'system' 
 	return runtime.cartRomSource;
 }
 
-export function loadProgramImagesForSource(runtime: Runtime, source: 'system' | 'cart'): { program: ProgramImage; symbols: ProgramSymbolsImage } {
+export function loadProgramImagesForSource(runtime: Runtime, source: 'system' | 'cart'): { program: ProgramImage; symbols: ProgramSymbolsImage | null } {
 	const romSource = resolveProgramImageSourceFor(runtime, source);
 	const programEntry = romSource.getEntry(PROGRAM_IMAGE_ID);
 	if (!programEntry) {
@@ -553,7 +549,10 @@ export function loadProgramImagesForSource(runtime: Runtime, source: 'system' | 
 	}
 	const program = decodeProgramImage(romSource.getBytes(programEntry));
 	const symbolsEntry = romSource.getEntry(PROGRAM_SYMBOLS_IMAGE_ID);
-	const symbols = symbolsEntry ? decodeBinary(romSource.getBytes(symbolsEntry)) as ProgramSymbolsImage : null;
+	let symbols: ProgramSymbolsImage | null = null;
+	if (symbolsEntry) {
+		symbols = decodeProgramSymbolsImage(romSource.getBytes(symbolsEntry));
+	}
 	return { program, symbols };
 }
 
@@ -644,17 +643,19 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	let staticModulePaths: ReadonlyArray<string> = system.image.sections.rodata.staticModulePaths;
 	runtime.cartEntryProtoIndex = null;
 	runtime.cartStaticModulePaths = [];
+	let cartProgramImage: ProgramImage | null = null;
+	let cartSymbols: ProgramSymbolsImage | null = null;
 	if (runtime.cartLuaSources?.can_boot_from_source) {
 		const cart = compileRegistryProgramImage(runtime, runtime.cartLuaSources, interpreter, system.modules);
-		const linked = linkProgramImages(system.image, system.symbols, cart.image, cart.symbols);
-		programImage = linked.programImage;
-		metadata = linked.metadata;
-		entryProtoIndex = linked.systemEntryProtoIndex;
-		staticModulePaths = linked.systemStaticModulePaths;
-		runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartStaticModulePaths);
+		cartProgramImage = cart.image;
+		cartSymbols = cart.symbols;
 	} else if (runtime.cartRomSource && runtime.cartRomSource.getEntry(PROGRAM_IMAGE_ID)) {
 		const cart = loadProgramImagesForSource(runtime, 'cart');
-		const linked = linkProgramImages(system.image, system.symbols, cart.program, cart.symbols);
+		cartProgramImage = cart.program;
+		cartSymbols = cart.symbols;
+	}
+	if (cartProgramImage) {
+		const linked = linkProgramImages(system.image, system.symbols, cartProgramImage, cartSymbols);
 		programImage = linked.programImage;
 		metadata = linked.metadata;
 		entryProtoIndex = linked.systemEntryProtoIndex;
@@ -677,7 +678,10 @@ export function bootProgramImage(runtime: Runtime, options?: { preserveState?: b
 	const bootingCart = runtime.cartProgramStarted;
 	const systemImages = loadProgramImagesForSource(runtime, 'system');
 	let programImage = systemImages.program;
-	let metadata: ProgramMetadata = systemImages.symbols ? systemImages.symbols.metadata : null;
+	let metadata: ProgramMetadata | null = null;
+	if (systemImages.symbols) {
+		metadata = systemImages.symbols.metadata;
+	}
 	let entryProtoIndex = systemImages.program.entryProtoIndex;
 	let staticModulePaths: ReadonlyArray<string> = systemImages.program.sections.rodata.staticModulePaths;
 	runtime.cartEntryProtoIndex = null;
@@ -726,7 +730,7 @@ export function bootProgramImage(runtime: Runtime, options?: { preserveState?: b
 	}
 }
 
-export function startLinkedCartProgram(runtime: Runtime, options?: { runInit?: boolean }): boolean {
+export function startCartProgram(runtime: Runtime, runInit?: boolean): boolean {
 	const entryProtoIndex = runtime.cartEntryProtoIndex;
 	if (entryProtoIndex === null) {
 		return false;
@@ -735,11 +739,7 @@ export function startLinkedCartProgram(runtime: Runtime, options?: { runInit?: b
 	runtime._luaPath = runtime.activeLuaSources.entry_path;
 	runStaticModuleInitializers(runtime, runtime.cartStaticModulePaths);
 	beginEntryExecution(runtime, entryProtoIndex);
-	return finishEntryBoot(runtime, options?.runInit);
-}
-
-export function startCartProgram(runtime: Runtime, options?: { runInit?: boolean }): boolean {
-	return startLinkedCartProgram(runtime, options);
+	return finishEntryBoot(runtime, runInit);
 }
 
 export function bootActiveProgram(runtime: Runtime, options?: { preserveState?: boolean; runInit?: boolean }): boolean {
@@ -824,7 +824,7 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 			const machine = resolveRuntimeMachineForPlan(runtime, reloadPlan);
 			const perfSpecs = getMachinePerfSpecs(machine);
 			applyUfpsScaled(runtime, perfSpecs.ufps);
-			const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
+			const cpuHz = resolvePositiveSafeInteger(perfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, runtime.timing.ufpsScaled);
 			const renderHeight = resolveRenderHeight(machine.render_size.height);
 			const vblankCycles = resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, renderHeight);

@@ -137,7 +137,7 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 		const int nextA = static_cast<int>((nextWord >> 12) & 0x3f);
 		const int nextB = static_cast<int>((nextWord >> 6) & 0x3f);
 		const int nextC = static_cast<int>(nextWord & 0x3f);
-		const bool usesBx = opCodeUsesBx(nextOp);
+		const bool usesBx = OPCODE_USES_BX[static_cast<size_t>(nextOp)] != 0u;
 		const int extA = usesBx ? 0 : static_cast<int>((nextExt >> 6) & 0x3);
 		const int extB = usesBx ? 0 : static_cast<int>((nextExt >> 3) & 0x7);
 		const int extC = usesBx ? 0 : static_cast<int>(nextExt & 0x7);
@@ -161,7 +161,7 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 			MAX_OPERAND_BITS + EXT_C_BITS + MAX_OPERAND_BITS,
 		};
 	}
-	const bool usesBx = opCodeUsesBx(op);
+	const bool usesBx = OPCODE_USES_BX[static_cast<size_t>(op)] != 0u;
 	const int extA = usesBx ? 0 : static_cast<int>((ext >> 6) & 0x3);
 	const int extB = usesBx ? 0 : static_cast<int>((ext >> 3) & 0x7);
 	const int extC = usesBx ? 0 : static_cast<int>(ext & 0x7);
@@ -272,18 +272,18 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::SHL:
 		case OpCode::SHR:
 		case OpCode::CONCAT:
-			return std::string(opCodeName(decoded.op)) + " r" + std::to_string(decoded.a) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+			return std::string(getOpcodeName(decoded.op)) + " r" + std::to_string(decoded.a) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::CONCATN:
 			return "CONCATN r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c);
 		case OpCode::UNM:
 		case OpCode::NOT:
 		case OpCode::LEN:
 		case OpCode::BNOT:
-			return std::string(opCodeName(decoded.op)) + " r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
+			return std::string(getOpcodeName(decoded.op)) + " r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
 		case OpCode::EQ:
 		case OpCode::LT:
 		case OpCode::LE:
-			return std::string(opCodeName(decoded.op)) + " " + formatBoolLiteral(decoded.a) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+			return std::string(getOpcodeName(decoded.op)) + " " + formatBoolLiteral(decoded.a) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::TEST:
 			return "TEST r" + std::to_string(decoded.a) + ", " + formatBoolLiteral(decoded.c);
 		case OpCode::TESTSET:
@@ -473,7 +473,7 @@ InstructionDebugInfo describeInstructionAtPc(const Program& program, const Progr
 		decoded.pc,
 		formatPcHex(decoded.pc, pcWidth),
 		decoded.op,
-		opCodeName(decoded.op),
+		getOpcodeName(decoded.op),
 		formatInstructionText(decoded, program, metadata, pcWidth),
 		buildInstructionOperands(decoded, program, metadata, pcWidth),
 		sourceRange,

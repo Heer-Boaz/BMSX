@@ -17,7 +17,6 @@
 
 namespace bmsx {
 
-// Color is already defined in primitives.h
 class BFont;
 class Mesh;
 
@@ -40,6 +39,11 @@ enum class RenderLayer {
 	IDE     // Editor/debug overlay
 };
 
+using color = u32;
+using RenderRectBounds = RectBounds;
+using RenderVec2 = Vec3;
+using RenderScale2 = Vec2;
+
 inline Layer2D renderLayerTo2dLayer(RenderLayer layer) {
 	if (layer == RenderLayer::UI) return Layer2D::UI;
 	if (layer == RenderLayer::IDE) return Layer2D::IDE;
@@ -54,8 +58,8 @@ inline Layer2D renderLayerTo2dLayer(RenderLayer layer) {
 struct RectRenderSubmission {
 	enum class Kind { Rect, Fill };
 	Kind kind = Kind::Rect;
-	RectBounds area;
-	Color color;
+	RenderRectBounds area;
+	u32 color = 0xffffffffu; // ARGB32
 	RenderLayer layer = RenderLayer::World;
 };
 
@@ -66,10 +70,10 @@ struct ImgRenderSubmission {
 	uint32_t v = 0;
 	uint32_t w = 0;
 	uint32_t h = 0;
-	Vec3 pos{0.0f, 0.0f, 0.0f};  // x, y, z (z for depth sorting)
-	Vec2 scale{1.0f, 1.0f};
+	RenderVec2 pos{0.0f, 0.0f, 0.0f};  // x, y, z (z for depth sorting)
+	RenderScale2 scale{1.0f, 1.0f};
 	FlipOptions flip;
-	Color colorize{1.0f, 1.0f, 1.0f, 1.0f};  // Tint color (white = no tint)
+	u32 colorize = 0xffffffffu; // ARGB32 tint; white = no tint
 	bool ambient_affected = false;
 	f32 ambient_factor = 1.0f;
 	RenderLayer layer = RenderLayer::World;
@@ -78,10 +82,10 @@ struct ImgRenderSubmission {
 
 struct HostImageRenderSubmission {
 	std::string imgid;
-	Vec3 pos{0.0f, 0.0f, 0.0f};
-	Vec2 scale{1.0f, 1.0f};
+	RenderVec2 pos{0.0f, 0.0f, 0.0f};
+	RenderScale2 scale{1.0f, 1.0f};
 	FlipOptions flip;
-	Color colorize{1.0f, 1.0f, 1.0f, 1.0f};
+	u32 colorize = 0xffffffffu; // ARGB32 tint; white = no tint
 	bool ambient_affected = false;
 	f32 ambient_factor = 1.0f;
 	RenderLayer layer = RenderLayer::World;
@@ -92,7 +96,7 @@ struct HostImageRenderSubmission {
 struct PolyRenderSubmission {
 	std::vector<f32> points;
 	f32 z = 0.0f;
-	Color color;
+	u32 color = 0xffffffffu; // ARGB32
 	f32 thickness = 1.0f;
 	RenderLayer layer = RenderLayer::World;
 };
@@ -111,7 +115,7 @@ struct MeshRenderSubmission {
 struct ParticleRenderSubmission {
 	Vec3 position{0.0f, 0.0f, 0.0f};
 	f32 size = 1.0f;
-	Color color;
+	u32 color = 0xffffffffu; // ARGB32
 	uint32_t slot = 0;
 	uint32_t u = 0;
 	uint32_t v = 0;
@@ -136,9 +140,9 @@ struct GlyphRenderSubmission {
 	i32 glyph_start = 0;
 	i32 glyph_end = std::numeric_limits<i32>::max();
 	BFont* font = nullptr;
-	Color color;
+	u32 color = 0xffffffffu; // ARGB32
 	bool has_background_color = false;
-	Color background_color;
+	u32 background_color = 0xff000000u; // ARGB32
 	i32 wrap_chars = 0;
 	i32 center_block_width = 0;
 	TextAlign align = TextAlign::Start;

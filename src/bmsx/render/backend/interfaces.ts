@@ -1,9 +1,12 @@
 /// <reference types="@webgpu/types" />
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { Host2DSubmission } from '../shared/queues';
+import type { TextureParams } from '../shared/submissions';
 import { LightingFrameState } from '../lighting/system';
 import type { WebGLBackend } from './webgl/backend';
 import type { WebGPUBackend } from './webgpu/backend';
+
+export type { TextureParams } from '../shared/submissions';
 
 // Minimal, unified render interfaces for both backends
 
@@ -26,15 +29,6 @@ export type RenderTargetHandle =
 	};
 
 // keep your existing alias names for other handles:
-
-export interface TextureParams {
-	size?: vec2;
-	wrapS?: number;
-	wrapT?: number;
-	minFilter?: number;
-	magFilter?: number;
-	srgb?: boolean;
-}
 
 // High-level render pass identifiers
 export type RenderPassId =
@@ -255,7 +249,7 @@ export interface RenderContext {
 	presentationHistoryDestinationIndex: 0 | 1;
 	vdpBillboardCount: number;
 	vdpBillboardPositionSize: Float32Array;
-	vdpBillboardColor: Float32Array;
+	vdpBillboardColor: Uint32Array;
 	vdpBillboardUvRect: Float32Array;
 	vdpBillboardSlot: Int32Array;
 	activeTexUnit: number;

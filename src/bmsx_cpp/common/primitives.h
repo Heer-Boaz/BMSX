@@ -25,7 +25,6 @@
 #define BMSX_RUNTIME_ERROR(message) std::runtime_error(message)
 #endif
 
-#include "common/color.h"
 #include "common/rect.h"
 #include "common/types.h"
 #include "common/vector.h"

@@ -26,7 +26,7 @@ import { resolveVdpSurfacePixels } from '../vdp/source_pixels';
 import type { HeadlessPresentHost } from './view';
 import { hostOverlayMenu } from '../../core/host_overlay_menu';
 import { renderHeadlessHost2DEntry, renderHeadlessSubmissions } from './host_2d';
-import { blendPixel, colorByte } from './pixel_ops';
+import { blendPixel } from './pixel_ops';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
@@ -470,10 +470,7 @@ function rasterizeHeadlessParticle(output: VdpHostOutput, submission: ParticleRe
 		position[1],
 		position[2],
 		submission.size,
-		submission.color.r,
-		submission.color.g,
-		submission.color.b,
-		submission.color.a,
+		submission.color,
 		state,
 	);
 }
@@ -487,10 +484,7 @@ function rasterizeHeadlessParticleSample(texture: SlotTexturePixels,
 	positionY: number,
 	positionZ: number,
 	size: number,
-	colorFloatR: number,
-	colorFloatG: number,
-	colorFloatB: number,
-	colorFloatA: number,
+	colorValue: number,
 	state: ParticlePipelineState): void {
 	const viewProj = state.viewProj;
 	const clipX = viewProj[0] * positionX + viewProj[4] * positionY + viewProj[8] * positionZ + viewProj[12];
@@ -523,10 +517,7 @@ function rasterizeHeadlessParticleSample(texture: SlotTexturePixels,
 	if (halfY < 0) halfY = -halfY;
 	let half = halfX > halfY ? halfX : halfY;
 	if (half < 1) half = 1;
-	const colorR = colorByte(colorFloatR);
-	const colorG = colorByte(colorFloatG);
-	const colorB = colorByte(colorFloatB);
-	const colorA = colorByte(colorFloatA);
+	const colorR = (colorValue >>> 16) & 0xff, colorG = (colorValue >>> 8) & 0xff, colorB = colorValue & 0xff, colorA = (colorValue >>> 24) & 0xff;
 	const startX = centerX - half < 0 ? 0 : centerX - half;
 	const startY = centerY - half < 0 ? 0 : centerY - half;
 	const endX = centerX + half > state.width ? state.width : centerX + half;
@@ -569,10 +560,7 @@ function rasterizeHeadlessVdpBillboard(output: VdpHostOutput, index: number, sta
 		positionSize[sourceBase + 1],
 		positionSize[sourceBase + 2],
 		positionSize[sourceBase + 3],
-		color[sourceBase + 0],
-		color[sourceBase + 1],
-		color[sourceBase + 2],
-		color[sourceBase + 3],
+		color[index],
 		state,
 	);
 }

@@ -1,4 +1,4 @@
-import type { asset_id } from './format';
+import type { asset_id } from '../format';
 
 export type ResourceDescriptor = {
 	path: string;

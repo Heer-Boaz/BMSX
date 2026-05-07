@@ -96,7 +96,6 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Frame rendering
 	// ─────────────────────────────────────────────────────────────────────────
-	void init();
 	void initializeDefaultTextures();
 	void drawgame();
 	void configurePresentation(PresentationMode mode, bool commitFrame);
@@ -118,7 +117,7 @@ public:
 	struct VdpBillboardRenderEntry {
 		Vec3 position{0.0f, 0.0f, 0.0f};
 		f32 size = 0.0f;
-		Color color;
+		u32 color = 0u;
 		u32 slot = 0u;
 		u32 u = 0u;
 		u32 v = 0u;

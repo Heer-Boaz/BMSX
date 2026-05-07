@@ -73,7 +73,7 @@ void drawVerticesGLES2(const float (&vertices)[24]) {
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
-void drawQuadGLES2(OpenGLES2Backend& backend, TextureHandle texture, i32 x, i32 y, i32 w, i32 h, f32 u0, f32 v0, f32 u1, f32 v1, const Color& color) {
+void drawQuadGLES2(OpenGLES2Backend& backend, TextureHandle texture, i32 x, i32 y, i32 w, i32 h, f32 u0, f32 v0, f32 u1, f32 v1, u32 color) {
 	const float left = static_cast<float>(x);
 	const float top = static_cast<float>(y);
 	const float right = static_cast<float>(x + w);
@@ -87,7 +87,13 @@ void drawQuadGLES2(OpenGLES2Backend& backend, TextureHandle texture, i32 x, i32 
 		right, bottom, u1, v1,
 	};
 	bindTexture(backend, texture);
-	glUniform4f(g_gles2.uniformColor, color.r, color.g, color.b, color.a);
+	glUniform4f(
+		g_gles2.uniformColor,
+		static_cast<f32>((color >> 16u) & 0xffu) / 255.0f,
+		static_cast<f32>((color >> 8u) & 0xffu) / 255.0f,
+		static_cast<f32>(color & 0xffu) / 255.0f,
+		static_cast<f32>((color >> 24u) & 0xffu) / 255.0f
+	);
 	drawVerticesGLES2(vertices);
 }
 
@@ -106,7 +112,7 @@ void drawRectGLES2(OpenGLES2Backend& backend, const RectRenderSubmission& comman
 	drawQuadGLES2(backend, g_gles2.whiteTexture, left + width - 1, top, 1, height, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
 }
 
-void drawLineGLES2(OpenGLES2Backend& backend, f32 x0, f32 y0, f32 x1, f32 y1, const Color& color, f32 thickness) {
+void drawLineGLES2(OpenGLES2Backend& backend, f32 x0, f32 y0, f32 x1, f32 y1, u32 color, f32 thickness) {
 	const f32 dx = x1 - x0;
 	const f32 dy = y1 - y0;
 	if (dx == 0.0f && dy == 0.0f) {
@@ -126,7 +132,13 @@ void drawLineGLES2(OpenGLES2Backend& backend, f32 x0, f32 y0, f32 x1, f32 y1, co
 		x1 + normalX * half, y1 + normalY * half, 1.0f, 1.0f,
 	};
 	bindTexture(backend, g_gles2.whiteTexture);
-	glUniform4f(g_gles2.uniformColor, color.r, color.g, color.b, color.a);
+	glUniform4f(
+		g_gles2.uniformColor,
+		static_cast<f32>((color >> 16u) & 0xffu) / 255.0f,
+		static_cast<f32>((color >> 8u) & 0xffu) / 255.0f,
+		static_cast<f32>(color & 0xffu) / 255.0f,
+		static_cast<f32>((color >> 24u) & 0xffu) / 255.0f
+	);
 	drawVerticesGLES2(vertices);
 }
 
@@ -169,7 +181,7 @@ void drawImageGLES2(OpenGLES2Backend& backend, const HostImageRenderSubmission& 
 	);
 }
 
-void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& glyph, f32 imageX, f32 imageY, const Color& color) {
+void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& glyph, f32 imageX, f32 imageY, u32 color) {
 	const ImageAtlasRect& rect = glyph.rect;
 	const f32 atlasWidth = static_cast<f32>(hostSystemAtlasWidth());
 	const f32 atlasHeight = static_cast<f32>(hostSystemAtlasHeight());
@@ -190,9 +202,8 @@ void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& glyph, f32 
 
 void drawGlyphsGLES2(OpenGLES2Backend& backend, const GlyphRenderSubmission& command) {
 	if (command.has_background_color) {
-		const Color& background = command.background_color;
 		const i32 lineHeight = command.font->lineHeight();
-		forEachGlyphImage(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, const Color&) {
+		forEachGlyphRunGlyph(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, u32) {
 			drawQuadGLES2(
 				backend,
 				g_gles2.whiteTexture,
@@ -204,11 +215,11 @@ void drawGlyphsGLES2(OpenGLES2Backend& backend, const GlyphRenderSubmission& com
 				0.0f,
 				1.0f,
 				1.0f,
-				background
+				command.background_color
 			);
 		});
 	}
-	forEachGlyphImage(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, const Color& color) {
+	forEachGlyphRunGlyph(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, u32 color) {
 		drawGlyphImageGLES2(backend, glyph, imageX, imageY, color);
 	});
 }

@@ -35,12 +35,11 @@ public:
 	TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) override;
 	void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
 	void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
-	TextureHandle createSolidTexture2D(i32 width, i32 height, const Color& color) override;
+	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color) override;
 	void destroyTexture(TextureHandle handle) override;
-	void copyTexture(TextureHandle source, TextureHandle destination, i32 width, i32 height) override;
 	void copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) override;
 
-	void clear(const Color* color, const f32* depth) override;
+	void clear(const std::array<f32, 4>* color, const f32* depth) override;
 	PassEncoder beginRenderPass(const RenderPassDesc& desc) override;
 	void endRenderPass(PassEncoder& pass) override;
 

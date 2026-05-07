@@ -11,37 +11,10 @@ namespace bmsx {
 
 namespace {
 
-struct ProgramLayout {
-	int systemBasePc;
-	int cartBasePc;
-};
-
 struct MergedNamedSlots {
 	std::vector<std::string> names;
 	std::vector<int> cartRemap;
 };
-
-ProgramLayout resolveProgramLayout(int systemCodeBytes, int systemBasePc, int cartBasePc) {
-	if (systemBasePc < 0) {
-		throw std::runtime_error("[ProgramLinker] System base PC must be >= 0.");
-	}
-	if (cartBasePc < 0) {
-		throw std::runtime_error("[ProgramLinker] Cart base PC must be >= 0.");
-	}
-	if (systemBasePc % INSTRUCTION_BYTES != 0) {
-		throw std::runtime_error("[ProgramLinker] System base PC must align to instruction bytes.");
-	}
-	if (cartBasePc % INSTRUCTION_BYTES != 0) {
-		throw std::runtime_error("[ProgramLinker] Cart base PC must align to instruction bytes.");
-	}
-	if (cartBasePc <= CART_PROGRAM_VECTOR_PC) {
-		throw std::runtime_error("[ProgramLinker] Cart base PC must leave room for the cart program vector.");
-	}
-	if (systemBasePc + systemCodeBytes > cartBasePc) {
-		throw std::runtime_error("[ProgramLinker] System program overlaps cart base PC.");
-	}
-	return {systemBasePc, cartBasePc};
-}
 
 // disable-next-line single_line_method_pattern -- WIDE is the named prefix encoder used by relocation rewriting.
 void writeWideInstruction(std::vector<uint8_t>& code, int index, uint8_t a, uint8_t b, uint8_t c) {
@@ -257,7 +230,7 @@ void rewriteClosureIndices(std::vector<uint8_t>& code, int protoOffset) {
 
 void rewriteConstRelocations(
 	std::vector<uint8_t>& code,
-	const std::vector<ProgramImage::ConstReloc>& relocs,
+	const std::vector<ProgramConstReloc>& relocs,
 	const std::vector<int>& cartConstRemap,
 	const std::vector<int>& cartGlobalRemap,
 	const std::vector<int>& cartSystemGlobalRemap,
@@ -266,7 +239,7 @@ void rewriteConstRelocations(
 	const std::vector<std::string>& mergedSystemGlobalNames
 ) {
 	for (size_t i = 0; i < relocs.size(); ++i) {
-		const ProgramImage::ConstReloc& reloc = relocs[i];
+		const ProgramConstReloc& reloc = relocs[i];
 		const int wordIndex = reloc.wordIndex;
 		uint32_t word = readInstructionWord(code, wordIndex);
 		uint8_t op = static_cast<uint8_t>((word >> 18) & 0x3f);
@@ -286,9 +259,9 @@ void rewriteConstRelocations(
 		uint8_t cLow = static_cast<uint8_t>(word & 0x3f);
 		uint8_t ext = static_cast<uint8_t>(word >> 24);
 
-		const int mappedIndex = reloc.kind == ProgramImage::ConstRelocKind::Gl
+		const int mappedIndex = reloc.kind == ProgramConstRelocKind::Gl
 			? cartGlobalRemap[static_cast<size_t>(reloc.constIndex)]
-			: reloc.kind == ProgramImage::ConstRelocKind::Sys
+			: reloc.kind == ProgramConstRelocKind::Sys
 				? cartSystemGlobalRemap[static_cast<size_t>(reloc.constIndex)]
 				: cartConstRemap[static_cast<size_t>(reloc.constIndex)];
 
@@ -296,7 +269,7 @@ void rewriteConstRelocations(
 		// These store a string sentinel in the merged const pool of the form
 		// "modslot:<slotName>". Resolve that string to a merged global/system
 		// global slot index and rewrite the instruction into GETSYS/GETGL.
-		if (reloc.kind == ProgramImage::ConstRelocKind::Module) {
+		if (reloc.kind == ProgramConstRelocKind::Module) {
 			if (mappedIndex < 0 || static_cast<size_t>(mappedIndex) >= mergedConstValues.size()) {
 				throw std::runtime_error("[ProgramLinker] Module const index out of range.");
 			}
@@ -351,9 +324,9 @@ void rewriteConstRelocations(
 			continue;
 		}
 
-		if (reloc.kind == ProgramImage::ConstRelocKind::Bx
-			|| reloc.kind == ProgramImage::ConstRelocKind::Gl
-			|| reloc.kind == ProgramImage::ConstRelocKind::Sys) {
+		if (reloc.kind == ProgramConstRelocKind::Bx
+			|| reloc.kind == ProgramConstRelocKind::Gl
+			|| reloc.kind == ProgramConstRelocKind::Sys) {
 			// disable-next-line repeated_statement_sequence_pattern -- direct Bx relocations share operand encoding with module slot rewrites by ABI contract.
 			const uint32_t nextWide = static_cast<uint32_t>(mappedIndex) >> (MAX_BX_BITS + EXT_BX_BITS);
 			if (!hasWide && nextWide != 0) {
@@ -373,12 +346,12 @@ void rewriteConstRelocations(
 			continue;
 		}
 
-		if (reloc.kind == ProgramImage::ConstRelocKind::ConstB
-			|| reloc.kind == ProgramImage::ConstRelocKind::ConstC) {
+		if (reloc.kind == ProgramConstRelocKind::ConstB
+			|| reloc.kind == ProgramConstRelocKind::ConstC) {
 			// These are direct const operands for specialized opcodes, not signed RK encodings.
 			// Rewriting them with the RK path silently mangles the operand bits and only shows up
 			// later in release/libretro when the linked program executes the wrong instruction data.
-			const bool relocOnB = reloc.kind == ProgramImage::ConstRelocKind::ConstB;
+			const bool relocOnB = reloc.kind == ProgramConstRelocKind::ConstB;
 			const int extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
 			const int baseBits = MAX_OPERAND_BITS + extBits;
 			const uint32_t maxBase = (1u << baseBits) - 1u;
@@ -409,7 +382,7 @@ void rewriteConstRelocations(
 			continue;
 		}
 
-		const bool relocOnB = reloc.kind == ProgramImage::ConstRelocKind::RkB;
+		const bool relocOnB = reloc.kind == ProgramConstRelocKind::RkB;
 		const int rkValue = -mappedIndex - 1;
 		const int extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
 		const int baseBits = MAX_OPERAND_BITS + extBits;

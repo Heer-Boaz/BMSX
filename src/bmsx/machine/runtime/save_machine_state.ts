@@ -1,5 +1,13 @@
-import { RuntimeSaveMachineState } from './contracts';
+import type { MachineSaveState } from '../machine';
+import type { FrameSchedulerStateSnapshot } from '../scheduler/frame';
+import type { RuntimeVblankSnapshot } from './vblank';
 import type { Runtime } from './runtime';
+
+export type RuntimeSaveMachineState = {
+	machine: MachineSaveState;
+	frameScheduler: FrameSchedulerStateSnapshot;
+	vblank: RuntimeVblankSnapshot;
+};
 
 export function captureRuntimeSaveMachineState(runtime: Runtime): RuntimeSaveMachineState {
 	return {

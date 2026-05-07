@@ -107,7 +107,6 @@ add_library(bmsx_core STATIC
 	vendor/stb_impl.c
 
 	# Core systems
-	common/color.cpp
 	common/vector.cpp
 	core/console.cpp
 	core/rom_boot_manager.cpp

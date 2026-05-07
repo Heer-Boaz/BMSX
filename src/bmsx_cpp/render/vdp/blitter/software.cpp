@@ -225,7 +225,7 @@ void VdpSoftwareBlitter::rasterizeFrameBufferLine(const VDP::VdpHostOutput& outp
 void VdpSoftwareBlitter::rasterizeFrameBufferBlit(const VDP::VdpHostOutput& output, std::vector<u8>& pixels, const VDP::BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const VDP::FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
 	const i32 frameBufferWidth = static_cast<i32>(output.frameBufferWidth);
 	const i32 frameBufferHeight = static_cast<i32>(output.frameBufferHeight);
-	const VdpSourcePixels sourcePixels = resolveVdpSurfacePixels(output, source.surfaceId);
+	const VdpSurfacePixels sourcePixels = resolveVdpSurfacePixels(output, source.surfaceId);
 	const i32 dstW = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.width) * scaleX)));
 	const i32 dstH = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.height) * scaleY)));
 	const i32 dstX = static_cast<i32>(std::round(dstXValue));

@@ -9,18 +9,18 @@ StringPool::StringPool(bool trackLuaHeap)
 	: m_trackLuaHeap(trackLuaHeap) {
 }
 
-size_t StringKeyHash::operator()(std::string_view key) const noexcept {
+size_t StringPool::StringKeyHash::operator()(std::string_view key) const noexcept {
 	return std::hash<std::string_view>{}(key);
 }
 
-size_t StringKeyHash::operator()(const std::string& key) const noexcept {
+size_t StringPool::StringKeyHash::operator()(const std::string& key) const noexcept {
 	return std::hash<std::string_view>{}(key);
 }
 
-bool StringKeyEq::operator()(std::string_view lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
-bool StringKeyEq::operator()(const std::string& lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
-bool StringKeyEq::operator()(const std::string& lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
-bool StringKeyEq::operator()(std::string_view lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
+bool StringPool::StringKeyEq::operator()(std::string_view lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
+bool StringPool::StringKeyEq::operator()(const std::string& lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
+bool StringPool::StringKeyEq::operator()(const std::string& lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
+bool StringPool::StringKeyEq::operator()(std::string_view lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
 
 StringId StringPool::intern(std::string_view value) {
 	return internWithOwnership(value, m_trackLuaHeap);
@@ -36,21 +36,13 @@ StringId StringPool::internWithOwnership(std::string_view value, bool tracked) {
 		const StringId id = it->second;
 		InternedString& stringEntry = *m_entries[static_cast<size_t>(id)];
 		if (tracked && stringEntry.trackedByteLength == 0) {
-			const size_t byteLength = utf8ByteLength(stringEntry.value);
-			stringEntry.trackedByteLength = byteLength;
-			m_trackedBytes += byteLength;
-			addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(byteLength));
-			enforceLuaHeapBudget();
+			trackStringEntry(stringEntry);
 		}
 		return id;
 	}
 	InternedString& stringEntry = insert(m_nextId, value);
 	if (tracked) {
-		const size_t byteLength = utf8ByteLength(stringEntry.value);
-		stringEntry.trackedByteLength = byteLength;
-		m_trackedBytes += byteLength;
-		addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(byteLength));
-		enforceLuaHeapBudget();
+		trackStringEntry(stringEntry);
 	}
 	return stringEntry.id;
 }
@@ -92,12 +84,12 @@ void StringPool::restoreState(const StringPoolState& state) {
 	}
 }
 
-const InternedString& StringPool::entry(StringId id) const {
+const StringPool::InternedString& StringPool::entry(StringId id) const {
 	const auto* stringEntry = m_entries.at(static_cast<size_t>(id)).get();
 	return *stringEntry;
 }
 
-InternedString& StringPool::insert(StringId id, std::string_view value) {
+StringPool::InternedString& StringPool::insert(StringId id, std::string_view value) {
 	auto stringEntry = std::make_unique<InternedString>();
 	stringEntry->id = id;
 	stringEntry->value.assign(value.data(), value.size());
@@ -117,6 +109,14 @@ void StringPool::insertEntry(std::unique_ptr<InternedString> entry) {
 	if (id >= m_nextId) {
 		m_nextId = id + 1u;
 	}
+}
+
+void StringPool::trackStringEntry(InternedString& entry) {
+	const size_t byteLength = utf8ByteLength(entry.value);
+	entry.trackedByteLength = byteLength;
+	m_trackedBytes += byteLength;
+	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(byteLength));
+	enforceLuaHeapBudget();
 }
 
 } // namespace bmsx

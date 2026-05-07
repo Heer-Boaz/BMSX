@@ -4,6 +4,7 @@
 
 #include "backend.h"
 #include "common/clamp.h"
+#include "render/shared/software_pixels.h"
 #include <array>
 #include <algorithm>
 #include <cstring>
@@ -310,11 +311,11 @@ void SoftwareBackend::readTextureRegion(TextureHandle handle, u8* out, i32 width
 	readSoftwareTextureRegionPixels<false>(*tex, out, width, height, x, y, nullptr);
 }
 
-TextureHandle SoftwareBackend::createSolidTexture2D(i32 width, i32 height, const Color& color) {
+TextureHandle SoftwareBackend::createSolidTexture2D(i32 width, i32 height, u32 color) {
 	auto tex = std::make_unique<SoftwareTexture>();
 	tex->width = width;
 	tex->height = height;
-	tex->data.resize(width * height, color.toARGB32());
+	tex->data.resize(width * height, color);
 
 	SoftwareTexture* ptr = tex.get();
 	m_textures.push_back(std::move(tex));
@@ -331,14 +332,6 @@ void SoftwareBackend::destroyTexture(TextureHandle handle) {
 	}
 }
 
-void SoftwareBackend::copyTexture(TextureHandle source, TextureHandle destination, i32 width, i32 height) {
-	(void)width;
-	(void)height;
-	auto* src = static_cast<SoftwareTexture*>(source);
-	auto* dst = static_cast<SoftwareTexture*>(destination);
-	dst->data = src->data;
-}
-
 void SoftwareBackend::copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) {
 	auto* src = static_cast<SoftwareTexture*>(source);
 	auto* dst = static_cast<SoftwareTexture*>(destination);
@@ -349,9 +342,12 @@ void SoftwareBackend::copyTextureRegion(TextureHandle source, TextureHandle dest
 	}
 }
 
-void SoftwareBackend::clear(const Color* color, const f32* depth) {
+void SoftwareBackend::clear(const std::array<f32, 4>* color, const f32* depth) {
 	if (color && m_framebuffer) {
-		u32 packed = color->toARGB32();
+		const u32 packed = (static_cast<u32>((*color)[3] * 255.0f) << 24u)
+			| (static_cast<u32>((*color)[0] * 255.0f) << 16u)
+			| (static_cast<u32>((*color)[1] * 255.0f) << 8u)
+			| static_cast<u32>((*color)[2] * 255.0f);
 		i32 pixelsPerRow = m_pitch / sizeof(u32);
 		for (i32 y = 0; y < m_height; ++y) {
 			u32* row = m_framebuffer + y * pixelsPerRow;
@@ -374,11 +370,9 @@ PassEncoder SoftwareBackend::beginRenderPass(const RenderPassDesc& desc) {
 		colorSpec = &desc.colors.front();
 	}
 
-	const Color* clearColor = nullptr;
-	Color colorValue;
+	const std::array<f32, 4>* clearColor = nullptr;
 	if (colorSpec && colorSpec->clear) {
-		colorValue = *colorSpec->clear;
-		clearColor = &colorValue;
+		clearColor = &*colorSpec->clear;
 	}
 
 	const f32* clearDepth = nullptr;
@@ -437,46 +431,37 @@ BackendCaps SoftwareBackend::getCaps() const {
 // Software-specific drawing primitives
 // ─────────────────────────────────────────────────────────────────────────────
 
-void SoftwareBackend::setPixel(i32 x, i32 y, const Color& color) {
+void SoftwareBackend::setPixel(i32 x, i32 y, u32 color) {
 	if (x < 0 || x >= m_width || y < 0 || y >= m_height) return;
 	if (!m_framebuffer) return;
 
 	i32 pixelsPerRow = m_pitch / sizeof(u32);
-	m_framebuffer[y * pixelsPerRow + x] = color.toARGB32();
+	m_framebuffer[y * pixelsPerRow + x] = color;
 }
 
-void SoftwareBackend::blendPixel(i32 x, i32 y, const Color& color) {
+void SoftwareBackend::blendPixel(i32 x, i32 y, u32 color) {
 	if (x < 0 || x >= m_width || y < 0 || y >= m_height) return;
 	if (!m_framebuffer) return;
-	if (color.a <= 0.0f) return;
+	const SoftwareColorBytes bytes{
+		static_cast<u8>((color >> 16u) & 0xffu),
+		static_cast<u8>((color >> 8u) & 0xffu),
+		static_cast<u8>(color & 0xffu),
+		static_cast<u8>((color >> 24u) & 0xffu),
+	};
+	if (bytes.a == 0u) return;
 
 	i32 pixelsPerRow = m_pitch / sizeof(u32);
 	i32 idx = y * pixelsPerRow + x;
 
-	if (color.a >= 1.0f) {
-		m_framebuffer[idx] = color.toARGB32();
+	if (bytes.a == 255u) {
+		m_framebuffer[idx] = color;
 		return;
 	}
 
-	// Alpha blend
-	u32 dst = m_framebuffer[idx];
-	f32 dstR = ((dst >> 16) & 0xFF) / 255.0f;
-	f32 dstG = ((dst >> 8) & 0xFF) / 255.0f;
-	f32 dstB = (dst & 0xFF) / 255.0f;
-
-	f32 srcA = color.a;
-	f32 invA = 1.0f - srcA;
-	f32 outR = color.r * srcA + dstR * invA;
-	f32 outG = color.g * srcA + dstG * invA;
-	f32 outB = color.b * srcA + dstB * invA;
-
-	u8 ri = static_cast<u8>(std::min(1.0f, outR) * 255.0f);
-	u8 gi = static_cast<u8>(std::min(1.0f, outG) * 255.0f);
-	u8 bi = static_cast<u8>(std::min(1.0f, outB) * 255.0f);
-	m_framebuffer[idx] = (0xFF << 24) | (ri << 16) | (gi << 8) | bi;
+	blendSoftwareArgb(m_framebuffer[idx], bytes.r, bytes.g, bytes.b, bytes.a);
 }
 
-void SoftwareBackend::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color) {
+void SoftwareBackend::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, u32 color) {
 	// Bresenham's line algorithm
 	i32 dx = std::abs(x1 - x0);
 	i32 dy = std::abs(y1 - y0);
@@ -501,7 +486,7 @@ void SoftwareBackend::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& colo
 	}
 }
 
-void SoftwareBackend::fillRect(i32 x, i32 y, i32 w, i32 h, const Color& color) {
+void SoftwareBackend::fillRect(i32 x, i32 y, i32 w, i32 h, u32 color) {
 	// Clip to screen bounds
 	i32 x0 = std::max(0, x);
 	i32 y0 = std::max(0, y);
@@ -512,13 +497,11 @@ void SoftwareBackend::fillRect(i32 x, i32 y, i32 w, i32 h, const Color& color) {
 
 	i32 pixelsPerRow = m_pitch / sizeof(u32);
 
-	if (color.a >= 1.0f) {
-		// Opaque fill - fast path
-		u32 packed = color.toARGB32();
+	if (((color >> 24u) & 0xffu) == 255u) {
 		for (i32 py = y0; py < y1; ++py) {
 			u32* row = m_framebuffer + py * pixelsPerRow;
 			for (i32 px = x0; px < x1; ++px) {
-				row[px] = packed;
+				row[px] = color;
 			}
 		}
 	} else {
@@ -531,7 +514,7 @@ void SoftwareBackend::fillRect(i32 x, i32 y, i32 w, i32 h, const Color& color) {
 	}
 }
 
-void SoftwareBackend::drawRect(i32 x, i32 y, i32 w, i32 h, const Color& color) {
+void SoftwareBackend::drawRect(i32 x, i32 y, i32 w, i32 h, u32 color) {
 	// Top and bottom edges
 	drawLine(x, y, x + w - 1, y, color);
 	drawLine(x, y + h - 1, x + w - 1, y + h - 1, color);
@@ -542,7 +525,7 @@ void SoftwareBackend::drawRect(i32 x, i32 y, i32 w, i32 h, const Color& color) {
 
 void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 srcW, i32 srcH,
 									i32 dstX, i32 dstY, i32 dstW, i32 dstH, f32 depth,
-									const Color& tint, bool flipH, bool flipV,
+									u32 tint, bool flipH, bool flipV,
 									const DitherParams& dither, bool useDepth) {
 	auto* softTex = static_cast<SoftwareTexture*>(tex);
 	if (!softTex || softTex->data.empty()) return;
@@ -572,10 +555,16 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
 
 	const i32 sx_fp_start = (srcX << 16) + baseX * stepX;
 
-	const i32 tintR = static_cast<i32>(tint.r * 255.0f + 0.5f);
-	const i32 tintG = static_cast<i32>(tint.g * 255.0f + 0.5f);
-	const i32 tintB = static_cast<i32>(tint.b * 255.0f + 0.5f);
-	const i32 tintA = static_cast<i32>(tint.a * 255.0f + 0.5f);
+	const SoftwareColorBytes tintBytes{
+		static_cast<u8>((tint >> 16u) & 0xffu),
+		static_cast<u8>((tint >> 8u) & 0xffu),
+		static_cast<u8>(tint & 0xffu),
+		static_cast<u8>((tint >> 24u) & 0xffu),
+	};
+	const i32 tintR = tintBytes.r;
+	const i32 tintG = tintBytes.g;
+	const i32 tintB = tintBytes.b;
+	const i32 tintA = tintBytes.a;
 
 	const u32* srcData = softTex->data.data();
 	const i32 texWidth = softTex->width;

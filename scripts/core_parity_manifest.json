@@ -51,11 +51,6 @@
 			"reason": "compiler_tooling_excluded"
 		},
 		{
-			"pattern": "src/bmsx/machine/program/layout.ts",
-			"category": "compiler_tooling",
-			"reason": "compiler_tooling_excluded"
-		},
-		{
 			"pattern": "src/bmsx/machine/program/source_range.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_tooling_excluded"
@@ -339,7 +334,6 @@
 	],
 	"must_have_cpp": [
 		"src/bmsx/common/arrays_equal.ts",
-		"src/bmsx/common/color.ts",
 		"src/bmsx/common/vector.ts",
 		"src/bmsx/common/lower_bound.ts",
 		"src/bmsx/common/scratchstack.ts",
@@ -353,5 +347,301 @@
 		"src/bmsx/rompack/toc.ts",
 		"src/bmsx/rompack/source.ts",
 		"src/bmsx/rompack/metadata.ts"
+	],
+	"public_symbol_parity": [
+		{
+			"ts": "src/bmsx/rompack/toc.ts",
+			"cpp": [
+				"src/bmsx_cpp/rompack/toc.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/rompack/source.ts",
+			"cpp": [
+				"src/bmsx_cpp/rompack/source.h"
+			],
+			"exclude": [
+				{
+					"side": "ts",
+					"symbol": "RawRomSource",
+					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
+				},
+				{
+					"side": "ts",
+					"symbol": "RawRomSource.getBytes",
+					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
+				},
+				{
+					"side": "ts",
+					"symbol": "RawRomSource.getBytesView",
+					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
+				},
+				{
+					"side": "ts",
+					"symbol": "RawRomSource.getEntry",
+					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
+				},
+				{
+					"side": "ts",
+					"symbol": "RawRomSource.getEntryByPath",
+					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
+				},
+				{
+					"side": "ts",
+					"symbol": "RawRomSource.list",
+					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
+				},
+				{
+					"side": "cpp",
+					"symbol": "CartridgeIndex",
+					"reason": "C++ source.h owns these source-stack record carriers because they embed C++ RomAssetInfo; TS owns the same wire-format types in rompack/format.ts."
+				},
+				{
+					"side": "cpp",
+					"symbol": "CartridgeLayerId",
+					"reason": "C++ source.h owns these source-stack record carriers because they embed C++ RomAssetInfo; TS owns the same wire-format types in rompack/format.ts."
+				},
+				{
+					"side": "cpp",
+					"symbol": "RomSourceEntry",
+					"reason": "C++ source.h owns these source-stack record carriers because they embed C++ RomAssetInfo; TS owns the same wire-format types in rompack/format.ts."
+				}
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/program/layout.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/program/layout.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/program/linker.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/program/linker.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/runtime/save_state/schema.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/runtime/save_state/schema.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/runtime/save_state/codec.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/runtime/save_state/codec.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/machine.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/machine.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/cpu/string_pool.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/cpu/string_pool.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/program/loader.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/program/loader.h"
+			],
+			"exclude": [
+				{
+					"side": "ts",
+					"symbol": "encodeProgramObjectSections",
+					"reason": "TS compiler emits object-image sections; C++ runtime consumes linked images and has no compiler producer surface."
+				}
+			]
+		},
+		{
+			"ts": "src/bmsx/common/arrays_equal.ts",
+			"cpp": [
+				"src/bmsx_cpp/common/arrays_equal.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/common/lower_bound.ts",
+			"cpp": [
+				"src/bmsx_cpp/common/lower_bound.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/common/hash.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/common/hash.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/memory/access_kind.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/memory/access_kind.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/cpu/opcode_info.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/cpu/opcode_info.h"
+			],
+			"exclude": [
+				{
+					"side": "ts",
+					"symbol": "OPCODE",
+					"reason": "TS emits OPCODE as a runtime value table for const-enum consumers; C++ exposes the same opcode values through enum class OpCode."
+				}
+			]
+		},
+		{
+			"ts": "src/bmsx/rompack/metadata.ts",
+			"cpp": [
+				"src/bmsx_cpp/rompack/metadata.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/rompack/tokens.ts",
+			"cpp": [
+				"src/bmsx_cpp/rompack/tokens.h"
+			],
+			"exclude": [
+				{
+					"side": "ts",
+					"symbol": "tokenKeyFromAsset",
+					"reason": "TS tokenKeyFromAsset reads optional TOC token fields from RomAsset; C++ verifies TOC tokens on decode and stores native keys separately."
+				},
+				{
+					"side": "cpp",
+					"symbol": "AssetId",
+					"reason": "C++ tokens.h exposes native ROM package map-key aliases; TS owns those asset id aliases in rompack/format.ts."
+				},
+				{
+					"side": "cpp",
+					"symbol": "AssetTokenParts",
+					"reason": "C++ keeps packed 64-bit token helpers for unordered_map keys; TS public token surface uses lo/hi parts."
+				},
+				{
+					"side": "cpp",
+					"symbol": "AudioId",
+					"reason": "C++ tokens.h exposes native ROM package map-key aliases; TS owns those asset id aliases in rompack/format.ts."
+				},
+				{
+					"side": "cpp",
+					"symbol": "BitmapId",
+					"reason": "C++ tokens.h exposes native ROM package map-key aliases; TS owns those asset id aliases in rompack/format.ts."
+				},
+				{
+					"side": "cpp",
+					"symbol": "DataId",
+					"reason": "C++ tokens.h exposes native ROM package map-key aliases; TS owns those asset id aliases in rompack/format.ts."
+				},
+				{
+					"side": "cpp",
+					"symbol": "ModelId",
+					"reason": "C++ tokens.h exposes native ROM package map-key aliases; TS owns those asset id aliases in rompack/format.ts."
+				},
+				{
+					"side": "cpp",
+					"symbol": "hashAssetToken",
+					"reason": "C++ keeps packed 64-bit token helpers for unordered_map keys; TS public token surface uses lo/hi parts."
+				},
+				{
+					"side": "cpp",
+					"symbol": "makeAssetToken",
+					"reason": "C++ keeps packed 64-bit token helpers for unordered_map keys; TS public token surface uses lo/hi parts."
+				},
+				{
+					"side": "cpp",
+					"symbol": "splitAssetToken",
+					"reason": "C++ keeps packed 64-bit token helpers for unordered_map keys; TS public token surface uses lo/hi parts."
+				}
+			]
+		},
+		{
+			"ts": "src/bmsx/common/scratchstack.ts",
+			"cpp": [
+				"src/bmsx_cpp/common/scratchstack.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/runtime/timing/state.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/runtime/timing/state.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/render/runtime_state.ts",
+			"cpp": [
+				"src/bmsx_cpp/render/runtime_state.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/render/shared/submissions.ts",
+			"cpp": [
+				"src/bmsx_cpp/render/shared/submissions.h"
+			],
+			"exclude": [
+				{
+					"side": "cpp",
+					"symbol": "RectRenderSubmission.Kind",
+					"reason": "TS RectRenderSubmission encodes kind as a string-literal union field; C++ uses a scoped enum to store the same closed command kind without adding a wrapper namespace."
+				}
+			]
+		},
+		{
+			"ts": "src/bmsx/common/vector.ts",
+			"cpp": [
+				"src/bmsx_cpp/common/vector.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/render/shared/camera_state.ts",
+			"cpp": [
+				"src/bmsx_cpp/render/shared/camera_state.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/render/shared/glyph_runs.ts",
+			"cpp": [
+				"src/bmsx_cpp/render/shared/glyph_runs.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/render/vdp/source_pixels.ts",
+			"cpp": [
+				"src/bmsx_cpp/render/vdp/source_pixels.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/runtime/system_irq.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/runtime/system_irq.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/runtime/cpu_state.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/runtime/cpu_state.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/runtime/machine_state.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/runtime/machine_state.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/runtime/save_machine_state.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/runtime/save_machine_state.h"
+			]
+		},
+		{
+			"ts": "src/bmsx/machine/runtime/save_state.ts",
+			"cpp": [
+				"src/bmsx_cpp/machine/runtime/save_state.h"
+			]
+		}
 	]
 }

@@ -84,7 +84,6 @@ struct VdpBlitterCommand {
 };
 
 u8 frameBufferColorByte(f32 value);
-u32 packFrameBufferColor(const Color& color);
 VdpFrameBufferColor unpackArgbColor(u32 value);
 
 } // namespace bmsx

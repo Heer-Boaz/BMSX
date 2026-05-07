@@ -53,17 +53,17 @@ constexpr HostMenuButton kButtonB{"b", "KeyC"};
 constexpr std::array<HostMenuButton, 4> kToggleButtons{kButtonStart, kButtonSelect, kButtonLb, kButtonRb};
 constexpr std::array<HostMenuButton, 7> kMenuButtons{kButtonUp, kButtonDown, kButtonLeft, kButtonRight, kButtonA, kButtonB, kButtonStart};
 
-const Color kPanelColor{0.03f, 0.03f, 0.03f, 0.80f};
-const Color kHighlightColor{0.12f, 0.25f, 0.38f, 0.86f};
-const Color kTextColor{0.94f, 0.94f, 0.94f, 1.0f};
-const Color kDimColor{0.70f, 0.70f, 0.70f, 1.0f};
-const Color kTitleColor{0.36f, 0.78f, 1.0f, 1.0f};
-const Color kUsagePanelColor{0.0f, 0.0f, 0.0f, 1.0f};
-const Color kUsageTextColor{1.0f, 1.0f, 1.0f, 1.0f};
-const Color kUsageDimColor{208.0f / 255.0f, 208.0f / 255.0f, 208.0f / 255.0f, 1.0f};
-const Color kUsageOkColor{4.0f / 255.0f, 212.0f / 255.0f, 19.0f / 255.0f, 1.0f};
-const Color kUsageWarnColor{226.0f / 255.0f, 210.0f / 255.0f, 4.0f / 255.0f, 1.0f};
-const Color kUsageDangerColor{1.0f, 81.0f / 255.0f, 52.0f / 255.0f, 1.0f};
+constexpr u32 kPanelColor = 0xcc070707u;
+constexpr u32 kHighlightColor = 0xdb1e3f60u;
+constexpr u32 kTextColor = 0xffefefefu;
+constexpr u32 kDimColor = 0xffb2b2b2u;
+constexpr u32 kTitleColor = 0xff5bc6ffu;
+constexpr u32 kUsagePanelColor = 0xff000000u;
+constexpr u32 kUsageTextColor = 0xffffffffu;
+constexpr u32 kUsageDimColor = 0xffd0d0d0u;
+constexpr u32 kUsageOkColor = 0xff04d413u;
+constexpr u32 kUsageWarnColor = 0xffe2d204u;
+constexpr u32 kUsageDangerColor = 0xffff5134u;
 
 enum class HostMenuOptionId : i32 {
 	ShowUsageGizmo,
@@ -174,13 +174,13 @@ void consumeButtons(PlayerInput& player, const std::array<HostMenuButton, N>& bu
 	}
 }
 
-void configureRect(RectRenderSubmission& submission, const Color& color) {
+void configureRect(RectRenderSubmission& submission, u32 color) {
 	submission.kind = RectRenderSubmission::Kind::Fill;
 	submission.color = color;
 	submission.layer = RenderLayer::IDE;
 }
 
-void configureGlyphs(GlyphRenderSubmission& submission, const char* text, const Color& color) {
+void configureGlyphs(GlyphRenderSubmission& submission, const char* text, u32 color) {
 	submission.glyphs.clear();
 	submission.glyphs.emplace_back(text);
 	submission.glyph_start = 0;
@@ -190,7 +190,7 @@ void configureGlyphs(GlyphRenderSubmission& submission, const char* text, const 
 	submission.layer = RenderLayer::IDE;
 }
 
-const Color& usageColor(double ratio) {
+u32 usageColor(double ratio) {
 	if (ratio >= 0.9) return kUsageDangerColor;
 	if (ratio >= 0.7) return kUsageWarnColor;
 	return kUsageOkColor;

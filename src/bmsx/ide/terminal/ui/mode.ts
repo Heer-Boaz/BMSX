@@ -187,7 +187,6 @@ const PAGER_FALLBACK_PAGE_LINES = 20;
 // const PROMPT_GAP = 4;
 const PADDING_X = 0;
 const PADDING_Y = 0;
-const CHARACTER_TILE_ALPHA = 1.0;
 const CURSOR_BLINK_PERIOD = 0.5;
 const SYMBOL_PANEL_MIN_CELL_WIDTH = 12;
 const SYMBOL_PANEL_COLUMN_GAP = 2;
@@ -208,7 +207,7 @@ export class TerminalMode {
 	public font: EditorFont;
 	private readonly uppercaseDisplayOverride = true;
 	private readonly maxEntries: number;
-	private readonly characterBackgroundColor = { r: 0, g: 0, b: 0, a: CHARACTER_TILE_ALPHA } as color;
+	private readonly characterBackgroundColor: color = 0xff000000;
 	private readonly caretColor = resolveThemeTokenColor(THEME_TOKEN_WHITE);
 	private readonly selectionColor = resolveThemeTokenColor(THEME_TOKEN_TERMINAL_LIGHT_YELLOW);
 	private readonly field: TextField = createInlineTextField();

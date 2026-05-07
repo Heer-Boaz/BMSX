@@ -861,7 +861,7 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 } // namespace
 
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state) {
-	const std::vector<u8> payload = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), runtimeSaveStatePropNames());
+	const std::vector<u8> payload = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
 	std::vector<u8> bytes;
 	bytes.reserve(RUNTIME_SAVE_STATE_FRAME_BYTES + payload.size());
 	bytes.push_back(BINENC_VERSION);
@@ -881,7 +881,7 @@ RuntimeSaveState decodeRuntimeSaveState(const u8* data, size_t size) {
 		throw BMSX_RUNTIME_ERROR("runtimeSaveState wire version is invalid.");
 	}
 	return decodeRuntimeSaveStateValue(
-		decodeBinaryWithPropTable(data + RUNTIME_SAVE_STATE_FRAME_BYTES, size - RUNTIME_SAVE_STATE_FRAME_BYTES, runtimeSaveStatePropNames()),
+		decodeBinaryWithPropTable(data + RUNTIME_SAVE_STATE_FRAME_BYTES, size - RUNTIME_SAVE_STATE_FRAME_BYTES, RUNTIME_SAVE_STATE_PROP_NAMES),
 		"runtimeSaveState");
 }
 

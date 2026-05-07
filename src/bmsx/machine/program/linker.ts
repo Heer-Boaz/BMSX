@@ -20,14 +20,13 @@ import {
 	type ProgramLayout,
 } from './layout';
 import type {
-	EncodedProgram,
 	EncodedValue,
 	ProgramImage,
 	ProgramConstReloc,
 	ProgramSymbolsImage,
 } from './loader';
 
-type LinkedProgramImage = {
+export type LinkedProgramImage = {
 	programImage: ProgramImage;
 	metadata: ProgramMetadata | null;
 	systemEntryProtoIndex: number;
@@ -528,12 +527,6 @@ export const linkProgramImages = (
 		protoIndex += 1;
 	}
 
-	const program: EncodedProgram = {
-		code,
-		constPool: mergedConsts.constPool,
-		protos,
-	};
-
 	const moduleProtos: Array<{ path: string; protoIndex: number }> = [];
 	for (const entry of cartRodata.moduleProtos) {
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex + baseProtoCount });
@@ -559,11 +552,11 @@ export const linkProgramImages = (
 			entryProtoIndex: cartEntryProtoIndex,
 			sections: {
 				text: {
-					code: program.code,
-					protos: program.protos,
+					code,
+					protos,
 				},
 				rodata: {
-					constPool: program.constPool,
+					constPool: mergedConsts.constPool,
 					moduleProtos,
 					staticModulePaths,
 				},

@@ -96,12 +96,7 @@ public:
 				out.tex = colorSpec.tex;
 				out.discardAfter = colorSpec.discardAfter;
 				if (colorSpec.clear) {
-					out.clear = Color{
-						(*colorSpec.clear)[0],
-						(*colorSpec.clear)[1],
-						(*colorSpec.clear)[2],
-						(*colorSpec.clear)[3]
-					};
+					out.clear = *colorSpec.clear;
 				}
 				desc.colors.push_back(out);
 			}
