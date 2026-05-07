@@ -23,13 +23,31 @@ bool StringKeyEq::operator()(const std::string& lhs, std::string_view rhs) const
 bool StringKeyEq::operator()(std::string_view lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
 
 StringId StringPool::intern(std::string_view value) {
+	return internWithOwnership(value, m_trackLuaHeap);
+}
+
+StringId StringPool::internRom(std::string_view value) {
+	return internWithOwnership(value, false);
+}
+
+StringId StringPool::internWithOwnership(std::string_view value, bool tracked) {
 	auto it = m_stringMap.find(value);
 	if (it != m_stringMap.end()) {
-		return it->second;
+		const StringId id = it->second;
+		InternedString& stringEntry = *m_entries[static_cast<size_t>(id)];
+		if (tracked && stringEntry.trackedByteLength == 0) {
+			const size_t byteLength = utf8ByteLength(stringEntry.value);
+			stringEntry.trackedByteLength = byteLength;
+			m_trackedBytes += byteLength;
+			addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(byteLength));
+			enforceLuaHeapBudget();
+		}
+		return id;
 	}
 	InternedString& stringEntry = insert(m_nextId, value);
-	if (m_trackLuaHeap) {
+	if (tracked) {
 		const size_t byteLength = utf8ByteLength(stringEntry.value);
+		stringEntry.trackedByteLength = byteLength;
 		m_trackedBytes += byteLength;
 		addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(byteLength));
 		enforceLuaHeapBudget();
@@ -49,7 +67,7 @@ StringPoolState StringPool::captureState() const {
 	StringPoolState state;
 	for (const auto& entry : m_entries) {
 		if (entry) {
-			state.entries.push_back(StringPoolStateEntry{ entry->id, entry->value });
+			state.entries.push_back(StringPoolStateEntry{ entry->id, entry->value, entry->trackedByteLength > 0 });
 		}
 	}
 	return state;
@@ -63,7 +81,10 @@ void StringPool::restoreState(const StringPoolState& state) {
 	m_trackedBytes = 0;
 	for (const StringPoolStateEntry& stateEntry : state.entries) {
 		InternedString& stringEntry = insert(stateEntry.id, stateEntry.value);
-		m_trackedBytes += utf8ByteLength(stringEntry.value);
+		if (stateEntry.tracked) {
+			stringEntry.trackedByteLength = utf8ByteLength(stringEntry.value);
+			m_trackedBytes += stringEntry.trackedByteLength;
+		}
 	}
 	if (m_trackLuaHeap) {
 		replaceTrackedLuaHeapBytes(previousTrackedBytes, m_trackedBytes);

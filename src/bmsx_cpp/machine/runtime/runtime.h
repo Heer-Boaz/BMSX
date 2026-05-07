@@ -109,7 +109,6 @@ public:
 	/**
 	 * Boot the runtime with a compiled program.
 	 */
-	void boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>* staticModulePaths = nullptr);
 	void boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>& staticModulePaths);
 	void handleLuaError(const std::string& message);
 
@@ -257,6 +256,7 @@ public:
 	Machine machine;
 
 private:
+	std::unique_ptr<Program> m_programStorage;
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 

@@ -1,6 +1,7 @@
 #include "machine/program/linker.h"
 #include "machine/cpu/instruction_format.h"
 #include <algorithm>
+#include <cstring>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -101,31 +102,24 @@ void writeBcRelocatedInstruction(
 	writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
 }
 
-std::string makeConstKey(const StringPool& strings, Value value) {
-	if (isNil(value)) {
+std::string makeConstKey(const EncodedValue& value) {
+	if (std::holds_alternative<std::nullptr_t>(value)) {
 		return "nil";
 	}
-	if (valueIsBool(value)) {
-		return valueToBool(value) ? "b:1" : "b:0";
+	if (const auto* boolValue = std::get_if<bool>(&value)) {
+		return *boolValue ? "b:1" : "b:0";
 	}
-	if (valueIsNumber(value)) {
+	if (const auto* numberValue = std::get_if<double>(&value)) {
+		uint64_t bits = VALUE_QNAN_MASK;
+		if (*numberValue == *numberValue) {
+			std::memcpy(&bits, numberValue, sizeof(bits));
+		}
 		std::ostringstream out;
-		out << "n:0x" << std::hex << std::setw(16) << std::setfill('0') << value;
+		out << "n:0x" << std::hex << std::setw(16) << std::setfill('0') << bits;
 		return out.str();
 	}
-	if (valueIsString(value)) {
-		return "s:" + strings.toString(asStringId(value));
-	}
-	throw std::runtime_error("[ProgramLinker] Unsupported const pool value.");
-}
-
-Value copyConstValue(const StringPool& sourceStrings, Value value, StringPool& outPool) {
-	if (isNil(value) || valueIsNumber(value) || valueIsBool(value)) {
-		return value;
-	}
-	if (valueIsString(value)) {
-		const std::string& text = sourceStrings.toString(asStringId(value));
-		return valueString(outPool.intern(text));
+	if (const auto* stringValue = std::get_if<std::string>(&value)) {
+		return "s:" + *stringValue;
 	}
 	throw std::runtime_error("[ProgramLinker] Unsupported const pool value.");
 }
@@ -163,19 +157,16 @@ MergedNamedSlots mergeNamedSlots(
 }
 
 struct MergedConstPool {
-	std::vector<Value> values;
+	std::vector<EncodedValue> values;
 	std::vector<int> cartRemap;
 };
 
 MergedConstPool mergeConstPools(
-	const Program& systemProgram,
-	const Program& cartProgram,
-	StringPool& outPool
+	const ProgramRodataSection& systemRodata,
+	const ProgramRodataSection& cartRodata
 ) {
-	const StringPool& systemStrings = *systemProgram.constPoolStringPool;
-	const StringPool& cartStrings = *cartProgram.constPoolStringPool;
-	const size_t systemConstCount = systemProgram.constPool.size();
-	const size_t cartConstCount = cartProgram.constPool.size();
+	const size_t systemConstCount = systemRodata.constPool.size();
+	const size_t cartConstCount = cartRodata.constPool.size();
 	MergedConstPool merged;
 	merged.values.reserve(systemConstCount + cartConstCount);
 	merged.cartRemap.resize(cartConstCount, -1);
@@ -184,25 +175,24 @@ MergedConstPool mergeConstPools(
 	keyToIndex.reserve(systemConstCount + cartConstCount);
 
 	for (size_t i = 0; i < systemConstCount; ++i) {
-		const Value value = systemProgram.constPool[i];
-		const Value copied = copyConstValue(systemStrings, value, outPool);
-		merged.values.push_back(copied);
-		const std::string key = makeConstKey(systemStrings, value);
+		const EncodedValue& value = systemRodata.constPool[i];
+		merged.values.push_back(value);
+		const std::string key = makeConstKey(value);
 		if (keyToIndex.find(key) == keyToIndex.end()) {
 			keyToIndex.emplace(key, static_cast<int>(i));
 		}
 	}
 
 	for (size_t i = 0; i < cartConstCount; ++i) {
-		const Value value = cartProgram.constPool[i];
-		const std::string key = makeConstKey(cartStrings, value);
+		const EncodedValue& value = cartRodata.constPool[i];
+		const std::string key = makeConstKey(value);
 		const auto existing = keyToIndex.find(key);
 		if (existing != keyToIndex.end()) {
 			merged.cartRemap[i] = existing->second;
 			continue;
 		}
 		const int newIndex = static_cast<int>(merged.values.size());
-		merged.values.push_back(copyConstValue(cartStrings, value, outPool));
+		merged.values.push_back(value);
 		keyToIndex.emplace(key, newIndex);
 		merged.cartRemap[i] = newIndex;
 	}
@@ -271,8 +261,7 @@ void rewriteConstRelocations(
 	const std::vector<int>& cartConstRemap,
 	const std::vector<int>& cartGlobalRemap,
 	const std::vector<int>& cartSystemGlobalRemap,
-	const std::vector<Value>& mergedConstValues,
-	const StringPool& mergedConstStrings,
+	const std::vector<EncodedValue>& mergedConstValues,
 	const std::vector<std::string>& mergedGlobalNames,
 	const std::vector<std::string>& mergedSystemGlobalNames
 ) {
@@ -311,11 +300,12 @@ void rewriteConstRelocations(
 			if (mappedIndex < 0 || static_cast<size_t>(mappedIndex) >= mergedConstValues.size()) {
 				throw std::runtime_error("[ProgramLinker] Module const index out of range.");
 			}
-			const Value cv = mergedConstValues[static_cast<size_t>(mappedIndex)];
-			if (!valueIsString(cv)) {
+			const EncodedValue& cv = mergedConstValues[static_cast<size_t>(mappedIndex)];
+			const auto* moduleSlotValue = std::get_if<std::string>(&cv);
+			if (!moduleSlotValue) {
 				throw std::runtime_error("[ProgramLinker] Module reloc must refer to a string const.");
 			}
-			const std::string text = mergedConstStrings.toString(asStringId(cv));
+			const std::string& text = *moduleSlotValue;
 			const std::string prefix = "modslot:";
 			std::string slotName = text;
 			if (text.rfind(prefix, 0) == 0) {
@@ -539,23 +529,21 @@ LinkedProgramImage linkProgramImages(
 	int systemBasePc,
 	int cartBasePc
 ) {
-	if (!systemImage.program || !cartImage.program) {
-		throw std::runtime_error("[ProgramLinker] Missing program image.");
-	}
-	const Program& systemProgram = *systemImage.program;
-	const Program& cartProgram = *cartImage.program;
-	const int systemCodeBytes = static_cast<int>(systemProgram.code.size());
-	const int cartCodeBytes = static_cast<int>(cartProgram.code.size());
-	const size_t systemProtoSize = systemProgram.protos.size();
+	const ProgramTextSection& systemText = systemImage.sections.text;
+	const ProgramTextSection& cartText = cartImage.sections.text;
+	const ProgramRodataSection& systemRodata = systemImage.sections.rodata;
+	const ProgramRodataSection& cartRodata = cartImage.sections.rodata;
+	const int systemCodeBytes = static_cast<int>(systemText.code.size());
+	const int cartCodeBytes = static_cast<int>(cartText.code.size());
+	const size_t systemProtoSize = systemText.protos.size();
 	const int systemProtoCount = static_cast<int>(systemProtoSize);
 	ProgramLayout layout = resolveProgramLayout(systemCodeBytes, systemBasePc, cartBasePc);
 
-	std::vector<uint8_t> cartCode = cartProgram.code;
+	std::vector<uint8_t> cartCode = cartText.code;
 	rewriteClosureIndices(cartCode, systemProtoCount);
 
-	auto linkedProgram = std::make_unique<Program>();
-	linkedProgram->constPoolStringPool = &linkedProgram->stringPool;
-	MergedConstPool merged = mergeConstPools(systemProgram, cartProgram, linkedProgram->stringPool);
+	ProgramObjectSections linkedSections;
+	MergedConstPool merged = mergeConstPools(systemRodata, cartRodata);
 	const MergedNamedSlots mergedSystemGlobals = mergeNamedSlots(
 		systemSymbols ? systemSymbols->systemGlobalNames : std::vector<std::string>{},
 		cartSymbols ? cartSymbols->systemGlobalNames : std::vector<std::string>{}
@@ -571,45 +559,47 @@ LinkedProgramImage linkProgramImages(
 		mergedGlobals.cartRemap,
 		mergedSystemGlobals.cartRemap,
 		merged.values,
-		linkedProgram->stringPool,
 		mergedGlobals.names,
 		mergedSystemGlobals.names
 	);
-	linkedProgram->constPool = std::move(merged.values);
+	linkedSections.rodata.constPool = std::move(merged.values);
 
-	linkedProgram->protos.reserve(systemProtoSize + cartProgram.protos.size());
-	for (const auto& proto : systemProgram.protos) {
-		Proto& linkedProto = linkedProgram->protos.emplace_back(proto);
+	linkedSections.text.protos.reserve(systemProtoSize + cartText.protos.size());
+	for (const auto& proto : systemText.protos) {
+		Proto& linkedProto = linkedSections.text.protos.emplace_back(proto);
 		linkedProto.entryPC += layout.systemBasePc;
 	}
-	for (const auto& proto : cartProgram.protos) {
-		Proto& linkedProto = linkedProgram->protos.emplace_back(proto);
+	for (const auto& proto : cartText.protos) {
+		Proto& linkedProto = linkedSections.text.protos.emplace_back(proto);
 		linkedProto.entryPC += layout.cartBasePc;
 	}
 
 	const int totalBytes = std::max(layout.systemBasePc + systemCodeBytes, layout.cartBasePc + cartCodeBytes);
-	linkedProgram->code.assign(static_cast<size_t>(totalBytes), 0);
-	std::copy(systemProgram.code.begin(), systemProgram.code.end(), linkedProgram->code.begin() + layout.systemBasePc);
-	std::copy(cartCode.begin(), cartCode.end(), linkedProgram->code.begin() + layout.cartBasePc);
-	writeInstructionWord(linkedProgram->code, CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES, CART_PROGRAM_VECTOR_VALUE);
-	linkedProgram->constPoolCanonicalized = false;
+	linkedSections.text.code.assign(static_cast<size_t>(totalBytes), 0);
+	std::copy(systemText.code.begin(), systemText.code.end(), linkedSections.text.code.begin() + layout.systemBasePc);
+	std::copy(cartCode.begin(), cartCode.end(), linkedSections.text.code.begin() + layout.cartBasePc);
+	writeInstructionWord(linkedSections.text.code, CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES, CART_PROGRAM_VECTOR_VALUE);
 
 	// disable-next-line single_use_local_pattern -- linked output names both entry indices as the ABI result pair.
 	const int systemEntryProtoIndex = systemImage.entryProtoIndex;
 	const int cartEntryProtoIndex = cartImage.entryProtoIndex + systemProtoCount;
 	auto linkedImage = std::make_unique<ProgramImage>();
 	linkedImage->entryProtoIndex = cartEntryProtoIndex;
-	linkedImage->program = std::move(linkedProgram);
-	linkedImage->moduleProtos.reserve(cartImage.moduleProtos.size() + systemImage.moduleProtos.size());
-	for (const auto& entry : cartImage.moduleProtos) {
-		linkedImage->moduleProtos.emplace_back(entry.first, entry.second + systemProtoCount);
+	linkedSections.rodata.moduleProtos.reserve(cartRodata.moduleProtos.size() + systemRodata.moduleProtos.size());
+	for (const auto& entry : cartRodata.moduleProtos) {
+		linkedSections.rodata.moduleProtos.emplace_back(entry.first, entry.second + systemProtoCount);
 	}
-	for (const auto& entry : systemImage.moduleProtos) {
-		linkedImage->moduleProtos.emplace_back(entry.first, entry.second);
+	for (const auto& entry : systemRodata.moduleProtos) {
+		linkedSections.rodata.moduleProtos.emplace_back(entry.first, entry.second);
 	}
-	linkedImage->staticModulePaths.reserve(systemImage.staticModulePaths.size() + cartImage.staticModulePaths.size());
-	linkedImage->staticModulePaths.insert(linkedImage->staticModulePaths.end(), systemImage.staticModulePaths.begin(), systemImage.staticModulePaths.end());
-	linkedImage->staticModulePaths.insert(linkedImage->staticModulePaths.end(), cartImage.staticModulePaths.begin(), cartImage.staticModulePaths.end());
+	linkedSections.rodata.staticModulePaths.reserve(systemRodata.staticModulePaths.size() + cartRodata.staticModulePaths.size());
+	linkedSections.rodata.staticModulePaths.insert(linkedSections.rodata.staticModulePaths.end(), systemRodata.staticModulePaths.begin(), systemRodata.staticModulePaths.end());
+	linkedSections.rodata.staticModulePaths.insert(linkedSections.rodata.staticModulePaths.end(), cartRodata.staticModulePaths.begin(), cartRodata.staticModulePaths.end());
+	linkedSections.data.bytes.reserve(systemImage.sections.data.bytes.size() + cartImage.sections.data.bytes.size());
+	linkedSections.data.bytes.insert(linkedSections.data.bytes.end(), systemImage.sections.data.bytes.begin(), systemImage.sections.data.bytes.end());
+	linkedSections.data.bytes.insert(linkedSections.data.bytes.end(), cartImage.sections.data.bytes.begin(), cartImage.sections.data.bytes.end());
+	linkedSections.bss.byteCount = systemImage.sections.bss.byteCount + cartImage.sections.bss.byteCount;
+	linkedImage->sections = std::move(linkedSections);
 	linkedImage->link.constRelocs.clear();
 
 	const int systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;
@@ -617,12 +607,12 @@ LinkedProgramImage linkProgramImages(
 	std::unique_ptr<ProgramMetadata> mergedMetadata = mergeMetadata(systemSymbols, cartSymbols, layout, systemInstructionCount, cartInstructionCount);
 
 	LinkedProgramImage output;
-	output.program = std::move(linkedImage);
+	output.programImage = std::move(linkedImage);
 	output.metadata = std::move(mergedMetadata);
 	output.systemEntryProtoIndex = systemEntryProtoIndex;
 	output.cartEntryProtoIndex = cartEntryProtoIndex;
-	output.systemStaticModulePaths = systemImage.staticModulePaths;
-	output.cartStaticModulePaths = cartImage.staticModulePaths;
+	output.systemStaticModulePaths = systemRodata.staticModulePaths;
+	output.cartStaticModulePaths = cartRodata.staticModulePaths;
 	return output;
 }
 

@@ -14,6 +14,7 @@ function makeProto(codeLen: number): Proto {
 		isVararg: false,
 		maxStack: 3,
 		upvalueDescs: [],
+		staticClosure: false,
 	};
 }
 

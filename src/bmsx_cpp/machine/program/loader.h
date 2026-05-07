@@ -1,12 +1,46 @@
 #pragma once
 
 #include "machine/cpu/cpu.h"
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace bmsx {
+
+constexpr const char* PROGRAM_IMAGE_ID = "__program__";
+constexpr const char* PROGRAM_SYMBOLS_IMAGE_ID = "__program_symbols__";
+constexpr uint32_t PROGRAM_BOOT_HEADER_VERSION = 1;
+
+using EncodedValue = std::variant<std::nullptr_t, bool, double, std::string>;
+
+struct ProgramTextSection {
+	std::vector<uint8_t> code;
+	std::vector<Proto> protos;
+};
+
+struct ProgramRodataSection {
+	std::vector<EncodedValue> constPool;
+	std::vector<std::pair<std::string, int>> moduleProtos;
+	std::vector<std::string> staticModulePaths;
+};
+
+struct ProgramDataSection {
+	std::vector<uint8_t> bytes;
+};
+
+struct ProgramBssSection {
+	size_t byteCount = 0;
+};
+
+struct ProgramObjectSections {
+	ProgramTextSection text;
+	ProgramRodataSection rodata;
+	ProgramDataSection data;
+	ProgramBssSection bss;
+};
 
 /**
  * ProgramImage - deserialized pre-compiled Lua program.
@@ -40,11 +74,11 @@ struct ProgramImage {
 	};
 
 	int entryProtoIndex = 0;
-	std::unique_ptr<Program> program;
-	std::vector<std::pair<std::string, int>> moduleProtos;  // path -> protoIndex
-	std::vector<std::string> staticModulePaths;
+	ProgramObjectSections sections;
 	LinkInfo link;
 };
+
+std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections);
 
 /**
  * ProgramLoader - loads pre-compiled bytecode from ROM.
@@ -57,7 +91,8 @@ class ProgramLoader {
 public:
 	/**
 	 * Load a ProgramImage from binary data.
-	 * The binary format is produced by asset.ts::encodeProgramImage.
+	 * The binary format is produced by the TS rompacker as a sectioned
+	 * ProgramImage: .text, .rodata, .data, .bss, plus link metadata.
 	 */
 	static std::unique_ptr<ProgramImage> load(const uint8_t* data, size_t size);
 

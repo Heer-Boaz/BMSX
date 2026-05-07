@@ -22,12 +22,13 @@ RomSourceStack::RomSourceStack(std::vector<RomSourceLayer> layers)
 	m_idMaps.reserve(m_layers.size());
 	m_pathMaps.reserve(m_layers.size());
 	for (const RomSourceLayer& layer : m_layers) {
+		const std::vector<RomSourceEntry>& entries = layer.index.entries;
 		std::unordered_map<std::string, size_t> idMap;
 		std::unordered_map<std::string, size_t> pathMap;
-		idMap.reserve(layer.index.entries.size());
-		pathMap.reserve(layer.index.entries.size());
-		for (size_t index = 0; index < layer.index.entries.size(); ++index) {
-			const RomSourceEntry& entry = layer.index.entries[index];
+		idMap.reserve(entries.size());
+		pathMap.reserve(entries.size());
+		for (size_t index = 0; index < entries.size(); ++index) {
+			const RomSourceEntry& entry = entries[index];
 			idMap[entry.resid] = index;
 			if (entry.rom.sourcePath.has_value()) {
 				pathMap[*entry.rom.sourcePath] = index;
@@ -40,24 +41,18 @@ RomSourceStack::RomSourceStack(std::vector<RomSourceLayer> layers)
 }
 
 std::optional<RomSourceEntry> RomSourceStack::getEntry(std::string_view id) const {
-	for (size_t layerIndex = 0; layerIndex < m_layers.size(); ++layerIndex) {
-		const auto assetIt = m_idMaps[layerIndex].find(std::string(id));
-		if (assetIt == m_idMaps[layerIndex].end()) {
-			continue;
-		}
-		const RomSourceEntry& asset = m_layers[layerIndex].index.entries[assetIt->second];
-		if (romEntryDeletes(asset)) {
-			return std::nullopt;
-		}
-		return attachPayloadId(asset, m_layers[layerIndex].id);
-	}
-	return std::nullopt;
+	return findEntry(id, m_idMaps);
 }
 
 std::optional<RomSourceEntry> RomSourceStack::getEntryByPath(std::string_view path) const {
+	return findEntry(path, m_pathMaps);
+}
+
+std::optional<RomSourceEntry> RomSourceStack::findEntry(std::string_view key, const std::vector<std::unordered_map<std::string, size_t>>& maps) const {
+	const std::string lookupKey(key);
 	for (size_t layerIndex = 0; layerIndex < m_layers.size(); ++layerIndex) {
-		const auto assetIt = m_pathMaps[layerIndex].find(std::string(path));
-		if (assetIt == m_pathMaps[layerIndex].end()) {
+		const auto assetIt = maps[layerIndex].find(lookupKey);
+		if (assetIt == maps[layerIndex].end()) {
 			continue;
 		}
 		const RomSourceEntry& asset = m_layers[layerIndex].index.entries[assetIt->second];

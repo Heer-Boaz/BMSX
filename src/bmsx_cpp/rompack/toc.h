@@ -13,6 +13,18 @@ constexpr u32 ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
 constexpr u32 ROM_TOC_HEADER_SIZE = 48;
 constexpr u32 ROM_TOC_ENTRY_SIZE = 88;
 constexpr u32 ROM_TOC_INVALID_U32 = 0xffffffffu;
+constexpr u32 ROM_TOC_OP_NONE = 0;
+constexpr u32 ROM_TOC_OP_DELETE = 1;
+constexpr u32 ROM_TOC_ASSET_TYPE_IMAGE = 1;
+constexpr u32 ROM_TOC_ASSET_TYPE_AUDIO = 2;
+constexpr u32 ROM_TOC_ASSET_TYPE_DATA = 3;
+constexpr u32 ROM_TOC_ASSET_TYPE_BIN = 4;
+constexpr u32 ROM_TOC_ASSET_TYPE_ATLAS = 5;
+constexpr u32 ROM_TOC_ASSET_TYPE_ROMLABEL = 6;
+constexpr u32 ROM_TOC_ASSET_TYPE_MODEL = 7;
+constexpr u32 ROM_TOC_ASSET_TYPE_AEM = 8;
+constexpr u32 ROM_TOC_ASSET_TYPE_LUA = 9;
+constexpr u32 ROM_TOC_ASSET_TYPE_CODE = 10;
 
 struct RomTocPayload {
 	std::vector<RomSourceEntry> entries;

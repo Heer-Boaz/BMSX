@@ -1,7 +1,7 @@
 # BMSX Architecture Boundary Review
 
 Status: current architecture review, not a quality rule.
-Last checked: 2026-05-03.
+Last checked: 2026-05-07.
 
 BMSX is not currently in a healthy feature-development state. The problem is
 larger than architecture boundaries: the code quality inside ordinary functions
@@ -55,6 +55,57 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   replace cart or overlay TOC bytes at a host edge and let BIOS/cart Lua rebuild
   lookup state from memory; that keeps live editing compatible with the same
   console-visible contract.
+- Compiled Lua/YAML is source material, not mutable machine state. The ROM
+  program asset `__program__` is a linked object image with `.text` instruction
+  words/protos, `.rodata` literals/module-proto tables/static module paths,
+  empty `.data`/`.bss` sections until mutable image data is introduced, and
+  explicit relocation metadata. The symbols asset `__program_symbols__` remains
+  debug/code metadata and never counts as RAM.
+- The TS/C++ ownership map for this slice is intentionally mirrored:
+  `src/bmsx/machine/program/loader.ts` and
+  `src/bmsx_cpp/machine/program/loader.h/.cpp` own the `PROGRAM_IMAGE_ID`,
+  `PROGRAM_SYMBOLS_IMAGE_ID`, `PROGRAM_BOOT_HEADER_VERSION`, `ProgramImage`,
+  `EncodedValue`, section structs, and `inflateProgram()` contracts; `src/bmsx/machine/program/linker.ts`
+  and `src/bmsx_cpp/machine/program/linker.h/.cpp` merge the same sections and
+  return `LinkedProgramImage.programImage`; `src/bmsx/ide/runtime/lua_pipeline.ts`
+  and `src/bmsx_cpp/machine/runtime/runtime.cpp` inflate sections at boot and
+  install module-proto maps from `.rodata`.
+- ROM package header constants and the `CartRomHeader` wire layout are likewise
+  owned by `src/bmsx/rompack/format.ts` and
+  `src/bmsx_cpp/rompack/format.h`. Loaders consume those constants; they do not
+  redeclare magic bytes or header sizes locally.
+- ROM TOC wire constants are owned by `src/bmsx/rompack/toc.ts` and
+  `src/bmsx_cpp/rompack/toc.h`: magic/header/entry sizes, invalid sentinels,
+  operation ids, and asset-type ids live there. The TS encoder
+  `src/bmsx/rompack/tooling/toc_encode.ts` and the C++ decoder
+  `src/bmsx_cpp/rompack/toc.cpp` consume those constants instead of open-coded
+  schema numbers.
+- Layered ROM source lookup is mirrored in `src/bmsx/rompack/source.ts` and
+  `src/bmsx_cpp/rompack/source.h/.cpp`: both build id/path maps to entry
+  indexes, resolve overlays through the same delete-blocking rule, and return
+  payload-tagged records plus direct byte views from the owning cartridge layer.
+  Generated host atlas artifacts follow the same filename contract in TS/C++:
+  `host_system_atlas.generated.ts`, `host_system_atlas.generated.h`, and
+  `host_system_atlas.generated.cpp`.
+- Runtime RAM accounting follows the same boundary: `CPU.setProgram()` maps
+  program const-pool strings and global/module/debug names as ROM-owned strings,
+  zero-upvalue proto references are static text labels, and only runtime-created
+  strings/tables/native handles/captured closures/upvalue cells increase the
+  Lua heap component of `sys_ram_used`. Captured closures still allocate their
+  closure/upvalue state; non-capturing const functions do not allocate per
+  materialization.
+- Save-state wire parity for this slice lives in the same relative files:
+  `src/bmsx/machine/runtime/save_state/schema.ts`,
+  `src/bmsx_cpp/machine/runtime/save_state/schema.h/.cpp`,
+  `src/bmsx/machine/runtime/save_state/codec.ts`, and
+  `src/bmsx_cpp/machine/runtime/save_state/codec.cpp`. The shared wire version
+  is `9`; the string-pool entry field is `tracked`; ROM-owned strings remain
+  untracked while runtime-materialized strings restore as tracked RAM.
+- World/mundo content should follow the same object-image rule: room templates,
+  maps, transitions, and export tables belong in `.rodata` records with offsets
+  or pointers, while room load instantiates only active mutable state into RAM.
+  `romdir.data()` remains for explicit decoded-data APIs, not as the internal
+  representation of compiled world structures.
 - Recent hardware notes such as `docs/geo_overlap2d_pass_v1.md` show the right
   style: concrete MMIO contracts, memory formats, deterministic behavior, and
   explicit division between hardware work and gameplay work.

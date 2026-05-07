@@ -6,7 +6,7 @@
 
 namespace bmsx {
 
-constexpr u8 RUNTIME_SAVE_STATE_WIRE_VERSION = 8;
+constexpr u8 RUNTIME_SAVE_STATE_WIRE_VERSION = 9;
 
 const std::vector<std::string>& runtimeSaveStatePropNames();
 

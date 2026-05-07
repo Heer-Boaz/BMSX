@@ -14,7 +14,7 @@ constexpr int CART_PROGRAM_VECTOR_PC = static_cast<int>(CART_PROGRAM_VECTOR_OFFS
 constexpr uint32_t CART_PROGRAM_VECTOR_VALUE = CART_PROGRAM_START_ADDR;
 
 struct LinkedProgramImage {
-	std::unique_ptr<ProgramImage> program;
+	std::unique_ptr<ProgramImage> programImage;
 	std::unique_ptr<ProgramMetadata> metadata;
 	int systemEntryProtoIndex = 0;
 	int cartEntryProtoIndex = 0;

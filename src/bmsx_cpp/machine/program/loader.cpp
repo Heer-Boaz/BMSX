@@ -71,46 +71,37 @@ std::vector<std::string> readStringArray(const BinValue& value, const std::strin
 	return out;
 }
 
-/**
- * Convert BinValue to runtime Value (for const pool).
- */
-Value binValueToRuntimeValue(const BinValue& bv, StringPool& stringPool) {
-	if (bv.isNull()) return valueNil();
-	if (bv.isBool()) return valueBool(bv.asBool());
-	if (bv.isNumber()) return valueNumber(bv.toNumber());
-	if (bv.isString()) return valueString(stringPool.intern(bv.asString()));
-	// Tables/closures not in const pool
-	return valueNil();
+EncodedValue binValueToEncodedValue(const BinValue& value) {
+	if (value.isNull()) return nullptr;
+	if (value.isBool()) return value.asBool();
+	if (value.isNumber()) return value.toNumber();
+	if (value.isString()) return value.asString();
+	throw BMSX_RUNTIME_ERROR("ProgramLoader: unsupported ProgramImage.sections.rodata.constPool value.");
 }
 
-/**
- * Extract Program from decoded ProgramImage.
- */
-std::unique_ptr<Program> extractProgram(const BinValue& programObj) {
-	auto program = std::make_unique<Program>();
-	program->constPoolStringPool = &program->stringPool;
+Value encodedValueToRuntimeValue(const EncodedValue& value, StringPool& stringPool) {
+	if (std::holds_alternative<std::nullptr_t>(value)) return valueNil();
+	if (const auto* boolValue = std::get_if<bool>(&value)) return valueBool(*boolValue);
+	if (const auto* numberValue = std::get_if<double>(&value)) return valueNumber(*numberValue);
+	if (const auto* stringValue = std::get_if<std::string>(&value)) return valueString(stringPool.intern(*stringValue));
+	throw BMSX_RUNTIME_ERROR("ProgramLoader: unsupported encoded const pool value.");
+}
 
-	// Extract code (Uint8Array stored as binary)
-	const auto& codeBytes = programObj.require("code").asBinary();
-	program->code.resize(codeBytes.size());
-	std::memcpy(program->code.data(), codeBytes.data(), codeBytes.size());
+ProgramTextSection extractTextSection(const BinValue& textObj) {
+	ProgramTextSection text;
+	const auto& codeBytes = textObj.require("code").asBinary();
+	text.code.resize(codeBytes.size());
+	std::memcpy(text.code.data(), codeBytes.data(), codeBytes.size());
 
-	// Extract constPool
-	const auto& constPoolArr = programObj.require("constPool").asArray();
-	program->constPool.reserve(constPoolArr.size());
-	for (const auto& cv : constPoolArr) {
-		program->constPool.push_back(binValueToRuntimeValue(cv, program->stringPool));
-	}
-
-	// Extract protos
-	const auto& protosArr = programObj.require("protos").asArray();
-	program->protos.reserve(protosArr.size());
+	const auto& protosArr = textObj.require("protos").asArray();
+	text.protos.reserve(protosArr.size());
 	for (const auto& protoObj : protosArr) {
 		Proto proto;
 		proto.maxStack = protoObj.require("maxStack").toI32();
 		proto.numParams = protoObj.require("numParams").toI32();
 		proto.entryPC = protoObj.require("entryPC").toI32();
 		proto.isVararg = protoObj.require("isVararg").asBool();
+		proto.staticClosure = protoObj.require("staticClosure").asBool();
 
 		const auto& upvaluesArr = protoObj.require("upvalueDescs").asArray();
 		proto.upvalues.reserve(upvaluesArr.size());
@@ -121,10 +112,51 @@ std::unique_ptr<Program> extractProgram(const BinValue& programObj) {
 			proto.upvalues.push_back(uv);
 		}
 
-		program->protos.push_back(std::move(proto));
+		text.protos.push_back(std::move(proto));
+	}
+	return text;
+}
+
+ProgramRodataSection extractRodataSection(const BinValue& rodataObj) {
+	ProgramRodataSection rodata;
+	const auto& constPoolArr = rodataObj.require("constPool").asArray();
+	rodata.constPool.reserve(constPoolArr.size());
+	for (const auto& cv : constPoolArr) {
+		rodata.constPool.push_back(binValueToEncodedValue(cv));
 	}
 
-	return program;
+	const auto& moduleProtosArr = rodataObj.require("moduleProtos").asArray();
+	rodata.moduleProtos.reserve(moduleProtosArr.size());
+	for (const auto& mp : moduleProtosArr) {
+		std::string path = mp.require("path").asString();
+		int protoIndex = mp.require("protoIndex").toI32();
+		rodata.moduleProtos.emplace_back(std::move(path), protoIndex);
+	}
+
+	rodata.staticModulePaths = readStringArray(rodataObj.require("staticModulePaths"), "ProgramLoader: ProgramImage.sections.rodata.staticModulePaths");
+	return rodata;
+}
+
+ProgramDataSection extractDataSection(const BinValue& dataObj) {
+	ProgramDataSection data;
+	const auto& bytes = dataObj.require("bytes").asBinary();
+	data.bytes.assign(bytes.begin(), bytes.end());
+	return data;
+}
+
+ProgramBssSection extractBssSection(const BinValue& bssObj) {
+	ProgramBssSection bss;
+	bss.byteCount = static_cast<size_t>(bssObj.require("byteCount").toI32());
+	return bss;
+}
+
+ProgramObjectSections extractProgramObjectSections(const BinValue& sectionsObj) {
+	ProgramObjectSections sections;
+	sections.text = extractTextSection(sectionsObj.require("text"));
+	sections.rodata = extractRodataSection(sectionsObj.require("rodata"));
+	sections.data = extractDataSection(sectionsObj.require("data"));
+	sections.bss = extractBssSection(sectionsObj.require("bss"));
+	return sections;
 }
 
 std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadataObj) {
@@ -174,6 +206,18 @@ std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadata
 
 } // namespace
 
+std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections) {
+	auto program = std::make_unique<Program>();
+	program->code = sections.text.code;
+	program->protos = sections.text.protos;
+	program->constPool.reserve(sections.rodata.constPool.size());
+	for (const EncodedValue& value : sections.rodata.constPool) {
+		program->constPool.push_back(encodedValueToRuntimeValue(value, program->stringPool));
+	}
+	program->constPoolStringPool = &program->stringPool;
+	return program;
+}
+
 std::unique_ptr<ProgramImage> ProgramLoader::load(const uint8_t* data, size_t size) {
 	// Decode binary format using binencoder
 	BinValue root = decodeBinary(data, size);
@@ -187,19 +231,7 @@ std::unique_ptr<ProgramImage> ProgramLoader::load(const uint8_t* data, size_t si
 	// Extract entryProtoIndex
 	image->entryProtoIndex = root.require("entryProtoIndex").toI32();
 
-	// Extract program
-	image->program = extractProgram(root.require("program"));
-
-	// Extract moduleProtos
-	const auto& moduleProtosArr = root.require("moduleProtos").asArray();
-	image->moduleProtos.reserve(moduleProtosArr.size());
-	for (const auto& mp : moduleProtosArr) {
-		std::string path = mp.require("path").asString();
-		int protoIndex = mp.require("protoIndex").toI32();
-		image->moduleProtos.emplace_back(std::move(path), protoIndex);
-	}
-
-	image->staticModulePaths = readStringArray(root.require("staticModulePaths"), "ProgramLoader: staticModulePaths");
+	image->sections = extractProgramObjectSections(root.require("sections"));
 
 	// Extract link metadata (required).
 	const auto& linkObj = root.require("link");

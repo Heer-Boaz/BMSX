@@ -79,7 +79,7 @@ export function loadProgramFromAssets(rombin: Uint8Array, assets: RomAsset[]) {
 	}
 	const programBytes = new Uint8Array(rombin.slice(programImageEntry.start, programImageEntry.end));
 	const programImage = decodeProgramImage(programBytes);
-	const program = inflateProgram(programImage.program);
+	const program = inflateProgram(programImage.sections);
 	const symbolsAsset = assets.find(asset => asset.resid === PROGRAM_SYMBOLS_IMAGE_ID);
 	const metadata = symbolsAsset
 		? (() => {

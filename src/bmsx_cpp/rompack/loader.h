@@ -24,10 +24,6 @@ namespace bmsx {
 constexpr i64 DEFAULT_VDP_WORK_UNITS_PER_SEC = 25'600;
 constexpr i64 DEFAULT_GEO_WORK_UNITS_PER_SEC = 16'384'000;
 
-// Program asset IDs emitted by the ROM compiler.
-constexpr const char* PROGRAM_ASSET_ID = "__program__";
-constexpr const char* PROGRAM_SYMBOLS_ASSET_ID = "__program_symbols__";
-
 /* ============================================================================
  * RuntimeRomPackage - decoded ROM package
  * ============================================================================ */

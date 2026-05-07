@@ -346,7 +346,7 @@ Runtime& ConsoleCore::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& t
 }
 
 void ConsoleCore::bootRuntimeFromProgram() {
-	if (!activeRom().programImage || !activeRom().programImage->program) {
+	if (!activeRom().programImage) {
 		return;
 	}
 	m_linked_program.reset();
@@ -379,27 +379,27 @@ void ConsoleCore::bootRuntimeFromProgram() {
 	rt.refreshMemoryMap();
 	rt.resetRuntimeForProgramReload();
 	refreshRenderSurfaces();
-	if (m_system_rom_loaded && m_system_rom.programImage && m_system_rom.programImage->program) {
+	if (m_system_rom_loaded && m_system_rom.programImage) {
 		auto linked = linkProgramImages(
 			*m_system_rom.programImage,
 			m_system_rom.programSymbols.get(),
 			*romPackage.programImage,
 			romPackage.programSymbols.get()
 		);
-		m_linked_program = std::move(linked.program);
+		m_linked_program = std::move(linked.programImage);
 		m_linked_program_symbols = std::move(linked.metadata);
 		rt.setLinkedCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
 		rt.enterCartProgram();
-		rt.boot(*m_linked_program, m_linked_program_symbols.get(), m_linked_program->entryProtoIndex, m_linked_program->staticModulePaths);
+		rt.boot(*m_linked_program, m_linked_program_symbols.get(), m_linked_program->entryProtoIndex, m_linked_program->sections.rodata.staticModulePaths);
 		return;
 	}
 	rt.enterCartProgram();
-	rt.boot(*romPackage.programImage, romPackage.programSymbols.get(), romPackage.programImage->entryProtoIndex, romPackage.programImage->staticModulePaths);
+	rt.boot(*romPackage.programImage, romPackage.programSymbols.get(), romPackage.programImage->entryProtoIndex, romPackage.programImage->sections.rodata.staticModulePaths);
 }
 
 bool ConsoleCore::bootSystemStartupProgram(const MachineManifest& runtimeMachine) {
 	if (!m_system_rom_loaded) return false;
-	if (!m_system_rom.programImage || !m_system_rom.programImage->program) return false;
+	if (!m_system_rom.programImage) return false;
 
 	if (m_cart_rom_size == 0) {
 		Input::instance().getPlayerInput(DEFAULT_KEYBOARD_PLAYER_INDEX)->setInputMap(Input::DEFAULT_INPUT_MAPPING);
@@ -439,19 +439,19 @@ bool ConsoleCore::bootSystemStartupProgram(const MachineManifest& runtimeMachine
 	refreshRenderSurfaces();
 	m_linked_program.reset();
 	m_linked_program_symbols.reset();
-	if (m_cart_rom_size > 0 && m_cart_rom.programImage && m_cart_rom.programImage->program) {
+	if (m_cart_rom_size > 0 && m_cart_rom.programImage) {
 		auto linked = linkProgramImages(
 			*m_system_rom.programImage,
 			m_system_rom.programSymbols.get(),
 			*m_cart_rom.programImage,
 			m_cart_rom.programSymbols.get()
 		);
-		m_linked_program = std::move(linked.program);
+		m_linked_program = std::move(linked.programImage);
 		m_linked_program_symbols = std::move(linked.metadata);
 		rt.setLinkedCartEntry(linked.cartEntryProtoIndex, std::move(linked.cartStaticModulePaths));
 		rt.boot(*m_linked_program, m_linked_program_symbols.get(), linked.systemEntryProtoIndex, linked.systemStaticModulePaths);
 	} else {
-		rt.boot(*m_system_rom.programImage, m_system_rom.programSymbols.get(), m_system_rom.programImage->entryProtoIndex, m_system_rom.programImage->staticModulePaths);
+		rt.boot(*m_system_rom.programImage, m_system_rom.programSymbols.get(), m_system_rom.programImage->entryProtoIndex, m_system_rom.programImage->sections.rodata.staticModulePaths);
 	}
 	rt.cartBoot.reset();
 	return true;
@@ -465,7 +465,7 @@ bool ConsoleCore::loadRomInternal(const u8* data, size_t size) {
 	if (!loadCartRomPackageFromRom(data, size, m_cart_rom, nullptr, "cart")) {
 		return false;
 	}
-	m_loaded_cart_has_program = m_cart_rom.programImage && m_cart_rom.programImage->program;
+	m_loaded_cart_has_program = m_cart_rom.programImage != nullptr;
 
 	const MachineManifest& cartMachine = m_cart_rom.machine;
 	const i64 cartUfpsScaled = resolveUfpsScaled(cartMachine);
@@ -489,8 +489,7 @@ bool ConsoleCore::loadRomInternal(const u8* data, size_t size) {
 	configureViewForMachine(cartMachine);
 
 	const bool hasSystemProgram = m_system_rom_loaded
-		&& m_system_rom.programImage
-		&& m_system_rom.programImage->program;
+		&& m_system_rom.programImage;
 	if (hasSystemProgram) {
 		if (!bootSystemStartupProgram(transferMachine)) {
 			return false;
@@ -571,7 +570,7 @@ bool ConsoleCore::rebootLoadedRom() {
 	}
 
 	const MachineManifest* runtimeMachine = &m_system_rom.machine;
-	if (m_cart_rom_size > 0 && m_cart_rom.programImage && m_cart_rom.programImage->program) {
+	if (m_cart_rom_size > 0 && m_cart_rom.programImage) {
 		runtimeMachine = &m_cart_rom.machine;
 	}
 	return bootSystemStartupProgram(*runtimeMachine);

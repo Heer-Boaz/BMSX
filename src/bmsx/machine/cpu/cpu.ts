@@ -372,6 +372,7 @@ export type Proto = {
 	isVararg: boolean;
 	maxStack: number;
 	upvalueDescs: UpvalueDesc[];
+	staticClosure: boolean;
 };
 
 export type UpvalueDesc = {
@@ -382,6 +383,7 @@ export type UpvalueDesc = {
 export type Closure = {
 	protoIndex: number;
 	upvalues: Upvalue[];
+	heapBytes?: number;
 };
 
 export const enum RunResult {
@@ -1454,6 +1456,7 @@ export class CPU {
 	private globalValues: Value[] = [];
 	private globalSlotByKey: Map<StringId, number> = new Map();
 	private readonly framePool: CallFrame[] = [];
+	private readonly staticClosures: Closure[] = [];
 	private stackRegisters = new RegisterFile(8);
 	private stackTop = 0;
 
@@ -1775,11 +1778,12 @@ export class CPU {
 		for (let index = 0; index < constPool.length; index += 1) {
 			const value = constPool[index];
 			if (valueIsString(value)) {
-				constPool[index] = valueString(this.stringPool.intern(programPool.toString(asStringId(value))));
+				constPool[index] = valueString(this.stringPool.internRom(programPool.toString(asStringId(value))));
 			}
 		}
 		program.constPoolStringPool = this.stringPool;
 		this.indexKey = valueString(this.stringPool.intern('__index'));
+		this.staticClosures.length = 0;
 		this.initializeGlobalSlots(metadata);
 		this.decodeProgram(program);
 		this.profiler.configureProgram(program, metadata, this.decodedOps!);
@@ -1792,7 +1796,7 @@ export class CPU {
 		this.systemGlobalValues = new Array(systemNames.length);
 		this.systemGlobalSlotByKey = new Map();
 		for (let index = 0; index < systemNames.length; index += 1) {
-			const key = this.stringPool.intern(systemNames[index]);
+			const key = this.stringPool.internRom(systemNames[index]);
 			this.systemGlobalNames[index] = key;
 			this.systemGlobalSlotByKey.set(key, index);
 			this.systemGlobalValues[index] = this.globals.get(valueString(key));
@@ -1801,7 +1805,7 @@ export class CPU {
 		this.globalValues = new Array(globalNames.length);
 		this.globalSlotByKey = new Map();
 		for (let index = 0; index < globalNames.length; index += 1) {
-			const key = this.stringPool.intern(globalNames[index]);
+			const key = this.stringPool.internRom(globalNames[index]);
 			this.globalNames[index] = key;
 			this.globalSlotByKey.set(key, index);
 			this.globalValues[index] = this.globals.get(valueString(key));
@@ -1886,8 +1890,7 @@ export class CPU {
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
-		const closure: Closure = { protoIndex: entryProtoIndex, upvalues: [] };
-		addTrackedLuaHeapBytes(CLOSURE_HEAP_BYTES);
+		const closure = this.staticClosure(entryProtoIndex);
 		this.pushFrame(closure, args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
 		enforceLuaHeapBudget();
 	}
@@ -2740,6 +2743,9 @@ export class CPU {
 
 	private createClosure(frame: CallFrame, protoIndex: number): Closure {
 		const proto = this.program.protos[protoIndex];
+		if (proto.staticClosure && proto.upvalueDescs.length === 0) {
+			return this.staticClosure(protoIndex);
+		}
 		const upvalues = new Array<Upvalue>(proto.upvalueDescs.length);
 		for (let index = 0; index < proto.upvalueDescs.length; index += 1) {
 			const desc = proto.upvalueDescs[index];
@@ -2755,8 +2761,18 @@ export class CPU {
 			}
 			upvalues[index] = frame.closure.upvalues[desc.index];
 		}
-		addTrackedLuaHeapBytes(CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES));
-		return { protoIndex, upvalues };
+		const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
+		addTrackedLuaHeapBytes(heapBytes);
+		return { protoIndex, upvalues, heapBytes };
+	}
+
+	private staticClosure(protoIndex: number): Closure {
+		let closure = this.staticClosures[protoIndex];
+		if (closure === undefined) {
+			closure = { protoIndex, upvalues: [], heapBytes: 0 };
+			this.staticClosures[protoIndex] = closure;
+		}
+		return closure;
 	}
 
 	private closeUpvalues(frame: CallFrame): void {
@@ -3340,8 +3356,14 @@ export class CPU {
 					break;
 				case 'closure': {
 					const upvalues = new Array<Upvalue>(objectState.upvalues.length);
-					addTrackedLuaHeapBytes(CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES));
-					restoredObjects[index] = { protoIndex: objectState.protoIndex, upvalues };
+					const proto = this.program.protos[objectState.protoIndex];
+					if (proto.staticClosure && upvalues.length === 0) {
+						restoredObjects[index] = this.staticClosure(objectState.protoIndex);
+					} else {
+						const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
+						addTrackedLuaHeapBytes(heapBytes);
+						restoredObjects[index] = { protoIndex: objectState.protoIndex, upvalues, heapBytes };
+					}
 					break;
 				}
 				case 'upvalue':
@@ -3592,7 +3614,7 @@ export class CPU {
 				continue;
 			}
 			seen.add(closure);
-			total += CLOSURE_HEAP_BYTES + (closure.upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
+			total += closure.heapBytes ?? 0;
 			for (let index = 0; index < closure.upvalues.length; index += 1) {
 				upvalueStack.push(closure.upvalues[index]);
 			}

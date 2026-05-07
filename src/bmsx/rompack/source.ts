@@ -16,29 +16,28 @@ export interface RawRomSource {
 
 export class RomSourceStack implements RawRomSource {
 	private readonly layers: RomSourceLayer[];
-	private readonly idMaps: Map<string, RomAsset>[];
-	private readonly pathMaps: Map<string, RomAsset>[];
+	private readonly idMaps: Map<string, number>[];
+	private readonly pathMaps: Map<string, number>[];
 	private readonly payloads: Partial<Record<CartridgeLayerId, Uint8Array>>;
 
 	public constructor(layers: RomSourceLayer[]) {
 		this.layers = layers;
-		this.idMaps = layers.map(layer => {
-			const map = new Map<string, RomAsset>();
-			for (const entry of layer.index.entries) {
-				map.set(entry.resid, entry);
-			}
-			return map;
-		});
-		this.pathMaps = layers.map(layer => {
-			const map = new Map<string, RomAsset>();
-			for (const entry of layer.index.entries) {
-				if (!entry.source_path) {
-					continue;
+		this.idMaps = new Array<Map<string, number>>(layers.length);
+		this.pathMaps = new Array<Map<string, number>>(layers.length);
+		for (let layerIndex = 0; layerIndex < layers.length; layerIndex += 1) {
+			const entries = layers[layerIndex].index.entries;
+			const idMap = new Map<string, number>();
+			const pathMap = new Map<string, number>();
+			for (let index = 0; index < entries.length; index += 1) {
+				const entry = entries[index];
+				idMap.set(entry.resid, index);
+				if (entry.source_path) {
+					pathMap.set(entry.source_path, index);
 				}
-				map.set(entry.source_path, entry);
 			}
-			return map;
-		});
+			this.idMaps[layerIndex] = idMap;
+			this.pathMaps[layerIndex] = pathMap;
+		}
 		const payloads: Partial<Record<CartridgeLayerId, Uint8Array>> = {};
 		for (const layer of layers) {
 			payloads[layer.id] = layer.payload;
@@ -46,38 +45,20 @@ export class RomSourceStack implements RawRomSource {
 		this.payloads = payloads;
 	}
 
+	// disable-next-line single_line_method_pattern -- RawRomSource keeps separate id/path public pins; shared layered lookup ownership stays in findEntry.
 	public getEntry(id: asset_id): RomAsset | null {
-		for (let i = 0; i < this.layers.length; i++) {
-			const asset = this.idMaps[i].get(id);
-			if (!asset) {
-				continue;
-			}
-			if (asset.op === 'delete') {
-				return null;
-			}
-			return this.attachPayloadId(asset, this.layers[i].id);
-		}
-		return null;
+		return this.findEntry(id, this.idMaps);
 	}
 
+	// disable-next-line single_line_method_pattern -- RawRomSource keeps separate id/path public pins; shared layered lookup ownership stays in findEntry.
 	public getEntryByPath(path: string): RomAsset | null {
-		for (let i = 0; i < this.layers.length; i++) {
-			const asset = this.pathMaps[i].get(path);
-			if (!asset) {
-				continue;
-			}
-			if (asset.op === 'delete') {
-				return null;
-			}
-			return this.attachPayloadId(asset, this.layers[i].id);
-		}
-		return null;
+		return this.findEntry(path, this.pathMaps);
 	}
 
 	public list(type?: asset_type): RomAsset[] {
-		const resolved = new Map<string, RomAsset>();
+		const out: RomAsset[] = [];
 		const blocked = new Set<string>();
-		for (let layerIndex = 0; layerIndex < this.layers.length; layerIndex++) {
+		for (let layerIndex = 0; layerIndex < this.layers.length; layerIndex += 1) {
 			const layer = this.layers[layerIndex];
 			for (const entry of layer.index.entries) {
 				if (type && entry.type !== type) {
@@ -89,14 +70,13 @@ export class RomSourceStack implements RawRomSource {
 				}
 				if (entry.op === 'delete') {
 					blocked.add(id);
-					resolved.delete(id);
 					continue;
 				}
-				resolved.set(id, this.attachPayloadId(entry, layer.id));
+				out.push(this.attachPayloadId(entry, layer.id));
 				blocked.add(id);
 			}
 		}
-		return Array.from(resolved.values());
+		return out;
 	}
 
 	public getBytes(entry: RomAsset): Uint8Array {
@@ -107,6 +87,21 @@ export class RomSourceStack implements RawRomSource {
 	public getBytesView(entry: RomAsset): Uint8Array {
 		const payload = this.payloads[entry.payload_id];
 		return payload.subarray(entry.start, entry.end);
+	}
+
+	private findEntry(key: string, maps: Map<string, number>[]): RomAsset | null {
+		for (let layerIndex = 0; layerIndex < this.layers.length; layerIndex += 1) {
+			const entryIndex = maps[layerIndex].get(key);
+			if (entryIndex === undefined) {
+				continue;
+			}
+			const asset = this.layers[layerIndex].index.entries[entryIndex];
+			if (asset.op === 'delete') {
+				return null;
+			}
+			return this.attachPayloadId(asset, this.layers[layerIndex].id);
+		}
+		return null;
 	}
 
 	private attachPayloadId(asset: RomAsset, payloadId: CartridgeLayerId): RomAsset {

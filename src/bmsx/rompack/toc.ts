@@ -4,6 +4,18 @@ export const ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
 export const ROM_TOC_HEADER_SIZE = 48;
 export const ROM_TOC_ENTRY_SIZE = 88;
 export const ROM_TOC_INVALID_U32 = 0xffffffff;
+export const ROM_TOC_OP_NONE = 0;
+export const ROM_TOC_OP_DELETE = 1;
+export const ROM_TOC_ASSET_TYPE_IMAGE = 1;
+export const ROM_TOC_ASSET_TYPE_AUDIO = 2;
+export const ROM_TOC_ASSET_TYPE_DATA = 3;
+export const ROM_TOC_ASSET_TYPE_BIN = 4;
+export const ROM_TOC_ASSET_TYPE_ATLAS = 5;
+export const ROM_TOC_ASSET_TYPE_ROMLABEL = 6;
+export const ROM_TOC_ASSET_TYPE_MODEL = 7;
+export const ROM_TOC_ASSET_TYPE_AEM = 8;
+export const ROM_TOC_ASSET_TYPE_LUA = 9;
+export const ROM_TOC_ASSET_TYPE_CODE = 10;
 const utf8Decoder = new TextDecoder();
 
 export type RomTocPayload = {
@@ -12,16 +24,16 @@ export type RomTocPayload = {
 };
 
 const ASSET_TYPE_IDS: Record<asset_type, number> = {
-	image: 1,
-	audio: 2,
-	data: 3,
-	bin: 4,
-	atlas: 5,
-	romlabel: 6,
-	model: 7,
-	aem: 8,
-	lua: 9,
-	code: 10,
+	image: ROM_TOC_ASSET_TYPE_IMAGE,
+	audio: ROM_TOC_ASSET_TYPE_AUDIO,
+	data: ROM_TOC_ASSET_TYPE_DATA,
+	bin: ROM_TOC_ASSET_TYPE_BIN,
+	atlas: ROM_TOC_ASSET_TYPE_ATLAS,
+	romlabel: ROM_TOC_ASSET_TYPE_ROMLABEL,
+	model: ROM_TOC_ASSET_TYPE_MODEL,
+	aem: ROM_TOC_ASSET_TYPE_AEM,
+	lua: ROM_TOC_ASSET_TYPE_LUA,
+	code: ROM_TOC_ASSET_TYPE_CODE,
 };
 
 export function assetTypeToId(type: asset_type): number {
@@ -34,16 +46,16 @@ export function assetTypeToId(type: asset_type): number {
 
 export function assetTypeFromId(id: number): asset_type {
 	switch (id) {
-		case 1: return 'image';
-		case 2: return 'audio';
-		case 3: return 'data';
-		case 4: return 'bin';
-		case 5: return 'atlas';
-		case 6: return 'romlabel';
-		case 7: return 'model';
-		case 8: return 'aem';
-		case 9: return 'lua';
-		case 10: return 'code';
+		case ROM_TOC_ASSET_TYPE_IMAGE: return 'image';
+		case ROM_TOC_ASSET_TYPE_AUDIO: return 'audio';
+		case ROM_TOC_ASSET_TYPE_DATA: return 'data';
+		case ROM_TOC_ASSET_TYPE_BIN: return 'bin';
+		case ROM_TOC_ASSET_TYPE_ATLAS: return 'atlas';
+		case ROM_TOC_ASSET_TYPE_ROMLABEL: return 'romlabel';
+		case ROM_TOC_ASSET_TYPE_MODEL: return 'model';
+		case ROM_TOC_ASSET_TYPE_AEM: return 'aem';
+		case ROM_TOC_ASSET_TYPE_LUA: return 'lua';
+		case ROM_TOC_ASSET_TYPE_CODE: return 'code';
 		default:
 			throw new Error(`Unknown asset type id "${id}".`);
 	}
@@ -128,7 +140,7 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 			id_token_lo: tokenLo,
 			id_token_hi: tokenHi,
 		};
-		if (opId === 1) {
+		if (opId === ROM_TOC_OP_DELETE) {
 			entry.op = 'delete';
 		}
 		const sourcePath = decodeString(stringTable, sourceOffset, sourceLength, utf8Decoder);

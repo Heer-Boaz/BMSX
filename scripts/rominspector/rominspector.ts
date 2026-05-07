@@ -265,7 +265,7 @@ function printProgramLinkInfo(rombin: Uint8Array, assets: RomAsset[]): void {
 		throw new Error(`[RomInspector] Program asset '${PROGRAM_IMAGE_ID}' is missing or has no buffer range.`);
 	}
 	const { programImage } = loadProgramFromAssets(rombin, assets);
-	const constPool = programImage.program.constPool;
+	const constPool = programImage.sections.rodata.constPool;
 	const constRelocs = programImage.link.constRelocs;
 	console.log(`Program asset: start=${programAsset.start} end=${programAsset.end} size=${programAsset.end - programAsset.start}`);
 	console.log(`constPool length: ${constPool.length}`);

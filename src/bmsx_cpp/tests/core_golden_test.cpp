@@ -12,6 +12,7 @@
 #include "rompack/toc.h"
 #include "rompack/tokens.h"
 #include "machine/memory/access_kind.h"
+#include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
 #include "machine/cpu/string_pool.h"
@@ -113,6 +114,46 @@ void testStringPoolGolden() {
 	require(restored.toString(empty).empty(), "StringPool restore should preserve empty string id");
 	require(restored.toString(hello) == "hé", "StringPool restore should preserve text");
 	require(restored.codepointCount(hello) == 2, "StringPool restore should preserve codepoint counts");
+
+	bmsx::resetTrackedLuaHeapBytes();
+	bmsx::StringPool trackedPool(true);
+	const bmsx::StringId romLiteral = trackedPool.internRom("rom literal");
+	require(trackedPool.trackedLuaHeapBytes() == 0u, "ROM string interning should not track Lua heap bytes");
+	require(trackedPool.intern("rom literal") == romLiteral, "runtime interning should reuse ROM string ids");
+	require(trackedPool.trackedLuaHeapBytes() > 0u, "runtime string materialization should track Lua heap bytes");
+	const bmsx::StringPoolState trackedState = trackedPool.captureState();
+	require(trackedState.entries[romLiteral].tracked, "StringPool save state should preserve runtime string ownership");
+	bmsx::StringPool trackedRestored(true);
+	trackedRestored.restoreState(trackedState);
+	require(trackedRestored.trackedLuaHeapBytes() == trackedPool.trackedLuaHeapBytes(), "StringPool restore should preserve tracked byte ownership");
+	bmsx::resetTrackedLuaHeapBytes();
+}
+
+void testProgramRomAccountingGolden() {
+	bmsx::resetTrackedLuaHeapBytes();
+	const std::array<bmsx::u8, 1> systemRom{0u};
+	bmsx::Memory memory(bmsx::MemoryInit{{systemRom.data(), systemRom.size()}, {}, {}});
+	bmsx::CPU cpu(memory);
+
+	bmsx::Program program;
+	program.constPoolStringPool = &program.stringPool;
+	program.constPool.push_back(bmsx::valueString(program.stringPool.intern("program literal")));
+	bmsx::Proto proto;
+	proto.entryPC = 0;
+	proto.maxStack = 1;
+	program.protos.push_back(std::move(proto));
+
+	bmsx::ProgramMetadata metadata;
+	metadata.globalNames.push_back("cart_global_name");
+	metadata.systemGlobalNames.push_back("sys_global_name");
+
+	const size_t beforeSetProgram = bmsx::trackedLuaHeapBytes();
+	cpu.setProgram(&program, &metadata);
+	require(bmsx::trackedLuaHeapBytes() == beforeSetProgram, "Program .rodata literals and debug/global names should not track RAM");
+
+	cpu.start(0);
+	require(bmsx::trackedLuaHeapBytes() == beforeSetProgram, "Root/static closures should not track RAM");
+	bmsx::resetTrackedLuaHeapBytes();
 }
 
 void testAccessKindAndOpcodeGolden() {
@@ -150,8 +191,8 @@ void testRompackSchemaGolden() {
 	require(parts.lo == 0x4a2a0873u, "asset token low word should match TS golden vector");
 	require(parts.hi == 0x4dc5355fu, "asset token high word should match TS golden vector");
 	require(bmsx::tokenKey(token) == "4dc5355f4a2a0873", "asset token key should match TS order");
-	require(bmsx::assetTypeToId("lua") == 9u, "lua asset type id should match ROM TOC schema");
-	require(bmsx::assetTypeFromId(8u) == "aem", "aem asset type id should decode");
+	require(bmsx::assetTypeToId("lua") == bmsx::ROM_TOC_ASSET_TYPE_LUA, "lua asset type id should match ROM TOC schema");
+	require(bmsx::assetTypeFromId(bmsx::ROM_TOC_ASSET_TYPE_AEM) == "aem", "aem asset type id should decode");
 	require(bmsx::resolveAssetTypeKind("atlas") == bmsx::AssetTypeKind::ImageAtlas, "atlas should load through image-atlas path");
 
 	std::vector<bmsx::u8> metadata;
@@ -276,11 +317,12 @@ void testTextureKeyGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 9> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 10> tests{{
 		{"memory", testMemoryGolden},
 		{"budget and fixed16", testBudgetAndFixed16Golden},
 		{"texture key", testTextureKeyGolden},
 		{"string pool", testStringPoolGolden},
+		{"program ROM accounting", testProgramRomAccountingGolden},
 		{"memory access and opcode", testAccessKindAndOpcodeGolden},
 		{"timing and hash", testTimingAndHashGolden},
 		{"rompack schema", testRompackSchemaGolden},

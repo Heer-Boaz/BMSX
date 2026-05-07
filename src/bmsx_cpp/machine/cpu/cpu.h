@@ -508,6 +508,7 @@ struct Proto {
 	int numParams = 0;
 	bool isVararg = false;
 	std::vector<UpvalueDesc> upvalues;
+	bool staticClosure = false;
 };
 
 /**
@@ -561,6 +562,7 @@ struct Upvalue : GCObject {
 struct Closure : GCObject {
 	int protoIndex = 0;
 	std::vector<Upvalue*> upvalues;
+	size_t trackedHeapBytes = 0;
 };
 
 struct OpenUpvalueSlot {
@@ -893,6 +895,8 @@ private:
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	void pushFrame(Closure* closure, const std::vector<Value>& args,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
+	Closure* staticClosure(int protoIndex);
+	Closure* createTrackedClosure(int protoIndex, size_t upvalueCount);
 	Closure* createClosure(CallFrame& frame, int protoIndex);
 	void closeUpvalues(CallFrame& frame);
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
@@ -942,6 +946,7 @@ private:
 	Memory& m_memory;
 	StringPool m_stringPool;
 	GcHeap m_heap;
+	std::vector<Closure*> m_staticClosures;
 	std::function<void(GcHeap&)> m_externalRootMarker;
 	NativeResults* m_externalReturnSink = nullptr;
 

@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 8;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 9;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
@@ -131,4 +131,5 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'pmuBankWords',
 	'vdpFaultCode',
 	'vdpFaultDetail',
+	'tracked',
 ] as const;

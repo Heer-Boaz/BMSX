@@ -156,7 +156,7 @@ constexpr ptrdiff_t kNativeObjectHeapBytes = 24;
 constexpr ptrdiff_t kUpvalueHeapBytes = 24;
 
 static inline size_t trackedClosureBytes(const Closure& closure) {
-	return kClosureHeapBytes + (closure.upvalues.size() * kClosureUpvalueSlotHeapBytes);
+	return closure.trackedHeapBytes;
 }
 
 constexpr std::string_view kCpuRuntimeMetatableSegment = "@metatable";
@@ -968,9 +968,30 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 }
 
 Closure* CPU::createRootClosure(int protoIndex) {
+	return staticClosure(protoIndex);
+}
+
+Closure* CPU::staticClosure(int protoIndex) {
+	const size_t index = static_cast<size_t>(protoIndex);
+	if (index >= m_staticClosures.size()) {
+		m_staticClosures.resize(index + 1u, nullptr);
+	}
+	Closure* closure = m_staticClosures[index];
+	if (!closure) {
+		closure = m_heap.allocate<Closure>(ObjType::Closure);
+		closure->protoIndex = protoIndex;
+		closure->upvalues.clear();
+		closure->trackedHeapBytes = 0;
+		m_staticClosures[index] = closure;
+	}
+	return closure;
+}
+
+Closure* CPU::createTrackedClosure(int protoIndex, size_t upvalueCount) {
 	auto* closure = m_heap.allocate<Closure>(ObjType::Closure);
 	closure->protoIndex = protoIndex;
-	closure->upvalues.clear();
+	closure->upvalues.resize(upvalueCount);
+	closure->trackedHeapBytes = kClosureHeapBytes + (upvalueCount * kClosureUpvalueSlotHeapBytes);
 	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedClosureBytes(*closure)));
 	return closure;
 }
@@ -981,6 +1002,7 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 	// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
 	syncGlobalSlotsToTable();
 	m_program = program;
+	m_staticClosures.clear();
 	if (m_program) {
 		m_memory.setProgramCode(m_program->code.data(), m_program->code.size());
 	} else {
@@ -999,7 +1021,7 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 			Value value = constPool[index];
 			if (valueIsString(value)) {
 				StringId oldId = asStringId(value);
-				StringId newId = m_stringPool.intern(programPool.toString(oldId));
+				StringId newId = m_stringPool.internRom(programPool.toString(oldId));
 				constPool[index] = valueString(newId);
 			}
 		}
@@ -1027,7 +1049,7 @@ void CPU::initializeGlobalSlotList(std::vector<StringId>& names, std::vector<Val
 	values.resize(source.size());
 	slotByKey.clear();
 	for (size_t index = 0; index < source.size(); ++index) {
-		const StringId key = m_stringPool.intern(source[index]);
+		const StringId key = m_stringPool.internRom(source[index]);
 		names[index] = key;
 		slotByKey.emplace(key, index);
 		values[index] = globals->get(valueString(key));
@@ -1603,7 +1625,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 				restoredObjects[index].table = createTable(0, 0);
 				break;
 			case CpuObjectState::Kind::Closure:
-				restoredObjects[index].closure = createRootClosure(objectState.protoIndex);
+				restoredObjects[index].closure = m_program->protos[static_cast<size_t>(objectState.protoIndex)].staticClosure && objectState.upvalues.empty()
+					? createRootClosure(objectState.protoIndex)
+					: createTrackedClosure(objectState.protoIndex, objectState.upvalues.size());
 				restoredObjects[index].closure->upvalues.resize(objectState.upvalues.size(), nullptr);
 				break;
 			case CpuObjectState::Kind::Upvalue: {
@@ -2236,10 +2260,10 @@ Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
 
 Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
 	const Proto& proto = m_program->protos[protoIndex];
-	auto* closure = m_heap.allocate<Closure>(ObjType::Closure);
-	closure->protoIndex = protoIndex;
-	closure->upvalues.resize(proto.upvalues.size());
-	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedClosureBytes(*closure)));
+	if (proto.staticClosure && proto.upvalues.empty()) {
+		return staticClosure(protoIndex);
+	}
+	auto* closure = createTrackedClosure(protoIndex, proto.upvalues.size());
 	for (size_t i = 0; i < proto.upvalues.size(); ++i) {
 		const UpvalueDesc& uv = proto.upvalues[i];
 		if (uv.isLocal) {
@@ -2908,6 +2932,11 @@ void CPU::markRoots(GcHeap& heap) {
 	if (m_program) {
 		for (const auto& value : m_program->constPool) {
 			heap.markValue(value);
+		}
+	}
+	for (Closure* closure : m_staticClosures) {
+		if (closure) {
+			heap.markObject(closure);
 		}
 	}
 	for (const auto& framePtr : m_frames) {

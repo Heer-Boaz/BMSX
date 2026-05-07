@@ -1,8 +1,30 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CPU, Table, createNativeFunction, createNativeObject, valueString } from '../../src/bmsx/machine/cpu/cpu';
+import { splitText } from '../../src/bmsx/common/text_lines';
+import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
+import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
+import { CPU, RunResult, Table, createNativeFunction, createNativeObject, valueString, type CpuRuntimeState } from '../../src/bmsx/machine/cpu/cpu';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
+import { compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
+
+function parseChunk(source: string, path = 'ram_accounting.lua') {
+	const lexer = new LuaLexer(source, path);
+	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
+	return parser.parseChunk();
+}
+
+function compileSource(source: string, path = 'ram_accounting.lua') {
+	return compileLuaChunkToProgram(parseChunk(source, path), [], { entrySource: source });
+}
+
+function createCpuWithProgram(source: string): { cpu: CPU; entryProtoIndex: number } {
+	const compiled = compileSource(source);
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	cpu.setProgram(compiled.program, compiled.metadata);
+	return { cpu, entryProtoIndex: compiled.entryProtoIndex };
+}
 
 test('tracked heap bytes include rooted tables and native arrays', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
@@ -93,4 +115,109 @@ test('tracked heap bytes do not include raw js array capacity without native ite
 
 	const after = cpu.collectTrackedHeapBytes([nativeArray]);
 	assert.equal(after - before, 24, `expected native object accounting to ignore raw js array capacity (${after - before} != 24)`);
+});
+
+test('program image literals and debug names stay in ROM accounting', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	const before = cpu.collectTrackedHeapBytes();
+	const compiled = compileSource([
+		'local alpha_beta_gamma = "literal text"',
+		'local field_name = "field literal"',
+		'program_literal = "global literal"',
+		'return alpha_beta_gamma, field_name',
+	].join('\n'));
+
+	cpu.setProgram(compiled.program, compiled.metadata);
+
+	assert.equal(cpu.collectTrackedHeapBytes(), before);
+});
+
+test('runtime string materialization tracks RAM even when the same text exists in ROM', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	cpu.stringPool.internRom('rom literal');
+	const before = cpu.collectTrackedHeapBytes();
+
+	cpu.stringPool.intern('rom literal');
+
+	assert.ok(cpu.collectTrackedHeapBytes() > before);
+});
+
+test('non-capturing const functions materialize as static proto references', () => {
+	const { cpu, entryProtoIndex } = createCpuWithProgram([
+		'local f<const> = function()',
+		'	return 7',
+		'end',
+		'return f',
+	].join('\n'));
+	const before = cpu.collectTrackedHeapBytes();
+
+	cpu.start(entryProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+
+	assert.equal(cpu.collectTrackedHeapBytes(), before);
+});
+
+test('restored static closures reuse the static proto cache', () => {
+	const { cpu } = createCpuWithProgram([
+		'local f<const> = function()',
+		'	return 7',
+		'end',
+		'return f',
+	].join('\n'));
+	const staticProtoIndex = cpu.program.protos.findIndex(proto => proto.staticClosure);
+	assert.notEqual(staticProtoIndex, -1);
+	const ioSlotCount = (cpu as unknown as { memory: { getIoSlots(): unknown[] } }).memory.getIoSlots().length;
+	const state: CpuRuntimeState = {
+		globals: [],
+		ioMemory: new Array(ioSlotCount).fill({ tag: 'nil' }),
+		moduleCache: [],
+		frames: [],
+		lastReturnValues: [{ tag: 'ref', id: 0 }],
+		objects: [{ kind: 'closure', protoIndex: staticProtoIndex, upvalues: [] }],
+		openUpvalues: [],
+		lastPc: 0,
+		lastInstruction: 0,
+		instructionBudgetRemaining: 0,
+		haltedUntilIrq: false,
+		yieldRequested: false,
+	};
+
+	cpu.restoreRuntimeState(state, new Map());
+
+	const restoredClosure = (cpu as unknown as { lastReturnValues: unknown[] }).lastReturnValues[0];
+	const cachedClosure = (cpu as unknown as { staticClosure(protoIndex: number): unknown }).staticClosure(staticProtoIndex);
+	assert.equal(restoredClosure, cachedClosure);
+});
+
+test('non-const function materialization allocates a runtime closure', () => {
+	const { cpu, entryProtoIndex } = createCpuWithProgram([
+		'local f = function()',
+		'	return 7',
+		'end',
+		'return f',
+	].join('\n'));
+	const before = cpu.collectTrackedHeapBytes();
+
+	cpu.start(entryProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+
+	assert.ok(cpu.collectTrackedHeapBytes() > before);
+});
+
+test('captured closures allocate tracked closure and upvalue state', () => {
+	const { cpu, entryProtoIndex } = createCpuWithProgram([
+		'local x = 7',
+		'local f = function()',
+		'	return x',
+		'end',
+		'return f',
+	].join('\n'));
+	const before = cpu.collectTrackedHeapBytes();
+
+	cpu.start(entryProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+
+	assert.ok(cpu.collectTrackedHeapBytes() > before);
 });

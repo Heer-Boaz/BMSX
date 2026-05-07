@@ -1,5 +1,5 @@
 // start repeated-sequence-acceptable -- Program linker rewrites packed instruction fields directly to preserve bit-level clarity.
-import { OpCode, type ProgramMetadata, type Proto, type SourceRange } from '../cpu/cpu';
+import { OpCode, type LocalSlotDebug, type ProgramMetadata, type Proto, type SourceRange } from '../cpu/cpu';
 import {
 	BASE_BX_BITS,
 	EXT_B_BITS,
@@ -40,6 +40,8 @@ const NUMBER_KEY_BUFFER = new ArrayBuffer(8);
 const NUMBER_KEY_VIEW = new DataView(NUMBER_KEY_BUFFER);
 const NAN_KEY = 'n:0x7ff8000000000000';
 const EMPTY_SLOT_NAMES: ReadonlyArray<string> = [];
+const EMPTY_LOCAL_SLOTS_BY_PROTO: ReadonlyArray<ReadonlyArray<LocalSlotDebug>> = [];
+const EMPTY_UPVALUE_NAMES_BY_PROTO: ReadonlyArray<ReadonlyArray<string>> = [];
 
 const makeNumberKey = (value: number): string => {
 	if (Number.isNaN(value)) {
@@ -394,16 +396,18 @@ const mergeMetadata = (
 	for (let index = 0; index < cartInstructionCount; index += 1) {
 		debugRanges[cartBaseWord + index] = cart.debugRanges[index];
 	}
+	const cartLocalSlotsByProto = cart.localSlotsByProto ?? EMPTY_LOCAL_SLOTS_BY_PROTO;
 	const localSlotsByProto = system.localSlotsByProto
-		? system.localSlotsByProto.concat(cart.localSlotsByProto ?? [])
-		: cart.localSlotsByProto ?? [];
+		? system.localSlotsByProto.concat(cartLocalSlotsByProto)
+		: cartLocalSlotsByProto;
+	const cartUpvalueNamesByProto = cart.upvalueNamesByProto ?? EMPTY_UPVALUE_NAMES_BY_PROTO;
 	return {
 		debugRanges,
 		protoIds: system.protoIds.concat(cart.protoIds),
 		localSlotsByProto,
 		upvalueNamesByProto: system.upvalueNamesByProto
-			? system.upvalueNamesByProto.concat(cart.upvalueNamesByProto ?? [])
-			: cart.upvalueNamesByProto ?? [],
+			? system.upvalueNamesByProto.concat(cartUpvalueNamesByProto)
+			: cartUpvalueNamesByProto,
 		systemGlobalNames: mergedSystemGlobals.names,
 		globalNames: mergedGlobals.names,
 	};
@@ -437,9 +441,13 @@ export const linkProgramImages = (
 	cartSymbols: ProgramSymbolsImage | null,
 	layout?: Partial<ProgramLayout>,
 ): LinkedProgramImage => {
-	const baseProtoCount = systemImage.program.protos.length;
-	const systemCodeBytes = systemImage.program.code.length;
-	const cartCodeBytes = cartImage.program.code.length;
+	const systemText = systemImage.sections.text;
+	const cartText = cartImage.sections.text;
+	const systemRodata = systemImage.sections.rodata;
+	const cartRodata = cartImage.sections.rodata;
+	const baseProtoCount = systemText.protos.length;
+	const systemCodeBytes = systemText.code.length;
+	const cartCodeBytes = cartText.code.length;
 	const systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;
 	const cartInstructionCount = cartCodeBytes / INSTRUCTION_BYTES;
 	const resolvedLayout = resolveProgramLayout(systemCodeBytes, layout);
@@ -448,12 +456,12 @@ export const linkProgramImages = (
 		resolvedLayout.cartBasePc + cartCodeBytes,
 	);
 	const code = new Uint8Array(totalBytes);
-	code.set(systemImage.program.code, resolvedLayout.systemBasePc);
-	code.set(cartImage.program.code, resolvedLayout.cartBasePc);
+	code.set(systemText.code, resolvedLayout.systemBasePc);
+	code.set(cartText.code, resolvedLayout.cartBasePc);
 	writeInstructionWord(code, CART_PROGRAM_VECTOR_PC / INSTRUCTION_BYTES, CART_PROGRAM_VECTOR_VALUE);
 	const cartCode = code.subarray(resolvedLayout.cartBasePc, resolvedLayout.cartBasePc + cartCodeBytes);
 	rewriteClosureIndices(cartCode, baseProtoCount);
-	const mergedConsts = mergeConstPools(systemImage.program.constPool, cartImage.program.constPool);
+	const mergedConsts = mergeConstPools(systemRodata.constPool, cartRodata.constPool);
 	const systemMetadata = systemSymbols?.metadata;
 	const cartMetadata = cartSymbols?.metadata;
 
@@ -489,8 +497,8 @@ export const linkProgramImages = (
 		mergedSystemGlobals.names,
 	);
 
-	const systemProtos = systemImage.program.protos;
-	const cartProtos = cartImage.program.protos;
+	const systemProtos = systemText.protos;
+	const cartProtos = cartText.protos;
 	const protos: Proto[] = new Array(systemProtos.length + cartProtos.length);
 	let protoIndex = 0;
 	for (let index = 0; index < systemProtos.length; index += 1) {
@@ -502,6 +510,7 @@ export const linkProgramImages = (
 			isVararg: proto.isVararg,
 			maxStack: proto.maxStack,
 			upvalueDescs: proto.upvalueDescs,
+			staticClosure: proto.staticClosure,
 		};
 		protoIndex += 1;
 	}
@@ -514,6 +523,7 @@ export const linkProgramImages = (
 			isVararg: proto.isVararg,
 			maxStack: proto.maxStack,
 			upvalueDescs: proto.upvalueDescs,
+			staticClosure: proto.staticClosure,
 		};
 		protoIndex += 1;
 	}
@@ -525,14 +535,14 @@ export const linkProgramImages = (
 	};
 
 	const moduleProtos: Array<{ path: string; protoIndex: number }> = [];
-	for (const entry of cartImage.moduleProtos ?? []) {
+	for (const entry of cartRodata.moduleProtos) {
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex + baseProtoCount });
 	}
-	for (const entry of systemImage.moduleProtos ?? []) {
+	for (const entry of systemRodata.moduleProtos) {
 		moduleProtos.push({ path: entry.path, protoIndex: entry.protoIndex });
 	}
-	const systemStaticModulePaths = systemImage.staticModulePaths ?? [];
-	const cartStaticModulePaths = cartImage.staticModulePaths ?? [];
+	const systemStaticModulePaths = systemRodata.staticModulePaths;
+	const cartStaticModulePaths = cartRodata.staticModulePaths;
 	const staticModulePaths = systemStaticModulePaths.concat(cartStaticModulePaths);
 	const systemEntryProtoIndex = systemImage.entryProtoIndex;
 	const cartEntryProtoIndex = cartImage.entryProtoIndex + baseProtoCount;
@@ -547,9 +557,19 @@ export const linkProgramImages = (
 	return {
 		programImage: {
 			entryProtoIndex: cartEntryProtoIndex,
-			program,
-			moduleProtos,
-			staticModulePaths,
+			sections: {
+				text: {
+					code: program.code,
+					protos: program.protos,
+				},
+				rodata: {
+					constPool: program.constPool,
+					moduleProtos,
+					staticModulePaths,
+				},
+				data: { bytes: new Uint8Array(0) },
+				bss: { byteCount: 0 },
+			},
 			link: { constRelocs: [] },
 		},
 		metadata,

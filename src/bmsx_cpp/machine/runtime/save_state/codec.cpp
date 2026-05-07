@@ -384,6 +384,7 @@ BinValue encodeStringPoolStateEntry(const StringPoolStateEntry& state) {
 	BinObject object;
 	object["id"] = static_cast<i64>(state.id);
 	object["value"] = state.value;
+	object["tracked"] = state.tracked;
 	return BinValue(std::move(object));
 }
 
@@ -392,6 +393,7 @@ StringPoolStateEntry decodeStringPoolStateEntry(const BinValue& value, const cha
 	StringPoolStateEntry state;
 	state.id = requireU32(requireField(object, "id", label), "machine.stringPool.entries[].id");
 	state.value = requireString(requireField(object, "value", label), "machine.stringPool.entries[].value");
+	state.tracked = requireBool(requireField(object, "tracked", label), "machine.stringPool.entries[].tracked");
 	return state;
 }
 

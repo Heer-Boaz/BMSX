@@ -19,7 +19,6 @@
 
 namespace bmsx {
 namespace {
-constexpr size_t CART_ROM_HEADER_SIZE = 72;
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 
 }
@@ -201,14 +200,32 @@ void Runtime::startCartProgram() {
 
 void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>& staticModulePaths) {
 	m_moduleProtos.clear();
-	for (const auto& [path, protoIndex] : image.moduleProtos) {
+	for (const auto& [path, protoIndex] : image.sections.rodata.moduleProtos) {
 		m_moduleProtos[path] = protoIndex;
 	}
 	m_moduleCache.clear();
-	boot(image.program.get(), metadata, entryProtoIndex, &staticModulePaths);
+	m_programStorage = inflateProgram(image.sections);
+	try {
+		setupBuiltins();
+		registerRuntimeDevtoolsTable(*this);
+		enforceLuaHeapBudget();
+		m_program = m_programStorage.get();
+		m_programMetadata = metadata;
+		machine.cpu.setProgram(m_program, metadata);
+		runSystemBuiltinPrelude();
+		runStaticModuleInitializers(staticModulePaths);
+		enforceLuaHeapBudget();
+
+		machine.cpu.start(entryProtoIndex);
+		enforceLuaHeapBudget();
+		m_pendingCall = PendingCall::Entry;
+		queueLifecycleHandlers(true, true);
+		m_luaInitialized = true;
+	} catch (const std::exception& e) {
+		handleLuaError(e.what());
+	}
 }
 
-// disable-next-line single_line_method_pattern -- ProgramImage default boot keeps entry-proto/static-module ownership at the image boundary.
 void Runtime::resetRuntimeForProgramReload() {
 	frameLoop.resetFrameState(*this);
 	m_runtimeFailed = false;
@@ -225,30 +242,6 @@ void Runtime::resetRuntimeForProgramReload() {
 	machine.initializeSystemIo();
 	resetHardwareState();
 	m_randomSeedValue = static_cast<uint32_t>(m_clock.now());
-}
-
-void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>* staticModulePaths) {
-	try {
-		setupBuiltins();
-		registerRuntimeDevtoolsTable(*this);
-		enforceLuaHeapBudget();
-		m_program = program;
-		m_programMetadata = metadata;
-		machine.cpu.setProgram(program, metadata);
-		runSystemBuiltinPrelude();
-		if (staticModulePaths) {
-			runStaticModuleInitializers(*staticModulePaths);
-		}
-		enforceLuaHeapBudget();
-
-		machine.cpu.start(entryProtoIndex);
-		enforceLuaHeapBudget();
-		m_pendingCall = PendingCall::Entry;
-		queueLifecycleHandlers(true, true);
-		m_luaInitialized = true;
-	} catch (const std::exception& e) {
-		handleLuaError(e.what());
-	}
 }
 
 void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {

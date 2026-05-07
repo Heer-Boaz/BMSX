@@ -46,7 +46,7 @@ const {
 	PROGRAM_IMAGE_ID,
 	PROGRAM_SYMBOLS_IMAGE_ID,
 	buildProgramBootHeader,
-	encodeProgram,
+	encodeProgramObjectSections,
 	toLuaModulePath,
 } = require('../../src/bmsx/machine/program/loader');
 // @ts-ignore
@@ -1474,9 +1474,11 @@ export function appendProgramImage(
 	const program = compiled.program;
 	const programImage = {
 		entryProtoIndex: compiled.entryProtoIndex,
-		program: encodeProgram(program),
-		moduleProtos: Array.from(compiled.moduleProtoMap.entries(), ([path, protoIndex]) => ({ path, protoIndex })),
-		staticModulePaths: compiled.staticModulePaths,
+		sections: encodeProgramObjectSections(
+			program,
+			Array.from(compiled.moduleProtoMap.entries(), ([path, protoIndex]) => ({ path, protoIndex })),
+			compiled.staticModulePaths,
+		),
 		link: {
 			constRelocs: compiled.constRelocs,
 		},

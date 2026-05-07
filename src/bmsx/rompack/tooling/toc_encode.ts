@@ -6,6 +6,8 @@ import {
 	ROM_TOC_HEADER_SIZE,
 	ROM_TOC_INVALID_U32,
 	ROM_TOC_MAGIC,
+	ROM_TOC_OP_DELETE,
+	ROM_TOC_OP_NONE,
 } from '../toc';
 
 type StringRef = { offset: number; length: number };
@@ -66,7 +68,7 @@ export function encodeRomToc(params: { entries: RomAsset[]; projectRootPath?: st
 		const { entry, token } = entries[i];
 		const base = i * ROM_TOC_ENTRY_SIZE;
 		const typeId = assetTypeToId(entry.type);
-		const opId = entry.op === 'delete' ? 1 : 0;
+		const opId = entry.op === 'delete' ? ROM_TOC_OP_DELETE : ROM_TOC_OP_NONE;
 		const residRef = intern(entry.resid);
 		const sourceRef = intern(entry.source_path);
 		const normalizedRef = intern(entry.normalized_source_path);

@@ -51,6 +51,7 @@ private:
 	std::vector<std::unordered_map<std::string, size_t>> m_pathMaps;
 	std::unordered_map<std::string, const std::vector<u8>*> m_payloads;
 
+	std::optional<RomSourceEntry> findEntry(std::string_view key, const std::vector<std::unordered_map<std::string, size_t>>& maps) const;
 	RomSourceEntry attachPayloadId(const RomSourceEntry& asset, CartridgeLayerId payloadId) const;
 };
 

@@ -49,13 +49,13 @@ static std::string toLuaModulePath(std::string_view sourcePath) {
 	static constexpr std::string_view BIOS_SYSTEM_RES_PREFIX = "src/bmsx/res/";
 	static constexpr std::string_view BIOS_RES_PREFIX = "res/";
 	const std::string path = stripLuaExtension(sourcePath);
+	std::string_view modulePath = path;
 	if (startsWith(path, BIOS_SYSTEM_RES_PREFIX)) {
-		return path.substr(BIOS_SYSTEM_RES_PREFIX.size());
+		modulePath.remove_prefix(BIOS_SYSTEM_RES_PREFIX.size());
+	} else if (startsWith(path, BIOS_RES_PREFIX)) {
+		modulePath.remove_prefix(BIOS_RES_PREFIX.size());
 	}
-	if (startsWith(path, BIOS_RES_PREFIX)) {
-		return path.substr(BIOS_RES_PREFIX.size());
-	}
-	return path;
+	return std::string(modulePath);
 }
 
 static void updateFlippedBoundingBox(ImgMeta& meta) {
@@ -958,35 +958,11 @@ void RuntimeRomPackage::clear() {
  * ROM loading
  * ============================================================================ */
 
-struct CartRomHeader {
-	u32 headerSize = 0;
-	u32 manifestOffset = 0;
-	u32 manifestLength = 0;
-	u32 tocOffset = 0;
-	u32 tocLength = 0;
-	u32 dataOffset = 0;
-	u32 dataLength = 0;
-	u32 programBootVersion = 0;
-	u32 programBootFlags = 0;
-	u32 programEntryProtoIndex = 0;
-	u32 programCodeByteCount = 0;
-	u32 programConstPoolCount = 0;
-	u32 programProtoCount = 0;
-	u32 programReserved0 = 0;
-	u32 programConstRelocCount = 0;
-	u32 metadataOffset = 0;
-	u32 metadataLength = 0;
-};
-
-static constexpr u8 CART_ROM_MAGIC_BYTES[4] = { 0x42, 0x4d, 0x53, 0x58 };
-static constexpr size_t CART_ROM_BASE_HEADER_SIZE = 32;
-static constexpr size_t CART_ROM_PROGRAM_HEADER_SIZE = 64;
-static constexpr size_t CART_ROM_HEADER_SIZE = 72;
 static bool hasCartHeader(const u8* data, size_t size) {
 	if (size < CART_ROM_BASE_HEADER_SIZE) {
 		return false;
 	}
-	if (std::memcmp(data, CART_ROM_MAGIC_BYTES, sizeof(CART_ROM_MAGIC_BYTES)) != 0) {
+	if (std::memcmp(data, CART_ROM_MAGIC_BYTES.data(), CART_ROM_MAGIC_BYTES.size()) != 0) {
 		return false;
 	}
 	const u32 headerSize = readLE32(data + 4);
@@ -1003,7 +979,7 @@ static CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	if (size < CART_ROM_BASE_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("ROM payload is too small for cart header.");
 	}
-	if (std::memcmp(data, CART_ROM_MAGIC_BYTES, sizeof(CART_ROM_MAGIC_BYTES)) != 0) {
+	if (std::memcmp(data, CART_ROM_MAGIC_BYTES.data(), CART_ROM_MAGIC_BYTES.size()) != 0) {
 		throw BMSX_RUNTIME_ERROR("Invalid ROM cart header.");
 	}
 	CartRomHeader header{};
@@ -1244,6 +1220,20 @@ static void normalizeRomPayload(const u8* buffer, size_t size, const u8*& romDat
 	}
 }
 
+struct NormalizedRomPayload {
+	const u8* data = nullptr;
+	size_t size = 0;
+	std::vector<u8> decompressed;
+	CartRomHeader header;
+};
+
+static NormalizedRomPayload readNormalizedRomPayload(const u8* buffer, size_t size) {
+	NormalizedRomPayload payload;
+	normalizeRomPayload(buffer, size, payload.data, payload.size, payload.decompressed);
+	payload.header = parseCartHeader(payload.data, payload.size);
+	return payload;
+}
+
 static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& header, RuntimeRomPackage& romPackage) {
 	if (header.manifestLength == 0) {
 		throw BMSX_RUNTIME_ERROR("ROM header is missing manifest payload.");
@@ -1285,11 +1275,9 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						const CartRomHeader& header,
 						RuntimeRomPackage& romPackage,
 						const AssetLoadCallbacks*,
-						const char* payloadId,
-						bool loadProjectRoot) {
-	const u8* tocData = romData + header.tocOffset;
-	const size_t tocSize = header.tocLength;
-	const RomTocPayload toc = decodeRomToc(tocData, tocSize);
+	const char* payloadId,
+	bool loadProjectRoot) {
+	const RomTocPayload toc = decodeRomToc(romData + header.tocOffset, header.tocLength);
 	if (loadProjectRoot && toc.projectRootPath.has_value()) {
 		romPackage.projectRootPath = *toc.projectRootPath;
 	}
@@ -1316,7 +1304,6 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 	for (const RomSourceEntry& sourceEntry : toc.entries) {
 		const std::string& assetId = sourceEntry.resid;
 		const AssetToken assetToken = hashAssetToken(assetId);
-		const std::string& assetType = sourceEntry.rom.type;
 
 		RomAssetInfo romInfo = sourceEntry.rom;
 		if (payloadId && payloadId[0] != '\0') {
@@ -1336,7 +1323,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 			static_cast<size_t>(metaBufStart) >= sharedMetadataPayloadOffset &&
 			static_cast<size_t>(metaBufEnd) <= sharedMetadataEndOffset;
 
-		switch (resolveAssetTypeKind(assetType)) {
+		switch (resolveAssetTypeKind(sourceEntry.rom.type)) {
 			case AssetTypeKind::ImageAtlas: {
 				ImgAsset imgAsset;
 				imgAsset.id = assetId;
@@ -1518,9 +1505,9 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 				if (bufStart < 0 || bufEnd <= bufStart) {
 					throw BMSX_RUNTIME_ERROR("Code ROM entry missing payload: " + assetId);
 				}
-				if (assetId == PROGRAM_ASSET_ID) {
+				if (assetId == PROGRAM_IMAGE_ID) {
 					romPackage.programImage = ProgramLoader::load(romData + bufStart, bufEnd - bufStart);
-				} else if (assetId == PROGRAM_SYMBOLS_ASSET_ID) {
+				} else if (assetId == PROGRAM_SYMBOLS_IMAGE_ID) {
 					romPackage.programSymbols = ProgramLoader::loadSymbols(romData + bufStart, bufEnd - bufStart);
 				}
 				break;
@@ -1555,18 +1542,14 @@ static bool loadRomPackageFromPayload(const u8* buffer,
 							RuntimeRomPackage& romPackage,
 							const AssetLoadCallbacks* callbacks,
 							const char* payloadId,
-							bool decodeMetadata,
-							bool cartPayload) {
+	bool decodeMetadata,
+	bool cartPayload) {
 	romPackage.clear();
-	const u8* romData = nullptr;
-	size_t romSize = 0;
-	std::vector<u8> decompressed;
-	normalizeRomPayload(buffer, size, romData, romSize, decompressed);
-	const CartRomHeader header = parseCartHeader(romData, romSize);
+	NormalizedRomPayload payload = readNormalizedRomPayload(buffer, size);
 	if (decodeMetadata) {
-		decodeCartridgeMetadata(romData, header, romPackage);
+		decodeCartridgeMetadata(payload.data, payload.header, romPackage);
 	}
-	return loadRomAssetPayloadInternal(romData, romSize, header, romPackage, callbacks, payloadId, cartPayload);
+	return loadRomAssetPayloadInternal(payload.data, payload.size, payload.header, romPackage, callbacks, payloadId, cartPayload);
 }
 
 bool loadCartRomPackageFromRom(const u8* buffer,
@@ -1586,13 +1569,9 @@ bool loadSystemRomPackageFromRom(const u8* buffer,
 }
 
 MachineManifest peekCartMachineManifest(const u8* buffer, size_t size) {
-	const u8* romData = nullptr;
-	size_t romSize = 0;
-	std::vector<u8> decompressed;
-	normalizeRomPayload(buffer, size, romData, romSize, decompressed);
-	const CartRomHeader header = parseCartHeader(romData, romSize);
+	NormalizedRomPayload payload = readNormalizedRomPayload(buffer, size);
 	RuntimeRomPackage pkg;
-	decodeCartridgeMetadata(romData, header, pkg);
+	decodeCartridgeMetadata(payload.data, payload.header, pkg);
 	return pkg.machine;
 }
 

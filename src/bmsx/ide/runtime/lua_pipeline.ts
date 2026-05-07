@@ -25,7 +25,7 @@ import { setFrameTiming, setTransferRatesFromManifest } from '../../machine/runt
 import {
 	buildModuleProtoMap,
 	decodeProgramImage,
-	encodeProgram,
+	encodeProgramObjectSections,
 	inflateProgram,
 	PROGRAM_IMAGE_ID,
 	PROGRAM_SYMBOLS_IMAGE_ID,
@@ -600,9 +600,11 @@ export function buildModuleChunks(
 function programImageFromCompiled(compiled: CompiledProgram): ProgramImage {
 	return {
 		entryProtoIndex: compiled.entryProtoIndex,
-		program: encodeProgram(compiled.program),
-		moduleProtos: Array.from(compiled.moduleProtoMap, ([path, protoIndex]) => ({ path, protoIndex })),
-		staticModulePaths: compiled.staticModulePaths,
+		sections: encodeProgramObjectSections(
+			compiled.program,
+			Array.from(compiled.moduleProtoMap, ([path, protoIndex]) => ({ path, protoIndex })),
+			compiled.staticModulePaths,
+		),
 		link: { constRelocs: compiled.constRelocs },
 	};
 }
@@ -639,7 +641,7 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	let programImage = system.image;
 	let metadata: ProgramMetadata = system.symbols.metadata;
 	let entryProtoIndex = system.image.entryProtoIndex;
-	let staticModulePaths: ReadonlyArray<string> = system.image.staticModulePaths;
+	let staticModulePaths: ReadonlyArray<string> = system.image.sections.rodata.staticModulePaths;
 	runtime.cartEntryProtoIndex = null;
 	runtime.cartStaticModulePaths = [];
 	if (runtime.cartLuaSources?.can_boot_from_source) {
@@ -664,8 +666,8 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	if (!options?.preserveState) {
 		resetRuntimeState(runtime);
 	}
-	installProgramModuleMaps(runtime, buildModuleProtoMap(programImage.moduleProtos));
-	const prelude = runSystemBuiltinPrelude(runtime, inflateProgram(programImage.program), metadata, staticModulePaths);
+	installProgramModuleMaps(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
+	const prelude = runSystemBuiltinPrelude(runtime, inflateProgram(programImage.sections), metadata, staticModulePaths);
 	runtime.programMetadata = prelude.metadata;
 	beginEntryExecution(runtime, entryProtoIndex);
 	return finishEntryBoot(runtime, options?.runInit);
@@ -677,7 +679,7 @@ export function bootProgramImage(runtime: Runtime, options?: { preserveState?: b
 	let programImage = systemImages.program;
 	let metadata: ProgramMetadata = systemImages.symbols ? systemImages.symbols.metadata : null;
 	let entryProtoIndex = systemImages.program.entryProtoIndex;
-	let staticModulePaths: ReadonlyArray<string> = systemImages.program.staticModulePaths;
+	let staticModulePaths: ReadonlyArray<string> = systemImages.program.sections.rodata.staticModulePaths;
 	runtime.cartEntryProtoIndex = null;
 	runtime.cartStaticModulePaths = [];
 	if (runtime.cartRomSource) {
@@ -690,7 +692,7 @@ export function bootProgramImage(runtime: Runtime, options?: { preserveState?: b
 			runtime.setLinkedCartEntry(linked.cartEntryProtoIndex, linked.cartStaticModulePaths);
 			if (bootingCart) {
 				entryProtoIndex = linked.cartEntryProtoIndex;
-				staticModulePaths = programImage.staticModulePaths;
+				staticModulePaths = programImage.sections.rodata.staticModulePaths;
 			} else {
 				entryProtoIndex = linked.systemEntryProtoIndex;
 				staticModulePaths = linked.systemStaticModulePaths;
@@ -705,10 +707,10 @@ export function bootProgramImage(runtime: Runtime, options?: { preserveState?: b
 		resetRuntimeState(runtime);
 	}
 
-	const protoMap = buildModuleProtoMap(programImage.moduleProtos);
+	const protoMap = buildModuleProtoMap(programImage.sections.rodata.moduleProtos);
 	installProgramModuleMaps(runtime, protoMap);
 
-	const inflated = inflateProgram(programImage.program);
+	const inflated = inflateProgram(programImage.sections);
 	try {
 		runtime.machine.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;

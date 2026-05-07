@@ -34,32 +34,32 @@ std::optional<std::string> decodeTocString(const u8* table, size_t tableSize, u3
 
 std::string assetTypeFromId(u32 id) {
 	switch (id) {
-		case 1: return "image";
-		case 2: return "audio";
-		case 3: return "data";
-		case 4: return "bin";
-		case 5: return "atlas";
-		case 6: return "romlabel";
-		case 7: return "model";
-		case 8: return "aem";
-		case 9: return "lua";
-		case 10: return "code";
+		case ROM_TOC_ASSET_TYPE_IMAGE: return "image";
+		case ROM_TOC_ASSET_TYPE_AUDIO: return "audio";
+		case ROM_TOC_ASSET_TYPE_DATA: return "data";
+		case ROM_TOC_ASSET_TYPE_BIN: return "bin";
+		case ROM_TOC_ASSET_TYPE_ATLAS: return "atlas";
+		case ROM_TOC_ASSET_TYPE_ROMLABEL: return "romlabel";
+		case ROM_TOC_ASSET_TYPE_MODEL: return "model";
+		case ROM_TOC_ASSET_TYPE_AEM: return "aem";
+		case ROM_TOC_ASSET_TYPE_LUA: return "lua";
+		case ROM_TOC_ASSET_TYPE_CODE: return "code";
 		default:
 			throw BMSX_RUNTIME_ERROR("Unknown asset type id: " + std::to_string(id));
 	}
 }
 
 u32 assetTypeToId(std::string_view type) {
-	if (type == "image") return 1;
-	if (type == "audio") return 2;
-	if (type == "data") return 3;
-	if (type == "bin") return 4;
-	if (type == "atlas") return 5;
-	if (type == "romlabel") return 6;
-	if (type == "model") return 7;
-	if (type == "aem") return 8;
-	if (type == "lua") return 9;
-	if (type == "code") return 10;
+	if (type == "image") return ROM_TOC_ASSET_TYPE_IMAGE;
+	if (type == "audio") return ROM_TOC_ASSET_TYPE_AUDIO;
+	if (type == "data") return ROM_TOC_ASSET_TYPE_DATA;
+	if (type == "bin") return ROM_TOC_ASSET_TYPE_BIN;
+	if (type == "atlas") return ROM_TOC_ASSET_TYPE_ATLAS;
+	if (type == "romlabel") return ROM_TOC_ASSET_TYPE_ROMLABEL;
+	if (type == "model") return ROM_TOC_ASSET_TYPE_MODEL;
+	if (type == "aem") return ROM_TOC_ASSET_TYPE_AEM;
+	if (type == "lua") return ROM_TOC_ASSET_TYPE_LUA;
+	if (type == "code") return ROM_TOC_ASSET_TYPE_CODE;
 	throw BMSX_RUNTIME_ERROR("Unknown asset type: " + std::string(type));
 }
 
@@ -162,7 +162,7 @@ RomTocPayload decodeRomToc(const u8* data, size_t size) {
 
 		RomAssetInfo romInfo;
 		romInfo.type = assetTypeFromId(typeId);
-		if (opId == 1) {
+		if (opId == ROM_TOC_OP_DELETE) {
 			romInfo.op = std::string("delete");
 		}
 		romInfo.start = optionalI32FromU32(readLE32(entry + 40));

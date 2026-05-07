@@ -338,6 +338,10 @@ class ProgramBuilder {
 		return index;
 	}
 
+	public markStaticClosureProto(protoIndex: number): void {
+		this.protos[protoIndex].staticClosure = true;
+	}
+
 	public seedProto(
 		proto: Proto,
 		code: Uint8Array,
@@ -403,6 +407,7 @@ class ProgramBuilder {
 				isVararg: proto.isVararg,
 				maxStack: proto.maxStack,
 				upvalueDescs: proto.upvalueDescs,
+				staticClosure: proto.staticClosure,
 			};
 			fullCode.set(chunk, targetOffsetBytes);
 			for (let j = 0; j < ranges.length; j += 1) {
@@ -1852,6 +1857,9 @@ class FunctionBuilder {
 			if (binding !== undefined) {
 				binding.constClosureProtoIndex = closureProtoIndex;
 			}
+			if (closureProtoIndex !== null) {
+				this.program.markStaticClosureProto(closureProtoIndex);
+			}
 			this.tempTop = Math.max(this.tempTop, tempsBase);
 			return;
 		}
@@ -1893,6 +1901,7 @@ class FunctionBuilder {
 					valueRegs[i] = reg;
 					if (attributes[i] === 'const' && closureProtoIndex !== null) {
 						initializerClosureProtoIndices[i] = closureProtoIndex;
+						this.program.markStaticClosureProto(closureProtoIndex);
 					}
 				}
 			}
@@ -1930,6 +1939,7 @@ class FunctionBuilder {
 					valueRegs[lastIndex] = lastReg;
 					if (attributes[lastIndex] === 'const' && closureProtoIndex !== null) {
 						initializerClosureProtoIndices[lastIndex] = closureProtoIndex;
+						this.program.markStaticClosureProto(closureProtoIndex);
 					}
 				}
 				if (wantsMulti) {
@@ -3574,10 +3584,11 @@ function compileFunctionExpression(
 		entryPC: 0,
 		codeLen: ranges.length * INSTRUCTION_BYTES,
 		numParams: expression.parameters.length + (implicitSelf ? 1 : 0),
-		isVararg: expression.hasVararg,
-		maxStack: builder.getMaxStack(),
-		upvalueDescs: builder.getUpvalueDescs(),
-	}, code, ranges, constRelocs, localSlots, builder.getUpvalueNames(), protoId, instructionSet);
+			isVararg: expression.hasVararg,
+			maxStack: builder.getMaxStack(),
+			upvalueDescs: builder.getUpvalueDescs(),
+			staticClosure: false,
+		}, code, ranges, constRelocs, localSlots, builder.getUpvalueNames(), protoId, instructionSet);
 	return protoIndex;
 }
 
@@ -3651,10 +3662,11 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			entryPC: 0,
 			codeLen: entryRanges.length * INSTRUCTION_BYTES,
 			numParams: 0,
-			isVararg: false,
-			maxStack: entryBuilder.getMaxStack(),
-			upvalueDescs: entryBuilder.getUpvalueDescs(),
-		}, entryCode, entryRanges, entryConstRelocs, entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
+				isVararg: false,
+				maxStack: entryBuilder.getMaxStack(),
+				upvalueDescs: entryBuilder.getUpvalueDescs(),
+				staticClosure: false,
+			}, entryCode, entryRanges, entryConstRelocs, entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
 	} catch (error) {
 		compileErrors.push({
 			path: chunk.range.path,
@@ -3685,10 +3697,11 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 				entryPC: 0,
 				codeLen: ranges.length * INSTRUCTION_BYTES,
 				numParams: 0,
-				isVararg: false,
-				maxStack: builder.getMaxStack(),
-				upvalueDescs: builder.getUpvalueDescs(),
-			}, code, ranges, constRelocs, localSlots, builder.getUpvalueNames(), moduleProtoId, instructionSet);
+					isVararg: false,
+					maxStack: builder.getMaxStack(),
+					upvalueDescs: builder.getUpvalueDescs(),
+					staticClosure: false,
+				}, code, ranges, constRelocs, localSlots, builder.getUpvalueNames(), moduleProtoId, instructionSet);
 			moduleProtoMap.set(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push({
@@ -3767,10 +3780,11 @@ export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramM
 			entryPC: 0,
 			codeLen: entryRanges.length * INSTRUCTION_BYTES,
 			numParams: 0,
-			isVararg: false,
-			maxStack: entryBuilder.getMaxStack(),
-			upvalueDescs: entryBuilder.getUpvalueDescs(),
-		}, entryCode, entryRanges, entryConstRelocs, entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
+				isVararg: false,
+				maxStack: entryBuilder.getMaxStack(),
+				upvalueDescs: entryBuilder.getUpvalueDescs(),
+				staticClosure: false,
+			}, entryCode, entryRanges, entryConstRelocs, entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
 	} catch (error) {
 		compileErrors.push({
 			path: chunk.range.path,
