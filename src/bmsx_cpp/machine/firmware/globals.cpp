@@ -177,7 +177,7 @@ Table* buildNumericArrayTable(CPU& cpu, const Container& values) {
 Table* buildStringArrayTable(CPU& cpu, const std::vector<std::string>& values) {
 	auto* table = cpu.createTable(static_cast<int>(values.size()), 0);
 	for (size_t index = 0; index < values.size(); ++index) {
-		table->set(valueNumber(static_cast<double>(index + 1)), valueString(cpu.internString(values[index])));
+		table->set(valueNumber(static_cast<double>(index + 1)), valueString(cpu.stringPool().intern(values[index])));
 	}
 	return table;
 }
@@ -243,7 +243,7 @@ Table* buildModelMaterialTable(CPU& cpu, const ModelMaterial& material, const Ke
 		table->set(key("emissiveFactor"), valueTable(buildNumericArrayTable(cpu, material.emissiveFactor.value())));
 	}
 	if (material.alphaMode) {
-		table->set(key("alphaMode"), valueString(cpu.internString(material.alphaMode.value())));
+		table->set(key("alphaMode"), valueString(cpu.stringPool().intern(material.alphaMode.value())));
 	}
 	if (material.alphaCutoff) {
 		table->set(key("alphaCutoff"), valueNumber(static_cast<double>(material.alphaCutoff.value())));
@@ -315,7 +315,7 @@ Table* buildModelMeshTable(CPU& cpu, const ModelMesh& mesh, const KeyFn& key) {
 template <typename KeyFn>
 Table* buildModelAnimationSamplerTable(CPU& cpu, const ModelAnimationSampler& sampler, const KeyFn& key) {
 	auto* table = cpu.createTable(0, 3);
-	table->set(key("interpolation"), valueString(cpu.internString(sampler.interpolation)));
+	table->set(key("interpolation"), valueString(cpu.stringPool().intern(sampler.interpolation)));
 	table->set(key("input"), valueTable(buildNumericArrayTable(cpu, sampler.input)));
 	table->set(key("output"), valueTable(buildNumericArrayTable(cpu, sampler.output)));
 	return table;
@@ -329,7 +329,7 @@ Table* buildModelAnimationChannelTable(CPU& cpu, const ModelAnimationChannel& ch
 	if (channel.target.node) {
 		target->set(key("node"), valueNumber(static_cast<double>(channel.target.node.value())));
 	}
-	target->set(key("path"), valueString(cpu.internString(channel.target.path)));
+	target->set(key("path"), valueString(cpu.stringPool().intern(channel.target.path)));
 	table->set(key("target"), valueTable(target));
 	return table;
 }
@@ -338,7 +338,7 @@ template <typename KeyFn>
 Table* buildModelAnimationTable(CPU& cpu, const ModelAnimation& animation, const KeyFn& key) {
 	auto* table = cpu.createTable(0, 3);
 	if (animation.name) {
-		table->set(key("name"), valueString(cpu.internString(animation.name.value())));
+		table->set(key("name"), valueString(cpu.stringPool().intern(animation.name.value())));
 	}
 	table->set(key("samplers"), valueTable(buildTableArray(cpu, animation.samplers, [&cpu, &key](const ModelAnimationSampler& sampler) {
 		return buildModelAnimationSamplerTable(cpu, sampler, key);
@@ -414,7 +414,7 @@ Table* buildModelImageOffsetTable(CPU& cpu, const ModelImageOffset& offset, cons
 template <typename KeyFn>
 Table* buildModelAssetTable(CPU& cpu, const ModelAsset& asset, const KeyFn& key) {
 	auto* table = cpu.createTable(0, 10);
-	table->set(key("name"), valueString(cpu.internString(asset.id)));
+	table->set(key("name"), valueString(cpu.stringPool().intern(asset.id)));
 	table->set(key("meshes"), valueTable(buildTableArray(cpu, asset.meshes, [&cpu, &key](const ModelMesh& mesh) {
 		return buildModelMeshTable(cpu, mesh, key);
 	})));
@@ -983,10 +983,10 @@ void Runtime::setupBuiltins() {
 		throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(callee, cpu));
 	};
 	auto key = [this](std::string_view name) {
-		return luaKey(name);
+		return internString(name);
 	};
 	auto str = [&cpu](std::string_view value) {
-		return valueString(cpu.internString(value));
+		return valueString(cpu.stringPool().intern(value));
 	};
 	auto asText = [&cpu](Value value) -> const std::string& {
 		return cpu.stringPool().toString(asStringId(value));
@@ -1089,14 +1089,14 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("assert", [this](NativeArgsView args, NativeResults& out) {
 		const Value& condition = args.empty() ? valueNil() : args.at(0);
 		if (!isTruthy(condition)) {
-			const Value message = args.size() > 1 ? args.at(1) : valueString(machine.cpu.internString("assertion failed!"));
+			const Value message = args.size() > 1 ? args.at(1) : valueString(machine.cpu.stringPool().intern("assertion failed!"));
 			throw LuaPcallError(message, machine.cpu.stringPool());
 		}
 		out.append(args.data(), args.size());
 	});
 
 	registerNativeFunction("error", [this](NativeArgsView args, NativeResults& out) {
-		const Value message = args.empty() ? valueString(machine.cpu.internString("error")) : args.at(0);
+		const Value message = args.empty() ? valueString(machine.cpu.stringPool().intern("error")) : args.at(0);
 		(void)out;
 		throw LuaPcallError(message, machine.cpu.stringPool());
 	});
@@ -1454,7 +1454,7 @@ void Runtime::setupBuiltins() {
 	auto resolveFontGlyph = [&cpu, fontFallbackGlyphKey](Table* glyphs, u32 codepoint) {
 		std::string glyphKey;
 		appendUtf8Codepoint(glyphKey, codepoint);
-		const Value glyph = glyphs->get(valueString(cpu.internString(glyphKey)));
+		const Value glyph = glyphs->get(valueString(cpu.stringPool().intern(glyphKey)));
 		return isNil(glyph) ? glyphs->get(fontFallbackGlyphKey) : glyph;
 	};
 	registerNativeFunction("font_for_each_glyph", [this, callClosureValue, fontGlyphsKey, resolveFontGlyph, asText](NativeArgsView args, NativeResults& out) {
@@ -1600,7 +1600,7 @@ void Runtime::setupBuiltins() {
 		}
 		auto* linesTable = machine.cpu.createTable(static_cast<int>(lines.size()), 0);
 		for (size_t index = 0; index < lines.size(); ++index) {
-			linesTable->set(valueNumber(static_cast<double>(index + 1)), valueString(machine.cpu.internString(lines[index])));
+			linesTable->set(valueNumber(static_cast<double>(index + 1)), valueString(machine.cpu.stringPool().intern(lines[index])));
 		}
 		auto* lineMapTable = machine.cpu.createTable(static_cast<int>(lineMap.size()), 0);
 		for (size_t index = 0; index < lineMap.size(); ++index) {

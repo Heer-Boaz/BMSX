@@ -84,10 +84,10 @@ machine/cpu/source_text.h
 machine/cpu/disassembler.h
 machine/cpu/disassembler.cpp
 machine/cpu/cpu.h
+machine/cpu/string_pool.cpp
+machine/cpu/string_pool.h
 machine/machine.h
 machine/specs.cpp
-machine/memory/string_memory.h
-machine/memory/string_memory.cpp
 machine/memory/lua_heap_usage.cpp
 machine/memory/memory.cpp
 machine/memory/specs.cpp

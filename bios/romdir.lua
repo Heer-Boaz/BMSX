@@ -501,19 +501,6 @@ function romdir.data(id)
 	return decode_payload(entry)
 end
 
-function romdir.data_entries()
-	local entries<const> = list_entries(active_roms, kind_data)
-	local out<const> = {}
-	for index = 1, #entries do
-		local entry<const> = entries[index]
-		out[index] = {
-			id = entry.id,
-			value = decode_payload(entry),
-		}
-	end
-	return out
-end
-
 function romdir.audioevents()
 	local entries<const> = list_entries(active_roms, kind_aem)
 	local out<const> = {}

@@ -73,6 +73,7 @@ machine/cpu/disassembler.ts
 machine/cpu/instruction_format.ts
 machine/cpu/opcode_info.ts
 machine/cpu/profiler.ts
+machine/cpu/string_pool.ts
 machine/devices/audio/controller.ts
 machine/devices/dma/controller.ts
 machine/devices/dma/image_copy.ts
@@ -109,8 +110,6 @@ machine/memory/lua_heap_usage.ts
 machine/memory/map.ts
 machine/memory/memory.ts
 machine/memory/specs.ts
-machine/memory/string/memory.ts
-machine/memory/string/pool.ts
 machine/program/bound_reference.ts
 machine/program/compile_value_flow.ts
 machine/program/compiler.ts

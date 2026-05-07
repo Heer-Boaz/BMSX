@@ -1514,42 +1514,25 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 					romPackage.lua[hashAssetToken(luaAsset.modulePath)] = std::move(luaAsset);
 					break;
 				}
+			case AssetTypeKind::Code: {
+				if (bufStart < 0 || bufEnd <= bufStart) {
+					throw BMSX_RUNTIME_ERROR("Code ROM entry missing payload: " + assetId);
+				}
+				if (assetId == PROGRAM_ASSET_ID) {
+					romPackage.programImage = ProgramLoader::load(romData + bufStart, bufEnd - bufStart);
+				} else if (assetId == PROGRAM_SYMBOLS_ASSET_ID) {
+					romPackage.programSymbols = ProgramLoader::loadSymbols(romData + bufStart, bufEnd - bufStart);
+				}
+				break;
+			}
 			case AssetTypeKind::Data: {
-				std::cerr << "[BMSX] Data ROM entry found: id='" << assetId << "' bufStart=" << bufStart << " bufEnd=" << bufEnd << std::endl;
 				if (bufStart >= 0 && bufEnd > bufStart) {
-					if (assetId == PROGRAM_ASSET_ID) {
-						std::cerr << "[BMSX] Loading program image (" << (bufEnd - bufStart) << " bytes)" << std::endl;
-						try {
-							// Load pre-compiled Lua bytecode program
-							romPackage.programImage = ProgramLoader::load(romData + bufStart, bufEnd - bufStart);
-							if (romPackage.programImage) {
-								std::cerr << "[BMSX] Program loaded successfully!" << std::endl;
-							} else {
-								std::cerr << "[BMSX] Program load returned nullptr!" << std::endl;
-							}
-						} catch (const std::exception& e) {
-							std::cerr << "[BMSX] Program load FAILED: " << e.what() << std::endl;
-						}
-					} else if (assetId == PROGRAM_SYMBOLS_ASSET_ID) {
-						std::cerr << "[BMSX] Loading program symbols (" << (bufEnd - bufStart) << " bytes)" << std::endl;
-						try {
-							romPackage.programSymbols = ProgramLoader::loadSymbols(romData + bufStart, bufEnd - bufStart);
-							if (romPackage.programSymbols) {
-								std::cerr << "[BMSX] Program symbols loaded successfully!" << std::endl;
-							} else {
-								std::cerr << "[BMSX] Program symbols load returned nullptr!" << std::endl;
-							}
-						} catch (const std::exception& e) {
-							std::cerr << "[BMSX] Program symbols load FAILED: " << e.what() << std::endl;
-						}
-					} else {
-						BinValue dataValue = decodeBinary(romData + bufStart, bufEnd - bufStart);
-						DataAsset dataAsset;
-						dataAsset.id = assetId;
-						dataAsset.rom = romInfo;
-						dataAsset.value = std::move(dataValue);
-						romPackage.data[assetToken] = std::move(dataAsset);
-					}
+					BinValue dataValue = decodeBinary(romData + bufStart, bufEnd - bufStart);
+					DataAsset dataAsset;
+					dataAsset.id = assetId;
+					dataAsset.rom = romInfo;
+					dataAsset.value = std::move(dataValue);
+					romPackage.data[assetToken] = std::move(dataAsset);
 				}
 				break;
 			}

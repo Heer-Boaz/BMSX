@@ -551,7 +551,7 @@ end
 
 ## Technical Constraints
 
-1. **No defensive coding**: Trust that the compiler's MMIO enforcement ensures only `StringValue` objects reach the Input Controller's action/bind/query/consume registers. Cast directly — don't check `isStringValue()`.
+1. **No defensive coding**: Trust that the compiler's MMIO enforcement ensures only `StringValue` objects reach the Input Controller's action/bind/query/consume registers. Cast directly — don't check `valueIsString()`.
 2. **No legacy fallback**: The existing `action_triggered()` native function continues to work. The MMIO Input Controller is an additional, parallel interface — not a replacement. Carts can use either. Both use the same underlying `checkActionTriggered()` → `ActionDefinitionEvaluator` path.
 3. **Performance**: `checkActionTriggered(expr)` parses the expression (cached via `ActionDefinitionEvaluator.cache`), calls `getActionState()` internally for each referenced action, and evaluates the boolean. This is identical cost to the existing `action_triggered()` native — they share the same code path. No new allocations per query thanks to the AST cache.
 4. **Serialization**: IO register values are transient per-frame state. The chip's accumulated action definitions (`chipKeyboard`/`chipGamepad`) and `contextPushed` flag are runtime config, not game state. `reset()` clears everything. No serialization needed.
@@ -585,7 +585,7 @@ end
 - Runtime IO dispatch: `src/bmsx/machine/runtime/runtime.ts` (`onIoWrite`)
 - Frame latch entry point: `src/bmsx/machine/runtime/runtime.ts` `beginGuestUpdatePhase()` (calls `Input.instance.beginFrame()` at `guestUpdatePhaseDepth === 0`)
 - Device examples: `src/bmsx/machine/devices/dma/controller.ts`, `src/bmsx/machine/devices/imgdec/controller.ts`
-- String pool: `src/bmsx/machine/memory/string/pool.ts` (`StringValue` class, `valueIsString()`)
+- String pool: `src/bmsx/machine/cpu/string_pool.ts` (`StringPool`) and `src/bmsx/machine/cpu/cpu.ts` (`StringValue`, `valueIsString()`)
 - Compiler validation: `src/bmsx/machine/program/compiler.ts` (`validateMemoryStore`, `resolveMemoryStoreRequirement`)
 - Flow analysis: `src/bmsx/machine/program/compile_value_flow.ts` (`evaluateExpressionValueKind`)
 - Input system — frame sampling: `src/bmsx/input/manager.ts` `beginFrame()` → iterates players → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()`

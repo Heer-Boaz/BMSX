@@ -242,8 +242,7 @@ add_library(bmsx_core STATIC
 	machine/common/hash.cpp
 	machine/devices/vdp/vram_garbage.cpp
 	machine/devices/vdp/vdp.cpp
-	machine/memory/string/memory.cpp
-	machine/memory/string/pool.cpp
+	machine/cpu/string_pool.cpp
 	machine/program/loader.cpp
 	machine/program/linker.cpp
 )

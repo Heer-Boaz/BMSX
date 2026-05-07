@@ -1,7 +1,6 @@
 // start normalized-body-acceptable -- Value-folding helpers mirror opcode cases; sharing them would hide the rewrite intent.
-import { isTruthyValue, OpCode, type Value } from '../../cpu/cpu';
+import { asStringId, isTruthyValue, OpCode, valueIsString, type Value } from '../../cpu/cpu';
 import { MAX_SIGNED_BX, MIN_SIGNED_BX } from '../../cpu/instruction_format';
-import { isStringValue, stringValueToString } from '../../memory/string/pool';
 import type { Instruction, OptimizationContext } from './index';
 import { luaModulo } from '../../../lua/numeric';
 
@@ -13,7 +12,7 @@ export type ConstValue = {
 export { isTruthyValue as isTruthy };
 
 export const isConstPoolValue = (value: Value): boolean =>
-	value === null || typeof value === 'boolean' || typeof value === 'number' || isStringValue(value);
+	value === null || typeof value === 'boolean' || typeof value === 'number' || valueIsString(value);
 
 export const getImmediateConstValue = (instruction: Instruction, context: OptimizationContext): ConstValue | null => {
 	switch (instruction.op) {
@@ -122,7 +121,7 @@ export const replaceWithConst = (instruction: Instruction, target: number, value
 	return { value, constIndex };
 };
 
-export const evaluateUnary = (op: OpCode, value: Value): Value | null => {
+export const evaluateUnary = (op: OpCode, value: Value, context: OptimizationContext): Value | null => {
 	switch (op) {
 		case OpCode.UNM:
 			return -(value as number);
@@ -131,8 +130,8 @@ export const evaluateUnary = (op: OpCode, value: Value): Value | null => {
 		case OpCode.NOT:
 			return !isTruthyValue(value);
 		case OpCode.LEN:
-			if (isStringValue(value)) {
-				return value.codepointCount;
+			if (valueIsString(value)) {
+				return context.stringPool.codepointCount(asStringId(value));
 			}
 			return null;
 		default:
@@ -173,16 +172,16 @@ export const evaluateBinary = (op: OpCode, left: Value, right: Value): Value | n
 	}
 };
 
-export const evaluateComparison = (op: OpCode, left: Value, right: Value): boolean | null => {
+export const evaluateComparison = (op: OpCode, left: Value, right: Value, context: OptimizationContext): boolean | null => {
 	switch (op) {
 		case OpCode.EQ:
 			return left === right;
 		case OpCode.LT:
 		case OpCode.LE: {
-			const bothStrings = isStringValue(left) && isStringValue(right);
+			const bothStrings = valueIsString(left) && valueIsString(right);
 			if (bothStrings) {
-				const leftText = stringValueToString(left);
-				const rightText = stringValueToString(right);
+				const leftText = context.stringPool.toString(asStringId(left));
+				const rightText = context.stringPool.toString(asStringId(right));
 				return op === OpCode.LT ? leftText < rightText : leftText <= rightText;
 			}
 			return op === OpCode.LT ? (left as number) < (right as number) : (left as number) <= (right as number);

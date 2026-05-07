@@ -35,7 +35,7 @@ struct MachineState {
 
 struct MachineSaveState {
 	MemorySaveState memory;
-	StringHandleTableState stringHandles;
+	StringPoolState stringPool;
 	InputControllerState input;
 	VdpSaveState vdp;
 };
@@ -46,7 +46,6 @@ public:
 
 	Memory& memory;
 	VdpFrameBufferSize frameBufferSize;
-	StringHandleTable stringHandles;
 	CPU cpu;
 	DeviceScheduler scheduler;
 	IrqController irqController;

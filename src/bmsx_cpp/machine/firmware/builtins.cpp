@@ -20,10 +20,10 @@ void registerMathAndEasingBuiltins(Runtime& runtime) {
 	CPU& cpu = runtime.machine.cpu;
 	Clock* runtimeClock = &runtime.clock();
 	auto key = [&runtime](std::string_view name) {
-		return runtime.luaKey(name);
+		return runtime.internString(name);
 	};
 	auto str = [&cpu](std::string_view value) {
-		return valueString(cpu.internString(value));
+		return valueString(cpu.stringPool().intern(value));
 	};
 	auto clamp01 = [](double value) {
 		return clamp(value, 0.0, 1.0);

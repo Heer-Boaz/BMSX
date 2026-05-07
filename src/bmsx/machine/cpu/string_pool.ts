@@ -1,106 +1,93 @@
-import type { StringHandleTable, StringHandleTableState } from './memory';
+import { utf8ByteLength, utf8CodepointCount } from '../../common/utf8';
+import { addTrackedLuaHeapBytes, enforceLuaHeapBudget, replaceTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 
 export type StringId = number;
 
-export class StringValue {
-	public readonly id: StringId;
-	public readonly text: string;
-	public readonly codepointCount: number;
+export type StringPoolStateEntry = {
+	id: StringId;
+	value: string;
+};
 
-	private constructor(id: StringId, text: string, codepointCount: number) {
-		this.id = id;
-		this.text = text;
-		this.codepointCount = codepointCount;
-	}
-
-	public static create(id: StringId, text: string): StringValue {
-		return new StringValue(id, text, countCodepoints(text));
-	}
-}
+export type StringPoolState = {
+	entries: StringPoolStateEntry[];
+};
 
 export class StringPool {
-	private readonly byText = new Map<string, StringValue>();
-	private readonly byId: Array<StringValue | null> = [];
+	private readonly byText = new Map<string, StringId>();
+	private readonly values: string[] = [];
+	private readonly codepointCounts: number[] = [];
 	private nextId = 0;
-	private readonly handleTable: StringHandleTable | null;
+	private trackedBytes = 0;
 
-	constructor(handleTable: StringHandleTable | null = null) {
-		this.handleTable = handleTable;
-	}
+	public constructor(private readonly trackLuaHeap = false) {}
 
-	public intern(text: string): StringValue {
+	public intern(text: string): StringId {
 		const existing = this.byText.get(text);
 		if (existing !== undefined) {
 			return existing;
 		}
-		let id = this.nextId;
-		if (this.handleTable) {
-			id = this.handleTable.allocateHandle(text).id;
+		const id = this.insert(this.nextId, text);
+		if (this.trackLuaHeap) {
+			const byteLength = utf8ByteLength(text);
+			this.trackedBytes += byteLength;
+			addTrackedLuaHeapBytes(byteLength);
+			enforceLuaHeapBudget();
 		}
-		const entry = StringValue.create(id, text);
-		this.byId[id] = entry;
-		this.byText.set(text, entry);
+		return id;
+	}
+
+	public toString(id: StringId): string {
+		const value = this.values[id];
+		if (value === undefined) {
+			throw new Error(`[StringPool] Unknown string id ${id}.`);
+		}
+		return value;
+	}
+
+	public codepointCount(id: StringId): number {
+		return this.codepointCounts[id];
+	}
+
+	public trackedLuaHeapBytes(): number {
+		return this.trackLuaHeap ? this.trackedBytes : 0;
+	}
+
+	public captureState(): StringPoolState {
+		const entries: StringPoolStateEntry[] = [];
+		for (let id = 0; id < this.values.length; id += 1) {
+			const value = this.values[id];
+			if (value !== undefined) {
+				entries.push({ id, value });
+			}
+		}
+		return { entries };
+	}
+
+	public restoreState(state: StringPoolState): void {
+		const previousBytes = this.trackedBytes;
+		this.byText.clear();
+		this.values.length = 0;
+		this.codepointCounts.length = 0;
+		this.nextId = 0;
+		this.trackedBytes = 0;
+		for (let index = 0; index < state.entries.length; index += 1) {
+			const stateEntry = state.entries[index];
+			this.insert(stateEntry.id, stateEntry.value);
+			this.trackedBytes += utf8ByteLength(stateEntry.value);
+		}
+		if (this.trackLuaHeap) {
+			replaceTrackedLuaHeapBytes(previousBytes, this.trackedBytes);
+			enforceLuaHeapBudget();
+		}
+	}
+
+	private insert(id: StringId, text: string): StringId {
+		this.values[id] = text;
+		this.codepointCounts[id] = utf8CodepointCount(text);
+		this.byText.set(text, id);
 		if (id >= this.nextId) {
 			this.nextId = id + 1;
 		}
-		return entry;
+		return id;
 	}
-
-	public getById(id: StringId): StringValue {
-		const entry = this.byId[id];
-		if (!entry) {
-			throw new Error(`[StringPool] Unknown string id ${id}.`);
-		}
-		return entry;
-	}
-
-	public codepointCount(value: StringValue): number {
-		return value.codepointCount;
-	}
-
-	public reserveHandles(minHandle: number): void {
-		if (this.handleTable) {
-			this.handleTable.reserveHandles(minHandle);
-		}
-		if (minHandle > this.nextId) {
-			for (let index = this.byId.length; index < minHandle; index += 1) {
-				this.byId[index] = null;
-			}
-			this.nextId = minHandle;
-		}
-	}
-
-	public rehydrateFromHandleTable(state: StringHandleTableState): void {
-		if (this.handleTable === null) {
-			throw new Error('[StringPool] Cannot rehydrate without a string handle table.');
-		}
-		this.byText.clear();
-		this.byId.length = 0;
-		this.nextId = 0;
-		for (let id = 0; id < state.nextHandle; id += 1) {
-			const entry = this.handleTable.readEntry(id);
-			const text = this.handleTable.readText(entry);
-			const restored = StringValue.create(id, text);
-			this.byId[id] = restored;
-			this.byText.set(text, restored);
-		}
-		this.reserveHandles(state.nextHandle);
-		this.nextId = state.nextHandle;
-	}
-}
-
-export function isStringValue(value: unknown): value is StringValue {
-	return value instanceof StringValue;
-}
-
-export function stringValueToString(value: StringValue): string {
-	return value.text;
-}
-
-function countCodepoints(text: string): number {
-	let count = 0;
-	for (const _char of text) {
-		count += 1;
-	}
-	return count;
 }

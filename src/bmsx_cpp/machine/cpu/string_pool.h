@@ -1,8 +1,7 @@
 #pragma once
 
-#include "machine/memory/string/memory.h"
-
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -12,6 +11,15 @@
 namespace bmsx {
 
 using StringId = uint32_t;
+
+struct StringPoolStateEntry {
+	StringId id = 0;
+	std::string value;
+};
+
+struct StringPoolState {
+	std::vector<StringPoolStateEntry> entries;
+};
 
 struct InternedString {
 	StringId id = 0;
@@ -35,20 +43,22 @@ struct StringKeyEq {
 
 class StringPool {
 public:
-	explicit StringPool(StringHandleTable* handleTable = nullptr);
+	explicit StringPool(bool trackLuaHeap = false);
 
 	StringId intern(std::string_view value);
 	const std::string& toString(StringId id) const;
 	int codepointCount(StringId id) const;
-	void reserveHandles(StringId minHandle);
-	void rehydrateFromHandleTable(const StringHandleTableState& state);
+	size_t trackedLuaHeapBytes() const { return m_trackLuaHeap ? m_trackedBytes : 0; }
+	StringPoolState captureState() const;
+	void restoreState(const StringPoolState& state);
 
 private:
 	const InternedString& entry(StringId id) const;
-	static int countCodepoints(std::string_view text);
-
-	StringHandleTable* m_handleTable = nullptr;
+	InternedString& insert(StringId id, std::string_view value);
+	void insertEntry(std::unique_ptr<InternedString> entry);
 	StringId m_nextId = 0;
+	bool m_trackLuaHeap = false;
+	size_t m_trackedBytes = 0;
 	std::unordered_map<std::string_view, StringId, StringKeyHash, StringKeyEq> m_stringMap;
 	std::vector<std::unique_ptr<InternedString>> m_entries;
 };

@@ -27,6 +27,7 @@ enum class AssetTypeKind {
 	Bin,
 	Lua,
 	Data,
+	Code,
 	Skip,
 	Unknown,
 };

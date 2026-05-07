@@ -84,6 +84,7 @@
  machine/common/word
  machine/cpu/cpu
  machine/cpu/disassembler
+ machine/cpu/string_pool
 -machine/cpu/instruction_format
 -machine/cpu/opcode_info
 -machine/cpu/profiler
@@ -112,14 +113,11 @@
  machine/memory/map
  machine/memory/memory
  machine/memory/specs
--machine/memory/string/memory
--machine/memory/string/pool
 -machine/program/bound_reference
 -machine/program/compile_value_flow
 -machine/program/compiler
 -machine/program/console_entry
 -machine/program/control_flow
-+machine/memory/string_memory
  machine/program/executor
 -machine/program/layout
  machine/program/linker

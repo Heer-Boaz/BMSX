@@ -10,8 +10,7 @@ namespace bmsx {
 Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, SoundMaster& soundMaster, MicrotaskQueue& microtasks)
 	: memory(memoryRef)
 	, frameBufferSize(frameBufferSizeValue)
-	, stringHandles(memory)
-	, cpu(memory, &stringHandles)
+	, cpu(memory)
 	, scheduler(cpu)
 	, irqController(memory)
 	, vdp(memory, scheduler, frameBufferSize)
@@ -95,7 +94,7 @@ void Machine::restoreState(const MachineState& state) {
 MachineSaveState Machine::captureSaveState() const {
 	MachineSaveState state;
 	state.memory = memory.captureSaveState();
-	state.stringHandles = stringHandles.captureState();
+	state.stringPool = cpu.stringPool().captureState();
 	state.input = inputController.captureState();
 	state.vdp = vdp.captureSaveState();
 	return state;
@@ -103,8 +102,7 @@ MachineSaveState Machine::captureSaveState() const {
 
 void Machine::restoreSaveState(const MachineSaveState& state) {
 	memory.restoreSaveState(state.memory);
-	stringHandles.restoreState(state.stringHandles);
-	cpu.stringPool().rehydrateFromHandleTable(state.stringHandles);
+	cpu.stringPool().restoreState(state.stringPool);
 	geometryController.postLoad();
 	irqController.postLoad();
 	inputController.restoreState(state.input);

@@ -270,9 +270,8 @@ import {
 	toRuntimeValue,
 } from '../runtime/host/native_bridge';
 import { buildLuaFrameRawLabel } from '../../lua/stack_frame_label';
-import { isStringValue, stringValueToString } from '../memory/string/pool';
-
-import type { StringValue } from '../memory/string/pool';
+import { asStringId, valueIsString, type StringValue } from '../cpu/cpu';
+import type { StringPool } from '../cpu/string_pool';
 import type { LuaMarshalContext } from '../runtime/contracts';
 import type { Runtime } from '../runtime/runtime';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';
@@ -282,7 +281,7 @@ import { createRuntimeDevtoolsTable } from './devtools';
 
 
 // start repeated-sequence-acceptable -- Lua tostring semantics live in firmware; disassembler formatting is intentionally separate.
-export function valueToString(value: Value): string {
+export function valueToString(value: Value, stringPool: StringPool): string {
 	if (value === null) {
 		return 'nil';
 	}
@@ -297,8 +296,8 @@ export function valueToString(value: Value): string {
 		// Slower than V8's native formatting; avoid tight-loop conversions.
 		return formatNumber(value);
 	}
-	if (isStringValue(value)) {
-		return stringValueToString(value);
+	if (valueIsString(value)) {
+		return stringPool.toString(asStringId(value));
 	}
 	if (value instanceof Table) {
 		return 'table';
@@ -313,96 +312,92 @@ export function valueToString(value: Value): string {
 }
 // end repeated-sequence-acceptable
 
-export function valueToStringValue(runtime: Runtime, value: Value): StringValue {
-	return runtime.internString(valueToString(value)); // TODO: REMOVE USELESS WRAPPER!!!!!!!!
-}
-
 function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest): Table {
 	const table = new Table(0, 5);
 	if (manifest.namespace.length > 0) {
-		table.set(runtime.luaKey('namespace'), runtime.internString(manifest.namespace));
+		table.set(runtime.internString('namespace'), runtime.internString(manifest.namespace));
 	}
 	if (manifest.ufps) {
-		table.set(runtime.luaKey('ufps'), manifest.ufps);
+		table.set(runtime.internString('ufps'), manifest.ufps);
 	}
 	if (manifest.render_size.width > 0 && manifest.render_size.height > 0) {
 		const renderSize = new Table(0, 2);
-		renderSize.set(runtime.luaKey('width'), manifest.render_size.width);
-		renderSize.set(runtime.luaKey('height'), manifest.render_size.height);
-		table.set(runtime.luaKey('render_size'), renderSize);
+		renderSize.set(runtime.internString('width'), manifest.render_size.width);
+		renderSize.set(runtime.internString('height'), manifest.render_size.height);
+		table.set(runtime.internString('render_size'), renderSize);
 	}
 	const specs = new Table(0, 5);
 	const specCpu = manifest.specs.cpu;
 	const cpu = new Table(0, 2);
 	if (specCpu.cpu_freq_hz) {
-		cpu.set(runtime.luaKey('cpu_freq_hz'), specCpu.cpu_freq_hz);
+		cpu.set(runtime.internString('cpu_freq_hz'), specCpu.cpu_freq_hz);
 	}
 	if (specCpu.imgdec_bytes_per_sec) {
-		cpu.set(runtime.luaKey('imgdec_bytes_per_sec'), specCpu.imgdec_bytes_per_sec);
+		cpu.set(runtime.internString('imgdec_bytes_per_sec'), specCpu.imgdec_bytes_per_sec);
 	}
-	specs.set(runtime.luaKey('cpu'), cpu);
+	specs.set(runtime.internString('cpu'), cpu);
 	const specDma = manifest.specs.dma;
 	const dma = new Table(0, 2);
 	if (specDma.dma_bytes_per_sec_iso) {
-		dma.set(runtime.luaKey('dma_bytes_per_sec_iso'), specDma.dma_bytes_per_sec_iso);
+		dma.set(runtime.internString('dma_bytes_per_sec_iso'), specDma.dma_bytes_per_sec_iso);
 	}
 	if (specDma.dma_bytes_per_sec_bulk) {
-		dma.set(runtime.luaKey('dma_bytes_per_sec_bulk'), specDma.dma_bytes_per_sec_bulk);
+		dma.set(runtime.internString('dma_bytes_per_sec_bulk'), specDma.dma_bytes_per_sec_bulk);
 	}
-	specs.set(runtime.luaKey('dma'), dma);
+	specs.set(runtime.internString('dma'), dma);
 	const vdp = new Table(0, 1);
-	vdp.set(runtime.luaKey('work_units_per_sec'), manifest.specs.vdp?.work_units_per_sec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC);
-	specs.set(runtime.luaKey('vdp'), vdp);
+	vdp.set(runtime.internString('work_units_per_sec'), manifest.specs.vdp?.work_units_per_sec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC);
+	specs.set(runtime.internString('vdp'), vdp);
 	const geo = new Table(0, 1);
-	geo.set(runtime.luaKey('work_units_per_sec'), manifest.specs.geo?.work_units_per_sec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC);
-	specs.set(runtime.luaKey('geo'), geo);
+	geo.set(runtime.internString('work_units_per_sec'), manifest.specs.geo?.work_units_per_sec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC);
+	specs.set(runtime.internString('geo'), geo);
 	const ram = manifest.specs.ram;
 	if (ram?.ram_bytes) {
 		const ramTable = new Table(0, 1);
-		ramTable.set(runtime.luaKey('ram_bytes'), ram.ram_bytes);
-		specs.set(runtime.luaKey('ram'), ramTable);
+		ramTable.set(runtime.internString('ram_bytes'), ram.ram_bytes);
+		specs.set(runtime.internString('ram'), ramTable);
 	}
 	const vram = manifest.specs.vram;
 	if (vram && (vram.slot_bytes || vram.system_slot_bytes || vram.staging_bytes)) {
 		const vramTable = new Table(0, 3);
 		if (vram.slot_bytes) {
-			vramTable.set(runtime.luaKey('slot_bytes'), vram.slot_bytes);
+			vramTable.set(runtime.internString('slot_bytes'), vram.slot_bytes);
 		}
 		if (vram.system_slot_bytes) {
-			vramTable.set(runtime.luaKey('system_slot_bytes'), vram.system_slot_bytes);
+			vramTable.set(runtime.internString('system_slot_bytes'), vram.system_slot_bytes);
 		}
 		if (vram.staging_bytes) {
-			vramTable.set(runtime.luaKey('staging_bytes'), vram.staging_bytes);
+			vramTable.set(runtime.internString('staging_bytes'), vram.staging_bytes);
 		}
-		specs.set(runtime.luaKey('vram'), vramTable);
+		specs.set(runtime.internString('vram'), vramTable);
 	}
-	table.set(runtime.luaKey('specs'), specs);
+	table.set(runtime.internString('specs'), specs);
 	return table;
 }
 
 function buildCartManifestTable(runtime: Runtime, manifest: CartManifest, machine: MachineManifest, entryPath: string): Table {
 	const table = new Table(0, 4);
 	if (manifest.title !== undefined && manifest.title.length > 0) {
-		table.set(runtime.luaKey('title'), runtime.internString(manifest.title));
+		table.set(runtime.internString('title'), runtime.internString(manifest.title));
 	}
 	if (manifest.short_name !== undefined && manifest.short_name.length > 0) {
-		table.set(runtime.luaKey('short_name'), runtime.internString(manifest.short_name));
+		table.set(runtime.internString('short_name'), runtime.internString(manifest.short_name));
 	}
 	if (manifest.rom_name !== undefined && manifest.rom_name.length > 0) {
-		table.set(runtime.luaKey('rom_name'), runtime.internString(manifest.rom_name));
+		table.set(runtime.internString('rom_name'), runtime.internString(manifest.rom_name));
 	}
-	table.set(runtime.luaKey('machine'), buildMachineManifestTable(runtime, machine));
+	table.set(runtime.internString('machine'), buildMachineManifestTable(runtime, machine));
 	const lua = new Table(0, 1);
-	lua.set(runtime.luaKey('entry_path'), runtime.internString(entryPath));
-	table.set(runtime.luaKey('lua'), lua);
+	lua.set(runtime.internString('entry_path'), runtime.internString(entryPath));
+	table.set(runtime.internString('lua'), lua);
 	return table;
 }
 
 class LuaThrownValueError extends Error {
 	public readonly value: Value;
 
-	public constructor(value: Value) {
-		super(valueToString(value));
+	public constructor(runtime: Runtime, value: Value) {
+		super(valueToString(value, runtime.machine.cpu.stringPool));
 		this.name = 'LuaThrownValueError';
 		this.value = value;
 	}
@@ -554,7 +549,7 @@ export function formatLuaString(runtime: Runtime, template: string, args: Readon
 		switch (specifier) {
 			case 's': {
 				const value = takeArgument();
-				let text = value === null ? 'nil' : valueToString(value);
+				let text = value === null ? 'nil' : valueToString(value, runtime.machine.cpu.stringPool);
 				if (precision !== null) {
 					text = text.substring(0, precision);
 				}
@@ -695,7 +690,7 @@ export function formatLuaString(runtime: Runtime, template: string, args: Readon
 			}
 			case 'q': {
 				const value = takeArgument();
-				const raw = value === null ? 'nil' : valueToString(value);
+				const raw = value === null ? 'nil' : valueToString(value, runtime.machine.cpu.stringPool);
 				let escaped = '"';
 				for (let charIndex = 0; charIndex < raw.length; charIndex += 1) {
 					const code = raw.charCodeAt(charIndex);
@@ -801,6 +796,7 @@ function normalizeLuaIndex(valueNumber: number, length: number, zeroFallback: nu
 }
 
 export function seedLuaGlobals(runtime: Runtime): void {
+	const strings = runtime.machine.cpu.stringPool;
 	const prependValue = (out: Value[], value: Value): void => {
 		const length = out.length;
 		out.length = length + 1;
@@ -842,7 +838,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		if (typeof value === 'number') {
 			return runtime.internString('number');
 		}
-		if (isStringValue(value)) {
+		if (valueIsString(value)) {
 			return runtime.internString('string');
 		}
 		if (value instanceof Table) {
@@ -988,7 +984,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 					output[keyValue - 1] = toNativeValue(runtime, value, extendMarshalContext(tableContext, String(keyValue)), visited);
 					return;
 				}
-				const segment = describeMarshalSegment(keyValue);
+				const segment = describeMarshalSegment(runtime, keyValue);
 				const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
 				output.push(toNativeValue(runtime, value, nextContext, visited));
 			});
@@ -1485,7 +1481,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	luaPipeline.registerGlobal(runtime, 'tostring', createNativeFunction('tostring', (args, out) => {
 		const value = args.length > 0 ? args[0] : null;
-		out.push(valueToStringValue(runtime, value));
+		out.push(runtime.internString(valueToString(value, runtime.machine.cpu.stringPool)));
 	}));
 	luaPipeline.registerGlobal(runtime, 'tonumber', createNativeFunction('tonumber', (args, out) => {
 		if (args.length === 0) {
@@ -1497,8 +1493,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			out.push(value);
 			return;
 		}
-		if (isStringValue(value)) {
-			const text = stringValueToString(value);
+		if (valueIsString(value)) {
+			const text = strings.toString(asStringId(value));
 			if (args.length >= 2) {
 				const baseValue = Math.floor(args[1] as number);
 				if (baseValue >= 2 && baseValue <= 36) {
@@ -1518,7 +1514,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const condition = args.length > 0 ? args[0] : null;
 		if (!isTruthyValue(condition)) {
 			const message = args.length > 1 ? args[1] : runtime.internString('assertion failed!');
-			throw new LuaThrownValueError(message);
+			throw new LuaThrownValueError(runtime, message);
 		}
 		for (let index = 0; index < args.length; index += 1) {
 			out.push(args[index]);
@@ -1527,7 +1523,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'error', createNativeFunction('error', (args, out) => {
 		void out;
 		const message = args.length > 0 ? args[0] : runtime.internString('error');
-		throw new LuaThrownValueError(message);
+		throw new LuaThrownValueError(runtime, message);
 	}));
 	luaPipeline.registerGlobal(runtime, 'setmetatable', createNativeFunction('setmetatable', (args, out) => {
 		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
@@ -1578,7 +1574,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'select', createNativeFunction('select', (args, out) => {
 		const index = args[0];
 		const count = args.length - 1;
-		if (isStringValue(index) && stringValueToString(index) === '#') {
+		if (valueIsString(index) && strings.toString(asStringId(index)) === '#') {
 			out.push(count);
 			return;
 		}
@@ -1637,14 +1633,14 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 	}));
 	luaPipeline.registerGlobal(runtime, 'loadstring', createNativeFunction('loadstring', (args, out) => {
-		if (!isStringValue(args[0])) {
+		if (!valueIsString(args[0])) {
 			throw runtime.createApiRuntimeError('loadstring(source [, chunkname]) requires a string source.');
 		}
-		if (args.length > 1 && args[1] !== null && !isStringValue(args[1])) {
+		if (args.length > 1 && args[1] !== null && !valueIsString(args[1])) {
 			throw runtime.createApiRuntimeError('loadstring(source [, chunkname]) requires a string chunkname.');
 		}
-		const source = stringValueToString(args[0] as StringValue);
-		const chunkName = args.length > 1 && args[1] !== null ? stringValueToString(args[1] as StringValue) : 'loadstring';
+		const source = strings.toString(asStringId(args[0] as StringValue));
+		const chunkName = args.length > 1 && args[1] !== null ? strings.toString(asStringId(args[1] as StringValue)) : 'loadstring';
 		try {
 			out.push(compileLoadChunk(runtime, source, chunkName));
 		} catch (error) {
@@ -1653,26 +1649,26 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 	}));
 	luaPipeline.registerGlobal(runtime, 'load', createNativeFunction('load', (args, out) => {
-		if (!isStringValue(args[0])) {
+		if (!valueIsString(args[0])) {
 			throw runtime.createApiRuntimeError('load(source [, chunkname [, mode]]) requires a string source.');
 		}
 		if (args.length > 2 && args[2] !== null) {
-			if (!isStringValue(args[2])) {
+			if (!valueIsString(args[2])) {
 				throw runtime.createApiRuntimeError('load(source [, chunkname [, mode]]) requires mode to be a string.');
 			}
-			const mode = stringValueToString(args[2] as StringValue);
+			const mode = strings.toString(asStringId(args[2] as StringValue));
 			if (mode !== 't' && mode !== 'bt') {
 				throw runtime.createApiRuntimeError("load only supports text mode ('t' or 'bt').");
 			}
 		}
-		if (args.length > 1 && args[1] !== null && !isStringValue(args[1])) {
+		if (args.length > 1 && args[1] !== null && !valueIsString(args[1])) {
 			throw runtime.createApiRuntimeError('load(source [, chunkname [, mode]]) requires chunkname to be a string.');
 		}
 		if (args.length > 3 && args[3] !== null) {
 			throw runtime.createApiRuntimeError('load does not support the environment argument.');
 		}
-		const source = stringValueToString(args[0] as StringValue);
-		const chunkName = args.length > 1 && args[1] !== null ? stringValueToString(args[1] as StringValue) : 'load';
+		const source = strings.toString(asStringId(args[0] as StringValue));
+		const chunkName = args.length > 1 && args[1] !== null ? strings.toString(asStringId(args[1] as StringValue)) : 'load';
 		try {
 			out.push(compileLoadChunk(runtime, source, chunkName));
 		} catch (error) {
@@ -1681,7 +1677,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 	}));
 	luaPipeline.registerGlobal(runtime, 'require', createNativeFunction('require', (args, out) => {
-		const moduleName = stringValueToString(args[0] as StringValue).trim();
+		const moduleName = strings.toString(asStringId(args[0] as StringValue)).trim();
 		out.push(luaPipeline.requireModule(runtime, moduleName));
 	}));
 	luaPipeline.registerGlobal(runtime, 'array', createNativeFunction('array', (args, out) => {
@@ -1705,7 +1701,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'print', createNativeFunction('print', (args, out) => {
 		const parts: string[] = [];
 		for (let index = 0; index < args.length; index += 1) {
-			parts.push(valueToString(args[index]));
+			parts.push(valueToString(args[index], runtime.machine.cpu.stringPool));
 		}
 		const text = parts.length === 0 ? '' : parts.join('\t');
 		runtime.terminal.appendStdout(text);
@@ -1723,7 +1719,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	};
 	luaPipeline.registerGlobal(runtime, 'font_for_each_glyph', createNativeFunction('font_for_each_glyph', (args, out) => {
 		const fontDescriptor = args[0] as Table;
-		const line = stringValueToString(args[1] as StringValue);
+		const line = strings.toString(asStringId(args[1] as StringValue));
 		const callback = args[2];
 		const glyphs = fontDescriptor.get(fontGlyphsKey) as Table;
 		const callArgs = runtime.luaScratch.acquireValue();
@@ -1743,7 +1739,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	luaPipeline.registerGlobal(runtime, 'font_measure_line_width', createNativeFunction('font_measure_line_width', (args, out) => {
 		const fontDescriptor = args[0] as Table;
-		const line = stringValueToString(args[1] as StringValue);
+		const line = strings.toString(asStringId(args[1] as StringValue));
 		const glyphs = fontDescriptor.get(fontGlyphsKey) as Table;
 		let width = 0;
 		for (const char of line) {
@@ -1852,10 +1848,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 
 	const stringTable = new Table(0, 0);
 	luaPipeline.registerGlobal(runtime, 'wrap_text_lines', createNativeFunction('wrap_text_lines', (args, out) => {
-		const text = stringValueToString(args[0] as StringValue);
+		const text = strings.toString(asStringId(args[0] as StringValue));
 		const maxChars = Math.floor(args[1] as number);
-		const firstPrefix = args.length > 2 && args[2] !== null ? stringValueToString(args[2] as StringValue) : '';
-		const nextPrefix = args.length > 3 && args[3] !== null ? stringValueToString(args[3] as StringValue) : firstPrefix;
+		const firstPrefix = args.length > 2 && args[2] !== null ? strings.toString(asStringId(args[2] as StringValue)) : '';
+		const nextPrefix = args.length > 3 && args[3] !== null ? strings.toString(asStringId(args[3] as StringValue)) : firstPrefix;
 		const wrapped = wrapTextLines(text, maxChars, firstPrefix, nextPrefix);
 		const linesTable = new Table(wrapped.lines.length, 0);
 		const lineMapTable = new Table(wrapped.lineMap.length, 0);
@@ -1868,25 +1864,25 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	setKey(stringTable, 'len', createNativeFunction('string.len', (args, out) => {
 		const value = args[0] as StringValue;
-		out.push(runtime.machine.cpu.stringPool.codepointCount(value));
+		out.push(strings.codepointCount(asStringId(value)));
 	}));
 	setKey(stringTable, 'upper', createNativeFunction('string.upper', (args, out) => {
-		const text = stringValueToString(args[0] as StringValue);
+		const text = strings.toString(asStringId(args[0] as StringValue));
 		out.push(runtime.internString(text.toUpperCase()));
 	}));
 	setKey(stringTable, 'lower', createNativeFunction('string.lower', (args, out) => {
-		const text = stringValueToString(args[0] as StringValue);
+		const text = strings.toString(asStringId(args[0] as StringValue));
 		out.push(runtime.internString(text.toLowerCase()));
 	}));
 	setKey(stringTable, 'rep', createNativeFunction('string.rep', (args, out) => {
-		const text = stringValueToString(args[0] as StringValue);
+		const text = strings.toString(asStringId(args[0] as StringValue));
 		const count = Math.floor(args.length > 1 ? (args[1] as number) : 1);
 		if (count <= 0) {
 			out.push(runtime.internString(''));
 			return;
 		}
 		const hasSeparator = args.length > 2 && args[2] !== null;
-		const separator = hasSeparator ? stringValueToString(args[2] as StringValue) : '';
+		const separator = hasSeparator ? strings.toString(asStringId(args[2] as StringValue)) : '';
 		let output = '';
 		if (hasSeparator) {
 			for (let index = 0; index < count; index += 1) {
@@ -1904,8 +1900,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	setKey(stringTable, 'sub', createNativeFunction('string.sub', (args, out) => {
 		const value = args[0] as StringValue;
-		const text = stringValueToString(value);
-		const length = runtime.machine.cpu.stringPool.codepointCount(value);
+		const text = strings.toString(asStringId(value));
+		const length = strings.codepointCount(asStringId(value));
 		const startArg = args.length > 1 ? (args[1] as number) : 1;
 		const endArg = args.length > 2 ? (args[2] as number) : length;
 		let startIndex = normalizeLuaIndex(startArg, length, 1);
@@ -1927,9 +1923,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	// start repeated-sequence-acceptable -- Lua string find/match keep argument decoding inline to avoid allocation in string-library calls.
 	setKey(stringTable, 'find', createNativeFunction('string.find', (args, out) => {
 		const sourceValue = args[0] as StringValue;
-		const source = stringValueToString(sourceValue);
-		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
-		const length = runtime.machine.cpu.stringPool.codepointCount(sourceValue);
+		const source = strings.toString(asStringId(sourceValue));
+		const pattern = args.length > 1 ? strings.toString(asStringId(args[1] as StringValue)) : '';
+		const length = strings.codepointCount(asStringId(sourceValue));
 		const startIndex = args.length > 2 ? normalizeLuaIndex(args[2] as number, length, 1) : 1;
 		if (startIndex > length) {
 			out.push(null);
@@ -1971,9 +1967,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	setKey(stringTable, 'match', createNativeFunction('string.match', (args, out) => {
 		const sourceValue = args[0] as StringValue;
-		const source = stringValueToString(sourceValue);
-		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
-		const length = runtime.machine.cpu.stringPool.codepointCount(sourceValue);
+		const source = strings.toString(asStringId(sourceValue));
+		const pattern = args.length > 1 ? strings.toString(asStringId(args[1] as StringValue)) : '';
+		const length = strings.codepointCount(asStringId(sourceValue));
 		const startIndex = args.length > 2 ? normalizeLuaIndex(args[2] as number, length, 1) : 1;
 		if (startIndex > length) {
 			out.push(null);
@@ -1998,8 +1994,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	// end repeated-sequence-acceptable
 	setKey(stringTable, 'gsub', createNativeFunction('string.gsub', (args, out) => {
-		const source = stringValueToString(args[0] as StringValue);
-		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
+		const source = strings.toString(asStringId(args[0] as StringValue));
+		const pattern = args.length > 1 ? strings.toString(asStringId(args[1] as StringValue)) : '';
 		const replacement = args.length > 2 ? args[2] : runtime.internString('');
 		let maxReplacements = Number.POSITIVE_INFINITY;
 		if (args.length > 3 && args[3] !== null) {
@@ -2019,8 +2015,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const fnResults = runtime.luaScratch.acquireValue();
 		try {
 			const renderReplacement = (match: RegExpExecArray): string => {
-				if (isStringValue(replacement) || typeof replacement === 'number') {
-					const template = isStringValue(replacement) ? stringValueToString(replacement) : String(replacement);
+				if (valueIsString(replacement) || typeof replacement === 'number') {
+					const template = valueIsString(replacement) ? strings.toString(asStringId(replacement)) : String(replacement);
 					return template.replace(/%([0-9%])/g, (_full, token) => {
 						if (token === '%') {
 							return '%';
@@ -2044,7 +2040,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 						? runtime.internString(match[1])
 						: runtime.internString(match[0]);
 					const mapped = replacement.get(keyValue);
-					return mapped === null ? match[0] : valueToString(mapped);
+					return mapped === null ? match[0] : valueToString(mapped, runtime.machine.cpu.stringPool);
 				}
 				if (isNativeFunction(replacement) || (replacement !== null && typeof replacement === 'object' && 'protoIndex' in replacement)) {
 					fnArgs.length = 0;
@@ -2065,7 +2061,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 					if (value === null || value === false) {
 						return match[0];
 					}
-					return valueToString(value);
+					return valueToString(value, runtime.machine.cpu.stringPool);
 				}
 				throw runtime.createApiRuntimeError('string.gsub replacement must be a string, number, function, or table.');
 			};
@@ -2099,8 +2095,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 	}));
 	setKey(stringTable, 'gmatch', createNativeFunction('string.gmatch', (args, out) => {
-		const source = stringValueToString(args[0] as StringValue);
-		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
+		const source = strings.toString(asStringId(args[0] as StringValue));
+		const pattern = args.length > 1 ? strings.toString(asStringId(args[1] as StringValue)) : '';
 		const regex = getLuaPatternRegex(pattern);
 		const state = { index: 0 };
 		const iterator = createNativeFunction('string.gmatch.iterator', (_args, iterOut) => {
@@ -2132,7 +2128,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(iterator);
 	}));
 	setKey(stringTable, 'byte', createNativeFunction('string.byte', (args, out) => {
-		const source = stringValueToString(args[0] as StringValue);
+		const source = strings.toString(asStringId(args[0] as StringValue));
 		const positionArg = args.length > 1 ? (args[1] as number) : 1;
 		const position = Math.floor(positionArg);
 		if (position < 1) {
@@ -2162,7 +2158,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(runtime.internString(result));
 	}));
 	setKey(stringTable, 'format', createNativeFunction('string.format', (args, out) => {
-		const template = stringValueToString(args[0] as StringValue);
+		const template = strings.toString(asStringId(args[0] as StringValue));
 		const formatted = formatLuaString(runtime, template, args, 1);
 		out.push(runtime.internString(formatted));
 	}));
@@ -2203,7 +2199,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	setKey(tableLibrary, 'concat', createNativeFunction('table.concat', (args, out) => {
 		const target = args[0] as Table;
-		const separator = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
+		const separator = args.length > 1 ? strings.toString(asStringId(args[1] as StringValue)) : '';
 		const length = target.arrayLength;
 		const startIndex = args.length > 2 ? normalizeLuaIndex(args[2] as number, length, 1) : 1;
 		const endIndex = args.length > 3 ? normalizeLuaIndex(args[3] as number, length, length) : length;
@@ -2215,7 +2211,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		try {
 			for (let index = startIndex; index <= endIndex; index += 1) {
 				const value = target.get(index);
-				parts.push(value === null ? '' : valueToString(value));
+				parts.push(value === null ? '' : valueToString(value, runtime.machine.cpu.stringPool));
 			}
 			out.push(runtime.internString(parts.join(separator)));
 		} finally {
@@ -2268,11 +2264,11 @@ export function seedLuaGlobals(runtime: Runtime): void {
 				if (typeof left === 'number' && typeof right === 'number') {
 					return left - right;
 				}
-				if (isStringValue(left) && isStringValue(right)) {
+				if (valueIsString(left) && valueIsString(right)) {
 					if (left === right) {
 						return 0;
 					}
-					return stringValueToString(left) < stringValueToString(right) ? -1 : 1;
+					return strings.toString(asStringId(left)) < strings.toString(asStringId(right)) ? -1 : 1;
 				}
 				throw runtime.createApiRuntimeError('table.sort comparison expects numbers or strings.');
 			});
@@ -2440,7 +2436,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(t2 - t1);
 	}));
 	setKey(osTable, 'date', createNativeFunction('os.date', (args, out) => {
-		const format = args.length > 0 && args[0] !== null ? stringValueToString(args[0] as StringValue) : '%c';
+		const format = args.length > 0 && args[0] !== null ? strings.toString(asStringId(args[0] as StringValue)) : '%c';
 		const timeValue = args.length > 1 && args[1] !== null ? (args[1] as number) * 1000 : Date.now();
 		const date = new Date(timeValue);
 		if (format === '*t') {
@@ -2542,7 +2538,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			const stack = buildLuaStackFrames(runtime)
 				.map(frame => `${frame.source ?? '<unknown>'}:${frame.line ?? '?'}:${frame.column ?? '?'}`)
 				.join(' <- ');
-			throw runtime.createApiRuntimeError(`pairs expects a table or native object (got ${valueToString(target)}). stack=${stack}`);
+			throw runtime.createApiRuntimeError(`pairs expects a table or native object (got ${valueToString(target, runtime.machine.cpu.stringPool)}). stack=${stack}`);
 		}
 		pushNativePairsIterator(runtime, target, out);
 	}));

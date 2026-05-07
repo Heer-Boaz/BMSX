@@ -34,10 +34,10 @@ import {
 	type LuaWhileStatement,
 	type LuaGotoStatement,
 } from '../../lua/syntax/ast';
-import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../cpu/cpu';
+import { OpCode, asStringId, valueIsString, valueString, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug, type StringValue } from '../cpu/cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './optimizer';
 import { stripLuaExtension, type ProgramConstReloc } from './loader';
-import { StringPool, StringValue, isStringValue, stringValueToString } from '../memory/string/pool';
+import { StringPool } from '../cpu/string_pool';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../cpu/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../../lua/semantic/frontend';
 import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from '../bus/registers';
@@ -249,7 +249,7 @@ class ProgramBuilder {
 	}
 
 	public internString(value: string): StringValue {
-		return this.stringPool.intern(value);
+		return valueString(this.stringPool.intern(value));
 	}
 
 	public constIndexString(value: string): number {
@@ -445,7 +445,7 @@ class ProgramBuilder {
 	private makeConstKey(value: Value): string {
 		if (value === null) return 'nil';
 		if (typeof value === 'number') return `n:${value}`;
-		if (isStringValue(value)) return `s:${value.id}`;
+		if (valueIsString(value)) return `s:${value.id}`;
 		if (typeof value === 'boolean') return `b:${value ? 1 : 0}`;
 		return `o:${String(value)}`;
 	}
@@ -637,6 +637,7 @@ class FunctionBuilder {
 		if (this.program.optLevel > 0) {
 			const optimized = optimizeInstructions(this.code, this.ranges, this.program.optLevel, {
 				constPool: this.program.constPool,
+				stringPool: this.program.stringPool,
 				constIndex: (value: Value) => this.program.constIndex(value),
 				getClosureUpvalues: (protoIndex: number) => {
 					const proto = this.program.protos[protoIndex];
@@ -813,8 +814,8 @@ class FunctionBuilder {
 				cursor += 1;
 				if (isConstBxOp(instr.op)) {
 					const constVal = this.program.constPool[instr.b];
-					if (isStringValue(constVal)) {
-						const s = stringValueToString(constVal);
+					if (valueIsString(constVal)) {
+						const s = this.program.stringPool.toString(asStringId(constVal));
 						if (s.startsWith('modslot:')) {
 							constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'module', constIndex: instr.b });
 						} else {
@@ -1475,7 +1476,7 @@ class FunctionBuilder {
 			this.emitABC(OpCode.GETI, target, tableReg, keyValue);
 			return;
 		}
-		if (isStringValue(keyValue) && keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
+		if (valueIsString(keyValue) && keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
 			this.emitABC(OpCode.GETFIELD, target, tableReg, keyConst);
 			return;
 		}
@@ -1488,7 +1489,7 @@ class FunctionBuilder {
 			this.emitABC(OpCode.SETI, tableReg, keyValue, valueReg, RK_C);
 			return;
 		}
-		if (isStringValue(keyValue) && keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
+		if (valueIsString(keyValue) && keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
 			this.emitABC(OpCode.SETFIELD, tableReg, keyConst, valueReg, RK_C);
 			return;
 		}
@@ -1627,7 +1628,7 @@ class FunctionBuilder {
 			case LuaUnaryOperator.Not:
 				return !this.isTruthyCompileTimeValue(operand);
 			case LuaUnaryOperator.Length:
-				return isStringValue(operand) ? operand.codepointCount : undefined;
+				return valueIsString(operand) ? this.program.stringPool.codepointCount(asStringId(operand)) : undefined;
 			case LuaUnaryOperator.BitwiseNot:
 				return typeof operand === 'number' ? ~operand : undefined;
 			default:
@@ -1735,8 +1736,8 @@ class FunctionBuilder {
 		if (typeof left === 'number') {
 			return typeof right === 'number' && left === right;
 		}
-		if (isStringValue(left)) {
-			return isStringValue(right) && left.text === right.text;
+		if (valueIsString(left)) {
+			return valueIsString(right) && this.program.stringPool.toString(asStringId(left)) === this.program.stringPool.toString(asStringId(right));
 		}
 		if (typeof left === 'boolean' || left === null) {
 			return left === right;
@@ -1753,18 +1754,18 @@ class FunctionBuilder {
 		if (typeof left === 'number' && typeof right === 'number') {
 			return comparator(left, right);
 		}
-		if (isStringValue(left) && isStringValue(right)) {
-			return comparator(left.text, right.text);
+		if (valueIsString(left) && valueIsString(right)) {
+			return comparator(this.program.stringPool.toString(asStringId(left)), this.program.stringPool.toString(asStringId(right)));
 		}
 		return undefined;
 	}
 
 	private isCompileTimeConcatValue(value: Value): boolean {
-		return typeof value === 'number' || isStringValue(value);
+		return typeof value === 'number' || valueIsString(value);
 	}
 
 	private toCompileTimeString(value: Value): string {
-		return isStringValue(value) ? value.text : String(value);
+		return valueIsString(value) ? this.program.stringPool.toString(asStringId(value)) : String(value);
 	}
 
 	private isTruthyCompileTimeValue(value: Value): boolean {

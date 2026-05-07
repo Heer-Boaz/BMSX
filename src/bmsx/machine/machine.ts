@@ -16,8 +16,7 @@ import { IrqController } from './devices/irq/controller';
 import type { VdpFrameBufferSize } from './devices/vdp/contracts';
 import { VDP, type VdpSaveState, type VdpState } from './devices/vdp/vdp';
 import { Memory, type MemorySaveState, type MemoryState } from './memory/memory';
-import { StringHandleTable, type StringHandleTableState } from './memory/string/memory';
-import { StringPool } from './memory/string/pool';
+import type { StringPoolState } from './cpu/string_pool';
 import {
 	DEVICE_SERVICE_DMA,
 	DEVICE_SERVICE_GEO,
@@ -43,14 +42,12 @@ export type MachineState = {
 
 export type MachineSaveState = {
 	memory: MemorySaveState;
-	stringHandles: StringHandleTableState;
+	stringPool: StringPoolState;
 	input: InputControllerState;
 	vdp: VdpSaveState;
 };
 
 export class Machine {
-	public readonly stringHandles: StringHandleTable;
-	public readonly stringPool: StringPool;
 	public readonly cpu: CPU;
 	public readonly scheduler: DeviceScheduler;
 	public readonly irqController: IrqController;
@@ -67,9 +64,7 @@ export class Machine {
 		input: Input,
 		soundMaster: SoundMaster,
 	) {
-		this.stringHandles = new StringHandleTable(this.memory);
-		this.stringPool = new StringPool(this.stringHandles);
-		this.cpu = new CPU(this.memory, this.stringPool);
+		this.cpu = new CPU(this.memory);
 		this.scheduler = new DeviceScheduler(this.cpu);
 		this.irqController = new IrqController(this.memory);
 		this.vdp = new VDP(this.memory, this.scheduler, frameBufferSize);
@@ -77,7 +72,7 @@ export class Machine {
 		this.dmaController = new DmaController(this.memory, this.irqController, this.vdp, this.scheduler);
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, this.vdp, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
-		this.inputController = new InputController(this.memory, input);
+		this.inputController = new InputController(this.memory, input, this.cpu.stringPool);
 	}
 
 	public initializeSystemIo(): void {
@@ -151,7 +146,7 @@ export class Machine {
 	public captureSaveState(): MachineSaveState {
 		return {
 			memory: this.memory.captureSaveState(),
-			stringHandles: this.stringHandles.captureState(),
+			stringPool: this.cpu.stringPool.captureState(),
 			input: this.inputController.captureState(),
 			vdp: this.vdp.captureSaveState(),
 		};
@@ -159,8 +154,7 @@ export class Machine {
 
 	public restoreSaveState(state: MachineSaveState): void {
 		this.memory.restoreSaveState(state.memory);
-		this.stringHandles.restoreState(state.stringHandles);
-		this.cpu.stringPool.rehydrateFromHandleTable(state.stringHandles);
+		this.cpu.stringPool.restoreState(state.stringPool);
 		this.geometryController.postLoad();
 		this.irqController.postLoad();
 		this.inputController.restoreState(state.input);

@@ -4,14 +4,13 @@ import { test } from 'node:test';
 import { splitText } from '../../src/bmsx/common/text_lines';
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
-import { CPU, OpCode, RunResult, Table, createNativeFunction, type Proto } from '../../src/bmsx/machine/cpu/cpu';
+import { CPU, OpCode, RunResult, Table, asStringId, createNativeFunction, valueIsString, valueString, type Proto } from '../../src/bmsx/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../src/bmsx/machine/cpu/instruction_format';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
 import type { ProgramImage, ProgramConstReloc, ProgramSymbolsImage } from '../../src/bmsx/machine/program/loader';
 import { linkProgramImages } from '../../src/bmsx/machine/program/linker';
 import { CART_BASE_PC, CART_PROGRAM_VECTOR_PC, CART_PROGRAM_VECTOR_VALUE } from '../../src/bmsx/machine/program/layout';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { isStringValue, stringValueToString } from '../../src/bmsx/machine/memory/string/pool';
 
 type EncodedWord = {
 	op: OpCode;
@@ -446,24 +445,25 @@ test('flattened module export slots stay in sync with runtime require results', 
 	const cpu = new CPU(memory);
 	cpu.setProgram(compiled.program, compiled.metadata);
 	const requireFn = createNativeFunction('require', (args, out) => {
-		assert.ok(isStringValue(args[0]));
-		const moduleName = stringValueToString(args[0]);
+		assert.ok(valueIsString(args[0]));
+		const moduleName = cpu.stringPool.toString(asStringId(args[0]));
 		assert.equal(moduleName, 'constants');
 		const protoIndex = compiled.moduleProtoMap.get('constants');
 		assert.notEqual(protoIndex, undefined);
+		const targetDepth = cpu.getFrameDepth();
 		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
-		assert.equal(cpu.run(100000), RunResult.Halted);
+		assert.equal(cpu.runUntilDepth(targetDepth, 100000), RunResult.Halted);
 		const value = cpu.lastReturnValues[0];
 		out.push(value !== undefined ? value : null);
 	});
-	cpu.setGlobalByKey(cpu.getStringPool().intern('require'), requireFn);
+	cpu.setGlobalByKey(valueString(cpu.stringPool.intern('require')), requireFn);
 	cpu.start(compiled.entryProtoIndex);
-	assert.equal(cpu.run(100000), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.equal(cpu.lastReturnValues[0], 8);
 	const room = cpu.lastReturnValues[1];
 	assert.ok(room instanceof Table);
-	assert.equal(room.getStringKey(cpu.getStringPool().intern('tile_size')), 8);
-	assert.equal(cpu.getGlobalByKey(cpu.getStringPool().intern('constants__room__tile_size')), 8);
+	assert.equal(room.getStringKey(valueString(cpu.stringPool.intern('tile_size'))), 8);
+	assert.equal(cpu.getGlobalByKey(valueString(cpu.stringPool.intern('constants__room__tile_size'))), 8);
 });
 
 test('flattened module export slots survive program append swaps', () => {
@@ -485,19 +485,20 @@ test('flattened module export slots survive program append swaps', () => {
 	const cpu = new CPU(memory);
 	cpu.setProgram(compiled.program, compiled.metadata);
 	const requireFn = createNativeFunction('require', (args, out) => {
-		assert.ok(isStringValue(args[0]));
-		assert.equal(stringValueToString(args[0]), 'constants');
+		assert.ok(valueIsString(args[0]));
+		assert.equal(cpu.stringPool.toString(asStringId(args[0])), 'constants');
 		const protoIndex = compiled.moduleProtoMap.get('constants');
 		assert.notEqual(protoIndex, undefined);
+		const targetDepth = cpu.getFrameDepth();
 		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
-		assert.equal(cpu.run(100000), RunResult.Halted);
+		assert.equal(cpu.runUntilDepth(targetDepth, 100000), RunResult.Halted);
 		const value = cpu.lastReturnValues[0];
 		out.push(value !== undefined ? value : null);
 	});
-	cpu.setGlobalByKey(cpu.getStringPool().intern('require'), requireFn);
+	cpu.setGlobalByKey(valueString(cpu.stringPool.intern('require')), requireFn);
 	cpu.start(compiled.entryProtoIndex);
-	assert.equal(cpu.run(100000), RunResult.Halted);
-	const slotKey = cpu.getStringPool().intern('constants__room__tile_size');
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const slotKey = valueString(cpu.stringPool.intern('constants__room__tile_size'));
 	assert.equal(cpu.getGlobalByKey(slotKey), 8);
 
 	const consoleSource = 'return 1';

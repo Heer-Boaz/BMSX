@@ -384,11 +384,8 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 				preview = asciiWaveBraille(pcm, 16, modalWidth, modalHeight, decoded.channels);
 			}
 			break;
-		case 'data':
-			if (selected.resid === ROM_MANIFEST_ASSET_ID) {
-				const payload = ctx.projectRootPath ? { project_root_path: ctx.projectRootPath, manifest: ctx.manifest } : { manifest: ctx.manifest };
-				preview = JSON.stringify(payload, null, 2);
-			} else if (selected.resid === PROGRAM_IMAGE_ID) {
+		case 'code':
+			if (selected.resid === PROGRAM_IMAGE_ID) {
 				const { programImage, program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(ctx.rombin, ctx.assetList);
 				disassembly = disassembleProgramImage(program, metadata, sourceTextForPath);
 				metadataLines.push(`Program entry proto: ${programImage.entryProtoIndex}`);
@@ -403,6 +400,14 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 				const symbols = decodeBinary(new Uint8Array(ctx.rombin.slice(selected.start, selected.end))) as ProgramSymbolsImage;
 				metadataLines.push(`Program symbols protos: ${symbols.metadata.protoIds.length}`);
 				preview = JSON.stringify(symbols.metadata, null, 2);
+			} else {
+				throw new Error(`Unsupported code asset '${selected.resid}'.`);
+			}
+			break;
+		case 'data':
+			if (selected.resid === ROM_MANIFEST_ASSET_ID) {
+				const payload = ctx.projectRootPath ? { project_root_path: ctx.projectRootPath, manifest: ctx.manifest } : { manifest: ctx.manifest };
+				preview = JSON.stringify(payload, null, 2);
 			} else {
 				if (!selected.buffer) {
 					selected.buffer = await loadDataFromBuffer(new Uint8Array(ctx.rombin.slice(selected.start, selected.end)));

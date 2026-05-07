@@ -89,7 +89,7 @@ AssetTypeKind resolveAssetTypeKind(std::string_view assetType) {
 			if (assetType == "romlabel") return AssetTypeKind::Skip;
 			break;
 		case 'c':
-			if (assetType == "code") return AssetTypeKind::Skip;
+			if (assetType == "code") return AssetTypeKind::Code;
 			break;
 	}
 	return AssetTypeKind::Unknown;

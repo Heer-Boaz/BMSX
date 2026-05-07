@@ -2,7 +2,7 @@
 // start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
 import { OpCode, type SourceRange, type Value } from '../../cpu/cpu';
 import { MAX_EXT_CONST } from '../../cpu/instruction_format';
-import { isStringValue } from '../../memory/string/pool';
+import { valueIsString } from '../../cpu/cpu';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
 import type { Instruction, InstructionSet, OptimizationContext } from './index';
 import { cloneInstruction, computeMaxRegister, isPureInstruction, isRegisterOperand, pushRegister, pushRegisterRange } from './instructions';
@@ -275,7 +275,7 @@ const simplifyBranches = (
 				if (!left || !right) {
 					break;
 				}
-				const result = evaluateComparison(instruction.op, left.value, right.value);
+				const result = evaluateComparison(instruction.op, left.value, right.value, context);
 				if (result === null) {
 					break;
 				}
@@ -460,7 +460,7 @@ const evaluateSccpDef = (
 			}
 			const operand = getSccpOperand(instruction, 'b', uses[0], context, valueKind, valueConst);
 			if (operand.kind === SCCP_CONST && operand.constVal) {
-				const result = evaluateUnary(instruction.op, operand.constVal.value);
+				const result = evaluateUnary(instruction.op, operand.constVal.value, context);
 				if (result !== null && isConstPoolValue(result)) {
 					return { kind: SCCP_CONST, constVal: { value: result, constIndex: context.constIndex(result) } };
 				}
@@ -731,7 +731,7 @@ const runSccp = (
 					const left = getSccpOperand(last, 'b', slotB, context, valueKind, valueConst);
 					const right = getSccpOperand(last, 'c', slotC, context, valueKind, valueConst);
 					if (left.kind === SCCP_CONST && right.kind === SCCP_CONST && left.constVal && right.constVal) {
-						const result = evaluateComparison(last.op, left.constVal.value, right.constVal.value);
+						const result = evaluateComparison(last.op, left.constVal.value, right.constVal.value, context);
 						if (result !== null) {
 							const expected = last.a !== 0;
 							const shouldSkip = result !== expected;
@@ -2759,7 +2759,7 @@ export const applyGlobalOptimizations = (
 			// CONCAT is currently the only value-numberable string-producing op in this pass.
 			// If we add new string-producing opcodes, extend this exclusion so we don't
 			// materialize stale or semantically wrong constants through LOADK.
-			if (constVal && !(instruction.op === OpCode.CONCAT && isStringValue(constVal.value))) {
+			if (constVal && !(instruction.op === OpCode.CONCAT && valueIsString(constVal.value))) {
 				replaceWithConst(instruction, instruction.a, constVal.value, context);
 				instrUses[i] = [];
 				replacedWithConst = true;
@@ -2784,7 +2784,7 @@ export const applyGlobalOptimizations = (
 			if (
 				constVal
 				&& slot.allowRk
-				&& !isStringValue(constVal.value)
+				&& !valueIsString(constVal.value)
 				&& constVal.constIndex <= MAX_EXT_CONST
 				&& slot.rkMaskBit !== null
 			) {

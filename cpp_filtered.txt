@@ -66,6 +66,8 @@ machine/cpu/disassembler.cpp
 machine/cpu/disassembler.h
 machine/cpu/source_text.cpp
 machine/cpu/source_text.h
+machine/cpu/string_pool.cpp
+machine/cpu/string_pool.h
 machine/devices/audio/controller.cpp
 machine/devices/audio/controller.h
 machine/devices/dma/controller.cpp
@@ -118,8 +120,6 @@ machine/memory/memory.cpp
 machine/memory/memory.h
 machine/memory/specs.cpp
 machine/memory/specs.h
-machine/memory/string_memory.cpp
-machine/memory/string_memory.h
 machine/program/executor.cpp
 machine/program/linker.cpp
 machine/program/linker.h

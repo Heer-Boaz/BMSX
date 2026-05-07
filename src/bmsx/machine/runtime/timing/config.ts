@@ -29,7 +29,7 @@ export function setCycleBudgetPerFrame(runtime: Runtime, value: number): void {
 		return;
 	}
 	timing.cycleBudgetPerFrame = value;
-	runtime.machine.cpu.setGlobalByKey(runtime.luaKey('sys_max_cycles_per_frame'), value);
+	runtime.machine.cpu.setGlobalByKey(runtime.internString('sys_max_cycles_per_frame'), value);
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 	runtime.vblank.configureCycleBudget();
 }
@@ -39,7 +39,7 @@ export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFr
 	timing.cpuHz = cpuHz;
 	if (cycleBudgetPerFrame !== timing.cycleBudgetPerFrame) {
 		timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
-		runtime.machine.cpu.setGlobalByKey(runtime.luaKey('sys_max_cycles_per_frame'), cycleBudgetPerFrame);
+		runtime.machine.cpu.setGlobalByKey(runtime.internString('sys_max_cycles_per_frame'), cycleBudgetPerFrame);
 	}
 	runtime.vblank.setVblankCycles(vblankCycles);
 	Input.instance.setFrameDurationMs(timing.frameDurationMs);

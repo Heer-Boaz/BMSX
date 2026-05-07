@@ -4,7 +4,6 @@ import { Table, isNativeObject, type LocalSlotDebug, type SourceRange, type Valu
 import { resolveLuaSourceRecordFromRegistries } from '../program/sources';
 import type { Runtime } from './runtime';
 import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
-import { isStringValue, stringValueToString } from '../memory/string/pool';
 import { KEYWORDS } from '../../lua/syntax/token';
 
 const DEBUG_EXPR_PATTERN = /\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\b/g;
@@ -95,10 +94,10 @@ function resourceSourceForPath(runtime: Runtime, path: string): string | null {
 	return cached;
 }
 
-function formatInstructionOperandDebug(operand: InstructionOperandDebugInfo, registers: ReadonlyArray<Value>): string {
+function formatInstructionOperandDebug(runtime: Runtime, operand: InstructionOperandDebugInfo, registers: ReadonlyArray<Value>): string {
 	let text = `${operand.label}=${operand.text}`;
 	if (operand.registerIndex !== undefined && operand.registerIndex < registers.length) {
-		text += `(${formatDebugValue(registers[operand.registerIndex])})`;
+		text += `(${formatDebugValue(runtime, registers[operand.registerIndex])})`;
 	}
 	return text;
 }
@@ -111,11 +110,8 @@ function formatDebugSourceLine(range: SourceRange, source: string | null): strin
 	return `${location} ${formatSourceSnippet(range, source)}`;
 }
 
-function formatDebugValue(value: Value): string {
-	if (isStringValue(value)) {
-		return JSON.stringify(stringValueToString(value));
-	}
-	return valueToString(value);
+function formatDebugValue(runtime: Runtime, value: Value): string {
+	return valueToString(value, runtime.machine.cpu.stringPool);
 }
 
 function selectLocalSlot(slots: ReadonlyArray<LocalSlotDebug>, name: string, range: SourceRange): LocalSlotDebug | null {
@@ -165,7 +161,7 @@ function resolveRootExpressionValue(
 			return { found: true, value: cpu.readFrameUpvalue(frameIndex, upvalueIndex) };
 		}
 	}
-	const globalValue = cpu.getGlobalByKey(runtime.luaKey(rootName));
+	const globalValue = cpu.getGlobalByKey(runtime.internString(rootName));
 	if (globalValue !== null) {
 		return { found: true, value: globalValue };
 	}
@@ -188,9 +184,9 @@ function resolveExpressionValue(
 	let current = root.value;
 	for (let index = 1; index < parts.length; index += 1) {
 		if (current instanceof Table) {
-			current = current.get(runtime.luaKey(parts[index]));
+			current = current.get(runtime.internString(parts[index]));
 		} else if (isNativeObject(current)) {
-			current = current.get(runtime.luaKey(parts[index]));
+			current = current.get(runtime.internString(parts[index]));
 		} else {
 			return { found: false, value: null };
 		}
@@ -215,7 +211,7 @@ function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, sour
 		if (!resolved.found) {
 			continue;
 		}
-		result.push(`${expression}=${formatDebugValue(resolved.value)}`);
+		result.push(`${expression}=${formatDebugValue(runtime, resolved.value)}`);
 	}
 	return result;
 }
@@ -230,7 +226,7 @@ export function logDebugState(runtime: Runtime): void {
 		return;
 	}
 	const instruction = describeInstructionAtPc(program, debug.pc, runtime.programMetadata, { formatStyle: 'assembly' });
-	const operandSummary = instruction.operands.map(operand => formatInstructionOperandDebug(operand, debug.registers)).join(' ');
+	const operandSummary = instruction.operands.map(operand => formatInstructionOperandDebug(runtime, operand, debug.registers)).join(' ');
 	console.error(`\tpc=${instruction.pcText} op=${instruction.opName}${operandSummary.length > 0 ? ` ${operandSummary}` : ''}`);
 	console.error(`\tinstr=${instruction.pcText}: ${instruction.instructionText}`);
 	if (instruction.sourceRange) {

@@ -380,20 +380,35 @@ MemorySaveState decodeMemorySaveState(const BinValue& value, const char* label) 
 	return state;
 }
 
-BinValue encodeStringHandleTableState(const StringHandleTableState& state) {
+BinValue encodeStringPoolStateEntry(const StringPoolStateEntry& state) {
 	BinObject object;
-	object["nextHandle"] = static_cast<i64>(state.nextHandle);
-	object["generation"] = static_cast<i64>(state.generation);
-	object["heapUsedBytes"] = static_cast<i64>(state.heapUsedBytes);
+	object["id"] = static_cast<i64>(state.id);
+	object["value"] = state.value;
 	return BinValue(std::move(object));
 }
 
-StringHandleTableState decodeStringHandleTableState(const BinValue& value, const char* label) {
+StringPoolStateEntry decodeStringPoolStateEntry(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
-	StringHandleTableState state;
-	state.nextHandle = requireU32(requireField(object, "nextHandle", label), "machine.stringHandles.nextHandle");
-	state.generation = requireU32(requireField(object, "generation", label), "machine.stringHandles.generation");
-	state.heapUsedBytes = requireU32(requireField(object, "heapUsedBytes", label), "machine.stringHandles.heapUsedBytes");
+	StringPoolStateEntry state;
+	state.id = requireU32(requireField(object, "id", label), "machine.stringPool.entries[].id");
+	state.value = requireString(requireField(object, "value", label), "machine.stringPool.entries[].value");
+	return state;
+}
+
+BinValue encodeStringPoolState(const StringPoolState& state) {
+	BinObject object;
+	object["entries"] = encodeVector<StringPoolStateEntry>(state.entries, encodeStringPoolStateEntry);
+	return BinValue(std::move(object));
+}
+
+StringPoolState decodeStringPoolState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	StringPoolState state;
+	state.entries = decodeVector<StringPoolStateEntry>(
+		requireField(object, "entries", label),
+		"machine.stringPool.entries",
+		[](const BinValue& entry, size_t) { return decodeStringPoolStateEntry(entry, "machine.stringPool.entries[]"); }
+	);
 	return state;
 }
 
@@ -485,7 +500,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	BinObject object;
 	object["memory"] = encodeMemorySaveState(state.memory);
-	object["stringHandles"] = encodeStringHandleTableState(state.stringHandles);
+	object["stringPool"] = encodeStringPoolState(state.stringPool);
 	object["input"] = encodeInputControllerState(state.input);
 	object["vdp"] = encodeVdpSaveState(state.vdp);
 	return BinValue(std::move(object));
@@ -495,7 +510,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 	const BinObject& object = requireObject(value, label);
 	MachineSaveState state;
 	state.memory = decodeMemorySaveState(requireField(object, "memory", label), "machineState.machine.memory");
-	state.stringHandles = decodeStringHandleTableState(requireField(object, "stringHandles", label), "machineState.machine.stringHandles");
+	state.stringPool = decodeStringPoolState(requireField(object, "stringPool", label), "machineState.machine.stringPool");
 	state.input = decodeInputControllerState(requireField(object, "input", label), "machineState.machine.input");
 	state.vdp = decodeVdpSaveState(requireField(object, "vdp", label), "machineState.machine.vdp");
 	return state;

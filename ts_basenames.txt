@@ -73,6 +73,7 @@ machine/cpu/disassembler
 machine/cpu/instruction_format
 machine/cpu/opcode_info
 machine/cpu/profiler
+machine/cpu/string_pool
 machine/devices/audio/controller
 machine/devices/dma/controller
 machine/devices/dma/image_copy
@@ -109,8 +110,6 @@ machine/memory/lua_heap_usage
 machine/memory/map
 machine/memory/memory
 machine/memory/specs
-machine/memory/string/memory
-machine/memory/string/pool
 machine/program/bound_reference
 machine/program/compile_value_flow
 machine/program/compiler

@@ -39,6 +39,7 @@ machine/common/word
 machine/cpu/cpu
 machine/cpu/disassembler
 machine/cpu/source_text
+machine/cpu/string_pool
 machine/devices/audio/controller
 machine/devices/dma/controller
 machine/devices/dma/image_copy
@@ -69,7 +70,6 @@ machine/memory/lua_heap_usage
 machine/memory/map
 machine/memory/memory
 machine/memory/specs
-machine/memory/string_memory
 machine/program/executor
 machine/program/linker
 machine/program/load_compiler

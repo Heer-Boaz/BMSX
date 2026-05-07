@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { compileLoadChunk } from '../../src/bmsx/machine/program/load_compiler';
-import { Table } from '../../src/bmsx/machine/cpu/cpu';
-import { StringPool } from '../../src/bmsx/machine/memory/string/pool';
+import { Table, valueString } from '../../src/bmsx/machine/cpu/cpu';
+import { StringPool } from '../../src/bmsx/machine/cpu/string_pool';
 
 test('compileLoadChunk supports negative numeric literals in generated assignments', () => {
 	const stringPool = new StringPool();
@@ -12,7 +12,7 @@ test('compileLoadChunk supports negative numeric literals in generated assignmen
 			return new Error(message);
 		},
 		internString(value: string) {
-			return stringPool.intern(value);
+			return valueString(stringPool.intern(value));
 		},
 	} as any;
 	const loader = compileLoadChunk(runtime, [
@@ -27,10 +27,10 @@ test('compileLoadChunk supports negative numeric literals in generated assignmen
 	const target = new Table(0, 1);
 	const sprite = new Table(0, 1);
 	const offset = new Table(0, 1);
-	sprite.set(stringPool.intern('offset'), offset);
-	target.set(stringPool.intern('sprite_component'), sprite);
+	sprite.set(valueString(stringPool.intern('offset')), offset);
+	target.set(valueString(stringPool.intern('sprite_component')), sprite);
 	apply.invoke([target], []);
-	assert.equal(offset.get(stringPool.intern('x')), -8);
+	assert.equal(offset.get(valueString(stringPool.intern('x'))), -8);
 });
 
 test('compileLoadChunk keeps negative numeric indices on the generic table path', () => {
@@ -40,7 +40,7 @@ test('compileLoadChunk keeps negative numeric indices on the generic table path'
 			return new Error(message);
 		},
 		internString(value: string) {
-			return stringPool.intern(value);
+			return valueString(stringPool.intern(value));
 		},
 	} as any;
 	const loader = compileLoadChunk(runtime, [

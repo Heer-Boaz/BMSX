@@ -1,10 +1,9 @@
-import { createNativeFunction, Table } from '../cpu/cpu';
+import { asStringId, createNativeFunction, Table, valueIsString } from '../cpu/cpu';
 import { createLuaTable, type LuaTable } from '../../lua/value';
 import { LuaNativeFunction, type LuaInterpreter } from '../../lua/runtime';
 import type { ResourceDescriptor } from '../../rompack/tooling/resource';
 import type { Runtime } from '../runtime/runtime';
 import type { LuaSourceRecord, LuaSourceRegistry } from '../program/sources';
-import { StringValue } from '../memory/string/pool';
 import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
 import { buildDirtyFilePath, hasWorkspaceStorage } from '../../ide/workbench/workspace/io';
 
@@ -111,10 +110,10 @@ export function getRuntimeLuaResourceSource(runtime: Runtime, path: string): str
 
 function buildRuntimeResourceDescriptorTable(runtime: Runtime, descriptor: ResourceDescriptor): Table {
 	const table = new Table(0, 3);
-	table.set(runtime.luaKey('path'), runtime.internString(descriptor.path));
-	table.set(runtime.luaKey('type'), runtime.internString(descriptor.type));
+	table.set(runtime.internString('path'), runtime.internString(descriptor.path));
+	table.set(runtime.internString('type'), runtime.internString(descriptor.type));
 	if (descriptor.asset_id !== undefined) {
-		table.set(runtime.luaKey('asset_id'), runtime.internString(descriptor.asset_id));
+		table.set(runtime.internString('asset_id'), runtime.internString(descriptor.asset_id));
 	}
 	return table;
 }
@@ -133,15 +132,15 @@ export function createRuntimeDevtoolsTable(runtime: Runtime): Table {
 	});
 	const getLuaResourceSourceFn = createNativeFunction('devtools.get_lua_resource_source', (args, out) => {
 		const path = args[0];
-		if (!(path instanceof StringValue)) {
+		if (!valueIsString(path)) {
 			throw runtime.createApiRuntimeError(`[devtools.get_lua_resource_source] path must be a string.`);
 		}
-		out.push(runtime.internString(getRuntimeLuaResourceSource(runtime, path.text)));
+		out.push(runtime.internString(getRuntimeLuaResourceSource(runtime, runtime.machine.cpu.stringPool.toString(asStringId(path)))));
 	});
 	const table = new Table(0, 3);
-	table.set(runtime.luaKey('list_lua_resources'), listLuaResourcesFn);
-	table.set(runtime.luaKey('get_lua_entry_path'), getLuaEntryPathFn);
-	table.set(runtime.luaKey('get_lua_resource_source'), getLuaResourceSourceFn);
+	table.set(runtime.internString('list_lua_resources'), listLuaResourcesFn);
+	table.set(runtime.internString('get_lua_entry_path'), getLuaEntryPathFn);
+	table.set(runtime.internString('get_lua_resource_source'), getLuaResourceSourceFn);
 	return table;
 }
 

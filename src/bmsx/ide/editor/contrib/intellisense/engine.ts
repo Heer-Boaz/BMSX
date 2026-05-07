@@ -15,7 +15,7 @@ import { buildLuaSemanticFrontend } from '../../../../lua/semantic/frontend';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { resolveLuaSourceRecordFromRegistries } from '../../../../machine/program/sources';
-import { isStringValue, stringValueToString } from '../../../../machine/memory/string/pool';
+import { asStringId, valueIsString } from '../../../../machine/cpu/cpu';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import { ScratchBatchPooled } from '../../../../common/scratchbatch';
 import { beginNavigationCapture, completeNavigation } from '../../../navigation/navigation_history';
@@ -1687,8 +1687,8 @@ function wrapRuntimeValueForIntellisense(runtime: Runtime, value: Value): LuaVal
 	if (value === null || typeof value === 'boolean' || typeof value === 'number') {
 		return value as LuaValue;
 	}
-	if (isStringValue(value)) {
-		return stringValueToString(value);
+	if (valueIsString(value)) {
+		return runtime.machine.cpu.stringPool.toString(asStringId(value));
 	}
 	const marshalContext = buildMarshalContext(runtime);
 	const native = toNativeValue(runtime, value, marshalContext, new WeakMap<Table, unknown>());
@@ -1895,7 +1895,7 @@ function resolveRuntimeLocalChainValue(
 
 function resolveRuntimeGlobalChainValue(runtime: Runtime, parts: ReadonlyArray<string>): ({ kind: 'value'; value: LuaValue } | { kind: 'not_defined' }) | null {
 	const cpu = runtime.machine.cpu;
-	const rootRaw = cpu.getGlobalByKey(runtime.luaKey(parts[0]));
+	const rootRaw = cpu.getGlobalByKey(runtime.internString(parts[0]));
 	if (rootRaw === null) {
 		return null;
 	}

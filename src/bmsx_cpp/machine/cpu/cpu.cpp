@@ -146,8 +146,17 @@ static std::string formatNonFunctionCallError(Value callee, const StringPool& st
 	return message;
 }
 
+constexpr size_t kTableHeapBytes = 32;
+constexpr size_t kTableArraySlotHeapBytes = 8;
+constexpr size_t kTableHashSlotHeapBytes = 20;
+constexpr size_t kClosureHeapBytes = 16;
+constexpr size_t kClosureUpvalueSlotHeapBytes = 8;
+constexpr ptrdiff_t kNativeFunctionHeapBytes = 16;
+constexpr ptrdiff_t kNativeObjectHeapBytes = 24;
+constexpr ptrdiff_t kUpvalueHeapBytes = 24;
+
 static inline size_t trackedClosureBytes(const Closure& closure) {
-	return 16 + (closure.upvalues.size() * sizeof(Upvalue*));
+	return kClosureHeapBytes + (closure.upvalues.size() * kClosureUpvalueSlotHeapBytes);
 }
 
 constexpr std::string_view kCpuRuntimeMetatableSegment = "@metatable";
@@ -751,9 +760,9 @@ void Table::restoreRuntimeState(const TableRuntimeState& state) {
 }
 
 size_t Table::trackedHeapBytes() const {
-	return 32
-		+ (m_array.size() * sizeof(Value))
-		+ (m_hash.size() * (sizeof(Value) * 2 + sizeof(int)));
+	return kTableHeapBytes
+		+ (m_array.size() * kTableArraySlotHeapBytes)
+		+ (m_hash.size() * kTableHashSlotHeapBytes);
 }
 
 void GcHeap::markValue(Value v) {
@@ -858,17 +867,17 @@ void GcHeap::sweep() {
 				break;
 			case ObjType::NativeFunction:
 				m_bytesAllocated -= sizeof(NativeFunction);
-				addTrackedLuaHeapBytes(-16);
+				addTrackedLuaHeapBytes(-kNativeFunctionHeapBytes);
 				delete static_cast<NativeFunction*>(obj);
 				break;
 			case ObjType::NativeObject:
 				m_bytesAllocated -= sizeof(NativeObject);
-				addTrackedLuaHeapBytes(-24);
+				addTrackedLuaHeapBytes(-kNativeObjectHeapBytes);
 				delete static_cast<NativeObject*>(obj);
 				break;
 			case ObjType::Upvalue:
 				m_bytesAllocated -= sizeof(Upvalue);
-				addTrackedLuaHeapBytes(-24);
+				addTrackedLuaHeapBytes(-kUpvalueHeapBytes);
 				delete static_cast<Upvalue*>(obj);
 				break;
 		}
@@ -911,9 +920,9 @@ NativeResultsScratchScope::~NativeResultsScratchScope() {
 	}
 }
 
-CPU::CPU(Memory& memory, StringHandleTable* handleTable)
+CPU::CPU(Memory& memory)
 	: m_memory(memory)
-	, m_stringPool(handleTable) {
+	, m_stringPool(true) {
 	m_heap.setRootMarker([this](GcHeap& heap) { markRoots(heap); });
 	m_externalRootMarker = [](GcHeap&) {};
 	globals = m_heap.allocate<Table>(ObjType::Table, 0, 0);
@@ -923,7 +932,7 @@ CPU::CPU(Memory& memory, StringHandleTable* handleTable)
 Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
 	const NativeFnCost resolvedCost = cost ? *cost : resolveNativeFunctionCost(name);
 	auto* native = m_heap.allocate<NativeFunction>(ObjType::NativeFunction);
-	addTrackedLuaHeapBytes(16);
+	addTrackedLuaHeapBytes(kNativeFunctionHeapBytes);
 	native->name = std::string(name);
 	native->cycleBase = resolvedCost.base;
 	native->cyclePerArg = resolvedCost.perArg;
@@ -944,7 +953,7 @@ Value CPU::createNativeObject(
 	std::function<void(GcHeap&)> mark
 ) {
 	auto* native = m_heap.allocate<NativeObject>(ObjType::NativeObject);
-	addTrackedLuaHeapBytes(24);
+	addTrackedLuaHeapBytes(kNativeObjectHeapBytes);
 	native->raw = raw;
 	native->get = std::move(get);
 	native->set = std::move(set);
@@ -1070,9 +1079,6 @@ void CPU::syncGlobalSlotsToTable() {
 	}
 }
 
-void CPU::reserveStringHandles(StringId minHandle) {
-	m_stringPool.reserveHandles(minHandle);
-}
 
 void CPU::decodeProgram() {
 	m_decoded.clear();
@@ -1606,7 +1612,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 				upvalue->index = objectState.upvalueIndex;
 				upvalue->frame = nullptr;
 				upvalue->value = valueNil();
-				addTrackedLuaHeapBytes(24);
+				addTrackedLuaHeapBytes(kUpvalueHeapBytes);
 				restoredObjects[index].upvalue = upvalue;
 				break;
 			}
@@ -1752,7 +1758,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	}
 
 	for (const CpuRootValueState& entry : state.globals) {
-		setGlobalByKey(valueString(internString(entry.name)), restoreValue(entry.value));
+		setGlobalByKey(valueString(m_stringPool.intern(entry.name)), restoreValue(entry.value));
 	}
 	for (const CpuRootValueState& entry : state.moduleCache) {
 		moduleCache[entry.name] = restoreValue(entry.value);
@@ -2240,7 +2246,7 @@ Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
 			Upvalue* upvalue = findOpenUpvalue(frame, uv.index);
 			if (!upvalue) {
 				upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
-				addTrackedLuaHeapBytes(24);
+				addTrackedLuaHeapBytes(kUpvalueHeapBytes);
 				upvalue->open = true;
 				upvalue->index = uv.index;
 				upvalue->frame = &frame;

@@ -3,7 +3,7 @@
 namespace bmsx {
 namespace {
 
-// Append only. Existing indices are part of the runtime save-state byte ABI.
+// Property indices are scoped to RUNTIME_SAVE_STATE_WIRE_VERSION.
 const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"accumulatedHostTimeMs",
 	"array",
@@ -29,12 +29,10 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"frameScheduler",
 	"frames",
 	"gameViewState",
-	"generation",
 	"globals",
 	"haltedUntilIrq",
 	"hash",
 	"hashFree",
-	"heapUsedBytes",
 	"id",
 	"index",
 	"input",
@@ -68,7 +66,6 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"negy",
 	"negz",
 	"next",
-	"nextHandle",
 	"objects",
 	"open",
 	"openUpvalues",
@@ -90,7 +87,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"sampleArmed",
 	"secondary",
 	"sequence",
-	"stringHandles",
+	"stringPool",
 	"tag",
 	"top",
 	"upvalues",

@@ -75,11 +75,10 @@ machine/cpu/disassembler.ts
 machine/cpu/profiler.ts
 machine/cpu/cpu.ts
 machine/cpu/instruction_format.ts
+machine/cpu/string_pool.ts
 machine/machine.ts
 machine/memory/map.ts
 machine/memory/lua_heap_usage.ts
-machine/memory/string/pool.ts
-machine/memory/string/memory.ts
 machine/memory/access_kind.ts
 machine/memory/memory.ts
 machine/memory/specs.ts

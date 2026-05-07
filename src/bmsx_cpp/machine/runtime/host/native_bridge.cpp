@@ -36,7 +36,7 @@ Value runtimeValueFromNativeBridgeValue(CPU& cpu, const NativeBridgeValue& value
 		case 2:
 			return valueNumber(std::get<double>(value));
 		case 3:
-			return valueString(cpu.internString(std::get<NativeBridgeString>(value).value));
+			return valueString(cpu.stringPool().intern(std::get<NativeBridgeString>(value).value));
 		case 4:
 			return valueTable(std::get<NativeBridgeTable>(value).value);
 		case 5:

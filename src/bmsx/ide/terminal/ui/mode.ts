@@ -530,7 +530,7 @@ export class TerminalMode {
 		try {
 			const results: Value[] = runConsoleChunk(this.runtime, source);
 			if (results.length > 0) {
-				const summary = results.map(value => valueToString(value)).join('\t');
+				const summary = results.map(value => valueToString(value, this.runtime.machine.cpu.stringPool)).join('\t');
 				this.appendStdout(summary);
 			}
 		}

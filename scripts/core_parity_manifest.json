@@ -345,7 +345,7 @@
 		"src/bmsx/common/scratchstack.ts",
 		"src/bmsx/machine/common/hash.ts",
 		"src/bmsx/machine/memory/access_kind.ts",
-		"src/bmsx/machine/memory/string/pool.ts",
+		"src/bmsx/machine/cpu/string_pool.ts",
 		"src/bmsx/machine/cpu/opcode_info.ts",
 		"src/bmsx/machine/runtime/timing/state.ts",
 		"src/bmsx/render/runtime_state.ts",

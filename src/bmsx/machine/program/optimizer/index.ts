@@ -1,6 +1,6 @@
-import { OpCode, type Proto, type SourceRange, type UpvalueDesc, type Value } from '../../cpu/cpu';
+import { OpCode, valueIsString, type Proto, type SourceRange, type UpvalueDesc, type Value } from '../../cpu/cpu';
 import { MAX_EXT_CONST } from '../../cpu/instruction_format';
-import { isStringValue } from '../../memory/string/pool';
+import type { StringPool } from '../../cpu/string_pool';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
 import { cloneInstruction, computeMaxRegister, isPureInstruction, isRegisterOperand, pushRegister, pushRegisterRange } from './instructions';
 import { applyGlobalOptimizations } from './ssa';
@@ -36,6 +36,7 @@ type OptimizationProtoMeta = Pick<Proto, 'numParams' | 'isVararg' | 'maxStack' |
 
 export type OptimizationContext = {
 	constPool: ReadonlyArray<Value>;
+	stringPool: StringPool;
 	constIndex: (value: Value) => number;
 	getClosureUpvalues: (protoIndex: number) => ReadonlyArray<UpvalueDesc>;
 	getProtoMeta: (protoIndex: number) => OptimizationProtoMeta;
@@ -428,7 +429,7 @@ const computeBlockConstantIn = (
 					case OpCode.LEN: {
 						const operand = constants.get(instruction.b);
 						if (operand) {
-							const result = evaluateUnary(instruction.op, operand.value);
+							const result = evaluateUnary(instruction.op, operand.value, context);
 							if (result !== null && isConstPoolValue(result)) {
 								constants.set(instruction.a, { value: result, constIndex: context.constIndex(result) });
 								break;
@@ -590,7 +591,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				const left = getConstForOperand(instruction.b, (instruction.rkMask & RK_B) !== 0, constants, context);
 				const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 				if (left && right) {
-					const result = evaluateComparison(instruction.op, left.value, right.value);
+					const result = evaluateComparison(instruction.op, left.value, right.value, context);
 					if (result !== null) {
 						const expected = instruction.a !== 0;
 						const shouldSkip = result !== expected;
@@ -608,7 +609,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 			if (instruction.op === OpCode.UNM || instruction.op === OpCode.BNOT || instruction.op === OpCode.NOT || instruction.op === OpCode.LEN) {
 				const operand = constants.get(instruction.b);
 				if (operand) {
-					const result = evaluateUnary(instruction.op, operand.value);
+					const result = evaluateUnary(instruction.op, operand.value, context);
 					if (result !== null && isConstPoolValue(result)) {
 						const folded = replaceWithConst(instruction, instruction.a, result, context);
 						constants.set(instruction.a, folded);
@@ -820,7 +821,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 			// Keep RK replacement for non-string constants only.
 			// While the string-producing path in this pass is currently limited (notably CONCAT),
 			// don't emit RK string constants for STORE_MEM_WORDS; those must stay register-based.
-			&& !(instruction.op === OpCode.STORE_MEM_WORDS && isStringValue(constant.value))
+			&& !(instruction.op === OpCode.STORE_MEM_WORDS && valueIsString(constant.value))
 		) {
 			return -1 - constant.constIndex;
 		}
@@ -864,7 +865,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					case OpCode.MOV: {
 						rewriteCopyInstructionOperand(instruction, 'b', copies);
 						const constant = constants.get(instruction.b);
-						if (constant && isConstPoolValue(constant.value) && !isStringValue(constant.value)) {
+						if (constant && isConstPoolValue(constant.value) && !valueIsString(constant.value)) {
 							replaceWithConst(instruction, instruction.a, constant.value, context);
 						}
 						break;
@@ -989,7 +990,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.LEN: {
 					const operand = constants.get(instruction.b);
 					if (operand) {
-						const result = evaluateUnary(instruction.op, operand.value);
+						const result = evaluateUnary(instruction.op, operand.value, context);
 						if (result !== null) {
 							setConst(constants, copies, instruction.a, { value: result, constIndex: context.constIndex(result) });
 							break;

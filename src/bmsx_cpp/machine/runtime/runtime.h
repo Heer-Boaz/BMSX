@@ -184,7 +184,7 @@ public:
 	 */
 	void setGlobal(std::string_view name, const Value& value);
 
-	Value luaKey(std::string_view name) const { return valueString(const_cast<CPU&>(machine.cpu).internString(name)); }
+	Value internString(std::string_view name) { return valueString(machine.cpu.stringPool().intern(name)); }
 
 	/**
 	 * Register a native function as a global.

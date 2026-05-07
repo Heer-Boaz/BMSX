@@ -13,28 +13,12 @@ local inputactioneffectcomponent<const> = 'inputactioneffectcomponent'
 local actioneffectcomponentid<const> = 'actioneffectcomponent'
 local assigned_value_edges<const> = { ['hold'] = true, ['press'] = true }
 
-local rom_programs_validated = false
-
 local run_effect<const> = function(effect, env)
 	if not effect then
 		return false
 	end
 	effect(env)
 	return true
-end
-
-local validate_primary_rom_programs_on_boot<const> = function()
-	if rom_programs_validated then
-		return
-	end
-	local entries<const> = romdir.data_entries()
-	for index = 1, #entries do
-		local entry<const> = entries[index]
-		if dsl.is_input_action_effect_program(entry.value) then
-			compiler.validate_program_effects(entry.value, entry.id)
-		end
-	end
-	rom_programs_validated = true
 end
 
 local inputactioneffectsystem<const> = {}
@@ -54,7 +38,6 @@ function inputactioneffectsystem.new(priority)
 	self.runtime_by_component = setmetatable({}, { __mode = 'k' })
 	self.frame_serial = 0
 	self.__ecs_id = 'inputactioneffectsystem'
-	validate_primary_rom_programs_on_boot()
 	return self
 end
 
@@ -399,6 +382,7 @@ function inputactioneffectsystem:resolve_program_by_id(program_id)
 		self.missing_program_ids[program_id] = true
 		error('[inputactioneffectsystem] program "' .. program_id .. '" not found or invalid.')
 	end
+	compiler.validate_program_effects(data, program_id)
 	self.resolved_programs[program_id] = data
 	return data
 end

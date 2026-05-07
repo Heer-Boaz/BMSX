@@ -173,7 +173,7 @@ LoadSubsetPathStep compilePathStep(Runtime& runtime, const std::string& chunkNam
 	if (expression.kind == LuaSyntaxKind::StringLiteralExpression || expression.kind == LuaSyntaxKind::StringRefLiteralExpression) {
 		return {
 			.kind = LoadSubsetPathStep::Kind::Field,
-			.fieldKey = runtime.machine.cpu.internString(expression.stringValue),
+			.fieldKey = runtime.machine.cpu.stringPool().intern(expression.stringValue),
 		};
 	}
 	fail(chunkName, "index expressions must use string or numeric literals", &expression.range);
@@ -204,7 +204,7 @@ CompiledParamPath compileParamPath(
 		CompiledParamPath base = compileParamPath(runtime, chunkName, *expression.base, paramIndexByName);
 		base.path.push_back({
 			.kind = LoadSubsetPathStep::Kind::Field,
-			.fieldKey = runtime.machine.cpu.internString(expression.name),
+			.fieldKey = runtime.machine.cpu.stringPool().intern(expression.name),
 		});
 		return base;
 	}
@@ -233,7 +233,7 @@ Value compileLiteralExpr(Runtime& runtime, const std::string& chunkName, const L
 			return valueNumber(expression.numberValue);
 		case LuaSyntaxKind::StringLiteralExpression:
 		case LuaSyntaxKind::StringRefLiteralExpression:
-			return valueString(runtime.machine.cpu.internString(expression.stringValue));
+			return valueString(runtime.machine.cpu.stringPool().intern(expression.stringValue));
 		default:
 			fail(chunkName, "unsupported literal expression", &expression.range);
 	}

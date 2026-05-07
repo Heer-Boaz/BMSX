@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 6;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 8;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
@@ -25,12 +25,10 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'frameScheduler',
 	'frames',
 	'gameViewState',
-	'generation',
 	'globals',
 	'haltedUntilIrq',
 	'hash',
 	'hashFree',
-	'heapUsedBytes',
 	'id',
 	'index',
 	'input',
@@ -64,7 +62,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'negy',
 	'negz',
 	'next',
-	'nextHandle',
 	'objects',
 	'open',
 	'openUpvalues',
@@ -86,7 +83,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'sampleArmed',
 	'secondary',
 	'sequence',
-	'stringHandles',
+	'stringPool',
 	'tag',
 	'top',
 	'upvalues',

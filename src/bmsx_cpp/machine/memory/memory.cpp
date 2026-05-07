@@ -7,7 +7,7 @@
 namespace bmsx {
 
 Memory::Memory()
-	: m_ram(RAM_USED_END - RAM_BASE)
+	: m_ram(RAM_END - RAM_BASE)
 	, m_ioSlots(IO_SLOT_COUNT, valueNil())
 	, m_ioReadHandlers(IO_SLOT_COUNT)
 	, m_ioWriteHandlers(IO_SLOT_COUNT) {
@@ -18,7 +18,7 @@ Memory::Memory(const MemoryInit& init)
 	, m_cartRom{ init.cartRom.data, init.cartRom.size }
 	, m_programCode()
 	, m_overlayRom{ init.overlayRom.data, init.overlayRom.size }
-	, m_ram(RAM_USED_END - RAM_BASE)
+	, m_ram(RAM_END - RAM_BASE)
 	, m_ioSlots(IO_SLOT_COUNT, valueNil())
 	, m_ioReadHandlers(IO_SLOT_COUNT)
 	, m_ioWriteHandlers(IO_SLOT_COUNT) {
@@ -334,11 +334,11 @@ bool Memory::isReadableMainMemoryRange(uint32_t addr, size_t length) const {
 		|| isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_systemRom.size))
 		|| (m_cartRom.data != nullptr && isRangeWithinRegion(addr, length, CART_ROM_BASE, static_cast<uint32_t>(m_cartRom.size)))
 		|| (m_overlayRom.data != nullptr && isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, static_cast<uint32_t>(m_overlayRom.size)))
-		|| isRangeWithinRegion(addr, length, RAM_BASE, RAM_USED_END - RAM_BASE);
+		|| isRangeWithinRegion(addr, length, RAM_BASE, RAM_END - RAM_BASE);
 }
 
 bool Memory::isRamRange(uint32_t addr, size_t length) const {
-	return isRangeWithinRegion(addr, length, RAM_BASE, RAM_USED_END - RAM_BASE);
+	return isRangeWithinRegion(addr, length, RAM_BASE, RAM_END - RAM_BASE);
 }
 
 void Memory::loadIoSlots(const std::vector<Value>& slots) {
@@ -429,11 +429,11 @@ bool Memory::isMappedWritableRange(uint32_t addr, size_t length) const {
 	if (isVramRange(addr, length)) {
 		return true;
 	}
-	return addr >= RAM_BASE && addr + length <= RAM_USED_END;
+	return addr >= RAM_BASE && addr + length <= RAM_END;
 }
 
 size_t Memory::ramOffset(uint32_t addr, size_t length) const {
-	if (addr < RAM_BASE || addr + length > RAM_USED_END) {
+	if (addr < RAM_BASE || addr + length > RAM_END) {
 		throw std::runtime_error("Bus fault @ " + formatNumberAsHex(addr, 8) + ": RAM range len=" + std::to_string(length) + ".");
 	}
 	return static_cast<size_t>(addr - RAM_BASE);

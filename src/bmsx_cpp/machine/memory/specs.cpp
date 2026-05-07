@@ -4,18 +4,9 @@
 
 #include <iomanip>
 #include <iostream>
-#include <limits>
 #include <stdexcept>
 
 namespace bmsx {
-namespace {
-
-uint64_t alignUpU64(uint64_t value, uint64_t alignment) {
-	const uint64_t mask = alignment - 1u;
-	return (value + mask) & ~mask;
-}
-
-} // namespace
 
 MemoryMapConfig resolveRuntimeMemoryMapConfig(const MachineManifest& machine, const MachineManifest& systemMachine, uint32_t systemSlotBytes) {
 	MemoryMapConfig config;
@@ -49,40 +40,30 @@ MemoryMapConfig resolveRuntimeMemoryMapConfig(const MachineManifest& machine, co
 	const uint32_t frameBufferHeight = static_cast<uint32_t>(machine.viewportHeight);
 	config.frameBufferBytes = frameBufferWidth * frameBufferHeight * 4u;
 
-	const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
-	const uint64_t runtimeRamBaseOffset = static_cast<uint64_t>(IO_REGION_SIZE)
-		+ static_cast<uint64_t>(stringHandleTableBytes)
-		+ static_cast<uint64_t>(config.stringHeapBytes);
-	const uint64_t runtimeRamBasePadding = alignUpU64(runtimeRamBaseOffset, static_cast<uint64_t>(IO_WORD_SIZE)) - runtimeRamBaseOffset;
-	const uint64_t fixedRamBytes = runtimeRamBaseOffset
-		+ runtimeRamBasePadding
-		+ static_cast<uint64_t>(DEFAULT_GEO_SCRATCH_SIZE)
-		+ static_cast<uint64_t>(VDP_STREAM_BUFFER_SIZE);
-	const uint64_t requiredRamBytes = fixedRamBytes;
-	if (requiredRamBytes > std::numeric_limits<uint32_t>::max()) {
-		throw std::runtime_error("[RuntimeMemorySpecs] ram_bytes exceeds addressable range.");
-	}
-	const uint32_t minimumRamBytes = static_cast<uint32_t>(requiredRamBytes);
 	if (machine.ramBytes) {
 		const i32 value = *machine.ramBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[RuntimeMemorySpecs] ram_bytes must be greater than 0.");
 		}
 		const uint32_t resolved = static_cast<uint32_t>(value);
-		if (resolved < minimumRamBytes) {
+		if (resolved < MIN_RAM_SIZE) {
 			throw std::runtime_error("[RuntimeMemorySpecs] ram_bytes must be at least required size.");
+		}
+		if (resolved > MAX_RAM_SIZE) {
+			throw std::runtime_error("[RuntimeMemorySpecs] ram_bytes exceeds RAM address window.");
 		}
 		config.ramBytes = resolved;
 	} else {
-		config.ramBytes = minimumRamBytes;
+		config.ramBytes = DEFAULT_RAM_SIZE;
 	}
 	const double ramMiB = static_cast<double>(config.ramBytes) / (1024.0 * 1024.0);
+	const uint32_t dynamicRamBytes = config.ramBytes - MIN_RAM_SIZE;
 	std::cerr
 		<< "[RuntimeMemorySpecs] memory footprint: ram=" << config.ramBytes << " bytes ("
 		<< std::fixed << std::setprecision(2) << ramMiB << " MiB) "
 		<< "(io=" << IO_REGION_SIZE
-		<< ", string_handles=" << config.stringHandleCount
-		<< ", string_heap=" << config.stringHeapBytes
+		<< ", base_ram_used=" << BASE_RAM_USED_SIZE
+		<< ", dynamic_ram=" << dynamicRamBytes
 		<< ", geo_scratch=" << DEFAULT_GEO_SCRATCH_SIZE
 		<< ", vdp_stream=" << VDP_STREAM_BUFFER_SIZE
 		<< ", vram_staging=" << config.stagingBytes

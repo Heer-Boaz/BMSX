@@ -1,7 +1,6 @@
-import { OpCode, Table, isNativeFunction, isNativeObject, type Program, type ProgramMetadata, type Proto, type SourceRange, type Value } from './cpu';
+import { OpCode, Table, asStringId, isNativeFunction, isNativeObject, valueIsString, type Program, type ProgramMetadata, type Proto, type SourceRange, type Value } from './cpu';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { formatNumber } from '../common/number_format';
-import { isStringValue, stringValueToString } from '../memory/string/pool';
 
 export type DisassemblyOptions = {
 	showPc?: boolean;
@@ -179,7 +178,7 @@ const formatBool = (value: number): string => (value !== 0 ? 'true' : 'false');
 const formatCount = (value: number): string => (value === 0 ? '*' : value.toString());
 
 // start repeated-sequence-acceptable -- Disassembly constants quote strings, unlike Lua tostring; keep formatter local to avoid firmware dependency.
-const formatValue = (value: Value): string => {
+const formatValue = (program: Program, value: Value): string => {
 	if (value === undefined) {
 		throw new Error('[Disassembler] Unexpected undefined value.');
 	}
@@ -195,8 +194,8 @@ const formatValue = (value: Value): string => {
 		}
 		return formatNumber(value);
 	}
-	if (isStringValue(value)) {
-		return JSON.stringify(stringValueToString(value));
+	if (valueIsString(value)) {
+		return JSON.stringify(program.constPoolStringPool.toString(asStringId(value)));
 	}
 	if (value instanceof Table) {
 		return 'table';
@@ -216,7 +215,7 @@ const formatConst = (program: Program, index: number, options: ResolvedOptions):
 	if (!options.showConsts) {
 		return base;
 	}
-	return `${base}(${formatValue(program.constPool[index])})`;
+	return `${base}(${formatValue(program, program.constPool[index])})`;
 };
 
 const describeRK = (program: Program, raw: number, bits: number, options: ResolvedOptions): { text: string; registerIndex?: number } => {

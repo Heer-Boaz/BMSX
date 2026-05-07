@@ -40,7 +40,7 @@ import {
 import { getMachinePerfSpecs } from '../../rompack/format';
 import type { RawRomSource } from '../../rompack/source';
 import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
-import { isStringValue, stringValueToString } from '../../machine/memory/string/pool';
+import { asStringId, valueIsString } from '../../machine/cpu/cpu';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { raiseSystemIrq } from '../../machine/runtime/system_irq';
 import { callClosure, callClosureInto } from '../../machine/program/executor';
@@ -343,7 +343,7 @@ export function resetHardwareState(runtime: Runtime): void {
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {
-	runtime.machine.cpu.setGlobalByKey(runtime.luaKey(name), value);
+	runtime.machine.cpu.setGlobalByKey(runtime.internString(name), value);
 }
 
 export function buildSystemBuiltinPreludeSource(): string {
@@ -383,7 +383,7 @@ export function applySystemBuiltinGlobals(runtime: Runtime): void {
 	const helperCount = SYSTEM_ROM_HELPER_NAMES.length;
 	for (let index = 0; index < REQUIRED_SYSTEM_ROM_HELPERS.length; index += 1) {
 		const name = REQUIRED_SYSTEM_ROM_HELPERS[index];
-		const key = runtime.luaKey(name);
+		const key = runtime.internString(name);
 		if (runtime.machine.cpu.globals.get(key) === null) {
 			seedLuaGlobals(runtime);
 			break;
@@ -392,16 +392,16 @@ export function applySystemBuiltinGlobals(runtime: Runtime): void {
 	const system = requireModule(runtime, 'bios/system') as Table;
 	for (let index = 0; index < SYSTEM_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
 		const name = SYSTEM_LUA_BUILTIN_FUNCTIONS[index].name;
-		const member = system.get(runtime.luaKey(name)) as Closure;
+		const member = system.get(runtime.internString(name)) as Closure;
 		registerGlobal(runtime, name, member);
 	}
 	for (let index = 0; index < SYSTEM_LUA_BUILTIN_GLOBALS.length; index += 1) {
 		const name = SYSTEM_LUA_BUILTIN_GLOBALS[index].name;
-		registerGlobal(runtime, name, system.get(runtime.luaKey(name)));
+		registerGlobal(runtime, name, system.get(runtime.internString(name)));
 	}
 	for (let index = 0; index < helperCount; index += 1) {
 		const name = SYSTEM_ROM_HELPER_NAMES[index];
-		const key = runtime.luaKey(name);
+		const key = runtime.internString(name);
 		const value = runtime.machine.cpu.globals.get(key);
 		if (value !== null) {
 			registerGlobal(runtime, name, value);
@@ -435,7 +435,7 @@ export function describeSymbolValue(value: Value): { kind: SymbolKind; valueType
 	if (typeof value === 'number') {
 		return { kind: 'constant', valueType: 'number' };
 	}
-	if (isStringValue(value)) {
+	if (valueIsString(value)) {
 		return { kind: 'constant', valueType: 'string' };
 	}
 	if (value instanceof Table) {
@@ -510,10 +510,10 @@ export function listSymbols(runtime: Runtime): SymbolEntry[] {
 	const hiddenPrefixes = collectHiddenSymbolPrefixes(runtime);
 	const symbolsByName = new Map<string, SymbolEntry>();
 	runtime.machine.cpu.globals.forEachEntry((key, value) => {
-		if (!isStringValue(key)) {
+		if (!valueIsString(key)) {
 			return;
 		}
-		const name = stringValueToString(key);
+		const name = runtime.machine.cpu.stringPool.toString(asStringId(key));
 		if (shouldHideTerminalSymbolName(name, hiddenPrefixes) || symbolsByName.has(name)) {
 			return;
 		}

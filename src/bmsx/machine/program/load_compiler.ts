@@ -13,8 +13,7 @@ import {
 	type LuaSourceRange,
 } from '../../lua/syntax/ast';
 import { LuaLexer } from '../../lua/syntax/lexer';
-import { createNativeFunction, isNativeObject, Table, type NativeFunction, type Value } from '../cpu/cpu';
-import { isStringValue, type StringValue } from '../memory/string/pool';
+import { createNativeFunction, isNativeObject, Table, valueIsString, type NativeFunction, type StringValue, type Value } from '../cpu/cpu';
 import type { Runtime } from '../runtime/runtime';
 
 type LoadSubsetValueExpr =
@@ -62,7 +61,7 @@ const describeValue = (value: Value): string => {
 	if (typeof value === 'number') {
 		return 'number';
 	}
-	if (isStringValue(value)) {
+	if (valueIsString(value)) {
 		return 'string';
 	}
 	if (value instanceof Table) {

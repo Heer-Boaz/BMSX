@@ -10,8 +10,8 @@ constexpr const char* INP_CONTEXT_ID = "inp_chip";
 
 InputController::InputController(Memory& memory, Input& input, const StringPool& strings)
 	: m_memory(memory)
-		, m_input(input)
-		, m_strings(strings) {
+	, m_input(input)
+	, m_strings(strings) {
 	m_memory.mapIoWrite(IO_INP_CTRL, this, &InputController::onCtrlWriteThunk);
 	m_memory.mapIoWrite(IO_INP_QUERY, this, &InputController::onQueryWriteThunk);
 	m_memory.mapIoWrite(IO_INP_CONSUME, this, &InputController::onConsumeWriteThunk);

@@ -37,6 +37,20 @@ inline size_t nextUtf8Index(std::string_view text, size_t index) {
 	return index + 4u;
 }
 
+inline size_t utf8ByteLength(std::string_view text) {
+	return text.size();
+}
+
+inline int utf8CodepointCount(std::string_view text) {
+	int count = 0;
+	size_t index = 0;
+	while (index < text.size()) {
+		index = nextUtf8Index(text, index);
+		count += 1;
+	}
+	return count;
+}
+
 inline u32 readUtf8Codepoint(const std::string& text, size_t& index) {
 	const size_t size = text.size();
 	const u8 c0 = utf8ByteAt(text, index);

@@ -1,4 +1,4 @@
-import { StringPool, StringValue, isStringValue, stringValueToString } from '../memory/string/pool';
+import { StringPool, type StringId } from './string_pool';
 import type { Memory } from '../memory/memory';
 import {
 	addTrackedLuaHeapBytes,
@@ -21,7 +21,44 @@ export { OpCode } from './opcode_info';
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
 
+const STRING_VALUE_KIND = 'string_value';
+const TABLE_VALUE_KIND = 'table';
+
+export class StringValue {
+	public readonly kind = STRING_VALUE_KIND;
+	public readonly id: StringId;
+
+	private constructor(id: StringId) {
+		this.id = id;
+	}
+
+	public static get(id: StringId): StringValue {
+		let value = STRING_VALUES[id];
+		if (value === undefined) {
+			value = new StringValue(id);
+			STRING_VALUES[id] = value;
+		}
+		return value;
+	}
+}
+
+const STRING_VALUES: StringValue[] = [];
+
 export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
+
+export function valueString(id: StringId): StringValue {
+	return StringValue.get(id);
+}
+
+export function valueIsString(value: unknown): value is StringValue {
+	return value !== null
+		&& value !== undefined
+		&& (value as { readonly kind?: string }).kind === STRING_VALUE_KIND;
+}
+
+export function asStringId(value: StringValue): StringId {
+	return value.id;
+}
 
 export const isTruthyValue = (value: Value): boolean => value !== null && value !== false;
 
@@ -75,7 +112,7 @@ function valueTypeName(value: Value): string {
 	if (value === null) return 'nil';
 	if (typeof value === 'boolean') return 'boolean';
 	if (typeof value === 'number') return 'number';
-	if (isStringValue(value)) return 'string';
+	if (valueIsString(value)) return 'string';
 	if (value instanceof Table) return 'table';
 	if (isNativeFunction(value)) return 'native_function';
 	if (isNativeObject(value)) return 'native_object';
@@ -87,6 +124,15 @@ const NATIVE_COST_TIER1: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
 const NATIVE_COST_TIER2: NativeFnCost = { base: 2, perArg: 0, perRet: 0 };
 const NATIVE_COST_TIER4: NativeFnCost = { base: 4, perArg: 0, perRet: 0 };
 const DEFAULT_NATIVE_COST = NATIVE_COST_TIER1;
+
+const TABLE_HEAP_BYTES = 32;
+const TABLE_ARRAY_SLOT_HEAP_BYTES = 8;
+const TABLE_HASH_SLOT_HEAP_BYTES = 20;
+const CLOSURE_HEAP_BYTES = 16;
+const CLOSURE_UPVALUE_SLOT_HEAP_BYTES = 8;
+const NATIVE_FUNCTION_HEAP_BYTES = 16;
+const NATIVE_OBJECT_HEAP_BYTES = 24;
+const UPVALUE_HEAP_BYTES = 24;
 
 function resolveNativeFunctionCost(name: string): NativeFnCost {
 	switch (name) {
@@ -190,7 +236,7 @@ export function createNativeFunction(
 	cost?: NativeFnCost,
 ): NativeFunction {
 	const resolvedCost = cost ?? resolveNativeFunctionCost(name);
-	addTrackedLuaHeapBytes(16);
+	addTrackedLuaHeapBytes(NATIVE_FUNCTION_HEAP_BYTES);
 	return {
 		kind: NATIVE_FUNCTION_KIND,
 		name,
@@ -217,7 +263,7 @@ export function createNativeObject(raw: object, handlers: {
 	len?: () => number;
 	nextEntry?: (after: Value) => [Value, Value] | null;
 }): NativeObject {
-	addTrackedLuaHeapBytes(24);
+	addTrackedLuaHeapBytes(NATIVE_OBJECT_HEAP_BYTES);
 	return { kind: NATIVE_OBJECT_KIND, raw, get: handlers.get, set: handlers.set, len: handlers.len, nextEntry: handlers.nextEntry, metatable: null };
 }
 
@@ -247,7 +293,6 @@ export type CpuFrameSnapshot = {
 export type CpuRuntimeRefSegment = string | number;
 
 const CPU_RUNTIME_METATABLE_SEGMENT = '@metatable';
-
 export type CpuValueState =
 	| { tag: 'nil' }
 	| { tag: 'false' }
@@ -396,6 +441,7 @@ export type TableRuntimeState = {
 };
 
 export class Table {
+	public readonly kind = TABLE_VALUE_KIND;
 	private array: Value[];
 	public arrayLength = 0;
 	private hash: HashNode[];
@@ -408,6 +454,12 @@ export class Table {
 	private static readonly uint32View = new Uint32Array(Table.numberBuffer);
 	private static readonly objectIds = new WeakMap<object, number>();
 	private static nextObjectId = 1;
+
+	public static [Symbol.hasInstance](value: unknown): boolean {
+		return value !== null
+			&& value !== undefined
+			&& (value as { readonly kind?: string }).kind === TABLE_VALUE_KIND;
+	}
 
 	constructor(arraySize: number, hashSize: number) {
 		this.array = new Array<Value>(arraySize);
@@ -650,7 +702,10 @@ export class Table {
 	public walkTrackedValues(visitor: (value: Value) => void): void {
 		visitor(this.tableMetatable);
 		for (let index = 0; index < this.array.length; index += 1) {
-			visitor(this.array[index]);
+			const value = this.array[index];
+			if (value !== null && value !== undefined) {
+				visitor(value);
+			}
 		}
 		for (let index = 0; index < this.hash.length; index += 1) {
 			const node = this.hash[index];
@@ -660,9 +715,9 @@ export class Table {
 	}
 
 	public getTrackedHeapBytes(): number {
-		return 32
-			+ (this.array.length * 8)
-			+ (this.hash.length * 24);
+		return TABLE_HEAP_BYTES
+			+ (this.array.length * TABLE_ARRAY_SLOT_HEAP_BYTES)
+			+ (this.hash.length * TABLE_HASH_SLOT_HEAP_BYTES);
 	}
 
 	public nextEntry(after: Value): [Value, Value] | null {
@@ -756,7 +811,7 @@ export class Table {
 		if (typeof key === 'boolean') {
 			return key ? 0x9e3779b9 : 0x85ebca6b;
 		}
-		if (isStringValue(key)) {
+		if (valueIsString(key)) {
 			return (key.id * 2654435761) >>> 0;
 		}
 		return (Table.getObjectId(key as object) * 2654435761) >>> 0;
@@ -769,7 +824,7 @@ export class Table {
 			}
 			return a === b;
 		}
-		if (isStringValue(a) && isStringValue(b)) {
+		if (valueIsString(a) && valueIsString(b)) {
 			return a.id === b.id;
 		}
 		return a === b;
@@ -1246,7 +1301,7 @@ class RegisterFile {
 			this.setBool(index, value);
 			return;
 		}
-		if (isStringValue(value)) {
+		if (valueIsString(value)) {
 			this.setString(index, value);
 			return;
 		}
@@ -1392,21 +1447,21 @@ export class CPU {
 	private decodedWords: Uint32Array | null = null;
 	private tableLoadCaches: TableLoadInlineCache[] = [];
 	public stringIndexTable: Table | null = null;
-	private systemGlobalNames: StringValue[] = [];
+	private systemGlobalNames: StringId[] = [];
 	private systemGlobalValues: Value[] = [];
-	private systemGlobalSlotByKey: Map<StringValue, number> = new Map();
-	private globalNames: StringValue[] = [];
+	private systemGlobalSlotByKey: Map<StringId, number> = new Map();
+	private globalNames: StringId[] = [];
 	private globalValues: Value[] = [];
-	private globalSlotByKey: Map<StringValue, number> = new Map();
+	private globalSlotByKey: Map<StringId, number> = new Map();
 	private readonly framePool: CallFrame[] = [];
 	private stackRegisters = new RegisterFile(8);
 	private stackTop = 0;
 
-	constructor(memory: Memory, stringPool: StringPool | null = null) {
+	constructor(memory: Memory) {
 		this.memory = memory;
-		this.stringPool = stringPool ?? new StringPool();
+		this.stringPool = new StringPool(true);
 		this.globals = new Table(0, 0);
-		this.indexKey = this.stringPool.intern('__index');
+		this.indexKey = valueString(this.stringPool.intern('__index'));
 	}
 
 	private ensureStackCapacity(size: number): void {
@@ -1506,7 +1561,7 @@ export class CPU {
 			}
 			return this.resolveTableIndex(base, key);
 		}
-		if (isStringValue(base)) {
+		if (valueIsString(base)) {
 			const indexTable = this.stringIndexTable;
 			if (indexTable === null) {
 				return null;
@@ -1547,7 +1602,7 @@ export class CPU {
 			}
 			return this.resolveTableIntegerIndex(base, index);
 		}
-		if (isStringValue(base)) {
+		if (valueIsString(base)) {
 			const table = this.stringIndexTable;
 			if (table === null) {
 				return null;
@@ -1596,7 +1651,7 @@ export class CPU {
 			}
 			return this.resolveTableFieldIndex(base, key);
 		}
-		if (isStringValue(base)) {
+		if (valueIsString(base)) {
 			const table = this.stringIndexTable;
 			if (table === null) {
 				return null;
@@ -1716,14 +1771,15 @@ export class CPU {
 		this.memory.setProgramCode(program.code);
 		this.metadata = metadata;
 		const constPool = program.constPool;
+		const programPool = program.constPoolStringPool;
 		for (let index = 0; index < constPool.length; index += 1) {
 			const value = constPool[index];
-			if (isStringValue(value)) {
-				constPool[index] = this.stringPool.intern(stringValueToString(value));
+			if (valueIsString(value)) {
+				constPool[index] = valueString(this.stringPool.intern(programPool.toString(asStringId(value))));
 			}
 		}
 		program.constPoolStringPool = this.stringPool;
-		this.indexKey = this.stringPool.intern('__index');
+		this.indexKey = valueString(this.stringPool.intern('__index'));
 		this.initializeGlobalSlots(metadata);
 		this.decodeProgram(program);
 		this.profiler.configureProgram(program, metadata, this.decodedOps!);
@@ -1739,7 +1795,7 @@ export class CPU {
 			const key = this.stringPool.intern(systemNames[index]);
 			this.systemGlobalNames[index] = key;
 			this.systemGlobalSlotByKey.set(key, index);
-			this.systemGlobalValues[index] = this.globals.get(key);
+			this.systemGlobalValues[index] = this.globals.get(valueString(key));
 		}
 		this.globalNames = new Array(globalNames.length);
 		this.globalValues = new Array(globalNames.length);
@@ -1748,7 +1804,7 @@ export class CPU {
 			const key = this.stringPool.intern(globalNames[index]);
 			this.globalNames[index] = key;
 			this.globalSlotByKey.set(key, index);
-			this.globalValues[index] = this.globals.get(key);
+			this.globalValues[index] = this.globals.get(valueString(key));
 		}
 	}
 
@@ -1831,7 +1887,7 @@ export class CPU {
 		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
 		const closure: Closure = { protoIndex: entryProtoIndex, upvalues: [] };
-		addTrackedLuaHeapBytes(16);
+		addTrackedLuaHeapBytes(CLOSURE_HEAP_BYTES);
 		this.pushFrame(closure, args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
 		enforceLuaHeapBudget();
 	}
@@ -2111,12 +2167,12 @@ export class CPU {
 
 	public setGlobalByKey(key: StringValue, value: Value): void {
 		this.globals.set(key, value);
-		const systemSlot = this.systemGlobalSlotByKey.get(key);
+		const systemSlot = this.systemGlobalSlotByKey.get(key.id);
 		if (systemSlot !== undefined) {
 			this.systemGlobalValues[systemSlot] = value;
 			return;
 		}
-		const globalSlot = this.globalSlotByKey.get(key);
+		const globalSlot = this.globalSlotByKey.get(key.id);
 		if (globalSlot !== undefined) {
 			this.globalValues[globalSlot] = value;
 		}
@@ -2133,19 +2189,19 @@ export class CPU {
 
 	public syncGlobalSlotsToTable(): void {
 		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
-			this.globals.set(this.systemGlobalNames[slot], this.systemGlobalValues[slot]);
+			this.globals.set(valueString(this.systemGlobalNames[slot]), this.systemGlobalValues[slot]);
 		}
 		for (let slot = 0; slot < this.globalNames.length; slot += 1) {
-			this.globals.set(this.globalNames[slot], this.globalValues[slot]);
+			this.globals.set(valueString(this.globalNames[slot]), this.globalValues[slot]);
 		}
 	}
 
 	public getGlobalByKey(key: StringValue): Value {
-		const systemSlot = this.systemGlobalSlotByKey.get(key);
+		const systemSlot = this.systemGlobalSlotByKey.get(key.id);
 		if (systemSlot !== undefined) {
 			return this.systemGlobalValues[systemSlot];
 		}
-		const globalSlot = this.globalSlotByKey.get(key);
+		const globalSlot = this.globalSlotByKey.get(key.id);
 		if (globalSlot !== undefined) {
 			return this.globalValues[globalSlot];
 		}
@@ -2355,7 +2411,7 @@ export class CPU {
 					const right = this.readRK(frame, rkC);
 					const text = this.valueToString(left) + this.valueToString(right);
 					const handle = this.stringPool.intern(text);
-					this.setRegisterStringFast(frame, registers, a, handle);
+					this.setRegisterStringFast(frame, registers, a, valueString(handle));
 					return;
 				}
 				case OpCode.CONCATN: {
@@ -2364,7 +2420,7 @@ export class CPU {
 						text += this.valueToString(registers.get(b + index));
 					}
 					const handle = this.stringPool.intern(text);
-					this.setRegisterStringFast(frame, registers, a, handle);
+					this.setRegisterStringFast(frame, registers, a, valueString(handle));
 					return;
 				}
 				case OpCode.UNM: {
@@ -2377,8 +2433,8 @@ export class CPU {
 					return;
 				case OpCode.LEN: {
 					const value = registers.get(b);
-					if (isStringValue(value)) {
-						const cp = this.stringPool.codepointCount(value);
+					if (valueIsString(value)) {
+						const cp = this.stringPool.codepointCount(asStringId(value));
 						this.setRegisterNumberFast(frame, registers, a, cp);
 						return;
 					}
@@ -2428,8 +2484,8 @@ export class CPU {
 				case OpCode.LT: {
 					const left = this.readRK(frame, rkB);
 					const right = this.readRK(frame, rkC);
-					const ok = (isStringValue(left) && isStringValue(right))
-						? stringValueToString(left) < stringValueToString(right)
+					const ok = (valueIsString(left) && valueIsString(right))
+						? this.stringPool.toString(asStringId(left)) < this.stringPool.toString(asStringId(right))
 						: (left as number) < (right as number);
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
@@ -2439,8 +2495,8 @@ export class CPU {
 				case OpCode.LE: {
 					const left = this.readRK(frame, rkB);
 					const right = this.readRK(frame, rkC);
-					const ok = (isStringValue(left) && isStringValue(right))
-						? stringValueToString(left) <= stringValueToString(right)
+					const ok = (valueIsString(left) && valueIsString(right))
+						? this.stringPool.toString(asStringId(left)) <= this.stringPool.toString(asStringId(right))
 						: (left as number) <= (right as number);
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
@@ -2539,8 +2595,8 @@ export class CPU {
 					}
 					if (typeof (callee as Closure).protoIndex !== 'number') {
 						const calleeType = valueTypeName(callee as Value);
-						const calleeValue = isStringValue(callee)
-							? ` value=${stringValueToString(callee)}`
+						const calleeValue = valueIsString(callee)
+							? ` value=${this.stringPool.toString(asStringId(callee))}`
 							: (typeof callee === 'number' || typeof callee === 'boolean')
 								? ` value=${String(callee)}`
 								: '';
@@ -2692,14 +2748,14 @@ export class CPU {
 				if (!upvalue) {
 					upvalue = { open: true, index: desc.index, frame, value: null };
 					this.openUpvalues.push({ frame, index: desc.index, upvalue });
-					addTrackedLuaHeapBytes(24);
+					addTrackedLuaHeapBytes(UPVALUE_HEAP_BYTES);
 				}
 				upvalues[index] = upvalue;
 				continue;
 			}
 			upvalues[index] = frame.closure.upvalues[desc.index];
 		}
-		addTrackedLuaHeapBytes(16 + (upvalues.length * 8));
+		addTrackedLuaHeapBytes(CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES));
 		return { protoIndex, upvalues };
 	}
 
@@ -2996,8 +3052,8 @@ export class CPU {
 						}
 						return;
 					}
-					if (isStringValue(key)) {
-						traverseStableValue([...path, stringValueToString(key)], entryValue);
+					if (valueIsString(key)) {
+						traverseStableValue([...path, this.stringPool.toString(asStringId(key))], entryValue);
 					}
 				});
 				return;
@@ -3015,10 +3071,10 @@ export class CPU {
 		};
 
 		this.globals.forEachEntry((key, value) => {
-			if (!isStringValue(key)) {
+			if (!valueIsString(key)) {
 				return;
 			}
-			traverseStableValue(['globals', stringValueToString(key)], value);
+			traverseStableValue(['globals', this.stringPool.toString(asStringId(key))], value);
 		});
 		const ioSlots = this.memory.getIoSlots();
 		for (let index = 0; index < ioSlots.length; index += 1) {
@@ -3052,7 +3108,7 @@ export class CPU {
 			if (typeof value === 'number') {
 				return { tag: 'number', value };
 			}
-			if (isStringValue(value)) {
+			if (valueIsString(value)) {
 				return { tag: 'string', id: value.id };
 			}
 			if (isNativeFunction(value) || isNativeObject(value)) {
@@ -3118,11 +3174,11 @@ export class CPU {
 
 		const globals: CpuRootValueState[] = [];
 		this.globals.forEachEntry((key, value) => {
-			if (!isStringValue(key)) {
+			if (!valueIsString(key)) {
 				return;
 			}
 			globals.push({
-				name: stringValueToString(key),
+				name: this.stringPool.toString(asStringId(key)),
 				value: captureValueState(value),
 			});
 		});
@@ -3240,8 +3296,8 @@ export class CPU {
 						}
 						return;
 					}
-					if (isStringValue(key)) {
-						traverseStableValue([...path, stringValueToString(key)], entryValue);
+					if (valueIsString(key)) {
+						traverseStableValue([...path, this.stringPool.toString(asStringId(key))], entryValue);
 					}
 				});
 				return;
@@ -3260,10 +3316,10 @@ export class CPU {
 
 		this.syncGlobalSlotsToTable();
 		this.globals.forEachEntry((key, value) => {
-			if (!isStringValue(key)) {
+			if (!valueIsString(key)) {
 				return;
 			}
-			traverseStableValue(['globals', stringValueToString(key)], value);
+			traverseStableValue(['globals', this.stringPool.toString(asStringId(key))], value);
 		});
 		const currentIoSlots = this.memory.getIoSlots();
 		for (let index = 0; index < currentIoSlots.length; index += 1) {
@@ -3284,12 +3340,12 @@ export class CPU {
 					break;
 				case 'closure': {
 					const upvalues = new Array<Upvalue>(objectState.upvalues.length);
-					addTrackedLuaHeapBytes(16 + (upvalues.length * 8));
+					addTrackedLuaHeapBytes(CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES));
 					restoredObjects[index] = { protoIndex: objectState.protoIndex, upvalues };
 					break;
 				}
 				case 'upvalue':
-					addTrackedLuaHeapBytes(24);
+					addTrackedLuaHeapBytes(UPVALUE_HEAP_BYTES);
 					restoredObjects[index] = { open: false, index: objectState.index, frame: null, value: null };
 					break;
 			}
@@ -3306,7 +3362,7 @@ export class CPU {
 				case 'number':
 					return valueState.value;
 				case 'string':
-					return this.stringPool.getById(valueState.id);
+					return valueString(valueState.id);
 				case 'ref':
 					return restoredObjects[valueState.id] as Table | Closure;
 				case 'stable_ref': {
@@ -3411,7 +3467,7 @@ export class CPU {
 
 		for (let index = 0; index < state.globals.length; index += 1) {
 			const entry = state.globals[index];
-			this.setGlobalByKey(this.stringPool.intern(entry.name), restoreValue(entry.value));
+			this.setGlobalByKey(valueString(this.stringPool.intern(entry.name)), restoreValue(entry.value));
 		}
 		for (let index = 0; index < state.moduleCache.length; index += 1) {
 			const entry = state.moduleCache[index];
@@ -3432,12 +3488,12 @@ export class CPU {
 
 	public collectTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
 		const seen = new WeakSet<object>();
-		let total = 0;
+		let total = this.stringPool.trackedLuaHeapBytes();
 		const valueStack: Value[] = [];
 		const upvalueStack: Upvalue[] = [];
 
 		const pushValue = (value: Value): void => {
-			if (value === null || typeof value === 'boolean' || typeof value === 'number' || isStringValue(value)) {
+			if (value === null || typeof value === 'boolean' || typeof value === 'number' || valueIsString(value)) {
 				return;
 			}
 			valueStack.push(value);
@@ -3493,7 +3549,7 @@ export class CPU {
 					continue;
 				}
 				seen.add(upvalue);
-				total += 24;
+				total += UPVALUE_HEAP_BYTES;
 				if (upvalue.open) {
 					pushValue(upvalue.frame.registers.get(upvalue.index));
 				}
@@ -3517,7 +3573,7 @@ export class CPU {
 					continue;
 				}
 				seen.add(value);
-				total += 16;
+				total += NATIVE_FUNCTION_HEAP_BYTES;
 				continue;
 			}
 			if (isNativeObject(value)) {
@@ -3525,7 +3581,7 @@ export class CPU {
 					continue;
 				}
 				seen.add(value);
-				total += 24;
+				total += NATIVE_OBJECT_HEAP_BYTES;
 				if (value.metatable !== null) {
 					pushValue(value.metatable);
 				}
@@ -3536,7 +3592,7 @@ export class CPU {
 				continue;
 			}
 			seen.add(closure);
-			total += 16 + (closure.upvalues.length * 8);
+			total += CLOSURE_HEAP_BYTES + (closure.upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
 			for (let index = 0; index < closure.upvalues.length; index += 1) {
 				upvalueStack.push(closure.upvalues[index]);
 			}
@@ -3559,8 +3615,8 @@ export class CPU {
 			// Slower than V8's native formatting; avoid tight-loop conversions.
 			return formatNumber(value);
 		}
-		if (isStringValue(value)) {
-			return stringValueToString(value);
+		if (valueIsString(value)) {
+			return this.stringPool.toString(asStringId(value));
 		}
 		if (value instanceof Table) {
 			return 'table';

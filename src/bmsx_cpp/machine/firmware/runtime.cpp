@@ -165,14 +165,14 @@ void Runtime::runSystemBuiltinPrelude() {
 	for (const char* name : systemBuiltinNames) {
 		std::string exportName = "res__bios__system__";
 		exportName += name;
-		Value value = machine.cpu.getGlobalByKey(luaKey(exportName));
+		Value value = machine.cpu.getGlobalByKey(internString(exportName));
 		if (isNil(value) && systemModule) {
-			value = systemModule->get(luaKey(name));
+			value = systemModule->get(internString(name));
 		}
 		if (isNil(value)) {
 			throw BMSX_RUNTIME_ERROR("System ROM builtin export '" + exportName + "' is missing.");
 		}
-		machine.cpu.setGlobalByKey(luaKey(name), value);
+		machine.cpu.setGlobalByKey(internString(name), value);
 	}
 	std::cout << "[Runtime] prelude: system ROM builtins bound" << std::endl;
 }

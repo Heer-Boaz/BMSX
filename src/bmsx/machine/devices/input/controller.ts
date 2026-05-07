@@ -14,7 +14,8 @@ import {
 	IO_INP_VALUE,
 } from '../../bus/io';
 import { Memory } from '../../memory/memory';
-import type { StringValue } from '../../memory/string/pool';
+import { asStringId, type StringValue } from '../../cpu/cpu';
+import type { StringPool } from '../../cpu/string_pool';
 
 const INP_CONTEXT_ID = 'inp_chip';
 
@@ -47,6 +48,7 @@ export class InputController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly input: Input,
+		private readonly strings: StringPool,
 	) {
 		this.memory.mapIoWrite(IO_INP_CTRL, this.onCtrlWrite.bind(this));
 		this.memory.mapIoWrite(IO_INP_QUERY, this.onQueryWrite.bind(this));
@@ -100,13 +102,13 @@ export class InputController {
 	public onQueryWrite(): void {
 		const query = this.memory.readValue(IO_INP_QUERY) as StringValue;
 		const playerInput = this.input.getPlayerInput(this.memory.readIoU32(IO_INP_PLAYER));
-		const triggered = playerInput.checkActionTriggered(query.text);
+		const triggered = playerInput.checkActionTriggered(this.strings.toString(asStringId(query)));
 		this.memory.writeValue(IO_INP_STATUS, triggered ? 1 : 0);
 		this.memory.writeValue(IO_INP_VALUE, 0);
 	}
 
 	public onConsumeWrite(): void {
-		const actionNames = (this.memory.readValue(IO_INP_CONSUME) as StringValue).text;
+		const actionNames = this.strings.toString(asStringId(this.memory.readValue(IO_INP_CONSUME) as StringValue));
 		const playerInput = this.input.getPlayerInput(this.memory.readIoU32(IO_INP_PLAYER));
 		let actionStart = 0;
 		for (let index = 0; index <= actionNames.length; index += 1) {
@@ -121,8 +123,8 @@ export class InputController {
 	private commitAction(): void {
 		const playerIndex = this.memory.readIoU32(IO_INP_PLAYER);
 		const state = this.playerStates[playerIndex - 1]!;
-		const actionName = (this.memory.readValue(IO_INP_ACTION) as StringValue).text;
-		const bindingsText = (this.memory.readValue(IO_INP_BIND) as StringValue).text;
+		const actionName = this.strings.toString(asStringId(this.memory.readValue(IO_INP_ACTION) as StringValue));
+		const bindingsText = this.strings.toString(asStringId(this.memory.readValue(IO_INP_BIND) as StringValue));
 		const keyboardBindings: KeyboardBinding[] = [];
 		const gamepadBindings: GamepadBinding[] = [];
 		this.appendBindings(bindingsText, keyboardBindings, gamepadBindings);

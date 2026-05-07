@@ -6,7 +6,6 @@
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
-#include "machine/memory/string/memory.h"
 #include "machine/scheduler/device.h"
 
 #include <array>
@@ -52,15 +51,13 @@ void setIo(bmsx::Memory& memory, uint32_t addr, uint32_t value) {
 
 struct Harness {
 	bmsx::Memory memory;
-	bmsx::StringHandleTable stringHandles;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::VDP vdp;
 
 	Harness()
 		: memory()
-		, stringHandles(memory)
-		, cpu(memory, &stringHandles)
+		, cpu(memory)
 		, scheduler(cpu)
 		, vdp(memory, scheduler, {256u, 212u}) {
 		setIo(memory, bmsx::IO_VDP_DITHER, 0u);

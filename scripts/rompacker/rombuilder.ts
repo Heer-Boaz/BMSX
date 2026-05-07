@@ -1485,7 +1485,7 @@ export function appendProgramImage(
 	const buffer = Buffer.from(encodeBinary(programImage));
 	assetList.push({
 		resid: PROGRAM_IMAGE_ID,
-		type: 'data',
+		type: 'code',
 		buffer,
 		source_path: PROGRAM_IMAGE_ID,
 	});
@@ -1496,7 +1496,7 @@ export function appendProgramImage(
 		const symbolsBuffer = Buffer.from(encodeBinary(symbolsAsset));
 		assetList.push({
 			resid: PROGRAM_SYMBOLS_IMAGE_ID,
-			type: 'data',
+			type: 'code',
 			buffer: symbolsBuffer,
 			source_path: PROGRAM_SYMBOLS_IMAGE_ID,
 		});

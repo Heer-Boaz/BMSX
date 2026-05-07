@@ -88,9 +88,7 @@ Runtime::~Runtime() {
 }
 
 uint32_t Runtime::baseRamUsedBytes() const {
-	return IO_REGION_SIZE
-		+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
-		+ machine.stringHandles.usedHeapBytes();
+	return BASE_RAM_USED_SIZE;
 }
 
 uint32_t Runtime::ramUsedBytes() const {
@@ -269,12 +267,12 @@ void Runtime::requestProgramReload() {
 
 // disable-next-line single_line_method_pattern -- runtime global writes keep CPU string-key encoding inside Runtime.
 void Runtime::setGlobal(std::string_view name, const Value& value) {
-	machine.cpu.setGlobalByKey(valueString(machine.cpu.internString(name)), value);
+	machine.cpu.setGlobalByKey(valueString(machine.cpu.stringPool().intern(name)), value);
 }
 
 void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
 	const auto nativeFn = machine.cpu.createNativeFunction(name, std::move(fn), cost);
-	machine.cpu.setGlobalByKey(valueString(machine.cpu.internString(name)), nativeFn);
+	machine.cpu.setGlobalByKey(valueString(machine.cpu.stringPool().intern(name)), nativeFn);
 }
 
 void Runtime::resetHardwareState() {

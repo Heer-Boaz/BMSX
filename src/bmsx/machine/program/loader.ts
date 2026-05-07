@@ -1,6 +1,6 @@
 import { decodeBinary, requireObject, requireObjectKey } from '../../common/serializer/binencoder';
-import type { Program, ProgramMetadata, Proto, Value } from '../cpu/cpu';
-import { StringPool, isStringValue, stringValueToString } from '../memory/string/pool';
+import { asStringId, valueIsString, valueString, type Program, type ProgramMetadata, type Proto, type Value } from '../cpu/cpu';
+import { StringPool } from '../cpu/string_pool';
 
 // disable-next-line legacy_sentinel_string_pattern -- Program image id is a TS/C++/bootrom binary contract, not an alias fallback.
 export const PROGRAM_IMAGE_ID = '__program__';
@@ -58,8 +58,8 @@ export function encodeProgram(program: Program): EncodedProgram {
 			constPool[index] = value as EncodedValue;
 			continue;
 		}
-		if (isStringValue(value)) {
-			constPool[index] = stringValueToString(value);
+		if (valueIsString(value)) {
+			constPool[index] = program.constPoolStringPool.toString(asStringId(value));
 			continue;
 		}
 		throw new Error(`encodeProgram: unsupported constPool value at index ${index}`);
@@ -146,7 +146,7 @@ export function inflateProgram(encoded: EncodedProgram): Program {
 	for (let index = 0; index < encoded.constPool.length; index += 1) {
 		const value = encoded.constPool[index];
 		if (typeof value === 'string') {
-			constPool[index] = stringPool.intern(value);
+			constPool[index] = valueString(stringPool.intern(value));
 			continue;
 		}
 		constPool[index] = value;

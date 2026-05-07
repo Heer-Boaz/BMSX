@@ -14,8 +14,6 @@ machine:
         dma:
             dma_bytes_per_sec_iso: 8388608
             dma_bytes_per_sec_bulk: 26214400
-        ram:
-            ram_bytes: 50331648 # 48 MB total RAM
             
 lua:
     entry_path: cart.lua

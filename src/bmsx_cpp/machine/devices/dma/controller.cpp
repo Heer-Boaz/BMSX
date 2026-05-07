@@ -469,8 +469,8 @@ uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {
 	if (dst >= OVERLAY_ROM_BASE && dst < OVERLAY_ROM_BASE + OVERLAY_ROM_SIZE) {
 		return (OVERLAY_ROM_BASE + OVERLAY_ROM_SIZE) - dst;
 	}
-	if (dst >= RAM_BASE && dst < RAM_USED_END) {
-		return RAM_USED_END - dst;
+	if (dst >= RAM_BASE && dst < RAM_END) {
+		return RAM_END - dst;
 	}
 	return 0;
 }

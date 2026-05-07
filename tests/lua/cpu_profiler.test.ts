@@ -23,7 +23,7 @@ function makeProgram(cpu: CPU): Program {
 	writeInstruction(code, 1, OpCode.K1, 1, 0, 0, 0);
 	writeInstruction(code, 2, OpCode.ADD, 2, 0, 1, 0);
 	writeInstruction(code, 3, OpCode.RET, 2, 1, 0, 0);
-	const pool = cpu.getStringPool();
+	const pool = cpu.stringPool;
 	return {
 		code,
 		constPool: [],
@@ -55,7 +55,7 @@ test('CPU profiler records opcode and PC execution counts', () => {
 	cpu.setProfilerEnabled(true);
 	cpu.start(0);
 
-	assert.equal(cpu.run(1000), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 
 	const snapshot = cpu.getProfilerSnapshot();
 	assert.equal(snapshot.totalInstructions, 4);
@@ -76,7 +76,7 @@ test('CPU profiler report resolves hot PCs back to opcode and source location', 
 	cpu.setProfilerEnabled(true);
 	cpu.start(0);
 
-	assert.equal(cpu.run(1000), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 
 	const snapshot = cpu.getProfilerSnapshot();
 	const hotAdd = collectCpuProfilerHotPcs(snapshot, 8, OpCode.ADD);

@@ -2,10 +2,9 @@ import { LuaSourceRange } from '../../../lua/syntax/ast';
 import { LuaEnvironment } from '../../../lua/environment';
 import { LuaHandlerCache, isLuaHandlerFunction } from '../../../lua/handler_cache';
 import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../../../lua/value';
-import { Table, type Closure, type NativeFunction, type NativeObject, type Value, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject } from '../../cpu/cpu';
+import { Table, asStringId, valueIsString, type Closure, type NativeFunction, type NativeObject, type Value, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject } from '../../cpu/cpu';
 import { Runtime } from '../runtime';
 import type { LuaMarshalContext } from '../contracts';
-import { isStringValue, stringValueToString } from '../../memory/string/pool';
 
 // disable defensive_typeof_function_pattern -- JS bridge marshals arbitrary host values; callable probes are explicit interop boundaries.
 export type LuaSnapshotObjects = Record<number, unknown>;
@@ -691,9 +690,9 @@ export function buildMarshalContext(runtime: Runtime): LuaMarshalContext {
 	return { moduleId: runtime.resolveCurrentModuleId(), path: [] };
 }
 
-export function describeMarshalSegment(key: Value): string {
-	if (isStringValue(key)) {
-		return stringValueToString(key);
+export function describeMarshalSegment(runtime: Runtime, key: Value): string {
+	if (valueIsString(key)) {
+		return runtime.machine.cpu.stringPool.toString(asStringId(key));
 	}
 	if (typeof key === 'number') {
 		return String(key);
@@ -701,9 +700,9 @@ export function describeMarshalSegment(key: Value): string {
 	return null;
 }
 
-function resolveNativeKey(key: Value): string {
-	if (isStringValue(key)) {
-		return stringValueToString(key);
+function resolveNativeKey(runtime: Runtime, key: Value): string {
+	if (valueIsString(key)) {
+		return runtime.machine.cpu.stringPool.toString(asStringId(key));
 	}
 	if (typeof key === 'number' && Number.isInteger(key)) {
 		return String(key);
@@ -719,18 +718,18 @@ function parseNativeKeyFromString(runtime: Runtime, key: string): Value {
 	return runtime.internString(key);
 }
 
-function nativeKeysEqual(left: Value, right: Value): boolean {
+function nativeKeysEqual(runtime: Runtime, left: Value, right: Value): boolean {
 	if (left === right) {
 		return true;
 	}
-	if (isStringValue(left) && isStringValue(right)) {
-		return stringValueToString(left) === stringValueToString(right);
+	if (valueIsString(left) && valueIsString(right)) {
+		return runtime.machine.cpu.stringPool.toString(asStringId(left)) === runtime.machine.cpu.stringPool.toString(asStringId(right));
 	}
-	if (typeof left === 'number' && isStringValue(right)) {
-		return String(left) === stringValueToString(right);
+	if (typeof left === 'number' && valueIsString(right)) {
+		return String(left) === runtime.machine.cpu.stringPool.toString(asStringId(right));
 	}
-	if (isStringValue(left) && typeof right === 'number') {
-		return stringValueToString(left) === String(right);
+	if (valueIsString(left) && typeof right === 'number') {
+		return runtime.machine.cpu.stringPool.toString(asStringId(left)) === String(right);
 	}
 	return false;
 }
@@ -798,7 +797,7 @@ function findNativePropertyAfter(runtime: Runtime, raw: Record<string, unknown>,
 		if (returnNext) {
 			return [key, value];
 		}
-		if (nativeKeysEqual(key, after)) {
+		if (nativeKeysEqual(runtime, key, after)) {
 			returnNext = true;
 		}
 	}
@@ -826,9 +825,9 @@ function findNativeRawEntryAfter(runtime: Runtime, raw: object, after: Value): [
 		return findNativePropertyAfter(runtime, raw as Record<string, unknown>, after, -1);
 }
 
-function stringifyKey(key: Value): string {
-	if (isStringValue(key)) {
-		return stringValueToString(key);
+function stringifyKey(runtime: Runtime, key: Value): string {
+	if (valueIsString(key)) {
+		return runtime.machine.cpu.stringPool.toString(asStringId(key));
 	}
 	return String(key);
 }
@@ -874,9 +873,9 @@ function tableToNative(runtime: Runtime, table: Table, context: LuaMarshalContex
 	const objectResult: Record<string, unknown> = {};
 	visited.set(table, objectResult);
 	table.forEachEntry((key, entryValue) => {
-		const segment = describeMarshalSegment(key);
+		const segment = describeMarshalSegment(runtime, key);
 		const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
-		objectResult[stringifyKey(key)] = toNativeValue(runtime, entryValue, nextContext, visited);
+		objectResult[stringifyKey(runtime, key)] = toNativeValue(runtime, entryValue, nextContext, visited);
 	});
 	return objectResult;
 }
@@ -909,9 +908,9 @@ export function pushNativePairsIterator(runtime: Runtime, target: NativeObject, 
 			return;
 		}
 		const after = args.length > 1 ? args[1] : null;
-		if (after !== null && pointer > 0 && !nativeKeysEqual(keys[pointer - 1], after)) {
+		if (after !== null && pointer > 0 && !nativeKeysEqual(runtime, keys[pointer - 1], after)) {
 			pointer = 0;
-			while (pointer < keys.length && !nativeKeysEqual(keys[pointer], after)) {
+			while (pointer < keys.length && !nativeKeysEqual(runtime, keys[pointer], after)) {
 				pointer += 1;
 			}
 			if (pointer < keys.length) {
@@ -1006,8 +1005,8 @@ export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarsha
 	if (value === null || typeof value === 'boolean' || typeof value === 'number') {
 		return value;
 	}
-	if (isStringValue(value)) {
-		return stringValueToString(value);
+	if (valueIsString(value)) {
+		return runtime.machine.cpu.stringPool.toString(asStringId(value));
 	}
 	if (value instanceof Table) {
 		return tableToNative(runtime, value, context, visited);
@@ -1073,7 +1072,7 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 				const rawValue = arrayValue[index];
 				return rawValue === undefined ? null : toRuntimeValue(runtime, rawValue);
 			}
-			const prop = resolveNativeKey(key);
+			const prop = resolveNativeKey(runtime, key);
 			if (!prop) {
 				throw new Error('Attempted to index native object with unsupported key.');
 			}
@@ -1093,7 +1092,7 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 				arrayValue[index] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
 				return;
 			}
-			const prop = resolveNativeKey(key);
+			const prop = resolveNativeKey(runtime, key);
 			if (!prop) {
 				throw new Error('Attempted to assign native object with unsupported key.');
 			}

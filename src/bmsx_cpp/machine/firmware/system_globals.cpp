@@ -20,7 +20,7 @@ void seedSystemGlobals(Runtime& runtime) {
 			out.push_back(valueNil());
 			return;
 		}
-		out.push_back(valueString(machine.cpu.internString(*runtime.m_hostFaultMessage)));
+		out.push_back(valueString(machine.cpu.stringPool().intern(*runtime.m_hostFaultMessage)));
 	}));
 	runtime.setGlobal("sys_cart_magic_addr", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
 	runtime.setGlobal("sys_cart_magic", valueNumber(static_cast<double>(CART_ROM_MAGIC)));

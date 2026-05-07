@@ -435,9 +435,9 @@ The libretro platform serialization entry points are no longer placeholders:
 - `LibretroPlatform::loadState(...)` applies runtime bytes, reapplies host view
   state, resets the libretro audio queue, and clears wall-frame timing state.
 
-Recent save-state work also includes CPU/runtime state, RAM/string handles,
-input, frame scheduler/VBLANK state, game-view state, render state, and VDP
-surface pixels.
+Recent save-state work also includes CPU/runtime state, RAM, the CPU-owned
+string pool, input, frame scheduler/VBLANK state, game-view state, render
+state, and VDP surface pixels.
 
 Risk:
 
@@ -449,9 +449,9 @@ such as empty strings.
 
 Desired direction:
 
-- Add focused save/load tests that mutate RAM, string handles, VDP surfaces,
-  framebuffer pixels, atlas slots, input state, scheduler/VBLANK state, and cart
-  persistent state before restoring.
+- Add focused save/load tests that mutate RAM, interned CPU strings, VDP
+  surfaces, framebuffer pixels, atlas slots, input state, scheduler/VBLANK
+  state, and cart persistent state before restoring.
 - Exercise libretro serialization through the platform boundary, not only the
   lower-level runtime codec.
 - Exclude host-only render backend handles, platform objects, transient queues,

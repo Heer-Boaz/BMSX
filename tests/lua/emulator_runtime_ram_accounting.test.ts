@@ -1,23 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CPU, Table, createNativeFunction, createNativeObject } from '../../src/bmsx/machine/cpu/cpu';
+import { CPU, Table, createNativeFunction, createNativeObject, valueString } from '../../src/bmsx/machine/cpu/cpu';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 
 test('tracked heap bytes include rooted tables and native arrays', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	const key = cpu.getStringPool().intern('state');
-	const listKey = cpu.getStringPool().intern('list');
+	const key = valueString(cpu.stringPool.intern('state'));
+	const listKey = valueString(cpu.stringPool.intern('list'));
 
-	const before = cpu.getTrackedHeapBytes();
+	const before = cpu.collectTrackedHeapBytes();
 
 	const table = new Table(2, 2);
 	table.set(1, 11);
-	table.set(cpu.getStringPool().intern('hp'), 7);
+	table.set(valueString(cpu.stringPool.intern('hp')), 7);
 	cpu.globals.set(key, table);
 
-	const afterTable = cpu.getTrackedHeapBytes();
+	const afterTable = cpu.collectTrackedHeapBytes();
 	assert.ok(afterTable > before, `expected table bytes to increase heap usage (${afterTable} <= ${before})`);
 
 	const raw = [3, 5];
@@ -39,13 +39,13 @@ test('tracked heap bytes include rooted tables and native arrays', () => {
 	});
 	cpu.globals.set(listKey, nativeArray);
 
-	const afterArray = cpu.getTrackedHeapBytes();
+	const afterArray = cpu.collectTrackedHeapBytes();
 	assert.ok(afterArray > afterTable, `expected native array bytes to increase heap usage (${afterArray} <= ${afterTable})`);
 
 	cpu.globals.set(key, null);
 	cpu.globals.set(listKey, null);
 
-	const afterCleanup = cpu.getTrackedHeapBytes();
+	const afterCleanup = cpu.collectTrackedHeapBytes();
 	assert.ok(afterCleanup < afterArray, `expected cleanup to drop rooted heap usage (${afterCleanup} >= ${afterArray})`);
 	assert.ok(afterCleanup >= before, `expected table capacity growth to remain tracked (${afterCleanup} < ${before})`);
 });
@@ -62,8 +62,8 @@ test('tracked heap bytes include explicit extra roots for native iterators and h
 		},
 	});
 
-	const before = cpu.getTrackedHeapBytes();
-	const after = cpu.getTrackedHeapBytes([iterator, handle]);
+	const before = cpu.collectTrackedHeapBytes();
+	const after = cpu.collectTrackedHeapBytes([iterator, handle]);
 
 	assert.ok(after > before, `expected explicit extra roots to increase tracked heap usage (${after} <= ${before})`);
 });
@@ -72,7 +72,7 @@ test('tracked heap bytes do not include raw js array capacity without native ite
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 
-	const before = cpu.getTrackedHeapBytes();
+	const before = cpu.collectTrackedHeapBytes();
 	const raw = new Array(1024).fill(7);
 	const nativeArray = createNativeObject(raw, {
 		get: (entryKey) => {
@@ -91,6 +91,6 @@ test('tracked heap bytes do not include raw js array capacity without native ite
 		len: () => raw.length,
 	});
 
-	const after = cpu.getTrackedHeapBytes([nativeArray]);
+	const after = cpu.collectTrackedHeapBytes([nativeArray]);
 	assert.equal(after - before, 24, `expected native object accounting to ignore raw js array capacity (${after - before} != 24)`);
 });

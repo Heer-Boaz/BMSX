@@ -7,7 +7,7 @@ import {
 	PROGRAM_ROM_BASE,
 	PROGRAM_ROM_SIZE,
 	RAM_BASE,
-	RAM_USED_END,
+	RAM_END,
 	SYSTEM_ROM_BASE,
 	isVramMappedRange,
 } from './map';
@@ -78,7 +78,7 @@ export class Memory {
 		this.systemRom = init.systemRom;
 		this.cartRom = init.cartRom;
 		this.overlayRom = init.overlayRom;
-		this.ram = new Uint8Array(RAM_USED_END - RAM_BASE);
+		this.ram = new Uint8Array(RAM_END - RAM_BASE);
 		this.ramView = new DataView(this.ram.buffer, this.ram.byteOffset, this.ram.byteLength);
 		this.ioSlots = new Array<Value>(IO_SLOT_COUNT);
 		for (let index = 0; index < this.ioSlots.length; index += 1) {
@@ -382,11 +382,11 @@ export class Memory {
 			|| this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)
 			|| (!!this.cartRom && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength))
 			|| (!!this.overlayRom && this.isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, this.overlayRom.byteLength))
-			|| this.isRangeWithinRegion(addr, length, RAM_BASE, RAM_USED_END - RAM_BASE);
+			|| this.isRangeWithinRegion(addr, length, RAM_BASE, RAM_END - RAM_BASE);
 	}
 
 	public isRamRange(addr: number, length: number): boolean {
-		return this.isRangeWithinRegion(addr, length, RAM_BASE, RAM_USED_END - RAM_BASE);
+		return this.isRangeWithinRegion(addr, length, RAM_BASE, RAM_END - RAM_BASE);
 	}
 
 	public writeBytes(addr: number, bytes: Uint8Array): void {
@@ -457,7 +457,7 @@ export class Memory {
 	}
 
 	private resolveRamOffset(addr: number, length: number): number {
-		if (addr < RAM_BASE || addr + length > RAM_USED_END) {
+		if (addr < RAM_BASE || addr + length > RAM_END) {
 			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: RAM range len=${length}.`);
 		}
 		return addr - RAM_BASE;
@@ -520,7 +520,7 @@ export class Memory {
 		if (this.isVramRange(addr, length)) {
 			return true;
 		}
-		return addr >= RAM_BASE && addr + length <= RAM_USED_END;
+		return addr >= RAM_BASE && addr + length <= RAM_END;
 	}
 
 	private writeVram(addr: number, bytes: Uint8Array): void {

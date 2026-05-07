@@ -14,7 +14,7 @@
 #include "machine/memory/access_kind.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
-#include "machine/memory/string/pool.h"
+#include "machine/cpu/string_pool.h"
 #include "machine/runtime/timing/state.h"
 #include "machine/scheduler/budget.h"
 #include "machine/common/hash.h"
@@ -101,19 +101,17 @@ void testBudgetAndFixed16Golden() {
 }
 
 void testStringPoolGolden() {
-	bmsx::Memory memory;
-	bmsx::StringHandleTable handles(memory);
-	bmsx::StringPool pool(&handles);
+	bmsx::StringPool pool;
 	const bmsx::StringId empty = pool.intern("");
 	const bmsx::StringId hello = pool.intern("hé");
 	require(pool.intern("hé") == hello, "StringPool should reuse interned text id");
 	require(pool.toString(empty).empty(), "StringPool should preserve empty interned strings");
 	require(pool.codepointCount(hello) == 2, "StringPool should count UTF-8 codepoints");
-	const bmsx::StringHandleTableState state = handles.captureState();
-	bmsx::StringPool restored(&handles);
-	restored.rehydrateFromHandleTable(state);
-	require(restored.toString(empty).empty(), "StringPool restore should preserve empty string handle");
-	require(restored.toString(hello) == "hé", "StringPool restore should preserve handle text");
+	const bmsx::StringPoolState state = pool.captureState();
+	bmsx::StringPool restored;
+	restored.restoreState(state);
+	require(restored.toString(empty).empty(), "StringPool restore should preserve empty string id");
+	require(restored.toString(hello) == "hé", "StringPool restore should preserve text");
 	require(restored.codepointCount(hello) == 2, "StringPool restore should preserve codepoint counts");
 }
 

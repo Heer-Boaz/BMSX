@@ -20,8 +20,7 @@ import {
 } from '../../rompack/format';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import { buildRuntimeRomLayer } from '../../rompack/loader';
-import { Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
-import { type StringValue } from '../memory/string/pool';
+import { Table, valueString, type Value, type ProgramMetadata, type NativeFunction, type NativeObject, type StringValue } from '../cpu/cpu';
 import type { TerminalMode } from '../../ide/terminal/ui/mode';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { Font, type FontVariant } from '../../render/shared/bmsx_font';
@@ -60,11 +59,9 @@ import { HandlerCache } from './handler_cache';
 import { Machine } from '../machine';
 import { Memory } from '../memory/memory';
 import {
+	BASE_RAM_USED_SIZE,
 	DEFAULT_VRAM_IMAGE_SLOT_SIZE,
-	IO_REGION_SIZE,
 	RAM_SIZE,
-	STRING_HANDLE_COUNT,
-	STRING_HANDLE_ENTRY_SIZE,
 	configureMemoryMap,
 } from '../memory/map';
 
@@ -524,9 +521,7 @@ export class Runtime {
 	}
 
 	public baseRamUsedBytes(): number {
-		return IO_REGION_SIZE
-			+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
-			+ this.machine.stringHandles.usedHeapBytes();
+		return BASE_RAM_USED_SIZE;
 	}
 
 	public ramUsedBytes(): number {
@@ -689,12 +684,9 @@ export class Runtime {
 
 	// disable-next-line single_line_method_pattern -- runtime string interning is the public CPU string-pool boundary.
 	public internString(value: string): StringValue {
-		return this.machine.cpu.stringPool.intern(value);
+		return valueString(this.machine.cpu.stringPool.intern(value));
 	}
 
-	public luaKey(name: string): StringValue {
-		return this.machine.cpu.stringPool.intern(name);
-	}
 
 	private prepareHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): Error {
 		const wrappedError = convertToError(error);
