@@ -202,7 +202,7 @@ void GameView::bindCubemapTex(TextureHandle tex) {
 
 void GameView::setSpritesAmbient(bool enabled, f32 factor) {
 	spriteAmbientEnabledDefault = enabled;
-	spriteAmbientFactorDefault = clamp(factor, 0.0f, 1.0f);
+	spriteAmbientFactorDefault = factor;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

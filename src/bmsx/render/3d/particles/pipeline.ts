@@ -18,7 +18,7 @@ import { VDP_BBU_BILLBOARD_LIMIT } from '../../../machine/devices/vdp/contracts'
 
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);
-const HOST_PARTICLE_LIMIT = 1000;
+const HOST_PARTICLE_LIMIT = 1024;
 const PARTICLE_INSTANCE_LIMIT = VDP_BBU_BILLBOARD_LIMIT;
 const INSTANCE_FLOATS = 13; // vec4(position+size) + vec4(color) + vec4(uvrect) + textpageId
 const BYTES_PER_FLOAT = 4;

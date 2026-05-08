@@ -42,6 +42,10 @@ static retro_usec_t g_pending_frame_time_usec = 0;
 static bool g_has_pending_frame_time = false;
 
 extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec);
+
+static void libretro_frame_time_callback(retro_usec_t usec) {
+	bmsx_set_frame_time_usec(usec);
+}
 extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down);
 extern "C" RETRO_API void bmsx_keyboard_reset(void);
 extern "C" RETRO_API void bmsx_focus_changed(bool focused);
@@ -1064,6 +1068,9 @@ void retro_set_environment(retro_environment_t cb) {
 		RETRO_SERIALIZATION_QUIRK_MUST_INITIALIZE |
 		RETRO_SERIALIZATION_QUIRK_CORE_VARIABLE_SIZE;
 	cb(RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS, &serialization_quirks);
+
+	static retro_frame_time_callback frame_time = { libretro_frame_time_callback, 0 };
+	cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
 
 	// Set input descriptors
 	static constexpr unsigned kRetroMouseIdLeft = 2;

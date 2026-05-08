@@ -1,0 +1,12 @@
+#pragma once
+
+namespace bmsx {
+
+constexpr const char* kRender3DAxisGizmoVertexShader = R"BMSX_GLSL(@BMSX_RENDER_3D_AXIS_GIZMO_VERTEX_SHADER@)BMSX_GLSL";
+constexpr const char* kRender3DAxisGizmoFragmentShader = R"BMSX_GLSL(@BMSX_RENDER_3D_AXIS_GIZMO_FRAGMENT_SHADER@)BMSX_GLSL";
+constexpr const char* kRender3DSkyboxVertexShader = R"BMSX_GLSL(@BMSX_RENDER_3D_SKYBOX_VERTEX_SHADER@)BMSX_GLSL";
+constexpr const char* kRender3DSkyboxFragmentShader = R"BMSX_GLSL(@BMSX_RENDER_3D_SKYBOX_FRAGMENT_SHADER@)BMSX_GLSL";
+constexpr const char* kRender3DParticleVertexShader = R"BMSX_GLSL(@BMSX_RENDER_3D_PARTICLE_VERTEX_SHADER@)BMSX_GLSL";
+constexpr const char* kRender3DParticleFragmentShader = R"BMSX_GLSL(@BMSX_RENDER_3D_PARTICLE_FRAGMENT_SHADER@)BMSX_GLSL";
+
+} // namespace bmsx

@@ -33,8 +33,7 @@ void main() {
 	}
 	vec4 c = tex * v_color;
 	if (u_particleAmbientMode == 1) {
-		float f = clamp(u_particleAmbientFactor, 0.0, 1.0);
-		c.rgb *= mix(vec3(1.0), u_ambient_frame.rgb * u_ambient_frame.a, f);
+		c.rgb *= mix(vec3(1.0), u_ambient_frame.rgb * u_ambient_frame.a, u_particleAmbientFactor);
 	}
 	outColor = c;
 }

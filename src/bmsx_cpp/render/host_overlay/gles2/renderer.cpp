@@ -1,11 +1,13 @@
 #include "render/host_overlay/gles2/renderer.h"
 
 #if BMSX_ENABLE_GLES2
+#include "core/console.h"
+#include "render/3d/axis_gizmo_pipeline.h"
 #include "render/host_overlay/gles2/host_overlay_shaders.h"
 #include "render/shared/glyph_runs.h"
 #include "rompack/host_system_atlas.h"
 #include <cmath>
-#include <stdexcept>
+#include <string_view>
 
 namespace bmsx {
 namespace {
@@ -24,38 +26,12 @@ struct HostOverlayGLES2State {
 
 HostOverlayGLES2State g_gles2;
 
-GLuint compileShader(GLenum type, const char* source) {
-	GLuint shader = glCreateShader(type);
-	glShaderSource(shader, 1, &source, nullptr);
-	glCompileShader(shader);
-	GLint ok = GL_FALSE;
-	glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-	if (ok == GL_TRUE) {
-		return shader;
-	}
-	char log[1024];
-	glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-	glDeleteShader(shader);
-	throw BMSX_RUNTIME_ERROR(std::string("[HostOverlayGLES2] Shader compile failed: ") + log);
-}
-
-GLuint linkProgram(GLuint vertexShader, GLuint fragmentShader) {
-	GLuint program = glCreateProgram();
-	glAttachShader(program, vertexShader);
-	glAttachShader(program, fragmentShader);
-	glLinkProgram(program);
-	GLint ok = GL_FALSE;
-	glGetProgramiv(program, GL_LINK_STATUS, &ok);
-	glDeleteShader(vertexShader);
-	glDeleteShader(fragmentShader);
-	if (ok == GL_TRUE) {
-		return program;
-	}
-	char log[1024];
-	glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-	glDeleteProgram(program);
-	throw BMSX_RUNTIME_ERROR(std::string("[HostOverlayGLES2] Program link failed: ") + log);
-}
+struct AxisGizmoHostImageContext {
+	OpenGLES2Backend* backend = nullptr;
+	const GameView* view = nullptr;
+	FlipOptions noFlip{};
+	bool prepared = false;
+};
 
 void bindTexture(OpenGLES2Backend& backend, TextureHandle texture) {
 	backend.setActiveTextureUnit(0);
@@ -148,13 +124,12 @@ void drawPolyGLES2(OpenGLES2Backend& backend, const PolyRenderSubmission& comman
 	}
 }
 
-void drawImageGLES2(OpenGLES2Backend& backend, const HostImageRenderSubmission& command) {
-	const HostSystemAtlasGeneratedImage& source = hostSystemAtlasImage(command.imgid);
+void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, std::string_view imgid, f32 x, f32 y, f32 scaleX, f32 scaleY, const FlipOptions& flip, u32 color) {
+	const HostSystemAtlasGeneratedImage& source = hostSystemAtlasImage(imgid);
 	f32 u0 = static_cast<f32>(source.u) / static_cast<f32>(hostSystemAtlasWidth());
 	f32 v0 = static_cast<f32>(source.v) / static_cast<f32>(hostSystemAtlasHeight());
 	f32 u1 = static_cast<f32>(source.u + source.w) / static_cast<f32>(hostSystemAtlasWidth());
 	f32 v1 = static_cast<f32>(source.v + source.h) / static_cast<f32>(hostSystemAtlasHeight());
-	const FlipOptions& flip = command.flip;
 	if (flip.flip_h) {
 		const f32 swap = u0;
 		u0 = u1;
@@ -165,20 +140,23 @@ void drawImageGLES2(OpenGLES2Backend& backend, const HostImageRenderSubmission& 
 		v0 = v1;
 		v1 = swap;
 	}
-	const Vec2& scale = command.scale;
 	drawQuadGLES2(
 		backend,
 		g_gles2.hostAtlasTexture,
-		static_cast<i32>(command.pos.x),
-		static_cast<i32>(command.pos.y),
-		static_cast<i32>(static_cast<f32>(source.width) * scale.x),
-		static_cast<i32>(static_cast<f32>(source.height) * scale.y),
+		static_cast<i32>(x),
+		static_cast<i32>(y),
+		static_cast<i32>(static_cast<f32>(source.width) * scaleX),
+		static_cast<i32>(static_cast<f32>(source.height) * scaleY),
 		u0,
 		v0,
 		u1,
 		v1,
-		command.colorize
+		color
 	);
+}
+
+void drawImageGLES2(OpenGLES2Backend& backend, const HostImageRenderSubmission& command) {
+	drawHostAtlasImageGLES2(backend, command.imgid, command.pos.x, command.pos.y, command.scale.x, command.scale.y, command.flip, command.colorize);
 }
 
 void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& glyph, f32 imageX, f32 imageY, u32 color) {
@@ -224,12 +202,20 @@ void drawGlyphsGLES2(OpenGLES2Backend& backend, const GlyphRenderSubmission& com
 	});
 }
 
+void emitAxisGizmoImageGLES2(void* context, std::string_view imgid, f32 x, f32 y, f32, f32 scale, color colorValue) {
+	auto& axisContext = *static_cast<AxisGizmoHostImageContext*>(context);
+	if (!axisContext.prepared) {
+		glUseProgram(g_gles2.program);
+		glUniform2f(g_gles2.uniformResolution, axisContext.view->viewportSize.x, axisContext.view->viewportSize.y);
+		axisContext.prepared = true;
+	}
+	drawHostAtlasImageGLES2(*axisContext.backend, imgid, x, y, scale, scale, axisContext.noFlip, colorValue);
+}
+
 } // namespace
 
 void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend) {
-	const GLuint vs = compileShader(GL_VERTEX_SHADER, kHostOverlayVertexShader);
-	const GLuint fs = compileShader(GL_FRAGMENT_SHADER, kHostOverlayFragmentShader);
-	g_gles2.program = linkProgram(vs, fs);
+	g_gles2.program = backend.buildProgram(kHostOverlayVertexShader, kHostOverlayFragmentShader, "host_overlay");
 	g_gles2.attribPos = glGetAttribLocation(g_gles2.program, "a_position");
 	g_gles2.attribUv = glGetAttribLocation(g_gles2.program, "a_texcoord");
 	g_gles2.uniformResolution = glGetUniformLocation(g_gles2.program, "u_resolution");
@@ -241,6 +227,7 @@ void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend) {
 	const u8 whitePixel[4] = {255u, 255u, 255u, 255u};
 	g_gles2.whiteTexture = backend.createTexture(whitePixel, 1, 1, params);
 	g_gles2.hostAtlasTexture = backend.createTexture(hostSystemAtlasPixels().data(), static_cast<i32>(hostSystemAtlasWidth()), static_cast<i32>(hostSystemAtlasHeight()), params);
+	bootstrapAxisGizmo_GLES2(backend);
 }
 
 void beginHostOverlayGLES2(OpenGLES2Backend& backend, const Host2DPipelineState& state) {
@@ -264,8 +251,18 @@ void renderHost2DEntryGLES2(OpenGLES2Backend& backend, Host2DKind kind, Host2DRe
 }
 
 void endHostOverlayGLES2(OpenGLES2Backend& backend) {
-	(void)backend;
+	if (shouldRenderAxisGizmo()) {
+		const GameView& view = *ConsoleCore::instance().view();
+		backend.setRenderTarget(backend.backbuffer(), static_cast<i32>(view.offscreenCanvasSize.x), static_cast<i32>(view.offscreenCanvasSize.y));
+		glDisable(GL_DEPTH_TEST);
+		glDisable(GL_CULL_FACE);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		AxisGizmoHostImageContext context{&backend, &view, FlipOptions{}};
+		renderAxisGizmo_GLES2(backend, emitAxisGizmoImageGLES2, &context);
+	}
 	glDisable(GL_BLEND);
+	glDepthMask(GL_TRUE);
 }
 
 } // namespace bmsx

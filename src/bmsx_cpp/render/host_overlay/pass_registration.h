@@ -7,7 +7,7 @@
 
 namespace bmsx {
 
-template<typename Backend, auto Bootstrap, auto Begin, auto RenderEntry, auto End>
+template<typename Backend, auto Bootstrap, auto Begin, auto RenderEntry, auto End, auto ShouldExecuteExtra = nullptr>
 void registerHostOverlayPass(RenderPassLibrary& registry) {
 	RenderPassDef desc;
 	desc.id = "host_overlay";
@@ -24,7 +24,11 @@ void registerHostOverlayPass(RenderPassLibrary& registry) {
 		};
 	}
 	desc.shouldExecute = []() {
-		return hasPendingOverlayFrame();
+		if constexpr (ShouldExecuteExtra != nullptr) {
+			return hasPendingOverlayFrame() || ShouldExecuteExtra();
+		} else {
+			return hasPendingOverlayFrame();
+		}
 	};
 	desc.exec = [](GPUBackend* backend, void*, std::any& stateAny) {
 		Backend& typedBackend = *static_cast<Backend*>(backend);
@@ -65,9 +69,9 @@ void registerHostMenuPass(RenderPassLibrary& registry) {
 	registry.registerPass(desc);
 }
 
-template<typename Backend, auto Bootstrap, auto Begin, auto RenderEntry, auto End>
+template<typename Backend, auto Bootstrap, auto Begin, auto RenderEntry, auto End, auto ShouldExecuteExtra = nullptr>
 void registerHostOverlayBackendPasses(RenderPassLibrary& registry) {
-	registerHostOverlayPass<Backend, Bootstrap, Begin, RenderEntry, End>(registry);
+	registerHostOverlayPass<Backend, Bootstrap, Begin, RenderEntry, End, ShouldExecuteExtra>(registry);
 	registerHostMenuPass<Backend, Begin, RenderEntry, End>(registry);
 }
 

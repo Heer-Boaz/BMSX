@@ -3,9 +3,7 @@
  */
 
 #include "queues.h"
-#include "common/clamp.h"
 #include <array>
-#include <algorithm>
 
 namespace bmsx {
 namespace RenderQueues {
@@ -134,12 +132,12 @@ const ParticleRenderSubmission& particleQueueEntry(size_t index) {
 
 void setAmbientDefaults(i32 mode, f32 factor) {
 	particleAmbientModeDefault = mode;
-	particleAmbientFactorDefault = clamp(factor, 0.0f, 1.0f);
+	particleAmbientFactorDefault = factor;
 }
 
 void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure) {
-	_skyTint = {std::max(0.0f, tint[0]), std::max(0.0f, tint[1]), std::max(0.0f, tint[2])};
-	_skyExposure = std::max(0.0f, exposure);
+	_skyTint = tint;
+	_skyExposure = exposure;
 }
 
 } // namespace RenderQueues

@@ -1,5 +1,6 @@
 #include "render/host_overlay/pipeline.h"
 
+#include "core/console.h"
 #include "render/gameview.h"
 #include "render/host_overlay/overlay_queue.h"
 
@@ -16,8 +17,15 @@ void fillHost2DState(Host2DPipelineState& state, GameView& view) {
 } // namespace
 
 HostOverlayPipelineState buildHostOverlayState() {
-	const HostOverlayFrame frame = consumeOverlayFrame();
 	HostOverlayPipelineState state;
+	state.time = ConsoleCore::instance().totalTime();
+	state.delta = ConsoleCore::instance().deltaTime();
+	if (!hasPendingOverlayFrame()) {
+		GameView& view = *ConsoleCore::instance().view();
+		fillHost2DState(state, view);
+		return state;
+	}
+	const HostOverlayFrame frame = consumeOverlayFrame();
 	state.width = frame.renderWidth;
 	state.height = frame.renderHeight;
 	state.overlayWidth = frame.logicalWidth;

@@ -17,7 +17,7 @@ let uSizeLoc: WebGLUniformLocation = null;
 let uOffsetLoc: WebGLUniformLocation = null;
 let vbo: WebGLBuffer = null;
 
-let enabled = true;
+let enabled = false;
 export function setAxisGizmoEnabled(v: boolean) { enabled = v; }
 
 const AXIS_VERTEX_COUNT = 6;

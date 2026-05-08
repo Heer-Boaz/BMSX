@@ -5,6 +5,9 @@
 #include "library.h"
 #include "software_scene.h"
 #include "../../gameview.h"
+#include "../../3d/axis_gizmo_pipeline.h"
+#include "../../3d/particles/pipeline.h"
+#include "../../3d/skybox/pipeline.h"
 #include "../../shared/hardware/camera.h"
 #include "../../vdp/framebuffer.h"
 #if BMSX_ENABLE_GLES2
@@ -248,6 +251,9 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		registerPass(desc);
 	}
 
+	registerSkyboxPass_GLES2(*this);
+	registerParticlesPass_GLES2(*this);
+
 	{
 		RenderPassDef desc;
 		desc.id = "framebuffer_2d";
@@ -333,7 +339,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		registerPass(desc);
 	}
 
-	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2>(*this);
+	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2, shouldRenderAxisGizmo>(*this);
 #endif
 }
 

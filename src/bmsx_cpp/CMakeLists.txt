@@ -97,6 +97,35 @@ configure_file(
 	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/host_overlay/gles2/host_overlay_shaders.h"
 	@ONLY
 )
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/axis_gizmo.vert.glsl"
+	BMSX_RENDER_3D_AXIS_GIZMO_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/axis_gizmo.frag.glsl"
+	BMSX_RENDER_3D_AXIS_GIZMO_FRAGMENT_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/skybox.vert.glsl"
+	BMSX_RENDER_3D_SKYBOX_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/skybox.frag.glsl"
+	BMSX_RENDER_3D_SKYBOX_FRAGMENT_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/particle.vert.glsl"
+	BMSX_RENDER_3D_PARTICLE_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/particle.frag.glsl"
+	BMSX_RENDER_3D_PARTICLE_FRAGMENT_SHADER
+)
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/render_3d_shaders.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/3d/shaders/render_3d_shaders.h"
+	@ONLY
+)
 
 add_library(bmsx_core STATIC
 	# Platform abstraction
@@ -146,6 +175,9 @@ add_library(bmsx_core STATIC
 	render/backend/backend.cpp
 	render/3d/math.cpp
 	render/3d/camera.cpp
+	render/3d/axis_gizmo_pipeline.cpp
+	render/3d/particles/pipeline.cpp
+	render/3d/skybox/pipeline.cpp
 	render/gameview.cpp
 	render/backend/frame_uniforms.cpp
 	render/lighting/system.cpp

@@ -34,6 +34,39 @@ void bindGLES2TextureForUpload(GLuint texture, const bmsx::TextureParams& params
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 }
 
+GLuint compileGLES2Shader(GLenum type, const char* source, const char* label, const char* stage) {
+	const GLuint shader = glCreateShader(type);
+	glShaderSource(shader, 1, &source, nullptr);
+	glCompileShader(shader);
+	GLint ok = GL_FALSE;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+	if (ok == GL_TRUE) {
+		return shader;
+	}
+	char log[1024];
+	glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+	glDeleteShader(shader);
+	throw BMSX_RUNTIME_ERROR(std::string("[GLES2] shader compile failed ") + label + ":" + stage + ": " + log);
+}
+
+GLuint linkGLES2Program(GLuint vertexShader, GLuint fragmentShader, const char* label) {
+	const GLuint program = glCreateProgram();
+	glAttachShader(program, vertexShader);
+	glAttachShader(program, fragmentShader);
+	glLinkProgram(program);
+	GLint ok = GL_FALSE;
+	glGetProgramiv(program, GL_LINK_STATUS, &ok);
+	glDeleteShader(vertexShader);
+	glDeleteShader(fragmentShader);
+	if (ok == GL_TRUE) {
+		return program;
+	}
+	char log[1024];
+	glGetProgramInfoLog(program, sizeof(log), nullptr, log);
+	glDeleteProgram(program);
+	throw BMSX_RUNTIME_ERROR(std::string("[GLES2] program link failed ") + label + ": " + log);
+}
+
 bool hasExtensionToken(const char* extensions, const char* needle) {
 	if (extensions == nullptr || needle == nullptr || *needle == '\0') {
 		return false;
@@ -463,6 +496,12 @@ void OpenGLES2Backend::setRenderTarget(GLuint fbo, i32 width, i32 height) {
 					static_cast<unsigned>(fbo), width, height,
 					fboChanged ? " (FBO changed)" : sizeChanged ? " (size changed)" : "");
 	}
+}
+
+GLuint OpenGLES2Backend::buildProgram(const char* vertexShaderSource, const char* fragmentShaderSource, const char* label) {
+	const GLuint vertexShader = compileGLES2Shader(GL_VERTEX_SHADER, vertexShaderSource, label, "vertex");
+	const GLuint fragmentShader = compileGLES2Shader(GL_FRAGMENT_SHADER, fragmentShaderSource, label, "fragment");
+	return linkGLES2Program(vertexShader, fragmentShader, label);
 }
 
 }  // namespace bmsx

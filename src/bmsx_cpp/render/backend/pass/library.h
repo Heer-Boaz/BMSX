@@ -10,6 +10,8 @@
 #include "../backend.h"
 #include "../../lighting/system.h"
 #include "../../shared/submissions.h"
+#include "machine/devices/vdp/contracts.h"
+#include <array>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -31,8 +33,14 @@ class RenderGraphContext;
  * ============================================================================ */
 
 struct SkyboxPipelineState {
-	// Camera view matrix for skybox
-	std::array<f32, 16> skyboxView;
+	i32 width = 0;
+	i32 height = 0;
+	std::array<f32, 16> view{};
+	std::array<f32, 16> proj{};
+	TextureHandle textpagePrimaryTex = nullptr;
+	TextureHandle textpageSecondaryTex = nullptr;
+	std::array<f32, SKYBOX_FACE_COUNT * 4> faceUvRects{};
+	std::array<i32, SKYBOX_FACE_COUNT> faceTextpageBindings{};
 };
 
 struct MeshBatchPipelineState {
@@ -44,8 +52,14 @@ struct MeshBatchPipelineState {
 struct ParticlePipelineState {
 	i32 width = 0;
 	i32 height = 0;
-	i32 ambientMode = 0;
-	f32 ambientFactor = 1.0f;
+	std::array<f32, 16> viewProj{};
+	std::array<f32, 3> camRight{};
+	std::array<f32, 3> camUp{};
+	TextureHandle textpagePrimaryTex = nullptr;
+	TextureHandle textpageSecondaryTex = nullptr;
+	TextureHandle systemSlotTex = nullptr;
+	std::array<f32, 3> ambientColor{1.0f, 1.0f, 1.0f};
+	f32 ambientIntensity = 1.0f;
 };
 
 struct Framebuffer2DPipelineState {

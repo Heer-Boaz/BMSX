@@ -1,6 +1,5 @@
 import { BFont } from './shared/bitmap_font';
 import { consoleCore } from '../core/console';
-import { clamp01 } from '../common/clamp';
 import { multiply_vec2 } from '../common/vector';
 import { shallowcopy } from '../common/shallowcopy';
 import type { vec2 } from '../rompack/format';
@@ -128,7 +127,7 @@ export class GameView implements RenderContext {
 
 	public setSpritesAmbient(enabled: boolean, factor = 1.0): void {
 		this.spriteAmbientEnabledDefault = !!enabled;
-		this.spriteAmbientFactorDefault = clamp01(factor);
+		this.spriteAmbientFactorDefault = factor;
 	}
 
 	public applyPresentationPassState(): void {
