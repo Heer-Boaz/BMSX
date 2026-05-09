@@ -110,7 +110,7 @@ export class BrowserPlatform implements Platform {
 
 		if (!options.debug) {
 			// Prevent the user from accidentally closing the game window if not in debug mode
-			consoleCore.platform.lifecycle.onWillExit((e: PlatformExitEvent) => {
+			this.lifecycle.onWillExit((e: PlatformExitEvent) => {
 				e.preventDefault();
 				e.setReturnMessage('Are you sure you want to exit this awesome game?');
 			});

@@ -9,6 +9,7 @@ import {
 	RAM_BASE,
 	RAM_END,
 	SYSTEM_ROM_BASE,
+	isVramMappedContiguousRange,
 	isVramMappedRange,
 } from './map';
 import {
@@ -44,10 +45,6 @@ export type VramWriteSink = {
 export type IoReadHandler = (addr: number) => Value;
 export type IoWriteHandler = (addr: number, value: Value) => void;
 
-export type MemoryState = {
-	ioMemory: Value[];
-};
-
 export type MemorySaveState = {
 	ram: Uint8Array;
 };
@@ -67,10 +64,15 @@ export class Memory {
 	private readonly ioSlots: Value[];
 	private readonly ioReadHandlers: Array<IoReadHandler | null>;
 	private readonly ioWriteHandlers: Array<IoWriteHandler | null>;
+	private readonly ioByteLength = IO_SLOT_COUNT * IO_WORD_SIZE;
 	private programCode: Uint8Array = new Uint8Array(0);
 	private vramWriter: VramWriteSink;
 	private readonly vramScratch = new Uint8Array(4);
 	private readonly vramReadScratch = new Uint8Array(4);
+	private readonly vramScratch1 = this.vramScratch.subarray(0, 1);
+	private readonly vramScratch2 = this.vramScratch.subarray(0, 2);
+	private readonly vramReadScratch1 = this.vramReadScratch.subarray(0, 1);
+	private readonly vramReadScratch2 = this.vramReadScratch.subarray(0, 2);
 	private readonly mappedFloatBuffer = new ArrayBuffer(8);
 	private readonly mappedFloatView = new DataView(this.mappedFloatBuffer);
 
@@ -115,23 +117,6 @@ export class Memory {
 		return this.overlayRom ? this.overlayRom.byteLength : 0;
 	}
 
-	public getIoSlots(): ReadonlyArray<Value> {
-		return this.ioSlots;
-	}
-
-	public loadIoSlots(slots: ReadonlyArray<Value>): void {
-		if (slots.length !== this.ioSlots.length) {
-			throw new Error(`[Memory] I/O snapshot slot count mismatch (${slots.length} != ${this.ioSlots.length}).`);
-		}
-		for (let index = 0; index < this.ioSlots.length; index += 1) {
-			this.ioSlots[index] = slots[index];
-		}
-	}
-
-	public clearIoSlots(): void {
-		this.ioSlots.fill(null);
-	}
-
 	public dumpMutableRam(): Uint8Array {
 		return this.ram.slice();
 	}
@@ -141,16 +126,6 @@ export class Memory {
 			throw new Error(`[Memory] RAM snapshot length mismatch (${snapshot.byteLength} != ${this.ram.byteLength}).`);
 		}
 		this.ram.set(snapshot);
-	}
-
-	public captureState(): MemoryState {
-		return {
-			ioMemory: this.ioSlots.slice(),
-		};
-	}
-
-	public restoreState(state: MemoryState): void {
-		this.loadIoSlots(state.ioMemory);
 	}
 
 	public captureSaveState(): MemorySaveState {
@@ -163,9 +138,19 @@ export class Memory {
 		this.restoreMutableRam(state.ram);
 	}
 
+	public clearIoSlots(): void {
+		this.ioSlots.fill(null);
+	}
+
+	public collectRootValues(visit: (value: Value) => void): void {
+		for (let index = 0; index < this.ioSlots.length; index += 1) {
+			visit(this.ioSlots[index]);
+		}
+	}
+
 	public readValue(addr: number): Value {
-		if (this.isIoAddress(addr)) {
-			const slot = this.ioIndex(addr);
+		const slot = this.ioAlignedSlot(addr);
+		if (slot >= 0) {
 			const handler = this.ioReadHandlers[slot];
 			if (handler !== null) {
 				return handler(addr);
@@ -182,15 +167,57 @@ export class Memory {
 	}
 
 	public readMappedValue(addr: number): Value {
+		if (isVramMappedContiguousRange(addr, 4)) {
+			this.readVram(addr, this.vramReadScratch);
+			const out = this.vramReadScratch;
+			return (out[0] | (out[1] << 8) | (out[2] << 16) | (out[3] << 24)) >>> 0;
+		}
 		if (this.isVramRange(addr, 4)) {
 			return this.readMappedU32LE(addr);
 		}
-		return this.readValue(addr);
+		const slot = this.ioAlignedSlot(addr);
+		if (slot >= 0) {
+			const handler = this.ioReadHandlers[slot];
+			return handler !== null ? handler(addr) : this.ioSlots[slot];
+		}
+		if (this.isIoRegionRange(addr, 4)) {
+			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: unaligned.`);
+		}
+		if (this.isProgramRomRange(addr, 4)) {
+			return this.readProgramCodeWord(addr);
+		}
+		let data: Uint8Array;
+		let offset: number;
+		if (addr >= SYSTEM_ROM_BASE && addr + 4 <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
+			data = this.systemRom;
+			offset = addr - SYSTEM_ROM_BASE;
+		}
+		else if (this.cartRom && addr >= CART_ROM_BASE && addr + 4 <= CART_ROM_BASE + this.cartRom.byteLength) {
+			data = this.cartRom;
+			offset = addr - CART_ROM_BASE;
+		}
+		else if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr + 4 <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
+			data = this.overlayRom;
+			offset = addr - OVERLAY_ROM_BASE;
+		}
+		else if (addr >= RAM_BASE && addr + 4 <= RAM_END) {
+			data = this.ram;
+			offset = addr - RAM_BASE;
+		}
+		else {
+			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: RAM range len=4.`);
+		}
+		return (
+			data[offset]
+			| (data[offset + 1] << 8)
+			| (data[offset + 2] << 16)
+			| (data[offset + 3] << 24)
+		) >>> 0;
 	}
 
 	public writeValue(addr: number, value: Value): void {
-		if (this.isIoAddress(addr)) {
-			const slot = this.ioIndex(addr);
+		const slot = this.ioAlignedSlot(addr);
+		if (slot >= 0) {
 			this.ioSlots[slot] = value;
 			const handler = this.ioWriteHandlers[slot];
 			if (handler !== null) {
@@ -202,21 +229,56 @@ export class Memory {
 	}
 
 	public writeIoValue(addr: number, value: Value): void {
-		if (!this.isIoAddress(addr)) {
+		const slot = this.ioAlignedSlot(addr);
+		if (slot < 0) {
 			throw new Error(`I/O fault @ ${formatNumberAsHex(addr >>> 0, 8)}: invalid register.`);
 		}
-		this.ioSlots[this.ioIndex(addr)] = value;
+		this.ioSlots[slot] = value;
 	}
 
 	public writeMappedValue(addr: number, value: Value): void {
-		if (!this.isMappedWritableRange(addr, 4)) {
-			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write word.`);
-		}
-		if (this.isVramRange(addr, 4)) {
-			this.writeMappedU32LE(addr, value as number);
+		const slot = this.ioAlignedSlot(addr);
+		if (slot >= 0) {
+			if (this.isLuaReadOnlyIoAddress(addr)) {
+				throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write word.`);
+			}
+			this.ioSlots[slot] = value;
+			const handler = this.ioWriteHandlers[slot];
+			if (handler !== null) {
+				handler(addr, value);
+			}
 			return;
 		}
-		this.writeValue(addr, value);
+		if (this.isIoRegionRange(addr, 4)) {
+			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write word.`);
+		}
+		if (isVramMappedContiguousRange(addr, 4)) {
+			const word = value as number;
+			this.vramScratch[0] = word & 0xff;
+			this.vramScratch[1] = (word >>> 8) & 0xff;
+			this.vramScratch[2] = (word >>> 16) & 0xff;
+			this.vramScratch[3] = (word >>> 24) & 0xff;
+			this.writeVram(addr, this.vramScratch);
+			return;
+		}
+		if (this.isVramRange(addr, 4)) {
+			const word = value as number;
+			this.writeMappedU8(addr, word);
+			this.writeMappedU8(addr + 1, word >>> 8);
+			this.writeMappedU8(addr + 2, word >>> 16);
+			this.writeMappedU8(addr + 3, word >>> 24);
+			return;
+		}
+		if (addr >= RAM_BASE && addr + 4 <= RAM_END) {
+			const offset = addr - RAM_BASE;
+			const word = value as number;
+			this.ram[offset] = word & 0xff;
+			this.ram[offset + 1] = (word >>> 8) & 0xff;
+			this.ram[offset + 2] = (word >>> 16) & 0xff;
+			this.ram[offset + 3] = (word >>> 24) & 0xff;
+			return;
+		}
+		throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write word.`);
 	}
 
 	public readU8(addr: number): number {
@@ -226,18 +288,35 @@ export class Memory {
 
 	public readMappedU8(addr: number): number {
 		if (this.isVramRange(addr, 1)) {
-			const out = this.vramReadScratch.subarray(0, 1);
+			const out = this.vramReadScratch1;
 			this.readVram(addr, out);
 			return out[0];
 		}
-		if (this.isIoAddress(addr)) {
-			const value = this.readValue(addr);
+		const slot = this.ioAlignedSlot(addr);
+		if (slot >= 0) {
+			const handler = this.ioReadHandlers[slot];
+			const value = handler !== null ? handler(addr) : this.ioSlots[slot];
 			return (value as number) & 0xff;
 		}
 		if (this.isIoRegionRange(addr, 1)) {
 			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: unaligned.`);
 		}
-		return this.readU8(addr);
+		if (this.isProgramCodeReadableRange(addr, 1)) {
+			return this.programCode[addr - PROGRAM_ROM_BASE];
+		}
+		if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + this.systemRom.byteLength) {
+			return this.systemRom[addr - SYSTEM_ROM_BASE];
+		}
+		if (this.cartRom && addr >= CART_ROM_BASE && addr < CART_ROM_BASE + this.cartRom.byteLength) {
+			return this.cartRom[addr - CART_ROM_BASE];
+		}
+		if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr < OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
+			return this.overlayRom[addr - OVERLAY_ROM_BASE];
+		}
+		if (addr >= RAM_BASE && addr < RAM_END) {
+			return this.ram[addr - RAM_BASE];
+		}
+		throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: RAM range len=1.`);
 	}
 
 	public writeU8(addr: number, value: number): void {
@@ -246,7 +325,7 @@ export class Memory {
 			this.vramScratch[1] = 0;
 			this.vramScratch[2] = 0;
 			this.vramScratch[3] = 0;
-			this.writeVram(addr, this.vramScratch.subarray(0, 1));
+			this.writeVram(addr, this.vramScratch1);
 			return;
 		}
 		const { data, offset } = this.resolveWriteRegion(addr, 1);
@@ -254,26 +333,39 @@ export class Memory {
 	}
 
 	public writeMappedU8(addr: number, value: number): void {
-		if (!this.isMappedWritableRange(addr, 1)) {
+		if (this.isIoRegionRange(addr, 1)) {
 			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write byte.`);
 		}
-		if (this.isIoAddress(addr)) {
-			this.writeValue(addr, value & 0xff);
+		if (this.isVramRange(addr, 1)) {
+			this.vramScratch[0] = value & 0xff;
+			this.writeVram(addr, this.vramScratch1);
 			return;
 		}
-		this.writeU8(addr, value);
+		if (addr >= RAM_BASE && addr < RAM_END) {
+			this.ram[addr - RAM_BASE] = value & 0xff;
+			return;
+		}
+		throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write byte.`);
 	}
 
 	public readIoU32(addr: number): number {
-		if (!this.isIoAddress(addr)) {
+		const slot = this.ioAlignedSlot(addr);
+		if (slot < 0) {
 			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: invalid register.`);
 		}
-		const value = this.readValue(addr);
+		const handler = this.ioReadHandlers[slot];
+		const value = handler !== null ? handler(addr) : this.ioSlots[slot];
 		return (value as number) >>> 0;
 	}
 
 	public readIoI32(addr: number): number {
-		return this.readIoU32(addr) | 0;
+		const slot = this.ioAlignedSlot(addr);
+		if (slot < 0) {
+			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: invalid register.`);
+		}
+		const handler = this.ioReadHandlers[slot];
+		const value = handler !== null ? handler(addr) : this.ioSlots[slot];
+		return (value as number) | 0;
 	}
 
 	public readU32(addr: number): number {
@@ -299,16 +391,100 @@ export class Memory {
 	}
 
 	public readMappedU16LE(addr: number): number {
-		const b0 = this.readMappedU8(addr);
-		const b1 = this.readMappedU8(addr + 1);
+		if (isVramMappedContiguousRange(addr, 2)) {
+			const out = this.vramReadScratch2;
+			this.readVram(addr, out);
+			return (out[0] | (out[1] << 8)) >>> 0;
+		}
+		if (this.isVramRange(addr, 2)) {
+			const b0 = this.readMappedU8(addr);
+			const b1 = this.readMappedU8(addr + 1);
+			return (b0 | (b1 << 8)) >>> 0;
+		}
+		if (this.isIoRegionRange(addr, 2)) {
+			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: unaligned.`);
+		}
+		let data: Uint8Array;
+		let offset: number;
+		if (this.isProgramCodeReadableRange(addr, 2)) {
+			data = this.programCode;
+			offset = addr - PROGRAM_ROM_BASE;
+		}
+		else if (addr >= SYSTEM_ROM_BASE && addr + 2 <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
+			data = this.systemRom;
+			offset = addr - SYSTEM_ROM_BASE;
+		}
+		else if (this.cartRom && addr >= CART_ROM_BASE && addr + 2 <= CART_ROM_BASE + this.cartRom.byteLength) {
+			data = this.cartRom;
+			offset = addr - CART_ROM_BASE;
+		}
+		else if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr + 2 <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
+			data = this.overlayRom;
+			offset = addr - OVERLAY_ROM_BASE;
+		}
+		else if (addr >= RAM_BASE && addr + 2 <= RAM_END) {
+			data = this.ram;
+			offset = addr - RAM_BASE;
+		}
+		else {
+			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: RAM range len=2.`);
+		}
+		const b0 = data[offset];
+		const b1 = data[offset + 1];
 		return (b0 | (b1 << 8)) >>> 0;
 	}
 
 	public readMappedU32LE(addr: number): number {
-		const b0 = this.readMappedU8(addr);
-		const b1 = this.readMappedU8(addr + 1);
-		const b2 = this.readMappedU8(addr + 2);
-		const b3 = this.readMappedU8(addr + 3);
+		if (isVramMappedContiguousRange(addr, 4)) {
+			this.readVram(addr, this.vramReadScratch);
+			const out = this.vramReadScratch;
+			return (out[0] | (out[1] << 8) | (out[2] << 16) | (out[3] << 24)) >>> 0;
+		}
+		if (this.isVramRange(addr, 4)) {
+			const b0 = this.readMappedU8(addr);
+			const b1 = this.readMappedU8(addr + 1);
+			const b2 = this.readMappedU8(addr + 2);
+			const b3 = this.readMappedU8(addr + 3);
+			return (b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)) >>> 0;
+		}
+		const slot = this.ioAlignedSlot(addr);
+		if (slot >= 0) {
+			const handler = this.ioReadHandlers[slot];
+			const value = handler !== null ? handler(addr) : this.ioSlots[slot];
+			return (value as number) >>> 0;
+		}
+		if (this.isIoRegionRange(addr, 4)) {
+			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: unaligned.`);
+		}
+		let data: Uint8Array;
+		let offset: number;
+		if (this.isProgramCodeReadableRange(addr, 4)) {
+			data = this.programCode;
+			offset = addr - PROGRAM_ROM_BASE;
+		}
+		else if (addr >= SYSTEM_ROM_BASE && addr + 4 <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
+			data = this.systemRom;
+			offset = addr - SYSTEM_ROM_BASE;
+		}
+		else if (this.cartRom && addr >= CART_ROM_BASE && addr + 4 <= CART_ROM_BASE + this.cartRom.byteLength) {
+			data = this.cartRom;
+			offset = addr - CART_ROM_BASE;
+		}
+		else if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr + 4 <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
+			data = this.overlayRom;
+			offset = addr - OVERLAY_ROM_BASE;
+		}
+		else if (addr >= RAM_BASE && addr + 4 <= RAM_END) {
+			data = this.ram;
+			offset = addr - RAM_BASE;
+		}
+		else {
+			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: RAM range len=4.`);
+		}
+		const b0 = data[offset];
+		const b1 = data[offset + 1];
+		const b2 = data[offset + 2];
+		const b3 = data[offset + 3];
 		return (b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)) >>> 0;
 	}
 
@@ -337,25 +513,70 @@ export class Memory {
 	}
 
 	public writeMappedU16LE(addr: number, value: number): void {
-		if (!this.isMappedWritableRange(addr, 2)) {
+		if (this.isIoRegionRange(addr, 2)) {
 			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write halfword.`);
 		}
-		this.writeMappedU8(addr, value);
-		this.writeMappedU8(addr + 1, value >>> 8);
+		if (isVramMappedContiguousRange(addr, 2)) {
+			this.vramScratch[0] = value & 0xff;
+			this.vramScratch[1] = (value >>> 8) & 0xff;
+			this.writeVram(addr, this.vramScratch2);
+			return;
+		}
+		if (this.isVramRange(addr, 2)) {
+			this.writeMappedU8(addr, value);
+			this.writeMappedU8(addr + 1, value >>> 8);
+			return;
+		}
+		if (addr >= RAM_BASE && addr + 2 <= RAM_END) {
+			const offset = addr - RAM_BASE;
+			this.ram[offset] = value & 0xff;
+			this.ram[offset + 1] = (value >>> 8) & 0xff;
+			return;
+		}
+		throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write halfword.`);
 	}
 
 	public writeMappedU32LE(addr: number, value: number): void {
-		if (!this.isMappedWritableRange(addr, 4)) {
-			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write word.`);
-		}
-		if (this.isIoAddress(addr)) {
-			this.writeValue(addr, value >>> 0);
+		const slot = this.ioAlignedSlot(addr);
+		if (slot >= 0) {
+			if (this.isLuaReadOnlyIoAddress(addr)) {
+				throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write word.`);
+			}
+			const word = value >>> 0;
+			this.ioSlots[slot] = word;
+			const handler = this.ioWriteHandlers[slot];
+			if (handler !== null) {
+				handler(addr, word);
+			}
 			return;
 		}
-		this.writeMappedU8(addr, value);
-		this.writeMappedU8(addr + 1, value >>> 8);
-		this.writeMappedU8(addr + 2, value >>> 16);
-		this.writeMappedU8(addr + 3, value >>> 24);
+		if (this.isIoRegionRange(addr, 4)) {
+			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write word.`);
+		}
+		if (isVramMappedContiguousRange(addr, 4)) {
+			this.vramScratch[0] = value & 0xff;
+			this.vramScratch[1] = (value >>> 8) & 0xff;
+			this.vramScratch[2] = (value >>> 16) & 0xff;
+			this.vramScratch[3] = (value >>> 24) & 0xff;
+			this.writeVram(addr, this.vramScratch);
+			return;
+		}
+		if (this.isVramRange(addr, 4)) {
+			this.writeMappedU8(addr, value);
+			this.writeMappedU8(addr + 1, value >>> 8);
+			this.writeMappedU8(addr + 2, value >>> 16);
+			this.writeMappedU8(addr + 3, value >>> 24);
+			return;
+		}
+		if (addr >= RAM_BASE && addr + 4 <= RAM_END) {
+			const offset = addr - RAM_BASE;
+			this.ram[offset] = value & 0xff;
+			this.ram[offset + 1] = (value >>> 8) & 0xff;
+			this.ram[offset + 2] = (value >>> 16) & 0xff;
+			this.ram[offset + 3] = (value >>> 24) & 0xff;
+			return;
+		}
+		throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write word.`);
 	}
 
 	public writeMappedF32LE(addr: number, value: number): void {
@@ -410,24 +631,27 @@ export class Memory {
 	}
 
 	private isIoAddress(addr: number): boolean {
-		const index = addr - IO_BASE;
-		return index >= 0 && index < this.ioSlots.length * IO_WORD_SIZE && (index % IO_WORD_SIZE) === 0;
+		return this.ioAlignedSlot(addr) >= 0;
 	}
 
 	private isIoRegionRange(addr: number, length: number): boolean {
-		return addr >= IO_BASE && addr + length <= IO_BASE + this.ioSlots.length * IO_WORD_SIZE;
+		return addr >= IO_BASE && addr + length <= IO_BASE + this.ioByteLength;
 	}
 
 	private ioIndex(addr: number): number {
-		const index = addr - IO_BASE;
-		if (index < 0 || (index % IO_WORD_SIZE) !== 0) {
-			throw new Error(`I/O fault @ ${formatNumberAsHex(addr >>> 0, 8)}: unaligned.`);
-		}
-		const slot = index / IO_WORD_SIZE;
-		if (slot < 0 || slot >= this.ioSlots.length) {
-			throw new Error(`I/O fault @ ${formatNumberAsHex(addr >>> 0, 8)}: out of range.`);
+		const slot = this.ioAlignedSlot(addr);
+		if (slot < 0) {
+			throw new Error(`I/O fault @ ${formatNumberAsHex(addr >>> 0, 8)}: invalid register.`);
 		}
 		return slot;
+	}
+
+	private ioAlignedSlot(addr: number): number {
+		const index = addr - IO_BASE;
+		if (index < 0 || index >= this.ioByteLength || (index & (IO_WORD_SIZE - 1)) !== 0) {
+			return -1;
+		}
+		return index / IO_WORD_SIZE;
 	}
 
 	private resolveReadRegion(addr: number, length: number): { data: Uint8Array; offset: number } {

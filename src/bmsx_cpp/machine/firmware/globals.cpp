@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cmath>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <iomanip>
@@ -1444,7 +1445,15 @@ void Runtime::setupBuiltins() {
 			}
 			text += valueToString(args[i]);
 		}
-		std::cerr << text << std::endl;
+		const bool stampPrint = std::getenv("BMSX_STAMP_LUA_PRINTS") != nullptr
+			|| std::getenv("BMSX_STAMP_MEASURE_LOGS") != nullptr;
+		if (stampPrint) {
+			const auto now = std::chrono::steady_clock::now().time_since_epoch();
+			const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+			std::cerr << "[rtc_ms=" << ms << "] " << text << std::endl;
+		} else {
+			std::cerr << text << std::endl;
+		}
 		(void)out;
 	});
 

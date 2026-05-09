@@ -1,5 +1,6 @@
 import { StringPool, type StringId } from './string_pool';
 import type { Memory } from '../memory/memory';
+import type { IrqController } from '../devices/irq/controller';
 import {
 	addTrackedLuaHeapBytes,
 	collectTrackedLuaHeapBytes as refreshTrackedLuaHeapBytes,
@@ -344,7 +345,6 @@ export type CpuRootValueState = {
 
 export type CpuRuntimeState = {
 	globals: CpuRootValueState[];
-	ioMemory: CpuValueState[];
 	moduleCache: CpuRootValueState[];
 	frames: CpuFrameState[];
 	lastReturnValues: CpuValueState[];
@@ -354,8 +354,17 @@ export type CpuRuntimeState = {
 	lastInstruction: number;
 	instructionBudgetRemaining: number;
 	haltedUntilIrq: boolean;
+	maskableInterruptsEnabled: boolean;
+	maskableInterruptsRestoreEnabled: boolean;
+	nonMaskableInterruptPending: boolean;
 	yieldRequested: boolean;
 };
+
+export const enum AcceptedInterruptKind {
+	None,
+	Maskable,
+	NonMaskable,
+}
 
 export type Program = {
 	code: Uint8Array;
@@ -1408,6 +1417,9 @@ export class CPU {
 	public readonly stringPool: StringPool;
 	private indexKey: StringValue = null;
 	private haltedUntilIrq = false;
+	private maskableInterruptsEnabled = true;
+	private maskableInterruptsRestoreEnabled = true;
+	private nonMaskableInterruptPending = false;
 	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
 	private readonly openUpvalues: OpenUpvalueSlot[] = [];
@@ -1873,6 +1885,9 @@ export class CPU {
 		this.lastReturnValues.length = 0;
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
+		this.maskableInterruptsEnabled = true;
+		this.maskableInterruptsRestoreEnabled = true;
+		this.nonMaskableInterruptPending = false;
 		this.yieldRequested = false;
 		const closure = this.staticClosure(entryProtoIndex);
 		this.pushFrame(closure, args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
@@ -1886,8 +1901,8 @@ export class CPU {
 		if (typeof closure.protoIndex !== 'number') {
 			throw new Error('Attempted to call a non-function value.');
 		}
+		this.requireRunnableForCall();
 		this.lastReturnValues.length = 0;
-		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, returnCount, false, this.program.protos[closure.protoIndex].entryPC);
 	}
@@ -1899,8 +1914,8 @@ export class CPU {
 		if (typeof closure.protoIndex !== 'number') {
 			throw new Error('Attempted to call a non-function value.');
 		}
+		this.requireRunnableForCall();
 		this.lastReturnValues.length = 0;
-		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, 0, true, this.program.protos[closure.protoIndex].entryPC);
 	}
@@ -1921,6 +1936,56 @@ export class CPU {
 
 	public isHaltedUntilIrq(): boolean {
 		return this.haltedUntilIrq;
+	}
+
+	public enableMaskableInterrupts(): void {
+		this.maskableInterruptsEnabled = true;
+		this.maskableInterruptsRestoreEnabled = true;
+	}
+
+	public disableMaskableInterrupts(): void {
+		this.maskableInterruptsEnabled = false;
+		this.maskableInterruptsRestoreEnabled = false;
+	}
+
+	public requestNonMaskableInterrupt(): void {
+		this.nonMaskableInterruptPending = true;
+	}
+
+	public restoreMaskableInterruptsAfterNonMaskableInterrupt(): void {
+		this.maskableInterruptsEnabled = this.maskableInterruptsRestoreEnabled;
+	}
+
+	public canAcceptMaskableInterruptLine(irqController: IrqController): boolean {
+		return this.maskableInterruptsEnabled
+			&& irqController.hasAssertedMaskableInterruptLine();
+	}
+
+	public acceptPendingInterrupt(irqController: IrqController): AcceptedInterruptKind {
+		if (this.nonMaskableInterruptPending) {
+			this.nonMaskableInterruptPending = false;
+			this.maskableInterruptsRestoreEnabled = this.maskableInterruptsEnabled;
+			this.maskableInterruptsEnabled = false;
+			this.clearHaltAfterAcceptedInterrupt();
+			return AcceptedInterruptKind.NonMaskable;
+		}
+		if (this.canAcceptMaskableInterruptLine(irqController)) {
+			this.maskableInterruptsRestoreEnabled = this.maskableInterruptsEnabled;
+			this.clearHaltAfterAcceptedInterrupt();
+			return AcceptedInterruptKind.Maskable;
+		}
+		return AcceptedInterruptKind.None;
+	}
+
+	private requireRunnableForCall(): void {
+		if (this.haltedUntilIrq) {
+			throw new Error('Cannot enter CPU while halted until IRQ.');
+		}
+	}
+
+	private clearHaltAfterAcceptedInterrupt(): void {
+		this.haltedUntilIrq = false;
+		this.yieldRequested = false;
 	}
 
 	public swapExternalReturnSink(sink: Value[] | null): Value[] | null {
@@ -3076,10 +3141,6 @@ export class CPU {
 			}
 			traverseStableValue(['globals', this.stringPool.toString(asStringId(key))], value);
 		});
-		const ioSlots = this.memory.getIoSlots();
-		for (let index = 0; index < ioSlots.length; index += 1) {
-			traverseStableValue(['ioMemory', index], ioSlots[index]);
-		}
 		for (const [name, value] of moduleCache) {
 			traverseStableValue(['moduleCache', name], value);
 		}
@@ -3221,11 +3282,6 @@ export class CPU {
 			lastReturnValues[index] = captureValueState(this.lastReturnValues[index]);
 		}
 
-		const ioMemory = new Array<CpuValueState>(ioSlots.length);
-		for (let index = 0; index < ioSlots.length; index += 1) {
-			ioMemory[index] = captureValueState(ioSlots[index]);
-		}
-
 		const openUpvalues = new Array<number>(this.openUpvalues.length);
 		for (let index = 0; index < this.openUpvalues.length; index += 1) {
 			openUpvalues[index] = ensureObjectId(this.openUpvalues[index].upvalue);
@@ -3233,7 +3289,6 @@ export class CPU {
 
 		return {
 			globals,
-			ioMemory,
 			moduleCache: moduleCacheState,
 			frames,
 			lastReturnValues,
@@ -3243,6 +3298,9 @@ export class CPU {
 			lastInstruction: this.lastInstruction,
 			instructionBudgetRemaining: this.instructionBudgetRemaining,
 			haltedUntilIrq: this.haltedUntilIrq,
+			maskableInterruptsEnabled: this.maskableInterruptsEnabled,
+			maskableInterruptsRestoreEnabled: this.maskableInterruptsRestoreEnabled,
+			nonMaskableInterruptPending: this.nonMaskableInterruptPending,
 			yieldRequested: this.yieldRequested,
 		};
 	}
@@ -3321,10 +3379,6 @@ export class CPU {
 			}
 			traverseStableValue(['globals', this.stringPool.toString(asStringId(key))], value);
 		});
-		const currentIoSlots = this.memory.getIoSlots();
-		for (let index = 0; index < currentIoSlots.length; index += 1) {
-			traverseStableValue(['ioMemory', index], currentIoSlots[index]);
-		}
 		for (const [name, value] of moduleCache) {
 			traverseStableValue(['moduleCache', name], value);
 		}
@@ -3479,7 +3533,6 @@ export class CPU {
 			const entry = state.moduleCache[index];
 			moduleCache.set(entry.name, restoreValue(entry.value));
 		}
-		this.memory.loadIoSlots(state.ioMemory.map(restoreValue));
 
 		for (let index = 0; index < state.lastReturnValues.length; index += 1) {
 			this.lastReturnValues[index] = restoreValue(state.lastReturnValues[index]);
@@ -3488,6 +3541,9 @@ export class CPU {
 		this.lastInstruction = state.lastInstruction;
 		this.instructionBudgetRemaining = state.instructionBudgetRemaining;
 		this.haltedUntilIrq = state.haltedUntilIrq;
+		this.maskableInterruptsEnabled = state.maskableInterruptsEnabled;
+		this.maskableInterruptsRestoreEnabled = state.maskableInterruptsRestoreEnabled;
+		this.nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 		this.yieldRequested = state.yieldRequested;
 		refreshTrackedLuaHeapBytes();
 	}
@@ -3515,10 +3571,7 @@ export class CPU {
 		if (this.stringIndexTable !== null) {
 			pushValue(this.stringIndexTable);
 		}
-		const ioSlots = this.memory.getIoSlots();
-		for (let index = 0; index < ioSlots.length; index += 1) {
-			pushValue(ioSlots[index]);
-		}
+		this.memory.collectRootValues(pushValue);
 		for (let index = 0; index < this.lastReturnValues.length; index += 1) {
 			pushValue(this.lastReturnValues[index]);
 		}

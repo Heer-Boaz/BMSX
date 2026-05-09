@@ -75,5 +75,6 @@ struct MemoryMapConfig {
 
 void configureMemoryMap(const MemoryMapConfig& config);
 bool isVramMappedRange(uint32_t addr, size_t length);
+bool isVramMappedContiguousRange(uint32_t addr, size_t length);
 
 } // namespace bmsx

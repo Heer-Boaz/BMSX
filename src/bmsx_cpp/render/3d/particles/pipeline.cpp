@@ -85,18 +85,18 @@ void bindParticleTextpages(OpenGLES2Backend& backend, const ParticlePipelineStat
 }
 
 void writeParticleVertex(ParticleGLES2Vertex& vertex,
-						 f32 x,
-						 f32 y,
-						 f32 z,
-						 f32 u,
-						 f32 v,
-						 f32 textpageId,
-						 f32 r,
-						 f32 g,
-						 f32 b,
-						 f32 a,
-						 f32 ambientMode,
-						 f32 ambientFactor) {
+							f32 x,
+							f32 y,
+							f32 z,
+							f32 u,
+							f32 v,
+							f32 textpageId,
+							f32 r,
+							f32 g,
+							f32 b,
+							f32 a,
+							f32 ambientMode,
+							f32 ambientFactor) {
 	vertex.x = x;
 	vertex.y = y;
 	vertex.z = z;
@@ -161,7 +161,7 @@ void appendParticleQuad(ParticleGLES2Runtime& runtime,
 }
 
 ParticlePipelineState buildParticlePipelineState(const RenderPassDef::RenderGraphPassContext& ctx,
-												 const FrameSharedState& frameShared) {
+													const FrameSharedState& frameShared) {
 	const HardwareCameraState& camera = resolveActiveHardwareCamera();
 	ParticlePipelineState state;
 	state.width = static_cast<i32>(ctx.view->offscreenCanvasSize.x);

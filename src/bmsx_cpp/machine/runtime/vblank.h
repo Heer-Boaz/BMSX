@@ -25,23 +25,14 @@ public:
 	void abandonTick();
 	void handleBeginTimer(Runtime& runtime);
 	void handleEndTimer(Runtime& runtime);
-	void clearHaltUntilIrq(Runtime& runtime);
-	bool consumeBackQueueClearAfterIrqWake();
-	bool runHaltedUntilIrq(Runtime& runtime, FrameState& frameState);
 
 private:
 	void scheduleCurrentFrameTimers(Runtime& runtime);
 	void setVblankStatus(Runtime& runtime, bool active);
 	void enterVblank(Runtime& runtime);
-	void resetHaltIrqWait();
-	bool tryCompleteTickOnPendingVblankIrq(Runtime& runtime, FrameState& frameState);
-	bool isFrameBoundaryHalt(Runtime& runtime) const;
 	void commitFrameOnVblankEdge(Runtime& runtime);
 	void completeTickIfPending(Runtime& runtime, FrameState& frameState, uint64_t vblankSequence);
 
-	bool m_clearBackQueuesAfterIrqWake = false;
-	uint64_t m_haltIrqSignalSequence = 0;
-	bool m_haltIrqWaitArmed = false;
 	uint64_t m_vblankSequence = 0;
 	uint64_t m_lastCompletedVblankSequence = 0;
 	int m_vblankCycles = 0;

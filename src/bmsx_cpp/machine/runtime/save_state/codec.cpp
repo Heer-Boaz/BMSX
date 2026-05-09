@@ -380,6 +380,19 @@ MemorySaveState decodeMemorySaveState(const BinValue& value, const char* label) 
 	return state;
 }
 
+BinValue encodeIrqControllerState(const IrqControllerState& state) {
+	BinObject object;
+	object["pendingFlags"] = static_cast<f64>(state.pendingFlags);
+	return BinValue(std::move(object));
+}
+
+IrqControllerState decodeIrqControllerState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	IrqControllerState state;
+	state.pendingFlags = requireU32(requireField(object, "pendingFlags", label), "machine.irq.pendingFlags");
+	return state;
+}
+
 BinValue encodeStringPoolStateEntry(const StringPoolStateEntry& state) {
 	BinObject object;
 	object["id"] = static_cast<i64>(state.id);
@@ -502,6 +515,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	BinObject object;
 	object["memory"] = encodeMemorySaveState(state.memory);
+	object["irq"] = encodeIrqControllerState(state.irq);
 	object["stringPool"] = encodeStringPoolState(state.stringPool);
 	object["input"] = encodeInputControllerState(state.input);
 	object["vdp"] = encodeVdpSaveState(state.vdp);
@@ -512,6 +526,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 	const BinObject& object = requireObject(value, label);
 	MachineSaveState state;
 	state.memory = decodeMemorySaveState(requireField(object, "memory", label), "machineState.machine.memory");
+	state.irq = decodeIrqControllerState(requireField(object, "irq", label), "machineState.machine.irq");
 	state.stringPool = decodeStringPoolState(requireField(object, "stringPool", label), "machineState.machine.stringPool");
 	state.input = decodeInputControllerState(requireField(object, "input", label), "machineState.machine.input");
 	state.vdp = decodeVdpSaveState(requireField(object, "vdp", label), "machineState.machine.vdp");
@@ -766,9 +781,6 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["globals"] = encodeVector(state.globals, [](const CpuRootValueState& value) {
 		return encodeCpuRootValueState(value);
 	});
-	object["ioMemory"] = encodeVector(state.ioMemory, [](const CpuValueState& value) {
-		return encodeCpuValueState(value);
-	});
 	object["moduleCache"] = encodeVector(state.moduleCache, [](const CpuRootValueState& value) {
 		return encodeCpuRootValueState(value);
 	});
@@ -788,6 +800,9 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["lastInstruction"] = static_cast<i64>(state.lastInstruction);
 	object["instructionBudgetRemaining"] = static_cast<i64>(state.instructionBudgetRemaining);
 	object["haltedUntilIrq"] = state.haltedUntilIrq;
+	object["maskableInterruptsEnabled"] = state.maskableInterruptsEnabled;
+	object["maskableInterruptsRestoreEnabled"] = state.maskableInterruptsRestoreEnabled;
+	object["nonMaskableInterruptPending"] = state.nonMaskableInterruptPending;
 	object["yieldRequested"] = state.yieldRequested;
 	return BinValue(std::move(object));
 }
@@ -798,10 +813,6 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.globals = decodeVector<CpuRootValueState>(requireField(object, "globals", label), "cpuState.globals",
 		[](const BinValue& entryValue, size_t) {
 			return decodeCpuRootValueState(entryValue, "cpuState.globals[]");
-		});
-	state.ioMemory = decodeVector<CpuValueState>(requireField(object, "ioMemory", label), "cpuState.ioMemory",
-		[](const BinValue& entryValue, size_t) {
-			return decodeCpuValueState(entryValue, "cpuState.ioMemory[]");
 		});
 	state.moduleCache = decodeVector<CpuRootValueState>(requireField(object, "moduleCache", label), "cpuState.moduleCache",
 		[](const BinValue& entryValue, size_t) {
@@ -827,6 +838,9 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.lastInstruction = requireU32(requireField(object, "lastInstruction", label), "cpuState.lastInstruction");
 	state.instructionBudgetRemaining = requireI32(requireField(object, "instructionBudgetRemaining", label), "cpuState.instructionBudgetRemaining");
 	state.haltedUntilIrq = requireBool(requireField(object, "haltedUntilIrq", label), "cpuState.haltedUntilIrq");
+	state.maskableInterruptsEnabled = requireBool(requireField(object, "maskableInterruptsEnabled", label), "cpuState.maskableInterruptsEnabled");
+	state.maskableInterruptsRestoreEnabled = requireBool(requireField(object, "maskableInterruptsRestoreEnabled", label), "cpuState.maskableInterruptsRestoreEnabled");
+	state.nonMaskableInterruptPending = requireBool(requireField(object, "nonMaskableInterruptPending", label), "cpuState.nonMaskableInterruptPending");
 	state.yieldRequested = requireBool(requireField(object, "yieldRequested", label), "cpuState.yieldRequested");
 	return state;
 }

@@ -26,6 +26,7 @@ namespace bmsx {
 
 class CPU;
 class GcHeap;
+class IrqController;
 class Memory;
 
 struct Table;
@@ -683,7 +684,6 @@ struct CpuRootValueState {
 
 struct CpuRuntimeState {
 	std::vector<CpuRootValueState> globals;
-	std::vector<CpuValueState> ioMemory;
 	std::vector<CpuRootValueState> moduleCache;
 	std::vector<CpuFrameState> frames;
 	std::vector<CpuValueState> lastReturnValues;
@@ -693,7 +693,16 @@ struct CpuRuntimeState {
 	uint32_t lastInstruction = 0;
 	int instructionBudgetRemaining = 0;
 	bool haltedUntilIrq = false;
+	bool maskableInterruptsEnabled = true;
+	bool maskableInterruptsRestoreEnabled = true;
+	bool nonMaskableInterruptPending = false;
 	bool yieldRequested = false;
+};
+
+enum class AcceptedInterruptKind : uint8_t {
+	None = 0,
+	Maskable = 1,
+	NonMaskable = 2,
 };
 
 class Table : public GCObject {
@@ -858,6 +867,12 @@ public:
 	void haltUntilIrq();
 	void clearHaltUntilIrq();
 	bool isHaltedUntilIrq() const { return m_haltedUntilIrq; }
+	void enableMaskableInterrupts();
+	void disableMaskableInterrupts();
+	void requestNonMaskableInterrupt();
+	void restoreMaskableInterruptsAfterNonMaskableInterrupt();
+	bool canAcceptMaskableInterruptLine(const IrqController& irqController) const;
+	AcceptedInterruptKind acceptPendingInterrupt(const IrqController& irqController);
 	RunResult run(int instructionBudget);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void unwindToDepth(int targetDepth);
@@ -935,6 +950,8 @@ private:
 	void releaseNativeReturnScratch(NativeResults& out);
 
 	void decodeProgram();
+	void requireRunnableForCall() const;
+	void clearHaltAfterAcceptedInterrupt();
 	void markRoots(GcHeap& heap);
 
 	Program* m_program = nullptr;
@@ -942,6 +959,9 @@ private:
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	std::vector<OpenUpvalueSlot> m_openUpvalues;
 	bool m_haltedUntilIrq = false;
+	bool m_maskableInterruptsEnabled = true;
+	bool m_maskableInterruptsRestoreEnabled = true;
+	bool m_nonMaskableInterruptPending = false;
 	bool m_yieldRequested = false;
 	Memory& m_memory;
 	StringPool m_stringPool;

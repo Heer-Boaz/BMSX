@@ -5,44 +5,50 @@ namespace bmsx {
 
 IrqController::IrqController(Memory& memory)
 	: m_memory(memory) {
+	m_memory.mapIoRead(IO_IRQ_FLAGS, this, &IrqController::onFlagsReadThunk);
 	m_memory.mapIoWrite(IO_IRQ_ACK, this, &IrqController::onAckWriteThunk);
 }
 
 void IrqController::reset() {
-	m_signalSequence = 0;
-	m_memory.writeIoValue(IO_IRQ_FLAGS, valueNumber(0.0));
+	m_pendingFlags = 0;
 	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
 }
 
 void IrqController::postLoad() {
-	m_signalSequence = 0;
 	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
 }
 
-uint32_t IrqController::pendingFlags() const {
-	return m_memory.readIoU32(IO_IRQ_FLAGS);
+IrqControllerState IrqController::captureState() const {
+	return IrqControllerState{m_pendingFlags};
+}
+
+void IrqController::restoreState(const IrqControllerState& state) {
+	m_pendingFlags = state.pendingFlags;
+	postLoad();
 }
 
 void IrqController::raise(uint32_t mask) {
-	const uint32_t current = m_memory.readIoU32(IO_IRQ_FLAGS);
-	const uint32_t next = current | mask;
-	m_memory.writeIoValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(next)));
-	if (next != current) {
-		m_signalSequence += 1;
+	const uint32_t next = m_pendingFlags | mask;
+	if (next != m_pendingFlags) {
+		m_pendingFlags = next;
 	}
 }
 
-void IrqController::acknowledge(uint32_t mask) {
-	if (mask != 0u) {
-		const uint32_t flags = m_memory.readIoU32(IO_IRQ_FLAGS) & ~mask;
-		m_memory.writeIoValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(flags)));
-	}
-	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
+Value IrqController::onFlagsReadThunk(void* context, uint32_t) {
+	const auto* controller = static_cast<IrqController*>(context);
+	return valueNumber(static_cast<double>(controller->m_pendingFlags));
 }
 
-void IrqController::onAckWriteThunk(void* context, uint32_t, Value) {
+void IrqController::onAckWriteThunk(void* context, uint32_t, Value value) {
 	auto* controller = static_cast<IrqController*>(context);
-	controller->acknowledge(controller->m_memory.readIoU32(IO_IRQ_ACK));
+	const uint32_t ack = toU32(value);
+	if (ack != 0u) {
+		const uint32_t next = controller->m_pendingFlags & ~ack;
+		if (next != controller->m_pendingFlags) {
+			controller->m_pendingFlags = next;
+		}
+	}
+	controller->m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
 }
 
 } // namespace bmsx

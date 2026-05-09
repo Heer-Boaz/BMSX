@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 9;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 11;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
@@ -33,7 +33,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'index',
 	'input',
 	'instructionBudgetRemaining',
-	'ioMemory',
+	'irq',
 	'key',
 	'kind',
 	'lastInstruction',
@@ -68,6 +68,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'path',
 	'pc',
 	'pendingEntryCall',
+	'pendingFlags',
 	'posx',
 	'posy',
 	'posz',
@@ -113,6 +114,9 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'range',
 	'vy',
 	'scale',
+	'maskableInterruptsEnabled',
+	'maskableInterruptsRestoreEnabled',
+	'nonMaskableInterruptPending',
 	'impact',
 	'impact_t',
 	'bias_px',

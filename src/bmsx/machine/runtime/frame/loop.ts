@@ -1,7 +1,6 @@
 import { FrameState, Runtime } from '../runtime';
 import { RunResult } from '../../cpu/cpu';
 import { clearHardwareLighting } from '../../../render/shared/hardware/lighting';
-import { clearBackQueues } from '../../../render/shared/queues';
 
 export class FrameLoopState {
 	public currentTimeMs = 0;
@@ -109,7 +108,7 @@ export class FrameLoopState {
 	private runUpdatePhase(state: FrameState): void {
 		const runtime = this.runtime;
 		const cpu = runtime.machine.cpu;
-		const vblank = runtime.vblank;
+		const cpuExecution = runtime.cpuExecution;
 		if (!runtime.cartEntryAvailable) {
 			return;
 		}
@@ -125,18 +124,15 @@ export class FrameLoopState {
 		}
 		try {
 			while (true) {
-				if (cpu.isHaltedUntilIrq() && vblank.runHaltedUntilIrq(state)) {
+				if (cpu.isHaltedUntilIrq() && cpuExecution.runHaltedUntilIrq(state)) {
 					return;
-				}
-				if (vblank.consumeBackQueueClearAfterIrqWake()) {
-					clearBackQueues();
 				}
 				if (runtime.pendingCall !== 'entry') {
 					return;
 				}
 				const result = runtime.cpuExecution.runWithBudget(state);
 				if (cpu.isHaltedUntilIrq()) {
-					if (vblank.runHaltedUntilIrq(state)) {
+					if (cpuExecution.runHaltedUntilIrq(state)) {
 						return;
 					}
 					continue;
@@ -148,7 +144,7 @@ export class FrameLoopState {
 			}
 		} catch (error) {
 			state.luaFaulted = true;
-			runtime.vblank.clearHaltUntilIrq();
+			runtime.cpuExecution.clearHaltUntilIrq();
 			runtime.pendingCall = null;
 			throw error;
 		}

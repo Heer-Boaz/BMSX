@@ -152,14 +152,14 @@ static const int64_t kHzScale = BMSX_HOST_HZ_SCALE;
 static char g_system_dir[1024] = "";
 static char g_save_dir[1024] = "";
 static char g_opt_render_backend[16] = "software";
-static char g_opt_crt_postprocessing[8] = "off";
+static char g_opt_crt_postprocessing[8] = "on";
 static char g_opt_postprocess_detail[8] = "off";
-static char g_opt_crt_noise[8] = "off";
-static char g_opt_crt_color_bleed[8] = "off";
-static char g_opt_crt_scanlines[8] = "off";
-static char g_opt_crt_blur[8] = "off";
-static char g_opt_crt_glow[8] = "off";
-static char g_opt_crt_fringing[8] = "off";
+static char g_opt_crt_noise[8] = "on";
+static char g_opt_crt_color_bleed[8] = "on";
+static char g_opt_crt_scanlines[8] = "on";
+static char g_opt_crt_blur[8] = "on";
+static char g_opt_crt_glow[8] = "on";
+static char g_opt_crt_fringing[8] = "on";
 static char g_opt_crt_aperture[8] = "off";
 static char g_opt_dither[16] = "off";
 static char g_opt_host_show_usage_gizmo[8] = "off";
@@ -1593,7 +1593,7 @@ static bool egl_init(void) {
 		fprintf(stderr, "[libretro-host] eglMakeCurrent failed\n");
 		return false;
 	}
-	eglSwapInterval_ptr(g_egl_display, 1);
+	eglSwapInterval_ptr(g_egl_display, 0);
 	return true;
 }
 
@@ -1749,9 +1749,9 @@ static void sdl_init(void) {
 		if (SDL_GL_MakeCurrent(g_sdl_window, g_sdl_gl_context) != 0) {
 			die("SDL_GL_MakeCurrent failed: %s", SDL_GetError());
 		}
-		SDL_GL_SetSwapInterval(1);
+		SDL_GL_SetSwapInterval(0);
 	} else {
-		g_sdl_renderer = SDL_CreateRenderer(g_sdl_window, -1, SDL_RENDERER_PRESENTVSYNC);
+		g_sdl_renderer = SDL_CreateRenderer(g_sdl_window, -1, 0);
 		if (!g_sdl_renderer) {
 			die("SDL_CreateRenderer failed: %s", SDL_GetError());
 		}
@@ -3893,7 +3893,11 @@ int main(int argc, char** argv) {
 			next_frame_ns = now_ns;
 		} else {
 			const uint64_t scheduled_next_ns = next_frame_ns + g_frame_ns;
-			next_frame_ns = now_ns > scheduled_next_ns ? now_ns : scheduled_next_ns;
+			if (now_ns > scheduled_next_ns && now_ns - scheduled_next_ns > kFrameScheduleResyncNs) {
+				next_frame_ns = now_ns;
+			} else {
+				next_frame_ns = scheduled_next_ns;
+			}
 		}
 	}
 

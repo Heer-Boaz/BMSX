@@ -98,17 +98,30 @@ export function callClosureInto(runtime: Runtime, fn: Closure, args: Value[], ou
 	const previousBudget = cpu.instructionBudgetRemaining;
 	const budgetSentinel = Number.MAX_SAFE_INTEGER;
 	const previousSink = cpu.swapExternalReturnSink(out);
+	let spentBudget = 0;
+	let activeBudget = 0;
 	out.length = 0;
 	try {
 		cpu.callExternal(fn, args);
-		cpu.runUntilDepth(depth, budgetSentinel);
+		activeBudget = budgetSentinel;
+		const result = cpu.runUntilDepth(depth, budgetSentinel);
+		spentBudget += activeBudget - cpu.instructionBudgetRemaining;
+		activeBudget = 0;
+		if (cpu.getFrameDepth() > depth && cpu.isHaltedUntilIrq()) {
+			throw new Error('Lua host call halted before returning.');
+		}
+		if (cpu.getFrameDepth() > depth && result === RunResult.Yielded) {
+			throw new Error('Lua host call exceeded external call budget before returning.');
+		}
 	} catch (error) {
 		cpu.unwindToDepth(depth);
 		throw error;
 	} finally {
+		if (activeBudget > 0) {
+			spentBudget += activeBudget - cpu.instructionBudgetRemaining;
+		}
 		cpu.swapExternalReturnSink(previousSink);
-		const remaining = cpu.instructionBudgetRemaining;
-		cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+		cpu.instructionBudgetRemaining = previousBudget - spentBudget;
 	}
 }
 
@@ -119,6 +132,7 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 	const previousBudget = cpu.instructionBudgetRemaining;
 	const budgetSentinel = Number.MAX_SAFE_INTEGER;
 	const previousSink = cpu.swapExternalReturnSink(out);
+	let spentBudget = 0;
 	out.length = 0;
 	try {
 		cpu.callExternal(fn, args);
@@ -138,18 +152,24 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 				}
 			}
 			scheduler.beginCpuSlice(sliceBudget);
-			const result = cpu.runUntilDepth(depth, sliceBudget);
-			scheduler.endCpuSlice();
-			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
-			if (consumed > 0) {
-				remaining -= consumed;
-				advanceRuntimeTime(runtime, consumed);
+			let result = RunResult.Yielded;
+			let consumed = 0;
+			try {
+				result = cpu.runUntilDepth(depth, sliceBudget);
+			} finally {
+				scheduler.endCpuSlice();
+				consumed = sliceBudget - cpu.instructionBudgetRemaining;
+				if (consumed > 0) {
+					remaining -= consumed;
+					spentBudget += consumed;
+					advanceRuntimeTime(runtime, consumed);
+				}
 			}
 			if (cpu.getFrameDepth() <= depth) {
 				break;
 			}
 			if (result === RunResult.Halted) {
-				break;
+				throw new Error('Lua host call halted before returning.');
 			}
 			if (consumed <= 0) {
 				runDueRuntimeTimers(runtime);
@@ -160,8 +180,7 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 		throw error;
 	} finally {
 		cpu.swapExternalReturnSink(previousSink);
-		const remaining = cpu.instructionBudgetRemaining;
-		cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+		cpu.instructionBudgetRemaining = previousBudget - spentBudget;
 	}
 }
 // end repeated-sequence-acceptable

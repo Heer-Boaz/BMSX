@@ -28,13 +28,14 @@ struct MachineTiming {
 };
 
 struct MachineState {
-	MemoryState memory;
+	IrqControllerState irq;
 	InputControllerState input;
 	VdpState vdp;
 };
 
 struct MachineSaveState {
 	MemorySaveState memory;
+	IrqControllerState irq;
 	StringPoolState stringPool;
 	InputControllerState input;
 	VdpSaveState vdp;

@@ -8,15 +8,15 @@
 namespace bmsx {
 
 CartBootState::CartBootState(Runtime& runtime)
-        : m_runtime(runtime) {
+		: m_runtime(runtime) {
 }
 
 void CartBootState::reset() {
-        m_pending = false;
+		m_pending = false;
 }
 
 void CartBootState::request() {
-        m_pending = true;
+		m_pending = true;
 }
 
 bool CartBootState::pollSystemBootRequest() {
@@ -44,7 +44,7 @@ bool CartBootState::processPending() {
 	}
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
 		runtime.m_pendingCall = Runtime::PendingCall::None;
-		runtime.vblank.clearHaltUntilIrq(runtime);
+		runtime.cpuExecution.clearHaltUntilIrq(runtime);
 	}
 	runtime.frameScheduler.clearQueuedTime();
 	m_pending = false;

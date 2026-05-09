@@ -782,7 +782,16 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 	g_present = PresentGLES2State{};
 }
 
-static void renderPresentQuadGLES2(OpenGLES2Backend* backend, i32 width, i32 height, TextureHandle colorTex, bool bindBackbuffer, bool flipTexY, bool outputSrgb) {
+static void renderPresentQuadGLES2(
+	OpenGLES2Backend* backend,
+	i32 width,
+	i32 height,
+	TextureHandle colorTex,
+	bool bindBackbuffer,
+	bool flipTexY,
+	bool outputSrgb,
+	bool blendAlpha
+) {
 	glUseProgram(g_present.program);
 	glUniform1i(g_present.uniform_texture, kTexUnitPostProcess);
 	glUniform1i(g_present.uniform_output_srgb, outputSrgb ? 1 : 0);
@@ -821,7 +830,12 @@ static void renderPresentQuadGLES2(OpenGLES2Backend* backend, i32 width, i32 hei
 
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
-	glDisable(GL_BLEND);
+	if (blendAlpha) {
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	} else {
+		glDisable(GL_BLEND);
+	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, g_present.vbo_pos);
 	glEnableVertexAttribArray(static_cast<GLuint>(g_present.attrib_pos));
@@ -842,12 +856,12 @@ static void renderPresentQuadGLES2(OpenGLES2Backend* backend, i32 width, i32 hei
 
 void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state) {
 	(void)context;
-	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, true, true, true);
+	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, true, true, true, false);
 }
 
 void renderPresentToCurrentTargetGLES2(OpenGLES2Backend* backend, GameView* context, const Framebuffer2DPipelineState& state) {
 	(void)context;
-	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, false, false, false);
+	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, false, false, false, true);
 }
 
 void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, const DeviceQuantizePipelineState& state) {

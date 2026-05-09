@@ -1,6 +1,7 @@
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey, VERSION as BINENC_VERSION } from '../../../common/serializer/binencoder';
 import type { MachineSaveState } from '../../machine';
 import type { CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeRefSegment, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
+import type { IrqControllerState } from '../../devices/irq/controller';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/controller';
 import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/vdp';
@@ -244,6 +245,19 @@ function decodeMemorySaveState(value: unknown, label: string): MemorySaveState {
 	};
 }
 
+function encodeIrqControllerState(state: IrqControllerState): IrqControllerState {
+	return {
+		pendingFlags: state.pendingFlags >>> 0,
+	};
+}
+
+function decodeIrqControllerState(value: unknown, label: string): IrqControllerState {
+	const object = requireObject(value, label);
+	return {
+		pendingFlags: requireObjectKey(object, 'pendingFlags', label, 'machine.irq.pendingFlags') as number,
+	};
+}
+
 function encodeStringPoolStateEntry(state: StringPoolStateEntry): StringPoolStateEntry {
 	return {
 		id: state.id,
@@ -359,6 +373,7 @@ function decodeVdpSaveState(value: unknown, label: string): VdpSaveState {
 function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 	return {
 		memory: encodeMemorySaveState(state.memory),
+		irq: encodeIrqControllerState(state.irq),
 		stringPool: encodeStringPoolState(state.stringPool),
 		input: encodeInputControllerState(state.input),
 		vdp: encodeVdpSaveState(state.vdp),
@@ -369,6 +384,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 	const object = requireObject(value, label);
 	return {
 		memory: decodeMemorySaveState(requireObjectKey(object, 'memory', label, 'machineState.machine.memory'), 'machineState.machine.memory'),
+		irq: decodeIrqControllerState(requireObjectKey(object, 'irq', label, 'machineState.machine.irq'), 'machineState.machine.irq'),
 		stringPool: decodeStringPoolState(requireObjectKey(object, 'stringPool', label, 'machineState.machine.stringPool'), 'machineState.machine.stringPool'),
 		input: decodeInputControllerState(requireObjectKey(object, 'input', label, 'machineState.machine.input'), 'machineState.machine.input'),
 		vdp: decodeVdpSaveState(requireObjectKey(object, 'vdp', label, 'machineState.machine.vdp'), 'machineState.machine.vdp'),
@@ -581,7 +597,6 @@ function decodeCpuRootValueState(value: unknown, label: string): CpuRootValueSta
 function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 	return {
 		globals: encodeVector(state.globals, encodeCpuRootValueState),
-		ioMemory: encodeVector(state.ioMemory, encodeCpuValueState),
 		moduleCache: encodeVector(state.moduleCache, encodeCpuRootValueState),
 		frames: encodeVector(state.frames, encodeCpuFrameState),
 		lastReturnValues: encodeVector(state.lastReturnValues, encodeCpuValueState),
@@ -591,6 +606,9 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 		lastInstruction: state.lastInstruction,
 		instructionBudgetRemaining: state.instructionBudgetRemaining,
 		haltedUntilIrq: state.haltedUntilIrq,
+		maskableInterruptsEnabled: state.maskableInterruptsEnabled,
+		maskableInterruptsRestoreEnabled: state.maskableInterruptsRestoreEnabled,
+		nonMaskableInterruptPending: state.nonMaskableInterruptPending,
 		yieldRequested: state.yieldRequested,
 	};
 }
@@ -602,11 +620,6 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 			requireObjectKey(object, 'globals', label, 'cpuState.globals'),
 			'cpuState.globals',
 			(entry) => decodeCpuRootValueState(entry, 'cpuState.globals[]'),
-		),
-		ioMemory: decodeVector(
-			requireObjectKey(object, 'ioMemory', label, 'cpuState.ioMemory'),
-			'cpuState.ioMemory',
-			(entry) => decodeCpuValueState(entry, 'cpuState.ioMemory[]'),
 		),
 		moduleCache: decodeVector(
 			requireObjectKey(object, 'moduleCache', label, 'cpuState.moduleCache'),
@@ -637,6 +650,9 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 		lastInstruction: requireObjectKey(object, 'lastInstruction', label, 'cpuState.lastInstruction') as number,
 		instructionBudgetRemaining: requireObjectKey(object, 'instructionBudgetRemaining', label, 'cpuState.instructionBudgetRemaining') as number,
 		haltedUntilIrq: requireObjectKey(object, 'haltedUntilIrq', label, 'cpuState.haltedUntilIrq') as boolean,
+		maskableInterruptsEnabled: requireObjectKey(object, 'maskableInterruptsEnabled', label, 'cpuState.maskableInterruptsEnabled') as boolean,
+		maskableInterruptsRestoreEnabled: requireObjectKey(object, 'maskableInterruptsRestoreEnabled', label, 'cpuState.maskableInterruptsRestoreEnabled') as boolean,
+		nonMaskableInterruptPending: requireObjectKey(object, 'nonMaskableInterruptPending', label, 'cpuState.nonMaskableInterruptPending') as boolean,
 		yieldRequested: requireObjectKey(object, 'yieldRequested', label, 'cpuState.yieldRequested') as boolean,
 	};
 }

@@ -228,10 +228,10 @@ export const bootrom = {
 				// };
 			}
 
-			fetchRom()
-				.then((response_array: Uint8Array) => {
-					if (response_array) {
-						const split = splitRomLabel(response_array);
+				fetchRom()
+					.then((response_array: Uint8Array) => {
+						if (response_array) {
+							const split = splitRomLabel(response_array);
 						if (split.romlabel) {
 							romlabel_bloburl = getImageUrlFromBuffer(split.romlabel);
 							replaceBMSXImgWithRomLabel();
@@ -241,15 +241,19 @@ export const bootrom = {
 					} else {
 						bootrom.cartridge = null;
 					}
-					return awaitBootComplete().then(() => {
-						replaceBMSXImgWithRomLabel();
-					});
-				})
-				.then(() => {
-					setLoaderText('Press any key, button or touch screen to start...');
-					return awaitPressedAnyKeyPromise();
-				})
-				.then(() => resolve(loadedRomBlob))
+						return awaitBootComplete().then(() => {
+							replaceBMSXImgWithRomLabel();
+						});
+					})
+					.then(() => {
+						if (bootrom.debug) {
+							startAudioOnIos(bootrom);
+							return;
+						}
+						setLoaderText('Press any key, button or touch screen to start...');
+						return awaitPressedAnyKeyPromise();
+					})
+					.then(() => resolve(loadedRomBlob))
 				.catch(err => {
 					reject(err);
 				});

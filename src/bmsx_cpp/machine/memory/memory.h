@@ -13,10 +13,6 @@ namespace bmsx {
 
 class AudioController;
 
-struct MemoryState {
-	std::vector<Value> ioMemory;
-};
-
 struct MemorySaveState {
 	std::vector<u8> ram;
 };
@@ -87,14 +83,10 @@ public:
 
 	std::vector<u8> dumpMutableRam() const;
 	void restoreMutableRam(const u8* data, size_t size);
-	MemoryState captureState() const;
-	void restoreState(const MemoryState& state);
 	MemorySaveState captureSaveState() const;
 	void restoreSaveState(const MemorySaveState& state);
-
-	const std::vector<Value>& getIoSlots() const { return m_ioSlots; }
-	void loadIoSlots(const std::vector<Value>& slots);
 	void clearIoSlots();
+	void markRoots(GcHeap& heap) const;
 
 private:
 	friend class AudioController;
@@ -128,6 +120,13 @@ private:
 	bool isIoAddress(uint32_t addr) const;
 	bool isIoRegionRange(uint32_t addr, size_t length) const;
 	size_t ioIndex(uint32_t addr) const;
+	int ioAlignedSlot(uint32_t addr) const {
+		const uint32_t delta = addr - IO_BASE;
+		if (delta >= IO_SLOT_COUNT * IO_WORD_SIZE || (delta & (IO_WORD_SIZE - 1u)) != 0u) {
+			return -1;
+		}
+		return static_cast<int>(delta / IO_WORD_SIZE);
+	}
 	size_t ramOffset(uint32_t addr, size_t length) const;
 	bool isProgramRomRange(uint32_t addr, size_t length) const;
 	bool isProgramCodeReadableRange(uint32_t addr, size_t length) const;

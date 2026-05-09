@@ -114,7 +114,7 @@ void ConsoleCore::shutdown() {
 	}
 
 	stop();
-        unloadRom();
+		unloadRom();
 
 	m_texture_manager.reset();
 
@@ -304,13 +304,13 @@ void ConsoleCore::configureViewForMachine(const MachineManifest& manifest) {
 }
 
 bool ConsoleCore::loadSystemRomInternal(const u8* data, size_t size) {
-        if (m_texture_manager) {
-                m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
-        }
-        auto plan = m_rom_boot_manager->buildBootPlan(data, size, nullptr, 0);
-        if (!plan) return false;
-        m_system_rom = std::move(plan->systemLayer);
-        m_system_rom_loaded = true;
+		if (m_texture_manager) {
+				m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
+		}
+		auto plan = m_rom_boot_manager->buildBootPlan(data, size, nullptr, 0);
+		if (!plan) return false;
+		m_system_rom = std::move(plan->systemLayer);
+		m_system_rom_loaded = true;
 	machine_manifest = &m_system_rom.machine;
 	m_default_font = std::make_unique<Font>();
 	m_view->default_font = m_default_font.get();

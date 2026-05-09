@@ -77,16 +77,15 @@ VDP* Machine::runDeviceService(uint8_t deviceKind) {
 
 MachineState Machine::captureState() const {
 	MachineState state;
-	state.memory = memory.captureState();
+	state.irq = irqController.captureState();
 	state.input = inputController.captureState();
 	state.vdp = vdp.captureState();
 	return state;
 }
 
 void Machine::restoreState(const MachineState& state) {
-	memory.restoreState(state.memory);
 	geometryController.postLoad();
-	irqController.postLoad();
+	irqController.restoreState(state.irq);
 	inputController.restoreState(state.input);
 	vdp.restoreState(state.vdp);
 }
@@ -94,6 +93,7 @@ void Machine::restoreState(const MachineState& state) {
 MachineSaveState Machine::captureSaveState() const {
 	MachineSaveState state;
 	state.memory = memory.captureSaveState();
+	state.irq = irqController.captureState();
 	state.stringPool = cpu.stringPool().captureState();
 	state.input = inputController.captureState();
 	state.vdp = vdp.captureSaveState();
@@ -104,7 +104,7 @@ void Machine::restoreSaveState(const MachineSaveState& state) {
 	memory.restoreSaveState(state.memory);
 	cpu.stringPool().restoreState(state.stringPool);
 	geometryController.postLoad();
-	irqController.postLoad();
+	irqController.restoreState(state.irq);
 	inputController.restoreState(state.input);
 	vdp.restoreSaveState(state.vdp);
 }

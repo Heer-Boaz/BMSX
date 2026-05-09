@@ -43,15 +43,36 @@ bool isVramMappedRange(uint32_t addr, size_t length) {
 	if (length == 0) {
 		return false;
 	}
-	const uint32_t end = addr + static_cast<uint32_t>(length);
+	const size_t start = static_cast<size_t>(addr);
+	const size_t end = start + length;
 	const auto overlaps = [addr, end](uint32_t base, uint32_t size) -> bool {
-		return addr < base + size && end > base;
+		const size_t regionStart = static_cast<size_t>(base);
+		const size_t regionEnd = regionStart + static_cast<size_t>(size);
+		return static_cast<size_t>(addr) < regionEnd && end > regionStart;
 	};
 	return overlaps(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
 		|| overlaps(VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
 		|| overlaps(VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
 		|| overlaps(VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
 		|| overlaps(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
+}
+
+bool isVramMappedContiguousRange(uint32_t addr, size_t length) {
+	if (length == 0) {
+		return false;
+	}
+	const size_t start = static_cast<size_t>(addr);
+	const size_t end = start + length;
+	const auto contained = [start, end](uint32_t base, uint32_t size) -> bool {
+		const size_t regionStart = static_cast<size_t>(base);
+		const size_t regionEnd = regionStart + static_cast<size_t>(size);
+		return start >= regionStart && end <= regionEnd;
+	};
+	return contained(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
+		|| contained(VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
+		|| contained(VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
+		|| contained(VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
+		|| contained(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
 struct MemoryMapInitializer {

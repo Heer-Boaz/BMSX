@@ -82,7 +82,6 @@ class Runtime {
 public:
 	friend class FrameLoopState;
 	friend class FrameSchedulerState;
-	friend class VblankState;
 	friend class CartBootState;
 	friend RuntimeSaveState captureRuntimeSaveState(Runtime& runtime);
 	friend void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state);

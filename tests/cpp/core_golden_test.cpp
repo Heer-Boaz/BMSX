@@ -1,7 +1,9 @@
 #include "machine/bus/io.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/instruction_format.h"
 #include "machine/cpu/opcode_info.h"
+#include "machine/devices/irq/controller.h"
 #include "machine/firmware/builtin_descriptors.h"
 #include "render/3d/camera.h"
 #include "render/3d/light.h"
@@ -16,10 +18,17 @@
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
 #include "machine/cpu/string_pool.h"
+#include "machine/runtime/runtime.h"
+#include "machine/runtime/save_state/codec.h"
+#include "machine/runtime/timing/constants.h"
 #include "machine/runtime/timing/state.h"
 #include "machine/scheduler/budget.h"
 #include "machine/common/hash.h"
+#include "audio/soundmaster.h"
+#include "platform/platform.h"
+#include "render/gameview.h"
 #include "render/texture_manager.h"
+#include "rompack/format.h"
 
 #include <algorithm>
 #include <array>
@@ -40,6 +49,42 @@ void require(bool condition, const char* message) {
 		throw std::runtime_error(message);
 	}
 }
+
+template <typename Fn>
+bool throwsRuntime(Fn&& fn) {
+	try {
+		fn();
+		return false;
+	} catch (const std::runtime_error&) {
+		return true;
+	}
+}
+
+class RecordingVramWriter final : public bmsx::Memory::VramWriter {
+public:
+	struct Read {
+		uint32_t addr = 0;
+		size_t length = 0;
+	};
+	struct Write {
+		uint32_t addr = 0;
+		std::vector<bmsx::u8> bytes;
+	};
+
+	mutable std::vector<Read> reads;
+	std::vector<Write> writes;
+
+	void writeVram(uint32_t addr, const bmsx::u8* data, size_t length) override {
+		writes.push_back(Write{addr, std::vector<bmsx::u8>(data, data + length)});
+	}
+
+	void readVram(uint32_t addr, bmsx::u8* out, size_t length) const override {
+		reads.push_back(Read{addr, length});
+		for (size_t index = 0; index < length; ++index) {
+			out[index] = static_cast<bmsx::u8>(index + 1u);
+		}
+	}
+};
 
 void writeLe32(std::vector<bmsx::u8>& bytes, bmsx::u32 value) {
 	bytes.push_back(static_cast<bmsx::u8>(value & 0xffu));
@@ -63,14 +108,135 @@ void writeVarUint(std::vector<bmsx::u8>& bytes, bmsx::u32 value) {
 	bytes.push_back(static_cast<bmsx::u8>(value));
 }
 
+void configureInterruptTestProgram(bmsx::Program& program) {
+	program.constPoolStringPool = &program.stringPool;
+	program.code.resize(2u * bmsx::INSTRUCTION_BYTES);
+	bmsx::writeInstruction(program.code, 0, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
+	bmsx::writeInstruction(program.code, 1, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+
+	bmsx::Proto haltProto;
+	haltProto.entryPC = 0;
+	haltProto.maxStack = 1;
+	program.protos.push_back(haltProto);
+
+	bmsx::Proto returnProto;
+	returnProto.entryPC = bmsx::INSTRUCTION_BYTES;
+	returnProto.maxStack = 1;
+	program.protos.push_back(returnProto);
+}
+
+void configureThrowingNativeProgram(bmsx::Program& program, bmsx::Value nativeFunction) {
+	program.constPoolStringPool = &program.stringPool;
+	program.constPool.push_back(nativeFunction);
+	program.code.resize(4u * bmsx::INSTRUCTION_BYTES);
+	bmsx::writeInstruction(program.code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(program.code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, 0, 0);
+	bmsx::writeInstruction(program.code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	bmsx::writeInstruction(program.code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+
+	bmsx::Proto throwingProto;
+	throwingProto.entryPC = 0;
+	throwingProto.maxStack = 1;
+	program.protos.push_back(throwingProto);
+
+	bmsx::Proto returnProto;
+	returnProto.entryPC = 3 * bmsx::INSTRUCTION_BYTES;
+	returnProto.maxStack = 1;
+	program.protos.push_back(returnProto);
+}
+
+class TestClock final : public bmsx::Clock {
+public:
+	bmsx::f64 now() override { return currentMs; }
+	bmsx::f64 origin() override { return originMs; }
+	bmsx::f64 elapsed() override { return currentMs - originMs; }
+
+	bmsx::f64 originMs = 0.0;
+	bmsx::f64 currentMs = 0.0;
+};
+
+bmsx::MachineManifest makeRuntimeTestManifest() {
+	bmsx::MachineManifest manifest;
+	manifest.namespaceName = "core_golden";
+	manifest.viewportWidth = 256;
+	manifest.viewportHeight = 212;
+	manifest.cpuHz = 5'000;
+	manifest.ufpsScaled = bmsx::DEFAULT_UFPS_SCALED;
+	return manifest;
+}
+
+struct RuntimeHarness {
+	TestClock clock;
+	bmsx::SoundMaster soundMaster;
+	bmsx::DefaultMicrotaskQueue microtasks;
+	bmsx::GameView view;
+	bmsx::MachineManifest manifest;
+	bmsx::Runtime runtime;
+
+	RuntimeHarness()
+		: view(nullptr, 256, 212)
+		, manifest(makeRuntimeTestManifest())
+		, runtime(
+			bmsx::RuntimeOptions{
+				.playerIndex = 0,
+				.viewport = {256.0f, 212.0f},
+				.systemRomBytes = {},
+				.cartRomBytes = {},
+				.machineManifest = &manifest,
+				.ufpsScaled = bmsx::DEFAULT_UFPS_SCALED,
+				.cpuHz = 5'000,
+				.cycleBudgetPerFrame = 100,
+				.vblankCycles = 20,
+				.vdpWorkUnitsPerSec = 25'600,
+				.geoWorkUnitsPerSec = 16'384'000,
+			},
+			clock,
+			soundMaster,
+			microtasks,
+			view
+		) {
+	}
+};
+
 void testMemoryGolden() {
 	const std::array<bmsx::u8, 4> systemRom{0x11u, 0x22u, 0x33u, 0x44u};
 	bmsx::Memory memory(bmsx::MemoryInit{{systemRom.data(), systemRom.size()}, {}, {}});
 	require(memory.readU8(bmsx::SYSTEM_ROM_BASE) == 0x11u, "system ROM byte should be readable");
 	memory.writeU32(bmsx::RAM_BASE, 0x12345678u);
 	require(memory.readU32(bmsx::RAM_BASE) == 0x12345678u, "RAM u32 should round-trip");
+	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0x89abcdefu);
+	require(memory.readMappedU32LE(bmsx::GEO_SCRATCH_BASE) == 0x89abcdefu, "mapped RAM u32le should round-trip directly");
+	memory.writeMappedU16LE(bmsx::GEO_SCRATCH_BASE + 4u, 0xf00du);
+	require(memory.readMappedU16LE(bmsx::GEO_SCRATCH_BASE + 4u) == 0xf00du, "mapped RAM u16le should round-trip directly");
 	memory.writeValue(bmsx::IO_DMA_STATUS, bmsx::valueNumber(static_cast<double>(0xfeedcafeu)));
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == 0xfeedcafeu, "numeric I/O word should round-trip");
+	require(memory.readMappedU32LE(bmsx::IO_DMA_STATUS) == 0xfeedcafeu, "mapped I/O u32le read should use the register word");
+	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, 0x13572468u);
+	require(memory.readIoU32(bmsx::IO_DMA_CTRL) == 0x13572468u, "mapped I/O u32le write should store one register word");
+	bool rejectedHalfwordIo = false;
+	try {
+		static_cast<void>(memory.readMappedU16LE(bmsx::IO_DMA_STATUS));
+	} catch (const std::runtime_error& error) {
+		rejectedHalfwordIo = std::string_view(error.what()).find("I/O read fault") != std::string_view::npos;
+	}
+	require(rejectedHalfwordIo, "mapped I/O u16le read should keep the I/O word boundary explicit");
+
+	RecordingVramWriter vram;
+	memory.setVramWriter(&vram);
+	require(throwsRuntime([&]() { static_cast<void>(memory.readMappedU32LE(0xfffffffcu)); }), "mapped u32 read near address wrap should fault");
+	require(throwsRuntime([&]() { memory.writeMappedU32LE(0xfffffffcu, 0u); }), "mapped u32 write near address wrap should fault");
+	require(throwsRuntime([&]() { static_cast<void>(memory.readMappedU32LE(bmsx::RAM_END - 3u)); }), "mapped u32 read past RAM end should fault");
+	require(throwsRuntime([&]() { memory.writeMappedU16LE(bmsx::RAM_END - 1u, 0u); }), "mapped u16 write past RAM end should fault");
+	require(throwsRuntime([&]() { static_cast<void>(memory.readMappedU32LE(bmsx::VRAM_STAGING_BASE - 1u)); }), "mapped u32 read straddling into VRAM should preserve byte-boundary fault");
+	require(throwsRuntime([&]() { memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE - 1u, 0xabcdef01u); }), "mapped u32 write straddling into VRAM should preserve byte-boundary fault");
+	require(vram.reads.empty(), "VRAM straddle read should not issue a contained VRAM transfer");
+	require(vram.writes.empty(), "VRAM straddle write should not issue a contained VRAM transfer");
+
+	require(memory.readMappedU32LE(bmsx::VRAM_STAGING_BASE) == 0x04030201u, "contained VRAM mapped u32 read should use one direct transfer");
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE, 0x78563412u);
+	require(vram.reads.size() == 1u && vram.reads[0].addr == bmsx::VRAM_STAGING_BASE && vram.reads[0].length == 4u, "contained VRAM read should be a single 4-byte transfer");
+	const std::vector<bmsx::u8> expectedWrite{0x12u, 0x34u, 0x56u, 0x78u};
+	require(vram.writes.size() == 1u && vram.writes[0].addr == bmsx::VRAM_STAGING_BASE && vram.writes[0].bytes == expectedWrite, "contained VRAM write should be a single 4-byte transfer");
 }
 
 void testBudgetAndFixed16Golden() {
@@ -154,6 +320,232 @@ void testProgramRomAccountingGolden() {
 	cpu.start(0);
 	require(bmsx::trackedLuaHeapBytes() == beforeSetProgram, "Root/static closures should not track RAM");
 	bmsx::resetTrackedLuaHeapBytes();
+}
+
+void testCpuHaltRequiresAcceptedInterruptGolden() {
+	bmsx::Memory memory;
+	bmsx::CPU cpu(memory);
+	bmsx::Program program;
+	configureInterruptTestProgram(program);
+	bmsx::ProgramMetadata metadata;
+	cpu.setProgram(&program, &metadata);
+
+	cpu.start(0);
+	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "HALT should suspend CPU execution");
+	require(cpu.isHaltedUntilIrq(), "HALT should leave CPU in halted state");
+
+	bmsx::Closure* returnClosure = cpu.createRootClosure(1);
+	bool rejectedCall = false;
+	try {
+		cpu.callExternal(returnClosure);
+	} catch (const std::runtime_error& error) {
+		rejectedCall = std::string_view(error.what()).find("Cannot enter CPU while halted until IRQ") != std::string_view::npos;
+	}
+	require(rejectedCall, "external host call must not clear or bypass HALT");
+	require(cpu.isHaltedUntilIrq(), "rejected host call should preserve HALT state");
+	require(cpu.getFrameDepth() == 1, "rejected host call should not push a new frame");
+}
+
+void testCpuExternalHaltDoesNotReturnGolden() {
+	bmsx::Memory memory;
+	bmsx::CPU cpu(memory);
+	bmsx::Program program;
+	configureInterruptTestProgram(program);
+	bmsx::ProgramMetadata metadata;
+	cpu.setProgram(&program, &metadata);
+
+	cpu.start(1);
+	bmsx::Closure* haltClosure = cpu.createRootClosure(0);
+	cpu.callExternal(haltClosure);
+	require(cpu.getFrameDepth() == 2, "external call should push a host frame before executing");
+	require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted, "HALT inside host call must not look like a returned call");
+	require(cpu.isHaltedUntilIrq(), "HALT inside host call should keep CPU halted");
+	require(cpu.getFrameDepth() == 2, "halted host call frame should remain active until host unwinds it");
+	cpu.unwindToDepth(1);
+	require(cpu.getFrameDepth() == 1, "host unwinding should restore the caller depth after halted external call");
+}
+
+void testRuntimeHostCallHaltUnwindsGolden() {
+	RuntimeHarness harness;
+	bmsx::Runtime& runtime = harness.runtime;
+	bmsx::Program program;
+	configureInterruptTestProgram(program);
+	bmsx::ProgramMetadata metadata;
+	runtime.machine.cpu.setProgram(&program, &metadata);
+
+	runtime.machine.cpu.start(1);
+	bmsx::Closure* haltClosure = runtime.machine.cpu.createRootClosure(0);
+	bmsx::NativeResults out;
+	bool rejectedHaltedCall = false;
+	try {
+		runtime.callLuaFunctionInto(haltClosure, bmsx::NativeArgsView(), out);
+	} catch (const std::runtime_error& error) {
+		rejectedHaltedCall = std::string_view(error.what()).find("Lua host call halted before returning") != std::string_view::npos;
+	}
+	require(rejectedHaltedCall, "runtime host-call wrapper should reject HALT before return");
+	require(runtime.machine.cpu.isHaltedUntilIrq(), "runtime host-call rejection should preserve CPU HALT");
+	require(runtime.machine.cpu.getFrameDepth() == 1, "runtime host-call rejection should unwind the external frame");
+}
+
+void testRuntimeHostCallThrowChargesSpentBudgetGolden() {
+	RuntimeHarness harness;
+	bmsx::Runtime& runtime = harness.runtime;
+	const uint16_t nativeCost = 7u;
+	bmsx::Value throwingNative = runtime.machine.cpu.createNativeFunction(
+		"throwing_native",
+		[](bmsx::NativeArgsView, bmsx::NativeResults&) {
+			throw std::runtime_error("native boom");
+		},
+		bmsx::NativeFnCost{nativeCost, 0u, 0u}
+	);
+	bmsx::Program program;
+	configureThrowingNativeProgram(program, throwingNative);
+	bmsx::ProgramMetadata metadata;
+	runtime.machine.cpu.setProgram(&program, &metadata);
+	runtime.machine.cpu.start(1);
+
+	const int spent = static_cast<int>(bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::LOADK)])
+		+ static_cast<int>(bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::CALL)])
+		+ static_cast<int>(nativeCost);
+	bmsx::NativeResults out;
+	bool threw = false;
+	runtime.machine.cpu.instructionBudgetRemaining = 100;
+	try {
+		runtime.callLuaFunctionInto(runtime.machine.cpu.createRootClosure(0), bmsx::NativeArgsView(), out);
+	} catch (const std::runtime_error& error) {
+		threw = std::string_view(error.what()).find("native boom") != std::string_view::npos;
+	}
+	require(threw, "runtime host-call wrapper should propagate native exceptions");
+	require(runtime.machine.cpu.instructionBudgetRemaining == 100 - spent, "runtime host-call wrapper should charge cycles spent before exception");
+	require(runtime.machine.cpu.getFrameDepth() == 1, "runtime host-call exception should unwind the external frame");
+}
+
+void testRuntimeFrameExecutorThrowClosesCpuSliceGolden() {
+	RuntimeHarness harness;
+	bmsx::Runtime& runtime = harness.runtime;
+	bmsx::Value throwingNative = runtime.machine.cpu.createNativeFunction(
+		"throwing_native",
+		[](bmsx::NativeArgsView, bmsx::NativeResults&) {
+			throw std::runtime_error("native boom");
+		},
+		bmsx::NativeFnCost{7u, 0u, 0u}
+	);
+	bmsx::Program program;
+	configureThrowingNativeProgram(program, throwingNative);
+	bmsx::ProgramMetadata metadata;
+	runtime.machine.cpu.setProgram(&program, &metadata);
+	runtime.machine.cpu.start(0);
+
+	bmsx::FrameState frameState;
+	frameState.cycleBudgetRemaining = 100;
+	frameState.cycleBudgetGranted = 100;
+	bool threw = false;
+	try {
+		runtime.cpuExecution.runWithBudget(runtime, frameState);
+	} catch (const std::runtime_error& error) {
+		threw = std::string_view(error.what()).find("native boom") != std::string_view::npos;
+	}
+	require(threw, "runtime frame executor should propagate CPU execution exceptions");
+	require(
+		runtime.machine.scheduler.currentNowCycles() == runtime.machine.scheduler.nowCycles(),
+		"runtime frame executor should close scheduler CPU slice after exception"
+	);
+}
+
+void testCpuNmiPreemptsMaskableIrqGolden() {
+	bmsx::Memory memory;
+	bmsx::IrqController irq(memory);
+	bmsx::CPU cpu(memory);
+
+	cpu.haltUntilIrq();
+	irq.raise(bmsx::IRQ_VBLANK);
+	cpu.requestNonMaskableInterrupt();
+	require(cpu.acceptPendingInterrupt(irq) == bmsx::AcceptedInterruptKind::NonMaskable, "NMI should preempt a pending maskable IRQ");
+	require(!cpu.isHaltedUntilIrq(), "accepted NMI should wake HALT");
+
+	cpu.haltUntilIrq();
+	require(cpu.acceptPendingInterrupt(irq) == bmsx::AcceptedInterruptKind::None, "NMI entry should inhibit maskable IRQ until CPU restores IFF");
+	require(cpu.isHaltedUntilIrq(), "inhibited maskable IRQ should not wake HALT");
+	cpu.restoreMaskableInterruptsAfterNonMaskableInterrupt();
+	require(cpu.acceptPendingInterrupt(irq) == bmsx::AcceptedInterruptKind::Maskable, "restored IFF should allow pending maskable IRQ");
+	require(!cpu.isHaltedUntilIrq(), "accepted maskable IRQ should wake HALT");
+
+	cpu.disableMaskableInterrupts();
+	cpu.haltUntilIrq();
+	require(cpu.acceptPendingInterrupt(irq) == bmsx::AcceptedInterruptKind::None, "disabled IFF should block maskable IRQ acceptance");
+	require(cpu.isHaltedUntilIrq(), "blocked maskable IRQ should leave CPU halted");
+	cpu.enableMaskableInterrupts();
+	require(cpu.acceptPendingInterrupt(irq) == bmsx::AcceptedInterruptKind::Maskable, "enabled IFF should accept asserted maskable IRQ line");
+}
+
+void testRuntimeSaveStateInterruptFieldsGolden() {
+	bmsx::RuntimeSaveState state;
+	state.machineState.machine.irq.pendingFlags = bmsx::IRQ_VBLANK | bmsx::IRQ_REINIT;
+	state.cpuState.haltedUntilIrq = true;
+	state.cpuState.maskableInterruptsEnabled = false;
+	state.cpuState.maskableInterruptsRestoreEnabled = true;
+	state.cpuState.nonMaskableInterruptPending = true;
+	state.cpuState.yieldRequested = true;
+	state.systemProgramActive = true;
+	state.luaInitialized = true;
+	state.randomSeed = 0x12345678u;
+
+	const std::vector<bmsx::u8> encoded = bmsx::encodeRuntimeSaveState(state);
+	const bmsx::RuntimeSaveState decoded = bmsx::decodeRuntimeSaveState(encoded);
+	require(decoded.machineState.machine.irq.pendingFlags == (bmsx::IRQ_VBLANK | bmsx::IRQ_REINIT), "save-state should preserve pending IRQ device flags");
+	require(decoded.cpuState.haltedUntilIrq, "save-state should preserve HALT state");
+	require(!decoded.cpuState.maskableInterruptsEnabled, "save-state should preserve disabled IFF");
+	require(decoded.cpuState.maskableInterruptsRestoreEnabled, "save-state should preserve NMI return IFF");
+	require(decoded.cpuState.nonMaskableInterruptPending, "save-state should preserve pending NMI");
+	require(decoded.cpuState.yieldRequested, "save-state should preserve yield state alongside interrupt state");
+	require(decoded.systemProgramActive && decoded.luaInitialized, "save-state should preserve runtime flags around CPU state");
+	require(decoded.randomSeed == 0x12345678u, "save-state should preserve scalar runtime fields");
+}
+
+void testMachineSaveRestorePreservesIrqLineGolden() {
+	RuntimeHarness harness;
+	bmsx::Runtime& runtime = harness.runtime;
+
+	runtime.machine.irqController.raise(bmsx::IRQ_VBLANK);
+	const bmsx::MachineState fullState = runtime.machine.captureState();
+	runtime.machine.irqController.reset();
+	require(!runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "IRQ reset should clear the asserted line before full-state restore");
+
+	runtime.machine.restoreState(fullState);
+
+	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "machine full-state restore should restore pending IRQ line state");
+	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "machine full-state restore should expose pending IRQ flags to the cart");
+	runtime.machine.irqController.reset();
+
+	runtime.machine.irqController.raise(bmsx::IRQ_VBLANK);
+	const bmsx::MachineSaveState state = runtime.machine.captureSaveState();
+	runtime.machine.irqController.reset();
+	require(!runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "IRQ reset should clear the asserted line");
+
+	runtime.machine.restoreSaveState(state);
+
+	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "machine save-state restore should restore pending IRQ line state");
+	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "machine save-state restore should expose pending IRQ flags to the cart");
+}
+
+void testRuntimeVblankEdgeCompletesActiveTickGolden() {
+	RuntimeHarness harness;
+	bmsx::Runtime& runtime = harness.runtime;
+
+	runtime.frameLoop.beginFrameState(runtime);
+	require(runtime.frameLoop.frameActive, "frame loop should mark a started frame active");
+	require(!runtime.vblank.tickCompleted(), "new active tick should not be completed before VBlank");
+
+	const bmsx::i64 sequenceBefore = runtime.frameScheduler.lastTickSequence;
+	runtime.vblank.handleBeginTimer(runtime);
+	require(runtime.vblank.tickCompleted(), "VBlank edge should complete the active runtime tick");
+	require(runtime.frameScheduler.lastTickSequence == sequenceBefore + 1, "VBlank edge should enqueue exactly one tick completion");
+	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "VBlank edge should assert the maskable IRQ line");
+	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "VBlank edge should raise the cart-visible VBlank IRQ");
+
+	runtime.vblank.handleBeginTimer(runtime);
+	require(runtime.frameScheduler.lastTickSequence == sequenceBefore + 1, "same active VBlank should not double-complete the tick");
+	runtime.frameLoop.abandonFrameState(runtime);
 }
 
 void testAccessKindAndOpcodeGolden() {
@@ -314,12 +706,21 @@ void testTextureKeyGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 10> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 19> tests{{
 		{"memory", testMemoryGolden},
 		{"budget and fixed16", testBudgetAndFixed16Golden},
 		{"texture key", testTextureKeyGolden},
 		{"string pool", testStringPoolGolden},
 		{"program ROM accounting", testProgramRomAccountingGolden},
+		{"cpu halt requires accepted interrupt", testCpuHaltRequiresAcceptedInterruptGolden},
+		{"cpu external halt does not return", testCpuExternalHaltDoesNotReturnGolden},
+		{"runtime host-call halt unwinds", testRuntimeHostCallHaltUnwindsGolden},
+		{"runtime host-call throw charges spent budget", testRuntimeHostCallThrowChargesSpentBudgetGolden},
+		{"runtime frame executor throw closes cpu slice", testRuntimeFrameExecutorThrowClosesCpuSliceGolden},
+		{"cpu nmi preempts maskable irq", testCpuNmiPreemptsMaskableIrqGolden},
+		{"runtime save-state interrupt fields", testRuntimeSaveStateInterruptFieldsGolden},
+		{"machine save-state restore preserves irq line", testMachineSaveRestorePreservesIrqLineGolden},
+		{"runtime vblank edge completes active tick", testRuntimeVblankEdgeCompletesActiveTickGolden},
 		{"memory access and opcode", testAccessKindAndOpcodeGolden},
 		{"timing and hash", testTimingAndHashGolden},
 		{"rompack schema", testRompackSchemaGolden},

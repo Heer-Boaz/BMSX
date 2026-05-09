@@ -26,6 +26,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 		machineState: {
 			machine: {
 				memory: { ram: new Uint8Array([1, 2, 3, 4]) },
+				irq: { pendingFlags: 0xa5a5 },
 				stringPool: {
 					entries: [
 						{ id: 0, value: 'rom literal', tracked: false },
@@ -81,9 +82,6 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 			globals: [
 				{ name: 'answer', value: { tag: 'number', value: 42 } },
 			],
-			ioMemory: [
-				{ tag: 'stable_ref', path: ['device', 3] },
-			],
 			moduleCache: [],
 			frames: [],
 			lastReturnValues: [],
@@ -93,6 +91,9 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 			lastInstruction: 0,
 			instructionBudgetRemaining: 0,
 			haltedUntilIrq: false,
+			maskableInterruptsEnabled: true,
+			maskableInterruptsRestoreEnabled: true,
+			nonMaskableInterruptPending: false,
 			yieldRequested: false,
 		},
 		renderState: {
@@ -111,7 +112,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));
 
 	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
+	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
 	assert.deepEqual(decoded.machineState.machine.vdp.surfacePixels, state.machineState.machine.vdp.surfacePixels);
-	assert.deepEqual(decoded.cpuState.ioMemory, state.cpuState.ioMemory);
 });

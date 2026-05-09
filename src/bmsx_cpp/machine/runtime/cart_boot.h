@@ -6,17 +6,17 @@ class Runtime;
 
 class CartBootState {
 public:
-        CartBootState(Runtime& runtime);
-        void reset();
-        bool processPending();
+		CartBootState(Runtime& runtime);
+		void reset();
+		bool processPending();
 
 private:
-        bool pollSystemBootRequest();
-        void request();
+		bool pollSystemBootRequest();
+		void request();
 
-        Runtime& m_runtime;
+		Runtime& m_runtime;
 
-        bool m_pending = false;
+		bool m_pending = false;
 };
 
 } // namespace bmsx

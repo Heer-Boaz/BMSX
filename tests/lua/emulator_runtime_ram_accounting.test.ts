@@ -168,10 +168,8 @@ test('restored static closures reuse the static proto cache', () => {
 	].join('\n'));
 	const staticProtoIndex = cpu.program.protos.findIndex(proto => proto.staticClosure);
 	assert.notEqual(staticProtoIndex, -1);
-	const ioSlotCount = (cpu as unknown as { memory: { getIoSlots(): unknown[] } }).memory.getIoSlots().length;
 	const state: CpuRuntimeState = {
 		globals: [],
-		ioMemory: new Array(ioSlotCount).fill({ tag: 'nil' }),
 		moduleCache: [],
 		frames: [],
 		lastReturnValues: [{ tag: 'ref', id: 0 }],
@@ -181,6 +179,9 @@ test('restored static closures reuse the static proto cache', () => {
 		lastInstruction: 0,
 		instructionBudgetRemaining: 0,
 		haltedUntilIrq: false,
+		maskableInterruptsEnabled: true,
+		maskableInterruptsRestoreEnabled: true,
+		nonMaskableInterruptPending: false,
 		yieldRequested: false,
 	};
 

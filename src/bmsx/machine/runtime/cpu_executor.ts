@@ -1,4 +1,4 @@
-import { RunResult } from '../cpu/cpu';
+import { AcceptedInterruptKind, RunResult } from '../cpu/cpu';
 import {
 	TIMER_KIND_DEVICE_SERVICE,
 	TIMER_KIND_VBLANK_BEGIN,
@@ -18,6 +18,43 @@ export class CpuExecutionState {
 	constructor(private readonly runtime: Runtime) {
 	}
 
+	public clearHaltUntilIrq(): void {
+		this.runtime.machine.cpu.clearHaltUntilIrq();
+	}
+
+	public runHaltedUntilIrq(state: FrameState): boolean {
+		const runtime = this.runtime;
+		const cpu = runtime.machine.cpu;
+		let cycleBudgetRemaining = state.cycleBudgetRemaining;
+		runDueRuntimeTimers(runtime);
+		if (!cpu.isHaltedUntilIrq()) {
+			return runtime.vblank.tickCompleted;
+		}
+		const irqController = runtime.machine.irqController;
+		const scheduler = runtime.machine.scheduler;
+		while (true) {
+			if (cpu.acceptPendingInterrupt(irqController) !== AcceptedInterruptKind.None) {
+				return runtime.vblank.tickCompleted;
+			}
+			if (runtime.vblank.tickCompleted) {
+				return true;
+			}
+			if (cycleBudgetRemaining > 0) {
+				const cyclesToTarget = scheduler.nextDeadline() - scheduler.nowCycles;
+				if (cyclesToTarget <= 0) {
+					runDueRuntimeTimers(runtime);
+					continue;
+				}
+				const idleCycles = cyclesToTarget < cycleBudgetRemaining ? cyclesToTarget : cycleBudgetRemaining;
+				cycleBudgetRemaining -= idleCycles;
+				state.cycleBudgetRemaining = cycleBudgetRemaining;
+				advanceRuntimeTime(runtime, idleCycles);
+				continue;
+			}
+			return true;
+		}
+	}
+
 	public runWithBudget(state: FrameState): RunResult {
 		const runtime = this.runtime;
 		const debugCycle = Boolean((globalThis as any).__bmsx_debug_tickrate);
@@ -33,6 +70,10 @@ export class CpuExecutionState {
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
 		runDueRuntimeTimers(runtime);
+		if (runtime.vblank.tickCompleted) {
+			state.cycleBudgetRemaining = remaining;
+			return result;
+		}
 		// start repeated-sequence-acceptable -- CPU scheduler loop mirrors external-call scheduling without extracting a callback-heavy helper.
 		while (remaining > 0) {
 			let sliceBudget = remaining;
@@ -41,6 +82,9 @@ export class CpuExecutionState {
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
 					runDueRuntimeTimers(runtime);
+					if (runtime.vblank.tickCompleted) {
+						break;
+					}
 					continue;
 				}
 				if (deadlineBudget < sliceBudget) {
@@ -48,13 +92,19 @@ export class CpuExecutionState {
 				}
 			}
 			scheduler.beginCpuSlice(sliceBudget);
-			result = cpu.runUntilDepth(0, sliceBudget);
-			scheduler.endCpuSlice();
+			try {
+				result = cpu.runUntilDepth(0, sliceBudget);
+			} finally {
+				scheduler.endCpuSlice();
+			}
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
 			if (consumed > 0) {
 				remaining -= consumed;
 				state.activeCpuUsedCycles += consumed;
 				advanceRuntimeTime(runtime, consumed);
+			}
+			if (runtime.vblank.tickCompleted) {
+				break;
 			}
 			if (cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
 				break;
@@ -88,6 +138,7 @@ export class CpuExecutionState {
 		}
 		return result;
 	}
+
 }
 
 export function advanceRuntimeTime(runtime: Runtime, cycles: number): void {

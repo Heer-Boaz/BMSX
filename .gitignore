@@ -69,6 +69,7 @@ temp/**
 **.tmp
 **/screenshots
 *.txt
+.vscode/edge-profile-wsl/
 
 # CMake generated files
 # CMakeCache.txt

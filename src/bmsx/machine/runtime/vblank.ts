@@ -1,6 +1,5 @@
 import { IRQ_VBLANK } from '../bus/io';
 import { FrameState, Runtime } from './runtime';
-import { advanceRuntimeTime, runDueRuntimeTimers } from './cpu_executor';
 import { refreshDeviceTimings } from './timing/config';
 import { TIMER_KIND_VBLANK_BEGIN, TIMER_KIND_VBLANK_END } from '../scheduler/device';
 import { applyVdpFrameBufferTextureWrites, presentVdpFrameBufferPages } from '../../render/vdp/framebuffer';
@@ -10,9 +9,6 @@ export type RuntimeVblankSnapshot = {
 };
 
 export class VblankState {
-	private clearBackQueuesAfterIrqWake = false;
-	private haltIrqSignalSequence = 0;
-	private haltIrqWaitArmed = false;
 	private vblankSequence = 0;
 	private lastCompletedVblankSequence = 0;
 	private vblankCycles = 0;
@@ -74,7 +70,6 @@ export class VblankState {
 		const runtime = this.runtime;
 		runtime.machine.inputController.sampleArmed = false;
 		runtime.machine.irqController.postLoad();
-		this.resetHaltIrqWait();
 		runtime.machine.vdp.resetStatus();
 		if (this.vblankStartCycle === 0) {
 			this.setVblankStatus(true);
@@ -91,7 +86,6 @@ export class VblankState {
 
 	public restore(state: RuntimeVblankSnapshot): void {
 		const runtime = this.runtime;
-		this.clearHaltUntilIrq();
 		runtime.frameScheduler.reset();
 		runtime.frameLoop.reset();
 		runtime.screen.reset();
@@ -133,68 +127,6 @@ export class VblankState {
 		}
 	}
 
-	public clearHaltUntilIrq(): void {
-		const runtime = this.runtime;
-		runtime.machine.cpu.clearHaltUntilIrq();
-		this.resetHaltIrqWait();
-		this.clearBackQueuesAfterIrqWake = false;
-	}
-
-	public consumeBackQueueClearAfterIrqWake(): boolean {
-		if (!this.clearBackQueuesAfterIrqWake) {
-			return false;
-		}
-		this.clearBackQueuesAfterIrqWake = false;
-		return true;
-	}
-
-	public runHaltedUntilIrq(state: FrameState): boolean {
-		const runtime = this.runtime;
-		const cpu = runtime.machine.cpu;
-		const irqController = runtime.machine.irqController;
-		const scheduler = runtime.machine.scheduler;
-		let cycleBudgetRemaining = state.cycleBudgetRemaining;
-		runDueRuntimeTimers(runtime);
-		if (!cpu.isHaltedUntilIrq()) {
-			this.resetHaltIrqWait();
-			return false;
-		}
-		if (this.tryCompleteTickOnPendingVblankIrq(state)) {
-			return true;
-		}
-		while (true) {
-			const signalSequence = irqController.signalSequence;
-			if (!this.haltIrqWaitArmed) {
-				if (irqController.pendingFlags() !== 0) {
-					cpu.clearHaltUntilIrq();
-					return this.activeTickCompleted;
-				}
-				this.haltIrqSignalSequence = signalSequence;
-				this.haltIrqWaitArmed = true;
-			} else if (signalSequence !== this.haltIrqSignalSequence) {
-				cpu.clearHaltUntilIrq();
-				this.resetHaltIrqWait();
-				return this.activeTickCompleted;
-			}
-			if (cycleBudgetRemaining > 0) {
-				const cyclesToTarget = scheduler.nextDeadline() - scheduler.nowCycles;
-				if (cyclesToTarget <= 0) {
-					runDueRuntimeTimers(runtime);
-					continue;
-				}
-				const idleCycles = cyclesToTarget < cycleBudgetRemaining ? cyclesToTarget : cycleBudgetRemaining;
-				cycleBudgetRemaining -= idleCycles;
-				state.cycleBudgetRemaining = cycleBudgetRemaining;
-				advanceRuntimeTime(runtime, idleCycles);
-				if (this.tryCompleteTickOnPendingVblankIrq(state)) {
-					return true;
-				}
-				continue;
-			}
-			return true;
-		}
-	}
-
 	private scheduleCurrentFrameTimers(): void {
 		const runtime = this.runtime;
 		runtime.machine.scheduler.scheduleVblankTimer(TIMER_KIND_VBLANK_END, this.frameStartCycle + runtime.timing.cycleBudgetPerFrame);
@@ -217,43 +149,9 @@ export class VblankState {
 		this.setVblankStatus(true);
 		runtime.machine.irqController.raise(IRQ_VBLANK);
 		const frameState = runtime.frameLoop.currentFrameState;
-		if (frameState !== null && this.isFrameBoundaryHalt()) {
+		if (frameState !== null) {
 			this.completeTickIfPending(frameState, this.vblankSequence);
-			this.clearBackQueuesAfterIrqWake = true;
 		}
-	}
-
-	private resetHaltIrqWait(): void {
-		this.haltIrqWaitArmed = false;
-		this.haltIrqSignalSequence = 0;
-	}
-
-	private tryCompleteTickOnPendingVblankIrq(state: FrameState): boolean {
-		if (!this.isFrameBoundaryHalt()) {
-			return false;
-		}
-		if (this.vblankSequence === 0) {
-			return false;
-		}
-		const runtime = this.runtime;
-		if ((runtime.machine.irqController.pendingFlags() & IRQ_VBLANK) === 0) {
-			return false;
-		}
-		if (this.lastCompletedVblankSequence === this.vblankSequence) {
-			return false;
-		}
-		this.completeTickIfPending(state, this.vblankSequence);
-		this.clearBackQueuesAfterIrqWake = true;
-		runtime.machine.cpu.clearHaltUntilIrq();
-		this.resetHaltIrqWait();
-		return true;
-	}
-
-	private isFrameBoundaryHalt(): boolean {
-		const runtime = this.runtime;
-		return runtime.machine.cpu.getFrameDepth() === 1
-			&& runtime.pendingCall === 'entry'
-			&& runtime.machine.cpu.isHaltedUntilIrq();
 	}
 
 	private commitFrameOnVblankEdge(): void {

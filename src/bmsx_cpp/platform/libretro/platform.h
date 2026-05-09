@@ -263,7 +263,7 @@ private:
 	double m_frame_time_sec = DEFAULT_FRAME_TIME_SEC;
 	BackendType m_backend_type = BackendType::Software;
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
-	bool m_crt_postprocessing_enabled = false;
+	bool m_crt_postprocessing_enabled = true;
 	i32 m_postprocess_scale = 1;
 	i32 m_dither_type = 0;
 	bool m_render_surfaces_need_refresh = true;

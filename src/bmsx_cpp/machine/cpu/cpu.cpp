@@ -1,6 +1,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/common/numeric.h"
 #include "machine/common/number_format.h"
+#include "machine/devices/irq/controller.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/memory.h"
 #include <algorithm>
@@ -1173,6 +1174,9 @@ void CPU::start(int entryProtoIndex, NativeArgsView args) {
 	lastReturnValues.clear();
 	clearCallStack();
 	m_haltedUntilIrq = false;
+	m_maskableInterruptsEnabled = true;
+	m_maskableInterruptsRestoreEnabled = true;
+	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
 	auto* closure = createRootClosure(entryProtoIndex);
 	pushFrame(closure, args.data(), args.size(), 0, 0, false, m_program->protos[entryProtoIndex].entryPC);
@@ -1187,8 +1191,8 @@ void CPU::call(Closure* closure, NativeArgsView args, int returnCount) {
 	if (!closure) {
 		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
+	requireRunnableForCall();
 	lastReturnValues.clear();
-	m_haltedUntilIrq = false;
 	m_yieldRequested = false;
 	pushFrame(closure, args.data(), args.size(), 0, returnCount, false, m_program->protos[closure->protoIndex].entryPC);
 }
@@ -1201,8 +1205,8 @@ void CPU::callExternal(Closure* closure, NativeArgsView args) {
 	if (!closure) {
 		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
+	requireRunnableForCall();
 	lastReturnValues.clear();
-	m_haltedUntilIrq = false;
 	m_yieldRequested = false;
 	pushFrame(closure, args.data(), args.size(), 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
 }
@@ -1313,12 +1317,6 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 		path.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
 		traverseStableValue(path, value);
 	});
-	for (size_t index = 0; index < m_memory.getIoSlots().size(); ++index) {
-		std::vector<CpuRuntimeRefSegment> path;
-		path.push_back(CpuRuntimeRefSegment{ false, "ioMemory", 0 });
-		path.push_back(CpuRuntimeRefSegment{ true, {}, static_cast<int>(index) });
-		traverseStableValue(path, m_memory.getIoSlots()[index]);
-	}
 	for (const auto& [name, value] : moduleCache) {
 		std::vector<CpuRuntimeRefSegment> path;
 		path.push_back(CpuRuntimeRefSegment{ false, "moduleCache", 0 });
@@ -1461,10 +1459,6 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	for (const auto& [name, value] : moduleCache) {
 		state.moduleCache.push_back(CpuRootValueState{ name, captureValueState(value) });
 	}
-	state.ioMemory.reserve(m_memory.getIoSlots().size());
-	for (const Value& value : m_memory.getIoSlots()) {
-		state.ioMemory.push_back(captureValueState(value));
-	}
 	state.frames.reserve(m_frames.size());
 	for (const auto& framePtr : m_frames) {
 		const CallFrame& frame = *framePtr;
@@ -1500,6 +1494,9 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	state.lastInstruction = lastInstruction;
 	state.instructionBudgetRemaining = instructionBudgetRemaining;
 	state.haltedUntilIrq = m_haltedUntilIrq;
+	state.maskableInterruptsEnabled = m_maskableInterruptsEnabled;
+	state.maskableInterruptsRestoreEnabled = m_maskableInterruptsRestoreEnabled;
+	state.nonMaskableInterruptPending = m_nonMaskableInterruptPending;
 	state.yieldRequested = m_yieldRequested;
 	return state;
 }
@@ -1598,12 +1595,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 		path.push_back(CpuRuntimeRefSegment{ false, m_stringPool.toString(asStringId(key)), 0 });
 		traverseStableValue(path, value);
 	});
-	for (size_t index = 0; index < m_memory.getIoSlots().size(); ++index) {
-		std::vector<CpuRuntimeRefSegment> path;
-		path.push_back(CpuRuntimeRefSegment{ false, "ioMemory", 0 });
-		path.push_back(CpuRuntimeRefSegment{ true, {}, static_cast<int>(index) });
-		traverseStableValue(path, m_memory.getIoSlots()[index]);
-	}
 	for (const auto& [name, value] : moduleCache) {
 		std::vector<CpuRuntimeRefSegment> path;
 		path.push_back(CpuRuntimeRefSegment{ false, "moduleCache", 0 });
@@ -1787,12 +1778,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	for (const CpuRootValueState& entry : state.moduleCache) {
 		moduleCache[entry.name] = restoreValue(entry.value);
 	}
-	std::vector<Value> restoredIo;
-	restoredIo.reserve(state.ioMemory.size());
-	for (const CpuValueState& valueState : state.ioMemory) {
-		restoredIo.push_back(restoreValue(valueState));
-	}
-	m_memory.loadIoSlots(restoredIo);
 	lastReturnValues.reserve(state.lastReturnValues.size());
 	for (const CpuValueState& valueState : state.lastReturnValues) {
 		lastReturnValues.push_back(restoreValue(valueState));
@@ -1801,6 +1786,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	lastInstruction = state.lastInstruction;
 	instructionBudgetRemaining = state.instructionBudgetRemaining;
 	m_haltedUntilIrq = state.haltedUntilIrq;
+	m_maskableInterruptsEnabled = state.maskableInterruptsEnabled;
+	m_maskableInterruptsRestoreEnabled = state.maskableInterruptsRestoreEnabled;
+	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 	m_yieldRequested = state.yieldRequested;
 	collectHeap();
 }
@@ -1815,6 +1803,56 @@ void CPU::haltUntilIrq() {
 }
 
 void CPU::clearHaltUntilIrq() {
+	m_haltedUntilIrq = false;
+	m_yieldRequested = false;
+}
+
+void CPU::enableMaskableInterrupts() {
+	m_maskableInterruptsEnabled = true;
+	m_maskableInterruptsRestoreEnabled = true;
+}
+
+void CPU::disableMaskableInterrupts() {
+	m_maskableInterruptsEnabled = false;
+	m_maskableInterruptsRestoreEnabled = false;
+}
+
+void CPU::requestNonMaskableInterrupt() {
+	m_nonMaskableInterruptPending = true;
+}
+
+void CPU::restoreMaskableInterruptsAfterNonMaskableInterrupt() {
+	m_maskableInterruptsEnabled = m_maskableInterruptsRestoreEnabled;
+}
+
+bool CPU::canAcceptMaskableInterruptLine(const IrqController& irqController) const {
+	return m_maskableInterruptsEnabled
+		&& irqController.hasAssertedMaskableInterruptLine();
+}
+
+AcceptedInterruptKind CPU::acceptPendingInterrupt(const IrqController& irqController) {
+	if (m_nonMaskableInterruptPending) {
+		m_nonMaskableInterruptPending = false;
+		m_maskableInterruptsRestoreEnabled = m_maskableInterruptsEnabled;
+		m_maskableInterruptsEnabled = false;
+		clearHaltAfterAcceptedInterrupt();
+		return AcceptedInterruptKind::NonMaskable;
+	}
+	if (canAcceptMaskableInterruptLine(irqController)) {
+		m_maskableInterruptsRestoreEnabled = m_maskableInterruptsEnabled;
+		clearHaltAfterAcceptedInterrupt();
+		return AcceptedInterruptKind::Maskable;
+	}
+	return AcceptedInterruptKind::None;
+}
+
+void CPU::requireRunnableForCall() const {
+	if (m_haltedUntilIrq) {
+		throw BMSX_RUNTIME_ERROR("Cannot enter CPU while halted until IRQ.");
+	}
+}
+
+void CPU::clearHaltAfterAcceptedInterrupt() {
 	m_haltedUntilIrq = false;
 	m_yieldRequested = false;
 }
@@ -2906,9 +2944,7 @@ void CPU::markRoots(GcHeap& heap) {
 	if (m_stringIndexTable) {
 		heap.markObject(m_stringIndexTable);
 	}
-	for (const auto& value : m_memory.getIoSlots()) {
-		heap.markValue(value);
-	}
+	m_memory.markRoots(heap);
 	for (const auto& value : lastReturnValues) {
 		heap.markValue(value);
 	}

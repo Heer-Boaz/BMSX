@@ -9,16 +9,16 @@
 namespace bmsx {
 
 struct RomBootPlan {
-    RuntimeRomPackage systemLayer;
-    struct { int x = 0; int y = 0; } viewportSize;
+	RuntimeRomPackage systemLayer;
+	struct { int x = 0; int y = 0; } viewportSize;
 };
 
 class RomBootManager {
 public:
-    std::unique_ptr<RomBootPlan> buildBootPlan(
-        const u8* systemRom, size_t systemSize,
-        const u8* cartridge, size_t cartSize
-    );
+	std::unique_ptr<RomBootPlan> buildBootPlan(
+		const u8* systemRom, size_t systemSize,
+		const u8* cartridge, size_t cartSize
+	);
 };
 
 } // namespace bmsx

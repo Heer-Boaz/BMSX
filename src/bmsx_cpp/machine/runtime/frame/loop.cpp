@@ -2,7 +2,6 @@
 #include "machine/runtime/cart_boot.h"
 #include "machine/runtime/cpu_executor.h"
 #include "render/shared/hardware/lighting.h"
-#include "render/shared/queues.h"
 #include "machine/runtime/runtime.h"
 
 namespace bmsx {
@@ -16,7 +15,7 @@ void FrameLoopState::resetFrameState(Runtime& runtime) {
 	runtime.vblank.abandonTick();
 	runtime.machine.inputController.sampleArmed = false;
 	frameState = FrameState{};
-	runtime.vblank.clearHaltUntilIrq(runtime);
+	runtime.cpuExecution.clearHaltUntilIrq(runtime);
 	runtime.frameScheduler.reset();
 	reset();
 	runtime.screen.reset();
@@ -51,18 +50,15 @@ void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 	try {
 		while (true) {
-			if (runtime.machine.cpu.isHaltedUntilIrq() && runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
+			if (runtime.machine.cpu.isHaltedUntilIrq() && runtime.cpuExecution.runHaltedUntilIrq(runtime, frameState)) {
 				return;
-			}
-			if (runtime.vblank.consumeBackQueueClearAfterIrqWake()) {
-				RenderQueues::clearBackQueues();
 			}
 			if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 				return;
 			}
 			const RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
 			if (runtime.machine.cpu.isHaltedUntilIrq()) {
-				if (runtime.vblank.runHaltedUntilIrq(runtime, frameState)) {
+				if (runtime.cpuExecution.runHaltedUntilIrq(runtime, frameState)) {
 					return;
 				}
 				continue;
@@ -74,7 +70,7 @@ void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 		}
 	} catch (...) {
 		frameState.luaFaulted = true;
-		runtime.vblank.clearHaltUntilIrq(runtime);
+		runtime.cpuExecution.clearHaltUntilIrq(runtime);
 		runtime.m_pendingCall = Runtime::PendingCall::None;
 		throw;
 	}

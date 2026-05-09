@@ -324,7 +324,7 @@ export function resetRuntimeState(runtime: Runtime): void {
 export function resetFrameState(runtime: Runtime): void {
 	runtime.frameLoop.abandonFrameState();
 	runtime.frameLoop.drawFrameState = null;
-	runtime.vblank.clearHaltUntilIrq();
+	runtime.cpuExecution.clearHaltUntilIrq();
 	runtime.frameScheduler.reset();
 	runtime.frameLoop.reset();
 	runtime.screen.reset();

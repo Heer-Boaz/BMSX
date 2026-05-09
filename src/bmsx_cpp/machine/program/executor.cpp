@@ -11,12 +11,15 @@ void Runtime::callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResult
 	const int budgetSentinel = std::numeric_limits<int>::max();
 	NativeResults* previousSink = cpu.swapExternalReturnSink(&out);
 	int spentBudget = 0;
+	int activeBudget = 0;
 	out.clear();
 	try {
 		cpu.callExternal(fn, args);
 		while (cpu.getFrameDepth() > depthBefore) {
+			activeBudget = budgetSentinel;
 			RunResult result = cpu.runUntilDepth(depthBefore, budgetSentinel);
-			spentBudget += budgetSentinel - cpu.instructionBudgetRemaining;
+			spentBudget += activeBudget - cpu.instructionBudgetRemaining;
+			activeBudget = 0;
 			if (cpu.getFrameDepth() > depthBefore && cpu.isHaltedUntilIrq()) {
 				throw BMSX_RUNTIME_ERROR("Lua host call halted before returning.");
 			}
@@ -25,6 +28,9 @@ void Runtime::callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResult
 			}
 		}
 	} catch (...) {
+		if (activeBudget > 0) {
+			spentBudget += activeBudget - cpu.instructionBudgetRemaining;
+		}
 		cpu.unwindToDepth(depthBefore);
 		cpu.instructionBudgetRemaining = previousBudget - spentBudget;
 		cpu.swapExternalReturnSink(previousSink);

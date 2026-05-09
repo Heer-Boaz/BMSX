@@ -79,6 +79,18 @@ export function isVramMappedRange(addr: number, length: number): boolean {
 		|| overlaps(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
+export function isVramMappedContiguousRange(addr: number, length: number): boolean {
+	if (length <= 0) {
+		return false;
+	}
+	const contained = (base: number, size: number): boolean => addr >= base && addr + length <= base + size;
+	return contained(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
+		|| contained(VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
+		|| contained(VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
+		|| contained(VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
+		|| contained(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
+}
+
 function recomputeMemoryLayout(config: {
 	ramBytes: number;
 	slotBytes: number;

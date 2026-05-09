@@ -566,7 +566,7 @@ export class Runtime {
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
 		this.machine.inputController.sampleArmed = false;
-		this.vblank.clearHaltUntilIrq();
+		this.cpuExecution.clearHaltUntilIrq();
 	}
 
 	public get activeIdeFontVariant(): FontVariant {

@@ -299,6 +299,8 @@ if(BMSX_ENABLE_GLES2)
 		render/backend/gles2_backend.cpp
 		render/post/crt_pipeline_gles2.cpp
 	)
+	find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
+	target_link_libraries(bmsx_core PUBLIC ${GLESV2_LIBRARY})
 endif()
 
 if(BMSX_ENABLE_ZLIB)
@@ -319,11 +321,6 @@ endif()
 	if(UNIX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 		target_link_options(bmsx_libretro PRIVATE "-Wl,--no-undefined")
 	endif()
-	if(BMSX_ENABLE_GLES2)
-		find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
-		target_link_libraries(bmsx_libretro PRIVATE ${GLESV2_LIBRARY})
-	endif()
-
 	# Libretro naming convention
 	set_target_properties(bmsx_libretro PROPERTIES
 		PREFIX ""

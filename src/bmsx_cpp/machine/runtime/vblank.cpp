@@ -2,13 +2,9 @@
 
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/timing/config.h"
 #include "machine/scheduler/device.h"
 #include "render/vdp/framebuffer.h"
-#include <algorithm>
-#include <limits>
-#include <stdexcept>
 
 namespace bmsx {
 
@@ -53,7 +49,6 @@ void VblankState::reset(Runtime& runtime) {
 	m_lastCompletedVblankSequence = 0;
 	runtime.machine.inputController.sampleArmed = false;
 	runtime.machine.irqController.postLoad();
-	resetHaltIrqWait();
 	runtime.machine.vdp.resetStatus();
 	if (m_vblankStartCycle == 0) {
 		setVblankStatus(runtime, true);
@@ -69,7 +64,6 @@ RuntimeVblankSnapshot VblankState::capture(const Runtime& runtime) const {
 }
 
 void VblankState::restore(Runtime& runtime, const RuntimeVblankSnapshot& state) {
-	clearHaltUntilIrq(runtime);
 	runtime.frameScheduler.reset();
 	runtime.frameLoop.reset();
 	runtime.screen.reset();
@@ -110,65 +104,6 @@ void VblankState::handleEndTimer(Runtime& runtime) {
 	}
 }
 
-void VblankState::clearHaltUntilIrq(Runtime& runtime) {
-	runtime.machine.cpu.clearHaltUntilIrq();
-	resetHaltIrqWait();
-	m_clearBackQueuesAfterIrqWake = false;
-}
-
-bool VblankState::consumeBackQueueClearAfterIrqWake() {
-	if (!m_clearBackQueuesAfterIrqWake) {
-		return false;
-	}
-	m_clearBackQueuesAfterIrqWake = false;
-	return true;
-}
-
-bool VblankState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameState) {
-	auto& cpu = runtime.machine.cpu;
-	auto& irqController = runtime.machine.irqController;
-	auto& scheduler = runtime.machine.scheduler;
-	int& cycleBudgetRemaining = frameState.cycleBudgetRemaining;
-	runDueRuntimeTimers(runtime);
-	if (!cpu.isHaltedUntilIrq()) {
-		resetHaltIrqWait();
-		return false;
-	}
-	if (tryCompleteTickOnPendingVblankIrq(runtime, frameState)) {
-		return true;
-	}
-	while (true) {
-		const uint32_t signalSequence = irqController.signalSequence();
-		if (!m_haltIrqWaitArmed) {
-			if (irqController.pendingFlags() != 0u) {
-				cpu.clearHaltUntilIrq();
-				return m_activeTickCompleted;
-			}
-			m_haltIrqSignalSequence = signalSequence;
-			m_haltIrqWaitArmed = true;
-		} else if (signalSequence != m_haltIrqSignalSequence) {
-			cpu.clearHaltUntilIrq();
-			resetHaltIrqWait();
-			return m_activeTickCompleted;
-		}
-		if (cycleBudgetRemaining > 0) {
-			const i64 cyclesToTarget = scheduler.nextDeadline() - scheduler.nowCycles();
-			if (cyclesToTarget <= 0) {
-				runDueRuntimeTimers(runtime);
-				continue;
-			}
-			const int idleCycles = static_cast<int>(std::min<i64>(cycleBudgetRemaining, cyclesToTarget));
-			cycleBudgetRemaining -= idleCycles;
-			advanceRuntimeTime(runtime, idleCycles);
-			if (tryCompleteTickOnPendingVblankIrq(runtime, frameState)) {
-				return true;
-			}
-			continue;
-		}
-		return true;
-	}
-}
-
 void VblankState::scheduleCurrentFrameTimers(Runtime& runtime) {
 	auto& scheduler = runtime.machine.scheduler;
 	scheduler.scheduleVblankTimer(TimerKindVblankEnd, m_frameStartCycle + runtime.timing.cycleBudgetPerFrame);
@@ -188,44 +123,11 @@ void VblankState::enterVblank(Runtime& runtime) {
 	runtime.machine.inputController.onVblankEdge();
 	setVblankStatus(runtime, true);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
-	if (runtime.frameLoop.frameActive && isFrameBoundaryHalt(runtime)) {
+	if (runtime.frameLoop.frameActive) {
 		completeTickIfPending(runtime, runtime.frameLoop.frameState, m_vblankSequence);
-		m_clearBackQueuesAfterIrqWake = true;
 	}
 }
 
-void VblankState::resetHaltIrqWait() {
-	m_haltIrqWaitArmed = false;
-	m_haltIrqSignalSequence = 0;
-}
-
-bool VblankState::tryCompleteTickOnPendingVblankIrq(Runtime& runtime, FrameState& frameState) {
-	if (!isFrameBoundaryHalt(runtime)) {
-		return false;
-	}
-	if (m_vblankSequence == 0) {
-		return false;
-	}
-	if ((runtime.machine.irqController.pendingFlags() & IRQ_VBLANK) == 0u) {
-		return false;
-	}
-	if (m_lastCompletedVblankSequence == m_vblankSequence) {
-		return false;
-	}
-	completeTickIfPending(runtime, frameState, m_vblankSequence);
-	m_clearBackQueuesAfterIrqWake = true;
-	runtime.machine.cpu.clearHaltUntilIrq();
-	resetHaltIrqWait();
-	return true;
-}
-
-bool VblankState::isFrameBoundaryHalt(Runtime& runtime) const {
-	return runtime.machine.cpu.getFrameDepth() == 1
-		&& runtime.m_pendingCall == Runtime::PendingCall::Entry
-		&& runtime.machine.cpu.isHaltedUntilIrq();
-}
-
-// disable-next-line single_line_method_pattern -- VBLANK owns the frame-commit timing edge into the VDP.
 void VblankState::commitFrameOnVblankEdge(Runtime& runtime) {
 	auto& vdp = runtime.machine.vdp;
 	if (vdp.presentReadyFrameOnVblankEdge()) {

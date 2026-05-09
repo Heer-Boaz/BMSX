@@ -6,22 +6,27 @@
 
 namespace bmsx {
 
+struct IrqControllerState {
+	uint32_t pendingFlags = 0;
+};
+
 class IrqController {
 public:
 	explicit IrqController(Memory& memory);
 
 	void reset();
 	void postLoad();
-	uint32_t pendingFlags() const;
+	IrqControllerState captureState() const;
+	void restoreState(const IrqControllerState& state);
+	bool hasAssertedMaskableInterruptLine() const { return m_pendingFlags != 0u; }
 	void raise(uint32_t mask);
-	void acknowledge(uint32_t mask);
-	uint64_t signalSequence() const { return m_signalSequence; }
 
 private:
+	static Value onFlagsReadThunk(void* context, uint32_t addr);
 	static void onAckWriteThunk(void* context, uint32_t addr, Value value);
 
 	Memory& m_memory;
-	uint64_t m_signalSequence = 0;
+	uint32_t m_pendingFlags = 0;
 };
 
 } // namespace bmsx

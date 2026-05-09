@@ -12,10 +12,10 @@ import { DmaController } from './devices/dma/controller';
 import { GeometryController } from './devices/geometry/controller';
 import { ImgDecController } from './devices/imgdec/controller';
 import { InputController, type InputControllerState } from './devices/input/controller';
-import { IrqController } from './devices/irq/controller';
+import { IrqController, type IrqControllerState } from './devices/irq/controller';
 import type { VdpFrameBufferSize } from './devices/vdp/contracts';
 import { VDP, type VdpSaveState, type VdpState } from './devices/vdp/vdp';
-import { Memory, type MemorySaveState, type MemoryState } from './memory/memory';
+import { Memory, type MemorySaveState } from './memory/memory';
 import type { StringPoolState } from './cpu/string_pool';
 import {
 	DEVICE_SERVICE_DMA,
@@ -35,13 +35,14 @@ export type MachineTiming = {
 };
 
 export type MachineState = {
-	memory: MemoryState;
+	irq: IrqControllerState;
 	input: InputControllerState;
 	vdp: VdpState;
 };
 
 export type MachineSaveState = {
 	memory: MemorySaveState;
+	irq: IrqControllerState;
 	stringPool: StringPoolState;
 	input: InputControllerState;
 	vdp: VdpSaveState;
@@ -129,16 +130,15 @@ export class Machine {
 
 	public captureState(): MachineState {
 		return {
-			memory: this.memory.captureState(),
+			irq: this.irqController.captureState(),
 			input: this.inputController.captureState(),
 			vdp: this.vdp.captureState(),
 		};
 	}
 
 	public restoreState(state: MachineState): void {
-		this.memory.restoreState(state.memory);
 		this.geometryController.postLoad();
-		this.irqController.postLoad();
+		this.irqController.restoreState(state.irq);
 		this.inputController.restoreState(state.input);
 		this.vdp.restoreState(state.vdp);
 	}
@@ -146,6 +146,7 @@ export class Machine {
 	public captureSaveState(): MachineSaveState {
 		return {
 			memory: this.memory.captureSaveState(),
+			irq: this.irqController.captureState(),
 			stringPool: this.cpu.stringPool.captureState(),
 			input: this.inputController.captureState(),
 			vdp: this.vdp.captureSaveState(),
@@ -156,7 +157,7 @@ export class Machine {
 		this.memory.restoreSaveState(state.memory);
 		this.cpu.stringPool.restoreState(state.stringPool);
 		this.geometryController.postLoad();
-		this.irqController.postLoad();
+		this.irqController.restoreState(state.irq);
 		this.inputController.restoreState(state.input);
 		this.vdp.restoreSaveState(state.vdp);
 	}
