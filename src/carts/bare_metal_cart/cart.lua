@@ -316,10 +316,10 @@ local draw_frame<const> = function()
 	mem[wp], wp = vdp_slot_primary, wp + 4 -- Texture slot sampled by the billboard
 	mem[wp], wp = 0, wp + 4 -- Source U/V packed as two u16 words
 	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4 -- Source W/H packed as two u16 words
-		mem[wp], wp = 0xffff0000 + billboard_shift, wp + 4 -- X = -1.0 plus a small Q16.16 animation offset
-		mem[wp], wp = 0x00006000, wp + 4 -- Y = +0.375 in signed Q16.16
-		mem[wp], wp = 0xfffc0000, wp + 4 -- Z = -4.0 in signed Q16.16, in front of the perspective camera
-		mem[wp], wp = 0x0000c000, wp + 4 -- Size = 0.75 in unsigned Q16.16 under the active camera
+	mem[wp], wp = 0xffff0000 + billboard_shift, wp + 4 -- X = -1.0 plus a small Q16.16 animation offset
+	mem[wp], wp = 0x00006000, wp + 4 -- Y = +0.375 in signed Q16.16
+	mem[wp], wp = 0xfffc0000, wp + 4 -- Z = -4.0 in signed Q16.16, in front of the perspective camera
+	mem[wp], wp = 0x0000c000, wp + 4 -- Size = 0.75 in unsigned Q16.16 under the active camera
 	mem[wp], wp = 0xffffd060, wp + 4 -- AARRGGBB billboard modulation color
 	mem[wp], wp = 0, wp + 4 -- Reserved BBU control word
 
@@ -329,10 +329,10 @@ local draw_frame<const> = function()
 	mem[wp], wp = vdp_slot_primary, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
-		mem[wp], wp = 0x00010000 - billboard_shift, wp + 4 -- X = +1.0 minus the same Q16.16 animation offset
-		mem[wp], wp = 0xffffe000, wp + 4 -- Y = -0.125 in signed Q16.16
-		mem[wp], wp = 0xfffc8000, wp + 4 -- Z = -3.5 in signed Q16.16
-		mem[wp], wp = 0x0000a000, wp + 4 -- Size = 0.625 in unsigned Q16.16 under the active camera
+	mem[wp], wp = 0x00010000 - billboard_shift, wp + 4 -- X = +1.0 minus the same Q16.16 animation offset
+	mem[wp], wp = 0xffffe000, wp + 4 -- Y = -0.125 in signed Q16.16
+	mem[wp], wp = 0xfffc8000, wp + 4 -- Z = -3.5 in signed Q16.16
+	mem[wp], wp = 0x0000a000, wp + 4 -- Size = 0.625 in unsigned Q16.16 under the active camera
 	mem[wp], wp = 0xff60e6ff, wp + 4
 	mem[wp], wp = 0, wp + 4
 
