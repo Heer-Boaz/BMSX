@@ -15,6 +15,9 @@ class AudioController;
 
 struct MemorySaveState {
 	std::vector<u8> ram;
+	uint32_t busFaultCode = BUS_FAULT_NONE;
+	uint32_t busFaultAddr = 0;
+	uint32_t busFaultAccess = 0;
 };
 
 struct MemoryInit {
@@ -86,6 +89,7 @@ public:
 	MemorySaveState captureSaveState() const;
 	void restoreSaveState(const MemorySaveState& state);
 	void clearIoSlots();
+	void clearBusFault();
 	void markRoots(GcHeap& heap) const;
 
 private:
@@ -112,14 +116,15 @@ private:
 		RomSpan m_programCode;
 		MutableRomSpan m_overlayRom;
 		std::vector<u8> m_ram;
-		std::vector<Value> m_ioSlots;
+		mutable std::vector<Value> m_ioSlots;
 		std::vector<IoReadBinding> m_ioReadHandlers;
 		std::vector<IoWriteBinding> m_ioWriteHandlers;
 		VramWriter* m_vramWriter = nullptr;
+		mutable uint32_t m_busFaultCode = BUS_FAULT_NONE;
+		mutable uint32_t m_busFaultAddr = 0;
+		mutable uint32_t m_busFaultAccess = 0;
 
-	bool isIoAddress(uint32_t addr) const;
 	bool isIoRegionRange(uint32_t addr, size_t length) const;
-	size_t ioIndex(uint32_t addr) const;
 	int ioAlignedSlot(uint32_t addr) const {
 		const uint32_t delta = addr - IO_BASE;
 		if (delta >= IO_SLOT_COUNT * IO_WORD_SIZE || (delta & (IO_WORD_SIZE - 1u)) != 0u) {
@@ -133,11 +138,14 @@ private:
 	uint32_t readProgramCodeWord(uint32_t addr) const;
 	uint32_t readU32FromRegion(uint32_t addr) const;
 	const u8* readBytesView(uint32_t addr, size_t length) const;
-	const u8* readRegion(uint32_t addr, size_t length, size_t& outOffset) const;
-	u8* writeRegion(uint32_t addr, size_t length, size_t& outOffset);
 	bool isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, uint32_t size) const;
 	bool isLuaReadOnlyIoAddress(uint32_t addr) const;
 	bool isMappedWritableRange(uint32_t addr, size_t length) const;
+	bool isMappedReadableRange(uint32_t addr, size_t length) const;
+	static void onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value);
+	void onBusFaultAckWrite(uint32_t addr, Value value);
+	void raiseBusFault(uint32_t code, uint32_t addr, uint32_t access) const;
+	void writeBusFaultSlots() const;
 };
 
 } // namespace bmsx

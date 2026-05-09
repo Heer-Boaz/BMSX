@@ -24,6 +24,7 @@ Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Inp
 }
 
 void Machine::initializeSystemIo() {
+	memory.clearBusFault();
 	memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, valueNumber(0.0));
 	memory.writeValue(IO_SYS_HOST_FAULT_STAGE, valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));

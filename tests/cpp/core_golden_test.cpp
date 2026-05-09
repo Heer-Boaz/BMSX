@@ -60,6 +60,17 @@ bool throwsRuntime(Fn&& fn) {
 	}
 }
 
+void requireBusFault(const bmsx::Memory& memory, uint32_t code, uint32_t addr, uint32_t access, const char* message) {
+	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == code, message);
+	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == addr, message);
+	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS) == access, message);
+}
+
+void clearBusFault(bmsx::Memory& memory) {
+	memory.writeMappedU32LE(bmsx::IO_SYS_BUS_FAULT_ACK, 1u);
+	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_NONE, "bus fault ack should clear the sticky fault");
+}
+
 class RecordingVramWriter final : public bmsx::Memory::VramWriter {
 public:
 	struct Read {
@@ -213,22 +224,51 @@ void testMemoryGolden() {
 	require(memory.readMappedU32LE(bmsx::IO_DMA_STATUS) == 0xfeedcafeu, "mapped I/O u32le read should use the register word");
 	memory.writeMappedU32LE(bmsx::IO_DMA_CTRL, 0x13572468u);
 	require(memory.readIoU32(bmsx::IO_DMA_CTRL) == 0x13572468u, "mapped I/O u32le write should store one register word");
-	bool rejectedHalfwordIo = false;
-	try {
-		static_cast<void>(memory.readMappedU16LE(bmsx::IO_DMA_STATUS));
-	} catch (const std::runtime_error& error) {
-		rejectedHalfwordIo = std::string_view(error.what()).find("I/O read fault") != std::string_view::npos;
-	}
-	require(rejectedHalfwordIo, "mapped I/O u16le read should keep the I/O word boundary explicit");
+	require(memory.readMappedU16LE(bmsx::IO_DMA_STATUS) == 0u, "mapped I/O u16le read should return open bus");
+	requireBusFault(
+		memory,
+		bmsx::BUS_FAULT_UNALIGNED_IO,
+		bmsx::IO_DMA_STATUS,
+		bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U16,
+		"mapped I/O u16le read should latch an I/O boundary bus fault"
+	);
+	clearBusFault(memory);
+	memory.writeMappedU32LE(bmsx::IO_DMA_STATUS, 0u);
+	requireBusFault(
+		memory,
+		bmsx::BUS_FAULT_READ_ONLY,
+		bmsx::IO_DMA_STATUS,
+		bmsx::BUS_FAULT_ACCESS_WRITE | bmsx::BUS_FAULT_ACCESS_U32,
+		"mapped I/O u32le write to read-only register should latch a bus fault"
+	);
+	clearBusFault(memory);
 
 	RecordingVramWriter vram;
 	memory.setVramWriter(&vram);
-	require(throwsRuntime([&]() { static_cast<void>(memory.readMappedU32LE(0xfffffffcu)); }), "mapped u32 read near address wrap should fault");
-	require(throwsRuntime([&]() { memory.writeMappedU32LE(0xfffffffcu, 0u); }), "mapped u32 write near address wrap should fault");
-	require(throwsRuntime([&]() { static_cast<void>(memory.readMappedU32LE(bmsx::RAM_END - 3u)); }), "mapped u32 read past RAM end should fault");
-	require(throwsRuntime([&]() { memory.writeMappedU16LE(bmsx::RAM_END - 1u, 0u); }), "mapped u16 write past RAM end should fault");
-	require(throwsRuntime([&]() { static_cast<void>(memory.readMappedU32LE(bmsx::VRAM_STAGING_BASE - 1u)); }), "mapped u32 read straddling into VRAM should preserve byte-boundary fault");
-	require(throwsRuntime([&]() { memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE - 1u, 0xabcdef01u); }), "mapped u32 write straddling into VRAM should preserve byte-boundary fault");
+	require(memory.readMappedU32LE(0xfffffffcu) == 0u, "mapped u32 read near address wrap should return open bus");
+	requireBusFault(memory, bmsx::BUS_FAULT_UNMAPPED, 0xfffffffcu, bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U32, "mapped u32 read near address wrap should latch a bus fault");
+	clearBusFault(memory);
+	memory.writeMappedU32LE(0xfffffffcu, 0u);
+	requireBusFault(memory, bmsx::BUS_FAULT_UNMAPPED, 0xfffffffcu, bmsx::BUS_FAULT_ACCESS_WRITE | bmsx::BUS_FAULT_ACCESS_U32, "mapped u32 write near address wrap should latch a bus fault");
+	clearBusFault(memory);
+	require(memory.readMappedU32LE(bmsx::RAM_END - 3u) == 0u, "mapped u32 read past RAM end should return open bus");
+	requireBusFault(memory, bmsx::BUS_FAULT_UNMAPPED, bmsx::RAM_END - 3u, bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U32, "mapped u32 read past RAM end should latch a bus fault");
+	clearBusFault(memory);
+	memory.writeMappedU16LE(bmsx::RAM_END - 1u, 0u);
+	requireBusFault(memory, bmsx::BUS_FAULT_UNMAPPED, bmsx::RAM_END - 1u, bmsx::BUS_FAULT_ACCESS_WRITE | bmsx::BUS_FAULT_ACCESS_U16, "mapped u16 write past RAM end should latch a bus fault");
+	clearBusFault(memory);
+	require(memory.readMappedU32LE(bmsx::VRAM_STAGING_BASE - 1u) == 0u, "mapped u32 read straddling into VRAM should return open bus");
+	requireBusFault(memory, bmsx::BUS_FAULT_VRAM_RANGE, bmsx::VRAM_STAGING_BASE - 1u, bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U32, "mapped u32 read straddling into VRAM should latch a bus fault");
+	clearBusFault(memory);
+	memory.writeMappedU32LE(bmsx::VRAM_STAGING_BASE - 1u, 0xabcdef01u);
+	requireBusFault(memory, bmsx::BUS_FAULT_VRAM_RANGE, bmsx::VRAM_STAGING_BASE - 1u, bmsx::BUS_FAULT_ACCESS_WRITE | bmsx::BUS_FAULT_ACCESS_U32, "mapped u32 write straddling into VRAM should latch a bus fault");
+	clearBusFault(memory);
+	require(memory.readMappedF64LE(bmsx::VRAM_STAGING_BASE - 4u) == 0.0, "mapped f64 read straddling into VRAM should return open bus");
+	requireBusFault(memory, bmsx::BUS_FAULT_VRAM_RANGE, bmsx::VRAM_STAGING_BASE - 4u, bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_F64, "mapped f64 read straddling into VRAM should latch a bus fault");
+	clearBusFault(memory);
+	memory.writeMappedF64LE(bmsx::VRAM_STAGING_BASE - 4u, 1.0);
+	requireBusFault(memory, bmsx::BUS_FAULT_VRAM_RANGE, bmsx::VRAM_STAGING_BASE - 4u, bmsx::BUS_FAULT_ACCESS_WRITE | bmsx::BUS_FAULT_ACCESS_F64, "mapped f64 write straddling into VRAM should latch a bus fault");
+	clearBusFault(memory);
 	require(vram.reads.empty(), "VRAM straddle read should not issue a contained VRAM transfer");
 	require(vram.writes.empty(), "VRAM straddle write should not issue a contained VRAM transfer");
 

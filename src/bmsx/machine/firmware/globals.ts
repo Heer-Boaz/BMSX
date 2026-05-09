@@ -51,6 +51,19 @@ import {
 	APU_FILTER_NONE,
 	APU_FILTER_NOTCH,
 	APU_FILTER_PEAKING,
+	BUS_FAULT_ACCESS_F32,
+	BUS_FAULT_ACCESS_F64,
+	BUS_FAULT_ACCESS_READ,
+	BUS_FAULT_ACCESS_U8,
+	BUS_FAULT_ACCESS_U16,
+	BUS_FAULT_ACCESS_U32,
+	BUS_FAULT_ACCESS_WORD,
+	BUS_FAULT_ACCESS_WRITE,
+	BUS_FAULT_NONE,
+	BUS_FAULT_READ_ONLY,
+	BUS_FAULT_UNALIGNED_IO,
+	BUS_FAULT_UNMAPPED,
+	BUS_FAULT_VRAM_RANGE,
 	DMA_CTRL_START,
 	DMA_CTRL_STRICT,
 	DMA_STATUS_BUSY,
@@ -178,6 +191,10 @@ import {
 	IO_INP_VALUE,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
+	IO_SYS_BUS_FAULT_ACCESS,
+	IO_SYS_BUS_FAULT_ACK,
+	IO_SYS_BUS_FAULT_ADDR,
+	IO_SYS_BUS_FAULT_CODE,
 	IO_SYS_BOOT_CART,
 	IO_SYS_HOST_FAULT_FLAGS,
 	IO_SYS_HOST_FAULT_STAGE,
@@ -1202,6 +1219,23 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'math', mathTable);
 	luaPipeline.registerGlobal(runtime, 'easing', easingTable);
 	luaPipeline.registerGlobal(runtime, 'sys_boot_cart', IO_SYS_BOOT_CART);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_code', IO_SYS_BUS_FAULT_CODE);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_addr', IO_SYS_BUS_FAULT_ADDR);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_access', IO_SYS_BUS_FAULT_ACCESS);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_ack', IO_SYS_BUS_FAULT_ACK);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_none', BUS_FAULT_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_unmapped', BUS_FAULT_UNMAPPED);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_unaligned_io', BUS_FAULT_UNALIGNED_IO);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_read_only', BUS_FAULT_READ_ONLY);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_vram_range', BUS_FAULT_VRAM_RANGE);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_access_read', BUS_FAULT_ACCESS_READ);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_access_write', BUS_FAULT_ACCESS_WRITE);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_access_u8', BUS_FAULT_ACCESS_U8);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_access_u16', BUS_FAULT_ACCESS_U16);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_access_u32', BUS_FAULT_ACCESS_U32);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_access_word', BUS_FAULT_ACCESS_WORD);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_access_f32', BUS_FAULT_ACCESS_F32);
+	luaPipeline.registerGlobal(runtime, 'sys_bus_fault_access_f64', BUS_FAULT_ACCESS_F64);
 	luaPipeline.registerGlobal(runtime, 'sys_host_fault_flags', IO_SYS_HOST_FAULT_FLAGS);
 	luaPipeline.registerGlobal(runtime, 'sys_host_fault_stage', IO_SYS_HOST_FAULT_STAGE);
 	luaPipeline.registerGlobal(runtime, 'sys_host_fault_flag_active', HOST_FAULT_FLAG_ACTIVE);

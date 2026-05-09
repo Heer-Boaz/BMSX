@@ -235,6 +235,9 @@ function decodeRuntimeVblankState(value: unknown, label: string): RuntimeSaveMac
 function encodeMemorySaveState(state: MemorySaveState): MemorySaveState {
 	return {
 		ram: state.ram,
+		busFaultCode: state.busFaultCode >>> 0,
+		busFaultAddr: state.busFaultAddr >>> 0,
+		busFaultAccess: state.busFaultAccess >>> 0,
 	};
 }
 
@@ -242,6 +245,9 @@ function decodeMemorySaveState(value: unknown, label: string): MemorySaveState {
 	const object = requireObject(value, label);
 	return {
 		ram: requireObjectKey(object, 'ram', label, 'machine.memory.ram') as Uint8Array,
+		busFaultCode: requireObjectKey(object, 'busFaultCode', label, 'machine.memory.busFaultCode') as number,
+		busFaultAddr: requireObjectKey(object, 'busFaultAddr', label, 'machine.memory.busFaultAddr') as number,
+		busFaultAccess: requireObjectKey(object, 'busFaultAccess', label, 'machine.memory.busFaultAccess') as number,
 	};
 }
 

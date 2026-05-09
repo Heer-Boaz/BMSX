@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 11;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 12;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
@@ -136,4 +136,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'vdpFaultCode',
 	'vdpFaultDetail',
 	'tracked',
+	'busFaultCode',
+	'busFaultAddr',
+	'busFaultAccess',
 ] as const;

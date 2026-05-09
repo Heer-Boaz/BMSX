@@ -25,7 +25,12 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	const state = {
 		machineState: {
 			machine: {
-				memory: { ram: new Uint8Array([1, 2, 3, 4]) },
+				memory: {
+					ram: new Uint8Array([1, 2, 3, 4]),
+					busFaultCode: 2,
+					busFaultAddr: 0x12345678,
+					busFaultAccess: 0x400,
+				},
 				irq: { pendingFlags: 0xa5a5 },
 				stringPool: {
 					entries: [

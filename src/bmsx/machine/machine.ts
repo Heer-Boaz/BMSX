@@ -77,6 +77,7 @@ export class Machine {
 	}
 
 	public initializeSystemIo(): void {
+		this.memory.clearBusFault();
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
 		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);

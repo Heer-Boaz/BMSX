@@ -370,6 +370,9 @@ RuntimeVblankSnapshot decodeRuntimeVblankState(const BinValue& value, const char
 BinValue encodeMemorySaveState(const MemorySaveState& state) {
 	BinObject object;
 	object["ram"] = BinValue(BinBinary(state.ram.begin(), state.ram.end()));
+	object["busFaultCode"] = static_cast<f64>(state.busFaultCode);
+	object["busFaultAddr"] = static_cast<f64>(state.busFaultAddr);
+	object["busFaultAccess"] = static_cast<f64>(state.busFaultAccess);
 	return BinValue(std::move(object));
 }
 
@@ -377,6 +380,9 @@ MemorySaveState decodeMemorySaveState(const BinValue& value, const char* label) 
 	const BinObject& object = requireObject(value, label);
 	MemorySaveState state;
 	state.ram = requireBinary(requireField(object, "ram", label), "machine.memory.ram");
+	state.busFaultCode = requireU32(requireField(object, "busFaultCode", label), "machine.memory.busFaultCode");
+	state.busFaultAddr = requireU32(requireField(object, "busFaultAddr", label), "machine.memory.busFaultAddr");
+	state.busFaultAccess = requireU32(requireField(object, "busFaultAccess", label), "machine.memory.busFaultAccess");
 	return state;
 }
 

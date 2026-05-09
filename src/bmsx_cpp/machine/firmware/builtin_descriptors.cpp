@@ -76,7 +76,7 @@ constexpr std::array<LuaBuiltinDescriptor, 4> kSystemLuaBuiltinGlobals{{
 	LuaBuiltinDescriptor{"sorted_scratchbatch", "sorted_scratchbatch", "Sorted scratch batch module table (sorted_scratchbatch.new; batches support clear, push, get, reserve, for_each, iter, set_compare, sort)."},
 }};
 
-constexpr std::array<LuaBuiltinDescriptor, 339> kDefaultLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 356> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"assert", "assert(value [, message])", ""},
 	LuaBuiltinDescriptor{"error", "error(message [, level])", ""},
 	LuaBuiltinDescriptor{"getmetatable", "getmetatable(object)", ""},
@@ -178,6 +178,23 @@ constexpr std::array<LuaBuiltinDescriptor, 339> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"memf32le", "memf32le[addr]", "Reserved memory-mapped little-endian 32-bit float space for direct `memf32le[addr]` reads/writes. Not a first-class Lua value. Invalid or read-only writes raise a fault."},
 	LuaBuiltinDescriptor{"memf64le", "memf64le[addr]", "Reserved memory-mapped little-endian 64-bit float space for direct `memf64le[addr]` reads/writes. Not a first-class Lua value. Invalid or read-only writes raise a fault."},
 	LuaBuiltinDescriptor{"sys_boot_cart", "sys_boot_cart", "System register address; write 1 to boot the cart."},
+	LuaBuiltinDescriptor{"sys_bus_fault_code", "sys_bus_fault_code", "System register address; sticky mapped bus fault code."},
+	LuaBuiltinDescriptor{"sys_bus_fault_addr", "sys_bus_fault_addr", "System register address; address captured for the first sticky mapped bus fault."},
+	LuaBuiltinDescriptor{"sys_bus_fault_access", "sys_bus_fault_access", "System register address; access flags captured for the first sticky mapped bus fault."},
+	LuaBuiltinDescriptor{"sys_bus_fault_ack", "sys_bus_fault_ack", "System register address; write nonzero to clear the sticky mapped bus fault."},
+	LuaBuiltinDescriptor{"sys_bus_fault_none", "sys_bus_fault_none", "Bus fault code meaning no bus fault is latched."},
+	LuaBuiltinDescriptor{"sys_bus_fault_unmapped", "sys_bus_fault_unmapped", "Bus fault code for an unmapped mapped-memory access."},
+	LuaBuiltinDescriptor{"sys_bus_fault_unaligned_io", "sys_bus_fault_unaligned_io", "Bus fault code for a non-word I/O mapped-memory access."},
+	LuaBuiltinDescriptor{"sys_bus_fault_read_only", "sys_bus_fault_read_only", "Bus fault code for a mapped-memory write to a read-only I/O register."},
+	LuaBuiltinDescriptor{"sys_bus_fault_vram_range", "sys_bus_fault_vram_range", "Bus fault code for a mapped VRAM access that is not contained in the VRAM aperture."},
+	LuaBuiltinDescriptor{"sys_bus_fault_access_read", "sys_bus_fault_access_read", "Bus fault access flag for reads."},
+	LuaBuiltinDescriptor{"sys_bus_fault_access_write", "sys_bus_fault_access_write", "Bus fault access flag for writes."},
+	LuaBuiltinDescriptor{"sys_bus_fault_access_u8", "sys_bus_fault_access_u8", "Bus fault access flag for byte accesses."},
+	LuaBuiltinDescriptor{"sys_bus_fault_access_u16", "sys_bus_fault_access_u16", "Bus fault access flag for little-endian 16-bit accesses."},
+	LuaBuiltinDescriptor{"sys_bus_fault_access_u32", "sys_bus_fault_access_u32", "Bus fault access flag for little-endian 32-bit accesses."},
+	LuaBuiltinDescriptor{"sys_bus_fault_access_word", "sys_bus_fault_access_word", "Bus fault access flag for Lua word accesses."},
+	LuaBuiltinDescriptor{"sys_bus_fault_access_f32", "sys_bus_fault_access_f32", "Bus fault access flag for little-endian 32-bit float accesses."},
+	LuaBuiltinDescriptor{"sys_bus_fault_access_f64", "sys_bus_fault_access_f64", "Bus fault access flag for little-endian 64-bit float accesses."},
 	LuaBuiltinDescriptor{"sys_host_fault_flags", "sys_host_fault_flags", "System register address; sticky host fault flags published by the host runtime during startup."},
 	LuaBuiltinDescriptor{"sys_host_fault_stage", "sys_host_fault_stage", "System register address; host-defined startup fault stage code."},
 	LuaBuiltinDescriptor{"sys_host_fault_flag_active", "sys_host_fault_flag_active", "Host fault flag bit indicating that a host fault is currently published."},
