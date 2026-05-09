@@ -1,4 +1,3 @@
-import { taskGate } from '../../../core/taskgate';
 import { decodePngToRgba } from '../../../common/image_decode';
 import {
 	IMG_CTRL_START,
@@ -42,19 +41,14 @@ type ImgDecJob = {
 	reject: (error: unknown) => void;
 };
 
-type ImageDecodeTarget = {
-	baseAddr: number;
-	capacity: number;
-};
-
 const IMGDEC_SERVICE_BATCH_BYTES = 256;
 
 function imageDecoderFault(message: string): Error {
 	return new Error(`Image decoder fault: ${message}`);
 }
 
-function planImageCopy(target: ImageDecodeTarget, result: DecodedImage, capacityLimit: number): ImageCopyPlan {
-	const capacity = capacityLimit < target.capacity ? capacityLimit : target.capacity;
+function planImageCopy(targetBaseAddr: number, targetCapacity: number, result: DecodedImage, capacityLimit: number): ImageCopyPlan {
+	const capacity = capacityLimit < targetCapacity ? capacityLimit : targetCapacity;
 	const sourceWidth = result.width;
 	const sourceHeight = result.height;
 	const sourceStride = sourceWidth * 4;
@@ -82,7 +76,7 @@ function planImageCopy(target: ImageDecodeTarget, result: DecodedImage, capacity
 	const writeStride = writeWidth * 4;
 	const writeSize = writeStride * writeHeight;
 	return {
-		baseAddr: target.baseAddr,
+		baseAddr: targetBaseAddr,
 		writeWidth,
 		writeHeight,
 		writeStride,
@@ -94,7 +88,6 @@ function planImageCopy(target: ImageDecodeTarget, result: DecodedImage, capacity
 }
 
 export class ImgDecController {
-	private readonly gate = taskGate.group('imgdec');
 	private cpuHz = 1;
 	private decodeBytesPerSec = 1;
 	private decodeCarry = 0;
@@ -103,8 +96,9 @@ export class ImgDecController {
 	private status = 0;
 	private pendingError: unknown = null;
 	private pendingResult: DecodedImage | null = null;
-	private pendingTarget: ImageDecodeTarget | null = null;
-	private pendingCap = 0;
+	private pendingTargetBase = 0;
+	private pendingTargetCapacity = 0;
+	private activeCapacityLimit = 0;
 	private decodeActive = false;
 	private decodeRemaining = 0;
 	private decodePlan: ImageCopyPlan | null = null;
@@ -115,7 +109,8 @@ export class ImgDecController {
 	private decodeToken = 0;
 	private readonly queuedJobs: Array<ImgDecJob | null> = [];
 	private queuedJobHead = 0;
-	private activeJob: ImgDecJob | null = null;
+	private activeResolve: ImgDecJob['resolve'] | null = null;
+	private activeReject: ImgDecJob['reject'] | null = null;
 	private signalIrq = false;
 
 	public constructor(
@@ -178,8 +173,9 @@ export class ImgDecController {
 		this.status = 0;
 		this.pendingError = null;
 		this.pendingResult = null;
-		this.pendingTarget = null;
-		this.pendingCap = 0;
+		this.pendingTargetBase = 0;
+		this.pendingTargetCapacity = 0;
+		this.activeCapacityLimit = 0;
 		this.decodeActive = false;
 		this.decodeRemaining = 0;
 		this.decodePlan = null;
@@ -190,7 +186,8 @@ export class ImgDecController {
 		this.signalIrq = false;
 		this.queuedJobs.length = 0;
 		this.queuedJobHead = 0;
-		this.activeJob = null;
+		this.activeResolve = null;
+		this.activeReject = null;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 		this.memory.writeValue(IO_IMG_SRC, 0);
 		this.memory.writeValue(IO_IMG_LEN, 0);
@@ -218,52 +215,67 @@ export class ImgDecController {
 		const dst = this.memory.readIoU32(IO_IMG_DST);
 		const cap = this.memory.readIoU32(IO_IMG_CAP);
 		this.memory.writeIoValue(IO_IMG_CTRL, ctrl & ~IMG_CTRL_START);
-		let buffer: Uint8Array;
-		try {
-			const bytes = this.memory.readBytes(src, len);
-			const copy = new Uint8Array(bytes.byteLength);
-			copy.set(bytes);
-			buffer = copy;
-		} catch (error) {
-			this.finishError(error);
+		const buffer = new Uint8Array(len);
+		if (!this.memory.readBytesInto(src, buffer, len)) {
+			this.activeResolve = null;
+			this.activeReject = null;
+			this.status = IMG_STATUS_DONE | IMG_STATUS_ERROR;
+			this.memory.writeValue(IO_IMG_STATUS, this.status);
+			this.memory.writeValue(IO_IMG_WRITTEN, 0);
+			this.memory.writeValue(IO_IMG_SRC, src);
+			this.memory.writeValue(IO_IMG_LEN, len);
+			this.memory.writeValue(IO_IMG_DST, dst);
+			this.memory.writeValue(IO_IMG_CAP, cap);
+			this.irq.raise(IRQ_IMG_ERROR);
+			this.scheduleNextService(nowCycles);
 			return;
 		}
-		this.startJob({ buffer, dst, cap, src, len, job: null, signalIrq: true });
+		this.activeResolve = null;
+		this.activeReject = null;
+		this.startJob(buffer, dst, cap, src, len, true);
 		this.scheduleNextService(nowCycles);
 	}
 
 	public onService(nowCycles: number): void {
-		this.tryStartQueued();
 		if (!this.active) {
-			this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
-			return;
+			if (!this.startNextQueuedJob()) {
+				this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
+				return;
+			}
+			if (!this.active) {
+				return;
+			}
 		}
 		if (this.pendingError !== null) {
 			const error = this.pendingError;
 			this.pendingError = null;
 			this.finishError(error);
-			this.scheduleNextService(nowCycles);
 			return;
 		}
-		if (this.pendingResult !== null && this.pendingTarget !== null) {
+		if (this.pendingResult !== null) {
 			const result = this.pendingResult;
-			const target = this.pendingTarget;
+			const targetBase = this.pendingTargetBase;
+			const targetCapacity = this.pendingTargetCapacity;
 			this.pendingResult = null;
-			this.pendingTarget = null;
-			this.beginDecode(result, target);
+			this.pendingTargetBase = 0;
+			this.pendingTargetCapacity = 0;
+			this.beginDecode(result, targetBase, targetCapacity);
+			if (!this.active) {
+				return;
+			}
 		}
 		if (this.decodeActive && this.availableDecodeBytes > 0) {
 			this.advanceDecode();
+			if (!this.active) {
+				return;
+			}
 		}
 		this.scheduleNextService(nowCycles);
 	}
 
-	private tryStartQueued(): void {
-		if (this.active) {
-			return;
-		}
+	private startNextQueuedJob(): boolean {
 		if (this.queuedJobHead === this.queuedJobs.length) {
-			return;
+			return false;
 		}
 		const job = this.queuedJobs[this.queuedJobHead]!;
 		this.queuedJobs[this.queuedJobHead] = null;
@@ -272,48 +284,52 @@ export class ImgDecController {
 			this.queuedJobs.length = 0;
 			this.queuedJobHead = 0;
 		}
-		this.startJob({ buffer: job.buffer, dst: job.dst, cap: job.cap, src: 0, len: job.buffer.byteLength, job, signalIrq: false });
+		const buffer = job.buffer;
+		this.activeResolve = job.resolve;
+		this.activeReject = job.reject;
+		this.startJob(buffer, job.dst, job.cap, 0, buffer.byteLength, false);
+		return true;
 	}
 
-	private resolveDecodeTarget(dst: number): ImageDecodeTarget {
+	private decodeTargetCapacity(dst: number): number {
 		if (dst === VRAM_PRIMARY_SLOT_BASE) {
-			return { baseAddr: VRAM_PRIMARY_SLOT_BASE, capacity: VRAM_PRIMARY_SLOT_SIZE };
+			return VRAM_PRIMARY_SLOT_SIZE;
 		}
 		if (dst === VRAM_SECONDARY_SLOT_BASE) {
-			return { baseAddr: VRAM_SECONDARY_SLOT_BASE, capacity: VRAM_SECONDARY_SLOT_SIZE };
+			return VRAM_SECONDARY_SLOT_SIZE;
 		}
 		if (dst === VRAM_SYSTEM_SLOT_BASE) {
-			return { baseAddr: VRAM_SYSTEM_SLOT_BASE, capacity: VRAM_SYSTEM_SLOT_SIZE };
+			return VRAM_SYSTEM_SLOT_SIZE;
 		}
-		throw imageDecoderFault(`unsupported destination address ${dst}.`);
+		return 0;
 	}
 
-	private startJob(params: { buffer: Uint8Array; dst: number; cap: number; src: number; len: number; job: ImgDecJob | null; signalIrq: boolean }): void {
+	private startJob(buffer: Uint8Array, dst: number, cap: number, src: number, len: number, signalIrq: boolean): void {
 		this.pendingResult = null;
 		this.pendingError = null;
-		this.pendingTarget = null;
-		this.signalIrq = params.signalIrq;
+		this.pendingTargetBase = 0;
+		this.pendingTargetCapacity = 0;
+		this.activeCapacityLimit = 0;
+		this.signalIrq = signalIrq;
 		this.status = IMG_STATUS_BUSY;
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
 		this.memory.writeValue(IO_IMG_WRITTEN, 0);
-		this.memory.writeValue(IO_IMG_SRC, params.src);
-		this.memory.writeValue(IO_IMG_LEN, params.len);
-		this.memory.writeValue(IO_IMG_DST, params.dst);
-		this.memory.writeValue(IO_IMG_CAP, params.cap);
+		this.memory.writeValue(IO_IMG_SRC, src);
+		this.memory.writeValue(IO_IMG_LEN, len);
+		this.memory.writeValue(IO_IMG_DST, dst);
+		this.memory.writeValue(IO_IMG_CAP, cap);
 
-		let target: ImageDecodeTarget;
-		try {
-			target = this.resolveDecodeTarget(params.dst);
-		} catch (error) {
-			this.finishError(error);
+		const targetCapacity = this.decodeTargetCapacity(dst);
+		if (targetCapacity === 0) {
+			this.finishError(null);
 			return;
 		}
-		const effectiveCap = params.cap < target.capacity ? params.cap : target.capacity;
+		const effectiveCap = cap < targetCapacity ? cap : targetCapacity;
 		if (effectiveCap === 0) {
-			this.finishError(imageDecoderFault(`invalid destination capacity ${params.cap}.`));
+			this.finishError(null);
 			return;
 		}
-		this.pendingCap = effectiveCap;
+		this.activeCapacityLimit = effectiveCap;
 		this.active = true;
 		this.decodeActive = false;
 		this.decodeRemaining = 0;
@@ -322,18 +338,17 @@ export class ImgDecController {
 		this.decodeWidth = 0;
 		this.decodeHeight = 0;
 		this.decodeQueued = false;
-		this.activeJob = params.job;
 		const token = this.decodeToken + 1;
 		this.decodeToken = token;
-		const promise = this.gate.track(decodePngToRgba(params.buffer), { blocking: false, category: 'texture', tag: 'imgdec' });
-		promise.then((result) => {
+		void decodePngToRgba(buffer).then((result) => {
 			if (token !== this.decodeToken) {
 				return;
 			}
 			this.pendingResult = result;
-			this.pendingTarget = target;
+			this.pendingTargetBase = dst;
+			this.pendingTargetCapacity = targetCapacity;
 			this.scheduleNextService(this.scheduler.currentNowCycles());
-		}).catch((error) => {
+		}, (error: unknown) => {
 			if (token !== this.decodeToken) {
 				return;
 			}
@@ -342,17 +357,16 @@ export class ImgDecController {
 		});
 	}
 
-	private beginDecode(result: DecodedImage, target: ImageDecodeTarget): void {
-		const cap = this.pendingCap;
-		this.pendingCap = 0;
-		const plan = planImageCopy(target, result, cap);
+	private beginDecode(result: DecodedImage, targetBase: number, targetCapacity: number): void {
+		const plan = planImageCopy(targetBase, targetCapacity, result, this.activeCapacityLimit);
+		this.activeCapacityLimit = 0;
 		this.decodePlan = plan;
 		this.decodePixels = result.pixels;
 		this.decodeWidth = result.width;
 		this.decodeHeight = result.height;
 		this.decodeRemaining = plan.writeSize;
 		if (plan.writeWidth > 0 && plan.writeHeight > 0) {
-			this.vdp.setDecodedVramSurfaceDimensions(target.baseAddr, plan.writeWidth, plan.writeHeight);
+			this.vdp.setDecodedVramSurfaceDimensions(targetBase, plan.writeWidth, plan.writeHeight);
 		}
 		this.decodeCarry = 0;
 		this.availableDecodeBytes = 0;
@@ -378,21 +392,27 @@ export class ImgDecController {
 		const pixels = this.decodePixels!;
 		this.decodePlan = null;
 		this.decodePixels = null;
-		this.dma.enqueueImageCopy(plan, pixels, (result) => {
-			if (result.error) {
-				this.finishError(result.fault);
+		this.dma.enqueueImageCopy(plan, pixels, (error, clipped) => {
+			if (error) {
+				this.finishError(null);
 				return;
 			}
-			this.finishSuccess(result.clipped);
+			this.finishSuccess(clipped);
 		});
 	}
 
 	private finishSuccess(clipped: boolean): void {
-		const job = this.activeJob;
+		const resolve = this.activeResolve;
 		const width = this.decodeWidth;
 		const height = this.decodeHeight;
-		this.activeJob = null;
+		this.activeResolve = null;
+		this.activeReject = null;
 		this.active = false;
+		this.pendingError = null;
+		this.pendingResult = null;
+		this.pendingTargetBase = 0;
+		this.pendingTargetCapacity = 0;
+		this.activeCapacityLimit = 0;
 		this.decodeActive = false;
 		this.availableDecodeBytes = 0;
 		this.decodePlan = null;
@@ -407,16 +427,22 @@ export class ImgDecController {
 			this.irq.raise(IRQ_IMG_DONE);
 		}
 		this.signalIrq = false;
-		if (job) {
-			job.resolve({ width, height, clipped });
+		if (resolve) {
+			resolve({ width, height, clipped });
 		}
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 	}
 
-	private finishError(error?: unknown): void {
-		const job = this.activeJob;
-		this.activeJob = null;
+	private finishError(jobError: unknown | null): void {
+		const reject = this.activeReject;
+		this.activeResolve = null;
+		this.activeReject = null;
 		this.active = false;
+		this.pendingError = null;
+		this.pendingResult = null;
+		this.pendingTargetBase = 0;
+		this.pendingTargetCapacity = 0;
+		this.activeCapacityLimit = 0;
 		this.decodeActive = false;
 		this.availableDecodeBytes = 0;
 		this.decodePlan = null;
@@ -431,8 +457,8 @@ export class ImgDecController {
 			this.irq.raise(IRQ_IMG_ERROR);
 		}
 		this.signalIrq = false;
-		if (job) {
-			job.reject(error ?? imageDecoderFault('decode failed.'));
+		if (reject) {
+			reject(jobError === null || jobError === undefined ? imageDecoderFault('decode failed.') : jobError);
 		}
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 	}
@@ -446,7 +472,7 @@ export class ImgDecController {
 			this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMG);
 			return;
 		}
-		if (this.pendingError !== null || (this.pendingResult !== null && this.pendingTarget !== null)) {
+		if (this.pendingError !== null || this.pendingResult !== null) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMG, nowCycles);
 			return;
 		}

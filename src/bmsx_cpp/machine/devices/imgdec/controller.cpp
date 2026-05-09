@@ -18,11 +18,6 @@
 namespace bmsx {
 namespace {
 
-TaskGate& imgdecGate() {
-	static TaskGate gate;
-	return gate;
-}
-
 inline std::runtime_error imageDecoderFault(const std::string& message) {
 	return std::runtime_error("Image decoder fault: " + message);
 }
@@ -31,8 +26,8 @@ constexpr uint32_t IMGDEC_SERVICE_BATCH_BYTES = 256u;
 
 }
 
-ImageCopyPlan ImgDecController::planImageCopy(const ImageDecodeTarget& target, const DecodedImage& result, uint32_t capacityLimit) {
-	const uint32_t capacity = capacityLimit < target.capacity ? capacityLimit : target.capacity;
+ImageCopyPlan ImgDecController::planImageCopy(uint32_t targetBaseAddr, uint32_t targetCapacity, const DecodedImage& result, uint32_t capacityLimit) {
+	const uint32_t capacity = capacityLimit < targetCapacity ? capacityLimit : targetCapacity;
 	const uint32_t sourceWidth = result.width;
 	const uint32_t sourceHeight = result.height;
 	const uint32_t sourceStride = sourceWidth * 4u;
@@ -60,7 +55,7 @@ ImageCopyPlan ImgDecController::planImageCopy(const ImageDecodeTarget& target, c
 	const uint32_t writeStride = writeWidth * 4u;
 	const size_t writeLen = static_cast<size_t>(writeStride) * static_cast<size_t>(writeHeight);
 	ImageCopyPlan plan;
-	plan.baseAddr = target.baseAddr;
+	plan.baseAddr = targetBaseAddr;
 	plan.writeWidth = writeWidth;
 	plan.writeHeight = writeHeight;
 	plan.writeStride = writeStride;
@@ -79,8 +74,7 @@ ImgDecController::ImgDecController(
 	DeviceScheduler& scheduler,
 	MicrotaskQueue& microtasks
 )
-	: m_gate(imgdecGate().group("imgdec"))
-	, m_memory(memory)
+	: m_memory(memory)
 	, m_dma(dma)
 	, m_vdp(vdp)
 	, m_irq(irq)
@@ -149,8 +143,9 @@ void ImgDecController::reset() {
 	m_status = 0;
 	m_pendingError = nullptr;
 	m_pendingResult.reset();
-	m_pendingTarget.reset();
-	m_pendingCap = 0;
+	m_pendingTargetBase = 0;
+	m_pendingTargetCapacity = 0;
+	m_activeCapacityLimit = 0;
 	m_decodeActive = false;
 	m_decodeRemaining = 0;
 	m_decodePlan = ImageCopyPlan{};
@@ -161,7 +156,8 @@ void ImgDecController::reset() {
 	m_signalIrq = false;
 	m_queuedJobs.clear();
 	m_queuedJobHead = 0;
-	m_activeJob.reset();
+	m_activeResolve = {};
+	m_activeReject = {};
 	m_scheduler.cancelDeviceService(DeviceServiceImg);
 	m_memory.writeValue(IO_IMG_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_LEN, valueNumber(0.0));
@@ -172,7 +168,6 @@ void ImgDecController::reset() {
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
 }
 
-// start fallible-boundary -- IMGDEC maps source-read faults to device status so carts can observe the failed transfer.
 void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 	const uint32_t ctrlValue = m_memory.readIoU32(IO_IMG_CTRL);
 	const uint32_t ctrl = ctrlValue;
@@ -191,49 +186,64 @@ void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 	const uint32_t cap = m_memory.readIoU32(IO_IMG_CAP);
 	m_memory.writeIoValue(IO_IMG_CTRL, valueNumber(static_cast<double>(ctrl & ~IMG_CTRL_START)));
 	std::vector<uint8_t> buffer(len);
-	try {
-		if (len > 0) {
-			m_memory.readBytes(src, buffer.data(), len);
-		}
-	} catch (...) {
-		finishError(std::current_exception());
-		return;
-	}
-	startJob(std::move(buffer), dst, cap, src, len, std::nullopt, true);
-	scheduleNextService(nowCycles);
-}
-// end fallible-boundary
-
-void ImgDecController::onService(int64_t nowCycles) {
-	tryStartQueued();
-	if (!m_active) {
-		m_scheduler.cancelDeviceService(DeviceServiceImg);
-		return;
-	}
-	if (m_pendingError) {
-		finishError(std::exchange(m_pendingError, nullptr));
+	if (len > 0 && !m_memory.readBytes(src, buffer.data(), len)) {
+		m_activeResolve = {};
+		m_activeReject = {};
+		m_status = IMG_STATUS_DONE | IMG_STATUS_ERROR;
+		m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
+		m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
+		m_memory.writeValue(IO_IMG_SRC, valueNumber(static_cast<double>(src)));
+		m_memory.writeValue(IO_IMG_LEN, valueNumber(static_cast<double>(len)));
+		m_memory.writeValue(IO_IMG_DST, valueNumber(static_cast<double>(dst)));
+		m_memory.writeValue(IO_IMG_CAP, valueNumber(static_cast<double>(cap)));
+		m_irq.raise(IRQ_IMG_ERROR);
 		scheduleNextService(nowCycles);
 		return;
 	}
-	if (m_pendingResult && m_pendingTarget) {
+	m_activeResolve = {};
+	m_activeReject = {};
+	startJob(std::move(buffer), dst, cap, src, len, true);
+	scheduleNextService(nowCycles);
+}
+
+void ImgDecController::onService(int64_t nowCycles) {
+	if (!m_active) {
+		if (!startNextQueuedJob()) {
+			m_scheduler.cancelDeviceService(DeviceServiceImg);
+			return;
+		}
+		if (!m_active) {
+			return;
+		}
+	}
+	if (m_pendingError) {
+		finishError(std::exchange(m_pendingError, nullptr));
+		return;
+	}
+	if (m_pendingResult) {
 		auto result = std::move(*m_pendingResult);
+		const uint32_t targetBase = m_pendingTargetBase;
+		const uint32_t targetCapacity = m_pendingTargetCapacity;
 		m_pendingResult.reset();
-		const auto target = *m_pendingTarget;
-		m_pendingTarget.reset();
-		beginDecode(std::move(result), target);
+		m_pendingTargetBase = 0;
+		m_pendingTargetCapacity = 0;
+		beginDecode(std::move(result), targetBase, targetCapacity);
+		if (!m_active) {
+			return;
+		}
 	}
 	if (m_decodeActive && m_availableDecodeBytes > 0u) {
 		advanceDecode();
+		if (!m_active) {
+			return;
+		}
 	}
 	scheduleNextService(nowCycles);
 }
 
-void ImgDecController::tryStartQueued() {
-	if (m_active) {
-		return;
-	}
+bool ImgDecController::startNextQueuedJob() {
 	if (m_queuedJobHead == m_queuedJobs.size()) {
-		return;
+		return false;
 	}
 	ImgDecJob job = std::move(m_queuedJobs[m_queuedJobHead]);
 	m_queuedJobHead += 1;
@@ -242,14 +252,20 @@ void ImgDecController::tryStartQueued() {
 		m_queuedJobHead = 0;
 	}
 	const uint32_t len = static_cast<uint32_t>(job.buffer.size());
-	startJob(std::move(job.buffer), job.dst, job.cap, 0u, len, std::move(job), false);
+	const uint32_t dst = job.dst;
+	const uint32_t cap = job.cap;
+	m_activeResolve = std::move(job.resolve);
+	m_activeReject = std::move(job.reject);
+	startJob(std::move(job.buffer), dst, cap, 0u, len, false);
+	return true;
 }
 
-// start fallible-boundary -- IMGDEC validates destination ownership at the device boundary and reports errors through IMG status.
-void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, std::optional<ImgDecJob> job, bool signalIrq) {
+void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, bool signalIrq) {
 	m_pendingResult.reset();
 	m_pendingError = nullptr;
-	m_pendingTarget.reset();
+	m_pendingTargetBase = 0;
+	m_pendingTargetCapacity = 0;
+	m_activeCapacityLimit = 0;
 	m_signalIrq = signalIrq;
 	m_status = IMG_STATUS_BUSY;
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
@@ -258,25 +274,18 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 	m_memory.writeValue(IO_IMG_LEN, valueNumber(static_cast<double>(len)));
 	m_memory.writeValue(IO_IMG_DST, valueNumber(static_cast<double>(dst)));
 	m_memory.writeValue(IO_IMG_CAP, valueNumber(static_cast<double>(cap)));
-	if (job.has_value()) {
-		m_activeJob = std::move(job);
-	} else {
-		m_activeJob.reset();
-	}
 
-	ImageDecodeTarget target;
-	try {
-		target = resolveDecodeTarget(dst);
-	} catch (...) {
-		finishError(std::current_exception());
+	const uint32_t targetCapacity = decodeTargetCapacity(dst);
+	if (targetCapacity == 0u) {
+		finishError(nullptr);
 		return;
 	}
-	const uint32_t effectiveCap = cap < target.capacity ? cap : target.capacity;
+	const uint32_t effectiveCap = cap < targetCapacity ? cap : targetCapacity;
 	if (effectiveCap == 0) {
-		finishError(std::make_exception_ptr(imageDecoderFault("invalid destination capacity.")));
+		finishError(nullptr);
 		return;
 	}
-	m_pendingCap = effectiveCap;
+	m_activeCapacityLimit = effectiveCap;
 	m_active = true;
 	m_decodeActive = false;
 	m_decodeRemaining = 0;
@@ -285,72 +294,62 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 	m_decodeQueued = false;
 	m_decodeWidth = 0;
 	m_decodeHeight = 0;
-	GateScope scope;
-	scope.blocking = false;
-	scope.category = "texture";
-	scope.tag = "imgdec";
 	const uint64_t token = m_decodeToken + 1;
 	m_decodeToken = token;
-	m_gateToken = m_gate.begin(scope);
-	m_microtasks.queueMicrotask([this, target, token, buffer = std::move(buffer)]() mutable {
-		try {
-			int width = 0;
-			int height = 0;
-			int comp = 0;
-			unsigned char* pixels = stbi_load_from_memory(
-				buffer.data(),
-				static_cast<int>(buffer.size()),
-				&width,
-				&height,
-				&comp,
-				STBI_rgb_alpha
-			);
-			(void)comp;
-			if (!pixels || width <= 0 || height <= 0) {
-				if (pixels) {
-					stbi_image_free(pixels);
-				}
-				throw imageDecoderFault("PNG decode failed.");
+	m_microtasks.queueMicrotask([this, dst, targetCapacity, token, buffer = std::move(buffer)]() mutable {
+		int width = 0;
+		int height = 0;
+		int comp = 0;
+		unsigned char* pixels = stbi_load_from_memory(
+			buffer.data(),
+			static_cast<int>(buffer.size()),
+			&width,
+			&height,
+			&comp,
+			STBI_rgb_alpha
+		);
+		(void)comp;
+		if (!pixels || width <= 0 || height <= 0) {
+			if (pixels) {
+				stbi_image_free(pixels);
 			}
-			const size_t byteCount = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
-			DecodedImage result;
-			result.width = static_cast<uint32_t>(width);
-			result.height = static_cast<uint32_t>(height);
-			result.pixels.resize(byteCount);
-			std::memcpy(result.pixels.data(), pixels, byteCount);
-			stbi_image_free(pixels);
 			if (token == m_decodeToken) {
-				m_pendingResult = std::move(result);
-				m_pendingTarget = target;
+				m_pendingError = std::make_exception_ptr(imageDecoderFault("PNG decode failed."));
 				scheduleNextService(m_scheduler.currentNowCycles());
 			}
-		} catch (...) {
-			if (token == m_decodeToken) {
-				m_pendingError = std::current_exception();
-				scheduleNextService(m_scheduler.currentNowCycles());
-			}
+			return;
 		}
-		m_gate.end(m_gateToken);
+		const size_t byteCount = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
+		DecodedImage result;
+		result.width = static_cast<uint32_t>(width);
+		result.height = static_cast<uint32_t>(height);
+		result.pixels.resize(byteCount);
+		std::memcpy(result.pixels.data(), pixels, byteCount);
+		stbi_image_free(pixels);
+		if (token == m_decodeToken) {
+			m_pendingResult = std::move(result);
+			m_pendingTargetBase = dst;
+			m_pendingTargetCapacity = targetCapacity;
+			scheduleNextService(m_scheduler.currentNowCycles());
+		}
 	});
 }
-// end fallible-boundary
-
-ImgDecController::ImageDecodeTarget ImgDecController::resolveDecodeTarget(uint32_t dst) {
+uint32_t ImgDecController::decodeTargetCapacity(uint32_t dst) const {
 	if (dst == VRAM_PRIMARY_SLOT_BASE) {
-		return { VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE };
+		return VRAM_PRIMARY_SLOT_SIZE;
 	}
 	if (dst == VRAM_SECONDARY_SLOT_BASE) {
-		return { VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE };
+		return VRAM_SECONDARY_SLOT_SIZE;
 	}
 	if (dst == VRAM_SYSTEM_SLOT_BASE) {
-		return { VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE };
+		return VRAM_SYSTEM_SLOT_SIZE;
 	}
-	throw imageDecoderFault("unsupported destination address " + std::to_string(dst) + ".");
+	return 0u;
 }
 
-void ImgDecController::beginDecode(DecodedImage&& result, const ImageDecodeTarget& target) {
-	m_decodePlan = planImageCopy(target, result, m_pendingCap);
-	m_pendingCap = 0;
+void ImgDecController::beginDecode(DecodedImage&& result, uint32_t targetBaseAddr, uint32_t targetCapacity) {
+	m_decodePlan = planImageCopy(targetBaseAddr, targetCapacity, result, m_activeCapacityLimit);
+	m_activeCapacityLimit = 0;
 	m_decodeWidth = result.width;
 	m_decodeHeight = result.height;
 	m_decodePixels = std::move(result.pixels);
@@ -360,7 +359,7 @@ void ImgDecController::beginDecode(DecodedImage&& result, const ImageDecodeTarge
 	m_decodeActive = true;
 	m_decodeQueued = false;
 	if (m_decodePlan.writeWidth > 0u && m_decodePlan.writeHeight > 0u) {
-		m_vdp.setDecodedVramSurfaceDimensions(target.baseAddr, m_decodePlan.writeWidth, m_decodePlan.writeHeight);
+		m_vdp.setDecodedVramSurfaceDimensions(targetBaseAddr, m_decodePlan.writeWidth, m_decodePlan.writeHeight);
 	}
 	if (m_decodePlan.writeLen == 0) {
 		finishSuccess(m_decodePlan.clipped);
@@ -383,9 +382,9 @@ void ImgDecController::advanceDecode() {
 	m_decodeQueued = true;
 	auto pixels = std::move(m_decodePixels);
 	m_decodePixels.clear();
-	m_dma.enqueueImageCopy(m_decodePlan, std::move(pixels), [this](bool error, bool clipped, std::exception_ptr fault) {
+	m_dma.enqueueImageCopy(m_decodePlan, std::move(pixels), [this](bool error, bool clipped) {
 		if (error) {
-			finishError(fault);
+			finishError(nullptr);
 			return;
 		}
 		finishSuccess(clipped);
@@ -393,13 +392,20 @@ void ImgDecController::advanceDecode() {
 }
 
 void ImgDecController::finishSuccess(bool clipped) {
-	auto activeJob = std::move(m_activeJob);
-	m_activeJob.reset();
+	auto activeResolve = std::move(m_activeResolve);
+	m_activeResolve = {};
+	m_activeReject = {};
 	m_active = false;
+	m_pendingError = nullptr;
+	m_pendingResult.reset();
+	m_pendingTargetBase = 0;
+	m_pendingTargetCapacity = 0;
+	m_activeCapacityLimit = 0;
 	m_decodeActive = false;
 	m_availableDecodeBytes = 0;
 	m_decodeRemaining = 0;
 	m_decodeQueued = false;
+	m_decodePlan = ImageCopyPlan{};
 	m_decodePixels.clear();
 	m_status = (m_status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE;
 	if (clipped) {
@@ -410,8 +416,8 @@ void ImgDecController::finishSuccess(bool clipped) {
 		m_irq.raise(IRQ_IMG_DONE);
 	}
 	m_signalIrq = false;
-	if (activeJob && activeJob->resolve) {
-		activeJob->resolve(m_decodeWidth, m_decodeHeight, clipped);
+	if (activeResolve) {
+		activeResolve(m_decodeWidth, m_decodeHeight, clipped);
 	}
 	m_decodeWidth = 0;
 	m_decodeHeight = 0;
@@ -419,13 +425,20 @@ void ImgDecController::finishSuccess(bool clipped) {
 }
 
 void ImgDecController::finishError(std::exception_ptr error) {
-	auto activeJob = std::move(m_activeJob);
-	m_activeJob.reset();
+	auto activeReject = std::move(m_activeReject);
+	m_activeResolve = {};
+	m_activeReject = {};
 	m_active = false;
+	m_pendingError = nullptr;
+	m_pendingResult.reset();
+	m_pendingTargetBase = 0;
+	m_pendingTargetCapacity = 0;
+	m_activeCapacityLimit = 0;
 	m_decodeActive = false;
 	m_availableDecodeBytes = 0;
 	m_decodeRemaining = 0;
 	m_decodeQueued = false;
+	m_decodePlan = ImageCopyPlan{};
 	m_decodePixels.clear();
 	m_status = (m_status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | IMG_STATUS_ERROR;
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
@@ -433,11 +446,11 @@ void ImgDecController::finishError(std::exception_ptr error) {
 		m_irq.raise(IRQ_IMG_ERROR);
 	}
 	m_signalIrq = false;
-	if (!error) {
-		error = std::make_exception_ptr(imageDecoderFault("decode failed."));
-	}
-	if (activeJob && activeJob->reject) {
-		activeJob->reject(error);
+	if (activeReject) {
+		if (!error) {
+			error = std::make_exception_ptr(imageDecoderFault("decode failed."));
+		}
+		activeReject(error);
 	}
 	m_decodeWidth = 0;
 	m_decodeHeight = 0;
@@ -453,7 +466,7 @@ void ImgDecController::scheduleNextService(int64_t nowCycles) {
 		m_scheduler.cancelDeviceService(DeviceServiceImg);
 		return;
 	}
-	if (m_pendingError || (m_pendingResult.has_value() && m_pendingTarget.has_value())) {
+	if (m_pendingError || m_pendingResult.has_value()) {
 		m_scheduler.scheduleDeviceService(DeviceServiceImg, nowCycles);
 		return;
 	}

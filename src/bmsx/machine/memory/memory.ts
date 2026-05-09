@@ -55,7 +55,7 @@ import {
 import { formatNumberAsHex } from '../../common/byte_hex_string';
 
 export type VramWriteSink = {
-	writeVram(addr: number, bytes: Uint8Array): void;
+	writeVram(addr: number, bytes: Uint8Array, srcOffset?: number, length?: number): void;
 	readVram(addr: number, out: Uint8Array): void;
 };
 
@@ -209,7 +209,7 @@ export class Memory {
 			}
 			return this.ioSlots[slot];
 		}
-		if (this.isProgramRomRange(addr, 4)) {
+		if (addr >= PROGRAM_ROM_BASE && addr + 4 <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE) {
 			return this.readProgramCodeWord(addr);
 		}
 		if (addr < RAM_BASE) {
@@ -218,12 +218,12 @@ export class Memory {
 		return this.readU32(addr);
 	}
 
-	public readMappedValue(addr: number): Value {
-		if (isVramMappedContiguousRange(addr, 4)) {
-			this.readVram(addr, this.vramReadScratch);
-			const out = this.vramReadScratch;
-			return (out[0] | (out[1] << 8) | (out[2] << 16) | (out[3] << 24)) >>> 0;
-		}
+		public readMappedValue(addr: number): Value {
+			if (isVramMappedContiguousRange(addr, 4)) {
+				this.vramWriter.readVram(addr, this.vramReadScratch);
+				const out = this.vramReadScratch;
+				return (out[0] | (out[1] << 8) | (out[2] << 16) | (out[3] << 24)) >>> 0;
+			}
 		if (this.isVramRange(addr, 4)) {
 			this.raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD);
 			return 0;
@@ -237,9 +237,9 @@ export class Memory {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD);
 			return 0;
 		}
-		if (this.isProgramRomRange(addr, 4)) {
-			return this.readProgramCodeWord(addr);
-		}
+			if (addr >= PROGRAM_ROM_BASE && addr + 4 <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE) {
+				return this.readProgramCodeWord(addr);
+			}
 		let data: Uint8Array;
 		let offset: number;
 		if (addr >= SYSTEM_ROM_BASE && addr + 4 <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
@@ -254,9 +254,14 @@ export class Memory {
 			data = this.overlayRom;
 			offset = addr - OVERLAY_ROM_BASE;
 		}
-		else if (addr >= RAM_BASE && addr + 4 <= RAM_END) {
+		else if (addr >= RAM_BASE) {
+			const ramOffset = addr - RAM_BASE;
+			if (ramOffset + 4 > this.ram.byteLength) {
+				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD);
+				return 0;
+			}
 			data = this.ram;
-			offset = addr - RAM_BASE;
+			offset = ramOffset;
 		}
 		else {
 			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD);
@@ -309,20 +314,20 @@ export class Memory {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD);
 			return;
 		}
-		if (isVramMappedContiguousRange(addr, 4)) {
-			const word = value as number;
-			this.vramScratch[0] = word & 0xff;
-			this.vramScratch[1] = (word >>> 8) & 0xff;
-			this.vramScratch[2] = (word >>> 16) & 0xff;
-			this.vramScratch[3] = (word >>> 24) & 0xff;
-			this.writeVram(addr, this.vramScratch);
-			return;
-		}
+			if (isVramMappedContiguousRange(addr, 4)) {
+				const word = value as number;
+				this.vramScratch[0] = word & 0xff;
+				this.vramScratch[1] = (word >>> 8) & 0xff;
+				this.vramScratch[2] = (word >>> 16) & 0xff;
+				this.vramScratch[3] = (word >>> 24) & 0xff;
+				this.vramWriter.writeVram(addr, this.vramScratch);
+				return;
+			}
 		if (this.isVramRange(addr, 4)) {
 			this.raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD);
 			return;
 		}
-		if (addr >= RAM_BASE && addr + 4 <= RAM_END) {
+		if (addr >= RAM_BASE && addr - RAM_BASE + 4 <= this.ram.byteLength) {
 			const offset = addr - RAM_BASE;
 			const word = value as number;
 			this.ram[offset] = word & 0xff;
@@ -336,7 +341,8 @@ export class Memory {
 
 	public readU8(addr: number): number {
 		if (this.isVramRange(addr, 1)) {
-			throw new Error(`VRAM read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write-only len=1.`);
+			this.raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+			return 0;
 		}
 		if (this.isProgramCodeReadableRange(addr, 1)) {
 			return this.programCode[addr - PROGRAM_ROM_BASE];
@@ -350,18 +356,22 @@ export class Memory {
 		if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr < OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
 			return this.overlayRom[addr - OVERLAY_ROM_BASE];
 		}
-		if (addr >= RAM_BASE && addr < RAM_END) {
-			return this.ram[addr - RAM_BASE];
+		if (addr >= RAM_BASE) {
+			const offset = addr - RAM_BASE;
+			if (offset < this.ram.byteLength) {
+				return this.ram[offset];
+			}
 		}
-		throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: RAM range len=1.`);
+		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+		return 0;
 	}
 
-	public readMappedU8(addr: number): number {
-		if (this.isVramRange(addr, 1)) {
-			const out = this.vramReadScratch1;
-			this.readVram(addr, out);
-			return out[0];
-		}
+		public readMappedU8(addr: number): number {
+			if (this.isVramRange(addr, 1)) {
+				const out = this.vramReadScratch1;
+				this.vramWriter.readVram(addr, out);
+				return out[0];
+			}
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
 			const handler = this.ioReadHandlers[slot];
@@ -384,8 +394,11 @@ export class Memory {
 		if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr < OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
 			return this.overlayRom[addr - OVERLAY_ROM_BASE];
 		}
-		if (addr >= RAM_BASE && addr < RAM_END) {
-			return this.ram[addr - RAM_BASE];
+		if (addr >= RAM_BASE) {
+			const offset = addr - RAM_BASE;
+			if (offset < this.ram.byteLength) {
+				return this.ram[offset];
+			}
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 		return 0;
@@ -393,19 +406,25 @@ export class Memory {
 
 	public writeU8(addr: number, value: number): void {
 		if (this.isVramRange(addr, 1)) {
-			this.vramScratch[0] = value & 0xff;
-			this.vramScratch[1] = 0;
-			this.vramScratch[2] = 0;
-			this.vramScratch[3] = 0;
-			this.writeVram(addr, this.vramScratch1);
-			return;
-		}
+				this.vramScratch[0] = value & 0xff;
+				this.vramScratch[1] = 0;
+				this.vramScratch[2] = 0;
+				this.vramScratch[3] = 0;
+				this.vramWriter.writeVram(addr, this.vramScratch1);
+				return;
+			}
 		if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr < OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
 			this.overlayRom[addr - OVERLAY_ROM_BASE] = value & 0xff;
 			return;
 		}
-		const offset = this.resolveRamOffset(addr, 1);
-		this.ram[offset] = value & 0xff;
+		if (addr >= RAM_BASE) {
+			const offset = addr - RAM_BASE;
+			if (offset < this.ram.byteLength) {
+				this.ram[offset] = value & 0xff;
+				return;
+			}
+		}
+		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
 	}
 
 	public writeMappedU8(addr: number, value: number): void {
@@ -413,14 +432,17 @@ export class Memory {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
 			return;
 		}
-		if (this.isVramRange(addr, 1)) {
-			this.vramScratch[0] = value & 0xff;
-			this.writeVram(addr, this.vramScratch1);
-			return;
-		}
-		if (addr >= RAM_BASE && addr < RAM_END) {
-			this.ram[addr - RAM_BASE] = value & 0xff;
-			return;
+			if (this.isVramRange(addr, 1)) {
+				this.vramScratch[0] = value & 0xff;
+				this.vramWriter.writeVram(addr, this.vramScratch1);
+				return;
+			}
+		if (addr >= RAM_BASE) {
+			const offset = addr - RAM_BASE;
+			if (offset < this.ram.byteLength) {
+				this.ram[offset] = value & 0xff;
+				return;
+			}
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
 	}
@@ -447,16 +469,21 @@ export class Memory {
 
 	public readU32(addr: number): number {
 		if (this.isVramRange(addr, 4)) {
-			throw new Error(`VRAM read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write-only len=4.`);
+			this.raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+			return 0;
 		}
-		if (this.isProgramRomRange(addr, 4)) {
+		if (addr >= PROGRAM_ROM_BASE && addr + 4 <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE) {
 			return this.readProgramCodeWord(addr);
 		}
 		if (addr < RAM_BASE) {
 			return this.readU32FromRegion(addr);
 		}
-		const offset = this.resolveRamOffset(addr, 4);
-		return this.ramView.getUint32(offset, true);
+		const offset = addr - RAM_BASE;
+		if (offset + 4 <= this.ram.byteLength) {
+			return this.ramView.getUint32(offset, true);
+		}
+		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+		return 0;
 	}
 
 	private readU32FromRegion(addr: number): number {
@@ -479,7 +506,8 @@ export class Memory {
 			offset = addr - OVERLAY_ROM_BASE;
 		}
 		else {
-			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: RAM range len=4.`);
+			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+			return 0;
 		}
 		return (
 			data[offset]
@@ -489,12 +517,12 @@ export class Memory {
 		) >>> 0;
 	}
 
-	public readMappedU16LE(addr: number): number {
-		if (isVramMappedContiguousRange(addr, 2)) {
-			const out = this.vramReadScratch2;
-			this.readVram(addr, out);
-			return (out[0] | (out[1] << 8)) >>> 0;
-		}
+		public readMappedU16LE(addr: number): number {
+			if (isVramMappedContiguousRange(addr, 2)) {
+				const out = this.vramReadScratch2;
+				this.vramWriter.readVram(addr, out);
+				return (out[0] | (out[1] << 8)) >>> 0;
+			}
 		if (this.isVramRange(addr, 2)) {
 			this.raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16);
 			return 0;
@@ -521,9 +549,14 @@ export class Memory {
 			data = this.overlayRom;
 			offset = addr - OVERLAY_ROM_BASE;
 		}
-		else if (addr >= RAM_BASE && addr + 2 <= RAM_END) {
+		else if (addr >= RAM_BASE) {
+			const ramOffset = addr - RAM_BASE;
+			if (ramOffset + 2 > this.ram.byteLength) {
+				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16);
+				return 0;
+			}
 			data = this.ram;
-			offset = addr - RAM_BASE;
+			offset = ramOffset;
 		}
 		else {
 			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16);
@@ -534,12 +567,12 @@ export class Memory {
 		return (b0 | (b1 << 8)) >>> 0;
 	}
 
-	public readMappedU32LE(addr: number): number {
-		if (isVramMappedContiguousRange(addr, 4)) {
-			this.readVram(addr, this.vramReadScratch);
-			const out = this.vramReadScratch;
-			return (out[0] | (out[1] << 8) | (out[2] << 16) | (out[3] << 24)) >>> 0;
-		}
+		public readMappedU32LE(addr: number): number {
+			if (isVramMappedContiguousRange(addr, 4)) {
+				this.vramWriter.readVram(addr, this.vramReadScratch);
+				const out = this.vramReadScratch;
+				return (out[0] | (out[1] << 8) | (out[2] << 16) | (out[3] << 24)) >>> 0;
+			}
 		if (this.isVramRange(addr, 4)) {
 			this.raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
 			return 0;
@@ -572,9 +605,14 @@ export class Memory {
 			data = this.overlayRom;
 			offset = addr - OVERLAY_ROM_BASE;
 		}
-		else if (addr >= RAM_BASE && addr + 4 <= RAM_END) {
+		else if (addr >= RAM_BASE) {
+			const ramOffset = addr - RAM_BASE;
+			if (ramOffset + 4 > this.ram.byteLength) {
+				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+				return 0;
+			}
 			data = this.ram;
-			offset = addr - RAM_BASE;
+			offset = ramOffset;
 		}
 		else {
 			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
@@ -614,15 +652,21 @@ export class Memory {
 
 	public writeU32(addr: number, value: number): void {
 		if (this.isVramRange(addr, 4)) {
-			this.vramScratch[0] = value & 0xff;
-			this.vramScratch[1] = (value >>> 8) & 0xff;
-			this.vramScratch[2] = (value >>> 16) & 0xff;
-			this.vramScratch[3] = (value >>> 24) & 0xff;
-			this.writeVram(addr, this.vramScratch);
-			return;
+				this.vramScratch[0] = value & 0xff;
+				this.vramScratch[1] = (value >>> 8) & 0xff;
+				this.vramScratch[2] = (value >>> 16) & 0xff;
+				this.vramScratch[3] = (value >>> 24) & 0xff;
+				this.vramWriter.writeVram(addr, this.vramScratch);
+				return;
+			}
+		if (addr >= RAM_BASE) {
+			const offset = addr - RAM_BASE;
+			if (offset + 4 <= this.ram.byteLength) {
+				this.ramView.setUint32(offset, value >>> 0, true);
+				return;
+			}
 		}
-		const offset = this.resolveRamOffset(addr, 4);
-		this.ramView.setUint32(offset, value >>> 0, true);
+		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 	}
 
 	public writeMappedU16LE(addr: number, value: number): void {
@@ -630,17 +674,17 @@ export class Memory {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16);
 			return;
 		}
-		if (isVramMappedContiguousRange(addr, 2)) {
-			this.vramScratch[0] = value & 0xff;
-			this.vramScratch[1] = (value >>> 8) & 0xff;
-			this.writeVram(addr, this.vramScratch2);
-			return;
-		}
+			if (isVramMappedContiguousRange(addr, 2)) {
+				this.vramScratch[0] = value & 0xff;
+				this.vramScratch[1] = (value >>> 8) & 0xff;
+				this.vramWriter.writeVram(addr, this.vramScratch2);
+				return;
+			}
 		if (this.isVramRange(addr, 2)) {
 			this.raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16);
 			return;
 		}
-		if (addr >= RAM_BASE && addr + 2 <= RAM_END) {
+		if (addr >= RAM_BASE && addr - RAM_BASE + 2 <= this.ram.byteLength) {
 			const offset = addr - RAM_BASE;
 			this.ram[offset] = value & 0xff;
 			this.ram[offset + 1] = (value >>> 8) & 0xff;
@@ -669,18 +713,18 @@ export class Memory {
 			return;
 		}
 		if (isVramMappedContiguousRange(addr, 4)) {
-			this.vramScratch[0] = value & 0xff;
-			this.vramScratch[1] = (value >>> 8) & 0xff;
-			this.vramScratch[2] = (value >>> 16) & 0xff;
-			this.vramScratch[3] = (value >>> 24) & 0xff;
-			this.writeVram(addr, this.vramScratch);
-			return;
-		}
+				this.vramScratch[0] = value & 0xff;
+				this.vramScratch[1] = (value >>> 8) & 0xff;
+				this.vramScratch[2] = (value >>> 16) & 0xff;
+				this.vramScratch[3] = (value >>> 24) & 0xff;
+				this.vramWriter.writeVram(addr, this.vramScratch);
+				return;
+			}
 		if (this.isVramRange(addr, 4)) {
 			this.raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 			return;
 		}
-		if (addr >= RAM_BASE && addr + 4 <= RAM_END) {
+		if (addr >= RAM_BASE && addr - RAM_BASE + 4 <= this.ram.byteLength) {
 			const offset = addr - RAM_BASE;
 			this.ram[offset] = value & 0xff;
 			this.ram[offset + 1] = (value >>> 8) & 0xff;
@@ -716,28 +760,49 @@ export class Memory {
 		this.writeMappedU32LE(addr + 4, this.mappedFloatView.getUint32(4, true));
 	}
 
-	public readBytes(addr: number, length: number): Uint8Array {
+	public readBytesInto(addr: number, out: Uint8Array, length: number): boolean {
 		if (this.isVramRange(addr, length)) {
-			throw new Error(`VRAM read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write-only len=${length}.`);
+			for (let index = 0; index < length; index += 1) {
+				out[index] = 0;
+			}
+			this.raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+			return false;
 		}
+		let data: Uint8Array | undefined;
+		let offset = 0;
 		if (this.isProgramCodeReadableRange(addr, length)) {
-			const offset = addr - PROGRAM_ROM_BASE;
-			return this.programCode.subarray(offset, offset + length);
+			data = this.programCode;
+			offset = addr - PROGRAM_ROM_BASE;
 		}
-		if (addr >= SYSTEM_ROM_BASE && addr + length <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
-			const offset = addr - SYSTEM_ROM_BASE;
-			return this.systemRom.subarray(offset, offset + length);
+		else if (addr >= SYSTEM_ROM_BASE && addr + length <= SYSTEM_ROM_BASE + this.systemRom.byteLength) {
+			data = this.systemRom;
+			offset = addr - SYSTEM_ROM_BASE;
 		}
-		if (this.cartRom && addr >= CART_ROM_BASE && addr + length <= CART_ROM_BASE + this.cartRom.byteLength) {
-			const offset = addr - CART_ROM_BASE;
-			return this.cartRom.subarray(offset, offset + length);
+		else if (this.cartRom && addr >= CART_ROM_BASE && addr + length <= CART_ROM_BASE + this.cartRom.byteLength) {
+			data = this.cartRom;
+			offset = addr - CART_ROM_BASE;
 		}
-		if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr + length <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
-			const offset = addr - OVERLAY_ROM_BASE;
-			return this.overlayRom.subarray(offset, offset + length);
+		else if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr + length <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
+			data = this.overlayRom;
+			offset = addr - OVERLAY_ROM_BASE;
 		}
-		const offset = this.resolveRamOffset(addr, length);
-		return this.ram.subarray(offset, offset + length);
+		else if (addr >= RAM_BASE) {
+			offset = addr - RAM_BASE;
+			if (offset + length <= this.ram.byteLength) {
+				data = this.ram;
+			}
+		}
+		if (data !== undefined) {
+			for (let index = 0; index < length; index += 1) {
+				out[index] = data[offset + index]!;
+			}
+			return true;
+		}
+		for (let index = 0; index < length; index += 1) {
+			out[index] = 0;
+		}
+		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+		return false;
 	}
 
 	public isReadableMainMemoryRange(addr: number, length: number): boolean {
@@ -745,36 +810,56 @@ export class Memory {
 			|| this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)
 			|| (!!this.cartRom && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength))
 			|| (!!this.overlayRom && this.isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, this.overlayRom.byteLength))
-			|| this.isRangeWithinRegion(addr, length, RAM_BASE, RAM_END - RAM_BASE);
+			|| (addr >= RAM_BASE && addr - RAM_BASE + length <= this.ram.byteLength);
 	}
 
 	public isRamRange(addr: number, length: number): boolean {
-		return this.isRangeWithinRegion(addr, length, RAM_BASE, RAM_END - RAM_BASE);
+		return addr >= RAM_BASE && addr - RAM_BASE + length <= this.ram.byteLength;
 	}
 
-	public writeBytes(addr: number, bytes: Uint8Array): void {
+	public writeBytes(addr: number, bytes: Uint8Array): boolean {
 		if (this.isVramRange(addr, bytes.byteLength)) {
-			this.writeVram(addr, bytes);
-			return;
+			this.vramWriter.writeVram(addr, bytes);
+			return true;
 		}
 		if (this.overlayRom && addr >= OVERLAY_ROM_BASE && addr + bytes.byteLength <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
 			this.overlayRom.set(bytes, addr - OVERLAY_ROM_BASE);
-			return;
+			return true;
 		}
-		this.ram.set(bytes, this.resolveRamOffset(addr, bytes.byteLength));
+		if (addr >= RAM_BASE) {
+			const offset = addr - RAM_BASE;
+			if (offset + bytes.byteLength <= this.ram.byteLength) {
+				this.ram.set(bytes, offset);
+				return true;
+			}
+		}
+		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
+		return false;
 	}
 
-	public writeBytesFrom(src: Uint8Array, srcOffset: number, dstAddr: number, length: number): void {
-		const slice = src.subarray(srcOffset, srcOffset + length);
+	public writeBytesFrom(src: Uint8Array, srcOffset: number, dstAddr: number, length: number): boolean {
 		if (this.isVramRange(dstAddr, length)) {
-			this.writeVram(dstAddr, slice);
-			return;
+			this.vramWriter.writeVram(dstAddr, src, srcOffset, length);
+			return true;
 		}
 		if (this.overlayRom && dstAddr >= OVERLAY_ROM_BASE && dstAddr + length <= OVERLAY_ROM_BASE + this.overlayRom.byteLength) {
-			this.overlayRom.set(slice, dstAddr - OVERLAY_ROM_BASE);
-			return;
+			const offset = dstAddr - OVERLAY_ROM_BASE;
+			for (let index = 0; index < length; index += 1) {
+				this.overlayRom[offset + index] = src[srcOffset + index]!;
+			}
+			return true;
 		}
-		this.ram.set(slice, this.resolveRamOffset(dstAddr, length));
+		if (dstAddr >= RAM_BASE) {
+			const offset = dstAddr - RAM_BASE;
+			if (offset + length <= this.ram.byteLength) {
+				for (let index = 0; index < length; index += 1) {
+					this.ram[offset + index] = src[srcOffset + index]!;
+				}
+				return true;
+			}
+		}
+		this.raiseBusFault(BUS_FAULT_UNMAPPED, dstAddr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
+		return false;
 	}
 
 	private raiseBusFault(code: number, addr: number, access: number): void {
@@ -810,13 +895,6 @@ export class Memory {
 			return -1;
 		}
 		return index / IO_WORD_SIZE;
-	}
-
-	private resolveRamOffset(addr: number, length: number): number {
-		if (addr < RAM_BASE || addr + length > RAM_END) {
-			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: RAM range len=${length}.`);
-		}
-		return addr - RAM_BASE;
 	}
 
 	private isRangeWithinRegion(addr: number, length: number, base: number, size: number): boolean {
@@ -858,7 +936,7 @@ export class Memory {
 		if (this.isIoRegionRange(addr, length)) {
 			return length === IO_WORD_SIZE && this.ioAlignedSlot(addr) >= 0 && !this.isLuaReadOnlyIoAddress(addr);
 		}
-		if (this.isProgramRomRange(addr, length)) {
+		if (addr >= PROGRAM_ROM_BASE && addr + length <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE) {
 			return false;
 		}
 		if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)) {
@@ -873,7 +951,7 @@ export class Memory {
 		if (this.isVramRange(addr, length)) {
 			return isVramMappedContiguousRange(addr, length);
 		}
-		return addr >= RAM_BASE && addr + length <= RAM_END;
+		return addr >= RAM_BASE && addr - RAM_BASE + length <= this.ram.byteLength;
 	}
 
 	private isMappedReadableRange(addr: number, length: number): boolean {
@@ -895,15 +973,7 @@ export class Memory {
 		if (this.isVramRange(addr, length)) {
 			return isVramMappedContiguousRange(addr, length);
 		}
-		return addr >= RAM_BASE && addr + length <= RAM_END;
-	}
-
-	private writeVram(addr: number, bytes: Uint8Array): void {
-		this.vramWriter.writeVram(addr, bytes);
-	}
-
-	private isProgramRomRange(addr: number, length: number): boolean {
-		return this.isRangeWithinRegion(addr, length, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE);
+		return addr >= RAM_BASE && addr - RAM_BASE + length <= this.ram.byteLength;
 	}
 
 	private isProgramCodeReadableRange(addr: number, length: number): boolean {
@@ -923,10 +993,6 @@ export class Memory {
 			| (code[offset + 2] << 8)
 			| code[offset + 3]
 		) >>> 0;
-	}
-
-	private readVram(addr: number, out: Uint8Array): void {
-		this.vramWriter.readVram(addr, out);
 	}
 
 	public isVramRange(addr: number, length: number): boolean {

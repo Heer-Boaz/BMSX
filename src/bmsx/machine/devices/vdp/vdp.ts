@@ -701,12 +701,10 @@ export class VDP implements VramWriteSink {
 		this.refreshSubmitBusyStatus();
 	}
 
-	public sealDmaTransfer(src: number, byteLength: number): void {
-		try {
-			this.consumeSealedVdpStream(src, byteLength);
-		} finally {
-			this.endDmaSubmit();
-		}
+	public sealDmaTransfer(src: number, byteLength: number): boolean {
+		const accepted = this.consumeSealedVdpStream(src, byteLength);
+		this.endDmaSubmit();
+		return accepted;
 	}
 
 	public writeVdpFifoBytes(bytes: Uint8Array): void {
@@ -755,19 +753,19 @@ export class VDP implements VramWriteSink {
 		this.refreshSubmitBusyStatus();
 	}
 
-	private consumeSealedVdpStream(baseAddr: number, byteLength: number): void {
+	private consumeSealedVdpStream(baseAddr: number, byteLength: number): boolean {
 		if ((byteLength & 3) !== 0) {
 			this.latchStreamFault(byteLength);
-			return;
+			return false;
 		}
 		if (byteLength > VDP_STREAM_BUFFER_SIZE) {
 			this.latchStreamFault(byteLength);
-			return;
+			return false;
 		}
 		if (this.buildFrame.open) {
 			this.latchStreamFault(VDP_CMD_BEGIN_FRAME);
 			this.cancelSubmittedFrame();
-			return;
+			return false;
 		}
 		let cursor = baseAddr;
 		const end = baseAddr + byteLength;
@@ -780,7 +778,7 @@ export class VDP implements VramWriteSink {
 				if (cursor !== end) {
 					this.latchStreamFault(word);
 					this.cancelSubmittedFrame();
-					return;
+					return false;
 				}
 				ended = true;
 				break;
@@ -788,19 +786,21 @@ export class VDP implements VramWriteSink {
 			const next = this.consumeReplayPacketFromMemory(word, cursor, end);
 			if (next < 0) {
 				this.cancelSubmittedFrame();
-				return;
+				return false;
 			}
 			cursor = next;
 		}
 		if (!ended) {
 			this.latchStreamFault(byteLength);
 			this.cancelSubmittedFrame();
-			return;
+			return false;
 		}
-		if (!this.sealSubmittedFrame()) {
+		const accepted = this.sealSubmittedFrame();
+		if (!accepted) {
 			this.cancelSubmittedFrame();
 		}
 		this.refreshSubmitBusyStatus();
+		return accepted;
 	}
 
 	private consumeSealedVdpWordStream(wordCount: number): void {
@@ -1706,19 +1706,21 @@ export class VDP implements VramWriteSink {
 	}
 
 	// start repeated-sequence-acceptable -- VRAM row streaming keeps read/write loops direct; callback helpers would add hot-path overhead.
-	public writeVram(addr: number, bytes: Uint8Array): void {
-		if (addr >= VRAM_STAGING_BASE && addr + bytes.byteLength <= VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
+	public writeVram(addr: number, bytes: Uint8Array, srcOffset = 0, length = bytes.byteLength - srcOffset): void {
+		if (addr >= VRAM_STAGING_BASE && addr + length <= VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
 			const offset = addr - VRAM_STAGING_BASE;
-			this.vramStaging.set(bytes, offset);
+			for (let index = 0; index < length; index += 1) {
+				this.vramStaging[offset + index] = bytes[srcOffset + index]!;
+			}
 			return;
 		}
-		const slot = this.findMappedVramSlot(addr, bytes.byteLength);
+		const slot = this.findMappedVramSlot(addr, length);
 		if (slot === null) {
 			this.raiseFault(VDP_FAULT_VRAM_WRITE_UNMAPPED, addr);
 			return;
 		}
 		const offset = addr - slot.baseAddr;
-		if ((offset & 3) !== 0 || (bytes.byteLength & 3) !== 0) {
+		if ((offset & 3) !== 0 || (length & 3) !== 0) {
 			this.raiseFault(VDP_FAULT_VRAM_WRITE_UNALIGNED, addr);
 			return;
 		}
@@ -1729,21 +1731,20 @@ export class VDP implements VramWriteSink {
 		const stride = slot.surfaceWidth * 4;
 		const rowCount = slot.surfaceHeight;
 		const totalBytes = rowCount * stride;
-		if (offset + bytes.byteLength > totalBytes) {
+		if (offset + length > totalBytes) {
 			this.raiseFault(VDP_FAULT_VRAM_WRITE_OOB, addr);
 			return;
 		}
-		let remaining = bytes.byteLength;
-		let cursor = 0;
+		let remaining = length;
+		let cursor = srcOffset;
 		let row = (offset / stride) >>> 0;
 		let rowOffset = offset - row * stride;
 		while (remaining > 0) {
-				const rowAvailable = stride - rowOffset;
-				const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
-				const x = rowOffset / 4;
-				const slice = bytes.subarray(cursor, cursor + rowBytes);
+			const rowAvailable = stride - rowOffset;
+			const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
+			const x = rowOffset / 4;
 			this.markVramSlotDirty(slot, row, 1);
-			this.updateCpuReadback(slot, slice, x, row);
+			this.updateCpuReadback(slot, bytes, cursor, rowBytes, x, row);
 			this.invalidateReadCache(slot.surfaceId);
 			remaining -= rowBytes;
 			cursor += rowBytes;
@@ -2153,11 +2154,13 @@ export class VDP implements VramWriteSink {
 		return out;
 	}
 
-	private updateCpuReadback(surface: VramSlot, slice: Uint8Array, x: number, y: number): void {
+	private updateCpuReadback(surface: VramSlot, bytes: Uint8Array, srcOffset: number, length: number, x: number, y: number): void {
 		const buffer = surface.cpuReadback;
 		const stride = surface.surfaceWidth * 4;
 		const offset = y * stride + x * 4;
-		buffer.set(slice, offset);
+		for (let index = 0; index < length; index += 1) {
+			buffer[offset + index] = bytes[srcOffset + index]!;
+		}
 	}
 
 	public get trackedUsedVramBytes(): number {
@@ -2255,8 +2258,7 @@ export class VDP implements VramWriteSink {
 				}
 				for (let row = 0; row < rows; row += 1) {
 					const rowOffset = row * rowPixels * 4;
-					const slice = chunk.subarray(rowOffset, rowOffset + rowPixels * 4);
-					this.updateCpuReadback(slot, slice, 0, y + row);
+					this.updateCpuReadback(slot, chunk, rowOffset, rowPixels * 4, 0, y + row);
 				}
 				y += rows;
 			}
@@ -2271,7 +2273,7 @@ export class VDP implements VramWriteSink {
 					if (!frameBufferSlot) {
 						this.markVramSlotDirty(slot, y, 1);
 					}
-					this.updateCpuReadback(slot, segment, x, y);
+					this.updateCpuReadback(slot, segment, 0, segmentBytes, x, y);
 					x += segmentWidth;
 				}
 			}

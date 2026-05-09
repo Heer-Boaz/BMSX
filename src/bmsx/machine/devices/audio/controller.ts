@@ -210,7 +210,8 @@ export class AudioController {
 		if (!this.soundMaster.isRuntimeAudioReady()) {
 			throw new Error('[APU] SoundMaster runtime audio is not initialized.');
 		}
-		const bytes = this.memory.readBytes(source.sourceAddr, source.sourceBytes);
+		const bytes = new Uint8Array(source.sourceBytes);
+		this.memory.readBytesInto(source.sourceAddr, bytes, bytes.byteLength);
 		void this.soundMaster.playResolvedSourceOnSlot(slot, source, bytes, request).catch(error => {
 			console.error(error);
 		});

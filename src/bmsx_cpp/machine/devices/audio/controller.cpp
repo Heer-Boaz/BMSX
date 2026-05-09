@@ -7,6 +7,8 @@
 
 #include <optional>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 namespace bmsx {
 namespace {
@@ -168,8 +170,9 @@ void AudioController::startPlay(const SoundMasterAudioSource& source, AudioSlot 
 	if (!m_soundMaster.isRuntimeAudioReady()) {
 		throw std::runtime_error("[APU] SoundMaster runtime audio is not initialized.");
 	}
-	const u8* bytes = m_memory.readBytesView(source.sourceAddr, source.sourceBytes);
-	m_soundMaster.playResolved(slot, source, bytes, request);
+	std::vector<u8> bytes(source.sourceBytes);
+	m_memory.readBytes(source.sourceAddr, bytes.data(), bytes.size());
+	m_soundMaster.playResolved(slot, source, std::move(bytes), request);
 }
 
 void AudioController::stopSlot() {

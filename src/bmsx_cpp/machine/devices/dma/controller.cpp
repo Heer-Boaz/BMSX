@@ -11,12 +11,6 @@
 #include <utility>
 
 namespace bmsx {
-namespace {
-
-constexpr uint32_t DMA_SERVICE_BATCH_BYTES = 64u;
-
-}
-
 DmaController::DmaController(
 			Memory& memory,
 			IrqController& irq,
@@ -116,7 +110,7 @@ uint32_t DmaController::pendingBytesForChannel(Channel channel) const {
 	return pendingBytes;
 }
 
-void DmaController::enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete) {
+void DmaController::enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped)> onComplete) {
 	DmaJob job;
 	job.kind = DmaJob::Kind::Image;
 	job.channel = Channel::Bulk;
@@ -128,7 +122,6 @@ void DmaController::enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint
 	job.written = 0;
 	job.clipped = plan.clipped;
 	job.error = false;
-	job.fault = nullptr;
 	job.onComplete = std::move(onComplete);
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
 	scheduleNextService(m_scheduler.currentNowCycles());
@@ -147,7 +140,6 @@ void DmaController::reset() {
 	m_ioWrittenDirty = false;
 	m_imgWrittenValue = 0;
 	m_imgWrittenDirty = false;
-	m_buffer.clear();
 	m_scheduler.cancelDeviceService(DeviceServiceDma);
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
@@ -196,7 +188,6 @@ void DmaController::tickChannel(Channel channel) {
 	state.budget = budget;
 }
 
-// start fallible-boundary -- DMA stores bus/write faults in the hardware job status instead of throwing through the scheduler.
 uint32_t DmaController::processJob(DmaJob& job, uint32_t budget) {
 	if (job.error) {
 		return 0;
@@ -211,23 +202,23 @@ uint32_t DmaController::processJob(DmaJob& job, uint32_t budget) {
 			job.written += chunk;
 			return chunk;
 		}
-		if (m_memory.isVramRange(job.dst, 1)) {
-			chunk &= ~3u;
-			if (chunk == 0) {
+			if (m_memory.isVramRange(job.dst, 1)) {
+				chunk &= ~3u;
+				if (chunk == 0) {
+					return 0;
+				}
+			}
+			if (chunk > m_buffer.size()) {
+				chunk = static_cast<uint32_t>(m_buffer.size());
+			}
+			if (!m_memory.readBytes(job.src, m_buffer.data(), chunk)) {
+				job.error = true;
 				return 0;
 			}
-		}
-		try {
-			if (m_buffer.size() < chunk) {
-				m_buffer.resize(chunk);
+			if (!m_memory.writeBytes(job.dst, m_buffer.data(), chunk)) {
+				job.error = true;
+				return 0;
 			}
-			m_memory.readBytes(job.src, m_buffer.data(), chunk);
-			m_memory.writeBytes(job.dst, m_buffer.data(), chunk);
-		} catch (...) {
-			job.error = true;
-			job.fault = std::current_exception();
-			return 0;
-		}
 		job.src += chunk;
 		job.dst += chunk;
 		job.remaining -= chunk;
@@ -250,11 +241,8 @@ uint32_t DmaController::processImageJob(DmaJob& job, uint32_t budget) {
 		}
 		const size_t srcOffset = static_cast<size_t>(job.row) * job.plan.sourceStride + job.rowOffset;
 		const uint32_t dstAddr = job.plan.baseAddr + job.row * job.plan.targetStride + job.rowOffset;
-		try {
-			m_memory.writeBytes(dstAddr, job.pixels.data() + srcOffset, toCopy);
-		} catch (...) {
+		if (!m_memory.writeBytes(dstAddr, job.pixels.data() + srcOffset, toCopy)) {
 			job.error = true;
-			job.fault = std::current_exception();
 			return budget - remaining;
 		}
 		remaining -= toCopy;
@@ -284,7 +272,7 @@ void DmaController::finishJob(DmaJob& job) {
 		return;
 	}
 	if (job.onComplete) {
-		job.onComplete(job.error, job.clipped, job.fault);
+		job.onComplete(job.error, job.clipped);
 	}
 }
 
@@ -363,16 +351,13 @@ void DmaController::finishIoJob(DmaJob& job) {
 		return;
 	}
 	if (job.dst == IO_VDP_FIFO) {
-		try {
-			m_vdp.sealDmaTransfer(job.src, job.written);
-		} catch (...) {
+		if (!m_vdp.sealDmaTransfer(job.src, job.written)) {
 			finishIoError(job.clipped);
 			return;
 		}
 	}
 	finishIoSuccess(job.clipped);
 }
-// end fallible-boundary
 
 void DmaController::finishIoSuccess(bool clipped) {
 	uint32_t status = DMA_STATUS_DONE;

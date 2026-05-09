@@ -279,6 +279,106 @@ void testMemoryGolden() {
 	require(vram.writes.size() == 1u && vram.writes[0].addr == bmsx::VRAM_STAGING_BASE && vram.writes[0].bytes == expectedWrite, "contained VRAM write should be a single 4-byte transfer");
 }
 
+void testRawMemoryBusFaults() {
+	const std::array<bmsx::u8, 4> systemRom{0x11u, 0x22u, 0x33u, 0x44u};
+	bmsx::Memory memory(bmsx::MemoryInit{{systemRom.data(), systemRom.size()}, {}, {}});
+	require(memory.readU8(0xffffffffu) == 0u, "raw u8 unmapped read should return open bus");
+	requireBusFault(memory, bmsx::BUS_FAULT_UNMAPPED, 0xffffffffu, bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U8, "raw u8 unmapped read should latch a bus fault");
+	clearBusFault(memory);
+	std::array<bmsx::u8, 4> bytes{};
+	require(!memory.readBytes(bmsx::RAM_END - 1u, bytes.data(), bytes.size()), "raw byte read past RAM should report a failed device transfer");
+	require(bytes == std::array<bmsx::u8, 4>{0u, 0u, 0u, 0u}, "raw byte read past RAM should return open bus bytes");
+	requireBusFault(memory, bmsx::BUS_FAULT_UNMAPPED, bmsx::RAM_END - 1u, bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U8, "raw byte read past RAM should latch a bus fault");
+	clearBusFault(memory);
+	const std::array<bmsx::u8, 4> writeBytes{1u, 2u, 3u, 4u};
+	require(!memory.writeBytes(bmsx::RAM_END - 1u, writeBytes.data(), writeBytes.size()), "raw byte write past RAM should report a failed device transfer");
+	requireBusFault(memory, bmsx::BUS_FAULT_UNMAPPED, bmsx::RAM_END - 1u, bmsx::BUS_FAULT_ACCESS_WRITE | bmsx::BUS_FAULT_ACCESS_U8, "raw byte write past RAM should latch a bus fault");
+	clearBusFault(memory);
+	memory.writeU32(bmsx::RAM_END - 3u, 0x12345678u);
+	requireBusFault(memory, bmsx::BUS_FAULT_UNMAPPED, bmsx::RAM_END - 3u, bmsx::BUS_FAULT_ACCESS_WRITE | bmsx::BUS_FAULT_ACCESS_U32, "raw u32 write past RAM should latch a bus fault");
+}
+
+void testDmaMemoryFaultStatus() {
+	RuntimeHarness harness;
+	bmsx::Memory& memory = harness.runtime.machine.memory;
+	bmsx::DmaController& controller = harness.runtime.machine.dmaController;
+	bmsx::IrqController& irq = harness.runtime.machine.irqController;
+	controller.reset();
+	irq.reset();
+	controller.setTiming(1, 64, 64, 0);
+	memory.writeValue(bmsx::IO_DMA_SRC, bmsx::valueNumber(static_cast<double>(bmsx::RAM_END - 1u)));
+	memory.writeValue(bmsx::IO_DMA_DST, bmsx::valueNumber(static_cast<double>(bmsx::RAM_BASE)));
+	memory.writeValue(bmsx::IO_DMA_LEN, bmsx::valueNumber(4.0));
+	memory.writeIoValue(bmsx::IO_DMA_CTRL, bmsx::valueNumber(static_cast<double>(bmsx::DMA_CTRL_START)));
+	controller.tryStartIo();
+	controller.accrueCycles(1, 1);
+	controller.onService(1);
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == (bmsx::DMA_STATUS_DONE | bmsx::DMA_STATUS_ERROR), "DMA source bus fault should complete through device error status");
+	require(memory.readIoU32(bmsx::IO_DMA_WRITTEN) == 0u, "DMA source bus fault should not count open-bus bytes as written");
+	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_DMA_ERROR) != 0u, "DMA source bus fault should raise the DMA error IRQ");
+	requireBusFault(memory, bmsx::BUS_FAULT_UNMAPPED, bmsx::RAM_END - 1u, bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U8, "DMA source bus fault should preserve the memory fault latch");
+}
+
+void testImageDecoderFaultStatus() {
+	RuntimeHarness harness;
+	bmsx::Memory& memory = harness.runtime.machine.memory;
+	bmsx::ImgDecController& controller = harness.runtime.machine.imgDecController;
+	auto runRegisterFault = [&](bmsx::u32 dst, bmsx::u32 cap) {
+		controller.reset();
+		harness.runtime.machine.irqController.reset();
+		memory.writeValue(bmsx::IO_IMG_SRC, bmsx::valueNumber(static_cast<double>(bmsx::RAM_BASE)));
+		memory.writeValue(bmsx::IO_IMG_LEN, bmsx::valueNumber(0.0));
+		memory.writeValue(bmsx::IO_IMG_DST, bmsx::valueNumber(static_cast<double>(dst)));
+		memory.writeValue(bmsx::IO_IMG_CAP, bmsx::valueNumber(static_cast<double>(cap)));
+		memory.writeIoValue(bmsx::IO_IMG_CTRL, bmsx::valueNumber(static_cast<double>(bmsx::IMG_CTRL_START)));
+		controller.onCtrlWrite(0);
+		require(memory.readIoU32(bmsx::IO_IMG_STATUS) == (bmsx::IMG_STATUS_DONE | bmsx::IMG_STATUS_ERROR), "IMG register fault should complete through device status");
+		require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_IMG_ERROR) != 0u, "IMG register fault should raise the cart-visible error IRQ");
+	};
+	runRegisterFault(0xffff0000u, 4u);
+	runRegisterFault(bmsx::VRAM_PRIMARY_SLOT_BASE, 0u);
+
+	controller.reset();
+	harness.runtime.machine.irqController.reset();
+	clearBusFault(memory);
+	memory.writeValue(bmsx::IO_IMG_SRC, bmsx::valueNumber(static_cast<double>(bmsx::RAM_END - 1u)));
+	memory.writeValue(bmsx::IO_IMG_LEN, bmsx::valueNumber(4.0));
+	memory.writeValue(bmsx::IO_IMG_DST, bmsx::valueNumber(static_cast<double>(bmsx::VRAM_PRIMARY_SLOT_BASE)));
+	memory.writeValue(bmsx::IO_IMG_CAP, bmsx::valueNumber(4.0));
+	memory.writeIoValue(bmsx::IO_IMG_CTRL, bmsx::valueNumber(static_cast<double>(bmsx::IMG_CTRL_START)));
+	controller.onCtrlWrite(0);
+	require(memory.readIoU32(bmsx::IO_IMG_STATUS) == (bmsx::IMG_STATUS_DONE | bmsx::IMG_STATUS_ERROR), "IMG source bus fault should complete through device status");
+	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_IMG_ERROR) != 0u, "IMG source bus fault should raise the cart-visible error IRQ");
+	requireBusFault(memory, bmsx::BUS_FAULT_UNMAPPED, bmsx::RAM_END - 1u, bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U8, "IMG source bus fault should preserve the memory fault latch");
+
+	bool invalidDstRejected = false;
+	bool invalidCapRejected = false;
+	controller.reset();
+	harness.runtime.machine.irqController.reset();
+	controller.decodeToVram(
+		{},
+		0xffff0000u,
+		4u,
+		{},
+		[&](std::exception_ptr error) {
+			invalidDstRejected = error != nullptr;
+		}
+	);
+	controller.decodeToVram(
+		{},
+		bmsx::VRAM_PRIMARY_SLOT_BASE,
+		0u,
+		{},
+		[&](std::exception_ptr error) {
+			invalidCapRejected = error != nullptr;
+		}
+	);
+	controller.onService(0);
+	require(invalidDstRejected && !invalidCapRejected, "queued invalid destination should reject before the next queued decode");
+	controller.onService(0);
+	require(invalidCapRejected, "queued invalid capacity should reject after the queue drains");
+}
+
 void testBudgetAndFixed16Golden() {
 	require(bmsx::cyclesUntilBudgetUnits(60, 7, 0, 1) == 9, "budget helper should round up to next unit");
 	require(bmsx::cyclesUntilBudgetUnits(60, 7, 59, 1) == 1, "budget helper should honor carry");
@@ -746,8 +846,11 @@ void testTextureKeyGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 19> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 22> tests{{
 		{"memory", testMemoryGolden},
+		{"raw memory bus faults", testRawMemoryBusFaults},
+		{"dma memory fault status", testDmaMemoryFaultStatus},
+		{"image decoder fault status", testImageDecoderFaultStatus},
 		{"budget and fixed16", testBudgetAndFixed16Golden},
 		{"texture key", testTextureKeyGolden},
 		{"string pool", testStringPoolGolden},

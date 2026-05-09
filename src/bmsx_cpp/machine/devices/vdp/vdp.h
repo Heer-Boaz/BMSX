@@ -92,7 +92,7 @@ public:
 	void rejectSubmitAttempt();
 	void beginDmaSubmit();
 	void endDmaSubmit();
-	void sealDmaTransfer(uint32_t src, size_t byteLength);
+	bool sealDmaTransfer(uint32_t src, size_t byteLength);
 	void writeVdpFifoBytes(const u8* data, size_t length);
 	void writeVram(uint32_t addr, const u8* data, size_t length) override;
 	void readVram(uint32_t addr, u8* out, size_t length) const override;
@@ -326,7 +326,7 @@ private:
 		void enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 priority, Layer2D layer);
 		bool enqueueLatchedCopyRect();
 	void pushVdpFifoWord(u32 word);
-	void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
+	bool consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(u32 wordCount);
 	void sealVdpFifoTransfer();
 	void latchPayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);

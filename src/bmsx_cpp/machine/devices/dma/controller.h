@@ -4,8 +4,8 @@
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 
+#include <array>
 #include <cstdint>
-#include <exception>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -36,20 +36,20 @@ public:
 	bool hasPendingVdpSubmit() const;
 	bool hasPendingIsoTransfer() const;
 	bool hasPendingBulkTransfer() const;
-	void enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete);
+		void enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped)> onComplete);
 	void reset();
 
-	private:
-		static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
+		private:
+			static constexpr uint32_t DMA_SERVICE_BATCH_BYTES = 64u;
+			static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
 
 		struct DmaJob {
 		enum class Kind : uint8_t { Io, Image };
 		Kind kind = Kind::Io;
 		Channel channel = Channel::Bulk;
-		uint32_t written = 0;
-		bool clipped = false;
-		bool error = false;
-		std::exception_ptr fault = nullptr;
+			uint32_t written = 0;
+			bool clipped = false;
+			bool error = false;
 
 			uint32_t src = 0;
 			uint32_t dst = 0;
@@ -58,10 +58,10 @@ public:
 
 			ImageCopyPlan plan;
 			std::vector<uint8_t> pixels;
-		uint32_t row = 0;
-		uint32_t rowOffset = 0;
-		bool vramTarget = false;
-		std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete;
+			uint32_t row = 0;
+			uint32_t rowOffset = 0;
+			bool vramTarget = false;
+			std::function<void(bool error, bool clipped)> onComplete;
 	};
 
 	struct DmaChannelState {
@@ -99,7 +99,7 @@ public:
 			VDP& m_vdp;
 			IrqController& m_irq;
 			DeviceScheduler& m_scheduler;
-	std::vector<uint8_t> m_buffer;
-};
+		std::array<uint8_t, DMA_SERVICE_BATCH_BYTES> m_buffer{};
+	};
 
 } // namespace bmsx

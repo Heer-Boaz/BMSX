@@ -11,8 +11,6 @@
 
 namespace bmsx {
 
-class AudioController;
-
 struct MemorySaveState {
 	std::vector<u8> ram;
 	uint32_t busFaultCode = BUS_FAULT_NONE;
@@ -78,8 +76,8 @@ public:
 	void writeMappedF32LE(uint32_t addr, float value);
 	void writeMappedF64LE(uint32_t addr, double value);
 
-	void writeBytes(uint32_t addr, const u8* data, size_t length);
-	void readBytes(uint32_t addr, u8* out, size_t length) const;
+		bool writeBytes(uint32_t addr, const u8* data, size_t length);
+		bool readBytes(uint32_t addr, u8* out, size_t length) const;
 	bool isVramRange(uint32_t addr, size_t length) const;
 	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
 	bool isRamRange(uint32_t addr, size_t length) const;
@@ -93,8 +91,6 @@ public:
 	void markRoots(GcHeap& heap) const;
 
 private:
-	friend class AudioController;
-
 	struct RomSpan {
 		const u8* data = nullptr;
 		size_t size = 0;
@@ -132,12 +128,9 @@ private:
 		}
 		return static_cast<int>(delta / IO_WORD_SIZE);
 	}
-	size_t ramOffset(uint32_t addr, size_t length) const;
-	bool isProgramRomRange(uint32_t addr, size_t length) const;
 	bool isProgramCodeReadableRange(uint32_t addr, size_t length) const;
 	uint32_t readProgramCodeWord(uint32_t addr) const;
 	uint32_t readU32FromRegion(uint32_t addr) const;
-	const u8* readBytesView(uint32_t addr, size_t length) const;
 	bool isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, uint32_t size) const;
 	bool isLuaReadOnlyIoAddress(uint32_t addr) const;
 	bool isMappedWritableRange(uint32_t addr, size_t length) const;

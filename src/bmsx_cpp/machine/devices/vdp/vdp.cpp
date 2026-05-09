@@ -343,14 +343,10 @@ void VDP::endDmaSubmit() {
 	refreshSubmitBusyStatus();
 }
 
-void VDP::sealDmaTransfer(uint32_t src, size_t byteLength) {
-	try {
-		consumeSealedVdpStream(src, byteLength);
-	} catch (...) {
-		endDmaSubmit();
-		throw;
-	}
+bool VDP::sealDmaTransfer(uint32_t src, size_t byteLength) {
+	const bool accepted = consumeSealedVdpStream(src, byteLength);
 	endDmaSubmit();
+	return accepted;
 }
 
 void VDP::writeVdpFifoBytes(const u8* data, size_t length) {
@@ -394,19 +390,19 @@ void VDP::pushVdpFifoWord(u32 word) {
 	refreshSubmitBusyStatus();
 }
 
-void VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
+bool VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 	if ((byteLength & 3u) != 0u) {
 		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(byteLength));
-		return;
+		return false;
 	}
 	if (byteLength > VDP_STREAM_BUFFER_SIZE) {
 		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(byteLength));
-		return;
+		return false;
 	}
 	if (m_buildFrame.open) {
 		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
 		cancelSubmittedFrame();
-		return;
+		return false;
 	}
 	uint32_t cursor = baseAddr;
 	const uint32_t end = baseAddr + static_cast<uint32_t>(byteLength);
@@ -416,29 +412,31 @@ void VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 		const u32 word = m_memory.readU32(cursor);
 		cursor += IO_WORD_SIZE;
 		if (word == VDP_PKT_END) {
-			if (cursor != end) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-				cancelSubmittedFrame();
-				return;
-			}
+				if (cursor != end) {
+					raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					cancelSubmittedFrame();
+					return false;
+				}
 			ended = true;
 			break;
 		}
 		cursor = consumeReplayPacketFromMemory(word, cursor, end);
 		if (cursor == VDP_REPLAY_PACKET_FAULT) {
 			cancelSubmittedFrame();
-			return;
+			return false;
 		}
 	}
 	if (!ended) {
 		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(byteLength));
 		cancelSubmittedFrame();
-		return;
+		return false;
 	}
-	if (!sealSubmittedFrame()) {
+	const bool accepted = sealSubmittedFrame();
+	if (!accepted) {
 		cancelSubmittedFrame();
 	}
 	refreshSubmitBusyStatus();
+	return accepted;
 }
 
 void VDP::consumeSealedVdpWordStream(u32 wordCount) {

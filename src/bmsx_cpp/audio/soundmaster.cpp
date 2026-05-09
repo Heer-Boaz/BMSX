@@ -206,18 +206,18 @@ void SoundMaster::dispose() {
 	resetPlaybackState();
 }
 
-VoiceId SoundMaster::playResolved(AudioSlot slot, const SoundMasterAudioSource& source, const u8* sourceBytes, const SoundMasterResolvedPlayRequest& request) {
+VoiceId SoundMaster::playResolved(AudioSlot slot, const SoundMasterAudioSource& source, std::vector<u8>&& sourceBytes, const SoundMasterResolvedPlayRequest& request) {
 	const ModulationParams params = resolveResolvedPlayParams(request);
 	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
 	std::vector<u32> badpSeekFrames;
 	std::vector<u32> badpSeekOffsets;
 	if (source.bitsPerSample == 4) {
-		readBadpSeekTable(sourceBytes, source.sourceBytes, source, badpSeekFrames, badpSeekOffsets);
+		readBadpSeekTable(sourceBytes.data(), source.sourceBytes, source, badpSeekFrames, badpSeekOffsets);
 	}
 	return startVoiceFromData(
 		slot,
 		source,
-		sourceBytes + source.dataOffset,
+		std::move(sourceBytes),
 		std::move(badpSeekFrames),
 		std::move(badpSeekOffsets),
 		params,
@@ -938,7 +938,7 @@ bool SoundMaster::badpReadFrameAt(VoiceRecord& record, size_t frame, i16& outLef
 
 VoiceId SoundMaster::startVoiceFromData(AudioSlot slot,
 										const SoundMasterAudioSource& source,
-										const u8* audioData,
+										std::vector<u8> sourceBytes,
 										std::vector<u32> badpSeekFrames,
 										std::vector<u32> badpSeekOffsets,
 										const ModulationParams& params,
@@ -952,6 +952,7 @@ VoiceId SoundMaster::startVoiceFromData(AudioSlot slot,
 	record.bitsPerSample = static_cast<i32>(source.bitsPerSample);
 	record.dataSize = source.dataBytes;
 	record.frames = source.frameCount;
+	record.sourceBytes = std::move(sourceBytes);
 	record.badpSeekFrames = std::move(badpSeekFrames);
 	record.badpSeekOffsets = std::move(badpSeekOffsets);
 	if (source.loopStartSample > 0) {
@@ -963,7 +964,7 @@ VoiceId SoundMaster::startVoiceFromData(AudioSlot slot,
 	record.slot = slot;
 	record.params = params;
 	record.startedAt = m_audioTimeSec;
-	record.data = audioData;
+	record.data = record.sourceBytes.data() + source.dataOffset;
 	record.usesBadp = source.bitsPerSample == 4;
 	const size_t framesInRecord = record.frames;
 	const f64 durationSec = framesInRecord > 0 ? static_cast<f64>(framesInRecord) / static_cast<f64>(record.sampleRate) : 0.0;
@@ -993,13 +994,13 @@ VoiceId SoundMaster::startVoiceFromData(AudioSlot slot,
 	}
 
 	const VoiceId voiceId = record.voiceId;
-	m_voices.push_back(record);
+	m_voices.push_back(std::move(record));
 	return voiceId;
 }
 
 void SoundMaster::removeVoice(size_t index) {
 	if (index >= m_voices.size()) return;
-	VoiceRecord record = m_voices[index];
+	VoiceRecord record = std::move(m_voices[index]);
 	m_voices.erase(m_voices.begin() + static_cast<std::ptrdiff_t>(index));
 	finalizeVoiceEnd(record);
 }

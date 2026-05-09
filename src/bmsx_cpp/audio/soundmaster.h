@@ -84,7 +84,7 @@ public:
 	void dispose();
 	bool isRuntimeAudioReady() const { return true; }
 
-	VoiceId playResolved(AudioSlot slot, const SoundMasterAudioSource& source, const u8* sourceBytes, const SoundMasterResolvedPlayRequest& request);
+	VoiceId playResolved(AudioSlot slot, const SoundMasterAudioSource& source, std::vector<u8>&& sourceBytes, const SoundMasterResolvedPlayRequest& request);
 	bool setVoiceGainLinear(VoiceId voiceId, f32 gain);
 	bool rampVoiceGainLinear(VoiceId voiceId, f32 target, f64 seconds);
 	bool setSlotGainLinear(AudioSlot slot, f32 gain);
@@ -130,9 +130,10 @@ private:
 		VoiceId voiceId = 0;
 		u32 sourceAddr = 0;
 		i32 sampleRate = 0;
-		i32 channels = 0;
-		i32 bitsPerSample = 0;
-		const u8* data = nullptr;
+			i32 channels = 0;
+			i32 bitsPerSample = 0;
+			std::vector<u8> sourceBytes;
+			const u8* data = nullptr;
 		size_t dataSize = 0;
 		size_t frames = 0;
 		std::vector<u32> badpSeekFrames;
@@ -160,7 +161,7 @@ private:
 
 	VoiceId startVoiceFromData(AudioSlot slot,
 								const SoundMasterAudioSource& source,
-								const u8* audioData,
+								std::vector<u8> sourceBytes,
 								std::vector<u32> badpSeekFrames,
 								std::vector<u32> badpSeekOffsets,
 								const ModulationParams& params,
