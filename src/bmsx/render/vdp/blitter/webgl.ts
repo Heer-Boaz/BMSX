@@ -154,15 +154,10 @@ function bindPassState(backend: WebGLBackend, state: WebGLVdpBlitterRuntime, pas
 	const frameBufferHeight = output.frameBufferHeight;
 	backend.setGraphicsPipeline(pass, state.pipeline);
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
-	updateAndBindFrameUniforms(backend, {
-		offscreen: { x: frameBufferWidth, y: frameBufferHeight },
-		logical: { x: frameBufferWidth, y: frameBufferHeight },
-		time: 0,
-		delta: 0,
-	});
+	updateAndBindFrameUniforms(backend, frameBufferWidth, frameBufferHeight, frameBufferWidth, frameBufferHeight);
 	gl.uniform1f(state.uniforms.scale, 1);
 	state.drawTargetHeight = frameBufferHeight;
-	backend.setViewport({ x: 0, y: 0, w: frameBufferWidth, h: frameBufferHeight });
+	backend.setViewportRect(0, 0, frameBufferWidth, frameBufferHeight);
 	backend.setCullEnabled(false);
 	backend.setDepthTestEnabled(true);
 	backend.setDepthMask(true);

@@ -26,7 +26,10 @@ export class WebGLBackend implements GPUBackend {
 	private currentVAO: WebGLVertexArrayObject = null;
 	private currentArrayBuffer: WebGLBuffer = null;
 	private currentElementArrayBuffer: WebGLBuffer = null;
-	private cachedViewport: { x: number; y: number; w: number; h: number } = null;
+	private cachedViewportX = -1;
+	private cachedViewportY = -1;
+	private cachedViewportW = -1;
+	private cachedViewportH = -1;
 	private cachedBlendEnabled: boolean = null;
 	private cachedCullEnabled: boolean = null;
 	private cachedDepthMask: boolean = null;
@@ -698,11 +701,13 @@ export class WebGLBackend implements GPUBackend {
 		if (vao) this.gl.deleteVertexArray(vao);
 	}
 
-	setViewport(vp: { x: number; y: number; w: number; h: number }): void {
-		const c = this.cachedViewport;
-		if (c && c.x === vp.x && c.y === vp.y && c.w === vp.w && c.h === vp.h) return;
-		this.gl.viewport(vp.x, vp.y, vp.w, vp.h);
-		this.cachedViewport = { ...vp };
+	setViewportRect(x: number, y: number, w: number, h: number): void {
+		if (this.cachedViewportX === x && this.cachedViewportY === y && this.cachedViewportW === w && this.cachedViewportH === h) return;
+		this.gl.viewport(x, y, w, h);
+		this.cachedViewportX = x;
+		this.cachedViewportY = y;
+		this.cachedViewportW = w;
+		this.cachedViewportH = h;
 	}
 	setCullEnabled(enabled: boolean): void {
 		if (this.cachedCullEnabled === enabled) return;

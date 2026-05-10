@@ -15,12 +15,12 @@ local vdp_pkt_end<const> = 0x00000000 -- End of packet stream
 local vdp_pkt_cmd<const> = 0x01000000 -- Command packet: lower 16 bits = command ID, upper 8 bits = number of additional data words
 local vdp_pkt_reg1<const> = 0x02000000 -- Register packet: lower 16 bits = register index, upper 8 bits = number of additional data words
 local vdp_pkt_regn<const> = 0x03000000 -- Register packet with N registers: lower 16 bits = starting register index, upper 8 bits = number of registers to set (data words must be in register order)
-local vdp_pkt_camera<const> = 0x10000000 -- CAMERA packet: VDP-owned 3D camera pose consumed by SBX, BBU, meshes, and later 3D render passes
 local vdp_pkt_billboard<const> = 0x11000000 -- BILLBOARD packet: BBU command-stream packet, followed by fixed hardware words
 local vdp_pkt_skybox<const> = 0x12000000 -- SKYBOX packet: SBX command-stream packet, followed by control and six face-source records
-local vdp_camera_payload_words<const> = 7 -- CAMERA payload: eye XYZ Q16.16, yaw/pitch/roll turn16, focal-Y Q16.16
+local vdp_pkt_xf<const> = 0x13000000 -- XF packet: raw Q16.16 view and projection matrices consumed by 3D render passes
 local vdp_billboard_payload_words<const> = 11 -- BILLBOARD payload: layer, priority, slot, uv, wh, x, y, z, size, color, control
 local vdp_skybox_payload_words<const> = 31 -- SKYBOX payload: control plus six faces of slot/u/v/w/h
+local vdp_xf_payload_words<const> = 32 -- XF payload: 16 view matrix words followed by 16 projection matrix words
 
 local vdp_cmd_clear<const> = 1 -- Clear command: clears a rectangle to the current background color, parameters are in registers (see draw_frame function below)
 local vdp_cmd_fill_rect<const> = 2 -- Fill rectangle command: fills a rectangle with the current draw color, parameters are in registers (see draw_frame function below)
@@ -40,8 +40,12 @@ local vdp_layer_world<const> = 0 -- World layer index (the main layer used for d
 local vdp_sbx_control_enable<const> = 1 -- SBX control bit: enable the live skybox face state when latched into a frame
 local draw_ctrl_parallax_half<const> = 0x00800000 -- DRAW_CTRL: PMU bank 0, parallax weight +0.5 in signed Q8.8
 local q16_one<const> = 0x00010000 -- Q16.16 value 1.0, used directly in VDP command words
-local camera_yaw_step<const> = 365 -- 0.035 radians per frame, represented as turn16 units
-local camera_focal_y<const> = 0x0001bb68 -- Perspective focal-Y, approximately cot(60deg / 2) in Q16.16
+local xf_yaw_step<const> = 0.035 -- Radians per frame for the raw XF view matrix
+local xf_proj_x<const> = 0x00016f32 -- Perspective focal-X in Q16.16 for 256x212 aspect
+local xf_proj_y<const> = 0x0001bb68 -- Perspective focal-Y in Q16.16, approximately cot(60deg / 2)
+local xf_proj_z<const> = 0xfffefefa -- Perspective depth term in Q16.16 for near 0.1, far 50
+local xf_proj_w<const> = 0xffff0000 -- Perspective W term -1.0 in Q16.16
+local xf_proj_zw<const> = 0xffffccb3 -- Perspective depth offset in Q16.16 for near 0.1, far 50
 
 local dma_ctrl_start<const> = 1 -- Control value to start a DMA transfer when written to the io_dma_ctrl register
 local irq_dma_done<const> = 0x01 -- IRQ flag bit for DMA transfer completion
@@ -157,16 +161,46 @@ end
 
 local draw_frame<const> = function()
 	local wp = vdp_stream_base -- Write pointer for building the VDP command stream in RAM for this frame
-	local camera_yaw<const> = (frame * camera_yaw_step) & 0xffff
+	local yaw<const> = frame * xf_yaw_step
+	local c<const> = math.cos(yaw)
+	local s<const> = math.sin(yaw)
+	local cw<const> = ((c * q16_one) // 1) & 0xffffffff
+	local sw<const> = ((s * q16_one) // 1) & 0xffffffff
+	local nw<const> = ((-s * q16_one) // 1) & 0xffffffff
 
-	mem[wp], wp = vdp_pkt_camera | (vdp_camera_payload_words << 16), wp + 4 -- VDP CAMERA packet: one device camera for SBX skybox, BBU billboards, and 3D render passes
-	mem[wp], wp = 0, wp + 4 -- Eye X = 0.0 in signed Q16.16
-	mem[wp], wp = 0, wp + 4 -- Eye Y = 0.0 in signed Q16.16
-	mem[wp], wp = 0, wp + 4 -- Eye Z = 0.0 in signed Q16.16
-	mem[wp], wp = camera_yaw, wp + 4 -- Yaw in turn16 units
-	mem[wp], wp = 0, wp + 4 -- Pitch in turn16 units
-	mem[wp], wp = 0, wp + 4 -- Roll in turn16 units
-	mem[wp], wp = camera_focal_y, wp + 4 -- Focal-Y projection in unsigned Q16.16
+	mem[wp], wp = vdp_pkt_xf | (vdp_xf_payload_words << 16), wp + 4 -- XF packet: raw Q16.16 view matrix followed by projection matrix
+	mem[wp], wp = cw, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = nw, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = sw, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = cw, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = xf_proj_x, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = xf_proj_y, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = xf_proj_z, wp + 4
+	mem[wp], wp = xf_proj_w, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = xf_proj_zw, wp + 4
+	mem[wp], wp = 0, wp + 4
 
 	mem[wp], wp = vdp_pkt_skybox | (vdp_skybox_payload_words << 16), wp + 4 -- SBX SKYBOX packet: live face words are latched and validated when the frame is sealed
 	mem[wp], wp = vdp_sbx_control_enable, wp + 4 -- Enable the six-face skybox for this frame

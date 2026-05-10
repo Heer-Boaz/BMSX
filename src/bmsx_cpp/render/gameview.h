@@ -11,7 +11,7 @@
 #include "shared/submissions.h"
 #include "shared/queues.h"
 #include "common/registry.h"
-#include "machine/devices/vdp/camera.h"
+#include "render/vdp/transform.h"
 #include "common/subscription.h"
 #include <array>
 #include <memory>
@@ -113,8 +113,7 @@ public:
 	std::array<f32, SKYBOX_FACE_COUNT * 4> skyboxFaceUvRects{};
 	std::array<i32, SKYBOX_FACE_COUNT> skyboxFaceTextpageBindings{};
 	std::array<i32, SKYBOX_FACE_COUNT * 2> skyboxFaceSizes{};
-	VdpCameraSnapshot vdpCameraFallback{};
-	const VdpCameraSnapshot* vdpCamera = &vdpCameraFallback;
+	VdpTransformSnapshot vdpTransform{};
 	struct VdpBillboardRenderEntry {
 		Vec3 position{0.0f, 0.0f, 0.0f};
 		f32 size = 0.0f;

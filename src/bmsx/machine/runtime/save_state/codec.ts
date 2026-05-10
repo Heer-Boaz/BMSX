@@ -5,7 +5,7 @@ import type { IrqControllerState } from '../../devices/irq/controller';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/controller';
 import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/vdp';
-import type { VdpCameraState } from '../../devices/vdp/camera';
+import { VDP_XF_MATRIX_WORDS } from '../../devices/vdp/xf';
 import type { MemorySaveState } from '../../memory/memory';
 import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
 import type {
@@ -54,6 +54,22 @@ function decodeVector<T>(value: unknown, label: string, decode: (value: unknown,
 	return out;
 }
 
+function decodeU32FixedArray(value: unknown, label: string, length: number): number[] {
+	const entries = requireArray(value, label);
+	if (entries.length !== length) {
+		throw new Error(`${label} must contain ${length} u32 values.`);
+	}
+	const out = new Array<number>(length);
+	for (let index = 0; index < length; index += 1) {
+		const word = entries[index];
+		if (typeof word !== 'number' || !Number.isInteger(word) || word < 0 || word > 0xffffffff) {
+			throw new Error(`${label}[${index}] must be a u32 value.`);
+		}
+		out[index] = word >>> 0;
+	}
+	return out;
+}
+
 function encodeCameraState(state: CameraWireState): CameraWireState {
 	return {
 		view: state.view,
@@ -68,31 +84,6 @@ function decodeCameraState(value: unknown, label: string): CameraWireState {
 		view: requireObjectKey(object, 'view', label, `${label}.view`) as number[],
 		proj: requireObjectKey(object, 'proj', label, `${label}.proj`) as number[],
 		eye: requireObjectKey(object, 'eye', label, `${label}.eye`) as [number, number, number],
-	};
-}
-
-function encodeVdpCameraState(state: VdpCameraState): VdpCameraState {
-	return {
-		eyeXWord: state.eyeXWord,
-		eyeYWord: state.eyeYWord,
-		eyeZWord: state.eyeZWord,
-		yawWord: state.yawWord,
-		pitchWord: state.pitchWord,
-		rollWord: state.rollWord,
-		focalYWord: state.focalYWord,
-	};
-}
-
-function decodeVdpCameraState(value: unknown, label: string): VdpCameraState {
-	const object = requireObject(value, label);
-	return {
-		eyeXWord: requireObjectKey(object, 'eyeXWord', label, `${label}.eyeXWord`) as number,
-		eyeYWord: requireObjectKey(object, 'eyeYWord', label, `${label}.eyeYWord`) as number,
-		eyeZWord: requireObjectKey(object, 'eyeZWord', label, `${label}.eyeZWord`) as number,
-		yawWord: requireObjectKey(object, 'yawWord', label, `${label}.yawWord`) as number,
-		pitchWord: requireObjectKey(object, 'pitchWord', label, `${label}.pitchWord`) as number,
-		rollWord: requireObjectKey(object, 'rollWord', label, `${label}.rollWord`) as number,
-		focalYWord: requireObjectKey(object, 'focalYWord', label, `${label}.focalYWord`) as number,
 	};
 }
 
@@ -339,7 +330,10 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 
 function encodeVdpState(state: VdpState): VdpState {
 	return {
-		camera: encodeVdpCameraState(state.camera),
+		xf: {
+			viewMatrixWords: state.xf.viewMatrixWords,
+			projectionMatrixWords: state.xf.projectionMatrixWords,
+		},
 		skyboxControl: state.skyboxControl,
 		skyboxFaceWords: state.skyboxFaceWords,
 		pmuSelectedBank: state.pmuSelectedBank,
@@ -352,8 +346,12 @@ function encodeVdpState(state: VdpState): VdpState {
 
 function decodeVdpState(value: unknown, label: string): VdpState {
 	const object = requireObject(value, label);
+	const xf = requireObject(requireObjectKey(object, 'xf', label, 'machine.vdp.xf'), 'machine.vdp.xf');
 	return {
-		camera: decodeVdpCameraState(requireObjectKey(object, 'camera', label, 'machine.vdp.camera'), 'machine.vdp.camera'),
+		xf: {
+			viewMatrixWords: decodeU32FixedArray(requireObjectKey(xf, 'viewMatrixWords', 'machine.vdp.xf', 'machine.vdp.xf.viewMatrixWords'), 'machine.vdp.xf.viewMatrixWords', VDP_XF_MATRIX_WORDS),
+			projectionMatrixWords: decodeU32FixedArray(requireObjectKey(xf, 'projectionMatrixWords', 'machine.vdp.xf', 'machine.vdp.xf.projectionMatrixWords'), 'machine.vdp.xf.projectionMatrixWords', VDP_XF_MATRIX_WORDS),
+		},
 		skyboxControl: requireObjectKey(object, 'skyboxControl', label, 'machine.vdp.skyboxControl') as number,
 		skyboxFaceWords: requireObjectKey(object, 'skyboxFaceWords', label, 'machine.vdp.skyboxFaceWords') as number[],
 		pmuSelectedBank: requireObjectKey(object, 'pmuSelectedBank', label, 'machine.vdp.pmuSelectedBank') as number,

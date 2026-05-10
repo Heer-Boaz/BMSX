@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 12;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 13;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
@@ -131,15 +131,11 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'displayFrameBufferPixels',
 	'skyboxControl',
 	'skyboxFaceWords',
+	'xf',
+	'viewMatrixWords',
+	'projectionMatrixWords',
 	'pmuSelectedBank',
 	'pmuBankWords',
-	'eyeXWord',
-	'eyeYWord',
-	'eyeZWord',
-	'yawWord',
-	'pitchWord',
-	'rollWord',
-	'focalYWord',
 	'vdpFaultCode',
 	'vdpFaultDetail',
 	'tracked',

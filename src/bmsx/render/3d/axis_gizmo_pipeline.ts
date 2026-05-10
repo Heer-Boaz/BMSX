@@ -132,7 +132,7 @@ export function renderAxisGizmo_WebGL(backend: WebGLBackend, emitHostImage: Axis
 	const aspect = gv.offscreenCanvasSize.x / gv.offscreenCanvasSize.y;
 
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-	backend.setViewport({ x: 0, y: 0, w: gv.offscreenCanvasSize.x, h: gv.offscreenCanvasSize.y });
+	backend.setViewportRect(0, 0, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y);
 	gl.useProgram(program);
 	gl.bindVertexArray(vao);
 

@@ -7,7 +7,7 @@ import { RenderPassLibrary } from '../../backend/pass/library';
 import { ParticlePipelineState } from '../../backend/backend';
 import { TEXTURE_UNIT_TEXTPAGE_ENGINE, TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '../../backend/webgl/constants';
 import { WebGLBackend } from '../../backend/webgl/backend';
-import type { VdpCameraSnapshot } from '../../../machine/devices/vdp/camera';
+import type { VdpTransformSnapshot } from '../../vdp/transform';
 import { M4 } from '../math';
 import { beginParticleQueue, forEachParticleQueue } from '../../shared/queues';
 import type { ParticleRenderSubmission } from '../../shared/submissions';
@@ -25,27 +25,28 @@ const INSTANCE_BYTES = INSTANCE_FLOATS * BYTES_PER_FLOAT;
 let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffers: WebGLBuffer[] = []; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let texture0Location: WebGLUniformLocation; let texture1Location: WebGLUniformLocation; let texture2Location: WebGLUniformLocation; let ambientModeLocation: WebGLUniformLocation; let ambientFactorLocation: WebGLUniformLocation; const instanceData = new Float32Array(PARTICLE_INSTANCE_LIMIT * INSTANCE_FLOATS);
 let framePage = 0;
 
-const cameraParticleState: ParticlePipelineState = {
+const particlePipelineStateScratch: ParticlePipelineState = {
 	width: 1,
 	height: 1,
 	viewProj: new Float32Array(16),
 	camRight: new Float32Array(3),
 	camUp: new Float32Array(3),
 };
+const particlePassEncoder: PassEncoder = { fbo: null, desc: { label: 'particles' } };
 
-function updateCameraParticleState(width: number, height: number, camera: VdpCameraSnapshot): ParticlePipelineState {
-	cameraParticleState.width = width;
-	cameraParticleState.height = height;
-	cameraParticleState.viewProj = camera.viewProj;
-	M4.viewRightUpInto(camera.view, cameraParticleState.camRight, cameraParticleState.camUp);
-	return cameraParticleState;
+function updateParticleTransformState(width: number, height: number, transform: VdpTransformSnapshot): ParticlePipelineState {
+	particlePipelineStateScratch.width = width;
+	particlePipelineStateScratch.height = height;
+	particlePipelineStateScratch.viewProj = transform.viewProj;
+	M4.viewRightUpInto(transform.view, particlePipelineStateScratch.camRight, particlePipelineStateScratch.camUp);
+	return particlePipelineStateScratch;
 }
 
 function drawPreparedParticleInstances(backend: WebGLBackend, instBuf: WebGLBuffer, framebuffer: WebGLFramebuffer, batchCount: number): void {
 	backend.bindArrayBuffer(instBuf);
 	backend.updateVertexBuffer(instBuf, instanceData.subarray(0, batchCount * INSTANCE_FLOATS), 0);
-	const passStub: PassEncoder = { fbo: framebuffer, desc: { label: 'particles' } };
-	backend.drawInstanced(passStub, 6, batchCount, 0, 0);
+	particlePassEncoder.fbo = framebuffer;
+	backend.drawInstanced(particlePassEncoder, 6, batchCount, 0, 0);
 }
 
 export function initParticlePipeline(backend: WebGLBackend): void {
@@ -87,14 +88,7 @@ export function setupParticleLocations(backend: WebGLBackend): void {
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(null);
 }
-interface ParticleRuntime {
-	backend: WebGLBackend;
-	gl: WebGL2RenderingContext;
-	context: RenderContext;
-}
-
-export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGLFramebuffer, state: ParticlePipelineState): void {
-	const { backend, gl, context } = runtime;
+export function renderParticleBatch(backend: WebGLBackend, gl: WebGL2RenderingContext, context: RenderContext, framebuffer: WebGLFramebuffer, state: ParticlePipelineState): void {
 	const pending = beginParticleQueue();
 	const vdpPending = context.vdpBillboardCount;
 	if (pending === 0 && vdpPending === 0) return;
@@ -131,7 +125,7 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 			}
 		}
 	}
-	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
+	backend.setViewportRect(0, 0, state.width, state.height);
 	gl.enable(gl.BLEND);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	gl.depthMask(false);
@@ -255,8 +249,7 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 		shouldExecute: () => beginParticleQueue() !== 0 || consoleCore.view.vdpBillboardCount !== 0,
 		exec: (backend, fbo, s: RenderPassStateRegistry['particles']) => {
 			const webglBackend = backend as WebGLBackend;
-			const runtime: ParticleRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: consoleCore.view };
-			renderParticleBatch(runtime, fbo as WebGLFramebuffer, s as ParticlePipelineState);
+			renderParticleBatch(webglBackend, webglBackend.gl as WebGL2RenderingContext, consoleCore.view, fbo as WebGLFramebuffer, s as ParticlePipelineState);
 		},
 		prepare: (_backend, _state) => {
 			const gv = consoleCore.view;
@@ -267,7 +260,7 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 			}
 			const textpageSecondaryTex = gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY];
 			const systemSlotTex = gv.textures[SYSTEM_SLOT_TEXTURE_KEY];
-			const state = updateCameraParticleState(width, height, gv.vdpCamera);
+			const state = updateParticleTransformState(width, height, gv.vdpTransform);
 			state.textpagePrimaryTex = textpagePrimaryTex;
 			state.textpageSecondaryTex = textpageSecondaryTex;
 			state.systemSlotTex = systemSlotTex;

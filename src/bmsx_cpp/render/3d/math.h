@@ -61,6 +61,7 @@ void mat4SetTranslationSelf(Mat4& m, f32 x, f32 y, f32 z);
 void mat4GetTranslationInto(Vec3& out, const Mat4& m);
 void mat4SetRotationSelfFromQuat(Mat4& m, const Quat& q);
 void mat4ViewRightUpInto(const Mat4& view, Vec3& outRight, Vec3& outUp);
+void mat4AffineViewEyeInto(Vec3& out, const Mat4& view, const Mat4& inverseLinear);
 void mat4Normal3Into(Mat3& out, const Mat4& model);
 void mat4TransformPoint3Into(Vec3& out, const Mat4& m, f32 x, f32 y, f32 z);
 void mat4TransformDir3Into(Vec3& out, const Mat4& m, f32 x, f32 y, f32 z);

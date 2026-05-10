@@ -160,14 +160,14 @@ void appendParticleQuad(ParticleGLES2Runtime& runtime,
 }
 
 ParticlePipelineState buildParticlePipelineState(const RenderPassDef::RenderGraphPassContext& ctx,
-													const FrameSharedState& frameShared) {
-	const VdpCameraSnapshot& camera = *ctx.view->vdpCamera;
+												const FrameSharedState& frameShared) {
+	const VdpTransformSnapshot& transform = ctx.view->vdpTransform;
 	ParticlePipelineState state;
 	state.width = static_cast<i32>(ctx.view->offscreenCanvasSize.x);
 	state.height = static_cast<i32>(ctx.view->offscreenCanvasSize.y);
-	state.viewProj = camera.viewProj;
-	state.camRight = {camera.view[0], camera.view[4], camera.view[8]};
-	state.camUp = {camera.view[1], camera.view[5], camera.view[9]};
+	state.viewProj = transform.viewProj;
+	state.camRight = {transform.view[0], transform.view[4], transform.view[8]};
+	state.camUp = {transform.view[1], transform.view[5], transform.view[9]};
 	state.textpagePrimaryTex = ctx.view->textures.at(VDP_PRIMARY_SLOT_TEXTURE_KEY);
 	state.textpageSecondaryTex = ctx.view->textures.at(VDP_SECONDARY_SLOT_TEXTURE_KEY);
 	state.systemSlotTex = ctx.view->textures.at(SYSTEM_SLOT_TEXTURE_KEY);

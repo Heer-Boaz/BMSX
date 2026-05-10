@@ -175,6 +175,7 @@ export interface GPUBackend {
 	// Optional WebGL-like texture binding helpers (implemented by WebGL backend).
 	// These allow higher-level code (GameView / render graph) to perform texture
 	// binds without casting to a concrete backend type.
+	setViewportRect?(x: number, y: number, w: number, h: number): void;
 	setActiveTexture?(unit: number): void;
 	bindTexture2D?(tex: TextureHandle): void;
 	bindTextureCube?(tex: TextureHandle): void;

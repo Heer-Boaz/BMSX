@@ -387,11 +387,29 @@ export const M4 = {
 	},
 
 	skyboxFromViewInto(out: Mat4Float32, view: Mat4Float32): Mat4Float32 {
-		// Provide inverse rotation (transpose of view's 3x3) without translation for cubemap lookup
-		out[0] = view[0];  out[1] = view[4];  out[2]  = view[8];  out[3]  = 0;
-		out[4] = view[1];  out[5] = view[5];  out[6]  = view[9];  out[7]  = 0;
-		out[8] = view[2];  out[9] = view[6];  out[10] = view[10]; out[11] = 0;
-		out[12] = 0;       out[13] = 0;       out[14] = 0;        out[15] = 1;
+		const a00 = view[0], a01 = view[4], a02 = view[8];
+		const a10 = view[1], a11 = view[5], a12 = view[9];
+		const a20 = view[2], a21 = view[6], a22 = view[10];
+		const b01 = a22 * a11 - a12 * a21;
+		const b11 = -a22 * a10 + a12 * a20;
+		const b21 = a21 * a10 - a11 * a20;
+		const invDet = 1 / (a00 * b01 + a01 * b11 + a02 * b21);
+		out[0] = b01 * invDet;
+		out[1] = b11 * invDet;
+		out[2] = b21 * invDet;
+		out[3] = 0;
+		out[4] = (-a22 * a01 + a02 * a21) * invDet;
+		out[5] = (a22 * a00 - a02 * a20) * invDet;
+		out[6] = (-a21 * a00 + a01 * a20) * invDet;
+		out[7] = 0;
+		out[8] = (a12 * a01 - a02 * a11) * invDet;
+		out[9] = (-a12 * a00 + a02 * a10) * invDet;
+		out[10] = (a11 * a00 - a01 * a10) * invDet;
+		out[11] = 0;
+		out[12] = 0;
+		out[13] = 0;
+		out[14] = 0;
+		out[15] = 1;
 		return out;
 	},
 
@@ -411,6 +429,16 @@ export const M4 = {
 	viewRightUpInto(view: Mat4Float32, outRight: Float32Array, outUp: Float32Array): void {
 		outRight[0] = view[0]; outRight[1] = view[4]; outRight[2] = view[8];
 		outUp[0] = view[1]; outUp[1] = view[5]; outUp[2] = view[9];
+	},
+
+	affineViewEyeInto(out: Float32Array, view: Mat4Float32, inverseLinear: Mat4Float32): Float32Array {
+		const tx = view[12];
+		const ty = view[13];
+		const tz = view[14];
+		out[0] = -(inverseLinear[0] * tx + inverseLinear[4] * ty + inverseLinear[8] * tz);
+		out[1] = -(inverseLinear[1] * tx + inverseLinear[5] * ty + inverseLinear[9] * tz);
+		out[2] = -(inverseLinear[2] * tx + inverseLinear[6] * ty + inverseLinear[10] * tz);
+		return out;
 	},
 
 		// 3x3 normal matrix (inverse-transpose)

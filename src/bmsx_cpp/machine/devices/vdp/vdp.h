@@ -9,12 +9,12 @@
 #include "machine/devices/vdp/bbu.h"
 #include "machine/devices/vdp/blitter.h"
 #include "machine/devices/vdp/budget.h"
-#include "machine/devices/vdp/camera.h"
 #include "machine/devices/vdp/frame.h"
 #include "machine/devices/vdp/pmu.h"
 #include "machine/devices/vdp/registers.h"
 #include "machine/devices/vdp/sbx.h"
 #include "machine/devices/vdp/vram_garbage.h"
+#include "machine/devices/vdp/xf.h"
 #include <array>
 #include <vector>
 
@@ -24,7 +24,7 @@ class ImgDecController;
 class VDP;
 
 struct VdpState {
-	VdpCameraState camera{};
+	VdpXfState xf{};
 	u32 skyboxControl = 0;
 	VdpSbxUnit::FaceWords skyboxFaceWords{};
 	u32 pmuSelectedBank = 0;
@@ -165,7 +165,8 @@ public:
 		const std::vector<VdpBbuBillboardEntry>* executionBillboards = nullptr;
 		bool executionWritesFrameBuffer = false;
 		i32 ditherType = 0;
-		const VdpCameraSnapshot* camera = nullptr;
+		const std::array<u32, VDP_XF_MATRIX_WORDS>* xfViewMatrixWords = nullptr;
+		const std::array<u32, VDP_XF_MATRIX_WORDS>* xfProjectionMatrixWords = nullptr;
 		bool skyboxEnabled = false;
 		const SkyboxSamples* skyboxSamples = nullptr;
 		const std::vector<VdpBbuBillboardEntry>* billboards = nullptr;
@@ -218,7 +219,7 @@ private:
 	VdpSbxUnit m_sbx;
 	VdpSbxUnit::FaceWords m_sbxPacketFaceWords{};
 	VdpSbxUnit::FaceWords m_sbxMmioFaceWords{};
-	VdpCameraUnit m_camera;
+	VdpXfUnit m_xf;
 	VdpPmuUnit m_pmu;
 	VdpBbuUnit m_bbu;
 	SkyboxSamples m_committedSkyboxSamples{};

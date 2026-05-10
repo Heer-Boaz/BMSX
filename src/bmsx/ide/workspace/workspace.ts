@@ -18,15 +18,7 @@ export * from './files';
 export { joinWorkspacePaths } from './path';
 
 function resolveEditableCartLuaSources(runtime: Runtime): LuaSourceRegistry {
-	return runtime.cartLuaSources ? runtime.cartLuaSources : runtime.activeLuaSources;
-}
-
-function resolveSystemProjectRootPath(runtime: Runtime): string {
-	return runtime.systemProjectRootPath;
-}
-
-function isSystemLuaSourcePath(path: string): boolean {
-	return path === 'res/bios' || path.startsWith('res/bios/');
+	return runtime.cartLuaSources ?? runtime.activeLuaSources;
 }
 
 export function resolveLuaSourceRegistry(runtime: Runtime, path: string): LuaSourceRegistry {
@@ -48,7 +40,7 @@ export function resolveLuaSourceProjectRootPath(runtime: Runtime, path: string):
 	}
 	const system = runtime.systemLuaSources;
 	if (system && (system.path2lua[path] || system.module2lua[path])) {
-		return resolveSystemProjectRootPath(runtime);
+		return runtime.systemProjectRootPath;
 	}
 	return runtime.cartProjectRootPath;
 }
@@ -85,14 +77,14 @@ export async function createLuaResource(runtime: Runtime, request: LuaResourceCr
 		registry.module2lua[asset.module_path] = asset;
 		registry.can_boot_from_source = true;
 	};
-	const registry = isSystemLuaSourcePath(asset.source_path)
+	const registry = runtime.systemLuaSources && asset.source_path.startsWith('bios/')
 		? runtime.systemLuaSources
 		: resolveEditableCartLuaSources(runtime);
 	registerAsset(registry);
 	luaPipeline.invalidateModuleLookups(runtime);
 	const filesystemPath = asset.source_path;
-	await persistWorkspaceSourceFile(filesystemPath, contents, isSystemLuaSourcePath(filesystemPath) ? resolveSystemProjectRootPath(runtime) : runtime.cartProjectRootPath);
-	luaPipeline.markSourceChunkAsDirty(runtime, asset.source_path);
+	await persistWorkspaceSourceFile(filesystemPath, contents, asset.source_path.startsWith('bios/') ? runtime.systemProjectRootPath : runtime.cartProjectRootPath);
+	runtime.luaGenericChunksExecuted.delete(asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
 }

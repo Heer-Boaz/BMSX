@@ -384,15 +384,10 @@ function drawGlyphRunCommand(backend: WebGLBackend, state: HostOverlayRuntime, c
 function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	gl.useProgram(state.program);
-	updateAndBindFrameUniforms(backend, {
-		offscreen: { x: passState.width, y: passState.height },
-		logical: { x: passState.overlayWidth, y: passState.overlayHeight },
-		time: passState.time,
-		delta: passState.delta,
-	});
+	updateAndBindFrameUniforms(backend, passState.width, passState.height, passState.overlayWidth, passState.overlayHeight, passState.time, passState.delta);
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	gl.uniform1f(state.uniforms.scale, 1);
-	backend.setViewport({ x: 0, y: 0, w: passState.width, h: passState.height });
+	backend.setViewportRect(0, 0, passState.width, passState.height);
 	backend.setCullEnabled(false);
 	backend.setDepthTestEnabled(false);
 	backend.setDepthMask(false);

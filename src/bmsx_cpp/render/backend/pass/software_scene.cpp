@@ -31,9 +31,9 @@ SoftwareParticleViewState resolveParticleViewState(const GameView& view) {
 	SoftwareParticleViewState state;
 	state.width = static_cast<i32>(view.offscreenCanvasSize.x);
 	state.height = static_cast<i32>(view.offscreenCanvasSize.y);
-	const VdpCameraSnapshot& camera = *view.vdpCamera;
-	state.viewProj = camera.viewProj;
-	state.camRight = { camera.view[0], camera.view[4], camera.view[8] };
+	const VdpTransformSnapshot& transform = view.vdpTransform;
+	state.viewProj = transform.viewProj;
+	state.camRight = { transform.view[0], transform.view[4], transform.view[8] };
 	return state;
 }
 
@@ -249,7 +249,7 @@ void renderSoftwareSkybox(SoftwareBackend& backend, const GameView& view, Runtim
 	if (!view.skyboxRenderReady) {
 		return;
 	}
-	writeSkyboxToFramebuffer(backend, runtime, view.vdpCamera->skyboxView);
+	writeSkyboxToFramebuffer(backend, runtime, view.vdpTransform.skyboxView);
 }
 
 void renderSoftwareParticles(SoftwareBackend& backend, const GameView& view, Runtime& runtime) {

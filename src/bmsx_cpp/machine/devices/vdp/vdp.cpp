@@ -31,10 +31,6 @@ std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
 	return values;
 }
 
-bool isCameraPosePacketPayloadValid(u32 yawWord, u32 pitchWord, u32 rollWord, u32 focalYWord) {
-	return ((yawWord | pitchWord | rollWord) & 0xffff0000u) == 0u && focalYWord != 0u;
-}
-
 uint64_t vramSurfaceByteSize(uint32_t width, uint32_t height) {
 	return static_cast<uint64_t>(width) * static_cast<uint64_t>(height) * 4u;
 }
@@ -509,36 +505,21 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 				m_memory.readU32(cursor + IO_WORD_SIZE * 8u),
 				m_memory.readU32(cursor + IO_WORD_SIZE * 9u))) ? payloadEnd : VDP_REPLAY_PACKET_FAULT;
 		}
-		case VDP_CAMERA_PACKET_KIND: {
-			if (!isVdpUnitPacketHeaderValid(word, VDP_CAMERA_PACKET_PAYLOAD_WORDS)) {
+		case VDP_XF_PACKET_KIND: {
+			if (!isVdpUnitPacketHeaderValid(word, VDP_XF_PACKET_PAYLOAD_WORDS)) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			const u32 byteCount = VDP_CAMERA_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
+			const u32 byteCount = VDP_XF_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
 			const u32 payloadEnd = cursor + byteCount;
 			if (payloadEnd > end) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			const u32 eyeXWord = m_memory.readU32(cursor);
-			const u32 eyeYWord = m_memory.readU32(cursor + IO_WORD_SIZE);
-			const u32 eyeZWord = m_memory.readU32(cursor + IO_WORD_SIZE * 2u);
-			const u32 yawWord = m_memory.readU32(cursor + IO_WORD_SIZE * 3u);
-			const u32 pitchWord = m_memory.readU32(cursor + IO_WORD_SIZE * 4u);
-			const u32 rollWord = m_memory.readU32(cursor + IO_WORD_SIZE * 5u);
-			const u32 focalYWord = m_memory.readU32(cursor + IO_WORD_SIZE * 6u);
-			if (!isCameraPosePacketPayloadValid(yawWord, pitchWord, rollWord, focalYWord)) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-				return VDP_REPLAY_PACKET_FAULT;
+			for (size_t offset = 0; offset < VDP_XF_MATRIX_WORDS; ++offset) {
+				m_xf.viewMatrixWords[offset] = m_memory.readU32(cursor + static_cast<u32>(offset) * IO_WORD_SIZE);
+				m_xf.projectionMatrixWords[offset] = m_memory.readU32(cursor + static_cast<u32>(offset + VDP_XF_MATRIX_WORDS) * IO_WORD_SIZE);
 			}
-			m_camera.writePosePacket(
-				eyeXWord,
-				eyeYWord,
-				eyeZWord,
-				yawWord,
-				pitchWord,
-				rollWord,
-				focalYWord);
 			return payloadEnd;
 		}
 		case VDP_SBX_PACKET_KIND: {
@@ -610,28 +591,16 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 7u)],
 				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 8u)],
 				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 9u)])) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : VDP_REPLAY_PACKET_FAULT;
-		case VDP_CAMERA_PACKET_KIND:
-			if (!isVdpUnitPacketHeaderValid(word, VDP_CAMERA_PACKET_PAYLOAD_WORDS) || cursor + VDP_CAMERA_PACKET_PAYLOAD_WORDS > wordCount) {
+		case VDP_XF_PACKET_KIND:
+			if (!isVdpUnitPacketHeaderValid(word, VDP_XF_PACKET_PAYLOAD_WORDS) || cursor + VDP_XF_PACKET_PAYLOAD_WORDS > wordCount) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			if (!isCameraPosePacketPayloadValid(
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 3u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 4u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 5u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 6u)])) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-				return VDP_REPLAY_PACKET_FAULT;
+			for (size_t offset = 0; offset < VDP_XF_MATRIX_WORDS; ++offset) {
+				m_xf.viewMatrixWords[offset] = m_vdpFifoStreamWords[static_cast<size_t>(cursor + static_cast<u32>(offset))];
+				m_xf.projectionMatrixWords[offset] = m_vdpFifoStreamWords[static_cast<size_t>(cursor + static_cast<u32>(offset + VDP_XF_MATRIX_WORDS))];
 			}
-			m_camera.writePosePacket(
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 1u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 2u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 3u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 4u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 5u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 6u)]);
-			return cursor + VDP_CAMERA_PACKET_PAYLOAD_WORDS;
+			return cursor + VDP_XF_PACKET_PAYLOAD_WORDS;
 		case VDP_SBX_PACKET_KIND:
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
@@ -1297,7 +1266,8 @@ VDP::VdpHostOutput VDP::readHostOutput() {
 	output.executionBillboards = &m_activeFrame.billboards;
 	output.executionWritesFrameBuffer = m_activeFrame.hasFrameBufferCommands;
 	output.ditherType = m_committedDitherType;
-	output.camera = &m_camera.snapshot;
+	output.xfViewMatrixWords = &m_xf.viewMatrixWords;
+	output.xfProjectionMatrixWords = &m_xf.projectionMatrixWords;
 	output.skyboxEnabled = m_sbx.visibleEnabled();
 	output.skyboxSamples = &m_committedSkyboxSamples;
 	output.billboards = &m_committedBillboards;
@@ -1735,7 +1705,7 @@ void VDP::initializeRegisters() {
 	resetVdpRegisters();
 	m_pmu.reset();
 	syncPmuRegisterWindow();
-	m_camera.reset();
+	m_xf.reset();
 	m_liveDitherType = dither;
 	m_committedDitherType = dither;
 	m_sbx.reset();
@@ -1789,7 +1759,7 @@ void VDP::attachImgDecController(ImgDecController& controller) {
 }
 
 void VDP::captureVisualStateFields(VdpState& state) const {
-	state.camera = m_camera.pose;
+	state.xf = m_xf.captureState();
 	state.skyboxControl = m_sbx.liveControl();
 	state.skyboxFaceWords = m_sbx.liveFaceWords();
 	state.pmuSelectedBank = m_pmu.selectedBank();
@@ -1806,7 +1776,7 @@ VdpState VDP::captureState() const {
 }
 
 void VDP::restoreState(const VdpState& state) {
-	m_camera.restoreState(state.camera);
+	m_xf.restoreState(state.xf);
 	m_sbx.restoreLiveState(state.skyboxControl, state.skyboxFaceWords);
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(state.ditherType)));
 	m_pmu.restoreBankWords(state.pmuSelectedBank, state.pmuBankWords);

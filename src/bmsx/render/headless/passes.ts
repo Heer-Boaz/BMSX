@@ -304,7 +304,10 @@ function slotSurfaceId(slot: number): number {
 	if (slot === VDP_SLOT_SECONDARY) {
 		return VDP_RD_SURFACE_SECONDARY;
 	}
-	return VDP_RD_SURFACE_SYSTEM;
+	if (slot === VDP_SLOT_SYSTEM) {
+		return VDP_RD_SURFACE_SYSTEM;
+	}
+	throw new Error(`[HeadlessVDP] Invalid slot binding ${slot}.`);
 }
 
 type SlotTexturePixels = {
@@ -421,7 +424,7 @@ function rasterizeSkyboxBackground(width: number, height: number): void {
 		headlessSkyboxSamples[index] = sample;
 		headlessSkyboxTextures[index] = readSlotTexturePixels(output, sample.slot);
 	}
-	const view = consoleCore.view.vdpCamera.skyboxView;
+	const view = consoleCore.view.vdpTransform.skyboxView;
 	for (let y = 0; y < height; y += 1) {
 		const rayY = 1 - (((y * 2) + 1) / height);
 		for (let x = 0; x < width; x += 1) {
@@ -645,13 +648,13 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 
 function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
 	const gv = consoleCore.view;
-	const camera = gv.vdpCamera;
+	const transform = gv.vdpTransform;
 	return {
 		width: gv.offscreenCanvasSize.x,
 		height: gv.offscreenCanvasSize.y,
-		camPos: camera.eye,
-		viewProj: camera.viewProj,
-		cameraFrustum: camera.frustumPlanes,
+		camPos: transform.eye,
+		viewProj: transform.viewProj,
+		cameraFrustum: transform.frustumPlanes,
 		lighting: registry.getState('frame_shared')?.lighting,
 	};
 }
@@ -725,21 +728,22 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 	registry.register(pass);
 }
 
-function makeParticleState(): ParticlePipelineState {
+const headlessParticleState: ParticlePipelineState = {
+	width: 1,
+	height: 1,
+	viewProj: new Float32Array(16),
+	camRight: new Float32Array(3),
+	camUp: new Float32Array(3),
+};
+
+function updateHeadlessParticleState(): ParticlePipelineState {
 	const gv = consoleCore.view;
-	const camera = gv.vdpCamera;
-	const width = gv.offscreenCanvasSize.x;
-	const height = gv.offscreenCanvasSize.y;
-	const camRight = new Float32Array(3);
-	const camUp = new Float32Array(3);
-	M4.viewRightUpInto(camera.view, camRight, camUp);
-	return {
-		width,
-		height,
-		viewProj: camera.viewProj,
-		camRight,
-		camUp,
-	};
+	const transform = gv.vdpTransform;
+	headlessParticleState.width = gv.offscreenCanvasSize.x;
+	headlessParticleState.height = gv.offscreenCanvasSize.y;
+	headlessParticleState.viewProj = transform.viewProj;
+	M4.viewRightUpInto(transform.view, headlessParticleState.camRight, headlessParticleState.camUp);
+	return headlessParticleState;
 }
 
 function registerParticlePass(registry: RenderPassLibrary): void {
@@ -750,7 +754,7 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 		graph: { writes: ['frame_color'] },
 		shouldExecute: () => beginParticleQueue() > 0 || consoleCore.view.vdpBillboardCount > 0,
 		prepare: () => {
-			registry.setState('particles', makeParticleState());
+			registry.setState('particles', updateHeadlessParticleState());
 		},
 		exec: (_backend, _fbo, state: unknown) => {
 			const particleState = state as ParticlePipelineState;

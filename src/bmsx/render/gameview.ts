@@ -19,7 +19,7 @@ import {
 	SYSTEM_SLOT_TEXTURE_KEY,
 } from 'bmsx/rompack/format';
 import { VDP_BBU_BILLBOARD_LIMIT } from '../machine/devices/vdp/contracts';
-import { createVdpCameraSnapshot } from '../machine/devices/vdp/camera';
+import { createVdpTransformSnapshot } from './vdp/transform';
 import { renderGate } from 'bmsx/core/taskgate';
 
 const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
@@ -78,7 +78,7 @@ export class GameView implements RenderContext {
 	public skyboxFaceUvRects: Float32Array | null = null;
 	public skyboxFaceTextpageBindings: Int32Array | null = null;
 	public skyboxFaceSizes: Int32Array | null = null;
-	public vdpCamera = createVdpCameraSnapshot();
+	public readonly vdpTransform = createVdpTransformSnapshot();
 	public readonly vdpBillboardPositionSize = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
 	public readonly vdpBillboardColor = new Uint32Array(VDP_BBU_BILLBOARD_LIMIT);
 	public readonly vdpBillboardUvRect = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);

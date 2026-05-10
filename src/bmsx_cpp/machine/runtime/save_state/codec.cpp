@@ -175,28 +175,18 @@ RuntimeRenderCameraState decodeRuntimeRenderCameraState(const BinValue& value, c
 	return state;
 }
 
-BinValue encodeVdpCameraState(const VdpCameraState& state) {
+BinValue encodeVdpXfState(const VdpXfState& state) {
 	BinObject object;
-	object["eyeXWord"] = static_cast<i64>(state.eyeXWord);
-	object["eyeYWord"] = static_cast<i64>(state.eyeYWord);
-	object["eyeZWord"] = static_cast<i64>(state.eyeZWord);
-	object["yawWord"] = static_cast<i64>(state.yawWord);
-	object["pitchWord"] = static_cast<i64>(state.pitchWord);
-	object["rollWord"] = static_cast<i64>(state.rollWord);
-	object["focalYWord"] = static_cast<i64>(state.focalYWord);
+	object["viewMatrixWords"] = encodeFixedArray(state.viewMatrixWords, encodeScalar<i64, u32>);
+	object["projectionMatrixWords"] = encodeFixedArray(state.projectionMatrixWords, encodeScalar<i64, u32>);
 	return BinValue(std::move(object));
 }
 
-VdpCameraState decodeVdpCameraState(const BinValue& value, const char* label) {
+VdpXfState decodeVdpXfState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
-	VdpCameraState state;
-	state.eyeXWord = requireU32(requireField(object, "eyeXWord", label), "machine.vdp.camera.eyeXWord");
-	state.eyeYWord = requireU32(requireField(object, "eyeYWord", label), "machine.vdp.camera.eyeYWord");
-	state.eyeZWord = requireU32(requireField(object, "eyeZWord", label), "machine.vdp.camera.eyeZWord");
-	state.yawWord = requireU32(requireField(object, "yawWord", label), "machine.vdp.camera.yawWord");
-	state.pitchWord = requireU32(requireField(object, "pitchWord", label), "machine.vdp.camera.pitchWord");
-	state.rollWord = requireU32(requireField(object, "rollWord", label), "machine.vdp.camera.rollWord");
-	state.focalYWord = requireU32(requireField(object, "focalYWord", label), "machine.vdp.camera.focalYWord");
+	VdpXfState state;
+	state.viewMatrixWords = decodeU32Array<VDP_XF_MATRIX_WORDS>(requireField(object, "viewMatrixWords", label), "machine.vdp.xf.viewMatrixWords");
+	state.projectionMatrixWords = decodeU32Array<VDP_XF_MATRIX_WORDS>(requireField(object, "projectionMatrixWords", label), "machine.vdp.xf.projectionMatrixWords");
 	return state;
 }
 
@@ -451,7 +441,7 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
-	object["camera"] = encodeVdpCameraState(state.camera);
+	object["xf"] = encodeVdpXfState(state.xf);
 	object["skyboxControl"] = static_cast<i64>(state.skyboxControl);
 	object["skyboxFaceWords"] = encodeFixedArray(state.skyboxFaceWords, encodeScalar<i64, u32>);
 	object["pmuSelectedBank"] = static_cast<i64>(state.pmuSelectedBank);
@@ -465,7 +455,7 @@ BinValue encodeVdpState(const VdpState& state) {
 VdpState decodeVdpState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpState state;
-	state.camera = decodeVdpCameraState(requireField(object, "camera", label), "machine.vdp.camera");
+	state.xf = decodeVdpXfState(requireField(object, "xf", label), "machine.vdp.xf");
 	state.skyboxControl = requireU32(requireField(object, "skyboxControl", label), "machine.vdp.skyboxControl");
 	state.skyboxFaceWords = decodeU32Array<SKYBOX_FACE_WORD_COUNT>(requireField(object, "skyboxFaceWords", label), "machine.vdp.skyboxFaceWords");
 	state.pmuSelectedBank = requireU32(requireField(object, "pmuSelectedBank", label), "machine.vdp.pmuSelectedBank");
@@ -503,7 +493,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	const VdpState base = decodeVdpState(value, label);
 	VdpSaveState state;
-	state.camera = base.camera;
+	state.xf = base.xf;
 	state.skyboxControl = base.skyboxControl;
 	state.skyboxFaceWords = base.skyboxFaceWords;
 	state.pmuSelectedBank = base.pmuSelectedBank;

@@ -1161,7 +1161,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	setKey(mathTable, 'randomseed', createNativeFunction('math.randomseed', (args, out) => {
 		const seedValue = args.length > 0 ? (args[0] as number) : runtime.clock.now();
-		luaPipeline.setRandomSeed(runtime, Math.floor(seedValue) >>> 0);
+		runtime.randomSeedValue = Math.floor(seedValue) >>> 0;
 		out.length = 0;
 	}));
 	setKey(mathTable, 'huge', Number.POSITIVE_INFINITY);

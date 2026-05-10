@@ -49,28 +49,10 @@ import { callClosure, callClosureInto } from '../../machine/program/executor';
 const SYSTEM_BUILTIN_PRELUDE_PATH = 'bios/system_builtin_prelude.lua';
 const REQUIRED_SYSTEM_ROM_HELPERS: ReadonlyArray<string> = ['clock_now'];
 
-function resolvePositiveSafeInteger(value: number | undefined, label: string): number {
-	if (value === undefined) {
-		throw new Error(`${label} is required.`);
-	}
-	if (!Number.isSafeInteger(value) || value <= 0) {
-		throw new Error(`${label} must be a positive safe integer.`);
-	}
-	return value;
-}
-
 function applyUfpsScaled(runtime: Runtime, ufps: number): number {
 	const ufpsScaled = resolveUfpsScaled(ufps);
 	runtime.timing.applyUfpsScaled(ufpsScaled);
 	return ufpsScaled;
-}
-
-function resolveRenderHeight(value: number | undefined): number {
-	const renderHeight = resolvePositiveSafeInteger(value, 'machine.render_size.height');
-	if (renderHeight <= 0) {
-		throw new Error('machine.render_size.height must be a positive integer.');
-	}
-	return renderHeight;
 }
 
 type RuntimeMachineSource = 'system' | 'cart';
@@ -192,19 +174,12 @@ function installProgramModules(runtime: Runtime, moduleProtos: Iterable<[string,
 	finishProgramModuleInstall(runtime);
 }
 
-function installProgramModuleMaps(runtime: Runtime, moduleProtos: Iterable<[string, number]>): void {
-	replaceMapEntries(runtime.moduleProtos, moduleProtos);
-	finishProgramModuleInstall(runtime);
-}
-
 function editorSourceForChunk(runtime: Runtime, path: string): string {
 	return runtime.editor ? runtime.editor.getSourceForChunk(path) : resourceSourceForChunk(runtime, path);
 }
 
 function clearEditorCompletionCache(runtime: Runtime): void {
-	if (runtime.editor) {
-		runtime.editor.clearNativeMemberCompletionCache();
-	}
+	runtime.editor?.clearNativeMemberCompletionCache(); // WAAROM NULLABLE?!?!?!
 }
 
 export function beginEntryExecution(runtime: Runtime, entryProtoIndex: number): void {
@@ -412,10 +387,6 @@ function runStaticModuleInitializers(runtime: Runtime, paths: ReadonlyArray<stri
 	runtime.machine.cpu.syncGlobalSlotsToTable();
 }
 
-export function setRandomSeed(runtime: Runtime, seed: number): void {
-	runtime.randomSeedValue = seed;
-}
-
 export function nextRandom(runtime: Runtime): number {
 	runtime.randomSeedValue = (runtime.randomSeedValue * 1664525 + 1013904223) % 4294967296;
 	return runtime.randomSeedValue / 4294967296;
@@ -447,7 +418,7 @@ export function describeSymbolValue(value: Value): { kind: SymbolKind; valueType
 }
 
 function stripSymbolModuleLuaExtension(path: string): string {
-	return path.toLowerCase().endsWith('.lua') ? path.slice(0, path.length - 4) : path;
+	return path.endsWith('.lua') ? path.slice(0, path.length - 4) : path;
 }
 
 function stripSymbolModuleSourcePrefix(path: string): string {
@@ -456,8 +427,8 @@ function stripSymbolModuleSourcePrefix(path: string): string {
 		const parts = normalized.split('/');
 		return parts.length > 3 ? parts.slice(3).join('/') : parts[parts.length - 1];
 	}
-	if (normalized.startsWith('src/bmsx/res/')) {
-		return normalized.slice('src/bmsx/res/'.length);
+	if (normalized.startsWith('bios/')) {
+		return normalized.slice('bios/'.length);
 	}
 	return normalized;
 }
@@ -667,7 +638,7 @@ function bootSystemSourceProgram(runtime: Runtime, interpreter: LuaInterpreter, 
 	if (!options?.preserveState) {
 		resetRuntimeState(runtime);
 	}
-	installProgramModuleMaps(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
+	installProgramModules(runtime, buildModuleProtoMap(programImage.sections.rodata.moduleProtos));
 	const prelude = runSystemBuiltinPrelude(runtime, inflateProgram(programImage.sections), metadata, staticModulePaths);
 	runtime.programMetadata = prelude.metadata;
 	beginEntryExecution(runtime, entryProtoIndex);
@@ -712,7 +683,7 @@ export function bootProgramImage(runtime: Runtime, options?: { preserveState?: b
 	}
 
 	const protoMap = buildModuleProtoMap(programImage.sections.rodata.moduleProtos);
-	installProgramModuleMaps(runtime, protoMap);
+	installProgramModules(runtime, protoMap);
 
 	const inflated = inflateProgram(programImage.sections);
 	try {
@@ -824,9 +795,9 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 			const machine = resolveRuntimeMachineForPlan(runtime, reloadPlan);
 			const perfSpecs = getMachinePerfSpecs(machine);
 			applyUfpsScaled(runtime, perfSpecs.ufps);
-			const cpuHz = resolvePositiveSafeInteger(perfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
+			const cpuHz = perfSpecs.cpu_freq_hz;
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, runtime.timing.ufpsScaled);
-			const renderHeight = resolveRenderHeight(machine.render_size.height);
+			const renderHeight = machine.render_size.height;
 			const vblankCycles = resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, renderHeight);
 			setFrameTiming(runtime, cpuHz, cycleBudgetPerFrame, vblankCycles);
 			setTransferRatesFromManifest(runtime, perfSpecs);

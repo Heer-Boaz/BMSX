@@ -462,10 +462,29 @@ void mat4ViewFromBasisInto(Mat4& out, const Vec3& pos, const Vec3& right, const 
 }
 
 void mat4SkyboxFromViewInto(Mat4& out, const Mat4& view) {
-	out[0] = view[0]; out[1] = view[4]; out[2] = view[8]; out[3] = 0.0f;
-	out[4] = view[1]; out[5] = view[5]; out[6] = view[9]; out[7] = 0.0f;
-	out[8] = view[2]; out[9] = view[6]; out[10] = view[10]; out[11] = 0.0f;
-	out[12] = 0.0f; out[13] = 0.0f; out[14] = 0.0f; out[15] = 1.0f;
+	const f32 a00 = view[0], a01 = view[4], a02 = view[8];
+	const f32 a10 = view[1], a11 = view[5], a12 = view[9];
+	const f32 a20 = view[2], a21 = view[6], a22 = view[10];
+	const f32 b01 = a22 * a11 - a12 * a21;
+	const f32 b11 = -a22 * a10 + a12 * a20;
+	const f32 b21 = a21 * a10 - a11 * a20;
+	const f32 invDet = 1.0f / (a00 * b01 + a01 * b11 + a02 * b21);
+	out[0] = b01 * invDet;
+	out[1] = b11 * invDet;
+	out[2] = b21 * invDet;
+	out[3] = 0.0f;
+	out[4] = (-a22 * a01 + a02 * a21) * invDet;
+	out[5] = (a22 * a00 - a02 * a20) * invDet;
+	out[6] = (-a21 * a00 + a01 * a20) * invDet;
+	out[7] = 0.0f;
+	out[8] = (a12 * a01 - a02 * a11) * invDet;
+	out[9] = (-a12 * a00 + a02 * a10) * invDet;
+	out[10] = (a11 * a00 - a01 * a10) * invDet;
+	out[11] = 0.0f;
+	out[12] = 0.0f;
+	out[13] = 0.0f;
+	out[14] = 0.0f;
+	out[15] = 1.0f;
 }
 
 void mat4SetTranslationSelf(Mat4& m, f32 x, f32 y, f32 z) {
@@ -504,6 +523,15 @@ void mat4ViewRightUpInto(const Mat4& view, Vec3& outRight, Vec3& outUp) {
 	outUp.x = view[1];
 	outUp.y = view[5];
 	outUp.z = view[9];
+}
+
+void mat4AffineViewEyeInto(Vec3& out, const Mat4& view, const Mat4& inverseLinear) {
+	const f32 tx = view[12];
+	const f32 ty = view[13];
+	const f32 tz = view[14];
+	out.x = -(inverseLinear[0] * tx + inverseLinear[4] * ty + inverseLinear[8] * tz);
+	out.y = -(inverseLinear[1] * tx + inverseLinear[5] * ty + inverseLinear[9] * tz);
+	out.z = -(inverseLinear[2] * tx + inverseLinear[6] * ty + inverseLinear[10] * tz);
 }
 
 void mat4Normal3Into(Mat3& out, const Mat4& model) {

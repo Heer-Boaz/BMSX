@@ -1,12 +1,12 @@
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/vdp/bbu.h"
-#include "machine/devices/vdp/camera.h"
 #include "machine/devices/vdp/contracts.h"
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
+#include "render/vdp/transform.h"
 
 #include <array>
 #include <cmath>
@@ -32,8 +32,8 @@ constexpr uint32_t VDP_PKT_CMD = 0x01000000u;
 constexpr uint32_t VDP_PKT_REG1 = 0x02000000u;
 constexpr uint32_t VDP_PKT_REGN = 0x03000000u;
 constexpr uint32_t VDP_BILLBOARD_HEADER = bmsx::VDP_BBU_PACKET_KIND | (bmsx::VDP_BBU_PACKET_PAYLOAD_WORDS << 16u);
-constexpr uint32_t VDP_CAMERA_HEADER = bmsx::VDP_CAMERA_PACKET_KIND | (bmsx::VDP_CAMERA_PACKET_PAYLOAD_WORDS << 16u);
 constexpr uint32_t VDP_SKYBOX_HEADER = bmsx::VDP_SBX_PACKET_KIND | (bmsx::VDP_SBX_PACKET_PAYLOAD_WORDS << 16u);
+constexpr uint32_t VDP_XF_HEADER = bmsx::VDP_XF_PACKET_KIND | (bmsx::VDP_XF_PACKET_PAYLOAD_WORDS << 16u);
 
 constexpr uint32_t regIndex(uint32_t addr) {
 	return (addr - bmsx::IO_VDP_REG0) / bmsx::IO_WORD_SIZE;
@@ -587,59 +587,66 @@ void testSbxSkyboxPacketRawControlAndFrameSealFault() {
 	require(!h.vdp.readHostOutput().skyboxEnabled, "bad-source SKYBOX should not become visible");
 }
 
-void testCameraPacketUpdatesLiveDeviceCameraState() {
+void testXfPacketUpdatesRawTransformRegisterState() {
 	Harness h;
-	sealStream(h, {
-		VDP_CAMERA_HEADER,
-		0x00030000u,
-		0x00040000u,
-		0xfffb0000u,
-		0x00004000u,
-		0u,
-		0u,
-		0x00010000u,
-		VDP_PKT_END,
-	});
+	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> viewWords{{
+		0x00010000u, 0u, 0u, 0u,
+		0u, 0x00010000u, 0u, 0u,
+		0u, 0u, 0x00010000u, 0u,
+		0x00030000u, 0x00040000u, 0xfffb0000u, 0x00010000u,
+	}};
+	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> projWords{{
+		0x00020000u, 0u, 0u, 0u,
+		0u, 0x00020000u, 0u, 0u,
+		0u, 0u, 0xffff0000u, 0xffff0000u,
+		0u, 0u, 0xfffe0000u, 0u,
+	}};
+	std::vector<uint32_t> stream{VDP_XF_HEADER};
+	stream.insert(stream.end(), viewWords.begin(), viewWords.end());
+	stream.insert(stream.end(), projWords.begin(), projWords.end());
+	stream.push_back(VDP_PKT_END);
+	sealStream(h, stream);
 
-	require(h.vdp.readHostOutput().camera->eye.x == 3.0f, "camera eye X should update live");
-	require(h.vdp.readHostOutput().camera->eye.y == 4.0f, "camera eye Y should update live");
-	require(h.vdp.readHostOutput().camera->eye.z == -5.0f, "camera eye Z should update live");
-	require(std::abs(h.vdp.readHostOutput().camera->view[0]) < 0.0001f, "turn16 yaw should rotate the camera basis");
-	require(std::abs(h.vdp.readHostOutput().camera->view[2] + 1.0f) < 0.0001f, "turn16 yaw should rotate the camera basis");
-	require(std::abs(h.vdp.readHostOutput().camera->view[8] - 1.0f) < 0.0001f, "turn16 yaw should rotate the camera basis");
-	require(std::abs(h.vdp.readHostOutput().camera->view[10]) < 0.0001f, "turn16 yaw should rotate the camera basis");
-	require(h.vdp.readHostOutput().camera->frustumPlanes.size() == 24u, "camera snapshot should expose packed frustum planes");
+	const auto output = h.vdp.readHostOutput();
+	for (size_t index = 0; index < bmsx::VDP_XF_MATRIX_WORDS; ++index) {
+		require((*output.xfViewMatrixWords)[index] == viewWords[index], "XF should preserve view matrix words");
+		require((*output.xfProjectionMatrixWords)[index] == projWords[index], "XF should preserve projection matrix words");
+	}
 }
 
-void testCameraPacketFaultsThroughVdpState() {
-	Harness h;
+void testXfWordsResolveToRenderOwnedSkyboxTransform() {
+	bmsx::VdpTransformSnapshot transform;
+	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> viewWords{{
+		0x00020000u, 0u, 0u, 0u,
+		0u, 0x00040000u, 0u, 0u,
+		0u, 0u, 0x00080000u, 0u,
+		0x00060000u, 0x00080000u, 0x00100000u, 0x00010000u,
+	}};
+	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> projWords{{
+		0x00010000u, 0u, 0u, 0u,
+		0u, 0x00010000u, 0u, 0u,
+		0u, 0u, 0x00010000u, 0u,
+		0u, 0u, 0u, 0x00010000u,
+	}};
 
-	sealStream(h, {
-		bmsx::VDP_CAMERA_PACKET_KIND | (6u << 16u),
-		0u,
-		0u,
-		0u,
-		0u,
-		0u,
-		0u,
-		VDP_PKT_END,
-	});
-	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "bad CAMERA packet should latch a stream fault");
-	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad CAMERA packet should not submit render work");
-	clearVdpFault(h);
-	sealStream(h, {
-		VDP_CAMERA_HEADER,
-		0u,
-		0u,
-		0u,
-		0x00010000u,
-		0u,
-		0u,
-		0u,
-		VDP_PKT_END,
-	});
-	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "CAMERA packet reserved turn bits and zero focal should latch a stream fault");
-	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad CAMERA payload should not submit render work");
+	bmsx::resolveVdpTransformSnapshot(transform, viewWords, projWords);
+
+	require(transform.view[0] == 2.0f, "XF view should decode Q16.16 words");
+	require(transform.skyboxView[0] == 0.5f, "XF skybox view should invert affine X scale");
+	require(transform.skyboxView[5] == 0.25f, "XF skybox view should invert affine Y scale");
+	require(transform.skyboxView[10] == 0.125f, "XF skybox view should invert affine Z scale");
+	require(transform.skyboxView[12] == 0.0f && transform.skyboxView[13] == 0.0f && transform.skyboxView[14] == 0.0f, "XF skybox view should remove translation");
+	require(transform.eye.x == -3.0f && transform.eye.y == -2.0f && transform.eye.z == -2.0f, "XF eye should come from affine inverse");
+}
+
+void testXfPacketFaultsThroughVdpState() {
+	Harness h;
+	std::vector<uint32_t> stream{bmsx::VDP_XF_PACKET_KIND | ((bmsx::VDP_XF_PACKET_PAYLOAD_WORDS - 1u) << 16u)};
+	stream.resize(bmsx::VDP_XF_PACKET_PAYLOAD_WORDS, 0u);
+	stream.push_back(VDP_PKT_END);
+	sealStream(h, stream);
+	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "bad XF packet should latch a stream fault");
+	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad XF packet should not submit render work");
 }
 
 void testBbuBillboardPacketLatchesInstanceRam() {
@@ -806,8 +813,9 @@ int main() {
 		{"SBX validates at frame seal", testSbxValidatesAtFrameSeal},
 		{"SBX SKYBOX packet latches frame state", testSbxSkyboxPacketLatchesFrameState},
 		{"SBX SKYBOX packet raw control", testSbxSkyboxPacketRawControlAndFrameSealFault},
-		{"VDP CAMERA packet live state", testCameraPacketUpdatesLiveDeviceCameraState},
-		{"VDP CAMERA packet fault state", testCameraPacketFaultsThroughVdpState},
+		{"VDP XF packet raw state", testXfPacketUpdatesRawTransformRegisterState},
+		{"VDP XF render transform", testXfWordsResolveToRenderOwnedSkyboxTransform},
+		{"VDP XF packet fault state", testXfPacketFaultsThroughVdpState},
 		{"BBU BILLBOARD packet latches instance RAM", testBbuBillboardPacketLatchesInstanceRam},
 		{"BBU faults at BILLBOARD packet acceptance", testBbuFaultsAtBillboardPacketAcceptance},
 		{"empty FIFO frame", testEmptyFifoFrame},

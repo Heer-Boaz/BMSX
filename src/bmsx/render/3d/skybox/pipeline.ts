@@ -95,7 +95,7 @@ interface SkyboxRuntime {
 
 export function drawSkybox(runtime: SkyboxRuntime, framebuffer: WebGLFramebuffer, state: SkyboxPipelineState): void {
 	const { backend, gl, context } = runtime;
-	if (state.width && state.height) backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
+	if (state.width && state.height) backend.setViewportRect(0, 0, state.width, state.height);
 	backend.setCullEnabled(false);
 	backend.setDepthMask(false);
 	backend.setDepthTestEnabled(false);
@@ -152,8 +152,8 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			registry.setState('skybox', {
 				width,
 				height,
-				view: gv.vdpCamera.skyboxView,
-				proj: gv.vdpCamera.proj,
+				view: gv.vdpTransform.skyboxView,
+				proj: gv.vdpTransform.proj,
 				textpagePrimaryTex,
 				textpageSecondaryTex,
 				faceUvRects: gv.skyboxFaceUvRects,

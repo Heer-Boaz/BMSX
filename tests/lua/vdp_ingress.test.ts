@@ -69,13 +69,14 @@ import { VDP } from '../../src/bmsx/machine/devices/vdp/vdp';
 import { VDP_BBU_BILLBOARD_LIMIT, VDP_RD_SURFACE_PRIMARY, VDP_SBX_CONTROL_ENABLE } from '../../src/bmsx/machine/devices/vdp/contracts';
 import { VDP_BBU_PACKET_KIND, VDP_BBU_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/bbu';
 import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
-import { VDP_CAMERA_PACKET_KIND, VDP_CAMERA_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/camera';
 import { VDP_SBX_PACKET_KIND, VDP_SBX_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/sbx';
+import { VDP_XF_PACKET_KIND, VDP_XF_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/xf';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
 import { HeadlessGPUBackend } from '../../src/bmsx/render/headless/backend';
 import { TextureManager } from '../../src/bmsx/render/texture_manager';
+import { createVdpTransformSnapshot, resolveVdpTransformSnapshot } from '../../src/bmsx/render/vdp/transform';
 import { initializeVdpTextureTransfer } from '../../src/bmsx/render/vdp/texture_transfer';
 import {
 	applyVdpFrameBufferTextureWrites,
@@ -98,8 +99,8 @@ const VDP_PKT_CMD = 0x01000000;
 const VDP_PKT_REG1 = 0x02000000;
 const VDP_PKT_REGN = 0x03000000;
 const VDP_BILLBOARD_HEADER = VDP_BBU_PACKET_KIND | (VDP_BBU_PACKET_PAYLOAD_WORDS << 16);
-const VDP_CAMERA_HEADER = VDP_CAMERA_PACKET_KIND | (VDP_CAMERA_PACKET_PAYLOAD_WORDS << 16);
 const VDP_SKYBOX_HEADER = VDP_SBX_PACKET_KIND | (VDP_SBX_PACKET_PAYLOAD_WORDS << 16);
+const VDP_XF_HEADER = VDP_XF_PACKET_KIND | (VDP_XF_PACKET_PAYLOAD_WORDS << 16);
 
 const VDP_REG_BG_COLOR = 16;
 const VDP_REG_SLOT_INDEX = 17;
@@ -742,56 +743,70 @@ test('VDP SBX stores raw control bits and faults bad face words at frame seal', 
 	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
 });
 
-test('VDP CAMERA packet updates live device camera state', () => {
+test('VDP XF packet updates raw transform register state', () => {
 	const { memory, vdp } = createVdp();
+	const viewWords = [
+		0x00010000, 0, 0, 0,
+		0, 0x00010000, 0, 0,
+		0, 0, 0x00010000, 0,
+		0x00030000, 0x00040000, 0xfffb0000, 0x00010000,
+	];
+	const projWords = [
+		0x00020000, 0, 0, 0,
+		0, 0x00020000, 0, 0,
+		0, 0, 0xffff0000, 0xffff0000,
+		0, 0, 0xfffe0000, 0,
+	];
 
 	sealStream(memory, vdp, [
-		VDP_CAMERA_HEADER,
-		0x00030000,
-		0x00040000,
-		0xfffb0000,
-		0x00004000,
-		0,
-		0,
-		0x00010000,
+		VDP_XF_HEADER,
+		...viewWords,
+		...projWords,
 		VDP_PKT_END,
 	]);
 
-	assert.equal(vdp.readHostOutput().camera.eye[0], 3);
-	assert.equal(vdp.readHostOutput().camera.eye[1], 4);
-	assert.equal(vdp.readHostOutput().camera.eye[2], -5);
-	assert.ok(Math.abs(vdp.readHostOutput().camera.view[0]) < 0.0001);
-	assert.ok(Math.abs(vdp.readHostOutput().camera.view[2] + 1) < 0.0001);
-	assert.ok(Math.abs(vdp.readHostOutput().camera.view[8] - 1) < 0.0001);
-	assert.ok(Math.abs(vdp.readHostOutput().camera.view[10]) < 0.0001);
-	assert.equal(vdp.readHostOutput().camera.frustumPlanes.length, 24);
+	const output = vdp.readHostOutput();
+	for (let index = 0; index < 16; index += 1) {
+		assert.equal(output.xfViewMatrixWords[index] >>> 0, viewWords[index] >>> 0);
+		assert.equal(output.xfProjectionMatrixWords[index] >>> 0, projWords[index] >>> 0);
+	}
 });
 
-test('VDP CAMERA packet faults through VDP state instead of exceptions', () => {
+test('VDP XF words resolve to render-owned skybox transform', () => {
+	const transform = createVdpTransformSnapshot();
+	const viewWords = [
+		0x00020000, 0, 0, 0,
+		0, 0x00040000, 0, 0,
+		0, 0, 0x00080000, 0,
+		0x00060000, 0x00080000, 0x00100000, 0x00010000,
+	];
+	const projWords = [
+		0x00010000, 0, 0, 0,
+		0, 0x00010000, 0, 0,
+		0, 0, 0x00010000, 0,
+		0, 0, 0, 0x00010000,
+	];
+
+	resolveVdpTransformSnapshot(transform, viewWords, projWords);
+
+	assert.equal(transform.view[0], 2);
+	assert.equal(transform.skyboxView[0], 0.5);
+	assert.equal(transform.skyboxView[5], 0.25);
+	assert.equal(transform.skyboxView[10], 0.125);
+	assert.equal(transform.skyboxView[12], 0);
+	assert.equal(transform.skyboxView[13], 0);
+	assert.equal(transform.skyboxView[14], 0);
+	assert.equal(transform.eye[0], -3);
+	assert.equal(transform.eye[1], -2);
+	assert.equal(transform.eye[2], -2);
+});
+
+test('VDP XF packet faults through VDP state instead of exceptions', () => {
 	const { memory, vdp } = createVdp();
 
 	assert.doesNotThrow(() => sealStream(memory, vdp, [
-		VDP_CAMERA_PACKET_KIND | (6 << 16),
-		0,
-		0,
-		0,
-		0,
-		0,
-		0,
-		VDP_PKT_END,
-	]));
-	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
-	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
-	clearVdpFault(memory);
-	assert.doesNotThrow(() => sealStream(memory, vdp, [
-		VDP_CAMERA_HEADER,
-		0,
-		0,
-		0,
-		0x00010000,
-		0,
-		0,
-		0,
+		VDP_XF_PACKET_KIND | ((VDP_XF_PACKET_PAYLOAD_WORDS - 1) << 16),
+		...new Array(VDP_XF_PACKET_PAYLOAD_WORDS - 1).fill(0),
 		VDP_PKT_END,
 	]));
 	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);

@@ -991,7 +991,7 @@ export function renderMeshBatch(backend: WebGLBackend, context: RenderContext, f
 		submissions[index] = it;
 	});
 	const drawLists = buildDrawLists(submissions, state);
-		runtime.backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
+		runtime.backend.setViewportRect(0, 0, state.width, state.height);
 		setupRenderingState(runtime, state);
 	gl.disable(gl.BLEND);
 	gl.depthMask(true);
@@ -1050,14 +1050,14 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 		},
 		prepare: (backend, _state) => {
 			const ctx = consoleCore.view as RenderContext;
-			const camera = consoleCore.view.vdpCamera;
+			const transform = consoleCore.view.vdpTransform;
 			const frameShared = registry.getState('frame_shared');
 			const meshState: MeshBatchPipelineState = {
 				width: ctx.offscreenCanvasSize.x,
 				height: ctx.offscreenCanvasSize.y,
-				camPos: camera.eye,
-				viewProj: camera.viewProj,
-				cameraFrustum: camera.frustumPlanes,
+				camPos: transform.eye,
+				viewProj: transform.viewProj,
+				cameraFrustum: transform.frustumPlanes,
 			};
 			if (frameShared) {
 				meshState.lighting = frameShared.lighting;

@@ -201,6 +201,7 @@ add_library(bmsx_core STATIC
 	render/vdp/surfaces.cpp
 	render/vdp/slot_textures.cpp
 	render/vdp/texture_transfer.cpp
+	render/vdp/transform.cpp
 	render/vdp/view_snapshot.cpp
 	render/texture_manager.cpp
 	render/backend/pass/library.cpp
@@ -265,11 +266,11 @@ add_library(bmsx_core STATIC
 	machine/memory/map.cpp
 	machine/devices/vdp/bbu.cpp
 	machine/devices/vdp/blitter.cpp
-	machine/devices/vdp/camera.cpp
 	machine/devices/vdp/frame.cpp
 	machine/devices/vdp/pmu.cpp
 	machine/devices/vdp/registers.cpp
 	machine/devices/vdp/sbx.cpp
+	machine/devices/vdp/xf.cpp
 	machine/common/hash.cpp
 	machine/devices/vdp/vram_garbage.cpp
 	machine/devices/vdp/vdp.cpp

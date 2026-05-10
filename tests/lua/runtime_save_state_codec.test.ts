@@ -32,14 +32,9 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 				},
 				input: { sampleArmed: false },
 				vdp: {
-					camera: {
-						eyeXWord: 0x00010000,
-						eyeYWord: 0x00020000,
-						eyeZWord: 0xfffd0000,
-						yawWord: 0x2000,
-						pitchWord: 0x0400,
-						rollWord: 0x0100,
-						focalYWord: 0x0001bb68,
+					xf: {
+						viewMatrixWords: numberedWords(16),
+						projectionMatrixWords: numberedWords(16),
 					},
 					skyboxControl: 5,
 					skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),

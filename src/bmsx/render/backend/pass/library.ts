@@ -16,7 +16,7 @@ import { registerCRT_WebGL } from '../../post/crt/pipeline';
 import { registerDeviceQuantize_WebGL } from '../../post/device_quantize_pipeline';
 import { registerCRT_WebGPU } from '../../post/crt/pipeline.wgpu';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
-import { AnyBackend, CRTPipelineState, FogUniforms, GPUBackend, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry } from '../backend';
+import { AnyBackend, CRTPipelineState, FrameSharedState, GPUBackend, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry } from '../backend';
 import { checkWebGLError } from '../webgl/helpers';
 import { WebGLBackend } from '../webgl/backend';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from '../../headless/passes';
@@ -35,6 +35,23 @@ export class RenderPassLibrary {
 	private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
 	private passEnabled = new Map<string, boolean>();
 	private registered = new Map<string, RegisteredPassRec>();
+	private readonly frameSharedState: FrameSharedState = {
+		view: {
+			camPos: new Float32Array(3),
+			viewProj: new Float32Array(16),
+			skyboxView: new Float32Array(16),
+			proj: new Float32Array(16),
+		},
+		lighting: { ambient: null, dirCount: 0, pointCount: 0, dirty: true },
+		fog: {
+			fogD50: 0,
+			fogStart: 0,
+			fogColorLow: [0, 0, 0],
+			fogColorHigh: [0, 0, 0],
+			fogYMin: 0,
+			fogYMax: 0,
+		},
+	};
 	constructor(private backend: GPUBackend) { }
 
 	registerBuiltin(backend: GPUBackend) {
@@ -59,10 +76,7 @@ export class RenderPassLibrary {
 			exec: () => { /* state only */ },
 			prepare: (backend, _state) => {
 				const gv = consoleCore.view;
-				updateAndBindFrameUniforms(backend, {
-					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
-					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
-				});
+				updateAndBindFrameUniforms(backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
 			},
 		});
 		// Removed: standalone fog pass. Fog state is produced in FrameSharedState.
@@ -103,10 +117,7 @@ export class RenderPassLibrary {
 			prepare: (backend, _state) => {
 				// Upload minimal frame-shared values via a UBO foundation
 				const gv = consoleCore.view;
-				updateAndBindFrameUniforms(backend, {
-					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
-					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
-				});
+				updateAndBindFrameUniforms(backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
 			},
 		});
 		// Removed: standalone fog pass. Fog state is produced in FrameSharedState.
@@ -359,51 +370,52 @@ export class RenderPassLibrary {
 				const frameTime = frame ? frame.time : 0;
 				const frameDelta = frame ? frame.delta : 0;
 				const gv = consoleCore.view;
-				updateAndBindFrameUniforms(gv.backend, {
-					offscreen: { x: offscreenWidth, y: offscreenHeight },
-					logical: { x: viewportWidth, y: viewportHeight },
-					time: frameTime,
-					delta: frameDelta,
-				});
-				const camera = gv.vdpCamera;
-				const viewState = { camPos: camera.eye, viewProj: camera.viewProj, skyboxView: camera.skyboxView, proj: camera.proj };
+				updateAndBindFrameUniforms(gv.backend, offscreenWidth, offscreenHeight, viewportWidth, viewportHeight, frameTime, frameDelta);
+				const transform = gv.vdpTransform;
 				const lighting = lightingSystem.update();
-				// Build fog state alongside frame-shared so consumers can rely on it
-					const fog: FogUniforms = {
-						fogD50: gv.atmosphere.fogD50,
-						fogStart: gv.atmosphere.fogStart,
-						fogColorLow: gv.atmosphere.fogColorLow,
-						fogColorHigh: gv.atmosphere.fogColorHigh,
-						fogYMin: gv.atmosphere.fogYMin,
-						fogYMax: gv.atmosphere.fogYMax,
-					};
-					this.setState('frame_shared', { view: viewState, lighting, fog });
-					if (lighting?.ambient) {
-						updateAndBindFrameUniforms(gv.backend, {
-							offscreen: { x: offscreenWidth, y: offscreenHeight },
-							logical: { x: viewportWidth, y: viewportHeight },
-							time: frameTime,
-							delta: frameDelta,
-							view: camera.view,
-							proj: camera.proj,
-							cameraPos: camera.eye,
-							ambient: {
-								color: lighting.ambient.color,
-								intensity: lighting.ambient.intensity,
-							},
-						});
-					} else {
-						updateAndBindFrameUniforms(gv.backend, {
-							offscreen: { x: offscreenWidth, y: offscreenHeight },
-							logical: { x: viewportWidth, y: viewportHeight },
-							time: frameTime,
-							delta: frameDelta,
-							view: camera.view,
-							proj: camera.proj,
-							cameraPos: camera.eye,
-						});
-					}
+				const frameShared = this.frameSharedState;
+				frameShared.view.camPos = transform.eye;
+				frameShared.view.viewProj = transform.viewProj;
+				frameShared.view.skyboxView = transform.skyboxView;
+				frameShared.view.proj = transform.proj;
+				frameShared.lighting = lighting;
+				frameShared.fog.fogD50 = gv.atmosphere.fogD50;
+				frameShared.fog.fogStart = gv.atmosphere.fogStart;
+				frameShared.fog.fogColorLow = gv.atmosphere.fogColorLow;
+				frameShared.fog.fogColorHigh = gv.atmosphere.fogColorHigh;
+				frameShared.fog.fogYMin = gv.atmosphere.fogYMin;
+				frameShared.fog.fogYMax = gv.atmosphere.fogYMax;
+				this.setState('frame_shared', frameShared);
+				if (lighting.ambient) {
+					updateAndBindFrameUniforms(
+						gv.backend,
+						offscreenWidth,
+						offscreenHeight,
+						viewportWidth,
+						viewportHeight,
+						frameTime,
+						frameDelta,
+						transform.view,
+						transform.proj,
+						transform.eye,
+						lighting.ambient.color,
+						lighting.ambient.intensity,
+					);
+				} else {
+					updateAndBindFrameUniforms(
+						gv.backend,
+						offscreenWidth,
+						offscreenHeight,
+						viewportWidth,
+						viewportHeight,
+						frameTime,
+						frameDelta,
+						transform.view,
+						transform.proj,
+						transform.eye,
+					);
 				}
+				},
 			});
 
 		// Build pass sequence from registry

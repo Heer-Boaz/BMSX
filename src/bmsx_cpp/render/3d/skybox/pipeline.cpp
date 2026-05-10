@@ -162,8 +162,8 @@ void registerSkyboxPass_GLES2(RenderPassLibrary& registry) {
 		SkyboxPipelineState state;
 		state.width = static_cast<i32>(ctx.view->offscreenCanvasSize.x);
 		state.height = static_cast<i32>(ctx.view->offscreenCanvasSize.y);
-		state.view = ctx.view->vdpCamera->skyboxView;
-		state.proj = ctx.view->vdpCamera->proj;
+		state.view = ctx.view->vdpTransform.skyboxView;
+		state.proj = ctx.view->vdpTransform.proj;
 		state.textpagePrimaryTex = ctx.view->textures.at(VDP_PRIMARY_SLOT_TEXTURE_KEY);
 		state.textpageSecondaryTex = ctx.view->textures.at(VDP_SECONDARY_SLOT_TEXTURE_KEY);
 		state.faceUvRects = ctx.view->skyboxFaceUvRects;

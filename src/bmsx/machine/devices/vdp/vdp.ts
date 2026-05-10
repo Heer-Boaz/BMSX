@@ -129,12 +129,12 @@ import {
 	VDP_BBU_PACKET_PAYLOAD_WORDS,
 } from './bbu';
 import {
-	VDP_CAMERA_PACKET_KIND,
-	VDP_CAMERA_PACKET_PAYLOAD_WORDS,
-	VdpCameraUnit,
-	type VdpCameraState,
-	type VdpCameraSnapshot,
-} from './camera';
+	VDP_XF_MATRIX_WORDS,
+	VDP_XF_PACKET_KIND,
+	VDP_XF_PACKET_PAYLOAD_WORDS,
+	VdpXfUnit,
+	type VdpXfState,
+} from './xf';
 import { decodeSignedQ16_16, decodeUnsignedQ16_16 } from './fixed_point';
 import { isVdpUnitPacketHeaderValid } from './packet';
 import { packedHigh16, packedLow16 } from '../../common/word';
@@ -213,7 +213,7 @@ export type {
 } from './blitter';
 
 export type VdpState = {
-	camera: VdpCameraState;
+	xf: VdpXfState;
 	skyboxControl: number;
 	skyboxFaceWords: number[];
 	pmuSelectedBank: number;
@@ -251,9 +251,6 @@ const VDP_SLOT_SURFACE_BINDINGS = [
 	{ slot: VDP_SLOT_SECONDARY, surfaceId: VDP_RD_SURFACE_SECONDARY },
 ] as const;
 
-function isCameraPosePacketPayloadValid(yawWord: number, pitchWord: number, rollWord: number, focalYWord: number): boolean {
-	return ((yawWord | pitchWord | rollWord) & 0xffff0000) === 0 && focalYWord !== 0;
-}
 const VDP_RD_BUDGET_BYTES = 4096;
 const VDP_RD_MAX_CHUNK_PIXELS = 256;
 type VdpReadSurface = {
@@ -285,7 +282,8 @@ type VdpHostOutputState = {
 	executionBillboards: VdpBbuFrameBuffer;
 	executionWritesFrameBuffer: boolean;
 	ditherType: number;
-	camera: VdpCameraSnapshot;
+	xfViewMatrixWords: ArrayLike<number>;
+	xfProjectionMatrixWords: ArrayLike<number>;
 	skyboxEnabled: boolean;
 	skyboxSamples: readonly VdpResolvedBlitterSample[];
 	billboards: VdpBbuFrameBuffer;
@@ -322,7 +320,7 @@ export class VDP implements VramWriteSink {
 	private readonly sbx = new VdpSbxUnit();
 	private readonly sbxPacketFaceWords = new Uint32Array(SKYBOX_FACE_WORD_COUNT);
 	private readonly sbxMmioFaceWords = new Uint32Array(SKYBOX_FACE_WORD_COUNT);
-	private readonly camera = new VdpCameraUnit();
+	private readonly xf = new VdpXfUnit();
 	private readonly pmu = new VdpPmuUnit();
 	private readonly bbu = new VdpBbuUnit();
 	private liveDitherType = 0;
@@ -874,37 +872,21 @@ export class VDP implements VramWriteSink {
 					this.memory.readU32(cursor + IO_WORD_SIZE * 9),
 				)) ? payloadEnd : -1;
 			}
-			case VDP_CAMERA_PACKET_KIND: {
-				if (!isVdpUnitPacketHeaderValid(word, VDP_CAMERA_PACKET_PAYLOAD_WORDS)) {
+			case VDP_XF_PACKET_KIND: {
+				if (!isVdpUnitPacketHeaderValid(word, VDP_XF_PACKET_PAYLOAD_WORDS)) {
 					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
-				const byteCount = VDP_CAMERA_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
+				const byteCount = VDP_XF_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
 				const payloadEnd = cursor + byteCount;
 				if (payloadEnd > end) {
 					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
-				const eyeXWord = this.memory.readU32(cursor);
-				const eyeYWord = this.memory.readU32(cursor + IO_WORD_SIZE);
-				const eyeZWord = this.memory.readU32(cursor + IO_WORD_SIZE * 2);
-				const yawWord = this.memory.readU32(cursor + IO_WORD_SIZE * 3);
-				const pitchWord = this.memory.readU32(cursor + IO_WORD_SIZE * 4);
-				const rollWord = this.memory.readU32(cursor + IO_WORD_SIZE * 5);
-				const focalYWord = this.memory.readU32(cursor + IO_WORD_SIZE * 6);
-				if (!isCameraPosePacketPayloadValid(yawWord, pitchWord, rollWord, focalYWord)) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-					return -1;
+				for (let offset = 0; offset < VDP_XF_MATRIX_WORDS; offset += 1) {
+					this.xf.viewMatrixWords[offset] = this.memory.readU32(cursor + offset * IO_WORD_SIZE);
+					this.xf.projectionMatrixWords[offset] = this.memory.readU32(cursor + (offset + VDP_XF_MATRIX_WORDS) * IO_WORD_SIZE);
 				}
-				this.camera.writePosePacket(
-					eyeXWord,
-					eyeYWord,
-					eyeZWord,
-					yawWord,
-					pitchWord,
-					rollWord,
-					focalYWord,
-				);
 				return payloadEnd;
 			}
 			case VDP_SBX_PACKET_KIND: {
@@ -978,30 +960,16 @@ export class VDP implements VramWriteSink {
 					this.vdpFifoStreamWords[cursor + 8],
 					this.vdpFifoStreamWords[cursor + 9],
 				)) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : -1;
-			case VDP_CAMERA_PACKET_KIND:
-				if (!isVdpUnitPacketHeaderValid(word, VDP_CAMERA_PACKET_PAYLOAD_WORDS) || cursor + VDP_CAMERA_PACKET_PAYLOAD_WORDS > wordCount) {
+			case VDP_XF_PACKET_KIND:
+				if (!isVdpUnitPacketHeaderValid(word, VDP_XF_PACKET_PAYLOAD_WORDS) || cursor + VDP_XF_PACKET_PAYLOAD_WORDS > wordCount) {
 					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
-				if (!isCameraPosePacketPayloadValid(
-					this.vdpFifoStreamWords[cursor + 3],
-					this.vdpFifoStreamWords[cursor + 4],
-					this.vdpFifoStreamWords[cursor + 5],
-					this.vdpFifoStreamWords[cursor + 6],
-				)) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-					return -1;
+				for (let offset = 0; offset < VDP_XF_MATRIX_WORDS; offset += 1) {
+					this.xf.viewMatrixWords[offset] = this.vdpFifoStreamWords[cursor + offset];
+					this.xf.projectionMatrixWords[offset] = this.vdpFifoStreamWords[cursor + offset + VDP_XF_MATRIX_WORDS];
 				}
-				this.camera.writePosePacket(
-					this.vdpFifoStreamWords[cursor],
-					this.vdpFifoStreamWords[cursor + 1],
-					this.vdpFifoStreamWords[cursor + 2],
-					this.vdpFifoStreamWords[cursor + 3],
-					this.vdpFifoStreamWords[cursor + 4],
-					this.vdpFifoStreamWords[cursor + 5],
-					this.vdpFifoStreamWords[cursor + 6],
-				);
-				return cursor + VDP_CAMERA_PACKET_PAYLOAD_WORDS;
+				return cursor + VDP_XF_PACKET_PAYLOAD_WORDS;
 			case VDP_SBX_PACKET_KIND:
 				if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
 					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
@@ -1896,7 +1864,7 @@ export class VDP implements VramWriteSink {
 		this.resetVdpRegisters();
 		this.pmu.reset();
 		this.syncPmuRegisterWindow();
-		this.camera.reset();
+		this.xf.reset();
 		this.liveDitherType = dither;
 		this.committedDitherType = dither;
 		this.sbx.reset();
@@ -1908,15 +1876,7 @@ export class VDP implements VramWriteSink {
 
 	public captureState(): VdpState {
 		return {
-			camera: {
-				eyeXWord: this.camera.pose.eyeXWord,
-				eyeYWord: this.camera.pose.eyeYWord,
-				eyeZWord: this.camera.pose.eyeZWord,
-				yawWord: this.camera.pose.yawWord,
-				pitchWord: this.camera.pose.pitchWord,
-				rollWord: this.camera.pose.rollWord,
-				focalYWord: this.camera.pose.focalYWord,
-			},
+			xf: this.xf.captureState(),
 			skyboxControl: this.sbx.liveControlWord,
 			skyboxFaceWords: this.sbx.captureLiveFaceWords(),
 			pmuSelectedBank: this.pmu.selectedBankIndex,
@@ -1941,7 +1901,7 @@ export class VDP implements VramWriteSink {
 		if (state.skyboxFaceWords.length !== SKYBOX_FACE_WORD_COUNT) {
 			throw new Error(`[VDP] SBX state requires ${SKYBOX_FACE_WORD_COUNT} face words.`);
 		}
-		this.camera.restoreState(state.camera);
+		this.xf.restoreState(state.xf);
 		this.sbx.restoreLiveState(state.skyboxControl, state.skyboxFaceWords);
 		if (state.pmuBankWords.length !== VDP_PMU_BANK_WORD_COUNT) {
 			throw new Error(`[VDP] PMU state requires ${VDP_PMU_BANK_WORD_COUNT} bank words.`);
@@ -1977,7 +1937,8 @@ export class VDP implements VramWriteSink {
 			executionBillboards: this.activeFrame.billboards,
 			executionWritesFrameBuffer: this.activeFrame.hasFrameBufferCommands,
 			ditherType: this.committedDitherType,
-			camera: this.camera.snapshot,
+			xfViewMatrixWords: this.xf.viewMatrixWords,
+			xfProjectionMatrixWords: this.xf.projectionMatrixWords,
 			skyboxEnabled: this.sbx.visibleEnabled,
 			skyboxSamples: this.committedSkyboxSamples,
 			billboards: this.committedBillboards,

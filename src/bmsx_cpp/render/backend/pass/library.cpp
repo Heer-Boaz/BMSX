@@ -530,16 +530,16 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 			return std::any{};
 		};
 		pass.execute = [this, view, &lightingSystem](RenderGraphContext&, FrameData* frame, const std::any&) {
-			const VdpCameraSnapshot& cameraState = *view->vdpCamera;
+			const VdpTransformSnapshot& transform = view->vdpTransform;
 			FrameSharedState frameShared;
 			frameShared.view.camPos = {
-				cameraState.eye.x,
-				cameraState.eye.y,
-				cameraState.eye.z,
+				transform.eye.x,
+				transform.eye.y,
+				transform.eye.z,
 			};
-			frameShared.view.viewProj = cameraState.viewProj;
-			frameShared.view.skyboxView = cameraState.skyboxView;
-			frameShared.view.proj = cameraState.proj;
+			frameShared.view.viewProj = transform.viewProj;
+			frameShared.view.skyboxView = transform.skyboxView;
+			frameShared.view.proj = transform.proj;
 			frameShared.lighting = lightingSystem.update();
 			frameShared.fog.fogD50 = view->atmosphere.fogD50;
 			frameShared.fog.fogStart = view->atmosphere.fogStart;
