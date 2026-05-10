@@ -1,7 +1,6 @@
 #include "render/vdp/surfaces.h"
 
 #include "machine/bus/io.h"
-#include "machine/devices/vdp/fault.h"
 #include "render/vdp/framebuffer.h"
 #include "render/vdp/texture_transfer.h"
 #include "rompack/format.h"
@@ -18,7 +17,7 @@ const char* resolveVdpSurfaceTextureKey(uint32_t surfaceId) {
 		case VDP_RD_SURFACE_FRAMEBUFFER: return FRAMEBUFFER_RENDER_TEXTURE_KEY;
 		default: break;
 	}
-	throw vdpFault("unknown VDP surface " + std::to_string(surfaceId) + ".");
+	throw BMSX_RUNTIME_ERROR("[VDP] unknown surface " + std::to_string(surfaceId) + ".");
 }
 
 } // namespace
@@ -29,7 +28,7 @@ const VDP::VramSlot& resolveVdpHostSurfaceSlot(const VDP::VdpHostOutput& output,
 			return slot;
 		}
 	}
-	throw vdpFault("surface " + std::to_string(surfaceId) + " is not registered for host output.");
+	throw BMSX_RUNTIME_ERROR("[VDP] surface " + std::to_string(surfaceId) + " is not registered for host output.");
 }
 
 VdpRenderSurfaceInfo resolveVdpRenderSurface(const VDP::VdpHostOutput& output, uint32_t surfaceId) {
@@ -48,7 +47,7 @@ u32 resolveVdpSurfaceSlotBinding(uint32_t surfaceId) {
 		case VDP_RD_SURFACE_SYSTEM: return VDP_SLOT_SYSTEM;
 		default: break;
 	}
-	throw vdpFault("surface " + std::to_string(surfaceId) + " cannot be sampled by the GLES2 slot blitter.");
+	throw BMSX_RUNTIME_ERROR("[VDP] surface " + std::to_string(surfaceId) + " cannot be sampled by the GLES2 slot blitter.");
 }
 
 bool isVdpFrameBufferSurface(uint32_t surfaceId) {

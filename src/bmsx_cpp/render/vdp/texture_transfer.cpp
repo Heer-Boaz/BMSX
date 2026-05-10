@@ -59,7 +59,8 @@ TextureHandle updateVdpTexturePixels(const std::string& textureKey, const u8* pi
 }
 
 void updateVdpTextureRegion(const std::string& textureKey, const u8* pixels, i32 width, i32 height, i32 x, i32 y) {
-	vdpTextureBackend().updateTextureRegion(vdpTextureByUri(textureKey), pixels, width, height, x, y, DEFAULT_TEXTURE_PARAMS);
+	TextureHandle handle = vdpTextureByUri(textureKey);
+	vdpTextureBackend().updateTextureRegion(handle, pixels, width, height, x, y, DEFAULT_TEXTURE_PARAMS);
 }
 
 void swapVdpTextureHandlesByUri(const std::string& textureKeyA, const std::string& textureKeyB) {

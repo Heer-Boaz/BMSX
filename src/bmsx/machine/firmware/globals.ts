@@ -198,10 +198,6 @@ import {
 	IO_SYS_BOOT_CART,
 	IO_SYS_HOST_FAULT_FLAGS,
 	IO_SYS_HOST_FAULT_STAGE,
-	IO_VDP_CAMERA_COMMIT,
-	IO_VDP_CAMERA_EYE,
-	IO_VDP_CAMERA_PROJ,
-	IO_VDP_CAMERA_VIEW,
 	IO_VDP_DITHER,
 	IO_VDP_FAULT_CODE,
 	IO_VDP_FAULT_DETAIL,
@@ -268,7 +264,6 @@ import {
 	VDP_SLOT_PRIMARY,
 	VDP_SLOT_SECONDARY,
 	VDP_SLOT_SYSTEM,
-	VDP_CAMERA_COMMIT_WRITE,
 	VDP_STATUS_FAULT,
 	VDP_STATUS_SUBMIT_BUSY,
 	VDP_STATUS_SUBMIT_REJECTED,
@@ -1274,11 +1269,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_sbx_faces', IO_VDP_SBX_FACE0);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_sbx_commit', IO_VDP_SBX_COMMIT);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_sbx_commit_write', VDP_SBX_COMMIT_WRITE);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_camera_view', IO_VDP_CAMERA_VIEW);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_camera_proj', IO_VDP_CAMERA_PROJ);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_camera_eye', IO_VDP_CAMERA_EYE);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_camera_commit', IO_VDP_CAMERA_COMMIT);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_camera_commit_write', VDP_CAMERA_COMMIT_WRITE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_primary', VDP_SLOT_PRIMARY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_secondary', VDP_SLOT_SECONDARY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_system', VDP_SLOT_SYSTEM);

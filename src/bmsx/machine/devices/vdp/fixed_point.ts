@@ -5,3 +5,7 @@ export function decodeSignedQ16_16(value: number): number {
 export function decodeUnsignedQ16_16(value: number): number {
 	return (value >>> 0) / 65536;
 }
+
+export function decodeTurn16(value: number): number {
+	return (value & 0xffff) * ((Math.PI * 2) / 0x10000);
+}

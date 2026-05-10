@@ -25,7 +25,7 @@ import {
 	forEachMeshQueue,
 	meshQueueBackSize,
 } from '../../shared/queues';
-import { hardwareCameraBank0 } from '../../shared/hardware/camera';
+import { ensureDirectionalLightRecord, ensurePointLightRecord } from '../../shared/hardware/light_records';
 import { clamp } from '../../../common/clamp';
 
 const BYTES_PER_FLOAT = 4;
@@ -131,24 +131,6 @@ function writeLightVec3(target: [number, number, number], source: readonly numbe
 	target[0] = source[0];
 	target[1] = source[1];
 	target[2] = source[2];
-}
-
-function directionalLightRecord(id: Identifier): DirectionalLight {
-	let record = directionalLights.get(id);
-	if (!record) {
-		record = { type: 'directional', color: [0, 0, 0], intensity: 0, orientation: [0, 0, 0] };
-		directionalLights.set(id, record);
-	}
-	return record;
-}
-
-function pointLightRecord(id: Identifier): PointLight {
-	let record = pointLights.get(id);
-	if (!record) {
-		record = { type: 'point', color: [0, 0, 0], intensity: 0, pos: [0, 0, 0], range: 0 };
-		pointLights.set(id, record);
-	}
-	return record;
 }
 
 // Accessors for lighting system (decouple from internal maps / buffers)
@@ -454,7 +436,7 @@ export function uploadPointLights(): void {
 	lightsDirty = true;
 }
 export function addDirectionalLight(id: Identifier, light: DirectionalLight): void {
-	const record = directionalLightRecord(id);
+	const record = ensureDirectionalLightRecord(directionalLights, id);
 	writeLightVec3(record.color, light.color);
 	writeLightVec3(record.orientation, light.orientation);
 	record.intensity = light.intensity;
@@ -465,7 +447,7 @@ export function addPointLight(id: Identifier, light: PointLight): void {
 	if (!light.pos) throw new Error('Point light must have a position');
 	if (!light.color) throw new Error('Point light must have a color');
 	if (light.range === undefined) throw new Error('Point light must have a range');
-	const record = pointLightRecord(id);
+	const record = ensurePointLightRecord(pointLights, id);
 	writeLightVec3(record.color, light.color);
 	writeLightVec3(record.pos, light.pos);
 	record.intensity = light.intensity;
@@ -1068,15 +1050,14 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 		},
 		prepare: (backend, _state) => {
 			const ctx = consoleCore.view as RenderContext;
-			const cam = hardwareCameraBank0;
+			const camera = consoleCore.view.vdpCamera;
 			const frameShared = registry.getState('frame_shared');
-			const mats = cam.getMatrices();
 			const meshState: MeshBatchPipelineState = {
 				width: ctx.offscreenCanvasSize.x,
 				height: ctx.offscreenCanvasSize.y,
-				camPos: cam.position,
-				viewProj: mats.vp,
-				cameraFrustum: cam.frustumPlanesPacked,
+				camPos: camera.eye,
+				viewProj: camera.viewProj,
+				cameraFrustum: camera.frustumPlanes,
 			};
 			if (frameShared) {
 				meshState.lighting = frameShared.lighting;

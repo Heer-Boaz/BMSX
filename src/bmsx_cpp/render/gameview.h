@@ -113,7 +113,8 @@ public:
 	std::array<f32, SKYBOX_FACE_COUNT * 4> skyboxFaceUvRects{};
 	std::array<i32, SKYBOX_FACE_COUNT> skyboxFaceTextpageBindings{};
 	std::array<i32, SKYBOX_FACE_COUNT * 2> skyboxFaceSizes{};
-	VdpCameraSnapshot vdpCamera{};
+	VdpCameraSnapshot vdpCameraFallback{};
+	const VdpCameraSnapshot* vdpCamera = &vdpCameraFallback;
 	struct VdpBillboardRenderEntry {
 		Vec3 position{0.0f, 0.0f, 0.0f};
 		f32 size = 0.0f;

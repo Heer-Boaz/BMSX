@@ -1,7 +1,6 @@
 #include "render/vdp/blitter/gles2.h"
 
 #if BMSX_ENABLE_GLES2
-#include "machine/devices/vdp/fault.h"
 #include "render/backend/gles2_backend.h"
 #include "render/vdp/framebuffer.h"
 #include "render/vdp/surfaces.h"
@@ -131,7 +130,7 @@ GLuint compileVdpGles2Shader(GLenum type, const char* source) {
 	std::string log(static_cast<size_t>(std::max(logLength, 1)), '\0');
 	glGetShaderInfoLog(shader, logLength, nullptr, log.data());
 	glDeleteShader(shader);
-	throw vdpBackendFault("shader compile failed: " + log);
+	throw BMSX_RUNTIME_ERROR("[VDPBackend] shader compile failed: " + log);
 }
 
 GLuint linkVdpGles2Program(GLuint vs, GLuint fs) {
@@ -151,7 +150,7 @@ GLuint linkVdpGles2Program(GLuint vs, GLuint fs) {
 	std::string log(static_cast<size_t>(std::max(logLength, 1)), '\0');
 	glGetProgramInfoLog(program, logLength, nullptr, log.data());
 	glDeleteProgram(program);
-	throw vdpBackendFault("program link failed: " + log);
+	throw BMSX_RUNTIME_ERROR("[VDPBackend] program link failed: " + log);
 }
 
 void destroyVdpGles2Runtime() {
@@ -205,7 +204,7 @@ void initializeVdpGles2Runtime(OpenGLES2Backend* backend) {
 	state.uniformTexture2 = glGetUniformLocation(state.program, "u_texture2");
 	if (state.attribPosition < 0 || state.attribUv < 0 || state.attribTextpageId < 0 || state.attribColor < 0
 		|| state.uniformLogicalSize < 0 || state.uniformTexture0 < 0 || state.uniformTexture1 < 0 || state.uniformTexture2 < 0) {
-		throw vdpBackendFault("missing shader attribute or uniform location.");
+		throw BMSX_RUNTIME_ERROR("[VDPBackend] missing shader attribute or uniform location.");
 	}
 	glGenBuffers(1, &state.vertexBuffer);
 	glGenFramebuffers(1, &state.frameBufferObject);
@@ -240,7 +239,7 @@ void bindVdpGles2Target(const VdpGles2Host& host) {
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, renderTexture->id, 0);
 		const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 		if (status != GL_FRAMEBUFFER_COMPLETE) {
-			throw vdpBackendFault("framebuffer incomplete.");
+			throw BMSX_RUNTIME_ERROR("[VDPBackend] framebuffer incomplete.");
 		}
 		state.attachedColorTextureId = renderTexture->id;
 	}
@@ -460,16 +459,16 @@ bool VdpGles2Blitter::execute(const VDP::VdpHostOutput& output, const std::vecto
 	prepareSurface(VDP_RD_SURFACE_SECONDARY, static_cast<f32>(resolveVdpSurfaceSlotBinding(VDP_RD_SURFACE_SECONDARY)));
 	prepareSurface(VDP_RD_SURFACE_FRAMEBUFFER, VDP_GLES2_PRIMARY_TEXTPAGE_ID);
 	if (!host.renderTexture) {
-		throw vdpBackendFault("missing framebuffer render texture.");
+		throw BMSX_RUNTIME_ERROR("[VDPBackend] missing framebuffer render texture.");
 	}
 	if (!host.surfaces[VDP_RD_SURFACE_SYSTEM].texture) {
-		throw vdpBackendFault("missing system VDP slot texture.");
+		throw BMSX_RUNTIME_ERROR("[VDPBackend] missing system VDP slot texture.");
 	}
 	if (!host.surfaces[VDP_RD_SURFACE_PRIMARY].texture) {
-		throw vdpBackendFault("missing primary textpage texture.");
+		throw BMSX_RUNTIME_ERROR("[VDPBackend] missing primary textpage texture.");
 	}
 	if (!host.surfaces[VDP_RD_SURFACE_SECONDARY].texture) {
-		throw vdpBackendFault("missing secondary textpage texture.");
+		throw BMSX_RUNTIME_ERROR("[VDPBackend] missing secondary textpage texture.");
 	}
 	auto clearFrame = [&](const VDP::FrameBufferColor& color) {
 		bindVdpGles2Target(host);

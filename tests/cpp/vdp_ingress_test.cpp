@@ -1,7 +1,7 @@
 #include "machine/bus/io.h"
-#include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/vdp/bbu.h"
+#include "machine/devices/vdp/camera.h"
 #include "machine/devices/vdp/contracts.h"
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
@@ -32,6 +32,7 @@ constexpr uint32_t VDP_PKT_CMD = 0x01000000u;
 constexpr uint32_t VDP_PKT_REG1 = 0x02000000u;
 constexpr uint32_t VDP_PKT_REGN = 0x03000000u;
 constexpr uint32_t VDP_BILLBOARD_HEADER = bmsx::VDP_BBU_PACKET_KIND | (bmsx::VDP_BBU_PACKET_PAYLOAD_WORDS << 16u);
+constexpr uint32_t VDP_CAMERA_HEADER = bmsx::VDP_CAMERA_PACKET_KIND | (bmsx::VDP_CAMERA_PACKET_PAYLOAD_WORDS << 16u);
 constexpr uint32_t VDP_SKYBOX_HEADER = bmsx::VDP_SBX_PACKET_KIND | (bmsx::VDP_SBX_PACKET_PAYLOAD_WORDS << 16u);
 
 constexpr uint32_t regIndex(uint32_t addr) {
@@ -149,17 +150,6 @@ void writeSbxMmio(bmsx::Memory& memory, uint32_t control = bmsx::VDP_SBX_CONTROL
 	}
 	writeIo(memory, bmsx::IO_VDP_SBX_CONTROL, control);
 	writeIo(memory, bmsx::IO_VDP_SBX_COMMIT, bmsx::VDP_SBX_COMMIT_WRITE);
-}
-
-void writeCameraMmio(bmsx::Memory& memory, const std::array<bmsx::f32, 16>& view, const std::array<bmsx::f32, 16>& proj, const std::array<bmsx::f32, 3>& eye) {
-	for (size_t index = 0; index < 16u; ++index) {
-		writeIo(memory, bmsx::IO_VDP_CAMERA_VIEW + static_cast<uint32_t>(index * bmsx::IO_WORD_SIZE), bmsx::numberToF32Bits(view[index]));
-		writeIo(memory, bmsx::IO_VDP_CAMERA_PROJ + static_cast<uint32_t>(index * bmsx::IO_WORD_SIZE), bmsx::numberToF32Bits(proj[index]));
-	}
-	for (size_t index = 0; index < 3u; ++index) {
-		writeIo(memory, bmsx::IO_VDP_CAMERA_EYE + static_cast<uint32_t>(index * bmsx::IO_WORD_SIZE), bmsx::numberToF32Bits(eye[index]));
-	}
-	writeIo(memory, bmsx::IO_VDP_CAMERA_COMMIT, bmsx::VDP_CAMERA_COMMIT_WRITE);
 }
 
 void testDirectLifecycle() {
@@ -480,6 +470,38 @@ void testBlitAndLineLatchDexFaults() {
 	}
 }
 
+void testUnsupportedDrawCtrlBlendFaultsAtBlitSnapshot() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0x00010000u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00000004u);
+
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	expectVdpFault(h, bmsx::VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, "unsupported DRAW_CTRL blend bits should latch a device fault");
+	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_CTRL) == 0x00000004u, "DRAW_CTRL raw register bits should remain latched");
+}
+
+void testBlitterFifoOverflowFaultsInsteadOfThrowing() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_X0, 0u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_Y0, 0u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_X1, 1u << 16u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_Y1, 1u << 16u);
+	for (size_t index = 0; index <= 4096u; ++index) {
+		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_FILL_RECT);
+	}
+
+	expectVdpFault(h, bmsx::VDP_FAULT_DEX_OVERFLOW, "blitter FIFO overflow should latch a device fault");
+}
+
 void testPmuResolvedScaleFlowsThroughBlitDatapath() {
 	Harness h;
 
@@ -565,23 +587,59 @@ void testSbxSkyboxPacketRawControlAndFrameSealFault() {
 	require(!h.vdp.readHostOutput().skyboxEnabled, "bad-source SKYBOX should not become visible");
 }
 
-void testCameraMmioCommitsLiveBankAtFramePresent() {
+void testCameraPacketUpdatesLiveDeviceCameraState() {
 	Harness h;
-	std::array<bmsx::f32, 16> view{};
-	std::array<bmsx::f32, 16> proj{};
-	view[0] = 1.0f; view[5] = 1.0f; view[10] = 1.0f; view[15] = 1.0f;
-	proj[0] = 1.0f; proj[5] = 1.0f; proj[10] = 1.0f; proj[15] = 1.0f;
-	const std::array<bmsx::f32, 3> eye{3.0f, 4.0f, 5.0f};
+	sealStream(h, {
+		VDP_CAMERA_HEADER,
+		0x00030000u,
+		0x00040000u,
+		0xfffb0000u,
+		0x00004000u,
+		0u,
+		0u,
+		0x00010000u,
+		VDP_PKT_END,
+	});
 
-	writeCameraMmio(h.memory, view, proj, eye);
+	require(h.vdp.readHostOutput().camera->eye.x == 3.0f, "camera eye X should update live");
+	require(h.vdp.readHostOutput().camera->eye.y == 4.0f, "camera eye Y should update live");
+	require(h.vdp.readHostOutput().camera->eye.z == -5.0f, "camera eye Z should update live");
+	require(std::abs(h.vdp.readHostOutput().camera->view[0]) < 0.0001f, "turn16 yaw should rotate the camera basis");
+	require(std::abs(h.vdp.readHostOutput().camera->view[2] + 1.0f) < 0.0001f, "turn16 yaw should rotate the camera basis");
+	require(std::abs(h.vdp.readHostOutput().camera->view[8] - 1.0f) < 0.0001f, "turn16 yaw should rotate the camera basis");
+	require(std::abs(h.vdp.readHostOutput().camera->view[10]) < 0.0001f, "turn16 yaw should rotate the camera basis");
+	require(h.vdp.readHostOutput().camera->frustumPlanes.size() == 24u, "camera snapshot should expose packed frustum planes");
+}
 
-	require(h.vdp.readHostOutput().camera->eye.x == 0.0f, "camera MMIO should not update visible camera before present");
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
-	h.vdp.presentReadyFrameOnVblankEdge();
-	require(h.vdp.readHostOutput().camera->eye.x == 3.0f, "camera eye X should commit on present");
-	require(h.vdp.readHostOutput().camera->eye.y == 4.0f, "camera eye Y should commit on present");
-	require(h.vdp.readHostOutput().camera->eye.z == 5.0f, "camera eye Z should commit on present");
+void testCameraPacketFaultsThroughVdpState() {
+	Harness h;
+
+	sealStream(h, {
+		bmsx::VDP_CAMERA_PACKET_KIND | (6u << 16u),
+		0u,
+		0u,
+		0u,
+		0u,
+		0u,
+		0u,
+		VDP_PKT_END,
+	});
+	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "bad CAMERA packet should latch a stream fault");
+	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad CAMERA packet should not submit render work");
+	clearVdpFault(h);
+	sealStream(h, {
+		VDP_CAMERA_HEADER,
+		0u,
+		0u,
+		0u,
+		0x00010000u,
+		0u,
+		0u,
+		0u,
+		VDP_PKT_END,
+	});
+	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "CAMERA packet reserved turn bits and zero focal should latch a stream fault");
+	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad CAMERA payload should not submit render work");
 }
 
 void testBbuBillboardPacketLatchesInstanceRam() {
@@ -701,6 +759,22 @@ void testVramWriteFaultsLatchStatus() {
 	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_FAULT) != 0u, "unaligned VRAM write should set VDP fault status");
 }
 
+void testVramReadFaultsLatchStatus() {
+	Harness h;
+	std::array<uint8_t, 4> bytes{{0xffu, 0xffu, 0xffu, 0xffu}};
+
+	h.vdp.readVram(0u, bytes.data(), bytes.size());
+	expectVdpFault(h, bmsx::VDP_FAULT_VRAM_WRITE_UNMAPPED, "unmapped VRAM read should latch fault code");
+	require(bytes == std::array<uint8_t, 4>{{0u, 0u, 0u, 0u}}, "unmapped VRAM read should return zero bytes");
+	clearVdpFault(h);
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 1u | (1u << 16u));
+	bytes = std::array<uint8_t, 4>{{0xffu, 0xffu, 0xffu, 0xffu}};
+	h.vdp.readVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 4u, bytes.data(), bytes.size());
+	expectVdpFault(h, bmsx::VDP_FAULT_VRAM_WRITE_OOB, "OOB VRAM read should latch fault code");
+	require(bytes == std::array<uint8_t, 4>{{0u, 0u, 0u, 0u}}, "OOB VRAM read should return zero bytes");
+}
+
 void testDitherRegisterWritesUpdateLiveLatch() {
 	Harness h;
 
@@ -725,12 +799,15 @@ int main() {
 		{"slot registers", testSlotRegisters},
 		{"BLIT source DEX faults", testBlitSourceFaultsLatchDexFaults},
 		{"BLIT and LINE DEX faults", testBlitAndLineLatchDexFaults},
+		{"DRAW_CTRL unsupported blend fault", testUnsupportedDrawCtrlBlendFaultsAtBlitSnapshot},
+		{"blitter FIFO overflow fault", testBlitterFifoOverflowFaultsInsteadOfThrowing},
 		{"PMU resolved scale datapath", testPmuResolvedScaleFlowsThroughBlitDatapath},
 		{"SBX commits through frame present", testSbxCommitsOnlyThroughFramePresent},
 		{"SBX validates at frame seal", testSbxValidatesAtFrameSeal},
 		{"SBX SKYBOX packet latches frame state", testSbxSkyboxPacketLatchesFrameState},
 		{"SBX SKYBOX packet raw control", testSbxSkyboxPacketRawControlAndFrameSealFault},
-		{"VDP camera MMIO frame latch", testCameraMmioCommitsLiveBankAtFramePresent},
+		{"VDP CAMERA packet live state", testCameraPacketUpdatesLiveDeviceCameraState},
+		{"VDP CAMERA packet fault state", testCameraPacketFaultsThroughVdpState},
 		{"BBU BILLBOARD packet latches instance RAM", testBbuBillboardPacketLatchesInstanceRam},
 		{"BBU faults at BILLBOARD packet acceptance", testBbuFaultsAtBillboardPacketAcceptance},
 		{"empty FIFO frame", testEmptyFifoFrame},
@@ -738,6 +815,7 @@ int main() {
 		{"VDP fault latch sticky-first", testFaultLatchStickyFirstUntilAck},
 		{"VDP readback OOB fault status", testReadbackOobFaultsLatchStatus},
 		{"VDP VRAM write fault status", testVramWriteFaultsLatchStatus},
+		{"VDP VRAM read fault status", testVramReadFaultsLatchStatus},
 		{"VDP dither live latch", testDitherRegisterWritesUpdateLiveLatch},
 	};
 

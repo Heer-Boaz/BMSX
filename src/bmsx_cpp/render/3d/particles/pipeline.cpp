@@ -6,7 +6,6 @@
 #include "render/3d/shaders/render_3d_shaders.h"
 #include "render/backend/gles2_backend.h"
 #include "render/gameview.h"
-#include "render/shared/hardware/camera.h"
 #include "render/shared/queues.h"
 #include "rompack/format.h"
 
@@ -162,7 +161,7 @@ void appendParticleQuad(ParticleGLES2Runtime& runtime,
 
 ParticlePipelineState buildParticlePipelineState(const RenderPassDef::RenderGraphPassContext& ctx,
 													const FrameSharedState& frameShared) {
-	const HardwareCameraState& camera = resolveActiveHardwareCamera();
+	const VdpCameraSnapshot& camera = *ctx.view->vdpCamera;
 	ParticlePipelineState state;
 	state.width = static_cast<i32>(ctx.view->offscreenCanvasSize.x);
 	state.height = static_cast<i32>(ctx.view->offscreenCanvasSize.y);

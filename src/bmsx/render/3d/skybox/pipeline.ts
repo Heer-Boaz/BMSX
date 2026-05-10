@@ -8,7 +8,6 @@ import { TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '
 import { WebGLBackend } from '../../backend/webgl/backend';
 import { VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
 import { _skyTint, _skyExposure } from '../../shared/queues';
-import { hardwareCameraBank0 } from '../../shared/hardware/camera';
 
 let vaoSkybox: WebGLVertexArrayObject = null;
 let skyboxProgram: WebGLProgram;
@@ -141,7 +140,6 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			const gv = consoleCore.view;
 			if (!gv.skyboxFaceUvRects || !gv.skyboxFaceTextpageBindings) return;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
-			const cam = hardwareCameraBank0;
 			const textpagePrimaryTex = gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY];
 			if (!textpagePrimaryTex) {
 				throw new Error(`[Skybox] Texture '${VDP_PRIMARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
@@ -151,12 +149,11 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 				throw new Error(`[Skybox] Texture '${VDP_SECONDARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
 			}
 			// Update state with dynamic data (reuse camera matrices)
-			const mats = cam.getMatrices();
 			registry.setState('skybox', {
 				width,
 				height,
-				view: cam.skyboxView,
-				proj: mats.proj,
+				view: gv.vdpCamera.skyboxView,
+				proj: gv.vdpCamera.proj,
 				textpagePrimaryTex,
 				textpageSecondaryTex,
 				faceUvRects: gv.skyboxFaceUvRects,

@@ -15,8 +15,10 @@ local vdp_pkt_end<const> = 0x00000000 -- End of packet stream
 local vdp_pkt_cmd<const> = 0x01000000 -- Command packet: lower 16 bits = command ID, upper 8 bits = number of additional data words
 local vdp_pkt_reg1<const> = 0x02000000 -- Register packet: lower 16 bits = register index, upper 8 bits = number of additional data words
 local vdp_pkt_regn<const> = 0x03000000 -- Register packet with N registers: lower 16 bits = starting register index, upper 8 bits = number of registers to set (data words must be in register order)
+local vdp_pkt_camera<const> = 0x10000000 -- CAMERA packet: VDP-owned 3D camera pose consumed by SBX, BBU, meshes, and later 3D render passes
 local vdp_pkt_billboard<const> = 0x11000000 -- BILLBOARD packet: BBU command-stream packet, followed by fixed hardware words
 local vdp_pkt_skybox<const> = 0x12000000 -- SKYBOX packet: SBX command-stream packet, followed by control and six face-source records
+local vdp_camera_payload_words<const> = 7 -- CAMERA payload: eye XYZ Q16.16, yaw/pitch/roll turn16, focal-Y Q16.16
 local vdp_billboard_payload_words<const> = 11 -- BILLBOARD payload: layer, priority, slot, uv, wh, x, y, z, size, color, control
 local vdp_skybox_payload_words<const> = 31 -- SKYBOX payload: control plus six faces of slot/u/v/w/h
 
@@ -38,6 +40,8 @@ local vdp_layer_world<const> = 0 -- World layer index (the main layer used for d
 local vdp_sbx_control_enable<const> = 1 -- SBX control bit: enable the live skybox face state when latched into a frame
 local draw_ctrl_parallax_half<const> = 0x00800000 -- DRAW_CTRL: PMU bank 0, parallax weight +0.5 in signed Q8.8
 local q16_one<const> = 0x00010000 -- Q16.16 value 1.0, used directly in VDP command words
+local camera_yaw_step<const> = 365 -- 0.035 radians per frame, represented as turn16 units
+local camera_focal_y<const> = 0x0001bb68 -- Perspective focal-Y, approximately cot(60deg / 2) in Q16.16
 
 local dma_ctrl_start<const> = 1 -- Control value to start a DMA transfer when written to the io_dma_ctrl register
 local irq_dma_done<const> = 0x01 -- IRQ flag bit for DMA transfer completion
@@ -53,19 +57,6 @@ local sprite_x = 112 -- Initial X coordinate of the sprite
 local sprite_y = 92 -- Initial Y coordinate of the sprite
 local sprite_step<const> = 2 -- Number of pixels the sprite moves horizontally each frame
 local sprite_direction = 1 -- Initial horizontal movement direction of the sprite (1 = right, -1 = left)
-local camera_view<const> = { -- Active 3D camera view matrix; updated in-place so SBX skybox lookup visibly rotates.
-	1, 0, 0, 0,
-	0, 1, 0, 0,
-	0, 0, 1, 0,
-	0, 0, 0, 1,
-}
-local camera_proj<const> = { -- Perspective projection for SBX/BBU demonstration; command ABI remains raw VDP words.
-	1.4342, 0, 0, 0,
-	0, 1.7321, 0, 0,
-	0, 0, -1.0040, -1,
-	0, 0, -0.2004, 0,
-}
-local camera_eye<const> = { 0, 0, 0 }
 
 local submit_stream<const> = function(byte_length)
 	mem[io_dma_src] = vdp_stream_base
@@ -90,40 +81,6 @@ local wait_vblank<const> = function()
 		flags = mem[io_irq_flags]
 		mem[io_irq_ack] = flags
 	until (flags & irq_vblank) ~= 0
-end
-
-local update_skybox_camera<const> = function()
-	local angle<const> = frame * 0.035
-	local c<const> = math.cos(angle)
-	local s<const> = math.sin(angle)
-	local wp_view<const> = sys_vdp_camera_view - 4
-	local wp_proj<const> = sys_vdp_camera_proj - 4
-	local wp_eye<const> = sys_vdp_camera_eye - 4
-
-
-	camera_view[1] = c
-	camera_view[2] = 0
-	camera_view[3] = -s
-	camera_view[4] = 0
-	camera_view[5] = 0
-	camera_view[6] = 1
-	camera_view[7] = 0
-	camera_view[8] = 0
-	camera_view[9] = s
-	camera_view[10] = 0
-	camera_view[11] = c
-	camera_view[12] = 0
-	camera_view[13] = 0
-	camera_view[14] = 0
-	camera_view[15] = 0
-	camera_view[16] = 1
-
-	for i = 1, 16 do
-		mem[wp_view + i * 4], mem[wp_proj + i * 4] = camera_view[i], camera_proj[i]
-	end
-	for i = 1, 3 do mem[wp_eye + i * 4] = camera_eye[i] end
-	mem[sys_vdp_camera_commit] = 1
-
 end
 
 local build_lua_atlas<const> = function()
@@ -200,6 +157,16 @@ end
 
 local draw_frame<const> = function()
 	local wp = vdp_stream_base -- Write pointer for building the VDP command stream in RAM for this frame
+	local camera_yaw<const> = (frame * camera_yaw_step) & 0xffff
+
+	mem[wp], wp = vdp_pkt_camera | (vdp_camera_payload_words << 16), wp + 4 -- VDP CAMERA packet: one device camera for SBX skybox, BBU billboards, and 3D render passes
+	mem[wp], wp = 0, wp + 4 -- Eye X = 0.0 in signed Q16.16
+	mem[wp], wp = 0, wp + 4 -- Eye Y = 0.0 in signed Q16.16
+	mem[wp], wp = 0, wp + 4 -- Eye Z = 0.0 in signed Q16.16
+	mem[wp], wp = camera_yaw, wp + 4 -- Yaw in turn16 units
+	mem[wp], wp = 0, wp + 4 -- Pitch in turn16 units
+	mem[wp], wp = 0, wp + 4 -- Roll in turn16 units
+	mem[wp], wp = camera_focal_y, wp + 4 -- Focal-Y projection in unsigned Q16.16
 
 	mem[wp], wp = vdp_pkt_skybox | (vdp_skybox_payload_words << 16), wp + 4 -- SBX SKYBOX packet: live face words are latched and validated when the frame is sealed
 	mem[wp], wp = vdp_sbx_control_enable, wp + 4 -- Enable the six-face skybox for this frame
@@ -354,7 +321,6 @@ upload_atlas_to_vram()
 
 while true do
 	frame = frame + 1
-	update_skybox_camera()
 	sprite_x = sprite_x + (sprite_direction * sprite_step)
 	if sprite_x >= 184 then
 		sprite_x = 184

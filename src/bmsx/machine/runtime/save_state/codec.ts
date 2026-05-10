@@ -5,6 +5,7 @@ import type { IrqControllerState } from '../../devices/irq/controller';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/controller';
 import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/vdp';
+import type { VdpCameraState } from '../../devices/vdp/camera';
 import type { MemorySaveState } from '../../memory/memory';
 import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
 import type {
@@ -67,6 +68,31 @@ function decodeCameraState(value: unknown, label: string): CameraWireState {
 		view: requireObjectKey(object, 'view', label, `${label}.view`) as number[],
 		proj: requireObjectKey(object, 'proj', label, `${label}.proj`) as number[],
 		eye: requireObjectKey(object, 'eye', label, `${label}.eye`) as [number, number, number],
+	};
+}
+
+function encodeVdpCameraState(state: VdpCameraState): VdpCameraState {
+	return {
+		eyeXWord: state.eyeXWord,
+		eyeYWord: state.eyeYWord,
+		eyeZWord: state.eyeZWord,
+		yawWord: state.yawWord,
+		pitchWord: state.pitchWord,
+		rollWord: state.rollWord,
+		focalYWord: state.focalYWord,
+	};
+}
+
+function decodeVdpCameraState(value: unknown, label: string): VdpCameraState {
+	const object = requireObject(value, label);
+	return {
+		eyeXWord: requireObjectKey(object, 'eyeXWord', label, `${label}.eyeXWord`) as number,
+		eyeYWord: requireObjectKey(object, 'eyeYWord', label, `${label}.eyeYWord`) as number,
+		eyeZWord: requireObjectKey(object, 'eyeZWord', label, `${label}.eyeZWord`) as number,
+		yawWord: requireObjectKey(object, 'yawWord', label, `${label}.yawWord`) as number,
+		pitchWord: requireObjectKey(object, 'pitchWord', label, `${label}.pitchWord`) as number,
+		rollWord: requireObjectKey(object, 'rollWord', label, `${label}.rollWord`) as number,
+		focalYWord: requireObjectKey(object, 'focalYWord', label, `${label}.focalYWord`) as number,
 	};
 }
 
@@ -313,7 +339,7 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 
 function encodeVdpState(state: VdpState): VdpState {
 	return {
-		camera: encodeCameraState(state.camera),
+		camera: encodeVdpCameraState(state.camera),
 		skyboxControl: state.skyboxControl,
 		skyboxFaceWords: state.skyboxFaceWords,
 		pmuSelectedBank: state.pmuSelectedBank,
@@ -327,7 +353,7 @@ function encodeVdpState(state: VdpState): VdpState {
 function decodeVdpState(value: unknown, label: string): VdpState {
 	const object = requireObject(value, label);
 	return {
-		camera: decodeCameraState(requireObjectKey(object, 'camera', label, 'machine.vdp.camera'), 'machine.vdp.camera'),
+		camera: decodeVdpCameraState(requireObjectKey(object, 'camera', label, 'machine.vdp.camera'), 'machine.vdp.camera'),
 		skyboxControl: requireObjectKey(object, 'skyboxControl', label, 'machine.vdp.skyboxControl') as number,
 		skyboxFaceWords: requireObjectKey(object, 'skyboxFaceWords', label, 'machine.vdp.skyboxFaceWords') as number[],
 		pmuSelectedBank: requireObjectKey(object, 'pmuSelectedBank', label, 'machine.vdp.pmuSelectedBank') as number,

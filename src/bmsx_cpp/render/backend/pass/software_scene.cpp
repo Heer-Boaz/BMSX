@@ -6,7 +6,6 @@
 #include "machine/bus/io.h"
 #include "machine/runtime/runtime.h"
 #include "render/gameview.h"
-#include "render/shared/hardware/camera.h"
 #include "render/shared/queues.h"
 #include "render/shared/software_pixels.h"
 #include "render/vdp/source_pixels.h"
@@ -32,7 +31,7 @@ SoftwareParticleViewState resolveParticleViewState(const GameView& view) {
 	SoftwareParticleViewState state;
 	state.width = static_cast<i32>(view.offscreenCanvasSize.x);
 	state.height = static_cast<i32>(view.offscreenCanvasSize.y);
-	const HardwareCameraState& camera = resolveActiveHardwareCamera();
+	const VdpCameraSnapshot& camera = *view.vdpCamera;
 	state.viewProj = camera.viewProj;
 	state.camRight = { camera.view[0], camera.view[4], camera.view[8] };
 	return state;
@@ -250,8 +249,7 @@ void renderSoftwareSkybox(SoftwareBackend& backend, const GameView& view, Runtim
 	if (!view.skyboxRenderReady) {
 		return;
 	}
-	const HardwareCameraState& camera = resolveActiveHardwareCamera();
-	writeSkyboxToFramebuffer(backend, runtime, camera.skyboxView);
+	writeSkyboxToFramebuffer(backend, runtime, view.vdpCamera->skyboxView);
 }
 
 void renderSoftwareParticles(SoftwareBackend& backend, const GameView& view, Runtime& runtime) {

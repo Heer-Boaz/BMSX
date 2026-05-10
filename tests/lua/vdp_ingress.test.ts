@@ -2,10 +2,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-	IO_VDP_CAMERA_COMMIT,
-	IO_VDP_CAMERA_EYE,
-	IO_VDP_CAMERA_PROJ,
-	IO_VDP_CAMERA_VIEW,
 	IO_VDP_CMD,
 	IO_VDP_DITHER,
 	IO_VDP_FAULT_ACK,
@@ -43,7 +39,6 @@ import {
 	IO_VDP_SBX_CONTROL,
 	IO_VDP_SBX_FACE0,
 	IO_VDP_STATUS,
-	VDP_CAMERA_COMMIT_WRITE,
 	VDP_FIFO_CTRL_SEAL,
 	VDP_FAULT_RD_OOB,
 	VDP_FAULT_RD_UNSUPPORTED_MODE,
@@ -53,12 +48,16 @@ import {
 	VDP_FAULT_DEX_SOURCE_SLOT,
 	VDP_FAULT_DEX_INVALID_LINE_WIDTH,
 	VDP_FAULT_DEX_INVALID_SCALE,
+	VDP_FAULT_DEX_OVERFLOW,
+	VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL,
 	VDP_FAULT_SBX_SOURCE_OOB,
 	VDP_FAULT_BBU_OVERFLOW,
 	VDP_FAULT_BBU_SOURCE_OOB,
 	VDP_FAULT_BBU_ZERO_SIZE,
 	VDP_FAULT_VRAM_SLOT_DIM,
+	VDP_FAULT_VRAM_WRITE_OOB,
 	VDP_FAULT_VRAM_WRITE_UNALIGNED,
+	VDP_FAULT_VRAM_WRITE_UNMAPPED,
 	VDP_RD_MODE_RGBA8888,
 	VDP_SLOT_ATLAS_NONE,
 	VDP_SLOT_PRIMARY,
@@ -69,12 +68,12 @@ import { CPU } from '../../src/bmsx/machine/cpu/cpu';
 import { VDP } from '../../src/bmsx/machine/devices/vdp/vdp';
 import { VDP_BBU_BILLBOARD_LIMIT, VDP_RD_SURFACE_PRIMARY, VDP_SBX_CONTROL_ENABLE } from '../../src/bmsx/machine/devices/vdp/contracts';
 import { VDP_BBU_PACKET_KIND, VDP_BBU_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/bbu';
-import { VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
+import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
+import { VDP_CAMERA_PACKET_KIND, VDP_CAMERA_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/camera';
 import { VDP_SBX_PACKET_KIND, VDP_SBX_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/sbx';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
-import { numberToF32Bits } from '../../src/bmsx/machine/common/numeric';
 import { HeadlessGPUBackend } from '../../src/bmsx/render/headless/backend';
 import { TextureManager } from '../../src/bmsx/render/texture_manager';
 import { initializeVdpTextureTransfer } from '../../src/bmsx/render/vdp/texture_transfer';
@@ -99,6 +98,7 @@ const VDP_PKT_CMD = 0x01000000;
 const VDP_PKT_REG1 = 0x02000000;
 const VDP_PKT_REGN = 0x03000000;
 const VDP_BILLBOARD_HEADER = VDP_BBU_PACKET_KIND | (VDP_BBU_PACKET_PAYLOAD_WORDS << 16);
+const VDP_CAMERA_HEADER = VDP_CAMERA_PACKET_KIND | (VDP_CAMERA_PACKET_PAYLOAD_WORDS << 16);
 const VDP_SKYBOX_HEADER = VDP_SBX_PACKET_KIND | (VDP_SBX_PACKET_PAYLOAD_WORDS << 16);
 
 const VDP_REG_BG_COLOR = 16;
@@ -142,17 +142,6 @@ function writeSkyboxMmio(memory: Memory, control = VDP_SBX_CONTROL_ENABLE, w = 1
 	}
 	memory.writeValue(IO_VDP_SBX_CONTROL, control);
 	memory.writeValue(IO_VDP_SBX_COMMIT, VDP_SBX_COMMIT_WRITE);
-}
-
-function writeCameraMmio(memory: Memory, view: Float32Array, proj: Float32Array, eye: Float32Array): void {
-	for (let index = 0; index < 16; index += 1) {
-		memory.writeValue(IO_VDP_CAMERA_VIEW + index * IO_WORD_SIZE, numberToF32Bits(view[index]));
-		memory.writeValue(IO_VDP_CAMERA_PROJ + index * IO_WORD_SIZE, numberToF32Bits(proj[index]));
-	}
-	for (let index = 0; index < 3; index += 1) {
-		memory.writeValue(IO_VDP_CAMERA_EYE + index * IO_WORD_SIZE, numberToF32Bits(eye[index]));
-	}
-	memory.writeValue(IO_VDP_CAMERA_COMMIT, VDP_CAMERA_COMMIT_WRITE);
 }
 
 function buildFrameOpen(vdp: VDP): boolean {
@@ -543,6 +532,40 @@ test('VDP2D BLIT and LINE latch cart-visible DEX faults without register rollbac
 	}
 });
 
+test('VDP2D BLIT faults unsupported DRAW_CTRL blend bits at snapshot', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_REG_SRC_SLOT, VDP_SLOT_PRIMARY);
+	memory.writeValue(IO_VDP_REG_SRC_UV, 0);
+	memory.writeValue(IO_VDP_REG_SRC_WH, 4 | (4 << 16));
+	memory.writeValue(IO_VDP_REG_DRAW_SCALE_X, 0x00010000);
+	memory.writeValue(IO_VDP_REG_DRAW_SCALE_Y, 0x00010000);
+	memory.writeValue(IO_VDP_REG_DRAW_CTRL, 0x00000004);
+
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	assertVdpFault(memory, VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL);
+	assert.equal(memory.readValue(IO_VDP_REG_DRAW_CTRL), 0x00000004);
+	assert.equal(buildFrameOpen(vdp), true);
+});
+
+test('VDP2D blitter FIFO overflow latches a DEX fault instead of throwing', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_REG_GEOM_X0, 0);
+	memory.writeValue(IO_VDP_REG_GEOM_X0 + IO_WORD_SIZE, 0);
+	memory.writeValue(IO_VDP_REG_GEOM_X0 + 2 * IO_WORD_SIZE, 1 << 16);
+	memory.writeValue(IO_VDP_REG_GEOM_X0 + 3 * IO_WORD_SIZE, 1 << 16);
+	for (let index = 0; index <= VDP_BLITTER_FIFO_CAPACITY; index += 1) {
+		memory.writeValue(IO_VDP_CMD, VDP_CMD_FILL_RECT);
+	}
+
+	assertVdpFault(memory, VDP_FAULT_DEX_OVERFLOW);
+	assert.equal(buildFrameOpen(vdp), true);
+});
+
 test('VDP2D PMU-resolved representable scale flows through BLIT datapath', () => {
 	const { memory, vdp } = createVdp();
 
@@ -636,6 +659,21 @@ test('VDP VRAM write faults latch status instead of throwing', () => {
 	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_FAULT) !== 0, true);
 });
 
+test('VDP VRAM read faults latch status instead of throwing', () => {
+	const { memory, vdp } = createVdp();
+	const out = new Uint8Array(4);
+
+	assert.doesNotThrow(() => vdp.readVram(0, out));
+	assertVdpFault(memory, VDP_FAULT_VRAM_WRITE_UNMAPPED);
+	assert.deepEqual(Array.from(out), [0, 0, 0, 0]);
+	clearVdpFault(memory);
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 1 | (1 << 16));
+	assert.doesNotThrow(() => vdp.readVram(VRAM_PRIMARY_SLOT_BASE + 4, out));
+	assertVdpFault(memory, VDP_FAULT_VRAM_WRITE_OOB);
+	assert.deepEqual(Array.from(out), [0, 0, 0, 0]);
+});
+
 test('VDP dither register writes update the live latch directly', () => {
 	const { memory, vdp } = createVdp();
 
@@ -704,23 +742,60 @@ test('VDP SBX stores raw control bits and faults bad face words at frame seal', 
 	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
 });
 
-test('VDP camera MMIO commits live bank sampled at frame present', () => {
+test('VDP CAMERA packet updates live device camera state', () => {
 	const { memory, vdp } = createVdp();
-	const view = new Float32Array(16);
-	const proj = new Float32Array(16);
-	view[0] = 1; view[5] = 1; view[10] = 1; view[15] = 1;
-	proj[0] = 1; proj[5] = 1; proj[10] = 1; proj[15] = 1;
-	const eye = new Float32Array([3, 4, 5]);
 
-	writeCameraMmio(memory, view, proj, eye);
+	sealStream(memory, vdp, [
+		VDP_CAMERA_HEADER,
+		0x00030000,
+		0x00040000,
+		0xfffb0000,
+		0x00004000,
+		0,
+		0,
+		0x00010000,
+		VDP_PKT_END,
+	]);
 
-	assert.equal(vdp.readHostOutput().camera.eye[0], 0);
-	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
-	vdp.presentReadyFrameOnVblankEdge();
 	assert.equal(vdp.readHostOutput().camera.eye[0], 3);
 	assert.equal(vdp.readHostOutput().camera.eye[1], 4);
-	assert.equal(vdp.readHostOutput().camera.eye[2], 5);
+	assert.equal(vdp.readHostOutput().camera.eye[2], -5);
+	assert.ok(Math.abs(vdp.readHostOutput().camera.view[0]) < 0.0001);
+	assert.ok(Math.abs(vdp.readHostOutput().camera.view[2] + 1) < 0.0001);
+	assert.ok(Math.abs(vdp.readHostOutput().camera.view[8] - 1) < 0.0001);
+	assert.ok(Math.abs(vdp.readHostOutput().camera.view[10]) < 0.0001);
+	assert.equal(vdp.readHostOutput().camera.frustumPlanes.length, 24);
+});
+
+test('VDP CAMERA packet faults through VDP state instead of exceptions', () => {
+	const { memory, vdp } = createVdp();
+
+	assert.doesNotThrow(() => sealStream(memory, vdp, [
+		VDP_CAMERA_PACKET_KIND | (6 << 16),
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		VDP_PKT_END,
+	]));
+	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
+	clearVdpFault(memory);
+	assert.doesNotThrow(() => sealStream(memory, vdp, [
+		VDP_CAMERA_HEADER,
+		0,
+		0,
+		0,
+		0x00010000,
+		0,
+		0,
+		0,
+		VDP_PKT_END,
+	]));
+	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
+	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
 });
 
 function billboardPacket(sizeWord: number, u = 2, v = 3, w = 4, h = 5, control = 0): number[] {

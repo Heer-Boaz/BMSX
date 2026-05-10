@@ -23,33 +23,12 @@ TextureHandle vdpRenderFrameBufferTexture() {
 	return renderFrameBufferTexture;
 }
 
-static void swapVdpFrameBufferTexturePages() {
-	swapVdpTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
-	std::swap(renderFrameBufferTexture, displayFrameBufferTexture);
-#if BMSX_ENABLE_GLES2
-	VdpGles2Blitter::invalidateFrameBufferAttachment();
-#endif
-}
-
 void writeVdpRenderFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
 	renderFrameBufferTexture = updateVdpTexturePixels(FRAMEBUFFER_RENDER_TEXTURE_KEY, pixels, width, height);
 }
 
 void writeVdpDisplayFrameBufferPixels(const u8* pixels, u32 width, u32 height) {
 	displayFrameBufferTexture = updateVdpTexturePixels(FRAMEBUFFER_TEXTURE_KEY, pixels, width, height);
-}
-
-// disable-next-line single_line_method_pattern -- framebuffer VRAM writes hit the owned render texture directly on the hot path.
-void writeVdpRenderFrameBufferPixelRegion(const u8* pixels, i32 width, i32 height, i32 x, i32 y) {
-	vdpTextureBackend().updateTextureRegion(
-		renderFrameBufferTexture,
-		pixels,
-		width,
-		height,
-		x,
-		y,
-		DEFAULT_TEXTURE_PARAMS
-	);
 }
 
 // disable-next-line single_line_method_pattern -- framebuffer readback is the concrete VDP texture boundary for save-state and MMIO reads.
@@ -98,13 +77,15 @@ void applyVdpFrameBufferTextureWrites(VDP& vdp) {
 					continue;
 				}
 				const size_t byteOffset = static_cast<size_t>(row) * static_cast<size_t>(rowBytes) + static_cast<size_t>(span.xStart) * 4u;
-				writeVdpRenderFrameBufferPixelRegion(
-					slot.cpuReadback.data() + byteOffset,
-					static_cast<i32>(span.xEnd - span.xStart),
-					1,
-					static_cast<i32>(span.xStart),
-					static_cast<i32>(row)
-				);
+					vdpTextureBackend().updateTextureRegion(
+						renderFrameBufferTexture,
+						slot.cpuReadback.data() + byteOffset,
+						static_cast<i32>(span.xEnd - span.xStart),
+						1,
+						static_cast<i32>(span.xStart),
+						static_cast<i32>(row),
+						DEFAULT_TEXTURE_PARAMS
+					);
 			}
 			vdp.clearSurfaceUploadDirty(slot.surfaceId);
 		}
@@ -113,7 +94,11 @@ void applyVdpFrameBufferTextureWrites(VDP& vdp) {
 }
 
 void presentVdpFrameBufferPages() {
-	swapVdpFrameBufferTexturePages();
+	swapVdpTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	std::swap(renderFrameBufferTexture, displayFrameBufferTexture);
+#if BMSX_ENABLE_GLES2
+	VdpGles2Blitter::invalidateFrameBufferAttachment();
+#endif
 }
 
 } // namespace bmsx

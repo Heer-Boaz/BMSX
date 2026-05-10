@@ -2,17 +2,6 @@
 
 namespace bmsx {
 
-void copyResolvedBlitterSample(VdpResolvedBlitterSample& target, const VdpResolvedBlitterSample& source) {
-	target.source.surfaceId = source.source.surfaceId;
-	target.source.srcX = source.source.srcX;
-	target.source.srcY = source.source.srcY;
-	target.source.width = source.source.width;
-	target.source.height = source.source.height;
-	target.surfaceWidth = source.surfaceWidth;
-	target.surfaceHeight = source.surfaceHeight;
-	target.slot = source.slot;
-}
-
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame) {
 	frame.queue.clear();
 	frame.billboards.clear();

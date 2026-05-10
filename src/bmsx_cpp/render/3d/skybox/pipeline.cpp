@@ -5,7 +5,6 @@
 #include "render/3d/shaders/render_3d_shaders.h"
 #include "render/backend/gles2_backend.h"
 #include "render/gameview.h"
-#include "render/shared/hardware/camera.h"
 #include "render/shared/queues.h"
 #include "rompack/format.h"
 
@@ -160,12 +159,11 @@ void registerSkyboxPass_GLES2(RenderPassLibrary& registry) {
 		return ConsoleCore::instance().view()->skyboxRenderReady;
 	};
 	desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-		const HardwareCameraState& camera = resolveActiveHardwareCamera();
 		SkyboxPipelineState state;
 		state.width = static_cast<i32>(ctx.view->offscreenCanvasSize.x);
 		state.height = static_cast<i32>(ctx.view->offscreenCanvasSize.y);
-		state.view = camera.skyboxView;
-		state.proj = camera.proj;
+		state.view = ctx.view->vdpCamera->skyboxView;
+		state.proj = ctx.view->vdpCamera->proj;
 		state.textpagePrimaryTex = ctx.view->textures.at(VDP_PRIMARY_SLOT_TEXTURE_KEY);
 		state.textpageSecondaryTex = ctx.view->textures.at(VDP_SECONDARY_SLOT_TEXTURE_KEY);
 		state.faceUvRects = ctx.view->skyboxFaceUvRects;

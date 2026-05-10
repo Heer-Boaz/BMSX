@@ -20,7 +20,6 @@ import { AnyBackend, CRTPipelineState, FogUniforms, GPUBackend, PassEncoder, Ren
 import { checkWebGLError } from '../webgl/helpers';
 import { WebGLBackend } from '../webgl/backend';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from '../../headless/passes';
-import { resolveCameraState } from '../../shared/camera_state';
 
 interface RegisteredPassRec {
 	id: string;
@@ -366,8 +365,8 @@ export class RenderPassLibrary {
 					time: frameTime,
 					delta: frameDelta,
 				});
-				const camState = resolveCameraState();
-				const viewState = { camPos: camState.camPos, viewProj: camState.viewProj, skyboxView: camState.skyboxView, proj: camState.proj };
+				const camera = gv.vdpCamera;
+				const viewState = { camPos: camera.eye, viewProj: camera.viewProj, skyboxView: camera.skyboxView, proj: camera.proj };
 				const lighting = lightingSystem.update();
 				// Build fog state alongside frame-shared so consumers can rely on it
 					const fog: FogUniforms = {
@@ -385,9 +384,9 @@ export class RenderPassLibrary {
 							logical: { x: viewportWidth, y: viewportHeight },
 							time: frameTime,
 							delta: frameDelta,
-							view: camState.view,
-							proj: camState.proj,
-							cameraPos: camState.camPos,
+							view: camera.view,
+							proj: camera.proj,
+							cameraPos: camera.eye,
 							ambient: {
 								color: lighting.ambient.color,
 								intensity: lighting.ambient.intensity,
@@ -399,9 +398,9 @@ export class RenderPassLibrary {
 							logical: { x: viewportWidth, y: viewportHeight },
 							time: frameTime,
 							delta: frameDelta,
-							view: camState.view,
-							proj: camState.proj,
-							cameraPos: camState.camPos,
+							view: camera.view,
+							proj: camera.proj,
+							cameraPos: camera.eye,
 						});
 					}
 				}

@@ -1,7 +1,6 @@
 import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT } from './contracts';
 import { VdpBbuFrameBuffer } from './bbu';
 import { VdpBlitterCommandBuffer, type VdpResolvedBlitterSample } from './blitter';
-import { createVdpCameraSnapshot, type VdpCameraSnapshot } from './camera';
 
 export type VdpSubmittedFrameState = {
 	queue: VdpBlitterCommandBuffer;
@@ -15,7 +14,6 @@ export type VdpSubmittedFrameState = {
 	skyboxControl: number;
 	skyboxFaceWords: Uint32Array;
 	skyboxSamples: VdpResolvedBlitterSample[];
-	camera: VdpCameraSnapshot;
 	billboards: VdpBbuFrameBuffer;
 };
 
@@ -54,17 +52,6 @@ export function createResolvedBlitterSamples(): VdpResolvedBlitterSample[] {
 	return samples;
 }
 
-export function copyResolvedBlitterSample(target: VdpResolvedBlitterSample, source: VdpResolvedBlitterSample): void {
-	target.source.surfaceId = source.source.surfaceId;
-	target.source.srcX = source.source.srcX;
-	target.source.srcY = source.source.srcY;
-	target.source.width = source.source.width;
-	target.source.height = source.source.height;
-	target.surfaceWidth = source.surfaceWidth;
-	target.surfaceHeight = source.surfaceHeight;
-	target.slot = source.slot;
-}
-
 export function allocateSubmittedFrameSlot(): VdpSubmittedFrameState {
 	return {
 		queue: new VdpBlitterCommandBuffer(),
@@ -78,7 +65,6 @@ export function allocateSubmittedFrameSlot(): VdpSubmittedFrameState {
 		skyboxControl: 0,
 		skyboxFaceWords: new Uint32Array(SKYBOX_FACE_WORD_COUNT),
 		skyboxSamples: createResolvedBlitterSamples(),
-		camera: createVdpCameraSnapshot(),
 		billboards: new VdpBbuFrameBuffer(),
 	};
 }

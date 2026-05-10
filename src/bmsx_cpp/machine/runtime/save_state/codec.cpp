@@ -177,24 +177,27 @@ RuntimeRenderCameraState decodeRuntimeRenderCameraState(const BinValue& value, c
 
 BinValue encodeVdpCameraState(const VdpCameraState& state) {
 	BinObject object;
-	object["view"] = encodeFixedArray(state.view, encodeScalar<f64, f32>);
-	object["proj"] = encodeFixedArray(state.proj, encodeScalar<f64, f32>);
-	object["eye"] = BinArray{
-		BinValue(static_cast<f64>(state.eye.x)),
-		BinValue(static_cast<f64>(state.eye.y)),
-		BinValue(static_cast<f64>(state.eye.z)),
-	};
+	object["eyeXWord"] = static_cast<i64>(state.eyeXWord);
+	object["eyeYWord"] = static_cast<i64>(state.eyeYWord);
+	object["eyeZWord"] = static_cast<i64>(state.eyeZWord);
+	object["yawWord"] = static_cast<i64>(state.yawWord);
+	object["pitchWord"] = static_cast<i64>(state.pitchWord);
+	object["rollWord"] = static_cast<i64>(state.rollWord);
+	object["focalYWord"] = static_cast<i64>(state.focalYWord);
 	return BinValue(std::move(object));
 }
 
 VdpCameraState decodeVdpCameraState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
-	const std::array<f32, 3> eye = decodeNumberArray<3>(requireField(object, "eye", label), "machine.vdp.camera.eye");
-	return VdpCameraState{
-		decodeNumberArray<16>(requireField(object, "view", label), "machine.vdp.camera.view"),
-		decodeNumberArray<16>(requireField(object, "proj", label), "machine.vdp.camera.proj"),
-		Vec3{ eye[0], eye[1], eye[2] },
-	};
+	VdpCameraState state;
+	state.eyeXWord = requireU32(requireField(object, "eyeXWord", label), "machine.vdp.camera.eyeXWord");
+	state.eyeYWord = requireU32(requireField(object, "eyeYWord", label), "machine.vdp.camera.eyeYWord");
+	state.eyeZWord = requireU32(requireField(object, "eyeZWord", label), "machine.vdp.camera.eyeZWord");
+	state.yawWord = requireU32(requireField(object, "yawWord", label), "machine.vdp.camera.yawWord");
+	state.pitchWord = requireU32(requireField(object, "pitchWord", label), "machine.vdp.camera.pitchWord");
+	state.rollWord = requireU32(requireField(object, "rollWord", label), "machine.vdp.camera.rollWord");
+	state.focalYWord = requireU32(requireField(object, "focalYWord", label), "machine.vdp.camera.focalYWord");
+	return state;
 }
 
 BinValue encodeRuntimeAmbientLightState(const RuntimeAmbientLightState& state) {

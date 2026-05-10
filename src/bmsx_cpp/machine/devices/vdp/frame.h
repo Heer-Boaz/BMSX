@@ -2,7 +2,6 @@
 
 #include "machine/devices/vdp/bbu.h"
 #include "machine/devices/vdp/blitter.h"
-#include "machine/devices/vdp/camera.h"
 #include "machine/devices/vdp/sbx.h"
 #include <vector>
 
@@ -21,7 +20,6 @@ struct VdpSubmittedFrame {
 	u32 skyboxControl = 0;
 	VdpSbxUnit::FaceWords skyboxFaceWords{};
 	VdpSkyboxSamples skyboxSamples{};
-	VdpCameraSnapshot camera{};
 };
 
 struct VdpBuildingFrame {
@@ -36,7 +34,6 @@ struct VdpExecutionState {
 	bool pending = false;
 };
 
-void copyResolvedBlitterSample(VdpResolvedBlitterSample& target, const VdpResolvedBlitterSample& source);
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame);
 
 } // namespace bmsx

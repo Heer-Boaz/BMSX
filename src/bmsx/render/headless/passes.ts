@@ -13,7 +13,6 @@ import {
 import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/submissions';
 import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
 import type { VdpHostOutput, VdpResolvedBlitterSample } from '../../machine/devices/vdp/vdp';
-import { hardwareCameraBank0 } from '../shared/hardware/camera';
 import { VDP_SLOT_PRIMARY, VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../machine/bus/io';
 import {
 	VDP_RD_SURFACE_PRIMARY,
@@ -422,8 +421,7 @@ function rasterizeSkyboxBackground(width: number, height: number): void {
 		headlessSkyboxSamples[index] = sample;
 		headlessSkyboxTextures[index] = readSlotTexturePixels(output, sample.slot);
 	}
-	const cam = hardwareCameraBank0;
-	const view = cam.skyboxView;
+	const view = consoleCore.view.vdpCamera.skyboxView;
 	for (let y = 0; y < height; y += 1) {
 		const rayY = 1 - (((y * 2) + 1) / height);
 		for (let x = 0; x < width; x += 1) {
@@ -647,14 +645,13 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 
 function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
 	const gv = consoleCore.view;
-	const cam = hardwareCameraBank0;
-	const mats = cam.getMatrices();
+	const camera = gv.vdpCamera;
 	return {
 		width: gv.offscreenCanvasSize.x,
 		height: gv.offscreenCanvasSize.y,
-		camPos: cam.position,
-		viewProj: mats.vp,
-		cameraFrustum: cam.frustumPlanesPacked,
+		camPos: camera.eye,
+		viewProj: camera.viewProj,
+		cameraFrustum: camera.frustumPlanes,
 		lighting: registry.getState('frame_shared')?.lighting,
 	};
 }
@@ -730,16 +727,16 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 
 function makeParticleState(): ParticlePipelineState {
 	const gv = consoleCore.view;
-	const cam = hardwareCameraBank0;
+	const camera = gv.vdpCamera;
 	const width = gv.offscreenCanvasSize.x;
 	const height = gv.offscreenCanvasSize.y;
 	const camRight = new Float32Array(3);
 	const camUp = new Float32Array(3);
-	M4.viewRightUpInto(cam.view, camRight, camUp);
+	M4.viewRightUpInto(camera.view, camRight, camUp);
 	return {
 		width,
 		height,
-		viewProj: cam.viewProjection,
+		viewProj: camera.viewProj,
 		camRight,
 		camUp,
 	};

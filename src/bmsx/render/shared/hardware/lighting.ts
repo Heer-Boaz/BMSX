@@ -1,4 +1,5 @@
 import type { AmbientLight, DirectionalLight, PointLight } from '../../3d/light';
+import { ensureDirectionalLightRecord, ensurePointLightRecord } from './light_records';
 
 const ambientLights = new Map<string, AmbientLight>();
 const directionalLights = new Map<string, DirectionalLight>();
@@ -20,24 +21,6 @@ function ambientLightRecord(id: string): AmbientLight {
 	return record;
 }
 
-function directionalLightRecord(id: string): DirectionalLight {
-	let record = directionalLights.get(id);
-	if (!record) {
-		record = { type: 'directional', color: [0, 0, 0], intensity: 0, orientation: [0, 0, 0] };
-		directionalLights.set(id, record);
-	}
-	return record;
-}
-
-function pointLightRecord(id: string): PointLight {
-	let record = pointLights.get(id);
-	if (!record) {
-		record = { type: 'point', color: [0, 0, 0], intensity: 0, pos: [0, 0, 0], range: 0 };
-		pointLights.set(id, record);
-	}
-	return record;
-}
-
 export function putHardwareAmbientLight(id: string, light: AmbientLight): void {
 	const record = ambientLightRecord(id);
 	writeVec3(record.color, light.color);
@@ -46,7 +29,7 @@ export function putHardwareAmbientLight(id: string, light: AmbientLight): void {
 }
 
 export function putHardwareDirectionalLight(id: string, light: DirectionalLight): void {
-	const record = directionalLightRecord(id);
+	const record = ensureDirectionalLightRecord(directionalLights, id);
 	writeVec3(record.color, light.color);
 	writeVec3(record.orientation, light.orientation);
 	record.intensity = light.intensity;
@@ -54,7 +37,7 @@ export function putHardwareDirectionalLight(id: string, light: DirectionalLight)
 }
 
 export function putHardwarePointLight(id: string, light: PointLight): void {
-	const record = pointLightRecord(id);
+	const record = ensurePointLightRecord(pointLights, id);
 	writeVec3(record.color, light.color);
 	writeVec3(record.pos, light.pos);
 	record.range = light.range;

@@ -67,11 +67,6 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_vdp_sbx_faces", valueNumber(static_cast<double>(IO_VDP_SBX_FACE0)));
 	runtime.setGlobal("sys_vdp_sbx_commit", valueNumber(static_cast<double>(IO_VDP_SBX_COMMIT)));
 	runtime.setGlobal("sys_vdp_sbx_commit_write", valueNumber(static_cast<double>(VDP_SBX_COMMIT_WRITE)));
-	runtime.setGlobal("sys_vdp_camera_view", valueNumber(static_cast<double>(IO_VDP_CAMERA_VIEW)));
-	runtime.setGlobal("sys_vdp_camera_proj", valueNumber(static_cast<double>(IO_VDP_CAMERA_PROJ)));
-	runtime.setGlobal("sys_vdp_camera_eye", valueNumber(static_cast<double>(IO_VDP_CAMERA_EYE)));
-	runtime.setGlobal("sys_vdp_camera_commit", valueNumber(static_cast<double>(IO_VDP_CAMERA_COMMIT)));
-	runtime.setGlobal("sys_vdp_camera_commit_write", valueNumber(static_cast<double>(VDP_CAMERA_COMMIT_WRITE)));
 	runtime.setGlobal("sys_vdp_slot_primary", valueNumber(static_cast<double>(VDP_SLOT_PRIMARY)));
 	runtime.setGlobal("sys_vdp_slot_secondary", valueNumber(static_cast<double>(VDP_SLOT_SECONDARY)));
 	runtime.setGlobal("sys_vdp_slot_system", valueNumber(static_cast<double>(VDP_SLOT_SYSTEM)));

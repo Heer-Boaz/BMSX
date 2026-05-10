@@ -43,10 +43,6 @@ export function writeVdpDisplayFrameBufferPixels(pixels: Uint8Array, width: numb
 	displayFrameBufferTexture = updateVdpTexturePixels(FRAMEBUFFER_TEXTURE_KEY, pixels, width, height);
 }
 
-export function writeVdpRenderFrameBufferPixelRegion(pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
-	vdpTextureBackend().updateTextureRegion(renderFrameBufferTexture, pixels, width, height, x, y, DEFAULT_TEXTURE_PARAMS);
-}
-
 export function applyVdpFrameBufferTextureWrites(vdp: VDP): void {
 	const output = vdp.readHostOutput();
 	const slots = output.surfaceUploadSlots;
@@ -60,13 +56,15 @@ export function applyVdpFrameBufferTextureWrites(vdp: VDP): void {
 			const rowStart = slot.dirtyRowStart;
 			const rowCount = slot.dirtyRowEnd - rowStart;
 			const byteStart = rowStart * rowBytes;
-			writeVdpRenderFrameBufferPixelRegion(
-				slot.cpuReadback.subarray(byteStart, byteStart + rowCount * rowBytes),
-				slot.surfaceWidth,
-				rowCount,
-				0,
-				rowStart,
-			);
+				vdpTextureBackend().updateTextureRegion(
+					renderFrameBufferTexture,
+					slot.cpuReadback.subarray(byteStart, byteStart + rowCount * rowBytes),
+					slot.surfaceWidth,
+					rowCount,
+					0,
+					rowStart,
+					DEFAULT_TEXTURE_PARAMS,
+				);
 			vdp.clearSurfaceUploadDirty(slot.surfaceId);
 		}
 		return;

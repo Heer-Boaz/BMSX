@@ -8,7 +8,6 @@
 #include "../../3d/axis_gizmo_pipeline.h"
 #include "../../3d/particles/pipeline.h"
 #include "../../3d/skybox/pipeline.h"
-#include "../../shared/hardware/camera.h"
 #include "../../vdp/framebuffer.h"
 #if BMSX_ENABLE_GLES2
 #include "../../post/crt_pipeline_gles2.h"
@@ -531,7 +530,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 			return std::any{};
 		};
 		pass.execute = [this, view, &lightingSystem](RenderGraphContext&, FrameData* frame, const std::any&) {
-			const HardwareCameraState& cameraState = resolveActiveHardwareCamera();
+			const VdpCameraSnapshot& cameraState = *view->vdpCamera;
 			FrameSharedState frameShared;
 			frameShared.view.camPos = {
 				cameraState.eye.x,

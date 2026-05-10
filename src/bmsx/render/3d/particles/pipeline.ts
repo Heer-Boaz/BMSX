@@ -7,13 +7,12 @@ import { RenderPassLibrary } from '../../backend/pass/library';
 import { ParticlePipelineState } from '../../backend/backend';
 import { TEXTURE_UNIT_TEXTPAGE_ENGINE, TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '../../backend/webgl/constants';
 import { WebGLBackend } from '../../backend/webgl/backend';
-import type { Camera } from '../camera';
+import type { VdpCameraSnapshot } from '../../../machine/devices/vdp/camera';
 import { M4 } from '../math';
 import { beginParticleQueue, forEachParticleQueue } from '../../shared/queues';
 import type { ParticleRenderSubmission } from '../../shared/submissions';
 import { SYSTEM_SLOT_TEXTURE_KEY, VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
 import { VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../../machine/bus/io';
-import { hardwareCameraBank0 } from '../../shared/hardware/camera';
 import { VDP_BBU_BILLBOARD_LIMIT } from '../../../machine/devices/vdp/contracts';
 
 const camRight = new Float32Array(3);
@@ -34,11 +33,11 @@ const cameraParticleState: ParticlePipelineState = {
 	camUp: new Float32Array(3),
 };
 
-function updateCameraParticleState(width: number, height: number, cam: Camera): ParticlePipelineState {
+function updateCameraParticleState(width: number, height: number, camera: VdpCameraSnapshot): ParticlePipelineState {
 	cameraParticleState.width = width;
 	cameraParticleState.height = height;
-	cameraParticleState.viewProj = cam.viewProjection;
-	M4.viewRightUpInto(cam.view, cameraParticleState.camRight, cameraParticleState.camUp);
+	cameraParticleState.viewProj = camera.viewProj;
+	M4.viewRightUpInto(camera.view, cameraParticleState.camRight, cameraParticleState.camUp);
 	return cameraParticleState;
 }
 
@@ -268,7 +267,7 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 			}
 			const textpageSecondaryTex = gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY];
 			const systemSlotTex = gv.textures[SYSTEM_SLOT_TEXTURE_KEY];
-			const state = updateCameraParticleState(width, height, hardwareCameraBank0);
+			const state = updateCameraParticleState(width, height, gv.vdpCamera);
 			state.textpagePrimaryTex = textpagePrimaryTex;
 			state.textpageSecondaryTex = textpageSecondaryTex;
 			state.systemSlotTex = systemSlotTex;

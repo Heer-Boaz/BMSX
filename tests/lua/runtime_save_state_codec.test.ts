@@ -13,14 +13,6 @@ function numberedWords(count: number): number[] {
 	return words;
 }
 
-function matrix(seed: number): number[] {
-	const values = new Array<number>(16);
-	for (let index = 0; index < values.length; index += 1) {
-		values[index] = seed + index;
-	}
-	return values;
-}
-
 test('runtime save-state codec preserves string pool ROM/runtime ownership', () => {
 	const state = {
 		machineState: {
@@ -41,9 +33,13 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 				input: { sampleArmed: false },
 				vdp: {
 					camera: {
-						view: matrix(10),
-						proj: matrix(40),
-						eye: [1, 2, 3],
+						eyeXWord: 0x00010000,
+						eyeYWord: 0x00020000,
+						eyeZWord: 0xfffd0000,
+						yawWord: 0x2000,
+						pitchWord: 0x0400,
+						rollWord: 0x0100,
+						focalYWord: 0x0001bb68,
 					},
 					skyboxControl: 5,
 					skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),
