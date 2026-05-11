@@ -3,6 +3,7 @@
 #include "core/host_overlay_menu.h"
 #include "common/time.h"
 #include "input/manager.h"
+#include "machine/runtime/frame/step.h"
 #include "machine/runtime/runtime.h"
 
 #include <chrono>
@@ -41,7 +42,6 @@ void ConsoleCore::runHostFrame(
 
 		runtime.screen.clearPresentation();
 		if (!platformPaused && !hostMenuActive) {
-			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 			// Handle program reload request at the frame boundary (TS parity: no ConsoleCore in CartBootState)
 			if (runtime.isRebootRequested()) {
@@ -52,8 +52,8 @@ void ConsoleCore::runHostFrame(
 					return;
 				}
 			}
-			runtime.frameScheduler.run(runtime, hostDeltaMs);
-			runtime.screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+			const RuntimeFrameStepResult stepResult = runRuntimeFrameStep(runtime, hostDeltaMs);
+			runtime.screen.syncAfterRuntimeUpdate(runtime, stepResult.previousTickSequence);
 		} else {
 			runtime.frameScheduler.clearQueuedTime();
 		}

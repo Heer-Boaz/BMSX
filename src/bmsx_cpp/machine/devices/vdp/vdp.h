@@ -128,7 +128,7 @@ public:
 	int lastFrameCost() const { return m_lastFrameCost; }
 	bool lastFrameHeld() const { return m_lastFrameHeld; }
 	bool needsImmediateSchedulerService() const { return !m_activeFrame.occupied && m_pendingFrame.occupied; }
-	bool hasPendingRenderWork() const { return m_activeFrame.occupied ? (!m_activeFrame.ready && !m_execution.pending) : (m_pendingFrame.occupied && m_pendingFrame.cost > 0); }
+	bool hasPendingRenderWork() const { return m_activeFrame.occupied ? !m_activeFrame.ready : (m_pendingFrame.occupied && m_pendingFrame.cost > 0); }
 	int getPendingRenderWorkUnits() const;
 
 	using FrameBufferColor = VdpFrameBufferColor;
@@ -141,7 +141,6 @@ public:
 	using BlitterCommand = VdpBlitterCommand;
 	using SubmittedFrame = VdpSubmittedFrame;
 	using BuildingFrame = VdpBuildingFrame;
-	using ExecutionState = VdpExecutionState;
 
 	struct VramSlot {
 		struct DirtySpan {
@@ -160,13 +159,10 @@ public:
 	};
 
 	struct VdpHostOutput {
-		uint32_t executionToken = 0;
-		const std::vector<BlitterCommand>* executionQueue = nullptr;
-		const std::vector<VdpBbuBillboardEntry>* executionBillboards = nullptr;
-		bool executionWritesFrameBuffer = false;
 		i32 ditherType = 0;
-		const std::array<u32, VDP_XF_MATRIX_WORDS>* xfViewMatrixWords = nullptr;
-		const std::array<u32, VDP_XF_MATRIX_WORDS>* xfProjectionMatrixWords = nullptr;
+		const std::array<u32, VDP_XF_MATRIX_REGISTER_WORDS>* xfMatrixWords = nullptr;
+		u32 xfViewMatrixIndex = 0;
+		u32 xfProjectionMatrixIndex = 0;
 		bool skyboxEnabled = false;
 		const SkyboxSamples* skyboxSamples = nullptr;
 		const std::vector<VdpBbuBillboardEntry>* billboards = nullptr;
@@ -178,7 +174,6 @@ public:
 
 	VdpHostOutput readHostOutput();
 	void clearSurfaceUploadDirty(uint32_t surfaceId);
-	void completeHostExecution(const VdpHostOutput& output);
 
 private:
 	static Value readVdpStatusThunk(void* context, uint32_t addr);
@@ -220,6 +215,7 @@ private:
 	VdpSbxUnit::FaceWords m_sbxPacketFaceWords{};
 	VdpSbxUnit::FaceWords m_sbxMmioFaceWords{};
 	VdpXfUnit m_xf;
+	VdpXfUnit m_committedXf;
 	VdpPmuUnit m_pmu;
 	VdpBbuUnit m_bbu;
 	SkyboxSamples m_committedSkyboxSamples{};
@@ -239,11 +235,12 @@ private:
 	int m_vdpFifoWordByteCount = 0;
 	std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
 	u32 m_vdpFifoStreamWordCount = 0;
-		BuildingFrame m_buildFrame;
-		ExecutionState m_execution;
-		uint32_t m_hostOutputToken = 0;
-		SubmittedFrame m_activeFrame;
+	BuildingFrame m_buildFrame;
+	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
+	std::vector<u8> m_frameBufferPriorityLayer;
+	std::vector<f32> m_frameBufferPriorityValue;
+	std::vector<u32> m_frameBufferPrioritySeq;
 	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
 	std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
 	u32 m_blitterSequence = 0;
@@ -289,6 +286,15 @@ private:
 	void cancelSubmittedFrame();
 	bool sealSubmittedFrame();
 	void promotePendingFrame();
+	void executeFrameBufferCommands(const std::vector<BlitterCommand>& commands);
+	void ensureFrameBufferPriorityCapacity(size_t pixelCount);
+	void resetFrameBufferPriority();
+	void fillFrameBuffer(std::vector<u8>& pixels, const FrameBufferColor& color);
+	void blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a, Layer2D layer, f32 priority, u32 seq);
+	void rasterizeFrameBufferFill(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq);
+	void rasterizeFrameBufferLine(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, f32 thicknessValue, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq);
+	void rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq);
+	void copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 priority, u32 seq);
 	void scheduleNextService(int64_t nowCycles);
 	bool hasOpenDirectVdpFifoIngress() const;
 	bool hasBlockedSubmitPath() const;
@@ -342,7 +348,9 @@ private:
 	void latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
 	bool appendTileRunSource(BlitterCommand& command, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow);
 	u32 consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end);
+	u32 consumeXfPacketFromMemory(u32 word, u32 cursor, u32 end);
 	u32 consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount);
+	u32 consumeXfPacketFromWords(u32 word, u32 cursor, u32 wordCount);
 	u32 decodeReg1Packet(u32 word) const;
 	struct RegnPacket {
 		u32 firstRegister = 0;

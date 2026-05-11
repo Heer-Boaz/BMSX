@@ -33,13 +33,16 @@ constexpr uint32_t VDP_PKT_REG1 = 0x02000000u;
 constexpr uint32_t VDP_PKT_REGN = 0x03000000u;
 constexpr uint32_t VDP_BILLBOARD_HEADER = bmsx::VDP_BBU_PACKET_KIND | (bmsx::VDP_BBU_PACKET_PAYLOAD_WORDS << 16u);
 constexpr uint32_t VDP_SKYBOX_HEADER = bmsx::VDP_SBX_PACKET_KIND | (bmsx::VDP_SBX_PACKET_PAYLOAD_WORDS << 16u);
-constexpr uint32_t VDP_XF_HEADER = bmsx::VDP_XF_PACKET_KIND | (bmsx::VDP_XF_PACKET_PAYLOAD_WORDS << 16u);
+constexpr uint32_t VDP_XF_MATRIX_HEADER = bmsx::VDP_XF_PACKET_KIND | (bmsx::VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS << 16u);
+constexpr uint32_t VDP_XF_SELECT_HEADER = bmsx::VDP_XF_PACKET_KIND | (bmsx::VDP_XF_SELECT_PACKET_PAYLOAD_WORDS << 16u);
 
 constexpr uint32_t regIndex(uint32_t addr) {
 	return (addr - bmsx::IO_VDP_REG0) / bmsx::IO_WORD_SIZE;
 }
 
 constexpr uint32_t VDP_REG_BG_COLOR = regIndex(bmsx::IO_VDP_REG_BG_COLOR);
+constexpr uint32_t VDP_REG_SRC_SLOT = regIndex(bmsx::IO_VDP_REG_SRC_SLOT);
+constexpr uint32_t VDP_REG_DRAW_PRIORITY = regIndex(bmsx::IO_VDP_REG_DRAW_PRIORITY);
 constexpr uint32_t VDP_REG_SLOT_INDEX = regIndex(bmsx::IO_VDP_REG_SLOT_INDEX);
 
 void writeIo(bmsx::Memory& memory, uint32_t addr, uint32_t value) {
@@ -104,6 +107,35 @@ void sealFifo(Harness& harness, const std::vector<uint32_t>& words) {
 		writeIo(harness.memory, bmsx::IO_VDP_FIFO, word);
 	}
 	writeIo(harness.memory, bmsx::IO_VDP_FIFO_CTRL, bmsx::VDP_FIFO_CTRL_SEAL);
+}
+
+void writePrimaryPixel(Harness& h, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+	std::vector<uint8_t> pixels(16u * 16u * 4u, 0u);
+	const size_t index = (static_cast<size_t>(y) * 16u + static_cast<size_t>(x)) * 4u;
+	pixels[index + 0u] = r;
+	pixels[index + 1u] = g;
+	pixels[index + 2u] = b;
+	pixels[index + 3u] = a;
+	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE, pixels.data(), pixels.size());
+}
+
+void requireFramePixel(const Harness& h, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b, uint8_t a, const char* message) {
+	const auto& pixels = h.vdp.frameBufferRenderReadback();
+	const size_t index = (static_cast<size_t>(y) * h.vdp.frameBufferWidth() + static_cast<size_t>(x)) * 4u;
+	require(pixels[index + 0u] == r, message);
+	require(pixels[index + 1u] == g, message);
+	require(pixels[index + 2u] == b, message);
+	require(pixels[index + 3u] == a, message);
+}
+
+std::vector<uint32_t> xfMatrixRegisterPacket(uint32_t matrixIndex, const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS>& words) {
+	std::vector<uint32_t> packet{VDP_XF_MATRIX_HEADER, matrixIndex * bmsx::VDP_XF_MATRIX_WORDS};
+	packet.insert(packet.end(), words.begin(), words.end());
+	return packet;
+}
+
+std::vector<uint32_t> xfSelectRegisterPacket(uint32_t viewMatrixIndex, uint32_t projectionMatrixIndex) {
+	return {VDP_XF_SELECT_HEADER, bmsx::VDP_XF_VIEW_MATRIX_INDEX_REGISTER, viewMatrixIndex, projectionMatrixIndex};
 }
 
 std::vector<uint32_t> billboardPacket(uint32_t sizeWord, uint32_t u = 2u, uint32_t v = 3u, uint32_t w = 4u, uint32_t h = 5u, uint32_t control = 0u) {
@@ -202,10 +234,14 @@ void testBlitDrawCtrlSnapshot() {
 	Harness h;
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writePrimaryPixel(h, 3u, 3u, 0x11u, 0x22u, 0x33u, 0xffu);
+	writeIo(h.memory, bmsx::IO_VDP_PMU_Y, 16u << 16u);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
+	writeIo(h.memory, bmsx::IO_VDP_REG_DST_X, 10u << 16);
+	writeIo(h.memory, bmsx::IO_VDP_REG_DST_Y, 20u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_PRIORITY, 9u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0xff000003u);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
@@ -215,15 +251,7 @@ void testBlitDrawCtrlSnapshot() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
-	const auto output = h.vdp.readHostOutput();
-	require(output.executionToken != 0u, "host output should expose an execution token");
-	const auto* queue = output.executionQueue;
-	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
-	const auto& command = queue->front();
-	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
-	require(command.flipH && command.flipV, "DRAW_CTRL flip bits should be snapshotted");
-	require(std::abs(command.parallaxWeight + 1.0f) < 0.0001f, "DRAW_CTRL signed Q8.8 parallax should be snapshotted");
-	h.vdp.completeHostExecution(output);
+	requireFramePixel(h, 10u, 4u, 0x11u, 0x22u, 0x33u, 0xffu, "DRAW_CTRL flip and parallax should execute inside the VDP");
 }
 
 void testPmuParallaxResolvedBlitSnapshot() {
@@ -235,6 +263,7 @@ void testPmuParallaxResolvedBlitSnapshot() {
 	h.vdp.accrueCycles(250, 250);
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writePrimaryPixel(h, 0u, 0u, 0x44u, 0x55u, 0x66u, 0xffu);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
@@ -253,18 +282,7 @@ void testPmuParallaxResolvedBlitSnapshot() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
-	const auto output = h.vdp.readHostOutput();
-	const auto* queue = output.executionQueue;
-	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
-	const auto& command = queue->front();
-	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
-	require(std::abs(command.parallaxWeight - 0.5f) < 0.0001f, "DRAW_CTRL parallax weight should remain per-BLIT state");
-	require(std::abs(command.dstX - 32.0f) < 0.0001f, "PMU should leave X unchanged for this rig");
-	require(std::abs(command.dstY - 48.0f) < 0.0001f, "PMU should resolve +8px Y before backend execution");
-	require(std::abs(command.scaleX - 1.0f) < 0.0001f, "PMU should leave scale X unchanged for this rig");
-	require(std::abs(command.scaleY - 1.0f) < 0.0001f, "PMU should leave scale Y unchanged for this rig");
-	h.vdp.completeHostExecution(output);
-	require(h.vdp.readHostOutput().executionToken == 0u, "host execution ack should clear token");
+	requireFramePixel(h, 32u, 48u, 0x44u, 0x55u, 0x66u, 0xffu, "PMU should resolve +8px Y before VDP execution");
 }
 
 void testPmuBankRegistersResolveDrawCtrl() {
@@ -281,6 +299,7 @@ void testPmuBankRegistersResolveDrawCtrl() {
 	writeIo(h.memory, bmsx::IO_VDP_PMU_BANK, 3u);
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writePrimaryPixel(h, 0u, 0u, 0x77u, 0x88u, 0x99u, 0xffu);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
@@ -295,16 +314,7 @@ void testPmuBankRegistersResolveDrawCtrl() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
-	const auto output = h.vdp.readHostOutput();
-	const auto* queue = output.executionQueue;
-	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
-	const auto& command = queue->front();
-	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
-	require(std::abs(command.parallaxWeight - 0.5f) < 0.0001f, "DRAW_CTRL parallax weight should be snapshotted");
-	require(std::abs(command.dstY - 46.0f) < 0.0001f, "PMU bank Y should resolve into BLIT geometry");
-	require(std::abs(command.scaleX - 1.25f) < 0.0001f, "PMU bank scale X should resolve into BLIT geometry");
-	require(std::abs(command.scaleY - 1.0f) < 0.0001f, "PMU bank scale Y should remain unchanged");
-	h.vdp.completeHostExecution(output);
+	requireFramePixel(h, 32u, 46u, 0x77u, 0x88u, 0x99u, 0xffu, "PMU bank Y should resolve inside VDP execution");
 }
 
 void testPmuScaleUsesAbsoluteWeight() {
@@ -315,6 +325,7 @@ void testPmuScaleUsesAbsoluteWeight() {
 	writeIo(h.memory, bmsx::IO_VDP_PMU_SCALE_X, 0x00018000u);
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
+	writePrimaryPixel(h, 0u, 0u, 0xaau, 0xbbu, 0xccu, 0xffu);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
@@ -329,16 +340,7 @@ void testPmuScaleUsesAbsoluteWeight() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
-	const auto output = h.vdp.readHostOutput();
-	const auto* queue = output.executionQueue;
-	require(queue != nullptr && queue->size() == 1u, "BLIT should reach the execution queue");
-	const auto& command = queue->front();
-	require(command.type == bmsx::VDP::BlitterCommandType::Blit, "queued command should be a BLIT");
-	require(std::abs(command.parallaxWeight + 0.5f) < 0.0001f, "DRAW_CTRL negative parallax weight should be snapshotted");
-	require(std::abs(command.dstY - 34.0f) < 0.0001f, "negative PMU weight should invert offset");
-	require(std::abs(command.scaleX - 1.25f) < 0.0001f, "negative PMU weight should use absolute scale influence");
-	require(std::abs(command.scaleY - 1.0f) < 0.0001f, "PMU bank scale Y should remain unchanged");
-	h.vdp.completeHostExecution(output);
+	requireFramePixel(h, 32u, 34u, 0xaau, 0xbbu, 0xccu, 0xffu, "negative PMU weight should invert offset inside VDP execution");
 }
 
 void testFifoReplayAndFaults() {
@@ -589,6 +591,8 @@ void testSbxSkyboxPacketRawControlAndFrameSealFault() {
 
 void testXfPacketUpdatesRawTransformRegisterState() {
 	Harness h;
+	constexpr uint32_t viewMatrixIndex = 2u;
+	constexpr uint32_t projectionMatrixIndex = 3u;
 	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> viewWords{{
 		0x00010000u, 0u, 0u, 0u,
 		0u, 0x00010000u, 0u, 0u,
@@ -601,21 +605,30 @@ void testXfPacketUpdatesRawTransformRegisterState() {
 		0u, 0u, 0xffff0000u, 0xffff0000u,
 		0u, 0u, 0xfffe0000u, 0u,
 	}};
-	std::vector<uint32_t> stream{VDP_XF_HEADER};
-	stream.insert(stream.end(), viewWords.begin(), viewWords.end());
-	stream.insert(stream.end(), projWords.begin(), projWords.end());
+	std::vector<uint32_t> stream = xfMatrixRegisterPacket(viewMatrixIndex, viewWords);
+	auto projectionPacket = xfMatrixRegisterPacket(projectionMatrixIndex, projWords);
+	stream.insert(stream.end(), projectionPacket.begin(), projectionPacket.end());
+	auto selectPacket = xfSelectRegisterPacket(viewMatrixIndex, projectionMatrixIndex);
+	stream.insert(stream.end(), selectPacket.begin(), selectPacket.end());
 	stream.push_back(VDP_PKT_END);
 	sealStream(h, stream);
 
-	const auto output = h.vdp.readHostOutput();
+	const bmsx::VdpState state = h.vdp.captureState();
+	const size_t viewBase = static_cast<size_t>(viewMatrixIndex * bmsx::VDP_XF_MATRIX_WORDS);
+	const size_t projectionBase = static_cast<size_t>(projectionMatrixIndex * bmsx::VDP_XF_MATRIX_WORDS);
+	require(state.xf.viewMatrixIndex == viewMatrixIndex, "XF should select view matrix index");
+	require(state.xf.projectionMatrixIndex == projectionMatrixIndex, "XF should select projection matrix index");
 	for (size_t index = 0; index < bmsx::VDP_XF_MATRIX_WORDS; ++index) {
-		require((*output.xfViewMatrixWords)[index] == viewWords[index], "XF should preserve view matrix words");
-		require((*output.xfProjectionMatrixWords)[index] == projWords[index], "XF should preserve projection matrix words");
+		require(state.xf.matrixWords[viewBase + index] == viewWords[index], "XF should preserve view matrix words");
+		require(state.xf.matrixWords[projectionBase + index] == projWords[index], "XF should preserve projection matrix words");
 	}
 }
 
 void testXfWordsResolveToRenderOwnedSkyboxTransform() {
 	bmsx::VdpTransformSnapshot transform;
+	constexpr uint32_t viewMatrixIndex = 2u;
+	constexpr uint32_t projectionMatrixIndex = 3u;
+	std::array<uint32_t, bmsx::VDP_XF_MATRIX_REGISTER_WORDS> matrixWords{};
 	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> viewWords{{
 		0x00020000u, 0u, 0u, 0u,
 		0u, 0x00040000u, 0u, 0u,
@@ -628,8 +641,12 @@ void testXfWordsResolveToRenderOwnedSkyboxTransform() {
 		0u, 0u, 0x00010000u, 0u,
 		0u, 0u, 0u, 0x00010000u,
 	}};
+	for (size_t index = 0; index < bmsx::VDP_XF_MATRIX_WORDS; ++index) {
+		matrixWords[static_cast<size_t>(viewMatrixIndex * bmsx::VDP_XF_MATRIX_WORDS) + index] = viewWords[index];
+		matrixWords[static_cast<size_t>(projectionMatrixIndex * bmsx::VDP_XF_MATRIX_WORDS) + index] = projWords[index];
+	}
 
-	bmsx::resolveVdpTransformSnapshot(transform, viewWords, projWords);
+	bmsx::resolveVdpTransformSnapshot(transform, matrixWords, viewMatrixIndex, projectionMatrixIndex);
 
 	require(transform.view[0] == 2.0f, "XF view should decode Q16.16 words");
 	require(transform.skyboxView[0] == 0.5f, "XF skybox view should invert affine X scale");
@@ -641,12 +658,76 @@ void testXfWordsResolveToRenderOwnedSkyboxTransform() {
 
 void testXfPacketFaultsThroughVdpState() {
 	Harness h;
-	std::vector<uint32_t> stream{bmsx::VDP_XF_PACKET_KIND | ((bmsx::VDP_XF_PACKET_PAYLOAD_WORDS - 1u) << 16u)};
-	stream.resize(bmsx::VDP_XF_PACKET_PAYLOAD_WORDS, 0u);
+	std::vector<uint32_t> stream{
+		bmsx::VDP_XF_PACKET_KIND | (bmsx::VDP_XF_SELECT_PACKET_PAYLOAD_WORDS << 16u),
+		bmsx::VDP_XF_VIEW_MATRIX_INDEX_REGISTER,
+		bmsx::VDP_XF_MATRIX_COUNT,
+		0u,
+	};
 	stream.push_back(VDP_PKT_END);
 	sealStream(h, stream);
 	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "bad XF packet should latch a stream fault");
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad XF packet should not submit render work");
+}
+
+void testXfStateCommitsWithSubmittedFrame() {
+	Harness h;
+	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> projWords{{
+		0x00010000u, 0u, 0u, 0u,
+		0u, 0x00010000u, 0u, 0u,
+		0u, 0u, 0x00010000u, 0u,
+		0u, 0u, 0u, 0x00010000u,
+	}};
+	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> frameAView{{
+		0x00020000u, 0u, 0u, 0u,
+		0u, 0x00010000u, 0u, 0u,
+		0u, 0u, 0x00010000u, 0u,
+		0u, 0u, 0u, 0x00010000u,
+	}};
+	const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS> frameBView{{
+		0x00030000u, 0u, 0u, 0u,
+		0u, 0x00010000u, 0u, 0u,
+		0u, 0u, 0x00010000u, 0u,
+		0u, 0u, 0u, 0x00010000u,
+	}};
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
+	std::vector<uint32_t> frameA = xfMatrixRegisterPacket(2u, frameAView);
+	auto frameAProj = xfMatrixRegisterPacket(3u, projWords);
+	frameA.insert(frameA.end(), frameAProj.begin(), frameAProj.end());
+	auto frameASelect = xfSelectRegisterPacket(2u, 3u);
+	frameA.insert(frameA.end(), frameASelect.begin(), frameASelect.end());
+	frameA.insert(frameA.end(), {
+		VDP_PKT_REGN | (5u << 16u) | VDP_REG_SRC_SLOT,
+		bmsx::VDP_SLOT_PRIMARY,
+		0u,
+		4u | (4u << 16u),
+		0u,
+		0u,
+		VDP_PKT_REG1 | VDP_REG_DRAW_PRIORITY,
+		9u,
+		VDP_PKT_CMD | VDP_CMD_BLIT,
+		VDP_PKT_END,
+	});
+	sealStream(h, frameA);
+
+	std::vector<uint32_t> frameB = xfMatrixRegisterPacket(4u, frameBView);
+	auto frameBProj = xfMatrixRegisterPacket(5u, projWords);
+	frameB.insert(frameB.end(), frameBProj.begin(), frameBProj.end());
+	auto frameBSelect = xfSelectRegisterPacket(4u, 5u);
+	frameB.insert(frameB.end(), frameBSelect.begin(), frameBSelect.end());
+	frameB.push_back(VDP_PKT_END);
+	sealStream(h, frameB);
+
+	const int workUnits = h.vdp.getPendingRenderWorkUnits();
+	require(workUnits > 0, "frame A should require render work");
+	h.vdp.advanceWork(workUnits);
+	require(h.vdp.presentReadyFrameOnVblankEdge(), "frame A should present framebuffer work");
+	const auto output = h.vdp.readHostOutput();
+	require(output.xfViewMatrixIndex == 2u, "presented XF should keep frame A view index");
+	require(output.xfProjectionMatrixIndex == 3u, "presented XF should keep frame A projection index");
+	require((*output.xfMatrixWords)[2u * bmsx::VDP_XF_MATRIX_WORDS] == frameAView[0], "presented XF should keep frame A matrix words");
+	require((*output.xfMatrixWords)[2u * bmsx::VDP_XF_MATRIX_WORDS] != frameBView[0], "presented XF should not use frame B live matrix");
 }
 
 void testBbuBillboardPacketLatchesInstanceRam() {
@@ -658,10 +739,9 @@ void testBbuBillboardPacketLatchesInstanceRam() {
 	sealStream(h, stream);
 	require(h.vdp.getPendingRenderWorkUnits() == 1, "BILLBOARD should submit BBU render work");
 	h.vdp.advanceWork(1);
+	require(!h.vdp.presentReadyFrameOnVblankEdge(), "BILLBOARD should not present framebuffer pages");
 	const auto output = h.vdp.readHostOutput();
-	const auto* queue = output.executionQueue;
-	require(queue != nullptr, "BILLBOARD should produce ready execution state");
-	const auto& billboards = *output.executionBillboards;
+	const auto& billboards = *output.billboards;
 	require(billboards.size() == 1u, "BILLBOARD should latch one instance");
 	const auto& entry = billboards.front();
 	require(entry.slot == bmsx::VDP_SLOT_PRIMARY, "BBU should resolve source slot");
@@ -673,7 +753,6 @@ void testBbuBillboardPacketLatchesInstanceRam() {
 	require(std::abs(entry.positionZ - 30.0f) < 0.0001f, "BBU should decode Z");
 	require(std::abs(entry.size - 2.0f) < 0.0001f, "BBU should decode size");
 	require(entry.color == 0xff112233u, "BBU should preserve packed ARGB color");
-	h.vdp.completeHostExecution(output);
 }
 
 void testBbuFaultsAtBillboardPacketAcceptance() {
@@ -816,6 +895,7 @@ int main() {
 		{"VDP XF packet raw state", testXfPacketUpdatesRawTransformRegisterState},
 		{"VDP XF render transform", testXfWordsResolveToRenderOwnedSkyboxTransform},
 		{"VDP XF packet fault state", testXfPacketFaultsThroughVdpState},
+		{"VDP XF frame commit timing", testXfStateCommitsWithSubmittedFrame},
 		{"BBU BILLBOARD packet latches instance RAM", testBbuBillboardPacketLatchesInstanceRam},
 		{"BBU faults at BILLBOARD packet acceptance", testBbuFaultsAtBillboardPacketAcceptance},
 		{"empty FIFO frame", testEmptyFifoFrame},

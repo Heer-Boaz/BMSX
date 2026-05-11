@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 13;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 14;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
@@ -132,8 +132,9 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'skyboxControl',
 	'skyboxFaceWords',
 	'xf',
-	'viewMatrixWords',
-	'projectionMatrixWords',
+	'matrixWords',
+	'viewMatrixIndex',
+	'projectionMatrixIndex',
 	'pmuSelectedBank',
 	'pmuBankWords',
 	'vdpFaultCode',

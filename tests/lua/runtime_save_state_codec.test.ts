@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../src/bmsx/machine/devices/vdp/contracts';
+import { VDP_XF_MATRIX_REGISTER_WORDS, VDP_XF_PROJECTION_MATRIX_RESET_INDEX, VDP_XF_VIEW_MATRIX_RESET_INDEX } from '../../src/bmsx/machine/devices/vdp/xf';
 import type { RuntimeSaveState } from '../../src/bmsx/machine/runtime/contracts';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../src/bmsx/machine/runtime/save_state/codec';
 
@@ -33,8 +34,9 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 				input: { sampleArmed: false },
 				vdp: {
 					xf: {
-						viewMatrixWords: numberedWords(16),
-						projectionMatrixWords: numberedWords(16),
+						matrixWords: numberedWords(VDP_XF_MATRIX_REGISTER_WORDS),
+						viewMatrixIndex: VDP_XF_VIEW_MATRIX_RESET_INDEX,
+						projectionMatrixIndex: VDP_XF_PROJECTION_MATRIX_RESET_INDEX,
 					},
 					skyboxControl: 5,
 					skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),

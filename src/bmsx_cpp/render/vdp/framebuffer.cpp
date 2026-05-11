@@ -1,7 +1,6 @@
 #include "render/vdp/framebuffer.h"
 
 #include "machine/devices/vdp/vdp.h"
-#include "render/vdp/blitter/gles2.h"
 #include "render/vdp/surfaces.h"
 #include "render/vdp/texture_transfer.h"
 #include "rompack/format.h"
@@ -96,9 +95,6 @@ void applyVdpFrameBufferTextureWrites(VDP& vdp) {
 void presentVdpFrameBufferPages() {
 	swapVdpTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
 	std::swap(renderFrameBufferTexture, displayFrameBufferTexture);
-#if BMSX_ENABLE_GLES2
-	VdpGles2Blitter::invalidateFrameBufferAttachment();
-#endif
 }
 
 } // namespace bmsx

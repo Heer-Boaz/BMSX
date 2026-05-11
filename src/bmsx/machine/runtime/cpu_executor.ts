@@ -4,7 +4,6 @@ import {
 	TIMER_KIND_VBLANK_BEGIN,
 	TIMER_KIND_VBLANK_END,
 } from '../scheduler/device';
-import { drainReadyVdpExecution } from '../../render/vdp/blitter';
 import { FrameState, Runtime } from './runtime';
 
 export class CpuExecutionState {
@@ -163,10 +162,7 @@ function dispatchRuntimeTimer(runtime: Runtime, kind: number, payload: number): 
 			runtime.vblank.handleEndTimer();
 			return;
 		case TIMER_KIND_DEVICE_SERVICE:
-			const renderVdp = runtime.machine.runDeviceService(payload);
-			if (renderVdp !== null) {
-				drainReadyVdpExecution(renderVdp);
-			}
+			runtime.machine.runDeviceService(payload);
 			return;
 		default:
 			throw new Error(`unknown timer kind ${kind}.`);

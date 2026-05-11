@@ -5,11 +5,14 @@
 namespace bmsx {
 
 void resolveVdpTransformSnapshot(VdpTransformSnapshot& target,
-								const std::array<u32, VDP_XF_MATRIX_WORDS>& viewMatrixWords,
-								const std::array<u32, VDP_XF_MATRIX_WORDS>& projectionMatrixWords) {
+									const std::array<u32, VDP_XF_MATRIX_REGISTER_WORDS>& matrixWords,
+									u32 viewMatrixIndex,
+									u32 projectionMatrixIndex) {
+	const size_t viewBase = static_cast<size_t>(viewMatrixIndex * VDP_XF_MATRIX_WORDS);
+	const size_t projectionBase = static_cast<size_t>(projectionMatrixIndex * VDP_XF_MATRIX_WORDS);
 	for (size_t index = 0; index < VDP_XF_MATRIX_WORDS; ++index) {
-		target.view[index] = decodeSignedQ16_16(viewMatrixWords[index]);
-		target.proj[index] = decodeSignedQ16_16(projectionMatrixWords[index]);
+		target.view[index] = decodeSignedQ16_16(matrixWords[viewBase + index]);
+		target.proj[index] = decodeSignedQ16_16(matrixWords[projectionBase + index]);
 	}
 	Render3D::mat4MulInto(target.viewProj, target.proj, target.view);
 	Render3D::mat4SkyboxFromViewInto(target.skyboxView, target.view);

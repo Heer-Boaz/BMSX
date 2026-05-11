@@ -12,4 +12,12 @@ inline bool isVdpUnitPacketHeaderValid(u32 word, u32 expectedPayloadWords) {
 	return payloadWords == expectedPayloadWords && (word & VDP_UNIT_PACKET_FLAGS_MASK) == 0u;
 }
 
+inline u32 vdpUnitPacketPayloadWords(u32 word) {
+	return (word & VDP_UNIT_PACKET_WORD_COUNT_MASK) >> 16u;
+}
+
+inline bool vdpUnitPacketHasFlags(u32 word) {
+	return (word & VDP_UNIT_PACKET_FLAGS_MASK) != 0u;
+}
+
 } // namespace bmsx

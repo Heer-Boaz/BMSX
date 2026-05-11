@@ -56,21 +56,21 @@ void Machine::advanceDevices(int cycles) {
 	scheduler.advanceTo(nextNow);
 }
 
-VDP* Machine::runDeviceService(uint8_t deviceKind) {
+void Machine::runDeviceService(uint8_t deviceKind) {
 	const i64 nowCycles = scheduler.nowCycles();
 	switch (deviceKind) {
 		case DeviceServiceGeo:
 			geometryController.onService(nowCycles);
-			return nullptr;
+			return;
 		case DeviceServiceDma:
 			dmaController.onService(nowCycles);
-			return nullptr;
+			return;
 		case DeviceServiceImg:
 			imgDecController.onService(nowCycles);
-			return nullptr;
+			return;
 		case DeviceServiceVdp:
 			vdp.onService(nowCycles);
-			return &vdp;
+			return;
 		default:
 			throw BMSX_RUNTIME_ERROR("unknown device service kind " + std::to_string(deviceKind) + ".");
 	}

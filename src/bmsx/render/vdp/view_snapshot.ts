@@ -7,7 +7,7 @@ import { resolveVdpTransformSnapshot } from './transform';
 export function commitVdpViewSnapshot(view: GameView, vdp: VDP): void {
 	const output = vdp.readHostOutput();
 	view.dither_type = output.ditherType;
-	resolveVdpTransformSnapshot(view.vdpTransform, output.xfViewMatrixWords, output.xfProjectionMatrixWords);
+	resolveVdpTransformSnapshot(view.vdpTransform, output.xfMatrixWords, output.xfViewMatrixIndex, output.xfProjectionMatrixIndex);
 	commitVdpSkyboxViewState(view, output);
 	commitVdpBillboardViewState(view, output);
 }

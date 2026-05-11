@@ -9,6 +9,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -20,6 +21,8 @@ constexpr uint32_t VDP_RD_MAX_CHUNK_PIXELS = 256u;
 constexpr int VDP_SERVICE_BATCH_WORK_UNITS = 128;
 constexpr size_t BLITTER_FIFO_CAPACITY = 4096u;
 constexpr u32 VDP_REPLAY_PACKET_FAULT = 0xffffffffu;
+constexpr VDP::FrameBufferColor VDP_BLITTER_IMPLICIT_CLEAR{0u, 0u, 0u, 255u};
+constexpr VDP::FrameBufferColor VDP_BLITTER_WHITE{255u, 255u, 255u, 255u};
 
 template <typename T>
 std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
@@ -71,7 +74,6 @@ VDP::VDP(
 	m_buildFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_activeFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_pendingFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
-	m_execution.queue.reserve(BLITTER_FIFO_CAPACITY);
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
 }
 
@@ -506,21 +508,7 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 				m_memory.readU32(cursor + IO_WORD_SIZE * 9u))) ? payloadEnd : VDP_REPLAY_PACKET_FAULT;
 		}
 		case VDP_XF_PACKET_KIND: {
-			if (!isVdpUnitPacketHeaderValid(word, VDP_XF_PACKET_PAYLOAD_WORDS)) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-				return VDP_REPLAY_PACKET_FAULT;
-			}
-			const u32 byteCount = VDP_XF_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
-			const u32 payloadEnd = cursor + byteCount;
-			if (payloadEnd > end) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-				return VDP_REPLAY_PACKET_FAULT;
-			}
-			for (size_t offset = 0; offset < VDP_XF_MATRIX_WORDS; ++offset) {
-				m_xf.viewMatrixWords[offset] = m_memory.readU32(cursor + static_cast<u32>(offset) * IO_WORD_SIZE);
-				m_xf.projectionMatrixWords[offset] = m_memory.readU32(cursor + static_cast<u32>(offset + VDP_XF_MATRIX_WORDS) * IO_WORD_SIZE);
-			}
-			return payloadEnd;
+			return consumeXfPacketFromMemory(word, cursor, end);
 		}
 		case VDP_SBX_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS)) {
@@ -543,6 +531,38 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return VDP_REPLAY_PACKET_FAULT;
 	}
+}
+
+u32 VDP::consumeXfPacketFromMemory(u32 word, u32 cursor, u32 end) {
+	if (vdpUnitPacketHasFlags(word)) {
+		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+		return VDP_REPLAY_PACKET_FAULT;
+	}
+	const u32 payloadWords = vdpUnitPacketPayloadWords(word);
+	if (payloadWords < 2u) {
+		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+		return VDP_REPLAY_PACKET_FAULT;
+	}
+	const u32 byteCount = payloadWords * IO_WORD_SIZE;
+	const u32 payloadEnd = cursor + byteCount;
+	if (payloadEnd > end) {
+		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+		return VDP_REPLAY_PACKET_FAULT;
+	}
+	const u32 firstRegister = m_memory.readU32(cursor);
+	const u32 registerCount = payloadWords - 1u;
+	if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
+		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+		return VDP_REPLAY_PACKET_FAULT;
+	}
+	for (u32 offset = 0u; offset < registerCount; ++offset) {
+		const u32 value = m_memory.readU32(cursor + (offset + 1u) * IO_WORD_SIZE);
+		if (!m_xf.writeRegister(firstRegister + offset, value)) {
+			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, value);
+			return VDP_REPLAY_PACKET_FAULT;
+		}
+	}
+	return payloadEnd;
 }
 
 u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
@@ -592,15 +612,7 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 8u)],
 				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 9u)])) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : VDP_REPLAY_PACKET_FAULT;
 		case VDP_XF_PACKET_KIND:
-			if (!isVdpUnitPacketHeaderValid(word, VDP_XF_PACKET_PAYLOAD_WORDS) || cursor + VDP_XF_PACKET_PAYLOAD_WORDS > wordCount) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-				return VDP_REPLAY_PACKET_FAULT;
-			}
-			for (size_t offset = 0; offset < VDP_XF_MATRIX_WORDS; ++offset) {
-				m_xf.viewMatrixWords[offset] = m_vdpFifoStreamWords[static_cast<size_t>(cursor + static_cast<u32>(offset))];
-				m_xf.projectionMatrixWords[offset] = m_vdpFifoStreamWords[static_cast<size_t>(cursor + static_cast<u32>(offset + VDP_XF_MATRIX_WORDS))];
-			}
-			return cursor + VDP_XF_PACKET_PAYLOAD_WORDS;
+			return consumeXfPacketFromWords(word, cursor, wordCount);
 		case VDP_SBX_PACKET_KIND:
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
 				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
@@ -615,6 +627,32 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return VDP_REPLAY_PACKET_FAULT;
 	}
+}
+
+u32 VDP::consumeXfPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
+	if (vdpUnitPacketHasFlags(word)) {
+		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+		return VDP_REPLAY_PACKET_FAULT;
+	}
+	const u32 payloadWords = vdpUnitPacketPayloadWords(word);
+	if (payloadWords < 2u || cursor + payloadWords > wordCount) {
+		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+		return VDP_REPLAY_PACKET_FAULT;
+	}
+	const u32 firstRegister = m_vdpFifoStreamWords[static_cast<size_t>(cursor)];
+	const u32 registerCount = payloadWords - 1u;
+	if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
+		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+		return VDP_REPLAY_PACKET_FAULT;
+	}
+	for (u32 offset = 0u; offset < registerCount; ++offset) {
+		const u32 value = m_vdpFifoStreamWords[static_cast<size_t>(cursor + offset + 1u)];
+		if (!m_xf.writeRegister(firstRegister + offset, value)) {
+			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, value);
+			return VDP_REPLAY_PACKET_FAULT;
+		}
+	}
+	return cursor + payloadWords;
 }
 // end repeated-sequence-acceptable
 
@@ -1108,6 +1146,7 @@ void VDP::resetQueuedFrameState() {
 	resetBuildFrameState();
 	clearActiveFrame();
 	m_committedBillboards.clear();
+	m_committedXf.reset();
 	recycleBlitterBuffers(m_pendingFrame.queue);
 	m_pendingFrame.billboards.clear();
 	resetSubmittedFrameSlot(m_pendingFrame);
@@ -1169,6 +1208,9 @@ bool VDP::sealSubmittedFrame() {
 	const int frameCost = (!m_buildFrame.queue.empty() && m_buildFrame.queue.front().type != BlitterCommandType::Clear)
 		? (m_buildFrame.cost + VDP_RENDER_CLEAR_COST)
 		: m_buildFrame.cost;
+	frame->xf.matrixWords = m_xf.matrixWords;
+	frame->xf.viewMatrixIndex = m_xf.viewMatrixIndex;
+	frame->xf.projectionMatrixIndex = m_xf.projectionMatrixIndex;
 	frame->skyboxControl = m_sbx.latchFrame(frame->skyboxFaceWords);
 	if (!resolveSkyboxFrameSamples(frame->skyboxControl, frame->skyboxFaceWords, frame->skyboxSamples)) {
 		return false;
@@ -1209,13 +1251,12 @@ void VDP::advanceWork(int workUnits) {
 	}
 	if (workUnits >= m_activeFrame.workRemaining) {
 		m_activeFrame.workRemaining = 0;
-		m_activeFrame.queue.swap(m_execution.queue);
-		m_activeFrame.queue.clear();
-		m_execution.pending = true;
-		m_hostOutputToken += 1u;
-		if (m_hostOutputToken == 0u) {
-			m_hostOutputToken = 1u;
+		if (m_activeFrame.hasFrameBufferCommands) {
+			executeFrameBufferCommands(m_activeFrame.queue);
 		}
+		recycleBlitterBuffers(m_activeFrame.queue);
+		m_activeFrame.queue.clear();
+		m_activeFrame.ready = true;
 		refreshSubmitBusyStatus();
 		scheduleNextService(m_scheduler.currentNowCycles());
 		return;
@@ -1227,7 +1268,288 @@ int VDP::getPendingRenderWorkUnits() const {
 	if (!m_activeFrame.occupied) {
 		return m_pendingFrame.cost;
 	}
-	return (m_activeFrame.ready || m_execution.pending) ? 0 : m_activeFrame.workRemaining;
+	return m_activeFrame.ready ? 0 : m_activeFrame.workRemaining;
+}
+
+void VDP::executeFrameBufferCommands(const std::vector<BlitterCommand>& commands) {
+	if (commands.empty()) {
+		return;
+	}
+	auto& frameBufferSlot = getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
+	auto& pixels = frameBufferSlot.cpuReadback;
+	ensureFrameBufferPriorityCapacity(static_cast<size_t>(m_frameBufferWidth) * static_cast<size_t>(m_frameBufferHeight));
+	if (commands.front().type != BlitterCommandType::Clear) {
+		fillFrameBuffer(pixels, VDP_BLITTER_IMPLICIT_CLEAR);
+	}
+	resetFrameBufferPriority();
+	for (const auto& command : commands) {
+		switch (command.type) {
+			case BlitterCommandType::Clear:
+				fillFrameBuffer(pixels, command.color);
+				resetFrameBufferPriority();
+				break;
+			case BlitterCommandType::FillRect:
+				rasterizeFrameBufferFill(pixels, command.x0, command.y0, command.x1, command.y1, command.color, command.layer, command.priority, command.seq);
+				break;
+			case BlitterCommandType::DrawLine:
+				rasterizeFrameBufferLine(pixels, command.x0, command.y0, command.x1, command.y1, command.thickness, command.color, command.layer, command.priority, command.seq);
+				break;
+			case BlitterCommandType::Blit:
+				rasterizeFrameBufferBlit(pixels, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.color, command.layer, command.priority, command.seq);
+				break;
+			case BlitterCommandType::CopyRect:
+				copyFrameBufferRect(
+					pixels,
+					command.srcX,
+					command.srcY,
+					command.width,
+					command.height,
+					static_cast<i32>(std::round(command.dstX)),
+					static_cast<i32>(std::round(command.dstY)),
+					command.layer,
+					command.priority,
+					command.seq
+				);
+				break;
+			case BlitterCommandType::GlyphRun:
+				if (command.backgroundColor.has_value()) {
+					for (const auto& glyph : command.glyphs) {
+						rasterizeFrameBufferFill(
+							pixels,
+							glyph.dstX,
+							glyph.dstY,
+							glyph.dstX + static_cast<f32>(glyph.advance),
+							glyph.dstY + static_cast<f32>(command.lineHeight),
+							*command.backgroundColor,
+							command.layer,
+							command.priority,
+							command.seq
+						);
+					}
+				}
+				for (const auto& glyph : command.glyphs) {
+					rasterizeFrameBufferBlit(pixels, glyph, glyph.dstX, glyph.dstY, 1.0f, 1.0f, false, false, command.color, command.layer, command.priority, command.seq);
+				}
+				break;
+			case BlitterCommandType::TileRun:
+				for (const auto& tile : command.tiles) {
+					rasterizeFrameBufferBlit(pixels, tile, tile.dstX, tile.dstY, 1.0f, 1.0f, false, false, VDP_BLITTER_WHITE, command.layer, command.priority, command.seq);
+				}
+				break;
+		}
+	}
+	markVramSlotDirty(frameBufferSlot, 0u, frameBufferSlot.surfaceHeight);
+	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+}
+
+void VDP::ensureFrameBufferPriorityCapacity(size_t pixelCount) {
+	if (m_frameBufferPriorityLayer.size() == pixelCount) {
+		return;
+	}
+	m_frameBufferPriorityLayer.resize(pixelCount);
+	m_frameBufferPriorityValue.resize(pixelCount);
+	m_frameBufferPrioritySeq.resize(pixelCount);
+}
+
+void VDP::resetFrameBufferPriority() {
+	std::fill(m_frameBufferPriorityLayer.begin(), m_frameBufferPriorityLayer.end(), static_cast<u8>(Layer2D::World));
+	std::fill(m_frameBufferPriorityValue.begin(), m_frameBufferPriorityValue.end(), -std::numeric_limits<f32>::infinity());
+	std::fill(m_frameBufferPrioritySeq.begin(), m_frameBufferPrioritySeq.end(), 0u);
+}
+
+void VDP::fillFrameBuffer(std::vector<u8>& pixels, const FrameBufferColor& color) {
+	for (size_t index = 0; index < pixels.size(); index += 4u) {
+		pixels[index + 0u] = color.r;
+		pixels[index + 1u] = color.g;
+		pixels[index + 2u] = color.b;
+		pixels[index + 3u] = color.a;
+	}
+}
+
+void VDP::blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a, Layer2D layer, f32 priority, u32 seq) {
+	if (a == 0u) {
+		return;
+	}
+	const size_t pixelIndex = index >> 2u;
+	const auto currentLayer = static_cast<Layer2D>(m_frameBufferPriorityLayer[pixelIndex]);
+	if (layer < currentLayer) {
+		return;
+	}
+	if (layer == currentLayer) {
+		const f32 currentPriority = m_frameBufferPriorityValue[pixelIndex];
+		if (priority < currentPriority) {
+			return;
+		}
+		if (priority == currentPriority && seq < m_frameBufferPrioritySeq[pixelIndex]) {
+			return;
+		}
+	}
+	if (a == 255u) {
+		pixels[index + 0u] = r;
+		pixels[index + 1u] = g;
+		pixels[index + 2u] = b;
+		pixels[index + 3u] = 255u;
+		m_frameBufferPriorityLayer[pixelIndex] = static_cast<u8>(layer);
+		m_frameBufferPriorityValue[pixelIndex] = priority;
+		m_frameBufferPrioritySeq[pixelIndex] = seq;
+		return;
+	}
+	const u32 inverse = 255u - a;
+	pixels[index + 0u] = static_cast<u8>(((static_cast<u32>(r) * a) + (static_cast<u32>(pixels[index + 0u]) * inverse) + 127u) / 255u);
+	pixels[index + 1u] = static_cast<u8>(((static_cast<u32>(g) * a) + (static_cast<u32>(pixels[index + 1u]) * inverse) + 127u) / 255u);
+	pixels[index + 2u] = static_cast<u8>(((static_cast<u32>(b) * a) + (static_cast<u32>(pixels[index + 2u]) * inverse) + 127u) / 255u);
+	pixels[index + 3u] = static_cast<u8>(a + ((static_cast<u32>(pixels[index + 3u]) * inverse) + 127u) / 255u);
+	m_frameBufferPriorityLayer[pixelIndex] = static_cast<u8>(layer);
+	m_frameBufferPriorityValue[pixelIndex] = priority;
+	m_frameBufferPrioritySeq[pixelIndex] = seq;
+}
+
+void VDP::rasterizeFrameBufferFill(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
+	const i32 frameBufferWidth = static_cast<i32>(m_frameBufferWidth);
+	const i32 frameBufferHeight = static_cast<i32>(m_frameBufferHeight);
+	i32 left = static_cast<i32>(std::round(x0));
+	i32 top = static_cast<i32>(std::round(y0));
+	i32 right = static_cast<i32>(std::round(x1));
+	i32 bottom = static_cast<i32>(std::round(y1));
+	if (right < left) {
+		std::swap(left, right);
+	}
+	if (bottom < top) {
+		std::swap(top, bottom);
+	}
+	left = std::max(0, left);
+	top = std::max(0, top);
+	right = std::min(frameBufferWidth, right);
+	bottom = std::min(frameBufferHeight, bottom);
+	for (i32 y = top; y < bottom; ++y) {
+		size_t index = (static_cast<size_t>(y) * static_cast<size_t>(frameBufferWidth) + static_cast<size_t>(left)) * 4u;
+		for (i32 x = left; x < right; ++x) {
+			blendFrameBufferPixel(pixels, index, color.r, color.g, color.b, color.a, layer, priority, seq);
+			index += 4u;
+		}
+	}
+}
+
+void VDP::rasterizeFrameBufferLine(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, f32 thicknessValue, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
+	const i32 frameBufferWidth = static_cast<i32>(m_frameBufferWidth);
+	const i32 frameBufferHeight = static_cast<i32>(m_frameBufferHeight);
+	i32 currentX = static_cast<i32>(std::round(x0));
+	i32 currentY = static_cast<i32>(std::round(y0));
+	const i32 targetX = static_cast<i32>(std::round(x1));
+	const i32 targetY = static_cast<i32>(std::round(y1));
+	const i32 dx = std::abs(targetX - currentX);
+	const i32 dy = std::abs(targetY - currentY);
+	const i32 sx = currentX < targetX ? 1 : -1;
+	const i32 sy = currentY < targetY ? 1 : -1;
+	i32 err = dx - dy;
+	i32 thickness = static_cast<i32>(std::round(thicknessValue));
+	if (thickness == 0) {
+		thickness = 1;
+	}
+	while (true) {
+		const i32 half = thickness >> 1;
+		for (i32 yy = currentY - half; yy < currentY - half + thickness; ++yy) {
+			if (yy < 0 || yy >= frameBufferHeight) {
+				continue;
+			}
+			for (i32 xx = currentX - half; xx < currentX - half + thickness; ++xx) {
+				if (xx < 0 || xx >= frameBufferWidth) {
+					continue;
+				}
+				const size_t index = (static_cast<size_t>(yy) * static_cast<size_t>(frameBufferWidth) + static_cast<size_t>(xx)) * 4u;
+				blendFrameBufferPixel(pixels, index, color.r, color.g, color.b, color.a, layer, priority, seq);
+			}
+		}
+		if (currentX == targetX && currentY == targetY) {
+			return;
+		}
+		const i32 e2 = err << 1;
+		if (e2 > -dy) {
+			err -= dy;
+			currentX += sx;
+		}
+		if (e2 < dx) {
+			err += dx;
+			currentY += sy;
+		}
+	}
+}
+
+void VDP::rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
+	const i32 frameBufferWidth = static_cast<i32>(m_frameBufferWidth);
+	const i32 frameBufferHeight = static_cast<i32>(m_frameBufferHeight);
+	const auto& sourceSlot = getVramSlotBySurfaceId(source.surfaceId);
+	const auto& sourcePixels = sourceSlot.cpuReadback;
+	const size_t sourceStride = static_cast<size_t>(sourceSlot.surfaceWidth) * 4u;
+	i32 dstW = static_cast<i32>(std::round(static_cast<f32>(source.width) * scaleX));
+	i32 dstH = static_cast<i32>(std::round(static_cast<f32>(source.height) * scaleY));
+	if (dstW == 0) {
+		dstW = 1;
+	}
+	if (dstH == 0) {
+		dstH = 1;
+	}
+	const i32 dstX = static_cast<i32>(std::round(dstXValue));
+	const i32 dstY = static_cast<i32>(std::round(dstYValue));
+	for (i32 y = 0; y < dstH; ++y) {
+		const i32 targetY = dstY + y;
+		if (targetY < 0 || targetY >= frameBufferHeight) {
+			continue;
+		}
+		const i32 srcY = flipV
+			? static_cast<i32>(source.height) - 1 - ((y * static_cast<i32>(source.height)) / dstH)
+			: ((y * static_cast<i32>(source.height)) / dstH);
+		for (i32 x = 0; x < dstW; ++x) {
+			const i32 targetX = dstX + x;
+			if (targetX < 0 || targetX >= frameBufferWidth) {
+				continue;
+			}
+			const i32 srcX = flipH
+				? static_cast<i32>(source.width) - 1 - ((x * static_cast<i32>(source.width)) / dstW)
+				: ((x * static_cast<i32>(source.width)) / dstW);
+			const uint32_t sampleX = source.srcX + static_cast<uint32_t>(srcX);
+			const uint32_t sampleY = source.srcY + static_cast<uint32_t>(srcY);
+			if (sampleX >= sourceSlot.surfaceWidth || sampleY >= sourceSlot.surfaceHeight) {
+				continue;
+			}
+			const size_t srcIndex = (static_cast<size_t>(sampleY) * sourceStride) + (static_cast<size_t>(sampleX) * 4u);
+			const u8 srcA = sourcePixels[srcIndex + 3u];
+			if (srcA == 0u) {
+				continue;
+			}
+			const u8 outA = static_cast<u8>((static_cast<u32>(srcA) * static_cast<u32>(color.a) + 127u) / 255u);
+			const u8 outR = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 0u]) * static_cast<u32>(color.r) + 127u) / 255u);
+			const u8 outG = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 1u]) * static_cast<u32>(color.g) + 127u) / 255u);
+			const u8 outB = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 2u]) * static_cast<u32>(color.b) + 127u) / 255u);
+			const size_t dstIndex = (static_cast<size_t>(targetY) * static_cast<size_t>(frameBufferWidth) + static_cast<size_t>(targetX)) * 4u;
+			blendFrameBufferPixel(pixels, dstIndex, outR, outG, outB, outA, layer, priority, seq);
+		}
+	}
+}
+
+void VDP::copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 priority, u32 seq) {
+	const size_t frameBufferWidth = static_cast<size_t>(m_frameBufferWidth);
+	const size_t rowBytes = static_cast<size_t>(width) * 4u;
+	const bool overlapping =
+		dstX < srcX + width
+		&& dstX + width > srcX
+		&& dstY < srcY + height
+		&& dstY + height > srcY;
+	const i32 startRow = overlapping && dstY > srcY ? height - 1 : 0;
+	const i32 endRow = overlapping && dstY > srcY ? -1 : height;
+	const i32 step = overlapping && dstY > srcY ? -1 : 1;
+	for (i32 row = startRow; row != endRow; row += step) {
+		const size_t sourceIndex = (static_cast<size_t>(srcY + row) * frameBufferWidth + static_cast<size_t>(srcX)) * 4u;
+		const size_t targetIndex = (static_cast<size_t>(dstY + row) * frameBufferWidth + static_cast<size_t>(dstX)) * 4u;
+		std::memmove(pixels.data() + targetIndex, pixels.data() + sourceIndex, rowBytes);
+		const size_t targetPixel = (static_cast<size_t>(dstY + row) * frameBufferWidth) + static_cast<size_t>(dstX);
+		for (i32 col = 0; col < width; ++col) {
+			const size_t pixelIndex = targetPixel + static_cast<size_t>(col);
+			m_frameBufferPriorityLayer[pixelIndex] = static_cast<u8>(layer);
+			m_frameBufferPriorityValue[pixelIndex] = priority;
+			m_frameBufferPrioritySeq[pixelIndex] = seq;
+		}
+	}
 }
 
 void VDP::scheduleNextService(int64_t nowCycles) {
@@ -1250,24 +1572,15 @@ void VDP::scheduleNextService(int64_t nowCycles) {
 
 void VDP::clearActiveFrame() {
 	recycleBlitterBuffers(m_activeFrame.queue);
-	recycleBlitterBuffers(m_execution.queue);
-	m_execution.queue.clear();
-	m_execution.pending = false;
-	m_hostOutputToken = 0u;
 	resetSubmittedFrameSlot(m_activeFrame);
 }
 
 VDP::VdpHostOutput VDP::readHostOutput() {
 	VdpHostOutput output;
-	if (m_execution.pending) {
-		output.executionToken = m_hostOutputToken;
-		output.executionQueue = &m_execution.queue;
-	}
-	output.executionBillboards = &m_activeFrame.billboards;
-	output.executionWritesFrameBuffer = m_activeFrame.hasFrameBufferCommands;
 	output.ditherType = m_committedDitherType;
-	output.xfViewMatrixWords = &m_xf.viewMatrixWords;
-	output.xfProjectionMatrixWords = &m_xf.projectionMatrixWords;
+	output.xfMatrixWords = &m_committedXf.matrixWords;
+	output.xfViewMatrixIndex = m_committedXf.viewMatrixIndex;
+	output.xfProjectionMatrixIndex = m_committedXf.projectionMatrixIndex;
 	output.skyboxEnabled = m_sbx.visibleEnabled();
 	output.skyboxSamples = &m_committedSkyboxSamples;
 	output.billboards = &m_committedBillboards;
@@ -1278,23 +1591,11 @@ VDP::VdpHostOutput VDP::readHostOutput() {
 	return output;
 }
 
-void VDP::completeHostExecution(const VdpHostOutput& output) {
-	if (!m_execution.pending || output.executionToken != m_hostOutputToken || output.executionQueue != &m_execution.queue) {
-		throw BMSX_RUNTIME_ERROR("[VDP] no active frame execution pending.");
-	}
-	if (output.executionWritesFrameBuffer) {
-		invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
-	}
-	m_execution.pending = false;
-	m_activeFrame.ready = true;
-	recycleBlitterBuffers(m_execution.queue);
-	m_execution.queue.clear();
-	m_hostOutputToken = 0u;
-	refreshSubmitBusyStatus();
-}
-
 void VDP::commitActiveVisualState() {
 	m_committedDitherType = m_activeFrame.ditherType;
+	m_committedXf.matrixWords = m_activeFrame.xf.matrixWords;
+	m_committedXf.viewMatrixIndex = m_activeFrame.xf.viewMatrixIndex;
+	m_committedXf.projectionMatrixIndex = m_activeFrame.xf.projectionMatrixIndex;
 	m_sbx.presentFrame(m_activeFrame.skyboxControl, m_activeFrame.skyboxFaceWords);
 	std::swap(m_committedSkyboxSamples, m_activeFrame.skyboxSamples);
 	m_committedBillboards.swap(m_activeFrame.billboards);
@@ -1609,6 +1910,9 @@ void VDP::latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, 
 
 void VDP::commitLiveVisualState() {
 	m_committedDitherType = m_liveDitherType;
+	m_committedXf.matrixWords = m_xf.matrixWords;
+	m_committedXf.viewMatrixIndex = m_xf.viewMatrixIndex;
+	m_committedXf.projectionMatrixIndex = m_xf.projectionMatrixIndex;
 	m_committedBillboards.clear();
 	m_sbx.presentLiveState();
 	resolveSkyboxFrameSamples(m_sbx.visibleControl(), m_sbx.visibleFaceWords(), m_committedSkyboxSamples);
@@ -1706,6 +2010,9 @@ void VDP::initializeRegisters() {
 	m_pmu.reset();
 	syncPmuRegisterWindow();
 	m_xf.reset();
+	m_committedXf.matrixWords = m_xf.matrixWords;
+	m_committedXf.viewMatrixIndex = m_xf.viewMatrixIndex;
+	m_committedXf.projectionMatrixIndex = m_xf.projectionMatrixIndex;
 	m_liveDitherType = dither;
 	m_committedDitherType = dither;
 	m_sbx.reset();
@@ -1731,6 +2038,9 @@ void VDP::initializeVramSurfaces() {
 	resetQueuedFrameState();
 	m_sbx.reset();
 	syncSbxRegisterWindow();
+	m_committedXf.matrixWords = m_xf.matrixWords;
+	m_committedXf.viewMatrixIndex = m_xf.viewMatrixIndex;
+	m_committedXf.projectionMatrixIndex = m_xf.projectionMatrixIndex;
 	m_committedDitherType = m_liveDitherType;
 	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, VRAM_STAGING_BASE};
 	fillVramGarbageScratch(m_vramStaging.data(), m_vramStaging.size(), stream);

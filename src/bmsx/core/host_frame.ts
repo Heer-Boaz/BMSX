@@ -2,8 +2,10 @@ import { consoleCore } from './console';
 import { hostOverlayMenu } from './host_overlay_menu';
 import * as workbenchMode from '../ide/workbench/mode';
 import type { Runtime } from '../machine/runtime/runtime';
+import { createRuntimeFrameStepResult, runRuntimeFrameStepInto } from '../machine/runtime/frame/step';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;
+const hostFrameStepResult = createRuntimeFrameStepResult();
 
 export function runConsoleHostFrame(runtime: Runtime, currentTime: number, runReady: boolean): void {
 	const console = consoleCore;
@@ -39,10 +41,9 @@ export function runConsoleHostFrame(runtime: Runtime, currentTime: number, runRe
 			} else if (!runReady) {
 				runtime.frameScheduler.clearQueuedTime();
 			} else {
-				const previousTickSequence = runtime.frameScheduler.lastTickSequence;
 				console.deltatime = runtime.timing.frameDurationMs;
-				runtime.frameScheduler.run(hostDeltaMs);
-				screen.syncAfterRuntimeUpdate(previousTickSequence);
+				runRuntimeFrameStepInto(hostFrameStepResult, runtime, hostDeltaMs);
+				screen.syncAfterRuntimeUpdate(hostFrameStepResult.previousTickSequence);
 			}
 			if (hostOverlayQueued) {
 				screen.requestHeldPresentation();

@@ -2,7 +2,6 @@
 
 #include "machine/runtime/runtime.h"
 #include "machine/scheduler/device.h"
-#include "render/vdp/blitter/execute.h"
 
 #include <algorithm>
 #include <limits>
@@ -20,9 +19,7 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 			runtime.vblank.handleEndTimer(runtime);
 			return;
 		case TimerKindDeviceService:
-			if (auto* renderVdp = runtime.machine.runDeviceService(payload); renderVdp != nullptr) {
-				drainReadyVdpExecution(*renderVdp);
-			}
+			runtime.machine.runDeviceService(payload);
 			return;
 		default:
 			throw BMSX_RUNTIME_ERROR("unknown timer kind " + std::to_string(kind) + ".");

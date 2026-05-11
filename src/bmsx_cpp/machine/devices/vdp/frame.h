@@ -3,6 +3,7 @@
 #include "machine/devices/vdp/bbu.h"
 #include "machine/devices/vdp/blitter.h"
 #include "machine/devices/vdp/sbx.h"
+#include "machine/devices/vdp/xf.h"
 #include <vector>
 
 namespace bmsx {
@@ -17,6 +18,7 @@ struct VdpSubmittedFrame {
 	int cost = 0;
 	int workRemaining = 0;
 	i32 ditherType = 0;
+	VdpXfUnit xf;
 	u32 skyboxControl = 0;
 	VdpSbxUnit::FaceWords skyboxFaceWords{};
 	VdpSkyboxSamples skyboxSamples{};
@@ -27,11 +29,6 @@ struct VdpBuildingFrame {
 	std::vector<VdpBbuBillboardEntry> billboards;
 	bool open = false;
 	int cost = 0;
-};
-
-struct VdpExecutionState {
-	std::vector<VdpBlitterCommand> queue;
-	bool pending = false;
 };
 
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame);

@@ -5,7 +5,7 @@ import type { IrqControllerState } from '../../devices/irq/controller';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/controller';
 import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/vdp';
-import { VDP_XF_MATRIX_WORDS } from '../../devices/vdp/xf';
+import { VDP_XF_MATRIX_COUNT, VDP_XF_MATRIX_REGISTER_WORDS } from '../../devices/vdp/xf';
 import type { MemorySaveState } from '../../memory/memory';
 import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
 import type {
@@ -68,6 +68,13 @@ function decodeU32FixedArray(value: unknown, label: string, length: number): num
 		out[index] = word >>> 0;
 	}
 	return out;
+}
+
+function requireBoundedU32(value: unknown, label: string, min: number, max: number): number {
+	if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+		throw new Error(`${label} must be a u32 value between ${min} and ${max}.`);
+	}
+	return value >>> 0;
 }
 
 function encodeCameraState(state: CameraWireState): CameraWireState {
@@ -331,8 +338,9 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 function encodeVdpState(state: VdpState): VdpState {
 	return {
 		xf: {
-			viewMatrixWords: state.xf.viewMatrixWords,
-			projectionMatrixWords: state.xf.projectionMatrixWords,
+			matrixWords: state.xf.matrixWords,
+			viewMatrixIndex: state.xf.viewMatrixIndex,
+			projectionMatrixIndex: state.xf.projectionMatrixIndex,
 		},
 		skyboxControl: state.skyboxControl,
 		skyboxFaceWords: state.skyboxFaceWords,
@@ -349,8 +357,9 @@ function decodeVdpState(value: unknown, label: string): VdpState {
 	const xf = requireObject(requireObjectKey(object, 'xf', label, 'machine.vdp.xf'), 'machine.vdp.xf');
 	return {
 		xf: {
-			viewMatrixWords: decodeU32FixedArray(requireObjectKey(xf, 'viewMatrixWords', 'machine.vdp.xf', 'machine.vdp.xf.viewMatrixWords'), 'machine.vdp.xf.viewMatrixWords', VDP_XF_MATRIX_WORDS),
-			projectionMatrixWords: decodeU32FixedArray(requireObjectKey(xf, 'projectionMatrixWords', 'machine.vdp.xf', 'machine.vdp.xf.projectionMatrixWords'), 'machine.vdp.xf.projectionMatrixWords', VDP_XF_MATRIX_WORDS),
+			matrixWords: decodeU32FixedArray(requireObjectKey(xf, 'matrixWords', 'machine.vdp.xf', 'machine.vdp.xf.matrixWords'), 'machine.vdp.xf.matrixWords', VDP_XF_MATRIX_REGISTER_WORDS),
+			viewMatrixIndex: requireBoundedU32(requireObjectKey(xf, 'viewMatrixIndex', 'machine.vdp.xf', 'machine.vdp.xf.viewMatrixIndex'), 'machine.vdp.xf.viewMatrixIndex', 0, VDP_XF_MATRIX_COUNT - 1),
+			projectionMatrixIndex: requireBoundedU32(requireObjectKey(xf, 'projectionMatrixIndex', 'machine.vdp.xf', 'machine.vdp.xf.projectionMatrixIndex'), 'machine.vdp.xf.projectionMatrixIndex', 0, VDP_XF_MATRIX_COUNT - 1),
 		},
 		skyboxControl: requireObjectKey(object, 'skyboxControl', label, 'machine.vdp.skyboxControl') as number,
 		skyboxFaceWords: requireObjectKey(object, 'skyboxFaceWords', label, 'machine.vdp.skyboxFaceWords') as number[],

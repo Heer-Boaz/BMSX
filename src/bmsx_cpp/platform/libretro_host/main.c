@@ -219,6 +219,9 @@ static float g_geom_aspect = 0.0f;
 static bool g_geom_dirty = false;
 static uint64_t g_frame_usec = BMSX_HOST_DEFAULT_FRAME_USEC;
 static uint64_t g_frame_ns = BMSX_HOST_DEFAULT_FRAME_NS;
+static uint64_t g_max_run_frames = 0;
+static uint64_t g_run_frame_count = 0;
+static bool g_audio_disabled = false;
 static struct retro_frame_time_callback g_frame_time_cb = {0};
 static bool g_has_frame_time_cb = false;
 static unsigned g_last_video_w = 0;
@@ -2735,6 +2738,9 @@ static void audio_shutdown(void) {
 }
 
 static void audio_sample_cb(int16_t left, int16_t right) {
+	if (g_audio_disabled) {
+		return;
+	}
 	const size_t idx = g_audio_sample_buf_frames * g_audio_channels;
 	g_audio_sample_buf[idx] = left;
 	g_audio_sample_buf[idx + 1] = right;
@@ -2746,6 +2752,9 @@ static void audio_sample_cb(int16_t left, int16_t right) {
 }
 
 static size_t audio_batch_cb(const int16_t* data, size_t frames) {
+	if (g_audio_disabled) {
+		return frames;
+	}
 	audio_flush_sample_buffer();
 	audio_push_frames(data, frames);
 	return frames;
@@ -3665,8 +3674,8 @@ static void load_core(LibretroCore* core, const char* path) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./bmsx_libretro.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--input-debug]\n"
-			"  %s --core ./bmsx_libretro.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--input-debug]\n",
+			"  %s --core ./bmsx_libretro.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--input-debug] [--no-audio] [--max-frames N]\n"
+			"  %s --core ./bmsx_libretro.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--input-debug] [--no-audio] [--max-frames N]\n",
 			argv0, argv0);
 	exit(2);
 }
@@ -3676,6 +3685,19 @@ static const char* required_arg(int argc, char** argv, int* index) {
 		usage(argv[0]);
 	}
 	return argv[++(*index)];
+}
+
+static uint64_t parse_positive_u64_arg(const char* text, const char* option_name) {
+	if (!text || !text[0]) {
+		die("%s expects a positive integer", option_name);
+	}
+	errno = 0;
+	char* end = NULL;
+	unsigned long long value = strtoull(text, &end, 10);
+	if (errno != 0 || end == text || *end != '\0' || value == 0ull) {
+		die("%s expects a positive integer, got '%s'", option_name, text);
+	}
+	return (uint64_t)value;
 }
 
 int main(int argc, char** argv) {
@@ -3718,6 +3740,14 @@ int main(int argc, char** argv) {
 		}
 		if (strcmp(argv[i], "--input-debug") == 0) {
 			g_input_debug = true;
+			continue;
+		}
+		if (strcmp(argv[i], "--no-audio") == 0) {
+			g_audio_disabled = true;
+			continue;
+		}
+		if (strcmp(argv[i], "--max-frames") == 0) {
+			g_max_run_frames = parse_positive_u64_arg(required_arg(argc, argv, &i), "--max-frames");
 			continue;
 		}
 		if (strcmp(argv[i], "--rom-folder") == 0) {
@@ -3839,13 +3869,17 @@ int main(int argc, char** argv) {
 	if (audio_rate <= 0) {
 		die("Invalid audio sample rate: %.2f", av.timing.sample_rate);
 	}
-	audio_init(audio_rate);
+	if (g_audio_disabled) {
+		fprintf(stderr, "[libretro-host] audio: disabled\n");
+	} else {
+		audio_init(audio_rate);
+	}
 	g_frame_usec = frame_time_usec_from_scaled(ufps_scaled);
 	core.bmsx_set_frame_time_usec((retro_usec_t)g_frame_usec);
 	g_frame_ns = frame_time_ns_from_scaled(ufps_scaled);
 	input_timeline_bind_keyboard_event(core_keyboard_event);
-	if (use_input_timeline) {
-		input_timeline_configure((input_timeline && input_timeline[0]) ? input_timeline : NULL,
+	if (use_input_timeline || (rom_folder && rom_folder[0]) || (!no_game && game_path && game_path[0])) {
+		input_timeline_configure(use_input_timeline ? input_timeline : NULL,
 				(rom_folder && rom_folder[0]) ? rom_folder : NULL, game_path, g_frame_usec);
 	}
 	const bool unpaced_timeline = input_timeline_is_active();
@@ -3883,8 +3917,14 @@ int main(int argc, char** argv) {
 			input_timeline_tick_frame();
 		}
 		core.retro_run();
+		++g_run_frame_count;
 		if (core_cart_program_active() && input_timeline_should_auto_quit(kInputTimelineAutoQuitGraceFrames)) {
 			fprintf(stderr, "[libretro-host] input timeline completed, exiting\n");
+			g_should_quit = 1;
+		}
+		if (g_max_run_frames > 0 && g_run_frame_count >= g_max_run_frames) {
+			fprintf(stderr, "[libretro-host] max frames reached (%llu), exiting\n",
+					(unsigned long long)g_run_frame_count);
 			g_should_quit = 1;
 		}
 		g_drop_video = false;
@@ -3903,7 +3943,9 @@ int main(int argc, char** argv) {
 
 	core.retro_unload_game();
 	core.retro_deinit();
-	audio_shutdown();
+	if (!g_audio_disabled) {
+		audio_shutdown();
+	}
 	input_timeline_shutdown();
 
 	for (size_t i = 0; i < g_input_dev_count; ++i) {

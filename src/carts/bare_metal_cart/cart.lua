@@ -17,10 +17,11 @@ local vdp_pkt_reg1<const> = 0x02000000 -- Register packet: lower 16 bits = regis
 local vdp_pkt_regn<const> = 0x03000000 -- Register packet with N registers: lower 16 bits = starting register index, upper 8 bits = number of registers to set (data words must be in register order)
 local vdp_pkt_billboard<const> = 0x11000000 -- BILLBOARD packet: BBU command-stream packet, followed by fixed hardware words
 local vdp_pkt_skybox<const> = 0x12000000 -- SKYBOX packet: SBX command-stream packet, followed by control and six face-source records
-local vdp_pkt_xf<const> = 0x13000000 -- XF packet: raw Q16.16 view and projection matrices consumed by 3D render passes
+local vdp_pkt_xf<const> = 0x13000000 -- XF packet: register-file command for VDP transform state
 local vdp_billboard_payload_words<const> = 11 -- BILLBOARD payload: layer, priority, slot, uv, wh, x, y, z, size, color, control
 local vdp_skybox_payload_words<const> = 31 -- SKYBOX payload: control plus six faces of slot/u/v/w/h
-local vdp_xf_payload_words<const> = 32 -- XF payload: 16 view matrix words followed by 16 projection matrix words
+local vdp_xf_matrix_payload_words<const> = 17 -- XF register write: first register index plus 16 matrix words
+local vdp_xf_select_payload_words<const> = 3 -- XF register write: first register index plus two selected matrix slots
 
 local vdp_cmd_clear<const> = 1 -- Clear command: clears a rectangle to the current background color, parameters are in registers (see draw_frame function below)
 local vdp_cmd_fill_rect<const> = 2 -- Fill rectangle command: fills a rectangle with the current draw color, parameters are in registers (see draw_frame function below)
@@ -40,6 +41,12 @@ local vdp_layer_world<const> = 0 -- World layer index (the main layer used for d
 local vdp_sbx_control_enable<const> = 1 -- SBX control bit: enable the live skybox face state when latched into a frame
 local draw_ctrl_parallax_half<const> = 0x00800000 -- DRAW_CTRL: PMU bank 0, parallax weight +0.5 in signed Q8.8
 local q16_one<const> = 0x00010000 -- Q16.16 value 1.0, used directly in VDP command words
+local xf_matrix_words<const> = 16 -- XF matrix register span
+local xf_view_matrix<const> = 0 -- XF matrix slot selected as the view transform
+local xf_proj_matrix<const> = 1 -- XF matrix slot selected as the projection transform
+local xf_view_matrix_register<const> = xf_view_matrix * xf_matrix_words -- First word of XF matrix slot 0
+local xf_proj_matrix_register<const> = xf_proj_matrix * xf_matrix_words -- First word of XF matrix slot 1
+local xf_select_register<const> = 128 -- XF register selecting view/projection matrix slots
 local xf_yaw_step<const> = 0.035 -- Radians per frame for the raw XF view matrix
 local xf_proj_x<const> = 0x00016f32 -- Perspective focal-X in Q16.16 for 256x212 aspect
 local xf_proj_y<const> = 0x0001bb68 -- Perspective focal-Y in Q16.16, approximately cot(60deg / 2)
@@ -168,7 +175,8 @@ local draw_frame<const> = function()
 	local sw<const> = ((s * q16_one) // 1) & 0xffffffff
 	local nw<const> = ((-s * q16_one) // 1) & 0xffffffff
 
-	mem[wp], wp = vdp_pkt_xf | (vdp_xf_payload_words << 16), wp + 4 -- XF packet: raw Q16.16 view matrix followed by projection matrix
+	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4 -- XF register write: matrix slot 0
+	mem[wp], wp = xf_view_matrix_register, wp + 4
 	mem[wp], wp = cw, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = nw, wp + 4
@@ -185,6 +193,8 @@ local draw_frame<const> = function()
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4 -- XF register write: matrix slot 1
+	mem[wp], wp = xf_proj_matrix_register, wp + 4
 	mem[wp], wp = xf_proj_x, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 0, wp + 4
@@ -201,6 +211,10 @@ local draw_frame<const> = function()
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = xf_proj_zw, wp + 4
 	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = vdp_pkt_xf | (vdp_xf_select_payload_words << 16), wp + 4 -- XF register write: select transform slots
+	mem[wp], wp = xf_select_register, wp + 4
+	mem[wp], wp = xf_view_matrix, wp + 4
+	mem[wp], wp = xf_proj_matrix, wp + 4
 
 	mem[wp], wp = vdp_pkt_skybox | (vdp_skybox_payload_words << 16), wp + 4 -- SBX SKYBOX packet: live face words are latched and validated when the frame is sealed
 	mem[wp], wp = vdp_sbx_control_enable, wp + 4 -- Enable the six-face skybox for this frame
@@ -310,8 +324,8 @@ local draw_frame<const> = function()
 	mem[wp], wp = sprite_y << 16, wp + 4 -- Set the destination Y coordinate for the sprite
 	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_blit, wp + 4 -- Issue the blit command to draw the sprite
 
-	local billboard_shift<const> = ((frame % 64) - 32) * 1024 -- Visible Q16.16 animation term around the active 3D camera center
-	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4 -- BBU BILLBOARD packet: fixed-point position and size in the active billboard coordinate space
+	local billboard_shift<const> = ((frame % 64) - 32) * 1024 -- Visible Q16.16 animation term in the selected XF view space
+	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4 -- BBU BILLBOARD packet: fixed-point position and size under the selected XF matrices
 	mem[wp], wp = vdp_layer_world, wp + 4 -- Billboard layer
 	mem[wp], wp = 32, wp + 4 -- Billboard priority
 	mem[wp], wp = vdp_slot_primary, wp + 4 -- Texture slot sampled by the billboard
@@ -319,8 +333,8 @@ local draw_frame<const> = function()
 	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4 -- Source W/H packed as two u16 words
 	mem[wp], wp = 0xffff0000 + billboard_shift, wp + 4 -- X = -1.0 plus a small Q16.16 animation offset
 	mem[wp], wp = 0x00006000, wp + 4 -- Y = +0.375 in signed Q16.16
-	mem[wp], wp = 0xfffc0000, wp + 4 -- Z = -4.0 in signed Q16.16, in front of the perspective camera
-	mem[wp], wp = 0x0000c000, wp + 4 -- Size = 0.75 in unsigned Q16.16 under the active camera
+	mem[wp], wp = 0xfffc0000, wp + 4 -- Z = -4.0 in signed Q16.16, in front of the selected perspective transform
+	mem[wp], wp = 0x0000c000, wp + 4 -- Size = 0.75 in unsigned Q16.16 under the selected XF matrices
 	mem[wp], wp = 0xffffd060, wp + 4 -- AARRGGBB billboard modulation color
 	mem[wp], wp = 0, wp + 4 -- Reserved BBU control word
 
@@ -333,7 +347,7 @@ local draw_frame<const> = function()
 	mem[wp], wp = 0x00010000 - billboard_shift, wp + 4 -- X = +1.0 minus the same Q16.16 animation offset
 	mem[wp], wp = 0xffffe000, wp + 4 -- Y = -0.125 in signed Q16.16
 	mem[wp], wp = 0xfffc8000, wp + 4 -- Z = -3.5 in signed Q16.16
-	mem[wp], wp = 0x0000a000, wp + 4 -- Size = 0.625 in unsigned Q16.16 under the active camera
+		mem[wp], wp = 0x0000a000, wp + 4 -- Size = 0.625 in unsigned Q16.16 under the selected XF matrices
 	mem[wp], wp = 0xff60e6ff, wp + 4
 	mem[wp], wp = 0, wp + 4
 

@@ -12,6 +12,7 @@ void resetSubmittedFrameSlot(VdpSubmittedFrame& frame) {
 	frame.cost = 0;
 	frame.workRemaining = 0;
 	frame.ditherType = 0;
+	frame.xf.reset();
 	frame.skyboxControl = 0;
 	frame.skyboxFaceWords.fill(0u);
 }

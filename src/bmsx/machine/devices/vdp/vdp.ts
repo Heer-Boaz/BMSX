@@ -129,14 +129,13 @@ import {
 	VDP_BBU_PACKET_PAYLOAD_WORDS,
 } from './bbu';
 import {
-	VDP_XF_MATRIX_WORDS,
+	VDP_XF_REGISTER_WORDS,
 	VDP_XF_PACKET_KIND,
-	VDP_XF_PACKET_PAYLOAD_WORDS,
 	VdpXfUnit,
 	type VdpXfState,
 } from './xf';
 import { decodeSignedQ16_16, decodeUnsignedQ16_16 } from './fixed_point';
-import { isVdpUnitPacketHeaderValid } from './packet';
+import { isVdpUnitPacketHeaderValid, vdpUnitPacketHasFlags, vdpUnitPacketPayloadWords } from './packet';
 import { packedHigh16, packedLow16 } from '../../common/word';
 import {
 	VdpBlitterCommandBuffer,
@@ -144,16 +143,19 @@ import {
 	type VdpBlitterSurfaceSize,
 	type VdpResolvedBlitterSample,
 	VDP_BLITTER_FIFO_CAPACITY,
+	VDP_BLITTER_IMPLICIT_CLEAR,
 	VDP_BLITTER_OPCODE_BLIT,
 	VDP_BLITTER_OPCODE_CLEAR,
 	VDP_BLITTER_OPCODE_COPY_RECT,
 	VDP_BLITTER_OPCODE_DRAW_LINE,
 	VDP_BLITTER_OPCODE_FILL_RECT,
+	VDP_BLITTER_OPCODE_GLYPH_RUN,
+	VDP_BLITTER_OPCODE_TILE_RUN,
+	VDP_BLITTER_WHITE,
 	vdpColorAlphaByte,
 } from './blitter';
 import {
 	type VdpBuildingFrameState,
-	type VdpExecutionState,
 	type VdpSubmittedFrameState,
 	allocateSubmittedFrameSlot,
 	createResolvedBlitterSamples,
@@ -277,13 +279,10 @@ export type VdpSurfaceUploadSlot = {
 };
 
 type VdpHostOutputState = {
-	executionToken: number;
-	executionQueue: VdpBlitterCommandBuffer | null;
-	executionBillboards: VdpBbuFrameBuffer;
-	executionWritesFrameBuffer: boolean;
 	ditherType: number;
-	xfViewMatrixWords: ArrayLike<number>;
-	xfProjectionMatrixWords: ArrayLike<number>;
+	xfMatrixWords: ArrayLike<number>;
+	xfViewMatrixIndex: number;
+	xfProjectionMatrixIndex: number;
 	skyboxEnabled: boolean;
 	skyboxSamples: readonly VdpResolvedBlitterSample[];
 	billboards: VdpBbuFrameBuffer;
@@ -321,6 +320,7 @@ export class VDP implements VramWriteSink {
 	private readonly sbxPacketFaceWords = new Uint32Array(SKYBOX_FACE_WORD_COUNT);
 	private readonly sbxMmioFaceWords = new Uint32Array(SKYBOX_FACE_WORD_COUNT);
 	private readonly xf = new VdpXfUnit();
+	private readonly committedXf = new VdpXfUnit();
 	private readonly pmu = new VdpPmuUnit();
 	private readonly bbu = new VdpBbuUnit();
 	private liveDitherType = 0;
@@ -333,15 +333,13 @@ export class VDP implements VramWriteSink {
 		open: false,
 		cost: 0,
 	};
-	private readonly execution: VdpExecutionState = {
-		queue: new VdpBlitterCommandBuffer(),
-		pending: false,
-	};
-	private hostOutputToken = 0;
 	private committedBillboards: VdpBbuFrameBuffer = new VdpBbuFrameBuffer();
 	private committedSkyboxSamples = createResolvedBlitterSamples();
 	private activeFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
 	private pendingFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
+	private frameBufferPriorityLayer = new Uint8Array(0);
+	private frameBufferPriorityZ = new Float32Array(0);
+	private frameBufferPrioritySeq = new Uint32Array(0);
 	private readonly clippedRectScratchA = { width: 0, height: 0, area: 0 };
 	private readonly latchedSourceScratch: VdpBlitterSource = { surfaceId: 0, srcX: 0, srcY: 0, width: 0, height: 0 };
 	private readonly latchedGeometryScratch: VdpLatchedGeometry = { x0: 0, y0: 0, x1: 0, y1: 0 };
@@ -873,21 +871,7 @@ export class VDP implements VramWriteSink {
 				)) ? payloadEnd : -1;
 			}
 			case VDP_XF_PACKET_KIND: {
-				if (!isVdpUnitPacketHeaderValid(word, VDP_XF_PACKET_PAYLOAD_WORDS)) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-					return -1;
-				}
-				const byteCount = VDP_XF_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
-				const payloadEnd = cursor + byteCount;
-				if (payloadEnd > end) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-					return -1;
-				}
-				for (let offset = 0; offset < VDP_XF_MATRIX_WORDS; offset += 1) {
-					this.xf.viewMatrixWords[offset] = this.memory.readU32(cursor + offset * IO_WORD_SIZE);
-					this.xf.projectionMatrixWords[offset] = this.memory.readU32(cursor + (offset + VDP_XF_MATRIX_WORDS) * IO_WORD_SIZE);
-				}
-				return payloadEnd;
+				return this.consumeXfPacketFromMemory(word, cursor, end);
 			}
 			case VDP_SBX_PACKET_KIND: {
 				if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS)) {
@@ -911,6 +895,38 @@ export class VDP implements VramWriteSink {
 				this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return -1;
 		}
+	}
+
+	private consumeXfPacketFromMemory(word: number, cursor: number, end: number): number {
+		if (vdpUnitPacketHasFlags(word)) {
+			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			return -1;
+		}
+		const payloadWords = vdpUnitPacketPayloadWords(word);
+		if (payloadWords < 2) {
+			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			return -1;
+		}
+		const byteCount = payloadWords * IO_WORD_SIZE;
+		const payloadEnd = cursor + byteCount;
+		if (payloadEnd > end) {
+			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			return -1;
+		}
+		const firstRegister = this.memory.readU32(cursor);
+		const registerCount = payloadWords - 1;
+		if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
+			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+			return -1;
+		}
+		for (let offset = 0; offset < registerCount; offset += 1) {
+			const value = this.memory.readU32(cursor + (offset + 1) * IO_WORD_SIZE);
+			if (!this.xf.writeRegister(firstRegister + offset, value)) {
+				this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, value);
+				return -1;
+			}
+		}
+		return payloadEnd;
 	}
 
 	private consumeReplayPacketFromWords(word: number, cursor: number, wordCount: number): number {
@@ -961,15 +977,7 @@ export class VDP implements VramWriteSink {
 					this.vdpFifoStreamWords[cursor + 9],
 				)) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : -1;
 			case VDP_XF_PACKET_KIND:
-				if (!isVdpUnitPacketHeaderValid(word, VDP_XF_PACKET_PAYLOAD_WORDS) || cursor + VDP_XF_PACKET_PAYLOAD_WORDS > wordCount) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
-					return -1;
-				}
-				for (let offset = 0; offset < VDP_XF_MATRIX_WORDS; offset += 1) {
-					this.xf.viewMatrixWords[offset] = this.vdpFifoStreamWords[cursor + offset];
-					this.xf.projectionMatrixWords[offset] = this.vdpFifoStreamWords[cursor + offset + VDP_XF_MATRIX_WORDS];
-				}
-				return cursor + VDP_XF_PACKET_PAYLOAD_WORDS;
+				return this.consumeXfPacketFromWords(word, cursor, wordCount);
 			case VDP_SBX_PACKET_KIND:
 				if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
 					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
@@ -984,6 +992,32 @@ export class VDP implements VramWriteSink {
 				this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return -1;
 		}
+	}
+
+	private consumeXfPacketFromWords(word: number, cursor: number, wordCount: number): number {
+		if (vdpUnitPacketHasFlags(word)) {
+			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			return -1;
+		}
+		const payloadWords = vdpUnitPacketPayloadWords(word);
+		if (payloadWords < 2 || cursor + payloadWords > wordCount) {
+			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			return -1;
+		}
+		const firstRegister = this.vdpFifoStreamWords[cursor];
+		const registerCount = payloadWords - 1;
+		if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
+			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+			return -1;
+		}
+		for (let offset = 0; offset < registerCount; offset += 1) {
+			const value = this.vdpFifoStreamWords[cursor + offset + 1];
+			if (!this.xf.writeRegister(firstRegister + offset, value)) {
+				this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, value);
+				return -1;
+			}
+		}
+		return cursor + payloadWords;
 	}
 
 	private decodeReg1Packet(word: number): number {
@@ -1312,6 +1346,7 @@ export class VDP implements VramWriteSink {
 		frame.cost = 0;
 		frame.workRemaining = 0;
 		frame.ditherType = 0;
+		frame.xf.reset();
 		frame.skyboxControl = 0;
 		frame.skyboxFaceWords.fill(0);
 		frame.billboards.reset();
@@ -1321,6 +1356,7 @@ export class VDP implements VramWriteSink {
 		this.resetBuildFrameState();
 		this.clearActiveFrame();
 		this.committedBillboards.reset();
+		this.committedXf.reset();
 		this.pendingFrame.queue.reset();
 		this.pendingFrame.billboards.reset();
 		this.workCarry = 0;
@@ -1404,6 +1440,9 @@ export class VDP implements VramWriteSink {
 		const frameCost = buildQueue.length !== 0 && buildQueue.opcode[0] !== VDP_BLITTER_OPCODE_CLEAR
 			? this.buildFrame.cost + VDP_RENDER_CLEAR_COST
 			: this.buildFrame.cost;
+		frame.xf.matrixWords.set(this.xf.matrixWords);
+		frame.xf.viewMatrixIndex = this.xf.viewMatrixIndex;
+		frame.xf.projectionMatrixIndex = this.xf.projectionMatrixIndex;
 		frame.skyboxControl = this.sbx.latchFrame(frame.skyboxFaceWords);
 		if (!this.resolveSkyboxFrameSamples(frame.skyboxControl, frame.skyboxFaceWords, frame.skyboxSamples)) {
 			return false;
@@ -1449,15 +1488,11 @@ export class VDP implements VramWriteSink {
 		}
 		if (workUnits >= this.activeFrame.workRemaining) {
 			this.activeFrame.workRemaining = 0;
-			const activeQueue = this.activeFrame.queue;
-			this.activeFrame.queue = this.execution.queue;
-			this.execution.queue = activeQueue;
-			this.activeFrame.queue.reset();
-			this.execution.pending = true;
-			this.hostOutputToken = (this.hostOutputToken + 1) >>> 0;
-			if (this.hostOutputToken === 0) {
-				this.hostOutputToken = 1;
+			if (this.activeFrame.hasFrameBufferCommands) {
+				this.executeFrameBufferCommands(this.activeFrame.queue);
 			}
+			this.activeFrame.queue.reset();
+			this.activeFrame.ready = true;
 			this.refreshSubmitBusyStatus();
 			this.scheduleNextService(this.scheduler.currentNowCycles());
 			return;
@@ -1473,17 +1508,324 @@ export class VDP implements VramWriteSink {
 		if (!this.activeFrame.occupied) {
 			return this.pendingFrame.occupied && this.pendingFrame.cost > 0;
 		}
-		return !this.activeFrame.ready && !this.execution.pending;
+		return !this.activeFrame.ready;
 	}
 
 	public getPendingRenderWorkUnits(): number {
 		if (!this.activeFrame.occupied) {
 			return this.pendingFrame.cost;
 		}
-		if (this.activeFrame.ready || this.execution.pending) {
+		if (this.activeFrame.ready) {
 			return 0;
 		}
 		return this.activeFrame.workRemaining;
+	}
+
+	private executeFrameBufferCommands(commands: VdpBlitterCommandBuffer): void {
+		if (commands.length === 0) {
+			return;
+		}
+		const frameWidth = this._frameBufferWidth;
+		const frameHeight = this._frameBufferHeight;
+		const frameBufferSlot = this.getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
+		const pixels = frameBufferSlot.cpuReadback;
+		this.ensureFrameBufferPriorityCapacity(frameWidth * frameHeight);
+		if (commands.opcode[0] !== VDP_BLITTER_OPCODE_CLEAR) {
+			this.fillFrameBuffer(pixels, VDP_BLITTER_IMPLICIT_CLEAR);
+		}
+		this.resetFrameBufferPriority();
+		for (let index = 0; index < commands.length; index += 1) {
+			const opcode = commands.opcode[index];
+			if (opcode === VDP_BLITTER_OPCODE_CLEAR) {
+				this.fillFrameBuffer(pixels, commands.color[index]);
+				this.resetFrameBufferPriority();
+				continue;
+			}
+			const layer = commands.layer[index] as Layer2D;
+			const priority = commands.priority[index];
+			const sequence = commands.seq[index];
+			const color = commands.color[index];
+			if (opcode === VDP_BLITTER_OPCODE_FILL_RECT) {
+				this.rasterizeFrameBufferFill(pixels, frameWidth, frameHeight, commands.x0[index], commands.y0[index], commands.x1[index], commands.y1[index], color, layer, priority, sequence);
+				continue;
+			}
+			if (opcode === VDP_BLITTER_OPCODE_DRAW_LINE) {
+				this.rasterizeFrameBufferLine(pixels, frameWidth, frameHeight, commands.x0[index], commands.y0[index], commands.x1[index], commands.y1[index], commands.thickness[index], color, layer, priority, sequence);
+				continue;
+			}
+			if (opcode === VDP_BLITTER_OPCODE_BLIT) {
+				const source = this.latchedSourceScratch;
+				source.surfaceId = commands.sourceSurfaceId[index];
+				source.srcX = commands.sourceSrcX[index];
+				source.srcY = commands.sourceSrcY[index];
+				source.width = commands.sourceWidth[index];
+				source.height = commands.sourceHeight[index];
+				this.rasterizeFrameBufferBlit(pixels, frameWidth, frameHeight, source, commands.dstX[index], commands.dstY[index], commands.scaleX[index], commands.scaleY[index], commands.flipH[index] !== 0, commands.flipV[index] !== 0, color, layer, priority, sequence);
+				continue;
+			}
+			if (opcode === VDP_BLITTER_OPCODE_COPY_RECT) {
+				this.copyFrameBufferRect(pixels, frameWidth, commands.srcX[index], commands.srcY[index], commands.width[index], commands.height[index], commands.dstX[index], commands.dstY[index], layer, priority, sequence);
+				continue;
+			}
+			if (opcode === VDP_BLITTER_OPCODE_GLYPH_RUN) {
+				const firstGlyph = commands.glyphRunFirstEntry[index];
+				const glyphEnd = firstGlyph + commands.glyphRunEntryCount[index];
+				if (commands.hasBackgroundColor[index] !== 0) {
+					for (let glyphIndex = firstGlyph; glyphIndex < glyphEnd; glyphIndex += 1) {
+						this.rasterizeFrameBufferFill(pixels, frameWidth, frameHeight, commands.glyphDstX[glyphIndex], commands.glyphDstY[glyphIndex], commands.glyphDstX[glyphIndex] + commands.glyphAdvance[glyphIndex], commands.glyphDstY[glyphIndex] + commands.lineHeight[index], commands.backgroundColor[index], layer, priority, sequence);
+					}
+				}
+				for (let glyphIndex = firstGlyph; glyphIndex < glyphEnd; glyphIndex += 1) {
+					const source = this.latchedSourceScratch;
+					source.surfaceId = commands.glyphSurfaceId[glyphIndex];
+					source.srcX = commands.glyphSrcX[glyphIndex];
+					source.srcY = commands.glyphSrcY[glyphIndex];
+					source.width = commands.glyphWidth[glyphIndex];
+					source.height = commands.glyphHeight[glyphIndex];
+					this.rasterizeFrameBufferBlit(pixels, frameWidth, frameHeight, source, commands.glyphDstX[glyphIndex], commands.glyphDstY[glyphIndex], 1, 1, false, false, color, layer, priority, sequence);
+				}
+				continue;
+			}
+			if (opcode === VDP_BLITTER_OPCODE_TILE_RUN) {
+				const firstTile = commands.tileRunFirstEntry[index];
+				const tileEnd = firstTile + commands.tileRunEntryCount[index];
+				for (let tileIndex = firstTile; tileIndex < tileEnd; tileIndex += 1) {
+					const source = this.latchedSourceScratch;
+					source.surfaceId = commands.tileSurfaceId[tileIndex];
+					source.srcX = commands.tileSrcX[tileIndex];
+					source.srcY = commands.tileSrcY[tileIndex];
+					source.width = commands.tileWidth[tileIndex];
+					source.height = commands.tileHeight[tileIndex];
+					this.rasterizeFrameBufferBlit(pixels, frameWidth, frameHeight, source, commands.tileDstX[tileIndex], commands.tileDstY[tileIndex], 1, 1, false, false, VDP_BLITTER_WHITE, layer, priority, sequence);
+				}
+			}
+		}
+		this.markVramSlotDirty(frameBufferSlot, 0, frameBufferSlot.surfaceHeight);
+		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+	}
+
+	private ensureFrameBufferPriorityCapacity(pixelCount: number): void {
+		if (this.frameBufferPriorityLayer.length === pixelCount) {
+			return;
+		}
+		this.frameBufferPriorityLayer = new Uint8Array(pixelCount);
+		this.frameBufferPriorityZ = new Float32Array(pixelCount);
+		this.frameBufferPrioritySeq = new Uint32Array(pixelCount);
+	}
+
+	private resetFrameBufferPriority(): void {
+		this.frameBufferPriorityLayer.fill(0);
+		this.frameBufferPriorityZ.fill(Number.NEGATIVE_INFINITY);
+		this.frameBufferPrioritySeq.fill(0);
+	}
+
+	private fillFrameBuffer(pixels: Uint8Array, color: number): void {
+		const r = (color >>> 16) & 0xff;
+		const g = (color >>> 8) & 0xff;
+		const b = color & 0xff;
+		const a = (color >>> 24) & 0xff;
+		for (let pixelIndex = 0; pixelIndex < pixels.length; pixelIndex += 4) {
+			pixels[pixelIndex + 0] = r;
+			pixels[pixelIndex + 1] = g;
+			pixels[pixelIndex + 2] = b;
+			pixels[pixelIndex + 3] = a;
+		}
+	}
+
+	private blendFrameBufferPixel(pixels: Uint8Array, index: number, r: number, g: number, b: number, a: number, layer: Layer2D, priority: number, seq: number): void {
+		if (a <= 0) {
+			return;
+		}
+		const pixelIndex = index >>> 2;
+		const currentLayer = this.frameBufferPriorityLayer[pixelIndex] as Layer2D;
+		if (layer < currentLayer) {
+			return;
+		}
+		if (layer === currentLayer) {
+			const currentPriority = this.frameBufferPriorityZ[pixelIndex];
+			if (priority < currentPriority) {
+				return;
+			}
+			if (priority === currentPriority && seq < this.frameBufferPrioritySeq[pixelIndex]) {
+				return;
+			}
+		}
+		if (a >= 255) {
+			pixels[index + 0] = r;
+			pixels[index + 1] = g;
+			pixels[index + 2] = b;
+			pixels[index + 3] = 255;
+			this.frameBufferPriorityLayer[pixelIndex] = layer;
+			this.frameBufferPriorityZ[pixelIndex] = priority;
+			this.frameBufferPrioritySeq[pixelIndex] = seq;
+			return;
+		}
+		const inverse = 255 - a;
+		pixels[index + 0] = ((r * a) + (pixels[index + 0] * inverse) + 127) / 255;
+		pixels[index + 1] = ((g * a) + (pixels[index + 1] * inverse) + 127) / 255;
+		pixels[index + 2] = ((b * a) + (pixels[index + 2] * inverse) + 127) / 255;
+		pixels[index + 3] = a + ((pixels[index + 3] * inverse) + 127) / 255;
+		this.frameBufferPriorityLayer[pixelIndex] = layer;
+		this.frameBufferPriorityZ[pixelIndex] = priority;
+		this.frameBufferPrioritySeq[pixelIndex] = seq;
+	}
+
+	private rasterizeFrameBufferFill(pixels: Uint8Array, frameWidth: number, frameHeight: number, x0: number, y0: number, x1: number, y1: number, color: number, layer: Layer2D, priority: number, seq: number): void {
+		const r = (color >>> 16) & 0xff;
+		const g = (color >>> 8) & 0xff;
+		const b = color & 0xff;
+		const a = (color >>> 24) & 0xff;
+		let left = Math.round(x0);
+		let top = Math.round(y0);
+		let right = Math.round(x1);
+		let bottom = Math.round(y1);
+		if (right < left) {
+			const swap = left;
+			left = right;
+			right = swap;
+		}
+		if (bottom < top) {
+			const swap = top;
+			top = bottom;
+			bottom = swap;
+		}
+		if (left < 0) left = 0;
+		if (top < 0) top = 0;
+		if (right > frameWidth) right = frameWidth;
+		if (bottom > frameHeight) bottom = frameHeight;
+		for (let y = top; y < bottom; y += 1) {
+			let index = (y * frameWidth + left) * 4;
+			for (let x = left; x < right; x += 1) {
+				this.blendFrameBufferPixel(pixels, index, r, g, b, a, layer, priority, seq);
+				index += 4;
+			}
+		}
+	}
+
+	private rasterizeFrameBufferLine(pixels: Uint8Array, frameWidth: number, frameHeight: number, x0: number, y0: number, x1: number, y1: number, thicknessValue: number, color: number, layer: Layer2D, priority: number, seq: number): void {
+		const r = (color >>> 16) & 0xff;
+		const g = (color >>> 8) & 0xff;
+		const b = color & 0xff;
+		const a = (color >>> 24) & 0xff;
+		let currentX = Math.round(x0);
+		let currentY = Math.round(y0);
+		const targetX = Math.round(x1);
+		const targetY = Math.round(y1);
+		const dx = Math.abs(targetX - currentX);
+		const dy = Math.abs(targetY - currentY);
+		const sx = currentX < targetX ? 1 : -1;
+		const sy = currentY < targetY ? 1 : -1;
+		let err = dx - dy;
+		let thickness = Math.round(thicknessValue);
+		if (thickness === 0) {
+			thickness = 1;
+		}
+		while (true) {
+			const half = thickness >> 1;
+			for (let yy = currentY - half; yy < currentY - half + thickness; yy += 1) {
+				if (yy < 0 || yy >= frameHeight) {
+					continue;
+				}
+				for (let xx = currentX - half; xx < currentX - half + thickness; xx += 1) {
+					if (xx < 0 || xx >= frameWidth) {
+						continue;
+					}
+					this.blendFrameBufferPixel(pixels, (yy * frameWidth + xx) * 4, r, g, b, a, layer, priority, seq);
+				}
+			}
+			if (currentX === targetX && currentY === targetY) {
+				return;
+			}
+			const e2 = err << 1;
+			if (e2 > -dy) {
+				err -= dy;
+				currentX += sx;
+			}
+			if (e2 < dx) {
+				err += dx;
+				currentY += sy;
+			}
+		}
+	}
+
+	private rasterizeFrameBufferBlit(pixels: Uint8Array, frameWidth: number, frameHeight: number, source: VdpBlitterSource, dstXValue: number, dstYValue: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, color: number, layer: Layer2D, priority: number, seq: number): void {
+		const colorR = (color >>> 16) & 0xff;
+		const colorG = (color >>> 8) & 0xff;
+		const colorB = color & 0xff;
+		const colorA = (color >>> 24) & 0xff;
+		const sourceSlot = this.getVramSlotBySurfaceId(source.surfaceId);
+		const sourcePixels = sourceSlot.cpuReadback;
+		const sourceStride = sourceSlot.surfaceWidth * 4;
+		let dstW = Math.round(source.width * scaleX);
+		let dstH = Math.round(source.height * scaleY);
+		if (dstW === 0) {
+			dstW = 1;
+		}
+		if (dstH === 0) {
+			dstH = 1;
+		}
+		const dstX = Math.round(dstXValue);
+		const dstY = Math.round(dstYValue);
+		for (let y = 0; y < dstH; y += 1) {
+			const targetY = dstY + y;
+			if (targetY < 0 || targetY >= frameHeight) {
+				continue;
+			}
+			const srcY = flipV
+				? source.height - 1 - Math.floor((y * source.height) / dstH)
+				: Math.floor((y * source.height) / dstH);
+			for (let x = 0; x < dstW; x += 1) {
+				const targetX = dstX + x;
+				if (targetX < 0 || targetX >= frameWidth) {
+					continue;
+				}
+				const srcX = flipH
+					? source.width - 1 - Math.floor((x * source.width) / dstW)
+					: Math.floor((x * source.width) / dstW);
+				const sampleX = source.srcX + srcX;
+				const sampleY = source.srcY + srcY;
+				if (sampleX < 0 || sampleX >= sourceSlot.surfaceWidth || sampleY < 0 || sampleY >= sourceSlot.surfaceHeight) {
+					continue;
+				}
+				const srcIndex = sampleY * sourceStride + sampleX * 4;
+				const srcA = sourcePixels[srcIndex + 3];
+				if (srcA === 0) {
+					continue;
+				}
+				const outA = (srcA * colorA + 127) / 255;
+				const outR = (sourcePixels[srcIndex + 0] * colorR + 127) / 255;
+				const outG = (sourcePixels[srcIndex + 1] * colorG + 127) / 255;
+				const outB = (sourcePixels[srcIndex + 2] * colorB + 127) / 255;
+				this.blendFrameBufferPixel(pixels, (targetY * frameWidth + targetX) * 4, outR, outG, outB, outA, layer, priority, seq);
+			}
+		}
+	}
+
+	private copyFrameBufferRect(pixels: Uint8Array, frameWidth: number, srcX: number, srcY: number, width: number, height: number, dstXValue: number, dstYValue: number, layer: Layer2D, priority: number, seq: number): void {
+		const dstX = Math.round(dstXValue);
+		const dstY = Math.round(dstYValue);
+		const rowBytes = width * 4;
+		const overlapping =
+			dstX < srcX + width
+			&& dstX + width > srcX
+			&& dstY < srcY + height
+			&& dstY + height > srcY;
+		const copyBackward = overlapping && dstY > srcY;
+		const startRow = copyBackward ? height - 1 : 0;
+		const endRow = copyBackward ? -1 : height;
+		const step = copyBackward ? -1 : 1;
+		for (let row = startRow; row !== endRow; row += step) {
+			const sourceIndex = ((srcY + row) * frameWidth + srcX) * 4;
+			const targetIndex = ((dstY + row) * frameWidth + dstX) * 4;
+			pixels.copyWithin(targetIndex, sourceIndex, sourceIndex + rowBytes);
+			const targetPixel = ((dstY + row) * frameWidth) + dstX;
+			for (let col = 0; col < width; col += 1) {
+				const pixelIndex = targetPixel + col;
+				this.frameBufferPriorityLayer[pixelIndex] = layer;
+				this.frameBufferPriorityZ[pixelIndex] = priority;
+				this.frameBufferPrioritySeq[pixelIndex] = seq;
+			}
+		}
 	}
 
 	private scheduleNextService(nowCycles: number): void {
@@ -1506,14 +1848,14 @@ export class VDP implements VramWriteSink {
 
 	private clearActiveFrame(): void {
 		this.activeFrame.queue.reset();
-		this.execution.queue.reset();
-		this.execution.pending = false;
-		this.hostOutputToken = 0;
 		this.resetSubmittedFrameSlot(this.activeFrame);
 	}
 
 	private commitActiveVisualState(): void {
 		this.committedDitherType = this.activeFrame.ditherType;
+		this.committedXf.matrixWords.set(this.activeFrame.xf.matrixWords);
+		this.committedXf.viewMatrixIndex = this.activeFrame.xf.viewMatrixIndex;
+		this.committedXf.projectionMatrixIndex = this.activeFrame.xf.projectionMatrixIndex;
 		this.sbx.presentFrame(this.activeFrame.skyboxControl, this.activeFrame.skyboxFaceWords);
 		const previousSkyboxSamples = this.committedSkyboxSamples;
 		this.committedSkyboxSamples = this.activeFrame.skyboxSamples;
@@ -1865,6 +2207,9 @@ export class VDP implements VramWriteSink {
 		this.pmu.reset();
 		this.syncPmuRegisterWindow();
 		this.xf.reset();
+		this.committedXf.matrixWords.set(this.xf.matrixWords);
+		this.committedXf.viewMatrixIndex = this.xf.viewMatrixIndex;
+		this.committedXf.projectionMatrixIndex = this.xf.projectionMatrixIndex;
 		this.liveDitherType = dither;
 		this.committedDitherType = dither;
 		this.sbx.reset();
@@ -1932,13 +2277,10 @@ export class VDP implements VramWriteSink {
 
 	public readHostOutput(): VdpHostOutput {
 		return {
-			executionToken: this.execution.pending ? this.hostOutputToken : 0,
-			executionQueue: this.execution.pending ? this.execution.queue : null,
-			executionBillboards: this.activeFrame.billboards,
-			executionWritesFrameBuffer: this.activeFrame.hasFrameBufferCommands,
 			ditherType: this.committedDitherType,
-			xfViewMatrixWords: this.xf.viewMatrixWords,
-			xfProjectionMatrixWords: this.xf.projectionMatrixWords,
+			xfMatrixWords: this.committedXf.matrixWords,
+			xfViewMatrixIndex: this.committedXf.viewMatrixIndex,
+			xfProjectionMatrixIndex: this.committedXf.projectionMatrixIndex,
 			skyboxEnabled: this.sbx.visibleEnabled,
 			skyboxSamples: this.committedSkyboxSamples,
 			billboards: this.committedBillboards,
@@ -1949,21 +2291,6 @@ export class VDP implements VramWriteSink {
 		};
 	}
 
-	public completeHostExecution(output: VdpHostOutput): void {
-		const queue = output.executionQueue;
-		if (!this.execution.pending || output.executionToken !== this.hostOutputToken || queue !== this.execution.queue) {
-			throw new Error('[VDP] no active frame execution pending.');
-		}
-		if (output.executionWritesFrameBuffer) {
-			this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
-		}
-		this.execution.pending = false;
-		this.activeFrame.ready = true;
-		this.execution.queue.reset();
-		this.hostOutputToken = 0;
-		this.refreshSubmitBusyStatus();
-	}
-
 	public clearSurfaceUploadDirty(surfaceId: number): void {
 		const slot = this.getVramSlotBySurfaceId(surfaceId);
 		slot.dirtyRowStart = 0;
@@ -1972,6 +2299,9 @@ export class VDP implements VramWriteSink {
 
 	private commitLiveVisualState(): void {
 		this.committedDitherType = this.liveDitherType;
+		this.committedXf.matrixWords.set(this.xf.matrixWords);
+		this.committedXf.viewMatrixIndex = this.xf.viewMatrixIndex;
+		this.committedXf.projectionMatrixIndex = this.xf.projectionMatrixIndex;
 		this.committedBillboards.reset();
 		this.sbx.presentLiveState();
 		this.resolveSkyboxFrameSamples(this.sbx.liveControlWord, this.sbx.visibleFaceState, this.committedSkyboxSamples);
@@ -2005,9 +2335,12 @@ export class VDP implements VramWriteSink {
 			this.readCaches[index].width = 0;
 		}
 		this.displayFrameBufferCpuReadback = new Uint8Array(0);
-		this.sbx.reset();
-		this.syncSbxRegisterWindow();
-		this.committedDitherType = this.liveDitherType;
+			this.sbx.reset();
+			this.syncSbxRegisterWindow();
+			this.committedXf.matrixWords.set(this.xf.matrixWords);
+			this.committedXf.viewMatrixIndex = this.xf.viewMatrixIndex;
+			this.committedXf.projectionMatrixIndex = this.xf.projectionMatrixIndex;
+			this.committedDitherType = this.liveDitherType;
 		fillVramGarbageScratch(this.vramStaging, {
 			machineSeed: this.vramMachineSeed,
 			bootSeed: this.vramBootSeed,

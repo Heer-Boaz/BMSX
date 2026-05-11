@@ -190,9 +190,6 @@ add_library(bmsx_core STATIC
 	render/runtime_state.cpp
 	render/shared/hardware/camera.cpp
 	render/shared/hardware/lighting.cpp
-	render/vdp/blitter/execute.cpp
-	render/vdp/blitter/gles2.cpp
-	render/vdp/blitter/software.cpp
 	render/vdp/context_state.cpp
 	render/vdp/billboards.cpp
 	render/vdp/framebuffer.cpp
@@ -249,6 +246,7 @@ add_library(bmsx_core STATIC
 	machine/runtime/system_irq.cpp
 	machine/runtime/boot_timing.cpp
 	machine/runtime/frame/loop.cpp
+	machine/runtime/frame/step.cpp
 	machine/program/executor.cpp
 	machine/program/scratch.cpp
 	machine/specs.cpp

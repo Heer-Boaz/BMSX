@@ -1,6 +1,7 @@
 import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT } from './contracts';
 import { VdpBbuFrameBuffer } from './bbu';
 import { VdpBlitterCommandBuffer, type VdpResolvedBlitterSample } from './blitter';
+import { VdpXfUnit } from './xf';
 
 export type VdpSubmittedFrameState = {
 	queue: VdpBlitterCommandBuffer;
@@ -11,6 +12,7 @@ export type VdpSubmittedFrameState = {
 	cost: number;
 	workRemaining: number;
 	ditherType: number;
+	xf: VdpXfUnit;
 	skyboxControl: number;
 	skyboxFaceWords: Uint32Array;
 	skyboxSamples: VdpResolvedBlitterSample[];
@@ -22,11 +24,6 @@ export type VdpBuildingFrameState = {
 	billboards: VdpBbuFrameBuffer;
 	open: boolean;
 	cost: number;
-};
-
-export type VdpExecutionState = {
-	queue: VdpBlitterCommandBuffer;
-	pending: boolean;
 };
 
 export function createResolvedBlitterSample(): VdpResolvedBlitterSample {
@@ -62,6 +59,7 @@ export function allocateSubmittedFrameSlot(): VdpSubmittedFrameState {
 		cost: 0,
 		workRemaining: 0,
 		ditherType: 0,
+		xf: new VdpXfUnit(),
 		skyboxControl: 0,
 		skyboxFaceWords: new Uint32Array(SKYBOX_FACE_WORD_COUNT),
 		skyboxSamples: createResolvedBlitterSamples(),

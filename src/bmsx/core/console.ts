@@ -15,7 +15,6 @@ import { clearAllQueues } from '../render/shared/queues';
 import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { restoreVdpContextState } from '../render/vdp/context_state';
 import { initializeVdpTextureTransfer } from '../render/vdp/texture_transfer';
-import { registerWebGLVdpBlitterExecutorFactory } from '../render/vdp/blitter/webgl';
 import { runConsoleHostFrame } from './host_frame';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -142,9 +141,6 @@ export class ConsoleCore {
 		this._view = gview;
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;
-		if (gpuBackend.type === 'webgl2') {
-			registerWebGLVdpBlitterExecutorFactory();
-		}
 		const textureManager = new TextureManager(gpuBackend);
 		initializeVdpTextureTransfer(textureManager, gview);
 		const pipelineRegistry = new RenderPassLibrary(gpuBackend);

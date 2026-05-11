@@ -70,7 +70,15 @@ import { VDP_BBU_BILLBOARD_LIMIT, VDP_RD_SURFACE_PRIMARY, VDP_SBX_CONTROL_ENABLE
 import { VDP_BBU_PACKET_KIND, VDP_BBU_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/bbu';
 import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
 import { VDP_SBX_PACKET_KIND, VDP_SBX_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/sbx';
-import { VDP_XF_PACKET_KIND, VDP_XF_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/xf';
+import {
+	VDP_XF_MATRIX_COUNT,
+	VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS,
+	VDP_XF_MATRIX_REGISTER_WORDS,
+	VDP_XF_MATRIX_WORDS,
+	VDP_XF_PACKET_KIND,
+	VDP_XF_SELECT_PACKET_PAYLOAD_WORDS,
+	VDP_XF_VIEW_MATRIX_INDEX_REGISTER,
+} from '../../src/bmsx/machine/devices/vdp/xf';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
@@ -100,8 +108,15 @@ const VDP_PKT_REG1 = 0x02000000;
 const VDP_PKT_REGN = 0x03000000;
 const VDP_BILLBOARD_HEADER = VDP_BBU_PACKET_KIND | (VDP_BBU_PACKET_PAYLOAD_WORDS << 16);
 const VDP_SKYBOX_HEADER = VDP_SBX_PACKET_KIND | (VDP_SBX_PACKET_PAYLOAD_WORDS << 16);
-const VDP_XF_HEADER = VDP_XF_PACKET_KIND | (VDP_XF_PACKET_PAYLOAD_WORDS << 16);
+const VDP_XF_MATRIX_HEADER = VDP_XF_PACKET_KIND | (VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS << 16);
+const VDP_XF_SELECT_HEADER = VDP_XF_PACKET_KIND | (VDP_XF_SELECT_PACKET_PAYLOAD_WORDS << 16);
 
+const VDP_REG_SRC_SLOT = 0;
+const VDP_REG_SRC_UV = 1;
+const VDP_REG_SRC_WH = 2;
+const VDP_REG_DST_X = 3;
+const VDP_REG_DST_Y = 4;
+const VDP_REG_DRAW_PRIORITY = 11;
 const VDP_REG_BG_COLOR = 16;
 const VDP_REG_SLOT_INDEX = 17;
 
@@ -165,6 +180,24 @@ function sealFifo(memory: Memory, words: number[]): void {
 		memory.writeValue(IO_VDP_FIFO, words[index] >>> 0);
 	}
 	memory.writeValue(IO_VDP_FIFO_CTRL, VDP_FIFO_CTRL_SEAL);
+}
+
+function xfMatrixRegisterPacket(matrixIndex: number, words: readonly number[]): number[] {
+	assert.equal(words.length, VDP_XF_MATRIX_WORDS);
+	return [
+		VDP_XF_MATRIX_HEADER,
+		matrixIndex * VDP_XF_MATRIX_WORDS,
+		...words,
+	];
+}
+
+function xfSelectRegisterPacket(viewMatrixIndex: number, projectionMatrixIndex: number): number[] {
+	return [
+		VDP_XF_SELECT_HEADER,
+		VDP_XF_VIEW_MATRIX_INDEX_REGISTER,
+		viewMatrixIndex,
+		projectionMatrixIndex,
+	];
 }
 
 function initializeHeadlessVdpTextures(vdp: VDP): void {
@@ -303,21 +336,15 @@ test('VDP PMU resolves parallax into BLIT geometry before backend execution', ()
 
 	const workUnits = vdp.getPendingRenderWorkUnits();
 	assert.ok(workUnits > 0);
-	vdp.advanceWork(workUnits);
-	const output = vdp.readHostOutput();
-	assert.notEqual(output, vdp.readHostOutput());
-	assert.notEqual(output.executionToken, 0);
-	const queue = output.executionQueue;
-	assert.ok(queue);
-	const command = queue;
+	const command = activeQueue(vdp);
 	assert.equal(command.opcode[0], VDP_BLITTER_OPCODE_BLIT);
 	assert.equal(command.parallaxWeight[0], 0.5);
 	assert.equal(command.dstX[0], 32);
 	assert.equal(command.dstY[0], 48);
 	assert.equal(command.scaleX[0], 1);
 	assert.equal(command.scaleY[0], 1);
-	vdp.completeHostExecution(output);
-	assert.equal(vdp.readHostOutput().executionToken, 0);
+	vdp.advanceWork(workUnits);
+	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
 });
 
 test('VDP PMU bank registers resolve DRAW_CTRL bank and signed weight', () => {
@@ -347,17 +374,14 @@ test('VDP PMU bank registers resolve DRAW_CTRL bank and signed weight', () => {
 
 	const workUnits = vdp.getPendingRenderWorkUnits();
 	assert.ok(workUnits > 0);
-	vdp.advanceWork(workUnits);
-	const output = vdp.readHostOutput();
-	const queue = output.executionQueue;
-	assert.ok(queue);
-	const command = queue;
+	const command = activeQueue(vdp);
 	assert.equal(command.opcode[0], VDP_BLITTER_OPCODE_BLIT);
 	assert.equal(command.parallaxWeight[0], 0.5);
 	assert.equal(command.dstY[0], 46);
 	assert.equal(command.scaleX[0], 1.25);
 	assert.equal(command.scaleY[0], 1);
-	vdp.completeHostExecution(output);
+	vdp.advanceWork(workUnits);
+	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
 });
 
 test('VDP PMU scale influence uses absolute signed DRAW_CTRL weight', () => {
@@ -745,6 +769,8 @@ test('VDP SBX stores raw control bits and faults bad face words at frame seal', 
 
 test('VDP XF packet updates raw transform register state', () => {
 	const { memory, vdp } = createVdp();
+	const viewMatrixIndex = 2;
+	const projectionMatrixIndex = 3;
 	const viewWords = [
 		0x00010000, 0, 0, 0,
 		0, 0x00010000, 0, 0,
@@ -759,21 +785,28 @@ test('VDP XF packet updates raw transform register state', () => {
 	];
 
 	sealStream(memory, vdp, [
-		VDP_XF_HEADER,
-		...viewWords,
-		...projWords,
+		...xfMatrixRegisterPacket(viewMatrixIndex, viewWords),
+		...xfMatrixRegisterPacket(projectionMatrixIndex, projWords),
+		...xfSelectRegisterPacket(viewMatrixIndex, projectionMatrixIndex),
 		VDP_PKT_END,
 	]);
 
-	const output = vdp.readHostOutput();
-	for (let index = 0; index < 16; index += 1) {
-		assert.equal(output.xfViewMatrixWords[index] >>> 0, viewWords[index] >>> 0);
-		assert.equal(output.xfProjectionMatrixWords[index] >>> 0, projWords[index] >>> 0);
+	const state = vdp.captureState();
+	const viewBase = viewMatrixIndex * VDP_XF_MATRIX_WORDS;
+	const projectionBase = projectionMatrixIndex * VDP_XF_MATRIX_WORDS;
+	assert.equal(state.xf.viewMatrixIndex, viewMatrixIndex);
+	assert.equal(state.xf.projectionMatrixIndex, projectionMatrixIndex);
+	for (let index = 0; index < VDP_XF_MATRIX_WORDS; index += 1) {
+		assert.equal(state.xf.matrixWords[viewBase + index] >>> 0, viewWords[index] >>> 0);
+		assert.equal(state.xf.matrixWords[projectionBase + index] >>> 0, projWords[index] >>> 0);
 	}
 });
 
 test('VDP XF words resolve to render-owned skybox transform', () => {
 	const transform = createVdpTransformSnapshot();
+	const viewMatrixIndex = 2;
+	const projectionMatrixIndex = 3;
+	const matrixWords = new Array<number>(VDP_XF_MATRIX_REGISTER_WORDS).fill(0);
 	const viewWords = [
 		0x00020000, 0, 0, 0,
 		0, 0x00040000, 0, 0,
@@ -786,8 +819,12 @@ test('VDP XF words resolve to render-owned skybox transform', () => {
 		0, 0, 0x00010000, 0,
 		0, 0, 0, 0x00010000,
 	];
+	for (let index = 0; index < VDP_XF_MATRIX_WORDS; index += 1) {
+		matrixWords[viewMatrixIndex * VDP_XF_MATRIX_WORDS + index] = viewWords[index];
+		matrixWords[projectionMatrixIndex * VDP_XF_MATRIX_WORDS + index] = projWords[index];
+	}
 
-	resolveVdpTransformSnapshot(transform, viewWords, projWords);
+	resolveVdpTransformSnapshot(transform, matrixWords, viewMatrixIndex, projectionMatrixIndex);
 
 	assert.equal(transform.view[0], 2);
 	assert.equal(transform.skyboxView[0], 0.5);
@@ -805,12 +842,69 @@ test('VDP XF packet faults through VDP state instead of exceptions', () => {
 	const { memory, vdp } = createVdp();
 
 	assert.doesNotThrow(() => sealStream(memory, vdp, [
-		VDP_XF_PACKET_KIND | ((VDP_XF_PACKET_PAYLOAD_WORDS - 1) << 16),
-		...new Array(VDP_XF_PACKET_PAYLOAD_WORDS - 1).fill(0),
+		VDP_XF_PACKET_KIND | (VDP_XF_SELECT_PACKET_PAYLOAD_WORDS << 16),
+		VDP_XF_VIEW_MATRIX_INDEX_REGISTER,
+		VDP_XF_MATRIX_COUNT,
+		0,
 		VDP_PKT_END,
 	]));
 	assertVdpFault(memory, VDP_FAULT_STREAM_BAD_PACKET);
 	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
+});
+
+test('VDP XF state is committed with the submitted frame instead of latest live state', () => {
+	const { memory, vdp } = createVdp();
+	const projWords = [
+		0x00010000, 0, 0, 0,
+		0, 0x00010000, 0, 0,
+		0, 0, 0x00010000, 0,
+		0, 0, 0, 0x00010000,
+	];
+	const frameAView = [
+		0x00020000, 0, 0, 0,
+		0, 0x00010000, 0, 0,
+		0, 0, 0x00010000, 0,
+		0, 0, 0, 0x00010000,
+	];
+	const frameBView = [
+		0x00030000, 0, 0, 0,
+		0, 0x00010000, 0, 0,
+		0, 0, 0x00010000, 0,
+		0, 0, 0, 0x00010000,
+	];
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	sealStream(memory, vdp, [
+		...xfMatrixRegisterPacket(2, frameAView),
+		...xfMatrixRegisterPacket(3, projWords),
+		...xfSelectRegisterPacket(2, 3),
+		VDP_PKT_REGN | (5 << 16) | VDP_REG_SRC_SLOT,
+		VDP_SLOT_PRIMARY,
+		0,
+		4 | (4 << 16),
+		0,
+		0,
+		VDP_PKT_REG1 | VDP_REG_DRAW_PRIORITY,
+		9,
+		VDP_PKT_CMD | VDP_CMD_BLIT,
+		VDP_PKT_END,
+	]);
+	sealStream(memory, vdp, [
+		...xfMatrixRegisterPacket(4, frameBView),
+		...xfMatrixRegisterPacket(5, projWords),
+		...xfSelectRegisterPacket(4, 5),
+		VDP_PKT_END,
+	]);
+
+	const workUnits = vdp.getPendingRenderWorkUnits();
+	assert.ok(workUnits > 0);
+	vdp.advanceWork(workUnits);
+	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
+	const output = vdp.readHostOutput();
+	assert.equal(output.xfViewMatrixIndex, 2);
+	assert.equal(output.xfProjectionMatrixIndex, 3);
+	assert.equal(output.xfMatrixWords[2 * VDP_XF_MATRIX_WORDS] >>> 0, frameAView[0]);
+	assert.notEqual(output.xfMatrixWords[2 * VDP_XF_MATRIX_WORDS] >>> 0, frameBView[0]);
 });
 
 function billboardPacket(sizeWord: number, u = 2, v = 3, w = 4, h = 5, control = 0): number[] {
@@ -839,10 +933,9 @@ test('VDP BBU accepts BILLBOARD packets into frame-latched instance RAM', () => 
 	assert.equal((vdp as any).activeFrame.hasCommands, true);
 	assert.equal((vdp as any).activeFrame.hasFrameBufferCommands, false);
 	vdp.advanceWork(1);
+	assert.equal(vdp.presentReadyFrameOnVblankEdge(), false);
 	const output = vdp.readHostOutput();
-	const queue = output.executionQueue;
-	assert.notEqual(queue, null);
-	const billboards = output.executionBillboards;
+	const billboards = output.billboards;
 	assert.equal(billboards.length, 1);
 	assert.equal(billboards.slot[0], VDP_SLOT_PRIMARY);
 	assert.equal(billboards.surfaceWidth[0], 16);
@@ -856,7 +949,6 @@ test('VDP BBU accepts BILLBOARD packets into frame-latched instance RAM', () => 
 	assert.equal(billboards.positionZ[0], 30);
 	assert.equal(billboards.size[0], 2);
 	assert.equal(billboards.color[0], 0xff112233);
-	vdp.completeHostExecution(output);
 });
 
 test('VDP BBU faults only at BILLBOARD packet latch', () => {

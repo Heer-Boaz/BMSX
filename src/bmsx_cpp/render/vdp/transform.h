@@ -15,7 +15,8 @@ struct VdpTransformSnapshot {
 };
 
 void resolveVdpTransformSnapshot(VdpTransformSnapshot& target,
-								const std::array<u32, VDP_XF_MATRIX_WORDS>& viewMatrixWords,
-								const std::array<u32, VDP_XF_MATRIX_WORDS>& projectionMatrixWords);
+									const std::array<u32, VDP_XF_MATRIX_REGISTER_WORDS>& matrixWords,
+									u32 viewMatrixIndex,
+									u32 projectionMatrixIndex);
 
 } // namespace bmsx

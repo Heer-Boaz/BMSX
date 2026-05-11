@@ -129,6 +129,12 @@ Run an already-built cart in headless mode:
 npm run headless:game -- pietious
 ```
 
+Run the bare-metal cart through both headless runtimes:
+
+```bash
+npm run headless:bare-metal
+```
+
 Run an explicit host test:
 
 ```bash
@@ -138,6 +144,7 @@ npm run headless:test -- pietious tests/carts/pietious/pietious_enter_world_asse
 Important:
 
 - `headless:forcebuildallrun` and `headless:game` take the cart folder name
+- `headless:bare-metal` force-builds and runs `bare_metal_cart` through TS headless and the C++ libretro host
 - headless uses `dist/headless_debug.js`, `dist/engine.debug.js`, and `dist/bmsx-bios.debug.rom`
 - host tests are always explicit; `headless:game` does not auto-load assert modules
 - if no explicit test is provided, `headless:game` falls back to `<cart>_demo.json`
@@ -177,6 +184,7 @@ npm run run:libretro-host:wsl:headless -- ./dist/pietious.rom
 Important:
 
 - `run:libretro-host:wsl:headless` now runs silently by default with `SDL_VIDEODRIVER=dummy` and `SDL_AUDIODRIVER=dummy`
+- the headless libretro-host path also passes `--no-audio`, so bare-metal smoke runs do not depend on an SDL or ALSA audio sink
 - the silent SDL path uses the software backend on purpose
 - the libretro core loads `dist/bmsx-bios.rom`, not `dist/bmsx-bios.debug.rom`
 - the ROM argument must be the non-debug cart ROM, for example `./dist/pietious.rom`

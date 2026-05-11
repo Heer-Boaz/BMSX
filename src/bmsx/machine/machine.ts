@@ -109,21 +109,21 @@ export class Machine {
 		this.scheduler.advanceTo(nextNow);
 	}
 
-	public runDeviceService(deviceKind: number): VDP | null {
+	public runDeviceService(deviceKind: number): void {
 		const nowCycles = this.scheduler.nowCycles;
 		switch (deviceKind) {
 			case DEVICE_SERVICE_GEO:
 				this.geometryController.onService(nowCycles);
-				return null;
+				return;
 			case DEVICE_SERVICE_DMA:
 				this.dmaController.onService(nowCycles);
-				return null;
+				return;
 			case DEVICE_SERVICE_IMG:
 				this.imgDecController.onService(nowCycles);
-				return null;
+				return;
 			case DEVICE_SERVICE_VDP:
 				this.vdp.onService(nowCycles);
-				return this.vdp;
+				return;
 			default:
 				throw new Error(`Runtime fault: unknown device service kind ${deviceKind}.`);
 		}

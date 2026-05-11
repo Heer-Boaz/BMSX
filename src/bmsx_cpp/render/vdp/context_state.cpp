@@ -3,16 +3,12 @@
 #include "machine/devices/vdp/vdp.h"
 #include "render/vdp/framebuffer.h"
 #include "render/vdp/slot_textures.h"
-#include "render/vdp/blitter/gles2.h"
 
 namespace bmsx {
 
 void restoreVdpContextState(VDP& vdp) {
 	initializeVdpFrameBufferTextures(vdp);
 	initializeVdpSlotTextures(vdp);
-	#if BMSX_ENABLE_GLES2
-	VdpGles2Blitter::initialize();
-#endif
 }
 
 void captureVdpContextState(VDP& vdp) {
@@ -38,9 +34,6 @@ void captureVdpContextState(VDP& vdp) {
 }
 
 void shutdownVdpContextState() {
-#if BMSX_ENABLE_GLES2
-	VdpGles2Blitter::shutdown();
-#endif
 }
 
 } // namespace bmsx

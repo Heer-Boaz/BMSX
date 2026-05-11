@@ -177,16 +177,21 @@ RuntimeRenderCameraState decodeRuntimeRenderCameraState(const BinValue& value, c
 
 BinValue encodeVdpXfState(const VdpXfState& state) {
 	BinObject object;
-	object["viewMatrixWords"] = encodeFixedArray(state.viewMatrixWords, encodeScalar<i64, u32>);
-	object["projectionMatrixWords"] = encodeFixedArray(state.projectionMatrixWords, encodeScalar<i64, u32>);
+	object["matrixWords"] = encodeFixedArray(state.matrixWords, encodeScalar<i64, u32>);
+	object["viewMatrixIndex"] = static_cast<i64>(state.viewMatrixIndex);
+	object["projectionMatrixIndex"] = static_cast<i64>(state.projectionMatrixIndex);
 	return BinValue(std::move(object));
 }
 
 VdpXfState decodeVdpXfState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpXfState state;
-	state.viewMatrixWords = decodeU32Array<VDP_XF_MATRIX_WORDS>(requireField(object, "viewMatrixWords", label), "machine.vdp.xf.viewMatrixWords");
-	state.projectionMatrixWords = decodeU32Array<VDP_XF_MATRIX_WORDS>(requireField(object, "projectionMatrixWords", label), "machine.vdp.xf.projectionMatrixWords");
+	state.matrixWords = decodeU32Array<VDP_XF_MATRIX_REGISTER_WORDS>(requireField(object, "matrixWords", label), "machine.vdp.xf.matrixWords");
+	state.viewMatrixIndex = requireU32(requireField(object, "viewMatrixIndex", label), "machine.vdp.xf.viewMatrixIndex");
+	state.projectionMatrixIndex = requireU32(requireField(object, "projectionMatrixIndex", label), "machine.vdp.xf.projectionMatrixIndex");
+	if (state.viewMatrixIndex >= VDP_XF_MATRIX_COUNT || state.projectionMatrixIndex >= VDP_XF_MATRIX_COUNT) {
+		throw BMSX_RUNTIME_ERROR("[save-state] machine.vdp.xf selects invalid matrix indexes.");
+	}
 	return state;
 }
 

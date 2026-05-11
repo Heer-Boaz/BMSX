@@ -1,4 +1,5 @@
 import { decodeSignedQ16_16 } from '../../machine/devices/vdp/fixed_point';
+import { VDP_XF_MATRIX_WORDS } from '../../machine/devices/vdp/xf';
 import { extractFrustumPlanesInto, M4 } from '../3d/math';
 
 export type VdpTransformSnapshot = {
@@ -21,10 +22,12 @@ export function createVdpTransformSnapshot(): VdpTransformSnapshot {
 	};
 }
 
-export function resolveVdpTransformSnapshot(target: VdpTransformSnapshot, viewMatrixWords: ArrayLike<number>, projectionMatrixWords: ArrayLike<number>): void {
+export function resolveVdpTransformSnapshot(target: VdpTransformSnapshot, matrixWords: ArrayLike<number>, viewMatrixIndex: number, projectionMatrixIndex: number): void {
+	const viewBase = viewMatrixIndex * VDP_XF_MATRIX_WORDS;
+	const projectionBase = projectionMatrixIndex * VDP_XF_MATRIX_WORDS;
 	for (let index = 0; index < 16; index += 1) {
-		target.view[index] = decodeSignedQ16_16(viewMatrixWords[index] >>> 0);
-		target.proj[index] = decodeSignedQ16_16(projectionMatrixWords[index] >>> 0);
+		target.view[index] = decodeSignedQ16_16(matrixWords[viewBase + index] >>> 0);
+		target.proj[index] = decodeSignedQ16_16(matrixWords[projectionBase + index] >>> 0);
 	}
 	M4.mulInto(target.viewProj, target.proj, target.view);
 	M4.skyboxFromViewInto(target.skyboxView, target.view);
