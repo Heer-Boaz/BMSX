@@ -1,7 +1,7 @@
 # BMSX Architecture Boundary Review
 
 Status: current architecture review, not a quality rule.
-Last checked: 2026-05-07.
+Last checked: 2026-05-12.
 
 BMSX is not currently in a healthy feature-development state. The problem is
 larger than architecture boundaries: the code quality inside ordinary functions
@@ -581,6 +581,128 @@ Desired direction:
   authoritative devtools source, but not a normal cart runtime capability.
 - Do not let IDE convenience APIs leak into firmware or runtime semantics.
 
+## Active Goal Resume State
+
+This section records what continuing the active cleanup goal means from the
+current working tree. It is not a new architecture rule; it is the handoff for
+the next cleanup session.
+
+The current goal is still active. The work has moved BMSX toward a stricter
+emulator shape, but it has not completed the architecture cleanup. A resumed
+goal should continue from the concrete ownership gaps below instead of starting
+a new broad audit.
+
+Already advanced in this goal:
+
+- Runtime construction has moved required host-owned dependencies toward the
+  runtime boundary. TS runtime construction receives the active `GameView`, and
+  native runtime construction receives the concrete `Input` owner instead of
+  discovering it internally.
+- BIOS-less cart boot is closer to a real cart runtime path: native runtime boot
+  no longer runs the system built-in prelude when no system ROM program is
+  installed.
+- Runtime/input pass-through APIs were reduced. Fake dispose wrappers, unused
+  action-definition cache clearing, and PlayerInput forwarding helpers were
+  removed or replaced by owner-level operations.
+- The scratchbatch compatibility facade was removed in TS and C++; callers now
+  use the actual scratch-buffer owner.
+- IDE runtime fault capture, debugger pause state, workbench runtime-error UI,
+  and overlay-mode transitions have been split into named owners instead of
+  being exported from one broad workbench mode bucket.
+- Terminal command parsing no longer owns workbench effects. It returns explicit
+  actions for terminal deactivation, fault clearing, and workspace reset/nuke;
+  workbench applies those effects at the owner boundary.
+- Workspace listing can see open dirty buffers without terminal importing
+  workbench code-tab internals. Open dirty workspace paths are tracked through a
+  workspace-owned boundary and updated by code-tab context state.
+- Semantic contract imports and keyword completion ownership were narrowed so
+  runtime/editor modules do not depend on unrelated re-export surfaces.
+- The code-quality CLI can now handle mixed TS/C++ roots, with CSV parsing moved
+  to the shared analysis utility.
+- Libretro save-state entry points are wired through the platform boundary, and
+  a native save-state round-trip path exists in the working tree.
+
+Open problems to continue with:
+
+1. The C++ program-cart fixture still owns too much ROM/program ABI shape.
+   `tests/cpp/support/program_cart_fixture.cpp` hand-assembles the encoded
+   `ProgramImage`, ROM TOC, and cart header. Even though it uses central
+   constants and endian/binencoder primitives, the schema ownership is wrong:
+   a fixture can drift from the real ROM/program packer contract. The next
+   cleanup step should move those producer operations to the central owners or
+   route the fixture through an existing owned packer path. The natural owners
+   are the program image loader/producer contract for `ProgramImage` encoding,
+   the ROM TOC owner for TOC encoding, and the ROM package/format owner for cart
+   header assembly.
+
+2. The libretro save-state proof remains incomplete until the cart image used
+   for that path is produced by an owner-owned ROM/program encoder. The platform
+   path itself should stay public: `LibretroPlatform::loadRom` should create the
+   console/runtime through `ConsoleCore`, and cart program mode should be entered
+   by the normal console boot sequence, not by a private backdoor or manual
+   runtime-state patch.
+
+3. `src/bmsx/ide/terminal/ui/mode.ts` remains a large IDE/terminal layering
+   hotspot. The known debt includes terminal imports from editor internals,
+   wrapper-only methods, repeated panel layout/drawing logic, repeated numeric
+   sanitization, empty-string fallback behavior, repeated command expression
+   handling, and string OR-comparison dispatch. This should be cleaned in
+   focused ownership slices, not hidden behind analyzer exceptions.
+
+4. `src/bmsx/ide/workbench/ui/code_tab/contexts.ts` still exposes several
+   wrapper-like state accessors. Some are public workbench contracts today, but
+   the file remains a state-bucket smell. The next cleanup should either inline
+   access at real owners or split code-tab context mutation/query responsibilities
+   by actual lifecycle ownership.
+
+5. Geometry is not proven complete. It is more hardware-shaped than many
+   older surfaces because it has MMIO registers, scheduler service, IRQs,
+   status/fault words, and mirrored TS/C++ controllers. That is not the same as
+   being done. The geometry controller still needs an ownership pass for its
+   internal datapaths, scratch buffers, save/load behavior, TS/C++ constant
+   ownership, and whether every cart-visible error is represented as device
+   status rather than host exception or ad-hoc rejection. The existing
+   `docs/geo_overlap2d_pass_v1.md` is a good hardware-contract note, but it does
+   not certify the whole geometry device.
+
+6. The public API surface is not proven complete. Firmware globals, BIOS helper
+   APIs, Lua API metadata, editor overlay APIs, devtools APIs, and terminal or
+   workspace command surfaces must be audited separately. The desired rule is
+   still: cart-facing behavior goes through BIOS/firmware helpers or MMIO/RAM,
+   editor/workbench helpers stay out of cart-visible semantics, and host/private
+   runtime shortcuts do not become de-facto cartridge APIs.
+
+7. The broader emulator boundary work is still not globally complete. The VDP,
+   render host bridge, runtime startup, IDE/workspace edge, device APIs, and
+   TS/C++ parity surfaces are better than before, but the goal should still be
+   treated as subsystem-by-subsystem cleanup rather than a completed architecture
+   rewrite.
+
+If `/goal resume` is invoked, it should mean this order of work:
+
+1. Remove the local ROM/program encoders from the C++ program-cart fixture by
+   moving the producer logic to the central ROM/program owners or by using an
+   already-owned packer path. Do not add private backdoors, private-state
+   exposure, or local ABI helpers to make the fixture shorter.
+2. Revisit the libretro save-state path only after the fixture uses the real
+   ownership boundary. Keep the platform path public and cart-mode ownership
+   console-driven.
+3. Continue the IDE/terminal cleanup with `terminal/ui/mode.ts`, because it is
+   the next concentrated quality hotspot exposed by the current slice.
+4. Clean `code_tab/contexts.ts` state access after terminal mode no longer
+   needs editor/workbench internals by convenience.
+5. Audit Geometry as a device, not as a math helper: registers, latches,
+   scheduler timing, IRQ/status/fault behavior, scratch ownership, save/load
+   behavior, and TS/C++ parity should be checked as one hardware contract.
+6. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
+   APIs, Lua API metadata, devtools source APIs, overlay/editor APIs, terminal
+   commands, and workspace APIs. Separate cart-visible contracts from editor or
+   host-only conveniences.
+7. Only then perform a fresh completion audit of the active goal against this
+   document and the actual working tree. The expected result today is still
+   "not complete" unless every open item above has been resolved by concrete
+   owner-owned code.
+
 ## Recommended Work Order
 
 Completed foundation:
@@ -595,9 +717,15 @@ Completed foundation:
 
 Next recommended work:
 
-1. Prove libretro save-state serialization end to end.
-2. Audit TS/C++ parity subsystem by subsystem.
-3. Clean IDE/editor layering after the machine boundaries are safer.
+1. Finish the libretro save-state ownership path by removing local ROM/program
+   fixture encoders and routing cart image production through the central
+   ROM/program owners.
+2. Expand save-state coverage through the public platform/runtime boundary once
+   the ROM construction path is owner-owned.
+3. Continue TS/C++ parity cleanup subsystem by subsystem, including Geometry
+   and the public API surfaces instead of assuming they are already covered.
+4. Clean IDE/editor layering after the machine boundaries are safer, starting
+   with `terminal/ui/mode.ts` and then code-tab context ownership.
 
 This order protects future feature work. The goal is not to make the codebase
 look abstractly tidy. The goal is to keep BMSX's cart-visible machine contract
