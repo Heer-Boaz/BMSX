@@ -222,28 +222,4 @@ export class KeyboardInput implements InputHandler {
 		this.pendingReleases.add(key_code);
 	}
 
-	/**
-	 * Handles the blur event of the input element by resetting the input state.
-	 * @param _e - The blur event object.
-	 */
-	blur(_e: FocusEvent): void {
-		// this.preventInput = true; // Prevent input when the window loses focus
-		this.reset();
-	}
-
-	/**
-	 * Handles the focus event for the input element by resetting the input state.
-	 * Resets the input state.
-	 * @param _e - The focus event object.
-	 */
-	focus(_e: FocusEvent): void {
-		this.reset();
-		// this.preventInput = false; // Allow input when the window regains focus
-	}
-
-	dispose(): void {
-		this.reset();
-		this.keyStates = {};
-		this.gamepadButtonStates = {};
-	}
 }

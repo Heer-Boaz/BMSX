@@ -925,10 +925,6 @@ EvalFn compileFunction(const std::string& fname,
  * ActionDefinitionEvaluator
  * ============================================================================ */
 
-void ActionDefinitionEvaluator::clearCache() {
-	s_cache.clear();
-}
-
 AstNode* ActionDefinitionEvaluator::getCachedOrParse(const std::string& def) {
 	auto it = s_cache.find(def);
 	if (it != s_cache.end()) {

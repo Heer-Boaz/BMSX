@@ -20,10 +20,6 @@ GamepadInput::GamepadInput(const std::string& deviceId, const std::string& descr
 	reset();
 }
 
-GamepadInput::~GamepadInput() {
-	dispose();
-}
-
 /* ============================================================================
  * InputHandler interface
  * ============================================================================ */
@@ -108,12 +104,10 @@ bool GamepadInput::supportsVibrationEffect() const {
 }
 
 void GamepadInput::applyVibrationEffect(const VibrationParams& params) {
-	if (!supportsVibrationEffect()) return;
+	if (!m_vibrationSupported || !m_vibrationCallback) {
+		return;
+	}
 	m_vibrationCallback(params.intensity, params.duration);
-}
-
-void GamepadInput::dispose() {
-	reset();
 }
 
 /* ============================================================================

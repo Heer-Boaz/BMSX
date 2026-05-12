@@ -1,13 +1,11 @@
 import { consoleCore } from '../../../core/console';
 import { Runtime } from '../../../machine/runtime/runtime';
-import * as workbenchMode from '../../workbench/mode';
 import { getTrackedLuaHeapBytes } from '../../../machine/memory/lua_heap_usage';
-import { clearWorkspaceSessionState } from '../../workbench/workspace/storage';
-import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from '../../workspace/workspace';
+import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, readWorkspaceTextStorageEntry } from '../../workspace/workspace';
+import { collectUnsavedWorkspaceSourcePaths } from '../../workspace/open_dirty';
 import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from '../../common/runtime_error_format';
 import type { LuaSourceRecord } from '../../../machine/program/sources';
 import { formatByteSize, lenAndHash } from '../../../common/byte_hex_string';
-import { getCodeTabContexts } from '../../workbench/ui/code_tab/contexts';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 
@@ -17,10 +15,8 @@ type PathEntry = {
 	// label: string;
 };
 
-type WorkspaceStoredEntry = {
-	contents: string;
-	updatedAt: number | null;
-};
+export type TerminalCommandAction = 'deactivate_terminal' | 'clear_fault' | 'workspace_reset' | 'workspace_nuke';
+type TerminalCommandResult = boolean | TerminalCommandAction;
 
 const HELP_TEXT = [
 	'----------------------------------------',
@@ -77,7 +73,7 @@ export class TerminalCommandDispatcher {
 		return `${this.drive}:${this.cwd}> `;
 	}
 
-	public async handle(raw: string): Promise<boolean> {
+	public async handle(raw: string): Promise<TerminalCommandResult> {
 		const trimmed = raw.trim();
 		if (trimmed.length === 0) {
 			return true;
@@ -93,8 +89,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'CONT') {
-			workbenchMode.deactivateTerminalMode(this.runtime);
-			return true;
+			return 'deactivate_terminal';
 		}
 		if (upper === 'REBOOT') {
 			await this.runtime.rebootToBootRom();
@@ -138,8 +133,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'SYS') {
-			this.handleSys(tokens);
-			return true;
+			return this.handleSys(tokens);
 		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'WS') {
 			if (tokens.length !== 2) {
@@ -147,8 +141,8 @@ export class TerminalCommandDispatcher {
 				return true;
 			}
 			const sub = tokens[1].toUpperCase();
-			if (sub === 'RESET') { await this.runWorkspaceReset(); return true; }
-			if (sub === 'NUKE') { await this.runWorkspaceNuke(); return true; }
+			if (sub === 'RESET') return 'workspace_reset';
+			if (sub === 'NUKE') return 'workspace_nuke';
 			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return true;
 		}
@@ -177,33 +171,20 @@ export class TerminalCommandDispatcher {
 		}
 	}
 
-	private async runWorkspaceReset() {
-		this.runtime.terminal.appendStdout('Discarding dirty files...');
-		await resetWorkspaceDirtyBuffersAndStorage(this.runtime);
-		this.runtime.terminal.appendStdout('Dirty workspace buffers cleared');
-	}
-
-	private async runWorkspaceNuke() {
-		this.runtime.terminal.appendStdout('Warning: this will erase workspace!');
-		await nukeWorkspaceState(this.runtime);
-		clearWorkspaceSessionState();
-		this.runtime.terminal.appendStdout('Workspace data wiped');
-	}
-
-	private handleSys(tokens: string[]): void {
+	private handleSys(tokens: string[]): TerminalCommandResult {
 		if (tokens.length === 1) {
 			this.printSystemInfo();
-			return;
+			return true;
 		}
 		if (tokens.length === 2) {
 			const second = tokens[1].toUpperCase();
 			switch (second) {
 				case 'FAULT':
 					this.printFaultState();
-					return;
+					return true;
 				case 'RAM':
 					this.printMemoryUsage();
-					return;
+					return true;
 			}
 		}
 
@@ -211,11 +192,11 @@ export class TerminalCommandDispatcher {
 			const second = tokens[1].toUpperCase();
 			const third = tokens[2].toUpperCase();
 			if ((second === 'FAULT' && third === 'CLEAR') || (second === 'CLEAR' && third === 'FAULT')) {
-				this.clearFaultState();
-				return;
+				return 'clear_fault';
 			}
 		}
 		this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+		return true;
 	}
 
 	private printSystemInfo(): void {
@@ -237,19 +218,6 @@ export class TerminalCommandDispatcher {
 		this.runtime.terminal.appendSystem('MEMORY USAGE');
 		const lines = this.getMemoryStatusLines();
 		this.runtime.terminal.appendStdoutLines(lines);
-	}
-
-	private clearFaultState(): void {
-		const result = workbenchMode.clearFaultState(this.runtime);
-		if (!result.cleared) {
-			this.runtime.terminal.appendStderr('No fault to clear');
-			return;
-		}
-		if (result.resumedDebugger) {
-			this.runtime.terminal.appendStdout('Fault cleared; debugger resumed');
-			return;
-		}
-		this.runtime.terminal.appendStdout('Fault state cleared');
 	}
 
 	public getSystemStatusLines(): string[] {
@@ -419,11 +387,9 @@ export class TerminalCommandDispatcher {
 		}
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, asset.source_path);
 		const dirtyKey = buildWorkspaceStorageKey(root, dirtyPath);
-		const dirtyRaw = storage.getItem(dirtyKey);
-		const dirtyEntry = this.parseWorkspaceStoredEntry(dirtyRaw);
+		const dirtyEntry = readWorkspaceTextStorageEntry(storage, dirtyKey);
 		const savedKey = buildWorkspaceStorageKey(root, asset.source_path);
-		const savedRaw = storage.getItem(savedKey);
-		const savedEntry = this.parseWorkspaceStoredEntry(savedRaw);
+		const savedEntry = readWorkspaceTextStorageEntry(storage, savedKey);
 		const cartUpdatedAt = asset.update_timestamp ?? 0;
 		const savedMatchesCart = savedEntry !== null && savedEntry.contents === asset.src;
 		const savedIsCurrent = savedEntry !== null && savedEntry.updatedAt !== null && savedEntry.updatedAt > cartUpdatedAt;
@@ -507,7 +473,7 @@ export class TerminalCommandDispatcher {
 		}
 		const next = targetRaw.startsWith('/') ? targetRaw : `${this.cwd}/${targetRaw}`;
 		const paths = this.collectPaths('-ALL');
-		const hasDir = paths.some(entry => this.isAncestor(next, entry.path) || entry.path === next);
+		const hasDir = paths.some(entry => this.relativeChildPath(next, entry.path) !== null);
 		if (!hasDir) {
 			this.runtime.terminal.appendStderr(ERROR_FOLDER_NOT_FOUND);
 			return;
@@ -520,23 +486,6 @@ export class TerminalCommandDispatcher {
 		return command.trim().split(/\s+/);
 	}
 
-	private collectUnsavedPaths(root: string): Set<string> {
-		const unsaved = new Set<string>();
-		for (const context of getCodeTabContexts()) {
-			if (!context.descriptor || !context.dirty) {
-				continue;
-			}
-			const cartPath = context.descriptor.path;
-			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
-			const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
-			if (this.runtime.storageService.getItem(storageKey) === null) {
-				const normalizedPath = cartPath.startsWith('/') ? cartPath : `/${cartPath}`;
-				unsaved.add(normalizedPath);
-			}
-		}
-		return unsaved;
-	}
-
 	private collectWorkspaceEntryFlags(luaAssets: Array<LuaSourceRecord>): Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }> {
 		const flags = new Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }>();
 		const root = this.runtime.cartProjectRootPath;
@@ -544,19 +493,17 @@ export class TerminalCommandDispatcher {
 		if (!root || !storage) {
 			return flags;
 		}
-		const unsavedPaths = this.collectUnsavedPaths(root);
+		const unsavedPaths = collectUnsavedWorkspaceSourcePaths(root, storage);
 		for (let index = 0; index < luaAssets.length; index += 1) {
 			const asset = luaAssets[index];
 			const cartPath = asset.source_path;
 			const normalizedPath = cartPath.startsWith('/') ? cartPath : `/${cartPath}`;
 			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 			const dirtyKey = buildWorkspaceStorageKey(root, dirtyPath);
-			const dirtyRaw = storage.getItem(dirtyKey);
-			const dirtyEntry = this.parseWorkspaceStoredEntry(dirtyRaw);
+			const dirtyEntry = readWorkspaceTextStorageEntry(storage, dirtyKey);
 
 			const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
-			const savedRaw = storage.getItem(canonicalKey);
-			const savedEntry = this.parseWorkspaceStoredEntry(savedRaw);
+			const savedEntry = readWorkspaceTextStorageEntry(storage, canonicalKey);
 			const cartSource = asset.src;
 			const baseSource = asset.base_src;
 			const cartUpdatedAt = asset.update_timestamp ?? 0;
@@ -574,8 +521,7 @@ export class TerminalCommandDispatcher {
 				const dirtyDiffersFromBase = dirtyEntry.contents !== baseSource;
 				hasDirty = dirtyDiffersFromSaved && dirtyDiffersFromBase;
 			}
-			const hasUnsaved = unsavedPaths.has(normalizedPath);
-			flags.set(normalizedPath, { hasSaved, hasDirty, hasUnsaved });
+			flags.set(normalizedPath, { hasSaved, hasDirty, hasUnsaved: unsavedPaths.has(normalizedPath) });
 		}
 		return flags;
 	}
@@ -596,28 +542,6 @@ export class TerminalCommandDispatcher {
 			return bySource;
 		}
 		return null;
-	}
-
-
-	private parseWorkspaceStoredEntry(raw: string): WorkspaceStoredEntry | null {
-		if (raw === null || raw === undefined) {
-			return null;
-		}
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(raw);
-		} catch {
-			return { contents: raw, updatedAt: null };
-		}
-		if (!parsed || typeof parsed !== 'object') {
-			return { contents: raw, updatedAt: null };
-		}
-		const payload = parsed as { contents?: unknown; updatedAt?: unknown };
-		if (typeof payload.contents !== 'string') {
-			return { contents: raw, updatedAt: null };
-		}
-		const updatedAt = typeof payload.updatedAt === 'number' ? payload.updatedAt : null;
-		return { contents: payload.contents, updatedAt };
 	}
 
 	private collectPaths(mode: string): PathEntry[] {
@@ -642,8 +566,7 @@ export class TerminalCommandDispatcher {
 		const luaAssets = Object.values(this.runtime.activeLuaSources.path2lua);
 		if (includeRom) {
 			for (const asset of luaAssets) {
-				const path = asset.source_path ?? 'help!!';
-				pushPath(path, 'rom');
+				pushPath(asset.source_path, 'rom');
 			}
 		}
 		if (includeSaved || includeDirty) {
@@ -665,25 +588,27 @@ export class TerminalCommandDispatcher {
 
 	private buildListing(entries: PathEntry[], cwd: string): Array<{ text: string; kind: PathEntryKind; isDir: boolean }> {
 		const dirs = new Set<string>();
-		const files = new Map<string, { labels: Set<string>; hasRom: boolean; hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }>();
+		const files = new Map<string, { hasRom: boolean; hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }>();
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			if (!this.isAncestor(cwd, entry.path) && entry.path !== cwd) {
+			const relative = this.relativeChildPath(cwd, entry.path);
+			if (relative === null) {
 				continue;
 			}
-			const relative = this.relativePath(cwd, entry.path);
 			if (relative.length === 0) {
 				continue;
 			}
 			const slashIndex = relative.indexOf('/');
 			const fileKey = relative;
-			const existing = files.get(fileKey) ?? { labels: new Set<string>(), hasRom: false, hasSaved: false, hasDirty: false, hasUnsaved: false };
-			// existing.labels.add(entry.label);
+			let existing = files.get(fileKey);
+			if (!existing) {
+				existing = { hasRom: false, hasSaved: false, hasDirty: false, hasUnsaved: false };
+				files.set(fileKey, existing);
+			}
 			if (entry.kind === 'rom') existing.hasRom = true;
 			if (entry.kind === 'saved') existing.hasSaved = true;
 			if (entry.kind === 'dirty') existing.hasDirty = true;
 			if (entry.kind === 'unsaved') existing.hasUnsaved = true;
-			files.set(fileKey, existing);
 			if (slashIndex !== -1) {
 				const dirName = relative.slice(0, slashIndex);
 				dirs.add(dirName);
@@ -697,7 +622,6 @@ export class TerminalCommandDispatcher {
 		const sortedFiles = Array.from(files.entries()).sort((a, b) => a[0].localeCompare(b[0]));
 		for (let i = 0; i < sortedFiles.length; i += 1) {
 			const [name, meta] = sortedFiles[i];
-			// const label = Array.from(meta.labels).join(', ');
 			let kind: PathEntryKind = 'rom';
 			if (meta.hasDirty && meta.hasSaved) {
 				kind = 'saved_dirty';
@@ -731,22 +655,14 @@ export class TerminalCommandDispatcher {
 		return trimmed.slice(0, index);
 	}
 
-	private isAncestor(base: string, candidate: string): boolean {
-		const normalizedBase = base === '/' ? '/' : `${base}/`;
-		if (normalizedBase === '/' && candidate === '/') {
-			return true;
+	private relativeChildPath(base: string, target: string): string | null {
+		if (target === base) {
+			return '';
 		}
-		if (normalizedBase === '/') {
-			return candidate.startsWith('/');
-		}
-		return candidate.startsWith(normalizedBase);
-	}
-
-	private relativePath(base: string, target: string): string {
 		if (base === '/') {
 			return target.startsWith('/') ? target.slice(1) : target;
 		}
 		const prefix = `${base}/`;
-		return target.startsWith(prefix) ? target.slice(prefix.length) : '';
+		return target.startsWith(prefix) ? target.slice(prefix.length) : null;
 	}
 }

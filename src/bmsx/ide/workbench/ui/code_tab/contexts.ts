@@ -10,6 +10,7 @@ import type {
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
 import { listResources } from '../../../workspace/workspace';
+import { clearOpenWorkspacePathDirtyState, setOpenWorkspacePathDirty } from '../../../workspace/open_dirty';
 import { computeResourceTabTitle } from '../tab/titles';
 import { codeTabSessionState } from './session_state';
 import { tabSessionState } from '../tab/session_state';
@@ -129,15 +130,21 @@ export function getCodeTabContexts(): Iterable<CodeTabContext> {
 
 export function registerCodeTabContext(context: CodeTabContext): void {
 	codeTabSessionState.contexts.set(context.id, context);
+	setOpenWorkspacePathDirty(context.descriptor.path, context.dirty);
 }
 
 export function clearCodeTabContexts(): void {
 	codeTabSessionState.contexts.clear();
+	clearOpenWorkspacePathDirtyState();
 }
 
 export function setTabDirty(tabId: string, dirty: boolean): void {
 	const tab = tabSessionState.tabs.find(candidate => candidate.id === tabId)!;
 	tab.dirty = dirty;
+	const context = codeTabSessionState.contexts.get(tabId);
+	if (context) {
+		setOpenWorkspacePathDirty(context.descriptor.path, dirty);
+	}
 }
 
 export function updateActiveContextDirtyFlag(): void {

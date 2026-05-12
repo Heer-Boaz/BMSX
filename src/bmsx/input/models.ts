@@ -184,9 +184,4 @@ export interface InputHandler {
 	 * Checks if the gamepad has haptic feedback capabilities.
 	 */
 	get supportsVibrationEffect(): boolean;
-
-	/**
-	 * Disposes of the input handler, cleaning up resources and event listeners.
-	 */
-	dispose(): void;
 }

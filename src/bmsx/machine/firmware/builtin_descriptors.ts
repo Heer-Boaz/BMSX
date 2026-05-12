@@ -1,4 +1,4 @@
-import type { LuaBuiltinDescriptor } from '../runtime/contracts';
+import type { LuaBuiltinDescriptor } from '../../lua/semantic_contracts';
 
 export const SYSTEM_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> = [
 	{ name: 'define_fsm', params: ['id', 'blueprint'], signature: 'define_fsm(id, blueprint)' },

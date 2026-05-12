@@ -4,7 +4,6 @@ import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
 import {
 	getApiCompletionData,
-	getKeywordCompletions,
 	intellisenseUiReady,
 	listGlobalLuaSymbols,
 	listLuaBuiltinFunctions,
@@ -13,6 +12,7 @@ import {
 	type LuaScopedSymbol,
 	shouldAutoTriggerCompletions,
 } from '../intellisense/engine';
+import { getKeywordCompletions } from './keyword_completions';
 import { isReservedMemoryMapName } from '../../../../lua/semantic/common';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../../../lua/syntax/ast';
 import {

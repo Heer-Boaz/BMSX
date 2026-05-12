@@ -985,14 +985,6 @@ export class ActionDefinitionEvaluator {
 	private static cache = new Map<string, Node>();
 
 	/**
-	 * Clears the static cache of parsed action definitions.
-	 *
-	 * This method can be called to reset the cache, which is useful
-	 * when action definitions change or need to be re-evaluated.
-	 */
-	static clearCache() { this.cache.clear(); }
-
-	/**
 	 * Checks if an action is triggered based on the provided action definition and state getter.
 	 *
 	 * This method first checks the cache for a parsed AST representation of the action definition.

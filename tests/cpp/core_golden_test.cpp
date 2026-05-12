@@ -28,6 +28,7 @@
 #include "machine/scheduler/budget.h"
 #include "machine/common/hash.h"
 #include "audio/soundmaster.h"
+#include "input/manager.h"
 #include "platform/platform.h"
 #include "render/gameview.h"
 #include "render/texture_manager.h"
@@ -201,6 +202,7 @@ struct RuntimeHarness {
 				.geoWorkUnitsPerSec = 16'384'000,
 			},
 			clock,
+			bmsx::Input::instance(),
 			soundMaster,
 			microtasks,
 			view

@@ -19,7 +19,12 @@ import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
 import { resetHardwareCameraBank0 } from '../../render/shared/hardware/camera';
 import { clearHardwareLighting } from '../../render/shared/hardware/lighting';
 import { restoreVdpContextState } from '../../render/vdp/context_state';
-import * as workbenchMode from '../workbench/mode';
+import { clearRuntimeDebuggerPause } from './debug_pause';
+import {
+	clearFaultSnapshot,
+	clearRuntimeFault,
+	resetHandledLuaErrors,
+} from './fault_state';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from '../../machine/runtime/timing';
 import { setFrameTiming, setTransferRatesFromManifest } from '../../machine/runtime/timing/config';
 import {
@@ -83,20 +88,20 @@ function resolveRuntimeMachineForPlan(runtime: Runtime, plan: RuntimeReloadPlan)
 }
 
 export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeSnapshot, preserveSystemModules?: boolean): Promise<void> {
-	workbenchMode.clearActiveDebuggerPause(runtime);
+	clearRuntimeDebuggerPause(runtime);
 	if (!state) {
 		runtime.luaRuntimeFailed = false;
 		throw new Error('cannot resume from invalid state snapshot.');
 	}
 	const snapshot: RuntimeResumeSnapshot = { ...state, luaRuntimeFailed: false };
 	runtime.interpreter.clearLastFaultEnvironment();
-	workbenchMode.clearFaultSnapshot(runtime);
+	clearFaultSnapshot(runtime);
 
-	workbenchMode.resetHandledLuaErrors(runtime);
+	resetHandledLuaErrors(runtime);
 	runtime.luaRuntimeFailed = false;
 	clearOverlayFrame();
 	applyRuntimeMachineState(runtime, snapshot.machineState);
-	restoreVdpContextState(runtime.machine.vdp, consoleCore.view);
+	restoreVdpContextState(runtime.machine.vdp, runtime.view);
 	resumeLuaProgramState(runtime, snapshot, preserveSystemModules);
 	runtime.luaInitialized = true;
 }
@@ -137,7 +142,6 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	runtime.programMetadata = finalizedMetadata;
 	runtime.luaInitialized = true;
 	clearEditorCompletionCache(runtime);
-	workbenchMode.clearEditorErrorOverlaysIfNoFault(runtime);
 }
 
 export function clearCartModuleCacheForHotResume(runtime: Runtime): void {
@@ -250,7 +254,6 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeS
 		hotResumeProgramEntry(runtime, { source, path: binding, preserveSystemModules: shouldPreserveSystemModules });
 	}
 	catch (error) {
-		workbenchMode.handleLuaError(runtime, error);
 		throw convertToError(error);
 	}
 	refreshLuaModulesOnResume(runtime, binding);
@@ -279,7 +282,7 @@ export function markSourceChunkAsDirty(runtime: Runtime, path: string): void {
 
 export function resetLuaInteroperabilityState(runtime: Runtime): void {
 	runtime.luaGenericChunksExecuted.clear();
-	workbenchMode.resetHandledLuaErrors(runtime);
+	resetHandledLuaErrors(runtime);
 	runtime.luaFunctionRedirectCache.clear();
 }
 
@@ -747,7 +750,6 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 	catch (error) {
 		console.info(`Lua boot '${path}' failed.`);
 		logDebugState(runtime);
-		workbenchMode.handleLuaError(runtime, error);
 		throw convertToError(error);
 	}
 }
@@ -758,8 +760,8 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 		const preservingSuspension = runtime.pauseCoordinator.hasSuspension();
 		if (!preservingSuspension) {
 			runtime.pauseCoordinator.clearSuspension();
-			workbenchMode.setDebuggerPaused(runtime, false);
-			workbenchMode.clearRuntimeFault(runtime);
+			runtime.debuggerPaused = false;
+			clearRuntimeFault(runtime);
 		}
 		runtime.luaInitialized = false;
 
@@ -787,9 +789,9 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 			const vblankCycles = resolveVblankCycles(cpuHz, runtime.timing.ufpsScaled, renderHeight);
 			setFrameTiming(runtime, cpuHz, cycleBudgetPerFrame, vblankCycles);
 			setTransferRatesFromManifest(runtime, perfSpecs);
-		} catch (error) {
-			workbenchMode.handleLuaError(runtime, error);
-		}
+			} catch (error) {
+				throw convertToError(error);
+			}
 	}
 	finally {
 		runtime.luaGate.end(gateToken);
@@ -836,7 +838,6 @@ export function refreshLuaHandlersForChunk(runtime: Runtime, path: string, sourc
 	runtime.luaGenericChunksExecuted.delete(path);
 	reloadGenericLuaChunk(runtime, path, sourceOverride);
 	clearEditorCompletionCache(runtime);
-	workbenchMode.clearEditorErrorOverlaysIfNoFault(runtime);
 }
 
 export function reloadGenericLuaChunk(runtime: Runtime, path: string, sourceOverride?: string): void {

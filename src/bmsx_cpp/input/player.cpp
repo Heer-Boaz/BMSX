@@ -188,6 +188,7 @@ void PlayerInput::setInputMap(const InputMap& map) {
 	base.pointer = pointer;
 	m_contexts = ContextStack();
 	m_contexts.push(base);
+	clearActionEvaluationState();
 }
 
 /* ============================================================================
@@ -195,24 +196,19 @@ void PlayerInput::setInputMap(const InputMap& map) {
  * ============================================================================ */
 
 void PlayerInput::pushContext(const std::string& id, const KeyboardInputMapping& keyboard, const GamepadInputMapping& gamepad, const PointerInputMapping& pointer, i32 priority, bool enabled) {
+	m_contexts.pop(id);
 	trackInputMapBindings(keyboard, gamepad, pointer);
 	MappingContext ctx(id, priority, enabled);
 	ctx.keyboard = keyboard;
 	ctx.gamepad = gamepad;
 	ctx.pointer = pointer;
 	m_contexts.push(ctx);
+	clearActionEvaluationState();
 }
 
-void PlayerInput::popContext(const std::string& id) {
+void PlayerInput::clearContext(const std::string& id) {
 	m_contexts.pop(id);
-}
-
-void PlayerInput::enableContext(const std::string& id, bool enabled) {
-	m_contexts.enable(id, enabled);
-}
-
-void PlayerInput::setContextPriority(const std::string& id, i32 priority) {
-	m_contexts.setPriority(id, priority);
+	clearActionEvaluationState();
 }
 
 bool PlayerInput::supportsVibrationEffect() const {
@@ -232,27 +228,23 @@ void PlayerInput::applyVibrationEffect(const VibrationParams& params) {
 	}
 }
 
-void PlayerInput::trackButton(InputSource source, const std::string& button) {
-	m_trackedButtons[sourceIndex(source)].insert(button);
-}
-
 void PlayerInput::trackInputMapBindings(const KeyboardInputMapping& keyboard, const GamepadInputMapping& gamepad, const PointerInputMapping& pointer) {
 	for (const auto& [action, bindings] : keyboard) {
 		(void)action;
 		for (const auto& binding : bindings) {
-			trackButton(InputSource::Keyboard, binding.id);
+			m_trackedButtons[sourceIndex(InputSource::Keyboard)].insert(binding.id);
 		}
 	}
 	for (const auto& [action, bindings] : gamepad) {
 		(void)action;
 		for (const auto& binding : bindings) {
-			trackButton(InputSource::Gamepad, binding.id);
+			m_trackedButtons[sourceIndex(InputSource::Gamepad)].insert(binding.id);
 		}
 	}
 	for (const auto& [action, bindings] : pointer) {
 		(void)action;
 		for (const auto& binding : bindings) {
-			trackButton(InputSource::Pointer, binding.id);
+			m_trackedButtons[sourceIndex(InputSource::Pointer)].insert(binding.id);
 		}
 	}
 }
@@ -283,7 +275,7 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 					id = &std::get<PointerBinding>(binding).id;
 					break;
 			}
-			const ButtonState state = getSimButtonState(*id, source, frameWindow);
+				const ButtonState state = getButtonState(*id, source, frameWindow);
 			addActionBindingState(aggregation, state);
 			addBufferedPressId(aggregation, getStateManager(source), *id);
 		}
@@ -408,8 +400,8 @@ bool PlayerInput::checkActionTriggered(const std::string& actionDef) {
  * Button state
  * ============================================================================ */
 
-ButtonState PlayerInput::getButtonState(const std::string& button, InputSource source) {
-	return getSimButtonState(button, source);
+ButtonState PlayerInput::getButtonState(const std::string& button, InputSource source, std::optional<i32> windowFrames) {
+	return getStateManager(source).getButtonState(button, windowFrames);
 }
 
 ButtonState PlayerInput::getRawButtonState(const std::string& button, InputSource source) {
@@ -428,7 +420,7 @@ ActionState PlayerInput::getButtonRepeatState(const std::string& button, InputSo
 }
 
 ButtonState PlayerInput::getKeyState(const std::string& key, KeyModifier modifiers) {
-	auto state = getSimButtonState(key, InputSource::Keyboard);
+	auto state = getButtonState(key, InputSource::Keyboard);
 
 	// If no modifiers required, return as is
 	if (modifiers == KeyModifier::None) return state;
@@ -445,10 +437,6 @@ ButtonState PlayerInput::getKeyState(const std::string& key, KeyModifier modifie
 	}
 
 	return state;
-}
-
-ButtonState PlayerInput::getSimButtonState(const std::string& button, InputSource source, std::optional<i32> windowFrames) {
-	return getStateManager(source).getButtonState(button, windowFrames);
 }
 
 /* ============================================================================
@@ -544,14 +532,6 @@ void PlayerInput::consumeAction(const std::string& action) {
 	}
 }
 
-void PlayerInput::consumeAction(const ActionState& action) {
-	consumeAction(action.action);
-}
-
-void PlayerInput::consumeButton(const std::string& button, InputSource source) {
-	consumeRawButton(button, source);
-}
-
 void PlayerInput::consumeRawButton(const std::string& button, InputSource source) {
 	auto* handler = inputHandlers[sourceIndex(source)];
 	if (handler) {
@@ -562,6 +542,11 @@ void PlayerInput::consumeRawButton(const std::string& button, InputSource source
 void PlayerInput::consumeGameplayButton(const std::string& button, InputSource source) {
 	auto state = getButtonState(button, source);
 	getStateManager(source).consumeBufferedEvent(button, state.pressId);
+}
+
+void PlayerInput::clearActionEvaluationState() {
+	m_actionGuardRecords.clear();
+	m_simActionRepeatRecords.clear();
 }
 
 /* ============================================================================
@@ -581,17 +566,17 @@ void PlayerInput::pollInput(f64 currentTimeMs) {
 }
 
 void PlayerInput::recordButtonEvent(InputSource source, const std::string& button, InputEvent evt) {
-	trackButton(source, button);
+	m_trackedButtons[sourceIndex(source)].insert(button);
 	getStateManager(source).addInputEvent(std::move(evt));
 }
 
 void PlayerInput::recordAxis1Input(InputSource source, const std::string& button, f32 value, f64 timestamp) {
-	trackButton(source, button);
+	m_trackedButtons[sourceIndex(source)].insert(button);
 	getStateManager(source).recordAxis1Sample(button, value, timestamp);
 }
 
 void PlayerInput::recordAxis2Input(InputSource source, const std::string& button, f32 x, f32 y, f64 timestamp) {
-	trackButton(source, button);
+	m_trackedButtons[sourceIndex(source)].insert(button);
 	getStateManager(source).recordAxis2Sample(button, x, y, timestamp);
 }
 

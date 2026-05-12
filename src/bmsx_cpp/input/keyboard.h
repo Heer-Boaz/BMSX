@@ -24,7 +24,7 @@ public:
 	// Constructor
 	// ─────────────────────────────────────────────────────────────────────────
 	explicit KeyboardInput(const std::string& deviceId = "keyboard:0");
-	~KeyboardInput() override;
+	~KeyboardInput() override = default;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// InputHandler interface
@@ -37,7 +37,6 @@ public:
 	i32 gamepadIndex() const override { return 0; }
 	bool supportsVibrationEffect() const override { return false; }
 	void applyVibrationEffect(const VibrationParams& /*params*/) override {}
-	void dispose() override;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Key events
@@ -48,12 +47,6 @@ public:
 	
 	// Called when a key is released
 	void keyup(const std::string& keyCode, i32 pressId, f64 timestamp);
-	
-	// Called when window loses focus
-	void blur();
-	
-	// Called when window gains focus
-	void focus();
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// State access

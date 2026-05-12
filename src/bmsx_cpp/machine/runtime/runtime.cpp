@@ -11,7 +11,6 @@
 #include "rompack/format.h"
 #include "rompack/loader.h"
 #include "input/manager.h"
-#include "input/player.h"
 #include "platform/platform.h"
 #include <array>
 #include <stdexcept>
@@ -26,6 +25,7 @@ constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 Runtime::Runtime(
 	const RuntimeOptions& options,
 	Clock& clock,
+	Input& input,
 	SoundMaster& soundMaster,
 	MicrotaskQueue& microtasks,
 	GameView& view
@@ -47,14 +47,14 @@ Runtime::Runtime(
 	, machine(
 		m_memory,
 		VdpFrameBufferSize{ static_cast<uint32_t>(options.viewport.x), static_cast<uint32_t>(options.viewport.y) },
-		Input::instance(),
+		input,
 		soundMaster,
 		microtasks
 	)
 {
 	configureLuaHeapUsage({});
 	resetTrackedLuaHeapBytes();
-	Input::instance().setFrameDurationMs(timing.frameDurationMs);
+	input.setFrameDurationMs(timing.frameDurationMs);
 	machine.memory.clearIoSlots();
 	machine.initializeSystemIo();
 	machine.resetDevices();
@@ -209,7 +209,9 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int ent
 		m_program = m_programStorage.get();
 		m_programMetadata = metadata;
 		machine.cpu.setProgram(m_program, metadata);
-		runSystemBuiltinPrelude();
+		if (systemRom().hasProgram()) {
+			runSystemBuiltinPrelude();
+		}
 		runStaticModuleInitializers(staticModulePaths);
 		enforceLuaHeapBudget();
 

@@ -19,10 +19,6 @@ KeyboardInput::KeyboardInput(const std::string& deviceId)
 	reset();
 }
 
-KeyboardInput::~KeyboardInput() {
-	dispose();
-}
-
 /* ============================================================================
  * InputHandler interface
  * ============================================================================ */
@@ -88,9 +84,8 @@ void KeyboardInput::pollInput() {
 		m_gamepadButtonStates[keyCode] = state;
 		
 		// Map to gamepad button if applicable
-		const auto& mapping = Input::KEYBOARD_TO_GAMEPAD;
-		auto it = mapping.find(keyCode);
-		if (it != mapping.end()) {
+		auto it = Input::KEYBOARD_TO_GAMEPAD.find(keyCode);
+		if (it != Input::KEYBOARD_TO_GAMEPAD.end()) {
 			const std::string& mappedButton = it->second;
 			auto& dst = m_gamepadButtonStates[mappedButton];
 			
@@ -133,8 +128,7 @@ void KeyboardInput::consumeButton(const ButtonId& button) {
 	}
 	
 	// Also consume any keyboard key that maps to this gamepad button
-	const auto& mapping = Input::KEYBOARD_TO_GAMEPAD;
-	for (const auto& [keyCode, mappedButton] : mapping) {
+	for (const auto& [keyCode, mappedButton] : Input::KEYBOARD_TO_GAMEPAD) {
 		if (mappedButton == button) {
 			auto keyIt = m_gamepadButtonStates.find(keyCode);
 			if (keyIt != m_gamepadButtonStates.end()) {
@@ -170,10 +164,6 @@ void KeyboardInput::reset(const std::vector<std::string>* except) {
 	}
 }
 
-void KeyboardInput::dispose() {
-	reset();
-}
-
 /* ============================================================================
  * Key events
  * ============================================================================ */
@@ -206,14 +196,6 @@ void KeyboardInput::keyup(const std::string& keyCode, i32 pressId, f64 timestamp
 		state.pressId = pressId;
 	}
 	m_pendingReleases.insert(keyCode);
-}
-
-void KeyboardInput::blur() {
-	reset();
-}
-
-void KeyboardInput::focus() {
-	reset();
 }
 
 } // namespace bmsx

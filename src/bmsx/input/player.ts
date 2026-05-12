@@ -246,6 +246,7 @@ export class PlayerInput {
 		// Reset stack to base
 		this.contexts = new ContextStack();
 		this.contexts.push(base);
+		this.clearActionEvaluationState();
 	}
 
 	private getStateManager(source: InputSource): InputStateManager {
@@ -272,13 +273,9 @@ export class PlayerInput {
 		}
 	}
 
-	private trackButton(source: InputSource, button: ButtonId): void {
-		this.trackedButtons[source].add(button);
-	}
-
 	private trackBindings(source: InputSource, bindings: Array<ButtonId | { id: ButtonId }>): void {
 		for (let i = 0; i < bindings.length; i += 1) {
-			this.trackButton(source, bindingId(bindings[i]));
+			this.trackedButtons[source].add(bindingId(bindings[i]));
 		}
 	}
 
@@ -296,20 +293,15 @@ export class PlayerInput {
 
 	/** Add a higher-priority mapping context */
 	public pushContext(id: string, keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping, priority = 100, enabled = true): void {
+		this.contexts.pop(id);
 		this.trackInputMapBindings({ keyboard, gamepad, pointer });
 		this.contexts.push(new MappingContext(id, priority, enabled, keyboard, gamepad, pointer));
+		this.clearActionEvaluationState();
 	}
 
-	public popContext(id?: string): void {
+	public clearContext(id: string): void {
 		this.contexts.pop(id);
-	}
-
-	public enableContext(id: string, enabled: boolean): void {
-		this.contexts.enable(id, enabled);
-	}
-
-	public setContextPriority(id: string, priority: number): void {
-		this.contexts.setPriority(id, priority);
+		this.clearActionEvaluationState();
 	}
 
 	public get supportsVibrationEffect(): boolean {
@@ -437,21 +429,21 @@ export class PlayerInput {
 			return { allPressed, anyPressed, anyJustPressed, allJustPressed, anyWasPressed, allWasPressed, anyJustReleased, allJustReleased, anyWasReleased, allWasReleased, anyConsumed, leastPressTime, recentestTimestamp, lastPressId, best1DVal, best1DAbs, best2DVal, best2DAbs, bufferPressId };
 		};
 
-		const keyboardState = getStates(
-			keyboardKeys,
-			(key: ButtonId, framewindow?: number) => this.getSimButtonState(key, 'keyboard', framewindow),
-			this.getStateManager('keyboard')
-		);
-		const gamepadState = getStates(
-			gamepadButtons,
-			(button: ButtonId, framewindow?: number) => this.getSimButtonState(button, 'gamepad', framewindow),
-			this.getStateManager('gamepad')
-		);
-		const pointerState = getStates(
-			pointerButtons,
-			(button: ButtonId, framewindow?: number) => this.getSimButtonState(button, 'pointer', framewindow),
-			this.getStateManager('pointer')
-		);
+			const keyboardState = getStates(
+				keyboardKeys,
+				(key: ButtonId, framewindow?: number) => this.getButtonState(key, 'keyboard', framewindow),
+				this.getStateManager('keyboard')
+			);
+			const gamepadState = getStates(
+				gamepadButtons,
+				(button: ButtonId, framewindow?: number) => this.getButtonState(button, 'gamepad', framewindow),
+				this.getStateManager('gamepad')
+			);
+			const pointerState = getStates(
+				pointerButtons,
+				(button: ButtonId, framewindow?: number) => this.getButtonState(button, 'pointer', framewindow),
+				this.getStateManager('pointer')
+			);
 		const deviceStates = [keyboardState, gamepadState, pointerState];
 		const pressed = deviceStates.some(state => state.anyPressed);
 		const justpressed = deviceStates.some(state => state.anyJustPressed);
@@ -606,12 +598,9 @@ export class PlayerInput {
 	 * Consumes the input action for the specified player index.
 	 * @param actionToConsume The name of the input action to consume.
 	 */
-	public consumeAction(actionToConsume: ActionState | string) {
+	public consumeAction(action: string): void {
 		const inputMap = this.inputMap;
 		if (!inputMap) return;
-
-		// Determine the action string
-		const action: string = (typeof actionToConsume === 'string') ? actionToConsume : actionToConsume.action;
 
 		for (const source of INPUT_SOURCES) {
 			const bindings = this.inputMapBindings(inputMap, action, source);
@@ -626,14 +615,11 @@ export class PlayerInput {
 		}
 	}
 
-	public consumeButton(button: ButtonId, source: InputSource): void {
-		const handler = this.inputHandlers[source];
-		if (!handler) return;
-		handler.consumeButton(button);
-	}
-
 	public consumeRawButton(button: ButtonId, source: InputSource): void {
-		this.inputHandlers[source]?.consumeButton(button);
+		const handler = this.inputHandlers[source];
+		if (handler) {
+			handler.consumeButton(button);
+		}
 	}
 
 	private consumeGameplayButton(button: ButtonId, source: InputSource): void {
@@ -641,8 +627,9 @@ export class PlayerInput {
 		this.getStateManager(source).consumeBufferedEvent(button, state?.pressId);
 	}
 
-	public consumeActions(...actions: (ActionState | string)[]): void {
-		actions.forEach(action => this.consumeAction(action));
+	private clearActionEvaluationState(): void {
+		this.actionGuardRecords.clear();
+		this.simActionRepeatRecords.clear();
 	}
 
 	public getModifiersState(): { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean } {
@@ -682,8 +669,15 @@ export class PlayerInput {
 	 * @param button - The gamepad button identifier.
 	 * @returns The state of the button.
 	 */
-	public getButtonState(button: ButtonId, source: InputSource): ButtonState {
-		return this.getSimButtonState(button, source);
+	public getButtonState(button: ButtonId, source: InputSource, framewindow: number = null): ButtonState {
+		switch (source) {
+			case 'keyboard':
+				return this._stateManagers.keyboard.getButtonState(button, framewindow);
+			case 'gamepad':
+				return this._stateManagers.gamepad.getButtonState(button, framewindow);
+			case 'pointer':
+				return this._stateManagers.pointer.getButtonState(button, framewindow);
+		}
 	}
 
 	public getRawButtonState(button: ButtonId, source: InputSource): ButtonState {
@@ -692,10 +686,6 @@ export class PlayerInput {
 
 	public get pollFrame(): number {
 		return this.frameCounter;
-	}
-
-	private getSimButtonState(button: ButtonId, source: InputSource, framewindow: number = null): ButtonState {
-		return this.getStateManager(source).getButtonState(button, framewindow);
 	}
 
 	/** Returns repeat/edge info for a raw button using the built-in repeat cadence. */
@@ -710,7 +700,7 @@ export class PlayerInput {
 	}
 
 	public getKeyState(key: ButtonId, modifiers: KeyModifier): ButtonState {
-		const state = this.getSimButtonState(key, 'keyboard');
+		const state = this.getButtonState(key, 'keyboard');
 		// If no modifiers are required, return the state as is
 		if (modifiers === KeyModifier.none) return state;
 
@@ -766,17 +756,17 @@ export class PlayerInput {
 	}
 
 	public recordButtonEvent(source: InputSource, button: ButtonId, event: InputEvent): void {
-		this.trackButton(source, button);
+		this.trackedButtons[source].add(button);
 		this.getStateManager(source).addInputEvent(event);
 	}
 
 	public recordAxis1Input(source: InputSource, button: ButtonId, value: number, timestamp: number): void {
-		this.trackButton(source, button);
+		this.trackedButtons[source].add(button);
 		this.getStateManager(source).recordAxis1Sample(button, value, timestamp);
 	}
 
 	public recordAxis2Input(source: InputSource, button: ButtonId, x: number, y: number, timestamp: number): void {
-		this.trackButton(source, button);
+		this.trackedButtons[source].add(button);
 		this.getStateManager(source).recordAxis2Sample(button, x, y, timestamp);
 	}
 
@@ -820,7 +810,7 @@ export class PlayerInput {
 	}
 
 	private applyCapturedRebind(source: 'keyboard' | 'gamepad', id: ButtonId, action: string, mode: 'append' | 'replace'): void {
-		this.trackButton(source, id);
+		this.trackedButtons[source].add(id);
 		const map = (source === 'keyboard' ? this.inputMap.keyboard : this.inputMap.gamepad) as RebindMapping;
 		const arr = map[action];
 		let base: RebindBinding[];

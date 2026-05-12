@@ -12,7 +12,7 @@ import {
 } from './builtin_descriptors';
 import { buildMarshalContext } from '../runtime/host/native_bridge';
 import type { Runtime } from '../runtime/runtime';
-import type { LuaBuiltinDescriptor } from '../runtime/contracts';
+import type { LuaBuiltinDescriptor } from '../../lua/semantic_contracts';
 
 export function registerFirmwareBuiltins(runtime: Runtime, interpreter: LuaInterpreter): void {
 	runtime.apiFunctionNames.clear();

@@ -17,7 +17,6 @@ import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { resolveLuaSourceRecordFromRegistries } from '../../../../machine/program/sources';
 import { asStringId, valueIsString } from '../../../../machine/cpu/cpu';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
-import { ScratchBatchPooled } from '../../../../common/scratchbatch';
 import { beginNavigationCapture, completeNavigation } from '../../../navigation/navigation_history';
 import { focusChunkSource } from '../../../workbench/contrib/resources/navigation';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
@@ -210,23 +209,6 @@ export function collectLuaModuleAliases(options: LuaScopedSymbolOptions): Map<st
 	return aliases;
 }
 
-export function getKeywordCompletions(): LuaCompletionItem[] {
-	const sorted = Array.from(KEYWORDS);
-	sorted.sort((a, b) => a.localeCompare(b));
-	const items: LuaCompletionItem[] = [];
-	for (let i = 0; i < sorted.length; i += 1) {
-		const keyword = sorted[i];
-		items.push({
-			label: keyword,
-			insertText: keyword,
-			sortKey: `keyword:${keyword}`,
-			kind: 'keyword',
-			detail: 'Lua keyword',
-		});
-	}
-	return items;
-}
-
 let cachedApiCompletionData: { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } | null = null;
 export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } {
 	if (cachedApiCompletionData) {
@@ -387,7 +369,8 @@ const luaDiagnosticPoolAccessor = Pool.createLazy<MutableLuaDiagnostic>({
 	},
 });
 
-const luaDiagnosticBatch = new ScratchBatchPooled<MutableLuaDiagnostic>(luaDiagnosticPoolAccessor.get());
+const luaDiagnosticPool = luaDiagnosticPoolAccessor.get();
+const activeLuaDiagnostics: MutableLuaDiagnostic[] = [];
 
 function getSemanticWorkspace(): LuaSemanticWorkspace {
 	return getOrCreateSemanticWorkspace();
@@ -403,7 +386,7 @@ type SemanticResolutionInput = {
 
 function finalizeLuaDiagnostics(): LuaDiagnostic[] {
 	const result: LuaDiagnostic[] = [];
-	for (const diag of luaDiagnosticBatch) {
+	for (const diag of activeLuaDiagnostics) {
 		result.push({
 			row: diag.row,
 			startColumn: diag.startColumn,
@@ -412,12 +395,20 @@ function finalizeLuaDiagnostics(): LuaDiagnostic[] {
 			severity: diag.severity,
 		});
 	}
-	luaDiagnosticBatch.clear();
+	clearLuaDiagnosticSlots();
 	return result;
 }
 
+function clearLuaDiagnosticSlots(): void {
+	for (const diag of activeLuaDiagnostics) {
+		luaDiagnosticPool.release(diag);
+	}
+	activeLuaDiagnostics.length = 0;
+}
+
 function pushDiagnostic(row: number, startColumn: number, endColumn: number, message: string, severity: EditorDiagnosticSeverity): void {
-	const slot = luaDiagnosticBatch.next();
+	const slot = luaDiagnosticPool.acquire();
+	activeLuaDiagnostics.push(slot);
 	slot.row = row;
 	slot.startColumn = startColumn;
 	slot.endColumn = endColumn > startColumn ? endColumn : startColumn + 1;
@@ -461,7 +452,7 @@ function resolveSemanticDataForDiagnostics(runtime: Runtime, input: SemanticReso
 }
 
 export function computeLuaDiagnostics(runtime: Runtime, options: LuaDiagnosticOptions): LuaDiagnostic[] {
-	luaDiagnosticBatch.clear();
+	clearLuaDiagnosticSlots();
 	const parseEntry = getCachedLuaParse({
 		path: options.path,
 		source: options.source,

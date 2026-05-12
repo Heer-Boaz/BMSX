@@ -290,9 +290,6 @@ public:
 	// Vibration support
 	virtual bool supportsVibrationEffect() const = 0;
 	virtual void applyVibrationEffect(const VibrationParams& params) = 0;
-	
-	// Cleanup
-	virtual void dispose() = 0;
 };
 
 /* ============================================================================

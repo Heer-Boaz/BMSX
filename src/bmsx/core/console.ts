@@ -132,13 +132,13 @@ export class ConsoleCore {
 		if (typeof document !== 'undefined') {
 			ensureBrowserBackendFactory();
 		}
-		const runtime = await Runtime.init(systemLayer, workspaceOverlay, cartridge);
-		this._runtime = runtime;
 		const gview = new GameView({
 			viewportSize,
 			host: resolvedViewHost,
 		});
 		this._view = gview;
+		const runtime = await Runtime.init(systemLayer, workspaceOverlay, gview, cartridge);
+		this._runtime = runtime;
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;
 		const textureManager = new TextureManager(gpuBackend);

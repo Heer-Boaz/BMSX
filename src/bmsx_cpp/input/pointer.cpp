@@ -33,10 +33,6 @@ PointerInput::PointerInput(const std::string& deviceId)
 	reset();
 }
 
-PointerInput::~PointerInput() {
-	dispose();
-}
-
 void PointerInput::pollInput() {
 	const f64 now = ConsoleCore::instance().clock()->now();
 	const f64 prevPollTime = m_lastPollTimeMs;
@@ -122,10 +118,6 @@ void PointerInput::reset(const std::vector<std::string>* except) {
 		return;
 	}
 	resetObject(m_buttonStates, except);
-}
-
-void PointerInput::dispose() {
-	reset();
 }
 
 void PointerInput::ingestButton(const std::string& code, bool down, f32 value,

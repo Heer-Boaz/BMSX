@@ -24,17 +24,23 @@ import { StringValue, Table, type Value, type ProgramMetadata, type NativeFuncti
 import type { TerminalMode } from '../../ide/terminal/ui/mode';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { Font, type FontVariant } from '../../render/shared/bmsx_font';
+import type { GameView } from '../../render/gameview';
 import type { CartEditor } from '../../ide/cart_editor';
 import { type LuaSemanticModel, type FileSemanticData } from '../../lua/semantic/model';
 import { registerFirmwareBuiltins } from '../firmware/builtins';
 import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
 import { LuaJsBridge } from './host/native_bridge';
-import { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion } from './contracts';
+import { RuntimeOptions } from './contracts';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_SYSTEM_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
 import { buildLuaSources, resolveLuaSourceRecordFromRegistries, type LuaSourceRegistry } from '../program/sources';
 import * as workbenchMode from '../../ide/workbench/mode';
+import { deactivateEditor, deactivateTerminalMode } from '../../ide/workbench/overlay_modes';
+import { handleLuaError } from '../../ide/workbench/runtime_errors';
 import * as luaPipeline from '../../ide/runtime/lua_pipeline';
+import { DebugPauseCoordinator } from '../../ide/runtime/debug_pause';
+import { clearRuntimeFault, createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../../lua/debugger';
+import type { LuaBuiltinDescriptor, LuaMemberCompletion } from '../../lua/semantic_contracts';
 import type { ParsedLuaChunk } from '../../lua/analysis/parse';
 import { configureLuaHeapUsage, getTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { FrameLoopState } from './frame/loop';
@@ -94,16 +100,16 @@ export class Runtime {
 	public executionOverlayActive = false;
 	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
 	public readonly debuggerController = new LuaDebuggerController();
-	public pauseCoordinator = workbenchMode.createPauseCoordinator();
+	public readonly pauseCoordinator = new DebugPauseCoordinator();
 	public debuggerSuspendSignal: LuaDebuggerPauseSignal = null;
 	public debuggerPaused = false;
 	public debuggerMetrics: LuaDebuggerSessionMetrics = null;
-	public readonly workbenchFaultState = workbenchMode.createRuntimeFaultState();
+	public readonly workbenchFaultState = createRuntimeFaultState();
 	public lastIdeInputFrame = -1;
 	public lastTerminalInputFrame = -1;
 	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
 		this._overlayResolutionMode = value;
-		this.overlayRenderer.setRenderingViewportType(consoleCore.view, value);
+		this.overlayRenderer.setRenderingViewportType(this.view, value);
 		this.editor.updateViewport(this.overlayRenderer.viewportSize);
 	}
 
@@ -223,6 +229,7 @@ export class Runtime {
 	public readonly hostFault: HostFaultState;
 	public readonly machine: Machine;
 	public readonly cartBoot: CartBootState;
+	public readonly view: GameView;
 	public get interpreter(): LuaInterpreter {
 		return this.luaInterpreter;
 	}
@@ -230,7 +237,7 @@ export class Runtime {
 		return this.programMetadata !== null;
 	}
 
-	public static async init(systemLayer: RuntimeRomLayer, workspaceOverlay: Uint8Array | undefined, cartridge?: Uint8Array): Promise<Runtime> {
+	public static async init(systemLayer: RuntimeRomLayer, workspaceOverlay: Uint8Array | undefined, view: GameView, cartridge?: Uint8Array): Promise<Runtime> {
 		const playerIndex = Input.instance.startupGamepadIndex ?? 1;
 
 		const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
@@ -268,7 +275,7 @@ export class Runtime {
 				vblankCycles,
 				vdpWorkUnitsPerSec: systemPerfSpecs.work_units_per_sec,
 				geoWorkUnitsPerSec: systemPerfSpecs.geo_work_units_per_sec,
-			});
+			}, view);
 			setTransferRatesFromManifest(runtime, systemPerfSpecs);
 			runtime.configureProgramSources({
 				systemRom: systemLayer,
@@ -344,7 +351,7 @@ export class Runtime {
 			vblankCycles,
 			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
 			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
-		});
+		}, view);
 		setTransferRatesFromManifest(runtime, cartPerfSpecs);
 		runtime.configureProgramSources({
 			systemRom: systemLayer,
@@ -373,7 +380,7 @@ export class Runtime {
 		});
 		await this.prepareBootRomStartupState();
 		await consoleCore.refreshRenderSurfaces();
-		consoleCore.view.default_font = new Font();
+		this.view.default_font = new Font();
 		await this.boot();
 	}
 
@@ -451,7 +458,8 @@ export class Runtime {
 		return binding.source_path;
 	}
 
-	private constructor(options: RuntimeOptions) {
+	private constructor(options: RuntimeOptions, view: GameView) {
+		this.view = view;
 		this.frameScheduler = new FrameSchedulerState(this);
 		this.frameLoop = new FrameLoopState(this);
 		this.screen = new RenderPresentationState(this);
@@ -577,10 +585,11 @@ export class Runtime {
 			}
 			luaPipeline.bootActiveProgram(this);
 			this.hasCompletedInitialBoot = true;
-		}
-		catch (error) {
-			throw new Error(`failed to boot runtime: ${error}`);
-		}
+			}
+			catch (error) {
+				handleLuaError(this, error);
+				throw new Error(`failed to boot runtime: ${error}`);
+			}
 		finally {
 			this.luaGate.end(gateToken);
 		}
@@ -588,7 +597,7 @@ export class Runtime {
 
 	private clearBootFaults(): void {
 		workbenchMode.clearActiveDebuggerPause(this);
-		workbenchMode.clearRuntimeFault(this);
+		clearRuntimeFault(this);
 	}
 
 	private clearLuaBootState(): void {
@@ -617,8 +626,8 @@ export class Runtime {
 		const gateToken = this.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
 		try {
 			this.clearBootFaults();
-			workbenchMode.deactivateTerminalMode(this);
-			workbenchMode.deactivateEditor(this);
+			deactivateTerminalMode(this);
+			deactivateEditor(this);
 			this.clearLuaBootState();
 			this.cartBoot.reset();
 			if (this.cartLuaSources && this.cartProjectRootPath) {
@@ -638,6 +647,10 @@ export class Runtime {
 			await this.restartBootRomStartupState();
 			luaPipeline.bootActiveProgram(this);
 		}
+		catch (error) {
+			handleLuaError(this, error);
+			throw error;
+		}
 		finally {
 			this.luaGate.end(gateToken);
 		}
@@ -655,7 +668,7 @@ export class Runtime {
 		this.machine.audioController.dispose();
 		workbenchMode.disposeShortcutHandlers(this);
 		this.terminal.deactivate();
-		workbenchMode.deactivateEditor(this);
+			deactivateEditor(this);
 		this.luaInitialized = false;
 		this.editor.shutdown();
 		this.luaInterpreter = null;

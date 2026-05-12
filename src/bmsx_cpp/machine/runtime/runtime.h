@@ -44,6 +44,7 @@ struct CartManifest;
 class RuntimeRomPackage;
 class Clock;
 class GameView;
+class Input;
 class MicrotaskQueue;
 class SoundMaster;
 
@@ -95,6 +96,7 @@ public:
 	Runtime(
 		const RuntimeOptions& options,
 		Clock& clock,
+		Input& input,
 		SoundMaster& soundMaster,
 		MicrotaskQueue& microtasks,
 		GameView& view

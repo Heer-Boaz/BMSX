@@ -131,9 +131,6 @@ export class InputController {
 		state.keyboard[actionName] = keyboardBindings;
 		state.gamepad[actionName] = gamepadBindings;
 		const playerInput = this.input.getPlayerInput(playerIndex);
-		if (state.contextPushed) {
-			playerInput.popContext(INP_CONTEXT_ID);
-		}
 		playerInput.pushContext(INP_CONTEXT_ID, state.keyboard, state.gamepad, {});
 		state.contextPushed = true;
 	}
@@ -148,7 +145,7 @@ export class InputController {
 
 	private clearPlayerActions(playerIndex: number, state: PlayerChipState): void {
 		if (state.contextPushed) {
-			this.input.getPlayerInput(playerIndex).popContext(INP_CONTEXT_ID);
+			this.input.getPlayerInput(playerIndex).clearContext(INP_CONTEXT_ID);
 		}
 		state.keyboard = {};
 		state.gamepad = {};

@@ -37,7 +37,7 @@ import type { Viewport } from '../../../rompack/format';
 import type { Runtime } from '../../../machine/runtime/runtime';
 import { runConsoleChunk } from '../../../machine/program/executor';
 import * as luaPipeline from '../../runtime/lua_pipeline';
-import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './commands';
+import { TerminalCommandDispatcher as TerminalCommandDispatcher, type TerminalCommandAction } from './commands';
 import { extractErrorMessage } from '../../../lua/value';
 import { valueToString } from '../../../machine/firmware/globals';
 import type { Value } from '../../../machine/cpu/cpu';
@@ -441,7 +441,7 @@ export class TerminalMode {
 		this.completion.processPending(deltaSeconds);
 	}
 
-	public async handleInput() {
+	public async handleInput(): Promise<TerminalCommandAction | null> {
 		if (!this.active) {
 			return null;
 		}
@@ -476,12 +476,13 @@ export class TerminalMode {
 		if (submit !== null) {
 			this.completion.closeSession();
 			this.suggestModel.clear();
-			await this.handleTerminalCommand(submit);
+			return await this.handleTerminalCommand(submit);
 		}
+		return null;
 	}
 
-	private async handleTerminalCommand(rawCommand: string): Promise<void> {
-		const input = rawCommand ?? '';
+	private async handleTerminalCommand(rawCommand: string): Promise<TerminalCommandAction | null> {
+		const input = rawCommand;
 		this.setPromptPrefix(this.terminalCommands.getPrompt());
 		this.appendPromptEcho(input);
 		const trimmed = input.trim();
@@ -490,23 +491,29 @@ export class TerminalMode {
 		}
 		else {
 			this.historyIndex = null;
-			return;
+			return null;
 		}
 
 		this.beginPagerSession();
 		try {
-			if (await this.terminalCommands.handle(trimmed)) {
-				return;
+			const result = await this.terminalCommands.handle(trimmed);
+			switch (result) {
+				case 'deactivate_terminal':
+				case 'clear_fault':
+				case 'workspace_reset':
+				case 'workspace_nuke':
+					return result;
+				case true:
+					return null;
+				case false:
+					break;
 			}
-		} catch (error) {
-			this.appendStderr(extractErrorMessage(error));
-			return;
 		} finally {
 			this.pagerSessionActive = false;
 		}
 		this.executeTerminalCommand(trimmed);
+		return null;
 	}
-
 	private static readonly SIMPLE_CHAIN = /^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$/;
 
 	private executeTerminalCommand(command: string): void {

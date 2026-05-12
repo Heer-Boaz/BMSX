@@ -15,7 +15,7 @@ public:
 	static constexpr i32 VIRTUAL_POINTER_INDEX = 0x7fffffff;
 
 	explicit PointerInput(const std::string& deviceId = "pointer:0");
-	~PointerInput() override;
+	~PointerInput() override = default;
 
 	void pollInput() override;
 	ButtonState getButtonState(const ButtonId& button) override;
@@ -24,7 +24,6 @@ public:
 	i32 gamepadIndex() const override { return VIRTUAL_POINTER_INDEX; }
 	bool supportsVibrationEffect() const override { return false; }
 	void applyVibrationEffect(const VibrationParams& /*params*/) override {}
-	void dispose() override;
 
 	void ingestButton(const std::string& code, bool down, f32 value, f64 timestamp, std::optional<i32> pressId = std::nullopt);
 	void ingestAxis2(const std::string& code, f32 x, f32 y, f64 timestamp);

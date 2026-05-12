@@ -79,6 +79,7 @@ export class PointerInput implements InputHandler {
 		}
 	}
 
+	// disable-next-line single_line_method_pattern -- InputHandler state API exposes pointer-owned button storage through the shared button-state projection.
 	public getButtonState(btn: string): ButtonState {
 		return getPressedState(this.buttonStates, btn);
 	}
@@ -163,9 +164,5 @@ export class PointerInput implements InputHandler {
 			return;
 		}
 		resetObject(this.buttonStates, except);
-	}
-
-	public dispose(): void {
-		this.reset();
 	}
 }

@@ -50,10 +50,10 @@ bmsx_cpp/
 │   ├── post/
 │   │   ├── crt_pipeline_gles2.h
 │   │   └── crt_pipeline_gles2.cpp
-	│   └── shared/
-	│       ├── glyphs.h
-	│       ├── glyphs.cpp
-	│       └── submissions.h
+│   └── shared/
+│       ├── glyphs.h
+│       ├── glyphs.cpp
+│       └── submissions.h
 ├── rompack/
 │   ├── format.h               # ROM pack utilities
 │   ├── format.cpp
@@ -64,11 +64,10 @@ bmsx_cpp/
 │   │   ├── binencoder.h
 │   │   └── binencoder.cpp
 │   ├── clamp.h
-	│   ├── mem_snapshot.h
+│   ├── mem_snapshot.h
 │   ├── mem_snapshot.cpp
 │   ├── mmap_file.h
-│   ├── mmap_file.cpp
-│   └── scratchbatch.h
+│   └── mmap_file.cpp
 ├── machine/
 │   ├── bus/
 │   │   └── io.h                 # Memory-mapped I/O register map

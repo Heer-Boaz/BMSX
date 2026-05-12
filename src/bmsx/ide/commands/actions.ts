@@ -6,6 +6,8 @@ import type { Runtime } from '../../machine/runtime/runtime';
 import { captureRuntimeResumeSnapshot } from '../../machine/runtime/resume_snapshot';
 import * as luaPipeline from '../runtime/lua_pipeline';
 import * as workbenchMode from '../workbench/mode';
+import { deactivateEditor } from '../workbench/overlay_modes';
+import { handleLuaError } from '../workbench/runtime_errors';
 import type { ActionPromptAction } from '../common/models';
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import * as constants from '../common/constants';
@@ -21,7 +23,7 @@ export function performEditorAction(runtime: Runtime, action: ActionPromptAction
 		case 'reboot':
 			return performReboot(runtime);
 		case 'close':
-			workbenchMode.deactivateEditor(runtime);
+			deactivateEditor(runtime);
 			return true;
 		case 'theme-toggle':
 			toggleThemeMode();
@@ -53,7 +55,7 @@ export function performHotResume(runtime: Runtime): boolean {
 	const targetGeneration = editorDocumentState.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
-	workbenchMode.deactivateEditor(runtime);
+	deactivateEditor(runtime);
 	console.log('[IDE] Performing hot-resume');
 	scheduleRuntimeTask(async () => {
 		console.log('[IDE] Applying workspace overrides to cart before resume');
@@ -87,17 +89,18 @@ export function performHotResume(runtime: Runtime): boolean {
 			editorDocumentState.appliedGeneration = targetGeneration;
 		}
 		consoleCore.paused = false;
-	}, (error) => {
-		console.error(error);
-		runtime.editor.handleRuntimeTaskError(error, 'Failed to resume game');
-	});
+		}, (error) => {
+			console.error(error);
+			handleLuaError(runtime, error);
+			runtime.editor.handleRuntimeTaskError(error, 'Failed to resume game');
+		});
 	return true;
 }
 
 export function performReboot(runtime: Runtime): boolean {
 	const targetGeneration = editorDocumentState.saveGeneration;
 	clearExecutionStopHighlights();
-	workbenchMode.deactivateEditor(runtime);
+	deactivateEditor(runtime);
 	scheduleRuntimeTask(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		await runtime.rebootToBootRom();

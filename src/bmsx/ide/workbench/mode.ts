@@ -1,271 +1,38 @@
 import { consoleCore } from '../../core/console';
 import { Input } from '../../input/manager';
 import { KeyModifier } from '../../input/player';
-import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../../lua/errors';
-import type { ExecutionSignal, LuaCallFrame } from '../../lua/runtime';
-import {
-	convertToError,
-	extractErrorMessage,
-	type LuaDebuggerPauseSignal,
-	type StackTraceFrame,
-} from '../../lua/value';
-import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
+import type { ExecutionSignal } from '../../lua/runtime';
+import { extractErrorMessage, type LuaDebuggerPauseSignal } from '../../lua/value';
 import * as constants from '../common/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
 import { editorDebuggerState } from './contrib/debugger/state';
 import { showEditorWarningBanner } from '../common/feedback_state';
-import type { FaultSnapshot, RuntimeErrorDetails } from '../common/models';
-import { buildLuaStackFrames } from '../../machine/firmware/globals';
 import { seedDefaultLuaBuiltins } from '../../machine/firmware/builtins';
-import {
-	buildErrorStackString,
-	buildLuaFrameRawLabel,
-	convertLuaCallFrames,
-	parseJsStackFrames,
-	sanitizeLuaErrorMessage,
-} from '../common/runtime_error_format';
-import { logDebugState } from '../../machine/runtime/debug';
 import { TerminalMode } from '../terminal/ui/mode';
 import type { FrameState, Runtime } from '../../machine/runtime/runtime';
-import type { CpuFrameSnapshot } from '../../machine/cpu/cpu';
 import type { Viewport } from '../../rompack/format';
-import { resolveWorkspacePath } from '../workspace/path';
-import { shallowcopy } from '../../common/shallowcopy';
 import { api as overlay_api } from '../runtime/overlay_api';
 import { createCartEditor } from '../cart_editor';
 import { clearExecutionStopHighlights, setExecutionStopHighlightForCurrentContext } from '../runtime_error/navigation';
 import { toggleDebuggerControls } from '../debugger_activation';
-
-class DebugPauseCoordinator {
-	private suspension: LuaDebuggerPauseSignal = null;
-	private pendingException: LuaRuntimeError | LuaError = null;
-
-	public capture(suspension: LuaDebuggerPauseSignal, pendingException: LuaRuntimeError | LuaError): void {
-		this.suspension = suspension;
-		this.pendingException = pendingException;
-	}
-
-	public hasSuspension(): boolean {
-		return this.suspension !== null;
-	}
-
-	public getSuspension(): LuaDebuggerPauseSignal {
-		return this.suspension;
-	}
-
-	public getPendingException(): LuaRuntimeError | LuaError {
-		return this.pendingException;
-	}
-
-	public clearSuspension(): void {
-		this.suspension = null;
-		this.pendingException = null;
-	}
-}
+import { nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from '../workspace/workspace';
+import { clearWorkspaceSessionState } from './workspace/storage';
+import {
+	clearRuntimeFault,
+	recordDebuggerExceptionFault,
+} from '../runtime/fault_state';
+import { clearRuntimeDebuggerPause } from '../runtime/debug_pause';
+import { handleLuaError } from './runtime_errors';
+import {
+	deactivateTerminalMode,
+	editorBlocksRuntimePipeline,
+	isManagedOverlayEditorActive,
+	toggleEditor,
+	toggleTerminalMode,
+	updateGamePipelineExts,
+} from './overlay_modes';
 
 type DebuggerStepOrigin = { path: string; line: number; depth: number };
-type RuntimeErrorLocation = { path: string; line: number; column: number };
-type RenderTargetVec2 = { x: number; y: number };
-type RenderTargetSnapshot = {
-	viewportSize: RenderTargetVec2;
-	canvasSize: RenderTargetVec2;
-	offscreenSize: RenderTargetVec2;
-};
-type TargetOwner = 'editor';
-type RenderTargetState = {
-	baseline?: RenderTargetSnapshot;
-	stack: TargetOwner[];
-};
-export type RuntimeFaultState = {
-	handledLuaErrors: WeakSet<object>;
-	lastLuaCallStack: StackTraceFrame[];
-	lastCpuFaultSnapshot: CpuFrameSnapshot[];
-	faultSnapshot: FaultSnapshot;
-	faultOverlayNeedsFlush: boolean;
-};
-
-export const EDITOR_TARGET: RenderTargetVec2 = { x: 384, y: 288 };
-// export const EDITOR_TARGET: RenderTargetVec2 = { x: 768, y: 576 };
-// export const EDITOR_TARGET: RenderTargetVec2 = { x: 512, y: 384 };
-const RT_STATE = new WeakMap<Runtime, RenderTargetState>();
-const EMPTY_LUA_CALL_FRAMES: ReadonlyArray<LuaCallFrame> = [];
-
-export function createRuntimeFaultState(): RuntimeFaultState {
-	return {
-		handledLuaErrors: new WeakSet<object>(),
-		lastLuaCallStack: [],
-		lastCpuFaultSnapshot: [],
-		faultSnapshot: null,
-		faultOverlayNeedsFlush: false,
-	};
-}
-
-export function resetHandledLuaErrors(runtime: Runtime): void {
-	runtime.workbenchFaultState.handledLuaErrors = new WeakSet<object>();
-}
-
-export function doesFaultOverlayNeedFlush(runtime: Runtime): boolean {
-	return runtime.workbenchFaultState.faultOverlayNeedsFlush;
-}
-
-export function flushedFaultOverlay(runtime: Runtime): void {
-	runtime.workbenchFaultState.faultOverlayNeedsFlush = false;
-}
-
-function getRenderTargetState(runtime: Runtime): RenderTargetState {
-	let state = RT_STATE.get(runtime);
-	if (!state) {
-		state = { stack: [] };
-		RT_STATE.set(runtime, state);
-	}
-	return state;
-}
-
-function captureCurrentTargets(): RenderTargetSnapshot {
-	const view = consoleCore.view;
-	return {
-		viewportSize: shallowcopy(view.viewportSize),
-		canvasSize: shallowcopy(view.canvasSize),
-		offscreenSize: shallowcopy(view.offscreenCanvasSize),
-	};
-}
-
-function applyFixedEditorTargets(runtime: Runtime): void {
-	consoleCore.view.configureRenderTargets({
-		viewportSize: EDITOR_TARGET,
-		canvasSize: EDITOR_TARGET,
-		offscreenSize: EDITOR_TARGET,
-	});
-	runtime.overlayResolutionMode = 'viewport';
-}
-
-function restoreTargets(runtime: Runtime, snapshot: RenderTargetSnapshot): void {
-	consoleCore.view.configureRenderTargets({
-		viewportSize: snapshot.viewportSize,
-		canvasSize: snapshot.canvasSize,
-		offscreenSize: snapshot.offscreenSize,
-	});
-	runtime.overlayResolutionMode = 'viewport';
-}
-
-function pushRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
-	const state = getRenderTargetState(runtime);
-	if (!state.baseline) {
-		state.baseline = captureCurrentTargets();
-	}
-	if (state.stack.includes(owner)) {
-		return;
-	}
-	state.stack.push(owner);
-	switch (owner) {
-		case 'editor':
-			applyFixedEditorTargets(runtime);
-			return;
-	}
-}
-
-function popRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
-	const state = RT_STATE.get(runtime);
-	if (!state) {
-		return;
-	}
-	for (let i = state.stack.length - 1; i >= 0; i -= 1) {
-		if (state.stack[i] === owner) {
-			state.stack.splice(i, 1);
-		}
-	}
-	if (state.stack.length === 0) {
-		restoreTargets(runtime, state.baseline!);
-		RT_STATE.delete(runtime);
-		return;
-	}
-	const top = state.stack[state.stack.length - 1];
-	switch (top) {
-		case 'editor':
-			applyFixedEditorTargets(runtime);
-			return;
-	}
-}
-
-function editorBlocksRuntimePipeline(runtime: Runtime): boolean {
-	return runtime.editor.blocksRuntimePipeline;
-}
-
-function isManagedOverlayEditorActive(runtime: Runtime): boolean {
-	if (!editorBlocksRuntimePipeline(runtime)) {
-		return false;
-	}
-	return runtime.editor.isActive;
-}
-
-function resolveEditorSourceWorkspacePath(runtime: Runtime, source: string): string {
-	const cart = runtime.cartLuaSources;
-	if (cart && cart.path2lua[source]) {
-		return resolveWorkspacePath(source, runtime.cartProjectRootPath);
-	}
-	const engine = runtime.systemLuaSources;
-	if (engine && engine.path2lua[source]) {
-		return resolveWorkspacePath(source, runtime.systemProjectRootPath);
-	}
-	return resolveWorkspacePath(source, runtime.cartProjectRootPath);
-}
-
-function luaErrorSourcePath(error: LuaError): string {
-	return error.path.startsWith('@') ? error.path.slice(1) : error.path;
-}
-
-function runtimeLuaErrorLocation(error: LuaError): RuntimeErrorLocation {
-	return {
-		path: luaErrorSourcePath(error),
-		line: error.line,
-		column: error.column,
-	};
-}
-
-function runtimeStackFrameLocation(frame: StackTraceFrame): RuntimeErrorLocation {
-	return {
-		path: frame.source,
-		line: frame.line,
-		column: frame.column,
-	};
-}
-
-function resolveRuntimeErrorLocation(runtime: Runtime, error: Error): RuntimeErrorLocation {
-	const state = runtime.workbenchFaultState;
-	if (state.lastLuaCallStack.length > 0) {
-		return runtimeStackFrameLocation(state.lastLuaCallStack[0]);
-	}
-	if (error instanceof LuaError) {
-		return runtimeLuaErrorLocation(error);
-	}
-	return { path: runtime.currentPath, line: 0, column: 0 };
-}
-
-function createLuaErrorStackFrame(error: LuaError, functionName: string): StackTraceFrame {
-	const source = luaErrorSourcePath(error);
-	return {
-		origin: 'lua',
-		functionName,
-		source,
-		line: error.line,
-		column: error.column,
-		raw: buildLuaFrameRawLabel(functionName, source),
-	};
-}
-
-function errorStackFunctionName(callFrames: ReadonlyArray<LuaCallFrame>, luaFrames: ReadonlyArray<StackTraceFrame>): string {
-	if (callFrames.length > 0) {
-		return callFrames[callFrames.length - 1].functionName;
-	}
-	if (luaFrames.length > 0) {
-		return luaFrames[0].functionName;
-	}
-	return null;
-}
-
-export function createPauseCoordinator(): DebugPauseCoordinator {
-	return new DebugPauseCoordinator();
-}
 
 export function initializeIdeFeatures(runtime: Runtime, viewport: Viewport): void {
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
@@ -284,98 +51,6 @@ export function setActiveIdeFontVariant(runtime: Runtime, variant: Runtime['acti
 	runtime._activeIdeFontVariant = variant;
 	runtime.terminal.setFontVariant(variant);
 	runtime.editor.setFontVariant(variant);
-}
-
-export function updateGamePipelineExts(runtime: Runtime): void {
-	const overlayActive = runtime.terminal.isActive || isManagedOverlayEditorActive(runtime);
-	runtime.executionOverlayActive = overlayActive;
-	Input.instance.setGameplayCaptureEnabled(!overlayActive);
-	updateOverlayAudioSuspension(runtime);
-}
-
-export function updateOverlayAudioSuspension(runtime: Runtime): void {
-	if (!consoleCore.sndmaster.isRuntimeAudioReady()) {
-		return;
-	}
-	if (isOverlayActive(runtime)) {
-		consoleCore.sndmaster.suspendAll('overlay');
-	} else {
-		consoleCore.sndmaster.resumeAll('overlay');
-	}
-}
-
-export function toggleTerminalMode(runtime: Runtime): void {
-	if (runtime.terminal.isActive) {
-		deactivateTerminalMode(runtime);
-		return;
-	}
-	activateTerminalMode(runtime);
-}
-
-export function activateTerminalMode(runtime: Runtime): void {
-	if (runtime.terminal.isActive) {
-		return;
-	}
-	deactivateEditor(runtime);
-	runtime.terminal.activate();
-	updateGamePipelineExts(runtime);
-}
-
-export function deactivateTerminalMode(runtime: Runtime): void {
-	if (!runtime.terminal.isActive) {
-		return;
-	}
-	runtime.terminal.deactivate();
-	updateGamePipelineExts(runtime);
-}
-
-export function isOverlayActive(runtime: Runtime): boolean {
-	return runtime.executionOverlayActive;
-}
-
-export function toggleEditor(runtime: Runtime): void {
-	if (runtime.editor.isActive) {
-		deactivateEditor(runtime);
-		return;
-	}
-	activateEditor(runtime);
-}
-
-export function activateEditor(runtime: Runtime): void {
-	if (!runtime.hasProgramSymbols) {
-		return;
-	}
-	if (runtime.terminal.isActive) {
-		runtime.terminal.deactivate();
-	}
-	const editor = runtime.editor;
-	const wasActive = editor.isActive;
-	if (!wasActive) {
-		pushRenderTargetOwner(runtime, 'editor');
-	}
-	try {
-		if (!editor.isActive) {
-			editor.activate();
-		}
-	} catch (error) {
-		if (!wasActive) {
-			popRenderTargetOwner(runtime, 'editor');
-		}
-		throw error;
-	}
-	if (!editor.isActive && !wasActive) {
-		popRenderTargetOwner(runtime, 'editor');
-	}
-	updateGamePipelineExts(runtime);
-}
-
-export function deactivateEditor(runtime: Runtime): void {
-	const editor = runtime.editor;
-	if (editor.isActive) {
-		editor.deactivate();
-	}
-	popRenderTargetOwner(runtime, 'editor');
-	updateGamePipelineExts(runtime);
 }
 
 export function registerRuntimeShortcuts(runtime: Runtime): void {
@@ -439,7 +114,43 @@ export function tickTerminalInput(runtime: Runtime): void {
 		return;
 	}
 	runtime.lastTerminalInputFrame = pollFrame;
-	void runtime.terminal.handleInput();
+	void runtime.terminal.handleInput()
+		.then(async action => {
+			switch (action) {
+				case 'deactivate_terminal':
+					deactivateTerminalMode(runtime);
+					return;
+				case 'clear_fault': {
+					const result = clearFaultState(runtime);
+					if (!result.cleared) {
+						runtime.terminal.appendStderr('No fault to clear');
+						return;
+					}
+					if (result.resumedDebugger) {
+						runtime.terminal.appendStdout('Fault cleared; debugger resumed');
+						return;
+					}
+					runtime.terminal.appendStdout('Fault state cleared');
+					return;
+				}
+				case null:
+					return;
+				case 'workspace_reset':
+					runtime.terminal.appendStdout('Discarding dirty files...');
+					await resetWorkspaceDirtyBuffersAndStorage(runtime);
+					runtime.terminal.appendStdout('Dirty workspace buffers cleared');
+					return;
+				case 'workspace_nuke':
+					runtime.terminal.appendStdout('Warning: this will erase workspace!');
+					await nukeWorkspaceState(runtime);
+					clearWorkspaceSessionState();
+					runtime.terminal.appendStdout('Workspace data wiped');
+					return;
+			}
+		})
+		.catch(error => {
+			runtime.terminal.appendStderr(extractErrorMessage(error));
+		});
 }
 
 export function flushLuaWarnings(runtime: Runtime): void {
@@ -490,11 +201,8 @@ export function onLuaDebuggerPause(runtime: Runtime, signal: LuaDebuggerPauseSig
 }
 
 export function clearActiveDebuggerPause(runtime: Runtime): void {
-	runtime.pauseCoordinator.clearSuspension();
-	runtime.debuggerSuspendSignal = null;
+	clearRuntimeDebuggerPause(runtime);
 	setDebuggerPaused(runtime, false);
-	clearRuntimeFault(runtime);
-	runtime.debuggerController.clearPauseContext();
 	if (runtime.editor) {
 		runtime.editor.clearRuntimeErrorOverlay();
 	}
@@ -563,41 +271,6 @@ export function ignoreLuaException(runtime: Runtime): void {
 	resumeDebugger(runtime, { mode: 'continue', strategy: 'skip_statement' });
 }
 
-export function clearEditorErrorOverlaysIfNoFault(runtime: Runtime): void {
-	if (runtime.luaRuntimeFailed) return;
-	if (runtime.editor) {
-		runtime.editor.clearRuntimeErrorOverlay();
-	}
-	clearOverlayFrame();
-}
-
-export function clearFaultSnapshot(runtime: Runtime): void {
-	const state = runtime.workbenchFaultState;
-	state.faultSnapshot = null;
-	state.lastCpuFaultSnapshot = [];
-	state.faultOverlayNeedsFlush = false;
-}
-
-export function clearRuntimeFault(runtime: Runtime): void {
-	runtime.luaRuntimeFailed = false;
-	clearFaultSnapshot(runtime);
-}
-
-export function setRuntimeFault(runtime: Runtime, payload: {
-	message: string;
-	path: string;
-	line: number;
-	column: number;
-	details: RuntimeErrorDetails;
-	fromDebugger: boolean;
-}): void {
-	const state = runtime.workbenchFaultState;
-	runtime.luaRuntimeFailed = true;
-	state.faultSnapshot = payload;
-	state.faultSnapshot.timestampMs = runtime.clock.dateNow();
-	state.faultOverlayNeedsFlush = true;
-}
-
 export function clearFaultState(runtime: Runtime): { cleared: boolean; resumedDebugger: boolean } {
 	const hadFault = runtime.luaRuntimeFailed || runtime.workbenchFaultState.faultSnapshot !== null || runtime.debuggerSuspendSignal !== null;
 	const wasPaused = runtime.debuggerSuspendSignal !== null || runtime.debuggerPaused;
@@ -608,118 +281,10 @@ export function clearFaultState(runtime: Runtime): { cleared: boolean; resumedDe
 	return { cleared: hadFault, resumedDebugger: wasPaused };
 }
 
-export function recordDebuggerExceptionFault(runtime: Runtime, signal: LuaDebuggerPauseSignal): void {
-	const exception = runtime.pauseCoordinator.getPendingException();
-	const state = runtime.workbenchFaultState;
-	if (state.faultSnapshot && runtime.luaRuntimeFailed) {
-		state.faultOverlayNeedsFlush = true;
-		return;
-	}
-	if (!exception) {
-		setRuntimeFault(runtime, {
-			message: 'Runtime error',
-			path: signal.location.path,
-			line: signal.location.line,
-			column: signal.location.column,
-			details: buildRuntimeErrorDetailsForEditor(runtime, null, 'Runtime error', signal.callStack),
-			fromDebugger: true,
-		});
-		return;
-	}
-	const message = sanitizeLuaErrorMessage(extractErrorMessage(exception));
-	const location = runtimeLuaErrorLocation(exception);
-	setRuntimeFault(runtime, {
-		message,
-		path: location.path,
-		line: location.line,
-		column: location.column,
-		details: buildRuntimeErrorDetailsForEditor(runtime, exception, message, signal.callStack),
-		fromDebugger: true,
-	});
-}
-
-export function handleLuaError(runtime: Runtime, whatever: unknown): void {
-	const error = convertToError(whatever);
-	const state = runtime.workbenchFaultState;
-	if (state.handledLuaErrors.has(error)) {
-		return;
-	}
-	state.lastCpuFaultSnapshot = runtime.machine.cpu.snapshotCallStack();
-	state.lastLuaCallStack = buildLuaStackFrames(runtime);
-	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
-	const location = resolveRuntimeErrorLocation(runtime, error);
-	const runtimeDetails = buildRuntimeErrorDetailsForEditor(runtime, error, message);
-	const stackText = buildErrorStackString(
-		error instanceof Error && error.name ? error.name : 'Error',
-		message,
-		runtimeDetails,
-		runtime.jsStackEnabled,
-	);
-	setRuntimeFault(runtime, {
-		message,
-		path: location.path,
-		line: location.line,
-		column: location.column,
-		details: runtimeDetails,
-		fromDebugger: false,
-	});
-	if (error instanceof Error) {
-		error.message = message;
-		error.stack = stackText;
-	}
-	console.error(stackText);
-	logDebugState(runtime);
-	runtime.terminal.appendError(error);
-	activateTerminalMode(runtime);
-	state.handledLuaErrors.add(error);
-}
-
 export function surfaceHostFrameError(runtime: Runtime, error: unknown, hostDeltaMs: number): void {
 	runtime.frameLoop.abandonFrameState();
 	handleLuaError(runtime, error);
 	runtime.screen.presentErrorOverlay(hostDeltaMs);
-}
-
-export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unknown, message: string, callStack?: ReadonlyArray<LuaCallFrame>): RuntimeErrorDetails {
-	if (error instanceof LuaSyntaxError) {
-		return null;
-	}
-	const useInterpreterStack = callStack !== undefined;
-	const callFrames = callStack === undefined ? EMPTY_LUA_CALL_FRAMES : callStack;
-	let luaFrames: StackTraceFrame[] = [];
-	if (useInterpreterStack) {
-		luaFrames = callFrames.length > 0 ? convertLuaCallFrames(callFrames) : [];
-	} else {
-		const state = runtime.workbenchFaultState;
-		if (state.lastLuaCallStack.length > 0) {
-			luaFrames = state.lastLuaCallStack.slice();
-		}
-	}
-	if (error instanceof LuaError) {
-		luaFrames[0] = createLuaErrorStackFrame(error, errorStackFunctionName(callFrames, luaFrames));
-	}
-	if (luaFrames.length > 0) {
-		for (const frame of luaFrames) {
-			const source = frame.source;
-			if (!source || source.length === 0) {
-				continue;
-			}
-			frame.pathPath = resolveEditorSourceWorkspacePath(runtime, source);
-		}
-	}
-	let stackText: string = null;
-	if (runtime.jsStackEnabled && error instanceof Error && typeof error.stack === 'string') {
-		stackText = error.stack;
-	}
-	const jsFrames = runtime.jsStackEnabled ? parseJsStackFrames(stackText) : [];
-	if (luaFrames.length === 0 && jsFrames.length === 0) {
-		return null;
-	}
-	return {
-		message,
-		luaStack: luaFrames,
-		jsStack: jsFrames,
-	};
 }
 
 export function tickTerminalMode(runtime: Runtime): void {

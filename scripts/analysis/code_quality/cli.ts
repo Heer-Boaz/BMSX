@@ -1,7 +1,7 @@
 import { createLintSuppressionSummary, filterSuppressedLintIssues, lintSuppressionSummaryEntries, printLintSuppressionSummary, type LintSuppressionSummary } from '../lint_suppressions';
 import { loadAnalysisConfig } from '../config';
 import { createQualityLedger, printQualityLedger, type QualityLedger, qualityLedgerEntries } from '../quality_ledger';
-import { quoteCsv } from '../csv';
+import { parseCsvRecord, quoteCsv } from '../csv';
 import { commandExists } from '../process';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -70,6 +70,14 @@ export function parseArgs(argv: string[], defaultRoots: readonly string[]): CliO
 		}
 		if (arg === '--summary-only') {
 			summaryOnly = true;
+			continue;
+		}
+		if (arg === '--compile-commands' || arg === '--config') {
+			const value = argv[index + 1];
+			if (value === undefined || value.startsWith('-')) {
+				throw new Error(`Missing value for ${arg}`);
+			}
+			index += 1;
 			continue;
 		}
 		if (arg === '--root') {
@@ -146,6 +154,75 @@ export function runNativeQuality(args: readonly string[]): number {
 	});
 	if (result.error) {
 		throw result.error;
+	}
+	return result.status ?? 0;
+}
+
+function printUnifiedNativeCsvRow(row: readonly string[]): void {
+	if (row[0] === 'summary') {
+		const key = row[1];
+		if (key === 'by_check') {
+			console.log([
+				quoteCsv('summary'),
+				quoteCsv(`cpp:rule:${row[2]}`),
+				quoteCsv(row[4]),
+				quoteCsv(''),
+				quoteCsv(''),
+				quoteCsv(''),
+				quoteCsv(''),
+				quoteCsv(`C++ lint rule "${row[2]}" count`),
+			].join(','));
+			return;
+		}
+		console.log([
+			quoteCsv('summary'),
+			quoteCsv(`cpp:${key}`),
+			quoteCsv(row[4] || row[2] || row[5]),
+			quoteCsv(''),
+			quoteCsv(''),
+			quoteCsv(''),
+			quoteCsv(''),
+			quoteCsv(row[6]),
+		].join(','));
+		return;
+	}
+	const file = row[0];
+	const line = row[1];
+	const column = row[2];
+	const tool = row[3];
+	const check = row[4];
+	const severity = row[5];
+	const message = row[6];
+	console.log([
+		quoteCsv(`cpp:${tool}`),
+		quoteCsv(check),
+		quoteCsv(1),
+		quoteCsv(`${file}:${line}:${column}`),
+		quoteCsv(line),
+		quoteCsv(column),
+		quoteCsv(severity),
+		quoteCsv(message),
+	].join(','));
+}
+
+export function runNativeQualityCsvUnified(args: readonly string[]): number {
+	if (!commandExists('npx')) {
+		throw new Error('npx is required to run C++ quality checks');
+	}
+	const result = spawnSync('npx', ['tsx', 'scripts/analysis/code_quality_cpp.ts', ...args], {
+		encoding: 'utf8',
+		maxBuffer: 24 * 1024 * 1024,
+	});
+	if (result.error) {
+		throw result.error;
+	}
+	if (result.stderr.length > 0) {
+		process.stderr.write(result.stderr);
+	}
+	// disable-next-line newline_normalization_pattern -- C++ analyzer CSV stdout is a line-oriented tool boundary.
+	const lines = result.stdout.split(/\r?\n/).filter(line => line.length > 0);
+	for (let index = 1; index < lines.length; index += 1) {
+		printUnifiedNativeCsvRow(parseCsvRecord(lines[index]));
 	}
 	return result.status ?? 0;
 }
@@ -563,9 +640,6 @@ export function run(): void {
 		return;
 	}
 	const options = parseArgs(argv, config.scan.roots);
-	if (language === 'mixed') {
-		throw new Error('Mixed TypeScript and C++ sources detected. Run the analyzer on one language folder at a time.');
-	}
 	if (language === 'unknown') {
 		console.log('No TypeScript or C++ files found in the provided roots.');
 		return;
@@ -634,6 +708,20 @@ export function run(): void {
 		printTextReport(groups, sortedIssues, fileList.length, options.summaryOnly, ledger, suppressionSummary);
 	}
 	if (options.failOnIssues && (groups.length > 0 || normalizedLintIssues.length > 0)) {
-		process.exit(1);
+		process.exitCode = 1;
+	}
+	if (language === 'mixed') {
+		if (options.csv) {
+			const exitCode = runNativeQualityCsvUnified(argv);
+			if (exitCode !== 0) {
+				process.exitCode = exitCode;
+			}
+		} else {
+			console.log('\nC++ quality report:');
+			const exitCode = runNativeQuality(argv);
+			if (exitCode !== 0) {
+				process.exitCode = exitCode;
+			}
+		}
 	}
 }

@@ -10,9 +10,15 @@ import { workspaceSourceCache } from '../../src/bmsx/ide/workspace/cache';
 import {
 	WORKSPACE_METADATA_DIR,
 	WORKSPACE_MARKER_FILE,
+	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
 } from '../../src/bmsx/ide/workspace/files';
+import {
+	clearOpenWorkspacePathDirtyState,
+	collectUnsavedWorkspaceSourcePaths,
+	setOpenWorkspacePathDirty,
+} from '../../src/bmsx/ide/workspace/open_dirty';
 import { codeTabSessionState } from '../../src/bmsx/ide/workbench/ui/code_tab/session_state';
 import { tabSessionState } from '../../src/bmsx/ide/workbench/ui/tab/session_state';
 import { collectDirtyContextEntries, persistDirtyContextEntries } from '../../src/bmsx/ide/workbench/workspace/autosave';
@@ -80,6 +86,7 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 	await configureWorkspaceStorage(null);
 	storage.clear();
 	workspaceSourceCache.clear();
+	clearOpenWorkspacePathDirtyState();
 	codeTabSessionState.contexts.clear();
 	codeTabSessionState.activeContextId = null;
 	codeTabSessionState.activeContextReadOnly = false;
@@ -158,6 +165,29 @@ test('workspace state falls back to local storage when remote backend is unavail
 
 	const restored = await readWorkspaceStateFile();
 	assert.equal(restored, '{"session":"offline"}');
+});
+
+test('open dirty workspace paths expose unsaved buffers until dirty storage exists', (t) => {
+	const storage = new MockStorage();
+	clearOpenWorkspacePathDirtyState();
+	t.after(() => clearOpenWorkspacePathDirtyState());
+
+	setOpenWorkspacePathDirty('src/foo.lua', true);
+	assert.deepEqual([...collectUnsavedWorkspaceSourcePaths('offline-cart', storage)], ['/src/foo.lua']);
+
+	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', 'src/foo.lua');
+	storage.setItem(buildWorkspaceStorageKey('offline-cart', dirtyPath), '-- autosaved edit');
+	assert.deepEqual([...collectUnsavedWorkspaceSourcePaths('offline-cart', storage)], []);
+});
+
+test('open dirty workspace paths clear when the code tab becomes clean', (t) => {
+	const storage = new MockStorage();
+	clearOpenWorkspacePathDirtyState();
+	t.after(() => clearOpenWorkspacePathDirtyState());
+
+	setOpenWorkspacePathDirty('/src/foo.lua', true);
+	setOpenWorkspacePathDirty('/src/foo.lua', false);
+	assert.deepEqual([...collectUnsavedWorkspaceSourcePaths('offline-cart', storage)], []);
 });
 
 test('dirty buffers persist via local storage between offline sessions', async (t) => {

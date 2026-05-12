@@ -23,7 +23,7 @@ public:
 	// Constructor
 	// ─────────────────────────────────────────────────────────────────────────
 	GamepadInput(const std::string& deviceId, const std::string& description = "");
-	~GamepadInput() override;
+	~GamepadInput() override = default;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// InputHandler interface
@@ -36,7 +36,6 @@ public:
 	i32 gamepadIndex() const override;
 	bool supportsVibrationEffect() const override;
 	void applyVibrationEffect(const VibrationParams& params) override;
-	void dispose() override;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Button/Axis ingestion (from platform layer)

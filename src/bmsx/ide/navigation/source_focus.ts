@@ -6,7 +6,7 @@ import { closeSymbolSearch } from '../editor/contrib/symbols/shared';
 import { resetBlink } from '../editor/render/caret';
 import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
 import { closeResourceSearch } from '../workbench/contrib/resources/search';
-import * as workbenchMode from '../workbench/mode';
+import { activateEditor } from '../workbench/overlay_modes';
 
 export function releaseResourcePanelFocus(resourcePanel: ResourcePanelController): void {
 	if (!resourcePanel.isFocused()) {
@@ -18,7 +18,7 @@ export function releaseResourcePanelFocus(resourcePanel: ResourcePanelController
 
 export function prepareEditorForSourceFocus(runtime: Runtime): void {
 	if (!editorRuntimeState.active) {
-		workbenchMode.activateEditor(runtime);
+		activateEditor(runtime);
 	}
 	closeSymbolSearch(true);
 	closeResourceSearch(true);

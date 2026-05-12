@@ -273,6 +273,7 @@ Runtime& ConsoleCore::ensureRuntime(const RuntimeOptions& options) {
 		m_runtime = std::make_unique<Runtime>(
 			options,
 			*clock(),
+			Input::instance(),
 			*soundMaster(),
 			*platform()->microtaskQueue(),
 			*view()

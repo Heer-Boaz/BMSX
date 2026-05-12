@@ -109,9 +109,6 @@ void InputController::commitAction() {
 	state.keyboard[actionName] = std::move(keyboardBindings);
 	state.gamepad[actionName] = std::move(gamepadBindings);
 	PlayerInput* const playerInput = m_input.getPlayerInput(playerIndex);
-	if (state.contextPushed) {
-		playerInput->popContext(INP_CONTEXT_ID);
-	}
 	playerInput->pushContext(INP_CONTEXT_ID, state.keyboard, state.gamepad, {});
 	state.contextPushed = true;
 }
@@ -126,7 +123,7 @@ void InputController::resetActions() {
 
 void InputController::clearPlayerActions(i32 playerIndex, PlayerChipState& state) {
 	if (state.contextPushed) {
-		m_input.getPlayerInput(playerIndex)->popContext(INP_CONTEXT_ID);
+		m_input.getPlayerInput(playerIndex)->clearContext(INP_CONTEXT_ID);
 	}
 	state.keyboard.clear();
 	state.gamepad.clear();

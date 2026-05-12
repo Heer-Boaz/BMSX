@@ -206,9 +206,6 @@ EvalFn compileFunction(const std::string& fname,
 
 class ActionDefinitionEvaluator {
 public:
-	// Clear the parse cache
-	static void clearCache();
-
 	// Check if action definition is triggered
 	static bool checkActionTriggered(const std::string& def, const GetterFn& get);
 

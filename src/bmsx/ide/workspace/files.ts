@@ -13,7 +13,8 @@ export const WORKSPACE_MARKER_FILE = '~workspace';
 export const DEFAULT_SYSTEM_PROJECT_ROOT_PATH = 'src/bmsx';
 
 export type WorkspaceOverrideRecord = { source: string; path: string; cartPath: string; updatedAt?: number };
-type WorkspaceStoragePayload = { contents: string; updatedAt: number };
+export type WorkspaceStoragePayload = { contents: string; updatedAt: number };
+export type WorkspaceTextStorageEntry = { contents: string; updatedAt: number | null };
 type WorkspaceStatePayload = { dirtyFiles: Array<{ dirtyPath: string; descriptor: unknown }> };
 type WorkspaceWinnerKind = 'override' | 'canonical' | 'rom';
 
@@ -30,6 +31,49 @@ export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: 
 	return `${WORKSPACE_STORAGE_PREFIX}:${projectRootPath}:${relativePath}`;
 }
 
+export function readWorkspaceStoragePayload(storage: StorageService, storageKey: string): WorkspaceStoragePayload | null {
+	const raw = storage.getItem(storageKey);
+	if (raw === null) {
+		return null;
+	}
+	let payload: WorkspaceStoragePayload;
+	// start fallible-boundary -- local workspace storage is external persisted data and malformed payloads are discarded at this owner boundary.
+	try {
+		payload = JSON.parse(raw) as WorkspaceStoragePayload;
+	} catch {
+		storage.removeItem(storageKey);
+		return null;
+	}
+	// end fallible-boundary
+	return payload;
+}
+
+export function readWorkspaceTextStorageEntry(storage: StorageService, storageKey: string): WorkspaceTextStorageEntry | null {
+	const raw = storage.getItem(storageKey);
+	if (raw === null) {
+		return null;
+	}
+	let parsed: unknown;
+	// start fallible-boundary -- workspace file storage is external persisted text; raw legacy text entries remain valid terminal/debug payloads.
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		return { contents: raw, updatedAt: null };
+	}
+	// end fallible-boundary
+	if (!parsed || typeof parsed !== 'object') {
+		return { contents: raw, updatedAt: null };
+	}
+	const payload = parsed as { contents?: unknown; updatedAt?: unknown };
+	if (typeof payload.contents !== 'string') {
+		return { contents: raw, updatedAt: null };
+	}
+	return {
+		contents: payload.contents,
+		updatedAt: typeof payload.updatedAt === 'number' ? payload.updatedAt : null,
+	};
+}
+
 export function collectWorkspaceOverrides(params: { cart: LuaSourceRegistry; projectRootPath: string; storage: StorageService; }): Map<string, WorkspaceOverrideRecord> {
 	const overrides = new Map<string, WorkspaceOverrideRecord>();
 	const root = params.projectRootPath;
@@ -40,16 +84,7 @@ export function collectWorkspaceOverrides(params: { cart: LuaSourceRegistry; pro
 		let bestSource: string = null;
 		let bestUpdatedAt = asset.update_timestamp ?? 0;
 		let bestPath: string = null;
-		const considerStored = (raw: string, path: string, storageKey: string): void => {
-			let parsed: WorkspaceStoragePayload;
-			// start fallible-boundary -- stale local workspace payloads are external persisted data and are discarded when malformed.
-			try {
-				parsed = JSON.parse(raw) as WorkspaceStoragePayload;
-			} catch {
-				storage.removeItem(storageKey);
-				return;
-			}
-			// end fallible-boundary
+		const considerStored = (parsed: WorkspaceStoragePayload, path: string, storageKey: string): void => {
 			if (parsed.contents === asset.src) {
 				storage.removeItem(storageKey);
 				return;
@@ -62,12 +97,12 @@ export function collectWorkspaceOverrides(params: { cart: LuaSourceRegistry; pro
 			bestPath = path;
 		};
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
-		const storedDirty = storage.getItem(storageKey);
+		const storedDirty = readWorkspaceStoragePayload(storage, storageKey);
 		if (storedDirty !== null) {
 			considerStored(storedDirty, dirtyPath, storageKey);
 		}
 		const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
-		const storedCanonical = storage.getItem(canonicalKey);
+		const storedCanonical = readWorkspaceStoragePayload(storage, canonicalKey);
 		if (storedCanonical !== null) {
 			considerStored(storedCanonical, cartPath, canonicalKey);
 		}
