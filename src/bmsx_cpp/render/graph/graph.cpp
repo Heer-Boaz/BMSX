@@ -61,35 +61,44 @@ RenderGraphIO::RenderGraphIO(RenderGraphRuntime* runtime, i32 passIndex)
 	, m_passIndex(passIndex) {}
 
 RenderGraphTexHandle RenderGraphIO::createTex(const TexDesc& desc) {
-	return m_runtime->allocTex(desc, m_passIndex);
+	RenderGraphRuntime& runtime = *m_runtime;
+	const RenderGraphTexHandle handle = runtime.m_nextHandle++;
+	if (static_cast<i32>(runtime.m_texResources.size()) <= handle) {
+		runtime.m_texResources.resize(static_cast<size_t>(handle + 1));
+	}
+	auto& resource = runtime.m_texResources[handle];
+	resource.desc = desc;
+	resource.firstUse = m_passIndex;
+	resource.lastUse = m_passIndex;
+	resource.writerPasses.clear();
+	resource.readPasses.clear();
+	resource.clearOnWrite = {};
+	resource.present = false;
+	resource.exportPass = -1;
+	return handle;
 }
 
 void RenderGraphIO::writeTex(RenderGraphTexHandle handle) {
-	m_runtime->writeTex(handle, m_passIndex, nullptr, nullptr);
-}
-
-void RenderGraphIO::writeTex(RenderGraphTexHandle handle, const std::array<f32, 4>& clearColor) {
-	m_runtime->writeTex(handle, m_passIndex, &clearColor, nullptr);
-}
-
-void RenderGraphIO::writeTex(RenderGraphTexHandle handle, f32 clearDepth) {
-	m_runtime->writeTex(handle, m_passIndex, nullptr, &clearDepth);
+	RenderGraphRuntime& runtime = *m_runtime;
+	auto& resource = runtime.m_texResources[handle];
+	if (resource.writerPasses.empty() || resource.writerPasses.back() != m_passIndex) {
+		resource.writerPasses.push_back(m_passIndex);
+	}
+	resource.firstUse = (resource.firstUse < 0) ? m_passIndex : std::min(resource.firstUse, m_passIndex);
+	resource.lastUse = std::max(resource.lastUse, m_passIndex);
+	runtime.m_passWrites[m_passIndex].push_back(handle);
 }
 
 void RenderGraphIO::exportToBackbuffer(RenderGraphTexHandle handle) {
-	m_runtime->exportToBackbuffer(handle, m_passIndex);
+	auto& resource = m_runtime->m_texResources[handle];
+	resource.present = true;
+	resource.exportPass = m_passIndex;
+	resource.lastUse = std::max(resource.lastUse, m_passIndex);
 }
 
 void RenderGraphIO::readTex(RenderGraphTexHandle handle) {
-	m_runtime->readTex(handle, m_passIndex);
-}
-
-RenderGraphValueHandle RenderGraphIO::provideValue(const std::any& val) {
-	return m_runtime->provideValue(val, m_passIndex);
-}
-
-void RenderGraphIO::readValue(RenderGraphValueHandle handle) {
-	m_runtime->readValue(handle, m_passIndex);
+	RenderGraphRuntime& runtime = *m_runtime;
+	recordGraphRead(runtime.m_texResources[handle], runtime.m_passReads[m_passIndex], handle, m_passIndex);
 }
 
 /* ============================================================================
@@ -106,10 +115,6 @@ TextureHandle RenderGraphContext::getTexture(RenderGraphTexHandle handle) const 
 
 void* RenderGraphContext::getFBO(RenderGraphTexHandle color, RenderGraphTexHandle depth) {
 	return m_runtime->getFBO(color, depth);
-}
-
-const std::any& RenderGraphContext::getValue(RenderGraphValueHandle handle) const {
-	return m_runtime->m_valueResources[handle].val;
 }
 
 /* ============================================================================
@@ -136,13 +141,10 @@ void RenderGraphRuntime::compile(FrameData* frame) {
 
 	m_passReads.assign(m_passes.size(), {});
 	m_passWrites.assign(m_passes.size(), {});
-	m_valueReads.assign(m_passes.size(), {});
 	m_setupData.clear();
 
 	m_texResources.clear();
-	m_valueResources.clear();
 	m_texResources.resize(1);
-	m_valueResources.resize(1);
 	m_presentHandle = -1;
 	m_nextHandle = 1;
 
@@ -181,12 +183,6 @@ void RenderGraphRuntime::compile(FrameData* frame) {
 				markPass(wp);
 			}
 		}
-		for (RenderGraphValueHandle v : m_valueReads[p]) {
-			const auto& res = m_valueResources[v];
-			if (res.providerPass >= 0) {
-				markPass(res.providerPass);
-			}
-		}
 	};
 
 	const auto& presentRes = m_texResources[m_presentHandle];
@@ -209,12 +205,6 @@ void RenderGraphRuntime::compile(FrameData* frame) {
 			const auto& res = m_texResources[h];
 			for (i32 wp : res.writerPasses) {
 				if (wp != p) adj[wp].push_back(p);
-			}
-		}
-		for (RenderGraphValueHandle v : m_valueReads[p]) {
-			const auto& res = m_valueResources[v];
-			if (res.providerPass >= 0 && res.providerPass != p) {
-				adj[res.providerPass].push_back(p);
 			}
 		}
 	}
@@ -376,65 +366,6 @@ void RenderGraphRuntime::invalidate() {
 	destroyResources();
 	m_compiled = false;
 	m_realized = false;
-}
-
-RenderGraphTexHandle RenderGraphRuntime::allocTex(const TexDesc& desc, i32 passIndex) {
-	const RenderGraphTexHandle handle = m_nextHandle++;
-	if (static_cast<i32>(m_texResources.size()) <= handle) {
-		m_texResources.resize(static_cast<size_t>(handle + 1));
-	}
-	auto& res = m_texResources[handle];
-	res.desc = desc;
-	res.firstUse = passIndex;
-	res.lastUse = passIndex;
-	res.writerPasses.clear();
-	res.readPasses.clear();
-	res.clearOnWrite = {};
-	res.present = false;
-	res.exportPass = -1;
-	return handle;
-}
-
-void RenderGraphRuntime::readTex(RenderGraphTexHandle handle, i32 passIndex) {
-	auto& res = m_texResources[handle];
-	recordGraphRead(res, m_passReads[passIndex], handle, passIndex);
-}
-
-void RenderGraphRuntime::writeTex(RenderGraphTexHandle handle, i32 passIndex, const std::array<f32, 4>* clearColor, const f32* clearDepth) {
-	auto& res = m_texResources[handle];
-	if (res.writerPasses.empty() || res.writerPasses.back() != passIndex) {
-		res.writerPasses.push_back(passIndex);
-	}
-	res.firstUse = (res.firstUse < 0) ? passIndex : std::min(res.firstUse, passIndex);
-	res.lastUse = std::max(res.lastUse, passIndex);
-	if (clearColor) res.clearOnWrite.color = *clearColor;
-	if (clearDepth) res.clearOnWrite.depth = *clearDepth;
-	m_passWrites[passIndex].push_back(handle);
-}
-
-void RenderGraphRuntime::exportToBackbuffer(RenderGraphTexHandle handle, i32 passIndex) {
-	auto& res = m_texResources[handle];
-	res.present = true;
-	res.exportPass = passIndex;
-	res.lastUse = std::max(res.lastUse, passIndex);
-}
-
-RenderGraphValueHandle RenderGraphRuntime::provideValue(const std::any& val, i32 passIndex) {
-	const RenderGraphValueHandle handle = m_nextHandle++;
-	if (static_cast<i32>(m_valueResources.size()) <= handle) {
-		m_valueResources.resize(static_cast<size_t>(handle + 1));
-	}
-	auto& res = m_valueResources[handle];
-	res.val = val;
-	res.providerPass = passIndex;
-	res.firstUse = passIndex;
-	res.lastUse = passIndex;
-	return handle;
-}
-
-void RenderGraphRuntime::readValue(RenderGraphValueHandle handle, i32 passIndex) {
-	auto& res = m_valueResources[handle];
-	recordGraphRead(res, m_valueReads[passIndex], handle, passIndex);
 }
 
 RenderGraphRuntime::WriteTargets RenderGraphRuntime::writeTargetsForPass(i32 passIndex) const {

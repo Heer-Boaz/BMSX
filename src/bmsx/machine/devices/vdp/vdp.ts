@@ -10,13 +10,14 @@ import {
 	SKYBOX_FACE_W_WORD,
 	SKYBOX_FACE_WORD_COUNT,
 	VDP_SBX_CONTROL_ENABLE,
-	VDP_PMU_BANK_WORD_COUNT,
 	VDP_RD_SURFACE_COUNT,
 	VDP_RD_SURFACE_SYSTEM,
 	VDP_RD_SURFACE_FRAMEBUFFER,
 	VDP_RD_SURFACE_PRIMARY,
 	VDP_BBU_BILLBOARD_LIMIT,
+	VDP_FRAMEBUFFER_PAGE_RENDER,
 	VDP_RD_SURFACE_SECONDARY,
+	type VdpFrameBufferPage,
 } from './contracts';
 import {
 	VDP_RENDER_ALPHA_COST_MULTIPLIER,
@@ -93,8 +94,9 @@ import {
 } from '../../bus/io';
 import type { VramWriteSink } from '../../memory/memory';
 import { Memory } from '../../memory/memory';
+import { DeviceStatusLatch, type DeviceStatusRegisters } from '../device_status';
 import type { Value } from '../../cpu/cpu';
-import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
+import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
 import { DEVICE_SERVICE_VDP, type DeviceScheduler } from '../../scheduler/device';
 import {
 	VRAM_SYSTEM_SLOT_SIZE,
@@ -140,7 +142,6 @@ import { packedHigh16, packedLow16 } from '../../common/word';
 import {
 	VdpBlitterCommandBuffer,
 	type VdpBlitterSource,
-	type VdpBlitterSurfaceSize,
 	type VdpResolvedBlitterSample,
 	VDP_BLITTER_FIFO_CAPACITY,
 	VDP_BLITTER_IMPLICIT_CLEAR,
@@ -206,11 +207,19 @@ import {
 	VRAM_GARBAGE_SPACE_SALT,
 	fillVramGarbageScratch,
 } from './vram_garbage';
+import type {
+	VdpDeviceOutput,
+	VdpDirtySpan,
+	VdpFrameBufferPresentation,
+	VdpFrameBufferPresentationSink,
+	VdpSurfaceUpload,
+	VdpSurfaceUploadSink,
+	VdpSurfaceUploadSlot,
+} from './device_output';
 
 export type {
 	VdpBlitterCommandBuffer as VdpBlitterCommand,
 	VdpBlitterSource,
-	VdpBlitterSurfaceSize,
 	VdpResolvedBlitterSample,
 } from './blitter';
 
@@ -245,6 +254,14 @@ const DEFAULT_VDP_ENTROPY_SEEDS: VdpEntropySeeds = {
 	machineSeed: 0x42564d58,
 	bootSeed: 0x7652414d,
 };
+const VDP_DEVICE_STATUS_REGISTERS: DeviceStatusRegisters = {
+	statusAddr: IO_VDP_STATUS,
+	codeAddr: IO_VDP_FAULT_CODE,
+	detailAddr: IO_VDP_FAULT_DETAIL,
+	ackAddr: IO_VDP_FAULT_ACK,
+	faultMask: VDP_STATUS_FAULT,
+	noneCode: VDP_FAULT_NONE,
+};
 const VDP_OPEN_BUS_WORD = 0;
 const VDP_SERVICE_BATCH_WORK_UNITS = 128;
 const VDP_SLOT_SURFACE_BINDINGS = [
@@ -266,35 +283,15 @@ type VdpReadCache = {
 	width: number;
 	data: Uint8Array;
 };
-
-export type VdpSurfaceUploadSlot = {
-	baseAddr: number;
-	capacity: number;
-	surfaceId: number;
-	surfaceWidth: number;
-	surfaceHeight: number;
-	cpuReadback: Uint8Array;
-	dirtyRowStart: number;
-	dirtyRowEnd: number;
+type MutableVdpDeviceOutput = {
+	-readonly [Key in keyof VdpDeviceOutput]: VdpDeviceOutput[Key];
 };
-
-type VdpHostOutputState = {
-	ditherType: number;
-	xfMatrixWords: ArrayLike<number>;
-	xfViewMatrixIndex: number;
-	xfProjectionMatrixIndex: number;
-	skyboxEnabled: boolean;
-	skyboxSamples: readonly VdpResolvedBlitterSample[];
-	billboards: VdpBbuFrameBuffer;
-	surfaceUploadSlots: readonly VdpSurfaceUploadSlot[];
-	frameBufferWidth: number;
-	frameBufferHeight: number;
-	frameBufferRenderReadback: Uint8Array;
+type MutableVdpFrameBufferPresentation = {
+	-readonly [Key in keyof VdpFrameBufferPresentation]: VdpFrameBufferPresentation[Key];
 };
-
-export type VdpHostOutput = Readonly<VdpHostOutputState>;
-
-type VramSlot = VdpSurfaceUploadSlot;
+type MutableVdpSurfaceUpload = {
+	-readonly [Key in keyof VdpSurfaceUpload]: VdpSurfaceUpload[Key];
+};
 
 function createReadSurfaceEntries(): VdpReadSurface[] {
 	const entries: VdpReadSurface[] = [];
@@ -304,8 +301,16 @@ function createReadSurfaceEntries(): VdpReadSurface[] {
 	return entries;
 }
 
+function createDirtySpans(height: number): VdpDirtySpan[] {
+	const spans: VdpDirtySpan[] = [];
+	for (let row = 0; row < height; row += 1) {
+		spans.push({ xStart: 0, xEnd: 0 });
+	}
+	return spans;
+}
+
 export class VDP implements VramWriteSink {
-	private vramSlots: VramSlot[] = [];
+	private vramSlots: VdpSurfaceUploadSlot[] = [];
 	private vramStaging = new Uint8Array(VRAM_STAGING_SIZE);
 	private readonly vramGarbageScratch = new Uint8Array(VRAM_GARBAGE_CHUNK_BYTES);
 	private readonly vramSeedPixel = new Uint8Array(4);
@@ -315,6 +320,7 @@ export class VDP implements VramWriteSink {
 	private readCaches: VdpReadCache[] = [];
 	private readBudgetBytes = VDP_RD_BUDGET_BYTES;
 	private readOverflow = false;
+	private readonly emptyReadback = new Uint8Array(0);
 	private displayFrameBufferCpuReadback: Uint8Array = new Uint8Array(0);
 	private readonly sbx = new VdpSbxUnit();
 	private readonly sbxPacketFaceWords = new Uint32Array(SKYBOX_FACE_WORD_COUNT);
@@ -327,6 +333,11 @@ export class VDP implements VramWriteSink {
 	private committedDitherType = 0;
 	private _frameBufferWidth = 0;
 	private _frameBufferHeight = 0;
+	private frameBufferPresentationCount = 0;
+	private frameBufferPresentationRequiresFullSync = false;
+	private frameBufferPresentationDirtyRowStart = 0;
+	private frameBufferPresentationDirtyRowEnd = 0;
+	private frameBufferPresentationDirtySpansByRow: VdpDirtySpan[] = [];
 	private readonly buildFrame: VdpBuildingFrameState = {
 		queue: new VdpBlitterCommandBuffer(),
 		billboards: new VdpBbuFrameBuffer(),
@@ -335,6 +346,37 @@ export class VDP implements VramWriteSink {
 	};
 	private committedBillboards: VdpBbuFrameBuffer = new VdpBbuFrameBuffer();
 	private committedSkyboxSamples = createResolvedBlitterSamples();
+	private readonly deviceOutput: MutableVdpDeviceOutput = {
+		ditherType: 0,
+		xfMatrixWords: this.committedXf.matrixWords,
+		xfViewMatrixIndex: 0,
+		xfProjectionMatrixIndex: 0,
+		skyboxEnabled: false,
+		skyboxSamples: this.committedSkyboxSamples,
+		billboards: this.committedBillboards,
+		frameBufferWidth: 0,
+		frameBufferHeight: 0,
+	};
+	private readonly surfaceUploadOutput: MutableVdpSurfaceUpload = {
+		surfaceId: 0,
+		surfaceWidth: 0,
+		surfaceHeight: 0,
+		cpuReadback: new Uint8Array(0),
+		dirtyRowStart: 0,
+		dirtyRowEnd: 0,
+		dirtySpansByRow: [],
+	};
+	private readonly frameBufferPresentationOutput: MutableVdpFrameBufferPresentation = {
+		presentationCount: 0,
+		requiresFullSync: false,
+		dirtyRowStart: 0,
+		dirtyRowEnd: 0,
+		dirtySpansByRow: this.frameBufferPresentationDirtySpansByRow,
+		renderReadback: new Uint8Array(0),
+		displayReadback: this.displayFrameBufferCpuReadback,
+		width: 0,
+		height: 0,
+	};
 	private activeFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
 	private pendingFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
 	private frameBufferPriorityLayer = new Uint8Array(0);
@@ -349,9 +391,8 @@ export class VDP implements VramWriteSink {
 	private workUnitsPerSec = 1;
 	private workCarry = 0;
 	private availableWorkUnits = 0;
-	private vdpStatus = 0;
-	private faultCode = VDP_FAULT_NONE;
-	private faultDetail = 0;
+	private readonly budgetAccrual: BudgetAccrual = { wholeUnits: 0, carry: 0 };
+	private readonly fault: DeviceStatusLatch;
 	private dmaSubmitActive = false;
 	private readonly vdpRegisters = new Uint32Array(VDP_REGISTER_COUNT);
 	private readonly vdpFifoWordScratch = new Uint8Array(4);
@@ -367,6 +408,7 @@ export class VDP implements VramWriteSink {
 		private readonly configuredFrameBufferSize: VdpFrameBufferSize,
 		entropySeeds: VdpEntropySeeds = DEFAULT_VDP_ENTROPY_SEEDS,
 	) {
+		this.fault = new DeviceStatusLatch(memory, VDP_DEVICE_STATUS_REGISTERS);
 		this.vramMachineSeed = entropySeeds.machineSeed >>> 0;
 		this.vramBootSeed = entropySeeds.bootSeed >>> 0;
 		this.memory.setVramWriter(this);
@@ -376,7 +418,9 @@ export class VDP implements VramWriteSink {
 		this.memory.mapIoWrite(IO_VDP_FIFO, this.onVdpFifoWrite.bind(this));
 		this.memory.mapIoWrite(IO_VDP_FIFO_CTRL, this.onVdpFifoCtrlWrite.bind(this));
 		this.memory.mapIoWrite(IO_VDP_CMD, this.onVdpCommandWrite.bind(this));
-		this.memory.mapIoWrite(IO_VDP_FAULT_ACK, this.onVdpFaultAckWrite.bind(this));
+		this.memory.mapIoWrite(IO_VDP_FAULT_ACK, () => {
+			this.fault.acknowledge();
+		});
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
 			this.memory.mapIoWrite(IO_VDP_REG0 + index * IO_WORD_SIZE, this.onVdpRegisterIoWrite.bind(this));
 		}
@@ -434,49 +478,18 @@ export class VDP implements VramWriteSink {
 	}
 
 	public resetStatus(): void {
-		this.vdpStatus = 0;
-		this.faultCode = VDP_FAULT_NONE;
-		this.faultDetail = 0;
-		this.memory.writeIoValue(IO_VDP_STATUS, this.vdpStatus);
-		this.memory.writeIoValue(IO_VDP_FAULT_CODE, this.faultCode);
-		this.memory.writeIoValue(IO_VDP_FAULT_DETAIL, this.faultDetail);
-		this.memory.writeIoValue(IO_VDP_FAULT_ACK, 0);
+		this.fault.resetStatus();
 		this.refreshSubmitBusyStatus();
-	}
-
-	private clearFault(): void {
-		this.faultCode = VDP_FAULT_NONE;
-		this.faultDetail = 0;
-		this.memory.writeIoValue(IO_VDP_FAULT_CODE, this.faultCode);
-		this.memory.writeIoValue(IO_VDP_FAULT_DETAIL, this.faultDetail);
-		this.setStatusFlag(VDP_STATUS_FAULT, false);
-	}
-
-	private onVdpFaultAckWrite(_addr: number): void {
-		if (this.memory.readIoU32(IO_VDP_FAULT_ACK) === 0) {
-			return;
-		}
-		this.clearFault();
-		this.memory.writeIoValue(IO_VDP_FAULT_ACK, 0);
-	}
-
-	private raiseFault(code: number, detail: number): void {
-		if ((this.vdpStatus & VDP_STATUS_FAULT) !== 0) {
-			return;
-		}
-		this.faultCode = code >>> 0;
-		this.faultDetail = detail >>> 0;
-		this.memory.writeIoValue(IO_VDP_FAULT_CODE, this.faultCode);
-		this.memory.writeIoValue(IO_VDP_FAULT_DETAIL, this.faultDetail);
-		this.setStatusFlag(VDP_STATUS_FAULT, true);
 	}
 
 	private resetVdpRegisters(): void {
 		const primarySurface = this.readSurfaces[VDP_RD_SURFACE_PRIMARY];
 		let slotDim = 1 | (1 << 16);
 		if (primarySurface.registered) {
-			const primarySlot = this.getVramSlotBySurfaceId(primarySurface.surfaceId);
-			slotDim = (primarySlot.surfaceWidth & 0xffff) | ((primarySlot.surfaceHeight & 0xffff) << 16);
+			const primarySlot = this.findRegisteredVramSlotBySurfaceId(primarySurface.surfaceId);
+			if (primarySlot !== null) {
+				slotDim = (primarySlot.surfaceWidth & 0xffff) | ((primarySlot.surfaceHeight & 0xffff) << 16);
+			}
 		}
 		this.vdpRegisters.fill(0);
 		this.vdpRegisters[VDP_REG_SRC_SLOT] = VDP_SLOT_PRIMARY;
@@ -494,7 +507,7 @@ export class VDP implements VramWriteSink {
 
 	private writeVdpRegister(index: number, value: number): boolean {
 		if (index < 0 || index >= VDP_REGISTER_COUNT) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, index);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, index);
 			return false;
 		}
 		const word = value >>> 0;
@@ -580,7 +593,7 @@ export class VDP implements VramWriteSink {
 		const width = packedLow16(word);
 		const height = packedHigh16(word);
 		if (width === 0 || height === 0) {
-			this.raiseFault(VDP_FAULT_VRAM_SLOT_DIM, word);
+			this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, word);
 			return;
 		}
 		let surfaceId = -1;
@@ -592,12 +605,16 @@ export class VDP implements VramWriteSink {
 			}
 		}
 		if (surfaceId < 0) {
-			this.raiseFault(VDP_FAULT_VRAM_SLOT_DIM, slotId);
+			this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, slotId);
 			return;
 		}
-		const slot = this.getVramSlotBySurfaceId(surfaceId);
+			const slot = this.findRegisteredVramSlotBySurfaceId(surfaceId);
+			if (slot === null) {
+				this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, surfaceId);
+				return;
+			}
 		if (width * height * 4 > slot.capacity) {
-			this.raiseFault(VDP_FAULT_VRAM_SLOT_DIM, word);
+			this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, word);
 			return;
 		}
 		this.setVramSlotLogicalDimensions(slot, width, height, word);
@@ -614,16 +631,7 @@ export class VDP implements VramWriteSink {
 
 	// disable-next-line single_line_method_pattern -- VBLANK status is the public device pin; status register bit ownership stays here.
 	public setVblankStatus(active: boolean): void {
-		this.setStatusFlag(VDP_STATUS_VBLANK, active);
-	}
-
-	private setStatusFlag(mask: number, active: boolean): void {
-		const nextStatus = active ? (this.vdpStatus | mask) : (this.vdpStatus & ~mask);
-		if (nextStatus === this.vdpStatus) {
-			return;
-		}
-		this.vdpStatus = nextStatus >>> 0;
-		this.memory.writeIoValue(IO_VDP_STATUS, this.vdpStatus);
+		this.fault.setStatusFlag(VDP_STATUS_VBLANK, active);
 	}
 
 	public canAcceptVdpSubmit(): boolean {
@@ -631,18 +639,18 @@ export class VDP implements VramWriteSink {
 	}
 
 	public acceptSubmitAttempt(): void {
-		this.setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, false);
+		this.fault.setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, false);
 		this.refreshSubmitBusyStatus();
 	}
 
 	public rejectSubmitAttempt(): void {
-		this.setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, true);
+		this.fault.setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, true);
 		this.refreshSubmitBusyStatus();
 	}
 
 	private rejectBusySubmitAttempt(detail: number): void {
 		this.rejectSubmitAttempt();
-		this.raiseFault(VDP_FAULT_SUBMIT_BUSY, detail);
+		this.fault.raise(VDP_FAULT_SUBMIT_BUSY, detail);
 	}
 
 	public beginDmaSubmit(): void {
@@ -689,12 +697,12 @@ export class VDP implements VramWriteSink {
 	}
 
 	private refreshSubmitBusyStatus(): void {
-		this.setStatusFlag(VDP_STATUS_SUBMIT_BUSY, this.hasBlockedSubmitPath());
+		this.fault.setStatusFlag(VDP_STATUS_SUBMIT_BUSY, this.hasBlockedSubmitPath());
 	}
 
 	private pushVdpFifoWord(word: number): void {
 		if (this.vdpFifoStreamWordCount >= VDP_STREAM_CAPACITY_WORDS) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, this.vdpFifoStreamWordCount + 1);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, this.vdpFifoStreamWordCount + 1);
 			this.resetIngressState();
 			return;
 		}
@@ -705,15 +713,15 @@ export class VDP implements VramWriteSink {
 
 	private consumeSealedVdpStream(baseAddr: number, byteLength: number): boolean {
 		if ((byteLength & 3) !== 0) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, byteLength);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, byteLength);
 			return false;
 		}
 		if (byteLength > VDP_STREAM_BUFFER_SIZE) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, byteLength);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, byteLength);
 			return false;
 		}
 		if (this.buildFrame.open) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
 			this.cancelSubmittedFrame();
 			return false;
 		}
@@ -728,7 +736,7 @@ export class VDP implements VramWriteSink {
 			cursor += IO_WORD_SIZE;
 			if (word === VDP_PKT_END) {
 				if (cursor !== end) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					this.cancelSubmittedFrame();
 					return false;
 				}
@@ -743,7 +751,7 @@ export class VDP implements VramWriteSink {
 			cursor = next;
 		}
 		if (!ended) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, byteLength);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, byteLength);
 			this.cancelSubmittedFrame();
 			return false;
 		}
@@ -757,7 +765,7 @@ export class VDP implements VramWriteSink {
 
 	private consumeSealedVdpWordStream(wordCount: number): void {
 		if (this.buildFrame.open) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
 			this.cancelSubmittedFrame();
 			return;
 		}
@@ -771,7 +779,7 @@ export class VDP implements VramWriteSink {
 			cursor += 1;
 			if (word === VDP_PKT_END) {
 				if (cursor !== wordCount) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					this.cancelSubmittedFrame();
 					return;
 				}
@@ -786,7 +794,7 @@ export class VDP implements VramWriteSink {
 			cursor = next;
 		}
 		if (!ended) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, wordCount);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, wordCount);
 			this.cancelSubmittedFrame();
 			return;
 		}
@@ -798,7 +806,7 @@ export class VDP implements VramWriteSink {
 
 	private sealVdpFifoTransfer(): void {
 		if (this.vdpFifoWordByteCount !== 0) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, this.vdpFifoWordByteCount);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, this.vdpFifoWordByteCount);
 			this.resetIngressState();
 			return;
 		}
@@ -817,7 +825,7 @@ export class VDP implements VramWriteSink {
 			case VDP_PKT_REG1: {
 				const register = this.decodeReg1Packet(word);
 				if (register < 0 || cursor + IO_WORD_SIZE > end) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
 				return this.writeVdpRegister(register, this.memory.readU32(cursor)) ? cursor + IO_WORD_SIZE : -1;
@@ -825,13 +833,13 @@ export class VDP implements VramWriteSink {
 			case VDP_PKT_REGN: {
 				const packet = this.decodeRegnPacket(word);
 				if (packet === null) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
 				const byteCount = packet.count * IO_WORD_SIZE;
 				const payloadEnd = cursor + byteCount;
 				if (payloadEnd > end) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
 				for (let offset = 0; offset < packet.count; offset += 1) {
@@ -843,18 +851,18 @@ export class VDP implements VramWriteSink {
 			}
 			case VDP_BBU_PACKET_KIND: {
 				if (!isVdpUnitPacketHeaderValid(word, VDP_BBU_PACKET_PAYLOAD_WORDS)) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
 				const byteCount = VDP_BBU_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
 				const payloadEnd = cursor + byteCount;
 				if (payloadEnd > end) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
 				const controlWord = this.memory.readU32(cursor + IO_WORD_SIZE * 10);
 				if (controlWord !== 0) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, controlWord);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, controlWord);
 					return -1;
 				}
 				return this.latchBillboardPacket(this.bbu.decodePacket(
@@ -875,13 +883,13 @@ export class VDP implements VramWriteSink {
 			}
 			case VDP_SBX_PACKET_KIND: {
 				if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS)) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
 				const byteCount = VDP_SBX_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
 				const payloadEnd = cursor + byteCount;
 				if (payloadEnd > end) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
 				const control = this.memory.readU32(cursor);
@@ -892,37 +900,37 @@ export class VDP implements VramWriteSink {
 				return payloadEnd;
 			}
 			default:
-				this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return -1;
 		}
 	}
 
 	private consumeXfPacketFromMemory(word: number, cursor: number, end: number): number {
 		if (vdpUnitPacketHasFlags(word)) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
 		}
 		const payloadWords = vdpUnitPacketPayloadWords(word);
 		if (payloadWords < 2) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
 		}
 		const byteCount = payloadWords * IO_WORD_SIZE;
 		const payloadEnd = cursor + byteCount;
 		if (payloadEnd > end) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
 		}
 		const firstRegister = this.memory.readU32(cursor);
 		const registerCount = payloadWords - 1;
 		if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
 			return -1;
 		}
 		for (let offset = 0; offset < registerCount; offset += 1) {
 			const value = this.memory.readU32(cursor + (offset + 1) * IO_WORD_SIZE);
 			if (!this.xf.writeRegister(firstRegister + offset, value)) {
-				this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, value);
+				this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
 				return -1;
 			}
 		}
@@ -937,7 +945,7 @@ export class VDP implements VramWriteSink {
 			case VDP_PKT_REG1: {
 				const register = this.decodeReg1Packet(word);
 				if (register < 0 || cursor >= wordCount) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
 				return this.writeVdpRegister(register, this.vdpFifoStreamWords[cursor]) ? cursor + 1 : -1;
@@ -945,7 +953,7 @@ export class VDP implements VramWriteSink {
 			case VDP_PKT_REGN: {
 				const packet = this.decodeRegnPacket(word);
 				if (packet === null || cursor + packet.count > wordCount) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
 				for (let offset = 0; offset < packet.count; offset += 1) {
@@ -957,11 +965,11 @@ export class VDP implements VramWriteSink {
 			}
 			case VDP_BBU_PACKET_KIND:
 				if (!isVdpUnitPacketHeaderValid(word, VDP_BBU_PACKET_PAYLOAD_WORDS) || cursor + VDP_BBU_PACKET_PAYLOAD_WORDS > wordCount) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
 				if (this.vdpFifoStreamWords[cursor + 10] !== 0) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, this.vdpFifoStreamWords[cursor + 10]);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, this.vdpFifoStreamWords[cursor + 10]);
 					return -1;
 				}
 				return this.latchBillboardPacket(this.bbu.decodePacket(
@@ -980,7 +988,7 @@ export class VDP implements VramWriteSink {
 				return this.consumeXfPacketFromWords(word, cursor, wordCount);
 			case VDP_SBX_PACKET_KIND:
 				if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
-					this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
 				for (let index = 0; index < SKYBOX_FACE_WORD_COUNT; index += 1) {
@@ -989,31 +997,31 @@ export class VDP implements VramWriteSink {
 				this.sbx.writePacket(this.vdpFifoStreamWords[cursor], this.sbxPacketFaceWords);
 				return cursor + VDP_SBX_PACKET_PAYLOAD_WORDS;
 			default:
-				this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return -1;
 		}
 	}
 
 	private consumeXfPacketFromWords(word: number, cursor: number, wordCount: number): number {
 		if (vdpUnitPacketHasFlags(word)) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
 		}
 		const payloadWords = vdpUnitPacketPayloadWords(word);
 		if (payloadWords < 2 || cursor + payloadWords > wordCount) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
 		}
 		const firstRegister = this.vdpFifoStreamWords[cursor];
 		const registerCount = payloadWords - 1;
 		if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
 			return -1;
 		}
 		for (let offset = 0; offset < registerCount; offset += 1) {
 			const value = this.vdpFifoStreamWords[cursor + offset + 1];
 			if (!this.xf.writeRegister(firstRegister + offset, value)) {
-				this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, value);
+				this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
 				return -1;
 			}
 		}
@@ -1041,12 +1049,12 @@ export class VDP implements VramWriteSink {
 
 	private consumeReplayCommandPacket(word: number): boolean {
 		if ((word & VDP_PKT_RESERVED_MASK) !== 0) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return false;
 		}
 		const command = packedLow16(word);
 		if (command === VDP_CMD_BEGIN_FRAME || command === VDP_CMD_END_FRAME) {
-			this.raiseFault(VDP_FAULT_STREAM_BAD_PACKET, command);
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, command);
 			return false;
 		}
 		if (command === VDP_CMD_NOP) {
@@ -1061,7 +1069,7 @@ export class VDP implements VramWriteSink {
 		}
 		if (command === VDP_CMD_BEGIN_FRAME) {
 			if (this.buildFrame.open) {
-				this.raiseFault(VDP_FAULT_SUBMIT_STATE, command);
+				this.fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 				this.cancelSubmittedFrame();
 				return;
 			}
@@ -1074,7 +1082,7 @@ export class VDP implements VramWriteSink {
 		if (command === VDP_CMD_END_FRAME) {
 			if (!this.buildFrame.open) {
 				this.rejectSubmitAttempt();
-				this.raiseFault(VDP_FAULT_SUBMIT_STATE, command);
+				this.fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 				return;
 			}
 			if (!this.sealSubmittedFrame()) {
@@ -1085,7 +1093,7 @@ export class VDP implements VramWriteSink {
 		}
 		if (!this.buildFrame.open) {
 			this.rejectSubmitAttempt();
-			this.raiseFault(VDP_FAULT_SUBMIT_STATE, command);
+			this.fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 			return;
 		}
 		this.executeVdpDrawDoorbell(command);
@@ -1105,7 +1113,7 @@ export class VDP implements VramWriteSink {
 			case VDP_CMD_COPY_RECT:
 				return this.enqueueLatchedCopyRect();
 			default:
-				this.raiseFault(VDP_FAULT_CMD_BAD_DOORBELL, command);
+				this.fault.raise(VDP_FAULT_CMD_BAD_DOORBELL, command);
 				return false;
 		}
 	}
@@ -1165,10 +1173,9 @@ export class VDP implements VramWriteSink {
 		if (!this.hasPendingRenderWork() || cycles <= 0) {
 			return;
 		}
-		const numerator = this.workUnitsPerSec * cycles + this.workCarry;
-		const nextCarry = numerator % this.cpuHz;
-		const wholeUnits = (numerator - nextCarry) / this.cpuHz;
-		this.workCarry = nextCarry;
+		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, this.workUnitsPerSec, this.workCarry, cycles);
+		const wholeUnits = this.budgetAccrual.wholeUnits;
+		this.workCarry = this.budgetAccrual.carry;
 		if (wholeUnits > 0) {
 			const remainingWork = this.getPendingRenderWorkUnits() - this.availableWorkUnits;
 			const maxGrant = remainingWork <= 0 ? 0 : remainingWork;
@@ -1228,7 +1235,7 @@ export class VDP implements VramWriteSink {
 		const priority = this.vdpRegisters[VDP_REG_DRAW_PRIORITY];
 		const thickness = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_LINE_WIDTH]);
 		if (thickness <= 0) {
-			this.raiseFault(VDP_FAULT_DEX_INVALID_LINE_WIDTH, this.vdpRegisters[VDP_REG_LINE_WIDTH]);
+			this.fault.raise(VDP_FAULT_DEX_INVALID_LINE_WIDTH, this.vdpRegisters[VDP_REG_LINE_WIDTH]);
 			return false;
 		}
 		const geometry = this.readLatchedGeometry(this.latchedGeometryScratch);
@@ -1255,7 +1262,7 @@ export class VDP implements VramWriteSink {
 		const drawCtrl = this.drawCtrlScratch;
 		decodeVdpDrawCtrl(this.vdpRegisters[VDP_REG_DRAW_CTRL], drawCtrl);
 		if (drawCtrl.blendMode !== 0) {
-			this.raiseFault(VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, this.vdpRegisters[VDP_REG_DRAW_CTRL]);
+			this.fault.raise(VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, this.vdpRegisters[VDP_REG_DRAW_CTRL]);
 			return false;
 		}
 		const slot = this.vdpRegisters[VDP_REG_SRC_SLOT];
@@ -1273,11 +1280,11 @@ export class VDP implements VramWriteSink {
 		const scaleX = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DRAW_SCALE_X]);
 		const scaleY = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
 		if (scaleX <= 0) {
-			this.raiseFault(VDP_FAULT_DEX_INVALID_SCALE, this.vdpRegisters[VDP_REG_DRAW_SCALE_X]);
+			this.fault.raise(VDP_FAULT_DEX_INVALID_SCALE, this.vdpRegisters[VDP_REG_DRAW_SCALE_X]);
 			return false;
 		}
 		if (scaleY <= 0) {
-			this.raiseFault(VDP_FAULT_DEX_INVALID_SCALE, this.vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
+			this.fault.raise(VDP_FAULT_DEX_INVALID_SCALE, this.vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
 			return false;
 		}
 		const dstX = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DST_X]);
@@ -1367,13 +1374,13 @@ export class VDP implements VramWriteSink {
 
 	private reserveBlitterCommand(opcode: number, renderCost: number): number {
 		if (!this.buildFrame.open) {
-			this.raiseFault(VDP_FAULT_SUBMIT_STATE, opcode);
+			this.fault.raise(VDP_FAULT_SUBMIT_STATE, opcode);
 			return -1;
 		}
 		const queue = this.buildFrame.queue;
 		const index = queue.length;
 		if (index >= VDP_BLITTER_FIFO_CAPACITY) {
-			this.raiseFault(VDP_FAULT_DEX_OVERFLOW, index);
+			this.fault.raise(VDP_FAULT_DEX_OVERFLOW, index);
 			return -1;
 		}
 		queue.opcode[index] = opcode;
@@ -1394,12 +1401,39 @@ export class VDP implements VramWriteSink {
 		queue.color[index] = color;
 	}
 
-	public swapFrameBufferReadbackPages(): void {
-		const renderSlot = this.getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
+	private swapFrameBufferReadbackPages(): void {
+			const renderSlot = this.findRegisteredVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
+			if (renderSlot === null) {
+				this.fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
+				return;
+			}
 		const displayReadback = this.displayFrameBufferCpuReadback;
 		this.displayFrameBufferCpuReadback = renderSlot.cpuReadback;
 		renderSlot.cpuReadback = displayReadback;
 		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+	}
+
+	private presentFrameBufferPageOnVblankEdge(): void {
+			const slot = this.findRegisteredVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
+			if (slot === null) {
+				this.fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
+				return;
+			}
+		if (this.frameBufferPresentationCount === 0) {
+			this.frameBufferPresentationDirtyRowStart = slot.dirtyRowStart;
+			this.frameBufferPresentationDirtyRowEnd = slot.dirtyRowEnd;
+			for (let row = slot.dirtyRowStart; row < slot.dirtyRowEnd; row += 1) {
+				const source = slot.dirtySpansByRow[row]!;
+				const target = this.frameBufferPresentationDirtySpansByRow[row]!;
+				target.xStart = source.xStart;
+				target.xEnd = source.xEnd;
+			}
+		} else {
+			this.frameBufferPresentationRequiresFullSync = true;
+		}
+		this.frameBufferPresentationCount += 1;
+		this.clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
+		this.swapFrameBufferReadbackPages();
 	}
 
 	private canAcceptSubmittedFrame(): boolean {
@@ -1408,7 +1442,7 @@ export class VDP implements VramWriteSink {
 
 	private beginSubmittedFrame(): boolean {
 		if (this.buildFrame.open) {
-			this.raiseFault(VDP_FAULT_SUBMIT_STATE, VDP_CMD_BEGIN_FRAME);
+			this.fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_BEGIN_FRAME);
 			return false;
 		}
 		this.resetBuildFrameState();
@@ -1425,12 +1459,12 @@ export class VDP implements VramWriteSink {
 
 	private sealSubmittedFrame(): boolean {
 		if (!this.buildFrame.open) {
-			this.raiseFault(VDP_FAULT_SUBMIT_STATE, VDP_CMD_END_FRAME);
+			this.fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_END_FRAME);
 			return false;
 		}
 		const frame = !this.activeFrame.occupied ? this.activeFrame : !this.pendingFrame.occupied ? this.pendingFrame : null;
 		if (frame === null) {
-			this.raiseFault(VDP_FAULT_SUBMIT_BUSY, VDP_CMD_END_FRAME);
+			this.fault.raise(VDP_FAULT_SUBMIT_BUSY, VDP_CMD_END_FRAME);
 			return false;
 		}
 		const buildQueue = this.buildFrame.queue;
@@ -1527,7 +1561,11 @@ export class VDP implements VramWriteSink {
 		}
 		const frameWidth = this._frameBufferWidth;
 		const frameHeight = this._frameBufferHeight;
-		const frameBufferSlot = this.getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
+			const frameBufferSlot = this.findRegisteredVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
+			if (frameBufferSlot === null) {
+				this.fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
+				return;
+			}
 		const pixels = frameBufferSlot.cpuReadback;
 		this.ensureFrameBufferPriorityCapacity(frameWidth * frameHeight);
 		if (commands.opcode[0] !== VDP_BLITTER_OPCODE_CLEAR) {
@@ -1753,7 +1791,11 @@ export class VDP implements VramWriteSink {
 		const colorG = (color >>> 8) & 0xff;
 		const colorB = color & 0xff;
 		const colorA = (color >>> 24) & 0xff;
-		const sourceSlot = this.getVramSlotBySurfaceId(source.surfaceId);
+			const sourceSlot = this.findRegisteredVramSlotBySurfaceId(source.surfaceId);
+			if (sourceSlot === null) {
+				this.fault.raise(VDP_FAULT_DEX_SOURCE_SLOT, source.surfaceId);
+				return;
+			}
 		const sourcePixels = sourceSlot.cpuReadback;
 		const sourceStride = sourceSlot.surfaceWidth * 4;
 		let dstW = Math.round(source.width * scaleX);
@@ -1884,6 +1926,9 @@ export class VDP implements VramWriteSink {
 		}
 		const presentFrameBuffer = this.activeFrame.hasFrameBufferCommands;
 		this.commitActiveVisualState();
+		if (presentFrameBuffer) {
+			this.presentFrameBufferPageOnVblankEdge();
+		}
 		this.lastFrameCommitted = true;
 		this.lastFrameHeld = false;
 		this.clearActiveFrame();
@@ -1904,18 +1949,22 @@ export class VDP implements VramWriteSink {
 				return true;
 			}
 		}
-		this.raiseFault(faultCode, slot);
+		this.fault.raise(faultCode, slot);
 		return false;
 	}
 
-	private tryResolveBlitterSurfaceForSource(source: VdpBlitterSource, faultCode: number, zeroSizeFaultCode: number): VdpBlitterSurfaceSize | null {
+	private tryResolveBlitterSurfaceForSource(source: VdpBlitterSource, faultCode: number, zeroSizeFaultCode: number): VdpSurfaceUploadSlot | null {
 		if (source.width === 0 || source.height === 0) {
-			this.raiseFault(zeroSizeFaultCode, (source.width | (source.height << 16)) >>> 0);
+			this.fault.raise(zeroSizeFaultCode, (source.width | (source.height << 16)) >>> 0);
 			return null;
 		}
-		const surface = this.resolveBlitterSurfaceSize(source.surfaceId);
-		if (source.srcX + source.width > surface.width || source.srcY + source.height > surface.height) {
-			this.raiseFault(faultCode, (source.srcX | (source.srcY << 16)) >>> 0);
+		const surface = this.findRegisteredVramSlotBySurfaceId(source.surfaceId);
+		if (surface === null) {
+			this.fault.raise(faultCode, source.surfaceId);
+			return null;
+		}
+		if (source.srcX + source.width > surface.surfaceWidth || source.srcY + source.height > surface.surfaceHeight) {
+			this.fault.raise(faultCode, (source.srcX | (source.srcY << 16)) >>> 0);
 			return null;
 		}
 		return surface;
@@ -1930,8 +1979,8 @@ export class VDP implements VramWriteSink {
 		if (surface === null) {
 			return false;
 		}
-		target.surfaceWidth = surface.width;
-		target.surfaceHeight = surface.height;
+		target.surfaceWidth = surface.surfaceWidth;
+		target.surfaceHeight = surface.surfaceHeight;
 		target.slot = slot;
 		return true;
 	}
@@ -1939,11 +1988,11 @@ export class VDP implements VramWriteSink {
 	private latchBillboardPacket(packet: VdpBbuPacket): boolean {
 		const size = decodeUnsignedQ16_16(packet.sizeWord);
 		if (size <= 0) {
-			this.raiseFault(VDP_FAULT_BBU_ZERO_SIZE, packet.sizeWord);
+			this.fault.raise(VDP_FAULT_BBU_ZERO_SIZE, packet.sizeWord);
 			return false;
 		}
 		if (this.buildFrame.billboards.length >= VDP_BBU_BILLBOARD_LIMIT) {
-			this.raiseFault(VDP_FAULT_BBU_OVERFLOW, this.buildFrame.billboards.length);
+			this.fault.raise(VDP_FAULT_BBU_OVERFLOW, this.buildFrame.billboards.length);
 			return false;
 		}
 		const source = this.latchedSourceScratch;
@@ -1954,7 +2003,7 @@ export class VDP implements VramWriteSink {
 		if (surface === null) {
 			return false;
 		}
-		this.bbu.latchBillboard(this.buildFrame.billboards, packet, this.nextBlitterSequence(), source.surfaceId, source.srcX, source.srcY, source.width, source.height, surface.width, surface.height, packet.sourceRect.slot);
+		this.bbu.latchBillboard(this.buildFrame.billboards, packet, this.nextBlitterSequence(), source.surfaceId, source.srcX, source.srcY, source.width, source.height, surface.surfaceWidth, surface.surfaceHeight, packet.sourceRect.slot);
 		this.buildFrame.cost += VDP_RENDER_BILLBOARD_COST;
 		return true;
 	}
@@ -2000,14 +2049,6 @@ export class VDP implements VramWriteSink {
 		return true;
 	}
 
-	public resolveBlitterSurfaceSize(surfaceId: number): VdpBlitterSurfaceSize {
-		const surface = this.getReadSurface(surfaceId);
-		return {
-			width: surface.surfaceWidth,
-			height: surface.surfaceHeight,
-		};
-	}
-
 	public get frameBufferWidth(): number {
 		return this._frameBufferWidth;
 	}
@@ -2017,11 +2058,67 @@ export class VDP implements VramWriteSink {
 	}
 
 	public get frameBufferRenderReadback(): Uint8Array {
-		return this.getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER).cpuReadback;
+			const slot = this.findRegisteredVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
+			if (slot === null) {
+				this.fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
+				return this.emptyReadback;
+			}
+			return slot.cpuReadback;
 	}
 
 	public get frameBufferDisplayReadback(): Uint8Array {
 		return this.displayFrameBufferCpuReadback;
+	}
+
+	public drainFrameBufferPresentation(sink: VdpFrameBufferPresentationSink): void {
+		if (this.frameBufferPresentationCount === 0) {
+			return;
+		}
+		const presentation = this.frameBufferPresentationOutput;
+		presentation.presentationCount = this.frameBufferPresentationCount;
+		presentation.requiresFullSync = this.frameBufferPresentationRequiresFullSync;
+		presentation.dirtyRowStart = this.frameBufferPresentationDirtyRowStart;
+		presentation.dirtyRowEnd = this.frameBufferPresentationDirtyRowEnd;
+		presentation.dirtySpansByRow = this.frameBufferPresentationDirtySpansByRow;
+		presentation.renderReadback = this.frameBufferRenderReadback;
+		presentation.displayReadback = this.displayFrameBufferCpuReadback;
+		presentation.width = this._frameBufferWidth;
+		presentation.height = this._frameBufferHeight;
+		sink.consumeVdpFrameBufferPresentation(presentation);
+		this.clearFrameBufferPresentation();
+	}
+
+	public drainSurfaceUploads(sink: VdpSurfaceUploadSink): void {
+		for (let index = 0; index < this.vramSlots.length; index += 1) {
+			const slot = this.vramSlots[index]!;
+			const upload = this.surfaceUploadOutput;
+			upload.surfaceId = slot.surfaceId;
+			upload.surfaceWidth = slot.surfaceWidth;
+			upload.surfaceHeight = slot.surfaceHeight;
+			upload.cpuReadback = slot.cpuReadback;
+			upload.dirtyRowStart = slot.dirtyRowStart;
+			upload.dirtyRowEnd = slot.dirtyRowEnd;
+			upload.dirtySpansByRow = slot.dirtySpansByRow;
+			if (sink.consumeVdpSurfaceUpload(upload)) {
+				this.clearSurfaceUploadDirty(slot.surfaceId);
+			}
+		}
+	}
+
+	public clearFrameBufferPresentation(): void {
+		for (let row = this.frameBufferPresentationDirtyRowStart; row < this.frameBufferPresentationDirtyRowEnd; row += 1) {
+			const span = this.frameBufferPresentationDirtySpansByRow[row]!;
+			span.xStart = 0;
+			span.xEnd = 0;
+		}
+		this.resetFrameBufferPresentation();
+	}
+
+	private resetFrameBufferPresentation(): void {
+		this.frameBufferPresentationCount = 0;
+		this.frameBufferPresentationRequiresFullSync = false;
+		this.frameBufferPresentationDirtyRowStart = 0;
+		this.frameBufferPresentationDirtyRowEnd = 0;
 	}
 
 	// start repeated-sequence-acceptable -- VRAM row streaming keeps read/write loops direct; callback helpers would add hot-path overhead.
@@ -2035,23 +2132,23 @@ export class VDP implements VramWriteSink {
 		}
 		const slot = this.findMappedVramSlot(addr, length);
 		if (slot === null) {
-			this.raiseFault(VDP_FAULT_VRAM_WRITE_UNMAPPED, addr);
+			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNMAPPED, addr);
 			return;
 		}
 		const offset = addr - slot.baseAddr;
 		if ((offset & 3) !== 0 || (length & 3) !== 0) {
-			this.raiseFault(VDP_FAULT_VRAM_WRITE_UNALIGNED, addr);
+			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNALIGNED, addr);
 			return;
 		}
 		if (slot.surfaceWidth === 0 || slot.surfaceHeight === 0) {
-			this.raiseFault(VDP_FAULT_VRAM_WRITE_UNINITIALIZED, addr);
+			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNINITIALIZED, addr);
 			return;
 		}
 		const stride = slot.surfaceWidth * 4;
 		const rowCount = slot.surfaceHeight;
 		const totalBytes = rowCount * stride;
 		if (offset + length > totalBytes) {
-			this.raiseFault(VDP_FAULT_VRAM_WRITE_OOB, addr);
+			this.fault.raise(VDP_FAULT_VRAM_WRITE_OOB, addr);
 			return;
 		}
 		let remaining = length;
@@ -2062,7 +2159,7 @@ export class VDP implements VramWriteSink {
 			const rowAvailable = stride - rowOffset;
 			const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
 			const x = rowOffset / 4;
-			this.markVramSlotDirty(slot, row, 1);
+			this.markVramSlotDirtySpan(slot, row, x, x + rowBytes / 4);
 			this.updateCpuReadback(slot, bytes, cursor, rowBytes, x, row);
 			this.invalidateReadCache(slot.surfaceId);
 			remaining -= rowBytes;
@@ -2080,12 +2177,12 @@ export class VDP implements VramWriteSink {
 		}
 		const slot = this.findMappedVramSlot(addr, out.byteLength);
 		if (slot === null) {
-			this.raiseFault(VDP_FAULT_VRAM_WRITE_UNMAPPED, addr);
+			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNMAPPED, addr);
 			out.fill(0);
 			return;
 		}
 		if (slot.surfaceWidth === 0 || slot.surfaceHeight === 0) {
-			this.raiseFault(VDP_FAULT_VRAM_WRITE_UNINITIALIZED, addr);
+			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNINITIALIZED, addr);
 			out.fill(0);
 			return;
 		}
@@ -2093,7 +2190,7 @@ export class VDP implements VramWriteSink {
 		const stride = slot.surfaceWidth * 4;
 		const totalBytes = slot.surfaceHeight * stride;
 		if (offset + out.byteLength > totalBytes) {
-			this.raiseFault(VDP_FAULT_VRAM_WRITE_OOB, addr);
+			this.fault.raise(VDP_FAULT_VRAM_WRITE_OOB, addr);
 			out.fill(0);
 			return;
 		}
@@ -2112,6 +2209,27 @@ export class VDP implements VramWriteSink {
 			row += 1;
 			rowOffset = 0;
 		}
+	}
+
+	public readFrameBufferPixels(page: VdpFrameBufferPage, x: number, y: number, width: number, height: number, out: Uint8Array): boolean {
+		const source = page === VDP_FRAMEBUFFER_PAGE_RENDER ? this.frameBufferRenderReadback : this.displayFrameBufferCpuReadback;
+		if (x < 0 || y < 0 || width < 0 || height < 0 || x + width > this._frameBufferWidth || y + height > this._frameBufferHeight) {
+			this.fault.raise(VDP_FAULT_RD_OOB, (x | (y << 16)) >>> 0);
+			return false;
+		}
+		const rowBytes = width * 4;
+		const expectedBytes = rowBytes * height;
+		if (out.byteLength !== expectedBytes) {
+			this.fault.raise(VDP_FAULT_RD_OOB, out.byteLength >>> 0);
+			return false;
+		}
+		const stride = this._frameBufferWidth * 4;
+		for (let row = 0; row < height; row += 1) {
+			const srcOffset = (y + row) * stride + x * 4;
+			const dstOffset = row * rowBytes;
+			out.set(source.subarray(srcOffset, srcOffset + rowBytes), dstOffset);
+		}
+		return true;
 	}
 	// end repeated-sequence-acceptable
 
@@ -2138,23 +2256,27 @@ export class VDP implements VramWriteSink {
 		const y = this.memory.readIoU32(IO_VDP_RD_Y);
 		const mode = this.memory.readIoU32(IO_VDP_RD_MODE);
 		if (mode !== VDP_RD_MODE_RGBA8888) {
-			this.raiseFault(VDP_FAULT_RD_UNSUPPORTED_MODE, mode);
+			this.fault.raise(VDP_FAULT_RD_UNSUPPORTED_MODE, mode);
 			return VDP_OPEN_BUS_WORD;
 		}
 		if (surfaceId >= VDP_RD_SURFACE_COUNT) {
-			this.raiseFault(VDP_FAULT_RD_SURFACE, surfaceId);
+			this.fault.raise(VDP_FAULT_RD_SURFACE, surfaceId);
 			return VDP_OPEN_BUS_WORD;
 		}
 		const readSurface = this.readSurfaces[surfaceId]!;
 		if (!readSurface.registered) {
-			this.raiseFault(VDP_FAULT_RD_SURFACE, surfaceId);
+			this.fault.raise(VDP_FAULT_RD_SURFACE, surfaceId);
 			return VDP_OPEN_BUS_WORD;
 		}
-		const surface = this.getVramSlotBySurfaceId(readSurface.surfaceId);
+			const surface = this.findRegisteredVramSlotBySurfaceId(readSurface.surfaceId);
+			if (surface === null) {
+				this.fault.raise(VDP_FAULT_RD_SURFACE, surfaceId);
+				return VDP_OPEN_BUS_WORD;
+			}
 		const width = surface.surfaceWidth;
 		const height = surface.surfaceHeight;
 		if (x >= width || y >= height) {
-			this.raiseFault(VDP_FAULT_RD_OOB, (x | (y << 16)) >>> 0);
+			this.fault.raise(VDP_FAULT_RD_OOB, (x | (y << 16)) >>> 0);
 			return VDP_OPEN_BUS_WORD;
 		}
 		if (this.readBudgetBytes < 4) {
@@ -2184,9 +2306,14 @@ export class VDP implements VramWriteSink {
 		const dither = 0;
 		const frameBufferSurface = this.readSurfaces[VDP_RD_SURFACE_FRAMEBUFFER];
 		if (frameBufferSurface.registered) {
-			const frameBufferSlot = this.getVramSlotBySurfaceId(frameBufferSurface.surfaceId);
-			this._frameBufferWidth = frameBufferSlot.surfaceWidth;
-			this._frameBufferHeight = frameBufferSlot.surfaceHeight;
+				const frameBufferSlot = this.findRegisteredVramSlotBySurfaceId(frameBufferSurface.surfaceId);
+				if (frameBufferSlot !== null) {
+					this._frameBufferWidth = frameBufferSlot.surfaceWidth;
+					this._frameBufferHeight = frameBufferSlot.surfaceHeight;
+				} else {
+					this._frameBufferWidth = this.configuredFrameBufferSize.width;
+					this._frameBufferHeight = this.configuredFrameBufferSize.height;
+				}
 		} else {
 			this._frameBufferWidth = this.configuredFrameBufferSize.width;
 			this._frameBufferHeight = this.configuredFrameBufferSize.height;
@@ -2227,8 +2354,8 @@ export class VDP implements VramWriteSink {
 			pmuSelectedBank: this.pmu.selectedBankIndex,
 			pmuBankWords: this.pmu.captureBankWords(),
 			ditherType: this.liveDitherType,
-			vdpFaultCode: this.faultCode,
-			vdpFaultDetail: this.faultDetail,
+			vdpFaultCode: this.fault.code,
+			vdpFaultDetail: this.fault.detail,
 		};
 	}
 
@@ -2243,25 +2370,14 @@ export class VDP implements VramWriteSink {
 	}
 
 	public restoreState(state: VdpState): void {
-		if (state.skyboxFaceWords.length !== SKYBOX_FACE_WORD_COUNT) {
-			throw new Error(`[VDP] SBX state requires ${SKYBOX_FACE_WORD_COUNT} face words.`);
-		}
 		this.xf.restoreState(state.xf);
 		this.sbx.restoreLiveState(state.skyboxControl, state.skyboxFaceWords);
-		if (state.pmuBankWords.length !== VDP_PMU_BANK_WORD_COUNT) {
-			throw new Error(`[VDP] PMU state requires ${VDP_PMU_BANK_WORD_COUNT} bank words.`);
-		}
 		this.pmu.restoreBankWords(state.pmuSelectedBank, state.pmuBankWords);
 		this.syncPmuRegisterWindow();
 		this.syncSbxRegisterWindow();
 		this.memory.writeValue(IO_VDP_DITHER, state.ditherType);
-		this.vdpStatus = 0;
-		this.faultCode = state.vdpFaultCode >>> 0;
-		this.faultDetail = state.vdpFaultDetail >>> 0;
-		this.memory.writeIoValue(IO_VDP_STATUS, this.vdpStatus);
-		this.memory.writeIoValue(IO_VDP_FAULT_CODE, this.faultCode);
-		this.memory.writeIoValue(IO_VDP_FAULT_DETAIL, this.faultDetail);
-		this.setStatusFlag(VDP_STATUS_FAULT, this.faultCode !== VDP_FAULT_NONE);
+		this.fault.restore(0, state.vdpFaultCode, state.vdpFaultDetail);
+		this.fault.setStatusFlag(VDP_STATUS_FAULT, this.fault.code !== VDP_FAULT_NONE);
 		this.refreshSubmitBusyStatus();
 		this.commitLiveVisualState();
 	}
@@ -2273,26 +2389,38 @@ export class VDP implements VramWriteSink {
 			this.restoreSurfacePixels(state.surfacePixels[index]);
 		}
 		this.displayFrameBufferCpuReadback.set(state.displayFrameBufferPixels);
+		for (let row = 0; row < this.frameBufferPresentationDirtySpansByRow.length; row += 1) {
+			const span = this.frameBufferPresentationDirtySpansByRow[row]!;
+			span.xStart = 0;
+			span.xEnd = 0;
+		}
+		this.resetFrameBufferPresentation();
 	}
 
-	public readHostOutput(): VdpHostOutput {
-		return {
-			ditherType: this.committedDitherType,
-			xfMatrixWords: this.committedXf.matrixWords,
-			xfViewMatrixIndex: this.committedXf.viewMatrixIndex,
-			xfProjectionMatrixIndex: this.committedXf.projectionMatrixIndex,
-			skyboxEnabled: this.sbx.visibleEnabled,
-			skyboxSamples: this.committedSkyboxSamples,
-			billboards: this.committedBillboards,
-			surfaceUploadSlots: this.vramSlots,
-			frameBufferWidth: this._frameBufferWidth,
-			frameBufferHeight: this._frameBufferHeight,
-			frameBufferRenderReadback: this.frameBufferRenderReadback,
-		};
+	public readDeviceOutput(): VdpDeviceOutput {
+		const output = this.deviceOutput;
+		output.ditherType = this.committedDitherType;
+		output.xfViewMatrixIndex = this.committedXf.viewMatrixIndex;
+		output.xfProjectionMatrixIndex = this.committedXf.projectionMatrixIndex;
+		output.skyboxEnabled = this.sbx.visibleEnabled;
+		output.skyboxSamples = this.committedSkyboxSamples;
+		output.billboards = this.committedBillboards;
+		output.frameBufferWidth = this._frameBufferWidth;
+		output.frameBufferHeight = this._frameBufferHeight;
+		return output;
 	}
 
-	public clearSurfaceUploadDirty(surfaceId: number): void {
-		const slot = this.getVramSlotBySurfaceId(surfaceId);
+	private clearSurfaceUploadDirty(surfaceId: number): void {
+		const slot = this.findRegisteredVramSlotBySurfaceId(surfaceId);
+		if (slot === null) {
+			this.fault.raise(VDP_FAULT_RD_SURFACE, surfaceId);
+			return;
+		}
+		for (let row = slot.dirtyRowStart; row < slot.dirtyRowEnd; row += 1) {
+			const span = slot.dirtySpansByRow[row]!;
+			span.xStart = 0;
+			span.xEnd = 0;
+		}
 		slot.dirtyRowStart = 0;
 		slot.dirtyRowEnd = 0;
 	}
@@ -2321,7 +2449,11 @@ export class VDP implements VramWriteSink {
 	}
 
 	private restoreSurfacePixels(state: VdpSurfacePixelsState): void {
-		const slot = this.getVramSlotBySurfaceId(state.surfaceId);
+		const slot = this.findRegisteredVramSlotBySurfaceId(state.surfaceId);
+		if (slot === null) {
+			this.fault.raise(VDP_FAULT_RD_SURFACE, state.surfaceId);
+			return;
+		}
 		slot.cpuReadback.set(state.pixels);
 		this.invalidateReadCache(state.surfaceId);
 		this.markVramSlotDirty(slot, 0, slot.surfaceHeight);
@@ -2329,18 +2461,18 @@ export class VDP implements VramWriteSink {
 
 	public registerVramSurfaces(surfaces: readonly VdpVramSurface[]): void {
 		this.resetQueuedFrameState();
-		this.vramSlots = [];
+		this.vramSlots.length = 0;
 		this.readSurfaces = createReadSurfaceEntries();
 		for (let index = 0; index < this.readCaches.length; index += 1) {
 			this.readCaches[index].width = 0;
 		}
 		this.displayFrameBufferCpuReadback = new Uint8Array(0);
-			this.sbx.reset();
-			this.syncSbxRegisterWindow();
-			this.committedXf.matrixWords.set(this.xf.matrixWords);
-			this.committedXf.viewMatrixIndex = this.xf.viewMatrixIndex;
-			this.committedXf.projectionMatrixIndex = this.xf.projectionMatrixIndex;
-			this.committedDitherType = this.liveDitherType;
+		this.sbx.reset();
+		this.syncSbxRegisterWindow();
+		this.committedXf.matrixWords.set(this.xf.matrixWords);
+		this.committedXf.viewMatrixIndex = this.xf.viewMatrixIndex;
+		this.committedXf.projectionMatrixIndex = this.xf.projectionMatrixIndex;
+		this.committedDitherType = this.liveDitherType;
 		fillVramGarbageScratch(this.vramStaging, {
 			machineSeed: this.vramMachineSeed,
 			bootSeed: this.vramBootSeed,
@@ -2352,10 +2484,10 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	private setVramSlotLogicalDimensions(slot: VramSlot, width: number, height: number, faultDetail = (width | (height << 16)) >>> 0): boolean {
+	private setVramSlotLogicalDimensions(slot: VdpSurfaceUploadSlot, width: number, height: number, faultDetail = (width | (height << 16)) >>> 0): boolean {
 		const byteLength = width * height * 4;
 		if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 || byteLength > slot.capacity) {
-			this.raiseFault(VDP_FAULT_VRAM_SLOT_DIM, faultDetail);
+			this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, faultDetail);
 			return false;
 		}
 		if (slot.surfaceWidth === width && slot.surfaceHeight === height) {
@@ -2365,11 +2497,14 @@ export class VDP implements VramWriteSink {
 		slot.surfaceWidth = width;
 		slot.surfaceHeight = height;
 		slot.cpuReadback = new Uint8Array(byteLength);
+		slot.dirtySpansByRow = createDirtySpans(height);
 		this.invalidateReadCache(slot.surfaceId);
 		if (slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
 			this._frameBufferWidth = width;
 			this._frameBufferHeight = height;
 			this.displayFrameBufferCpuReadback = new Uint8Array(byteLength);
+			this.frameBufferPresentationDirtySpansByRow = createDirtySpans(height);
+			this.resetFrameBufferPresentation();
 		}
 		if (slot.surfaceId === VDP_RD_SURFACE_SYSTEM) {
 			slot.dirtyRowStart = 0;
@@ -2385,7 +2520,7 @@ export class VDP implements VramWriteSink {
 	public setDecodedVramSurfaceDimensions(baseAddr: number, width: number, height: number): void {
 		const slot = this.findMappedVramSlot(baseAddr, 1);
 		if (slot === null) {
-			this.raiseFault(VDP_FAULT_VRAM_WRITE_UNMAPPED, baseAddr);
+			this.fault.raise(VDP_FAULT_VRAM_WRITE_UNMAPPED, baseAddr);
 			return;
 		}
 		this.setVramSlotLogicalDimensions(slot, width, height);
@@ -2394,48 +2529,74 @@ export class VDP implements VramWriteSink {
 	public configureVramSlotSurface(slotId: number, width: number, height: number): void {
 		for (const binding of VDP_SLOT_SURFACE_BINDINGS) {
 			if (binding.slot === slotId) {
-				const slot = this.getVramSlotBySurfaceId(binding.surfaceId);
+				const slot = this.findRegisteredVramSlotBySurfaceId(binding.surfaceId);
+				if (slot === null) {
+					this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, binding.surfaceId);
+					return;
+				}
 				this.setVramSlotLogicalDimensions(slot, width, height);
 				return;
 			}
 		}
-		this.raiseFault(VDP_FAULT_VRAM_SLOT_DIM, slotId);
+		this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, slotId);
 	}
 
 	private invalidateReadCache(surfaceId: number): void {
 		this.readCaches[surfaceId].width = 0;
 	}
 
-	private markVramSlotDirty(slot: VramSlot, startRow: number, rowCount: number): void {
+	private markVramSlotDirty(slot: VdpSurfaceUploadSlot, startRow: number, rowCount: number): void {
 		const endRow = startRow + rowCount;
 		if (slot.dirtyRowStart >= slot.dirtyRowEnd) {
 			slot.dirtyRowStart = startRow;
 			slot.dirtyRowEnd = endRow;
-			return;
-		}
-		if (startRow < slot.dirtyRowStart) {
+		} else if (startRow < slot.dirtyRowStart) {
 			slot.dirtyRowStart = startRow;
 		}
 		if (endRow > slot.dirtyRowEnd) {
 			slot.dirtyRowEnd = endRow;
 		}
+		for (let row = startRow; row < endRow; row += 1) {
+			const span = slot.dirtySpansByRow[row]!;
+			span.xStart = 0;
+			span.xEnd = slot.surfaceWidth;
+		}
 	}
 
-	private registerReadSurface(slot: VramSlot): void {
+	private markVramSlotDirtySpan(slot: VdpSurfaceUploadSlot, row: number, xStart: number, xEnd: number): void {
+		const endRow = row + 1;
+		if (slot.dirtyRowStart >= slot.dirtyRowEnd) {
+			slot.dirtyRowStart = row;
+			slot.dirtyRowEnd = endRow;
+		} else {
+			if (row < slot.dirtyRowStart) {
+				slot.dirtyRowStart = row;
+			}
+			if (endRow > slot.dirtyRowEnd) {
+				slot.dirtyRowEnd = endRow;
+			}
+		}
+		const span = slot.dirtySpansByRow[row]!;
+		if (span.xStart >= span.xEnd) {
+			span.xStart = xStart;
+			span.xEnd = xEnd;
+			return;
+		}
+		if (xStart < span.xStart) {
+			span.xStart = xStart;
+		}
+		if (xEnd > span.xEnd) {
+			span.xEnd = xEnd;
+		}
+	}
+
+	private registerReadSurface(slot: VdpSurfaceUploadSlot): void {
 		this.readSurfaces[slot.surfaceId].surfaceId = slot.surfaceId;
 		this.readSurfaces[slot.surfaceId].registered = true;
 		this.invalidateReadCache(slot.surfaceId);
 	}
 
-	private getReadSurface(surfaceId: number): VramSlot {
-		const surface = this.readSurfaces[surfaceId];
-		if (!surface.registered) {
-			throw new Error(`[VDP] read surface ${surfaceId} is not registered.`);
-		}
-		return this.getVramSlotBySurfaceId(surface.surfaceId);
-	}
-
-	private getReadCache(surfaceId: number, surface: VramSlot, x: number, y: number): VdpReadCache {
+	private getReadCache(surfaceId: number, surface: VdpSurfaceUploadSlot, x: number, y: number): VdpReadCache {
 		const cache = this.readCaches[surfaceId];
 		if (cache.width === 0 || cache.y !== y || x < cache.x0 || x >= cache.x0 + cache.width) {
 			this.prefetchReadCache(cache, surface, x, y);
@@ -2443,7 +2604,7 @@ export class VDP implements VramWriteSink {
 		return cache;
 	}
 
-	private prefetchReadCache(cache: VdpReadCache, surface: VramSlot, x: number, y: number): void {
+	private prefetchReadCache(cache: VdpReadCache, surface: VdpSurfaceUploadSlot, x: number, y: number): void {
 		const width = surface.surfaceWidth;
 		const maxPixelsByBudget = this.readBudgetBytes >>> 2;
 		if (maxPixelsByBudget <= 0) {
@@ -2461,7 +2622,7 @@ export class VDP implements VramWriteSink {
 		cache.data = data;
 	}
 
-	private readCpuReadback(cache: VdpReadCache, surface: VramSlot, x: number, y: number, width: number, height: number): Uint8Array {
+	private readCpuReadback(cache: VdpReadCache, surface: VdpSurfaceUploadSlot, x: number, y: number, width: number, height: number): Uint8Array {
 		const buffer = surface.cpuReadback;
 		const stride = surface.surfaceWidth * 4;
 		const rowBytes = width * 4;
@@ -2475,7 +2636,7 @@ export class VDP implements VramWriteSink {
 		return out;
 	}
 
-	private updateCpuReadback(surface: VramSlot, bytes: Uint8Array, srcOffset: number, length: number, x: number, y: number): void {
+	private updateCpuReadback(surface: VdpSurfaceUploadSlot, bytes: Uint8Array, srcOffset: number, length: number, x: number, y: number): void {
 		const buffer = surface.cpuReadback;
 		const stride = surface.surfaceWidth * 4;
 		const offset = y * stride + x * 4;
@@ -2501,7 +2662,7 @@ export class VDP implements VramWriteSink {
 		const isSystemSlot = surface.surfaceId === VDP_RD_SURFACE_SYSTEM;
 		const byteLength = surface.width * surface.height * 4;
 		if (surface.width <= 0 || surface.height <= 0 || byteLength > surface.capacity) {
-			this.raiseFault(VDP_FAULT_VRAM_SLOT_DIM, surface.surfaceId);
+			this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, surface.surfaceId);
 			return;
 		}
 		fillVramGarbageScratch(this.vramSeedPixel, {
@@ -2510,7 +2671,7 @@ export class VDP implements VramWriteSink {
 			slotSalt: VRAM_GARBAGE_SPACE_SALT >>> 0,
 			addr: surface.baseAddr >>> 0,
 		});
-		const slot: VramSlot = {
+		const slot: VdpSurfaceUploadSlot = {
 			baseAddr: surface.baseAddr,
 			capacity: surface.capacity,
 			surfaceId: surface.surfaceId,
@@ -2519,11 +2680,14 @@ export class VDP implements VramWriteSink {
 			cpuReadback: new Uint8Array(byteLength),
 			dirtyRowStart: 0,
 			dirtyRowEnd: 0,
+			dirtySpansByRow: createDirtySpans(surface.height),
 		};
 		if (slot.surfaceId === VDP_RD_SURFACE_FRAMEBUFFER) {
 			this._frameBufferWidth = surface.width;
 			this._frameBufferHeight = surface.height;
 			this.displayFrameBufferCpuReadback = new Uint8Array(byteLength);
+			this.frameBufferPresentationDirtySpansByRow = createDirtySpans(surface.height);
+			this.resetFrameBufferPresentation();
 		}
 		this.vramSlots.push(slot);
 		this.registerReadSurface(slot);
@@ -2532,15 +2696,7 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	private getVramSlotBySurfaceId(surfaceId: number): VramSlot {
-		const slot = this.findRegisteredVramSlotBySurfaceId(surfaceId);
-		if (slot !== null) {
-			return slot;
-		}
-		throw new Error(`[VDP] VRAM slot not registered for surface ${surfaceId}.`);
-	}
-
-	private findRegisteredVramSlotBySurfaceId(surfaceId: number): VramSlot | null {
+	private findRegisteredVramSlotBySurfaceId(surfaceId: number): VdpSurfaceUploadSlot | null {
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
 			const slot = this.vramSlots[index];
 			if (slot.surfaceId === surfaceId) {
@@ -2550,7 +2706,7 @@ export class VDP implements VramWriteSink {
 		return null;
 	}
 
-	private seedVramSlotTexture(slot: VramSlot): void {
+	private seedVramSlotTexture(slot: VdpSurfaceUploadSlot): void {
 		const width = slot.surfaceWidth;
 		const height = slot.surfaceHeight;
 		const rowPixels = width;
@@ -2598,7 +2754,7 @@ export class VDP implements VramWriteSink {
 		this.invalidateReadCache(slot.surfaceId);
 	}
 
-	private findMappedVramSlot(addr: number, length: number): VramSlot | null {
+	private findMappedVramSlot(addr: number, length: number): VdpSurfaceUploadSlot | null {
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
 			const slot = this.vramSlots[index];
 			if (addr >= slot.baseAddr && addr + length <= slot.baseAddr + slot.capacity) {

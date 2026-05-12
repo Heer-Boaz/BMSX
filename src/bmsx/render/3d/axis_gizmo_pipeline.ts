@@ -57,11 +57,6 @@ function axisNdcToPixelY(y: number, height: number): number {
 	return (1 - y) * 0.5 * height;
 }
 
-function drawAxisLabel(px: number, py: number, letter: string, col: color, scale: number, emitHostImage: AxisGizmoHostImageSink): void {
-	const font = consoleCore.view.default_font;
-	emitHostImage(font.char_to_img(letter), px, py, 999, scale, col);
-}
-
 function placeAxisLabel(originX: number, originY: number, vx: number, vy: number, letter: string, col: color, scale: number, aspect: number, width: number, height: number, emitHostImage: AxisGizmoHostImageSink): void {
 	const tipX = originX + (vx / aspect) * AXIS_GIZMO_SIZE;
 	const tipY = originY + vy * AXIS_GIZMO_SIZE;
@@ -76,10 +71,11 @@ function placeAxisLabel(originX: number, originY: number, vx: number, vy: number
 	dy /= length;
 	const x = clamp(tipPixelX + dx * AXIS_LABEL_PAD_PX, AXIS_LABEL_INSET_PX, width - AXIS_LABEL_INSET_PX);
 	const y = clamp(tipPixelY + dy * AXIS_LABEL_PAD_PX, AXIS_LABEL_INSET_PX, height - AXIS_LABEL_INSET_PX);
-	drawAxisLabel(x, y, letter, col, scale, emitHostImage);
+	const font = consoleCore.view.default_font;
+	emitHostImage(font.char_to_img(letter), x, y, 999, scale, col);
 }
 
-function initAxisGizmoPipeline(backend: WebGLBackend): void {
+export function bootstrapAxisGizmo_WebGL(backend: WebGLBackend): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	vao = gl.createVertexArray();
 	vbo = gl.createBuffer();
@@ -105,10 +101,6 @@ function initAxisGizmoPipeline(backend: WebGLBackend): void {
 	gl.enableVertexAttribArray(colLoc);
 	gl.vertexAttribPointer(colLoc, 3, gl.FLOAT, false, AXIS_VERTEX_STRIDE, 3 * 4);
 	gl.bindVertexArray(null);
-}
-
-export function bootstrapAxisGizmo_WebGL(backend: WebGLBackend): void {
-	initAxisGizmoPipeline(backend);
 }
 
 export function shouldRenderAxisGizmo(): boolean {

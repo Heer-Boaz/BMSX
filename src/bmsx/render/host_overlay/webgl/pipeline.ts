@@ -22,6 +22,9 @@ import { bootstrapAxisGizmo_WebGL, renderAxisGizmo_WebGL, shouldRenderAxisGizmo 
 import type {
 	GlyphRenderSubmission,
 	HostImageRenderSubmission,
+	Host2DKind,
+	Host2DRef,
+	Host2DSubmission,
 	PolyRenderSubmission,
 	RectRenderSubmission,
 	color,
@@ -37,7 +40,6 @@ import { forEachGlyphRunGlyph } from '../../shared/glyph_runs';
 import { hasPendingOverlayFrame } from '../overlay_queue';
 import { buildHostMenuState, buildHostOverlayState } from '../pipeline';
 import { hostOverlayMenu } from '../../../core/host_overlay_menu';
-import type { Host2DKind, Host2DRef, Host2DSubmission } from '../../shared/queues';
 import vertexShaderCode from '../../2d/shaders/2d.vert.glsl';
 import fragmentShaderCode from '../shaders/host_overlay.frag.glsl';
 

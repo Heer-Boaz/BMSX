@@ -3,10 +3,9 @@ import {
 	buildSystemRuntimeRomLayer,
 	normalizeCartridgeBlob,
 	parseCartridgeIndex,
+	type RuntimeRomLayer,
 } from '../rompack/loader';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
-
-export type RuntimeRomLayer = Awaited<ReturnType<typeof buildSystemRuntimeRomLayer>>;
 
 export type RomBootPlan = {
 	systemLayer: RuntimeRomLayer;

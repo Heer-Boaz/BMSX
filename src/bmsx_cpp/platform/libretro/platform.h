@@ -347,7 +347,6 @@ public:
 
 	void setAudioBatchCallback(retro_audio_sample_batch_t cb) { m_audio_batch_cb = cb; }
 	void setTiming(double sampleRate);
-	void setFrameTimeSec(double seconds);
 	void resetQueue();
 	void refreshTargetBufferFrames();
 

@@ -28,35 +28,30 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 
 } // namespace
 
-void CpuExecutionState::clearHaltUntilIrq(Runtime& runtime) {
-	runtime.machine.cpu.clearHaltUntilIrq();
-}
-
 bool CpuExecutionState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameState) {
 	auto& cpu = runtime.machine.cpu;
 	int& cycleBudgetRemaining = frameState.cycleBudgetRemaining;
-	runDueRuntimeTimers(runtime);
+	bool tickCompleted = runDueRuntimeTimers(runtime);
 	if (!cpu.isHaltedUntilIrq()) {
-		return runtime.vblank.tickCompleted();
+		return tickCompleted;
 	}
-	auto& irqController = runtime.machine.irqController;
 	auto& scheduler = runtime.machine.scheduler;
 	while (true) {
-		if (cpu.acceptPendingInterrupt(irqController) != AcceptedInterruptKind::None) {
-			return runtime.vblank.tickCompleted();
+		if (cpu.acceptPendingInterrupt(runtime.machine.irqController) != AcceptedInterruptKind::None) {
+			return tickCompleted;
 		}
-		if (runtime.vblank.tickCompleted()) {
+		if (tickCompleted) {
 			return true;
 		}
 		if (cycleBudgetRemaining > 0) {
 			const i64 cyclesToTarget = scheduler.nextDeadline() - scheduler.nowCycles();
 			if (cyclesToTarget <= 0) {
-				runDueRuntimeTimers(runtime);
+				tickCompleted = runDueRuntimeTimers(runtime);
 				continue;
 			}
 			const int idleCycles = static_cast<int>(std::min<i64>(cycleBudgetRemaining, cyclesToTarget));
 			cycleBudgetRemaining -= idleCycles;
-			advanceRuntimeTime(runtime, idleCycles);
+			tickCompleted = advanceRuntimeTime(runtime, idleCycles);
 			continue;
 		}
 		return true;
@@ -69,8 +64,8 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 	auto& cpu = machine.cpu;
 	int remaining = frameState.cycleBudgetRemaining;
 	RunResult result = RunResult::Yielded;
-	runDueRuntimeTimers(runtime);
-	if (runtime.vblank.tickCompleted()) {
+	bool tickCompleted = runDueRuntimeTimers(runtime);
+	if (tickCompleted) {
 		frameState.cycleBudgetRemaining = remaining;
 		return result;
 	}
@@ -80,8 +75,8 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 		if (nextDeadline != std::numeric_limits<i64>::max()) {
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
 			if (deadlineBudget <= 0) {
-				runDueRuntimeTimers(runtime);
-				if (runtime.vblank.tickCompleted()) {
+				tickCompleted = runDueRuntimeTimers(runtime);
+				if (tickCompleted) {
 					break;
 				}
 				continue;
@@ -102,9 +97,9 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 		if (consumed > 0) {
 			remaining -= consumed;
 			frameState.activeCpuUsedCycles += consumed;
-			advanceRuntimeTime(runtime, consumed);
+			tickCompleted = advanceRuntimeTime(runtime, consumed);
 		}
-		if (runtime.vblank.tickCompleted()) {
+		if (tickCompleted) {
 			break;
 		}
 		if (cpu.isHaltedUntilIrq() || result == RunResult::Halted) {
@@ -118,17 +113,18 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 	return result;
 }
 
-void advanceRuntimeTime(Runtime& runtime, int cycles) {
+bool advanceRuntimeTime(Runtime& runtime, int cycles) {
 	runtime.machine.advanceDevices(cycles);
-	runDueRuntimeTimers(runtime);
+	return runDueRuntimeTimers(runtime);
 }
 
-void runDueRuntimeTimers(Runtime& runtime) {
+bool runDueRuntimeTimers(Runtime& runtime) {
 	auto& scheduler = runtime.machine.scheduler;
 	while (scheduler.hasDueTimer()) {
 		const uint16_t event = scheduler.popDueTimer();
 		dispatchRuntimeTimer(runtime, static_cast<uint8_t>(event >> 8u), static_cast<uint8_t>(event & 0xffu));
 	}
+	return runtime.vblank.tickCompleted();
 }
 
 } // namespace bmsx

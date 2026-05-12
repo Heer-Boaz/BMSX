@@ -5,7 +5,6 @@ import { consoleCore } from '../../core/console';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/constants';
 import vertexShaderCode from './shaders/framebuffer_2d.vert.glsl';
 import fragmentShaderCode from './shaders/framebuffer_2d.frag.glsl';
-import { vdpDisplayFrameBufferTexture } from '../vdp/framebuffer';
 import {
 	bindFullscreenQuad,
 	createFullscreenQuad,
@@ -71,7 +70,7 @@ export function registerFramebuffer2DPass_WebGL(registry: RenderPassLibrary): vo
 				height: consoleCore.view.offscreenCanvasSize.y,
 				baseWidth: consoleCore.view.viewportSize.x,
 				baseHeight: consoleCore.view.viewportSize.y,
-				colorTex: vdpDisplayFrameBufferTexture(),
+				colorTex: consoleCore.view.vdpFrameBufferTextures.displayTexture(),
 			};
 			registry.setState('framebuffer_2d', state);
 			const gl = backend.gl;

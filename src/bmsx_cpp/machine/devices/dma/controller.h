@@ -33,9 +33,6 @@ public:
 	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
 	void tryStartIo();
-	bool hasPendingVdpSubmit() const;
-	bool hasPendingIsoTransfer() const;
-	bool hasPendingBulkTransfer() const;
 		void enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped)> onComplete);
 	void reset();
 
@@ -73,6 +70,8 @@ public:
 
 	void accrueChannel(Channel channel, int64_t bytesPerSec, int64_t& carry, int cycles);
 	void scheduleNextService(int64_t nowCycles);
+	bool hasPendingTransfer(Channel channel) const;
+	bool hasPendingVdpSubmit() const;
 	void tickChannel(Channel channel);
 	uint32_t processJob(DmaJob& job, uint32_t budget);
 	uint32_t processImageJob(DmaJob& job, uint32_t budget);

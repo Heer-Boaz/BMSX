@@ -1,27 +1,11 @@
 import { consoleCore } from '../../core/console';
 import { RenderPassLibrary } from '../backend/pass/library';
-import { Framebuffer2DPipelineState, MeshBatchPipelineState, ParticlePipelineState, type RenderPassDef } from '../backend/backend';
+import { Framebuffer2DPipelineState, ParticlePipelineState, type RenderPassDef } from '../backend/backend';
 import { M4 } from '../3d/math';
-import {
-	beginMeshQueue,
-	forEachMeshQueue,
-	beginParticleQueue,
-	forEachParticleQueue,
-	meshQueueBackSize,
-	type Host2DSubmission,
-} from '../shared/queues';
-import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/submissions';
+import type { Host2DSubmission } from '../shared/submissions';
 import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
-import type { VdpHostOutput, VdpResolvedBlitterSample } from '../../machine/devices/vdp/vdp';
-import { VDP_SLOT_PRIMARY, VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../machine/bus/io';
-import {
-	VDP_RD_SURFACE_PRIMARY,
-	VDP_RD_SURFACE_SECONDARY,
-	VDP_RD_SURFACE_SYSTEM,
-} from '../../machine/devices/vdp/contracts';
-import type { Mesh } from '../3d/mesh';
-import { readVdpDisplayFrameBufferPixels, vdpDisplayFrameBufferTexture } from '../vdp/framebuffer';
-import { resolveVdpSurfacePixels } from '../vdp/source_pixels';
+import type { VdpSlotTexturePixels } from '../vdp/slot_textures';
+import { DEFAULT_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { HeadlessPresentHost } from './view';
 import { hostOverlayMenu } from '../../core/host_overlay_menu';
 import { renderHeadlessHost2DEntry, renderHeadlessSubmissions } from './host_2d';
@@ -30,7 +14,6 @@ import { blendPixel } from './pixel_ops';
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
 	registerSkyboxPass(registry);
-	registerMeshPass(registry);
 	registerParticlePass(registry);
 	registerFrameBuffer2DPass(registry);
 }
@@ -50,23 +33,24 @@ export function registerHeadlessPresentPass(registry: RenderPassLibrary): void {
 function registerFramePasses(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'frame_resolve',
-		name: 'HeadlessFrameResolve',
-		stateOnly: true,
-		graph: { skip: true },
-		exec: () => {
-			const output = consoleCore.runtime.machine.vdp.readHostOutput();
-			beginHeadlessScene(output.frameBufferWidth, output.frameBufferHeight);
-		},
-	});
+			name: 'HeadlessFrameResolve',
+			stateOnly: true,
+			graph: { skip: true },
+			exec: () => {
+				beginHeadlessScene(consoleCore.view.vdpFrameBufferTextures.width(), consoleCore.view.vdpFrameBufferTextures.height());
+			},
+		});
 	registry.register({ id: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, graph: { skip: true }, exec: () => { /* noop */ } });
 }
 
 type Snapshot = string[];
 
-let previousMeshSnapshot: Snapshot = [];
 let previousParticleSnapshot: Snapshot = [];
 let previousSkyboxSnapshot: Snapshot = [];
 let previousFrameBufferSnapshot: Snapshot = [];
+let previousParticleHeadline = '';
+let previousSkyboxHeadline = '';
+let previousFrameBufferHeadline = '';
 
 let diffMatrix = new Uint32Array(0);
 let headlessFrameBufferReadbackPixels = new Uint8Array(0);
@@ -80,123 +64,14 @@ let headlessPresentWidth = 0;
 let headlessPresentHeight = 0;
 let headlessFrameReady = false;
 let headlessSceneActive = false;
-const headlessSkyboxSamples = new Array<VdpResolvedBlitterSample>(SKYBOX_FACE_KEYS.length);
-const headlessSkyboxTextures = new Array<SlotTexturePixels>(SKYBOX_FACE_KEYS.length);
+const headlessSkyboxTextures = new Array<VdpSlotTexturePixels>(SKYBOX_FACE_KEYS.length);
+const headlessSkyboxSourceRects = new Int32Array(SKYBOX_FACE_KEYS.length * 4);
 const headlessSkyboxFaceUv = new Float32Array(2);
 
-const validatedMesh = new WeakMap<Mesh, boolean>();
-const MAX_MORPH_TARGETS = 8;
-const MAX_JOINTS = 32;
 const HEADLESS_VERBOSE_DIFF = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.BMSX_HEADLESS_VERBOSE === '1';
-
-function validateMeshRecord(mesh: Mesh): void {
-	if (validatedMesh.has(mesh)) {
-		return;
-	}
-	const positions = mesh.positions;
-	if (!positions || positions.length === 0 || positions.length % 3 !== 0) {
-		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid positions buffer.`);
-	}
-	const vertexCount = mesh.vertexCount;
-	if (!Number.isFinite(vertexCount) || vertexCount <= 0) {
-		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid vertex count (${vertexCount}).`);
-	}
-	if (mesh.indices && mesh.indices.length > 0) {
-		let maxIndex = 0;
-		for (let i = 0; i < mesh.indices.length; i += 1) {
-			const idx = mesh.indices[i] as number;
-			if (idx > maxIndex) maxIndex = idx;
-		}
-		if (maxIndex >= vertexCount) {
-			throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' index buffer out of range (max ${maxIndex}, verts ${vertexCount}).`);
-		}
-	}
-	if (mesh.texcoords && mesh.texcoords.length > 0 && mesh.texcoords.length < vertexCount * 2) {
-		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid texcoord buffer length (${mesh.texcoords.length}).`);
-	}
-	if (mesh.normals && mesh.normals.length > 0 && mesh.normals.length < vertexCount * 3) {
-		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid normals buffer length (${mesh.normals.length}).`);
-	}
-	if (mesh.tangents && mesh.tangents.length > 0) {
-		const len = mesh.tangents.length;
-		if (len !== vertexCount * 3 && len !== vertexCount * 4) {
-			throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid tangent buffer length (${len}).`);
-		}
-	}
-	if (mesh.hasSkinning) {
-		if (!mesh.jointIndices || !mesh.jointWeights) {
-			throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' skinning data is incomplete.`);
-		}
-		if (mesh.jointIndices.length < vertexCount * 4 || mesh.jointWeights.length < vertexCount * 4) {
-			throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' skinning buffers are too small.`);
-		}
-	}
-	if (mesh.morphPositions && mesh.morphPositions.length > 0) {
-		for (const morph of mesh.morphPositions) {
-			if (morph.length !== positions.length) {
-				throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has morph position buffer mismatch.`);
-			}
-		}
-	}
-	if (mesh.morphNormals && mesh.morphNormals.length > 0 && mesh.normals) {
-		for (const morph of mesh.morphNormals) {
-			if (morph.length !== mesh.normals.length) {
-				throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has morph normal buffer mismatch.`);
-			}
-		}
-	}
-	if (mesh.morphTangents && mesh.morphTangents.length > 0 && mesh.tangents) {
-		for (const morph of mesh.morphTangents) {
-			if (morph.length !== mesh.tangents.length) {
-				throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has morph tangent buffer mismatch.`);
-			}
-		}
-	}
-	validatedMesh.set(mesh, true);
-}
-
-function requireMaterialTexture(mesh: Mesh, slot: 'albedo' | 'normal' | 'metallicRoughness' | 'occlusion' | 'emissive'): void {
-	const material = mesh.material;
-	if (!material) {
-		return;
-	}
-	const index = material.textures[slot];
-	if (index === undefined || index === null) {
-		return;
-	}
-	const model = (mesh as unknown as { _sourceModel?: { imageBuffers?: ArrayBuffer[]; imageURIs?: string[] } })._sourceModel;
-	if (model) {
-		const count = model.imageBuffers ? model.imageBuffers.length : (model.imageURIs ? model.imageURIs.length : 0);
-		if (index < 0 || index >= count) {
-			throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' material texture '${slot}' index ${index} out of range (images=${count}).`);
-		}
-	}
-	const key = material.gpuTextures[slot];
-	if (!key) {
-		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' material texture '${slot}' missing GPU binding.`);
-	}
-	const handle = consoleCore.texmanager.getTexture(key);
-	if (!handle) {
-		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' material texture '${slot}' not loaded (key='${key}').`);
-	}
-}
 
 function formatNumber(value: number): string {
 	return Number.isFinite(value) ? value.toFixed(2) : 'NaN';
-}
-
-function formatVec3(input: { x: number; y: number; z: number } | Float32Array | [number, number, number]): string {
-	if (input instanceof Float32Array) {
-		return `(${formatNumber(input[0] ?? 0)}, ${formatNumber(input[1] ?? 0)}, ${formatNumber(input[2] ?? 0)})`;
-	}
-	if (Array.isArray(input)) {
-		return `(${formatNumber(input[0] ?? 0)}, ${formatNumber(input[1] ?? 0)}, ${formatNumber(input[2] ?? 0)})`;
-	}
-	return `(${formatNumber(input.x)}, ${formatNumber(input.y)}, ${formatNumber(input.z)})`;
-}
-
-function translationFromMatrix(m: Float32Array): string {
-	return `(${formatNumber(m[12])}, ${formatNumber(m[13])}, ${formatNumber(m[14])})`;
 }
 
 function computeDiff(previous: Snapshot, current: Snapshot): Snapshot {
@@ -279,6 +154,13 @@ function emitDiff(label: string, previous: Snapshot, current: Snapshot): Snapsho
 	return current;
 }
 
+function emitHeadlessHeadline(label: string, previous: string, current: string): string {
+	if (previous !== current) {
+		console.log(`[headless:${label}] ${current} (1 changes)`);
+	}
+	return current;
+}
+
 function resizeHeadlessScene(width: number, height: number): void {
 	const byteLength = width * height * 4;
 	if (headlessScenePixels.byteLength !== byteLength) {
@@ -295,30 +177,6 @@ function beginHeadlessScene(width: number, height: number): void {
 	headlessScenePixels.fill(0);
 	headlessSceneActive = false;
 	headlessFrameReady = false;
-}
-
-function slotSurfaceId(slot: number): number {
-	if (slot === VDP_SLOT_PRIMARY) {
-		return VDP_RD_SURFACE_PRIMARY;
-	}
-	if (slot === VDP_SLOT_SECONDARY) {
-		return VDP_RD_SURFACE_SECONDARY;
-	}
-	if (slot === VDP_SLOT_SYSTEM) {
-		return VDP_RD_SURFACE_SYSTEM;
-	}
-	throw new Error(`[HeadlessVDP] Invalid slot binding ${slot}.`);
-}
-
-type SlotTexturePixels = {
-	pixels: Uint8Array;
-	width: number;
-	height: number;
-	stride: number;
-};
-
-function readSlotTexturePixels(output: VdpHostOutput, slot: number): SlotTexturePixels {
-	return resolveVdpSurfacePixels(output, slotSurfaceId(slot));
 }
 
 function resolveSkyboxFaceInto(dirX: number, dirY: number, dirZ: number): number {
@@ -416,15 +274,22 @@ function presentHeadlessFrame(): void {
 }
 
 function rasterizeSkyboxBackground(width: number, height: number): void {
-	const vdp = consoleCore.runtime.machine.vdp;
-	const output = vdp.readHostOutput();
-	const skyboxSamples = output.skyboxSamples;
+	const gv = consoleCore.view;
+	const faceSurfaceIds = gv.skyboxFaceSurfaceIds;
+	const faceUvRects = gv.skyboxFaceUvRects;
+	const faceSizes = gv.skyboxFaceSizes;
 	for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
-		const sample = skyboxSamples[index]!;
-		headlessSkyboxSamples[index] = sample;
-		headlessSkyboxTextures[index] = readSlotTexturePixels(output, sample.slot);
+		const texture = gv.vdpSlotTextures.readSurfaceTexturePixels(faceSurfaceIds[index]);
+		const uvBase = index * 4;
+		const rectBase = index * 4;
+		const sizeBase = index * 2;
+		headlessSkyboxTextures[index] = texture;
+		headlessSkyboxSourceRects[rectBase + 0] = (faceUvRects[uvBase + 0] * texture.width) | 0;
+		headlessSkyboxSourceRects[rectBase + 1] = (faceUvRects[uvBase + 1] * texture.height) | 0;
+		headlessSkyboxSourceRects[rectBase + 2] = faceSizes[sizeBase + 0];
+		headlessSkyboxSourceRects[rectBase + 3] = faceSizes[sizeBase + 1];
 	}
-	const view = consoleCore.view.vdpTransform.skyboxView;
+	const view = gv.vdpTransform.skyboxView;
 	for (let y = 0; y < height; y += 1) {
 		const rayY = 1 - (((y * 2) + 1) / height);
 		for (let x = 0; x < width; x += 1) {
@@ -433,19 +298,22 @@ function rasterizeSkyboxBackground(width: number, height: number): void {
 			const dirY = view[1] * rayX + view[5] * rayY + view[9];
 			const dirZ = view[2] * rayX + view[6] * rayY + view[10];
 			const faceIndex = resolveSkyboxFaceInto(dirX, dirY, dirZ);
-			const sample = headlessSkyboxSamples[faceIndex]!;
-			const source = sample.source;
 			const texture = headlessSkyboxTextures[faceIndex]!;
-			let faceX = (headlessSkyboxFaceUv[0] * source.width) | 0;
-			let faceY = (headlessSkyboxFaceUv[1] * source.height) | 0;
-			if (faceX >= source.width) {
-				faceX = source.width - 1;
+			const rectBase = faceIndex * 4;
+			const sourceX = headlessSkyboxSourceRects[rectBase + 0];
+			const sourceY = headlessSkyboxSourceRects[rectBase + 1];
+			const sourceWidth = headlessSkyboxSourceRects[rectBase + 2];
+			const sourceHeight = headlessSkyboxSourceRects[rectBase + 3];
+			let faceX = (headlessSkyboxFaceUv[0] * sourceWidth) | 0;
+			let faceY = (headlessSkyboxFaceUv[1] * sourceHeight) | 0;
+			if (faceX >= sourceWidth) {
+				faceX = sourceWidth - 1;
 			}
-			if (faceY >= source.height) {
-				faceY = source.height - 1;
+			if (faceY >= sourceHeight) {
+				faceY = sourceHeight - 1;
 			}
-			const srcX = source.srcX + faceX;
-			const srcY = source.srcY + faceY;
+			const srcX = sourceX + faceX;
+			const srcY = sourceY + faceY;
 			const srcOffset = srcY * texture.stride + srcX * 4;
 			const dstOffset = (y * width + x) * 4;
 			headlessScenePixels[dstOffset + 0] = texture.pixels[srcOffset + 0];
@@ -457,28 +325,7 @@ function rasterizeSkyboxBackground(width: number, height: number): void {
 	headlessSceneActive = true;
 }
 
-function rasterizeHeadlessParticle(output: VdpHostOutput, submission: ParticleRenderSubmission, state: ParticlePipelineState): void {
-	const slot = submission.slot;
-	const texture = readSlotTexturePixels(output, slot);
-	const uv0 = submission.uv0;
-	const uv1 = submission.uv1;
-	const position = submission.position;
-	rasterizeHeadlessParticleSample(
-		texture,
-		(uv0[0] * texture.width) | 0,
-		(uv0[1] * texture.height) | 0,
-		((uv1[0] - uv0[0]) * texture.width) | 0,
-		((uv1[1] - uv0[1]) * texture.height) | 0,
-		position[0],
-		position[1],
-		position[2],
-		submission.size,
-		submission.color,
-		state,
-	);
-}
-
-function rasterizeHeadlessParticleSample(texture: SlotTexturePixels,
+function rasterizeHeadlessParticleSample(texture: VdpSlotTexturePixels,
 	sourceX: number,
 	sourceY: number,
 	sourceW: number,
@@ -545,14 +392,13 @@ function rasterizeHeadlessParticleSample(texture: SlotTexturePixels,
 	headlessSceneActive = true;
 }
 
-function rasterizeHeadlessVdpBillboard(output: VdpHostOutput, index: number, state: ParticlePipelineState): void {
+function rasterizeHeadlessVdpBillboard(index: number, state: ParticlePipelineState): void {
 	const view = consoleCore.view;
 	const sourceBase = index * 4;
 	const positionSize = view.vdpBillboardPositionSize;
 	const uvRect = view.vdpBillboardUvRect;
 	const color = view.vdpBillboardColor;
-	const slot = view.vdpBillboardSlot[index];
-	const texture = readSlotTexturePixels(output, slot);
+	const texture = view.vdpSlotTextures.readSurfaceTexturePixels(view.vdpBillboardSurfaceId[index]);
 	rasterizeHeadlessParticleSample(
 		texture,
 		(uvRect[sourceBase + 0] * texture.width) | 0,
@@ -580,36 +426,37 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 				height: consoleCore.view.canvasSize.y,
 				baseWidth: consoleCore.view.viewportSize.x,
 				baseHeight: consoleCore.view.viewportSize.y,
-				colorTex: vdpDisplayFrameBufferTexture(),
+				colorTex: consoleCore.view.vdpFrameBufferTextures.displayTexture(),
 			} as Framebuffer2DPipelineState);
 		},
-		exec: (_backend, _fbo, state: Framebuffer2DPipelineState) => {
-			const output = consoleCore.runtime.machine.vdp.readHostOutput();
-			const frameBufferWidth = output.frameBufferWidth;
-			const frameBufferHeight = output.frameBufferHeight;
-			resizeHeadlessScene(frameBufferWidth, frameBufferHeight);
-			if (frameBufferWidth <= 0 || frameBufferHeight <= 0) {
-				throw new Error(`[HeadlessFramebuffer2D] Invalid framebuffer dimensions ${frameBufferWidth}x${frameBufferHeight}.`);
-			}
-			readVdpDisplayFrameBufferPixels(0, 0, frameBufferWidth, frameBufferHeight, headlessFrameBufferReadbackPixels);
-			const pixels = headlessFrameBufferReadbackPixels;
+			exec: (backend, _fbo, state: Framebuffer2DPipelineState) => {
+				const frameBufferWidth = consoleCore.view.vdpFrameBufferTextures.width();
+				const frameBufferHeight = consoleCore.view.vdpFrameBufferTextures.height();
+				resizeHeadlessScene(frameBufferWidth, frameBufferHeight);
+				if (frameBufferWidth <= 0 || frameBufferHeight <= 0) {
+					throw new Error(`[HeadlessFramebuffer2D] Invalid framebuffer dimensions ${frameBufferWidth}x${frameBufferHeight}.`);
+				}
+				backend.readTextureRegion(state.colorTex, headlessFrameBufferReadbackPixels, frameBufferWidth, frameBufferHeight, 0, 0, DEFAULT_TEXTURE_PARAMS);
+				const pixels = headlessFrameBufferReadbackPixels;
 			const expectedByteLength = frameBufferWidth * frameBufferHeight * 4;
 			if (pixels.byteLength !== expectedByteLength) {
 				throw new Error(`[HeadlessFramebuffer2D] Framebuffer byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);
 			}
-			const presentedPixels = writeHeadlessFrame(pixels, frameBufferWidth, frameBufferHeight, state.width, state.height);
-			let active = 0;
-			for (let index = 3; index < presentedPixels.length; index += 4) {
-				if (presentedPixels[index] !== 0) {
-					active += 1;
+				const presentedPixels = writeHeadlessFrame(pixels, frameBufferWidth, frameBufferHeight, state.width, state.height);
+				let active = 0;
+				for (let index = 3; index < presentedPixels.length; index += 4) {
+					if (presentedPixels[index] !== 0) {
+						active += 1;
+					}
 				}
-			}
-			const snapshot: Snapshot = [
-				`pixels=${pixels.length >> 2} active=${active} framebuffer=${frameBufferWidth}x${frameBufferHeight} present=${state.width}x${state.height} logical=${state.baseWidth}x${state.baseHeight}`,
-			];
-			previousFrameBufferSnapshot = emitDiff('framebuffer', previousFrameBufferSnapshot, snapshot);
-		},
-	};
+				const headline = `pixels=${pixels.length >> 2} active=${active} framebuffer=${frameBufferWidth}x${frameBufferHeight} present=${state.width}x${state.height} logical=${state.baseWidth}x${state.baseHeight}`;
+				if (HEADLESS_VERBOSE_DIFF) {
+					previousFrameBufferSnapshot = emitDiff('framebuffer', previousFrameBufferSnapshot, [headline]);
+				} else {
+					previousFrameBufferHeadline = emitHeadlessHeadline('framebuffer', previousFrameBufferHeadline, headline);
+				}
+			},
+		};
 	registry.register(pass);
 }
 
@@ -619,112 +466,32 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 		name: 'HeadlessSkybox',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: () => !!consoleCore.view.skyboxFaceUvRects,
+		shouldExecute: () => consoleCore.view.skyboxRenderReady,
 		exec: () => {
 			const uvRects = consoleCore.view.skyboxFaceUvRects;
-			const sizes = consoleCore.view.skyboxFaceSizes;
-			const bindings = consoleCore.view.skyboxFaceTextpageBindings;
-			if (!uvRects || !sizes || !bindings) {
-				return;
-			}
-			const output = consoleCore.runtime.machine.vdp.readHostOutput();
-			rasterizeSkyboxBackground(output.frameBufferWidth, output.frameBufferHeight);
-			const snapshot: Snapshot = [`faces=${SKYBOX_FACE_KEYS.map((_, index) => {
-				const uvBase = index * 4;
-				return `${bindings[index]}:${uvRects[uvBase]},${uvRects[uvBase + 1]},${uvRects[uvBase + 2]},${uvRects[uvBase + 3]}`;
-			}).join(',')}`];
-			for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
-				const key = SKYBOX_FACE_KEYS[index];
-				const uvBase = index * 4;
-				const sizeBase = index * 2;
-				const slot = bindings[index] === 0 ? 'primary' : 'secondary';
-				snapshot.push(`[skybox:${key}] uv=${uvRects[uvBase]},${uvRects[uvBase + 1]},${uvRects[uvBase + 2]},${uvRects[uvBase + 3]} size=${sizes[sizeBase]}x${sizes[sizeBase + 1]} slot=${slot}`);
-			}
-			previousSkyboxSnapshot = emitDiff('skybox', previousSkyboxSnapshot, snapshot);
-		},
-	};
-	registry.register(pass);
-}
-
-function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
-	const gv = consoleCore.view;
-	const transform = gv.vdpTransform;
-	return {
-		width: gv.offscreenCanvasSize.x,
-		height: gv.offscreenCanvasSize.y,
-		camPos: transform.eye,
-		viewProj: transform.viewProj,
-		cameraFrustum: transform.frustumPlanes,
-		lighting: registry.getState('frame_shared')?.lighting,
-	};
-}
-
-function registerMeshPass(registry: RenderPassLibrary): void {
-	const pass: RenderPassDef<MeshBatchPipelineState> = {
-		id: 'meshbatch',
-		name: 'HeadlessMeshes',
-		stateOnly: true,
-		shouldExecute: () => meshQueueBackSize() > 0,
-		prepare: () => {
-			registry.setState('meshbatch', makeMeshState(registry));
-		},
-		exec: (_backend, _fbo, state: unknown) => {
-			const meshState = state as MeshBatchPipelineState;
-			const count = beginMeshQueue();
-			const snapshot: Snapshot = [`draws=${count} viewport=${meshState.width}x${meshState.height}`];
-			if (count > 0) {
-				let index = 0;
-				forEachMeshQueue((submission: MeshRenderSubmission) => {
-					const mesh = submission.mesh;
-					validateMeshRecord(mesh);
-					requireMaterialTexture(mesh, 'albedo');
-					requireMaterialTexture(mesh, 'normal');
-					requireMaterialTexture(mesh, 'metallicRoughness');
-					requireMaterialTexture(mesh, 'occlusion');
-					requireMaterialTexture(mesh, 'emissive');
-					const matrix = submission.matrix;
-					if (!matrix || matrix.length !== 16) {
-						throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid matrix.`);
+				const sizes = consoleCore.view.skyboxFaceSizes;
+				const bindings = consoleCore.view.skyboxFaceTextpageBindings;
+				rasterizeSkyboxBackground(headlessSceneWidth, headlessSceneHeight);
+				let headline = 'faces=';
+				for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
+					const uvBase = index * 4;
+					headline += `${index === 0 ? '' : ','}${bindings[index]}:${uvRects[uvBase]},${uvRects[uvBase + 1]},${uvRects[uvBase + 2]},${uvRects[uvBase + 3]}`;
+				}
+				if (HEADLESS_VERBOSE_DIFF) {
+					const snapshot: Snapshot = [headline];
+					for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
+						const key = SKYBOX_FACE_KEYS[index];
+						const uvBase = index * 4;
+						const sizeBase = index * 2;
+						const slot = bindings[index] === 0 ? 'primary' : 'secondary';
+						snapshot.push(`[skybox:${key}] uv=${uvRects[uvBase]},${uvRects[uvBase + 1]},${uvRects[uvBase + 2]},${uvRects[uvBase + 3]} size=${sizes[sizeBase]}x${sizes[sizeBase + 1]} slot=${slot}`);
 					}
-					for (let i = 0; i < 16; i += 1) {
-						if (!Number.isFinite(matrix[i])) {
-							throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' matrix contains non-finite values.`);
-						}
-					}
-					const jointMatrices = submission.joint_matrices;
-					if (jointMatrices && jointMatrices.length > 0) {
-						if (!mesh.hasSkinning) {
-							throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has joint_matrices but no skinning data.`);
-						}
-						if (jointMatrices.length > MAX_JOINTS) {
-							throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' joint count ${jointMatrices.length} exceeds MAX_JOINTS (${MAX_JOINTS}).`);
-						}
-						for (let j = 0; j < jointMatrices.length; j += 1) {
-							const jointMatrix = jointMatrices[j];
-							if (!jointMatrix || jointMatrix.length !== 16) {
-								throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' joint matrix ${j} is invalid.`);
-							}
-						}
-					}
-					const morphWeights = submission.morph_weights;
-					if (morphWeights && morphWeights.length > 0) {
-						if (!mesh.hasMorphTargets) {
-							throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has morph_weights but no morph targets.`);
-						}
-						if (morphWeights.length > MAX_MORPH_TARGETS) {
-							throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' morph count ${morphWeights.length} exceeds MAX_MORPH_TARGETS (${MAX_MORPH_TARGETS}).`);
-						}
-						}
-						const translation = translationFromMatrix(submission.matrix);
-						const shadow = submission.receive_shadow ? 'yes' : 'no';
-					const morphCount = submission.morph_weights.length;
-					snapshot.push(`[mesh#${index}] mesh=${submission.mesh.name} translate=${translation} shadow=${shadow} morphs=${morphCount}`);
-					index += 1;
-				});
-			}
-			previousMeshSnapshot = emitDiff('mesh', previousMeshSnapshot, snapshot);
-		},
-	};
+					previousSkyboxSnapshot = emitDiff('skybox', previousSkyboxSnapshot, snapshot);
+				} else {
+					previousSkyboxHeadline = emitHeadlessHeadline('skybox', previousSkyboxHeadline, headline);
+				}
+			},
+		};
 	registry.register(pass);
 }
 
@@ -752,47 +519,33 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 		name: 'HeadlessParticles',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: () => beginParticleQueue() > 0 || consoleCore.view.vdpBillboardCount > 0,
+		shouldExecute: () => consoleCore.view.vdpBillboardCount > 0,
 		prepare: () => {
 			registry.setState('particles', updateHeadlessParticleState());
 		},
 		exec: (_backend, _fbo, state: unknown) => {
 			const particleState = state as ParticlePipelineState;
-			const count = beginParticleQueue() + consoleCore.view.vdpBillboardCount;
+			const count = consoleCore.view.vdpBillboardCount;
 			if (count <= 0) {
 				return;
 			}
-			const snapshot: Snapshot = [`draws=${count} viewport=${particleState.width}x${particleState.height}`];
-			const output = consoleCore.runtime.machine.vdp.readHostOutput();
-			if (beginParticleQueue() > 0) {
-				let index = 0;
-				forEachParticleQueue((submission: ParticleRenderSubmission) => {
-					const uv0 = submission.uv0;
-					const uv1 = submission.uv1;
-					const slot = submission.slot;
-					if (slot !== VDP_SLOT_PRIMARY && slot !== VDP_SLOT_SECONDARY && slot !== VDP_SLOT_SYSTEM) {
-						throw new Error(`[HeadlessParticles] Particle has invalid slot binding (${slot}).`);
+				const headline = `draws=${count} viewport=${particleState.width}x${particleState.height}`;
+				const snapshot: Snapshot | null = HEADLESS_VERBOSE_DIFF ? [headline] : null;
+				const vdpBillboardCount = consoleCore.view.vdpBillboardCount;
+				const positionSize = consoleCore.view.vdpBillboardPositionSize;
+				for (let index = 0; index < vdpBillboardCount; index += 1) {
+					rasterizeHeadlessVdpBillboard(index, particleState);
+					if (snapshot !== null) {
+						const base = index * 4;
+						snapshot.push(`[vdp-particle#${index}] pos=(${formatNumber(positionSize[base + 0])}, ${formatNumber(positionSize[base + 1])}, ${formatNumber(positionSize[base + 2])}) size=${formatNumber(positionSize[base + 3])} slot=${consoleCore.view.vdpBillboardSlot[index]}`);
 					}
-					if (!Number.isFinite(uv0[0]) || !Number.isFinite(uv0[1]) || !Number.isFinite(uv1[0]) || !Number.isFinite(uv1[1])) {
-						throw new Error('[HeadlessParticles] Particle UVs must be finite numbers.');
-					}
-					if (uv0[0] < 0 || uv0[1] < 0 || uv1[0] > 1 || uv1[1] > 1 || uv0[0] > uv1[0] || uv0[1] > uv1[1]) {
-						throw new Error(`[HeadlessParticles] Particle UVs out of range (${uv0[0]}, ${uv0[1]})..(${uv1[0]}, ${uv1[1]}).`);
-					}
-					rasterizeHeadlessParticle(output, submission, particleState);
-					snapshot.push(`[particle#${index}] pos=${formatVec3(submission.position)} size=${formatNumber(submission.size)} slot=${slot}`);
-					index += 1;
-				});
-			}
-			const vdpBillboardCount = consoleCore.view.vdpBillboardCount;
-			const positionSize = consoleCore.view.vdpBillboardPositionSize;
-			for (let index = 0; index < vdpBillboardCount; index += 1) {
-				rasterizeHeadlessVdpBillboard(output, index, particleState);
-				const base = index * 4;
-				snapshot.push(`[vdp-particle#${index}] pos=(${formatNumber(positionSize[base + 0])}, ${formatNumber(positionSize[base + 1])}, ${formatNumber(positionSize[base + 2])}) size=${formatNumber(positionSize[base + 3])} slot=${consoleCore.view.vdpBillboardSlot[index]}`);
-			}
-			previousParticleSnapshot = emitDiff('particles', previousParticleSnapshot, snapshot);
-		},
-	};
+				}
+				if (snapshot !== null) {
+					previousParticleSnapshot = emitDiff('particles', previousParticleSnapshot, snapshot);
+				} else {
+					previousParticleHeadline = emitHeadlessHeadline('particles', previousParticleHeadline, headline);
+				}
+			},
+		};
 	registry.register(pass);
 }

@@ -155,10 +155,6 @@ void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, std::string_view imgid, 
 	);
 }
 
-void drawImageGLES2(OpenGLES2Backend& backend, const HostImageRenderSubmission& command) {
-	drawHostAtlasImageGLES2(backend, command.imgid, command.pos.x, command.pos.y, command.scale.x, command.scale.y, command.flip, command.colorize);
-}
-
 void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& glyph, f32 imageX, f32 imageY, u32 color) {
 	const ImageAtlasRect& rect = glyph.rect;
 	const f32 atlasWidth = static_cast<f32>(hostSystemAtlasWidth());
@@ -243,7 +239,11 @@ void beginHostOverlayGLES2(OpenGLES2Backend& backend, const Host2DPipelineState&
 
 void renderHost2DEntryGLES2(OpenGLES2Backend& backend, Host2DKind kind, Host2DRef ref) {
 	switch (kind) {
-		case Host2DKind::Img: drawImageGLES2(backend, *static_cast<const HostImageRenderSubmission*>(ref)); return;
+		case Host2DKind::Img: {
+			const auto& command = *static_cast<const HostImageRenderSubmission*>(ref);
+			drawHostAtlasImageGLES2(backend, command.imgid, command.pos.x, command.pos.y, command.scale.x, command.scale.y, command.flip, command.colorize);
+			return;
+		}
 		case Host2DKind::Rect: drawRectGLES2(backend, *static_cast<const RectRenderSubmission*>(ref)); return;
 		case Host2DKind::Poly: drawPolyGLES2(backend, *static_cast<const PolyRenderSubmission*>(ref)); return;
 		case Host2DKind::Glyphs: drawGlyphsGLES2(backend, *static_cast<const GlyphRenderSubmission*>(ref)); return;

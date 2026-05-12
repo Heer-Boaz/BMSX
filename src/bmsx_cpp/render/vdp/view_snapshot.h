@@ -3,8 +3,8 @@
 namespace bmsx {
 
 class GameView;
-class VDP;
+struct VdpDeviceOutput;
 
-void commitVdpViewSnapshot(GameView& view, VDP& vdp);
+void commitVdpViewSnapshot(GameView& view, const VdpDeviceOutput& output);
 
 } // namespace bmsx

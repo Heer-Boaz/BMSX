@@ -66,29 +66,36 @@ export type MemoryMapSpecs = {
 	framebuffer_bytes?: number;
 };
 
+function vramRegionOverlaps(addr: number, end: number, base: number, size: number): boolean {
+	return addr < base + size && end > base;
+}
+
+function vramRegionContains(addr: number, end: number, base: number, size: number): boolean {
+	return addr >= base && end <= base + size;
+}
+
+function vramMappedRangeMatchesNonEmpty(addr: number, length: number, contiguous: boolean): boolean {
+	const end = addr + length;
+	const matches = contiguous ? vramRegionContains : vramRegionOverlaps;
+	return matches(addr, end, VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
+		|| matches(addr, end, VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
+		|| matches(addr, end, VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
+		|| matches(addr, end, VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
+		|| matches(addr, end, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
+}
+
 export function isVramMappedRange(addr: number, length: number): boolean {
 	if (length <= 0) {
 		return false;
 	}
-	const end = addr + length;
-	const overlaps = (base: number, size: number): boolean => addr < base + size && end > base;
-	return overlaps(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
-		|| overlaps(VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
-		|| overlaps(VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
-		|| overlaps(VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
-		|| overlaps(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
+	return vramMappedRangeMatchesNonEmpty(addr, length, false);
 }
 
 export function isVramMappedContiguousRange(addr: number, length: number): boolean {
 	if (length <= 0) {
 		return false;
 	}
-	const contained = (base: number, size: number): boolean => addr >= base && addr + length <= base + size;
-	return contained(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
-		|| contained(VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
-		|| contained(VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
-		|| contained(VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
-		|| contained(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
+	return vramMappedRangeMatchesNonEmpty(addr, length, true);
 }
 
 function recomputeMemoryLayout(config: {

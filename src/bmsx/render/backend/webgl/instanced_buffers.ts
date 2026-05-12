@@ -37,10 +37,6 @@ const UNIT_QUAD_CORNERS = new Float32Array([
 	1, 1,
 ]);
 
-export function createWebGLUnitQuadCornerBuffer(backend: WebGLBackend): WebGLBuffer {
-	return backend.createVertexBuffer(UNIT_QUAD_CORNERS, 'static') as WebGLBuffer;
-}
-
 export function createWebGLInstanceBuffers(backend: WebGLBackend, capacity: number, instanceFloats: number): WebGLInstancedBufferRuntime {
 	return {
 		instanceFloatBuffer: backend.createVertexBuffer(new Float32Array(capacity * instanceFloats), 'dynamic') as WebGLBuffer,
@@ -71,8 +67,8 @@ export function bindWebGLUnitQuadCornerAttribute(backend: WebGLBackend, program:
 	const gl = backend.gl as WebGL2RenderingContext;
 	backend.bindArrayBuffer(cornerBuffer);
 	const location = gl.getAttribLocation(program, 'a_corner');
-	backend.enableVertexAttrib(location);
-	backend.vertexAttribPointer(location, 2, gl.FLOAT, false, 0, 0);
+	gl.enableVertexAttribArray(location);
+	gl.vertexAttribPointer(location, 2, gl.FLOAT, false, 0, 0);
 }
 
 export function bindWebGLInstancedFloatAttributes(backend: WebGLBackend, program: WebGLProgram, strideBytes: number, attributes: readonly WebGLInstancedFloatAttribute[]): void {
@@ -80,9 +76,9 @@ export function bindWebGLInstancedFloatAttributes(backend: WebGLBackend, program
 	for (let index = 0; index < attributes.length; index += 1) {
 		const [name, size, offset] = attributes[index];
 		const location = gl.getAttribLocation(program, name);
-		backend.enableVertexAttrib(location);
-		backend.vertexAttribPointer(location, size, gl.FLOAT, false, strideBytes, offset);
-		backend.vertexAttribDivisor(location, 1);
+		gl.enableVertexAttribArray(location);
+		gl.vertexAttribPointer(location, size, gl.FLOAT, false, strideBytes, offset);
+		gl.vertexAttribDivisor(location, 1);
 	}
 }
 
@@ -90,16 +86,16 @@ export function bindWebGLTextpageIdAttribute(backend: WebGLBackend, program: Web
 	const gl = backend.gl as WebGL2RenderingContext;
 	backend.bindArrayBuffer(textpageBuffer);
 	const location = gl.getAttribLocation(program, 'i_textpage_id');
-	backend.enableVertexAttrib(location);
-	backend.vertexAttribIPointer(location, 1, gl.UNSIGNED_BYTE, 1, 0);
-	backend.vertexAttribDivisor(location, 1);
+	gl.enableVertexAttribArray(location);
+	gl.vertexAttribIPointer(location, 1, gl.UNSIGNED_BYTE, 1, 0);
+	gl.vertexAttribDivisor(location, 1);
 }
 
 export function createWebGLInstancedQuadRuntime(backend: WebGLBackend, gl: WebGL2RenderingContext, program: WebGLProgram, capacity: number, instanceFloats: number): WebGLInstancedQuadRuntime {
 	const uniforms = getWebGLSpriteQuadUniforms(gl, program);
 	bindWebGLSpriteQuadTextureUnits(gl, uniforms);
 	return {
-		cornerBuffer: createWebGLUnitQuadCornerBuffer(backend),
+		cornerBuffer: backend.createVertexBuffer(UNIT_QUAD_CORNERS, 'static') as WebGLBuffer,
 		uniforms,
 		...createWebGLInstanceBuffers(backend, capacity, instanceFloats),
 	};
@@ -142,8 +138,8 @@ export function ensureWebGLInstanceBufferCapacity(backend: WebGLBackend, state: 
 
 export function flushWebGLInstanceBatch(backend: WebGLBackend, pass: PassEncoder, state: WebGLInstancedBufferRuntime, count: number, instanceFloats: number): void {
 	backend.bindArrayBuffer(state.instanceFloatBuffer);
-	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData.subarray(0, count * instanceFloats), 0);
+	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData, 0, 0, count * instanceFloats);
 	backend.bindArrayBuffer(state.instanceTextpageBuffer);
-	backend.updateVertexBuffer(state.instanceTextpageBuffer, state.textpageData.subarray(0, count), 0);
+	backend.updateVertexBuffer(state.instanceTextpageBuffer, state.textpageData, 0, 0, count);
 	backend.drawInstanced(pass, 6, count, 0, 0);
 }

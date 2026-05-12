@@ -1,4 +1,4 @@
-import type { Host2DSubmission } from '../shared/queues';
+import type { Host2DSubmission } from '../shared/submissions';
 
 export type HostOverlayFrame = {
 	width: number;

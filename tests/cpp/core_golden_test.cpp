@@ -1,8 +1,10 @@
+#include "core/system.h"
 #include "machine/bus/io.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/opcode_info.h"
+#include "machine/devices/audio/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/firmware/builtin_descriptors.h"
 #include "render/3d/camera.h"
@@ -17,6 +19,7 @@
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
+#include "machine/program/loader.h"
 #include "machine/cpu/string_pool.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
@@ -29,6 +32,7 @@
 #include "render/gameview.h"
 #include "render/texture_manager.h"
 #include "rompack/format.h"
+#include "rompack/loader.h"
 
 #include <algorithm>
 #include <array>
@@ -50,16 +54,6 @@ void require(bool condition, const char* message) {
 	}
 }
 
-template <typename Fn>
-bool throwsRuntime(Fn&& fn) {
-	try {
-		fn();
-		return false;
-	} catch (const std::runtime_error&) {
-		return true;
-	}
-}
-
 void requireBusFault(const bmsx::Memory& memory, uint32_t code, uint32_t addr, uint32_t access, const char* message) {
 	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == code, message);
 	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == addr, message);
@@ -69,6 +63,11 @@ void requireBusFault(const bmsx::Memory& memory, uint32_t code, uint32_t addr, u
 void clearBusFault(bmsx::Memory& memory) {
 	memory.writeMappedU32LE(bmsx::IO_SYS_BUS_FAULT_ACK, 1u);
 	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_NONE, "bus fault ack should clear the sticky fault");
+}
+
+void writeIoWord(bmsx::Memory& memory, uint32_t addr, uint32_t value) {
+	const bmsx::Value numericValue = bmsx::valueNumber(static_cast<double>(value));
+	memory.writeValue(addr, numericValue);
 }
 
 class RecordingVramWriter final : public bmsx::Memory::VramWriter {
@@ -621,6 +620,10 @@ void testCpuNmiPreemptsMaskableIrqGolden() {
 void testRuntimeSaveStateInterruptFieldsGolden() {
 	bmsx::RuntimeSaveState state;
 	state.machineState.machine.irq.pendingFlags = bmsx::IRQ_VBLANK | bmsx::IRQ_REINIT;
+	state.machineState.machine.audio.eventSequence = 3u;
+	state.machineState.machine.audio.apuStatus = bmsx::APU_STATUS_FAULT;
+	state.machineState.machine.audio.apuFaultCode = bmsx::APU_FAULT_SOURCE_RANGE;
+	state.machineState.machine.audio.apuFaultDetail = 0x1234u;
 	state.cpuState.haltedUntilIrq = true;
 	state.cpuState.maskableInterruptsEnabled = false;
 	state.cpuState.maskableInterruptsRestoreEnabled = true;
@@ -633,6 +636,10 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	const std::vector<bmsx::u8> encoded = bmsx::encodeRuntimeSaveState(state);
 	const bmsx::RuntimeSaveState decoded = bmsx::decodeRuntimeSaveState(encoded);
 	require(decoded.machineState.machine.irq.pendingFlags == (bmsx::IRQ_VBLANK | bmsx::IRQ_REINIT), "save-state should preserve pending IRQ device flags");
+	require(decoded.machineState.machine.audio.eventSequence == 3u, "save-state should preserve APU event sequence");
+	require(decoded.machineState.machine.audio.apuStatus == bmsx::APU_STATUS_FAULT, "save-state should preserve APU status");
+	require(decoded.machineState.machine.audio.apuFaultCode == bmsx::APU_FAULT_SOURCE_RANGE, "save-state should preserve APU fault code");
+	require(decoded.machineState.machine.audio.apuFaultDetail == 0x1234u, "save-state should preserve APU fault detail");
 	require(decoded.cpuState.haltedUntilIrq, "save-state should preserve HALT state");
 	require(!decoded.cpuState.maskableInterruptsEnabled, "save-state should preserve disabled IFF");
 	require(decoded.cpuState.maskableInterruptsRestoreEnabled, "save-state should preserve NMI return IFF");
@@ -666,6 +673,69 @@ void testMachineSaveRestorePreservesIrqLineGolden() {
 
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "machine save-state restore should restore pending IRQ line state");
 	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "machine save-state restore should expose pending IRQ flags to the cart");
+}
+
+struct AudioHarness {
+	bmsx::Memory memory;
+	bmsx::SoundMaster soundMaster;
+	bmsx::IrqController irq;
+	bmsx::AudioController audio;
+
+	AudioHarness()
+		: memory()
+		, soundMaster()
+		, irq(memory)
+		, audio(memory, soundMaster, irq) {
+		audio.reset();
+	}
+};
+
+void expectApuFault(const AudioHarness& h, uint32_t code, const char* label) {
+	require(h.memory.readIoU32(bmsx::IO_APU_FAULT_CODE) == code, label);
+	require((h.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_FAULT) != 0u, label);
+}
+
+void clearApuFault(AudioHarness& h) {
+	writeIoWord(h.memory, bmsx::IO_APU_FAULT_ACK, 1u);
+	require(h.memory.readIoU32(bmsx::IO_APU_FAULT_CODE) == bmsx::APU_FAULT_NONE, "APU fault ACK should clear fault code");
+	require((h.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_FAULT) == 0u, "APU fault ACK should clear status bit");
+	require(h.memory.readIoU32(bmsx::IO_APU_FAULT_ACK) == 0u, "APU fault ACK should self-clear");
+}
+
+void writeValidApuSource(AudioHarness& h, uint32_t bitsPerSample) {
+	h.memory.writeU32(bmsx::RAM_BASE, 0x11223344u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_ADDR, bmsx::RAM_BASE);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_BYTES, 4u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, 44100u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_CHANNELS, 1u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, bitsPerSample);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_FRAME_COUNT, 1u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_OFFSET, 0u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_BYTES, 4u);
+}
+
+void testApuDeviceFaultsGolden() {
+	AudioHarness h;
+
+	writeIoWord(h.memory, bmsx::IO_APU_CMD, 0xffffu);
+	expectApuFault(h, bmsx::APU_FAULT_BAD_CMD, "invalid APU command should latch a device fault");
+	writeIoWord(h.memory, bmsx::IO_APU_CMD, bmsx::APU_CMD_STOP_SLOT);
+	require(h.memory.readIoU32(bmsx::IO_APU_FAULT_CODE) == bmsx::APU_FAULT_BAD_CMD, "APU fault latch should be sticky-first until ACK");
+	clearApuFault(h);
+
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 99u);
+	writeIoWord(h.memory, bmsx::IO_APU_CMD, bmsx::APU_CMD_STOP_SLOT);
+	expectApuFault(h, bmsx::APU_FAULT_BAD_SLOT, "invalid APU slot should latch a device fault");
+	clearApuFault(h);
+
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_BYTES, 4u);
+	writeIoWord(h.memory, bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+	expectApuFault(h, bmsx::APU_FAULT_SOURCE_RANGE, "unreadable APU source should latch a source-range fault");
+	clearApuFault(h);
+
+	writeValidApuSource(h, 4u);
+	writeIoWord(h.memory, bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+	expectApuFault(h, bmsx::APU_FAULT_PLAYBACK_REJECTED, "rejected APU playback decode should latch a device fault");
 }
 
 void testRuntimeVblankEdgeCompletesActiveTickGolden() {
@@ -726,6 +796,40 @@ void testRompackSchemaGolden() {
 	require(bmsx::assetTypeToId("lua") == bmsx::ROM_TOC_ASSET_TYPE_LUA, "lua asset type id should match ROM TOC schema");
 	require(bmsx::assetTypeFromId(bmsx::ROM_TOC_ASSET_TYPE_AEM) == "aem", "aem asset type id should decode");
 	require(bmsx::resolveAssetTypeKind("atlas") == bmsx::AssetTypeKind::ImageAtlas, "atlas should load through image-atlas path");
+	bmsx::RuntimeRomPackage package;
+	bmsx::LuaSourceAsset luaAsset;
+	luaAsset.id = "main";
+	luaAsset.path = "cart.lua";
+	luaAsset.modulePath = bmsx::toLuaModulePath(luaAsset.path);
+	package.insertLuaSource(std::move(luaAsset));
+	require(package.getLuaModule("cart") != nullptr, "Lua source lookup should use module path keys");
+	require(package.getLuaModule("cart.lua") == nullptr, "Lua source lookup should not pretend source paths are module keys");
+	require(package.hasLuaModule("cart"), "Lua source module presence should use module path keys");
+	require(package.getLuaSource("cart.lua") != nullptr, "Lua source lookup should use source path keys");
+	require(package.getLuaSource("cart") == nullptr, "Lua source lookup should not pretend module paths are source keys");
+	require(package.hasLuaSource("cart.lua"), "Lua source path presence should use source path keys");
+	require(package.luaSources().size() == 1u, "Lua source storage should be exposed read-only through the package owner");
+	bmsx::LuaSourceAsset replacementLuaAsset;
+	replacementLuaAsset.id = "main";
+	replacementLuaAsset.path = "main.lua";
+	replacementLuaAsset.modulePath = "cart";
+	package.insertLuaSource(std::move(replacementLuaAsset));
+	require(package.getLuaSource("cart.lua") == nullptr, "Lua source replacement should remove stale source-path index entries");
+	require(package.getLuaSource("main.lua") != nullptr, "Lua source replacement should index the new source path");
+	package.clear();
+	require(package.getLuaModule("cart") == nullptr, "RuntimeRomPackage clear should remove Lua module entries");
+	require(package.getLuaSource("main.lua") == nullptr, "RuntimeRomPackage clear should remove Lua source-path index entries");
+	require(package.luaSources().empty(), "RuntimeRomPackage clear should remove Lua source storage");
+	require(std::string(bmsx::systemBootEntryPath()) == "bios/bootrom.lua", "system boot entry should be a Lua source path");
+	bmsx::RuntimeRomPackage systemPackage;
+	systemPackage.entryPoint = bmsx::systemBootEntryPath();
+	bmsx::LuaSourceAsset bootLuaAsset;
+	bootLuaAsset.id = "bootrom";
+	bootLuaAsset.path = bmsx::systemBootEntryPath();
+	bootLuaAsset.modulePath = bmsx::toLuaModulePath(bootLuaAsset.path);
+	systemPackage.insertLuaSource(std::move(bootLuaAsset));
+	require(systemPackage.getLuaSource(systemPackage.entryPoint) != nullptr, "system boot entry should resolve through source-path lookup");
+	require(systemPackage.getLuaModule("bios/bootrom") != nullptr, "system boot module should remain available for module lookup");
 
 	std::vector<bmsx::u8> metadata;
 	writeLe32(metadata, bmsx::ROM_METADATA_MAGIC);
@@ -843,10 +947,20 @@ void testTextureKeyGolden() {
 	);
 }
 
+void testProgramLoaderModulePathsGolden() {
+	require(bmsx::toLuaModulePath("cart.lua") == "cart", "module path should strip lua suffix");
+	require(bmsx::toLuaModulePath("bios/font.lua") == "bios/font", "module path should preserve bios namespace");
+	require(bmsx::toLuaModulePath("src/carts/pietious/cart.lua") == "cart", "module path should strip cart workspace root");
+	require(bmsx::toLuaModulePath("src/carts/pietious/room/index.lua") == "room/index", "module path should strip cart name");
+	require(bmsx::toLuaModulePath("src\\carts\\pietious\\room\\index.lua") == "room/index", "module path should normalize source separators");
+	require(bmsx::toLuaModulePath("src/bmsx/res/_ignore/ide/source_text.lua") == "_ignore/ide/source_text", "module path should strip engine resource root");
+	require(bmsx::toLuaModulePath("res/_ignore/ide/source_text.lua") == "_ignore/ide/source_text", "module path should strip virtual resource root");
+}
+
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 22> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 24> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -863,12 +977,14 @@ int main() {
 		{"cpu nmi preempts maskable irq", testCpuNmiPreemptsMaskableIrqGolden},
 		{"runtime save-state interrupt fields", testRuntimeSaveStateInterruptFieldsGolden},
 		{"machine save-state restore preserves irq line", testMachineSaveRestorePreservesIrqLineGolden},
+		{"APU device faults", testApuDeviceFaultsGolden},
 		{"runtime vblank edge completes active tick", testRuntimeVblankEdgeCompletesActiveTickGolden},
 		{"memory access and opcode", testAccessKindAndOpcodeGolden},
 		{"timing and hash", testTimingAndHashGolden},
 		{"rompack schema", testRompackSchemaGolden},
 		{"firmware descriptors", testFirmwareDescriptorGolden},
 		{"render schema", testRenderSchemaGolden},
+		{"program loader module paths", testProgramLoaderModulePathsGolden},
 	}};
 	for (const auto& test : tests) {
 		test.second();

@@ -57,10 +57,6 @@ f32 axisNdcToPixelY(f32 y, f32 height) {
 	return (1.0f - y) * 0.5f * height;
 }
 
-void drawAxisLabel(AxisGizmoHostImageSink emitHostImage, void* emitHostImageContext, f32 px, f32 py, u32 letter, color col, f32 scale) {
-	emitHostImage(emitHostImageContext, ConsoleCore::instance().view()->default_font->char_to_img(letter), px, py, 999.0f, scale, col);
-}
-
 void placeAxisLabel(AxisGizmoHostImageSink emitHostImage, void* emitHostImageContext, f32 originX, f32 originY, f32 vx, f32 vy, u32 letter, color col, f32 scale, f32 aspect, f32 width, f32 height) {
 	const f32 tipX = originX + (vx / aspect) * AXIS_GIZMO_SIZE;
 	const f32 tipY = originY + vy * AXIS_GIZMO_SIZE;
@@ -77,7 +73,8 @@ void placeAxisLabel(AxisGizmoHostImageSink emitHostImage, void* emitHostImageCon
 	}
 	const f32 x = clamp(tipPixelX + dx * AXIS_LABEL_PAD_PX, AXIS_LABEL_INSET_PX, width - AXIS_LABEL_INSET_PX);
 	const f32 y = clamp(tipPixelY + dy * AXIS_LABEL_PAD_PX, AXIS_LABEL_INSET_PX, height - AXIS_LABEL_INSET_PX);
-	drawAxisLabel(emitHostImage, emitHostImageContext, x, y, letter, col, scale);
+	const std::string& imageId = ConsoleCore::instance().view()->default_font->char_to_img(letter);
+	emitHostImage(emitHostImageContext, imageId, x, y, 999.0f, scale, col);
 }
 
 void bindAxisVertexLayout(const AxisGizmoGLES2Runtime& state) {

@@ -21,7 +21,7 @@
  *   bindTextureCube(), createImageBitmapFromSource(),
  *   createCubemapFromSources(), createSolidCubemap(), createCubemapEmpty(),
  *   uploadCubemapFace(), createColorTexture(), createDepthTexture(),
- *   createRenderTarget(), transitionTexture(), createRenderPassInstance(),
+ *   createRenderTarget(), createRenderPassInstance(),
  *   destroyRenderPassInstance(), setGraphicsPipeline(), setPassState(),
  *   getPassState(), createVertexBuffer(), updateVertexBuffer(),
  *   bindArrayBuffer(), createVertexArray(), bindVertexArray(),

@@ -1,24 +1,24 @@
 import { consoleCore } from '../../../core/console';
 import type { Runtime } from '../../../machine/runtime/runtime';
 import * as luaPipeline from '../../runtime/lua_pipeline';
-import { editorDocumentState } from '../../editor/editing/document_state';
-import { editorViewState } from '../../editor/ui/view/state';
-import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../../workspace/cache';
-import { restoreSnapshot } from '../../editor/editing/undo_controller';
+import { workspaceSourceCache } from '../../workspace/cache';
 import { resetNavigationHistoryState } from '../../navigation/navigation_history';
 import { editorDebuggerState } from '../contrib/debugger/state';
 import {
 	findCodeTabContext,
-	getActiveCodeTabContextId,
 	getCodeTabContexts,
-	setTabDirty,
-	updateActiveContextDirtyFlag,
 } from '../ui/code_tab/contexts';
-import { getActiveTabId } from '../ui/tabs';
 import { serializeBreakpoints } from '../contrib/debugger/controller';
-import { buildDirtyFilePath, deleteDirtyBuffer, getWorkspaceDirtyDirSegment, hasWorkspaceStorage, writeDirtyBuffer } from './io';
+import { buildDirtyFilePath, deleteWorkspaceFile, getWorkspaceDirtyDirSegment, hasWorkspaceStorage, writeWorkspaceFile } from './io';
 import { workspaceState } from './state';
-import { applySourceToContext, buildSnapshotFromBuffer, captureContextSnapshotMetadata, captureContextText } from './context_snapshot';
+import {
+	captureContextSnapshotMetadata,
+	captureContextText,
+	clearWorkspaceActiveDocumentSessionState,
+	clearWorkspaceContextSessionState,
+	resetWorkspaceActiveDocumentDirtyBufferState,
+	resetWorkspaceContextToCleanSource,
+} from './context_snapshot';
 import type { DirtyContextEntry, PersistedDirtyEntry, SerializedDescriptor, WorkspaceAutosavePayload } from './models';
 
 export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
@@ -39,7 +39,6 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 		const metadata = captureContextSnapshotMetadata(context);
 		const dirtyPath = buildDirtyFilePath(descriptor.path);
 		const text = captureContextText(context);
-		setWorkspaceCachedSources([dirtyPath, descriptor.path], text);
 		entries.set(dirtyPath, {
 			contextId: context.id,
 			descriptor,
@@ -76,8 +75,8 @@ export function buildWorkspaceAutosavePayload(runtime: Runtime, entries: Map<str
 		savedAt: consoleCore.platform.clock.dateNow(),
 		dirtyFiles,
 		breakpoints: serializeBreakpoints(),
-		fontVariant: editorViewState.fontVariant,
-		overlayResolutionMode: runtime ? runtime.overlayResolutionMode : undefined,
+		fontVariant: runtime.activeIdeFontVariant,
+		overlayResolutionMode: runtime.overlayResolutionMode,
 	};
 }
 
@@ -103,8 +102,8 @@ export function buildWorkspaceAutosaveSignature(payload: WorkspaceAutosavePayloa
 			.map(path => `${path}:${payload.breakpoints[path].join(',')}`)
 		: [];
 	return [
-		payload.fontVariant ?? '',
-		payload.overlayResolutionMode ?? '',
+		payload.fontVariant === undefined ? 'font:unset' : `font:${payload.fontVariant}`,
+		payload.overlayResolutionMode === undefined ? 'overlay:unset' : `overlay:${payload.overlayResolutionMode}`,
 		dirtyParts.join('|'),
 		breakpointEntries.join('|'),
 	].join('#');
@@ -114,22 +113,23 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 	const activeDirtyPaths = new Set<string>();
 	for (const [dirtyPath, entry] of entries) {
 		activeDirtyPaths.add(dirtyPath);
-		const cached = getWorkspaceCachedSource(dirtyPath);
+		const cached = workspaceSourceCache.get(dirtyPath);
 		if (cached === entry.text) {
 			continue;
 		}
-		await writeDirtyBuffer(dirtyPath, entry.text);
-		setWorkspaceCachedSources([dirtyPath, entry.descriptor.path], entry.text);
+		await writeWorkspaceFile(dirtyPath, entry.text);
+		workspaceSourceCache.set(dirtyPath, entry.text);
+		workspaceSourceCache.set(entry.descriptor.path, entry.text);
 	}
-	for (const cachedPath of Array.from(listWorkspaceCachedPaths())) {
+	for (const cachedPath of workspaceSourceCache.keys()) {
 		if (!cachedPath.includes(`/${getWorkspaceDirtyDirSegment()}/`)) {
 			continue;
 		}
 		if (activeDirtyPaths.has(cachedPath)) {
 			continue;
 		}
-		await deleteDirtyBuffer(cachedPath);
-		deleteWorkspaceCachedSources([cachedPath]);
+		await deleteWorkspaceFile(cachedPath);
+		workspaceSourceCache.delete(cachedPath);
 	}
 }
 
@@ -142,51 +142,18 @@ export function loadCleanSrc(runtime: Runtime, path: string): string {
 }
 
 export function clearWorkspaceDirtyBuffers(runtime: Runtime): void {
-	clearWorkspaceCachedSources();
+	workspaceSourceCache.clear();
 	workspaceState.autosaveSignature = null;
-	editorDocumentState.saveGeneration = editorDocumentState.appliedGeneration;
-	editorDocumentState.dirty = false;
-	editorDocumentState.undoStack.length = 0;
-	editorDocumentState.redoStack.length = 0;
-	editorDocumentState.lastHistoryKey = null;
-	editorDocumentState.lastHistoryTimestamp = 0;
-	editorDocumentState.savePointDepth = 0;
+	resetWorkspaceActiveDocumentDirtyBufferState();
 	for (const context of getCodeTabContexts()) {
-		const source = loadCleanSrc(runtime, context.descriptor.path);
-		applySourceToContext(context, source);
-		context.dirty = false;
-		context.saveGeneration = editorDocumentState.saveGeneration;
-		context.appliedGeneration = editorDocumentState.appliedGeneration;
-		context.lastSavedSource = source;
-		context.undoStack.length = 0;
-		context.redoStack.length = 0;
-		context.lastHistoryKey = null;
-		context.lastHistoryTimestamp = 0;
-		context.savePointDepth = 0;
-		setTabDirty(context.id, false);
-		if (getActiveCodeTabContextId() === context.id && getActiveTabId() === context.id) {
-			restoreSnapshot(buildSnapshotFromBuffer(context), { preserveScroll: false });
-			updateActiveContextDirtyFlag();
-		}
+		resetWorkspaceContextToCleanSource(context, loadCleanSrc(runtime, context.descriptor.path));
 	}
-	updateActiveContextDirtyFlag();
 }
 
 export function clearWorkspaceSessionStateData(): void {
-	editorDocumentState.undoStack.length = 0;
-	editorDocumentState.redoStack.length = 0;
-	editorDocumentState.lastHistoryKey = null;
-	editorDocumentState.lastHistoryTimestamp = 0;
-	editorDocumentState.savePointDepth = 0;
-	editorDocumentState.dirty = false;
+	clearWorkspaceActiveDocumentSessionState();
 	for (const context of getCodeTabContexts()) {
-		context.undoStack.length = 0;
-		context.redoStack.length = 0;
-		context.lastHistoryKey = null;
-		context.lastHistoryTimestamp = 0;
-		context.savePointDepth = 0;
-		context.dirty = false;
-		setTabDirty(context.id, false);
+		clearWorkspaceContextSessionState(context);
 	}
 	resetNavigationHistoryState();
 	editorDebuggerState.breakpoints.clear();

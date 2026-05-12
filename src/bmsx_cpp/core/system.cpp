@@ -27,7 +27,7 @@ const MachineManifest& defaultSystemMachineManifest() {
 }
 
 const char* systemBootEntryPath() {
-	return "bios/bootrom";
+	return "bios/bootrom.lua";
 }
 
 } // namespace bmsx

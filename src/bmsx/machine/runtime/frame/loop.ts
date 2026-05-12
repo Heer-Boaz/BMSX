@@ -144,7 +144,7 @@ export class FrameLoopState {
 			}
 		} catch (error) {
 			state.luaFaulted = true;
-			runtime.cpuExecution.clearHaltUntilIrq();
+				runtime.machine.cpu.clearHaltUntilIrq();
 			runtime.pendingCall = null;
 			throw error;
 		}

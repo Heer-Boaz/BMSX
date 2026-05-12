@@ -8,14 +8,14 @@ import type { Runtime } from '../runtime/runtime';
 import { appendLuaChunkToProgram } from './compiler';
 
 export function callLuaFunction(runtime: Runtime, fn: LuaFunctionValue, args: unknown[]): unknown[] {
-	const luaArgs = runtime.luaScratch.acquireValue() as unknown as LuaValue[];
+	const luaArgs = runtime.luaScratch.values.acquire() as unknown as LuaValue[];
 	try {
 		for (let index = 0; index < args.length; index += 1) {
 			luaArgs.push(runtime.luaJsBridge.toLua(args[index]));
 		}
 		return callLuaFunctionPrepared(runtime, fn, luaArgs);
 	} finally {
-		runtime.luaScratch.releaseValue(luaArgs as unknown as Value[]);
+		runtime.luaScratch.values.release(luaArgs as unknown as Value[]);
 	}
 }
 
@@ -64,12 +64,12 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	} else {
 		runtime.consoleMetadata = compiled.metadata;
 	}
-	const results = runtime.luaScratch.acquireValue();
+	const results = runtime.luaScratch.values.acquire();
 	try {
 		callClosureIntoWithScheduler(runtime, { protoIndex: compiled.entryProtoIndex, upvalues: [] }, [], results);
 		return results.slice();
 	} finally {
-		runtime.luaScratch.releaseValue(results);
+		runtime.luaScratch.values.release(results);
 	}
 }
 
@@ -191,8 +191,8 @@ export function callClosure(runtime: Runtime, fn: Closure, args: Value[]): Value
 }
 
 export function invokeClosureHandler(runtime: Runtime, fn: Closure, thisArg: unknown, args: ReadonlyArray<unknown>): unknown {
-	const callArgs = runtime.luaScratch.acquireValue();
-	const results = runtime.luaScratch.acquireValue();
+	const callArgs = runtime.luaScratch.values.acquire();
+	const results = runtime.luaScratch.values.acquire();
 	try {
 		if (thisArg !== undefined) {
 			callArgs.push(toRuntimeValue(runtime, thisArg));
@@ -207,13 +207,13 @@ export function invokeClosureHandler(runtime: Runtime, fn: Closure, thisArg: unk
 		const ctx = buildMarshalContext(runtime);
 		return toNativeValue(runtime, results[0], ctx, new WeakMap());
 	} finally {
-		runtime.luaScratch.releaseValue(results);
-		runtime.luaScratch.releaseValue(callArgs);
+		runtime.luaScratch.values.release(results);
+		runtime.luaScratch.values.release(callArgs);
 	}
 }
 
 export function invokeLuaHandler(runtime: Runtime, fn: LuaFunctionValue, thisArg: unknown, args: ReadonlyArray<unknown>): unknown {
-	const luaArgs = runtime.luaScratch.acquireValue() as unknown as LuaValue[];
+	const luaArgs = runtime.luaScratch.values.acquire() as unknown as LuaValue[];
 	try {
 		if (thisArg !== undefined) {
 			luaArgs.push(runtime.luaJsBridge.toLua(thisArg));
@@ -224,6 +224,6 @@ export function invokeLuaHandler(runtime: Runtime, fn: LuaFunctionValue, thisArg
 		const results = callLuaFunctionPrepared(runtime, fn, luaArgs);
 		return results.length > 0 ? results[0] : undefined;
 	} finally {
-		runtime.luaScratch.releaseValue(luaArgs as unknown as Value[]);
+		runtime.luaScratch.values.release(luaArgs as unknown as Value[]);
 	}
 }

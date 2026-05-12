@@ -3,6 +3,7 @@
  */
 
 #include "binencoder.h"
+#include "common/endian.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -20,42 +21,6 @@ static const BinValue NULL_VALUE = BinValue(nullptr);
 
 namespace {
 
-static uint32_t readLittleU32(const u8* data) {
-	return static_cast<uint32_t>(data[0])
-		| (static_cast<uint32_t>(data[1]) << 8)
-		| (static_cast<uint32_t>(data[2]) << 16)
-		| (static_cast<uint32_t>(data[3]) << 24);
-}
-
-static uint64_t readLittleU64(const u8* data) {
-	return static_cast<uint64_t>(data[0])
-		| (static_cast<uint64_t>(data[1]) << 8)
-		| (static_cast<uint64_t>(data[2]) << 16)
-		| (static_cast<uint64_t>(data[3]) << 24)
-		| (static_cast<uint64_t>(data[4]) << 32)
-		| (static_cast<uint64_t>(data[5]) << 40)
-		| (static_cast<uint64_t>(data[6]) << 48)
-		| (static_cast<uint64_t>(data[7]) << 56);
-}
-
-static void appendLittleU32(std::vector<u8>& out, uint32_t value) {
-	out.push_back(static_cast<u8>(value & 0xFFu));
-	out.push_back(static_cast<u8>((value >> 8) & 0xFFu));
-	out.push_back(static_cast<u8>((value >> 16) & 0xFFu));
-	out.push_back(static_cast<u8>((value >> 24) & 0xFFu));
-}
-
-static void appendLittleU64(std::vector<u8>& out, uint64_t value) {
-	out.push_back(static_cast<u8>(value & 0xFFu));
-	out.push_back(static_cast<u8>((value >> 8) & 0xFFu));
-	out.push_back(static_cast<u8>((value >> 16) & 0xFFu));
-	out.push_back(static_cast<u8>((value >> 24) & 0xFFu));
-	out.push_back(static_cast<u8>((value >> 32) & 0xFFu));
-	out.push_back(static_cast<u8>((value >> 40) & 0xFFu));
-	out.push_back(static_cast<u8>((value >> 48) & 0xFFu));
-	out.push_back(static_cast<u8>((value >> 56) & 0xFFu));
-}
-
 class BinWriter {
 public:
 	explicit BinWriter(size_t capacityHint) {
@@ -68,11 +33,11 @@ public:
 
 	void writeWithPropTable(const BinValue& value, const std::unordered_map<std::string, uint32_t>& propNameToId) {
 		if (value.isNull()) {
-			u8Value(static_cast<u8>(BinTag::Null));
+			writeTag(BinTag::Null);
 			return;
 		}
 		if (value.isBool()) {
-			u8Value(value.asBool() ? static_cast<u8>(BinTag::True) : static_cast<u8>(BinTag::False));
+			writeTag(value.asBool() ? BinTag::True : BinTag::False);
 			return;
 		}
 		if (value.isInt()) {
@@ -81,7 +46,7 @@ public:
 		}
 		if (value.isF32()) {
 			const f32 number = value.asF32();
-			u8Value(static_cast<u8>(BinTag::F32));
+			writeTag(BinTag::F32);
 			writeF32(number);
 			return;
 		}
@@ -90,13 +55,13 @@ public:
 			return;
 		}
 		if (value.isString()) {
-			u8Value(static_cast<u8>(BinTag::Str));
+			writeTag(BinTag::Str);
 			writeString(value.asString());
 			return;
 		}
 		if (value.isArray()) {
 			const BinArray& array = value.asArray();
-			u8Value(static_cast<u8>(BinTag::Arr));
+			writeTag(BinTag::Arr);
 			writeVarUint(static_cast<uint32_t>(array.size()));
 			for (const BinValue& entry : array) {
 				writeWithPropTable(entry, propNameToId);
@@ -105,7 +70,7 @@ public:
 		}
 		if (value.isBinary()) {
 			const BinBinary& binary = value.asBinary();
-			u8Value(static_cast<u8>(BinTag::Bin));
+			writeTag(BinTag::Bin);
 			writeVarUint(static_cast<uint32_t>(binary.size()));
 			m_buf.insert(m_buf.end(), binary.begin(), binary.end());
 			return;
@@ -115,7 +80,7 @@ public:
 			if (object.size() == 1) {
 				auto ref = object.find("r");
 				if (ref != object.end()) {
-					u8Value(static_cast<u8>(BinTag::Ref));
+					writeTag(BinTag::Ref);
 					writeVarUint(readRefId(ref->second));
 					return;
 				}
@@ -132,7 +97,7 @@ public:
 			std::sort(entries.begin(), entries.end(), [](const auto& left, const auto& right) {
 				return left.first < right.first;
 			});
-			u8Value(static_cast<u8>(BinTag::Obj));
+			writeTag(BinTag::Obj);
 			writeVarUint(static_cast<uint32_t>(entries.size()));
 			for (const auto& [propId, entryValue] : entries) {
 				writeVarUint(propId);
@@ -144,7 +109,7 @@ public:
 	}
 
 	void writeVersioned(const BinValue& value, const std::vector<std::string>& propNames) {
-		u8Value(BINENC_VERSION);
+		m_buf.push_back(BINENC_VERSION);
 		writeVarUint(static_cast<uint32_t>(propNames.size()));
 		for (const std::string& propName : propNames) {
 			writeString(propName);
@@ -160,37 +125,50 @@ public:
 private:
 	std::vector<u8> m_buf;
 
-	void u8Value(u8 value) {
-		m_buf.push_back(value);
+	void writeTag(BinTag tag) {
+		const u8 tagValue = static_cast<u8>(tag);
+		m_buf.push_back(tagValue);
+	}
+
+	void writeRawLE32(u32 value) {
+		const size_t offset = m_buf.size();
+		m_buf.resize(offset + sizeof(value));
+		writeLE32(m_buf.data() + offset, value);
+	}
+
+	void writeRawLE64(u64 value) {
+		const size_t offset = m_buf.size();
+		m_buf.resize(offset + sizeof(value));
+		writeLE64(m_buf.data() + offset, value);
 	}
 
 	void writeF32(f32 value) {
 		uint32_t raw = 0;
 		std::memcpy(&raw, &value, sizeof(raw));
-		appendLittleU32(m_buf, raw);
+		writeRawLE32(raw);
 	}
 
 	void writeF64(f64 value) {
 		uint64_t raw = 0;
 		std::memcpy(&raw, &value, sizeof(raw));
-		appendLittleU64(m_buf, raw);
+		writeRawLE64(raw);
 	}
 
 	void writeVarUint(uint32_t value) {
 		while (value >= 0x80u) {
-			u8Value(static_cast<u8>((value & 0x7Fu) | 0x80u));
+			m_buf.push_back(static_cast<u8>((value & 0x7Fu) | 0x80u));
 			value >>= 7;
 		}
-		u8Value(static_cast<u8>(value));
+		m_buf.push_back(static_cast<u8>(value));
 	}
 
 	void writeVarInt(i64 value) {
 		uint64_t zigzag = (static_cast<uint64_t>(value) << 1) ^ static_cast<uint64_t>(value >> 63);
 		while (zigzag >= 0x80u) {
-			u8Value(static_cast<u8>((zigzag & 0x7Fu) | 0x80u));
+			m_buf.push_back(static_cast<u8>((zigzag & 0x7Fu) | 0x80u));
 			zigzag >>= 7;
 		}
-		u8Value(static_cast<u8>(zigzag));
+		m_buf.push_back(static_cast<u8>(zigzag));
 	}
 
 	void writeString(const std::string& value) {
@@ -201,22 +179,22 @@ private:
 	void writeInteger(i64 value) {
 		if (value >= static_cast<i64>(std::numeric_limits<int32_t>::min())
 			&& value <= static_cast<i64>(std::numeric_limits<int32_t>::max())) {
-			u8Value(static_cast<u8>(BinTag::Int));
+			writeTag(BinTag::Int);
 			writeVarInt(value);
 			return;
 		}
-		u8Value(static_cast<u8>(BinTag::F64));
+		writeTag(BinTag::F64);
 		writeF64(static_cast<f64>(value));
 	}
 
 	void writeNumber(f64 value) {
 		if (std::isnan(value)) {
-			u8Value(static_cast<u8>(BinTag::F32));
+			writeTag(BinTag::F32);
 			writeF32(static_cast<f32>(value));
 			return;
 		}
 		if (std::signbit(value) && value == 0.0) {
-			u8Value(static_cast<u8>(BinTag::F32));
+			writeTag(BinTag::F32);
 			writeF32(static_cast<f32>(value));
 			return;
 		}
@@ -224,43 +202,39 @@ private:
 		if (static_cast<f64>(integer) == value
 			&& integer >= static_cast<i64>(std::numeric_limits<int32_t>::min())
 			&& integer <= static_cast<i64>(std::numeric_limits<int32_t>::max())) {
-			u8Value(static_cast<u8>(BinTag::Int));
+			writeTag(BinTag::Int);
 			writeVarInt(integer);
 			return;
 		}
 		const f32 f32Value = static_cast<f32>(value);
 		if (static_cast<f64>(f32Value) == value) {
-			u8Value(static_cast<u8>(BinTag::F32));
+			writeTag(BinTag::F32);
 			writeF32(f32Value);
 			return;
 		}
-		u8Value(static_cast<u8>(BinTag::F64));
+		writeTag(BinTag::F64);
 		writeF64(value);
 	}
 
 	static uint32_t readRefId(const BinValue& value) {
+		f64 refId = 0.0;
 		if (value.isInt()) {
-			const i64 refId = value.asInt();
-			if (refId < 0 || refId > static_cast<i64>(UINT32_MAX)) {
+			const i64 integerRefId = value.asInt();
+			if (integerRefId < 0 || integerRefId > static_cast<i64>(UINT32_MAX)) {
 				throw BMSX_RUNTIME_ERROR("BinEncoder: ref id out of range.");
 			}
-			return static_cast<uint32_t>(refId);
+			refId = static_cast<f64>(integerRefId);
+		} else if (value.isF32()) {
+			refId = static_cast<f64>(value.asF32());
+		} else if (value.isF64()) {
+			refId = value.asF64();
+		} else {
+			throw BMSX_RUNTIME_ERROR("BinEncoder: ref id must be numeric.");
 		}
-		if (value.isF32()) {
-			const f32 refId = value.asF32();
-			if (refId < 0.0f || std::floor(refId) != refId) {
-				throw BMSX_RUNTIME_ERROR("BinEncoder: invalid ref id.");
-			}
-			return static_cast<uint32_t>(refId);
+		if (refId < 0.0 || std::floor(refId) != refId || refId > static_cast<f64>(UINT32_MAX)) {
+			throw BMSX_RUNTIME_ERROR("BinEncoder: invalid ref id.");
 		}
-		if (value.isF64()) {
-			const f64 refId = value.asF64();
-			if (refId < 0.0 || std::floor(refId) != refId || refId > static_cast<f64>(UINT32_MAX)) {
-				throw BMSX_RUNTIME_ERROR("BinEncoder: invalid ref id.");
-			}
-			return static_cast<uint32_t>(refId);
-		}
-		throw BMSX_RUNTIME_ERROR("BinEncoder: ref id must be numeric.");
+		return static_cast<uint32_t>(refId);
 	}
 };
 
@@ -386,7 +360,7 @@ f32 BinDecoder::readF32() {
 	if (m_pos + sizeof(uint32_t) > m_size) {
 		throw BMSX_RUNTIME_ERROR("BinDecoder: not enough data for f32");
 	}
-	const uint32_t raw = readLittleU32(m_data + m_pos);
+	const uint32_t raw = readLE32(m_data + m_pos);
 	m_pos += sizeof(uint32_t);
 	f32 result = 0.0f;
 	std::memcpy(&result, &raw, sizeof(result));
@@ -397,7 +371,7 @@ f64 BinDecoder::readF64() {
 	if (m_pos + sizeof(uint64_t) > m_size) {
 		throw BMSX_RUNTIME_ERROR("BinDecoder: not enough data for f64");
 	}
-	const uint64_t raw = readLittleU64(m_data + m_pos);
+	const uint64_t raw = readLE64(m_data + m_pos);
 	m_pos += sizeof(uint64_t);
 	f64 result = 0.0;
 	std::memcpy(&result, &raw, sizeof(result));

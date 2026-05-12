@@ -1,5 +1,4 @@
-import type { AmbientLight, DirectionalLight, PointLight } from '../../3d/light';
-import { ensureDirectionalLightRecord, ensurePointLightRecord } from './light_records';
+import { ensureDirectionalLightRecord, ensurePointLightRecord, type AmbientLight, type DirectionalLight, type PointLight } from '../../3d/light';
 
 const ambientLights = new Map<string, AmbientLight>();
 const directionalLights = new Map<string, DirectionalLight>();

@@ -4,7 +4,7 @@ import { LuaNativeFunction, type LuaInterpreter } from '../../lua/runtime';
 import type { ResourceDescriptor } from '../../rompack/tooling/resource';
 import type { Runtime } from '../runtime/runtime';
 import type { LuaSourceRecord, LuaSourceRegistry } from '../program/sources';
-import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
+import { workspaceSourceCache } from '../../ide/workspace/cache';
 import { buildDirtyFilePath, hasWorkspaceStorage } from '../../ide/workbench/workspace/io';
 
 function listRuntimeLuaRegistries(runtime: Runtime): LuaSourceRegistry[] {
@@ -19,12 +19,12 @@ function listRuntimeLuaRegistries(runtime: Runtime): LuaSourceRegistry[] {
 	return registries;
 }
 
-function resolveLuaSourceRecordByPath(registry: LuaSourceRegistry, path: string): LuaSourceRecord {
-	const direct = registry.path2lua[path];
-	if (direct !== undefined) {
-		return direct;
+function resolveLuaSourceRecordBySourcePath(registry: LuaSourceRegistry, path: string): LuaSourceRecord | null {
+	const record = registry.path2lua[path];
+	if (record === undefined) {
+		return null;
 	}
-	return registry.module2lua[path];
+	return record;
 }
 
 function summarizeLuaPaths(runtime: Runtime, limit: number): string {
@@ -52,7 +52,7 @@ function summarizeLuaPaths(runtime: Runtime, limit: number): string {
 function resolveRuntimeLuaSourceRecord(runtime: Runtime, path: string): LuaSourceRecord | null {
 	const registries = listRuntimeLuaRegistries(runtime);
 	for (let index = 0; index < registries.length; index += 1) {
-		const resolved = resolveLuaSourceRecordByPath(registries[index], path);
+		const resolved = resolveLuaSourceRecordBySourcePath(registries[index], path);
 		if (resolved !== null) {
 			return resolved;
 		}
@@ -86,7 +86,7 @@ export function listRuntimeLuaResources(runtime: Runtime): ResourceDescriptor[] 
 export function getRuntimeLuaEntryPath(runtime: Runtime): string {
 	const registry = runtime.activeLuaSources;
 	const entryPath = registry.entry_path;
-	const record = resolveLuaSourceRecordByPath(registry, entryPath);
+	const record = resolveLuaSourceRecordBySourcePath(registry, entryPath);
 	return record ? record.source_path : entryPath;
 }
 
@@ -95,13 +95,13 @@ export function getRuntimeLuaResourceSource(runtime: Runtime, path: string): str
 	if (record === null) {
 		throw new Error(`[devtools.get_lua_resource_source] Missing Lua resource for path '${path}'. Available: ${summarizeLuaPaths(runtime, 16)}`);
 	}
-	const cached = getWorkspaceCachedSource(record.source_path);
-	if (cached !== null) {
+	const cached = workspaceSourceCache.get(record.source_path);
+	if (cached !== undefined) {
 		return cached;
 	}
 	if (hasWorkspaceStorage()) {
-		const dirty = getWorkspaceCachedSource(buildDirtyFilePath(record.source_path));
-		if (dirty !== null) {
+		const dirty = workspaceSourceCache.get(buildDirtyFilePath(record.source_path));
+		if (dirty !== undefined) {
 			return dirty;
 		}
 	}

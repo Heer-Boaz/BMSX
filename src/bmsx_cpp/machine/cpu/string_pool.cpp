@@ -79,7 +79,7 @@ void StringPool::restoreState(const StringPoolState& state) {
 		}
 	}
 	if (m_trackLuaHeap) {
-		replaceTrackedLuaHeapBytes(previousTrackedBytes, m_trackedBytes);
+		addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(m_trackedBytes) - static_cast<ptrdiff_t>(previousTrackedBytes));
 		enforceLuaHeapBudget();
 	}
 }

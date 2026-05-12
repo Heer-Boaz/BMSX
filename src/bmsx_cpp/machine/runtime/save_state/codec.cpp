@@ -130,19 +130,6 @@ BinValue encodeFixedArray(const std::array<T, N>& values, EncodeFn&& encode) {
 }
 
 template<size_t N>
-std::array<f32, N> decodeNumberArray(const BinValue& value, const char* label) {
-	const BinArray& array = requireArray(value, label);
-	if (array.size() != N) {
-		throw BMSX_RUNTIME_ERROR(std::string(label) + " must have " + std::to_string(N) + " entries.");
-	}
-	std::array<f32, N> out{};
-	for (size_t index = 0; index < N; ++index) {
-		out[index] = static_cast<f32>(requireNumber(array[index], label));
-	}
-	return out;
-}
-
-template<size_t N>
 std::array<u32, N> decodeU32Array(const BinValue& value, const char* label) {
 	const BinArray& array = requireArray(value, label);
 	if (array.size() != N) {
@@ -157,23 +144,6 @@ std::array<u32, N> decodeU32Array(const BinValue& value, const char* label) {
 
 BinValue encodeCpuValueState(const CpuValueState& state);
 CpuValueState decodeCpuValueState(const BinValue& value, const char* label);
-
-BinValue encodeRuntimeRenderCameraState(const RuntimeRenderCameraState& state) {
-	BinObject object;
-	object["view"] = encodeFixedArray(state.view, encodeScalar<f64, f32>);
-	object["proj"] = encodeFixedArray(state.proj, encodeScalar<f64, f32>);
-	object["eye"] = encodeFixedArray(state.eye, encodeScalar<f64, f32>);
-	return BinValue(std::move(object));
-}
-
-RuntimeRenderCameraState decodeRuntimeRenderCameraState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	RuntimeRenderCameraState state;
-	state.view = decodeNumberArray<16>(requireField(object, "view", label), "renderState.camera.view");
-	state.proj = decodeNumberArray<16>(requireField(object, "proj", label), "renderState.camera.proj");
-	state.eye = decodeNumberArray<3>(requireField(object, "eye", label), "renderState.camera.eye");
-	return state;
-}
 
 BinValue encodeVdpXfState(const VdpXfState& state) {
 	BinObject object;
@@ -192,102 +162,6 @@ VdpXfState decodeVdpXfState(const BinValue& value, const char* label) {
 	if (state.viewMatrixIndex >= VDP_XF_MATRIX_COUNT || state.projectionMatrixIndex >= VDP_XF_MATRIX_COUNT) {
 		throw BMSX_RUNTIME_ERROR("[save-state] machine.vdp.xf selects invalid matrix indexes.");
 	}
-	return state;
-}
-
-BinValue encodeRuntimeAmbientLightState(const RuntimeAmbientLightState& state) {
-	BinObject object;
-	object["id"] = state.id;
-	object["color"] = encodeFixedArray(state.color, encodeScalar<f64, f32>);
-	object["intensity"] = state.intensity;
-	return BinValue(std::move(object));
-}
-
-RuntimeAmbientLightState decodeRuntimeAmbientLightState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	RuntimeAmbientLightState state;
-	state.id = requireString(requireField(object, "id", label), "renderState.ambientLights[].id");
-	state.color = decodeNumberArray<3>(requireField(object, "color", label), "renderState.ambientLights[].color");
-	state.intensity = static_cast<f32>(requireNumber(requireField(object, "intensity", label), "renderState.ambientLights[].intensity"));
-	return state;
-}
-
-BinValue encodeRuntimeDirectionalLightState(const RuntimeDirectionalLightState& state) {
-	BinObject object;
-	object["id"] = state.id;
-	object["color"] = encodeFixedArray(state.color, encodeScalar<f64, f32>);
-	object["intensity"] = state.intensity;
-	object["orientation"] = encodeFixedArray(state.orientation, encodeScalar<f64, f32>);
-	return BinValue(std::move(object));
-}
-
-RuntimeDirectionalLightState decodeRuntimeDirectionalLightState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	RuntimeDirectionalLightState state;
-	state.id = requireString(requireField(object, "id", label), "renderState.directionalLights[].id");
-	state.color = decodeNumberArray<3>(requireField(object, "color", label), "renderState.directionalLights[].color");
-	state.intensity = static_cast<f32>(requireNumber(requireField(object, "intensity", label), "renderState.directionalLights[].intensity"));
-	state.orientation = decodeNumberArray<3>(requireField(object, "orientation", label), "renderState.directionalLights[].orientation");
-	return state;
-}
-
-BinValue encodeRuntimePointLightState(const RuntimePointLightState& state) {
-	BinObject object;
-	object["id"] = state.id;
-	object["color"] = encodeFixedArray(state.color, encodeScalar<f64, f32>);
-	object["intensity"] = state.intensity;
-	object["pos"] = encodeFixedArray(state.pos, encodeScalar<f64, f32>);
-	object["range"] = state.range;
-	return BinValue(std::move(object));
-}
-
-RuntimePointLightState decodeRuntimePointLightState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	RuntimePointLightState state;
-	state.id = requireString(requireField(object, "id", label), "renderState.pointLights[].id");
-	state.color = decodeNumberArray<3>(requireField(object, "color", label), "renderState.pointLights[].color");
-	state.intensity = static_cast<f32>(requireNumber(requireField(object, "intensity", label), "renderState.pointLights[].intensity"));
-	state.pos = decodeNumberArray<3>(requireField(object, "pos", label), "renderState.pointLights[].pos");
-	state.range = static_cast<f32>(requireNumber(requireField(object, "range", label), "renderState.pointLights[].range"));
-	return state;
-}
-
-BinValue encodeRuntimeRenderState(const RuntimeRenderState& state) {
-	BinObject object;
-	object["camera"] = state.camera.has_value()
-		? encodeRuntimeRenderCameraState(*state.camera)
-		: BinValue(nullptr);
-	object["ambientLights"] = encodeVector(state.ambientLights, [](const RuntimeAmbientLightState& light) {
-		return encodeRuntimeAmbientLightState(light);
-	});
-	object["directionalLights"] = encodeVector(state.directionalLights, [](const RuntimeDirectionalLightState& light) {
-		return encodeRuntimeDirectionalLightState(light);
-	});
-	object["pointLights"] = encodeVector(state.pointLights, [](const RuntimePointLightState& light) {
-		return encodeRuntimePointLightState(light);
-	});
-	return BinValue(std::move(object));
-}
-
-RuntimeRenderState decodeRuntimeRenderState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	RuntimeRenderState state;
-	const BinValue& camera = requireField(object, "camera", label);
-	if (!camera.isNull()) {
-		state.camera = decodeRuntimeRenderCameraState(camera, "renderState.camera");
-	}
-	state.ambientLights = decodeVector<RuntimeAmbientLightState>(requireField(object, "ambientLights", label), "renderState.ambientLights",
-		[](const BinValue& entryValue, size_t) {
-			return decodeRuntimeAmbientLightState(entryValue, "renderState.ambientLights[]");
-		});
-	state.directionalLights = decodeVector<RuntimeDirectionalLightState>(requireField(object, "directionalLights", label), "renderState.directionalLights",
-		[](const BinValue& entryValue, size_t) {
-			return decodeRuntimeDirectionalLightState(entryValue, "renderState.directionalLights[]");
-		});
-	state.pointLights = decodeVector<RuntimePointLightState>(requireField(object, "pointLights", label), "renderState.pointLights",
-		[](const BinValue& entryValue, size_t) {
-			return decodeRuntimePointLightState(entryValue, "renderState.pointLights[]");
-		});
 	return state;
 }
 
@@ -516,10 +390,30 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	return state;
 }
 
+BinValue encodeAudioControllerState(const AudioControllerState& state) {
+	BinObject object;
+	object["eventSequence"] = encodeScalar<f64>(state.eventSequence);
+	object["apuStatus"] = encodeScalar<f64>(state.apuStatus);
+	object["apuFaultCode"] = encodeScalar<f64>(state.apuFaultCode);
+	object["apuFaultDetail"] = encodeScalar<f64>(state.apuFaultDetail);
+	return BinValue(std::move(object));
+}
+
+AudioControllerState decodeAudioControllerState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	AudioControllerState state;
+	state.eventSequence = requireU32(requireField(object, "eventSequence", label), "machine.audio.eventSequence");
+	state.apuStatus = requireU32(requireField(object, "apuStatus", label), "machine.audio.apuStatus");
+	state.apuFaultCode = requireU32(requireField(object, "apuFaultCode", label), "machine.audio.apuFaultCode");
+	state.apuFaultDetail = requireU32(requireField(object, "apuFaultDetail", label), "machine.audio.apuFaultDetail");
+	return state;
+}
+
 BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	BinObject object;
 	object["memory"] = encodeMemorySaveState(state.memory);
 	object["irq"] = encodeIrqControllerState(state.irq);
+	object["audio"] = encodeAudioControllerState(state.audio);
 	object["stringPool"] = encodeStringPoolState(state.stringPool);
 	object["input"] = encodeInputControllerState(state.input);
 	object["vdp"] = encodeVdpSaveState(state.vdp);
@@ -531,6 +425,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 	MachineSaveState state;
 	state.memory = decodeMemorySaveState(requireField(object, "memory", label), "machineState.machine.memory");
 	state.irq = decodeIrqControllerState(requireField(object, "irq", label), "machineState.machine.irq");
+	state.audio = decodeAudioControllerState(requireField(object, "audio", label), "machineState.machine.audio");
 	state.stringPool = decodeStringPoolState(requireField(object, "stringPool", label), "machineState.machine.stringPool");
 	state.input = decodeInputControllerState(requireField(object, "input", label), "machineState.machine.input");
 	state.vdp = decodeVdpSaveState(requireField(object, "vdp", label), "machineState.machine.vdp");
@@ -853,7 +748,6 @@ BinValue encodeRuntimeSaveStateValue(const RuntimeSaveState& state) {
 	BinObject object;
 	object["machineState"] = encodeRuntimeSaveMachineState(state.machineState);
 	object["cpuState"] = encodeCpuRuntimeState(state.cpuState);
-	object["renderState"] = encodeRuntimeRenderState(state.renderState);
 	object["systemProgramActive"] = state.systemProgramActive;
 	object["luaInitialized"] = state.luaInitialized;
 	object["luaRuntimeFailed"] = state.luaRuntimeFailed;
@@ -867,7 +761,6 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 	RuntimeSaveState state;
 	state.machineState = decodeRuntimeSaveMachineState(requireField(object, "machineState", label), "runtimeSaveState.machineState");
 	state.cpuState = decodeCpuRuntimeState(requireField(object, "cpuState", label), "runtimeSaveState.cpuState");
-	state.renderState = decodeRuntimeRenderState(requireField(object, "renderState", label), "runtimeSaveState.renderState");
 	state.systemProgramActive = requireBool(requireField(object, "systemProgramActive", label), "runtimeSaveState.systemProgramActive");
 	state.luaInitialized = requireBool(requireField(object, "luaInitialized", label), "runtimeSaveState.luaInitialized");
 	state.luaRuntimeFailed = requireBool(requireField(object, "luaRuntimeFailed", label), "runtimeSaveState.luaRuntimeFailed");

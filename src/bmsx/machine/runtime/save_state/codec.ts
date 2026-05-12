@@ -2,18 +2,15 @@ import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, re
 import type { MachineSaveState } from '../../machine';
 import type { CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeRefSegment, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/controller';
+import type { AudioControllerState } from '../../devices/audio/controller';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/controller';
 import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/vdp';
+import { SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
 import { VDP_XF_MATRIX_COUNT, VDP_XF_MATRIX_REGISTER_WORDS } from '../../devices/vdp/xf';
 import type { MemorySaveState } from '../../memory/memory';
 import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
 import type {
-	RuntimeAmbientLightState,
-	RuntimeDirectionalLightState,
-	RuntimePointLightState,
-	RuntimeRenderCameraState,
-	RuntimeRenderState,
 	RuntimeSaveMachineState,
 	RuntimeSaveState,
 } from '../contracts';
@@ -24,11 +21,6 @@ import type { Runtime } from '../runtime';
 const RUNTIME_SAVE_STATE_FRAME_BYTES = 2;
 
 type CpuTableHashNodeState = Extract<CpuObjectState, { kind: 'table' }>['hash'][number];
-type CameraWireState = {
-	view: number[];
-	proj: number[];
-	eye: [number, number, number];
-};
 
 function requireArray(value: unknown, label: string): unknown[] {
 	if (!Array.isArray(value)) {
@@ -77,110 +69,16 @@ function requireBoundedU32(value: unknown, label: string, min: number, max: numb
 	return value >>> 0;
 }
 
-function encodeCameraState(state: CameraWireState): CameraWireState {
-	return {
-		view: state.view,
-		proj: state.proj,
-		eye: state.eye,
-	};
+function requireI32(value: unknown, label: string): number {
+	if (typeof value !== 'number' || !Number.isInteger(value) || value < -0x80000000 || value > 0x7fffffff) {
+		throw new Error(`${label} must be an i32 value.`);
+	}
+	return value | 0;
 }
 
-function decodeCameraState(value: unknown, label: string): CameraWireState {
+function decodeNumberObjectField(value: unknown, label: string, key: string, keyLabel: string): number {
 	const object = requireObject(value, label);
-	return {
-		view: requireObjectKey(object, 'view', label, `${label}.view`) as number[],
-		proj: requireObjectKey(object, 'proj', label, `${label}.proj`) as number[],
-		eye: requireObjectKey(object, 'eye', label, `${label}.eye`) as [number, number, number],
-	};
-}
-
-function encodeRuntimeAmbientLightState(state: RuntimeAmbientLightState): RuntimeAmbientLightState {
-	return {
-		id: state.id,
-		color: state.color,
-		intensity: state.intensity,
-	};
-}
-
-function decodeRuntimeAmbientLightState(value: unknown, label: string): RuntimeAmbientLightState {
-	const object = requireObject(value, label);
-	return {
-		id: requireObjectKey(object, 'id', label, 'renderState.ambientLights[].id') as string,
-		color: requireObjectKey(object, 'color', label, 'renderState.ambientLights[].color') as [number, number, number],
-		intensity: requireObjectKey(object, 'intensity', label, 'renderState.ambientLights[].intensity') as number,
-	};
-}
-
-function encodeRuntimeDirectionalLightState(state: RuntimeDirectionalLightState): RuntimeDirectionalLightState {
-	return {
-		id: state.id,
-		color: state.color,
-		intensity: state.intensity,
-		orientation: state.orientation,
-	};
-}
-
-function decodeRuntimeDirectionalLightState(value: unknown, label: string): RuntimeDirectionalLightState {
-	const object = requireObject(value, label);
-	return {
-		id: requireObjectKey(object, 'id', label, 'renderState.directionalLights[].id') as string,
-		color: requireObjectKey(object, 'color', label, 'renderState.directionalLights[].color') as [number, number, number],
-		intensity: requireObjectKey(object, 'intensity', label, 'renderState.directionalLights[].intensity') as number,
-		orientation: requireObjectKey(object, 'orientation', label, 'renderState.directionalLights[].orientation') as [number, number, number],
-	};
-}
-
-function encodeRuntimePointLightState(state: RuntimePointLightState): RuntimePointLightState {
-	return {
-		id: state.id,
-		color: state.color,
-		intensity: state.intensity,
-		pos: state.pos,
-		range: state.range,
-	};
-}
-
-function decodeRuntimePointLightState(value: unknown, label: string): RuntimePointLightState {
-	const object = requireObject(value, label);
-	return {
-		id: requireObjectKey(object, 'id', label, 'renderState.pointLights[].id') as string,
-		color: requireObjectKey(object, 'color', label, 'renderState.pointLights[].color') as [number, number, number],
-		intensity: requireObjectKey(object, 'intensity', label, 'renderState.pointLights[].intensity') as number,
-		pos: requireObjectKey(object, 'pos', label, 'renderState.pointLights[].pos') as [number, number, number],
-		range: requireObjectKey(object, 'range', label, 'renderState.pointLights[].range') as number,
-	};
-}
-
-function encodeRuntimeRenderState(state: RuntimeRenderState): RuntimeRenderState {
-	return {
-		camera: state.camera === null ? null : encodeCameraState(state.camera),
-		ambientLights: encodeVector(state.ambientLights, encodeRuntimeAmbientLightState),
-		directionalLights: encodeVector(state.directionalLights, encodeRuntimeDirectionalLightState),
-		pointLights: encodeVector(state.pointLights, encodeRuntimePointLightState),
-	};
-}
-
-function decodeRuntimeRenderState(value: unknown, label: string): RuntimeRenderState {
-	const object = requireObject(value, label);
-	const camera = requireObjectKey(object, 'camera', label, 'renderState.camera');
-	return {
-		camera: camera === null ? null : decodeCameraState(camera, 'renderState.camera') as RuntimeRenderCameraState,
-		ambientLights: decodeVector(
-			requireObjectKey(object, 'ambientLights', label, 'renderState.ambientLights'),
-			'renderState.ambientLights',
-			(entry) => decodeRuntimeAmbientLightState(entry, 'renderState.ambientLights[]'),
-		),
-		directionalLights: decodeVector(
-			requireObjectKey(object, 'directionalLights', label, 'renderState.directionalLights'),
-			'renderState.directionalLights',
-			(entry) => decodeRuntimeDirectionalLightState(entry, 'renderState.directionalLights[]'),
-		),
-		pointLights: decodeVector(
-			requireObjectKey(object, 'pointLights', label, 'renderState.pointLights'),
-			'renderState.pointLights',
-			(entry) => decodeRuntimePointLightState(entry, 'renderState.pointLights[]'),
-		),
-	};
+	return requireObjectKey(object, key, label, keyLabel) as number;
 }
 
 function encodeTickCompletion(state: TickCompletion): TickCompletion {
@@ -250,9 +148,8 @@ function encodeRuntimeVblankState(state: RuntimeSaveMachineState['vblank']): Run
 }
 
 function decodeRuntimeVblankState(value: unknown, label: string): RuntimeSaveMachineState['vblank'] {
-	const object = requireObject(value, label);
 	return {
-		cyclesIntoFrame: requireObjectKey(object, 'cyclesIntoFrame', label, 'vblank.cyclesIntoFrame') as number,
+		cyclesIntoFrame: decodeNumberObjectField(value, label, 'cyclesIntoFrame', 'vblank.cyclesIntoFrame'),
 	};
 }
 
@@ -282,9 +179,8 @@ function encodeIrqControllerState(state: IrqControllerState): IrqControllerState
 }
 
 function decodeIrqControllerState(value: unknown, label: string): IrqControllerState {
-	const object = requireObject(value, label);
 	return {
-		pendingFlags: requireObjectKey(object, 'pendingFlags', label, 'machine.irq.pendingFlags') as number,
+		pendingFlags: decodeNumberObjectField(value, label, 'pendingFlags', 'machine.irq.pendingFlags'),
 	};
 }
 
@@ -361,13 +257,13 @@ function decodeVdpState(value: unknown, label: string): VdpState {
 			viewMatrixIndex: requireBoundedU32(requireObjectKey(xf, 'viewMatrixIndex', 'machine.vdp.xf', 'machine.vdp.xf.viewMatrixIndex'), 'machine.vdp.xf.viewMatrixIndex', 0, VDP_XF_MATRIX_COUNT - 1),
 			projectionMatrixIndex: requireBoundedU32(requireObjectKey(xf, 'projectionMatrixIndex', 'machine.vdp.xf', 'machine.vdp.xf.projectionMatrixIndex'), 'machine.vdp.xf.projectionMatrixIndex', 0, VDP_XF_MATRIX_COUNT - 1),
 		},
-		skyboxControl: requireObjectKey(object, 'skyboxControl', label, 'machine.vdp.skyboxControl') as number,
-		skyboxFaceWords: requireObjectKey(object, 'skyboxFaceWords', label, 'machine.vdp.skyboxFaceWords') as number[],
-		pmuSelectedBank: requireObjectKey(object, 'pmuSelectedBank', label, 'machine.vdp.pmuSelectedBank') as number,
-		pmuBankWords: requireObjectKey(object, 'pmuBankWords', label, 'machine.vdp.pmuBankWords') as number[],
-		ditherType: requireObjectKey(object, 'ditherType', label, 'machine.vdp.ditherType') as number,
-		vdpFaultCode: requireObjectKey(object, 'vdpFaultCode', label, 'machine.vdp.vdpFaultCode') as number,
-		vdpFaultDetail: requireObjectKey(object, 'vdpFaultDetail', label, 'machine.vdp.vdpFaultDetail') as number,
+		skyboxControl: requireBoundedU32(requireObjectKey(object, 'skyboxControl', label, 'machine.vdp.skyboxControl'), 'machine.vdp.skyboxControl', 0, 0xffffffff),
+		skyboxFaceWords: decodeU32FixedArray(requireObjectKey(object, 'skyboxFaceWords', label, 'machine.vdp.skyboxFaceWords'), 'machine.vdp.skyboxFaceWords', SKYBOX_FACE_WORD_COUNT),
+		pmuSelectedBank: requireBoundedU32(requireObjectKey(object, 'pmuSelectedBank', label, 'machine.vdp.pmuSelectedBank'), 'machine.vdp.pmuSelectedBank', 0, 0xffffffff),
+		pmuBankWords: decodeU32FixedArray(requireObjectKey(object, 'pmuBankWords', label, 'machine.vdp.pmuBankWords'), 'machine.vdp.pmuBankWords', VDP_PMU_BANK_WORD_COUNT),
+		ditherType: requireI32(requireObjectKey(object, 'ditherType', label, 'machine.vdp.ditherType'), 'machine.vdp.ditherType'),
+		vdpFaultCode: requireBoundedU32(requireObjectKey(object, 'vdpFaultCode', label, 'machine.vdp.vdpFaultCode'), 'machine.vdp.vdpFaultCode', 0, 0xffffffff),
+		vdpFaultDetail: requireBoundedU32(requireObjectKey(object, 'vdpFaultDetail', label, 'machine.vdp.vdpFaultDetail'), 'machine.vdp.vdpFaultDetail', 0, 0xffffffff),
 	};
 }
 
@@ -409,10 +305,30 @@ function decodeVdpSaveState(value: unknown, label: string): VdpSaveState {
 	};
 }
 
+function encodeAudioControllerState(state: AudioControllerState): AudioControllerState {
+	return {
+		eventSequence: state.eventSequence,
+		apuStatus: state.apuStatus,
+		apuFaultCode: state.apuFaultCode,
+		apuFaultDetail: state.apuFaultDetail,
+	};
+}
+
+function decodeAudioControllerState(value: unknown, label: string): AudioControllerState {
+	const object = requireObject(value, label);
+	return {
+		eventSequence: requireBoundedU32(requireObjectKey(object, 'eventSequence', label, 'machine.audio.eventSequence'), 'machine.audio.eventSequence', 0, 0xffffffff),
+		apuStatus: requireBoundedU32(requireObjectKey(object, 'apuStatus', label, 'machine.audio.apuStatus'), 'machine.audio.apuStatus', 0, 0xffffffff),
+		apuFaultCode: requireBoundedU32(requireObjectKey(object, 'apuFaultCode', label, 'machine.audio.apuFaultCode'), 'machine.audio.apuFaultCode', 0, 0xffffffff),
+		apuFaultDetail: requireBoundedU32(requireObjectKey(object, 'apuFaultDetail', label, 'machine.audio.apuFaultDetail'), 'machine.audio.apuFaultDetail', 0, 0xffffffff),
+	};
+}
+
 function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 	return {
 		memory: encodeMemorySaveState(state.memory),
 		irq: encodeIrqControllerState(state.irq),
+		audio: encodeAudioControllerState(state.audio),
 		stringPool: encodeStringPoolState(state.stringPool),
 		input: encodeInputControllerState(state.input),
 		vdp: encodeVdpSaveState(state.vdp),
@@ -424,6 +340,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 	return {
 		memory: decodeMemorySaveState(requireObjectKey(object, 'memory', label, 'machineState.machine.memory'), 'machineState.machine.memory'),
 		irq: decodeIrqControllerState(requireObjectKey(object, 'irq', label, 'machineState.machine.irq'), 'machineState.machine.irq'),
+		audio: decodeAudioControllerState(requireObjectKey(object, 'audio', label, 'machineState.machine.audio'), 'machineState.machine.audio'),
 		stringPool: decodeStringPoolState(requireObjectKey(object, 'stringPool', label, 'machineState.machine.stringPool'), 'machineState.machine.stringPool'),
 		input: decodeInputControllerState(requireObjectKey(object, 'input', label, 'machineState.machine.input'), 'machineState.machine.input'),
 		vdp: decodeVdpSaveState(requireObjectKey(object, 'vdp', label, 'machineState.machine.vdp'), 'machineState.machine.vdp'),
@@ -700,7 +617,6 @@ function encodeRuntimeSaveStateValue(state: RuntimeSaveState): RuntimeSaveState 
 	return {
 		machineState: encodeRuntimeSaveMachineState(state.machineState),
 		cpuState: encodeCpuRuntimeState(state.cpuState),
-		renderState: encodeRuntimeRenderState(state.renderState),
 		systemProgramActive: state.systemProgramActive,
 		luaInitialized: state.luaInitialized,
 		luaRuntimeFailed: state.luaRuntimeFailed,
@@ -714,7 +630,6 @@ function decodeRuntimeSaveStateValue(value: unknown, label: string): RuntimeSave
 	return {
 		machineState: decodeRuntimeSaveMachineState(requireObjectKey(object, 'machineState', label, 'runtimeSaveState.machineState'), 'runtimeSaveState.machineState'),
 		cpuState: decodeCpuRuntimeState(requireObjectKey(object, 'cpuState', label, 'runtimeSaveState.cpuState'), 'runtimeSaveState.cpuState'),
-		renderState: decodeRuntimeRenderState(requireObjectKey(object, 'renderState', label, 'runtimeSaveState.renderState'), 'runtimeSaveState.renderState'),
 		systemProgramActive: requireObjectKey(object, 'systemProgramActive', label, 'runtimeSaveState.systemProgramActive') as boolean,
 		luaInitialized: requireObjectKey(object, 'luaInitialized', label, 'runtimeSaveState.luaInitialized') as boolean,
 		luaRuntimeFailed: requireObjectKey(object, 'luaRuntimeFailed', label, 'runtimeSaveState.luaRuntimeFailed') as boolean,

@@ -2180,13 +2180,13 @@ stringTable->set(key("sub"), machine.cpu.createNativeFunction("string.sub", [&cp
 				if (match.size() > 1) {
 					for (size_t i = 1; i < match.size(); ++i) {
 						if (match[i].matched) {
-							fnArgs.emplace_back(str(match[i].str()));
+							fnArgs.push_back(str(match[i].str()));
 						} else {
-							fnArgs.emplace_back(valueNil());
+							fnArgs.push_back(valueNil());
 						}
 					}
 				} else {
-					fnArgs.emplace_back(str(match[0].str()));
+					fnArgs.push_back(str(match[0].str()));
 				}
 				callClosureValue(replacement, fnArgs, fnResults);
 				Value value = fnResults.empty() ? valueNil() : fnResults[0];
@@ -2259,9 +2259,9 @@ stringTable->set(key("sub"), machine.cpu.createNativeFunction("string.sub", [&cp
 			if (match.size() > 1) {
 				for (size_t i = 1; i < match.size(); ++i) {
 					if (match[i].matched) {
-						out.emplace_back(str(match[i].str()));
+						out.push_back(str(match[i].str()));
 					} else {
-						out.emplace_back(valueNil());
+						out.push_back(valueNil());
 					}
 				}
 				return;

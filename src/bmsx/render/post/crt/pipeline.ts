@@ -42,9 +42,6 @@ export function registerCRT_WebGL(registry: RenderPassLibrary): void {
 				gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 				gl.bindTexture(gl.TEXTURE_2D, state.colorTex);
 			}
-
-
-			registry.validatePassResources('crt', be);
 		}
 	});
 }

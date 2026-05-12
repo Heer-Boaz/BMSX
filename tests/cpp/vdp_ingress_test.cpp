@@ -73,6 +73,19 @@ struct Harness {
 	}
 };
 
+struct PrimarySurfaceProbe final : bmsx::VdpSurfaceUploadSink {
+	uint32_t width = 0;
+	uint32_t height = 0;
+
+	bool consumeVdpSurfaceUpload(const bmsx::VdpSurfaceUpload& upload) override {
+		if (upload.surfaceId == bmsx::VDP_RD_SURFACE_PRIMARY) {
+			width = upload.surfaceWidth;
+			height = upload.surfaceHeight;
+		}
+		return false;
+	}
+};
+
 void require(bool condition, const char* message) {
 	if (!condition) {
 		throw std::runtime_error(message);
@@ -119,13 +132,22 @@ void writePrimaryPixel(Harness& h, uint32_t x, uint32_t y, uint8_t r, uint8_t g,
 	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE, pixels.data(), pixels.size());
 }
 
-void requireFramePixel(const Harness& h, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b, uint8_t a, const char* message) {
-	const auto& pixels = h.vdp.frameBufferRenderReadback();
-	const size_t index = (static_cast<size_t>(y) * h.vdp.frameBufferWidth() + static_cast<size_t>(x)) * 4u;
-	require(pixels[index + 0u] == r, message);
-	require(pixels[index + 1u] == g, message);
-	require(pixels[index + 2u] == b, message);
-	require(pixels[index + 3u] == a, message);
+void requireFramePixel(Harness& h, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b, uint8_t a, const char* message) {
+	std::array<uint8_t, 4u> pixel{};
+	require(h.vdp.readFrameBufferPixels(bmsx::VdpFrameBufferPage::Render, x, y, 1u, 1u, pixel.data(), pixel.size()), "render framebuffer readback should succeed");
+	require(pixel[0u] == r, message);
+	require(pixel[1u] == g, message);
+	require(pixel[2u] == b, message);
+	require(pixel[3u] == a, message);
+}
+
+void requireDisplayFramePixel(Harness& h, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b, uint8_t a, const char* message) {
+	std::array<uint8_t, 4u> pixel{};
+	require(h.vdp.readFrameBufferPixels(bmsx::VdpFrameBufferPage::Display, x, y, 1u, 1u, pixel.data(), pixel.size()), "display framebuffer readback should succeed");
+	require(pixel[0u] == r, message);
+	require(pixel[1u] == g, message);
+	require(pixel[2u] == b, message);
+	require(pixel[3u] == a, message);
 }
 
 std::vector<uint32_t> xfMatrixRegisterPacket(uint32_t matrixIndex, const std::array<uint32_t, bmsx::VDP_XF_MATRIX_WORDS>& words) {
@@ -285,6 +307,30 @@ void testPmuParallaxResolvedBlitSnapshot() {
 	requireFramePixel(h, 32u, 48u, 0x44u, 0x55u, 0x66u, 0xffu, "PMU should resolve +8px Y before VDP execution");
 }
 
+void testFrameBufferPresentSwapsDisplayReadback() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff112233u);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_CLEAR);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	const int workUnits = h.vdp.getPendingRenderWorkUnits();
+	require(workUnits > 0, "CLEAR should submit framebuffer render work");
+	h.vdp.advanceWork(workUnits);
+	require(h.vdp.presentReadyFrameOnVblankEdge(), "CLEAR should present framebuffer work");
+	requireDisplayFramePixel(h, 0u, 0u, 0x11u, 0x22u, 0x33u, 0xffu, "VDP present edge should swap CPU-visible display readback page");
+	class PresentationProbe final : public bmsx::VdpFrameBufferPresentationSink {
+	public:
+		void consumeVdpFrameBufferPresentation(const bmsx::VdpFrameBufferPresentation& presentation) override {
+			count = presentation.presentationCount;
+		}
+		uint32_t count = 0;
+	};
+	PresentationProbe probe;
+	h.vdp.drainFrameBufferPresentation(probe);
+	require(probe.count == 1u, "VDP should latch one pending host texture mirror sync");
+}
+
 void testPmuBankRegistersResolveDrawCtrl() {
 	Harness h;
 
@@ -402,6 +448,7 @@ void testStreamDexFaultsAbortSealedFrame() {
 
 void testSlotRegisters() {
 	Harness h;
+	PrimarySurfaceProbe primary;
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_INDEX, 3u);
 	require(h.memory.readIoU32(bmsx::IO_VDP_REG_SLOT_INDEX) == 3u, "SLOT_INDEX should latch raw representable words");
@@ -413,13 +460,25 @@ void testSlotRegisters() {
 		16u | (16u << 16),
 		VDP_PKT_END,
 	});
-	const auto surface = h.vdp.resolveBlitterSurfaceSize(bmsx::VDP_RD_SURFACE_PRIMARY);
-	require(surface.width == 16u && surface.height == 16u, "REGN SLOT_INDEX/SLOT_DIM should apply in order");
+	h.vdp.drainSurfaceUploads(primary);
+	require(primary.width == 16u && primary.height == 16u, "REGN SLOT_INDEX/SLOT_DIM should apply in order");
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 0xffffffffu);
 	expectVdpFault(h, bmsx::VDP_FAULT_VRAM_SLOT_DIM, "slot capacity overflow should latch a cart-visible fault");
-	const auto afterFault = h.vdp.resolveBlitterSurfaceSize(bmsx::VDP_RD_SURFACE_PRIMARY);
-	require(afterFault.width == 16u && afterFault.height == 16u, "invalid SLOT_DIM should not change the slot");
+	primary.width = 0u;
+	primary.height = 0u;
+	h.vdp.drainSurfaceUploads(primary);
+	require(primary.width == 16u && primary.height == 16u, "invalid SLOT_DIM should not change the slot");
+
+	clearVdpFault(h);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 15u);
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 1u | (1u << 16u));
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "source x=15 should still fit the retained 16px slot");
+	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 16u);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	expectVdpFault(h, bmsx::VDP_FAULT_DEX_SOURCE_OOB, "source x=16 should fault against the retained 16px slot");
 }
 
 void testBlitSourceFaultsLatchDexFaults() {
@@ -527,22 +586,22 @@ void testPmuResolvedScaleFlowsThroughBlitDatapath() {
 void testSbxCommitsOnlyThroughFramePresent() {
 	Harness h;
 
-	require(!h.vdp.readHostOutput().skyboxEnabled, "skybox starts disabled");
+	require(!h.vdp.readDeviceOutput().skyboxEnabled, "skybox starts disabled");
 	writeSbxMmio(h.memory);
-	require(!h.vdp.readHostOutput().skyboxEnabled, "live SBX write should not commit visible skybox");
+	require(!h.vdp.readDeviceOutput().skyboxEnabled, "live SBX write should not commit visible skybox");
 
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
-	require(!h.vdp.readHostOutput().skyboxEnabled, "sealed SBX frame should wait for VBlank present");
+	require(!h.vdp.readDeviceOutput().skyboxEnabled, "sealed SBX frame should wait for VBlank present");
 	h.vdp.presentReadyFrameOnVblankEdge();
-	require(h.vdp.readHostOutput().skyboxEnabled, "presented frame should commit visible SBX state");
+	require(h.vdp.readDeviceOutput().skyboxEnabled, "presented frame should commit visible SBX state");
 
 	writeSbxMmio(h.memory, 0u);
-	require(h.vdp.readHostOutput().skyboxEnabled, "live SBX clear should not change visible skybox immediately");
+	require(h.vdp.readDeviceOutput().skyboxEnabled, "live SBX clear should not change visible skybox immediately");
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 	h.vdp.presentReadyFrameOnVblankEdge();
-	require(!h.vdp.readHostOutput().skyboxEnabled, "presented clear frame should disable visible skybox");
+	require(!h.vdp.readDeviceOutput().skyboxEnabled, "presented clear frame should disable visible skybox");
 }
 
 void testSbxValidatesAtFrameSeal() {
@@ -554,7 +613,7 @@ void testSbxValidatesAtFrameSeal() {
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
 	expectVdpFault(h, bmsx::VDP_FAULT_SBX_SOURCE_OOB, "SBX source rect overflow should latch a device fault");
 	require(h.vdp.canAcceptVdpSubmit(), "invalid SBX frame should cancel and close the build frame");
-	require(!h.vdp.readHostOutput().skyboxEnabled, "invalid SBX state should not become visible");
+	require(!h.vdp.readDeviceOutput().skyboxEnabled, "invalid SBX state should not become visible");
 }
 
 void testSbxSkyboxPacketLatchesFrameState() {
@@ -565,8 +624,8 @@ void testSbxSkyboxPacketLatchesFrameState() {
 	stream.push_back(VDP_PKT_END);
 	sealStream(h, stream);
 	h.vdp.presentReadyFrameOnVblankEdge();
-	require(h.vdp.readHostOutput().skyboxEnabled, "SKYBOX packet should present visible SBX state");
-	const auto sample = (*h.vdp.readHostOutput().skyboxSamples)[0u];
+	require(h.vdp.readDeviceOutput().skyboxEnabled, "SKYBOX packet should present visible SBX state");
+	const auto sample = (*h.vdp.readDeviceOutput().skyboxSamples)[0u];
 	require(sample.source.surfaceId == bmsx::VDP_RD_SURFACE_PRIMARY, "SKYBOX should resolve primary slot");
 	require(sample.surfaceWidth == 16u && sample.surfaceHeight == 16u, "SKYBOX should resolve surface size");
 	require(sample.source.width == 4u && sample.source.height == 5u, "SKYBOX should resolve face dimensions");
@@ -580,13 +639,13 @@ void testSbxSkyboxPacketRawControlAndFrameSealFault() {
 	badControl.push_back(VDP_PKT_END);
 	sealStream(h, badControl);
 	h.vdp.presentReadyFrameOnVblankEdge();
-	require(!h.vdp.readHostOutput().skyboxEnabled, "raw control without enable bit should not show SKYBOX");
+	require(!h.vdp.readDeviceOutput().skyboxEnabled, "raw control without enable bit should not show SKYBOX");
 
 	auto badSource = skyboxPacket(bmsx::VDP_SBX_CONTROL_ENABLE, 17u, 1u);
 	badSource.push_back(VDP_PKT_END);
 	sealStream(h, badSource);
 	expectVdpFault(h, bmsx::VDP_FAULT_SBX_SOURCE_OOB, "bad-source SKYBOX should latch a device fault");
-	require(!h.vdp.readHostOutput().skyboxEnabled, "bad-source SKYBOX should not become visible");
+	require(!h.vdp.readDeviceOutput().skyboxEnabled, "bad-source SKYBOX should not become visible");
 }
 
 void testXfPacketUpdatesRawTransformRegisterState() {
@@ -723,7 +782,7 @@ void testXfStateCommitsWithSubmittedFrame() {
 	require(workUnits > 0, "frame A should require render work");
 	h.vdp.advanceWork(workUnits);
 	require(h.vdp.presentReadyFrameOnVblankEdge(), "frame A should present framebuffer work");
-	const auto output = h.vdp.readHostOutput();
+	const auto& output = h.vdp.readDeviceOutput();
 	require(output.xfViewMatrixIndex == 2u, "presented XF should keep frame A view index");
 	require(output.xfProjectionMatrixIndex == 3u, "presented XF should keep frame A projection index");
 	require((*output.xfMatrixWords)[2u * bmsx::VDP_XF_MATRIX_WORDS] == frameAView[0], "presented XF should keep frame A matrix words");
@@ -740,7 +799,7 @@ void testBbuBillboardPacketLatchesInstanceRam() {
 	require(h.vdp.getPendingRenderWorkUnits() == 1, "BILLBOARD should submit BBU render work");
 	h.vdp.advanceWork(1);
 	require(!h.vdp.presentReadyFrameOnVblankEdge(), "BILLBOARD should not present framebuffer pages");
-	const auto output = h.vdp.readHostOutput();
+	const auto& output = h.vdp.readDeviceOutput();
 	const auto& billboards = *output.billboards;
 	require(billboards.size() == 1u, "BILLBOARD should latch one instance");
 	const auto& entry = billboards.front();
@@ -878,6 +937,7 @@ int main() {
 		{"latch snapshot geometry", testLatchSnapshotGeometry},
 		{"BLIT DRAW_CTRL snapshot", testBlitDrawCtrlSnapshot},
 		{"PMU parallax resolved BLIT snapshot", testPmuParallaxResolvedBlitSnapshot},
+		{"framebuffer present swaps display readback", testFrameBufferPresentSwapsDisplayReadback},
 		{"PMU bank registers resolve DRAW_CTRL", testPmuBankRegistersResolveDrawCtrl},
 		{"PMU scale uses absolute weight", testPmuScaleUsesAbsoluteWeight},
 		{"FIFO replay and faults", testFifoReplayAndFaults},

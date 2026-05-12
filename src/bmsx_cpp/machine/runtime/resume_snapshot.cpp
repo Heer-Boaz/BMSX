@@ -1,8 +1,6 @@
 #include "machine/runtime/resume_snapshot.h"
 
 #include "machine/runtime/machine_state.h"
-#include "render/runtime_state.h"
-#include "render/shared/queues.h"
 #include "render/vdp/context_state.h"
 #include "machine/runtime/runtime.h"
 
@@ -15,7 +13,6 @@ RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 	runtime.machine.cpu.globals->forEachEntry([&snapshot](Value key, Value value) {
 		snapshot.globals.emplace_back(key, value);
 	});
-	snapshot.renderState = captureRuntimeRenderState();
 	snapshot.randomSeed = runtime.m_randomSeedValue;
 	snapshot.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
 	return snapshot;
@@ -23,8 +20,7 @@ RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime) {
 
 void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& snapshot) {
 	applyRuntimeMachineState(runtime, snapshot.machineState);
-	restoreVdpContextState(runtime.machine.vdp);
-	applyRuntimeRenderState(snapshot.renderState);
+	restoreVdpContextState(runtime.machine.vdp, runtime.view());
 	runtime.m_randomSeedValue = snapshot.randomSeed;
 	runtime.m_pendingCall = snapshot.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
 
@@ -34,7 +30,6 @@ void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& s
 	for (const auto& [key, value] : snapshot.globals) {
 		runtime.machine.cpu.setGlobalByKey(key, value);
 	}
-	RenderQueues::clearBackQueues();
 }
 
 } // namespace bmsx

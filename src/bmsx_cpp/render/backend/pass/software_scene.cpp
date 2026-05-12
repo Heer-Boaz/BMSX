@@ -3,12 +3,9 @@
 #include "render/backend/pass/library.h"
 
 #include "core/console.h"
-#include "machine/bus/io.h"
-#include "machine/runtime/runtime.h"
 #include "render/gameview.h"
-#include "render/shared/queues.h"
 #include "render/shared/software_pixels.h"
-#include "render/vdp/source_pixels.h"
+#include "render/vdp/slot_textures.h"
 #include <array>
 
 namespace bmsx {
@@ -26,6 +23,13 @@ struct SoftwareSkyboxFaceUv {
 	f32 v = 0.0f;
 };
 
+struct SoftwareSkyboxSourceRect {
+	u32 x = 0u;
+	u32 y = 0u;
+	u32 width = 0u;
+	u32 height = 0u;
+};
+
 
 SoftwareParticleViewState resolveParticleViewState(const GameView& view) {
 	SoftwareParticleViewState state;
@@ -35,15 +39,6 @@ SoftwareParticleViewState resolveParticleViewState(const GameView& view) {
 	state.viewProj = transform.viewProj;
 	state.camRight = { transform.view[0], transform.view[4], transform.view[8] };
 	return state;
-}
-
-u32 surfaceIdForParticleSlot(u32 slot) {
-	switch (slot) {
-		case VDP_SLOT_PRIMARY: return VDP_RD_SURFACE_PRIMARY;
-		case VDP_SLOT_SECONDARY: return VDP_RD_SURFACE_SECONDARY;
-		case VDP_SLOT_SYSTEM: return VDP_RD_SURFACE_SYSTEM;
-	}
-	throw BMSX_RUNTIME_ERROR("[SoftwareScene] Particle slot is outside the VDP texture slot set.");
 }
 
 size_t resolveSkyboxFace(f32 dirX, f32 dirY, f32 dirZ, SoftwareSkyboxFaceUv& uv) {
@@ -80,14 +75,20 @@ size_t resolveSkyboxFace(f32 dirX, f32 dirY, f32 dirZ, SoftwareSkyboxFaceUv& uv)
 	return 5u;
 }
 
-void writeSkyboxToFramebuffer(SoftwareBackend& backend, Runtime& runtime, const std::array<f32, 16>& skyboxView) {
-	std::array<VDP::ResolvedBlitterSample, SKYBOX_FACE_COUNT> samples{};
-	std::array<VdpSurfacePixels, SKYBOX_FACE_COUNT> textures{};
-	VDP& vdp = runtime.machine.vdp;
-	const VDP::VdpHostOutput output = vdp.readHostOutput();
+void writeSkyboxToFramebuffer(SoftwareBackend& backend, const GameView& view, const std::array<f32, 16>& skyboxView) {
+	std::array<SoftwareSkyboxSourceRect, SKYBOX_FACE_COUNT> sources{};
+	std::array<VdpSlotTexturePixels, SKYBOX_FACE_COUNT> textures{};
 	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
-		samples[index] = (*output.skyboxSamples)[index];
-		textures[index] = resolveVdpSurfacePixels(output, samples[index].source.surfaceId);
+		const VdpSlotTexturePixels texture = view.vdpSlotTextures().readSurfaceTexturePixels(view.skyboxFaceSurfaceIds[index]);
+		const size_t uvBase = index * 4u;
+		const size_t sizeBase = index * 2u;
+		textures[index] = texture;
+		sources[index] = SoftwareSkyboxSourceRect{
+			static_cast<u32>(view.skyboxFaceUvRects[uvBase + 0u] * static_cast<f32>(texture.width)),
+			static_cast<u32>(view.skyboxFaceUvRects[uvBase + 1u] * static_cast<f32>(texture.height)),
+			static_cast<u32>(view.skyboxFaceSizes[sizeBase + 0u]),
+			static_cast<u32>(view.skyboxFaceSizes[sizeBase + 1u]),
+		};
 	}
 	u32* framebuffer = backend.framebuffer();
 	const i32 width = backend.width();
@@ -103,9 +104,8 @@ void writeSkyboxToFramebuffer(SoftwareBackend& backend, Runtime& runtime, const 
 			const f32 dirY = skyboxView[1] * rayX + skyboxView[5] * rayY + skyboxView[9];
 			const f32 dirZ = skyboxView[2] * rayX + skyboxView[6] * rayY + skyboxView[10];
 			const size_t faceIndex = resolveSkyboxFace(dirX, dirY, dirZ, faceUv);
-			const VDP::ResolvedBlitterSample& sample = samples[faceIndex];
-			const VDP::BlitterSource& source = sample.source;
-			const VdpSurfacePixels& texture = textures[faceIndex];
+			const SoftwareSkyboxSourceRect& source = sources[faceIndex];
+			const VdpSlotTexturePixels& texture = textures[faceIndex];
 			u32 faceX = static_cast<u32>(faceUv.u * static_cast<f32>(source.width));
 			u32 faceY = static_cast<u32>(faceUv.v * static_cast<f32>(source.height));
 			if (faceX >= source.width) {
@@ -114,8 +114,8 @@ void writeSkyboxToFramebuffer(SoftwareBackend& backend, Runtime& runtime, const 
 			if (faceY >= source.height) {
 				faceY = source.height - 1u;
 			}
-			const u32 srcX = source.srcX + faceX;
-			const u32 srcY = source.srcY + faceY;
+			const u32 srcX = source.x + faceX;
+			const u32 srcY = source.y + faceY;
 			const u8* sourceRow = texture.pixels + static_cast<size_t>(srcY) * texture.stride;
 			const u8* pixel = sourceRow + static_cast<size_t>(srcX) * 4u;
 			targetRow[x] = packSoftwareArgb(pixel[0], pixel[1], pixel[2], pixel[3]);
@@ -124,9 +124,9 @@ void writeSkyboxToFramebuffer(SoftwareBackend& backend, Runtime& runtime, const 
 }
 
 void drawSoftwareBillboardSample(SoftwareBackend& backend,
-	const VDP::VdpHostOutput& output,
 	const SoftwareParticleViewState& state,
-	u32 slot,
+	const VdpSlotTextures& slotTextures,
+	u32 surfaceId,
 	u32 u,
 	u32 v,
 	u32 w,
@@ -134,8 +134,7 @@ void drawSoftwareBillboardSample(SoftwareBackend& backend,
 	const Vec3& position,
 	f32 size,
 	u32 color) {
-	const u32 surfaceId = surfaceIdForParticleSlot(slot);
-	const VdpSurfacePixels texture = resolveVdpSurfacePixels(output, surfaceId);
+	const VdpSlotTexturePixels texture = slotTextures.readSurfaceTexturePixels(surfaceId);
 	const i32 sourceX = static_cast<i32>(u);
 	const i32 sourceY = static_cast<i32>(v);
 	const i32 sourceW = static_cast<i32>(w);
@@ -222,7 +221,7 @@ void registerSoftwareScenePasses(RenderPassLibrary& registry) {
 		};
 		desc.exec = [](GPUBackend* backend, void*, std::any&) {
 			auto& console = ConsoleCore::instance();
-			renderSoftwareSkybox(static_cast<SoftwareBackend&>(*backend), *console.view(), console.runtime());
+			renderSoftwareSkybox(static_cast<SoftwareBackend&>(*backend), *console.view());
 		};
 		registry.registerPass(desc);
 	}
@@ -235,50 +234,34 @@ void registerSoftwareScenePasses(RenderPassLibrary& registry) {
 		desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
 		desc.shouldExecute = []() {
 			const GameView* view = ConsoleCore::instance().view();
-			return RenderQueues::beginParticleQueue() > 0 || view->vdpBillboardCount > 0u;
+			return view->vdpBillboardCount > 0u;
 		};
 		desc.exec = [](GPUBackend* backend, void*, std::any&) {
 			auto& console = ConsoleCore::instance();
-			renderSoftwareParticles(static_cast<SoftwareBackend&>(*backend), *console.view(), console.runtime());
+			renderSoftwareParticles(static_cast<SoftwareBackend&>(*backend), *console.view());
 		};
 		registry.registerPass(desc);
 	}
 }
 
-void renderSoftwareSkybox(SoftwareBackend& backend, const GameView& view, Runtime& runtime) {
+void renderSoftwareSkybox(SoftwareBackend& backend, const GameView& view) {
 	if (!view.skyboxRenderReady) {
 		return;
 	}
-	writeSkyboxToFramebuffer(backend, runtime, view.vdpTransform.skyboxView);
+	writeSkyboxToFramebuffer(backend, view, view.vdpTransform.skyboxView);
 }
 
-void renderSoftwareParticles(SoftwareBackend& backend, const GameView& view, Runtime& runtime) {
+void renderSoftwareParticles(SoftwareBackend& backend, const GameView& view) {
 	const SoftwareParticleViewState state = resolveParticleViewState(view);
-	if (RenderQueues::beginParticleQueue() == 0 && view.vdpBillboardCount == 0u) {
+	if (view.vdpBillboardCount == 0u) {
 		return;
-	}
-	VDP::VdpHostOutput output = runtime.machine.vdp.readHostOutput();
-	const i32 particleCount = RenderQueues::beginParticleQueue();
-	for (i32 particleIndex = 0; particleIndex < particleCount; particleIndex += 1) {
-		const ParticleRenderSubmission& submission = RenderQueues::particleQueueEntry(static_cast<size_t>(particleIndex));
-		drawSoftwareBillboardSample(backend,
-			output,
-			state,
-			submission.slot,
-			submission.u,
-			submission.v,
-			submission.w,
-			submission.h,
-			submission.position,
-			submission.size,
-			submission.color);
 	}
 	for (size_t index = 0; index < view.vdpBillboardCount; ++index) {
 		const GameView::VdpBillboardRenderEntry& submission = view.vdpBillboards[index];
 		drawSoftwareBillboardSample(backend,
-			output,
 			state,
-			submission.slot,
+			view.vdpSlotTextures(),
+			submission.surfaceId,
 			submission.u,
 			submission.v,
 			submission.w,

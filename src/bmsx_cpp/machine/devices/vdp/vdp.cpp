@@ -23,6 +23,14 @@ constexpr size_t BLITTER_FIFO_CAPACITY = 4096u;
 constexpr u32 VDP_REPLAY_PACKET_FAULT = 0xffffffffu;
 constexpr VDP::FrameBufferColor VDP_BLITTER_IMPLICIT_CLEAR{0u, 0u, 0u, 255u};
 constexpr VDP::FrameBufferColor VDP_BLITTER_WHITE{255u, 255u, 255u, 255u};
+constexpr DeviceStatusRegisters VDP_DEVICE_STATUS_REGISTERS{
+	IO_VDP_STATUS,
+	IO_VDP_FAULT_CODE,
+	IO_VDP_FAULT_DETAIL,
+	IO_VDP_FAULT_ACK,
+	VDP_STATUS_FAULT,
+	VDP_FAULT_NONE,
+};
 
 template <typename T>
 std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
@@ -47,6 +55,7 @@ VDP::VDP(
 	VdpEntropySeeds entropySeeds
 )
 	: m_memory(memory)
+	, m_fault(memory, VDP_DEVICE_STATUS_REGISTERS)
 	, m_vramStaging(VRAM_STAGING_SIZE)
 	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
 	, m_vramMachineSeed(entropySeeds.machineSeed)
@@ -85,22 +94,8 @@ void VDP::resetIngressState() {
 }
 
 void VDP::resetStatus() {
-	m_vdpStatus = 0u;
-	m_faultCode = VDP_FAULT_NONE;
-	m_faultDetail = 0u;
-	m_memory.writeIoValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
-	m_memory.writeIoValue(IO_VDP_FAULT_CODE, valueNumber(static_cast<double>(m_faultCode)));
-	m_memory.writeIoValue(IO_VDP_FAULT_DETAIL, valueNumber(static_cast<double>(m_faultDetail)));
-	m_memory.writeIoValue(IO_VDP_FAULT_ACK, valueNumber(0.0));
+	m_fault.resetStatus();
 	refreshSubmitBusyStatus();
-}
-
-void VDP::clearFault() {
-	m_faultCode = VDP_FAULT_NONE;
-	m_faultDetail = 0u;
-	m_memory.writeIoValue(IO_VDP_FAULT_CODE, valueNumber(static_cast<double>(m_faultCode)));
-	m_memory.writeIoValue(IO_VDP_FAULT_DETAIL, valueNumber(static_cast<double>(m_faultDetail)));
-	setStatusFlag(VDP_STATUS_FAULT, false);
 }
 
 void VDP::resetVdpRegisters() {
@@ -124,7 +119,7 @@ void VDP::resetVdpRegisters() {
 
 bool VDP::writeVdpRegister(uint32_t index, u32 value) {
 	if (index >= VDP_REGISTER_COUNT) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, index);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, index);
 		return false;
 	}
 	switch (index) {
@@ -211,20 +206,23 @@ void VDP::configureSelectedSlotDimension(u32 word) {
 	const uint32_t width = packedLow16(word);
 	const uint32_t height = packedHigh16(word);
 	if (width == 0u || height == 0u) {
-		raiseFault(VDP_FAULT_VRAM_SLOT_DIM, word);
+		m_fault.raise(VDP_FAULT_VRAM_SLOT_DIM, word);
 		return;
 	}
 	uint32_t surfaceId = 0u;
 	if (!tryResolveSurfaceIdForSlot(m_vdpRegisters[VDP_REG_SLOT_INDEX], surfaceId, VDP_FAULT_VRAM_SLOT_DIM)) {
 		return;
 	}
-	VramSlot& slot = getVramSlotBySurfaceId(surfaceId);
-	const uint64_t byteLength = static_cast<uint64_t>(width) * static_cast<uint64_t>(height) * 4u;
-	if (byteLength > slot.capacity) {
-		raiseFault(VDP_FAULT_VRAM_SLOT_DIM, word);
+	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(surfaceId, VDP_FAULT_VRAM_SLOT_DIM);
+	if (slot == nullptr) {
 		return;
 	}
-	setVramSlotLogicalDimensions(slot, width, height, word);
+	const uint64_t byteLength = static_cast<uint64_t>(width) * static_cast<uint64_t>(height) * 4u;
+	if (byteLength > slot->capacity) {
+		m_fault.raise(VDP_FAULT_VRAM_SLOT_DIM, word);
+		return;
+	}
+	setVramSlotLogicalDimensions(*slot, width, height, word);
 }
 
 VdpLatchedGeometry VDP::readLatchedGeometry() const {
@@ -239,35 +237,7 @@ VdpLatchedGeometry VDP::readLatchedGeometry() const {
 // start hot-path -- VDP status, command ingress, scheduler service, and VRAM row access run on frame-critical paths.
 // disable-next-line single_line_method_pattern -- VBLANK status is the public device pin; status register bit ownership stays here.
 void VDP::setVblankStatus(bool active) {
-	setStatusFlag(VDP_STATUS_VBLANK, active);
-}
-
-void VDP::setStatusFlag(uint32_t mask, bool active) const {
-	const uint32_t nextStatus = active ? (m_vdpStatus | mask) : (m_vdpStatus & ~mask);
-	if (nextStatus == m_vdpStatus) {
-		return;
-	}
-	m_vdpStatus = nextStatus;
-	m_memory.writeIoValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
-}
-
-void VDP::raiseFault(uint32_t code, uint32_t detail) const {
-	if ((m_vdpStatus & VDP_STATUS_FAULT) != 0u) {
-		return;
-	}
-	m_faultCode = code;
-	m_faultDetail = detail;
-	m_memory.writeIoValue(IO_VDP_FAULT_CODE, valueNumber(static_cast<double>(m_faultCode)));
-	m_memory.writeIoValue(IO_VDP_FAULT_DETAIL, valueNumber(static_cast<double>(m_faultDetail)));
-	setStatusFlag(VDP_STATUS_FAULT, true);
-}
-
-void VDP::onVdpFaultAckWrite() {
-	if (m_memory.readIoU32(IO_VDP_FAULT_ACK) == 0u) {
-		return;
-	}
-	clearFault();
-	m_memory.writeIoValue(IO_VDP_FAULT_ACK, valueNumber(0.0));
+	m_fault.setStatusFlag(VDP_STATUS_VBLANK, active);
 }
 
 bool VDP::canAcceptVdpSubmit() const {
@@ -275,18 +245,18 @@ bool VDP::canAcceptVdpSubmit() const {
 }
 
 void VDP::acceptSubmitAttempt() {
-	setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, false);
+	m_fault.setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, false);
 	refreshSubmitBusyStatus();
 }
 
 void VDP::rejectSubmitAttempt() {
-	setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, true);
+	m_fault.setStatusFlag(VDP_STATUS_SUBMIT_REJECTED, true);
 	refreshSubmitBusyStatus();
 }
 
 void VDP::rejectBusySubmitAttempt(uint32_t detail) {
 	rejectSubmitAttempt();
-	raiseFault(VDP_FAULT_SUBMIT_BUSY, detail);
+	m_fault.raise(VDP_FAULT_SUBMIT_BUSY, detail);
 }
 
 void VDP::beginDmaSubmit() {
@@ -332,12 +302,12 @@ bool VDP::hasBlockedSubmitPath() const {
 
 // disable-next-line single_line_method_pattern -- submit-busy refresh owns the status-bit projection from current VDP ingress state.
 void VDP::refreshSubmitBusyStatus() {
-	setStatusFlag(VDP_STATUS_SUBMIT_BUSY, hasBlockedSubmitPath());
+	m_fault.setStatusFlag(VDP_STATUS_SUBMIT_BUSY, hasBlockedSubmitPath());
 }
 
 void VDP::pushVdpFifoWord(u32 word) {
 	if (m_vdpFifoStreamWordCount >= VDP_STREAM_CAPACITY_WORDS) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, m_vdpFifoStreamWordCount + 1u);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, m_vdpFifoStreamWordCount + 1u);
 		resetIngressState();
 		return;
 	}
@@ -348,11 +318,11 @@ void VDP::pushVdpFifoWord(u32 word) {
 
 bool VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 	if ((byteLength & 3u) != 0u || byteLength > VDP_STREAM_BUFFER_SIZE) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(byteLength));
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(byteLength));
 		return false;
 	}
 	if (m_buildFrame.open) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
 		cancelSubmittedFrame();
 		return false;
 	}
@@ -367,7 +337,7 @@ bool VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 		cursor += IO_WORD_SIZE;
 		if (word == VDP_PKT_END) {
 				if (cursor != end) {
-					raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+					m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					cancelSubmittedFrame();
 					return false;
 				}
@@ -381,7 +351,7 @@ bool VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 		}
 	}
 	if (!ended) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(byteLength));
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(byteLength));
 		cancelSubmittedFrame();
 		return false;
 	}
@@ -395,7 +365,7 @@ bool VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 
 void VDP::consumeSealedVdpWordStream(u32 wordCount) {
 	if (m_buildFrame.open) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
 		cancelSubmittedFrame();
 		return;
 	}
@@ -409,7 +379,7 @@ void VDP::consumeSealedVdpWordStream(u32 wordCount) {
 		cursor += 1u;
 		if (word == VDP_PKT_END) {
 			if (cursor != wordCount) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				cancelSubmittedFrame();
 				return;
 			}
@@ -423,7 +393,7 @@ void VDP::consumeSealedVdpWordStream(u32 wordCount) {
 		}
 	}
 	if (!ended) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, wordCount);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, wordCount);
 		cancelSubmittedFrame();
 		return;
 	}
@@ -435,7 +405,7 @@ void VDP::consumeSealedVdpWordStream(u32 wordCount) {
 
 void VDP::sealVdpFifoTransfer() {
 	if (m_vdpFifoWordByteCount != 0) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(m_vdpFifoWordByteCount));
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(m_vdpFifoWordByteCount));
 		resetIngressState();
 		return;
 	}
@@ -455,7 +425,7 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 		case VDP_PKT_REG1: {
 			const u32 reg = decodeReg1Packet(word);
 			if (reg == VDP_REPLAY_PACKET_FAULT || cursor + IO_WORD_SIZE > end) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			return writeVdpRegister(reg, m_memory.readU32(cursor)) ? cursor + IO_WORD_SIZE : VDP_REPLAY_PACKET_FAULT;
@@ -463,13 +433,13 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 		case VDP_PKT_REGN: {
 			RegnPacket packet;
 			if (!decodeRegnPacket(word, packet)) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			const u32 byteCount = packet.count * IO_WORD_SIZE;
 			const u32 payloadEnd = cursor + byteCount;
 			if (payloadEnd > end) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			for (uint32_t offset = 0; offset < packet.count; ++offset) {
@@ -481,18 +451,18 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 		}
 		case VDP_BBU_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_BBU_PACKET_PAYLOAD_WORDS)) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			const u32 byteCount = VDP_BBU_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
 			const u32 payloadEnd = cursor + byteCount;
 			if (payloadEnd > end) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			const u32 controlWord = m_memory.readU32(cursor + IO_WORD_SIZE * 10u);
 			if (controlWord != 0u) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, controlWord);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, controlWord);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			return latchBillboardPacket(m_bbu.decodePacket(
@@ -512,13 +482,13 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 		}
 		case VDP_SBX_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS)) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			const u32 byteCount = VDP_SBX_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
 			const u32 payloadEnd = cursor + byteCount;
 			if (payloadEnd > end) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
@@ -528,37 +498,37 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 			return payloadEnd;
 		}
 		default:
-			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return VDP_REPLAY_PACKET_FAULT;
 	}
 }
 
 u32 VDP::consumeXfPacketFromMemory(u32 word, u32 cursor, u32 end) {
 	if (vdpUnitPacketHasFlags(word)) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	const u32 payloadWords = vdpUnitPacketPayloadWords(word);
 	if (payloadWords < 2u) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	const u32 byteCount = payloadWords * IO_WORD_SIZE;
 	const u32 payloadEnd = cursor + byteCount;
 	if (payloadEnd > end) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	const u32 firstRegister = m_memory.readU32(cursor);
 	const u32 registerCount = payloadWords - 1u;
 	if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	for (u32 offset = 0u; offset < registerCount; ++offset) {
 		const u32 value = m_memory.readU32(cursor + (offset + 1u) * IO_WORD_SIZE);
 		if (!m_xf.writeRegister(firstRegister + offset, value)) {
-			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, value);
+			m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
 			return VDP_REPLAY_PACKET_FAULT;
 		}
 	}
@@ -573,7 +543,7 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 		case VDP_PKT_REG1: {
 			const u32 reg = decodeReg1Packet(word);
 			if (reg == VDP_REPLAY_PACKET_FAULT || cursor >= wordCount) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			return writeVdpRegister(reg, m_vdpFifoStreamWords[static_cast<size_t>(cursor)]) ? cursor + 1u : VDP_REPLAY_PACKET_FAULT;
@@ -581,7 +551,7 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 		case VDP_PKT_REGN: {
 			RegnPacket packet;
 			if (!decodeRegnPacket(word, packet) || cursor + packet.count > wordCount) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			for (uint32_t offset = 0; offset < packet.count; ++offset) {
@@ -593,11 +563,11 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 		}
 		case VDP_BBU_PACKET_KIND:
 			if (!isVdpUnitPacketHeaderValid(word, VDP_BBU_PACKET_PAYLOAD_WORDS) || cursor + VDP_BBU_PACKET_PAYLOAD_WORDS > wordCount) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			if (m_vdpFifoStreamWords[static_cast<size_t>(cursor + 10u)] != 0u) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, m_vdpFifoStreamWords[static_cast<size_t>(cursor + 10u)]);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, m_vdpFifoStreamWords[static_cast<size_t>(cursor + 10u)]);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			return latchBillboardPacket(m_bbu.decodePacket(
@@ -615,7 +585,7 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 			return consumeXfPacketFromWords(word, cursor, wordCount);
 		case VDP_SBX_PACKET_KIND:
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
-				raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
@@ -624,31 +594,31 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 			m_sbx.writePacket(m_vdpFifoStreamWords[static_cast<size_t>(cursor)], m_sbxPacketFaceWords);
 			return cursor + VDP_SBX_PACKET_PAYLOAD_WORDS;
 		default:
-			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+			m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return VDP_REPLAY_PACKET_FAULT;
 	}
 }
 
 u32 VDP::consumeXfPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 	if (vdpUnitPacketHasFlags(word)) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	const u32 payloadWords = vdpUnitPacketPayloadWords(word);
 	if (payloadWords < 2u || cursor + payloadWords > wordCount) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	const u32 firstRegister = m_vdpFifoStreamWords[static_cast<size_t>(cursor)];
 	const u32 registerCount = payloadWords - 1u;
 	if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	for (u32 offset = 0u; offset < registerCount; ++offset) {
 		const u32 value = m_vdpFifoStreamWords[static_cast<size_t>(cursor + offset + 1u)];
 		if (!m_xf.writeRegister(firstRegister + offset, value)) {
-			raiseFault(VDP_FAULT_STREAM_BAD_PACKET, value);
+			m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
 			return VDP_REPLAY_PACKET_FAULT;
 		}
 	}
@@ -680,12 +650,12 @@ bool VDP::decodeRegnPacket(u32 word, RegnPacket& packet) const {
 
 bool VDP::consumeReplayCommandPacket(u32 word) {
 	if ((word & VDP_PKT_RESERVED_MASK) != 0u) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, word);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return false;
 	}
 	const u32 command = packedLow16(word);
 	if (command == VDP_CMD_BEGIN_FRAME || command == VDP_CMD_END_FRAME) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, command);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, command);
 		return false;
 	}
 	if (command == VDP_CMD_NOP) {
@@ -700,7 +670,7 @@ void VDP::consumeDirectVdpCommand(u32 command) {
 	}
 	if (command == VDP_CMD_BEGIN_FRAME) {
 		if (m_buildFrame.open) {
-			raiseFault(VDP_FAULT_SUBMIT_STATE, command);
+			m_fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 			cancelSubmittedFrame();
 			return;
 		}
@@ -713,7 +683,7 @@ void VDP::consumeDirectVdpCommand(u32 command) {
 	if (command == VDP_CMD_END_FRAME) {
 		if (!m_buildFrame.open) {
 			rejectSubmitAttempt();
-			raiseFault(VDP_FAULT_SUBMIT_STATE, command);
+			m_fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 			return;
 		}
 		if (!sealSubmittedFrame()) {
@@ -724,7 +694,7 @@ void VDP::consumeDirectVdpCommand(u32 command) {
 	}
 	if (!m_buildFrame.open) {
 		rejectSubmitAttempt();
-		raiseFault(VDP_FAULT_SUBMIT_STATE, command);
+		m_fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 		return;
 	}
 	executeVdpDrawDoorbell(command);
@@ -744,7 +714,7 @@ bool VDP::executeVdpDrawDoorbell(u32 command) {
 		case VDP_CMD_COPY_RECT:
 			return enqueueLatchedCopyRect();
 		default:
-			raiseFault(VDP_FAULT_CMD_BAD_DOORBELL, command);
+			m_fault.raise(VDP_FAULT_CMD_BAD_DOORBELL, command);
 			return false;
 	}
 }
@@ -829,7 +799,7 @@ void VDP::onSbxCommitWriteThunk(void* context, uint32_t, Value) {
 
 void VDP::onFaultAckWriteThunk(void* context, uint32_t, Value) {
 	auto& vdp = *static_cast<VDP*>(context);
-	vdp.onVdpFaultAckWrite();
+	vdp.m_fault.acknowledge();
 }
 
 void VDP::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
@@ -878,25 +848,25 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 		std::memcpy(m_vramStaging.data() + offset, data, length);
 		return;
 	}
-	VramSlot* mappedSlot = findMappedVramSlot(addr, length);
+	VdpSurfaceUploadSlot* mappedSlot = findMappedVramSlot(addr, length);
 	if (mappedSlot == nullptr) {
-		raiseFault(VDP_FAULT_VRAM_WRITE_UNMAPPED, addr);
+		m_fault.raise(VDP_FAULT_VRAM_WRITE_UNMAPPED, addr);
 		return;
 	}
 	auto& slot = *mappedSlot;
 	const uint32_t offset = addr - slot.baseAddr;
 	if ((offset & 3u) != 0u || (length & 3u) != 0u) {
-		raiseFault(VDP_FAULT_VRAM_WRITE_UNALIGNED, addr);
+		m_fault.raise(VDP_FAULT_VRAM_WRITE_UNALIGNED, addr);
 		return;
 	}
 	if (slot.surfaceWidth == 0 || slot.surfaceHeight == 0) {
-		raiseFault(VDP_FAULT_VRAM_WRITE_UNINITIALIZED, addr);
+		m_fault.raise(VDP_FAULT_VRAM_WRITE_UNINITIALIZED, addr);
 		return;
 	}
 	const uint32_t stride = slot.surfaceWidth * 4u;
 	const uint32_t totalBytes = slot.surfaceHeight * stride;
 	if (offset + length > totalBytes) {
-		raiseFault(VDP_FAULT_VRAM_WRITE_OOB, addr);
+		m_fault.raise(VDP_FAULT_VRAM_WRITE_OOB, addr);
 		return;
 	}
 	size_t remaining = length;
@@ -905,13 +875,13 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 	uint32_t rowOffset = offset - row * stride;
 	while (remaining > 0) {
 		const uint32_t rowAvailable = stride - rowOffset;
-			const uint32_t rowBytes = static_cast<uint32_t>(std::min<size_t>(remaining, rowAvailable));
-			const uint32_t xStart = rowOffset / 4u;
-			const uint32_t xEnd = xStart + rowBytes / 4u;
-			markVramSlotDirtySpan(slot, row, xStart, xEnd);
-			const size_t cpuOffset = static_cast<size_t>(row) * static_cast<size_t>(stride) + static_cast<size_t>(rowOffset);
-			std::memcpy(slot.cpuReadback.data() + cpuOffset, data + cursor, rowBytes);
-			invalidateReadCache(slot.surfaceId);
+		const uint32_t rowBytes = static_cast<uint32_t>(std::min<size_t>(remaining, rowAvailable));
+		const uint32_t xStart = rowOffset / 4u;
+		const uint32_t xEnd = xStart + rowBytes / 4u;
+		markVramSlotDirtySpan(slot, row, xStart, xEnd);
+		const size_t cpuOffset = static_cast<size_t>(row) * static_cast<size_t>(stride) + static_cast<size_t>(rowOffset);
+		std::memcpy(slot.cpuReadback.data() + cpuOffset, data + cursor, rowBytes);
+		invalidateReadCache(slot.surfaceId);
 		remaining -= rowBytes;
 		cursor += rowBytes;
 		row += 1;
@@ -925,15 +895,15 @@ void VDP::readVram(uint32_t addr, u8* out, size_t length) const {
 		std::memcpy(out, m_vramStaging.data() + offset, length);
 		return;
 	}
-	const VramSlot* mappedSlot = findMappedVramSlot(addr, length);
+	const VdpSurfaceUploadSlot* mappedSlot = findMappedVramSlot(addr, length);
 	if (mappedSlot == nullptr) {
-		raiseFault(VDP_FAULT_VRAM_WRITE_UNMAPPED, addr);
+		m_fault.raise(VDP_FAULT_VRAM_WRITE_UNMAPPED, addr);
 		std::memset(out, 0, length);
 		return;
 	}
 	const auto& slot = *mappedSlot;
 	if (slot.surfaceWidth == 0 || slot.surfaceHeight == 0) {
-		raiseFault(VDP_FAULT_VRAM_WRITE_UNINITIALIZED, addr);
+		m_fault.raise(VDP_FAULT_VRAM_WRITE_UNINITIALIZED, addr);
 		std::memset(out, 0, length);
 		return;
 	}
@@ -941,7 +911,7 @@ void VDP::readVram(uint32_t addr, u8* out, size_t length) const {
 	const uint32_t stride = slot.surfaceWidth * 4u;
 	const uint32_t totalBytes = slot.surfaceHeight * stride;
 	if (offset + length > totalBytes) {
-		raiseFault(VDP_FAULT_VRAM_WRITE_OOB, addr);
+		m_fault.raise(VDP_FAULT_VRAM_WRITE_OOB, addr);
 		std::memset(out, 0, length);
 		return;
 	}
@@ -1008,7 +978,7 @@ bool VDP::enqueueLatchedDrawLine() {
 	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
 	const f32 thickness = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_LINE_WIDTH]);
 	if (thickness <= 0.0f) {
-		raiseFault(VDP_FAULT_DEX_INVALID_LINE_WIDTH, m_vdpRegisters[VDP_REG_LINE_WIDTH]);
+		m_fault.raise(VDP_FAULT_DEX_INVALID_LINE_WIDTH, m_vdpRegisters[VDP_REG_LINE_WIDTH]);
 		return false;
 	}
 	const VdpLatchedGeometry geometry = readLatchedGeometry();
@@ -1035,7 +1005,7 @@ bool VDP::enqueueLatchedBlit() {
 	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
 	const VdpDrawCtrl drawCtrl = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
 	if (drawCtrl.blendMode != 0u) {
-		raiseFault(VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, m_vdpRegisters[VDP_REG_DRAW_CTRL]);
+		m_fault.raise(VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, m_vdpRegisters[VDP_REG_DRAW_CTRL]);
 		return false;
 	}
 	const u32 slot = m_vdpRegisters[VDP_REG_SRC_SLOT];
@@ -1047,18 +1017,17 @@ bool VDP::enqueueLatchedBlit() {
 	if (!tryResolveBlitterSourceWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
 		return false;
 	}
-	VdpBlitterSurfaceSize surface;
-	if (!tryResolveBlitterSurfaceForSource(source, surface, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB)) {
+	if (tryResolveBlitterSurfaceForSource(source, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB) == nullptr) {
 		return false;
 	}
 	const f32 scaleX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DRAW_SCALE_X]);
 	const f32 scaleY = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
 	if (scaleX <= 0.0f) {
-		raiseFault(VDP_FAULT_DEX_INVALID_SCALE, m_vdpRegisters[VDP_REG_DRAW_SCALE_X]);
+		m_fault.raise(VDP_FAULT_DEX_INVALID_SCALE, m_vdpRegisters[VDP_REG_DRAW_SCALE_X]);
 		return false;
 	}
 	if (scaleY <= 0.0f) {
-		raiseFault(VDP_FAULT_DEX_INVALID_SCALE, m_vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
+		m_fault.raise(VDP_FAULT_DEX_INVALID_SCALE, m_vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
 		return false;
 	}
 	const f32 dstX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_X]);
@@ -1154,11 +1123,11 @@ void VDP::resetQueuedFrameState() {
 
 bool VDP::enqueueBlitterCommand(BlitterCommand&& command) {
 	if (!m_buildFrame.open) {
-		raiseFault(VDP_FAULT_SUBMIT_STATE, static_cast<uint32_t>(command.type));
+		m_fault.raise(VDP_FAULT_SUBMIT_STATE, static_cast<uint32_t>(command.type));
 		return false;
 	}
 	if (m_buildFrame.queue.size() >= BLITTER_FIFO_CAPACITY) {
-		raiseFault(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(m_buildFrame.queue.size()));
+		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(m_buildFrame.queue.size()));
 		return false;
 	}
 	m_buildFrame.cost += command.renderCost;
@@ -1167,14 +1136,82 @@ bool VDP::enqueueBlitterCommand(BlitterCommand&& command) {
 }
 
 void VDP::swapFrameBufferReadbackPages() {
-	auto& renderSlot = getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
-	std::swap(renderSlot.cpuReadback, m_displayFrameBufferCpuReadback);
+	VdpSurfaceUploadSlot* renderSlot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
+	if (renderSlot == nullptr) {
+		return;
+	}
+	std::swap(renderSlot->cpuReadback, m_displayFrameBufferCpuReadback);
 	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+}
+
+void VDP::presentFrameBufferPageOnVblankEdge() {
+	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
+	if (slot == nullptr) {
+		return;
+	}
+	if (m_frameBufferPresentationCount == 0u) {
+		m_frameBufferPresentationDirtyRowStart = slot->dirtyRowStart;
+		m_frameBufferPresentationDirtyRowEnd = slot->dirtyRowEnd;
+		for (uint32_t row = slot->dirtyRowStart; row < slot->dirtyRowEnd; ++row) {
+			m_frameBufferPresentationDirtySpansByRow[row] = slot->dirtySpansByRow[row];
+		}
+	} else {
+		m_frameBufferPresentationRequiresFullSync = true;
+	}
+	m_frameBufferPresentationCount += 1u;
+	clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
+	swapFrameBufferReadbackPages();
+}
+
+void VDP::clearFrameBufferPresentation() {
+	for (uint32_t row = m_frameBufferPresentationDirtyRowStart; row < m_frameBufferPresentationDirtyRowEnd; ++row) {
+		m_frameBufferPresentationDirtySpansByRow[row] = VdpDirtySpan{};
+	}
+	resetFrameBufferPresentation();
+}
+
+const std::vector<u8>* VDP::frameBufferRenderReadback() const {
+	const VdpSurfaceUploadSlot* slot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
+	if (slot == nullptr) {
+		return nullptr;
+	}
+	return &slot->cpuReadback;
+}
+
+void VDP::drainFrameBufferPresentation(VdpFrameBufferPresentationSink& sink) {
+	if (m_frameBufferPresentationCount == 0u) {
+		return;
+	}
+	const std::vector<u8>* renderReadback = frameBufferRenderReadback();
+	if (renderReadback == nullptr) {
+		m_fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
+		return;
+	}
+	const VdpFrameBufferPresentation presentation{
+		m_frameBufferPresentationCount,
+		m_frameBufferPresentationRequiresFullSync,
+		m_frameBufferPresentationDirtyRowStart,
+		m_frameBufferPresentationDirtyRowEnd,
+		&m_frameBufferPresentationDirtySpansByRow,
+		renderReadback,
+		&m_displayFrameBufferCpuReadback,
+		m_frameBufferWidth,
+		m_frameBufferHeight,
+	};
+	sink.consumeVdpFrameBufferPresentation(presentation);
+	clearFrameBufferPresentation();
+}
+
+void VDP::resetFrameBufferPresentation() {
+	m_frameBufferPresentationCount = 0u;
+	m_frameBufferPresentationRequiresFullSync = false;
+	m_frameBufferPresentationDirtyRowStart = 0u;
+	m_frameBufferPresentationDirtyRowEnd = 0u;
 }
 
 bool VDP::beginSubmittedFrame() {
 	if (m_buildFrame.open) {
-		raiseFault(VDP_FAULT_SUBMIT_STATE, VDP_CMD_BEGIN_FRAME);
+		m_fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_BEGIN_FRAME);
 		return false;
 	}
 	resetBuildFrameState();
@@ -1191,7 +1228,7 @@ void VDP::cancelSubmittedFrame() {
 
 bool VDP::sealSubmittedFrame() {
 	if (!m_buildFrame.open) {
-		raiseFault(VDP_FAULT_SUBMIT_STATE, VDP_CMD_END_FRAME);
+		m_fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_END_FRAME);
 		return false;
 	}
 	VdpSubmittedFrame* frame = nullptr;
@@ -1200,7 +1237,7 @@ bool VDP::sealSubmittedFrame() {
 	} else if (!m_pendingFrame.occupied) {
 		frame = &m_pendingFrame;
 	} else {
-		raiseFault(VDP_FAULT_SUBMIT_BUSY, VDP_CMD_END_FRAME);
+		m_fault.raise(VDP_FAULT_SUBMIT_BUSY, VDP_CMD_END_FRAME);
 		return false;
 	}
 	const bool frameHasFrameBufferCommands = !m_buildFrame.queue.empty();
@@ -1275,8 +1312,11 @@ void VDP::executeFrameBufferCommands(const std::vector<BlitterCommand>& commands
 	if (commands.empty()) {
 		return;
 	}
-	auto& frameBufferSlot = getVramSlotBySurfaceId(VDP_RD_SURFACE_FRAMEBUFFER);
-	auto& pixels = frameBufferSlot.cpuReadback;
+	VdpSurfaceUploadSlot* frameBufferSlot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
+	if (frameBufferSlot == nullptr) {
+		return;
+	}
+	auto& pixels = frameBufferSlot->cpuReadback;
 	ensureFrameBufferPriorityCapacity(static_cast<size_t>(m_frameBufferWidth) * static_cast<size_t>(m_frameBufferHeight));
 	if (commands.front().type != BlitterCommandType::Clear) {
 		fillFrameBuffer(pixels, VDP_BLITTER_IMPLICIT_CLEAR);
@@ -1338,7 +1378,7 @@ void VDP::executeFrameBufferCommands(const std::vector<BlitterCommand>& commands
 				break;
 		}
 	}
-	markVramSlotDirty(frameBufferSlot, 0u, frameBufferSlot.surfaceHeight);
+	markVramSlotDirty(*frameBufferSlot, 0u, frameBufferSlot->surfaceHeight);
 	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 }
 
@@ -1478,9 +1518,12 @@ void VDP::rasterizeFrameBufferLine(std::vector<u8>& pixels, f32 x0, f32 y0, f32 
 void VDP::rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
 	const i32 frameBufferWidth = static_cast<i32>(m_frameBufferWidth);
 	const i32 frameBufferHeight = static_cast<i32>(m_frameBufferHeight);
-	const auto& sourceSlot = getVramSlotBySurfaceId(source.surfaceId);
-	const auto& sourcePixels = sourceSlot.cpuReadback;
-	const size_t sourceStride = static_cast<size_t>(sourceSlot.surfaceWidth) * 4u;
+	const VdpSurfaceUploadSlot* sourceSlot = findVramSlotOrFault(source.surfaceId, VDP_FAULT_DEX_SOURCE_SLOT);
+	if (sourceSlot == nullptr) {
+		return;
+	}
+	const auto& sourcePixels = sourceSlot->cpuReadback;
+	const size_t sourceStride = static_cast<size_t>(sourceSlot->surfaceWidth) * 4u;
 	i32 dstW = static_cast<i32>(std::round(static_cast<f32>(source.width) * scaleX));
 	i32 dstH = static_cast<i32>(std::round(static_cast<f32>(source.height) * scaleY));
 	if (dstW == 0) {
@@ -1509,7 +1552,7 @@ void VDP::rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource&
 				: ((x * static_cast<i32>(source.width)) / dstW);
 			const uint32_t sampleX = source.srcX + static_cast<uint32_t>(srcX);
 			const uint32_t sampleY = source.srcY + static_cast<uint32_t>(srcY);
-			if (sampleX >= sourceSlot.surfaceWidth || sampleY >= sourceSlot.surfaceHeight) {
+				if (sampleX >= sourceSlot->surfaceWidth || sampleY >= sourceSlot->surfaceHeight) {
 				continue;
 			}
 			const size_t srcIndex = (static_cast<size_t>(sampleY) * sourceStride) + (static_cast<size_t>(sampleX) * 4u);
@@ -1575,20 +1618,17 @@ void VDP::clearActiveFrame() {
 	resetSubmittedFrameSlot(m_activeFrame);
 }
 
-VDP::VdpHostOutput VDP::readHostOutput() {
-	VdpHostOutput output;
-	output.ditherType = m_committedDitherType;
-	output.xfMatrixWords = &m_committedXf.matrixWords;
-	output.xfViewMatrixIndex = m_committedXf.viewMatrixIndex;
-	output.xfProjectionMatrixIndex = m_committedXf.projectionMatrixIndex;
-	output.skyboxEnabled = m_sbx.visibleEnabled();
-	output.skyboxSamples = &m_committedSkyboxSamples;
-	output.billboards = &m_committedBillboards;
-	output.surfaceUploadSlots = &m_vramSlots;
-	output.frameBufferWidth = m_frameBufferWidth;
-	output.frameBufferHeight = m_frameBufferHeight;
-	output.frameBufferRenderReadback = &frameBufferRenderReadback();
-	return output;
+const VdpDeviceOutput& VDP::readDeviceOutput() {
+	m_deviceOutput.ditherType = m_committedDitherType;
+	m_deviceOutput.xfMatrixWords = &m_committedXf.matrixWords;
+	m_deviceOutput.xfViewMatrixIndex = m_committedXf.viewMatrixIndex;
+	m_deviceOutput.xfProjectionMatrixIndex = m_committedXf.projectionMatrixIndex;
+	m_deviceOutput.skyboxEnabled = m_sbx.visibleEnabled();
+	m_deviceOutput.skyboxSamples = &m_committedSkyboxSamples;
+	m_deviceOutput.billboards = &m_committedBillboards;
+	m_deviceOutput.frameBufferWidth = m_frameBufferWidth;
+	m_deviceOutput.frameBufferHeight = m_frameBufferHeight;
+	return m_deviceOutput;
 }
 
 void VDP::commitActiveVisualState() {
@@ -1629,6 +1669,7 @@ bool VDP::presentReadyFrameOnVblankEdge() {
 		return false;
 	}
 	if (m_activeFrame.hasFrameBufferCommands) {
+		presentFrameBufferPageOnVblankEdge();
 		finishCommittedFrameOnVblankEdge();
 		return true;
 	}
@@ -1650,7 +1691,7 @@ bool VDP::tryResolveSurfaceIdForSlot(u32 slot, uint32_t& surfaceId, uint32_t fau
 		surfaceId = VDP_RD_SURFACE_SECONDARY;
 		return true;
 	}
-	raiseFault(faultCode, slot);
+	m_fault.raise(faultCode, slot);
 	return false;
 }
 
@@ -1667,26 +1708,23 @@ bool VDP::tryResolveBlitterSourceWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h,
 	return true;
 }
 
-VdpBlitterSurfaceSize VDP::resolveBlitterSurfaceSize(uint32_t surfaceId) const {
-	const auto& surface = getReadSurface(surfaceId);
-	return VdpBlitterSurfaceSize{
-		surface.surfaceWidth,
-		surface.surfaceHeight,
-	};
-}
-
-bool VDP::tryResolveBlitterSurfaceForSource(const BlitterSource& source, VdpBlitterSurfaceSize& target, uint32_t faultCode, uint32_t zeroSizeFaultCode) {
+const VdpSurfaceUploadSlot* VDP::tryResolveBlitterSurfaceForSource(const BlitterSource& source, uint32_t faultCode, uint32_t zeroSizeFaultCode) {
 	if (source.width == 0u || source.height == 0u) {
-		raiseFault(zeroSizeFaultCode, source.width | (source.height << 16u));
-		return false;
+		m_fault.raise(zeroSizeFaultCode, source.width | (source.height << 16u));
+		return nullptr;
 	}
-	const VdpBlitterSurfaceSize surface = resolveBlitterSurfaceSize(source.surfaceId);
-	if (source.srcX + source.width > surface.width || source.srcY + source.height > surface.height) {
-		raiseFault(faultCode, source.srcX | (source.srcY << 16u));
-		return false;
+	const VdpSurfaceUploadSlot* surface = findRegisteredVramSlotBySurfaceId(source.surfaceId);
+	if (surface == nullptr) {
+		m_fault.raise(faultCode, source.surfaceId);
+		return nullptr;
 	}
-	target = surface;
-	return true;
+	const uint64_t sourceRight = static_cast<uint64_t>(source.srcX) + static_cast<uint64_t>(source.width);
+	const uint64_t sourceBottom = static_cast<uint64_t>(source.srcY) + static_cast<uint64_t>(source.height);
+	if (sourceRight > surface->surfaceWidth || sourceBottom > surface->surfaceHeight) {
+		m_fault.raise(faultCode, source.srcX | (source.srcY << 16u));
+		return nullptr;
+	}
+	return surface;
 }
 
 bool VDP::tryResolveBlitterSampleWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, ResolvedBlitterSample& target, uint32_t faultCode) {
@@ -1694,13 +1732,13 @@ bool VDP::tryResolveBlitterSampleWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h,
 	if (!tryResolveBlitterSourceWordsInto(slot, u, v, w, h, source, faultCode)) {
 		return false;
 	}
-	VdpBlitterSurfaceSize surface;
-	if (!tryResolveBlitterSurfaceForSource(source, surface, faultCode, faultCode)) {
+	const VdpSurfaceUploadSlot* surface = tryResolveBlitterSurfaceForSource(source, faultCode, faultCode);
+	if (surface == nullptr) {
 		return false;
 	}
 	target.source = source;
-	target.surfaceWidth = surface.width;
-	target.surfaceHeight = surface.height;
+	target.surfaceWidth = surface->surfaceWidth;
+	target.surfaceHeight = surface->surfaceHeight;
 	target.slot = slot;
 	return true;
 }
@@ -1708,19 +1746,19 @@ bool VDP::tryResolveBlitterSampleWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h,
 bool VDP::latchBillboardPacket(const VdpBbuPacket& packet) {
 	const f32 size = decodeUnsignedQ16_16(packet.sizeWord);
 	if (size <= 0.0f) {
-		raiseFault(VDP_FAULT_BBU_ZERO_SIZE, packet.sizeWord);
+		m_fault.raise(VDP_FAULT_BBU_ZERO_SIZE, packet.sizeWord);
 		return false;
 	}
 	if (m_buildFrame.billboards.size() >= VDP_BBU_BILLBOARD_LIMIT) {
-		raiseFault(VDP_FAULT_BBU_OVERFLOW, static_cast<uint32_t>(m_buildFrame.billboards.size()));
+		m_fault.raise(VDP_FAULT_BBU_OVERFLOW, static_cast<uint32_t>(m_buildFrame.billboards.size()));
 		return false;
 	}
 	BlitterSource source;
 	if (!tryResolveBlitterSourceWordsInto(packet.sourceRect.slot, packet.sourceRect.u, packet.sourceRect.v, packet.sourceRect.w, packet.sourceRect.h, source, VDP_FAULT_BBU_SOURCE_OOB)) {
 		return false;
 	}
-	VdpBlitterSurfaceSize surface;
-	if (!tryResolveBlitterSurfaceForSource(source, surface, VDP_FAULT_BBU_SOURCE_OOB, VDP_FAULT_BBU_ZERO_SIZE)) {
+	const VdpSurfaceUploadSlot* surface = tryResolveBlitterSurfaceForSource(source, VDP_FAULT_BBU_SOURCE_OOB, VDP_FAULT_BBU_ZERO_SIZE);
+	if (surface == nullptr) {
 		return false;
 	}
 	m_bbu.latchBillboard(
@@ -1728,8 +1766,8 @@ bool VDP::latchBillboardPacket(const VdpBbuPacket& packet) {
 		packet,
 			nextBlitterSequence(),
 			VdpBbuSource{source.surfaceId, source.srcX, source.srcY, source.width, source.height},
-			VdpBbuSurfaceSize{surface.width, surface.height},
-			packet.sourceRect.slot);
+				VdpBbuSurfaceSize{surface->surfaceWidth, surface->surfaceHeight},
+				packet.sourceRect.slot);
 	m_buildFrame.cost += VDP_RENDER_BILLBOARD_COST;
 	return true;
 }
@@ -1810,7 +1848,7 @@ u32 VDP::readTileRunPayloadWord(const TileRunPayload& payload, u32 wordOffset) c
 
 bool VDP::appendTileRunSource(BlitterCommand& command, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow) {
 	if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
-		raiseFault(VDP_FAULT_DEX_SOURCE_OOB, source.width | (source.height << 16u));
+		m_fault.raise(VDP_FAULT_DEX_SOURCE_OOB, source.width | (source.height << 16u));
 		return false;
 	}
 	const VdpClippedRect clipped = computeClippedRect(
@@ -1843,7 +1881,7 @@ bool VDP::appendTileRunSource(BlitterCommand& command, const BlitterSource& sour
 
 void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer) {
 	if (tileCount != static_cast<uint32_t>(cols * rows)) {
-		raiseFault(VDP_FAULT_STREAM_BAD_PACKET, tileCount);
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, tileCount);
 		return;
 	}
 	const TileRunClipWindow clip = clipTileRun(cols, rows, tileW, tileH, originX, originY, scrollX, scrollY);
@@ -1938,30 +1976,33 @@ uint32_t VDP::readVdpData() {
 	const uint32_t y = m_memory.readIoU32(IO_VDP_RD_Y);
 	const uint32_t mode = m_memory.readIoU32(IO_VDP_RD_MODE);
 	if (mode != VDP_RD_MODE_RGBA8888) {
-		raiseFault(VDP_FAULT_RD_UNSUPPORTED_MODE, mode);
+		m_fault.raise(VDP_FAULT_RD_UNSUPPORTED_MODE, mode);
 		return 0u;
 	}
 	if (surfaceId >= VDP_RD_SURFACE_COUNT) {
-		raiseFault(VDP_FAULT_RD_SURFACE, surfaceId);
+		m_fault.raise(VDP_FAULT_RD_SURFACE, surfaceId);
 		return 0u;
 	}
 	const ReadSurface& readSurface = m_readSurfaces[surfaceId];
 	if (!readSurface.registered) {
-		raiseFault(VDP_FAULT_RD_SURFACE, surfaceId);
+		m_fault.raise(VDP_FAULT_RD_SURFACE, surfaceId);
 		return 0u;
 	}
-	const auto& surface = getVramSlotBySurfaceId(readSurface.surfaceId);
-	const uint32_t width = surface.surfaceWidth;
-	const uint32_t height = surface.surfaceHeight;
+	const VdpSurfaceUploadSlot* surface = findVramSlotOrFault(readSurface.surfaceId, VDP_FAULT_RD_SURFACE);
+	if (surface == nullptr) {
+		return 0u;
+	}
+	const uint32_t width = surface->surfaceWidth;
+	const uint32_t height = surface->surfaceHeight;
 	if (x >= width || y >= height) {
-		raiseFault(VDP_FAULT_RD_OOB, x | (y << 16u));
+		m_fault.raise(VDP_FAULT_RD_OOB, x | (y << 16u));
 		return 0u;
 	}
 	if (m_readBudgetBytes < 4u) {
 		m_readOverflow = true;
 		return 0u;
 	}
-	auto& cache = getReadCache(surfaceId, surface, x, y);
+	auto& cache = getReadCache(surfaceId, *surface, x, y);
 	const uint32_t localX = x - cache.x0;
 	const size_t byteIndex = static_cast<size_t>(localX) * 4u;
 	const u32 r = cache.data[byteIndex + 0];
@@ -1988,9 +2029,14 @@ void VDP::initializeRegisters() {
 	const i32 dither = 0;
 	const auto& frameBufferSurface = m_readSurfaces[VDP_RD_SURFACE_FRAMEBUFFER];
 	if (frameBufferSurface.registered) {
-		const auto& slot = getVramSlotBySurfaceId(frameBufferSurface.surfaceId);
-		m_frameBufferWidth = slot.surfaceWidth;
-		m_frameBufferHeight = slot.surfaceHeight;
+		const VdpSurfaceUploadSlot* slot = findRegisteredVramSlotBySurfaceId(frameBufferSurface.surfaceId);
+		if (slot != nullptr) {
+			m_frameBufferWidth = slot->surfaceWidth;
+			m_frameBufferHeight = slot->surfaceHeight;
+		} else {
+			m_frameBufferWidth = m_configuredFrameBufferSize.width;
+			m_frameBufferHeight = m_configuredFrameBufferSize.height;
+		}
 	} else {
 		m_frameBufferWidth = m_configuredFrameBufferSize.width;
 		m_frameBufferHeight = m_configuredFrameBufferSize.height;
@@ -2075,8 +2121,8 @@ void VDP::captureVisualStateFields(VdpState& state) const {
 	state.pmuSelectedBank = m_pmu.selectedBank();
 	state.pmuBankWords = m_pmu.captureBankWords();
 	state.ditherType = m_liveDitherType;
-	state.vdpFaultCode = m_faultCode;
-	state.vdpFaultDetail = m_faultDetail;
+	state.vdpFaultCode = m_fault.code;
+	state.vdpFaultDetail = m_fault.detail;
 }
 
 VdpState VDP::captureState() const {
@@ -2092,13 +2138,8 @@ void VDP::restoreState(const VdpState& state) {
 	m_pmu.restoreBankWords(state.pmuSelectedBank, state.pmuBankWords);
 	syncPmuRegisterWindow();
 	syncSbxRegisterWindow();
-	m_vdpStatus = 0u;
-	m_faultCode = state.vdpFaultCode;
-	m_faultDetail = state.vdpFaultDetail;
-	m_memory.writeIoValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
-	m_memory.writeIoValue(IO_VDP_FAULT_CODE, valueNumber(static_cast<double>(m_faultCode)));
-	m_memory.writeIoValue(IO_VDP_FAULT_DETAIL, valueNumber(static_cast<double>(m_faultDetail)));
-	setStatusFlag(VDP_STATUS_FAULT, m_faultCode != VDP_FAULT_NONE);
+	m_fault.restore(0u, state.vdpFaultCode, state.vdpFaultDetail);
+	m_fault.setStatusFlag(VDP_STATUS_FAULT, m_fault.code != VDP_FAULT_NONE);
 	refreshSubmitBusyStatus();
 	commitLiveVisualState();
 }
@@ -2119,18 +2160,22 @@ void VDP::restoreSaveState(const VdpSaveState& state) {
 		restoreSurfacePixels(surface);
 	}
 	m_displayFrameBufferCpuReadback = state.displayFrameBufferPixels;
+	for (VdpDirtySpan& span : m_frameBufferPresentationDirtySpansByRow) {
+		span = VdpDirtySpan{};
+	}
+	resetFrameBufferPresentation();
 }
 
 void VDP::registerVramSlot(const VdpVramSurface& surface) {
 	const uint64_t size64 = vramSurfaceByteSize(surface.width, surface.height);
 	if (surface.width == 0u || surface.height == 0u || size64 > surface.capacity) {
-		raiseFault(VDP_FAULT_VRAM_SLOT_DIM, surface.surfaceId);
+		m_fault.raise(VDP_FAULT_VRAM_SLOT_DIM, surface.surfaceId);
 		return;
 	}
 	const uint32_t size = static_cast<uint32_t>(size64);
 	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, surface.baseAddr};
 	fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
-	VramSlot slot;
+	VdpSurfaceUploadSlot slot;
 	slot.baseAddr = surface.baseAddr;
 	slot.capacity = surface.capacity;
 	slot.surfaceId = surface.surfaceId;
@@ -2145,6 +2190,8 @@ void VDP::registerVramSlot(const VdpVramSurface& surface) {
 		m_frameBufferWidth = surface.width;
 		m_frameBufferHeight = surface.height;
 		m_displayFrameBufferCpuReadback.resize(static_cast<size_t>(size));
+		m_frameBufferPresentationDirtySpansByRow.assign(surface.height, VdpDirtySpan{});
+		resetFrameBufferPresentation();
 	}
 	if (surface.surfaceId == VDP_RD_SURFACE_SYSTEM) {
 		invalidateReadCache(surface.surfaceId);
@@ -2153,10 +2200,10 @@ void VDP::registerVramSlot(const VdpVramSurface& surface) {
 	seedVramSlotPixels(slotRef);
 }
 
-bool VDP::setVramSlotLogicalDimensions(VramSlot& slot, uint32_t width, uint32_t height, uint32_t faultDetail) {
+bool VDP::setVramSlotLogicalDimensions(VdpSurfaceUploadSlot& slot, uint32_t width, uint32_t height, uint32_t faultDetail) {
 	const uint64_t size64 = vramSurfaceByteSize(width, height);
 	if (width == 0u || height == 0u || size64 > slot.capacity) {
-		raiseFault(VDP_FAULT_VRAM_SLOT_DIM, faultDetail);
+		m_fault.raise(VDP_FAULT_VRAM_SLOT_DIM, faultDetail);
 		return false;
 	}
 	const uint32_t size = static_cast<uint32_t>(size64);
@@ -2170,12 +2217,14 @@ bool VDP::setVramSlotLogicalDimensions(VramSlot& slot, uint32_t width, uint32_t 
 	slot.surfaceWidth = width;
 	slot.surfaceHeight = height;
 	slot.cpuReadback.resize(static_cast<size_t>(size));
-	slot.dirtySpansByRow.assign(height, VramSlot::DirtySpan{});
+	slot.dirtySpansByRow.assign(height, VdpDirtySpan{});
 	invalidateReadCache(slot.surfaceId);
 	if (slot.surfaceId == VDP_RD_SURFACE_FRAMEBUFFER) {
 		m_frameBufferWidth = width;
 		m_frameBufferHeight = height;
 		m_displayFrameBufferCpuReadback.resize(static_cast<size_t>(size));
+		m_frameBufferPresentationDirtySpansByRow.assign(height, VdpDirtySpan{});
+		resetFrameBufferPresentation();
 	}
 	if (slot.surfaceId == VDP_RD_SURFACE_SYSTEM) {
 		slot.dirtyRowStart = 0;
@@ -2191,9 +2240,9 @@ bool VDP::setVramSlotLogicalDimensions(VramSlot& slot, uint32_t width, uint32_t 
 }
 
 void VDP::setDecodedVramSurfaceDimensions(uint32_t baseAddr, uint32_t width, uint32_t height) {
-	VramSlot* slot = findMappedVramSlot(baseAddr, 1u);
+	VdpSurfaceUploadSlot* slot = findMappedVramSlot(baseAddr, 1u);
 	if (slot == nullptr) {
-		raiseFault(VDP_FAULT_VRAM_WRITE_UNMAPPED, baseAddr);
+		m_fault.raise(VDP_FAULT_VRAM_WRITE_UNMAPPED, baseAddr);
 		return;
 	}
 	setVramSlotLogicalDimensions(*slot, width, height, width | (height << 16u));
@@ -2204,14 +2253,17 @@ void VDP::configureVramSlotSurface(uint32_t slotId, uint32_t width, uint32_t hei
 	if (!tryResolveSurfaceIdForSlot(slotId, surfaceId, VDP_FAULT_VRAM_SLOT_DIM)) {
 		return;
 	}
-	VramSlot& slot = getVramSlotBySurfaceId(surfaceId);
-	setVramSlotLogicalDimensions(slot, width, height, width | (height << 16u));
+	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(surfaceId, VDP_FAULT_VRAM_SLOT_DIM);
+	if (slot == nullptr) {
+		return;
+	}
+	setVramSlotLogicalDimensions(*slot, width, height, width | (height << 16u));
 }
 
 std::vector<VdpSurfacePixelsState> VDP::captureSurfacePixels() const {
 	std::vector<VdpSurfacePixelsState> surfaces;
 	surfaces.reserve(m_vramSlots.size());
-	for (const VramSlot& slot : m_vramSlots) {
+	for (const VdpSurfaceUploadSlot& slot : m_vramSlots) {
 		VdpSurfacePixelsState state;
 		state.surfaceId = slot.surfaceId;
 		state.pixels = slot.cpuReadback;
@@ -2221,13 +2273,16 @@ std::vector<VdpSurfacePixelsState> VDP::captureSurfacePixels() const {
 }
 
 void VDP::restoreSurfacePixels(const VdpSurfacePixelsState& state) {
-	VramSlot& slot = getVramSlotBySurfaceId(state.surfaceId);
-	slot.cpuReadback = state.pixels;
+	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(state.surfaceId, VDP_FAULT_RD_SURFACE);
+	if (slot == nullptr) {
+		return;
+	}
+	slot->cpuReadback = state.pixels;
 	invalidateReadCache(state.surfaceId);
-	markVramSlotDirty(slot, 0, slot.surfaceHeight);
+	markVramSlotDirty(*slot, 0, slot->surfaceHeight);
 }
 
-VDP::VramSlot* VDP::findMappedVramSlot(uint32_t addr, size_t length) {
+VdpSurfaceUploadSlot* VDP::findMappedVramSlot(uint32_t addr, size_t length) {
 	for (auto& slot : m_vramSlots) {
 		const uint32_t end = slot.baseAddr + slot.capacity;
 		if (addr >= slot.baseAddr && addr + length <= end) {
@@ -2237,7 +2292,7 @@ VDP::VramSlot* VDP::findMappedVramSlot(uint32_t addr, size_t length) {
 	return nullptr;
 }
 
-const VDP::VramSlot* VDP::findMappedVramSlot(uint32_t addr, size_t length) const {
+const VdpSurfaceUploadSlot* VDP::findMappedVramSlot(uint32_t addr, size_t length) const {
 	for (const auto& slot : m_vramSlots) {
 		const uint32_t end = slot.baseAddr + slot.capacity;
 		if (addr >= slot.baseAddr && addr + length <= end) {
@@ -2247,7 +2302,7 @@ const VDP::VramSlot* VDP::findMappedVramSlot(uint32_t addr, size_t length) const
 	return nullptr;
 }
 
-void VDP::markVramSlotDirty(VramSlot& slot, uint32_t startRow, uint32_t rowCount) {
+void VDP::markVramSlotDirty(VdpSurfaceUploadSlot& slot, uint32_t startRow, uint32_t rowCount) {
 	const uint32_t endRow = startRow + rowCount;
 	if (slot.dirtyRowStart >= slot.dirtyRowEnd) {
 		slot.dirtyRowStart = startRow;
@@ -2264,7 +2319,7 @@ void VDP::markVramSlotDirty(VramSlot& slot, uint32_t startRow, uint32_t rowCount
 	}
 }
 
-void VDP::markVramSlotDirtySpan(VramSlot& slot, uint32_t row, uint32_t xStart, uint32_t xEnd) {
+void VDP::markVramSlotDirtySpan(VdpSurfaceUploadSlot& slot, uint32_t row, uint32_t xStart, uint32_t xEnd) {
 	const uint32_t endRow = row + 1u;
 	if (slot.dirtyRowStart >= slot.dirtyRowEnd) {
 		slot.dirtyRowStart = row;
@@ -2291,7 +2346,7 @@ void VDP::markVramSlotDirtySpan(VramSlot& slot, uint32_t row, uint32_t xStart, u
 	}
 }
 
-VDP::VramSlot* VDP::findRegisteredVramSlotBySurfaceId(uint32_t surfaceId) {
+VdpSurfaceUploadSlot* VDP::findRegisteredVramSlotBySurfaceId(uint32_t surfaceId) {
 	for (auto& slot : m_vramSlots) {
 		if (slot.surfaceId == surfaceId) {
 			return &slot;
@@ -2300,24 +2355,32 @@ VDP::VramSlot* VDP::findRegisteredVramSlotBySurfaceId(uint32_t surfaceId) {
 	return nullptr;
 }
 
-VDP::VramSlot& VDP::getVramSlotBySurfaceId(uint32_t surfaceId) {
-	VramSlot* slot = findRegisteredVramSlotBySurfaceId(surfaceId);
-	if (slot != nullptr) {
-		return *slot;
-	}
-	throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not registered for surface " + std::to_string(surfaceId) + ".");
-}
-
-const VDP::VramSlot& VDP::getVramSlotBySurfaceId(uint32_t surfaceId) const {
+const VdpSurfaceUploadSlot* VDP::findRegisteredVramSlotBySurfaceId(uint32_t surfaceId) const {
 	for (const auto& slot : m_vramSlots) {
 		if (slot.surfaceId == surfaceId) {
-			return slot;
+			return &slot;
 		}
 	}
-	throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not registered for surface " + std::to_string(surfaceId) + ".");
+	return nullptr;
 }
 
-void VDP::seedVramSlotPixels(VramSlot& slot) {
+VdpSurfaceUploadSlot* VDP::findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode) {
+	VdpSurfaceUploadSlot* slot = findRegisteredVramSlotBySurfaceId(surfaceId);
+	if (slot == nullptr) {
+		m_fault.raise(faultCode, surfaceId);
+	}
+	return slot;
+}
+
+const VdpSurfaceUploadSlot* VDP::findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode) const {
+	const VdpSurfaceUploadSlot* slot = findRegisteredVramSlotBySurfaceId(surfaceId);
+	if (slot == nullptr) {
+		m_fault.raise(faultCode, surfaceId);
+	}
+	return slot;
+}
+
+void VDP::seedVramSlotPixels(VdpSurfaceUploadSlot& slot) {
 	const size_t rowPixels = static_cast<size_t>(slot.surfaceWidth);
 	const size_t maxPixels = m_vramGarbageScratch.size() / 4u;
 	slot.cpuReadback.resize(static_cast<size_t>(slot.surfaceWidth) * static_cast<size_t>(slot.surfaceHeight) * 4u);
@@ -2363,21 +2426,31 @@ void VDP::registerReadSurface(uint32_t surfaceId) {
 	invalidateReadCache(surfaceId);
 }
 
-const VDP::VramSlot& VDP::getReadSurface(uint32_t surfaceId) const {
-	const ReadSurface& surface = m_readSurfaces[surfaceId];
-	if (!surface.registered) {
-		throw BMSX_RUNTIME_ERROR("[VDP] read surface " + std::to_string(surfaceId) + " is not registered.");
+void VDP::clearSurfaceUploadDirty(uint32_t surfaceId) {
+	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(surfaceId, VDP_FAULT_RD_SURFACE);
+	if (slot == nullptr) {
+		return;
 	}
-	return getVramSlotBySurfaceId(surface.surfaceId);
+	for (uint32_t row = slot->dirtyRowStart; row < slot->dirtyRowEnd; ++row) {
+		slot->dirtySpansByRow[row] = VdpDirtySpan{};
+	}
+	slot->dirtyRowStart = 0;
+	slot->dirtyRowEnd = 0;
 }
 
-void VDP::clearSurfaceUploadDirty(uint32_t surfaceId) {
-	auto& slot = getVramSlotBySurfaceId(surfaceId);
-	for (uint32_t row = slot.dirtyRowStart; row < slot.dirtyRowEnd; ++row) {
-		slot.dirtySpansByRow[row] = VramSlot::DirtySpan{};
+void VDP::drainSurfaceUploads(VdpSurfaceUploadSink& sink) {
+	for (const VdpSurfaceUploadSlot& slot : m_vramSlots) {
+		m_surfaceUploadOutput.surfaceId = slot.surfaceId;
+		m_surfaceUploadOutput.surfaceWidth = slot.surfaceWidth;
+		m_surfaceUploadOutput.surfaceHeight = slot.surfaceHeight;
+		m_surfaceUploadOutput.cpuReadback = &slot.cpuReadback;
+		m_surfaceUploadOutput.dirtyRowStart = slot.dirtyRowStart;
+		m_surfaceUploadOutput.dirtyRowEnd = slot.dirtyRowEnd;
+		m_surfaceUploadOutput.dirtySpansByRow = &slot.dirtySpansByRow;
+		if (sink.consumeVdpSurfaceUpload(m_surfaceUploadOutput)) {
+			clearSurfaceUploadDirty(slot.surfaceId);
+		}
 	}
-	slot.dirtyRowStart = 0;
-	slot.dirtyRowEnd = 0;
 }
 
 void VDP::invalidateReadCache(uint32_t surfaceId) {
@@ -2385,7 +2458,7 @@ void VDP::invalidateReadCache(uint32_t surfaceId) {
 }
 
 // start hot-path -- VDP read cache feeds CPU-side MMIO readback one pixel at a time.
-VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const VramSlot& surface, uint32_t x, uint32_t y) {
+VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const VdpSurfaceUploadSlot& surface, uint32_t x, uint32_t y) {
 	auto& cache = m_readCaches[surfaceId];
 	if (cache.width == 0 || cache.y != y || x < cache.x0 || x >= cache.x0 + cache.width) {
 		prefetchReadCache(surfaceId, surface, x, y);
@@ -2394,7 +2467,7 @@ VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const VramSlot& surface, u
 }
 
 // start numeric-sanitization-acceptable -- readback chunk width is the minimum of hardware cap, remaining surface span, and per-frame read budget.
-void VDP::prefetchReadCache(uint32_t surfaceId, const VramSlot& surface, uint32_t x, uint32_t y) {
+void VDP::prefetchReadCache(uint32_t surfaceId, const VdpSurfaceUploadSlot& surface, uint32_t x, uint32_t y) {
 	const uint32_t maxPixelsByBudget = m_readBudgetBytes / 4u;
 	if (maxPixelsByBudget == 0) {
 		m_readOverflow = true;
@@ -2403,14 +2476,14 @@ void VDP::prefetchReadCache(uint32_t surfaceId, const VramSlot& surface, uint32_
 	}
 	const uint32_t chunkW = std::min(VDP_RD_MAX_CHUNK_PIXELS, std::min(surface.surfaceWidth - x, maxPixelsByBudget));
 	auto& cache = m_readCaches[surfaceId];
-	readSurfacePixels(surface, x, y, chunkW, 1, cache.data);
+		copySurfacePixels(surface, x, y, chunkW, 1, cache.data);
 	cache.x0 = x;
 	cache.y = y;
 	cache.width = chunkW;
 }
 // end numeric-sanitization-acceptable
 
-void VDP::readSurfacePixels(const VramSlot& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::vector<u8>& out) {
+void VDP::copySurfacePixels(const VdpSurfaceUploadSlot& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::vector<u8>& out) {
 	out.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
 	const uint32_t stride = surface.surfaceWidth * 4u;
 	const uint32_t rowBytes = width * 4u;
@@ -2419,6 +2492,34 @@ void VDP::readSurfacePixels(const VramSlot& surface, uint32_t x, uint32_t y, uin
 		const size_t dstOffset = static_cast<size_t>(row) * static_cast<size_t>(rowBytes);
 		std::memcpy(out.data() + dstOffset, surface.cpuReadback.data() + srcOffset, rowBytes);
 	}
+}
+
+bool VDP::readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes) {
+	const std::vector<u8>* source = &m_displayFrameBufferCpuReadback;
+	if (page == VdpFrameBufferPage::Render) {
+		source = frameBufferRenderReadback();
+		if (source == nullptr) {
+			m_fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
+			return false;
+		}
+	}
+	const size_t rowBytes = static_cast<size_t>(width) * 4u;
+	const size_t expectedBytes = rowBytes * static_cast<size_t>(height);
+	if (outBytes != expectedBytes) {
+		m_fault.raise(VDP_FAULT_RD_OOB, static_cast<uint32_t>(outBytes));
+		return false;
+	}
+	if (width > m_frameBufferWidth || height > m_frameBufferHeight || x > m_frameBufferWidth - width || y > m_frameBufferHeight - height) {
+		m_fault.raise(VDP_FAULT_RD_OOB, x | (y << 16u));
+		return false;
+	}
+	const size_t stride = static_cast<size_t>(m_frameBufferWidth) * 4u;
+	for (uint32_t row = 0; row < height; ++row) {
+		const size_t srcOffset = static_cast<size_t>(y + row) * stride + static_cast<size_t>(x) * 4u;
+		const size_t dstOffset = static_cast<size_t>(row) * rowBytes;
+		std::memcpy(out + dstOffset, source->data() + srcOffset, rowBytes);
+	}
+	return true;
 }
 // end hot-path
 

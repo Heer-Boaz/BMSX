@@ -181,23 +181,17 @@ add_library(bmsx_core STATIC
 	render/gameview.cpp
 	render/backend/frame_uniforms.cpp
 	render/lighting/system.cpp
-	render/shared/queues.cpp
 	render/shared/camera_state.cpp
 	render/host_overlay/pipeline.cpp
 	render/host_overlay/overlay_queue.cpp
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/renderer.cpp
-	render/runtime_state.cpp
 	render/shared/hardware/camera.cpp
 	render/shared/hardware/lighting.cpp
 	render/vdp/context_state.cpp
-	render/vdp/billboards.cpp
 	render/vdp/framebuffer.cpp
-	render/vdp/source_pixels.cpp
-	render/vdp/skybox.cpp
 	render/vdp/surfaces.cpp
 	render/vdp/slot_textures.cpp
-	render/vdp/texture_transfer.cpp
 	render/vdp/transform.cpp
 	render/vdp/view_snapshot.cpp
 	render/texture_manager.cpp
@@ -216,6 +210,7 @@ add_library(bmsx_core STATIC
 	lua/syntax/lexer.cpp
 	lua/syntax/parser.cpp
 	machine/devices/dma/controller.cpp
+	machine/devices/device_status.cpp
 	machine/devices/geometry/controller.cpp
 	machine/devices/imgdec/controller.cpp
 	machine/devices/input/controller.cpp

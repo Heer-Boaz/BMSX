@@ -4,14 +4,16 @@ import type { StorageService } from '../../platform';
 import type { Runtime } from '../../machine/runtime/runtime';
 import * as luaPipeline from '../runtime/lua_pipeline';
 import type { LuaResourceCreationRequest, ResourceDescriptor } from '../../rompack/tooling/resource';
+import { joinWorkspacePaths } from './path';
 import {
 	applyWorkspaceSourceOverrides,
 	collectScratchWorkspaceDirtyPaths,
-	deleteWorkspaceFile,
+	deleteWorkspaceServerFile,
 	persistWorkspaceSourceFile,
 	buildWorkspaceDirtyEntryPath,
-	buildWorkspaceStateFilePath,
 	buildWorkspaceStorageKey,
+	WORKSPACE_METADATA_DIR,
+	WORKSPACE_STATE_FILE,
 } from './files';
 
 export * from './files';
@@ -112,7 +114,7 @@ async function discardWorkspaceDirtyPath(storage: StorageService, root: string, 
 	const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 	const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 	storage.removeItem(storageKey);
-	await deleteWorkspaceFile(dirtyPath);
+	await deleteWorkspaceServerFile(dirtyPath);
 }
 
 export async function clearWorkspaceArtifacts(runtime: Runtime, cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
@@ -120,10 +122,10 @@ export async function clearWorkspaceArtifacts(runtime: Runtime, cart: LuaSourceR
 	for (const asset of Object.values(cart.path2lua)) {
 		await discardWorkspaceDirtyPath(storage, root, asset.source_path);
 	}
-	const statePath = buildWorkspaceStateFilePath(root);
+	const statePath = joinWorkspacePaths(root, WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE);
 	const stateKey = buildWorkspaceStorageKey(root, statePath);
 	storage.removeItem(stateKey);
-	await deleteWorkspaceFile(statePath);
+	await deleteWorkspaceServerFile(statePath);
 }
 
 async function clearWorkspaceDirtyFiles(runtime: Runtime, cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
@@ -135,7 +137,7 @@ async function clearWorkspaceDirtyFiles(runtime: Runtime, cart: LuaSourceRegistr
 	for (const dirtyPath of scratchPaths) {
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 		storage.removeItem(storageKey);
-		await deleteWorkspaceFile(dirtyPath);
+		await deleteWorkspaceServerFile(dirtyPath);
 	}
 }
 

@@ -378,12 +378,7 @@ public:
 		m_size += count;
 	}
 
-	template <typename T>
-	void emplace_back(T&& value) {
-		push_back(static_cast<Value>(std::forward<T>(value)));
-	}
-
-	void insert(iterator position, Value value) {
+		void insert(iterator position, Value value) {
 		if (position.position() == iterator::Position::Begin) {
 			prepend(value);
 			return;
@@ -853,12 +848,9 @@ public:
 	Table* createTable(int arraySize = 0, int hashSize = 0);
 	Closure* createRootClosure(int protoIndex);
 
-	void start(int entryProtoIndex, const std::vector<Value>& args = {});
-	void start(int entryProtoIndex, NativeArgsView args);
-	void call(Closure* closure, const std::vector<Value>& args = {}, int returnCount = 0);
-	void call(Closure* closure, NativeArgsView args, int returnCount = 0);
-	void callExternal(Closure* closure, const std::vector<Value>& args = {});
-	void callExternal(Closure* closure, NativeArgsView args);
+	void start(int entryProtoIndex, NativeArgsView args = {});
+	void call(Closure* closure, NativeArgsView args = {}, int returnCount = 0);
+	void callExternal(Closure* closure, NativeArgsView args = {});
 	NativeResults* swapExternalReturnSink(NativeResults* sink);
 	CpuRuntimeState captureRuntimeState(const std::unordered_map<std::string, Value>& moduleCache) const;
 	void restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<std::string, Value>& moduleCache);
@@ -878,8 +870,8 @@ public:
 	void unwindToDepth(int targetDepth);
 	void step();
 	void collectHeap();
-	void suspendGc() { m_heap.suspendCollection(); }
-	void resumeGc() { m_heap.resumeCollection(); }
+	void suspendGc();
+	void resumeGc();
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
 	bool hasFrames() const { return !m_frames.empty(); }
@@ -908,8 +900,6 @@ private:
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	void pushFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
-	void pushFrame(Closure* closure, const std::vector<Value>& args,
-		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	Closure* staticClosure(int protoIndex);
 	Closure* createTrackedClosure(int protoIndex, size_t upvalueCount);
 	Closure* createClosure(CallFrame& frame, int protoIndex);
@@ -917,7 +907,6 @@ private:
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
 	const Value& readUpvalue(Upvalue* upvalue);
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
-	void captureLastReturnValues(const Value* values, int count);
 	void writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount);
 	void setRegister(CallFrame& frame, int index, Value value);
 	Value* ensureRegisterCapacity(CallFrame& frame, int index);

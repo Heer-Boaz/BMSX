@@ -533,24 +533,24 @@ DISPATCH_LABEL(RET) {
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();
 	if (finished->captureReturns) {
-		if (m_externalReturnSink) {
-			m_externalReturnSink->clear();
-			m_externalReturnSink->append(results, static_cast<size_t>(count));
-		} else {
-			captureLastReturnValues(results, count);
-		}
+			if (m_externalReturnSink) {
+				m_externalReturnSink->clear();
+				m_externalReturnSink->append(results, static_cast<size_t>(count));
+			} else {
+				lastReturnValues.assign(results, results + count);
+			}
 		m_stackTop = finished->varargBase;
 		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));
 		DISPATCH_CONTINUE();
 	}
 	if (m_frames.empty()) {
-		if (m_externalReturnSink) {
-			m_externalReturnSink->clear();
-			m_externalReturnSink->append(results, static_cast<size_t>(count));
-		} else {
-			captureLastReturnValues(results, count);
-		}
+			if (m_externalReturnSink) {
+				m_externalReturnSink->clear();
+				m_externalReturnSink->append(results, static_cast<size_t>(count));
+			} else {
+				lastReturnValues.assign(results, results + count);
+			}
 		m_stackTop = finished->varargBase;
 		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));

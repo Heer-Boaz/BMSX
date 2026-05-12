@@ -1,5 +1,5 @@
 import { utf8ByteLength, utf8CodepointCount } from '../../common/utf8';
-import { addTrackedLuaHeapBytes, enforceLuaHeapBudget, replaceTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
+import { addTrackedLuaHeapBytes, enforceLuaHeapBudget } from '../memory/lua_heap_usage';
 
 export type StringId = number;
 
@@ -23,15 +23,7 @@ export class StringPool {
 
 	public constructor(private readonly trackLuaHeap: boolean = false) {}
 
-	public intern(text: string): StringId {
-		return this.internWithOwnership(text, this.trackLuaHeap);
-	}
-
-	public internRom(text: string): StringId {
-		return this.internWithOwnership(text, false);
-	}
-
-	private internWithOwnership(text: string, tracked: boolean): StringId {
+	public intern(text: string, tracked: boolean = this.trackLuaHeap): StringId {
 		const existing = this.byText.get(text);
 		if (existing !== undefined) {
 			if (tracked && this.trackedByteLengths[existing] === 0) {
@@ -99,7 +91,7 @@ export class StringPool {
 			}
 		}
 		if (this.trackLuaHeap) {
-			replaceTrackedLuaHeapBytes(previousBytes, this.trackedBytes);
+			addTrackedLuaHeapBytes(this.trackedBytes - previousBytes);
 			enforceLuaHeapBudget();
 		}
 	}

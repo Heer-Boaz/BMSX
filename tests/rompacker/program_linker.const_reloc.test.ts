@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { splitText } from '../../src/bmsx/common/text_lines';
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
-import { CPU, OpCode, RunResult, Table, asStringId, createNativeFunction, valueIsString, valueString, type Proto } from '../../src/bmsx/machine/cpu/cpu';
+import { CPU, OpCode, RunResult, StringValue, Table, asStringId, createNativeFunction, valueIsString, type Proto } from '../../src/bmsx/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction, writeInstructionWord } from '../../src/bmsx/machine/cpu/instruction_format';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
 import { buildProgramBootHeader, inflateProgram, type ProgramImage, type ProgramConstReloc, type ProgramSymbolsImage } from '../../src/bmsx/machine/program/loader';
@@ -109,14 +109,12 @@ test('ProgramImage exposes text and rodata as ROM sections', () => {
 
 function makeProgramSymbols(protoId: string, instructionCount: number): ProgramSymbolsImage {
 	return {
-		metadata: {
-			debugRanges: new Array(instructionCount).fill(null),
-			protoIds: [protoId],
-			localSlotsByProto: [[]],
-			upvalueNamesByProto: [[]],
-			globalNames: [],
-			systemGlobalNames: [],
-		},
+		debugRanges: new Array(instructionCount).fill(null),
+		protoIds: [protoId],
+		localSlotsByProto: [[]],
+		upvalueNamesByProto: [[]],
+		globalNames: [],
+		systemGlobalNames: [],
 	};
 }
 
@@ -453,6 +451,27 @@ test('ProgramCompiler emits module export slot stores from module returns', () =
 	assert.equal(entryOps.includes(OpCode.GETFIELD), false);
 });
 
+test('ProgramCompiler canonicalizes raw module source paths at the API boundary', () => {
+	const entrySource = [
+		'local room<const> = require("room/index")',
+		'return room.value',
+	].join('\n');
+	const moduleSource = 'return { value = 7 }';
+	const compiled = compileLuaChunkToProgram(
+		parseChunk(entrySource, 'cart.lua'),
+		[{
+			path: 'src/carts/pietious/room/index.lua',
+			chunk: parseChunk(moduleSource, 'src/carts/pietious/room/index.lua'),
+			source: moduleSource,
+		}],
+		{ entrySource },
+	);
+
+	assert.equal(compiled.moduleProtoMap.has('room/index'), true);
+	assert.equal(compiled.moduleProtoMap.has('src/carts/pietious/room/index.lua'), false);
+	assert.ok(compiled.metadata.protoIds.some(id => id.includes('module:room/index')));
+});
+
 test('flattened module export slots stay in sync with runtime require results', () => {
 	const moduleSource = [
 		'local constants<const> = {}',
@@ -484,14 +503,14 @@ test('flattened module export slots stay in sync with runtime require results', 
 		const value = cpu.lastReturnValues[0];
 		out.push(value !== undefined ? value : null);
 	});
-	cpu.setGlobalByKey(valueString(cpu.stringPool.intern('require')), requireFn);
+	cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('require')), requireFn);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.equal(cpu.lastReturnValues[0], 8);
 	const room = cpu.lastReturnValues[1];
 	assert.ok(room instanceof Table);
-	assert.equal(room.getStringKey(valueString(cpu.stringPool.intern('tile_size'))), 8);
-	assert.equal(cpu.getGlobalByKey(valueString(cpu.stringPool.intern('constants__room__tile_size'))), 8);
+	assert.equal(room.getStringKey(StringValue.get(cpu.stringPool.intern('tile_size'))), 8);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('constants__room__tile_size'))), 8);
 });
 
 test('flattened module export slots survive program append swaps', () => {
@@ -523,10 +542,10 @@ test('flattened module export slots survive program append swaps', () => {
 		const value = cpu.lastReturnValues[0];
 		out.push(value !== undefined ? value : null);
 	});
-	cpu.setGlobalByKey(valueString(cpu.stringPool.intern('require')), requireFn);
+	cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('require')), requireFn);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	const slotKey = valueString(cpu.stringPool.intern('constants__room__tile_size'));
+	const slotKey = StringValue.get(cpu.stringPool.intern('constants__room__tile_size'));
 	assert.equal(cpu.getGlobalByKey(slotKey), 8);
 
 	const consoleSource = 'return 1';

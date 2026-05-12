@@ -1,8 +1,7 @@
 #include "render/vdp/surfaces.h"
 
-#include "machine/bus/io.h"
-#include "render/vdp/framebuffer.h"
-#include "render/vdp/texture_transfer.h"
+#include "machine/devices/vdp/contracts.h"
+#include "machine/devices/vdp/device_output.h"
 #include "rompack/format.h"
 #include <string>
 
@@ -17,48 +16,21 @@ const char* resolveVdpSurfaceTextureKey(uint32_t surfaceId) {
 		case VDP_RD_SURFACE_FRAMEBUFFER: return FRAMEBUFFER_RENDER_TEXTURE_KEY;
 		default: break;
 	}
-	throw BMSX_RUNTIME_ERROR("[VDP] unknown surface " + std::to_string(surfaceId) + ".");
+	throw BMSX_RUNTIME_ERROR("[VDPSurfaces] unknown surface " + std::to_string(surfaceId) + ".");
 }
 
 } // namespace
 
-const VDP::VramSlot& resolveVdpHostSurfaceSlot(const VDP::VdpHostOutput& output, uint32_t surfaceId) {
-	for (const auto& slot : *output.surfaceUploadSlots) {
-		if (slot.surfaceId == surfaceId) {
-			return slot;
-		}
-	}
-	throw BMSX_RUNTIME_ERROR("[VDP] surface " + std::to_string(surfaceId) + " is not registered for host output.");
-}
-
-VdpRenderSurfaceInfo resolveVdpRenderSurface(const VDP::VdpHostOutput& output, uint32_t surfaceId) {
-	const VDP::VramSlot& slot = resolveVdpHostSurfaceSlot(output, surfaceId);
+VdpRenderSurfaceInfo resolveVdpRenderSurfaceForUpload(const VdpSurfaceUpload& upload) {
 	return VdpRenderSurfaceInfo{
-		resolveVdpSurfaceTextureKey(surfaceId),
-		slot.surfaceWidth,
-		slot.surfaceHeight,
+		resolveVdpSurfaceTextureKey(upload.surfaceId),
+		upload.surfaceWidth,
+		upload.surfaceHeight,
 	};
-}
-
-u32 resolveVdpSurfaceSlotBinding(uint32_t surfaceId) {
-	switch (surfaceId) {
-		case VDP_RD_SURFACE_PRIMARY: return VDP_SLOT_PRIMARY;
-		case VDP_RD_SURFACE_SECONDARY: return VDP_SLOT_SECONDARY;
-		case VDP_RD_SURFACE_SYSTEM: return VDP_SLOT_SYSTEM;
-		default: break;
-	}
-	throw BMSX_RUNTIME_ERROR("[VDP] surface " + std::to_string(surfaceId) + " cannot be sampled by the GLES2 slot blitter.");
 }
 
 bool isVdpFrameBufferSurface(uint32_t surfaceId) {
 	return surfaceId == VDP_RD_SURFACE_FRAMEBUFFER;
-}
-
-TextureHandle getVdpRenderSurfaceTexture(uint32_t surfaceId) {
-	if (isVdpFrameBufferSurface(surfaceId)) {
-		return vdpRenderFrameBufferTexture();
-	}
-	return vdpTextureByUri(resolveVdpSurfaceTextureKey(surfaceId));
 }
 
 } // namespace bmsx

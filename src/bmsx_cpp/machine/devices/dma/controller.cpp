@@ -44,13 +44,8 @@ bool DmaController::hasPendingVdpSubmit() const {
 	return false;
 }
 
-bool DmaController::hasPendingIsoTransfer() const {
-	const auto& state = m_channels[static_cast<int>(Channel::Iso)];
-	return state.active.has_value() || state.queueHead != state.queue.size();
-}
-
-bool DmaController::hasPendingBulkTransfer() const {
-	const auto& state = m_channels[static_cast<int>(Channel::Bulk)];
+bool DmaController::hasPendingTransfer(Channel channel) const {
+	const auto& state = m_channels[static_cast<int>(channel)];
 	return state.active.has_value() || state.queueHead != state.queue.size();
 }
 
@@ -75,7 +70,7 @@ void DmaController::accrueCycles(int cycles, int64_t nowCycles) {
 }
 
 void DmaController::onService(int64_t nowCycles) {
-	if (!hasPendingIsoTransfer() && !hasPendingBulkTransfer()) {
+	if (!hasPendingTransfer(Channel::Iso) && !hasPendingTransfer(Channel::Bulk)) {
 		m_scheduler.cancelDeviceService(DeviceServiceDma);
 		return;
 	}
@@ -118,7 +113,7 @@ void DmaController::enqueueImageCopy(const ImageCopyPlan& plan, std::vector<uint
 	job.pixels = std::move(pixels);
 	job.row = 0;
 	job.rowOffset = 0;
-	job.vramTarget = m_memory.isVramRange(plan.baseAddr, plan.writeLen > 0 ? plan.writeLen : 1);
+	job.vramTarget = isVramMappedRange(plan.baseAddr, plan.writeLen > 0 ? plan.writeLen : 1);
 	job.written = 0;
 	job.clipped = plan.clipped;
 	job.error = false;
@@ -202,7 +197,7 @@ uint32_t DmaController::processJob(DmaJob& job, uint32_t budget) {
 			job.written += chunk;
 			return chunk;
 		}
-			if (m_memory.isVramRange(job.dst, 1)) {
+			if (isVramMappedRange(job.dst, 1)) {
 				chunk &= ~3u;
 				if (chunk == 0) {
 					return 0;
@@ -400,8 +395,8 @@ void DmaController::accrueChannel(Channel channel, int64_t bytesPerSec, int64_t&
 }
 
 void DmaController::scheduleNextService(int64_t nowCycles) {
-	const bool pendingIso = hasPendingIsoTransfer();
-	const bool pendingBulk = hasPendingBulkTransfer();
+	const bool pendingIso = hasPendingTransfer(Channel::Iso);
+	const bool pendingBulk = hasPendingTransfer(Channel::Bulk);
 	if (!pendingIso && !pendingBulk) {
 		m_scheduler.cancelDeviceService(DeviceServiceDma);
 		return;

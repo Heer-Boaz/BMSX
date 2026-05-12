@@ -1,7 +1,6 @@
 #pragma once
 
 #include "machine/cpu/cpu.h"
-#include "render/runtime_state.h"
 #include "machine/runtime/save_machine_state.h"
 
 namespace bmsx {
@@ -11,7 +10,6 @@ class Runtime;
 struct RuntimeSaveState {
 	RuntimeSaveMachineState machineState;
 	CpuRuntimeState cpuState;
-	RuntimeRenderState renderState;
 	bool systemProgramActive = false;
 	bool luaInitialized = false;
 	bool luaRuntimeFailed = false;

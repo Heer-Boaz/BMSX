@@ -2,7 +2,7 @@ import { DEFAULT_GEO_WORK_UNITS_PER_SEC, type MachineManifest } from '../rompack
 import { DEFAULT_UFPS_SCALED } from '../machine/runtime/timing/constants';
 
 export const SYSTEM_ROM_NAME = 'bmsx-bios';
-export const SYSTEM_BOOT_ENTRY_PATH = 'bios/bootrom';
+export const SYSTEM_BOOT_ENTRY_PATH = 'bios/bootrom.lua';
 
 export const SYSTEM_MACHINE_MANIFEST: MachineManifest = {
 	render_size: {

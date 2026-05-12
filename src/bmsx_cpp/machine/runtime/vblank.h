@@ -30,7 +30,6 @@ private:
 	void scheduleCurrentFrameTimers(Runtime& runtime);
 	void setVblankStatus(Runtime& runtime, bool active);
 	void enterVblank(Runtime& runtime);
-	void commitFrameOnVblankEdge(Runtime& runtime);
 	void completeTickIfPending(Runtime& runtime, FrameState& frameState, uint64_t vblankSequence);
 
 	uint64_t m_vblankSequence = 0;

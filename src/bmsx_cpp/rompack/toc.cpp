@@ -13,13 +13,6 @@ std::optional<i32> optionalI32FromU32(u32 value) {
 	return static_cast<i32>(value);
 }
 
-std::optional<i64> optionalI64FromU64(u64 value) {
-	if (value == 0) {
-		return std::nullopt;
-	}
-	return static_cast<i64>(value);
-}
-
 std::optional<std::string> decodeTocString(const u8* table, size_t tableSize, u32 offset, u32 length) {
 	if (offset == ROM_TOC_INVALID_U32 || length == 0) {
 		return std::nullopt;
@@ -180,7 +173,10 @@ RomTocPayload decodeRomToc(const u8* data, size_t size) {
 		romInfo.collisionBinEnd = optionalI32FromU32(readLE32(entry + 76));
 		romInfo.sourcePath = decodeTocString(stringTable, stringTableSize, sourceOffset, sourceLength);
 		romInfo.normalizedSourcePath = decodeTocString(stringTable, stringTableSize, normalizedOffset, normalizedLength);
-		romInfo.updateTimestamp = optionalI64FromU64((static_cast<u64>(updateHi) << 32) | updateLo);
+		const u64 updateTimestamp = (static_cast<u64>(updateHi) << 32) | updateLo;
+		if (typeId == ROM_TOC_ASSET_TYPE_LUA || updateTimestamp != 0u) {
+			romInfo.updateTimestamp = static_cast<i64>(updateTimestamp);
+		}
 
 		payload.entries.push_back(RomSourceEntry{*assetId, std::move(romInfo)});
 	}

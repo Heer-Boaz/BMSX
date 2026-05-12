@@ -4,11 +4,10 @@ import { scheduleIdeOnce } from '../../common/background_tasks';
 import {
 	WORKSPACE_FILE_ENDPOINT,
 	WORKSPACE_MARKER_FILE,
+	WORKSPACE_METADATA_DIR,
 	WORKSPACE_DIRTY_DIR,
-	buildWorkspaceDirtyDir,
+	WORKSPACE_STATE_FILE,
 	buildWorkspaceDirtyEntryPath,
-	buildWorkspaceMetadataPath,
-	buildWorkspaceStateFilePath,
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
 } from '../../workspace/files';
@@ -22,6 +21,8 @@ let serverBackendFailureNotified = false;
 let localBackend: LocalWorkspaceBackend = null;
 let serverRetryScheduled = false;
 let serverRetryHandle: TimerHandle = null;
+// disable-next-line legacy_sentinel_string_pattern -- removes the obsolete local-only readiness marker from older workspace storage.
+const LEGACY_LOCAL_WORKSPACE_MARKER = '__marker__';
 
 function resetWorkspaceBackends(): void {
 	serverBackend = null;
@@ -50,42 +51,25 @@ function handleServerBackendFailure(error: unknown): void {
 	}
 }
 
-async function fetchOrThrow(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-	if (typeof fetch !== 'function') {
-		throw new Error('[WorkspaceStorage] Fetch API is not available in this environment.');
-	}
-	return await fetch(input, init);
-}
-
-async function safeReadText(response: Response): Promise<string> {
-	try {
-		return await response.text();
-	} catch {
-		return `${response.status} ${response.statusText}`;
-	}
-}
-
 class LocalWorkspaceBackend {
 	constructor(private readonly projectRootPath: string, private readonly storage: StorageService) { }
 
-	private makeKey(relativePath: string): string {
-		return buildWorkspaceStorageKey(this.projectRootPath, relativePath);
-	}
-
 	async ensureReady(): Promise<void> {
-		this.storage.setItem(this.makeKey('__marker__'), 'ready');
+		const markerPath = joinWorkspacePaths(this.projectRootPath, WORKSPACE_METADATA_DIR, WORKSPACE_MARKER_FILE);
+		this.storage.removeItem(buildWorkspaceStorageKey(this.projectRootPath, LEGACY_LOCAL_WORKSPACE_MARKER));
+		this.storage.setItem(buildWorkspaceStorageKey(this.projectRootPath, markerPath), '');
 	}
 
 	async readFile(relativePath: string): Promise<string> {
-		return this.storage.getItem(this.makeKey(relativePath));
+		return this.storage.getItem(buildWorkspaceStorageKey(this.projectRootPath, relativePath));
 	}
 
 	async writeFile(relativePath: string, contents: string): Promise<void> {
-		this.storage.setItem(this.makeKey(relativePath), contents);
+		this.storage.setItem(buildWorkspaceStorageKey(this.projectRootPath, relativePath), contents);
 	}
 
 	async deleteFile(relativePath: string): Promise<void> {
-		this.storage.removeItem(this.makeKey(relativePath));
+		this.storage.removeItem(buildWorkspaceStorageKey(this.projectRootPath, relativePath));
 	}
 }
 
@@ -93,13 +77,12 @@ class ServerWorkspaceBackend {
 	constructor(private readonly projectRootPath: string) { }
 
 	async ensureReady(): Promise<void> {
-		const metadataDir = buildWorkspaceMetadataPath(this.projectRootPath);
-		const markerPath = joinWorkspacePaths(metadataDir, WORKSPACE_MARKER_FILE);
+		const markerPath = joinWorkspacePaths(this.projectRootPath, WORKSPACE_METADATA_DIR, WORKSPACE_MARKER_FILE);
 		await this.writeFile(markerPath, '');
 	}
 
 	async readFile(relativePath: string): Promise<string> {
-		const response = await fetchOrThrow(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
+		const response = await fetch(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
 			method: 'GET',
 			cache: 'no-store',
 		});
@@ -107,7 +90,7 @@ class ServerWorkspaceBackend {
 			return null;
 		}
 		if (!response.ok) {
-			const detail = await safeReadText(response);
+			const detail = await response.text();
 			throw new Error(`[WorkspaceStorage] Failed to read file '${relativePath}': ${detail}`);
 		}
 		const payload = await response.json();
@@ -118,29 +101,29 @@ class ServerWorkspaceBackend {
 	}
 
 	async writeFile(relativePath: string, contents: string): Promise<void> {
-		const response = await fetchOrThrow(WORKSPACE_FILE_ENDPOINT, {
+		const response = await fetch(WORKSPACE_FILE_ENDPOINT, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ path: relativePath, contents }),
 		});
 		if (!response.ok) {
-			const detail = await safeReadText(response);
+			const detail = await response.text();
 			throw new Error(`[WorkspaceStorage] Failed to write file '${relativePath}': ${detail}`);
 		}
 	}
 
 	async deleteFile(relativePath: string): Promise<void> {
-		const response = await fetchOrThrow(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
+		const response = await fetch(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
 			method: 'DELETE',
 		});
 		if (!response.ok && response.status !== 404) {
-			const detail = await safeReadText(response);
+			const detail = await response.text();
 			throw new Error(`[WorkspaceStorage] Failed to delete file '${relativePath}': ${detail}`);
 		}
 	}
 }
 
-async function readWorkspaceFile(relativePath: string): Promise<string> {
+export async function readWorkspaceFile(relativePath: string): Promise<string> {
 	if (serverBackendAvailable && serverBackend) {
 		try {
 			const result = await serverBackend.readFile(relativePath);
@@ -160,7 +143,7 @@ async function readWorkspaceFile(relativePath: string): Promise<string> {
 	return await localBackend.readFile(relativePath);
 }
 
-async function writeWorkspaceFile(relativePath: string, contents: string): Promise<void> {
+export async function writeWorkspaceFile(relativePath: string, contents: string): Promise<void> {
 	if (localBackend) {
 		await localBackend.writeFile(relativePath, contents);
 	}
@@ -173,7 +156,7 @@ async function writeWorkspaceFile(relativePath: string, contents: string): Promi
 	}
 }
 
-async function deleteWorkspaceFileFromBackends(relativePath: string): Promise<void> {
+export async function deleteWorkspaceFile(relativePath: string): Promise<void> {
 	if (localBackend) {
 		await localBackend.deleteFile(relativePath);
 	}
@@ -197,9 +180,9 @@ export async function configureWorkspaceStorage(projectRootPath: string): Promis
 		return;
 	}
 	resetWorkspaceBackends();
-	const metadataDir = buildWorkspaceMetadataPath(projectRootPath);
-	const dirtyDir = buildWorkspaceDirtyDir(projectRootPath);
-	const stateFile = buildWorkspaceStateFilePath(projectRootPath);
+	const metadataDir = joinWorkspacePaths(projectRootPath, WORKSPACE_METADATA_DIR);
+	const dirtyDir = joinWorkspacePaths(projectRootPath, WORKSPACE_METADATA_DIR, WORKSPACE_DIRTY_DIR);
+	const stateFile = joinWorkspacePaths(projectRootPath, WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE);
 	storagePaths = {
 		projectRootPath,
 		metadataDir,
@@ -263,18 +246,6 @@ export async function writeWorkspaceStateFile(contents: string): Promise<void> {
 	await writeWorkspaceFile(storagePaths.stateFile, contents);
 }
 
-export async function readDirtyBuffer(relativePath: string): Promise<string> {
-	return await readWorkspaceFile(relativePath);
-}
-
-export async function writeDirtyBuffer(relativePath: string, contents: string): Promise<void> {
-	await writeWorkspaceFile(relativePath, contents);
-}
-
-export async function deleteDirtyBuffer(relativePath: string): Promise<void> {
-	await deleteWorkspaceFileFromBackends(relativePath);
-}
-
 export function scheduleWorkspaceServerRetry(delayMs: number): void {
 	if (serverBackendAvailable || serverRetryScheduled || !storagePaths) {
 		return;
@@ -298,6 +269,7 @@ async function tryReconnectServerBackend(): Promise<void> {
 		serverBackendAvailable = true;
 		serverBackendFailureNotified = false;
 		workspaceState.serverConnected = true;
-	} catch {
+	} catch (error) {
+		handleServerBackendFailure(error);
 	}
 }

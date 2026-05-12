@@ -9,7 +9,6 @@
 
 #include "backend/backend.h"
 #include "shared/submissions.h"
-#include "shared/queues.h"
 #include "common/registry.h"
 #include "render/vdp/transform.h"
 #include "common/subscription.h"
@@ -25,6 +24,8 @@ class GameViewHost;
 class RenderPassLibrary;
 class RenderGraphRuntime;
 class LightingSystem;
+class VdpFrameBufferTextures;
+class VdpSlotTextures;
 
 /* ============================================================================
  * Atmosphere parameters (fog, etc.)
@@ -105,6 +106,11 @@ public:
 	// Textures map
 	// ─────────────────────────────────────────────────────────────────────────
 	std::unordered_map<std::string, TextureHandle> textures;
+	void setVdpTextureState(std::unique_ptr<VdpFrameBufferTextures> frameBufferTextures, std::unique_ptr<VdpSlotTextures> slotTextures);
+	VdpFrameBufferTextures& vdpFrameBufferTextures();
+	const VdpFrameBufferTextures& vdpFrameBufferTextures() const;
+	VdpSlotTextures& vdpSlotTextures();
+	const VdpSlotTextures& vdpSlotTextures() const;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Video snapshot fields (owned by VDP, consumed by renderer)
@@ -112,6 +118,7 @@ public:
 	bool skyboxRenderReady = false;
 	std::array<f32, SKYBOX_FACE_COUNT * 4> skyboxFaceUvRects{};
 	std::array<i32, SKYBOX_FACE_COUNT> skyboxFaceTextpageBindings{};
+	std::array<u32, SKYBOX_FACE_COUNT> skyboxFaceSurfaceIds{};
 	std::array<i32, SKYBOX_FACE_COUNT * 2> skyboxFaceSizes{};
 	VdpTransformSnapshot vdpTransform{};
 	struct VdpBillboardRenderEntry {
@@ -119,6 +126,7 @@ public:
 		f32 size = 0.0f;
 		u32 color = 0u;
 		u32 slot = 0u;
+		u32 surfaceId = 0u;
 		u32 u = 0u;
 		u32 v = 0u;
 		u32 w = 0u;
@@ -220,6 +228,8 @@ private:
 	std::unique_ptr<RenderPassLibrary> m_pipelineRegistry;
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;
 	std::unique_ptr<LightingSystem> m_lightingSystem;
+	std::unique_ptr<VdpFrameBufferTextures> m_vdpFrameBufferTextures;
+	std::unique_ptr<VdpSlotTextures> m_vdpSlotTextures;
 
 	i32 m_activeTexUnit = -1;
 

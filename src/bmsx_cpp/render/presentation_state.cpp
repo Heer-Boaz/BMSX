@@ -3,8 +3,9 @@
 #include "core/rom_boot_manager.h"
 #include "common/time.h"
 #include "machine/runtime/runtime.h"
-#include "render/shared/queues.h"
 #include "render/test_pattern.h"
+#include "render/vdp/framebuffer.h"
+#include "render/vdp/slot_textures.h"
 #include "render/vdp/view_snapshot.h"
 #include <cstdio>
 #include <cstdlib>
@@ -152,13 +153,6 @@ bool RenderPresentationState::consumePresentation(RenderPresentation& outPresent
 	outPresentation.mode = m_presentationMode;
 	outPresentation.commitFrame = m_presentationCommitFrame;
 
-	if (outPresentation.mode == GameView::PresentationMode::Completed && outPresentation.commitFrame) {
-		RenderQueues::prepareCompletedRenderQueues();
-	} else if (outPresentation.mode == GameView::PresentationMode::Completed) {
-		RenderQueues::prepareHeldRenderQueues();
-	} else {
-		RenderQueues::preparePartialRenderQueues();
-	}
 	clearPresentation();
 	return true;
 }
@@ -194,14 +188,13 @@ bool RenderPresentationState::render(ConsoleCore& console, Runtime& runtime, boo
 			? false
 			: m_presentationScratch.commitFrame;
 		recordPresentation(presentMode, commitFrame, pausedPresent);
-		if (pausedPresent) {
-			RenderQueues::prepareHeldRenderQueues();
-		}
 		if (!console.romLoaded()) {
 			renderTestPattern(*console.m_view, console.m_total_time);
 		}
 
-		commitVdpViewSnapshot(*console.m_view, runtime.machine.vdp);
+		runtime.machine.vdp.drainFrameBufferPresentation(console.m_view->vdpFrameBufferTextures());
+		runtime.machine.vdp.drainSurfaceUploads(console.m_view->vdpSlotTextures());
+		commitVdpViewSnapshot(*console.m_view, runtime.machine.vdp.readDeviceOutput());
 		console.m_view->configurePresentation(presentMode, commitFrame);
 		console.m_view->drawgame();
 	}

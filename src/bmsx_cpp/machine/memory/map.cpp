@@ -4,6 +4,37 @@
 
 namespace bmsx {
 
+namespace {
+
+enum class VramRangeMatch {
+	Overlap,
+	Contiguous,
+};
+
+bool vramRegionMatches(size_t start, size_t end, uint32_t base, uint32_t size, VramRangeMatch match) {
+	const size_t regionStart = static_cast<size_t>(base);
+	const size_t regionEnd = regionStart + static_cast<size_t>(size);
+	if (match == VramRangeMatch::Contiguous) {
+		return start >= regionStart && end <= regionEnd;
+	}
+	return start < regionEnd && end > regionStart;
+}
+
+bool vramMappedRangeMatches(uint32_t addr, size_t length, VramRangeMatch match) {
+	if (length == 0) {
+		return false;
+	}
+	const size_t start = static_cast<size_t>(addr);
+	const size_t end = start + length;
+	return vramRegionMatches(start, end, VRAM_STAGING_BASE, VRAM_STAGING_SIZE, match)
+		|| vramRegionMatches(start, end, VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE, match)
+		|| vramRegionMatches(start, end, VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE, match)
+		|| vramRegionMatches(start, end, VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE, match)
+		|| vramRegionMatches(start, end, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE, match);
+}
+
+} // namespace
+
 uint32_t RAM_SIZE = DEFAULT_RAM_SIZE;
 uint32_t RAM_END = RAM_BASE + DEFAULT_RAM_SIZE;
 uint32_t VRAM_IMAGE_SLOT_SIZE = DEFAULT_VRAM_IMAGE_SLOT_SIZE;
@@ -18,7 +49,7 @@ uint32_t VRAM_SYSTEM_SLOT_SIZE = 0;
 uint32_t VRAM_PRIMARY_SLOT_SIZE = 0;
 uint32_t VRAM_SECONDARY_SLOT_SIZE = 0;
 
-static void recomputeMemoryLayout(const MemoryMapConfig& config) {
+void configureMemoryMap(const MemoryMapConfig& config) {
 	RAM_SIZE = config.ramBytes;
 	RAM_END = RAM_BASE + RAM_SIZE;
 	VRAM_IMAGE_SLOT_SIZE = config.slotBytes;
@@ -35,51 +66,19 @@ static void recomputeMemoryLayout(const MemoryMapConfig& config) {
 	VRAM_SECONDARY_SLOT_SIZE = VRAM_IMAGE_SLOT_SIZE;
 }
 
-void configureMemoryMap(const MemoryMapConfig& config) {
-	recomputeMemoryLayout(config);
-}
-
 bool isVramMappedRange(uint32_t addr, size_t length) {
-	if (length == 0) {
-		return false;
-	}
-	const size_t start = static_cast<size_t>(addr);
-	const size_t end = start + length;
-	const auto overlaps = [addr, end](uint32_t base, uint32_t size) -> bool {
-		const size_t regionStart = static_cast<size_t>(base);
-		const size_t regionEnd = regionStart + static_cast<size_t>(size);
-		return static_cast<size_t>(addr) < regionEnd && end > regionStart;
-	};
-	return overlaps(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
-		|| overlaps(VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
-		|| overlaps(VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
-		|| overlaps(VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
-		|| overlaps(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
+	return vramMappedRangeMatches(addr, length, VramRangeMatch::Overlap);
 }
 
 bool isVramMappedContiguousRange(uint32_t addr, size_t length) {
-	if (length == 0) {
-		return false;
-	}
-	const size_t start = static_cast<size_t>(addr);
-	const size_t end = start + length;
-	const auto contained = [start, end](uint32_t base, uint32_t size) -> bool {
-		const size_t regionStart = static_cast<size_t>(base);
-		const size_t regionEnd = regionStart + static_cast<size_t>(size);
-		return start >= regionStart && end <= regionEnd;
-	};
-	return contained(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
-		|| contained(VRAM_SYSTEM_SLOT_BASE, VRAM_SYSTEM_SLOT_SIZE)
-		|| contained(VRAM_PRIMARY_SLOT_BASE, VRAM_PRIMARY_SLOT_SIZE)
-		|| contained(VRAM_SECONDARY_SLOT_BASE, VRAM_SECONDARY_SLOT_SIZE)
-		|| contained(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
+	return vramMappedRangeMatches(addr, length, VramRangeMatch::Contiguous);
 }
 
 struct MemoryMapInitializer {
 	MemoryMapInitializer() {
 		MemoryMapConfig config;
 		config.ramBytes = DEFAULT_RAM_SIZE;
-		recomputeMemoryLayout(config);
+		configureMemoryMap(config);
 	}
 };
 

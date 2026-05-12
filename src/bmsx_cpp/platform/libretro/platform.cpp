@@ -284,13 +284,6 @@ void LibretroPlatform::onContextDestroy() {
 #if BMSX_ENABLE_GLES2
 	auto* view = m_console->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
-	if (m_console->hasRuntime()) {
-		auto& vdp = m_console->runtime().machine.vdp;
-		if (!m_render_surfaces_need_refresh) {
-			captureVdpContextState(vdp);
-		}
-		shutdownVdpContextState();
-	}
 	m_console->texmanager()->clear();
 	m_render_surfaces_need_refresh = true;
 	CRTPipeline::shutdownGLES2(backend);
@@ -407,7 +400,9 @@ void LibretroPlatform::setResourceUsageGizmo(bool enabled) {
 }
 
 void LibretroPlatform::requestShutdown() {
-	m_environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
+	if (!m_environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr)) {
+		return;
+	}
 }
 
 void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
@@ -1117,10 +1112,6 @@ void LibretroAudioService::setTiming(double sampleRate) {
 	m_queue_start_samples = 0;
 	m_queue_samples = 0;
 	m_sample_queue.clear();
-	refreshTargetBufferFrames();
-}
-
-void LibretroAudioService::setFrameTimeSec(double) {
 	refreshTargetBufferFrames();
 }
 

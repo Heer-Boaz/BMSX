@@ -11,10 +11,10 @@ import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from './taskgate';
 import { Runtime } from '../machine/runtime/runtime';
 import type { GPUBackend } from '../render/backend/backend';
-import { clearAllQueues } from '../render/shared/queues';
 import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { restoreVdpContextState } from '../render/vdp/context_state';
-import { initializeVdpTextureTransfer } from '../render/vdp/texture_transfer';
+import { VdpFrameBufferTextures } from '../render/vdp/framebuffer';
+import { VdpSlotTextures } from '../render/vdp/slot_textures';
 import { runConsoleHostFrame } from './host_frame';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -142,7 +142,8 @@ export class ConsoleCore {
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;
 		const textureManager = new TextureManager(gpuBackend);
-		initializeVdpTextureTransfer(textureManager, gview);
+		gview.vdpFrameBufferTextures = new VdpFrameBufferTextures(textureManager, gview);
+		gview.vdpSlotTextures = new VdpSlotTextures(textureManager, gview);
 		const pipelineRegistry = new RenderPassLibrary(gpuBackend);
 		pipelineRegistry.registerBuiltin(gpuBackend);
 		gview.pipelineRegistry = pipelineRegistry;
@@ -178,9 +179,8 @@ export class ConsoleCore {
 
 	public async refreshRenderSurfaces(): Promise<void> {
 		this.texmanager.setBackend(this.view.backend);
-		initializeVdpTextureTransfer(this.texmanager, this.view);
 		await this.view.initializeDefaultTextures();
-		restoreVdpContextState(this.runtime.machine.vdp);
+		restoreVdpContextState(this.runtime.machine.vdp, this.view);
 	}
 
 	public async resetRuntime(preserveTextures = false): Promise<void> {
@@ -194,14 +194,13 @@ export class ConsoleCore {
 			this.sndmaster.resetPlaybackState();
 			this.debug_runSingleFrameAndPause = false;
 			runtime.machine.vdp.initializeRegisters();
-			clearAllQueues();
 			clearOverlayFrame();
 
 			runtime.frameScheduler.clearQueuedTime();
 			runtime.screen.clearPresentation();
 			runtime.frameLoop.abandonFrameState();
 			runtime.frameLoop.drawFrameState = null;
-			runtime.cpuExecution.clearHaltUntilIrq();
+				runtime.machine.cpu.clearHaltUntilIrq();
 			runtime.vblank.reset();
 			runtime.overlayRenderer.abandonFrame();
 

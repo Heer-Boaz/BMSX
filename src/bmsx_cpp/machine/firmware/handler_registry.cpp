@@ -17,13 +17,12 @@ Value LuaFunctionRedirectCache::getOrCreate(Runtime& runtime, std::string_view m
 	return it->second.redirect;
 }
 
-void LuaFunctionRedirectCache::clear() {
-	m_byKey.clear();
-}
-
 const LuaFunctionRedirectRecord* LuaFunctionRedirectCache::find(std::string_view key) const {
 	auto it = m_byKey.find(std::string(key));
-	return it == m_byKey.end() ? nullptr : &it->second;
+	if (it == m_byKey.end()) {
+		return nullptr;
+	}
+	return &it->second;
 }
 
 LuaFunctionRedirectRecord& LuaFunctionRedirectCache::createRecord(Runtime& runtime, std::string_view moduleId, std::string key, const std::vector<std::string>& path, Value fn) {

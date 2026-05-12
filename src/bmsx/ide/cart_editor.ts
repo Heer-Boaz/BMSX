@@ -59,7 +59,7 @@ import { storeActiveCodeTabContext } from './workbench/ui/code_tab/activation';
 import { buildDirtyFilePath } from './workbench/workspace/io';
 import { initializeWorkspaceStorage, runWorkspaceAutosaveTick, stopWorkspaceAutosaveLoop } from './workbench/workspace/storage';
 import { workspaceState } from './workbench/workspace/state';
-import { clearWorkspaceCachedSources, getWorkspaceCachedSource } from './workspace/cache';
+import { workspaceSourceCache } from './workspace/cache';
 import { DebuggerUiController, getBreakpointsForChunk } from './workbench/contrib/debugger/controller';
 import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlockingWorkbenchModalInput, hasBlockingWorkbenchModal } from './workbench/contrib/modal/blocking_modal';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
@@ -138,9 +138,13 @@ export function getSourceForChunk(runtime: Runtime, path: string): string {
 		return getTextSnapshot(context.buffer);
 	}
 	const dirtyPath = buildDirtyFilePath(asset.source_path);
-	const cached = getWorkspaceCachedSource(asset.source_path) ?? getWorkspaceCachedSource(dirtyPath);
-	if (cached !== null) {
+	const cached = workspaceSourceCache.get(asset.source_path);
+	if (cached !== undefined) {
 		return cached;
+	}
+	const dirtyCached = workspaceSourceCache.get(dirtyPath);
+	if (dirtyCached !== undefined) {
+		return dirtyCached;
 	}
 	return asset.src;
 }
@@ -363,7 +367,7 @@ class RuntimeCartEditor implements CartEditor {
 			void runWorkspaceAutosaveTick(this.runtime);
 		}
 		workspaceState.autosaveEnabled = false;
-		clearWorkspaceCachedSources();
+		workspaceSourceCache.clear();
 		workspaceState.autosaveSignature = null;
 		initializeWorkspaceStorage(this.runtime, null);
 		editorPointerState.pointerSelecting = false;

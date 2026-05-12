@@ -15,7 +15,7 @@ void FrameLoopState::resetFrameState(Runtime& runtime) {
 	runtime.vblank.abandonTick();
 	runtime.machine.inputController.sampleArmed = false;
 	frameState = FrameState{};
-	runtime.cpuExecution.clearHaltUntilIrq(runtime);
+	runtime.machine.cpu.clearHaltUntilIrq();
 	runtime.frameScheduler.reset();
 	reset();
 	runtime.screen.reset();
@@ -70,7 +70,7 @@ void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 		}
 	} catch (...) {
 		frameState.luaFaulted = true;
-		runtime.cpuExecution.clearHaltUntilIrq(runtime);
+		runtime.machine.cpu.clearHaltUntilIrq();
 		runtime.m_pendingCall = Runtime::PendingCall::None;
 		throw;
 	}

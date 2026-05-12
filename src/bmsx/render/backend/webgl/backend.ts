@@ -2,7 +2,7 @@
 import { color_arr, type TextureSource } from '../../../rompack/format';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
-import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle } from '../backend';
+import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, type SizedArrayBufferView } from '../backend';
 import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
 import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './helpers';
@@ -100,10 +100,10 @@ export class WebGLBackend implements GPUBackend {
 		return handle;
 	}
 
-	updateTextureRegion(handle: WebGLTexture, data: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams): void {
+	updateTextureRegion(handle: WebGLTexture, data: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams, sourceOffset = 0): void {
 		const gl = this.gl;
 		this.bindTexture2DForUpload(handle, desc);
-		gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+		gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data, sourceOffset);
 		this.accountUpload('texture', width * height * 4);
 		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
@@ -219,6 +219,16 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
 	}
 	destroyTexture(handle: WebGLTexture): void {
+		for (let unit = 0; unit < this.boundTex2D.length; unit += 1) {
+			if (this.boundTex2D[unit] === handle) {
+				this.boundTex2D[unit] = null;
+			}
+			if (this.boundTexCube[unit] === handle) {
+				this.boundTexCube[unit] = null;
+			}
+		}
+		this.texInfo.delete(handle);
+		this.texIds.delete(handle);
 		this.gl.deleteTexture(handle);
 	}
 
@@ -254,7 +264,14 @@ export class WebGLBackend implements GPUBackend {
 			return tex;
 	}
 	createDepthTexture(desc: { width: number; height: number }): WebGLTexture {
-		return GLR.glCreateDepthTexture(this.gl, desc.width, desc.height, TEXTURE_UNIT_UPLOAD);
+		const gl = this.gl;
+		const tex = gl.createTexture()!;
+		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
+		gl.bindTexture(gl.TEXTURE_2D, tex);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, desc.width, desc.height, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
+		this.accountUpload('texture', desc.width * desc.height * 2);
+		GLR.glSetTexture2DParams(gl);
+		return tex;
 	}
 	createRenderTarget(color?: WebGLTexture, depth?: WebGLTexture): RenderTargetHandle {
 		const gl = this.gl;
@@ -332,8 +349,8 @@ export class WebGLBackend implements GPUBackend {
 		return { fbo, desc } as PassEncoder & { encoder?: null }; // No encoder in WebGL
 	}
 	endRenderPass(_pass: PassEncoder): void {
-		// No-op in WebGL; unbind if needed
-		this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+		const gl = this.gl;
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	}
 	getCaps() {
 		return {
@@ -342,9 +359,6 @@ export class WebGLBackend implements GPUBackend {
 			supportsInstancing: true,
 			supportsDepthTexture: true,
 		};
-	}
-	transitionTexture(): void {
-		// No-op in WebGL
 	}
 	// --- Pipeline API ---
 	createRenderPassInstance(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle {
@@ -422,36 +436,25 @@ export class WebGLBackend implements GPUBackend {
 			gl.bindBuffer(gl.ARRAY_BUFFER, null);
 			return buf;
 	}
-	updateVertexBuffer(buf: WebGLBuffer, data: ArrayBufferView, dstOffset = 0): void {
+	updateVertexBuffer(buf: WebGLBuffer, data: ArrayBufferView, dstOffset = 0, sourceOffset = 0, elementCount?: number): void {
 		const gl = this.gl;
 		gl.bindBuffer(gl.ARRAY_BUFFER, buf);
 		const current = this.bufferSizes.get(buf) ?? 0;
-		const needed = dstOffset + data.byteLength;
-			if (needed > current) {
-				// Grow buffer with new contents when subData would overflow
-				gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-				this.bufferSizes.set(buf, data.byteLength);
-			} else {
-				gl.bufferSubData(gl.ARRAY_BUFFER, dstOffset, data);
-			}
-			this.accountUpload('vertex', data.byteLength);
-			gl.bindBuffer(gl.ARRAY_BUFFER, null);
+		const sized = data as SizedArrayBufferView;
+		const bytesPerElement = data instanceof DataView ? 1 : sized.BYTES_PER_ELEMENT ?? 1;
+		const availableElements = data instanceof DataView ? data.byteLength : sized.length ?? data.byteLength / bytesPerElement;
+		const uploadElements = elementCount === undefined ? availableElements - sourceOffset : elementCount;
+		const uploadBytes = uploadElements * bytesPerElement;
+		const needed = dstOffset + uploadBytes;
+		if (needed > current) {
+			gl.bufferData(gl.ARRAY_BUFFER, needed, gl.DYNAMIC_DRAW);
+			this.bufferSizes.set(buf, needed);
 		}
+		gl.bufferSubData(gl.ARRAY_BUFFER, dstOffset, data, sourceOffset, uploadElements);
+		this.accountUpload('vertex', uploadBytes);
+		gl.bindBuffer(gl.ARRAY_BUFFER, null);
+	}
 	// moved below with cached variants
-
-	enableVertexAttrib(index: number): void { this.gl.enableVertexAttribArray(index); }
-	disableVertexAttrib(index: number): void { this.gl.disableVertexAttribArray(index); }
-	vertexAttribPointer(index: number, size: number, type: number, normalized: boolean, stride: number, offset: number): void {
-		this.gl.vertexAttribPointer(index, size, type, normalized, stride, offset);
-	}
-	vertexAttribDivisor(index: number, divisor: number): void { this.gl.vertexAttribDivisor(index, divisor); }
-	// moved below with cached variants
-	vertexAttribIPointer(index: number, size: number, type: number, stride: number, offset: number): void {
-		this.gl.vertexAttribIPointer(index, size, type, stride, offset);
-	}
-	vertexAttribI4ui(index: number, x: number, y: number, z: number, w: number): void {
-		this.gl.vertexAttribI4ui(index, x, y, z, w);
-	}
 
 	drawInstanced(_pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void {
 		this.frameStats.drawsInstanced++;
@@ -555,7 +558,8 @@ export class WebGLBackend implements GPUBackend {
 		}
 
 	bindUniformBufferBase(bindingIndex: number, buf: WebGLBuffer): void {
-		this.gl.bindBufferBase(this.gl.UNIFORM_BUFFER, bindingIndex, buf);
+		const gl = this.gl;
+		gl.bindBufferBase(gl.UNIFORM_BUFFER, bindingIndex, buf);
 	}
 
 	// --- Render state helpers ---
@@ -576,8 +580,6 @@ export class WebGLBackend implements GPUBackend {
 		this.gl.bindTexture(this.gl.TEXTURE_CUBE_MAP, tex);
 		this.boundTexCube[unit] = tex;
 	}
-	getError?(): number { return this.gl.getError(); }
-
 	// --- Uniform helpers ---
 	private getCurrentProgramOrThrow(): WebGLProgram {
 		const p = this.currentProgram ?? (this.gl.getParameter(this.gl.CURRENT_PROGRAM) as WebGLProgram);

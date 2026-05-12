@@ -1,5 +1,6 @@
 #include "machine/program/loader.h"
 #include "common/serializer/binencoder.h"
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
@@ -302,14 +303,27 @@ std::string stripLuaExtension(std::string_view candidate) {
 }
 
 std::string toLuaModulePath(std::string_view sourcePath) {
-	static constexpr std::string_view BIOS_SYSTEM_RES_PREFIX = "src/bmsx/res/";
-	static constexpr std::string_view BIOS_RES_PREFIX = "res/";
-	const std::string path = stripLuaExtension(sourcePath);
+	static constexpr std::string_view CART_SOURCE_PREFIX = "src/carts/";
+	static constexpr std::string_view MODULE_PATH_SOURCE_PREFIXES[] = {
+		"src/bmsx/res/",
+		"res/",
+	};
+	std::string path = stripLuaExtension(sourcePath);
+	std::replace(path.begin(), path.end(), '\\', '/');
 	std::string_view modulePath = path;
-	if (startsWith(path, BIOS_SYSTEM_RES_PREFIX)) {
-		modulePath.remove_prefix(BIOS_SYSTEM_RES_PREFIX.size());
-	} else if (startsWith(path, BIOS_RES_PREFIX)) {
-		modulePath.remove_prefix(BIOS_RES_PREFIX.size());
+	if (startsWith(path, CART_SOURCE_PREFIX)) {
+		modulePath.remove_prefix(CART_SOURCE_PREFIX.size());
+		const size_t cartNameEnd = modulePath.find('/');
+		if (cartNameEnd != std::string_view::npos) {
+			modulePath.remove_prefix(cartNameEnd + 1);
+		}
+	} else {
+		for (const std::string_view prefix : MODULE_PATH_SOURCE_PREFIXES) {
+			if (startsWith(path, prefix)) {
+				modulePath.remove_prefix(prefix.size());
+				break;
+			}
+		}
 	}
 	return std::string(modulePath);
 }

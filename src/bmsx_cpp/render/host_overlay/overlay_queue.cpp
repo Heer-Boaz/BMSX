@@ -18,9 +18,8 @@ bool hasPendingOverlayFrame() {
 }
 
 HostOverlayFrame consumeOverlayFrame() {
-	const HostOverlayFrame frame = g_pendingFrame;
 	g_hasPendingFrame = false;
-	return frame;
+	return g_pendingFrame;
 }
 
 void clearOverlayFrame() {

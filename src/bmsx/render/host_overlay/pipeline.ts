@@ -1,6 +1,6 @@
 import type { HostMenuPipelineState, HostOverlayPipelineState } from '../backend/backend';
 import { consoleCore } from '../../core/console';
-import type { Host2DSubmission } from '../shared/queues';
+import type { Host2DSubmission } from '../shared/submissions';
 import { consumeOverlayFrame, hasPendingOverlayFrame } from './overlay_queue';
 
 const EMPTY_HOST_OVERLAY_COMMANDS: Host2DSubmission[] = [];

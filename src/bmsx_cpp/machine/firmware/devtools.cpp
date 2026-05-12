@@ -9,37 +9,21 @@
 namespace bmsx {
 namespace {
 
-template<typename Fn>
-void forEachLuaSource(const RuntimeRomPackage& romPackage, Fn&& fn) {
-	for (const auto& entry : romPackage.lua) {
-		fn(entry.second);
-	}
-}
-
 const LuaSourceAsset* resolveLuaSourceByPath(const RuntimeRomPackage& romPackage, const std::string& path) {
-	const LuaSourceAsset* direct = romPackage.getLua(path);
-	if (direct) {
-		return direct;
-	}
-	forEachLuaSource(romPackage, [&](const LuaSourceAsset& asset) {
-		if (direct || asset.path != path) {
-			return;
-		}
-		direct = &asset;
-	});
-	return direct;
+	return romPackage.getLuaSource(path);
 }
 
 void appendUniqueLuaPaths(const RuntimeRomPackage& romPackage, std::unordered_set<std::string>& seen, std::vector<std::string>& out, size_t limit) {
-	forEachLuaSource(romPackage, [&](const LuaSourceAsset& asset) {
+	for (const auto& entry : romPackage.luaSources()) {
+		const LuaSourceAsset& asset = entry.second;
 		if (out.size() >= limit) {
-			return;
+			break;
 		}
 		if (!seen.insert(asset.path).second) {
-			return;
+			continue;
 		}
 		out.push_back(asset.path);
-	});
+	}
 }
 
 std::string summarizeLuaPaths(Runtime& runtime, size_t limit) {
@@ -104,14 +88,15 @@ void registerRuntimeDevtoolsTable(Runtime& runtime) {
 		(void)args;
 		std::unordered_set<std::string> seen;
 		std::vector<const LuaSourceAsset*> entries;
-		entries.reserve(runtime.activeRom().lua.size() + runtime.systemRom().lua.size());
+		entries.reserve(runtime.activeRom().luaSources().size() + runtime.systemRom().luaSources().size());
 		auto appendRomPackage = [&](const RuntimeRomPackage& romPackage) {
-			forEachLuaSource(romPackage, [&](const LuaSourceAsset& asset) {
+			for (const auto& entry : romPackage.luaSources()) {
+				const LuaSourceAsset& asset = entry.second;
 				if (!seen.insert(asset.path).second) {
-					return;
+					continue;
 				}
 				entries.push_back(&asset);
-			});
+			}
 		};
 		appendRomPackage(runtime.activeRom());
 		if (&runtime.systemRom() != &runtime.activeRom()) {

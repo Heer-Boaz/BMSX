@@ -11,12 +11,11 @@ class Runtime;
 
 class CpuExecutionState {
 public:
-	void clearHaltUntilIrq(Runtime& runtime);
 	bool runHaltedUntilIrq(Runtime& runtime, FrameState& frameState);
 	RunResult runWithBudget(Runtime& runtime, FrameState& frameState);
 };
 
-void advanceRuntimeTime(Runtime& runtime, int cycles);
-void runDueRuntimeTimers(Runtime& runtime);
+bool advanceRuntimeTime(Runtime& runtime, int cycles);
+bool runDueRuntimeTimers(Runtime& runtime);
 
 } // namespace bmsx

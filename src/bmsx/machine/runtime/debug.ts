@@ -3,7 +3,7 @@ import { valueToString } from '../firmware/globals';
 import { Table, isNativeObject, type LocalSlotDebug, type SourceRange, type Value } from '../cpu/cpu';
 import { resolveLuaSourceRecordFromRegistries } from '../program/sources';
 import type { Runtime } from './runtime';
-import { getWorkspaceCachedSource } from '../../ide/workspace/cache';
+import { workspaceSourceCache } from '../../ide/workspace/cache';
 import { KEYWORDS } from '../../lua/syntax/token';
 
 const DEBUG_EXPR_PATTERN = /\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\b/g;
@@ -87,8 +87,8 @@ function resourceSourceForPath(runtime: Runtime, path: string): string | null {
 	if (!binding) {
 		return null;
 	}
-	const cached = getWorkspaceCachedSource(binding.source_path);
-	if (cached === null) {
+	const cached = workspaceSourceCache.get(binding.source_path);
+	if (cached === undefined) {
 		return binding.src;
 	}
 	return cached;
@@ -97,7 +97,7 @@ function resourceSourceForPath(runtime: Runtime, path: string): string | null {
 function formatInstructionOperandDebug(runtime: Runtime, operand: InstructionOperandDebugInfo, registers: ReadonlyArray<Value>): string {
 	let text = `${operand.label}=${operand.text}`;
 	if (operand.registerIndex !== undefined && operand.registerIndex < registers.length) {
-		text += `(${formatDebugValue(runtime, registers[operand.registerIndex])})`;
+		text += `(${valueToString(registers[operand.registerIndex], runtime.machine.cpu.stringPool)})`;
 	}
 	return text;
 }
@@ -108,10 +108,6 @@ function formatDebugSourceLine(range: SourceRange, source: string | null): strin
 		return location;
 	}
 	return `${location} ${formatSourceSnippet(range, source)}`;
-}
-
-function formatDebugValue(runtime: Runtime, value: Value): string {
-	return valueToString(value, runtime.machine.cpu.stringPool);
 }
 
 function selectLocalSlot(slots: ReadonlyArray<LocalSlotDebug>, name: string, range: SourceRange): LocalSlotDebug | null {
@@ -211,7 +207,7 @@ function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, sour
 		if (!resolved.found) {
 			continue;
 		}
-		result.push(`${expression}=${formatDebugValue(runtime, resolved.value)}`);
+		result.push(`${expression}=${valueToString(resolved.value, runtime.machine.cpu.stringPool)}`);
 	}
 	return result;
 }

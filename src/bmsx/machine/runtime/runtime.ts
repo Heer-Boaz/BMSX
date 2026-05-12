@@ -19,8 +19,8 @@ import {
 	getMachinePerfSpecs,
 } from '../../rompack/format';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
-import { buildRuntimeRomLayer } from '../../rompack/loader';
-import { Table, valueString, type Value, type ProgramMetadata, type NativeFunction, type NativeObject, type StringValue } from '../cpu/cpu';
+import { buildRuntimeRomLayer, type RuntimeRomLayer } from '../../rompack/loader';
+import { StringValue, Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
 import type { TerminalMode } from '../../ide/terminal/ui/mode';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { Font, type FontVariant } from '../../render/shared/bmsx_font';
@@ -48,7 +48,7 @@ import { CartBootState } from './cart_boot';
 import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import { invokeClosureHandler, invokeLuaHandler } from '../program/executor';
-import { resolveCpuHz, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../specs';
+import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../specs';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
 import {
 	applyActiveMachineTiming,
@@ -77,8 +77,6 @@ export type FrameState = {
 	cycleCarryGranted: number;
 	activeCpuUsedCycles: number;
 };
-
-type RuntimeRomLayer = Awaited<ReturnType<typeof buildRuntimeRomLayer>>;
 
 export class Runtime {
 	public readonly storageService: StorageService;
@@ -236,12 +234,7 @@ export class Runtime {
 		const playerIndex = Input.instance.startupGamepadIndex ?? 1;
 
 		const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
-		const systemLuaSources = buildLuaSources({
-			cartSource: systemSource,
-			romSource: systemSource,
-			index: systemLayer.index,
-			allowedPayloadIds: ['system'],
-		});
+		const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
 		const systemMachine = systemLayer.index.machine;
 		if (!cartridge) {
 			Input.instance.getPlayerInput(1).setInputMap({ keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
@@ -254,7 +247,7 @@ export class Runtime {
 			configureMemoryMap(systemMemorySpecs);
 			const systemPerfSpecs = getMachinePerfSpecs(systemMachine);
 			const ufpsScaled = resolveUfpsScaled(systemPerfSpecs.ufps);
-			const cpuHz = resolveCpuHz(systemPerfSpecs.cpu_freq_hz);
+			const cpuHz = resolvePositiveSafeInteger(systemPerfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
 			const systemRenderSize = resolveRuntimeRenderSize(systemMachine);
 			const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, systemRenderSize.height);
@@ -304,12 +297,7 @@ export class Runtime {
 		const activeRomSource = new RomSourceStack(sourceLayers);
 
 		const cartSource = new RomSourceStack([{ id: cartRom.id, index: cartRom.index, payload: cartRom.payload }]);
-		const cartLuaSources = buildLuaSources({
-			cartSource,
-			romSource: activeRomSource,
-			index: cartRom.index,
-			allowedPayloadIds: overlayRom ? ['overlay', 'cart'] : ['cart'],
-		});
+		const cartLuaSources = buildLuaSources(cartSource, activeRomSource, cartRom.index, overlayRom ? ['overlay', 'cart'] : ['cart']);
 
 		const inputMappingPerPlayer = cartRom.index.input;
 		if (inputMappingPerPlayer) {
@@ -330,7 +318,7 @@ export class Runtime {
 		configureMemoryMap(memoryLimits);
 		const cartPerfSpecs = getMachinePerfSpecs(cartRom.index.machine);
 		const ufpsScaled = resolveUfpsScaled(cartPerfSpecs.ufps);
-		const cpuHz = resolveCpuHz(cartPerfSpecs.cpu_freq_hz);
+		const cpuHz = resolvePositiveSafeInteger(cartPerfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, ufpsScaled);
 		const cartRenderSize = resolveRuntimeRenderSize(cartRom.index.machine);
 		const vblankCycles = resolveVblankCycles(cpuHz, ufpsScaled, cartRenderSize.height);
@@ -387,10 +375,6 @@ export class Runtime {
 		await consoleCore.refreshRenderSurfaces();
 		consoleCore.view.default_font = new Font();
 		await this.boot();
-	}
-
-	public refreshMemoryMap(): void {
-		this.machine.vdp.initializeVramSurfaces();
 	}
 
 	private configureProgramSources(params: {
@@ -479,8 +463,8 @@ export class Runtime {
 		Input.instance.setFrameDurationMs(this.timing.frameDurationMs);
 		const initialVdpWorkUnits = options.vdpWorkUnitsPerSec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC;
 		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
-		this.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(initialVdpWorkUnits);
-		this.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(initialGeoWorkUnits);
+		this.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(initialVdpWorkUnits, 'machine.specs.vdp.work_units_per_sec');
+		this.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(initialGeoWorkUnits, 'machine.specs.geo.work_units_per_sec');
 		this.storageService = consoleCore.platform.storage;
 		this.frames = consoleCore.platform.frames;
 		this.clock = consoleCore.platform.clock;
@@ -497,11 +481,11 @@ export class Runtime {
 		this.machine.memory.clearIoSlots();
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
-		this.refreshMemoryMap();
+		this.machine.vdp.initializeVramSurfaces();
 		configureLuaHeapUsage({
 			getBaseRamUsedBytes: () => this.baseRamUsedBytes(),
 			collectTrackedHeapBytes: () => {
-				const extraRoots = this.luaScratch.acquireValue();
+				const extraRoots = this.luaScratch.values.acquire();
 				try {
 					extraRoots.push(this.pairsIterator);
 					extraRoots.push(this.ipairsIterator);
@@ -511,7 +495,7 @@ export class Runtime {
 					return this.machine.cpu.collectTrackedHeapBytes(extraRoots);
 				}
 				finally {
-					this.luaScratch.releaseValue(extraRoots);
+					this.luaScratch.values.release(extraRoots);
 				}
 			},
 		});
@@ -566,7 +550,7 @@ export class Runtime {
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
 		this.machine.inputController.sampleArmed = false;
-		this.cpuExecution.clearHaltUntilIrq();
+		this.machine.cpu.clearHaltUntilIrq();
 	}
 
 	public get activeIdeFontVariant(): FontVariant {
@@ -662,12 +646,13 @@ export class Runtime {
 	public applyCartProgramTiming(): void {
 		const perfSpecs = getMachinePerfSpecs(this.activeMachineManifest);
 		this.timing.applyUfpsScaled(resolveUfpsScaled(perfSpecs.ufps));
-		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
+		const cpuHz = resolvePositiveSafeInteger(perfSpecs.cpu_freq_hz, 'machine.specs.cpu.cpu_freq_hz');
 		applyActiveMachineTiming(this, cpuHz);
 		setTransferRatesFromManifest(this, perfSpecs);
 	}
 
 	public dispose(): void {
+		this.machine.audioController.dispose();
 		workbenchMode.disposeShortcutHandlers(this);
 		this.terminal.deactivate();
 		workbenchMode.deactivateEditor(this);
@@ -684,7 +669,7 @@ export class Runtime {
 
 	// disable-next-line single_line_method_pattern -- runtime string interning is the public CPU string-pool boundary.
 	public internString(value: string): StringValue {
-		return valueString(this.machine.cpu.stringPool.intern(value));
+		return StringValue.get(this.machine.cpu.stringPool.intern(value));
 	}
 
 

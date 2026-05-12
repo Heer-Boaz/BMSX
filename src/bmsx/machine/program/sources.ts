@@ -1,9 +1,10 @@
 import type { RawRomSource } from '../../rompack/source';
 import type { CartridgeIndex, CartridgeLayerId, RomLuaAsset } from '../../rompack/format';
-import { decodeuint8arr } from '../../common/serializer/binencoder';
+import { utf8FatalDecoder } from '../../common/serializer/binencoder';
 import { PROGRAM_IMAGE_ID, toLuaModulePath } from './loader';
 
 export type LuaSourceRecord = RomLuaAsset & { base_src: string; module_path: string };
+type PackedLuaSourceAsset = RomLuaAsset & { source_path: string; payload_id: CartridgeLayerId };
 
 export type LuaSourceRegistry = {
 	path2lua: Record<string, LuaSourceRecord>;
@@ -32,51 +33,45 @@ export function resolveLuaSourceRecordFromRegistries(path: string, registries: R
 	return null;
 }
 
-export function buildLuaSources(params: { cartSource: RawRomSource; romSource: RawRomSource; index: CartridgeIndex; allowedPayloadIds: CartridgeLayerId[] }): LuaSourceRegistry {
-	const { cartSource, romSource, index, allowedPayloadIds } = params;
-	const allowedPayloadIdSet = new Set(allowedPayloadIds);
-	const activeLuaEntries = romSource.list('lua').filter(entry => allowedPayloadIdSet.has(entry.payload_id));
+function isAllowedPayloadId(payloadId: CartridgeLayerId, allowedPayloadIds: readonly CartridgeLayerId[]): boolean {
+	for (let index = 0; index < allowedPayloadIds.length; index += 1) {
+		if (allowedPayloadIds[index] === payloadId) {
+			return true;
+		}
+	}
+	return false;
+}
+
+export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSource, index: CartridgeIndex, allowedPayloadIds: readonly CartridgeLayerId[]): LuaSourceRegistry {
 	const registry: LuaSourceRegistry = {
 		path2lua: {},
 		module2lua: {},
 		entry_path: index.entry_path,
 		namespace: index.machine.namespace,
 		projectRootPath: index.projectRootPath,
-		can_boot_from_source: activeLuaEntries.length > 0,
+		can_boot_from_source: false,
 	};
 
-	for (const activeEntry of activeLuaEntries) {
-		const baseEntry = cartSource.getEntry(activeEntry.resid);
-		const src = decodeuint8arr(romSource.getBytes(activeEntry));
-		const baseSrc = baseEntry ? decodeuint8arr(cartSource.getBytes(baseEntry)) : src;
-		const luaRecord = activeEntry as LuaSourceRecord;
+	let sourceCount = 0;
+	for (const entry of romSource.list('lua') as PackedLuaSourceAsset[]) {
+		if (!isAllowedPayloadId(entry.payload_id, allowedPayloadIds)) {
+			continue;
+		}
+		sourceCount += 1;
+		const baseEntry = cartSource.getEntry(entry.resid);
+		const src = utf8FatalDecoder.decode(romSource.getBytes(entry));
+		const baseSrc = baseEntry ? utf8FatalDecoder.decode(cartSource.getBytes(baseEntry)) : src;
+		const luaRecord = entry as LuaSourceRecord;
 		luaRecord.src = src;
 		luaRecord.base_src = baseSrc;
-		luaRecord.module_path = toLuaModulePath(activeEntry.source_path);
-		luaRecord.update_timestamp = typeof activeEntry.update_timestamp === 'number' ? activeEntry.update_timestamp : 0;
+		luaRecord.module_path = toLuaModulePath(entry.source_path);
 		registry.path2lua[luaRecord.source_path] = luaRecord;
 		registry.module2lua[luaRecord.module_path] = luaRecord;
 	}
+	registry.can_boot_from_source = sourceCount > 0;
 
-	const entryPath = registry.entry_path;
-	if (entryPath.length > 0 && !registry.path2lua[entryPath] && !registry.module2lua[entryPath]) {
-		let entryRecord: LuaSourceRecord = null;
-		for (const record of Object.values(registry.path2lua)) {
-			if (record.source_path !== entryPath) {
-				continue;
-			}
-			if (entryRecord !== null && entryRecord.source_path !== record.source_path) {
-				throw new Error(`[LuaSources] Ambiguous lua.entry_path '${entryPath}'.`);
-			}
-			entryRecord = record;
-		}
-		if (entryRecord !== null) {
-			registry.path2lua[entryPath] = entryRecord;
-			registry.module2lua[entryRecord.module_path] = entryRecord;
-		}
-	}
-
-	if (Object.keys(registry.path2lua).length === 0) {
+	if (sourceCount === 0) {
+		const entryPath = registry.entry_path;
 		const hasPackedProgram = index.entries.some(entry => entry.resid === PROGRAM_IMAGE_ID);
 		if (hasPackedProgram) {
 			const stub: LuaSourceRecord = {

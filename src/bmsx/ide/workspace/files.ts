@@ -1,6 +1,6 @@
 import type { LuaSourceRegistry } from '../../machine/program/sources';
 import type { HttpResponse, StorageService } from '../../platform/index';
-import { getWorkspaceCachedSource } from './cache';
+import { workspaceSourceCache } from './cache';
 import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './path';
 export { joinWorkspacePaths } from './path';
 
@@ -17,25 +17,13 @@ type WorkspaceStoragePayload = { contents: string; updatedAt: number };
 type WorkspaceStatePayload = { dirtyFiles: Array<{ dirtyPath: string; descriptor: unknown }> };
 type WorkspaceWinnerKind = 'override' | 'canonical' | 'rom';
 
-export function buildWorkspaceMetadataPath(projectRootPath: string): string {
-	return joinWorkspacePaths(projectRootPath, WORKSPACE_METADATA_DIR);
-}
-
-export function buildWorkspaceDirtyDir(projectRootPath: string): string {
-	return joinWorkspacePaths(buildWorkspaceMetadataPath(projectRootPath), WORKSPACE_DIRTY_DIR);
-}
-
 export function buildWorkspaceDirtyEntryPath(projectRootPath: string, resourcePath: string): string {
 	const normalizedPath = stripProjectRootPrefix(resourcePath, projectRootPath);
 	const segments = normalizedPath.split('/');
 	const baseName = segments.pop() ?? resourcePath;
 	const tempName = baseName.startsWith('~') ? baseName : `~${baseName}`;
 	segments.push(tempName);
-	return joinWorkspacePaths(buildWorkspaceDirtyDir(projectRootPath), ...segments);
-}
-
-export function buildWorkspaceStateFilePath(projectRootPath: string): string {
-	return joinWorkspacePaths(buildWorkspaceMetadataPath(projectRootPath), WORKSPACE_STATE_FILE);
+	return joinWorkspacePaths(projectRootPath, WORKSPACE_METADATA_DIR, WORKSPACE_DIRTY_DIR, ...segments);
 }
 
 export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: string): string {
@@ -118,7 +106,15 @@ export async function persistWorkspaceSourceFile(path: string, source: string, p
 }
 
 export async function loadWorkspaceSourceFile(path: string, projectRootPath: string): Promise<string> {
-	return getWorkspaceCachedSource(path) ?? (await fetchWorkspaceFile(resolveWorkspacePath(path, projectRootPath)))?.contents;
+	const cached = workspaceSourceCache.get(path);
+	if (cached !== undefined) {
+		return cached;
+	}
+	const file = await fetchWorkspaceFile(resolveWorkspacePath(path, projectRootPath));
+	if (file !== null) {
+		return file.contents;
+	}
+	return null;
 }
 
 export async function fetchWorkspaceDirtyLuaOverrides(cart: LuaSourceRegistry, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
@@ -181,7 +177,7 @@ async function fetchWorkspaceCanonicalLua(cart: LuaSourceRegistry, root: string)
 
 export async function collectScratchWorkspaceDirtyPaths(root: string): Promise<Set<string>> {
 	const paths = new Set<string>();
-	const statePath = buildWorkspaceStateFilePath(root);
+	const statePath = joinWorkspacePaths(root, WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE);
 	const payload = await fetchWorkspaceFile(statePath);
 	if (!payload) {
 		return paths;
@@ -288,7 +284,7 @@ function selectWorkspaceWinner(options: {
 	return { kind: winnerKind, record: winner, updatedAt: winnerUpdatedAt };
 }
 
-export async function deleteWorkspaceFile(path: string): Promise<void> {
+export async function deleteWorkspaceServerFile(path: string): Promise<void> {
 	const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
 	// start fallible-boundary -- deleting remote workspace scratch files is best-effort cleanup.
 	try {

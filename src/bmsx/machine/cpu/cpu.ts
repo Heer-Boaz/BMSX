@@ -4,12 +4,11 @@ import type { IrqController } from '../devices/irq/controller';
 import {
 	addTrackedLuaHeapBytes,
 	collectTrackedLuaHeapBytes as refreshTrackedLuaHeapBytes,
-	enforceLuaHeapBudget,
-	replaceTrackedLuaHeapBytes
+	enforceLuaHeapBudget
 } from '../memory/lua_heap_usage';
 import { formatNumber } from '../common/number_format';
 import { BASE_CYCLES, OPCODE_USES_BX, OpCode } from './opcode_info';
-import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions, type CpuProfilerSnapshot } from './profiler';
+import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { MEMORY_ACCESS_KIND_NAMES, MemoryAccessKind } from '../memory/access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
@@ -46,10 +45,6 @@ export class StringValue {
 const STRING_VALUES: StringValue[] = [];
 
 export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
-
-export function valueString(id: StringId): StringValue {
-	return StringValue.get(id);
-}
 
 export function valueIsString(value: unknown): value is StringValue {
 	return value !== null
@@ -656,7 +651,7 @@ export class Table {
 		this.hash.length = 0;
 		this.hashFree = -1;
 		this.bumpVersion();
-		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
+			addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
 	}
 
 	public forEachEntry(visitor: (key: Value, value: Value) => void): void {
@@ -707,7 +702,7 @@ export class Table {
 		this.hashFree = state.hashFree;
 		this.tableMetatable = state.metatable;
 		this.bumpVersion();
-		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
+			addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
 	}
 
 	public walkTrackedValues(visitor: (value: Value) => void): void {
@@ -948,7 +943,7 @@ export class Table {
 				this.rawSet(node.key, node.value);
 			}
 		}
-		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
+			addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
 	}
 
 	private rawSet(key: Value, value: Value): void {
@@ -1430,7 +1425,7 @@ export class CPU {
 	private nativeArgsScratchIndex = 0;
 	private readonly debugRegistersScratch: Value[] = [];
 	private readonly nativeReturnScratch = new ScratchArrayStack<Value>();
-	private readonly profiler = new CpuExecutionProfiler();
+	public readonly profiler = new CpuExecutionProfiler();
 	private profilerEnabled = false;
 	private externalReturnSink: Value[] | null = null;
 	private decodedWidths: Uint8Array | null = null;
@@ -1460,7 +1455,7 @@ export class CPU {
 		this.memory = memory;
 		this.stringPool = new StringPool(true);
 		this.globals = new Table(0, 0);
-		this.indexKey = valueString(this.stringPool.intern('__index'));
+		this.indexKey = StringValue.get(this.stringPool.intern('__index'));
 	}
 
 	private ensureStackCapacity(size: number): void {
@@ -1498,14 +1493,6 @@ export class CPU {
 		this.nativeArgsScratchIndex -= 1;
 	}
 
-	private acquireNativeReturnScratch(): Value[] {
-		return this.nativeReturnScratch.acquire();
-	}
-
-	private releaseNativeReturnScratch(out: Value[]): void {
-		this.nativeReturnScratch.release(out);
-	}
-
 	private findOpenUpvalue(frame: CallFrame, index: number): Upvalue | null {
 		const openUpvalues = this.openUpvalues;
 		for (let slot = 0; slot < openUpvalues.length; slot += 1) {
@@ -1541,24 +1528,12 @@ export class CPU {
 		throw new Error('Metatable __index loop detected.');
 	}
 
-	private resolveTableIndex(table: Table, key: Value): Value {
-		return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Value);
-	}
-
-	private resolveTableIntegerIndex(table: Table, index: number): Value {
-		return this.resolveTableIndexChain(table, index, TableIndexKeyKind.Integer);
-	}
-
-	private resolveTableFieldIndex(table: Table, key: StringValue): Value {
-		return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Field);
-	}
-
 	private loadTableIndex(base: Value, key: Value): Value {
 		if (base instanceof Table) {
 			if (base.metatable === null) {
 				return base.get(key);
 			}
-			return this.resolveTableIndex(base, key);
+			return this.resolveTableIndexChain(base, key, TableIndexKeyKind.Value);
 		}
 		if (valueIsString(base)) {
 			const indexTable = this.stringIndexTable;
@@ -1568,7 +1543,7 @@ export class CPU {
 			if (indexTable.metatable === null) {
 				return indexTable.get(key);
 			}
-			return this.resolveTableIndex(indexTable, key);
+			return this.resolveTableIndexChain(indexTable, key, TableIndexKeyKind.Value);
 		}
 		if (isNativeObject(base)) {
 			const directValue = base.get(key);
@@ -1578,7 +1553,7 @@ export class CPU {
 			}
 			const indexer = metatable.getStringKey(this.indexKey);
 			if (indexer instanceof Table) {
-				return this.resolveTableIndex(indexer, key);
+				return this.resolveTableIndexChain(indexer, key, TableIndexKeyKind.Value);
 			}
 			return null;
 		}
@@ -1586,6 +1561,7 @@ export class CPU {
 	}
 
 	private loadTableIntegerIndexCached(cacheIndex: number, base: Value, index: number): Value {
+		const indexKind = TableIndexKeyKind.Integer;
 		if (base instanceof Table) {
 			if (base.metatable === null) {
 				const cache = this.tableLoadCaches[cacheIndex];
@@ -1599,7 +1575,7 @@ export class CPU {
 				cache.value = value;
 				return value;
 			}
-			return this.resolveTableIntegerIndex(base, index);
+			return this.resolveTableIndexChain(base, index, indexKind);
 		}
 		if (valueIsString(base)) {
 			const table = this.stringIndexTable;
@@ -1618,7 +1594,7 @@ export class CPU {
 				cache.value = value;
 				return value;
 			}
-			return this.resolveTableIntegerIndex(table, index);
+			return this.resolveTableIndexChain(table, index, indexKind);
 		}
 		if (isNativeObject(base)) {
 			const directValue = base.get(index);
@@ -1627,7 +1603,7 @@ export class CPU {
 			}
 			const indexer = base.metatable.getStringKey(this.indexKey);
 			if (indexer instanceof Table) {
-				return this.resolveTableIntegerIndex(indexer, index);
+				return this.resolveTableIndexChain(indexer, index, indexKind);
 			}
 			return directValue;
 		}
@@ -1648,7 +1624,7 @@ export class CPU {
 				cache.value = value;
 				return value;
 			}
-			return this.resolveTableFieldIndex(base, key);
+			return this.resolveTableIndexChain(base, key, TableIndexKeyKind.Field);
 		}
 		if (valueIsString(base)) {
 			const table = this.stringIndexTable;
@@ -1667,7 +1643,7 @@ export class CPU {
 				cache.value = value;
 				return value;
 			}
-			return this.resolveTableFieldIndex(table, key);
+			return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Field);
 		}
 		if (isNativeObject(base)) {
 			const directValue = base.get(key);
@@ -1676,7 +1652,7 @@ export class CPU {
 			}
 			const indexer = base.metatable.getStringKey(this.indexKey);
 			if (indexer instanceof Table) {
-				return this.resolveTableFieldIndex(indexer, key);
+				return this.resolveTableIndexChain(indexer, key, TableIndexKeyKind.Field);
 			}
 			return directValue;
 		}
@@ -1774,11 +1750,11 @@ export class CPU {
 		for (let index = 0; index < constPool.length; index += 1) {
 			const value = constPool[index];
 			if (valueIsString(value)) {
-				constPool[index] = valueString(this.stringPool.internRom(programPool.toString(asStringId(value))));
+				constPool[index] = StringValue.get(this.stringPool.intern(programPool.toString(asStringId(value)), false));
 			}
 		}
 		program.constPoolStringPool = this.stringPool;
-		this.indexKey = valueString(this.stringPool.intern('__index'));
+		this.indexKey = StringValue.get(this.stringPool.intern('__index'));
 		this.staticClosures.length = 0;
 		this.initializeGlobalSlots(metadata);
 		this.decodeProgram(program);
@@ -1792,19 +1768,19 @@ export class CPU {
 		this.systemGlobalValues = new Array(systemNames.length);
 		this.systemGlobalSlotByKey = new Map();
 		for (let index = 0; index < systemNames.length; index += 1) {
-			const key = this.stringPool.internRom(systemNames[index]);
+			const key = this.stringPool.intern(systemNames[index], false);
 			this.systemGlobalNames[index] = key;
 			this.systemGlobalSlotByKey.set(key, index);
-			this.systemGlobalValues[index] = this.globals.get(valueString(key));
+			this.systemGlobalValues[index] = this.globals.get(StringValue.get(key));
 		}
 		this.globalNames = new Array(globalNames.length);
 		this.globalValues = new Array(globalNames.length);
 		this.globalSlotByKey = new Map();
 		for (let index = 0; index < globalNames.length; index += 1) {
-			const key = this.stringPool.internRom(globalNames[index]);
+			const key = this.stringPool.intern(globalNames[index], false);
 			this.globalNames[index] = key;
 			this.globalSlotByKey.set(key, index);
-			this.globalValues[index] = this.globals.get(valueString(key));
+			this.globalValues[index] = this.globals.get(StringValue.get(key));
 		}
 	}
 
@@ -2149,14 +2125,6 @@ export class CPU {
 		return this.profilerEnabled;
 	}
 
-	public resetProfiler(): void {
-		this.profiler.reset();
-	}
-
-	public getProfilerSnapshot(): CpuProfilerSnapshot {
-		return this.profiler.snapshot();
-	}
-
 	public formatProfilerReport(options: CpuProfilerReportOptions = {}): string {
 		return formatCpuProfilerReport(this.profiler.snapshot(), options);
 	}
@@ -2241,10 +2209,10 @@ export class CPU {
 
 	public syncGlobalSlotsToTable(): void {
 		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
-			this.globals.set(valueString(this.systemGlobalNames[slot]), this.systemGlobalValues[slot]);
+			this.globals.set(StringValue.get(this.systemGlobalNames[slot]), this.systemGlobalValues[slot]);
 		}
 		for (let slot = 0; slot < this.globalNames.length; slot += 1) {
-			this.globals.set(valueString(this.globalNames[slot]), this.globalValues[slot]);
+			this.globals.set(StringValue.get(this.globalNames[slot]), this.globalValues[slot]);
 		}
 	}
 
@@ -2463,7 +2431,7 @@ export class CPU {
 					const right = this.readRK(frame, rkC);
 					const text = this.valueToString(left) + this.valueToString(right);
 					const handle = this.stringPool.intern(text);
-					this.setRegisterStringFast(frame, registers, a, valueString(handle));
+					this.setRegisterStringFast(frame, registers, a, StringValue.get(handle));
 					return;
 				}
 				case OpCode.CONCATN: {
@@ -2472,7 +2440,7 @@ export class CPU {
 						text += this.valueToString(registers.get(b + index));
 					}
 					const handle = this.stringPool.intern(text);
-					this.setRegisterStringFast(frame, registers, a, valueString(handle));
+					this.setRegisterStringFast(frame, registers, a, StringValue.get(handle));
 					return;
 				}
 				case OpCode.UNM: {
@@ -2631,7 +2599,7 @@ export class CPU {
 					if (isNativeFunction(callee)) {
 						this.charge(callee.cost.base);
 						const argsHandle = this.acquireNativeArgsProxy();
-						const results = this.acquireNativeReturnScratch();
+							const results = this.nativeReturnScratch.acquire();
 						try {
 							argsHandle.view.bindRegisters(registers, a + 1, argCount);
 							callee.invoke(argsHandle.proxy, results);
@@ -2641,7 +2609,7 @@ export class CPU {
 							enforceLuaHeapBudget();
 						} finally {
 							this.releaseNativeArgsProxy(argsHandle);
-							this.releaseNativeReturnScratch(results);
+								this.nativeReturnScratch.release(results);
 						}
 						return;
 					}
@@ -3422,7 +3390,7 @@ export class CPU {
 				case 'number':
 					return valueState.value;
 				case 'string':
-					return valueString(valueState.id);
+					return StringValue.get(valueState.id);
 				case 'ref':
 					return restoredObjects[valueState.id] as Table | Closure;
 				case 'stable_ref': {
@@ -3527,7 +3495,7 @@ export class CPU {
 
 		for (let index = 0; index < state.globals.length; index += 1) {
 			const entry = state.globals[index];
-			this.setGlobalByKey(valueString(this.stringPool.intern(entry.name)), restoreValue(entry.value));
+			this.setGlobalByKey(StringValue.get(this.stringPool.intern(entry.name)), restoreValue(entry.value));
 		}
 		for (let index = 0; index < state.moduleCache.length; index += 1) {
 			const entry = state.moduleCache[index];

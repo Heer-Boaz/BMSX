@@ -74,15 +74,14 @@ export class ScratchBatchPooled<T> implements Iterable<T> {
 		return slot;
 	}
 
-	get(index: number): T { return this.list.get(index); }
-
 	clear(): void {
 		// Release all active items back to the pool (idempotent per item as Pool.release is safe).
 		for (const item of this.list) this.pool.release(item);
 		this.list.clear();
 	}
 
-	forEach(cb: (item: T, index: number) => void): void { this.list.forEach(cb); }
-	sort(compareFn: (a: T, b: T) => number): void { this.list.sort(compareFn); }
-	[Symbol.iterator](): Iterator<T> { return this.list[Symbol.iterator](); }
+	[Symbol.iterator](): Iterator<T> {
+		const iterator = this.list[Symbol.iterator]();
+		return iterator;
+	}
 }

@@ -4,9 +4,11 @@ import {
 	hostSystemAtlasPixels,
 } from '../../rompack/host_system_atlas';
 import { forEachGlyphRunGlyph } from '../shared/glyph_runs';
-import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/queues';
 import type {
 	GlyphRenderSubmission,
+	Host2DKind,
+	Host2DRef,
+	Host2DSubmission,
 	HostImageRenderSubmission,
 	PolyRenderSubmission,
 	RectRenderSubmission,

@@ -18,11 +18,13 @@ import {
 	VDP_SECONDARY_SLOT_TEXTURE_KEY,
 	SYSTEM_SLOT_TEXTURE_KEY,
 } from 'bmsx/rompack/format';
-import { VDP_BBU_BILLBOARD_LIMIT } from '../machine/devices/vdp/contracts';
+import { SKYBOX_FACE_COUNT, VDP_BBU_BILLBOARD_LIMIT } from '../machine/devices/vdp/contracts';
 import { createVdpTransformSnapshot } from './vdp/transform';
+import type { VdpFrameBufferTextures } from './vdp/framebuffer';
+import type { VdpSlotTextures } from './vdp/slot_textures';
 import { renderGate } from 'bmsx/core/taskgate';
 
-const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
+const PRESENTATION_PASS_IDS = ['skybox', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
 const VDP_BBU_BILLBOARD_VEC4_CAPACITY = VDP_BBU_BILLBOARD_LIMIT * 4;
 
 interface GameViewOpts {
@@ -75,14 +77,19 @@ export class GameView implements RenderContext {
 	private lightingSystem: LightingSystem = null;
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
-	public skyboxFaceUvRects: Float32Array | null = null;
-	public skyboxFaceTextpageBindings: Int32Array | null = null;
-	public skyboxFaceSizes: Int32Array | null = null;
+	public skyboxRenderReady = false;
+	public readonly skyboxFaceUvRects = new Float32Array(SKYBOX_FACE_COUNT * 4);
+	public readonly skyboxFaceTextpageBindings = new Int32Array(SKYBOX_FACE_COUNT);
+	public readonly skyboxFaceSurfaceIds = new Uint32Array(SKYBOX_FACE_COUNT);
+	public readonly skyboxFaceSizes = new Int32Array(SKYBOX_FACE_COUNT * 2);
 	public readonly vdpTransform = createVdpTransformSnapshot();
+	public vdpFrameBufferTextures!: VdpFrameBufferTextures;
+	public vdpSlotTextures!: VdpSlotTextures;
 	public readonly vdpBillboardPositionSize = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
 	public readonly vdpBillboardColor = new Uint32Array(VDP_BBU_BILLBOARD_LIMIT);
 	public readonly vdpBillboardUvRect = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
 	public readonly vdpBillboardSlot = new Int32Array(VDP_BBU_BILLBOARD_LIMIT);
+	public readonly vdpBillboardSurfaceId = new Uint32Array(VDP_BBU_BILLBOARD_LIMIT);
 	public vdpBillboardCount = 0;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationEnabled = true;
@@ -451,9 +458,6 @@ export class GameView implements RenderContext {
 		this.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY] = fallback; // Start with fallback to avoid undefined states and race conditions
 		this.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY] = fallback;
 		this.textures['_textpage_fallback'] = fallback;
-		this.skyboxFaceUvRects = null;
-		this.skyboxFaceTextpageBindings = null;
-		this.skyboxFaceSizes = null;
 		this.textures[SYSTEM_SLOT_TEXTURE_KEY] = fallback;
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, 0xffffffff);

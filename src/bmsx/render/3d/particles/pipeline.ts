@@ -9,15 +9,12 @@ import { TEXTURE_UNIT_TEXTPAGE_ENGINE, TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UN
 import { WebGLBackend } from '../../backend/webgl/backend';
 import type { VdpTransformSnapshot } from '../../vdp/transform';
 import { M4 } from '../math';
-import { beginParticleQueue, forEachParticleQueue } from '../../shared/queues';
-import type { ParticleRenderSubmission } from '../../shared/submissions';
 import { SYSTEM_SLOT_TEXTURE_KEY, VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
 import { VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../../machine/bus/io';
 import { VDP_BBU_BILLBOARD_LIMIT } from '../../../machine/devices/vdp/contracts';
 
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);
-const HOST_PARTICLE_LIMIT = 1024;
 const PARTICLE_INSTANCE_LIMIT = VDP_BBU_BILLBOARD_LIMIT;
 const INSTANCE_FLOATS = 13; // vec4(position+size) + vec4(color) + vec4(uvrect) + textpageId
 const BYTES_PER_FLOAT = 4;
@@ -44,7 +41,7 @@ function updateParticleTransformState(width: number, height: number, transform: 
 
 function drawPreparedParticleInstances(backend: WebGLBackend, instBuf: WebGLBuffer, framebuffer: WebGLFramebuffer, batchCount: number): void {
 	backend.bindArrayBuffer(instBuf);
-	backend.updateVertexBuffer(instBuf, instanceData.subarray(0, batchCount * INSTANCE_FLOATS), 0);
+	backend.updateVertexBuffer(instBuf, instanceData, 0, 0, batchCount * INSTANCE_FLOATS);
 	particlePassEncoder.fbo = framebuffer;
 	backend.drawInstanced(particlePassEncoder, 6, batchCount, 0, 0);
 }
@@ -82,47 +79,26 @@ export function setupParticleLocations(backend: WebGLBackend): void {
 	backend.bindVertexArray(vao);
 	// Static quad buffer at attrib 0
 	backend.bindArrayBuffer(quadBuffer);
-	backend.enableVertexAttrib(0);
-	backend.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+	gl.enableVertexAttribArray(0);
+	gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 	// Instance attributes 1 & 2 are (re)bound once per frame for the selected buffer
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(null);
 }
 export function renderParticleBatch(backend: WebGLBackend, gl: WebGL2RenderingContext, context: RenderContext, framebuffer: WebGLFramebuffer, state: ParticlePipelineState): void {
-	const pending = beginParticleQueue();
 	const vdpPending = context.vdpBillboardCount;
-	if (pending === 0 && vdpPending === 0) return;
+	if (vdpPending === 0) return;
 	camRight.set(state.camRight);
 	camUp.set(state.camUp);
 	let needsSystemSlot = false;
 	let needsSecondaryTextpage = false;
-	let batches: Map<string, ParticleRenderSubmission[]> | null = null;
-	if (pending !== 0) {
-		batches = new Map<string, ParticleRenderSubmission[]>();
-		forEachParticleQueue((p) => {
-			const slot = p.slot;
-			if (slot === VDP_SLOT_SYSTEM) {
-				needsSystemSlot = true;
-			} else if (slot === VDP_SLOT_SECONDARY) {
-				needsSecondaryTextpage = true;
-			}
-			const mode = p.ambient_mode | 0;
-			const factor = p.ambient_factor;
-			const key = mode + ':' + factor.toFixed(2);
-			let arr = batches.get(key);
-			if (!arr) { arr = []; batches.set(key, arr); }
-			arr.push(p);
-		});
-	}
-	if (vdpPending !== 0) {
-		const vdpSlots = context.vdpBillboardSlot;
-		for (let index = 0; index < vdpPending; index += 1) {
-			const slot = vdpSlots[index];
-			if (slot === VDP_SLOT_SYSTEM) {
-				needsSystemSlot = true;
-			} else if (slot === VDP_SLOT_SECONDARY) {
-				needsSecondaryTextpage = true;
-			}
+	const vdpSlots = context.vdpBillboardSlot;
+	for (let index = 0; index < vdpPending; index += 1) {
+		const slot = vdpSlots[index];
+		if (slot === VDP_SLOT_SYSTEM) {
+			needsSystemSlot = true;
+		} else if (slot === VDP_SLOT_SECONDARY) {
+			needsSecondaryTextpage = true;
 		}
 	}
 	backend.setViewportRect(0, 0, state.width, state.height);
@@ -160,70 +136,39 @@ export function renderParticleBatch(backend: WebGLBackend, gl: WebGL2RenderingCo
 	framePage = (framePage + 1) % 3;
 	const instBuf = instanceBuffers[framePage];
 	backend.bindArrayBuffer(instBuf);
-	backend.enableVertexAttrib(1); backend.enableVertexAttrib(2); backend.enableVertexAttrib(3); backend.enableVertexAttrib(4);
-	backend.vertexAttribPointer(1, 4, gl.FLOAT, false, INSTANCE_BYTES, 0);
-	backend.vertexAttribDivisor(1, 1);
-	backend.vertexAttribPointer(2, 4, gl.FLOAT, false, INSTANCE_BYTES, 4 * BYTES_PER_FLOAT);
-	backend.vertexAttribDivisor(2, 1);
-	backend.vertexAttribPointer(3, 4, gl.FLOAT, false, INSTANCE_BYTES, 8 * BYTES_PER_FLOAT);
-	backend.vertexAttribDivisor(3, 1);
-	backend.vertexAttribPointer(4, 1, gl.FLOAT, false, INSTANCE_BYTES, 12 * BYTES_PER_FLOAT);
-	backend.vertexAttribDivisor(4, 1);
-	if (batches !== null) {
-		for (const [ambKey, arr] of batches) {
-			const batchCount = arr.length < HOST_PARTICLE_LIMIT ? arr.length : HOST_PARTICLE_LIMIT;
-			const [modeStr, factorStr] = ambKey.split(':');
-			gl.uniform1i(ambientModeLocation, parseInt(modeStr, 10) | 0);
-			gl.uniform1f(ambientFactorLocation, parseFloat(factorStr));
-			for (let i = 0; i < batchCount; i++) {
-				const p = arr[i];
-				const base = i * INSTANCE_FLOATS;
-				const color = p.color;
-				instanceData[base] = p.position[0];
-				instanceData[base + 1] = p.position[1];
-				instanceData[base + 2] = p.position[2];
-				instanceData[base + 3] = p.size;
-				instanceData[base + 4] = ((color >>> 16) & 0xff) / 255;
-				instanceData[base + 5] = ((color >>> 8) & 0xff) / 255;
-				instanceData[base + 6] = (color & 0xff) / 255;
-				instanceData[base + 7] = ((color >>> 24) & 0xff) / 255;
-				instanceData[base + 8] = p.uv0[0];
-				instanceData[base + 9] = p.uv0[1];
-				instanceData[base + 10] = p.uv1[0];
-				instanceData[base + 11] = p.uv1[1];
-				instanceData[base + 12] = p.slot;
-			}
-			drawPreparedParticleInstances(backend, instBuf, framebuffer, batchCount);
-		}
+	gl.enableVertexAttribArray(1); gl.enableVertexAttribArray(2); gl.enableVertexAttribArray(3); gl.enableVertexAttribArray(4);
+	gl.vertexAttribPointer(1, 4, gl.FLOAT, false, INSTANCE_BYTES, 0);
+	gl.vertexAttribDivisor(1, 1);
+	gl.vertexAttribPointer(2, 4, gl.FLOAT, false, INSTANCE_BYTES, 4 * BYTES_PER_FLOAT);
+	gl.vertexAttribDivisor(2, 1);
+	gl.vertexAttribPointer(3, 4, gl.FLOAT, false, INSTANCE_BYTES, 8 * BYTES_PER_FLOAT);
+	gl.vertexAttribDivisor(3, 1);
+	gl.vertexAttribPointer(4, 1, gl.FLOAT, false, INSTANCE_BYTES, 12 * BYTES_PER_FLOAT);
+	gl.vertexAttribDivisor(4, 1);
+	const positionSize = context.vdpBillboardPositionSize;
+	const color = context.vdpBillboardColor;
+	const uvRect = context.vdpBillboardUvRect;
+	gl.uniform1i(ambientModeLocation, 0);
+	gl.uniform1f(ambientFactorLocation, 1.0);
+	for (let index = 0; index < vdpPending; index += 1) {
+		const base = index * INSTANCE_FLOATS;
+		const sourceBase = index * 4;
+		const colorValue = color[index];
+		instanceData[base + 0] = positionSize[sourceBase + 0];
+		instanceData[base + 1] = positionSize[sourceBase + 1];
+		instanceData[base + 2] = positionSize[sourceBase + 2];
+		instanceData[base + 3] = positionSize[sourceBase + 3];
+		instanceData[base + 4] = ((colorValue >>> 16) & 0xff) / 255;
+		instanceData[base + 5] = ((colorValue >>> 8) & 0xff) / 255;
+		instanceData[base + 6] = (colorValue & 0xff) / 255;
+		instanceData[base + 7] = ((colorValue >>> 24) & 0xff) / 255;
+		instanceData[base + 8] = uvRect[sourceBase + 0];
+		instanceData[base + 9] = uvRect[sourceBase + 1];
+		instanceData[base + 10] = uvRect[sourceBase + 2];
+		instanceData[base + 11] = uvRect[sourceBase + 3];
+		instanceData[base + 12] = vdpSlots[index];
 	}
-	if (vdpPending !== 0) {
-		const batchCount = vdpPending;
-		const positionSize = context.vdpBillboardPositionSize;
-		const color = context.vdpBillboardColor;
-		const uvRect = context.vdpBillboardUvRect;
-		const slots = context.vdpBillboardSlot;
-		gl.uniform1i(ambientModeLocation, 0);
-		gl.uniform1f(ambientFactorLocation, 1.0);
-		for (let index = 0; index < batchCount; index += 1) {
-			const base = index * INSTANCE_FLOATS;
-			const sourceBase = index * 4;
-			const colorValue = color[index];
-			instanceData[base + 0] = positionSize[sourceBase + 0];
-			instanceData[base + 1] = positionSize[sourceBase + 1];
-			instanceData[base + 2] = positionSize[sourceBase + 2];
-			instanceData[base + 3] = positionSize[sourceBase + 3];
-			instanceData[base + 4] = ((colorValue >>> 16) & 0xff) / 255;
-			instanceData[base + 5] = ((colorValue >>> 8) & 0xff) / 255;
-			instanceData[base + 6] = (colorValue & 0xff) / 255;
-			instanceData[base + 7] = ((colorValue >>> 24) & 0xff) / 255;
-			instanceData[base + 8] = uvRect[sourceBase + 0];
-			instanceData[base + 9] = uvRect[sourceBase + 1];
-			instanceData[base + 10] = uvRect[sourceBase + 2];
-			instanceData[base + 11] = uvRect[sourceBase + 3];
-			instanceData[base + 12] = slots[index];
-		}
-		drawPreparedParticleInstances(backend, instBuf, framebuffer, batchCount);
-	}
+	drawPreparedParticleInstances(backend, instBuf, framebuffer, vdpPending);
 	backend.bindVertexArray(null);
 	gl.depthMask(true);
 }
@@ -246,25 +191,19 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 			setupParticleUniforms(webglBackend);
 		},
 		writesDepth: true,
-		shouldExecute: () => beginParticleQueue() !== 0 || consoleCore.view.vdpBillboardCount !== 0,
+		shouldExecute: () => consoleCore.view.vdpBillboardCount !== 0,
 		exec: (backend, fbo, s: RenderPassStateRegistry['particles']) => {
 			const webglBackend = backend as WebGLBackend;
 			renderParticleBatch(webglBackend, webglBackend.gl as WebGL2RenderingContext, consoleCore.view, fbo as WebGLFramebuffer, s as ParticlePipelineState);
-		},
-		prepare: (_backend, _state) => {
-			const gv = consoleCore.view;
-			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
-			const textpagePrimaryTex = gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY];
-			if (!textpagePrimaryTex) {
-				throw new Error(`[ParticlesPipeline] Texture '${VDP_PRIMARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
-			}
-			const textpageSecondaryTex = gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY];
-			const systemSlotTex = gv.textures[SYSTEM_SLOT_TEXTURE_KEY];
-			const state = updateParticleTransformState(width, height, gv.vdpTransform);
-			state.textpagePrimaryTex = textpagePrimaryTex;
-			state.textpageSecondaryTex = textpageSecondaryTex;
-			state.systemSlotTex = systemSlotTex;
-			registry.setState('particles', state);
-		},
+			},
+			prepare: (_backend, _state) => {
+				const gv = consoleCore.view;
+				const size = gv.offscreenCanvasSize;
+				const state = updateParticleTransformState(size.x, size.y, gv.vdpTransform);
+				state.textpagePrimaryTex = gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY];
+				state.textpageSecondaryTex = gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY];
+				state.systemSlotTex = gv.textures[SYSTEM_SLOT_TEXTURE_KEY];
+				registry.setState('particles', state);
+			},
 	});
 }

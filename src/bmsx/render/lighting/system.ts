@@ -1,6 +1,5 @@
 import { Float32ArrayPool } from '../../common/pool';
 import type { AmbientLight } from '../3d/light';
-import { addDirectionalLight, addPointLight, clearLights, directionalLightList, pointLightList } from '../3d/mesh/pipeline';
 import {
 	consumeHardwareLightingDirty,
 	getHardwareDirectionalLights,
@@ -45,16 +44,6 @@ export class LightingSystem {
 		const pointLights = getHardwarePointLights();
 		const dirCount = directionalLights.size;
 		const pointCount = pointLights.size;
-
-		if (hardwareDirty) {
-			clearLights();
-			for (const [id, light] of directionalLights) {
-				addDirectionalLight(id, light);
-			}
-			for (const [id, light] of pointLights) {
-				addPointLight(id, light);
-			}
-		}
 
 		const dirty = hardwareDirty
 			|| this._frameState.dirCount !== dirCount
@@ -113,10 +102,10 @@ export function resetLightingDescriptorPools(): void {
 }
 
 export function buildLightingDescriptorPooled(frame: LightingFrameState): LightingDescriptor {
-	const dirs = directionalLightList;
-	const pts = pointLightList;
-	const dirCount = Math.min(dirs.length, frame.dirCount, DEFAULT_MAX_DIR_LIGHTS);
-	const pointCount = Math.min(pts.length, frame.pointCount, DEFAULT_MAX_POINT_LIGHTS);
+	const dirs = getHardwareDirectionalLights();
+	const pts = getHardwarePointLights();
+	const dirCount = Math.min(dirs.size, frame.dirCount, DEFAULT_MAX_DIR_LIGHTS);
+	const pointCount = Math.min(pts.size, frame.pointCount, DEFAULT_MAX_POINT_LIGHTS);
 
 	const dirDirections = poolDirDirections.ensure();
 	const dirColors = poolDirColors.ensure();
@@ -127,29 +116,40 @@ export function buildLightingDescriptorPooled(frame: LightingFrameState): Lighti
 	const ambientColor = poolAmbientColor.ensure();
 
 	// Fill (only active range) -----------------------------------------------------------------
-	for (let i = 0; i < dirCount; i++) {
-		const light = dirs.get(i);
-		dirDirections[i * 3] = light.orientation[0];
-		dirDirections[i * 3 + 1] = light.orientation[1];
-		dirDirections[i * 3 + 2] = light.orientation[2];
-		dirColors[i * 3] = light.color[0];
-		dirColors[i * 3 + 1] = light.color[1];
-		dirColors[i * 3 + 2] = light.color[2];
-		dirIntensity[i] = light.intensity;
+	let dirIndex = 0;
+	for (const light of dirs.values()) {
+		if (dirIndex >= dirCount) {
+			break;
+		}
+		const base = dirIndex * 3;
+		dirDirections[base] = light.orientation[0];
+		dirDirections[base + 1] = light.orientation[1];
+		dirDirections[base + 2] = light.orientation[2];
+		dirColors[base] = light.color[0];
+		dirColors[base + 1] = light.color[1];
+		dirColors[base + 2] = light.color[2];
+		dirIntensity[dirIndex] = light.intensity;
+		dirIndex += 1;
 	}
 	// Optionally zero the unused tail (not strictly required if consumer respects counts)
 	// for (let i = dirCount * 3; i < dirDirections.length; i++) dirDirections[i] = 0; // skipped for perf
 
-	for (let i = 0; i < pointCount; i++) {
-		const light = pts.get(i);
-		pointPositions[i * 3] = light.pos![0];
-		pointPositions[i * 3 + 1] = light.pos![1];
-		pointPositions[i * 3 + 2] = light.pos![2];
-		pointColors[i * 3] = light.color![0];
-		pointColors[i * 3 + 1] = light.color![1];
-		pointColors[i * 3 + 2] = light.color![2];
-		pointParams[i * 2] = light.range!;
-		pointParams[i * 2 + 1] = light.intensity;
+	let pointIndex = 0;
+	for (const light of pts.values()) {
+		if (pointIndex >= pointCount) {
+			break;
+		}
+		const vecBase = pointIndex * 3;
+		const paramBase = pointIndex * 2;
+		pointPositions[vecBase] = light.pos[0];
+		pointPositions[vecBase + 1] = light.pos[1];
+		pointPositions[vecBase + 2] = light.pos[2];
+		pointColors[vecBase] = light.color[0];
+		pointColors[vecBase + 1] = light.color[1];
+		pointColors[vecBase + 2] = light.color[2];
+		pointParams[paramBase] = light.range;
+		pointParams[paramBase + 1] = light.intensity;
+		pointIndex += 1;
 	}
 
 	if (frame.ambient) {

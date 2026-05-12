@@ -28,7 +28,7 @@ export class CartBootState {
 		}
 		if (hasPendingCall) {
 			runtime.pendingCall = null;
-			runtime.cpuExecution.clearHaltUntilIrq();
+			runtime.machine.cpu.clearHaltUntilIrq();
 		}
 		runtime.frameScheduler.clearQueuedTime();
 		this.pending = false;

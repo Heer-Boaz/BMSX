@@ -10,7 +10,8 @@
 #include "input/player.h"
 #include "render/texture_manager.h"
 #include "render/vdp/context_state.h"
-#include "render/vdp/texture_transfer.h"
+#include "render/vdp/framebuffer.h"
+#include "render/vdp/slot_textures.h"
 #include "../machine/runtime/runtime.h"
 #include "machine/specs.h"
 #include "machine/memory/map.h"
@@ -95,7 +96,10 @@ bool ConsoleCore::initialize(Platform* platform) {
 	m_view->configureRenderTargets(nullptr, nullptr, nullptr, &m_viewport_scale, &m_canvas_scale);
 
 	m_texture_manager = std::make_unique<TextureManager>(m_view->backend());
-	initializeVdpTextureTransfer(*m_texture_manager, *m_view);
+	m_view->setVdpTextureState(
+		std::make_unique<VdpFrameBufferTextures>(*m_texture_manager, *m_view),
+		std::make_unique<VdpSlotTextures>(*m_texture_manager, *m_view)
+	);
 	if (m_view->backend()->readyForTextureUpload()) {
 		m_view->initializeDefaultTextures();
 	}
@@ -224,9 +228,8 @@ void ConsoleCore::refreshRenderSurfaces() {
 	if (!backend->readyForTextureUpload()) {
 		return;
 	}
-	initializeVdpTextureTransfer(*m_texture_manager, *m_view);
 	m_view->initializeDefaultTextures();
-	restoreVdpContextState(runtime().machine.vdp);
+	restoreVdpContextState(runtime().machine.vdp, *m_view);
 }
 
 void ConsoleCore::log(LogLevel level, const char* fmt, ...) {

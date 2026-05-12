@@ -1,7 +1,7 @@
 import { getMachinePerfSpecs } from '../../../rompack/format';
 import { Input } from '../../../input/manager';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './index';
-import { resolveBytesPerSec, resolveGeoWorkUnitsPerSec, resolveRuntimeRenderSize, resolveVdpWorkUnitsPerSec } from '../../specs';
+import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../../specs';
 import type { Runtime } from '../runtime';
 
 export type TransferRateManifest = {
@@ -46,8 +46,8 @@ export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFr
 }
 
 function setRenderWorkUnitsPerSec(runtime: Runtime, vdpValue: number, geoValue: number): void {
-	runtime.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(vdpValue);
-	runtime.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(geoValue);
+	runtime.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(vdpValue, 'machine.specs.vdp.work_units_per_sec');
+	runtime.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(geoValue, 'machine.specs.geo.work_units_per_sec');
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 }
 
@@ -62,10 +62,10 @@ export function applyActiveMachineTiming(runtime: Runtime, cpuHz: number): void 
 }
 
 export function setTransferRatesFromManifest(runtime: Runtime, specs: TransferRateManifest): void {
-	runtime.timing.imgDecBytesPerSec = resolveBytesPerSec(specs.imgdec_bytes_per_sec, 'machine.specs.cpu.imgdec_bytes_per_sec');
-	runtime.timing.dmaBytesPerSecIso = resolveBytesPerSec(specs.dma_bytes_per_sec_iso, 'machine.specs.dma.dma_bytes_per_sec_iso');
-	runtime.timing.dmaBytesPerSecBulk = resolveBytesPerSec(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
-	runtime.timing.vdpWorkUnitsPerSec = resolveVdpWorkUnitsPerSec(specs.work_units_per_sec);
-	runtime.timing.geoWorkUnitsPerSec = resolveGeoWorkUnitsPerSec(specs.geo_work_units_per_sec);
+	runtime.timing.imgDecBytesPerSec = resolvePositiveSafeInteger(specs.imgdec_bytes_per_sec, 'machine.specs.cpu.imgdec_bytes_per_sec');
+	runtime.timing.dmaBytesPerSecIso = resolvePositiveSafeInteger(specs.dma_bytes_per_sec_iso, 'machine.specs.dma.dma_bytes_per_sec_iso');
+	runtime.timing.dmaBytesPerSecBulk = resolvePositiveSafeInteger(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
+	runtime.timing.vdpWorkUnitsPerSec = resolvePositiveSafeInteger(specs.work_units_per_sec, 'machine.specs.vdp.work_units_per_sec');
+	runtime.timing.geoWorkUnitsPerSec = resolvePositiveSafeInteger(specs.geo_work_units_per_sec, 'machine.specs.geo.work_units_per_sec');
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 }

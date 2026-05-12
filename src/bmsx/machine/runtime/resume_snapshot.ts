@@ -3,7 +3,6 @@ import { convertToError, isLuaFunctionValue, isLuaTable } from '../../lua/value'
 import type { LuaEntrySnapshot, RuntimeResumeSnapshot } from './contracts';
 import type { Runtime } from './runtime';
 import { captureRuntimeMachineState } from './machine_state';
-import { captureRuntimeRenderState } from '../../render/runtime_state';
 
 const LUA_RESUME_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 	'print',
@@ -42,16 +41,11 @@ const LUA_RESUME_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 	'debug',
 ]);
 
-function resumeSnapshotFault(message: string): Error {
-	return new Error(`Resume snapshot fault: ${message}`);
-}
-
 export function captureRuntimeResumeSnapshot(runtime: Runtime): RuntimeResumeSnapshot {
 	const luaSnapshot = captureRuntimeLuaSnapshot(runtime);
 	const snapshot: RuntimeResumeSnapshot = {
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
 		luaPath: runtime.currentPath,
-		renderState: captureRuntimeRenderState(),
 		machineState: captureRuntimeMachineState(runtime),
 	};
 	if (luaSnapshot) {
@@ -99,7 +93,7 @@ function captureLuaEntryCollection(runtime: Runtime, entries: ReadonlyArray<[str
 			count += 1;
 		}
 		catch (error) {
-			throw resumeSnapshotFault(`failed to serialize Lua entry '${name}': ${convertToError(error).message}`);
+			throw new Error(`Resume snapshot fault: failed to serialize Lua entry '${name}': ${convertToError(error).message}`);
 		}
 	}
 	return count > 0 ? { root: snapshotRoot, objects: ctx.objects } : null;
@@ -150,7 +144,7 @@ function restoreLuaGlobals(runtime: Runtime, globals: LuaEntrySnapshot): void {
 			interpreter.setGlobal(name, value);
 		}
 		catch (error) {
-			throw resumeSnapshotFault(`failed to restore Lua global '${name}': ${convertToError(error).message}`);
+			throw new Error(`Resume snapshot fault: failed to restore Lua global '${name}': ${convertToError(error).message}`);
 		}
 	}
 }
@@ -174,7 +168,7 @@ function restoreLuaLocals(runtime: Runtime, locals: LuaEntrySnapshot): void {
 			interpreter.assignChunkValue(name, value);
 		}
 		catch (error) {
-			throw resumeSnapshotFault(`failed to restore Lua local '${name}': ${convertToError(error).message}`);
+			throw new Error(`Resume snapshot fault: failed to restore Lua local '${name}': ${convertToError(error).message}`);
 		}
 	}
 }

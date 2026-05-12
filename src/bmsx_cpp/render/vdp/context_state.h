@@ -2,10 +2,9 @@
 
 namespace bmsx {
 
+class GameView;
 class VDP;
 
-void restoreVdpContextState(VDP& vdp);
-void captureVdpContextState(VDP& vdp);
-void shutdownVdpContextState();
+void restoreVdpContextState(VDP& vdp, GameView& view);
 
 } // namespace bmsx

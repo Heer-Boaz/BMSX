@@ -1,0 +1,61 @@
+import type { VdpBbuFrameBuffer } from './bbu';
+import type { VdpResolvedBlitterSample } from './blitter';
+
+export type VdpDirtySpan = {
+	xStart: number;
+	xEnd: number;
+};
+
+export type VdpSurfaceUploadSlot = {
+	baseAddr: number;
+	capacity: number;
+	surfaceId: number;
+	surfaceWidth: number;
+	surfaceHeight: number;
+	cpuReadback: Uint8Array;
+	dirtyRowStart: number;
+	dirtyRowEnd: number;
+	dirtySpansByRow: VdpDirtySpan[];
+};
+
+export type VdpSurfaceUpload = Readonly<{
+	surfaceId: number;
+	surfaceWidth: number;
+	surfaceHeight: number;
+	cpuReadback: Uint8Array;
+	dirtyRowStart: number;
+	dirtyRowEnd: number;
+	dirtySpansByRow: readonly VdpDirtySpan[];
+}>;
+
+export type VdpDeviceOutput = Readonly<{
+	ditherType: number;
+	xfMatrixWords: ArrayLike<number>;
+	xfViewMatrixIndex: number;
+	xfProjectionMatrixIndex: number;
+	skyboxEnabled: boolean;
+	skyboxSamples: readonly VdpResolvedBlitterSample[];
+	billboards: VdpBbuFrameBuffer;
+	frameBufferWidth: number;
+	frameBufferHeight: number;
+}>;
+
+export type VdpFrameBufferPresentation = Readonly<{
+	presentationCount: number;
+	requiresFullSync: boolean;
+	dirtyRowStart: number;
+	dirtyRowEnd: number;
+	dirtySpansByRow: readonly VdpDirtySpan[];
+	renderReadback: Uint8Array;
+	displayReadback: Uint8Array;
+	width: number;
+	height: number;
+}>;
+
+export type VdpFrameBufferPresentationSink = {
+	consumeVdpFrameBufferPresentation(presentation: VdpFrameBufferPresentation): void;
+};
+
+export type VdpSurfaceUploadSink = {
+	consumeVdpSurfaceUpload(upload: VdpSurfaceUpload): boolean;
+};

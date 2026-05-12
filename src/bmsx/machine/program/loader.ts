@@ -1,5 +1,5 @@
 import { decodeBinary, requireObject, requireObjectKey } from '../../common/serializer/binencoder';
-import { asStringId, valueIsString, valueString, type Program, type ProgramMetadata, type Proto, type Value } from '../cpu/cpu';
+import { StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type Proto, type Value } from '../cpu/cpu';
 import { StringPool } from '../cpu/string_pool';
 
 // disable-next-line legacy_sentinel_string_pattern -- Program image id is a TS/C++/bootrom binary contract, not an alias fallback.
@@ -196,7 +196,7 @@ export function inflateProgram(sections: ProgramObjectSections): Program {
 	for (let index = 0; index < sections.rodata.constPool.length; index += 1) {
 		const value = sections.rodata.constPool[index];
 		if (typeof value === 'string') {
-			constPool[index] = valueString(stringPool.intern(value));
+			constPool[index] = StringValue.get(stringPool.intern(value));
 			continue;
 		}
 		constPool[index] = value;
@@ -226,16 +226,26 @@ export function stripLuaExtension(candidate: string): string {
 	return candidate;
 }
 
-const BIOS_RES_PREFIX = 'res/';
-const BIOS_SYSTEM_RES_PREFIX = 'src/bmsx/res/';
+const CART_SOURCE_PREFIX = 'src/carts/';
+const ENGINE_RESOURCE_SOURCE_PREFIX = 'src/bmsx/res/';
+const RESOURCE_SOURCE_PREFIX = 'res/';
+const MODULE_PATH_SOURCE_PREFIXES = [
+	ENGINE_RESOURCE_SOURCE_PREFIX,
+	RESOURCE_SOURCE_PREFIX,
+];
 
 export function toLuaModulePath(sourcePath: string): string {
-	const path = stripLuaExtension(sourcePath);
-	if (path.startsWith(BIOS_SYSTEM_RES_PREFIX)) {
-		return path.substring(BIOS_SYSTEM_RES_PREFIX.length);
+	const path = stripLuaExtension(sourcePath.includes('\\') ? sourcePath.replace(/\\/g, '/') : sourcePath);
+	if (path.startsWith(CART_SOURCE_PREFIX)) {
+		const cartRelative = path.substring(CART_SOURCE_PREFIX.length);
+		const cartNameEnd = cartRelative.indexOf('/');
+		return cartNameEnd >= 0 ? cartRelative.substring(cartNameEnd + 1) : cartRelative;
 	}
-	if (path.startsWith(BIOS_RES_PREFIX)) {
-		return path.substring(BIOS_RES_PREFIX.length);
+	for (let index = 0; index < MODULE_PATH_SOURCE_PREFIXES.length; index += 1) {
+		const prefix = MODULE_PATH_SOURCE_PREFIXES[index];
+		if (path.startsWith(prefix)) {
+			return path.substring(prefix.length);
+		}
 	}
 	return path;
 }

@@ -43,12 +43,6 @@ struct SkyboxPipelineState {
 	std::array<i32, SKYBOX_FACE_COUNT> faceTextpageBindings{};
 };
 
-struct MeshBatchPipelineState {
-	i32 width = 0;
-	i32 height = 0;
-	// Additional mesh batch state
-};
-
 struct ParticlePipelineState {
 	i32 width = 0;
 	i32 height = 0;
@@ -276,9 +270,6 @@ public:
 
 	// Build render graph from current pass registry
 	std::unique_ptr<RenderGraphRuntime> buildRenderGraph(GameView* view, LightingSystem& lightingSystem);
-
-	// Resource validation
-	void validatePassResources(const std::string& passId);
 
 private:
 	struct RegisteredPassRec {

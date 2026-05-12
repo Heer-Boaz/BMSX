@@ -15,7 +15,8 @@ void IrqController::reset() {
 }
 
 void IrqController::postLoad() {
-	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
+	const Value clearAck = valueNumber(0.0);
+	m_memory.writeIoValue(IO_IRQ_ACK, clearAck);
 }
 
 IrqControllerState IrqController::captureState() const {

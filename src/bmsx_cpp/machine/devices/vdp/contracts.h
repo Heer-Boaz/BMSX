@@ -46,5 +46,15 @@ constexpr size_t VDP_PMU_BANK_SCALE_Y_WORD = 3;
 constexpr size_t VDP_PMU_BANK_CONTROL_WORD = 4;
 constexpr u32 VDP_PMU_Q16_ONE = 0x00010000u;
 constexpr size_t VDP_BBU_BILLBOARD_LIMIT = 1024;
+constexpr uint32_t VDP_RD_SURFACE_SYSTEM = 0u;
+constexpr uint32_t VDP_RD_SURFACE_PRIMARY = 1u;
+constexpr uint32_t VDP_RD_SURFACE_SECONDARY = 2u;
+constexpr uint32_t VDP_RD_SURFACE_FRAMEBUFFER = 3u;
+constexpr uint32_t VDP_RD_SURFACE_COUNT = 4u;
+
+enum class VdpFrameBufferPage : u8 {
+	Render,
+	Display,
+};
 
 } // namespace bmsx

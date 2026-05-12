@@ -15,11 +15,6 @@ export type VdpResolvedBlitterSample = {
 	slot: number;
 };
 
-export type VdpBlitterSurfaceSize = {
-	width: number;
-	height: number;
-};
-
 export type VdpTileRunInputBase = {
 	cols: number;
 	rows: number;

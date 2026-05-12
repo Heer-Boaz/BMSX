@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 14;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 16;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
@@ -99,19 +99,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'x',
 	'y',
 	'yieldRequested',
-	'renderState',
-	'camera',
-	'view',
-	'proj',
-	'eye',
-	'ambientLights',
-	'directionalLights',
-	'pointLights',
-	'color',
-	'intensity',
-	'orientation',
-	'pos',
-	'range',
 	'vy',
 	'scale',
 	'maskableInterruptsEnabled',
@@ -143,4 +130,9 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'busFaultCode',
 	'busFaultAddr',
 	'busFaultAccess',
+	'audio',
+	'eventSequence',
+	'apuStatus',
+	'apuFaultCode',
+	'apuFaultDetail',
 ] as const;

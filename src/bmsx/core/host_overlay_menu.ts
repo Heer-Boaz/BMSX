@@ -1,6 +1,6 @@
 import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../render/shared/submissions';
 import { LAYER_2D_IDE } from '../machine/devices/vdp/contracts';
-import type { Host2DKind, Host2DRef } from '../render/shared/queues';
+import type { Host2DKind, Host2DRef } from '../render/shared/submissions';
 import { consoleCore } from './console';
 import { Input } from '../input/manager';
 import type { PlayerInput } from '../input/player';

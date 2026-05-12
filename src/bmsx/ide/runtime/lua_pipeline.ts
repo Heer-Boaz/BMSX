@@ -9,15 +9,15 @@ import { seedLuaGlobals } from '../../machine/firmware/globals';
 import { SYSTEM_ROM_HELPER_NAMES } from '../../machine/firmware/system_globals';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram, type CompiledProgram } from '../../machine/program/compiler';
 import { linkProgramImages } from '../../machine/program/linker';
-import { getWorkspaceCachedSource } from '../workspace/cache';
+import { workspaceSourceCache } from '../workspace/cache';
 import { RuntimeResumeSnapshot, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
 import { resolveLuaSourceRecordFromRegistries, type LuaSourceRegistry } from '../../machine/program/sources';
 import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
-import { applyRuntimeRenderState, resetRuntimeRenderState } from '../../render/runtime_state';
-import { clearBackQueues } from '../../render/shared/queues';
+import { resetHardwareCameraBank0 } from '../../render/shared/hardware/camera';
+import { clearHardwareLighting } from '../../render/shared/hardware/lighting';
 import { restoreVdpContextState } from '../../render/vdp/context_state';
 import * as workbenchMode from '../workbench/mode';
 import { calcCyclesPerFrameScaled, resolveUfpsScaled, resolveVblankCycles } from '../../machine/runtime/timing';
@@ -96,10 +96,8 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 	runtime.luaRuntimeFailed = false;
 	clearOverlayFrame();
 	applyRuntimeMachineState(runtime, snapshot.machineState);
-	restoreVdpContextState(runtime.machine.vdp);
+	restoreVdpContextState(runtime.machine.vdp, consoleCore.view);
 	resumeLuaProgramState(runtime, snapshot, preserveSystemModules);
-	applyRuntimeRenderState(snapshot.renderState);
-	clearBackQueues();
 	runtime.luaInitialized = true;
 }
 
@@ -179,7 +177,11 @@ function editorSourceForChunk(runtime: Runtime, path: string): string {
 }
 
 function clearEditorCompletionCache(runtime: Runtime): void {
-	runtime.editor?.clearNativeMemberCompletionCache(); // WAAROM NULLABLE?!?!?!
+	const editor = runtime.editor;
+	if (!editor) {
+		return;
+	}
+	editor.clearNativeMemberCompletionCache();
 }
 
 export function beginEntryExecution(runtime: Runtime, entryProtoIndex: number): void {
@@ -299,7 +301,7 @@ export function resetRuntimeState(runtime: Runtime): void {
 export function resetFrameState(runtime: Runtime): void {
 	runtime.frameLoop.abandonFrameState();
 	runtime.frameLoop.drawFrameState = null;
-	runtime.cpuExecution.clearHaltUntilIrq();
+	runtime.machine.cpu.clearHaltUntilIrq();
 	runtime.frameScheduler.reset();
 	runtime.frameLoop.reset();
 	runtime.screen.reset();
@@ -309,8 +311,8 @@ export function resetFrameState(runtime: Runtime): void {
 export function resetHardwareState(runtime: Runtime): void {
 	runtime.machine.resetDevices();
 	runtime.vblank.reset();
-	resetRuntimeRenderState();
-	clearBackQueues();
+	resetHardwareCameraBank0();
+	clearHardwareLighting();
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {
@@ -417,24 +419,8 @@ export function describeSymbolValue(value: Value): { kind: SymbolKind; valueType
 	return { kind: 'function', valueType: 'function' };
 }
 
-function stripSymbolModuleLuaExtension(path: string): string {
-	return path.endsWith('.lua') ? path.slice(0, path.length - 4) : path;
-}
-
-function stripSymbolModuleSourcePrefix(path: string): string {
-	const normalized = stripSymbolModuleLuaExtension(path.replace(/\\/g, '/'));
-	if (normalized.startsWith('src/carts/')) {
-		const parts = normalized.split('/');
-		return parts.length > 3 ? parts.slice(3).join('/') : parts[parts.length - 1];
-	}
-	if (normalized.startsWith('bios/')) {
-		return normalized.slice('bios/'.length);
-	}
-	return normalized;
-}
-
 function buildSymbolModuleSlotPrefix(modulePath: string): string {
-	const compactPath = stripSymbolModuleSourcePrefix(modulePath);
+	const compactPath = toLuaModulePath(modulePath);
 	const parts = compactPath.split('/').filter(part => part.length > 0);
 	const normalizedParts = parts.length > 0 ? parts : [compactPath];
 	let prefix = '';
@@ -819,8 +805,8 @@ export function resourceSourceForChunk(runtime: Runtime, path: string): string {
 	if (!binding) {
 		return null;
 	}
-	const cached = getWorkspaceCachedSource(binding.source_path);
-	if (cached !== null) {
+	const cached = workspaceSourceCache.get(binding.source_path);
+	if (cached !== undefined) {
 		return cached;
 	}
 	return binding.src;
@@ -890,13 +876,13 @@ export function requireModule(runtime: Runtime, moduleName: string): Value {
 		throw runtime.createApiRuntimeError(`require('${moduleName}') failed: module not compiled.`);
 	}
 	runtime.moduleCache.set(moduleName, true);
-	const results = runtime.luaScratch.acquireValue();
+	const results = runtime.luaScratch.values.acquire();
 	let value: Value = null;
 	try {
 		callClosureInto(runtime, { protoIndex, upvalues: [] }, [], results);
 		value = results.length > 0 ? results[0] : null;
 	} finally {
-		runtime.luaScratch.releaseValue(results);
+		runtime.luaScratch.values.release(results);
 	}
 	const cachedValue = value === null ? true : value;
 	runtime.moduleCache.set(moduleName, cachedValue);
@@ -912,14 +898,14 @@ function runStaticModuleInitializer(runtime: Runtime, path: string): void {
 		throw runtime.createApiRuntimeError(`static module init failed: module '${path}' is not compiled.`);
 	}
 	runtime.moduleCache.set(path, true);
-	const results = runtime.luaScratch.acquireValue();
+	const results = runtime.luaScratch.values.acquire();
 	try {
 		callClosureInto(runtime, { protoIndex, upvalues: [] }, [], results);
 	} catch (error) {
 		runtime.moduleCache.delete(path);
 		throw error;
 	} finally {
-		runtime.luaScratch.releaseValue(results);
+		runtime.luaScratch.values.release(results);
 	}
 	runtime.moduleCache.delete(path);
 }

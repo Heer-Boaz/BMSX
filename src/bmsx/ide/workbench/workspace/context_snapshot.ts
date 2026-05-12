@@ -1,26 +1,40 @@
+// disable cross_layer_import_pattern -- workspace context snapshots own the editor/workbench state handoff for autosave and restore.
 import { clamp_safe } from '../../../common/clamp';
 import type { CodeTabContext, EditorSnapshot, Position } from '../../common/models';
 import { editorDocumentState } from '../../editor/editing/document_state';
+import { restoreSnapshot } from '../../editor/editing/undo_controller';
 import { editorViewState } from '../../editor/ui/view/state';
 import { getTextSnapshot } from '../../editor/text/source_text';
 import type { SnapshotMetadata } from './models';
-import { getActiveCodeTabContextId } from '../ui/code_tab/contexts';
+import { getActiveCodeTabContextId, setTabDirty, updateActiveContextDirtyFlag } from '../ui/code_tab/contexts';
 import { getActiveTabId } from '../ui/tabs';
+
+type EditHistoryState = {
+	undoStack: { length: number };
+	redoStack: { length: number };
+	lastHistoryKey: unknown;
+	lastHistoryTimestamp: number;
+	savePointDepth: number;
+};
+
+function clearEditHistory(state: EditHistoryState): void {
+	state.undoStack.length = 0;
+	state.redoStack.length = 0;
+	state.lastHistoryKey = null;
+	state.lastHistoryTimestamp = 0;
+	state.savePointDepth = 0;
+}
+
+function isActiveCodeContext(context: CodeTabContext): boolean {
+	return getActiveCodeTabContextId() === context.id && getActiveTabId() === context.id;
+}
 
 export function applySourceToContext(context: CodeTabContext, source: string, metadata?: SnapshotMetadata): void {
 	context.buffer.replace(0, context.buffer.length, source);
 	context.textVersion = context.buffer.version;
-	context.undoStack.length = 0;
-	context.redoStack.length = 0;
-	context.lastHistoryKey = null;
-	context.lastHistoryTimestamp = 0;
-	context.savePointDepth = 0;
-	if (getActiveCodeTabContextId() === context.id && getActiveTabId() === context.id) {
-		editorDocumentState.undoStack.length = 0;
-		editorDocumentState.redoStack.length = 0;
-		editorDocumentState.lastHistoryKey = null;
-		editorDocumentState.lastHistoryTimestamp = 0;
-		editorDocumentState.savePointDepth = 0;
+	clearEditHistory(context);
+	if (isActiveCodeContext(context)) {
+		clearEditHistory(editorDocumentState);
 	}
 	const snapshot = buildSnapshotFromBuffer(context, metadata);
 	context.cursorRow = snapshot.cursorRow;
@@ -52,6 +66,55 @@ export function buildSnapshotFromBuffer(context: CodeTabContext, metadata?: Snap
 		selectionAnchor,
 		textVersion: metadata?.textVersion ?? buffer.version,
 	};
+}
+
+export function resetWorkspaceActiveDocumentDirtyBufferState(): void {
+	editorDocumentState.saveGeneration = editorDocumentState.appliedGeneration;
+	editorDocumentState.dirty = false;
+	clearEditHistory(editorDocumentState);
+}
+
+export function clearWorkspaceActiveDocumentSessionState(): void {
+	clearEditHistory(editorDocumentState);
+	editorDocumentState.dirty = false;
+}
+
+export function resetWorkspaceContextToCleanSource(context: CodeTabContext, source: string): void {
+	applySourceToContext(context, source);
+	context.dirty = false;
+	context.saveGeneration = editorDocumentState.saveGeneration;
+	context.appliedGeneration = editorDocumentState.appliedGeneration;
+	context.lastSavedSource = source;
+	setTabDirty(context.id, false);
+	if (isActiveCodeContext(context)) {
+		restoreSnapshot(buildSnapshotFromBuffer(context), { preserveScroll: false });
+		updateActiveContextDirtyFlag();
+	}
+}
+
+export function clearWorkspaceContextSessionState(context: CodeTabContext): void {
+	clearEditHistory(context);
+	context.dirty = false;
+	setTabDirty(context.id, false);
+}
+
+export function restoreWorkspaceContextSource(context: CodeTabContext, source: string, metadata: SnapshotMetadata, dirty: boolean): void {
+	applySourceToContext(context, source, metadata);
+	if (dirty) {
+		context.dirty = true;
+		context.savePointDepth = -1;
+	} else {
+		context.lastSavedSource = source;
+		context.dirty = false;
+		context.savePointDepth = context.undoStack.length;
+	}
+	setTabDirty(context.id, dirty);
+	if (isActiveCodeContext(context)) {
+		restoreSnapshot(buildSnapshotFromBuffer(context, metadata), { preserveScroll: true });
+		editorDocumentState.savePointDepth = context.savePointDepth;
+		editorDocumentState.dirty = dirty;
+		updateActiveContextDirtyFlag();
+	}
 }
 
 export function captureContextText(context: CodeTabContext): string {

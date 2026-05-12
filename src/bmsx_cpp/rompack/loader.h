@@ -41,7 +41,6 @@ public:
 	std::unordered_map<AssetToken, ModelAsset> model;
 	std::unordered_map<AssetToken, DataAsset> data;
 	std::unordered_map<AssetToken, BinAsset> bin;
-	std::unordered_map<AssetToken, LuaSourceAsset> lua;
 	std::unordered_map<AssetToken, AudioEventAsset> audioevents;
 
 	// Pre-compiled program image loaded from the ROM package.
@@ -69,8 +68,10 @@ public:
 	BinAsset* getBin(const AssetId& id);
 	const BinAsset* getBin(const AssetId& id) const;
 
-	LuaSourceAsset* getLua(const AssetId& path);
-	const LuaSourceAsset* getLua(const AssetId& path) const;
+	const LuaSourceAsset* getLuaModule(const AssetId& modulePath) const;
+	const LuaSourceAsset* getLuaSource(const AssetId& sourcePath) const;
+	const std::unordered_map<AssetToken, LuaSourceAsset>& luaSources() const;
+	void insertLuaSource(LuaSourceAsset asset);
 
 	const BinValue* getAudioEvent(const AssetId& id) const;
 
@@ -82,10 +83,15 @@ public:
 	bool hasModel(const AssetId& id) const;
 	bool hasData(const AssetId& id) const;
 	bool hasBin(const AssetId& id) const;
-	bool hasLua(const AssetId& path) const;
+	bool hasLuaModule(const AssetId& modulePath) const;
+	bool hasLuaSource(const AssetId& sourcePath) const;
 	bool hasAudioEvent(const AssetId& id) const;
 	bool hasProgram() const { return programImage != nullptr; }
 	bool hasAnyImg() const { return !img.empty(); }
+
+private:
+	std::unordered_map<AssetToken, LuaSourceAsset> m_lua;
+	std::unordered_map<AssetToken, AssetToken> m_luaSourceToModule;
 };
 
 struct AssetLoadCallbacks {

@@ -76,9 +76,6 @@ VdpXfState VdpXfUnit::captureState() const {
 }
 
 void VdpXfUnit::restoreState(const VdpXfState& state) {
-	if (state.viewMatrixIndex >= VDP_XF_MATRIX_COUNT || state.projectionMatrixIndex >= VDP_XF_MATRIX_COUNT) {
-		throw BMSX_RUNTIME_ERROR("[VDP] XF state selects invalid matrix indexes.");
-	}
 	matrixWords = state.matrixWords;
 	viewMatrixIndex = state.viewMatrixIndex;
 	projectionMatrixIndex = state.projectionMatrixIndex;

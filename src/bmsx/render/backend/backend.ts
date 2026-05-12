@@ -1,6 +1,6 @@
 /// <reference types="@webgpu/types" />
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
-import type { Host2DSubmission } from '../shared/queues';
+import type { Host2DSubmission } from '../shared/submissions';
 import { LightingFrameState } from '../lighting/system';
 import type { WebGLBackend } from './webgl/backend';
 import type { WebGPUBackend } from './webgpu/backend';
@@ -25,7 +25,7 @@ import type { TextureParams } from './texture_params';
  *   createImageBitmapFromSource(), createCubemapFromSources(),
  *   createSolidCubemap(), createCubemapEmpty(), uploadCubemapFace(),
  *   createColorTexture(), createDepthTexture(), createRenderTarget(),
- *   transitionTexture(), createRenderPassInstance(),
+ *   createRenderPassInstance(),
  *   destroyRenderPassInstance(), setGraphicsPipeline(), setPassState(),
  *   getPassState(), createVertexBuffer(), updateVertexBuffer(),
  *   bindArrayBuffer(), createVertexArray(), bindVertexArray(),
@@ -44,6 +44,7 @@ export type TextureFormat = 'rgba8unorm' | 'bgra8unorm' | 'rgb8unorm' | 'depth24
 export type TextureHandle = WebGLTexture | GPUTexture;
 export type BufferHandle = WebGLBuffer | GPUBuffer | null;
 export type BackendContext =  WebGL2RenderingContext | GPUCanvasContext | null;
+export type SizedArrayBufferView = ArrayBufferView & { readonly BYTES_PER_ELEMENT?: number; readonly length?: number };
 // ---- Unified "FBO" a.k.a. render target ------------------------------------
 
 export type RenderTargetHandle =
@@ -63,7 +64,6 @@ export type RenderTargetHandle =
 // High-level render pass identifiers
 export type RenderPassId =
 	| 'skybox'
-	| 'meshbatch'
 	| 'particles'
 	| 'framebuffer_2d'
 	| 'host_overlay'
@@ -183,7 +183,7 @@ export interface GPUBackend {
 	createTexture(data: Uint8Array, width: number, height: number, desc: TextureParams): TextureHandle;
 	updateTexture(handle: TextureHandle, data: Uint8Array, width: number, height: number, desc: TextureParams): void;
 	resizeTexture(handle: TextureHandle, width: number, height: number, desc: TextureParams): TextureHandle;
-	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams): void;
+	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams, sourceOffset?: number): void;
 	readTextureRegion(handle: TextureHandle, out: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams): void;
 	createSolidTexture2D(width: number, height: number, color: number, desc?: TextureParams): TextureHandle;
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): TextureHandle;
@@ -199,7 +199,6 @@ export interface GPUBackend {
 	beginRenderPass(desc: RenderPassDesc): PassEncoder;
 	endRenderPass(pass: PassEncoder): void;
 	getCaps(): BackendCaps;
-	transitionTexture?(tex: TextureHandle, fromLayout: string, toLayout: string): void;
 	createRenderPassInstance?(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle;
 	destroyRenderPassInstance?(p: RenderPassInstanceHandle): void;
 	setGraphicsPipeline?(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void;
@@ -210,7 +209,7 @@ export interface GPUBackend {
 
 	// Optional buffer/VAO helpers (WebGL-backed today; WebGPU mapping later)
 	createVertexBuffer?(data: ArrayBufferView, usage: 'static' | 'dynamic'): BufferHandle;
-	updateVertexBuffer?(buf: BufferHandle, data: ArrayBufferView, dstOffset?: number): void;
+	updateVertexBuffer?(buf: BufferHandle, data: ArrayBufferView, dstOffset?: number, sourceOffset?: number, elementCount?: number): void;
 	bindArrayBuffer?(buf: BufferHandle): void;
 	createVertexArray?(): unknown;
 	bindVertexArray?(vao: unknown): void;
@@ -235,7 +234,6 @@ export interface GPUBackend {
 
 export interface RenderPassStateRegistry {
 	['skybox']: SkyboxPipelineState;
-	['meshbatch']: MeshBatchPipelineState;
 	['particles']: ParticlePipelineState;
 	['framebuffer_2d']: Framebuffer2DPipelineState;
 	['host_overlay']: HostOverlayPipelineState;
@@ -247,7 +245,6 @@ export interface RenderPassStateRegistry {
 	['headless_present']: never;
 	['axis_gizmo']: never;
 	['sprites']: never;
-	['debug_solid']: never;
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;
 
@@ -312,15 +309,6 @@ export interface SkyboxPipelineState {
 	textpageSecondaryTex: TextureHandle;
 	faceUvRects: Float32Array;
 	faceTextpageBindings: Int32Array;
-}
-
-export interface MeshBatchPipelineState {
-	width: number;
-	height: number;
-	camPos: Float32Array | { x: number; y: number; z: number; };
-	viewProj: Float32Array;
-	cameraFrustum: Float32Array;
-	lighting?: LightingFrameState;
 }
 
 export interface ParticlePipelineState {

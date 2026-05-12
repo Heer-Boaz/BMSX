@@ -59,6 +59,7 @@ private:
 	static ImageCopyPlan planImageCopy(uint32_t targetBaseAddr, uint32_t targetCapacity, const DecodedImage& result, uint32_t capacityLimit);
 	bool startNextQueuedJob();
 	void startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, bool signalIrq);
+	void writeJobRegisters(uint32_t status, uint32_t written, uint32_t src, uint32_t len, uint32_t dst, uint32_t cap);
 	uint32_t decodeTargetCapacity(uint32_t dst) const;
 	void beginDecode(DecodedImage&& result, uint32_t targetBaseAddr, uint32_t targetCapacity);
 	void advanceDecode();

@@ -32,10 +32,6 @@ export function addTrackedLuaHeapBytes(delta: number): void {
 	}
 }
 
-export function replaceTrackedLuaHeapBytes(previousBytes: number, nextBytes: number): void {
-	addTrackedLuaHeapBytes(nextBytes - previousBytes);
-}
-
 export function getTrackedLuaHeapBytes(): number {
 	return trackedLuaHeapBytes;
 }

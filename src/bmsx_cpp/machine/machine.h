@@ -29,6 +29,7 @@ struct MachineTiming {
 
 struct MachineState {
 	IrqControllerState irq;
+	AudioControllerState audio;
 	InputControllerState input;
 	VdpState vdp;
 };
@@ -36,6 +37,7 @@ struct MachineState {
 struct MachineSaveState {
 	MemorySaveState memory;
 	IrqControllerState irq;
+	AudioControllerState audio;
 	StringPoolState stringPool;
 	InputControllerState input;
 	VdpSaveState vdp;

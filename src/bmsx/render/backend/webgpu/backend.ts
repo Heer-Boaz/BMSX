@@ -83,11 +83,11 @@ export class WebGPUBackend implements GPUBackend {
 		});
 	}
 
-	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, _desc: TextureParams): void {
+	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, _desc: TextureParams, sourceOffset = 0): void {
 		this.device.queue.writeTexture(
 			{ texture: handle as GPUTexture, origin: { x, y, z: 0 } },
 			data as Uint8Array<ArrayBuffer>,
-			{ bytesPerRow: width * 4 },
+			{ offset: sourceOffset, bytesPerRow: width * 4 },
 			{ width, height, depthOrArrayLayers: 1 },
 		);
 		this.accountUpload('texture', width * height * 4);
@@ -220,6 +220,8 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	destroyTexture(handle: TextureHandle): void {
+		this.textureBindings.clear();
+		this.bindGroupCache.clear();
 		(handle as GPUTexture).destroy();
 	}
 
@@ -352,10 +354,6 @@ export class WebGPUBackend implements GPUBackend {
 			supportsInstancing: true,
 			supportsDepthTexture: true,
 		};
-	}
-
-	transitionTexture(_tex: TextureHandle, _fromLayout: string, _toLayout: string): void {
-		// WebGPU handles resource states automatically; manual transitions not required.
 	}
 
 	createRenderPassInstance(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle {
@@ -495,7 +493,11 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	getPassState<S = unknown>(label: RenderPassStateId): S {
-		return this.stateRegistry.get(label);
+		const state = this.stateRegistry.get(label);
+		if (state === undefined && !this.stateRegistry.has(label)) {
+			throw new Error(`[WebGPUBackend] Render pass state '${String(label)}' is not registered.`);
+		}
+		return state as S;
 	}
 
 	createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): GPUBuffer {

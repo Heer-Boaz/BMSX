@@ -1,5 +1,6 @@
 #include "machine/memory/memory.h"
 #include "common/byte_hex_string.h"
+#include "common/endian.h"
 
 #include <cstring>
 #include <stdexcept>
@@ -12,6 +13,14 @@ constexpr size_t IO_SYS_BUS_FAULT_CODE_SLOT = (IO_SYS_BUS_FAULT_CODE - IO_BASE) 
 constexpr size_t IO_SYS_BUS_FAULT_ADDR_SLOT = (IO_SYS_BUS_FAULT_ADDR - IO_BASE) / IO_WORD_SIZE;
 constexpr size_t IO_SYS_BUS_FAULT_ACCESS_SLOT = (IO_SYS_BUS_FAULT_ACCESS - IO_BASE) / IO_WORD_SIZE;
 constexpr size_t IO_SYS_BUS_FAULT_ACK_SLOT = (IO_SYS_BUS_FAULT_ACK - IO_BASE) / IO_WORD_SIZE;
+constexpr uint32_t BUS_ACCESS_READ_WORD = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD;
+constexpr uint32_t BUS_ACCESS_WRITE_WORD = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD;
+constexpr uint32_t BUS_ACCESS_READ_U8 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8;
+constexpr uint32_t BUS_ACCESS_WRITE_U8 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8;
+constexpr uint32_t BUS_ACCESS_READ_U16 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16;
+constexpr uint32_t BUS_ACCESS_READ_U32 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32;
+constexpr uint32_t BUS_ACCESS_WRITE_U16 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16;
+constexpr uint32_t BUS_ACCESS_WRITE_U32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32;
 
 inline bool addressRangeOffset(uint32_t addr, uint32_t base, size_t size, size_t length, size_t& outOffset) {
 	if (addr < base || length > size) {
@@ -63,18 +72,12 @@ void Memory::setVramWriter(VramWriter* writer) {
 }
 
 void Memory::mapIoRead(uint32_t addr, void* context, IoReadHandler handler) {
-	const int slot = ioAlignedSlot(addr);
-	if (slot < 0) {
-		throw std::runtime_error("I/O fault @ " + formatNumberAsHex(addr, 8) + ": invalid register.");
-	}
+	const int slot = requireIoAlignedSlot(addr);
 	m_ioReadHandlers[static_cast<size_t>(slot)] = { context, handler };
 }
 
 void Memory::mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler) {
-	const int slot = ioAlignedSlot(addr);
-	if (slot < 0) {
-		throw std::runtime_error("I/O fault @ " + formatNumberAsHex(addr, 8) + ": invalid register.");
-	}
+	const int slot = requireIoAlignedSlot(addr);
 	m_ioWriteHandlers[static_cast<size_t>(slot)] = { context, handler };
 }
 
@@ -85,20 +88,9 @@ void Memory::setProgramCode(const u8* data, size_t size) {
 	m_programCode = { data, size };
 }
 
-std::vector<u8> Memory::dumpMutableRam() const {
-	return m_ram;
-}
-
-void Memory::restoreMutableRam(const u8* data, size_t size) {
-	if (size != m_ram.size()) {
-		throw std::runtime_error("[Memory] RAM snapshot length mismatch.");
-	}
-	std::memcpy(m_ram.data(), data, size);
-}
-
 MemorySaveState Memory::captureSaveState() const {
 	MemorySaveState state;
-	state.ram = dumpMutableRam();
+	state.ram = m_ram;
 	state.busFaultCode = m_busFaultCode;
 	state.busFaultAddr = m_busFaultAddr;
 	state.busFaultAccess = m_busFaultAccess;
@@ -114,6 +106,94 @@ void Memory::restoreSaveState(const MemorySaveState& state) {
 	m_busFaultAddr = state.busFaultAddr;
 	m_busFaultAccess = state.busFaultAccess;
 	writeBusFaultSlots();
+}
+
+u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const {
+	if (isProgramCodeReadableRange(addr, 1)) {
+		return m_programCode.data[static_cast<size_t>(addr - PROGRAM_ROM_BASE)];
+	}
+	if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + m_systemRom.size) {
+		return m_systemRom.data[static_cast<size_t>(addr - SYSTEM_ROM_BASE)];
+	}
+	if (m_cartRom.data != nullptr && addr >= CART_ROM_BASE && addr < CART_ROM_BASE + m_cartRom.size) {
+		return m_cartRom.data[static_cast<size_t>(addr - CART_ROM_BASE)];
+	}
+	if (m_overlayRom.data != nullptr && addr >= OVERLAY_ROM_BASE && addr < OVERLAY_ROM_BASE + m_overlayRom.size) {
+		return m_overlayRom.data[static_cast<size_t>(addr - OVERLAY_ROM_BASE)];
+	}
+	if (addr >= RAM_BASE) {
+		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+		if (offset < m_ram.size()) {
+			return m_ram[offset];
+		}
+	}
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
+	return 0;
+}
+
+void Memory::writeVramU16LE(uint32_t addr, uint32_t value) {
+	u8 bytes[2] = {0, 0};
+	writeLE16(bytes, value);
+	m_vramWriter->writeVram(addr, bytes, 2);
+}
+
+void Memory::writeVramU32LE(uint32_t addr, uint32_t value) {
+	u8 bytes[4] = {0, 0, 0, 0};
+	writeLE32(bytes, value);
+	m_vramWriter->writeVram(addr, bytes, 4);
+}
+
+Value Memory::readIoSlotValue(int slot, uint32_t addr) const {
+	const IoReadBinding& binding = m_ioReadHandlers[static_cast<size_t>(slot)];
+	if (binding.handler != nullptr) {
+		return binding.handler(binding.context, addr);
+	}
+	return m_ioSlots[static_cast<size_t>(slot)];
+}
+
+void Memory::writeIoSlotValue(int slot, uint32_t addr, Value value) {
+	const size_t slotIndex = static_cast<size_t>(slot);
+	m_ioSlots[slotIndex] = value;
+	const IoWriteBinding& binding = m_ioWriteHandlers[slotIndex];
+	if (binding.handler != nullptr) {
+		binding.handler(binding.context, addr, value);
+	}
+}
+
+int Memory::requireIoAlignedSlot(uint32_t addr) const {
+	const int slot = ioAlignedSlot(addr);
+	if (slot < 0) {
+		throw std::runtime_error("I/O fault @ " + formatNumberAsHex(addr, 8) + ": invalid register.");
+	}
+	return slot;
+}
+
+bool Memory::writeRamU8(uint32_t addr, u8 value) {
+	if (addr < RAM_BASE) {
+		return false;
+	}
+	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+	if (offset >= m_ram.size()) {
+		return false;
+	}
+	m_ram[offset] = value;
+	return true;
+}
+
+bool Memory::writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value) {
+	if (addr < RAM_BASE) {
+		return false;
+	}
+	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+	if (offset + byteLength > m_ram.size()) {
+		return false;
+	}
+	if (byteLength == 2) {
+		writeLE16(m_ram.data() + offset, value);
+	} else {
+		writeLE32(m_ram.data() + offset, value);
+	}
+	return true;
 }
 
 void Memory::markRoots(GcHeap& heap) const {
@@ -139,11 +219,7 @@ void Memory::clearBusFault() {
 Value Memory::readValue(uint32_t addr) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		const IoReadBinding& binding = m_ioReadHandlers[static_cast<size_t>(slot)];
-		if (binding.handler != nullptr) {
-			return binding.handler(binding.context, addr);
-		}
-		return m_ioSlots[static_cast<size_t>(slot)];
+		return readIoSlotValue(slot, addr);
 	}
 	if (addressRangeWithin(addr, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, 4)) {
 		return valueNumber(static_cast<double>(readProgramCodeWord(addr)));
@@ -158,26 +234,18 @@ Value Memory::readMappedValue(uint32_t addr) const {
 	if (isVramMappedContiguousRange(addr, 4)) {
 		u8 bytes[4] = {0, 0, 0, 0};
 		m_vramWriter->readVram(addr, bytes, 4);
-		const uint32_t value = static_cast<uint32_t>(bytes[0])
-			| (static_cast<uint32_t>(bytes[1]) << 8)
-			| (static_cast<uint32_t>(bytes[2]) << 16)
-			| (static_cast<uint32_t>(bytes[3]) << 24);
-		return valueNumber(static_cast<double>(value));
+		return valueNumber(static_cast<double>(readLE32(bytes)));
 	}
-	if (isVramRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD);
+	if (isVramMappedRange(addr, 4)) {
+		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_ACCESS_READ_WORD);
 		return valueNumber(0.0);
 	}
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		const IoReadBinding& binding = m_ioReadHandlers[static_cast<size_t>(slot)];
-		if (binding.handler != nullptr) {
-			return binding.handler(binding.context, addr);
-		}
-		return m_ioSlots[static_cast<size_t>(slot)];
+		return readIoSlotValue(slot, addr);
 	}
 	if (isIoRegionRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD);
+		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_WORD);
 		return valueNumber(0.0);
 	}
 	if (addressRangeWithin(addr, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, 4)) {
@@ -194,30 +262,21 @@ Value Memory::readMappedValue(uint32_t addr) const {
 	} else if (addr >= RAM_BASE) {
 		offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset + 4 > m_ram.size()) {
-			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD);
+			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_WORD);
 			return valueNumber(0.0);
 		}
 		region = m_ram.data();
 	} else {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD);
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_WORD);
 		return valueNumber(0.0);
 	}
-	const uint32_t value = static_cast<uint32_t>(region[offset])
-		| (static_cast<uint32_t>(region[offset + 1]) << 8)
-		| (static_cast<uint32_t>(region[offset + 2]) << 16)
-		| (static_cast<uint32_t>(region[offset + 3]) << 24);
-	return valueNumber(static_cast<double>(value));
+	return valueNumber(static_cast<double>(readLE32(region + offset)));
 }
 
 void Memory::writeValue(uint32_t addr, Value value) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		const size_t slotIndex = static_cast<size_t>(slot);
-		m_ioSlots[slotIndex] = value;
-		const IoWriteBinding& binding = m_ioWriteHandlers[slotIndex];
-		if (binding.handler != nullptr) {
-			binding.handler(binding.context, addr, value);
-		}
+		writeIoSlotValue(slot, addr, value);
 		return;
 	}
 	writeU32(addr, toU32(value));
@@ -226,7 +285,8 @@ void Memory::writeValue(uint32_t addr, Value value) {
 void Memory::writeIoValue(uint32_t addr, Value value) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot < 0) {
-		throw std::runtime_error("I/O fault @ " + formatNumberAsHex(addr, 8) + ": invalid register.");
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_WORD);
+		return;
 	}
 	m_ioSlots[static_cast<size_t>(slot)] = value;
 }
@@ -235,121 +295,58 @@ void Memory::writeMappedValue(uint32_t addr, Value value) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
 		if (isLuaReadOnlyIoAddress(addr)) {
-			raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD);
+			raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_ACCESS_WRITE_WORD);
 			return;
 		}
-		const size_t slotIndex = static_cast<size_t>(slot);
-		m_ioSlots[slotIndex] = value;
-		const IoWriteBinding& binding = m_ioWriteHandlers[slotIndex];
-		if (binding.handler != nullptr) {
-			binding.handler(binding.context, addr, value);
-		}
+		writeIoSlotValue(slot, addr, value);
 		return;
 	}
 	if (isIoRegionRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD);
+		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_WORD);
 		return;
 	}
 	if (isVramMappedContiguousRange(addr, 4)) {
 		const uint32_t word = toU32(value);
-		u8 bytes[4] = {
-			static_cast<u8>(word & 0xffu),
-			static_cast<u8>((word >> 8) & 0xffu),
-			static_cast<u8>((word >> 16) & 0xffu),
-			static_cast<u8>((word >> 24) & 0xffu),
-		};
-		m_vramWriter->writeVram(addr, bytes, 4);
+		writeVramU32LE(addr, word);
 		return;
 	}
-	if (isVramRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD);
+	if (isVramMappedRange(addr, 4)) {
+		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_ACCESS_WRITE_WORD);
 		return;
 	}
-	if (addr >= RAM_BASE) {
-		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + 4 > m_ram.size()) {
-			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD);
-			return;
-		}
-		const uint32_t word = toU32(value);
-		m_ram[offset] = static_cast<u8>(word & 0xffu);
-		m_ram[offset + 1] = static_cast<u8>((word >> 8) & 0xffu);
-		m_ram[offset + 2] = static_cast<u8>((word >> 16) & 0xffu);
-		m_ram[offset + 3] = static_cast<u8>((word >> 24) & 0xffu);
+	if (writeRamWordLE(addr, 4, toU32(value))) {
 		return;
 	}
-	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD);
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_WORD);
 }
 
 u8 Memory::readU8(uint32_t addr) const {
-	if (isVramRange(addr, 1)) {
-		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+	if (isVramMappedRange(addr, 1)) {
+		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_ACCESS_READ_U8);
 		return 0;
 	}
-	if (isProgramCodeReadableRange(addr, 1)) {
-		return m_programCode.data[static_cast<size_t>(addr - PROGRAM_ROM_BASE)];
-	}
-	if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + m_systemRom.size) {
-		return m_systemRom.data[static_cast<size_t>(addr - SYSTEM_ROM_BASE)];
-	}
-	if (m_cartRom.data != nullptr && addr >= CART_ROM_BASE && addr < CART_ROM_BASE + m_cartRom.size) {
-		return m_cartRom.data[static_cast<size_t>(addr - CART_ROM_BASE)];
-	}
-	if (m_overlayRom.data != nullptr && addr >= OVERLAY_ROM_BASE && addr < OVERLAY_ROM_BASE + m_overlayRom.size) {
-		return m_overlayRom.data[static_cast<size_t>(addr - OVERLAY_ROM_BASE)];
-	}
-	if (addr >= RAM_BASE) {
-		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset < m_ram.size()) {
-			return m_ram[offset];
-		}
-	}
-	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
-	return 0;
+	return readMainMemoryU8(addr, BUS_ACCESS_READ_U8);
 }
 
 u8 Memory::readMappedU8(uint32_t addr) const {
-	if (isVramRange(addr, 1)) {
+	if (isVramMappedRange(addr, 1)) {
 		u8 value = 0;
 		m_vramWriter->readVram(addr, &value, 1);
 		return value;
 	}
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		const IoReadBinding& binding = m_ioReadHandlers[static_cast<size_t>(slot)];
-		const Value value = binding.handler != nullptr
-			? binding.handler(binding.context, addr)
-			: m_ioSlots[static_cast<size_t>(slot)];
-		return static_cast<u8>(toU32(value) & 0xffu);
+		return static_cast<u8>(toU32(readIoSlotValue(slot, addr)) & 0xffu);
 	}
 	if (isIoRegionRange(addr, 1)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U8);
 		return 0;
 	}
-	if (isProgramCodeReadableRange(addr, 1)) {
-		return m_programCode.data[static_cast<size_t>(addr - PROGRAM_ROM_BASE)];
-	}
-	if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + m_systemRom.size) {
-		return m_systemRom.data[static_cast<size_t>(addr - SYSTEM_ROM_BASE)];
-	}
-	if (m_cartRom.data != nullptr && addr >= CART_ROM_BASE && addr < CART_ROM_BASE + m_cartRom.size) {
-		return m_cartRom.data[static_cast<size_t>(addr - CART_ROM_BASE)];
-	}
-	if (m_overlayRom.data != nullptr && addr >= OVERLAY_ROM_BASE && addr < OVERLAY_ROM_BASE + m_overlayRom.size) {
-		return m_overlayRom.data[static_cast<size_t>(addr - OVERLAY_ROM_BASE)];
-	}
-	if (addr >= RAM_BASE) {
-		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset < m_ram.size()) {
-			return m_ram[offset];
-		}
-	}
-	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
-	return 0;
+	return readMainMemoryU8(addr, BUS_ACCESS_READ_U8);
 }
 
 void Memory::writeU8(uint32_t addr, u8 value) {
-	if (isVramRange(addr, 1)) {
+	if (isVramMappedRange(addr, 1)) {
 		m_vramWriter->writeVram(addr, &value, 1);
 		return;
 	}
@@ -357,62 +354,48 @@ void Memory::writeU8(uint32_t addr, u8 value) {
 		m_overlayRom.data[static_cast<size_t>(addr - OVERLAY_ROM_BASE)] = value;
 		return;
 	}
-	if (addr >= RAM_BASE) {
-		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset < m_ram.size()) {
-			m_ram[offset] = value;
-			return;
-		}
+	if (writeRamU8(addr, value)) {
+		return;
 	}
-	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U8);
 }
 
 void Memory::writeMappedU8(uint32_t addr, u8 value) {
 	if (isIoRegionRange(addr, 1)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
+		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U8);
 		return;
 	}
-	if (isVramRange(addr, 1)) {
+	if (isVramMappedRange(addr, 1)) {
 		m_vramWriter->writeVram(addr, &value, 1);
 		return;
 	}
-	if (addr >= RAM_BASE) {
-		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset < m_ram.size()) {
-			m_ram[offset] = value;
-			return;
-		}
+	if (writeRamU8(addr, value)) {
+		return;
 	}
-	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8);
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U8);
 }
 
 uint32_t Memory::readIoU32(uint32_t addr) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot < 0) {
-		throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": invalid register.");
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
+		return 0;
 	}
-	const IoReadBinding& binding = m_ioReadHandlers[static_cast<size_t>(slot)];
-	const Value value = binding.handler != nullptr
-		? binding.handler(binding.context, addr)
-		: m_ioSlots[static_cast<size_t>(slot)];
-	return toU32(value);
+	return toU32(readIoSlotValue(slot, addr));
 }
 
 int32_t Memory::readIoI32(uint32_t addr) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot < 0) {
-		throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": invalid register.");
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
+		return 0;
 	}
-	const IoReadBinding& binding = m_ioReadHandlers[static_cast<size_t>(slot)];
-	const Value value = binding.handler != nullptr
-		? binding.handler(binding.context, addr)
-		: m_ioSlots[static_cast<size_t>(slot)];
-	return static_cast<int32_t>(toU32(value));
+	return static_cast<int32_t>(toU32(readIoSlotValue(slot, addr)));
 }
 
 uint32_t Memory::readU32(uint32_t addr) const {
-	if (isVramRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+	if (isVramMappedRange(addr, 4)) {
+		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_ACCESS_READ_U32);
 		return 0;
 	}
 	if (addressRangeWithin(addr, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, 4)) {
@@ -423,12 +406,10 @@ uint32_t Memory::readU32(uint32_t addr) const {
 	}
 	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
 	if (offset + sizeof(uint32_t) > m_ram.size()) {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
 		return 0;
 	}
-	uint32_t value = 0;
-	std::memcpy(&value, m_ram.data() + offset, sizeof(uint32_t));
-	return value;
+	return readLE32(m_ram.data() + offset);
 }
 
 uint32_t Memory::readU32FromRegion(uint32_t addr) const {
@@ -444,29 +425,24 @@ uint32_t Memory::readU32FromRegion(uint32_t addr) const {
 	} else if (m_overlayRom.data != nullptr && addressRangeOffset(addr, OVERLAY_ROM_BASE, m_overlayRom.size, 4, offset)) {
 		region = m_overlayRom.data;
 	} else {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
 		return 0;
 	}
-	return static_cast<uint32_t>(region[offset])
-		| (static_cast<uint32_t>(region[offset + 1]) << 8)
-		| (static_cast<uint32_t>(region[offset + 2]) << 16)
-		| (static_cast<uint32_t>(region[offset + 3]) << 24);
+	return readLE32(region + offset);
 }
 
 uint32_t Memory::readMappedU16LE(uint32_t addr) const {
 	if (isVramMappedContiguousRange(addr, 2)) {
 		u8 bytes[2] = {0, 0};
 		m_vramWriter->readVram(addr, bytes, 2);
-		const uint32_t b0 = static_cast<uint32_t>(bytes[0]);
-		const uint32_t b1 = static_cast<uint32_t>(bytes[1]);
-		return b0 | (b1 << 8);
+		return readLE16(bytes);
 	}
-	if (isVramRange(addr, 2)) {
-		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16);
+	if (isVramMappedRange(addr, 2)) {
+		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_ACCESS_READ_U16);
 		return 0;
 	}
 	if (isIoRegionRange(addr, 2)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16);
+		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U16);
 		return 0;
 	}
 	const u8* region = nullptr;
@@ -483,43 +459,33 @@ uint32_t Memory::readMappedU16LE(uint32_t addr) const {
 	} else if (addr >= RAM_BASE) {
 		offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset + 2 > m_ram.size()) {
-			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16);
+			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U16);
 			return 0;
 		}
 		region = m_ram.data();
 	} else {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16);
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U16);
 		return 0;
 	}
-	const uint32_t b0 = static_cast<uint32_t>(region[offset]);
-	const uint32_t b1 = static_cast<uint32_t>(region[offset + 1]);
-	return b0 | (b1 << 8);
+	return readLE16(region + offset);
 }
 
 uint32_t Memory::readMappedU32LE(uint32_t addr) const {
 	if (isVramMappedContiguousRange(addr, 4)) {
 		u8 bytes[4] = {0, 0, 0, 0};
 		m_vramWriter->readVram(addr, bytes, 4);
-		const uint32_t b0 = static_cast<uint32_t>(bytes[0]);
-		const uint32_t b1 = static_cast<uint32_t>(bytes[1]);
-		const uint32_t b2 = static_cast<uint32_t>(bytes[2]);
-		const uint32_t b3 = static_cast<uint32_t>(bytes[3]);
-		return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+		return readLE32(bytes);
 	}
-	if (isVramRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+	if (isVramMappedRange(addr, 4)) {
+		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_ACCESS_READ_U32);
 		return 0;
 	}
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		const IoReadBinding& binding = m_ioReadHandlers[static_cast<size_t>(slot)];
-		const Value value = binding.handler != nullptr
-			? binding.handler(binding.context, addr)
-			: m_ioSlots[static_cast<size_t>(slot)];
-		return toU32(value);
+		return toU32(readIoSlotValue(slot, addr));
 	}
 	if (isIoRegionRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U32);
 		return 0;
 	}
 	const u8* region = nullptr;
@@ -536,26 +502,22 @@ uint32_t Memory::readMappedU32LE(uint32_t addr) const {
 	} else if (addr >= RAM_BASE) {
 		offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset + 4 > m_ram.size()) {
-			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
 			return 0;
 		}
 		region = m_ram.data();
 	} else {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
 		return 0;
 	}
-	const uint32_t b0 = static_cast<uint32_t>(region[offset]);
-	const uint32_t b1 = static_cast<uint32_t>(region[offset + 1]);
-	const uint32_t b2 = static_cast<uint32_t>(region[offset + 2]);
-	const uint32_t b3 = static_cast<uint32_t>(region[offset + 3]);
-	return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+	return readLE32(region + offset);
 }
 
 float Memory::readMappedF32LE(uint32_t addr) const {
 	if (!isMappedReadableRange(addr, 4)) {
 		const uint32_t code = isIoRegionRange(addr, 4)
 			? BUS_FAULT_UNALIGNED_IO
-			: (isVramRange(addr, 4) ? BUS_FAULT_VRAM_RANGE : BUS_FAULT_UNMAPPED);
+			: (isVramMappedRange(addr, 4) ? BUS_FAULT_VRAM_RANGE : BUS_FAULT_UNMAPPED);
 		raiseBusFault(code, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_F32);
 		return 0.0f;
 	}
@@ -569,7 +531,7 @@ double Memory::readMappedF64LE(uint32_t addr) const {
 	if (!isMappedReadableRange(addr, 8)) {
 		const uint32_t code = isIoRegionRange(addr, 8)
 			? BUS_FAULT_UNALIGNED_IO
-			: (isVramRange(addr, 8) ? BUS_FAULT_VRAM_RANGE : BUS_FAULT_UNMAPPED);
+			: (isVramMappedRange(addr, 8) ? BUS_FAULT_VRAM_RANGE : BUS_FAULT_UNMAPPED);
 		raiseBusFault(code, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_F64);
 		return 0.0;
 	}
@@ -582,112 +544,69 @@ double Memory::readMappedF64LE(uint32_t addr) const {
 }
 
 void Memory::writeU32(uint32_t addr, uint32_t value) {
-	if (isVramRange(addr, 4)) {
-		u8 bytes[4] = {
-			static_cast<u8>(value & 0xffu),
-			static_cast<u8>((value >> 8) & 0xffu),
-			static_cast<u8>((value >> 16) & 0xffu),
-			static_cast<u8>((value >> 24) & 0xffu),
-		};
-		m_vramWriter->writeVram(addr, bytes, 4);
+	if (isVramMappedRange(addr, 4)) {
+		writeVramU32LE(addr, value);
 		return;
 	}
-	if (addr < RAM_BASE) {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
+	if (!writeRamWordLE(addr, 4, value)) {
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
 		return;
 	}
-	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-	if (offset + sizeof(uint32_t) > m_ram.size()) {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
-		return;
-	}
-	std::memcpy(m_ram.data() + offset, &value, sizeof(uint32_t));
 }
 
 void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
 	if (isIoRegionRange(addr, 2)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16);
+		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U16);
 		return;
 	}
 	if (isVramMappedContiguousRange(addr, 2)) {
-		u8 bytes[2] = {
-			static_cast<u8>(value & 0xffu),
-			static_cast<u8>((value >> 8) & 0xffu),
-		};
-		m_vramWriter->writeVram(addr, bytes, 2);
+		writeVramU16LE(addr, value);
 		return;
 	}
-	if (isVramRange(addr, 2)) {
-		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16);
+	if (isVramMappedRange(addr, 2)) {
+		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_ACCESS_WRITE_U16);
 		return;
 	}
-	if (addr >= RAM_BASE) {
-		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + 2 > m_ram.size()) {
-			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16);
-			return;
-		}
-		m_ram[offset] = static_cast<u8>(value & 0xffu);
-		m_ram[offset + 1] = static_cast<u8>((value >> 8) & 0xffu);
+	if (writeRamWordLE(addr, 2, value)) {
 		return;
 	}
-	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16);
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U16);
 }
 
 void Memory::writeMappedU32LE(uint32_t addr, uint32_t value) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
 		if (isLuaReadOnlyIoAddress(addr)) {
-			raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
+			raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_ACCESS_WRITE_U32);
 			return;
 		}
 		const Value word = valueNumber(static_cast<double>(value));
-		const size_t slotIndex = static_cast<size_t>(slot);
-		m_ioSlots[slotIndex] = word;
-		const IoWriteBinding& binding = m_ioWriteHandlers[slotIndex];
-		if (binding.handler != nullptr) {
-			binding.handler(binding.context, addr, word);
-		}
+		writeIoSlotValue(slot, addr, word);
 		return;
 	}
 	if (isIoRegionRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
+		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U32);
 		return;
 	}
 	if (isVramMappedContiguousRange(addr, 4)) {
-		u8 bytes[4] = {
-			static_cast<u8>(value & 0xffu),
-			static_cast<u8>((value >> 8) & 0xffu),
-			static_cast<u8>((value >> 16) & 0xffu),
-			static_cast<u8>((value >> 24) & 0xffu),
-		};
-		m_vramWriter->writeVram(addr, bytes, 4);
+		writeVramU32LE(addr, value);
 		return;
 	}
-	if (isVramRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
+	if (isVramMappedRange(addr, 4)) {
+		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_ACCESS_WRITE_U32);
 		return;
 	}
-	if (addr >= RAM_BASE) {
-		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + 4 > m_ram.size()) {
-			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
-			return;
-		}
-		m_ram[offset] = static_cast<u8>(value & 0xffu);
-		m_ram[offset + 1] = static_cast<u8>((value >> 8) & 0xffu);
-		m_ram[offset + 2] = static_cast<u8>((value >> 16) & 0xffu);
-		m_ram[offset + 3] = static_cast<u8>((value >> 24) & 0xffu);
+	if (writeRamWordLE(addr, 4, value)) {
 		return;
 	}
-	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
 }
 
 void Memory::writeMappedF32LE(uint32_t addr, float value) {
 	if (!isMappedWritableRange(addr, 4)) {
 		const uint32_t code = isIoRegionRange(addr, 4)
 			? (ioAlignedSlot(addr) >= 0 ? BUS_FAULT_READ_ONLY : BUS_FAULT_UNALIGNED_IO)
-			: (isVramRange(addr, 4) ? BUS_FAULT_VRAM_RANGE : BUS_FAULT_UNMAPPED);
+			: (isVramMappedRange(addr, 4) ? BUS_FAULT_VRAM_RANGE : BUS_FAULT_UNMAPPED);
 		raiseBusFault(code, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F32);
 		return;
 	}
@@ -700,7 +619,7 @@ void Memory::writeMappedF64LE(uint32_t addr, double value) {
 	if (!isMappedWritableRange(addr, 8)) {
 		const uint32_t code = isIoRegionRange(addr, 8)
 			? BUS_FAULT_UNALIGNED_IO
-			: (isVramRange(addr, 8) ? BUS_FAULT_VRAM_RANGE : BUS_FAULT_UNMAPPED);
+			: (isVramMappedRange(addr, 8) ? BUS_FAULT_VRAM_RANGE : BUS_FAULT_UNMAPPED);
 		raiseBusFault(code, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64);
 		return;
 	}
@@ -711,7 +630,7 @@ void Memory::writeMappedF64LE(uint32_t addr, double value) {
 }
 
 bool Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
-	if (isVramRange(addr, length)) {
+	if (isVramMappedRange(addr, length)) {
 		m_vramWriter->writeVram(addr, data, length);
 		return true;
 	}
@@ -732,9 +651,9 @@ bool Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
 }
 
 bool Memory::readBytes(uint32_t addr, u8* out, size_t length) const {
-	if (isVramRange(addr, length)) {
+	if (isVramMappedRange(addr, length)) {
 		std::memset(out, 0, length);
-		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+		raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_ACCESS_READ_U8);
 		return false;
 	}
 	size_t offset = 0;
@@ -766,10 +685,6 @@ bool Memory::readBytes(uint32_t addr, u8* out, size_t length) const {
 	return false;
 }
 
-bool Memory::isVramRange(uint32_t addr, size_t length) const {
-	return isVramMappedRange(addr, length);
-}
-
 bool Memory::isReadableMainMemoryRange(uint32_t addr, size_t length) const {
 	const bool isReadableRam = addr >= RAM_BASE
 		&& length <= m_ram.size()
@@ -788,7 +703,8 @@ bool Memory::isRamRange(uint32_t addr, size_t length) const {
 }
 
 void Memory::onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value) {
-	static_cast<Memory*>(context)->onBusFaultAckWrite(addr, value);
+	Memory* memory = static_cast<Memory*>(context);
+	memory->onBusFaultAckWrite(addr, value);
 }
 
 void Memory::onBusFaultAckWrite(uint32_t addr, Value value) {
@@ -839,6 +755,8 @@ bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 		case IO_IMG_STATUS:
 		case IO_IMG_WRITTEN:
 		case IO_APU_STATUS:
+		case IO_APU_FAULT_CODE:
+		case IO_APU_FAULT_DETAIL:
 		case IO_APU_EVENT_KIND:
 		case IO_APU_EVENT_SLOT:
 		case IO_APU_EVENT_SOURCE_ADDR:
@@ -870,7 +788,7 @@ bool Memory::isMappedWritableRange(uint32_t addr, size_t length) const {
 	if (m_overlayRom.data != nullptr && isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, static_cast<uint32_t>(m_overlayRom.size))) {
 		return false;
 	}
-	if (isVramRange(addr, length)) {
+	if (isVramMappedRange(addr, length)) {
 		return isVramMappedContiguousRange(addr, length);
 	}
 	return addr >= RAM_BASE
@@ -894,7 +812,7 @@ bool Memory::isMappedReadableRange(uint32_t addr, size_t length) const {
 	if (m_overlayRom.data != nullptr && isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, static_cast<uint32_t>(m_overlayRom.size))) {
 		return true;
 	}
-	if (isVramRange(addr, length)) {
+	if (isVramMappedRange(addr, length)) {
 		return isVramMappedContiguousRange(addr, length);
 	}
 	return addr >= RAM_BASE

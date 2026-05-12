@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { splitText } from '../../src/bmsx/common/text_lines';
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/parser';
-import { CPU, RunResult, Table, createNativeFunction, createNativeObject, valueString, type CpuRuntimeState } from '../../src/bmsx/machine/cpu/cpu';
+import { CPU, RunResult, StringValue, Table, createNativeFunction, createNativeObject, type CpuRuntimeState } from '../../src/bmsx/machine/cpu/cpu';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { compileLuaChunkToProgram } from '../../src/bmsx/machine/program/compiler';
 
@@ -29,14 +29,14 @@ function createCpuWithProgram(source: string): { cpu: CPU; entryProtoIndex: numb
 test('tracked heap bytes include rooted tables and native arrays', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	const key = valueString(cpu.stringPool.intern('state'));
-	const listKey = valueString(cpu.stringPool.intern('list'));
+	const key = StringValue.get(cpu.stringPool.intern('state'));
+	const listKey = StringValue.get(cpu.stringPool.intern('list'));
 
 	const before = cpu.collectTrackedHeapBytes();
 
 	const table = new Table(2, 2);
 	table.set(1, 11);
-	table.set(valueString(cpu.stringPool.intern('hp')), 7);
+	table.set(StringValue.get(cpu.stringPool.intern('hp')), 7);
 	cpu.globals.set(key, table);
 
 	const afterTable = cpu.collectTrackedHeapBytes();
@@ -136,7 +136,7 @@ test('program image literals and debug names stay in ROM accounting', () => {
 test('runtime string materialization tracks RAM even when the same text exists in ROM', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
-	cpu.stringPool.internRom('rom literal');
+	cpu.stringPool.intern('rom literal', false);
 	const before = cpu.collectTrackedHeapBytes();
 
 	cpu.stringPool.intern('rom literal');

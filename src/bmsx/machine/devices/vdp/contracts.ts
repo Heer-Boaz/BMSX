@@ -61,3 +61,6 @@ export const VDP_RD_SURFACE_PRIMARY = 1;
 export const VDP_RD_SURFACE_SECONDARY = 2;
 export const VDP_RD_SURFACE_FRAMEBUFFER = 3;
 export const VDP_RD_SURFACE_COUNT = 4;
+export const VDP_FRAMEBUFFER_PAGE_RENDER = 0;
+export const VDP_FRAMEBUFFER_PAGE_DISPLAY = 1;
+export type VdpFrameBufferPage = typeof VDP_FRAMEBUFFER_PAGE_RENDER | typeof VDP_FRAMEBUFFER_PAGE_DISPLAY;

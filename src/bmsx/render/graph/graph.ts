@@ -1,13 +1,9 @@
-/**
- * Generic render graph scaffolding (initial draft).
+/*
+ * Render pass scheduler for the frontend presentation pipeline.
  *
- * Goal: Provide a minimal, engine-agnostic abstraction to declare passes with
- * explicit resource dependencies (textures + values) and execute them in
- * topological order. This file intentionally avoids touching existing pipeline
- * code so migration can be incremental.
+ * Machine-visible VDP state enters through device output snapshots; this graph
+ * only orders frontend texture passes and owns no emulated state.
  */
-import { consoleCore } from '../../core/console';
-import { taskGate } from '../../core/taskgate';
 import { color_arr } from '../../rompack/format';
 import { GPUBackend, TextureHandle } from '../backend/backend';
 import { RenderPassBuilder } from '../backend/pass/builder';
@@ -18,7 +14,6 @@ import { hardwareCameraBank0 } from '../shared/hardware/camera';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;
-export type ValueHandle<T = unknown> = RGTexHandle & { readonly __t?: T };
 
 export interface TexDesc {
 	width: number;
@@ -46,19 +41,6 @@ export interface FrameData {
 	time: number;
 	delta: number;
 	views: View[];
-}
-
-// Public debug info interface (exported separately)
-export interface RGTexDebugInfo {
-	index: number;
-	name?: string;
-	firstUse?: number;
-	lastUse?: number;
-	writers: number[];
-	readers: number[];
-	physicalId?: number;
-	present?: boolean;
-	transient?: boolean;
 }
 
 // FrameData helpers (moved here to simplify file structure)
@@ -93,23 +75,7 @@ export function buildFrameData(view: GameView): FrameData {
 		time: extTimeSeconds,
 		delta: extDeltaSeconds,
 		views,
-		postFx: {
-			crt: {
-				noise: view.noiseIntensity,
-				colorBleed: view.colorBleed as [number, number, number],
-				blur: view.blurIntensity,
-				glowColor: view.glowColor as [number, number, number],
-				flags: {
-					noise: !!view.enable_noise,
-					colorBleed: !!view.enable_colorbleed,
-					scanlines: !!view.enable_scanlines,
-					blur: !!view.enable_blur,
-					glow: !!view.enable_glow,
-					fringe: !!view.enable_fringing,
-				},
-			},
-		},
-	} as FrameData;
+	};
 	return frame;
 }
 
@@ -120,14 +86,11 @@ export interface IOBuilder {
 	readTex(handle: RGTexHandle): void;    // declare read dependency
 	writeTex(handle: RGTexHandle, opts?: { clearColor?: color_arr; clearDepth?: number }): void; // declare write + optional clear
 	exportToBackbuffer(handle: RGTexHandle): void; // mark final output
-	provideValue<T>(val: T): ValueHandle<T>; // immediate value handle
-	readValue(handle: ValueHandle): void; // declare value read
 }
 
 export interface PassContext {
 	getTex(handle: RGTexHandle): TextureHandle;
 	getFBO(color: RGTexHandle, depth?: RGTexHandle): unknown;
-	getValue<T>(handle: ValueHandle<T>): T;
 	setDebugLabel?(label: string): void;
 	backend: GPUBackend;
 }
@@ -147,7 +110,6 @@ export interface RenderPass<SetupOut = unknown> {
 }
 
 type FramebufferHandle = unknown; // Opaque backend-specific framebuffer handle
-const EMPTY_PASS_READS: Array<{ tex: RGTexHandle }> = [];
 
 interface InternalTexResource {
 	desc: TexDesc;
@@ -163,20 +125,6 @@ interface InternalTexResource {
 	lastUse?: number;
 	physicalId?: number;
 	clearOnWrite?: { color?: color_arr; depth?: number };
-	state?: { layout: string };
-}
-
-function textureBytesPerPixel(resource: InternalTexResource): number {
-	return resource.desc.depth ? 2 : 4;
-}
-
-interface InternalValueResource<T = unknown> {
-	val: T;
-	readers: number;
-	providerPass?: number; // pass index that created value
-	readPasses: number[];  // passes that read it
-	firstUse?: number;     // first providing or reading pass
-	lastUse?: number;      // last reading pass (or provider if never read)
 }
 
 // Using unified GPUBackend abstraction (WebGLBackend) from backend/backend.ts
@@ -186,14 +134,10 @@ export class RenderGraphRuntime {
 	private passes: RenderPass<unknown>[] = [];
 	private compiled = false;
 	private texResources: InternalTexResource[] = [];
-	private valueResources: InternalValueResource[] = [];
-	private passStats: { name: string; ms: number }[] = [];
 	// DAG data
 	private passOrder: number[] = []; // topologically sorted indices
 	private reachable: boolean[] = [];
-	private _pendingInvalidateOnReady: boolean = false;
 	// Cached per-pass dependency data (populated during compile) for use during execute (transitions, stats)
-	private _passReads: { tex: RGTexHandle }[][] = [];
 	private _passWrites: { tex: RGTexHandle; clear?: { color?: color_arr; depth?: number } }[][] = [];
 	private _setupData: unknown[] = []; // per-pass setup() return values
 
@@ -209,8 +153,6 @@ export class RenderGraphRuntime {
 		let nextHandle: RGTexHandle = 1; // 0 reserved / invalid
 
 		const texMap = new Map<RGTexHandle, InternalTexResource>();
-		const valueMap = new Map<ValueHandle, InternalValueResource>();
-
 		const self = this;
 		function allocTex(desc: TexDesc): RGTexHandle {
 			const handle = nextHandle++ as RGTexHandle;
@@ -218,30 +160,20 @@ export class RenderGraphRuntime {
 			texMap.set(handle, res);
 			return handle;
 		}
-		function provideValue<T>(val: T, providerPass: number): ValueHandle<T> {
-			const handle = nextHandle++ as ValueHandle<T>;
-			const res: InternalValueResource<T> = { val, readers: 0, providerPass, readPasses: [], firstUse: providerPass, lastUse: providerPass };
-			valueMap.set(handle, res as InternalValueResource);
-			return handle;
-		}
 
 		const setupData: unknown[] = [];
 		const passWrites: { tex: RGTexHandle; clear?: { color?: color_arr; depth?: number } }[][] = [];
 		const passReads: { tex: RGTexHandle }[][] = [];
-		const valueReads: { val: ValueHandle }[][] = [];
 
 		for (let pIndex = 0; pIndex < this.passes.length; pIndex++) {
 			const pass = this.passes[pIndex];
 			passWrites[pIndex] = [];
 			passReads[pIndex] = [];
-			valueReads[pIndex] = [];
 			const io: IOBuilder = {
 				createTex: (desc) => allocTex(desc),
 				readTex: (h) => { const r = texMap.get(h); if (r) { r.readers++; r.readPasses.push(pIndex); r.lastUse = Math.max(r.lastUse ?? -1, pIndex); if (r.firstUse === undefined) r.firstUse = pIndex; passReads[pIndex].push({ tex: h }); } },
 				writeTex: (h, opts) => { const r = texMap.get(h); if (r) { if (r.writerPasses[r.writerPasses.length - 1] !== pIndex) r.writerPasses.push(pIndex); r.firstUse = r.firstUse === undefined ? pIndex : Math.min(r.firstUse, pIndex); r.lastUse = Math.max(r.lastUse ?? -1, pIndex); if (opts && (opts.clearColor || opts.clearDepth !== undefined)) r.clearOnWrite = { color: opts.clearColor, depth: opts.clearDepth }; passWrites[pIndex].push({ tex: h, clear: r.clearOnWrite }); } },
 				exportToBackbuffer: (h) => { const r = texMap.get(h); if (r) { r.present = true; r.exportPass = pIndex; r.lastUse = Math.max(r.lastUse ?? -1, pIndex); } },
-				provideValue: (v) => provideValue(v, pIndex),
-				readValue: (h) => { const r = valueMap.get(h); if (r) { r.readers++; r.readPasses.push(pIndex); r.lastUse = Math.max(r.lastUse ?? -1, pIndex); if (r.firstUse === undefined) r.firstUse = pIndex; valueReads[pIndex].push({ val: h }); } },
 			};
 			const data = pass.setup(io, frame);
 			setupData.push(data);
@@ -268,11 +200,6 @@ export class RenderGraphRuntime {
 			for (const r of passReads[p]) {
 				const texRes = texMap.get(r.tex);
 				if (texRes && texRes.writerPasses.length) for (const wp of texRes.writerPasses) markPass(wp);
-			}
-			// Any pass that provided a value this pass reads
-			for (const vr of valueReads[p]) {
-				const valRes = valueMap.get(vr.val);
-				if (valRes && valRes.providerPass !== undefined) markPass(valRes.providerPass);
 			}
 			// Also include writer of any texture this pass exports (present) – handled via lastUse marking above
 		}
@@ -302,13 +229,6 @@ export class RenderGraphRuntime {
 			for (const r of passReads[p]) {
 				const texRes = texMap.get(r.tex);
 				if (texRes && texRes.writerPasses.length) for (const wp of texRes.writerPasses) if (wp !== p) adj[wp].push(p);
-			}
-			// For each value read, add provider -> p
-			for (const vr of valueReads[p]) {
-				const valRes = valueMap.get(vr.val);
-				if (valRes && valRes.providerPass !== undefined && valRes.providerPass !== p) {
-					adj[valRes.providerPass].push(p);
-				}
 			}
 		}
 		// Enforce sequential order between multiple writers of the same texture
@@ -346,52 +266,53 @@ export class RenderGraphRuntime {
 		const active: ActivePhys[] = [];
 		const freePool: ActivePhys[] = [];
 		let nextPhysId = 1;
-		function formatsCompatible(a: TexDesc, b: TexDesc): boolean {
+		function textureDescriptionsCompatible(a: TexDesc, b: TexDesc): boolean {
 			if (!!a.depth !== !!b.depth) return false;
-			if (a.depth) return true; // treat all depth formats as compatible placeholder
-			if (a.format === b.format) return true;
-			if (!a.format || !b.format) return true; // unspecified acts as wildcard
-			// Extend with more nuanced matching (bit depth equivalence) as needed
-			return false;
+			if (a.width !== b.width || a.height !== b.height) return false;
+			return a.format === b.format;
 		}
 		for (const lr of logicalResources) {
 			// Expire finished actives -> freePool
 			for (let i = active.length - 1; i >= 0; i--) {
 				if (active[i].lastUse < lr.res.firstUse!) { freePool.push(active[i]); active.splice(i, 1); }
 			}
-			// Sort freePool largest-first by area to reduce fragmentation
-			freePool.sort((a, b) => (b.desc.width * b.desc.height) - (a.desc.width * a.desc.height));
 			// Pick compatible released physical, prefer matching transient flag
-			let chosen: ActivePhys;
+			let chosen: ActivePhys | null = null;
+			let chosenIndex = -1;
 			for (let i = 0; i < freePool.length; i++) {
 				const f = freePool[i];
-				if (!formatsCompatible(f.desc, lr.res.desc)) continue;
+				if (!textureDescriptionsCompatible(f.desc, lr.res.desc)) continue;
 				const matchTransient = (!!f.desc.transient) === (!!lr.res.desc.transient);
-				if (matchTransient) { chosen = f; freePool.splice(i, 1); break; }
-				if (!chosen) { chosen = f; freePool.splice(i, 1); /* keep searching for better match */ }
+				if (matchTransient) {
+					chosen = f;
+					chosenIndex = i;
+					break;
+				}
+				if (!chosen) {
+					chosen = f;
+					chosenIndex = i;
+				}
 			}
-			if (!chosen) chosen = { id: nextPhysId++, lastUse: lr.res.lastUse!, desc: lr.res.desc }; else chosen.lastUse = lr.res.lastUse!;
+			if (chosen !== null) {
+				freePool.splice(chosenIndex, 1);
+				chosen.lastUse = lr.res.lastUse!;
+				chosen.desc = lr.res.desc;
+			} else {
+				chosen = { id: nextPhysId++, lastUse: lr.res.lastUse!, desc: lr.res.desc };
+			}
 			lr.res.physicalId = chosen.id;
 			active.push(chosen);
 		}
 
-		// Store textures & only keep value resources that are actually read (cull unused)
+		// Store textures
 		for (const [handle, res] of texMap) (this.texResources as InternalTexResource[])[handle] = res;
-		for (const [handle, res] of valueMap) if (res.readers > 0) (this.valueResources as InternalValueResource[])[handle] = res;
 		this._setupData = setupData;
 		// Persist dependency info for execution phase (avoids rescanning resources)
-		this._passReads = passReads;
 		this._passWrites = passWrites;
 		this.compiled = true;
 	}
 
 	execute(frame: FrameData): void {
-		// If an external texture/task gate system is present (optional), we can delay execution until
-		// blocking async loads finish, and then invalidate once to rebuild resource lifetimes.
-		// Integration contract: global taskGate.group('render') or similar provides readiness.
-		const gateGroup = taskGate.group('render');
-		if (gateGroup && !gateGroup.ready) return; // Defer frame until required textures are loaded
-		if (gateGroup && gateGroup.ready && this._pendingInvalidateOnReady) { this.invalidate(); this._pendingInvalidateOnReady = false; }
 		checkWebGLError('Before compile');
 		if (!this.compiled) this.compile(frame);
 		checkWebGLError('After compile');
@@ -419,7 +340,6 @@ export class RenderGraphRuntime {
 				// Lazy allocate FBOs on demand
 				return this.ensureFBO(color, depth);
 			},
-			getValue: <T>(h: ValueHandle<T>) => (this.valueResources[h] as InternalValueResource<T>).val,
 			setDebugLabel: undefined,
 			backend: this.backend,
 		};
@@ -430,7 +350,6 @@ export class RenderGraphRuntime {
 		this.realizeAll();
 		checkWebGLError('After realizeAll');
 
-		this.passStats.length = 0;
 		const order = this.passOrder.length ? this.passOrder : this.passes.map((_, i) => i); // fallback sequential
 		for (let oi = 0; oi < order.length; oi++) {
 			checkWebGLError(`Before pass execution: ${order[oi]}: ${this.passes[order[oi]].name}`);
@@ -458,32 +377,6 @@ export class RenderGraphRuntime {
 					if (r.desc.depth) depthRes = r; else colorTargets.push(r);
 				}
 				const colorRes = colorTargets[0]; // legacy single color path
-				// Simple layout / usage transition heuristic (no-op on WebGL):
-				//  * Reads -> shaderRead
-				//  * Color attachment writes -> colorAttachment
-				//  * Depth attachment writes -> depthAttachment
-					const backendTransition = this.backend.transitionTexture?.bind(this.backend);
-					if (backendTransition) {
-						const desiredLayouts = new Map<number, string>();
-						const passReads = this._passReads[i] ?? EMPTY_PASS_READS;
-					for (const r of passReads) {
-						const texRes = this.texResources[r.tex];
-						if (!texRes) continue;
-						if (texRes.writerPasses.includes(i)) continue; // treat as attachment
-						desiredLayouts.set(r.tex, 'shaderRead');
-					}
-					if (colorRes) desiredLayouts.set(writes.find(w => this.texResources[w] === colorRes)!, 'colorAttachment');
-					if (depthRes) desiredLayouts.set(writes.find(w => this.texResources[w] === depthRes)!, 'depthAttachment');
-					for (const [handle, layout] of desiredLayouts) {
-						const texRes = this.texResources[handle];
-						if (!texRes) continue;
-							const prev = texRes.state?.layout;
-						if (prev !== layout) {
-							backendTransition(texRes.tex as TextureHandle, prev, layout);
-							texRes.state = { layout };
-						}
-					}
-				}
 				// Only perform clears on the FIRST writer pass for a given resource. Subsequent overlay writers
 				// should preserve previous contents (unless they explicitly requested a clear in the future).
 				const isFirstColorWriter = colorRes ? colorRes.writerPasses[0] === i : false;
@@ -515,59 +408,12 @@ export class RenderGraphRuntime {
 					}
 				};
 			}
-			const t0 = consoleCore.platform.clock.now();
 			pass.execute(ctx, frame, data);
-			const dt = consoleCore.platform.clock.now() - t0;
-			this.passStats.push({ name: pass.name, ms: dt });
 			if (rp) rp.end();
 			checkWebGLError(`After pass execution: ${i}: ${this.passes[i].name}`);
 		}
 	}
 
-	getPassStats(): ReadonlyArray<{ name: string; ms: number }> { return this.passStats; }
-
-	// Introspection API (safe, read-only views for diagnostics / editor tools)
-	getPassOrder(): readonly number[] { return this.passOrder; }
-	getReachableMask(): readonly boolean[] { return this.reachable; }
-	getPassNames(): readonly string[] { return this.passes.map(p => p.name); }
-	/** Debug info for each logical texture resource. */
-	getTextureDebugInfo(): RGTexDebugInfo[] {
-		const list: RGTexDebugInfo[] = [];
-		for (let i = 0; i < this.texResources.length; i++) {
-			const r = this.texResources[i]; if (!r) continue;
-			list.push({ index: i, name: r.desc.name, firstUse: r.firstUse, lastUse: r.lastUse, writers: [...r.writerPasses], readers: [...r.readPasses], physicalId: r.physicalId, present: !!r.present, transient: !!r.desc.transient });
-		}
-		return list;
-	}
-	/** Total texture memory (unique physical textures) and breakdown by color/depth. */
-		getTotalTextureMemoryInfo(): { total: number; color: number; depth: number } {
-			const seen = new Set<number>();
-			let color = 0, depth = 0;
-			for (let i = 0; i < this.texResources.length; i++) {
-				const r = this.texResources[i]; if (!r) continue;
-				const pid = r.physicalId ?? i;
-				if (seen.has(pid)) continue;
-				seen.add(pid);
-				const bytes = (r.desc.width * r.desc.height * textureBytesPerPixel(r)) | 0;
-				if (r.desc.depth) depth += bytes; else color += bytes;
-			}
-		return { total: color + depth, color, depth };
-	}
-	/** Rough per-pass texture memory footprint (bytes) based on logical resources (color=4Bpp, depth16=2Bpp). */
-	getPassTextureMemoryInfo(): { name: string; bytes: number }[] {
-			// Aggregate bytes of textures read or written by each pass
-			const names = this.getPassNames();
-			const mem = new Array<number>(names.length).fill(0);
-			for (let i = 0; i < this.texResources.length; i++) {
-				const r = this.texResources[i]; if (!r) continue;
-				const bytes = (r.desc.width * r.desc.height * textureBytesPerPixel(r)) | 0;
-			// Writers
-			for (const p of r.writerPasses) mem[p] += bytes;
-			// Readers
-			for (const p of r.readPasses) mem[p] += bytes;
-		}
-		return names.map((name, i) => ({ name, bytes: mem[i] }));
-	}
 	private realizeAll(): void {
 		// Create physical textures for each alias group lazily; map physicalId -> backend TextureHandle
 		const physTex = new Map<number, TextureHandle>();
@@ -607,6 +453,5 @@ export class RenderGraphRuntime {
 		this.passOrder = [];
 		this.reachable = [];
 		this.texResources = [];
-		this.valueResources = [];
 	}
 }

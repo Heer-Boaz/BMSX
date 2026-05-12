@@ -1,11 +1,4 @@
 import { consoleCore } from '../core/console';
-import {
-	clearBackQueues,
-	prepareCompletedRenderQueues,
-	prepareHeldRenderQueues,
-	prepareOverlayRenderQueues,
-	preparePartialRenderQueues,
-} from './shared/queues';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { TickCompletion } from '../machine/scheduler/frame';
 import * as workbenchMode from '../ide/workbench/mode';
@@ -97,7 +90,9 @@ export class RenderPresentationState {
 	private presentFrame(hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		const runtime = this.runtime;
 		consoleCore.deltatime = hostDeltaMs;
-		commitVdpViewSnapshot(consoleCore.view, runtime.machine.vdp);
+		runtime.machine.vdp.drainFrameBufferPresentation(consoleCore.view.vdpFrameBufferTextures);
+		runtime.machine.vdp.drainSurfaceUploads(consoleCore.view.vdpSlotTextures);
+		commitVdpViewSnapshot(consoleCore.view, runtime.machine.vdp.readDeviceOutput());
 		consoleCore.view.configurePresentation(mode, commitFrame);
 		this.recordPresentation(mode, commitFrame);
 		consoleCore.sndmaster.finishFrame();
@@ -124,20 +119,8 @@ export class RenderPresentationState {
 		const overlayActive = runtime.executionOverlayActive;
 		out.mode = this.presentationMode;
 		out.commitFrame = overlayActive ? false : this.presentationCommitFrame;
-		if (overlayActive) {
-			clearBackQueues();
-		}
 		workbenchMode.tickIDEDraw(runtime);
 		workbenchMode.tickTerminalModeDraw(runtime);
-		if (overlayActive) {
-			prepareOverlayRenderQueues();
-		} else if (out.mode === 'completed' && out.commitFrame) {
-			prepareCompletedRenderQueues();
-		} else if (out.mode === 'completed') {
-			prepareHeldRenderQueues();
-		} else {
-			preparePartialRenderQueues();
-		}
 		this.clearPresentation();
 		return true;
 	}
@@ -201,7 +184,6 @@ export class RenderPresentationState {
 		}
 		runtime.frameScheduler.clearQueuedTime();
 		this.clearPresentation();
-		prepareHeldRenderQueues();
 		this.presentFrame(hostDeltaMs, 'completed', false);
 	}
 

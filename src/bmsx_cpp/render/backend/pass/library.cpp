@@ -50,7 +50,7 @@ void setSkippedStatePass(RenderPassDef& desc, const char* id, const char* name) 
 Framebuffer2DPipelineState buildFramebuffer2DState(const RenderPassDef::RenderGraphPassContext& ctx) {
 	Framebuffer2DPipelineState state;
 	setPassViewportSize(state, ctx.view);
-	state.colorTex = vdpDisplayFrameBufferTexture();
+	state.colorTex = ctx.view->vdpFrameBufferTextures().displayTexture();
 	return state;
 }
 
@@ -646,13 +646,6 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 	}
 
 	return rg;
-}
-
-void RenderPassLibrary::validatePassResources(const std::string& passId) {
-	auto idx = findPipelinePassIndex(passId);
-	if (idx < 0) return;
-
-	// TODO: Validate binding layout vs available resources
 }
 
 } // namespace bmsx

@@ -7,6 +7,7 @@ import type {
 	PassEncoder,
 	RenderPassInstanceHandle,
 	RenderPassId,
+	SizedArrayBufferView,
 } from '../backend/backend';
 import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../backend/texture_params';
 import { createSolidRgba8Pixels } from '../shared/solid_pixels';
@@ -63,6 +64,17 @@ function createFrameStats(): HeadlessFrameStats {
 
 function toBytes(data: ArrayBufferView): Uint8Array {
 	return new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+}
+
+function arrayBufferViewElementCount(data: ArrayBufferView): number {
+	const sized = data as SizedArrayBufferView;
+	const bytesPerElement = arrayBufferViewBytesPerElement(data);
+	return data instanceof DataView ? data.byteLength : sized.length ?? data.byteLength / bytesPerElement;
+}
+
+function arrayBufferViewBytesPerElement(data: ArrayBufferView): number {
+	const sized = data as SizedArrayBufferView;
+	return data instanceof DataView ? 1 : sized.BYTES_PER_ELEMENT ?? 1;
 }
 
 function textureByteLength(width: number, height: number): number {
@@ -171,7 +183,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return handle;
 	}
 
-	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, _desc: TextureParams): void {
+	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, _desc: TextureParams, sourceOffset = 0): void {
 		const record = this.getTextureRecord(handle);
 		if (record.cubemapFaces) {
 			throw new Error('[HeadlessBackend] Cannot write 2D texture region into cubemap texture.');
@@ -183,9 +195,11 @@ export class HeadlessGPUBackend implements GPUBackend {
 		const dstStride = record.width * 4;
 		const srcStride = width * 4;
 		for (let row = 0; row < height; row += 1) {
-			const srcOffset = row * srcStride;
+			const srcOffset = sourceOffset + row * srcStride;
 			const dstOffset = (y + row) * dstStride + x * 4;
-			dstPixels.set(data.subarray(srcOffset, srcOffset + srcStride), dstOffset);
+			for (let index = 0; index < srcStride; index += 1) {
+				dstPixels[dstOffset + index] = data[srcOffset + index];
+			}
 		}
 		this.accountUpload('texture', textureByteLength(width, height));
 	}
@@ -330,8 +344,6 @@ export class HeadlessGPUBackend implements GPUBackend {
 		};
 	}
 
-	transitionTexture(_tex: TextureHandle, _fromLayout: string, _toLayout: string): void { }
-
 	createRenderPassInstance(desc: { label?: string }): RenderPassInstanceHandle {
 		return { id: ++passIdSeq, label: desc.label };
 	}
@@ -361,21 +373,25 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return this.createBufferRecord(this.vertexBuffers, 'vertex', usage, bytes);
 	}
 
-	updateVertexBuffer(buf: unknown, data: ArrayBufferView, dstOffset = 0): void {
+	updateVertexBuffer(buf: unknown, data: ArrayBufferView, dstOffset = 0, sourceOffset = 0, elementCount?: number): void {
 		const id = (buf as { id: number }).id;
 		const record = this.vertexBuffers.get(id);
 		if (!record) {
 			throw new Error(`[HeadlessBackend] Vertex buffer ${id} is not tracked.`);
 		}
-		const src = toBytes(data);
-		const needed = dstOffset + src.byteLength;
+		const bytesPerElement = arrayBufferViewBytesPerElement(data);
+		const uploadElements = elementCount === undefined ? arrayBufferViewElementCount(data) - sourceOffset : elementCount;
+		const uploadBytes = uploadElements * bytesPerElement;
+		const sourceByteOffset = data.byteOffset + sourceOffset * bytesPerElement;
+		const sourceBytes = new Uint8Array(data.buffer, sourceByteOffset, uploadBytes);
+		const needed = dstOffset + uploadBytes;
 		if (needed > record.bytes.byteLength) {
 			const grown = new Uint8Array(needed);
 			grown.set(record.bytes, 0);
 			record.bytes = grown;
 		}
-		record.bytes.set(src, dstOffset);
-		this.accountUpload('vertex', src.byteLength);
+		record.bytes.set(sourceBytes, dstOffset);
+		this.accountUpload('vertex', uploadBytes);
 	}
 
 	bindArrayBuffer(_buf: unknown): void { }

@@ -3,7 +3,7 @@
 import { consoleCore } from '../../../core/console';
 import { formatNumberAsHex } from '../../../common/byte_hex_string';
 import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
-import { TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD } from './constants';
+import { TEXTURE_UNIT_SHADOW_MAP } from './constants';
 
 function getRenderContext() {
 	return consoleCore.view;
@@ -180,24 +180,4 @@ export function glCreateTextureFromImage(
 	gl.texImage2D(gl.TEXTURE_2D, 0, desc.srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
 	glSetTexture2DParams(gl, desc);
 	return tex;
-}
-
-export function glCreateDepthTexture(
-	gl: WebGL2RenderingContext,
-	width: number,
-	height: number,
-	unit = TEXTURE_UNIT_UPLOAD,
-): WebGLTexture {
-	const tex = gl.createTexture()!;
-	gl.activeTexture(gl.TEXTURE0 + unit);
-	gl.bindTexture(gl.TEXTURE_2D, tex);
-	gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, width, height, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
-	const backendDepth = getRenderContext().backend;
-	backendDepth.accountUpload('texture', width * height * 2);
-	glSetTexture2DParams(gl);
-	return tex;
-}
-
-export function glSwitchProgram(gl: WebGL2RenderingContext, program: WebGLProgram): void {
-	gl.useProgram(program);
 }

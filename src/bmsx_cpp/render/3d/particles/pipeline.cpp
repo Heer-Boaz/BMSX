@@ -6,7 +6,6 @@
 #include "render/3d/shaders/render_3d_shaders.h"
 #include "render/backend/gles2_backend.h"
 #include "render/gameview.h"
-#include "render/shared/queues.h"
 #include "rompack/format.h"
 
 #include <GLES2/gl2.h>
@@ -23,8 +22,7 @@ constexpr f32 PARTICLE_TEXTPAGE_SYSTEM = 2.0f;
 constexpr i32 PARTICLE_TEXTURE_UNIT_PRIMARY = 0;
 constexpr i32 PARTICLE_TEXTURE_UNIT_SECONDARY = 1;
 constexpr i32 PARTICLE_TEXTURE_UNIT_SYSTEM = 2;
-constexpr size_t HOST_PARTICLE_QUEUE_LIMIT = 1024u;
-constexpr size_t PARTICLE_VERTEX_LIMIT = (HOST_PARTICLE_QUEUE_LIMIT + VDP_BBU_BILLBOARD_LIMIT) * 6u;
+constexpr size_t PARTICLE_VERTEX_LIMIT = VDP_BBU_BILLBOARD_LIMIT * 6u;
 
 // TS WebGL2 reads frame ambient from a FrameUniforms UBO and batches
 // mode/factor as uniforms. Strict GLES2 has no UBO, and this backend merges the
@@ -214,30 +212,13 @@ void setupParticleUniforms() {
 }
 
 void renderParticleBatch(ParticleRuntime& runtime, void* framebuffer, const ParticlePipelineState& pipelineState) {
-	const i32 particleQueueCount = RenderQueues::beginParticleQueue();
 	OpenGLES2Backend& backend = runtime.backend;
 	const GameView& view = runtime.context;
-	if (particleQueueCount == 0 && view.vdpBillboardCount == 0u) {
+	if (view.vdpBillboardCount == 0u) {
 		return;
 	}
 	auto& state = g_particles;
 	state.vertexCount = 0u;
-	for (i32 index = 0; index < particleQueueCount; index += 1) {
-		const ParticleRenderSubmission& submission = RenderQueues::particleQueueEntry(static_cast<size_t>(index));
-		appendParticleQuad(
-			state,
-			pipelineState.camRight,
-			pipelineState.camUp,
-			submission.position,
-			submission.size,
-			submission.color,
-			textpageIdForSlot(submission.slot),
-			submission.uv0,
-			submission.uv1,
-			submission.ambient_mode,
-			submission.ambient_factor
-		);
-	}
 	for (size_t index = 0; index < view.vdpBillboardCount; index += 1u) {
 		const GameView::VdpBillboardRenderEntry& submission = view.vdpBillboards[index];
 		appendParticleQuad(
@@ -306,7 +287,7 @@ void registerParticlesPass_GLES2(RenderPassLibrary& registry) {
 	};
 	desc.shouldExecute = []() {
 		const GameView* view = ConsoleCore::instance().view();
-		return RenderQueues::beginParticleQueue() > 0 || view->vdpBillboardCount > 0u;
+		return view->vdpBillboardCount > 0u;
 	};
 	desc.exec = [](GPUBackend* backend, void* framebuffer, std::any& state) {
 		ParticleRuntime runtime{*static_cast<OpenGLES2Backend*>(backend), *ConsoleCore::instance().view()};

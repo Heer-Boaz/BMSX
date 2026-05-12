@@ -21,7 +21,6 @@ class Runtime;
 class LuaFunctionRedirectCache {
 public:
 	Value getOrCreate(Runtime& runtime, std::string_view moduleId, const std::vector<std::string>& path, Value fn);
-	void clear();
 	const LuaFunctionRedirectRecord* find(std::string_view key) const;
 
 private:

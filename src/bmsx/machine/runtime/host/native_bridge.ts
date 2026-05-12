@@ -1016,9 +1016,9 @@ export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarsha
 	}
 	if (isNativeFunction(value)) {
 		return (...args: unknown[]) => {
-			const callArgs = runtime.luaScratch.acquireValue();
-			const results = runtime.luaScratch.acquireValue();
-			const resultVisited = runtime.luaScratch.acquireTableMarshal();
+			const callArgs = runtime.luaScratch.values.acquire();
+			const results = runtime.luaScratch.values.acquire();
+			const resultVisited = runtime.luaScratch.tableMarshal.acquire();
 			try {
 				for (let index = 0; index < args.length; index += 1) {
 						callArgs.push(toRuntimeValue(runtime, args[index]));
@@ -1029,9 +1029,9 @@ export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarsha
 				}
 					return toNativeValue(runtime, results[0], context, resultVisited);
 			} finally {
-				runtime.luaScratch.releaseTableMarshal(resultVisited);
-				runtime.luaScratch.releaseValue(results);
-				runtime.luaScratch.releaseValue(callArgs);
+				runtime.luaScratch.tableMarshal.release(resultVisited);
+				runtime.luaScratch.values.release(results);
+				runtime.luaScratch.values.release(callArgs);
 			}
 		};
 	}
@@ -1118,8 +1118,8 @@ export function getOrCreateNativeFunction(runtime: Runtime, fn: Function): Nativ
 	const name = resolveNativeTypeName(fn);
 	const wrapper = createNativeFunction(name, (args, out) => {
 		const ctx = buildMarshalContext(runtime);
-		const visited = runtime.luaScratch.acquireTableMarshal();
-		const jsArgs = runtime.luaScratch.acquireValue() as unknown[];
+		const visited = runtime.luaScratch.tableMarshal.acquire();
+		const jsArgs = runtime.luaScratch.values.acquire() as unknown[];
 		try {
 			for (let index = 0; index < args.length; index += 1) {
 				jsArgs.push(toNativeValue(runtime, args[index], ctx, visited));
@@ -1127,8 +1127,8 @@ export function getOrCreateNativeFunction(runtime: Runtime, fn: Function): Nativ
 			const result = fn.apply(undefined, jsArgs);
 			wrapNativeResult(runtime, result, out);
 		} finally {
-			runtime.luaScratch.releaseValue(jsArgs as unknown as Value[]);
-			runtime.luaScratch.releaseTableMarshal(visited);
+			runtime.luaScratch.values.release(jsArgs as unknown as Value[]);
+			runtime.luaScratch.tableMarshal.release(visited);
 		}
 	});
 	runtime.nativeFunctionCache.set(fn, wrapper);
@@ -1148,8 +1148,8 @@ export function getOrCreateNativeMethod(runtime: Runtime, target: object, key: s
 	const name = `${resolveNativeTypeName(target)}.${key}`;
 	const wrapper = createNativeFunction(name, (args, out) => {
 		const ctx = buildMarshalContext(runtime);
-		const visited = runtime.luaScratch.acquireTableMarshal();
-		const jsArgs = runtime.luaScratch.acquireValue() as unknown[];
+		const visited = runtime.luaScratch.tableMarshal.acquire();
+		const jsArgs = runtime.luaScratch.values.acquire() as unknown[];
 		const member = (target as Record<string, unknown>)[key];
 		try {
 			if (!isLuaHandlerFunction(member)) {
@@ -1180,8 +1180,8 @@ export function getOrCreateNativeMethod(runtime: Runtime, target: object, key: s
 			const result = (member as (...inner: unknown[]) => unknown).apply(undefined, jsArgs);
 			wrapNativeResult(runtime, result, out);
 		} finally {
-			runtime.luaScratch.releaseValue(jsArgs as unknown as Value[]);
-			runtime.luaScratch.releaseTableMarshal(visited);
+			runtime.luaScratch.values.release(jsArgs as unknown as Value[]);
+			runtime.luaScratch.tableMarshal.release(visited);
 		}
 	});
 	bucket.set(key, wrapper);

@@ -2,24 +2,17 @@ import type { ResourceDescriptor } from '../../common/models';
 import { restoreBreakpointsFromPayload } from '../contrib/debugger/controller';
 import type { Runtime } from '../../../machine/runtime/runtime';
 import * as workbenchMode from '../mode';
-import { editorDocumentState } from '../../editor/editing/document_state';
-import { fetchWorkspaceFile } from '../../workspace/files';
 import { initializeTabs } from '../ui/tabs';
 import {
 	clearCodeTabContexts,
 	createEntryTabContext,
 	findCodeTabContext,
-	getActiveCodeTabContextId,
 	getCodeTabContextById,
-	setTabDirty,
-	updateActiveContextDirtyFlag,
 } from '../ui/code_tab/contexts';
 import { openCodeTabForDescriptor } from '../ui/code_tab/io';
-import { getActiveTabId } from '../ui/tabs';
-import { deleteWorkspaceCachedSources, setWorkspaceCachedSources } from '../../workspace/cache';
-import { restoreSnapshot } from '../../editor/editing/undo_controller';
-import { readDirtyBuffer, readWorkspaceStateFile, deleteDirtyBuffer } from './io';
-import { applySourceToContext, buildSnapshotFromBuffer } from './context_snapshot';
+import { workspaceSourceCache } from '../../workspace/cache';
+import { readWorkspaceFile, readWorkspaceStateFile } from './io';
+import { restoreWorkspaceContextSource } from './context_snapshot';
 import { buildWorkspaceAutosaveSignature } from './autosave';
 import type { PersistedDirtyEntry, WorkspaceAutosavePayload } from './models';
 
@@ -71,37 +64,12 @@ export async function hydrateDirtyFiles(runtime: Runtime, entries: PersistedDirt
 		if (!context) {
 			throw new Error(`Failed to restore code tab context for '${descriptor.path}'.`);
 		}
-		const contents = await readDirtyBuffer(entry.dirtyPath);
+		const contents = await readWorkspaceFile(entry.dirtyPath);
 		if (contents === null) {
 			continue;
 		}
-		const saved = await fetchWorkspaceFile(descriptor.path);
-		if (saved && saved.contents !== contents) {
-			await deleteDirtyBuffer(entry.dirtyPath);
-			deleteWorkspaceCachedSources([entry.dirtyPath, descriptor.path]);
-			applySourceToContext(context, saved.contents, entry);
-			context.lastSavedSource = saved.contents;
-			context.dirty = false;
-			context.savePointDepth = context.undoStack.length;
-			setTabDirty(context.id, false);
-			if (getActiveCodeTabContextId() === context.id && getActiveTabId() === context.id) {
-				restoreSnapshot(buildSnapshotFromBuffer(context, entry), { preserveScroll: true });
-				editorDocumentState.savePointDepth = context.savePointDepth;
-				editorDocumentState.dirty = false;
-				updateActiveContextDirtyFlag();
-			}
-			continue;
-		}
-		setWorkspaceCachedSources([entry.dirtyPath, descriptor.path], contents);
-		applySourceToContext(context, contents, entry);
-		context.dirty = true;
-		context.savePointDepth = -1;
-		setTabDirty(context.id, true);
-		if (getActiveCodeTabContextId() === context.id && getActiveTabId() === context.id) {
-			restoreSnapshot(buildSnapshotFromBuffer(context, entry), { preserveScroll: true });
-			editorDocumentState.savePointDepth = context.savePointDepth;
-			editorDocumentState.dirty = true;
-			updateActiveContextDirtyFlag();
-		}
+		workspaceSourceCache.set(entry.dirtyPath, contents);
+		workspaceSourceCache.set(descriptor.path, contents);
+		restoreWorkspaceContextSource(context, contents, entry, true);
 	}
 }

@@ -463,7 +463,10 @@ const LuaBuiltinDescriptor* findDefaultLuaBuiltinDescriptor(std::string_view nam
 	auto it = std::find_if(builtins.begin(), builtins.end(), [name](const LuaBuiltinDescriptor& descriptor) {
 		return descriptor.name == name;
 	});
-	return it == builtins.end() ? nullptr : &*it;
+	if (it == builtins.end()) {
+		return nullptr;
+	}
+	return &*it;
 }
 
 } // namespace bmsx

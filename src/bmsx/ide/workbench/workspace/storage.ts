@@ -2,7 +2,7 @@ import { consoleCore } from '../../../core/console';
 import { scheduleIdeOnce } from '../../common/background_tasks';
 import { taskGate } from '../../../core/taskgate';
 import type { Runtime } from '../../../machine/runtime/runtime';
-import { clearWorkspaceCachedSources } from '../../workspace/cache';
+import { workspaceSourceCache } from '../../workspace/cache';
 import { workspaceState } from './state';
 import { clearWorkspaceStorageConfiguration, configureWorkspaceStorage, isWorkspaceServerAvailable, scheduleWorkspaceServerRetry, writeWorkspaceStateFile } from './io';
 import { restoreWorkspaceSessionFromDisk } from './restore';
@@ -13,10 +13,7 @@ const workspaceRestoreGate = taskGate.group('restore');
 
 function detachWorkspaceExitHandler(): void {
 	if (workspaceState.disposeExitListener) {
-		try {
-			workspaceState.disposeExitListener.unsubscribe();
-		} catch {
-		}
+		workspaceState.disposeExitListener.unsubscribe();
 		workspaceState.disposeExitListener = null;
 	}
 }
@@ -40,7 +37,7 @@ function disableWorkspacePersistence(): void {
 export function initializeWorkspaceStorage(runtime: Runtime, projectRootPath: string | null): void {
 	stopWorkspaceAutosaveLoop();
 	workspaceState.autosaveSignature = null;
-	clearWorkspaceCachedSources();
+	workspaceSourceCache.clear();
 	if (!projectRootPath || projectRootPath.length === 0) {
 		workspaceState.autosaveEnabled = false;
 		clearWorkspaceStorageConfiguration();
@@ -91,10 +88,7 @@ export function stopWorkspaceAutosaveLoop(): void {
 	if (!workspaceState.autosaveHandle) {
 		return;
 	}
-	try {
-		workspaceState.autosaveHandle.cancel();
-	} catch {
-	}
+	workspaceState.autosaveHandle.cancel();
 	workspaceState.autosaveHandle = null;
 }
 
@@ -117,6 +111,7 @@ export async function runWorkspaceAutosaveTick(runtime: Runtime): Promise<void> 
 	try {
 		const dirtyEntries = collectDirtyContextEntries();
 		const payload = buildWorkspaceAutosavePayload(runtime, dirtyEntries);
+		await persistDirtyContextEntries(dirtyEntries);
 		if (payload) {
 			const signature = buildWorkspaceAutosaveSignature(payload);
 			if (signature !== workspaceState.autosaveSignature) {
@@ -124,7 +119,6 @@ export async function runWorkspaceAutosaveTick(runtime: Runtime): Promise<void> 
 				workspaceState.autosaveSignature = signature;
 			}
 		}
-		await persistDirtyContextEntries(dirtyEntries);
 	} catch (error) {
 		console.warn('[CartEditor] Workspace autosave failed:', error);
 	} finally {

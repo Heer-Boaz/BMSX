@@ -1,7 +1,7 @@
 import { formatNumberAsHex } from '../byte_hex_string';
 
 export const VERSION = 0xA1;
-const utf8FatalDecoder = new TextDecoder('utf-8', { fatal: true });
+export const utf8FatalDecoder = new TextDecoder('utf-8', { fatal: true });
 
 const enum Tag {
 	Null = 0,
@@ -106,10 +106,6 @@ export function encodeBinary(obj: any, opts: EncodeOptions = {}): Uint8Array {
 	for (let i = 0; i < propNames.length; i++) writer.str(propNames[i]);
 	writer.writeWithPropTable(obj, propNameToId);
 	return writer.finish();
-}
-
-export function decodeuint8arr(to_decode: Uint8Array): string {
-	return utf8FatalDecoder.decode(to_decode);
 }
 
 export function typedArrayFromBytes<T extends ArrayBufferView>(u8: Uint8Array, ctor: { new(buffer: ArrayBufferLike, byteOffset: number, length?: number): T; BYTES_PER_ELEMENT: number; }): T {
@@ -234,7 +230,8 @@ class BinWriter {
 	}
 
 	finish(): Uint8Array {
-		return this.buf.subarray(0, this.pos);
+		const written = this.buf.subarray(0, this.pos);
+		return written;
 	}
 
 	private writeNumber(v: number) {
@@ -371,8 +368,11 @@ class BinReader {
 		this.propNames = propNames;
 	}
 
-	readVersion(): number {
-		return this.readUint8();
+	readVersion(expectedVersion: number): void {
+		const version = this.readUint8();
+		if (version !== expectedVersion) {
+			throw new Error(`decodeBinary: unknown version ${formatNumberAsHex(version)} (expected ${formatNumberAsHex(expectedVersion)})`);
+		}
 	}
 
 	readPropNames(): string[] {
@@ -523,10 +523,7 @@ export interface DecodeOptions {
 	/** Decode a buffer produced by this module (BREAKING vs legacy A1 semantics). */
 	export function decodeBinary(buf: Uint8Array, opts: DecodeOptions = {}) {
 		const reader = new BinReader(buf, opts);
-		const version = reader.readVersion();
-		if (version !== VERSION) {
-			throw new Error(`decodeBinary: unknown version ${formatNumberAsHex(version)} (expected ${formatNumberAsHex(VERSION)})`);
-		}
+		reader.readVersion(VERSION);
 		return readBinaryPayloadWithPropNames(reader, buf, reader.readPropNames());
 	}
 

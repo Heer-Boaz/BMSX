@@ -7,6 +7,22 @@
 #include <stdexcept>
 
 namespace bmsx {
+namespace {
+
+void restoreSharedDeviceState(
+	Machine& machine,
+	const IrqControllerState& irq,
+	const AudioControllerState& audio,
+	const InputControllerState& input
+) {
+	machine.geometryController.postLoad();
+	machine.irqController.restoreState(irq);
+	machine.audioController.restoreState(audio);
+	machine.inputController.restoreState(input);
+}
+
+} // namespace
+
 Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, SoundMaster& soundMaster, MicrotaskQueue& microtasks)
 	: memory(memoryRef)
 	, frameBufferSize(frameBufferSizeValue)
@@ -79,15 +95,14 @@ void Machine::runDeviceService(uint8_t deviceKind) {
 MachineState Machine::captureState() const {
 	MachineState state;
 	state.irq = irqController.captureState();
+	state.audio = audioController.captureState();
 	state.input = inputController.captureState();
 	state.vdp = vdp.captureState();
 	return state;
 }
 
 void Machine::restoreState(const MachineState& state) {
-	geometryController.postLoad();
-	irqController.restoreState(state.irq);
-	inputController.restoreState(state.input);
+	restoreSharedDeviceState(*this, state.irq, state.audio, state.input);
 	vdp.restoreState(state.vdp);
 }
 
@@ -95,6 +110,7 @@ MachineSaveState Machine::captureSaveState() const {
 	MachineSaveState state;
 	state.memory = memory.captureSaveState();
 	state.irq = irqController.captureState();
+	state.audio = audioController.captureState();
 	state.stringPool = cpu.stringPool().captureState();
 	state.input = inputController.captureState();
 	state.vdp = vdp.captureSaveState();
@@ -104,9 +120,7 @@ MachineSaveState Machine::captureSaveState() const {
 void Machine::restoreSaveState(const MachineSaveState& state) {
 	memory.restoreSaveState(state.memory);
 	cpu.stringPool().restoreState(state.stringPool);
-	geometryController.postLoad();
-	irqController.restoreState(state.irq);
-	inputController.restoreState(state.input);
+	restoreSharedDeviceState(*this, state.irq, state.audio, state.input);
 	vdp.restoreSaveState(state.vdp);
 }
 

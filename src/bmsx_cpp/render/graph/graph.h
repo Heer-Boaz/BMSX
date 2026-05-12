@@ -42,7 +42,6 @@ struct TexDesc {
 };
 
 using RenderGraphTexHandle = i32;
-using RenderGraphValueHandle = i32;
 
 class RenderGraphRuntime;
 
@@ -52,13 +51,8 @@ public:
 
 	RenderGraphTexHandle createTex(const TexDesc& desc);
 	void writeTex(RenderGraphTexHandle handle);
-	void writeTex(RenderGraphTexHandle handle, const std::array<f32, 4>& clearColor);
-	void writeTex(RenderGraphTexHandle handle, f32 clearDepth);
 	void exportToBackbuffer(RenderGraphTexHandle handle);
 	void readTex(RenderGraphTexHandle handle);
-
-	RenderGraphValueHandle provideValue(const std::any& val);
-	void readValue(RenderGraphValueHandle handle);
 
 private:
 	RenderGraphRuntime* m_runtime;
@@ -76,7 +70,6 @@ public:
 	GPUBackend* backend() const { return m_backend; }
 	TextureHandle getTexture(RenderGraphTexHandle handle) const;
 	void* getFBO(RenderGraphTexHandle color, RenderGraphTexHandle depth);
-	const std::any& getValue(RenderGraphValueHandle handle) const;
 
 private:
 	GPUBackend* m_backend;
@@ -136,14 +129,6 @@ private:
 		ClearInfo clearOnWrite;
 	};
 
-	struct InternalValueResource {
-		std::any val;
-		i32 providerPass = -1;
-		std::vector<i32> readPasses;
-		i32 firstUse = -1;
-		i32 lastUse = -1;
-	};
-
 	struct WriteTargets {
 		RenderGraphTexHandle color = -1;
 		RenderGraphTexHandle depth = -1;
@@ -155,14 +140,6 @@ private:
 		const std::any* data = nullptr;
 		WriteTargets targets;
 	};
-
-	RenderGraphTexHandle allocTex(const TexDesc& desc, i32 passIndex);
-	void readTex(RenderGraphTexHandle handle, i32 passIndex);
-	void writeTex(RenderGraphTexHandle handle, i32 passIndex, const std::array<f32, 4>* clearColor, const f32* clearDepth);
-	void exportToBackbuffer(RenderGraphTexHandle handle, i32 passIndex);
-
-	RenderGraphValueHandle provideValue(const std::any& val, i32 passIndex);
-	void readValue(RenderGraphValueHandle handle, i32 passIndex);
 
 	TextureHandle getTexture(RenderGraphTexHandle handle) const;
 	void* getFBO(RenderGraphTexHandle color, RenderGraphTexHandle depth);
@@ -179,11 +156,9 @@ private:
 	std::vector<std::any> m_setupData;
 	std::vector<std::vector<RenderGraphTexHandle>> m_passReads;
 	std::vector<std::vector<RenderGraphTexHandle>> m_passWrites;
-	std::vector<std::vector<RenderGraphValueHandle>> m_valueReads;
 	std::vector<i32> m_passOrder;
 	std::vector<bool> m_reachable;
 	std::vector<InternalTexResource> m_texResources;
-	std::vector<InternalValueResource> m_valueResources;
 
 	bool m_compiled = false;
 	bool m_realized = false;

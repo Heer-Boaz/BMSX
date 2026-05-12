@@ -876,12 +876,34 @@ const BinAsset* RuntimeRomPackage::getBin(const AssetId& id) const {
 	return findAssetValue(bin, id);
 }
 
-LuaSourceAsset* RuntimeRomPackage::getLua(const AssetId& path) {
-	return findAssetValue(lua, path);
+const LuaSourceAsset* RuntimeRomPackage::getLuaModule(const AssetId& modulePath) const {
+	return findAssetValue(m_lua, modulePath);
 }
 
-const LuaSourceAsset* RuntimeRomPackage::getLua(const AssetId& path) const {
-	return findAssetValue(lua, path);
+const LuaSourceAsset* RuntimeRomPackage::getLuaSource(const AssetId& sourcePath) const {
+	const auto it = m_luaSourceToModule.find(hashAssetToken(sourcePath));
+	if (it == m_luaSourceToModule.end()) {
+		return nullptr;
+	}
+	const auto luaIt = m_lua.find(it->second);
+	if (luaIt == m_lua.end()) {
+		return nullptr;
+	}
+	return &luaIt->second;
+}
+
+const std::unordered_map<AssetToken, LuaSourceAsset>& RuntimeRomPackage::luaSources() const {
+	return m_lua;
+}
+
+void RuntimeRomPackage::insertLuaSource(LuaSourceAsset asset) {
+	const AssetToken moduleToken = hashAssetToken(asset.modulePath);
+	const auto existing = m_lua.find(moduleToken);
+	if (existing != m_lua.end()) {
+		m_luaSourceToModule.erase(hashAssetToken(existing->second.path));
+	}
+	m_luaSourceToModule[hashAssetToken(asset.path)] = moduleToken;
+	m_lua[moduleToken] = std::move(asset);
 }
 
 const BinValue* RuntimeRomPackage::getAudioEvent(const AssetId& id) const {
@@ -904,8 +926,12 @@ bool RuntimeRomPackage::hasBin(const AssetId& id) const {
 	return getBin(id) != nullptr;
 }
 
-bool RuntimeRomPackage::hasLua(const AssetId& path) const {
-	return getLua(path) != nullptr;
+bool RuntimeRomPackage::hasLuaModule(const AssetId& modulePath) const {
+	return getLuaModule(modulePath) != nullptr;
+}
+
+bool RuntimeRomPackage::hasLuaSource(const AssetId& sourcePath) const {
+	return getLuaSource(sourcePath) != nullptr;
 }
 
 bool RuntimeRomPackage::hasAudioEvent(const AssetId& id) const {
@@ -918,7 +944,8 @@ void RuntimeRomPackage::clear() {
 	model.clear();
 	data.clear();
 	bin.clear();
-	lua.clear();
+	m_lua.clear();
+	m_luaSourceToModule.clear();
 	audioevents.clear();
 	programImage.reset();
 	programSymbols.reset();
@@ -1466,15 +1493,15 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 				if (bufStart < 0 || bufEnd <= bufStart) {
 					throw BMSX_RUNTIME_ERROR("Lua ROM entry missing source payload: " + assetId);
 				}
-					LuaSourceAsset luaAsset;
-					luaAsset.id = assetId;
-					luaAsset.path = *romInfo.sourcePath;
-					luaAsset.modulePath = toLuaModulePath(luaAsset.path);
-					luaAsset.rom = romInfo;
-					luaAsset.source.assign(reinterpret_cast<const char*>(romData + bufStart), static_cast<size_t>(bufEnd - bufStart));
-					romPackage.lua[hashAssetToken(luaAsset.modulePath)] = std::move(luaAsset);
-					break;
-				}
+				LuaSourceAsset luaAsset;
+				luaAsset.id = assetId;
+				luaAsset.path = *romInfo.sourcePath;
+				luaAsset.modulePath = toLuaModulePath(luaAsset.path);
+				luaAsset.rom = romInfo;
+				luaAsset.source.assign(reinterpret_cast<const char*>(romData + bufStart), static_cast<size_t>(bufEnd - bufStart));
+				romPackage.insertLuaSource(std::move(luaAsset));
+				break;
+			}
 			case AssetTypeKind::Code: {
 				if (bufStart < 0 || bufEnd <= bufStart) {
 					throw BMSX_RUNTIME_ERROR("Code ROM entry missing payload: " + assetId);

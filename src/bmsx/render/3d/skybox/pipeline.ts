@@ -7,7 +7,6 @@ import { SkyboxPipelineState } from '../../backend/backend';
 import { TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '../../backend/webgl/constants';
 import { WebGLBackend } from '../../backend/webgl/backend';
 import { VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
-import { _skyTint, _skyExposure } from '../../shared/queues';
 
 let vaoSkybox: WebGLVertexArrayObject = null;
 let skyboxProgram: WebGLProgram;
@@ -104,8 +103,8 @@ export function drawSkybox(runtime: SkyboxRuntime, framebuffer: WebGLFramebuffer
 	gl.uniformMatrix4fv(skyboxProjectionLocation, false, state.proj);
 	gl.uniform4fv(skyboxFaceUvRectLocation, state.faceUvRects);
 	gl.uniform1iv(skyboxFaceTextpageLocation, state.faceTextpageBindings);
-	gl.uniform3f(skyboxTintLocation, _skyTint[0], _skyTint[1], _skyTint[2]);
-	gl.uniform1f(skyboxExposureLocation, _skyExposure);
+	gl.uniform3f(skyboxTintLocation, 1.0, 1.0, 1.0);
+	gl.uniform1f(skyboxExposureLocation, 1.0);
 	context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_PRIMARY;
 	context.bind2DTex(state.textpagePrimaryTex);
 	context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_SECONDARY;
@@ -130,36 +129,25 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			initSkyboxPipeline(backend as WebGLBackend);
 		},
 		writesDepth: false,
-		shouldExecute: () => !!consoleCore.view.skyboxFaceUvRects,
+		shouldExecute: () => consoleCore.view.skyboxRenderReady,
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
 			const runtime: SkyboxRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: consoleCore.view };
 			drawSkybox(runtime, fbo as WebGLFramebuffer, s as SkyboxPipelineState);
 		},
-		prepare: (backend, _state) => {
+		prepare: (_backend, _state) => {
 			const gv = consoleCore.view;
-			if (!gv.skyboxFaceUvRects || !gv.skyboxFaceTextpageBindings) return;
-			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
-			const textpagePrimaryTex = gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY];
-			if (!textpagePrimaryTex) {
-				throw new Error(`[Skybox] Texture '${VDP_PRIMARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
-			}
-			const textpageSecondaryTex = gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY];
-			if (!textpageSecondaryTex) {
-				throw new Error(`[Skybox] Texture '${VDP_SECONDARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
-			}
-			// Update state with dynamic data (reuse camera matrices)
+			const size = gv.offscreenCanvasSize;
 			registry.setState('skybox', {
-				width,
-				height,
+				width: size.x,
+				height: size.y,
 				view: gv.vdpTransform.skyboxView,
 				proj: gv.vdpTransform.proj,
-				textpagePrimaryTex,
-				textpageSecondaryTex,
+				textpagePrimaryTex: gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY],
+				textpageSecondaryTex: gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY],
 				faceUvRects: gv.skyboxFaceUvRects,
 				faceTextpageBindings: gv.skyboxFaceTextpageBindings,
 			});
-			registry.validatePassResources('skybox', backend);
 		},
 	});
 }

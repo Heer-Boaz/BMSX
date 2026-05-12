@@ -7,7 +7,7 @@ import {
 	IO_SYS_HOST_FAULT_STAGE,
 } from './bus/io';
 import { CPU } from './cpu/cpu';
-import { AudioController } from './devices/audio/controller';
+import { AudioController, type AudioControllerState } from './devices/audio/controller';
 import { DmaController } from './devices/dma/controller';
 import { GeometryController } from './devices/geometry/controller';
 import { ImgDecController } from './devices/imgdec/controller';
@@ -36,6 +36,7 @@ export type MachineTiming = {
 
 export type MachineState = {
 	irq: IrqControllerState;
+	audio: AudioControllerState;
 	input: InputControllerState;
 	vdp: VdpState;
 };
@@ -43,6 +44,7 @@ export type MachineState = {
 export type MachineSaveState = {
 	memory: MemorySaveState;
 	irq: IrqControllerState;
+	audio: AudioControllerState;
 	stringPool: StringPoolState;
 	input: InputControllerState;
 	vdp: VdpSaveState;
@@ -132,15 +134,14 @@ export class Machine {
 	public captureState(): MachineState {
 		return {
 			irq: this.irqController.captureState(),
+			audio: this.audioController.captureState(),
 			input: this.inputController.captureState(),
 			vdp: this.vdp.captureState(),
 		};
 	}
 
 	public restoreState(state: MachineState): void {
-		this.geometryController.postLoad();
-		this.irqController.restoreState(state.irq);
-		this.inputController.restoreState(state.input);
+		this.restoreSharedDeviceState(state);
 		this.vdp.restoreState(state.vdp);
 	}
 
@@ -148,6 +149,7 @@ export class Machine {
 		return {
 			memory: this.memory.captureSaveState(),
 			irq: this.irqController.captureState(),
+			audio: this.audioController.captureState(),
 			stringPool: this.cpu.stringPool.captureState(),
 			input: this.inputController.captureState(),
 			vdp: this.vdp.captureSaveState(),
@@ -157,10 +159,15 @@ export class Machine {
 	public restoreSaveState(state: MachineSaveState): void {
 		this.memory.restoreSaveState(state.memory);
 		this.cpu.stringPool.restoreState(state.stringPool);
+		this.restoreSharedDeviceState(state);
+		this.vdp.restoreSaveState(state.vdp);
+	}
+
+	private restoreSharedDeviceState(state: Pick<MachineState, 'irq' | 'audio' | 'input'>): void {
 		this.geometryController.postLoad();
 		this.irqController.restoreState(state.irq);
+		this.audioController.restoreState(state.audio);
 		this.inputController.restoreState(state.input);
-		this.vdp.restoreSaveState(state.vdp);
 	}
 
 }

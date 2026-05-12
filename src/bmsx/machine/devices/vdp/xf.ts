@@ -99,12 +99,6 @@ export class VdpXfUnit {
 	}
 
 	public restoreState(state: VdpXfState): void {
-		if (state.matrixWords.length !== VDP_XF_MATRIX_REGISTER_WORDS) {
-			throw new Error(`[VDP] XF state requires ${VDP_XF_MATRIX_REGISTER_WORDS} matrix register words.`);
-		}
-		if (state.viewMatrixIndex < 0 || state.viewMatrixIndex >= VDP_XF_MATRIX_COUNT || state.projectionMatrixIndex < 0 || state.projectionMatrixIndex >= VDP_XF_MATRIX_COUNT) {
-			throw new Error(`[VDP] XF state selects invalid matrix indexes.`);
-		}
 		this.matrixWords.set(state.matrixWords);
 		this.viewMatrixIndex = state.viewMatrixIndex;
 		this.projectionMatrixIndex = state.projectionMatrixIndex;

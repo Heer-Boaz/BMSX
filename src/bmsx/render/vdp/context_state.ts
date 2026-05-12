@@ -1,8 +1,7 @@
 import type { VDP } from '../../machine/devices/vdp/vdp';
-import { initializeVdpFrameBufferTextures } from './framebuffer';
-import { initializeVdpSlotTextures } from './slot_textures';
+import type { GameView } from '../gameview';
 
-export function restoreVdpContextState(vdp: VDP): void {
-	initializeVdpFrameBufferTextures(vdp);
-	initializeVdpSlotTextures(vdp);
+export function restoreVdpContextState(vdp: VDP, view: GameView): void {
+	view.vdpFrameBufferTextures.initialize(vdp);
+	view.vdpSlotTextures.initialize(vdp);
 }

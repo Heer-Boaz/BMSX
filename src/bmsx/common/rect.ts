@@ -52,18 +52,6 @@ export function copy_rect_bounds(a: RectBounds, n: RectBounds): void {
 	a.bottom = n.bottom;
 }
 
-/**
- * Creates a new area with the specified coordinates.
- * @param sx The x-coordinate of the start point.
- * @param sy The y-coordinate of the start point.
- * @param ex The x-coordinate of the end point.
- * @param ey The y-coordinate of the end point.
- * @returns The newly created area.
- */
-export function new_area(sx: number, sy: number, ex: number, ey: number): RectBounds {
-	return new_area3d(sx, sy, undefined, ex, ey);
-}
-
 export function new_area3d(sx: number, sy: number, z: number, ex: number, ey: number): RectBounds {
 	[sx, sy, ex, ey] = correctAreaStartEnd(sx, sy, ex, ey);
 	return { left: sx, top: sy, right: ex, bottom: ey, z: z };
@@ -95,7 +83,7 @@ export function get_overlap_area(a: RectBounds, b: RectBounds): RectBounds {
 	const startY = Math.max(a.top, b.top);
 	const endX = Math.min(a.right, b.right);
 	const endY = Math.min(a.bottom, b.bottom);
-	return new_area(startX, startY, endX, endY);
+	return new_area3d(startX, startY, undefined, endX, endY);
 }
 
 export function point_in_rect(x: number, y: number, rect: RectBounds): boolean {

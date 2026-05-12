@@ -30,7 +30,7 @@ import { DmaController } from '../dma/controller';
 import type { ImageCopyPlan } from '../dma/image_copy';
 import type { IrqController } from '../irq/controller';
 import type { VDP } from '../vdp/vdp';
-import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
+import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
 import { DEVICE_SERVICE_IMG, type DeviceScheduler } from '../../scheduler/device';
 
 type ImgDecJob = {
@@ -91,6 +91,7 @@ export class ImgDecController {
 	private cpuHz = 1;
 	private decodeBytesPerSec = 1;
 	private decodeCarry = 0;
+	private readonly budgetAccrual: BudgetAccrual = { wholeUnits: 0, carry: 0 };
 	private availableDecodeBytes = 0;
 	private active = false;
 	private status = 0;
@@ -139,10 +140,9 @@ export class ImgDecController {
 		if (!this.active || !this.decodeActive || this.decodeQueued || this.decodeRemaining <= 0 || cycles <= 0) {
 			return;
 		}
-		const numerator = this.decodeBytesPerSec * cycles + this.decodeCarry;
-		const nextCarry = numerator % this.cpuHz;
-		const wholeBytes = (numerator - nextCarry) / this.cpuHz;
-		this.decodeCarry = nextCarry;
+		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, this.decodeBytesPerSec, this.decodeCarry, cycles);
+		const wholeBytes = this.budgetAccrual.wholeUnits;
+		this.decodeCarry = this.budgetAccrual.carry;
 		if (wholeBytes > 0) {
 			const maxGrant = this.decodeRemaining - this.availableDecodeBytes;
 			this.availableDecodeBytes += wholeBytes > maxGrant ? maxGrant : wholeBytes;
@@ -219,13 +219,7 @@ export class ImgDecController {
 		if (!this.memory.readBytesInto(src, buffer, len)) {
 			this.activeResolve = null;
 			this.activeReject = null;
-			this.status = IMG_STATUS_DONE | IMG_STATUS_ERROR;
-			this.memory.writeValue(IO_IMG_STATUS, this.status);
-			this.memory.writeValue(IO_IMG_WRITTEN, 0);
-			this.memory.writeValue(IO_IMG_SRC, src);
-			this.memory.writeValue(IO_IMG_LEN, len);
-			this.memory.writeValue(IO_IMG_DST, dst);
-			this.memory.writeValue(IO_IMG_CAP, cap);
+			this.writeJobRegisters(IMG_STATUS_DONE | IMG_STATUS_ERROR, 0, src, len, dst, cap);
 			this.irq.raise(IRQ_IMG_ERROR);
 			this.scheduleNextService(nowCycles);
 			return;
@@ -311,13 +305,7 @@ export class ImgDecController {
 		this.pendingTargetCapacity = 0;
 		this.activeCapacityLimit = 0;
 		this.signalIrq = signalIrq;
-		this.status = IMG_STATUS_BUSY;
-		this.memory.writeValue(IO_IMG_STATUS, this.status);
-		this.memory.writeValue(IO_IMG_WRITTEN, 0);
-		this.memory.writeValue(IO_IMG_SRC, src);
-		this.memory.writeValue(IO_IMG_LEN, len);
-		this.memory.writeValue(IO_IMG_DST, dst);
-		this.memory.writeValue(IO_IMG_CAP, cap);
+		this.writeJobRegisters(IMG_STATUS_BUSY, 0, src, len, dst, cap);
 
 		const targetCapacity = this.decodeTargetCapacity(dst);
 		if (targetCapacity === 0) {
@@ -355,6 +343,16 @@ export class ImgDecController {
 			this.pendingError = error;
 			this.scheduleNextService(this.scheduler.currentNowCycles());
 		});
+	}
+
+	private writeJobRegisters(status: number, written: number, src: number, len: number, dst: number, cap: number): void {
+		this.status = status;
+		this.memory.writeValue(IO_IMG_STATUS, this.status);
+		this.memory.writeValue(IO_IMG_WRITTEN, written);
+		this.memory.writeValue(IO_IMG_SRC, src);
+		this.memory.writeValue(IO_IMG_LEN, len);
+		this.memory.writeValue(IO_IMG_DST, dst);
+		this.memory.writeValue(IO_IMG_CAP, cap);
 	}
 
 	private beginDecode(result: DecodedImage, targetBase: number, targetCapacity: number): void {

@@ -58,7 +58,7 @@ test('CPU profiler records opcode and PC execution counts', () => {
 
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 
-	const snapshot = cpu.getProfilerSnapshot();
+	const snapshot = cpu.profiler.snapshot();
 	assert.equal(snapshot.totalInstructions, 4);
 	assert.equal(snapshot.totalBaseCycles, 5);
 	assert.equal(snapshot.opcodeCounts[OpCode.K1], 2);
@@ -79,7 +79,7 @@ test('CPU profiler report resolves hot PCs back to opcode and source location', 
 
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 
-	const snapshot = cpu.getProfilerSnapshot();
+	const snapshot = cpu.profiler.snapshot();
 	const hotAdd = collectCpuProfilerHotPcs(snapshot, 8, OpCode.ADD);
 	assert.equal(hotAdd.length, 1);
 	assert.equal(hotAdd[0].opcodeName, 'ADD');

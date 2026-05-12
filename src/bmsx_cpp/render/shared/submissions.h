@@ -85,33 +85,6 @@ struct PolyRenderSubmission {
 	Layer2D layer = Layer2D::World;
 };
 
-// Mesh render (3D)
-struct MeshRenderSubmission {
-	Mesh* mesh = nullptr;
-	std::array<f32, 16> matrix;
-	std::vector<std::array<f32, 16>> joint_matrices;
-	std::vector<f32> morph_weights;
-	bool receive_shadow = false;
-	Layer2D layer = Layer2D::World;
-};
-
-// Particle render
-struct ParticleRenderSubmission {
-	Vec3 position{0.0f, 0.0f, 0.0f};
-	f32 size = 1.0f;
-	bmsx::color color = 0xffffffffu; // ARGB32
-	uint32_t slot = 0;
-	uint32_t u = 0;
-	uint32_t v = 0;
-	uint32_t w = 0;
-	uint32_t h = 0;
-	std::array<f32, 2> uv0{0.0f, 0.0f};
-	std::array<f32, 2> uv1{0.0f, 0.0f};
-	i32 ambient_mode = 0;  // 0 or 1
-	f32 ambient_factor = 1.0f;
-	Layer2D layer = Layer2D::World;
-};
-
 enum class TextAlign { Left, Right, Center, Start, End };
 enum class TextBaseline { Top, Hanging, Middle, Alphabetic, Ideographic, Bottom };
 

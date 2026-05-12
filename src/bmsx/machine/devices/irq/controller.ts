@@ -16,11 +16,12 @@ export class IrqController {
 
 	public reset(): void {
 		this.pendingFlags = 0;
-		this.clearAckLatch();
+		this.memory.writeIoValue(IO_IRQ_ACK, 0);
 	}
 
 	public postLoad(): void {
-		this.clearAckLatch();
+		const clearAck = 0;
+		this.memory.writeIoValue(IO_IRQ_ACK, clearAck);
 	}
 
 	public captureState(): IrqControllerState {
@@ -31,7 +32,7 @@ export class IrqController {
 
 	public restoreState(state: IrqControllerState): void {
 		this.pendingFlags = state.pendingFlags >>> 0;
-		this.clearAckLatch();
+		this.memory.writeIoValue(IO_IRQ_ACK, 0);
 	}
 
 	public hasAssertedMaskableInterruptLine(): boolean {
@@ -57,10 +58,6 @@ export class IrqController {
 				this.pendingFlags = next;
 			}
 		}
-		this.clearAckLatch();
-	}
-
-	private clearAckLatch(): void {
 		this.memory.writeIoValue(IO_IRQ_ACK, 0);
 	}
 }

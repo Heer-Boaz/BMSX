@@ -63,10 +63,6 @@ void addTrackedLuaHeapBytes(ptrdiff_t delta) {
 	}
 }
 
-void replaceTrackedLuaHeapBytes(size_t previousBytes, size_t nextBytes) {
-	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(nextBytes) - static_cast<ptrdiff_t>(previousBytes));
-}
-
 size_t trackedLuaHeapBytes() {
 	return g_trackedLuaHeapBytes;
 }

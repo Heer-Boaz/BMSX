@@ -69,7 +69,7 @@ import {
 	transformFixed16,
 } from '../../common/numeric';
 import type { IrqController } from '../irq/controller';
-import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
+import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
 import { DEVICE_SERVICE_GEO, type DeviceScheduler } from '../../scheduler/device';
 
 type GeoJob = {
@@ -131,6 +131,7 @@ export class GeometryController {
 	private workUnitsPerSec = 1;
 	private workCarry = 0;
 	private availableWorkUnits = 0;
+	private readonly budgetAccrual: BudgetAccrual = { wholeUnits: 0, carry: 0 };
 	private readonly overlapWorldPolyA: number[] = [];
 	private readonly overlapWorldPolyB: number[] = [];
 	private readonly overlapClip0: number[] = [];
@@ -171,10 +172,9 @@ export class GeometryController {
 		if (job === null || cycles <= 0) {
 			return;
 		}
-		const numerator = this.workUnitsPerSec * cycles + this.workCarry;
-		const nextCarry = numerator % this.cpuHz;
-		const wholeUnits = (numerator - nextCarry) / this.cpuHz;
-		this.workCarry = nextCarry;
+		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, this.workUnitsPerSec, this.workCarry, cycles);
+		const wholeUnits = this.budgetAccrual.wholeUnits;
+		this.workCarry = this.budgetAccrual.carry;
 		if (wholeUnits > 0) {
 			const remainingRecords = job.count - job.processed;
 			const maxGrant = remainingRecords - this.availableWorkUnits;

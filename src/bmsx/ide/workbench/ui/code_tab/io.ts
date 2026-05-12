@@ -5,7 +5,7 @@ import { tryShowLuaErrorOverlay } from '../../../runtime_error/navigation';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
 import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../../workspace/files';
 import { buildDirtyFilePath } from '../../workspace/io';
-import { setWorkspaceCachedSources } from '../../../workspace/cache';
+import { workspaceSourceCache } from '../../../workspace/cache';
 import { applyAemSourceToRuntime } from '../../../language/aem/editor';
 import { extractErrorMessage } from '../../../../lua/value';
 import type { Runtime } from '../../../../machine/runtime/runtime';
@@ -88,7 +88,8 @@ export async function save(runtime: Runtime): Promise<void> {
 		} else {
 			await persistWorkspaceSourceFile(targetPath, source, runtime.cartProjectRootPath);
 		}
-		setWorkspaceCachedSources([targetPath, buildDirtyFilePath(targetPath)], source);
+		workspaceSourceCache.set(targetPath, source);
+		workspaceSourceCache.set(buildDirtyFilePath(targetPath), source);
 		commitActiveCodeTabSave(context, source);
 		if (context.mode === 'lua') {
 			setContextRuntimeSyncState(context, 'restart_pending', null);

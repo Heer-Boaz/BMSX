@@ -17,37 +17,33 @@ export class CpuExecutionState {
 	constructor(private readonly runtime: Runtime) {
 	}
 
-	public clearHaltUntilIrq(): void {
-		this.runtime.machine.cpu.clearHaltUntilIrq();
-	}
-
 	public runHaltedUntilIrq(state: FrameState): boolean {
 		const runtime = this.runtime;
 		const cpu = runtime.machine.cpu;
 		let cycleBudgetRemaining = state.cycleBudgetRemaining;
-		runDueRuntimeTimers(runtime);
+		let tickCompleted = runDueRuntimeTimers(runtime);
 		if (!cpu.isHaltedUntilIrq()) {
-			return runtime.vblank.tickCompleted;
+			return tickCompleted;
 		}
 		const irqController = runtime.machine.irqController;
 		const scheduler = runtime.machine.scheduler;
 		while (true) {
 			if (cpu.acceptPendingInterrupt(irqController) !== AcceptedInterruptKind.None) {
-				return runtime.vblank.tickCompleted;
+				return tickCompleted;
 			}
-			if (runtime.vblank.tickCompleted) {
+			if (tickCompleted) {
 				return true;
 			}
 			if (cycleBudgetRemaining > 0) {
 				const cyclesToTarget = scheduler.nextDeadline() - scheduler.nowCycles;
 				if (cyclesToTarget <= 0) {
-					runDueRuntimeTimers(runtime);
+					tickCompleted = runDueRuntimeTimers(runtime);
 					continue;
 				}
 				const idleCycles = cyclesToTarget < cycleBudgetRemaining ? cyclesToTarget : cycleBudgetRemaining;
 				cycleBudgetRemaining -= idleCycles;
 				state.cycleBudgetRemaining = cycleBudgetRemaining;
-				advanceRuntimeTime(runtime, idleCycles);
+				tickCompleted = advanceRuntimeTime(runtime, idleCycles);
 				continue;
 			}
 			return true;
@@ -68,8 +64,8 @@ export class CpuExecutionState {
 		let result = RunResult.Yielded;
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
-		runDueRuntimeTimers(runtime);
-		if (runtime.vblank.tickCompleted) {
+		let tickCompleted = runDueRuntimeTimers(runtime);
+		if (tickCompleted) {
 			state.cycleBudgetRemaining = remaining;
 			return result;
 		}
@@ -80,8 +76,8 @@ export class CpuExecutionState {
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
-					runDueRuntimeTimers(runtime);
-					if (runtime.vblank.tickCompleted) {
+					tickCompleted = runDueRuntimeTimers(runtime);
+					if (tickCompleted) {
 						break;
 					}
 					continue;
@@ -97,14 +93,14 @@ export class CpuExecutionState {
 				scheduler.endCpuSlice();
 			}
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
-			if (consumed > 0) {
-				remaining -= consumed;
-				state.activeCpuUsedCycles += consumed;
-				advanceRuntimeTime(runtime, consumed);
-			}
-			if (runtime.vblank.tickCompleted) {
-				break;
-			}
+				if (consumed > 0) {
+					remaining -= consumed;
+					state.activeCpuUsedCycles += consumed;
+					tickCompleted = advanceRuntimeTime(runtime, consumed);
+				}
+				if (tickCompleted) {
+					break;
+				}
 			if (cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
 				break;
 			}
@@ -140,17 +136,18 @@ export class CpuExecutionState {
 
 }
 
-export function advanceRuntimeTime(runtime: Runtime, cycles: number): void {
+export function advanceRuntimeTime(runtime: Runtime, cycles: number): boolean {
 	runtime.machine.advanceDevices(cycles);
-	runDueRuntimeTimers(runtime);
+	return runDueRuntimeTimers(runtime);
 }
 
-export function runDueRuntimeTimers(runtime: Runtime): void {
+export function runDueRuntimeTimers(runtime: Runtime): boolean {
 	const scheduler = runtime.machine.scheduler;
 	while (scheduler.hasDueTimer()) {
 		const event = scheduler.popDueTimer();
 		dispatchRuntimeTimer(runtime, event >> 8, event & 0xff);
 	}
+	return runtime.vblank.tickCompleted;
 }
 
 function dispatchRuntimeTimer(runtime: Runtime, kind: number, payload: number): void {

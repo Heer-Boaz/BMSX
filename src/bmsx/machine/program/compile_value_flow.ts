@@ -817,7 +817,7 @@ export class ValueKindFlowAnalyzer {
 	private analyzeLocalAssignment(statement: LuaLocalAssignmentStatement): void {
 		const facts = this.evalExpressionList(statement.values);
 		for (let index = 0; index < statement.names.length; index += 1) {
-			const handle = this.resolveDeclarationHandle(statement.names[index]);
+			const handle = resolveDeclarationHandle(statement.names[index], this.semantics);
 			if (handle === undefined) continue;
 			this.recordDeclaredHandle(handle);
 			this.state.set(
@@ -828,7 +828,7 @@ export class ValueKindFlowAnalyzer {
 	}
 
 	private analyzeLocalFunction(statement: LuaLocalFunctionStatement): void {
-		const handle = this.resolveDeclarationHandle(statement.name);
+		const handle = resolveDeclarationHandle(statement.name, this.semantics);
 		if (handle === undefined) return;
 		this.recordDeclaredHandle(handle);
 		this.state.set(handle, FUNCTION_VALUE_FACT);
@@ -880,7 +880,7 @@ export class ValueKindFlowAnalyzer {
 		for (let index = 0; index < statement.left.length; index += 1) {
 			const target = statement.left[index];
 			if (target.kind !== LuaSyntaxKind.IdentifierExpression) continue;
-			const handle = this.resolveReferenceHandle(target as LuaIdentifierExpression);
+			const handle = resolveReferenceHandle(target as LuaIdentifierExpression, this.semantics);
 				if (handle === null || !this.state.has(handle)) continue;
 			this.state.set(
 				handle,
@@ -985,7 +985,7 @@ export class ValueKindFlowAnalyzer {
 			this.evalExprFact(statement.step);
 		}
 		this.withLexicalScope(() => {
-			const handle = this.resolveDeclarationHandle(statement.variable);
+		const handle = resolveDeclarationHandle(statement.variable, this.semantics);
 			if (handle !== undefined) {
 				this.recordDeclaredHandle(handle);
 				this.state.set(handle, NUMBER_VALUE_FACT);
@@ -1003,7 +1003,7 @@ export class ValueKindFlowAnalyzer {
 		this.evalExpressionList(statement.iterators);
 		this.withLexicalScope(() => {
 			for (let index = 0; index < statement.variables.length; index += 1) {
-				const handle = this.resolveDeclarationHandle(statement.variables[index]);
+				const handle = resolveDeclarationHandle(statement.variables[index], this.semantics);
 				if (handle === undefined) continue;
 				this.recordDeclaredHandle(handle);
 				this.state.set(handle, UNKNOWN_VALUE_FACT);
@@ -1019,17 +1019,10 @@ export class ValueKindFlowAnalyzer {
 
 	private degradeLocalTarget(expression: LuaExpression): void {
 		if (expression.kind !== LuaSyntaxKind.IdentifierExpression) return;
-		const handle = this.resolveReferenceHandle(expression as LuaIdentifierExpression);
+		const handle = resolveReferenceHandle(expression as LuaIdentifierExpression, this.semantics);
 			if (handle !== null) {
 				setUnknown(this.state, handle);
 			}
 	}
 
-	private resolveDeclarationHandle(identifier: LuaIdentifierExpression): string | undefined {
-		return resolveDeclarationHandle(identifier, this.semantics);
-	}
-
-	private resolveReferenceHandle(identifier: LuaIdentifierExpression): string | null {
-		return resolveReferenceHandle(identifier, this.semantics);
-	}
 }

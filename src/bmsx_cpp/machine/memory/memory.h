@@ -78,12 +78,9 @@ public:
 
 		bool writeBytes(uint32_t addr, const u8* data, size_t length);
 		bool readBytes(uint32_t addr, u8* out, size_t length) const;
-	bool isVramRange(uint32_t addr, size_t length) const;
 	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
 	bool isRamRange(uint32_t addr, size_t length) const;
 
-	std::vector<u8> dumpMutableRam() const;
-	void restoreMutableRam(const u8* data, size_t size);
 	MemorySaveState captureSaveState() const;
 	void restoreSaveState(const MemorySaveState& state);
 	void clearIoSlots();
@@ -135,9 +132,17 @@ private:
 	bool isLuaReadOnlyIoAddress(uint32_t addr) const;
 	bool isMappedWritableRange(uint32_t addr, size_t length) const;
 	bool isMappedReadableRange(uint32_t addr, size_t length) const;
+	int requireIoAlignedSlot(uint32_t addr) const;
+	Value readIoSlotValue(int slot, uint32_t addr) const;
+	void writeIoSlotValue(int slot, uint32_t addr, Value value);
+	bool writeRamU8(uint32_t addr, u8 value);
+	bool writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value);
 	static void onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value);
 	void onBusFaultAckWrite(uint32_t addr, Value value);
 	void raiseBusFault(uint32_t code, uint32_t addr, uint32_t access) const;
+	u8 readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const;
+	void writeVramU16LE(uint32_t addr, uint32_t value);
+	void writeVramU32LE(uint32_t addr, uint32_t value);
 	void writeBusFaultSlots() const;
 };
 

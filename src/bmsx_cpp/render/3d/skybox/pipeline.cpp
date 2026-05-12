@@ -5,7 +5,6 @@
 #include "render/3d/shaders/render_3d_shaders.h"
 #include "render/backend/gles2_backend.h"
 #include "render/gameview.h"
-#include "render/shared/queues.h"
 #include "rompack/format.h"
 
 #include <GLES2/gl2.h>
@@ -127,20 +126,21 @@ void drawSkybox(SkyboxRuntime& runtime, void* framebuffer, const SkyboxPipelineS
 	glVertexAttribPointer(state.attribPosition, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
 	glUniformMatrix4fv(state.uniformView, 1, GL_FALSE, pipelineState.view.data());
 	glUniformMatrix4fv(state.uniformProjection, 1, GL_FALSE, pipelineState.proj.data());
-	glUniform4fv(state.uniformFaceUvRect0, 1, pipelineState.faceUvRects.data() + 0u);
-	glUniform4fv(state.uniformFaceUvRect1, 1, pipelineState.faceUvRects.data() + 4u);
-	glUniform4fv(state.uniformFaceUvRect2, 1, pipelineState.faceUvRects.data() + 8u);
-	glUniform4fv(state.uniformFaceUvRect3, 1, pipelineState.faceUvRects.data() + 12u);
-	glUniform4fv(state.uniformFaceUvRect4, 1, pipelineState.faceUvRects.data() + 16u);
-	glUniform4fv(state.uniformFaceUvRect5, 1, pipelineState.faceUvRects.data() + 20u);
+	const f32* faceUvRects = pipelineState.faceUvRects.data();
+	glUniform4fv(state.uniformFaceUvRect0, 1, faceUvRects + 0u);
+	glUniform4fv(state.uniformFaceUvRect1, 1, faceUvRects + 4u);
+	glUniform4fv(state.uniformFaceUvRect2, 1, faceUvRects + 8u);
+	glUniform4fv(state.uniformFaceUvRect3, 1, faceUvRects + 12u);
+	glUniform4fv(state.uniformFaceUvRect4, 1, faceUvRects + 16u);
+	glUniform4fv(state.uniformFaceUvRect5, 1, faceUvRects + 20u);
 	glUniform1f(state.uniformFaceTextpage0, static_cast<f32>(pipelineState.faceTextpageBindings[0]));
 	glUniform1f(state.uniformFaceTextpage1, static_cast<f32>(pipelineState.faceTextpageBindings[1]));
 	glUniform1f(state.uniformFaceTextpage2, static_cast<f32>(pipelineState.faceTextpageBindings[2]));
 	glUniform1f(state.uniformFaceTextpage3, static_cast<f32>(pipelineState.faceTextpageBindings[3]));
 	glUniform1f(state.uniformFaceTextpage4, static_cast<f32>(pipelineState.faceTextpageBindings[4]));
 	glUniform1f(state.uniformFaceTextpage5, static_cast<f32>(pipelineState.faceTextpageBindings[5]));
-	glUniform3f(state.uniformTint, RenderQueues::_skyTint[0], RenderQueues::_skyTint[1], RenderQueues::_skyTint[2]);
-	glUniform1f(state.uniformExposure, RenderQueues::_skyExposure);
+	glUniform3f(state.uniformTint, 1.0f, 1.0f, 1.0f);
+	glUniform1f(state.uniformExposure, 1.0f);
 	bindSkyboxTextpages(backend, pipelineState);
 	glDrawArrays(GL_TRIANGLES, 0, SKYBOX_VERTEX_COUNT);
 	glDepthMask(GL_TRUE);

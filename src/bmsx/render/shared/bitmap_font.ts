@@ -142,14 +142,6 @@ export class BFont {
 		return this.letter_to_img[c] ?? this.letter_to_img[this.fallbackCharacter]!;
 	}
 
-	protected getGlyphRecord(imgid: string) {
-		return this.source.getGlyphRecord(imgid);
-	}
-
-	protected getGlyphRect(imgid: string): ImageAtlasRect {
-		return this.source.getGlyphRect(imgid);
-	}
-
 	public textWidth(text: string): number {
 		let width = 0;
 		for (const char of text) {
@@ -177,12 +169,12 @@ export class BFont {
 			return computed;
 		}
 		const imgid = this.char_to_img(char);
-		const record = this.getGlyphRecord(imgid);
+		const record = this.source.getGlyphRecord(imgid);
 		const width = record.imgmeta.width;
 		const height = record.imgmeta.height;
 			const computed: FontGlyph = {
 				imgid,
-				rect: this.getGlyphRect(imgid),
+				rect: this.source.getGlyphRect(imgid),
 				width,
 				height,
 				advance: width + this.advancePadding,

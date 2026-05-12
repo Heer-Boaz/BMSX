@@ -51,10 +51,15 @@ class HeadlessOverlay implements OverlayHandle {
 		this.classes.delete(className);
 	}
 	onAnimationEnd(callback: () => void): void {
-		callback();
+		if (this.classes.has('fade-out')) {
+			callback();
+		}
 	}
-	forceReflow(): void { }
-	remove(): void { }
+	forceReflow(): void {
+	}
+	remove(): void {
+		this.classes.clear();
+	}
 }
 
 class HeadlessGameViewCanvas implements GameViewCanvas {
@@ -203,7 +208,8 @@ export class HeadlessGameViewHost implements GameViewHost {
 	}
 
 	public copyPresentedFramePixels(): Uint8Array {
-		return this.presentSurface.copyPixels();
+		const pixels = this.presentSurface.copyPixels();
+		return pixels;
 	}
 
 	public get presentedFrameWidth(): number {

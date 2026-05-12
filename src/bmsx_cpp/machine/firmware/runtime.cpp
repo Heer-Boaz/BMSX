@@ -83,7 +83,7 @@ void Runtime::handleLuaError(const std::string& message) {
 	m_hostFaultMessage = message;
 	logDebugState();
 	logLuaCallStack();
-	cpuExecution.clearHaltUntilIrq(*this);
+	machine.cpu.clearHaltUntilIrq();
 	machine.inputController.sampleArmed = false;
 	m_pendingCall = PendingCall::None;
 	frameLoop.frameActive = false;
@@ -158,9 +158,12 @@ void Runtime::runSystemBuiltinPrelude() {
 		"eventemitter",
 		"scratchbatch",
 		"sorted_scratchbatch",
-	};
-	const Value systemValue = requireModule("bios/system");
-	Table* systemModule = valueIsTable(systemValue) ? asTable(systemValue) : nullptr;
+		};
+		const Value systemValue = requireModule("bios/system");
+		Table* systemModule = nullptr;
+		if (valueIsTable(systemValue)) {
+			systemModule = asTable(systemValue);
+		}
 	machine.cpu.syncGlobalSlotsToTable();
 	for (const char* name : systemBuiltinNames) {
 		std::string exportName = "res__bios__system__";

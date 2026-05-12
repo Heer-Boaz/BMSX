@@ -14,8 +14,8 @@ function numberedWords(count: number): number[] {
 	return words;
 }
 
-test('runtime save-state codec preserves string pool ROM/runtime ownership', () => {
-	const state = {
+function createRuntimeSaveState(): RuntimeSaveState {
+	return {
 		machineState: {
 			machine: {
 				memory: {
@@ -25,6 +25,12 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 					busFaultAccess: 0x400,
 				},
 				irq: { pendingFlags: 0xa5a5 },
+				audio: {
+					eventSequence: 3,
+					apuStatus: 1,
+					apuFaultCode: 0x0102,
+					apuFaultDetail: 0x1234,
+				},
 				stringPool: {
 					entries: [
 						{ id: 0, value: 'rom literal', tracked: false },
@@ -94,23 +100,38 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 			nonMaskableInterruptPending: false,
 			yieldRequested: false,
 		},
-		renderState: {
-			camera: null,
-			ambientLights: [],
-			directionalLights: [],
-			pointLights: [],
-		},
 		systemProgramActive: true,
 		luaInitialized: true,
 		luaRuntimeFailed: false,
 		randomSeed: 123,
 		pendingEntryCall: false,
 	} as unknown as RuntimeSaveState;
+}
+
+test('runtime save-state codec preserves string pool ROM/runtime ownership', () => {
+	const state = createRuntimeSaveState();
 
 	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));
 
 	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
+	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
 	assert.deepEqual(decoded.machineState.machine.vdp.surfacePixels, state.machineState.machine.vdp.surfacePixels);
+});
+
+test('runtime save-state codec rejects invalid VDP fixed register snapshots before device restore', () => {
+	const badSkyboxState = createRuntimeSaveState();
+	badSkyboxState.machineState.machine.vdp.skyboxFaceWords = numberedWords(SKYBOX_FACE_WORD_COUNT - 1);
+	assert.throws(
+		() => decodeRuntimeSaveState(encodeRuntimeSaveState(badSkyboxState)),
+		/machine\.vdp\.skyboxFaceWords must contain/,
+	);
+
+	const badPmuState = createRuntimeSaveState();
+	badPmuState.machineState.machine.vdp.pmuBankWords = numberedWords(VDP_PMU_BANK_WORD_COUNT - 1);
+	assert.throws(
+		() => decodeRuntimeSaveState(encodeRuntimeSaveState(badPmuState)),
+		/machine\.vdp\.pmuBankWords must contain/,
+	);
 });

@@ -1,42 +1,16 @@
 import type { LuaFunctionValue } from '../../lua/value';
-import type { CartManifest, MachineManifest, asset_id, Viewport } from '../../rompack/format';
+import type { CartManifest, MachineManifest, Viewport } from '../../rompack/format';
 import type { Memory } from '../memory/memory';
 import type { LuaEntrySnapshot } from './host/native_bridge';
 import type { RuntimeMachineState } from './machine_state';
 import type { RuntimeSaveMachineState } from './save_machine_state';
 import type { RuntimeSaveState } from './save_state';
-import type {
-	RuntimeRenderCameraState,
-	RuntimeAmbientLightState,
-	RuntimeDirectionalLightState,
-	RuntimePointLightState,
-	RuntimeRenderState,
-} from '../../render/runtime_state';
 
 export type { LuaEntrySnapshot };
-export type {
-	RuntimeRenderCameraState,
-	RuntimeAmbientLightState,
-	RuntimeDirectionalLightState,
-	RuntimePointLightState,
-	RuntimeRenderState,
-};
 export type {
 	RuntimeMachineState,
 	RuntimeSaveMachineState,
 	RuntimeSaveState,
-};
-
-export type ResourceDescriptor = {
-	path: string;
-	type: string;
-	asset_id?: asset_id;
-	readOnly?: boolean;
-};
-
-export type LuaResourceCreationRequest = {
-	path: string;
-	contents: string;
 };
 
 export type LuaHoverScope = 'global' | 'path';
@@ -148,7 +122,6 @@ export type RuntimeResumeSnapshot = {
 	luaLocals?: LuaEntrySnapshot;
 	luaRandomSeed?: number;
 	luaProgramCounter?: number;
-	renderState: RuntimeRenderState;
 	machineState: RuntimeMachineState;
 };
 

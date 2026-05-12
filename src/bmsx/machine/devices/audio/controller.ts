@@ -1,4 +1,4 @@
-import type { ActiveVoiceInfo, AudioSlot, SoundMaster, SoundMasterAudioSource, SoundMasterResolvedPlayRequest } from '../../../audio/soundmaster';
+import type { AudioSlot, SoundMaster, SoundMasterAudioSource, SoundMasterResolvedPlayRequest } from '../../../audio/soundmaster';
 import {
 	APU_GAIN_Q12_ONE,
 	APU_RATE_STEP_Q16_ONE,
@@ -9,6 +9,18 @@ import {
 	APU_CMD_STOP_SLOT,
 	APU_EVENT_NONE,
 	APU_EVENT_SLOT_ENDED,
+	APU_FAULT_BAD_CMD,
+	APU_FAULT_BAD_SLOT,
+	APU_FAULT_NONE,
+	APU_FAULT_PLAYBACK_REJECTED,
+	APU_FAULT_RUNTIME_UNAVAILABLE,
+	APU_FAULT_SOURCE_BIT_DEPTH,
+	APU_FAULT_SOURCE_BYTES,
+	APU_FAULT_SOURCE_CHANNELS,
+	APU_FAULT_SOURCE_DATA_RANGE,
+	APU_FAULT_SOURCE_FRAME_COUNT,
+	APU_FAULT_SOURCE_RANGE,
+	APU_FAULT_SOURCE_SAMPLE_RATE,
 	APU_FILTER_ALLPASS,
 	APU_FILTER_BANDPASS,
 	APU_FILTER_HIGHPASS,
@@ -19,12 +31,16 @@ import {
 	APU_FILTER_NOTCH,
 	APU_FILTER_PEAKING,
 	APU_SLOT_COUNT,
+	APU_STATUS_FAULT,
 	IO_APU_CMD,
 	IO_APU_EVENT_KIND,
 	IO_APU_EVENT_SEQ,
 	IO_APU_EVENT_SLOT,
 	IO_APU_EVENT_SOURCE_ADDR,
 	IO_APU_FADE_SAMPLES,
+	IO_APU_FAULT_ACK,
+	IO_APU_FAULT_CODE,
+	IO_APU_FAULT_DETAIL,
 	IO_APU_FILTER_FREQ_HZ,
 	IO_APU_FILTER_GAIN_MILLIDB,
 	IO_APU_FILTER_KIND,
@@ -48,7 +64,24 @@ import {
 	IRQ_APU,
 } from '../../bus/io';
 import { Memory } from '../../memory/memory';
+import { DeviceStatusLatch, type DeviceStatusRegisters } from '../device_status';
 import type { IrqController } from '../irq/controller';
+
+export type AudioControllerState = {
+	eventSequence: number;
+	apuStatus: number;
+	apuFaultCode: number;
+	apuFaultDetail: number;
+};
+
+const APU_DEVICE_STATUS_REGISTERS: DeviceStatusRegisters = {
+	statusAddr: IO_APU_STATUS,
+	codeAddr: IO_APU_FAULT_CODE,
+	detailAddr: IO_APU_FAULT_DETAIL,
+	ackAddr: IO_APU_FAULT_ACK,
+	faultMask: APU_STATUS_FAULT,
+	noneCode: APU_FAULT_NONE,
+};
 
 function apuSamplesToMilliseconds(samples: number): number {
 	return Math.floor((samples * 1000) / APU_SAMPLE_RATE_HZ);
@@ -78,29 +111,55 @@ function decodeFilterKind(kind: number): BiquadFilterType {
 
 export class AudioController {
 	private eventSequence = 0;
-	private readonly unsubscribeEnded: () => void;
+	private readonly fault: DeviceStatusLatch;
+	private endedUnsubscribe: (() => void) | null = null;
 
 	public constructor(
 		private readonly memory: Memory,
 		private readonly soundMaster: SoundMaster,
 		private readonly irq: IrqController,
 	) {
+		this.fault = new DeviceStatusLatch(memory, APU_DEVICE_STATUS_REGISTERS);
 		this.memory.mapIoWrite(IO_APU_CMD, this.onCommandWrite.bind(this));
-		this.unsubscribeEnded = this.soundMaster.addEndedListener((info) => this.onVoiceEnded(info));
+		this.memory.mapIoWrite(IO_APU_FAULT_ACK, () => {
+			this.fault.acknowledge();
+		});
+		this.endedUnsubscribe = this.soundMaster.addEndedListener((info) => {
+			this.emitSlotEvent(APU_EVENT_SLOT_ENDED, info.slot, info.sourceAddr);
+		});
 	}
 
 	public dispose(): void {
-		this.unsubscribeEnded();
+		const endedUnsubscribe = this.endedUnsubscribe;
+		if (endedUnsubscribe === null) {
+			return;
+		}
+		this.endedUnsubscribe = null;
+		endedUnsubscribe();
 	}
 
 	public reset(): void {
 		this.eventSequence = 0;
+		this.fault.resetStatus();
 		this.clearCommandLatch();
-		this.memory.writeValue(IO_APU_STATUS, 0);
 		this.memory.writeValue(IO_APU_EVENT_KIND, APU_EVENT_NONE);
 		this.memory.writeValue(IO_APU_EVENT_SLOT, 0);
 		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, 0);
 		this.memory.writeValue(IO_APU_EVENT_SEQ, 0);
+	}
+
+	public captureState(): AudioControllerState {
+		return {
+			eventSequence: this.eventSequence,
+			apuStatus: this.fault.status,
+			apuFaultCode: this.fault.code,
+			apuFaultDetail: this.fault.detail,
+		};
+	}
+
+	public restoreState(state: AudioControllerState): void {
+		this.eventSequence = state.eventSequence >>> 0;
+		this.fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
 	}
 
 	private resetCommandLatch(): void {
@@ -132,7 +191,8 @@ export class AudioController {
 	}
 
 	public onCommandWrite(): void {
-		switch (this.memory.readIoU32(IO_APU_CMD)) {
+		const command = this.memory.readIoU32(IO_APU_CMD);
+		switch (command) {
 			case APU_CMD_PLAY:
 				this.play();
 				this.clearCommandLatch();
@@ -145,23 +205,37 @@ export class AudioController {
 				this.rampSlot();
 				this.clearCommandLatch();
 				return;
+			case APU_CMD_NONE:
+				return;
+			default:
+				this.fault.raise(APU_FAULT_BAD_CMD, command);
+				this.clearCommandLatch();
+				return;
 		}
 	}
 
-	private readSlot(): AudioSlot {
+	private readSlot(): AudioSlot | undefined {
 		const slot = this.memory.readIoU32(IO_APU_SLOT);
 		if (slot >= APU_SLOT_COUNT) {
-			throw new Error(`[APU] slot ${slot} is outside 0..${APU_SLOT_COUNT - 1}.`);
+			this.fault.raise(APU_FAULT_BAD_SLOT, slot);
+			return undefined;
 		}
 		return slot;
 	}
 
 	private play(): void {
 		const source = this.readAudioSource();
-		this.startPlay(source, this.readSlot(), this.readResolvedPlayRequest(source));
+		if (source === undefined) {
+			return;
+		}
+		const slot = this.readSlot();
+		if (slot === undefined) {
+			return;
+		}
+		this.startPlay(source, slot, this.readResolvedPlayRequest(source));
 	}
 
-	private readAudioSource(): SoundMasterAudioSource {
+	private readAudioSource(): SoundMasterAudioSource | undefined {
 		const source: SoundMasterAudioSource = {
 			sourceAddr: this.memory.readIoU32(IO_APU_SOURCE_ADDR),
 			sourceBytes: this.memory.readIoU32(IO_APU_SOURCE_BYTES),
@@ -174,57 +248,66 @@ export class AudioController {
 			loopStartSample: this.memory.readIoU32(IO_APU_SOURCE_LOOP_START_SAMPLE),
 			loopEndSample: this.memory.readIoU32(IO_APU_SOURCE_LOOP_END_SAMPLE),
 		};
-		this.requireAudioSource(source);
-		return source;
-	}
-
-	private requireAudioSource(source: SoundMasterAudioSource): void {
 		if (source.sourceBytes === 0) {
-			throw new Error('[APU] source byte length must be positive.');
+			this.fault.raise(APU_FAULT_SOURCE_BYTES, source.sourceBytes);
+			return undefined;
 		}
 		if (!this.memory.isReadableMainMemoryRange(source.sourceAddr, source.sourceBytes)) {
-			throw new Error(`[APU] source range ${source.sourceAddr}..${source.sourceAddr + source.sourceBytes} is not readable main memory.`);
+			this.fault.raise(APU_FAULT_SOURCE_RANGE, source.sourceAddr);
+			return undefined;
 		}
 		if (source.sampleRateHz === 0) {
-			throw new Error('[APU] source sample rate must be positive.');
+			this.fault.raise(APU_FAULT_SOURCE_SAMPLE_RATE, source.sampleRateHz);
+			return undefined;
 		}
 		if (source.channels < 1 || source.channels > 2) {
-			throw new Error(`[APU] source channel count ${source.channels} is invalid.`);
+			this.fault.raise(APU_FAULT_SOURCE_CHANNELS, source.channels);
+			return undefined;
 		}
 		if (source.frameCount === 0) {
-			throw new Error('[APU] source frame count must be positive.');
+			this.fault.raise(APU_FAULT_SOURCE_FRAME_COUNT, source.frameCount);
+			return undefined;
 		}
 		if (source.dataBytes === 0 || source.dataOffset + source.dataBytes > source.sourceBytes) {
-			throw new Error('[APU] source data range exceeds source bytes.');
+			this.fault.raise(APU_FAULT_SOURCE_DATA_RANGE, source.dataOffset);
+			return undefined;
 		}
 		switch (source.bitsPerSample) {
 			case 4:
 			case 8:
 			case 16:
-				return;
+				return source;
 		}
-		throw new Error(`[APU] source bit depth ${source.bitsPerSample} is unsupported.`);
+		this.fault.raise(APU_FAULT_SOURCE_BIT_DEPTH, source.bitsPerSample);
+		return undefined;
 	}
 
 	private startPlay(source: SoundMasterAudioSource, slot: AudioSlot, request: SoundMasterResolvedPlayRequest): void {
 		if (!this.soundMaster.isRuntimeAudioReady()) {
-			throw new Error('[APU] SoundMaster runtime audio is not initialized.');
+			this.fault.raise(APU_FAULT_RUNTIME_UNAVAILABLE, source.sourceAddr);
+			return;
 		}
 		const bytes = new Uint8Array(source.sourceBytes);
 		this.memory.readBytesInto(source.sourceAddr, bytes, bytes.byteLength);
-		void this.soundMaster.playResolvedSourceOnSlot(slot, source, bytes, request).catch(error => {
-			console.error(error);
+		void this.soundMaster.playResolvedSourceOnSlot(slot, source, bytes, request).catch(() => {
+			this.fault.raise(APU_FAULT_PLAYBACK_REJECTED, source.sourceAddr);
 		});
 	}
 
 	private stopSlot(): void {
 		const slot = this.readSlot();
+		if (slot === undefined) {
+			return;
+		}
 		const fadeSamples = this.memory.readIoU32(IO_APU_FADE_SAMPLES);
 		this.soundMaster.stopSlot(slot, fadeSamples > 0 ? apuSamplesToMilliseconds(fadeSamples) : undefined);
 	}
 
 	private rampSlot(): void {
 		const slot = this.readSlot();
+		if (slot === undefined) {
+			return;
+		}
 		const targetGain = this.memory.readIoI32(IO_APU_TARGET_GAIN_Q12) / APU_GAIN_Q12_ONE;
 		const fadeSamples = this.memory.readIoU32(IO_APU_FADE_SAMPLES);
 		if (fadeSamples > 0) {
@@ -265,7 +348,4 @@ export class AudioController {
 		this.irq.raise(IRQ_APU);
 	}
 
-	private onVoiceEnded(info: ActiveVoiceInfo): void {
-		this.emitSlotEvent(APU_EVENT_SLOT_ENDED, info.slot, info.sourceAddr);
-	}
 }

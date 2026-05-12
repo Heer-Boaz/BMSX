@@ -659,14 +659,6 @@ void updatePostProcessQuad(State& state, i32 width, i32 height) {
 	glBufferData(GL_ARRAY_BUFFER, sizeof(texcoords), texcoords, GL_STATIC_DRAW);
 }
 
-void updateFullscreenQuad(i32 width, i32 height) {
-	updatePostProcessQuad(g_crt, width, height);
-}
-
-void updateDeviceQuad(i32 width, i32 height) {
-	updatePostProcessQuad(g_device, width, height);
-}
-
 } // namespace
 
 void initPresentGLES2(OpenGLES2Backend* backend) {
@@ -870,7 +862,7 @@ void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, con
 	glUseProgram(g_device.program);
 	glUniform1i(g_device.uniform_texture, kTexUnitPostProcess);
 
-	updateDeviceQuad(state.width, state.height);
+	updatePostProcessQuad(g_device, state.width, state.height);
 
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
@@ -909,7 +901,7 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
 						static_cast<unsigned>(srcTex->id), state.width,
 						state.height, state.baseWidth, state.baseHeight);
 	}
-	updateFullscreenQuad(state.width, state.height);
+	updatePostProcessQuad(g_crt, state.width, state.height);
 
 	backend->setRenderTarget(backend->backbuffer(), state.width, state.height);
 

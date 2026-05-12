@@ -15,6 +15,8 @@
 #include "core/console.h"
 #include "rompack/format.h"
 #include "texture_manager.h"
+#include "vdp/framebuffer.h"
+#include "vdp/slot_textures.h"
 #include "common/clamp.h"
 #include <algorithm>
 #include <cmath>
@@ -113,6 +115,27 @@ void GameView::initializeDefaultTextures() {
 	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, 0xffffffffu);
 	textures["_default_normal"] = m_backend->createSolidTexture2D(1, 1, 0xff7f7fffu);
 	textures["_default_mr"] = m_backend->createSolidTexture2D(1, 1, 0xffffffffu);
+}
+
+void GameView::setVdpTextureState(std::unique_ptr<VdpFrameBufferTextures> frameBufferTextures, std::unique_ptr<VdpSlotTextures> slotTextures) {
+	m_vdpFrameBufferTextures = std::move(frameBufferTextures);
+	m_vdpSlotTextures = std::move(slotTextures);
+}
+
+VdpFrameBufferTextures& GameView::vdpFrameBufferTextures() {
+	return *m_vdpFrameBufferTextures;
+}
+
+const VdpFrameBufferTextures& GameView::vdpFrameBufferTextures() const {
+	return *m_vdpFrameBufferTextures;
+}
+
+VdpSlotTextures& GameView::vdpSlotTextures() {
+	return *m_vdpSlotTextures;
+}
+
+const VdpSlotTextures& GameView::vdpSlotTextures() const {
+	return *m_vdpSlotTextures;
 }
 
 void GameView::configurePresentation(PresentationMode mode, bool commitFrame) {

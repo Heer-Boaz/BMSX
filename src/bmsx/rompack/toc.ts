@@ -205,7 +205,7 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		if (collisionBinEnd !== ROM_TOC_INVALID_U32) entry.collision_bin_end = collisionBinEnd;
 
 		const updateTimestamp = (updateHi * 0x100000000) + updateLo;
-		if (updateTimestamp > 0) {
+		if (entry.type === 'lua' || updateTimestamp > 0) {
 			entry.update_timestamp = updateTimestamp;
 		}
 

@@ -4,7 +4,6 @@
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/timing/config.h"
 #include "machine/scheduler/device.h"
-#include "render/vdp/framebuffer.h"
 
 namespace bmsx {
 
@@ -119,21 +118,12 @@ void VblankState::setVblankStatus(Runtime& runtime, bool active) {
 
 void VblankState::enterVblank(Runtime& runtime) {
 	m_vblankSequence += 1;
-	commitFrameOnVblankEdge(runtime);
+	runtime.machine.vdp.presentReadyFrameOnVblankEdge();
 	runtime.machine.inputController.onVblankEdge();
 	setVblankStatus(runtime, true);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	if (runtime.frameLoop.frameActive) {
 		completeTickIfPending(runtime, runtime.frameLoop.frameState, m_vblankSequence);
-	}
-}
-
-void VblankState::commitFrameOnVblankEdge(Runtime& runtime) {
-	auto& vdp = runtime.machine.vdp;
-	if (vdp.presentReadyFrameOnVblankEdge()) {
-		applyVdpFrameBufferTextureWrites(vdp);
-		presentVdpFrameBufferPages();
-		vdp.swapFrameBufferReadbackPages();
 	}
 }
 

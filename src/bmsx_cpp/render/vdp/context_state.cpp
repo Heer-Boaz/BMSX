@@ -1,39 +1,14 @@
 #include "render/vdp/context_state.h"
 
-#include "machine/devices/vdp/vdp.h"
+#include "render/gameview.h"
 #include "render/vdp/framebuffer.h"
 #include "render/vdp/slot_textures.h"
 
 namespace bmsx {
 
-void restoreVdpContextState(VDP& vdp) {
-	initializeVdpFrameBufferTextures(vdp);
-	initializeVdpSlotTextures(vdp);
-}
-
-void captureVdpContextState(VDP& vdp) {
-	const VDP::VdpHostOutput output = vdp.readHostOutput();
-	const size_t bytes = static_cast<size_t>(output.frameBufferWidth) * static_cast<size_t>(output.frameBufferHeight) * 4u;
-	output.frameBufferRenderReadback->resize(bytes);
-	readVdpRenderFrameBufferPixels(
-		output.frameBufferRenderReadback->data(),
-		static_cast<i32>(output.frameBufferWidth),
-		static_cast<i32>(output.frameBufferHeight),
-		0,
-		0
-	);
-	auto& displayReadback = vdp.frameBufferDisplayReadback();
-	displayReadback.resize(bytes);
-	readVdpDisplayFrameBufferPixels(
-		displayReadback.data(),
-		static_cast<i32>(output.frameBufferWidth),
-		static_cast<i32>(output.frameBufferHeight),
-		0,
-		0
-	);
-}
-
-void shutdownVdpContextState() {
+void restoreVdpContextState(VDP& vdp, GameView& view) {
+	view.vdpFrameBufferTextures().initialize(vdp);
+	view.vdpSlotTextures().initialize(vdp);
 }
 
 } // namespace bmsx

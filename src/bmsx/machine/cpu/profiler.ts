@@ -175,7 +175,7 @@ function collectTopOpcodesFromCounts(counts: Uint32Array, totalInstructions: num
 		const cycles = count * baseCost;
 		rows.push({
 			opcode,
-			name: getCpuProfilerOpcodeName(opcode),
+			name: getOpcodeName(opcode as OpCode),
 			count,
 			percent: percent(count, totalInstructions),
 			baseCost,
@@ -194,10 +194,6 @@ function collectTopOpcodesFromCounts(counts: Uint32Array, totalInstructions: num
 		return left.opcode - right.opcode;
 	});
 	return rows.slice(0, limit);
-}
-
-export function getCpuProfilerOpcodeName(opcode: number): string {
-	return getOpcodeName(opcode as OpCode);
 }
 
 export class CpuExecutionProfiler {
@@ -400,7 +396,7 @@ export function collectCpuProfilerHotPcs(snapshot: CpuProfilerSnapshot, limit = 
 			wordIndex,
 			pc: wordIndex * INSTRUCTION_BYTES,
 			opcode,
-			opcodeName: getCpuProfilerOpcodeName(opcode),
+				opcodeName: getOpcodeName(opcode as OpCode),
 			count,
 			percent: percent(count, snapshot.totalInstructions),
 			protoIndex,

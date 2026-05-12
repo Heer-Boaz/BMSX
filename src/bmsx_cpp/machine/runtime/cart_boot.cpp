@@ -44,7 +44,7 @@ bool CartBootState::processPending() {
 	}
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
 		runtime.m_pendingCall = Runtime::PendingCall::None;
-		runtime.cpuExecution.clearHaltUntilIrq(runtime);
+		runtime.machine.cpu.clearHaltUntilIrq();
 	}
 	runtime.frameScheduler.clearQueuedTime();
 	m_pending = false;

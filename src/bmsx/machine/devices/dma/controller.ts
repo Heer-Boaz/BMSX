@@ -33,12 +33,13 @@ import {
 	VRAM_SECONDARY_SLOT_SIZE,
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
+	isVramMappedRange,
 } from '../../memory/map';
 import type { ImageCopyPlan } from './image_copy';
 import { Memory } from '../../memory/memory';
 import type { IrqController } from '../irq/controller';
 import type { VDP } from '../vdp/vdp';
-import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
+import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
 import { DEVICE_SERVICE_DMA, type DeviceScheduler } from '../../scheduler/device';
 
 type DmaChannelId = 0 | 1;
@@ -91,6 +92,7 @@ export class DmaController {
 	private bulkBytesPerSec = 1;
 	private isoCarry = 0;
 	private bulkCarry = 0;
+	private readonly budgetAccrual: BudgetAccrual = { wholeUnits: 0, carry: 0 };
 	private ioWrittenValue = 0;
 	private ioWrittenDirty = false;
 	private imgWrittenValue = 0;
@@ -126,7 +128,7 @@ export class DmaController {
 		this.scheduleNextService(nowCycles);
 	}
 
-	public hasPendingVdpSubmit(): boolean {
+	private hasPendingVdpSubmit(): boolean {
 		for (let channelIndex = 0; channelIndex < this.channels.length; channelIndex += 1) {
 			const state = this.channels[channelIndex]!;
 			if (state.active !== null && state.active.kind === 'io' && state.active.dst === IO_VDP_FIFO) {
@@ -142,13 +144,8 @@ export class DmaController {
 		return false;
 	}
 
-	public hasPendingIsoTransfer(): boolean {
-		const state = this.channels[DMA_CH_ISO];
-		return state.active !== null || state.queueHead !== state.queue.length;
-	}
-
-	public hasPendingBulkTransfer(): boolean {
-		const state = this.channels[DMA_CH_BULK];
+	private hasPendingTransfer(channel: DmaChannelId): boolean {
+		const state = this.channels[channel];
 		return state.active !== null || state.queueHead !== state.queue.length;
 	}
 
@@ -195,7 +192,7 @@ export class DmaController {
 	}
 
 	public enqueueImageCopy(plan: ImageCopyPlan, pixels: Uint8Array, onComplete: (error: boolean, clipped: boolean) => void): void {
-		const vramTarget = this.memory.isVramRange(plan.baseAddr, plan.writeSize > 0 ? plan.writeSize : 1);
+		const vramTarget = isVramMappedRange(plan.baseAddr, plan.writeSize > 0 ? plan.writeSize : 1);
 		const job: DmaImageJob = {
 			kind: 'image',
 			channel: DMA_CH_BULK,
@@ -214,7 +211,7 @@ export class DmaController {
 	}
 
 	public onService(nowCycles: number): void {
-		if (!this.hasPendingIsoTransfer() && !this.hasPendingBulkTransfer()) {
+		if (!this.hasPendingTransfer(DMA_CH_ISO) && !this.hasPendingTransfer(DMA_CH_BULK)) {
 			this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 			return;
 		}
@@ -351,7 +348,7 @@ export class DmaController {
 				job.written += chunk;
 				return chunk;
 			}
-				if (this.memory.isVramRange(job.dst, 1)) {
+				if (isVramMappedRange(job.dst, 1)) {
 					chunk &= ~3;
 					if (chunk === 0) {
 						return 0;
@@ -504,13 +501,12 @@ export class DmaController {
 		}
 		const state = this.channels[channel];
 		const carry = carryKey === 'isoCarry' ? this.isoCarry : this.bulkCarry;
-		const numerator = bytesPerSec * cycles + carry;
-		const nextCarry = numerator % this.cpuHz;
-		const wholeBytes = (numerator - nextCarry) / this.cpuHz;
+		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, bytesPerSec, carry, cycles);
+		const wholeBytes = this.budgetAccrual.wholeUnits;
 		if (carryKey === 'isoCarry') {
-			this.isoCarry = nextCarry;
+			this.isoCarry = this.budgetAccrual.carry;
 		} else {
-			this.bulkCarry = nextCarry;
+			this.bulkCarry = this.budgetAccrual.carry;
 		}
 		if (wholeBytes <= 0) {
 			return;
@@ -520,8 +516,8 @@ export class DmaController {
 	}
 
 	private scheduleNextService(nowCycles: number): void {
-		const pendingIso = this.hasPendingIsoTransfer();
-		const pendingBulk = this.hasPendingBulkTransfer();
+		const pendingIso = this.hasPendingTransfer(DMA_CH_ISO);
+		const pendingBulk = this.hasPendingTransfer(DMA_CH_BULK);
 		if (!pendingIso && !pendingBulk) {
 			this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 			return;

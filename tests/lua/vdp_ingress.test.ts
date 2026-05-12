@@ -65,8 +65,9 @@ import {
 	VDP_STATUS_FAULT,
 } from '../../src/bmsx/machine/bus/io';
 import { CPU } from '../../src/bmsx/machine/cpu/cpu';
-import { VDP } from '../../src/bmsx/machine/devices/vdp/vdp';
-import { VDP_BBU_BILLBOARD_LIMIT, VDP_RD_SURFACE_PRIMARY, VDP_SBX_CONTROL_ENABLE } from '../../src/bmsx/machine/devices/vdp/contracts';
+import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink, VdpSurfaceUpload } from '../../src/bmsx/machine/devices/vdp/device_output';
+import { VDP, VDP_FRAMEBUFFER_PAGE_DISPLAY } from '../../src/bmsx/machine/devices/vdp/vdp';
+import { VDP_BBU_BILLBOARD_LIMIT, VDP_RD_SURFACE_FRAMEBUFFER, VDP_RD_SURFACE_PRIMARY, VDP_SBX_CONTROL_ENABLE } from '../../src/bmsx/machine/devices/vdp/contracts';
 import { VDP_BBU_PACKET_KIND, VDP_BBU_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/bbu';
 import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
 import { VDP_SBX_PACKET_KIND, VDP_SBX_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/sbx';
@@ -80,19 +81,9 @@ import {
 	VDP_XF_VIEW_MATRIX_INDEX_REGISTER,
 } from '../../src/bmsx/machine/devices/vdp/xf';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
+import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
-import { HeadlessGPUBackend } from '../../src/bmsx/render/headless/backend';
-import { TextureManager } from '../../src/bmsx/render/texture_manager';
 import { createVdpTransformSnapshot, resolveVdpTransformSnapshot } from '../../src/bmsx/render/vdp/transform';
-import { initializeVdpTextureTransfer } from '../../src/bmsx/render/vdp/texture_transfer';
-import {
-	applyVdpFrameBufferTextureWrites,
-	initializeVdpFrameBufferTextures,
-	presentVdpFrameBufferPages,
-	readVdpDisplayFrameBufferPixels,
-	readVdpRenderFrameBufferPixels,
-} from '../../src/bmsx/render/vdp/framebuffer';
 
 const VDP_CMD_NOP = 0;
 const VDP_CMD_CLEAR = 1;
@@ -200,16 +191,28 @@ function xfSelectRegisterPacket(viewMatrixIndex: number, projectionMatrixIndex: 
 	];
 }
 
-function initializeHeadlessVdpTextures(vdp: VDP): void {
-	const backend = new HeadlessGPUBackend();
-	const textureManager = new TextureManager(backend);
-	initializeVdpTextureTransfer(textureManager, { backend, textures: {} } as any);
-	initializeVdpFrameBufferTextures(vdp);
-}
-
 function assertVdpFault(memory: Memory, code: number): void {
 	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), code);
 	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_FAULT) !== 0, true);
+}
+
+function drainFrameBufferPresentation(vdp: VDP): { count: number; dirtyRowStart: number; dirtyRowEnd: number; firstDirtyXEnd: number } {
+	const result = {
+		count: 0,
+		dirtyRowStart: 0,
+		dirtyRowEnd: 0,
+		firstDirtyXEnd: 0,
+	};
+	const sink: VdpFrameBufferPresentationSink = {
+		consumeVdpFrameBufferPresentation(presentation: VdpFrameBufferPresentation): void {
+			result.count = presentation.presentationCount;
+			result.dirtyRowStart = presentation.dirtyRowStart;
+			result.dirtyRowEnd = presentation.dirtyRowEnd;
+			result.firstDirtyXEnd = presentation.dirtySpansByRow[presentation.dirtyRowStart]!.xEnd;
+		},
+	};
+	vdp.drainFrameBufferPresentation(sink);
+	return result;
 }
 
 function clearVdpFault(memory: Memory): void {
@@ -272,21 +275,26 @@ test('VDP2D direct draw doorbell snapshots latch state immutably', () => {
 	assert.equal(activeQueue(vdp).color[0], 0xff112233);
 });
 
-test('VDP framebuffer VRAM dirty rows upload to the render texture before page present', () => {
-	const { vdp } = createVdp();
-	initializeHeadlessVdpTextures(vdp);
-	const pixel = new Uint8Array([0x11, 0x22, 0x33, 0xff]);
+test('VDP framebuffer present edge swaps CPU-visible display page', () => {
+	const { memory, vdp } = createVdp();
 
-	vdp.writeVram(VRAM_FRAMEBUFFER_BASE, pixel);
-	applyVdpFrameBufferTextureWrites(vdp);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_REG_BG_COLOR, 0xff112233);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_CLEAR);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	const workUnits = vdp.getPendingRenderWorkUnits();
+	assert.ok(workUnits > 0);
+	vdp.advanceWork(workUnits);
 
 	const readback = new Uint8Array(4);
-	readVdpRenderFrameBufferPixels(0, 0, 1, 1, readback);
-	assert.deepEqual(Array.from(readback), Array.from(pixel));
-	presentVdpFrameBufferPages();
-	vdp.swapFrameBufferReadbackPages();
-	readVdpDisplayFrameBufferPixels(0, 0, 1, 1, readback);
-	assert.deepEqual(Array.from(readback), Array.from(pixel));
+	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
+	assert.equal(vdp.readFrameBufferPixels(VDP_FRAMEBUFFER_PAGE_DISPLAY, 0, 0, 1, 1, readback), true);
+	assert.deepEqual(Array.from(readback), [0x11, 0x22, 0x33, 0xff]);
+	const presentation = drainFrameBufferPresentation(vdp);
+	assert.equal(presentation.count, 1);
+	assert.equal(presentation.dirtyRowStart, 0);
+	assert.equal(presentation.dirtyRowEnd, vdp.frameBufferHeight);
+	assert.equal(presentation.firstDirtyXEnd, vdp.frameBufferWidth);
 });
 
 test('VDP2D BLIT snapshots DRAW_CTRL flip and parallax immutably', () => {
@@ -491,6 +499,17 @@ test('VDP2D DMA DEX command faults abort the sealed stream frame', () => {
 
 test('VDP2D SLOT_INDEX latches raw words and SLOT_DIM applies in-order through REGN', () => {
 	const { memory, vdp } = createVdp();
+	let primaryWidth = 0;
+	let primaryHeight = 0;
+	const primarySurfaceProbe = {
+		consumeVdpSurfaceUpload(upload: VdpSurfaceUpload): boolean {
+			if (upload.surfaceId === VDP_RD_SURFACE_PRIMARY) {
+				primaryWidth = upload.surfaceWidth;
+				primaryHeight = upload.surfaceHeight;
+			}
+			return false;
+		},
+	};
 
 	memory.writeValue(IO_VDP_REG_SLOT_INDEX, 3);
 	assert.equal(memory.readValue(IO_VDP_REG_SLOT_INDEX), 3);
@@ -502,11 +521,25 @@ test('VDP2D SLOT_INDEX latches raw words and SLOT_DIM applies in-order through R
 		16 | (16 << 16),
 		VDP_PKT_END,
 	]);
-	assert.deepEqual(vdp.resolveBlitterSurfaceSize(VDP_RD_SURFACE_PRIMARY), { width: 16, height: 16 });
+	vdp.drainSurfaceUploads(primarySurfaceProbe);
+	assert.deepEqual({ width: primaryWidth, height: primaryHeight }, { width: 16, height: 16 });
 
 	memory.writeValue(IO_VDP_REG_SLOT_DIM, 0xffff | (0xffff << 16));
 	assertVdpFault(memory, VDP_FAULT_VRAM_SLOT_DIM);
-	assert.deepEqual(vdp.resolveBlitterSurfaceSize(VDP_RD_SURFACE_PRIMARY), { width: 16, height: 16 });
+	primaryWidth = 0;
+	primaryHeight = 0;
+	vdp.drainSurfaceUploads(primarySurfaceProbe);
+	assert.deepEqual({ width: primaryWidth, height: primaryHeight }, { width: 16, height: 16 });
+
+	clearVdpFault(memory);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_REG_SRC_UV, 15);
+	memory.writeValue(IO_VDP_REG_SRC_WH, 1 | (1 << 16));
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), 0);
+	memory.writeValue(IO_VDP_REG_SRC_UV, 16);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BLIT);
+	assertVdpFault(memory, VDP_FAULT_DEX_SOURCE_OOB);
 });
 
 test('VDP2D BLIT source faults latch without closing a direct frame', () => {
@@ -710,22 +743,22 @@ test('VDP dither register writes update the live latch directly', () => {
 test('VDP SBX live state commits only through frame present', () => {
 	const { memory, vdp } = createVdp();
 
-	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
+	assert.equal(vdp.readDeviceOutput().skyboxEnabled, false);
 	writeSkyboxMmio(memory);
-	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
+	assert.equal(vdp.readDeviceOutput().skyboxEnabled, false);
 
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
-	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
+	assert.equal(vdp.readDeviceOutput().skyboxEnabled, false);
 	vdp.presentReadyFrameOnVblankEdge();
-	assert.equal(vdp.readHostOutput().skyboxEnabled, true);
+	assert.equal(vdp.readDeviceOutput().skyboxEnabled, true);
 
 	writeSkyboxMmio(memory, 0);
-	assert.equal(vdp.readHostOutput().skyboxEnabled, true);
+	assert.equal(vdp.readDeviceOutput().skyboxEnabled, true);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 	vdp.presentReadyFrameOnVblankEdge();
-	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
+	assert.equal(vdp.readDeviceOutput().skyboxEnabled, false);
 });
 
 test('VDP SBX validates face words during frame seal', () => {
@@ -737,7 +770,7 @@ test('VDP SBX validates face words during frame seal', () => {
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
 	assertVdpFault(memory, VDP_FAULT_SBX_SOURCE_OOB);
 	assert.equal(buildFrameOpen(vdp), false);
-	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
+	assert.equal(vdp.readDeviceOutput().skyboxEnabled, false);
 });
 
 test('VDP SBX accepts SKYBOX packets into frame-latched state', () => {
@@ -746,8 +779,8 @@ test('VDP SBX accepts SKYBOX packets into frame-latched state', () => {
 	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
 	sealStream(memory, vdp, [...skyboxPacket(VDP_SBX_CONTROL_ENABLE, 4, 5), VDP_PKT_END]);
 	vdp.presentReadyFrameOnVblankEdge();
-	assert.equal(vdp.readHostOutput().skyboxEnabled, true);
-	const sample = vdp.readHostOutput().skyboxSamples[0]!;
+	assert.equal(vdp.readDeviceOutput().skyboxEnabled, true);
+	const sample = vdp.readDeviceOutput().skyboxSamples[0]!;
 	assert.equal(sample.source.surfaceId, VDP_RD_SURFACE_PRIMARY);
 	assert.equal(sample.surfaceWidth, 16);
 	assert.equal(sample.surfaceHeight, 16);
@@ -761,10 +794,10 @@ test('VDP SBX stores raw control bits and faults bad face words at frame seal', 
 	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
 	assert.doesNotThrow(() => sealStream(memory, vdp, [...skyboxPacket(2, 4, 5), VDP_PKT_END]));
 	vdp.presentReadyFrameOnVblankEdge();
-	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
+	assert.equal(vdp.readDeviceOutput().skyboxEnabled, false);
 	sealStream(memory, vdp, [...skyboxPacket(VDP_SBX_CONTROL_ENABLE, 17, 1), VDP_PKT_END]);
 	assertVdpFault(memory, VDP_FAULT_SBX_SOURCE_OOB);
-	assert.equal(vdp.readHostOutput().skyboxEnabled, false);
+	assert.equal(vdp.readDeviceOutput().skyboxEnabled, false);
 });
 
 test('VDP XF packet updates raw transform register state', () => {
@@ -900,7 +933,7 @@ test('VDP XF state is committed with the submitted frame instead of latest live 
 	assert.ok(workUnits > 0);
 	vdp.advanceWork(workUnits);
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
-	const output = vdp.readHostOutput();
+	const output = vdp.readDeviceOutput();
 	assert.equal(output.xfViewMatrixIndex, 2);
 	assert.equal(output.xfProjectionMatrixIndex, 3);
 	assert.equal(output.xfMatrixWords[2 * VDP_XF_MATRIX_WORDS] >>> 0, frameAView[0]);
@@ -934,7 +967,7 @@ test('VDP BBU accepts BILLBOARD packets into frame-latched instance RAM', () => 
 	assert.equal((vdp as any).activeFrame.hasFrameBufferCommands, false);
 	vdp.advanceWork(1);
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), false);
-	const output = vdp.readHostOutput();
+	const output = vdp.readDeviceOutput();
 	const billboards = output.billboards;
 	assert.equal(billboards.length, 1);
 	assert.equal(billboards.slot[0], VDP_SLOT_PRIMARY);

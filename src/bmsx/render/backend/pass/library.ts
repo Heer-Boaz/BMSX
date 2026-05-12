@@ -2,14 +2,10 @@ import { consoleCore } from '../../../core/console';
 import { registerFramebuffer2DPass_WebGL } from '../../2d/framebuffer_pipeline';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../../host_overlay/headless/pipeline';
 import { registerHostOverlayPass_WebGL, registerHostMenuPass_WebGL } from '../../host_overlay/webgl/pipeline';
-import * as MeshPipeline from '../../3d/mesh/pipeline';
-import { registerMeshBatchPass_WebGL } from '../../3d/mesh/pipeline';
-import { registerMeshBatchPass_WebGPU } from '../../3d/mesh/pipeline.wgpu';
 import { registerParticlesPass_WebGL } from '../../3d/particles/pipeline';
 import { registerParticlesPass_WebGPU } from '../../3d/particles/pipeline.wgpu';
 import { registerSkyboxPass_WebGL } from '../../3d/skybox/pipeline';
 import { registerSkyboxPass_WebGPU } from '../../3d/skybox/pipeline.wgpu';
-import { registerSolidColorPass_WebGPU } from '../../debug/solidcolor_pipeline.wgpu';
 import { RenderGraphRuntime } from '../../graph/graph';
 import { LightingSystem } from '../../lighting/system';
 import { registerCRT_WebGL } from '../../post/crt/pipeline';
@@ -84,30 +80,12 @@ export class RenderPassLibrary {
 		this.register({ id: 'framebuffer_2d', name: 'Framebuffer2D', stateOnly: true, exec: () => { } });
 		// Backend-specific pass registrations (stubs for now)
 		registerSkyboxPass_WebGPU(this);
-		registerMeshBatchPass_WebGPU(this);
 		registerParticlesPass_WebGPU(this);
-		registerSolidColorPass_WebGPU(this);
 		registerCRT_WebGPU(this);
-		this.register({
-			id: 'host_overlay',
-			name: 'HostOverlay',
-			stateOnly: true,
-			exec: () => {
-				throw new Error('[HostOverlay/WebGPU] Host overlay rendering is not implemented for WebGPU.');
-			},
-		});
-		this.register({
-			id: 'host_menu',
-			name: 'HostMenu',
-			stateOnly: true,
-			exec: () => {
-				throw new Error('[HostMenu/WebGPU] Host menu rendering is not implemented for WebGPU.');
-			},
-		});
 	}
 
 	private registerBuiltinPassesWebGL() {
-		// FrameResolve: set per-frame default uniforms shared across passes (sprite + mesh)
+		// FrameResolve: set per-frame default uniforms shared across device presentation passes.
 		this.register({
 			id: 'frame_resolve',
 			name: 'FrameResolve',
@@ -115,31 +93,16 @@ export class RenderPassLibrary {
 			graph: { skip: true },
 			exec: () => { /* state only */ },
 			prepare: (backend, _state) => {
-				// Upload minimal frame-shared values via a UBO foundation
 				const gv = consoleCore.view;
 				updateAndBindFrameUniforms(backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
 			},
 		});
 		// Removed: standalone fog pass. Fog state is produced in FrameSharedState.
 
-		// Skybox (WebGPU)
 		registerSkyboxPass_WebGL(this);
-
-		// Mesh batch (WebGPU)
-		registerMeshBatchPass_WebGL(this);
-
-		// Particles (WebGPU)
 		registerParticlesPass_WebGL(this);
-
 		registerFramebuffer2DPass_WebGL(this);
-
-		// Device quantize/dither (WebGL)
 		registerDeviceQuantize_WebGL(this);
-
-		// Debug solid writer (WebGL) — ensures content is written before present
-		// registerSolidColorPass_WebGL(this);
-
-		// CRT (WebGL)
 		registerCRT_WebGL(this); // Registers program + execution
 		registerHostOverlayPass_WebGL(this);
 		registerHostMenuPass_WebGL(this);
@@ -159,29 +122,6 @@ export class RenderPassLibrary {
 		registerHostOverlayPass_Headless(this);
 		registerHostMenuPass_Headless(this);
 		registerHeadlessPresentPass(this);
-	}
-
-	public validatePassResources(passId: string, backend: GPUBackend): void {
-		let pass: RenderPassDef;
-		try {
-			const idx = this.passes.findIndex((p) => String(p.id) === passId);
-			if (idx < 0) return;
-			pass = this.passes[idx];
-			const layout = pass.bindingLayout; if (!layout) return;
-			const layoutUniforms = Array.isArray(layout.uniforms) ? layout.uniforms : [];
-			if (layoutUniforms.includes('FrameUniforms') && !backend.bindUniformBufferBase) {
-				console.warn(`[validate] ${pass.name}: backend lacks uniform buffer binding API`);
-			}
-			if (passId === 'meshbatch') {
-				const dirBuf = MeshPipeline.getDirectionalLightBuffer();
-				const ptBuf = MeshPipeline.getPointLightBuffer();
-				if (!dirBuf) console.warn(`[validate] ${pass.name}: DirLightBlock buffer not initialized`);
-				if (!ptBuf) console.warn(`[validate] ${pass.name}: PointLightBlock buffer not initialized`);
-			}
-		} catch (e) {
-			const passName = pass ? pass.name : 'unknown';
-			console.error(`[validate] ${passName}: error occurred during validation: ${e}`);
-		}
 	}
 
 	register(desc: RenderPassDef): void {
@@ -516,31 +456,6 @@ export class RenderPassLibrary {
 					}
 				}
 			});
-		}
-
-		// Quick validation of render passes
-			try {
-				const dummyFrame: any = { views: [], frameIndex: 0, time: 0, delta: 0 };
-				rg.compile(dummyFrame);
-				const texInfo = rg.getTextureDebugInfo();
-				const frameColor = frameColorHandle !== null ? texInfo.find(t => t.index === frameColorHandle) : texInfo.find(t => t.present);
-				if (frameColor) {
-					const writerNames = frameColor.writers.map(i => rg.getPassNames()[i]);
-				const contentWriters = writerNames.filter(n => n !== 'FrameTargets' && n !== 'FrameBaselineRestore');
-				const hasPotentialWriters = this.getPipelinePasses().some(p => !p.stateOnly && !p.present);
-				if (contentWriters.length === 0 && hasPotentialWriters) {
-					console.warn('Framegraph validation: Only baseline setup wrote to frame color.');
-				}
-			}
-			// Pass registry validation: unique IDs
-			const seen = new Set<string>();
-			for (const p of this.getPipelinePasses()) {
-				const idStr = String(p.id);
-				if (seen.has(idStr)) console.warn(`Duplicate pass id registered: ${idStr}`);
-				seen.add(idStr);
-			}
-		} catch (e) {
-			console.error(`Framegraph validation failed: ${e}`);
 		}
 
 		return rg;

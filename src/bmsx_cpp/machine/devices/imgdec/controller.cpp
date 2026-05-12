@@ -189,13 +189,7 @@ void ImgDecController::onCtrlWrite(int64_t nowCycles) {
 	if (len > 0 && !m_memory.readBytes(src, buffer.data(), len)) {
 		m_activeResolve = {};
 		m_activeReject = {};
-		m_status = IMG_STATUS_DONE | IMG_STATUS_ERROR;
-		m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
-		m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
-		m_memory.writeValue(IO_IMG_SRC, valueNumber(static_cast<double>(src)));
-		m_memory.writeValue(IO_IMG_LEN, valueNumber(static_cast<double>(len)));
-		m_memory.writeValue(IO_IMG_DST, valueNumber(static_cast<double>(dst)));
-		m_memory.writeValue(IO_IMG_CAP, valueNumber(static_cast<double>(cap)));
+		writeJobRegisters(IMG_STATUS_DONE | IMG_STATUS_ERROR, 0u, src, len, dst, cap);
 		m_irq.raise(IRQ_IMG_ERROR);
 		scheduleNextService(nowCycles);
 		return;
@@ -222,12 +216,8 @@ void ImgDecController::onService(int64_t nowCycles) {
 	}
 	if (m_pendingResult) {
 		auto result = std::move(*m_pendingResult);
-		const uint32_t targetBase = m_pendingTargetBase;
-		const uint32_t targetCapacity = m_pendingTargetCapacity;
 		m_pendingResult.reset();
-		m_pendingTargetBase = 0;
-		m_pendingTargetCapacity = 0;
-		beginDecode(std::move(result), targetBase, targetCapacity);
+		beginDecode(std::move(result), std::exchange(m_pendingTargetBase, 0u), std::exchange(m_pendingTargetCapacity, 0u));
 		if (!m_active) {
 			return;
 		}
@@ -252,11 +242,9 @@ bool ImgDecController::startNextQueuedJob() {
 		m_queuedJobHead = 0;
 	}
 	const uint32_t len = static_cast<uint32_t>(job.buffer.size());
-	const uint32_t dst = job.dst;
-	const uint32_t cap = job.cap;
 	m_activeResolve = std::move(job.resolve);
 	m_activeReject = std::move(job.reject);
-	startJob(std::move(job.buffer), dst, cap, 0u, len, false);
+	startJob(std::move(job.buffer), job.dst, job.cap, 0u, len, false);
 	return true;
 }
 
@@ -267,13 +255,7 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 	m_pendingTargetCapacity = 0;
 	m_activeCapacityLimit = 0;
 	m_signalIrq = signalIrq;
-	m_status = IMG_STATUS_BUSY;
-	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
-	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
-	m_memory.writeValue(IO_IMG_SRC, valueNumber(static_cast<double>(src)));
-	m_memory.writeValue(IO_IMG_LEN, valueNumber(static_cast<double>(len)));
-	m_memory.writeValue(IO_IMG_DST, valueNumber(static_cast<double>(dst)));
-	m_memory.writeValue(IO_IMG_CAP, valueNumber(static_cast<double>(cap)));
+	writeJobRegisters(IMG_STATUS_BUSY, 0u, src, len, dst, cap);
 
 	const uint32_t targetCapacity = decodeTargetCapacity(dst);
 	if (targetCapacity == 0u) {
@@ -334,6 +316,17 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 		}
 	});
 }
+
+void ImgDecController::writeJobRegisters(uint32_t status, uint32_t written, uint32_t src, uint32_t len, uint32_t dst, uint32_t cap) {
+	m_status = status;
+	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
+	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(static_cast<double>(written)));
+	m_memory.writeValue(IO_IMG_SRC, valueNumber(static_cast<double>(src)));
+	m_memory.writeValue(IO_IMG_LEN, valueNumber(static_cast<double>(len)));
+	m_memory.writeValue(IO_IMG_DST, valueNumber(static_cast<double>(dst)));
+	m_memory.writeValue(IO_IMG_CAP, valueNumber(static_cast<double>(cap)));
+}
+
 uint32_t ImgDecController::decodeTargetCapacity(uint32_t dst) const {
 	if (dst == VRAM_PRIMARY_SLOT_BASE) {
 		return VRAM_PRIMARY_SLOT_SIZE;

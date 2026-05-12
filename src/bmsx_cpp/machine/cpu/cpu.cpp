@@ -383,7 +383,7 @@ void Table::resize(size_t newArraySize, size_t newHashSize) {
 			rawSet(node.key, node.value);
 		}
 	}
-	replaceTrackedLuaHeapBytes(previousBytes, trackedHeapBytes());
+		addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedHeapBytes()) - static_cast<ptrdiff_t>(previousBytes));
 }
 
 void Table::rawSet(const Value& key, const Value& value) {
@@ -662,7 +662,7 @@ void Table::clear() {
 	m_hash.clear();
 	m_hashFree = -1;
 	bumpVersion();
-	replaceTrackedLuaHeapBytes(previousBytes, trackedHeapBytes());
+	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedHeapBytes()) - static_cast<ptrdiff_t>(previousBytes));
 }
 
 std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) const {
@@ -757,7 +757,7 @@ void Table::restoreRuntimeState(const TableRuntimeState& state) {
 	m_hashFree = state.hashFree;
 	metatable = state.metatable;
 	bumpVersion();
-	replaceTrackedLuaHeapBytes(previousBytes, trackedHeapBytes());
+		addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedHeapBytes()) - static_cast<ptrdiff_t>(previousBytes));
 }
 
 size_t Table::trackedHeapBytes() const {
@@ -1166,10 +1166,6 @@ void CPU::decodeProgram() {
 	}
 }
 
-void CPU::start(int entryProtoIndex, const std::vector<Value>& args) {
-	start(entryProtoIndex, NativeArgsView(args));
-}
-
 void CPU::start(int entryProtoIndex, NativeArgsView args) {
 	lastReturnValues.clear();
 	clearCallStack();
@@ -1183,10 +1179,6 @@ void CPU::start(int entryProtoIndex, NativeArgsView args) {
 	runHousekeeping();
 }
 
-void CPU::call(Closure* closure, const std::vector<Value>& args, int returnCount) {
-	call(closure, NativeArgsView(args), returnCount);
-}
-
 void CPU::call(Closure* closure, NativeArgsView args, int returnCount) {
 	if (!closure) {
 		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
@@ -1195,10 +1187,6 @@ void CPU::call(Closure* closure, NativeArgsView args, int returnCount) {
 	lastReturnValues.clear();
 	m_yieldRequested = false;
 	pushFrame(closure, args.data(), args.size(), 0, returnCount, false, m_program->protos[closure->protoIndex].entryPC);
-}
-
-void CPU::callExternal(Closure* closure, const std::vector<Value>& args) {
-	callExternal(closure, NativeArgsView(args));
 }
 
 void CPU::callExternal(Closure* closure, NativeArgsView args) {
@@ -1615,12 +1603,14 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 			case CpuObjectState::Kind::Table:
 				restoredObjects[index].table = createTable(0, 0);
 				break;
-			case CpuObjectState::Kind::Closure:
-				restoredObjects[index].closure = m_program->protos[static_cast<size_t>(objectState.protoIndex)].staticClosure && objectState.upvalues.empty()
-					? createRootClosure(objectState.protoIndex)
-					: createTrackedClosure(objectState.protoIndex, objectState.upvalues.size());
-				restoredObjects[index].closure->upvalues.resize(objectState.upvalues.size(), nullptr);
-				break;
+				case CpuObjectState::Kind::Closure: {
+					const size_t upvalueCount = objectState.upvalues.size();
+					restoredObjects[index].closure = m_program->protos[static_cast<size_t>(objectState.protoIndex)].staticClosure && objectState.upvalues.empty()
+						? createRootClosure(objectState.protoIndex)
+						: createTrackedClosure(objectState.protoIndex, upvalueCount);
+					restoredObjects[index].closure->upvalues.resize(upvalueCount, nullptr);
+					break;
+				}
 			case CpuObjectState::Kind::Upvalue: {
 				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
 				upvalue->open = false;
@@ -2153,6 +2143,14 @@ void CPU::collectHeap() {
 	m_heap.collect();
 }
 
+void CPU::suspendGc() {
+	m_heap.suspendCollection();
+}
+
+void CPU::resumeGc() {
+	m_heap.resumeCollection();
+}
+
 void CPU::runHousekeeping() {
 	enforceLuaHeapBudget();
 	if (m_heap.needsCollection()) {
@@ -2437,15 +2435,6 @@ void CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 		}
 	}
 	m_frames.push_back(std::move(frame));
-}
-
-void CPU::pushFrame(Closure* closure, const std::vector<Value>& args,
-	int returnBase, int returnCount, bool captureReturns, int callSitePc) {
-	pushFrame(closure, args.data(), args.size(), returnBase, returnCount, captureReturns, callSitePc);
-}
-
-void CPU::captureLastReturnValues(const Value* values, int count) {
-	lastReturnValues.assign(values, values + count);
 }
 
 void CPU::writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount) {

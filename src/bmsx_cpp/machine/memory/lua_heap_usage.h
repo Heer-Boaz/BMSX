@@ -13,7 +13,6 @@ struct LuaHeapUsageHooks {
 void configureLuaHeapUsage(LuaHeapUsageHooks hooks);
 void resetTrackedLuaHeapBytes();
 void addTrackedLuaHeapBytes(ptrdiff_t delta);
-void replaceTrackedLuaHeapBytes(size_t previousBytes, size_t nextBytes);
 size_t trackedLuaHeapBytes();
 void enforceLuaHeapBudget();
 
