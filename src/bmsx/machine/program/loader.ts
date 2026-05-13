@@ -1,4 +1,4 @@
-import { decodeBinary, requireObject, requireObjectKey } from '../../common/serializer/binencoder';
+import { decodeBinary, encodeBinary, requireObject, requireObjectKey } from '../../common/serializer/binencoder';
 import { StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type Proto, type Value } from '../cpu/cpu';
 import { StringPool } from '../cpu/string_pool';
 
@@ -113,6 +113,11 @@ export function decodeProgramImage(bytes: Uint8Array): ProgramImage {
 		sections,
 		link,
 	};
+}
+
+// disable-next-line single_line_method_pattern -- ProgramImage binary encoding is owned by the program loader/producer boundary.
+export function encodeProgramImage(asset: ProgramImage): Uint8Array {
+	return encodeBinary(asset);
 }
 
 export function decodeProgramSymbolsImage(bytes: Uint8Array): ProgramSymbolsImage {

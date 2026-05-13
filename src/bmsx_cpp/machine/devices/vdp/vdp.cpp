@@ -297,7 +297,7 @@ bool VDP::hasOpenDirectVdpFifoIngress() const {
 }
 
 bool VDP::hasBlockedSubmitPath() const {
-	return hasOpenDirectVdpFifoIngress() || m_dmaSubmitActive || m_buildFrame.open || !canAcceptSubmittedFrame();
+	return hasOpenDirectVdpFifoIngress() || m_dmaSubmitActive || m_buildFrame.state != VdpDexFrameState::Idle || !canAcceptSubmittedFrame();
 }
 
 // disable-next-line single_line_method_pattern -- submit-busy refresh owns the status-bit projection from current VDP ingress state.
@@ -321,14 +321,14 @@ bool VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(byteLength));
 		return false;
 	}
-	if (m_buildFrame.open) {
+	if (m_buildFrame.state != VdpDexFrameState::Idle) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
 		cancelSubmittedFrame();
 		return false;
 	}
 	uint32_t cursor = baseAddr;
 	const uint32_t end = baseAddr + static_cast<uint32_t>(byteLength);
-	if (!beginSubmittedFrame()) {
+	if (!beginSubmittedFrame(VdpDexFrameState::StreamOpen)) {
 		return false;
 	}
 	bool ended = false;
@@ -364,13 +364,13 @@ bool VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 }
 
 void VDP::consumeSealedVdpWordStream(u32 wordCount) {
-	if (m_buildFrame.open) {
+	if (m_buildFrame.state != VdpDexFrameState::Idle) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
 		cancelSubmittedFrame();
 		return;
 	}
 	u32 cursor = 0u;
-	if (!beginSubmittedFrame()) {
+	if (!beginSubmittedFrame(VdpDexFrameState::StreamOpen)) {
 		return;
 	}
 	bool ended = false;
@@ -669,19 +669,19 @@ void VDP::consumeDirectVdpCommand(u32 command) {
 		return;
 	}
 	if (command == VDP_CMD_BEGIN_FRAME) {
-		if (m_buildFrame.open) {
+		if (m_buildFrame.state != VdpDexFrameState::Idle) {
 			m_fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 			cancelSubmittedFrame();
 			return;
 		}
-		if (!beginSubmittedFrame()) {
+		if (!beginSubmittedFrame(VdpDexFrameState::DirectOpen)) {
 			return;
 		}
 		refreshSubmitBusyStatus();
 		return;
 	}
 	if (command == VDP_CMD_END_FRAME) {
-		if (!m_buildFrame.open) {
+		if (m_buildFrame.state == VdpDexFrameState::Idle) {
 			rejectSubmitAttempt();
 			m_fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 			return;
@@ -692,7 +692,7 @@ void VDP::consumeDirectVdpCommand(u32 command) {
 		refreshSubmitBusyStatus();
 		return;
 	}
-	if (!m_buildFrame.open) {
+	if (m_buildFrame.state == VdpDexFrameState::Idle) {
 		rejectSubmitAttempt();
 		m_fault.raise(VDP_FAULT_SUBMIT_STATE, command);
 		return;
@@ -720,7 +720,7 @@ bool VDP::executeVdpDrawDoorbell(u32 command) {
 }
 
 void VDP::onVdpFifoWrite() {
-	if (m_dmaSubmitActive || m_buildFrame.open || (!hasOpenDirectVdpFifoIngress() && !canAcceptSubmittedFrame())) {
+	if (m_dmaSubmitActive || m_buildFrame.state != VdpDexFrameState::Idle || (!hasOpenDirectVdpFifoIngress() && !canAcceptSubmittedFrame())) {
 		rejectBusySubmitAttempt(m_memory.readIoU32(IO_VDP_FIFO));
 		return;
 	}
@@ -745,16 +745,16 @@ void VDP::onVdpCommandWrite() {
 	if (command == VDP_CMD_NOP) {
 		return;
 	}
-	const bool directFrameCommand = command == VDP_CMD_BEGIN_FRAME || command == VDP_CMD_END_FRAME || m_buildFrame.open;
+	const bool directFrameCommand = command == VDP_CMD_BEGIN_FRAME || command == VDP_CMD_END_FRAME || m_buildFrame.state == VdpDexFrameState::DirectOpen;
 	if (!directFrameCommand && hasBlockedSubmitPath()) {
 		rejectBusySubmitAttempt(command);
 		return;
 	}
-	if (command == VDP_CMD_BEGIN_FRAME && !m_buildFrame.open && hasBlockedSubmitPath()) {
+	if (command == VDP_CMD_BEGIN_FRAME && m_buildFrame.state == VdpDexFrameState::Idle && hasBlockedSubmitPath()) {
 		rejectBusySubmitAttempt(command);
 		return;
 	}
-	if (command != VDP_CMD_BEGIN_FRAME && command != VDP_CMD_END_FRAME && !m_buildFrame.open) {
+	if (command != VDP_CMD_BEGIN_FRAME && command != VDP_CMD_END_FRAME && m_buildFrame.state == VdpDexFrameState::Idle) {
 		rejectSubmitAttempt();
 	} else {
 		acceptSubmitAttempt();
@@ -1108,7 +1108,7 @@ void VDP::resetBuildFrameState() {
 	m_buildFrame.queue.clear();
 	m_buildFrame.billboards.clear();
 	m_buildFrame.cost = 0;
-	m_buildFrame.open = false;
+	m_buildFrame.state = VdpDexFrameState::Idle;
 }
 
 void VDP::resetQueuedFrameState() {
@@ -1122,7 +1122,7 @@ void VDP::resetQueuedFrameState() {
 }
 
 bool VDP::enqueueBlitterCommand(BlitterCommand&& command) {
-	if (!m_buildFrame.open) {
+	if (m_buildFrame.state == VdpDexFrameState::Idle) {
 		m_fault.raise(VDP_FAULT_SUBMIT_STATE, static_cast<uint32_t>(command.type));
 		return false;
 	}
@@ -1209,14 +1209,14 @@ void VDP::resetFrameBufferPresentation() {
 	m_frameBufferPresentationDirtyRowEnd = 0u;
 }
 
-bool VDP::beginSubmittedFrame() {
-	if (m_buildFrame.open) {
+bool VDP::beginSubmittedFrame(VdpDexFrameState state) {
+	if (m_buildFrame.state != VdpDexFrameState::Idle) {
 		m_fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_BEGIN_FRAME);
 		return false;
 	}
 	resetBuildFrameState();
 	m_blitterSequence = 0u;
-	m_buildFrame.open = true;
+	m_buildFrame.state = state;
 	return true;
 }
 
@@ -1227,7 +1227,7 @@ void VDP::cancelSubmittedFrame() {
 }
 
 bool VDP::sealSubmittedFrame() {
-	if (!m_buildFrame.open) {
+	if (m_buildFrame.state == VdpDexFrameState::Idle) {
 		m_fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_END_FRAME);
 		return false;
 	}
@@ -1263,7 +1263,7 @@ bool VDP::sealSubmittedFrame() {
 	frame->ditherType = m_liveDitherType;
 	m_buildFrame.billboards.clear();
 	m_buildFrame.cost = 0;
-	m_buildFrame.open = false;
+	m_buildFrame.state = VdpDexFrameState::Idle;
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 	return true;
@@ -2116,6 +2116,7 @@ void VDP::attachImgDecController(ImgDecController& controller) {
 
 void VDP::captureVisualStateFields(VdpState& state) const {
 	state.xf = m_xf.captureState();
+	state.vdpRegisterWords = m_vdpRegisters;
 	state.skyboxControl = m_sbx.liveControl();
 	state.skyboxFaceWords = m_sbx.liveFaceWords();
 	state.pmuSelectedBank = m_pmu.selectedBank();
@@ -2133,6 +2134,10 @@ VdpState VDP::captureState() const {
 
 void VDP::restoreState(const VdpState& state) {
 	m_xf.restoreState(state.xf);
+	m_vdpRegisters = state.vdpRegisterWords;
+	for (uint32_t index = 0; index < VDP_REGISTER_COUNT; ++index) {
+		m_memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, valueNumber(static_cast<double>(m_vdpRegisters[index])));
+	}
 	m_sbx.restoreLiveState(state.skyboxControl, state.skyboxFaceWords);
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(state.ditherType)));
 	m_pmu.restoreBankWords(state.pmuSelectedBank, state.pmuBankWords);
@@ -2266,6 +2271,8 @@ std::vector<VdpSurfacePixelsState> VDP::captureSurfacePixels() const {
 	for (const VdpSurfaceUploadSlot& slot : m_vramSlots) {
 		VdpSurfacePixelsState state;
 		state.surfaceId = slot.surfaceId;
+		state.surfaceWidth = slot.surfaceWidth;
+		state.surfaceHeight = slot.surfaceHeight;
 		state.pixels = slot.cpuReadback;
 		surfaces.push_back(std::move(state));
 	}
@@ -2277,6 +2284,7 @@ void VDP::restoreSurfacePixels(const VdpSurfacePixelsState& state) {
 	if (slot == nullptr) {
 		return;
 	}
+	setVramSlotLogicalDimensions(*slot, state.surfaceWidth, state.surfaceHeight, state.surfaceWidth | (state.surfaceHeight << 16u));
 	slot->cpuReadback = state.pixels;
 	invalidateReadCache(state.surfaceId);
 	markVramSlotDirty(*slot, 0, slot->surfaceHeight);

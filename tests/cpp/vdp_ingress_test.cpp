@@ -928,6 +928,45 @@ void testDitherRegisterWritesUpdateLiveLatch() {
 	require(h.vdp.captureState().ditherType == 3, "DITHER write should update live VDP latch directly");
 }
 
+void testSaveStateRestoresRegisterFileAndSurfaceGeometry() {
+	Harness h;
+	std::vector<uint8_t> pixels(16u * 16u * 4u, 0u);
+	pixels[0u] = 0xaau;
+	pixels[1u] = 0xbbu;
+	pixels[2u] = 0xccu;
+	pixels[3u] = 0xffu;
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
+	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff112233u);
+	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE, pixels.data(), pixels.size());
+	const bmsx::VdpSaveState saved = h.vdp.captureSaveState();
+
+	const std::array<uint8_t, 4u> mutated{{0x10u, 0x20u, 0x30u, 0x40u}};
+	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 1u | (1u << 16u));
+	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff445566u);
+	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE, mutated.data(), mutated.size());
+
+	h.vdp.restoreSaveState(saved);
+	require(h.memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff112233u, "VDP restore should refresh the MMIO mirror from the saved registerfile");
+
+	PrimarySurfaceProbe primary;
+	h.vdp.drainSurfaceUploads(primary);
+	require(primary.width == 16u && primary.height == 16u, "VDP restore should restore surface geometry before dirty upload");
+
+	std::array<uint8_t, 4u> restoredPixel{};
+	h.vdp.readVram(bmsx::VRAM_PRIMARY_SLOT_BASE, restoredPixel.data(), restoredPixel.size());
+	require(restoredPixel == std::array<uint8_t, 4u>{{0xaau, 0xbbu, 0xccu, 0xffu}}, "VDP restore should restore surface pixels");
+
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_CLEAR);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	const int workUnits = h.vdp.getPendingRenderWorkUnits();
+	require(workUnits > 0, "restored BG register should drive CLEAR work");
+	h.vdp.advanceWork(workUnits);
+	require(h.vdp.presentReadyFrameOnVblankEdge(), "restored BG register should present a framebuffer page");
+	requireDisplayFramePixel(h, 0u, 0u, 0x11u, 0x22u, 0x33u, 0xffu, "VDP CLEAR should consume the restored raw BG register");
+}
+
 } // namespace
 
 int main() {
@@ -965,6 +1004,7 @@ int main() {
 		{"VDP VRAM write fault status", testVramWriteFaultsLatchStatus},
 		{"VDP VRAM read fault status", testVramReadFaultsLatchStatus},
 		{"VDP dither live latch", testDitherRegisterWritesUpdateLiveLatch},
+		{"VDP save-state registerfile/surface geometry", testSaveStateRestoresRegisterFileAndSurfaceGeometry},
 	};
 
 	for (const auto& test : tests) {

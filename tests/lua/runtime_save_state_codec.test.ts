@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../src/bmsx/machine/devices/vdp/contracts';
+import { VDP_REGISTER_COUNT } from '../../src/bmsx/machine/devices/vdp/registers';
 import { VDP_XF_MATRIX_REGISTER_WORDS, VDP_XF_PROJECTION_MATRIX_RESET_INDEX, VDP_XF_VIEW_MATRIX_RESET_INDEX } from '../../src/bmsx/machine/devices/vdp/xf';
 import type { RuntimeSaveState } from '../../src/bmsx/machine/runtime/contracts';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../src/bmsx/machine/runtime/save_state/codec';
@@ -44,6 +45,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						viewMatrixIndex: VDP_XF_VIEW_MATRIX_RESET_INDEX,
 						projectionMatrixIndex: VDP_XF_PROJECTION_MATRIX_RESET_INDEX,
 					},
+					vdpRegisterWords: numberedWords(VDP_REGISTER_COUNT),
 					skyboxControl: 5,
 					skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),
 					pmuSelectedBank: 2,
@@ -53,7 +55,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					vdpFaultDetail: 0,
 					vramStaging: new Uint8Array([7, 8]),
 					surfacePixels: [
-						{ surfaceId: 4, pixels: new Uint8Array([9, 10, 11, 12]) },
+						{ surfaceId: 4, surfaceWidth: 1, surfaceHeight: 1, pixels: new Uint8Array([9, 10, 11, 12]) },
 					],
 					displayFrameBufferPixels: new Uint8Array([13, 14]),
 				},
@@ -133,5 +135,12 @@ test('runtime save-state codec rejects invalid VDP fixed register snapshots befo
 	assert.throws(
 		() => decodeRuntimeSaveState(encodeRuntimeSaveState(badPmuState)),
 		/machine\.vdp\.pmuBankWords must contain/,
+	);
+
+	const badVdpRegisterState = createRuntimeSaveState();
+	badVdpRegisterState.machineState.machine.vdp.vdpRegisterWords = numberedWords(VDP_REGISTER_COUNT - 1);
+	assert.throws(
+		() => decodeRuntimeSaveState(encodeRuntimeSaveState(badVdpRegisterState)),
+		/machine\.vdp\.vdpRegisterWords must contain/,
 	);
 });

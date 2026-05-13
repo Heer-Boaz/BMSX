@@ -48,5 +48,6 @@ std::string assetTypeFromId(u32 id);
 u32 assetTypeToId(std::string_view type);
 AssetTypeKind resolveAssetTypeKind(std::string_view assetType);
 RomTocPayload decodeRomToc(const u8* data, size_t size);
+std::vector<u8> encodeRomToc(const RomTocPayload& payload);
 
 } // namespace bmsx

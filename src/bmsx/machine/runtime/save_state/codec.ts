@@ -7,6 +7,7 @@ import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_poo
 import type { InputControllerState } from '../../devices/input/controller';
 import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/vdp';
 import { SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
+import { VDP_REGISTER_COUNT } from '../../devices/vdp/registers';
 import { VDP_XF_MATRIX_COUNT, VDP_XF_MATRIX_REGISTER_WORDS } from '../../devices/vdp/xf';
 import type { MemorySaveState } from '../../memory/memory';
 import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
@@ -238,6 +239,7 @@ function encodeVdpState(state: VdpState): VdpState {
 			viewMatrixIndex: state.xf.viewMatrixIndex,
 			projectionMatrixIndex: state.xf.projectionMatrixIndex,
 		},
+		vdpRegisterWords: state.vdpRegisterWords,
 		skyboxControl: state.skyboxControl,
 		skyboxFaceWords: state.skyboxFaceWords,
 		pmuSelectedBank: state.pmuSelectedBank,
@@ -257,6 +259,7 @@ function decodeVdpState(value: unknown, label: string): VdpState {
 			viewMatrixIndex: requireBoundedU32(requireObjectKey(xf, 'viewMatrixIndex', 'machine.vdp.xf', 'machine.vdp.xf.viewMatrixIndex'), 'machine.vdp.xf.viewMatrixIndex', 0, VDP_XF_MATRIX_COUNT - 1),
 			projectionMatrixIndex: requireBoundedU32(requireObjectKey(xf, 'projectionMatrixIndex', 'machine.vdp.xf', 'machine.vdp.xf.projectionMatrixIndex'), 'machine.vdp.xf.projectionMatrixIndex', 0, VDP_XF_MATRIX_COUNT - 1),
 		},
+		vdpRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'vdpRegisterWords', label, 'machine.vdp.vdpRegisterWords'), 'machine.vdp.vdpRegisterWords', VDP_REGISTER_COUNT),
 		skyboxControl: requireBoundedU32(requireObjectKey(object, 'skyboxControl', label, 'machine.vdp.skyboxControl'), 'machine.vdp.skyboxControl', 0, 0xffffffff),
 		skyboxFaceWords: decodeU32FixedArray(requireObjectKey(object, 'skyboxFaceWords', label, 'machine.vdp.skyboxFaceWords'), 'machine.vdp.skyboxFaceWords', SKYBOX_FACE_WORD_COUNT),
 		pmuSelectedBank: requireBoundedU32(requireObjectKey(object, 'pmuSelectedBank', label, 'machine.vdp.pmuSelectedBank'), 'machine.vdp.pmuSelectedBank', 0, 0xffffffff),
@@ -270,6 +273,8 @@ function decodeVdpState(value: unknown, label: string): VdpState {
 function encodeVdpSurfacePixelsState(state: VdpSurfacePixelsState): VdpSurfacePixelsState {
 	return {
 		surfaceId: state.surfaceId,
+		surfaceWidth: state.surfaceWidth,
+		surfaceHeight: state.surfaceHeight,
 		pixels: state.pixels,
 	};
 }
@@ -278,6 +283,8 @@ function decodeVdpSurfacePixelsState(value: unknown, label: string): VdpSurfaceP
 	const object = requireObject(value, label);
 	return {
 		surfaceId: requireObjectKey(object, 'surfaceId', label, 'machine.vdp.surfacePixels.surfaceId') as number,
+		surfaceWidth: requireObjectKey(object, 'surfaceWidth', label, 'machine.vdp.surfacePixels.surfaceWidth') as number,
+		surfaceHeight: requireObjectKey(object, 'surfaceHeight', label, 'machine.vdp.surfacePixels.surfaceHeight') as number,
 		pixels: requireObjectKey(object, 'pixels', label, 'machine.vdp.surfacePixels.pixels') as Uint8Array,
 	};
 }

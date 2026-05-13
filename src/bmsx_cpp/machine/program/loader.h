@@ -90,6 +90,7 @@ struct ProgramBootHeader {
 };
 
 std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t size);
+std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset);
 std::unique_ptr<ProgramSymbolsImage> decodeProgramSymbolsImage(const uint8_t* data, size_t size);
 ProgramBootHeader buildProgramBootHeader(const ProgramImage& asset);
 std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections);

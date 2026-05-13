@@ -3,6 +3,15 @@ import { VdpBbuFrameBuffer } from './bbu';
 import { VdpBlitterCommandBuffer, type VdpResolvedBlitterSample } from './blitter';
 import { VdpXfUnit } from './xf';
 
+export const VDP_DEX_FRAME_IDLE = 0;
+export const VDP_DEX_FRAME_DIRECT_OPEN = 1;
+export const VDP_DEX_FRAME_STREAM_OPEN = 2;
+
+export type VdpDexFrameState =
+	| typeof VDP_DEX_FRAME_IDLE
+	| typeof VDP_DEX_FRAME_DIRECT_OPEN
+	| typeof VDP_DEX_FRAME_STREAM_OPEN;
+
 export type VdpSubmittedFrameState = {
 	queue: VdpBlitterCommandBuffer;
 	occupied: boolean;
@@ -22,7 +31,7 @@ export type VdpSubmittedFrameState = {
 export type VdpBuildingFrameState = {
 	queue: VdpBlitterCommandBuffer;
 	billboards: VdpBbuFrameBuffer;
-	open: boolean;
+	state: VdpDexFrameState;
 	cost: number;
 };
 

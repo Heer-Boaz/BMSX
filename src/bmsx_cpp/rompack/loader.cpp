@@ -959,69 +959,6 @@ void RuntimeRomPackage::clear() {
  * ROM loading
  * ============================================================================ */
 
-static bool hasCartHeader(const u8* data, size_t size) {
-	if (size < CART_ROM_BASE_HEADER_SIZE) {
-		return false;
-	}
-	if (std::memcmp(data, CART_ROM_MAGIC_BYTES.data(), CART_ROM_MAGIC_BYTES.size()) != 0) {
-		return false;
-	}
-	const u32 headerSize = readLE32(data + 4);
-	return headerSize >= CART_ROM_BASE_HEADER_SIZE && headerSize <= size;
-}
-
-static void assertSectionRange(size_t offset, size_t length, size_t total, const char* label) {
-	if (offset + length > total) {
-		throw BMSX_RUNTIME_ERROR(std::string("Invalid ROM ") + label + " range.");
-	}
-}
-
-static CartRomHeader parseCartHeader(const u8* data, size_t size) {
-	if (size < CART_ROM_BASE_HEADER_SIZE) {
-		throw BMSX_RUNTIME_ERROR("ROM payload is too small for cart header.");
-	}
-	if (std::memcmp(data, CART_ROM_MAGIC_BYTES.data(), CART_ROM_MAGIC_BYTES.size()) != 0) {
-		throw BMSX_RUNTIME_ERROR("Invalid ROM cart header.");
-	}
-	CartRomHeader header{};
-	header.headerSize = readLE32(data + 4);
-	if (header.headerSize < CART_ROM_BASE_HEADER_SIZE) {
-		throw BMSX_RUNTIME_ERROR("ROM header size is too small.");
-	}
-	if (header.headerSize > size) {
-		throw BMSX_RUNTIME_ERROR("ROM header size exceeds payload length.");
-	}
-	header.manifestOffset = readLE32(data + 8);
-	header.manifestLength = readLE32(data + 12);
-	header.tocOffset = readLE32(data + 16);
-	header.tocLength = readLE32(data + 20);
-	header.dataOffset = readLE32(data + 24);
-	header.dataLength = readLE32(data + 28);
-	if (header.headerSize >= CART_ROM_PROGRAM_HEADER_SIZE) {
-		header.programBootVersion = readLE32(data + 32);
-		header.programBootFlags = readLE32(data + 36);
-		header.programEntryProtoIndex = readLE32(data + 40);
-		header.programCodeByteCount = readLE32(data + 44);
-		header.programConstPoolCount = readLE32(data + 48);
-		header.programProtoCount = readLE32(data + 52);
-		header.programReserved0 = readLE32(data + 56);
-		header.programConstRelocCount = readLE32(data + 60);
-	}
-	if (header.headerSize >= CART_ROM_HEADER_SIZE) {
-		header.metadataOffset = readLE32(data + 64);
-		header.metadataLength = readLE32(data + 68);
-	}
-
-	assertSectionRange(static_cast<size_t>(header.manifestOffset), static_cast<size_t>(header.manifestLength), size, "manifest");
-	assertSectionRange(static_cast<size_t>(header.tocOffset), static_cast<size_t>(header.tocLength), size, "toc");
-	assertSectionRange(static_cast<size_t>(header.dataOffset), static_cast<size_t>(header.dataLength), size, "data");
-	if (header.metadataLength > 0) {
-		assertSectionRange(static_cast<size_t>(header.metadataOffset), static_cast<size_t>(header.metadataLength), size, "metadata");
-	}
-
-	return header;
-}
-
 // Check if buffer has PNG signature
 static bool isPNG(const u8* data, size_t size) {
 	if (size < 8) return false;

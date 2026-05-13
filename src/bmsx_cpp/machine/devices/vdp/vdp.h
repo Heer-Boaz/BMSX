@@ -27,6 +27,7 @@ class VDP;
 
 struct VdpState {
 	VdpXfState xf{};
+	std::array<u32, VDP_REGISTER_COUNT> vdpRegisterWords{};
 	u32 skyboxControl = 0;
 	VdpSbxUnit::FaceWords skyboxFaceWords{};
 	u32 pmuSelectedBank = 0;
@@ -38,6 +39,8 @@ struct VdpState {
 
 struct VdpSurfacePixelsState {
 	uint32_t surfaceId = 0;
+	uint32_t surfaceWidth = 0;
+	uint32_t surfaceHeight = 0;
 	std::vector<u8> pixels;
 };
 
@@ -248,7 +251,7 @@ private:
 	void resetQueuedFrameState();
 	bool enqueueBlitterCommand(BlitterCommand&& command);
 	bool canAcceptSubmittedFrame() const { return !m_pendingFrame.occupied; }
-	bool beginSubmittedFrame();
+	bool beginSubmittedFrame(VdpDexFrameState state);
 	void cancelSubmittedFrame();
 	bool sealSubmittedFrame();
 	void promotePendingFrame();

@@ -138,6 +138,9 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"apuStatus",
 	"apuFaultCode",
 	"apuFaultDetail",
+	"vdpRegisterWords",
+	"surfaceWidth",
+	"surfaceHeight",
 };
 
 } // namespace bmsx

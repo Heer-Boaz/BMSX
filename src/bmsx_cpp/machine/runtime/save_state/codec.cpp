@@ -321,6 +321,7 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
 	object["xf"] = encodeVdpXfState(state.xf);
+	object["vdpRegisterWords"] = encodeFixedArray(state.vdpRegisterWords, encodeScalar<i64, u32>);
 	object["skyboxControl"] = static_cast<i64>(state.skyboxControl);
 	object["skyboxFaceWords"] = encodeFixedArray(state.skyboxFaceWords, encodeScalar<i64, u32>);
 	object["pmuSelectedBank"] = static_cast<i64>(state.pmuSelectedBank);
@@ -335,6 +336,7 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpState state;
 	state.xf = decodeVdpXfState(requireField(object, "xf", label), "machine.vdp.xf");
+	state.vdpRegisterWords = decodeU32Array<VDP_REGISTER_COUNT>(requireField(object, "vdpRegisterWords", label), "machine.vdp.vdpRegisterWords");
 	state.skyboxControl = requireU32(requireField(object, "skyboxControl", label), "machine.vdp.skyboxControl");
 	state.skyboxFaceWords = decodeU32Array<SKYBOX_FACE_WORD_COUNT>(requireField(object, "skyboxFaceWords", label), "machine.vdp.skyboxFaceWords");
 	state.pmuSelectedBank = requireU32(requireField(object, "pmuSelectedBank", label), "machine.vdp.pmuSelectedBank");
@@ -348,6 +350,8 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 BinValue encodeVdpSurfacePixelsState(const VdpSurfacePixelsState& state) {
 	BinObject object;
 	object["surfaceId"] = static_cast<i64>(state.surfaceId);
+	object["surfaceWidth"] = static_cast<i64>(state.surfaceWidth);
+	object["surfaceHeight"] = static_cast<i64>(state.surfaceHeight);
 	object["pixels"] = BinBinary(state.pixels);
 	return BinValue(std::move(object));
 }
@@ -356,6 +360,8 @@ VdpSurfacePixelsState decodeVdpSurfacePixelsState(const BinValue& value, const c
 	const BinObject& object = requireObject(value, label);
 	VdpSurfacePixelsState state;
 	state.surfaceId = requireU32(requireField(object, "surfaceId", label), "machine.vdp.surfacePixels.surfaceId");
+	state.surfaceWidth = requireU32(requireField(object, "surfaceWidth", label), "machine.vdp.surfacePixels.surfaceWidth");
+	state.surfaceHeight = requireU32(requireField(object, "surfaceHeight", label), "machine.vdp.surfacePixels.surfaceHeight");
 	state.pixels = requireBinary(requireField(object, "pixels", label), "machine.vdp.surfacePixels.pixels");
 	return state;
 }
@@ -373,6 +379,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	const VdpState base = decodeVdpState(value, label);
 	VdpSaveState state;
 	state.xf = base.xf;
+	state.vdpRegisterWords = base.vdpRegisterWords;
 	state.skyboxControl = base.skyboxControl;
 	state.skyboxFaceWords = base.skyboxFaceWords;
 	state.pmuSelectedBank = base.pmuSelectedBank;

@@ -1,10 +1,12 @@
 #include "core/console.h"
 #include "machine/bus/io.h"
+#include "machine/devices/vdp/registers.h"
 #include "machine/memory/map.h"
 #include "machine/runtime/runtime.h"
 #include "platform/libretro/platform.h"
 #include "support/program_cart_fixture.h"
 
+#include <array>
 #include <stdexcept>
 #include <vector>
 
@@ -36,6 +38,7 @@ void testLibretroSaveStateRoundTrip() {
 
 	bmsx::Memory& memory = runtime.machine.memory;
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0x11223344u);
+	memory.writeMappedU32LE(bmsx::IO_VDP_REG_BG_COLOR, 0xff112233u);
 	runtime.machine.irqController.raise(bmsx::IRQ_VBLANK);
 	require(platform.getStateSize() == stateSize, "libretro state size should remain stable across RAM and device-register changes");
 
@@ -43,14 +46,28 @@ void testLibretroSaveStateRoundTrip() {
 	require(platform.saveState(saved.data(), saved.size()), "libretro saveState should serialize initialized runtime state");
 
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0xaabbccddu);
+	memory.writeMappedU32LE(bmsx::IO_VDP_REG_BG_COLOR, 0xff445566u);
 	runtime.machine.irqController.reset();
 	require(memory.readMappedU32LE(bmsx::GEO_SCRATCH_BASE) == 0xaabbccddu, "RAM mutation should be visible before loadState");
+	require(memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff445566u, "VDP register mutation should be visible before loadState");
 	require(!runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "IRQ reset should clear the maskable line before loadState");
 
 	require(platform.loadState(saved.data(), stateSize), "libretro loadState should apply runtime state bytes");
 	require(memory.readMappedU32LE(bmsx::GEO_SCRATCH_BASE) == 0x11223344u, "libretro loadState should restore RAM through Runtime save state");
+	require(memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff112233u, "libretro loadState should restore VDP raw registerfile state");
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "libretro loadState should restore asserted IRQ line state");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "libretro loadState should restore cart-visible IRQ flags");
+
+	memory.writeMappedU32LE(bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	memory.writeMappedU32LE(bmsx::IO_VDP_CMD, bmsx::VDP_CMD_CLEAR);
+	memory.writeMappedU32LE(bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
+	const int workUnits = runtime.machine.vdp.getPendingRenderWorkUnits();
+	require(workUnits > 0, "restored VDP BG register should submit CLEAR work after libretro loadState");
+	runtime.machine.vdp.advanceWork(workUnits);
+	require(runtime.machine.vdp.presentReadyFrameOnVblankEdge(), "restored VDP state should present framebuffer output after libretro loadState");
+	std::array<bmsx::u8, 4u> pixel{};
+	require(runtime.machine.vdp.readFrameBufferPixels(bmsx::VdpFrameBufferPage::Display, 0u, 0u, 1u, 1u, pixel.data(), pixel.size()), "restored VDP framebuffer should be readable");
+	require(pixel == std::array<bmsx::u8, 4u>{{0x11u, 0x22u, 0x33u, 0xffu}}, "restored VDP registerfile should determine visible framebuffer output");
 }
 
 } // namespace

@@ -9,9 +9,13 @@
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace bmsx {
+
+struct ProgramImage;
 
 constexpr u32 CART_ROM_MAGIC = 0x58534D42u;
 constexpr std::array<u8, 4> CART_ROM_MAGIC_BYTES = { 0x42, 0x4d, 0x53, 0x58 };
@@ -47,6 +51,9 @@ struct CartRomHeader {
 	u32 metadataLength = 0;
 };
 
+bool hasCartHeader(const u8* data, size_t size);
+CartRomHeader parseCartHeader(const u8* data, size_t size);
+
 /* ============================================================================
  * Machine manifest (effective hardware spec)
  * ============================================================================ */
@@ -81,6 +88,9 @@ struct CartManifest {
 	std::string author;
 	std::string description;
 };
+
+std::vector<u8> encodeCartManifest(const CartManifest& cart, const MachineManifest& machine);
+std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const MachineManifest& machine, const ProgramImage& program);
 
 } // namespace bmsx
 

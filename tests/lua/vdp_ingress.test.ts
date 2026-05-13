@@ -70,6 +70,7 @@ import { VDP, VDP_FRAMEBUFFER_PAGE_DISPLAY } from '../../src/bmsx/machine/device
 import { VDP_BBU_BILLBOARD_LIMIT, VDP_RD_SURFACE_FRAMEBUFFER, VDP_RD_SURFACE_PRIMARY, VDP_SBX_CONTROL_ENABLE } from '../../src/bmsx/machine/devices/vdp/contracts';
 import { VDP_BBU_PACKET_KIND, VDP_BBU_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/bbu';
 import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
+import { VDP_DEX_FRAME_IDLE } from '../../src/bmsx/machine/devices/vdp/frame';
 import { VDP_SBX_PACKET_KIND, VDP_SBX_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/sbx';
 import {
 	VDP_XF_MATRIX_COUNT,
@@ -152,7 +153,7 @@ function writeSkyboxMmio(memory: Memory, control = VDP_SBX_CONTROL_ENABLE, w = 1
 }
 
 function buildFrameOpen(vdp: VDP): boolean {
-	return (vdp as any).buildFrame.open;
+	return (vdp as any).buildFrame.state !== VDP_DEX_FRAME_IDLE;
 }
 
 function writeStream(memory: Memory, words: number[]): void {
@@ -738,6 +739,55 @@ test('VDP dither register writes update the live latch directly', () => {
 	memory.writeValue(IO_VDP_DITHER, 3);
 
 	assert.equal(vdp.captureState().ditherType, 3);
+});
+
+test('VDP save-state restores raw registerfile and surface geometry', () => {
+	const { memory, vdp } = createVdp();
+	const pixels = new Uint8Array(16 * 16 * 4);
+	pixels[0] = 0xaa;
+	pixels[1] = 0xbb;
+	pixels[2] = 0xcc;
+	pixels[3] = 0xff;
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 16 | (16 << 16));
+	memory.writeValue(IO_VDP_REG_BG_COLOR, 0xff112233);
+	vdp.writeVram(VRAM_PRIMARY_SLOT_BASE, pixels);
+	const saved = vdp.captureSaveState();
+
+	memory.writeValue(IO_VDP_REG_SLOT_DIM, 1 | (1 << 16));
+	memory.writeValue(IO_VDP_REG_BG_COLOR, 0xff445566);
+	vdp.writeVram(VRAM_PRIMARY_SLOT_BASE, new Uint8Array([0x10, 0x20, 0x30, 0x40]));
+
+	vdp.restoreSaveState(saved);
+	assert.equal(memory.readIoU32(IO_VDP_REG_BG_COLOR), 0xff112233);
+
+	let primaryWidth = 0;
+	let primaryHeight = 0;
+	vdp.drainSurfaceUploads({
+		consumeVdpSurfaceUpload(upload: VdpSurfaceUpload): boolean {
+			if (upload.surfaceId === VDP_RD_SURFACE_PRIMARY) {
+				primaryWidth = upload.surfaceWidth;
+				primaryHeight = upload.surfaceHeight;
+			}
+			return false;
+		},
+	});
+	assert.deepEqual({ width: primaryWidth, height: primaryHeight }, { width: 16, height: 16 });
+
+	const restoredPixel = new Uint8Array(4);
+	vdp.readVram(VRAM_PRIMARY_SLOT_BASE, restoredPixel);
+	assert.deepEqual(Array.from(restoredPixel), [0xaa, 0xbb, 0xcc, 0xff]);
+
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_CLEAR);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	const workUnits = vdp.getPendingRenderWorkUnits();
+	assert.ok(workUnits > 0);
+	vdp.advanceWork(workUnits);
+	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
+	const displayPixel = new Uint8Array(4);
+	assert.equal(vdp.readFrameBufferPixels(VDP_FRAMEBUFFER_PAGE_DISPLAY, 0, 0, 1, 1, displayPixel), true);
+	assert.deepEqual(Array.from(displayPixel), [0x11, 0x22, 0x33, 0xff]);
 });
 
 test('VDP SBX live state commits only through frame present', () => {

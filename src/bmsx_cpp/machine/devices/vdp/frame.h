@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/primitives.h"
 #include "machine/devices/vdp/bbu.h"
 #include "machine/devices/vdp/blitter.h"
 #include "machine/devices/vdp/sbx.h"
@@ -7,6 +8,12 @@
 #include <vector>
 
 namespace bmsx {
+
+enum class VdpDexFrameState : u8 {
+	Idle = 0,
+	DirectOpen = 1,
+	StreamOpen = 2,
+};
 
 struct VdpSubmittedFrame {
 	std::vector<VdpBlitterCommand> queue;
@@ -27,7 +34,7 @@ struct VdpSubmittedFrame {
 struct VdpBuildingFrame {
 	std::vector<VdpBlitterCommand> queue;
 	std::vector<VdpBbuBillboardEntry> billboards;
-	bool open = false;
+	VdpDexFrameState state = VdpDexFrameState::Idle;
 	int cost = 0;
 };
 

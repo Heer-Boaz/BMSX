@@ -3,8 +3,17 @@
 #include "common/endian.h"
 #include "rompack/tokens.h"
 
+#include <algorithm>
+#include <unordered_map>
+#include <utility>
+
 namespace bmsx {
 namespace {
+
+struct TocStringRef {
+	u32 offset = ROM_TOC_INVALID_U32;
+	u32 length = 0;
+};
 
 std::optional<i32> optionalI32FromU32(u32 value) {
 	if (value == ROM_TOC_INVALID_U32) {
@@ -21,6 +30,51 @@ std::optional<std::string> decodeTocString(const u8* table, size_t tableSize, u3
 		throw BMSX_RUNTIME_ERROR("ROM TOC string table entry out of bounds.");
 	}
 	return std::string(reinterpret_cast<const char*>(table + offset), static_cast<size_t>(length));
+}
+
+u32 tocFieldValue(const std::optional<i32>& value) {
+	return value.has_value() ? static_cast<u32>(*value) : ROM_TOC_INVALID_U32;
+}
+
+u32 tocUpdateLo(const std::optional<i64>& value) {
+	return value.has_value() ? static_cast<u32>(static_cast<u64>(*value) & 0xffffffffu) : 0u;
+}
+
+u32 tocUpdateHi(const std::optional<i64>& value) {
+	return value.has_value() ? static_cast<u32>(static_cast<u64>(*value) >> 32u) : 0u;
+}
+
+void writeTocString(std::vector<u8>& table, std::unordered_map<std::string, TocStringRef>& index, std::string_view text, TocStringRef& out) {
+	if (text.empty()) {
+		out = {};
+		return;
+	}
+	const std::string key(text);
+	const auto found = index.find(key);
+	if (found != index.end()) {
+		out = found->second;
+		return;
+	}
+	out.offset = static_cast<u32>(table.size());
+	out.length = static_cast<u32>(text.size());
+	for (char value : text) {
+		table.push_back(static_cast<u8>(value));
+	}
+	index.emplace(key, out);
+}
+
+TocStringRef internTocString(std::vector<u8>& table, std::unordered_map<std::string, TocStringRef>& index, const std::optional<std::string>& text) {
+	TocStringRef ref;
+	if (text.has_value()) {
+		writeTocString(table, index, *text, ref);
+	}
+	return ref;
+}
+
+TocStringRef internTocString(std::vector<u8>& table, std::unordered_map<std::string, TocStringRef>& index, const std::string& text) {
+	TocStringRef ref;
+	writeTocString(table, index, text, ref);
+	return ref;
 }
 
 } // namespace
@@ -181,6 +235,67 @@ RomTocPayload decodeRomToc(const u8* data, size_t size) {
 		payload.entries.push_back(RomSourceEntry{*assetId, std::move(romInfo)});
 	}
 	return payload;
+}
+
+std::vector<u8> encodeRomToc(const RomTocPayload& payload) {
+	std::vector<RomSourceEntry> entries = payload.entries;
+	std::sort(entries.begin(), entries.end(), [](const RomSourceEntry& lhs, const RomSourceEntry& rhs) {
+		return lhs.resid < rhs.resid;
+	});
+
+	std::vector<u8> stringTable;
+	std::unordered_map<std::string, TocStringRef> stringIndex;
+	const TocStringRef projectRoot = internTocString(stringTable, stringIndex, payload.projectRootPath);
+
+	std::vector<u8> out(ROM_TOC_HEADER_SIZE + (entries.size() * ROM_TOC_ENTRY_SIZE));
+	writeLE32(out.data() + 0, ROM_TOC_MAGIC);
+	writeLE32(out.data() + 4, ROM_TOC_HEADER_SIZE);
+	writeLE32(out.data() + 8, ROM_TOC_ENTRY_SIZE);
+	writeLE32(out.data() + 12, static_cast<u32>(entries.size()));
+	writeLE32(out.data() + 16, ROM_TOC_HEADER_SIZE);
+	writeLE32(out.data() + 20, ROM_TOC_HEADER_SIZE + static_cast<u32>(entries.size() * ROM_TOC_ENTRY_SIZE));
+	writeLE32(out.data() + 24, 0u);
+	writeLE32(out.data() + 28, projectRoot.offset);
+	writeLE32(out.data() + 32, projectRoot.length);
+	writeLE32(out.data() + 36, 0u);
+	writeLE32(out.data() + 40, 0u);
+	writeLE32(out.data() + 44, 0u);
+
+	for (size_t index = 0; index < entries.size(); ++index) {
+		const RomSourceEntry& source = entries[index];
+		const TocStringRef resid = internTocString(stringTable, stringIndex, source.resid);
+		const TocStringRef sourcePath = internTocString(stringTable, stringIndex, source.rom.sourcePath);
+		const TocStringRef normalizedSourcePath = internTocString(stringTable, stringIndex, source.rom.normalizedSourcePath);
+		const AssetTokenParts token = splitAssetToken(hashAssetToken(source.resid));
+		const u32 opId = source.rom.op == "delete" ? ROM_TOC_OP_DELETE : ROM_TOC_OP_NONE;
+		u8* entry = out.data() + ROM_TOC_HEADER_SIZE + (index * ROM_TOC_ENTRY_SIZE);
+		writeLE32(entry + 0, token.lo);
+		writeLE32(entry + 4, token.hi);
+		writeLE32(entry + 8, assetTypeToId(source.rom.type));
+		writeLE32(entry + 12, opId);
+		writeLE32(entry + 16, resid.offset);
+		writeLE32(entry + 20, resid.length);
+		writeLE32(entry + 24, sourcePath.offset);
+		writeLE32(entry + 28, sourcePath.length);
+		writeLE32(entry + 32, normalizedSourcePath.offset);
+		writeLE32(entry + 36, normalizedSourcePath.length);
+		writeLE32(entry + 40, tocFieldValue(source.rom.start));
+		writeLE32(entry + 44, tocFieldValue(source.rom.end));
+		writeLE32(entry + 48, tocFieldValue(source.rom.compiledStart));
+		writeLE32(entry + 52, tocFieldValue(source.rom.compiledEnd));
+		writeLE32(entry + 56, tocFieldValue(source.rom.metabufferStart));
+		writeLE32(entry + 60, tocFieldValue(source.rom.metabufferEnd));
+		writeLE32(entry + 64, tocFieldValue(source.rom.textureStart));
+		writeLE32(entry + 68, tocFieldValue(source.rom.textureEnd));
+		writeLE32(entry + 72, tocFieldValue(source.rom.collisionBinStart));
+		writeLE32(entry + 76, tocFieldValue(source.rom.collisionBinEnd));
+		writeLE32(entry + 80, tocUpdateLo(source.rom.updateTimestamp));
+		writeLE32(entry + 84, tocUpdateHi(source.rom.updateTimestamp));
+	}
+
+	writeLE32(out.data() + 24, static_cast<u32>(stringTable.size()));
+	out.insert(out.end(), stringTable.begin(), stringTable.end());
+	return out;
 }
 
 } // namespace bmsx

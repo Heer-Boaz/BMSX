@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
+#include <utility>
 
 namespace bmsx {
 
@@ -80,6 +81,14 @@ EncodedValue binValueToEncodedValue(const BinValue& value) {
 	throw BMSX_RUNTIME_ERROR("ProgramImage: unsupported ProgramImage.sections.rodata.constPool value.");
 }
 
+BinValue encodedValueToBinValue(const EncodedValue& value) {
+	if (std::holds_alternative<std::nullptr_t>(value)) return BinValue(nullptr);
+	if (const auto* boolValue = std::get_if<bool>(&value)) return BinValue(*boolValue);
+	if (const auto* numberValue = std::get_if<double>(&value)) return BinValue(*numberValue);
+	if (const auto* stringValue = std::get_if<std::string>(&value)) return BinValue(*stringValue);
+	throw BMSX_RUNTIME_ERROR("ProgramImage: unsupported encoded const pool value.");
+}
+
 Value encodedValueToRuntimeValue(const EncodedValue& value, StringPool& stringPool) {
 	if (std::holds_alternative<std::nullptr_t>(value)) return valueNil();
 	if (const auto* boolValue = std::get_if<bool>(&value)) return valueBool(*boolValue);
@@ -118,6 +127,25 @@ ProgramTextSection extractTextSection(const BinValue& textObj) {
 	return text;
 }
 
+BinValue encodeProto(const Proto& proto) {
+	BinObject object;
+	object["maxStack"] = BinValue(proto.maxStack);
+	object["numParams"] = BinValue(proto.numParams);
+	object["entryPC"] = BinValue(proto.entryPC);
+	object["isVararg"] = BinValue(proto.isVararg);
+	object["staticClosure"] = BinValue(proto.staticClosure);
+	BinArray upvalues;
+	upvalues.reserve(proto.upvalues.size());
+	for (const UpvalueDesc& upvalue : proto.upvalues) {
+		BinObject uv;
+		uv["inStack"] = BinValue(upvalue.isLocal);
+		uv["index"] = BinValue(upvalue.index);
+		upvalues.push_back(BinValue(std::move(uv)));
+	}
+	object["upvalueDescs"] = BinValue(std::move(upvalues));
+	return BinValue(std::move(object));
+}
+
 ProgramRodataSection extractRodataSection(const BinValue& rodataObj) {
 	ProgramRodataSection rodata;
 	const auto& constPoolArr = rodataObj.require("constPool").asArray();
@@ -136,6 +164,13 @@ ProgramRodataSection extractRodataSection(const BinValue& rodataObj) {
 
 	rodata.staticModulePaths = readStringArray(rodataObj.require("staticModulePaths"), "ProgramImage: ProgramImage.sections.rodata.staticModulePaths");
 	return rodata;
+}
+
+BinValue encodeModuleProto(const std::pair<std::string, int>& entry) {
+	BinObject object;
+	object["path"] = BinValue(entry.first);
+	object["protoIndex"] = BinValue(entry.second);
+	return BinValue(std::move(object));
 }
 
 ProgramDataSection extractDataSection(const BinValue& dataObj) {
@@ -220,6 +255,28 @@ bool hasLuaExtension(std::string_view candidate) {
 		&& (candidate[dotIndex + 3] == 'a' || candidate[dotIndex + 3] == 'A');
 }
 
+const char* constRelocKindName(ProgramConstRelocKind kind) {
+	switch (kind) {
+		case ProgramConstRelocKind::Bx: return "bx";
+		case ProgramConstRelocKind::RkB: return "rk_b";
+		case ProgramConstRelocKind::RkC: return "rk_c";
+		case ProgramConstRelocKind::ConstB: return "const_b";
+		case ProgramConstRelocKind::ConstC: return "const_c";
+		case ProgramConstRelocKind::Gl: return "gl";
+		case ProgramConstRelocKind::Sys: return "sys";
+		case ProgramConstRelocKind::Module: return "module";
+	}
+	throw BMSX_RUNTIME_ERROR("ProgramImage: unsupported const reloc kind.");
+}
+
+BinValue encodeConstReloc(const ProgramConstReloc& reloc) {
+	BinObject object;
+	object["wordIndex"] = BinValue(reloc.wordIndex);
+	object["kind"] = BinValue(constRelocKindName(reloc.kind));
+	object["constIndex"] = BinValue(reloc.constIndex);
+	return BinValue(std::move(object));
+}
+
 } // namespace
 
 std::unique_ptr<Program> inflateProgram(const ProgramObjectSections& sections) {
@@ -262,6 +319,65 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 	}
 
 	return image;
+}
+
+std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
+	BinArray protos;
+	protos.reserve(asset.sections.text.protos.size());
+	for (const Proto& proto : asset.sections.text.protos) {
+		protos.push_back(encodeProto(proto));
+	}
+
+	BinObject text;
+	text["code"] = BinValue(BinBinary(asset.sections.text.code.begin(), asset.sections.text.code.end()));
+	text["protos"] = BinValue(std::move(protos));
+
+	BinArray constPool;
+	constPool.reserve(asset.sections.rodata.constPool.size());
+	for (const EncodedValue& value : asset.sections.rodata.constPool) {
+		constPool.push_back(encodedValueToBinValue(value));
+	}
+	BinArray moduleProtos;
+	moduleProtos.reserve(asset.sections.rodata.moduleProtos.size());
+	for (const auto& entry : asset.sections.rodata.moduleProtos) {
+		moduleProtos.push_back(encodeModuleProto(entry));
+	}
+	BinArray staticModulePaths;
+	staticModulePaths.reserve(asset.sections.rodata.staticModulePaths.size());
+	for (const std::string& path : asset.sections.rodata.staticModulePaths) {
+		staticModulePaths.push_back(BinValue(path));
+	}
+
+	BinObject rodata;
+	rodata["constPool"] = BinValue(std::move(constPool));
+	rodata["moduleProtos"] = BinValue(std::move(moduleProtos));
+	rodata["staticModulePaths"] = BinValue(std::move(staticModulePaths));
+
+	BinObject data;
+	data["bytes"] = BinValue(BinBinary(asset.sections.data.bytes.begin(), asset.sections.data.bytes.end()));
+
+	BinObject bss;
+	bss["byteCount"] = BinValue(static_cast<i64>(asset.sections.bss.byteCount));
+
+	BinObject sections;
+	sections["text"] = BinValue(std::move(text));
+	sections["rodata"] = BinValue(std::move(rodata));
+	sections["data"] = BinValue(std::move(data));
+	sections["bss"] = BinValue(std::move(bss));
+
+	BinArray constRelocs;
+	constRelocs.reserve(asset.link.constRelocs.size());
+	for (const ProgramConstReloc& reloc : asset.link.constRelocs) {
+		constRelocs.push_back(encodeConstReloc(reloc));
+	}
+	BinObject link;
+	link["constRelocs"] = BinValue(std::move(constRelocs));
+
+	BinObject root;
+	root["entryProtoIndex"] = BinValue(asset.entryProtoIndex);
+	root["sections"] = BinValue(std::move(sections));
+	root["link"] = BinValue(std::move(link));
+	return encodeBinary(BinValue(std::move(root)));
 }
 
 std::unique_ptr<ProgramMetadata> decodeProgramSymbolsImage(const uint8_t* data, size_t size) {

@@ -250,10 +250,19 @@ Current evidence:
 - TS and C++ VDP expose cart-visible fault latches as VDP status registers: `IO_VDP_STATUS` carries the fault bit, `IO_VDP_FAULT_CODE` / `IO_VDP_FAULT_DETAIL` carry the sticky-first reason, and `IO_VDP_FAULT_ACK` is write-one-to-clear. Save-state stores the sticky fault code/detail plus device state, not raw transient status pins.
 - Cart-originating VDP faults latch and cancel/drop device work instead of throwing host exceptions. Packet/header/count problems use `VDP_FAULT_STREAM_BAD_PACKET`; direct submit state errors use `VDP_FAULT_SUBMIT_STATE`; unknown command doorbells use `VDP_FAULT_CMD_BAD_DOORBELL`; busy submit rejection uses `VDP_FAULT_SUBMIT_BUSY`; DEX source faults use `VDP_FAULT_DEX_SOURCE_SLOT` or `VDP_FAULT_DEX_SOURCE_OOB`; invalid DEX scale and LINE width use their DEX fault codes; SBX/BBU faults use their unit-specific codes.
 - Current per-unit fault policy is explicit and test-covered: direct DEX command faults drop the command and keep the open direct frame; DEX faults reached while replaying a sealed FIFO/DMA stream abort that sealed stream frame; FIFO/DMA stream parser faults abort the stream frame; SBX frame-seal faults reject the frame; BBU packet faults reject the packet/stream frame; submit-busy faults reject the attempt without mutating the visible frame.
+- The TS and C++ VDP save-state stores now include the raw VDP registerfile and saved surface
+  pixel geometry. Restore rehydrates the MMIO register mirror from the VDP
+  owner, restores CPU-visible surface dimensions before copying saved pixels,
+  and marks the restored surface dirty for host upload. This keeps register
+  words and surface shape as VDP state rather than backend texture state.
 - Exceptions are reserved for emulator bugs and impossible internal states, such as broken save-state schema, impossible host transaction invariants, null host buffers, or internal surface registration mistakes.
 - `IO_VDP_DITHER` is a live VDP register. MMIO writes update the live latch directly in both runtimes; the old `syncRegisters()` read-self-back pass is gone.
 - VDP VRAM power-on garbage is seeded from explicit machine/boot entropy words instead of `Math.random`, `Date.now`, or host wall-clock state.
 - The 19-word `IO_VDP_CMD_ARG0` latch bank is the DEX/2D blitter ingress, not the whole VDP frontend. Direct MMIO writes and FIFO `REG1`/`REGN` replay feed the same latches, `IO_VDP_CMD`/FIFO `CMD` doorbells snapshot those latches, registers 10 and 11 are raw `DRAW_LAYER`/`DRAW_PRIORITY`, and register 12 is `DRAW_CTRL` for DEX flip/PMU control.
+- DEX frame ingress now has an explicit TS/C++ state word instead of a boolean
+  `open` latch. Direct MMIO `BEGIN_FRAME` enters `DirectOpen`; sealed FIFO/DMA
+  stream replay enters `StreamOpen`; frame seal and cancellation return the unit
+  to `Idle`; submit-busy status derives from that device state.
 - Current parallax status is DEX/PMU-owned parallax execution. PMU register writes latch raw bank words. DEX resolves the selected bank into per-BLIT `dstX`/`dstY`/scale geometry when it latches BLIT work, and DEX/LINE faults are surfaced through VDP fault latches.
 - Camera, PMU, SBX, and BBU state are real VDP unit state. SBX ingress is either the `IO_VDP_SBX_*` register window plus commit doorbell or a sealed `SKYBOX` packet. BBU ingress is the sealed `BILLBOARD` packet stream. Render backends consume resolved host-output state; they do not validate or program VDP device state.
 - `src/bmsx/render/vdp` and `src/bmsx_cpp/render/vdp` remain the renderer/backend side of the VDP host bridge. They may upload textures, execute ready blitter queues, present framebuffer pages, and clear dirty-surface pins through the explicit VDP host-output contract; they must not be imported by `machine/devices/vdp`.
@@ -508,7 +517,10 @@ The libretro platform serialization entry points are no longer placeholders:
 
 Recent save-state work also includes CPU/runtime state, RAM, the CPU-owned
 string pool, input, frame scheduler/VBLANK state, game-view state, render
-state, and VDP surface pixels.
+state, and VDP surface pixels. The VDP save-state now stores its raw register
+file and the logical geometry for saved surface pixel payloads, so restore
+rebuilds the cart-visible MMIO register mirror and CPU-visible surface shape
+through the VDP owner instead of relying on host texture state.
 
 Risk:
 
@@ -521,7 +533,7 @@ such as empty strings.
 Desired direction:
 
 - Add focused save/load tests that mutate RAM, interned CPU strings, VDP
-  surfaces, framebuffer pixels, atlas slots, input state, scheduler/VBLANK
+  framebuffer pixels, atlas slots, input state, scheduler/VBLANK
   state, and cart persistent state before restoring.
 - Exercise libretro serialization through the platform boundary, not only the
   lower-level runtime codec.
@@ -621,41 +633,57 @@ Already advanced in this goal:
   to the shared analysis utility.
 - Libretro save-state entry points are wired through the platform boundary, and
   a native save-state round-trip path exists in the working tree.
+- The native program-cart test fixture no longer owns the ROM/program wire
+  encoders or package layout. `tests/cpp/support/program_cart_fixture.cpp`
+  chooses the tiny RET program and minimal manifest identity, while
+  `machine/program/loader` owns `ProgramImage` encoding, `rompack/toc` owns TOC
+  encoding, and `rompack/format` owns cart manifest encoding plus section
+  offsets, boot-header fields, header bytes, and final cart-byte assembly. The
+  libretro save-state test cart now enters through those ROM/program owners
+  before `LibretroPlatform::loadRom` boots it.
+- VDP save-state coverage now includes the raw VDP registerfile and saved
+  surface geometry in both TS and C++. The focused VDP ingress tests mutate
+  register words, surface dimensions, and surface pixels, restore through the
+  VDP owner, then prove both the MMIO register mirror and the visible
+  framebuffer result come from the restored device state. The libretro
+  save-state test also mutates a VDP register through the platform-owned
+  runtime, restores it through `LibretroPlatform::loadState`, and uses that
+  restored register word to produce a visible framebuffer pixel.
+- DEX frame ingress no longer uses a loose boolean open latch. TS and C++ now
+  store the hardware ingress state as `Idle`, `DirectOpen`, or `StreamOpen`, so
+  direct MMIO submit, FIFO/DMA replay, frame seal, cancel, and submit-busy
+  status all consume the same explicit unit state.
 
 Open problems to continue with:
 
-1. The C++ program-cart fixture still owns too much ROM/program ABI shape.
-   `tests/cpp/support/program_cart_fixture.cpp` hand-assembles the encoded
-   `ProgramImage`, ROM TOC, and cart header. Even though it uses central
-   constants and endian/binencoder primitives, the schema ownership is wrong:
-   a fixture can drift from the real ROM/program packer contract. The next
-   cleanup step should move those producer operations to the central owners or
-   route the fixture through an existing owned packer path. The natural owners
-   are the program image loader/producer contract for `ProgramImage` encoding,
-   the ROM TOC owner for TOC encoding, and the ROM package/format owner for cart
-   header assembly.
+1. The libretro save-state proof is no longer blocked by a test-private cart
+   packer, but the proof is still narrow. The current native test covers public
+   `LibretroPlatform::loadRom` boot, runtime initialization, RAM restore, IRQ
+   line restore, cart-visible IRQ flags, one VDP registerfile restore, and a
+   restored-register-driven visible framebuffer pixel. It still needs a more
+   cart-driven mutation program instead of direct test mutation of runtime
+   state, plus device-by-device expansion for VDP framebuffer page/VBlank edge
+   timing, BBU/queued VDP work, input latches, cart-persistent state, and any
+   APU state that becomes machine-visible. The platform path itself should stay
+   public: `LibretroPlatform::loadRom` should create the console/runtime
+   through `ConsoleCore`, and cart program mode should be entered by the normal
+   console boot sequence, not by a private backdoor or manual runtime-state
+   patch.
 
-2. The libretro save-state proof remains incomplete until the cart image used
-   for that path is produced by an owner-owned ROM/program encoder. The platform
-   path itself should stay public: `LibretroPlatform::loadRom` should create the
-   console/runtime through `ConsoleCore`, and cart program mode should be entered
-   by the normal console boot sequence, not by a private backdoor or manual
-   runtime-state patch.
-
-3. `src/bmsx/ide/terminal/ui/mode.ts` remains a large IDE/terminal layering
+2. `src/bmsx/ide/terminal/ui/mode.ts` remains a large IDE/terminal layering
    hotspot. The known debt includes terminal imports from editor internals,
    wrapper-only methods, repeated panel layout/drawing logic, repeated numeric
    sanitization, empty-string fallback behavior, repeated command expression
    handling, and string OR-comparison dispatch. This should be cleaned in
    focused ownership slices, not hidden behind analyzer exceptions.
 
-4. `src/bmsx/ide/workbench/ui/code_tab/contexts.ts` still exposes several
+3. `src/bmsx/ide/workbench/ui/code_tab/contexts.ts` still exposes several
    wrapper-like state accessors. Some are public workbench contracts today, but
    the file remains a state-bucket smell. The next cleanup should either inline
    access at real owners or split code-tab context mutation/query responsibilities
    by actual lifecycle ownership.
 
-5. Geometry is not proven complete. It is more hardware-shaped than many
+4. Geometry is not proven complete. It is more hardware-shaped than many
    older surfaces because it has MMIO registers, scheduler service, IRQs,
    status/fault words, and mirrored TS/C++ controllers. That is not the same as
    being done. The geometry controller still needs an ownership pass for its
@@ -665,14 +693,14 @@ Open problems to continue with:
    `docs/geo_overlap2d_pass_v1.md` is a good hardware-contract note, but it does
    not certify the whole geometry device.
 
-6. The public API surface is not proven complete. Firmware globals, BIOS helper
+5. The public API surface is not proven complete. Firmware globals, BIOS helper
    APIs, Lua API metadata, editor overlay APIs, devtools APIs, and terminal or
    workspace command surfaces must be audited separately. The desired rule is
    still: cart-facing behavior goes through BIOS/firmware helpers or MMIO/RAM,
    editor/workbench helpers stay out of cart-visible semantics, and host/private
    runtime shortcuts do not become de-facto cartridge APIs.
 
-7. The broader emulator boundary work is still not globally complete. The VDP,
+6. The broader emulator boundary work is still not globally complete. The VDP,
    render host bridge, runtime startup, IDE/workspace edge, device APIs, and
    TS/C++ parity surfaces are better than before, but the goal should still be
    treated as subsystem-by-subsystem cleanup rather than a completed architecture
@@ -680,24 +708,23 @@ Open problems to continue with:
 
 If `/goal resume` is invoked, it should mean this order of work:
 
-1. Remove the local ROM/program encoders from the C++ program-cart fixture by
-   moving the producer logic to the central ROM/program owners or by using an
-   already-owned packer path. Do not add private backdoors, private-state
-   exposure, or local ABI helpers to make the fixture shorter.
-2. Revisit the libretro save-state path only after the fixture uses the real
-   ownership boundary. Keep the platform path public and cart-mode ownership
-   console-driven.
-3. Continue the IDE/terminal cleanup with `terminal/ui/mode.ts`, because it is
-   the next concentrated quality hotspot exposed by the current slice.
-4. Clean `code_tab/contexts.ts` state access after terminal mode no longer
-   needs editor/workbench internals by convenience.
-5. Audit Geometry as a device, not as a math helper: registers, latches,
+1. Continue VDP-as-hardware cleanup by extending explicit state, timing, and
+   fault ownership from DEX ingress into SBX, BBU, FBM, and VOUT without adding
+   renderer-facing scene APIs or wrapper layers.
+2. Audit Geometry as a device, not as a math helper: registers, latches,
    scheduler timing, IRQ/status/fault behavior, scratch ownership, save/load
    behavior, and TS/C++ parity should be checked as one hardware contract.
-6. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
+3. Add the APU hardware contract before audio grows further as host-side
+   convenience: MMIO/FIFO ingress, voice/channel state, mixer/timer ownership,
+   AOUT output, and cart-visible status/fault behavior.
+4. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
    APIs, Lua API metadata, devtools source APIs, overlay/editor APIs, terminal
    commands, and workspace APIs. Separate cart-visible contracts from editor or
    host-only conveniences.
+5. Continue the IDE/terminal cleanup with `terminal/ui/mode.ts`, because it is
+   the next concentrated quality hotspot exposed by the current slice.
+6. Clean `code_tab/contexts.ts` state access after terminal mode no longer
+   needs editor/workbench internals by convenience.
 7. Only then perform a fresh completion audit of the active goal against this
    document and the actual working tree. The expected result today is still
    "not complete" unless every open item above has been resolved by concrete
@@ -717,14 +744,17 @@ Completed foundation:
 
 Next recommended work:
 
-1. Finish the libretro save-state ownership path by removing local ROM/program
-   fixture encoders and routing cart image production through the central
-   ROM/program owners.
-2. Expand save-state coverage through the public platform/runtime boundary once
-   the ROM construction path is owner-owned.
-3. Continue TS/C++ parity cleanup subsystem by subsystem, including Geometry
-   and the public API surfaces instead of assuming they are already covered.
-4. Clean IDE/editor layering after the machine boundaries are safer, starting
+1. Continue VDP-as-hardware cleanup with explicit state/timing/fault contracts
+   for SBX, BBU, FBM, and VOUT, preserving direct VDP-owned hot paths and the
+   explicit host-output transaction boundary.
+2. Audit Geometry as a real coprocessor device, including register/latch
+   ownership, scheduler timing, scratch/result memory, status/fault behavior,
+   and focused TS/C++ tests.
+3. Add an APU architecture section and then implement APU hardware slices
+   through MMIO/FIFO/device state/AOUT instead of host sound shortcuts.
+4. Continue TS/C++ parity cleanup subsystem by subsystem, including public API
+   surfaces instead of assuming they are already covered.
+5. Clean IDE/editor layering after the machine boundaries are safer, starting
    with `terminal/ui/mode.ts` and then code-tab context ownership.
 
 This order protects future feature work. The goal is not to make the codebase

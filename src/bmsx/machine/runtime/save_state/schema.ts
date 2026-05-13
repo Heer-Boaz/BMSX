@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 16;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 17;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
@@ -135,4 +135,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'apuStatus',
 	'apuFaultCode',
 	'apuFaultDetail',
+	'vdpRegisterWords',
+	'surfaceWidth',
+	'surfaceHeight',
 ] as const;
