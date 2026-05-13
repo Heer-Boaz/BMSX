@@ -619,8 +619,8 @@ export class VDP implements VramWriteSink {
 	}
 
 
-	public setVblankStatus(active: boolean): void {
-		this.vout.setVblankActive(active);
+	public setScanoutTiming(vblankActive: boolean, cyclesIntoFrame: number, cyclesPerFrame: number, vblankStartCycle: number): void {
+		this.vout.setScanoutTiming(vblankActive, cyclesIntoFrame, cyclesPerFrame, vblankStartCycle);
 		this.fault.setStatusFlag(VDP_STATUS_VBLANK, this.vout.vblankActive);
 	}
 

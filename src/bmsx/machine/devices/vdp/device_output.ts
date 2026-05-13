@@ -39,6 +39,8 @@ export type VdpSurfaceUpload = Readonly<{
 export type VdpDeviceOutput = Readonly<{
 	ditherType: number;
 	scanoutPhase: number;
+	scanoutX: number;
+	scanoutY: number;
 	xfMatrixWords: ArrayLike<number>;
 	xfViewMatrixIndex: number;
 	xfProjectionMatrixIndex: number;

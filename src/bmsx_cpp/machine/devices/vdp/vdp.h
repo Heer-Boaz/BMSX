@@ -82,7 +82,7 @@ public:
 	void initializeRegisters();
 	void resetIngressState();
 	void resetStatus();
-	void setVblankStatus(bool active);
+	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle);
 	bool canAcceptVdpSubmit() const;
 	void acceptSubmitAttempt();
 	void rejectSubmitAttempt();

@@ -50,7 +50,7 @@ void VblankState::reset(Runtime& runtime) {
 	runtime.machine.irqController.postLoad();
 	runtime.machine.vdp.resetStatus();
 	if (m_vblankStartCycle == 0) {
-		setVblankStatus(runtime, true);
+		publishVblankTiming(runtime, true);
 	}
 	scheduleCurrentFrameTimers(runtime);
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles());
@@ -73,7 +73,7 @@ void VblankState::restore(Runtime& runtime, const RuntimeVblankSnapshot& state) 
 	m_lastCompletedVblankSequence = 0;
 	m_activeTickCompleted = false;
 	runtime.machine.irqController.postLoad();
-	setVblankStatus(runtime, m_vblankStartCycle == 0 || getCyclesIntoFrame(runtime) >= m_vblankStartCycle);
+	publishVblankTiming(runtime, m_vblankStartCycle == 0 || getCyclesIntoFrame(runtime) >= m_vblankStartCycle);
 	scheduleCurrentFrameTimers(runtime);
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles());
 }
@@ -93,14 +93,16 @@ void VblankState::handleBeginTimer(Runtime& runtime) {
 }
 
 void VblankState::handleEndTimer(Runtime& runtime) {
-	if (m_vblankActive) {
-		setVblankStatus(runtime, false);
-	}
 	m_frameStartCycle = runtime.machine.scheduler.nowCycles();
-	scheduleCurrentFrameTimers(runtime);
 	if (m_vblankStartCycle == 0) {
+		scheduleCurrentFrameTimers(runtime);
 		enterVblank(runtime);
+		return;
 	}
+	if (m_vblankActive) {
+		publishVblankTiming(runtime, false);
+	}
+	scheduleCurrentFrameTimers(runtime);
 }
 
 void VblankState::scheduleCurrentFrameTimers(Runtime& runtime) {
@@ -111,16 +113,16 @@ void VblankState::scheduleCurrentFrameTimers(Runtime& runtime) {
 	}
 }
 
-void VblankState::setVblankStatus(Runtime& runtime, bool active) {
+void VblankState::publishVblankTiming(Runtime& runtime, bool active) {
 	m_vblankActive = active;
-	runtime.machine.vdp.setVblankStatus(active);
+	runtime.machine.vdp.setScanoutTiming(active, getCyclesIntoFrame(runtime), runtime.timing.cycleBudgetPerFrame, m_vblankStartCycle);
 }
 
 void VblankState::enterVblank(Runtime& runtime) {
 	m_vblankSequence += 1;
 	runtime.machine.vdp.presentReadyFrameOnVblankEdge();
 	runtime.machine.inputController.onVblankEdge();
-	setVblankStatus(runtime, true);
+	publishVblankTiming(runtime, true);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	if (runtime.frameLoop.frameActive) {
 		completeTickIfPending(runtime, runtime.frameLoop.frameState, m_vblankSequence);

@@ -11,6 +11,8 @@ VdpVoutUnit::VdpVoutUnit(size_t billboardCapacity) {
 void VdpVoutUnit::reset(i32 ditherType, u32 frameBufferWidth, u32 frameBufferHeight) {
 	m_liveDitherType = ditherType;
 	m_scanoutPhase = VdpVoutScanoutPhase::Active;
+	m_scanoutX = 0u;
+	m_scanoutY = 0u;
 	m_liveFrameBufferWidth = frameBufferWidth;
 	m_liveFrameBufferHeight = frameBufferHeight;
 	m_visibleDitherType = ditherType;
@@ -37,8 +39,24 @@ void VdpVoutUnit::configureScanout(u32 frameBufferWidth, u32 frameBufferHeight) 
 	m_state = VdpVoutState::RegisterLatched;
 }
 
-void VdpVoutUnit::setVblankActive(bool active) {
-	m_scanoutPhase = active ? VdpVoutScanoutPhase::Vblank : VdpVoutScanoutPhase::Active;
+void VdpVoutUnit::setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle) {
+	m_scanoutPhase = vblankActive ? VdpVoutScanoutPhase::Vblank : VdpVoutScanoutPhase::Active;
+	if (m_liveFrameBufferWidth == 0u || m_liveFrameBufferHeight == 0u) {
+		m_scanoutX = 0u;
+		m_scanoutY = 0u;
+		return;
+	}
+	if (vblankActive) {
+		const int vblankCycles = cyclesPerFrame - vblankStartCycle;
+		const int vblankCycle = cyclesIntoFrame - vblankStartCycle;
+		m_scanoutX = 0u;
+		m_scanoutY = m_liveFrameBufferHeight + static_cast<u32>((static_cast<u64>(vblankCycle) * static_cast<u64>(m_liveFrameBufferHeight)) / static_cast<u64>(vblankCycles));
+		return;
+	}
+	const u64 totalPixels = static_cast<u64>(m_liveFrameBufferWidth) * static_cast<u64>(m_liveFrameBufferHeight);
+	const u64 pixel = (static_cast<u64>(cyclesIntoFrame) * totalPixels) / static_cast<u64>(vblankStartCycle);
+	m_scanoutX = static_cast<u32>(pixel % static_cast<u64>(m_liveFrameBufferWidth));
+	m_scanoutY = static_cast<u32>(pixel / static_cast<u64>(m_liveFrameBufferWidth));
 }
 
 const VdpVoutFrameOutput& VdpVoutUnit::sealFrame() {
@@ -78,6 +96,8 @@ void VdpVoutUnit::presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled) {
 const VdpDeviceOutput& VdpVoutUnit::readDeviceOutput() {
 	m_deviceOutput.ditherType = m_visibleDitherType;
 	m_deviceOutput.scanoutPhase = static_cast<u32>(m_scanoutPhase);
+	m_deviceOutput.scanoutX = m_scanoutX;
+	m_deviceOutput.scanoutY = m_scanoutY;
 	m_deviceOutput.xfMatrixWords = &m_visibleXf.matrixWords;
 	m_deviceOutput.xfViewMatrixIndex = m_visibleXf.viewMatrixIndex;
 	m_deviceOutput.xfProjectionMatrixIndex = m_visibleXf.projectionMatrixIndex;

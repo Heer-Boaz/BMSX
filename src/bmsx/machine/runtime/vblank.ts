@@ -71,7 +71,7 @@ export class VblankState {
 		runtime.machine.irqController.postLoad();
 		runtime.machine.vdp.resetStatus();
 		if (this.vblankStartCycle === 0) {
-			this.setVblankStatus(true);
+			this.publishVblankTiming(true);
 		}
 		this.scheduleCurrentFrameTimers();
 		refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles);
@@ -95,7 +95,7 @@ export class VblankState {
 		this.lastCompletedVblankSequence = 0;
 		this.activeTickCompleted = false;
 		runtime.machine.irqController.postLoad();
-		this.setVblankStatus(this.vblankStartCycle === 0 || this.getCyclesIntoFrame() >= this.vblankStartCycle);
+		this.publishVblankTiming(this.vblankStartCycle === 0 || this.getCyclesIntoFrame() >= this.vblankStartCycle);
 		this.scheduleCurrentFrameTimers();
 		refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles);
 	}
@@ -115,15 +115,17 @@ export class VblankState {
 	}
 
 	public handleEndTimer(): void {
-		if (this.vblankActive) {
-			this.setVblankStatus(false);
-		}
 		const runtime = this.runtime;
 		this.frameStartCycle = runtime.machine.scheduler.nowCycles;
-		this.scheduleCurrentFrameTimers();
 		if (this.vblankStartCycle === 0) {
+			this.scheduleCurrentFrameTimers();
 			this.enterVblank();
+			return;
 		}
+		if (this.vblankActive) {
+			this.publishVblankTiming(false);
+		}
+		this.scheduleCurrentFrameTimers();
 	}
 
 	private scheduleCurrentFrameTimers(): void {
@@ -134,10 +136,10 @@ export class VblankState {
 		}
 	}
 
-	private setVblankStatus(active: boolean): void {
+	private publishVblankTiming(active: boolean): void {
 		const runtime = this.runtime;
 		this.vblankActive = active;
-		runtime.machine.vdp.setVblankStatus(active);
+		runtime.machine.vdp.setScanoutTiming(active, this.getCyclesIntoFrame(), runtime.timing.cycleBudgetPerFrame, this.vblankStartCycle);
 	}
 
 	private enterVblank(): void {
@@ -145,7 +147,7 @@ export class VblankState {
 		this.vblankSequence += 1;
 		runtime.machine.vdp.presentReadyFrameOnVblankEdge();
 		runtime.machine.inputController.onVblankEdge();
-		this.setVblankStatus(true);
+		this.publishVblankTiming(true);
 		runtime.machine.irqController.raise(IRQ_VBLANK);
 		const frameState = runtime.frameLoop.currentFrameState;
 		if (frameState !== null) {

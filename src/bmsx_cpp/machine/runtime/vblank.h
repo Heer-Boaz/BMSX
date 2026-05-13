@@ -28,7 +28,7 @@ public:
 
 private:
 	void scheduleCurrentFrameTimers(Runtime& runtime);
-	void setVblankStatus(Runtime& runtime, bool active);
+	void publishVblankTiming(Runtime& runtime, bool active);
 	void enterVblank(Runtime& runtime);
 	void completeTickIfPending(Runtime& runtime, FrameState& frameState, uint64_t vblankSequence);
 

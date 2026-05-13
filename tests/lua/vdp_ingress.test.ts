@@ -735,16 +735,27 @@ test('VDP VRAM read faults latch status instead of throwing', () => {
 	assert.deepEqual(Array.from(out), [0, 0, 0, 0]);
 });
 
-test('VDP VOUT scanout phase owns the VBLANK output pin', () => {
+test('VDP VOUT scanout timing owns the VBLANK output pin', () => {
 	const { memory, vdp } = createVdp();
 
 	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
+	assert.equal(vdp.readDeviceOutput().scanoutX, 0);
+	assert.equal(vdp.readDeviceOutput().scanoutY, 0);
 	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, false);
-	vdp.setVblankStatus(true);
-	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_VBLANK);
-	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, true);
-	vdp.setVblankStatus(false);
+	vdp.setScanoutTiming(false, 40, 100, 80);
 	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
+	assert.equal(vdp.readDeviceOutput().scanoutX, 0);
+	assert.equal(vdp.readDeviceOutput().scanoutY, 106);
+	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, false);
+	vdp.setScanoutTiming(true, 90, 100, 80);
+	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_VBLANK);
+	assert.equal(vdp.readDeviceOutput().scanoutX, 0);
+	assert.equal(vdp.readDeviceOutput().scanoutY, 318);
+	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, true);
+	vdp.setScanoutTiming(false, 20, 100, 80);
+	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
+	assert.equal(vdp.readDeviceOutput().scanoutX, 0);
+	assert.equal(vdp.readDeviceOutput().scanoutY, 53);
 	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, false);
 });
 

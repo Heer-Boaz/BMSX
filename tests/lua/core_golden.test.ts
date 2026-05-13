@@ -38,6 +38,7 @@ import {
 		IO_SYS_BUS_FAULT_CODE,
 	IRQ_DMA_ERROR,
 		IRQ_IMG_ERROR,
+	IRQ_VBLANK,
 	} from '../../src/bmsx/machine/bus/io';
 import { transformFixed16 } from '../../src/bmsx/machine/common/numeric';
 	import { CPU } from '../../src/bmsx/machine/cpu/cpu';
@@ -47,6 +48,8 @@ import { IrqController } from '../../src/bmsx/machine/devices/irq/controller';
 import { Memory, type VramWriteSink } from '../../src/bmsx/machine/memory/memory';
 import { GEO_SCRATCH_BASE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, VRAM_PRIMARY_SLOT_BASE, VRAM_STAGING_BASE } from '../../src/bmsx/machine/memory/map';
 	import type { VDP } from '../../src/bmsx/machine/devices/vdp/vdp';
+import type { Runtime } from '../../src/bmsx/machine/runtime/runtime';
+import { VblankState } from '../../src/bmsx/machine/runtime/vblank';
 import { cyclesUntilBudgetUnits } from '../../src/bmsx/machine/scheduler/budget';
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
 import { HeadlessGPUBackend } from '../../src/bmsx/render/headless/backend';
@@ -272,6 +275,69 @@ test('core golden: budget and fixed16 datapaths match native integer semantics',
 	for (const [m0, m1, tx, x, y, expected] of TRANSFORM_CASES) {
 		assert.equal(transformFixed16(m0, m1, tx, x, y), expected);
 	}
+});
+
+test('core golden: runtime VBlank end publishes scanout at the new frame origin', () => {
+	const memory = new Memory({ systemRom: new Uint8Array() });
+	const scheduler = new DeviceScheduler(new CPU(memory));
+	const scanoutCalls: Array<{ active: boolean; cyclesIntoFrame: number }> = [];
+	let raisedIrq = 0;
+	const runtime = {
+		timing: {
+			cpuHz: 5000,
+			cycleBudgetPerFrame: 100,
+			dmaBytesPerSecIso: 0,
+			dmaBytesPerSecBulk: 0,
+			imgDecBytesPerSec: 0,
+			geoWorkUnitsPerSec: 0,
+			vdpWorkUnitsPerSec: 0,
+		},
+		machine: {
+			scheduler,
+			inputController: {
+				sampleArmed: false,
+				onVblankEdge() { },
+			},
+			irqController: {
+				postLoad() { },
+				raise(irq: number) {
+					raisedIrq = irq;
+				},
+			},
+			vdp: {
+				resetStatus() { },
+				presentReadyFrameOnVblankEdge() {
+					return false;
+				},
+				setScanoutTiming(active: boolean, cyclesIntoFrame: number) {
+					scanoutCalls.push({ active, cyclesIntoFrame });
+				},
+			},
+			refreshDeviceTimings() { },
+		},
+		frameLoop: {
+			currentFrameState: null,
+		},
+	} as unknown as Runtime;
+	const vblank = new VblankState(runtime);
+	vblank.setVblankCycles(20);
+
+	scheduler.setNowCycles(80);
+	vblank.handleBeginTimer();
+	assert.equal(raisedIrq, IRQ_VBLANK);
+	assert.deepEqual(scanoutCalls[0], { active: true, cyclesIntoFrame: 80 });
+
+	scheduler.setNowCycles(100);
+	vblank.handleEndTimer();
+	assert.deepEqual(scanoutCalls[1], { active: false, cyclesIntoFrame: 0 });
+
+	scanoutCalls.length = 0;
+	scheduler.setNowCycles(0);
+	vblank.setVblankCycles(100);
+	assert.deepEqual(scanoutCalls[0], { active: true, cyclesIntoFrame: 0 });
+	scheduler.setNowCycles(100);
+	vblank.handleEndTimer();
+	assert.deepEqual(scanoutCalls[1], { active: true, cyclesIntoFrame: 0 });
 });
 
 test('core golden: texture keys use the canonical direct string format', () => {

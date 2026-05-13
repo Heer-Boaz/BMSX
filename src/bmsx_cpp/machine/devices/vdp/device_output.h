@@ -63,6 +63,8 @@ public:
 struct VdpDeviceOutput {
 	i32 ditherType = 0;
 	u32 scanoutPhase = 0u;
+	u32 scanoutX = 0u;
+	u32 scanoutY = 0u;
 	const std::array<u32, VDP_XF_MATRIX_REGISTER_WORDS>* xfMatrixWords = nullptr;
 	u32 xfViewMatrixIndex = 0;
 	u32 xfProjectionMatrixIndex = 0;

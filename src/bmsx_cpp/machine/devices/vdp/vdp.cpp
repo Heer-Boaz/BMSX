@@ -250,8 +250,8 @@ VdpLatchedGeometry VDP::readLatchedGeometry() const {
 }
 
 // start hot-path -- VDP status, command ingress, scheduler service, and VRAM row access run on frame-critical paths.
-void VDP::setVblankStatus(bool active) {
-	m_vout.setVblankActive(active);
+void VDP::setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle) {
+	m_vout.setScanoutTiming(vblankActive, cyclesIntoFrame, cyclesPerFrame, vblankStartCycle);
 	m_fault.setStatusFlag(VDP_STATUS_VBLANK, m_vout.vblankActive());
 }
 

@@ -6,6 +6,7 @@
 #include "machine/cpu/opcode_info.h"
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/irq/controller.h"
+#include "machine/devices/vdp/vout.h"
 #include "machine/firmware/builtin_descriptors.h"
 #include "render/3d/camera.h"
 #include "render/3d/light.h"
@@ -849,14 +850,33 @@ void testRuntimeVblankEdgeCompletesActiveTickGolden() {
 	require(!runtime.vblank.tickCompleted(), "new active tick should not be completed before VBlank");
 
 	const bmsx::i64 sequenceBefore = runtime.frameScheduler.lastTickSequence;
+	runtime.machine.scheduler.setNowCycles(80);
 	runtime.vblank.handleBeginTimer(runtime);
 	require(runtime.vblank.tickCompleted(), "VBlank edge should complete the active runtime tick");
 	require(runtime.frameScheduler.lastTickSequence == sequenceBefore + 1, "VBlank edge should enqueue exactly one tick completion");
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "VBlank edge should assert the maskable IRQ line");
 	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "VBlank edge should raise the cart-visible VBlank IRQ");
+	require(runtime.machine.vdp.readDeviceOutput().scanoutPhase == static_cast<bmsx::u32>(bmsx::VdpVoutScanoutPhase::Vblank), "VBlank edge should publish VOUT VBLANK scanout phase");
+	require(runtime.machine.vdp.readDeviceOutput().scanoutX == 0u, "VBlank edge should publish VOUT scanout X at the left edge");
+	require(runtime.machine.vdp.readDeviceOutput().scanoutY == 212u, "VBlank edge should publish VOUT scanout Y at the first blank line");
 
 	runtime.vblank.handleBeginTimer(runtime);
 	require(runtime.frameScheduler.lastTickSequence == sequenceBefore + 1, "same active VBlank should not double-complete the tick");
+	runtime.machine.scheduler.setNowCycles(100);
+	runtime.vblank.handleEndTimer(runtime);
+	require(runtime.machine.vdp.readDeviceOutput().scanoutPhase == static_cast<bmsx::u32>(bmsx::VdpVoutScanoutPhase::Active), "VBlank end should publish active scanout phase");
+	require(runtime.machine.vdp.readDeviceOutput().scanoutX == 0u, "VBlank end should publish new-frame scanout X");
+	require(runtime.machine.vdp.readDeviceOutput().scanoutY == 0u, "VBlank end should publish new-frame scanout Y");
+
+	runtime.vblank.setVblankCycles(runtime, 100);
+	require(runtime.machine.vdp.readDeviceOutput().scanoutPhase == static_cast<bmsx::u32>(bmsx::VdpVoutScanoutPhase::Vblank), "full-frame VBlank should publish VOUT VBLANK scanout phase");
+	require(runtime.machine.vdp.readDeviceOutput().scanoutX == 0u, "full-frame VBlank should publish VOUT scanout X at the left edge");
+	require(runtime.machine.vdp.readDeviceOutput().scanoutY == 212u, "full-frame VBlank should publish VOUT scanout Y at the first blank line");
+	runtime.machine.scheduler.setNowCycles(100);
+	runtime.vblank.handleEndTimer(runtime);
+	require(runtime.machine.vdp.readDeviceOutput().scanoutPhase == static_cast<bmsx::u32>(bmsx::VdpVoutScanoutPhase::Vblank), "full-frame VBlank frame end should keep VOUT in VBLANK");
+	require(runtime.machine.vdp.readDeviceOutput().scanoutX == 0u, "full-frame VBlank frame end should keep scanout X at the left edge");
+	require(runtime.machine.vdp.readDeviceOutput().scanoutY == 212u, "full-frame VBlank frame end should publish the next blank line origin");
 	runtime.frameLoop.abandonFrameState(runtime);
 }
 

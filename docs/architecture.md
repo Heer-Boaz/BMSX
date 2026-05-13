@@ -288,13 +288,14 @@ Current evidence:
 - VOUT now owns mirrored TS/C++ visible video-output state in
   `machine/devices/vdp/vout`: `Idle` / `RegisterLatched` / `FrameSealed` /
   `FramePresented` state, the live dither register, active/VBlank scanout
-  phase, retained sealed frame output, live/frame-sealed/visible framebuffer
-  scanout dimensions, visible dither, visible XF matrix selection, visible
+  phase and scanout X/Y position, retained sealed frame output,
+  live/frame-sealed/visible framebuffer scanout dimensions, visible dither,
+  visible XF matrix selection, visible
   resolved SBX samples, visible BBU instance RAM, and the retained
   `VdpDeviceOutput` host transaction. VDP maps `IO_VDP_DITHER`, framebuffer-size
-  changes, VBlank phase changes, frame seal, VBlank frame promotion, and
-  VDP-owned VRAM/sample resolution into that unit; render code still consumes
-  explicit device-output values instead of interpreting cart intent.
+  changes, runtime VBlank timing changes, frame seal, VBlank frame promotion,
+  and VDP-owned VRAM/sample resolution into that unit; render code still
+  consumes explicit device-output values instead of interpreting cart intent.
 - Current parallax status is DEX/PMU-owned parallax execution. PMU register writes latch raw bank words. DEX resolves the selected bank into per-BLIT `dstX`/`dstY`/scale geometry when it latches BLIT work, and DEX/LINE faults are surfaced through VDP fault latches.
 - Camera, PMU, SBX, and BBU state are real VDP unit state. SBX ingress is either the `IO_VDP_SBX_*` register window plus commit doorbell or a sealed `SKYBOX` packet. BBU ingress is the sealed `BILLBOARD` packet stream. Render backends consume resolved host-output state; they do not validate or program VDP device state.
 - `src/bmsx/render/vdp` and `src/bmsx_cpp/render/vdp` remain the renderer/backend side of the VDP host bridge. They may upload textures, execute ready blitter queues, present framebuffer pages, and clear dirty-surface pins through the explicit VDP host-output contract; they must not be imported by `machine/devices/vdp`.
@@ -695,8 +696,9 @@ Already advanced in this goal:
   sealed face samples against VDP-owned VRAM/surface state, and raises the
   returned SBX fault decision.
 - VOUT now owns the live/frame-sealed/visible host-output buffers for dither,
-  active/VBlank scanout phase, framebuffer scanout dimensions, XF, resolved SBX
-  samples, BBU instances, and retained `VdpDeviceOutput` in both TS and C++.
+  active/VBlank scanout phase, scanout X/Y position, framebuffer scanout
+  dimensions, XF, resolved SBX samples, BBU instances, and retained
+  `VdpDeviceOutput` in both TS and C++.
   VDP still performs VRAM/sample resolution and FBM dimension ownership, but it
   no longer passes framebuffer dimensions through the host-output read path or
   carries separate committed camera/skybox/billboard output mirrors.
@@ -763,9 +765,9 @@ Open problems to continue with:
 
 If `/goal resume` is invoked, it should mean this order of work:
 
-1. Continue VDP-as-hardware cleanup by extending VOUT beyond the current dither
-   live/visible latch into explicit video timing, scanout, and host-output
-   ownership without adding renderer-facing scene APIs or wrapper layers.
+1. Continue VDP-as-hardware cleanup by extending the current VOUT video-timing
+   ownership toward full scanline/dot timing and host-output ownership without
+   adding renderer-facing scene APIs or wrapper layers.
 2. Audit Geometry as a device, not as a math helper: registers, latches,
    scheduler timing, IRQ/status/fault behavior, scratch ownership, save/load
    behavior, and TS/C++ parity should be checked as one hardware contract.
@@ -799,9 +801,9 @@ Completed foundation:
 
 Next recommended work:
 
-1. Continue VDP-as-hardware cleanup by expanding VOUT from live/visible dither
-   and scanout dimensions into explicit scanline/output timing, preserving
-   direct VDP-owned hot paths and the explicit host-output transaction boundary.
+1. Continue VDP-as-hardware cleanup by expanding VOUT from current phase/X/Y
+   timing into fuller scanline/dot timing, preserving direct VDP-owned hot paths
+   and the explicit host-output transaction boundary.
 2. Audit Geometry as a real coprocessor device, including register/latch
    ownership, scheduler timing, scratch/result memory, status/fault behavior,
    and focused TS/C++ tests.

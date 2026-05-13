@@ -37,6 +37,8 @@ export class VdpVoutUnit {
 	private _state: VdpVoutState = VDP_VOUT_STATE_IDLE;
 	private liveDither = 0;
 	private _scanoutPhase: VdpVoutScanoutPhase = VDP_VOUT_SCANOUT_PHASE_ACTIVE;
+	private scanoutX = 0;
+	private scanoutY = 0;
 	private liveFrameBufferWidth = 0;
 	private liveFrameBufferHeight = 0;
 	private visibleDither = 0;
@@ -54,6 +56,8 @@ export class VdpVoutUnit {
 	private readonly deviceOutput: MutableVdpDeviceOutput = {
 		ditherType: 0,
 		scanoutPhase: VDP_VOUT_SCANOUT_PHASE_ACTIVE,
+		scanoutX: 0,
+		scanoutY: 0,
 		xfMatrixWords: this.visibleXf.matrixWords,
 		xfViewMatrixIndex: 0,
 		xfProjectionMatrixIndex: 0,
@@ -87,6 +91,8 @@ export class VdpVoutUnit {
 	public reset(ditherType = 0, frameBufferWidth = 0, frameBufferHeight = 0): void {
 		this.liveDither = ditherType;
 		this._scanoutPhase = VDP_VOUT_SCANOUT_PHASE_ACTIVE;
+		this.scanoutX = 0;
+		this.scanoutY = 0;
 		this.liveFrameBufferWidth = frameBufferWidth;
 		this.liveFrameBufferHeight = frameBufferHeight;
 		this.visibleDither = ditherType;
@@ -113,8 +119,25 @@ export class VdpVoutUnit {
 		this._state = VDP_VOUT_STATE_REGISTER_LATCHED;
 	}
 
-	public setVblankActive(active: boolean): void {
-		this._scanoutPhase = active ? VDP_VOUT_SCANOUT_PHASE_VBLANK : VDP_VOUT_SCANOUT_PHASE_ACTIVE;
+	public setScanoutTiming(vblankActive: boolean, cyclesIntoFrame: number, cyclesPerFrame: number, vblankStartCycle: number): void {
+		this._scanoutPhase = vblankActive ? VDP_VOUT_SCANOUT_PHASE_VBLANK : VDP_VOUT_SCANOUT_PHASE_ACTIVE;
+		if (this.liveFrameBufferWidth === 0 || this.liveFrameBufferHeight === 0) {
+			this.scanoutX = 0;
+			this.scanoutY = 0;
+			return;
+		}
+		if (vblankActive) {
+			const vblankCycles = cyclesPerFrame - vblankStartCycle;
+			const vblankCycle = cyclesIntoFrame - vblankStartCycle;
+			const scanoutYNumerator = vblankCycle * this.liveFrameBufferHeight;
+			this.scanoutX = 0;
+			this.scanoutY = this.liveFrameBufferHeight + (scanoutYNumerator - scanoutYNumerator % vblankCycles) / vblankCycles;
+			return;
+		}
+		const pixelNumerator = cyclesIntoFrame * this.liveFrameBufferWidth * this.liveFrameBufferHeight;
+		const pixel = (pixelNumerator - pixelNumerator % vblankStartCycle) / vblankStartCycle;
+		this.scanoutX = pixel % this.liveFrameBufferWidth;
+		this.scanoutY = (pixel - this.scanoutX) / this.liveFrameBufferWidth;
 	}
 
 	public sealFrame(): VdpVoutFrameOutput {
@@ -159,6 +182,8 @@ export class VdpVoutUnit {
 		const output = this.deviceOutput;
 		output.ditherType = this.visibleDither;
 		output.scanoutPhase = this._scanoutPhase;
+		output.scanoutX = this.scanoutX;
+		output.scanoutY = this.scanoutY;
 		output.xfViewMatrixIndex = this.visibleXf.viewMatrixIndex;
 		output.xfProjectionMatrixIndex = this.visibleXf.projectionMatrixIndex;
 		output.skyboxEnabled = this.visibleSkyboxEnabled;

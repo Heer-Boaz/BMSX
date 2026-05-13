@@ -934,16 +934,27 @@ void testVramReadFaultsLatchStatus() {
 	require(bytes == std::array<uint8_t, 4>{{0u, 0u, 0u, 0u}}, "OOB VRAM read should return zero bytes");
 }
 
-void testVoutScanoutPhaseOwnsVblankOutputPin() {
+void testVoutScanoutTimingOwnsVblankOutputPin() {
 	Harness h;
 
 	require(h.vdp.readDeviceOutput().scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Active), "VOUT scanout should start active");
+	require(h.vdp.readDeviceOutput().scanoutX == 0u, "VOUT scanout X should start at the left edge");
+	require(h.vdp.readDeviceOutput().scanoutY == 0u, "VOUT scanout Y should start at the top edge");
 	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_VBLANK) == 0u, "VDP status should start outside VBLANK");
-	h.vdp.setVblankStatus(true);
+	h.vdp.setScanoutTiming(false, 40, 100, 80);
+	require(h.vdp.readDeviceOutput().scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Active), "VOUT scanout should remain active before VBLANK");
+	require(h.vdp.readDeviceOutput().scanoutX == 0u, "VOUT active scanout X should advance through visible pixels");
+	require(h.vdp.readDeviceOutput().scanoutY == 106u, "VOUT active scanout Y should advance through visible lines");
+	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_VBLANK) == 0u, "VDP status should remain outside VBLANK before the edge");
+	h.vdp.setScanoutTiming(true, 90, 100, 80);
 	require(h.vdp.readDeviceOutput().scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Vblank), "VOUT scanout should enter VBLANK");
+	require(h.vdp.readDeviceOutput().scanoutX == 0u, "VOUT VBLANK scanout X should stay at the left edge");
+	require(h.vdp.readDeviceOutput().scanoutY == 318u, "VOUT VBLANK scanout Y should advance past visible lines");
 	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_VBLANK) != 0u, "VDP status should reflect VOUT VBLANK phase");
-	h.vdp.setVblankStatus(false);
+	h.vdp.setScanoutTiming(false, 20, 100, 80);
 	require(h.vdp.readDeviceOutput().scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Active), "VOUT scanout should return to active output");
+	require(h.vdp.readDeviceOutput().scanoutX == 0u, "VOUT active scanout X should restart with visible pixels");
+	require(h.vdp.readDeviceOutput().scanoutY == 53u, "VOUT active scanout Y should restart with visible lines");
 	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_VBLANK) == 0u, "VDP status should clear with VOUT active phase");
 }
 
@@ -1055,7 +1066,7 @@ int main() {
 		{"VDP readback OOB fault status", testReadbackOobFaultsLatchStatus},
 		{"VDP VRAM write fault status", testVramWriteFaultsLatchStatus},
 		{"VDP VRAM read fault status", testVramReadFaultsLatchStatus},
-		{"VDP VOUT scanout phase", testVoutScanoutPhaseOwnsVblankOutputPin},
+		{"VDP VOUT scanout timing", testVoutScanoutTimingOwnsVblankOutputPin},
 		{"VDP dither live latch", testDitherRegisterWritesUpdateLiveLatch},
 		{"VDP save-state registerfile/surface geometry", testSaveStateRestoresRegisterFileAndSurfaceGeometry},
 	};
