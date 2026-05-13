@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 17;
+export const RUNTIME_SAVE_STATE_WIRE_VERSION = 18;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
@@ -138,4 +138,25 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'vdpRegisterWords',
 	'surfaceWidth',
 	'surfaceHeight',
+	'geometry',
+	'registerWords',
+	'activeJob',
+	'cmd',
+	'src0',
+	'src1',
+	'src2',
+	'dst0',
+	'dst1',
+	'count',
+	'param0',
+	'param1',
+	'stride0',
+	'stride1',
+	'stride2',
+	'processed',
+	'resultCount',
+	'exactPairCount',
+	'broadphasePairCount',
+	'workCarry',
+	'availableWorkUnits',
 ] as const;

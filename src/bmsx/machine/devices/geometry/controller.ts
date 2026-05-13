@@ -72,7 +72,7 @@ import type { IrqController } from '../irq/controller';
 import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
 import { DEVICE_SERVICE_GEO, type DeviceScheduler } from '../../scheduler/device';
 
-type GeoJob = {
+export type GeometryJobState = {
 	cmd: number;
 	src0: number;
 	src1: number;
@@ -90,6 +90,43 @@ type GeoJob = {
 	exactPairCount: number;
 	broadphasePairCount: number;
 };
+
+export type GeometryControllerState = {
+	registerWords: number[];
+	activeJob: GeometryJobState | null;
+	workCarry: number;
+	availableWorkUnits: number;
+};
+
+type GeoJob = GeometryJobState;
+type GeoProjectionScratch = {
+	min: number;
+	max: number;
+};
+type GeoPointScratch = {
+	x: number;
+	y: number;
+};
+
+const GEOMETRY_CONTROLLER_REGISTER_ADDRS = [
+	IO_GEO_SRC0,
+	IO_GEO_SRC1,
+	IO_GEO_SRC2,
+	IO_GEO_DST0,
+	IO_GEO_DST1,
+	IO_GEO_COUNT,
+	IO_GEO_CMD,
+	IO_GEO_CTRL,
+	IO_GEO_STATUS,
+	IO_GEO_PARAM0,
+	IO_GEO_PARAM1,
+	IO_GEO_STRIDE0,
+	IO_GEO_STRIDE1,
+	IO_GEO_STRIDE2,
+	IO_GEO_PROCESSED,
+	IO_GEO_FAULT,
+] as const;
+export const GEOMETRY_CONTROLLER_REGISTER_COUNT = GEOMETRY_CONTROLLER_REGISTER_ADDRS.length;
 
 const GEO_RECORD_INDEX_NONE = 0xffff;
 const WORD_ALIGN_MASK = 3;
@@ -140,6 +177,11 @@ export class GeometryController {
 	private readonly overlapInstanceB = new Uint32Array(OVERLAP2D_INSTANCE_WORDS);
 	private readonly overlapBoundsA = new Float64Array(4);
 	private readonly overlapBoundsB = new Float64Array(4);
+	private readonly overlapProjectionA: GeoProjectionScratch = { min: 0, max: 0 };
+	private readonly overlapProjectionB: GeoProjectionScratch = { min: 0, max: 0 };
+	private readonly overlapCenterA: GeoPointScratch = { x: 0, y: 0 };
+	private readonly overlapCenterB: GeoPointScratch = { x: 0, y: 0 };
+	private readonly overlapCentroid: GeoPointScratch = { x: 0, y: 0 };
 	private overlapContactNx = 0;
 	private overlapContactNy = 0;
 	private overlapContactDepth = 0;
@@ -162,8 +204,10 @@ export class GeometryController {
 	public setTiming(cpuHz: number, workUnitsPerSec: number, nowCycles: number): void {
 		this.cpuHz = cpuHz;
 		this.workUnitsPerSec = workUnitsPerSec;
-		this.workCarry = 0;
-		this.availableWorkUnits = 0;
+		if (this.activeJob === null) {
+			this.workCarry = 0;
+			this.availableWorkUnits = 0;
+		}
 		this.scheduleNextService(nowCycles);
 	}
 
@@ -244,20 +288,28 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_FAULT, 0);
 	}
 
-	public postLoad(): void {
-		this.workCarry = 0;
-		this.availableWorkUnits = 0;
-		this.activeJob = null;
-		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-		const ctrl = this.memory.readIoU32(IO_GEO_CTRL);
-		const status = this.memory.readIoU32(IO_GEO_STATUS);
-		const processed = this.memory.readIoU32(IO_GEO_PROCESSED);
-		this.memory.writeIoValue(IO_GEO_CTRL, ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT));
-		if ((status & GEO_STATUS_BUSY) !== 0) {
-			this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
-			this.memory.writeValue(IO_GEO_PROCESSED, processed);
-			this.memory.writeValue(IO_GEO_FAULT, packFault(GEO_FAULT_ABORTED_BY_HOST, processed));
+	public captureState(): GeometryControllerState {
+		const registerWords = new Array<number>(GEOMETRY_CONTROLLER_REGISTER_COUNT);
+		for (let index = 0; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1) {
+			registerWords[index] = this.memory.readIoU32(GEOMETRY_CONTROLLER_REGISTER_ADDRS[index]!);
 		}
+		return {
+			registerWords,
+			activeJob: this.activeJob === null ? null : { ...this.activeJob },
+			workCarry: this.workCarry,
+			availableWorkUnits: this.availableWorkUnits,
+		};
+	}
+
+	public restoreState(state: GeometryControllerState, nowCycles: number): void {
+		for (let index = 0; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1) {
+			this.memory.writeIoValue(GEOMETRY_CONTROLLER_REGISTER_ADDRS[index]!, state.registerWords[index]!);
+		}
+		this.activeJob = state.activeJob === null ? null : { ...state.activeJob };
+		this.workCarry = state.workCarry;
+		this.availableWorkUnits = state.availableWorkUnits;
+		this.memory.writeIoValue(IO_GEO_CTRL, this.memory.readIoU32(IO_GEO_CTRL) & ~(GEO_CTRL_START | GEO_CTRL_ABORT));
+		this.scheduleNextService(nowCycles);
 	}
 
 	public onCtrlWrite(nowCycles: number): void {
@@ -1077,9 +1129,9 @@ export class GeometryController {
 				sawAxis = true;
 				const ax = nx / len;
 				const ay = ny / len;
-				const projA = this.projectPoly(polyA, ax, ay);
-				const projB = this.projectPoly(polyB, ax, ay);
-				const overlap = Math.min(projA.max, projB.max) - Math.max(projA.min, projB.min);
+				this.projectPolyInto(polyA, ax, ay, this.overlapProjectionA);
+				this.projectPolyInto(polyB, ax, ay, this.overlapProjectionB);
+				const overlap = Math.min(this.overlapProjectionA.max, this.overlapProjectionB.max) - Math.max(this.overlapProjectionA.min, this.overlapProjectionB.min);
 				if (!(overlap > 0)) {
 					return false;
 				}
@@ -1097,9 +1149,9 @@ export class GeometryController {
 		if (!sawAxis) {
 			return false;
 		}
-		const centerA = this.computePolyAverage(polyA);
-		const centerB = this.computePolyAverage(polyB);
-		if ((((centerA.x - centerB.x) * bestAxisX) + ((centerA.y - centerB.y) * bestAxisY)) < 0) {
+		this.computePolyAverageInto(polyA, this.overlapCenterA);
+		this.computePolyAverageInto(polyB, this.overlapCenterB);
+		if ((((this.overlapCenterA.x - this.overlapCenterB.x) * bestAxisX) + ((this.overlapCenterA.y - this.overlapCenterB.y) * bestAxisY)) < 0) {
 			bestAxisX = -bestAxisX;
 			bestAxisY = -bestAxisY;
 		}
@@ -1107,12 +1159,12 @@ export class GeometryController {
 		let pointX;
 		let pointY;
 		if (intersection.length === 0) {
-			pointX = (centerA.x + centerB.x) * 0.5;
-			pointY = (centerA.y + centerB.y) * 0.5;
+			pointX = (this.overlapCenterA.x + this.overlapCenterB.x) * 0.5;
+			pointY = (this.overlapCenterA.y + this.overlapCenterB.y) * 0.5;
 		} else {
-			const centroid = this.computePolyAverage(intersection);
-			pointX = centroid.x;
-			pointY = centroid.y;
+			this.computePolyAverageInto(intersection, this.overlapCentroid);
+			pointX = this.overlapCentroid.x;
+			pointY = this.overlapCentroid.y;
 		}
 		this.overlapContactNx = bestAxisX;
 		this.overlapContactNy = bestAxisY;
@@ -1123,7 +1175,7 @@ export class GeometryController {
 		return true;
 	}
 
-	private projectPoly(poly: number[], ax: number, ay: number): { min: number; max: number } {
+	private projectPolyInto(poly: number[], ax: number, ay: number, out: GeoProjectionScratch): void {
 		let min = Number.POSITIVE_INFINITY;
 		let max = Number.NEGATIVE_INFINITY;
 		for (let i = 0; i < poly.length; i += 2) {
@@ -1135,10 +1187,11 @@ export class GeometryController {
 				max = projection;
 			}
 		}
-		return { min, max };
+		out.min = min;
+		out.max = max;
 	}
 
-	private computePolyAverage(poly: number[]): { x: number; y: number } {
+	private computePolyAverageInto(poly: number[], out: GeoPointScratch): void {
 		let sumX = 0;
 		let sumY = 0;
 		const count = poly.length >> 1;
@@ -1146,7 +1199,8 @@ export class GeometryController {
 			sumX += poly[i];
 			sumY += poly[i + 1];
 		}
-		return { x: sumX / count, y: sumY / count };
+		out.x = sumX / count;
+		out.y = sumY / count;
 	}
 
 	private clipConvexPolygons(polyA: number[], polyB: number[]): number[] {

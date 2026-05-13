@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <utility>
 
 namespace bmsx {
 namespace {
@@ -37,6 +36,24 @@ constexpr uint32_t OVERLAP2D_DESC_BYTES = 16u;
 constexpr uint32_t OVERLAP2D_BOUNDS_BYTES = 16u;
 constexpr uint32_t OVERLAP2D_KIND_COMPOUND = 4u;
 constexpr uint32_t GEO_SERVICE_BATCH_RECORDS = 1u;
+constexpr std::array<uint32_t, GEOMETRY_CONTROLLER_REGISTER_COUNT> GEO_REGISTER_ADDRS = {
+	IO_GEO_SRC0,
+	IO_GEO_SRC1,
+	IO_GEO_SRC2,
+	IO_GEO_DST0,
+	IO_GEO_DST1,
+	IO_GEO_COUNT,
+	IO_GEO_CMD,
+	IO_GEO_CTRL,
+	IO_GEO_STATUS,
+	IO_GEO_PARAM0,
+	IO_GEO_PARAM1,
+	IO_GEO_STRIDE0,
+	IO_GEO_STRIDE1,
+	IO_GEO_STRIDE2,
+	IO_GEO_PROCESSED,
+	IO_GEO_FAULT,
+};
 
 uint32_t packFault(uint32_t code, uint32_t recordIndex) {
 	return ((code & 0xffffu) << 16u) | (recordIndex & 0xffffu);
@@ -72,8 +89,10 @@ void GeometryController::onCtrlWriteThunk(void* context, uint32_t, Value) {
 void GeometryController::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
 	m_cpuHz = cpuHz;
 	m_workUnitsPerSec = workUnitsPerSec;
-	m_workCarry = 0;
-	m_availableWorkUnits = 0;
+	if (!m_activeJob.has_value()) {
+		m_workCarry = 0;
+		m_availableWorkUnits = 0;
+	}
 	scheduleNextService(nowCycles);
 }
 
@@ -126,20 +145,26 @@ void GeometryController::reset() {
 	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(0)));
 }
 
-void GeometryController::postLoad() {
-	m_workCarry = 0;
-	m_availableWorkUnits = 0;
-	m_activeJob.reset();
-	m_scheduler.cancelDeviceService(DeviceServiceGeo);
-	const uint32_t ctrl = m_memory.readIoU32(IO_GEO_CTRL);
-	const uint32_t status = m_memory.readIoU32(IO_GEO_STATUS);
-	const uint32_t processed = m_memory.readIoU32(IO_GEO_PROCESSED);
-	m_memory.writeIoValue(IO_GEO_CTRL, valueNumber(static_cast<double>(ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT))));
-	if ((status & GEO_STATUS_BUSY) != 0u) {
-		m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_DONE | GEO_STATUS_ERROR)));
-		m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(processed)));
-		m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(packFault(GEO_FAULT_ABORTED_BY_HOST, processed))));
+GeometryControllerState GeometryController::captureState() const {
+	GeometryControllerState state;
+	for (size_t index = 0; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1u) {
+		state.registerWords[index] = m_memory.readIoU32(GEO_REGISTER_ADDRS[index]);
 	}
+	state.activeJob = m_activeJob;
+	state.workCarry = m_workCarry;
+	state.availableWorkUnits = m_availableWorkUnits;
+	return state;
+}
+
+void GeometryController::restoreState(const GeometryControllerState& state, int64_t nowCycles) {
+	for (size_t index = 0; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1u) {
+		m_memory.writeIoValue(GEO_REGISTER_ADDRS[index], valueNumber(static_cast<double>(state.registerWords[index])));
+	}
+	m_activeJob = state.activeJob;
+	m_workCarry = state.workCarry;
+	m_availableWorkUnits = state.availableWorkUnits;
+	m_memory.writeIoValue(IO_GEO_CTRL, valueNumber(static_cast<double>(m_memory.readIoU32(IO_GEO_CTRL) & ~(GEO_CTRL_START | GEO_CTRL_ABORT))));
+	scheduleNextService(nowCycles);
 }
 
 void GeometryController::onCtrlWrite(int64_t nowCycles) {
@@ -982,9 +1007,9 @@ bool GeometryController::computePolyPairContact(const std::vector<double>& polyA
 			sawAxis = true;
 			const double ax = nx / len;
 			const double ay = ny / len;
-			const auto projA = projectPoly(polyA, ax, ay);
-			const auto projB = projectPoly(polyB, ax, ay);
-			const double overlap = std::min(projA.second, projB.second) - std::max(projA.first, projB.first);
+			projectPolyInto(polyA, ax, ay, m_overlapProjectionA);
+			projectPolyInto(polyB, ax, ay, m_overlapProjectionB);
+			const double overlap = std::min(m_overlapProjectionA.max, m_overlapProjectionB.max) - std::max(m_overlapProjectionA.min, m_overlapProjectionB.min);
 			if (!(overlap > 0.0)) {
 				return false;
 			}
@@ -1001,9 +1026,9 @@ bool GeometryController::computePolyPairContact(const std::vector<double>& polyA
 	if (!sawAxis) {
 		return false;
 	}
-	const auto centerA = computePolyAverage(polyA);
-	const auto centerB = computePolyAverage(polyB);
-	if ((((centerA.first - centerB.first) * bestAxisX) + ((centerA.second - centerB.second) * bestAxisY)) < 0.0) {
+	computePolyAverageInto(polyA, m_overlapCenterA);
+	computePolyAverageInto(polyB, m_overlapCenterB);
+	if ((((m_overlapCenterA.x - m_overlapCenterB.x) * bestAxisX) + ((m_overlapCenterA.y - m_overlapCenterB.y) * bestAxisY)) < 0.0) {
 		bestAxisX = -bestAxisX;
 		bestAxisY = -bestAxisY;
 	}
@@ -1011,12 +1036,12 @@ bool GeometryController::computePolyPairContact(const std::vector<double>& polyA
 	double pointX = 0.0;
 	double pointY = 0.0;
 	if (intersection.empty()) {
-		pointX = (centerA.first + centerB.first) * 0.5;
-		pointY = (centerA.second + centerB.second) * 0.5;
+		pointX = (m_overlapCenterA.x + m_overlapCenterB.x) * 0.5;
+		pointY = (m_overlapCenterA.y + m_overlapCenterB.y) * 0.5;
 	} else {
-		const auto centroid = computePolyAverage(intersection);
-		pointX = centroid.first;
-		pointY = centroid.second;
+		computePolyAverageInto(intersection, m_overlapCentroid);
+		pointX = m_overlapCentroid.x;
+		pointY = m_overlapCentroid.y;
 	}
 	m_overlapContactNx = bestAxisX;
 	m_overlapContactNy = bestAxisY;
@@ -1027,7 +1052,7 @@ bool GeometryController::computePolyPairContact(const std::vector<double>& polyA
 	return true;
 }
 
-std::pair<double, double> GeometryController::projectPoly(const std::vector<double>& poly, double ax, double ay) {
+void GeometryController::projectPolyInto(const std::vector<double>& poly, double ax, double ay, ProjectionScratch& out) {
 	double min = std::numeric_limits<double>::infinity();
 	double max = -std::numeric_limits<double>::infinity();
 	for (size_t i = 0; i < poly.size(); i += 2u) {
@@ -1039,10 +1064,11 @@ std::pair<double, double> GeometryController::projectPoly(const std::vector<doub
 			max = projection;
 		}
 	}
-	return { min, max };
+	out.min = min;
+	out.max = max;
 }
 
-std::pair<double, double> GeometryController::computePolyAverage(const std::vector<double>& poly) {
+void GeometryController::computePolyAverageInto(const std::vector<double>& poly, PointScratch& out) {
 	double sumX = 0.0;
 	double sumY = 0.0;
 	const double count = static_cast<double>(poly.size() >> 1u);
@@ -1050,7 +1076,8 @@ std::pair<double, double> GeometryController::computePolyAverage(const std::vect
 		sumX += poly[i];
 		sumY += poly[i + 1u];
 	}
-	return { sumX / count, sumY / count };
+	out.x = sumX / count;
+	out.y = sumY / count;
 }
 
 const std::vector<double>& GeometryController::clipConvexPolygons(const std::vector<double>& polyA, const std::vector<double>& polyB) {

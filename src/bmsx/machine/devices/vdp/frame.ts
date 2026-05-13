@@ -21,6 +21,8 @@ export type VdpSubmittedFrameState = {
 	cost: number;
 	workRemaining: number;
 	ditherType: number;
+	frameBufferWidth: number;
+	frameBufferHeight: number;
 	xf: VdpXfUnit;
 	skyboxControl: number;
 	skyboxFaceWords: Uint32Array;
@@ -68,6 +70,8 @@ export function allocateSubmittedFrameSlot(): VdpSubmittedFrameState {
 		cost: 0,
 		workRemaining: 0,
 		ditherType: 0,
+		frameBufferWidth: 0,
+		frameBufferHeight: 0,
 		xf: new VdpXfUnit(),
 		skyboxControl: 0,
 		skyboxFaceWords: new Uint32Array(SKYBOX_FACE_WORD_COUNT),

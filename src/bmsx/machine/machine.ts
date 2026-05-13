@@ -9,7 +9,7 @@ import {
 import { CPU } from './cpu/cpu';
 import { AudioController, type AudioControllerState } from './devices/audio/controller';
 import { DmaController } from './devices/dma/controller';
-import { GeometryController } from './devices/geometry/controller';
+import { GeometryController, type GeometryControllerState } from './devices/geometry/controller';
 import { ImgDecController } from './devices/imgdec/controller';
 import { InputController, type InputControllerState } from './devices/input/controller';
 import { IrqController, type IrqControllerState } from './devices/irq/controller';
@@ -35,6 +35,7 @@ export type MachineTiming = {
 };
 
 export type MachineState = {
+	geometry: GeometryControllerState;
 	irq: IrqControllerState;
 	audio: AudioControllerState;
 	input: InputControllerState;
@@ -43,6 +44,7 @@ export type MachineState = {
 
 export type MachineSaveState = {
 	memory: MemorySaveState;
+	geometry: GeometryControllerState;
 	irq: IrqControllerState;
 	audio: AudioControllerState;
 	stringPool: StringPoolState;
@@ -133,6 +135,7 @@ export class Machine {
 
 	public captureState(): MachineState {
 		return {
+			geometry: this.geometryController.captureState(),
 			irq: this.irqController.captureState(),
 			audio: this.audioController.captureState(),
 			input: this.inputController.captureState(),
@@ -148,6 +151,7 @@ export class Machine {
 	public captureSaveState(): MachineSaveState {
 		return {
 			memory: this.memory.captureSaveState(),
+			geometry: this.geometryController.captureState(),
 			irq: this.irqController.captureState(),
 			audio: this.audioController.captureState(),
 			stringPool: this.cpu.stringPool.captureState(),
@@ -163,8 +167,8 @@ export class Machine {
 		this.vdp.restoreSaveState(state.vdp);
 	}
 
-	private restoreSharedDeviceState(state: Pick<MachineState, 'irq' | 'audio' | 'input'>): void {
-		this.geometryController.postLoad();
+	private restoreSharedDeviceState(state: Pick<MachineState, 'geometry' | 'irq' | 'audio' | 'input'>): void {
+		this.geometryController.restoreState(state.geometry, this.scheduler.nowCycles);
 		this.irqController.restoreState(state.irq);
 		this.audioController.restoreState(state.audio);
 		this.inputController.restoreState(state.input);

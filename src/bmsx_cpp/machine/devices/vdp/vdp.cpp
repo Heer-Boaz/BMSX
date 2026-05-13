@@ -60,6 +60,7 @@ VDP::VDP(
 	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
 	, m_vramMachineSeed(entropySeeds.machineSeed)
 	, m_vramBootSeed(entropySeeds.bootSeed)
+	, m_vout(VDP_BBU_BILLBOARD_LIMIT)
 	, m_configuredFrameBufferSize(frameBufferSize)
 	, m_scheduler(scheduler) {
 	m_memory.setVramWriter(this);
@@ -79,10 +80,17 @@ VDP::VDP(
 	m_memory.mapIoWrite(IO_VDP_PMU_SCALE_X, this, &VDP::onPmuRegisterWindowWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_PMU_SCALE_Y, this, &VDP::onPmuRegisterWindowWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_PMU_CTRL, this, &VDP::onPmuRegisterWindowWriteThunk);
+	m_memory.mapIoWrite(IO_VDP_SBX_CONTROL, this, &VDP::onSbxRegisterWindowWriteThunk);
+	for (uint32_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
+		m_memory.mapIoWrite(IO_VDP_SBX_FACE0 + index * IO_WORD_SIZE, this, &VDP::onSbxRegisterWindowWriteThunk);
+	}
 	m_memory.mapIoWrite(IO_VDP_SBX_COMMIT, this, &VDP::onSbxCommitWriteThunk);
 	m_buildFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
+	m_buildFrame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
 	m_activeFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
+	m_activeFrame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
 	m_pendingFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
+	m_pendingFrame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
 }
 
@@ -140,7 +148,8 @@ void VDP::onVdpRegisterWrite(uint32_t addr) {
 }
 
 void VDP::onDitherWrite(Value value) {
-	m_liveDitherType = toI32(asNumber(value));
+	const i32 ditherType = toI32(asNumber(value));
+	m_vout.writeDitherType(ditherType);
 }
 
 void VDP::writePmuBankSelect(u32 value) {
@@ -183,14 +192,20 @@ void VDP::syncPmuRegisterWindow() {
 	m_memory.writeIoValue(IO_VDP_PMU_CTRL, valueNumber(static_cast<double>(window.control)));
 }
 
+void VDP::onSbxRegisterWindowWrite(uint32_t addr, Value value) {
+	const u32 word = toU32(value);
+	if (addr == IO_VDP_SBX_CONTROL) {
+		m_sbx.writeFaceWindowControl(word);
+		return;
+	}
+	m_sbx.writeFaceWindowWord((addr - IO_VDP_SBX_FACE0) / IO_WORD_SIZE, word);
+}
+
 void VDP::onSbxCommitWrite() {
 	if ((m_memory.readIoU32(IO_VDP_SBX_COMMIT) & VDP_SBX_COMMIT_WRITE) == 0u) {
 		return;
 	}
-	for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
-		m_sbxMmioFaceWords[index] = m_memory.readIoU32(IO_VDP_SBX_FACE0 + static_cast<uint32_t>(index * IO_WORD_SIZE));
-	}
-	m_sbx.writePacket(m_memory.readIoU32(IO_VDP_SBX_CONTROL), m_sbxMmioFaceWords);
+	m_sbx.commitFaceWindow();
 }
 
 void VDP::syncSbxRegisterWindow() {
@@ -235,9 +250,9 @@ VdpLatchedGeometry VDP::readLatchedGeometry() const {
 }
 
 // start hot-path -- VDP status, command ingress, scheduler service, and VRAM row access run on frame-critical paths.
-// disable-next-line single_line_method_pattern -- VBLANK status is the public device pin; status register bit ownership stays here.
 void VDP::setVblankStatus(bool active) {
-	m_fault.setStatusFlag(VDP_STATUS_VBLANK, active);
+	m_vout.setVblankActive(active);
+	m_fault.setStatusFlag(VDP_STATUS_VBLANK, m_vout.vblankActive());
 }
 
 bool VDP::canAcceptVdpSubmit() const {
@@ -491,12 +506,13 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
-				m_sbxPacketFaceWords[index] = m_memory.readU32(cursor + IO_WORD_SIZE * static_cast<u32>(index + 1u));
+				VdpSbxUnit::FaceWords& faceWords = m_sbx.beginPacket(m_memory.readU32(cursor));
+				for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
+					faceWords[index] = m_memory.readU32(cursor + IO_WORD_SIZE * static_cast<u32>(index + 1u));
+				}
+				m_sbx.commitPacket();
+				return payloadEnd;
 			}
-			m_sbx.writePacket(m_memory.readU32(cursor), m_sbxPacketFaceWords);
-			return payloadEnd;
-		}
 		default:
 			m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return VDP_REPLAY_PACKET_FAULT;
@@ -583,16 +599,18 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 9u)])) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : VDP_REPLAY_PACKET_FAULT;
 		case VDP_XF_PACKET_KIND:
 			return consumeXfPacketFromWords(word, cursor, wordCount);
-		case VDP_SBX_PACKET_KIND:
+		case VDP_SBX_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
 				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
-				m_sbxPacketFaceWords[index] = m_vdpFifoStreamWords[static_cast<size_t>(cursor + static_cast<u32>(index + 1u))];
+				VdpSbxUnit::FaceWords& faceWords = m_sbx.beginPacket(m_vdpFifoStreamWords[static_cast<size_t>(cursor)]);
+				for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
+					faceWords[index] = m_vdpFifoStreamWords[static_cast<size_t>(cursor + static_cast<u32>(index + 1u))];
 			}
-			m_sbx.writePacket(m_vdpFifoStreamWords[static_cast<size_t>(cursor)], m_sbxPacketFaceWords);
+			m_sbx.commitPacket();
 			return cursor + VDP_SBX_PACKET_PAYLOAD_WORDS;
+		}
 		default:
 			m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return VDP_REPLAY_PACKET_FAULT;
@@ -792,6 +810,11 @@ void VDP::onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value) {
 	vdp.onPmuRegisterWindowWrite(addr);
 }
 
+void VDP::onSbxRegisterWindowWriteThunk(void* context, uint32_t addr, Value value) {
+	auto& vdp = *static_cast<VDP*>(context);
+	vdp.onSbxRegisterWindowWrite(addr, value);
+}
+
 void VDP::onSbxCommitWriteThunk(void* context, uint32_t, Value) {
 	auto& vdp = *static_cast<VDP*>(context);
 	vdp.onSbxCommitWrite();
@@ -953,7 +976,7 @@ bool VDP::enqueueLatchedFillRect() {
 	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
 	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
 	const VdpLatchedGeometry geometry = readLatchedGeometry();
-	const VdpClippedRect clipped = computeClippedRect(geometry.x0, geometry.y0, geometry.x1, geometry.y1, m_frameBufferWidth, m_frameBufferHeight);
+	const VdpClippedRect clipped = computeClippedRect(geometry.x0, geometry.y0, geometry.x1, geometry.y1, m_fbm.width(), m_fbm.height());
 	if (clipped.area == 0.0) {
 		return true;
 	}
@@ -982,7 +1005,7 @@ bool VDP::enqueueLatchedDrawLine() {
 		return false;
 	}
 	const VdpLatchedGeometry geometry = readLatchedGeometry();
-	const double span = computeClippedLineSpan(geometry.x0, geometry.y0, geometry.x1, geometry.y1, m_frameBufferWidth, m_frameBufferHeight);
+	const double span = computeClippedLineSpan(geometry.x0, geometry.y0, geometry.x1, geometry.y1, m_fbm.width(), m_fbm.height());
 	if (span == 0.0) {
 		return true;
 	}
@@ -1035,7 +1058,7 @@ bool VDP::enqueueLatchedBlit() {
 	const VdpResolvedBlitPmu resolved = m_pmu.resolveBlit(dstX, dstY, scaleX, scaleY, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
 	const double dstWidth = static_cast<double>(source.width) * static_cast<double>(resolved.scaleX);
 	const double dstHeight = static_cast<double>(source.height) * static_cast<double>(resolved.scaleY);
-	const VdpClippedRect clipped = computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, m_frameBufferWidth, m_frameBufferHeight);
+	const VdpClippedRect clipped = computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, m_fbm.width(), m_fbm.height());
 	if (clipped.area == 0.0) {
 		return true;
 	}
@@ -1114,8 +1137,6 @@ void VDP::resetBuildFrameState() {
 void VDP::resetQueuedFrameState() {
 	resetBuildFrameState();
 	clearActiveFrame();
-	m_committedBillboards.clear();
-	m_committedXf.reset();
 	recycleBlitterBuffers(m_pendingFrame.queue);
 	m_pendingFrame.billboards.clear();
 	resetSubmittedFrameSlot(m_pendingFrame);
@@ -1135,39 +1156,20 @@ bool VDP::enqueueBlitterCommand(BlitterCommand&& command) {
 	return true;
 }
 
-void VDP::swapFrameBufferReadbackPages() {
-	VdpSurfaceUploadSlot* renderSlot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
-	if (renderSlot == nullptr) {
-		return;
-	}
-	std::swap(renderSlot->cpuReadback, m_displayFrameBufferCpuReadback);
-	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
-}
-
 void VDP::presentFrameBufferPageOnVblankEdge() {
 	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
 	if (slot == nullptr) {
 		return;
 	}
-	if (m_frameBufferPresentationCount == 0u) {
-		m_frameBufferPresentationDirtyRowStart = slot->dirtyRowStart;
-		m_frameBufferPresentationDirtyRowEnd = slot->dirtyRowEnd;
-		for (uint32_t row = slot->dirtyRowStart; row < slot->dirtyRowEnd; ++row) {
-			m_frameBufferPresentationDirtySpansByRow[row] = slot->dirtySpansByRow[row];
-		}
-	} else {
-		m_frameBufferPresentationRequiresFullSync = true;
-	}
-	m_frameBufferPresentationCount += 1u;
+	m_fbm.presentPage(*slot);
 	clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
-	swapFrameBufferReadbackPages();
+	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 }
 
 void VDP::clearFrameBufferPresentation() {
-	for (uint32_t row = m_frameBufferPresentationDirtyRowStart; row < m_frameBufferPresentationDirtyRowEnd; ++row) {
-		m_frameBufferPresentationDirtySpansByRow[row] = VdpDirtySpan{};
+	if (m_fbm.hasPendingPresentation()) {
+		m_fbm.clearPresentation();
 	}
-	resetFrameBufferPresentation();
 }
 
 const std::vector<u8>* VDP::frameBufferRenderReadback() const {
@@ -1179,7 +1181,7 @@ const std::vector<u8>* VDP::frameBufferRenderReadback() const {
 }
 
 void VDP::drainFrameBufferPresentation(VdpFrameBufferPresentationSink& sink) {
-	if (m_frameBufferPresentationCount == 0u) {
+	if (!m_fbm.hasPendingPresentation()) {
 		return;
 	}
 	const std::vector<u8>* renderReadback = frameBufferRenderReadback();
@@ -1187,26 +1189,8 @@ void VDP::drainFrameBufferPresentation(VdpFrameBufferPresentationSink& sink) {
 		m_fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
 		return;
 	}
-	const VdpFrameBufferPresentation presentation{
-		m_frameBufferPresentationCount,
-		m_frameBufferPresentationRequiresFullSync,
-		m_frameBufferPresentationDirtyRowStart,
-		m_frameBufferPresentationDirtyRowEnd,
-		&m_frameBufferPresentationDirtySpansByRow,
-		renderReadback,
-		&m_displayFrameBufferCpuReadback,
-		m_frameBufferWidth,
-		m_frameBufferHeight,
-	};
-	sink.consumeVdpFrameBufferPresentation(presentation);
-	clearFrameBufferPresentation();
-}
-
-void VDP::resetFrameBufferPresentation() {
-	m_frameBufferPresentationCount = 0u;
-	m_frameBufferPresentationRequiresFullSync = false;
-	m_frameBufferPresentationDirtyRowStart = 0u;
-	m_frameBufferPresentationDirtyRowEnd = 0u;
+	sink.consumeVdpFrameBufferPresentation(m_fbm.buildPresentation(*renderReadback));
+	m_fbm.clearPresentation();
 }
 
 bool VDP::beginSubmittedFrame(VdpDexFrameState state) {
@@ -1245,13 +1229,21 @@ bool VDP::sealSubmittedFrame() {
 	const int frameCost = (!m_buildFrame.queue.empty() && m_buildFrame.queue.front().type != BlitterCommandType::Clear)
 		? (m_buildFrame.cost + VDP_RENDER_CLEAR_COST)
 		: m_buildFrame.cost;
+	const VdpSbxFrameDecision sbxDecision = m_sbx.beginFrameSeal();
+	const VdpSbxUnit::FaceWords& sbxSealFaceWords = m_sbx.sealFaceWords();
+	VdpSbxFrameResolution sbxResolution;
+	resolveSkyboxFrameSamplesInto(sbxDecision.control, sbxSealFaceWords, m_sbxSealSamples, sbxResolution);
+	const VdpSbxFrameDecision completedSbx = m_sbx.completeFrameSeal(sbxResolution);
+	if (completedSbx.faultCode != VDP_FAULT_NONE) {
+		m_fault.raise(completedSbx.faultCode, completedSbx.faultDetail);
+		return false;
+	}
 	frame->xf.matrixWords = m_xf.matrixWords;
 	frame->xf.viewMatrixIndex = m_xf.viewMatrixIndex;
 	frame->xf.projectionMatrixIndex = m_xf.projectionMatrixIndex;
-	frame->skyboxControl = m_sbx.latchFrame(frame->skyboxFaceWords);
-	if (!resolveSkyboxFrameSamples(frame->skyboxControl, frame->skyboxFaceWords, frame->skyboxSamples)) {
-		return false;
-	}
+	frame->skyboxControl = completedSbx.control;
+	frame->skyboxFaceWords = sbxSealFaceWords;
+	std::swap(frame->skyboxSamples, m_sbxSealSamples);
 	frame->queue.swap(m_buildFrame.queue);
 	frame->billboards.swap(m_buildFrame.billboards);
 	frame->occupied = true;
@@ -1260,7 +1252,10 @@ bool VDP::sealSubmittedFrame() {
 	frame->ready = frameCost == 0;
 	frame->cost = frameCost;
 	frame->workRemaining = frameCost;
-	frame->ditherType = m_liveDitherType;
+	const VdpVoutFrameOutput& voutFrame = m_vout.sealFrame();
+	frame->ditherType = voutFrame.ditherType;
+	frame->frameBufferWidth = voutFrame.frameBufferWidth;
+	frame->frameBufferHeight = voutFrame.frameBufferHeight;
 	m_buildFrame.billboards.clear();
 	m_buildFrame.cost = 0;
 	m_buildFrame.state = VdpDexFrameState::Idle;
@@ -1317,7 +1312,7 @@ void VDP::executeFrameBufferCommands(const std::vector<BlitterCommand>& commands
 		return;
 	}
 	auto& pixels = frameBufferSlot->cpuReadback;
-	ensureFrameBufferPriorityCapacity(static_cast<size_t>(m_frameBufferWidth) * static_cast<size_t>(m_frameBufferHeight));
+	ensureFrameBufferPriorityCapacity(static_cast<size_t>(m_fbm.width()) * static_cast<size_t>(m_fbm.height()));
 	if (commands.front().type != BlitterCommandType::Clear) {
 		fillFrameBuffer(pixels, VDP_BLITTER_IMPLICIT_CLEAR);
 	}
@@ -1445,8 +1440,8 @@ void VDP::blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 
 }
 
 void VDP::rasterizeFrameBufferFill(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
-	const i32 frameBufferWidth = static_cast<i32>(m_frameBufferWidth);
-	const i32 frameBufferHeight = static_cast<i32>(m_frameBufferHeight);
+	const i32 frameBufferWidth = static_cast<i32>(m_fbm.width());
+	const i32 frameBufferHeight = static_cast<i32>(m_fbm.height());
 	i32 left = static_cast<i32>(std::round(x0));
 	i32 top = static_cast<i32>(std::round(y0));
 	i32 right = static_cast<i32>(std::round(x1));
@@ -1471,8 +1466,8 @@ void VDP::rasterizeFrameBufferFill(std::vector<u8>& pixels, f32 x0, f32 y0, f32 
 }
 
 void VDP::rasterizeFrameBufferLine(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, f32 thicknessValue, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
-	const i32 frameBufferWidth = static_cast<i32>(m_frameBufferWidth);
-	const i32 frameBufferHeight = static_cast<i32>(m_frameBufferHeight);
+	const i32 frameBufferWidth = static_cast<i32>(m_fbm.width());
+	const i32 frameBufferHeight = static_cast<i32>(m_fbm.height());
 	i32 currentX = static_cast<i32>(std::round(x0));
 	i32 currentY = static_cast<i32>(std::round(y0));
 	const i32 targetX = static_cast<i32>(std::round(x1));
@@ -1516,8 +1511,8 @@ void VDP::rasterizeFrameBufferLine(std::vector<u8>& pixels, f32 x0, f32 y0, f32 
 }
 
 void VDP::rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
-	const i32 frameBufferWidth = static_cast<i32>(m_frameBufferWidth);
-	const i32 frameBufferHeight = static_cast<i32>(m_frameBufferHeight);
+	const i32 frameBufferWidth = static_cast<i32>(m_fbm.width());
+	const i32 frameBufferHeight = static_cast<i32>(m_fbm.height());
 	const VdpSurfaceUploadSlot* sourceSlot = findVramSlotOrFault(source.surfaceId, VDP_FAULT_DEX_SOURCE_SLOT);
 	if (sourceSlot == nullptr) {
 		return;
@@ -1571,7 +1566,7 @@ void VDP::rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource&
 }
 
 void VDP::copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 priority, u32 seq) {
-	const size_t frameBufferWidth = static_cast<size_t>(m_frameBufferWidth);
+	const size_t frameBufferWidth = static_cast<size_t>(m_fbm.width());
 	const size_t rowBytes = static_cast<size_t>(width) * 4u;
 	const bool overlapping =
 		dstX < srcX + width
@@ -1619,27 +1614,12 @@ void VDP::clearActiveFrame() {
 }
 
 const VdpDeviceOutput& VDP::readDeviceOutput() {
-	m_deviceOutput.ditherType = m_committedDitherType;
-	m_deviceOutput.xfMatrixWords = &m_committedXf.matrixWords;
-	m_deviceOutput.xfViewMatrixIndex = m_committedXf.viewMatrixIndex;
-	m_deviceOutput.xfProjectionMatrixIndex = m_committedXf.projectionMatrixIndex;
-	m_deviceOutput.skyboxEnabled = m_sbx.visibleEnabled();
-	m_deviceOutput.skyboxSamples = &m_committedSkyboxSamples;
-	m_deviceOutput.billboards = &m_committedBillboards;
-	m_deviceOutput.frameBufferWidth = m_frameBufferWidth;
-	m_deviceOutput.frameBufferHeight = m_frameBufferHeight;
-	return m_deviceOutput;
+	return m_vout.readDeviceOutput();
 }
 
 void VDP::commitActiveVisualState() {
-	m_committedDitherType = m_activeFrame.ditherType;
-	m_committedXf.matrixWords = m_activeFrame.xf.matrixWords;
-	m_committedXf.viewMatrixIndex = m_activeFrame.xf.viewMatrixIndex;
-	m_committedXf.projectionMatrixIndex = m_activeFrame.xf.projectionMatrixIndex;
 	m_sbx.presentFrame(m_activeFrame.skyboxControl, m_activeFrame.skyboxFaceWords);
-	std::swap(m_committedSkyboxSamples, m_activeFrame.skyboxSamples);
-	m_committedBillboards.swap(m_activeFrame.billboards);
-	m_activeFrame.billboards.clear();
+	m_vout.presentFrame(m_activeFrame, m_sbx.visibleEnabled());
 }
 
 void VDP::finishCommittedFrameOnVblankEdge() {
@@ -1727,72 +1707,151 @@ const VdpSurfaceUploadSlot* VDP::tryResolveBlitterSurfaceForSource(const Blitter
 	return surface;
 }
 
-bool VDP::tryResolveBlitterSampleWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, ResolvedBlitterSample& target, uint32_t faultCode) {
-	BlitterSource source;
-	if (!tryResolveBlitterSourceWordsInto(slot, u, v, w, h, source, faultCode)) {
-		return false;
+void VDP::resolveBbuSourceInto(const VdpBbuPacket& packet, VdpBbuSourceResolution& target) const {
+	target.faultCode = VDP_FAULT_NONE;
+	target.faultDetail = 0u;
+	u32 surfaceId = 0u;
+	if (packet.sourceRect.slot == VDP_SLOT_SYSTEM) {
+		surfaceId = VDP_RD_SURFACE_SYSTEM;
+	} else if (packet.sourceRect.slot == VDP_SLOT_PRIMARY) {
+		surfaceId = VDP_RD_SURFACE_PRIMARY;
+	} else if (packet.sourceRect.slot == VDP_SLOT_SECONDARY) {
+		surfaceId = VDP_RD_SURFACE_SECONDARY;
+	} else {
+		target.faultCode = VDP_FAULT_BBU_SOURCE_OOB;
+		target.faultDetail = packet.sourceRect.slot;
+		return;
 	}
-	const VdpSurfaceUploadSlot* surface = tryResolveBlitterSurfaceForSource(source, faultCode, faultCode);
+	target.source.surfaceId = surfaceId;
+	target.source.srcX = packet.sourceRect.u;
+	target.source.srcY = packet.sourceRect.v;
+	target.source.width = packet.sourceRect.w;
+	target.source.height = packet.sourceRect.h;
+	target.slot = packet.sourceRect.slot;
+	if (target.source.width == 0u || target.source.height == 0u) {
+		target.faultCode = VDP_FAULT_BBU_ZERO_SIZE;
+		target.faultDetail = target.source.width | (target.source.height << 16u);
+		return;
+	}
+	const VdpSurfaceUploadSlot* surface = findRegisteredVramSlotBySurfaceId(surfaceId);
 	if (surface == nullptr) {
+		target.faultCode = VDP_FAULT_BBU_SOURCE_OOB;
+		target.faultDetail = surfaceId;
+		return;
+	}
+	const uint64_t sourceRight = static_cast<uint64_t>(target.source.srcX) + static_cast<uint64_t>(target.source.width);
+	const uint64_t sourceBottom = static_cast<uint64_t>(target.source.srcY) + static_cast<uint64_t>(target.source.height);
+	if (sourceRight > surface->surfaceWidth || sourceBottom > surface->surfaceHeight) {
+		target.faultCode = VDP_FAULT_BBU_SOURCE_OOB;
+		target.faultDetail = target.source.srcX | (target.source.srcY << 16u);
+		return;
+	}
+	target.surfaceWidth = surface->surfaceWidth;
+	target.surfaceHeight = surface->surfaceHeight;
+}
+
+bool VDP::latchBillboardPacket(const VdpBbuPacket& packet) {
+	const VdpBbuPacketDecision decision = m_bbu.beginPacket(packet, m_buildFrame.billboards.size());
+	if (decision.state != VdpBbuPacketState::SourceResolve) {
+		m_fault.raise(decision.faultCode, decision.faultDetail);
 		return false;
 	}
-	target.source = source;
+	VdpBbuSourceResolution resolution;
+	resolveBbuSourceInto(packet, resolution);
+	const VdpBbuPacketDecision completed = m_bbu.completePacket(
+		m_buildFrame.billboards,
+		packet,
+		resolution,
+		resolution.faultCode == VDP_FAULT_NONE ? nextBlitterSequence() : 0u);
+	if (completed.faultCode != VDP_FAULT_NONE) {
+		m_fault.raise(completed.faultCode, completed.faultDetail);
+		return false;
+	}
+	m_buildFrame.cost += VDP_RENDER_BILLBOARD_COST;
+	return true;
+}
+
+bool VDP::resolveSkyboxSampleInto(
+	u32 slot,
+	u32 u,
+	u32 v,
+	u32 w,
+	u32 h,
+	ResolvedBlitterSample& target,
+	VdpSbxFrameResolution& resolution) const {
+	resolution.faultCode = VDP_FAULT_NONE;
+	resolution.faultDetail = 0u;
+	if (slot == VDP_SLOT_SYSTEM) {
+		target.source.surfaceId = VDP_RD_SURFACE_SYSTEM;
+	} else if (slot == VDP_SLOT_PRIMARY) {
+		target.source.surfaceId = VDP_RD_SURFACE_PRIMARY;
+	} else if (slot == VDP_SLOT_SECONDARY) {
+		target.source.surfaceId = VDP_RD_SURFACE_SECONDARY;
+	} else {
+		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
+		resolution.faultDetail = slot;
+		return false;
+	}
+	target.source.srcX = u;
+	target.source.srcY = v;
+	target.source.width = w;
+	target.source.height = h;
+	if (w == 0u || h == 0u) {
+		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
+		resolution.faultDetail = w | (h << 16u);
+		return false;
+	}
+	const VdpSurfaceUploadSlot* surface = findRegisteredVramSlotBySurfaceId(target.source.surfaceId);
+	if (surface == nullptr) {
+		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
+		resolution.faultDetail = target.source.surfaceId;
+		return false;
+	}
+	const uint64_t sourceRight = static_cast<uint64_t>(u) + static_cast<uint64_t>(w);
+	const uint64_t sourceBottom = static_cast<uint64_t>(v) + static_cast<uint64_t>(h);
+	if (sourceRight > surface->surfaceWidth || sourceBottom > surface->surfaceHeight) {
+		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
+		resolution.faultDetail = u | (v << 16u);
+		return false;
+	}
 	target.surfaceWidth = surface->surfaceWidth;
 	target.surfaceHeight = surface->surfaceHeight;
 	target.slot = slot;
 	return true;
 }
 
-bool VDP::latchBillboardPacket(const VdpBbuPacket& packet) {
-	const f32 size = decodeUnsignedQ16_16(packet.sizeWord);
-	if (size <= 0.0f) {
-		m_fault.raise(VDP_FAULT_BBU_ZERO_SIZE, packet.sizeWord);
-		return false;
-	}
-	if (m_buildFrame.billboards.size() >= VDP_BBU_BILLBOARD_LIMIT) {
-		m_fault.raise(VDP_FAULT_BBU_OVERFLOW, static_cast<uint32_t>(m_buildFrame.billboards.size()));
-		return false;
-	}
-	BlitterSource source;
-	if (!tryResolveBlitterSourceWordsInto(packet.sourceRect.slot, packet.sourceRect.u, packet.sourceRect.v, packet.sourceRect.w, packet.sourceRect.h, source, VDP_FAULT_BBU_SOURCE_OOB)) {
-		return false;
-	}
-	const VdpSurfaceUploadSlot* surface = tryResolveBlitterSurfaceForSource(source, VDP_FAULT_BBU_SOURCE_OOB, VDP_FAULT_BBU_ZERO_SIZE);
-	if (surface == nullptr) {
-		return false;
-	}
-	m_bbu.latchBillboard(
-		m_buildFrame.billboards,
-		packet,
-			nextBlitterSequence(),
-			VdpBbuSource{source.surfaceId, source.srcX, source.srcY, source.width, source.height},
-				VdpBbuSurfaceSize{surface->surfaceWidth, surface->surfaceHeight},
-				packet.sourceRect.slot);
-	m_buildFrame.cost += VDP_RENDER_BILLBOARD_COST;
-	return true;
-}
-
-bool VDP::resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples) {
+bool VDP::resolveSkyboxFrameSamplesInto(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples, VdpSbxFrameResolution& resolution) {
+	resolution.faultCode = VDP_FAULT_NONE;
+	resolution.faultDetail = 0u;
 	if ((control & VDP_SBX_CONTROL_ENABLE) == 0u) {
 		return true;
 	}
 	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
-		if (!tryResolveBlitterSampleWordsInto(
+		if (!resolveSkyboxSampleInto(
 			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_SLOT_WORD),
 			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_U_WORD),
 			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_V_WORD),
 			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_W_WORD),
 			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_H_WORD),
 			samples[index],
-			VDP_FAULT_SBX_SOURCE_OOB)) {
+			resolution)) {
 			return false;
 		}
 	}
 	return true;
 }
 
+bool VDP::resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples) {
+	VdpSbxFrameResolution resolution;
+	if (!resolveSkyboxFrameSamplesInto(control, faceWords, samples, resolution)) {
+		m_fault.raise(resolution.faultCode, resolution.faultDetail);
+		return false;
+	}
+	return true;
+}
+
 bool VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 priority, Layer2D layer) {
-	const VdpClippedRect clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, m_frameBufferWidth, m_frameBufferHeight);
+	const VdpClippedRect clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, m_fbm.width(), m_fbm.height());
 	if (clipped.area == 0.0) {
 		return true;
 	}
@@ -1809,8 +1868,8 @@ bool VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i
 
 VDP::TileRunClipWindow VDP::clipTileRun(i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY) const {
 	TileRunClipWindow clip;
-	clip.frameWidth = static_cast<i32>(m_frameBufferWidth);
-	clip.frameHeight = static_cast<i32>(m_frameBufferHeight);
+	clip.frameWidth = static_cast<i32>(m_fbm.width());
+	clip.frameHeight = static_cast<i32>(m_fbm.height());
 	const i32 totalWidth = cols * tileW;
 	const i32 totalHeight = rows * tileH;
 	clip.dstX = originX - scrollX;
@@ -1947,13 +2006,9 @@ void VDP::latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, 
 }
 
 void VDP::commitLiveVisualState() {
-	m_committedDitherType = m_liveDitherType;
-	m_committedXf.matrixWords = m_xf.matrixWords;
-	m_committedXf.viewMatrixIndex = m_xf.viewMatrixIndex;
-	m_committedXf.projectionMatrixIndex = m_xf.projectionMatrixIndex;
-	m_committedBillboards.clear();
 	m_sbx.presentLiveState();
-	resolveSkyboxFrameSamples(m_sbx.visibleControl(), m_sbx.visibleFaceWords(), m_committedSkyboxSamples);
+	m_vout.presentLiveState(m_xf, m_sbx.visibleEnabled());
+	resolveSkyboxFrameSamples(m_sbx.visibleControl(), m_sbx.visibleFaceWords(), m_vout.visibleSkyboxSampleBuffer());
 }
 
 // start hot-path -- VDP readback registers are polled by the emulated CPU.
@@ -2031,15 +2086,12 @@ void VDP::initializeRegisters() {
 	if (frameBufferSurface.registered) {
 		const VdpSurfaceUploadSlot* slot = findRegisteredVramSlotBySurfaceId(frameBufferSurface.surfaceId);
 		if (slot != nullptr) {
-			m_frameBufferWidth = slot->surfaceWidth;
-			m_frameBufferHeight = slot->surfaceHeight;
+			m_fbm.configure(slot->surfaceWidth, slot->surfaceHeight);
 		} else {
-			m_frameBufferWidth = m_configuredFrameBufferSize.width;
-			m_frameBufferHeight = m_configuredFrameBufferSize.height;
+			m_fbm.configure(m_configuredFrameBufferSize.width, m_configuredFrameBufferSize.height);
 		}
 	} else {
-		m_frameBufferWidth = m_configuredFrameBufferSize.width;
-		m_frameBufferHeight = m_configuredFrameBufferSize.height;
+		m_fbm.configure(m_configuredFrameBufferSize.width, m_configuredFrameBufferSize.height);
 	}
 	resetQueuedFrameState();
 	resetIngressState();
@@ -2056,11 +2108,8 @@ void VDP::initializeRegisters() {
 	m_pmu.reset();
 	syncPmuRegisterWindow();
 	m_xf.reset();
-	m_committedXf.matrixWords = m_xf.matrixWords;
-	m_committedXf.viewMatrixIndex = m_xf.viewMatrixIndex;
-	m_committedXf.projectionMatrixIndex = m_xf.projectionMatrixIndex;
-	m_liveDitherType = dither;
-	m_committedDitherType = dither;
+	m_vout.reset(dither, m_fbm.width(), m_fbm.height());
+	m_bbu.reset();
 	m_sbx.reset();
 	syncSbxRegisterWindow();
 	m_lastFrameCommitted = true;
@@ -2082,18 +2131,18 @@ void VDP::initializeVramSurfaces() {
 		cache.data.clear();
 	}
 	resetQueuedFrameState();
+	m_fbm.configure(0u, 0u);
+	m_vout.configureScanout(0u, 0u);
 	m_sbx.reset();
 	syncSbxRegisterWindow();
-	m_committedXf.matrixWords = m_xf.matrixWords;
-	m_committedXf.viewMatrixIndex = m_xf.viewMatrixIndex;
-	m_committedXf.projectionMatrixIndex = m_xf.projectionMatrixIndex;
-	m_committedDitherType = m_liveDitherType;
 	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, VRAM_STAGING_BASE};
 	fillVramGarbageScratch(m_vramStaging.data(), m_vramStaging.size(), stream);
 	m_vramSlots.reserve(surfaces.size());
 	for (const auto& surface : surfaces) {
 		registerVramSlot(surface);
 	}
+	m_vout.presentLiveState(m_xf, m_sbx.visibleEnabled());
+	resolveSkyboxFrameSamples(m_sbx.visibleControl(), m_sbx.visibleFaceWords(), m_vout.visibleSkyboxSampleBuffer());
 	m_memory.writeIoValue(IO_VDP_SLOT_PRIMARY_ATLAS, valueNumber(static_cast<double>(VDP_SLOT_ATLAS_NONE)));
 	m_memory.writeIoValue(IO_VDP_SLOT_SECONDARY_ATLAS, valueNumber(static_cast<double>(VDP_SLOT_ATLAS_NONE)));
 }
@@ -2121,7 +2170,7 @@ void VDP::captureVisualStateFields(VdpState& state) const {
 	state.skyboxFaceWords = m_sbx.liveFaceWords();
 	state.pmuSelectedBank = m_pmu.selectedBank();
 	state.pmuBankWords = m_pmu.captureBankWords();
-	state.ditherType = m_liveDitherType;
+	state.ditherType = m_vout.liveDitherType();
 	state.vdpFaultCode = m_fault.code;
 	state.vdpFaultDetail = m_fault.detail;
 }
@@ -2154,7 +2203,7 @@ VdpSaveState VDP::captureSaveState() const {
 	captureVisualStateFields(state);
 	state.vramStaging = m_vramStaging;
 	state.surfacePixels = captureSurfacePixels();
-	state.displayFrameBufferPixels = m_displayFrameBufferCpuReadback;
+	state.displayFrameBufferPixels = m_fbm.captureDisplayReadback();
 	return state;
 }
 
@@ -2164,11 +2213,8 @@ void VDP::restoreSaveState(const VdpSaveState& state) {
 	for (const VdpSurfacePixelsState& surface : state.surfacePixels) {
 		restoreSurfacePixels(surface);
 	}
-	m_displayFrameBufferCpuReadback = state.displayFrameBufferPixels;
-	for (VdpDirtySpan& span : m_frameBufferPresentationDirtySpansByRow) {
-		span = VdpDirtySpan{};
-	}
-	resetFrameBufferPresentation();
+	m_fbm.restoreDisplayReadback(state.displayFrameBufferPixels);
+	commitLiveVisualState();
 }
 
 void VDP::registerVramSlot(const VdpVramSurface& surface) {
@@ -2192,11 +2238,8 @@ void VDP::registerVramSlot(const VdpVramSurface& surface) {
 	registerReadSurface(surface.surfaceId);
 	auto& slotRef = m_vramSlots.back();
 	if (surface.surfaceId == VDP_RD_SURFACE_FRAMEBUFFER) {
-		m_frameBufferWidth = surface.width;
-		m_frameBufferHeight = surface.height;
-		m_displayFrameBufferCpuReadback.resize(static_cast<size_t>(size));
-		m_frameBufferPresentationDirtySpansByRow.assign(surface.height, VdpDirtySpan{});
-		resetFrameBufferPresentation();
+		m_fbm.configure(surface.width, surface.height);
+		m_vout.configureScanout(surface.width, surface.height);
 	}
 	if (surface.surfaceId == VDP_RD_SURFACE_SYSTEM) {
 		invalidateReadCache(surface.surfaceId);
@@ -2225,11 +2268,8 @@ bool VDP::setVramSlotLogicalDimensions(VdpSurfaceUploadSlot& slot, uint32_t widt
 	slot.dirtySpansByRow.assign(height, VdpDirtySpan{});
 	invalidateReadCache(slot.surfaceId);
 	if (slot.surfaceId == VDP_RD_SURFACE_FRAMEBUFFER) {
-		m_frameBufferWidth = width;
-		m_frameBufferHeight = height;
-		m_displayFrameBufferCpuReadback.resize(static_cast<size_t>(size));
-		m_frameBufferPresentationDirtySpansByRow.assign(height, VdpDirtySpan{});
-		resetFrameBufferPresentation();
+		m_fbm.configure(width, height);
+		m_vout.configureScanout(width, height);
 	}
 	if (slot.surfaceId == VDP_RD_SURFACE_SYSTEM) {
 		slot.dirtyRowStart = 0;
@@ -2503,7 +2543,7 @@ void VDP::copySurfacePixels(const VdpSurfaceUploadSlot& surface, uint32_t x, uin
 }
 
 bool VDP::readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes) {
-	const std::vector<u8>* source = &m_displayFrameBufferCpuReadback;
+	const std::vector<u8>* source = &m_fbm.displayReadback();
 	if (page == VdpFrameBufferPage::Render) {
 		source = frameBufferRenderReadback();
 		if (source == nullptr) {
@@ -2517,16 +2557,13 @@ bool VDP::readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y,
 		m_fault.raise(VDP_FAULT_RD_OOB, static_cast<uint32_t>(outBytes));
 		return false;
 	}
-	if (width > m_frameBufferWidth || height > m_frameBufferHeight || x > m_frameBufferWidth - width || y > m_frameBufferHeight - height) {
+	const u32 frameBufferWidth = m_fbm.width();
+	const u32 frameBufferHeight = m_fbm.height();
+	if (width > frameBufferWidth || height > frameBufferHeight || x > frameBufferWidth - width || y > frameBufferHeight - height) {
 		m_fault.raise(VDP_FAULT_RD_OOB, x | (y << 16u));
 		return false;
 	}
-	const size_t stride = static_cast<size_t>(m_frameBufferWidth) * 4u;
-	for (uint32_t row = 0; row < height; ++row) {
-		const size_t srcOffset = static_cast<size_t>(y + row) * stride + static_cast<size_t>(x) * 4u;
-		const size_t dstOffset = static_cast<size_t>(row) * rowBytes;
-		std::memcpy(out + dstOffset, source->data() + srcOffset, rowBytes);
-	}
+	m_fbm.copyReadbackPixelsFrom(*source, x, y, width, height, out);
 	return true;
 }
 // end hot-path

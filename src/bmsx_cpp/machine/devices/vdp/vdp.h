@@ -11,10 +11,12 @@
 #include "machine/devices/vdp/blitter.h"
 #include "machine/devices/vdp/budget.h"
 #include "machine/devices/vdp/device_output.h"
+#include "machine/devices/vdp/fbm.h"
 #include "machine/devices/vdp/frame.h"
 #include "machine/devices/vdp/pmu.h"
 #include "machine/devices/vdp/registers.h"
 #include "machine/devices/vdp/sbx.h"
+#include "machine/devices/vdp/vout.h"
 #include "machine/devices/vdp/vram_garbage.h"
 #include "machine/devices/vdp/xf.h"
 #include <array>
@@ -96,10 +98,10 @@ public:
 	void onService(int64_t nowCycles);
 	void advanceWork(int workUnits);
 	bool presentReadyFrameOnVblankEdge();
-	uint32_t frameBufferWidth() const { return m_frameBufferWidth; }
-	uint32_t frameBufferHeight() const { return m_frameBufferHeight; }
+	uint32_t frameBufferWidth() const { return m_fbm.width(); }
+	uint32_t frameBufferHeight() const { return m_fbm.height(); }
 		const std::vector<u8>* frameBufferRenderReadback() const;
-		const std::vector<u8>& frameBufferDisplayReadback() const { return m_displayFrameBufferCpuReadback; }
+		const std::vector<u8>& frameBufferDisplayReadback() const { return m_fbm.displayReadback(); }
 		bool readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes);
 		void drainFrameBufferPresentation(VdpFrameBufferPresentationSink& sink);
 		void clearFrameBufferPresentation();
@@ -147,6 +149,7 @@ private:
 	static void onDitherWriteThunk(void* context, uint32_t addr, Value value);
 	static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
 	static void onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
+	static void onSbxRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
 	static void onSbxCommitWriteThunk(void* context, uint32_t addr, Value value);
 	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value);
 
@@ -177,17 +180,11 @@ private:
 	uint32_t m_readBudgetBytes = 0;
 	bool m_readOverflow = false;
 	VdpSbxUnit m_sbx;
-	VdpSbxUnit::FaceWords m_sbxPacketFaceWords{};
-	VdpSbxUnit::FaceWords m_sbxMmioFaceWords{};
+	SkyboxSamples m_sbxSealSamples{};
 	VdpXfUnit m_xf;
-	VdpXfUnit m_committedXf;
 	VdpPmuUnit m_pmu;
 	VdpBbuUnit m_bbu;
-		SkyboxSamples m_committedSkyboxSamples{};
-		std::vector<VdpBbuBillboardEntry> m_committedBillboards;
-		VdpDeviceOutput m_deviceOutput;
-	i32 m_liveDitherType = 0;
-	i32 m_committedDitherType = 0;
+	VdpVoutUnit m_vout;
 	int64_t m_cpuHz = 1;
 	int64_t m_workUnitsPerSec = 1;
 	int64_t m_workCarry = 0;
@@ -210,14 +207,7 @@ private:
 	bool m_lastFrameCommitted = true;
 	int m_lastFrameCost = 0;
 	bool m_lastFrameHeld = false;
-	uint32_t m_frameBufferWidth = 0;
-	uint32_t m_frameBufferHeight = 0;
-	std::vector<u8> m_displayFrameBufferCpuReadback;
-	uint32_t m_frameBufferPresentationCount = 0;
-	bool m_frameBufferPresentationRequiresFullSync = false;
-	uint32_t m_frameBufferPresentationDirtyRowStart = 0;
-	uint32_t m_frameBufferPresentationDirtyRowEnd = 0;
-	std::vector<VdpDirtySpan> m_frameBufferPresentationDirtySpansByRow;
+	VdpFbmUnit m_fbm;
 	std::array<ReadSurface, 4> m_readSurfaces{};
 	std::array<ReadCache, 4> m_readCaches{};
 	VdpFrameBufferSize m_configuredFrameBufferSize;
@@ -264,9 +254,7 @@ private:
 	void rasterizeFrameBufferLine(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, f32 thicknessValue, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq);
 	void rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq);
 	void copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 priority, u32 seq);
-	void swapFrameBufferReadbackPages();
 	void presentFrameBufferPageOnVblankEdge();
-	void resetFrameBufferPresentation();
 	void scheduleNextService(int64_t nowCycles);
 	bool hasOpenDirectVdpFifoIngress() const;
 	bool hasBlockedSubmitPath() const;
@@ -277,6 +265,7 @@ private:
 	void writePmuBankSelect(u32 value);
 	void onPmuRegisterWindowWrite(uint32_t addr);
 	void syncPmuRegisterWindow();
+	void onSbxRegisterWindowWrite(uint32_t addr, Value value);
 	void onSbxCommitWrite();
 	void syncSbxRegisterWindow();
 	void configureSelectedSlotDimension(u32 word);
@@ -337,7 +326,9 @@ private:
 		bool tryResolveSurfaceIdForSlot(u32 slot, uint32_t& surfaceId, uint32_t faultCode);
 		bool tryResolveBlitterSourceWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, BlitterSource& target, uint32_t faultCode);
 		const VdpSurfaceUploadSlot* tryResolveBlitterSurfaceForSource(const BlitterSource& source, uint32_t faultCode, uint32_t zeroSizeFaultCode);
-		bool tryResolveBlitterSampleWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, ResolvedBlitterSample& target, uint32_t faultCode);
+		bool resolveSkyboxSampleInto(u32 slot, u32 u, u32 v, u32 w, u32 h, ResolvedBlitterSample& target, VdpSbxFrameResolution& resolution) const;
+		void resolveBbuSourceInto(const VdpBbuPacket& packet, VdpBbuSourceResolution& target) const;
+		bool resolveSkyboxFrameSamplesInto(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples, VdpSbxFrameResolution& resolution);
 		bool resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples);
 
 	void commitLiveVisualState();

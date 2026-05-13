@@ -5,6 +5,7 @@ import type { IrqControllerState } from '../../devices/irq/controller';
 import type { AudioControllerState } from '../../devices/audio/controller';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/controller';
+import { GEOMETRY_CONTROLLER_REGISTER_COUNT, type GeometryControllerState, type GeometryJobState } from '../../devices/geometry/controller';
 import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/vdp';
 import { SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
 import { VDP_REGISTER_COUNT } from '../../devices/vdp/registers';
@@ -75,6 +76,14 @@ function requireI32(value: unknown, label: string): number {
 		throw new Error(`${label} must be an i32 value.`);
 	}
 	return value | 0;
+}
+
+function requireI64(value: unknown, label: string): number {
+	const word = value as number;
+	if (!Number.isSafeInteger(word)) {
+		throw new Error(`${label} must be an i64 value.`);
+	}
+	return word;
 }
 
 function decodeNumberObjectField(value: unknown, label: string, key: string, keyLabel: string): number {
@@ -232,6 +241,69 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 	};
 }
 
+function encodeGeometryJobState(state: GeometryJobState): GeometryJobState {
+	return {
+		cmd: state.cmd >>> 0,
+		src0: state.src0 >>> 0,
+		src1: state.src1 >>> 0,
+		src2: state.src2 >>> 0,
+		dst0: state.dst0 >>> 0,
+		dst1: state.dst1 >>> 0,
+		count: state.count >>> 0,
+		param0: state.param0 >>> 0,
+		param1: state.param1 >>> 0,
+		stride0: state.stride0 >>> 0,
+		stride1: state.stride1 >>> 0,
+		stride2: state.stride2 >>> 0,
+		processed: state.processed >>> 0,
+		resultCount: state.resultCount >>> 0,
+		exactPairCount: state.exactPairCount >>> 0,
+		broadphasePairCount: state.broadphasePairCount >>> 0,
+	};
+}
+
+function decodeGeometryJobState(value: unknown, label: string): GeometryJobState {
+	const object = requireObject(value, label);
+	return {
+		cmd: requireBoundedU32(requireObjectKey(object, 'cmd', label, 'machine.geometry.activeJob.cmd'), 'machine.geometry.activeJob.cmd', 0, 0xffffffff),
+		src0: requireBoundedU32(requireObjectKey(object, 'src0', label, 'machine.geometry.activeJob.src0'), 'machine.geometry.activeJob.src0', 0, 0xffffffff),
+		src1: requireBoundedU32(requireObjectKey(object, 'src1', label, 'machine.geometry.activeJob.src1'), 'machine.geometry.activeJob.src1', 0, 0xffffffff),
+		src2: requireBoundedU32(requireObjectKey(object, 'src2', label, 'machine.geometry.activeJob.src2'), 'machine.geometry.activeJob.src2', 0, 0xffffffff),
+		dst0: requireBoundedU32(requireObjectKey(object, 'dst0', label, 'machine.geometry.activeJob.dst0'), 'machine.geometry.activeJob.dst0', 0, 0xffffffff),
+		dst1: requireBoundedU32(requireObjectKey(object, 'dst1', label, 'machine.geometry.activeJob.dst1'), 'machine.geometry.activeJob.dst1', 0, 0xffffffff),
+		count: requireBoundedU32(requireObjectKey(object, 'count', label, 'machine.geometry.activeJob.count'), 'machine.geometry.activeJob.count', 0, 0xffffffff),
+		param0: requireBoundedU32(requireObjectKey(object, 'param0', label, 'machine.geometry.activeJob.param0'), 'machine.geometry.activeJob.param0', 0, 0xffffffff),
+		param1: requireBoundedU32(requireObjectKey(object, 'param1', label, 'machine.geometry.activeJob.param1'), 'machine.geometry.activeJob.param1', 0, 0xffffffff),
+		stride0: requireBoundedU32(requireObjectKey(object, 'stride0', label, 'machine.geometry.activeJob.stride0'), 'machine.geometry.activeJob.stride0', 0, 0xffffffff),
+		stride1: requireBoundedU32(requireObjectKey(object, 'stride1', label, 'machine.geometry.activeJob.stride1'), 'machine.geometry.activeJob.stride1', 0, 0xffffffff),
+		stride2: requireBoundedU32(requireObjectKey(object, 'stride2', label, 'machine.geometry.activeJob.stride2'), 'machine.geometry.activeJob.stride2', 0, 0xffffffff),
+		processed: requireBoundedU32(requireObjectKey(object, 'processed', label, 'machine.geometry.activeJob.processed'), 'machine.geometry.activeJob.processed', 0, 0xffffffff),
+		resultCount: requireBoundedU32(requireObjectKey(object, 'resultCount', label, 'machine.geometry.activeJob.resultCount'), 'machine.geometry.activeJob.resultCount', 0, 0xffffffff),
+		exactPairCount: requireBoundedU32(requireObjectKey(object, 'exactPairCount', label, 'machine.geometry.activeJob.exactPairCount'), 'machine.geometry.activeJob.exactPairCount', 0, 0xffffffff),
+		broadphasePairCount: requireBoundedU32(requireObjectKey(object, 'broadphasePairCount', label, 'machine.geometry.activeJob.broadphasePairCount'), 'machine.geometry.activeJob.broadphasePairCount', 0, 0xffffffff),
+	};
+}
+
+function encodeGeometryControllerState(state: GeometryControllerState): GeometryControllerState {
+	return {
+		registerWords: encodeVector(state.registerWords, (word) => word >>> 0),
+		activeJob: state.activeJob === null ? null : encodeGeometryJobState(state.activeJob),
+		workCarry: state.workCarry,
+		availableWorkUnits: state.availableWorkUnits >>> 0,
+	};
+}
+
+function decodeGeometryControllerState(value: unknown, label: string): GeometryControllerState {
+	const object = requireObject(value, label);
+	const activeJob = requireObjectKey(object, 'activeJob', label, 'machine.geometry.activeJob');
+	return {
+		registerWords: decodeU32FixedArray(requireObjectKey(object, 'registerWords', label, 'machine.geometry.registerWords'), 'machine.geometry.registerWords', GEOMETRY_CONTROLLER_REGISTER_COUNT),
+		activeJob: activeJob === null ? null : decodeGeometryJobState(activeJob, 'machine.geometry.activeJob'),
+		workCarry: requireI64(requireObjectKey(object, 'workCarry', label, 'machine.geometry.workCarry'), 'machine.geometry.workCarry'),
+		availableWorkUnits: requireBoundedU32(requireObjectKey(object, 'availableWorkUnits', label, 'machine.geometry.availableWorkUnits'), 'machine.geometry.availableWorkUnits', 0, 0xffffffff),
+	};
+}
+
 function encodeVdpState(state: VdpState): VdpState {
 	return {
 		xf: {
@@ -334,6 +406,7 @@ function decodeAudioControllerState(value: unknown, label: string): AudioControl
 function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 	return {
 		memory: encodeMemorySaveState(state.memory),
+		geometry: encodeGeometryControllerState(state.geometry),
 		irq: encodeIrqControllerState(state.irq),
 		audio: encodeAudioControllerState(state.audio),
 		stringPool: encodeStringPoolState(state.stringPool),
@@ -346,6 +419,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 	const object = requireObject(value, label);
 	return {
 		memory: decodeMemorySaveState(requireObjectKey(object, 'memory', label, 'machineState.machine.memory'), 'machineState.machine.memory'),
+		geometry: decodeGeometryControllerState(requireObjectKey(object, 'geometry', label, 'machineState.machine.geometry'), 'machineState.machine.geometry'),
 		irq: decodeIrqControllerState(requireObjectKey(object, 'irq', label, 'machineState.machine.irq'), 'machineState.machine.irq'),
 		audio: decodeAudioControllerState(requireObjectKey(object, 'audio', label, 'machineState.machine.audio'), 'machineState.machine.audio'),
 		stringPool: decodeStringPoolState(requireObjectKey(object, 'stringPool', label, 'machineState.machine.stringPool'), 'machineState.machine.stringPool'),

@@ -646,6 +646,12 @@ void testSbxSkyboxPacketRawControlAndFrameSealFault() {
 	sealStream(h, badSource);
 	expectVdpFault(h, bmsx::VDP_FAULT_SBX_SOURCE_OOB, "bad-source SKYBOX should latch a device fault");
 	require(!h.vdp.readDeviceOutput().skyboxEnabled, "bad-source SKYBOX should not become visible");
+	clearVdpFault(h);
+	auto acceptedAfterReject = skyboxPacket(bmsx::VDP_SBX_CONTROL_ENABLE, 4u, 5u);
+	acceptedAfterReject.push_back(VDP_PKT_END);
+	sealStream(h, acceptedAfterReject);
+	h.vdp.presentReadyFrameOnVblankEdge();
+	require(h.vdp.readDeviceOutput().skyboxEnabled, "SBX should emit valid state after a rejected frame seal");
 }
 
 void testXfPacketUpdatesRawTransformRegisterState() {
@@ -839,6 +845,14 @@ void testBbuFaultsAtBillboardPacketAcceptance() {
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad-source BILLBOARD should cancel the build frame");
 	clearVdpFault(h);
 
+	auto acceptedAfterReject = billboardPacket(1u << 16u, 0u, 0u, 1u, 1u);
+	acceptedAfterReject.push_back(VDP_PKT_END);
+	sealStream(h, acceptedAfterReject);
+	require(h.vdp.getPendingRenderWorkUnits() == 1, "BBU should leave rejected packet state when the next packet starts");
+	h.vdp.advanceWork(1);
+	require(!h.vdp.presentReadyFrameOnVblankEdge(), "BBU instance-only frame should not present framebuffer pages");
+	require(h.vdp.readDeviceOutput().billboards->size() == 1u, "BBU should emit a valid instance after a rejected packet");
+
 	std::vector<uint32_t> overflow;
 	for (size_t index = 0; index <= bmsx::VDP_BBU_BILLBOARD_LIMIT; ++index) {
 		auto packet = billboardPacket(1u << 16u, 0u, 0u, 1u, 1u);
@@ -920,12 +934,50 @@ void testVramReadFaultsLatchStatus() {
 	require(bytes == std::array<uint8_t, 4>{{0u, 0u, 0u, 0u}}, "OOB VRAM read should return zero bytes");
 }
 
+void testVoutScanoutPhaseOwnsVblankOutputPin() {
+	Harness h;
+
+	require(h.vdp.readDeviceOutput().scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Active), "VOUT scanout should start active");
+	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_VBLANK) == 0u, "VDP status should start outside VBLANK");
+	h.vdp.setVblankStatus(true);
+	require(h.vdp.readDeviceOutput().scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Vblank), "VOUT scanout should enter VBLANK");
+	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_VBLANK) != 0u, "VDP status should reflect VOUT VBLANK phase");
+	h.vdp.setVblankStatus(false);
+	require(h.vdp.readDeviceOutput().scanoutPhase == static_cast<uint32_t>(bmsx::VdpVoutScanoutPhase::Active), "VOUT scanout should return to active output");
+	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_VBLANK) == 0u, "VDP status should clear with VOUT active phase");
+}
+
 void testDitherRegisterWritesUpdateLiveLatch() {
 	Harness h;
 
+	require(h.vdp.readDeviceOutput().ditherType == 0, "visible DITHER output should start at reset value");
+	require(h.vdp.readDeviceOutput().frameBufferWidth == 256u, "visible VOUT scanout width should start at configured framebuffer width");
+	require(h.vdp.readDeviceOutput().frameBufferHeight == 212u, "visible VOUT scanout height should start at configured framebuffer height");
 	writeIo(h.memory, bmsx::IO_VDP_DITHER, 3u);
+	h.vdp.setDecodedVramSurfaceDimensions(bmsx::VRAM_FRAMEBUFFER_BASE, 128u, 64u);
 
 	require(h.vdp.captureState().ditherType == 3, "DITHER write should update live VDP latch directly");
+	require(h.vdp.readDeviceOutput().ditherType == 0, "live DITHER write should wait for frame present before visible output");
+	require(h.vdp.frameBufferWidth() == 128u, "FBM live scanout width should update at framebuffer configuration");
+	require(h.vdp.frameBufferHeight() == 64u, "FBM live scanout height should update at framebuffer configuration");
+	require(h.vdp.readDeviceOutput().frameBufferWidth == 256u, "VOUT visible scanout width should wait for frame present");
+	require(h.vdp.readDeviceOutput().frameBufferHeight == 212u, "VOUT visible scanout height should wait for frame present");
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	h.vdp.setDecodedVramSurfaceDimensions(bmsx::VRAM_FRAMEBUFFER_BASE, 96u, 48u);
+	require(h.vdp.frameBufferWidth() == 96u, "FBM live scanout width should accept post-seal configuration");
+	require(h.vdp.frameBufferHeight() == 48u, "FBM live scanout height should accept post-seal configuration");
+	require(h.vdp.readDeviceOutput().frameBufferWidth == 256u, "visible VOUT scanout width should stay on previous presented frame before VBlank");
+	require(h.vdp.readDeviceOutput().frameBufferHeight == 212u, "visible VOUT scanout height should stay on previous presented frame before VBlank");
+	require(!h.vdp.presentReadyFrameOnVblankEdge(), "DITHER-only frame should not present framebuffer pages");
+	require(h.vdp.readDeviceOutput().ditherType == 3, "presented frame should commit visible DITHER output");
+	require(h.vdp.readDeviceOutput().frameBufferWidth == 128u, "presented frame should commit frame-sealed VOUT scanout width");
+	require(h.vdp.readDeviceOutput().frameBufferHeight == 64u, "presented frame should commit frame-sealed VOUT scanout height");
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	require(!h.vdp.presentReadyFrameOnVblankEdge(), "next DITHER-only frame should not present framebuffer pages");
+	require(h.vdp.readDeviceOutput().frameBufferWidth == 96u, "next frame should commit the post-seal VOUT scanout width");
+	require(h.vdp.readDeviceOutput().frameBufferHeight == 48u, "next frame should commit the post-seal VOUT scanout height");
 }
 
 void testSaveStateRestoresRegisterFileAndSurfaceGeometry() {
@@ -1003,6 +1055,7 @@ int main() {
 		{"VDP readback OOB fault status", testReadbackOobFaultsLatchStatus},
 		{"VDP VRAM write fault status", testVramWriteFaultsLatchStatus},
 		{"VDP VRAM read fault status", testVramReadFaultsLatchStatus},
+		{"VDP VOUT scanout phase", testVoutScanoutPhaseOwnsVblankOutputPin},
 		{"VDP dither live latch", testDitherRegisterWritesUpdateLiveLatch},
 		{"VDP save-state registerfile/surface geometry", testSaveStateRestoresRegisterFileAndSurfaceGeometry},
 	};

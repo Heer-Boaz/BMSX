@@ -1,9 +1,28 @@
 import { VDP_BBU_BILLBOARD_LIMIT, type Layer2D, type VdpSlotSource } from './contracts';
 import { decodeSignedQ16_16, decodeUnsignedQ16_16 } from './fixed_point';
 import { packedHigh16, packedLow16 } from '../../common/word';
+import {
+	VDP_FAULT_BBU_OVERFLOW,
+	VDP_FAULT_BBU_ZERO_SIZE,
+	VDP_FAULT_NONE,
+} from '../../bus/io';
 
 export const VDP_BBU_PACKET_KIND = 0x11000000;
 export const VDP_BBU_PACKET_PAYLOAD_WORDS = 11;
+export const VDP_BBU_STATE_IDLE = 0;
+export const VDP_BBU_STATE_PACKET_DECODE = 1;
+export const VDP_BBU_STATE_SOURCE_RESOLVE = 2;
+export const VDP_BBU_STATE_INSTANCE_EMIT = 3;
+export const VDP_BBU_STATE_LIMIT_REACHED = 4;
+export const VDP_BBU_STATE_PACKET_REJECTED = 5;
+
+export type VdpBbuPacketState =
+	| typeof VDP_BBU_STATE_IDLE
+	| typeof VDP_BBU_STATE_PACKET_DECODE
+	| typeof VDP_BBU_STATE_SOURCE_RESOLVE
+	| typeof VDP_BBU_STATE_INSTANCE_EMIT
+	| typeof VDP_BBU_STATE_LIMIT_REACHED
+	| typeof VDP_BBU_STATE_PACKET_REJECTED;
 
 export type VdpBbuPacket = {
 	layer: Layer2D;
@@ -14,6 +33,30 @@ export type VdpBbuPacket = {
 	zWord: number;
 	sizeWord: number;
 	color: number;
+};
+
+export type VdpBbuPacketDecision = {
+	state: VdpBbuPacketState;
+	faultCode: number;
+	faultDetail: number;
+	size: number;
+};
+
+export type VdpBbuSource = {
+	surfaceId: number;
+	srcX: number;
+	srcY: number;
+	width: number;
+	height: number;
+};
+
+export type VdpBbuSourceResolution = {
+	faultCode: number;
+	faultDetail: number;
+	source: VdpBbuSource;
+	surfaceWidth: number;
+	surfaceHeight: number;
+	slot: number;
 };
 
 export class VdpBbuFrameBuffer {
@@ -52,6 +95,20 @@ export class VdpBbuUnit {
 		sizeWord: 0,
 		color: 0,
 	};
+	private readonly packetDecision: VdpBbuPacketDecision = {
+		state: VDP_BBU_STATE_IDLE,
+		faultCode: VDP_FAULT_NONE,
+		faultDetail: 0,
+		size: 0,
+	};
+
+	public reset(): void {
+		const decision = this.packetDecision;
+		decision.state = VDP_BBU_STATE_IDLE;
+		decision.faultCode = VDP_FAULT_NONE;
+		decision.faultDetail = 0;
+		decision.size = 0;
+	}
 
 	public decodePacket(
 		layerWord: number,
@@ -83,21 +140,69 @@ export class VdpBbuUnit {
 		return packet;
 	}
 
-	public latchBillboard(
+	public beginPacket(packet: VdpBbuPacket, targetLength: number): VdpBbuPacketDecision {
+		const decision = this.packetDecision;
+		decision.state = VDP_BBU_STATE_PACKET_DECODE;
+		decision.faultCode = VDP_FAULT_NONE;
+		decision.faultDetail = 0;
+		const size = decodeUnsignedQ16_16(packet.sizeWord);
+		decision.size = size;
+		if (size <= 0) {
+			decision.state = VDP_BBU_STATE_PACKET_REJECTED;
+			decision.faultCode = VDP_FAULT_BBU_ZERO_SIZE;
+			decision.faultDetail = packet.sizeWord >>> 0;
+			return decision;
+		}
+		if (targetLength >= VDP_BBU_BILLBOARD_LIMIT) {
+			decision.state = VDP_BBU_STATE_LIMIT_REACHED;
+			decision.faultCode = VDP_FAULT_BBU_OVERFLOW;
+			decision.faultDetail = targetLength >>> 0;
+			return decision;
+		}
+		decision.state = VDP_BBU_STATE_SOURCE_RESOLVE;
+		return decision;
+	}
+
+	public completePacket(
+		target: VdpBbuFrameBuffer,
+		packet: VdpBbuPacket,
+		resolution: VdpBbuSourceResolution,
+		seq: number,
+	): VdpBbuPacketDecision {
+		const decision = this.packetDecision;
+		if (resolution.faultCode !== VDP_FAULT_NONE) {
+			decision.state = VDP_BBU_STATE_PACKET_REJECTED;
+			decision.faultCode = resolution.faultCode;
+			decision.faultDetail = resolution.faultDetail;
+			return decision;
+		}
+		decision.state = VDP_BBU_STATE_INSTANCE_EMIT;
+		this.latchBillboard(
+			target,
+			packet,
+			seq,
+			decision.size,
+			resolution.source,
+			resolution.surfaceWidth,
+			resolution.surfaceHeight,
+			resolution.slot,
+		);
+		decision.faultCode = VDP_FAULT_NONE;
+		decision.faultDetail = 0;
+		return decision;
+	}
+
+	private latchBillboard(
 		target: VdpBbuFrameBuffer,
 		packet: VdpBbuPacket,
 		seq: number,
-		surfaceId: number,
-		srcX: number,
-		srcY: number,
-		width: number,
-		height: number,
+		size: number,
+		source: VdpBbuSource,
 		surfaceWidth: number,
 		surfaceHeight: number,
 		slot: number,
 	): void {
 		const index = target.length;
-		const size = decodeUnsignedQ16_16(packet.sizeWord);
 		target.seq[index] = seq;
 		target.layer[index] = packet.layer;
 		target.priority[index] = packet.priority;
@@ -106,11 +211,11 @@ export class VdpBbuUnit {
 		target.positionZ[index] = decodeSignedQ16_16(packet.zWord);
 		target.size[index] = size;
 		target.color[index] = packet.color;
-		target.sourceSurfaceId[index] = surfaceId;
-		target.sourceSrcX[index] = srcX;
-		target.sourceSrcY[index] = srcY;
-		target.sourceWidth[index] = width;
-		target.sourceHeight[index] = height;
+		target.sourceSurfaceId[index] = source.surfaceId;
+		target.sourceSrcX[index] = source.srcX;
+		target.sourceSrcY[index] = source.srcY;
+		target.sourceWidth[index] = source.width;
+		target.sourceHeight[index] = source.height;
 		target.surfaceWidth[index] = surfaceWidth;
 		target.surfaceHeight[index] = surfaceHeight;
 		target.slot[index] = slot;

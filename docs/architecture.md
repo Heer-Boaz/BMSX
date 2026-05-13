@@ -119,7 +119,7 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   `src/bmsx_cpp/machine/runtime/save_state/schema.h/.cpp`,
   `src/bmsx/machine/runtime/save_state/codec.ts`, and
   `src/bmsx_cpp/machine/runtime/save_state/codec.cpp`. The shared wire version
-  is `9`; the string-pool entry field is `tracked`; ROM-owned strings remain
+  is `18`; the string-pool entry field is `tracked`; ROM-owned strings remain
   untracked while runtime-materialized strings restore as tracked RAM.
 - World/mundo content should follow the same object-image rule: room templates,
   maps, transitions, and export tables belong in `.rodata` records with offsets
@@ -256,13 +256,45 @@ Current evidence:
   and marks the restored surface dirty for host upload. This keeps register
   words and surface shape as VDP state rather than backend texture state.
 - Exceptions are reserved for emulator bugs and impossible internal states, such as broken save-state schema, impossible host transaction invariants, null host buffers, or internal surface registration mistakes.
-- `IO_VDP_DITHER` is a live VDP register. MMIO writes update the live latch directly in both runtimes; the old `syncRegisters()` read-self-back pass is gone.
+- `IO_VDP_DITHER` is a live VOUT register owned by mirrored TS/C++ `machine/devices/vdp/vout` units. MMIO writes update the live latch directly, frame seal snapshots the live dither word, and VBlank presentation promotes the sealed word to visible `VdpDeviceOutput.ditherType`; the old `syncRegisters()` read-self-back pass is gone.
 - VDP VRAM power-on garbage is seeded from explicit machine/boot entropy words instead of `Math.random`, `Date.now`, or host wall-clock state.
 - The 19-word `IO_VDP_CMD_ARG0` latch bank is the DEX/2D blitter ingress, not the whole VDP frontend. Direct MMIO writes and FIFO `REG1`/`REGN` replay feed the same latches, `IO_VDP_CMD`/FIFO `CMD` doorbells snapshot those latches, registers 10 and 11 are raw `DRAW_LAYER`/`DRAW_PRIORITY`, and register 12 is `DRAW_CTRL` for DEX flip/PMU control.
 - DEX frame ingress now has an explicit TS/C++ state word instead of a boolean
   `open` latch. Direct MMIO `BEGIN_FRAME` enters `DirectOpen`; sealed FIFO/DMA
   stream replay enters `StreamOpen`; frame seal and cancellation return the unit
   to `Idle`; submit-busy status derives from that device state.
+- BBU packet acceptance now owns a mirrored TS/C++ synchronous packet transition
+  sequence: `PacketDecode`, `SourceResolve`, `InstanceEmit`, `LimitReached`, and
+  `PacketRejected`; `reset()` returns the packet state to `Idle`. VDP still
+  owns VRAM slot/surface resolution and the cart-visible fault latch, but BBU
+  classifies zero-size and instance-limit rejection before emitting resolved
+  billboard instance RAM. The ingress tests cover rejection
+  without visible mutation and accepting the next valid packet after a rejected
+  one.
+- SBX now owns its mirrored TS/C++ face-window, packet-ingress, seal-snapshot,
+  live, and visible register buffers. The VDP stream/MMIO ingress code writes
+  raw words into SBX-owned buffers, then asks SBX to seal the frame; VDP still
+  performs the VRAM slot/surface lookup and projects the returned SBX fault
+  decision into the cart-visible fault latch. Rejected SBX frame seals leave
+  visible skybox state untouched and the next valid SKYBOX packet can still
+  commit normally.
+- FBM now owns mirrored TS/C++ framebuffer page lifecycle state in
+  `machine/devices/vdp/fbm`: configured framebuffer dimensions, display-page
+  CPU readback, `PageWritable` / `PagePendingPresent` / `PagePresented` /
+  `ReadbackRequested` state, pending presentation count, full-sync promotion,
+  and dirty presentation spans. VDP still owns VRAM slot lookup, fault latching,
+  and dirty-surface clearing, while render-side texture upload remains in
+  `render/vdp/framebuffer`.
+- VOUT now owns mirrored TS/C++ visible video-output state in
+  `machine/devices/vdp/vout`: `Idle` / `RegisterLatched` / `FrameSealed` /
+  `FramePresented` state, the live dither register, active/VBlank scanout
+  phase, retained sealed frame output, live/frame-sealed/visible framebuffer
+  scanout dimensions, visible dither, visible XF matrix selection, visible
+  resolved SBX samples, visible BBU instance RAM, and the retained
+  `VdpDeviceOutput` host transaction. VDP maps `IO_VDP_DITHER`, framebuffer-size
+  changes, VBlank phase changes, frame seal, VBlank frame promotion, and
+  VDP-owned VRAM/sample resolution into that unit; render code still consumes
+  explicit device-output values instead of interpreting cart intent.
 - Current parallax status is DEX/PMU-owned parallax execution. PMU register writes latch raw bank words. DEX resolves the selected bank into per-BLIT `dstX`/`dstY`/scale geometry when it latches BLIT work, and DEX/LINE faults are surfaced through VDP fault latches.
 - Camera, PMU, SBX, and BBU state are real VDP unit state. SBX ingress is either the `IO_VDP_SBX_*` register window plus commit doorbell or a sealed `SKYBOX` packet. BBU ingress is the sealed `BILLBOARD` packet stream. Render backends consume resolved host-output state; they do not validate or program VDP device state.
 - `src/bmsx/render/vdp` and `src/bmsx_cpp/render/vdp` remain the renderer/backend side of the VDP host bridge. They may upload textures, execute ready blitter queues, present framebuffer pages, and clear dirty-surface pins through the explicit VDP host-output contract; they must not be imported by `machine/devices/vdp`.
@@ -653,6 +685,21 @@ Already advanced in this goal:
   store the hardware ingress state as `Idle`, `DirectOpen`, or `StreamOpen`, so
   direct MMIO submit, FIFO/DMA replay, frame seal, cancel, and submit-busy
   status all consume the same explicit unit state.
+- BBU packet acceptance has a mirrored synchronous unit transition in TS and
+  C++ for packet decode, source-resolve admission, instance emit, packet
+  rejection, and billboard-limit rejection. The slice keeps VDP-owned
+  VRAM/surface lookup direct; it does not insert a renderer/host/provider layer
+  or weaken the framebuffer/texture hot path.
+- SBX now owns its register-window staging, packet staging, and frame-seal
+  snapshot buffers in both TS and C++. VDP only writes ingress words, resolves
+  sealed face samples against VDP-owned VRAM/surface state, and raises the
+  returned SBX fault decision.
+- VOUT now owns the live/frame-sealed/visible host-output buffers for dither,
+  active/VBlank scanout phase, framebuffer scanout dimensions, XF, resolved SBX
+  samples, BBU instances, and retained `VdpDeviceOutput` in both TS and C++.
+  VDP still performs VRAM/sample resolution and FBM dimension ownership, but it
+  no longer passes framebuffer dimensions through the host-output read path or
+  carries separate committed camera/skybox/billboard output mirrors.
 
 Open problems to continue with:
 
@@ -686,10 +733,18 @@ Open problems to continue with:
 4. Geometry is not proven complete. It is more hardware-shaped than many
    older surfaces because it has MMIO registers, scheduler service, IRQs,
    status/fault words, and mirrored TS/C++ controllers. That is not the same as
-   being done. The geometry controller still needs an ownership pass for its
-   internal datapaths, scratch buffers, save/load behavior, TS/C++ constant
-   ownership, and whether every cart-visible error is represented as device
-   status rather than host exception or ad-hoc rejection. The existing
+   being done. The geometry controller now saves and restores its in-flight
+   command latch, processed counters, and timing budget state instead of
+   aborting BUSY work at load time, so a save-state preserves the device as an
+   active coprocessor rather than reconstructing work from visible registers.
+   The overlap datapath now keeps its projection, center, centroid, bounds,
+   instance, world-poly, and clip buffers as mirrored transient controller
+   scratch in both runtimes instead of allocating helper-return objects in the
+   hot SAT/contact path; that scratch remains excluded from save-state because
+   it is deterministically derived from the active job and RAM operands. The
+   controller still needs ownership passes for TS/C++ constant ownership and
+   whether every cart-visible error is represented as device status rather than
+   host exception or ad-hoc rejection. The existing
    `docs/geo_overlap2d_pass_v1.md` is a good hardware-contract note, but it does
    not certify the whole geometry device.
 
@@ -708,9 +763,9 @@ Open problems to continue with:
 
 If `/goal resume` is invoked, it should mean this order of work:
 
-1. Continue VDP-as-hardware cleanup by extending explicit state, timing, and
-   fault ownership from DEX ingress into SBX, BBU, FBM, and VOUT without adding
-   renderer-facing scene APIs or wrapper layers.
+1. Continue VDP-as-hardware cleanup by extending VOUT beyond the current dither
+   live/visible latch into explicit video timing, scanout, and host-output
+   ownership without adding renderer-facing scene APIs or wrapper layers.
 2. Audit Geometry as a device, not as a math helper: registers, latches,
    scheduler timing, IRQ/status/fault behavior, scratch ownership, save/load
    behavior, and TS/C++ parity should be checked as one hardware contract.
@@ -744,9 +799,9 @@ Completed foundation:
 
 Next recommended work:
 
-1. Continue VDP-as-hardware cleanup with explicit state/timing/fault contracts
-   for SBX, BBU, FBM, and VOUT, preserving direct VDP-owned hot paths and the
-   explicit host-output transaction boundary.
+1. Continue VDP-as-hardware cleanup by expanding VOUT from live/visible dither
+   and scanout dimensions into explicit scanline/output timing, preserving
+   direct VDP-owned hot paths and the explicit host-output transaction boundary.
 2. Audit Geometry as a real coprocessor device, including register/latch
    ownership, scheduler timing, scratch/result memory, status/fault behavior,
    and focused TS/C++ tests.

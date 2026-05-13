@@ -621,6 +621,29 @@ void testCpuNmiPreemptsMaskableIrqGolden() {
 
 void testRuntimeSaveStateInterruptFieldsGolden() {
 	bmsx::RuntimeSaveState state;
+	bmsx::GeometryJobState geoJob;
+	geoJob.cmd = bmsx::IO_CMD_GEO_XFORM2_BATCH;
+	geoJob.src0 = 0x1000u;
+	geoJob.src1 = 0x2000u;
+	geoJob.src2 = 0x3000u;
+	geoJob.dst0 = 0x4000u;
+	geoJob.dst1 = 0x5000u;
+	geoJob.count = 6u;
+	geoJob.param0 = 7u;
+	geoJob.param1 = 8u;
+	geoJob.stride0 = 9u;
+	geoJob.stride1 = 10u;
+	geoJob.stride2 = 11u;
+	geoJob.processed = 2u;
+	geoJob.resultCount = 3u;
+	geoJob.exactPairCount = 4u;
+	geoJob.broadphasePairCount = 5u;
+	for (size_t index = 0; index < bmsx::GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1u) {
+		state.machineState.machine.geometry.registerWords[index] = static_cast<bmsx::u32>(index + 1u);
+	}
+	state.machineState.machine.geometry.activeJob = geoJob;
+	state.machineState.machine.geometry.workCarry = 12;
+	state.machineState.machine.geometry.availableWorkUnits = 1u;
 	state.machineState.machine.irq.pendingFlags = bmsx::IRQ_VBLANK | bmsx::IRQ_REINIT;
 	state.machineState.machine.audio.eventSequence = 3u;
 	state.machineState.machine.audio.apuStatus = bmsx::APU_STATUS_FAULT;
@@ -637,6 +660,12 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 
 	const std::vector<bmsx::u8> encoded = bmsx::encodeRuntimeSaveState(state);
 	const bmsx::RuntimeSaveState decoded = bmsx::decodeRuntimeSaveState(encoded);
+	require(decoded.machineState.machine.geometry.registerWords[0] == 1u, "save-state should preserve GEO raw registerfile");
+	require(decoded.machineState.machine.geometry.activeJob.has_value(), "save-state should preserve active GEO job presence");
+	require(decoded.machineState.machine.geometry.activeJob->processed == 2u, "save-state should preserve GEO processed latch");
+	require(decoded.machineState.machine.geometry.activeJob->count == 6u, "save-state should preserve GEO command count latch");
+	require(decoded.machineState.machine.geometry.workCarry == 12, "save-state should preserve GEO timing carry");
+	require(decoded.machineState.machine.geometry.availableWorkUnits == 1u, "save-state should preserve GEO available work");
 	require(decoded.machineState.machine.irq.pendingFlags == (bmsx::IRQ_VBLANK | bmsx::IRQ_REINIT), "save-state should preserve pending IRQ device flags");
 	require(decoded.machineState.machine.audio.eventSequence == 3u, "save-state should preserve APU event sequence");
 	require(decoded.machineState.machine.audio.apuStatus == bmsx::APU_STATUS_FAULT, "save-state should preserve APU status");
@@ -675,6 +704,77 @@ void testMachineSaveRestorePreservesIrqLineGolden() {
 
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "machine save-state restore should restore pending IRQ line state");
 	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "machine save-state restore should expose pending IRQ flags to the cart");
+}
+
+void writeNoopXform2Record(bmsx::Memory& memory, uint32_t addr) {
+	memory.writeU32(addr + 0u, 0u);
+	memory.writeU32(addr + 4u, 0u);
+	memory.writeU32(addr + 8u, 0u);
+	memory.writeU32(addr + 12u, 0u);
+	memory.writeU32(addr + 16u, 0u);
+	memory.writeU32(addr + 20u, bmsx::GEO_INDEX_NONE);
+}
+
+void testGeometrySaveStateRestoresActiveCommandLatchGolden() {
+	constexpr uint32_t XFORM2_JOB_BYTES = 24u;
+	constexpr uint32_t XFORM2_VERTEX_BYTES = 8u;
+	constexpr uint32_t XFORM2_MATRIX_BYTES = 24u;
+	RuntimeHarness harness;
+	bmsx::Machine& machine = harness.runtime.machine;
+	bmsx::Memory& memory = machine.memory;
+	bmsx::GeometryController& geometry = machine.geometryController;
+	const uint32_t jobBase = bmsx::RAM_BASE;
+
+	geometry.setTiming(1, 1, 0);
+	for (uint32_t record = 0u; record < 3u; record += 1u) {
+		writeNoopXform2Record(memory, jobBase + record * XFORM2_JOB_BYTES);
+	}
+	writeIoWord(memory, bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_XFORM2_BATCH);
+	writeIoWord(memory, bmsx::IO_GEO_SRC0, jobBase);
+	writeIoWord(memory, bmsx::IO_GEO_SRC1, jobBase + 0x100u);
+	writeIoWord(memory, bmsx::IO_GEO_SRC2, jobBase + 0x200u);
+	writeIoWord(memory, bmsx::IO_GEO_DST0, jobBase + 0x300u);
+	writeIoWord(memory, bmsx::IO_GEO_DST1, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_COUNT, 3u);
+	writeIoWord(memory, bmsx::IO_GEO_PARAM0, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_PARAM1, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE0, XFORM2_JOB_BYTES);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE1, XFORM2_VERTEX_BYTES);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE2, XFORM2_MATRIX_BYTES);
+	writeIoWord(memory, bmsx::IO_GEO_CTRL, bmsx::GEO_CTRL_START);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO command should enter BUSY state");
+
+	geometry.accrueCycles(1, 1);
+	geometry.onService(1);
+	require(memory.readIoU32(bmsx::IO_GEO_PROCESSED) == 1u, "GEO should process one record before save");
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO should remain BUSY after a partial command");
+
+	writeIoWord(memory, bmsx::IO_GEO_CMD, 0xffffu);
+	writeIoWord(memory, bmsx::IO_GEO_COUNT, 1u);
+	const bmsx::MachineSaveState saved = machine.captureSaveState();
+
+	geometry.accrueCycles(8, 9);
+	geometry.onService(9);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_DONE, "mutated live machine should finish before restore");
+
+	machine.restoreSaveState(saved);
+	geometry.setTiming(1, 1, machine.scheduler.nowCycles());
+	require(memory.readIoU32(bmsx::IO_GEO_CMD) == 0xffffu, "restore should preserve the post-START visible command register");
+	require(memory.readIoU32(bmsx::IO_GEO_COUNT) == 1u, "restore should preserve the post-START visible count register");
+	require(memory.readIoU32(bmsx::IO_GEO_PROCESSED) == 1u, "restore should preserve the partially processed count");
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "restore should keep active GEO work BUSY");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) == 0u, "restore should not synthesize an abort fault");
+
+	geometry.accrueCycles(1, 1);
+	geometry.onService(1);
+	require(memory.readIoU32(bmsx::IO_GEO_PROCESSED) == 2u, "restored GEO should continue from the latched job");
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "restored GEO should stay BUSY until the latched count completes");
+
+	geometry.accrueCycles(1, 2);
+	geometry.onService(2);
+	require(memory.readIoU32(bmsx::IO_GEO_PROCESSED) == 3u, "restored GEO should complete the latched count");
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_DONE, "restored GEO should finish normally");
+	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GEO_DONE) != 0u, "restored GEO completion should raise DONE IRQ");
 }
 
 struct AudioHarness {
@@ -962,7 +1062,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 24> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 25> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -979,6 +1079,7 @@ int main() {
 		{"cpu nmi preempts maskable irq", testCpuNmiPreemptsMaskableIrqGolden},
 		{"runtime save-state interrupt fields", testRuntimeSaveStateInterruptFieldsGolden},
 		{"machine save-state restore preserves irq line", testMachineSaveRestorePreservesIrqLineGolden},
+		{"GEO save-state restores active command latch", testGeometrySaveStateRestoresActiveCommandLatchGolden},
 		{"APU device faults", testApuDeviceFaultsGolden},
 		{"runtime vblank edge completes active tick", testRuntimeVblankEdgeCompletesActiveTickGolden},
 		{"memory access and opcode", testAccessKindAndOpcodeGolden},

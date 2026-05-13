@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../src/bmsx/machine/devices/vdp/contracts';
+import { GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../src/bmsx/machine/devices/geometry/controller';
 import { VDP_REGISTER_COUNT } from '../../src/bmsx/machine/devices/vdp/registers';
 import { VDP_XF_MATRIX_REGISTER_WORDS, VDP_XF_PROJECTION_MATRIX_RESET_INDEX, VDP_XF_VIEW_MATRIX_RESET_INDEX } from '../../src/bmsx/machine/devices/vdp/xf';
 import type { RuntimeSaveState } from '../../src/bmsx/machine/runtime/contracts';
@@ -24,6 +25,29 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					busFaultCode: 2,
 					busFaultAddr: 0x12345678,
 					busFaultAccess: 0x400,
+				},
+				geometry: {
+					registerWords: numberedWords(GEOMETRY_CONTROLLER_REGISTER_COUNT),
+					activeJob: {
+						cmd: 1,
+						src0: 0x1000,
+						src1: 0x2000,
+						src2: 0x3000,
+						dst0: 0x4000,
+						dst1: 0x5000,
+						count: 6,
+						param0: 7,
+						param1: 8,
+						stride0: 9,
+						stride1: 10,
+						stride2: 11,
+						processed: 2,
+						resultCount: 3,
+						exactPairCount: 4,
+						broadphasePairCount: 5,
+					},
+					workCarry: 12,
+					availableWorkUnits: 1,
 				},
 				irq: { pendingFlags: 0xa5a5 },
 				audio: {
@@ -117,6 +141,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 
 	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
+	assert.deepEqual(decoded.machineState.machine.geometry, state.machineState.machine.geometry);
 	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
 	assert.deepEqual(decoded.machineState.machine.vdp.surfacePixels, state.machineState.machine.vdp.surfacePixels);

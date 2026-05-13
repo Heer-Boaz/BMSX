@@ -318,6 +318,71 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 	return state;
 }
 
+BinValue encodeGeometryJobState(const GeometryJobState& state) {
+	BinObject object;
+	object["cmd"] = static_cast<i64>(state.cmd);
+	object["src0"] = static_cast<i64>(state.src0);
+	object["src1"] = static_cast<i64>(state.src1);
+	object["src2"] = static_cast<i64>(state.src2);
+	object["dst0"] = static_cast<i64>(state.dst0);
+	object["dst1"] = static_cast<i64>(state.dst1);
+	object["count"] = static_cast<i64>(state.count);
+	object["param0"] = static_cast<i64>(state.param0);
+	object["param1"] = static_cast<i64>(state.param1);
+	object["stride0"] = static_cast<i64>(state.stride0);
+	object["stride1"] = static_cast<i64>(state.stride1);
+	object["stride2"] = static_cast<i64>(state.stride2);
+	object["processed"] = static_cast<i64>(state.processed);
+	object["resultCount"] = static_cast<i64>(state.resultCount);
+	object["exactPairCount"] = static_cast<i64>(state.exactPairCount);
+	object["broadphasePairCount"] = static_cast<i64>(state.broadphasePairCount);
+	return BinValue(std::move(object));
+}
+
+GeometryJobState decodeGeometryJobState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	GeometryJobState state;
+	state.cmd = requireU32(requireField(object, "cmd", label), "machine.geometry.activeJob.cmd");
+	state.src0 = requireU32(requireField(object, "src0", label), "machine.geometry.activeJob.src0");
+	state.src1 = requireU32(requireField(object, "src1", label), "machine.geometry.activeJob.src1");
+	state.src2 = requireU32(requireField(object, "src2", label), "machine.geometry.activeJob.src2");
+	state.dst0 = requireU32(requireField(object, "dst0", label), "machine.geometry.activeJob.dst0");
+	state.dst1 = requireU32(requireField(object, "dst1", label), "machine.geometry.activeJob.dst1");
+	state.count = requireU32(requireField(object, "count", label), "machine.geometry.activeJob.count");
+	state.param0 = requireU32(requireField(object, "param0", label), "machine.geometry.activeJob.param0");
+	state.param1 = requireU32(requireField(object, "param1", label), "machine.geometry.activeJob.param1");
+	state.stride0 = requireU32(requireField(object, "stride0", label), "machine.geometry.activeJob.stride0");
+	state.stride1 = requireU32(requireField(object, "stride1", label), "machine.geometry.activeJob.stride1");
+	state.stride2 = requireU32(requireField(object, "stride2", label), "machine.geometry.activeJob.stride2");
+	state.processed = requireU32(requireField(object, "processed", label), "machine.geometry.activeJob.processed");
+	state.resultCount = requireU32(requireField(object, "resultCount", label), "machine.geometry.activeJob.resultCount");
+	state.exactPairCount = requireU32(requireField(object, "exactPairCount", label), "machine.geometry.activeJob.exactPairCount");
+	state.broadphasePairCount = requireU32(requireField(object, "broadphasePairCount", label), "machine.geometry.activeJob.broadphasePairCount");
+	return state;
+}
+
+BinValue encodeGeometryControllerState(const GeometryControllerState& state) {
+	BinObject object;
+	object["registerWords"] = encodeFixedArray(state.registerWords, encodeScalar<i64, u32>);
+	object["activeJob"] = state.activeJob.has_value() ? encodeGeometryJobState(*state.activeJob) : BinValue(nullptr);
+	object["workCarry"] = static_cast<i64>(state.workCarry);
+	object["availableWorkUnits"] = static_cast<i64>(state.availableWorkUnits);
+	return BinValue(std::move(object));
+}
+
+GeometryControllerState decodeGeometryControllerState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	GeometryControllerState state;
+	state.registerWords = decodeU32Array<GEOMETRY_CONTROLLER_REGISTER_COUNT>(requireField(object, "registerWords", label), "machine.geometry.registerWords");
+	const BinValue& activeJob = requireField(object, "activeJob", label);
+	if (!activeJob.isNull()) {
+		state.activeJob = decodeGeometryJobState(activeJob, "machine.geometry.activeJob");
+	}
+	state.workCarry = requireI64(requireField(object, "workCarry", label), "machine.geometry.workCarry");
+	state.availableWorkUnits = requireU32(requireField(object, "availableWorkUnits", label), "machine.geometry.availableWorkUnits");
+	return state;
+}
+
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
 	object["xf"] = encodeVdpXfState(state.xf);
@@ -419,6 +484,7 @@ AudioControllerState decodeAudioControllerState(const BinValue& value, const cha
 BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	BinObject object;
 	object["memory"] = encodeMemorySaveState(state.memory);
+	object["geometry"] = encodeGeometryControllerState(state.geometry);
 	object["irq"] = encodeIrqControllerState(state.irq);
 	object["audio"] = encodeAudioControllerState(state.audio);
 	object["stringPool"] = encodeStringPoolState(state.stringPool);
@@ -431,6 +497,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 	const BinObject& object = requireObject(value, label);
 	MachineSaveState state;
 	state.memory = decodeMemorySaveState(requireField(object, "memory", label), "machineState.machine.memory");
+	state.geometry = decodeGeometryControllerState(requireField(object, "geometry", label), "machineState.machine.geometry");
 	state.irq = decodeIrqControllerState(requireField(object, "irq", label), "machineState.machine.irq");
 	state.audio = decodeAudioControllerState(requireField(object, "audio", label), "machineState.machine.audio");
 	state.stringPool = decodeStringPoolState(requireField(object, "stringPool", label), "machineState.machine.stringPool");

@@ -25,6 +25,8 @@ struct VdpSubmittedFrame {
 	int cost = 0;
 	int workRemaining = 0;
 	i32 ditherType = 0;
+	u32 frameBufferWidth = 0u;
+	u32 frameBufferHeight = 0u;
 	VdpXfUnit xf;
 	u32 skyboxControl = 0;
 	VdpSbxUnit::FaceWords skyboxFaceWords{};

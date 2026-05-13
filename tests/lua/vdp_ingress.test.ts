@@ -63,6 +63,7 @@ import {
 	VDP_SLOT_PRIMARY,
 	VDP_SBX_COMMIT_WRITE,
 	VDP_STATUS_FAULT,
+	VDP_STATUS_VBLANK,
 } from '../../src/bmsx/machine/bus/io';
 import { CPU } from '../../src/bmsx/machine/cpu/cpu';
 import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink, VdpSurfaceUpload } from '../../src/bmsx/machine/devices/vdp/device_output';
@@ -71,6 +72,7 @@ import { VDP_BBU_BILLBOARD_LIMIT, VDP_RD_SURFACE_FRAMEBUFFER, VDP_RD_SURFACE_PRI
 import { VDP_BBU_PACKET_KIND, VDP_BBU_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/bbu';
 import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
 import { VDP_DEX_FRAME_IDLE } from '../../src/bmsx/machine/devices/vdp/frame';
+import { VDP_VOUT_SCANOUT_PHASE_ACTIVE, VDP_VOUT_SCANOUT_PHASE_VBLANK } from '../../src/bmsx/machine/devices/vdp/vout';
 import { VDP_SBX_PACKET_KIND, VDP_SBX_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/sbx';
 import {
 	VDP_XF_MATRIX_COUNT,
@@ -82,7 +84,7 @@ import {
 	VDP_XF_VIEW_MATRIX_INDEX_REGISTER,
 } from '../../src/bmsx/machine/devices/vdp/xf';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
+import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
 import { createVdpTransformSnapshot, resolveVdpTransformSnapshot } from '../../src/bmsx/render/vdp/transform';
 
@@ -733,12 +735,50 @@ test('VDP VRAM read faults latch status instead of throwing', () => {
 	assert.deepEqual(Array.from(out), [0, 0, 0, 0]);
 });
 
+test('VDP VOUT scanout phase owns the VBLANK output pin', () => {
+	const { memory, vdp } = createVdp();
+
+	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
+	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, false);
+	vdp.setVblankStatus(true);
+	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_VBLANK);
+	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, true);
+	vdp.setVblankStatus(false);
+	assert.equal(vdp.readDeviceOutput().scanoutPhase, VDP_VOUT_SCANOUT_PHASE_ACTIVE);
+	assert.equal((memory.readIoU32(IO_VDP_STATUS) & VDP_STATUS_VBLANK) !== 0, false);
+});
+
 test('VDP dither register writes update the live latch directly', () => {
 	const { memory, vdp } = createVdp();
 
+	assert.equal(vdp.readDeviceOutput().ditherType, 0);
+	assert.equal(vdp.readDeviceOutput().frameBufferWidth, 256);
+	assert.equal(vdp.readDeviceOutput().frameBufferHeight, 212);
 	memory.writeValue(IO_VDP_DITHER, 3);
+	vdp.setDecodedVramSurfaceDimensions(VRAM_FRAMEBUFFER_BASE, 128, 64);
 
 	assert.equal(vdp.captureState().ditherType, 3);
+	assert.equal(vdp.readDeviceOutput().ditherType, 0);
+	assert.equal(vdp.frameBufferWidth, 128);
+	assert.equal(vdp.frameBufferHeight, 64);
+	assert.equal(vdp.readDeviceOutput().frameBufferWidth, 256);
+	assert.equal(vdp.readDeviceOutput().frameBufferHeight, 212);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	vdp.setDecodedVramSurfaceDimensions(VRAM_FRAMEBUFFER_BASE, 96, 48);
+	assert.equal(vdp.frameBufferWidth, 96);
+	assert.equal(vdp.frameBufferHeight, 48);
+	assert.equal(vdp.readDeviceOutput().frameBufferWidth, 256);
+	assert.equal(vdp.readDeviceOutput().frameBufferHeight, 212);
+	assert.equal(vdp.presentReadyFrameOnVblankEdge(), false);
+	assert.equal(vdp.readDeviceOutput().ditherType, 3);
+	assert.equal(vdp.readDeviceOutput().frameBufferWidth, 128);
+	assert.equal(vdp.readDeviceOutput().frameBufferHeight, 64);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	assert.equal(vdp.presentReadyFrameOnVblankEdge(), false);
+	assert.equal(vdp.readDeviceOutput().frameBufferWidth, 96);
+	assert.equal(vdp.readDeviceOutput().frameBufferHeight, 48);
 });
 
 test('VDP save-state restores raw registerfile and surface geometry', () => {
@@ -848,6 +888,10 @@ test('VDP SBX stores raw control bits and faults bad face words at frame seal', 
 	sealStream(memory, vdp, [...skyboxPacket(VDP_SBX_CONTROL_ENABLE, 17, 1), VDP_PKT_END]);
 	assertVdpFault(memory, VDP_FAULT_SBX_SOURCE_OOB);
 	assert.equal(vdp.readDeviceOutput().skyboxEnabled, false);
+	clearVdpFault(memory);
+	sealStream(memory, vdp, [...skyboxPacket(VDP_SBX_CONTROL_ENABLE, 4, 5), VDP_PKT_END]);
+	vdp.presentReadyFrameOnVblankEdge();
+	assert.equal(vdp.readDeviceOutput().skyboxEnabled, true);
 });
 
 test('VDP XF packet updates raw transform register state', () => {
@@ -1050,6 +1094,11 @@ test('VDP BBU faults only at BILLBOARD packet latch', () => {
 	assertVdpFault(memory, VDP_FAULT_BBU_SOURCE_OOB);
 	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
 	clearVdpFault(memory);
+	sealStream(memory, vdp, [...billboardPacket(1 << 16, 0, 0, 1, 1), VDP_PKT_END]);
+	assert.equal(vdp.getPendingRenderWorkUnits(), 1);
+	vdp.advanceWork(1);
+	assert.equal(vdp.presentReadyFrameOnVblankEdge(), false);
+	assert.equal(vdp.readDeviceOutput().billboards.length, 1);
 
 	const stream: number[] = [];
 	for (let index = 0; index <= VDP_BBU_BILLBOARD_LIMIT; index += 1) {

@@ -4,6 +4,7 @@
 #include "machine/scheduler/device.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -11,6 +12,34 @@
 namespace bmsx {
 
 class IrqController;
+
+constexpr size_t GEOMETRY_CONTROLLER_REGISTER_COUNT = 16u;
+
+struct GeometryJobState {
+	uint32_t cmd = 0;
+	uint32_t src0 = 0;
+	uint32_t src1 = 0;
+	uint32_t src2 = 0;
+	uint32_t dst0 = 0;
+	uint32_t dst1 = 0;
+	uint32_t count = 0;
+	uint32_t param0 = 0;
+	uint32_t param1 = 0;
+	uint32_t stride0 = 0;
+	uint32_t stride1 = 0;
+	uint32_t stride2 = 0;
+	uint32_t processed = 0;
+	uint32_t resultCount = 0;
+	uint32_t exactPairCount = 0;
+	uint32_t broadphasePairCount = 0;
+};
+
+struct GeometryControllerState {
+	std::array<uint32_t, GEOMETRY_CONTROLLER_REGISTER_COUNT> registerWords{};
+	std::optional<GeometryJobState> activeJob;
+	int64_t workCarry = 0;
+	uint32_t availableWorkUnits = 0;
+};
 
 class GeometryController {
 public:
@@ -26,29 +55,21 @@ public:
 		uint32_t getPendingWorkUnits() const;
 		void onService(int64_t nowCycles);
 		void reset();
-		void postLoad();
+		GeometryControllerState captureState() const;
+		void restoreState(const GeometryControllerState& state, int64_t nowCycles);
 		void onCtrlWrite(int64_t nowCycles);
 
 	private:
 		static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
 
-		struct GeoJob {
-		uint32_t cmd = 0;
-		uint32_t src0 = 0;
-		uint32_t src1 = 0;
-		uint32_t src2 = 0;
-		uint32_t dst0 = 0;
-		uint32_t dst1 = 0;
-		uint32_t count = 0;
-		uint32_t param0 = 0;
-		uint32_t param1 = 0;
-		uint32_t stride0 = 0;
-		uint32_t stride1 = 0;
-		uint32_t stride2 = 0;
-		uint32_t processed = 0;
-		uint32_t resultCount = 0;
-		uint32_t exactPairCount = 0;
-		uint32_t broadphasePairCount = 0;
+		using GeoJob = GeometryJobState;
+	struct ProjectionScratch {
+		double min = 0.0;
+		double max = 0.0;
+	};
+	struct PointScratch {
+		double x = 0.0;
+		double y = 0.0;
 	};
 
 	void tryStart(int64_t nowCycles);
@@ -69,8 +90,8 @@ public:
 	static void pushWorldVertex(std::vector<double>& out, double tx, double ty, double localX, double localY);
 	static bool boundsOverlap(const std::array<double, 4>& a, const std::array<double, 4>& b);
 	bool computePolyPairContact(const std::vector<double>& polyA, const std::vector<double>& polyB);
-	static std::pair<double, double> projectPoly(const std::vector<double>& poly, double ax, double ay);
-	static std::pair<double, double> computePolyAverage(const std::vector<double>& poly);
+	static void projectPolyInto(const std::vector<double>& poly, double ax, double ay, ProjectionScratch& out);
+	static void computePolyAverageInto(const std::vector<double>& poly, PointScratch& out);
 	const std::vector<double>& clipConvexPolygons(const std::vector<double>& polyA, const std::vector<double>& polyB);
 	static double clipPlaneDistance(double x0, double y0, double x1, double y1, double px, double py);
 	void writeOverlap2dSummary(const GeoJob& job, uint32_t flags);
@@ -97,6 +118,11 @@ public:
 	std::array<uint32_t, 5> m_overlapInstanceB = { 0, 0, 0, 0, 0 };
 	std::array<double, 4> m_overlapBoundsA = { 0, 0, 0, 0 };
 	std::array<double, 4> m_overlapBoundsB = { 0, 0, 0, 0 };
+	ProjectionScratch m_overlapProjectionA;
+	ProjectionScratch m_overlapProjectionB;
+	PointScratch m_overlapCenterA;
+	PointScratch m_overlapCenterB;
+	PointScratch m_overlapCentroid;
 	double m_overlapContactNx = 0;
 	double m_overlapContactNy = 0;
 	double m_overlapContactDepth = 0;

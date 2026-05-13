@@ -18,6 +18,14 @@ export type VdpSurfaceUploadSlot = {
 	dirtySpansByRow: VdpDirtySpan[];
 };
 
+export function createVdpDirtySpans(height: number): VdpDirtySpan[] {
+	const spans: VdpDirtySpan[] = [];
+	for (let row = 0; row < height; row += 1) {
+		spans.push({ xStart: 0, xEnd: 0 });
+	}
+	return spans;
+}
+
 export type VdpSurfaceUpload = Readonly<{
 	surfaceId: number;
 	surfaceWidth: number;
@@ -30,6 +38,7 @@ export type VdpSurfaceUpload = Readonly<{
 
 export type VdpDeviceOutput = Readonly<{
 	ditherType: number;
+	scanoutPhase: number;
 	xfMatrixWords: ArrayLike<number>;
 	xfViewMatrixIndex: number;
 	xfProjectionMatrixIndex: number;
