@@ -1,6 +1,12 @@
+model_instructions_file = "bmsx-codex-instructions.md"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 model = "gpt-5.5"
 model_reasoning_effort = "xhigh"
 personality = "pragmatic"
-model_instructions_file = "bmsx-codex-instructions.md"
+
+[features]
+fast_mode = false
+
+[notice]
+fast_default_opt_out = true
