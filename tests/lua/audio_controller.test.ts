@@ -17,6 +17,9 @@ import {
 	APU_FAULT_SOURCE_DATA_RANGE,
 	APU_FAULT_SOURCE_RANGE,
 	APU_FAULT_UNSUPPORTED_FORMAT,
+	APU_GENERATOR_SQUARE,
+	APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX,
+	APU_PARAMETER_GENERATOR_KIND_INDEX,
 	APU_PARAMETER_REGISTER_COUNT,
 	APU_PARAMETER_GAIN_Q12_INDEX,
 	APU_PARAMETER_RATE_STEP_Q16_INDEX,
@@ -56,6 +59,8 @@ import {
 	IO_APU_FILTER_KIND,
 	IO_APU_FILTER_Q_MILLI,
 	IO_APU_GAIN_Q12,
+	IO_APU_GENERATOR_DUTY_Q12,
+	IO_APU_GENERATOR_KIND,
 	IO_APU_OUTPUT_CAPACITY_FRAMES,
 	IO_APU_OUTPUT_FREE_FRAMES,
 	IO_APU_OUTPUT_QUEUED_FRAMES,
@@ -199,10 +204,13 @@ test('APU contract constants keep hardware command values', () => {
 	assert.equal(APU_FAULT_OUTPUT_PLAYBACK_RATE, 0x0204);
 	assert.equal(APU_FILTER_HIGHSHELF, 8);
 	assert.equal(APU_EVENT_SLOT_ENDED, 1);
-	assert.equal(APU_PARAMETER_REGISTER_COUNT, 19);
+	assert.equal(APU_GENERATOR_SQUARE, 1);
+	assert.equal(APU_PARAMETER_REGISTER_COUNT, 21);
 	assert.equal(APU_PARAMETER_SOURCE_ADDR_INDEX, 0);
 	assert.equal(APU_PARAMETER_SLOT_INDEX, 10);
-	assert.equal(APU_SLOT_REGISTER_WORD_COUNT, 304);
+	assert.equal(APU_PARAMETER_GENERATOR_KIND_INDEX, 19);
+	assert.equal(APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX, 20);
+	assert.equal(APU_SLOT_REGISTER_WORD_COUNT, 336);
 	assert.equal(IO_APU_PARAMETER_REGISTER_ADDRS.length, APU_PARAMETER_REGISTER_COUNT);
 	assert.equal(IO_APU_SELECTED_SLOT_REG_COUNT, APU_PARAMETER_REGISTER_COUNT);
 });
@@ -221,6 +229,10 @@ test('APU firmware descriptors expose status and fault ABI', () => {
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_active_mask'), true);
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_selected_slot_regs'), true);
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_selected_slot_reg_count'), true);
+	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_generator_kind'), true);
+	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_generator_duty_q12'), true);
+	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_generator_none'), true);
+	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('apu_generator_square'), true);
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_output_queued_frames'), true);
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_output_free_frames'), true);
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_apu_output_capacity_frames'), true);
@@ -235,6 +247,10 @@ test('APU firmware descriptors expose status and fault ABI', () => {
 	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_active_mask'), true);
 	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_selected_slot_regs'), true);
 	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_selected_slot_reg_count'), true);
+	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_generator_kind'), true);
+	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_generator_duty_q12'), true);
+	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_generator_none'), true);
+	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('apu_generator_square'), true);
 	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_output_queued_frames'), true);
 	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_output_free_frames'), true);
 	assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has('sys_apu_output_capacity_frames'), true);
@@ -264,6 +280,21 @@ function writeValidSourceRegisters(memory: Memory): void {
 	memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, 4);
 	memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 0);
 	memory.writeValue(IO_APU_SOURCE_DATA_BYTES, 4);
+}
+
+function writeSquareGeneratorRegisters(memory: Memory): void {
+	memory.writeValue(IO_APU_SOURCE_ADDR, 0);
+	memory.writeValue(IO_APU_SOURCE_BYTES, 0);
+	memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ / 4);
+	memory.writeValue(IO_APU_SOURCE_CHANNELS, 1);
+	memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, 0);
+	memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, 2);
+	memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 0);
+	memory.writeValue(IO_APU_SOURCE_DATA_BYTES, 0);
+	memory.writeValue(IO_APU_SOURCE_LOOP_START_SAMPLE, 0);
+	memory.writeValue(IO_APU_SOURCE_LOOP_END_SAMPLE, 2);
+	memory.writeValue(IO_APU_GENERATOR_KIND, APU_GENERATOR_SQUARE);
+	memory.writeValue(IO_APU_GENERATOR_DUTY_Q12, 0x0800);
 }
 
 function writeApuCommand(memory: Memory, audio: AudioController, command: number): void {
@@ -587,6 +618,8 @@ test('APU parameter registerfile is device-owned and saved', () => {
 	memory.writeValue(IO_APU_FILTER_Q_MILLI, 700);
 	memory.writeValue(IO_APU_FILTER_GAIN_MILLIDB, 3000);
 	memory.writeValue(IO_APU_FADE_SAMPLES, APU_SAMPLE_RATE_HZ);
+	memory.writeValue(IO_APU_GENERATOR_KIND, APU_GENERATOR_SQUARE);
+	memory.writeValue(IO_APU_GENERATOR_DUTY_Q12, 0x0800);
 
 	const saved = audio.captureState();
 	const restored = createAudioHarness();
@@ -611,6 +644,8 @@ test('APU parameter registerfile is device-owned and saved', () => {
 	assert.equal(restored.memory.readIoU32(IO_APU_FILTER_Q_MILLI), 700);
 	assert.equal(restored.memory.readIoU32(IO_APU_FILTER_GAIN_MILLIDB), 3000);
 	assert.equal(restored.memory.readIoU32(IO_APU_FADE_SAMPLES), APU_SAMPLE_RATE_HZ);
+	assert.equal(restored.memory.readIoU32(IO_APU_GENERATOR_KIND), APU_GENERATOR_SQUARE);
+	assert.equal(restored.memory.readIoU32(IO_APU_GENERATOR_DUTY_Q12), 0x0800);
 	assert.equal(restored.audio.captureState().registerWords[APU_PARAMETER_SLOT_INDEX], 3);
 });
 
@@ -799,6 +834,33 @@ test('APU device cursor advances at source sample rate', async () => {
 	audio.onService(2);
 
 	assert.equal(audio.captureState().slotPlaybackCursorQ16[1], APU_RATE_STEP_Q16_ONE);
+});
+
+test('APU square generator is device-owned and restored from cursor', () => {
+	const { memory, audio, audioOutput } = createRealAudioHarness();
+	writeSquareGeneratorRegisters(memory);
+	memory.writeValue(IO_APU_SLOT, 1);
+	writeApuCommand(memory, audio, APU_CMD_PLAY);
+	const state = audio.captureState();
+	assert.equal(state.slotSourceBytes[1]!.byteLength, 0);
+	const output = new Int16Array(8);
+	audioOutput.renderSamples(output, 4, APU_SAMPLE_RATE_HZ, 1);
+	assert.deepEqual(Array.from(output), [32767, 32767, 32767, 32767, -32767, -32767, -32767, -32767]);
+
+	const phaseHarness = createRealAudioHarness();
+	writeSquareGeneratorRegisters(phaseHarness.memory);
+	phaseHarness.memory.writeValue(IO_APU_SLOT, 1);
+	writeApuCommand(phaseHarness.memory, phaseHarness.audio, APU_CMD_PLAY);
+	phaseHarness.audio.accrueCycles(2, 2);
+	phaseHarness.audio.onService(2);
+	const saved = phaseHarness.audio.captureState();
+	assert.equal(saved.slotPlaybackCursorQ16[1], APU_RATE_STEP_Q16_ONE / 2);
+	const restored = createRealAudioHarness();
+	restored.audio.restoreState(saved, 0);
+	const restoredOutput = new Int16Array(2);
+	restored.audioOutput.renderSamples(restoredOutput, 1, APU_SAMPLE_RATE_HZ, 1);
+	assert.equal(restoredOutput[0], -32767);
+	assert.equal(restoredOutput[1], -32767);
 });
 
 test('APU STOP_SLOT fade keeps the slot active until the ended event', async () => {

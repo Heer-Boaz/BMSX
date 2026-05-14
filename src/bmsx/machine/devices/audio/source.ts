@@ -4,6 +4,7 @@ import {
 	APU_FAULT_SOURCE_BYTES,
 	APU_FAULT_SOURCE_RANGE,
 	APU_SLOT_COUNT,
+	apuAudioSourceUsesGenerator,
 	type ApuAudioSlot,
 	type ApuAudioSource,
 } from './contracts';
@@ -46,6 +47,10 @@ export class ApuSourceDma {
 	}
 
 	public loadSlot(slot: ApuAudioSlot, source: ApuAudioSource): ApuSourceDmaResult {
+		if (apuAudioSourceUsesGenerator(source)) {
+			this.clearSlot(slot);
+			return APU_SOURCE_DMA_OK;
+		}
 		const validation = this.validateSource(source);
 		if (validation.faultCode !== APU_FAULT_NONE) {
 			return validation;

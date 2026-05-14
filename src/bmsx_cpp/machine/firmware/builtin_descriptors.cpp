@@ -76,7 +76,7 @@ constexpr std::array<LuaBuiltinDescriptor, 4> kSystemLuaBuiltinGlobals{{
 	LuaBuiltinDescriptor{"sorted_scratchbatch", "sorted_scratchbatch", "Sorted scratch batch module table (sorted_scratchbatch.new; batches support clear, push, get, reserve, for_each, iter, set_compare, sort)."},
 }};
 
-constexpr std::array<LuaBuiltinDescriptor, 485> kDefaultLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 489> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"assert", "assert(value [, message])", ""},
 	LuaBuiltinDescriptor{"error", "error(message [, level])", ""},
 	LuaBuiltinDescriptor{"getmetatable", "getmetatable(object)", ""},
@@ -334,6 +334,8 @@ constexpr std::array<LuaBuiltinDescriptor, 485> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_apu_filter_q_milli", "sys_apu_filter_q_milli", "APU filter Q register in milli-units."},
 	LuaBuiltinDescriptor{"sys_apu_filter_gain_millidb", "sys_apu_filter_gain_millidb", "APU filter gain register in milli-decibels."},
 	LuaBuiltinDescriptor{"sys_apu_fade_samples", "sys_apu_fade_samples", "APU STOP_SLOT fade duration register in samples at apu_sample_rate_hz."},
+	LuaBuiltinDescriptor{"sys_apu_generator_kind", "sys_apu_generator_kind", "APU internal generator kind register; apu_generator_none selects source-DMA playback."},
+	LuaBuiltinDescriptor{"sys_apu_generator_duty_q12", "sys_apu_generator_duty_q12", "APU square-generator duty cycle in Q12 fixed point."},
 	LuaBuiltinDescriptor{"sys_apu_cmd", "sys_apu_cmd", "APU command doorbell register."},
 	LuaBuiltinDescriptor{"sys_apu_status", "sys_apu_status", "APU status register."},
 	LuaBuiltinDescriptor{"sys_apu_fault_code", "sys_apu_fault_code", "APU sticky fault-code register."},
@@ -384,6 +386,8 @@ constexpr std::array<LuaBuiltinDescriptor, 485> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"apu_sample_rate_hz", "apu_sample_rate_hz", "APU hardware sample clock in Hz."},
 	LuaBuiltinDescriptor{"apu_rate_step_q16_one", "apu_rate_step_q16_one", "APU Q16.16 rate-step value for normal speed."},
 	LuaBuiltinDescriptor{"apu_gain_q12_one", "apu_gain_q12_one", "APU Q12 gain value for unity gain."},
+	LuaBuiltinDescriptor{"apu_generator_none", "apu_generator_none", "APU generator kind: no internal generator; play source-DMA audio."},
+	LuaBuiltinDescriptor{"apu_generator_square", "apu_generator_square", "APU generator kind: square oscillator clocked by the source-rate register."},
 	LuaBuiltinDescriptor{"apu_output_queue_capacity_frames", "apu_output_queue_capacity_frames", "AOUT hardware output-ring capacity in PCM frames."},
 	LuaBuiltinDescriptor{"apu_command_fifo_capacity", "apu_command_fifo_capacity", "APU command FIFO capacity in queued commands."},
 	LuaBuiltinDescriptor{"apu_status_fault", "apu_status_fault", "APU status bit: sticky fault is latched."},

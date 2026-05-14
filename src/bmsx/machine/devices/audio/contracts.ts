@@ -13,7 +13,9 @@ export const APU_SLOT_COUNT = 16;
 export const APU_SLOT_PHASE_IDLE = 0;
 export const APU_SLOT_PHASE_PLAYING = 1;
 export const APU_SLOT_PHASE_FADING = 2;
-export const APU_PARAMETER_REGISTER_COUNT = 19;
+export const APU_GENERATOR_NONE = 0;
+export const APU_GENERATOR_SQUARE = 1;
+export const APU_PARAMETER_REGISTER_COUNT = 21;
 export const APU_PARAMETER_SOURCE_ADDR_INDEX = 0;
 export const APU_PARAMETER_SOURCE_BYTES_INDEX = 1;
 export const APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX = 2;
@@ -33,6 +35,8 @@ export const APU_PARAMETER_FILTER_FREQ_HZ_INDEX = 15;
 export const APU_PARAMETER_FILTER_Q_MILLI_INDEX = 16;
 export const APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX = 17;
 export const APU_PARAMETER_FADE_SAMPLES_INDEX = 18;
+export const APU_PARAMETER_GENERATOR_KIND_INDEX = 19;
+export const APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX = 20;
 export const APU_SLOT_REGISTER_WORD_COUNT = APU_SLOT_COUNT * APU_PARAMETER_REGISTER_COUNT;
 export const APU_COMMAND_FIFO_REGISTER_WORD_COUNT = APU_COMMAND_FIFO_CAPACITY * APU_PARAMETER_REGISTER_COUNT;
 
@@ -94,6 +98,8 @@ export interface ApuAudioSource {
 	dataBytes: number;
 	loopStartSample: number;
 	loopEndSample: number;
+	generatorKind: number;
+	generatorDutyQ12: number;
 }
 
 export function resolveApuAudioSource(registerWords: ApuParameterRegisterWords): ApuAudioSource {
@@ -108,7 +114,13 @@ export function resolveApuAudioSource(registerWords: ApuParameterRegisterWords):
 		dataBytes: registerWords[APU_PARAMETER_SOURCE_DATA_BYTES_INDEX]!,
 		loopStartSample: registerWords[APU_PARAMETER_SOURCE_LOOP_START_SAMPLE_INDEX]!,
 		loopEndSample: registerWords[APU_PARAMETER_SOURCE_LOOP_END_SAMPLE_INDEX]!,
+		generatorKind: registerWords[APU_PARAMETER_GENERATOR_KIND_INDEX]!,
+		generatorDutyQ12: registerWords[APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX]!,
 	};
+}
+
+export function apuAudioSourceUsesGenerator(source: ApuAudioSource): boolean {
+	return source.generatorKind !== APU_GENERATOR_NONE;
 }
 
 export function apuParameterProgramsSourceBuffer(parameterIndex: number): boolean {
@@ -121,6 +133,7 @@ export function apuParameterProgramsSourceBuffer(parameterIndex: number): boolea
 		case APU_PARAMETER_SOURCE_FRAME_COUNT_INDEX:
 		case APU_PARAMETER_SOURCE_DATA_OFFSET_INDEX:
 		case APU_PARAMETER_SOURCE_DATA_BYTES_INDEX:
+		case APU_PARAMETER_GENERATOR_KIND_INDEX:
 			return true;
 		default:
 			return false;

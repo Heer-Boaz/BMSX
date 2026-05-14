@@ -163,6 +163,8 @@ import {
 } from '../devices/geometry/contracts';
 import {
 	APU_COMMAND_FIFO_CAPACITY,
+	APU_GENERATOR_NONE,
+	APU_GENERATOR_SQUARE,
 	APU_GAIN_Q12_ONE,
 	APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
 	APU_RATE_STEP_Q16_ONE,
@@ -258,6 +260,8 @@ import {
 	IO_APU_FILTER_KIND,
 	IO_APU_FILTER_Q_MILLI,
 	IO_APU_GAIN_Q12,
+	IO_APU_GENERATOR_DUTY_Q12,
+	IO_APU_GENERATOR_KIND,
 	IO_APU_OUTPUT_CAPACITY_FRAMES,
 	IO_APU_OUTPUT_FREE_FRAMES,
 	IO_APU_OUTPUT_QUEUED_FRAMES,
@@ -1506,6 +1510,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_q_milli', IO_APU_FILTER_Q_MILLI);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_gain_millidb', IO_APU_FILTER_GAIN_MILLIDB);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_fade_samples', IO_APU_FADE_SAMPLES);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_generator_kind', IO_APU_GENERATOR_KIND);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_generator_duty_q12', IO_APU_GENERATOR_DUTY_Q12);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_cmd', IO_APU_CMD);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_status', IO_APU_STATUS);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_fault_code', IO_APU_FAULT_CODE);
@@ -1531,6 +1537,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'apu_sample_rate_hz', APU_SAMPLE_RATE_HZ);
 	luaPipeline.registerGlobal(runtime, 'apu_rate_step_q16_one', APU_RATE_STEP_Q16_ONE);
 	luaPipeline.registerGlobal(runtime, 'apu_gain_q12_one', APU_GAIN_Q12_ONE);
+	luaPipeline.registerGlobal(runtime, 'apu_generator_none', APU_GENERATOR_NONE);
+	luaPipeline.registerGlobal(runtime, 'apu_generator_square', APU_GENERATOR_SQUARE);
 	luaPipeline.registerGlobal(runtime, 'apu_output_queue_capacity_frames', APU_OUTPUT_QUEUE_CAPACITY_FRAMES);
 	luaPipeline.registerGlobal(runtime, 'apu_command_fifo_capacity', APU_COMMAND_FIFO_CAPACITY);
 	luaPipeline.registerGlobal(runtime, 'apu_status_fault', APU_STATUS_FAULT);

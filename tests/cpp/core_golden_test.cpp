@@ -1197,6 +1197,21 @@ void writeValidApuSource(AudioHarness& h, uint32_t bitsPerSample) {
 	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_BYTES, 4u);
 }
 
+void writeSquareGeneratorSource(AudioHarness& h) {
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_ADDR, 0u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_BYTES, 0u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ / 4u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_CHANNELS, 1u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, 0u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_FRAME_COUNT, 2u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_OFFSET, 0u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_BYTES, 0u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_LOOP_START_SAMPLE, 0u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_LOOP_END_SAMPLE, 2u);
+	writeIoWord(h.memory, bmsx::IO_APU_GENERATOR_KIND, bmsx::APU_GENERATOR_SQUARE);
+	writeIoWord(h.memory, bmsx::IO_APU_GENERATOR_DUTY_Q12, 0x0800u);
+}
+
 void writeApuCommand(AudioHarness& h, uint32_t command) {
 	writeIoWord(h.memory, bmsx::IO_APU_CMD, command);
 	h.audio.onService(0);
@@ -1207,10 +1222,13 @@ void testApuContractConstantsGolden() {
 	require(bmsx::APU_CMD_STOP_SLOT == 2u, "APU STOP_SLOT command value should match the hardware command doorbell");
 	require(bmsx::APU_CMD_SET_SLOT_GAIN == 3u, "APU SET_SLOT_GAIN command value should match the hardware command doorbell");
 	require(bmsx::APU_SAMPLE_RATE_HZ == 44100u, "APU sample clock should match the hardware clock");
-	require(bmsx::APU_PARAMETER_REGISTER_COUNT == 19u, "APU parameter register count should match the hardware register bank");
+	require(bmsx::APU_GENERATOR_SQUARE == 1u, "APU square generator value should match the hardware generator register");
+	require(bmsx::APU_PARAMETER_REGISTER_COUNT == 21u, "APU parameter register count should match the hardware register bank");
 	require(bmsx::APU_PARAMETER_SOURCE_ADDR_INDEX == 0u, "APU source-address parameter index should match the register bank");
 	require(bmsx::APU_PARAMETER_SLOT_INDEX == 10u, "APU slot parameter index should match the register bank");
-	require(bmsx::APU_SLOT_REGISTER_WORD_COUNT == 304u, "APU slot register word count should match the slot latch bank");
+	require(bmsx::APU_PARAMETER_GENERATOR_KIND_INDEX == 19u, "APU generator-kind parameter index should match the register bank");
+	require(bmsx::APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX == 20u, "APU generator-duty parameter index should match the register bank");
+	require(bmsx::APU_SLOT_REGISTER_WORD_COUNT == 336u, "APU slot register word count should match the slot latch bank");
 	require(bmsx::IO_APU_PARAMETER_REGISTER_ADDRS.size() == bmsx::APU_PARAMETER_REGISTER_COUNT, "APU parameter MMIO address bank should match the device register bank");
 	require(bmsx::IO_APU_SELECTED_SLOT_REG_COUNT == bmsx::APU_PARAMETER_REGISTER_COUNT, "APU selected-slot readback window should cover the parameter register bank");
 	require(bmsx::APU_STATUS_FAULT == 1u, "APU fault status bit ABI value should remain stable");
@@ -1401,6 +1419,8 @@ void testApuParameterRegisterStateGolden() {
 	writeIoWord(h.memory, bmsx::IO_APU_FILTER_Q_MILLI, 700u);
 	writeIoWord(h.memory, bmsx::IO_APU_FILTER_GAIN_MILLIDB, 3000u);
 	writeIoWord(h.memory, bmsx::IO_APU_FADE_SAMPLES, bmsx::APU_SAMPLE_RATE_HZ);
+	writeIoWord(h.memory, bmsx::IO_APU_GENERATOR_KIND, bmsx::APU_GENERATOR_SQUARE);
+	writeIoWord(h.memory, bmsx::IO_APU_GENERATOR_DUTY_Q12, 0x0800u);
 
 	const bmsx::AudioControllerState state = h.audio.captureState();
 	AudioHarness restored;
@@ -1424,6 +1444,8 @@ void testApuParameterRegisterStateGolden() {
 	require(restored.memory.readIoU32(bmsx::IO_APU_FILTER_Q_MILLI) == 700u, "APU restore should expose filter-Q register word");
 	require(restored.memory.readIoU32(bmsx::IO_APU_FILTER_GAIN_MILLIDB) == 3000u, "APU restore should expose filter-gain register word");
 	require(restored.memory.readIoU32(bmsx::IO_APU_FADE_SAMPLES) == bmsx::APU_SAMPLE_RATE_HZ, "APU restore should expose fade register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_GENERATOR_KIND) == bmsx::APU_GENERATOR_SQUARE, "APU restore should expose generator-kind register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_GENERATOR_DUTY_Q12) == 0x0800u, "APU restore should expose generator-duty register word");
 	require(restored.audio.captureState().registerWords[bmsx::APU_PARAMETER_SLOT_INDEX] == 3u, "APU capture after restore should preserve parameter register words");
 }
 
@@ -1646,6 +1668,30 @@ void testApuSelectedSlotActiveStateGolden() {
 	sourceRateCursorHarness.audio.accrueCycles(2, 2);
 	sourceRateCursorHarness.audio.onService(2);
 	require(sourceRateCursorHarness.audio.captureState().slotPlaybackCursorQ16[1u] == static_cast<bmsx::i64>(bmsx::APU_RATE_STEP_Q16_ONE), "APU device cursor should advance at the source sample rate");
+
+	AudioHarness generatorHarness;
+	writeSquareGeneratorSource(generatorHarness);
+	writeIoWord(generatorHarness.memory, bmsx::IO_APU_SLOT, 1u);
+	writeApuCommand(generatorHarness, bmsx::APU_CMD_PLAY);
+	const bmsx::AudioControllerState generatorState = generatorHarness.audio.captureState();
+	require(generatorState.slotSourceBytes[1u].empty(), "APU square generator should not capture RAM source bytes");
+	bmsx::i16 squareFrames[8] = {};
+	generatorHarness.audioOutput.renderSamples(squareFrames, 4u, bmsx::APU_SAMPLE_RATE_HZ, 1.0f);
+	require(squareFrames[0] == 32767 && squareFrames[1] == 32767 && squareFrames[2] == 32767 && squareFrames[3] == 32767 && squareFrames[4] == -32767 && squareFrames[5] == -32767 && squareFrames[6] == -32767 && squareFrames[7] == -32767, "APU square generator should render from device generator state");
+
+	AudioHarness generatorPhaseHarness;
+	writeSquareGeneratorSource(generatorPhaseHarness);
+	writeIoWord(generatorPhaseHarness.memory, bmsx::IO_APU_SLOT, 1u);
+	writeApuCommand(generatorPhaseHarness, bmsx::APU_CMD_PLAY);
+	generatorPhaseHarness.audio.accrueCycles(2, 2);
+	generatorPhaseHarness.audio.onService(2);
+	const bmsx::AudioControllerState generatorPhaseState = generatorPhaseHarness.audio.captureState();
+	require(generatorPhaseState.slotPlaybackCursorQ16[1u] == static_cast<bmsx::i64>(bmsx::APU_RATE_STEP_Q16_ONE / 2u), "APU square generator cursor should advance on the device sample clock");
+	AudioHarness generatorRestored;
+	generatorRestored.audio.restoreState(generatorPhaseState, 0);
+	bmsx::i16 restoredSquareFrame[2] = {};
+	generatorRestored.audioOutput.renderSamples(restoredSquareFrame, 1u, bmsx::APU_SAMPLE_RATE_HZ, 1.0f);
+	require(restoredSquareFrame[0] == -32767 && restoredSquareFrame[1] == -32767, "APU restore should replay square generator phase from the device cursor");
 }
 
 void testRuntimeVblankEdgeCompletesActiveTickGolden() {
@@ -1858,6 +1904,10 @@ void testFirmwareDescriptorGolden() {
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_active_mask") != nullptr, "APU active-mask register descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_selected_slot_regs") != nullptr, "APU selected-slot register window descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_selected_slot_reg_count") != nullptr, "APU selected-slot register count descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_generator_kind") != nullptr, "APU generator-kind register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_generator_duty_q12") != nullptr, "APU generator-duty register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("apu_generator_none") != nullptr, "APU no-generator constant descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("apu_generator_square") != nullptr, "APU square-generator constant descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_output_queued_frames") != nullptr, "APU output-ring queued-frame register descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_output_free_frames") != nullptr, "APU output-ring free-frame register descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_output_capacity_frames") != nullptr, "APU output-ring capacity register descriptor should be exposed");
@@ -1902,6 +1952,8 @@ void testSystemGlobalsGeometryContractGolden() {
 	require(globalNumber("sys_apu_active_mask") == static_cast<double>(bmsx::IO_APU_ACTIVE_MASK), "C++ system globals should expose the APU active-mask register");
 	require(globalNumber("sys_apu_selected_slot_regs") == static_cast<double>(bmsx::IO_APU_SELECTED_SLOT_REG0), "C++ system globals should expose the APU selected-slot register window");
 	require(globalNumber("sys_apu_selected_slot_reg_count") == static_cast<double>(bmsx::IO_APU_SELECTED_SLOT_REG_COUNT), "C++ system globals should expose the APU selected-slot register count");
+	require(globalNumber("sys_apu_generator_kind") == static_cast<double>(bmsx::IO_APU_GENERATOR_KIND), "C++ system globals should expose the APU generator-kind register");
+	require(globalNumber("sys_apu_generator_duty_q12") == static_cast<double>(bmsx::IO_APU_GENERATOR_DUTY_Q12), "C++ system globals should expose the APU generator-duty register");
 	require(globalNumber("sys_apu_output_queued_frames") == static_cast<double>(bmsx::IO_APU_OUTPUT_QUEUED_FRAMES), "C++ system globals should expose the APU output-ring queued-frame register");
 	require(globalNumber("sys_apu_output_free_frames") == static_cast<double>(bmsx::IO_APU_OUTPUT_FREE_FRAMES), "C++ system globals should expose the APU output-ring free-frame register");
 	require(globalNumber("sys_apu_output_capacity_frames") == static_cast<double>(bmsx::IO_APU_OUTPUT_CAPACITY_FRAMES), "C++ system globals should expose the APU output-ring capacity register");
@@ -1915,6 +1967,8 @@ void testSystemGlobalsGeometryContractGolden() {
 	require(globalNumber("apu_status_cmd_fifo_full") == static_cast<double>(bmsx::APU_STATUS_CMD_FIFO_FULL), "C++ system globals should expose the APU command-FIFO-full status bit");
 	require(globalNumber("apu_output_queue_capacity_frames") == static_cast<double>(bmsx::APU_OUTPUT_QUEUE_CAPACITY_FRAMES), "C++ system globals should expose the APU output-ring capacity constant");
 	require(globalNumber("apu_command_fifo_capacity") == static_cast<double>(bmsx::APU_COMMAND_FIFO_CAPACITY), "C++ system globals should expose the APU command-FIFO capacity constant");
+	require(globalNumber("apu_generator_none") == static_cast<double>(bmsx::APU_GENERATOR_NONE), "C++ system globals should expose the APU no-generator constant");
+	require(globalNumber("apu_generator_square") == static_cast<double>(bmsx::APU_GENERATOR_SQUARE), "C++ system globals should expose the APU square-generator constant");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_instance_bytes") != nullptr, "C++ builtin descriptors should expose GEO overlap table layout ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_result_pair_meta_offset") != nullptr, "C++ builtin descriptors should expose GEO overlap result layout ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_pair_meta_instance_a_shift") != nullptr, "C++ builtin descriptors should expose GEO overlap pair-meta ABI");

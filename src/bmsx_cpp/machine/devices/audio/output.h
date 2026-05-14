@@ -118,6 +118,8 @@ private:
 		const u8* data = nullptr;
 		size_t dataSize = 0;
 		size_t frames = 0;
+		u32 generatorKind = APU_GENERATOR_NONE;
+		u32 generatorDutyQ12 = 0;
 		std::vector<u32> badpSeekFrames;
 		std::vector<u32> badpSeekOffsets;
 		std::optional<f64> loopStartFrame;

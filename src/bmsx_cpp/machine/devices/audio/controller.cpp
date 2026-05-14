@@ -205,6 +205,8 @@ void AudioController::resetCommandLatch() {
 	m_memory.writeValue(IO_APU_FILTER_Q_MILLI, valueNumber(1000.0));
 	m_memory.writeValue(IO_APU_FILTER_GAIN_MILLIDB, valueNumber(0.0));
 	m_memory.writeValue(IO_APU_FADE_SAMPLES, valueNumber(0.0));
+	m_memory.writeValue(IO_APU_GENERATOR_KIND, valueNumber(static_cast<double>(APU_GENERATOR_NONE)));
+	m_memory.writeValue(IO_APU_GENERATOR_DUTY_Q12, valueNumber(static_cast<double>(APU_GAIN_Q12_ONE / 2u)));
 }
 
 void AudioController::onCommandWrite() {

@@ -901,8 +901,16 @@ Already advanced in this goal:
   plus the full fade-duration latch, replays restored or source-reloaded fading
   voices into AOUT with the effective current gain derived from those device
   latches, and raises `APU_EVENT_SLOT_ENDED`/`IRQ_APU` from the device when playback or
-  fade completes. `IO_APU_CMD` is now a doorbell into a bounded device-owned
-  command FIFO. Doorbell writes snapshot the 19-word raw parameter latch bank, clear the
+  fade completes. Generator playback is also device-owned now: the raw
+  `IO_APU_GENERATOR_KIND` and `IO_APU_GENERATOR_DUTY_Q12` parameter words live
+  in the APU latch/slot banks, source DMA skips RAM capture for generator
+  sources, and AOUT renders the square generator from the device cursor,
+  source-rate register, loop bounds, and duty register. Restored generator
+  voices therefore replay the same phase without re-reading cart RAM or
+  depending on host voice state; richer generator/noise/envelope/pan/pitch
+  channels are the next APU datapath work. `IO_APU_CMD` is now a doorbell into
+  a bounded device-owned command FIFO. Doorbell writes snapshot the 21-word raw
+  parameter latch bank, clear the
   visible doorbell/latch pad, and device service drains queued commands in FIFO
   order. `IO_APU_CMD_QUEUED`, `IO_APU_CMD_FREE`, and
   `IO_APU_CMD_CAPACITY` expose FIFO occupancy/capacity, while

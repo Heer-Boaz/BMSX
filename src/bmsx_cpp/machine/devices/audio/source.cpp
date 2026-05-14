@@ -20,6 +20,10 @@ void ApuSourceDma::clearSlot(ApuAudioSlot slot) {
 }
 
 ApuSourceDmaResult ApuSourceDma::loadSlot(const Memory& memory, ApuAudioSlot slot, const ApuAudioSource& source) {
+	if (apuAudioSourceUsesGenerator(source)) {
+		clearSlot(slot);
+		return APU_SOURCE_DMA_OK;
+	}
 	const ApuSourceDmaResult validation = validateSource(memory, source);
 	if (validation.faultCode != APU_FAULT_NONE) {
 		return validation;

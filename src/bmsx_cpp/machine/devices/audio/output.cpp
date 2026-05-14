@@ -68,6 +68,12 @@ static ApuOutputStartResult validateAoutSourceMetadata(const ApuAudioSource& sou
 	if (source.frameCount == 0u) {
 		return {APU_FAULT_SOURCE_FRAME_COUNT, source.frameCount};
 	}
+	if (source.generatorKind != APU_GENERATOR_NONE) {
+		if (source.generatorKind == APU_GENERATOR_SQUARE) {
+			return APU_OUTPUT_START_OK;
+		}
+		return {APU_FAULT_OUTPUT_METADATA, source.generatorKind};
+	}
 	if (source.dataBytes == 0u || source.dataOffset > source.sourceBytes || source.dataBytes > source.sourceBytes - source.dataOffset) {
 		return {APU_FAULT_SOURCE_DATA_RANGE, source.dataOffset};
 	}
@@ -215,6 +221,11 @@ static inline i64 audioFrameIndex(f64 position) {
 	return static_cast<i64>(position);
 }
 
+static inline f32 squareGeneratorSample(f64 position, u32 dutyQ12) {
+	const f64 phaseQ12 = (position - static_cast<f64>(audioFrameIndex(position))) * static_cast<f64>(APU_GAIN_Q12_ONE);
+	return phaseQ12 < static_cast<f64>(dutyQ12) ? 1.0f : -1.0f;
+}
+
 static inline bool audioPositionIsInteger(f64 position) {
 	return position == static_cast<f64>(audioFrameIndex(position));
 }
@@ -304,17 +315,19 @@ ApuOutputStartResult ApuOutputMixer::playVoice(ApuAudioSlot slot, ApuVoiceId voi
 	const f32 initialGain = clampVolume(playback.gainLinear);
 	std::vector<u32> badpSeekFrames;
 	std::vector<u32> badpSeekOffsets;
-	if (source.bitsPerSample == 4) {
-		BadpSeekTableResult badpSeek = readBadpSeekTable(sourceBytes.data(), source.sourceBytes, source);
-		if (badpSeek.startResult.faultCode != APU_FAULT_NONE) {
-			return badpSeek.startResult;
-		}
-		badpSeekFrames = std::move(badpSeek.frames);
-		badpSeekOffsets = std::move(badpSeek.offsets);
-	} else {
-		const ApuOutputStartResult pcmResult = validatePcmSourceData(source);
-		if (pcmResult.faultCode != APU_FAULT_NONE) {
-			return pcmResult;
+	if (!apuAudioSourceUsesGenerator(source)) {
+		if (source.bitsPerSample == 4) {
+			BadpSeekTableResult badpSeek = readBadpSeekTable(sourceBytes.data(), source.sourceBytes, source);
+			if (badpSeek.startResult.faultCode != APU_FAULT_NONE) {
+				return badpSeek.startResult;
+			}
+			badpSeekFrames = std::move(badpSeek.frames);
+			badpSeekOffsets = std::move(badpSeek.offsets);
+		} else {
+			const ApuOutputStartResult pcmResult = validatePcmSourceData(source);
+			if (pcmResult.faultCode != APU_FAULT_NONE) {
+				return pcmResult;
+			}
 		}
 	}
 	VoiceRecord record = buildVoiceFromData(
@@ -348,6 +361,7 @@ ApuOutputStartResult ApuOutputMixer::writeSlotRegisterWord(ApuAudioSlot slot, co
 		case APU_PARAMETER_SOURCE_FRAME_COUNT_INDEX:
 		case APU_PARAMETER_SOURCE_DATA_OFFSET_INDEX:
 		case APU_PARAMETER_SOURCE_DATA_BYTES_INDEX:
+		case APU_PARAMETER_GENERATOR_KIND_INDEX:
 			return {APU_FAULT_OUTPUT_METADATA, parameterIndex};
 		case APU_PARAMETER_RATE_STEP_Q16_INDEX:
 			playbackRate = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX])) / static_cast<f32>(APU_RATE_STEP_Q16_ONE);
@@ -373,6 +387,9 @@ ApuOutputStartResult ApuOutputMixer::writeSlotRegisterWord(ApuAudioSlot slot, co
 			return APU_OUTPUT_START_OK;
 		case APU_PARAMETER_GAIN_Q12_INDEX:
 			applyVoiceGainQ12(*record, registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
+			return APU_OUTPUT_START_OK;
+		case APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX:
+			record->generatorDutyQ12 = source.generatorDutyQ12;
 			return APU_OUTPUT_START_OK;
 		case APU_PARAMETER_START_SAMPLE_INDEX:
 			seekVoice(*record, registerWords[APU_PARAMETER_START_SAMPLE_INDEX], playbackCursorQ16);
@@ -482,7 +499,30 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 			}
 
 				bool ended = false;
-				if (record.usesBadp) {
+				if (record.generatorKind == APU_GENERATOR_SQUARE) {
+					size_t outIndex = 0;
+					for (size_t frame = 0; frame < frameCount; ++frame) {
+						if (consumeStopTimer(stopAfter, invOutputRate)) {
+							ended = true;
+							break;
+						}
+						if (hasLoop) {
+							wrapAudioPosition(position, loopStart, loopEnd, loopLen);
+						} else if (position >= framesInRecordF) {
+							ended = true;
+							break;
+						}
+
+						const f32 sample = squareGeneratorSample(position, record.generatorDutyQ12);
+						mixVoiceSample(record, mix, outIndex, sample, sample, gain);
+
+						if (hasLoop) {
+							advanceLoopedAudioFrame(position, step, loopStart, loopEnd, loopLen, gain, rampRemaining, gainStep, invOutputRate);
+						} else {
+							advanceLinearAudioFrame(position, step, gain, rampRemaining, gainStep, invOutputRate);
+						}
+					}
+				} else if (record.usesBadp) {
 					size_t outIndex = 0;
 					for (size_t frame = 0; frame < frameCount; ++frame) {
 						if (consumeStopTimer(stopAfter, invOutputRate)) {
@@ -950,6 +990,8 @@ ApuOutputMixer::VoiceRecord ApuOutputMixer::buildVoiceFromData(ApuAudioSlot slot
 	record.bitsPerSample = static_cast<i32>(source.bitsPerSample);
 	record.dataSize = source.dataBytes;
 	record.frames = source.frameCount;
+	record.generatorKind = source.generatorKind;
+	record.generatorDutyQ12 = source.generatorDutyQ12;
 	record.badpSeekFrames = std::move(badpSeekFrames);
 	record.badpSeekOffsets = std::move(badpSeekOffsets);
 	if (source.loopEndSample > source.loopStartSample) {
@@ -958,8 +1000,8 @@ ApuOutputMixer::VoiceRecord ApuOutputMixer::buildVoiceFromData(ApuAudioSlot slot
 	}
 	record.slot = slot;
 	record.playback = playback;
-	record.data = sourceBytes.data() + source.dataOffset;
-	record.usesBadp = source.bitsPerSample == 4;
+	record.data = apuAudioSourceUsesGenerator(source) ? sourceBytes.data() : sourceBytes.data() + source.dataOffset;
+	record.usesBadp = !apuAudioSourceUsesGenerator(source) && source.bitsPerSample == 4;
 	const size_t framesInRecord = record.frames;
 	f64 position = static_cast<f64>(playbackCursorQ16) / static_cast<f64>(APU_RATE_STEP_Q16_ONE);
 	if (framesInRecord > 0u) {

@@ -175,6 +175,8 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_apu_filter_q_milli", valueNumber(static_cast<double>(IO_APU_FILTER_Q_MILLI)));
 	runtime.setGlobal("sys_apu_filter_gain_millidb", valueNumber(static_cast<double>(IO_APU_FILTER_GAIN_MILLIDB)));
 	runtime.setGlobal("sys_apu_fade_samples", valueNumber(static_cast<double>(IO_APU_FADE_SAMPLES)));
+	runtime.setGlobal("sys_apu_generator_kind", valueNumber(static_cast<double>(IO_APU_GENERATOR_KIND)));
+	runtime.setGlobal("sys_apu_generator_duty_q12", valueNumber(static_cast<double>(IO_APU_GENERATOR_DUTY_Q12)));
 	runtime.setGlobal("sys_apu_cmd", valueNumber(static_cast<double>(IO_APU_CMD)));
 	runtime.setGlobal("sys_apu_status", valueNumber(static_cast<double>(IO_APU_STATUS)));
 	runtime.setGlobal("sys_apu_fault_code", valueNumber(static_cast<double>(IO_APU_FAULT_CODE)));
@@ -215,6 +217,8 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("apu_sample_rate_hz", valueNumber(static_cast<double>(APU_SAMPLE_RATE_HZ)));
 	runtime.setGlobal("apu_rate_step_q16_one", valueNumber(static_cast<double>(APU_RATE_STEP_Q16_ONE)));
 	runtime.setGlobal("apu_gain_q12_one", valueNumber(static_cast<double>(APU_GAIN_Q12_ONE)));
+	runtime.setGlobal("apu_generator_none", valueNumber(static_cast<double>(APU_GENERATOR_NONE)));
+	runtime.setGlobal("apu_generator_square", valueNumber(static_cast<double>(APU_GENERATOR_SQUARE)));
 	runtime.setGlobal("apu_output_queue_capacity_frames", valueNumber(static_cast<double>(APU_OUTPUT_QUEUE_CAPACITY_FRAMES)));
 	runtime.setGlobal("apu_command_fifo_capacity", valueNumber(static_cast<double>(APU_COMMAND_FIFO_CAPACITY)));
 	runtime.setGlobal("apu_status_fault", valueNumber(static_cast<double>(APU_STATUS_FAULT)));

@@ -21,7 +21,9 @@ constexpr uint32_t APU_SLOT_COUNT = 16u;
 constexpr uint32_t APU_SLOT_PHASE_IDLE = 0u;
 constexpr uint32_t APU_SLOT_PHASE_PLAYING = 1u;
 constexpr uint32_t APU_SLOT_PHASE_FADING = 2u;
-constexpr uint32_t APU_PARAMETER_REGISTER_COUNT = 19u;
+constexpr uint32_t APU_GENERATOR_NONE = 0u;
+constexpr uint32_t APU_GENERATOR_SQUARE = 1u;
+constexpr uint32_t APU_PARAMETER_REGISTER_COUNT = 21u;
 constexpr uint32_t APU_PARAMETER_SOURCE_ADDR_INDEX = 0u;
 constexpr uint32_t APU_PARAMETER_SOURCE_BYTES_INDEX = 1u;
 constexpr uint32_t APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX = 2u;
@@ -41,6 +43,8 @@ constexpr uint32_t APU_PARAMETER_FILTER_FREQ_HZ_INDEX = 15u;
 constexpr uint32_t APU_PARAMETER_FILTER_Q_MILLI_INDEX = 16u;
 constexpr uint32_t APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX = 17u;
 constexpr uint32_t APU_PARAMETER_FADE_SAMPLES_INDEX = 18u;
+constexpr uint32_t APU_PARAMETER_GENERATOR_KIND_INDEX = 19u;
+constexpr uint32_t APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX = 20u;
 constexpr uint32_t APU_SLOT_REGISTER_WORD_COUNT = APU_SLOT_COUNT * APU_PARAMETER_REGISTER_COUNT;
 constexpr uint32_t APU_COMMAND_FIFO_REGISTER_WORD_COUNT = APU_COMMAND_FIFO_CAPACITY * APU_PARAMETER_REGISTER_COUNT;
 
@@ -102,6 +106,8 @@ struct ApuAudioSource {
 	uint32_t dataBytes = 0;
 	uint32_t loopStartSample = 0;
 	uint32_t loopEndSample = 0;
+	uint32_t generatorKind = 0;
+	uint32_t generatorDutyQ12 = 0;
 };
 
 inline ApuAudioSource resolveApuAudioSource(const ApuParameterRegisterWords& registerWords) {
@@ -116,7 +122,13 @@ inline ApuAudioSource resolveApuAudioSource(const ApuParameterRegisterWords& reg
 	source.dataBytes = registerWords[APU_PARAMETER_SOURCE_DATA_BYTES_INDEX];
 	source.loopStartSample = registerWords[APU_PARAMETER_SOURCE_LOOP_START_SAMPLE_INDEX];
 	source.loopEndSample = registerWords[APU_PARAMETER_SOURCE_LOOP_END_SAMPLE_INDEX];
+	source.generatorKind = registerWords[APU_PARAMETER_GENERATOR_KIND_INDEX];
+	source.generatorDutyQ12 = registerWords[APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX];
 	return source;
+}
+
+constexpr bool apuAudioSourceUsesGenerator(const ApuAudioSource& source) {
+	return source.generatorKind != APU_GENERATOR_NONE;
 }
 
 constexpr bool apuParameterProgramsSourceBuffer(uint32_t parameterIndex) {
@@ -127,7 +139,8 @@ constexpr bool apuParameterProgramsSourceBuffer(uint32_t parameterIndex) {
 		|| parameterIndex == APU_PARAMETER_SOURCE_BITS_PER_SAMPLE_INDEX
 		|| parameterIndex == APU_PARAMETER_SOURCE_FRAME_COUNT_INDEX
 		|| parameterIndex == APU_PARAMETER_SOURCE_DATA_OFFSET_INDEX
-		|| parameterIndex == APU_PARAMETER_SOURCE_DATA_BYTES_INDEX;
+		|| parameterIndex == APU_PARAMETER_SOURCE_DATA_BYTES_INDEX
+		|| parameterIndex == APU_PARAMETER_GENERATOR_KIND_INDEX;
 }
 
 constexpr int64_t advanceApuPlaybackCursorQ16(int64_t cursorQ16, int64_t samples, int64_t rateStepQ16, uint32_t sourceSampleRateHz) {
