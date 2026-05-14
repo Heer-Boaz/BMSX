@@ -19,7 +19,6 @@ namespace {
 constexpr uint32_t VDP_RD_BUDGET_BYTES = 4096u;
 constexpr uint32_t VDP_RD_MAX_CHUNK_PIXELS = 256u;
 constexpr int VDP_SERVICE_BATCH_WORK_UNITS = 128;
-constexpr size_t BLITTER_FIFO_CAPACITY = 4096u;
 constexpr u32 VDP_REPLAY_PACKET_FAULT = 0xffffffffu;
 constexpr VDP::FrameBufferColor VDP_BLITTER_IMPLICIT_CLEAR{0u, 0u, 0u, 255u};
 constexpr VDP::FrameBufferColor VDP_BLITTER_WHITE{255u, 255u, 255u, 255u};
@@ -40,6 +39,16 @@ std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
 	std::vector<T> values = std::move(pool.back());
 	pool.pop_back();
 	return values;
+}
+
+void reserveBuildFrameStorage(VdpBuildingFrame& frame) {
+	frame.queue.reserve(VDP_BLITTER_FIFO_CAPACITY);
+	frame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
+}
+
+void reserveSubmittedFrameStorage(VdpSubmittedFrame& frame) {
+	frame.queue.reserve(VDP_BLITTER_FIFO_CAPACITY);
+	frame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
 }
 
 uint64_t vramSurfaceByteSize(uint32_t width, uint32_t height) {
@@ -85,12 +94,9 @@ VDP::VDP(
 		m_memory.mapIoWrite(IO_VDP_SBX_FACE0 + index * IO_WORD_SIZE, this, &VDP::onSbxRegisterWindowWriteThunk);
 	}
 	m_memory.mapIoWrite(IO_VDP_SBX_COMMIT, this, &VDP::onSbxCommitWriteThunk);
-	m_buildFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
-	m_buildFrame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
-	m_activeFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
-	m_activeFrame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
-	m_pendingFrame.queue.reserve(BLITTER_FIFO_CAPACITY);
-	m_pendingFrame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
+	reserveBuildFrameStorage(m_buildFrame);
+	reserveSubmittedFrameStorage(m_activeFrame);
+	reserveSubmittedFrameStorage(m_pendingFrame);
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
 }
 
@@ -1147,7 +1153,7 @@ bool VDP::enqueueBlitterCommand(BlitterCommand&& command) {
 		m_fault.raise(VDP_FAULT_SUBMIT_STATE, static_cast<uint32_t>(command.type));
 		return false;
 	}
-	if (m_buildFrame.queue.size() >= BLITTER_FIFO_CAPACITY) {
+	if (m_buildFrame.queue.size() >= VDP_BLITTER_FIFO_CAPACITY) {
 		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(m_buildFrame.queue.size()));
 		return false;
 	}
@@ -1213,14 +1219,14 @@ bool VDP::sealSubmittedFrame() {
 		m_fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_END_FRAME);
 		return false;
 	}
-	VdpSubmittedFrame* frame = nullptr;
-	if (!m_activeFrame.occupied) {
-		frame = &m_activeFrame;
-	} else if (!m_pendingFrame.occupied) {
+	const bool activeFrameEmpty = m_activeFrame.state == VdpSubmittedFrameState::Empty;
+	VdpSubmittedFrame* frame = &m_activeFrame;
+	if (!activeFrameEmpty) {
+		if (m_pendingFrame.state != VdpSubmittedFrameState::Empty) {
+			m_fault.raise(VDP_FAULT_SUBMIT_BUSY, VDP_CMD_END_FRAME);
+			return false;
+		}
 		frame = &m_pendingFrame;
-	} else {
-		m_fault.raise(VDP_FAULT_SUBMIT_BUSY, VDP_CMD_END_FRAME);
-		return false;
 	}
 	const bool frameHasFrameBufferCommands = !m_buildFrame.queue.empty();
 	const bool frameHasCommands = frameHasFrameBufferCommands || !m_buildFrame.billboards.empty();
@@ -1244,10 +1250,15 @@ bool VDP::sealSubmittedFrame() {
 	std::swap(frame->skyboxSamples, m_sbxSealSamples);
 	frame->queue.swap(m_buildFrame.queue);
 	frame->billboards.swap(m_buildFrame.billboards);
-	frame->occupied = true;
+	if (frameCost == 0) {
+		frame->state = VdpSubmittedFrameState::Ready;
+	} else if (activeFrameEmpty) {
+		frame->state = VdpSubmittedFrameState::Executing;
+	} else {
+		frame->state = VdpSubmittedFrameState::Queued;
+	}
 	frame->hasCommands = frameHasCommands;
 	frame->hasFrameBufferCommands = frameHasFrameBufferCommands;
-	frame->ready = frameCost == 0;
 	frame->cost = frameCost;
 	frame->workRemaining = frameCost;
 	const VdpVoutFrameOutput& voutFrame = m_vout.sealFrame();
@@ -1263,20 +1274,23 @@ bool VDP::sealSubmittedFrame() {
 }
 
 void VDP::promotePendingFrame() {
-	if (m_activeFrame.occupied || !m_pendingFrame.occupied) {
+	if (m_activeFrame.state != VdpSubmittedFrameState::Empty || m_pendingFrame.state == VdpSubmittedFrameState::Empty) {
 		return;
 	}
 	std::swap(m_activeFrame, m_pendingFrame);
+	if (m_activeFrame.state == VdpSubmittedFrameState::Queued) {
+		m_activeFrame.state = VdpSubmittedFrameState::Executing;
+	}
 	resetSubmittedFrameSlot(m_pendingFrame);
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 }
 
 void VDP::advanceWork(int workUnits) {
-	if (!m_activeFrame.occupied) {
+	if (m_activeFrame.state == VdpSubmittedFrameState::Empty) {
 		promotePendingFrame();
 	}
-	if (!m_activeFrame.occupied || m_activeFrame.ready || workUnits <= 0) {
+	if (m_activeFrame.state != VdpSubmittedFrameState::Executing || workUnits <= 0) {
 		return;
 	}
 	if (workUnits >= m_activeFrame.workRemaining) {
@@ -1286,7 +1300,7 @@ void VDP::advanceWork(int workUnits) {
 		}
 		recycleBlitterBuffers(m_activeFrame.queue);
 		m_activeFrame.queue.clear();
-		m_activeFrame.ready = true;
+		m_activeFrame.state = VdpSubmittedFrameState::Ready;
 		refreshSubmitBusyStatus();
 		scheduleNextService(m_scheduler.currentNowCycles());
 		return;
@@ -1295,10 +1309,10 @@ void VDP::advanceWork(int workUnits) {
 }
 
 int VDP::getPendingRenderWorkUnits() const {
-	if (!m_activeFrame.occupied) {
+	if (m_activeFrame.state == VdpSubmittedFrameState::Empty) {
 		return m_pendingFrame.cost;
 	}
-	return m_activeFrame.ready ? 0 : m_activeFrame.workRemaining;
+	return m_activeFrame.state == VdpSubmittedFrameState::Ready ? 0 : m_activeFrame.workRemaining;
 }
 
 void VDP::executeFrameBufferCommands(const std::vector<BlitterCommand>& commands) {
@@ -1631,7 +1645,7 @@ void VDP::finishCommittedFrameOnVblankEdge() {
 }
 
 bool VDP::presentReadyFrameOnVblankEdge() {
-	if (!m_activeFrame.occupied) {
+	if (m_activeFrame.state == VdpSubmittedFrameState::Empty) {
 		m_lastFrameCommitted = false;
 		m_lastFrameCost = 0;
 		m_lastFrameHeld = false;
@@ -1641,7 +1655,7 @@ bool VDP::presentReadyFrameOnVblankEdge() {
 		return false;
 	}
 	m_lastFrameCost = m_activeFrame.cost;
-	if (!m_activeFrame.ready) {
+	if (m_activeFrame.state != VdpSubmittedFrameState::Ready) {
 		m_lastFrameCommitted = false;
 		m_lastFrameHeld = true;
 		return false;
@@ -2164,6 +2178,17 @@ void VDP::attachImgDecController(ImgDecController& controller) {
 void VDP::captureVisualStateFields(VdpState& state) const {
 	state.xf = m_xf.captureState();
 	state.vdpRegisterWords = m_vdpRegisters;
+	state.buildFrame = captureBuildingFrameState(m_buildFrame);
+	state.activeFrame = captureSubmittedFrameState(m_activeFrame);
+	state.pendingFrame = captureSubmittedFrameState(m_pendingFrame);
+	state.workCarry = m_workCarry;
+	state.availableWorkUnits = m_availableWorkUnits;
+	state.dmaSubmitActive = m_dmaSubmitActive;
+	state.vdpFifoWordScratch = m_vdpFifoWordScratch;
+	state.vdpFifoWordByteCount = m_vdpFifoWordByteCount;
+	state.vdpFifoStreamWords.assign(m_vdpFifoStreamWords.begin(), m_vdpFifoStreamWords.begin() + m_vdpFifoStreamWordCount);
+	state.vdpFifoStreamWordCount = m_vdpFifoStreamWordCount;
+	state.blitterSequence = m_blitterSequence;
 	state.skyboxControl = m_sbx.liveControl();
 	state.skyboxFaceWords = m_sbx.liveFaceWords();
 	state.pmuSelectedBank = m_pmu.selectedBank();
@@ -2182,6 +2207,20 @@ VdpState VDP::captureState() const {
 void VDP::restoreState(const VdpState& state) {
 	m_xf.restoreState(state.xf);
 	m_vdpRegisters = state.vdpRegisterWords;
+	restoreBuildingFrameState(m_buildFrame, state.buildFrame);
+	restoreSubmittedFrameState(m_activeFrame, state.activeFrame);
+	restoreSubmittedFrameState(m_pendingFrame, state.pendingFrame);
+	reserveBuildFrameStorage(m_buildFrame);
+	reserveSubmittedFrameStorage(m_activeFrame);
+	reserveSubmittedFrameStorage(m_pendingFrame);
+	m_workCarry = state.workCarry;
+	m_availableWorkUnits = state.availableWorkUnits;
+	m_dmaSubmitActive = state.dmaSubmitActive;
+	m_vdpFifoWordScratch = state.vdpFifoWordScratch;
+	m_vdpFifoWordByteCount = state.vdpFifoWordByteCount;
+	std::copy(state.vdpFifoStreamWords.begin(), state.vdpFifoStreamWords.end(), m_vdpFifoStreamWords.begin());
+	m_vdpFifoStreamWordCount = state.vdpFifoStreamWordCount;
+	m_blitterSequence = state.blitterSequence;
 	for (uint32_t index = 0; index < VDP_REGISTER_COUNT; ++index) {
 		m_memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, valueNumber(static_cast<double>(m_vdpRegisters[index])));
 	}
@@ -2193,6 +2232,10 @@ void VDP::restoreState(const VdpState& state) {
 	m_fault.restore(0u, state.vdpFaultCode, state.vdpFaultDetail);
 	m_fault.setStatusFlag(VDP_STATUS_FAULT, m_fault.code != VDP_FAULT_NONE);
 	refreshSubmitBusyStatus();
+	m_scheduler.cancelDeviceService(DeviceServiceVdp);
+	if (needsImmediateSchedulerService() || hasPendingRenderWork()) {
+		scheduleNextService(m_scheduler.currentNowCycles());
+	}
 	commitLiveVisualState();
 }
 

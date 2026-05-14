@@ -30,6 +30,17 @@ class VDP;
 struct VdpState {
 	VdpXfState xf{};
 	std::array<u32, VDP_REGISTER_COUNT> vdpRegisterWords{};
+	VdpBuildingFrameSaveState buildFrame;
+	VdpSubmittedFrameSaveState activeFrame;
+	VdpSubmittedFrameSaveState pendingFrame;
+	i64 workCarry = 0;
+	int availableWorkUnits = 0;
+	bool dmaSubmitActive = false;
+	std::array<u8, 4> vdpFifoWordScratch{{0, 0, 0, 0}};
+	int vdpFifoWordByteCount = 0;
+	std::vector<u32> vdpFifoStreamWords;
+	u32 vdpFifoStreamWordCount = 0;
+	u32 blitterSequence = 0;
 	u32 skyboxControl = 0;
 	VdpSbxUnit::FaceWords skyboxFaceWords{};
 	u32 pmuSelectedBank = 0;
@@ -120,8 +131,15 @@ public:
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
 	int lastFrameCost() const { return m_lastFrameCost; }
 	bool lastFrameHeld() const { return m_lastFrameHeld; }
-	bool needsImmediateSchedulerService() const { return !m_activeFrame.occupied && m_pendingFrame.occupied; }
-	bool hasPendingRenderWork() const { return m_activeFrame.occupied ? !m_activeFrame.ready : (m_pendingFrame.occupied && m_pendingFrame.cost > 0); }
+	bool needsImmediateSchedulerService() const {
+		return m_activeFrame.state == VdpSubmittedFrameState::Empty && m_pendingFrame.state != VdpSubmittedFrameState::Empty;
+	}
+	bool hasPendingRenderWork() const {
+		if (m_activeFrame.state == VdpSubmittedFrameState::Empty) {
+			return m_pendingFrame.state == VdpSubmittedFrameState::Queued;
+		}
+		return m_activeFrame.state == VdpSubmittedFrameState::Executing;
+	}
 	int getPendingRenderWorkUnits() const;
 
 	using FrameBufferColor = VdpFrameBufferColor;
@@ -240,7 +258,9 @@ private:
 	void resetBuildFrameState();
 	void resetQueuedFrameState();
 	bool enqueueBlitterCommand(BlitterCommand&& command);
-	bool canAcceptSubmittedFrame() const { return !m_pendingFrame.occupied; }
+	bool canAcceptSubmittedFrame() const {
+		return m_pendingFrame.state == VdpSubmittedFrameState::Empty;
+	}
 	bool beginSubmittedFrame(VdpDexFrameState state);
 	void cancelSubmittedFrame();
 	bool sealSubmittedFrame();

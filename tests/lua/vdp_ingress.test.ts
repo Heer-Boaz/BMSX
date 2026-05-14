@@ -75,7 +75,11 @@ import {
 } from '../../src/bmsx/machine/devices/vdp/contracts';
 import { VDP_BBU_PACKET_KIND, VDP_BBU_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/bbu';
 import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
-import { VDP_DEX_FRAME_IDLE } from '../../src/bmsx/machine/devices/vdp/frame';
+import {
+	VDP_DEX_FRAME_IDLE,
+	VDP_SUBMITTED_FRAME_EMPTY,
+	VDP_SUBMITTED_FRAME_READY,
+} from '../../src/bmsx/machine/devices/vdp/frame';
 import {
 	VDP_CMD_BEGIN_FRAME,
 	VDP_CMD_BLIT,
@@ -478,7 +482,7 @@ test('VDP2D FIFO DEX command faults abort the sealed stream frame', () => {
 
 	assertVdpFault(memory, VDP_FAULT_DEX_INVALID_SCALE);
 	assert.equal(buildFrameOpen(vdp), false);
-	assert.equal((vdp as any).activeFrame.occupied, false);
+	assert.equal((vdp as any).activeFrame.state, VDP_SUBMITTED_FRAME_EMPTY);
 	assert.equal(activeQueue(vdp).length, 0);
 });
 
@@ -496,7 +500,7 @@ test('VDP2D DMA DEX command faults abort the sealed stream frame', () => {
 
 	assertVdpFault(memory, VDP_FAULT_DEX_SOURCE_OOB);
 	assert.equal(buildFrameOpen(vdp), false);
-	assert.equal((vdp as any).activeFrame.occupied, false);
+	assert.equal((vdp as any).activeFrame.state, VDP_SUBMITTED_FRAME_EMPTY);
 	assert.equal(activeQueue(vdp).length, 0);
 });
 
@@ -561,7 +565,7 @@ test('VDP2D BLIT source faults latch without closing a direct frame', () => {
 	assertVdpFault(memory, VDP_FAULT_DEX_SOURCE_OOB);
 	assert.equal(buildFrameOpen(vdp), true);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
-	assert.equal((vdp as any).activeFrame.occupied, true);
+	assert.equal((vdp as any).activeFrame.state, VDP_SUBMITTED_FRAME_READY);
 });
 
 test('VDP2D BLIT and LINE latch cart-visible DEX faults without register rollback', () => {
@@ -653,7 +657,7 @@ test('VDP2D FIFO allows an empty PKT_END-only frame', () => {
 	sealStream(memory, vdp, [VDP_PKT_END]);
 
 	assert.equal(activeQueue(vdp).length, 0);
-	assert.equal((vdp as any).activeFrame.occupied, true);
+	assert.equal((vdp as any).activeFrame.state, VDP_SUBMITTED_FRAME_READY);
 	assert.equal((vdp as any).activeFrame.hasCommands, false);
 });
 
@@ -842,6 +846,42 @@ test('VDP save-state restores raw registerfile and surface geometry', () => {
 	const displayPixel = new Uint8Array(4);
 	assert.equal(vdp.readFrameBufferPixels(VDP_FRAMEBUFFER_PAGE_DISPLAY, 0, 0, 1, 1, displayPixel), true);
 	assert.deepEqual(Array.from(displayPixel), [0x11, 0x22, 0x33, 0xff]);
+});
+
+test('VDP save-state restores active and queued submitted frames', () => {
+	const { memory, vdp } = createVdp();
+
+	memory.writeValue(IO_VDP_REG_BG_COLOR, 0xff101112);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_CLEAR);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	const firstFrameWork = vdp.getPendingRenderWorkUnits();
+	assert.ok(firstFrameWork > 0);
+
+	memory.writeValue(IO_VDP_REG_BG_COLOR, 0xff202122);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_CLEAR);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	const saved = vdp.captureSaveState();
+
+	memory.writeValue(IO_VDP_REG_BG_COLOR, 0xff303132);
+	vdp.advanceWork(vdp.getPendingRenderWorkUnits());
+	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
+
+	vdp.restoreSaveState(saved);
+	assert.equal(vdp.getPendingRenderWorkUnits(), firstFrameWork);
+	vdp.advanceWork(vdp.getPendingRenderWorkUnits());
+	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
+	const firstDisplayPixel = new Uint8Array(4);
+	assert.equal(vdp.readFrameBufferPixels(VDP_FRAMEBUFFER_PAGE_DISPLAY, 0, 0, 1, 1, firstDisplayPixel), true);
+	assert.deepEqual(Array.from(firstDisplayPixel), [0x10, 0x11, 0x12, 0xff]);
+
+	assert.ok(vdp.getPendingRenderWorkUnits() > 0);
+	vdp.advanceWork(vdp.getPendingRenderWorkUnits());
+	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
+	const secondDisplayPixel = new Uint8Array(4);
+	assert.equal(vdp.readFrameBufferPixels(VDP_FRAMEBUFFER_PAGE_DISPLAY, 0, 0, 1, 1, secondDisplayPixel), true);
+	assert.deepEqual(Array.from(secondDisplayPixel), [0x20, 0x21, 0x22, 0xff]);
 });
 
 test('VDP SBX live state commits only through frame present', () => {

@@ -1,7 +1,7 @@
 import { VdpBbuFrameBuffer } from './bbu';
 import type { VdpResolvedBlitterSample } from './blitter';
 import type { VdpDeviceOutput } from './device_output';
-import type { VdpSubmittedFrameState } from './frame';
+import type { VdpSubmittedFrame } from './frame';
 import { createResolvedBlitterSamples } from './frame';
 import { VdpXfUnit } from './xf';
 
@@ -159,7 +159,7 @@ export class VdpVoutUnit {
 		return this.sealedFrameOutput;
 	}
 
-	public presentFrame(frame: VdpSubmittedFrameState, skyboxEnabled: boolean): void {
+	public presentFrame(frame: VdpSubmittedFrame, skyboxEnabled: boolean): void {
 		this.visibleDither = frame.ditherType;
 		this.visibleFrameBufferWidth = frame.frameBufferWidth;
 		this.visibleFrameBufferHeight = frame.frameBufferHeight;

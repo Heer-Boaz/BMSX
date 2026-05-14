@@ -8,6 +8,9 @@
 
 namespace bmsx {
 
+constexpr size_t VDP_BLITTER_FIFO_CAPACITY = 4096u;
+constexpr size_t VDP_BLITTER_RUN_ENTRY_CAPACITY = 16384u;
+
 struct VdpFrameBufferColor {
 	u8 r = 255;
 	u8 g = 255;
@@ -44,13 +47,13 @@ struct VdpTileRunBlit : VdpBlitterSource {
 };
 
 enum class VdpBlitterCommandType : u8 {
-	Clear,
-	Blit,
-	CopyRect,
-	FillRect,
-	DrawLine,
-	GlyphRun,
-	TileRun,
+	Clear = 1,
+	Blit = 2,
+	CopyRect = 3,
+	FillRect = 4,
+	DrawLine = 5,
+	GlyphRun = 6,
+	TileRun = 7,
 };
 
 struct VdpBlitterCommand {
@@ -84,6 +87,7 @@ struct VdpBlitterCommand {
 };
 
 u8 frameBufferColorByte(f32 value);
+u32 packArgbColor(const VdpFrameBufferColor& value);
 VdpFrameBufferColor unpackArgbColor(u32 value);
 
 } // namespace bmsx

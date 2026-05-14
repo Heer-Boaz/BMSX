@@ -161,11 +161,21 @@ import {
 	VDP_DEX_FRAME_DIRECT_OPEN,
 	VDP_DEX_FRAME_IDLE,
 	VDP_DEX_FRAME_STREAM_OPEN,
+	VDP_SUBMITTED_FRAME_EMPTY,
+	VDP_SUBMITTED_FRAME_EXECUTING,
+	VDP_SUBMITTED_FRAME_QUEUED,
+	VDP_SUBMITTED_FRAME_READY,
 	type VdpBuildingFrameState,
+	type VdpBuildingFrameSaveState,
 	type VdpDexFrameState,
-	type VdpSubmittedFrameState,
+	type VdpSubmittedFrame,
+	type VdpSubmittedFrameSaveState,
 	allocateSubmittedFrameSlot,
+	captureBuildingFrameState,
 	createResolvedBlitterSamples,
+	captureSubmittedFrameState,
+	restoreBuildingFrameState,
+	restoreSubmittedFrameState,
 } from './frame';
 import {
 	VDP_CMD_BEGIN_FRAME,
@@ -232,6 +242,17 @@ export type {
 export type VdpState = {
 	xf: VdpXfState;
 	vdpRegisterWords: number[];
+	buildFrame: VdpBuildingFrameSaveState;
+	activeFrame: VdpSubmittedFrameSaveState;
+	pendingFrame: VdpSubmittedFrameSaveState;
+	workCarry: number;
+	availableWorkUnits: number;
+	dmaSubmitActive: boolean;
+	vdpFifoWordScratch: number[];
+	vdpFifoWordByteCount: number;
+	vdpFifoStreamWords: number[];
+	vdpFifoStreamWordCount: number;
+	blitterSequence: number;
 	skyboxControl: number;
 	skyboxFaceWords: number[];
 	pmuSelectedBank: number;
@@ -342,8 +363,8 @@ export class VDP implements VramWriteSink {
 		dirtySpansByRow: [],
 		requiresFullSync: false,
 	};
-	private activeFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
-	private pendingFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
+	private activeFrame: VdpSubmittedFrame = allocateSubmittedFrameSlot();
+	private pendingFrame: VdpSubmittedFrame = allocateSubmittedFrameSlot();
 	private frameBufferPriorityLayer = new Uint8Array(0);
 	private frameBufferPriorityZ = new Float32Array(0);
 	private frameBufferPrioritySeq = new Uint32Array(0);
@@ -1336,12 +1357,11 @@ export class VDP implements VramWriteSink {
 		this.buildFrame.state = VDP_DEX_FRAME_IDLE;
 	}
 
-	private resetSubmittedFrameSlot(frame: VdpSubmittedFrameState): void {
+	private resetSubmittedFrameSlot(frame: VdpSubmittedFrame): void {
 		frame.queue.reset();
-		frame.occupied = false;
+		frame.state = VDP_SUBMITTED_FRAME_EMPTY;
 		frame.hasCommands = false;
 		frame.hasFrameBufferCommands = false;
-		frame.ready = false;
 		frame.cost = 0;
 		frame.workRemaining = 0;
 		frame.ditherType = 0;
@@ -1405,7 +1425,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	private canAcceptSubmittedFrame(): boolean {
-		return !this.pendingFrame.occupied;
+		return this.pendingFrame.state === VDP_SUBMITTED_FRAME_EMPTY;
 	}
 
 	private beginSubmittedFrame(state: VdpDexFrameState): boolean {
@@ -1430,10 +1450,14 @@ export class VDP implements VramWriteSink {
 			this.fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_END_FRAME);
 			return false;
 		}
-		const frame = !this.activeFrame.occupied ? this.activeFrame : !this.pendingFrame.occupied ? this.pendingFrame : null;
-		if (frame === null) {
-			this.fault.raise(VDP_FAULT_SUBMIT_BUSY, VDP_CMD_END_FRAME);
-			return false;
+		const activeFrameEmpty = this.activeFrame.state === VDP_SUBMITTED_FRAME_EMPTY;
+		let frame = this.activeFrame;
+		if (!activeFrameEmpty) {
+			if (this.pendingFrame.state !== VDP_SUBMITTED_FRAME_EMPTY) {
+				this.fault.raise(VDP_FAULT_SUBMIT_BUSY, VDP_CMD_END_FRAME);
+				return false;
+			}
+			frame = this.pendingFrame;
 		}
 		const buildQueue = this.buildFrame.queue;
 		const buildBillboards = this.buildFrame.billboards;
@@ -1462,10 +1486,15 @@ export class VDP implements VramWriteSink {
 		frame.queue = buildQueue;
 		this.buildFrame.billboards = frame.billboards;
 		frame.billboards = buildBillboards;
-		frame.occupied = true;
+		if (frameCost === 0) {
+			frame.state = VDP_SUBMITTED_FRAME_READY;
+		} else if (activeFrameEmpty) {
+			frame.state = VDP_SUBMITTED_FRAME_EXECUTING;
+		} else {
+			frame.state = VDP_SUBMITTED_FRAME_QUEUED;
+		}
 		frame.hasCommands = frameHasCommands;
 		frame.hasFrameBufferCommands = frameHasFrameBufferCommands;
-		frame.ready = frameCost === 0;
 		frame.cost = frameCost;
 		frame.workRemaining = frameCost;
 		const voutFrame = this.vout.sealFrame();
@@ -1482,22 +1511,25 @@ export class VDP implements VramWriteSink {
 	}
 
 	private promotePendingFrame(): void {
-		if (this.activeFrame.occupied || !this.pendingFrame.occupied) {
+		if (this.activeFrame.state !== VDP_SUBMITTED_FRAME_EMPTY || this.pendingFrame.state === VDP_SUBMITTED_FRAME_EMPTY) {
 			return;
 		}
 		const emptyFrame = this.activeFrame;
 		this.activeFrame = this.pendingFrame;
 		this.pendingFrame = emptyFrame;
+		if (this.activeFrame.state === VDP_SUBMITTED_FRAME_QUEUED) {
+			this.activeFrame.state = VDP_SUBMITTED_FRAME_EXECUTING;
+		}
 		this.resetSubmittedFrameSlot(this.pendingFrame);
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
 
 	public advanceWork(workUnits: number): void {
-		if (!this.activeFrame.occupied) {
+		if (this.activeFrame.state === VDP_SUBMITTED_FRAME_EMPTY) {
 			this.promotePendingFrame();
 		}
-		if (!this.activeFrame.occupied || this.activeFrame.ready || workUnits <= 0) {
+		if (this.activeFrame.state !== VDP_SUBMITTED_FRAME_EXECUTING || workUnits <= 0) {
 			return;
 		}
 		if (workUnits >= this.activeFrame.workRemaining) {
@@ -1506,7 +1538,7 @@ export class VDP implements VramWriteSink {
 				this.executeFrameBufferCommands(this.activeFrame.queue);
 			}
 			this.activeFrame.queue.reset();
-			this.activeFrame.ready = true;
+			this.activeFrame.state = VDP_SUBMITTED_FRAME_READY;
 			this.refreshSubmitBusyStatus();
 			this.scheduleNextService(this.scheduler.currentNowCycles());
 			return;
@@ -1515,21 +1547,21 @@ export class VDP implements VramWriteSink {
 	}
 
 	public needsImmediateSchedulerService(): boolean {
-		return !this.activeFrame.occupied && this.pendingFrame.occupied;
+		return this.activeFrame.state === VDP_SUBMITTED_FRAME_EMPTY && this.pendingFrame.state !== VDP_SUBMITTED_FRAME_EMPTY;
 	}
 
 	public hasPendingRenderWork(): boolean {
-		if (!this.activeFrame.occupied) {
-			return this.pendingFrame.occupied && this.pendingFrame.cost > 0;
+		if (this.activeFrame.state === VDP_SUBMITTED_FRAME_EMPTY) {
+			return this.pendingFrame.state === VDP_SUBMITTED_FRAME_QUEUED;
 		}
-		return !this.activeFrame.ready;
+		return this.activeFrame.state === VDP_SUBMITTED_FRAME_EXECUTING;
 	}
 
 	public getPendingRenderWorkUnits(): number {
-		if (!this.activeFrame.occupied) {
+		if (this.activeFrame.state === VDP_SUBMITTED_FRAME_EMPTY) {
 			return this.pendingFrame.cost;
 		}
-		if (this.activeFrame.ready) {
+		if (this.activeFrame.state === VDP_SUBMITTED_FRAME_READY) {
 			return 0;
 		}
 		return this.activeFrame.workRemaining;
@@ -1879,7 +1911,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public presentReadyFrameOnVblankEdge(): boolean {
-		if (!this.activeFrame.occupied) {
+		if (this.activeFrame.state === VDP_SUBMITTED_FRAME_EMPTY) {
 			this.lastFrameCommitted = false;
 			this.lastFrameCost = 0;
 			this.lastFrameHeld = false;
@@ -1889,7 +1921,7 @@ export class VDP implements VramWriteSink {
 			return false;
 		}
 		this.lastFrameCost = this.activeFrame.cost;
-		if (!this.activeFrame.ready) {
+		if (this.activeFrame.state !== VDP_SUBMITTED_FRAME_READY) {
 			this.lastFrameCommitted = false;
 			this.lastFrameHeld = true;
 			return false;
@@ -2384,6 +2416,17 @@ export class VDP implements VramWriteSink {
 		return {
 			xf: this.xf.captureState(),
 			vdpRegisterWords: Array.from(this.vdpRegisters),
+			buildFrame: captureBuildingFrameState(this.buildFrame),
+			activeFrame: captureSubmittedFrameState(this.activeFrame),
+			pendingFrame: captureSubmittedFrameState(this.pendingFrame),
+			workCarry: this.workCarry,
+			availableWorkUnits: this.availableWorkUnits,
+			dmaSubmitActive: this.dmaSubmitActive,
+			vdpFifoWordScratch: Array.from(this.vdpFifoWordScratch),
+			vdpFifoWordByteCount: this.vdpFifoWordByteCount,
+			vdpFifoStreamWords: Array.from(this.vdpFifoStreamWords.subarray(0, this.vdpFifoStreamWordCount)),
+			vdpFifoStreamWordCount: this.vdpFifoStreamWordCount,
+			blitterSequence: this.blitterSequence,
 			skyboxControl: this.sbx.liveControlWord,
 			skyboxFaceWords: this.sbx.captureLiveFaceWords(),
 			pmuSelectedBank: this.pmu.selectedBankIndex,
@@ -2406,6 +2449,17 @@ export class VDP implements VramWriteSink {
 	public restoreState(state: VdpState): void {
 		this.xf.restoreState(state.xf);
 		this.vdpRegisters.set(state.vdpRegisterWords);
+		restoreBuildingFrameState(this.buildFrame, state.buildFrame);
+		restoreSubmittedFrameState(this.activeFrame, state.activeFrame);
+		restoreSubmittedFrameState(this.pendingFrame, state.pendingFrame);
+		this.workCarry = state.workCarry;
+		this.availableWorkUnits = state.availableWorkUnits;
+		this.dmaSubmitActive = state.dmaSubmitActive;
+		this.vdpFifoWordScratch.set(state.vdpFifoWordScratch);
+		this.vdpFifoWordByteCount = state.vdpFifoWordByteCount;
+		this.vdpFifoStreamWords.set(state.vdpFifoStreamWords);
+		this.vdpFifoStreamWordCount = state.vdpFifoStreamWordCount;
+		this.blitterSequence = state.blitterSequence;
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
 			this.memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, this.vdpRegisters[index]);
 		}
@@ -2417,6 +2471,10 @@ export class VDP implements VramWriteSink {
 		this.fault.restore(0, state.vdpFaultCode, state.vdpFaultDetail);
 		this.fault.setStatusFlag(VDP_STATUS_FAULT, this.fault.code !== VDP_FAULT_NONE);
 		this.refreshSubmitBusyStatus();
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
+		if (this.needsImmediateSchedulerService() || this.hasPendingRenderWork()) {
+			this.scheduleNextService(this.scheduler.currentNowCycles());
+		}
 		this.commitLiveVisualState();
 	}
 

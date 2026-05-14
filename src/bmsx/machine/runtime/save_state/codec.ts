@@ -14,10 +14,28 @@ import {
 } from '../../devices/geometry/contracts';
 import type { GeometryControllerState, GeometryJobState } from '../../devices/geometry/state';
 import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/vdp';
-import { SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
+import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT, VDP_BBU_BILLBOARD_LIMIT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
+import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_RUN_ENTRY_CAPACITY } from '../../devices/vdp/blitter';
+import {
+	VDP_DEX_FRAME_DIRECT_OPEN,
+	VDP_DEX_FRAME_IDLE,
+	VDP_DEX_FRAME_STREAM_OPEN,
+	VDP_SUBMITTED_FRAME_EMPTY,
+	VDP_SUBMITTED_FRAME_EXECUTING,
+	VDP_SUBMITTED_FRAME_QUEUED,
+	VDP_SUBMITTED_FRAME_READY,
+	type VdpBbuBillboardSaveState,
+	type VdpBlitterCommandSaveState,
+	type VdpBlitterSourceSaveState,
+	type VdpBuildingFrameSaveState,
+	type VdpGlyphRunGlyphSaveState,
+	type VdpSubmittedFrameSaveState,
+	type VdpTileRunBlitSaveState,
+} from '../../devices/vdp/frame';
 import { VDP_REGISTER_COUNT } from '../../devices/vdp/registers';
-import { VDP_XF_MATRIX_COUNT, VDP_XF_MATRIX_REGISTER_WORDS } from '../../devices/vdp/xf';
+import { VDP_XF_MATRIX_COUNT, VDP_XF_MATRIX_REGISTER_WORDS, type VdpXfState } from '../../devices/vdp/xf';
 import type { MemorySaveState } from '../../memory/memory';
+import { VDP_STREAM_CAPACITY_WORDS } from '../../memory/map';
 import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
 import type {
 	RuntimeSaveMachineState,
@@ -69,6 +87,18 @@ function decodeU32FixedArray(value: unknown, label: string, length: number): num
 	return out;
 }
 
+function decodeU8FixedArray(value: unknown, label: string, length: number): number[] {
+	const entries = requireArray(value, label);
+	if (entries.length !== length) {
+		throw new Error(`${label} must contain ${length} u8 values.`);
+	}
+	const out = new Array<number>(length);
+	for (let index = 0; index < length; index += 1) {
+		out[index] = requireBoundedU32(entries[index], `${label}[${index}]`, 0, 0xff);
+	}
+	return out;
+}
+
 function decodeI64FixedArray(value: unknown, label: string, length: number): number[] {
 	const entries = requireArray(value, label);
 	if (entries.length !== length) {
@@ -113,6 +143,24 @@ function requireI64(value: unknown, label: string): number {
 		throw new Error(`${label} must be an i64 value.`);
 	}
 	return word;
+}
+
+function requireNumberValue(value: unknown, label: string): number {
+	const number = value as number;
+	if (+number !== number || number - number !== 0) {
+		throw new Error(`${label} must be numeric.`);
+	}
+	return number;
+}
+
+function requireBooleanValue(value: unknown, label: string): boolean {
+	if (Object.is(value, true)) {
+		return true;
+	}
+	if (Object.is(value, false)) {
+		return false;
+	}
+	throw new Error(`${label} must be a boolean.`);
 }
 
 function decodeNumberObjectField(value: unknown, label: string, key: string, keyLabel: string): number {
@@ -429,14 +477,263 @@ function decodeGeometryControllerState(value: unknown, label: string): GeometryC
 	};
 }
 
+function encodeBlitterSourceState(state: VdpBlitterSourceSaveState): VdpBlitterSourceSaveState {
+	return {
+		surfaceId: state.surfaceId,
+		srcX: state.srcX,
+		srcY: state.srcY,
+		width: state.width,
+		height: state.height,
+	};
+}
+
+function decodeBlitterSourceState(value: unknown, label: string): VdpBlitterSourceSaveState {
+	const object = requireObject(value, label);
+	return {
+		surfaceId: requireBoundedU32(requireObjectKey(object, 'surfaceId', label, `${label}.surfaceId`), `${label}.surfaceId`, 0, 0xffffffff),
+		srcX: requireBoundedU32(requireObjectKey(object, 'srcX', label, `${label}.srcX`), `${label}.srcX`, 0, 0xffffffff),
+		srcY: requireBoundedU32(requireObjectKey(object, 'srcY', label, `${label}.srcY`), `${label}.srcY`, 0, 0xffffffff),
+		width: requireBoundedU32(requireObjectKey(object, 'width', label, `${label}.width`), `${label}.width`, 0, 0xffffffff),
+		height: requireBoundedU32(requireObjectKey(object, 'height', label, `${label}.height`), `${label}.height`, 0, 0xffffffff),
+	};
+}
+
+function encodeGlyphRunGlyphState(state: VdpGlyphRunGlyphSaveState): VdpGlyphRunGlyphSaveState {
+	return {
+		...encodeBlitterSourceState(state),
+		dstX: state.dstX,
+		dstY: state.dstY,
+		advance: state.advance,
+	};
+}
+
+function decodeGlyphRunGlyphState(value: unknown, label: string): VdpGlyphRunGlyphSaveState {
+	const object = requireObject(value, label);
+	return {
+		...decodeBlitterSourceState(value, label),
+		dstX: requireNumberValue(requireObjectKey(object, 'dstX', label, `${label}.dstX`), `${label}.dstX`),
+		dstY: requireNumberValue(requireObjectKey(object, 'dstY', label, `${label}.dstY`), `${label}.dstY`),
+		advance: requireBoundedU32(requireObjectKey(object, 'advance', label, `${label}.advance`), `${label}.advance`, 0, 0xffffffff),
+	};
+}
+
+function encodeTileRunBlitState(state: VdpTileRunBlitSaveState): VdpTileRunBlitSaveState {
+	return {
+		...encodeBlitterSourceState(state),
+		dstX: state.dstX,
+		dstY: state.dstY,
+	};
+}
+
+function decodeTileRunBlitState(value: unknown, label: string): VdpTileRunBlitSaveState {
+	const object = requireObject(value, label);
+	return {
+		...decodeBlitterSourceState(value, label),
+		dstX: requireNumberValue(requireObjectKey(object, 'dstX', label, `${label}.dstX`), `${label}.dstX`),
+		dstY: requireNumberValue(requireObjectKey(object, 'dstY', label, `${label}.dstY`), `${label}.dstY`),
+	};
+}
+
+function encodeBlitterCommandState(state: VdpBlitterCommandSaveState): VdpBlitterCommandSaveState {
+	return {
+		...state,
+		source: encodeBlitterSourceState(state.source),
+		glyphs: encodeVector(state.glyphs, encodeGlyphRunGlyphState),
+		tiles: encodeVector(state.tiles, encodeTileRunBlitState),
+	};
+}
+
+function decodeBlitterCommandState(value: unknown, label: string): VdpBlitterCommandSaveState {
+	const object = requireObject(value, label);
+	return {
+		opcode: requireBoundedU32(requireObjectKey(object, 'opcode', label, `${label}.opcode`), `${label}.opcode`, 1, 7),
+		seq: requireBoundedU32(requireObjectKey(object, 'seq', label, `${label}.seq`), `${label}.seq`, 0, 0xffffffff),
+		renderCost: requireI32(requireObjectKey(object, 'renderCost', label, `${label}.renderCost`), `${label}.renderCost`),
+		layer: requireBoundedU32(requireObjectKey(object, 'layer', label, `${label}.layer`), `${label}.layer`, 0, 0xff),
+		priority: requireNumberValue(requireObjectKey(object, 'priority', label, `${label}.priority`), `${label}.priority`),
+		source: decodeBlitterSourceState(requireObjectKey(object, 'source', label, `${label}.source`), `${label}.source`),
+		dstX: requireNumberValue(requireObjectKey(object, 'dstX', label, `${label}.dstX`), `${label}.dstX`),
+		dstY: requireNumberValue(requireObjectKey(object, 'dstY', label, `${label}.dstY`), `${label}.dstY`),
+		scaleX: requireNumberValue(requireObjectKey(object, 'scaleX', label, `${label}.scaleX`), `${label}.scaleX`),
+		scaleY: requireNumberValue(requireObjectKey(object, 'scaleY', label, `${label}.scaleY`), `${label}.scaleY`),
+		flipH: requireBooleanValue(requireObjectKey(object, 'flipH', label, `${label}.flipH`), `${label}.flipH`),
+		flipV: requireBooleanValue(requireObjectKey(object, 'flipV', label, `${label}.flipV`), `${label}.flipV`),
+		color: requireBoundedU32(requireObjectKey(object, 'color', label, `${label}.color`), `${label}.color`, 0, 0xffffffff),
+		parallaxWeight: requireNumberValue(requireObjectKey(object, 'parallaxWeight', label, `${label}.parallaxWeight`), `${label}.parallaxWeight`),
+		srcX: requireI32(requireObjectKey(object, 'srcX', label, `${label}.srcX`), `${label}.srcX`),
+		srcY: requireI32(requireObjectKey(object, 'srcY', label, `${label}.srcY`), `${label}.srcY`),
+		width: requireI32(requireObjectKey(object, 'width', label, `${label}.width`), `${label}.width`),
+		height: requireI32(requireObjectKey(object, 'height', label, `${label}.height`), `${label}.height`),
+		x0: requireNumberValue(requireObjectKey(object, 'x0', label, `${label}.x0`), `${label}.x0`),
+		y0: requireNumberValue(requireObjectKey(object, 'y0', label, `${label}.y0`), `${label}.y0`),
+		x1: requireNumberValue(requireObjectKey(object, 'x1', label, `${label}.x1`), `${label}.x1`),
+		y1: requireNumberValue(requireObjectKey(object, 'y1', label, `${label}.y1`), `${label}.y1`),
+		thickness: requireNumberValue(requireObjectKey(object, 'thickness', label, `${label}.thickness`), `${label}.thickness`),
+		hasBackgroundColor: requireBooleanValue(requireObjectKey(object, 'hasBackgroundColor', label, `${label}.hasBackgroundColor`), `${label}.hasBackgroundColor`),
+		backgroundColor: requireBoundedU32(requireObjectKey(object, 'backgroundColor', label, `${label}.backgroundColor`), `${label}.backgroundColor`, 0, 0xffffffff),
+		lineHeight: requireBoundedU32(requireObjectKey(object, 'lineHeight', label, `${label}.lineHeight`), `${label}.lineHeight`, 0, 0xffffffff),
+		glyphs: decodeVector(requireObjectKey(object, 'glyphs', label, `${label}.glyphs`), `${label}.glyphs`, (entry) => decodeGlyphRunGlyphState(entry, `${label}.glyphs[]`)),
+		tiles: decodeVector(requireObjectKey(object, 'tiles', label, `${label}.tiles`), `${label}.tiles`, (entry) => decodeTileRunBlitState(entry, `${label}.tiles[]`)),
+	};
+}
+
+function decodeBlitterCommandStates(value: unknown, label: string): VdpBlitterCommandSaveState[] {
+	const commands = decodeVector(value, label, (entry) => decodeBlitterCommandState(entry, `${label}[]`));
+	if (commands.length > VDP_BLITTER_FIFO_CAPACITY) {
+		throw new Error(`${label} exceeds the VDP blitter FIFO capacity.`);
+	}
+	let glyphCount = 0;
+	let tileCount = 0;
+	for (let index = 0; index < commands.length; index += 1) {
+		glyphCount += commands[index].glyphs.length;
+		tileCount += commands[index].tiles.length;
+	}
+	if (glyphCount > VDP_BLITTER_RUN_ENTRY_CAPACITY || tileCount > VDP_BLITTER_RUN_ENTRY_CAPACITY) {
+		throw new Error(`${label} exceeds the VDP blitter run-entry capacity.`);
+	}
+	return commands;
+}
+
+function encodeBbuBillboardState(state: VdpBbuBillboardSaveState): VdpBbuBillboardSaveState {
+	return {
+		...state,
+		source: encodeBlitterSourceState(state.source),
+	};
+}
+
+function decodeBbuBillboardState(value: unknown, label: string): VdpBbuBillboardSaveState {
+	const object = requireObject(value, label);
+	return {
+		seq: requireBoundedU32(requireObjectKey(object, 'seq', label, `${label}.seq`), `${label}.seq`, 0, 0xffffffff),
+		layer: requireBoundedU32(requireObjectKey(object, 'layer', label, `${label}.layer`), `${label}.layer`, 0, 0xff),
+		priority: requireBoundedU32(requireObjectKey(object, 'priority', label, `${label}.priority`), `${label}.priority`, 0, 0xffffffff),
+		positionX: requireNumberValue(requireObjectKey(object, 'positionX', label, `${label}.positionX`), `${label}.positionX`),
+		positionY: requireNumberValue(requireObjectKey(object, 'positionY', label, `${label}.positionY`), `${label}.positionY`),
+		positionZ: requireNumberValue(requireObjectKey(object, 'positionZ', label, `${label}.positionZ`), `${label}.positionZ`),
+		size: requireNumberValue(requireObjectKey(object, 'size', label, `${label}.size`), `${label}.size`),
+		color: requireBoundedU32(requireObjectKey(object, 'color', label, `${label}.color`), `${label}.color`, 0, 0xffffffff),
+		source: decodeBlitterSourceState(requireObjectKey(object, 'source', label, `${label}.source`), `${label}.source`),
+		surfaceWidth: requireBoundedU32(requireObjectKey(object, 'surfaceWidth', label, `${label}.surfaceWidth`), `${label}.surfaceWidth`, 0, 0xffffffff),
+		surfaceHeight: requireBoundedU32(requireObjectKey(object, 'surfaceHeight', label, `${label}.surfaceHeight`), `${label}.surfaceHeight`, 0, 0xffffffff),
+		slot: requireBoundedU32(requireObjectKey(object, 'slot', label, `${label}.slot`), `${label}.slot`, 0, 0xffffffff),
+	};
+}
+
+function decodeBbuBillboardStates(value: unknown, label: string): VdpBbuBillboardSaveState[] {
+	const billboards = decodeVector(value, label, (entry) => decodeBbuBillboardState(entry, `${label}[]`));
+	if (billboards.length > VDP_BBU_BILLBOARD_LIMIT) {
+		throw new Error(`${label} exceeds the VDP BBU billboard capacity.`);
+	}
+	return billboards;
+}
+
+function encodeVdpXfState(state: VdpXfState): VdpXfState {
+	return {
+		matrixWords: state.matrixWords,
+		viewMatrixIndex: state.viewMatrixIndex,
+		projectionMatrixIndex: state.projectionMatrixIndex,
+	};
+}
+
+function decodeVdpXfState(value: unknown, label: string): VdpXfState {
+	const object = requireObject(value, label);
+	return {
+		matrixWords: decodeU32FixedArray(requireObjectKey(object, 'matrixWords', label, `${label}.matrixWords`), `${label}.matrixWords`, VDP_XF_MATRIX_REGISTER_WORDS),
+		viewMatrixIndex: requireBoundedU32(requireObjectKey(object, 'viewMatrixIndex', label, `${label}.viewMatrixIndex`), `${label}.viewMatrixIndex`, 0, VDP_XF_MATRIX_COUNT - 1),
+		projectionMatrixIndex: requireBoundedU32(requireObjectKey(object, 'projectionMatrixIndex', label, `${label}.projectionMatrixIndex`), `${label}.projectionMatrixIndex`, 0, VDP_XF_MATRIX_COUNT - 1),
+	};
+}
+
+function encodeBuildingFrameState(state: VdpBuildingFrameSaveState): VdpBuildingFrameSaveState {
+	return {
+		state: state.state,
+		queue: encodeVector(state.queue, encodeBlitterCommandState),
+		billboards: encodeVector(state.billboards, encodeBbuBillboardState),
+		cost: state.cost,
+	};
+}
+
+function decodeBuildingFrameState(value: unknown, label: string): VdpBuildingFrameSaveState {
+	const object = requireObject(value, label);
+	return {
+		state: requireBoundedU32(requireObjectKey(object, 'state', label, `${label}.state`), `${label}.state`, VDP_DEX_FRAME_IDLE, VDP_DEX_FRAME_STREAM_OPEN) as typeof VDP_DEX_FRAME_IDLE | typeof VDP_DEX_FRAME_DIRECT_OPEN | typeof VDP_DEX_FRAME_STREAM_OPEN,
+		queue: decodeBlitterCommandStates(requireObjectKey(object, 'queue', label, `${label}.queue`), `${label}.queue`),
+		billboards: decodeBbuBillboardStates(requireObjectKey(object, 'billboards', label, `${label}.billboards`), `${label}.billboards`),
+		cost: requireI32(requireObjectKey(object, 'cost', label, `${label}.cost`), `${label}.cost`),
+	};
+}
+
+function encodeSubmittedFrameState(state: VdpSubmittedFrameSaveState): VdpSubmittedFrameSaveState {
+	return {
+		state: state.state,
+		queue: encodeVector(state.queue, encodeBlitterCommandState),
+		billboards: encodeVector(state.billboards, encodeBbuBillboardState),
+		hasCommands: state.hasCommands,
+		hasFrameBufferCommands: state.hasFrameBufferCommands,
+		cost: state.cost,
+		workRemaining: state.workRemaining,
+		ditherType: state.ditherType,
+		frameBufferWidth: state.frameBufferWidth,
+		frameBufferHeight: state.frameBufferHeight,
+		xf: state.xf,
+		skyboxControl: state.skyboxControl,
+		skyboxFaceWords: state.skyboxFaceWords,
+		skyboxSamples: encodeVector(state.skyboxSamples, (sample) => ({
+			source: encodeBlitterSourceState(sample.source),
+			surfaceWidth: sample.surfaceWidth,
+			surfaceHeight: sample.surfaceHeight,
+			slot: sample.slot,
+		})),
+	};
+}
+
+function decodeSubmittedFrameState(value: unknown, label: string): VdpSubmittedFrameSaveState {
+	const object = requireObject(value, label);
+	const skyboxSamples = decodeVector(requireObjectKey(object, 'skyboxSamples', label, `${label}.skyboxSamples`), `${label}.skyboxSamples`, (entry) => {
+		const sample = requireObject(entry, `${label}.skyboxSamples[]`);
+		return {
+			source: decodeBlitterSourceState(requireObjectKey(sample, 'source', `${label}.skyboxSamples[]`, `${label}.skyboxSamples[].source`), `${label}.skyboxSamples[].source`),
+			surfaceWidth: requireBoundedU32(requireObjectKey(sample, 'surfaceWidth', `${label}.skyboxSamples[]`, `${label}.skyboxSamples[].surfaceWidth`), `${label}.skyboxSamples[].surfaceWidth`, 0, 0xffffffff),
+			surfaceHeight: requireBoundedU32(requireObjectKey(sample, 'surfaceHeight', `${label}.skyboxSamples[]`, `${label}.skyboxSamples[].surfaceHeight`), `${label}.skyboxSamples[].surfaceHeight`, 0, 0xffffffff),
+			slot: requireBoundedU32(requireObjectKey(sample, 'slot', `${label}.skyboxSamples[]`, `${label}.skyboxSamples[].slot`), `${label}.skyboxSamples[].slot`, 0, 0xffffffff),
+		};
+	});
+	if (skyboxSamples.length !== SKYBOX_FACE_COUNT) {
+		throw new Error(`${label}.skyboxSamples must contain ${SKYBOX_FACE_COUNT} samples.`);
+	}
+	return {
+		state: requireBoundedU32(requireObjectKey(object, 'state', label, `${label}.state`), `${label}.state`, VDP_SUBMITTED_FRAME_EMPTY, VDP_SUBMITTED_FRAME_READY) as typeof VDP_SUBMITTED_FRAME_EMPTY | typeof VDP_SUBMITTED_FRAME_QUEUED | typeof VDP_SUBMITTED_FRAME_EXECUTING | typeof VDP_SUBMITTED_FRAME_READY,
+		queue: decodeBlitterCommandStates(requireObjectKey(object, 'queue', label, `${label}.queue`), `${label}.queue`),
+		billboards: decodeBbuBillboardStates(requireObjectKey(object, 'billboards', label, `${label}.billboards`), `${label}.billboards`),
+		hasCommands: requireBooleanValue(requireObjectKey(object, 'hasCommands', label, `${label}.hasCommands`), `${label}.hasCommands`),
+		hasFrameBufferCommands: requireBooleanValue(requireObjectKey(object, 'hasFrameBufferCommands', label, `${label}.hasFrameBufferCommands`), `${label}.hasFrameBufferCommands`),
+		cost: requireI32(requireObjectKey(object, 'cost', label, `${label}.cost`), `${label}.cost`),
+		workRemaining: requireI32(requireObjectKey(object, 'workRemaining', label, `${label}.workRemaining`), `${label}.workRemaining`),
+		ditherType: requireI32(requireObjectKey(object, 'ditherType', label, `${label}.ditherType`), `${label}.ditherType`),
+		frameBufferWidth: requireBoundedU32(requireObjectKey(object, 'frameBufferWidth', label, `${label}.frameBufferWidth`), `${label}.frameBufferWidth`, 0, 0xffffffff),
+		frameBufferHeight: requireBoundedU32(requireObjectKey(object, 'frameBufferHeight', label, `${label}.frameBufferHeight`), `${label}.frameBufferHeight`, 0, 0xffffffff),
+		xf: decodeVdpXfState(requireObjectKey(object, 'xf', label, `${label}.xf`), `${label}.xf`),
+		skyboxControl: requireBoundedU32(requireObjectKey(object, 'skyboxControl', label, `${label}.skyboxControl`), `${label}.skyboxControl`, 0, 0xffffffff),
+		skyboxFaceWords: decodeU32FixedArray(requireObjectKey(object, 'skyboxFaceWords', label, `${label}.skyboxFaceWords`), `${label}.skyboxFaceWords`, SKYBOX_FACE_WORD_COUNT),
+		skyboxSamples,
+	};
+}
+
 function encodeVdpState(state: VdpState): VdpState {
 	return {
-		xf: {
-			matrixWords: state.xf.matrixWords,
-			viewMatrixIndex: state.xf.viewMatrixIndex,
-			projectionMatrixIndex: state.xf.projectionMatrixIndex,
-		},
+		xf: encodeVdpXfState(state.xf),
 		vdpRegisterWords: state.vdpRegisterWords,
+		buildFrame: encodeBuildingFrameState(state.buildFrame),
+		activeFrame: encodeSubmittedFrameState(state.activeFrame),
+		pendingFrame: encodeSubmittedFrameState(state.pendingFrame),
+		workCarry: state.workCarry,
+		availableWorkUnits: state.availableWorkUnits,
+		dmaSubmitActive: state.dmaSubmitActive,
+		vdpFifoWordScratch: state.vdpFifoWordScratch,
+		vdpFifoWordByteCount: state.vdpFifoWordByteCount,
+		vdpFifoStreamWords: state.vdpFifoStreamWords,
+		vdpFifoStreamWordCount: state.vdpFifoStreamWordCount,
+		blitterSequence: state.blitterSequence,
 		skyboxControl: state.skyboxControl,
 		skyboxFaceWords: state.skyboxFaceWords,
 		pmuSelectedBank: state.pmuSelectedBank,
@@ -449,14 +746,29 @@ function encodeVdpState(state: VdpState): VdpState {
 
 function decodeVdpState(value: unknown, label: string): VdpState {
 	const object = requireObject(value, label);
-	const xf = requireObject(requireObjectKey(object, 'xf', label, 'machine.vdp.xf'), 'machine.vdp.xf');
+	const vdpFifoStreamWords = decodeVector(
+		requireObjectKey(object, 'vdpFifoStreamWords', label, 'machine.vdp.vdpFifoStreamWords'),
+		'machine.vdp.vdpFifoStreamWords',
+		(entry) => requireBoundedU32(entry, 'machine.vdp.vdpFifoStreamWords[]', 0, 0xffffffff),
+	);
+	const vdpFifoStreamWordCount = requireBoundedU32(requireObjectKey(object, 'vdpFifoStreamWordCount', label, 'machine.vdp.vdpFifoStreamWordCount'), 'machine.vdp.vdpFifoStreamWordCount', 0, 0xffffffff);
+	if (vdpFifoStreamWords.length !== vdpFifoStreamWordCount || vdpFifoStreamWordCount > VDP_STREAM_CAPACITY_WORDS) {
+		throw new Error('machine.vdp FIFO ingress state is inconsistent.');
+	}
 	return {
-		xf: {
-			matrixWords: decodeU32FixedArray(requireObjectKey(xf, 'matrixWords', 'machine.vdp.xf', 'machine.vdp.xf.matrixWords'), 'machine.vdp.xf.matrixWords', VDP_XF_MATRIX_REGISTER_WORDS),
-			viewMatrixIndex: requireBoundedU32(requireObjectKey(xf, 'viewMatrixIndex', 'machine.vdp.xf', 'machine.vdp.xf.viewMatrixIndex'), 'machine.vdp.xf.viewMatrixIndex', 0, VDP_XF_MATRIX_COUNT - 1),
-			projectionMatrixIndex: requireBoundedU32(requireObjectKey(xf, 'projectionMatrixIndex', 'machine.vdp.xf', 'machine.vdp.xf.projectionMatrixIndex'), 'machine.vdp.xf.projectionMatrixIndex', 0, VDP_XF_MATRIX_COUNT - 1),
-		},
+		xf: decodeVdpXfState(requireObjectKey(object, 'xf', label, 'machine.vdp.xf'), 'machine.vdp.xf'),
 		vdpRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'vdpRegisterWords', label, 'machine.vdp.vdpRegisterWords'), 'machine.vdp.vdpRegisterWords', VDP_REGISTER_COUNT),
+		buildFrame: decodeBuildingFrameState(requireObjectKey(object, 'buildFrame', label, 'machine.vdp.buildFrame'), 'machine.vdp.buildFrame'),
+		activeFrame: decodeSubmittedFrameState(requireObjectKey(object, 'activeFrame', label, 'machine.vdp.activeFrame'), 'machine.vdp.activeFrame'),
+		pendingFrame: decodeSubmittedFrameState(requireObjectKey(object, 'pendingFrame', label, 'machine.vdp.pendingFrame'), 'machine.vdp.pendingFrame'),
+		workCarry: requireI64(requireObjectKey(object, 'workCarry', label, 'machine.vdp.workCarry'), 'machine.vdp.workCarry'),
+		availableWorkUnits: requireI32(requireObjectKey(object, 'availableWorkUnits', label, 'machine.vdp.availableWorkUnits'), 'machine.vdp.availableWorkUnits'),
+		dmaSubmitActive: requireBooleanValue(requireObjectKey(object, 'dmaSubmitActive', label, 'machine.vdp.dmaSubmitActive'), 'machine.vdp.dmaSubmitActive'),
+		vdpFifoWordScratch: decodeU8FixedArray(requireObjectKey(object, 'vdpFifoWordScratch', label, 'machine.vdp.vdpFifoWordScratch'), 'machine.vdp.vdpFifoWordScratch', 4),
+		vdpFifoWordByteCount: requireBoundedU32(requireObjectKey(object, 'vdpFifoWordByteCount', label, 'machine.vdp.vdpFifoWordByteCount'), 'machine.vdp.vdpFifoWordByteCount', 0, 3),
+		vdpFifoStreamWords,
+		vdpFifoStreamWordCount,
+		blitterSequence: requireBoundedU32(requireObjectKey(object, 'blitterSequence', label, 'machine.vdp.blitterSequence'), 'machine.vdp.blitterSequence', 0, 0xffffffff),
 		skyboxControl: requireBoundedU32(requireObjectKey(object, 'skyboxControl', label, 'machine.vdp.skyboxControl'), 'machine.vdp.skyboxControl', 0, 0xffffffff),
 		skyboxFaceWords: decodeU32FixedArray(requireObjectKey(object, 'skyboxFaceWords', label, 'machine.vdp.skyboxFaceWords'), 'machine.vdp.skyboxFaceWords', SKYBOX_FACE_WORD_COUNT),
 		pmuSelectedBank: requireBoundedU32(requireObjectKey(object, 'pmuSelectedBank', label, 'machine.vdp.pmuSelectedBank'), 'machine.vdp.pmuSelectedBank', 0, 0xffffffff),

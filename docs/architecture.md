@@ -86,8 +86,9 @@ Saved:
 - CPU registers, stack/frame/root runtime values, string pool ownership, RAM/IO
   state, scheduler/VBlank state, device registerfiles/latches/FIFOs/buffers, and
   device-visible memory.
-- VDP registerfile, surfaces, display/readback pixels, PMU/SBX/BBU/VOUT visible
-  state that determines future output.
+- VDP registerfile, DEX build/submitted-frame state, FIFO ingress latches,
+  surfaces, display/readback pixels, and PMU/SBX/BBU/VOUT state that determines
+  future output.
 - APU command/source/output state that determines future audio output.
 - GEO command/result/fault state and device-visible scratch/result memory.
 - ICU registerfile, sample latch, committed action records, and sampled action
@@ -298,8 +299,8 @@ should be deleted.
 
 ## Active work queue
 
-1. Continue VDP subunit state-machine tightening where boolean ingress state
-   remains, especially DEX submitted-work execution state.
+1. Continue VDP subunit state-machine tightening where FIFO/DMA ingress still
+   uses loose counters/latches rather than one named ingress state.
 2. Continue APU/AOUT proof around deterministic output state and hot-path buffer
    ownership.
 3. Keep save-state proof expanding through device-visible state, not host queues.

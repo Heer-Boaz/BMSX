@@ -45,7 +45,7 @@ host renderer commands.
 | Bit/constant | Meaning |
 |---|---|
 | `VDP_STATUS_VBLANK` | The frame scheduler reports the machine VBlank edge/interval. |
-| `VDP_STATUS_SUBMIT_BUSY` | DEX cannot accept a new submission because FIFO/DMA/build/active/pending work occupies the path. |
+| `VDP_STATUS_SUBMIT_BUSY` | DEX cannot accept a new submission because FIFO/DMA/build/submitted work occupies the path. |
 | `VDP_STATUS_SUBMIT_REJECTED` | The last submission attempt was rejected. |
 | `VDP_STATUS_FAULT` | The sticky fault latch contains a non-zero code. |
 | `VDP_RD_STATUS_READY` | Readback data is available. |
@@ -112,17 +112,13 @@ BEGIN/END stream commands, and unknown packet kinds fault with
 | Unit | States | Owner files |
 |---|---|---|
 | DEX ingress/build | `Idle`, `DirectOpen`, `StreamOpen` | `frame.ts/.h`, `vdp.ts/.cpp` |
-| Submitted DEX work | active/pending occupied, ready, work remaining | `frame.ts/.h`, `vdp.ts/.cpp` |
+| Submitted DEX work | `Empty`, `Queued`, `Executing`, `Ready` | `frame.ts/.h`, `vdp.ts/.cpp` |
 | SBX | `Idle`, `PacketOpen`, `FrameSealed`, `FrameRejected` | `sbx.ts/.h/.cpp` |
 | BBU | `Idle`, `PacketDecode`, `SourceResolve`, `InstanceEmit`, `LimitReached`, `PacketRejected` | `bbu.ts/.h/.cpp` |
 | FBM | `PageWritable`, `PagePendingPresent`, `PagePresented`, `ReadbackRequested` | `fbm.ts/.h/.cpp` |
 | VOUT | `Idle`, `RegisterLatched`, `FrameSealed`, `FramePresented` | `vout.ts/.h/.cpp` |
 | PMU | selected bank and bank registerfile | `pmu.ts/.h/.cpp` |
 | XF | matrix registerfile and selected matrix indexes | `xf.ts/.h/.cpp` |
-
-The next VDP cleanup target is DEX: the open-frame state is explicit, but
-submitted work still uses active/pending occupancy words rather than a named DEX
-execution state.
 
 ## Timing
 
@@ -131,10 +127,10 @@ execution state.
 | DEX direct command | BEGIN/END/doorbell writes execute admission immediately. Draw commands enqueue retained work; framebuffer rasterization waits for scheduler work units. | `VDP_STATUS_SUBMIT_BUSY`, `VDP_STATUS_SUBMIT_REJECTED`, and fault registers. |
 | DEX FIFO stream | `IO_VDP_FIFO` collects words. `VDP_FIFO_CTRL_SEAL` decodes/replays the sealed stream immediately into submitted-frame state. | FIFO partial words and submitted frames keep submit busy set. |
 | DMA stream | DMA owner opens a submit, copies bytes into VDP stream memory, then seals. The VDP decodes the stream on seal. | Submit busy remains set while DMA submit is active. |
-| Submitted framebuffer work | Scheduler accrues render work units from CPU cycles and advances active DEX work. Work becomes `ready` when remaining units reach zero. | VBlank presents only ready frames; unfinished frames are held. |
-| SBX | Register-window writes affect live SBX state. Frame seal samples live SBX state. Visible SBX state changes only when a ready frame is presented. | Invalid face sources fault at frame seal; rejected SBX state does not become visible. |
+| Submitted framebuffer work | Scheduler accrues render work units from CPU cycles and advances active DEX work. Work moves from `Executing` to `Ready` when remaining units reach zero. | VBlank presents only `Ready` frames; unfinished frames are held. |
+| SBX | Register-window writes affect live SBX state. Frame seal samples live SBX state. Visible SBX state changes only when a `Ready` frame is presented. | Invalid face sources fault at frame seal; rejected SBX state does not become visible. |
 | BBU | Packet decode/source resolve/instance emit happen during sealed stream replay. Accepted instances are retained in the submitted frame. | Packet faults abort the sealed stream frame through VDP fault registers. |
-| FBM | Framebuffer page present happens on VBlank for ready frames with framebuffer work. Readback executes through readback registers with a chunk budget. | Readback status/data and VDP fault registers. |
+| FBM | Framebuffer page present happens on VBlank for `Ready` frames with framebuffer work. Readback executes through readback registers with a chunk budget. | Readback status/data and VDP fault registers. |
 | VOUT | Dither/dimension/output latches are sampled at frame seal and become visible at frame presentation. | Host consumes `VdpDeviceOutput`; cart sees MMIO/status only. |
 
 The boundary follows the same device-shape discipline used by mature emulator
@@ -175,6 +171,9 @@ interpret cart intent.
 Saved VDP state includes:
 
 - DEX registerfile words;
+- DEX build-frame state, active/pending submitted-frame state, render work
+  counters, DMA submit latch, FIFO partial word bytes, FIFO stream words, and
+  blitter sequence;
 - VDP status/fault words;
 - PMU selected bank and bank words;
 - SBX live face/control words;

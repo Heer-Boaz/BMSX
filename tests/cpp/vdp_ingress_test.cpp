@@ -1043,6 +1043,38 @@ void testSaveStateRestoresRegisterFileAndSurfaceGeometry() {
 	requireDisplayFramePixel(h, 0u, 0u, 0x11u, 0x22u, 0x33u, 0xffu, "VDP CLEAR should consume the restored raw BG register");
 }
 
+void testSaveStateRestoresSubmittedFramePipeline() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff101112u);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_CLEAR);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
+	const int firstFrameWork = h.vdp.getPendingRenderWorkUnits();
+	require(firstFrameWork > 0, "first CLEAR should submit active framebuffer work");
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff202122u);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_CLEAR);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
+	const bmsx::VdpSaveState saved = h.vdp.captureSaveState();
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff303132u);
+	h.vdp.advanceWork(h.vdp.getPendingRenderWorkUnits());
+	require(h.vdp.presentReadyFrameOnVblankEdge(), "mutated first frame should present before restore");
+
+	h.vdp.restoreSaveState(saved);
+	require(h.vdp.getPendingRenderWorkUnits() == firstFrameWork, "save-state restore should restore active submitted frame work");
+	h.vdp.advanceWork(h.vdp.getPendingRenderWorkUnits());
+	require(h.vdp.presentReadyFrameOnVblankEdge(), "restored active submitted frame should present");
+	requireDisplayFramePixel(h, 0u, 0u, 0x10u, 0x11u, 0x12u, 0xffu, "restored active frame should use its saved BG register snapshot");
+
+	require(h.vdp.getPendingRenderWorkUnits() > 0, "save-state restore should keep queued submitted frame work");
+	h.vdp.advanceWork(h.vdp.getPendingRenderWorkUnits());
+	require(h.vdp.presentReadyFrameOnVblankEdge(), "restored queued submitted frame should promote and present");
+	requireDisplayFramePixel(h, 0u, 0u, 0x20u, 0x21u, 0x22u, 0xffu, "restored queued frame should use its saved BG register snapshot");
+}
+
 } // namespace
 
 int main() {
@@ -1083,6 +1115,7 @@ int main() {
 		{"VDP VOUT scanout timing", testVoutScanoutTimingOwnsVblankOutputPin},
 		{"VDP dither live latch", testDitherRegisterWritesUpdateLiveLatch},
 		{"VDP save-state registerfile/surface geometry", testSaveStateRestoresRegisterFileAndSurfaceGeometry},
+		{"VDP save-state submitted-frame pipeline", testSaveStateRestoresSubmittedFramePipeline},
 	};
 
 	for (const auto& test : tests) {

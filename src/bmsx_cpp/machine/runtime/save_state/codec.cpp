@@ -2,6 +2,7 @@
 
 #include "common/serializer/binencoder.h"
 #include "machine/devices/input/contracts.h"
+#include "machine/memory/map.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/schema.h"
 #include <cmath>
@@ -145,6 +146,19 @@ std::array<u32, N> decodeU32Array(const BinValue& value, const char* label) {
 	std::array<u32, N> out{};
 	for (size_t index = 0; index < N; ++index) {
 		out[index] = requireU32(array[index], label);
+	}
+	return out;
+}
+
+template<size_t N>
+std::array<u8, N> decodeU8Array(const BinValue& value, const char* label) {
+	const BinArray& array = requireArray(value, label);
+	if (array.size() != N) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " must have " + std::to_string(N) + " entries.");
+	}
+	std::array<u8, N> out{};
+	for (size_t index = 0; index < N; ++index) {
+		out[index] = static_cast<u8>(requireBoundedU32(array[index], label, 0u, 0xffu));
 	}
 	return out;
 }
@@ -500,10 +514,324 @@ GeometryControllerState decodeGeometryControllerState(const BinValue& value, con
 	return state;
 }
 
+template<typename Source>
+BinValue encodeVdpSourceState(const Source& state) {
+	return BinValue(BinObject{
+		{"surfaceId", static_cast<i64>(state.surfaceId)},
+		{"srcX", static_cast<i64>(state.srcX)},
+		{"srcY", static_cast<i64>(state.srcY)},
+		{"width", static_cast<i64>(state.width)},
+		{"height", static_cast<i64>(state.height)},
+	});
+}
+
+template<typename Source>
+Source decodeVdpSourceState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	return Source{
+		requireU32(requireField(object, "surfaceId", label), "machine.vdp.source.surfaceId"),
+		requireU32(requireField(object, "srcX", label), "machine.vdp.source.srcX"),
+		requireU32(requireField(object, "srcY", label), "machine.vdp.source.srcY"),
+		requireU32(requireField(object, "width", label), "machine.vdp.source.width"),
+		requireU32(requireField(object, "height", label), "machine.vdp.source.height"),
+	};
+}
+
+BinValue encodeGlyphRunGlyphState(const VdpGlyphRunGlyphSaveState& state) {
+	BinObject object = encodeVdpSourceState(state).asObject();
+	object["dstX"] = static_cast<f64>(state.dstX);
+	object["dstY"] = static_cast<f64>(state.dstY);
+	object["advance"] = static_cast<i64>(state.advance);
+	return BinValue(std::move(object));
+}
+
+VdpGlyphRunGlyphSaveState decodeGlyphRunGlyphState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpGlyphRunGlyphSaveState state;
+	static_cast<VdpBlitterSourceSaveState&>(state) = decodeVdpSourceState<VdpBlitterSourceSaveState>(value, label);
+	state.dstX = static_cast<f32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.glyph.dstX"));
+	state.dstY = static_cast<f32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.glyph.dstY"));
+	state.advance = requireU32(requireField(object, "advance", label), "machine.vdp.glyph.advance");
+	return state;
+}
+
+BinValue encodeTileRunBlitState(const VdpTileRunBlitSaveState& state) {
+	BinObject object = encodeVdpSourceState(state).asObject();
+	object["dstX"] = static_cast<f64>(state.dstX);
+	object["dstY"] = static_cast<f64>(state.dstY);
+	return BinValue(std::move(object));
+}
+
+VdpTileRunBlitSaveState decodeTileRunBlitState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpTileRunBlitSaveState state;
+	static_cast<VdpBlitterSourceSaveState&>(state) = decodeVdpSourceState<VdpBlitterSourceSaveState>(value, label);
+	state.dstX = static_cast<f32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.tile.dstX"));
+	state.dstY = static_cast<f32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.tile.dstY"));
+	return state;
+}
+
+VdpBlitterCommandType decodeBlitterCommandType(u32 opcode, const char* label) {
+	switch (opcode) {
+		case static_cast<u32>(VdpBlitterCommandType::Clear): return VdpBlitterCommandType::Clear;
+		case static_cast<u32>(VdpBlitterCommandType::Blit): return VdpBlitterCommandType::Blit;
+		case static_cast<u32>(VdpBlitterCommandType::CopyRect): return VdpBlitterCommandType::CopyRect;
+		case static_cast<u32>(VdpBlitterCommandType::FillRect): return VdpBlitterCommandType::FillRect;
+		case static_cast<u32>(VdpBlitterCommandType::DrawLine): return VdpBlitterCommandType::DrawLine;
+		case static_cast<u32>(VdpBlitterCommandType::GlyphRun): return VdpBlitterCommandType::GlyphRun;
+		case static_cast<u32>(VdpBlitterCommandType::TileRun): return VdpBlitterCommandType::TileRun;
+		default:
+			throw BMSX_RUNTIME_ERROR(std::string(label) + " has an invalid VDP blitter opcode.");
+	}
+}
+
+BinValue encodeBlitterCommandState(const VdpBlitterCommandSaveState& state) {
+	BinObject object;
+	object["opcode"] = static_cast<i64>(static_cast<u32>(state.opcode));
+	object["seq"] = static_cast<i64>(state.seq);
+	object["renderCost"] = static_cast<i64>(state.renderCost);
+	object["layer"] = static_cast<i64>(static_cast<u32>(state.layer));
+	object["priority"] = static_cast<f64>(state.priority);
+	object["source"] = encodeVdpSourceState(state.source);
+	object["dstX"] = static_cast<f64>(state.dstX);
+	object["dstY"] = static_cast<f64>(state.dstY);
+	object["scaleX"] = static_cast<f64>(state.scaleX);
+	object["scaleY"] = static_cast<f64>(state.scaleY);
+	object["flipH"] = state.flipH;
+	object["flipV"] = state.flipV;
+	object["color"] = static_cast<i64>(state.color);
+	object["parallaxWeight"] = static_cast<f64>(state.parallaxWeight);
+	object["srcX"] = static_cast<i64>(state.srcX);
+	object["srcY"] = static_cast<i64>(state.srcY);
+	object["width"] = static_cast<i64>(state.width);
+	object["height"] = static_cast<i64>(state.height);
+	object["x0"] = static_cast<f64>(state.x0);
+	object["y0"] = static_cast<f64>(state.y0);
+	object["x1"] = static_cast<f64>(state.x1);
+	object["y1"] = static_cast<f64>(state.y1);
+	object["thickness"] = static_cast<f64>(state.thickness);
+	object["hasBackgroundColor"] = state.hasBackgroundColor;
+	object["backgroundColor"] = static_cast<i64>(state.backgroundColor);
+	object["lineHeight"] = static_cast<i64>(state.lineHeight);
+	object["glyphs"] = encodeVector<VdpGlyphRunGlyphSaveState>(state.glyphs, encodeGlyphRunGlyphState);
+	object["tiles"] = encodeVector<VdpTileRunBlitSaveState>(state.tiles, encodeTileRunBlitState);
+	return BinValue(std::move(object));
+}
+
+VdpBlitterCommandSaveState decodeBlitterCommandState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpBlitterCommandSaveState state;
+	state.opcode = decodeBlitterCommandType(requireU32(requireField(object, "opcode", label), "machine.vdp.command.opcode"), label);
+	state.seq = requireU32(requireField(object, "seq", label), "machine.vdp.command.seq");
+	state.renderCost = requireI32(requireField(object, "renderCost", label), "machine.vdp.command.renderCost");
+	state.layer = static_cast<Layer2D>(requireBoundedU32(requireField(object, "layer", label), "machine.vdp.command.layer", 0u, 0xffu));
+	state.priority = static_cast<f32>(requireNumber(requireField(object, "priority", label), "machine.vdp.command.priority"));
+	state.source = decodeVdpSourceState<VdpBlitterSourceSaveState>(requireField(object, "source", label), "machine.vdp.command.source");
+	state.dstX = static_cast<f32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.command.dstX"));
+	state.dstY = static_cast<f32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.command.dstY"));
+	state.scaleX = static_cast<f32>(requireNumber(requireField(object, "scaleX", label), "machine.vdp.command.scaleX"));
+	state.scaleY = static_cast<f32>(requireNumber(requireField(object, "scaleY", label), "machine.vdp.command.scaleY"));
+	state.flipH = requireBool(requireField(object, "flipH", label), "machine.vdp.command.flipH");
+	state.flipV = requireBool(requireField(object, "flipV", label), "machine.vdp.command.flipV");
+	state.color = requireU32(requireField(object, "color", label), "machine.vdp.command.color");
+	state.parallaxWeight = static_cast<f32>(requireNumber(requireField(object, "parallaxWeight", label), "machine.vdp.command.parallaxWeight"));
+	state.srcX = requireI32(requireField(object, "srcX", label), "machine.vdp.command.srcX");
+	state.srcY = requireI32(requireField(object, "srcY", label), "machine.vdp.command.srcY");
+	state.width = requireI32(requireField(object, "width", label), "machine.vdp.command.width");
+	state.height = requireI32(requireField(object, "height", label), "machine.vdp.command.height");
+	state.x0 = static_cast<f32>(requireNumber(requireField(object, "x0", label), "machine.vdp.command.x0"));
+	state.y0 = static_cast<f32>(requireNumber(requireField(object, "y0", label), "machine.vdp.command.y0"));
+	state.x1 = static_cast<f32>(requireNumber(requireField(object, "x1", label), "machine.vdp.command.x1"));
+	state.y1 = static_cast<f32>(requireNumber(requireField(object, "y1", label), "machine.vdp.command.y1"));
+	state.thickness = static_cast<f32>(requireNumber(requireField(object, "thickness", label), "machine.vdp.command.thickness"));
+	state.hasBackgroundColor = requireBool(requireField(object, "hasBackgroundColor", label), "machine.vdp.command.hasBackgroundColor");
+	state.backgroundColor = requireU32(requireField(object, "backgroundColor", label), "machine.vdp.command.backgroundColor");
+	state.lineHeight = requireU32(requireField(object, "lineHeight", label), "machine.vdp.command.lineHeight");
+	state.glyphs = decodeVector<VdpGlyphRunGlyphSaveState>(
+		requireField(object, "glyphs", label),
+		"machine.vdp.command.glyphs",
+		[](const BinValue& entry, size_t) { return decodeGlyphRunGlyphState(entry, "machine.vdp.command.glyphs[]"); }
+	);
+	state.tiles = decodeVector<VdpTileRunBlitSaveState>(
+		requireField(object, "tiles", label),
+		"machine.vdp.command.tiles",
+		[](const BinValue& entry, size_t) { return decodeTileRunBlitState(entry, "machine.vdp.command.tiles[]"); }
+	);
+	return state;
+}
+
+std::vector<VdpBlitterCommandSaveState> decodeBlitterCommandStates(const BinValue& value, const char* label) {
+	std::vector<VdpBlitterCommandSaveState> commands = decodeVector<VdpBlitterCommandSaveState>(
+		value,
+		label,
+		[](const BinValue& entry, size_t) { return decodeBlitterCommandState(entry, "machine.vdp.commands[]"); }
+	);
+	if (commands.size() > VDP_BLITTER_FIFO_CAPACITY) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " exceeds the VDP blitter FIFO capacity.");
+	}
+	size_t glyphCount = 0;
+	size_t tileCount = 0;
+	for (const VdpBlitterCommandSaveState& command : commands) {
+		glyphCount += command.glyphs.size();
+		tileCount += command.tiles.size();
+	}
+	if (glyphCount > VDP_BLITTER_RUN_ENTRY_CAPACITY || tileCount > VDP_BLITTER_RUN_ENTRY_CAPACITY) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " exceeds the VDP blitter run-entry capacity.");
+	}
+	return commands;
+}
+
+BinValue encodeBbuBillboardState(const VdpBbuBillboardSaveState& state) {
+	return BinValue(BinObject{
+		{"seq", static_cast<i64>(state.seq)},
+		{"layer", static_cast<i64>(static_cast<u32>(state.layer))},
+		{"priority", static_cast<i64>(state.priority)},
+		{"positionX", static_cast<f64>(state.positionX)},
+		{"positionY", static_cast<f64>(state.positionY)},
+		{"positionZ", static_cast<f64>(state.positionZ)},
+		{"size", static_cast<f64>(state.size)},
+		{"color", static_cast<i64>(state.color)},
+		{"source", encodeVdpSourceState(state.source)},
+		{"surfaceWidth", static_cast<i64>(state.surfaceWidth)},
+		{"surfaceHeight", static_cast<i64>(state.surfaceHeight)},
+		{"slot", static_cast<i64>(state.slot)},
+	});
+}
+
+VdpBbuBillboardSaveState decodeBbuBillboardState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpBbuBillboardSaveState state;
+	state.seq = requireU32(requireField(object, "seq", label), "machine.vdp.billboard.seq");
+	state.layer = static_cast<Layer2D>(requireBoundedU32(requireField(object, "layer", label), "machine.vdp.billboard.layer", 0u, 0xffu));
+	state.priority = requireU32(requireField(object, "priority", label), "machine.vdp.billboard.priority");
+	state.positionX = static_cast<f32>(requireNumber(requireField(object, "positionX", label), "machine.vdp.billboard.positionX"));
+	state.positionY = static_cast<f32>(requireNumber(requireField(object, "positionY", label), "machine.vdp.billboard.positionY"));
+	state.positionZ = static_cast<f32>(requireNumber(requireField(object, "positionZ", label), "machine.vdp.billboard.positionZ"));
+	state.size = static_cast<f32>(requireNumber(requireField(object, "size", label), "machine.vdp.billboard.size"));
+	state.color = requireU32(requireField(object, "color", label), "machine.vdp.billboard.color");
+	state.source = decodeVdpSourceState<VdpBlitterSourceSaveState>(requireField(object, "source", label), "machine.vdp.billboard.source");
+	state.surfaceWidth = requireU32(requireField(object, "surfaceWidth", label), "machine.vdp.billboard.surfaceWidth");
+	state.surfaceHeight = requireU32(requireField(object, "surfaceHeight", label), "machine.vdp.billboard.surfaceHeight");
+	state.slot = requireU32(requireField(object, "slot", label), "machine.vdp.billboard.slot");
+	return state;
+}
+
+std::vector<VdpBbuBillboardSaveState> decodeBbuBillboardStates(const BinValue& value, const char* label) {
+	std::vector<VdpBbuBillboardSaveState> billboards = decodeVector<VdpBbuBillboardSaveState>(
+		value,
+		label,
+		[](const BinValue& entry, size_t) { return decodeBbuBillboardState(entry, "machine.vdp.billboards[]"); }
+	);
+	if (billboards.size() > VDP_BBU_BILLBOARD_LIMIT) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " exceeds the VDP BBU billboard capacity.");
+	}
+	return billboards;
+}
+
+BinValue encodeBuildingFrameState(const VdpBuildingFrameSaveState& state) {
+	return BinValue(BinObject{
+		{"state", static_cast<i64>(static_cast<u32>(state.state))},
+		{"queue", encodeVector<VdpBlitterCommandSaveState>(state.queue, encodeBlitterCommandState)},
+		{"billboards", encodeVector<VdpBbuBillboardSaveState>(state.billboards, encodeBbuBillboardState)},
+		{"cost", static_cast<i64>(state.cost)},
+	});
+}
+
+VdpBuildingFrameSaveState decodeBuildingFrameState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpBuildingFrameSaveState state;
+	state.state = static_cast<VdpDexFrameState>(requireBoundedU32(requireField(object, "state", label), "machine.vdp.buildFrame.state", 0u, 2u));
+	state.queue = decodeBlitterCommandStates(requireField(object, "queue", label), "machine.vdp.buildFrame.queue");
+	state.billboards = decodeBbuBillboardStates(requireField(object, "billboards", label), "machine.vdp.buildFrame.billboards");
+	state.cost = requireI32(requireField(object, "cost", label), "machine.vdp.buildFrame.cost");
+	return state;
+}
+
+BinValue encodeResolvedBlitterSampleState(const VdpResolvedBlitterSample& state) {
+	return BinValue(BinObject{
+		{"source", encodeVdpSourceState(state.source)},
+		{"surfaceWidth", static_cast<i64>(state.surfaceWidth)},
+		{"surfaceHeight", static_cast<i64>(state.surfaceHeight)},
+		{"slot", static_cast<i64>(state.slot)},
+	});
+}
+
+VdpResolvedBlitterSample decodeResolvedBlitterSampleState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpResolvedBlitterSample state;
+	state.source = decodeVdpSourceState<VdpBlitterSource>(requireField(object, "source", label), "machine.vdp.sample.source");
+	state.surfaceWidth = requireU32(requireField(object, "surfaceWidth", label), "machine.vdp.sample.surfaceWidth");
+	state.surfaceHeight = requireU32(requireField(object, "surfaceHeight", label), "machine.vdp.sample.surfaceHeight");
+	state.slot = requireU32(requireField(object, "slot", label), "machine.vdp.sample.slot");
+	return state;
+}
+
+VdpSkyboxSamples decodeSkyboxSampleStates(const BinValue& value, const char* label) {
+	const BinArray& array = requireArray(value, label);
+	if (array.size() != SKYBOX_FACE_COUNT) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " must contain one sample per skybox face.");
+	}
+	VdpSkyboxSamples samples{};
+	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
+		samples[index] = decodeResolvedBlitterSampleState(array[index], "machine.vdp.skyboxSamples[]");
+	}
+	return samples;
+}
+
+BinValue encodeSubmittedFrameState(const VdpSubmittedFrameSaveState& state) {
+	return BinValue(BinObject{
+		{"state", static_cast<i64>(static_cast<u32>(state.state))},
+		{"queue", encodeVector<VdpBlitterCommandSaveState>(state.queue, encodeBlitterCommandState)},
+		{"billboards", encodeVector<VdpBbuBillboardSaveState>(state.billboards, encodeBbuBillboardState)},
+		{"hasCommands", state.hasCommands},
+		{"hasFrameBufferCommands", state.hasFrameBufferCommands},
+		{"cost", static_cast<i64>(state.cost)},
+		{"workRemaining", static_cast<i64>(state.workRemaining)},
+		{"ditherType", static_cast<i64>(state.ditherType)},
+		{"frameBufferWidth", static_cast<i64>(state.frameBufferWidth)},
+		{"frameBufferHeight", static_cast<i64>(state.frameBufferHeight)},
+		{"xf", encodeVdpXfState(state.xf)},
+		{"skyboxControl", static_cast<i64>(state.skyboxControl)},
+		{"skyboxFaceWords", encodeFixedArray(state.skyboxFaceWords, encodeScalar<i64, u32>)},
+		{"skyboxSamples", encodeFixedArray(state.skyboxSamples, encodeResolvedBlitterSampleState)},
+	});
+}
+
+VdpSubmittedFrameSaveState decodeSubmittedFrameState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpSubmittedFrameSaveState state;
+	state.state = static_cast<VdpSubmittedFrameState>(requireBoundedU32(requireField(object, "state", label), "machine.vdp.submittedFrame.state", 0u, 3u));
+	state.queue = decodeBlitterCommandStates(requireField(object, "queue", label), "machine.vdp.submittedFrame.queue");
+	state.billboards = decodeBbuBillboardStates(requireField(object, "billboards", label), "machine.vdp.submittedFrame.billboards");
+	state.hasCommands = requireBool(requireField(object, "hasCommands", label), "machine.vdp.submittedFrame.hasCommands");
+	state.hasFrameBufferCommands = requireBool(requireField(object, "hasFrameBufferCommands", label), "machine.vdp.submittedFrame.hasFrameBufferCommands");
+	state.cost = requireI32(requireField(object, "cost", label), "machine.vdp.submittedFrame.cost");
+	state.workRemaining = requireI32(requireField(object, "workRemaining", label), "machine.vdp.submittedFrame.workRemaining");
+	state.ditherType = requireI32(requireField(object, "ditherType", label), "machine.vdp.submittedFrame.ditherType");
+	state.frameBufferWidth = requireU32(requireField(object, "frameBufferWidth", label), "machine.vdp.submittedFrame.frameBufferWidth");
+	state.frameBufferHeight = requireU32(requireField(object, "frameBufferHeight", label), "machine.vdp.submittedFrame.frameBufferHeight");
+	state.xf = decodeVdpXfState(requireField(object, "xf", label), "machine.vdp.submittedFrame.xf");
+	state.skyboxControl = requireU32(requireField(object, "skyboxControl", label), "machine.vdp.submittedFrame.skyboxControl");
+	state.skyboxFaceWords = decodeU32Array<SKYBOX_FACE_WORD_COUNT>(requireField(object, "skyboxFaceWords", label), "machine.vdp.submittedFrame.skyboxFaceWords");
+	state.skyboxSamples = decodeSkyboxSampleStates(requireField(object, "skyboxSamples", label), "machine.vdp.submittedFrame.skyboxSamples");
+	return state;
+}
+
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
 	object["xf"] = encodeVdpXfState(state.xf);
 	object["vdpRegisterWords"] = encodeFixedArray(state.vdpRegisterWords, encodeScalar<i64, u32>);
+	object["buildFrame"] = encodeBuildingFrameState(state.buildFrame);
+	object["activeFrame"] = encodeSubmittedFrameState(state.activeFrame);
+	object["pendingFrame"] = encodeSubmittedFrameState(state.pendingFrame);
+	object["workCarry"] = static_cast<i64>(state.workCarry);
+	object["availableWorkUnits"] = static_cast<i64>(state.availableWorkUnits);
+	object["dmaSubmitActive"] = state.dmaSubmitActive;
+	object["vdpFifoWordScratch"] = encodeFixedArray(state.vdpFifoWordScratch, encodeScalar<i64, u8>);
+	object["vdpFifoWordByteCount"] = static_cast<i64>(state.vdpFifoWordByteCount);
+	object["vdpFifoStreamWords"] = encodeVector<u32>(state.vdpFifoStreamWords, encodeScalar<i64, u32>);
+	object["vdpFifoStreamWordCount"] = static_cast<i64>(state.vdpFifoStreamWordCount);
+	object["blitterSequence"] = static_cast<i64>(state.blitterSequence);
 	object["skyboxControl"] = static_cast<i64>(state.skyboxControl);
 	object["skyboxFaceWords"] = encodeFixedArray(state.skyboxFaceWords, encodeScalar<i64, u32>);
 	object["pmuSelectedBank"] = static_cast<i64>(state.pmuSelectedBank);
@@ -519,6 +847,24 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 	VdpState state;
 	state.xf = decodeVdpXfState(requireField(object, "xf", label), "machine.vdp.xf");
 	state.vdpRegisterWords = decodeU32Array<VDP_REGISTER_COUNT>(requireField(object, "vdpRegisterWords", label), "machine.vdp.vdpRegisterWords");
+	state.buildFrame = decodeBuildingFrameState(requireField(object, "buildFrame", label), "machine.vdp.buildFrame");
+	state.activeFrame = decodeSubmittedFrameState(requireField(object, "activeFrame", label), "machine.vdp.activeFrame");
+	state.pendingFrame = decodeSubmittedFrameState(requireField(object, "pendingFrame", label), "machine.vdp.pendingFrame");
+	state.workCarry = requireI64(requireField(object, "workCarry", label), "machine.vdp.workCarry");
+	state.availableWorkUnits = requireI32(requireField(object, "availableWorkUnits", label), "machine.vdp.availableWorkUnits");
+	state.dmaSubmitActive = requireBool(requireField(object, "dmaSubmitActive", label), "machine.vdp.dmaSubmitActive");
+	state.vdpFifoWordScratch = decodeU8Array<4>(requireField(object, "vdpFifoWordScratch", label), "machine.vdp.vdpFifoWordScratch");
+	state.vdpFifoWordByteCount = requireI32(requireField(object, "vdpFifoWordByteCount", label), "machine.vdp.vdpFifoWordByteCount");
+	state.vdpFifoStreamWords = decodeVector<u32>(
+		requireField(object, "vdpFifoStreamWords", label),
+		"machine.vdp.vdpFifoStreamWords",
+		[](const BinValue& entry, size_t) { return requireU32(entry, "machine.vdp.vdpFifoStreamWords[]"); }
+	);
+	state.vdpFifoStreamWordCount = requireU32(requireField(object, "vdpFifoStreamWordCount", label), "machine.vdp.vdpFifoStreamWordCount");
+	if (state.vdpFifoWordByteCount < 0 || state.vdpFifoWordByteCount > 3 || state.vdpFifoStreamWords.size() != state.vdpFifoStreamWordCount || state.vdpFifoStreamWordCount > VDP_STREAM_CAPACITY_WORDS) {
+		throw BMSX_RUNTIME_ERROR("[save-state] machine.vdp FIFO ingress state is inconsistent.");
+	}
+	state.blitterSequence = requireU32(requireField(object, "blitterSequence", label), "machine.vdp.blitterSequence");
 	state.skyboxControl = requireU32(requireField(object, "skyboxControl", label), "machine.vdp.skyboxControl");
 	state.skyboxFaceWords = decodeU32Array<SKYBOX_FACE_WORD_COUNT>(requireField(object, "skyboxFaceWords", label), "machine.vdp.skyboxFaceWords");
 	state.pmuSelectedBank = requireU32(requireField(object, "pmuSelectedBank", label), "machine.vdp.pmuSelectedBank");
@@ -567,6 +913,17 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	state.pmuSelectedBank = base.pmuSelectedBank;
 	state.pmuBankWords = base.pmuBankWords;
 	state.ditherType = base.ditherType;
+	state.buildFrame = base.buildFrame;
+	state.activeFrame = base.activeFrame;
+	state.pendingFrame = base.pendingFrame;
+	state.workCarry = base.workCarry;
+	state.availableWorkUnits = base.availableWorkUnits;
+	state.dmaSubmitActive = base.dmaSubmitActive;
+	state.vdpFifoWordScratch = base.vdpFifoWordScratch;
+	state.vdpFifoWordByteCount = base.vdpFifoWordByteCount;
+	state.vdpFifoStreamWords = base.vdpFifoStreamWords;
+	state.vdpFifoStreamWordCount = base.vdpFifoStreamWordCount;
+	state.blitterSequence = base.blitterSequence;
 	state.vdpFaultCode = base.vdpFaultCode;
 	state.vdpFaultDetail = base.vdpFaultDetail;
 	state.vramStaging = requireBinary(requireField(object, "vramStaging", label), "machine.vdp.vramStaging");

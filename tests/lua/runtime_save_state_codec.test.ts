@@ -15,10 +15,15 @@ import {
 	APU_SLOT_REGISTER_WORD_COUNT,
 	apuSlotRegisterWordIndex,
 } from '../../src/bmsx/machine/devices/audio/contracts';
-import { SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../src/bmsx/machine/devices/vdp/contracts';
+import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../src/bmsx/machine/devices/vdp/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../src/bmsx/machine/devices/geometry/contracts';
 import { VDP_REGISTER_COUNT } from '../../src/bmsx/machine/devices/vdp/registers';
 import { VDP_XF_MATRIX_REGISTER_WORDS, VDP_XF_PROJECTION_MATRIX_RESET_INDEX, VDP_XF_VIEW_MATRIX_RESET_INDEX } from '../../src/bmsx/machine/devices/vdp/xf';
+import {
+	VDP_DEX_FRAME_IDLE,
+	VDP_SUBMITTED_FRAME_EMPTY,
+	VDP_SUBMITTED_FRAME_EXECUTING,
+} from '../../src/bmsx/machine/devices/vdp/frame';
 import type { RuntimeSaveState } from '../../src/bmsx/machine/runtime/contracts';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../src/bmsx/machine/runtime/save_state/codec';
 import { decodeBinaryWithPropTable } from '../../src/bmsx/common/serializer/binencoder';
@@ -30,6 +35,44 @@ function numberedWords(count: number): number[] {
 		words[index] = index + 1;
 	}
 	return words;
+}
+
+function createSkyboxSamples() {
+	return Array.from({ length: SKYBOX_FACE_COUNT }, (_, face) => ({
+		source: {
+			surfaceId: face,
+			srcX: face + 1,
+			srcY: face + 2,
+			width: face + 3,
+			height: face + 4,
+		},
+		surfaceWidth: face + 5,
+		surfaceHeight: face + 6,
+		slot: face + 7,
+	}));
+}
+
+function createSubmittedFrameState(state = VDP_SUBMITTED_FRAME_EMPTY) {
+	return {
+		state,
+		queue: [],
+		billboards: [],
+		hasCommands: state !== VDP_SUBMITTED_FRAME_EMPTY,
+		hasFrameBufferCommands: state !== VDP_SUBMITTED_FRAME_EMPTY,
+		cost: state === VDP_SUBMITTED_FRAME_EMPTY ? 0 : 9,
+		workRemaining: state === VDP_SUBMITTED_FRAME_EMPTY ? 0 : 7,
+		ditherType: 2,
+		frameBufferWidth: 256,
+		frameBufferHeight: 212,
+		xf: {
+			matrixWords: numberedWords(VDP_XF_MATRIX_REGISTER_WORDS),
+			viewMatrixIndex: VDP_XF_VIEW_MATRIX_RESET_INDEX,
+			projectionMatrixIndex: VDP_XF_PROJECTION_MATRIX_RESET_INDEX,
+		},
+		skyboxControl: 5,
+		skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),
+		skyboxSamples: createSkyboxSamples(),
+	};
 }
 
 function createRuntimeSaveState(): RuntimeSaveState {
@@ -137,6 +180,22 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						projectionMatrixIndex: VDP_XF_PROJECTION_MATRIX_RESET_INDEX,
 					},
 					vdpRegisterWords: numberedWords(VDP_REGISTER_COUNT),
+					buildFrame: {
+						state: VDP_DEX_FRAME_IDLE,
+						queue: [],
+						billboards: [],
+						cost: 0,
+					},
+					activeFrame: createSubmittedFrameState(VDP_SUBMITTED_FRAME_EXECUTING),
+					pendingFrame: createSubmittedFrameState(),
+					workCarry: 12,
+					availableWorkUnits: 3,
+					dmaSubmitActive: true,
+					vdpFifoWordScratch: [1, 2, 3, 4],
+					vdpFifoWordByteCount: 2,
+					vdpFifoStreamWords: [0x12345678],
+					vdpFifoStreamWordCount: 1,
+					blitterSequence: 5,
 					skyboxControl: 5,
 					skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),
 					pmuSelectedBank: 2,
@@ -211,6 +270,9 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.geometry, state.machineState.machine.geometry);
 	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
 	assert.deepEqual(decoded.machineState.machine.input, state.machineState.machine.input);
+	assert.deepEqual(decoded.machineState.machine.vdp.activeFrame, state.machineState.machine.vdp.activeFrame);
+	assert.deepEqual(decoded.machineState.machine.vdp.vdpFifoWordScratch, state.machineState.machine.vdp.vdpFifoWordScratch);
+	assert.deepEqual(decoded.machineState.machine.vdp.vdpFifoStreamWords, state.machineState.machine.vdp.vdpFifoStreamWords);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
 	assert.deepEqual(decoded.machineState.machine.vdp.surfacePixels, state.machineState.machine.vdp.surfacePixels);
 });
