@@ -196,8 +196,11 @@ Cart-visible ingress:
   `sys_inp_query`, and `sys_inp_consume` writes;
 - `sys_inp_status` and `sys_inp_value` reads;
 - `sys_inp_event_*` FIFO status/front-entry reads and event control writes;
+- `sys_inp_output_intensity_q16`, `sys_inp_output_duration_ms`,
+  `sys_inp_output_status`, and `sys_inp_output_ctrl` output registers;
 - `inp_ctrl_commit`, `inp_ctrl_arm`, `inp_ctrl_reset`,
-  `inp_event_ctrl_pop`, and `inp_event_ctrl_clear` command words.
+  `inp_event_ctrl_pop`, `inp_event_ctrl_clear`, and
+  `inp_output_ctrl_apply` command words.
 
 State owned by ICU:
 
@@ -210,6 +213,7 @@ State owned by ICU:
 - event FIFO entries containing player, action string id, status word, value
   word, and repeat count;
 - event FIFO read/write pointers, queued count, and overflow latch.
+- output intensity and duration latch words.
 
 VBlank consumes the arm latch, asks the input owner to sample players once, and
 then snapshots committed actions. Later MMIO queries evaluate against that ICU
@@ -221,9 +225,15 @@ The event FIFO is filled at the same sample edge. It queues action edge/repeat
 snapshots and exposes a front-entry register bank plus pop/clear doorbells. The
 queue is saved as visible device state; it is not a host queue.
 
-Remaining ICU work must move toward device hardware, not API cleanup: output /
-rumble control and stricter raw string-ref MMIO contracts are valid next
-targets.
+The output register bank is a selected-player output datapath. Carts write an
+unsigned-Q16.16 intensity word and a duration word, then ring the output
+doorbell. The ICU decodes those latch words at the output datapath boundary and
+passes one output command to the selected player's input hardware. Status reads
+expose host output support for the selected player; that support bit is runtime
+capability, not save-state payload.
+
+Remaining ICU work must move toward device hardware, not API cleanup: stricter
+raw string-ref MMIO contracts are the next ICU target.
 
 ## Firmware and Lua layer
 
@@ -283,8 +293,7 @@ should be deleted.
 ## Active work queue
 
 1. Clean or delete remaining hardware notes that are not current contracts.
-2. Continue ICU hardware work: output/rumble control and raw string-ref MMIO
-   tightening.
+2. Continue ICU hardware work: raw string-ref MMIO tightening.
 3. Continue VDP subunit state-machine tightening where boolean ingress state
    remains.
 4. Continue APU/AOUT proof around deterministic output state and hot-path buffer

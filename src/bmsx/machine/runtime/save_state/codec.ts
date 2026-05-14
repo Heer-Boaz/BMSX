@@ -271,6 +271,8 @@ function encodeInputControllerState(state: InputControllerState): InputControlle
 			status: state.registers.status >>> 0,
 			value: state.registers.value >>> 0,
 			consumeStringId: state.registers.consumeStringId >>> 0,
+			outputIntensityQ16: state.registers.outputIntensityQ16 >>> 0,
+			outputDurationMs: state.registers.outputDurationMs >>> 0,
 		},
 		players: encodeVector(state.players, (player) => ({
 			actions: encodeVector(player.actions, (action) => ({
@@ -353,6 +355,8 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 			status: requireBoundedU32(requireObjectKey(registers, 'status', 'machine.input.registers', 'machine.input.registers.status'), 'machine.input.registers.status', 0, 0xffffffff),
 			value: requireBoundedU32(requireObjectKey(registers, 'value', 'machine.input.registers', 'machine.input.registers.value'), 'machine.input.registers.value', 0, 0xffffffff),
 			consumeStringId: requireBoundedU32(requireObjectKey(registers, 'consumeStringId', 'machine.input.registers', 'machine.input.registers.consumeStringId'), 'machine.input.registers.consumeStringId', 0, 0xffffffff),
+			outputIntensityQ16: requireBoundedU32(requireObjectKey(registers, 'outputIntensityQ16', 'machine.input.registers', 'machine.input.registers.outputIntensityQ16'), 'machine.input.registers.outputIntensityQ16', 0, 0xffffffff),
+			outputDurationMs: requireBoundedU32(requireObjectKey(registers, 'outputDurationMs', 'machine.input.registers', 'machine.input.registers.outputDurationMs'), 'machine.input.registers.outputDurationMs', 0, 0xffffffff),
 		},
 		players,
 		eventFifoEvents,

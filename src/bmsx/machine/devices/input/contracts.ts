@@ -1,5 +1,5 @@
 import type { ActionState } from '../../../input/models';
-import { decodeSignedFix16, encodeSignedFix16 } from '../../common/numeric';
+import { decodeSignedFix16, encodeSignedFix16, FIX16_SCALE } from '../../common/numeric';
 
 export const INP_STATUS_PRESSED = 1 << 0;
 export const INP_STATUS_JUST_PRESSED = 1 << 1;
@@ -26,6 +26,14 @@ export const INP_EVENT_ACTION_STATUS_MASK = INP_STATUS_JUST_PRESSED
 	| INP_STATUS_ALL_JUST_RELEASED
 	| INP_STATUS_GUARDED_JUST_PRESSED
 	| INP_STATUS_REPEAT_PRESSED;
+
+export const INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE = FIX16_SCALE;
+export const INP_OUTPUT_STATUS_SUPPORTED = 1 << 0;
+export const INP_OUTPUT_CTRL_APPLY = 1;
+
+export function decodeInputOutputIntensityQ16(value: number): number {
+	return (value >>> 0) / INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE;
+}
 
 export function packInputActionStatus(state: ActionState): number {
 	let word = 0;

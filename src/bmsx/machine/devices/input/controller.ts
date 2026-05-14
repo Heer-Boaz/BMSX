@@ -17,6 +17,10 @@ import {
 	IO_INP_EVENT_REPEAT_COUNT,
 	IO_INP_EVENT_STATUS,
 	IO_INP_EVENT_VALUE,
+	IO_INP_OUTPUT_CTRL,
+	IO_INP_OUTPUT_DURATION_MS,
+	IO_INP_OUTPUT_INTENSITY_Q16,
+	IO_INP_OUTPUT_STATUS,
 	IO_INP_PLAYER,
 	IO_INP_QUERY,
 	IO_INP_STATUS,
@@ -27,6 +31,7 @@ import { asStringId, StringValue, type Value } from '../../cpu/cpu';
 import type { StringId, StringPool } from '../../cpu/string_pool';
 import {
 	createInputActionSnapshot,
+	decodeInputOutputIntensityQ16,
 	encodeInputActionValueQ16,
 	INP_EVENT_ACTION_STATUS_MASK,
 	INP_EVENT_CTRL_CLEAR,
@@ -34,6 +39,8 @@ import {
 	INP_EVENT_STATUS_EMPTY,
 	INP_EVENT_STATUS_FULL,
 	INP_EVENT_STATUS_OVERFLOW,
+	INP_OUTPUT_CTRL_APPLY,
+	INP_OUTPUT_STATUS_SUPPORTED,
 	INP_STATUS_CONSUMED,
 	INPUT_CONTROLLER_EVENT_FIFO_CAPACITY,
 	packInputActionStatus,
@@ -72,6 +79,8 @@ type InputControllerRegisterState = {
 	status: number;
 	value: number;
 	consumeStringId: StringId;
+	outputIntensityQ16: number;
+	outputDurationMs: number;
 };
 
 type PlayerChipState = {
@@ -118,6 +127,8 @@ function createResetRegisters(): InputControllerRegisterState {
 		status: 0,
 		value: 0,
 		consumeStringId: 0,
+		outputIntensityQ16: 0,
+		outputDurationMs: 0,
 	};
 }
 
@@ -171,6 +182,8 @@ export class InputController {
 		this.memory.mapIoWrite(IO_INP_CTRL, this.onRegisterWrite.bind(this));
 		this.memory.mapIoWrite(IO_INP_QUERY, this.onRegisterWrite.bind(this));
 		this.memory.mapIoWrite(IO_INP_CONSUME, this.onRegisterWrite.bind(this));
+		this.memory.mapIoWrite(IO_INP_OUTPUT_INTENSITY_Q16, this.onRegisterWrite.bind(this));
+		this.memory.mapIoWrite(IO_INP_OUTPUT_DURATION_MS, this.onRegisterWrite.bind(this));
 		this.memory.mapIoRead(IO_INP_EVENT_STATUS, this.onEventRegisterRead.bind(this));
 		this.memory.mapIoRead(IO_INP_EVENT_COUNT, this.onEventRegisterRead.bind(this));
 		this.memory.mapIoRead(IO_INP_EVENT_PLAYER, this.onEventRegisterRead.bind(this));
@@ -180,6 +193,9 @@ export class InputController {
 		this.memory.mapIoRead(IO_INP_EVENT_REPEAT_COUNT, this.onEventRegisterRead.bind(this));
 		this.memory.mapIoRead(IO_INP_EVENT_CTRL, this.onEventRegisterRead.bind(this));
 		this.memory.mapIoWrite(IO_INP_EVENT_CTRL, this.onEventCtrlWrite.bind(this));
+		this.memory.mapIoRead(IO_INP_OUTPUT_STATUS, this.onOutputRegisterRead.bind(this));
+		this.memory.mapIoRead(IO_INP_OUTPUT_CTRL, this.onOutputRegisterRead.bind(this));
+		this.memory.mapIoWrite(IO_INP_OUTPUT_CTRL, this.onOutputCtrlWrite.bind(this));
 	}
 
 	public reset(): void {
@@ -193,6 +209,7 @@ export class InputController {
 		this.registers = createResetRegisters();
 		this.clearEventFifo();
 		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
+		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 		this.mirrorRegisters();
 	}
 
@@ -240,6 +257,7 @@ export class InputController {
 		this.restoreEventFifo(state.eventFifoEvents);
 		this.eventFifoOverflow = state.eventFifoOverflow;
 		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
+		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 		this.mirrorRegisters();
 	}
 
@@ -264,6 +282,12 @@ export class InputController {
 			case IO_INP_CONSUME:
 				this.registers.consumeStringId = asStringId(value as StringValue);
 				this.consumeActions();
+				return;
+			case IO_INP_OUTPUT_INTENSITY_Q16:
+				this.registers.outputIntensityQ16 = (value as number) >>> 0;
+				return;
+			case IO_INP_OUTPUT_DURATION_MS:
+				this.registers.outputDurationMs = (value as number) >>> 0;
 				return;
 		}
 	}
@@ -316,6 +340,26 @@ export class InputController {
 				break;
 		}
 		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
+	}
+
+	private onOutputRegisterRead(addr: number): Value {
+		switch (addr) {
+			case IO_INP_OUTPUT_STATUS:
+				return this.readOutputStatus();
+			case IO_INP_OUTPUT_CTRL:
+				return 0;
+		}
+		throw new Error(`ICU output register read is not mapped for ${addr >>> 0}.`);
+	}
+
+	private onOutputCtrlWrite(_addr: number, value: Value): void {
+		const command = (value as number) >>> 0;
+		switch (command) {
+			case INP_OUTPUT_CTRL_APPLY:
+				this.applyOutputEffect();
+				break;
+		}
+		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 	}
 
 	private queryAction(): void {
@@ -435,6 +479,18 @@ export class InputController {
 		return (this.eventFifoCount === 0 ? INP_EVENT_STATUS_EMPTY : 0)
 			| (this.eventFifoCount === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY ? INP_EVENT_STATUS_FULL : 0)
 			| (this.eventFifoOverflow ? INP_EVENT_STATUS_OVERFLOW : 0);
+	}
+
+	private readOutputStatus(): number {
+		return this.input.getPlayerInput(this.registers.player).supportsVibrationEffect ? INP_OUTPUT_STATUS_SUPPORTED : 0;
+	}
+
+	private applyOutputEffect(): void {
+		this.input.getPlayerInput(this.registers.player).applyVibrationEffect({
+			effect: 'dual-rumble',
+			duration: this.registers.outputDurationMs,
+			intensity: decodeInputOutputIntensityQ16(this.registers.outputIntensityQ16),
+		});
 	}
 
 	private readFrontEvent(): InputControllerEventState {
@@ -581,6 +637,8 @@ export class InputController {
 		this.memory.writeIoValue(IO_INP_STATUS, this.registers.status);
 		this.memory.writeIoValue(IO_INP_VALUE, this.registers.value);
 		this.memory.writeIoValue(IO_INP_CONSUME, StringValue.get(this.registers.consumeStringId));
+		this.memory.writeIoValue(IO_INP_OUTPUT_INTENSITY_Q16, this.registers.outputIntensityQ16);
+		this.memory.writeIoValue(IO_INP_OUTPUT_DURATION_MS, this.registers.outputDurationMs);
 	}
 
 	private appendBindings(bindingsText: string, keyboardBindings: KeyboardBinding[], gamepadBindings: GamepadBinding[]): void {

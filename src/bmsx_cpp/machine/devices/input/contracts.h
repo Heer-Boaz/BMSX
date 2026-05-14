@@ -31,6 +31,14 @@ constexpr u32 INP_EVENT_ACTION_STATUS_MASK = INP_STATUS_JUST_PRESSED
 	| INP_STATUS_GUARDED_JUST_PRESSED
 	| INP_STATUS_REPEAT_PRESSED;
 
+constexpr u32 INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE = static_cast<u32>(FIX16_ONE);
+constexpr u32 INP_OUTPUT_STATUS_SUPPORTED = 1u << 0u;
+constexpr u32 INP_OUTPUT_CTRL_APPLY = 1u;
+
+inline f32 decodeInputOutputIntensityQ16(u32 value) {
+	return static_cast<f32>(value) / static_cast<f32>(INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE);
+}
+
 inline u32 packInputActionStatus(const ActionState& state) {
 	u32 word = 0u;
 	if (state.pressed) word |= INP_STATUS_PRESSED;

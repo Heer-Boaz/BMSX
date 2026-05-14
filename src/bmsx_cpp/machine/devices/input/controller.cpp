@@ -23,6 +23,8 @@ InputController::InputController(Memory& memory, Input& input, const StringPool&
 	m_memory.mapIoWrite(IO_INP_CTRL, this, &InputController::onRegisterWriteThunk);
 	m_memory.mapIoWrite(IO_INP_QUERY, this, &InputController::onRegisterWriteThunk);
 	m_memory.mapIoWrite(IO_INP_CONSUME, this, &InputController::onRegisterWriteThunk);
+	m_memory.mapIoWrite(IO_INP_OUTPUT_INTENSITY_Q16, this, &InputController::onRegisterWriteThunk);
+	m_memory.mapIoWrite(IO_INP_OUTPUT_DURATION_MS, this, &InputController::onRegisterWriteThunk);
 	m_memory.mapIoRead(IO_INP_EVENT_STATUS, this, &InputController::onEventRegisterReadThunk);
 	m_memory.mapIoRead(IO_INP_EVENT_COUNT, this, &InputController::onEventRegisterReadThunk);
 	m_memory.mapIoRead(IO_INP_EVENT_PLAYER, this, &InputController::onEventRegisterReadThunk);
@@ -32,6 +34,9 @@ InputController::InputController(Memory& memory, Input& input, const StringPool&
 	m_memory.mapIoRead(IO_INP_EVENT_REPEAT_COUNT, this, &InputController::onEventRegisterReadThunk);
 	m_memory.mapIoRead(IO_INP_EVENT_CTRL, this, &InputController::onEventRegisterReadThunk);
 	m_memory.mapIoWrite(IO_INP_EVENT_CTRL, this, &InputController::onEventCtrlWriteThunk);
+	m_memory.mapIoRead(IO_INP_OUTPUT_STATUS, this, &InputController::onOutputRegisterReadThunk);
+	m_memory.mapIoRead(IO_INP_OUTPUT_CTRL, this, &InputController::onOutputRegisterReadThunk);
+	m_memory.mapIoWrite(IO_INP_OUTPUT_CTRL, this, &InputController::onOutputCtrlWriteThunk);
 }
 
 // disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the input device instance.
@@ -48,6 +53,15 @@ void InputController::onEventCtrlWriteThunk(void* context, uint32_t, Value value
 	static_cast<InputController*>(context)->onEventCtrlWrite(toU32(value));
 }
 
+Value InputController::onOutputRegisterReadThunk(void* context, uint32_t addr) {
+	return static_cast<InputController*>(context)->onOutputRegisterRead(addr);
+}
+
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the input device instance.
+void InputController::onOutputCtrlWriteThunk(void* context, uint32_t, Value value) {
+	static_cast<InputController*>(context)->onOutputCtrlWrite(toU32(value));
+}
+
 void InputController::reset() {
 	m_sampleArmed = false;
 	m_sampleSequence = 0;
@@ -59,6 +73,7 @@ void InputController::reset() {
 	m_registers = InputControllerRegisterState{};
 	clearEventFifo();
 	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
+	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
 	mirrorRegisters();
 }
 
@@ -109,6 +124,7 @@ void InputController::restoreState(const InputControllerState& state) {
 	restoreEventFifo(state.eventFifoEvents);
 	m_eventFifoOverflow = state.eventFifoOverflow;
 	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
+	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
 	mirrorRegisters();
 }
 
@@ -133,6 +149,12 @@ void InputController::onRegisterWrite(uint32_t addr, Value value) {
 		case IO_INP_CONSUME:
 			m_registers.consumeStringId = asStringId(value);
 			consumeActions();
+			return;
+		case IO_INP_OUTPUT_INTENSITY_Q16:
+			m_registers.outputIntensityQ16 = toU32(value);
+			return;
+		case IO_INP_OUTPUT_DURATION_MS:
+			m_registers.outputDurationMs = toU32(value);
 			return;
 	}
 }
@@ -184,6 +206,25 @@ void InputController::onEventCtrlWrite(u32 command) {
 			break;
 	}
 	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
+}
+
+Value InputController::onOutputRegisterRead(uint32_t addr) const {
+	switch (addr) {
+		case IO_INP_OUTPUT_STATUS:
+			return valueNumber(static_cast<double>(readOutputStatus()));
+		case IO_INP_OUTPUT_CTRL:
+			return valueNumber(0.0);
+	}
+	throw std::runtime_error("ICU output register read is not mapped.");
+}
+
+void InputController::onOutputCtrlWrite(u32 command) {
+	switch (command) {
+		case INP_OUTPUT_CTRL_APPLY:
+			applyOutputEffect();
+			break;
+	}
+	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
 }
 
 void InputController::queryAction() {
@@ -374,6 +415,17 @@ void InputController::restoreEventFifo(const std::vector<InputControllerEventSta
 	}
 }
 
+u32 InputController::readOutputStatus() const {
+	return m_input.getPlayerInput(static_cast<i32>(m_registers.player))->supportsVibrationEffect() ? INP_OUTPUT_STATUS_SUPPORTED : 0u;
+}
+
+void InputController::applyOutputEffect() {
+	VibrationParams params;
+	params.duration = static_cast<f64>(m_registers.outputDurationMs);
+	params.intensity = decodeInputOutputIntensityQ16(m_registers.outputIntensityQ16);
+	m_input.getPlayerInput(static_cast<i32>(m_registers.player))->applyVibrationEffect(params);
+}
+
 ActionState InputController::createSnapshotActionState(const PlayerChipState& state, const std::string& actionName) const {
 	const InputControllerActionState& action = findSnapshotAction(state, actionName);
 	return createInputActionSnapshot(actionName, action.statusWord, action.valueQ16, action.pressTime, action.repeatCount);
@@ -421,6 +473,8 @@ void InputController::mirrorRegisters() {
 	m_memory.writeIoValue(IO_INP_STATUS, valueNumber(static_cast<double>(m_registers.status)));
 	m_memory.writeIoValue(IO_INP_VALUE, valueNumber(static_cast<double>(m_registers.value)));
 	m_memory.writeIoValue(IO_INP_CONSUME, valueString(m_registers.consumeStringId));
+	m_memory.writeIoValue(IO_INP_OUTPUT_INTENSITY_Q16, valueNumber(static_cast<double>(m_registers.outputIntensityQ16)));
+	m_memory.writeIoValue(IO_INP_OUTPUT_DURATION_MS, valueNumber(static_cast<double>(m_registers.outputDurationMs)));
 }
 
 void InputController::appendBindings(

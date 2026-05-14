@@ -165,6 +165,10 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_inp_event_value", valueNumber(static_cast<double>(IO_INP_EVENT_VALUE)));
 	runtime.setGlobal("sys_inp_event_repeat_count", valueNumber(static_cast<double>(IO_INP_EVENT_REPEAT_COUNT)));
 	runtime.setGlobal("sys_inp_event_ctrl", valueNumber(static_cast<double>(IO_INP_EVENT_CTRL)));
+	runtime.setGlobal("sys_inp_output_intensity_q16", valueNumber(static_cast<double>(IO_INP_OUTPUT_INTENSITY_Q16)));
+	runtime.setGlobal("sys_inp_output_duration_ms", valueNumber(static_cast<double>(IO_INP_OUTPUT_DURATION_MS)));
+	runtime.setGlobal("sys_inp_output_status", valueNumber(static_cast<double>(IO_INP_OUTPUT_STATUS)));
+	runtime.setGlobal("sys_inp_output_ctrl", valueNumber(static_cast<double>(IO_INP_OUTPUT_CTRL)));
 	runtime.setGlobal("sys_apu_source_addr", valueNumber(static_cast<double>(IO_APU_SOURCE_ADDR)));
 	runtime.setGlobal("sys_apu_source_bytes", valueNumber(static_cast<double>(IO_APU_SOURCE_BYTES)));
 	runtime.setGlobal("sys_apu_source_sample_rate_hz", valueNumber(static_cast<double>(IO_APU_SOURCE_SAMPLE_RATE_HZ)));
@@ -424,6 +428,9 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("inp_event_ctrl_pop", valueNumber(static_cast<double>(INP_EVENT_CTRL_POP)));
 	runtime.setGlobal("inp_event_ctrl_clear", valueNumber(static_cast<double>(INP_EVENT_CTRL_CLEAR)));
 	runtime.setGlobal("inp_event_fifo_capacity", valueNumber(static_cast<double>(INPUT_CONTROLLER_EVENT_FIFO_CAPACITY)));
+	runtime.setGlobal("inp_output_status_supported", valueNumber(static_cast<double>(INP_OUTPUT_STATUS_SUPPORTED)));
+	runtime.setGlobal("inp_output_ctrl_apply", valueNumber(static_cast<double>(INP_OUTPUT_CTRL_APPLY)));
+	runtime.setGlobal("inp_output_intensity_q16_one", valueNumber(static_cast<double>(INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE)));
 }
 
 } // namespace bmsx

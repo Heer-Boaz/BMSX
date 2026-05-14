@@ -245,6 +245,10 @@ const SYSTEM_ROM_INPUT_GLOBAL_NAMES = [
 	'sys_inp_event_value',
 	'sys_inp_event_repeat_count',
 	'sys_inp_event_ctrl',
+	'sys_inp_output_intensity_q16',
+	'sys_inp_output_duration_ms',
+	'sys_inp_output_status',
+	'sys_inp_output_ctrl',
 	'inp_ctrl_commit',
 	'inp_ctrl_arm',
 	'inp_ctrl_reset',
@@ -266,6 +270,9 @@ const SYSTEM_ROM_INPUT_GLOBAL_NAMES = [
 	'inp_event_ctrl_pop',
 	'inp_event_ctrl_clear',
 	'inp_event_fifo_capacity',
+	'inp_output_status_supported',
+	'inp_output_ctrl_apply',
+	'inp_output_intensity_q16_one',
 ] as const;
 
 const SYSTEM_ROM_APU_GLOBAL_NAMES = [

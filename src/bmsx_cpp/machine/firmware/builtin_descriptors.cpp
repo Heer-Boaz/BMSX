@@ -76,7 +76,7 @@ constexpr std::array<LuaBuiltinDescriptor, 4> kSystemLuaBuiltinGlobals{{
 	LuaBuiltinDescriptor{"sorted_scratchbatch", "sorted_scratchbatch", "Sorted scratch batch module table (sorted_scratchbatch.new; batches support clear, push, get, reserve, for_each, iter, set_compare, sort)."},
 }};
 
-constexpr std::array<LuaBuiltinDescriptor, 514> kDefaultLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 521> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"assert", "assert(value [, message])", ""},
 	LuaBuiltinDescriptor{"error", "error(message [, level])", ""},
 	LuaBuiltinDescriptor{"getmetatable", "getmetatable(object)", ""},
@@ -322,6 +322,10 @@ constexpr std::array<LuaBuiltinDescriptor, 514> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_inp_event_value", "sys_inp_event_value", "Input Controller front-event signed Q16.16 value register."},
 	LuaBuiltinDescriptor{"sys_inp_event_repeat_count", "sys_inp_event_repeat_count", "Input Controller front-event repeat count register."},
 	LuaBuiltinDescriptor{"sys_inp_event_ctrl", "sys_inp_event_ctrl", "Input Controller event FIFO control register; write inp_event_ctrl_pop or inp_event_ctrl_clear."},
+	LuaBuiltinDescriptor{"sys_inp_output_intensity_q16", "sys_inp_output_intensity_q16", "Input Controller output intensity register in unsigned Q16.16."},
+	LuaBuiltinDescriptor{"sys_inp_output_duration_ms", "sys_inp_output_duration_ms", "Input Controller output duration register in milliseconds."},
+	LuaBuiltinDescriptor{"sys_inp_output_status", "sys_inp_output_status", "Input Controller output status register."},
+	LuaBuiltinDescriptor{"sys_inp_output_ctrl", "sys_inp_output_ctrl", "Input Controller output control register; write inp_output_ctrl_apply to emit the output command."},
 	LuaBuiltinDescriptor{"sys_apu_source_addr", "sys_apu_source_addr", "APU audio source address register."},
 	LuaBuiltinDescriptor{"sys_apu_source_bytes", "sys_apu_source_bytes", "APU audio source byte length register."},
 	LuaBuiltinDescriptor{"sys_apu_source_sample_rate_hz", "sys_apu_source_sample_rate_hz", "APU audio source sample rate register."},
@@ -591,6 +595,9 @@ constexpr std::array<LuaBuiltinDescriptor, 514> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"inp_event_ctrl_pop", "inp_event_ctrl_pop", "Input Controller event FIFO command: pop the front event."},
 	LuaBuiltinDescriptor{"inp_event_ctrl_clear", "inp_event_ctrl_clear", "Input Controller event FIFO command: clear queued events and the overflow latch."},
 	LuaBuiltinDescriptor{"inp_event_fifo_capacity", "inp_event_fifo_capacity", "Input Controller event FIFO capacity in entries."},
+	LuaBuiltinDescriptor{"inp_output_status_supported", "inp_output_status_supported", "Input Controller output status bit: selected player has output hardware."},
+	LuaBuiltinDescriptor{"inp_output_ctrl_apply", "inp_output_ctrl_apply", "Input Controller output command: apply the selected player output effect."},
+	LuaBuiltinDescriptor{"inp_output_intensity_q16_one", "inp_output_intensity_q16_one", "Input Controller output intensity Q16.16 value for one."},
 }};
 
 constexpr std::array<LuaBuiltinDescriptor, 0> kDefaultLuaBuiltinGlobals{{

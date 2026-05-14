@@ -17,6 +17,10 @@ import {
 	IO_INP_EVENT_REPEAT_COUNT,
 	IO_INP_EVENT_STATUS,
 	IO_INP_EVENT_VALUE,
+	IO_INP_OUTPUT_CTRL,
+	IO_INP_OUTPUT_DURATION_MS,
+	IO_INP_OUTPUT_INTENSITY_Q16,
+	IO_INP_OUTPUT_STATUS,
 	IO_INP_PLAYER,
 	IO_INP_QUERY,
 	IO_INP_STATUS,
@@ -27,14 +31,18 @@ import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { Input, makeActionState } from '../../src/bmsx/input/manager';
 import { PlayerInput } from '../../src/bmsx/input/player';
 import type { ActionState, GamepadInputMapping, KeyboardInputMapping, PointerInputMapping } from '../../src/bmsx/input/models';
+import type { VibrationParams } from '../../src/bmsx/platform';
 import {
 	INP_EVENT_CTRL_POP,
 	INP_EVENT_STATUS_EMPTY,
+	INP_OUTPUT_CTRL_APPLY,
+	INP_OUTPUT_STATUS_SUPPORTED,
 	INP_STATUS_CONSUMED,
 	INP_STATUS_HAS_VALUE,
 	INP_STATUS_JUST_PRESSED,
 	INP_STATUS_PRESSED,
 	INP_STATUS_WAS_PRESSED,
+	INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE,
 } from '../../src/bmsx/machine/devices/input/contracts';
 
 type PushedContext = {
@@ -48,9 +56,12 @@ type FakePlayerInput = {
 	pushed: PushedContext[];
 	cleared: string[];
 	consumed: string[];
+	vibrations: VibrationParams[];
+	supportsVibrationEffect: boolean;
 	checkActionTriggered(action: string): boolean;
 	getActionState(action: string): ActionState;
 	consumeAction(action: string): void;
+	applyVibrationEffect(params: VibrationParams): void;
 	pushContext(id: string, keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping): void;
 	clearContext(id: string): void;
 };
@@ -60,6 +71,8 @@ function createFakePlayer(): FakePlayerInput {
 		pushed: [],
 		cleared: [],
 		consumed: [],
+		vibrations: [],
+		supportsVibrationEffect: true,
 		checkActionTriggered: action => action === 'jump[p]',
 		getActionState(action) {
 			return makeActionState(action, {
@@ -70,6 +83,9 @@ function createFakePlayer(): FakePlayerInput {
 		},
 		consumeAction(action) {
 			this.consumed.push(action);
+		},
+		applyVibrationEffect(params) {
+			this.vibrations.push(params);
 		},
 		pushContext(id, keyboard, gamepad, pointer) {
 			this.pushed.push({ id, keyboard, gamepad, pointer });
@@ -180,6 +196,28 @@ test('input controller persists register latches and committed action contexts',
 	assert.equal(restored.controller.captureState().sampleArmed, false);
 	assert.equal(restored.controller.captureState().sampleSequence, 2);
 	assert.equal(restored.controller.captureState().lastSampleCycle, 123);
+});
+
+test('input controller output registers emit selected player vibration commands', () => {
+	const live = createHarness();
+
+	live.memory.writeValue(IO_INP_PLAYER, 2);
+	live.memory.writeValue(IO_INP_OUTPUT_INTENSITY_Q16, INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE >>> 1);
+	live.memory.writeValue(IO_INP_OUTPUT_DURATION_MS, 120);
+
+	assert.equal(live.memory.readIoU32(IO_INP_OUTPUT_STATUS), INP_OUTPUT_STATUS_SUPPORTED);
+	live.memory.writeValue(IO_INP_OUTPUT_CTRL, INP_OUTPUT_CTRL_APPLY);
+	assert.deepEqual(live.players[1]!.vibrations, [{ effect: 'dual-rumble', duration: 120, intensity: 0.5 }]);
+	assert.equal(live.memory.readIoU32(IO_INP_OUTPUT_CTRL), 0);
+
+	const savedInput = live.controller.captureState();
+	const restored = createHarness();
+	restored.controller.restoreState(savedInput);
+	assert.equal(restored.memory.readIoU32(IO_INP_OUTPUT_INTENSITY_Q16), INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE >>> 1);
+	assert.equal(restored.memory.readIoU32(IO_INP_OUTPUT_DURATION_MS), 120);
+	restored.memory.writeValue(IO_INP_PLAYER, 2);
+	restored.memory.writeValue(IO_INP_OUTPUT_CTRL, INP_OUTPUT_CTRL_APPLY);
+	assert.deepEqual(restored.players[1]!.vibrations, [{ effect: 'dual-rumble', duration: 120, intensity: 0.5 }]);
 });
 
 test('input controller owns arm cancellation instead of exposing the latch', () => {

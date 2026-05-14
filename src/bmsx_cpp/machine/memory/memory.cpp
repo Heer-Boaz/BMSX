@@ -754,6 +754,16 @@ bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 		case IO_GEO_FAULT:
 		case IO_IMG_STATUS:
 		case IO_IMG_WRITTEN:
+		case IO_INP_STATUS:
+		case IO_INP_VALUE:
+		case IO_INP_EVENT_STATUS:
+		case IO_INP_EVENT_COUNT:
+		case IO_INP_EVENT_PLAYER:
+		case IO_INP_EVENT_ACTION:
+		case IO_INP_EVENT_FLAGS:
+		case IO_INP_EVENT_VALUE:
+		case IO_INP_EVENT_REPEAT_COUNT:
+		case IO_INP_OUTPUT_STATUS:
 		case IO_APU_STATUS:
 		case IO_APU_FAULT_CODE:
 		case IO_APU_FAULT_DETAIL:

@@ -40,6 +40,8 @@ struct InputControllerRegisterState {
 	u32 status = 0;
 	u32 value = 0;
 	StringId consumeStringId = 0;
+	u32 outputIntensityQ16 = 0;
+	u32 outputDurationMs = 0;
 };
 
 struct InputControllerState {
@@ -66,6 +68,8 @@ private:
 	static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
 	static Value onEventRegisterReadThunk(void* context, uint32_t addr);
 	static void onEventCtrlWriteThunk(void* context, uint32_t addr, Value value);
+	static Value onOutputRegisterReadThunk(void* context, uint32_t addr);
+	static void onOutputCtrlWriteThunk(void* context, uint32_t addr, Value value);
 
 	struct PlayerChipState {
 		KeyboardInputMapping keyboard;
@@ -92,6 +96,8 @@ private:
 	void onCtrlWrite(u32 command);
 	Value onEventRegisterRead(uint32_t addr) const;
 	void onEventCtrlWrite(u32 command);
+	Value onOutputRegisterRead(uint32_t addr) const;
+	void onOutputCtrlWrite(u32 command);
 	void queryAction();
 	void consumeActions();
 	void commitAction();
@@ -108,6 +114,8 @@ private:
 	void clearEventFifo();
 	std::vector<InputControllerEventState> captureEventFifoEvents() const;
 	void restoreEventFifo(const std::vector<InputControllerEventState>& events);
+	u32 readOutputStatus() const;
+	void applyOutputEffect();
 	ActionState createSnapshotActionState(const PlayerChipState& state, const std::string& actionName) const;
 	const InputControllerActionState& selectQuerySnapshotAction(const PlayerChipState& state, const std::string& queryText) const;
 	const InputControllerActionState& findSnapshotAction(const PlayerChipState& state, const std::string& actionName) const;

@@ -36,6 +36,7 @@
 #include "machine/scheduler/budget.h"
 #include "machine/common/hash.h"
 #include "audio/soundmaster.h"
+#include "input/gamepad.h"
 #include "input/manager.h"
 #include "input/player.h"
 #include "platform/platform.h"
@@ -250,6 +251,24 @@ void testMemoryGolden() {
 		"mapped I/O u32le write to read-only register should latch a bus fault"
 	);
 	clearBusFault(memory);
+	const std::array<uint32_t, 5> readOnlyIcuRegisters{
+		bmsx::IO_INP_STATUS,
+		bmsx::IO_INP_VALUE,
+		bmsx::IO_INP_EVENT_STATUS,
+		bmsx::IO_INP_EVENT_COUNT,
+		bmsx::IO_INP_OUTPUT_STATUS,
+	};
+	for (const uint32_t readOnlyIcuRegister : readOnlyIcuRegisters) {
+		memory.writeMappedU32LE(readOnlyIcuRegister, 0u);
+		requireBusFault(
+			memory,
+			bmsx::BUS_FAULT_READ_ONLY,
+			readOnlyIcuRegister,
+			bmsx::BUS_FAULT_ACCESS_WRITE | bmsx::BUS_FAULT_ACCESS_U32,
+			"mapped I/O u32le write to read-only ICU register should latch a bus fault"
+		);
+		clearBusFault(memory);
+	}
 
 	RecordingVramWriter vram;
 	memory.setVramWriter(&vram);
@@ -686,6 +705,8 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	state.machineState.machine.input.registers.status = 1u;
 	state.machineState.machine.input.registers.value = 0u;
 	state.machineState.machine.input.registers.consumeStringId = 7u;
+	state.machineState.machine.input.registers.outputIntensityQ16 = 0x8000u;
+	state.machineState.machine.input.registers.outputDurationMs = 120u;
 	state.machineState.machine.input.players[1u].actions.push_back(bmsx::InputControllerActionState{ 4u, 5u, 0x809u, 0x8000u, 12.5, 2u });
 	state.machineState.machine.input.eventFifoEvents.push_back(bmsx::InputControllerEventState{ 2u, 4u, 0x80au, 0x8000u, 2u });
 	state.machineState.machine.input.eventFifoOverflow = true;
@@ -1269,6 +1290,39 @@ void testInputControllerStateGolden() {
 	require(restored.inputController.captureState().sampleArmed, "ICU ARM command should set the private sample latch");
 	restored.inputController.cancelArmedSample();
 	require(!restored.inputController.captureState().sampleArmed, "ICU runtime cancellation should clear the private sample latch");
+}
+
+void testInputControllerOutputRegisters() {
+	InputHarness live;
+	bmsx::GamepadInput gamepad("gamepad:1", "test rumble");
+	bmsx::f32 lastIntensity = 0.0f;
+	bmsx::f64 lastDuration = 0.0;
+	bmsx::u32 calls = 0u;
+	gamepad.setVibrationSupported(true);
+	gamepad.setVibrationCallback([&lastIntensity, &lastDuration, &calls](bmsx::f32 intensity, bmsx::f64 duration) {
+		lastIntensity = intensity;
+		lastDuration = duration;
+		calls += 1u;
+	});
+	auto* playerTwo = bmsx::Input::instance().getPlayerInput(2);
+	playerTwo->assignGamepadToPlayer(&gamepad);
+
+	writeIoWord(live.memory, bmsx::IO_INP_PLAYER, 2u);
+	writeIoWord(live.memory, bmsx::IO_INP_OUTPUT_INTENSITY_Q16, bmsx::INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE >> 1u);
+	writeIoWord(live.memory, bmsx::IO_INP_OUTPUT_DURATION_MS, 120u);
+	require((live.memory.readIoU32(bmsx::IO_INP_OUTPUT_STATUS) & bmsx::INP_OUTPUT_STATUS_SUPPORTED) != 0u, "ICU output status should expose selected-player output support");
+	writeIoWord(live.memory, bmsx::IO_INP_OUTPUT_CTRL, bmsx::INP_OUTPUT_CTRL_APPLY);
+	require(calls == 1u, "ICU output command should emit one selected-player output effect");
+	require(lastIntensity == 0.5f, "ICU output command should decode unsigned Q16.16 intensity");
+	require(lastDuration == 120.0, "ICU output command should pass duration in milliseconds");
+	require(live.memory.readIoU32(bmsx::IO_INP_OUTPUT_CTRL) == 0u, "ICU output control doorbell should self-clear");
+
+	const bmsx::InputControllerState savedInput = live.inputController.captureState();
+	InputHarness restored;
+	restored.inputController.restoreState(savedInput);
+	require(restored.memory.readIoU32(bmsx::IO_INP_OUTPUT_INTENSITY_Q16) == (bmsx::INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE >> 1u), "ICU restore should mirror output intensity register");
+	require(restored.memory.readIoU32(bmsx::IO_INP_OUTPUT_DURATION_MS) == 120u, "ICU restore should mirror output duration register");
+	playerTwo->clearGamepad(&gamepad);
 }
 
 void testInputControllerRealPlayerContext() {
@@ -2080,6 +2134,9 @@ void testFirmwareDescriptorGolden() {
 	require(bmsx::findDefaultLuaBuiltinDescriptor("inp_event_status_empty") != nullptr, "ICU event FIFO empty status descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("inp_event_ctrl_pop") != nullptr, "ICU event FIFO pop command descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("inp_event_fifo_capacity") != nullptr, "ICU event FIFO capacity descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_inp_output_status") != nullptr, "ICU output status register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_inp_output_ctrl") != nullptr, "ICU output control register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("inp_output_ctrl_apply") != nullptr, "ICU output apply command descriptor should be exposed");
 }
 
 void testSystemGlobalsGeometryContractGolden() {
@@ -2133,6 +2190,10 @@ void testSystemGlobalsGeometryContractGolden() {
 	require(globalNumber("inp_event_status_empty") == static_cast<double>(bmsx::INP_EVENT_STATUS_EMPTY), "C++ system globals should expose the ICU event FIFO empty status bit");
 	require(globalNumber("inp_event_ctrl_pop") == static_cast<double>(bmsx::INP_EVENT_CTRL_POP), "C++ system globals should expose the ICU event FIFO pop command");
 	require(globalNumber("inp_event_fifo_capacity") == static_cast<double>(bmsx::INPUT_CONTROLLER_EVENT_FIFO_CAPACITY), "C++ system globals should expose the ICU event FIFO capacity");
+	require(globalNumber("sys_inp_output_status") == static_cast<double>(bmsx::IO_INP_OUTPUT_STATUS), "C++ system globals should expose the ICU output status register");
+	require(globalNumber("sys_inp_output_ctrl") == static_cast<double>(bmsx::IO_INP_OUTPUT_CTRL), "C++ system globals should expose the ICU output control register");
+	require(globalNumber("inp_output_status_supported") == static_cast<double>(bmsx::INP_OUTPUT_STATUS_SUPPORTED), "C++ system globals should expose the ICU output supported bit");
+	require(globalNumber("inp_output_ctrl_apply") == static_cast<double>(bmsx::INP_OUTPUT_CTRL_APPLY), "C++ system globals should expose the ICU output apply command");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_instance_bytes") != nullptr, "C++ builtin descriptors should expose GEO overlap table layout ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_result_pair_meta_offset") != nullptr, "C++ builtin descriptors should expose GEO overlap result layout ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_pair_meta_instance_a_shift") != nullptr, "C++ builtin descriptors should expose GEO overlap pair-meta ABI");
@@ -2181,7 +2242,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 40> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 41> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -2213,6 +2274,7 @@ int main() {
 		{"APU parameter register state", testApuParameterRegisterStateGolden},
 		{"APU selected-slot active state", testApuSelectedSlotActiveStateGolden},
 		{"ICU register and action state", testInputControllerStateGolden},
+		{"ICU output registers", testInputControllerOutputRegisters},
 		{"ICU real PlayerInput context", testInputControllerRealPlayerContext},
 		{"runtime vblank edge completes active tick", testRuntimeVblankEdgeCompletesActiveTickGolden},
 		{"memory access and opcode", testAccessKindAndOpcodeGolden},

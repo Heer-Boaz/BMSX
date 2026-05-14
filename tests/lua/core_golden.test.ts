@@ -31,6 +31,11 @@ import {
 	IO_IMG_LEN,
 	IO_IMG_SRC,
 	IO_IMG_STATUS,
+	IO_INP_EVENT_COUNT,
+	IO_INP_EVENT_STATUS,
+	IO_INP_OUTPUT_STATUS,
+	IO_INP_STATUS,
+	IO_INP_VALUE,
 	IO_IRQ_FLAGS,
 	IO_SYS_BUS_FAULT_ACCESS,
 	IO_SYS_BUS_FAULT_ACK,
@@ -125,6 +130,11 @@ test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () =
 	memory.writeMappedU32LE(IO_DMA_STATUS, 0);
 	assertBusFault(memory, BUS_FAULT_READ_ONLY, IO_DMA_STATUS, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 	clearBusFault(memory);
+	for (const readOnlyIcuRegister of [IO_INP_STATUS, IO_INP_VALUE, IO_INP_EVENT_STATUS, IO_INP_EVENT_COUNT, IO_INP_OUTPUT_STATUS]) {
+		memory.writeMappedU32LE(readOnlyIcuRegister, 0);
+		assertBusFault(memory, BUS_FAULT_READ_ONLY, readOnlyIcuRegister, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
+		clearBusFault(memory);
+	}
 });
 
 test('core golden: mapped memory hot paths keep boundary faults and contained VRAM transfers explicit', () => {

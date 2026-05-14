@@ -213,6 +213,8 @@ import {
 	INP_EVENT_STATUS_EMPTY,
 	INP_EVENT_STATUS_FULL,
 	INP_EVENT_STATUS_OVERFLOW,
+	INP_OUTPUT_CTRL_APPLY,
+	INP_OUTPUT_STATUS_SUPPORTED,
 	INP_STATUS_ALL_JUST_PRESSED,
 	INP_STATUS_ALL_JUST_RELEASED,
 	INP_STATUS_ALL_WAS_PRESSED,
@@ -226,6 +228,7 @@ import {
 	INP_STATUS_WAS_PRESSED,
 	INP_STATUS_WAS_RELEASED,
 	INPUT_CONTROLLER_EVENT_FIFO_CAPACITY,
+	INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE,
 } from '../devices/input/contracts';
 import {
 	BUS_FAULT_ACCESS_F32,
@@ -344,6 +347,10 @@ import {
 	IO_INP_EVENT_REPEAT_COUNT,
 	IO_INP_EVENT_STATUS,
 	IO_INP_EVENT_VALUE,
+	IO_INP_OUTPUT_CTRL,
+	IO_INP_OUTPUT_DURATION_MS,
+	IO_INP_OUTPUT_INTENSITY_Q16,
+	IO_INP_OUTPUT_STATUS,
 	IO_INP_PLAYER,
 	IO_INP_QUERY,
 	IO_INP_STATUS,
@@ -1527,6 +1534,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_inp_event_value', IO_INP_EVENT_VALUE);
 	luaPipeline.registerGlobal(runtime, 'sys_inp_event_repeat_count', IO_INP_EVENT_REPEAT_COUNT);
 	luaPipeline.registerGlobal(runtime, 'sys_inp_event_ctrl', IO_INP_EVENT_CTRL);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_output_intensity_q16', IO_INP_OUTPUT_INTENSITY_Q16);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_output_duration_ms', IO_INP_OUTPUT_DURATION_MS);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_output_status', IO_INP_OUTPUT_STATUS);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_output_ctrl', IO_INP_OUTPUT_CTRL);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_source_addr', IO_APU_SOURCE_ADDR);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_source_bytes', IO_APU_SOURCE_BYTES);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_source_sample_rate_hz', IO_APU_SOURCE_SAMPLE_RATE_HZ);
@@ -1632,6 +1643,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'inp_event_ctrl_pop', INP_EVENT_CTRL_POP);
 	luaPipeline.registerGlobal(runtime, 'inp_event_ctrl_clear', INP_EVENT_CTRL_CLEAR);
 	luaPipeline.registerGlobal(runtime, 'inp_event_fifo_capacity', INPUT_CONTROLLER_EVENT_FIFO_CAPACITY);
+	luaPipeline.registerGlobal(runtime, 'inp_output_status_supported', INP_OUTPUT_STATUS_SUPPORTED);
+	luaPipeline.registerGlobal(runtime, 'inp_output_ctrl_apply', INP_OUTPUT_CTRL_APPLY);
+	luaPipeline.registerGlobal(runtime, 'inp_output_intensity_q16_one', INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_system_base', SYSTEM_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);

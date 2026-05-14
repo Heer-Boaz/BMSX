@@ -2,8 +2,8 @@
 
 This is the CPU-visible contract for the Input Controller Unit (ICU). The ICU
 is a machine device with a registerfile, command latch, VBlank sample latch,
-per-player committed action table, sampled action status/value words, and a
-device-owned event FIFO.
+per-player committed action table, sampled action status/value words, a
+device-owned event FIFO, and an output command datapath.
 
 ## Register map
 
@@ -25,6 +25,10 @@ device-owned event FIFO.
 | `sys_inp_event_value` | R | s16.16 word | Front event value word. |
 | `sys_inp_event_repeat_count` | R | u32 | Front event repeat count. |
 | `sys_inp_event_ctrl` | W | u32 | Event FIFO command latch. |
+| `sys_inp_output_intensity_q16` | W | u16.16 word | Output intensity latch for the selected player. |
+| `sys_inp_output_duration_ms` | W | u32 | Output duration latch in milliseconds. |
+| `sys_inp_output_status` | R | u32 | Selected-player output status bits. |
+| `sys_inp_output_ctrl` | W | u32 | Output command latch. |
 
 String-ref registers are enforced by the compiler/MMIO contract. The ICU reads
 the string id representation directly.
@@ -38,6 +42,7 @@ the string id representation directly.
 | `inp_ctrl_reset` | 3 | Clears the selected player's ICU mapping context and committed action records. |
 | `inp_event_ctrl_pop` | 1 | Pops the front event FIFO entry. |
 | `inp_event_ctrl_clear` | 2 | Clears queued events and the overflow latch. |
+| `inp_output_ctrl_apply` | 1 | Applies the latched output intensity/duration to the selected player. |
 
 `inp_ctrl_arm` does not sample immediately. The next VBlank edge consumes the
 latch.
@@ -107,6 +112,23 @@ When the FIFO is empty, front-event registers read zero words and string id 0.
 Overflow does not overwrite queued entries; it sets the overflow latch. The clear
 command resets both the queue and the overflow latch.
 
+## Output datapath
+
+The output register bank is selected by `sys_inp_player`.
+`sys_inp_output_status` exposes:
+
+| Bit | Constant | Meaning |
+|---:|---|---|
+| 0 | `inp_output_status_supported` | Selected player has output-capable input hardware. |
+
+The cart writes an unsigned Q16.16 intensity word to
+`sys_inp_output_intensity_q16`, writes a duration in milliseconds to
+`sys_inp_output_duration_ms`, then writes `inp_output_ctrl_apply` to
+`sys_inp_output_ctrl`. The control latch self-clears. The ICU decodes the
+intensity word at this output boundary and emits one selected-player output
+command. Weird but representable intensity and duration words are not sanitized
+by the ICU.
+
 ## Save state
 
 Saved ICU state:
@@ -118,10 +140,12 @@ Saved ICU state:
 - per-player committed action/bind string ids;
 - sampled `statusWord`, `valueQ16`, `pressTime`, and `repeatCount` per action.
 - queued event FIFO entries;
-- event FIFO overflow latch.
+- event FIFO overflow latch;
+- output intensity and duration latch words.
 
 Restore rebuilds the ICU mapping contexts from committed action records and
-preserves the sampled action words and queued FIFO entries.
+preserves the sampled action words, queued FIFO entries, and output latch words.
+Selected-player output support is a host capability bit and is not saved.
 
 ## Owners
 

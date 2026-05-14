@@ -116,6 +116,8 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						status: 1,
 						value: 0,
 						consumeStringId: 0,
+						outputIntensityQ16: 0x8000,
+						outputDurationMs: 120,
 					},
 					players: [
 						{ actions: [] },

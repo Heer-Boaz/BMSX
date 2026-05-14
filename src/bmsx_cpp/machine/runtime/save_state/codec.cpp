@@ -339,6 +339,8 @@ BinValue encodeInputControllerState(const InputControllerState& state) {
 	registers["status"] = static_cast<i64>(state.registers.status);
 	registers["value"] = static_cast<i64>(state.registers.value);
 	registers["consumeStringId"] = static_cast<i64>(state.registers.consumeStringId);
+	registers["outputIntensityQ16"] = static_cast<i64>(state.registers.outputIntensityQ16);
+	registers["outputDurationMs"] = static_cast<i64>(state.registers.outputDurationMs);
 	object["registers"] = BinValue(std::move(registers));
 	object["players"] = encodeFixedArray(state.players, [](const InputControllerPlayerState& player) {
 		BinObject playerObject;
@@ -382,6 +384,8 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 	state.registers.status = requireU32(requireField(registers, "status", "machine.input.registers"), "machine.input.registers.status");
 	state.registers.value = requireU32(requireField(registers, "value", "machine.input.registers"), "machine.input.registers.value");
 	state.registers.consumeStringId = requireU32(requireField(registers, "consumeStringId", "machine.input.registers"), "machine.input.registers.consumeStringId");
+	state.registers.outputIntensityQ16 = requireU32(requireField(registers, "outputIntensityQ16", "machine.input.registers"), "machine.input.registers.outputIntensityQ16");
+	state.registers.outputDurationMs = requireU32(requireField(registers, "outputDurationMs", "machine.input.registers"), "machine.input.registers.outputDurationMs");
 	const BinArray& players = requireArray(requireField(object, "players", label), "machine.input.players");
 	if (players.size() != state.players.size()) {
 		throw BMSX_RUNTIME_ERROR("machine.input.players must contain " + std::to_string(state.players.size()) + " player entries.");

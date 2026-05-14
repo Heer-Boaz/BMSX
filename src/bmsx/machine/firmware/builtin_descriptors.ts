@@ -319,6 +319,10 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'sys_inp_event_value', params: [], signature: 'sys_inp_event_value', description: 'Input Controller front-event signed Q16.16 value register.' },
 	{ name: 'sys_inp_event_repeat_count', params: [], signature: 'sys_inp_event_repeat_count', description: 'Input Controller front-event repeat count register.' },
 	{ name: 'sys_inp_event_ctrl', params: [], signature: 'sys_inp_event_ctrl', description: 'Input Controller event FIFO control register; write inp_event_ctrl_pop or inp_event_ctrl_clear.' },
+	{ name: 'sys_inp_output_intensity_q16', params: [], signature: 'sys_inp_output_intensity_q16', description: 'Input Controller output intensity register in unsigned Q16.16.' },
+	{ name: 'sys_inp_output_duration_ms', params: [], signature: 'sys_inp_output_duration_ms', description: 'Input Controller output duration register in milliseconds.' },
+	{ name: 'sys_inp_output_status', params: [], signature: 'sys_inp_output_status', description: 'Input Controller output status register.' },
+	{ name: 'sys_inp_output_ctrl', params: [], signature: 'sys_inp_output_ctrl', description: 'Input Controller output control register; write inp_output_ctrl_apply to emit the output command.' },
 	{ name: 'sys_apu_source_addr', params: [], signature: 'sys_apu_source_addr', description: 'APU audio source address register.' },
 	{ name: 'sys_apu_source_bytes', params: [], signature: 'sys_apu_source_bytes', description: 'APU audio source byte length register.' },
 	{ name: 'sys_apu_source_sample_rate_hz', params: [], signature: 'sys_apu_source_sample_rate_hz', description: 'APU audio source sample rate register.' },
@@ -588,6 +592,9 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'inp_event_ctrl_pop', params: [], signature: 'inp_event_ctrl_pop', description: 'Input Controller event FIFO command: pop the front event.' },
 	{ name: 'inp_event_ctrl_clear', params: [], signature: 'inp_event_ctrl_clear', description: 'Input Controller event FIFO command: clear queued events and the overflow latch.' },
 	{ name: 'inp_event_fifo_capacity', params: [], signature: 'inp_event_fifo_capacity', description: 'Input Controller event FIFO capacity in entries.' },
+	{ name: 'inp_output_status_supported', params: [], signature: 'inp_output_status_supported', description: 'Input Controller output status bit: selected player has output hardware.' },
+	{ name: 'inp_output_ctrl_apply', params: [], signature: 'inp_output_ctrl_apply', description: 'Input Controller output command: apply the selected player output effect.' },
+	{ name: 'inp_output_intensity_q16_one', params: [], signature: 'inp_output_intensity_q16_one', description: 'Input Controller output intensity Q16.16 value for one.' },
 ];
 
 const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = [
