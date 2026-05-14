@@ -37,21 +37,6 @@ ApuSourceDmaResult ApuSourceDma::validateSource(const Memory& memory, const ApuA
 	if (!memory.isReadableMainMemoryRange(source.sourceAddr, source.sourceBytes)) {
 		return {APU_FAULT_SOURCE_RANGE, source.sourceAddr};
 	}
-	if (source.sampleRateHz == 0u) {
-		return {APU_FAULT_SOURCE_SAMPLE_RATE, source.sampleRateHz};
-	}
-	if (source.channels < 1u || source.channels > 2u) {
-		return {APU_FAULT_SOURCE_CHANNELS, source.channels};
-	}
-	if (source.frameCount == 0u) {
-		return {APU_FAULT_SOURCE_FRAME_COUNT, source.frameCount};
-	}
-	if (source.dataBytes == 0u || source.dataOffset > source.sourceBytes || source.dataBytes > source.sourceBytes - source.dataOffset) {
-		return {APU_FAULT_SOURCE_DATA_RANGE, source.dataOffset};
-	}
-	if (source.bitsPerSample != 4u && source.bitsPerSample != 8u && source.bitsPerSample != 16u) {
-		return {APU_FAULT_SOURCE_BIT_DEPTH, source.bitsPerSample};
-	}
 	return APU_SOURCE_DMA_OK;
 }
 

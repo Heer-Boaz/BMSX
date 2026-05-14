@@ -58,6 +58,25 @@ static ApuOutputStartResult validatePcmSourceData(const ApuAudioSource& source) 
 	return APU_OUTPUT_START_OK;
 }
 
+static ApuOutputStartResult validateAoutSourceMetadata(const ApuAudioSource& source) {
+	if (source.sampleRateHz == 0u) {
+		return {APU_FAULT_SOURCE_SAMPLE_RATE, source.sampleRateHz};
+	}
+	if (source.channels < 1u || source.channels > 2u) {
+		return {APU_FAULT_SOURCE_CHANNELS, source.channels};
+	}
+	if (source.frameCount == 0u) {
+		return {APU_FAULT_SOURCE_FRAME_COUNT, source.frameCount};
+	}
+	if (source.dataBytes == 0u || source.dataOffset > source.sourceBytes || source.dataBytes > source.sourceBytes - source.dataOffset) {
+		return {APU_FAULT_SOURCE_DATA_RANGE, source.dataOffset};
+	}
+	if (source.bitsPerSample == 4u || source.bitsPerSample == 8u || source.bitsPerSample == 16u) {
+		return APU_OUTPUT_START_OK;
+	}
+	return {APU_FAULT_SOURCE_BIT_DEPTH, source.bitsPerSample};
+}
+
 static ApuOutputStartResult validateBadpBlocks(const u8* data, const ApuAudioSource& source, const std::vector<u32>& seekFrames, const std::vector<u32>& seekOffsets) {
 	size_t offset = 0;
 	u32 decodedFrames = 0;
@@ -277,6 +296,10 @@ ApuOutputStartResult ApuOutputMixer::playVoice(ApuAudioSlot slot, ApuVoiceId voi
 	const ApuOutputPlayback playback = resolveApuOutputPlayback(registerWords);
 	if (playback.playbackRate <= 0.0f) {
 		return {APU_FAULT_OUTPUT_PLAYBACK_RATE, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]};
+	}
+	const ApuOutputStartResult metadataResult = validateAoutSourceMetadata(source);
+	if (metadataResult.faultCode != APU_FAULT_NONE) {
+		return metadataResult;
 	}
 	const f32 initialGain = clampVolume(playback.gainLinear);
 	std::vector<u32> badpSeekFrames;

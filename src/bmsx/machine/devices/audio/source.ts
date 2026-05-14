@@ -1,13 +1,8 @@
 import { Memory } from '../../memory/memory';
 import {
 	APU_FAULT_NONE,
-	APU_FAULT_SOURCE_BIT_DEPTH,
 	APU_FAULT_SOURCE_BYTES,
-	APU_FAULT_SOURCE_CHANNELS,
-	APU_FAULT_SOURCE_DATA_RANGE,
-	APU_FAULT_SOURCE_FRAME_COUNT,
 	APU_FAULT_SOURCE_RANGE,
-	APU_FAULT_SOURCE_SAMPLE_RATE,
 	APU_SLOT_COUNT,
 	type ApuAudioSlot,
 	type ApuAudioSource,
@@ -71,24 +66,6 @@ export class ApuSourceDma {
 		if (!this.memory.isReadableMainMemoryRange(source.sourceAddr, source.sourceBytes)) {
 			return { faultCode: APU_FAULT_SOURCE_RANGE, faultDetail: source.sourceAddr };
 		}
-		if (source.sampleRateHz === 0) {
-			return { faultCode: APU_FAULT_SOURCE_SAMPLE_RATE, faultDetail: source.sampleRateHz };
-		}
-		if (source.channels < 1 || source.channels > 2) {
-			return { faultCode: APU_FAULT_SOURCE_CHANNELS, faultDetail: source.channels };
-		}
-		if (source.frameCount === 0) {
-			return { faultCode: APU_FAULT_SOURCE_FRAME_COUNT, faultDetail: source.frameCount };
-		}
-		if (source.dataBytes === 0 || source.dataOffset > source.sourceBytes || source.dataBytes > source.sourceBytes - source.dataOffset) {
-			return { faultCode: APU_FAULT_SOURCE_DATA_RANGE, faultDetail: source.dataOffset };
-		}
-		switch (source.bitsPerSample) {
-			case 4:
-			case 8:
-			case 16:
-				return APU_SOURCE_DMA_OK;
-		}
-		return { faultCode: APU_FAULT_SOURCE_BIT_DEPTH, faultDetail: source.bitsPerSample };
+		return APU_SOURCE_DMA_OK;
 	}
 }

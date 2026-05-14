@@ -421,12 +421,12 @@ test('APU register validation reports device faults instead of throwing', () => 
 	assert.doesNotThrow(() => writeApuCommand(memory, audio, APU_CMD_PLAY));
 	assertApuFaultLatch(memory, APU_FAULT_SOURCE_RANGE);
 
-	memory.writeValue(IO_APU_FAULT_ACK, 1);
-	writeValidSourceRegisters(memory);
-	memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 0xfffffff0);
-	memory.writeValue(IO_APU_SOURCE_DATA_BYTES, 0x20);
-	assert.doesNotThrow(() => writeApuCommand(memory, audio, APU_CMD_PLAY));
-	assertApuFaultLatch(memory, APU_FAULT_SOURCE_DATA_RANGE);
+	const aoutMetadataHarness = createRealAudioHarness();
+	writeValidSourceRegisters(aoutMetadataHarness.memory);
+	aoutMetadataHarness.memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 0xfffffff0);
+	aoutMetadataHarness.memory.writeValue(IO_APU_SOURCE_DATA_BYTES, 0x20);
+	assert.doesNotThrow(() => writeApuCommand(aoutMetadataHarness.memory, aoutMetadataHarness.audio, APU_CMD_PLAY));
+	assertApuFaultLatch(aoutMetadataHarness.memory, APU_FAULT_SOURCE_DATA_RANGE);
 });
 
 test('APU output decode faults latch through the device status register', () => {

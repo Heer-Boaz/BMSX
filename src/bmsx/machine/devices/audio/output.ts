@@ -16,6 +16,11 @@ import {
 	APU_FAULT_OUTPUT_DATA_RANGE,
 	APU_FAULT_OUTPUT_METADATA,
 	APU_FAULT_OUTPUT_PLAYBACK_RATE,
+	APU_FAULT_SOURCE_BIT_DEPTH,
+	APU_FAULT_SOURCE_CHANNELS,
+	APU_FAULT_SOURCE_DATA_RANGE,
+	APU_FAULT_SOURCE_FRAME_COUNT,
+	APU_FAULT_SOURCE_SAMPLE_RATE,
 	APU_FAULT_UNSUPPORTED_FORMAT,
 	APU_GAIN_Q12_ONE,
 	APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
@@ -239,6 +244,10 @@ export class ApuOutputMixer {
 		const playback = resolveApuOutputPlayback(registerWords);
 		if (playback.playbackRate <= 0) {
 			return { faultCode: APU_FAULT_OUTPUT_PLAYBACK_RATE, faultDetail: registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]! };
+		}
+		const metadataResult = this.validateAoutSourceMetadata(source);
+		if (metadataResult.faultCode !== APU_FAULT_NONE) {
+			return metadataResult;
 		}
 		let seekTable = EMPTY_BADP_SEEK_TABLE;
 		if (source.bitsPerSample === 4) {
@@ -697,6 +706,28 @@ export class ApuOutputMixer {
 			return { faultCode: APU_FAULT_OUTPUT_DATA_RANGE, faultDetail: source.dataBytes };
 		}
 		return APU_OUTPUT_START_OK;
+	}
+
+	private validateAoutSourceMetadata(source: ApuAudioSource): ApuOutputStartResult {
+		if (source.sampleRateHz === 0) {
+			return { faultCode: APU_FAULT_SOURCE_SAMPLE_RATE, faultDetail: source.sampleRateHz };
+		}
+		if (source.channels < 1 || source.channels > 2) {
+			return { faultCode: APU_FAULT_SOURCE_CHANNELS, faultDetail: source.channels };
+		}
+		if (source.frameCount === 0) {
+			return { faultCode: APU_FAULT_SOURCE_FRAME_COUNT, faultDetail: source.frameCount };
+		}
+		if (source.dataBytes === 0 || source.dataOffset > source.sourceBytes || source.dataBytes > source.sourceBytes - source.dataOffset) {
+			return { faultCode: APU_FAULT_SOURCE_DATA_RANGE, faultDetail: source.dataOffset };
+		}
+		switch (source.bitsPerSample) {
+			case 4:
+			case 8:
+			case 16:
+				return APU_OUTPUT_START_OK;
+		}
+		return { faultCode: APU_FAULT_SOURCE_BIT_DEPTH, faultDetail: source.bitsPerSample };
 	}
 
 	private readBadpSeekTable(bytes: Uint8Array, source: ApuAudioSource): ApuOutputBadpSeekTableResult {

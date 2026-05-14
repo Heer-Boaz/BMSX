@@ -843,12 +843,15 @@ Already advanced in this goal:
   update the raw per-slot channel register bank, persist in APU save-state, and
   push live playback state such as gain, rate, loop bounds, start cursor, and
   filter words into AOUT at the AOUT datapath boundary. Source-buffer register
-  writes (`source addr`, byte count, format, frame/data window) now enter the
+  writes (`source addr`, byte count, format, frame/data window) now split at the
+  hardware boundary: `source addr` and byte count enter the
   mirrored APU source-DMA owner in `machine/devices/audio/source`: the device
-  reloads the selected slot source bytes from machine memory, restarts the AOUT
-  voice from the device cursor, and keeps the reloaded bytes in save-state
-  instead of routing active source changes through host sound objects or
-  rejecting them as an AOUT limitation. The mirrored
+  reloads the selected slot source bytes from machine memory and keeps the
+  reloaded bytes in save-state, while AOUT owns format, frame/data-window, BADP,
+  and PCM metadata validation before it restarts the voice from the device
+  cursor. This keeps DMA from knowing codec rules and avoids routing active
+  source changes through host sound objects or rejecting them as an AOUT
+  limitation. The mirrored
   `machine/devices/audio/output` owner now contains raw parameter-register playback decode,
   voice-id shapes, BADP/PCM decode state, loop/rate/gain/filter/fade mixer
   state, and the raw PCM render path in both TS and C++. BADP/PCM little-endian
