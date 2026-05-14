@@ -26,7 +26,7 @@ import {
 	type LuaStatement,
 	type LuaBooleanLiteralExpression,
 	type LuaStringLiteralExpression,
-	type LuaStringRefLiteralExpression,
+	type LuaStringRefExpression,
 	type LuaReturnStatement,
 	type LuaUnaryExpression,
 	type LuaSourceRange,
@@ -56,7 +56,7 @@ import {
 } from './target_semantics';
 import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_kind';
 import { luaModulo } from '../../lua/numeric';
-import { LUA_INTRINSIC_MEMWRITE, LUA_INTRINSIC_STRING_REF, isReservedIntrinsicName } from '../../lua/semantic/common';
+import { LUA_INTRINSIC_MEMWRITE, isReservedIntrinsicName } from '../../lua/semantic/common';
 
 export type CompiledProgram = {
 	program: Program;
@@ -84,8 +84,6 @@ function reservedIntrinsicUsage(name: string): string {
 	switch (name) {
 		case LUA_INTRINSIC_MEMWRITE:
 			return `${name}(base, ...)`;
-		case LUA_INTRINSIC_STRING_REF:
-			return `${name}(value)`;
 		default:
 			return `${name}(...)`;
 	}
@@ -1581,8 +1579,10 @@ class FunctionBuilder {
 				return (expression as LuaNumericLiteralExpression).value;
 			case LuaSyntaxKind.StringLiteralExpression:
 				return this.program.internString((expression as LuaStringLiteralExpression).value);
-			case LuaSyntaxKind.StringRefLiteralExpression:
-				return this.program.internString((expression as LuaStringRefLiteralExpression).value);
+			case LuaSyntaxKind.StringRefExpression: {
+				const value = this.evaluateCompileTimeExpression((expression as LuaStringRefExpression).operand);
+				return value !== undefined && valueIsString(value) ? value : undefined;
+			}
 			case LuaSyntaxKind.BooleanLiteralExpression:
 				return (expression as LuaBooleanLiteralExpression).value;
 			case LuaSyntaxKind.NilLiteralExpression:
@@ -2483,8 +2483,8 @@ class FunctionBuilder {
 				case LuaSyntaxKind.StringLiteralExpression:
 					this.emitLoadConst(target, this.program.internString(expression.value));
 					return;
-				case LuaSyntaxKind.StringRefLiteralExpression:
-					this.emitLoadConst(target, this.program.internString(expression.value));
+				case LuaSyntaxKind.StringRefExpression:
+					this.compileStringIdExpression(expression as LuaStringRefExpression, target, resultCount);
 					return;
 				case LuaSyntaxKind.BooleanLiteralExpression:
 					this.emitLoadBool(target, expression.value);
@@ -2745,11 +2745,11 @@ class FunctionBuilder {
 		const requirement = this.resolveMemoryStoreRequirement(addressExpression);
 		if (requirement === 'any') return;
 		const valueKind = this.flowAnalysis!.evaluateExpressionValueKind(valueExpression, this.currentFlowState);
-		if (valueKind === 'string_ref') return;
+		if (valueKind === 'string_id') return;
 		const registerName = this.resolveMemoryStoreRegisterName(addressExpression);
 		const target = registerName ? `Register '${registerName}'` : 'This memory-mapped register';
 		throw new LuaSyntaxError(
-			`${target} requires a string_ref value (&'...'). The expression at this point is not proven to be string_ref (got: ${valueKind}).`,
+			`${target} requires an interned string-id value (&expr). The expression at this point is not proven to be an interned string id (got: ${valueKind}).`,
 			valueExpression.range.path,
 			valueExpression.range.start.line,
 			valueExpression.range.start.column,
@@ -2775,9 +2775,6 @@ class FunctionBuilder {
 			switch (name) {
 				case LUA_INTRINSIC_MEMWRITE:
 					this.compileMemWriteIntrinsic(expression, target, resultCount);
-					return true;
-				case LUA_INTRINSIC_STRING_REF:
-					this.compileStringRefIntrinsic(expression, target, resultCount);
 					return true;
 			}
 		}
@@ -2809,28 +2806,24 @@ class FunctionBuilder {
 		}
 	}
 
-	private compileStringRefIntrinsic(expression: LuaCallExpression, target: number, resultCount: number): void {
-		if (expression.arguments.length !== 1) {
-			throw new Error('[Compiler] string_ref expects exactly one value.');
-		}
-		const valueExpression = expression.arguments[0];
-		const valueKind = this.flowAnalysis!.evaluateExpressionValueKind(valueExpression, this.currentFlowState);
+	private compileStringIdExpression(expression: LuaStringRefExpression, target: number, resultCount: number): void {
+		const valueKind = this.flowAnalysis!.evaluateExpressionValueKind(expression.operand, this.currentFlowState);
 		switch (valueKind) {
 			case 'string':
-			case 'string_ref':
+			case 'string_id':
 			case 'unknown':
 				break;
 			default:
 				throw new LuaSyntaxError(
-					`string_ref expects a string value (got: ${valueKind}).`,
-					valueExpression.range.path,
-					valueExpression.range.start.line,
-					valueExpression.range.start.column,
+					`& expects a string value (got: ${valueKind}).`,
+					expression.operand.range.path,
+					expression.operand.range.start.line,
+					expression.operand.range.start.column,
 				);
 		}
 		const tempBase = this.tempTop;
 		const valueTarget = resultCount > 0 ? target : this.allocTemp();
-		this.compileExpressionInto(valueExpression, valueTarget, 1);
+		this.compileExpressionInto(expression.operand, valueTarget, 1);
 		if (resultCount > 1) {
 			this.emitLoadNil(target + 1, resultCount - 1);
 		}
@@ -3090,13 +3083,6 @@ class FunctionBuilder {
 	private isMultiReturnExpression(expression: LuaExpression): boolean {
 		if (expression.kind === LuaSyntaxKind.VarargExpression) return true;
 		if (expression.kind !== LuaSyntaxKind.CallExpression) return false;
-		const call = expression as LuaCallExpression;
-		if (call.methodName === null && call.callee.kind === LuaSyntaxKind.IdentifierExpression) {
-			const reference = getResolvedIdentifierReference(this.semantics, call.callee as LuaIdentifierExpression);
-			if (reference.kind === 'reserved_intrinsic' && this.getReferenceName(reference) === LUA_INTRINSIC_STRING_REF) {
-				return false;
-			}
-		}
 		return true;
 	}
 

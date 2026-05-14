@@ -263,8 +263,10 @@ export function collectOptionsParameterUseInExpression(expression: Expression, p
 			return;
 		case SyntaxKind.IndexExpression:
 			if (isIdentifier(expression.base, parameterName)) {
-				if (expression.index.kind === SyntaxKind.StringLiteralExpression || expression.index.kind === SyntaxKind.StringRefLiteralExpression) {
+				if (expression.index.kind === SyntaxKind.StringLiteralExpression) {
 					use.fields.add(expression.index.value);
+				} else if (expression.index.kind === SyntaxKind.StringRefExpression && expression.index.operand.kind === SyntaxKind.StringLiteralExpression) {
+					use.fields.add(expression.index.operand.value);
 				} else {
 					use.dynamicReads += 1;
 				}
@@ -297,7 +299,6 @@ export function collectOptionsParameterUseInExpression(expression: Expression, p
 		case SyntaxKind.FunctionExpression:
 		case SyntaxKind.NumericLiteralExpression:
 		case SyntaxKind.StringLiteralExpression:
-		case SyntaxKind.StringRefLiteralExpression:
 		case SyntaxKind.BooleanLiteralExpression:
 		case SyntaxKind.NilLiteralExpression:
 		case SyntaxKind.VarargExpression:

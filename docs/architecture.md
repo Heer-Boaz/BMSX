@@ -89,7 +89,9 @@ Saved:
 - VDP registerfile, DEX build/submitted-frame state, FIFO ingress latches,
   surfaces, display/readback pixels, and PMU/SBX/BBU/VOUT state that determines
   future output.
-- APU command/source/output state that determines future audio output.
+- APU command/source/output state that determines future audio output,
+  including active AOUT voice position, gain-ramp, filter history, and BADP
+  decoder state.
 - GEO command/result/fault state and device-visible scratch/result memory.
 - ICU registerfile, sample latch, committed action records, and sampled action
   status/value words.
@@ -167,8 +169,16 @@ Internal units:
 - command FIFO and parameter latch bank;
 - source slots and source bytes;
 - mixer/filter datapath;
-- AOUT fixed-capacity output ring, retained render buffer, retained mix buffer,
-  and host-audio pull edge.
+- AOUT active voice records, fixed-capacity output ring, retained render
+  buffer, retained mix buffer, and host-audio pull edge.
+
+Save-state captures active AOUT voice datapath state. It does not capture the
+already-rendered AOUT output ring; queued frames at the host edge are not
+machine state and are rebuilt from the restored voice datapath. The audio
+save-state data contract lives in dedicated `machine/devices/audio/save_state`
+files on both runtimes. C++ keeps the capture/restore method bodies there too;
+TS keeps those methods at the private-field device boundary and imports only the
+save-state record shapes.
 
 Hot paths must use retained buffers and fixed-size state. No per-sample,
 per-render, or per-pull allocation is acceptable.
@@ -236,12 +246,12 @@ passes one output command to the selected player's input hardware. Status reads
 expose host output support for the selected player; that support bit is runtime
 capability, not save-state payload.
 
-ICU string ingress is a raw `string_ref` MMIO contract. The register metadata
-marks action, bind, query, and consume writes as `string_ref`-only; normal Lua
-strings are rejected before program image emission. The ICU consumes interned
-string-id words directly. Dynamic firmware producers use the compiler
-`string_ref(value)` intrinsic at the producer boundary so the device still sees
-raw string-id words rather than a high-level input API.
+ICU string ingress is a raw interned-string-id MMIO contract. The register
+metadata marks action, bind, query, and consume writes as interned string ids;
+normal Lua strings are rejected before program image emission. The ICU consumes
+interned string-id words directly. Dynamic producers use the existing `&`
+operator at the producer boundary, for example `&(action .. '[p]')`, so the
+device still sees raw string-id words rather than a high-level input API.
 
 ## Firmware and Lua layer
 
@@ -302,6 +312,6 @@ should be deleted.
 
 1. Continue VDP subunit state-machine tightening where FIFO/DMA ingress still
    uses loose counters/latches rather than one named ingress state.
-2. Continue APU/AOUT proof around deterministic voice/decoder state that affects
-   future output.
+2. Continue APU/AOUT proof around BADP fixture coverage and selected-slot
+   mutation while a decoder-backed voice is active.
 3. Keep save-state proof expanding through device-visible state, not host queues.

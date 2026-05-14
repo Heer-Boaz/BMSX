@@ -109,7 +109,7 @@ end
 local read_toc_string<const> = function(toc_base, string_table_offset, string_table_length, offset, length, label)
 	if offset == toc_invalid_u32 then
 		if length ~= 0 then
-			error(label .. ' has an invalid string reference.')
+			error(label .. ' has an invalid string-table entry.')
 		end
 		return nil
 	end

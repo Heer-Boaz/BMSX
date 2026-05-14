@@ -2,6 +2,7 @@
 
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/audio/output.h"
+#include "machine/devices/audio/save_state.h"
 #include "machine/devices/audio/source.h"
 #include "machine/devices/device_status.h"
 #include "machine/memory/memory.h"
@@ -15,30 +16,6 @@ namespace bmsx {
 class ApuOutputMixer;
 class IrqController;
 class DeviceScheduler;
-
-struct AudioControllerState {
-	std::array<uint32_t, APU_PARAMETER_REGISTER_COUNT> registerWords{};
-	std::array<uint32_t, APU_COMMAND_FIFO_CAPACITY> commandFifoCommands{};
-	std::array<uint32_t, APU_COMMAND_FIFO_REGISTER_WORD_COUNT> commandFifoRegisterWords{};
-	uint32_t commandFifoReadIndex = 0;
-	uint32_t commandFifoWriteIndex = 0;
-	uint32_t commandFifoCount = 0;
-	uint32_t eventSequence = 0;
-	uint32_t eventKind = APU_EVENT_NONE;
-	uint32_t eventSlot = 0;
-	uint32_t eventSourceAddr = 0;
-	std::array<uint32_t, APU_SLOT_COUNT> slotPhases{};
-	std::array<uint32_t, APU_SLOT_REGISTER_WORD_COUNT> slotRegisterWords{};
-	ApuSlotSourceBytes slotSourceBytes{};
-	std::array<int64_t, APU_SLOT_COUNT> slotPlaybackCursorQ16{};
-	std::array<uint32_t, APU_SLOT_COUNT> slotFadeSamplesRemaining{};
-	std::array<uint32_t, APU_SLOT_COUNT> slotFadeSamplesTotal{};
-	int64_t sampleCarry = 0;
-	int64_t availableSamples = 0;
-	uint32_t apuStatus = 0;
-	uint32_t apuFaultCode = APU_FAULT_NONE;
-	uint32_t apuFaultDetail = 0;
-};
 
 class AudioController {
 public:
@@ -112,7 +89,7 @@ private:
 	void setSlotActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords, ApuVoiceId voiceId);
 	void stopSlotActive(ApuAudioSlot slot);
 	void setSlotPhase(ApuAudioSlot slot, ApuSlotPhase phase);
-	void replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId);
+	bool replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId);
 	void advanceActiveSlots(int64_t samples);
 	bool advanceSlotCursor(ApuAudioSlot slot, int64_t samples);
 	void scheduleNextService(int64_t nowCycles);

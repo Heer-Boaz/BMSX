@@ -4,6 +4,7 @@
 #include "common/types.h"
 #include "machine/common/numeric.h"
 #include "machine/devices/audio/contracts.h"
+#include "machine/devices/audio/save_state.h"
 
 #include <array>
 #include <optional>
@@ -86,6 +87,8 @@ public:
 
 	void resetPlaybackState();
 	void clearOutputQueue();
+	ApuOutputState captureState() const;
+	void restoreVoiceState(const ApuOutputVoiceState& state);
 	size_t queuedOutputFrames() const { return m_outputQueueFrames; }
 	size_t capacityOutputFrames() const { return APU_OUTPUT_QUEUE_CAPACITY_FRAMES; }
 	size_t freeOutputFrames() const { return APU_OUTPUT_QUEUE_CAPACITY_FRAMES - m_outputQueueFrames; }

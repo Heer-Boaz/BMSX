@@ -304,8 +304,8 @@ test('Input.initialize installs host defaults as the base context', () => {
 	}
 });
 
-test('ICU firmware descriptors expose string_ref ingress contracts', () => {
-	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('string_ref'), true);
+test('ICU firmware descriptors expose input ingress registers without extra string helpers', () => {
+	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('string' + '_ref'), false);
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_action'), true);
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_bind'), true);
 	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_query'), true);

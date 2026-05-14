@@ -109,19 +109,19 @@ function inputactioneffectsystem:evaluate_intent_binding(owner, player_index, bi
 	end
 	mem[sys_inp_player] = player_index
 	if binding.press then
-		mem[sys_inp_query] = string_ref(action .. '[jp]')
+		mem[sys_inp_query] = &(action .. '[jp]')
 		if mem[sys_inp_status] ~= 0 then
 			self:run_intent_assignments(owner, player_index, binding, 'press', binding.press)
 		end
 	end
 	if binding.hold then
-		mem[sys_inp_query] = string_ref(action .. '[p]')
+		mem[sys_inp_query] = &(action .. '[p]')
 		if mem[sys_inp_status] ~= 0 then
 			self:run_intent_assignments(owner, player_index, binding, 'hold', binding.hold)
 		end
 	end
 	if binding.release then
-		mem[sys_inp_query] = string_ref(action .. '[jr]')
+		mem[sys_inp_query] = &(action .. '[jr]')
 		if mem[sys_inp_status] ~= 0 then
 			self:run_intent_assignments(owner, player_index, binding, 'release', binding.release)
 		end
@@ -143,7 +143,7 @@ function inputactioneffectsystem:run_intent_assignments(owner, player_index, bin
 		self:assign_owner_path(owner, path, resolved_value, should_clear)
 		if (assignment.consume) then
 			mem[sys_inp_player] = player_index
-			mem[sys_inp_consume] = string_ref(binding.action)
+			mem[sys_inp_consume] = &(binding.action)
 		end
 	end
 end
@@ -394,7 +394,7 @@ function inputactioneffectsystem:parse_pattern(pattern)
 	end
 	predicate = function(env)
 		mem[sys_inp_player] = env.player_index
-		mem[sys_inp_query] = string_ref(pattern)
+		mem[sys_inp_query] = &(pattern)
 		return mem[sys_inp_status] ~= 0
 	end
 	self.pattern_cache[pattern] = predicate

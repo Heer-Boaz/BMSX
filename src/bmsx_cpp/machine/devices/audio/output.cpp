@@ -1023,10 +1023,11 @@ ApuOutputMixer::VoiceRecord ApuOutputMixer::buildVoiceFromData(ApuAudioSlot slot
 }
 
 void ApuOutputMixer::removeVoice(size_t index) {
-	if (index >= m_voices.size()) {
-		throw BMSX_RUNTIME_ERROR("[ApuOutput] Active voice index is not owned by this mixer.");
+	const size_t last = m_voices.size() - 1u;
+	if (index != last) {
+		m_voices[index] = std::move(m_voices[last]);
 	}
-	m_voices.erase(m_voices.begin() + static_cast<std::ptrdiff_t>(index));
+	m_voices.pop_back();
 }
 
 ApuOutputMixer::VoiceRecord* ApuOutputMixer::findSlot(ApuAudioSlot slot) {

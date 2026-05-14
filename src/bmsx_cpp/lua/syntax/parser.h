@@ -22,7 +22,7 @@ enum class LuaSyntaxKind {
 	BooleanLiteralExpression,
 	NumericLiteralExpression,
 	StringLiteralExpression,
-	StringRefLiteralExpression,
+	StringRefExpression,
 };
 
 enum class LuaAssignmentOperator {

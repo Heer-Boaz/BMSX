@@ -2,6 +2,7 @@ import { toSignedWord } from '../../common/numeric';
 import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
 import { DEVICE_SERVICE_APU, type DeviceScheduler } from '../../scheduler/device';
 import type { ApuOutputMixer } from './output';
+import type { AudioControllerState } from './save_state';
 import { ApuSourceDma } from './source';
 import {
 	APU_GAIN_Q12_ONE,
@@ -102,30 +103,6 @@ import { Memory } from '../../memory/memory';
 import { DeviceStatusLatch, type DeviceStatusRegisters } from '../device_status';
 import type { IrqController } from '../irq/controller';
 import type { Value } from '../../cpu/cpu';
-
-export type AudioControllerState = {
-	registerWords: number[];
-	commandFifoCommands: number[];
-	commandFifoRegisterWords: number[];
-	commandFifoReadIndex: number;
-	commandFifoWriteIndex: number;
-	commandFifoCount: number;
-	eventSequence: number;
-	eventKind: number;
-	eventSlot: number;
-	eventSourceAddr: number;
-	slotPhases: number[];
-	slotRegisterWords: number[];
-	slotSourceBytes: Uint8Array[];
-	slotPlaybackCursorQ16: number[];
-	slotFadeSamplesRemaining: number[];
-	slotFadeSamplesTotal: number[];
-	sampleCarry: number;
-	availableSamples: number;
-	apuStatus: number;
-	apuFaultCode: number;
-	apuFaultDetail: number;
-};
 
 const APU_DEVICE_STATUS_REGISTERS: DeviceStatusRegisters = {
 	statusAddr: IO_APU_STATUS,
@@ -242,6 +219,7 @@ export class AudioController {
 			slotPlaybackCursorQ16: this.slotPlaybackCursorQ16.slice(),
 			slotFadeSamplesRemaining: Array.from(this.slotFadeSamplesRemaining),
 			slotFadeSamplesTotal: Array.from(this.slotFadeSamplesTotal),
+			output: this.audioOutput.captureState(),
 			sampleCarry: this.sampleCarry,
 			availableSamples: this.availableSamples,
 			apuStatus: this.fault.status,
@@ -291,14 +269,15 @@ export class AudioController {
 		this.sampleCarry = state.sampleCarry;
 		this.availableSamples = state.availableSamples;
 		this.fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
-		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
-			if (this.slotPhases[slot] === APU_SLOT_PHASE_IDLE) {
-				continue;
-			}
+		for (const voiceState of state.output.voices) {
+			const slot = voiceState.slot;
 			const voiceId = this.nextVoiceId;
 			this.nextVoiceId += 1;
 			this.slotVoiceIds[slot] = voiceId;
-			this.replayHostOutput(slot, voiceId);
+			if (!this.replayHostOutput(slot, voiceId)) {
+				throw new Error('[APU] Cannot restore saved AOUT voice.');
+			}
+			this.audioOutput.restoreVoiceState(voiceState);
 		}
 		this.updateSelectedSlotActiveStatus();
 		this.scheduleNextService(nowCycles);
@@ -573,14 +552,14 @@ export class AudioController {
 		this.updateSelectedSlotActiveStatus();
 	}
 
-	private replayHostOutput(slot: ApuAudioSlot, voiceId: ApuVoiceId): void {
+	private replayHostOutput(slot: ApuAudioSlot, voiceId: ApuVoiceId): boolean {
 		const registerWords = this.slotRegisterDispatchWords;
 		const base = apuSlotRegisterWordIndex(slot, 0);
 		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
 			registerWords[index] = this.slotRegisterWords[base + index]!;
 		}
 		const fadeSamples = this.slotFadeSamplesRemaining[slot]!;
-		this.playOutputVoice(slot, voiceId, resolveApuAudioSource(registerWords), registerWords, fadeSamples);
+		return this.playOutputVoice(slot, voiceId, resolveApuAudioSource(registerWords), registerWords, fadeSamples);
 	}
 
 	private advanceActiveSlots(samples: number): void {

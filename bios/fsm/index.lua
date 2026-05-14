@@ -2202,14 +2202,14 @@ function state:update()
 	local trace_transitions<const> = diagnostics and diagnostics.trace_transitions
 	local handlers<const> = definition.input_event_handler_list
 	if #handlers ~= 0 then
-		local player_index<const> = target.player_index or 1
+		local player_index<const> = target.player_index or 1 -- TODO: Should happen at "FSM compile" time and not be looked up every frame
 		local eval_mode<const> = definition.effective_input_eval
 		for i = 1, #handlers do
 			local entry<const> = handlers[i]
 			local pattern<const> = entry.pattern
 			local handler<const> = entry.handler
 			mem[sys_inp_player] = player_index
-			mem[sys_inp_query] = string_ref(pattern)
+			mem[sys_inp_query] = &(pattern)
 			if mem[sys_inp_status] ~= 0 then
 				local handled
 				if trace_transitions then
@@ -2402,17 +2402,17 @@ function state:dispose()
 			states[state_ids[i]]:dispose()
 		end
 	end
-	self.states = {}
-	self.state_ids = {}
-	self.concurrent_states = {}
-	self.state_count = 0
-	self.concurrent_state_count = 0
-	self.current_id = nil
-	self.current_state = nil
-	self.active_frame_work = false
-	self.transition_queue_paths = {}
-	self.transition_queue_diags = {}
-	self.transition_queue_count = 0
+	self.states = {} -- TODO: WTF?!
+	self.state_ids = {} -- TODO: WTF?!
+	self.concurrent_states = {} -- TODO: WTF?!
+	self.state_count = 0 -- TODO: WTF?!
+	self.concurrent_state_count = 0 -- TODO: WTF?!
+	self.current_id = nil -- TODO: WTF?!
+	self.current_state = nil -- TODO: WTF?!
+	self.active_frame_work = false -- TODO: WTF?!
+	self.transition_queue_paths = {} -- TODO: WTF?!
+	self.transition_queue_diags = {} -- TODO: WTF?!
+	self.transition_queue_count = 0 -- TODO: WTF?!
 end
 
 local statemachinecontroller<const> = {}

@@ -87,13 +87,13 @@ LuaExpression LuaParser::parseExpression() {
 }
 
 LuaExpression LuaParser::parseUnaryExpression() {
-	if (check(LuaTokenType::Ampersand) && m_index + 1 < m_tokens.size() && m_tokens[m_index + 1].type == LuaTokenType::String) {
+	if (check(LuaTokenType::Ampersand)) {
 		const LuaToken& ampersandToken = advance();
-		const LuaToken& stringToken = advance();
 		LuaExpression expression;
-		expression.kind = LuaSyntaxKind::StringRefLiteralExpression;
-		expression.stringValue = std::get<std::string>(stringToken.literal);
-		expression.range = rangeFromTokenAndToken(ampersandToken, stringToken);
+		expression.kind = LuaSyntaxKind::StringRefExpression;
+		LuaExpression operand = parseUnaryExpression();
+		expression.range = rangeFromTokenAndExpression(ampersandToken, operand);
+		expression.operand = std::make_unique<LuaExpression>(std::move(operand));
 		return expression;
 	}
 	if (match(LuaTokenType::Minus)) {

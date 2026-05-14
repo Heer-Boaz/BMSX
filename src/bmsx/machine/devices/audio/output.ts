@@ -1,6 +1,7 @@
 import { clamp, clamp01 } from '../../../common/clamp';
 import { readI16LE, readLE16, readLE32 } from '../../../common/endian';
 import { BiquadFilterState, configureBiquadFilter, type BiquadFilterType } from './biquad_filter';
+import type { ApuOutputState, ApuOutputVoiceState } from './save_state';
 import { toSignedWord } from '../../common/numeric';
 import {
 	APU_FILTER_ALLPASS,
@@ -225,6 +226,90 @@ export class ApuOutputMixer {
 	public clearOutputQueue(): void {
 		this.outputQueueReadFrame = 0;
 		this.outputQueueFrames = 0;
+	}
+
+	public captureState(): ApuOutputState {
+		const voices = new Array<ApuOutputVoiceState>(this.voices.length);
+		for (let index = 0; index < this.voices.length; index += 1) {
+			const record = this.voices[index]!;
+			voices[index] = {
+				slot: record.slot,
+				position: record.position,
+				step: record.step,
+				gain: record.gain,
+				targetGain: record.targetGain,
+				gainRampRemaining: record.gainRampRemaining,
+				stopAfter: record.stopAfter,
+				filterSampleRate: record.filterSampleRate,
+				filter: {
+					enabled: record.filter.enabled,
+					b0: record.filter.b0,
+					b1: record.filter.b1,
+					b2: record.filter.b2,
+					a1: record.filter.a1,
+					a2: record.filter.a2,
+					l1: record.filter.l1,
+					l2: record.filter.l2,
+					r1: record.filter.r1,
+					r2: record.filter.r2,
+				},
+				badp: {
+					predictors: Array.from(record.badp.predictors),
+					stepIndices: Array.from(record.badp.stepIndices),
+					nextFrame: record.badp.nextFrame,
+					blockEnd: record.badp.blockEnd,
+					blockFrames: record.badp.blockFrames,
+					blockFrameIndex: record.badp.blockFrameIndex,
+					payloadOffset: record.badp.payloadOffset,
+					nibbleCursor: record.badp.nibbleCursor,
+					decodedFrame: record.badp.decodedFrame,
+					decodedLeft: record.badp.decodedLeft,
+					decodedRight: record.badp.decodedRight,
+				},
+			};
+		}
+		return { voices };
+	}
+
+	public restoreVoiceState(state: ApuOutputVoiceState): void {
+		for (let index = this.voices.length - 1; index >= 0; index -= 1) {
+			const record = this.voices[index]!;
+			if (record.slot !== state.slot) {
+				continue;
+			}
+			record.position = state.position;
+			record.step = state.step;
+			record.gain = state.gain;
+			record.targetGain = state.targetGain;
+			record.gainRampRemaining = state.gainRampRemaining;
+			record.stopAfter = state.stopAfter;
+			record.filterSampleRate = state.filterSampleRate;
+			record.filter.enabled = state.filter.enabled;
+			record.filter.b0 = state.filter.b0;
+			record.filter.b1 = state.filter.b1;
+			record.filter.b2 = state.filter.b2;
+			record.filter.a1 = state.filter.a1;
+			record.filter.a2 = state.filter.a2;
+			record.filter.l1 = state.filter.l1;
+			record.filter.l2 = state.filter.l2;
+			record.filter.r1 = state.filter.r1;
+			record.filter.r2 = state.filter.r2;
+			record.badp.predictors[0] = state.badp.predictors[0]!;
+			record.badp.predictors[1] = state.badp.predictors[1]!;
+			record.badp.stepIndices[0] = state.badp.stepIndices[0]!;
+			record.badp.stepIndices[1] = state.badp.stepIndices[1]!;
+			record.badp.nextFrame = state.badp.nextFrame;
+			record.badp.blockEnd = state.badp.blockEnd;
+			record.badp.blockFrames = state.badp.blockFrames;
+			record.badp.blockFrameIndex = state.badp.blockFrameIndex;
+			record.badp.payloadOffset = state.badp.payloadOffset;
+			record.badp.nibbleCursor = state.badp.nibbleCursor;
+			record.badp.decodedFrame = state.badp.decodedFrame;
+			record.badp.decodedLeft = state.badp.decodedLeft;
+			record.badp.decodedRight = state.badp.decodedRight;
+			return;
+		}
+		throw new Error('[AOUT] Restored voice state has no active AOUT record.');
 	}
 
 	public queuedOutputFrames(): number {

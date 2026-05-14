@@ -20,61 +20,61 @@ function compileSource(source: string, path: string = 'value_flow.lua') {
 	return compileLuaChunkToProgram(parseChunk(source, path), [], { entrySource: source });
 }
 
-const ICU_STRING_REF_REGISTERS = [
+const ICU_STRING_ID_REGISTERS = [
 	['sys_inp_action', IO_INP_ACTION],
 	['sys_inp_bind', IO_INP_BIND],
 	['sys_inp_query', IO_INP_QUERY],
 	['sys_inp_consume', IO_INP_CONSUME],
 ] as const;
 
-test('ProgramCompiler uses production string_ref contracts for ICU string registers', () => {
-	for (const [name, address] of ICU_STRING_REF_REGISTERS) {
-		assert.equal(MMIO_REGISTER_SPEC_BY_ADDRESS.get(address)?.writeRequirement, 'string_ref', name);
+test('ProgramCompiler uses production string-id contracts for ICU string registers', () => {
+	for (const [name, address] of ICU_STRING_ID_REGISTERS) {
+		assert.equal(MMIO_REGISTER_SPEC_BY_ADDRESS.get(address)?.writeRequirement, 'string_id', name);
 	}
 });
 
 test('ProgramCompiler rejects plain string writes to ICU string registers by address', () => {
-	for (const [name, address] of ICU_STRING_REF_REGISTERS) {
+	for (const [name, address] of ICU_STRING_ID_REGISTERS) {
 		const source = [
 			`local reg<const> = ${address}`,
 			"mem[reg] = 'left[p]'",
 		].join('\n');
 		assert.throws(
 			() => compileSource(source, `${name}_plain_string_address.lua`),
-			/requires a string_ref value/,
+			/requires an interned string-id value/,
 		);
 	}
 });
 
 test('ProgramCompiler rejects plain string writes to ICU string registers by global name', () => {
-	for (const [name] of ICU_STRING_REF_REGISTERS) {
+	for (const [name] of ICU_STRING_ID_REGISTERS) {
 		const source = `mem[${name}] = 'left[p]'`;
 		assert.throws(
 			() => compileSource(source, `${name}_plain_string_global.lua`),
-			/requires a string_ref value/,
+			/requires an interned string-id value/,
 		);
 	}
 });
 
-test('ProgramCompiler accepts explicit dynamic string_ref producers for ICU string registers', () => {
+test('ProgramCompiler accepts explicit dynamic & producers for ICU string registers', () => {
 	const source = [
 		"local action<const> = 'left'",
-		"mem[sys_inp_query] = string_ref(action .. '[p]')",
+		"mem[sys_inp_query] = &(action .. '[p]')",
 	].join('\n');
-	const compiled = compileSource(source, 'sys_inp_query_dynamic_string_ref.lua');
+	const compiled = compileSource(source, 'sys_inp_query_dynamic_string_id.lua');
 	assert.ok(compiled.program.code.length > 0);
 });
 
-test('ProgramCompiler rejects non-string string_ref producers for ICU string registers', () => {
-	const source = 'mem[sys_inp_query] = string_ref(1)';
+test('ProgramCompiler rejects non-string & producers for ICU string registers', () => {
+	const source = 'mem[sys_inp_query] = &1';
 	assert.throws(
-		() => compileSource(source, 'sys_inp_query_string_ref_number.lua'),
-		/requires a string_ref value/,
+		() => compileSource(source, 'sys_inp_query_string_id_number.lua'),
+		/requires an interned string-id value/,
 	);
 });
 
-test('ProgramCompiler emits string_ref intrinsic as a single result expression', () => {
-	const returned = runCompiledLua("return string_ref('left')", 'string_ref_return.lua');
+test('ProgramCompiler emits & expression as a single result expression', () => {
+	const returned = runCompiledLua("return &'left'", 'string_id_return.lua');
 	assert.equal(returned.length, 1);
 	assert.equal(valueIsString(returned[0]), true);
 
@@ -82,13 +82,13 @@ test('ProgramCompiler emits string_ref intrinsic as a single result expression',
 		'local function echo(value)',
 		'\treturn value',
 		'end',
-		"return echo(string_ref('right'))",
-	].join('\n'), 'string_ref_argument.lua');
+		"return echo(&'right')",
+	].join('\n'), 'string_id_argument.lua');
 	assert.equal(passed.length, 1);
 	assert.equal(valueIsString(passed[0]), true);
 });
 
-test('ProgramCompiler accepts string_ref writes to sys_inp_query', () => {
+test('ProgramCompiler accepts & writes to sys_inp_query', () => {
 	const source = [
 		`local reg<const> = ${IO_INP_QUERY}`,
 		"local q<const> = &'left[p]'",
@@ -105,7 +105,7 @@ test('ProgramCompiler rejects plain string writes to sys_inp_query', () => {
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'sys_inp_query_plain_string.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -123,11 +123,11 @@ test('ProgramCompiler rejects degraded aliases written to sys_inp_query', () => 
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'sys_inp_query_degraded_alias.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
-test('ProgramCompiler proves Lua and/or short-circuit expressions as string_ref when truthiness is known', () => {
+test('ProgramCompiler proves Lua and/or short-circuit expressions as string-id when truthiness is known', () => {
 	const source = [
 		`local reg<const> = ${IO_INP_QUERY}`,
 		"mem[reg] = true and &'a' or &'b'",
@@ -136,7 +136,7 @@ test('ProgramCompiler proves Lua and/or short-circuit expressions as string_ref 
 	assert.ok(compiled.program.code.length > 0);
 });
 
-test('ProgramCompiler rejects mixed and/or truthiness paths that are not provably string_ref', () => {
+test('ProgramCompiler rejects mixed and/or truthiness paths that are not provably string-id', () => {
 	const source = [
 		'local function write(flag)',
 		`\tlocal reg<const> = ${IO_INP_QUERY}`,
@@ -146,7 +146,7 @@ test('ProgramCompiler rejects mixed and/or truthiness paths that are not provabl
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'and_or_fail.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -166,7 +166,7 @@ test('ProgramCompiler invalidates closure-written aliases after calls in local i
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'initializer_call.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -187,7 +187,7 @@ test('ProgramCompiler invalidates closure-written aliases after calls in assignm
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'rhs_call.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -208,7 +208,7 @@ test('ProgramCompiler invalidates closure-written aliases after calls in conditi
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'condition_call.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -230,7 +230,7 @@ test('ProgramCompiler finds nested closure writes inside table constructors', ()
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'table_closure.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -258,7 +258,7 @@ test('ProgramCompiler iterates loop flow analysis to a real fixpoint instead of 
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'loop_fixpoint.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -294,7 +294,7 @@ test('ProgramCompiler matches assignment target-preparation order before RHS eva
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'assignment_order.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -314,7 +314,7 @@ test('ProgramCompiler matches memory-target preparation order before RHS evaluat
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'memory_assignment_order.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -332,7 +332,7 @@ test('ProgramCompiler treats function declarations as writing the declaration ta
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'function_target.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -371,7 +371,7 @@ test('ProgramCompiler tracks nested closure writes introduced through function d
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'function_decl_closure.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -388,7 +388,7 @@ test('ProgramCompiler does not treat dotted function declarations as rewriting t
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'function_decl_dotted.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -405,7 +405,7 @@ test('ProgramCompiler does not treat method function declarations as rewriting t
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'function_decl_method.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -429,7 +429,7 @@ test('ProgramCompiler tracks nested closure writes in dotted function declaratio
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'function_decl_dotted_closure.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -455,7 +455,7 @@ test('ProgramCompiler keeps while-loop exit flow conservative when the condition
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'while_condition.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
@@ -481,11 +481,11 @@ test('ProgramCompiler keeps repeat-until exit flow conservative when the conditi
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'repeat_condition.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });
 
-test('ProgramCompiler treats concat as plain string instead of preserving string_ref', () => {
+test('ProgramCompiler treats concat as plain string instead of preserving string-id', () => {
 	const source = [
 		'local function write()',
 		`\tlocal reg<const> = ${IO_INP_QUERY}`,
@@ -495,6 +495,6 @@ test('ProgramCompiler treats concat as plain string instead of preserving string
 	].join('\n');
 	assert.throws(
 		() => compileSource(source, 'concat_plain_string.lua'),
-		/requires a string_ref value/,
+		/requires an interned string-id value/,
 	);
 });

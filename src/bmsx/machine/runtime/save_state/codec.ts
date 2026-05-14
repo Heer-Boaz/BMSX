@@ -2,7 +2,13 @@ import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, re
 import type { MachineSaveState } from '../../machine';
 import type { CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeRefSegment, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/controller';
-import type { AudioControllerState } from '../../devices/audio/controller';
+import type { AudioControllerState } from '../../devices/audio/save_state';
+import type {
+	ApuBadpDecoderSaveState,
+	ApuBiquadFilterState,
+	ApuOutputState,
+	ApuOutputVoiceState,
+} from '../../devices/audio/save_state';
 import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT } from '../../devices/audio/contracts';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import { INPUT_CONTROLLER_PLAYER_COUNT, type InputControllerState } from '../../devices/input/controller';
@@ -99,14 +105,14 @@ function decodeU8FixedArray(value: unknown, label: string, length: number): numb
 	return out;
 }
 
-function decodeI64FixedArray(value: unknown, label: string, length: number): number[] {
+function decodeIntegerFixedArray(value: unknown, label: string, length: number, valueName: string, decode: (value: unknown, label: string) => number): number[] {
 	const entries = requireArray(value, label);
 	if (entries.length !== length) {
-		throw new Error(`${label} must contain ${length} i64 values.`);
+		throw new Error(`${label} must contain ${length} ${valueName} values.`);
 	}
 	const out = new Array<number>(length);
 	for (let index = 0; index < length; index += 1) {
-		out[index] = requireI64(entries[index], `${label}[${index}]`);
+		out[index] = decode(entries[index], `${label}[${index}]`);
 	}
 	return out;
 }
@@ -118,9 +124,16 @@ function decodeBinaryFixedArray(value: unknown, label: string, length: number): 
 	}
 	const out = new Array<Uint8Array>(length);
 	for (let index = 0; index < length; index += 1) {
-		out[index] = entries[index] as Uint8Array;
+		out[index] = requireBinaryValue(entries[index], `${label}[${index}]`);
 	}
 	return out;
+}
+
+function requireBinaryValue(value: unknown, label: string): Uint8Array {
+	if (!(value instanceof Uint8Array)) {
+		throw new Error(`${label} must be binary.`);
+	}
+	return value;
 }
 
 function requireBoundedU32(value: unknown, label: string, min: number, max: number): number {
@@ -252,7 +265,7 @@ function encodeMemorySaveState(state: MemorySaveState): MemorySaveState {
 function decodeMemorySaveState(value: unknown, label: string): MemorySaveState {
 	const object = requireObject(value, label);
 	return {
-		ram: requireObjectKey(object, 'ram', label, 'machine.memory.ram') as Uint8Array,
+		ram: requireBinaryValue(requireObjectKey(object, 'ram', label, 'machine.memory.ram'), 'machine.memory.ram'),
 		busFaultCode: requireObjectKey(object, 'busFaultCode', label, 'machine.memory.busFaultCode') as number,
 		busFaultAddr: requireObjectKey(object, 'busFaultAddr', label, 'machine.memory.busFaultAddr') as number,
 		busFaultAccess: requireObjectKey(object, 'busFaultAccess', label, 'machine.memory.busFaultAccess') as number,
@@ -794,7 +807,7 @@ function decodeVdpSurfacePixelsState(value: unknown, label: string): VdpSurfaceP
 		surfaceId: requireObjectKey(object, 'surfaceId', label, 'machine.vdp.surfacePixels.surfaceId') as number,
 		surfaceWidth: requireObjectKey(object, 'surfaceWidth', label, 'machine.vdp.surfacePixels.surfaceWidth') as number,
 		surfaceHeight: requireObjectKey(object, 'surfaceHeight', label, 'machine.vdp.surfacePixels.surfaceHeight') as number,
-		pixels: requireObjectKey(object, 'pixels', label, 'machine.vdp.surfacePixels.pixels') as Uint8Array,
+		pixels: requireBinaryValue(requireObjectKey(object, 'pixels', label, 'machine.vdp.surfacePixels.pixels'), 'machine.vdp.surfacePixels.pixels'),
 	};
 }
 
@@ -811,13 +824,125 @@ function decodeVdpSaveState(value: unknown, label: string): VdpSaveState {
 	const object = requireObject(value, label);
 	return {
 		...decodeVdpState(value, label),
-		vramStaging: requireObjectKey(object, 'vramStaging', label, 'machine.vdp.vramStaging') as Uint8Array,
+		vramStaging: requireBinaryValue(requireObjectKey(object, 'vramStaging', label, 'machine.vdp.vramStaging'), 'machine.vdp.vramStaging'),
 		surfacePixels: decodeVector(
 			requireObjectKey(object, 'surfacePixels', label, 'machine.vdp.surfacePixels'),
 			'machine.vdp.surfacePixels',
 			(entry) => decodeVdpSurfacePixelsState(entry, 'machine.vdp.surfacePixels[]'),
 		),
-		displayFrameBufferPixels: requireObjectKey(object, 'displayFrameBufferPixels', label, 'machine.vdp.displayFrameBufferPixels') as Uint8Array,
+		displayFrameBufferPixels: requireBinaryValue(requireObjectKey(object, 'displayFrameBufferPixels', label, 'machine.vdp.displayFrameBufferPixels'), 'machine.vdp.displayFrameBufferPixels'),
+	};
+}
+
+function encodeApuBiquadFilterState(state: ApuBiquadFilterState): ApuBiquadFilterState {
+	return {
+		enabled: state.enabled,
+		b0: state.b0,
+		b1: state.b1,
+		b2: state.b2,
+		a1: state.a1,
+		a2: state.a2,
+		l1: state.l1,
+		l2: state.l2,
+		r1: state.r1,
+		r2: state.r2,
+	};
+}
+
+function decodeApuBiquadFilterState(value: unknown, label: string): ApuBiquadFilterState {
+	const object = requireObject(value, label);
+	return {
+		enabled: requireBooleanValue(requireObjectKey(object, 'enabled', label, `${label}.enabled`), `${label}.enabled`),
+		b0: requireNumberValue(requireObjectKey(object, 'b0', label, `${label}.b0`), `${label}.b0`),
+		b1: requireNumberValue(requireObjectKey(object, 'b1', label, `${label}.b1`), `${label}.b1`),
+		b2: requireNumberValue(requireObjectKey(object, 'b2', label, `${label}.b2`), `${label}.b2`),
+		a1: requireNumberValue(requireObjectKey(object, 'a1', label, `${label}.a1`), `${label}.a1`),
+		a2: requireNumberValue(requireObjectKey(object, 'a2', label, `${label}.a2`), `${label}.a2`),
+		l1: requireNumberValue(requireObjectKey(object, 'l1', label, `${label}.l1`), `${label}.l1`),
+		l2: requireNumberValue(requireObjectKey(object, 'l2', label, `${label}.l2`), `${label}.l2`),
+		r1: requireNumberValue(requireObjectKey(object, 'r1', label, `${label}.r1`), `${label}.r1`),
+		r2: requireNumberValue(requireObjectKey(object, 'r2', label, `${label}.r2`), `${label}.r2`),
+	};
+}
+
+function encodeApuBadpDecoderState(state: ApuBadpDecoderSaveState): ApuBadpDecoderSaveState {
+	return {
+		predictors: encodeVector(state.predictors, (word) => word),
+		stepIndices: encodeVector(state.stepIndices, (word) => word),
+		nextFrame: state.nextFrame,
+		blockEnd: state.blockEnd,
+		blockFrames: state.blockFrames,
+		blockFrameIndex: state.blockFrameIndex,
+		payloadOffset: state.payloadOffset,
+		nibbleCursor: state.nibbleCursor,
+		decodedFrame: state.decodedFrame,
+		decodedLeft: state.decodedLeft,
+		decodedRight: state.decodedRight,
+	};
+}
+
+function decodeApuBadpDecoderState(value: unknown, label: string): ApuBadpDecoderSaveState {
+	const object = requireObject(value, label);
+	return {
+		predictors: decodeIntegerFixedArray(requireObjectKey(object, 'predictors', label, `${label}.predictors`), `${label}.predictors`, 2, 'i32', requireI32),
+		stepIndices: decodeIntegerFixedArray(requireObjectKey(object, 'stepIndices', label, `${label}.stepIndices`), `${label}.stepIndices`, 2, 'i32', requireI32),
+		nextFrame: requireBoundedU32(requireObjectKey(object, 'nextFrame', label, `${label}.nextFrame`), `${label}.nextFrame`, 0, 0xffffffff),
+		blockEnd: requireBoundedU32(requireObjectKey(object, 'blockEnd', label, `${label}.blockEnd`), `${label}.blockEnd`, 0, 0xffffffff),
+		blockFrames: requireBoundedU32(requireObjectKey(object, 'blockFrames', label, `${label}.blockFrames`), `${label}.blockFrames`, 0, 0xffffffff),
+		blockFrameIndex: requireBoundedU32(requireObjectKey(object, 'blockFrameIndex', label, `${label}.blockFrameIndex`), `${label}.blockFrameIndex`, 0, 0xffffffff),
+		payloadOffset: requireBoundedU32(requireObjectKey(object, 'payloadOffset', label, `${label}.payloadOffset`), `${label}.payloadOffset`, 0, 0xffffffff),
+		nibbleCursor: requireBoundedU32(requireObjectKey(object, 'nibbleCursor', label, `${label}.nibbleCursor`), `${label}.nibbleCursor`, 0, 0xffffffff),
+		decodedFrame: requireI64(requireObjectKey(object, 'decodedFrame', label, `${label}.decodedFrame`), `${label}.decodedFrame`),
+		decodedLeft: requireI32(requireObjectKey(object, 'decodedLeft', label, `${label}.decodedLeft`), `${label}.decodedLeft`),
+		decodedRight: requireI32(requireObjectKey(object, 'decodedRight', label, `${label}.decodedRight`), `${label}.decodedRight`),
+	};
+}
+
+function encodeApuOutputVoiceState(state: ApuOutputVoiceState): ApuOutputVoiceState {
+	return {
+		slot: state.slot,
+		position: state.position,
+		step: state.step,
+		gain: state.gain,
+		targetGain: state.targetGain,
+		gainRampRemaining: state.gainRampRemaining,
+		stopAfter: state.stopAfter,
+		filterSampleRate: state.filterSampleRate,
+		filter: encodeApuBiquadFilterState(state.filter),
+		badp: encodeApuBadpDecoderState(state.badp),
+	};
+}
+
+function decodeApuOutputVoiceState(value: unknown, label: string): ApuOutputVoiceState {
+	const object = requireObject(value, label);
+	return {
+		slot: requireBoundedU32(requireObjectKey(object, 'slot', label, `${label}.slot`), `${label}.slot`, 0, APU_SLOT_COUNT - 1),
+		position: requireNumberValue(requireObjectKey(object, 'position', label, `${label}.position`), `${label}.position`),
+		step: requireNumberValue(requireObjectKey(object, 'step', label, `${label}.step`), `${label}.step`),
+		gain: requireNumberValue(requireObjectKey(object, 'gain', label, `${label}.gain`), `${label}.gain`),
+		targetGain: requireNumberValue(requireObjectKey(object, 'targetGain', label, `${label}.targetGain`), `${label}.targetGain`),
+		gainRampRemaining: requireNumberValue(requireObjectKey(object, 'gainRampRemaining', label, `${label}.gainRampRemaining`), `${label}.gainRampRemaining`),
+		stopAfter: requireNumberValue(requireObjectKey(object, 'stopAfter', label, `${label}.stopAfter`), `${label}.stopAfter`),
+		filterSampleRate: requireI32(requireObjectKey(object, 'filterSampleRate', label, `${label}.filterSampleRate`), `${label}.filterSampleRate`),
+		filter: decodeApuBiquadFilterState(requireObjectKey(object, 'filter', label, `${label}.filter`), `${label}.filter`),
+		badp: decodeApuBadpDecoderState(requireObjectKey(object, 'badp', label, `${label}.badp`), `${label}.badp`),
+	};
+}
+
+function encodeApuOutputState(state: ApuOutputState): ApuOutputState {
+	return {
+		voices: encodeVector(state.voices, encodeApuOutputVoiceState),
+	};
+}
+
+function decodeApuOutputState(value: unknown, label: string): ApuOutputState {
+	const object = requireObject(value, label);
+	return {
+		voices: decodeVector(
+			requireObjectKey(object, 'voices', label, `${label}.voices`),
+			`${label}.voices`,
+			(entry) => decodeApuOutputVoiceState(entry, `${label}.voices[]`),
+		),
 	};
 }
 
@@ -839,6 +964,7 @@ function encodeAudioControllerState(state: AudioControllerState): AudioControlle
 		slotPlaybackCursorQ16: encodeVector(state.slotPlaybackCursorQ16, (word) => word),
 		slotFadeSamplesRemaining: encodeVector(state.slotFadeSamplesRemaining, (word) => word >>> 0),
 		slotFadeSamplesTotal: encodeVector(state.slotFadeSamplesTotal, (word) => word >>> 0),
+		output: encodeApuOutputState(state.output),
 		sampleCarry: state.sampleCarry,
 		availableSamples: state.availableSamples,
 		apuStatus: state.apuStatus,
@@ -863,9 +989,10 @@ function decodeAudioControllerState(value: unknown, label: string): AudioControl
 		slotPhases: decodeU32FixedArray(requireObjectKey(object, 'slotPhases', label, 'machine.audio.slotPhases'), 'machine.audio.slotPhases', APU_SLOT_COUNT),
 		slotRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'slotRegisterWords', label, 'machine.audio.slotRegisterWords'), 'machine.audio.slotRegisterWords', APU_SLOT_REGISTER_WORD_COUNT),
 		slotSourceBytes: decodeBinaryFixedArray(requireObjectKey(object, 'slotSourceBytes', label, 'machine.audio.slotSourceBytes'), 'machine.audio.slotSourceBytes', APU_SLOT_COUNT),
-		slotPlaybackCursorQ16: decodeI64FixedArray(requireObjectKey(object, 'slotPlaybackCursorQ16', label, 'machine.audio.slotPlaybackCursorQ16'), 'machine.audio.slotPlaybackCursorQ16', APU_SLOT_COUNT),
+		slotPlaybackCursorQ16: decodeIntegerFixedArray(requireObjectKey(object, 'slotPlaybackCursorQ16', label, 'machine.audio.slotPlaybackCursorQ16'), 'machine.audio.slotPlaybackCursorQ16', APU_SLOT_COUNT, 'i64', requireI64),
 		slotFadeSamplesRemaining: decodeU32FixedArray(requireObjectKey(object, 'slotFadeSamplesRemaining', label, 'machine.audio.slotFadeSamplesRemaining'), 'machine.audio.slotFadeSamplesRemaining', APU_SLOT_COUNT),
 		slotFadeSamplesTotal: decodeU32FixedArray(requireObjectKey(object, 'slotFadeSamplesTotal', label, 'machine.audio.slotFadeSamplesTotal'), 'machine.audio.slotFadeSamplesTotal', APU_SLOT_COUNT),
+		output: decodeApuOutputState(requireObjectKey(object, 'output', label, 'machine.audio.output'), 'machine.audio.output'),
 		sampleCarry: requireI64(requireObjectKey(object, 'sampleCarry', label, 'machine.audio.sampleCarry'), 'machine.audio.sampleCarry'),
 		availableSamples: requireI64(requireObjectKey(object, 'availableSamples', label, 'machine.audio.availableSamples'), 'machine.audio.availableSamples'),
 		apuStatus: requireBoundedU32(requireObjectKey(object, 'apuStatus', label, 'machine.audio.apuStatus'), 'machine.audio.apuStatus', 0, 0xffffffff),

@@ -40,7 +40,7 @@ local compile_effect<const> = function(effect, slot, analysis)
 		return function(env)
 			for i = 1, #actions do
 				mem[sys_inp_player] = env.player_index
-				mem[sys_inp_consume] = string_ref(actions[i])
+				mem[sys_inp_consume] = &(actions[i])
 			end
 		end
 	end

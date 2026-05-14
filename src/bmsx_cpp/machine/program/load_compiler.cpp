@@ -170,10 +170,19 @@ LoadSubsetPathStep compilePathStep(Runtime& runtime, const std::string& chunkNam
 			.key = valueNumber(expression.numberValue),
 		};
 	}
-	if (expression.kind == LuaSyntaxKind::StringLiteralExpression || expression.kind == LuaSyntaxKind::StringRefLiteralExpression) {
+	if (expression.kind == LuaSyntaxKind::StringLiteralExpression) {
 		return {
 			.kind = LoadSubsetPathStep::Kind::Field,
 			.fieldKey = runtime.machine.cpu.stringPool().intern(expression.stringValue),
+		};
+	}
+	if (expression.kind == LuaSyntaxKind::StringRefExpression) {
+		if (expression.operand->kind != LuaSyntaxKind::StringLiteralExpression) {
+			fail(chunkName, "index expressions must use string or numeric literals", &expression.range);
+		}
+		return {
+			.kind = LoadSubsetPathStep::Kind::Field,
+			.fieldKey = runtime.machine.cpu.stringPool().intern(expression.operand->stringValue),
 		};
 	}
 	fail(chunkName, "index expressions must use string or numeric literals", &expression.range);
@@ -232,8 +241,12 @@ Value compileLiteralExpr(Runtime& runtime, const std::string& chunkName, const L
 		case LuaSyntaxKind::NumericLiteralExpression:
 			return valueNumber(expression.numberValue);
 		case LuaSyntaxKind::StringLiteralExpression:
-		case LuaSyntaxKind::StringRefLiteralExpression:
 			return valueString(runtime.machine.cpu.stringPool().intern(expression.stringValue));
+		case LuaSyntaxKind::StringRefExpression:
+			if (expression.operand->kind != LuaSyntaxKind::StringLiteralExpression) {
+				fail(chunkName, "unsupported literal expression", &expression.range);
+			}
+			return valueString(runtime.machine.cpu.stringPool().intern(expression.operand->stringValue));
 		default:
 			fail(chunkName, "unsupported literal expression", &expression.range);
 	}
@@ -250,7 +263,7 @@ LoadSubsetValueExpr compileValueExpr(
 		|| expression.kind == LuaSyntaxKind::BooleanLiteralExpression
 		|| expression.kind == LuaSyntaxKind::NumericLiteralExpression
 		|| expression.kind == LuaSyntaxKind::StringLiteralExpression
-		|| expression.kind == LuaSyntaxKind::StringRefLiteralExpression
+		|| expression.kind == LuaSyntaxKind::StringRefExpression
 		|| expression.kind == LuaSyntaxKind::UnaryExpression
 	) {
 		return {

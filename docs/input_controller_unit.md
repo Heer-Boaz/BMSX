@@ -10,17 +10,17 @@ device-owned event FIFO, and an output command datapath.
 | Register | Direction | Value | Effect |
 |---|---:|---|---|
 | `sys_inp_player` | W | u32 | Selects player, 1-based. |
-| `sys_inp_action` | W | `string_ref` | Action name for the next commit. |
-| `sys_inp_bind` | W | `string_ref` | Comma-separated binding names for the selected action. |
+| `sys_inp_action` | W | interned `&` string id | Action name for the next commit. |
+| `sys_inp_bind` | W | interned `&` string id | Comma-separated binding names for the selected action. |
 | `sys_inp_ctrl` | W | u32 | Command latch. |
-| `sys_inp_query` | W | `string_ref` | Action expression evaluated against the ICU snapshot. |
+| `sys_inp_query` | W | interned `&` string id | Action expression evaluated against the ICU snapshot. |
 | `sys_inp_status` | R | u32 | Query result status word. |
 | `sys_inp_value` | R | s16.16 word | Query result value word. |
-| `sys_inp_consume` | W | `string_ref` | Plain action name to consume. |
+| `sys_inp_consume` | W | interned `&` string id | Plain action name to consume. |
 | `sys_inp_event_status` | R | u32 | Event FIFO status bits. |
 | `sys_inp_event_count` | R | u32 | Queued event count. |
 | `sys_inp_event_player` | R | u32 | Front event player, 1-based. |
-| `sys_inp_event_action` | R | `string_ref` | Front event action name id. |
+| `sys_inp_event_action` | R | string id word | Front event action name id. |
 | `sys_inp_event_flags` | R | u32 | Front event packed `inp_status_*` word. |
 | `sys_inp_event_value` | R | s16.16 word | Front event value word. |
 | `sys_inp_event_repeat_count` | R | u32 | Front event repeat count. |
@@ -31,11 +31,11 @@ device-owned event FIFO, and an output command datapath.
 | `sys_inp_output_ctrl` | W | u32 | Output command latch. |
 
 The MMIO contract marks `sys_inp_action`, `sys_inp_bind`, `sys_inp_query`, and
-`sys_inp_consume` as `string_ref`-only. Program images that write normal Lua
-strings to those addresses fail before emission. The ICU receives interned
-string-id words and reads that representation directly. Firmware producers that
-construct a string id dynamically must mark the value with the compiler
-intrinsic `string_ref(value)` at the producer boundary.
+`sys_inp_consume` as interned-string-id writes. Program images that write normal
+Lua strings to those addresses fail before emission. The ICU receives interned
+string-id words and reads that representation directly. Producers mark literals
+or dynamic string expressions with the existing `&` operator at the producer
+boundary, for example `&'left[p]'` or `&(action .. '[p]')`.
 
 ## Commands
 

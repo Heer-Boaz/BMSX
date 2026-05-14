@@ -164,6 +164,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/biquad_filter.cpp
 	machine/devices/audio/source.cpp
 	machine/devices/audio/output.cpp
+	machine/devices/audio/save_state.cpp
 
 	# Input systems
 	input/player.cpp

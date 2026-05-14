@@ -3,11 +3,9 @@ import type { LuaSymbolKind } from '../semantic_contracts';
 import type { SemanticSymbolKind } from './symbols';
 
 export const LUA_INTRINSIC_MEMWRITE = 'memwrite';
-export const LUA_INTRINSIC_STRING_REF = 'string_ref';
 
 export const RESERVED_LUA_INTRINSIC_NAMES = [
 	LUA_INTRINSIC_MEMWRITE,
-	LUA_INTRINSIC_STRING_REF,
 ] as const;
 
 const RESERVED_LUA_INTRINSIC_NAME_SET = new Set<string>(RESERVED_LUA_INTRINSIC_NAMES);

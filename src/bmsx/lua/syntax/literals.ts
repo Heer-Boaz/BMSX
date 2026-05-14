@@ -9,7 +9,7 @@ export function isLuaNilLiteral(expression: LuaExpression): boolean {
 }
 
 export function stringLiteralValue(expression: LuaExpression): string | undefined {
-	if (expression.kind === LuaSyntaxKind.StringLiteralExpression || expression.kind === LuaSyntaxKind.StringRefLiteralExpression) {
+	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
 		return expression.value;
 	}
 	return undefined;

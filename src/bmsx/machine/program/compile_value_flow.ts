@@ -37,7 +37,6 @@ import {
 	classifyAssignmentTargetPreparation,
 	classifyFunctionDeclarationTarget,
 } from './target_semantics';
-import { LUA_INTRINSIC_STRING_REF } from '../../lua/semantic/common';
 
 // ---------------------------------------------------------------------------
 //  Types
@@ -49,7 +48,7 @@ export type CompileValueKind =
 	| 'boolean'
 	| 'number'
 	| 'string'
-	| 'string_ref';
+	| 'string_id';
 
 type CompileTruthiness = 'truthy' | 'falsy' | 'unknown';
 
@@ -82,7 +81,7 @@ const TRUE_VALUE_FACT: CompileValueFact = { kind: 'boolean', truthiness: 'truthy
 const FALSE_VALUE_FACT: CompileValueFact = { kind: 'boolean', truthiness: 'falsy' };
 const NUMBER_VALUE_FACT: CompileValueFact = { kind: 'number', truthiness: 'truthy' };
 const STRING_VALUE_FACT: CompileValueFact = { kind: 'string', truthiness: 'truthy' };
-const STRING_REF_VALUE_FACT: CompileValueFact = { kind: 'string_ref', truthiness: 'truthy' };
+const STRING_ID_VALUE_FACT: CompileValueFact = { kind: 'string_id', truthiness: 'truthy' };
 // Functions are currently represented as generic truthy facts; this is enough
 // for short-circuit reasoning without adding a runtime-visible value category.
 const FUNCTION_VALUE_FACT: CompileValueFact = UNKNOWN_TRUTHY_VALUE_FACT;
@@ -114,8 +113,8 @@ function selectValueFact(kind: CompileValueKind, truthiness: CompileTruthiness):
 			return NUMBER_VALUE_FACT;
 		case 'string':
 			return STRING_VALUE_FACT;
-		case 'string_ref':
-			return STRING_REF_VALUE_FACT;
+		case 'string_id':
+			return STRING_ID_VALUE_FACT;
 		case 'unknown':
 			if (truthiness === 'truthy') return UNKNOWN_TRUTHY_VALUE_FACT;
 			if (truthiness === 'falsy') return UNKNOWN_FALSY_VALUE_FACT;
@@ -178,13 +177,6 @@ function degradeClosureWrittenSymbolsInState(state: MutableFlowState, closureWri
 	}
 }
 
-function isStringRefIntrinsicCall(call: LuaCallExpression, semantics: LuaSemanticFrontendFile): boolean {
-	if (call.methodName !== null || call.callee.kind !== LuaSyntaxKind.IdentifierExpression) return false;
-	const callee = call.callee as LuaIdentifierExpression;
-	if (callee.name !== LUA_INTRINSIC_STRING_REF) return false;
-	return getBoundIdentifierReference(semantics, callee).kind === 'reserved_intrinsic';
-}
-
 function evaluateCallArgumentsState(
 	args: readonly LuaExpression[],
 	state: MutableFlowState,
@@ -212,7 +204,7 @@ function evaluateBinaryOperatorFact(operator: LuaBinaryOperator): CompileValueFa
 		case LuaBinaryOperator.GreaterEqual:
 			return BOOLEAN_VALUE_FACT;
 		case LuaBinaryOperator.Concat:
-			// Concatenation materializes a normal runtime string; string_ref proofs do
+			// Concatenation materializes a normal runtime string; string-id proofs do
 			// not survive '..'.
 			return STRING_VALUE_FACT;
 		case LuaBinaryOperator.BitwiseOr:
@@ -244,8 +236,17 @@ function evaluateExpressionFact(
 ): ExpressionEvaluation {
 	const kind = expression.kind;
 	switch (kind) {
-		case LuaSyntaxKind.StringRefLiteralExpression:
-			return { fact: STRING_REF_VALUE_FACT, state };
+		case LuaSyntaxKind.StringRefExpression: {
+			const operand = evaluateExpressionFact(expression.operand, state, semantics, closureWrittenSymbols);
+			switch (operand.fact.kind) {
+				case 'string':
+				case 'string_id':
+				case 'unknown':
+					return { fact: STRING_ID_VALUE_FACT, state: operand.state };
+				default:
+					return operand;
+			}
+		}
 		case LuaSyntaxKind.StringLiteralExpression:
 			return { fact: STRING_VALUE_FACT, state };
 		case LuaSyntaxKind.NumericLiteralExpression:
@@ -347,23 +348,6 @@ function evaluateExpressionFact(
 		}
 		case LuaSyntaxKind.CallExpression: {
 			const call = expression as LuaCallExpression;
-			if (isStringRefIntrinsicCall(call, semantics)) {
-				if (call.arguments.length !== 1) {
-					return {
-						fact: UNKNOWN_VALUE_FACT,
-						state: evaluateCallArgumentsState(call.arguments, state, semantics, closureWrittenSymbols),
-					};
-				}
-				const argument = evaluateExpressionFact(call.arguments[0], state, semantics, closureWrittenSymbols);
-				switch (argument.fact.kind) {
-					case 'string':
-					case 'string_ref':
-					case 'unknown':
-						return { fact: STRING_REF_VALUE_FACT, state: argument.state };
-					default:
-						return argument;
-				}
-			}
 			let currentState = evaluateExpressionFact(call.callee, state, semantics, closureWrittenSymbols).state;
 			currentState = evaluateCallArgumentsState(call.arguments, currentState, semantics, closureWrittenSymbols);
 			degradeClosureWrittenSymbolsInState(currentState, closureWrittenSymbols);

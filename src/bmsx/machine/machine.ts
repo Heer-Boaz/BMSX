@@ -7,7 +7,8 @@ import {
 	IO_SYS_HOST_FAULT_STAGE,
 } from './bus/io';
 import { CPU } from './cpu/cpu';
-import { AudioController, type AudioControllerState } from './devices/audio/controller';
+import { AudioController } from './devices/audio/controller';
+import type { AudioControllerState } from './devices/audio/save_state';
 import { DmaController } from './devices/dma/controller';
 import { GeometryController } from './devices/geometry/controller';
 import type { GeometryControllerState } from './devices/geometry/state';

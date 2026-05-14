@@ -41,6 +41,9 @@ export function visitLuaExpressionChildren(
 		case LuaSyntaxKind.UnaryExpression:
 			visit((expression as LuaUnaryExpression).operand);
 			return;
+		case LuaSyntaxKind.StringRefExpression:
+			visit(expression.operand);
+			return;
 		case LuaSyntaxKind.CallExpression: {
 			const call = expression as LuaCallExpression;
 			visit(call.callee);
@@ -80,7 +83,6 @@ export function visitLuaExpressionChildren(
 		case LuaSyntaxKind.FunctionExpression:
 		case LuaSyntaxKind.NumericLiteralExpression:
 		case LuaSyntaxKind.StringLiteralExpression:
-		case LuaSyntaxKind.StringRefLiteralExpression:
 		case LuaSyntaxKind.BooleanLiteralExpression:
 		case LuaSyntaxKind.NilLiteralExpression:
 		case LuaSyntaxKind.VarargExpression:
