@@ -119,7 +119,9 @@ fault state.
 
 ### VDP
 
-VDP is a video device, not a render API.
+VDP is a video device, not a render API. Its detailed register, timing,
+fault, subunit-state, host-output, and save-state contract is
+`docs/video_display_processor.md`.
 
 Cart-visible ingress:
 
@@ -296,9 +298,8 @@ should be deleted.
 
 ## Active work queue
 
-1. Clean or delete remaining hardware notes that are not current contracts.
-2. Continue VDP subunit state-machine tightening where boolean ingress state
-   remains.
-3. Continue APU/AOUT proof around deterministic output state and hot-path buffer
+1. Continue VDP subunit state-machine tightening where boolean ingress state
+   remains, especially DEX submitted-work execution state.
+2. Continue APU/AOUT proof around deterministic output state and hot-path buffer
    ownership.
-4. Keep save-state proof expanding through device-visible state, not host queues.
+3. Keep save-state proof expanding through device-visible state, not host queues.
