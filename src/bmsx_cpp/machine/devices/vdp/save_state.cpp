@@ -65,45 +65,17 @@ void VDP::restoreState(const VdpState& state) {
 VdpSaveState VDP::captureSaveState() const {
 	VdpSaveState state;
 	captureVisualStateFields(state);
-	state.vramStaging = m_vramStaging;
-	state.surfacePixels = captureSurfacePixels();
+	state.vram = m_vram.captureState();
 	state.displayFrameBufferPixels = m_fbm.captureDisplayReadback();
 	return state;
 }
 
 void VDP::restoreSaveState(const VdpSaveState& state) {
 	restoreState(state);
-	m_vramStaging = state.vramStaging;
-	for (const VdpSurfacePixelsState& surface : state.surfacePixels) {
-		restoreSurfacePixels(surface);
-	}
+	m_vram.restoreState(state.vram);
+	bindVramSurfaces(false);
 	m_fbm.restoreDisplayReadback(state.displayFrameBufferPixels);
 	commitLiveVisualState();
-}
-
-std::vector<VdpSurfacePixelsState> VDP::captureSurfacePixels() const {
-	std::vector<VdpSurfacePixelsState> surfaces;
-	surfaces.reserve(m_vramSlots.size());
-	for (const VdpSurfaceUploadSlot& slot : m_vramSlots) {
-		VdpSurfacePixelsState state;
-		state.surfaceId = slot.surfaceId;
-		state.surfaceWidth = slot.surfaceWidth;
-		state.surfaceHeight = slot.surfaceHeight;
-		state.pixels = slot.cpuReadback;
-		surfaces.push_back(std::move(state));
-	}
-	return surfaces;
-}
-
-void VDP::restoreSurfacePixels(const VdpSurfacePixelsState& state) {
-	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(state.surfaceId, VDP_FAULT_RD_SURFACE);
-	if (slot == nullptr) {
-		return;
-	}
-	setVramSlotLogicalDimensions(*slot, state.surfaceWidth, state.surfaceHeight, state.surfaceWidth | (state.surfaceHeight << 16u));
-	slot->cpuReadback = state.pixels;
-	m_readback.invalidateSurface(state.surfaceId);
-	markVramSlotDirty(*slot, 0, slot->surfaceHeight);
 }
 
 } // namespace bmsx

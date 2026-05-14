@@ -182,7 +182,8 @@ Saved VDP state includes:
 - SBX live face/control words;
 - XF matrix words and selected indexes;
 - VOUT/dither/display dimensions that affect future output;
-- VRAM staging bytes, surface pixels, and framebuffer display/readback pixels.
+- VRAM unit state: staging bytes and surface pixels.
+- framebuffer display/readback pixels.
 
 Host GPU textures, WebGL/SDL resources, texture handles, renderer queues, and
 host-side scratch are rebuilt from saved device-visible state.
@@ -190,15 +191,15 @@ host-side scratch are rebuilt from saved device-visible state.
 ## Owners
 
 - TS VDP device: `src/bmsx/machine/devices/vdp/vdp.ts`
-- TS VDP save-state, stream ingress, and readback: `save_state.ts`,
-  `ingress.ts`, and `readback.ts`
+- TS VDP save-state, stream ingress, VRAM/surface memory, and readback:
+  `save_state.ts`, `ingress.ts`, `vram.ts`, and `readback.ts`
 - TS VDP constants/registers: `src/bmsx/machine/devices/vdp/contracts.ts` and
   `registers.ts`
 - TS subunits: `bbu.ts`, `fbm.ts`, `frame.ts`, `pmu.ts`, `sbx.ts`, `vout.ts`,
   and `xf.ts`
 - C++ VDP device: `src/bmsx_cpp/machine/devices/vdp/vdp.cpp/.h`
-- C++ VDP save-state, stream ingress, and readback: `save_state.cpp/.h`,
-  `ingress.cpp/.h`, and `readback.cpp/.h`
+- C++ VDP save-state, stream ingress, VRAM/surface memory, and readback:
+  `save_state.cpp/.h`, `ingress.cpp/.h`, `vram.cpp/.h`, and `readback.cpp/.h`
 - C++ VDP constants/registers: `src/bmsx_cpp/machine/devices/vdp/contracts.h`
   and `registers.h`
 - C++ subunits: `bbu.cpp/.h`, `fbm.cpp/.h`, `frame.cpp/.h`, `pmu.cpp/.h`,

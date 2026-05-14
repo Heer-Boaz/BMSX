@@ -141,6 +141,8 @@ Internal units:
 - `DEX` owns direct/stream frame state and submit admission.
 - `streamIngress` owns the DMA submit latch, FIFO partial-word bytes, and sealed
   FIFO packet words.
+- `VRAM` owns staging memory, surface slots, dirty spans, CPU readback pixels,
+  and surface-upload transactions.
 - `readback` owns the CPU-visible read-surface registry, retained read cache,
   per-frame read budget, and overflow latch.
 - `PMU` owns bank registers, selected bank, and BLIT resolve state.
@@ -156,11 +158,12 @@ Internal units:
 Host render backends consume VOUT output transactions. They do not receive cart
 intent such as sprites, rectangles, labels, or scene objects. VDP save-state
 record shapes live in dedicated `machine/devices/vdp/save_state` files on both
-runtimes; the stream-ingress and readback latch/buffer owners live in mirrored
-`machine/devices/vdp/ingress` and `machine/devices/vdp/readback` files. C++
-keeps VDP capture/restore method bodies in the VDP save-state translation unit;
-TS keeps those methods at the private-field device boundary and imports only the
-save-state record shapes.
+runtimes; the stream-ingress, VRAM/surface-memory, and readback latch/buffer
+owners live in mirrored `machine/devices/vdp/ingress`, `machine/devices/vdp/vram`,
+and `machine/devices/vdp/readback` files. C++ keeps aggregate VDP capture/restore
+method bodies in the VDP save-state translation unit; TS aggregate capture/restore
+stays on the device boundary and imports only the save-state record shapes while
+subunit state is owned by the subunit files.
 
 ### APU and AOUT
 
@@ -321,9 +324,6 @@ should be deleted.
 
 ## Active work queue
 
-1. Continue VDP hardware-unit cleanup where VRAM slot/surface-pixel save-state
-   still lives at the main VDP private-field boundary; move it only when a real
-   VRAM/surface-memory owner can own the state directly without a facade.
-2. Continue APU/AOUT proof around BADP fixture coverage and selected-slot
+1. Continue APU/AOUT proof around BADP fixture coverage and selected-slot
    mutation while a decoder-backed voice is active.
-3. Keep save-state proof expanding through device-visible state, not host queues.
+2. Keep save-state proof expanding through device-visible state, not host queues.

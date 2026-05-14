@@ -930,17 +930,35 @@ BinValue encodeVdpSurfacePixelsState(const VdpSurfacePixelsState& state) {
 VdpSurfacePixelsState decodeVdpSurfacePixelsState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpSurfacePixelsState state;
-	state.surfaceId = requireU32(requireField(object, "surfaceId", label), "machine.vdp.surfacePixels.surfaceId");
-	state.surfaceWidth = requireU32(requireField(object, "surfaceWidth", label), "machine.vdp.surfacePixels.surfaceWidth");
-	state.surfaceHeight = requireU32(requireField(object, "surfaceHeight", label), "machine.vdp.surfacePixels.surfaceHeight");
-	state.pixels = requireBinary(requireField(object, "pixels", label), "machine.vdp.surfacePixels.pixels");
+	state.surfaceId = requireU32(requireField(object, "surfaceId", label), "machine.vdp.vram.surfacePixels.surfaceId");
+	state.surfaceWidth = requireU32(requireField(object, "surfaceWidth", label), "machine.vdp.vram.surfacePixels.surfaceWidth");
+	state.surfaceHeight = requireU32(requireField(object, "surfaceHeight", label), "machine.vdp.vram.surfacePixels.surfaceHeight");
+	state.pixels = requireBinary(requireField(object, "pixels", label), "machine.vdp.vram.surfacePixels.pixels");
+	return state;
+}
+
+BinValue encodeVdpVramState(const VdpVramState& state) {
+	BinObject object;
+	object["staging"] = BinBinary(state.staging);
+	object["surfacePixels"] = encodeVector<VdpSurfacePixelsState>(state.surfacePixels, encodeVdpSurfacePixelsState);
+	return BinValue(std::move(object));
+}
+
+VdpVramState decodeVdpVramState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpVramState state;
+	state.staging = requireBinary(requireField(object, "staging", label), "machine.vdp.vram.staging");
+	state.surfacePixels = decodeVector<VdpSurfacePixelsState>(
+		requireField(object, "surfacePixels", label),
+		"machine.vdp.vram.surfacePixels",
+		[](const BinValue& entry, size_t) { return decodeVdpSurfacePixelsState(entry, "machine.vdp.vram.surfacePixels[]"); }
+	);
 	return state;
 }
 
 BinValue encodeVdpSaveState(const VdpSaveState& state) {
 	BinObject object = encodeVdpState(state).asObject();
-	object["vramStaging"] = BinBinary(state.vramStaging);
-	object["surfacePixels"] = encodeVector<VdpSurfacePixelsState>(state.surfacePixels, encodeVdpSurfacePixelsState);
+	object["vram"] = encodeVdpVramState(state.vram);
 	object["displayFrameBufferPixels"] = BinBinary(state.displayFrameBufferPixels);
 	return BinValue(std::move(object));
 }
@@ -966,12 +984,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	state.blitterSequence = base.blitterSequence;
 	state.vdpFaultCode = base.vdpFaultCode;
 	state.vdpFaultDetail = base.vdpFaultDetail;
-	state.vramStaging = requireBinary(requireField(object, "vramStaging", label), "machine.vdp.vramStaging");
-	state.surfacePixels = decodeVector<VdpSurfacePixelsState>(
-		requireField(object, "surfacePixels", label),
-		"machine.vdp.surfacePixels",
-		[](const BinValue& entry, size_t) { return decodeVdpSurfacePixelsState(entry, "machine.vdp.surfacePixels[]"); }
-	);
+	state.vram = decodeVdpVramState(requireField(object, "vram", label), "machine.vdp.vram");
 	state.displayFrameBufferPixels = requireBinary(requireField(object, "displayFrameBufferPixels", label), "machine.vdp.displayFrameBufferPixels");
 	return state;
 }

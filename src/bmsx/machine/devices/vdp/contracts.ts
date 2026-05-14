@@ -43,19 +43,6 @@ export const VDP_PMU_Q16_ONE = 0x00010000;
 
 export const VDP_BBU_BILLBOARD_LIMIT = 1024;
 
-export type VdpFrameBufferSize = {
-	width: number;
-	height: number;
-};
-
-export type VdpVramSurface = {
-	surfaceId: number;
-	baseAddr: number;
-	capacity: number;
-	width: number;
-	height: number;
-};
-
 export const VDP_RD_SURFACE_SYSTEM = 0;
 export const VDP_RD_SURFACE_PRIMARY = 1;
 export const VDP_RD_SURFACE_SECONDARY = 2;

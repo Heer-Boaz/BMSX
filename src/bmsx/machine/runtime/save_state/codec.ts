@@ -19,7 +19,8 @@ import {
 	type GeometryControllerPhase,
 } from '../../devices/geometry/contracts';
 import type { GeometryControllerState, GeometryJobState } from '../../devices/geometry/state';
-import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/save_state';
+import type { VdpSaveState, VdpState } from '../../devices/vdp/save_state';
+import type { VdpSurfacePixelsState, VdpVramState } from '../../devices/vdp/vram';
 import type { VdpStreamIngressState } from '../../devices/vdp/ingress';
 import type { VdpReadbackState } from '../../devices/vdp/readback';
 import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT, VDP_BBU_BILLBOARD_LIMIT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
@@ -836,18 +837,36 @@ function encodeVdpSurfacePixelsState(state: VdpSurfacePixelsState): VdpSurfacePi
 function decodeVdpSurfacePixelsState(value: unknown, label: string): VdpSurfacePixelsState {
 	const object = requireObject(value, label);
 	return {
-		surfaceId: requireObjectKey(object, 'surfaceId', label, 'machine.vdp.surfacePixels.surfaceId') as number,
-		surfaceWidth: requireObjectKey(object, 'surfaceWidth', label, 'machine.vdp.surfacePixels.surfaceWidth') as number,
-		surfaceHeight: requireObjectKey(object, 'surfaceHeight', label, 'machine.vdp.surfacePixels.surfaceHeight') as number,
-		pixels: requireBinaryValue(requireObjectKey(object, 'pixels', label, 'machine.vdp.surfacePixels.pixels'), 'machine.vdp.surfacePixels.pixels'),
+		surfaceId: requireObjectKey(object, 'surfaceId', label, 'machine.vdp.vram.surfacePixels.surfaceId') as number,
+		surfaceWidth: requireObjectKey(object, 'surfaceWidth', label, 'machine.vdp.vram.surfacePixels.surfaceWidth') as number,
+		surfaceHeight: requireObjectKey(object, 'surfaceHeight', label, 'machine.vdp.vram.surfacePixels.surfaceHeight') as number,
+		pixels: requireBinaryValue(requireObjectKey(object, 'pixels', label, 'machine.vdp.vram.surfacePixels.pixels'), 'machine.vdp.vram.surfacePixels.pixels'),
+	};
+}
+
+function encodeVdpVramState(state: VdpVramState): VdpVramState {
+	return {
+		staging: state.staging,
+		surfacePixels: encodeVector(state.surfacePixels, encodeVdpSurfacePixelsState),
+	};
+}
+
+function decodeVdpVramState(value: unknown, label: string): VdpVramState {
+	const object = requireObject(value, label);
+	return {
+		staging: requireBinaryValue(requireObjectKey(object, 'staging', label, 'machine.vdp.vram.staging'), 'machine.vdp.vram.staging'),
+		surfacePixels: decodeVector(
+			requireObjectKey(object, 'surfacePixels', label, 'machine.vdp.vram.surfacePixels'),
+			'machine.vdp.vram.surfacePixels',
+			(entry) => decodeVdpSurfacePixelsState(entry, 'machine.vdp.vram.surfacePixels[]'),
+		),
 	};
 }
 
 function encodeVdpSaveState(state: VdpSaveState): VdpSaveState {
 	return {
 		...encodeVdpState(state),
-		vramStaging: state.vramStaging,
-		surfacePixels: encodeVector(state.surfacePixels, encodeVdpSurfacePixelsState),
+		vram: encodeVdpVramState(state.vram),
 		displayFrameBufferPixels: state.displayFrameBufferPixels,
 	};
 }
@@ -856,12 +875,7 @@ function decodeVdpSaveState(value: unknown, label: string): VdpSaveState {
 	const object = requireObject(value, label);
 	return {
 		...decodeVdpState(value, label),
-		vramStaging: requireBinaryValue(requireObjectKey(object, 'vramStaging', label, 'machine.vdp.vramStaging'), 'machine.vdp.vramStaging'),
-		surfacePixels: decodeVector(
-			requireObjectKey(object, 'surfacePixels', label, 'machine.vdp.surfacePixels'),
-			'machine.vdp.surfacePixels',
-			(entry) => decodeVdpSurfacePixelsState(entry, 'machine.vdp.surfacePixels[]'),
-		),
+		vram: decodeVdpVramState(requireObjectKey(object, 'vram', label, 'machine.vdp.vram'), 'machine.vdp.vram'),
 		displayFrameBufferPixels: requireBinaryValue(requireObjectKey(object, 'displayFrameBufferPixels', label, 'machine.vdp.displayFrameBufferPixels'), 'machine.vdp.displayFrameBufferPixels'),
 	};
 }

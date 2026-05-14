@@ -248,10 +248,12 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					ditherType: 1,
 					vdpFaultCode: 0,
 					vdpFaultDetail: 0,
-					vramStaging: new Uint8Array([7, 8]),
-					surfacePixels: [
-						{ surfaceId: 4, surfaceWidth: 1, surfaceHeight: 1, pixels: new Uint8Array([9, 10, 11, 12]) },
-					],
+					vram: {
+						staging: new Uint8Array([7, 8]),
+						surfacePixels: [
+							{ surfaceId: 4, surfaceWidth: 1, surfaceHeight: 1, pixels: new Uint8Array([9, 10, 11, 12]) },
+						],
+					},
 					displayFrameBufferPixels: new Uint8Array([13, 14]),
 				},
 			},
@@ -320,7 +322,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.vdp.streamIngress.fifoStreamWords, state.machineState.machine.vdp.streamIngress.fifoStreamWords);
 	assert.deepEqual(decoded.machineState.machine.vdp.readback, state.machineState.machine.vdp.readback);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
-	assert.deepEqual(decoded.machineState.machine.vdp.surfacePixels, state.machineState.machine.vdp.surfacePixels);
+	assert.deepEqual(decoded.machineState.machine.vdp.vram, state.machineState.machine.vdp.vram);
 });
 
 test('runtime save-state bytes start at the current property-table payload', () => {

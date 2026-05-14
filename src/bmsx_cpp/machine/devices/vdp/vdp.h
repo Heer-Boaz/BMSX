@@ -20,7 +20,7 @@
 #include "machine/devices/vdp/sbx.h"
 #include "machine/devices/vdp/save_state.h"
 #include "machine/devices/vdp/vout.h"
-#include "machine/devices/vdp/vram_garbage.h"
+#include "machine/devices/vdp/vram.h"
 #include "machine/devices/vdp/xf.h"
 #include <array>
 #include <vector>
@@ -29,24 +29,6 @@ namespace bmsx {
 
 class ImgDecController;
 class VDP;
-
-struct VdpFrameBufferSize {
-	uint32_t width = 0;
-	uint32_t height = 0;
-};
-
-struct VdpEntropySeeds {
-	uint32_t machineSeed = 0x42564d58u;
-	uint32_t bootSeed = 0x7652414du;
-};
-
-struct VdpVramSurface {
-	uint32_t surfaceId = 0;
-	uint32_t baseAddr = 0;
-	uint32_t capacity = 0;
-	uint32_t width = 0;
-	uint32_t height = 0;
-};
 
 class VDP : public Memory::VramWriter {
 public:
@@ -143,13 +125,7 @@ private:
 	Memory& m_memory;
 	DeviceStatusLatch m_fault;
 	ImgDecController* m_imgDecController = nullptr;
-		std::vector<VdpSurfaceUploadSlot> m_vramSlots;
-		VdpSurfaceUpload m_surfaceUploadOutput;
-		std::vector<u8> m_vramStaging;
-	std::vector<u8> m_vramGarbageScratch;
-	std::array<u8, 4> m_vramSeedPixel{{0, 0, 0, 0}};
-	uint32_t m_vramMachineSeed = 0;
-	uint32_t m_vramBootSeed = 0;
+	VdpVramUnit m_vram;
 	VdpReadbackUnit m_readback;
 	VdpSbxUnit m_sbx;
 	SkyboxSamples m_sbxSealSamples{};
@@ -179,21 +155,10 @@ private:
 	VdpFrameBufferSize m_configuredFrameBufferSize;
 	DeviceScheduler& m_scheduler;
 
-	void registerVramSlot(const VdpVramSurface& surface);
-	bool setVramSlotLogicalDimensions(VdpSurfaceUploadSlot& slot, uint32_t width, uint32_t height, uint32_t faultDetail);
-	std::vector<VdpSurfacePixelsState> captureSurfacePixels() const;
-	void restoreSurfacePixels(const VdpSurfacePixelsState& state);
-	VdpSurfaceUploadSlot* findMappedVramSlot(uint32_t addr, size_t length);
-	const VdpSurfaceUploadSlot* findMappedVramSlot(uint32_t addr, size_t length) const;
 	VdpSurfaceUploadSlot* findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode);
 	const VdpSurfaceUploadSlot* findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode) const;
-	void markVramSlotDirty(VdpSurfaceUploadSlot& slot, uint32_t startRow, uint32_t rowCount);
-	void markVramSlotDirtySpan(VdpSurfaceUploadSlot& slot, uint32_t row, uint32_t xStart, uint32_t xEnd);
-	VdpSurfaceUploadSlot* findRegisteredVramSlotBySurfaceId(uint32_t surfaceId);
-	const VdpSurfaceUploadSlot* findRegisteredVramSlotBySurfaceId(uint32_t surfaceId) const;
-	void clearSurfaceUploadDirty(uint32_t surfaceId);
-	void emitSurfaceUpload(VdpSurfaceUploadSink& sink, const VdpSurfaceUploadSlot& slot, bool requiresFullSync);
-	void seedVramSlotPixels(VdpSurfaceUploadSlot& slot);
+	void bindVramSurfaces(bool resetSkybox);
+	bool resizeVramSlot(VdpSurfaceUploadSlot& slot, uint32_t width, uint32_t height, uint32_t faultDetail);
 	u32 nextBlitterSequence();
 	void assignLayeredBlitterCommand(BlitterCommand& command, BlitterCommandType type, int renderCost, Layer2D layer, f32 priority);
 	std::vector<GlyphRunGlyph> acquireGlyphBuffer();

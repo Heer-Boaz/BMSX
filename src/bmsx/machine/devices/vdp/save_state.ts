@@ -1,6 +1,7 @@
 import type { VdpBuildingFrameSaveState, VdpSubmittedFrameSaveState } from './frame';
 import type { VdpStreamIngressState } from './ingress';
 import type { VdpReadbackState } from './readback';
+import type { VdpVramState } from './vram';
 import type { VdpXfState } from './xf';
 
 export type VdpState = {
@@ -23,15 +24,7 @@ export type VdpState = {
 	vdpFaultDetail: number;
 };
 
-export type VdpSurfacePixelsState = {
-	surfaceId: number;
-	surfaceWidth: number;
-	surfaceHeight: number;
-	pixels: Uint8Array;
-};
-
 export type VdpSaveState = VdpState & {
-	vramStaging: Uint8Array;
-	surfacePixels: VdpSurfacePixelsState[];
+	vram: VdpVramState;
 	displayFrameBufferPixels: Uint8Array;
 };

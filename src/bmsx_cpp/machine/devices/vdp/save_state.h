@@ -8,6 +8,7 @@
 #include "machine/devices/vdp/readback.h"
 #include "machine/devices/vdp/registers.h"
 #include "machine/devices/vdp/sbx.h"
+#include "machine/devices/vdp/vram.h"
 #include "machine/devices/vdp/xf.h"
 #include <array>
 #include <vector>
@@ -34,16 +35,8 @@ struct VdpState {
 	u32 vdpFaultDetail = 0;
 };
 
-struct VdpSurfacePixelsState {
-	uint32_t surfaceId = 0;
-	uint32_t surfaceWidth = 0;
-	uint32_t surfaceHeight = 0;
-	std::vector<u8> pixels;
-};
-
 struct VdpSaveState : VdpState {
-	std::vector<u8> vramStaging;
-	std::vector<VdpSurfacePixelsState> surfacePixels;
+	VdpVramState vram;
 	std::vector<u8> displayFrameBufferPixels;
 };
 
