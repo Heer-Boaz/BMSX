@@ -265,11 +265,8 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_geo_cmd_xform2_batch", valueNumber(static_cast<double>(IO_CMD_GEO_XFORM2_BATCH)));
 	runtime.setGlobal("sys_geo_cmd_sat2_batch", valueNumber(static_cast<double>(IO_CMD_GEO_SAT2_BATCH)));
 	runtime.setGlobal("sys_geo_cmd_overlap2d_pass", valueNumber(static_cast<double>(IO_CMD_GEO_OVERLAP2D_PASS)));
-	runtime.setGlobal("sys_geo_cmd_xform3_batch", valueNumber(static_cast<double>(IO_CMD_GEO_XFORM3_BATCH)));
-	runtime.setGlobal("sys_geo_cmd_project3_batch", valueNumber(static_cast<double>(IO_CMD_GEO_PROJECT3_BATCH)));
 	runtime.setGlobal("sys_geo_index_none", valueNumber(static_cast<double>(GEO_INDEX_NONE)));
 	runtime.setGlobal("sys_geo_primitive_aabb", valueNumber(static_cast<double>(GEO_PRIMITIVE_AABB)));
-	runtime.setGlobal("sys_geo_primitive_circle", valueNumber(static_cast<double>(GEO_PRIMITIVE_CIRCLE)));
 	runtime.setGlobal("sys_geo_primitive_convex_poly", valueNumber(static_cast<double>(GEO_PRIMITIVE_CONVEX_POLY)));
 	runtime.setGlobal("sys_geo_shape_convex_poly", valueNumber(static_cast<double>(GEO_SHAPE_CONVEX_POLY)));
 	runtime.setGlobal("sys_geo_vertex2_bytes", valueNumber(static_cast<double>(GEO_VERTEX2_BYTES)));
@@ -294,6 +291,7 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_geo_xform2_aabb_min_y_offset", valueNumber(static_cast<double>(GEO_XFORM2_AABB_MIN_Y_OFFSET)));
 	runtime.setGlobal("sys_geo_xform2_aabb_max_x_offset", valueNumber(static_cast<double>(GEO_XFORM2_AABB_MAX_X_OFFSET)));
 	runtime.setGlobal("sys_geo_xform2_aabb_max_y_offset", valueNumber(static_cast<double>(GEO_XFORM2_AABB_MAX_Y_OFFSET)));
+	runtime.setGlobal("sys_geo_xform2_max_vertices", valueNumber(static_cast<double>(GEO_XFORM2_MAX_VERTICES)));
 	runtime.setGlobal("sys_geo_sat2_pair_bytes", valueNumber(static_cast<double>(GEO_SAT2_PAIR_BYTES)));
 	runtime.setGlobal("sys_geo_sat2_pair_flags_offset", valueNumber(static_cast<double>(GEO_SAT2_PAIR_FLAGS_OFFSET)));
 	runtime.setGlobal("sys_geo_sat2_pair_shape_a_index_offset", valueNumber(static_cast<double>(GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET)));
@@ -311,6 +309,7 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_geo_sat2_result_ny_offset", valueNumber(static_cast<double>(GEO_SAT2_RESULT_NY_OFFSET)));
 	runtime.setGlobal("sys_geo_sat2_result_depth_offset", valueNumber(static_cast<double>(GEO_SAT2_RESULT_DEPTH_OFFSET)));
 	runtime.setGlobal("sys_geo_sat2_result_meta_offset", valueNumber(static_cast<double>(GEO_SAT2_RESULT_META_OFFSET)));
+	runtime.setGlobal("sys_geo_sat2_max_poly_vertices", valueNumber(static_cast<double>(GEO_SAT2_MAX_POLY_VERTICES)));
 	runtime.setGlobal("sys_geo_overlap_mode_candidate_pairs", valueNumber(static_cast<double>(GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS)));
 	runtime.setGlobal("sys_geo_overlap_mode_full_pass", valueNumber(static_cast<double>(GEO_OVERLAP2D_MODE_FULL_PASS)));
 	runtime.setGlobal("sys_geo_overlap_broadphase_none", valueNumber(static_cast<double>(GEO_OVERLAP2D_BROADPHASE_NONE)));

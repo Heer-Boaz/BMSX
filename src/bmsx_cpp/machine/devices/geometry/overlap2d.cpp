@@ -169,9 +169,13 @@ uint32_t GeometryOverlap2dUnit::processPair(GeoJob& job, const std::array<uint32
 		return GEO_FAULT_NONE;
 	}
 	job.broadphasePairCount += 1u;
-	if (!readPieceBounds(shapeAAddr, txA, tyA, m_boundsA)
-		|| !readPieceBounds(shapeBAddr, txB, tyB, m_boundsB)) {
-		return GEO_FAULT_SRC_RANGE;
+	const uint32_t shapeABoundsFault = readPieceBounds(shapeAAddr, txA, tyA, m_boundsA);
+	if (shapeABoundsFault != GEO_FAULT_NONE) {
+		return shapeABoundsFault;
+	}
+	const uint32_t shapeBBoundsFault = readPieceBounds(shapeBAddr, txB, tyB, m_boundsB);
+	if (shapeBBoundsFault != GEO_FAULT_NONE) {
+		return shapeBBoundsFault;
 	}
 	if (!boundsOverlap(m_boundsA, m_boundsB)) {
 		return GEO_FAULT_NONE;
@@ -210,8 +214,9 @@ uint32_t GeometryOverlap2dUnit::processPair(GeoJob& job, const std::array<uint32
 		if (!pieceAAddr.has_value() || !m_memory.isReadableMainMemoryRange(*pieceAAddr, GEO_OVERLAP2D_SHAPE_DESC_BYTES)) {
 			return GEO_FAULT_SRC_RANGE;
 		}
-		if (!readPieceBounds(*pieceAAddr, txA, tyA, m_boundsA)) {
-			return GEO_FAULT_SRC_RANGE;
+		const uint32_t pieceABoundsFault = readPieceBounds(*pieceAAddr, txA, tyA, m_boundsA);
+		if (pieceABoundsFault != GEO_FAULT_NONE) {
+			return pieceABoundsFault;
 		}
 		for (uint32_t pieceBIndex = 0u; pieceBIndex < shapeBPieceCount; pieceBIndex += 1u) {
 			const std::optional<uint32_t> pieceBAddr = shapeBIsCompound
@@ -220,8 +225,9 @@ uint32_t GeometryOverlap2dUnit::processPair(GeoJob& job, const std::array<uint32
 			if (!pieceBAddr.has_value() || !m_memory.isReadableMainMemoryRange(*pieceBAddr, GEO_OVERLAP2D_SHAPE_DESC_BYTES)) {
 				return GEO_FAULT_SRC_RANGE;
 			}
-			if (!readPieceBounds(*pieceBAddr, txB, tyB, m_boundsB)) {
-				return GEO_FAULT_SRC_RANGE;
+			const uint32_t pieceBBoundsFault = readPieceBounds(*pieceBAddr, txB, tyB, m_boundsB);
+			if (pieceBBoundsFault != GEO_FAULT_NONE) {
+				return pieceBBoundsFault;
 			}
 			if (!boundsOverlap(m_boundsA, m_boundsB)) {
 				continue;
@@ -268,17 +274,20 @@ uint32_t GeometryOverlap2dUnit::processPair(GeoJob& job, const std::array<uint32
 	return GEO_FAULT_NONE;
 }
 
-bool GeometryOverlap2dUnit::readPieceBounds(uint32_t pieceAddr, double tx, double ty, std::array<double, 4>& out) const {
+uint32_t GeometryOverlap2dUnit::readPieceBounds(uint32_t pieceAddr, double tx, double ty, std::array<double, 4>& out) const {
 	const uint32_t boundsOffset = m_memory.readU32(pieceAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET);
+	if ((boundsOffset & GEOMETRY_WORD_ALIGN_MASK) != 0u) {
+		return GEO_FAULT_BAD_RECORD_ALIGNMENT;
+	}
 	const std::optional<uint32_t> boundsAddr = resolveGeometryByteOffset(pieceAddr, boundsOffset, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES);
 	if (!boundsAddr.has_value() || !m_memory.isReadableMainMemoryRange(*boundsAddr, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES)) {
-		return false;
+		return GEO_FAULT_SRC_RANGE;
 	}
 	out[0] = static_cast<double>(readF32(*boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET)) + tx;
 	out[1] = static_cast<double>(readF32(*boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET)) + ty;
 	out[2] = static_cast<double>(readF32(*boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET)) + tx;
 	out[3] = static_cast<double>(readF32(*boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET)) + ty;
-	return true;
+	return GEO_FAULT_NONE;
 }
 
 uint32_t GeometryOverlap2dUnit::computePiecePairContact(
@@ -310,6 +319,9 @@ uint32_t GeometryOverlap2dUnit::loadPolyView(uint32_t pieceAddr, double tx, doub
 		if (dataCount != GEO_OVERLAP2D_AABB_DATA_COUNT) {
 			return GEO_FAULT_BAD_VERTEX_COUNT;
 		}
+		if ((dataOffset & GEOMETRY_WORD_ALIGN_MASK) != 0u) {
+			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
+		}
 		const std::optional<uint32_t> dataAddr = resolveGeometryByteOffset(pieceAddr, dataOffset, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES);
 		if (!dataAddr.has_value() || !m_memory.isReadableMainMemoryRange(*dataAddr, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES)) {
 			return GEO_FAULT_SRC_RANGE;
@@ -330,6 +342,9 @@ uint32_t GeometryOverlap2dUnit::loadPolyView(uint32_t pieceAddr, double tx, doub
 	}
 	if (dataCount < 3u || dataCount > GEO_OVERLAP2D_MAX_POLY_VERTICES) {
 		return GEO_FAULT_BAD_VERTEX_COUNT;
+	}
+	if ((dataOffset & GEOMETRY_WORD_ALIGN_MASK) != 0u) {
+		return GEO_FAULT_BAD_RECORD_ALIGNMENT;
 	}
 	const uint64_t byteLength = static_cast<uint64_t>(dataCount) * GEO_VERTEX2_BYTES;
 	const std::optional<uint32_t> dataAddr = resolveGeometryByteOffset(pieceAddr, dataOffset, byteLength);

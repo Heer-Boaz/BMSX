@@ -31,8 +31,9 @@ import {
 	GEO_XFORM2_RECORD_FLAGS_OFFSET,
 	GEO_XFORM2_RECORD_SRC_INDEX_OFFSET,
 	GEO_XFORM2_RECORD_VERTEX_COUNT_OFFSET,
+	GEO_XFORM2_MAX_VERTICES,
 } from './contracts';
-import { GEOMETRY_VERTEX2_U32_SPAN_MAX_COUNT, GEOMETRY_WORD_ALIGN_MASK, resolveGeometryIndexedSpan } from './addressing';
+import { GEOMETRY_WORD_ALIGN_MASK, resolveGeometryIndexedSpan } from './addressing';
 import type { GeometryJobState } from './state';
 import type { Memory } from '../../memory/memory';
 import { toSignedWord, transformFixed16 } from '../../common/numeric';
@@ -94,7 +95,7 @@ export class GeometryXform2Unit {
 		if (vertexCount === 0) {
 			return GEO_FAULT_NONE;
 		}
-		if (vertexCount > GEOMETRY_VERTEX2_U32_SPAN_MAX_COUNT) {
+		if (vertexCount > GEO_XFORM2_MAX_VERTICES) {
 			return GEO_FAULT_BAD_VERTEX_COUNT;
 		}
 		const vertexBytes = vertexCount * GEO_VERTEX2_BYTES;

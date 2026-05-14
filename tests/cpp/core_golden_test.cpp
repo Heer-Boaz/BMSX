@@ -761,6 +761,15 @@ void writeNoopXform2Record(bmsx::Memory& memory, uint32_t addr) {
 	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_DST1_INDEX_OFFSET, bmsx::GEO_INDEX_NONE);
 }
 
+void writeOversizeXform2Record(bmsx::Memory& memory, uint32_t addr) {
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_FLAGS_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_SRC_INDEX_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_DST_INDEX_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_AUX_INDEX_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_VERTEX_COUNT_OFFSET, bmsx::GEO_XFORM2_MAX_VERTICES + 1u);
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_DST1_INDEX_OFFSET, bmsx::GEO_INDEX_NONE);
+}
+
 void writeXform2BatchRegisters(bmsx::Memory& memory, uint32_t jobBase, uint32_t count) {
 	writeIoWord(memory, bmsx::IO_GEO_SRC0, jobBase);
 	writeIoWord(memory, bmsx::IO_GEO_SRC1, jobBase + 0x100u);
@@ -773,6 +782,35 @@ void writeXform2BatchRegisters(bmsx::Memory& memory, uint32_t jobBase, uint32_t 
 	writeIoWord(memory, bmsx::IO_GEO_STRIDE0, bmsx::GEO_XFORM2_RECORD_BYTES);
 	writeIoWord(memory, bmsx::IO_GEO_STRIDE1, bmsx::GEO_VERTEX2_BYTES);
 	writeIoWord(memory, bmsx::IO_GEO_STRIDE2, bmsx::GEO_XFORM2_MATRIX_BYTES);
+}
+
+void writeSat2BatchRegisters(bmsx::Memory& memory, uint32_t pairBase, uint32_t descBase, uint32_t vertexBase, uint32_t resultBase, uint32_t count) {
+	writeIoWord(memory, bmsx::IO_GEO_SRC0, pairBase);
+	writeIoWord(memory, bmsx::IO_GEO_SRC1, descBase);
+	writeIoWord(memory, bmsx::IO_GEO_SRC2, vertexBase);
+	writeIoWord(memory, bmsx::IO_GEO_DST0, resultBase);
+	writeIoWord(memory, bmsx::IO_GEO_DST1, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_COUNT, count);
+	writeIoWord(memory, bmsx::IO_GEO_PARAM0, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_PARAM1, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE0, bmsx::GEO_SAT2_PAIR_BYTES);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE1, bmsx::GEO_SAT2_DESC_BYTES);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE2, bmsx::GEO_VERTEX2_BYTES);
+}
+
+void writeSat2Pair(bmsx::Memory& memory, uint32_t addr) {
+	memory.writeU32(addr + bmsx::GEO_SAT2_PAIR_FLAGS_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_SAT2_PAIR_RESULT_INDEX_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_SAT2_PAIR_SHAPE_B_INDEX_OFFSET, 1u);
+	memory.writeU32(addr + bmsx::GEO_SAT2_PAIR_FLAGS2_OFFSET, 0u);
+}
+
+void writeSat2Desc(bmsx::Memory& memory, uint32_t addr, uint32_t vertexCount, uint32_t vertexOffsetBytes) {
+	memory.writeU32(addr + bmsx::GEO_SAT2_DESC_FLAGS_OFFSET, bmsx::GEO_SHAPE_CONVEX_POLY);
+	memory.writeU32(addr + bmsx::GEO_SAT2_DESC_VERTEX_COUNT_OFFSET, vertexCount);
+	memory.writeU32(addr + bmsx::GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET, vertexOffsetBytes);
+	memory.writeU32(addr + bmsx::GEO_SAT2_DESC_RESERVED_OFFSET, 0u);
 }
 
 constexpr uint32_t OVERLAP2D_FULL_PASS_PARAM0 = bmsx::GEO_OVERLAP2D_MODE_FULL_PASS
@@ -948,6 +986,45 @@ void testGeometryRejectedCommandPhaseGolden() {
 	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Idle, "GEO FAULT_ACK should return rejected phase to IDLE");
 }
 
+void testGeometryXform2RecordCapacityFaultGolden() {
+	RuntimeHarness harness;
+	bmsx::Machine& machine = harness.runtime.machine;
+	bmsx::Memory& memory = machine.memory;
+	const uint32_t jobBase = bmsx::RAM_BASE + 0x700u;
+
+	writeOversizeXform2Record(memory, jobBase);
+	writeXform2BatchRegisters(memory, jobBase, 1u);
+	writeIoWord(memory, bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_XFORM2_BATCH);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO xform2 should enter BUSY before record-capacity fault");
+	machine.geometryController.accrueCycles(1, 1);
+	machine.geometryController.onService(1);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO xform2 should complete through ERROR for oversize vertex batch");
+	require((memory.readIoU32(bmsx::IO_GEO_FAULT) >> bmsx::GEO_FAULT_CODE_SHIFT) == bmsx::GEO_FAULT_BAD_VERTEX_COUNT, "GEO xform2 oversize vertex batch should expose a vertex-count fault");
+	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Error, "GEO xform2 record-capacity fault should latch ERROR phase");
+}
+
+void testGeometrySat2ScratchCapacityFaultGolden() {
+	RuntimeHarness harness;
+	bmsx::Machine& machine = harness.runtime.machine;
+	bmsx::Memory& memory = machine.memory;
+	const uint32_t pairBase = bmsx::RAM_BASE + 0x800u;
+	const uint32_t descBase = bmsx::RAM_BASE + 0x900u;
+	const uint32_t vertexBase = bmsx::RAM_BASE + 0xa00u;
+	const uint32_t resultBase = bmsx::RAM_BASE + 0xb00u;
+
+	writeSat2Pair(memory, pairBase);
+	writeSat2Desc(memory, descBase, bmsx::GEO_SAT2_MAX_POLY_VERTICES + 1u, 0u);
+	writeSat2Desc(memory, descBase + bmsx::GEO_SAT2_DESC_BYTES, 3u, bmsx::GEO_VERTEX2_BYTES * 4u);
+	writeSat2BatchRegisters(memory, pairBase, descBase, vertexBase, resultBase, 1u);
+	writeIoWord(memory, bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_SAT2_BATCH);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO sat2 should enter BUSY before scratch-capacity fault");
+	machine.geometryController.accrueCycles(1, 1);
+	machine.geometryController.onService(1);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO sat2 should complete through ERROR for oversize public poly span");
+	require((memory.readIoU32(bmsx::IO_GEO_FAULT) >> bmsx::GEO_FAULT_CODE_SHIFT) == bmsx::GEO_FAULT_BAD_VERTEX_COUNT, "GEO sat2 oversize public poly span should expose a vertex-count fault");
+	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Error, "GEO sat2 scratch-capacity fault should latch ERROR phase");
+}
+
 void testGeometryOverlap2dSubmitContractGolden() {
 	RuntimeHarness harness;
 	bmsx::Machine& machine = harness.runtime.machine;
@@ -1002,6 +1079,36 @@ void testGeometryOverlap2dSubmitContractGolden() {
 	machine.geometryController.onService(1);
 	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO overlap2d should fault oversize public poly span without uint32 wrap");
 	require((memory.readIoU32(bmsx::IO_GEO_FAULT) >> bmsx::GEO_FAULT_CODE_SHIFT) == bmsx::GEO_FAULT_BAD_VERTEX_COUNT, "GEO overlap2d oversize public poly span should expose a vertex-count fault");
+
+	writeIoWord(memory, bmsx::IO_GEO_FAULT_ACK, 1u);
+	writeOverlap2dInstance(memory, jobBase, shapeA);
+	writeOverlap2dInstance(memory, jobBase + bmsx::GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
+	writeOverlapAabbShape(memory, shapeA, 0x00000000u, 0x00000000u, 0x3f800000u, 0x3f800000u);
+	writeOverlapAabbShape(memory, shapeB, 0x3f000000u, 0x00000000u, 0x3fc00000u, 0x3f800000u);
+	memory.writeU32(shapeA + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET, bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + 1u);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 2u, 0u, resultBase, 1u);
+	writeIoWord(memory, bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_OVERLAP2D_PASS);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO overlap2d unaligned bounds offset should enter BUSY before execution fault");
+	machine.geometryController.accrueCycles(1, 1);
+	machine.geometryController.onService(1);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO overlap2d should fault unaligned bounds offset as execution error");
+	require((memory.readIoU32(bmsx::IO_GEO_FAULT) >> bmsx::GEO_FAULT_CODE_SHIFT) == bmsx::GEO_FAULT_BAD_RECORD_ALIGNMENT, "GEO overlap2d unaligned bounds offset should expose a record-alignment fault");
+	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Error, "GEO overlap2d unaligned bounds offset should latch ERROR phase");
+
+	writeIoWord(memory, bmsx::IO_GEO_FAULT_ACK, 1u);
+	writeOverlap2dInstance(memory, jobBase, shapeA);
+	writeOverlap2dInstance(memory, jobBase + bmsx::GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
+	writeOverlapAabbShape(memory, shapeA, 0x00000000u, 0x00000000u, 0x3f800000u, 0x3f800000u);
+	writeOverlapAabbShape(memory, shapeB, 0x3f000000u, 0x00000000u, 0x3fc00000u, 0x3f800000u);
+	memory.writeU32(shapeA + bmsx::GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET, bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + 1u);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 2u, 0u, resultBase, 1u);
+	writeIoWord(memory, bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_OVERLAP2D_PASS);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO overlap2d unaligned data offset should enter BUSY before execution fault");
+	machine.geometryController.accrueCycles(1, 1);
+	machine.geometryController.onService(1);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO overlap2d should fault unaligned data offset as execution error");
+	require((memory.readIoU32(bmsx::IO_GEO_FAULT) >> bmsx::GEO_FAULT_CODE_SHIFT) == bmsx::GEO_FAULT_BAD_RECORD_ALIGNMENT, "GEO overlap2d unaligned data offset should expose a record-alignment fault");
+	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Error, "GEO overlap2d unaligned data offset should latch ERROR phase");
 }
 
 void testGeometryContractConstantsGolden() {
@@ -1019,6 +1126,8 @@ void testGeometryContractConstantsGolden() {
 	require(static_cast<uint32_t>(bmsx::GeometryControllerPhase::Done) == 2u, "GEO DONE phase ABI value should remain stable");
 	require(static_cast<uint32_t>(bmsx::GeometryControllerPhase::Error) == 3u, "GEO ERROR phase ABI value should remain stable");
 	require(static_cast<uint32_t>(bmsx::GeometryControllerPhase::Rejected) == 4u, "GEO REJECTED phase ABI value should remain stable");
+	require(bmsx::GEO_XFORM2_MAX_VERTICES == 64u, "GEO xform2 vertex capacity should remain stable");
+	require(bmsx::GEO_SAT2_MAX_POLY_VERTICES == 64u, "GEO sat2 convex polygon capacity should remain stable");
 }
 
 struct AudioHarness {
@@ -1729,8 +1838,9 @@ void testSystemGlobalsGeometryContractGolden() {
 		return bmsx::asNumber(harness.runtime.machine.cpu.getGlobalByKey(harness.runtime.internString(name)));
 	};
 	require(globalNumber("sys_geo_primitive_aabb") == static_cast<double>(bmsx::GEO_PRIMITIVE_AABB), "C++ system globals should expose GEO AABB primitive");
-	require(globalNumber("sys_geo_primitive_circle") == static_cast<double>(bmsx::GEO_PRIMITIVE_CIRCLE), "C++ system globals should expose GEO circle primitive");
 	require(globalNumber("sys_geo_primitive_convex_poly") == static_cast<double>(bmsx::GEO_PRIMITIVE_CONVEX_POLY), "C++ system globals should expose GEO convex polygon primitive");
+	require(globalNumber("sys_geo_xform2_max_vertices") == static_cast<double>(bmsx::GEO_XFORM2_MAX_VERTICES), "C++ system globals should expose GEO xform2 vertex capacity");
+	require(globalNumber("sys_geo_sat2_max_poly_vertices") == static_cast<double>(bmsx::GEO_SAT2_MAX_POLY_VERTICES), "C++ system globals should expose GEO sat2 poly scratch capacity");
 	require(globalNumber("sys_geo_overlap_max_poly_vertices") == static_cast<double>(bmsx::GEO_OVERLAP2D_MAX_POLY_VERTICES), "C++ system globals should expose GEO overlap poly scratch capacity");
 	require(globalNumber("sys_geo_overlap_max_clip_vertices") == static_cast<double>(bmsx::GEO_OVERLAP2D_MAX_CLIP_VERTICES), "C++ system globals should expose GEO overlap clip scratch capacity");
 	require(globalNumber("sys_geo_overlap_instance_bytes") == static_cast<double>(bmsx::GEO_OVERLAP2D_INSTANCE_BYTES), "C++ system globals should expose GEO overlap instance record size");
@@ -1765,6 +1875,8 @@ void testSystemGlobalsGeometryContractGolden() {
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_instance_bytes") != nullptr, "C++ builtin descriptors should expose GEO overlap table layout ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_result_pair_meta_offset") != nullptr, "C++ builtin descriptors should expose GEO overlap result layout ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_pair_meta_instance_a_shift") != nullptr, "C++ builtin descriptors should expose GEO overlap pair-meta ABI");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_xform2_max_vertices") != nullptr, "C++ builtin descriptors should expose GEO xform2 capacity ABI");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_sat2_max_poly_vertices") != nullptr, "C++ builtin descriptors should expose GEO sat2 scratch capacity ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_max_poly_vertices") != nullptr, "C++ builtin descriptors should expose GEO overlap scratch capacity ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_primitive_aabb") != nullptr, "C++ builtin descriptors should expose GEO primitive ABI");
 }
@@ -1808,7 +1920,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 36> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 38> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -1828,6 +1940,8 @@ int main() {
 		{"GEO save-state restores active command latch", testGeometrySaveStateRestoresActiveCommandLatchGolden},
 		{"GEO execution fault ack preserves completed status", testGeometryExecutionFaultAckPreservesCompletedStatusGolden},
 		{"GEO rejected command phase", testGeometryRejectedCommandPhaseGolden},
+		{"GEO xform2 record capacity fault", testGeometryXform2RecordCapacityFaultGolden},
+		{"GEO sat2 scratch capacity fault", testGeometrySat2ScratchCapacityFaultGolden},
 		{"GEO overlap2d submit contract", testGeometryOverlap2dSubmitContractGolden},
 		{"GEO contract constants", testGeometryContractConstantsGolden},
 		{"APU contract constants", testApuContractConstantsGolden},

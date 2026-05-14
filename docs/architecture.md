@@ -796,14 +796,20 @@ Already advanced in this goal:
   `GeometryOverlap2dUnit` under `machine/devices/geometry`. The controller owns
   MMIO latches, phase, timing budget, service scheduling, active-job lifecycle,
   and IRQ/fault latch transitions. XFORM2 owns record/matrix/vertex/AABB
-  memory traversal, SAT2 owns descriptor/pair/projection/result traversal, and
-  overlap2d owns candidate/full-pass decoding, transient
-  instance/bounds/projection/world-poly/clip/contact scratch, summary/result
-  writes, and cart-originating overlap faults. Shared projection interval
-  scratch is a Geometry data shape, not controller state. All datapath scratch
+  memory traversal with a fixed per-record vertex capacity exposed as
+  `sys_geo_xform2_max_vertices`, SAT2 owns descriptor/pair/projection/result
+  traversal with a fixed convex-polygon vertex capacity exposed as
+  `sys_geo_sat2_max_poly_vertices`, and overlap2d owns candidate/full-pass
+  decoding, retained instance/bounds/piece views, fixed clip/contact scratch,
+  summary/result writes, and cart-originating overlap faults. Shared projection
+  interval scratch is a Geometry data shape, not controller state. All datapath scratch
   remains transient and unsaved because it is deterministically derived from the
   active job and RAM operands, while result and summary RAM remain
-  cart-visible device output.
+  cart-visible device output. The Geometry ABI now publishes only implemented
+  command doorbells (`xform2`, `sat2`, `overlap2d`) and implemented primitive
+  kinds (`aabb`, `convex_poly`, `compound`); placeholder XFORM3/PROJECT3
+  command globals/descriptors and the unimplemented circle primitive global
+  were removed instead of preserving fake hardware surfaces that only reject.
 - APU command, status, fault, filter, event, slot, and fixed-point clock/gain
   constants now live with the mirrored APU device contract in
   `machine/devices/audio/contracts.ts` and
@@ -933,12 +939,16 @@ Open problems to continue with:
    reconstructing work from visible registers.
    XFORM2, SAT2, and overlap2d command execution now live in mirrored unit-owned
    datapaths instead of in the generic register/timing controller. XFORM2 owns
-   transform record decoding and result/AABB writes, SAT2 owns pair/descriptor
-   decode plus retained projection scratch and result writes, and overlap2d
-   owns candidate/full-pass decoding, contact scratch, and summary/result
-   writes. That scratch remains excluded from save-state because it is
-   deterministically derived from the active job and RAM operands. The remaining
-   Geometry work is to audit whether every cart-visible error is represented as
+   transform record decoding, a fixed per-record vertex capacity, and
+   result/AABB writes, SAT2 owns pair/descriptor decode plus retained
+   projection scratch, a fixed polygon vertex capacity, and result writes, and
+   overlap2d owns candidate/full-pass decoding, retained piece views, fixed
+   clip/contact scratch, and summary/result writes. Placeholder 3D Geometry
+   command globals/descriptors and the circle primitive global are no longer
+   exposed as if they were implemented hardware. That scratch remains excluded
+   from save-state because it is deterministically derived from the active job
+   and RAM operands. The remaining Geometry work is to audit whether every
+   cart-visible error is represented as
    device status rather than host exception or ad-hoc rejection, and whether the
    register/latch contract is tight enough for future geometry commands. The existing
    `docs/geo_overlap2d_pass_v1.md` is a good hardware-contract note, but it does

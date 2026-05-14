@@ -33,8 +33,9 @@ It does not own:
 - event emission
 - gameplay resolution
 
-Lower-level `GEO` commands such as `xform2_batch`, `sat2_batch`,
-`xform3_batch`, and `project3_batch` remain valid alongside this pass.
+Lower-level implemented `GEO` commands such as `xform2_batch` and `sat2_batch`
+remain valid alongside this pass. Unimplemented 3D transform/project commands
+are not published as cart-facing ABI names.
 
 ## High-Level Rules
 
@@ -177,11 +178,15 @@ word2 data_offset
 word3 bounds_offset
 ```
 
+`data_offset` and `bounds_offset` are byte offsets from the descriptor address,
+and both must be 32-bit aligned. Misaligned shape payload offsets complete the
+command with `GEO_FAULT_BAD_RECORD_ALIGNMENT`; they are not silently rounded and
+they are not interpreted as host memory access failures.
+
 Primitive kinds:
 
 ```c
 1 = aabb
-2 = circle
 3 = convex_poly
 4 = compound
 ```
@@ -189,7 +194,6 @@ Primitive kinds:
 Primitive payloads:
 
 - `aabb`: `left, top, right, bottom` as IEEE-754 float32 words
-- `circle`: reserved for a later command contract
 - `convex_poly`: vertex array `x0, y0, x1, y1, ...` as IEEE-754 float32 words
 - `compound`: `data_count` child descriptors at `data_offset`
 
@@ -456,9 +460,10 @@ therefore uses the edge-order tie-break: the top-edge Y axis wins before the
 right-edge X axis. For axis-aligned rectangle intersections, the clipped
 intersection average is the center of the overlap rectangle.
 
-`circle` remains a reserved primitive kind for a later GEO command contract.
-The current OVERLAP2D pass rejects circle descriptors instead of applying a
-partial contact policy.
+Circle is not part of the current public primitive ABI. A descriptor word that
+does not name `aabb`, `convex_poly`, or `compound` faults as an unsupported
+descriptor kind; future circle support must introduce a real Geometry command
+contract when the datapath exists.
 
 ## Fault Model
 
@@ -477,6 +482,7 @@ Execution faults include:
 - bad instance index
 - self-pair in candidate mode
 - malformed shape or piece data
+- misaligned shape payload offsets
 - polygon vertex count outside the device scratch capacity
 - source or destination range fault
 - result capacity overflow

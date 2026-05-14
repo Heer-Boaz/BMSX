@@ -1,5 +1,4 @@
 export const GEOMETRY_WORD_ALIGN_MASK = 3;
-export const GEOMETRY_VERTEX2_U32_SPAN_MAX_COUNT = 0x1fff_ffff;
 
 export function resolveGeometryByteOffset(base: number, offset: number, byteLength: number): number | null {
 	if (offset > 0xffff_ffff || byteLength > 0x1_0000_0000) {

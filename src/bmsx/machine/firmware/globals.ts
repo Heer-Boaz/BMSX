@@ -106,7 +106,6 @@ import {
 	GEO_OVERLAP2D_PAIR_META_INSTANCE_A_SHIFT,
 	GEO_OVERLAP2D_PAIR_META_INSTANCE_B_MASK,
 	GEO_PRIMITIVE_AABB,
-	GEO_PRIMITIVE_CIRCLE,
 	GEO_PRIMITIVE_CONVEX_POLY,
 	GEO_SAT_META_AXIS_MASK,
 	GEO_SAT_META_SHAPE_AUX,
@@ -135,6 +134,7 @@ import {
 	GEO_XFORM2_AABB_MIN_Y_OFFSET,
 	GEO_XFORM2_AABB_MAX_X_OFFSET,
 	GEO_XFORM2_AABB_MAX_Y_OFFSET,
+	GEO_XFORM2_MAX_VERTICES,
 	GEO_SAT2_PAIR_BYTES,
 	GEO_SAT2_PAIR_FLAGS_OFFSET,
 	GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET,
@@ -152,15 +152,14 @@ import {
 	GEO_SAT2_RESULT_NY_OFFSET,
 	GEO_SAT2_RESULT_DEPTH_OFFSET,
 	GEO_SAT2_RESULT_META_OFFSET,
+	GEO_SAT2_MAX_POLY_VERTICES,
 	GEO_STATUS_BUSY,
 	GEO_STATUS_DONE,
 	GEO_STATUS_ERROR,
 	GEO_STATUS_REJECTED,
 	IO_CMD_GEO_OVERLAP2D_PASS,
-	IO_CMD_GEO_PROJECT3_BATCH,
 	IO_CMD_GEO_SAT2_BATCH,
 	IO_CMD_GEO_XFORM2_BATCH,
-	IO_CMD_GEO_XFORM3_BATCH,
 } from '../devices/geometry/contracts';
 import {
 	APU_COMMAND_FIFO_CAPACITY,
@@ -1608,11 +1607,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_geo_cmd_xform2_batch', IO_CMD_GEO_XFORM2_BATCH);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_cmd_sat2_batch', IO_CMD_GEO_SAT2_BATCH);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_cmd_overlap2d_pass', IO_CMD_GEO_OVERLAP2D_PASS);
-	luaPipeline.registerGlobal(runtime, 'sys_geo_cmd_xform3_batch', IO_CMD_GEO_XFORM3_BATCH);
-	luaPipeline.registerGlobal(runtime, 'sys_geo_cmd_project3_batch', IO_CMD_GEO_PROJECT3_BATCH);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_index_none', GEO_INDEX_NONE);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_primitive_aabb', GEO_PRIMITIVE_AABB);
-	luaPipeline.registerGlobal(runtime, 'sys_geo_primitive_circle', GEO_PRIMITIVE_CIRCLE);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_primitive_convex_poly', GEO_PRIMITIVE_CONVEX_POLY);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_shape_convex_poly', GEO_SHAPE_CONVEX_POLY);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_vertex2_bytes', GEO_VERTEX2_BYTES);
@@ -1637,6 +1633,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_aabb_min_y_offset', GEO_XFORM2_AABB_MIN_Y_OFFSET);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_aabb_max_x_offset', GEO_XFORM2_AABB_MAX_X_OFFSET);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_aabb_max_y_offset', GEO_XFORM2_AABB_MAX_Y_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_max_vertices', GEO_XFORM2_MAX_VERTICES);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_pair_bytes', GEO_SAT2_PAIR_BYTES);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_pair_flags_offset', GEO_SAT2_PAIR_FLAGS_OFFSET);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_pair_shape_a_index_offset', GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET);
@@ -1654,6 +1651,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_result_ny_offset', GEO_SAT2_RESULT_NY_OFFSET);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_result_depth_offset', GEO_SAT2_RESULT_DEPTH_OFFSET);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_result_meta_offset', GEO_SAT2_RESULT_META_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_max_poly_vertices', GEO_SAT2_MAX_POLY_VERTICES);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_mode_candidate_pairs', GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_mode_full_pass', GEO_OVERLAP2D_MODE_FULL_PASS);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_broadphase_none', GEO_OVERLAP2D_BROADPHASE_NONE);

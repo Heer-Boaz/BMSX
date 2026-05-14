@@ -76,7 +76,7 @@ constexpr std::array<LuaBuiltinDescriptor, 4> kSystemLuaBuiltinGlobals{{
 	LuaBuiltinDescriptor{"sorted_scratchbatch", "sorted_scratchbatch", "Sorted scratch batch module table (sorted_scratchbatch.new; batches support clear, push, get, reserve, for_each, iter, set_compare, sort)."},
 }};
 
-constexpr std::array<LuaBuiltinDescriptor, 487> kDefaultLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 485> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"assert", "assert(value [, message])", ""},
 	LuaBuiltinDescriptor{"error", "error(message [, level])", ""},
 	LuaBuiltinDescriptor{"getmetatable", "getmetatable(object)", ""},
@@ -435,11 +435,8 @@ constexpr std::array<LuaBuiltinDescriptor, 487> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_geo_cmd_xform2_batch", "sys_geo_cmd_xform2_batch", "GEO command opcode for batched 2D affine transforms."},
 	LuaBuiltinDescriptor{"sys_geo_cmd_sat2_batch", "sys_geo_cmd_sat2_batch", "GEO command opcode for batched convex polygon SAT tests."},
 	LuaBuiltinDescriptor{"sys_geo_cmd_overlap2d_pass", "sys_geo_cmd_overlap2d_pass", "GEO command opcode for the overlap2d coprocessor pass."},
-	LuaBuiltinDescriptor{"sys_geo_cmd_xform3_batch", "sys_geo_cmd_xform3_batch", "GEO command opcode for batched 3D transforms."},
-	LuaBuiltinDescriptor{"sys_geo_cmd_project3_batch", "sys_geo_cmd_project3_batch", "GEO command opcode for batched 3D projection."},
 	LuaBuiltinDescriptor{"sys_geo_index_none", "sys_geo_index_none", "GEO sentinel index meaning no destination record."},
 	LuaBuiltinDescriptor{"sys_geo_primitive_aabb", "sys_geo_primitive_aabb", "GEO primitive kind for an AABB descriptor."},
-	LuaBuiltinDescriptor{"sys_geo_primitive_circle", "sys_geo_primitive_circle", "GEO primitive kind for a circle descriptor."},
 	LuaBuiltinDescriptor{"sys_geo_primitive_convex_poly", "sys_geo_primitive_convex_poly", "GEO primitive kind for a convex polygon descriptor."},
 	LuaBuiltinDescriptor{"sys_geo_shape_convex_poly", "sys_geo_shape_convex_poly", "GEO descriptor flag for convex polygon shapes."},
 	LuaBuiltinDescriptor{"sys_geo_vertex2_bytes", "sys_geo_vertex2_bytes", "GEO shared 2D vertex record size in bytes."},
@@ -464,6 +461,7 @@ constexpr std::array<LuaBuiltinDescriptor, 487> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_geo_xform2_aabb_min_y_offset", "sys_geo_xform2_aabb_min_y_offset", "Byte offset of min Y in a GEO xform2 AABB record."},
 	LuaBuiltinDescriptor{"sys_geo_xform2_aabb_max_x_offset", "sys_geo_xform2_aabb_max_x_offset", "Byte offset of max X in a GEO xform2 AABB record."},
 	LuaBuiltinDescriptor{"sys_geo_xform2_aabb_max_y_offset", "sys_geo_xform2_aabb_max_y_offset", "Byte offset of max Y in a GEO xform2 AABB record."},
+	LuaBuiltinDescriptor{"sys_geo_xform2_max_vertices", "sys_geo_xform2_max_vertices", "GEO xform2 per-record vertex capacity."},
 	LuaBuiltinDescriptor{"sys_geo_sat2_pair_bytes", "sys_geo_sat2_pair_bytes", "GEO sat2 pair record size in bytes."},
 	LuaBuiltinDescriptor{"sys_geo_sat2_pair_flags_offset", "sys_geo_sat2_pair_flags_offset", "Byte offset of flags in a GEO sat2 pair record."},
 	LuaBuiltinDescriptor{"sys_geo_sat2_pair_shape_a_index_offset", "sys_geo_sat2_pair_shape_a_index_offset", "Byte offset of shape A index in a GEO sat2 pair record."},
@@ -481,6 +479,7 @@ constexpr std::array<LuaBuiltinDescriptor, 487> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_geo_sat2_result_ny_offset", "sys_geo_sat2_result_ny_offset", "Byte offset of normal Y in a GEO sat2 result record."},
 	LuaBuiltinDescriptor{"sys_geo_sat2_result_depth_offset", "sys_geo_sat2_result_depth_offset", "Byte offset of penetration depth in a GEO sat2 result record."},
 	LuaBuiltinDescriptor{"sys_geo_sat2_result_meta_offset", "sys_geo_sat2_result_meta_offset", "Byte offset of metadata in a GEO sat2 result record."},
+	LuaBuiltinDescriptor{"sys_geo_sat2_max_poly_vertices", "sys_geo_sat2_max_poly_vertices", "GEO sat2 convex-polygon vertex scratch capacity."},
 	LuaBuiltinDescriptor{"sys_geo_overlap_mode_candidate_pairs", "sys_geo_overlap_mode_candidate_pairs", "GEO overlap2d mode for explicit candidate-pair input."},
 	LuaBuiltinDescriptor{"sys_geo_overlap_mode_full_pass", "sys_geo_overlap_mode_full_pass", "GEO overlap2d mode for full instance-pair traversal."},
 	LuaBuiltinDescriptor{"sys_geo_overlap_broadphase_none", "sys_geo_overlap_broadphase_none", "GEO overlap2d broadphase policy: no device broadphase."},

@@ -30,12 +30,13 @@ import {
 	GEO_SAT2_RESULT_META_OFFSET,
 	GEO_SAT2_RESULT_NX_OFFSET,
 	GEO_SAT2_RESULT_NY_OFFSET,
+	GEO_SAT2_MAX_POLY_VERTICES,
 	GEO_SHAPE_CONVEX_POLY,
 	GEO_VERTEX2_BYTES,
 	GEO_VERTEX2_X_OFFSET,
 	GEO_VERTEX2_Y_OFFSET,
 } from './contracts';
-import { GEOMETRY_VERTEX2_U32_SPAN_MAX_COUNT, GEOMETRY_WORD_ALIGN_MASK, resolveGeometryIndexedSpan } from './addressing';
+import { GEOMETRY_WORD_ALIGN_MASK, resolveGeometryIndexedSpan } from './addressing';
 import { GeometryProjectionSpan } from './projection';
 import type { GeometryJobState } from './state';
 import type { Memory } from '../../memory/memory';
@@ -134,8 +135,8 @@ export class GeometrySat2Unit {
 		if ((shapeAVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) !== 0 || (shapeBVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) !== 0) {
 			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
 		}
-		if (shapeAVertexCount > GEOMETRY_VERTEX2_U32_SPAN_MAX_COUNT
-			|| shapeBVertexCount > GEOMETRY_VERTEX2_U32_SPAN_MAX_COUNT) {
+		if (shapeAVertexCount > GEO_SAT2_MAX_POLY_VERTICES
+			|| shapeBVertexCount > GEO_SAT2_MAX_POLY_VERTICES) {
 			return GEO_FAULT_BAD_VERTEX_COUNT;
 		}
 		const shapeAVertexBytes = shapeAVertexCount * GEO_VERTEX2_BYTES;

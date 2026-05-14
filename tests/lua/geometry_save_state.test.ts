@@ -33,6 +33,7 @@ import {
 	GEOMETRY_CONTROLLER_PHASE_IDLE,
 	GEOMETRY_CONTROLLER_PHASE_REJECTED,
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
+	GEO_FAULT_BAD_RECORD_ALIGNMENT,
 	GEO_FAULT_BAD_VERTEX_COUNT,
 	GEO_FAULT_CODE_SHIFT,
 	GEO_INDEX_NONE,
@@ -67,6 +68,20 @@ import {
 	GEO_OVERLAP2D_SUMMARY_RESULT_COUNT_OFFSET,
 	GEO_PRIMITIVE_AABB,
 	GEO_PRIMITIVE_CONVEX_POLY,
+	GEO_SAT2_DESC_BYTES,
+	GEO_SAT2_DESC_FLAGS_OFFSET,
+	GEO_SAT2_DESC_RESERVED_OFFSET,
+	GEO_SAT2_DESC_VERTEX_COUNT_OFFSET,
+	GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET,
+	GEO_SAT2_MAX_POLY_VERTICES,
+	GEO_SAT2_PAIR_BYTES,
+	GEO_SAT2_PAIR_FLAGS2_OFFSET,
+	GEO_SAT2_PAIR_FLAGS_OFFSET,
+	GEO_SAT2_PAIR_RESULT_INDEX_OFFSET,
+	GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET,
+	GEO_SAT2_PAIR_SHAPE_B_INDEX_OFFSET,
+	GEO_SAT2_RESULT_BYTES,
+	GEO_SHAPE_CONVEX_POLY,
 	GEO_VERTEX2_BYTES,
 	GEO_XFORM2_MATRIX_BYTES,
 	GEO_XFORM2_RECORD_AUX_INDEX_OFFSET,
@@ -76,11 +91,13 @@ import {
 	GEO_XFORM2_RECORD_FLAGS_OFFSET,
 	GEO_XFORM2_RECORD_SRC_INDEX_OFFSET,
 	GEO_XFORM2_RECORD_VERTEX_COUNT_OFFSET,
+	GEO_XFORM2_MAX_VERTICES,
 	GEO_STATUS_BUSY,
 	GEO_STATUS_DONE,
 	GEO_STATUS_ERROR,
 	GEO_STATUS_REJECTED,
 	IO_CMD_GEO_OVERLAP2D_PASS,
+	IO_CMD_GEO_SAT2_BATCH,
 	IO_CMD_GEO_XFORM2_BATCH,
 } from '../../src/bmsx/machine/devices/geometry/contracts';
 import { Machine } from '../../src/bmsx/machine/machine';
@@ -132,6 +149,15 @@ function writeNoopXform2Record(memory: Memory, addr: number): void {
 	memory.writeU32(addr + GEO_XFORM2_RECORD_DST1_INDEX_OFFSET, GEO_INDEX_NONE);
 }
 
+function writeOversizeXform2Record(memory: Memory, addr: number): void {
+	memory.writeU32(addr + GEO_XFORM2_RECORD_FLAGS_OFFSET, 0);
+	memory.writeU32(addr + GEO_XFORM2_RECORD_SRC_INDEX_OFFSET, 0);
+	memory.writeU32(addr + GEO_XFORM2_RECORD_DST_INDEX_OFFSET, 0);
+	memory.writeU32(addr + GEO_XFORM2_RECORD_AUX_INDEX_OFFSET, 0);
+	memory.writeU32(addr + GEO_XFORM2_RECORD_VERTEX_COUNT_OFFSET, GEO_XFORM2_MAX_VERTICES + 1);
+	memory.writeU32(addr + GEO_XFORM2_RECORD_DST1_INDEX_OFFSET, GEO_INDEX_NONE);
+}
+
 function writeXform2BatchRegisters(memory: Memory, jobBase: number, count: number): void {
 	memory.writeValue(IO_GEO_SRC0, jobBase);
 	memory.writeValue(IO_GEO_SRC1, jobBase + 0x100);
@@ -144,6 +170,35 @@ function writeXform2BatchRegisters(memory: Memory, jobBase: number, count: numbe
 	memory.writeValue(IO_GEO_STRIDE0, GEO_XFORM2_RECORD_BYTES);
 	memory.writeValue(IO_GEO_STRIDE1, GEO_VERTEX2_BYTES);
 	memory.writeValue(IO_GEO_STRIDE2, GEO_XFORM2_MATRIX_BYTES);
+}
+
+function writeSat2BatchRegisters(memory: Memory, pairBase: number, descBase: number, vertexBase: number, resultBase: number, count: number): void {
+	memory.writeValue(IO_GEO_SRC0, pairBase);
+	memory.writeValue(IO_GEO_SRC1, descBase);
+	memory.writeValue(IO_GEO_SRC2, vertexBase);
+	memory.writeValue(IO_GEO_DST0, resultBase);
+	memory.writeValue(IO_GEO_DST1, 0);
+	memory.writeValue(IO_GEO_COUNT, count);
+	memory.writeValue(IO_GEO_PARAM0, 0);
+	memory.writeValue(IO_GEO_PARAM1, 0);
+	memory.writeValue(IO_GEO_STRIDE0, GEO_SAT2_PAIR_BYTES);
+	memory.writeValue(IO_GEO_STRIDE1, GEO_SAT2_DESC_BYTES);
+	memory.writeValue(IO_GEO_STRIDE2, GEO_VERTEX2_BYTES);
+}
+
+function writeSat2Pair(memory: Memory, addr: number): void {
+	memory.writeU32(addr + GEO_SAT2_PAIR_FLAGS_OFFSET, 0);
+	memory.writeU32(addr + GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET, 0);
+	memory.writeU32(addr + GEO_SAT2_PAIR_RESULT_INDEX_OFFSET, 0);
+	memory.writeU32(addr + GEO_SAT2_PAIR_SHAPE_B_INDEX_OFFSET, 1);
+	memory.writeU32(addr + GEO_SAT2_PAIR_FLAGS2_OFFSET, 0);
+}
+
+function writeSat2Desc(memory: Memory, addr: number, vertexCount: number, vertexOffsetBytes: number): void {
+	memory.writeU32(addr + GEO_SAT2_DESC_FLAGS_OFFSET, GEO_SHAPE_CONVEX_POLY);
+	memory.writeU32(addr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET, vertexCount);
+	memory.writeU32(addr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET, vertexOffsetBytes);
+	memory.writeU32(addr + GEO_SAT2_DESC_RESERVED_OFFSET, 0);
 }
 
 const OVERLAP2D_FULL_PASS_PARAM0 = GEO_OVERLAP2D_MODE_FULL_PASS
@@ -374,6 +429,45 @@ test('GEO rejected command is explicit controller phase state', () => {
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_IDLE);
 });
 
+test('GEO xform2 faults oversize vertex batches at the device record capacity', () => {
+	const machine = makeMachine();
+	const memory = machine.memory;
+	const geometry = machine.geometryController;
+	const jobBase = RAM_BASE + 0x700;
+
+	writeOversizeXform2Record(memory, jobBase);
+	writeXform2BatchRegisters(memory, jobBase, 1);
+	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
+	geometry.accrueCycles(1, 1);
+	geometry.onService(1);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
+	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_VERTEX_COUNT);
+	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
+});
+
+test('GEO sat2 faults oversize convex polygons at the device scratch capacity', () => {
+	const machine = makeMachine();
+	const memory = machine.memory;
+	const geometry = machine.geometryController;
+	const pairBase = RAM_BASE + 0x800;
+	const descBase = RAM_BASE + 0x900;
+	const vertexBase = RAM_BASE + 0xa00;
+	const resultBase = RAM_BASE + 0xb00;
+
+	writeSat2Pair(memory, pairBase);
+	writeSat2Desc(memory, descBase, GEO_SAT2_MAX_POLY_VERTICES + 1, 0);
+	writeSat2Desc(memory, descBase + GEO_SAT2_DESC_BYTES, 3, GEO_VERTEX2_BYTES * 4);
+	writeSat2BatchRegisters(memory, pairBase, descBase, vertexBase, resultBase, 1);
+	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_SAT2_BATCH);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
+	geometry.accrueCycles(1, 1);
+	geometry.onService(1);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
+	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_VERTEX_COUNT);
+	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
+});
+
 test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () => {
 	const machine = makeMachine();
 	const memory = machine.memory;
@@ -440,22 +534,53 @@ test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () =>
 	geometry.onService(1);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_VERTEX_COUNT);
+
+	memory.writeValue(IO_GEO_FAULT_ACK, 1);
+	writeOverlap2dInstance(memory, jobBase, shapeA);
+	writeOverlap2dInstance(memory, jobBase + GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
+	writeOverlapAabbShape(memory, shapeA, 0x0000_0000, 0x0000_0000, 0x3f80_0000, 0x3f80_0000);
+	writeOverlapAabbShape(memory, shapeB, 0x3f00_0000, 0x0000_0000, 0x3fc0_0000, 0x3f80_0000);
+	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET, GEO_OVERLAP2D_SHAPE_DESC_BYTES + 1);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
+	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
+	geometry.accrueCycles(1, 1);
+	geometry.onService(1);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
+	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_RECORD_ALIGNMENT);
+	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
+
+	memory.writeValue(IO_GEO_FAULT_ACK, 1);
+	writeOverlap2dInstance(memory, jobBase, shapeA);
+	writeOverlap2dInstance(memory, jobBase + GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
+	writeOverlapAabbShape(memory, shapeA, 0x0000_0000, 0x0000_0000, 0x3f80_0000, 0x3f80_0000);
+	writeOverlapAabbShape(memory, shapeB, 0x3f00_0000, 0x0000_0000, 0x3fc0_0000, 0x3f80_0000);
+	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET, GEO_OVERLAP2D_SHAPE_DESC_BYTES + 1);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
+	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
+	geometry.accrueCycles(1, 1);
+	geometry.onService(1);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
+	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_RECORD_ALIGNMENT);
+	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
 });
 
 test('GEO cart-visible ABI names are system ROM globals and builtins', () => {
 	for (const name of [
 		'sys_geo_cmd_overlap2d_pass',
 		'sys_geo_primitive_aabb',
-		'sys_geo_primitive_circle',
 		'sys_geo_primitive_convex_poly',
 		'sys_geo_vertex2_bytes',
 		'sys_geo_xform2_record_bytes',
 		'sys_geo_xform2_record_vertex_count_offset',
 		'sys_geo_xform2_matrix_bytes',
 		'sys_geo_xform2_aabb_bytes',
+		'sys_geo_xform2_max_vertices',
 		'sys_geo_sat2_pair_bytes',
 		'sys_geo_sat2_desc_bytes',
 		'sys_geo_sat2_result_bytes',
+		'sys_geo_sat2_max_poly_vertices',
 		'sys_geo_overlap_mode_candidate_pairs',
 		'sys_geo_overlap_mode_full_pass',
 		'sys_geo_overlap_broadphase_none',
@@ -492,6 +617,8 @@ test('GEO cart-visible ABI names are system ROM globals and builtins', () => {
 		assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has(name), true);
 		assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes(name), true);
 	}
+	assert.equal(GEO_XFORM2_MAX_VERTICES, 64);
+	assert.equal(GEO_SAT2_MAX_POLY_VERTICES, 64);
 	assert.equal(GEO_OVERLAP2D_MAX_POLY_VERTICES, 64);
 	assert.equal(GEO_OVERLAP2D_MAX_CLIP_VERTICES, GEO_OVERLAP2D_MAX_POLY_VERTICES * 2);
 });

@@ -2,6 +2,7 @@ import { f32BitsToNumber, numberToF32Bits } from '../../common/numeric';
 import type { Memory } from '../../memory/memory';
 import { GEOMETRY_WORD_ALIGN_MASK, resolveGeometryByteOffset, resolveGeometryIndexedSpan } from './addressing';
 import {
+	GEO_FAULT_BAD_RECORD_ALIGNMENT,
 	GEO_FAULT_BAD_RECORD_FLAGS,
 	GEO_FAULT_BAD_VERTEX_COUNT,
 	GEO_FAULT_DESCRIPTOR_KIND,
@@ -292,9 +293,13 @@ export class GeometryOverlap2dUnit {
 			return GEO_FAULT_NONE;
 		}
 		job.broadphasePairCount += 1;
-		if (!this.readPieceBounds(shapeAAddr, txA, tyA, this.boundsA)
-			|| !this.readPieceBounds(shapeBAddr, txB, tyB, this.boundsB)) {
-			return GEO_FAULT_SRC_RANGE;
+		const shapeABoundsFault = this.readPieceBounds(shapeAAddr, txA, tyA, this.boundsA);
+		if (shapeABoundsFault !== GEO_FAULT_NONE) {
+			return shapeABoundsFault;
+		}
+		const shapeBBoundsFault = this.readPieceBounds(shapeBAddr, txB, tyB, this.boundsB);
+		if (shapeBBoundsFault !== GEO_FAULT_NONE) {
+			return shapeBBoundsFault;
 		}
 		if (!this.boundsOverlap(this.boundsA, this.boundsB)) {
 			return GEO_FAULT_NONE;
@@ -333,8 +338,9 @@ export class GeometryOverlap2dUnit {
 			if (pieceAAddr === null || !this.memory.isReadableMainMemoryRange(pieceAAddr, GEO_OVERLAP2D_SHAPE_DESC_BYTES)) {
 				return GEO_FAULT_SRC_RANGE;
 			}
-			if (!this.readPieceBounds(pieceAAddr, txA, tyA, this.boundsA)) {
-				return GEO_FAULT_SRC_RANGE;
+			const pieceABoundsFault = this.readPieceBounds(pieceAAddr, txA, tyA, this.boundsA);
+			if (pieceABoundsFault !== GEO_FAULT_NONE) {
+				return pieceABoundsFault;
 			}
 			for (let pieceBIndex = 0; pieceBIndex < shapeBPieceCount; pieceBIndex += 1) {
 				const pieceBAddr = shapeBIsCompound
@@ -343,8 +349,9 @@ export class GeometryOverlap2dUnit {
 				if (pieceBAddr === null || !this.memory.isReadableMainMemoryRange(pieceBAddr, GEO_OVERLAP2D_SHAPE_DESC_BYTES)) {
 					return GEO_FAULT_SRC_RANGE;
 				}
-				if (!this.readPieceBounds(pieceBAddr, txB, tyB, this.boundsB)) {
-					return GEO_FAULT_SRC_RANGE;
+				const pieceBBoundsFault = this.readPieceBounds(pieceBAddr, txB, tyB, this.boundsB);
+				if (pieceBBoundsFault !== GEO_FAULT_NONE) {
+					return pieceBBoundsFault;
 				}
 				if (!this.boundsOverlap(this.boundsA, this.boundsB)) {
 					continue;
@@ -390,17 +397,20 @@ export class GeometryOverlap2dUnit {
 		return GEO_FAULT_NONE;
 	}
 
-	private readPieceBounds(pieceAddr: number, tx: number, ty: number, out: Float64Array): boolean {
+	private readPieceBounds(pieceAddr: number, tx: number, ty: number, out: Float64Array): number {
 		const boundsOffset = this.memory.readU32(pieceAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET);
+		if ((boundsOffset & GEOMETRY_WORD_ALIGN_MASK) !== 0) {
+			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
+		}
 		const boundsAddr = resolveGeometryByteOffset(pieceAddr, boundsOffset, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES);
 		if (boundsAddr === null || !this.memory.isReadableMainMemoryRange(boundsAddr, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES)) {
-			return false;
+			return GEO_FAULT_SRC_RANGE;
 		}
 		out[0] = this.readF32(boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET) + tx;
 		out[1] = this.readF32(boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET) + ty;
 		out[2] = this.readF32(boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET) + tx;
 		out[3] = this.readF32(boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET) + ty;
-		return true;
+		return GEO_FAULT_NONE;
 	}
 
 	private computePiecePairContact(pieceAAddr: number, txA: number, tyA: number, pieceBAddr: number, txB: number, tyB: number): number {
@@ -425,6 +435,9 @@ export class GeometryOverlap2dUnit {
 			if (dataCount !== GEO_OVERLAP2D_AABB_DATA_COUNT) {
 				return GEO_FAULT_BAD_VERTEX_COUNT;
 			}
+			if ((dataOffset & GEOMETRY_WORD_ALIGN_MASK) !== 0) {
+				return GEO_FAULT_BAD_RECORD_ALIGNMENT;
+			}
 			const dataAddr = resolveGeometryByteOffset(pieceAddr, dataOffset, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES);
 			if (dataAddr === null || !this.memory.isReadableMainMemoryRange(dataAddr, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES)) {
 				return GEO_FAULT_SRC_RANGE;
@@ -445,6 +458,9 @@ export class GeometryOverlap2dUnit {
 		}
 		if (dataCount < 3 || dataCount > GEO_OVERLAP2D_MAX_POLY_VERTICES) {
 			return GEO_FAULT_BAD_VERTEX_COUNT;
+		}
+		if ((dataOffset & GEOMETRY_WORD_ALIGN_MASK) !== 0) {
+			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
 		}
 		const dataBytes = dataCount * GEO_VERTEX2_BYTES;
 		const dataAddr = resolveGeometryByteOffset(pieceAddr, dataOffset, dataBytes);

@@ -68,7 +68,7 @@ uint32_t GeometryXform2Unit::processRecord(GeometryJobState& job) {
 	if (vertexCount == 0u) {
 		return GEO_FAULT_NONE;
 	}
-	if (vertexCount > GEOMETRY_VERTEX2_U32_SPAN_MAX_COUNT) {
+	if (vertexCount > GEO_XFORM2_MAX_VERTICES) {
 		return GEO_FAULT_BAD_VERTEX_COUNT;
 	}
 	const uint32_t vertexBytes = vertexCount * GEO_VERTEX2_BYTES;

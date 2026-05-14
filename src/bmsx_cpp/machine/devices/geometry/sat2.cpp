@@ -100,8 +100,8 @@ uint32_t GeometrySat2Unit::processRecord(GeometryJobState& job) {
 	if ((shapeAVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) != 0u || (shapeBVertexOffsetBytes & GEOMETRY_WORD_ALIGN_MASK) != 0u) {
 		return GEO_FAULT_BAD_RECORD_ALIGNMENT;
 	}
-	if (shapeAVertexCount > GEOMETRY_VERTEX2_U32_SPAN_MAX_COUNT
-		|| shapeBVertexCount > GEOMETRY_VERTEX2_U32_SPAN_MAX_COUNT) {
+	if (shapeAVertexCount > GEO_SAT2_MAX_POLY_VERTICES
+		|| shapeBVertexCount > GEO_SAT2_MAX_POLY_VERTICES) {
 		return GEO_FAULT_BAD_VERTEX_COUNT;
 	}
 	const uint32_t shapeAVertexBytes = shapeAVertexCount * GEO_VERTEX2_BYTES;
