@@ -311,6 +311,14 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'sys_inp_status', params: [], signature: 'sys_inp_status', description: 'Input Controller query status register; simple action queries return packed inp_status_* bits, complex expressions return 1 or 0.' },
 	{ name: 'sys_inp_value', params: [], signature: 'sys_inp_value', description: 'Input Controller value register for simple single-action queries in signed Q16.16.' },
 	{ name: 'sys_inp_consume', params: [], signature: 'sys_inp_consume', description: 'Input Controller consume register; write an action name or comma-separated action names string to consume them in order.' },
+	{ name: 'sys_inp_event_status', params: [], signature: 'sys_inp_event_status', description: 'Input Controller event FIFO status register.' },
+	{ name: 'sys_inp_event_count', params: [], signature: 'sys_inp_event_count', description: 'Input Controller event FIFO queued-entry count register.' },
+	{ name: 'sys_inp_event_player', params: [], signature: 'sys_inp_event_player', description: 'Input Controller front-event player register.' },
+	{ name: 'sys_inp_event_action', params: [], signature: 'sys_inp_event_action', description: 'Input Controller front-event action string reference register.' },
+	{ name: 'sys_inp_event_flags', params: [], signature: 'sys_inp_event_flags', description: 'Input Controller front-event packed inp_status_* flags register.' },
+	{ name: 'sys_inp_event_value', params: [], signature: 'sys_inp_event_value', description: 'Input Controller front-event signed Q16.16 value register.' },
+	{ name: 'sys_inp_event_repeat_count', params: [], signature: 'sys_inp_event_repeat_count', description: 'Input Controller front-event repeat count register.' },
+	{ name: 'sys_inp_event_ctrl', params: [], signature: 'sys_inp_event_ctrl', description: 'Input Controller event FIFO control register; write inp_event_ctrl_pop or inp_event_ctrl_clear.' },
 	{ name: 'sys_apu_source_addr', params: [], signature: 'sys_apu_source_addr', description: 'APU audio source address register.' },
 	{ name: 'sys_apu_source_bytes', params: [], signature: 'sys_apu_source_bytes', description: 'APU audio source byte length register.' },
 	{ name: 'sys_apu_source_sample_rate_hz', params: [], signature: 'sys_apu_source_sample_rate_hz', description: 'APU audio source sample rate register.' },
@@ -574,6 +582,12 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'inp_status_guardedjustpressed', params: [], signature: 'inp_status_guardedjustpressed', description: 'Input Controller status bit: guarded just-pressed accepted this edge.' },
 	{ name: 'inp_status_repeatpressed', params: [], signature: 'inp_status_repeatpressed', description: 'Input Controller status bit: repeat pulse fired this sampled frame.' },
 	{ name: 'inp_status_has_value', params: [], signature: 'inp_status_has_value', description: 'Input Controller status bit: sys_inp_value contains an action value.' },
+	{ name: 'inp_event_status_empty', params: [], signature: 'inp_event_status_empty', description: 'Input Controller event FIFO status bit: FIFO is empty.' },
+	{ name: 'inp_event_status_full', params: [], signature: 'inp_event_status_full', description: 'Input Controller event FIFO status bit: FIFO is full.' },
+	{ name: 'inp_event_status_overflow', params: [], signature: 'inp_event_status_overflow', description: 'Input Controller event FIFO status bit: at least one event was dropped while full.' },
+	{ name: 'inp_event_ctrl_pop', params: [], signature: 'inp_event_ctrl_pop', description: 'Input Controller event FIFO command: pop the front event.' },
+	{ name: 'inp_event_ctrl_clear', params: [], signature: 'inp_event_ctrl_clear', description: 'Input Controller event FIFO command: clear queued events and the overflow latch.' },
+	{ name: 'inp_event_fifo_capacity', params: [], signature: 'inp_event_fifo_capacity', description: 'Input Controller event FIFO capacity in entries.' },
 ];
 
 const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = [

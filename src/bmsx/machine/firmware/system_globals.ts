@@ -237,6 +237,14 @@ const SYSTEM_ROM_INPUT_GLOBAL_NAMES = [
 	'sys_inp_status',
 	'sys_inp_value',
 	'sys_inp_consume',
+	'sys_inp_event_status',
+	'sys_inp_event_count',
+	'sys_inp_event_player',
+	'sys_inp_event_action',
+	'sys_inp_event_flags',
+	'sys_inp_event_value',
+	'sys_inp_event_repeat_count',
+	'sys_inp_event_ctrl',
 	'inp_ctrl_commit',
 	'inp_ctrl_arm',
 	'inp_ctrl_reset',
@@ -252,6 +260,12 @@ const SYSTEM_ROM_INPUT_GLOBAL_NAMES = [
 	'inp_status_guardedjustpressed',
 	'inp_status_repeatpressed',
 	'inp_status_has_value',
+	'inp_event_status_empty',
+	'inp_event_status_full',
+	'inp_event_status_overflow',
+	'inp_event_ctrl_pop',
+	'inp_event_ctrl_clear',
+	'inp_event_fifo_capacity',
 ] as const;
 
 const SYSTEM_ROM_APU_GLOBAL_NAMES = [

@@ -189,4 +189,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'queryStringId',
 	'status',
 	'consumeStringId',
+	'eventFifoEvents',
+	'eventFifoOverflow',
 ] as const;

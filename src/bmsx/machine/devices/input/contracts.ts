@@ -14,6 +14,19 @@ export const INP_STATUS_GUARDED_JUST_PRESSED = 1 << 9;
 export const INP_STATUS_REPEAT_PRESSED = 1 << 10;
 export const INP_STATUS_HAS_VALUE = 1 << 11;
 
+export const INPUT_CONTROLLER_EVENT_FIFO_CAPACITY = 32;
+export const INP_EVENT_STATUS_EMPTY = 1 << 0;
+export const INP_EVENT_STATUS_FULL = 1 << 1;
+export const INP_EVENT_STATUS_OVERFLOW = 1 << 2;
+export const INP_EVENT_CTRL_POP = 1;
+export const INP_EVENT_CTRL_CLEAR = 2;
+export const INP_EVENT_ACTION_STATUS_MASK = INP_STATUS_JUST_PRESSED
+	| INP_STATUS_JUST_RELEASED
+	| INP_STATUS_ALL_JUST_PRESSED
+	| INP_STATUS_ALL_JUST_RELEASED
+	| INP_STATUS_GUARDED_JUST_PRESSED
+	| INP_STATUS_REPEAT_PRESSED;
+
 export function packInputActionStatus(state: ActionState): number {
 	let word = 0;
 	if (state.pressed) word |= INP_STATUS_PRESSED;

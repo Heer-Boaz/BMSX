@@ -9,6 +9,14 @@ import {
 	IO_INP_BIND,
 	IO_INP_CONSUME,
 	IO_INP_CTRL,
+	IO_INP_EVENT_ACTION,
+	IO_INP_EVENT_COUNT,
+	IO_INP_EVENT_CTRL,
+	IO_INP_EVENT_FLAGS,
+	IO_INP_EVENT_PLAYER,
+	IO_INP_EVENT_REPEAT_COUNT,
+	IO_INP_EVENT_STATUS,
+	IO_INP_EVENT_VALUE,
 	IO_INP_PLAYER,
 	IO_INP_QUERY,
 	IO_INP_STATUS,
@@ -20,6 +28,8 @@ import { Input, makeActionState } from '../../src/bmsx/input/manager';
 import { PlayerInput } from '../../src/bmsx/input/player';
 import type { ActionState, GamepadInputMapping, KeyboardInputMapping, PointerInputMapping } from '../../src/bmsx/input/models';
 import {
+	INP_EVENT_CTRL_POP,
+	INP_EVENT_STATUS_EMPTY,
 	INP_STATUS_CONSUMED,
 	INP_STATUS_HAS_VALUE,
 	INP_STATUS_JUST_PRESSED,
@@ -202,6 +212,43 @@ test('input controller mappings drive real PlayerInput contexts without a base i
 	assert.notEqual(status & INP_STATUS_HAS_VALUE, 0);
 	assert.equal(harness.memory.readIoU32(IO_INP_VALUE), 0);
 	assert.equal(playerTwo.getActionState('jump').justpressed, true);
+});
+
+test('input controller event FIFO exposes sampled action edges', () => {
+	const harness = createRealPlayerHarness();
+	const playerTwo = harness.players[1]!;
+	const actionValue = StringValue.get(harness.cpu.stringPool.intern('jump'));
+	const bindValue = StringValue.get(harness.cpu.stringPool.intern('a'));
+
+	harness.memory.writeValue(IO_INP_PLAYER, 2);
+	harness.memory.writeValue(IO_INP_ACTION, actionValue);
+	harness.memory.writeValue(IO_INP_BIND, bindValue);
+	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_COMMIT);
+	playerTwo.recordButtonEvent('gamepad', 'a', { eventType: 'press', identifier: 'a', timestamp: 0, consumed: false, pressId: 9 });
+	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
+	harness.controller.onVblankEdge(1000 / 60, 789);
+
+	assert.equal(harness.memory.readIoU32(IO_INP_EVENT_COUNT), 1);
+	assert.equal(harness.memory.readIoU32(IO_INP_EVENT_PLAYER), 2);
+	assert.equal(asStringId(harness.memory.readValue(IO_INP_EVENT_ACTION) as StringValue), asStringId(actionValue));
+	const flags = harness.memory.readIoU32(IO_INP_EVENT_FLAGS);
+	assert.notEqual(flags & INP_STATUS_JUST_PRESSED, 0);
+	assert.notEqual(flags & INP_STATUS_WAS_PRESSED, 0);
+	assert.notEqual(flags & INP_STATUS_HAS_VALUE, 0);
+	assert.equal(harness.memory.readIoU32(IO_INP_EVENT_VALUE), 0);
+	assert.equal(harness.memory.readIoU32(IO_INP_EVENT_REPEAT_COUNT), 0);
+
+	const savedStrings = harness.cpu.stringPool.captureState();
+	const savedInput = harness.controller.captureState();
+	const restored = createRealPlayerHarness();
+	restored.cpu.stringPool.restoreState(savedStrings);
+	restored.controller.restoreState(savedInput);
+	assert.equal(restored.memory.readIoU32(IO_INP_EVENT_COUNT), 1);
+	assert.equal(asStringId(restored.memory.readValue(IO_INP_EVENT_ACTION) as StringValue), asStringId(actionValue));
+	restored.memory.writeValue(IO_INP_EVENT_CTRL, INP_EVENT_CTRL_POP);
+	assert.equal(restored.memory.readIoU32(IO_INP_EVENT_COUNT), 0);
+	assert.notEqual(restored.memory.readIoU32(IO_INP_EVENT_STATUS) & INP_EVENT_STATUS_EMPTY, 0);
+	assert.equal(restored.memory.readIoU32(IO_INP_EVENT_CTRL), 0);
 });
 
 test('Input.initialize installs host defaults as the base context', () => {

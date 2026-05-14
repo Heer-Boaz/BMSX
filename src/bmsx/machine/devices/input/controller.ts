@@ -9,6 +9,14 @@ import {
 	IO_INP_BIND,
 	IO_INP_CONSUME,
 	IO_INP_CTRL,
+	IO_INP_EVENT_ACTION,
+	IO_INP_EVENT_COUNT,
+	IO_INP_EVENT_CTRL,
+	IO_INP_EVENT_FLAGS,
+	IO_INP_EVENT_PLAYER,
+	IO_INP_EVENT_REPEAT_COUNT,
+	IO_INP_EVENT_STATUS,
+	IO_INP_EVENT_VALUE,
 	IO_INP_PLAYER,
 	IO_INP_QUERY,
 	IO_INP_STATUS,
@@ -20,7 +28,14 @@ import type { StringId, StringPool } from '../../cpu/string_pool';
 import {
 	createInputActionSnapshot,
 	encodeInputActionValueQ16,
+	INP_EVENT_ACTION_STATUS_MASK,
+	INP_EVENT_CTRL_CLEAR,
+	INP_EVENT_CTRL_POP,
+	INP_EVENT_STATUS_EMPTY,
+	INP_EVENT_STATUS_FULL,
+	INP_EVENT_STATUS_OVERFLOW,
 	INP_STATUS_CONSUMED,
+	INPUT_CONTROLLER_EVENT_FIFO_CAPACITY,
 	packInputActionStatus,
 } from './contracts';
 
@@ -38,6 +53,14 @@ type InputControllerActionState = {
 
 type InputControllerPlayerState = {
 	actions: InputControllerActionState[];
+};
+
+type InputControllerEventState = {
+	player: number;
+	actionStringId: StringId;
+	statusWord: number;
+	valueQ16: number;
+	repeatCount: number;
 };
 
 type InputControllerRegisterState = {
@@ -81,6 +104,8 @@ export type InputControllerState = {
 	lastSampleCycle: number;
 	registers: InputControllerRegisterState;
 	players: InputControllerPlayerState[];
+	eventFifoEvents: InputControllerEventState[];
+	eventFifoOverflow: boolean;
 };
 
 function createResetRegisters(): InputControllerRegisterState {
@@ -109,12 +134,31 @@ function createPlayerChipStates(): PlayerChipState[] {
 	return states;
 }
 
+function createEventFifoSlots(): InputControllerEventState[] {
+	const slots = new Array<InputControllerEventState>(INPUT_CONTROLLER_EVENT_FIFO_CAPACITY);
+	for (let index = 0; index < slots.length; index += 1) {
+		slots[index] = {
+			player: 0,
+			actionStringId: 0,
+			statusWord: 0,
+			valueQ16: 0,
+			repeatCount: 0,
+		};
+	}
+	return slots;
+}
+
 export class InputController {
 	private readonly playerStates = createPlayerChipStates();
+	private readonly eventFifo = createEventFifoSlots();
 	private registers = createResetRegisters();
 	private sampleArmed = false;
 	private sampleSequence = 0;
 	private lastSampleCycle = 0;
+	private eventFifoReadIndex = 0;
+	private eventFifoWriteIndex = 0;
+	private eventFifoCount = 0;
+	private eventFifoOverflow = false;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -127,6 +171,15 @@ export class InputController {
 		this.memory.mapIoWrite(IO_INP_CTRL, this.onRegisterWrite.bind(this));
 		this.memory.mapIoWrite(IO_INP_QUERY, this.onRegisterWrite.bind(this));
 		this.memory.mapIoWrite(IO_INP_CONSUME, this.onRegisterWrite.bind(this));
+		this.memory.mapIoRead(IO_INP_EVENT_STATUS, this.onEventRegisterRead.bind(this));
+		this.memory.mapIoRead(IO_INP_EVENT_COUNT, this.onEventRegisterRead.bind(this));
+		this.memory.mapIoRead(IO_INP_EVENT_PLAYER, this.onEventRegisterRead.bind(this));
+		this.memory.mapIoRead(IO_INP_EVENT_ACTION, this.onEventRegisterRead.bind(this));
+		this.memory.mapIoRead(IO_INP_EVENT_FLAGS, this.onEventRegisterRead.bind(this));
+		this.memory.mapIoRead(IO_INP_EVENT_VALUE, this.onEventRegisterRead.bind(this));
+		this.memory.mapIoRead(IO_INP_EVENT_REPEAT_COUNT, this.onEventRegisterRead.bind(this));
+		this.memory.mapIoRead(IO_INP_EVENT_CTRL, this.onEventRegisterRead.bind(this));
+		this.memory.mapIoWrite(IO_INP_EVENT_CTRL, this.onEventCtrlWrite.bind(this));
 	}
 
 	public reset(): void {
@@ -138,6 +191,8 @@ export class InputController {
 			this.clearPlayerActions(playerIndex, state);
 		}
 		this.registers = createResetRegisters();
+		this.clearEventFifo();
+		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
 		this.mirrorRegisters();
 	}
 
@@ -165,6 +220,8 @@ export class InputController {
 			players: this.playerStates.map(state => ({
 				actions: state.actions.map(action => ({ ...action })),
 			})),
+			eventFifoEvents: this.captureEventFifoEvents(),
+			eventFifoOverflow: this.eventFifoOverflow,
 		};
 	}
 
@@ -180,6 +237,9 @@ export class InputController {
 			const restoredPlayer = state.players[playerIndex - 1]!;
 			this.restorePlayerActions(playerIndex, this.playerStates[playerIndex - 1]!, restoredPlayer.actions);
 		}
+		this.restoreEventFifo(state.eventFifoEvents);
+		this.eventFifoOverflow = state.eventFifoOverflow;
+		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
 		this.mirrorRegisters();
 	}
 
@@ -221,6 +281,41 @@ export class InputController {
 				this.resetActions();
 				return;
 		}
+	}
+
+	private onEventRegisterRead(addr: number): Value {
+		switch (addr) {
+			case IO_INP_EVENT_STATUS:
+				return this.readEventFifoStatus();
+			case IO_INP_EVENT_COUNT:
+				return this.eventFifoCount;
+			case IO_INP_EVENT_PLAYER:
+				return this.readFrontEvent().player;
+			case IO_INP_EVENT_ACTION:
+				return StringValue.get(this.readFrontEvent().actionStringId);
+			case IO_INP_EVENT_FLAGS:
+				return this.readFrontEvent().statusWord;
+			case IO_INP_EVENT_VALUE:
+				return this.readFrontEvent().valueQ16;
+			case IO_INP_EVENT_REPEAT_COUNT:
+				return this.readFrontEvent().repeatCount;
+			case IO_INP_EVENT_CTRL:
+				return 0;
+		}
+		throw new Error(`ICU event register read is not mapped for ${addr >>> 0}.`);
+	}
+
+	private onEventCtrlWrite(_addr: number, value: Value): void {
+		const command = (value as number) >>> 0;
+		switch (command) {
+			case INP_EVENT_CTRL_POP:
+				this.popEventFifo();
+				break;
+			case INP_EVENT_CTRL_CLEAR:
+				this.clearEventFifo();
+				break;
+		}
+		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
 	}
 
 	private queryAction(): void {
@@ -329,7 +424,111 @@ export class InputController {
 				action.valueQ16 = encodeInputActionValueQ16(actionState);
 				action.pressTime = actionState.presstime ?? 0;
 				action.repeatCount = actionState.repeatcount >>> 0;
+				if ((action.statusWord & INP_EVENT_ACTION_STATUS_MASK) !== 0) {
+					this.pushEventFifo(playerIndex, action);
+				}
 			}
+		}
+	}
+
+	private readEventFifoStatus(): number {
+		return (this.eventFifoCount === 0 ? INP_EVENT_STATUS_EMPTY : 0)
+			| (this.eventFifoCount === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY ? INP_EVENT_STATUS_FULL : 0)
+			| (this.eventFifoOverflow ? INP_EVENT_STATUS_OVERFLOW : 0);
+	}
+
+	private readFrontEvent(): InputControllerEventState {
+		if (this.eventFifoCount === 0) {
+			return this.eventFifo[0]!;
+		}
+		return this.eventFifo[this.eventFifoReadIndex]!;
+	}
+
+	private pushEventFifo(player: number, action: InputControllerActionState): void {
+		if (this.eventFifoCount === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+			this.eventFifoOverflow = true;
+			return;
+		}
+		const slot = this.eventFifo[this.eventFifoWriteIndex]!;
+		slot.player = player;
+		slot.actionStringId = action.actionStringId;
+		slot.statusWord = action.statusWord;
+		slot.valueQ16 = action.valueQ16;
+		slot.repeatCount = action.repeatCount;
+		this.eventFifoWriteIndex += 1;
+		if (this.eventFifoWriteIndex === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+			this.eventFifoWriteIndex = 0;
+		}
+		this.eventFifoCount += 1;
+	}
+
+	private popEventFifo(): void {
+		if (this.eventFifoCount === 0) {
+			return;
+		}
+		const slot = this.eventFifo[this.eventFifoReadIndex]!;
+		slot.player = 0;
+		slot.actionStringId = 0;
+		slot.statusWord = 0;
+		slot.valueQ16 = 0;
+		slot.repeatCount = 0;
+		this.eventFifoReadIndex += 1;
+		if (this.eventFifoReadIndex === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+			this.eventFifoReadIndex = 0;
+		}
+		this.eventFifoCount -= 1;
+	}
+
+	private clearEventFifo(): void {
+		for (let index = 0; index < this.eventFifo.length; index += 1) {
+			const slot = this.eventFifo[index]!;
+			slot.player = 0;
+			slot.actionStringId = 0;
+			slot.statusWord = 0;
+			slot.valueQ16 = 0;
+			slot.repeatCount = 0;
+		}
+		this.eventFifoReadIndex = 0;
+		this.eventFifoWriteIndex = 0;
+		this.eventFifoCount = 0;
+		this.eventFifoOverflow = false;
+	}
+
+	private captureEventFifoEvents(): InputControllerEventState[] {
+		const events = new Array<InputControllerEventState>(this.eventFifoCount);
+		let entry = this.eventFifoReadIndex;
+		for (let index = 0; index < events.length; index += 1) {
+			const slot = this.eventFifo[entry]!;
+			events[index] = {
+				player: slot.player,
+				actionStringId: slot.actionStringId,
+				statusWord: slot.statusWord,
+				valueQ16: slot.valueQ16,
+				repeatCount: slot.repeatCount,
+			};
+			entry += 1;
+			if (entry === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+				entry = 0;
+			}
+		}
+		return events;
+	}
+
+	private restoreEventFifo(events: readonly InputControllerEventState[]): void {
+		this.clearEventFifo();
+		for (let index = 0; index < events.length; index += 1) {
+			const event = events[index]!;
+			const slot = this.eventFifo[this.eventFifoWriteIndex]!;
+			slot.player = event.player;
+			slot.actionStringId = event.actionStringId;
+			slot.statusWord = event.statusWord;
+			slot.valueQ16 = event.valueQ16;
+			slot.repeatCount = event.repeatCount;
+			this.eventFifoWriteIndex += 1;
+			if (this.eventFifoWriteIndex === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+				this.eventFifoWriteIndex = 0;
+			}
+			this.eventFifoCount += 1;
 		}
 	}
 

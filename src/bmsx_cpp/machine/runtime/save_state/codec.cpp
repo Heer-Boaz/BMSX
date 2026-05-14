@@ -1,6 +1,7 @@
 #include "machine/runtime/save_state/codec.h"
 
 #include "common/serializer/binencoder.h"
+#include "machine/devices/input/contracts.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/schema.h"
 #include <cmath>
@@ -353,6 +354,16 @@ BinValue encodeInputControllerState(const InputControllerState& state) {
 		});
 		return BinValue(std::move(playerObject));
 	});
+	object["eventFifoEvents"] = encodeVector(state.eventFifoEvents, [](const InputControllerEventState& event) {
+		BinObject eventObject;
+		eventObject["player"] = static_cast<i64>(event.player);
+		eventObject["actionStringId"] = static_cast<i64>(event.actionStringId);
+		eventObject["statusWord"] = static_cast<i64>(event.statusWord);
+		eventObject["valueQ16"] = static_cast<i64>(event.valueQ16);
+		eventObject["repeatCount"] = static_cast<i64>(event.repeatCount);
+		return BinValue(std::move(eventObject));
+	});
+	object["eventFifoOverflow"] = state.eventFifoOverflow;
 	return BinValue(std::move(object));
 }
 
@@ -393,6 +404,24 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 			}
 		);
 	}
+	state.eventFifoEvents = decodeVector<InputControllerEventState>(
+		requireField(object, "eventFifoEvents", label),
+		"machine.input.eventFifoEvents",
+		[](const BinValue& eventValue, size_t) {
+			const BinObject& event = requireObject(eventValue, "machine.input.eventFifoEvents[]");
+			InputControllerEventState stateEvent;
+			stateEvent.player = requireU32(requireField(event, "player", "machine.input.eventFifoEvents[]"), "machine.input.eventFifoEvents[].player");
+			stateEvent.actionStringId = requireU32(requireField(event, "actionStringId", "machine.input.eventFifoEvents[]"), "machine.input.eventFifoEvents[].actionStringId");
+			stateEvent.statusWord = requireU32(requireField(event, "statusWord", "machine.input.eventFifoEvents[]"), "machine.input.eventFifoEvents[].statusWord");
+			stateEvent.valueQ16 = requireU32(requireField(event, "valueQ16", "machine.input.eventFifoEvents[]"), "machine.input.eventFifoEvents[].valueQ16");
+			stateEvent.repeatCount = requireU32(requireField(event, "repeatCount", "machine.input.eventFifoEvents[]"), "machine.input.eventFifoEvents[].repeatCount");
+			return stateEvent;
+		}
+	);
+	if (state.eventFifoEvents.size() > INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+		throw BMSX_RUNTIME_ERROR("machine.input.eventFifoEvents must contain at most " + std::to_string(INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) + " entries.");
+	}
+	state.eventFifoOverflow = requireBool(requireField(object, "eventFifoOverflow", label), "machine.input.eventFifoOverflow");
 	return state;
 }
 

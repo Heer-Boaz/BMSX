@@ -157,6 +157,14 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_inp_status", valueNumber(static_cast<double>(IO_INP_STATUS)));
 	runtime.setGlobal("sys_inp_value", valueNumber(static_cast<double>(IO_INP_VALUE)));
 	runtime.setGlobal("sys_inp_consume", valueNumber(static_cast<double>(IO_INP_CONSUME)));
+	runtime.setGlobal("sys_inp_event_status", valueNumber(static_cast<double>(IO_INP_EVENT_STATUS)));
+	runtime.setGlobal("sys_inp_event_count", valueNumber(static_cast<double>(IO_INP_EVENT_COUNT)));
+	runtime.setGlobal("sys_inp_event_player", valueNumber(static_cast<double>(IO_INP_EVENT_PLAYER)));
+	runtime.setGlobal("sys_inp_event_action", valueNumber(static_cast<double>(IO_INP_EVENT_ACTION)));
+	runtime.setGlobal("sys_inp_event_flags", valueNumber(static_cast<double>(IO_INP_EVENT_FLAGS)));
+	runtime.setGlobal("sys_inp_event_value", valueNumber(static_cast<double>(IO_INP_EVENT_VALUE)));
+	runtime.setGlobal("sys_inp_event_repeat_count", valueNumber(static_cast<double>(IO_INP_EVENT_REPEAT_COUNT)));
+	runtime.setGlobal("sys_inp_event_ctrl", valueNumber(static_cast<double>(IO_INP_EVENT_CTRL)));
 	runtime.setGlobal("sys_apu_source_addr", valueNumber(static_cast<double>(IO_APU_SOURCE_ADDR)));
 	runtime.setGlobal("sys_apu_source_bytes", valueNumber(static_cast<double>(IO_APU_SOURCE_BYTES)));
 	runtime.setGlobal("sys_apu_source_sample_rate_hz", valueNumber(static_cast<double>(IO_APU_SOURCE_SAMPLE_RATE_HZ)));
@@ -410,6 +418,12 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("inp_status_guardedjustpressed", valueNumber(static_cast<double>(INP_STATUS_GUARDED_JUST_PRESSED)));
 	runtime.setGlobal("inp_status_repeatpressed", valueNumber(static_cast<double>(INP_STATUS_REPEAT_PRESSED)));
 	runtime.setGlobal("inp_status_has_value", valueNumber(static_cast<double>(INP_STATUS_HAS_VALUE)));
+	runtime.setGlobal("inp_event_status_empty", valueNumber(static_cast<double>(INP_EVENT_STATUS_EMPTY)));
+	runtime.setGlobal("inp_event_status_full", valueNumber(static_cast<double>(INP_EVENT_STATUS_FULL)));
+	runtime.setGlobal("inp_event_status_overflow", valueNumber(static_cast<double>(INP_EVENT_STATUS_OVERFLOW)));
+	runtime.setGlobal("inp_event_ctrl_pop", valueNumber(static_cast<double>(INP_EVENT_CTRL_POP)));
+	runtime.setGlobal("inp_event_ctrl_clear", valueNumber(static_cast<double>(INP_EVENT_CTRL_CLEAR)));
+	runtime.setGlobal("inp_event_fifo_capacity", valueNumber(static_cast<double>(INPUT_CONTROLLER_EVENT_FIFO_CAPACITY)));
 }
 
 } // namespace bmsx

@@ -194,6 +194,8 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"queryStringId",
 	"status",
 	"consumeStringId",
+	"eventFifoEvents",
+	"eventFifoOverflow",
 };
 
 } // namespace bmsx

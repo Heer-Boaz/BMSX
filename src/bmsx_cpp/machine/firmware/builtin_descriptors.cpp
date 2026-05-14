@@ -76,7 +76,7 @@ constexpr std::array<LuaBuiltinDescriptor, 4> kSystemLuaBuiltinGlobals{{
 	LuaBuiltinDescriptor{"sorted_scratchbatch", "sorted_scratchbatch", "Sorted scratch batch module table (sorted_scratchbatch.new; batches support clear, push, get, reserve, for_each, iter, set_compare, sort)."},
 }};
 
-constexpr std::array<LuaBuiltinDescriptor, 500> kDefaultLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 514> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"assert", "assert(value [, message])", ""},
 	LuaBuiltinDescriptor{"error", "error(message [, level])", ""},
 	LuaBuiltinDescriptor{"getmetatable", "getmetatable(object)", ""},
@@ -314,6 +314,14 @@ constexpr std::array<LuaBuiltinDescriptor, 500> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_inp_status", "sys_inp_status", "Input Controller query status register; simple action queries return packed inp_status_* bits, complex expressions return 1 or 0."},
 	LuaBuiltinDescriptor{"sys_inp_value", "sys_inp_value", "Input Controller value register for simple single-action queries in signed Q16.16."},
 	LuaBuiltinDescriptor{"sys_inp_consume", "sys_inp_consume", "Input Controller consume register; write an action name or comma-separated action names string to consume them in order."},
+	LuaBuiltinDescriptor{"sys_inp_event_status", "sys_inp_event_status", "Input Controller event FIFO status register."},
+	LuaBuiltinDescriptor{"sys_inp_event_count", "sys_inp_event_count", "Input Controller event FIFO queued-entry count register."},
+	LuaBuiltinDescriptor{"sys_inp_event_player", "sys_inp_event_player", "Input Controller front-event player register."},
+	LuaBuiltinDescriptor{"sys_inp_event_action", "sys_inp_event_action", "Input Controller front-event action string reference register."},
+	LuaBuiltinDescriptor{"sys_inp_event_flags", "sys_inp_event_flags", "Input Controller front-event packed inp_status_* flags register."},
+	LuaBuiltinDescriptor{"sys_inp_event_value", "sys_inp_event_value", "Input Controller front-event signed Q16.16 value register."},
+	LuaBuiltinDescriptor{"sys_inp_event_repeat_count", "sys_inp_event_repeat_count", "Input Controller front-event repeat count register."},
+	LuaBuiltinDescriptor{"sys_inp_event_ctrl", "sys_inp_event_ctrl", "Input Controller event FIFO control register; write inp_event_ctrl_pop or inp_event_ctrl_clear."},
 	LuaBuiltinDescriptor{"sys_apu_source_addr", "sys_apu_source_addr", "APU audio source address register."},
 	LuaBuiltinDescriptor{"sys_apu_source_bytes", "sys_apu_source_bytes", "APU audio source byte length register."},
 	LuaBuiltinDescriptor{"sys_apu_source_sample_rate_hz", "sys_apu_source_sample_rate_hz", "APU audio source sample rate register."},
@@ -577,6 +585,12 @@ constexpr std::array<LuaBuiltinDescriptor, 500> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"inp_status_guardedjustpressed", "inp_status_guardedjustpressed", "Input Controller status bit: guarded just-pressed accepted this edge."},
 	LuaBuiltinDescriptor{"inp_status_repeatpressed", "inp_status_repeatpressed", "Input Controller status bit: repeat pulse fired this sampled frame."},
 	LuaBuiltinDescriptor{"inp_status_has_value", "inp_status_has_value", "Input Controller status bit: sys_inp_value contains an action value."},
+	LuaBuiltinDescriptor{"inp_event_status_empty", "inp_event_status_empty", "Input Controller event FIFO status bit: FIFO is empty."},
+	LuaBuiltinDescriptor{"inp_event_status_full", "inp_event_status_full", "Input Controller event FIFO status bit: FIFO is full."},
+	LuaBuiltinDescriptor{"inp_event_status_overflow", "inp_event_status_overflow", "Input Controller event FIFO status bit: at least one event was dropped while full."},
+	LuaBuiltinDescriptor{"inp_event_ctrl_pop", "inp_event_ctrl_pop", "Input Controller event FIFO command: pop the front event."},
+	LuaBuiltinDescriptor{"inp_event_ctrl_clear", "inp_event_ctrl_clear", "Input Controller event FIFO command: clear queued events and the overflow latch."},
+	LuaBuiltinDescriptor{"inp_event_fifo_capacity", "inp_event_fifo_capacity", "Input Controller event FIFO capacity in entries."},
 }};
 
 constexpr std::array<LuaBuiltinDescriptor, 0> kDefaultLuaBuiltinGlobals{{

@@ -208,6 +208,11 @@ import {
 	APU_STATUS_SELECTED_SLOT_ACTIVE,
 } from '../devices/audio/contracts';
 import {
+	INP_EVENT_CTRL_CLEAR,
+	INP_EVENT_CTRL_POP,
+	INP_EVENT_STATUS_EMPTY,
+	INP_EVENT_STATUS_FULL,
+	INP_EVENT_STATUS_OVERFLOW,
 	INP_STATUS_ALL_JUST_PRESSED,
 	INP_STATUS_ALL_JUST_RELEASED,
 	INP_STATUS_ALL_WAS_PRESSED,
@@ -220,6 +225,7 @@ import {
 	INP_STATUS_REPEAT_PRESSED,
 	INP_STATUS_WAS_PRESSED,
 	INP_STATUS_WAS_RELEASED,
+	INPUT_CONTROLLER_EVENT_FIFO_CAPACITY,
 } from '../devices/input/contracts';
 import {
 	BUS_FAULT_ACCESS_F32,
@@ -330,6 +336,14 @@ import {
 	IO_INP_BIND,
 	IO_INP_CONSUME,
 	IO_INP_CTRL,
+	IO_INP_EVENT_ACTION,
+	IO_INP_EVENT_COUNT,
+	IO_INP_EVENT_CTRL,
+	IO_INP_EVENT_FLAGS,
+	IO_INP_EVENT_PLAYER,
+	IO_INP_EVENT_REPEAT_COUNT,
+	IO_INP_EVENT_STATUS,
+	IO_INP_EVENT_VALUE,
 	IO_INP_PLAYER,
 	IO_INP_QUERY,
 	IO_INP_STATUS,
@@ -1505,6 +1519,14 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_inp_status', IO_INP_STATUS);
 	luaPipeline.registerGlobal(runtime, 'sys_inp_value', IO_INP_VALUE);
 	luaPipeline.registerGlobal(runtime, 'sys_inp_consume', IO_INP_CONSUME);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_event_status', IO_INP_EVENT_STATUS);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_event_count', IO_INP_EVENT_COUNT);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_event_player', IO_INP_EVENT_PLAYER);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_event_action', IO_INP_EVENT_ACTION);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_event_flags', IO_INP_EVENT_FLAGS);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_event_value', IO_INP_EVENT_VALUE);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_event_repeat_count', IO_INP_EVENT_REPEAT_COUNT);
+	luaPipeline.registerGlobal(runtime, 'sys_inp_event_ctrl', IO_INP_EVENT_CTRL);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_source_addr', IO_APU_SOURCE_ADDR);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_source_bytes', IO_APU_SOURCE_BYTES);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_source_sample_rate_hz', IO_APU_SOURCE_SAMPLE_RATE_HZ);
@@ -1604,6 +1626,12 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'inp_status_guardedjustpressed', INP_STATUS_GUARDED_JUST_PRESSED);
 	luaPipeline.registerGlobal(runtime, 'inp_status_repeatpressed', INP_STATUS_REPEAT_PRESSED);
 	luaPipeline.registerGlobal(runtime, 'inp_status_has_value', INP_STATUS_HAS_VALUE);
+	luaPipeline.registerGlobal(runtime, 'inp_event_status_empty', INP_EVENT_STATUS_EMPTY);
+	luaPipeline.registerGlobal(runtime, 'inp_event_status_full', INP_EVENT_STATUS_FULL);
+	luaPipeline.registerGlobal(runtime, 'inp_event_status_overflow', INP_EVENT_STATUS_OVERFLOW);
+	luaPipeline.registerGlobal(runtime, 'inp_event_ctrl_pop', INP_EVENT_CTRL_POP);
+	luaPipeline.registerGlobal(runtime, 'inp_event_ctrl_clear', INP_EVENT_CTRL_CLEAR);
+	luaPipeline.registerGlobal(runtime, 'inp_event_fifo_capacity', INPUT_CONTROLLER_EVENT_FIFO_CAPACITY);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_system_base', SYSTEM_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);

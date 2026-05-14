@@ -2,7 +2,8 @@
 
 This is the CPU-visible contract for the Input Controller Unit (ICU). The ICU
 is a machine device with a registerfile, command latch, VBlank sample latch,
-per-player committed action table, and sampled action status/value words.
+per-player committed action table, sampled action status/value words, and a
+device-owned event FIFO.
 
 ## Register map
 
@@ -16,6 +17,14 @@ per-player committed action table, and sampled action status/value words.
 | `sys_inp_status` | R | u32 | Query result status word. |
 | `sys_inp_value` | R | s16.16 word | Query result value word. |
 | `sys_inp_consume` | W | `string_ref` | Plain action name to consume. |
+| `sys_inp_event_status` | R | u32 | Event FIFO status bits. |
+| `sys_inp_event_count` | R | u32 | Queued event count. |
+| `sys_inp_event_player` | R | u32 | Front event player, 1-based. |
+| `sys_inp_event_action` | R | `string_ref` | Front event action name id. |
+| `sys_inp_event_flags` | R | u32 | Front event packed `inp_status_*` word. |
+| `sys_inp_event_value` | R | s16.16 word | Front event value word. |
+| `sys_inp_event_repeat_count` | R | u32 | Front event repeat count. |
+| `sys_inp_event_ctrl` | W | u32 | Event FIFO command latch. |
 
 String-ref registers are enforced by the compiler/MMIO contract. The ICU reads
 the string id representation directly.
@@ -27,6 +36,8 @@ the string id representation directly.
 | `inp_ctrl_commit` | 1 | Reads `sys_inp_action`/`sys_inp_bind`, updates the selected player's ICU mapping context, and records the committed action ids. |
 | `inp_ctrl_arm` | 2 | Sets the private sample-arm latch. |
 | `inp_ctrl_reset` | 3 | Clears the selected player's ICU mapping context and committed action records. |
+| `inp_event_ctrl_pop` | 1 | Pops the front event FIFO entry. |
+| `inp_event_ctrl_clear` | 2 | Clears queued events and the overflow latch. |
 
 `inp_ctrl_arm` does not sample immediately. The next VBlank edge consumes the
 latch.
@@ -39,7 +50,8 @@ On VBlank, when armed:
 2. latch `lastSampleCycle`;
 3. call the input owner to sample all players once;
 4. snapshot each committed action into ICU-owned words;
-5. clear the arm latch.
+5. push edge/repeat action snapshots into the event FIFO;
+6. clear the arm latch.
 
 Later `sys_inp_query` writes read that ICU snapshot. They do not query live host
 input state.
@@ -67,6 +79,34 @@ Compound expressions return boolean `1`/`0` and zero value.
 `sys_inp_value` stores a signed Q16.16 word. Digital actions use the same value
 register as analog actions.
 
+## Event FIFO
+
+The event FIFO has 32 entries. It is filled only by the ICU sample edge. Each
+entry is a device-visible snapshot:
+
+- player index;
+- action string id;
+- packed action status word;
+- signed-Q16.16 value word;
+- repeat count word.
+
+Events are generated when the sampled status word contains one of these edge or
+repeat bits: `inp_status_justpressed`, `inp_status_justreleased`,
+`inp_status_alljustpressed`, `inp_status_alljustreleased`,
+`inp_status_guardedjustpressed`, or `inp_status_repeatpressed`.
+
+`sys_inp_event_status` exposes:
+
+| Bit | Constant | Meaning |
+|---:|---|---|
+| 0 | `inp_event_status_empty` | FIFO has no queued events. |
+| 1 | `inp_event_status_full` | FIFO is full. |
+| 2 | `inp_event_status_overflow` | At least one event was dropped while full. |
+
+When the FIFO is empty, front-event registers read zero words and string id 0.
+Overflow does not overwrite queued entries; it sets the overflow latch. The clear
+command resets both the queue and the overflow latch.
+
 ## Save state
 
 Saved ICU state:
@@ -77,9 +117,11 @@ Saved ICU state:
 - mirrored registerfile;
 - per-player committed action/bind string ids;
 - sampled `statusWord`, `valueQ16`, `pressTime`, and `repeatCount` per action.
+- queued event FIFO entries;
+- event FIFO overflow latch.
 
 Restore rebuilds the ICU mapping contexts from committed action records and
-preserves the sampled action words.
+preserves the sampled action words and queued FIFO entries.
 
 ## Owners
 

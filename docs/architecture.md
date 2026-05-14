@@ -195,7 +195,9 @@ Cart-visible ingress:
 - `sys_inp_player`, `sys_inp_action`, `sys_inp_bind`, `sys_inp_ctrl`,
   `sys_inp_query`, and `sys_inp_consume` writes;
 - `sys_inp_status` and `sys_inp_value` reads;
-- `inp_ctrl_commit`, `inp_ctrl_arm`, and `inp_ctrl_reset` command words.
+- `sys_inp_event_*` FIFO status/front-entry reads and event control writes;
+- `inp_ctrl_commit`, `inp_ctrl_arm`, `inp_ctrl_reset`,
+  `inp_event_ctrl_pop`, and `inp_event_ctrl_clear` command words.
 
 State owned by ICU:
 
@@ -205,6 +207,9 @@ State owned by ICU:
 - per-player committed action records;
 - per-action sampled `statusWord`, signed-Q16.16 `valueQ16`, `pressTime`, and
   `repeatCount` words.
+- event FIFO entries containing player, action string id, status word, value
+  word, and repeat count;
+- event FIFO read/write pointers, queued count, and overflow latch.
 
 VBlank consumes the arm latch, asks the input owner to sample players once, and
 then snapshots committed actions. Later MMIO queries evaluate against that ICU
@@ -212,9 +217,13 @@ snapshot. A root action query returns the sampled action status/value words; a
 compound expression returns boolean `1`/`0` in `sys_inp_status` and zero in
 `sys_inp_value`.
 
-Remaining ICU work must move toward device hardware, not API cleanup: buffered
-input registers/FIFO, rumble/output control, and stricter raw string-ref MMIO
-contracts are valid next targets.
+The event FIFO is filled at the same sample edge. It queues action edge/repeat
+snapshots and exposes a front-entry register bank plus pop/clear doorbells. The
+queue is saved as visible device state; it is not a host queue.
+
+Remaining ICU work must move toward device hardware, not API cleanup: output /
+rumble control and stricter raw string-ref MMIO contracts are valid next
+targets.
 
 ## Firmware and Lua layer
 
@@ -274,7 +283,8 @@ should be deleted.
 ## Active work queue
 
 1. Clean or delete remaining hardware notes that are not current contracts.
-2. Continue ICU hardware work: buffered input/FIFO and output/rumble control.
+2. Continue ICU hardware work: output/rumble control and raw string-ref MMIO
+   tightening.
 3. Continue VDP subunit state-machine tightening where boolean ingress state
    remains.
 4. Continue APU/AOUT proof around deterministic output state and hot-path buffer

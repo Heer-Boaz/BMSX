@@ -6,6 +6,7 @@ import type { AudioControllerState } from '../../devices/audio/controller';
 import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT } from '../../devices/audio/contracts';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import { INPUT_CONTROLLER_PLAYER_COUNT, type InputControllerState } from '../../devices/input/controller';
+import { INPUT_CONTROLLER_EVENT_FIFO_CAPACITY } from '../../devices/input/contracts';
 import {
 	GEOMETRY_CONTROLLER_PHASE_REJECTED,
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
@@ -281,6 +282,14 @@ function encodeInputControllerState(state: InputControllerState): InputControlle
 				repeatCount: action.repeatCount >>> 0,
 			})),
 		})),
+		eventFifoEvents: encodeVector(state.eventFifoEvents, (event) => ({
+			player: event.player >>> 0,
+			actionStringId: event.actionStringId >>> 0,
+			statusWord: event.statusWord >>> 0,
+			valueQ16: event.valueQ16 >>> 0,
+			repeatCount: event.repeatCount >>> 0,
+		})),
+		eventFifoOverflow: state.eventFifoOverflow,
 	};
 }
 
@@ -314,6 +323,23 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 	if (players.length !== INPUT_CONTROLLER_PLAYER_COUNT) {
 		throw new Error(`machine.input.players must contain ${INPUT_CONTROLLER_PLAYER_COUNT} player entries.`);
 	}
+	const eventFifoEvents = decodeVector(
+		requireObjectKey(object, 'eventFifoEvents', label, 'machine.input.eventFifoEvents'),
+		'machine.input.eventFifoEvents',
+		(eventValue) => {
+			const event = requireObject(eventValue, 'machine.input.eventFifoEvents[]');
+			return {
+				player: requireBoundedU32(requireObjectKey(event, 'player', 'machine.input.eventFifoEvents[]', 'machine.input.eventFifoEvents[].player'), 'machine.input.eventFifoEvents[].player', 0, 0xffffffff),
+				actionStringId: requireBoundedU32(requireObjectKey(event, 'actionStringId', 'machine.input.eventFifoEvents[]', 'machine.input.eventFifoEvents[].actionStringId'), 'machine.input.eventFifoEvents[].actionStringId', 0, 0xffffffff),
+				statusWord: requireBoundedU32(requireObjectKey(event, 'statusWord', 'machine.input.eventFifoEvents[]', 'machine.input.eventFifoEvents[].statusWord'), 'machine.input.eventFifoEvents[].statusWord', 0, 0xffffffff),
+				valueQ16: requireBoundedU32(requireObjectKey(event, 'valueQ16', 'machine.input.eventFifoEvents[]', 'machine.input.eventFifoEvents[].valueQ16'), 'machine.input.eventFifoEvents[].valueQ16', 0, 0xffffffff),
+				repeatCount: requireBoundedU32(requireObjectKey(event, 'repeatCount', 'machine.input.eventFifoEvents[]', 'machine.input.eventFifoEvents[].repeatCount'), 'machine.input.eventFifoEvents[].repeatCount', 0, 0xffffffff),
+			};
+		},
+	);
+	if (eventFifoEvents.length > INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+		throw new Error(`machine.input.eventFifoEvents must contain at most ${INPUT_CONTROLLER_EVENT_FIFO_CAPACITY} entries.`);
+	}
 	return {
 		sampleArmed: requireObjectKey(object, 'sampleArmed', label, 'machine.input.sampleArmed') as boolean,
 		sampleSequence: requireBoundedU32(requireObjectKey(object, 'sampleSequence', label, 'machine.input.sampleSequence'), 'machine.input.sampleSequence', 0, 0xffffffff),
@@ -329,6 +355,8 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 			consumeStringId: requireBoundedU32(requireObjectKey(registers, 'consumeStringId', 'machine.input.registers', 'machine.input.registers.consumeStringId'), 'machine.input.registers.consumeStringId', 0, 0xffffffff),
 		},
 		players,
+		eventFifoEvents,
+		eventFifoOverflow: requireObjectKey(object, 'eventFifoOverflow', label, 'machine.input.eventFifoOverflow') as boolean,
 	};
 }
 

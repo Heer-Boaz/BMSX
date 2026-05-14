@@ -687,6 +687,8 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	state.machineState.machine.input.registers.value = 0u;
 	state.machineState.machine.input.registers.consumeStringId = 7u;
 	state.machineState.machine.input.players[1u].actions.push_back(bmsx::InputControllerActionState{ 4u, 5u, 0x809u, 0x8000u, 12.5, 2u });
+	state.machineState.machine.input.eventFifoEvents.push_back(bmsx::InputControllerEventState{ 2u, 4u, 0x80au, 0x8000u, 2u });
+	state.machineState.machine.input.eventFifoOverflow = true;
 	state.cpuState.haltedUntilIrq = true;
 	state.cpuState.maskableInterruptsEnabled = false;
 	state.cpuState.maskableInterruptsRestoreEnabled = true;
@@ -1298,6 +1300,26 @@ void testInputControllerRealPlayerContext() {
 	require((status & bmsx::INP_STATUS_HAS_VALUE) != 0u, "real PlayerInput context should expose ICU value snapshot");
 	require(h.memory.readIoU32(bmsx::IO_INP_VALUE) == 0u, "real PlayerInput context should expose ICU Q16 value");
 	require(playerTwo->getActionState("jump").justpressed, "real PlayerInput should expose the ICU action edge");
+	require(h.memory.readIoU32(bmsx::IO_INP_EVENT_COUNT) == 1u, "ICU event FIFO should expose one sampled edge");
+	require(h.memory.readIoU32(bmsx::IO_INP_EVENT_PLAYER) == 2u, "ICU event FIFO should expose the sampled player");
+	require(bmsx::asStringId(h.memory.readValue(bmsx::IO_INP_EVENT_ACTION)) == action, "ICU event FIFO should expose the sampled action");
+	const uint32_t eventFlags = h.memory.readIoU32(bmsx::IO_INP_EVENT_FLAGS);
+	require((eventFlags & bmsx::INP_STATUS_JUST_PRESSED) != 0u, "ICU event FIFO should expose the sampled action edge flags");
+	require((eventFlags & bmsx::INP_STATUS_WAS_PRESSED) != 0u, "ICU event FIFO should expose the sampled action buffer flags");
+	require((eventFlags & bmsx::INP_STATUS_HAS_VALUE) != 0u, "ICU event FIFO should expose the sampled action value flag");
+	require(h.memory.readIoU32(bmsx::IO_INP_EVENT_VALUE) == 0u, "ICU event FIFO should expose the sampled Q16 value");
+	require(h.memory.readIoU32(bmsx::IO_INP_EVENT_REPEAT_COUNT) == 0u, "ICU event FIFO should expose the sampled repeat count");
+	const bmsx::StringPoolState stringState = h.cpu.stringPool().captureState();
+	const bmsx::InputControllerState savedInput = h.inputController.captureState();
+	InputHarness restored;
+	restored.cpu.stringPool().restoreState(stringState);
+	restored.inputController.restoreState(savedInput);
+	require(restored.memory.readIoU32(bmsx::IO_INP_EVENT_COUNT) == 1u, "ICU restore should preserve queued input events");
+	require(bmsx::asStringId(restored.memory.readValue(bmsx::IO_INP_EVENT_ACTION)) == action, "ICU restore should preserve queued input event action");
+	writeIoWord(restored.memory, bmsx::IO_INP_EVENT_CTRL, bmsx::INP_EVENT_CTRL_POP);
+	require(restored.memory.readIoU32(bmsx::IO_INP_EVENT_COUNT) == 0u, "ICU event pop should remove the front event");
+	require((restored.memory.readIoU32(bmsx::IO_INP_EVENT_STATUS) & bmsx::INP_EVENT_STATUS_EMPTY) != 0u, "ICU event status should expose an empty FIFO");
+	require(restored.memory.readIoU32(bmsx::IO_INP_EVENT_CTRL) == 0u, "ICU event control doorbell should self-clear");
 	h.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(complexQuery));
 	require(h.memory.readIoU32(bmsx::IO_INP_STATUS) == 1u, "compound ICU query should return boolean status");
 	require(h.memory.readIoU32(bmsx::IO_INP_VALUE) == 0u, "compound ICU query should not expose an action value");
@@ -2052,6 +2074,12 @@ void testFirmwareDescriptorGolden() {
 	require(bmsx::findDefaultLuaBuiltinDescriptor("apu_command_fifo_capacity") != nullptr, "APU command-FIFO capacity constant descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("apu_fault_source_range") != nullptr, "APU source-range fault descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("apu_fault_cmd_fifo_full") != nullptr, "APU command-FIFO-full fault descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_inp_event_status") != nullptr, "ICU event FIFO status register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_inp_event_action") != nullptr, "ICU event FIFO action register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_inp_event_ctrl") != nullptr, "ICU event FIFO control register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("inp_event_status_empty") != nullptr, "ICU event FIFO empty status descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("inp_event_ctrl_pop") != nullptr, "ICU event FIFO pop command descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("inp_event_fifo_capacity") != nullptr, "ICU event FIFO capacity descriptor should be exposed");
 }
 
 void testSystemGlobalsGeometryContractGolden() {
@@ -2099,6 +2127,12 @@ void testSystemGlobalsGeometryContractGolden() {
 	require(globalNumber("apu_command_fifo_capacity") == static_cast<double>(bmsx::APU_COMMAND_FIFO_CAPACITY), "C++ system globals should expose the APU command-FIFO capacity constant");
 	require(globalNumber("apu_generator_none") == static_cast<double>(bmsx::APU_GENERATOR_NONE), "C++ system globals should expose the APU no-generator constant");
 	require(globalNumber("apu_generator_square") == static_cast<double>(bmsx::APU_GENERATOR_SQUARE), "C++ system globals should expose the APU square-generator constant");
+	require(globalNumber("sys_inp_event_status") == static_cast<double>(bmsx::IO_INP_EVENT_STATUS), "C++ system globals should expose the ICU event FIFO status register");
+	require(globalNumber("sys_inp_event_action") == static_cast<double>(bmsx::IO_INP_EVENT_ACTION), "C++ system globals should expose the ICU event FIFO action register");
+	require(globalNumber("sys_inp_event_ctrl") == static_cast<double>(bmsx::IO_INP_EVENT_CTRL), "C++ system globals should expose the ICU event FIFO control register");
+	require(globalNumber("inp_event_status_empty") == static_cast<double>(bmsx::INP_EVENT_STATUS_EMPTY), "C++ system globals should expose the ICU event FIFO empty status bit");
+	require(globalNumber("inp_event_ctrl_pop") == static_cast<double>(bmsx::INP_EVENT_CTRL_POP), "C++ system globals should expose the ICU event FIFO pop command");
+	require(globalNumber("inp_event_fifo_capacity") == static_cast<double>(bmsx::INPUT_CONTROLLER_EVENT_FIFO_CAPACITY), "C++ system globals should expose the ICU event FIFO capacity");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_instance_bytes") != nullptr, "C++ builtin descriptors should expose GEO overlap table layout ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_result_pair_meta_offset") != nullptr, "C++ builtin descriptors should expose GEO overlap result layout ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_pair_meta_instance_a_shift") != nullptr, "C++ builtin descriptors should expose GEO overlap pair-meta ABI");

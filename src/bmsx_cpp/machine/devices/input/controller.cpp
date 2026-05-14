@@ -1,7 +1,8 @@
 #include "machine/devices/input/controller.h"
 #include "input/action_parser.h"
 #include "input/player.h"
-#include "machine/devices/input/contracts.h"
+
+#include <stdexcept>
 
 namespace bmsx {
 namespace {
@@ -22,11 +23,29 @@ InputController::InputController(Memory& memory, Input& input, const StringPool&
 	m_memory.mapIoWrite(IO_INP_CTRL, this, &InputController::onRegisterWriteThunk);
 	m_memory.mapIoWrite(IO_INP_QUERY, this, &InputController::onRegisterWriteThunk);
 	m_memory.mapIoWrite(IO_INP_CONSUME, this, &InputController::onRegisterWriteThunk);
+	m_memory.mapIoRead(IO_INP_EVENT_STATUS, this, &InputController::onEventRegisterReadThunk);
+	m_memory.mapIoRead(IO_INP_EVENT_COUNT, this, &InputController::onEventRegisterReadThunk);
+	m_memory.mapIoRead(IO_INP_EVENT_PLAYER, this, &InputController::onEventRegisterReadThunk);
+	m_memory.mapIoRead(IO_INP_EVENT_ACTION, this, &InputController::onEventRegisterReadThunk);
+	m_memory.mapIoRead(IO_INP_EVENT_FLAGS, this, &InputController::onEventRegisterReadThunk);
+	m_memory.mapIoRead(IO_INP_EVENT_VALUE, this, &InputController::onEventRegisterReadThunk);
+	m_memory.mapIoRead(IO_INP_EVENT_REPEAT_COUNT, this, &InputController::onEventRegisterReadThunk);
+	m_memory.mapIoRead(IO_INP_EVENT_CTRL, this, &InputController::onEventRegisterReadThunk);
+	m_memory.mapIoWrite(IO_INP_EVENT_CTRL, this, &InputController::onEventCtrlWriteThunk);
 }
 
 // disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the input device instance.
 void InputController::onRegisterWriteThunk(void* context, uint32_t addr, Value value) {
 	static_cast<InputController*>(context)->onRegisterWrite(addr, value);
+}
+
+Value InputController::onEventRegisterReadThunk(void* context, uint32_t addr) {
+	return static_cast<InputController*>(context)->onEventRegisterRead(addr);
+}
+
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the input device instance.
+void InputController::onEventCtrlWriteThunk(void* context, uint32_t, Value value) {
+	static_cast<InputController*>(context)->onEventCtrlWrite(toU32(value));
 }
 
 void InputController::reset() {
@@ -38,6 +57,8 @@ void InputController::reset() {
 		clearPlayerActions(playerIndex, state);
 	}
 	m_registers = InputControllerRegisterState{};
+	clearEventFifo();
+	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
 	mirrorRegisters();
 }
 
@@ -65,6 +86,8 @@ InputControllerState InputController::captureState() const {
 	for (size_t index = 0; index < m_playerStates.size(); index += 1) {
 		state.players[index].actions = m_playerStates[index].actions;
 	}
+	state.eventFifoEvents = captureEventFifoEvents();
+	state.eventFifoOverflow = m_eventFifoOverflow;
 	return state;
 }
 
@@ -83,6 +106,9 @@ void InputController::restoreState(const InputControllerState& state) {
 			state.players[static_cast<size_t>(playerIndex - 1)].actions
 		);
 	}
+	restoreEventFifo(state.eventFifoEvents);
+	m_eventFifoOverflow = state.eventFifoOverflow;
+	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
 	mirrorRegisters();
 }
 
@@ -124,6 +150,40 @@ void InputController::onCtrlWrite(u32 command) {
 			resetActions();
 			return;
 	}
+}
+
+Value InputController::onEventRegisterRead(uint32_t addr) const {
+	switch (addr) {
+		case IO_INP_EVENT_STATUS:
+			return valueNumber(static_cast<double>(readEventFifoStatus()));
+		case IO_INP_EVENT_COUNT:
+			return valueNumber(static_cast<double>(m_eventFifoCount));
+		case IO_INP_EVENT_PLAYER:
+			return valueNumber(static_cast<double>(readFrontEvent().player));
+		case IO_INP_EVENT_ACTION:
+			return valueString(readFrontEvent().actionStringId);
+		case IO_INP_EVENT_FLAGS:
+			return valueNumber(static_cast<double>(readFrontEvent().statusWord));
+		case IO_INP_EVENT_VALUE:
+			return valueNumber(static_cast<double>(readFrontEvent().valueQ16));
+		case IO_INP_EVENT_REPEAT_COUNT:
+			return valueNumber(static_cast<double>(readFrontEvent().repeatCount));
+		case IO_INP_EVENT_CTRL:
+			return valueNumber(0.0);
+	}
+	throw std::runtime_error("ICU event register read is not mapped.");
+}
+
+void InputController::onEventCtrlWrite(u32 command) {
+	switch (command) {
+		case INP_EVENT_CTRL_POP:
+			popEventFifo();
+			break;
+		case INP_EVENT_CTRL_CLEAR:
+			clearEventFifo();
+			break;
+	}
+	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
 }
 
 void InputController::queryAction() {
@@ -229,7 +289,88 @@ void InputController::sampleCommittedActions() {
 			action.valueQ16 = encodeInputActionValueQ16(actionState);
 			action.pressTime = buttonPressTimeOrZero(actionState);
 			action.repeatCount = static_cast<u32>(actionRepeatCount(actionState));
+			if ((action.statusWord & INP_EVENT_ACTION_STATUS_MASK) != 0u) {
+				pushEventFifo(static_cast<u32>(playerIndex), action);
+			}
 		}
+	}
+}
+
+u32 InputController::readEventFifoStatus() const {
+	return (m_eventFifoCount == 0u ? INP_EVENT_STATUS_EMPTY : 0u)
+		| (m_eventFifoCount == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY ? INP_EVENT_STATUS_FULL : 0u)
+		| (m_eventFifoOverflow ? INP_EVENT_STATUS_OVERFLOW : 0u);
+}
+
+const InputControllerEventState& InputController::readFrontEvent() const {
+	if (m_eventFifoCount == 0u) {
+		return m_eventFifo[0];
+	}
+	return m_eventFifo[m_eventFifoReadIndex];
+}
+
+void InputController::pushEventFifo(u32 player, const InputControllerActionState& action) {
+	if (m_eventFifoCount == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+		m_eventFifoOverflow = true;
+		return;
+	}
+	InputControllerEventState& slot = m_eventFifo[m_eventFifoWriteIndex];
+	slot.player = player;
+	slot.actionStringId = action.actionStringId;
+	slot.statusWord = action.statusWord;
+	slot.valueQ16 = action.valueQ16;
+	slot.repeatCount = action.repeatCount;
+	m_eventFifoWriteIndex += 1u;
+	if (m_eventFifoWriteIndex == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+		m_eventFifoWriteIndex = 0u;
+	}
+	m_eventFifoCount += 1u;
+}
+
+void InputController::popEventFifo() {
+	if (m_eventFifoCount == 0u) {
+		return;
+	}
+	InputControllerEventState& slot = m_eventFifo[m_eventFifoReadIndex];
+	slot = InputControllerEventState{};
+	m_eventFifoReadIndex += 1u;
+	if (m_eventFifoReadIndex == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+		m_eventFifoReadIndex = 0u;
+	}
+	m_eventFifoCount -= 1u;
+}
+
+void InputController::clearEventFifo() {
+	m_eventFifo.fill(InputControllerEventState{});
+	m_eventFifoReadIndex = 0u;
+	m_eventFifoWriteIndex = 0u;
+	m_eventFifoCount = 0u;
+	m_eventFifoOverflow = false;
+}
+
+std::vector<InputControllerEventState> InputController::captureEventFifoEvents() const {
+	std::vector<InputControllerEventState> events;
+	events.reserve(m_eventFifoCount);
+	u32 entry = m_eventFifoReadIndex;
+	for (u32 index = 0u; index < m_eventFifoCount; index += 1u) {
+		events.push_back(m_eventFifo[entry]);
+		entry += 1u;
+		if (entry == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+			entry = 0u;
+		}
+	}
+	return events;
+}
+
+void InputController::restoreEventFifo(const std::vector<InputControllerEventState>& events) {
+	clearEventFifo();
+	for (const InputControllerEventState& event : events) {
+		m_eventFifo[m_eventFifoWriteIndex] = event;
+		m_eventFifoWriteIndex += 1u;
+		if (m_eventFifoWriteIndex == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
+			m_eventFifoWriteIndex = 0u;
+		}
+		m_eventFifoCount += 1u;
 	}
 }
 

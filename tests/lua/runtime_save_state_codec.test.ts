@@ -123,6 +123,10 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						{ actions: [] },
 						{ actions: [] },
 					],
+					eventFifoEvents: [
+						{ player: 2, actionStringId: 0, statusWord: 0x80a, valueQ16: 0x8000, repeatCount: 2 },
+					],
+					eventFifoOverflow: true,
 				},
 				vdp: {
 					xf: {
