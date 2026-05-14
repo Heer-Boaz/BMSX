@@ -692,8 +692,11 @@ Already advanced in this goal:
   no longer runs the system built-in prelude when no system ROM program is
   installed.
 - Runtime/input pass-through APIs were reduced. Fake dispose wrappers, unused
-  action-definition cache clearing, and PlayerInput forwarding helpers were
-  removed or replaced by owner-level operations.
+  action-definition cache clearing, PlayerInput forwarding helpers, and the
+  TS/C++ public input-map setter were removed or
+  replaced by owner-level operations. The host default input map is now a base
+  `ContextStack` layer installed by the input owner, while carts program ICU
+  contexts through MMIO.
 - The ICU no longer exposes its arm latch for runtime code to mutate directly:
   VBLANK/runtime reset/error paths now go through the device transition, while
   the ICU owns and persists its register latches and committed action table.
@@ -1015,10 +1018,10 @@ If `/goal resume` is invoked, it should mean this order of work:
    remaining generator and richer envelope work must stay device-owned instead
    of growing through host-side sound shortcuts.
 3. Continue the Input Controller (ICU) cleanup beyond the persisted
-   register/action state by removing the remaining boot/input-map pass-through
-   APIs and making the device owner the single source of truth for the active
-   input snapshot, input timing, and any future input features such as buffered
-   input or rumble.
+   register/action state and removed input-map pass-through surfaces by making
+   the device owner the single source of truth for the active input snapshot,
+   input timing, and any future input features such as buffered input or
+   rumble.
 4. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
    APIs, Lua API metadata, devtools source APIs, overlay/editor APIs, terminal
    commands, and workspace APIs. Separate cart-visible contracts from editor or
@@ -1062,7 +1065,7 @@ Next recommended work:
    owned by the device.
 3. Continue ICU work by moving the active input snapshot/timing into the device
    instead of letting cart-visible input semantics leak through host
-   `PlayerInput` APIs. The previous Lua/manifest input-map shortcut is gone;
+   `PlayerInput` APIs. The previous Lua/manifest/public input-map shortcuts are gone;
    carts define action bindings through the input-controller register path.
 4. Continue TS/C++ parity cleanup subsystem by subsystem, including public API
    surfaces instead of assuming they are already covered.

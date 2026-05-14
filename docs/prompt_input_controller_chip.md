@@ -61,8 +61,8 @@ These are numeric constants written to `sys_inp_ctrl` to trigger chip operations
 | Constant | Name | Value | Description |
 |---|---|---|---|
 | `INP_CTRL_COMMIT` | `inp_ctrl_commit` | `1` | Commit the current action definition. Reads action name from `sys_inp_action` and bindings from `sys_inp_bind`, then registers the mapping into the chip's **persistent context** for the current player. The first commit creates and pushes a `MappingContext` (id `'inp_chip'`) onto the player's `ContextStack`; subsequent commits update that same context with additional actions. |
-| `INP_CTRL_ARM` | `inp_ctrl_arm` | `2` | **Acknowledge/mark the current frame's input snapshot.** The engine already calls `Input.beginFrame()` at the start of each guest update phase (in `runtime.beginGuestUpdatePhase()`), which runs `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()` for all tracked buttons. The `inp_ctrl_arm` command hooks into this **existing** frame-sampling path — it does NOT invent a new latch mechanism or call `beginFrame()` again. It may serve as a cart-side discipline marker (chip refuses queries unless latched this frame) or as a no-op that documents intent. |
-| `INP_CTRL_RESET` | `inp_ctrl_reset` | `3` | Pop the chip's `'inp_chip'` context from the current player's `ContextStack` and clear all accumulated action definitions. |
+| `INP_CTRL_ARM` | `inp_ctrl_arm` | `2` | Arm the ICU sample latch. The next runtime VBlank edge calls `InputController.onVblankEdge()`; when armed, the ICU performs exactly one `Input.beginFrame()` sample transition and clears the latch. |
+| `INP_CTRL_RESET` | `inp_ctrl_reset` | `3` | Clear the chip's `'inp_chip'` context from the current player's `ContextStack` and clear all accumulated action definitions. |
 
 ### Action Map Registration (INIT phase)
 
@@ -99,22 +99,20 @@ mem[sys_inp_player] = 1  -- switch back
 
 **Binding format**: The `sys_inp_bind` register accepts a **comma-separated** list of button names as a single `string_ref`. Multiple names form a **chord** (all must be pressed simultaneously). The button names match the standard engine button vocabulary: `a`, `b`, `x`, `y`, `lb`, `rb`, `lt`, `rt`, `up`, `down`, `left`, `right`, `start`, `select`, `ls`, `rs`, `lx`, `ly`, `rx`, `ry`, etc. These map to both keyboard and gamepad bindings using the engine's default keyboard→button mapping (e.g. `a` → `KeyX` on keyboard, `a` on gamepad).
 
-**Implementation**: On `inp_ctrl_commit`, the InputController reads the `StringValue` from `sys_inp_action` (action name) and `sys_inp_bind` (comma-separated bindings), splits the bindings string by `,`, and accumulates the result into a chip-owned `KeyboardInputMapping` / `GamepadInputMapping`. The chip manages a **single persistent `MappingContext`** per player (id `'inp_chip'`, layered on top of the base context via `ContextStack`). On the first commit for a player, it creates and pushes the context via `PlayerInput.pushContext('inp_chip', kb, gp, {})`. On subsequent commits, it pops the old context, updates the mapping tables, and pushes a new one — or mutates the existing context's keyboard/gamepad fields directly if `ContextStack` permits that. Reset pops the context via `PlayerInput.popContext('inp_chip')`. Latch does NOT touch the context.
+**Implementation**: On `inp_ctrl_commit`, the InputController reads the `StringValue` from `sys_inp_action` (action name) and `sys_inp_bind` (comma-separated bindings), splits the bindings string by `,`, and accumulates the result into chip-owned `KeyboardInputMapping` / `GamepadInputMapping` tables. The chip manages one persistent `MappingContext` per player (id `'inp_chip'`, layered on top of the host default base context via `ContextStack`). Each commit refreshes that context through `PlayerInput.pushContext('inp_chip', kb, gp, {})`, which replaces the same context id. Reset uses `PlayerInput.clearContext('inp_chip')`. VBlank sampling does not touch mapping contexts.
 
 ### Input Latch (per-frame)
 
 The engine already has a complete frame-sampling pipeline:
 
-1. `runtime.beginGuestUpdatePhase()` calls `Input.instance.beginFrame()`
-2. `Input.beginFrame()` iterates all players, calling `playerInput.beginFrame(currentTime)`
-3. `PlayerInput.beginFrame()` iterates all input sources (keyboard, gamepad, pointer), calling `stateManager.beginFrame(currentTime)` (which clears `justpressed`/`justreleased` edge flags) and then `stateManager.latchButtonState(button, handler.getButtonState(button), currentTime)` for every tracked button
+1. `src/bmsx/machine/runtime/vblank.ts` `enterVblank()` calls `InputController.onVblankEdge()`
+2. If `inp_ctrl_arm` set the private sample latch, `InputController.onVblankEdge()` calls `Input.beginFrame()` once and clears the latch
+3. `Input.beginFrame()` iterates all players, calling `playerInput.beginFrame(currentTime)`
+4. `PlayerInput.beginFrame()` iterates all input sources (keyboard, gamepad, pointer), calling `stateManager.beginFrame(currentTime)` (which clears `justpressed`/`justreleased` edge flags) and then `stateManager.latchButtonState(button, handler.getButtonState(button), currentTime)` for every tracked button
 
 This already snapshots a consistent per-frame `ButtonState` for all tracked buttons before any cart Lua code runs. The `getActionState()` path reads from these latched states.
 
-The `inp_ctrl_arm` command **hooks into this existing snapshot semantics**. It does NOT invent a new sampling mechanism, does NOT call `beginFrame()` again (which would double-increment the frame counter and corrupt edge detection), and does NOT mutate any mapping contexts. Its role is one of:
-
-- **Discipline marker**: The chip tracks a `latchedThisFrame` flag per player. `inp_ctrl_arm` sets it; queries check it and fault if the cart forgot to latch. At frame boundaries the flag resets. This enforces "latch before query" hygiene.
-- **Explicit re-sample**: If a future design needs mid-frame re-sampling (e.g. for split-phase updates), `inp_ctrl_arm` could call `playerInput.beginFrame(currentTime)` again — but only if the `InputStateManager` is made reentrant-safe. For now, the engine's single `beginFrame()` per guest update phase is sufficient.
+The `inp_ctrl_arm` command is the cart-visible latch request. Sampling happens at the hardware edge: the runtime VBlank path calls `InputController.onVblankEdge()`, and the ICU performs the armed `Input.beginFrame()` sample transition exactly once. The latch is then cleared. Mapping contexts are not mutated by the sample edge.
 
 Cart code still writes `mem[sys_inp_ctrl] = inp_ctrl_arm` at the top of the update loop, documenting the frame boundary:
 
@@ -333,7 +331,7 @@ export class InputController {
     public reset(): void {
         if (this.contextPushed) {
             const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
-            this.input.getPlayerInput(playerIndex).popContext('inp_chip');
+            this.input.getPlayerInput(playerIndex).clearContext('inp_chip');
             this.contextPushed = false;
         }
         this.memory.writeValue(IO_INP_PLAYER, 1);
@@ -363,44 +361,38 @@ export class InputController {
         const bindings = bindStr.split(',');  // e.g. 'lb,left' → ['lb', 'left']
 
         // For keyboard: resolve each abstract button name to its default keyboard key(s)
-        // using Input.DEFAULT_KEYBOARD_INPUT_MAPPING (e.g. 'a' → 'KeyX', 'lb' → 'ShiftLeft').
+        // using Input.DEFAULT_INPUT_MAPPING.keyboard (e.g. 'a' → 'KeyX', 'lb' → 'ShiftLeft').
         // For gamepad: use button names directly (they ARE gamepad button IDs).
-        this.chipGamepad[actionName] = bindings;
-        this.chipKeyboard[actionName] = bindings.map(
-            b => Input.DEFAULT_KEYBOARD_INPUT_MAPPING[b]?.[0] ?? b
-        );
+        this.chipGamepad[actionName] = bindings.map(b => ({ id: b }));
+        this.chipKeyboard[actionName] = [];
+        for (const binding of bindings) {
+            this.chipKeyboard[actionName].push(...Input.DEFAULT_INPUT_MAPPING.keyboard[binding]);
+        }
 
-        // Manage the persistent context: pop old, push updated
+        // Manage the persistent context: replace the same context id.
         const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
         const playerInput = this.input.getPlayerInput(playerIndex);
         if (this.contextPushed) {
-            playerInput.popContext('inp_chip');
+            playerInput.clearContext('inp_chip');
         }
         playerInput.pushContext('inp_chip', this.chipKeyboard, this.chipGamepad, {});
         this.contextPushed = true;
     }
 
     /**
-     * LATCH: hooks into the existing frame-sampling path.
-     * The engine already calls Input.beginFrame() → PlayerInput.beginFrame() →
-     * InputStateManager.beginFrame() + latchButtonState() at the start of each
-     * guest update phase. This command does NOT re-sample or mutate contexts.
-     *
-     * If desired, implement as a discipline marker: set a latchedThisFrame flag
-     * that queries check, and reset it at frame boundaries.
+     * ARM: set the private ICU sample latch. The runtime VBlank edge consumes
+     * this latch by calling InputController.onVblankEdge(), which performs the
+     * single Input.beginFrame() transition for the frame.
      */
     private latchInput(): void {
-        // Acknowledge frame snapshot for the current player.
-        // The actual button state sampling is already done by the engine's
-        // beginGuestUpdatePhase() → Input.beginFrame() path.
-        // No new latch mechanism needed — hook into existing semantics.
+        this.sampleArmed = true;
     }
 
-    /** RESET: pop the chip's context and clear all accumulated action definitions */
+    /** RESET: clear the chip's context and all accumulated action definitions */
     private resetActions(): void {
         if (this.contextPushed) {
             const playerIndex = this.memory.readValue(IO_INP_PLAYER) as number;
-            this.input.getPlayerInput(playerIndex).popContext('inp_chip');
+            this.input.getPlayerInput(playerIndex).clearContext('inp_chip');
             this.contextPushed = false;
         }
         this.chipKeyboard = {};
@@ -435,11 +427,11 @@ export class InputController {
 ```
 
 **Key implementation notes**:
-- **Persistent chip context**: The InputController owns a SINGLE `MappingContext` per player (id `'inp_chip'`) that accumulates action definitions across multiple `inp_ctrl_commit` calls. It uses `pushContext()` / `popContext()` for lifecycle management. Commit manages the context; latch does NOT.
-- **Binding resolution**: Uses `Input.DEFAULT_KEYBOARD_INPUT_MAPPING` directly (e.g. `Input.DEFAULT_KEYBOARD_INPUT_MAPPING['a']` → `['KeyX']`). No new `resolveKeyboardKey()` method needed — the mapping table already exists as a frozen object on `Input`. For gamepad, the abstract names ARE the button IDs (identity mapping via `Input.DEFAULT_GAMEPAD_INPUT_MAPPING`).
+- **Persistent chip context**: The InputController owns a SINGLE `MappingContext` per player (id `'inp_chip'`) that accumulates action definitions across multiple `inp_ctrl_commit` calls. It uses `pushContext()` / `clearContext()` for lifecycle management. Commit manages the context; latch does NOT.
+- **Binding resolution**: Uses `Input.DEFAULT_INPUT_MAPPING.keyboard` directly (e.g. `Input.DEFAULT_INPUT_MAPPING.keyboard['a']` → `['KeyX']`). No new `resolveKeyboardKey()` method needed — the mapping table already exists as a frozen object on `Input`. For gamepad, the abstract names ARE the button IDs (identity mapping via `Input.DEFAULT_INPUT_MAPPING.gamepad`).
 - **Query semantics**: `onQueryWrite()` calls `checkActionTriggered(expr)` — the same expression evaluator used by `action_triggered()`. It parses the expression via `ActionDefinitionEvaluator` (which uses cached ASTs from `InputActionParser`), calls `getActionState()` internally for each referenced action, and evaluates the boolean expression (including modifiers like `[p]`, `[jp]`, `[jr]` and operators `||`, `&&`, `!`). The status register holds 1 (triggered) or 0 (not triggered). The cart puts the "which flag to check" logic into the expression string itself (e.g. `'left[jp]'` for just-pressed, `'left[p]'` for pressed). Root-level actions require a modifier — enforced by the parser's `enforceRootModifiers()`.
 - **Consume semantics**: `onConsumeWrite()` calls `consumeAction(actionName)` — an existing method that iterates all sources, finds pressed+unconsumed bindings for the action, and marks them consumed. Takes a plain action name (no modifiers, no expressions).
-- **Latch mechanism**: No new `latchFrame()` method is needed. The engine's existing `beginGuestUpdatePhase()` → `Input.beginFrame()` → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()` path already snapshots all tracked buttons per frame before cart code runs. The chip's `inp_ctrl_arm` hooks into this existing semantics — it may set a discipline flag, but it does NOT re-sample.
+- **Latch mechanism**: No new `latchFrame()` method is needed. The runtime VBlank `InputController.onVblankEdge()` → `Input.beginFrame()` → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()` path snapshots all tracked buttons before cart code runs. The chip's `inp_ctrl_arm` sets the private sample latch; `onVblankEdge()` performs the armed sample transition.
 
 **Note**: The `InputController` does not use `packActionStateFlags` — the status register is a simple boolean (1/0) since modifier semantics are embedded in the expression string. The `ACTION_STATE_FLAG_*` constants remain useful for the existing `get_action_state()` Lua native function.
 
@@ -554,14 +546,14 @@ end
 1. **No defensive coding**: Trust that the compiler's MMIO enforcement ensures only `StringValue` objects reach the Input Controller's action/bind/query/consume registers. Cast directly — don't check `valueIsString()`.
 2. **No legacy fallback**: The existing `action_triggered()` native function continues to work. The MMIO Input Controller is an additional, parallel interface — not a replacement. Carts can use either. Both use the same underlying `checkActionTriggered()` → `ActionDefinitionEvaluator` path.
 3. **Performance**: `checkActionTriggered(expr)` parses the expression (cached via `ActionDefinitionEvaluator.cache`), calls `getActionState()` internally for each referenced action, and evaluates the boolean. This is identical cost to the existing `action_triggered()` native — they share the same code path. No new allocations per query thanks to the AST cache.
-4. **Serialization**: IO register values are transient per-frame state. The chip's accumulated action definitions (`chipKeyboard`/`chipGamepad`) and `contextPushed` flag are runtime config, not game state. `reset()` clears everything. No serialization needed.
+4. **Serialization**: The ICU save-state contract captures the private sample latch, mirrored registers, and committed per-player action string ids. Restore rebuilds the chip-owned mapping contexts from those action records.
 5. **The `onIoWrite` non-numeric guard**: This is the most critical integration detail. The guard `if (typeof value !== 'number') { return; }` currently drops all non-numeric writes silently. String_ref writes to the Input Controller produce a `StringValue` which is not a number. The guard must be restructured. All four string_ref registers (`sys_inp_action`, `sys_inp_bind`, `sys_inp_query`, `sys_inp_consume`) need handling before the guard.
 6. **Shared flag constants**: The `ACTION_STATE_FLAG_*` constants in `engine.ts` remain useful for the existing `get_action_state()` Lua native. The chip itself does not use them — its status register is a boolean (1/0) since modifier semantics are embedded in the action expression.
-7. **Latch semantics**: The engine already calls `Input.beginFrame()` at `runtime.beginGuestUpdatePhase()`, which runs `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` (clears edge flags, increments frame counter) + `latchButtonState()` for all tracked buttons. This already provides a consistent per-frame snapshot before cart code runs. The chip's `inp_ctrl_arm` hooks into this **existing** sampling path. It does NOT call `beginFrame()` again (which would double-increment the frame counter), does NOT create a new sampling mechanism, and does NOT mutate mapping contexts. No new `latchFrame()` method is needed.
-8. **Binding resolution**: The `commitAction()` flow resolves abstract button names (`a`, `lb`, `left`) to keyboard key codes via `Input.DEFAULT_KEYBOARD_INPUT_MAPPING` — an existing frozen object: `{ a: ['KeyX'], lb: ['ShiftLeft'], left: ['ArrowLeft'], ... }`. No new `resolveKeyboardKey()` method is needed — read directly from the existing mapping table. For gamepad, the abstract names ARE the button IDs (identity mapping via `Input.DEFAULT_GAMEPAD_INPUT_MAPPING`).
+7. **Latch semantics**: `inp_ctrl_arm` sets the ICU's private sample latch. The runtime VBlank path calls `InputController.onVblankEdge()`; when armed, that edge performs the single `Input.beginFrame()` transition and clears the latch. The sample edge does not mutate mapping contexts.
+8. **Binding resolution**: The `commitAction()` flow resolves abstract button names (`a`, `lb`, `left`) to keyboard key codes via `Input.DEFAULT_INPUT_MAPPING.keyboard` — an existing frozen object: `{ a: ['KeyX'], lb: ['ShiftLeft'], left: ['ArrowLeft'], ... }`. No new `resolveKeyboardKey()` method is needed — read directly from the existing mapping table. For gamepad, the abstract names ARE the button IDs (identity mapping via `Input.DEFAULT_INPUT_MAPPING.gamepad`).
 9. **Query semantics**: `sys_inp_query` accepts **action expressions** — the same expression language used by `action_triggered()`. Both simple queries (`'left[p]'`, `'dash[jp]'`) and compound expressions (`'up[jp] || a[jp]'`, `'left[p] && !dash[p]'`) are supported. Root-level actions require a modifier (`[p]`, `[jp]`, `[jr]`, etc.) — enforced by `enforceRootModifiers()` in the parser. The status register holds 1 (triggered) or 0 (not triggered).
 10. **Consume semantics**: `sys_inp_consume` accepts **plain action names** (no modifiers, no expressions). It dispatches to `PlayerInput.consumeAction(action)`, which iterates all sources and marks pressed+unconsumed bindings for that action as consumed.
-11. **Commit context lifecycle**: `inp_ctrl_commit` manages a **persistent `MappingContext`** (id `'inp_chip'`) on the player's `ContextStack`. Multiple commits accumulate actions into the same context. `inp_ctrl_reset` pops it. `inp_ctrl_arm` does NOT touch the context. The `ContextStack.push()` / `pop()` by id mechanism already supports this pattern.
+11. **Commit context lifecycle**: `inp_ctrl_commit` manages a **persistent `MappingContext`** (id `'inp_chip'`) on the player's `ContextStack`. Multiple commits accumulate actions into the same context. `inp_ctrl_reset` clears it. `inp_ctrl_arm` does not touch the context. The `ContextStack.push()` / `clearContext()` by id mechanism already supports this pattern.
 
 ---
 
@@ -583,19 +575,19 @@ end
 - Memory map base: `src/bmsx/machine/memory/map.ts` (`IO_BASE`, `IO_WORD_SIZE`)
 - MMIO spec: `src/bmsx/machine/bus/registers.ts`
 - Runtime IO dispatch: `src/bmsx/machine/runtime/runtime.ts` (`onIoWrite`)
-- Frame latch entry point: `src/bmsx/machine/runtime/runtime.ts` `beginGuestUpdatePhase()` (calls `Input.instance.beginFrame()` at `guestUpdatePhaseDepth === 0`)
+- Frame latch entry point: `src/bmsx/machine/runtime/vblank.ts` `enterVblank()` calls `InputController.onVblankEdge()`, which performs the armed `Input.beginFrame()` sample transition.
 - Device examples: `src/bmsx/machine/devices/dma/controller.ts`, `src/bmsx/machine/devices/imgdec/controller.ts`
 - String pool: `src/bmsx/machine/cpu/string_pool.ts` (`StringPool`) and `src/bmsx/machine/cpu/cpu.ts` (`StringValue`, `valueIsString()`)
 - Compiler validation: `src/bmsx/machine/program/compiler.ts` (`validateMemoryStore`, `resolveMemoryStoreRequirement`)
 - Flow analysis: `src/bmsx/machine/program/compile_value_flow.ts` (`evaluateExpressionValueKind`)
 - Input system — frame sampling: `src/bmsx/input/manager.ts` `beginFrame()` → iterates players → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()`
 - Input system — state manager: `src/bmsx/input/manager.ts` `InputStateManager` class (`beginFrame()`, `latchButtonState()`, `getButtonState()`)
-- Input system — player: `src/bmsx/input/player.ts` (`checkActionTriggered`, `getActionState`, `consumeAction`, `pushContext`, `popContext`, `setInputMap`, `beginFrame`)
+- Input system — player: `src/bmsx/input/player.ts` (`checkActionTriggered`, `getActionState`, `consumeAction`, `pushContext`, `clearContext`, `beginFrame`)
 - Input system (C++): `src/bmsx_cpp/input/player.cpp` (same methods)
 - Input context stacking: `src/bmsx/input/context.ts` (`MappingContext`, `ContextStack` with `push`/`pop`/`enable`/`getBindings`)
-- Input types: `src/bmsx/input/models.ts` (`InputMap`, `KeyboardInputMapping`, `GamepadInputMapping`, `ButtonState`, `ActionState`)
-- Default keyboard mapping: `src/bmsx/input/manager.ts` `Input.DEFAULT_KEYBOARD_INPUT_MAPPING` — `{ a: ['KeyX'], lb: ['ShiftLeft'], left: ['ArrowLeft'], ... }` (frozen)
-- Default gamepad mapping: `src/bmsx/input/manager.ts` `Input.DEFAULT_GAMEPAD_INPUT_MAPPING` — identity: `{ a: ['a'], lb: ['lb'], ... }`
+- Input types: `src/bmsx/input/models.ts` (`InputMap` for the host default base context, `KeyboardInputMapping`, `GamepadInputMapping`, `ButtonState`, `ActionState`)
+- Default keyboard mapping: `src/bmsx/input/manager.ts` `Input.DEFAULT_INPUT_MAPPING.keyboard` — `{ a: ['KeyX'], lb: ['ShiftLeft'], left: ['ArrowLeft'], ... }`
+- Default gamepad mapping: `src/bmsx/input/manager.ts` `Input.DEFAULT_INPUT_MAPPING.gamepad` — identity: `{ a: ['a'], lb: ['lb'], ... }`
 - Button vocabulary: `src/bmsx/input/manager.ts` `Input.BUTTON_IDS` — `['a','b','x','y','lb','rb','lt','rt','select','start','ls','rs','up','down','left','right','home','touch']`
 - Action parser: `src/bmsx/input/action_parser.ts`, `src/bmsx_cpp/input/action_parser.cpp` (expression evaluation — used by the chip's query path via `checkActionTriggered()` → `ActionDefinitionEvaluator`)
 - Engine core: `src/bmsx/core/engine.ts` (`action_triggered`, `get_action_state`, `packActionStateFlags`)

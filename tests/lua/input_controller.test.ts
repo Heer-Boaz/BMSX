@@ -16,7 +16,7 @@ import {
 } from '../../src/bmsx/machine/bus/io';
 import { CPU, asStringId, StringValue } from '../../src/bmsx/machine/cpu/cpu';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
-import type { Input } from '../../src/bmsx/input/manager';
+import { Input } from '../../src/bmsx/input/manager';
 import { PlayerInput } from '../../src/bmsx/input/player';
 import type { GamepadInputMapping, KeyboardInputMapping, PointerInputMapping } from '../../src/bmsx/input/models';
 
@@ -172,4 +172,18 @@ test('input controller mappings drive real PlayerInput contexts without a base i
 
 	assert.equal(harness.memory.readIoU32(IO_INP_STATUS), 1);
 	assert.equal(playerTwo.getActionState('jump').justpressed, true);
+});
+
+test('Input.initialize installs host defaults as the base context', () => {
+	const input = Input.initialize();
+	try {
+		const playerOne = input.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX);
+		playerOne.recordButtonEvent('keyboard', 'KeyX', { eventType: 'press', identifier: 'KeyX', timestamp: 0, consumed: false, pressId: 11 });
+		input.beginFrame(1000 / 60);
+
+		assert.equal(playerOne.checkActionTriggered('a[jp]'), true);
+		assert.equal(playerOne.getActionState('a').justpressed, true);
+	} finally {
+		input.dispose();
+	}
 });

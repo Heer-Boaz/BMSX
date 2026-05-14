@@ -1,8 +1,8 @@
 /*
  * player.h - Per-player input handling for BMSX
  *
- * Manages input for a single player, including action state evaluation,
- * input mapping, and context stacking.
+ * Manages input for a single player, including action state evaluation
+ * and context stacking.
  */
 
 #ifndef BMSX_PLAYERINPUT_H
@@ -49,15 +49,6 @@ public:
 
 	// Clear gamepad if it matches
 	void clearGamepad(InputHandler* handler);
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// Input mapping
-	// ─────────────────────────────────────────────────────────────────────────
-
-	InputMap inputMap;
-
-	// Set input map
-	void setInputMap(const InputMap& map);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Context stacking
@@ -197,7 +188,7 @@ private:
 	InputStateManager& getStateManager(InputSource source) { return m_stateManagers[sourceIndex(source)]; }
 	const InputStateManager& getStateManager(InputSource source) const { return m_stateManagers[sourceIndex(source)]; }
 	i64 simFrame() const { return m_stateManagers[sourceIndex(InputSource::Keyboard)].frame(); }
-	void trackInputMapBindings(const KeyboardInputMapping& keyboard, const GamepadInputMapping& gamepad, const PointerInputMapping& pointer);
+	void trackContextBindings(const KeyboardInputMapping& keyboard, const GamepadInputMapping& gamepad, const PointerInputMapping& pointer);
 	void consumeGameplayButton(const std::string& button, InputSource source);
 	void clearActionEvaluationState();
 

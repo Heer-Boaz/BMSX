@@ -545,7 +545,13 @@ export class Input implements RegisterablePersistent {
 			return Input._instance;
 		}
 		Input._instance = new Input(startingGamepadIndex);
-		Input._instance.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).setInputMap(Input.DEFAULT_INPUT_MAPPING);
+		Input._instance.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).pushContext(
+			'base',
+			Input.DEFAULT_INPUT_MAPPING.keyboard,
+			Input.DEFAULT_INPUT_MAPPING.gamepad,
+			Input.DEFAULT_INPUT_MAPPING.pointer,
+			0,
+		);
 		return Input._instance;
 	}
 

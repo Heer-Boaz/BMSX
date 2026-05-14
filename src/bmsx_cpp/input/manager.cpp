@@ -394,8 +394,13 @@ Input::~Input() {
 void Input::initialize() {
 	if (m_initialized) return;
 
-	// Set up default input mapping for keyboard player
-	m_playerInputs[DEFAULT_KEYBOARD_PLAYER_INDEX - 1]->setInputMap(DEFAULT_INPUT_MAPPING);
+	m_playerInputs[DEFAULT_KEYBOARD_PLAYER_INDEX - 1]->pushContext(
+		"base",
+		DEFAULT_INPUT_MAPPING.keyboard,
+		DEFAULT_INPUT_MAPPING.gamepad,
+		DEFAULT_INPUT_MAPPING.pointer,
+		0
+	);
 	m_focusChangeSub = ConsoleCore::instance().platform()->gameviewHost()->onFocusChange([this](bool focused) {
 		handleFocusChange(focused);
 	});
@@ -549,9 +554,9 @@ bool Input::isPlayerIndexAvailableForGamepadAssignment(i32 playerIndex) {
 
 static InputMap createDefaultInputMapping() {
 	InputMap map;
-	auto& pointer = map.pointer.emplace();
-	auto& keyboard = map.keyboard.emplace();
-	auto& gamepad = map.gamepad.emplace();
+	auto& pointer = map.pointer;
+	auto& keyboard = map.keyboard;
+	auto& gamepad = map.gamepad;
 
 	// Keyboard mappings
 	pointer["pointer_primary"] = {PointerBinding{"pointer_primary"}};
@@ -609,7 +614,7 @@ const InputMap Input::DEFAULT_INPUT_MAPPING = createDefaultInputMapping();
 
 const std::unordered_map<std::string, std::string> Input::KEYBOARD_TO_GAMEPAD = []() {
 	std::unordered_map<std::string, std::string> inverse;
-	for (const auto& [action, bindings] : *Input::DEFAULT_INPUT_MAPPING.keyboard) {
+	for (const auto& [action, bindings] : Input::DEFAULT_INPUT_MAPPING.keyboard) {
 		for (const auto& binding : bindings) {
 			inverse[binding.id] = action;
 		}

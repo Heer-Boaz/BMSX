@@ -1,4 +1,6 @@
 #include "core/console.h"
+#include "input/manager.h"
+#include "input/player.h"
 #include "machine/bus/io.h"
 #include "machine/devices/vdp/registers.h"
 #include "machine/memory/map.h"
@@ -70,9 +72,24 @@ void testLibretroSaveStateRoundTrip() {
 	require(pixel == std::array<bmsx::u8, 4u>{{0x11u, 0x22u, 0x33u, 0xffu}}, "restored VDP registerfile should determine visible framebuffer output");
 }
 
+void testInputInitializeInstallsBaseContext() {
+	bmsx::LibretroPlatform platform(bmsx::BackendType::Software);
+	platform.setLogCallback(discardRetroLog);
+
+	bmsx::Input& input = bmsx::Input::instance();
+	bmsx::PlayerInput* const playerOne = input.getPlayerInput(bmsx::Input::DEFAULT_KEYBOARD_PLAYER_INDEX);
+	platform.postKeyboardEvent("KeyX", true);
+	input.pollInput();
+	input.beginFrame();
+
+	require(playerOne->checkActionTriggered("a[p]"), "Input::initialize should install host defaults as the player base context");
+	require(playerOne->getActionState("a").pressed, "default base context should map keyboard KeyX to action a");
+}
+
 } // namespace
 
 int main() {
 	testLibretroSaveStateRoundTrip();
+	testInputInitializeInstallsBaseContext();
 	return 0;
 }

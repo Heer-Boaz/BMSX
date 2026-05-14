@@ -1,8 +1,7 @@
 import { ActionDefinitionEvaluator } from './action_parser';
-import { Input, InputStateManager, makeActionState, makeButtonState } from './manager';
-import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, GamepadInputMapping, InputEvent, InputHandler, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping } from './models';
+import { InputStateManager, makeActionState, makeButtonState } from './manager';
+import type { ActionState, ActionStateQuery, ButtonId, ButtonState, GamepadInputMapping, InputEvent, InputHandler, KeyboardInputMapping, PointerInputMapping } from './models';
 import type { VibrationParams } from '../platform';
-import { KeyboardInput } from './keyboard';
 import { ContextStack, MappingContext } from './context';
 import { consoleCore } from '../core/console';
 import { clamp } from '../common/clamp';
@@ -38,9 +37,6 @@ type RawActionRepeatRecord = {
 	lastRepeatAtMs: number;
 };
 
-type RebindBinding = ButtonId | { id: ButtonId };
-type RebindMapping = Record<string, RebindBinding[]>;
-
 export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
 export type InputSource = typeof INPUT_SOURCES[number];
 
@@ -55,39 +51,6 @@ function getOrCreateMapValue<K, V>(map: Map<K, V>, key: K, create: () => V): V {
 		map.set(key, value);
 	}
 	return value;
-}
-
-type InputBinding = KeyboardBinding | GamepadBinding | PointerBinding;
-type InputBindingMap<T extends InputBinding> = Record<string, T[]>;
-
-function copyInputBinding<T extends InputBinding>(binding: T): T {
-	if (typeof binding === 'string') {
-		return binding;
-	}
-	const copy = { id: binding.id } as T;
-	if (binding.scale !== undefined) {
-		(copy as { scale?: number }).scale = binding.scale;
-	}
-	if (binding.invert !== undefined) {
-		(copy as { invert?: boolean }).invert = binding.invert;
-	}
-	return copy;
-}
-
-function copyInputBindingList<T extends InputBinding>(bindings: readonly T[]): T[] {
-	const out = new Array<T>(bindings.length);
-	for (let index = 0; index < bindings.length; index += 1) {
-		out[index] = copyInputBinding(bindings[index]);
-	}
-	return out;
-}
-
-function copyInputBindingMap<T extends InputBinding>(mapping: InputBindingMap<T>): InputBindingMap<T> {
-	const out: InputBindingMap<T> = {};
-	for (const action of Object.keys(mapping)) {
-		out[action] = copyInputBindingList(mapping[action]);
-	}
-	return out;
 }
 
 /** Bitwise flags representing keyboard modifier keys. */
@@ -131,8 +94,6 @@ export class PlayerInput {
 	/** Context stack for layered action maps */
 	private contexts: ContextStack = new ContextStack();
 
-	/** Pending rebind operation, if any */
-	private pendingRebind: { action: string; source: InputSource; mode: 'append' | 'replace' } = null;
 
 	private readonly actionGuardRecords: Map<string, ActionGuardRecord> = new Map();
 	private readonly simActionRepeatRecords: Map<string, SimActionRepeatRecord> = new Map();
@@ -141,63 +102,12 @@ export class PlayerInput {
 	private frameCounter = 0;
 
 	/**
-	 * Indicates whether the player is the main player.
-	 * Currently used for determining whether to assign the on-screen gamepad automatically if any other assigned gamepad is disconnected.
-	 * @returns {boolean} True if the player is the main player, false otherwise.
-	 */
-	/**
-	 * The input maps for each player.
-	 * @private
-	 * @param {number} playerIndex - The index of the player to set the input map for.
-	 * @param {InputMap} inputMap - The input map to set for the player.
-	 * @returns {void}
-	 * @throws {Error} Throws an error if the player index is out of range.
-	 * @throws {Error} Throws an error if the input map is invalid.
-	 * @see {@link this.getActionState} and {@link this.checkActionTriggered} for checking if an action is pressed for a player.
-	 * @example
-	 * this.setInputMap(0, {
-	 *     keyboard: {
-	 *         'jump': ['Space'],
-	 *         'left': ['ArrowLeft'],
-	 *         'right': ['ArrowRight'],
-	 *         'up': ['ArrowUp'],
-	 *         'down': ['ArrowDown'],
-	 *    	   'jumpleft': ['ArrowLeft', 'Space'],
-	 *	       'jumpright': ['ArrowRight', 'Space'],
-	 *     },
-	 *     gamepad: {
-	 *         'jump': ['a'],
-	 *         'left': ['left'],
-	 *         'right': ['right'],
-	 *         'up': ['up'],
-	 *         'down': ['down'],
-	 *		   'jumpleft': ['left', 'a'],
-	 *		   'jumpright': ['right', 'a'],
-	 *     },
-	 * });
-	 */
-	public inputMap: InputMap;
-
-	/**
 	 * Checks if all actions defined in the action definition string have been triggered.
 	 * Supports both AND (•) and OR (+) operators.
 	 * @param actionDefinition The action definition string to check.
 	 * @returns True if the action definition is satisfied, false otherwise.
 	 */
 	public checkActionTriggered(actionDefinition: string): boolean {
-		// Validate referenced action names exist in current mappings to catch typos or missing bindings early
-		const referenced = ActionDefinitionEvaluator.getReferencedActions(actionDefinition);
-		if (referenced.length > 0) {
-			const missing: string[] = [];
-			for (const name of referenced) {
-				// Ask the context stack whether any bindings exist for this action across sources
-				const kb = this.contexts.getBindings(name, 'keyboard');
-				const gp = this.contexts.getBindings(name, 'gamepad');
-				const ptr = this.contexts.getBindings(name, 'pointer');
-				if ((!kb || kb.length === 0) && (!gp || gp.length === 0) && (!ptr || ptr.length === 0)) missing.push(name);
-			}
-			if (missing.length > 0) throw new Error(`[PlayerInput] Action definition references unknown actions: ${missing.join(', ')}`);
-		}
 		return ActionDefinitionEvaluator.checkActionTriggered(actionDefinition, this.getActionState.bind(this));
 	}
 
@@ -205,49 +115,6 @@ export class PlayerInput {
 		return actions.filter(action => this.checkActionTriggered(action.def)).map(action => action.id);
 	}
 
-	/**
-	 * Sets the input map for a specific player.
-	 * @param inputMap - The input map to set.
-	 * TODO: id unused (always defaults to 'base')
-	 * TODO: priority unused (always defaults to 0)
-	 */
-	public setInputMap(inputMap: InputMap): void {
-		if (!inputMap) throw new Error('[PlayerInput] Null or undefined input map provided.');
-		let keyboard = inputMap.keyboard;
-		let gamepad = inputMap.gamepad;
-		let pointer = inputMap.pointer;
-		if (!inputMap.keyboard) {
-			if (this.inputMap?.keyboard) {
-				keyboard = this.inputMap.keyboard;
-			} else if (this.playerIndex === 1) {
-				keyboard = copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.keyboard) as KeyboardInputMapping;
-			} else {
-				keyboard = {};
-			}
-		} else if (inputMap.keyboard === Input.DEFAULT_INPUT_MAPPING.keyboard) {
-			keyboard = copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.keyboard) as KeyboardInputMapping;
-		}
-		if (!inputMap.gamepad) {
-			gamepad = this.inputMap?.gamepad ?? copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.gamepad) as GamepadInputMapping;
-		} else if (inputMap.gamepad === Input.DEFAULT_INPUT_MAPPING.gamepad) {
-			gamepad = copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.gamepad) as GamepadInputMapping;
-		}
-		if (!inputMap.pointer) {
-			pointer = this.inputMap?.pointer ?? copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.pointer) as PointerInputMapping;
-		} else if (inputMap.pointer === Input.DEFAULT_INPUT_MAPPING.pointer) {
-			pointer = copyInputBindingMap(Input.DEFAULT_INPUT_MAPPING.pointer) as PointerInputMapping;
-		}
-		this.inputMap = { keyboard, gamepad, pointer };
-		this.trackInputMapBindings(this.inputMap);
-
-		// Mirror into a base context for layered merging semantics
-		const base = new MappingContext('base', 0, true, this.inputMap.keyboard, this.inputMap.gamepad, this.inputMap.pointer);
-
-		// Reset stack to base
-		this.contexts = new ContextStack();
-		this.contexts.push(base);
-		this.clearActionEvaluationState();
-	}
 
 	private getStateManager(source: InputSource): InputStateManager {
 		return this._stateManagers[source];
@@ -271,22 +138,22 @@ export class PlayerInput {
 		}
 	}
 
-	private trackInputMapBindings(inputMap: InputMap): void {
-		if (inputMap.keyboard) for (const action of Object.keys(inputMap.keyboard)) {
-			this.trackBindings('keyboard', inputMap.keyboard[action]);
+	private trackContextBindings(keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping): void {
+		for (const action in keyboard) {
+			this.trackBindings('keyboard', keyboard[action]);
 		}
-		if (inputMap.gamepad) for (const action of Object.keys(inputMap.gamepad)) {
-			this.trackBindings('gamepad', inputMap.gamepad[action]);
+		for (const action in gamepad) {
+			this.trackBindings('gamepad', gamepad[action]);
 		}
-		if (inputMap.pointer) for (const action of Object.keys(inputMap.pointer)) {
-			this.trackBindings('pointer', inputMap.pointer[action]);
+		for (const action in pointer) {
+			this.trackBindings('pointer', pointer[action]);
 		}
 	}
 
 	/** Add a higher-priority mapping context */
 	public pushContext(id: string, keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping, priority = 100, enabled = true): void {
 		this.contexts.pop(id);
-		this.trackInputMapBindings({ keyboard, gamepad, pointer });
+		this.trackContextBindings(keyboard, gamepad, pointer);
 		this.contexts.push(new MappingContext(id, priority, enabled, keyboard, gamepad, pointer));
 		this.clearActionEvaluationState();
 	}
@@ -728,7 +595,6 @@ export class PlayerInput {
 			if (!handler) continue;
 			handler.pollInput();
 		}
-		this.processPendingRebind();
 	}
 
 	public recordButtonEvent(source: InputSource, button: ButtonId, event: InputEvent): void {
@@ -754,58 +620,6 @@ export class PlayerInput {
 			for (const button of this.trackedButtons[source]) {
 				stateManager.latchButtonState(button, handler?.getButtonState(button) ?? makeButtonState(), currentTime);
 			}
-		}
-	}
-
-	private processPendingRebind(): void {
-		if (!this.pendingRebind) return;
-		const { action, source, mode } = this.pendingRebind;
-		const handler = this.inputHandlers[source];
-		if (!handler) return;
-		let capturedKb: string = null;
-		let capturedGp: BGamepadButton = null;
-		if (source === 'gamepad') {
-			for (const button of Input.BUTTON_IDS) {
-				const st = handler.getButtonState(button);
-				if (st?.justpressed) { capturedGp = button; break; }
-			}
-		} else if (handler instanceof KeyboardInput) {
-			for (const key of Object.keys(handler.keyStates)) {
-				const st = handler.getButtonState(key);
-				if (st?.justpressed) { capturedKb = key; break; }
-			}
-		}
-		if (capturedKb === null && capturedGp === null) return;
-		if (capturedKb !== null) {
-			this.applyCapturedRebind('keyboard', capturedKb, action, mode);
-		}
-		if (capturedGp !== null) {
-			this.applyCapturedRebind('gamepad', capturedGp, action, mode);
-		}
-		this.pendingRebind = null;
-	}
-
-	private applyCapturedRebind(source: 'keyboard' | 'gamepad', id: ButtonId, action: string, mode: 'append' | 'replace'): void {
-		this.trackedButtons[source].add(id);
-		const map = (source === 'keyboard' ? this.inputMap.keyboard : this.inputMap.gamepad) as RebindMapping;
-		const arr = map[action];
-		let base: RebindBinding[];
-		if (mode === 'replace' || !arr) {
-			base = [];
-		} else if (arr.some(binding => bindingId(binding) === id)) {
-			base = arr.filter(binding => bindingId(binding) !== id);
-		} else {
-			base = [];
-			for (let index = 0; index < arr.length; index += 1) {
-				base.push(arr[index]);
-			}
-		}
-		base.push(id);
-		map[action] = base;
-		for (const act of Object.keys(map)) {
-			if (act === action) continue;
-			const list = map[act];
-			if (list) map[act] = list.filter(binding => bindingId(binding) !== id);
 		}
 	}
 

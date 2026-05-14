@@ -163,47 +163,12 @@ void PlayerInput::clearGamepad(InputHandler* handler) {
 }
 
 /* ============================================================================
- * Input mapping
- * ============================================================================ */
-
-void PlayerInput::setInputMap(const InputMap& map) {
-	KeyboardInputMapping keyboard;
-	if (map.keyboard.has_value()) {
-		keyboard = map.keyboard.value();
-	} else if (inputMap.keyboard.has_value()) {
-		keyboard = inputMap.keyboard.value();
-	} else if (playerIndex == DEFAULT_KEYBOARD_PLAYER_INDEX) {
-		keyboard = *Input::DEFAULT_INPUT_MAPPING.keyboard;
-	}
-
-	GamepadInputMapping gamepad = map.gamepad.has_value()
-		? map.gamepad.value()
-		: (inputMap.gamepad.has_value() ? inputMap.gamepad.value() : *Input::DEFAULT_INPUT_MAPPING.gamepad);
-
-	PointerInputMapping pointer = map.pointer.has_value()
-		? map.pointer.value()
-		: (inputMap.pointer.has_value() ? inputMap.pointer.value() : *Input::DEFAULT_INPUT_MAPPING.pointer);
-
-	inputMap.keyboard = keyboard;
-	inputMap.gamepad = gamepad;
-	inputMap.pointer = pointer;
-	trackInputMapBindings(keyboard, gamepad, pointer);
-	MappingContext base("base", 0, true);
-	base.keyboard = keyboard;
-	base.gamepad = gamepad;
-	base.pointer = pointer;
-	m_contexts = ContextStack();
-	m_contexts.push(base);
-	clearActionEvaluationState();
-}
-
-/* ============================================================================
  * Context stacking
  * ============================================================================ */
 
 void PlayerInput::pushContext(const std::string& id, const KeyboardInputMapping& keyboard, const GamepadInputMapping& gamepad, const PointerInputMapping& pointer, i32 priority, bool enabled) {
 	m_contexts.pop(id);
-	trackInputMapBindings(keyboard, gamepad, pointer);
+	trackContextBindings(keyboard, gamepad, pointer);
 	MappingContext ctx(id, priority, enabled);
 	ctx.keyboard = keyboard;
 	ctx.gamepad = gamepad;
@@ -234,7 +199,7 @@ void PlayerInput::applyVibrationEffect(const VibrationParams& params) {
 	}
 }
 
-void PlayerInput::trackInputMapBindings(const KeyboardInputMapping& keyboard, const GamepadInputMapping& gamepad, const PointerInputMapping& pointer) {
+void PlayerInput::trackContextBindings(const KeyboardInputMapping& keyboard, const GamepadInputMapping& gamepad, const PointerInputMapping& pointer) {
 	for (const auto& [action, bindings] : keyboard) {
 		(void)action;
 		for (const auto& binding : bindings) {

@@ -76,12 +76,12 @@ export type PointerInputMapping = {
 };
 
 /**
- * Represents the input mapping for a game.
+ * Host default input mapping bundle installed as the base context.
  */
 export interface InputMap {
 	keyboard: KeyboardInputMapping;
 	gamepad: GamepadInputMapping;
-	pointer?: PointerInputMapping;
+	pointer: PointerInputMapping;
 }
 
 /**

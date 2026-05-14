@@ -214,7 +214,7 @@ void InputController::appendBindings(
 	std::vector<KeyboardBinding>& keyboardBindings,
 	std::vector<GamepadBinding>& gamepadBindings
 ) const {
-	const auto& defaultKeyboard = *Input::DEFAULT_INPUT_MAPPING.keyboard;
+	const auto& defaultKeyboard = Input::DEFAULT_INPUT_MAPPING.keyboard;
 	size_t start = 0;
 	for (size_t index = 0; index <= bindingsText.size(); index += 1) {
 		if (index != bindingsText.size() && bindingsText[index] != ',') {
