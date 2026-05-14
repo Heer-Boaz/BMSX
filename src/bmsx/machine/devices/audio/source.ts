@@ -29,7 +29,11 @@ export class ApuSourceDma {
 	}
 
 	public captureState(): Uint8Array[] {
-		return this.slotSourceBytes.map((bytes) => bytes.slice());
+		const state = new Array<Uint8Array>(APU_SLOT_COUNT);
+		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
+			state[slot] = this.slotSourceBytes[slot]!.slice();
+		}
+		return state;
 	}
 
 	public restoreState(slotSourceBytes: readonly Uint8Array[]): void {

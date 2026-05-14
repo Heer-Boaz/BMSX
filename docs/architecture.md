@@ -190,9 +190,11 @@ Save-state captures active AOUT voice datapath state. It does not capture the
 already-rendered AOUT output ring; queued frames at the host edge are not
 machine state and are rebuilt from the restored voice datapath. The audio
 save-state data contract lives in dedicated `machine/devices/audio/save_state`
-files on both runtimes. C++ keeps the capture/restore method bodies there too;
-TS keeps those methods at the private-field device boundary and imports only the
-save-state record shapes.
+files on both runtimes. C++ keeps the capture/restore method bodies there too.
+TS keeps aggregate controller methods at the private-field device boundary, but
+the AOUT voice save-state mapping belongs to the audio save-state module rather
+than the mixer datapath. BADP fixture proof covers saved decoder latches and
+selected-slot start-sample mutation while a decoder-backed voice is active.
 
 Hot paths must use retained buffers and fixed-size state. No per-sample,
 per-render, or per-pull allocation is acceptable.
@@ -324,6 +326,7 @@ should be deleted.
 
 ## Active work queue
 
-1. Continue APU/AOUT proof around BADP fixture coverage and selected-slot
-   mutation while a decoder-backed voice is active.
+1. Keep moving remaining device save-state bodies into dedicated state owners
+   where the TS boundary can do it without wrapper-only methods or private-field
+   leaks.
 2. Keep save-state proof expanding through device-visible state, not host queues.

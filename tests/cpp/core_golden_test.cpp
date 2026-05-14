@@ -1,4 +1,5 @@
 #include "core/system.h"
+#include "common/endian.h"
 #include "common/serializer/binencoder.h"
 #include "machine/bus/io.h"
 #include "machine/common/numeric.h"
@@ -1476,6 +1477,40 @@ void writeValidApuSource(AudioHarness& h, uint32_t bitsPerSample) {
 	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_BYTES, 4u);
 }
 
+std::vector<bmsx::u8> createBadpFixture() {
+	std::vector<bmsx::u8> bytes(60u, 0u);
+	bytes[0] = 0x42u;
+	bytes[1] = 0x41u;
+	bytes[2] = 0x44u;
+	bytes[3] = 0x50u;
+	bmsx::writeLE16(bytes.data() + 4u, 1u);
+	bmsx::writeLE16(bytes.data() + 6u, 1u);
+	bmsx::writeLE32(bytes.data() + 8u, bmsx::APU_SAMPLE_RATE_HZ);
+	bmsx::writeLE32(bytes.data() + 12u, 8u);
+	bmsx::writeLE32(bytes.data() + 36u, 48u);
+	bmsx::writeLE16(bytes.data() + 48u, 8u);
+	bmsx::writeLE16(bytes.data() + 50u, 12u);
+	bmsx::writeLE16(bytes.data() + 52u, 0u);
+	bytes[56] = 0x11u;
+	bytes[57] = 0x11u;
+	bytes[58] = 0x11u;
+	bytes[59] = 0x11u;
+	return bytes;
+}
+
+void writeBadpApuSource(AudioHarness& h) {
+	const std::vector<bmsx::u8> bytes = createBadpFixture();
+	require(h.memory.writeBytes(bmsx::RAM_BASE, bytes.data(), bytes.size()), "BADP fixture should fit in RAM");
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_ADDR, bmsx::RAM_BASE);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_BYTES, static_cast<bmsx::u32>(bytes.size()));
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_CHANNELS, 1u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, 4u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_FRAME_COUNT, 8u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_OFFSET, 48u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_BYTES, 12u);
+}
+
 void writeSquareGeneratorSource(AudioHarness& h) {
 	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_ADDR, 0u);
 	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_BYTES, 0u);
@@ -2013,6 +2048,54 @@ void testApuSelectedSlotActiveStateGolden() {
 	require(restoredSquareFrame[0] == liveSquareFrame[0] && restoredSquareFrame[1] == liveSquareFrame[1], "APU restore should preserve live square-generator AOUT state");
 }
 
+void testApuBadpSaveStateGolden() {
+	AudioHarness h;
+	writeBadpApuSource(h);
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
+	writeApuCommand(h, bmsx::APU_CMD_PLAY);
+
+	bmsx::i16 firstFrames[4] = {};
+	h.audioOutput.renderSamples(firstFrames, 2u, bmsx::APU_SAMPLE_RATE_HZ, 1.0f);
+	require(
+		firstFrames[0] == 1 && firstFrames[1] == 1 && firstFrames[2] == 2 && firstFrames[3] == 2,
+		"APU BADP fixture should render decoded AOUT samples"
+	);
+
+	const bmsx::AudioControllerState saved = h.audio.captureState();
+	require(saved.output.voices.size() == 1u, "APU BADP capture should preserve one active AOUT voice");
+	require(saved.output.voices[0].badp.decodedFrame == 2, "APU BADP capture should preserve decoded-frame state");
+	require(saved.output.voices[0].badp.nextFrame == 3u, "APU BADP capture should preserve next-frame state");
+
+	bmsx::i16 liveNext[2] = {};
+	h.audioOutput.renderSamples(liveNext, 1u, bmsx::APU_SAMPLE_RATE_HZ, 1.0f);
+
+	AudioHarness restored;
+	restored.audio.restoreState(saved, 0);
+	bmsx::i16 restoredNext[2] = {};
+	restored.audioOutput.renderSamples(restoredNext, 1u, bmsx::APU_SAMPLE_RATE_HZ, 1.0f);
+	require(
+		restoredNext[0] == liveNext[0] && restoredNext[1] == liveNext[1],
+		"APU BADP restore should resume from the saved decoder-backed AOUT datapath"
+	);
+
+	writeIoWord(restored.memory, bmsx::IO_APU_SLOT, 1u);
+	restored.memory.writeMappedU32LE(
+		bmsx::IO_APU_SELECTED_SLOT_REG0 + bmsx::APU_PARAMETER_START_SAMPLE_INDEX * bmsx::IO_WORD_SIZE,
+		5u
+	);
+	const bmsx::AudioControllerState seekState = restored.audio.captureState();
+	require(
+		seekState.slotPlaybackCursorQ16[1u] == static_cast<bmsx::i64>(5u * bmsx::APU_RATE_STEP_Q16_ONE),
+		"APU selected-slot start-sample writes should update the decoder-backed slot cursor"
+	);
+	require(seekState.output.voices[0].badp.decodedFrame == 5, "APU selected-slot start-sample writes should reseek the BADP decoder");
+	require(seekState.output.voices[0].badp.nextFrame == 6u, "APU selected-slot start-sample writes should preserve the reseeked BADP next-frame latch");
+
+	bmsx::i16 seekFrame[2] = {};
+	restored.audioOutput.renderSamples(seekFrame, 1u, bmsx::APU_SAMPLE_RATE_HZ, 1.0f);
+	require(seekFrame[0] == 6 && seekFrame[1] == 6, "APU selected-slot BADP seek should render from the requested frame");
+}
+
 void testRuntimeVblankEdgeCompletesActiveTickGolden() {
 	RuntimeHarness harness;
 	bmsx::Runtime& runtime = harness.runtime;
@@ -2361,7 +2444,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 41> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 42> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -2392,6 +2475,7 @@ int main() {
 		{"APU output-ring status", testApuOutputRingStatusGolden},
 		{"APU parameter register state", testApuParameterRegisterStateGolden},
 		{"APU selected-slot active state", testApuSelectedSlotActiveStateGolden},
+		{"APU BADP save-state", testApuBadpSaveStateGolden},
 		{"ICU register and action state", testInputControllerStateGolden},
 		{"ICU output registers", testInputControllerOutputRegisters},
 		{"ICU real PlayerInput context", testInputControllerRealPlayerContext},

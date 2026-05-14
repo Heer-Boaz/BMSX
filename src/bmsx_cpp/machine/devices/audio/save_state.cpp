@@ -15,6 +15,75 @@ void ApuSourceDma::restoreState(const ApuSlotSourceBytes& slotSourceBytes) {
 	m_slotSourceBytes = slotSourceBytes;
 }
 
+ApuOutputVoiceState captureApuOutputVoiceState(const ApuOutputMixer::VoiceRecord& record) {
+	ApuOutputVoiceState voice;
+	voice.slot = record.slot;
+	voice.position = record.position;
+	voice.step = record.step;
+	voice.gain = record.gain;
+	voice.targetGain = record.targetGain;
+	voice.gainRampRemaining = record.gainRampRemaining;
+	voice.stopAfter = record.stopAfter;
+	voice.filterSampleRate = record.filterSampleRate;
+	voice.filter.enabled = record.filter.enabled;
+	voice.filter.b0 = record.filter.b0;
+	voice.filter.b1 = record.filter.b1;
+	voice.filter.b2 = record.filter.b2;
+	voice.filter.a1 = record.filter.a1;
+	voice.filter.a2 = record.filter.a2;
+	voice.filter.l1 = record.filter.l1;
+	voice.filter.l2 = record.filter.l2;
+	voice.filter.r1 = record.filter.r1;
+	voice.filter.r2 = record.filter.r2;
+	voice.badp.predictors[0] = record.badp.predictors[0];
+	voice.badp.predictors[1] = record.badp.predictors[1];
+	voice.badp.stepIndices[0] = record.badp.stepIndices[0];
+	voice.badp.stepIndices[1] = record.badp.stepIndices[1];
+	voice.badp.nextFrame = static_cast<u32>(record.badp.nextFrame);
+	voice.badp.blockEnd = static_cast<u32>(record.badp.blockEnd);
+	voice.badp.blockFrames = static_cast<u32>(record.badp.blockFrames);
+	voice.badp.blockFrameIndex = static_cast<u32>(record.badp.blockFrameIndex);
+	voice.badp.payloadOffset = static_cast<u32>(record.badp.payloadOffset);
+	voice.badp.nibbleCursor = static_cast<u32>(record.badp.nibbleCursor);
+	voice.badp.decodedFrame = record.badp.decodedFrame;
+	voice.badp.decodedLeft = record.badp.decodedLeft;
+	voice.badp.decodedRight = record.badp.decodedRight;
+	return voice;
+}
+
+void restoreApuOutputVoiceState(ApuOutputMixer::VoiceRecord& record, const ApuOutputVoiceState& state) {
+	record.position = state.position;
+	record.step = state.step;
+	record.gain = state.gain;
+	record.targetGain = state.targetGain;
+	record.gainRampRemaining = state.gainRampRemaining;
+	record.stopAfter = state.stopAfter;
+	record.filterSampleRate = state.filterSampleRate;
+	record.filter.enabled = state.filter.enabled;
+	record.filter.b0 = state.filter.b0;
+	record.filter.b1 = state.filter.b1;
+	record.filter.b2 = state.filter.b2;
+	record.filter.a1 = state.filter.a1;
+	record.filter.a2 = state.filter.a2;
+	record.filter.l1 = state.filter.l1;
+	record.filter.l2 = state.filter.l2;
+	record.filter.r1 = state.filter.r1;
+	record.filter.r2 = state.filter.r2;
+	record.badp.predictors[0] = state.badp.predictors[0];
+	record.badp.predictors[1] = state.badp.predictors[1];
+	record.badp.stepIndices[0] = state.badp.stepIndices[0];
+	record.badp.stepIndices[1] = state.badp.stepIndices[1];
+	record.badp.nextFrame = state.badp.nextFrame;
+	record.badp.blockEnd = state.badp.blockEnd;
+	record.badp.blockFrames = state.badp.blockFrames;
+	record.badp.blockFrameIndex = state.badp.blockFrameIndex;
+	record.badp.payloadOffset = state.badp.payloadOffset;
+	record.badp.nibbleCursor = state.badp.nibbleCursor;
+	record.badp.decodedFrame = state.badp.decodedFrame;
+	record.badp.decodedLeft = static_cast<i16>(state.badp.decodedLeft);
+	record.badp.decodedRight = static_cast<i16>(state.badp.decodedRight);
+}
+
 AudioControllerState AudioController::captureState() const {
 	AudioControllerState state;
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
@@ -95,39 +164,7 @@ ApuOutputState ApuOutputMixer::captureState() const {
 	ApuOutputState state;
 	state.voices.reserve(m_voices.size());
 	for (const VoiceRecord& record : m_voices) {
-		ApuOutputVoiceState voice;
-		voice.slot = record.slot;
-		voice.position = record.position;
-		voice.step = record.step;
-		voice.gain = record.gain;
-		voice.targetGain = record.targetGain;
-		voice.gainRampRemaining = record.gainRampRemaining;
-		voice.stopAfter = record.stopAfter;
-		voice.filterSampleRate = record.filterSampleRate;
-		voice.filter.enabled = record.filter.enabled;
-		voice.filter.b0 = record.filter.b0;
-		voice.filter.b1 = record.filter.b1;
-		voice.filter.b2 = record.filter.b2;
-		voice.filter.a1 = record.filter.a1;
-		voice.filter.a2 = record.filter.a2;
-		voice.filter.l1 = record.filter.l1;
-		voice.filter.l2 = record.filter.l2;
-		voice.filter.r1 = record.filter.r1;
-		voice.filter.r2 = record.filter.r2;
-		voice.badp.predictors[0] = record.badp.predictors[0];
-		voice.badp.predictors[1] = record.badp.predictors[1];
-		voice.badp.stepIndices[0] = record.badp.stepIndices[0];
-		voice.badp.stepIndices[1] = record.badp.stepIndices[1];
-		voice.badp.nextFrame = static_cast<u32>(record.badp.nextFrame);
-		voice.badp.blockEnd = static_cast<u32>(record.badp.blockEnd);
-		voice.badp.blockFrames = static_cast<u32>(record.badp.blockFrames);
-		voice.badp.blockFrameIndex = static_cast<u32>(record.badp.blockFrameIndex);
-		voice.badp.payloadOffset = static_cast<u32>(record.badp.payloadOffset);
-		voice.badp.nibbleCursor = static_cast<u32>(record.badp.nibbleCursor);
-		voice.badp.decodedFrame = record.badp.decodedFrame;
-		voice.badp.decodedLeft = record.badp.decodedLeft;
-		voice.badp.decodedRight = record.badp.decodedRight;
-		state.voices.push_back(voice);
+		state.voices.push_back(captureApuOutputVoiceState(record));
 	}
 	return state;
 }
@@ -138,36 +175,7 @@ void ApuOutputMixer::restoreVoiceState(const ApuOutputVoiceState& state) {
 		if (record.slot != state.slot) {
 			continue;
 		}
-		record.position = state.position;
-		record.step = state.step;
-		record.gain = state.gain;
-		record.targetGain = state.targetGain;
-		record.gainRampRemaining = state.gainRampRemaining;
-		record.stopAfter = state.stopAfter;
-		record.filterSampleRate = state.filterSampleRate;
-		record.filter.enabled = state.filter.enabled;
-		record.filter.b0 = state.filter.b0;
-		record.filter.b1 = state.filter.b1;
-		record.filter.b2 = state.filter.b2;
-		record.filter.a1 = state.filter.a1;
-		record.filter.a2 = state.filter.a2;
-		record.filter.l1 = state.filter.l1;
-		record.filter.l2 = state.filter.l2;
-		record.filter.r1 = state.filter.r1;
-		record.filter.r2 = state.filter.r2;
-		record.badp.predictors[0] = state.badp.predictors[0];
-		record.badp.predictors[1] = state.badp.predictors[1];
-		record.badp.stepIndices[0] = state.badp.stepIndices[0];
-		record.badp.stepIndices[1] = state.badp.stepIndices[1];
-		record.badp.nextFrame = state.badp.nextFrame;
-		record.badp.blockEnd = state.badp.blockEnd;
-		record.badp.blockFrames = state.badp.blockFrames;
-		record.badp.blockFrameIndex = state.badp.blockFrameIndex;
-		record.badp.payloadOffset = state.badp.payloadOffset;
-		record.badp.nibbleCursor = state.badp.nibbleCursor;
-		record.badp.decodedFrame = state.badp.decodedFrame;
-		record.badp.decodedLeft = static_cast<i16>(state.badp.decodedLeft);
-		record.badp.decodedRight = static_cast<i16>(state.badp.decodedRight);
+		restoreApuOutputVoiceState(record, state);
 		return;
 	}
 	throw BMSX_RUNTIME_ERROR("[AOUT] Restored voice state has no active AOUT record.");

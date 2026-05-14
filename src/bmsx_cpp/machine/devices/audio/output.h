@@ -143,6 +143,9 @@ private:
 		BadpDecoderState badp;
 	};
 
+	friend ApuOutputVoiceState captureApuOutputVoiceState(const VoiceRecord& record);
+	friend void restoreApuOutputVoiceState(VoiceRecord& record, const ApuOutputVoiceState& state);
+
 	VoiceRecord buildVoiceFromData(ApuAudioSlot slot,
 								ApuVoiceId voiceId,
 								const ApuAudioSource& source,

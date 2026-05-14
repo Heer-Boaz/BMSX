@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { writeLE16, writeLE32 } from '../../src/bmsx/common/endian';
 import {
 	APU_COMMAND_FIFO_CAPACITY,
 	APU_CMD_PLAY,
@@ -24,6 +25,7 @@ import {
 	APU_PARAMETER_REGISTER_COUNT,
 	APU_PARAMETER_GAIN_Q12_INDEX,
 	APU_PARAMETER_RATE_STEP_Q16_INDEX,
+	APU_PARAMETER_START_SAMPLE_INDEX,
 	APU_RATE_STEP_Q16_ONE,
 	APU_PARAMETER_SLOT_INDEX,
 	APU_SLOT_REGISTER_WORD_COUNT,
@@ -346,6 +348,34 @@ function writeSquareGeneratorRegisters(memory: Memory): void {
 	memory.writeValue(IO_APU_SOURCE_LOOP_END_SAMPLE, 2);
 	memory.writeValue(IO_APU_GENERATOR_KIND, APU_GENERATOR_SQUARE);
 	memory.writeValue(IO_APU_GENERATOR_DUTY_Q12, 0x0800);
+}
+
+function createBadpFixture(): Uint8Array {
+	const bytes = new Uint8Array(60);
+	bytes.set([0x42, 0x41, 0x44, 0x50], 0);
+	writeLE16(bytes, 4, 1);
+	writeLE16(bytes, 6, 1);
+	writeLE32(bytes, 8, APU_SAMPLE_RATE_HZ);
+	writeLE32(bytes, 12, 8);
+	writeLE32(bytes, 36, 48);
+	writeLE16(bytes, 48, 8);
+	writeLE16(bytes, 50, 12);
+	writeLE16(bytes, 52, 0);
+	bytes.set([0x11, 0x11, 0x11, 0x11], 56);
+	return bytes;
+}
+
+function writeBadpSourceRegisters(memory: Memory, sourceAddr = RAM_BASE): void {
+	const bytes = createBadpFixture();
+	memory.writeBytes(sourceAddr, bytes);
+	memory.writeValue(IO_APU_SOURCE_ADDR, sourceAddr);
+	memory.writeValue(IO_APU_SOURCE_BYTES, bytes.byteLength);
+	memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ);
+	memory.writeValue(IO_APU_SOURCE_CHANNELS, 1);
+	memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, 4);
+	memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, 8);
+	memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 48);
+	memory.writeValue(IO_APU_SOURCE_DATA_BYTES, 12);
 }
 
 function writeApuCommand(memory: Memory, audio: AudioController, command: number): void {
@@ -957,6 +987,42 @@ test('APU square generator is device-owned and restores live AOUT state', () => 
 	const restoredOutput = new Int16Array(2);
 	restored.audioOutput.renderSamples(restoredOutput, 1, APU_SAMPLE_RATE_HZ, 1);
 	assert.deepEqual(Array.from(restoredOutput), Array.from(liveRestoredPhase));
+});
+
+test('APU BADP save-state restores decoder-backed AOUT and selected-slot seek writes', () => {
+	const { memory, audio, audioOutput } = createRealAudioHarness();
+	writeBadpSourceRegisters(memory);
+	memory.writeValue(IO_APU_SLOT, 1);
+	writeApuCommand(memory, audio, APU_CMD_PLAY);
+
+	const firstFrames = new Int16Array(4);
+	audioOutput.renderSamples(firstFrames, 2, APU_SAMPLE_RATE_HZ, 1);
+	assert.deepEqual(Array.from(firstFrames), [1, 1, 2, 2]);
+
+	const saved = audio.captureState();
+	assert.equal(saved.output.voices.length, 1);
+	assert.equal(saved.output.voices[0]!.badp.decodedFrame, 2);
+	assert.equal(saved.output.voices[0]!.badp.nextFrame, 3);
+
+	const liveNext = new Int16Array(2);
+	audioOutput.renderSamples(liveNext, 1, APU_SAMPLE_RATE_HZ, 1);
+
+	const restored = createRealAudioHarness();
+	restored.audio.restoreState(saved, 0);
+	const restoredNext = new Int16Array(2);
+	restored.audioOutput.renderSamples(restoredNext, 1, APU_SAMPLE_RATE_HZ, 1);
+	assert.deepEqual(Array.from(restoredNext), Array.from(liveNext));
+
+	restored.memory.writeValue(IO_APU_SLOT, 1);
+	restored.memory.writeMappedU32LE(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_START_SAMPLE_INDEX * IO_ARG_STRIDE, 5);
+	const seekState = restored.audio.captureState();
+	assert.equal(seekState.slotPlaybackCursorQ16[1], 5 * APU_RATE_STEP_Q16_ONE);
+	assert.equal(seekState.output.voices[0]!.badp.decodedFrame, 5);
+	assert.equal(seekState.output.voices[0]!.badp.nextFrame, 6);
+
+	const seekFrame = new Int16Array(2);
+	restored.audioOutput.renderSamples(seekFrame, 1, APU_SAMPLE_RATE_HZ, 1);
+	assert.deepEqual(Array.from(seekFrame), [6, 6]);
 });
 
 test('APU STOP_SLOT fade keeps the slot active until the ended event', async () => {
