@@ -259,6 +259,8 @@ function decodeStringPoolState(value: unknown, label: string): StringPoolState {
 function encodeInputControllerState(state: InputControllerState): InputControllerState {
 	return {
 		sampleArmed: state.sampleArmed,
+		sampleSequence: state.sampleSequence >>> 0,
+		lastSampleCycle: state.lastSampleCycle >>> 0,
 		registers: {
 			player: state.registers.player >>> 0,
 			actionStringId: state.registers.actionStringId >>> 0,
@@ -306,6 +308,8 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 	}
 	return {
 		sampleArmed: requireObjectKey(object, 'sampleArmed', label, 'machine.input.sampleArmed') as boolean,
+		sampleSequence: requireBoundedU32(requireObjectKey(object, 'sampleSequence', label, 'machine.input.sampleSequence'), 'machine.input.sampleSequence', 0, 0xffffffff),
+		lastSampleCycle: requireBoundedU32(requireObjectKey(object, 'lastSampleCycle', label, 'machine.input.lastSampleCycle'), 'machine.input.lastSampleCycle', 0, 0xffffffff),
 		registers: {
 			player: requireBoundedU32(requireObjectKey(registers, 'player', 'machine.input.registers', 'machine.input.registers.player'), 'machine.input.registers.player', 0, 0xffffffff),
 			actionStringId: requireBoundedU32(requireObjectKey(registers, 'actionStringId', 'machine.input.registers', 'machine.input.registers.actionStringId'), 'machine.input.registers.actionStringId', 0, 0xffffffff),

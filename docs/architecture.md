@@ -138,11 +138,12 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   because RAM save-state intentionally excludes IO slots. The string-pool entry field is `tracked`;
   ROM-owned strings remain untracked while runtime-materialized strings restore
   as tracked RAM. The Input Controller (ICU) state now persists the sample-arm
-  latch, raw registerfile (`player`, `action`, `bind`, `ctrl`, `query`,
-  `status`, `value`, and `consume` string-handle/numeric words), and the
-  per-player committed action table. ICU restore rewrites its MMIO mirrors and
-  rebuilds the chip-owned input context from those register/action words rather
-  than depending on host `Input` mappings surviving outside save-state.
+  latch, sample sequence/cycle latches, raw registerfile (`player`, `action`,
+  `bind`, `ctrl`, `query`, `status`, `value`, and `consume`
+  string-handle/numeric words), and the per-player committed action table. ICU
+  restore rewrites its MMIO mirrors and rebuilds the chip-owned input context
+  from those register/action words rather than depending on host `Input`
+  mappings surviving outside save-state.
 - World/mundo content should follow the same object-image rule: room templates,
   maps, transitions, and export tables belong in `.rodata` records with offsets
   or pointers, while room load instantiates only active mutable state into RAM.
@@ -699,7 +700,9 @@ Already advanced in this goal:
   contexts through MMIO.
 - The ICU no longer exposes its arm latch for runtime code to mutate directly:
   VBLANK/runtime reset/error paths now go through the device transition, while
-  the ICU owns and persists its register latches and committed action table.
+  the ICU owns and persists its sample/register latches and committed action
+  table. The VBlank edge passes runtime time/cycles into the ICU; the device
+  records `sampleSequence`/`lastSampleCycle` before sampling player state.
 - The scratchbatch compatibility facade was removed in TS and C++; callers now
   use the actual scratch-buffer owner.
 - IDE runtime fault capture, debugger pause state, workbench runtime-error UI,
@@ -1018,10 +1021,10 @@ If `/goal resume` is invoked, it should mean this order of work:
    remaining generator and richer envelope work must stay device-owned instead
    of growing through host-side sound shortcuts.
 3. Continue the Input Controller (ICU) cleanup beyond the persisted
-   register/action state and removed input-map pass-through surfaces by making
-   the device owner the single source of truth for the active input snapshot,
-   input timing, and any future input features such as buffered input or
-   rumble.
+   register/action state and removed input-map pass-through surfaces. The ICU
+   now owns the VBlank sample edge and sample sequence/cycle latches; remaining
+   work is to move future input features such as buffered input, analog value
+   readout, or rumble behind the same device boundary.
 4. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
    APIs, Lua API metadata, devtools source APIs, overlay/editor APIs, terminal
    commands, and workspace APIs. Separate cart-visible contracts from editor or
@@ -1063,9 +1066,10 @@ Next recommended work:
    cursors, slot lifecycle phases, STOP-fade envelope restore, and square
    generator state, the next APU step is richer generator/noise/envelope state
    owned by the device.
-3. Continue ICU work by moving the active input snapshot/timing into the device
-   instead of letting cart-visible input semantics leak through host
-   `PlayerInput` APIs. The previous Lua/manifest/public input-map shortcuts are gone;
+3. Continue ICU work by moving richer input features behind the device instead
+   of letting cart-visible input semantics leak through host `PlayerInput` APIs.
+   The active sample edge, timing latches, and previous
+   Lua/manifest/public input-map shortcuts are now under the ICU boundary;
    carts define action bindings through the input-controller register path.
 4. Continue TS/C++ parity cleanup subsystem by subsystem, including public API
    surfaces instead of assuming they are already covered.

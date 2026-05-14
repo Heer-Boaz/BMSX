@@ -27,6 +27,8 @@ void InputController::onRegisterWriteThunk(void* context, uint32_t addr, Value v
 
 void InputController::reset() {
 	m_sampleArmed = false;
+	m_sampleSequence = 0;
+	m_lastSampleCycle = 0;
 	for (i32 playerIndex = 1; playerIndex <= PLAYERS_MAX; playerIndex += 1) {
 		PlayerChipState& state = m_playerStates[static_cast<size_t>(playerIndex - 1)];
 		clearPlayerActions(playerIndex, state);
@@ -39,17 +41,21 @@ void InputController::cancelArmedSample() {
 	m_sampleArmed = false;
 }
 
-void InputController::onVblankEdge() {
+void InputController::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
 	if (!m_sampleArmed) {
 		return;
 	}
-	m_input.beginFrame();
+	m_sampleSequence += 1u;
+	m_lastSampleCycle = nowCycles;
+	m_input.samplePlayers(currentTimeMs);
 	m_sampleArmed = false;
 }
 
 InputControllerState InputController::captureState() const {
 	InputControllerState state;
 	state.sampleArmed = m_sampleArmed;
+	state.sampleSequence = m_sampleSequence;
+	state.lastSampleCycle = m_lastSampleCycle;
 	state.registers = m_registers;
 	for (size_t index = 0; index < m_playerStates.size(); index += 1) {
 		state.players[index].actions = m_playerStates[index].actions;
@@ -62,6 +68,8 @@ void InputController::restoreState(const InputControllerState& state) {
 		clearPlayerActions(playerIndex, m_playerStates[static_cast<size_t>(playerIndex - 1)]);
 	}
 	m_sampleArmed = state.sampleArmed;
+	m_sampleSequence = state.sampleSequence;
+	m_lastSampleCycle = state.lastSampleCycle;
 	m_registers = state.registers;
 	for (i32 playerIndex = 1; playerIndex <= PLAYERS_MAX; playerIndex += 1) {
 		restorePlayerActions(

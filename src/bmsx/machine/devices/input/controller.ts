@@ -49,6 +49,8 @@ type PlayerChipState = {
 
 export type InputControllerState = {
 	sampleArmed: boolean;
+	sampleSequence: number;
+	lastSampleCycle: number;
 	registers: InputControllerRegisterState;
 	players: InputControllerPlayerState[];
 };
@@ -83,6 +85,8 @@ export class InputController {
 	private readonly playerStates = createPlayerChipStates();
 	private registers = createResetRegisters();
 	private sampleArmed = false;
+	private sampleSequence = 0;
+	private lastSampleCycle = 0;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -99,6 +103,8 @@ export class InputController {
 
 	public reset(): void {
 		this.sampleArmed = false;
+		this.sampleSequence = 0;
+		this.lastSampleCycle = 0;
 		for (let playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
 			const state = this.playerStates[playerIndex - 1]!;
 			this.clearPlayerActions(playerIndex, state);
@@ -111,17 +117,21 @@ export class InputController {
 		this.sampleArmed = false;
 	}
 
-	public onVblankEdge(): void {
+	public onVblankEdge(currentTimeMs: number, nowCycles: number): void {
 		if (!this.sampleArmed) {
 			return;
 		}
-		this.input.beginFrame();
+		this.sampleSequence = (this.sampleSequence + 1) >>> 0;
+		this.lastSampleCycle = nowCycles >>> 0;
+		this.input.samplePlayers(currentTimeMs);
 		this.sampleArmed = false;
 	}
 
 	public captureState(): InputControllerState {
 		return {
 			sampleArmed: this.sampleArmed,
+			sampleSequence: this.sampleSequence,
+			lastSampleCycle: this.lastSampleCycle,
 			registers: { ...this.registers },
 			players: this.playerStates.map(state => ({
 				actions: state.actions.map(action => ({ ...action })),
@@ -134,6 +144,8 @@ export class InputController {
 			this.clearPlayerActions(playerIndex, this.playerStates[playerIndex - 1]!);
 		}
 		this.sampleArmed = state.sampleArmed;
+		this.sampleSequence = state.sampleSequence;
+		this.lastSampleCycle = state.lastSampleCycle;
 		this.registers = { ...state.registers };
 		for (let playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
 			const restoredPlayer = state.players[playerIndex - 1]!;

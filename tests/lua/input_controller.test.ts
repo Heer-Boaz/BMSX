@@ -55,14 +55,14 @@ function createFakePlayer(): FakePlayerInput {
 	};
 }
 
-function createHarness(): { memory: Memory; cpu: CPU; controller: InputController; players: FakePlayerInput[]; beginFrames: () => number } {
+function createHarness(): { memory: Memory; cpu: CPU; controller: InputController; players: FakePlayerInput[]; samples: () => number } {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const players = [createFakePlayer(), createFakePlayer(), createFakePlayer(), createFakePlayer()];
-	let beginFrameCount = 0;
+	let sampleCount = 0;
 	const input = {
-		beginFrame() {
-			beginFrameCount += 1;
+		samplePlayers() {
+			sampleCount += 1;
 		},
 		getPlayerInput(playerIndex: number) {
 			return players[playerIndex - 1]!;
@@ -70,7 +70,7 @@ function createHarness(): { memory: Memory; cpu: CPU; controller: InputControlle
 	};
 	const controller = new InputController(memory, input as unknown as Input, cpu.stringPool);
 	controller.reset();
-	return { memory, cpu, controller, players, beginFrames: () => beginFrameCount };
+	return { memory, cpu, controller, players, samples: () => sampleCount };
 }
 
 function createRealPlayerHarness(): { memory: Memory; cpu: CPU; controller: InputController; players: PlayerInput[] } {
@@ -84,8 +84,8 @@ function createRealPlayerHarness(): { memory: Memory; cpu: CPU; controller: Inpu
 	];
 	let frameTime = 0;
 	const input = {
-		beginFrame() {
-			frameTime += 1000 / 60;
+		samplePlayers(currentTime: number) {
+			frameTime = currentTime;
 			for (let index = 0; index < players.length; index += 1) {
 				players[index]!.beginFrame(frameTime);
 			}
@@ -141,9 +141,11 @@ test('input controller persists register latches and committed action contexts',
 	assert.equal(restored.controller.captureState().players[1]!.actions[0]!.actionStringId, asStringId(actionValue));
 	assert.equal(restored.controller.captureState().players[1]!.actions[0]!.bindStringId, asStringId(bindValue));
 
-	restored.controller.onVblankEdge();
-	assert.equal(restored.beginFrames(), 1);
+	restored.controller.onVblankEdge(1000 / 60, 123);
+	assert.equal(restored.samples(), 1);
 	assert.equal(restored.controller.captureState().sampleArmed, false);
+	assert.equal(restored.controller.captureState().sampleSequence, 1);
+	assert.equal(restored.controller.captureState().lastSampleCycle, 123);
 });
 
 test('input controller owns arm cancellation instead of exposing the latch', () => {
@@ -167,7 +169,7 @@ test('input controller mappings drive real PlayerInput contexts without a base i
 	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_COMMIT);
 	playerTwo.recordButtonEvent('gamepad', 'a', { eventType: 'press', identifier: 'a', timestamp: 0, consumed: false, pressId: 7 });
 	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
-	harness.controller.onVblankEdge();
+	harness.controller.onVblankEdge(1000 / 60, 456);
 	harness.memory.writeValue(IO_INP_QUERY, queryValue);
 
 	assert.equal(harness.memory.readIoU32(IO_INP_STATUS), 1);
@@ -179,7 +181,7 @@ test('Input.initialize installs host defaults as the base context', () => {
 	try {
 		const playerOne = input.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX);
 		playerOne.recordButtonEvent('keyboard', 'KeyX', { eventType: 'press', identifier: 'KeyX', timestamp: 0, consumed: false, pressId: 11 });
-		input.beginFrame(1000 / 60);
+		input.samplePlayers(1000 / 60);
 
 		assert.equal(playerOne.checkActionTriggered('a[jp]'), true);
 		assert.equal(playerOne.getActionState('a').justpressed, true);

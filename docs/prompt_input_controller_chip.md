@@ -2,7 +2,7 @@
 
 ## Goal
 
-Implement a new **Input Controller chip** — a memory-mapped I/O device on the BMSX fantasy console that allows cart Lua code to query input actions via `mem[]` MMIO writes using the new `&'...'` string_ref syntax. This replaces the current `action_triggered(...)` native function call with a hardware-style MMIO interface where the cart writes an action expression string (as a `string_ref`) into an IO register, and reads back the boolean result from another IO register.
+Maintain the **Input Controller chip** — a memory-mapped I/O device on the BMSX fantasy console that allows cart Lua code to query input actions via `mem[]` MMIO writes using `&'...'` string_ref syntax. Cart code writes an action expression string_ref into an IO register and reads the boolean result from another IO register; sampling is owned by the ICU VBlank edge, not by host/runtime shortcuts.
 
 BMSX is a fantasy console with real console discipline: cart-visible behavior should route through the machine memory map and device controllers, not through host/runtime shortcuts.
 
@@ -12,17 +12,16 @@ BMSX is a fantasy console with real console discipline: cart-visible behavior sh
 
 BMSX is a fantasy console with a custom Lua VM. The architecture mirrors retro hardware:
 
-- **Memory-mapped I/O**: Cart code writes to special addresses via `mem[addr] = value`. The compiler lowers this to `STORE_MEM` opcodes. The runtime dispatches IO writes to device controllers.
-- **IO slots**: `memory.ts` stores IO values in `ioSlots[]`. IO writes call `ioWriteHandler.onIoWrite(addr, value)`. IO slots can hold non-numeric values (including `StringValue` objects) — unlike RAM which only accepts numbers.
-- **Runtime dispatch**: `runtime.ts` has an `onIoWrite(addr, value)` method that checks the address and dispatches to the appropriate device controller (DMA, IMGDEC, GEO, etc.).
-- **Device pattern**: Each device is a class with `reset()`, `onCtrlWrite()`, and `onService()` methods. Devices are instantiated in `runtime.ts` with references to `Memory`, IRQ callbacks, and scheduling callbacks. See `src/bmsx/machine/devices/*.ts` for examples.
+- **Memory-mapped I/O**: Cart code writes to special addresses via `mem[addr] = value`. The compiler lowers this to `STORE_MEM` opcodes. `Memory.mapIoWrite()` connects IO addresses directly to device-owned write callbacks.
+- **IO slots**: `memory.ts` stores IO values in `ioSlots[]`. IO slots can hold non-numeric values (including `StringValue` objects) — unlike RAM which only accepts numbers.
+- **Device pattern**: Device controllers own their register callbacks, reset state, save-state capture/restore, and service/edge transitions. The ICU is constructed by `Machine` with `Memory`, `Input`, and `StringPool` ownership references.
 - **String refs**: The `&'...'` syntax creates a `StringRefLiteralExpression` in the AST, which the compiler interns as a `StringValue` via `program.internString()`. At runtime this is a `StringValue` object (with `.id` and `.text`). When written to an IO slot, the `StringValue` is stored directly (not as a number).
-- **Compile-time enforcement**: `registers.ts` defines `MMIO_REGISTER_SPECS` with `writeRequirement: 'string_ref'`. The compiler's `validateMemoryStore()` uses flow-sensitive analysis (`compile_value_flow.ts`) to verify that any value written to such an address is provably a `string_ref` at compile time. The spec array is currently empty (placeholder comment says "Input Controller registers will be added here").
-- **Existing input API**: Cart code currently calls `action_triggered('left[p]')` — a native function that calls `PlayerInput.checkActionTriggered(actionDef)`. This evaluates action parser expressions like `'up[jp] || a[jp]'` via `ActionDefinitionEvaluator`. The result is a boolean. A lower-level `get_action_state(action, player, window?)` returns packed flags as a number. The MMIO chip mirrors the `action_triggered()` path — same expression language, same `checkActionTriggered()` dispatch.
+- **Compile-time enforcement**: `registers.ts` defines `MMIO_REGISTER_SPECS` entries with `writeRequirement: 'string_ref'`. The compiler's `validateMemoryStore()` uses flow-sensitive analysis (`compile_value_flow.ts`) to verify that values written to action/bind/query/consume registers are provably `string_ref` values.
+- **Input expression evaluator**: The MMIO query path calls `PlayerInput.checkActionTriggered(actionDef)`. This evaluates action parser expressions like `'up[jp] || a[jp]'` via `ActionDefinitionEvaluator`. The result is mirrored to the ICU status register as a boolean word. A lower-level `get_action_state(action, player, window?)` still returns packed flags for callers that need the flag ABI.
 
 ---
 
-## Architecture: The New Input Controller Chip
+## Architecture: Input Controller Chip
 
 ### Concept
 
@@ -39,7 +38,7 @@ The compiler statically verifies that only `string_ref` values (not plain string
 
 ### IO Register Layout
 
-Add the following IO registers to `io.ts`, immediately after the last existing device (GEO/Payload), before `IO_SLOT_COUNT`:
+The current IO register bank is:
 
 | Register | Name | Index | Direction | Type | Description |
 |---|---|---|---|---|---|
@@ -61,7 +60,7 @@ These are numeric constants written to `sys_inp_ctrl` to trigger chip operations
 | Constant | Name | Value | Description |
 |---|---|---|---|
 | `INP_CTRL_COMMIT` | `inp_ctrl_commit` | `1` | Commit the current action definition. Reads action name from `sys_inp_action` and bindings from `sys_inp_bind`, then registers the mapping into the chip's **persistent context** for the current player. The first commit creates and pushes a `MappingContext` (id `'inp_chip'`) onto the player's `ContextStack`; subsequent commits update that same context with additional actions. |
-| `INP_CTRL_ARM` | `inp_ctrl_arm` | `2` | Arm the ICU sample latch. The next runtime VBlank edge calls `InputController.onVblankEdge()`; when armed, the ICU performs exactly one `Input.beginFrame()` sample transition and clears the latch. |
+| `INP_CTRL_ARM` | `inp_ctrl_arm` | `2` | Arm the ICU sample latch. The next runtime VBlank edge calls `InputController.onVblankEdge(currentTimeMs, nowCycles)`; when armed, the ICU records `sampleSequence`/`lastSampleCycle` and asks the input owner to `samplePlayers(currentTimeMs)` exactly once and clears the latch. |
 | `INP_CTRL_RESET` | `inp_ctrl_reset` | `3` | Clear the chip's `'inp_chip'` context from the current player's `ContextStack` and clear all accumulated action definitions. |
 
 ### Action Map Registration (INIT phase)
@@ -105,14 +104,14 @@ mem[sys_inp_player] = 1  -- switch back
 
 The engine already has a complete frame-sampling pipeline:
 
-1. `src/bmsx/machine/runtime/vblank.ts` `enterVblank()` calls `InputController.onVblankEdge()`
-2. If `inp_ctrl_arm` set the private sample latch, `InputController.onVblankEdge()` calls `Input.beginFrame()` once and clears the latch
-3. `Input.beginFrame()` iterates all players, calling `playerInput.beginFrame(currentTime)`
+1. `src/bmsx/machine/runtime/vblank.ts` `enterVblank()` calls `InputController.onVblankEdge(currentTimeMs, nowCycles)`
+2. If `inp_ctrl_arm` set the private sample latch, `InputController.onVblankEdge(currentTimeMs, nowCycles)` records `sampleSequence`/`lastSampleCycle`, calls `Input.samplePlayers(currentTimeMs)` once, and clears the latch
+3. `Input.samplePlayers(currentTimeMs)` iterates all players, calling `playerInput.beginFrame(currentTime)`
 4. `PlayerInput.beginFrame()` iterates all input sources (keyboard, gamepad, pointer), calling `stateManager.beginFrame(currentTime)` (which clears `justpressed`/`justreleased` edge flags) and then `stateManager.latchButtonState(button, handler.getButtonState(button), currentTime)` for every tracked button
 
 This already snapshots a consistent per-frame `ButtonState` for all tracked buttons before any cart Lua code runs. The `getActionState()` path reads from these latched states.
 
-The `inp_ctrl_arm` command is the cart-visible latch request. Sampling happens at the hardware edge: the runtime VBlank path calls `InputController.onVblankEdge()`, and the ICU performs the armed `Input.beginFrame()` sample transition exactly once. The latch is then cleared. Mapping contexts are not mutated by the sample edge.
+The `inp_ctrl_arm` command is the cart-visible latch request. Sampling happens at the hardware edge: the runtime VBlank path calls `InputController.onVblankEdge(currentTimeMs, nowCycles)`, and the ICU performs the armed sample transition exactly once. The latch is then cleared. Mapping contexts are not mutated by the sample edge.
 
 Cart code still writes `mem[sys_inp_ctrl] = inp_ctrl_arm` at the top of the update loop, documenting the frame boundary:
 
@@ -381,8 +380,8 @@ export class InputController {
 
     /**
      * ARM: set the private ICU sample latch. The runtime VBlank edge consumes
-     * this latch by calling InputController.onVblankEdge(), which performs the
-     * single Input.beginFrame() transition for the frame.
+     * this latch by calling InputController.onVblankEdge(currentTimeMs, nowCycles), which performs the
+     * single `Input.samplePlayers(currentTimeMs)` transition for the frame.
      */
     private latchInput(): void {
         this.sampleArmed = true;
@@ -431,91 +430,46 @@ export class InputController {
 - **Binding resolution**: Uses `Input.DEFAULT_INPUT_MAPPING.keyboard` directly (e.g. `Input.DEFAULT_INPUT_MAPPING.keyboard['a']` → `['KeyX']`). No new `resolveKeyboardKey()` method needed — the mapping table already exists as a frozen object on `Input`. For gamepad, the abstract names ARE the button IDs (identity mapping via `Input.DEFAULT_INPUT_MAPPING.gamepad`).
 - **Query semantics**: `onQueryWrite()` calls `checkActionTriggered(expr)` — the same expression evaluator used by `action_triggered()`. It parses the expression via `ActionDefinitionEvaluator` (which uses cached ASTs from `InputActionParser`), calls `getActionState()` internally for each referenced action, and evaluates the boolean expression (including modifiers like `[p]`, `[jp]`, `[jr]` and operators `||`, `&&`, `!`). The status register holds 1 (triggered) or 0 (not triggered). The cart puts the "which flag to check" logic into the expression string itself (e.g. `'left[jp]'` for just-pressed, `'left[p]'` for pressed). Root-level actions require a modifier — enforced by the parser's `enforceRootModifiers()`.
 - **Consume semantics**: `onConsumeWrite()` calls `consumeAction(actionName)` — an existing method that iterates all sources, finds pressed+unconsumed bindings for the action, and marks them consumed. Takes a plain action name (no modifiers, no expressions).
-- **Latch mechanism**: No new `latchFrame()` method is needed. The runtime VBlank `InputController.onVblankEdge()` → `Input.beginFrame()` → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()` path snapshots all tracked buttons before cart code runs. The chip's `inp_ctrl_arm` sets the private sample latch; `onVblankEdge()` performs the armed sample transition.
+- **Latch mechanism**: No new `latchFrame()` method is needed. The runtime VBlank `InputController.onVblankEdge(currentTimeMs, nowCycles)` → `Input.samplePlayers(currentTimeMs)` → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()` path snapshots all tracked buttons before cart code runs. The chip's `inp_ctrl_arm` sets the private sample latch; `onVblankEdge()` performs the armed sample transition.
 
 **Note**: The `InputController` does not use `packActionStateFlags` — the status register is a simple boolean (1/0) since modifier semantics are embedded in the expression string. The `ACTION_STATE_FLAG_*` constants remain useful for the existing `get_action_state()` Lua native function.
 
-### Step 5: Runtime IO Write Dispatch (`src/bmsx/machine/runtime/runtime.ts`)
+### Current Integration Owners
 
-In `onIoWrite()`, add handling for the Input Controller registers. Note: the current `onIoWrite` early-returns if `typeof value !== 'number'` — this must be adjusted because the Input Controller accepts `StringValue` writes:
+- `Machine` constructs `InputController(memory, input, cpu.stringPool)` on both TS and C++ runtimes.
+- `InputController` maps its own write callbacks with `Memory.mapIoWrite()` for `sys_inp_player`, `sys_inp_action`, `sys_inp_bind`, `sys_inp_ctrl`, `sys_inp_query`, and `sys_inp_consume`.
+- String-ref registers are stored in the memory IO slot and decoded by the device callback via the CPU/StringPool string id contract.
+- `inp_ctrl_commit` owns the chip action table and refreshes the `inp_chip` context with `PlayerInput.pushContext()`.
+- `inp_ctrl_reset` clears the chip context with `PlayerInput.clearContext()`.
+- `inp_ctrl_arm` sets only the private ICU sample latch.
+- Runtime VBlank calls `InputController.onVblankEdge(currentTimeMs, nowCycles)`. When armed, the ICU records `sampleSequence`/`lastSampleCycle`, samples players once through `Input.samplePlayers(currentTimeMs)`, and clears the latch.
+- Save-state captures the private sample latch, sample sequence/cycle latches, mirrored registerfile, and committed per-player action string ids. Restore rebuilds the chip-owned contexts from those action records.
+- TS and C++ use the same ownership topology: `machine/devices/input/controller.*` owns the ICU registerfile/latches/context replay, `input/manager.*` owns host device polling and player sampling, and `input/player.*` owns per-player context evaluation.
 
-```ts
-// In onIoWrite, BEFORE the typeof value !== 'number' early return:
-if (addr === IO_INP_ACTION || addr === IO_INP_BIND) {
-    return; // StringValue stored in IO slot; no dispatch needed (read on COMMIT)
-}
-if (addr === IO_INP_QUERY) {
-    this.inputController.onQueryWrite();
-    return;
-}
-if (addr === IO_INP_CONSUME) {
-    this.inputController.onConsumeWrite();
-    return;
-}
-if (addr === IO_INP_CTRL) {
-    this.inputController.onCtrlWrite();
-    return;
-}
-// The existing typeof value !== 'number' guard must come AFTER these checks,
-// or be restructured to allow StringValue for known IO addresses.
-```
+### Lua Builtin Descriptors
 
-**Critical**: The existing guard `if (typeof value !== 'number') { return; }` at the top of `onIoWrite` silently ignores all non-numeric IO writes. This must be restructured so that string_ref writes to the Input Controller registers are dispatched properly. The simplest fix is to check for the Input Controller addresses before the numeric guard.
-
-**Note**: `sys_inp_action` and `sys_inp_bind` don't need dispatch on write — they just store the StringValue in the IO slot. The device reads them later when `sys_inp_ctrl = inp_ctrl_commit` is written. However, they still need to be handled before the `typeof value !== 'number'` guard, because they contain StringValues that would be dropped by the guard.
-
-Also instantiate the `InputController` in the runtime constructor alongside the other device controllers:
+The system constants are exposed through firmware globals and builtin descriptors:
 
 ```ts
-this.inputController = new InputController(this.memory, this.input);
+{ name: 'sys_inp_player', description: 'Input Controller: player index register (1-based).' }
+{ name: 'sys_inp_action', description: 'Input Controller: write a string_ref action name for define/commit.' }
+{ name: 'sys_inp_bind', description: 'Input Controller: write string_ref button bindings (comma-separated) for current action.' }
+{ name: 'sys_inp_ctrl', description: 'Input Controller: write a control command (inp_ctrl_commit, inp_ctrl_arm, inp_ctrl_reset).' }
+{ name: 'sys_inp_query', description: 'Input Controller: write a string_ref action expression to evaluate (e.g. left[p], up[jp] || a[jp]).' }
+{ name: 'sys_inp_status', description: 'Input Controller: read query result (1 = triggered, 0 = not triggered).' }
+{ name: 'sys_inp_value', description: 'Input Controller: read analog value after a query.' }
+{ name: 'sys_inp_consume', description: 'Input Controller: write a string_ref action name to consume it.' }
+{ name: 'inp_ctrl_commit', description: 'Input Controller command: commit the current action definition (reads sys_inp_action + sys_inp_bind).' }
+{ name: 'inp_ctrl_arm', description: 'Input Controller command: latch (sample) input state for this frame.' }
+{ name: 'inp_ctrl_reset', description: 'Input Controller command: reset all action definitions to empty.' }
 ```
 
-And call `this.inputController.reset()` in the runtime's reset path.
+### Action State Flag Constants for Lua
 
-### Step 6: C++ Parity (`src/bmsx_cpp/`)
+The `ACTION_STATE_FLAG_*` constants from `engine.ts` remain useful as Lua globals for the existing `get_action_state()` native function. The MMIO chip itself does not use them: its status register is boolean 1/0 because modifier semantics live in the expression string.
 
-The C++ (libretro) runtime needs matching implementation:
+Cart usage:
 
-1. **IO constants** in `src/bmsx_cpp/machine/bus/io.h`
-2. **Input Controller device class** in `src/bmsx_cpp/machine/devices/input/controller.cpp/.h`
-3. **Runtime dispatch** in the C++ runtime's IO write handler, same structure as TS
-4. **String handling**: In C++, the IO slot will contain a string handle ID (not a `StringValue` object). The device reads the handle, resolves it via the string pool to get the text, then evaluates the action query. The C++ `PlayerInput::getActionState()` and `PlayerInput::consumeAction()` already exist.
-
-### Step 7: Lua Builtin Descriptors (`src/bmsx/machine/firmware/builtin_descriptors.ts`)
-
-Add descriptors for the new system constants so they appear in IDE autocomplete:
-
-```ts
-// In the system constants section — IO address registers:
-{ name: 'sys_inp_player', description: 'Input Controller: player index register (1-based).' },
-{ name: 'sys_inp_action', description: 'Input Controller: write a string_ref action name for define/commit.' },
-{ name: 'sys_inp_bind', description: 'Input Controller: write string_ref button bindings (comma-separated) for current action.' },
-{ name: 'sys_inp_ctrl', description: 'Input Controller: write a control command (inp_ctrl_commit, inp_ctrl_arm, inp_ctrl_reset).' },
-{ name: 'sys_inp_query', description: 'Input Controller: write a string_ref action expression to evaluate (e.g. left[p], up[jp] || a[jp]).' },
-{ name: 'sys_inp_status', description: 'Input Controller: read query result (1 = triggered, 0 = not triggered).' },
-{ name: 'sys_inp_value', description: 'Input Controller: read analog value after a query.' },
-{ name: 'sys_inp_consume', description: 'Input Controller: write a string_ref action name to consume it.' },
-
-// Control command constants:
-{ name: 'inp_ctrl_commit', description: 'Input Controller command: commit the current action definition (reads sys_inp_action + sys_inp_bind).' },
-{ name: 'inp_ctrl_arm', description: 'Input Controller command: latch (sample) input state for this frame.' },
-{ name: 'inp_ctrl_reset', description: 'Input Controller command: reset all action definitions to empty.' },
-```
-
-### Step 8: Action State Flag Constants for Lua
-
-The `ACTION_STATE_FLAG_*` constants from `engine.ts` are still useful as Lua globals for the existing `get_action_state()` native function. The MMIO chip itself does not use them (its status register is boolean 1/0, since modifier semantics live in the expression string), but they should still be exposed:
-
-```ts
-luaPipeline.registerGlobal(runtime, 'inp_pressed', ACTION_STATE_FLAG_PRESSED);         // 1 << 0
-luaPipeline.registerGlobal(runtime, 'inp_justpressed', ACTION_STATE_FLAG_JUSTPRESSED);   // 1 << 1
-luaPipeline.registerGlobal(runtime, 'inp_justreleased', ACTION_STATE_FLAG_JUSTRELEASED); // 1 << 2
-luaPipeline.registerGlobal(runtime, 'inp_consumed', ACTION_STATE_FLAG_CONSUMED);         // 1 << 5
-luaPipeline.registerGlobal(runtime, 'inp_guardedjustpressed', ACTION_STATE_FLAG_GUARDEDJUSTPRESSED); // 1 << 9
-luaPipeline.registerGlobal(runtime, 'inp_repeatpressed', ACTION_STATE_FLAG_REPEATPRESSED); // 1 << 10
-```
-
-Cart usage becomes readable:
 ```lua
 mem[sys_inp_query] = &'a[jp]'
 if mem[sys_inp_status] ~= 0 then
@@ -523,64 +477,56 @@ if mem[sys_inp_status] ~= 0 then
 end
 ```
 
----
+## Current Files
 
-## Files to Modify (Summary)
-
-| File | Action |
+| File | Owner role |
 |---|---|
-| `src/bmsx/machine/bus/io.ts` | Add IO_INP_* index and address constants + INP_CTRL_* command constants |
-| `src/bmsx/machine/bus/registers.ts` | Add string_ref write requirements for action, bind, query, and consume registers |
-| `src/bmsx/machine/firmware/globals.ts` | Register IO address constants + control command constants + flag constants as Lua globals |
-| `src/bmsx/machine/firmware/builtin_descriptors.ts` | Add descriptor entries for all new sys_inp_*, inp_ctrl_*, and inp_* constants |
-| `src/bmsx/machine/devices/input/controller.ts` | **New file**: InputController MMIO device over PlayerInput / ContextStack, uses `checkActionTriggered()` for expression queries |
-| `src/bmsx/machine/runtime/runtime.ts` | Instantiate InputController, dispatch IO writes in onIoWrite (including string_ref writes), fix non-numeric guard |
-| `src/bmsx_cpp/machine/bus/io.h` | C++ IO constants + control command constants |
-| `src/bmsx_cpp/machine/devices/input/controller.cpp/.h` | **New files**: C++ InputController with same register/query/consume semantics |
-| `src/bmsx_cpp/machine/runtime/runtime.cpp` | C++ runtime dispatch |
-
----
+| `src/bmsx/machine/bus/io.ts` | TS IO_INP_* address constants and INP_CTRL_* command constants |
+| `src/bmsx/machine/bus/registers.ts` | TS string_ref write requirements for action, bind, query, and consume registers |
+| `src/bmsx/machine/firmware/globals.ts` | TS Lua globals for IO address constants, control command constants, and flag constants |
+| `src/bmsx/machine/firmware/builtin_descriptors.ts` | TS IDE descriptors for sys_inp_*, inp_ctrl_*, and inp_* constants |
+| `src/bmsx/machine/devices/input/controller.ts` | TS ICU MMIO device/registerfile/latches/context replay/query path |
+| `src/bmsx/machine/machine.ts` | TS machine construction, reset, capture, restore wiring for the ICU |
+| `src/bmsx/machine/runtime/vblank.ts` | TS VBlank edge call into the ICU sample transition |
+| `src/bmsx_cpp/machine/bus/io.h` | C++ IO_INP_* address constants and INP_CTRL_* command constants |
+| `src/bmsx_cpp/machine/devices/input/controller.cpp/.h` | C++ ICU MMIO device/registerfile/latches/context replay/query path |
+| `src/bmsx_cpp/machine/machine.cpp/.h` | C++ machine construction, reset, capture, restore wiring for the ICU |
+| `src/bmsx_cpp/machine/runtime/vblank.cpp` | C++ VBlank edge call into the ICU sample transition |
 
 ## Technical Constraints
 
-1. **No defensive coding**: Trust that the compiler's MMIO enforcement ensures only `StringValue` objects reach the Input Controller's action/bind/query/consume registers. Cast directly — don't check `valueIsString()`.
-2. **No legacy fallback**: The existing `action_triggered()` native function continues to work. The MMIO Input Controller is an additional, parallel interface — not a replacement. Carts can use either. Both use the same underlying `checkActionTriggered()` → `ActionDefinitionEvaluator` path.
-3. **Performance**: `checkActionTriggered(expr)` parses the expression (cached via `ActionDefinitionEvaluator.cache`), calls `getActionState()` internally for each referenced action, and evaluates the boolean. This is identical cost to the existing `action_triggered()` native — they share the same code path. No new allocations per query thanks to the AST cache.
-4. **Serialization**: The ICU save-state contract captures the private sample latch, mirrored registers, and committed per-player action string ids. Restore rebuilds the chip-owned mapping contexts from those action records.
-5. **The `onIoWrite` non-numeric guard**: This is the most critical integration detail. The guard `if (typeof value !== 'number') { return; }` currently drops all non-numeric writes silently. String_ref writes to the Input Controller produce a `StringValue` which is not a number. The guard must be restructured. All four string_ref registers (`sys_inp_action`, `sys_inp_bind`, `sys_inp_query`, `sys_inp_consume`) need handling before the guard.
-6. **Shared flag constants**: The `ACTION_STATE_FLAG_*` constants in `engine.ts` remain useful for the existing `get_action_state()` Lua native. The chip itself does not use them — its status register is a boolean (1/0) since modifier semantics are embedded in the action expression.
-7. **Latch semantics**: `inp_ctrl_arm` sets the ICU's private sample latch. The runtime VBlank path calls `InputController.onVblankEdge()`; when armed, that edge performs the single `Input.beginFrame()` transition and clears the latch. The sample edge does not mutate mapping contexts.
-8. **Binding resolution**: The `commitAction()` flow resolves abstract button names (`a`, `lb`, `left`) to keyboard key codes via `Input.DEFAULT_INPUT_MAPPING.keyboard` — an existing frozen object: `{ a: ['KeyX'], lb: ['ShiftLeft'], left: ['ArrowLeft'], ... }`. No new `resolveKeyboardKey()` method is needed — read directly from the existing mapping table. For gamepad, the abstract names ARE the button IDs (identity mapping via `Input.DEFAULT_INPUT_MAPPING.gamepad`).
-9. **Query semantics**: `sys_inp_query` accepts **action expressions** — the same expression language used by `action_triggered()`. Both simple queries (`'left[p]'`, `'dash[jp]'`) and compound expressions (`'up[jp] || a[jp]'`, `'left[p] && !dash[p]'`) are supported. Root-level actions require a modifier (`[p]`, `[jp]`, `[jr]`, etc.) — enforced by `enforceRootModifiers()` in the parser. The status register holds 1 (triggered) or 0 (not triggered).
-10. **Consume semantics**: `sys_inp_consume` accepts **plain action names** (no modifiers, no expressions). It dispatches to `PlayerInput.consumeAction(action)`, which iterates all sources and marks pressed+unconsumed bindings for that action as consumed.
-11. **Commit context lifecycle**: `inp_ctrl_commit` manages a **persistent `MappingContext`** (id `'inp_chip'`) on the player's `ContextStack`. Multiple commits accumulate actions into the same context. `inp_ctrl_reset` clears it. `inp_ctrl_arm` does not touch the context. The `ContextStack.push()` / `clearContext()` by id mechanism already supports this pattern.
-
----
+1. **No defensive coding**: Trust compiler/MMIO enforcement for string-ref registers. Cast/read the owned representation directly.
+2. **No runtime dispatch facade**: ICU writes are delivered through `Memory.mapIoWrite()` callbacks owned by the device.
+3. **Performance**: `checkActionTriggered(expr)` uses the shared cached action parser/evaluator. Do not add per-query wrapper allocation, DTO validation, or fallback parsing.
+4. **Serialization**: ICU save-state captures the private sample latch, sample sequence/cycle latches, mirrored registers, and committed per-player action string ids. Restore rebuilds chip-owned mapping contexts from those action records.
+5. **Latch semantics**: `inp_ctrl_arm` sets the ICU's private sample latch. The runtime VBlank path calls `InputController.onVblankEdge(currentTimeMs, nowCycles)`; when armed, that edge records `sampleSequence`/`lastSampleCycle`, performs the single `Input.samplePlayers(currentTimeMs)` transition, and clears the latch. The sample edge does not mutate mapping contexts.
+6. **Binding resolution**: `commitAction()` resolves abstract button names through `Input.DEFAULT_INPUT_MAPPING.keyboard` and `Input.DEFAULT_INPUT_MAPPING.gamepad`. Do not add a duplicate resolver.
+7. **Query semantics**: `sys_inp_query` accepts action expressions in the same expression language used by `action_triggered()`.
+8. **Consume semantics**: `sys_inp_consume` accepts plain action names and dispatches to `PlayerInput.consumeAction(action)`.
+9. **Commit context lifecycle**: `inp_ctrl_commit` manages one persistent `MappingContext` (`inp_chip`) on the player's `ContextStack`. Multiple commits accumulate actions into the same context. `inp_ctrl_reset` clears it. `inp_ctrl_arm` does not touch the context.
 
 ## Verification
 
-1. `npx tsc --noEmit` — zero errors
-2. `npm run build:bios -- --debug --force` — BIOS builds
-3. `npm run build:game -- pietious --debug --force` — game builds (even without using new registers)
-4. `npm run headless:game -- pietious` — headless runs
-5. Write a test Lua snippet that uses the MMIO Input Controller and verify it compiles and runs
-6. Write a test Lua snippet with a plain string write to `sys_inp_query` and verify the compiler rejects it
-7. `npm run build:platform:libretro-wsl` — libretro core builds with C++ parity
+Current focused validation for ICU changes should include:
 
----
+1. TS compile: `npx tsc --build ./src/bmsx --pretty false`
+2. TS tests: `npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/input_controller.test.ts tests/lua/core_golden.test.ts tests/lua/runtime_save_state_codec.test.ts`
+3. Native tests: `cmake --build build-cpp-tests --target bmsx_core_golden_tests bmsx_libretro_save_state_tests --parallel $(nproc)` and `ctest --test-dir build-cpp-tests --output-on-failure -R 'bmsx_core_golden_tests|bmsx_libretro_save_state_tests'`
+4. Scoped code-quality analyzer over touched TS/C++ input/runtime/save-state files
+5. `npm run audit:core-parity`
+6. `npm run build:bios -- --force`
 
 ## Existing Code References (exact paths)
 
 - IO register layout: `src/bmsx/machine/bus/io.ts` (all `IO_*_INDEX` / `IO_*` constants)
 - Memory map base: `src/bmsx/machine/memory/map.ts` (`IO_BASE`, `IO_WORD_SIZE`)
 - MMIO spec: `src/bmsx/machine/bus/registers.ts`
-- Runtime IO dispatch: `src/bmsx/machine/runtime/runtime.ts` (`onIoWrite`)
-- Frame latch entry point: `src/bmsx/machine/runtime/vblank.ts` `enterVblank()` calls `InputController.onVblankEdge()`, which performs the armed `Input.beginFrame()` sample transition.
+- Frame latch entry point: `src/bmsx/machine/runtime/vblank.ts` `enterVblank()` calls `InputController.onVblankEdge(currentTimeMs, nowCycles)`, which performs the armed ICU sample transition.
 - Device examples: `src/bmsx/machine/devices/dma/controller.ts`, `src/bmsx/machine/devices/imgdec/controller.ts`
 - String pool: `src/bmsx/machine/cpu/string_pool.ts` (`StringPool`) and `src/bmsx/machine/cpu/cpu.ts` (`StringValue`, `valueIsString()`)
 - Compiler validation: `src/bmsx/machine/program/compiler.ts` (`validateMemoryStore`, `resolveMemoryStoreRequirement`)
 - Flow analysis: `src/bmsx/machine/program/compile_value_flow.ts` (`evaluateExpressionValueKind`)
-- Input system — frame sampling: `src/bmsx/input/manager.ts` `beginFrame()` → iterates players → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()`
+- Input system — frame sampling: `src/bmsx/input/manager.ts` `samplePlayers(currentTimeMs)` → iterates players → `PlayerInput.beginFrame()` → `InputStateManager.beginFrame()` + `latchButtonState()`
 - Input system — state manager: `src/bmsx/input/manager.ts` `InputStateManager` class (`beginFrame()`, `latchButtonState()`, `getButtonState()`)
 - Input system — player: `src/bmsx/input/player.ts` (`checkActionTriggered`, `getActionState`, `consumeAction`, `pushContext`, `clearContext`, `beginFrame`)
 - Input system (C++): `src/bmsx_cpp/input/player.cpp` (same methods)

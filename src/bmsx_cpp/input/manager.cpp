@@ -680,13 +680,10 @@ void Input::pollInput() {
 	}
 }
 
-void Input::beginFrame() {
-	// Called exactly when the runtime reaches a new cart-visible simulation frame boundary.
-	// Do not call this from host polls, idle host frames, or budget refills inside the same
-	// unfinished gameplay frame.
+void Input::samplePlayers(f64 currentTimeMs) {
 	for (auto& player : m_playerInputs) {
 		if (player) {
-			player->beginFrame(m_currentTimeMs);
+			player->beginFrame(currentTimeMs);
 		}
 	}
 }

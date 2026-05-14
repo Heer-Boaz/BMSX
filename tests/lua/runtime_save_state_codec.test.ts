@@ -105,6 +105,8 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				},
 				input: {
 					sampleArmed: false,
+					sampleSequence: 3,
+					lastSampleCycle: 77,
 					registers: {
 						player: 2,
 						actionStringId: 0,

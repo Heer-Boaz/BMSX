@@ -30,6 +30,8 @@ struct InputControllerRegisterState {
 
 struct InputControllerState {
 	bool sampleArmed = false;
+	u32 sampleSequence = 0;
+	u32 lastSampleCycle = 0;
 	InputControllerRegisterState registers;
 	std::array<InputControllerPlayerState, PLAYERS_MAX> players;
 };
@@ -40,7 +42,7 @@ public:
 
 	void reset();
 	void cancelArmedSample();
-	void onVblankEdge();
+	void onVblankEdge(f64 currentTimeMs, u32 nowCycles);
 	InputControllerState captureState() const;
 	void restoreState(const InputControllerState& state);
 
@@ -60,6 +62,8 @@ private:
 	std::array<PlayerChipState, PLAYERS_MAX> m_playerStates;
 	InputControllerRegisterState m_registers;
 	bool m_sampleArmed = false;
+	u32 m_sampleSequence = 0;
+	u32 m_lastSampleCycle = 0;
 
 	void onRegisterWrite(uint32_t addr, Value value);
 	void onCtrlWrite(u32 command);

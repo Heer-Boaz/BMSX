@@ -327,6 +327,8 @@ StringPoolState decodeStringPoolState(const BinValue& value, const char* label) 
 BinValue encodeInputControllerState(const InputControllerState& state) {
 	BinObject object;
 	object["sampleArmed"] = state.sampleArmed;
+	object["sampleSequence"] = static_cast<i64>(state.sampleSequence);
+	object["lastSampleCycle"] = static_cast<i64>(state.lastSampleCycle);
 	BinObject registers;
 	registers["player"] = static_cast<i64>(state.registers.player);
 	registers["actionStringId"] = static_cast<i64>(state.registers.actionStringId);
@@ -355,6 +357,8 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 	const BinObject& registers = requireObject(requireField(object, "registers", label), "machine.input.registers");
 	InputControllerState state;
 	state.sampleArmed = requireBool(requireField(object, "sampleArmed", label), "machine.input.sampleArmed");
+	state.sampleSequence = requireU32(requireField(object, "sampleSequence", label), "machine.input.sampleSequence");
+	state.lastSampleCycle = requireU32(requireField(object, "lastSampleCycle", label), "machine.input.lastSampleCycle");
 	state.registers.player = requireU32(requireField(registers, "player", "machine.input.registers"), "machine.input.registers.player");
 	state.registers.actionStringId = requireU32(requireField(registers, "actionStringId", "machine.input.registers"), "machine.input.registers.actionStringId");
 	state.registers.bindStringId = requireU32(requireField(registers, "bindStringId", "machine.input.registers"), "machine.input.registers.bindStringId");

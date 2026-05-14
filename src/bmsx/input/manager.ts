@@ -1116,12 +1116,7 @@ export class Input implements RegisterablePersistent {
 		this.pendingGamepadAssignments.forEach(pending => pending.run());
 	}
 
-	public beginFrame(currentTime: number = consoleCore.platform.clock.now()): void {
-		// Input edge state is intentionally advanced explicitly by the runtime only when a
-		// new cart-visible simulation frame boundary is reached.
-		// beginFrame() clears justpressed/justreleased for the current simulation frame.
-		// Calling it from poll/update paths, idle host frames, or budget refills inside the
-		// same unfinished gameplay frame will silently destroy buffered jp/jr edges.
+	public samplePlayers(currentTime: number): void {
 		this.playerInputs.forEach(player => {
 			if (!player) return;
 			player.beginFrame(currentTime);

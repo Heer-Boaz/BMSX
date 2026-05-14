@@ -296,7 +296,7 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 			scheduler,
 			inputController: {
 				cancelArmedSample() { },
-				onVblankEdge() { },
+				onVblankEdge(_currentTimeMs: number, _nowCycles: number) { },
 			},
 			irqController: {
 				postLoad() { },

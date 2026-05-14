@@ -675,6 +675,8 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	state.machineState.machine.audio.apuFaultCode = bmsx::APU_FAULT_SOURCE_RANGE;
 	state.machineState.machine.audio.apuFaultDetail = 0x1234u;
 	state.machineState.machine.input.sampleArmed = true;
+	state.machineState.machine.input.sampleSequence = 3u;
+	state.machineState.machine.input.lastSampleCycle = 77u;
 	state.machineState.machine.input.registers.player = 2u;
 	state.machineState.machine.input.registers.actionStringId = 4u;
 	state.machineState.machine.input.registers.bindStringId = 5u;
@@ -731,6 +733,8 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	require(decoded.machineState.machine.audio.apuFaultCode == bmsx::APU_FAULT_SOURCE_RANGE, "save-state should preserve APU fault code");
 	require(decoded.machineState.machine.audio.apuFaultDetail == 0x1234u, "save-state should preserve APU fault detail");
 	require(decoded.machineState.machine.input.sampleArmed, "save-state should preserve ICU sample arm latch");
+	require(decoded.machineState.machine.input.sampleSequence == 3u, "save-state should preserve ICU sample sequence latch");
+	require(decoded.machineState.machine.input.lastSampleCycle == 77u, "save-state should preserve ICU sample cycle latch");
 	require(decoded.machineState.machine.input.registers.player == 2u, "save-state should preserve ICU player register");
 	require(decoded.machineState.machine.input.registers.actionStringId == 4u, "save-state should preserve ICU action string register");
 	require(decoded.machineState.machine.input.registers.bindStringId == 5u, "save-state should preserve ICU bind string register");
@@ -1250,8 +1254,10 @@ void testInputControllerStateGolden() {
 	require(bmsx::asStringId(restored.memory.readValue(bmsx::IO_INP_CONSUME)) == consume, "ICU restore should mirror the consume string register");
 	restored.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(query));
 	require(restored.memory.readIoU32(bmsx::IO_INP_STATUS) == 0u, "restored ICU context should accept a known action query");
-	restored.inputController.onVblankEdge();
+	restored.inputController.onVblankEdge(1000.0 / 60.0, 123u);
 	require(!restored.inputController.captureState().sampleArmed, "ICU VBlank edge should consume the restored sample arm latch");
+	require(restored.inputController.captureState().sampleSequence == 1u, "ICU VBlank edge should count the sampled frame");
+	require(restored.inputController.captureState().lastSampleCycle == 123u, "ICU VBlank edge should latch the sample cycle");
 	writeIoWord(restored.memory, bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
 	require(restored.inputController.captureState().sampleArmed, "ICU ARM command should set the private sample latch");
 	restored.inputController.cancelArmedSample();
@@ -1277,7 +1283,7 @@ void testInputControllerRealPlayerContext() {
 	event.pressId = 7;
 	playerTwo->recordButtonEvent(bmsx::InputSource::Gamepad, "a", std::move(event));
 	writeIoWord(h.memory, bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
-	h.inputController.onVblankEdge();
+	h.inputController.onVblankEdge(1000.0 / 60.0, 456u);
 	h.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(query));
 
 	require(h.memory.readIoU32(bmsx::IO_INP_STATUS) == 1u, "real PlayerInput context should observe ICU gamepad bindings without a base map");

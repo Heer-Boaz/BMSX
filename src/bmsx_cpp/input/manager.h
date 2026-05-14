@@ -161,8 +161,8 @@ public:
 	// Poll all inputs (call once per frame)
 	void pollInput();
 
-	// Advance input edge state for one simulation frame
-	void beginFrame();
+	// Sample player input state for one cart-visible simulation frame
+	void samplePlayers(f64 currentTimeMs);
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Button event handling (from platform)
