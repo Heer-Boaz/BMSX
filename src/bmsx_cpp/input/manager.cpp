@@ -247,14 +247,6 @@ ButtonState InputStateManager::getButtonState(const std::string& button, std::op
 	return state;
 }
 
-std::optional<i32> InputStateManager::getLatestUnconsumedPressId(const std::string& button) const {
-	return getLatestUnconsumedEdgeId(button, InputEvent::Type::Press);
-}
-
-std::optional<i32> InputStateManager::getLatestUnconsumedReleaseId(const std::string& button) const {
-	return getLatestUnconsumedEdgeId(button, InputEvent::Type::Release);
-}
-
 bool InputStateManager::hasTrackedButton(const std::string& button) const {
 	return m_buttonStates.find(button) != m_buttonStates.end();
 }
@@ -527,9 +519,6 @@ void Input::assignGamepadToPlayer(InputHandler* gamepad, i32 playerIndex) {
 			break;
 		}
 	}
-
-	// Set default input mapping if not already set
-	player->setInputMap(DEFAULT_INPUT_MAPPING);
 }
 
 std::optional<i32> Input::getFirstAvailablePlayerIndexForGamepadAssignment(i32 from, bool reverse) {

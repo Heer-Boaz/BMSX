@@ -265,14 +265,6 @@ export class PlayerInput {
 		return ids;
 	}
 
-	private inputMapBindings(inputMap: InputMap, action: string, source: InputSource): Array<KeyboardBinding | GamepadBinding | PointerBinding> | undefined {
-		switch (source) {
-			case 'keyboard': return inputMap.keyboard[action];
-			case 'gamepad': return inputMap.gamepad[action];
-			case 'pointer': return inputMap.pointer?.[action];
-		}
-	}
-
 	private trackBindings(source: InputSource, bindings: Array<ButtonId | { id: ButtonId }>): void {
 		for (let i = 0; i < bindings.length; i += 1) {
 			this.trackedButtons[source].add(bindingId(bindings[i]));
@@ -326,9 +318,6 @@ export class PlayerInput {
 	 * @returns The state of the action, including whether it is pressed, consumed, the press time, and the timestamp.
 	 */
 	public getActionState(action: string, framewindow: number = null): ActionState {
-		const inputMap = this.inputMap;
-		if (!inputMap) return makeActionState(action);
-
 		const keyboardKeys = this.getContextBindingIds(action, 'keyboard');
 		const gamepadButtons = this.getContextBindingIds(action, 'gamepad');
 		const pointerButtons = this.getContextBindingIds(action, 'pointer');
@@ -404,7 +393,7 @@ export class PlayerInput {
 					if (state?.pressId != null && (state.justpressed || lastPressId === null || (state.timestamp != null && recentestTimestamp != null && state.timestamp >= recentestTimestamp))) {
 						lastPressId = state.pressId;
 					}
-					const bufferedPress = stateManager.getLatestUnconsumedPressId(key);
+					const bufferedPress = stateManager.getLatestUnconsumedEdgeId(key, 'press');
 					if (bufferedPress != null && (bufferPressId == null || bufferedPress > bufferPressId)) {
 						bufferPressId = bufferedPress;
 					}
@@ -429,21 +418,21 @@ export class PlayerInput {
 			return { allPressed, anyPressed, anyJustPressed, allJustPressed, anyWasPressed, allWasPressed, anyJustReleased, allJustReleased, anyWasReleased, allWasReleased, anyConsumed, leastPressTime, recentestTimestamp, lastPressId, best1DVal, best1DAbs, best2DVal, best2DAbs, bufferPressId };
 		};
 
-			const keyboardState = getStates(
-				keyboardKeys,
-				(key: ButtonId, framewindow?: number) => this.getButtonState(key, 'keyboard', framewindow),
-				this.getStateManager('keyboard')
-			);
-			const gamepadState = getStates(
-				gamepadButtons,
-				(button: ButtonId, framewindow?: number) => this.getButtonState(button, 'gamepad', framewindow),
-				this.getStateManager('gamepad')
-			);
-			const pointerState = getStates(
-				pointerButtons,
-				(button: ButtonId, framewindow?: number) => this.getButtonState(button, 'pointer', framewindow),
-				this.getStateManager('pointer')
-			);
+		const keyboardState = getStates(
+			keyboardKeys,
+			(key: ButtonId, framewindow?: number) => this.getButtonState(key, 'keyboard', framewindow),
+			this.getStateManager('keyboard')
+		);
+		const gamepadState = getStates(
+			gamepadButtons,
+			(button: ButtonId, framewindow?: number) => this.getButtonState(button, 'gamepad', framewindow),
+			this.getStateManager('gamepad')
+		);
+		const pointerState = getStates(
+			pointerButtons,
+			(button: ButtonId, framewindow?: number) => this.getButtonState(button, 'pointer', framewindow),
+			this.getStateManager('pointer')
+		);
 		const deviceStates = [keyboardState, gamepadState, pointerState];
 		const pressed = deviceStates.some(state => state.anyPressed);
 		const justpressed = deviceStates.some(state => state.anyJustPressed);
@@ -543,40 +532,31 @@ export class PlayerInput {
 	 * @returns An array of pressed ActionStates.
 	 */
 	public getPressedActions(query?: ActionStateQuery): ActionState[] {
-		const inputMap = this.inputMap;
-
 		const pressedActions: ActionState[] = [];
 		const seen = new Set<string>();
-		// Iterate over all input sources (keyboard, gamepad, pointer)
-		for (const source of INPUT_SOURCES) {
-			const bindings = source === 'keyboard'
-				? inputMap.keyboard
-				: source === 'gamepad'
-					? inputMap.gamepad
-					: inputMap.pointer;
-			if (!bindings) continue;
-			for (const action in bindings) {
-				if (seen.has(action)) continue;
-				if (query?.filter && !query.filter.includes(action)) continue; // Skip actions that are not in the filter
-				const actionState = this.getActionState(action);
-				// Check if the just pressed state matches the query, but only if the query explicitly specifies that justPressed should be true
-				const justPressedMatches = !query?.justPressed || actionState.justpressed;
-				// Check if the consumed state matches the query, but only if the query explicitly specifies that consumed should be false
-				let consumedMatches = true;
-				if (query && 'consumed' in query) {
-					consumedMatches = query.consumed ? actionState.consumed : !actionState.consumed;
-				}
-				const pressedMatches = query && 'pressed' in query
-					? query.pressed ? actionState.pressed : !actionState.pressed
-					: actionState.pressed;
-				if (pressedMatches &&
-					justPressedMatches &&
-					consumedMatches &&
-					((actionState.presstime ?? 0) >= (query?.pressTime ?? 0))) {
-					pressedActions.push(actionState);
-					seen.add(action);
-				}
+		const considerAction = (action: string): void => {
+			if (seen.has(action)) return;
+			if (query?.filter && !query.filter.includes(action)) return;
+			const actionState = this.getActionState(action);
+			const justPressedMatches = !query?.justPressed || actionState.justpressed;
+			let consumedMatches = true;
+			if (query && 'consumed' in query) {
+				consumedMatches = query.consumed ? actionState.consumed : !actionState.consumed;
 			}
+			const pressedMatches = query && 'pressed' in query
+				? query.pressed ? actionState.pressed : !actionState.pressed
+				: actionState.pressed;
+			if (pressedMatches &&
+				justPressedMatches &&
+				consumedMatches &&
+				((actionState.presstime ?? 0) >= (query?.pressTime ?? 0))) {
+				pressedActions.push(actionState);
+				seen.add(action);
+			}
+		};
+
+		for (const source of INPUT_SOURCES) {
+			this.contexts.forEachAction(source, considerAction);
 		}
 
 		if (query?.actionsByPriority) {
@@ -599,12 +579,8 @@ export class PlayerInput {
 	 * @param actionToConsume The name of the input action to consume.
 	 */
 	public consumeAction(action: string): void {
-		const inputMap = this.inputMap;
-		if (!inputMap) return;
-
 		for (const source of INPUT_SOURCES) {
-			const bindings = this.inputMapBindings(inputMap, action, source);
-			if (!bindings) continue;
+			const bindings = this.contexts.getBindings(action, source);
 			for (const binding of bindings) {
 				const key = bindingId(binding);
 				const buttonState = this.getButtonState(key, source);

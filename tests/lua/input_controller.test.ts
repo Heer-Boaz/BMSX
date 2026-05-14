@@ -17,6 +17,7 @@ import {
 import { CPU, asStringId, StringValue } from '../../src/bmsx/machine/cpu/cpu';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import type { Input } from '../../src/bmsx/input/manager';
+import { PlayerInput } from '../../src/bmsx/input/player';
 import type { GamepadInputMapping, KeyboardInputMapping, PointerInputMapping } from '../../src/bmsx/input/models';
 
 type PushedContext = {
@@ -72,6 +73,32 @@ function createHarness(): { memory: Memory; cpu: CPU; controller: InputControlle
 	return { memory, cpu, controller, players, beginFrames: () => beginFrameCount };
 }
 
+function createRealPlayerHarness(): { memory: Memory; cpu: CPU; controller: InputController; players: PlayerInput[] } {
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	const players = [
+		new PlayerInput(1, 1000 / 60),
+		new PlayerInput(2, 1000 / 60),
+		new PlayerInput(3, 1000 / 60),
+		new PlayerInput(4, 1000 / 60),
+	];
+	let frameTime = 0;
+	const input = {
+		beginFrame() {
+			frameTime += 1000 / 60;
+			for (let index = 0; index < players.length; index += 1) {
+				players[index]!.beginFrame(frameTime);
+			}
+		},
+		getPlayerInput(playerIndex: number) {
+			return players[playerIndex - 1]!;
+		},
+	};
+	const controller = new InputController(memory, input as unknown as Input, cpu.stringPool);
+	controller.reset();
+	return { memory, cpu, controller, players };
+}
+
 test('input controller persists register latches and committed action contexts', () => {
 	const live = createHarness();
 	const actionValue = StringValue.get(live.cpu.stringPool.intern('jump'));
@@ -125,4 +152,24 @@ test('input controller owns arm cancellation instead of exposing the latch', () 
 	assert.equal(harness.controller.captureState().sampleArmed, true);
 	harness.controller.cancelArmedSample();
 	assert.equal(harness.controller.captureState().sampleArmed, false);
+});
+
+test('input controller mappings drive real PlayerInput contexts without a base input map', () => {
+	const harness = createRealPlayerHarness();
+	const playerTwo = harness.players[1]!;
+	const actionValue = StringValue.get(harness.cpu.stringPool.intern('jump'));
+	const bindValue = StringValue.get(harness.cpu.stringPool.intern('a'));
+	const queryValue = StringValue.get(harness.cpu.stringPool.intern('jump[jp]'));
+
+	harness.memory.writeValue(IO_INP_PLAYER, 2);
+	harness.memory.writeValue(IO_INP_ACTION, actionValue);
+	harness.memory.writeValue(IO_INP_BIND, bindValue);
+	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_COMMIT);
+	playerTwo.recordButtonEvent('gamepad', 'a', { eventType: 'press', identifier: 'a', timestamp: 0, consumed: false, pressId: 7 });
+	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
+	harness.controller.onVblankEdge();
+	harness.memory.writeValue(IO_INP_QUERY, queryValue);
+
+	assert.equal(harness.memory.readIoU32(IO_INP_STATUS), 1);
+	assert.equal(playerTwo.getActionState('jump').justpressed, true);
 });

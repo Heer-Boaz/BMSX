@@ -202,7 +202,6 @@ type CartridgeMetadata = {
 	cart_manifest: CartManifest;
 	machine: MachineManifest;
 	entry_path: string;
-	input?: CartManifest['input'];
 };
 
 function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): CartridgeMetadata {
@@ -215,7 +214,6 @@ function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): Cartri
 		cart_manifest,
 		machine: cart_manifest.machine,
 		entry_path: cart_manifest.lua.entry_path,
-		input: cart_manifest.input,
 	};
 }
 
@@ -375,14 +373,13 @@ export async function loadRomAssetList(rom: Uint8Array): Promise<RomAssetList> {
 export async function parseCartridgeIndex(payload: Uint8Array): Promise<CartridgeIndex> {
 	const header = parseCartHeader(payload);
 	const { entries, projectRootPath } = await loadRomAssetListFromHeader(payload, header);
-	const { cart_manifest, machine, entry_path, input } = decodeCartridgeMetadata(payload, header);
+	const { cart_manifest, machine, entry_path } = decodeCartridgeMetadata(payload, header);
 	return {
 		entries,
 		projectRootPath,
 		cart_manifest,
 		machine,
 		entry_path,
-		input,
 	};
 }
 

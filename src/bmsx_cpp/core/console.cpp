@@ -7,7 +7,6 @@
 #include "rom_boot_manager.h"
 #include "system.h"
 #include "input/manager.h"
-#include "input/player.h"
 #include "render/texture_manager.h"
 #include "render/vdp/context_state.h"
 #include "render/vdp/framebuffer.h"
@@ -400,9 +399,6 @@ bool ConsoleCore::bootSystemStartupProgram(const MachineManifest& runtimeMachine
 	if (!m_system_rom_loaded) return false;
 	if (!m_system_rom.programImage) return false;
 
-	if (m_cart_rom_size == 0) {
-		Input::instance().getPlayerInput(DEFAULT_KEYBOARD_PLAYER_INDEX)->setInputMap(Input::DEFAULT_INPUT_MAPPING);
-	}
 	activateSystemRom();
 	setMachineManifest(runtimeMachine);
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(runtimeMachine);

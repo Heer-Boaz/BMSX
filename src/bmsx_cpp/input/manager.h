@@ -35,8 +35,7 @@ public:
 	void latchButtonState(const std::string& button, const ButtonState& rawState, f64 currentTimeMs);
 	void consumeBufferedEvent(const std::string& identifier, std::optional<i32> pressId);
 	ButtonState getButtonState(const std::string& button, std::optional<i32> windowFrames = std::nullopt) const;
-	std::optional<i32> getLatestUnconsumedPressId(const std::string& button) const;
-	std::optional<i32> getLatestUnconsumedReleaseId(const std::string& button) const;
+	std::optional<i32> getLatestUnconsumedEdgeId(const std::string& button, InputEvent::Type eventType) const;
 	bool hasTrackedButton(const std::string& button) const;
 	i64 frame() const { return m_currentFrame; }
 	void resetEdgeState();
@@ -65,7 +64,6 @@ private:
 	static constexpr i32 BUFFER_FRAME_RETENTION = 150;
 	static constexpr i32 RECENT_BUFFERED_EDGE_FRAMES = 2;
 
-	std::optional<i32> getLatestUnconsumedEdgeId(const std::string& button, InputEvent::Type eventType) const;
 	std::optional<BufferedEdgeRecord> getBufferedEdgeRecord(const std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const std::string& button, i32 windowFrames) const;
 	bool isBufferedFrameInWindow(i64 frame, i32 windowFrames) const;
 	void bufferEdge(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const BufferedInputEvent& event);

@@ -1,7 +1,6 @@
 import type { quat } from '../render/3d/math';
 import type { TextureKey } from '../render/texture_manager';
 import type { GameViewHost, Platform } from '../platform';
-import { InputMap } from '../input/models';
 
 export const CART_ROM_MAGIC = 0x58534D42;
 export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
@@ -110,7 +109,6 @@ export type CartridgeIndex = {
 	cart_manifest: CartManifest | null;
 	machine: MachineManifest;
 	entry_path: string;
-	input?: CartManifest['input'];
 };
 
 /**
@@ -423,12 +421,6 @@ export type CartManifest = {
 	short_name?: string;
 	rom_name?: string;
 	machine: MachineManifest;
-	input?: {
-		1: InputMap,
-		2?: InputMap,
-		3?: InputMap,
-		4?: InputMap,
-	};
 	lua: {
 		entry_path: string;
 	};

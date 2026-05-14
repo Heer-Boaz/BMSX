@@ -1,16 +1,12 @@
-import { Input } from '../../input/manager';
-import { InputMap } from '../../input/models';
 import { LuaEnvironment } from '../../lua/environment';
 import { LuaInterpreter, LuaNativeFunction } from '../../lua/runtime';
 import { isLuaCallSignal, LuaFunctionValue, type LuaCallResult } from '../../lua/value';
-import { isLuaTable, LuaTable, LuaValue } from '../../lua/value';
-import { arrayify } from '../../common/arrayify';
+import { LuaTable, LuaValue } from '../../lua/value';
 import { createInterpreterDevtoolsTable } from './devtools';
 import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,
 	SYSTEM_LUA_BUILTIN_FUNCTIONS,
 } from './builtin_descriptors';
-import { buildMarshalContext } from '../runtime/host/native_bridge';
 import type { Runtime } from '../runtime/runtime';
 import type { LuaBuiltinDescriptor } from '../../lua/semantic_contracts';
 
@@ -18,46 +14,7 @@ export function registerFirmwareBuiltins(runtime: Runtime, interpreter: LuaInter
 	runtime.apiFunctionNames.clear();
 
 	const env = interpreter.globalEnvironment;
-	const setInputMapNative = new LuaNativeFunction('set_input_map', (args) => {
-		if (args.length === 0 || !isLuaTable(args[0])) {
-			throw interpreter.runtimeError('set_input_map(mapping [, player]) requires a table as the first argument.');
-		}
-		const mappingTable = args[0] as LuaTable;
-		const targetPlayer = args.length >= 2
-			? Number(args[1])
-			: 1;
-		const marshalCtx = buildMarshalContext(runtime);
-		const mappingValue = runtime.luaJsBridge.convertFromLua(mappingTable, marshalCtx) as InputMap;
-		if (!mappingValue || typeof mappingValue !== 'object') {
-			throw interpreter.runtimeError('set_input_map(mapping [, player]) requires mapping to be a table.');
-		}
-		for (const key of ['keyboard', 'gamepad', 'pointer']) {
-			if (key in mappingValue) {
-				const layer = mappingValue[key];
-				if (layer !== undefined && layer !== null && typeof layer !== 'object') {
-					throw interpreter.runtimeError(`set_input_map(mapping [, player]) requires ${key} to be a table.`);
-				}
-				// Apply the layer mapping to the player input
-				for (const [_action, bindings] of Object.entries(layer)) {
-					layer.bindings = arrayify(bindings);
-				}
-			}
-		}
-
-		const playerInput = Input.instance.getPlayerInput(targetPlayer);
-		playerInput.setInputMap(mappingValue as InputMap);
-		return [];
-	});
-
-	registerLuaGlobal(runtime, env, 'set_input_map', setInputMapNative);
-	registerLuaBuiltin(runtime, {
-		name: 'set_input_map',
-		params: ['mapping', 'player?'],
-		signature: 'set_input_map(mapping [, player])',
-		description: 'Replaces the input bindings for the console player. The optional player argument is zero-based.',
-	});
 	registerLuaGlobal(runtime, env, 'devtools', createInterpreterDevtoolsTable(runtime, interpreter));
-
 
 	registerSystemBuiltins(runtime, interpreter);
 }

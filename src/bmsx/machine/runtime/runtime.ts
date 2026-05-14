@@ -244,8 +244,6 @@ export class Runtime {
 		const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
 		const systemMachine = systemLayer.index.machine;
 		if (!cartridge) {
-			Input.instance.getPlayerInput(1).setInputMap({ keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
-
 			const systemMemorySpecs = resolveRuntimeMemoryMapSpecs({
 				machine: systemMachine,
 				systemMachine,
@@ -305,17 +303,6 @@ export class Runtime {
 
 		const cartSource = new RomSourceStack([{ id: cartRom.id, index: cartRom.index, payload: cartRom.payload }]);
 		const cartLuaSources = buildLuaSources(cartSource, activeRomSource, cartRom.index, overlayRom ? ['overlay', 'cart'] : ['cart']);
-
-		const inputMappingPerPlayer = cartRom.index.input;
-		if (inputMappingPerPlayer) {
-			for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
-				const mappedIndex = parseInt(playerIndexStr, 10);
-				const inputMapping = inputMappingPerPlayer[mappedIndex];
-				Input.instance.getPlayerInput(mappedIndex).setInputMap(inputMapping);
-			}
-		} else {
-			Input.instance.getPlayerInput(1).setInputMap(Input.DEFAULT_INPUT_MAPPING);
-		}
 
 		const memoryLimits = resolveRuntimeMemoryMapSpecs({
 			machine: cartRom.index.machine,

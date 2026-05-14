@@ -1203,11 +1203,13 @@ struct InputHarness {
 		: memory()
 		, cpu(memory)
 		, inputController(memory, bmsx::Input::instance(), cpu.stringPool()) {
-		for (bmsx::i32 player = 1; player <= bmsx::PLAYERS_MAX; player += 1) {
-			bmsx::Input::instance().getPlayerInput(player)->clearContext("inp_chip");
+			for (bmsx::i32 player = 1; player <= bmsx::PLAYERS_MAX; player += 1) {
+				auto* playerInput = bmsx::Input::instance().getPlayerInput(player);
+				playerInput->clearContext("inp_chip");
+				playerInput->clearEdgeState();
+			}
+			inputController.reset();
 		}
-		inputController.reset();
-	}
 };
 
 void testInputControllerStateGolden() {
@@ -1254,6 +1256,32 @@ void testInputControllerStateGolden() {
 	require(restored.inputController.captureState().sampleArmed, "ICU ARM command should set the private sample latch");
 	restored.inputController.cancelArmedSample();
 	require(!restored.inputController.captureState().sampleArmed, "ICU runtime cancellation should clear the private sample latch");
+}
+
+void testInputControllerRealPlayerContext() {
+	InputHarness h;
+	const bmsx::StringId action = h.cpu.stringPool().intern("jump");
+	const bmsx::StringId bind = h.cpu.stringPool().intern("a");
+	const bmsx::StringId query = h.cpu.stringPool().intern("jump[jp]");
+	auto* playerTwo = bmsx::Input::instance().getPlayerInput(2);
+
+	writeIoWord(h.memory, bmsx::IO_INP_PLAYER, 2u);
+	h.memory.writeValue(bmsx::IO_INP_ACTION, bmsx::valueString(action));
+	h.memory.writeValue(bmsx::IO_INP_BIND, bmsx::valueString(bind));
+	writeIoWord(h.memory, bmsx::IO_INP_CTRL, bmsx::INP_CTRL_COMMIT);
+	bmsx::InputEvent event;
+	event.eventType = bmsx::InputEvent::Type::Press;
+	event.identifier = "a";
+	event.timestamp = 0.0;
+	event.consumed = false;
+	event.pressId = 7;
+	playerTwo->recordButtonEvent(bmsx::InputSource::Gamepad, "a", std::move(event));
+	writeIoWord(h.memory, bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
+	h.inputController.onVblankEdge();
+	h.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(query));
+
+	require(h.memory.readIoU32(bmsx::IO_INP_STATUS) == 1u, "real PlayerInput context should observe ICU gamepad bindings without a base map");
+	require(playerTwo->getActionState("jump").justpressed, "real PlayerInput should expose the ICU action edge");
 }
 
 void expectApuFault(const AudioHarness& h, uint32_t code, const char* label) {
@@ -2100,7 +2128,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 39> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 40> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -2132,6 +2160,7 @@ int main() {
 		{"APU parameter register state", testApuParameterRegisterStateGolden},
 		{"APU selected-slot active state", testApuSelectedSlotActiveStateGolden},
 		{"ICU register and action state", testInputControllerStateGolden},
+		{"ICU real PlayerInput context", testInputControllerRealPlayerContext},
 		{"runtime vblank edge completes active tick", testRuntimeVblankEdgeCompletesActiveTickGolden},
 		{"memory access and opcode", testAccessKindAndOpcodeGolden},
 		{"timing and hash", testTimingAndHashGolden},

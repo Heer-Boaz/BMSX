@@ -66,7 +66,7 @@ These are numeric constants written to `sys_inp_ctrl` to trigger chip operations
 
 ### Action Map Registration (INIT phase)
 
-Before the main loop, the cart defines its action-to-button bindings via MMIO — the chip equivalent of `set_input_map()`:
+Before the main loop, the cart defines its action-to-button bindings via MMIO:
 
 ```lua
 -- Define 'dash' as a chord: lb + left (both must be pressed)
@@ -601,7 +601,6 @@ end
 - Engine core: `src/bmsx/core/engine.ts` (`action_triggered`, `get_action_state`, `packActionStateFlags`)
 - Lua globals registration: `src/bmsx/machine/firmware/globals.ts` (pattern: `registerGlobal(runtime, 'sys_*', IO_*)`)
 - Lua builtin descriptors: `src/bmsx/machine/firmware/builtin_descriptors.ts`
-- Lua builtins (set_input_map): `src/bmsx/machine/firmware/builtins.ts` (existing `set_input_map()` native — reference impl for input map application)
 - Firmware API: `src/bmsx/machine/firmware/api/index.ts` (`action_triggered` implementation via `checkActionTriggered`)
 - C++ input: `src/bmsx_cpp/input/manager.h`, `src/bmsx_cpp/input/player.h/.cpp`
 - C++ firmware: `src/bmsx_cpp/machine/firmware/api.cpp`, `src/bmsx_cpp/machine/firmware/globals.cpp`

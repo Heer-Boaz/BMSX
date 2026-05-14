@@ -83,10 +83,16 @@ void addActionBindingState(ActionAggregation& aggregation, const ButtonState& st
 }
 
 void addBufferedPressId(ActionAggregation& aggregation, const InputStateManager& stateManager, const std::string& id) {
-	auto pressId = stateManager.getLatestUnconsumedPressId(id);
+	auto pressId = stateManager.getLatestUnconsumedEdgeId(id, InputEvent::Type::Press);
 	if (pressId.has_value() && (!aggregation.bufferedPressId.has_value() || pressId.value() > aggregation.bufferedPressId.value())) {
 		aggregation.bufferedPressId = pressId;
 	}
+}
+
+const std::string& inputBindingId(const InputBinding& binding) {
+	return std::visit([](const auto& typedBinding) -> const std::string& {
+		return typedBinding.id;
+	}, binding);
 }
 
 void mergeActionAggregation(ActionAggregation& merged, const ActionAggregation& source) {
@@ -263,21 +269,10 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 		ActionAggregation aggregation;
 		const auto bindings = m_contexts.getBindings(action, source);
 		for (const auto& binding : bindings) {
-			const std::string* id = nullptr;
-			switch (source) {
-				case InputSource::Keyboard:
-					id = &std::get<KeyboardBinding>(binding).id;
-					break;
-				case InputSource::Gamepad:
-					id = &std::get<GamepadBinding>(binding).id;
-					break;
-				case InputSource::Pointer:
-					id = &std::get<PointerBinding>(binding).id;
-					break;
-			}
-				const ButtonState state = getButtonState(*id, source, frameWindow);
+			const auto& id = inputBindingId(binding);
+			const ButtonState state = getButtonState(id, source, frameWindow);
 			addActionBindingState(aggregation, state);
-			addBufferedPressId(aggregation, getStateManager(source), *id);
+			addBufferedPressId(aggregation, getStateManager(source), id);
 		}
 		finishActionAggregation(aggregation);
 		return aggregation;
@@ -361,17 +356,8 @@ std::vector<ActionState> PlayerInput::getPressedActions(const PressedActionsQuer
 		}
 	};
 
-	for (const auto& [action, _] : *inputMap.keyboard) {
-		(void)_;
-		considerAction(action);
-	}
-	for (const auto& [action, _] : *inputMap.gamepad) {
-		(void)_;
-		considerAction(action);
-	}
-	for (const auto& [action, _] : *inputMap.pointer) {
-		(void)_;
-		considerAction(action);
+	for (const InputSource source : INPUT_SOURCES) {
+		m_contexts.forEachAction(source, considerAction);
 	}
 
 	if (query && !query->actionsByPriority.empty()) {
@@ -483,52 +469,18 @@ PlayerInput::ModifierState PlayerInput::modifiersFromMask(KeyModifier mask) {
  * ============================================================================ */
 
 void PlayerInput::consumeAction(const std::string& action) {
-	// Consume keyboard bindings
-	{
-		auto* handler = inputHandlers[sourceIndex(InputSource::Keyboard)];
-		if (handler) {
-			auto it = inputMap.keyboard->find(action);
-			if (it != inputMap.keyboard->end()) {
-				for (const auto& binding : it->second) {
-					auto state = getButtonState(binding.id, InputSource::Keyboard);
-					if (state.pressed && !state.consumed) {
-						consumeGameplayButton(binding.id, InputSource::Keyboard);
-					}
-				}
+	const auto consumeSource = [&](InputSource source) {
+		const auto bindings = m_contexts.getBindings(action, source);
+		for (const auto& binding : bindings) {
+			const auto& id = inputBindingId(binding);
+			const auto state = getButtonState(id, source);
+			if (state.pressed && !state.consumed) {
+				consumeGameplayButton(id, source);
 			}
 		}
-	}
-
-	// Consume gamepad bindings
-	{
-		auto* handler = inputHandlers[sourceIndex(InputSource::Gamepad)];
-		if (handler) {
-			auto it = inputMap.gamepad->find(action);
-			if (it != inputMap.gamepad->end()) {
-				for (const auto& binding : it->second) {
-					auto state = getButtonState(binding.id, InputSource::Gamepad);
-					if (state.pressed && !state.consumed) {
-						consumeGameplayButton(binding.id, InputSource::Gamepad);
-					}
-				}
-			}
-		}
-	}
-
-	// Consume pointer bindings
-	{
-		auto* handler = inputHandlers[sourceIndex(InputSource::Pointer)];
-		if (handler) {
-			auto it = inputMap.pointer->find(action);
-			if (it != inputMap.pointer->end()) {
-				for (const auto& binding : it->second) {
-					auto state = getButtonState(binding.id, InputSource::Pointer);
-					if (state.pressed && !state.consumed) {
-						consumeGameplayButton(binding.id, InputSource::Pointer);
-					}
-				}
-			}
-		}
+	};
+	for (const InputSource source : INPUT_SOURCES) {
+		consumeSource(source);
 	}
 }
 

@@ -214,7 +214,6 @@ local build_info<const> = function()
 	-- local cart_ns = cart_manifest and cart_manifest.namespace or '--'
 	local cart_view_label<const> = cart_manifest and cart_manifest.render_size or '--'
 	-- local cart_entry = cart_manifest and cart_manifest.entry_path or '--'
-	-- local cart_input = cart_manifest and cart_manifest.input or '--'
 	local cart_cpu_raw<const> = cart_manifest and cart_manifest.cpu_freq_hz
 	local cart_cpu_label<const> = format_cpu_mhz_from_hz(cart_cpu_raw)
 	local cart_entry_ready<const> = mem[cart_program_vector_addr] == cart_program_start_addr

@@ -1060,10 +1060,10 @@ Next recommended work:
    cursors, slot lifecycle phases, STOP-fade envelope restore, and square
    generator state, the next APU step is richer generator/noise/envelope state
    owned by the device.
-3. Continue ICU work by moving the remaining boot manifest / `set_input_map`
-   pass-through surfaces behind the input controller and then owning the active
-   input snapshot/timing in the device instead of letting cart-visible input
-   semantics leak through host `PlayerInput` APIs.
+3. Continue ICU work by moving the active input snapshot/timing into the device
+   instead of letting cart-visible input semantics leak through host
+   `PlayerInput` APIs. The previous Lua/manifest input-map shortcut is gone;
+   carts define action bindings through the input-controller register path.
 4. Continue TS/C++ parity cleanup subsystem by subsystem, including public API
    surfaces instead of assuming they are already covered.
 5. Clean IDE/editor layering after the machine boundaries are safer, starting

@@ -86,24 +86,13 @@ public:
 	}
 
 	std::vector<InputBinding> getBindings(const std::string& action, InputSource device) const {
-		std::vector<const MappingContext*> active;
-		for (const auto& ctx : m_contexts) {
-			if (ctx.enabled) {
-				active.push_back(&ctx);
-			}
-		}
-		std::sort(active.begin(), active.end(),
-			[](const MappingContext* a, const MappingContext* b) {
-				return a->priority < b->priority;
-			});
-
 		std::vector<InputBinding> out;
 		std::set<std::string> seen;
-		for (const auto* ctx : active) {
+		forEachEnabledContextByPriority([&](const MappingContext& ctx) {
 			switch (device) {
 				case InputSource::Keyboard: {
-					auto it = ctx->keyboard.find(action);
-					if (it == ctx->keyboard.end()) {
+					auto it = ctx.keyboard.find(action);
+					if (it == ctx.keyboard.end()) {
 						break;
 					}
 					for (const auto& binding : it->second) {
@@ -115,8 +104,8 @@ public:
 					break;
 				}
 				case InputSource::Gamepad: {
-					auto it = ctx->gamepad.find(action);
-					if (it == ctx->gamepad.end()) {
+					auto it = ctx.gamepad.find(action);
+					if (it == ctx.gamepad.end()) {
 						break;
 					}
 					for (const auto& binding : it->second) {
@@ -128,8 +117,8 @@ public:
 					break;
 				}
 				case InputSource::Pointer: {
-					auto it = ctx->pointer.find(action);
-					if (it == ctx->pointer.end()) {
+					auto it = ctx.pointer.find(action);
+					if (it == ctx.pointer.end()) {
 						break;
 					}
 					for (const auto& binding : it->second) {
@@ -141,11 +130,71 @@ public:
 					break;
 				}
 			}
-		}
+		});
 		return out;
 	}
 
+	template<typename Fn>
+	void forEachAction(InputSource device, Fn&& visit) const {
+		std::set<std::string> seen;
+		forEachEnabledContextByPriority([&](const MappingContext& ctx) {
+			switch (device) {
+				case InputSource::Keyboard:
+					visitMappedActions(ctx.keyboard, seen, visit);
+					break;
+				case InputSource::Gamepad:
+					visitMappedActions(ctx.gamepad, seen, visit);
+					break;
+				case InputSource::Pointer:
+					visitMappedActions(ctx.pointer, seen, visit);
+					break;
+			}
+		});
+	}
+
 private:
+	template<typename Fn>
+	void forEachEnabledContextByPriority(Fn&& visit) const {
+		bool haveLast = false;
+		i32 lastPriority = 0;
+		std::size_t lastIndex = 0;
+		while (true) {
+			const MappingContext* next = nullptr;
+			std::size_t nextIndex = 0;
+			for (std::size_t index = 0; index < m_contexts.size(); ++index) {
+				const auto& ctx = m_contexts[index];
+				if (!ctx.enabled) {
+					continue;
+				}
+				if (haveLast && (ctx.priority < lastPriority || (ctx.priority == lastPriority && index <= lastIndex))) {
+					continue;
+				}
+				if (!next || ctx.priority < next->priority || (ctx.priority == next->priority && index < nextIndex)) {
+					next = &ctx;
+					nextIndex = index;
+				}
+			}
+			if (!next) {
+				return;
+			}
+			visit(*next);
+			lastPriority = next->priority;
+			lastIndex = nextIndex;
+			haveLast = true;
+		}
+	}
+
+	template<typename Mapping, typename Fn>
+	void visitMappedActions(const Mapping& mapping, std::set<std::string>& seen, Fn& visit) const {
+		for (const auto& [action, bindings] : mapping) {
+			(void)bindings;
+			const auto inserted = seen.insert(action);
+			if (inserted.second) {
+				visit(action);
+			}
+		}
+	}
+
 	std::vector<MappingContext> m_contexts;
 };
 

@@ -76,7 +76,7 @@ constexpr std::array<LuaBuiltinDescriptor, 4> kSystemLuaBuiltinGlobals{{
 	LuaBuiltinDescriptor{"sorted_scratchbatch", "sorted_scratchbatch", "Sorted scratch batch module table (sorted_scratchbatch.new; batches support clear, push, get, reserve, for_each, iter, set_compare, sort)."},
 }};
 
-constexpr std::array<LuaBuiltinDescriptor, 489> kDefaultLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 488> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"assert", "assert(value [, message])", ""},
 	LuaBuiltinDescriptor{"error", "error(message [, level])", ""},
 	LuaBuiltinDescriptor{"getmetatable", "getmetatable(object)", ""},
@@ -98,7 +98,6 @@ constexpr std::array<LuaBuiltinDescriptor, 489> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"type", "type(value)", ""},
 	LuaBuiltinDescriptor{"xpcall", "xpcall(f, msgh, ...)", ""},
 	LuaBuiltinDescriptor{"require", "require(moduleName)", ""},
-	LuaBuiltinDescriptor{"set_input_map", "set_input_map(mapping [, player])", "Replaces the input bindings for the console player. The optional player argument is zero-based."},
 	LuaBuiltinDescriptor{"font_for_each_glyph", "font_for_each_glyph(font, line, fn)", "Runtime font helper that iterates UTF-8 glyph descriptors for a line."},
 	LuaBuiltinDescriptor{"font_measure_line_width", "font_measure_line_width(font, line)", "Runtime font helper that measures a UTF-8 text line."},
 	LuaBuiltinDescriptor{"table.concat", "table.concat(list [, sep [, i [, j]]])", ""},

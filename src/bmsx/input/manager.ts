@@ -183,7 +183,7 @@ export class InputStateManager {
 		let write = 0;
 		for (let read = 0; read < this.inputBuffer.length; read += 1) {
 			const event = this.inputBuffer[read];
-			if (this.isBufferedEventInWindow(event, this.bufferframeDuration)) {
+			if (this.isBufferedFrameInWindow(event.frame, this.bufferframeDuration)) {
 				this.inputBuffer[write++] = event;
 			}
 		}
@@ -333,11 +333,13 @@ export class InputStateManager {
 		const value = baseState?.value ?? (pressed ? 1 : 0);
 		const value2d = baseState?.value2d;
 
-		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && event.frame <= this.currentFrame && this.isBufferedEventInWindow(event, window));
 		let waspressed = pressed;
 		let wasreleased = justreleased;
-		for (let i = 0; i < inputEvents.length; ++i) {
-			const event = inputEvents[i];
+		for (let i = 0; i < this.inputBuffer.length; i += 1) {
+			const event = this.inputBuffer[i];
+			if (event.identifier !== identifier || event.frame > this.currentFrame || !this.isBufferedFrameInWindow(event.frame, window)) {
+				continue;
+			}
 			if (event.eventType === 'press') {
 				waspressed = true;
 			}
@@ -371,7 +373,7 @@ export class InputStateManager {
 			if (event.frame > this.currentFrame) {
 				continue;
 			}
-			if (!this.isBufferedEventInWindow(event, windowFrames)) {
+			if (!this.isBufferedFrameInWindow(event.frame, windowFrames)) {
 				break;
 			}
 			if (event.identifier !== identifier) {
@@ -384,7 +386,7 @@ export class InputStateManager {
 		return false;
 	}
 
-	private getLatestUnconsumedEdgeId(
+	public getLatestUnconsumedEdgeId(
 		identifier: ButtonId,
 		eventType: 'press' | 'release'
 	): number | undefined {
@@ -392,10 +394,6 @@ export class InputStateManager {
 			? this.bufferedPressEdges
 			: this.bufferedReleaseEdges;
 		return this.getBufferedEdgeRecord(edgeMap, identifier, RECENT_BUFFERED_EDGE_FRAMES)?.edgeId;
-	}
-
-	private isBufferedEventInWindow(event: BufferedInputEvent, windowFrames: number): boolean {
-		return this.isBufferedFrameInWindow(event.frame, windowFrames);
 	}
 
 	private isBufferedFrameInWindow(frame: number, windowFrames: number): boolean {
@@ -453,14 +451,6 @@ export class InputStateManager {
 				edgeMap.delete(identifier);
 			}
 		}
-	}
-
-	public getLatestUnconsumedPressId(identifier: ButtonId): number | undefined {
-		return this.getLatestUnconsumedEdgeId(identifier, 'press');
-	}
-
-	public getLatestUnconsumedReleaseId(identifier: ButtonId): number | undefined {
-		return this.getLatestUnconsumedEdgeId(identifier, 'release');
 	}
 
 	public hasTrackedButton(identifier: ButtonId): boolean {
@@ -555,6 +545,7 @@ export class Input implements RegisterablePersistent {
 			return Input._instance;
 		}
 		Input._instance = new Input(startingGamepadIndex);
+		Input._instance.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).setInputMap(Input.DEFAULT_INPUT_MAPPING);
 		return Input._instance;
 	}
 
@@ -640,15 +631,6 @@ export class Input implements RegisterablePersistent {
 				player.setFrameDurationMs(frameDurationMs);
 			}
 		}
-	}
-
-	/**
-	 * Hides the specified buttons.
-	 * @param gamepad_button_ids An array of button names to hide.
-	 * @throws Error if no element is found matching a button name in the array of buttons.
-	 */
-	public hideOnscreenGamepadButtons(gamepad_button_ids: string[]): void {
-		OnscreenGamepad.hideButtons(gamepad_button_ids);
 	}
 
 	/**
@@ -862,10 +844,6 @@ export class Input implements RegisterablePersistent {
 		consoleCore.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
 		this.attachToPlatformInput();
 		this.focusChangeUnsubscribe = consoleCore.platform.gameviewHost.onFocusChange(this.handleFocusChange);
-	}
-
-	public refreshBindings(): void {
-		this.attachToPlatformInput();
 	}
 
 	public setGameplayCaptureEnabled(enabled: boolean): void {

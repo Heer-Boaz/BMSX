@@ -93,7 +93,6 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'type', params: ['value'], signature: 'type(value)' },
 	{ name: 'xpcall', params: ['func', 'msgh', 'arg...'], signature: 'xpcall(f, msgh, ...)' },
 	{ name: 'require', params: ['moduleName'], signature: 'require(moduleName)' },
-	{ name: 'set_input_map', params: ['mapping', 'player?'], signature: 'set_input_map(mapping [, player])', description: 'Replaces the input bindings for the console player. The optional player argument is zero-based.' },
 	{ name: 'font_for_each_glyph', params: ['font', 'line', 'fn'], signature: 'font_for_each_glyph(font, line, fn)', description: 'Runtime font helper that iterates UTF-8 glyph descriptors for a line.' },
 	{ name: 'font_measure_line_width', params: ['font', 'line'], signature: 'font_measure_line_width(font, line)', description: 'Runtime font helper that measures a UTF-8 text line.' },
 	{ name: 'table.concat', params: ['list', 'separator?', 'start?', 'end?'], signature: 'table.concat(list [, sep [, i [, j]]])' },
