@@ -21,6 +21,7 @@ import {
 import type { GeometryControllerState, GeometryJobState } from '../../devices/geometry/state';
 import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/save_state';
 import type { VdpStreamIngressState } from '../../devices/vdp/ingress';
+import type { VdpReadbackState } from '../../devices/vdp/readback';
 import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT, VDP_BBU_BILLBOARD_LIMIT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
 import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_RUN_ENTRY_CAPACITY } from '../../devices/vdp/blitter';
 import {
@@ -763,6 +764,21 @@ function decodeVdpStreamIngressState(value: unknown, label: string): VdpStreamIn
 	};
 }
 
+function encodeVdpReadbackState(state: VdpReadbackState): VdpReadbackState {
+	return {
+		readBudgetBytes: state.readBudgetBytes,
+		readOverflow: state.readOverflow,
+	};
+}
+
+function decodeVdpReadbackState(value: unknown, label: string): VdpReadbackState {
+	const object = requireObject(value, label);
+	return {
+		readBudgetBytes: requireBoundedU32(requireObjectKey(object, 'readBudgetBytes', label, `${label}.readBudgetBytes`), `${label}.readBudgetBytes`, 0, 0xffffffff),
+		readOverflow: requireBooleanValue(requireObjectKey(object, 'readOverflow', label, `${label}.readOverflow`), `${label}.readOverflow`),
+	};
+}
+
 function encodeVdpState(state: VdpState): VdpState {
 	return {
 		xf: encodeVdpXfState(state.xf),
@@ -773,6 +789,7 @@ function encodeVdpState(state: VdpState): VdpState {
 		workCarry: state.workCarry,
 		availableWorkUnits: state.availableWorkUnits,
 		streamIngress: encodeVdpStreamIngressState(state.streamIngress),
+		readback: encodeVdpReadbackState(state.readback),
 		blitterSequence: state.blitterSequence,
 		skyboxControl: state.skyboxControl,
 		skyboxFaceWords: state.skyboxFaceWords,
@@ -795,6 +812,7 @@ function decodeVdpState(value: unknown, label: string): VdpState {
 		workCarry: requireI64(requireObjectKey(object, 'workCarry', label, 'machine.vdp.workCarry'), 'machine.vdp.workCarry'),
 		availableWorkUnits: requireI32(requireObjectKey(object, 'availableWorkUnits', label, 'machine.vdp.availableWorkUnits'), 'machine.vdp.availableWorkUnits'),
 		streamIngress: decodeVdpStreamIngressState(requireObjectKey(object, 'streamIngress', label, 'machine.vdp.streamIngress'), 'machine.vdp.streamIngress'),
+		readback: decodeVdpReadbackState(requireObjectKey(object, 'readback', label, 'machine.vdp.readback'), 'machine.vdp.readback'),
 		blitterSequence: requireBoundedU32(requireObjectKey(object, 'blitterSequence', label, 'machine.vdp.blitterSequence'), 'machine.vdp.blitterSequence', 0, 0xffffffff),
 		skyboxControl: requireBoundedU32(requireObjectKey(object, 'skyboxControl', label, 'machine.vdp.skyboxControl'), 'machine.vdp.skyboxControl', 0, 0xffffffff),
 		skyboxFaceWords: decodeU32FixedArray(requireObjectKey(object, 'skyboxFaceWords', label, 'machine.vdp.skyboxFaceWords'), 'machine.vdp.skyboxFaceWords', SKYBOX_FACE_WORD_COUNT),

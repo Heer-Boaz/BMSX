@@ -16,6 +16,7 @@ import {
 	IO_VDP_PMU_Y,
 	IO_VDP_RD_DATA,
 	IO_VDP_RD_MODE,
+	IO_VDP_RD_STATUS,
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_REG_BG_COLOR,
@@ -65,6 +66,8 @@ import {
 	VDP_FAULT_VRAM_WRITE_UNALIGNED,
 	VDP_FAULT_VRAM_WRITE_UNMAPPED,
 	VDP_RD_MODE_RGBA8888,
+	VDP_RD_STATUS_OVERFLOW,
+	VDP_RD_STATUS_READY,
 	VDP_RD_SURFACE_PRIMARY,
 	VDP_SBX_CONTROL_ENABLE,
 	VDP_SLOT_ATLAS_NONE,
@@ -713,6 +716,23 @@ test('VDP readback OOB faults latch status instead of throwing', () => {
 
 	assert.equal(memory.readValue(IO_VDP_RD_DATA), 0);
 	assert.equal(memory.readIoU32(IO_VDP_FAULT_CODE), VDP_FAULT_RD_OOB);
+});
+
+
+test('VDP save-state restores readback budget and overflow status', () => {
+	const { memory, vdp } = createVdp();
+
+	vdp.beginFrame();
+	const state = vdp.captureState();
+	state.readback.readBudgetBytes = 0;
+	state.readback.readOverflow = true;
+	vdp.beginFrame();
+	assert.notEqual((memory.readValue(IO_VDP_RD_STATUS) as number) & VDP_RD_STATUS_READY, 0);
+
+	vdp.restoreState(state);
+	const status = memory.readValue(IO_VDP_RD_STATUS) as number;
+	assert.equal(status & VDP_RD_STATUS_READY, 0);
+	assert.notEqual(status & VDP_RD_STATUS_OVERFLOW, 0);
 });
 
 test('VDP VRAM write faults latch status instead of throwing', () => {

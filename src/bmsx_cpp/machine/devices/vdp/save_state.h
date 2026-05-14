@@ -5,6 +5,7 @@
 #include "machine/devices/vdp/frame.h"
 #include "machine/devices/vdp/ingress.h"
 #include "machine/devices/vdp/pmu.h"
+#include "machine/devices/vdp/readback.h"
 #include "machine/devices/vdp/registers.h"
 #include "machine/devices/vdp/sbx.h"
 #include "machine/devices/vdp/xf.h"
@@ -22,6 +23,7 @@ struct VdpState {
 	i64 workCarry = 0;
 	int availableWorkUnits = 0;
 	VdpStreamIngressState streamIngress;
+	VdpReadbackState readback;
 	u32 blitterSequence = 0;
 	u32 skyboxControl = 0;
 	VdpSbxUnit::FaceWords skyboxFaceWords{};

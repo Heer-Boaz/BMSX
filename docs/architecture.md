@@ -87,8 +87,9 @@ Saved:
   state, scheduler/VBlank state, device registerfiles/latches/FIFOs/buffers, and
   device-visible memory.
 - VDP registerfile, DEX build/submitted-frame state, named stream-ingress
-  latches/FIFO words, surfaces, display/readback pixels, and PMU/SBX/BBU/VOUT
-  state that determines future output.
+  latches/FIFO words, readback budget/overflow latches, surfaces,
+  display/readback pixels, and PMU/SBX/BBU/VOUT state that determines future
+  output.
 - APU command/source/output state that determines future audio output,
   including active AOUT voice position, gain-ramp, filter history, and BADP
   decoder state.
@@ -140,11 +141,13 @@ Internal units:
 - `DEX` owns direct/stream frame state and submit admission.
 - `streamIngress` owns the DMA submit latch, FIFO partial-word bytes, and sealed
   FIFO packet words.
+- `readback` owns the CPU-visible read-surface registry, retained read cache,
+  per-frame read budget, and overflow latch.
 - `PMU` owns bank registers, selected bank, and BLIT resolve state.
 - `SBX` owns skybox register-window staging, packet staging, frame seal, and
   sampled face words.
 - `BBU` owns billboard packet decode/source admission/instance emission limits.
-- `FBM` owns framebuffer pages, display/readback pixels, and presentable display
+- `FBM` owns framebuffer pages, display pixels, and presentable display
   dimensions.
 - `XF` owns transform register words.
 - `VOUT` owns live, frame-sealed, and visible host-output buffers, scanout phase,
@@ -153,10 +156,11 @@ Internal units:
 Host render backends consume VOUT output transactions. They do not receive cart
 intent such as sprites, rectangles, labels, or scene objects. VDP save-state
 record shapes live in dedicated `machine/devices/vdp/save_state` files on both
-runtimes; the stream-ingress latch/buffer owner lives in mirrored
-`machine/devices/vdp/ingress` files. C++ keeps VDP capture/restore method bodies
-in the VDP save-state translation unit; TS keeps those methods at the
-private-field device boundary and imports only the save-state record shapes.
+runtimes; the stream-ingress and readback latch/buffer owners live in mirrored
+`machine/devices/vdp/ingress` and `machine/devices/vdp/readback` files. C++
+keeps VDP capture/restore method bodies in the VDP save-state translation unit;
+TS keeps those methods at the private-field device boundary and imports only the
+save-state record shapes.
 
 ### APU and AOUT
 
@@ -317,9 +321,9 @@ should be deleted.
 
 ## Active work queue
 
-1. Continue VDP hardware-unit cleanup where FBM/readback surface restore still
-   lives at the main VDP private-field boundary; move only when the owning
-   framebuffer/readback unit can own the state directly without a facade.
+1. Continue VDP hardware-unit cleanup where VRAM slot/surface-pixel save-state
+   still lives at the main VDP private-field boundary; move it only when a real
+   VRAM/surface-memory owner can own the state directly without a facade.
 2. Continue APU/AOUT proof around BADP fixture coverage and selected-slot
    mutation while a decoder-backed voice is active.
 3. Keep save-state proof expanding through device-visible state, not host queues.

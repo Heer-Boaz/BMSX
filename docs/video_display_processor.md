@@ -115,7 +115,8 @@ BEGIN/END stream commands, and unknown packet kinds fault with
 | Submitted DEX work | `Empty`, `Queued`, `Executing`, `Ready` | `frame.ts/.h`, `vdp.ts/.cpp` |
 | SBX | `Idle`, `PacketOpen`, `FrameSealed`, `FrameRejected` | `sbx.ts/.h/.cpp` |
 | BBU | `Idle`, `PacketDecode`, `SourceResolve`, `InstanceEmit`, `LimitReached`, `PacketRejected` | `bbu.ts/.h/.cpp` |
-| FBM | `PageWritable`, `PagePendingPresent`, `PagePresented`, `ReadbackRequested` | `fbm.ts/.h/.cpp` |
+| FBM | `PageWritable`, `PagePendingPresent`, `PagePresented` | `fbm.ts/.h/.cpp` |
+| Readback | `Ready`, `BudgetExhausted`, `OverflowLatched` | `readback.ts/.h/.cpp` |
 | VOUT | `Idle`, `RegisterLatched`, `FrameSealed`, `FramePresented` | `vout.ts/.h/.cpp` |
 | PMU | selected bank and bank registerfile | `pmu.ts/.h/.cpp` |
 | XF | matrix registerfile and selected matrix indexes | `xf.ts/.h/.cpp` |
@@ -130,7 +131,8 @@ BEGIN/END stream commands, and unknown packet kinds fault with
 | Submitted framebuffer work | Scheduler accrues render work units from CPU cycles and advances active DEX work. Work moves from `Executing` to `Ready` when remaining units reach zero. | VBlank presents only `Ready` frames; unfinished frames are held. |
 | SBX | Register-window writes affect live SBX state. Frame seal samples live SBX state. Visible SBX state changes only when a `Ready` frame is presented. | Invalid face sources fault at frame seal; rejected SBX state does not become visible. |
 | BBU | Packet decode/source resolve/instance emit happen during sealed stream replay. Accepted instances are retained in the submitted frame. | Packet faults abort the sealed stream frame through VDP fault registers. |
-| FBM | Framebuffer page present happens on VBlank for `Ready` frames with framebuffer work. Readback executes through readback registers with a chunk budget. | Readback status/data and VDP fault registers. |
+| FBM | Framebuffer page present happens on VBlank for `Ready` frames with framebuffer work. | Framebuffer presentation and display readback page. |
+| Readback | `IO_VDP_RD_*` reads resolve a registered surface, serve retained cache chunks, advance X/Y, and consume per-frame budget. | Readback status/data and VDP fault registers. |
 | VOUT | Dither/dimension/output latches are sampled at frame seal and become visible at frame presentation. | Host consumes `VdpDeviceOutput`; cart sees MMIO/status only. |
 
 The boundary follows the same device-shape discipline used by mature emulator
@@ -175,6 +177,7 @@ Saved VDP state includes:
   counters, `streamIngress` DMA submit latch, FIFO partial-word bytes, sealed
   FIFO stream words, and blitter sequence;
 - VDP status/fault words;
+- readback budget/overflow latches;
 - PMU selected bank and bank words;
 - SBX live face/control words;
 - XF matrix words and selected indexes;
@@ -187,14 +190,15 @@ host-side scratch are rebuilt from saved device-visible state.
 ## Owners
 
 - TS VDP device: `src/bmsx/machine/devices/vdp/vdp.ts`
-- TS VDP save-state and stream ingress: `save_state.ts` and `ingress.ts`
+- TS VDP save-state, stream ingress, and readback: `save_state.ts`,
+  `ingress.ts`, and `readback.ts`
 - TS VDP constants/registers: `src/bmsx/machine/devices/vdp/contracts.ts` and
   `registers.ts`
 - TS subunits: `bbu.ts`, `fbm.ts`, `frame.ts`, `pmu.ts`, `sbx.ts`, `vout.ts`,
   and `xf.ts`
 - C++ VDP device: `src/bmsx_cpp/machine/devices/vdp/vdp.cpp/.h`
-- C++ VDP save-state and stream ingress: `save_state.cpp/.h` and
-  `ingress.cpp/.h`
+- C++ VDP save-state, stream ingress, and readback: `save_state.cpp/.h`,
+  `ingress.cpp/.h`, and `readback.cpp/.h`
 - C++ VDP constants/registers: `src/bmsx_cpp/machine/devices/vdp/contracts.h`
   and `registers.h`
 - C++ subunits: `bbu.cpp/.h`, `fbm.cpp/.h`, `frame.cpp/.h`, `pmu.cpp/.h`,

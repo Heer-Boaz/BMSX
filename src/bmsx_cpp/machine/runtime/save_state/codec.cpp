@@ -858,6 +858,21 @@ VdpStreamIngressState decodeVdpStreamIngressState(const BinValue& value, const c
 	return state;
 }
 
+BinValue encodeVdpReadbackState(const VdpReadbackState& state) {
+	BinObject object;
+	object["readBudgetBytes"] = static_cast<i64>(state.readBudgetBytes);
+	object["readOverflow"] = state.readOverflow;
+	return BinValue(std::move(object));
+}
+
+VdpReadbackState decodeVdpReadbackState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpReadbackState state;
+	state.readBudgetBytes = requireU32(requireField(object, "readBudgetBytes", label), "machine.vdp.readback.readBudgetBytes");
+	state.readOverflow = requireBool(requireField(object, "readOverflow", label), "machine.vdp.readback.readOverflow");
+	return state;
+}
+
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
 	object["xf"] = encodeVdpXfState(state.xf);
@@ -868,6 +883,7 @@ BinValue encodeVdpState(const VdpState& state) {
 	object["workCarry"] = static_cast<i64>(state.workCarry);
 	object["availableWorkUnits"] = static_cast<i64>(state.availableWorkUnits);
 	object["streamIngress"] = encodeVdpStreamIngressState(state.streamIngress);
+	object["readback"] = encodeVdpReadbackState(state.readback);
 	object["blitterSequence"] = static_cast<i64>(state.blitterSequence);
 	object["skyboxControl"] = static_cast<i64>(state.skyboxControl);
 	object["skyboxFaceWords"] = encodeFixedArray(state.skyboxFaceWords, encodeScalar<i64, u32>);
@@ -890,6 +906,7 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 	state.workCarry = requireI64(requireField(object, "workCarry", label), "machine.vdp.workCarry");
 	state.availableWorkUnits = requireI32(requireField(object, "availableWorkUnits", label), "machine.vdp.availableWorkUnits");
 	state.streamIngress = decodeVdpStreamIngressState(requireField(object, "streamIngress", label), "machine.vdp.streamIngress");
+	state.readback = decodeVdpReadbackState(requireField(object, "readback", label), "machine.vdp.readback");
 	state.blitterSequence = requireU32(requireField(object, "blitterSequence", label), "machine.vdp.blitterSequence");
 	state.skyboxControl = requireU32(requireField(object, "skyboxControl", label), "machine.vdp.skyboxControl");
 	state.skyboxFaceWords = decodeU32Array<SKYBOX_FACE_WORD_COUNT>(requireField(object, "skyboxFaceWords", label), "machine.vdp.skyboxFaceWords");
@@ -945,6 +962,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	state.workCarry = base.workCarry;
 	state.availableWorkUnits = base.availableWorkUnits;
 	state.streamIngress = base.streamIngress;
+	state.readback = base.readback;
 	state.blitterSequence = base.blitterSequence;
 	state.vdpFaultCode = base.vdpFaultCode;
 	state.vdpFaultDetail = base.vdpFaultDetail;

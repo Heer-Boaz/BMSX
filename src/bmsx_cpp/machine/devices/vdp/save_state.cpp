@@ -13,6 +13,7 @@ void VDP::captureVisualStateFields(VdpState& state) const {
 	state.workCarry = m_workCarry;
 	state.availableWorkUnits = m_availableWorkUnits;
 	state.streamIngress = m_streamIngress.captureState();
+	state.readback = m_readback.captureState();
 	state.blitterSequence = m_blitterSequence;
 	state.skyboxControl = m_sbx.liveControl();
 	state.skyboxFaceWords = m_sbx.liveFaceWords();
@@ -41,6 +42,7 @@ void VDP::restoreState(const VdpState& state) {
 	m_workCarry = state.workCarry;
 	m_availableWorkUnits = state.availableWorkUnits;
 	m_streamIngress.restoreState(state.streamIngress);
+	m_readback.restoreState(state.readback);
 	m_blitterSequence = state.blitterSequence;
 	for (uint32_t index = 0; index < VDP_REGISTER_COUNT; ++index) {
 		m_memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, valueNumber(static_cast<double>(m_vdpRegisters[index])));
@@ -100,7 +102,7 @@ void VDP::restoreSurfacePixels(const VdpSurfacePixelsState& state) {
 	}
 	setVramSlotLogicalDimensions(*slot, state.surfaceWidth, state.surfaceHeight, state.surfaceWidth | (state.surfaceHeight << 16u));
 	slot->cpuReadback = state.pixels;
-	invalidateReadCache(state.surfaceId);
+	m_readback.invalidateSurface(state.surfaceId);
 	markVramSlotDirty(*slot, 0, slot->surfaceHeight);
 }
 

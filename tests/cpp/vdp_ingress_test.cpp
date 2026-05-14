@@ -916,6 +916,23 @@ void testReadbackOobFaultsLatchStatus() {
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_RD_OOB, "OOB read should latch fault code");
 }
 
+
+void testSaveStateRestoresReadbackStatus() {
+	Harness h;
+
+	h.vdp.beginFrame();
+	bmsx::VdpState state = h.vdp.captureState();
+	state.readback.readBudgetBytes = 0u;
+	state.readback.readOverflow = true;
+	h.vdp.beginFrame();
+	require((h.memory.readIoU32(bmsx::IO_VDP_RD_STATUS) & bmsx::VDP_RD_STATUS_READY) != 0u, "fresh VDP frame should expose ready readback status");
+
+	h.vdp.restoreState(state);
+	const uint32_t status = h.memory.readIoU32(bmsx::IO_VDP_RD_STATUS);
+	require((status & bmsx::VDP_RD_STATUS_READY) == 0u, "save-state restore should preserve exhausted readback budget");
+	require((status & bmsx::VDP_RD_STATUS_OVERFLOW) != 0u, "save-state restore should preserve readback overflow latch");
+}
+
 void testVramWriteFaultsLatchStatus() {
 	Harness h;
 	const uint8_t bytes[4] = {1u, 2u, 3u, 4u};
@@ -1110,6 +1127,7 @@ int main() {
 		{"VDP readback fault status", testReadbackFaultsLatchStatus},
 		{"VDP fault latch sticky-first", testFaultLatchStickyFirstUntilAck},
 		{"VDP readback OOB fault status", testReadbackOobFaultsLatchStatus},
+		{"VDP save-state readback status", testSaveStateRestoresReadbackStatus},
 		{"VDP VRAM write fault status", testVramWriteFaultsLatchStatus},
 		{"VDP VRAM read fault status", testVramReadFaultsLatchStatus},
 		{"VDP VOUT scanout timing", testVoutScanoutTimingOwnsVblankOutputPin},

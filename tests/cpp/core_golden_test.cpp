@@ -765,6 +765,8 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	state.machineState.machine.vdp.streamIngress.fifoWordByteCount = 2;
 	state.machineState.machine.vdp.streamIngress.fifoStreamWords = {0x12345678u};
 	state.machineState.machine.vdp.streamIngress.fifoStreamWordCount = 1u;
+	state.machineState.machine.vdp.readback.readBudgetBytes = 12u;
+	state.machineState.machine.vdp.readback.readOverflow = true;
 	state.machineState.machine.vdp.blitterSequence = 5u;
 	state.cpuState.haltedUntilIrq = true;
 	state.cpuState.maskableInterruptsEnabled = false;
@@ -840,6 +842,8 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	require(decoded.machineState.machine.vdp.pendingFrame.state == bmsx::VdpSubmittedFrameState::Queued, "save-state should preserve queued VDP submitted-frame state");
 	require(decoded.machineState.machine.vdp.streamIngress.fifoWordScratch[2u] == 3u, "save-state should preserve VDP FIFO word scratch bytes");
 	require(decoded.machineState.machine.vdp.streamIngress.fifoStreamWords.size() == 1u && decoded.machineState.machine.vdp.streamIngress.fifoStreamWords[0u] == 0x12345678u, "save-state should preserve VDP FIFO stream ingress words");
+	require(decoded.machineState.machine.vdp.readback.readBudgetBytes == 12u, "save-state should preserve VDP readback budget latch");
+	require(decoded.machineState.machine.vdp.readback.readOverflow, "save-state should preserve VDP readback overflow latch");
 	require(decoded.cpuState.haltedUntilIrq, "save-state should preserve HALT state");
 	require(!decoded.cpuState.maskableInterruptsEnabled, "save-state should preserve disabled IFF");
 	require(decoded.cpuState.maskableInterruptsRestoreEnabled, "save-state should preserve NMI return IFF");

@@ -15,6 +15,7 @@
 #include "machine/devices/vdp/frame.h"
 #include "machine/devices/vdp/ingress.h"
 #include "machine/devices/vdp/pmu.h"
+#include "machine/devices/vdp/readback.h"
 #include "machine/devices/vdp/registers.h"
 #include "machine/devices/vdp/sbx.h"
 #include "machine/devices/vdp/save_state.h"
@@ -80,7 +81,6 @@ public:
 	bool readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes);
 	void drainFrameBufferPresentation(VdpFrameBufferPresentationSink& sink);
 	void syncFrameBufferPresentation(VdpFrameBufferPresentationSink& sink);
-	uint32_t readVdpStatus();
 	uint32_t readVdpData();
 
 	void initializeVramSurfaces();
@@ -140,16 +140,6 @@ private:
 	void consumeDirectVdpCommand(u32 cmd);
 	void rejectBusySubmitAttempt(uint32_t detail);
 
-	struct ReadSurface {
-		uint32_t surfaceId = 0;
-		bool registered = false;
-	};
-	struct ReadCache {
-		uint32_t x0 = 0;
-		uint32_t y = 0;
-		uint32_t width = 0;
-		std::vector<u8> data;
-	};
 	Memory& m_memory;
 	DeviceStatusLatch m_fault;
 	ImgDecController* m_imgDecController = nullptr;
@@ -160,8 +150,7 @@ private:
 	std::array<u8, 4> m_vramSeedPixel{{0, 0, 0, 0}};
 	uint32_t m_vramMachineSeed = 0;
 	uint32_t m_vramBootSeed = 0;
-	uint32_t m_readBudgetBytes = 0;
-	bool m_readOverflow = false;
+	VdpReadbackUnit m_readback;
 	VdpSbxUnit m_sbx;
 	SkyboxSamples m_sbxSealSamples{};
 	VdpXfUnit m_xf;
@@ -187,8 +176,6 @@ private:
 	int m_lastFrameCost = 0;
 	bool m_lastFrameHeld = false;
 	VdpFbmUnit m_fbm;
-	std::array<ReadSurface, 4> m_readSurfaces{};
-	std::array<ReadCache, 4> m_readCaches{};
 	VdpFrameBufferSize m_configuredFrameBufferSize;
 	DeviceScheduler& m_scheduler;
 
@@ -196,11 +183,6 @@ private:
 	bool setVramSlotLogicalDimensions(VdpSurfaceUploadSlot& slot, uint32_t width, uint32_t height, uint32_t faultDetail);
 	std::vector<VdpSurfacePixelsState> captureSurfacePixels() const;
 	void restoreSurfacePixels(const VdpSurfacePixelsState& state);
-	void registerReadSurface(uint32_t surfaceId);
-	void invalidateReadCache(uint32_t surfaceId);
-	ReadCache& getReadCache(uint32_t surfaceId, const VdpSurfaceUploadSlot& surface, uint32_t x, uint32_t y);
-	void prefetchReadCache(uint32_t surfaceId, const VdpSurfaceUploadSlot& surface, uint32_t x, uint32_t y);
-	void copySurfacePixels(const VdpSurfaceUploadSlot& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::vector<u8>& out);
 	VdpSurfaceUploadSlot* findMappedVramSlot(uint32_t addr, size_t length);
 	const VdpSurfaceUploadSlot* findMappedVramSlot(uint32_t addr, size_t length) const;
 	VdpSurfaceUploadSlot* findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode);

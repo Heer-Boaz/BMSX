@@ -1,5 +1,6 @@
 import type { VdpBuildingFrameSaveState, VdpSubmittedFrameSaveState } from './frame';
 import type { VdpStreamIngressState } from './ingress';
+import type { VdpReadbackState } from './readback';
 import type { VdpXfState } from './xf';
 
 export type VdpState = {
@@ -11,6 +12,7 @@ export type VdpState = {
 	workCarry: number;
 	availableWorkUnits: number;
 	streamIngress: VdpStreamIngressState;
+	readback: VdpReadbackState;
 	blitterSequence: number;
 	skyboxControl: number;
 	skyboxFaceWords: number[];

@@ -236,6 +236,10 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						fifoStreamWords: [0x12345678],
 						fifoStreamWordCount: 1,
 					},
+					readback: {
+						readBudgetBytes: 12,
+						readOverflow: true,
+					},
 					blitterSequence: 5,
 					skyboxControl: 5,
 					skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),
@@ -314,6 +318,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.vdp.activeFrame, state.machineState.machine.vdp.activeFrame);
 	assert.deepEqual(decoded.machineState.machine.vdp.streamIngress.fifoWordScratch, state.machineState.machine.vdp.streamIngress.fifoWordScratch);
 	assert.deepEqual(decoded.machineState.machine.vdp.streamIngress.fifoStreamWords, state.machineState.machine.vdp.streamIngress.fifoStreamWords);
+	assert.deepEqual(decoded.machineState.machine.vdp.readback, state.machineState.machine.vdp.readback);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
 	assert.deepEqual(decoded.machineState.machine.vdp.surfacePixels, state.machineState.machine.vdp.surfacePixels);
 });
