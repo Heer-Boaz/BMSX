@@ -298,6 +298,9 @@ void ApuOutputMixer::clearOutputQueue() {
 }
 
 void ApuOutputMixer::pullOutputFrames(i16* output, size_t frameCount, i32 outputSampleRate, f32 outputGain, size_t targetQueuedFrames) {
+	if (frameCount > APU_OUTPUT_QUEUE_CAPACITY_FRAMES) {
+		throw std::runtime_error("[AOUT] Host pull exceeds the output-ring capacity.");
+	}
 	fillOutputQueueTo(frameCount, outputSampleRate, outputGain);
 	readOutputQueue(output, frameCount);
 	fillOutputQueueTo(targetQueuedFrames, outputSampleRate, outputGain);
@@ -442,8 +445,8 @@ void ApuOutputMixer::stopAllVoices() {
 
 void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSampleRate, f32 outputGain) {
 	const size_t totalSamples = frameCount * 2;
-	if (m_mixBuffer.size() < totalSamples) {
-		m_mixBuffer.resize(totalSamples);
+	if (frameCount > APU_OUTPUT_QUEUE_CAPACITY_FRAMES) {
+		throw std::runtime_error("[AOUT] Render request exceeds the output-ring capacity.");
 	}
 	std::fill(m_mixBuffer.begin(), m_mixBuffer.begin() + totalSamples, 0.0f);
 
@@ -783,10 +786,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 }
 
 void ApuOutputMixer::fillOutputQueueTo(size_t targetFrames, i32 outputSampleRate, f32 outputGain) {
-	if (m_outputQueue.empty()) {
-		m_outputQueue.resize(APU_OUTPUT_QUEUE_CAPACITY_FRAMES * 2u);
-	}
-	const size_t capacityFrames = m_outputQueue.size() / 2u;
+	const size_t capacityFrames = APU_OUTPUT_QUEUE_CAPACITY_FRAMES;
 	if (targetFrames > capacityFrames) {
 		targetFrames = capacityFrames;
 	}
@@ -794,16 +794,12 @@ void ApuOutputMixer::fillOutputQueueTo(size_t targetFrames, i32 outputSampleRate
 		return;
 	}
 	const size_t framesToRender = targetFrames - m_outputQueueFrames;
-	const size_t renderSampleCount = framesToRender * 2u;
-	if (m_outputRenderBuffer.size() < renderSampleCount) {
-		m_outputRenderBuffer.resize(renderSampleCount);
-	}
 	renderSamples(m_outputRenderBuffer.data(), framesToRender, outputSampleRate, outputGain);
 	writeOutputQueue(m_outputRenderBuffer.data(), framesToRender);
 }
 
 void ApuOutputMixer::writeOutputQueue(const i16* samples, size_t frameCount) {
-	const size_t capacityFrames = m_outputQueue.size() / 2u;
+	const size_t capacityFrames = APU_OUTPUT_QUEUE_CAPACITY_FRAMES;
 	const size_t writeFrame = (m_outputQueueReadFrame + m_outputQueueFrames) % capacityFrames;
 	size_t firstSpan = capacityFrames - writeFrame;
 	if (firstSpan > frameCount) {
@@ -819,7 +815,7 @@ void ApuOutputMixer::writeOutputQueue(const i16* samples, size_t frameCount) {
 }
 
 void ApuOutputMixer::readOutputQueue(i16* output, size_t frameCount) {
-	const size_t capacityFrames = m_outputQueue.size() / 2u;
+	const size_t capacityFrames = APU_OUTPUT_QUEUE_CAPACITY_FRAMES;
 	size_t firstSpan = capacityFrames - m_outputQueueReadFrame;
 	if (firstSpan > frameCount) {
 		firstSpan = frameCount;

@@ -5,6 +5,7 @@
 #include "machine/common/numeric.h"
 #include "machine/devices/audio/contracts.h"
 
+#include <array>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -170,9 +171,9 @@ private:
 	f32 clampVolume(f32 value) const;
 
 	std::vector<VoiceRecord> m_voices;
-	std::vector<f32> m_mixBuffer;
-	std::vector<i16> m_outputQueue;
-	std::vector<i16> m_outputRenderBuffer;
+	std::array<f32, APU_OUTPUT_QUEUE_CAPACITY_SAMPLES> m_mixBuffer{};
+	std::array<i16, APU_OUTPUT_QUEUE_CAPACITY_SAMPLES> m_outputQueue{};
+	std::array<i16, APU_OUTPUT_QUEUE_CAPACITY_SAMPLES> m_outputRenderBuffer{};
 	size_t m_outputQueueReadFrame = 0;
 	size_t m_outputQueueFrames = 0;
 };

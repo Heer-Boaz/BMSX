@@ -167,10 +167,11 @@ Internal units:
 - command FIFO and parameter latch bank;
 - source slots and source bytes;
 - mixer/filter datapath;
-- AOUT output ring/buffer consumed by host audio.
+- AOUT fixed-capacity output ring, retained render buffer, retained mix buffer,
+  and host-audio pull edge.
 
-Hot paths must use retained buffers and fixed-size state. No per-sample or
-per-pull allocation is acceptable.
+Hot paths must use retained buffers and fixed-size state. No per-sample,
+per-render, or per-pull allocation is acceptable.
 
 ### GEO
 
@@ -301,6 +302,6 @@ should be deleted.
 
 1. Continue VDP subunit state-machine tightening where FIFO/DMA ingress still
    uses loose counters/latches rather than one named ingress state.
-2. Continue APU/AOUT proof around deterministic output state and hot-path buffer
-   ownership.
+2. Continue APU/AOUT proof around deterministic voice/decoder state that affects
+   future output.
 3. Keep save-state proof expanding through device-visible state, not host queues.

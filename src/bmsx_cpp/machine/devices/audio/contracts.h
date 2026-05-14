@@ -10,6 +10,7 @@ constexpr uint32_t APU_SAMPLE_RATE_HZ = 44100u;
 constexpr uint32_t APU_RATE_STEP_Q16_ONE = 0x10000u;
 constexpr uint32_t APU_GAIN_Q12_ONE = 0x1000u;
 constexpr uint32_t APU_OUTPUT_QUEUE_CAPACITY_FRAMES = 16384u;
+constexpr uint32_t APU_OUTPUT_QUEUE_CAPACITY_SAMPLES = APU_OUTPUT_QUEUE_CAPACITY_FRAMES * 2u;
 constexpr uint32_t APU_COMMAND_FIFO_CAPACITY = 16u;
 
 constexpr uint32_t APU_CMD_NONE = 0u;

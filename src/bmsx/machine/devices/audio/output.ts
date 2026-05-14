@@ -26,6 +26,7 @@ import {
 	APU_GENERATOR_NONE,
 	APU_GENERATOR_SQUARE,
 	APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
+	APU_OUTPUT_QUEUE_CAPACITY_SAMPLES,
 	APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX,
 	APU_PARAMETER_GENERATOR_KIND_INDEX,
 	APU_PARAMETER_SOURCE_ADDR_INDEX,
@@ -208,9 +209,9 @@ export function resolveApuOutputPlayback(registerWords: ApuParameterRegisterWord
 
 export class ApuOutputMixer {
 	private readonly voices: ApuOutputVoice[] = [];
-	private mixBuffer = new Float32Array(0);
-	private readonly outputQueue = new Int16Array(APU_OUTPUT_QUEUE_CAPACITY_FRAMES * 2);
-	private outputRenderBuffer = new Int16Array(0);
+	private readonly mixBuffer = new Float32Array(APU_OUTPUT_QUEUE_CAPACITY_SAMPLES);
+	private readonly outputQueue = new Int16Array(APU_OUTPUT_QUEUE_CAPACITY_SAMPLES);
+	private readonly outputRenderBuffer = new Int16Array(APU_OUTPUT_QUEUE_CAPACITY_SAMPLES);
 	private outputQueueReadFrame = 0;
 	private outputQueueFrames = 0;
 	private sampledLeft = 0;
@@ -239,6 +240,9 @@ export class ApuOutputMixer {
 	}
 
 	public pullOutputFrames(output: Int16Array, frameCount: number, outputSampleRate: number, outputGain: number, targetQueuedFrames = 0): void {
+		if (frameCount > APU_OUTPUT_QUEUE_CAPACITY_FRAMES) {
+			throw new Error('[AOUT] Host pull exceeds the output-ring capacity.');
+		}
 		this.fillOutputQueueTo(frameCount, outputSampleRate, outputGain);
 		this.readOutputQueue(output, frameCount);
 		this.fillOutputQueueTo(targetQueuedFrames, outputSampleRate, outputGain);
@@ -358,11 +362,10 @@ export class ApuOutputMixer {
 
 	public renderSamples(output: Int16Array, frameCount: number, outputSampleRate: number, outputGain: number): void {
 		const totalSamples = frameCount * 2;
-		if (this.mixBuffer.length < totalSamples) {
-			this.mixBuffer = new Float32Array(totalSamples);
-		} else {
-			this.mixBuffer.fill(0, 0, totalSamples);
+		if (frameCount > APU_OUTPUT_QUEUE_CAPACITY_FRAMES) {
+			throw new Error('[AOUT] Render request exceeds the output-ring capacity.');
 		}
+		this.mixBuffer.fill(0, 0, totalSamples);
 
 		const invOutputRate = 1 / outputSampleRate;
 		const mix = this.mixBuffer;
@@ -524,10 +527,6 @@ export class ApuOutputMixer {
 		const framesToRender = targetFrames - this.outputQueueFrames;
 		if (framesToRender <= 0) {
 			return;
-		}
-		const requiredSamples = framesToRender * 2;
-		if (this.outputRenderBuffer.length < requiredSamples) {
-			this.outputRenderBuffer = new Int16Array(requiredSamples);
 		}
 		this.renderSamples(this.outputRenderBuffer, framesToRender, outputSampleRate, outputGain);
 		this.writeOutputQueue(this.outputRenderBuffer, framesToRender);
