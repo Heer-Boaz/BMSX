@@ -984,6 +984,15 @@ export class ActionDefinitionEvaluator {
 	 */
 	private static cache = new Map<string, Node>();
 
+	private static getCachedOrParse(def: string): Node {
+		let ast = this.cache.get(def);
+		if (!ast) {
+			ast = InputActionParser.parse(def);
+			this.cache.set(def, ast);
+		}
+		return ast;
+	}
+
 	/**
 	 * Checks if an action is triggered based on the provided action definition and state getter.
 	 *
@@ -997,42 +1006,14 @@ export class ActionDefinitionEvaluator {
 	 */
 	static checkActionTriggered(def: string,
 		get: (n: string, w?: number) => ActionState): boolean {
-		let ast = this.cache.get(def); // Check if the action definition is already cached
-		// If not cached, parse the definition and store it in the cache
-		if (!ast) { ast = InputActionParser.parse(def); this.cache.set(def, ast); }
+		const ast = this.getCachedOrParse(def);
 		// Evaluate the action definition using the provided state getter
 		// This will return true if the action is triggered based on the current state (or the windowed state if applicable)
 		return ast.eval(get);
 	}
 
-	/**
-	 * Return all action names referenced by the given action definition string.
-	 * Uses the parser (cached) and traverses the AST collecting ActNode names.
-	 */
-	static getReferencedActions(def: string): string[] {
-		let ast = this.cache.get(def);
-		if (!ast) { ast = InputActionParser.parse(def); this.cache.set(def, ast); }
-		const out = new Set<string>();
-		const walk = (n: Node) => {
-			if ((n as ActNode).name !== undefined) {
-				out.add((n as ActNode).name);
-				return;
-			}
-			if ((n as FunNode).fname !== undefined) {
-				for (const a of (n as FunNode).args) walk(a);
-				return;
-			}
-			if ((n as OpNode).op !== undefined) {
-				if ((n as OpNode).left) walk((n as OpNode).left!);
-				if ((n as OpNode).right) walk((n as OpNode).right!);
-				return;
-			}
-		};
-		walk(ast);
-		const actions: string[] = [];
-		for (const action of out) {
-			actions.push(action);
-		}
-		return actions;
+	static getSimpleActionName(def: string): string | undefined {
+		const ast = this.getCachedOrParse(def);
+		return (ast as ActNode).name;
 	}
 }

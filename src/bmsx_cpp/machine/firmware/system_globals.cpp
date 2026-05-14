@@ -2,6 +2,7 @@
 
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/geometry/contracts.h"
+#include "machine/devices/input/contracts.h"
 #include "machine/devices/vdp/contracts.h"
 #include "machine/runtime/runtime.h"
 #include "rompack/format.h"
@@ -397,6 +398,18 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("inp_ctrl_commit", valueNumber(static_cast<double>(INP_CTRL_COMMIT)));
 	runtime.setGlobal("inp_ctrl_arm", valueNumber(static_cast<double>(INP_CTRL_ARM)));
 	runtime.setGlobal("inp_ctrl_reset", valueNumber(static_cast<double>(INP_CTRL_RESET)));
+	runtime.setGlobal("inp_status_pressed", valueNumber(static_cast<double>(INP_STATUS_PRESSED)));
+	runtime.setGlobal("inp_status_justpressed", valueNumber(static_cast<double>(INP_STATUS_JUST_PRESSED)));
+	runtime.setGlobal("inp_status_justreleased", valueNumber(static_cast<double>(INP_STATUS_JUST_RELEASED)));
+	runtime.setGlobal("inp_status_waspressed", valueNumber(static_cast<double>(INP_STATUS_WAS_PRESSED)));
+	runtime.setGlobal("inp_status_wasreleased", valueNumber(static_cast<double>(INP_STATUS_WAS_RELEASED)));
+	runtime.setGlobal("inp_status_consumed", valueNumber(static_cast<double>(INP_STATUS_CONSUMED)));
+	runtime.setGlobal("inp_status_alljustpressed", valueNumber(static_cast<double>(INP_STATUS_ALL_JUST_PRESSED)));
+	runtime.setGlobal("inp_status_alljustreleased", valueNumber(static_cast<double>(INP_STATUS_ALL_JUST_RELEASED)));
+	runtime.setGlobal("inp_status_allwaspressed", valueNumber(static_cast<double>(INP_STATUS_ALL_WAS_PRESSED)));
+	runtime.setGlobal("inp_status_guardedjustpressed", valueNumber(static_cast<double>(INP_STATUS_GUARDED_JUST_PRESSED)));
+	runtime.setGlobal("inp_status_repeatpressed", valueNumber(static_cast<double>(INP_STATUS_REPEAT_PRESSED)));
+	runtime.setGlobal("inp_status_has_value", valueNumber(static_cast<double>(INP_STATUS_HAS_VALUE)));
 }
 
 } // namespace bmsx

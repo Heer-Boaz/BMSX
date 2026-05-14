@@ -209,8 +209,7 @@ public:
 	// Check if action definition is triggered
 	static bool checkActionTriggered(const std::string& def, const GetterFn& get);
 
-	// Get all action names referenced by a definition
-	static std::vector<std::string> getReferencedActions(const std::string& def);
+	static const std::string* getSimpleActionName(const std::string& def);
 
 private:
 	static std::unordered_map<std::string, std::unique_ptr<AstNode>> s_cache;

@@ -240,6 +240,18 @@ const SYSTEM_ROM_INPUT_GLOBAL_NAMES = [
 	'inp_ctrl_commit',
 	'inp_ctrl_arm',
 	'inp_ctrl_reset',
+	'inp_status_pressed',
+	'inp_status_justpressed',
+	'inp_status_justreleased',
+	'inp_status_waspressed',
+	'inp_status_wasreleased',
+	'inp_status_consumed',
+	'inp_status_alljustpressed',
+	'inp_status_alljustreleased',
+	'inp_status_allwaspressed',
+	'inp_status_guardedjustpressed',
+	'inp_status_repeatpressed',
+	'inp_status_has_value',
 ] as const;
 
 const SYSTEM_ROM_APU_GLOBAL_NAMES = [

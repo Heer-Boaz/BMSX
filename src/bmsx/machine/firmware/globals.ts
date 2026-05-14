@@ -208,6 +208,20 @@ import {
 	APU_STATUS_SELECTED_SLOT_ACTIVE,
 } from '../devices/audio/contracts';
 import {
+	INP_STATUS_ALL_JUST_PRESSED,
+	INP_STATUS_ALL_JUST_RELEASED,
+	INP_STATUS_ALL_WAS_PRESSED,
+	INP_STATUS_CONSUMED,
+	INP_STATUS_GUARDED_JUST_PRESSED,
+	INP_STATUS_HAS_VALUE,
+	INP_STATUS_JUST_PRESSED,
+	INP_STATUS_JUST_RELEASED,
+	INP_STATUS_PRESSED,
+	INP_STATUS_REPEAT_PRESSED,
+	INP_STATUS_WAS_PRESSED,
+	INP_STATUS_WAS_RELEASED,
+} from '../devices/input/contracts';
+import {
 	BUS_FAULT_ACCESS_F32,
 	BUS_FAULT_ACCESS_F64,
 	BUS_FAULT_ACCESS_READ,
@@ -1578,6 +1592,18 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'inp_ctrl_commit', INP_CTRL_COMMIT);
 	luaPipeline.registerGlobal(runtime, 'inp_ctrl_arm', INP_CTRL_ARM);
 	luaPipeline.registerGlobal(runtime, 'inp_ctrl_reset', INP_CTRL_RESET);
+	luaPipeline.registerGlobal(runtime, 'inp_status_pressed', INP_STATUS_PRESSED);
+	luaPipeline.registerGlobal(runtime, 'inp_status_justpressed', INP_STATUS_JUST_PRESSED);
+	luaPipeline.registerGlobal(runtime, 'inp_status_justreleased', INP_STATUS_JUST_RELEASED);
+	luaPipeline.registerGlobal(runtime, 'inp_status_waspressed', INP_STATUS_WAS_PRESSED);
+	luaPipeline.registerGlobal(runtime, 'inp_status_wasreleased', INP_STATUS_WAS_RELEASED);
+	luaPipeline.registerGlobal(runtime, 'inp_status_consumed', INP_STATUS_CONSUMED);
+	luaPipeline.registerGlobal(runtime, 'inp_status_alljustpressed', INP_STATUS_ALL_JUST_PRESSED);
+	luaPipeline.registerGlobal(runtime, 'inp_status_alljustreleased', INP_STATUS_ALL_JUST_RELEASED);
+	luaPipeline.registerGlobal(runtime, 'inp_status_allwaspressed', INP_STATUS_ALL_WAS_PRESSED);
+	luaPipeline.registerGlobal(runtime, 'inp_status_guardedjustpressed', INP_STATUS_GUARDED_JUST_PRESSED);
+	luaPipeline.registerGlobal(runtime, 'inp_status_repeatpressed', INP_STATUS_REPEAT_PRESSED);
+	luaPipeline.registerGlobal(runtime, 'inp_status_has_value', INP_STATUS_HAS_VALUE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_system_base', SYSTEM_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);

@@ -1,10 +1,14 @@
 #include "machine/devices/input/controller.h"
+#include "input/action_parser.h"
 #include "input/player.h"
+#include "machine/devices/input/contracts.h"
 
 namespace bmsx {
 namespace {
 
 constexpr const char* INP_CONTEXT_ID = "inp_chip";
+const InputControllerActionState EMPTY_ACTION_SNAPSHOT{};
+const InputControllerActionState COMPLEX_QUERY_ACTION_SNAPSHOT{0u, 0u, 1u, 0u, 0.0, 0u};
 
 } // namespace
 
@@ -48,6 +52,7 @@ void InputController::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
 	m_sampleSequence += 1u;
 	m_lastSampleCycle = nowCycles;
 	m_input.samplePlayers(currentTimeMs);
+	sampleCommittedActions();
 	m_sampleArmed = false;
 }
 
@@ -123,20 +128,31 @@ void InputController::onCtrlWrite(u32 command) {
 
 void InputController::queryAction() {
 	const std::string& queryText = m_strings.toString(m_registers.queryStringId);
-	PlayerInput* const playerInput = m_input.getPlayerInput(static_cast<i32>(m_registers.player));
-	const bool triggered = playerInput->checkActionTriggered(queryText);
-	writeResult(triggered ? 1u : 0u, 0u);
+	const PlayerChipState& state = m_playerStates[static_cast<size_t>(m_registers.player - 1u)];
+	const bool triggered = ActionDefinitionEvaluator::checkActionTriggered(queryText,
+		[this, &state](const std::string& actionName, std::optional<f64>) {
+			return createSnapshotActionState(state, actionName);
+		});
+	if (!triggered) {
+		writeResult(0u, 0u);
+		return;
+	}
+	const InputControllerActionState& selectedAction = selectQuerySnapshotAction(state, queryText);
+	writeResult(selectedAction.statusWord, selectedAction.valueQ16);
 }
 
 void InputController::consumeActions() {
 	const std::string& actionNames = m_strings.toString(m_registers.consumeStringId);
 	PlayerInput* const playerInput = m_input.getPlayerInput(static_cast<i32>(m_registers.player));
+	PlayerChipState& state = m_playerStates[static_cast<size_t>(m_registers.player - 1u)];
 	size_t start = 0;
 	for (size_t index = 0; index <= actionNames.size(); index += 1) {
 		if (index != actionNames.size() && actionNames[index] != ',') {
 			continue;
 		}
-		playerInput->consumeAction(actionNames.substr(start, index - start));
+		const std::string actionName = actionNames.substr(start, index - start);
+		playerInput->consumeAction(actionName);
+		markSnapshotActionConsumed(state, actionName);
 		start = index + 1;
 	}
 }
@@ -193,10 +209,59 @@ void InputController::upsertAction(PlayerChipState& state, StringId actionString
 	for (InputControllerActionState& action : state.actions) {
 		if (action.actionStringId == actionStringId) {
 			action.bindStringId = bindStringId;
+			action.statusWord = 0u;
+			action.valueQ16 = 0u;
+			action.pressTime = 0.0;
+			action.repeatCount = 0u;
 			return;
 		}
 	}
 	state.actions.push_back(InputControllerActionState{ actionStringId, bindStringId });
+}
+
+void InputController::sampleCommittedActions() {
+	for (i32 playerIndex = 1; playerIndex <= PLAYERS_MAX; playerIndex += 1) {
+		PlayerChipState& state = m_playerStates[static_cast<size_t>(playerIndex - 1)];
+		PlayerInput* const playerInput = m_input.getPlayerInput(playerIndex);
+		for (InputControllerActionState& action : state.actions) {
+			const ActionState actionState = playerInput->getActionState(m_strings.toString(action.actionStringId));
+			action.statusWord = packInputActionStatus(actionState);
+			action.valueQ16 = encodeInputActionValueQ16(actionState);
+			action.pressTime = buttonPressTimeOrZero(actionState);
+			action.repeatCount = static_cast<u32>(actionRepeatCount(actionState));
+		}
+	}
+}
+
+ActionState InputController::createSnapshotActionState(const PlayerChipState& state, const std::string& actionName) const {
+	const InputControllerActionState& action = findSnapshotAction(state, actionName);
+	return createInputActionSnapshot(actionName, action.statusWord, action.valueQ16, action.pressTime, action.repeatCount);
+}
+
+const InputControllerActionState& InputController::selectQuerySnapshotAction(const PlayerChipState& state, const std::string& queryText) const {
+	const std::string* const actionName = ActionDefinitionEvaluator::getSimpleActionName(queryText);
+	if (!actionName) {
+		return COMPLEX_QUERY_ACTION_SNAPSHOT;
+	}
+	return findSnapshotAction(state, *actionName);
+}
+
+const InputControllerActionState& InputController::findSnapshotAction(const PlayerChipState& state, const std::string& actionName) const {
+	for (const InputControllerActionState& action : state.actions) {
+		if (m_strings.toString(action.actionStringId) == actionName) {
+			return action;
+		}
+	}
+	return EMPTY_ACTION_SNAPSHOT;
+}
+
+void InputController::markSnapshotActionConsumed(PlayerChipState& state, const std::string& actionName) {
+	for (InputControllerActionState& action : state.actions) {
+		if (m_strings.toString(action.actionStringId) == actionName) {
+			action.statusWord |= INP_STATUS_CONSUMED;
+			return;
+		}
+	}
 }
 
 void InputController::writeResult(u32 status, u32 value) {

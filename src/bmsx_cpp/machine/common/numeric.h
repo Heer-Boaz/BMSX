@@ -15,6 +15,14 @@ inline i32 toSignedWord(u32 value) {
 	return static_cast<i32>(value);
 }
 
+inline u32 encodeSignedFix16(f32 value) {
+	return static_cast<u32>(static_cast<i32>(value * static_cast<f32>(FIX16_SCALE)));
+}
+
+inline f32 decodeSignedFix16(u32 value) {
+	return static_cast<f32>(toSignedWord(value)) / static_cast<f32>(FIX16_SCALE);
+}
+
 inline size_t nextPowerOfTwo(size_t value) {
 	if (value == 0) {
 		return 0;

@@ -140,10 +140,11 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   as tracked RAM. The Input Controller (ICU) state now persists the sample-arm
   latch, sample sequence/cycle latches, raw registerfile (`player`, `action`,
   `bind`, `ctrl`, `query`, `status`, `value`, and `consume`
-  string-handle/numeric words), and the per-player committed action table. ICU
-  restore rewrites its MMIO mirrors and rebuilds the chip-owned input context
-  from those register/action words rather than depending on host `Input`
-  mappings surviving outside save-state.
+  string-handle/numeric words), the per-player committed action table, and the
+  device-owned per-action sampled status/value words. ICU restore rewrites its
+  MMIO mirrors and rebuilds the chip-owned input context from those
+  register/action words rather than depending on host `Input` mappings
+  surviving outside save-state.
 - World/mundo content should follow the same object-image rule: room templates,
   maps, transitions, and export tables belong in `.rodata` records with offsets
   or pointers, while room load instantiates only active mutable state into RAM.
@@ -700,9 +701,11 @@ Already advanced in this goal:
   contexts through MMIO.
 - The ICU no longer exposes its arm latch for runtime code to mutate directly:
   VBLANK/runtime reset/error paths now go through the device transition, while
-  the ICU owns and persists its sample/register latches and committed action
-  table. The VBlank edge passes runtime time/cycles into the ICU; the device
-  records `sampleSequence`/`lastSampleCycle` before sampling player state.
+  the ICU owns and persists its sample/register latches, committed action
+  table, and active sampled action snapshot. The VBlank edge passes runtime
+  time/cycles into the ICU; the device records `sampleSequence`/
+  `lastSampleCycle`, samples players, snapshots committed action status/value
+  words, and serves later MMIO queries from that device-owned snapshot.
 - The scratchbatch compatibility facade was removed in TS and C++; callers now
   use the actual scratch-buffer owner.
 - IDE runtime fault capture, debugger pause state, workbench runtime-error UI,
@@ -1022,9 +1025,10 @@ If `/goal resume` is invoked, it should mean this order of work:
    of growing through host-side sound shortcuts.
 3. Continue the Input Controller (ICU) cleanup beyond the persisted
    register/action state and removed input-map pass-through surfaces. The ICU
-   now owns the VBlank sample edge and sample sequence/cycle latches; remaining
-   work is to move future input features such as buffered input, analog value
-   readout, or rumble behind the same device boundary.
+   now owns the VBlank sample edge, sample sequence/cycle latches, and active
+   per-action status/value snapshots; remaining work is to move future input
+   features such as richer buffered input or rumble behind the same device
+   boundary.
 4. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
    APIs, Lua API metadata, devtools source APIs, overlay/editor APIs, terminal
    commands, and workspace APIs. Separate cart-visible contracts from editor or
@@ -1068,9 +1072,10 @@ Next recommended work:
    owned by the device.
 3. Continue ICU work by moving richer input features behind the device instead
    of letting cart-visible input semantics leak through host `PlayerInput` APIs.
-   The active sample edge, timing latches, and previous
-   Lua/manifest/public input-map shortcuts are now under the ICU boundary;
-   carts define action bindings through the input-controller register path.
+   The active sample edge, timing latches, per-action sampled status/value
+   words, and previous Lua/manifest/public input-map shortcuts are now under
+   the ICU boundary; carts define action bindings through the
+   input-controller register path.
 4. Continue TS/C++ parity cleanup subsystem by subsystem, including public API
    surfaces instead of assuming they are already covered.
 5. Clean IDE/editor layering after the machine boundaries are safer, starting

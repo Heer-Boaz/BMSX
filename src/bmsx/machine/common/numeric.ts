@@ -14,6 +14,14 @@ export function toSignedWord(value: number): number {
 	return value | 0;
 }
 
+export function encodeSignedFix16(value: number): number {
+	return Math.trunc(value * FIX16_SCALE) >>> 0;
+}
+
+export function decodeSignedFix16(value: number): number {
+	return (value | 0) / FIX16_SCALE;
+}
+
 export function nextPowerOfTwo(value: number): number {
 	if (value <= 0) {
 		return 0;

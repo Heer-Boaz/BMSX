@@ -275,6 +275,10 @@ function encodeInputControllerState(state: InputControllerState): InputControlle
 			actions: encodeVector(player.actions, (action) => ({
 				actionStringId: action.actionStringId >>> 0,
 				bindStringId: action.bindStringId >>> 0,
+				statusWord: action.statusWord >>> 0,
+				valueQ16: action.valueQ16 >>> 0,
+				pressTime: action.pressTime,
+				repeatCount: action.repeatCount >>> 0,
 			})),
 		})),
 	};
@@ -297,6 +301,10 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 						return {
 							actionStringId: requireBoundedU32(requireObjectKey(action, 'actionStringId', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].actionStringId'), 'machine.input.players[].actions[].actionStringId', 0, 0xffffffff),
 							bindStringId: requireBoundedU32(requireObjectKey(action, 'bindStringId', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].bindStringId'), 'machine.input.players[].actions[].bindStringId', 0, 0xffffffff),
+							statusWord: requireBoundedU32(requireObjectKey(action, 'statusWord', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].statusWord'), 'machine.input.players[].actions[].statusWord', 0, 0xffffffff),
+							valueQ16: requireBoundedU32(requireObjectKey(action, 'valueQ16', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].valueQ16'), 'machine.input.players[].actions[].valueQ16', 0, 0xffffffff),
+							pressTime: requireObjectKey(action, 'pressTime', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].pressTime') as number,
+							repeatCount: requireBoundedU32(requireObjectKey(action, 'repeatCount', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].repeatCount'), 'machine.input.players[].actions[].repeatCount', 0, 0xffffffff),
 						};
 					},
 				),

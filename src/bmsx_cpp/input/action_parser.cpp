@@ -942,29 +942,13 @@ bool ActionDefinitionEvaluator::checkActionTriggered(const std::string& def, con
 	return ast->eval(get);
 }
 
-std::vector<std::string> ActionDefinitionEvaluator::getReferencedActions(const std::string& def) {
+const std::string* ActionDefinitionEvaluator::getSimpleActionName(const std::string& def) {
 	AstNode* ast = getCachedOrParse(def);
-	std::vector<std::string> out;
-
-	std::function<void(AstNode*)> walk = [&walk, &out](AstNode* node) {
-		if (auto* act = node->asAction()) {
-			out.push_back(act->name);
-			return;
-		}
-		if (auto* fn = node->asFunction()) {
-			for (auto& arg : fn->args) {
-				walk(arg.get());
-			}
-			return;
-		}
-		if (auto* op = node->asOperation()) {
-			if (op->left) walk(op->left.get());
-			if (op->right) walk(op->right.get());
-		}
-	};
-
-	walk(ast);
-	return out;
+	const ActNode* action = ast->asAction();
+	if (action) {
+		return &action->name;
+	}
+	return nullptr;
 }
 
 } // namespace bmsx

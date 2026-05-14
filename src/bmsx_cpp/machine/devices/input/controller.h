@@ -2,6 +2,7 @@
 
 #include "machine/memory/memory.h"
 #include "input/manager.h"
+#include "input/models.h"
 #include <array>
 #include <string>
 #include <vector>
@@ -11,6 +12,10 @@ namespace bmsx {
 struct InputControllerActionState {
 	StringId actionStringId = 0;
 	StringId bindStringId = 0;
+	u32 statusWord = 0;
+	u32 valueQ16 = 0;
+	f64 pressTime = 0.0;
+	u32 repeatCount = 0;
 };
 
 struct InputControllerPlayerState {
@@ -75,6 +80,11 @@ private:
 	void restorePlayerActions(i32 playerIndex, PlayerChipState& state, const std::vector<InputControllerActionState>& actions);
 	void installActionMapping(PlayerChipState& state, StringId actionStringId, StringId bindStringId);
 	void upsertAction(PlayerChipState& state, StringId actionStringId, StringId bindStringId);
+	void sampleCommittedActions();
+	ActionState createSnapshotActionState(const PlayerChipState& state, const std::string& actionName) const;
+	const InputControllerActionState& selectQuerySnapshotAction(const PlayerChipState& state, const std::string& queryText) const;
+	const InputControllerActionState& findSnapshotAction(const PlayerChipState& state, const std::string& actionName) const;
+	void markSnapshotActionConsumed(PlayerChipState& state, const std::string& actionName);
 	void writeResult(u32 status, u32 value);
 	void mirrorRegisters();
 	void appendBindings(const std::string& bindingsText, std::vector<KeyboardBinding>& keyboardBindings, std::vector<GamepadBinding>& gamepadBindings) const;

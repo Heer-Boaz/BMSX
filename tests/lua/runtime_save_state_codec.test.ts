@@ -119,7 +119,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					},
 					players: [
 						{ actions: [] },
-						{ actions: [{ actionStringId: 0, bindStringId: 1 }] },
+						{ actions: [{ actionStringId: 0, bindStringId: 1, statusWord: 0x809, valueQ16: 0x8000, pressTime: 12.5, repeatCount: 2 }] },
 						{ actions: [] },
 						{ actions: [] },
 					],

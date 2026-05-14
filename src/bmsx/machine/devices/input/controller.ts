@@ -1,4 +1,5 @@
 import { Input } from '../../../input/manager';
+import { ActionDefinitionEvaluator } from '../../../input/action_parser';
 import type { BGamepadButton, GamepadBinding, GamepadInputMapping, KeyboardBinding, KeyboardInputMapping } from '../../../input/models';
 import {
 	INP_CTRL_COMMIT,
@@ -16,6 +17,12 @@ import {
 import { Memory } from '../../memory/memory';
 import { asStringId, StringValue, type Value } from '../../cpu/cpu';
 import type { StringId, StringPool } from '../../cpu/string_pool';
+import {
+	createInputActionSnapshot,
+	encodeInputActionValueQ16,
+	INP_STATUS_CONSUMED,
+	packInputActionStatus,
+} from './contracts';
 
 const INP_CONTEXT_ID = 'inp_chip';
 export const INPUT_CONTROLLER_PLAYER_COUNT = Input.PLAYERS_MAX;
@@ -23,6 +30,10 @@ export const INPUT_CONTROLLER_PLAYER_COUNT = Input.PLAYERS_MAX;
 type InputControllerActionState = {
 	actionStringId: StringId;
 	bindStringId: StringId;
+	statusWord: number;
+	valueQ16: number;
+	pressTime: number;
+	repeatCount: number;
 };
 
 type InputControllerPlayerState = {
@@ -45,6 +56,23 @@ type PlayerChipState = {
 	gamepad: GamepadInputMapping;
 	actions: InputControllerActionState[];
 	contextPushed: boolean;
+};
+
+const EMPTY_ACTION_SNAPSHOT: InputControllerActionState = {
+	actionStringId: 0,
+	bindStringId: 0,
+	statusWord: 0,
+	valueQ16: 0,
+	pressTime: 0,
+	repeatCount: 0,
+};
+const COMPLEX_QUERY_ACTION_SNAPSHOT: InputControllerActionState = {
+	actionStringId: 0,
+	bindStringId: 0,
+	statusWord: 1,
+	valueQ16: 0,
+	pressTime: 0,
+	repeatCount: 0,
 };
 
 export type InputControllerState = {
@@ -124,6 +152,7 @@ export class InputController {
 		this.sampleSequence = (this.sampleSequence + 1) >>> 0;
 		this.lastSampleCycle = nowCycles >>> 0;
 		this.input.samplePlayers(currentTimeMs);
+		this.sampleCommittedActions();
 		this.sampleArmed = false;
 	}
 
@@ -195,20 +224,32 @@ export class InputController {
 	}
 
 	private queryAction(): void {
-		const playerInput = this.input.getPlayerInput(this.registers.player);
-		const triggered = playerInput.checkActionTriggered(this.strings.toString(this.registers.queryStringId));
-		this.writeResult(triggered ? 1 : 0, 0);
+		const queryText = this.strings.toString(this.registers.queryStringId);
+		const state = this.playerStates[this.registers.player - 1]!;
+		const triggered = ActionDefinitionEvaluator.checkActionTriggered(
+			queryText,
+			(actionName) => this.createSnapshotActionState(state, actionName),
+		);
+		if (!triggered) {
+			this.writeResult(0, 0);
+			return;
+		}
+		const selectedAction = this.selectQuerySnapshotAction(state, queryText);
+		this.writeResult(selectedAction.statusWord, selectedAction.valueQ16);
 	}
 
 	private consumeActions(): void {
 		const actionNames = this.strings.toString(this.registers.consumeStringId);
 		const playerInput = this.input.getPlayerInput(this.registers.player);
+		const state = this.playerStates[this.registers.player - 1]!;
 		let actionStart = 0;
 		for (let index = 0; index <= actionNames.length; index += 1) {
 			if (index !== actionNames.length && actionNames.charCodeAt(index) !== 44) {
 				continue;
 			}
-			playerInput.consumeAction(actionNames.slice(actionStart, index));
+			const actionName = actionNames.slice(actionStart, index);
+			playerInput.consumeAction(actionName);
+			this.markSnapshotActionConsumed(state, actionName);
 			actionStart = index + 1;
 		}
 	}
@@ -267,10 +308,62 @@ export class InputController {
 			const action = state.actions[index]!;
 			if (action.actionStringId === actionStringId) {
 				action.bindStringId = bindStringId;
+				action.statusWord = 0;
+				action.valueQ16 = 0;
+				action.pressTime = 0;
+				action.repeatCount = 0;
 				return;
 			}
 		}
-		state.actions.push({ actionStringId, bindStringId });
+		state.actions.push({ actionStringId, bindStringId, statusWord: 0, valueQ16: 0, pressTime: 0, repeatCount: 0 });
+	}
+
+	private sampleCommittedActions(): void {
+		for (let playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
+			const state = this.playerStates[playerIndex - 1]!;
+			const playerInput = this.input.getPlayerInput(playerIndex);
+			for (let actionIndex = 0; actionIndex < state.actions.length; actionIndex += 1) {
+				const action = state.actions[actionIndex]!;
+				const actionState = playerInput.getActionState(this.strings.toString(action.actionStringId));
+				action.statusWord = packInputActionStatus(actionState);
+				action.valueQ16 = encodeInputActionValueQ16(actionState);
+				action.pressTime = actionState.presstime ?? 0;
+				action.repeatCount = actionState.repeatcount >>> 0;
+			}
+		}
+	}
+
+	private createSnapshotActionState(state: PlayerChipState, actionName: string) {
+		const action = this.findSnapshotAction(state, actionName);
+		return createInputActionSnapshot(actionName, action.statusWord, action.valueQ16, action.pressTime, action.repeatCount);
+	}
+
+	private selectQuerySnapshotAction(state: PlayerChipState, queryText: string): InputControllerActionState {
+		const actionName = ActionDefinitionEvaluator.getSimpleActionName(queryText);
+		if (actionName === undefined) {
+			return COMPLEX_QUERY_ACTION_SNAPSHOT;
+		}
+		return this.findSnapshotAction(state, actionName);
+	}
+
+	private findSnapshotAction(state: PlayerChipState, actionName: string): InputControllerActionState {
+		for (let index = 0; index < state.actions.length; index += 1) {
+			const action = state.actions[index]!;
+			if (this.strings.toString(action.actionStringId) === actionName) {
+				return action;
+			}
+		}
+		return EMPTY_ACTION_SNAPSHOT;
+	}
+
+	private markSnapshotActionConsumed(state: PlayerChipState, actionName: string): void {
+		for (let index = 0; index < state.actions.length; index += 1) {
+			const action = state.actions[index]!;
+			if (this.strings.toString(action.actionStringId) === actionName) {
+				action.statusWord = (action.statusWord | INP_STATUS_CONSUMED) >>> 0;
+				return;
+			}
+		}
 	}
 
 	private writeResult(status: number, value: number): void {

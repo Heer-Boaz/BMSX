@@ -16,9 +16,16 @@ import {
 } from '../../src/bmsx/machine/bus/io';
 import { CPU, asStringId, StringValue } from '../../src/bmsx/machine/cpu/cpu';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { Input } from '../../src/bmsx/input/manager';
+import { Input, makeActionState } from '../../src/bmsx/input/manager';
 import { PlayerInput } from '../../src/bmsx/input/player';
-import type { GamepadInputMapping, KeyboardInputMapping, PointerInputMapping } from '../../src/bmsx/input/models';
+import type { ActionState, GamepadInputMapping, KeyboardInputMapping, PointerInputMapping } from '../../src/bmsx/input/models';
+import {
+	INP_STATUS_CONSUMED,
+	INP_STATUS_HAS_VALUE,
+	INP_STATUS_JUST_PRESSED,
+	INP_STATUS_PRESSED,
+	INP_STATUS_WAS_PRESSED,
+} from '../../src/bmsx/machine/devices/input/contracts';
 
 type PushedContext = {
 	id: string;
@@ -32,6 +39,7 @@ type FakePlayerInput = {
 	cleared: string[];
 	consumed: string[];
 	checkActionTriggered(action: string): boolean;
+	getActionState(action: string): ActionState;
 	consumeAction(action: string): void;
 	pushContext(id: string, keyboard: KeyboardInputMapping, gamepad: GamepadInputMapping, pointer: PointerInputMapping): void;
 	clearContext(id: string): void;
@@ -43,6 +51,13 @@ function createFakePlayer(): FakePlayerInput {
 		cleared: [],
 		consumed: [],
 		checkActionTriggered: action => action === 'jump[p]',
+		getActionState(action) {
+			return makeActionState(action, {
+				pressed: action === 'jump',
+				waspressed: action === 'jump',
+				value: action === 'jump' ? 0.5 : null,
+			});
+		},
 		consumeAction(action) {
 			this.consumed.push(action);
 		},
@@ -104,18 +119,25 @@ test('input controller persists register latches and committed action contexts',
 	const actionValue = StringValue.get(live.cpu.stringPool.intern('jump'));
 	const bindValue = StringValue.get(live.cpu.stringPool.intern('a,left'));
 	const queryValue = StringValue.get(live.cpu.stringPool.intern('jump[p]'));
+	const complexQueryValue = StringValue.get(live.cpu.stringPool.intern('jump[p] || jump[p]'));
 	const consumeValue = StringValue.get(live.cpu.stringPool.intern('jump,dash'));
 
 	live.memory.writeValue(IO_INP_PLAYER, 2);
 	live.memory.writeValue(IO_INP_ACTION, actionValue);
 	live.memory.writeValue(IO_INP_BIND, bindValue);
 	live.memory.writeValue(IO_INP_CTRL, INP_CTRL_COMMIT);
+	live.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
+	live.controller.onVblankEdge(1000 / 60, 77);
+	live.memory.writeValue(IO_INP_QUERY, queryValue);
+
+	assert.equal(live.memory.readIoU32(IO_INP_STATUS), INP_STATUS_PRESSED | INP_STATUS_WAS_PRESSED | INP_STATUS_HAS_VALUE);
+	assert.equal(live.memory.readIoU32(IO_INP_VALUE), 0x8000);
+	live.memory.writeValue(IO_INP_QUERY, complexQueryValue);
+	assert.equal(live.memory.readIoU32(IO_INP_STATUS), 1);
+	assert.equal(live.memory.readIoU32(IO_INP_VALUE), 0);
 	live.memory.writeValue(IO_INP_QUERY, queryValue);
 	live.memory.writeValue(IO_INP_CONSUME, consumeValue);
 	live.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
-
-	assert.equal(live.memory.readIoU32(IO_INP_STATUS), 1);
-	assert.equal(live.memory.readIoU32(IO_INP_VALUE), 0);
 	assert.deepEqual(live.players[1]!.consumed, ['jump', 'dash']);
 	assert.equal(live.controller.captureState().sampleArmed, true);
 
@@ -131,8 +153,8 @@ test('input controller persists register latches and committed action contexts',
 	assert.equal(asStringId(restored.memory.readValue(IO_INP_QUERY) as StringValue), asStringId(queryValue));
 	assert.equal(asStringId(restored.memory.readValue(IO_INP_CONSUME) as StringValue), asStringId(consumeValue));
 	assert.equal(restored.memory.readIoU32(IO_INP_CTRL), INP_CTRL_ARM);
-	assert.equal(restored.memory.readIoU32(IO_INP_STATUS), 1);
-	assert.equal(restored.memory.readIoU32(IO_INP_VALUE), 0);
+	assert.equal(restored.memory.readIoU32(IO_INP_STATUS), INP_STATUS_PRESSED | INP_STATUS_WAS_PRESSED | INP_STATUS_HAS_VALUE);
+	assert.equal(restored.memory.readIoU32(IO_INP_VALUE), 0x8000);
 
 	assert.equal(restored.players[1]!.pushed.length, 1);
 	const pushed = restored.players[1]!.pushed[0]!;
@@ -140,11 +162,13 @@ test('input controller persists register latches and committed action contexts',
 	assert.deepEqual(pushed.gamepad.jump, [{ id: 'a' }, { id: 'left' }]);
 	assert.equal(restored.controller.captureState().players[1]!.actions[0]!.actionStringId, asStringId(actionValue));
 	assert.equal(restored.controller.captureState().players[1]!.actions[0]!.bindStringId, asStringId(bindValue));
+	assert.equal(restored.controller.captureState().players[1]!.actions[0]!.statusWord, INP_STATUS_PRESSED | INP_STATUS_WAS_PRESSED | INP_STATUS_CONSUMED | INP_STATUS_HAS_VALUE);
+	assert.equal(restored.controller.captureState().players[1]!.actions[0]!.valueQ16, 0x8000);
 
 	restored.controller.onVblankEdge(1000 / 60, 123);
 	assert.equal(restored.samples(), 1);
 	assert.equal(restored.controller.captureState().sampleArmed, false);
-	assert.equal(restored.controller.captureState().sampleSequence, 1);
+	assert.equal(restored.controller.captureState().sampleSequence, 2);
 	assert.equal(restored.controller.captureState().lastSampleCycle, 123);
 });
 
@@ -172,7 +196,11 @@ test('input controller mappings drive real PlayerInput contexts without a base i
 	harness.controller.onVblankEdge(1000 / 60, 456);
 	harness.memory.writeValue(IO_INP_QUERY, queryValue);
 
-	assert.equal(harness.memory.readIoU32(IO_INP_STATUS), 1);
+	const status = harness.memory.readIoU32(IO_INP_STATUS);
+	assert.notEqual(status & INP_STATUS_JUST_PRESSED, 0);
+	assert.notEqual(status & INP_STATUS_WAS_PRESSED, 0);
+	assert.notEqual(status & INP_STATUS_HAS_VALUE, 0);
+	assert.equal(harness.memory.readIoU32(IO_INP_VALUE), 0);
 	assert.equal(playerTwo.getActionState('jump').justpressed, true);
 });
 

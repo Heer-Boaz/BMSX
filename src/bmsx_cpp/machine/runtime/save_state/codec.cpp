@@ -345,6 +345,10 @@ BinValue encodeInputControllerState(const InputControllerState& state) {
 			BinObject actionObject;
 			actionObject["actionStringId"] = static_cast<i64>(action.actionStringId);
 			actionObject["bindStringId"] = static_cast<i64>(action.bindStringId);
+			actionObject["statusWord"] = static_cast<i64>(action.statusWord);
+			actionObject["valueQ16"] = static_cast<i64>(action.valueQ16);
+			actionObject["pressTime"] = action.pressTime;
+			actionObject["repeatCount"] = static_cast<i64>(action.repeatCount);
 			return BinValue(std::move(actionObject));
 		});
 		return BinValue(std::move(playerObject));
@@ -381,6 +385,10 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 				InputControllerActionState stateAction;
 				stateAction.actionStringId = requireU32(requireField(action, "actionStringId", "machine.input.players[].actions[]"), "machine.input.players[].actions[].actionStringId");
 				stateAction.bindStringId = requireU32(requireField(action, "bindStringId", "machine.input.players[].actions[]"), "machine.input.players[].actions[].bindStringId");
+				stateAction.statusWord = requireU32(requireField(action, "statusWord", "machine.input.players[].actions[]"), "machine.input.players[].actions[].statusWord");
+				stateAction.valueQ16 = requireU32(requireField(action, "valueQ16", "machine.input.players[].actions[]"), "machine.input.players[].actions[].valueQ16");
+				stateAction.pressTime = requireNumber(requireField(action, "pressTime", "machine.input.players[].actions[]"), "machine.input.players[].actions[].pressTime");
+				stateAction.repeatCount = requireU32(requireField(action, "repeatCount", "machine.input.players[].actions[]"), "machine.input.players[].actions[].repeatCount");
 				return stateAction;
 			}
 		);

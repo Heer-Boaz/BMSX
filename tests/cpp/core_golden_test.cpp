@@ -8,6 +8,7 @@
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/geometry/contracts.h"
+#include "machine/devices/input/contracts.h"
 #include "machine/devices/input/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/vdp/vout.h"
@@ -685,7 +686,7 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	state.machineState.machine.input.registers.status = 1u;
 	state.machineState.machine.input.registers.value = 0u;
 	state.machineState.machine.input.registers.consumeStringId = 7u;
-	state.machineState.machine.input.players[1u].actions.push_back(bmsx::InputControllerActionState{ 4u, 5u });
+	state.machineState.machine.input.players[1u].actions.push_back(bmsx::InputControllerActionState{ 4u, 5u, 0x809u, 0x8000u, 12.5, 2u });
 	state.cpuState.haltedUntilIrq = true;
 	state.cpuState.maskableInterruptsEnabled = false;
 	state.cpuState.maskableInterruptsRestoreEnabled = true;
@@ -743,6 +744,10 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	require(decoded.machineState.machine.input.players[1u].actions.size() == 1u, "save-state should preserve ICU committed action table");
 	require(decoded.machineState.machine.input.players[1u].actions[0].actionStringId == 4u, "save-state should preserve ICU committed action id");
 	require(decoded.machineState.machine.input.players[1u].actions[0].bindStringId == 5u, "save-state should preserve ICU committed bind id");
+	require(decoded.machineState.machine.input.players[1u].actions[0].statusWord == 0x809u, "save-state should preserve ICU action status snapshot");
+	require(decoded.machineState.machine.input.players[1u].actions[0].valueQ16 == 0x8000u, "save-state should preserve ICU action value snapshot");
+	require(decoded.machineState.machine.input.players[1u].actions[0].pressTime == 12.5, "save-state should preserve ICU action press-time snapshot");
+	require(decoded.machineState.machine.input.players[1u].actions[0].repeatCount == 2u, "save-state should preserve ICU action repeat-count snapshot");
 	require(decoded.cpuState.haltedUntilIrq, "save-state should preserve HALT state");
 	require(!decoded.cpuState.maskableInterruptsEnabled, "save-state should preserve disabled IFF");
 	require(decoded.cpuState.maskableInterruptsRestoreEnabled, "save-state should preserve NMI return IFF");
@@ -1269,6 +1274,7 @@ void testInputControllerRealPlayerContext() {
 	const bmsx::StringId action = h.cpu.stringPool().intern("jump");
 	const bmsx::StringId bind = h.cpu.stringPool().intern("a");
 	const bmsx::StringId query = h.cpu.stringPool().intern("jump[jp]");
+	const bmsx::StringId complexQuery = h.cpu.stringPool().intern("jump[jp] || jump[jp]");
 	auto* playerTwo = bmsx::Input::instance().getPlayerInput(2);
 
 	writeIoWord(h.memory, bmsx::IO_INP_PLAYER, 2u);
@@ -1286,8 +1292,15 @@ void testInputControllerRealPlayerContext() {
 	h.inputController.onVblankEdge(1000.0 / 60.0, 456u);
 	h.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(query));
 
-	require(h.memory.readIoU32(bmsx::IO_INP_STATUS) == 1u, "real PlayerInput context should observe ICU gamepad bindings without a base map");
+	const uint32_t status = h.memory.readIoU32(bmsx::IO_INP_STATUS);
+	require((status & bmsx::INP_STATUS_JUST_PRESSED) != 0u, "real PlayerInput context should expose ICU just-pressed snapshot");
+	require((status & bmsx::INP_STATUS_WAS_PRESSED) != 0u, "real PlayerInput context should expose ICU buffered snapshot");
+	require((status & bmsx::INP_STATUS_HAS_VALUE) != 0u, "real PlayerInput context should expose ICU value snapshot");
+	require(h.memory.readIoU32(bmsx::IO_INP_VALUE) == 0u, "real PlayerInput context should expose ICU Q16 value");
 	require(playerTwo->getActionState("jump").justpressed, "real PlayerInput should expose the ICU action edge");
+	h.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(complexQuery));
+	require(h.memory.readIoU32(bmsx::IO_INP_STATUS) == 1u, "compound ICU query should return boolean status");
+	require(h.memory.readIoU32(bmsx::IO_INP_VALUE) == 0u, "compound ICU query should not expose an action value");
 }
 
 void expectApuFault(const AudioHarness& h, uint32_t code, const char* label) {

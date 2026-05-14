@@ -76,7 +76,7 @@ constexpr std::array<LuaBuiltinDescriptor, 4> kSystemLuaBuiltinGlobals{{
 	LuaBuiltinDescriptor{"sorted_scratchbatch", "sorted_scratchbatch", "Sorted scratch batch module table (sorted_scratchbatch.new; batches support clear, push, get, reserve, for_each, iter, set_compare, sort)."},
 }};
 
-constexpr std::array<LuaBuiltinDescriptor, 488> kDefaultLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 500> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"assert", "assert(value [, message])", ""},
 	LuaBuiltinDescriptor{"error", "error(message [, level])", ""},
 	LuaBuiltinDescriptor{"getmetatable", "getmetatable(object)", ""},
@@ -311,8 +311,8 @@ constexpr std::array<LuaBuiltinDescriptor, 488> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_inp_bind", "sys_inp_bind", "Input Controller binding register; write comma-separated button names as a string."},
 	LuaBuiltinDescriptor{"sys_inp_ctrl", "sys_inp_ctrl", "Input Controller command register; write inp_ctrl_commit, inp_ctrl_arm, or inp_ctrl_reset."},
 	LuaBuiltinDescriptor{"sys_inp_query", "sys_inp_query", "Input Controller query register; write an action expression such as left[p] or jump[jp]."},
-	LuaBuiltinDescriptor{"sys_inp_status", "sys_inp_status", "Input Controller query result register; 1 when the last query was triggered, else 0."},
-	LuaBuiltinDescriptor{"sys_inp_value", "sys_inp_value", "Input Controller analog value register for simple single-action queries."},
+	LuaBuiltinDescriptor{"sys_inp_status", "sys_inp_status", "Input Controller query status register; simple action queries return packed inp_status_* bits, complex expressions return 1 or 0."},
+	LuaBuiltinDescriptor{"sys_inp_value", "sys_inp_value", "Input Controller value register for simple single-action queries in signed Q16.16."},
 	LuaBuiltinDescriptor{"sys_inp_consume", "sys_inp_consume", "Input Controller consume register; write an action name or comma-separated action names string to consume them in order."},
 	LuaBuiltinDescriptor{"sys_apu_source_addr", "sys_apu_source_addr", "APU audio source address register."},
 	LuaBuiltinDescriptor{"sys_apu_source_bytes", "sys_apu_source_bytes", "APU audio source byte length register."},
@@ -565,6 +565,18 @@ constexpr std::array<LuaBuiltinDescriptor, 488> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"inp_ctrl_commit", "inp_ctrl_commit", "Input Controller command: commit sys_inp_action plus sys_inp_bind into the chip context."},
 	LuaBuiltinDescriptor{"inp_ctrl_arm", "inp_ctrl_arm", "Input Controller command: arm the next VBLANK input sample."},
 	LuaBuiltinDescriptor{"inp_ctrl_reset", "inp_ctrl_reset", "Input Controller command: pop the chip context for the current player and clear its actions."},
+	LuaBuiltinDescriptor{"inp_status_pressed", "inp_status_pressed", "Input Controller status bit: action is currently pressed."},
+	LuaBuiltinDescriptor{"inp_status_justpressed", "inp_status_justpressed", "Input Controller status bit: action was pressed on the sampled frame."},
+	LuaBuiltinDescriptor{"inp_status_justreleased", "inp_status_justreleased", "Input Controller status bit: action was released on the sampled frame."},
+	LuaBuiltinDescriptor{"inp_status_waspressed", "inp_status_waspressed", "Input Controller status bit: action was pressed inside the sampled buffer window."},
+	LuaBuiltinDescriptor{"inp_status_wasreleased", "inp_status_wasreleased", "Input Controller status bit: action was released inside the sampled buffer window."},
+	LuaBuiltinDescriptor{"inp_status_consumed", "inp_status_consumed", "Input Controller status bit: action was consumed."},
+	LuaBuiltinDescriptor{"inp_status_alljustpressed", "inp_status_alljustpressed", "Input Controller status bit: all bindings were just pressed."},
+	LuaBuiltinDescriptor{"inp_status_alljustreleased", "inp_status_alljustreleased", "Input Controller status bit: all bindings were just released."},
+	LuaBuiltinDescriptor{"inp_status_allwaspressed", "inp_status_allwaspressed", "Input Controller status bit: all bindings were pressed inside the sampled buffer window."},
+	LuaBuiltinDescriptor{"inp_status_guardedjustpressed", "inp_status_guardedjustpressed", "Input Controller status bit: guarded just-pressed accepted this edge."},
+	LuaBuiltinDescriptor{"inp_status_repeatpressed", "inp_status_repeatpressed", "Input Controller status bit: repeat pulse fired this sampled frame."},
+	LuaBuiltinDescriptor{"inp_status_has_value", "inp_status_has_value", "Input Controller status bit: sys_inp_value contains an action value."},
 }};
 
 constexpr std::array<LuaBuiltinDescriptor, 0> kDefaultLuaBuiltinGlobals{{
