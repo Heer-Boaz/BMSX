@@ -41,16 +41,6 @@ std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
 	return values;
 }
 
-void reserveBuildFrameStorage(VdpBuildingFrame& frame) {
-	frame.queue.reserve(VDP_BLITTER_FIFO_CAPACITY);
-	frame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
-}
-
-void reserveSubmittedFrameStorage(VdpSubmittedFrame& frame) {
-	frame.queue.reserve(VDP_BLITTER_FIFO_CAPACITY);
-	frame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
-}
-
 uint64_t vramSurfaceByteSize(uint32_t width, uint32_t height) {
 	return static_cast<uint64_t>(width) * static_cast<uint64_t>(height) * 4u;
 }
@@ -101,9 +91,7 @@ VDP::VDP(
 }
 
 void VDP::resetIngressState() {
-	m_vdpFifoWordByteCount = 0;
-	m_vdpFifoStreamWordCount = 0u;
-	m_dmaSubmitActive = false;
+	m_streamIngress.reset();
 	refreshSubmitBusyStatus();
 }
 
@@ -281,12 +269,12 @@ void VDP::rejectBusySubmitAttempt(uint32_t detail) {
 }
 
 void VDP::beginDmaSubmit() {
-	m_dmaSubmitActive = true;
+	m_streamIngress.beginDmaSubmit();
 	acceptSubmitAttempt();
 }
 
 void VDP::endDmaSubmit() {
-	m_dmaSubmitActive = false;
+	m_streamIngress.endDmaSubmit();
 	refreshSubmitBusyStatus();
 }
 
@@ -297,28 +285,17 @@ bool VDP::sealDmaTransfer(uint32_t src, size_t byteLength) {
 }
 
 void VDP::writeVdpFifoBytes(const u8* data, size_t length) {
-	for (size_t index = 0; index < length; index += 1u) {
-		m_vdpFifoWordScratch[static_cast<size_t>(m_vdpFifoWordByteCount)] = data[index];
-		m_vdpFifoWordByteCount += 1;
-		if (m_vdpFifoWordByteCount != 4) {
-			continue;
-		}
-		const u32 word = static_cast<u32>(m_vdpFifoWordScratch[0])
-			| (static_cast<u32>(m_vdpFifoWordScratch[1]) << 8)
-			| (static_cast<u32>(m_vdpFifoWordScratch[2]) << 16)
-			| (static_cast<u32>(m_vdpFifoWordScratch[3]) << 24);
-		m_vdpFifoWordByteCount = 0;
-		pushVdpFifoWord(word);
+	const u32 overflowDetail = m_streamIngress.writeBytes(data, length);
+	if (overflowDetail != 0u) {
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, overflowDetail);
+		resetIngressState();
+		return;
 	}
 	refreshSubmitBusyStatus();
 }
 
-bool VDP::hasOpenDirectVdpFifoIngress() const {
-	return m_vdpFifoWordByteCount != 0 || m_vdpFifoStreamWordCount != 0u;
-}
-
 bool VDP::hasBlockedSubmitPath() const {
-	return hasOpenDirectVdpFifoIngress() || m_dmaSubmitActive || m_buildFrame.state != VdpDexFrameState::Idle || !canAcceptSubmittedFrame();
+	return m_streamIngress.hasOpenDirectFifoIngress() || m_streamIngress.dmaSubmitActive || m_buildFrame.state != VdpDexFrameState::Idle || !canAcceptSubmittedFrame();
 }
 
 // disable-next-line single_line_method_pattern -- submit-busy refresh owns the status-bit projection from current VDP ingress state.
@@ -327,13 +304,12 @@ void VDP::refreshSubmitBusyStatus() {
 }
 
 void VDP::pushVdpFifoWord(u32 word) {
-	if (m_vdpFifoStreamWordCount >= VDP_STREAM_CAPACITY_WORDS) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, m_vdpFifoStreamWordCount + 1u);
+	const u32 overflowDetail = m_streamIngress.pushWord(word);
+	if (overflowDetail != 0u) {
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, overflowDetail);
 		resetIngressState();
 		return;
 	}
-	m_vdpFifoStreamWords[static_cast<size_t>(m_vdpFifoStreamWordCount)] = word;
-	m_vdpFifoStreamWordCount += 1u;
 	refreshSubmitBusyStatus();
 }
 
@@ -384,7 +360,7 @@ bool VDP::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 	return accepted;
 }
 
-void VDP::consumeSealedVdpWordStream(u32 wordCount) {
+void VDP::consumeSealedVdpWordStream(const u32* words, u32 wordCount) {
 	if (m_buildFrame.state != VdpDexFrameState::Idle) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
 		cancelSubmittedFrame();
@@ -396,7 +372,7 @@ void VDP::consumeSealedVdpWordStream(u32 wordCount) {
 	}
 	bool ended = false;
 	while (cursor < wordCount) {
-		const u32 word = m_vdpFifoStreamWords[static_cast<size_t>(cursor)];
+		const u32 word = words[cursor];
 		cursor += 1u;
 		if (word == VDP_PKT_END) {
 			if (cursor != wordCount) {
@@ -407,7 +383,7 @@ void VDP::consumeSealedVdpWordStream(u32 wordCount) {
 			ended = true;
 			break;
 		}
-		cursor = consumeReplayPacketFromWords(word, cursor, wordCount);
+		cursor = consumeReplayPacketFromWords(words, word, cursor, wordCount);
 		if (cursor == VDP_REPLAY_PACKET_FAULT) {
 			cancelSubmittedFrame();
 			return;
@@ -425,15 +401,15 @@ void VDP::consumeSealedVdpWordStream(u32 wordCount) {
 }
 
 void VDP::sealVdpFifoTransfer() {
-	if (m_vdpFifoWordByteCount != 0) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(m_vdpFifoWordByteCount));
+	if (m_streamIngress.fifoWordByteCount != 0) {
+		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, static_cast<uint32_t>(m_streamIngress.fifoWordByteCount));
 		resetIngressState();
 		return;
 	}
-	if (m_vdpFifoStreamWordCount == 0u) {
+	if (m_streamIngress.fifoStreamWordCount == 0u) {
 		return;
 	}
-	consumeSealedVdpWordStream(m_vdpFifoStreamWordCount);
+	consumeSealedVdpWordStream(m_streamIngress.fifoStreamWords.data(), m_streamIngress.fifoStreamWordCount);
 	resetIngressState();
 }
 
@@ -557,7 +533,7 @@ u32 VDP::consumeXfPacketFromMemory(u32 word, u32 cursor, u32 end) {
 	return payloadEnd;
 }
 
-u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
+u32 VDP::consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount) {
 	const u32 kind = word & VDP_PKT_KIND_MASK;
 	switch (kind) {
 		case VDP_PKT_CMD:
@@ -568,7 +544,7 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			return writeVdpRegister(reg, m_vdpFifoStreamWords[static_cast<size_t>(cursor)]) ? cursor + 1u : VDP_REPLAY_PACKET_FAULT;
+			return writeVdpRegister(reg, words[cursor]) ? cursor + 1u : VDP_REPLAY_PACKET_FAULT;
 		}
 		case VDP_PKT_REGN: {
 			RegnPacket packet;
@@ -577,7 +553,7 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			for (uint32_t offset = 0; offset < packet.count; ++offset) {
-				if (!writeVdpRegister(packet.firstRegister + offset, m_vdpFifoStreamWords[static_cast<size_t>(cursor + offset)])) {
+				if (!writeVdpRegister(packet.firstRegister + offset, words[cursor + offset])) {
 					return VDP_REPLAY_PACKET_FAULT;
 				}
 			}
@@ -588,31 +564,31 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			if (m_vdpFifoStreamWords[static_cast<size_t>(cursor + 10u)] != 0u) {
-				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, m_vdpFifoStreamWords[static_cast<size_t>(cursor + 10u)]);
+			if (words[cursor + 10u] != 0u) {
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, words[cursor + 10u]);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			return latchBillboardPacket(m_bbu.decodePacket(
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 1u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 2u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 3u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 4u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 5u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 6u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 7u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 8u)],
-				m_vdpFifoStreamWords[static_cast<size_t>(cursor + 9u)])) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : VDP_REPLAY_PACKET_FAULT;
+				words[cursor],
+				words[cursor + 1u],
+				words[cursor + 2u],
+				words[cursor + 3u],
+				words[cursor + 4u],
+				words[cursor + 5u],
+				words[cursor + 6u],
+				words[cursor + 7u],
+				words[cursor + 8u],
+				words[cursor + 9u])) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : VDP_REPLAY_PACKET_FAULT;
 		case VDP_XF_PACKET_KIND:
-			return consumeXfPacketFromWords(word, cursor, wordCount);
+			return consumeXfPacketFromWords(words, word, cursor, wordCount);
 		case VDP_SBX_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
 				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-				VdpSbxUnit::FaceWords& faceWords = m_sbx.beginPacket(m_vdpFifoStreamWords[static_cast<size_t>(cursor)]);
+				VdpSbxUnit::FaceWords& faceWords = m_sbx.beginPacket(words[cursor]);
 				for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
-					faceWords[index] = m_vdpFifoStreamWords[static_cast<size_t>(cursor + static_cast<u32>(index + 1u))];
+					faceWords[index] = words[cursor + static_cast<u32>(index + 1u)];
 			}
 			m_sbx.commitPacket();
 			return cursor + VDP_SBX_PACKET_PAYLOAD_WORDS;
@@ -623,7 +599,7 @@ u32 VDP::consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 	}
 }
 
-u32 VDP::consumeXfPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
+u32 VDP::consumeXfPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount) {
 	if (vdpUnitPacketHasFlags(word)) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
@@ -633,14 +609,14 @@ u32 VDP::consumeXfPacketFromWords(u32 word, u32 cursor, u32 wordCount) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
-	const u32 firstRegister = m_vdpFifoStreamWords[static_cast<size_t>(cursor)];
+	const u32 firstRegister = words[cursor];
 	const u32 registerCount = payloadWords - 1u;
 	if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	for (u32 offset = 0u; offset < registerCount; ++offset) {
-		const u32 value = m_vdpFifoStreamWords[static_cast<size_t>(cursor + offset + 1u)];
+		const u32 value = words[cursor + offset + 1u];
 		if (!m_xf.writeRegister(firstRegister + offset, value)) {
 			m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
 			return VDP_REPLAY_PACKET_FAULT;
@@ -744,7 +720,7 @@ bool VDP::executeVdpDrawDoorbell(u32 command) {
 }
 
 void VDP::onVdpFifoWrite() {
-	if (m_dmaSubmitActive || m_buildFrame.state != VdpDexFrameState::Idle || (!hasOpenDirectVdpFifoIngress() && !canAcceptSubmittedFrame())) {
+	if (m_streamIngress.dmaSubmitActive || m_buildFrame.state != VdpDexFrameState::Idle || (!m_streamIngress.hasOpenDirectFifoIngress() && !canAcceptSubmittedFrame())) {
 		rejectBusySubmitAttempt(m_memory.readIoU32(IO_VDP_FIFO));
 		return;
 	}
@@ -756,7 +732,7 @@ void VDP::onVdpFifoCtrlWrite() {
 	if ((m_memory.readIoU32(IO_VDP_FIFO_CTRL) & VDP_FIFO_CTRL_SEAL) == 0u) {
 		return;
 	}
-	if (m_dmaSubmitActive) {
+	if (m_streamIngress.dmaSubmitActive) {
 		rejectBusySubmitAttempt(VDP_FIFO_CTRL_SEAL);
 		return;
 	}
@@ -2175,89 +2151,6 @@ void VDP::attachImgDecController(ImgDecController& controller) {
 	m_imgDecController = &controller;
 }
 
-void VDP::captureVisualStateFields(VdpState& state) const {
-	state.xf = m_xf.captureState();
-	state.vdpRegisterWords = m_vdpRegisters;
-	state.buildFrame = captureBuildingFrameState(m_buildFrame);
-	state.activeFrame = captureSubmittedFrameState(m_activeFrame);
-	state.pendingFrame = captureSubmittedFrameState(m_pendingFrame);
-	state.workCarry = m_workCarry;
-	state.availableWorkUnits = m_availableWorkUnits;
-	state.dmaSubmitActive = m_dmaSubmitActive;
-	state.vdpFifoWordScratch = m_vdpFifoWordScratch;
-	state.vdpFifoWordByteCount = m_vdpFifoWordByteCount;
-	state.vdpFifoStreamWords.assign(m_vdpFifoStreamWords.begin(), m_vdpFifoStreamWords.begin() + m_vdpFifoStreamWordCount);
-	state.vdpFifoStreamWordCount = m_vdpFifoStreamWordCount;
-	state.blitterSequence = m_blitterSequence;
-	state.skyboxControl = m_sbx.liveControl();
-	state.skyboxFaceWords = m_sbx.liveFaceWords();
-	state.pmuSelectedBank = m_pmu.selectedBank();
-	state.pmuBankWords = m_pmu.captureBankWords();
-	state.ditherType = m_vout.liveDitherType();
-	state.vdpFaultCode = m_fault.code;
-	state.vdpFaultDetail = m_fault.detail;
-}
-
-VdpState VDP::captureState() const {
-	VdpState state;
-	captureVisualStateFields(state);
-	return state;
-}
-
-void VDP::restoreState(const VdpState& state) {
-	m_xf.restoreState(state.xf);
-	m_vdpRegisters = state.vdpRegisterWords;
-	restoreBuildingFrameState(m_buildFrame, state.buildFrame);
-	restoreSubmittedFrameState(m_activeFrame, state.activeFrame);
-	restoreSubmittedFrameState(m_pendingFrame, state.pendingFrame);
-	reserveBuildFrameStorage(m_buildFrame);
-	reserveSubmittedFrameStorage(m_activeFrame);
-	reserveSubmittedFrameStorage(m_pendingFrame);
-	m_workCarry = state.workCarry;
-	m_availableWorkUnits = state.availableWorkUnits;
-	m_dmaSubmitActive = state.dmaSubmitActive;
-	m_vdpFifoWordScratch = state.vdpFifoWordScratch;
-	m_vdpFifoWordByteCount = state.vdpFifoWordByteCount;
-	std::copy(state.vdpFifoStreamWords.begin(), state.vdpFifoStreamWords.end(), m_vdpFifoStreamWords.begin());
-	m_vdpFifoStreamWordCount = state.vdpFifoStreamWordCount;
-	m_blitterSequence = state.blitterSequence;
-	for (uint32_t index = 0; index < VDP_REGISTER_COUNT; ++index) {
-		m_memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, valueNumber(static_cast<double>(m_vdpRegisters[index])));
-	}
-	m_sbx.restoreLiveState(state.skyboxControl, state.skyboxFaceWords);
-	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(state.ditherType)));
-	m_pmu.restoreBankWords(state.pmuSelectedBank, state.pmuBankWords);
-	syncPmuRegisterWindow();
-	syncSbxRegisterWindow();
-	m_fault.restore(0u, state.vdpFaultCode, state.vdpFaultDetail);
-	m_fault.setStatusFlag(VDP_STATUS_FAULT, m_fault.code != VDP_FAULT_NONE);
-	refreshSubmitBusyStatus();
-	m_scheduler.cancelDeviceService(DeviceServiceVdp);
-	if (needsImmediateSchedulerService() || hasPendingRenderWork()) {
-		scheduleNextService(m_scheduler.currentNowCycles());
-	}
-	commitLiveVisualState();
-}
-
-VdpSaveState VDP::captureSaveState() const {
-	VdpSaveState state;
-	captureVisualStateFields(state);
-	state.vramStaging = m_vramStaging;
-	state.surfacePixels = captureSurfacePixels();
-	state.displayFrameBufferPixels = m_fbm.captureDisplayReadback();
-	return state;
-}
-
-void VDP::restoreSaveState(const VdpSaveState& state) {
-	restoreState(state);
-	m_vramStaging = state.vramStaging;
-	for (const VdpSurfacePixelsState& surface : state.surfacePixels) {
-		restoreSurfacePixels(surface);
-	}
-	m_fbm.restoreDisplayReadback(state.displayFrameBufferPixels);
-	commitLiveVisualState();
-}
-
 void VDP::registerVramSlot(const VdpVramSurface& surface) {
 	const uint64_t size64 = vramSurfaceByteSize(surface.width, surface.height);
 	if (surface.width == 0u || surface.height == 0u || size64 > surface.capacity) {
@@ -2344,31 +2237,6 @@ void VDP::configureVramSlotSurface(uint32_t slotId, uint32_t width, uint32_t hei
 		return;
 	}
 	setVramSlotLogicalDimensions(*slot, width, height, width | (height << 16u));
-}
-
-std::vector<VdpSurfacePixelsState> VDP::captureSurfacePixels() const {
-	std::vector<VdpSurfacePixelsState> surfaces;
-	surfaces.reserve(m_vramSlots.size());
-	for (const VdpSurfaceUploadSlot& slot : m_vramSlots) {
-		VdpSurfacePixelsState state;
-		state.surfaceId = slot.surfaceId;
-		state.surfaceWidth = slot.surfaceWidth;
-		state.surfaceHeight = slot.surfaceHeight;
-		state.pixels = slot.cpuReadback;
-		surfaces.push_back(std::move(state));
-	}
-	return surfaces;
-}
-
-void VDP::restoreSurfacePixels(const VdpSurfacePixelsState& state) {
-	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(state.surfaceId, VDP_FAULT_RD_SURFACE);
-	if (slot == nullptr) {
-		return;
-	}
-	setVramSlotLogicalDimensions(*slot, state.surfaceWidth, state.surfaceHeight, state.surfaceWidth | (state.surfaceHeight << 16u));
-	slot->cpuReadback = state.pixels;
-	invalidateReadCache(state.surfaceId);
-	markVramSlotDirty(*slot, 0, slot->surfaceHeight);
 }
 
 VdpSurfaceUploadSlot* VDP::findMappedVramSlot(uint32_t addr, size_t length) {

@@ -19,7 +19,8 @@ import {
 	type GeometryControllerPhase,
 } from '../../devices/geometry/contracts';
 import type { GeometryControllerState, GeometryJobState } from '../../devices/geometry/state';
-import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/vdp';
+import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/save_state';
+import type { VdpStreamIngressState } from '../../devices/vdp/ingress';
 import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT, VDP_BBU_BILLBOARD_LIMIT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
 import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_RUN_ENTRY_CAPACITY } from '../../devices/vdp/blitter';
 import {
@@ -732,6 +733,36 @@ function decodeSubmittedFrameState(value: unknown, label: string): VdpSubmittedF
 	};
 }
 
+function encodeVdpStreamIngressState(state: VdpStreamIngressState): VdpStreamIngressState {
+	return {
+		dmaSubmitActive: state.dmaSubmitActive,
+		fifoWordScratch: state.fifoWordScratch,
+		fifoWordByteCount: state.fifoWordByteCount,
+		fifoStreamWords: state.fifoStreamWords,
+		fifoStreamWordCount: state.fifoStreamWordCount,
+	};
+}
+
+function decodeVdpStreamIngressState(value: unknown, label: string): VdpStreamIngressState {
+	const object = requireObject(value, label);
+	const fifoStreamWords = decodeVector(
+		requireObjectKey(object, 'fifoStreamWords', label, `${label}.fifoStreamWords`),
+		`${label}.fifoStreamWords`,
+		(entry) => requireBoundedU32(entry, `${label}.fifoStreamWords[]`, 0, 0xffffffff),
+	);
+	const fifoStreamWordCount = requireBoundedU32(requireObjectKey(object, 'fifoStreamWordCount', label, `${label}.fifoStreamWordCount`), `${label}.fifoStreamWordCount`, 0, 0xffffffff);
+	if (fifoStreamWords.length !== fifoStreamWordCount || fifoStreamWordCount > VDP_STREAM_CAPACITY_WORDS) {
+		throw new Error('machine.vdp.streamIngress state is inconsistent.');
+	}
+	return {
+		dmaSubmitActive: requireBooleanValue(requireObjectKey(object, 'dmaSubmitActive', label, `${label}.dmaSubmitActive`), `${label}.dmaSubmitActive`),
+		fifoWordScratch: decodeU8FixedArray(requireObjectKey(object, 'fifoWordScratch', label, `${label}.fifoWordScratch`), `${label}.fifoWordScratch`, 4),
+		fifoWordByteCount: requireBoundedU32(requireObjectKey(object, 'fifoWordByteCount', label, `${label}.fifoWordByteCount`), `${label}.fifoWordByteCount`, 0, 3),
+		fifoStreamWords,
+		fifoStreamWordCount,
+	};
+}
+
 function encodeVdpState(state: VdpState): VdpState {
 	return {
 		xf: encodeVdpXfState(state.xf),
@@ -741,11 +772,7 @@ function encodeVdpState(state: VdpState): VdpState {
 		pendingFrame: encodeSubmittedFrameState(state.pendingFrame),
 		workCarry: state.workCarry,
 		availableWorkUnits: state.availableWorkUnits,
-		dmaSubmitActive: state.dmaSubmitActive,
-		vdpFifoWordScratch: state.vdpFifoWordScratch,
-		vdpFifoWordByteCount: state.vdpFifoWordByteCount,
-		vdpFifoStreamWords: state.vdpFifoStreamWords,
-		vdpFifoStreamWordCount: state.vdpFifoStreamWordCount,
+		streamIngress: encodeVdpStreamIngressState(state.streamIngress),
 		blitterSequence: state.blitterSequence,
 		skyboxControl: state.skyboxControl,
 		skyboxFaceWords: state.skyboxFaceWords,
@@ -759,15 +786,6 @@ function encodeVdpState(state: VdpState): VdpState {
 
 function decodeVdpState(value: unknown, label: string): VdpState {
 	const object = requireObject(value, label);
-	const vdpFifoStreamWords = decodeVector(
-		requireObjectKey(object, 'vdpFifoStreamWords', label, 'machine.vdp.vdpFifoStreamWords'),
-		'machine.vdp.vdpFifoStreamWords',
-		(entry) => requireBoundedU32(entry, 'machine.vdp.vdpFifoStreamWords[]', 0, 0xffffffff),
-	);
-	const vdpFifoStreamWordCount = requireBoundedU32(requireObjectKey(object, 'vdpFifoStreamWordCount', label, 'machine.vdp.vdpFifoStreamWordCount'), 'machine.vdp.vdpFifoStreamWordCount', 0, 0xffffffff);
-	if (vdpFifoStreamWords.length !== vdpFifoStreamWordCount || vdpFifoStreamWordCount > VDP_STREAM_CAPACITY_WORDS) {
-		throw new Error('machine.vdp FIFO ingress state is inconsistent.');
-	}
 	return {
 		xf: decodeVdpXfState(requireObjectKey(object, 'xf', label, 'machine.vdp.xf'), 'machine.vdp.xf'),
 		vdpRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'vdpRegisterWords', label, 'machine.vdp.vdpRegisterWords'), 'machine.vdp.vdpRegisterWords', VDP_REGISTER_COUNT),
@@ -776,11 +794,7 @@ function decodeVdpState(value: unknown, label: string): VdpState {
 		pendingFrame: decodeSubmittedFrameState(requireObjectKey(object, 'pendingFrame', label, 'machine.vdp.pendingFrame'), 'machine.vdp.pendingFrame'),
 		workCarry: requireI64(requireObjectKey(object, 'workCarry', label, 'machine.vdp.workCarry'), 'machine.vdp.workCarry'),
 		availableWorkUnits: requireI32(requireObjectKey(object, 'availableWorkUnits', label, 'machine.vdp.availableWorkUnits'), 'machine.vdp.availableWorkUnits'),
-		dmaSubmitActive: requireBooleanValue(requireObjectKey(object, 'dmaSubmitActive', label, 'machine.vdp.dmaSubmitActive'), 'machine.vdp.dmaSubmitActive'),
-		vdpFifoWordScratch: decodeU8FixedArray(requireObjectKey(object, 'vdpFifoWordScratch', label, 'machine.vdp.vdpFifoWordScratch'), 'machine.vdp.vdpFifoWordScratch', 4),
-		vdpFifoWordByteCount: requireBoundedU32(requireObjectKey(object, 'vdpFifoWordByteCount', label, 'machine.vdp.vdpFifoWordByteCount'), 'machine.vdp.vdpFifoWordByteCount', 0, 3),
-		vdpFifoStreamWords,
-		vdpFifoStreamWordCount,
+		streamIngress: decodeVdpStreamIngressState(requireObjectKey(object, 'streamIngress', label, 'machine.vdp.streamIngress'), 'machine.vdp.streamIngress'),
 		blitterSequence: requireBoundedU32(requireObjectKey(object, 'blitterSequence', label, 'machine.vdp.blitterSequence'), 'machine.vdp.blitterSequence', 0, 0xffffffff),
 		skyboxControl: requireBoundedU32(requireObjectKey(object, 'skyboxControl', label, 'machine.vdp.skyboxControl'), 'machine.vdp.skyboxControl', 0, 0xffffffff),
 		skyboxFaceWords: decodeU32FixedArray(requireObjectKey(object, 'skyboxFaceWords', label, 'machine.vdp.skyboxFaceWords'), 'machine.vdp.skyboxFaceWords', SKYBOX_FACE_WORD_COUNT),

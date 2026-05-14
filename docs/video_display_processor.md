@@ -125,8 +125,8 @@ BEGIN/END stream commands, and unknown packet kinds fault with
 | Unit/path | Work timing | CPU-visible polling/edge |
 |---|---|---|
 | DEX direct command | BEGIN/END/doorbell writes execute admission immediately. Draw commands enqueue retained work; framebuffer rasterization waits for scheduler work units. | `VDP_STATUS_SUBMIT_BUSY`, `VDP_STATUS_SUBMIT_REJECTED`, and fault registers. |
-| DEX FIFO stream | `IO_VDP_FIFO` collects words. `VDP_FIFO_CTRL_SEAL` decodes/replays the sealed stream immediately into submitted-frame state. | FIFO partial words and submitted frames keep submit busy set. |
-| DMA stream | DMA owner opens a submit, copies bytes into VDP stream memory, then seals. The VDP decodes the stream on seal. | Submit busy remains set while DMA submit is active. |
+| DEX FIFO stream | `IO_VDP_FIFO` collects words through the stream-ingress unit. `VDP_FIFO_CTRL_SEAL` decodes/replays the sealed stream immediately into submitted-frame state. | Stream-ingress partial words and submitted frames keep submit busy set. |
+| DMA stream | DMA owner opens the stream-ingress DMA submit latch, copies bytes into VDP stream memory, then seals. The VDP decodes the stream on seal. | Submit busy remains set while DMA submit is active. |
 | Submitted framebuffer work | Scheduler accrues render work units from CPU cycles and advances active DEX work. Work moves from `Executing` to `Ready` when remaining units reach zero. | VBlank presents only `Ready` frames; unfinished frames are held. |
 | SBX | Register-window writes affect live SBX state. Frame seal samples live SBX state. Visible SBX state changes only when a `Ready` frame is presented. | Invalid face sources fault at frame seal; rejected SBX state does not become visible. |
 | BBU | Packet decode/source resolve/instance emit happen during sealed stream replay. Accepted instances are retained in the submitted frame. | Packet faults abort the sealed stream frame through VDP fault registers. |
@@ -172,8 +172,8 @@ Saved VDP state includes:
 
 - DEX registerfile words;
 - DEX build-frame state, active/pending submitted-frame state, render work
-  counters, DMA submit latch, FIFO partial word bytes, FIFO stream words, and
-  blitter sequence;
+  counters, `streamIngress` DMA submit latch, FIFO partial-word bytes, sealed
+  FIFO stream words, and blitter sequence;
 - VDP status/fault words;
 - PMU selected bank and bank words;
 - SBX live face/control words;
@@ -187,11 +187,14 @@ host-side scratch are rebuilt from saved device-visible state.
 ## Owners
 
 - TS VDP device: `src/bmsx/machine/devices/vdp/vdp.ts`
+- TS VDP save-state and stream ingress: `save_state.ts` and `ingress.ts`
 - TS VDP constants/registers: `src/bmsx/machine/devices/vdp/contracts.ts` and
   `registers.ts`
 - TS subunits: `bbu.ts`, `fbm.ts`, `frame.ts`, `pmu.ts`, `sbx.ts`, `vout.ts`,
   and `xf.ts`
 - C++ VDP device: `src/bmsx_cpp/machine/devices/vdp/vdp.cpp/.h`
+- C++ VDP save-state and stream ingress: `save_state.cpp/.h` and
+  `ingress.cpp/.h`
 - C++ VDP constants/registers: `src/bmsx_cpp/machine/devices/vdp/contracts.h`
   and `registers.h`
 - C++ subunits: `bbu.cpp/.h`, `fbm.cpp/.h`, `frame.cpp/.h`, `pmu.cpp/.h`,

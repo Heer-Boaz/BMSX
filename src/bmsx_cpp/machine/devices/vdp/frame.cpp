@@ -234,6 +234,17 @@ std::vector<VdpBbuBillboardEntry> restoreBbuFrameBufferState(const std::vector<V
 
 } // namespace
 
+
+void reserveBuildFrameStorage(VdpBuildingFrame& frame) {
+	frame.queue.reserve(VDP_BLITTER_FIFO_CAPACITY);
+	frame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
+}
+
+void reserveSubmittedFrameStorage(VdpSubmittedFrame& frame) {
+	frame.queue.reserve(VDP_BLITTER_FIFO_CAPACITY);
+	frame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
+}
+
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame) {
 	frame.queue.clear();
 	frame.billboards.clear();

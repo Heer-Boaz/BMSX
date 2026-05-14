@@ -268,9 +268,11 @@ add_library(bmsx_core STATIC
 	machine/devices/vdp/blitter.cpp
 	machine/devices/vdp/fbm.cpp
 	machine/devices/vdp/frame.cpp
+	machine/devices/vdp/ingress.cpp
 	machine/devices/vdp/pmu.cpp
 	machine/devices/vdp/registers.cpp
 	machine/devices/vdp/sbx.cpp
+	machine/devices/vdp/save_state.cpp
 	machine/devices/vdp/vout.cpp
 	machine/devices/vdp/xf.cpp
 	machine/common/hash.cpp

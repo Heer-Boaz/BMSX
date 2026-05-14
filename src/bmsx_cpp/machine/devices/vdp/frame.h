@@ -135,6 +135,8 @@ struct VdpSubmittedFrameSaveState {
 	VdpSkyboxSamples skyboxSamples{};
 };
 
+void reserveBuildFrameStorage(VdpBuildingFrame& frame);
+void reserveSubmittedFrameStorage(VdpSubmittedFrame& frame);
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame);
 VdpBuildingFrameSaveState captureBuildingFrameState(const VdpBuildingFrame& frame);
 void restoreBuildingFrameState(VdpBuildingFrame& frame, const VdpBuildingFrameSaveState& state);

@@ -13,9 +13,11 @@
 #include "machine/devices/vdp/device_output.h"
 #include "machine/devices/vdp/fbm.h"
 #include "machine/devices/vdp/frame.h"
+#include "machine/devices/vdp/ingress.h"
 #include "machine/devices/vdp/pmu.h"
 #include "machine/devices/vdp/registers.h"
 #include "machine/devices/vdp/sbx.h"
+#include "machine/devices/vdp/save_state.h"
 #include "machine/devices/vdp/vout.h"
 #include "machine/devices/vdp/vram_garbage.h"
 #include "machine/devices/vdp/xf.h"
@@ -26,42 +28,6 @@ namespace bmsx {
 
 class ImgDecController;
 class VDP;
-
-struct VdpState {
-	VdpXfState xf{};
-	std::array<u32, VDP_REGISTER_COUNT> vdpRegisterWords{};
-	VdpBuildingFrameSaveState buildFrame;
-	VdpSubmittedFrameSaveState activeFrame;
-	VdpSubmittedFrameSaveState pendingFrame;
-	i64 workCarry = 0;
-	int availableWorkUnits = 0;
-	bool dmaSubmitActive = false;
-	std::array<u8, 4> vdpFifoWordScratch{{0, 0, 0, 0}};
-	int vdpFifoWordByteCount = 0;
-	std::vector<u32> vdpFifoStreamWords;
-	u32 vdpFifoStreamWordCount = 0;
-	u32 blitterSequence = 0;
-	u32 skyboxControl = 0;
-	VdpSbxUnit::FaceWords skyboxFaceWords{};
-	u32 pmuSelectedBank = 0;
-	VdpPmuUnit::BankWords pmuBankWords{};
-	i32 ditherType = 0;
-	u32 vdpFaultCode = VDP_FAULT_NONE;
-	u32 vdpFaultDetail = 0;
-};
-
-struct VdpSurfacePixelsState {
-	uint32_t surfaceId = 0;
-	uint32_t surfaceWidth = 0;
-	uint32_t surfaceHeight = 0;
-	std::vector<u8> pixels;
-};
-
-struct VdpSaveState : VdpState {
-	std::vector<u8> vramStaging;
-	std::vector<VdpSurfacePixelsState> surfacePixels;
-	std::vector<u8> displayFrameBufferPixels;
-};
 
 struct VdpFrameBufferSize {
 	uint32_t width = 0;
@@ -206,12 +172,8 @@ private:
 	int64_t m_workUnitsPerSec = 1;
 	int64_t m_workCarry = 0;
 	int m_availableWorkUnits = 0;
-	bool m_dmaSubmitActive = false;
 	std::array<u32, VDP_CMD_ARG_COUNT> m_vdpRegisters{};
-	std::array<u8, 4> m_vdpFifoWordScratch{{0, 0, 0, 0}};
-	int m_vdpFifoWordByteCount = 0;
-	std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
-	u32 m_vdpFifoStreamWordCount = 0;
+	VdpStreamIngressUnit m_streamIngress;
 	BuildingFrame m_buildFrame;
 	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
@@ -276,7 +238,6 @@ private:
 	void copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 priority, u32 seq);
 	void presentFrameBufferPageOnVblankEdge();
 	void scheduleNextService(int64_t nowCycles);
-	bool hasOpenDirectVdpFifoIngress() const;
 	bool hasBlockedSubmitPath() const;
 		void refreshSubmitBusyStatus();
 		void resetVdpRegisters();
@@ -298,7 +259,7 @@ private:
 		bool enqueueLatchedCopyRect();
 	void pushVdpFifoWord(u32 word);
 	bool consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
-	void consumeSealedVdpWordStream(u32 wordCount);
+	void consumeSealedVdpWordStream(const u32* words, u32 wordCount);
 	void sealVdpFifoTransfer();
 	void latchPayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
 	void latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
@@ -326,8 +287,8 @@ private:
 	bool appendTileRunSource(BlitterCommand& command, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow);
 	u32 consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end);
 	u32 consumeXfPacketFromMemory(u32 word, u32 cursor, u32 end);
-	u32 consumeReplayPacketFromWords(u32 word, u32 cursor, u32 wordCount);
-	u32 consumeXfPacketFromWords(u32 word, u32 cursor, u32 wordCount);
+	u32 consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);
+	u32 consumeXfPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);
 	u32 decodeReg1Packet(u32 word) const;
 	struct RegnPacket {
 		u32 firstRegister = 0;

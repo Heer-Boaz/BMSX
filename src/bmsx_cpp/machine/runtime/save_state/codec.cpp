@@ -830,6 +830,34 @@ VdpSubmittedFrameSaveState decodeSubmittedFrameState(const BinValue& value, cons
 	return state;
 }
 
+BinValue encodeVdpStreamIngressState(const VdpStreamIngressState& state) {
+	BinObject object;
+	object["dmaSubmitActive"] = state.dmaSubmitActive;
+	object["fifoWordScratch"] = encodeFixedArray(state.fifoWordScratch, encodeScalar<i64, u8>);
+	object["fifoWordByteCount"] = static_cast<i64>(state.fifoWordByteCount);
+	object["fifoStreamWords"] = encodeVector<u32>(state.fifoStreamWords, encodeScalar<i64, u32>);
+	object["fifoStreamWordCount"] = static_cast<i64>(state.fifoStreamWordCount);
+	return BinValue(std::move(object));
+}
+
+VdpStreamIngressState decodeVdpStreamIngressState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpStreamIngressState state;
+	state.dmaSubmitActive = requireBool(requireField(object, "dmaSubmitActive", label), "machine.vdp.streamIngress.dmaSubmitActive");
+	state.fifoWordScratch = decodeU8Array<4>(requireField(object, "fifoWordScratch", label), "machine.vdp.streamIngress.fifoWordScratch");
+	state.fifoWordByteCount = requireI32(requireField(object, "fifoWordByteCount", label), "machine.vdp.streamIngress.fifoWordByteCount");
+	state.fifoStreamWords = decodeVector<u32>(
+		requireField(object, "fifoStreamWords", label),
+		"machine.vdp.streamIngress.fifoStreamWords",
+		[](const BinValue& entry, size_t) { return requireU32(entry, "machine.vdp.streamIngress.fifoStreamWords[]"); }
+	);
+	state.fifoStreamWordCount = requireU32(requireField(object, "fifoStreamWordCount", label), "machine.vdp.streamIngress.fifoStreamWordCount");
+	if (state.fifoWordByteCount < 0 || state.fifoWordByteCount > 3 || state.fifoStreamWords.size() != state.fifoStreamWordCount || state.fifoStreamWordCount > VDP_STREAM_CAPACITY_WORDS) {
+		throw BMSX_RUNTIME_ERROR("[save-state] machine.vdp.streamIngress state is inconsistent.");
+	}
+	return state;
+}
+
 BinValue encodeVdpState(const VdpState& state) {
 	BinObject object;
 	object["xf"] = encodeVdpXfState(state.xf);
@@ -839,11 +867,7 @@ BinValue encodeVdpState(const VdpState& state) {
 	object["pendingFrame"] = encodeSubmittedFrameState(state.pendingFrame);
 	object["workCarry"] = static_cast<i64>(state.workCarry);
 	object["availableWorkUnits"] = static_cast<i64>(state.availableWorkUnits);
-	object["dmaSubmitActive"] = state.dmaSubmitActive;
-	object["vdpFifoWordScratch"] = encodeFixedArray(state.vdpFifoWordScratch, encodeScalar<i64, u8>);
-	object["vdpFifoWordByteCount"] = static_cast<i64>(state.vdpFifoWordByteCount);
-	object["vdpFifoStreamWords"] = encodeVector<u32>(state.vdpFifoStreamWords, encodeScalar<i64, u32>);
-	object["vdpFifoStreamWordCount"] = static_cast<i64>(state.vdpFifoStreamWordCount);
+	object["streamIngress"] = encodeVdpStreamIngressState(state.streamIngress);
 	object["blitterSequence"] = static_cast<i64>(state.blitterSequence);
 	object["skyboxControl"] = static_cast<i64>(state.skyboxControl);
 	object["skyboxFaceWords"] = encodeFixedArray(state.skyboxFaceWords, encodeScalar<i64, u32>);
@@ -865,18 +889,7 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 	state.pendingFrame = decodeSubmittedFrameState(requireField(object, "pendingFrame", label), "machine.vdp.pendingFrame");
 	state.workCarry = requireI64(requireField(object, "workCarry", label), "machine.vdp.workCarry");
 	state.availableWorkUnits = requireI32(requireField(object, "availableWorkUnits", label), "machine.vdp.availableWorkUnits");
-	state.dmaSubmitActive = requireBool(requireField(object, "dmaSubmitActive", label), "machine.vdp.dmaSubmitActive");
-	state.vdpFifoWordScratch = decodeU8Array<4>(requireField(object, "vdpFifoWordScratch", label), "machine.vdp.vdpFifoWordScratch");
-	state.vdpFifoWordByteCount = requireI32(requireField(object, "vdpFifoWordByteCount", label), "machine.vdp.vdpFifoWordByteCount");
-	state.vdpFifoStreamWords = decodeVector<u32>(
-		requireField(object, "vdpFifoStreamWords", label),
-		"machine.vdp.vdpFifoStreamWords",
-		[](const BinValue& entry, size_t) { return requireU32(entry, "machine.vdp.vdpFifoStreamWords[]"); }
-	);
-	state.vdpFifoStreamWordCount = requireU32(requireField(object, "vdpFifoStreamWordCount", label), "machine.vdp.vdpFifoStreamWordCount");
-	if (state.vdpFifoWordByteCount < 0 || state.vdpFifoWordByteCount > 3 || state.vdpFifoStreamWords.size() != state.vdpFifoStreamWordCount || state.vdpFifoStreamWordCount > VDP_STREAM_CAPACITY_WORDS) {
-		throw BMSX_RUNTIME_ERROR("[save-state] machine.vdp FIFO ingress state is inconsistent.");
-	}
+	state.streamIngress = decodeVdpStreamIngressState(requireField(object, "streamIngress", label), "machine.vdp.streamIngress");
 	state.blitterSequence = requireU32(requireField(object, "blitterSequence", label), "machine.vdp.blitterSequence");
 	state.skyboxControl = requireU32(requireField(object, "skyboxControl", label), "machine.vdp.skyboxControl");
 	state.skyboxFaceWords = decodeU32Array<SKYBOX_FACE_WORD_COUNT>(requireField(object, "skyboxFaceWords", label), "machine.vdp.skyboxFaceWords");
@@ -931,11 +944,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	state.pendingFrame = base.pendingFrame;
 	state.workCarry = base.workCarry;
 	state.availableWorkUnits = base.availableWorkUnits;
-	state.dmaSubmitActive = base.dmaSubmitActive;
-	state.vdpFifoWordScratch = base.vdpFifoWordScratch;
-	state.vdpFifoWordByteCount = base.vdpFifoWordByteCount;
-	state.vdpFifoStreamWords = base.vdpFifoStreamWords;
-	state.vdpFifoStreamWordCount = base.vdpFifoStreamWordCount;
+	state.streamIngress = base.streamIngress;
 	state.blitterSequence = base.blitterSequence;
 	state.vdpFaultCode = base.vdpFaultCode;
 	state.vdpFaultDetail = base.vdpFaultDetail;

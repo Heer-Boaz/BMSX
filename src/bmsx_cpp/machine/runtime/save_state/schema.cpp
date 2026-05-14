@@ -277,11 +277,12 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"frameBufferHeight",
 	"skyboxSamples",
 	"slot",
+	"streamIngress",
 	"dmaSubmitActive",
-	"vdpFifoWordScratch",
-	"vdpFifoWordByteCount",
-	"vdpFifoStreamWords",
-	"vdpFifoStreamWordCount",
+	"fifoWordScratch",
+	"fifoWordByteCount",
+	"fifoStreamWords",
+	"fifoStreamWordCount",
 	"blitterSequence",
 };
 

@@ -229,11 +229,13 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					pendingFrame: createSubmittedFrameState(),
 					workCarry: 12,
 					availableWorkUnits: 3,
-					dmaSubmitActive: true,
-					vdpFifoWordScratch: [1, 2, 3, 4],
-					vdpFifoWordByteCount: 2,
-					vdpFifoStreamWords: [0x12345678],
-					vdpFifoStreamWordCount: 1,
+					streamIngress: {
+						dmaSubmitActive: true,
+						fifoWordScratch: [1, 2, 3, 4],
+						fifoWordByteCount: 2,
+						fifoStreamWords: [0x12345678],
+						fifoStreamWordCount: 1,
+					},
 					blitterSequence: 5,
 					skyboxControl: 5,
 					skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),
@@ -310,8 +312,8 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
 	assert.deepEqual(decoded.machineState.machine.input, state.machineState.machine.input);
 	assert.deepEqual(decoded.machineState.machine.vdp.activeFrame, state.machineState.machine.vdp.activeFrame);
-	assert.deepEqual(decoded.machineState.machine.vdp.vdpFifoWordScratch, state.machineState.machine.vdp.vdpFifoWordScratch);
-	assert.deepEqual(decoded.machineState.machine.vdp.vdpFifoStreamWords, state.machineState.machine.vdp.vdpFifoStreamWords);
+	assert.deepEqual(decoded.machineState.machine.vdp.streamIngress.fifoWordScratch, state.machineState.machine.vdp.streamIngress.fifoWordScratch);
+	assert.deepEqual(decoded.machineState.machine.vdp.streamIngress.fifoStreamWords, state.machineState.machine.vdp.streamIngress.fifoStreamWords);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
 	assert.deepEqual(decoded.machineState.machine.vdp.surfacePixels, state.machineState.machine.vdp.surfacePixels);
 });

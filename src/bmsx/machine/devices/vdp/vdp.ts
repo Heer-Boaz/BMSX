@@ -108,7 +108,6 @@ import {
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
 	VDP_STREAM_BUFFER_SIZE,
-	VDP_STREAM_CAPACITY_WORDS,
 	IO_WORD_SIZE,
 } from '../../memory/map';
 import {
@@ -135,7 +134,6 @@ import {
 	VDP_XF_REGISTER_WORDS,
 	VDP_XF_PACKET_KIND,
 	VdpXfUnit,
-	type VdpXfState,
 } from './xf';
 import { VdpVoutUnit } from './vout';
 import { decodeSignedQ16_16 } from './fixed_point';
@@ -166,10 +164,8 @@ import {
 	VDP_SUBMITTED_FRAME_QUEUED,
 	VDP_SUBMITTED_FRAME_READY,
 	type VdpBuildingFrameState,
-	type VdpBuildingFrameSaveState,
 	type VdpDexFrameState,
 	type VdpSubmittedFrame,
-	type VdpSubmittedFrameSaveState,
 	allocateSubmittedFrameSlot,
 	captureBuildingFrameState,
 	createResolvedBlitterSamples,
@@ -232,48 +228,14 @@ import {
 	type VdpSurfaceUploadSlot,
 } from './device_output';
 import { VdpFbmUnit } from './fbm';
+import { VdpStreamIngressUnit } from './ingress';
+import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from './save_state';
 
 export type {
 	VdpBlitterCommandBuffer as VdpBlitterCommand,
 	VdpBlitterSource,
 	VdpResolvedBlitterSample,
 } from './blitter';
-
-export type VdpState = {
-	xf: VdpXfState;
-	vdpRegisterWords: number[];
-	buildFrame: VdpBuildingFrameSaveState;
-	activeFrame: VdpSubmittedFrameSaveState;
-	pendingFrame: VdpSubmittedFrameSaveState;
-	workCarry: number;
-	availableWorkUnits: number;
-	dmaSubmitActive: boolean;
-	vdpFifoWordScratch: number[];
-	vdpFifoWordByteCount: number;
-	vdpFifoStreamWords: number[];
-	vdpFifoStreamWordCount: number;
-	blitterSequence: number;
-	skyboxControl: number;
-	skyboxFaceWords: number[];
-	pmuSelectedBank: number;
-	pmuBankWords: number[];
-	ditherType: number;
-	vdpFaultCode: number;
-	vdpFaultDetail: number;
-};
-
-export type VdpSurfacePixelsState = {
-	surfaceId: number;
-	surfaceWidth: number;
-	surfaceHeight: number;
-	pixels: Uint8Array;
-};
-
-export type VdpSaveState = VdpState & {
-	vramStaging: Uint8Array;
-	surfacePixels: VdpSurfacePixelsState[];
-	displayFrameBufferPixels: Uint8Array;
-};
 
 export type VdpEntropySeeds = {
 	machineSeed: number;
@@ -393,12 +355,8 @@ export class VDP implements VramWriteSink {
 	private availableWorkUnits = 0;
 	private readonly budgetAccrual: BudgetAccrual = { wholeUnits: 0, carry: 0 };
 	private readonly fault: DeviceStatusLatch;
-	private dmaSubmitActive = false;
 	private readonly vdpRegisters = new Uint32Array(VDP_REGISTER_COUNT);
-	private readonly vdpFifoWordScratch = new Uint8Array(4);
-	private vdpFifoWordByteCount = 0;
-	private readonly vdpFifoStreamWords = new Uint32Array(VDP_STREAM_CAPACITY_WORDS);
-	private vdpFifoStreamWordCount = 0;
+	private readonly streamIngress = new VdpStreamIngressUnit();
 	public lastFrameCommitted = true;
 	public lastFrameCost = 0;
 	public lastFrameHeld = false;
@@ -476,9 +434,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	public resetIngressState(): void {
-		this.vdpFifoWordByteCount = 0;
-		this.vdpFifoStreamWordCount = 0;
-		this.dmaSubmitActive = false;
+		this.streamIngress.reset();
 		this.refreshSubmitBusyStatus();
 	}
 
@@ -665,12 +621,12 @@ export class VDP implements VramWriteSink {
 	}
 
 	public beginDmaSubmit(): void {
-		this.dmaSubmitActive = true;
+		this.streamIngress.beginDmaSubmit();
 		this.acceptSubmitAttempt();
 	}
 
 	public endDmaSubmit(): void {
-		this.dmaSubmitActive = false;
+		this.streamIngress.endDmaSubmit();
 		this.refreshSubmitBusyStatus();
 	}
 
@@ -681,30 +637,17 @@ export class VDP implements VramWriteSink {
 	}
 
 	public writeVdpFifoBytes(bytes: Uint8Array): void {
-		for (let index = 0; index < bytes.byteLength; index += 1) {
-			this.vdpFifoWordScratch[this.vdpFifoWordByteCount] = bytes[index]!;
-			this.vdpFifoWordByteCount += 1;
-			if (this.vdpFifoWordByteCount !== 4) {
-				continue;
-			}
-			const word = (
-				this.vdpFifoWordScratch[0]
-				| (this.vdpFifoWordScratch[1] << 8)
-				| (this.vdpFifoWordScratch[2] << 16)
-				| (this.vdpFifoWordScratch[3] << 24)
-			) >>> 0;
-			this.vdpFifoWordByteCount = 0;
-			this.pushVdpFifoWord(word);
+		const overflowDetail = this.streamIngress.writeBytes(bytes);
+		if (overflowDetail !== 0) {
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, overflowDetail);
+			this.resetIngressState();
+			return;
 		}
 		this.refreshSubmitBusyStatus();
 	}
 
-	private hasOpenDirectVdpFifoIngress(): boolean {
-		return this.vdpFifoWordByteCount !== 0 || this.vdpFifoStreamWordCount !== 0;
-	}
-
 	private hasBlockedSubmitPath(): boolean {
-		return this.hasOpenDirectVdpFifoIngress() || this.dmaSubmitActive || this.buildFrame.state !== VDP_DEX_FRAME_IDLE || !this.canAcceptSubmittedFrame();
+		return this.streamIngress.hasOpenDirectFifoIngress() || this.streamIngress.dmaSubmitActive || this.buildFrame.state !== VDP_DEX_FRAME_IDLE || !this.canAcceptSubmittedFrame();
 	}
 
 	private refreshSubmitBusyStatus(): void {
@@ -712,13 +655,12 @@ export class VDP implements VramWriteSink {
 	}
 
 	private pushVdpFifoWord(word: number): void {
-		if (this.vdpFifoStreamWordCount >= VDP_STREAM_CAPACITY_WORDS) {
-			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, this.vdpFifoStreamWordCount + 1);
+		const overflowDetail = this.streamIngress.pushWord(word);
+		if (overflowDetail !== 0) {
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, overflowDetail);
 			this.resetIngressState();
 			return;
 		}
-		this.vdpFifoStreamWords[this.vdpFifoStreamWordCount] = word >>> 0;
-		this.vdpFifoStreamWordCount += 1;
 		this.refreshSubmitBusyStatus();
 	}
 
@@ -774,7 +716,7 @@ export class VDP implements VramWriteSink {
 		return accepted;
 	}
 
-	private consumeSealedVdpWordStream(wordCount: number): void {
+	private consumeSealedVdpWordStream(words: Uint32Array, wordCount: number): void {
 		if (this.buildFrame.state !== VDP_DEX_FRAME_IDLE) {
 			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, VDP_CMD_BEGIN_FRAME);
 			this.cancelSubmittedFrame();
@@ -786,7 +728,7 @@ export class VDP implements VramWriteSink {
 		}
 		let ended = false;
 		while (cursor < wordCount) {
-			const word = this.vdpFifoStreamWords[cursor] >>> 0;
+			const word = words[cursor] >>> 0;
 			cursor += 1;
 			if (word === VDP_PKT_END) {
 				if (cursor !== wordCount) {
@@ -797,7 +739,7 @@ export class VDP implements VramWriteSink {
 				ended = true;
 				break;
 			}
-			const next = this.consumeReplayPacketFromWords(word, cursor, wordCount);
+			const next = this.consumeReplayPacketFromWords(words, word, cursor, wordCount);
 			if (next < 0) {
 				this.cancelSubmittedFrame();
 				return;
@@ -816,15 +758,15 @@ export class VDP implements VramWriteSink {
 	}
 
 	private sealVdpFifoTransfer(): void {
-		if (this.vdpFifoWordByteCount !== 0) {
-			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, this.vdpFifoWordByteCount);
+		if (this.streamIngress.fifoWordByteCount !== 0) {
+			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, this.streamIngress.fifoWordByteCount);
 			this.resetIngressState();
 			return;
 		}
-		if (this.vdpFifoStreamWordCount === 0) {
+		if (this.streamIngress.fifoStreamWordCount === 0) {
 			return;
 		}
-		this.consumeSealedVdpWordStream(this.vdpFifoStreamWordCount);
+		this.consumeSealedVdpWordStream(this.streamIngress.fifoStreamWords, this.streamIngress.fifoStreamWordCount);
 		this.resetIngressState();
 	}
 
@@ -949,7 +891,7 @@ export class VDP implements VramWriteSink {
 		return payloadEnd;
 	}
 
-	private consumeReplayPacketFromWords(word: number, cursor: number, wordCount: number): number {
+	private consumeReplayPacketFromWords(words: Uint32Array, word: number, cursor: number, wordCount: number): number {
 		const kind = word & VDP_PKT_KIND_MASK;
 		switch (kind) {
 			case VDP_PKT_CMD:
@@ -960,7 +902,7 @@ export class VDP implements VramWriteSink {
 					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
-				return this.writeVdpRegister(register, this.vdpFifoStreamWords[cursor]) ? cursor + 1 : -1;
+				return this.writeVdpRegister(register, words[cursor]) ? cursor + 1 : -1;
 			}
 			case VDP_PKT_REGN: {
 				const packet = this.decodeRegnPacket(word);
@@ -969,7 +911,7 @@ export class VDP implements VramWriteSink {
 					return -1;
 				}
 				for (let offset = 0; offset < packet.count; offset += 1) {
-					if (!this.writeVdpRegister(packet.firstRegister + offset, this.vdpFifoStreamWords[cursor + offset])) {
+					if (!this.writeVdpRegister(packet.firstRegister + offset, words[cursor + offset])) {
 						return -1;
 					}
 				}
@@ -980,32 +922,32 @@ export class VDP implements VramWriteSink {
 					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
-				if (this.vdpFifoStreamWords[cursor + 10] !== 0) {
-					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, this.vdpFifoStreamWords[cursor + 10]);
+				if (words[cursor + 10] !== 0) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, words[cursor + 10]);
 					return -1;
 				}
 				return this.latchBillboardPacket(this.bbu.decodePacket(
-					this.vdpFifoStreamWords[cursor],
-					this.vdpFifoStreamWords[cursor + 1],
-					this.vdpFifoStreamWords[cursor + 2],
-					this.vdpFifoStreamWords[cursor + 3],
-					this.vdpFifoStreamWords[cursor + 4],
-					this.vdpFifoStreamWords[cursor + 5],
-					this.vdpFifoStreamWords[cursor + 6],
-					this.vdpFifoStreamWords[cursor + 7],
-					this.vdpFifoStreamWords[cursor + 8],
-					this.vdpFifoStreamWords[cursor + 9],
+					words[cursor],
+					words[cursor + 1],
+					words[cursor + 2],
+					words[cursor + 3],
+					words[cursor + 4],
+					words[cursor + 5],
+					words[cursor + 6],
+					words[cursor + 7],
+					words[cursor + 8],
+					words[cursor + 9],
 				)) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : -1;
 			case VDP_XF_PACKET_KIND:
-				return this.consumeXfPacketFromWords(word, cursor, wordCount);
+				return this.consumeXfPacketFromWords(words, word, cursor, wordCount);
 			case VDP_SBX_PACKET_KIND:
 				if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
 					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
-				const faceWords = this.sbx.beginPacket(this.vdpFifoStreamWords[cursor]);
+				const faceWords = this.sbx.beginPacket(words[cursor]);
 				for (let index = 0; index < SKYBOX_FACE_WORD_COUNT; index += 1) {
-					faceWords[index] = this.vdpFifoStreamWords[cursor + index + 1];
+					faceWords[index] = words[cursor + index + 1];
 				}
 				this.sbx.commitPacket();
 				return cursor + VDP_SBX_PACKET_PAYLOAD_WORDS;
@@ -1015,7 +957,7 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	private consumeXfPacketFromWords(word: number, cursor: number, wordCount: number): number {
+	private consumeXfPacketFromWords(words: Uint32Array, word: number, cursor: number, wordCount: number): number {
 		if (vdpUnitPacketHasFlags(word)) {
 			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
@@ -1025,14 +967,14 @@ export class VDP implements VramWriteSink {
 			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
 		}
-		const firstRegister = this.vdpFifoStreamWords[cursor];
+		const firstRegister = words[cursor];
 		const registerCount = payloadWords - 1;
 		if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
 			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
 			return -1;
 		}
 		for (let offset = 0; offset < registerCount; offset += 1) {
-			const value = this.vdpFifoStreamWords[cursor + offset + 1];
+			const value = words[cursor + offset + 1];
 			if (!this.xf.writeRegister(firstRegister + offset, value)) {
 				this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
 				return -1;
@@ -1132,7 +1074,7 @@ export class VDP implements VramWriteSink {
 	}
 
 	private onVdpFifoWrite(): void {
-		if (this.dmaSubmitActive || this.buildFrame.state !== VDP_DEX_FRAME_IDLE || (!this.hasOpenDirectVdpFifoIngress() && !this.canAcceptSubmittedFrame())) {
+		if (this.streamIngress.dmaSubmitActive || this.buildFrame.state !== VDP_DEX_FRAME_IDLE || (!this.streamIngress.hasOpenDirectFifoIngress() && !this.canAcceptSubmittedFrame())) {
 			this.rejectBusySubmitAttempt(this.memory.readIoU32(IO_VDP_FIFO));
 			return;
 		}
@@ -1144,7 +1086,7 @@ export class VDP implements VramWriteSink {
 		if ((this.memory.readIoU32(IO_VDP_FIFO_CTRL) & VDP_FIFO_CTRL_SEAL) === 0) {
 			return;
 		}
-		if (this.dmaSubmitActive) {
+		if (this.streamIngress.dmaSubmitActive) {
 			this.rejectBusySubmitAttempt(VDP_FIFO_CTRL_SEAL);
 			return;
 		}
@@ -2421,11 +2363,7 @@ export class VDP implements VramWriteSink {
 			pendingFrame: captureSubmittedFrameState(this.pendingFrame),
 			workCarry: this.workCarry,
 			availableWorkUnits: this.availableWorkUnits,
-			dmaSubmitActive: this.dmaSubmitActive,
-			vdpFifoWordScratch: Array.from(this.vdpFifoWordScratch),
-			vdpFifoWordByteCount: this.vdpFifoWordByteCount,
-			vdpFifoStreamWords: Array.from(this.vdpFifoStreamWords.subarray(0, this.vdpFifoStreamWordCount)),
-			vdpFifoStreamWordCount: this.vdpFifoStreamWordCount,
+			streamIngress: this.streamIngress.captureState(),
 			blitterSequence: this.blitterSequence,
 			skyboxControl: this.sbx.liveControlWord,
 			skyboxFaceWords: this.sbx.captureLiveFaceWords(),
@@ -2454,11 +2392,7 @@ export class VDP implements VramWriteSink {
 		restoreSubmittedFrameState(this.pendingFrame, state.pendingFrame);
 		this.workCarry = state.workCarry;
 		this.availableWorkUnits = state.availableWorkUnits;
-		this.dmaSubmitActive = state.dmaSubmitActive;
-		this.vdpFifoWordScratch.set(state.vdpFifoWordScratch);
-		this.vdpFifoWordByteCount = state.vdpFifoWordByteCount;
-		this.vdpFifoStreamWords.set(state.vdpFifoStreamWords);
-		this.vdpFifoStreamWordCount = state.vdpFifoStreamWordCount;
+		this.streamIngress.restoreState(state.streamIngress);
 		this.blitterSequence = state.blitterSequence;
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
 			this.memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, this.vdpRegisters[index]);

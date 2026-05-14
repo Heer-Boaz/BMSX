@@ -86,9 +86,9 @@ Saved:
 - CPU registers, stack/frame/root runtime values, string pool ownership, RAM/IO
   state, scheduler/VBlank state, device registerfiles/latches/FIFOs/buffers, and
   device-visible memory.
-- VDP registerfile, DEX build/submitted-frame state, FIFO ingress latches,
-  surfaces, display/readback pixels, and PMU/SBX/BBU/VOUT state that determines
-  future output.
+- VDP registerfile, DEX build/submitted-frame state, named stream-ingress
+  latches/FIFO words, surfaces, display/readback pixels, and PMU/SBX/BBU/VOUT
+  state that determines future output.
 - APU command/source/output state that determines future audio output,
   including active AOUT voice position, gain-ramp, filter history, and BADP
   decoder state.
@@ -137,7 +137,9 @@ Cart-visible ingress:
 Internal units:
 
 - `registers` owns the raw VDP registerfile and MMIO-visible status/fault words.
-- `DEX` owns direct/stream ingress state and submit admission.
+- `DEX` owns direct/stream frame state and submit admission.
+- `streamIngress` owns the DMA submit latch, FIFO partial-word bytes, and sealed
+  FIFO packet words.
 - `PMU` owns bank registers, selected bank, and BLIT resolve state.
 - `SBX` owns skybox register-window staging, packet staging, frame seal, and
   sampled face words.
@@ -149,7 +151,12 @@ Internal units:
   beam position, and retained `VdpDeviceOutput`.
 
 Host render backends consume VOUT output transactions. They do not receive cart
-intent such as sprites, rectangles, labels, or scene objects.
+intent such as sprites, rectangles, labels, or scene objects. VDP save-state
+record shapes live in dedicated `machine/devices/vdp/save_state` files on both
+runtimes; the stream-ingress latch/buffer owner lives in mirrored
+`machine/devices/vdp/ingress` files. C++ keeps VDP capture/restore method bodies
+in the VDP save-state translation unit; TS keeps those methods at the
+private-field device boundary and imports only the save-state record shapes.
 
 ### APU and AOUT
 
@@ -310,8 +317,9 @@ should be deleted.
 
 ## Active work queue
 
-1. Continue VDP subunit state-machine tightening where FIFO/DMA ingress still
-   uses loose counters/latches rather than one named ingress state.
+1. Continue VDP hardware-unit cleanup where FBM/readback surface restore still
+   lives at the main VDP private-field boundary; move only when the owning
+   framebuffer/readback unit can own the state directly without a facade.
 2. Continue APU/AOUT proof around BADP fixture coverage and selected-slot
    mutation while a decoder-backed voice is active.
 3. Keep save-state proof expanding through device-visible state, not host queues.
