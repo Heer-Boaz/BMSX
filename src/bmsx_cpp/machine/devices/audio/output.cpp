@@ -4,6 +4,8 @@
 
 #include "machine/devices/audio/output.h"
 
+#include "common/endian.h"
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -27,17 +29,6 @@ static constexpr i32 BADP_INDEX_TABLE[16] = {
 	-1, -1, -1, -1, 2, 4, 6, 8,
 	-1, -1, -1, -1, 2, 4, 6, 8,
 };
-
-static inline u16 readLE16Audio(const u8* data) {
-	return static_cast<u16>(data[0]) | (static_cast<u16>(data[1]) << 8);
-}
-
-static inline u32 readLE32Audio(const u8* data) {
-	return static_cast<u32>(data[0])
-		| (static_cast<u32>(data[1]) << 8)
-		| (static_cast<u32>(data[2]) << 16)
-		| (static_cast<u32>(data[3]) << 24);
-}
 
 static constexpr size_t BADP_HEADER_SIZE = 48;
 static constexpr u16 BADP_VERSION = 1;
@@ -85,8 +76,8 @@ static ApuOutputStartResult validateBadpBlocks(const u8* data, const ApuAudioSou
 		if (offset + 4u > static_cast<size_t>(source.dataBytes)) {
 			return {APU_FAULT_OUTPUT_BLOCK, static_cast<u32>(offset)};
 		}
-		const size_t blockFrames = static_cast<size_t>(readLE16Audio(data + blockOffset));
-		const size_t blockBytes = static_cast<size_t>(readLE16Audio(data + blockOffset + 2u));
+		const size_t blockFrames = static_cast<size_t>(readLE16(data + blockOffset));
+		const size_t blockBytes = static_cast<size_t>(readLE16(data + blockOffset + 2u));
 		if (blockFrames == 0u) {
 			return {APU_FAULT_OUTPUT_BLOCK, static_cast<u32>(offset)};
 		}
@@ -126,17 +117,17 @@ static BadpSeekTableResult readBadpSeekTable(const u8* data, size_t size, const 
 		result.startResult = {APU_FAULT_UNSUPPORTED_FORMAT, static_cast<u32>(size)};
 		return result;
 	}
-	const u16 version = readLE16Audio(data + 4);
+	const u16 version = readLE16(data + 4);
 	if (version != BADP_VERSION) {
 		result.startResult = {APU_FAULT_UNSUPPORTED_FORMAT, version};
 		return result;
 	}
-	const u32 channels = readLE16Audio(data + 6);
-	const u32 sampleRate = readLE32Audio(data + 8);
-	const u32 frames = readLE32Audio(data + 12);
-	const u32 seekEntryCount = readLE32Audio(data + 28);
-	const u32 seekTableOffset = readLE32Audio(data + 32);
-	const u32 dataOffset = readLE32Audio(data + 36);
+	const u32 channels = readLE16(data + 6);
+	const u32 sampleRate = readLE32(data + 8);
+	const u32 frames = readLE32(data + 12);
+	const u32 seekEntryCount = readLE32(data + 28);
+	const u32 seekTableOffset = readLE32(data + 32);
+	const u32 dataOffset = readLE32(data + 36);
 	if (channels != source.channels || sampleRate != source.sampleRateHz || frames != source.frameCount || dataOffset != source.dataOffset) {
 		result.startResult = {APU_FAULT_OUTPUT_METADATA, dataOffset};
 		return result;
@@ -163,8 +154,8 @@ static BadpSeekTableResult readBadpSeekTable(const u8* data, size_t size, const 
 	if (seekEntryCount > 0) {
 		size_t cursor = static_cast<size_t>(seekTableOffset);
 		for (size_t i = 0; i < seekCount; i += 1) {
-			result.frames[i] = readLE32Audio(data + cursor);
-			result.offsets[i] = readLE32Audio(data + cursor + 4);
+			result.frames[i] = readLE32(data + cursor);
+			result.offsets[i] = readLE32(data + cursor + 4);
 			cursor += 8;
 		}
 	} else {
@@ -209,11 +200,11 @@ static inline bool audioPositionIsInteger(f64 position) {
 	return position == static_cast<f64>(audioFrameIndex(position));
 }
 
-static inline i16 readPcmSample(const i16* samples16, const u8* samples8, bool is16Bit, size_t sampleIndex) {
+static inline i16 readPcmSample(const u8* data, bool is16Bit, size_t sampleIndex) {
 	if (is16Bit) {
-		return samples16[sampleIndex];
+		return readI16LE(data + sampleIndex * 2u);
 	}
-	return static_cast<i16>(static_cast<int>(samples8[sampleIndex]) - 128) << 8;
+	return static_cast<i16>(static_cast<int>(data[sampleIndex]) - 128) << 8;
 }
 
 static inline void audioSamplePosition(f64 position, i64& index, f64& frac, size_t& index0) {
@@ -231,8 +222,11 @@ static inline i64 wrappedAudioIndex(i64 index, f64 loopStart, f64 loopEnd) {
 }
 
 static inline void wrapAudioPosition(f64& position, f64 loopStart, f64 loopEnd, f64 loopLen) {
-	if (position >= loopEnd) {
+	if (position < loopStart || position >= loopEnd) {
 		position = loopStart + std::fmod(position - loopStart, loopLen);
+		if (position < loopStart) {
+			position += loopLen;
+		}
 	}
 }
 
@@ -427,8 +421,6 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 				continue;
 			}
 			const bool is16Bit = record.bitsPerSample == 16;
-			const i16* samples16 = reinterpret_cast<const i16*>(data);
-			const u8* samples8 = data;
 
 				const bool hasLoopStart = record.loopStartFrame.has_value();
 				const f64 loopStart = hasLoopStart ? *record.loopStartFrame : 0.0;
@@ -475,12 +467,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 							break;
 						}
 					if (hasLoop) {
-						if (position < loopStart || position >= loopEnd) {
-							position = loopStart + std::fmod(position - loopStart, loopLen);
-							if (position < loopStart) {
-								position += loopLen;
-							}
-						}
+						wrapAudioPosition(position, loopStart, loopEnd, loopLen);
 					} else if (position >= framesInRecordF) {
 						ended = true;
 						break;
@@ -528,6 +515,10 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 
 				if (fastPath) {
 					size_t posIndex = static_cast<size_t>(position);
+					if (hasLoop) {
+						wrapAudioPosition(position, loopStart, loopEnd, loopLen);
+						posIndex = static_cast<size_t>(position);
+					}
 					const size_t loopStartIndex = static_cast<size_t>(loopStart);
 					const size_t loopEndIndex = static_cast<size_t>(loopEnd);
 				size_t outIndex = 0;
@@ -546,7 +537,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 							break;
 						}
 
-						const f32 sample = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, posIndex)) * sampleScale;
+						const f32 sample = static_cast<f32>(readPcmSample(data, is16Bit, posIndex)) * sampleScale;
 						mixVoiceSample(record, mix, outIndex, sample, sample, gain);
 
 						++posIndex;
@@ -574,8 +565,8 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 						}
 
 						const size_t base = posIndex * static_cast<size_t>(channels);
-						const f32 left = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, base)) * sampleScale;
-						const f32 right = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, base + 1)) * sampleScale;
+						const f32 left = static_cast<f32>(readPcmSample(data, is16Bit, base)) * sampleScale;
+						const f32 right = static_cast<f32>(readPcmSample(data, is16Bit, base + 1)) * sampleScale;
 						mixVoiceSample(record, mix, outIndex, left, right, gain);
 
 						++posIndex;
@@ -601,6 +592,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 									ended = true;
 									break;
 								}
+								wrapAudioPosition(position, loopStart, loopEnd, loopLen);
 
 								i64 idx = 0;
 								f64 frac = 0.0;
@@ -608,8 +600,8 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 								audioSamplePosition(position, idx, frac, idx0);
 								const i64 idx1 = wrappedAudioIndex(idx + 1, loopStart, loopEnd);
 
-								const f32 s0 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, idx0)) * sampleScale;
-								const f32 s1 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, static_cast<size_t>(idx1))) * sampleScale;
+								const f32 s0 = static_cast<f32>(readPcmSample(data, is16Bit, idx0)) * sampleScale;
+								const f32 s1 = static_cast<f32>(readPcmSample(data, is16Bit, static_cast<size_t>(idx1))) * sampleScale;
 								const f32 sample = lerpAudioSample(s0, s1, frac);
 								mixVoiceSample(record, mix, outIndex, sample, sample, gain);
 
@@ -630,11 +622,11 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 							f64 frac = 0.0;
 							size_t idx0 = 0;
 							audioSamplePosition(position, idx, frac, idx0);
-							const f32 s0 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, idx0)) * sampleScale;
+							const f32 s0 = static_cast<f32>(readPcmSample(data, is16Bit, idx0)) * sampleScale;
 							f32 s1 = 0.0f;
 							const size_t idx1 = idx0 + 1;
 							if (idx1 < framesInRecord) {
-								s1 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, idx1)) * sampleScale;
+								s1 = static_cast<f32>(readPcmSample(data, is16Bit, idx1)) * sampleScale;
 							}
 								const f32 sample = lerpAudioSample(s0, s1, frac);
 								mixVoiceSample(record, mix, outIndex, sample, sample, gain);
@@ -649,6 +641,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 									ended = true;
 									break;
 								}
+								wrapAudioPosition(position, loopStart, loopEnd, loopLen);
 
 								i64 idx = 0;
 								f64 frac = 0.0;
@@ -658,10 +651,10 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 
 							const size_t base0 = idx0 * static_cast<size_t>(channels);
 							const size_t base1 = static_cast<size_t>(idx1) * static_cast<size_t>(channels);
-							const f32 left0 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, base0)) * sampleScale;
-							const f32 right0 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, base0 + 1)) * sampleScale;
-							const f32 left1 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, base1)) * sampleScale;
-							const f32 right1 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, base1 + 1)) * sampleScale;
+							const f32 left0 = static_cast<f32>(readPcmSample(data, is16Bit, base0)) * sampleScale;
+							const f32 right0 = static_cast<f32>(readPcmSample(data, is16Bit, base0 + 1)) * sampleScale;
+							const f32 left1 = static_cast<f32>(readPcmSample(data, is16Bit, base1)) * sampleScale;
+							const f32 right1 = static_cast<f32>(readPcmSample(data, is16Bit, base1 + 1)) * sampleScale;
 
 									mixVoiceSample(record, mix, outIndex, lerpAudioSample(left0, left1, frac), lerpAudioSample(right0, right1, frac), gain);
 
@@ -683,15 +676,15 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 							size_t idx0 = 0;
 							audioSamplePosition(position, idx, frac, idx0);
 							const size_t base0 = idx0 * static_cast<size_t>(channels);
-							const f32 left0 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, base0)) * sampleScale;
-							const f32 right0 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, base0 + 1)) * sampleScale;
+							const f32 left0 = static_cast<f32>(readPcmSample(data, is16Bit, base0)) * sampleScale;
+							const f32 right0 = static_cast<f32>(readPcmSample(data, is16Bit, base0 + 1)) * sampleScale;
 							f32 left1 = 0.0f;
 							f32 right1 = 0.0f;
 							const size_t idx1 = idx0 + 1;
 							if (idx1 < framesInRecord) {
 								const size_t base1 = idx1 * static_cast<size_t>(channels);
-								left1 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, base1)) * sampleScale;
-								right1 = static_cast<f32>(readPcmSample(samples16, samples8, is16Bit, base1 + 1)) * sampleScale;
+								left1 = static_cast<f32>(readPcmSample(data, is16Bit, base1)) * sampleScale;
+								right1 = static_cast<f32>(readPcmSample(data, is16Bit, base1 + 1)) * sampleScale;
 							}
 
 									mixVoiceSample(record, mix, outIndex, lerpAudioSample(left0, left1, frac), lerpAudioSample(right0, right1, frac), gain);
@@ -784,13 +777,13 @@ void ApuOutputMixer::readOutputQueue(i16* output, size_t frameCount) {
 void ApuOutputMixer::badpLoadBlock(VoiceRecord& record, size_t offset) {
 	const u8* data = record.data;
 	BadpDecoderState& badp = record.badp;
-	const size_t blockFrames = static_cast<size_t>(readLE16Audio(data + offset));
-	const size_t blockBytes = static_cast<size_t>(readLE16Audio(data + offset + 2));
+	const size_t blockFrames = static_cast<size_t>(readLE16(data + offset));
+	const size_t blockBytes = static_cast<size_t>(readLE16(data + offset + 2));
 	const size_t blockHeaderBytes = 4 + static_cast<size_t>(record.channels) * 4;
 	const size_t blockEnd = offset + blockBytes;
 	size_t cursor = offset + 4;
 	for (i32 channel = 0; channel < record.channels; channel += 1) {
-		badp.predictors[channel] = static_cast<i16>(readLE16Audio(data + cursor));
+		badp.predictors[channel] = readI16LE(data + cursor);
 		const i32 stepIndex = static_cast<i32>(data[cursor + 2]);
 		badp.stepIndices[channel] = stepIndex;
 		cursor += 4;

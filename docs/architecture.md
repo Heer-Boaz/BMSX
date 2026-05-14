@@ -851,7 +851,9 @@ Already advanced in this goal:
   rejecting them as an AOUT limitation. The mirrored
   `machine/devices/audio/output` owner now contains raw parameter-register playback decode,
   voice-id shapes, BADP/PCM decode state, loop/rate/gain/filter/fade mixer
-  state, and the raw PCM render path in both TS and C++. The `Machine` owns the
+  state, and the raw PCM render path in both TS and C++. BADP/PCM little-endian
+  word reads use the shared `common/endian` owner in both runtimes instead of
+  local audio-private decode helpers. The `Machine` owns the
   AOUT mixer next to the APU controller; the APU controller talks to this AOUT
   owner directly. SoundMaster is only the host audio edge for
   latency, master gain, suspension, and native queue pumping. Active APU source

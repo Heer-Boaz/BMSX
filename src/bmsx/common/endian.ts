@@ -2,6 +2,11 @@ export function readLE16(data: ArrayLike<number>, offset: number): number {
 	return (data[offset] | (data[offset + 1] << 8)) >>> 0;
 }
 
+export function readI16LE(data: ArrayLike<number>, offset: number): number {
+	const word = readLE16(data, offset);
+	return (word & 0x8000) !== 0 ? word - 0x10000 : word;
+}
+
 export function readLE32(data: ArrayLike<number>, offset: number): number {
 	return (
 		data[offset]

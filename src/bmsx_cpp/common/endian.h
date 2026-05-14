@@ -8,6 +8,10 @@ inline u16 readLE16(const u8* data) {
 	return static_cast<u16>(data[0]) | (static_cast<u16>(data[1]) << 8);
 }
 
+inline i16 readI16LE(const u8* data) {
+	return static_cast<i16>(readLE16(data));
+}
+
 inline u32 readLE32(const u8* data) {
 	return static_cast<u32>(data[0])
 		| (static_cast<u32>(data[1]) << 8)

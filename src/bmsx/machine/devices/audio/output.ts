@@ -1,4 +1,5 @@
 import { clamp, clamp01 } from '../../../common/clamp';
+import { readI16LE, readLE16, readLE32 } from '../../../common/endian';
 import { BiquadFilterState, configureBiquadFilter, type BiquadFilterType } from './biquad_filter';
 import { toSignedWord } from '../../common/numeric';
 import {
@@ -136,19 +137,6 @@ const BADP_INDEX_TABLE = new Int32Array([
 	-1, -1, -1, -1, 2, 4, 6, 8,
 	-1, -1, -1, -1, 2, 4, 6, 8,
 ]);
-
-function readLE16Audio(bytes: Uint8Array, offset: number): number {
-	return bytes[offset]! | (bytes[offset + 1]! << 8);
-}
-
-function readI16Audio(bytes: Uint8Array, offset: number): number {
-	const word = readLE16Audio(bytes, offset);
-	return (word & 0x8000) !== 0 ? word - 0x10000 : word;
-}
-
-function readLE32Audio(bytes: Uint8Array, offset: number): number {
-	return (bytes[offset]! | (bytes[offset + 1]! << 8) | (bytes[offset + 2]! << 16) | (bytes[offset + 3]! << 24)) >>> 0;
-}
 
 function audioFrameIndex(position: number): number {
 	return position - (position % 1);
@@ -669,8 +657,8 @@ export class ApuOutputMixer {
 		const baseSample = frame * record.channels;
 		if (record.bitsPerSample === 16) {
 			const byteOffset = record.dataOffset + baseSample * 2;
-			this.sampledLeft = readI16Audio(record.sourceBytes, byteOffset) * PCM_SCALE;
-			this.sampledRight = record.channels === 1 ? this.sampledLeft : readI16Audio(record.sourceBytes, byteOffset + 2) * PCM_SCALE;
+			this.sampledLeft = readI16LE(record.sourceBytes, byteOffset) * PCM_SCALE;
+			this.sampledRight = record.channels === 1 ? this.sampledLeft : readI16LE(record.sourceBytes, byteOffset + 2) * PCM_SCALE;
 			return true;
 		}
 		const byteOffset = record.dataOffset + baseSample;
@@ -715,16 +703,16 @@ export class ApuOutputMixer {
 		if (bytes.byteLength < BADP_HEADER_SIZE || bytes[0] !== 0x42 || bytes[1] !== 0x41 || bytes[2] !== 0x44 || bytes[3] !== 0x50) {
 			return { faultCode: APU_FAULT_UNSUPPORTED_FORMAT, faultDetail: bytes.byteLength, seekTable: null };
 		}
-		const version = readLE16Audio(bytes, 4);
+		const version = readLE16(bytes, 4);
 		if (version !== BADP_VERSION) {
 			return { faultCode: APU_FAULT_UNSUPPORTED_FORMAT, faultDetail: version, seekTable: null };
 		}
-		const channels = readLE16Audio(bytes, 6);
-		const sampleRate = readLE32Audio(bytes, 8);
-		const frames = readLE32Audio(bytes, 12);
-		const seekEntryCount = readLE32Audio(bytes, 28);
-		const seekTableOffset = readLE32Audio(bytes, 32);
-		const dataOffset = readLE32Audio(bytes, 36);
+		const channels = readLE16(bytes, 6);
+		const sampleRate = readLE32(bytes, 8);
+		const frames = readLE32(bytes, 12);
+		const seekEntryCount = readLE32(bytes, 28);
+		const seekTableOffset = readLE32(bytes, 32);
+		const dataOffset = readLE32(bytes, 36);
 		if (channels !== source.channels || sampleRate !== source.sampleRateHz || frames !== source.frameCount || dataOffset !== source.dataOffset) {
 			return { faultCode: APU_FAULT_OUTPUT_METADATA, faultDetail: dataOffset, seekTable: null };
 		}
@@ -746,8 +734,8 @@ export class ApuOutputMixer {
 		if (seekEntryCount > 0) {
 			let cursor = seekTableOffset;
 			for (let index = 0; index < seekCount; index += 1) {
-				seekFrames[index] = readLE32Audio(bytes, cursor);
-				seekOffsets[index] = readLE32Audio(bytes, cursor + 4);
+				seekFrames[index] = readLE32(bytes, cursor);
+				seekOffsets[index] = readLE32(bytes, cursor + 4);
 				cursor += 8;
 			}
 		} else {
@@ -790,8 +778,8 @@ export class ApuOutputMixer {
 			if (offset + 4 > source.dataBytes) {
 				return { faultCode: APU_FAULT_OUTPUT_BLOCK, faultDetail: offset };
 			}
-			const blockFrames = readLE16Audio(bytes, blockOffset);
-			const blockBytes = readLE16Audio(bytes, blockOffset + 2);
+			const blockFrames = readLE16(bytes, blockOffset);
+			const blockBytes = readLE16(bytes, blockOffset + 2);
 			if (blockFrames === 0) {
 				return { faultCode: APU_FAULT_OUTPUT_BLOCK, faultDetail: offset };
 			}
@@ -829,13 +817,13 @@ export class ApuOutputMixer {
 		const bytes = record.sourceBytes;
 		const badp = record.badp;
 		const blockOffset = record.dataOffset + offset;
-		const blockFrames = readLE16Audio(bytes, blockOffset);
-		const blockBytes = readLE16Audio(bytes, blockOffset + 2);
+		const blockFrames = readLE16(bytes, blockOffset);
+		const blockBytes = readLE16(bytes, blockOffset + 2);
 		const blockHeaderBytes = 4 + record.channels * 4;
 		const blockEnd = offset + blockBytes;
 		let cursor = blockOffset + 4;
 		for (let channel = 0; channel < record.channels; channel += 1) {
-			badp.predictors[channel] = readI16Audio(bytes, cursor);
+			badp.predictors[channel] = readI16LE(bytes, cursor);
 			const stepIndex = bytes[cursor + 2]!;
 			badp.stepIndices[channel] = stepIndex;
 			cursor += 4;
