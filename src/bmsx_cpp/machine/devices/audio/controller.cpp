@@ -59,6 +59,7 @@ void AudioController::reset() {
 	m_sourceDma.reset();
 	m_slotPlaybackCursorQ16.fill(0);
 	m_slotFadeSamplesRemaining.fill(0u);
+	m_slotFadeSamplesTotal.fill(0u);
 	m_sampleCarry = 0;
 	m_availableSamples = 0;
 	m_slotVoiceIds.fill(0);
@@ -94,6 +95,7 @@ AudioControllerState AudioController::captureState() const {
 	state.slotSourceBytes = m_sourceDma.captureState();
 	state.slotPlaybackCursorQ16 = m_slotPlaybackCursorQ16;
 	state.slotFadeSamplesRemaining = m_slotFadeSamplesRemaining;
+	state.slotFadeSamplesTotal = m_slotFadeSamplesTotal;
 	state.sampleCarry = m_sampleCarry;
 	state.availableSamples = m_availableSamples;
 	state.apuStatus = m_fault.status;
@@ -131,6 +133,7 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 	m_sourceDma.restoreState(state.slotSourceBytes);
 	m_slotPlaybackCursorQ16 = state.slotPlaybackCursorQ16;
 	m_slotFadeSamplesRemaining = state.slotFadeSamplesRemaining;
+	m_slotFadeSamplesTotal = state.slotFadeSamplesTotal;
 	m_sampleCarry = state.sampleCarry;
 	m_availableSamples = state.availableSamples;
 	m_fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
@@ -377,12 +380,15 @@ void AudioController::startPlay(const ApuAudioSource& source, ApuAudioSlot slot,
 }
 
 bool AudioController::playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples) {
+	const ApuParameterRegisterWords& outputRegisterWords = fadeSamples > 0u
+		? fadeOutputRegisterWords(slot, registerWords)
+		: registerWords;
 	const ApuOutputStartResult outputStart = m_audioOutput.playVoice(
 		slot,
 		voiceId,
 		source,
 		m_sourceDma.bytesForSlot(slot),
-		registerWords,
+		outputRegisterWords,
 		m_slotPlaybackCursorQ16[slot],
 		fadeSamples
 	);
@@ -393,6 +399,15 @@ bool AudioController::playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, con
 		return false;
 	}
 	return true;
+}
+
+const ApuParameterRegisterWords& AudioController::fadeOutputRegisterWords(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords) {
+	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
+		m_slotRegisterDispatchWords[index] = registerWords[index];
+	}
+	const i64 scaledGain = static_cast<i64>(toSignedWord(registerWords[APU_PARAMETER_GAIN_Q12_INDEX])) * static_cast<i64>(m_slotFadeSamplesRemaining[slot]);
+	m_slotRegisterDispatchWords[APU_PARAMETER_GAIN_Q12_INDEX] = static_cast<u32>(scaledGain / static_cast<i64>(m_slotFadeSamplesTotal[slot]));
+	return m_slotRegisterDispatchWords;
 }
 
 bool AudioController::replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source) {
@@ -419,6 +434,7 @@ void AudioController::stopSlot(const ApuParameterRegisterWords& registerWords) {
 	}
 	if (fadeSamples > 0u) {
 		m_slotFadeSamplesRemaining[slot] = fadeSamples;
+		m_slotFadeSamplesTotal[slot] = fadeSamples;
 		setSlotPhase(slot, APU_SLOT_PHASE_FADING);
 		m_audioOutput.stopSlot(slot, fadeSamples);
 		scheduleNextService(m_scheduler.currentNowCycles());
@@ -458,6 +474,7 @@ void AudioController::setSlotActive(ApuAudioSlot slot, const ApuParameterRegiste
 	}
 	m_slotPlaybackCursorQ16[slot] = static_cast<int64_t>(registerWords[APU_PARAMETER_START_SAMPLE_INDEX]) * static_cast<int64_t>(APU_RATE_STEP_Q16_ONE);
 	m_slotFadeSamplesRemaining[slot] = 0u;
+	m_slotFadeSamplesTotal[slot] = 0u;
 	m_slotVoiceIds[slot] = voiceId;
 }
 
@@ -470,6 +487,7 @@ void AudioController::stopSlotActive(ApuAudioSlot slot) {
 	m_sourceDma.clearSlot(slot);
 	m_slotPlaybackCursorQ16[slot] = 0;
 	m_slotFadeSamplesRemaining[slot] = 0u;
+	m_slotFadeSamplesTotal[slot] = 0u;
 	m_slotVoiceIds[slot] = 0;
 }
 
@@ -490,13 +508,11 @@ void AudioController::replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId) {
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		m_slotRegisterDispatchWords[index] = m_slotRegisterWords[base + index];
 	}
-	m_audioOutput.playVoice(
+	playOutputVoice(
 		slot,
 		voiceId,
 		resolveApuAudioSource(m_slotRegisterDispatchWords),
-		m_sourceDma.bytesForSlot(slot),
 		m_slotRegisterDispatchWords,
-		m_slotPlaybackCursorQ16[slot],
 		m_slotFadeSamplesRemaining[slot]
 	);
 }
@@ -644,10 +660,14 @@ void AudioController::writeSlotRegisterWord(ApuAudioSlot slot, uint32_t paramete
 			}
 			scheduleNextService(m_scheduler.currentNowCycles());
 		} else {
+			const u32 fadeSamples = m_slotFadeSamplesRemaining[slot];
+			const ApuParameterRegisterWords& outputRegisterWords = fadeSamples > 0u
+				? fadeOutputRegisterWords(slot, m_slotRegisterDispatchWords)
+				: m_slotRegisterDispatchWords;
 			const ApuOutputStartResult outputWrite = m_audioOutput.writeSlotRegisterWord(
 				slot,
 				source,
-				m_slotRegisterDispatchWords,
+				outputRegisterWords,
 				parameterIndex,
 				m_slotPlaybackCursorQ16[slot]
 			);

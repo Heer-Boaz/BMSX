@@ -722,7 +722,32 @@ test('APU selected-slot source-DMA reload preserves STOP fade countdown', () => 
 	assert.equal((voice as FakeVoiceInfo).stopFadeSamples, APU_SAMPLE_RATE_HZ - 2);
 	const state = audio.captureState();
 	assert.equal(state.slotFadeSamplesRemaining[1], APU_SAMPLE_RATE_HZ - 2);
+	assert.equal(state.slotFadeSamplesTotal[1], APU_SAMPLE_RATE_HZ);
 	assert.deepEqual(Array.from(state.slotSourceBytes[1]!), [0x80, 0x80, 0x80, 0x80]);
+});
+
+test('APU restore replays STOP fade with device-owned envelope level', () => {
+	const { memory, audio } = createRealAudioHarness();
+	writeValidSourceRegisters(memory);
+	memory.writeU32(RAM_BASE, 0x44444444);
+	memory.writeValue(IO_APU_SLOT, 1);
+	writeApuCommand(memory, audio, APU_CMD_PLAY);
+	memory.writeValue(IO_APU_SLOT, 1);
+	memory.writeValue(IO_APU_FADE_SAMPLES, 4);
+	writeApuCommand(memory, audio, APU_CMD_STOP_SLOT);
+	audio.accrueCycles(2, 2);
+	audio.onService(2);
+
+	const saved = audio.captureState();
+	assert.equal(saved.slotFadeSamplesRemaining[1], 2);
+	assert.equal(saved.slotFadeSamplesTotal[1], 4);
+
+	const restored = createRealAudioHarness();
+	restored.audio.restoreState(saved, 0);
+	const output = new Int16Array(2);
+	restored.audioOutput.renderSamples(output, 1, APU_SAMPLE_RATE_HZ, 1);
+	assert.equal(output[0], -7680);
+	assert.equal(output[1], -7680);
 });
 
 test('APU sample cursor ends playback through the device scheduler', async () => {

@@ -148,6 +148,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"slotSourceBytes",
 	"slotPlaybackCursorQ16",
 	"slotFadeSamplesRemaining",
+	"slotFadeSamplesTotal",
 	"sampleCarry",
 	"availableSamples",
 	"apuStatus",

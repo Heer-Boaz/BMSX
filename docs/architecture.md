@@ -123,13 +123,13 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   contract and old saves are not supported. The APU state persists the raw
   parameter registerfile, raw command FIFO contents/cursors, per-slot raw
   parameter latches, per-slot lifecycle phases, per-slot source-DMA byte
-  buffers, per-slot Q16 playback cursors, per-slot fade
-  sample countdowns, and the APU scheduler sample-carry/pending-sample latches,
+  buffers, per-slot Q16 playback cursors, per-slot STOP-fade envelope countdown
+  and total-duration latches, and the APU scheduler sample-carry/pending-sample latches,
   cart-visible event latch (`eventKind`, `eventSlot`, `eventSourceAddr`,
   `eventSequence`), and sticky APU fault/status latch. APU voice ids are
   runtime-only device tokens; restore mints fresh runtime voice ids and replays
   active AOUT output from the restored per-slot APU source-DMA buffers, playback
-  cursor, and remaining fade countdown instead of reading cart RAM or
+  cursor, and STOP-fade envelope position instead of reading cart RAM or
   preserving host clip handles. AOUT retained host-output queue frames are
   runtime-only; restore clears that queue inside the APU/AOUT device owner before
   replaying active voices, so cart-visible output-ring MMIO cannot expose stale
@@ -897,8 +897,10 @@ Already advanced in this goal:
   The APU is now a device-scheduled participant in machine time: it accrues
   fixed 44.1 kHz sample ticks from CPU cycles, advances per-slot Q16 playback
   cursors at each source's sample rate, wraps looped cursors, owns
-  `Idle`/`Playing`/`Fading` channel phases, owns STOP fade sample countdowns,
-  and raises `APU_EVENT_SLOT_ENDED`/`IRQ_APU` from the device when playback or
+  `Idle`/`Playing`/`Fading` channel phases, owns STOP fade sample countdowns
+  plus the full fade-duration latch, replays restored or source-reloaded fading
+  voices into AOUT with the effective current gain derived from those device
+  latches, and raises `APU_EVENT_SLOT_ENDED`/`IRQ_APU` from the device when playback or
   fade completes. `IO_APU_CMD` is now a doorbell into a bounded device-owned
   command FIFO. Doorbell writes snapshot the 19-word raw parameter latch bank, clear the
   visible doorbell/latch pad, and device service drains queued commands in FIFO
@@ -993,8 +995,9 @@ If `/goal resume` is invoked, it should mean this order of work:
    cart-visible AOUT start faults, the mirrored AOUT mixer, cart-visible AOUT
    output-ring status, the persisted command FIFO, the writable selected
    channel register bank, the mirrored source-DMA byte-buffer owner, and the
-   mirrored slot lifecycle phases: remaining envelope/generator work must stay
-   device-owned instead of growing through host-side sound shortcuts.
+   mirrored slot lifecycle phases, and the mirrored STOP-fade envelope level:
+   remaining generator and richer envelope work must stay device-owned instead
+   of growing through host-side sound shortcuts.
 3. Continue the Input Controller (ICU) cleanup by removing the remaining pass-through APIs and making the
    device owner the single source of truth for input state, including the
    active `Input` snapshot, input timing, and any future input features such as
@@ -1037,8 +1040,8 @@ Next recommended work:
    host sound shortcuts; after the mirrored AOUT mixer, cart-visible AOUT
    start faults, cart-visible output-ring status, persisted command FIFO,
    selected-channel register writes, source-DMA ownership, sample-rate-scaled
-   cursors, and slot lifecycle phases, the next APU step is envelope/generator
-   state owned by the device.
+   cursors, slot lifecycle phases, and STOP-fade envelope level restore, the
+   next APU step is generator and richer envelope state owned by the device.
 3. Continue Input Controller (ICU) cleanup by removing the remaining pass-through APIs and making the
    device owner the single source of truth for input state, including the
    active `Input` snapshot, input timing, and any future input features such as

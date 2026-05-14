@@ -666,6 +666,7 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	state.machineState.machine.audio.slotSourceBytes[1u] = {9u, 8u, 7u, 6u};
 	state.machineState.machine.audio.slotPlaybackCursorQ16[1u] = static_cast<bmsx::i64>(2u * bmsx::APU_RATE_STEP_Q16_ONE);
 	state.machineState.machine.audio.slotFadeSamplesRemaining[1u] = 7u;
+	state.machineState.machine.audio.slotFadeSamplesTotal[1u] = 11u;
 	state.machineState.machine.audio.sampleCarry = 8;
 	state.machineState.machine.audio.availableSamples = 9;
 	state.machineState.machine.audio.apuStatus = bmsx::APU_STATUS_FAULT;
@@ -711,6 +712,7 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	require(decoded.machineState.machine.audio.slotSourceBytes[1u][0] == 9u, "save-state should preserve APU slot source bytes");
 	require(decoded.machineState.machine.audio.slotPlaybackCursorQ16[1u] == static_cast<bmsx::i64>(2u * bmsx::APU_RATE_STEP_Q16_ONE), "save-state should preserve APU slot playback cursor");
 	require(decoded.machineState.machine.audio.slotFadeSamplesRemaining[1u] == 7u, "save-state should preserve APU slot fade timer");
+	require(decoded.machineState.machine.audio.slotFadeSamplesTotal[1u] == 11u, "save-state should preserve APU slot fade envelope duration");
 	require(decoded.machineState.machine.audio.sampleCarry == 8, "save-state should preserve APU sample carry");
 	require(decoded.machineState.machine.audio.availableSamples == 9, "save-state should preserve APU available samples");
 	require(decoded.machineState.machine.audio.apuStatus == bmsx::APU_STATUS_FAULT, "save-state should preserve APU status");
@@ -1586,8 +1588,28 @@ void testApuSelectedSlotActiveStateGolden() {
 	const bmsx::AudioControllerState sourceReloadFadeState = sourceReloadFadeHarness.audio.captureState();
 	require(sourceReloadFadeState.slotPhases[1u] == bmsx::APU_SLOT_PHASE_FADING, "APU source-DMA reload should preserve the fading slot phase");
 	require(sourceReloadFadeState.slotFadeSamplesRemaining[1u] == bmsx::APU_SAMPLE_RATE_HZ - 2u, "APU source-DMA reload should preserve the active STOP fade countdown");
+	require(sourceReloadFadeState.slotFadeSamplesTotal[1u] == bmsx::APU_SAMPLE_RATE_HZ, "APU source-DMA reload should preserve the active STOP fade envelope duration");
 	require(sourceReloadFadeState.slotSourceBytes[1u].size() == 4u, "APU source-DMA reload during fade should retain source bytes");
 	require(sourceReloadFadeState.slotSourceBytes[1u][0] == 0x80u, "APU source-DMA reload during fade should capture the new source bytes");
+
+	AudioHarness fadeRestoreHarness;
+	writeValidApuSource(fadeRestoreHarness, 8u);
+	fadeRestoreHarness.memory.writeU32(bmsx::RAM_BASE, 0x44444444u);
+	writeIoWord(fadeRestoreHarness.memory, bmsx::IO_APU_SLOT, 1u);
+	writeApuCommand(fadeRestoreHarness, bmsx::APU_CMD_PLAY);
+	writeIoWord(fadeRestoreHarness.memory, bmsx::IO_APU_SLOT, 1u);
+	writeIoWord(fadeRestoreHarness.memory, bmsx::IO_APU_FADE_SAMPLES, 4u);
+	writeApuCommand(fadeRestoreHarness, bmsx::APU_CMD_STOP_SLOT);
+	fadeRestoreHarness.audio.accrueCycles(2, 2);
+	fadeRestoreHarness.audio.onService(2);
+	const bmsx::AudioControllerState fadeRestoreState = fadeRestoreHarness.audio.captureState();
+	require(fadeRestoreState.slotFadeSamplesRemaining[1u] == 2u, "APU restore proof should capture the mid-fade countdown");
+	require(fadeRestoreState.slotFadeSamplesTotal[1u] == 4u, "APU restore proof should capture the full STOP fade duration");
+	AudioHarness fadeRestored;
+	fadeRestored.audio.restoreState(fadeRestoreState, 0);
+	bmsx::i16 restoredFadeFrame[2] = {0, 0};
+	fadeRestored.audioOutput.renderSamples(restoredFadeFrame, 1u, bmsx::APU_SAMPLE_RATE_HZ, 1.0f);
+	require(restoredFadeFrame[0] == -7680 && restoredFadeFrame[1] == -7680, "APU restore should replay STOP fade from the device-owned envelope level");
 
 	AudioHarness noOutputRecordRateFaultHarness;
 	writeValidApuSource(noOutputRecordRateFaultHarness, 8u);

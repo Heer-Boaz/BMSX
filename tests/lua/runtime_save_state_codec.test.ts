@@ -90,6 +90,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					slotSourceBytes: audioSlotSourceBytes,
 					slotPlaybackCursorQ16: Array.from({ length: APU_SLOT_COUNT }, (_, slot) => slot === 1 ? 2 * APU_RATE_STEP_Q16_ONE : 0),
 					slotFadeSamplesRemaining: Array.from({ length: APU_SLOT_COUNT }, (_, slot) => slot === 1 ? 7 : 0),
+					slotFadeSamplesTotal: Array.from({ length: APU_SLOT_COUNT }, (_, slot) => slot === 1 ? 11 : 0),
 					sampleCarry: 8,
 					availableSamples: 9,
 					apuStatus: 1,

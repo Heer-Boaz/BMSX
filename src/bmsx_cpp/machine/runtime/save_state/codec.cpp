@@ -506,6 +506,7 @@ BinValue encodeAudioControllerState(const AudioControllerState& state) {
 	});
 	object["slotPlaybackCursorQ16"] = encodeFixedArray(state.slotPlaybackCursorQ16, encodeScalar<f64, i64>);
 	object["slotFadeSamplesRemaining"] = encodeFixedArray(state.slotFadeSamplesRemaining, encodeScalar<f64, u32>);
+	object["slotFadeSamplesTotal"] = encodeFixedArray(state.slotFadeSamplesTotal, encodeScalar<f64, u32>);
 	object["sampleCarry"] = encodeScalar<f64>(state.sampleCarry);
 	object["availableSamples"] = encodeScalar<f64>(state.availableSamples);
 	object["apuStatus"] = encodeScalar<f64>(state.apuStatus);
@@ -538,6 +539,7 @@ AudioControllerState decodeAudioControllerState(const BinValue& value, const cha
 	}
 	state.slotPlaybackCursorQ16 = decodeI64Array<APU_SLOT_COUNT>(requireField(object, "slotPlaybackCursorQ16", label), "machine.audio.slotPlaybackCursorQ16");
 	state.slotFadeSamplesRemaining = decodeU32Array<APU_SLOT_COUNT>(requireField(object, "slotFadeSamplesRemaining", label), "machine.audio.slotFadeSamplesRemaining");
+	state.slotFadeSamplesTotal = decodeU32Array<APU_SLOT_COUNT>(requireField(object, "slotFadeSamplesTotal", label), "machine.audio.slotFadeSamplesTotal");
 	state.sampleCarry = requireI64(requireField(object, "sampleCarry", label), "machine.audio.sampleCarry");
 	state.availableSamples = requireI64(requireField(object, "availableSamples", label), "machine.audio.availableSamples");
 	state.apuStatus = requireU32(requireField(object, "apuStatus", label), "machine.audio.apuStatus");

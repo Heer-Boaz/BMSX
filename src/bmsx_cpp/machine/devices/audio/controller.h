@@ -32,6 +32,7 @@ struct AudioControllerState {
 	ApuSlotSourceBytes slotSourceBytes{};
 	std::array<int64_t, APU_SLOT_COUNT> slotPlaybackCursorQ16{};
 	std::array<uint32_t, APU_SLOT_COUNT> slotFadeSamplesRemaining{};
+	std::array<uint32_t, APU_SLOT_COUNT> slotFadeSamplesTotal{};
 	int64_t sampleCarry = 0;
 	int64_t availableSamples = 0;
 	uint32_t apuStatus = 0;
@@ -85,6 +86,7 @@ private:
 	ApuSourceDma m_sourceDma;
 	std::array<int64_t, APU_SLOT_COUNT> m_slotPlaybackCursorQ16{};
 	std::array<uint32_t, APU_SLOT_COUNT> m_slotFadeSamplesRemaining{};
+	std::array<uint32_t, APU_SLOT_COUNT> m_slotFadeSamplesTotal{};
 	std::array<ApuVoiceId, APU_SLOT_COUNT> m_slotVoiceIds{};
 	ApuVoiceId m_nextVoiceId = 1;
 	int64_t m_cpuHz = APU_SAMPLE_RATE_HZ;
@@ -102,6 +104,7 @@ private:
 		bool readSlot(const ApuParameterRegisterWords& registerWords, ApuAudioSlot& slot) const;
 		void startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
 		bool playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples);
+		const ApuParameterRegisterWords& fadeOutputRegisterWords(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
 		bool replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source);
 		void stopSlot(const ApuParameterRegisterWords& registerWords);
 		void setSlotGain(const ApuParameterRegisterWords& registerWords);
