@@ -160,6 +160,8 @@ const SYSTEM_ROM_GEO_GLOBAL_NAMES = [
 	'sys_geo_overlap_broadphase_local_bounds_aabb',
 	'sys_geo_overlap_contact_clipped_feature',
 	'sys_geo_overlap_output_stop_on_overflow',
+	'sys_geo_overlap_max_poly_vertices',
+	'sys_geo_overlap_max_clip_vertices',
 	'sys_geo_overlap_instance_bytes',
 	'sys_geo_overlap_instance_shape_offset',
 	'sys_geo_overlap_instance_tx_offset',

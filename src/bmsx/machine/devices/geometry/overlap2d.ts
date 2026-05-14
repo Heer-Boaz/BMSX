@@ -3,6 +3,7 @@ import type { Memory } from '../../memory/memory';
 import { GEOMETRY_WORD_ALIGN_MASK, resolveGeometryByteOffset, resolveGeometryIndexedSpan } from './addressing';
 import {
 	GEO_FAULT_BAD_RECORD_FLAGS,
+	GEO_FAULT_BAD_VERTEX_COUNT,
 	GEO_FAULT_DESCRIPTOR_KIND,
 	GEO_FAULT_DST_RANGE,
 	GEO_FAULT_RESULT_CAPACITY,
@@ -27,6 +28,8 @@ import {
 	GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS,
 	GEO_OVERLAP2D_MODE_FULL_PASS,
 	GEO_OVERLAP2D_MODE_MASK,
+	GEO_OVERLAP2D_MAX_CLIP_VERTICES,
+	GEO_OVERLAP2D_MAX_POLY_VERTICES,
 	GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW,
 	GEO_OVERLAP2D_OUTPUT_POLICY_MASK,
 	GEO_OVERLAP2D_PAIR_BYTES,
@@ -74,14 +77,48 @@ import { GeometryProjectionSpan } from './projection';
 import type { GeometryJobState } from './state';
 
 type PointScratch = { x: number; y: number };
+type GeometryPolyView = {
+	primitive: number;
+	vertexCount: number;
+	dataAddr: number;
+	tx: number;
+	ty: number;
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+};
 
 const GEO_FAULT_NONE = 0;
+const GEO_OVERLAP2D_CLIP_COORDS = GEO_OVERLAP2D_MAX_CLIP_VERTICES * 2;
 
 export class GeometryOverlap2dUnit {
-	private readonly worldPolyA: number[] = [];
-	private readonly worldPolyB: number[] = [];
-	private readonly clip0: number[] = [];
-	private readonly clip1: number[] = [];
+	private readonly polyA: GeometryPolyView = {
+		primitive: 0,
+		vertexCount: 0,
+		dataAddr: 0,
+		tx: 0,
+		ty: 0,
+		left: 0,
+		top: 0,
+		right: 0,
+		bottom: 0,
+	};
+	private readonly polyB: GeometryPolyView = {
+		primitive: 0,
+		vertexCount: 0,
+		dataAddr: 0,
+		tx: 0,
+		ty: 0,
+		left: 0,
+		top: 0,
+		right: 0,
+		bottom: 0,
+	};
+	private readonly clip0 = new Float64Array(GEO_OVERLAP2D_CLIP_COORDS);
+	private readonly clip1 = new Float64Array(GEO_OVERLAP2D_CLIP_COORDS);
+	private clipResult = this.clip0;
+	private clipResultVertexCount = 0;
 	private readonly instanceA = new Uint32Array(GEO_OVERLAP2D_INSTANCE_WORDS);
 	private readonly instanceB = new Uint32Array(GEO_OVERLAP2D_INSTANCE_WORDS);
 	private readonly boundsA = new Float64Array(4);
@@ -91,6 +128,8 @@ export class GeometryOverlap2dUnit {
 	private readonly centerA: PointScratch = { x: 0, y: 0 };
 	private readonly centerB: PointScratch = { x: 0, y: 0 };
 	private readonly centroid: PointScratch = { x: 0, y: 0 };
+	private readonly vertex0: PointScratch = { x: 0, y: 0 };
+	private readonly vertex1: PointScratch = { x: 0, y: 0 };
 	private contactHit = false;
 	private contactNx = 0;
 	private contactNy = 0;
@@ -366,64 +405,69 @@ export class GeometryOverlap2dUnit {
 
 	private computePiecePairContact(pieceAAddr: number, txA: number, tyA: number, pieceBAddr: number, txB: number, tyB: number): number {
 		this.contactHit = false;
-		const primitiveA = this.memory.readU32(pieceAAddr + GEO_OVERLAP2D_SHAPE_KIND_OFFSET);
-		const primitiveB = this.memory.readU32(pieceBAddr + GEO_OVERLAP2D_SHAPE_KIND_OFFSET);
-		if ((primitiveA !== GEO_PRIMITIVE_AABB && primitiveA !== GEO_PRIMITIVE_CONVEX_POLY)
-			|| (primitiveB !== GEO_PRIMITIVE_AABB && primitiveB !== GEO_PRIMITIVE_CONVEX_POLY)) {
-			return GEO_FAULT_DESCRIPTOR_KIND;
+		const faultA = this.loadPolyView(pieceAAddr, txA, tyA, this.polyA);
+		if (faultA !== GEO_FAULT_NONE) {
+			return faultA;
 		}
-		if (!this.loadWorldPoly(pieceAAddr, txA, tyA, this.worldPolyA)
-			|| !this.loadWorldPoly(pieceBAddr, txB, tyB, this.worldPolyB)) {
-			return GEO_FAULT_SRC_RANGE;
+		const faultB = this.loadPolyView(pieceBAddr, txB, tyB, this.polyB);
+		if (faultB !== GEO_FAULT_NONE) {
+			return faultB;
 		}
-		this.contactHit = this.computePolyPairContact(this.worldPolyA, this.worldPolyB);
+		this.contactHit = this.computePolyPairContact(this.polyA, this.polyB);
 		return GEO_FAULT_NONE;
 	}
 
-	private loadWorldPoly(pieceAddr: number, tx: number, ty: number, out: number[]): boolean {
+	private loadPolyView(pieceAddr: number, tx: number, ty: number, out: GeometryPolyView): number {
 		const primitive = this.memory.readU32(pieceAddr + GEO_OVERLAP2D_SHAPE_KIND_OFFSET);
 		const dataCount = this.memory.readU32(pieceAddr + GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET);
 		const dataOffset = this.memory.readU32(pieceAddr + GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET);
-		const dataBytes = primitive === GEO_PRIMITIVE_AABB ? GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES : dataCount * GEO_VERTEX2_BYTES;
-		const dataAddr = resolveGeometryByteOffset(pieceAddr, dataOffset, dataBytes);
-		if (dataAddr === null) {
-			return false;
-		}
-		out.length = 0;
 		if (primitive === GEO_PRIMITIVE_AABB) {
-			if (dataCount !== GEO_OVERLAP2D_AABB_DATA_COUNT || !this.memory.isReadableMainMemoryRange(dataAddr, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES)) {
-				return false;
+			if (dataCount !== GEO_OVERLAP2D_AABB_DATA_COUNT) {
+				return GEO_FAULT_BAD_VERTEX_COUNT;
 			}
-			const left = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET);
-			const top = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET);
-			const right = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET);
-			const bottom = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET);
-			this.pushWorldVertex(out, tx, ty, left, top);
-			this.pushWorldVertex(out, tx, ty, right, top);
-			this.pushWorldVertex(out, tx, ty, right, bottom);
-			this.pushWorldVertex(out, tx, ty, left, bottom);
-			return true;
+			const dataAddr = resolveGeometryByteOffset(pieceAddr, dataOffset, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES);
+			if (dataAddr === null || !this.memory.isReadableMainMemoryRange(dataAddr, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES)) {
+				return GEO_FAULT_SRC_RANGE;
+			}
+			out.primitive = primitive;
+			out.vertexCount = GEO_OVERLAP2D_AABB_DATA_COUNT;
+			out.dataAddr = dataAddr;
+			out.tx = tx;
+			out.ty = ty;
+			out.left = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET) + tx;
+			out.top = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET) + ty;
+			out.right = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET) + tx;
+			out.bottom = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET) + ty;
+			return GEO_FAULT_NONE;
 		}
-		if (primitive !== GEO_PRIMITIVE_CONVEX_POLY || dataCount < 3 || !this.memory.isReadableMainMemoryRange(dataAddr, dataBytes)) {
-			return false;
+		if (primitive !== GEO_PRIMITIVE_CONVEX_POLY) {
+			return GEO_FAULT_DESCRIPTOR_KIND;
 		}
-		for (let vertexIndex = 0; vertexIndex < dataCount; vertexIndex += 1) {
-			const vertexAddr = dataAddr + vertexIndex * GEO_VERTEX2_BYTES;
-			this.pushWorldVertex(out, tx, ty, this.readF32(vertexAddr + GEO_VERTEX2_X_OFFSET), this.readF32(vertexAddr + GEO_VERTEX2_Y_OFFSET));
+		if (dataCount < 3 || dataCount > GEO_OVERLAP2D_MAX_POLY_VERTICES) {
+			return GEO_FAULT_BAD_VERTEX_COUNT;
 		}
-		return true;
-	}
-
-	private pushWorldVertex(out: number[], tx: number, ty: number, localX: number, localY: number): void {
-		out.push(localX + tx);
-		out.push(localY + ty);
+		const dataBytes = dataCount * GEO_VERTEX2_BYTES;
+		const dataAddr = resolveGeometryByteOffset(pieceAddr, dataOffset, dataBytes);
+		if (dataAddr === null || !this.memory.isReadableMainMemoryRange(dataAddr, dataBytes)) {
+			return GEO_FAULT_SRC_RANGE;
+		}
+		out.primitive = primitive;
+		out.vertexCount = dataCount;
+		out.dataAddr = dataAddr;
+		out.tx = tx;
+		out.ty = ty;
+		out.left = 0;
+		out.top = 0;
+		out.right = 0;
+		out.bottom = 0;
+		return GEO_FAULT_NONE;
 	}
 
 	private boundsOverlap(a: Float64Array, b: Float64Array): boolean {
 		return !(a[0] > b[2] || a[2] < b[0] || a[1] > b[3] || a[3] < b[1]);
 	}
 
-	private computePolyPairContact(polyA: number[], polyB: number[]): boolean {
+	private computePolyPairContact(polyA: GeometryPolyView, polyB: GeometryPolyView): boolean {
 		let bestOverlap = Number.POSITIVE_INFINITY;
 		let bestAxisX = 0;
 		let bestAxisY = 0;
@@ -432,10 +476,12 @@ export class GeometryOverlap2dUnit {
 		let sawAxis = false;
 		for (let owner = 0; owner < 2; owner += 1) {
 			const poly = owner === 0 ? polyA : polyB;
-			for (let i = 0; i < poly.length; i += 2) {
-				const next = i + 2 >= poly.length ? 0 : i + 2;
-				const nx = -(poly[next + 1] - poly[i + 1]);
-				const ny = poly[next] - poly[i];
+			for (let edgeIndex = 0; edgeIndex < poly.vertexCount; edgeIndex += 1) {
+				const nextIndex = edgeIndex + 1 === poly.vertexCount ? 0 : edgeIndex + 1;
+				this.readWorldVertexInto(poly, edgeIndex, this.vertex0);
+				this.readWorldVertexInto(poly, nextIndex, this.vertex1);
+				const nx = -(this.vertex1.y - this.vertex0.y);
+				const ny = this.vertex1.x - this.vertex0.x;
 				const len = Math.sqrt((nx * nx) + (ny * ny));
 				if (!(len > 0)) {
 					continue;
@@ -449,7 +495,6 @@ export class GeometryOverlap2dUnit {
 				if (!(overlap > 0)) {
 					return false;
 				}
-				const edgeIndex = i >> 1;
 				if (overlap < bestOverlap
 					|| (overlap === bestOverlap && (owner < bestOwner || (owner === bestOwner && edgeIndex < bestEdgeIndex)))) {
 					bestOverlap = overlap;
@@ -469,14 +514,14 @@ export class GeometryOverlap2dUnit {
 			bestAxisX = -bestAxisX;
 			bestAxisY = -bestAxisY;
 		}
-		const intersection = this.clipConvexPolygons(polyA, polyB);
 		let pointX;
 		let pointY;
-		if (intersection.length === 0) {
+		this.clipConvexPolygons(polyA, polyB);
+		if (this.clipResultVertexCount === 0) {
 			pointX = (this.centerA.x + this.centerB.x) * 0.5;
 			pointY = (this.centerA.y + this.centerB.y) * 0.5;
 		} else {
-			this.computePolyAverageInto(intersection, this.centroid);
+			this.computeClipAverageInto(this.clipResult, this.clipResultVertexCount, this.centroid);
 			pointX = this.centroid.x;
 			pointY = this.centroid.y;
 		}
@@ -489,11 +534,12 @@ export class GeometryOverlap2dUnit {
 		return true;
 	}
 
-	private projectPolyInto(poly: number[], ax: number, ay: number, out: GeometryProjectionSpan): void {
+	private projectPolyInto(poly: GeometryPolyView, ax: number, ay: number, out: GeometryProjectionSpan): void {
 		let min = Number.POSITIVE_INFINITY;
 		let max = Number.NEGATIVE_INFINITY;
-		for (let i = 0; i < poly.length; i += 2) {
-			const projection = (poly[i] * ax) + (poly[i + 1] * ay);
+		for (let vertexIndex = 0; vertexIndex < poly.vertexCount; vertexIndex += 1) {
+			this.readWorldVertexInto(poly, vertexIndex, this.vertex0);
+			const projection = (this.vertex0.x * ax) + (this.vertex0.y * ay);
 			if (projection < min) {
 				min = projection;
 			}
@@ -505,52 +551,61 @@ export class GeometryOverlap2dUnit {
 		out.max = max;
 	}
 
-	private computePolyAverageInto(poly: number[], out: PointScratch): void {
+	private computePolyAverageInto(poly: GeometryPolyView, out: PointScratch): void {
 		let sumX = 0;
 		let sumY = 0;
-		const count = poly.length >> 1;
-		for (let i = 0; i < poly.length; i += 2) {
-			sumX += poly[i];
-			sumY += poly[i + 1];
+		for (let vertexIndex = 0; vertexIndex < poly.vertexCount; vertexIndex += 1) {
+			this.readWorldVertexInto(poly, vertexIndex, this.vertex0);
+			sumX += this.vertex0.x;
+			sumY += this.vertex0.y;
 		}
-		out.x = sumX / count;
-		out.y = sumY / count;
+		out.x = sumX / poly.vertexCount;
+		out.y = sumY / poly.vertexCount;
 	}
 
-	private clipConvexPolygons(polyA: number[], polyB: number[]): number[] {
-		this.clip0.length = polyA.length;
-		for (let i = 0; i < polyA.length; i += 1) {
-			this.clip0[i] = polyA[i];
+	private clipConvexPolygons(polyA: GeometryPolyView, polyB: GeometryPolyView): void {
+		for (let vertexIndex = 0; vertexIndex < polyA.vertexCount; vertexIndex += 1) {
+			this.readWorldVertexInto(polyA, vertexIndex, this.vertex0);
+			this.writeClipVertex(this.clip0, vertexIndex, this.vertex0.x, this.vertex0.y);
 		}
 		let input = this.clip0;
 		let output = this.clip1;
-		for (let i = 0; i < polyB.length; i += 2) {
-			output.length = 0;
-			const x0 = polyB[i];
-			const y0 = polyB[i + 1];
-			const next = i + 2 >= polyB.length ? 0 : i + 2;
-			const x1 = polyB[next];
-			const y1 = polyB[next + 1];
-			if (input.length === 0) {
+		let inputVertexCount = polyA.vertexCount;
+		for (let edgeIndex = 0; edgeIndex < polyB.vertexCount; edgeIndex += 1) {
+			let outputVertexCount = 0;
+			const nextIndex = edgeIndex + 1 === polyB.vertexCount ? 0 : edgeIndex + 1;
+			this.readWorldVertexInto(polyB, edgeIndex, this.vertex0);
+			const x0 = this.vertex0.x;
+			const y0 = this.vertex0.y;
+			this.readWorldVertexInto(polyB, nextIndex, this.vertex1);
+			const x1 = this.vertex1.x;
+			const y1 = this.vertex1.y;
+			if (inputVertexCount === 0) {
 				break;
 			}
-			let sx = input[input.length - 2];
-			let sy = input[input.length - 1];
+			let sx = input[(inputVertexCount - 1) * 2];
+			let sy = input[((inputVertexCount - 1) * 2) + 1];
 			let sd = this.clipPlaneDistance(x0, y0, x1, y1, sx, sy);
 			let sInside = sd >= 0;
-			for (let j = 0; j < input.length; j += 2) {
-				const ex = input[j];
-				const ey = input[j + 1];
+			for (let inputIndex = 0; inputIndex < inputVertexCount; inputIndex += 1) {
+				const inputOffset = inputIndex * 2;
+				const ex = input[inputOffset];
+				const ey = input[inputOffset + 1];
 				const ed = this.clipPlaneDistance(x0, y0, x1, y1, ex, ey);
 				const eInside = ed >= 0;
 				if (sInside && eInside) {
-					output.push(ex, ey);
+					this.writeClipVertex(output, outputVertexCount, ex, ey);
+					outputVertexCount += 1;
 				} else if (sInside && !eInside) {
 					const t = sd / (sd - ed);
-					output.push(sx + ((ex - sx) * t), sy + ((ey - sy) * t));
+					this.writeClipVertex(output, outputVertexCount, sx + ((ex - sx) * t), sy + ((ey - sy) * t));
+					outputVertexCount += 1;
 				} else if (!sInside && eInside) {
 					const t = sd / (sd - ed);
-					output.push(sx + ((ex - sx) * t), sy + ((ey - sy) * t), ex, ey);
+					this.writeClipVertex(output, outputVertexCount, sx + ((ex - sx) * t), sy + ((ey - sy) * t));
+					outputVertexCount += 1;
+					this.writeClipVertex(output, outputVertexCount, ex, ey);
+					outputVertexCount += 1;
 				}
 				sx = ex;
 				sy = ey;
@@ -560,8 +615,50 @@ export class GeometryOverlap2dUnit {
 			const swap = input;
 			input = output;
 			output = swap;
+			inputVertexCount = outputVertexCount;
 		}
-		return input;
+		this.clipResult = input;
+		this.clipResultVertexCount = inputVertexCount;
+	}
+
+	private readWorldVertexInto(poly: GeometryPolyView, vertexIndex: number, out: PointScratch): void {
+		if (poly.primitive === GEO_PRIMITIVE_AABB) {
+			if (vertexIndex === 0) {
+				out.x = poly.left;
+				out.y = poly.top;
+			} else if (vertexIndex === 1) {
+				out.x = poly.right;
+				out.y = poly.top;
+			} else if (vertexIndex === 2) {
+				out.x = poly.right;
+				out.y = poly.bottom;
+			} else {
+				out.x = poly.left;
+				out.y = poly.bottom;
+			}
+			return;
+		}
+		const vertexAddr = poly.dataAddr + vertexIndex * GEO_VERTEX2_BYTES;
+		out.x = this.readF32(vertexAddr + GEO_VERTEX2_X_OFFSET) + poly.tx;
+		out.y = this.readF32(vertexAddr + GEO_VERTEX2_Y_OFFSET) + poly.ty;
+	}
+
+	private writeClipVertex(buffer: Float64Array, vertexIndex: number, x: number, y: number): void {
+		const offset = vertexIndex * 2;
+		buffer[offset] = x;
+		buffer[offset + 1] = y;
+	}
+
+	private computeClipAverageInto(buffer: Float64Array, vertexCount: number, out: PointScratch): void {
+		let sumX = 0;
+		let sumY = 0;
+		for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex += 1) {
+			const offset = vertexIndex * 2;
+			sumX += buffer[offset];
+			sumY += buffer[offset + 1];
+		}
+		out.x = sumX / vertexCount;
+		out.y = sumY / vertexCount;
 	}
 
 	private clipPlaneDistance(x0: number, y0: number, x1: number, y1: number, px: number, py: number): number {

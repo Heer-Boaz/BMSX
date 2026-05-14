@@ -254,7 +254,7 @@ dirty VDP-owned rows and the render bridge uploads those rows before execution
 or page present, without reintroducing a generic scene API or host texture API
 as cart-visible ingress.
 
-Status: current cleanup target. The VDP/render singleton-discovery and renderer-callback leaks are being replaced by a stricter device/host-output boundary: the VDP device owns registers, latches, VRAM slot state, frame submission, fault latches, and explicit host-output transactions; render code consumes those transactions and acks execution tokens.
+Status: the main VDP/render singleton-discovery and renderer-callback leaks have been replaced by a stricter device/host-output boundary: the VDP device owns registers, latches, VRAM slot state, frame submission, fault latches, and explicit host-output transactions; render code consumes those transactions and acks execution tokens.
 
 Current evidence:
 
@@ -308,6 +308,14 @@ Current evidence:
   and dirty presentation spans. VDP still owns VRAM slot lookup, fault latching,
   and dirty-surface clearing, while render-side texture upload remains in
   `render/vdp/framebuffer`.
+- Non-framebuffer VDP surface uploads now follow the same device-owned
+  transaction rule. Normal `drainSurfaceUploads(...)` emits dirty-only
+  non-framebuffer slot transactions, `syncSurfaceUploads(...)` emits full-sync
+  transactions for renderer context or texture initialization, and VDP clears
+  the dirty pin inside the device owner after the sink consumes the transaction.
+  Renderer slot textures consume the raw upload payload and `requiresFullSync`
+  flag only; they no longer return an ack boolean, classify framebuffer
+  surfaces, or clear surface-dirty state themselves.
 - VOUT now owns mirrored TS/C++ visible video-output state in
   `machine/devices/vdp/vout`: `Idle` / `RegisterLatched` / `FrameSealed` /
   `FramePresented` state, the live dither register, active/VBlank scanout
@@ -321,7 +329,7 @@ Current evidence:
   consumes explicit device-output values instead of interpreting cart intent.
 - Current parallax status is DEX/PMU-owned parallax execution. PMU register writes latch raw bank words. DEX resolves the selected bank into per-BLIT `dstX`/`dstY`/scale geometry when it latches BLIT work, and DEX/LINE faults are surfaced through VDP fault latches.
 - Camera, PMU, SBX, and BBU state are real VDP unit state. SBX ingress is either the `IO_VDP_SBX_*` register window plus commit doorbell or a sealed `SKYBOX` packet. BBU ingress is the sealed `BILLBOARD` packet stream. Render backends consume resolved host-output state; they do not validate or program VDP device state.
-- `src/bmsx/render/vdp` and `src/bmsx_cpp/render/vdp` remain the renderer/backend side of the VDP host bridge. They may upload textures, execute ready blitter queues, present framebuffer pages, and clear dirty-surface pins through the explicit VDP host-output contract; they must not be imported by `machine/devices/vdp`.
+- `src/bmsx/render/vdp` and `src/bmsx_cpp/render/vdp` remain the renderer/backend side of the VDP host bridge. They may upload textures, execute ready blitter queues, and present framebuffer pages through explicit VDP host-output transactions; dirty acknowledgement remains inside the VDP owner. Render modules must not be imported by `machine/devices/vdp`.
 
 Risk:
 
@@ -934,7 +942,10 @@ Open problems to continue with:
    device status rather than host exception or ad-hoc rejection, and whether the
    register/latch contract is tight enough for future geometry commands. The existing
    `docs/geo_overlap2d_pass_v1.md` is a good hardware-contract note, but it does
-   not certify the whole geometry device.
+   not certify the whole geometry device. The OVERLAP2D contact datapath now
+   decodes shape descriptors into retained device scratch views and clips into a
+   fixed scratch arena; it no longer materializes full world-polygon staging
+   arrays/vectors before SAT/contact work.
 
 5. The public API surface is not proven complete. Firmware globals, BIOS helper
    APIs, Lua API metadata, editor overlay APIs, devtools APIs, and terminal or
@@ -951,32 +962,31 @@ Open problems to continue with:
 
 If `/goal resume` is invoked, it should mean this order of work:
 
-1. Continue VDP-as-hardware cleanup beyond the now-implemented VOUT beam timing
-   and FBM context-sync transaction: audit the remaining dirty-surface
-   acknowledgement and renderer-consumed non-framebuffer surface handles without
-   adding renderer-facing scene APIs or wrapper layers.
-2. Continue auditing Geometry as a device, not as a math helper: register/latch
+1. Continue auditing Geometry as a device, not as a math helper: register/latch
    ownership, scheduler timing, IRQ/status/fault behavior, scratch/result
    memory, save/load behavior, and TS/C++ parity should be checked as one
    hardware contract.
-3. Continue the APU hardware contract beyond device-owned cursor/timer events,
+2. Continue the APU hardware contract beyond device-owned cursor/timer events,
    cart-visible AOUT start faults, the mirrored AOUT mixer, cart-visible AOUT
    output-ring status, the persisted command FIFO, the writable selected
    channel register bank, the mirrored source-DMA byte-buffer owner, and the
    mirrored slot lifecycle phases: remaining envelope/generator work must stay
    device-owned instead of growing through host-side sound shortcuts.
-4. Continue the Input Controller (ICU) cleanup by removing the remaining pass-through APIs and making the
+3. Continue the Input Controller (ICU) cleanup by removing the remaining pass-through APIs and making the
    device owner the single source of truth for input state, including the
    active `Input` snapshot, input timing, and any future input features such as
    buffered input or rumble.
-5. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
+4. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
    APIs, Lua API metadata, devtools source APIs, overlay/editor APIs, terminal
    commands, and workspace APIs. Separate cart-visible contracts from editor or
    host-only conveniences.
-6. Continue the IDE/terminal cleanup with `terminal/ui/mode.ts`, because it is
+5. Continue the IDE/terminal cleanup with `terminal/ui/mode.ts`, because it is
    the next concentrated quality hotspot exposed by the current slice.
-7. Clean `code_tab/contexts.ts` state access after terminal mode no longer
+6. Clean `code_tab/contexts.ts` state access after terminal mode no longer
    needs editor/workbench internals by convenience.
+7. Revisit VDP only if a concrete host-output race appears that requires
+   generation/frozen snapshot semantics; do not invent a new renderer-facing
+   scene API.
 8. Only then perform a fresh completion audit of the active goal against this
    document and the actual working tree. The expected result today is still
    "not complete" unless every open item above has been resolved by concrete
@@ -996,27 +1006,23 @@ Completed foundation:
 
 Next recommended work:
 
-1. Continue VDP-as-hardware cleanup beyond the now-implemented VOUT scanline/dot
-   beam and FBM full-sync transaction: audit dirty-surface acknowledgement and
-   renderer-consumed non-framebuffer surface handles while preserving direct
-   VDP-owned hot paths.
-2. Continue Geometry as a real coprocessor device beyond the explicit
+1. Continue Geometry as a real coprocessor device beyond the explicit
    controller phase and mirrored XFORM2/SAT2/overlap2d datapaths: re-audit
    register/latch ownership, scheduler timing, scratch/result memory,
    status/fault behavior, and focused TS/C++ tests.
-3. Continue APU hardware work through MMIO/FIFO/device state/AOUT instead of
+2. Continue APU hardware work through MMIO/FIFO/device state/AOUT instead of
    host sound shortcuts; after the mirrored AOUT mixer, cart-visible AOUT
    start faults, cart-visible output-ring status, persisted command FIFO,
    selected-channel register writes, source-DMA ownership, sample-rate-scaled
    cursors, and slot lifecycle phases, the next APU step is envelope/generator
    state owned by the device.
-4. Continue Input Controller (ICU) cleanup by removing the remaining pass-through APIs and making the
+3. Continue Input Controller (ICU) cleanup by removing the remaining pass-through APIs and making the
    device owner the single source of truth for input state, including the
    active `Input` snapshot, input timing, and any future input features such as
    buffered input or rumble.
-5. Continue TS/C++ parity cleanup subsystem by subsystem, including public API
+4. Continue TS/C++ parity cleanup subsystem by subsystem, including public API
    surfaces instead of assuming they are already covered.
-6. Clean IDE/editor layering after the machine boundaries are safer, starting
+5. Clean IDE/editor layering after the machine boundaries are safer, starting
    with `terminal/ui/mode.ts` and then code-tab context ownership.
 
 This order protects future feature work. The goal is not to make the codebase

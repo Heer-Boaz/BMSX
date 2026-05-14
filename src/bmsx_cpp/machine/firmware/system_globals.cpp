@@ -317,6 +317,8 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_geo_overlap_broadphase_local_bounds_aabb", valueNumber(static_cast<double>(GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB)));
 	runtime.setGlobal("sys_geo_overlap_contact_clipped_feature", valueNumber(static_cast<double>(GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE)));
 	runtime.setGlobal("sys_geo_overlap_output_stop_on_overflow", valueNumber(static_cast<double>(GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW)));
+	runtime.setGlobal("sys_geo_overlap_max_poly_vertices", valueNumber(static_cast<double>(GEO_OVERLAP2D_MAX_POLY_VERTICES)));
+	runtime.setGlobal("sys_geo_overlap_max_clip_vertices", valueNumber(static_cast<double>(GEO_OVERLAP2D_MAX_CLIP_VERTICES)));
 	runtime.setGlobal("sys_geo_overlap_instance_bytes", valueNumber(static_cast<double>(GEO_OVERLAP2D_INSTANCE_BYTES)));
 	runtime.setGlobal("sys_geo_overlap_instance_shape_offset", valueNumber(static_cast<double>(GEO_OVERLAP2D_INSTANCE_SHAPE_OFFSET)));
 	runtime.setGlobal("sys_geo_overlap_instance_tx_offset", valueNumber(static_cast<double>(GEO_OVERLAP2D_INSTANCE_TX_OFFSET)));

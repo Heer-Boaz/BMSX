@@ -484,6 +484,8 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'sys_geo_overlap_broadphase_local_bounds_aabb', params: [], signature: 'sys_geo_overlap_broadphase_local_bounds_aabb', description: 'GEO overlap2d broadphase policy: local-bounds AABB.' },
 	{ name: 'sys_geo_overlap_contact_clipped_feature', params: [], signature: 'sys_geo_overlap_contact_clipped_feature', description: 'GEO overlap2d contact policy: clipped feature point.' },
 	{ name: 'sys_geo_overlap_output_stop_on_overflow', params: [], signature: 'sys_geo_overlap_output_stop_on_overflow', description: 'GEO overlap2d output policy: stop and fault on result overflow.' },
+	{ name: 'sys_geo_overlap_max_poly_vertices', params: [], signature: 'sys_geo_overlap_max_poly_vertices', description: 'GEO overlap2d per-piece polygon vertex scratch capacity.' },
+	{ name: 'sys_geo_overlap_max_clip_vertices', params: [], signature: 'sys_geo_overlap_max_clip_vertices', description: 'GEO overlap2d clipped-contact vertex scratch capacity.' },
 	{ name: 'sys_geo_overlap_instance_bytes', params: [], signature: 'sys_geo_overlap_instance_bytes', description: 'GEO overlap2d instance record size in bytes.' },
 	{ name: 'sys_geo_overlap_instance_shape_offset', params: [], signature: 'sys_geo_overlap_instance_shape_offset', description: 'Byte offset of the shape address field in a GEO overlap2d instance record.' },
 	{ name: 'sys_geo_overlap_instance_tx_offset', params: [], signature: 'sys_geo_overlap_instance_tx_offset', description: 'Byte offset of the world translation X field in a GEO overlap2d instance record.' },

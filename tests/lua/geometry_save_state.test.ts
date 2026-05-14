@@ -33,7 +33,10 @@ import {
 	GEOMETRY_CONTROLLER_PHASE_IDLE,
 	GEOMETRY_CONTROLLER_PHASE_REJECTED,
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
+	GEO_FAULT_BAD_VERTEX_COUNT,
+	GEO_FAULT_CODE_SHIFT,
 	GEO_INDEX_NONE,
+	GEO_OVERLAP2D_AABB_DATA_COUNT,
 	GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB,
 	GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE,
 	GEO_OVERLAP2D_INSTANCE_BYTES,
@@ -42,8 +45,16 @@ import {
 	GEO_OVERLAP2D_INSTANCE_SHAPE_OFFSET,
 	GEO_OVERLAP2D_INSTANCE_TX_OFFSET,
 	GEO_OVERLAP2D_INSTANCE_TY_OFFSET,
+	GEO_OVERLAP2D_MAX_CLIP_VERTICES,
+	GEO_OVERLAP2D_MAX_POLY_VERTICES,
 	GEO_OVERLAP2D_MODE_FULL_PASS,
 	GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW,
+	GEO_OVERLAP2D_RESULT_DEPTH_OFFSET,
+	GEO_OVERLAP2D_RESULT_NX_OFFSET,
+	GEO_OVERLAP2D_RESULT_NY_OFFSET,
+	GEO_OVERLAP2D_RESULT_PAIR_META_OFFSET,
+	GEO_OVERLAP2D_RESULT_PX_OFFSET,
+	GEO_OVERLAP2D_RESULT_PY_OFFSET,
 	GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET,
 	GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET,
 	GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET,
@@ -53,6 +64,8 @@ import {
 	GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET,
 	GEO_OVERLAP2D_SHAPE_DESC_BYTES,
 	GEO_OVERLAP2D_SHAPE_KIND_OFFSET,
+	GEO_OVERLAP2D_SUMMARY_RESULT_COUNT_OFFSET,
+	GEO_PRIMITIVE_AABB,
 	GEO_PRIMITIVE_CONVEX_POLY,
 	GEO_VERTEX2_BYTES,
 	GEO_XFORM2_MATRIX_BYTES,
@@ -169,6 +182,17 @@ function writeOversizeOverlapPoly(memory: Memory, shapeAddr: number): void {
 	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET, 0);
 	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET, 0x3f80_0000);
 	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET, 0x3f80_0000);
+}
+
+function writeOverlapAabbShape(memory: Memory, shapeAddr: number, left: number, top: number, right: number, bottom: number): void {
+	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_KIND_OFFSET, GEO_PRIMITIVE_AABB);
+	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET, GEO_OVERLAP2D_AABB_DATA_COUNT);
+	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET, GEO_OVERLAP2D_SHAPE_DESC_BYTES);
+	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET, GEO_OVERLAP2D_SHAPE_DESC_BYTES);
+	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET, left);
+	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET, top);
+	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET, right);
+	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET, bottom);
 }
 
 function startGeometryCommand(memory: Memory, geometry: GeometryController, command: number): GeometryControllerState {
@@ -384,17 +408,38 @@ test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () =>
 	memory.writeValue(IO_GEO_FAULT_ACK, 1);
 	const shapeA = jobBase + 0x400;
 	const shapeB = jobBase + 0x500;
+	const summaryBase = jobBase + 0x200;
+	const resultBase = jobBase + 0x300;
+
+	writeOverlap2dInstance(memory, jobBase, shapeA);
+	writeOverlap2dInstance(memory, jobBase + GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
+	writeOverlapAabbShape(memory, shapeA, 0x0000_0000, 0x0000_0000, 0x3f80_0000, 0x3f80_0000);
+	writeOverlapAabbShape(memory, shapeB, 0x3f00_0000, 0x0000_0000, 0x3fc0_0000, 0x3f80_0000);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
+	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
+	geometry.accrueCycles(2, 2);
+	geometry.onService(2);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
+	assert.equal(memory.readU32(summaryBase + GEO_OVERLAP2D_SUMMARY_RESULT_COUNT_OFFSET), 1);
+	assert.equal(memory.readU32(resultBase + GEO_OVERLAP2D_RESULT_NX_OFFSET), 0xbf80_0000);
+	assert.equal(memory.readU32(resultBase + GEO_OVERLAP2D_RESULT_NY_OFFSET), 0x0000_0000);
+	assert.equal(memory.readU32(resultBase + GEO_OVERLAP2D_RESULT_DEPTH_OFFSET), 0x3f00_0000);
+	assert.equal(memory.readU32(resultBase + GEO_OVERLAP2D_RESULT_PX_OFFSET), 0x3f40_0000);
+	assert.equal(memory.readU32(resultBase + GEO_OVERLAP2D_RESULT_PY_OFFSET), 0x3f00_0000);
+	assert.equal(memory.readU32(resultBase + GEO_OVERLAP2D_RESULT_PAIR_META_OFFSET), 1);
+
 	writeOverlap2dInstance(memory, jobBase, shapeA);
 	writeOverlap2dInstance(memory, jobBase + GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
 	writeOversizeOverlapPoly(memory, shapeA);
 	writeOversizeOverlapPoly(memory, shapeB);
-	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, jobBase + 0x300, 1);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
 	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	geometry.accrueCycles(1, 1);
 	geometry.onService(1);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
-	assert.notEqual(memory.readIoU32(IO_GEO_FAULT), 0);
+	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_VERTEX_COUNT);
 });
 
 test('GEO cart-visible ABI names are system ROM globals and builtins', () => {
@@ -417,6 +462,8 @@ test('GEO cart-visible ABI names are system ROM globals and builtins', () => {
 		'sys_geo_overlap_broadphase_local_bounds_aabb',
 		'sys_geo_overlap_contact_clipped_feature',
 		'sys_geo_overlap_output_stop_on_overflow',
+		'sys_geo_overlap_max_poly_vertices',
+		'sys_geo_overlap_max_clip_vertices',
 		'sys_geo_overlap_instance_bytes',
 		'sys_geo_overlap_instance_shape_offset',
 		'sys_geo_overlap_pair_bytes',
@@ -445,4 +492,6 @@ test('GEO cart-visible ABI names are system ROM globals and builtins', () => {
 		assert.equal(SYSTEM_ROM_GLOBAL_NAME_SET.has(name), true);
 		assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes(name), true);
 	}
+	assert.equal(GEO_OVERLAP2D_MAX_POLY_VERTICES, 64);
+	assert.equal(GEO_OVERLAP2D_MAX_CLIP_VERTICES, GEO_OVERLAP2D_MAX_POLY_VERTICES * 2);
 });

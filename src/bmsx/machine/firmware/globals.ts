@@ -58,6 +58,8 @@ import {
 	GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB,
 	GEO_OVERLAP2D_BROADPHASE_NONE,
 	GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE,
+	GEO_OVERLAP2D_MAX_CLIP_VERTICES,
+	GEO_OVERLAP2D_MAX_POLY_VERTICES,
 	GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS,
 	GEO_OVERLAP2D_MODE_FULL_PASS,
 	GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW,
@@ -1658,6 +1660,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_broadphase_local_bounds_aabb', GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_contact_clipped_feature', GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_output_stop_on_overflow', GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_max_poly_vertices', GEO_OVERLAP2D_MAX_POLY_VERTICES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_max_clip_vertices', GEO_OVERLAP2D_MAX_CLIP_VERTICES);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_instance_bytes', GEO_OVERLAP2D_INSTANCE_BYTES);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_instance_shape_offset', GEO_OVERLAP2D_INSTANCE_SHAPE_OFFSET);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_instance_tx_offset', GEO_OVERLAP2D_INSTANCE_TX_OFFSET);

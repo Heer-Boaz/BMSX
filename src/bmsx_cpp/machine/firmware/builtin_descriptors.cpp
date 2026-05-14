@@ -76,7 +76,7 @@ constexpr std::array<LuaBuiltinDescriptor, 4> kSystemLuaBuiltinGlobals{{
 	LuaBuiltinDescriptor{"sorted_scratchbatch", "sorted_scratchbatch", "Sorted scratch batch module table (sorted_scratchbatch.new; batches support clear, push, get, reserve, for_each, iter, set_compare, sort)."},
 }};
 
-constexpr std::array<LuaBuiltinDescriptor, 485> kDefaultLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 487> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"assert", "assert(value [, message])", ""},
 	LuaBuiltinDescriptor{"error", "error(message [, level])", ""},
 	LuaBuiltinDescriptor{"getmetatable", "getmetatable(object)", ""},
@@ -487,6 +487,8 @@ constexpr std::array<LuaBuiltinDescriptor, 485> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_geo_overlap_broadphase_local_bounds_aabb", "sys_geo_overlap_broadphase_local_bounds_aabb", "GEO overlap2d broadphase policy: local-bounds AABB."},
 	LuaBuiltinDescriptor{"sys_geo_overlap_contact_clipped_feature", "sys_geo_overlap_contact_clipped_feature", "GEO overlap2d contact policy: clipped feature point."},
 	LuaBuiltinDescriptor{"sys_geo_overlap_output_stop_on_overflow", "sys_geo_overlap_output_stop_on_overflow", "GEO overlap2d output policy: stop and fault on result overflow."},
+	LuaBuiltinDescriptor{"sys_geo_overlap_max_poly_vertices", "sys_geo_overlap_max_poly_vertices", "GEO overlap2d per-piece polygon vertex scratch capacity."},
+	LuaBuiltinDescriptor{"sys_geo_overlap_max_clip_vertices", "sys_geo_overlap_max_clip_vertices", "GEO overlap2d clipped-contact vertex scratch capacity."},
 	LuaBuiltinDescriptor{"sys_geo_overlap_instance_bytes", "sys_geo_overlap_instance_bytes", "GEO overlap2d instance record size in bytes."},
 	LuaBuiltinDescriptor{"sys_geo_overlap_instance_shape_offset", "sys_geo_overlap_instance_shape_offset", "Byte offset of the shape address field in a GEO overlap2d instance record."},
 	LuaBuiltinDescriptor{"sys_geo_overlap_instance_tx_offset", "sys_geo_overlap_instance_tx_offset", "Byte offset of the world translation X field in a GEO overlap2d instance record."},

@@ -45,6 +45,9 @@ Lower-level `GEO` commands such as `xform2_batch`, `sat2_batch`,
   normals, depth, or `contact.point` for overlap hot paths.
 - In candidate mode, CPU broadphase must use transformed local bounds only.
   It must not materialize world polygon tables for overlap staging.
+- The device datapath follows the same rule internally: it decodes descriptors
+  into retained scratch views, reads vertices from RAM on demand, and clips
+  contact polygons into a fixed Geometry-owned scratch arena.
 
 ## MMIO Contract
 
@@ -68,6 +71,9 @@ status bits, fault codes, shape ids, and overlap policy bitfields.
 - `cmd`: `sys_geo_cmd_overlap2d_pass`
 - `param0`: format / control word
 - `param1`: result capacity in records
+- `sys_geo_overlap_max_poly_vertices`: maximum vertices accepted for one
+  convex-poly primitive by the OVERLAP2D scratch datapath
+- `sys_geo_overlap_max_clip_vertices`: clipped-contact scratch vertex capacity
 - `stride0`: instance record stride in bytes
 - `stride1`: candidate pair record stride in bytes, or `0` in full-pass mode
 - `stride2`: candidate-mode instance count; `0` in full-pass mode
@@ -208,6 +214,7 @@ For every `convex_poly` piece:
 - vertices are expected in CCW local-space order
 - no repeated terminal vertex is needed
 - minimum 3 vertices
+- maximum `sys_geo_overlap_max_poly_vertices` vertices
 - collinear adjacent edges and zero-length edges are tolerated by the datapath by
   skipping degenerate SAT axes
 - if no usable SAT axis remains, the piece-pair is treated as non-hit rather
@@ -470,22 +477,24 @@ Execution faults include:
 - bad instance index
 - self-pair in candidate mode
 - malformed shape or piece data
+- polygon vertex count outside the device scratch capacity
 - source or destination range fault
 - result capacity overflow
 
 ## Migration Intent
 
-The overlap hot path is expected to migrate from:
+The overlap hot path has migrated away from:
 
 - CPU-side piece expansion
 - CPU-side world polygon staging
 - CPU-side post-SAT contact reconstruction
 
-to:
+The active contract is:
 
 - Geometry-owned shape descriptors and instance records
 - instance table submission
 - `GEO overlap2d_pass`
+- retained Geometry scratch views plus fixed clipped-contact scratch
 - result-table consumption only
 
 This command is the long-term overlap path for ECS.

@@ -813,6 +813,17 @@ void writeOversizeOverlapPoly(bmsx::Memory& memory, uint32_t shapeAddr) {
 	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET, 0x3f800000u);
 }
 
+void writeOverlapAabbShape(bmsx::Memory& memory, uint32_t shapeAddr, uint32_t left, uint32_t top, uint32_t right, uint32_t bottom) {
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_KIND_OFFSET, bmsx::GEO_PRIMITIVE_AABB);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET, bmsx::GEO_OVERLAP2D_AABB_DATA_COUNT);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET, bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET, bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET, left);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET, top);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET, right);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET, bottom);
+}
+
 void testGeometrySaveStateRestoresActiveCommandLatchGolden() {
 	RuntimeHarness harness;
 	bmsx::Machine& machine = harness.runtime.machine;
@@ -959,17 +970,38 @@ void testGeometryOverlap2dSubmitContractGolden() {
 	writeIoWord(memory, bmsx::IO_GEO_FAULT_ACK, 1u);
 	const uint32_t shapeA = jobBase + 0x400u;
 	const uint32_t shapeB = jobBase + 0x500u;
+	const uint32_t summaryBase = jobBase + 0x200u;
+	const uint32_t resultBase = jobBase + 0x300u;
+
+	writeOverlap2dInstance(memory, jobBase, shapeA);
+	writeOverlap2dInstance(memory, jobBase + bmsx::GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
+	writeOverlapAabbShape(memory, shapeA, 0x00000000u, 0x00000000u, 0x3f800000u, 0x3f800000u);
+	writeOverlapAabbShape(memory, shapeB, 0x3f000000u, 0x00000000u, 0x3fc00000u, 0x3f800000u);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 2u, 0u, resultBase, 1u);
+	writeIoWord(memory, bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_OVERLAP2D_PASS);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO overlap2d AABB test should enter BUSY");
+	machine.geometryController.accrueCycles(2, 2);
+	machine.geometryController.onService(2);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_DONE, "GEO overlap2d AABB test should complete");
+	require(memory.readU32(summaryBase + bmsx::GEO_OVERLAP2D_SUMMARY_RESULT_COUNT_OFFSET) == 1u, "GEO overlap2d AABB test should write one result");
+	require(memory.readU32(resultBase + bmsx::GEO_OVERLAP2D_RESULT_NX_OFFSET) == 0xbf800000u, "GEO overlap2d AABB result should expose normal X");
+	require(memory.readU32(resultBase + bmsx::GEO_OVERLAP2D_RESULT_NY_OFFSET) == 0u, "GEO overlap2d AABB result should expose normal Y");
+	require(memory.readU32(resultBase + bmsx::GEO_OVERLAP2D_RESULT_DEPTH_OFFSET) == 0x3f000000u, "GEO overlap2d AABB result should expose depth");
+	require(memory.readU32(resultBase + bmsx::GEO_OVERLAP2D_RESULT_PX_OFFSET) == 0x3f400000u, "GEO overlap2d AABB result should expose contact X");
+	require(memory.readU32(resultBase + bmsx::GEO_OVERLAP2D_RESULT_PY_OFFSET) == 0x3f000000u, "GEO overlap2d AABB result should expose contact Y");
+	require(memory.readU32(resultBase + bmsx::GEO_OVERLAP2D_RESULT_PAIR_META_OFFSET) == 1u, "GEO overlap2d AABB result should preserve pair meta");
+
 	writeOverlap2dInstance(memory, jobBase, shapeA);
 	writeOverlap2dInstance(memory, jobBase + bmsx::GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
 	writeOversizeOverlapPoly(memory, shapeA);
 	writeOversizeOverlapPoly(memory, shapeB);
-	writeOverlap2dFullPassRegisters(memory, jobBase, 2u, 0u, jobBase + 0x300u, 1u);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 2u, 0u, resultBase, 1u);
 	writeIoWord(memory, bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_OVERLAP2D_PASS);
 	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO overlap2d oversize poly test should enter BUSY before execution fault");
 	machine.geometryController.accrueCycles(1, 1);
 	machine.geometryController.onService(1);
 	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO overlap2d should fault oversize public poly span without uint32 wrap");
-	require(memory.readIoU32(bmsx::IO_GEO_FAULT) != 0u, "GEO overlap2d oversize public poly span should expose a fault word");
+	require((memory.readIoU32(bmsx::IO_GEO_FAULT) >> bmsx::GEO_FAULT_CODE_SHIFT) == bmsx::GEO_FAULT_BAD_VERTEX_COUNT, "GEO overlap2d oversize public poly span should expose a vertex-count fault");
 }
 
 void testGeometryContractConstantsGolden() {
@@ -1699,6 +1731,8 @@ void testSystemGlobalsGeometryContractGolden() {
 	require(globalNumber("sys_geo_primitive_aabb") == static_cast<double>(bmsx::GEO_PRIMITIVE_AABB), "C++ system globals should expose GEO AABB primitive");
 	require(globalNumber("sys_geo_primitive_circle") == static_cast<double>(bmsx::GEO_PRIMITIVE_CIRCLE), "C++ system globals should expose GEO circle primitive");
 	require(globalNumber("sys_geo_primitive_convex_poly") == static_cast<double>(bmsx::GEO_PRIMITIVE_CONVEX_POLY), "C++ system globals should expose GEO convex polygon primitive");
+	require(globalNumber("sys_geo_overlap_max_poly_vertices") == static_cast<double>(bmsx::GEO_OVERLAP2D_MAX_POLY_VERTICES), "C++ system globals should expose GEO overlap poly scratch capacity");
+	require(globalNumber("sys_geo_overlap_max_clip_vertices") == static_cast<double>(bmsx::GEO_OVERLAP2D_MAX_CLIP_VERTICES), "C++ system globals should expose GEO overlap clip scratch capacity");
 	require(globalNumber("sys_geo_overlap_instance_bytes") == static_cast<double>(bmsx::GEO_OVERLAP2D_INSTANCE_BYTES), "C++ system globals should expose GEO overlap instance record size");
 	require(globalNumber("sys_geo_overlap_pair_bytes") == static_cast<double>(bmsx::GEO_OVERLAP2D_PAIR_BYTES), "C++ system globals should expose GEO overlap pair record size");
 	require(globalNumber("sys_geo_overlap_result_bytes") == static_cast<double>(bmsx::GEO_OVERLAP2D_RESULT_BYTES), "C++ system globals should expose GEO overlap result record size");
@@ -1731,6 +1765,7 @@ void testSystemGlobalsGeometryContractGolden() {
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_instance_bytes") != nullptr, "C++ builtin descriptors should expose GEO overlap table layout ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_result_pair_meta_offset") != nullptr, "C++ builtin descriptors should expose GEO overlap result layout ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_pair_meta_instance_a_shift") != nullptr, "C++ builtin descriptors should expose GEO overlap pair-meta ABI");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_max_poly_vertices") != nullptr, "C++ builtin descriptors should expose GEO overlap scratch capacity ABI");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_primitive_aabb") != nullptr, "C++ builtin descriptors should expose GEO primitive ABI");
 }
 
