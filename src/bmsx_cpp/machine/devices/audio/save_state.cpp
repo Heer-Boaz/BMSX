@@ -89,11 +89,7 @@ AudioControllerState AudioController::captureState() const {
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		state.registerWords[index] = m_memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]);
 	}
-	state.commandFifoCommands = m_commandFifoCommands;
-	state.commandFifoRegisterWords = m_commandFifoRegisterWords;
-	state.commandFifoReadIndex = m_commandFifoReadIndex;
-	state.commandFifoWriteIndex = m_commandFifoWriteIndex;
-	state.commandFifoCount = m_commandFifoCount;
+	state.commandFifo = m_commandFifo.captureState();
 	state.eventSequence = m_eventSequence;
 	state.eventKind = m_memory.readIoU32(IO_APU_EVENT_KIND);
 	state.eventSlot = m_memory.readIoU32(IO_APU_EVENT_SLOT);
@@ -120,11 +116,7 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		m_memory.writeIoValue(IO_APU_PARAMETER_REGISTER_ADDRS[index], valueNumber(static_cast<double>(state.registerWords[index])));
 	}
-	m_commandFifoCommands = state.commandFifoCommands;
-	m_commandFifoRegisterWords = state.commandFifoRegisterWords;
-	m_commandFifoReadIndex = state.commandFifoReadIndex;
-	m_commandFifoWriteIndex = state.commandFifoWriteIndex;
-	m_commandFifoCount = state.commandFifoCount;
+	m_commandFifo.restoreState(state.commandFifo);
 	m_eventSequence = state.eventSequence;
 	m_memory.writeValue(IO_APU_EVENT_KIND, valueNumber(static_cast<double>(state.eventKind)));
 	m_memory.writeValue(IO_APU_EVENT_SLOT, valueNumber(static_cast<double>(state.eventSlot)));

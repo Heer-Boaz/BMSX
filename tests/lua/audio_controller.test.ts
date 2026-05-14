@@ -509,7 +509,7 @@ test('APU save-state restores pending command FIFO work', () => {
 
 	enqueueApuPlayWithoutService(memory, 1);
 	const saved = audio.captureState();
-	assert.equal(saved.commandFifoCount, 1);
+	assert.equal(saved.commandFifo.count, 1);
 	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 0);
 
 	const restored = createAudioHarness();

@@ -52,7 +52,7 @@ void AudioController::dispose() {
 
 void AudioController::reset() {
 	m_eventSequence = 0;
-	resetCommandFifo();
+	m_commandFifo.reset();
 	m_activeSlotMask = 0u;
 	m_slotPhases.fill(APU_SLOT_PHASE_IDLE);
 	m_slotRegisterWords.fill(0u);
@@ -78,7 +78,7 @@ void AudioController::reset() {
 
 void AudioController::setTiming(int64_t cpuHz, int64_t nowCycles) {
 	m_cpuHz = cpuHz;
-	if (m_activeSlotMask == 0u && m_commandFifoCount == 0u) {
+	if (m_activeSlotMask == 0u && m_commandFifo.empty()) {
 		m_sampleCarry = 0;
 		m_availableSamples = 0;
 	}
@@ -95,7 +95,7 @@ void AudioController::accrueCycles(int cycles, int64_t nowCycles) {
 }
 
 void AudioController::onService(int64_t nowCycles) {
-	if (m_commandFifoCount > 0u) {
+	if (!m_commandFifo.empty()) {
 		drainCommandFifo();
 	}
 	if (m_activeSlotMask == 0u || m_availableSamples == 0) {
@@ -155,48 +155,17 @@ void AudioController::onCommandWrite() {
 	}
 }
 
-void AudioController::resetCommandFifo() {
-	m_commandFifoCommands.fill(APU_CMD_NONE);
-	m_commandFifoRegisterWords.fill(0u);
-	m_commandFifoReadIndex = 0u;
-	m_commandFifoWriteIndex = 0u;
-	m_commandFifoCount = 0u;
-}
-
 bool AudioController::enqueueCommand(uint32_t command) {
-	if (m_commandFifoCount == APU_COMMAND_FIFO_CAPACITY) {
+	if (!m_commandFifo.enqueue(command, m_memory)) {
 		m_fault.raise(APU_FAULT_CMD_FIFO_FULL, command);
 		return false;
 	}
-	const uint32_t entry = m_commandFifoWriteIndex;
-	m_commandFifoCommands[entry] = command;
-	const size_t base = static_cast<size_t>(entry) * APU_PARAMETER_REGISTER_COUNT;
-	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
-		m_commandFifoRegisterWords[base + index] = m_memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]);
-	}
-	m_commandFifoWriteIndex += 1u;
-	if (m_commandFifoWriteIndex == APU_COMMAND_FIFO_CAPACITY) {
-		m_commandFifoWriteIndex = 0u;
-	}
-	m_commandFifoCount += 1u;
 	return true;
 }
 
 void AudioController::drainCommandFifo() {
-	while (m_commandFifoCount > 0u) {
-		const uint32_t entry = m_commandFifoReadIndex;
-		const uint32_t command = m_commandFifoCommands[entry];
-		const size_t base = static_cast<size_t>(entry) * APU_PARAMETER_REGISTER_COUNT;
-		for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
-			m_commandDispatchRegisterWords[index] = m_commandFifoRegisterWords[base + index];
-			m_commandFifoRegisterWords[base + index] = 0u;
-		}
-		m_commandFifoCommands[entry] = APU_CMD_NONE;
-		m_commandFifoReadIndex += 1u;
-		if (m_commandFifoReadIndex == APU_COMMAND_FIFO_CAPACITY) {
-			m_commandFifoReadIndex = 0u;
-		}
-		m_commandFifoCount -= 1u;
+	while (!m_commandFifo.empty()) {
+		const uint32_t command = m_commandFifo.popInto(m_commandDispatchRegisterWords);
 		executeCommand(command, m_commandDispatchRegisterWords);
 	}
 }
@@ -255,12 +224,12 @@ Value AudioController::onOutputCapacityFramesReadThunk(void* context, uint32_t) 
 
 Value AudioController::onCommandQueuedReadThunk(void* context, uint32_t) {
 	auto& controller = *static_cast<AudioController*>(context);
-	return valueNumber(static_cast<double>(controller.m_commandFifoCount));
+	return valueNumber(static_cast<double>(controller.m_commandFifo.count()));
 }
 
 Value AudioController::onCommandFreeReadThunk(void* context, uint32_t) {
 	auto& controller = *static_cast<AudioController*>(context);
-	return valueNumber(static_cast<double>(APU_COMMAND_FIFO_CAPACITY - controller.m_commandFifoCount));
+	return valueNumber(static_cast<double>(controller.m_commandFifo.free()));
 }
 
 Value AudioController::onCommandCapacityReadThunk(void*, uint32_t) {
@@ -500,7 +469,7 @@ bool AudioController::advanceSlotCursor(ApuAudioSlot slot, int64_t samples) {
 }
 
 void AudioController::scheduleNextService(int64_t nowCycles) {
-	if (m_commandFifoCount > 0u) {
+	if (!m_commandFifo.empty()) {
 		m_scheduler.scheduleDeviceService(DeviceServiceApu, nowCycles);
 		return;
 	}
@@ -526,13 +495,13 @@ void AudioController::updateSelectedSlotActiveStatus() {
 
 Value AudioController::onStatusRead() const {
 	uint32_t status = m_fault.status;
-	if (m_activeSlotMask != 0u || m_commandFifoCount != 0u) {
+	if (m_activeSlotMask != 0u || !m_commandFifo.empty()) {
 		status |= APU_STATUS_BUSY;
 	}
-	if (m_commandFifoCount == 0u) {
+	if (m_commandFifo.empty()) {
 		status |= APU_STATUS_CMD_FIFO_EMPTY;
 	}
-	if (m_commandFifoCount == APU_COMMAND_FIFO_CAPACITY) {
+	if (m_commandFifo.full()) {
 		status |= APU_STATUS_CMD_FIFO_FULL;
 	}
 	const size_t queuedFrames = m_audioOutput.queuedOutputFrames();

@@ -1095,14 +1095,31 @@ ApuOutputState decodeApuOutputState(const BinValue& value, const char* label) {
 	return state;
 }
 
+BinValue encodeApuCommandFifoState(const ApuCommandFifoState& state) {
+	BinObject object;
+	object["commands"] = encodeFixedArray(state.commands, encodeScalar<f64, u32>);
+	object["registerWords"] = encodeFixedArray(state.registerWords, encodeScalar<f64, u32>);
+	object["readIndex"] = encodeScalar<f64>(state.readIndex);
+	object["writeIndex"] = encodeScalar<f64>(state.writeIndex);
+	object["count"] = encodeScalar<f64>(state.count);
+	return BinValue(std::move(object));
+}
+
+ApuCommandFifoState decodeApuCommandFifoState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	ApuCommandFifoState state;
+	state.commands = decodeU32Array<APU_COMMAND_FIFO_CAPACITY>(requireField(object, "commands", label), "machine.audio.commandFifo.commands");
+	state.registerWords = decodeU32Array<APU_COMMAND_FIFO_REGISTER_WORD_COUNT>(requireField(object, "registerWords", label), "machine.audio.commandFifo.registerWords");
+	state.readIndex = requireBoundedU32(requireField(object, "readIndex", label), "machine.audio.commandFifo.readIndex", 0, APU_COMMAND_FIFO_CAPACITY - 1u);
+	state.writeIndex = requireBoundedU32(requireField(object, "writeIndex", label), "machine.audio.commandFifo.writeIndex", 0, APU_COMMAND_FIFO_CAPACITY - 1u);
+	state.count = requireBoundedU32(requireField(object, "count", label), "machine.audio.commandFifo.count", 0, APU_COMMAND_FIFO_CAPACITY);
+	return state;
+}
+
 BinValue encodeAudioControllerState(const AudioControllerState& state) {
 	BinObject object;
 	object["registerWords"] = encodeFixedArray(state.registerWords, encodeScalar<f64, u32>);
-	object["commandFifoCommands"] = encodeFixedArray(state.commandFifoCommands, encodeScalar<f64, u32>);
-	object["commandFifoRegisterWords"] = encodeFixedArray(state.commandFifoRegisterWords, encodeScalar<f64, u32>);
-	object["commandFifoReadIndex"] = encodeScalar<f64>(state.commandFifoReadIndex);
-	object["commandFifoWriteIndex"] = encodeScalar<f64>(state.commandFifoWriteIndex);
-	object["commandFifoCount"] = encodeScalar<f64>(state.commandFifoCount);
+	object["commandFifo"] = encodeApuCommandFifoState(state.commandFifo);
 	object["eventSequence"] = encodeScalar<f64>(state.eventSequence);
 	object["eventKind"] = encodeScalar<f64>(state.eventKind);
 	object["eventSlot"] = encodeScalar<f64>(state.eventSlot);
@@ -1130,11 +1147,7 @@ AudioControllerState decodeAudioControllerState(const BinValue& value, const cha
 	const BinObject& object = requireObject(value, label);
 	AudioControllerState state;
 	state.registerWords = decodeU32Array<APU_PARAMETER_REGISTER_COUNT>(requireField(object, "registerWords", label), "machine.audio.registerWords");
-	state.commandFifoCommands = decodeU32Array<APU_COMMAND_FIFO_CAPACITY>(requireField(object, "commandFifoCommands", label), "machine.audio.commandFifoCommands");
-	state.commandFifoRegisterWords = decodeU32Array<APU_COMMAND_FIFO_REGISTER_WORD_COUNT>(requireField(object, "commandFifoRegisterWords", label), "machine.audio.commandFifoRegisterWords");
-	state.commandFifoReadIndex = requireBoundedU32(requireField(object, "commandFifoReadIndex", label), "machine.audio.commandFifoReadIndex", 0, APU_COMMAND_FIFO_CAPACITY - 1u);
-	state.commandFifoWriteIndex = requireBoundedU32(requireField(object, "commandFifoWriteIndex", label), "machine.audio.commandFifoWriteIndex", 0, APU_COMMAND_FIFO_CAPACITY - 1u);
-	state.commandFifoCount = requireBoundedU32(requireField(object, "commandFifoCount", label), "machine.audio.commandFifoCount", 0, APU_COMMAND_FIFO_CAPACITY);
+	state.commandFifo = decodeApuCommandFifoState(requireField(object, "commandFifo", label), "machine.audio.commandFifo");
 	state.eventSequence = requireU32(requireField(object, "eventSequence", label), "machine.audio.eventSequence");
 	state.eventKind = requireU32(requireField(object, "eventKind", label), "machine.audio.eventKind");
 	state.eventSlot = requireU32(requireField(object, "eventSlot", label), "machine.audio.eventSlot");

@@ -1653,7 +1653,7 @@ void testApuCommandFifoGolden() {
 	writeIoWord(restored.memory, bmsx::IO_APU_SLOT, 1u);
 	writeIoWord(restored.memory, bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
 	const bmsx::AudioControllerState saved = restored.audio.captureState();
-	require(saved.commandFifoCount == 1u, "APU capture should preserve queued command count");
+	require(saved.commandFifo.count == 1u, "APU capture should preserve queued command count");
 	require(restored.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 0u, "APU capture should not synthesize active slots for queued commands");
 	AudioHarness replay;
 	replay.audio.restoreState(saved, 0);

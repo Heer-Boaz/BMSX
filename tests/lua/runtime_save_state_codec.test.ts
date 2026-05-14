@@ -119,11 +119,13 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				irq: { pendingFlags: 0xa5a5 },
 				audio: {
 					registerWords: audioRegisterWords,
-					commandFifoCommands: numberedWords(APU_COMMAND_FIFO_CAPACITY),
-					commandFifoRegisterWords: numberedWords(APU_COMMAND_FIFO_REGISTER_WORD_COUNT),
-					commandFifoReadIndex: 1,
-					commandFifoWriteIndex: 2,
-					commandFifoCount: 3,
+					commandFifo: {
+						commands: numberedWords(APU_COMMAND_FIFO_CAPACITY),
+						registerWords: numberedWords(APU_COMMAND_FIFO_REGISTER_WORD_COUNT),
+						readIndex: 1,
+						writeIndex: 2,
+						count: 3,
+					},
 					eventSequence: 3,
 					eventKind: 1,
 					eventSlot: 2,

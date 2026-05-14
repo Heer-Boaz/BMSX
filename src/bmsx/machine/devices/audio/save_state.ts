@@ -1,5 +1,6 @@
 import type { ApuAudioSlot } from './contracts';
 import type { BiquadFilterState } from './biquad_filter';
+import type { ApuCommandFifoState } from './command_fifo';
 
 export type ApuBiquadFilterState = {
 	enabled: boolean;
@@ -47,11 +48,7 @@ export type ApuOutputState = {
 
 export type AudioControllerState = {
 	registerWords: number[];
-	commandFifoCommands: number[];
-	commandFifoRegisterWords: number[];
-	commandFifoReadIndex: number;
-	commandFifoWriteIndex: number;
-	commandFifoCount: number;
+	commandFifo: ApuCommandFifoState;
 	eventSequence: number;
 	eventKind: number;
 	eventSlot: number;

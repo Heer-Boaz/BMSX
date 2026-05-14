@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/types.h"
+#include "machine/devices/audio/command_fifo.h"
 #include "machine/devices/audio/contracts.h"
 
 #include <array>
@@ -56,11 +57,7 @@ struct ApuOutputState {
 
 struct AudioControllerState {
 	std::array<uint32_t, APU_PARAMETER_REGISTER_COUNT> registerWords{};
-	std::array<uint32_t, APU_COMMAND_FIFO_CAPACITY> commandFifoCommands{};
-	std::array<uint32_t, APU_COMMAND_FIFO_REGISTER_WORD_COUNT> commandFifoRegisterWords{};
-	uint32_t commandFifoReadIndex = 0;
-	uint32_t commandFifoWriteIndex = 0;
-	uint32_t commandFifoCount = 0;
+	ApuCommandFifoState commandFifo;
 	uint32_t eventSequence = 0;
 	uint32_t eventKind = APU_EVENT_NONE;
 	uint32_t eventSlot = 0;

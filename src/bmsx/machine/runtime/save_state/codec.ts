@@ -9,6 +9,7 @@ import type {
 	ApuOutputState,
 	ApuOutputVoiceState,
 } from '../../devices/audio/save_state';
+import type { ApuCommandFifoState } from '../../devices/audio/command_fifo';
 import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT } from '../../devices/audio/contracts';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/save_state';
@@ -992,14 +993,31 @@ function decodeApuOutputState(value: unknown, label: string): ApuOutputState {
 	};
 }
 
+function encodeApuCommandFifoState(state: ApuCommandFifoState): ApuCommandFifoState {
+	return {
+		commands: encodeVector(state.commands, (word) => word >>> 0),
+		registerWords: encodeVector(state.registerWords, (word) => word >>> 0),
+		readIndex: state.readIndex >>> 0,
+		writeIndex: state.writeIndex >>> 0,
+		count: state.count >>> 0,
+	};
+}
+
+function decodeApuCommandFifoState(value: unknown, label: string): ApuCommandFifoState {
+	const object = requireObject(value, label);
+	return {
+		commands: decodeU32FixedArray(requireObjectKey(object, 'commands', label, 'machine.audio.commandFifo.commands'), 'machine.audio.commandFifo.commands', APU_COMMAND_FIFO_CAPACITY),
+		registerWords: decodeU32FixedArray(requireObjectKey(object, 'registerWords', label, 'machine.audio.commandFifo.registerWords'), 'machine.audio.commandFifo.registerWords', APU_COMMAND_FIFO_REGISTER_WORD_COUNT),
+		readIndex: requireBoundedU32(requireObjectKey(object, 'readIndex', label, 'machine.audio.commandFifo.readIndex'), 'machine.audio.commandFifo.readIndex', 0, APU_COMMAND_FIFO_CAPACITY - 1),
+		writeIndex: requireBoundedU32(requireObjectKey(object, 'writeIndex', label, 'machine.audio.commandFifo.writeIndex'), 'machine.audio.commandFifo.writeIndex', 0, APU_COMMAND_FIFO_CAPACITY - 1),
+		count: requireBoundedU32(requireObjectKey(object, 'count', label, 'machine.audio.commandFifo.count'), 'machine.audio.commandFifo.count', 0, APU_COMMAND_FIFO_CAPACITY),
+	};
+}
+
 function encodeAudioControllerState(state: AudioControllerState): AudioControllerState {
 	return {
 		registerWords: encodeVector(state.registerWords, (word) => word >>> 0),
-		commandFifoCommands: encodeVector(state.commandFifoCommands, (word) => word >>> 0),
-		commandFifoRegisterWords: encodeVector(state.commandFifoRegisterWords, (word) => word >>> 0),
-		commandFifoReadIndex: state.commandFifoReadIndex >>> 0,
-		commandFifoWriteIndex: state.commandFifoWriteIndex >>> 0,
-		commandFifoCount: state.commandFifoCount >>> 0,
+		commandFifo: encodeApuCommandFifoState(state.commandFifo),
 		eventSequence: state.eventSequence,
 		eventKind: state.eventKind,
 		eventSlot: state.eventSlot,
@@ -1023,11 +1041,7 @@ function decodeAudioControllerState(value: unknown, label: string): AudioControl
 	const object = requireObject(value, label);
 	return {
 		registerWords: decodeU32FixedArray(requireObjectKey(object, 'registerWords', label, 'machine.audio.registerWords'), 'machine.audio.registerWords', APU_PARAMETER_REGISTER_COUNT),
-		commandFifoCommands: decodeU32FixedArray(requireObjectKey(object, 'commandFifoCommands', label, 'machine.audio.commandFifoCommands'), 'machine.audio.commandFifoCommands', APU_COMMAND_FIFO_CAPACITY),
-		commandFifoRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'commandFifoRegisterWords', label, 'machine.audio.commandFifoRegisterWords'), 'machine.audio.commandFifoRegisterWords', APU_COMMAND_FIFO_REGISTER_WORD_COUNT),
-		commandFifoReadIndex: requireBoundedU32(requireObjectKey(object, 'commandFifoReadIndex', label, 'machine.audio.commandFifoReadIndex'), 'machine.audio.commandFifoReadIndex', 0, APU_COMMAND_FIFO_CAPACITY - 1),
-		commandFifoWriteIndex: requireBoundedU32(requireObjectKey(object, 'commandFifoWriteIndex', label, 'machine.audio.commandFifoWriteIndex'), 'machine.audio.commandFifoWriteIndex', 0, APU_COMMAND_FIFO_CAPACITY - 1),
-		commandFifoCount: requireBoundedU32(requireObjectKey(object, 'commandFifoCount', label, 'machine.audio.commandFifoCount'), 'machine.audio.commandFifoCount', 0, APU_COMMAND_FIFO_CAPACITY),
+		commandFifo: decodeApuCommandFifoState(requireObjectKey(object, 'commandFifo', label, 'machine.audio.commandFifo'), 'machine.audio.commandFifo'),
 		eventSequence: requireBoundedU32(requireObjectKey(object, 'eventSequence', label, 'machine.audio.eventSequence'), 'machine.audio.eventSequence', 0, 0xffffffff),
 		eventKind: requireBoundedU32(requireObjectKey(object, 'eventKind', label, 'machine.audio.eventKind'), 'machine.audio.eventKind', 0, 0xffffffff),
 		eventSlot: requireBoundedU32(requireObjectKey(object, 'eventSlot', label, 'machine.audio.eventSlot'), 'machine.audio.eventSlot', 0, 0xffffffff),

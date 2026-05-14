@@ -1,5 +1,6 @@
 #pragma once
 
+#include "machine/devices/audio/command_fifo.h"
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/audio/output.h"
 #include "machine/devices/audio/save_state.h"
@@ -50,11 +51,7 @@ private:
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;
 	uint32_t m_eventSequence = 0;
-	std::array<uint32_t, APU_COMMAND_FIFO_CAPACITY> m_commandFifoCommands{};
-	std::array<uint32_t, APU_COMMAND_FIFO_REGISTER_WORD_COUNT> m_commandFifoRegisterWords{};
-	uint32_t m_commandFifoReadIndex = 0;
-	uint32_t m_commandFifoWriteIndex = 0;
-	uint32_t m_commandFifoCount = 0;
+	ApuCommandFifo m_commandFifo;
 	ApuParameterRegisterWords m_commandDispatchRegisterWords{};
 	ApuParameterRegisterWords m_slotRegisterDispatchWords{};
 	uint32_t m_activeSlotMask = 0;
@@ -73,7 +70,6 @@ private:
 
 	void clearCommandLatch();
 	void resetCommandLatch();
-	void resetCommandFifo();
 	bool enqueueCommand(uint32_t command);
 	void drainCommandFifo();
 	void executeCommand(uint32_t command, const ApuParameterRegisterWords& registerWords);

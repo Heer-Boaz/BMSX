@@ -91,8 +91,8 @@ Saved:
   display/readback pixels, and PMU/SBX/BBU/VOUT state that determines future
   output.
 - APU command/source/output state that determines future audio output,
-  including active AOUT voice position, gain-ramp, filter history, and BADP
-  decoder state.
+  including the command FIFO ring, queued parameter latch words, active AOUT
+  voice position, gain-ramp, filter history, and BADP decoder state.
 - GEO command/result/fault state and device-visible scratch/result memory.
 - ICU registerfile, sample latch, committed action records, and sampled action
   status/value words.
@@ -196,11 +196,15 @@ Save-state captures active AOUT voice datapath state. It does not capture the
 already-rendered AOUT output ring; queued frames at the host edge are not
 machine state and are rebuilt from the restored voice datapath. The audio
 save-state data contract lives in dedicated `machine/devices/audio/save_state`
-files on both runtimes. C++ keeps the capture/restore method bodies there too.
-TS keeps aggregate controller methods at the private-field device boundary, but
-the AOUT voice save-state mapping belongs to the audio save-state module rather
-than the mixer datapath. BADP fixture proof covers saved decoder latches and
-selected-slot start-sample mutation while a decoder-backed voice is active.
+files on both runtimes. The command FIFO ring, read/write pointers, queued count,
+and per-entry parameter words are owned by mirrored
+`machine/devices/audio/command_fifo` files and are saved through that owner.
+C++ keeps aggregate capture/restore method bodies in the audio save-state
+translation unit. TS keeps aggregate controller methods at the private-field
+device boundary while command-FIFO state transfer stays on the FIFO hardware
+owner, including the FIFO save-state record shape. BADP fixture proof covers
+saved decoder latches and selected-slot start-sample mutation while a
+decoder-backed voice is active.
 
 Hot paths must use retained buffers and fixed-size state. No per-sample,
 per-render, or per-pull allocation is acceptable.
@@ -337,3 +341,6 @@ should be deleted.
    datapath only if it can be done without opening private render/device fields
    as a fake public contract.
 2. Keep save-state proof expanding through device-visible state, not host queues.
+3. Promote the remaining large device aggregate save-state bodies only when the
+   target language can do it without opening private hardware fields as a fake
+   public contract.

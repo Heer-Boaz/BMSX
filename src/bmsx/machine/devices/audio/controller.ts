@@ -4,10 +4,10 @@ import { DEVICE_SERVICE_APU, type DeviceScheduler } from '../../scheduler/device
 import type { ApuOutputMixer } from './output';
 import type { AudioControllerState } from './save_state';
 import { ApuSourceDma } from './source';
+import { ApuCommandFifo } from './command_fifo';
 import {
 	APU_GAIN_Q12_ONE,
 	APU_COMMAND_FIFO_CAPACITY,
-	APU_COMMAND_FIFO_REGISTER_WORD_COUNT,
 	APU_RATE_STEP_Q16_ONE,
 	APU_SAMPLE_RATE_HZ,
 	APU_CMD_NONE,
@@ -116,11 +116,7 @@ const APU_DEVICE_STATUS_REGISTERS: DeviceStatusRegisters = {
 export class AudioController {
 	private readonly sourceDma: ApuSourceDma;
 	private eventSequence = 0;
-	private readonly commandFifoCommands = new Uint32Array(APU_COMMAND_FIFO_CAPACITY);
-	private readonly commandFifoRegisterWords = new Uint32Array(APU_COMMAND_FIFO_REGISTER_WORD_COUNT);
-	private commandFifoReadIndex = 0;
-	private commandFifoWriteIndex = 0;
-	private commandFifoCount = 0;
+	private readonly commandFifo = new ApuCommandFifo();
 	private readonly commandDispatchRegisterWords = new Uint32Array(APU_PARAMETER_REGISTER_COUNT);
 	private readonly slotRegisterDispatchWords = new Uint32Array(APU_PARAMETER_REGISTER_COUNT);
 	private activeSlotMask = 0;
@@ -154,8 +150,8 @@ export class AudioController {
 		this.memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, () => this.audioOutput.queuedOutputFrames());
 		this.memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, () => this.audioOutput.freeOutputFrames());
 		this.memory.mapIoRead(IO_APU_OUTPUT_CAPACITY_FRAMES, () => this.audioOutput.capacityOutputFrames());
-		this.memory.mapIoRead(IO_APU_CMD_QUEUED, () => this.commandFifoCount);
-		this.memory.mapIoRead(IO_APU_CMD_FREE, () => APU_COMMAND_FIFO_CAPACITY - this.commandFifoCount);
+		this.memory.mapIoRead(IO_APU_CMD_QUEUED, () => this.commandFifo.count);
+		this.memory.mapIoRead(IO_APU_CMD_FREE, () => this.commandFifo.free);
 		this.memory.mapIoRead(IO_APU_CMD_CAPACITY, () => APU_COMMAND_FIFO_CAPACITY);
 		const selectedSlotRegisterRead = this.onSelectedSlotRegisterRead.bind(this);
 		const selectedSlotRegisterWrite = this.onSelectedSlotRegisterWrite.bind(this);
@@ -173,7 +169,7 @@ export class AudioController {
 
 	public reset(): void {
 		this.eventSequence = 0;
-		this.resetCommandFifo();
+		this.commandFifo.reset();
 		this.activeSlotMask = 0;
 		this.slotPhases.fill(APU_SLOT_PHASE_IDLE);
 		this.slotRegisterWords.fill(0);
@@ -204,11 +200,7 @@ export class AudioController {
 		}
 		return {
 			registerWords,
-			commandFifoCommands: Array.from(this.commandFifoCommands),
-			commandFifoRegisterWords: Array.from(this.commandFifoRegisterWords),
-			commandFifoReadIndex: this.commandFifoReadIndex,
-			commandFifoWriteIndex: this.commandFifoWriteIndex,
-			commandFifoCount: this.commandFifoCount,
+			commandFifo: this.commandFifo.captureState(),
 			eventSequence: this.eventSequence,
 			eventKind: this.memory.readIoU32(IO_APU_EVENT_KIND),
 			eventSlot: this.memory.readIoU32(IO_APU_EVENT_SLOT),
@@ -235,15 +227,7 @@ export class AudioController {
 		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
 			this.memory.writeIoValue(IO_APU_PARAMETER_REGISTER_ADDRS[index]!, state.registerWords[index]!);
 		}
-		for (let index = 0; index < APU_COMMAND_FIFO_CAPACITY; index += 1) {
-			this.commandFifoCommands[index] = state.commandFifoCommands[index]! >>> 0;
-		}
-		for (let index = 0; index < APU_COMMAND_FIFO_REGISTER_WORD_COUNT; index += 1) {
-			this.commandFifoRegisterWords[index] = state.commandFifoRegisterWords[index]! >>> 0;
-		}
-		this.commandFifoReadIndex = state.commandFifoReadIndex >>> 0;
-		this.commandFifoWriteIndex = state.commandFifoWriteIndex >>> 0;
-		this.commandFifoCount = state.commandFifoCount >>> 0;
+		this.commandFifo.restoreState(state.commandFifo);
 		this.eventSequence = state.eventSequence >>> 0;
 		this.memory.writeValue(IO_APU_EVENT_KIND, state.eventKind);
 		this.memory.writeValue(IO_APU_EVENT_SLOT, state.eventSlot);
@@ -285,7 +269,7 @@ export class AudioController {
 
 	public setTiming(cpuHz: number, nowCycles: number): void {
 		this.cpuHz = cpuHz;
-		if (this.activeSlotMask === 0 && this.commandFifoCount === 0) {
+		if (this.activeSlotMask === 0 && this.commandFifo.empty) {
 			this.sampleCarry = 0;
 			this.availableSamples = 0;
 		}
@@ -303,7 +287,7 @@ export class AudioController {
 	}
 
 	public onService(nowCycles: number): void {
-		if (this.commandFifoCount > 0) {
+		if (!this.commandFifo.empty) {
 			this.drainCommandFifo();
 		}
 		if (this.activeSlotMask === 0 || this.availableSamples === 0) {
@@ -365,48 +349,17 @@ export class AudioController {
 		}
 	}
 
-	private resetCommandFifo(): void {
-		this.commandFifoCommands.fill(APU_CMD_NONE);
-		this.commandFifoRegisterWords.fill(0);
-		this.commandFifoReadIndex = 0;
-		this.commandFifoWriteIndex = 0;
-		this.commandFifoCount = 0;
-	}
-
 	private enqueueCommand(command: number): boolean {
-		if (this.commandFifoCount === APU_COMMAND_FIFO_CAPACITY) {
+		if (!this.commandFifo.enqueue(command, this.memory)) {
 			this.fault.raise(APU_FAULT_CMD_FIFO_FULL, command);
 			return false;
 		}
-		const entry = this.commandFifoWriteIndex;
-		this.commandFifoCommands[entry] = command;
-		const base = entry * APU_PARAMETER_REGISTER_COUNT;
-		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
-			this.commandFifoRegisterWords[base + index] = this.memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]!);
-		}
-		this.commandFifoWriteIndex += 1;
-		if (this.commandFifoWriteIndex === APU_COMMAND_FIFO_CAPACITY) {
-			this.commandFifoWriteIndex = 0;
-		}
-		this.commandFifoCount += 1;
 		return true;
 	}
 
 	private drainCommandFifo(): void {
-		while (this.commandFifoCount > 0) {
-			const entry = this.commandFifoReadIndex;
-			const command = this.commandFifoCommands[entry]!;
-			const base = entry * APU_PARAMETER_REGISTER_COUNT;
-			for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
-				this.commandDispatchRegisterWords[index] = this.commandFifoRegisterWords[base + index]!;
-				this.commandFifoRegisterWords[base + index] = 0;
-			}
-			this.commandFifoCommands[entry] = APU_CMD_NONE;
-			this.commandFifoReadIndex += 1;
-			if (this.commandFifoReadIndex === APU_COMMAND_FIFO_CAPACITY) {
-				this.commandFifoReadIndex = 0;
-			}
-			this.commandFifoCount -= 1;
+		while (!this.commandFifo.empty) {
+			const command = this.commandFifo.popInto(this.commandDispatchRegisterWords);
 			this.executeCommand(command, this.commandDispatchRegisterWords);
 		}
 	}
@@ -617,7 +570,7 @@ export class AudioController {
 	}
 
 	private scheduleNextService(nowCycles: number): void {
-		if (this.commandFifoCount > 0) {
+		if (!this.commandFifo.empty) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
 			return;
 		}
@@ -645,9 +598,9 @@ export class AudioController {
 	}
 
 	private onStatusRead(): number {
-		const busy = this.activeSlotMask !== 0 || this.commandFifoCount !== 0;
-		const commandFifoEmpty = this.commandFifoCount === 0;
-		const commandFifoFull = this.commandFifoCount === APU_COMMAND_FIFO_CAPACITY;
+		const busy = this.activeSlotMask !== 0 || !this.commandFifo.empty;
+		const commandFifoEmpty = this.commandFifo.empty;
+		const commandFifoFull = this.commandFifo.full;
 		const queuedFrames = this.audioOutput.queuedOutputFrames();
 		const outputEmpty = queuedFrames === 0;
 		const outputFull = queuedFrames >= this.audioOutput.capacityOutputFrames();
