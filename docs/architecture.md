@@ -1,7 +1,7 @@
 # BMSX Architecture Boundary Review
 
 Status: current architecture review, not a quality rule.
-Last checked: 2026-05-12.
+Last checked: 2026-05-14.
 
 BMSX is not currently in a healthy feature-development state. The problem is
 larger than architecture boundaries: the code quality inside ordinary functions
@@ -137,7 +137,12 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   Restore rewrites the event, active-slot, and selected-source MMIO mirrors
   because RAM save-state intentionally excludes IO slots. The string-pool entry field is `tracked`;
   ROM-owned strings remain untracked while runtime-materialized strings restore
-  as tracked RAM.
+  as tracked RAM. The Input Controller (ICU) state now persists the sample-arm
+  latch, raw registerfile (`player`, `action`, `bind`, `ctrl`, `query`,
+  `status`, `value`, and `consume` string-handle/numeric words), and the
+  per-player committed action table. ICU restore rewrites its MMIO mirrors and
+  rebuilds the chip-owned input context from those register/action words rather
+  than depending on host `Input` mappings surviving outside save-state.
 - World/mundo content should follow the same object-image rule: room templates,
   maps, transitions, and export tables belong in `.rodata` records with offsets
   or pointers, while room load instantiates only active mutable state into RAM.
@@ -689,6 +694,9 @@ Already advanced in this goal:
 - Runtime/input pass-through APIs were reduced. Fake dispose wrappers, unused
   action-definition cache clearing, and PlayerInput forwarding helpers were
   removed or replaced by owner-level operations.
+- The ICU no longer exposes its arm latch for runtime code to mutate directly:
+  VBLANK/runtime reset/error paths now go through the device transition, while
+  the ICU owns and persists its register latches and committed action table.
 - The scratchbatch compatibility facade was removed in TS and C++; callers now
   use the actual scratch-buffer owner.
 - IDE runtime fault capture, debugger pause state, workbench runtime-error UI,
@@ -1006,10 +1014,11 @@ If `/goal resume` is invoked, it should mean this order of work:
    mirrored slot lifecycle phases, and the mirrored STOP-fade envelope level:
    remaining generator and richer envelope work must stay device-owned instead
    of growing through host-side sound shortcuts.
-3. Continue the Input Controller (ICU) cleanup by removing the remaining pass-through APIs and making the
-   device owner the single source of truth for input state, including the
-   active `Input` snapshot, input timing, and any future input features such as
-   buffered input or rumble.
+3. Continue the Input Controller (ICU) cleanup beyond the persisted
+   register/action state by removing the remaining boot/input-map pass-through
+   APIs and making the device owner the single source of truth for the active
+   input snapshot, input timing, and any future input features such as buffered
+   input or rumble.
 4. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
    APIs, Lua API metadata, devtools source APIs, overlay/editor APIs, terminal
    commands, and workspace APIs. Separate cart-visible contracts from editor or
@@ -1048,12 +1057,13 @@ Next recommended work:
    host sound shortcuts; after the mirrored AOUT mixer, cart-visible AOUT
    start faults, cart-visible output-ring status, persisted command FIFO,
    selected-channel register writes, source-DMA ownership, sample-rate-scaled
-   cursors, slot lifecycle phases, and STOP-fade envelope level restore, the
-   next APU step is generator and richer envelope state owned by the device.
-3. Continue Input Controller (ICU) cleanup by removing the remaining pass-through APIs and making the
-   device owner the single source of truth for input state, including the
-   active `Input` snapshot, input timing, and any future input features such as
-   buffered input or rumble.
+   cursors, slot lifecycle phases, STOP-fade envelope restore, and square
+   generator state, the next APU step is richer generator/noise/envelope state
+   owned by the device.
+3. Continue ICU work by moving the remaining boot manifest / `set_input_map`
+   pass-through surfaces behind the input controller and then owning the active
+   input snapshot/timing in the device instead of letting cart-visible input
+   semantics leak through host `PlayerInput` APIs.
 4. Continue TS/C++ parity cleanup subsystem by subsystem, including public API
    surfaces instead of assuming they are already covered.
 5. Clean IDE/editor layering after the machine boundaries are safer, starting

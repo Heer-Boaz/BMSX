@@ -327,13 +327,60 @@ StringPoolState decodeStringPoolState(const BinValue& value, const char* label) 
 BinValue encodeInputControllerState(const InputControllerState& state) {
 	BinObject object;
 	object["sampleArmed"] = state.sampleArmed;
+	BinObject registers;
+	registers["player"] = static_cast<i64>(state.registers.player);
+	registers["actionStringId"] = static_cast<i64>(state.registers.actionStringId);
+	registers["bindStringId"] = static_cast<i64>(state.registers.bindStringId);
+	registers["ctrl"] = static_cast<i64>(state.registers.ctrl);
+	registers["queryStringId"] = static_cast<i64>(state.registers.queryStringId);
+	registers["status"] = static_cast<i64>(state.registers.status);
+	registers["value"] = static_cast<i64>(state.registers.value);
+	registers["consumeStringId"] = static_cast<i64>(state.registers.consumeStringId);
+	object["registers"] = BinValue(std::move(registers));
+	object["players"] = encodeFixedArray(state.players, [](const InputControllerPlayerState& player) {
+		BinObject playerObject;
+		playerObject["actions"] = encodeVector(player.actions, [](const InputControllerActionState& action) {
+			BinObject actionObject;
+			actionObject["actionStringId"] = static_cast<i64>(action.actionStringId);
+			actionObject["bindStringId"] = static_cast<i64>(action.bindStringId);
+			return BinValue(std::move(actionObject));
+		});
+		return BinValue(std::move(playerObject));
+	});
 	return BinValue(std::move(object));
 }
 
 InputControllerState decodeInputControllerState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
+	const BinObject& registers = requireObject(requireField(object, "registers", label), "machine.input.registers");
 	InputControllerState state;
 	state.sampleArmed = requireBool(requireField(object, "sampleArmed", label), "machine.input.sampleArmed");
+	state.registers.player = requireU32(requireField(registers, "player", "machine.input.registers"), "machine.input.registers.player");
+	state.registers.actionStringId = requireU32(requireField(registers, "actionStringId", "machine.input.registers"), "machine.input.registers.actionStringId");
+	state.registers.bindStringId = requireU32(requireField(registers, "bindStringId", "machine.input.registers"), "machine.input.registers.bindStringId");
+	state.registers.ctrl = requireU32(requireField(registers, "ctrl", "machine.input.registers"), "machine.input.registers.ctrl");
+	state.registers.queryStringId = requireU32(requireField(registers, "queryStringId", "machine.input.registers"), "machine.input.registers.queryStringId");
+	state.registers.status = requireU32(requireField(registers, "status", "machine.input.registers"), "machine.input.registers.status");
+	state.registers.value = requireU32(requireField(registers, "value", "machine.input.registers"), "machine.input.registers.value");
+	state.registers.consumeStringId = requireU32(requireField(registers, "consumeStringId", "machine.input.registers"), "machine.input.registers.consumeStringId");
+	const BinArray& players = requireArray(requireField(object, "players", label), "machine.input.players");
+	if (players.size() != state.players.size()) {
+		throw BMSX_RUNTIME_ERROR("machine.input.players must contain " + std::to_string(state.players.size()) + " player entries.");
+	}
+	for (size_t playerIndex = 0; playerIndex < state.players.size(); playerIndex += 1) {
+		const BinObject& player = requireObject(players[playerIndex], "machine.input.players[]");
+		state.players[playerIndex].actions = decodeVector<InputControllerActionState>(
+			requireField(player, "actions", "machine.input.players[]"),
+			"machine.input.players[].actions",
+			[](const BinValue& actionValue, size_t) {
+				const BinObject& action = requireObject(actionValue, "machine.input.players[].actions[]");
+				InputControllerActionState stateAction;
+				stateAction.actionStringId = requireU32(requireField(action, "actionStringId", "machine.input.players[].actions[]"), "machine.input.players[].actions[].actionStringId");
+				stateAction.bindStringId = requireU32(requireField(action, "bindStringId", "machine.input.players[].actions[]"), "machine.input.players[].actions[].bindStringId");
+				return stateAction;
+			}
+		);
+	}
 	return state;
 }
 

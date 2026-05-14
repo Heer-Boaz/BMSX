@@ -103,7 +103,25 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						{ id: 1, value: 'runtime literal', tracked: true },
 					],
 				},
-				input: { sampleArmed: false },
+				input: {
+					sampleArmed: false,
+					registers: {
+						player: 2,
+						actionStringId: 0,
+						bindStringId: 1,
+						ctrl: 1,
+						queryStringId: 0,
+						status: 1,
+						value: 0,
+						consumeStringId: 0,
+					},
+					players: [
+						{ actions: [] },
+						{ actions: [{ actionStringId: 0, bindStringId: 1 }] },
+						{ actions: [] },
+						{ actions: [] },
+					],
+				},
 				vdp: {
 					xf: {
 						matrixWords: numberedWords(VDP_XF_MATRIX_REGISTER_WORDS),
@@ -184,6 +202,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.machine.geometry, state.machineState.machine.geometry);
 	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
+	assert.deepEqual(decoded.machineState.machine.input, state.machineState.machine.input);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
 	assert.deepEqual(decoded.machineState.machine.vdp.surfacePixels, state.machineState.machine.vdp.surfacePixels);
 });

@@ -67,7 +67,7 @@ export class VblankState {
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
 		const runtime = this.runtime;
-		runtime.machine.inputController.sampleArmed = false;
+		runtime.machine.inputController.cancelArmedSample();
 		runtime.machine.irqController.postLoad();
 		runtime.machine.vdp.resetStatus();
 		if (this.vblankStartCycle === 0) {

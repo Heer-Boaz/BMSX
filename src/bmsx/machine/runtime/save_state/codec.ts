@@ -5,7 +5,7 @@ import type { IrqControllerState } from '../../devices/irq/controller';
 import type { AudioControllerState } from '../../devices/audio/controller';
 import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT } from '../../devices/audio/contracts';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
-import type { InputControllerState } from '../../devices/input/controller';
+import { INPUT_CONTROLLER_PLAYER_COUNT, type InputControllerState } from '../../devices/input/controller';
 import {
 	GEOMETRY_CONTROLLER_PHASE_REJECTED,
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
@@ -259,13 +259,64 @@ function decodeStringPoolState(value: unknown, label: string): StringPoolState {
 function encodeInputControllerState(state: InputControllerState): InputControllerState {
 	return {
 		sampleArmed: state.sampleArmed,
+		registers: {
+			player: state.registers.player >>> 0,
+			actionStringId: state.registers.actionStringId >>> 0,
+			bindStringId: state.registers.bindStringId >>> 0,
+			ctrl: state.registers.ctrl >>> 0,
+			queryStringId: state.registers.queryStringId >>> 0,
+			status: state.registers.status >>> 0,
+			value: state.registers.value >>> 0,
+			consumeStringId: state.registers.consumeStringId >>> 0,
+		},
+		players: encodeVector(state.players, (player) => ({
+			actions: encodeVector(player.actions, (action) => ({
+				actionStringId: action.actionStringId >>> 0,
+				bindStringId: action.bindStringId >>> 0,
+			})),
+		})),
 	};
 }
 
 function decodeInputControllerState(value: unknown, label: string): InputControllerState {
 	const object = requireObject(value, label);
+	const registers = requireObject(requireObjectKey(object, 'registers', label, 'machine.input.registers'), 'machine.input.registers');
+	const players = decodeVector(
+		requireObjectKey(object, 'players', label, 'machine.input.players'),
+		'machine.input.players',
+		(playerValue) => {
+			const player = requireObject(playerValue, 'machine.input.players[]');
+			return {
+				actions: decodeVector(
+					requireObjectKey(player, 'actions', 'machine.input.players[]', 'machine.input.players[].actions'),
+					'machine.input.players[].actions',
+					(actionValue) => {
+						const action = requireObject(actionValue, 'machine.input.players[].actions[]');
+						return {
+							actionStringId: requireBoundedU32(requireObjectKey(action, 'actionStringId', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].actionStringId'), 'machine.input.players[].actions[].actionStringId', 0, 0xffffffff),
+							bindStringId: requireBoundedU32(requireObjectKey(action, 'bindStringId', 'machine.input.players[].actions[]', 'machine.input.players[].actions[].bindStringId'), 'machine.input.players[].actions[].bindStringId', 0, 0xffffffff),
+						};
+					},
+				),
+			};
+		},
+	);
+	if (players.length !== INPUT_CONTROLLER_PLAYER_COUNT) {
+		throw new Error(`machine.input.players must contain ${INPUT_CONTROLLER_PLAYER_COUNT} player entries.`);
+	}
 	return {
 		sampleArmed: requireObjectKey(object, 'sampleArmed', label, 'machine.input.sampleArmed') as boolean,
+		registers: {
+			player: requireBoundedU32(requireObjectKey(registers, 'player', 'machine.input.registers', 'machine.input.registers.player'), 'machine.input.registers.player', 0, 0xffffffff),
+			actionStringId: requireBoundedU32(requireObjectKey(registers, 'actionStringId', 'machine.input.registers', 'machine.input.registers.actionStringId'), 'machine.input.registers.actionStringId', 0, 0xffffffff),
+			bindStringId: requireBoundedU32(requireObjectKey(registers, 'bindStringId', 'machine.input.registers', 'machine.input.registers.bindStringId'), 'machine.input.registers.bindStringId', 0, 0xffffffff),
+			ctrl: requireBoundedU32(requireObjectKey(registers, 'ctrl', 'machine.input.registers', 'machine.input.registers.ctrl'), 'machine.input.registers.ctrl', 0, 0xffffffff),
+			queryStringId: requireBoundedU32(requireObjectKey(registers, 'queryStringId', 'machine.input.registers', 'machine.input.registers.queryStringId'), 'machine.input.registers.queryStringId', 0, 0xffffffff),
+			status: requireBoundedU32(requireObjectKey(registers, 'status', 'machine.input.registers', 'machine.input.registers.status'), 'machine.input.registers.status', 0, 0xffffffff),
+			value: requireBoundedU32(requireObjectKey(registers, 'value', 'machine.input.registers', 'machine.input.registers.value'), 'machine.input.registers.value', 0, 0xffffffff),
+			consumeStringId: requireBoundedU32(requireObjectKey(registers, 'consumeStringId', 'machine.input.registers', 'machine.input.registers.consumeStringId'), 'machine.input.registers.consumeStringId', 0, 0xffffffff),
+		},
+		players,
 	};
 }
 

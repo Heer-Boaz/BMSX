@@ -8,6 +8,7 @@
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/geometry/contracts.h"
+#include "machine/devices/input/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/vdp/vout.h"
 #include "machine/firmware/builtin_descriptors.h"
@@ -35,6 +36,7 @@
 #include "machine/common/hash.h"
 #include "audio/soundmaster.h"
 #include "input/manager.h"
+#include "input/player.h"
 #include "platform/platform.h"
 #include "render/gameview.h"
 #include "render/texture_manager.h"
@@ -672,6 +674,16 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	state.machineState.machine.audio.apuStatus = bmsx::APU_STATUS_FAULT;
 	state.machineState.machine.audio.apuFaultCode = bmsx::APU_FAULT_SOURCE_RANGE;
 	state.machineState.machine.audio.apuFaultDetail = 0x1234u;
+	state.machineState.machine.input.sampleArmed = true;
+	state.machineState.machine.input.registers.player = 2u;
+	state.machineState.machine.input.registers.actionStringId = 4u;
+	state.machineState.machine.input.registers.bindStringId = 5u;
+	state.machineState.machine.input.registers.ctrl = bmsx::INP_CTRL_ARM;
+	state.machineState.machine.input.registers.queryStringId = 6u;
+	state.machineState.machine.input.registers.status = 1u;
+	state.machineState.machine.input.registers.value = 0u;
+	state.machineState.machine.input.registers.consumeStringId = 7u;
+	state.machineState.machine.input.players[1u].actions.push_back(bmsx::InputControllerActionState{ 4u, 5u });
 	state.cpuState.haltedUntilIrq = true;
 	state.cpuState.maskableInterruptsEnabled = false;
 	state.cpuState.maskableInterruptsRestoreEnabled = true;
@@ -718,6 +730,15 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	require(decoded.machineState.machine.audio.apuStatus == bmsx::APU_STATUS_FAULT, "save-state should preserve APU status");
 	require(decoded.machineState.machine.audio.apuFaultCode == bmsx::APU_FAULT_SOURCE_RANGE, "save-state should preserve APU fault code");
 	require(decoded.machineState.machine.audio.apuFaultDetail == 0x1234u, "save-state should preserve APU fault detail");
+	require(decoded.machineState.machine.input.sampleArmed, "save-state should preserve ICU sample arm latch");
+	require(decoded.machineState.machine.input.registers.player == 2u, "save-state should preserve ICU player register");
+	require(decoded.machineState.machine.input.registers.actionStringId == 4u, "save-state should preserve ICU action string register");
+	require(decoded.machineState.machine.input.registers.bindStringId == 5u, "save-state should preserve ICU bind string register");
+	require(decoded.machineState.machine.input.registers.queryStringId == 6u, "save-state should preserve ICU query string register");
+	require(decoded.machineState.machine.input.registers.consumeStringId == 7u, "save-state should preserve ICU consume string register");
+	require(decoded.machineState.machine.input.players[1u].actions.size() == 1u, "save-state should preserve ICU committed action table");
+	require(decoded.machineState.machine.input.players[1u].actions[0].actionStringId == 4u, "save-state should preserve ICU committed action id");
+	require(decoded.machineState.machine.input.players[1u].actions[0].bindStringId == 5u, "save-state should preserve ICU committed bind id");
 	require(decoded.cpuState.haltedUntilIrq, "save-state should preserve HALT state");
 	require(!decoded.cpuState.maskableInterruptsEnabled, "save-state should preserve disabled IFF");
 	require(decoded.cpuState.maskableInterruptsRestoreEnabled, "save-state should preserve NMI return IFF");
@@ -1172,6 +1193,68 @@ struct AudioHarness {
 		audio.setTiming(bmsx::APU_SAMPLE_RATE_HZ, 0);
 	}
 };
+
+struct InputHarness {
+	bmsx::Memory memory;
+	bmsx::CPU cpu;
+	bmsx::InputController inputController;
+
+	InputHarness()
+		: memory()
+		, cpu(memory)
+		, inputController(memory, bmsx::Input::instance(), cpu.stringPool()) {
+		for (bmsx::i32 player = 1; player <= bmsx::PLAYERS_MAX; player += 1) {
+			bmsx::Input::instance().getPlayerInput(player)->clearContext("inp_chip");
+		}
+		inputController.reset();
+	}
+};
+
+void testInputControllerStateGolden() {
+	InputHarness live;
+	const bmsx::StringId action = live.cpu.stringPool().intern("jump");
+	const bmsx::StringId bind = live.cpu.stringPool().intern("a,left");
+	const bmsx::StringId query = live.cpu.stringPool().intern("jump[p]");
+	const bmsx::StringId consume = live.cpu.stringPool().intern("jump,dash");
+
+	writeIoWord(live.memory, bmsx::IO_INP_PLAYER, 2u);
+	live.memory.writeValue(bmsx::IO_INP_ACTION, bmsx::valueString(action));
+	live.memory.writeValue(bmsx::IO_INP_BIND, bmsx::valueString(bind));
+	writeIoWord(live.memory, bmsx::IO_INP_CTRL, bmsx::INP_CTRL_COMMIT);
+	live.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(query));
+	live.memory.writeValue(bmsx::IO_INP_CONSUME, bmsx::valueString(consume));
+	writeIoWord(live.memory, bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
+
+	const bmsx::StringPoolState stringState = live.cpu.stringPool().captureState();
+	const bmsx::InputControllerState state = live.inputController.captureState();
+	require(state.sampleArmed, "ICU capture should preserve the armed sample latch");
+	require(state.registers.player == 2u, "ICU capture should preserve the selected player register");
+	require(state.registers.actionStringId == action, "ICU capture should preserve the action string register");
+	require(state.registers.bindStringId == bind, "ICU capture should preserve the bind string register");
+	require(state.registers.queryStringId == query, "ICU capture should preserve the query string register");
+	require(state.registers.consumeStringId == consume, "ICU capture should preserve the consume string register");
+	require(state.players[1u].actions.size() == 1u, "ICU capture should preserve committed player action count");
+	require(state.players[1u].actions[0].actionStringId == action, "ICU capture should preserve committed action ids");
+	require(state.players[1u].actions[0].bindStringId == bind, "ICU capture should preserve committed binding ids");
+
+	InputHarness restored;
+	restored.cpu.stringPool().restoreState(stringState);
+	restored.inputController.restoreState(state);
+
+	require(restored.memory.readIoU32(bmsx::IO_INP_PLAYER) == 2u, "ICU restore should mirror the selected player register");
+	require(bmsx::asStringId(restored.memory.readValue(bmsx::IO_INP_ACTION)) == action, "ICU restore should mirror the action string register");
+	require(bmsx::asStringId(restored.memory.readValue(bmsx::IO_INP_BIND)) == bind, "ICU restore should mirror the bind string register");
+	require(bmsx::asStringId(restored.memory.readValue(bmsx::IO_INP_QUERY)) == query, "ICU restore should mirror the query string register");
+	require(bmsx::asStringId(restored.memory.readValue(bmsx::IO_INP_CONSUME)) == consume, "ICU restore should mirror the consume string register");
+	restored.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(query));
+	require(restored.memory.readIoU32(bmsx::IO_INP_STATUS) == 0u, "restored ICU context should accept a known action query");
+	restored.inputController.onVblankEdge();
+	require(!restored.inputController.captureState().sampleArmed, "ICU VBlank edge should consume the restored sample arm latch");
+	writeIoWord(restored.memory, bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
+	require(restored.inputController.captureState().sampleArmed, "ICU ARM command should set the private sample latch");
+	restored.inputController.cancelArmedSample();
+	require(!restored.inputController.captureState().sampleArmed, "ICU runtime cancellation should clear the private sample latch");
+}
 
 void expectApuFault(const AudioHarness& h, uint32_t code, const char* label) {
 	require(h.memory.readIoU32(bmsx::IO_APU_FAULT_CODE) == code, label);
@@ -2017,7 +2100,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 38> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 39> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -2048,6 +2131,7 @@ int main() {
 		{"APU output-ring status", testApuOutputRingStatusGolden},
 		{"APU parameter register state", testApuParameterRegisterStateGolden},
 		{"APU selected-slot active state", testApuSelectedSlotActiveStateGolden},
+		{"ICU register and action state", testInputControllerStateGolden},
 		{"runtime vblank edge completes active tick", testRuntimeVblankEdgeCompletesActiveTickGolden},
 		{"memory access and opcode", testAccessKindAndOpcodeGolden},
 		{"timing and hash", testTimingAndHashGolden},

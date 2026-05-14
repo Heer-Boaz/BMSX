@@ -72,6 +72,8 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"pc",
 	"pendingEntryCall",
 	"pendingFlags",
+	"player",
+	"players",
 	"posx",
 	"posy",
 	"posz",
@@ -179,6 +181,13 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"broadphasePairCount",
 	"workCarry",
 	"availableWorkUnits",
+	"actions",
+	"actionStringId",
+	"bindStringId",
+	"ctrl",
+	"queryStringId",
+	"status",
+	"consumeStringId",
 };
 
 } // namespace bmsx

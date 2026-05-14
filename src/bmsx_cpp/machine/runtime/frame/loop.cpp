@@ -13,7 +13,7 @@ void FrameLoopState::reset() {
 void FrameLoopState::resetFrameState(Runtime& runtime) {
 	frameActive = false;
 	runtime.vblank.abandonTick();
-	runtime.machine.inputController.sampleArmed = false;
+	runtime.machine.inputController.cancelArmedSample();
 	frameState = FrameState{};
 	runtime.machine.cpu.clearHaltUntilIrq();
 	runtime.frameScheduler.reset();

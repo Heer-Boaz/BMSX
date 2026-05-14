@@ -46,7 +46,7 @@ void VblankState::reset(Runtime& runtime) {
 	m_vblankActive = false;
 	m_vblankSequence = 0;
 	m_lastCompletedVblankSequence = 0;
-	runtime.machine.inputController.sampleArmed = false;
+	runtime.machine.inputController.cancelArmedSample();
 	runtime.machine.irqController.postLoad();
 	runtime.machine.vdp.resetStatus();
 	if (m_vblankStartCycle == 0) {
