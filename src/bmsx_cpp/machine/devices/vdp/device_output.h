@@ -34,6 +34,7 @@ struct VdpSurfaceUpload {
 	uint32_t dirtyRowStart = 0;
 	uint32_t dirtyRowEnd = 0;
 	const std::vector<VdpDirtySpan>* dirtySpansByRow = nullptr;
+	bool requiresFullSync = false;
 };
 
 struct VdpFrameBufferPresentation {
@@ -57,7 +58,7 @@ public:
 class VdpSurfaceUploadSink {
 public:
 	virtual ~VdpSurfaceUploadSink() = default;
-	virtual bool consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) = 0;
+	virtual void consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) = 0;
 };
 
 struct VdpDeviceOutput {

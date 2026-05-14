@@ -505,12 +505,11 @@ test('VDP2D SLOT_INDEX latches raw words and SLOT_DIM applies in-order through R
 	let primaryWidth = 0;
 	let primaryHeight = 0;
 	const primarySurfaceProbe = {
-		consumeVdpSurfaceUpload(upload: VdpSurfaceUpload): boolean {
+		consumeVdpSurfaceUpload(upload: VdpSurfaceUpload): void {
 			if (upload.surfaceId === VDP_RD_SURFACE_PRIMARY) {
 				primaryWidth = upload.surfaceWidth;
 				primaryHeight = upload.surfaceHeight;
 			}
-			return false;
 		},
 	};
 
@@ -532,7 +531,7 @@ test('VDP2D SLOT_INDEX latches raw words and SLOT_DIM applies in-order through R
 	primaryWidth = 0;
 	primaryHeight = 0;
 	vdp.drainSurfaceUploads(primarySurfaceProbe);
-	assert.deepEqual({ width: primaryWidth, height: primaryHeight }, { width: 16, height: 16 });
+	assert.deepEqual({ width: primaryWidth, height: primaryHeight }, { width: 0, height: 0 });
 
 	clearVdpFault(memory);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
@@ -820,12 +819,11 @@ test('VDP save-state restores raw registerfile and surface geometry', () => {
 	let primaryWidth = 0;
 	let primaryHeight = 0;
 	vdp.drainSurfaceUploads({
-		consumeVdpSurfaceUpload(upload: VdpSurfaceUpload): boolean {
+		consumeVdpSurfaceUpload(upload: VdpSurfaceUpload): void {
 			if (upload.surfaceId === VDP_RD_SURFACE_PRIMARY) {
 				primaryWidth = upload.surfaceWidth;
 				primaryHeight = upload.surfaceHeight;
 			}
-			return false;
 		},
 	});
 	assert.deepEqual({ width: primaryWidth, height: primaryHeight }, { width: 16, height: 16 });

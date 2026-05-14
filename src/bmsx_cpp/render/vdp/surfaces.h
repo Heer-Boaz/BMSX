@@ -13,6 +13,5 @@ struct VdpRenderSurfaceInfo {
 };
 
 VdpRenderSurfaceInfo resolveVdpRenderSurfaceForUpload(const VdpSurfaceUpload& upload);
-bool isVdpFrameBufferSurface(uint32_t surfaceId);
 
 } // namespace bmsx

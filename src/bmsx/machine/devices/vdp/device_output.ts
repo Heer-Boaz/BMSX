@@ -34,6 +34,7 @@ export type VdpSurfaceUpload = Readonly<{
 	dirtyRowStart: number;
 	dirtyRowEnd: number;
 	dirtySpansByRow: readonly VdpDirtySpan[];
+	requiresFullSync: boolean;
 }>;
 
 export type VdpDeviceOutput = Readonly<{
@@ -68,5 +69,5 @@ export type VdpFrameBufferPresentationSink = {
 };
 
 export type VdpSurfaceUploadSink = {
-	consumeVdpSurfaceUpload(upload: VdpSurfaceUpload): boolean;
+	consumeVdpSurfaceUpload(upload: VdpSurfaceUpload): void;
 };

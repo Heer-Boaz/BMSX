@@ -135,8 +135,9 @@ public:
 	using SubmittedFrame = VdpSubmittedFrame;
 	using BuildingFrame = VdpBuildingFrame;
 
-		const VdpDeviceOutput& readDeviceOutput();
+	const VdpDeviceOutput& readDeviceOutput();
 	void drainSurfaceUploads(VdpSurfaceUploadSink& sink);
+	void syncSurfaceUploads(VdpSurfaceUploadSink& sink);
 
 private:
 	static Value readVdpStatusThunk(void* context, uint32_t addr);
@@ -228,8 +229,9 @@ private:
 	void markVramSlotDirtySpan(VdpSurfaceUploadSlot& slot, uint32_t row, uint32_t xStart, uint32_t xEnd);
 	VdpSurfaceUploadSlot* findRegisteredVramSlotBySurfaceId(uint32_t surfaceId);
 	const VdpSurfaceUploadSlot* findRegisteredVramSlotBySurfaceId(uint32_t surfaceId) const;
-		void clearSurfaceUploadDirty(uint32_t surfaceId);
-		void seedVramSlotPixels(VdpSurfaceUploadSlot& slot);
+	void clearSurfaceUploadDirty(uint32_t surfaceId);
+	void emitSurfaceUpload(VdpSurfaceUploadSink& sink, const VdpSurfaceUploadSlot& slot, bool requiresFullSync);
+	void seedVramSlotPixels(VdpSurfaceUploadSlot& slot);
 	u32 nextBlitterSequence();
 	void assignLayeredBlitterCommand(BlitterCommand& command, BlitterCommandType type, int renderCost, Layer2D layer, f32 priority);
 	std::vector<GlyphRunGlyph> acquireGlyphBuffer();

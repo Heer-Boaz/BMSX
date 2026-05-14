@@ -77,12 +77,11 @@ struct PrimarySurfaceProbe final : bmsx::VdpSurfaceUploadSink {
 	uint32_t width = 0;
 	uint32_t height = 0;
 
-	bool consumeVdpSurfaceUpload(const bmsx::VdpSurfaceUpload& upload) override {
+	void consumeVdpSurfaceUpload(const bmsx::VdpSurfaceUpload& upload) override {
 		if (upload.surfaceId == bmsx::VDP_RD_SURFACE_PRIMARY) {
 			width = upload.surfaceWidth;
 			height = upload.surfaceHeight;
 		}
-		return false;
 	}
 };
 
@@ -497,7 +496,7 @@ void testSlotRegisters() {
 	primary.width = 0u;
 	primary.height = 0u;
 	h.vdp.drainSurfaceUploads(primary);
-	require(primary.width == 16u && primary.height == 16u, "invalid SLOT_DIM should not change the slot");
+	require(primary.width == 0u && primary.height == 0u, "invalid SLOT_DIM should not emit a new surface upload");
 
 	clearVdpFault(h);
 	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);

@@ -4,7 +4,7 @@ import { VDP_RD_SURFACE_COUNT } from '../../machine/devices/vdp/contracts';
 import { DEFAULT_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { TextureManager } from '../texture_manager';
 import type { GameView } from '../gameview';
-import { isVdpFrameBufferSurface, resolveVdpRenderSurfaceForUpload } from './surfaces';
+import { resolveVdpRenderSurfaceForUpload } from './surfaces';
 
 const EMPTY_TEXTURE_SEED = new Uint8Array(4);
 
@@ -19,7 +19,6 @@ export class VdpSlotTextures implements VdpSurfaceUploadSink {
 	private readonly syncedTextureWidths = new Uint32Array(VDP_RD_SURFACE_COUNT);
 	private readonly syncedTextureHeights = new Uint32Array(VDP_RD_SURFACE_COUNT);
 	private readonly surfaceReadbacks = new Array<VdpSlotTexturePixels>(VDP_RD_SURFACE_COUNT);
-	private initializing = false;
 
 	public constructor(
 		private readonly textureManager: TextureManager,
@@ -32,18 +31,13 @@ export class VdpSlotTextures implements VdpSurfaceUploadSink {
 		this.syncedTextureHeights.fill(0);
 		this.surfaceReadbacks.length = 0;
 		this.surfaceReadbacks.length = VDP_RD_SURFACE_COUNT;
-		this.initializing = true;
-		vdp.drainSurfaceUploads(this);
-		this.initializing = false;
+		vdp.syncSurfaceUploads(this);
 	}
 
-	public consumeVdpSurfaceUpload(slot: VdpSurfaceUpload): boolean {
-		if (isVdpFrameBufferSurface(slot.surfaceId)) {
-			return false;
-		}
-		if (this.initializing) {
+	public consumeVdpSurfaceUpload(slot: VdpSurfaceUpload): void {
+		if (slot.requiresFullSync) {
 			this.initializeVdpSlotTexture(slot);
-			return true;
+			return;
 		}
 		const surface = resolveVdpRenderSurfaceForUpload(slot);
 		const width = slot.surfaceWidth;
@@ -56,7 +50,7 @@ export class VdpSlotTextures implements VdpSurfaceUploadSink {
 			this.noteSyncedTextureSize(slot.surfaceId, width, height);
 		}
 		if (!forceFullUpload && slot.dirtyRowStart >= slot.dirtyRowEnd) {
-			return false;
+			return;
 		}
 		if (forceFullUpload) {
 			this.uploadVdpSlotRows(textureKey, slot, 0, height);
@@ -68,7 +62,6 @@ export class VdpSlotTextures implements VdpSurfaceUploadSink {
 				}
 			}
 		}
-		return true;
 	}
 
 	public readSurfaceTexturePixels(surfaceId: number): VdpSlotTexturePixels {

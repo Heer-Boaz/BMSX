@@ -2486,17 +2486,31 @@ void VDP::clearSurfaceUploadDirty(uint32_t surfaceId) {
 
 void VDP::drainSurfaceUploads(VdpSurfaceUploadSink& sink) {
 	for (const VdpSurfaceUploadSlot& slot : m_vramSlots) {
-		m_surfaceUploadOutput.surfaceId = slot.surfaceId;
-		m_surfaceUploadOutput.surfaceWidth = slot.surfaceWidth;
-		m_surfaceUploadOutput.surfaceHeight = slot.surfaceHeight;
-		m_surfaceUploadOutput.cpuReadback = &slot.cpuReadback;
-		m_surfaceUploadOutput.dirtyRowStart = slot.dirtyRowStart;
-		m_surfaceUploadOutput.dirtyRowEnd = slot.dirtyRowEnd;
-		m_surfaceUploadOutput.dirtySpansByRow = &slot.dirtySpansByRow;
-		if (sink.consumeVdpSurfaceUpload(m_surfaceUploadOutput)) {
-			clearSurfaceUploadDirty(slot.surfaceId);
+		if (slot.surfaceId != VDP_RD_SURFACE_FRAMEBUFFER && slot.dirtyRowStart < slot.dirtyRowEnd) {
+			emitSurfaceUpload(sink, slot, false);
 		}
 	}
+}
+
+void VDP::syncSurfaceUploads(VdpSurfaceUploadSink& sink) {
+	for (const VdpSurfaceUploadSlot& slot : m_vramSlots) {
+		if (slot.surfaceId != VDP_RD_SURFACE_FRAMEBUFFER) {
+			emitSurfaceUpload(sink, slot, true);
+		}
+	}
+}
+
+void VDP::emitSurfaceUpload(VdpSurfaceUploadSink& sink, const VdpSurfaceUploadSlot& slot, bool requiresFullSync) {
+	m_surfaceUploadOutput.surfaceId = slot.surfaceId;
+	m_surfaceUploadOutput.surfaceWidth = slot.surfaceWidth;
+	m_surfaceUploadOutput.surfaceHeight = slot.surfaceHeight;
+	m_surfaceUploadOutput.cpuReadback = &slot.cpuReadback;
+	m_surfaceUploadOutput.dirtyRowStart = slot.dirtyRowStart;
+	m_surfaceUploadOutput.dirtyRowEnd = slot.dirtyRowEnd;
+	m_surfaceUploadOutput.dirtySpansByRow = &slot.dirtySpansByRow;
+	m_surfaceUploadOutput.requiresFullSync = requiresFullSync;
+	sink.consumeVdpSurfaceUpload(m_surfaceUploadOutput);
+	clearSurfaceUploadDirty(slot.surfaceId);
 }
 
 void VDP::invalidateReadCache(uint32_t surfaceId) {

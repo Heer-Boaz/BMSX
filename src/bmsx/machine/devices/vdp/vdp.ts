@@ -340,6 +340,7 @@ export class VDP implements VramWriteSink {
 		dirtyRowStart: 0,
 		dirtyRowEnd: 0,
 		dirtySpansByRow: [],
+		requiresFullSync: false,
 	};
 	private activeFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
 	private pendingFrame: VdpSubmittedFrameState = allocateSubmittedFrameSlot();
@@ -2140,16 +2141,17 @@ export class VDP implements VramWriteSink {
 	public drainSurfaceUploads(sink: VdpSurfaceUploadSink): void {
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
 			const slot = this.vramSlots[index]!;
-			const upload = this.surfaceUploadOutput;
-			upload.surfaceId = slot.surfaceId;
-			upload.surfaceWidth = slot.surfaceWidth;
-			upload.surfaceHeight = slot.surfaceHeight;
-			upload.cpuReadback = slot.cpuReadback;
-			upload.dirtyRowStart = slot.dirtyRowStart;
-			upload.dirtyRowEnd = slot.dirtyRowEnd;
-			upload.dirtySpansByRow = slot.dirtySpansByRow;
-			if (sink.consumeVdpSurfaceUpload(upload)) {
-				this.clearSurfaceUploadDirty(slot.surfaceId);
+			if (slot.surfaceId !== VDP_RD_SURFACE_FRAMEBUFFER && slot.dirtyRowStart < slot.dirtyRowEnd) {
+				this.emitSurfaceUpload(sink, slot, false);
+			}
+		}
+	}
+
+	public syncSurfaceUploads(sink: VdpSurfaceUploadSink): void {
+		for (let index = 0; index < this.vramSlots.length; index += 1) {
+			const slot = this.vramSlots[index]!;
+			if (slot.surfaceId !== VDP_RD_SURFACE_FRAMEBUFFER) {
+				this.emitSurfaceUpload(sink, slot, true);
 			}
 		}
 	}
@@ -2446,6 +2448,20 @@ export class VDP implements VramWriteSink {
 		}
 		slot.dirtyRowStart = 0;
 		slot.dirtyRowEnd = 0;
+	}
+
+	private emitSurfaceUpload(sink: VdpSurfaceUploadSink, slot: VdpSurfaceUploadSlot, requiresFullSync: boolean): void {
+		const upload = this.surfaceUploadOutput;
+		upload.surfaceId = slot.surfaceId;
+		upload.surfaceWidth = slot.surfaceWidth;
+		upload.surfaceHeight = slot.surfaceHeight;
+		upload.cpuReadback = slot.cpuReadback;
+		upload.dirtyRowStart = slot.dirtyRowStart;
+		upload.dirtyRowEnd = slot.dirtyRowEnd;
+		upload.dirtySpansByRow = slot.dirtySpansByRow;
+		upload.requiresFullSync = requiresFullSync;
+		sink.consumeVdpSurfaceUpload(upload);
+		this.clearSurfaceUploadDirty(slot.surfaceId);
 	}
 
 	private commitLiveVisualState(): void {

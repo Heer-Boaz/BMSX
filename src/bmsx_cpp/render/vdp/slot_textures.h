@@ -31,7 +31,7 @@ public:
 	VdpSlotTextures(TextureManager& textureManager, GameView& view);
 
 	void initialize(VDP& vdp);
-	bool consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) override;
+	void consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) override;
 	VdpSlotTexturePixels readSurfaceTexturePixels(u32 surfaceId) const;
 
 private:
@@ -47,7 +47,6 @@ private:
 	std::array<u32, VDP_RD_SURFACE_COUNT> m_syncedTextureWidths{};
 	std::array<u32, VDP_RD_SURFACE_COUNT> m_syncedTextureHeights{};
 	std::array<VdpSlotTextureReadback, VDP_RD_SURFACE_COUNT> m_surfaceReadbacks{};
-	bool m_initializing = false;
 };
 
 } // namespace bmsx

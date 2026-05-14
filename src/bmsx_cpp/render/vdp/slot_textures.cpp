@@ -26,18 +26,13 @@ void VdpSlotTextures::initialize(VDP& vdp) {
 	for (VdpSlotTextureReadback& readback : m_surfaceReadbacks) {
 		readback = VdpSlotTextureReadback{};
 	}
-	m_initializing = true;
-	vdp.drainSurfaceUploads(*this);
-	m_initializing = false;
+	vdp.syncSurfaceUploads(*this);
 }
 
-bool VdpSlotTextures::consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) {
-	if (isVdpFrameBufferSurface(upload.surfaceId)) {
-		return false;
-	}
-	if (m_initializing) {
+void VdpSlotTextures::consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) {
+	if (upload.requiresFullSync) {
 		initializeVdpSlotTexture(upload);
-		return true;
+		return;
 	}
 	const VdpRenderSurfaceInfo surface = resolveVdpRenderSurfaceForUpload(upload);
 	const u32 width = upload.surfaceWidth;
@@ -49,7 +44,7 @@ bool VdpSlotTextures::consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) {
 		noteSyncedTextureSize(upload.surfaceId, width, height);
 	}
 	if (!forceFullUpload && upload.dirtyRowStart >= upload.dirtyRowEnd) {
-		return false;
+		return;
 	}
 	if (forceFullUpload) {
 		uploadVdpSlotRows(surface.textureKey, upload, 0u, height);
@@ -61,7 +56,6 @@ bool VdpSlotTextures::consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) {
 			}
 		}
 	}
-	return true;
 }
 
 VdpSlotTexturePixels VdpSlotTextures::readSurfaceTexturePixels(u32 surfaceId) const {
