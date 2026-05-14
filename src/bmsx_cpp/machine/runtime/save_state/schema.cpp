@@ -2,7 +2,7 @@
 
 namespace bmsx {
 
-// Property indices are scoped to RUNTIME_SAVE_STATE_WIRE_VERSION.
+// Property indices are the current save-state property contract; BMSX does not keep legacy decoders.
 const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"accumulatedHostTimeMs",
 	"array",
@@ -135,6 +135,11 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"busFaultAccess",
 	"audio",
 	"eventSequence",
+	"eventKind",
+	"eventSlot",
+	"eventSourceAddr",
+	"activeSlotMask",
+	"slotRegisterWords",
 	"apuStatus",
 	"apuFaultCode",
 	"apuFaultDetail",
@@ -142,6 +147,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"surfaceWidth",
 	"surfaceHeight",
 	"geometry",
+	"phase",
 	"registerWords",
 	"activeJob",
 	"cmd",

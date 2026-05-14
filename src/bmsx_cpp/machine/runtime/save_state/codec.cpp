@@ -10,8 +10,6 @@
 namespace bmsx {
 namespace {
 
-constexpr size_t RUNTIME_SAVE_STATE_FRAME_BYTES = 2;
-
 template<typename T, typename EncodeFn>
 BinValue encodeVector(const std::vector<T>& values, EncodeFn&& encode) {
 	BinArray array;
@@ -363,6 +361,7 @@ GeometryJobState decodeGeometryJobState(const BinValue& value, const char* label
 
 BinValue encodeGeometryControllerState(const GeometryControllerState& state) {
 	BinObject object;
+	object["phase"] = static_cast<i64>(static_cast<u32>(state.phase));
 	object["registerWords"] = encodeFixedArray(state.registerWords, encodeScalar<i64, u32>);
 	object["activeJob"] = state.activeJob.has_value() ? encodeGeometryJobState(*state.activeJob) : BinValue(nullptr);
 	object["workCarry"] = static_cast<i64>(state.workCarry);
@@ -373,6 +372,11 @@ BinValue encodeGeometryControllerState(const GeometryControllerState& state) {
 GeometryControllerState decodeGeometryControllerState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	GeometryControllerState state;
+	const u32 phase = requireU32(requireField(object, "phase", label), "machine.geometry.phase");
+	if (phase > static_cast<u32>(GeometryControllerPhase::Rejected)) {
+		throw BMSX_RUNTIME_ERROR("machine.geometry.phase out of range");
+	}
+	state.phase = static_cast<GeometryControllerPhase>(phase);
 	state.registerWords = decodeU32Array<GEOMETRY_CONTROLLER_REGISTER_COUNT>(requireField(object, "registerWords", label), "machine.geometry.registerWords");
 	const BinValue& activeJob = requireField(object, "activeJob", label);
 	if (!activeJob.isNull()) {
@@ -464,7 +468,13 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 
 BinValue encodeAudioControllerState(const AudioControllerState& state) {
 	BinObject object;
+	object["registerWords"] = encodeFixedArray(state.registerWords, encodeScalar<f64, u32>);
 	object["eventSequence"] = encodeScalar<f64>(state.eventSequence);
+	object["eventKind"] = encodeScalar<f64>(state.eventKind);
+	object["eventSlot"] = encodeScalar<f64>(state.eventSlot);
+	object["eventSourceAddr"] = encodeScalar<f64>(state.eventSourceAddr);
+	object["activeSlotMask"] = encodeScalar<f64>(state.activeSlotMask);
+	object["slotRegisterWords"] = encodeFixedArray(state.slotRegisterWords, encodeScalar<f64, u32>);
 	object["apuStatus"] = encodeScalar<f64>(state.apuStatus);
 	object["apuFaultCode"] = encodeScalar<f64>(state.apuFaultCode);
 	object["apuFaultDetail"] = encodeScalar<f64>(state.apuFaultDetail);
@@ -474,7 +484,13 @@ BinValue encodeAudioControllerState(const AudioControllerState& state) {
 AudioControllerState decodeAudioControllerState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	AudioControllerState state;
+	state.registerWords = decodeU32Array<APU_PARAMETER_REGISTER_COUNT>(requireField(object, "registerWords", label), "machine.audio.registerWords");
 	state.eventSequence = requireU32(requireField(object, "eventSequence", label), "machine.audio.eventSequence");
+	state.eventKind = requireU32(requireField(object, "eventKind", label), "machine.audio.eventKind");
+	state.eventSlot = requireU32(requireField(object, "eventSlot", label), "machine.audio.eventSlot");
+	state.eventSourceAddr = requireU32(requireField(object, "eventSourceAddr", label), "machine.audio.eventSourceAddr");
+	state.activeSlotMask = requireU32(requireField(object, "activeSlotMask", label), "machine.audio.activeSlotMask");
+	state.slotRegisterWords = decodeU32Array<APU_SLOT_REGISTER_WORD_COUNT>(requireField(object, "slotRegisterWords", label), "machine.audio.slotRegisterWords");
 	state.apuStatus = requireU32(requireField(object, "apuStatus", label), "machine.audio.apuStatus");
 	state.apuFaultCode = requireU32(requireField(object, "apuFaultCode", label), "machine.audio.apuFaultCode");
 	state.apuFaultDetail = requireU32(requireField(object, "apuFaultDetail", label), "machine.audio.apuFaultDetail");
@@ -846,27 +862,12 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 } // namespace
 
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state) {
-	const std::vector<u8> payload = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
-	std::vector<u8> bytes;
-	bytes.reserve(RUNTIME_SAVE_STATE_FRAME_BYTES + payload.size());
-	bytes.push_back(BINENC_VERSION);
-	bytes.push_back(RUNTIME_SAVE_STATE_WIRE_VERSION);
-	bytes.insert(bytes.end(), payload.begin(), payload.end());
-	return bytes;
+	return encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
 }
 
 RuntimeSaveState decodeRuntimeSaveState(const u8* data, size_t size) {
-	if (size < RUNTIME_SAVE_STATE_FRAME_BYTES) {
-		throw BMSX_RUNTIME_ERROR("runtimeSaveState payload is truncated.");
-	}
-	if (data[0] != BINENC_VERSION) {
-		throw BMSX_RUNTIME_ERROR("runtimeSaveState binenc version is invalid.");
-	}
-	if (data[1] != RUNTIME_SAVE_STATE_WIRE_VERSION) {
-		throw BMSX_RUNTIME_ERROR("runtimeSaveState wire version is invalid.");
-	}
 	return decodeRuntimeSaveStateValue(
-		decodeBinaryWithPropTable(data + RUNTIME_SAVE_STATE_FRAME_BYTES, size - RUNTIME_SAVE_STATE_FRAME_BYTES, RUNTIME_SAVE_STATE_PROP_NAMES),
+		decodeBinaryWithPropTable(data, size, RUNTIME_SAVE_STATE_PROP_NAMES),
 		"runtimeSaveState");
 }
 

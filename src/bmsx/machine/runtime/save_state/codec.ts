@@ -1,11 +1,17 @@
-import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey, VERSION as BINENC_VERSION } from '../../../common/serializer/binencoder';
+import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../../common/serializer/binencoder';
 import type { MachineSaveState } from '../../machine';
 import type { CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeRefSegment, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/controller';
 import type { AudioControllerState } from '../../devices/audio/controller';
+import { APU_PARAMETER_REGISTER_COUNT, APU_SLOT_REGISTER_WORD_COUNT } from '../../devices/audio/contracts';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/controller';
-import { GEOMETRY_CONTROLLER_REGISTER_COUNT, type GeometryControllerState, type GeometryJobState } from '../../devices/geometry/controller';
+import {
+	GEOMETRY_CONTROLLER_PHASE_REJECTED,
+	GEOMETRY_CONTROLLER_REGISTER_COUNT,
+	type GeometryControllerPhase,
+} from '../../devices/geometry/contracts';
+import type { GeometryControllerState, GeometryJobState } from '../../devices/geometry/controller';
 import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/vdp';
 import { SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
 import { VDP_REGISTER_COUNT } from '../../devices/vdp/registers';
@@ -17,10 +23,8 @@ import type {
 	RuntimeSaveState,
 } from '../contracts';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../save_state';
-import { RUNTIME_SAVE_STATE_PROP_NAMES, RUNTIME_SAVE_STATE_WIRE_VERSION } from './schema';
+import { RUNTIME_SAVE_STATE_PROP_NAMES } from './schema';
 import type { Runtime } from '../runtime';
-
-const RUNTIME_SAVE_STATE_FRAME_BYTES = 2;
 
 type CpuTableHashNodeState = Extract<CpuObjectState, { kind: 'table' }>['hash'][number];
 
@@ -286,6 +290,7 @@ function decodeGeometryJobState(value: unknown, label: string): GeometryJobState
 
 function encodeGeometryControllerState(state: GeometryControllerState): GeometryControllerState {
 	return {
+		phase: state.phase,
 		registerWords: encodeVector(state.registerWords, (word) => word >>> 0),
 		activeJob: state.activeJob === null ? null : encodeGeometryJobState(state.activeJob),
 		workCarry: state.workCarry,
@@ -297,6 +302,7 @@ function decodeGeometryControllerState(value: unknown, label: string): GeometryC
 	const object = requireObject(value, label);
 	const activeJob = requireObjectKey(object, 'activeJob', label, 'machine.geometry.activeJob');
 	return {
+		phase: requireBoundedU32(requireObjectKey(object, 'phase', label, 'machine.geometry.phase'), 'machine.geometry.phase', 0, GEOMETRY_CONTROLLER_PHASE_REJECTED) as GeometryControllerPhase,
 		registerWords: decodeU32FixedArray(requireObjectKey(object, 'registerWords', label, 'machine.geometry.registerWords'), 'machine.geometry.registerWords', GEOMETRY_CONTROLLER_REGISTER_COUNT),
 		activeJob: activeJob === null ? null : decodeGeometryJobState(activeJob, 'machine.geometry.activeJob'),
 		workCarry: requireI64(requireObjectKey(object, 'workCarry', label, 'machine.geometry.workCarry'), 'machine.geometry.workCarry'),
@@ -386,7 +392,13 @@ function decodeVdpSaveState(value: unknown, label: string): VdpSaveState {
 
 function encodeAudioControllerState(state: AudioControllerState): AudioControllerState {
 	return {
+		registerWords: encodeVector(state.registerWords, (word) => word >>> 0),
 		eventSequence: state.eventSequence,
+		eventKind: state.eventKind,
+		eventSlot: state.eventSlot,
+		eventSourceAddr: state.eventSourceAddr,
+		activeSlotMask: state.activeSlotMask,
+		slotRegisterWords: encodeVector(state.slotRegisterWords, (word) => word >>> 0),
 		apuStatus: state.apuStatus,
 		apuFaultCode: state.apuFaultCode,
 		apuFaultDetail: state.apuFaultDetail,
@@ -396,7 +408,13 @@ function encodeAudioControllerState(state: AudioControllerState): AudioControlle
 function decodeAudioControllerState(value: unknown, label: string): AudioControllerState {
 	const object = requireObject(value, label);
 	return {
+		registerWords: decodeU32FixedArray(requireObjectKey(object, 'registerWords', label, 'machine.audio.registerWords'), 'machine.audio.registerWords', APU_PARAMETER_REGISTER_COUNT),
 		eventSequence: requireBoundedU32(requireObjectKey(object, 'eventSequence', label, 'machine.audio.eventSequence'), 'machine.audio.eventSequence', 0, 0xffffffff),
+		eventKind: requireBoundedU32(requireObjectKey(object, 'eventKind', label, 'machine.audio.eventKind'), 'machine.audio.eventKind', 0, 0xffffffff),
+		eventSlot: requireBoundedU32(requireObjectKey(object, 'eventSlot', label, 'machine.audio.eventSlot'), 'machine.audio.eventSlot', 0, 0xffffffff),
+		eventSourceAddr: requireBoundedU32(requireObjectKey(object, 'eventSourceAddr', label, 'machine.audio.eventSourceAddr'), 'machine.audio.eventSourceAddr', 0, 0xffffffff),
+		activeSlotMask: requireBoundedU32(requireObjectKey(object, 'activeSlotMask', label, 'machine.audio.activeSlotMask'), 'machine.audio.activeSlotMask', 0, 0xffffffff),
+		slotRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'slotRegisterWords', label, 'machine.audio.slotRegisterWords'), 'machine.audio.slotRegisterWords', APU_SLOT_REGISTER_WORD_COUNT),
 		apuStatus: requireBoundedU32(requireObjectKey(object, 'apuStatus', label, 'machine.audio.apuStatus'), 'machine.audio.apuStatus', 0, 0xffffffff),
 		apuFaultCode: requireBoundedU32(requireObjectKey(object, 'apuFaultCode', label, 'machine.audio.apuFaultCode'), 'machine.audio.apuFaultCode', 0, 0xffffffff),
 		apuFaultDetail: requireBoundedU32(requireObjectKey(object, 'apuFaultDetail', label, 'machine.audio.apuFaultDetail'), 'machine.audio.apuFaultDetail', 0, 0xffffffff),
@@ -720,26 +738,12 @@ function decodeRuntimeSaveStateValue(value: unknown, label: string): RuntimeSave
 }
 
 export function encodeRuntimeSaveState(state: RuntimeSaveState): Uint8Array {
-	const payload = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
-	const bytes = new Uint8Array(RUNTIME_SAVE_STATE_FRAME_BYTES + payload.length);
-	bytes[0] = BINENC_VERSION;
-	bytes[1] = RUNTIME_SAVE_STATE_WIRE_VERSION;
-	bytes.set(payload, RUNTIME_SAVE_STATE_FRAME_BYTES);
-	return bytes;
+	return encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
 }
 
 export function decodeRuntimeSaveState(bytes: Uint8Array): RuntimeSaveState {
-	if (bytes.length < RUNTIME_SAVE_STATE_FRAME_BYTES) {
-		throw new Error('runtimeSaveState payload is truncated.');
-	}
-	if (bytes[0] !== BINENC_VERSION) {
-		throw new Error(`runtimeSaveState binenc version must be ${BINENC_VERSION}.`);
-	}
-	if (bytes[1] !== RUNTIME_SAVE_STATE_WIRE_VERSION) {
-		throw new Error(`runtimeSaveState wire version must be ${RUNTIME_SAVE_STATE_WIRE_VERSION}.`);
-	}
 	return decodeRuntimeSaveStateValue(
-		decodeBinaryWithPropTable(bytes.subarray(RUNTIME_SAVE_STATE_FRAME_BYTES), RUNTIME_SAVE_STATE_PROP_NAMES),
+		decodeBinaryWithPropTable(bytes, RUNTIME_SAVE_STATE_PROP_NAMES),
 		'runtimeSaveState',
 	);
 }

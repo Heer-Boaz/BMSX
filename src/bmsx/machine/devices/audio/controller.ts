@@ -1,4 +1,4 @@
-import type { AudioSlot, SoundMaster, SoundMasterAudioSource, SoundMasterResolvedPlayRequest } from '../../../audio/soundmaster';
+import type { AudioSlot, SoundMaster, SoundMasterAudioSource, SoundMasterResolvedPlayRequest, VoiceId } from '../../../audio/soundmaster';
 import {
 	APU_GAIN_Q12_ONE,
 	APU_RATE_STEP_Q16_ONE,
@@ -30,13 +30,22 @@ import {
 	APU_FILTER_NONE,
 	APU_FILTER_NOTCH,
 	APU_FILTER_PEAKING,
+	APU_PARAMETER_REGISTER_COUNT,
+	APU_PARAMETER_SOURCE_ADDR_INDEX,
 	APU_SLOT_COUNT,
+	APU_SLOT_REGISTER_WORD_COUNT,
+	APU_STATUS_BUSY,
 	APU_STATUS_FAULT,
+	APU_STATUS_SELECTED_SLOT_ACTIVE,
+	apuSlotRegisterWordIndex,
+} from './contracts';
+import {
 	IO_APU_CMD,
 	IO_APU_EVENT_KIND,
 	IO_APU_EVENT_SEQ,
 	IO_APU_EVENT_SLOT,
 	IO_APU_EVENT_SOURCE_ADDR,
+	IO_APU_ACTIVE_MASK,
 	IO_APU_FADE_SAMPLES,
 	IO_APU_FAULT_ACK,
 	IO_APU_FAULT_CODE,
@@ -46,7 +55,10 @@ import {
 	IO_APU_FILTER_KIND,
 	IO_APU_FILTER_Q_MILLI,
 	IO_APU_GAIN_Q12,
+	IO_APU_PARAMETER_REGISTER_ADDRS,
 	IO_APU_RATE_STEP_Q16,
+	IO_APU_SELECTED_SOURCE_ADDR,
+	IO_APU_SELECTED_SLOT_REG0,
 	IO_APU_SLOT,
 	IO_APU_START_SAMPLE,
 	IO_APU_STATUS,
@@ -61,6 +73,7 @@ import {
 	IO_APU_SOURCE_LOOP_START_SAMPLE,
 	IO_APU_SOURCE_SAMPLE_RATE_HZ,
 	IO_APU_TARGET_GAIN_Q12,
+	IO_ARG_STRIDE,
 	IRQ_APU,
 } from '../../bus/io';
 import { Memory } from '../../memory/memory';
@@ -68,7 +81,13 @@ import { DeviceStatusLatch, type DeviceStatusRegisters } from '../device_status'
 import type { IrqController } from '../irq/controller';
 
 export type AudioControllerState = {
+	registerWords: number[];
 	eventSequence: number;
+	eventKind: number;
+	eventSlot: number;
+	eventSourceAddr: number;
+	activeSlotMask: number;
+	slotRegisterWords: number[];
 	apuStatus: number;
 	apuFaultCode: number;
 	apuFaultDetail: number;
@@ -84,7 +103,8 @@ const APU_DEVICE_STATUS_REGISTERS: DeviceStatusRegisters = {
 };
 
 function apuSamplesToMilliseconds(samples: number): number {
-	return Math.floor((samples * 1000) / APU_SAMPLE_RATE_HZ);
+	const scaled = samples * 1000;
+	return (scaled - (scaled % APU_SAMPLE_RATE_HZ)) / APU_SAMPLE_RATE_HZ;
 }
 
 function decodeFilterKind(kind: number): BiquadFilterType {
@@ -111,6 +131,11 @@ function decodeFilterKind(kind: number): BiquadFilterType {
 
 export class AudioController {
 	private eventSequence = 0;
+	private pendingSlotMask = 0;
+	private activeSlotMask = 0;
+	private readonly slotPlayGenerations = new Array<number>(APU_SLOT_COUNT).fill(0);
+	private readonly slotRegisterWords = new Uint32Array(APU_SLOT_REGISTER_WORD_COUNT);
+	private readonly slotVoiceIds: VoiceId[] = new Array(APU_SLOT_COUNT).fill(0);
 	private readonly fault: DeviceStatusLatch;
 	private endedUnsubscribe: (() => void) | null = null;
 
@@ -120,12 +145,18 @@ export class AudioController {
 		private readonly irq: IrqController,
 	) {
 		this.fault = new DeviceStatusLatch(memory, APU_DEVICE_STATUS_REGISTERS);
+		this.memory.mapIoRead(IO_APU_STATUS, this.onStatusRead.bind(this));
 		this.memory.mapIoWrite(IO_APU_CMD, this.onCommandWrite.bind(this));
+		this.memory.mapIoWrite(IO_APU_SLOT, this.updateSelectedSlotActiveStatus.bind(this));
 		this.memory.mapIoWrite(IO_APU_FAULT_ACK, () => {
 			this.fault.acknowledge();
 		});
+		const selectedSlotRegisterRead = this.onSelectedSlotRegisterRead.bind(this);
+		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
+			this.memory.mapIoRead(IO_APU_SELECTED_SLOT_REG0 + index * IO_ARG_STRIDE, selectedSlotRegisterRead);
+		}
 		this.endedUnsubscribe = this.soundMaster.addEndedListener((info) => {
-			this.emitSlotEvent(APU_EVENT_SLOT_ENDED, info.slot, info.sourceAddr);
+			this.emitSlotEvent(APU_EVENT_SLOT_ENDED, info.slot, info.voiceId, info.sourceAddr);
 		});
 	}
 
@@ -139,18 +170,38 @@ export class AudioController {
 	}
 
 	public reset(): void {
+		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
+			this.slotPlayGenerations[slot] += 1;
+		}
 		this.eventSequence = 0;
+		this.pendingSlotMask = 0;
+		this.activeSlotMask = 0;
+		this.slotRegisterWords.fill(0);
+		this.slotVoiceIds.fill(0);
+		this.soundMaster.stopAllVoices();
 		this.fault.resetStatus();
 		this.clearCommandLatch();
 		this.memory.writeValue(IO_APU_EVENT_KIND, APU_EVENT_NONE);
 		this.memory.writeValue(IO_APU_EVENT_SLOT, 0);
 		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, 0);
 		this.memory.writeValue(IO_APU_EVENT_SEQ, 0);
+		this.memory.writeValue(IO_APU_SELECTED_SOURCE_ADDR, 0);
+		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, 0);
 	}
 
 	public captureState(): AudioControllerState {
+		const registerWords = new Array<number>(APU_PARAMETER_REGISTER_COUNT);
+		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
+			registerWords[index] = this.memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]!);
+		}
 		return {
+			registerWords,
 			eventSequence: this.eventSequence,
+			eventKind: this.memory.readIoU32(IO_APU_EVENT_KIND),
+			eventSlot: this.memory.readIoU32(IO_APU_EVENT_SLOT),
+			eventSourceAddr: this.memory.readIoU32(IO_APU_EVENT_SOURCE_ADDR),
+			activeSlotMask: this.activeSlotMask,
+			slotRegisterWords: Array.from(this.slotRegisterWords),
 			apuStatus: this.fault.status,
 			apuFaultCode: this.fault.code,
 			apuFaultDetail: this.fault.detail,
@@ -158,8 +209,27 @@ export class AudioController {
 	}
 
 	public restoreState(state: AudioControllerState): void {
+		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
+			this.slotPlayGenerations[slot] += 1;
+		}
+		this.pendingSlotMask = 0;
+		this.slotVoiceIds.fill(0);
+		this.soundMaster.stopAllVoices();
+		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
+			this.memory.writeIoValue(IO_APU_PARAMETER_REGISTER_ADDRS[index]!, state.registerWords[index]!);
+		}
 		this.eventSequence = state.eventSequence >>> 0;
+		this.memory.writeValue(IO_APU_EVENT_KIND, state.eventKind);
+		this.memory.writeValue(IO_APU_EVENT_SLOT, state.eventSlot);
+		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, state.eventSourceAddr);
+		this.memory.writeValue(IO_APU_EVENT_SEQ, this.eventSequence);
+		this.activeSlotMask = state.activeSlotMask >>> 0;
+		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, this.activeSlotMask);
+		for (let index = 0; index < APU_SLOT_REGISTER_WORD_COUNT; index += 1) {
+			this.slotRegisterWords[index] = state.slotRegisterWords[index] >>> 0;
+		}
 		this.fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
+		this.updateSelectedSlotActiveStatus();
 	}
 
 	private resetCommandLatch(): void {
@@ -232,7 +302,15 @@ export class AudioController {
 		if (slot === undefined) {
 			return;
 		}
-		this.startPlay(source, slot, this.readResolvedPlayRequest(source));
+		this.startPlay(source, slot, this.readResolvedPlayRequest(source), this.captureParameterRegisterWords());
+	}
+
+	private captureParameterRegisterWords(): number[] {
+		const words = new Array<number>(APU_PARAMETER_REGISTER_COUNT);
+		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
+			words[index] = this.memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]!);
+		}
+		return words;
 	}
 
 	private readAudioSource(): SoundMasterAudioSource | undefined {
@@ -282,14 +360,31 @@ export class AudioController {
 		return undefined;
 	}
 
-	private startPlay(source: SoundMasterAudioSource, slot: AudioSlot, request: SoundMasterResolvedPlayRequest): void {
+	private startPlay(source: SoundMasterAudioSource, slot: AudioSlot, request: SoundMasterResolvedPlayRequest, registerWords: number[]): void {
 		if (!this.soundMaster.isRuntimeAudioReady()) {
 			this.fault.raise(APU_FAULT_RUNTIME_UNAVAILABLE, source.sourceAddr);
 			return;
 		}
 		const bytes = new Uint8Array(source.sourceBytes);
 		this.memory.readBytesInto(source.sourceAddr, bytes, bytes.byteLength);
-		void this.soundMaster.playResolvedSourceOnSlot(slot, source, bytes, request).catch(() => {
+		const bit = 1 << slot;
+		const playGeneration = this.slotPlayGenerations[slot] + 1;
+		this.slotPlayGenerations[slot] = playGeneration;
+		this.pendingSlotMask = (this.pendingSlotMask | bit) >>> 0;
+		void this.soundMaster.playResolvedSourceOnSlot(slot, source, bytes, request).then((voiceId) => {
+			if (playGeneration !== this.slotPlayGenerations[slot]) {
+				return;
+			}
+			this.pendingSlotMask = (this.pendingSlotMask & ~bit) >>> 0;
+			if (voiceId === 0) {
+				return;
+			}
+			this.setSlotActive(slot, registerWords, voiceId);
+		}, () => {
+			if (playGeneration !== this.slotPlayGenerations[slot]) {
+				return;
+			}
+			this.pendingSlotMask = (this.pendingSlotMask & ~bit) >>> 0;
 			this.fault.raise(APU_FAULT_PLAYBACK_REJECTED, source.sourceAddr);
 		});
 	}
@@ -299,8 +394,14 @@ export class AudioController {
 		if (slot === undefined) {
 			return;
 		}
+		const bit = 1 << slot;
+		this.slotPlayGenerations[slot] += 1;
+		this.pendingSlotMask = (this.pendingSlotMask & ~bit) >>> 0;
 		const fadeSamples = this.memory.readIoU32(IO_APU_FADE_SAMPLES);
-		this.soundMaster.stopSlot(slot, fadeSamples > 0 ? apuSamplesToMilliseconds(fadeSamples) : undefined);
+		const stopped = this.soundMaster.stopSlot(slot, fadeSamples > 0 ? apuSamplesToMilliseconds(fadeSamples) : undefined);
+		if (!stopped) {
+			this.stopSlotActive(slot);
+		}
 	}
 
 	private rampSlot(): void {
@@ -339,13 +440,64 @@ export class AudioController {
 		return request;
 	}
 
-	private emitSlotEvent(kind: number, slot: AudioSlot, sourceAddr: number): void {
+	private emitSlotEvent(kind: number, slot: AudioSlot, voiceId: VoiceId, sourceAddr: number): void {
+		if (this.slotVoiceIds[slot] !== voiceId) {
+			return;
+		}
+		this.stopSlotActive(slot);
 		this.eventSequence = (this.eventSequence + 1) >>> 0;
 		this.memory.writeValue(IO_APU_EVENT_KIND, kind);
 		this.memory.writeValue(IO_APU_EVENT_SLOT, slot);
 		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, sourceAddr);
 		this.memory.writeValue(IO_APU_EVENT_SEQ, this.eventSequence);
 		this.irq.raise(IRQ_APU);
+	}
+
+	private setSlotActive(slot: AudioSlot, registerWords: number[], voiceId: VoiceId): void {
+		const bit = 1 << slot;
+		this.pendingSlotMask = (this.pendingSlotMask & ~bit) >>> 0;
+		this.activeSlotMask = (this.activeSlotMask | bit) >>> 0;
+		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, this.activeSlotMask);
+		const base = apuSlotRegisterWordIndex(slot, 0);
+		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
+			this.slotRegisterWords[base + index] = registerWords[index] >>> 0;
+		}
+		this.slotVoiceIds[slot] = voiceId;
+		this.updateSelectedSlotActiveStatus();
+	}
+
+	private stopSlotActive(slot: AudioSlot): void {
+		const bit = 1 << slot;
+		this.activeSlotMask = (this.activeSlotMask & ~bit) >>> 0;
+		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, this.activeSlotMask);
+		const base = apuSlotRegisterWordIndex(slot, 0);
+		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
+			this.slotRegisterWords[base + index] = 0;
+		}
+		this.slotVoiceIds[slot] = 0;
+		this.updateSelectedSlotActiveStatus();
+	}
+
+	private updateSelectedSlotActiveStatus(): void {
+		const slot = this.memory.readIoU32(IO_APU_SLOT);
+		const active = slot < APU_SLOT_COUNT && (this.activeSlotMask & (1 << slot)) !== 0;
+		this.memory.writeIoValue(IO_APU_SELECTED_SOURCE_ADDR, active ? this.slotRegisterWords[apuSlotRegisterWordIndex(slot, APU_PARAMETER_SOURCE_ADDR_INDEX)] : 0);
+		this.fault.setStatusFlag(APU_STATUS_SELECTED_SLOT_ACTIVE, active);
+	}
+
+	private onStatusRead(): number {
+		const busy = (this.activeSlotMask | this.pendingSlotMask) !== 0;
+		return (this.fault.status | (busy ? APU_STATUS_BUSY : 0)) >>> 0;
+	}
+
+	private onSelectedSlotRegisterRead(addr: number): number {
+		const slot = this.memory.readIoU32(IO_APU_SLOT);
+		const active = slot < APU_SLOT_COUNT && (this.activeSlotMask & (1 << slot)) !== 0;
+		if (!active) {
+			return 0;
+		}
+		const parameterIndex = (addr - IO_APU_SELECTED_SLOT_REG0) / IO_ARG_STRIDE;
+		return this.slotRegisterWords[apuSlotRegisterWordIndex(slot, parameterIndex)]!;
 	}
 
 }

@@ -34,6 +34,134 @@ import {
 } from '../memory/map';
 import { CART_ROM_MAGIC, DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../../rompack/format';
 import {
+	GEO_CTRL_ABORT,
+	GEO_CTRL_START,
+	GEO_FAULT_ABORTED_BY_HOST,
+	GEO_FAULT_BAD_RECORD_ALIGNMENT,
+	GEO_FAULT_BAD_RECORD_FLAGS,
+	GEO_FAULT_BAD_VERTEX_COUNT,
+	GEO_FAULT_CODE_MASK,
+	GEO_FAULT_CODE_SHIFT,
+	GEO_FAULT_DESCRIPTOR_KIND,
+	GEO_FAULT_DST_RANGE,
+	GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL,
+	GEO_FAULT_RECORD_INDEX_MASK,
+	GEO_FAULT_RECORD_INDEX_NONE,
+	GEO_FAULT_RESULT_CAPACITY,
+	GEO_FAULT_REJECT_BAD_CMD,
+	GEO_FAULT_REJECT_BAD_REGISTER_COMBO,
+	GEO_FAULT_REJECT_BAD_STRIDE,
+	GEO_FAULT_REJECT_DST_NOT_RAM,
+	GEO_FAULT_REJECT_MISALIGNED_REGS,
+	GEO_FAULT_REJECT_BUSY,
+	GEO_FAULT_SRC_RANGE,
+	GEO_INDEX_NONE,
+	GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB,
+	GEO_OVERLAP2D_BROADPHASE_NONE,
+	GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE,
+	GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS,
+	GEO_OVERLAP2D_MODE_FULL_PASS,
+	GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW,
+	GEO_OVERLAP2D_AABB_DATA_COUNT,
+	GEO_OVERLAP2D_AABB_SHAPE_BYTES,
+	GEO_OVERLAP2D_INSTANCE_BYTES,
+	GEO_OVERLAP2D_INSTANCE_LAYER_OFFSET,
+	GEO_OVERLAP2D_INSTANCE_MASK_OFFSET,
+	GEO_OVERLAP2D_INSTANCE_SHAPE_OFFSET,
+	GEO_OVERLAP2D_INSTANCE_TX_OFFSET,
+	GEO_OVERLAP2D_INSTANCE_TY_OFFSET,
+	GEO_OVERLAP2D_PAIR_BYTES,
+	GEO_OVERLAP2D_PAIR_INSTANCE_A_OFFSET,
+	GEO_OVERLAP2D_PAIR_INSTANCE_B_OFFSET,
+	GEO_OVERLAP2D_PAIR_META_OFFSET,
+	GEO_OVERLAP2D_RESULT_BYTES,
+	GEO_OVERLAP2D_RESULT_DEPTH_OFFSET,
+	GEO_OVERLAP2D_RESULT_FEATURE_META_OFFSET,
+	GEO_OVERLAP2D_RESULT_NX_OFFSET,
+	GEO_OVERLAP2D_RESULT_NY_OFFSET,
+	GEO_OVERLAP2D_RESULT_PAIR_META_OFFSET,
+	GEO_OVERLAP2D_RESULT_PIECE_A_OFFSET,
+	GEO_OVERLAP2D_RESULT_PIECE_B_OFFSET,
+	GEO_OVERLAP2D_RESULT_PX_OFFSET,
+	GEO_OVERLAP2D_RESULT_PY_OFFSET,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET,
+	GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET,
+	GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET,
+	GEO_OVERLAP2D_SHAPE_DESC_BYTES,
+	GEO_OVERLAP2D_SHAPE_KIND_OFFSET,
+	GEO_OVERLAP2D_SHAPE_KIND_COMPOUND,
+	GEO_OVERLAP2D_SUMMARY_BROADPHASE_PAIR_COUNT_OFFSET,
+	GEO_OVERLAP2D_SUMMARY_BYTES,
+	GEO_OVERLAP2D_SUMMARY_EXACT_PAIR_COUNT_OFFSET,
+	GEO_OVERLAP2D_SUMMARY_FLAGS_OFFSET,
+	GEO_OVERLAP2D_SUMMARY_FLAG_OVERFLOW,
+	GEO_OVERLAP2D_SUMMARY_RESULT_COUNT_OFFSET,
+	GEO_OVERLAP2D_PAIR_META_INSTANCE_A_MASK,
+	GEO_OVERLAP2D_PAIR_META_INSTANCE_A_SHIFT,
+	GEO_OVERLAP2D_PAIR_META_INSTANCE_B_MASK,
+	GEO_PRIMITIVE_AABB,
+	GEO_PRIMITIVE_CIRCLE,
+	GEO_PRIMITIVE_CONVEX_POLY,
+	GEO_SAT_META_AXIS_MASK,
+	GEO_SAT_META_SHAPE_AUX,
+	GEO_SAT_META_SHAPE_SHIFT,
+	GEO_SAT_META_SHAPE_SRC,
+	GEO_SHAPE_CONVEX_POLY,
+	GEO_VERTEX2_BYTES,
+	GEO_VERTEX2_X_OFFSET,
+	GEO_VERTEX2_Y_OFFSET,
+	GEO_XFORM2_RECORD_BYTES,
+	GEO_XFORM2_RECORD_FLAGS_OFFSET,
+	GEO_XFORM2_RECORD_SRC_INDEX_OFFSET,
+	GEO_XFORM2_RECORD_DST_INDEX_OFFSET,
+	GEO_XFORM2_RECORD_AUX_INDEX_OFFSET,
+	GEO_XFORM2_RECORD_VERTEX_COUNT_OFFSET,
+	GEO_XFORM2_RECORD_DST1_INDEX_OFFSET,
+	GEO_XFORM2_MATRIX_BYTES,
+	GEO_XFORM2_MATRIX_M00_OFFSET,
+	GEO_XFORM2_MATRIX_M01_OFFSET,
+	GEO_XFORM2_MATRIX_TX_OFFSET,
+	GEO_XFORM2_MATRIX_M10_OFFSET,
+	GEO_XFORM2_MATRIX_M11_OFFSET,
+	GEO_XFORM2_MATRIX_TY_OFFSET,
+	GEO_XFORM2_AABB_BYTES,
+	GEO_XFORM2_AABB_MIN_X_OFFSET,
+	GEO_XFORM2_AABB_MIN_Y_OFFSET,
+	GEO_XFORM2_AABB_MAX_X_OFFSET,
+	GEO_XFORM2_AABB_MAX_Y_OFFSET,
+	GEO_SAT2_PAIR_BYTES,
+	GEO_SAT2_PAIR_FLAGS_OFFSET,
+	GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET,
+	GEO_SAT2_PAIR_RESULT_INDEX_OFFSET,
+	GEO_SAT2_PAIR_SHAPE_B_INDEX_OFFSET,
+	GEO_SAT2_PAIR_FLAGS2_OFFSET,
+	GEO_SAT2_DESC_BYTES,
+	GEO_SAT2_DESC_FLAGS_OFFSET,
+	GEO_SAT2_DESC_VERTEX_COUNT_OFFSET,
+	GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET,
+	GEO_SAT2_DESC_RESERVED_OFFSET,
+	GEO_SAT2_RESULT_BYTES,
+	GEO_SAT2_RESULT_HIT_OFFSET,
+	GEO_SAT2_RESULT_NX_OFFSET,
+	GEO_SAT2_RESULT_NY_OFFSET,
+	GEO_SAT2_RESULT_DEPTH_OFFSET,
+	GEO_SAT2_RESULT_META_OFFSET,
+	GEO_STATUS_BUSY,
+	GEO_STATUS_DONE,
+	GEO_STATUS_ERROR,
+	GEO_STATUS_REJECTED,
+	IO_CMD_GEO_OVERLAP2D_PASS,
+	IO_CMD_GEO_PROJECT3_BATCH,
+	IO_CMD_GEO_SAT2_BATCH,
+	IO_CMD_GEO_XFORM2_BATCH,
+	IO_CMD_GEO_XFORM3_BATCH,
+} from '../devices/geometry/contracts';
+import {
 	APU_GAIN_Q12_ONE,
 	APU_RATE_STEP_Q16_ONE,
 	APU_SAMPLE_RATE_HZ,
@@ -63,7 +191,11 @@ import {
 	APU_FILTER_NONE,
 	APU_FILTER_NOTCH,
 	APU_FILTER_PEAKING,
+	APU_STATUS_BUSY,
 	APU_STATUS_FAULT,
+	APU_STATUS_SELECTED_SLOT_ACTIVE,
+} from '../devices/audio/contracts';
+import {
 	BUS_FAULT_ACCESS_F32,
 	BUS_FAULT_ACCESS_F64,
 	BUS_FAULT_ACCESS_READ,
@@ -84,46 +216,10 @@ import {
 	DMA_STATUS_DONE,
 	DMA_STATUS_ERROR,
 	DMA_STATUS_REJECTED,
-	GEO_CTRL_ABORT,
-	GEO_CTRL_START,
-	GEO_STATUS_BUSY,
-	GEO_STATUS_DONE,
-	GEO_STATUS_ERROR,
-	GEO_STATUS_REJECTED,
 	HOST_FAULT_FLAG_ACTIVE,
 	HOST_FAULT_FLAG_STARTUP_BLOCKING,
 	HOST_FAULT_STAGE_NONE,
 	HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH,
-	GEO_FAULT_ABORTED_BY_HOST,
-	GEO_FAULT_BAD_RECORD_ALIGNMENT,
-	GEO_FAULT_BAD_RECORD_FLAGS,
-	GEO_FAULT_BAD_VERTEX_COUNT,
-	GEO_FAULT_DESCRIPTOR_KIND,
-	GEO_FAULT_DST_RANGE,
-	GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL,
-	GEO_FAULT_RESULT_CAPACITY,
-	GEO_FAULT_REJECT_BAD_CMD,
-	GEO_FAULT_REJECT_BAD_REGISTER_COMBO,
-	GEO_FAULT_REJECT_BAD_STRIDE,
-	GEO_FAULT_REJECT_DST_NOT_RAM,
-	GEO_FAULT_REJECT_MISALIGNED_REGS,
-	GEO_FAULT_REJECT_BUSY,
-	GEO_FAULT_SRC_RANGE,
-	GEO_INDEX_NONE,
-	GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB,
-	GEO_OVERLAP2D_BROADPHASE_NONE,
-	GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE,
-	GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS,
-	GEO_OVERLAP2D_MODE_FULL_PASS,
-	GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW,
-	GEO_PRIMITIVE_AABB,
-	GEO_PRIMITIVE_CIRCLE,
-	GEO_PRIMITIVE_CONVEX_POLY,
-	GEO_SAT_META_AXIS_MASK,
-	GEO_SAT_META_SHAPE_AUX,
-	GEO_SAT_META_SHAPE_SHIFT,
-	GEO_SAT_META_SHAPE_SRC,
-	GEO_SHAPE_CONVEX_POLY,
 	IMG_CTRL_START,
 	IMG_STATUS_BUSY,
 	IMG_STATUS_CLIPPED,
@@ -139,6 +235,7 @@ import {
 	IO_APU_EVENT_SEQ,
 	IO_APU_EVENT_SLOT,
 	IO_APU_EVENT_SOURCE_ADDR,
+	IO_APU_ACTIVE_MASK,
 	IO_APU_FADE_SAMPLES,
 	IO_APU_FAULT_ACK,
 	IO_APU_FAULT_CODE,
@@ -149,6 +246,9 @@ import {
 	IO_APU_FILTER_Q_MILLI,
 	IO_APU_GAIN_Q12,
 	IO_APU_RATE_STEP_Q16,
+	IO_APU_SELECTED_SOURCE_ADDR,
+	IO_APU_SELECTED_SLOT_REG0,
+	IO_APU_SELECTED_SLOT_REG_COUNT,
 	IO_APU_SLOT,
 	IO_APU_START_SAMPLE,
 	IO_APU_STATUS,
@@ -163,11 +263,6 @@ import {
 	IO_APU_SOURCE_LOOP_START_SAMPLE,
 	IO_APU_SOURCE_SAMPLE_RATE_HZ,
 	IO_APU_TARGET_GAIN_Q12,
-	IO_CMD_GEO_OVERLAP2D_PASS,
-	IO_CMD_GEO_PROJECT3_BATCH,
-	IO_CMD_GEO_SAT2_BATCH,
-	IO_CMD_GEO_XFORM2_BATCH,
-	IO_CMD_GEO_XFORM3_BATCH,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -180,6 +275,7 @@ import {
 	IO_GEO_DST0,
 	IO_GEO_DST1,
 	IO_GEO_FAULT,
+	IO_GEO_FAULT_ACK,
 	IO_GEO_PARAM0,
 	IO_GEO_PARAM1,
 	IO_GEO_PROCESSED,
@@ -1357,6 +1453,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_geo_stride2', IO_GEO_STRIDE2);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_processed', IO_GEO_PROCESSED);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_fault', IO_GEO_FAULT);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_ack', IO_GEO_FAULT_ACK);
 	luaPipeline.registerGlobal(runtime, 'sys_img_src', IO_IMG_SRC);
 	luaPipeline.registerGlobal(runtime, 'sys_img_len', IO_IMG_LEN);
 	luaPipeline.registerGlobal(runtime, 'sys_img_dst', IO_IMG_DST);
@@ -1401,6 +1498,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_apu_event_slot', IO_APU_EVENT_SLOT);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_event_source_addr', IO_APU_EVENT_SOURCE_ADDR);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_event_seq', IO_APU_EVENT_SEQ);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_selected_source_addr', IO_APU_SELECTED_SOURCE_ADDR);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_active_mask', IO_APU_ACTIVE_MASK);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_selected_slot_regs', IO_APU_SELECTED_SLOT_REG0);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_selected_slot_reg_count', IO_APU_SELECTED_SLOT_REG_COUNT);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_play', APU_CMD_PLAY);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_stop_slot', APU_CMD_STOP_SLOT);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_ramp_slot', APU_CMD_RAMP_SLOT);
@@ -1408,6 +1509,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'apu_rate_step_q16_one', APU_RATE_STEP_Q16_ONE);
 	luaPipeline.registerGlobal(runtime, 'apu_gain_q12_one', APU_GAIN_Q12_ONE);
 	luaPipeline.registerGlobal(runtime, 'apu_status_fault', APU_STATUS_FAULT);
+	luaPipeline.registerGlobal(runtime, 'apu_status_selected_slot_active', APU_STATUS_SELECTED_SLOT_ACTIVE);
+	luaPipeline.registerGlobal(runtime, 'apu_status_busy', APU_STATUS_BUSY);
 	luaPipeline.registerGlobal(runtime, 'apu_fault_none', APU_FAULT_NONE);
 	luaPipeline.registerGlobal(runtime, 'apu_fault_bad_cmd', APU_FAULT_BAD_CMD);
 	luaPipeline.registerGlobal(runtime, 'apu_fault_bad_slot', APU_FAULT_BAD_SLOT);
@@ -1482,12 +1585,93 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_geo_primitive_circle', GEO_PRIMITIVE_CIRCLE);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_primitive_convex_poly', GEO_PRIMITIVE_CONVEX_POLY);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_shape_convex_poly', GEO_SHAPE_CONVEX_POLY);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_vertex2_bytes', GEO_VERTEX2_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_vertex2_x_offset', GEO_VERTEX2_X_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_vertex2_y_offset', GEO_VERTEX2_Y_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_record_bytes', GEO_XFORM2_RECORD_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_record_flags_offset', GEO_XFORM2_RECORD_FLAGS_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_record_src_index_offset', GEO_XFORM2_RECORD_SRC_INDEX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_record_dst_index_offset', GEO_XFORM2_RECORD_DST_INDEX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_record_aux_index_offset', GEO_XFORM2_RECORD_AUX_INDEX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_record_vertex_count_offset', GEO_XFORM2_RECORD_VERTEX_COUNT_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_record_dst1_index_offset', GEO_XFORM2_RECORD_DST1_INDEX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_matrix_bytes', GEO_XFORM2_MATRIX_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_matrix_m00_offset', GEO_XFORM2_MATRIX_M00_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_matrix_m01_offset', GEO_XFORM2_MATRIX_M01_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_matrix_tx_offset', GEO_XFORM2_MATRIX_TX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_matrix_m10_offset', GEO_XFORM2_MATRIX_M10_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_matrix_m11_offset', GEO_XFORM2_MATRIX_M11_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_matrix_ty_offset', GEO_XFORM2_MATRIX_TY_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_aabb_bytes', GEO_XFORM2_AABB_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_aabb_min_x_offset', GEO_XFORM2_AABB_MIN_X_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_aabb_min_y_offset', GEO_XFORM2_AABB_MIN_Y_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_aabb_max_x_offset', GEO_XFORM2_AABB_MAX_X_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_xform2_aabb_max_y_offset', GEO_XFORM2_AABB_MAX_Y_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_pair_bytes', GEO_SAT2_PAIR_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_pair_flags_offset', GEO_SAT2_PAIR_FLAGS_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_pair_shape_a_index_offset', GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_pair_result_index_offset', GEO_SAT2_PAIR_RESULT_INDEX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_pair_shape_b_index_offset', GEO_SAT2_PAIR_SHAPE_B_INDEX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_pair_flags2_offset', GEO_SAT2_PAIR_FLAGS2_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_desc_bytes', GEO_SAT2_DESC_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_desc_flags_offset', GEO_SAT2_DESC_FLAGS_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_desc_vertex_count_offset', GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_desc_vertex_offset_offset', GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_desc_reserved_offset', GEO_SAT2_DESC_RESERVED_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_result_bytes', GEO_SAT2_RESULT_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_result_hit_offset', GEO_SAT2_RESULT_HIT_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_result_nx_offset', GEO_SAT2_RESULT_NX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_result_ny_offset', GEO_SAT2_RESULT_NY_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_result_depth_offset', GEO_SAT2_RESULT_DEPTH_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_sat2_result_meta_offset', GEO_SAT2_RESULT_META_OFFSET);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_mode_candidate_pairs', GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_mode_full_pass', GEO_OVERLAP2D_MODE_FULL_PASS);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_broadphase_none', GEO_OVERLAP2D_BROADPHASE_NONE);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_broadphase_local_bounds_aabb', GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_contact_clipped_feature', GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_output_stop_on_overflow', GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_instance_bytes', GEO_OVERLAP2D_INSTANCE_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_instance_shape_offset', GEO_OVERLAP2D_INSTANCE_SHAPE_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_instance_tx_offset', GEO_OVERLAP2D_INSTANCE_TX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_instance_ty_offset', GEO_OVERLAP2D_INSTANCE_TY_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_instance_layer_offset', GEO_OVERLAP2D_INSTANCE_LAYER_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_instance_mask_offset', GEO_OVERLAP2D_INSTANCE_MASK_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_pair_bytes', GEO_OVERLAP2D_PAIR_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_pair_instance_a_offset', GEO_OVERLAP2D_PAIR_INSTANCE_A_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_pair_instance_b_offset', GEO_OVERLAP2D_PAIR_INSTANCE_B_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_pair_meta_offset', GEO_OVERLAP2D_PAIR_META_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_result_bytes', GEO_OVERLAP2D_RESULT_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_result_nx_offset', GEO_OVERLAP2D_RESULT_NX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_result_ny_offset', GEO_OVERLAP2D_RESULT_NY_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_result_depth_offset', GEO_OVERLAP2D_RESULT_DEPTH_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_result_px_offset', GEO_OVERLAP2D_RESULT_PX_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_result_py_offset', GEO_OVERLAP2D_RESULT_PY_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_result_piece_a_offset', GEO_OVERLAP2D_RESULT_PIECE_A_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_result_piece_b_offset', GEO_OVERLAP2D_RESULT_PIECE_B_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_result_feature_meta_offset', GEO_OVERLAP2D_RESULT_FEATURE_META_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_result_pair_meta_offset', GEO_OVERLAP2D_RESULT_PAIR_META_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_summary_bytes', GEO_OVERLAP2D_SUMMARY_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_summary_result_count_offset', GEO_OVERLAP2D_SUMMARY_RESULT_COUNT_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_summary_exact_pair_count_offset', GEO_OVERLAP2D_SUMMARY_EXACT_PAIR_COUNT_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_summary_broadphase_pair_count_offset', GEO_OVERLAP2D_SUMMARY_BROADPHASE_PAIR_COUNT_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_summary_flags_offset', GEO_OVERLAP2D_SUMMARY_FLAGS_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_summary_flag_overflow', GEO_OVERLAP2D_SUMMARY_FLAG_OVERFLOW);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_shape_desc_bytes', GEO_OVERLAP2D_SHAPE_DESC_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_shape_kind_offset', GEO_OVERLAP2D_SHAPE_KIND_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_shape_kind_compound', GEO_OVERLAP2D_SHAPE_KIND_COMPOUND);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_shape_data_count_offset', GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_shape_data_offset_offset', GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_shape_bounds_offset_offset', GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_shape_bounds_bytes', GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_shape_bounds_left_offset', GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_shape_bounds_top_offset', GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_shape_bounds_right_offset', GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_shape_bounds_bottom_offset', GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_aabb_data_count', GEO_OVERLAP2D_AABB_DATA_COUNT);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_aabb_shape_bytes', GEO_OVERLAP2D_AABB_SHAPE_BYTES);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_pair_meta_instance_a_shift', GEO_OVERLAP2D_PAIR_META_INSTANCE_A_SHIFT);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_pair_meta_instance_a_mask', GEO_OVERLAP2D_PAIR_META_INSTANCE_A_MASK);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_overlap_pair_meta_instance_b_mask', GEO_OVERLAP2D_PAIR_META_INSTANCE_B_MASK);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_axis_mask', GEO_SAT_META_AXIS_MASK);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_shape_shift', GEO_SAT_META_SHAPE_SHIFT);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_shape_src', GEO_SAT_META_SHAPE_SRC);
@@ -1501,6 +1685,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_numeric_overflow_internal', GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_bad_record_flags', GEO_FAULT_BAD_RECORD_FLAGS);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_result_capacity', GEO_FAULT_RESULT_CAPACITY);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_code_shift', GEO_FAULT_CODE_SHIFT);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_code_mask', GEO_FAULT_CODE_MASK);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_record_index_mask', GEO_FAULT_RECORD_INDEX_MASK);
+	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_record_index_none', GEO_FAULT_RECORD_INDEX_NONE);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_busy', GEO_FAULT_REJECT_BUSY);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_bad_cmd', GEO_FAULT_REJECT_BAD_CMD);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_bad_stride', GEO_FAULT_REJECT_BAD_STRIDE);

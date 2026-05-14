@@ -50,9 +50,18 @@ Lower-level `GEO` commands such as `xform2_batch`, `sat2_batch`,
 
 The command uses the existing `GEO` register block.
 
+The cart-visible Geometry command/status/fault constants are owned by the
+mirrored Geometry contract files:
+
+- `src/bmsx/machine/devices/geometry/contracts.ts`
+- `src/bmsx_cpp/machine/devices/geometry/contracts.h`
+
+The bus I/O map owns the MMIO addresses; Geometry owns the command words,
+status bits, fault codes, shape ids, and overlap policy bitfields.
+
 - `src0`: instance table base
 - `src1`: candidate pair table base, or `0` in full-pass mode
-- `src2`: geometry arena base
+- `src2`: reserved for this command; write `0`
 - `dst0`: result table base
 - `dst1`: summary table base
 - `count`: input record count
@@ -61,10 +70,15 @@ The command uses the existing `GEO` register block.
 - `param1`: result capacity in records
 - `stride0`: instance record stride in bytes
 - `stride1`: candidate pair record stride in bytes, or `0` in full-pass mode
-- `stride2`: `0` in v1
+- `stride2`: candidate-mode instance count; `0` in full-pass mode
 - `processed`: mode-dependent processed work count
 - `fault`: `hi16 = fault code`, `lo16 = mode-dependent fault index`, or
-  `0xffff` for submit-time reject
+  `GEO_FAULT_RECORD_INDEX_NONE` / `sys_geo_fault_record_index_none` for
+  submit-time reject
+- `fault_ack`: write one to clear the cart-visible fault latch; the register
+  self-clears to zero. It is an append-only I/O doorbell outside the original
+  contiguous 16-word GEO registerfile, preserving existing downstream MMIO
+  addresses.
 
 `count` means:
 
@@ -107,6 +121,16 @@ Rejected submit if:
 - `dst0` or `dst1` is not in RAM
 - aligned register or range requirements fail
 
+Fault acknowledgement:
+
+- execution faults leave `DONE | ERROR` set until `fault_ack` is written
+- rejected submissions leave `REJECTED` set until `fault_ack` is written
+- `start` and `abort` strobes are ignored while an unacknowledged fault latch is
+  pending
+- acknowledging an execution fault clears `ERROR` and `fault` while preserving
+  `DONE`
+- acknowledging a rejected submission clears `REJECTED` and `fault`
+
 ## Summary Record
 
 `dst1` points to one 16-byte summary record:
@@ -122,35 +146,23 @@ Semantics:
 
 - `result_count`: hits actually written to `dst0`
 - `exact_pair_count`: collider pairs that reached exact narrowphase
-- `broadphase_pair_count`: collider pairs considered after layer/mask/space
+- `broadphase_pair_count`: collider pairs considered after layer/mask
   filtering and before exact narrowphase
 - `flags bit0`: output overflow occurred
 - remaining bits: reserved
 
-## Geometry Arena
+## Memory Format Ownership
 
-`src2` points to a persistent geometry arena in ROM or RAM.
-Raw geometry is not rebuilt every frame for this pass.
+The record sizes and byte offsets below are owned by the mirrored Geometry
+contract files and surfaced to BIOS/cart code through `sys_geo_overlap_*`
+globals. BIOS does not carry a private copy of the overlap table ABI.
 
-Arena header:
+## Shape Descriptors
 
-```c
-word0 version
-word1 shape_count
-word2 shape_table_offset
-word3 reserved
-```
+Shape descriptors are addressed directly by the instance record. There is no
+arena header and no version field in the live hardware contract.
 
 Shape descriptor, 16 bytes:
-
-```c
-word0 flags
-word1 piece_count
-word2 piece_desc_offset
-word3 bounds_offset
-```
-
-Piece descriptor, 16 bytes:
 
 ```c
 word0 primitive_kind
@@ -165,13 +177,15 @@ Primitive kinds:
 1 = aabb
 2 = circle
 3 = convex_poly
+4 = compound
 ```
 
 Primitive payloads:
 
-- `aabb`: `left, top, right, bottom` in `s16.16`
-- `circle`: `x, y, r, reserved` in `s16.16`
-- `convex_poly`: vertex array `x0, y0, x1, y1, ...` in `s16.16`
+- `aabb`: `left, top, right, bottom` as IEEE-754 float32 words
+- `circle`: reserved for a later command contract
+- `convex_poly`: vertex array `x0, y0, x1, y1, ...` as IEEE-754 float32 words
+- `compound`: `data_count` child descriptors at `data_offset`
 
 All `bounds_offset` values point to a local-space 16-byte AABB:
 
@@ -182,15 +196,22 @@ word2 right
 word3 bottom
 ```
 
+Bounds payload words are IEEE-754 float32 values. The BIOS AABB helper shape is
+one descriptor followed by one 16-byte bounds payload; `data_offset` and
+`bounds_offset` both point to that payload and `data_count` is
+`sys_geo_overlap_aabb_data_count`.
+
 ### Convex Poly Validity
 
 For every `convex_poly` piece:
 
-- vertices are CCW in local space
-- no repeated terminal vertex
+- vertices are expected in CCW local-space order
+- no repeated terminal vertex is needed
 - minimum 3 vertices
-- collinear adjacent edges are allowed
-- zero-length edges are forbidden
+- collinear adjacent edges and zero-length edges are tolerated by the datapath by
+  skipping degenerate SAT axes
+- if no usable SAT axis remains, the piece-pair is treated as non-hit rather
+  than as a GEO fault
 - local bounds must enclose the primitive exactly
 
 Piece indices are descriptor order. Feature indices are edge order.
@@ -199,38 +220,30 @@ Piece indices are descriptor order. Feature indices are edge order.
 
 `src0` points to instance records. `stride0` is the byte stride.
 
-Instance record, 48 bytes:
+Instance record, 20 bytes:
 
 ```c
-word0 flags
-word1 collider_id
-word2 shape_id
+word0 shape_addr
+word1 tx
+word2 ty
 word3 layer
 word4 mask
-word5 space_id
-word6 m00
-word7 m01
-word8 m02
-word9 m10
-word10 m11
-word11 m12
 ```
 
-The matrix is a local-to-world affine `2x3` matrix in `s16.16`.
+`tx` and `ty` are world translation fields encoded as IEEE-754 float32 words.
 
-Single-piece and compound colliders both resolve through `shape_id`.
+Single-piece and compound colliders both resolve through `shape_addr`.
 
 ## Candidate Pair Table
 
 Used only when `mode == candidate-pair`.
 
-Pair record, 16 bytes:
+Pair record, 12 bytes:
 
 ```c
-word0 flags
-word1 instance_a_index
-word2 instance_b_index
-word3 pair_meta
+word0 instance_a_index
+word1 instance_b_index
+word2 pair_meta
 ```
 
 ### Candidate Pair Legality
@@ -249,32 +262,30 @@ before submission if it requires those properties.
 `dst0` points to hit records. `param1` is the maximum number of result records
 that may be written.
 
-Result record, 48 bytes:
+Result record, 36 bytes:
 
 ```c
-word0 flags
-word1 collider_id_a
-word2 collider_id_b
-word3 nx
-word4 ny
-word5 depth
-word6 px
-word7 py
-word8 piece_a
-word9 piece_b
-word10 feature_meta
-word11 pair_meta
+word0 nx
+word1 ny
+word2 depth
+word3 px
+word4 py
+word5 piece_a
+word6 piece_b
+word7 feature_meta
+word8 pair_meta
 ```
 
 Semantics:
 
-- `flags bit0`: hit
-- `nx, ny`: world-space normal in `s16.16`, pointing from `b` toward `a`
-- `depth`: penetration depth in `s16.16`
-- `px, py`: final world-space representative contact point in `s16.16`
+- `nx, ny`: world-space normal as IEEE-754 float32 words, pointing from `b` toward `a`
+- `depth`: penetration depth as an IEEE-754 float32 word
+- `px, py`: final world-space representative contact point as IEEE-754 float32 words
 - `piece_a`, `piece_b`: winning piece indices
 - `feature_meta`: winning feature metadata
-- `pair_meta`: echoed from candidate input in candidate mode, otherwise `0`
+- `pair_meta`: echoed from candidate input in candidate mode. Full-pass mode
+  emits `instance_a` in the high field and `instance_b` in the low field using
+  the cart-visible `sys_geo_overlap_pair_meta_instance_*` constants.
 
 `dst0` contains only hits. Non-hits do not write result records.
 
@@ -297,7 +308,7 @@ Full-pass result ordering is normative:
 
 - iterate `instance_a = 0 .. count - 1`
 - iterate `instance_b = instance_a + 1 .. count - 1`
-- layer/mask/space filtering only skips logical pairs
+- layer/mask filtering only skips logical pairs
 - broadphase pruning only skips logical pairs
 - surviving hits append to `dst0` in that surviving logical pair order
 
@@ -308,7 +319,6 @@ This ordering must not vary across implementations.
 The pass owns:
 
 - layer/mask filtering
-- space filtering
 - compound local-bounds pruning
 
 In full-pass mode, `broadphase policy = local-bounds AABB` means:
@@ -354,122 +364,31 @@ No clip-and-continue behavior is allowed in v1.
 
 ## Numeric Domain
 
-All geometry values are `s16.16`.
+The overlap table memory boundary uses raw 32-bit words:
 
-- multiply: signed 64-bit intermediate
-- accumulate: signed 64-bit intermediate
-- divide / normalize: exact helper below
-- final writeback: saturate to signed 32-bit `s16.16`
+- positions, translations, normals, depths, and contact points are IEEE-754
+  float32 bit patterns
+- layer, mask, piece index, feature metadata, and pair metadata are raw `u32`
+- controllers widen float32 inputs to the runtime numeric type for SAT/contact
+  work and write float32 result words back to RAM
+- no fixed-point conversion helper or local rounding ABI belongs in BIOS/cart
+  code for this command
 
-Quantized negative zero must be normalized to zero.
+### Clip Plane Convention
 
-## Normative Helpers
-
-The following helper behavior is normative and must be mirrored bit-for-bit in
-TypeScript and C++.
-
-### `fix16_mul(a, b)`
-
-```text
-tmp = int64(a) * int64(b)
-sign = -1 if tmp < 0 else 1
-mag = abs(tmp)
-mag = mag + 0x8000
-out = mag >> 16
-out = out * sign
-saturate out to signed 32-bit
-if out == -0 then out = 0
-return out
-```
-
-### `fix16_midpoint(a, b)`
+Convex clipping uses directed edge `(x0, y0) -> (x1, y1)` in CCW winding and
+the raw edge cross product as its inside test:
 
 ```text
-sum = int64(a) + int64(b)
-sign = -1 if sum < 0 else 1
-mag = abs(sum)
-mag = mag + 1
-out = mag >> 1
-out = out * sign
-saturate out to signed 32-bit
-if out == -0 then out = 0
-return out
-```
-
-This is round-half-away-from-zero.
-
-### `normalize_vec(x, y)`
-
-```text
-if x == 0 and y == 0:
-    fault if a normal is required by the calling path
-
-len2 = int64(x) * int64(x) + int64(y) * int64(y)
-len = isqrt64(len2)
-
-if len == 0:
-    fault if a normal is required by the calling path
-
-nx_num = int64(x) << 16
-ny_num = int64(y) << 16
-
-nx = div_round_half_away_from_zero(nx_num, len)
-ny = div_round_half_away_from_zero(ny_num, len)
-
-saturate nx, ny to signed 32-bit
-if nx == -0 then nx = 0
-if ny == -0 then ny = 0
-return nx, ny
-```
-
-`isqrt64` and `div_round_half_away_from_zero` must be implemented with exact
-integer arithmetic, not floating-point.
-
-### `div_round_half_away_from_zero(num, den)`
-
-```text
-require den > 0
-
-sign = -1 if num < 0 else 1
-mag = abs(num)
-q = mag / den
-r = mag % den
-
-if (r << 1) >= den:
-    q = q + 1
-
-out = q * sign
-saturate out to signed 32-bit
-if out == -0 then out = 0
-return out
-```
-
-### `isqrt64(v)`
-
-```text
-require v >= 0
-return floor(sqrt(v))
-```
-
-### Plane Conventions
-
-For a directed edge `(x0, y0) -> (x1, y1)` in CCW winding:
-
-```text
-edge = (x1 - x0, y1 - y0)
-normal = normalize_vec(-(y1 - y0), x1 - x0)
-plane_distance(p) = dot(normal, p - edge_start)
+plane_distance(p) = (x1 - x0) * (p.y - y0) - (y1 - y0) * (p.x - x0)
 ```
 
 Conventions:
 
 - `plane_distance(p) >= 0` means inside
 - `plane_distance(p) == 0` counts as inside
-- any quantized `-0` becomes `0`
 
-### Segment Clip Against Plane
-
-Clipping uses directed segment `(p0 -> p1)` and one plane.
+Clipping uses directed segment `(p0 -> p1)` and one edge plane.
 
 ```text
 d0 = plane_distance(p0)
@@ -494,75 +413,45 @@ Intersection parameter:
 t = d0 / (d0 - d1)
 ```
 
-Implemented as exact fixed-point rational evaluation with
-round-half-away-from-zero at each coordinate writeback.
-
-Side-plane ordering for reference-face clipping is normative:
-
-- lower side plane first
-- upper side plane second
-
-Given reference edge `(r0 -> r1)`:
-
-```text
-tangent = normalize_vec(r1.x - r0.x, r1.y - r0.y)
-lower_side_plane.normal = tangent
-lower_side_plane.origin = r0
-upper_side_plane.normal = -tangent
-upper_side_plane.origin = r1
-```
+Implemented in the controller datapath and written back only through the
+float32 result-table boundary.
 
 ### Poly/Poly Feature Selection
 
 For `poly/poly` and `poly/aabb`:
 
-1. Enumerate candidate axes from both pieces in piece edge order.
-2. Normalize every axis with `normalize_vec`.
+1. Enumerate candidate SAT axes from both pieces in piece edge order.
+2. Normalize each SAT axis for projection/depth calculation.
 3. Compute overlap along every axis.
-4. Choose the minimum-overlap axis.
-5. Tie-break by:
+4. Reject as non-hit when any overlap is not positive.
+5. Choose the minimum-overlap axis.
+6. Tie-break by:
    - smaller overlap
-   - lower owner piece index
-   - lower edge index
    - shape A before shape B
-6. Winning axis owner defines the reference face.
-7. Other piece chooses the incident face with minimum dot against the reference
-   normal.
-8. Clip incident segment against the two side planes of the reference face:
-   - lower side plane first
-   - upper side plane second
-9. Clamp remaining points to the reference plane.
-10. If one clipped point survives, `contact.point` is that point.
-11. If two clipped points survive, `contact.point` is their midpoint.
-12. More than two surviving points is invalid for v1 clipping.
-13. `feature_meta` packs:
-   - low16 = reference edge index
-   - high16 = incident edge index
+   - lower edge index within that shape
+7. Flip the chosen normal when needed so it points from `b` toward `a`.
+8. Clip polygon A through every edge plane of polygon B with the clip convention
+   above.
+9. If the clipped intersection has vertices, `contact.point` is the average of
+   those vertices. If clipping produces no vertices after SAT overlap succeeded,
+   `contact.point` is the midpoint of the two piece centroids.
+10. `feature_meta` is the winning edge index as a raw `u32`; it does not pack
+    an incident edge or owner bit.
 
 ## Primitive Contact Policies
 
 ### `aabb/aabb`
 
-- choose the smaller overlap axis
-- tie-break X before Y
-- `contact.point = center of overlap rectangle`
+AABB descriptors are expanded into the same CCW polygon vertex order used by the
+controller datapath: left/top, right/top, right/bottom, left/bottom. Contact
+selection then follows the generic poly/poly SAT rule above. Equal X/Y overlap
+therefore uses the edge-order tie-break: the top-edge Y axis wins before the
+right-edge X axis. For axis-aligned rectangle intersections, the clipped
+intersection average is the center of the overlap rectangle.
 
-### `circle/circle`
-
-- normal points from B toward A
-- `contact.point = center(B) + normal * radius(B)`
-- this is a representative point and does not imply a global “point on B”
-  guarantee for all primitive pairs
-
-### `circle/poly`
-
-- evaluate all poly face normals
-- evaluate one vertex axis from closest vertex to circle center
-- choose the minimum-overlap axis
-- tie-break face axes before the vertex axis
-- if a face axis wins, project the circle center onto the winning face span and
-  clamp to the face segment
-- if the vertex axis wins, `contact.point = closest vertex`
+`circle` remains a reserved primitive kind for a later GEO command contract.
+The current OVERLAP2D pass rejects circle descriptors instead of applying a
+partial contact policy.
 
 ## Fault Model
 
@@ -581,8 +470,6 @@ Execution faults include:
 - bad instance index
 - self-pair in candidate mode
 - malformed shape or piece data
-- invalid poly topology
-- required normal degenerates to zero
 - source or destination range fault
 - result capacity overflow
 
@@ -596,7 +483,7 @@ The overlap hot path is expected to migrate from:
 
 to:
 
-- persistent geometry arena
+- Geometry-owned shape descriptors and instance records
 - instance table submission
 - `GEO overlap2d_pass`
 - result-table consumption only

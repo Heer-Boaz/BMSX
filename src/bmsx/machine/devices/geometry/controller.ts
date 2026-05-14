@@ -1,54 +1,15 @@
 import {
-	GEO_CTRL_ABORT,
-	GEO_CTRL_START,
-	GEO_FAULT_ABORTED_BY_HOST,
-	GEO_FAULT_BAD_RECORD_ALIGNMENT,
-	GEO_FAULT_BAD_RECORD_FLAGS,
-	GEO_FAULT_BAD_VERTEX_COUNT,
-	GEO_FAULT_DESCRIPTOR_KIND,
-	GEO_FAULT_DST_RANGE,
-	GEO_FAULT_RESULT_CAPACITY,
-	GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB,
-	GEO_FAULT_REJECT_BAD_CMD,
-	GEO_FAULT_REJECT_BAD_REGISTER_COMBO,
-	GEO_FAULT_REJECT_BAD_STRIDE,
-	GEO_FAULT_REJECT_DST_NOT_RAM,
-	GEO_FAULT_REJECT_MISALIGNED_REGS,
-	GEO_FAULT_REJECT_BUSY,
-	GEO_FAULT_SRC_RANGE,
-	GEO_INDEX_NONE,
-	GEO_OVERLAP2D_BROADPHASE_MASK,
-	GEO_OVERLAP2D_BROADPHASE_NONE,
-	GEO_OVERLAP2D_CONTACT_POLICY_MASK,
-	GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE,
-	GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS,
-	GEO_OVERLAP2D_MODE_FULL_PASS,
-	GEO_OVERLAP2D_MODE_MASK,
-	GEO_OVERLAP2D_OUTPUT_POLICY_MASK,
-	GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW,
-	GEO_OVERLAP2D_SUMMARY_FLAG_OVERFLOW,
-	GEO_PRIMITIVE_AABB,
-	GEO_PRIMITIVE_CONVEX_POLY,
-	GEO_SAT_META_SHAPE_AUX,
-	GEO_SAT_META_SHAPE_SHIFT,
-	GEO_SAT_META_SHAPE_SRC,
-	GEO_SHAPE_CONVEX_POLY,
-	GEO_STATUS_BUSY,
-	GEO_STATUS_DONE,
-	GEO_STATUS_ERROR,
-	GEO_STATUS_REJECTED,
-	IO_CMD_GEO_OVERLAP2D_PASS,
-	IO_CMD_GEO_SAT2_BATCH,
-	IO_CMD_GEO_XFORM2_BATCH,
 	IO_GEO_CMD,
 	IO_GEO_COUNT,
 	IO_GEO_CTRL,
 	IO_GEO_DST0,
 	IO_GEO_DST1,
 	IO_GEO_FAULT,
+	IO_GEO_FAULT_ACK,
 	IO_GEO_PARAM0,
 	IO_GEO_PARAM1,
 	IO_GEO_PROCESSED,
+	IO_GEO_REGISTER_ADDRS,
 	IO_GEO_SRC0,
 	IO_GEO_SRC1,
 	IO_GEO_SRC2,
@@ -59,6 +20,143 @@ import {
 	IRQ_GEO_DONE,
 	IRQ_GEO_ERROR,
 } from '../../bus/io';
+import {
+	GEO_CTRL_ABORT,
+	GEO_CTRL_START,
+	GEO_FAULT_ABORTED_BY_HOST,
+	GEO_FAULT_BAD_RECORD_ALIGNMENT,
+	GEO_FAULT_BAD_RECORD_FLAGS,
+	GEO_FAULT_BAD_VERTEX_COUNT,
+	GEO_FAULT_CODE_MASK,
+	GEO_FAULT_CODE_SHIFT,
+	GEO_FAULT_DESCRIPTOR_KIND,
+	GEO_FAULT_DST_RANGE,
+	GEO_FAULT_RECORD_INDEX_MASK,
+	GEO_FAULT_RECORD_INDEX_NONE,
+	GEO_FAULT_RESULT_CAPACITY,
+	GEO_FAULT_REJECT_BAD_CMD,
+	GEO_FAULT_REJECT_BAD_REGISTER_COMBO,
+	GEO_FAULT_REJECT_BAD_STRIDE,
+	GEO_FAULT_REJECT_DST_NOT_RAM,
+	GEO_FAULT_REJECT_MISALIGNED_REGS,
+	GEO_FAULT_REJECT_BUSY,
+	GEO_FAULT_SRC_RANGE,
+	GEOMETRY_CONTROLLER_PHASE_BUSY,
+	GEOMETRY_CONTROLLER_PHASE_DONE,
+	GEOMETRY_CONTROLLER_PHASE_ERROR,
+	GEOMETRY_CONTROLLER_PHASE_IDLE,
+	GEOMETRY_CONTROLLER_PHASE_REJECTED,
+	GEOMETRY_CONTROLLER_REGISTER_COUNT,
+	type GeometryControllerPhase,
+	GEO_INDEX_NONE,
+	GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB,
+	GEO_OVERLAP2D_BROADPHASE_MASK,
+	GEO_OVERLAP2D_BROADPHASE_NONE,
+	GEO_OVERLAP2D_CONTACT_POLICY_MASK,
+	GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE,
+	GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS,
+	GEO_OVERLAP2D_MODE_FULL_PASS,
+	GEO_OVERLAP2D_MODE_MASK,
+	GEO_OVERLAP2D_OUTPUT_POLICY_MASK,
+	GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW,
+	GEO_OVERLAP2D_AABB_DATA_COUNT,
+	GEO_OVERLAP2D_INSTANCE_BYTES,
+	GEO_OVERLAP2D_INSTANCE_LAYER_OFFSET,
+	GEO_OVERLAP2D_INSTANCE_MASK_OFFSET,
+	GEO_OVERLAP2D_INSTANCE_SHAPE_OFFSET,
+	GEO_OVERLAP2D_INSTANCE_TX_OFFSET,
+	GEO_OVERLAP2D_INSTANCE_TY_OFFSET,
+	GEO_OVERLAP2D_INSTANCE_WORDS,
+	GEO_OVERLAP2D_PAIR_BYTES,
+	GEO_OVERLAP2D_PAIR_INSTANCE_A_OFFSET,
+	GEO_OVERLAP2D_PAIR_INSTANCE_B_OFFSET,
+	GEO_OVERLAP2D_PAIR_META_OFFSET,
+	GEO_OVERLAP2D_PAIR_META_INSTANCE_A_MASK,
+	GEO_OVERLAP2D_PAIR_META_INSTANCE_A_SHIFT,
+	GEO_OVERLAP2D_PAIR_META_INSTANCE_B_MASK,
+	GEO_OVERLAP2D_PARAM0_RESERVED_MASK,
+	GEO_OVERLAP2D_RESULT_BYTES,
+	GEO_OVERLAP2D_RESULT_DEPTH_OFFSET,
+	GEO_OVERLAP2D_RESULT_FEATURE_META_OFFSET,
+	GEO_OVERLAP2D_RESULT_NX_OFFSET,
+	GEO_OVERLAP2D_RESULT_NY_OFFSET,
+	GEO_OVERLAP2D_RESULT_PAIR_META_OFFSET,
+	GEO_OVERLAP2D_RESULT_PIECE_A_OFFSET,
+	GEO_OVERLAP2D_RESULT_PIECE_B_OFFSET,
+	GEO_OVERLAP2D_RESULT_PX_OFFSET,
+	GEO_OVERLAP2D_RESULT_PY_OFFSET,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET,
+	GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET,
+	GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET,
+	GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET,
+	GEO_OVERLAP2D_SHAPE_DESC_BYTES,
+	GEO_OVERLAP2D_SHAPE_KIND_COMPOUND,
+	GEO_OVERLAP2D_SHAPE_KIND_OFFSET,
+	GEO_OVERLAP2D_SUMMARY_BROADPHASE_PAIR_COUNT_OFFSET,
+	GEO_OVERLAP2D_SUMMARY_BYTES,
+	GEO_OVERLAP2D_SUMMARY_EXACT_PAIR_COUNT_OFFSET,
+	GEO_OVERLAP2D_SUMMARY_FLAG_OVERFLOW,
+	GEO_OVERLAP2D_SUMMARY_FLAGS_OFFSET,
+	GEO_OVERLAP2D_SUMMARY_RESULT_COUNT_OFFSET,
+	GEO_PRIMITIVE_AABB,
+	GEO_PRIMITIVE_CONVEX_POLY,
+	GEO_SAT_META_AXIS_MASK,
+	GEO_SAT_META_SHAPE_AUX,
+	GEO_SAT_META_SHAPE_SHIFT,
+	GEO_SAT_META_SHAPE_SRC,
+	GEO_SHAPE_CONVEX_POLY,
+	GEO_SAT2_DESC_BYTES,
+	GEO_SAT2_DESC_FLAGS_OFFSET,
+	GEO_SAT2_DESC_RESERVED_OFFSET,
+	GEO_SAT2_DESC_VERTEX_COUNT_OFFSET,
+	GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET,
+	GEO_SAT2_PAIR_BYTES,
+	GEO_SAT2_PAIR_FLAGS2_OFFSET,
+	GEO_SAT2_PAIR_FLAGS_OFFSET,
+	GEO_SAT2_PAIR_RESULT_INDEX_OFFSET,
+	GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET,
+	GEO_SAT2_PAIR_SHAPE_B_INDEX_OFFSET,
+	GEO_SAT2_RESULT_BYTES,
+	GEO_SAT2_RESULT_DEPTH_OFFSET,
+	GEO_SAT2_RESULT_HIT_OFFSET,
+	GEO_SAT2_RESULT_META_OFFSET,
+	GEO_SAT2_RESULT_NX_OFFSET,
+	GEO_SAT2_RESULT_NY_OFFSET,
+	GEO_VERTEX2_BYTES,
+	GEO_VERTEX2_X_OFFSET,
+	GEO_VERTEX2_Y_OFFSET,
+	GEO_XFORM2_AABB_BYTES,
+	GEO_XFORM2_AABB_MAX_X_OFFSET,
+	GEO_XFORM2_AABB_MAX_Y_OFFSET,
+	GEO_XFORM2_AABB_MIN_X_OFFSET,
+	GEO_XFORM2_AABB_MIN_Y_OFFSET,
+	GEO_XFORM2_MATRIX_BYTES,
+	GEO_XFORM2_MATRIX_M00_OFFSET,
+	GEO_XFORM2_MATRIX_M01_OFFSET,
+	GEO_XFORM2_MATRIX_M10_OFFSET,
+	GEO_XFORM2_MATRIX_M11_OFFSET,
+	GEO_XFORM2_MATRIX_TX_OFFSET,
+	GEO_XFORM2_MATRIX_TY_OFFSET,
+	GEO_XFORM2_RECORD_AUX_INDEX_OFFSET,
+	GEO_XFORM2_RECORD_BYTES,
+	GEO_XFORM2_RECORD_DST1_INDEX_OFFSET,
+	GEO_XFORM2_RECORD_DST_INDEX_OFFSET,
+	GEO_XFORM2_RECORD_FLAGS_OFFSET,
+	GEO_XFORM2_RECORD_SRC_INDEX_OFFSET,
+	GEO_XFORM2_RECORD_VERTEX_COUNT_OFFSET,
+	GEO_STATUS_BUSY,
+	GEO_STATUS_DONE,
+	GEO_STATUS_ERROR,
+	GEO_STATUS_REJECTED,
+	IO_CMD_GEO_OVERLAP2D_PASS,
+	IO_CMD_GEO_SAT2_BATCH,
+	IO_CMD_GEO_XFORM2_BATCH,
+} from './contracts';
+import type { Value } from '../../cpu/cpu';
 import { Memory } from '../../memory/memory';
 import {
 	FIX16_SCALE,
@@ -92,6 +190,7 @@ export type GeometryJobState = {
 };
 
 export type GeometryControllerState = {
+	phase: GeometryControllerPhase;
 	registerWords: number[];
 	activeJob: GeometryJobState | null;
 	workCarry: number;
@@ -108,61 +207,19 @@ type GeoPointScratch = {
 	y: number;
 };
 
-const GEOMETRY_CONTROLLER_REGISTER_ADDRS = [
-	IO_GEO_SRC0,
-	IO_GEO_SRC1,
-	IO_GEO_SRC2,
-	IO_GEO_DST0,
-	IO_GEO_DST1,
-	IO_GEO_COUNT,
-	IO_GEO_CMD,
-	IO_GEO_CTRL,
-	IO_GEO_STATUS,
-	IO_GEO_PARAM0,
-	IO_GEO_PARAM1,
-	IO_GEO_STRIDE0,
-	IO_GEO_STRIDE1,
-	IO_GEO_STRIDE2,
-	IO_GEO_PROCESSED,
-	IO_GEO_FAULT,
-] as const;
-export const GEOMETRY_CONTROLLER_REGISTER_COUNT = GEOMETRY_CONTROLLER_REGISTER_ADDRS.length;
-
-const GEO_RECORD_INDEX_NONE = 0xffff;
 const WORD_ALIGN_MASK = 3;
-const XFORM2_JOB_WORDS = 6;
-const XFORM2_JOB_BYTES = XFORM2_JOB_WORDS * 4;
-const XFORM2_VERTEX_BYTES = 8;
-const XFORM2_MATRIX_WORDS = 6;
-const XFORM2_MATRIX_BYTES = XFORM2_MATRIX_WORDS * 4;
-const XFORM2_AABB_BYTES = 16;
-const SAT2_PAIR_WORDS = 5;
-const SAT2_PAIR_BYTES = SAT2_PAIR_WORDS * 4;
-const SAT2_DESC_WORDS = 4;
-const SAT2_DESC_BYTES = SAT2_DESC_WORDS * 4;
-const SAT2_RESULT_WORDS = 5;
-const SAT2_RESULT_BYTES = SAT2_RESULT_WORDS * 4;
-const OVERLAP2D_INSTANCE_WORDS = 5;
-const OVERLAP2D_INSTANCE_BYTES = OVERLAP2D_INSTANCE_WORDS * 4;
-const OVERLAP2D_PAIR_WORDS = 3;
-const OVERLAP2D_PAIR_BYTES = OVERLAP2D_PAIR_WORDS * 4;
-const OVERLAP2D_RESULT_WORDS = 9;
-const OVERLAP2D_RESULT_BYTES = OVERLAP2D_RESULT_WORDS * 4;
-const OVERLAP2D_SUMMARY_BYTES = 16;
-const OVERLAP2D_DESC_BYTES = 16;
-const OVERLAP2D_BOUNDS_BYTES = 16;
-const OVERLAP2D_KIND_COMPOUND = 4;
 const GEO_SERVICE_BATCH_RECORDS = 1;
 
 function packFault(code: number, recordIndex: number): number {
-	return (((code & 0xffff) << 16) | (recordIndex & 0xffff)) >>> 0;
+	return (((code & GEO_FAULT_CODE_MASK) << GEO_FAULT_CODE_SHIFT) | (recordIndex & GEO_FAULT_RECORD_INDEX_MASK)) >>> 0;
 }
 
 function packSat2Meta(axisIndex: number, shapeSelector: number): number {
-	return (((shapeSelector & 0xffff) << GEO_SAT_META_SHAPE_SHIFT) | (axisIndex & 0xffff)) >>> 0;
+	return (((shapeSelector & GEO_SAT_META_AXIS_MASK) << GEO_SAT_META_SHAPE_SHIFT) | (axisIndex & GEO_SAT_META_AXIS_MASK)) >>> 0;
 }
 
 export class GeometryController {
+	private phase: GeometryControllerPhase = GEOMETRY_CONTROLLER_PHASE_IDLE;
 	private activeJob: GeoJob | null = null;
 	private cpuHz = 1;
 	private workUnitsPerSec = 1;
@@ -173,8 +230,8 @@ export class GeometryController {
 	private readonly overlapWorldPolyB: number[] = [];
 	private readonly overlapClip0: number[] = [];
 	private readonly overlapClip1: number[] = [];
-	private readonly overlapInstanceA = new Uint32Array(OVERLAP2D_INSTANCE_WORDS);
-	private readonly overlapInstanceB = new Uint32Array(OVERLAP2D_INSTANCE_WORDS);
+	private readonly overlapInstanceA = new Uint32Array(GEO_OVERLAP2D_INSTANCE_WORDS);
+	private readonly overlapInstanceB = new Uint32Array(GEO_OVERLAP2D_INSTANCE_WORDS);
 	private readonly overlapBoundsA = new Float64Array(4);
 	private readonly overlapBoundsB = new Float64Array(4);
 	private readonly overlapProjectionA: GeoProjectionScratch = { min: 0, max: 0 };
@@ -195,16 +252,32 @@ export class GeometryController {
 		private readonly scheduler: DeviceScheduler,
 	) {
 		this.memory.mapIoWrite(IO_GEO_CTRL, this.onCtrlRegisterWrite.bind(this));
+		this.memory.mapIoWrite(IO_GEO_FAULT_ACK, this.onFaultAckWrite.bind(this));
 	}
 
 	private onCtrlRegisterWrite(): void {
 		this.onCtrlWrite(this.scheduler.currentNowCycles());
 	}
 
+	private onFaultAckWrite(_addr: number, value: Value): void {
+		if (((value as number) >>> 0) === 0) {
+			return;
+		}
+		const status = this.memory.readIoU32(IO_GEO_STATUS) & ~(GEO_STATUS_ERROR | GEO_STATUS_REJECTED);
+		this.memory.writeIoValue(IO_GEO_STATUS, status);
+		this.memory.writeIoValue(IO_GEO_FAULT, 0);
+		this.memory.writeIoValue(IO_GEO_FAULT_ACK, 0);
+		if (this.phase === GEOMETRY_CONTROLLER_PHASE_ERROR) {
+			this.phase = GEOMETRY_CONTROLLER_PHASE_DONE;
+		} else if (this.phase === GEOMETRY_CONTROLLER_PHASE_REJECTED) {
+			this.phase = GEOMETRY_CONTROLLER_PHASE_IDLE;
+		}
+	}
+
 	public setTiming(cpuHz: number, workUnitsPerSec: number, nowCycles: number): void {
 		this.cpuHz = cpuHz;
 		this.workUnitsPerSec = workUnitsPerSec;
-		if (this.activeJob === null) {
+		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY) {
 			this.workCarry = 0;
 			this.availableWorkUnits = 0;
 		}
@@ -212,10 +285,10 @@ export class GeometryController {
 	}
 
 	public accrueCycles(cycles: number, nowCycles: number): void {
-		const job = this.activeJob;
-		if (job === null || cycles <= 0) {
+		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY || cycles <= 0) {
 			return;
 		}
+		const job = this.activeJob!;
 		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, this.workUnitsPerSec, this.workCarry, cycles);
 		const wholeUnits = this.budgetAccrual.wholeUnits;
 		this.workCarry = this.budgetAccrual.carry;
@@ -228,23 +301,26 @@ export class GeometryController {
 	}
 
 	public hasPendingWork(): boolean {
-		return this.activeJob !== null;
+		return this.phase === GEOMETRY_CONTROLLER_PHASE_BUSY;
 	}
 
 	public getPendingWorkUnits(): number {
-		const job = this.activeJob;
-		return job === null ? 0 : (job.count - job.processed) >>> 0;
+		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY) {
+			return 0;
+		}
+		const job = this.activeJob!;
+		return (job.count - job.processed) >>> 0;
 	}
 
 	public onService(nowCycles: number): void {
-		const job = this.activeJob;
-		if (job === null || this.availableWorkUnits === 0) {
+		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY || this.availableWorkUnits === 0) {
 			this.scheduleNextService(nowCycles);
 			return;
 		}
+		const job = this.activeJob!;
 		let remaining = this.availableWorkUnits;
 		this.availableWorkUnits = 0;
-		while (this.activeJob !== null && remaining > 0) {
+		while (this.phase === GEOMETRY_CONTROLLER_PHASE_BUSY && remaining > 0) {
 			switch (job.cmd) {
 				case IO_CMD_GEO_XFORM2_BATCH:
 					this.processXform2Record(job);
@@ -261,11 +337,12 @@ export class GeometryController {
 			}
 			remaining -= 1;
 		}
-		this.availableWorkUnits = remaining;
+		this.availableWorkUnits = this.phase === GEOMETRY_CONTROLLER_PHASE_BUSY ? remaining : 0;
 		this.scheduleNextService(nowCycles);
 	}
 
 	public reset(): void {
+		this.phase = GEOMETRY_CONTROLLER_PHASE_IDLE;
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.activeJob = null;
@@ -286,14 +363,16 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_STRIDE2, 0);
 		this.memory.writeValue(IO_GEO_PROCESSED, 0);
 		this.memory.writeValue(IO_GEO_FAULT, 0);
+		this.memory.writeIoValue(IO_GEO_FAULT_ACK, 0);
 	}
 
 	public captureState(): GeometryControllerState {
 		const registerWords = new Array<number>(GEOMETRY_CONTROLLER_REGISTER_COUNT);
 		for (let index = 0; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1) {
-			registerWords[index] = this.memory.readIoU32(GEOMETRY_CONTROLLER_REGISTER_ADDRS[index]!);
+			registerWords[index] = this.memory.readIoU32(IO_GEO_REGISTER_ADDRS[index]!);
 		}
 		return {
+			phase: this.phase,
 			registerWords,
 			activeJob: this.activeJob === null ? null : { ...this.activeJob },
 			workCarry: this.workCarry,
@@ -303,8 +382,9 @@ export class GeometryController {
 
 	public restoreState(state: GeometryControllerState, nowCycles: number): void {
 		for (let index = 0; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1) {
-			this.memory.writeIoValue(GEOMETRY_CONTROLLER_REGISTER_ADDRS[index]!, state.registerWords[index]!);
+			this.memory.writeIoValue(IO_GEO_REGISTER_ADDRS[index]!, state.registerWords[index]!);
 		}
+		this.phase = state.phase;
 		this.activeJob = state.activeJob === null ? null : { ...state.activeJob };
 		this.workCarry = state.workCarry;
 		this.availableWorkUnits = state.availableWorkUnits;
@@ -320,17 +400,23 @@ export class GeometryController {
 			return;
 		}
 		this.memory.writeIoValue(IO_GEO_CTRL, ctrl & ~(GEO_CTRL_START | GEO_CTRL_ABORT));
+		if (
+			this.phase === GEOMETRY_CONTROLLER_PHASE_ERROR ||
+			this.phase === GEOMETRY_CONTROLLER_PHASE_REJECTED
+		) {
+			return;
+		}
 		if (start && abort) {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 			return;
 		}
 		if (abort) {
-			if (this.activeJob !== null) {
-				this.finishError(GEO_FAULT_ABORTED_BY_HOST, this.activeJob.processed);
+			if (this.phase === GEOMETRY_CONTROLLER_PHASE_BUSY) {
+				this.finishError(GEO_FAULT_ABORTED_BY_HOST, this.activeJob!.processed);
 			}
 			return;
 		}
-		if (this.activeJob !== null) {
+		if (this.phase === GEOMETRY_CONTROLLER_PHASE_BUSY) {
 			this.finishRejected(GEO_FAULT_REJECT_BUSY);
 			return;
 		}
@@ -389,16 +475,17 @@ export class GeometryController {
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.activeJob = job;
+		this.phase = GEOMETRY_CONTROLLER_PHASE_BUSY;
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_BUSY);
 		this.scheduleNextService(nowCycles);
 	}
 
 	private scheduleNextService(nowCycles: number): void {
-		const job = this.activeJob;
-		if (job === null) {
+		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY) {
 			this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 			return;
 		}
+		const job = this.activeJob!;
 		const remainingRecords = job.count - job.processed;
 		const targetUnits = remainingRecords < GEO_SERVICE_BATCH_RECORDS ? remainingRecords : GEO_SERVICE_BATCH_RECORDS;
 		if (this.availableWorkUnits >= targetUnits) {
@@ -413,7 +500,7 @@ export class GeometryController {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 			return false;
 		}
-		if (job.stride0 !== XFORM2_JOB_BYTES || job.stride1 !== XFORM2_VERTEX_BYTES || job.stride2 !== XFORM2_MATRIX_BYTES) {
+		if (job.stride0 !== GEO_XFORM2_RECORD_BYTES || job.stride1 !== GEO_VERTEX2_BYTES || job.stride2 !== GEO_XFORM2_MATRIX_BYTES) {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
 			return false;
 		}
@@ -434,7 +521,7 @@ export class GeometryController {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 			return false;
 		}
-		if (!this.memory.isRamRange(job.dst0, XFORM2_VERTEX_BYTES)) {
+		if (!this.memory.isRamRange(job.dst0, GEO_VERTEX2_BYTES)) {
 			this.finishRejected(GEO_FAULT_REJECT_DST_NOT_RAM);
 			return false;
 		}
@@ -450,7 +537,7 @@ export class GeometryController {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 			return false;
 		}
-		if (job.stride0 !== SAT2_PAIR_BYTES || job.stride1 !== SAT2_DESC_BYTES || job.stride2 !== XFORM2_VERTEX_BYTES) {
+		if (job.stride0 !== GEO_SAT2_PAIR_BYTES || job.stride1 !== GEO_SAT2_DESC_BYTES || job.stride2 !== GEO_VERTEX2_BYTES) {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
 			return false;
 		}
@@ -470,7 +557,7 @@ export class GeometryController {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 			return false;
 		}
-		if (!this.memory.isRamRange(job.dst0, SAT2_RESULT_BYTES)) {
+		if (!this.memory.isRamRange(job.dst0, GEO_SAT2_RESULT_BYTES)) {
 			this.finishRejected(GEO_FAULT_REJECT_DST_NOT_RAM);
 			return false;
 		}
@@ -481,17 +568,21 @@ export class GeometryController {
 		const mode = job.param0 & GEO_OVERLAP2D_MODE_MASK;
 		if ((job.param0 & GEO_OVERLAP2D_CONTACT_POLICY_MASK) !== GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE
 			|| (job.param0 & GEO_OVERLAP2D_OUTPUT_POLICY_MASK) !== GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW
-			|| (job.param0 & 0xffff_0000) !== 0) {
+			|| (job.param0 & GEO_OVERLAP2D_PARAM0_RESERVED_MASK) !== 0) {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 			return false;
 		}
-		if (job.stride0 !== OVERLAP2D_INSTANCE_BYTES) {
+		if (job.stride0 !== GEO_OVERLAP2D_INSTANCE_BYTES) {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
+			return false;
+		}
+		if (job.src2 !== 0) {
+			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 			return false;
 		}
 		if (mode === GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS) {
 			if ((job.param0 & GEO_OVERLAP2D_BROADPHASE_MASK) !== GEO_OVERLAP2D_BROADPHASE_NONE
-				|| job.stride1 !== OVERLAP2D_PAIR_BYTES
+				|| job.stride1 !== GEO_OVERLAP2D_PAIR_BYTES
 				|| job.stride2 === 0) {
 				this.finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
 				return false;
@@ -501,7 +592,7 @@ export class GeometryController {
 				|| job.src1 !== 0
 				|| job.stride1 !== 0
 				|| job.stride2 !== 0
-				|| job.count > 0xffff) {
+				|| job.count > GEO_OVERLAP2D_PAIR_META_INSTANCE_A_MASK) {
 				this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 				return false;
 			}
@@ -516,24 +607,24 @@ export class GeometryController {
 			this.finishRejected(GEO_FAULT_REJECT_MISALIGNED_REGS);
 			return false;
 		}
-		if (!this.memory.isRamRange(job.dst1, OVERLAP2D_SUMMARY_BYTES)) {
+		if (!this.memory.isRamRange(job.dst1, GEO_OVERLAP2D_SUMMARY_BYTES)) {
 			this.finishRejected(GEO_FAULT_REJECT_DST_NOT_RAM);
 			return false;
 		}
-		if (job.param1 !== 0 && !this.memory.isRamRange(job.dst0, OVERLAP2D_RESULT_BYTES)) {
+		if (!this.memory.isRamRange(job.dst0, GEO_OVERLAP2D_RESULT_BYTES)) {
 			this.finishRejected(GEO_FAULT_REJECT_DST_NOT_RAM);
 			return false;
 		}
 		if (job.count === 0) {
 			return true;
 		}
-		if (mode === GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS && !this.memory.isReadableMainMemoryRange(job.src1, OVERLAP2D_PAIR_BYTES)) {
+		if (mode === GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS && !this.memory.isReadableMainMemoryRange(job.src1, GEO_OVERLAP2D_PAIR_BYTES)) {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 			return false;
 		}
 		const instanceCount = mode === GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS ? job.stride2 : job.count;
-		const lastInstanceAddr = this.resolveIndexedSpan(job.src0, instanceCount - 1, job.stride0, OVERLAP2D_INSTANCE_BYTES);
-		if (lastInstanceAddr === null || !this.memory.isReadableMainMemoryRange(lastInstanceAddr, OVERLAP2D_INSTANCE_BYTES)) {
+		const lastInstanceAddr = this.resolveIndexedSpan(job.src0, instanceCount - 1, job.stride0, GEO_OVERLAP2D_INSTANCE_BYTES);
+		if (lastInstanceAddr === null || !this.memory.isReadableMainMemoryRange(lastInstanceAddr, GEO_OVERLAP2D_INSTANCE_BYTES)) {
 			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 			return false;
 		}
@@ -551,14 +642,14 @@ export class GeometryController {
 
 	private processOverlap2dCandidateRecord(job: GeoJob): void {
 		const recordIndex = job.processed;
-		const pairAddr = this.resolveIndexedSpan(job.src1, recordIndex, job.stride1, OVERLAP2D_PAIR_BYTES);
-		if (pairAddr === null || !this.memory.isReadableMainMemoryRange(pairAddr, OVERLAP2D_PAIR_BYTES)) {
+		const pairAddr = this.resolveIndexedSpan(job.src1, recordIndex, job.stride1, GEO_OVERLAP2D_PAIR_BYTES);
+		if (pairAddr === null || !this.memory.isReadableMainMemoryRange(pairAddr, GEO_OVERLAP2D_PAIR_BYTES)) {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return;
 		}
-		const instanceAIndex = this.memory.readU32(pairAddr + 0);
-		const instanceBIndex = this.memory.readU32(pairAddr + 4);
-		const pairMeta = this.memory.readU32(pairAddr + 8);
+		const instanceAIndex = this.memory.readU32(pairAddr + GEO_OVERLAP2D_PAIR_INSTANCE_A_OFFSET);
+		const instanceBIndex = this.memory.readU32(pairAddr + GEO_OVERLAP2D_PAIR_INSTANCE_B_OFFSET);
+		const pairMeta = this.memory.readU32(pairAddr + GEO_OVERLAP2D_PAIR_META_OFFSET);
 		if (instanceAIndex === instanceBIndex) {
 			this.finishError(GEO_FAULT_BAD_RECORD_FLAGS, recordIndex);
 			return;
@@ -592,7 +683,8 @@ export class GeometryController {
 				this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 				return;
 			}
-			const pairMeta = (((recordIndex & 0xffff) << 16) | (instanceBIndex & 0xffff)) >>> 0;
+			const pairMeta = (((recordIndex & GEO_OVERLAP2D_PAIR_META_INSTANCE_A_MASK) << GEO_OVERLAP2D_PAIR_META_INSTANCE_A_SHIFT)
+				| (instanceBIndex & GEO_OVERLAP2D_PAIR_META_INSTANCE_B_MASK)) >>> 0;
 			if (!this.processOverlap2dPair(job, recordIndex, this.overlapInstanceA, this.overlapInstanceB, pairMeta)) {
 				return;
 			}
@@ -602,15 +694,15 @@ export class GeometryController {
 	}
 
 	private readOverlapInstanceAt(job: GeoJob, instanceIndex: number, out: Uint32Array): boolean {
-		const instanceAddr = this.resolveIndexedSpan(job.src0, instanceIndex, job.stride0, OVERLAP2D_INSTANCE_BYTES);
-		if (instanceAddr === null || !this.memory.isReadableMainMemoryRange(instanceAddr, OVERLAP2D_INSTANCE_BYTES)) {
+		const instanceAddr = this.resolveIndexedSpan(job.src0, instanceIndex, job.stride0, GEO_OVERLAP2D_INSTANCE_BYTES);
+		if (instanceAddr === null || !this.memory.isReadableMainMemoryRange(instanceAddr, GEO_OVERLAP2D_INSTANCE_BYTES)) {
 			return false;
 		}
-		out[0] = this.memory.readU32(instanceAddr + 0);
-		out[1] = this.memory.readU32(instanceAddr + 4);
-		out[2] = this.memory.readU32(instanceAddr + 8);
-		out[3] = this.memory.readU32(instanceAddr + 12);
-		out[4] = this.memory.readU32(instanceAddr + 16);
+		out[0] = this.memory.readU32(instanceAddr + GEO_OVERLAP2D_INSTANCE_SHAPE_OFFSET);
+		out[1] = this.memory.readU32(instanceAddr + GEO_OVERLAP2D_INSTANCE_TX_OFFSET);
+		out[2] = this.memory.readU32(instanceAddr + GEO_OVERLAP2D_INSTANCE_TY_OFFSET);
+		out[3] = this.memory.readU32(instanceAddr + GEO_OVERLAP2D_INSTANCE_LAYER_OFFSET);
+		out[4] = this.memory.readU32(instanceAddr + GEO_OVERLAP2D_INSTANCE_MASK_OFFSET);
 		return true;
 	}
 
@@ -625,8 +717,8 @@ export class GeometryController {
 		const tyB = f32BitsToNumber(instanceB[2]);
 		const layerB = instanceB[3];
 		const maskB = instanceB[4];
-		if (!this.memory.isReadableMainMemoryRange(shapeAAddr, OVERLAP2D_DESC_BYTES)
-			|| !this.memory.isReadableMainMemoryRange(shapeBAddr, OVERLAP2D_DESC_BYTES)) {
+		if (!this.memory.isReadableMainMemoryRange(shapeAAddr, GEO_OVERLAP2D_SHAPE_DESC_BYTES)
+			|| !this.memory.isReadableMainMemoryRange(shapeBAddr, GEO_OVERLAP2D_SHAPE_DESC_BYTES)) {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return false;
 		}
@@ -642,19 +734,21 @@ export class GeometryController {
 		if (!this.boundsOverlap(this.overlapBoundsA, this.overlapBoundsB)) {
 			return true;
 		}
-		const shapeAKind = this.memory.readU32(shapeAAddr + 0);
-		const shapeACount = this.memory.readU32(shapeAAddr + 4);
-		const shapeADataOffset = this.memory.readU32(shapeAAddr + 8);
-		const shapeBKind = this.memory.readU32(shapeBAddr + 0);
-		const shapeBCount = this.memory.readU32(shapeBAddr + 4);
-		const shapeBDataOffset = this.memory.readU32(shapeBAddr + 8);
-		const shapeAPieceCount = shapeAKind === OVERLAP2D_KIND_COMPOUND ? shapeACount : 1;
-		const shapeBPieceCount = shapeBKind === OVERLAP2D_KIND_COMPOUND ? shapeBCount : 1;
+		const shapeAKind = this.memory.readU32(shapeAAddr + GEO_OVERLAP2D_SHAPE_KIND_OFFSET);
+		const shapeACount = this.memory.readU32(shapeAAddr + GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET);
+		const shapeADataOffset = this.memory.readU32(shapeAAddr + GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET);
+		const shapeBKind = this.memory.readU32(shapeBAddr + GEO_OVERLAP2D_SHAPE_KIND_OFFSET);
+		const shapeBCount = this.memory.readU32(shapeBAddr + GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET);
+		const shapeBDataOffset = this.memory.readU32(shapeBAddr + GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET);
+		const shapeAIsCompound = shapeAKind === GEO_OVERLAP2D_SHAPE_KIND_COMPOUND;
+		const shapeBIsCompound = shapeBKind === GEO_OVERLAP2D_SHAPE_KIND_COMPOUND;
+		const shapeAPieceCount = shapeAIsCompound ? shapeACount : 1;
+		const shapeBPieceCount = shapeBIsCompound ? shapeBCount : 1;
 		if (shapeAPieceCount === 0 || shapeBPieceCount === 0
-			|| (shapeAKind === OVERLAP2D_KIND_COMPOUND && (shapeADataOffset & WORD_ALIGN_MASK) !== 0)
-			|| (shapeBKind === OVERLAP2D_KIND_COMPOUND && (shapeBDataOffset & WORD_ALIGN_MASK) !== 0)
-			|| (shapeAKind !== OVERLAP2D_KIND_COMPOUND && shapeAKind !== GEO_PRIMITIVE_AABB && shapeAKind !== GEO_PRIMITIVE_CONVEX_POLY)
-			|| (shapeBKind !== OVERLAP2D_KIND_COMPOUND && shapeBKind !== GEO_PRIMITIVE_AABB && shapeBKind !== GEO_PRIMITIVE_CONVEX_POLY)) {
+			|| (shapeAIsCompound && (shapeADataOffset & WORD_ALIGN_MASK) !== 0)
+			|| (shapeBIsCompound && (shapeBDataOffset & WORD_ALIGN_MASK) !== 0)
+			|| (!shapeAIsCompound && shapeAKind !== GEO_PRIMITIVE_AABB && shapeAKind !== GEO_PRIMITIVE_CONVEX_POLY)
+			|| (!shapeBIsCompound && shapeBKind !== GEO_PRIMITIVE_AABB && shapeBKind !== GEO_PRIMITIVE_CONVEX_POLY)) {
 			this.finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
 			return false;
 		}
@@ -669,10 +763,10 @@ export class GeometryController {
 		let bestPx = 0;
 		let bestPy = 0;
 		for (let pieceAIndex = 0; pieceAIndex < shapeAPieceCount; pieceAIndex += 1) {
-			const pieceAAddr = shapeAKind === OVERLAP2D_KIND_COMPOUND
-				? this.resolveByteOffset(shapeAAddr, shapeADataOffset + pieceAIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
+			const pieceAAddr = shapeAIsCompound
+				? this.resolveByteOffset(shapeAAddr, shapeADataOffset + pieceAIndex * GEO_OVERLAP2D_SHAPE_DESC_BYTES, GEO_OVERLAP2D_SHAPE_DESC_BYTES)
 				: shapeAAddr;
-			if (pieceAAddr === null || !this.memory.isReadableMainMemoryRange(pieceAAddr, OVERLAP2D_DESC_BYTES)) {
+			if (pieceAAddr === null || !this.memory.isReadableMainMemoryRange(pieceAAddr, GEO_OVERLAP2D_SHAPE_DESC_BYTES)) {
 				this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 				return false;
 			}
@@ -681,10 +775,10 @@ export class GeometryController {
 				return false;
 			}
 			for (let pieceBIndex = 0; pieceBIndex < shapeBPieceCount; pieceBIndex += 1) {
-				const pieceBAddr = shapeBKind === OVERLAP2D_KIND_COMPOUND
-					? this.resolveByteOffset(shapeBAddr, shapeBDataOffset + pieceBIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
+				const pieceBAddr = shapeBIsCompound
+					? this.resolveByteOffset(shapeBAddr, shapeBDataOffset + pieceBIndex * GEO_OVERLAP2D_SHAPE_DESC_BYTES, GEO_OVERLAP2D_SHAPE_DESC_BYTES)
 					: shapeBAddr;
-				if (pieceBAddr === null || !this.memory.isReadableMainMemoryRange(pieceBAddr, OVERLAP2D_DESC_BYTES)) {
+				if (pieceBAddr === null || !this.memory.isReadableMainMemoryRange(pieceBAddr, GEO_OVERLAP2D_SHAPE_DESC_BYTES)) {
 					this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 					return false;
 				}
@@ -727,8 +821,8 @@ export class GeometryController {
 			this.finishError(GEO_FAULT_RESULT_CAPACITY, recordIndex);
 			return false;
 		}
-		const resultAddr = this.resolveIndexedSpan(job.dst0, resultCount, OVERLAP2D_RESULT_BYTES, OVERLAP2D_RESULT_BYTES);
-		if (resultAddr === null || !this.memory.isRamRange(resultAddr, OVERLAP2D_RESULT_BYTES)) {
+		const resultAddr = this.resolveIndexedSpan(job.dst0, resultCount, GEO_OVERLAP2D_RESULT_BYTES, GEO_OVERLAP2D_RESULT_BYTES);
+		if (resultAddr === null || !this.memory.isRamRange(resultAddr, GEO_OVERLAP2D_RESULT_BYTES)) {
 			this.finishError(GEO_FAULT_DST_RANGE, recordIndex);
 			return false;
 		}
@@ -739,21 +833,21 @@ export class GeometryController {
 
 	private processXform2Record(job: GeoJob): void {
 		const recordIndex = job.processed;
-		const recordAddr = this.resolveIndexedSpan(job.src0, recordIndex, job.stride0, XFORM2_JOB_BYTES);
+		const recordAddr = this.resolveIndexedSpan(job.src0, recordIndex, job.stride0, GEO_XFORM2_RECORD_BYTES);
 		if (recordAddr === null) {
 			this.finishError(GEO_FAULT_BAD_RECORD_ALIGNMENT, recordIndex);
 			return;
 		}
-		if (!this.memory.isReadableMainMemoryRange(recordAddr, XFORM2_JOB_BYTES)) {
+		if (!this.memory.isReadableMainMemoryRange(recordAddr, GEO_XFORM2_RECORD_BYTES)) {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return;
 		}
-		const flags = this.memory.readU32(recordAddr + 0);
-		const srcIndex = this.memory.readU32(recordAddr + 4);
-		const dstIndex = this.memory.readU32(recordAddr + 8);
-		const auxIndex = this.memory.readU32(recordAddr + 12);
-		const vertexCount = this.memory.readU32(recordAddr + 16);
-		const dst1Index = this.memory.readU32(recordAddr + 20);
+		const flags = this.memory.readU32(recordAddr + GEO_XFORM2_RECORD_FLAGS_OFFSET);
+		const srcIndex = this.memory.readU32(recordAddr + GEO_XFORM2_RECORD_SRC_INDEX_OFFSET);
+		const dstIndex = this.memory.readU32(recordAddr + GEO_XFORM2_RECORD_DST_INDEX_OFFSET);
+		const auxIndex = this.memory.readU32(recordAddr + GEO_XFORM2_RECORD_AUX_INDEX_OFFSET);
+		const vertexCount = this.memory.readU32(recordAddr + GEO_XFORM2_RECORD_VERTEX_COUNT_OFFSET);
+		const dst1Index = this.memory.readU32(recordAddr + GEO_XFORM2_RECORD_DST1_INDEX_OFFSET);
 		if (flags !== 0) {
 			this.finishError(GEO_FAULT_BAD_RECORD_FLAGS, recordIndex);
 			return;
@@ -762,7 +856,7 @@ export class GeometryController {
 			this.completeRecord(job);
 			return;
 		}
-		const vertexBytes = vertexCount * XFORM2_VERTEX_BYTES;
+		const vertexBytes = vertexCount * GEO_VERTEX2_BYTES;
 		if (!Number.isSafeInteger(vertexBytes) || vertexBytes > 0xffff_ffff) {
 			this.finishError(GEO_FAULT_BAD_VERTEX_COUNT, recordIndex);
 			return;
@@ -772,43 +866,43 @@ export class GeometryController {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return;
 		}
-		const matrixAddr = this.resolveIndexedSpan(job.src2, auxIndex, job.stride2, XFORM2_MATRIX_BYTES);
-		if (matrixAddr === null || !this.memory.isReadableMainMemoryRange(matrixAddr, XFORM2_MATRIX_BYTES)) {
+		const matrixAddr = this.resolveIndexedSpan(job.src2, auxIndex, job.stride2, GEO_XFORM2_MATRIX_BYTES);
+		if (matrixAddr === null || !this.memory.isReadableMainMemoryRange(matrixAddr, GEO_XFORM2_MATRIX_BYTES)) {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return;
 		}
-		const dstAddr = this.resolveIndexedSpan(job.dst0, dstIndex, XFORM2_VERTEX_BYTES, vertexBytes);
+		const dstAddr = this.resolveIndexedSpan(job.dst0, dstIndex, GEO_VERTEX2_BYTES, vertexBytes);
 		if (dstAddr === null || !this.memory.isRamRange(dstAddr, vertexBytes)) {
 			this.finishError(GEO_FAULT_DST_RANGE, recordIndex);
 			return;
 		}
 		let aabbAddr = 0;
 		if (dst1Index !== GEO_INDEX_NONE) {
-			aabbAddr = this.resolveIndexedSpan(job.dst1, dst1Index, XFORM2_AABB_BYTES, XFORM2_AABB_BYTES);
-			if (aabbAddr === null || !this.memory.isRamRange(aabbAddr, XFORM2_AABB_BYTES)) {
+			aabbAddr = this.resolveIndexedSpan(job.dst1, dst1Index, GEO_XFORM2_AABB_BYTES, GEO_XFORM2_AABB_BYTES);
+			if (aabbAddr === null || !this.memory.isRamRange(aabbAddr, GEO_XFORM2_AABB_BYTES)) {
 				this.finishError(GEO_FAULT_DST_RANGE, recordIndex);
 				return;
 			}
 		}
-		const m00 = toSignedWord(this.memory.readU32(matrixAddr + 0));
-		const m01 = toSignedWord(this.memory.readU32(matrixAddr + 4));
-		const tx = toSignedWord(this.memory.readU32(matrixAddr + 8));
-		const m10 = toSignedWord(this.memory.readU32(matrixAddr + 12));
-		const m11 = toSignedWord(this.memory.readU32(matrixAddr + 16));
-		const ty = toSignedWord(this.memory.readU32(matrixAddr + 20));
+		const m00 = toSignedWord(this.memory.readU32(matrixAddr + GEO_XFORM2_MATRIX_M00_OFFSET));
+		const m01 = toSignedWord(this.memory.readU32(matrixAddr + GEO_XFORM2_MATRIX_M01_OFFSET));
+		const tx = toSignedWord(this.memory.readU32(matrixAddr + GEO_XFORM2_MATRIX_TX_OFFSET));
+		const m10 = toSignedWord(this.memory.readU32(matrixAddr + GEO_XFORM2_MATRIX_M10_OFFSET));
+		const m11 = toSignedWord(this.memory.readU32(matrixAddr + GEO_XFORM2_MATRIX_M11_OFFSET));
+		const ty = toSignedWord(this.memory.readU32(matrixAddr + GEO_XFORM2_MATRIX_TY_OFFSET));
 		let minX = 0;
 		let minY = 0;
 		let maxX = 0;
 		let maxY = 0;
 		for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex += 1) {
-			const localAddr = srcAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-			const worldAddr = dstAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-			const localX = toSignedWord(this.memory.readU32(localAddr + 0));
-			const localY = toSignedWord(this.memory.readU32(localAddr + 4));
+			const localAddr = srcAddr + vertexIndex * GEO_VERTEX2_BYTES;
+			const worldAddr = dstAddr + vertexIndex * GEO_VERTEX2_BYTES;
+			const localX = toSignedWord(this.memory.readU32(localAddr + GEO_VERTEX2_X_OFFSET));
+			const localY = toSignedWord(this.memory.readU32(localAddr + GEO_VERTEX2_Y_OFFSET));
 			const worldX = transformFixed16(m00, m01, tx, localX, localY);
 			const worldY = transformFixed16(m10, m11, ty, localX, localY);
-			this.memory.writeU32(worldAddr + 0, worldX >>> 0);
-			this.memory.writeU32(worldAddr + 4, worldY >>> 0);
+			this.memory.writeU32(worldAddr + GEO_VERTEX2_X_OFFSET, worldX >>> 0);
+			this.memory.writeU32(worldAddr + GEO_VERTEX2_Y_OFFSET, worldY >>> 0);
 			if (vertexIndex === 0) {
 				minX = worldX;
 				minY = worldY;
@@ -830,58 +924,58 @@ export class GeometryController {
 			}
 		}
 		if (dst1Index !== GEO_INDEX_NONE) {
-			this.memory.writeU32(aabbAddr + 0, minX >>> 0);
-			this.memory.writeU32(aabbAddr + 4, minY >>> 0);
-			this.memory.writeU32(aabbAddr + 8, maxX >>> 0);
-			this.memory.writeU32(aabbAddr + 12, maxY >>> 0);
+			this.memory.writeU32(aabbAddr + GEO_XFORM2_AABB_MIN_X_OFFSET, minX >>> 0);
+			this.memory.writeU32(aabbAddr + GEO_XFORM2_AABB_MIN_Y_OFFSET, minY >>> 0);
+			this.memory.writeU32(aabbAddr + GEO_XFORM2_AABB_MAX_X_OFFSET, maxX >>> 0);
+			this.memory.writeU32(aabbAddr + GEO_XFORM2_AABB_MAX_Y_OFFSET, maxY >>> 0);
 		}
 		this.completeRecord(job);
 	}
 
 	private processSat2Record(job: GeoJob): void {
 		const recordIndex = job.processed;
-		const pairAddr = this.resolveIndexedSpan(job.src0, recordIndex, job.stride0, SAT2_PAIR_BYTES);
+		const pairAddr = this.resolveIndexedSpan(job.src0, recordIndex, job.stride0, GEO_SAT2_PAIR_BYTES);
 		if (pairAddr === null) {
 			this.finishError(GEO_FAULT_BAD_RECORD_ALIGNMENT, recordIndex);
 			return;
 		}
-		if (!this.memory.isReadableMainMemoryRange(pairAddr, SAT2_PAIR_BYTES)) {
+		if (!this.memory.isReadableMainMemoryRange(pairAddr, GEO_SAT2_PAIR_BYTES)) {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return;
 		}
-		const flags = this.memory.readU32(pairAddr + 0);
-		const shapeAIndex = this.memory.readU32(pairAddr + 4);
-		const resultIndex = this.memory.readU32(pairAddr + 8);
-		const shapeBIndex = this.memory.readU32(pairAddr + 12);
-		const pairFlags = this.memory.readU32(pairAddr + 16);
+		const flags = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_FLAGS_OFFSET);
+		const shapeAIndex = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_SHAPE_A_INDEX_OFFSET);
+		const resultIndex = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_RESULT_INDEX_OFFSET);
+		const shapeBIndex = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_SHAPE_B_INDEX_OFFSET);
+		const pairFlags = this.memory.readU32(pairAddr + GEO_SAT2_PAIR_FLAGS2_OFFSET);
 		if (flags !== 0 || pairFlags !== 0) {
 			this.finishError(GEO_FAULT_BAD_RECORD_FLAGS, recordIndex);
 			return;
 		}
-		const resultAddr = this.resolveIndexedSpan(job.dst0, resultIndex, SAT2_RESULT_BYTES, SAT2_RESULT_BYTES);
-		if (resultAddr === null || !this.memory.isRamRange(resultAddr, SAT2_RESULT_BYTES)) {
+		const resultAddr = this.resolveIndexedSpan(job.dst0, resultIndex, GEO_SAT2_RESULT_BYTES, GEO_SAT2_RESULT_BYTES);
+		if (resultAddr === null || !this.memory.isRamRange(resultAddr, GEO_SAT2_RESULT_BYTES)) {
 			this.finishError(GEO_FAULT_DST_RANGE, recordIndex);
 			return;
 		}
-		const shapeADescAddr = this.resolveIndexedSpan(job.src1, shapeAIndex, job.stride1, SAT2_DESC_BYTES);
-		const shapeBDescAddr = this.resolveIndexedSpan(job.src1, shapeBIndex, job.stride1, SAT2_DESC_BYTES);
+		const shapeADescAddr = this.resolveIndexedSpan(job.src1, shapeAIndex, job.stride1, GEO_SAT2_DESC_BYTES);
+		const shapeBDescAddr = this.resolveIndexedSpan(job.src1, shapeBIndex, job.stride1, GEO_SAT2_DESC_BYTES);
 		if (shapeADescAddr === null || shapeBDescAddr === null) {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return;
 		}
-		if (!this.memory.isReadableMainMemoryRange(shapeADescAddr, SAT2_DESC_BYTES)
-			|| !this.memory.isReadableMainMemoryRange(shapeBDescAddr, SAT2_DESC_BYTES)) {
+		if (!this.memory.isReadableMainMemoryRange(shapeADescAddr, GEO_SAT2_DESC_BYTES)
+			|| !this.memory.isReadableMainMemoryRange(shapeBDescAddr, GEO_SAT2_DESC_BYTES)) {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return;
 		}
-		const shapeAFlags = this.memory.readU32(shapeADescAddr + 0);
-		const shapeAVertexCount = this.memory.readU32(shapeADescAddr + 4);
-		const shapeAVertexOffsetBytes = this.memory.readU32(shapeADescAddr + 8);
-		const shapeAReserved = this.memory.readU32(shapeADescAddr + 12);
-		const shapeBFlags = this.memory.readU32(shapeBDescAddr + 0);
-		const shapeBVertexCount = this.memory.readU32(shapeBDescAddr + 4);
-		const shapeBVertexOffsetBytes = this.memory.readU32(shapeBDescAddr + 8);
-		const shapeBReserved = this.memory.readU32(shapeBDescAddr + 12);
+		const shapeAFlags = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_FLAGS_OFFSET);
+		const shapeAVertexCount = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
+		const shapeAVertexOffsetBytes = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
+		const shapeAReserved = this.memory.readU32(shapeADescAddr + GEO_SAT2_DESC_RESERVED_OFFSET);
+		const shapeBFlags = this.memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_FLAGS_OFFSET);
+		const shapeBVertexCount = this.memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_VERTEX_COUNT_OFFSET);
+		const shapeBVertexOffsetBytes = this.memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_VERTEX_OFFSET_OFFSET);
+		const shapeBReserved = this.memory.readU32(shapeBDescAddr + GEO_SAT2_DESC_RESERVED_OFFSET);
 		if (shapeAFlags !== GEO_SHAPE_CONVEX_POLY
 			|| shapeBFlags !== GEO_SHAPE_CONVEX_POLY
 			|| shapeAReserved !== 0
@@ -897,8 +991,8 @@ export class GeometryController {
 			this.finishError(GEO_FAULT_BAD_RECORD_ALIGNMENT, recordIndex);
 			return;
 		}
-		const shapeAVertexBytes = shapeAVertexCount * XFORM2_VERTEX_BYTES;
-		const shapeBVertexBytes = shapeBVertexCount * XFORM2_VERTEX_BYTES;
+		const shapeAVertexBytes = shapeAVertexCount * GEO_VERTEX2_BYTES;
+		const shapeBVertexBytes = shapeBVertexCount * GEO_VERTEX2_BYTES;
 		if (!Number.isSafeInteger(shapeAVertexBytes)
 			|| !Number.isSafeInteger(shapeBVertexBytes)
 			|| shapeAVertexBytes > 0xffff_ffff
@@ -919,19 +1013,23 @@ export class GeometryController {
 		}
 		let centerAX = 0;
 		let centerAY = 0;
-		let vertexAddr = shapeAVertexAddr;
+		let vertexXAddr = shapeAVertexAddr + GEO_VERTEX2_X_OFFSET;
+		let vertexYAddr = shapeAVertexAddr + GEO_VERTEX2_Y_OFFSET;
 		for (let vertexIndex = 0; vertexIndex < shapeAVertexCount; vertexIndex += 1) {
-			centerAX += toSignedWord(this.memory.readU32(vertexAddr + 0));
-			centerAY += toSignedWord(this.memory.readU32(vertexAddr + 4));
-			vertexAddr += XFORM2_VERTEX_BYTES;
+			centerAX += toSignedWord(this.memory.readU32(vertexXAddr));
+			centerAY += toSignedWord(this.memory.readU32(vertexYAddr));
+			vertexXAddr += GEO_VERTEX2_BYTES;
+			vertexYAddr += GEO_VERTEX2_BYTES;
 		}
 		let centerBX = 0;
 		let centerBY = 0;
-		vertexAddr = shapeBVertexAddr;
+		vertexXAddr = shapeBVertexAddr + GEO_VERTEX2_X_OFFSET;
+		vertexYAddr = shapeBVertexAddr + GEO_VERTEX2_Y_OFFSET;
 		for (let vertexIndex = 0; vertexIndex < shapeBVertexCount; vertexIndex += 1) {
-			centerBX += toSignedWord(this.memory.readU32(vertexAddr + 0));
-			centerBY += toSignedWord(this.memory.readU32(vertexAddr + 4));
-			vertexAddr += XFORM2_VERTEX_BYTES;
+			centerBX += toSignedWord(this.memory.readU32(vertexXAddr));
+			centerBY += toSignedWord(this.memory.readU32(vertexYAddr));
+			vertexXAddr += GEO_VERTEX2_BYTES;
+			vertexYAddr += GEO_VERTEX2_BYTES;
 		}
 		centerAX /= shapeAVertexCount;
 		centerAY /= shapeAVertexCount;
@@ -947,13 +1045,13 @@ export class GeometryController {
 			const axisBase = shapeSelector === GEO_SAT_META_SHAPE_SRC ? shapeAVertexAddr : shapeBVertexAddr;
 			const axisCount = shapeSelector === GEO_SAT_META_SHAPE_SRC ? shapeAVertexCount : shapeBVertexCount;
 			for (let edgeIndex = 0; edgeIndex < axisCount; edgeIndex += 1) {
-				const currentAddr = axisBase + edgeIndex * XFORM2_VERTEX_BYTES;
+				const currentAddr = axisBase + edgeIndex * GEO_VERTEX2_BYTES;
 				const nextIndex = edgeIndex + 1 === axisCount ? 0 : edgeIndex + 1;
-				const nextAddr = axisBase + nextIndex * XFORM2_VERTEX_BYTES;
-				const x0 = toSignedWord(this.memory.readU32(currentAddr + 0));
-				const y0 = toSignedWord(this.memory.readU32(currentAddr + 4));
-				const x1 = toSignedWord(this.memory.readU32(nextAddr + 0));
-				const y1 = toSignedWord(this.memory.readU32(nextAddr + 4));
+				const nextAddr = axisBase + nextIndex * GEO_VERTEX2_BYTES;
+				const x0 = toSignedWord(this.memory.readU32(currentAddr + GEO_VERTEX2_X_OFFSET));
+				const y0 = toSignedWord(this.memory.readU32(currentAddr + GEO_VERTEX2_Y_OFFSET));
+				const x1 = toSignedWord(this.memory.readU32(nextAddr + GEO_VERTEX2_X_OFFSET));
+				const y1 = toSignedWord(this.memory.readU32(nextAddr + GEO_VERTEX2_Y_OFFSET));
 				const nx = -(y1 - y0);
 				const ny = x1 - x0;
 				const axisLength = Math.sqrt((nx * nx) + (ny * ny));
@@ -963,42 +1061,16 @@ export class GeometryController {
 				sawAxis = true;
 				const ax = nx / axisLength;
 				const ay = ny / axisLength;
-				let minA = Infinity;
-				let maxA = -Infinity;
-				for (let vertexIndex = 0; vertexIndex < shapeAVertexCount; vertexIndex += 1) {
-					const vertexAddr = shapeAVertexAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-					const px = toSignedWord(this.memory.readU32(vertexAddr + 0));
-					const py = toSignedWord(this.memory.readU32(vertexAddr + 4));
-					const projection = (px * ax) + (py * ay);
-					if (projection < minA) {
-						minA = projection;
-					}
-					if (projection > maxA) {
-						maxA = projection;
-					}
-				}
-				let minB = Infinity;
-				let maxB = -Infinity;
-				for (let vertexIndex = 0; vertexIndex < shapeBVertexCount; vertexIndex += 1) {
-					const vertexAddr = shapeBVertexAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-					const px = toSignedWord(this.memory.readU32(vertexAddr + 0));
-					const py = toSignedWord(this.memory.readU32(vertexAddr + 4));
-					const projection = (px * ax) + (py * ay);
-					if (projection < minB) {
-						minB = projection;
-					}
-					if (projection > maxB) {
-						maxB = projection;
-					}
-				}
-				const sepA = minA - maxB;
-				const sepB = minB - maxA;
+				this.projectVertexSpanInto(shapeAVertexAddr, shapeAVertexCount, ax, ay, this.overlapProjectionA);
+				this.projectVertexSpanInto(shapeBVertexAddr, shapeBVertexCount, ax, ay, this.overlapProjectionB);
+				const sepA = this.overlapProjectionA.min - this.overlapProjectionB.max;
+				const sepB = this.overlapProjectionB.min - this.overlapProjectionA.max;
 				if (sepA > 0 || sepB > 0) {
 					this.writeSat2Result(resultAddr, 0, 0, 0, 0, 0);
 					this.completeRecord(job);
 					return;
 				}
-				const overlap = Math.min(maxA, maxB) - Math.max(minA, minB);
+				const overlap = Math.min(this.overlapProjectionA.max, this.overlapProjectionB.max) - Math.max(this.overlapProjectionA.min, this.overlapProjectionB.min);
 				if (overlap < bestOverlap) {
 					bestOverlap = overlap;
 					bestAxisX = ax;
@@ -1031,15 +1103,15 @@ export class GeometryController {
 
 
 	private readPieceBounds(pieceAddr: number, tx: number, ty: number, out: Float64Array): boolean {
-		const boundsOffset = this.memory.readU32(pieceAddr + 12);
-		const boundsAddr = this.resolveByteOffset(pieceAddr, boundsOffset, OVERLAP2D_BOUNDS_BYTES);
-		if (boundsAddr === null || !this.memory.isReadableMainMemoryRange(boundsAddr, OVERLAP2D_BOUNDS_BYTES)) {
+		const boundsOffset = this.memory.readU32(pieceAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET);
+		const boundsAddr = this.resolveByteOffset(pieceAddr, boundsOffset, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES);
+		if (boundsAddr === null || !this.memory.isReadableMainMemoryRange(boundsAddr, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES)) {
 			return false;
 		}
-		out[0] = this.readF32(boundsAddr + 0) + tx;
-		out[1] = this.readF32(boundsAddr + 4) + ty;
-		out[2] = this.readF32(boundsAddr + 8) + tx;
-		out[3] = this.readF32(boundsAddr + 12) + ty;
+		out[0] = this.readF32(boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET) + tx;
+		out[1] = this.readF32(boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET) + ty;
+		out[2] = this.readF32(boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET) + tx;
+		out[3] = this.readF32(boundsAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET) + ty;
 		return true;
 	}
 
@@ -1052,8 +1124,8 @@ export class GeometryController {
 		tyB: number,
 		recordIndex: number,
 	): boolean {
-		const primitiveA = this.memory.readU32(pieceAAddr + 0);
-		const primitiveB = this.memory.readU32(pieceBAddr + 0);
+		const primitiveA = this.memory.readU32(pieceAAddr + GEO_OVERLAP2D_SHAPE_KIND_OFFSET);
+		const primitiveB = this.memory.readU32(pieceBAddr + GEO_OVERLAP2D_SHAPE_KIND_OFFSET);
 		if ((primitiveA !== GEO_PRIMITIVE_AABB && primitiveA !== GEO_PRIMITIVE_CONVEX_POLY)
 			|| (primitiveB !== GEO_PRIMITIVE_AABB && primitiveB !== GEO_PRIMITIVE_CONVEX_POLY)) {
 			this.finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
@@ -1068,34 +1140,34 @@ export class GeometryController {
 	}
 
 	private loadWorldPoly(pieceAddr: number, tx: number, ty: number, out: number[]): boolean {
-		const primitive = this.memory.readU32(pieceAddr + 0);
-		const dataCount = this.memory.readU32(pieceAddr + 4);
-		const dataOffset = this.memory.readU32(pieceAddr + 8);
-		const dataAddr = this.resolveByteOffset(pieceAddr, dataOffset, primitive === GEO_PRIMITIVE_AABB ? 16 : dataCount * XFORM2_VERTEX_BYTES);
+		const primitive = this.memory.readU32(pieceAddr + GEO_OVERLAP2D_SHAPE_KIND_OFFSET);
+		const dataCount = this.memory.readU32(pieceAddr + GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET);
+		const dataOffset = this.memory.readU32(pieceAddr + GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET);
+		const dataAddr = this.resolveByteOffset(pieceAddr, dataOffset, primitive === GEO_PRIMITIVE_AABB ? GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES : dataCount * GEO_VERTEX2_BYTES);
 		if (dataAddr === null) {
 			return false;
 		}
 		out.length = 0;
 		if (primitive === GEO_PRIMITIVE_AABB) {
-			if (dataCount !== 4 || !this.memory.isReadableMainMemoryRange(dataAddr, 16)) {
+			if (dataCount !== GEO_OVERLAP2D_AABB_DATA_COUNT || !this.memory.isReadableMainMemoryRange(dataAddr, GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES)) {
 				return false;
 			}
-			const left = this.readF32(dataAddr + 0);
-			const top = this.readF32(dataAddr + 4);
-			const right = this.readF32(dataAddr + 8);
-			const bottom = this.readF32(dataAddr + 12);
+			const left = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET);
+			const top = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET);
+			const right = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET);
+			const bottom = this.readF32(dataAddr + GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET);
 			this.pushWorldVertex(out, tx, ty, left, top);
 			this.pushWorldVertex(out, tx, ty, right, top);
 			this.pushWorldVertex(out, tx, ty, right, bottom);
 			this.pushWorldVertex(out, tx, ty, left, bottom);
 			return true;
 		}
-		if (primitive !== GEO_PRIMITIVE_CONVEX_POLY || dataCount < 3 || !this.memory.isReadableMainMemoryRange(dataAddr, dataCount * XFORM2_VERTEX_BYTES)) {
+		if (primitive !== GEO_PRIMITIVE_CONVEX_POLY || dataCount < 3 || !this.memory.isReadableMainMemoryRange(dataAddr, dataCount * GEO_VERTEX2_BYTES)) {
 			return false;
 		}
 		for (let vertexIndex = 0; vertexIndex < dataCount; vertexIndex += 1) {
-			const vertexAddr = dataAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-			this.pushWorldVertex(out, tx, ty, this.readF32(vertexAddr + 0), this.readF32(vertexAddr + 4));
+			const vertexAddr = dataAddr + vertexIndex * GEO_VERTEX2_BYTES;
+			this.pushWorldVertex(out, tx, ty, this.readF32(vertexAddr + GEO_VERTEX2_X_OFFSET), this.readF32(vertexAddr + GEO_VERTEX2_Y_OFFSET));
 		}
 		return true;
 	}
@@ -1173,6 +1245,28 @@ export class GeometryController {
 		this.overlapContactPy = pointY;
 		this.overlapContactFeatureMeta = bestEdgeIndex >>> 0;
 		return true;
+	}
+
+	private projectVertexSpanInto(base: number, count: number, ax: number, ay: number, out: GeoProjectionScratch): void {
+		let min = Number.POSITIVE_INFINITY;
+		let max = Number.NEGATIVE_INFINITY;
+		let xAddr = base + GEO_VERTEX2_X_OFFSET;
+		let yAddr = base + GEO_VERTEX2_Y_OFFSET;
+		for (let vertexIndex = 0; vertexIndex < count; vertexIndex += 1) {
+			const px = toSignedWord(this.memory.readU32(xAddr));
+			const py = toSignedWord(this.memory.readU32(yAddr));
+			const projection = (px * ax) + (py * ay);
+			if (projection < min) {
+				min = projection;
+			}
+			if (projection > max) {
+				max = projection;
+			}
+			xAddr += GEO_VERTEX2_BYTES;
+			yAddr += GEO_VERTEX2_BYTES;
+		}
+		out.min = min;
+		out.max = max;
 	}
 
 	private projectPolyInto(poly: number[], ax: number, ay: number, out: GeoProjectionScratch): void {
@@ -1255,22 +1349,22 @@ export class GeometryController {
 	}
 
 	private writeOverlap2dSummary(job: GeoJob, flags: number): void {
-		this.memory.writeU32(job.dst1 + 0, job.resultCount >>> 0);
-		this.memory.writeU32(job.dst1 + 4, job.exactPairCount >>> 0);
-		this.memory.writeU32(job.dst1 + 8, job.broadphasePairCount >>> 0);
-		this.memory.writeU32(job.dst1 + 12, flags >>> 0);
+		this.memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_RESULT_COUNT_OFFSET, job.resultCount >>> 0);
+		this.memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_EXACT_PAIR_COUNT_OFFSET, job.exactPairCount >>> 0);
+		this.memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_BROADPHASE_PAIR_COUNT_OFFSET, job.broadphasePairCount >>> 0);
+		this.memory.writeU32(job.dst1 + GEO_OVERLAP2D_SUMMARY_FLAGS_OFFSET, flags >>> 0);
 	}
 
 	private writeOverlap2dResult(addr: number, nx: number, ny: number, depth: number, px: number, py: number, pieceA: number, pieceB: number, featureMeta: number, pairMeta: number): void {
-		this.memory.writeU32(addr + 0, numberToF32Bits(nx));
-		this.memory.writeU32(addr + 4, numberToF32Bits(ny));
-		this.memory.writeU32(addr + 8, numberToF32Bits(depth));
-		this.memory.writeU32(addr + 12, numberToF32Bits(px));
-		this.memory.writeU32(addr + 16, numberToF32Bits(py));
-		this.memory.writeU32(addr + 20, pieceA >>> 0);
-		this.memory.writeU32(addr + 24, pieceB >>> 0);
-		this.memory.writeU32(addr + 28, featureMeta >>> 0);
-		this.memory.writeU32(addr + 32, pairMeta >>> 0);
+		this.memory.writeU32(addr + GEO_OVERLAP2D_RESULT_NX_OFFSET, numberToF32Bits(nx));
+		this.memory.writeU32(addr + GEO_OVERLAP2D_RESULT_NY_OFFSET, numberToF32Bits(ny));
+		this.memory.writeU32(addr + GEO_OVERLAP2D_RESULT_DEPTH_OFFSET, numberToF32Bits(depth));
+		this.memory.writeU32(addr + GEO_OVERLAP2D_RESULT_PX_OFFSET, numberToF32Bits(px));
+		this.memory.writeU32(addr + GEO_OVERLAP2D_RESULT_PY_OFFSET, numberToF32Bits(py));
+		this.memory.writeU32(addr + GEO_OVERLAP2D_RESULT_PIECE_A_OFFSET, pieceA >>> 0);
+		this.memory.writeU32(addr + GEO_OVERLAP2D_RESULT_PIECE_B_OFFSET, pieceB >>> 0);
+		this.memory.writeU32(addr + GEO_OVERLAP2D_RESULT_FEATURE_META_OFFSET, featureMeta >>> 0);
+		this.memory.writeU32(addr + GEO_OVERLAP2D_RESULT_PAIR_META_OFFSET, pairMeta >>> 0);
 	}
 
 	private resolveByteOffset(base: number, offset: number, byteLength: number): number | null {
@@ -1301,6 +1395,7 @@ export class GeometryController {
 	}
 
 	private finishSuccess(processed: number): void {
+		this.phase = GEOMETRY_CONTROLLER_PHASE_DONE;
 		this.activeJob = null;
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
@@ -1312,6 +1407,7 @@ export class GeometryController {
 	}
 
 	private finishError(code: number, recordIndex: number): void {
+		this.phase = GEOMETRY_CONTROLLER_PHASE_ERROR;
 		this.activeJob = null;
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
@@ -1322,13 +1418,14 @@ export class GeometryController {
 	}
 
 	private finishRejected(code: number): void {
+		this.phase = GEOMETRY_CONTROLLER_PHASE_REJECTED;
 		this.activeJob = null;
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_REJECTED);
 		this.memory.writeValue(IO_GEO_PROCESSED, 0);
-		this.memory.writeValue(IO_GEO_FAULT, packFault(code, GEO_RECORD_INDEX_NONE));
+		this.memory.writeValue(IO_GEO_FAULT, packFault(code, GEO_FAULT_RECORD_INDEX_NONE));
 		this.irq.raise(IRQ_GEO_ERROR);
 	}
 
@@ -1338,10 +1435,10 @@ export class GeometryController {
 	}
 
 	private writeSat2Result(addr: number, hit: number, nx: number, ny: number, depth: number, meta: number): void {
-		this.memory.writeU32(addr + 0, hit >>> 0);
-		this.memory.writeU32(addr + 4, nx >>> 0);
-		this.memory.writeU32(addr + 8, ny >>> 0);
-		this.memory.writeU32(addr + 12, depth >>> 0);
-		this.memory.writeU32(addr + 16, meta >>> 0);
+		this.memory.writeU32(addr + GEO_SAT2_RESULT_HIT_OFFSET, hit >>> 0);
+		this.memory.writeU32(addr + GEO_SAT2_RESULT_NX_OFFSET, nx >>> 0);
+		this.memory.writeU32(addr + GEO_SAT2_RESULT_NY_OFFSET, ny >>> 0);
+		this.memory.writeU32(addr + GEO_SAT2_RESULT_DEPTH_OFFSET, depth >>> 0);
+		this.memory.writeU32(addr + GEO_SAT2_RESULT_META_OFFSET, meta >>> 0);
 	}
 }

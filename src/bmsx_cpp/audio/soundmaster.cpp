@@ -188,7 +188,7 @@ SoundMaster::SoundMaster()
 }
 
 SoundMaster::~SoundMaster() {
-	dispose();
+	resetPlaybackState();
 }
 
 const Identifier& SoundMaster::registryId() const {
@@ -202,27 +202,34 @@ void SoundMaster::resetPlaybackState() {
 	m_nextVoiceId = 1;
 }
 
-void SoundMaster::dispose() {
-	resetPlaybackState();
-}
-
-VoiceId SoundMaster::playResolved(AudioSlot slot, const SoundMasterAudioSource& source, std::vector<u8>&& sourceBytes, const SoundMasterResolvedPlayRequest& request) {
-	const ModulationParams params = resolveResolvedPlayParams(request);
-	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
-	std::vector<u32> badpSeekFrames;
-	std::vector<u32> badpSeekOffsets;
-	if (source.bitsPerSample == 4) {
-		readBadpSeekTable(sourceBytes.data(), source.sourceBytes, source, badpSeekFrames, badpSeekOffsets);
+std::optional<VoiceId> SoundMaster::playResolved(AudioSlot slot, const SoundMasterAudioSource& source, std::vector<u8>&& sourceBytes, const SoundMasterResolvedPlayRequest& request) {
+	VoiceRecord record;
+	// start fallible-boundary -- BADP decode and playback-parameter preparation reject malformed cart-provided audio sources.
+	try {
+		const ModulationParams params = resolveResolvedPlayParams(request);
+		const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
+		std::vector<u32> badpSeekFrames;
+		std::vector<u32> badpSeekOffsets;
+		if (source.bitsPerSample == 4) {
+			readBadpSeekTable(sourceBytes.data(), source.sourceBytes, source, badpSeekFrames, badpSeekOffsets);
+		}
+		record = buildVoiceFromData(
+			slot,
+			source,
+			std::move(sourceBytes),
+			std::move(badpSeekFrames),
+			std::move(badpSeekOffsets),
+			params,
+			initialGain
+		);
+	} catch (const std::exception&) {
+		return std::nullopt;
 	}
-	return startVoiceFromData(
-		slot,
-		source,
-		std::move(sourceBytes),
-		std::move(badpSeekFrames),
-		std::move(badpSeekOffsets),
-		params,
-		initialGain
-	);
+	// end fallible-boundary
+	stopSlot(slot);
+	m_voices.push_back(std::move(record));
+	m_nextVoiceId += 1u;
+	return m_voices.back().voiceId;
 }
 
 bool SoundMaster::setVoiceGainLinear(VoiceId voiceId, f32 gain) {
@@ -274,37 +281,49 @@ bool SoundMaster::rampSlotGainLinear(AudioSlot slot, f32 target, f64 seconds) {
 }
 
 bool SoundMaster::stopVoiceById(VoiceId voiceId, std::optional<i32> fadeMs) {
-	for (size_t i = 0; i < m_voices.size(); ++i) {
-		if (m_voices[i].voiceId != voiceId) {
-			continue;
-		}
-		if (fadeMs.has_value() && fadeMs.value() > 0) {
-			const f64 fadeSec = static_cast<f64>(fadeMs.value()) / 1000.0;
-			rampVoiceGain(m_voices[i], MIN_GAIN, fadeSec);
-			m_voices[i].stopAfter = fadeSec;
-			return true;
-		}
-		removeVoice(i);
-		return true;
-	}
-	return false;
+	return stopSelectedVoice(VoiceSelectorKind::VoiceId, voiceId, fadeMs);
 }
 
 bool SoundMaster::stopSlot(AudioSlot slot, std::optional<i32> fadeMs) {
-	for (size_t i = 0; i < m_voices.size(); ++i) {
-		if (m_voices[i].slot != slot) {
-			continue;
-		}
-		if (fadeMs.has_value() && fadeMs.value() > 0) {
-			const f64 fadeSec = static_cast<f64>(fadeMs.value()) / 1000.0;
-			rampVoiceGain(m_voices[i], MIN_GAIN, fadeSec);
-			m_voices[i].stopAfter = fadeSec;
-			return true;
-		}
-		removeVoice(i);
+	return stopSelectedVoice(VoiceSelectorKind::Slot, slot, fadeMs);
+}
+
+bool SoundMaster::stopSelectedVoice(VoiceSelectorKind kind, uint64_t value, std::optional<i32> fadeMs) {
+	const std::optional<size_t> index = findVoiceIndex(kind, value);
+	if (!index.has_value()) {
+		return false;
+	}
+	return stopVoiceAtIndex(*index, fadeMs);
+}
+
+bool SoundMaster::stopVoiceAtIndex(size_t index, std::optional<i32> fadeMs) {
+	if (fadeMs.has_value() && fadeMs.value() > 0) {
+		const f64 fadeSec = static_cast<f64>(fadeMs.value()) / 1000.0;
+		rampVoiceGain(m_voices[index], MIN_GAIN, fadeSec);
+		m_voices[index].stopAfter = fadeSec;
 		return true;
 	}
-	return false;
+	removeVoice(index);
+	return true;
+}
+
+std::optional<size_t> SoundMaster::findVoiceIndex(VoiceSelectorKind kind, uint64_t value) const {
+	for (size_t index = 0; index < m_voices.size(); ++index) {
+		const VoiceRecord& record = m_voices[index];
+		switch (kind) {
+			case VoiceSelectorKind::VoiceId:
+				if (record.voiceId == value) {
+					return index;
+				}
+				break;
+			case VoiceSelectorKind::Slot:
+				if (record.slot == value) {
+					return index;
+				}
+				break;
+		}
+	}
+	return std::nullopt;
 }
 
 void SoundMaster::stopAllVoices() {
@@ -404,9 +423,10 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 				return static_cast<i16>(static_cast<int>(samples8[sampleIndex]) - 128) << 8;
 			};
 
-			const f64 loopStart = record.loopStartFrame.value_or(0.0);
-				const f64 loopEnd = record.loopEndFrame.value_or(static_cast<f64>(framesInRecord));
-				const bool hasLoop = record.loopStartFrame.has_value() && loopEnd > loopStart;
+				const bool hasLoopStart = record.loopStartFrame.has_value();
+				const f64 loopStart = hasLoopStart ? *record.loopStartFrame : 0.0;
+				const f64 loopEnd = record.loopEndFrame.has_value() ? *record.loopEndFrame : static_cast<f64>(framesInRecord);
+				const bool hasLoop = hasLoopStart && loopEnd > loopStart;
 				const f64 loopLen = loopEnd - loopStart;
 				const f64 framesInRecordF = static_cast<f64>(framesInRecord);
 
@@ -936,16 +956,15 @@ bool SoundMaster::badpReadFrameAt(VoiceRecord& record, size_t frame, i16& outLef
 	return true;
 }
 
-VoiceId SoundMaster::startVoiceFromData(AudioSlot slot,
-										const SoundMasterAudioSource& source,
-										std::vector<u8> sourceBytes,
-										std::vector<u32> badpSeekFrames,
-										std::vector<u32> badpSeekOffsets,
-										const ModulationParams& params,
-										f32 initialGain) {
-	stopSlot(slot);
+SoundMaster::VoiceRecord SoundMaster::buildVoiceFromData(AudioSlot slot,
+														 const SoundMasterAudioSource& source,
+														 std::vector<u8> sourceBytes,
+														 std::vector<u32> badpSeekFrames,
+														 std::vector<u32> badpSeekOffsets,
+														 const ModulationParams& params,
+														 f32 initialGain) {
 	VoiceRecord record;
-	record.voiceId = m_nextVoiceId++;
+	record.voiceId = m_nextVoiceId;
 	record.sourceAddr = source.sourceAddr;
 	record.sampleRate = static_cast<i32>(source.sampleRateHz);
 	record.channels = static_cast<i32>(source.channels);
@@ -993,9 +1012,7 @@ VoiceId SoundMaster::startVoiceFromData(AudioSlot slot,
 		badpResetDecoder(record, static_cast<size_t>(std::floor(record.position)));
 	}
 
-	const VoiceId voiceId = record.voiceId;
-	m_voices.push_back(std::move(record));
-	return voiceId;
+	return record;
 }
 
 void SoundMaster::removeVoice(size_t index) {
@@ -1017,6 +1034,7 @@ void SoundMaster::finalizeVoiceEnd(const VoiceRecord& record) {
 	};
 	// Dispatch against a snapshot so listener callbacks can safely unsubscribe
 	// themselves (or other listeners) without invalidating this iteration.
+	// disable-next-line single_use_local_pattern -- snapshot lifetime is the listener-iteration contract.
 	const auto listeners = m_endedListeners;
 	for (const auto& entry : listeners) {
 		entry.second(info);

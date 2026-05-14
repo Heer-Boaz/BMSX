@@ -30,6 +30,10 @@ import {
 	IO_APU_EVENT_SEQ,
 	IO_APU_EVENT_SLOT,
 	IO_APU_EVENT_SOURCE_ADDR,
+	IO_APU_ACTIVE_MASK,
+	IO_APU_SELECTED_SOURCE_ADDR,
+	IO_APU_SELECTED_SLOT_REG0,
+	IO_APU_SELECTED_SLOT_REG_COUNT,
 	IO_APU_FAULT_CODE,
 	IO_APU_FAULT_DETAIL,
 	IO_APU_STATUS,
@@ -856,6 +860,9 @@ export class Memory {
 	}
 
 	private isLuaReadOnlyIoAddress(addr: number): boolean {
+		if (addr >= IO_APU_SELECTED_SLOT_REG0 && addr < IO_APU_SELECTED_SLOT_REG0 + IO_APU_SELECTED_SLOT_REG_COUNT * IO_WORD_SIZE) {
+			return true;
+		}
 		switch (addr) {
 			case IO_SYS_BUS_FAULT_CODE:
 			case IO_SYS_BUS_FAULT_ADDR:
@@ -877,6 +884,8 @@ export class Memory {
 			case IO_APU_EVENT_SLOT:
 			case IO_APU_EVENT_SOURCE_ADDR:
 			case IO_APU_EVENT_SEQ:
+			case IO_APU_SELECTED_SOURCE_ADDR:
+			case IO_APU_ACTIVE_MASK:
 			case IO_VDP_RD_STATUS:
 			case IO_VDP_RD_DATA:
 			case IO_VDP_STATUS:

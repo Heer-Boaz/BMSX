@@ -104,6 +104,7 @@ function makeMachine(): Machine {
 	};
 	const soundMaster = {
 		addEndedListener: () => () => {},
+		stopAllVoices: () => {},
 	};
 	const machine = new Machine(
 		memory,

@@ -114,13 +114,22 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   Lua heap component of `sys_ram_used`. Captured closures still allocate their
   closure/upvalue state; non-capturing const functions do not allocate per
   materialization.
-- Save-state wire parity for this slice lives in the same relative files:
+- Save-state byte parity for this slice lives in the same relative files:
   `src/bmsx/machine/runtime/save_state/schema.ts`,
   `src/bmsx_cpp/machine/runtime/save_state/schema.h/.cpp`,
   `src/bmsx/machine/runtime/save_state/codec.ts`, and
-  `src/bmsx_cpp/machine/runtime/save_state/codec.cpp`. The shared wire version
-  is `18`; the string-pool entry field is `tracked`; ROM-owned strings remain
-  untracked while runtime-materialized strings restore as tracked RAM.
+  `src/bmsx_cpp/machine/runtime/save_state/codec.cpp`. There is no save-state
+  version byte and no compatibility layer; the current prop table is the
+  contract and old saves are not supported. The APU state persists the raw
+  parameter registerfile, per-slot raw parameter latches, active-slot mask,
+  cart-visible event latch (`eventKind`, `eventSlot`, `eventSourceAddr`,
+  `eventSequence`), and sticky APU fault/status latch. Pending host starts and
+  play-generation counters are runtime-only; restore cancels them, then derives
+  `APU_STATUS_BUSY` from restored active slots until new `PLAY` commands arrive.
+  Restore rewrites the read-only event and active-slot MMIO mirrors because RAM
+  save-state intentionally excludes IO slots. The string-pool entry field is `tracked`;
+  ROM-owned strings remain untracked while runtime-materialized strings restore
+  as tracked RAM.
 - World/mundo content should follow the same object-image rule: room templates,
   maps, transitions, and export tables belong in `.rodata` records with offsets
   or pointers, while room load instantiates only active mutable state into RAM.
@@ -702,6 +711,66 @@ Already advanced in this goal:
   VDP still performs VRAM/sample resolution and FBM dimension ownership, but it
   no longer passes framebuffer dimensions through the host-output read path or
   carries separate committed camera/skybox/billboard output mirrors.
+- Geometry now has mirrored TS/C++ controller phase state (`Idle`, `Busy`,
+  `Done`, `Error`, `Rejected`) and the 16-word registerfile count in the
+  Geometry contract owner instead of deriving the device lifecycle from
+  active-job optionality or controller-local layout. The bus I/O map owns the
+  ordered 16-word GEO register address bank; the controller and save-state path
+  consume that bus-owned bank directly when capturing/restoring raw register
+  words. Save-state persists the phase with the raw register words, active job
+  latch, processed counters, and timing budget, and focused TS/C++ tests prove
+  BUSY/DONE restore plus REJECTED command admission.
+- Geometry now exposes `IO_GEO_FAULT_ACK` / `sys_geo_fault_ack` as a
+  cart-visible write-one-to-clear fault doorbell. REJECTED and ERROR fault bits
+  stay visible until acknowledged, START/ABORT strobes are ignored while that
+  fault latch is pending, and the ACK register self-clears. The ACK doorbell is
+  append-only in the I/O bank rather than part of the original contiguous
+  16-word GEO registerfile, so existing downstream MMIO addresses do not move.
+  This adds no legacy save-state compatibility logic.
+- Geometry command/status/fault/policy constants now live with the Geometry
+  device contract in mirrored `machine/devices/geometry/contracts.ts` and
+  `machine/devices/geometry/contracts.h`. The bus I/O map owns the MMIO
+  addresses and ordered register address bank, while firmware globals,
+  controller code, save-state code, and tests consume the geometry ABI from the
+  geometry owner, including the packed fault-word masks, shift, and reject
+  sentinel used by BIOS-side fault decoding. The overlap result
+  `pair_meta` field is likewise a Geometry-owned cart ABI: full-pass mode packs
+  instance A/B with mirrored `GEO_OVERLAP2D_PAIR_META_INSTANCE_*` constants, and
+  BIOS decodes it through `sys_geo_overlap_pair_meta_instance_*` globals instead
+  of local bit masks.
+- Geometry also owns the command memory layouts. The live overlap instance,
+  candidate pair, result, summary, and shape/bounds descriptor sizes and byte
+  offsets are mirrored in the Geometry contract files and exposed as
+  `sys_geo_overlap_*` globals. The older XFORM2 and SAT2 table formats now use
+  the same owner: `GEO_VERTEX2_*`, `GEO_XFORM2_*`, and `GEO_SAT2_*` constants
+  live in the mirrored Geometry contracts and are exported as
+  `sys_geo_vertex2_*`, `sys_geo_xform2_*`, and `sys_geo_sat2_*` globals. BIOS
+  now stages shapes, instances, summaries, and result reads from those globals
+  instead of hard-coding the old stale 48-byte instance / 16-byte pair-table
+  notes.
+- APU command, status, fault, filter, event, slot, and fixed-point clock/gain
+  constants now live with the mirrored APU device contract in
+  `machine/devices/audio/contracts.ts` and
+  `machine/devices/audio/contracts.h`. The bus I/O map owns the MMIO addresses
+  and ordered APU parameter-register address bank; the APU controller, firmware
+  globals, and tests consume cart-visible APU semantics from those owners instead
+  of re-deriving register layout locally. The public Lua descriptor surface now
+  advertises the APU fault/status register and fault-code ABI instead of leaving
+  those globals as undocumented constants. The controller also owns the raw
+  parameter registerfile, per-slot raw parameter latches, a mirrored active-slot
+  mask, runtime-only pending-slot command state, sticky fault/status latches, and
+  event latch state; save/load restores only the persistent device latches through
+  the APU owner because RAM save-state does not carry IO slots and pending host
+  starts are runtime-only.
+  The active-slot mask is now cart-visible at `IO_APU_ACTIVE_MASK` /
+  `sys_apu_active_mask`, while the selected-slot active bit, `APU_STATUS_BUSY`,
+  selected-source readback, and
+  `IO_APU_SELECTED_SLOT_REG0` readback window are derived from the per-slot
+  latches and pending/active slot masks instead of asking carts to inspect host
+  voice handles. `STOP_SLOT` cancels a pending slot start before host audio can
+  publish a stale voice. This is still only an early APU hardware-state slice:
+  writable voice/channel register banks, deterministic mixer/timer state, and
+  AOUT output ownership still need hardware-device treatment.
 
 Open problems to continue with:
 
@@ -735,18 +804,20 @@ Open problems to continue with:
 4. Geometry is not proven complete. It is more hardware-shaped than many
    older surfaces because it has MMIO registers, scheduler service, IRQs,
    status/fault words, and mirrored TS/C++ controllers. That is not the same as
-   being done. The geometry controller now saves and restores its in-flight
-   command latch, processed counters, and timing budget state instead of
-   aborting BUSY work at load time, so a save-state preserves the device as an
-   active coprocessor rather than reconstructing work from visible registers.
+   being done. The geometry controller now stores an explicit mirrored hardware
+   phase from the mirrored Geometry contract and saves/restores that phase with
+   its bus-owned raw register address bank, in-flight command latch, processed
+   counters, and timing budget state instead of aborting BUSY work at load time,
+   so a save-state preserves the device as an active coprocessor rather than
+   reconstructing work from visible registers.
    The overlap datapath now keeps its projection, center, centroid, bounds,
    instance, world-poly, and clip buffers as mirrored transient controller
    scratch in both runtimes instead of allocating helper-return objects in the
    hot SAT/contact path; that scratch remains excluded from save-state because
    it is deterministically derived from the active job and RAM operands. The
-   controller still needs ownership passes for TS/C++ constant ownership and
-   whether every cart-visible error is represented as device status rather than
-   host exception or ad-hoc rejection. The existing
+   controller still needs ownership passes for whether every cart-visible error
+   is represented as device status rather than host exception or ad-hoc
+   rejection. The existing
    `docs/geo_overlap2d_pass_v1.md` is a good hardware-contract note, but it does
    not certify the whole geometry device.
 
@@ -768,12 +839,14 @@ If `/goal resume` is invoked, it should mean this order of work:
 1. Continue VDP-as-hardware cleanup by extending the current VOUT video-timing
    ownership toward full scanline/dot timing and host-output ownership without
    adding renderer-facing scene APIs or wrapper layers.
-2. Audit Geometry as a device, not as a math helper: registers, latches,
-   scheduler timing, IRQ/status/fault behavior, scratch ownership, save/load
-   behavior, and TS/C++ parity should be checked as one hardware contract.
-3. Add the APU hardware contract before audio grows further as host-side
-   convenience: MMIO/FIFO ingress, voice/channel state, mixer/timer ownership,
-   AOUT output, and cart-visible status/fault behavior.
+2. Continue auditing Geometry as a device, not as a math helper: register/latch
+   ownership, scheduler timing, IRQ/status/fault behavior, scratch/result
+   memory, save/load behavior, and TS/C++ parity should be checked as one
+   hardware contract.
+3. Continue the APU hardware contract beyond the new ABI owner: MMIO/FIFO
+   ingress, voice/channel state, mixer/timer ownership, AOUT output, and
+   cart-visible status/fault behavior must stay device-owned instead of growing
+   through host-side sound shortcuts.
 4. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
    APIs, Lua API metadata, devtools source APIs, overlay/editor APIs, terminal
    commands, and workspace APIs. Separate cart-visible contracts from editor or
@@ -804,11 +877,11 @@ Next recommended work:
 1. Continue VDP-as-hardware cleanup by expanding VOUT from current phase/X/Y
    timing into fuller scanline/dot timing, preserving direct VDP-owned hot paths
    and the explicit host-output transaction boundary.
-2. Audit Geometry as a real coprocessor device, including register/latch
-   ownership, scheduler timing, scratch/result memory, status/fault behavior,
-   and focused TS/C++ tests.
-3. Add an APU architecture section and then implement APU hardware slices
-   through MMIO/FIFO/device state/AOUT instead of host sound shortcuts.
+2. Continue Geometry as a real coprocessor device beyond the new explicit
+   controller phase: register/latch ownership, scheduler timing, scratch/result
+   memory, status/fault behavior, and focused TS/C++ tests.
+3. Continue APU hardware slices through MMIO/FIFO/device state/AOUT instead of
+   host sound shortcuts, starting from the mirrored APU contract owner.
 4. Continue TS/C++ parity cleanup subsystem by subsystem, including public API
    surfaces instead of assuming they are already covered.
 5. Clean IDE/editor layering after the machine boundaries are safer, starting

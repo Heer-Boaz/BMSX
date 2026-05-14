@@ -129,7 +129,7 @@ void ConsoleCore::shutdown() {
 	}
 
 	// Clear registry (keeps persistent objects)
-	m_sound_master->dispose();
+	m_sound_master->resetPlaybackState();
 	registry().deregister(m_sound_master.get(), true);
 	m_sound_master.reset();
 	registry().clear();

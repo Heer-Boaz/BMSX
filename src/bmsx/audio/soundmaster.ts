@@ -495,14 +495,14 @@ export class SoundMaster {
 		return undefined;
 	}
 
-	private stopVoiceRecord(record: ActiveVoiceRecord, fade_ms?: number): void {
-		if (record.finalized) return;
+	private stopVoiceRecord(record: ActiveVoiceRecord, fade_ms?: number): boolean {
+		if (record.finalized) return false;
 		if (fade_ms !== undefined && fade_ms > 0) {
 			record.handle.rampGainLinear(MIN_GAIN, fade_ms / 1000);
 			setTimeout(() => {
 				this.stopVoiceRecord(record);
 			}, fade_ms);
-			return;
+			return true;
 		}
 		if (record.backendEnded !== null) {
 			record.backendEnded.unsubscribe();
@@ -511,6 +511,7 @@ export class SoundMaster {
 		record.backendVoice.stop();
 		this.removeRecord(record.voiceId);
 		this.finalizeVoiceEnd(record);
+		return true;
 	}
 
 	private findRecordByVoiceId(voiceId: VoiceId): ActiveVoiceRecord | null {
@@ -607,17 +608,17 @@ export class SoundMaster {
 		record.backendVoice.rampGainLinear(clamp01(target), seconds);
 	}
 
-	public stopSlot(slot: AudioSlot, fade_ms?: number): void {
+	public stopSlot(slot: AudioSlot, fade_ms?: number): boolean {
 		this.advanceSlotPlaySequence(slot);
-		this.stopSlotRecord(slot, fade_ms);
+		return this.stopSlotRecord(slot, fade_ms);
 	}
 
-	private stopSlotRecord(slot: AudioSlot, fade_ms?: number): void {
+	private stopSlotRecord(slot: AudioSlot, fade_ms?: number): boolean {
 		const record = this.findRecordBySlot(slot);
 		if (!record) {
-			return;
+			return false;
 		}
-		this.stopVoiceRecord(record, fade_ms);
+		return this.stopVoiceRecord(record, fade_ms);
 	}
 
 	public setMixerUfpsScaled(ufpsScaled: number): void {

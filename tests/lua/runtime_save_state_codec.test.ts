@@ -1,12 +1,21 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import {
+	APU_PARAMETER_REGISTER_COUNT,
+	APU_PARAMETER_SLOT_INDEX,
+	APU_PARAMETER_SOURCE_ADDR_INDEX,
+	APU_SLOT_REGISTER_WORD_COUNT,
+	apuSlotRegisterWordIndex,
+} from '../../src/bmsx/machine/devices/audio/contracts';
 import { SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../src/bmsx/machine/devices/vdp/contracts';
-import { GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../src/bmsx/machine/devices/geometry/controller';
+import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../src/bmsx/machine/devices/geometry/contracts';
 import { VDP_REGISTER_COUNT } from '../../src/bmsx/machine/devices/vdp/registers';
 import { VDP_XF_MATRIX_REGISTER_WORDS, VDP_XF_PROJECTION_MATRIX_RESET_INDEX, VDP_XF_VIEW_MATRIX_RESET_INDEX } from '../../src/bmsx/machine/devices/vdp/xf';
 import type { RuntimeSaveState } from '../../src/bmsx/machine/runtime/contracts';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../src/bmsx/machine/runtime/save_state/codec';
+import { decodeBinaryWithPropTable } from '../../src/bmsx/common/serializer/binencoder';
+import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../src/bmsx/machine/runtime/save_state/schema';
 
 function numberedWords(count: number): number[] {
 	const words = new Array<number>(count);
@@ -17,6 +26,12 @@ function numberedWords(count: number): number[] {
 }
 
 function createRuntimeSaveState(): RuntimeSaveState {
+	const audioRegisterWords = numberedWords(APU_PARAMETER_REGISTER_COUNT);
+	audioRegisterWords[APU_PARAMETER_SLOT_INDEX] = 1;
+	const audioSlotRegisterWords = new Array<number>(APU_SLOT_REGISTER_WORD_COUNT).fill(0);
+	audioSlotRegisterWords[apuSlotRegisterWordIndex(0, APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x1000;
+	audioSlotRegisterWords[apuSlotRegisterWordIndex(1, APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x2000;
+	audioSlotRegisterWords[apuSlotRegisterWordIndex(2, APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x3000;
 	return {
 		machineState: {
 			machine: {
@@ -27,6 +42,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					busFaultAccess: 0x400,
 				},
 				geometry: {
+					phase: GEOMETRY_CONTROLLER_PHASE_BUSY,
 					registerWords: numberedWords(GEOMETRY_CONTROLLER_REGISTER_COUNT),
 					activeJob: {
 						cmd: 1,
@@ -51,7 +67,13 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				},
 				irq: { pendingFlags: 0xa5a5 },
 				audio: {
+					registerWords: audioRegisterWords,
 					eventSequence: 3,
+					eventKind: 1,
+					eventSlot: 2,
+					eventSourceAddr: 0x2000,
+					activeSlotMask: 5,
+					slotRegisterWords: audioSlotRegisterWords,
 					apuStatus: 1,
 					apuFaultCode: 0x0102,
 					apuFaultDetail: 0x1234,
@@ -145,6 +167,13 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
 	assert.deepEqual(decoded.machineState.machine.vdp.surfacePixels, state.machineState.machine.vdp.surfacePixels);
+});
+
+test('runtime save-state bytes start at the current property-table payload', () => {
+	const encoded = encodeRuntimeSaveState(createRuntimeSaveState());
+
+	assert.doesNotThrow(() => decodeBinaryWithPropTable(encoded, RUNTIME_SAVE_STATE_PROP_NAMES));
+	assert.throws(() => decodeBinaryWithPropTable(encoded.subarray(2), RUNTIME_SAVE_STATE_PROP_NAMES));
 });
 
 test('runtime save-state codec rejects invalid VDP fixed register snapshots before device restore', () => {

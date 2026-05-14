@@ -1,5 +1,3 @@
-export const RUNTIME_SAVE_STATE_WIRE_VERSION = 18;
-
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'accumulatedHostTimeMs',
 	'array',
@@ -132,6 +130,11 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'busFaultAccess',
 	'audio',
 	'eventSequence',
+	'eventKind',
+	'eventSlot',
+	'eventSourceAddr',
+	'activeSlotMask',
+	'slotRegisterWords',
 	'apuStatus',
 	'apuFaultCode',
 	'apuFaultDetail',
@@ -139,6 +142,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'surfaceWidth',
 	'surfaceHeight',
 	'geometry',
+	'phase',
 	'registerWords',
 	'activeJob',
 	'cmd',

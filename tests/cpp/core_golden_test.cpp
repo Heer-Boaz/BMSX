@@ -1,13 +1,17 @@
 #include "core/system.h"
+#include "common/serializer/binencoder.h"
 #include "machine/bus/io.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/opcode_info.h"
 #include "machine/devices/audio/controller.h"
+#include "machine/devices/audio/contracts.h"
+#include "machine/devices/geometry/contracts.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/vdp/vout.h"
 #include "machine/firmware/builtin_descriptors.h"
+#include "machine/firmware/system_globals.h"
 #include "render/3d/camera.h"
 #include "render/3d/light.h"
 #include "render/shared/camera_state.h"
@@ -24,6 +28,7 @@
 #include "machine/cpu/string_pool.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
+#include "machine/runtime/save_state/schema.h"
 #include "machine/runtime/timing/constants.h"
 #include "machine/runtime/timing/state.h"
 #include "machine/scheduler/budget.h"
@@ -642,11 +647,23 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	for (size_t index = 0; index < bmsx::GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1u) {
 		state.machineState.machine.geometry.registerWords[index] = static_cast<bmsx::u32>(index + 1u);
 	}
+	state.machineState.machine.geometry.phase = bmsx::GeometryControllerPhase::Busy;
 	state.machineState.machine.geometry.activeJob = geoJob;
 	state.machineState.machine.geometry.workCarry = 12;
 	state.machineState.machine.geometry.availableWorkUnits = 1u;
 	state.machineState.machine.irq.pendingFlags = bmsx::IRQ_VBLANK | bmsx::IRQ_REINIT;
+	for (size_t index = 0; index < bmsx::APU_PARAMETER_REGISTER_COUNT; index += 1u) {
+		state.machineState.machine.audio.registerWords[index] = static_cast<bmsx::u32>(index + 1u);
+	}
+	state.machineState.machine.audio.registerWords[bmsx::APU_PARAMETER_SLOT_INDEX] = 1u;
 	state.machineState.machine.audio.eventSequence = 3u;
+	state.machineState.machine.audio.eventKind = bmsx::APU_EVENT_SLOT_ENDED;
+	state.machineState.machine.audio.eventSlot = 2u;
+	state.machineState.machine.audio.eventSourceAddr = 0x2000u;
+	state.machineState.machine.audio.activeSlotMask = 5u;
+	state.machineState.machine.audio.slotRegisterWords[bmsx::apuSlotRegisterWordIndex(0u, bmsx::APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x1000u;
+	state.machineState.machine.audio.slotRegisterWords[bmsx::apuSlotRegisterWordIndex(1u, bmsx::APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x2000u;
+	state.machineState.machine.audio.slotRegisterWords[bmsx::apuSlotRegisterWordIndex(2u, bmsx::APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x3000u;
 	state.machineState.machine.audio.apuStatus = bmsx::APU_STATUS_FAULT;
 	state.machineState.machine.audio.apuFaultCode = bmsx::APU_FAULT_SOURCE_RANGE;
 	state.machineState.machine.audio.apuFaultDetail = 0x1234u;
@@ -660,8 +677,18 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	state.randomSeed = 0x12345678u;
 
 	const std::vector<bmsx::u8> encoded = bmsx::encodeRuntimeSaveState(state);
+	require(!encoded.empty(), "runtime save-state should emit payload bytes");
+	require(bmsx::decodeBinaryWithPropTable(encoded, bmsx::RUNTIME_SAVE_STATE_PROP_NAMES).isObject(), "runtime save-state bytes should start at the property-table payload");
+	bool skippedFrameRejected = false;
+	try {
+		bmsx::decodeBinaryWithPropTable(encoded.data() + 2u, encoded.size() - 2u, bmsx::RUNTIME_SAVE_STATE_PROP_NAMES);
+	} catch (const std::exception&) {
+		skippedFrameRejected = true;
+	}
+	require(skippedFrameRejected, "runtime save-state bytes should not contain a two-byte frame before the payload");
 	const bmsx::RuntimeSaveState decoded = bmsx::decodeRuntimeSaveState(encoded);
 	require(decoded.machineState.machine.geometry.registerWords[0] == 1u, "save-state should preserve GEO raw registerfile");
+	require(decoded.machineState.machine.geometry.phase == bmsx::GeometryControllerPhase::Busy, "save-state should preserve GEO hardware phase");
 	require(decoded.machineState.machine.geometry.activeJob.has_value(), "save-state should preserve active GEO job presence");
 	require(decoded.machineState.machine.geometry.activeJob->processed == 2u, "save-state should preserve GEO processed latch");
 	require(decoded.machineState.machine.geometry.activeJob->count == 6u, "save-state should preserve GEO command count latch");
@@ -669,6 +696,12 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	require(decoded.machineState.machine.geometry.availableWorkUnits == 1u, "save-state should preserve GEO available work");
 	require(decoded.machineState.machine.irq.pendingFlags == (bmsx::IRQ_VBLANK | bmsx::IRQ_REINIT), "save-state should preserve pending IRQ device flags");
 	require(decoded.machineState.machine.audio.eventSequence == 3u, "save-state should preserve APU event sequence");
+	require(decoded.machineState.machine.audio.eventKind == bmsx::APU_EVENT_SLOT_ENDED, "save-state should preserve APU event kind latch");
+	require(decoded.machineState.machine.audio.eventSlot == 2u, "save-state should preserve APU event slot latch");
+	require(decoded.machineState.machine.audio.eventSourceAddr == 0x2000u, "save-state should preserve APU event source latch");
+	require(decoded.machineState.machine.audio.registerWords[bmsx::APU_PARAMETER_SLOT_INDEX] == 1u, "save-state should preserve APU selected slot register word");
+	require(decoded.machineState.machine.audio.activeSlotMask == 5u, "save-state should preserve APU active slot mask");
+	require(decoded.machineState.machine.audio.slotRegisterWords[bmsx::apuSlotRegisterWordIndex(1u, bmsx::APU_PARAMETER_SOURCE_ADDR_INDEX)] == 0x2000u, "save-state should preserve APU slot source latch bank");
 	require(decoded.machineState.machine.audio.apuStatus == bmsx::APU_STATUS_FAULT, "save-state should preserve APU status");
 	require(decoded.machineState.machine.audio.apuFaultCode == bmsx::APU_FAULT_SOURCE_RANGE, "save-state should preserve APU fault code");
 	require(decoded.machineState.machine.audio.apuFaultDetail == 0x1234u, "save-state should preserve APU fault detail");
@@ -707,19 +740,71 @@ void testMachineSaveRestorePreservesIrqLineGolden() {
 	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "machine save-state restore should expose pending IRQ flags to the cart");
 }
 
+
 void writeNoopXform2Record(bmsx::Memory& memory, uint32_t addr) {
-	memory.writeU32(addr + 0u, 0u);
-	memory.writeU32(addr + 4u, 0u);
-	memory.writeU32(addr + 8u, 0u);
-	memory.writeU32(addr + 12u, 0u);
-	memory.writeU32(addr + 16u, 0u);
-	memory.writeU32(addr + 20u, bmsx::GEO_INDEX_NONE);
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_FLAGS_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_SRC_INDEX_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_DST_INDEX_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_AUX_INDEX_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_VERTEX_COUNT_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_XFORM2_RECORD_DST1_INDEX_OFFSET, bmsx::GEO_INDEX_NONE);
+}
+
+void writeXform2BatchRegisters(bmsx::Memory& memory, uint32_t jobBase, uint32_t count) {
+	writeIoWord(memory, bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_XFORM2_BATCH);
+	writeIoWord(memory, bmsx::IO_GEO_SRC0, jobBase);
+	writeIoWord(memory, bmsx::IO_GEO_SRC1, jobBase + 0x100u);
+	writeIoWord(memory, bmsx::IO_GEO_SRC2, jobBase + 0x200u);
+	writeIoWord(memory, bmsx::IO_GEO_DST0, jobBase + 0x300u);
+	writeIoWord(memory, bmsx::IO_GEO_DST1, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_COUNT, count);
+	writeIoWord(memory, bmsx::IO_GEO_PARAM0, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_PARAM1, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE0, bmsx::GEO_XFORM2_RECORD_BYTES);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE1, bmsx::GEO_VERTEX2_BYTES);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE2, bmsx::GEO_XFORM2_MATRIX_BYTES);
+}
+
+constexpr uint32_t OVERLAP2D_FULL_PASS_PARAM0 = bmsx::GEO_OVERLAP2D_MODE_FULL_PASS
+	| bmsx::GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB
+	| bmsx::GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE
+	| bmsx::GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW;
+
+void writeOverlap2dFullPassRegisters(bmsx::Memory& memory, uint32_t instanceBase, uint32_t instanceCount, uint32_t src2, uint32_t dst0, uint32_t resultCapacity) {
+	writeIoWord(memory, bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_OVERLAP2D_PASS);
+	writeIoWord(memory, bmsx::IO_GEO_SRC0, instanceBase);
+	writeIoWord(memory, bmsx::IO_GEO_SRC1, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_SRC2, src2);
+	writeIoWord(memory, bmsx::IO_GEO_DST0, dst0);
+	writeIoWord(memory, bmsx::IO_GEO_DST1, instanceBase + 0x200u);
+	writeIoWord(memory, bmsx::IO_GEO_COUNT, instanceCount);
+	writeIoWord(memory, bmsx::IO_GEO_PARAM0, OVERLAP2D_FULL_PASS_PARAM0);
+	writeIoWord(memory, bmsx::IO_GEO_PARAM1, resultCapacity);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE0, bmsx::GEO_OVERLAP2D_INSTANCE_BYTES);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE1, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_STRIDE2, 0u);
+}
+
+void writeOverlap2dInstance(bmsx::Memory& memory, uint32_t addr, uint32_t shapeAddr) {
+	memory.writeU32(addr + bmsx::GEO_OVERLAP2D_INSTANCE_SHAPE_OFFSET, shapeAddr);
+	memory.writeU32(addr + bmsx::GEO_OVERLAP2D_INSTANCE_TX_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_OVERLAP2D_INSTANCE_TY_OFFSET, 0u);
+	memory.writeU32(addr + bmsx::GEO_OVERLAP2D_INSTANCE_LAYER_OFFSET, 1u);
+	memory.writeU32(addr + bmsx::GEO_OVERLAP2D_INSTANCE_MASK_OFFSET, 1u);
+}
+
+void writeOversizeOverlapPoly(bmsx::Memory& memory, uint32_t shapeAddr) {
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_KIND_OFFSET, bmsx::GEO_PRIMITIVE_CONVEX_POLY);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET, 0x40000000u);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET, bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET, bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET, 0u);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET, 0u);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET, 0x3f800000u);
+	memory.writeU32(shapeAddr + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET, 0x3f800000u);
 }
 
 void testGeometrySaveStateRestoresActiveCommandLatchGolden() {
-	constexpr uint32_t XFORM2_JOB_BYTES = 24u;
-	constexpr uint32_t XFORM2_VERTEX_BYTES = 8u;
-	constexpr uint32_t XFORM2_MATRIX_BYTES = 24u;
 	RuntimeHarness harness;
 	bmsx::Machine& machine = harness.runtime.machine;
 	bmsx::Memory& memory = machine.memory;
@@ -728,27 +813,18 @@ void testGeometrySaveStateRestoresActiveCommandLatchGolden() {
 
 	geometry.setTiming(1, 1, 0);
 	for (uint32_t record = 0u; record < 3u; record += 1u) {
-		writeNoopXform2Record(memory, jobBase + record * XFORM2_JOB_BYTES);
+		writeNoopXform2Record(memory, jobBase + record * bmsx::GEO_XFORM2_RECORD_BYTES);
 	}
-	writeIoWord(memory, bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_XFORM2_BATCH);
-	writeIoWord(memory, bmsx::IO_GEO_SRC0, jobBase);
-	writeIoWord(memory, bmsx::IO_GEO_SRC1, jobBase + 0x100u);
-	writeIoWord(memory, bmsx::IO_GEO_SRC2, jobBase + 0x200u);
-	writeIoWord(memory, bmsx::IO_GEO_DST0, jobBase + 0x300u);
-	writeIoWord(memory, bmsx::IO_GEO_DST1, 0u);
-	writeIoWord(memory, bmsx::IO_GEO_COUNT, 3u);
-	writeIoWord(memory, bmsx::IO_GEO_PARAM0, 0u);
-	writeIoWord(memory, bmsx::IO_GEO_PARAM1, 0u);
-	writeIoWord(memory, bmsx::IO_GEO_STRIDE0, XFORM2_JOB_BYTES);
-	writeIoWord(memory, bmsx::IO_GEO_STRIDE1, XFORM2_VERTEX_BYTES);
-	writeIoWord(memory, bmsx::IO_GEO_STRIDE2, XFORM2_MATRIX_BYTES);
+	writeXform2BatchRegisters(memory, jobBase, 3u);
 	writeIoWord(memory, bmsx::IO_GEO_CTRL, bmsx::GEO_CTRL_START);
 	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO command should enter BUSY state");
+	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Busy, "GEO controller phase should enter BUSY with the device status");
 
 	geometry.accrueCycles(1, 1);
 	geometry.onService(1);
 	require(memory.readIoU32(bmsx::IO_GEO_PROCESSED) == 1u, "GEO should process one record before save");
 	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO should remain BUSY after a partial command");
+	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Busy, "GEO controller phase should stay BUSY while work remains");
 
 	writeIoWord(memory, bmsx::IO_GEO_CMD, 0xffffu);
 	writeIoWord(memory, bmsx::IO_GEO_COUNT, 1u);
@@ -757,6 +833,7 @@ void testGeometrySaveStateRestoresActiveCommandLatchGolden() {
 	geometry.accrueCycles(8, 9);
 	geometry.onService(9);
 	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_DONE, "mutated live machine should finish before restore");
+	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Done, "completed GEO controller phase should be DONE");
 
 	machine.restoreSaveState(saved);
 	geometry.setTiming(1, 1, machine.scheduler.nowCycles());
@@ -765,17 +842,144 @@ void testGeometrySaveStateRestoresActiveCommandLatchGolden() {
 	require(memory.readIoU32(bmsx::IO_GEO_PROCESSED) == 1u, "restore should preserve the partially processed count");
 	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "restore should keep active GEO work BUSY");
 	require(memory.readIoU32(bmsx::IO_GEO_FAULT) == 0u, "restore should not synthesize an abort fault");
+	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Busy, "restore should keep the GEO controller phase BUSY");
 
 	geometry.accrueCycles(1, 1);
 	geometry.onService(1);
 	require(memory.readIoU32(bmsx::IO_GEO_PROCESSED) == 2u, "restored GEO should continue from the latched job");
 	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "restored GEO should stay BUSY until the latched count completes");
+	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Busy, "restored GEO controller phase should stay BUSY until completion");
 
 	geometry.accrueCycles(1, 2);
 	geometry.onService(2);
 	require(memory.readIoU32(bmsx::IO_GEO_PROCESSED) == 3u, "restored GEO should complete the latched count");
 	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_DONE, "restored GEO should finish normally");
+	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Done, "restored GEO controller phase should finish DONE");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GEO_DONE) != 0u, "restored GEO completion should raise DONE IRQ");
+}
+
+void testGeometryExecutionFaultAckPreservesCompletedStatusGolden() {
+	RuntimeHarness harness;
+	bmsx::Machine& machine = harness.runtime.machine;
+	bmsx::Memory& memory = machine.memory;
+	bmsx::GeometryController& geometry = machine.geometryController;
+	const uint32_t jobBase = bmsx::RAM_BASE + 0x600u;
+
+	geometry.setTiming(1, 1, 0);
+	writeNoopXform2Record(memory, jobBase);
+	memory.writeU32(jobBase + 0u, 1u);
+	writeXform2BatchRegisters(memory, jobBase, 1u);
+	writeIoWord(memory, bmsx::IO_GEO_CTRL, bmsx::GEO_CTRL_START);
+
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO command should enter BUSY before the execution fault");
+	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Busy, "GEO controller phase should enter BUSY before the execution fault");
+	geometry.accrueCycles(1, 1);
+	geometry.onService(1);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO execution fault should preserve DONE with ERROR status");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) != 0u, "GEO execution fault should expose a fault word");
+	const uint32_t executionFault = memory.readIoU32(bmsx::IO_GEO_FAULT);
+	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Error, "GEO execution fault should latch ERROR controller phase");
+
+	writeNoopXform2Record(memory, jobBase);
+	writeXform2BatchRegisters(memory, jobBase, 1u);
+	writeIoWord(memory, bmsx::IO_GEO_CTRL, bmsx::GEO_CTRL_START);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO START should not clear execution fault status before FAULT_ACK");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) == executionFault, "GEO START should not clear the execution fault word before FAULT_ACK");
+	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Error, "GEO START should keep ERROR phase until FAULT_ACK");
+	writeIoWord(memory, bmsx::IO_GEO_CTRL, bmsx::GEO_CTRL_ABORT);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO ABORT should not clear execution fault status before FAULT_ACK");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) == executionFault, "GEO ABORT should not clear the execution fault word before FAULT_ACK");
+	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Error, "GEO ABORT should keep ERROR phase until FAULT_ACK");
+
+	writeIoWord(memory, bmsx::IO_GEO_FAULT_ACK, 1u);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_DONE, "GEO FAULT_ACK should preserve DONE after an execution fault");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) == 0u, "GEO FAULT_ACK should clear the execution fault word");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT_ACK) == 0u, "GEO FAULT_ACK should self-clear after an execution fault");
+	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Done, "GEO FAULT_ACK should return execution fault phase to DONE");
+}
+
+void testGeometryRejectedCommandPhaseGolden() {
+	RuntimeHarness harness;
+	bmsx::Machine& machine = harness.runtime.machine;
+	bmsx::Memory& memory = machine.memory;
+	const uint32_t jobBase = bmsx::RAM_BASE;
+
+	writeIoWord(memory, bmsx::IO_GEO_CMD, 0xffffu);
+	writeIoWord(memory, bmsx::IO_GEO_CTRL, bmsx::GEO_CTRL_START);
+
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_REJECTED, "invalid GEO command should latch REJECTED status");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) != 0u, "invalid GEO command should expose a fault word");
+	const uint32_t rejectedFault = memory.readIoU32(bmsx::IO_GEO_FAULT);
+	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Rejected, "invalid GEO command should latch REJECTED controller phase");
+
+	writeNoopXform2Record(memory, jobBase);
+	writeXform2BatchRegisters(memory, jobBase, 1u);
+	writeIoWord(memory, bmsx::IO_GEO_CTRL, bmsx::GEO_CTRL_START);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_REJECTED, "GEO START should not clear rejected status before FAULT_ACK");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) == rejectedFault, "GEO START should not clear the rejected fault word before FAULT_ACK");
+	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Rejected, "GEO START should keep REJECTED phase until FAULT_ACK");
+	writeIoWord(memory, bmsx::IO_GEO_CTRL, bmsx::GEO_CTRL_ABORT);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_REJECTED, "GEO ABORT should not clear rejected status before FAULT_ACK");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) == rejectedFault, "GEO ABORT should not clear the rejected fault word before FAULT_ACK");
+	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Rejected, "GEO ABORT should keep REJECTED phase until FAULT_ACK");
+
+	writeIoWord(memory, bmsx::IO_GEO_FAULT_ACK, 1u);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == 0u, "GEO FAULT_ACK should clear REJECTED status");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) == 0u, "GEO FAULT_ACK should clear the fault word");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT_ACK) == 0u, "GEO FAULT_ACK should self-clear");
+	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Idle, "GEO FAULT_ACK should return rejected phase to IDLE");
+}
+
+void testGeometryOverlap2dSubmitContractGolden() {
+	RuntimeHarness harness;
+	bmsx::Machine& machine = harness.runtime.machine;
+	bmsx::Memory& memory = machine.memory;
+	const uint32_t jobBase = bmsx::RAM_BASE + 0x900u;
+
+	writeOverlap2dFullPassRegisters(memory, jobBase, 0u, jobBase + 0x100u, jobBase + 0x300u, 1u);
+	writeIoWord(memory, bmsx::IO_GEO_CTRL, bmsx::GEO_CTRL_START);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_REJECTED, "GEO overlap2d should reject non-zero reserved src2");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) != 0u, "GEO overlap2d src2 reject should expose a fault word");
+	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Rejected, "GEO overlap2d src2 reject should latch REJECTED phase");
+
+	writeIoWord(memory, bmsx::IO_GEO_FAULT_ACK, 1u);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 0u, 0u, 0u, 0u);
+	writeIoWord(memory, bmsx::IO_GEO_CTRL, bmsx::GEO_CTRL_START);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_REJECTED, "GEO overlap2d should reject non-RAM dst0 even with zero result capacity");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) != 0u, "GEO overlap2d dst0 reject should expose a fault word");
+	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Rejected, "GEO overlap2d dst0 reject should latch REJECTED phase");
+
+	writeIoWord(memory, bmsx::IO_GEO_FAULT_ACK, 1u);
+	const uint32_t shapeA = jobBase + 0x400u;
+	const uint32_t shapeB = jobBase + 0x500u;
+	writeOverlap2dInstance(memory, jobBase, shapeA);
+	writeOverlap2dInstance(memory, jobBase + bmsx::GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
+	writeOversizeOverlapPoly(memory, shapeA);
+	writeOversizeOverlapPoly(memory, shapeB);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 2u, 0u, jobBase + 0x300u, 1u);
+	writeIoWord(memory, bmsx::IO_GEO_CTRL, bmsx::GEO_CTRL_START);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO overlap2d oversize poly test should enter BUSY before execution fault");
+	machine.geometryController.accrueCycles(1, 1);
+	machine.geometryController.onService(1);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO overlap2d should fault oversize public poly span without uint32 wrap");
+	require(memory.readIoU32(bmsx::IO_GEO_FAULT) != 0u, "GEO overlap2d oversize public poly span should expose a fault word");
+}
+
+void testGeometryContractConstantsGolden() {
+	require(bmsx::GEOMETRY_CONTROLLER_REGISTER_COUNT == 16u, "GEO register count should remain stable");
+	require(bmsx::IO_GEO_REGISTER_ADDRS.size() == bmsx::GEOMETRY_CONTROLLER_REGISTER_COUNT, "GEO MMIO address bank should match the device register bank");
+	require(bmsx::IO_GEO_REGISTER_ADDRS[0] == bmsx::IO_GEO_SRC0, "GEO register bank should start at SRC0");
+	require(bmsx::IO_GEO_REGISTER_ADDRS[15] == bmsx::IO_GEO_FAULT, "GEO register bank should end at FAULT");
+	require(bmsx::GEOMETRY_CONTROLLER_PHASE_IDLE == 0u, "GEO IDLE phase ABI constant should remain stable");
+	require(bmsx::GEOMETRY_CONTROLLER_PHASE_BUSY == 1u, "GEO BUSY phase ABI constant should remain stable");
+	require(bmsx::GEOMETRY_CONTROLLER_PHASE_DONE == 2u, "GEO DONE phase ABI constant should remain stable");
+	require(bmsx::GEOMETRY_CONTROLLER_PHASE_ERROR == 3u, "GEO ERROR phase ABI constant should remain stable");
+	require(bmsx::GEOMETRY_CONTROLLER_PHASE_REJECTED == 4u, "GEO REJECTED phase ABI constant should remain stable");
+	require(static_cast<uint32_t>(bmsx::GeometryControllerPhase::Idle) == 0u, "GEO IDLE phase ABI value should remain stable");
+	require(static_cast<uint32_t>(bmsx::GeometryControllerPhase::Busy) == 1u, "GEO BUSY phase ABI value should remain stable");
+	require(static_cast<uint32_t>(bmsx::GeometryControllerPhase::Done) == 2u, "GEO DONE phase ABI value should remain stable");
+	require(static_cast<uint32_t>(bmsx::GeometryControllerPhase::Error) == 3u, "GEO ERROR phase ABI value should remain stable");
+	require(static_cast<uint32_t>(bmsx::GeometryControllerPhase::Rejected) == 4u, "GEO REJECTED phase ABI value should remain stable");
 }
 
 struct AudioHarness {
@@ -817,6 +1021,25 @@ void writeValidApuSource(AudioHarness& h, uint32_t bitsPerSample) {
 	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_BYTES, 4u);
 }
 
+void testApuContractConstantsGolden() {
+	require(bmsx::APU_CMD_PLAY == 1u, "APU PLAY command ABI value should remain stable");
+	require(bmsx::APU_CMD_STOP_SLOT == 2u, "APU STOP_SLOT command ABI value should remain stable");
+	require(bmsx::APU_CMD_RAMP_SLOT == 3u, "APU RAMP_SLOT command ABI value should remain stable");
+	require(bmsx::APU_SAMPLE_RATE_HZ == 44100u, "APU sample clock ABI value should remain stable");
+	require(bmsx::APU_PARAMETER_REGISTER_COUNT == 20u, "APU parameter register count should remain stable");
+	require(bmsx::APU_PARAMETER_SOURCE_ADDR_INDEX == 0u, "APU source-address parameter index should remain stable");
+	require(bmsx::APU_PARAMETER_SLOT_INDEX == 10u, "APU slot parameter index should remain stable");
+	require(bmsx::APU_SLOT_REGISTER_WORD_COUNT == 320u, "APU slot register word count should remain stable");
+	require(bmsx::IO_APU_PARAMETER_REGISTER_ADDRS.size() == bmsx::APU_PARAMETER_REGISTER_COUNT, "APU parameter MMIO address bank should match the device register bank");
+	require(bmsx::IO_APU_SELECTED_SLOT_REG_COUNT == bmsx::APU_PARAMETER_REGISTER_COUNT, "APU selected-slot readback window should cover the parameter register bank");
+	require(bmsx::APU_STATUS_FAULT == 1u, "APU fault status bit ABI value should remain stable");
+	require(bmsx::APU_STATUS_SELECTED_SLOT_ACTIVE == 2u, "APU selected-slot active status bit ABI value should remain stable");
+	require(bmsx::APU_STATUS_BUSY == 4u, "APU busy status bit ABI value should remain stable");
+	require(bmsx::APU_FAULT_SOURCE_RANGE == 0x0102u, "APU source-range fault ABI value should remain stable");
+	require(bmsx::APU_FILTER_HIGHSHELF == 8u, "APU high-shelf filter ABI value should remain stable");
+	require(bmsx::APU_EVENT_SLOT_ENDED == 1u, "APU slot-ended event ABI value should remain stable");
+}
+
 void testApuDeviceFaultsGolden() {
 	AudioHarness h;
 
@@ -839,6 +1062,149 @@ void testApuDeviceFaultsGolden() {
 	writeValidApuSource(h, 4u);
 	writeIoWord(h.memory, bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
 	expectApuFault(h, bmsx::APU_FAULT_PLAYBACK_REJECTED, "rejected APU playback decode should latch a device fault");
+}
+
+void testApuParameterRegisterStateGolden() {
+	AudioHarness h;
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_ADDR, bmsx::RAM_BASE + 0x80u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_BYTES, 128u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, 22050u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_CHANNELS, 2u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, 16u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_FRAME_COUNT, 32u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_OFFSET, 12u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_BYTES, 96u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_LOOP_START_SAMPLE, 4u);
+	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_LOOP_END_SAMPLE, 28u);
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 3u);
+	writeIoWord(h.memory, bmsx::IO_APU_RATE_STEP_Q16, 0x18000u);
+	writeIoWord(h.memory, bmsx::IO_APU_GAIN_Q12, 0x0800u);
+	writeIoWord(h.memory, bmsx::IO_APU_START_SAMPLE, 6u);
+	writeIoWord(h.memory, bmsx::IO_APU_FILTER_KIND, bmsx::APU_FILTER_HIGHSHELF);
+	writeIoWord(h.memory, bmsx::IO_APU_FILTER_FREQ_HZ, 1200u);
+	writeIoWord(h.memory, bmsx::IO_APU_FILTER_Q_MILLI, 700u);
+	writeIoWord(h.memory, bmsx::IO_APU_FILTER_GAIN_MILLIDB, 3000u);
+	writeIoWord(h.memory, bmsx::IO_APU_FADE_SAMPLES, bmsx::APU_SAMPLE_RATE_HZ);
+	writeIoWord(h.memory, bmsx::IO_APU_TARGET_GAIN_Q12, 0x0400u);
+
+	const bmsx::AudioControllerState state = h.audio.captureState();
+	AudioHarness restored;
+	restored.audio.restoreState(state);
+	require(restored.memory.readIoU32(bmsx::IO_APU_SOURCE_ADDR) == bmsx::RAM_BASE + 0x80u, "APU restore should expose source address register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SOURCE_BYTES) == 128u, "APU restore should expose source bytes register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ) == 22050u, "APU restore should expose source sample-rate register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SOURCE_CHANNELS) == 2u, "APU restore should expose source channel register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE) == 16u, "APU restore should expose source bit-depth register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SOURCE_FRAME_COUNT) == 32u, "APU restore should expose source frame-count register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SOURCE_DATA_OFFSET) == 12u, "APU restore should expose source data-offset register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SOURCE_DATA_BYTES) == 96u, "APU restore should expose source data-bytes register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SOURCE_LOOP_START_SAMPLE) == 4u, "APU restore should expose loop-start register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SOURCE_LOOP_END_SAMPLE) == 28u, "APU restore should expose loop-end register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SLOT) == 3u, "APU restore should expose selected slot register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_RATE_STEP_Q16) == 0x18000u, "APU restore should expose rate-step register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_GAIN_Q12) == 0x0800u, "APU restore should expose gain register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_START_SAMPLE) == 6u, "APU restore should expose start-sample register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_FILTER_KIND) == bmsx::APU_FILTER_HIGHSHELF, "APU restore should expose filter-kind register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_FILTER_FREQ_HZ) == 1200u, "APU restore should expose filter-frequency register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_FILTER_Q_MILLI) == 700u, "APU restore should expose filter-Q register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_FILTER_GAIN_MILLIDB) == 3000u, "APU restore should expose filter-gain register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_FADE_SAMPLES) == bmsx::APU_SAMPLE_RATE_HZ, "APU restore should expose fade register word");
+	require(restored.memory.readIoU32(bmsx::IO_APU_TARGET_GAIN_Q12) == 0x0400u, "APU restore should expose target-gain register word");
+	require(restored.audio.captureState().registerWords[bmsx::APU_PARAMETER_SLOT_INDEX] == 3u, "APU capture after restore should preserve parameter register words");
+}
+
+void testApuSelectedSlotActiveStateGolden() {
+	AudioHarness h;
+
+	writeValidApuSource(h, 8u);
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
+	writeIoWord(h.memory, bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+	require((h.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_SELECTED_SLOT_ACTIVE) == 0u, "APU selected-active status should follow IO_APU_SLOT");
+	require(h.memory.readIoU32(bmsx::IO_APU_SELECTED_SOURCE_ADDR) == 0u, "APU selected-source readback should clear for inactive selected slots");
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
+	require((h.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_SELECTED_SLOT_ACTIVE) != 0u, "APU selected-active status should return when selecting the active slot");
+	require((h.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_BUSY) != 0u, "APU busy status should stay high while any slot is active");
+	require(h.memory.readIoU32(bmsx::IO_APU_SELECTED_SOURCE_ADDR) == bmsx::RAM_BASE, "APU selected-source readback should expose the active slot source");
+	require(h.audio.captureState().registerWords[bmsx::APU_PARAMETER_SLOT_INDEX] == 1u, "APU capture should preserve selected slot register word");
+	require(h.audio.captureState().activeSlotMask == 2u, "APU capture should preserve active slot mask");
+	require(h.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 2u, "APU active-mask register should expose active hardware slots");
+	require(h.memory.readIoU32(bmsx::IO_APU_SELECTED_SLOT_REG0) == bmsx::RAM_BASE, "APU selected-slot register window should expose the active slot source latch");
+	require(h.memory.readIoU32(bmsx::IO_APU_SELECTED_SLOT_REG0 + bmsx::APU_PARAMETER_SLOT_INDEX * bmsx::IO_WORD_SIZE) == 1u, "APU selected-slot register window should expose the active slot index latch");
+	h.memory.writeMappedU32LE(bmsx::IO_APU_ACTIVE_MASK, 0xffffffffu);
+	require(h.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 2u, "APU active-mask register should be read-only to cart writes");
+	h.memory.writeMappedU32LE(bmsx::IO_APU_SELECTED_SLOT_REG0, 0xffffffffu);
+	require(h.memory.readIoU32(bmsx::IO_APU_SELECTED_SLOT_REG0) == bmsx::RAM_BASE, "APU selected-slot register window should be read-only to cart writes");
+	require(h.audio.captureState().slotRegisterWords[bmsx::apuSlotRegisterWordIndex(1u, bmsx::APU_PARAMETER_SOURCE_ADDR_INDEX)] == bmsx::RAM_BASE, "APU capture should preserve the selected slot source latch");
+
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 0u);
+	require((h.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_SELECTED_SLOT_ACTIVE) == 0u, "APU selected-active status should clear when selecting an inactive slot");
+	require(h.memory.readIoU32(bmsx::IO_APU_SELECTED_SOURCE_ADDR) == 0u, "APU selected-source readback should clear when selecting an inactive slot");
+	require(h.memory.readIoU32(bmsx::IO_APU_SELECTED_SLOT_REG0) == 0u, "APU selected-slot register window should clear for inactive selected slots");
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
+	require((h.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_SELECTED_SLOT_ACTIVE) != 0u, "APU selected-active status should restore when reselecting the active slot");
+	require(h.memory.readIoU32(bmsx::IO_APU_SELECTED_SOURCE_ADDR) == bmsx::RAM_BASE, "APU selected-source readback should restore when reselecting the active slot");
+	require(h.memory.readIoU32(bmsx::IO_APU_SELECTED_SLOT_REG0) == bmsx::RAM_BASE, "APU selected-slot register window should restore when reselecting the active slot");
+
+	writeValidApuSource(h, 8u);
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
+	writeIoWord(h.memory, bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
+	require((h.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_SELECTED_SLOT_ACTIVE) != 0u, "APU same-source replay should keep the replacement slot active");
+	require((h.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_BUSY) != 0u, "APU same-source replay should keep busy status active");
+	require(h.memory.readIoU32(bmsx::IO_APU_SELECTED_SOURCE_ADDR) == bmsx::RAM_BASE, "APU same-source replay should keep the replacement source latch");
+	require(h.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 2u, "APU same-source replay should keep the active-mask register latched");
+
+	writeIoWord(h.memory, bmsx::IO_APU_FADE_SAMPLES, bmsx::APU_SAMPLE_RATE_HZ);
+	writeIoWord(h.memory, bmsx::IO_APU_CMD, bmsx::APU_CMD_STOP_SLOT);
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
+	require((h.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_SELECTED_SLOT_ACTIVE) != 0u, "APU faded STOP_SLOT should keep the slot active until the ended event");
+	require(h.memory.readIoU32(bmsx::IO_APU_SELECTED_SOURCE_ADDR) == bmsx::RAM_BASE, "APU faded STOP_SLOT should keep the source latch until the ended event");
+	h.soundMaster.stopSlot(1u);
+	const bmsx::AudioControllerState eventState = h.audio.captureState();
+	require(h.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 0u, "APU ended event should clear the active-mask register");
+	require((h.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_BUSY) == 0u, "APU ended event should clear busy status when no slots remain active");
+	require(eventState.eventKind == bmsx::APU_EVENT_SLOT_ENDED, "APU capture should preserve the event kind latch");
+	require(eventState.eventSlot == 1u, "APU capture should preserve the event slot latch");
+	require(eventState.eventSourceAddr == bmsx::RAM_BASE, "APU capture should preserve the event source latch");
+	require(h.memory.readIoU32(bmsx::IO_APU_EVENT_KIND) == bmsx::APU_EVENT_SLOT_ENDED, "APU ended event should publish the event kind latch");
+	require(h.memory.readIoU32(bmsx::IO_APU_EVENT_SLOT) == 1u, "APU ended event should publish the event slot latch");
+	require(h.memory.readIoU32(bmsx::IO_APU_EVENT_SOURCE_ADDR) == bmsx::RAM_BASE, "APU ended event should publish the event source latch");
+	require(h.memory.readIoU32(bmsx::IO_APU_EVENT_SEQ) == eventState.eventSequence, "APU ended event should publish the event sequence latch");
+	require((h.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_APU) != 0u, "APU ended event should raise IRQ_APU");
+
+	AudioHarness eventRestored;
+	eventRestored.audio.restoreState(eventState);
+	require(eventRestored.memory.readIoU32(bmsx::IO_APU_EVENT_KIND) == bmsx::APU_EVENT_SLOT_ENDED, "APU restore should expose the event kind latch");
+	require(eventRestored.memory.readIoU32(bmsx::IO_APU_EVENT_SLOT) == 1u, "APU restore should expose the event slot latch");
+	require(eventRestored.memory.readIoU32(bmsx::IO_APU_EVENT_SOURCE_ADDR) == bmsx::RAM_BASE, "APU restore should expose the event source latch");
+	require(eventRestored.memory.readIoU32(bmsx::IO_APU_EVENT_SEQ) == eventState.eventSequence, "APU restore should expose the event sequence latch");
+
+	writeIoWord(h.memory, bmsx::IO_APU_FADE_SAMPLES, 0u);
+	writeValidApuSource(h, 8u);
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
+	writeIoWord(h.memory, bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
+	const bmsx::AudioControllerState state = h.audio.captureState();
+	AudioHarness restored;
+	restored.audio.restoreState(state);
+	require(restored.audio.captureState().registerWords[bmsx::APU_PARAMETER_SLOT_INDEX] == 1u, "APU restore should preserve selected slot register word");
+	require(restored.audio.captureState().activeSlotMask == 2u, "APU restore should preserve active slot mask");
+	require(restored.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 2u, "APU restore should expose active hardware slots in MMIO");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SLOT) == 1u, "APU restore should expose the restored selected slot register");
+	require(restored.audio.captureState().slotRegisterWords[bmsx::apuSlotRegisterWordIndex(1u, bmsx::APU_PARAMETER_SOURCE_ADDR_INDEX)] == bmsx::RAM_BASE, "APU restore should preserve the selected slot source latch");
+	require((restored.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_SELECTED_SLOT_ACTIVE) != 0u, "APU restore should refresh selected-active status from the active slot mask");
+	require((restored.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_BUSY) != 0u, "APU restore should derive busy status from the active slot mask");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SELECTED_SOURCE_ADDR) == bmsx::RAM_BASE, "APU restore should refresh selected-source readback from the source latch bank");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SELECTED_SLOT_REG0) == bmsx::RAM_BASE, "APU restore should refresh selected-slot register window from the source latch bank");
+
+	writeIoWord(restored.memory, bmsx::IO_APU_CMD, bmsx::APU_CMD_STOP_SLOT);
+	require((restored.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_SELECTED_SLOT_ACTIVE) == 0u, "APU STOP_SLOT should clear selected-active status");
+	require((restored.memory.readIoU32(bmsx::IO_APU_STATUS) & bmsx::APU_STATUS_BUSY) == 0u, "APU STOP_SLOT should clear busy status when no slots remain active");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SELECTED_SOURCE_ADDR) == 0u, "APU STOP_SLOT should clear selected-source readback");
+	require(restored.audio.captureState().activeSlotMask == 0u, "APU STOP_SLOT should clear active slot mask");
+	require(restored.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 0u, "APU STOP_SLOT should clear active-mask register");
+	require(restored.memory.readIoU32(bmsx::IO_APU_SELECTED_SLOT_REG0) == 0u, "APU STOP_SLOT should clear selected-slot register window");
+	require(restored.audio.captureState().slotRegisterWords[bmsx::apuSlotRegisterWordIndex(1u, bmsx::APU_PARAMETER_SOURCE_ADDR_INDEX)] == 0u, "APU STOP_SLOT should clear source latch");
 }
 
 void testRuntimeVblankEdgeCompletesActiveTickGolden() {
@@ -1041,6 +1407,50 @@ void testFirmwareDescriptorGolden() {
 	require(assertDescriptor && assertDescriptor->signature == "assert(value [, message])", "assert builtin descriptor should match TS signature");
 	require(std::string_view(bmsx::systemLuaBuiltinGlobals()[0].name) == "timeline", "system global descriptors should keep runtime globals");
 	require(std::string_view(bmsx::systemLuaBuiltinFunctions()[0].name) == "define_fsm", "system builtin descriptors should include define_fsm");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_fault_code") != nullptr, "APU fault-code register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_fault_detail") != nullptr, "APU fault-detail register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_fault_ack") != nullptr, "APU fault ACK register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("apu_status_fault") != nullptr, "APU fault status-bit descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("apu_status_selected_slot_active") != nullptr, "APU selected-slot active status-bit descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("apu_status_busy") != nullptr, "APU busy status-bit descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_selected_source_addr") != nullptr, "APU selected-source register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_active_mask") != nullptr, "APU active-mask register descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_selected_slot_regs") != nullptr, "APU selected-slot register window descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_selected_slot_reg_count") != nullptr, "APU selected-slot register count descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("apu_fault_source_range") != nullptr, "APU source-range fault descriptor should be exposed");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("apu_fault_playback_rejected") != nullptr, "APU playback rejection fault descriptor should be exposed");
+}
+
+void testSystemGlobalsGeometryContractGolden() {
+	RuntimeHarness harness;
+	bmsx::seedSystemGlobals(harness.runtime);
+	auto globalNumber = [&harness](std::string_view name) {
+		return bmsx::asNumber(harness.runtime.machine.cpu.getGlobalByKey(harness.runtime.internString(name)));
+	};
+	require(globalNumber("sys_geo_primitive_aabb") == static_cast<double>(bmsx::GEO_PRIMITIVE_AABB), "C++ system globals should expose GEO AABB primitive");
+	require(globalNumber("sys_geo_primitive_circle") == static_cast<double>(bmsx::GEO_PRIMITIVE_CIRCLE), "C++ system globals should expose GEO circle primitive");
+	require(globalNumber("sys_geo_primitive_convex_poly") == static_cast<double>(bmsx::GEO_PRIMITIVE_CONVEX_POLY), "C++ system globals should expose GEO convex polygon primitive");
+	require(globalNumber("sys_geo_overlap_instance_bytes") == static_cast<double>(bmsx::GEO_OVERLAP2D_INSTANCE_BYTES), "C++ system globals should expose GEO overlap instance record size");
+	require(globalNumber("sys_geo_overlap_pair_bytes") == static_cast<double>(bmsx::GEO_OVERLAP2D_PAIR_BYTES), "C++ system globals should expose GEO overlap pair record size");
+	require(globalNumber("sys_geo_overlap_result_bytes") == static_cast<double>(bmsx::GEO_OVERLAP2D_RESULT_BYTES), "C++ system globals should expose GEO overlap result record size");
+	require(globalNumber("sys_geo_overlap_result_pair_meta_offset") == static_cast<double>(bmsx::GEO_OVERLAP2D_RESULT_PAIR_META_OFFSET), "C++ system globals should expose GEO overlap result pair-meta offset");
+	require(globalNumber("sys_geo_overlap_shape_desc_bytes") == static_cast<double>(bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES), "C++ system globals should expose GEO overlap shape descriptor size");
+	require(globalNumber("sys_geo_overlap_shape_bounds_bottom_offset") == static_cast<double>(bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET), "C++ system globals should expose GEO overlap shape bounds offsets");
+	require(globalNumber("sys_geo_overlap_aabb_shape_bytes") == static_cast<double>(bmsx::GEO_OVERLAP2D_AABB_SHAPE_BYTES), "C++ system globals should expose GEO overlap AABB footprint");
+	require(globalNumber("sys_geo_overlap_pair_meta_instance_a_shift") == static_cast<double>(bmsx::GEO_OVERLAP2D_PAIR_META_INSTANCE_A_SHIFT), "C++ system globals should expose GEO overlap pair-meta instance A shift");
+	require(globalNumber("sys_geo_overlap_pair_meta_instance_a_mask") == static_cast<double>(bmsx::GEO_OVERLAP2D_PAIR_META_INSTANCE_A_MASK), "C++ system globals should expose GEO overlap pair-meta instance A mask");
+	require(globalNumber("sys_geo_overlap_pair_meta_instance_b_mask") == static_cast<double>(bmsx::GEO_OVERLAP2D_PAIR_META_INSTANCE_B_MASK), "C++ system globals should expose GEO overlap pair-meta instance B mask");
+	require(globalNumber("sys_geo_fault_ack") == static_cast<double>(bmsx::IO_GEO_FAULT_ACK), "C++ system globals should expose the GEO fault ACK doorbell");
+	require(globalNumber("sys_geo_fault_code_shift") == static_cast<double>(bmsx::GEO_FAULT_CODE_SHIFT), "C++ system globals should expose the GEO fault code shift");
+	require(globalNumber("sys_geo_fault_record_index_none") == static_cast<double>(bmsx::GEO_FAULT_RECORD_INDEX_NONE), "C++ system globals should expose the GEO reject fault sentinel");
+	require(globalNumber("sys_apu_active_mask") == static_cast<double>(bmsx::IO_APU_ACTIVE_MASK), "C++ system globals should expose the APU active-mask register");
+	require(globalNumber("sys_apu_selected_slot_regs") == static_cast<double>(bmsx::IO_APU_SELECTED_SLOT_REG0), "C++ system globals should expose the APU selected-slot register window");
+	require(globalNumber("sys_apu_selected_slot_reg_count") == static_cast<double>(bmsx::IO_APU_SELECTED_SLOT_REG_COUNT), "C++ system globals should expose the APU selected-slot register count");
+	require(globalNumber("apu_status_busy") == static_cast<double>(bmsx::APU_STATUS_BUSY), "C++ system globals should expose the APU busy status bit");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_instance_bytes") != nullptr, "C++ builtin descriptors should expose GEO overlap table layout ABI");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_result_pair_meta_offset") != nullptr, "C++ builtin descriptors should expose GEO overlap result layout ABI");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_overlap_pair_meta_instance_a_shift") != nullptr, "C++ builtin descriptors should expose GEO overlap pair-meta ABI");
+	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_geo_primitive_aabb") != nullptr, "C++ builtin descriptors should expose GEO primitive ABI");
 }
 
 void testRenderSchemaGolden() {
@@ -1082,7 +1492,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 25> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 33> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -1100,12 +1510,20 @@ int main() {
 		{"runtime save-state interrupt fields", testRuntimeSaveStateInterruptFieldsGolden},
 		{"machine save-state restore preserves irq line", testMachineSaveRestorePreservesIrqLineGolden},
 		{"GEO save-state restores active command latch", testGeometrySaveStateRestoresActiveCommandLatchGolden},
+		{"GEO execution fault ack preserves completed status", testGeometryExecutionFaultAckPreservesCompletedStatusGolden},
+		{"GEO rejected command phase", testGeometryRejectedCommandPhaseGolden},
+		{"GEO overlap2d submit contract", testGeometryOverlap2dSubmitContractGolden},
+		{"GEO contract constants", testGeometryContractConstantsGolden},
+		{"APU contract constants", testApuContractConstantsGolden},
 		{"APU device faults", testApuDeviceFaultsGolden},
+		{"APU parameter register state", testApuParameterRegisterStateGolden},
+		{"APU selected-slot active state", testApuSelectedSlotActiveStateGolden},
 		{"runtime vblank edge completes active tick", testRuntimeVblankEdgeCompletesActiveTickGolden},
 		{"memory access and opcode", testAccessKindAndOpcodeGolden},
 		{"timing and hash", testTimingAndHashGolden},
 		{"rompack schema", testRompackSchemaGolden},
 		{"firmware descriptors", testFirmwareDescriptorGolden},
+		{"system globals geometry contract", testSystemGlobalsGeometryContractGolden},
 		{"render schema", testRenderSchemaGolden},
 		{"program loader module paths", testProgramLoaderModulePathsGolden},
 	}};

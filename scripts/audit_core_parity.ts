@@ -17,12 +17,9 @@ const sourceRoot = 'src/bmsx';
 const cppRoot = 'src/bmsx_cpp';
 const manifestPath = 'scripts/core_parity_manifest.json';
 
-function toPosix(value: string): string {
-	return value.split(path.sep).join('/');
-}
-
 function repoPath(value: string): string {
-	return toPosix(path.relative(repoRoot, value));
+	const relative = path.relative(repoRoot, value);
+	return relative.split(path.sep).join('/');
 }
 
 function readJsonManifest(): Manifest {
@@ -176,16 +173,20 @@ function isExplicitNonCore(file: string, manifest: Manifest): boolean {
 
 function manifestCoreScopeConflicts(manifest: Manifest): string[] {
 	const conflicts: string[] = [];
-	for (const file of manifest.core_roots ?? []) {
-		const explicit = matchPattern(file, manifest.patterns);
-		if (explicit && explicit.category !== 'core') {
-			conflicts.push(`core_roots contains non-core file ${file} (${explicit.category}: ${explicit.reason})`);
+	if (manifest.core_roots) {
+		for (const file of manifest.core_roots) {
+			const explicit = matchPattern(file, manifest.patterns);
+			if (explicit && explicit.category !== 'core') {
+				conflicts.push(`core_roots contains non-core file ${file} (${explicit.category}: ${explicit.reason})`);
+			}
 		}
 	}
-	for (const file of manifest.must_have_cpp ?? []) {
-		const explicit = matchPattern(file, manifest.patterns);
-		if (explicit && explicit.category !== 'core') {
-			conflicts.push(`must_have_cpp contains non-core file ${file} (${explicit.category}: ${explicit.reason})`);
+	if (manifest.must_have_cpp) {
+		for (const file of manifest.must_have_cpp) {
+			const explicit = matchPattern(file, manifest.patterns);
+			if (explicit && explicit.category !== 'core') {
+				conflicts.push(`must_have_cpp contains non-core file ${file} (${explicit.category}: ${explicit.reason})`);
+			}
 		}
 	}
 	return conflicts;
@@ -194,10 +195,19 @@ function manifestCoreScopeConflicts(manifest: Manifest): string[] {
 function collectCoreReachable(manifest: Manifest, graph: Map<string, string[]>): Set<string> {
 	const core = new Set<string>();
 	const stack: string[] = [];
-	for (const file of [...(manifest.core_roots ?? []), ...(manifest.must_have_cpp ?? [])]) {
-		if (isExplicitNonCore(file, manifest)) continue;
-		core.add(file);
-		stack.push(file);
+	if (manifest.core_roots) {
+		for (const file of manifest.core_roots) {
+			if (isExplicitNonCore(file, manifest)) continue;
+			core.add(file);
+			stack.push(file);
+		}
+	}
+	if (manifest.must_have_cpp) {
+		for (const file of manifest.must_have_cpp) {
+			if (isExplicitNonCore(file, manifest)) continue;
+			core.add(file);
+			stack.push(file);
+		}
 	}
 	while (stack.length > 0) {
 		const file = stack.pop()!;
@@ -222,6 +232,7 @@ function equivalentPaths(tsFile: string): string[] {
 
 function cppFileHasLogic(file: string): boolean {
 	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+	// disable-next-line newline_normalization_pattern -- C++ source text analysis splits lines at the scanner boundary.
 	const stripped = text
 		.replace(/\/\*[\s\S]*?\*\//g, '')
 		.split('\n')
@@ -230,7 +241,31 @@ function cppFileHasLogic(file: string): boolean {
 		.filter((line) => !line.startsWith('#'))
 		.filter((line) => line !== '{' && line !== '}')
 		.filter((line) => !line.startsWith('namespace ') && !line.startsWith('} // namespace'));
-	return stripped.some((line) => /\b(class|struct|enum|template|constexpr|inline|return|for|while|switch|if|=|\(|;)\b/.test(line));
+	return cppFileHasStringTableDefinition(stripped) || stripped.some(cppLineHasLogic);
+}
+
+function cppLineHasLogic(line: string): boolean {
+	return /\b(class|struct|enum|template|constexpr|inline|return|for|while|switch|if)\b/.test(line)
+		|| /^(?:[\w:<>,*&]+\s+)+[\w:~]+\([^;]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:->\s*[\w:<>,*&\s]+)?\{?$/.test(line);
+}
+
+function cppFileHasStringTableDefinition(lines: string[]): boolean {
+	let insideStringTable = false;
+	let hasStringEntry = false;
+	for (const line of lines) {
+		if (!insideStringTable) {
+			insideStringTable = /^const\s+std::vector<std::string>\s+\w+\s*=\s*\{/.test(line);
+			continue;
+		}
+		if (/^"[^"]*"\s*,?$/.test(line)) {
+			hasStringEntry = true;
+			continue;
+		}
+		if (line === '};') {
+			return hasStringEntry;
+		}
+	}
+	return false;
 }
 
 function classify(file: string, manifest: Manifest, core: Set<string>): ClassifiedFile | null {
