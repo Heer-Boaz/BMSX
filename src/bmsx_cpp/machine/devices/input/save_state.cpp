@@ -14,8 +14,8 @@ InputControllerState InputController::captureState() const {
 	for (size_t index = 0; index < m_playerStates.size(); index += 1) {
 		state.players[index].actions = m_playerStates[index].actions;
 	}
-	state.eventFifoEvents = captureEventFifoEvents();
-	state.eventFifoOverflow = m_eventFifoOverflow;
+	state.eventFifoEvents = m_eventFifo.captureEvents();
+	state.eventFifoOverflow = m_eventFifo.overflow();
 	return state;
 }
 
@@ -34,8 +34,7 @@ void InputController::restoreState(const InputControllerState& state) {
 			state.players[static_cast<size_t>(playerIndex - 1)].actions
 		);
 	}
-	restoreEventFifo(state.eventFifoEvents);
-	m_eventFifoOverflow = state.eventFifoOverflow;
+	m_eventFifo.restore(state.eventFifoEvents, state.eventFifoOverflow);
 	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
 	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
 	mirrorRegisters();

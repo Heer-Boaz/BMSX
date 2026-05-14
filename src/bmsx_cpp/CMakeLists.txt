@@ -221,6 +221,7 @@ add_library(bmsx_core STATIC
 	machine/devices/geometry/controller.cpp
 	machine/devices/imgdec/controller.cpp
 	machine/devices/input/controller.cpp
+	machine/devices/input/event_fifo.cpp
 	machine/devices/input/save_state.cpp
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp

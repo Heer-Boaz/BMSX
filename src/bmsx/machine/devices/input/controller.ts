@@ -29,7 +29,8 @@ import {
 import { Memory } from '../../memory/memory';
 import { asStringId, StringValue, type Value } from '../../cpu/cpu';
 import type { StringId, StringPool } from '../../cpu/string_pool';
-import type { InputControllerActionState, InputControllerEventState, InputControllerRegisterState, InputControllerState } from './save_state';
+import type { InputControllerActionState, InputControllerRegisterState, InputControllerState } from './save_state';
+import { InputControllerEventFifo } from './event_fifo';
 import {
 	createInputActionSnapshot,
 	decodeInputOutputIntensityQ16,
@@ -37,13 +38,9 @@ import {
 	INP_EVENT_ACTION_STATUS_MASK,
 	INP_EVENT_CTRL_CLEAR,
 	INP_EVENT_CTRL_POP,
-	INP_EVENT_STATUS_EMPTY,
-	INP_EVENT_STATUS_FULL,
-	INP_EVENT_STATUS_OVERFLOW,
 	INP_OUTPUT_CTRL_APPLY,
 	INP_OUTPUT_STATUS_SUPPORTED,
 	INP_STATUS_CONSUMED,
-	INPUT_CONTROLLER_EVENT_FIFO_CAPACITY,
 	INPUT_CONTROLLER_PLAYER_COUNT,
 	packInputActionStatus,
 } from './contracts';
@@ -101,31 +98,13 @@ function createPlayerChipStates(): PlayerChipState[] {
 	return states;
 }
 
-function createEventFifoSlots(): InputControllerEventState[] {
-	const slots = new Array<InputControllerEventState>(INPUT_CONTROLLER_EVENT_FIFO_CAPACITY);
-	for (let index = 0; index < slots.length; index += 1) {
-		slots[index] = {
-			player: 0,
-			actionStringId: 0,
-			statusWord: 0,
-			valueQ16: 0,
-			repeatCount: 0,
-		};
-	}
-	return slots;
-}
-
 export class InputController {
 	private readonly playerStates = createPlayerChipStates();
-	private readonly eventFifo = createEventFifoSlots();
+	private readonly eventFifo = new InputControllerEventFifo();
 	private registers = createResetRegisters();
 	private sampleArmed = false;
 	private sampleSequence = 0;
 	private lastSampleCycle = 0;
-	private eventFifoReadIndex = 0;
-	private eventFifoWriteIndex = 0;
-	private eventFifoCount = 0;
-	private eventFifoOverflow = false;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -163,7 +142,7 @@ export class InputController {
 			this.clearPlayerActions(playerIndex, state);
 		}
 		this.registers = createResetRegisters();
-		this.clearEventFifo();
+		this.eventFifo.clear();
 		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 		this.mirrorRegisters();
@@ -193,8 +172,8 @@ export class InputController {
 			players: this.playerStates.map(state => ({
 				actions: state.actions.map(action => ({ ...action })),
 			})),
-			eventFifoEvents: this.captureEventFifoEvents(),
-			eventFifoOverflow: this.eventFifoOverflow,
+			eventFifoEvents: this.eventFifo.captureEvents(),
+			eventFifoOverflow: this.eventFifo.overflow,
 		};
 	}
 
@@ -210,8 +189,7 @@ export class InputController {
 			const restoredPlayer = state.players[playerIndex - 1]!;
 			this.restorePlayerActions(playerIndex, this.playerStates[playerIndex - 1]!, restoredPlayer.actions);
 		}
-		this.restoreEventFifo(state.eventFifoEvents);
-		this.eventFifoOverflow = state.eventFifoOverflow;
+		this.eventFifo.restore(state.eventFifoEvents, state.eventFifoOverflow);
 		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 		this.mirrorRegisters();
@@ -266,19 +244,19 @@ export class InputController {
 	private onEventRegisterRead(addr: number): Value {
 		switch (addr) {
 			case IO_INP_EVENT_STATUS:
-				return this.readEventFifoStatus();
+				return this.eventFifo.statusWord();
 			case IO_INP_EVENT_COUNT:
-				return this.eventFifoCount;
+				return this.eventFifo.count;
 			case IO_INP_EVENT_PLAYER:
-				return this.readFrontEvent().player;
+				return this.eventFifo.front().player;
 			case IO_INP_EVENT_ACTION:
-				return StringValue.get(this.readFrontEvent().actionStringId);
+				return StringValue.get(this.eventFifo.front().actionStringId);
 			case IO_INP_EVENT_FLAGS:
-				return this.readFrontEvent().statusWord;
+				return this.eventFifo.front().statusWord;
 			case IO_INP_EVENT_VALUE:
-				return this.readFrontEvent().valueQ16;
+				return this.eventFifo.front().valueQ16;
 			case IO_INP_EVENT_REPEAT_COUNT:
-				return this.readFrontEvent().repeatCount;
+				return this.eventFifo.front().repeatCount;
 			case IO_INP_EVENT_CTRL:
 				return 0;
 		}
@@ -289,10 +267,10 @@ export class InputController {
 		const command = (value as number) >>> 0;
 		switch (command) {
 			case INP_EVENT_CTRL_POP:
-				this.popEventFifo();
+				this.eventFifo.pop();
 				break;
 			case INP_EVENT_CTRL_CLEAR:
-				this.clearEventFifo();
+				this.eventFifo.clear();
 				break;
 		}
 		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
@@ -425,16 +403,10 @@ export class InputController {
 				action.pressTime = actionState.presstime ?? 0;
 				action.repeatCount = actionState.repeatcount >>> 0;
 				if ((action.statusWord & INP_EVENT_ACTION_STATUS_MASK) !== 0) {
-					this.pushEventFifo(playerIndex, action);
+					this.eventFifo.push(playerIndex, action);
 				}
 			}
 		}
-	}
-
-	private readEventFifoStatus(): number {
-		return (this.eventFifoCount === 0 ? INP_EVENT_STATUS_EMPTY : 0)
-			| (this.eventFifoCount === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY ? INP_EVENT_STATUS_FULL : 0)
-			| (this.eventFifoOverflow ? INP_EVENT_STATUS_OVERFLOW : 0);
 	}
 
 	private readOutputStatus(): number {
@@ -449,100 +421,6 @@ export class InputController {
 		});
 	}
 
-	private readFrontEvent(): InputControllerEventState {
-		if (this.eventFifoCount === 0) {
-			return this.eventFifo[0]!;
-		}
-		return this.eventFifo[this.eventFifoReadIndex]!;
-	}
-
-	private pushEventFifo(player: number, action: InputControllerActionState): void {
-		if (this.eventFifoCount === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-			this.eventFifoOverflow = true;
-			return;
-		}
-		const slot = this.eventFifo[this.eventFifoWriteIndex]!;
-		slot.player = player;
-		slot.actionStringId = action.actionStringId;
-		slot.statusWord = action.statusWord;
-		slot.valueQ16 = action.valueQ16;
-		slot.repeatCount = action.repeatCount;
-		this.eventFifoWriteIndex += 1;
-		if (this.eventFifoWriteIndex === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-			this.eventFifoWriteIndex = 0;
-		}
-		this.eventFifoCount += 1;
-	}
-
-	private popEventFifo(): void {
-		if (this.eventFifoCount === 0) {
-			return;
-		}
-		const slot = this.eventFifo[this.eventFifoReadIndex]!;
-		slot.player = 0;
-		slot.actionStringId = 0;
-		slot.statusWord = 0;
-		slot.valueQ16 = 0;
-		slot.repeatCount = 0;
-		this.eventFifoReadIndex += 1;
-		if (this.eventFifoReadIndex === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-			this.eventFifoReadIndex = 0;
-		}
-		this.eventFifoCount -= 1;
-	}
-
-	private clearEventFifo(): void {
-		for (let index = 0; index < this.eventFifo.length; index += 1) {
-			const slot = this.eventFifo[index]!;
-			slot.player = 0;
-			slot.actionStringId = 0;
-			slot.statusWord = 0;
-			slot.valueQ16 = 0;
-			slot.repeatCount = 0;
-		}
-		this.eventFifoReadIndex = 0;
-		this.eventFifoWriteIndex = 0;
-		this.eventFifoCount = 0;
-		this.eventFifoOverflow = false;
-	}
-
-	private captureEventFifoEvents(): InputControllerEventState[] {
-		const events = new Array<InputControllerEventState>(this.eventFifoCount);
-		let entry = this.eventFifoReadIndex;
-		for (let index = 0; index < events.length; index += 1) {
-			const slot = this.eventFifo[entry]!;
-			events[index] = {
-				player: slot.player,
-				actionStringId: slot.actionStringId,
-				statusWord: slot.statusWord,
-				valueQ16: slot.valueQ16,
-				repeatCount: slot.repeatCount,
-			};
-			entry += 1;
-			if (entry === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-				entry = 0;
-			}
-		}
-		return events;
-	}
-
-	private restoreEventFifo(events: readonly InputControllerEventState[]): void {
-		this.clearEventFifo();
-		for (let index = 0; index < events.length; index += 1) {
-			const event = events[index]!;
-			const slot = this.eventFifo[this.eventFifoWriteIndex]!;
-			slot.player = event.player;
-			slot.actionStringId = event.actionStringId;
-			slot.statusWord = event.statusWord;
-			slot.valueQ16 = event.valueQ16;
-			slot.repeatCount = event.repeatCount;
-			this.eventFifoWriteIndex += 1;
-			if (this.eventFifoWriteIndex === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-				this.eventFifoWriteIndex = 0;
-			}
-			this.eventFifoCount += 1;
-		}
-	}
 
 	private createSnapshotActionState(state: PlayerChipState, actionName: string) {
 		const action = this.findSnapshotAction(state, actionName);

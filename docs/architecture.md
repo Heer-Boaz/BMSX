@@ -246,9 +246,8 @@ State owned by ICU:
 - per-player committed action records;
 - per-action sampled `statusWord`, signed-Q16.16 `valueQ16`, `pressTime`, and
   `repeatCount` words.
-- event FIFO entries containing player, action string id, status word, value
-  word, and repeat count;
-- event FIFO read/write pointers, queued count, and overflow latch.
+- event FIFO hardware state: retained event slots, read/write pointers, queued
+  count, and overflow latch;
 - output intensity and duration latch words.
 
 VBlank consumes the arm latch, asks the input owner to sample players once, and
@@ -258,8 +257,10 @@ compound expression returns boolean `1`/`0` in `sys_inp_status` and zero in
 `sys_inp_value`.
 
 The event FIFO is filled at the same sample edge. It queues action edge/repeat
-snapshots and exposes a front-entry register bank plus pop/clear doorbells. The
-queue is saved as visible device state; it is not a host queue.
+snapshots and exposes a front-entry register bank plus pop/clear doorbells.
+`machine/devices/input/event_fifo` owns the retained ring slots, pointers, count,
+and overflow latch on both runtimes. The queue is saved as visible device state;
+it is not a host queue.
 
 The output register bank is a selected-player output datapath. Carts write an
 unsigned-Q16.16 intensity word and a duration word, then ring the output

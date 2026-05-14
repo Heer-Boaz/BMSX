@@ -114,7 +114,9 @@ repeat bits: `inp_status_justpressed`, `inp_status_justreleased`,
 
 When the FIFO is empty, front-event registers read zero words and string id 0.
 Overflow does not overwrite queued entries; it sets the overflow latch. The clear
-command resets both the queue and the overflow latch.
+command resets both the queue and the overflow latch. The FIFO ring slots,
+read/write pointers, queued count, and overflow latch are owned by
+`machine/devices/input/event_fifo` on both runtimes.
 
 ## Output datapath
 
@@ -155,7 +157,11 @@ Selected-player output support is a host capability bit and is not saved.
 
 - TS: `src/bmsx/machine/devices/input/controller.ts`
 - TS constants: `src/bmsx/machine/devices/input/contracts.ts`
+- TS FIFO: `src/bmsx/machine/devices/input/event_fifo.ts`
+- TS save state: `src/bmsx/machine/devices/input/save_state.ts`
 - C++: `src/bmsx_cpp/machine/devices/input/controller.cpp/.h`
 - C++ constants: `src/bmsx_cpp/machine/devices/input/contracts.h`
-- Save state: `src/bmsx/machine/runtime/save_state/*` and
+- C++ FIFO: `src/bmsx_cpp/machine/devices/input/event_fifo.cpp/.h`
+- C++ save state: `src/bmsx_cpp/machine/devices/input/save_state.cpp/.h`
+- Runtime byte codec: `src/bmsx/machine/runtime/save_state/*` and
   `src/bmsx_cpp/machine/runtime/save_state/*`

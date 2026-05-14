@@ -2,6 +2,7 @@
 
 #include "machine/memory/memory.h"
 #include "machine/devices/input/contracts.h"
+#include "machine/devices/input/event_fifo.h"
 #include "machine/devices/input/save_state.h"
 #include "input/manager.h"
 #include "input/models.h"
@@ -40,14 +41,10 @@ private:
 	const StringPool& m_strings;
 	std::array<PlayerChipState, INPUT_CONTROLLER_PLAYER_COUNT> m_playerStates;
 	InputControllerRegisterState m_registers;
-	std::array<InputControllerEventState, INPUT_CONTROLLER_EVENT_FIFO_CAPACITY> m_eventFifo;
 	bool m_sampleArmed = false;
 	u32 m_sampleSequence = 0;
 	u32 m_lastSampleCycle = 0;
-	u32 m_eventFifoReadIndex = 0;
-	u32 m_eventFifoWriteIndex = 0;
-	u32 m_eventFifoCount = 0;
-	bool m_eventFifoOverflow = false;
+	InputControllerEventFifo m_eventFifo;
 
 	void onRegisterWrite(uint32_t addr, Value value);
 	void onCtrlWrite(u32 command);
@@ -64,13 +61,6 @@ private:
 	void installActionMapping(PlayerChipState& state, StringId actionStringId, StringId bindStringId);
 	void upsertAction(PlayerChipState& state, StringId actionStringId, StringId bindStringId);
 	void sampleCommittedActions();
-	u32 readEventFifoStatus() const;
-	const InputControllerEventState& readFrontEvent() const;
-	void pushEventFifo(u32 player, const InputControllerActionState& action);
-	void popEventFifo();
-	void clearEventFifo();
-	std::vector<InputControllerEventState> captureEventFifoEvents() const;
-	void restoreEventFifo(const std::vector<InputControllerEventState>& events);
 	u32 readOutputStatus() const;
 	void applyOutputEffect();
 	ActionState createSnapshotActionState(const PlayerChipState& state, const std::string& actionName) const;

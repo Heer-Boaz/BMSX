@@ -71,7 +71,7 @@ void InputController::reset() {
 		clearPlayerActions(playerIndex, state);
 	}
 	m_registers = InputControllerRegisterState{};
-	clearEventFifo();
+	m_eventFifo.clear();
 	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
 	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
 	mirrorRegisters();
@@ -141,19 +141,19 @@ void InputController::onCtrlWrite(u32 command) {
 Value InputController::onEventRegisterRead(uint32_t addr) const {
 	switch (addr) {
 		case IO_INP_EVENT_STATUS:
-			return valueNumber(static_cast<double>(readEventFifoStatus()));
+			return valueNumber(static_cast<double>(m_eventFifo.statusWord()));
 		case IO_INP_EVENT_COUNT:
-			return valueNumber(static_cast<double>(m_eventFifoCount));
+			return valueNumber(static_cast<double>(m_eventFifo.count()));
 		case IO_INP_EVENT_PLAYER:
-			return valueNumber(static_cast<double>(readFrontEvent().player));
+			return valueNumber(static_cast<double>(m_eventFifo.front().player));
 		case IO_INP_EVENT_ACTION:
-			return valueString(readFrontEvent().actionStringId);
+			return valueString(m_eventFifo.front().actionStringId);
 		case IO_INP_EVENT_FLAGS:
-			return valueNumber(static_cast<double>(readFrontEvent().statusWord));
+			return valueNumber(static_cast<double>(m_eventFifo.front().statusWord));
 		case IO_INP_EVENT_VALUE:
-			return valueNumber(static_cast<double>(readFrontEvent().valueQ16));
+			return valueNumber(static_cast<double>(m_eventFifo.front().valueQ16));
 		case IO_INP_EVENT_REPEAT_COUNT:
-			return valueNumber(static_cast<double>(readFrontEvent().repeatCount));
+			return valueNumber(static_cast<double>(m_eventFifo.front().repeatCount));
 		case IO_INP_EVENT_CTRL:
 			return valueNumber(0.0);
 	}
@@ -163,10 +163,10 @@ Value InputController::onEventRegisterRead(uint32_t addr) const {
 void InputController::onEventCtrlWrite(u32 command) {
 	switch (command) {
 		case INP_EVENT_CTRL_POP:
-			popEventFifo();
+			m_eventFifo.pop();
 			break;
 		case INP_EVENT_CTRL_CLEAR:
-			clearEventFifo();
+			m_eventFifo.clear();
 			break;
 	}
 	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
@@ -295,87 +295,9 @@ void InputController::sampleCommittedActions() {
 			action.pressTime = buttonPressTimeOrZero(actionState);
 			action.repeatCount = static_cast<u32>(actionRepeatCount(actionState));
 			if ((action.statusWord & INP_EVENT_ACTION_STATUS_MASK) != 0u) {
-				pushEventFifo(static_cast<u32>(playerIndex), action);
+				m_eventFifo.push(static_cast<u32>(playerIndex), action);
 			}
 		}
-	}
-}
-
-u32 InputController::readEventFifoStatus() const {
-	return (m_eventFifoCount == 0u ? INP_EVENT_STATUS_EMPTY : 0u)
-		| (m_eventFifoCount == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY ? INP_EVENT_STATUS_FULL : 0u)
-		| (m_eventFifoOverflow ? INP_EVENT_STATUS_OVERFLOW : 0u);
-}
-
-const InputControllerEventState& InputController::readFrontEvent() const {
-	if (m_eventFifoCount == 0u) {
-		return m_eventFifo[0];
-	}
-	return m_eventFifo[m_eventFifoReadIndex];
-}
-
-void InputController::pushEventFifo(u32 player, const InputControllerActionState& action) {
-	if (m_eventFifoCount == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-		m_eventFifoOverflow = true;
-		return;
-	}
-	InputControllerEventState& slot = m_eventFifo[m_eventFifoWriteIndex];
-	slot.player = player;
-	slot.actionStringId = action.actionStringId;
-	slot.statusWord = action.statusWord;
-	slot.valueQ16 = action.valueQ16;
-	slot.repeatCount = action.repeatCount;
-	m_eventFifoWriteIndex += 1u;
-	if (m_eventFifoWriteIndex == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-		m_eventFifoWriteIndex = 0u;
-	}
-	m_eventFifoCount += 1u;
-}
-
-void InputController::popEventFifo() {
-	if (m_eventFifoCount == 0u) {
-		return;
-	}
-	InputControllerEventState& slot = m_eventFifo[m_eventFifoReadIndex];
-	slot = InputControllerEventState{};
-	m_eventFifoReadIndex += 1u;
-	if (m_eventFifoReadIndex == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-		m_eventFifoReadIndex = 0u;
-	}
-	m_eventFifoCount -= 1u;
-}
-
-void InputController::clearEventFifo() {
-	m_eventFifo.fill(InputControllerEventState{});
-	m_eventFifoReadIndex = 0u;
-	m_eventFifoWriteIndex = 0u;
-	m_eventFifoCount = 0u;
-	m_eventFifoOverflow = false;
-}
-
-std::vector<InputControllerEventState> InputController::captureEventFifoEvents() const {
-	std::vector<InputControllerEventState> events;
-	events.reserve(m_eventFifoCount);
-	u32 entry = m_eventFifoReadIndex;
-	for (u32 index = 0u; index < m_eventFifoCount; index += 1u) {
-		events.push_back(m_eventFifo[entry]);
-		entry += 1u;
-		if (entry == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-			entry = 0u;
-		}
-	}
-	return events;
-}
-
-void InputController::restoreEventFifo(const std::vector<InputControllerEventState>& events) {
-	clearEventFifo();
-	for (const InputControllerEventState& event : events) {
-		m_eventFifo[m_eventFifoWriteIndex] = event;
-		m_eventFifoWriteIndex += 1u;
-		if (m_eventFifoWriteIndex == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
-			m_eventFifoWriteIndex = 0u;
-		}
-		m_eventFifoCount += 1u;
 	}
 }
 
