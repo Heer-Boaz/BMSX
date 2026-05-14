@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-05-14.
+Last checked: 2026-05-15.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -103,8 +103,13 @@ Not saved:
   parser caches, derived lookup tables, scratch arrays that are fully rebuilt
   from saved device state, and output queues that belong only to a host backend.
 
-The save-state wire uses the current property table. There is no old-version
-reader and no stale migration path.
+Save-state bytes start with the current property-table payload. There is no
+format-version field, old reader, or migration path. Aggregate machine
+save-state records live in
+`machine/save_state` on both runtimes. IRQ and ICU save-state contracts live in
+dedicated `machine/devices/irq/save_state` and
+`machine/devices/input/save_state` files on both runtimes; C++ keeps those
+capture/restore bodies in the matching save-state translation units.
 
 ## Device contracts
 
@@ -113,7 +118,8 @@ reader and no stale migration path.
 IRQ is a machine device with flag/status words. Devices raise/clear IRQ state
 through the IRQ owner. Cart-originated faults surface as status/fault bits and
 IRQ flags when the device contract says so; they do not escape as host
-exceptions.
+exceptions. IRQ save-state is the pending flag register word only, owned by
+`machine/devices/irq/save_state`.
 
 ### DMA and image decode
 
@@ -326,7 +332,7 @@ should be deleted.
 
 ## Active work queue
 
-1. Keep moving remaining device save-state bodies into dedicated state owners
-   where the TS boundary can do it without wrapper-only methods or private-field
-   leaks.
+1. Move the remaining VDP TS aggregate capture/restore body out of the VDP
+   datapath only if it can be done without opening private render/device fields
+   as a fake public contract.
 2. Keep save-state proof expanding through device-visible state, not host queues.

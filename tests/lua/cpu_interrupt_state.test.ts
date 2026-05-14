@@ -7,6 +7,7 @@ import { BASE_CYCLES } from '../../src/bmsx/machine/cpu/opcode_info';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../src/bmsx/machine/bus/io';
 import { IrqController } from '../../src/bmsx/machine/devices/irq/controller';
 import { Machine } from '../../src/bmsx/machine/machine';
+import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../src/bmsx/machine/save_state';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { callClosureInto, callClosureIntoWithScheduler } from '../../src/bmsx/machine/program/executor';
 import { CpuExecutionState } from '../../src/bmsx/machine/runtime/cpu_executor';
@@ -268,13 +269,13 @@ test('Machine full-state restore preserves asserted IRQ line and cart-visible fl
 	const machine = makeMachine();
 
 	machine.irqController.raise(IRQ_VBLANK);
-	const state = machine.captureState();
+	const state = captureMachineState(machine);
 	machine.irqController.reset();
 
 	assert.equal(machine.irqController.hasAssertedMaskableInterruptLine(), false);
 	assert.equal(machine.memory.readIoU32(IO_IRQ_FLAGS), 0);
 
-	machine.restoreState(state);
+	restoreMachineState(machine, state);
 
 	assert.equal(machine.irqController.hasAssertedMaskableInterruptLine(), true);
 	assert.equal((machine.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK) !== 0, true);
@@ -284,13 +285,13 @@ test('Machine save-state restore preserves asserted IRQ line and cart-visible fl
 	const machine = makeMachine();
 
 	machine.irqController.raise(IRQ_VBLANK);
-	const state = machine.captureSaveState();
+	const state = captureMachineSaveState(machine);
 	machine.irqController.reset();
 
 	assert.equal(machine.irqController.hasAssertedMaskableInterruptLine(), false);
 	assert.equal(machine.memory.readIoU32(IO_IRQ_FLAGS), 0);
 
-	machine.restoreSaveState(state);
+	restoreMachineSaveState(machine, state);
 
 	assert.equal(machine.irqController.hasAssertedMaskableInterruptLine(), true);
 	assert.equal((machine.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK) !== 0, true);

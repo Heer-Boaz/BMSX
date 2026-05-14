@@ -1,4 +1,4 @@
-import type { MachineState } from '../machine';
+import { captureMachineState, restoreMachineState, type MachineState } from '../save_state';
 import type { FrameSchedulerStateSnapshot } from '../scheduler/frame';
 import type { RuntimeVblankSnapshot } from './vblank';
 import type { Runtime } from './runtime';
@@ -11,14 +11,14 @@ export type RuntimeMachineState = {
 
 export function captureRuntimeMachineState(runtime: Runtime): RuntimeMachineState {
 	return {
-		machine: runtime.machine.captureState(),
+		machine: captureMachineState(runtime.machine),
 		frameScheduler: runtime.frameScheduler.captureState(),
 		vblank: runtime.vblank.capture(),
 	};
 }
 
 export function applyRuntimeMachineState(runtime: Runtime, state: RuntimeMachineState): void {
-	runtime.machine.restoreState(state.machine);
+	restoreMachineState(runtime.machine, state.machine);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
 	runtime.vblank.restore(state.vblank);
 }

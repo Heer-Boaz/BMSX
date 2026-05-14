@@ -28,11 +28,13 @@
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
 #include "machine/program/loader.h"
+#include "machine/program/load_compiler.h"
 #include "machine/cpu/string_pool.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
 #include "machine/runtime/save_state/schema.h"
 #include "machine/runtime/timing/constants.h"
+#include "machine/save_state.h"
 #include "machine/runtime/timing/state.h"
 #include "machine/scheduler/budget.h"
 #include "machine/common/hash.h"
@@ -859,22 +861,22 @@ void testMachineSaveRestorePreservesIrqLineGolden() {
 	bmsx::Runtime& runtime = harness.runtime;
 
 	runtime.machine.irqController.raise(bmsx::IRQ_VBLANK);
-	const bmsx::MachineState fullState = runtime.machine.captureState();
+	const bmsx::MachineState fullState = captureMachineState(runtime.machine);
 	runtime.machine.irqController.reset();
 	require(!runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "IRQ reset should clear the asserted line before full-state restore");
 
-	runtime.machine.restoreState(fullState);
+	restoreMachineState(runtime.machine, fullState);
 
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "machine full-state restore should restore pending IRQ line state");
 	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "machine full-state restore should expose pending IRQ flags to the cart");
 	runtime.machine.irqController.reset();
 
 	runtime.machine.irqController.raise(bmsx::IRQ_VBLANK);
-	const bmsx::MachineSaveState state = runtime.machine.captureSaveState();
+	const bmsx::MachineSaveState state = captureMachineSaveState(runtime.machine);
 	runtime.machine.irqController.reset();
 	require(!runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "IRQ reset should clear the asserted line");
 
-	runtime.machine.restoreSaveState(state);
+	restoreMachineSaveState(runtime.machine, state);
 
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "machine save-state restore should restore pending IRQ line state");
 	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "machine save-state restore should expose pending IRQ flags to the cart");
@@ -1014,14 +1016,14 @@ void testGeometrySaveStateRestoresActiveCommandLatchGolden() {
 	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Busy, "GEO controller phase should stay BUSY while work remains");
 
 	writeIoWord(memory, bmsx::IO_GEO_COUNT, 1u);
-	const bmsx::MachineSaveState saved = machine.captureSaveState();
+	const bmsx::MachineSaveState saved = captureMachineSaveState(machine);
 
 	geometry.accrueCycles(8, 9);
 	geometry.onService(9);
 	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_DONE, "mutated live machine should finish before restore");
 	require(geometry.captureState().phase == bmsx::GeometryControllerPhase::Done, "completed GEO controller phase should be DONE");
 
-	machine.restoreSaveState(saved);
+	restoreMachineSaveState(machine, saved);
 	geometry.setTiming(1, 1, machine.scheduler.nowCycles());
 	require(memory.readIoU32(bmsx::IO_GEO_CMD) == bmsx::IO_CMD_GEO_XFORM2_BATCH, "restore should preserve the latched visible command register");
 	require(memory.readIoU32(bmsx::IO_GEO_COUNT) == 1u, "restore should preserve the post-doorbell visible count register");
@@ -2431,6 +2433,27 @@ void testTextureKeyGolden() {
 	);
 }
 
+
+void testLoadCompilerStringIdUnaryGolden() {
+	RuntimeHarness harness;
+	bmsx::Runtime& runtime = harness.runtime;
+	const bmsx::Value loader = bmsx::compileLoadChunk(
+		runtime,
+		"return function(target)\n\ttarget[&\"field\"] = &\"value\"\nend",
+		"load_string_id_field"
+	);
+	bmsx::NativeResults outerOut;
+	bmsx::asNativeFunction(loader)->invoke(bmsx::NativeArgsView(), outerOut);
+	require(outerOut.size() == 1u && bmsx::valueIsNativeFunction(outerOut[0]), "load compiler should return one generated function");
+	bmsx::Table* target = runtime.machine.cpu.createTable(0, 1);
+	const bmsx::Value args[] = {bmsx::valueTable(target)};
+	bmsx::NativeResults innerOut;
+	bmsx::asNativeFunction(outerOut[0])->invoke(bmsx::NativeArgsView(args, 1u), innerOut);
+	const bmsx::StringId field = runtime.machine.cpu.stringPool().intern("field");
+	const bmsx::StringId value = runtime.machine.cpu.stringPool().intern("value");
+	require(target->getStringKey(field) == bmsx::valueString(value), "load compiler should preserve & field/value as string ids");
+}
+
 void testProgramLoaderModulePathsGolden() {
 	require(bmsx::toLuaModulePath("cart.lua") == "cart", "module path should strip lua suffix");
 	require(bmsx::toLuaModulePath("bios/font.lua") == "bios/font", "module path should preserve bios namespace");
@@ -2444,7 +2467,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 42> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 43> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -2486,6 +2509,7 @@ int main() {
 		{"firmware descriptors", testFirmwareDescriptorGolden},
 		{"system globals geometry contract", testSystemGlobalsGeometryContractGolden},
 		{"render schema", testRenderSchemaGolden},
+		{"load compiler string-id unary", testLoadCompilerStringIdUnaryGolden},
 		{"program loader module paths", testProgramLoaderModulePathsGolden},
 	}};
 	for (const auto& test : tests) {

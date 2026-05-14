@@ -236,17 +236,6 @@ function evaluateExpressionFact(
 ): ExpressionEvaluation {
 	const kind = expression.kind;
 	switch (kind) {
-		case LuaSyntaxKind.StringRefExpression: {
-			const operand = evaluateExpressionFact(expression.operand, state, semantics, closureWrittenSymbols);
-			switch (operand.fact.kind) {
-				case 'string':
-				case 'string_id':
-				case 'unknown':
-					return { fact: STRING_ID_VALUE_FACT, state: operand.state };
-				default:
-					return operand;
-			}
-		}
 		case LuaSyntaxKind.StringLiteralExpression:
 			return { fact: STRING_VALUE_FACT, state };
 		case LuaSyntaxKind.NumericLiteralExpression:
@@ -307,6 +296,15 @@ function evaluateExpressionFact(
 				case LuaUnaryOperator.Negate:
 				case LuaUnaryOperator.BitwiseNot:
 					return { fact: NUMBER_VALUE_FACT, state: operand.state };
+				case LuaUnaryOperator.StringId:
+					switch (operand.fact.kind) {
+						case 'string':
+						case 'string_id':
+						case 'unknown':
+							return { fact: STRING_ID_VALUE_FACT, state: operand.state };
+						default:
+							return operand;
+					}
 				default:
 					return { fact: unreachableFlowValue(unary.operator, 'unary operator'), state: operand.state };
 			}

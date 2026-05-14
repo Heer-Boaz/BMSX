@@ -56,3 +56,27 @@ test('compileLoadChunk keeps negative numeric indices on the generic table path'
 	apply.invoke([target], []);
 	assert.equal(target.get(-1), 42);
 });
+
+test('compileLoadChunk keeps & as the string-id unary operator for generated field assignments', () => {
+	const stringPool = new StringPool();
+	const runtime = {
+		createApiRuntimeError(message: string) {
+			return new Error(message);
+		},
+		internString(value: string) {
+			return StringValue.get(stringPool.intern(value));
+		},
+	} as any;
+	const loader = compileLoadChunk(runtime, [
+		'return function(target)',
+		'\ttarget[&"field"] = &"value"',
+		'end',
+	].join('\n'), 'timeline_apply.string_id_field');
+	const loaded: any[] = [];
+	loader.invoke([], loaded);
+	assert.equal(loaded.length, 1);
+	const apply = loaded[0];
+	const target = new Table(0, 1);
+	apply.invoke([target], []);
+	assert.equal(target.get(StringValue.get(stringPool.intern('field'))), StringValue.get(stringPool.intern('value')));
+});

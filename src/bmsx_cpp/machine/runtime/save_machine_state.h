@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/machine.h"
+#include "machine/save_state.h"
 #include "machine/scheduler/frame.h"
 #include "machine/runtime/vblank.h"
 

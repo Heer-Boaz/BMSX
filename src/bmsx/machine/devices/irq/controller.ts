@@ -1,10 +1,7 @@
 import { IO_IRQ_ACK, IO_IRQ_FLAGS } from '../../bus/io';
 import type { Value } from '../../cpu/cpu';
 import { Memory } from '../../memory/memory';
-
-export type IrqControllerState = {
-	pendingFlags: number;
-};
+import type { IrqControllerState } from './save_state';
 
 export class IrqController {
 	private pendingFlags = 0;

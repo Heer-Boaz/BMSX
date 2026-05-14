@@ -19,15 +19,6 @@ void IrqController::postLoad() {
 	m_memory.writeIoValue(IO_IRQ_ACK, clearAck);
 }
 
-IrqControllerState IrqController::captureState() const {
-	return IrqControllerState{m_pendingFlags};
-}
-
-void IrqController::restoreState(const IrqControllerState& state) {
-	m_pendingFlags = state.pendingFlags;
-	postLoad();
-}
-
 void IrqController::raise(uint32_t mask) {
 	const uint32_t next = m_pendingFlags | mask;
 	if (next != m_pendingFlags) {

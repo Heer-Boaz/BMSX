@@ -6,23 +6,6 @@
 #include <stdexcept>
 
 namespace bmsx {
-namespace {
-
-void restoreSharedDeviceState(
-	Machine& machine,
-	const GeometryControllerState& geometry,
-	const IrqControllerState& irq,
-	const AudioControllerState& audio,
-	const InputControllerState& input
-) {
-	machine.geometryController.restoreState(geometry, machine.scheduler.nowCycles());
-	machine.irqController.restoreState(irq);
-	machine.audioController.restoreState(audio, machine.scheduler.nowCycles());
-	machine.inputController.restoreState(input);
-}
-
-} // namespace
-
 Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, MicrotaskQueue& microtasks)
 	: memory(memoryRef)
 	, frameBufferSize(frameBufferSizeValue)
@@ -98,38 +81,5 @@ void Machine::runDeviceService(uint8_t deviceKind) {
 	}
 }
 
-MachineState Machine::captureState() const {
-	MachineState state;
-	state.geometry = geometryController.captureState();
-	state.irq = irqController.captureState();
-	state.audio = audioController.captureState();
-	state.input = inputController.captureState();
-	state.vdp = vdp.captureState();
-	return state;
-}
-
-void Machine::restoreState(const MachineState& state) {
-	restoreSharedDeviceState(*this, state.geometry, state.irq, state.audio, state.input);
-	vdp.restoreState(state.vdp);
-}
-
-MachineSaveState Machine::captureSaveState() const {
-	MachineSaveState state;
-	state.memory = memory.captureSaveState();
-	state.geometry = geometryController.captureState();
-	state.irq = irqController.captureState();
-	state.audio = audioController.captureState();
-	state.stringPool = cpu.stringPool().captureState();
-	state.input = inputController.captureState();
-	state.vdp = vdp.captureSaveState();
-	return state;
-}
-
-void Machine::restoreSaveState(const MachineSaveState& state) {
-	memory.restoreSaveState(state.memory);
-	cpu.stringPool().restoreState(state.stringPool);
-	restoreSharedDeviceState(*this, state.geometry, state.irq, state.audio, state.input);
-	vdp.restoreSaveState(state.vdp);
-}
 
 } // namespace bmsx

@@ -8,18 +8,14 @@ import {
 } from './bus/io';
 import { CPU } from './cpu/cpu';
 import { AudioController } from './devices/audio/controller';
-import type { AudioControllerState } from './devices/audio/save_state';
 import { DmaController } from './devices/dma/controller';
 import { GeometryController } from './devices/geometry/controller';
-import type { GeometryControllerState } from './devices/geometry/state';
 import { ImgDecController } from './devices/imgdec/controller';
-import { InputController, type InputControllerState } from './devices/input/controller';
-import { IrqController, type IrqControllerState } from './devices/irq/controller';
+import { InputController } from './devices/input/controller';
+import { IrqController } from './devices/irq/controller';
 import { VDP } from './devices/vdp/vdp';
 import type { VdpFrameBufferSize } from './devices/vdp/vram';
-import type { VdpSaveState, VdpState } from './devices/vdp/save_state';
-import { Memory, type MemorySaveState } from './memory/memory';
-import type { StringPoolState } from './cpu/string_pool';
+import { Memory } from './memory/memory';
 import {
 	DEVICE_SERVICE_DMA,
 	DEVICE_SERVICE_GEO,
@@ -36,24 +32,6 @@ export type MachineTiming = {
 	imgDecBytesPerSec: number;
 	geoWorkUnitsPerSec: number;
 	vdpWorkUnitsPerSec: number;
-};
-
-export type MachineState = {
-	geometry: GeometryControllerState;
-	irq: IrqControllerState;
-	audio: AudioControllerState;
-	input: InputControllerState;
-	vdp: VdpState;
-};
-
-export type MachineSaveState = {
-	memory: MemorySaveState;
-	geometry: GeometryControllerState;
-	irq: IrqControllerState;
-	audio: AudioControllerState;
-	stringPool: StringPoolState;
-	input: InputControllerState;
-	vdp: VdpSaveState;
 };
 
 export class Machine {
@@ -141,47 +119,6 @@ export class Machine {
 			default:
 				throw new Error(`Runtime fault: unknown device service kind ${deviceKind}.`);
 		}
-	}
-
-	public captureState(): MachineState {
-		return {
-			geometry: this.geometryController.captureState(),
-			irq: this.irqController.captureState(),
-			audio: this.audioController.captureState(),
-			input: this.inputController.captureState(),
-			vdp: this.vdp.captureState(),
-		};
-	}
-
-	public restoreState(state: MachineState): void {
-		this.restoreSharedDeviceState(state);
-		this.vdp.restoreState(state.vdp);
-	}
-
-	public captureSaveState(): MachineSaveState {
-		return {
-			memory: this.memory.captureSaveState(),
-			geometry: this.geometryController.captureState(),
-			irq: this.irqController.captureState(),
-			audio: this.audioController.captureState(),
-			stringPool: this.cpu.stringPool.captureState(),
-			input: this.inputController.captureState(),
-			vdp: this.vdp.captureSaveState(),
-		};
-	}
-
-	public restoreSaveState(state: MachineSaveState): void {
-		this.memory.restoreSaveState(state.memory);
-		this.cpu.stringPool.restoreState(state.stringPool);
-		this.restoreSharedDeviceState(state);
-		this.vdp.restoreSaveState(state.vdp);
-	}
-
-	private restoreSharedDeviceState(state: Pick<MachineState, 'geometry' | 'irq' | 'audio' | 'input'>): void {
-		this.geometryController.restoreState(state.geometry, this.scheduler.nowCycles);
-		this.irqController.restoreState(state.irq);
-		this.audioController.restoreState(state.audio, this.scheduler.nowCycles);
-		this.inputController.restoreState(state.input);
 	}
 
 }

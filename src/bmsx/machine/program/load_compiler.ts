@@ -196,6 +196,9 @@ const compilePathStep = (runtime: Runtime, chunkName: string, expression: LuaExp
 				return { kind: 'key', key: -operand.value };
 			}
 		}
+		if (expression.operator === LuaUnaryOperator.StringId && expression.operand.kind === LuaSyntaxKind.StringLiteralExpression) {
+			return { kind: 'field', key: runtime.internString(expression.operand.value) };
+		}
 		fail(runtime, chunkName, 'index expressions must use string or numeric literals', expression.range);
 	}
 	if (expression.kind === LuaSyntaxKind.NumericLiteralExpression) {
@@ -207,9 +210,6 @@ const compilePathStep = (runtime: Runtime, chunkName: string, expression: LuaExp
 	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
 		return { kind: 'field', key: runtime.internString(expression.value) };
 	}
-	if (expression.kind === LuaSyntaxKind.StringRefExpression && expression.operand.kind === LuaSyntaxKind.StringLiteralExpression) {
-		return { kind: 'field', key: runtime.internString(expression.operand.value) };
-	}
 	fail(runtime, chunkName, 'index expressions must use string or numeric literals', expression.range);
 };
 
@@ -220,6 +220,9 @@ const compileLiteralExpr = (runtime: Runtime, chunkName: string, expression: Lua
 			if (operand.kind === LuaSyntaxKind.NumericLiteralExpression) {
 				return -operand.value;
 			}
+		}
+		if (expression.operator === LuaUnaryOperator.StringId && expression.operand.kind === LuaSyntaxKind.StringLiteralExpression) {
+			return runtime.internString(expression.operand.value);
 		}
 		fail(runtime, chunkName, 'unsupported literal expression', expression.range);
 	}
@@ -235,9 +238,6 @@ const compileLiteralExpr = (runtime: Runtime, chunkName: string, expression: Lua
 	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
 		return runtime.internString(expression.value);
 	}
-	if (expression.kind === LuaSyntaxKind.StringRefExpression && expression.operand.kind === LuaSyntaxKind.StringLiteralExpression) {
-		return runtime.internString(expression.operand.value);
-	}
 	fail(runtime, chunkName, 'unsupported literal expression', expression.range);
 };
 
@@ -252,7 +252,6 @@ const compileValueExpr = (
 		|| expression.kind === LuaSyntaxKind.BooleanLiteralExpression
 		|| expression.kind === LuaSyntaxKind.NumericLiteralExpression
 		|| expression.kind === LuaSyntaxKind.StringLiteralExpression
-		|| expression.kind === LuaSyntaxKind.StringRefExpression
 		|| expression.kind === LuaSyntaxKind.UnaryExpression
 	) {
 		return {

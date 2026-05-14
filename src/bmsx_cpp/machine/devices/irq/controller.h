@@ -1,14 +1,11 @@
 #pragma once
 
 #include "machine/memory/memory.h"
+#include "machine/devices/irq/save_state.h"
 
 #include <cstdint>
 
 namespace bmsx {
-
-struct IrqControllerState {
-	uint32_t pendingFlags = 0;
-};
 
 class IrqController {
 public:

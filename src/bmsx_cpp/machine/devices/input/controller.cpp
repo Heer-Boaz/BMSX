@@ -66,7 +66,7 @@ void InputController::reset() {
 	m_sampleArmed = false;
 	m_sampleSequence = 0;
 	m_lastSampleCycle = 0;
-	for (i32 playerIndex = 1; playerIndex <= PLAYERS_MAX; playerIndex += 1) {
+	for (i32 playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
 		PlayerChipState& state = m_playerStates[static_cast<size_t>(playerIndex - 1)];
 		clearPlayerActions(playerIndex, state);
 	}
@@ -90,42 +90,6 @@ void InputController::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
 	m_input.samplePlayers(currentTimeMs);
 	sampleCommittedActions();
 	m_sampleArmed = false;
-}
-
-InputControllerState InputController::captureState() const {
-	InputControllerState state;
-	state.sampleArmed = m_sampleArmed;
-	state.sampleSequence = m_sampleSequence;
-	state.lastSampleCycle = m_lastSampleCycle;
-	state.registers = m_registers;
-	for (size_t index = 0; index < m_playerStates.size(); index += 1) {
-		state.players[index].actions = m_playerStates[index].actions;
-	}
-	state.eventFifoEvents = captureEventFifoEvents();
-	state.eventFifoOverflow = m_eventFifoOverflow;
-	return state;
-}
-
-void InputController::restoreState(const InputControllerState& state) {
-	for (i32 playerIndex = 1; playerIndex <= PLAYERS_MAX; playerIndex += 1) {
-		clearPlayerActions(playerIndex, m_playerStates[static_cast<size_t>(playerIndex - 1)]);
-	}
-	m_sampleArmed = state.sampleArmed;
-	m_sampleSequence = state.sampleSequence;
-	m_lastSampleCycle = state.lastSampleCycle;
-	m_registers = state.registers;
-	for (i32 playerIndex = 1; playerIndex <= PLAYERS_MAX; playerIndex += 1) {
-		restorePlayerActions(
-			playerIndex,
-			m_playerStates[static_cast<size_t>(playerIndex - 1)],
-			state.players[static_cast<size_t>(playerIndex - 1)].actions
-		);
-	}
-	restoreEventFifo(state.eventFifoEvents);
-	m_eventFifoOverflow = state.eventFifoOverflow;
-	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
-	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
-	mirrorRegisters();
 }
 
 void InputController::onRegisterWrite(uint32_t addr, Value value) {
@@ -321,7 +285,7 @@ void InputController::upsertAction(PlayerChipState& state, StringId actionString
 }
 
 void InputController::sampleCommittedActions() {
-	for (i32 playerIndex = 1; playerIndex <= PLAYERS_MAX; playerIndex += 1) {
+	for (i32 playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
 		PlayerChipState& state = m_playerStates[static_cast<size_t>(playerIndex - 1)];
 		PlayerInput* const playerInput = m_input.getPlayerInput(playerIndex);
 		for (InputControllerActionState& action : state.actions) {

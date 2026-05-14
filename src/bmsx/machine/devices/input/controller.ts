@@ -29,6 +29,7 @@ import {
 import { Memory } from '../../memory/memory';
 import { asStringId, StringValue, type Value } from '../../cpu/cpu';
 import type { StringId, StringPool } from '../../cpu/string_pool';
+import type { InputControllerActionState, InputControllerEventState, InputControllerRegisterState, InputControllerState } from './save_state';
 import {
 	createInputActionSnapshot,
 	decodeInputOutputIntensityQ16,
@@ -43,46 +44,11 @@ import {
 	INP_OUTPUT_STATUS_SUPPORTED,
 	INP_STATUS_CONSUMED,
 	INPUT_CONTROLLER_EVENT_FIFO_CAPACITY,
+	INPUT_CONTROLLER_PLAYER_COUNT,
 	packInputActionStatus,
 } from './contracts';
 
 const INP_CONTEXT_ID = 'inp_chip';
-export const INPUT_CONTROLLER_PLAYER_COUNT = Input.PLAYERS_MAX;
-
-type InputControllerActionState = {
-	actionStringId: StringId;
-	bindStringId: StringId;
-	statusWord: number;
-	valueQ16: number;
-	pressTime: number;
-	repeatCount: number;
-};
-
-type InputControllerPlayerState = {
-	actions: InputControllerActionState[];
-};
-
-type InputControllerEventState = {
-	player: number;
-	actionStringId: StringId;
-	statusWord: number;
-	valueQ16: number;
-	repeatCount: number;
-};
-
-type InputControllerRegisterState = {
-	player: number;
-	actionStringId: StringId;
-	bindStringId: StringId;
-	ctrl: number;
-	queryStringId: StringId;
-	status: number;
-	value: number;
-	consumeStringId: StringId;
-	outputIntensityQ16: number;
-	outputDurationMs: number;
-};
-
 type PlayerChipState = {
 	keyboard: KeyboardInputMapping;
 	gamepad: GamepadInputMapping;
@@ -105,16 +71,6 @@ const COMPLEX_QUERY_ACTION_SNAPSHOT: InputControllerActionState = {
 	valueQ16: 0,
 	pressTime: 0,
 	repeatCount: 0,
-};
-
-export type InputControllerState = {
-	sampleArmed: boolean;
-	sampleSequence: number;
-	lastSampleCycle: number;
-	registers: InputControllerRegisterState;
-	players: InputControllerPlayerState[];
-	eventFifoEvents: InputControllerEventState[];
-	eventFifoOverflow: boolean;
 };
 
 function createResetRegisters(): InputControllerRegisterState {

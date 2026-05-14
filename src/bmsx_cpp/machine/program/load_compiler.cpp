@@ -144,13 +144,24 @@ Value resolveValueExpr(NativeArgsView args, const LoadSubsetValueExpr& expr) {
 
 LoadSubsetPathStep compilePathStep(Runtime& runtime, const std::string& chunkName, const LuaExpression& expression) {
 	if (expression.kind == LuaSyntaxKind::UnaryExpression) {
-		if (expression.unaryOperator != LuaUnaryOperator::Negate || expression.operand == nullptr || expression.operand->kind != LuaSyntaxKind::NumericLiteralExpression) {
-			fail(chunkName, "index expressions must use string or numeric literals", &expression.range);
+		switch (expression.unaryOperator) {
+			case LuaUnaryOperator::Negate:
+				if (expression.operand->kind != LuaSyntaxKind::NumericLiteralExpression) {
+					fail(chunkName, "index expressions must use string or numeric literals", &expression.range);
+				}
+				return {
+					.kind = LoadSubsetPathStep::Kind::Key,
+					.key = valueNumber(-expression.operand->numberValue),
+				};
+			case LuaUnaryOperator::StringId:
+				if (expression.operand->kind != LuaSyntaxKind::StringLiteralExpression) {
+					fail(chunkName, "index expressions must use string or numeric literals", &expression.range);
+				}
+				return {
+					.kind = LoadSubsetPathStep::Kind::Field,
+					.fieldKey = runtime.machine.cpu.stringPool().intern(expression.operand->stringValue),
+				};
 		}
-		return {
-			.kind = LoadSubsetPathStep::Kind::Key,
-			.key = valueNumber(-expression.operand->numberValue),
-		};
 	}
 	if (expression.kind == LuaSyntaxKind::NumericLiteralExpression) {
 		if (
@@ -174,15 +185,6 @@ LoadSubsetPathStep compilePathStep(Runtime& runtime, const std::string& chunkNam
 		return {
 			.kind = LoadSubsetPathStep::Kind::Field,
 			.fieldKey = runtime.machine.cpu.stringPool().intern(expression.stringValue),
-		};
-	}
-	if (expression.kind == LuaSyntaxKind::StringRefExpression) {
-		if (expression.operand->kind != LuaSyntaxKind::StringLiteralExpression) {
-			fail(chunkName, "index expressions must use string or numeric literals", &expression.range);
-		}
-		return {
-			.kind = LoadSubsetPathStep::Kind::Field,
-			.fieldKey = runtime.machine.cpu.stringPool().intern(expression.operand->stringValue),
 		};
 	}
 	fail(chunkName, "index expressions must use string or numeric literals", &expression.range);
@@ -226,12 +228,19 @@ CompiledParamPath compileParamPath(
 }
 
 Value compileLiteralExpr(Runtime& runtime, const std::string& chunkName, const LuaExpression& expression) {
-	(void)runtime;
 	if (expression.kind == LuaSyntaxKind::UnaryExpression) {
-		if (expression.unaryOperator != LuaUnaryOperator::Negate || expression.operand == nullptr || expression.operand->kind != LuaSyntaxKind::NumericLiteralExpression) {
-			fail(chunkName, "unsupported literal expression", &expression.range);
+		switch (expression.unaryOperator) {
+			case LuaUnaryOperator::Negate:
+				if (expression.operand->kind != LuaSyntaxKind::NumericLiteralExpression) {
+					fail(chunkName, "unsupported literal expression", &expression.range);
+				}
+				return valueNumber(-expression.operand->numberValue);
+			case LuaUnaryOperator::StringId:
+				if (expression.operand->kind != LuaSyntaxKind::StringLiteralExpression) {
+					fail(chunkName, "unsupported literal expression", &expression.range);
+				}
+				return valueString(runtime.machine.cpu.stringPool().intern(expression.operand->stringValue));
 		}
-		return valueNumber(-expression.operand->numberValue);
 	}
 	switch (expression.kind) {
 		case LuaSyntaxKind::NilLiteralExpression:
@@ -242,11 +251,6 @@ Value compileLiteralExpr(Runtime& runtime, const std::string& chunkName, const L
 			return valueNumber(expression.numberValue);
 		case LuaSyntaxKind::StringLiteralExpression:
 			return valueString(runtime.machine.cpu.stringPool().intern(expression.stringValue));
-		case LuaSyntaxKind::StringRefExpression:
-			if (expression.operand->kind != LuaSyntaxKind::StringLiteralExpression) {
-				fail(chunkName, "unsupported literal expression", &expression.range);
-			}
-			return valueString(runtime.machine.cpu.stringPool().intern(expression.operand->stringValue));
 		default:
 			fail(chunkName, "unsupported literal expression", &expression.range);
 	}
@@ -263,7 +267,6 @@ LoadSubsetValueExpr compileValueExpr(
 		|| expression.kind == LuaSyntaxKind::BooleanLiteralExpression
 		|| expression.kind == LuaSyntaxKind::NumericLiteralExpression
 		|| expression.kind == LuaSyntaxKind::StringLiteralExpression
-		|| expression.kind == LuaSyntaxKind::StringRefExpression
 		|| expression.kind == LuaSyntaxKind::UnaryExpression
 	) {
 		return {

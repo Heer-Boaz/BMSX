@@ -26,24 +26,6 @@ struct MachineTiming {
 	int vdpWorkUnitsPerSec = 0;
 };
 
-struct MachineState {
-	GeometryControllerState geometry;
-	IrqControllerState irq;
-	AudioControllerState audio;
-	InputControllerState input;
-	VdpState vdp;
-};
-
-struct MachineSaveState {
-	MemorySaveState memory;
-	GeometryControllerState geometry;
-	IrqControllerState irq;
-	AudioControllerState audio;
-	StringPoolState stringPool;
-	InputControllerState input;
-	VdpSaveState vdp;
-};
-
 class Machine {
 public:
 	Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, MicrotaskQueue& microtasks);
@@ -66,10 +48,6 @@ public:
 	void refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles);
 	void advanceDevices(int cycles);
 	void runDeviceService(uint8_t deviceKind);
-	MachineState captureState() const;
-	void restoreState(const MachineState& state);
-	MachineSaveState captureSaveState() const;
-	void restoreSaveState(const MachineSaveState& state);
 };
 
 } // namespace bmsx

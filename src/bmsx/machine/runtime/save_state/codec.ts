@@ -1,7 +1,7 @@
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../../common/serializer/binencoder';
-import type { MachineSaveState } from '../../machine';
+import type { MachineSaveState } from '../../save_state';
 import type { CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeRefSegment, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
-import type { IrqControllerState } from '../../devices/irq/controller';
+import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
 import type {
 	ApuBadpDecoderSaveState,
@@ -11,8 +11,8 @@ import type {
 } from '../../devices/audio/save_state';
 import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT } from '../../devices/audio/contracts';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
-import { INPUT_CONTROLLER_PLAYER_COUNT, type InputControllerState } from '../../devices/input/controller';
-import { INPUT_CONTROLLER_EVENT_FIFO_CAPACITY } from '../../devices/input/contracts';
+import type { InputControllerState } from '../../devices/input/save_state';
+import { INPUT_CONTROLLER_EVENT_FIFO_CAPACITY, INPUT_CONTROLLER_PLAYER_COUNT } from '../../devices/input/contracts';
 import {
 	GEOMETRY_CONTROLLER_PHASE_REJECTED,
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,

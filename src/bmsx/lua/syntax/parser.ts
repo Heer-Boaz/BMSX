@@ -43,7 +43,6 @@ import type {
 	LuaSourceRange,
 	LuaStatement,
 	LuaStringLiteralExpression,
-	LuaStringRefExpression,
 	LuaLocalAttribute,
 	LuaTableArrayField,
 	LuaTableConstructorExpression,
@@ -706,7 +705,7 @@ export class LuaParser {
 	private parseUnaryExpression(): LuaExpression {
 		if (this.check(LuaTokenType.Ampersand)) {
 			const ampersandToken = this.advance();
-			return this.createStringRefExpression(ampersandToken, this.parseUnaryExpression());
+			return this.createUnaryExpression(ampersandToken, this.parseUnaryExpression(), LuaUnaryOperator.StringId);
 		}
 		if (this.match(LuaTokenType.Not)) {
 			const operatorToken = this.previous();
@@ -1379,14 +1378,6 @@ export class LuaParser {
 			kind: LuaSyntaxKind.StringLiteralExpression,
 			range: this.rangeFromTokenAndToken(token, token),
 			value: this.stringLiteralValue(token, 'Expected string literal.'),
-		};
-	}
-
-	private createStringRefExpression(ampersandToken: LuaToken, operand: LuaExpression): LuaStringRefExpression {
-		return {
-			kind: LuaSyntaxKind.StringRefExpression,
-			range: this.rangeFromTokenAndNode(ampersandToken, operand),
-			operand,
 		};
 	}
 

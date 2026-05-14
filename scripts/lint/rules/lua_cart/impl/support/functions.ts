@@ -1,4 +1,4 @@
-import { LuaAssignmentOperator as AssignmentOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../src/bmsx/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../src/bmsx/lua/syntax/ast';
 import { isIdentifier } from './bindings';
 import { isBuiltinCallExpression } from './calls';
 import { matchesLocalAliasReturnWrapperPattern } from './cart_patterns';
@@ -265,7 +265,7 @@ export function collectOptionsParameterUseInExpression(expression: Expression, p
 			if (isIdentifier(expression.base, parameterName)) {
 				if (expression.index.kind === SyntaxKind.StringLiteralExpression) {
 					use.fields.add(expression.index.value);
-				} else if (expression.index.kind === SyntaxKind.StringRefExpression && expression.index.operand.kind === SyntaxKind.StringLiteralExpression) {
+				} else if (expression.index.kind === SyntaxKind.UnaryExpression && expression.index.operator === UnaryOperator.StringId && expression.index.operand.kind === SyntaxKind.StringLiteralExpression) {
 					use.fields.add(expression.index.operand.value);
 				} else {
 					use.dynamicReads += 1;

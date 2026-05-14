@@ -1630,10 +1630,6 @@ class SemanticBuilder {
 				this.visitExpression(expression.operand, context);
 				return null;
 			}
-			case LuaSyntaxKind.StringRefExpression: {
-				this.visitExpression(expression.operand, context);
-				return null;
-			}
 			case LuaSyntaxKind.VarargExpression:
 			case LuaSyntaxKind.NumericLiteralExpression:
 			case LuaSyntaxKind.StringLiteralExpression:

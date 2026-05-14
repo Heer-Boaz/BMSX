@@ -10,7 +10,7 @@ import {
 	ROM_TOC_OP_NONE,
 } from '../toc';
 
-type StringRef = { offset: number; length: number };
+type TocStringSlice = { offset: number; length: number };
 
 function concatArrays(chunks: Uint8Array[], totalLength: number): Uint8Array {
 	const output = new Uint8Array(totalLength);
@@ -33,7 +33,7 @@ function writeU32(view: DataView, offset: number, value: number): void {
 export function encodeRomToc(params: { entries: RomAsset[]; projectRootPath?: string | null; }): Uint8Array {
 	const encoder = new TextEncoder();
 	const stringChunks: Uint8Array[] = [];
-	const stringIndex = new Map<string, StringRef>();
+	const stringIndex = new Map<string, TocStringSlice>();
 	let stringTableLength = 0;
 	const entries = params.entries
 		.map((entry) => {
@@ -44,7 +44,7 @@ export function encodeRomToc(params: { entries: RomAsset[]; projectRootPath?: st
 		})
 		.sort((a, b) => (a.token.hi - b.token.hi) || (a.token.lo - b.token.lo));
 
-	const intern = (value: string | null | undefined): StringRef => {
+	const intern = (value: string | null | undefined): TocStringSlice => {
 		if (!value || value.length === 0) {
 			return { offset: ROM_TOC_INVALID_U32, length: 0 };
 		}

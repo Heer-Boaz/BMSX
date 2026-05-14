@@ -34,7 +34,6 @@ export const enum LuaSyntaxKind {
 	LabelStatement,
 	NumericLiteralExpression,
 	StringLiteralExpression,
-	StringRefExpression,
 	BooleanLiteralExpression,
 	NilLiteralExpression,
 	VarargExpression,
@@ -90,7 +89,6 @@ export type LuaStatement =
 export type LuaExpression =
 	| LuaNumericLiteralExpression
 	| LuaStringLiteralExpression
-	| LuaStringRefExpression
 	| LuaBooleanLiteralExpression
 	| LuaNilLiteralExpression
 	| LuaVarargExpression
@@ -238,11 +236,6 @@ export type LuaStringLiteralExpression = LuaNode & {
 	readonly value: string;
 };
 
-export type LuaStringRefExpression = LuaNode & {
-	readonly kind: LuaSyntaxKind.StringRefExpression;
-	readonly operand: LuaExpression;
-};
-
 export type LuaBooleanLiteralExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.BooleanLiteralExpression;
 	readonly value: boolean;
@@ -337,6 +330,7 @@ export const enum LuaUnaryOperator {
 	Not,
 	Length,
 	BitwiseNot,
+	StringId,
 }
 
 export type LuaUnaryExpression = LuaNode & {

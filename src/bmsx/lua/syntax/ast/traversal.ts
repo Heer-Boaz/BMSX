@@ -41,9 +41,6 @@ export function visitLuaExpressionChildren(
 		case LuaSyntaxKind.UnaryExpression:
 			visit((expression as LuaUnaryExpression).operand);
 			return;
-		case LuaSyntaxKind.StringRefExpression:
-			visit(expression.operand);
-			return;
 		case LuaSyntaxKind.CallExpression: {
 			const call = expression as LuaCallExpression;
 			visit(call.callee);

@@ -14,6 +14,7 @@ export const INP_STATUS_GUARDED_JUST_PRESSED = 1 << 9;
 export const INP_STATUS_REPEAT_PRESSED = 1 << 10;
 export const INP_STATUS_HAS_VALUE = 1 << 11;
 
+export const INPUT_CONTROLLER_PLAYER_COUNT = 4;
 export const INPUT_CONTROLLER_EVENT_FIFO_CAPACITY = 32;
 export const INP_EVENT_STATUS_EMPTY = 1 << 0;
 export const INP_EVENT_STATUS_FULL = 1 << 1;

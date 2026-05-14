@@ -26,7 +26,6 @@ import {
 	type LuaStatement,
 	type LuaBooleanLiteralExpression,
 	type LuaStringLiteralExpression,
-	type LuaStringRefExpression,
 	type LuaReturnStatement,
 	type LuaUnaryExpression,
 	type LuaSourceRange,
@@ -1579,10 +1578,6 @@ class FunctionBuilder {
 				return (expression as LuaNumericLiteralExpression).value;
 			case LuaSyntaxKind.StringLiteralExpression:
 				return this.program.internString((expression as LuaStringLiteralExpression).value);
-			case LuaSyntaxKind.StringRefExpression: {
-				const value = this.evaluateCompileTimeExpression((expression as LuaStringRefExpression).operand);
-				return value !== undefined && valueIsString(value) ? value : undefined;
-			}
 			case LuaSyntaxKind.BooleanLiteralExpression:
 				return (expression as LuaBooleanLiteralExpression).value;
 			case LuaSyntaxKind.NilLiteralExpression:
@@ -1617,6 +1612,8 @@ class FunctionBuilder {
 				return valueIsString(operand) ? this.program.stringPool.codepointCount(asStringId(operand)) : undefined;
 			case LuaUnaryOperator.BitwiseNot:
 				return typeof operand === 'number' ? ~operand : undefined;
+			case LuaUnaryOperator.StringId:
+				return valueIsString(operand) ? operand : undefined;
 			default:
 				return undefined;
 		}
@@ -2483,9 +2480,6 @@ class FunctionBuilder {
 				case LuaSyntaxKind.StringLiteralExpression:
 					this.emitLoadConst(target, this.program.internString(expression.value));
 					return;
-				case LuaSyntaxKind.StringRefExpression:
-					this.compileStringIdExpression(expression as LuaStringRefExpression, target, resultCount);
-					return;
 				case LuaSyntaxKind.BooleanLiteralExpression:
 					this.emitLoadBool(target, expression.value);
 					return;
@@ -2499,7 +2493,7 @@ class FunctionBuilder {
 					this.compileTableConstructor(expression as LuaTableConstructorExpression, target);
 					return;
 				case LuaSyntaxKind.UnaryExpression:
-					this.compileUnaryExpression(expression, target);
+					this.compileUnaryExpression(expression as LuaUnaryExpression, target, resultCount);
 					return;
 				case LuaSyntaxKind.BinaryExpression:
 					this.compileBinaryExpression(expression, target);
@@ -2806,7 +2800,7 @@ class FunctionBuilder {
 		}
 	}
 
-	private compileStringIdExpression(expression: LuaStringRefExpression, target: number, resultCount: number): void {
+	private compileStringIdUnaryExpression(expression: LuaUnaryExpression, target: number, resultCount: number): void {
 		const valueKind = this.flowAnalysis!.evaluateExpressionValueKind(expression.operand, this.currentFlowState);
 		switch (valueKind) {
 			case 'string':
@@ -2842,7 +2836,11 @@ class FunctionBuilder {
 		return reg;
 	}
 
-	private compileUnaryExpression(expression: any, target: number): void {
+	private compileUnaryExpression(expression: LuaUnaryExpression, target: number, resultCount: number): void {
+		if (expression.operator === LuaUnaryOperator.StringId) {
+			this.compileStringIdUnaryExpression(expression, target, resultCount);
+			return;
+		}
 		const operandReg = this.allocTemp();
 		this.compileExpressionInto(expression.operand, operandReg, 1);
 		switch (expression.operator) {

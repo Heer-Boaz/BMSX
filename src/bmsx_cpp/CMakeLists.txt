@@ -221,8 +221,10 @@ add_library(bmsx_core STATIC
 	machine/devices/geometry/controller.cpp
 	machine/devices/imgdec/controller.cpp
 	machine/devices/input/controller.cpp
+	machine/devices/input/save_state.cpp
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp
+	machine/devices/irq/save_state.cpp
 	machine/firmware/devtools.cpp
 	machine/firmware/builtin_descriptors.cpp
 	machine/firmware/builtins.cpp
@@ -234,6 +236,7 @@ add_library(bmsx_core STATIC
 	machine/memory/lua_heap_usage.cpp
 	machine/firmware/runtime.cpp
 	machine/machine.cpp
+	machine/save_state.cpp
 	machine/scheduler/device.cpp
 	machine/runtime/runtime.cpp
 	machine/runtime/machine_state.cpp

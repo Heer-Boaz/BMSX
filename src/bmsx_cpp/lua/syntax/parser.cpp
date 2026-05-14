@@ -88,12 +88,13 @@ LuaExpression LuaParser::parseExpression() {
 
 LuaExpression LuaParser::parseUnaryExpression() {
 	if (check(LuaTokenType::Ampersand)) {
-		const LuaToken& ampersandToken = advance();
-		LuaExpression expression;
-		expression.kind = LuaSyntaxKind::StringRefExpression;
+		const LuaToken& operatorToken = advance();
 		LuaExpression operand = parseUnaryExpression();
-		expression.range = rangeFromTokenAndExpression(ampersandToken, operand);
+		LuaExpression expression;
+		expression.kind = LuaSyntaxKind::UnaryExpression;
+		expression.unaryOperator = LuaUnaryOperator::StringId;
 		expression.operand = std::make_unique<LuaExpression>(std::move(operand));
+		expression.range = rangeFromPositions(positionFromToken(operatorToken), expression.operand->range.end);
 		return expression;
 	}
 	if (match(LuaTokenType::Minus)) {

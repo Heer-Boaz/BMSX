@@ -10,7 +10,7 @@
 namespace bmsx {
 namespace {
 
-struct TocStringRef {
+struct TocStringSlice {
 	u32 offset = ROM_TOC_INVALID_U32;
 	u32 length = 0;
 };
@@ -44,7 +44,7 @@ u32 tocUpdateHi(const std::optional<i64>& value) {
 	return value.has_value() ? static_cast<u32>(static_cast<u64>(*value) >> 32u) : 0u;
 }
 
-void writeTocString(std::vector<u8>& table, std::unordered_map<std::string, TocStringRef>& index, std::string_view text, TocStringRef& out) {
+void writeTocString(std::vector<u8>& table, std::unordered_map<std::string, TocStringSlice>& index, std::string_view text, TocStringSlice& out) {
 	if (text.empty()) {
 		out = {};
 		return;
@@ -63,16 +63,16 @@ void writeTocString(std::vector<u8>& table, std::unordered_map<std::string, TocS
 	index.emplace(key, out);
 }
 
-TocStringRef internTocString(std::vector<u8>& table, std::unordered_map<std::string, TocStringRef>& index, const std::optional<std::string>& text) {
-	TocStringRef ref;
+TocStringSlice internTocString(std::vector<u8>& table, std::unordered_map<std::string, TocStringSlice>& index, const std::optional<std::string>& text) {
+	TocStringSlice ref;
 	if (text.has_value()) {
 		writeTocString(table, index, *text, ref);
 	}
 	return ref;
 }
 
-TocStringRef internTocString(std::vector<u8>& table, std::unordered_map<std::string, TocStringRef>& index, const std::string& text) {
-	TocStringRef ref;
+TocStringSlice internTocString(std::vector<u8>& table, std::unordered_map<std::string, TocStringSlice>& index, const std::string& text) {
+	TocStringSlice ref;
 	writeTocString(table, index, text, ref);
 	return ref;
 }
@@ -244,8 +244,8 @@ std::vector<u8> encodeRomToc(const RomTocPayload& payload) {
 	});
 
 	std::vector<u8> stringTable;
-	std::unordered_map<std::string, TocStringRef> stringIndex;
-	const TocStringRef projectRoot = internTocString(stringTable, stringIndex, payload.projectRootPath);
+	std::unordered_map<std::string, TocStringSlice> stringIndex;
+	const TocStringSlice projectRoot = internTocString(stringTable, stringIndex, payload.projectRootPath);
 
 	std::vector<u8> out(ROM_TOC_HEADER_SIZE + (entries.size() * ROM_TOC_ENTRY_SIZE));
 	writeLE32(out.data() + 0, ROM_TOC_MAGIC);
@@ -263,9 +263,9 @@ std::vector<u8> encodeRomToc(const RomTocPayload& payload) {
 
 	for (size_t index = 0; index < entries.size(); ++index) {
 		const RomSourceEntry& source = entries[index];
-		const TocStringRef resid = internTocString(stringTable, stringIndex, source.resid);
-		const TocStringRef sourcePath = internTocString(stringTable, stringIndex, source.rom.sourcePath);
-		const TocStringRef normalizedSourcePath = internTocString(stringTable, stringIndex, source.rom.normalizedSourcePath);
+		const TocStringSlice resid = internTocString(stringTable, stringIndex, source.resid);
+		const TocStringSlice sourcePath = internTocString(stringTable, stringIndex, source.rom.sourcePath);
+		const TocStringSlice normalizedSourcePath = internTocString(stringTable, stringIndex, source.rom.normalizedSourcePath);
 		const AssetTokenParts token = splitAssetToken(hashAssetToken(source.resid));
 		const u32 opId = source.rom.op == "delete" ? ROM_TOC_OP_DELETE : ROM_TOC_OP_NONE;
 		u8* entry = out.data() + ROM_TOC_HEADER_SIZE + (index * ROM_TOC_ENTRY_SIZE);

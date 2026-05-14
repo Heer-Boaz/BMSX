@@ -102,6 +102,7 @@ import {
 	IO_CMD_GEO_XFORM2_BATCH,
 } from '../../src/bmsx/machine/devices/geometry/contracts';
 import { Machine } from '../../src/bmsx/machine/machine';
+import { captureMachineSaveState, restoreMachineSaveState } from '../../src/bmsx/machine/save_state';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { RAM_BASE } from '../../src/bmsx/machine/memory/map';
 import type { GeometryController } from '../../src/bmsx/machine/devices/geometry/controller';
@@ -294,7 +295,7 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_BUSY);
 
 	memory.writeValue(IO_GEO_COUNT, 1);
-	const saved = machine.captureSaveState();
+	const saved = captureMachineSaveState(machine);
 
 	geometry.accrueCycles(8, 9);
 	geometry.onService(9);
@@ -302,7 +303,7 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_DONE);
 
-	machine.restoreSaveState(saved);
+	restoreMachineSaveState(machine, saved);
 	geometry.setTiming(1, 1, machine.scheduler.nowCycles);
 	assert.equal(memory.readIoU32(IO_GEO_CMD), IO_CMD_GEO_XFORM2_BATCH);
 	assert.equal(memory.readIoU32(IO_GEO_COUNT), 1);

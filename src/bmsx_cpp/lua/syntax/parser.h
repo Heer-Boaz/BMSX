@@ -22,7 +22,6 @@ enum class LuaSyntaxKind {
 	BooleanLiteralExpression,
 	NumericLiteralExpression,
 	StringLiteralExpression,
-	StringRefExpression,
 };
 
 enum class LuaAssignmentOperator {
@@ -42,6 +41,7 @@ struct LuaSourceRange {
 
 enum class LuaUnaryOperator {
 	Negate,
+	StringId,
 };
 
 struct LuaIdentifier {

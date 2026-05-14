@@ -1,4 +1,5 @@
 import type { ApuAudioSlot } from './contracts';
+import type { BiquadFilterState } from './biquad_filter';
 
 export type ApuBiquadFilterState = {
 	enabled: boolean;
@@ -77,7 +78,7 @@ export type ApuBadpDecoderStateAccess = Omit<ApuBadpDecoderSaveState, 'predictor
 };
 
 export type ApuOutputVoiceStateAccess = Omit<ApuOutputVoiceState, 'filter' | 'badp'> & {
-	filter: ApuBiquadFilterState;
+	filter: BiquadFilterState;
 	badp: ApuBadpDecoderStateAccess;
 };
 
