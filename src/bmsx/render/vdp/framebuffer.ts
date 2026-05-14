@@ -1,13 +1,14 @@
 import type { TextureHandle } from '../backend/backend';
 import type { VDP } from '../../machine/devices/vdp/vdp';
-import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink, VdpSurfaceUpload, VdpSurfaceUploadSink } from '../../machine/devices/vdp/device_output';
-import { VDP_RD_SURFACE_FRAMEBUFFER } from '../../machine/devices/vdp/contracts';
+import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink } from '../../machine/devices/vdp/device_output';
 import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY } from '../../rompack/format';
 import { DEFAULT_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { TextureManager } from '../texture_manager';
 import type { GameView } from '../gameview';
 
-export class VdpFrameBufferTextures implements VdpSurfaceUploadSink, VdpFrameBufferPresentationSink {
+const EMPTY_TEXTURE_SEED = new Uint8Array(4);
+
+export class VdpFrameBufferTextures implements VdpFrameBufferPresentationSink {
 	private renderFrameBufferTexture: TextureHandle = null as TextureHandle;
 	private displayFrameBufferTexture: TextureHandle = null as TextureHandle;
 	private frameBufferTextureWidth = 0;
@@ -17,15 +18,6 @@ export class VdpFrameBufferTextures implements VdpSurfaceUploadSink, VdpFrameBuf
 		private readonly textureManager: TextureManager,
 		private readonly view: GameView,
 	) {
-	}
-
-	public consumeVdpSurfaceUpload(slot: VdpSurfaceUpload): boolean {
-		if (slot.surfaceId !== VDP_RD_SURFACE_FRAMEBUFFER) {
-			return false;
-		}
-		this.frameBufferTextureWidth = slot.surfaceWidth;
-		this.frameBufferTextureHeight = slot.surfaceHeight;
-		return true;
 	}
 
 	public consumeVdpFrameBufferPresentation(presentation: VdpFrameBufferPresentation): void {
@@ -85,24 +77,21 @@ export class VdpFrameBufferTextures implements VdpSurfaceUploadSink, VdpFrameBuf
 		this.frameBufferTextureHeight = vdp.frameBufferHeight;
 		this.renderFrameBufferTexture = this.textureManager.createTextureFromPixelsSync(
 			FRAMEBUFFER_RENDER_TEXTURE_KEY,
-			vdp.frameBufferRenderReadback,
-			vdp.frameBufferWidth,
-			vdp.frameBufferHeight
+			EMPTY_TEXTURE_SEED,
+			1,
+			1
 		);
 		this.renderFrameBufferTexture = this.textureManager.resizeTextureForKey(FRAMEBUFFER_RENDER_TEXTURE_KEY, vdp.frameBufferWidth, vdp.frameBufferHeight);
-		this.view.backend.updateTexture(this.renderFrameBufferTexture, vdp.frameBufferRenderReadback, vdp.frameBufferWidth, vdp.frameBufferHeight, DEFAULT_TEXTURE_PARAMS);
 		this.view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = this.renderFrameBufferTexture;
-		vdp.drainSurfaceUploads(this);
 		this.displayFrameBufferTexture = this.textureManager.createTextureFromPixelsSync(
 			FRAMEBUFFER_TEXTURE_KEY,
-			vdp.frameBufferDisplayReadback,
-			vdp.frameBufferWidth,
-			vdp.frameBufferHeight
+			EMPTY_TEXTURE_SEED,
+			1,
+			1
 		);
 		this.displayFrameBufferTexture = this.textureManager.resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, vdp.frameBufferWidth, vdp.frameBufferHeight);
-		this.view.backend.updateTexture(this.displayFrameBufferTexture, vdp.frameBufferDisplayReadback, vdp.frameBufferWidth, vdp.frameBufferHeight, DEFAULT_TEXTURE_PARAMS);
 		this.view.textures[FRAMEBUFFER_TEXTURE_KEY] = this.displayFrameBufferTexture;
-		vdp.clearFrameBufferPresentation();
+		vdp.syncFrameBufferPresentation(this);
 	}
 
 	public width(): number {

@@ -10,11 +10,10 @@ class GameView;
 class TextureManager;
 class VDP;
 
-class VdpFrameBufferTextures final : public VdpSurfaceUploadSink, public VdpFrameBufferPresentationSink {
+class VdpFrameBufferTextures final : public VdpFrameBufferPresentationSink {
 public:
 	VdpFrameBufferTextures(TextureManager& textureManager, GameView& view);
 
-	bool consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) override;
 	void consumeVdpFrameBufferPresentation(const VdpFrameBufferPresentation& presentation) override;
 	void initialize(VDP& vdp);
 	TextureHandle displayTexture() const { return m_displayFrameBufferTexture; }

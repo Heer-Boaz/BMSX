@@ -79,6 +79,21 @@ test('VDP framebuffer texture syncs from presented device page', () => {
 	assert.deepEqual(Array.from(pixel), [0x11, 0x22, 0x33, 0xff]);
 });
 
+test('VDP framebuffer context sync consumes pending presentation through the device transaction', () => {
+	const { memory, vdp } = createVdp();
+	submitClearFrame(memory, vdp);
+
+	const backend = new HeadlessGPUBackend();
+	const textureManager = new TextureManager(backend);
+	const frameBufferTextures = new VdpFrameBufferTextures(textureManager, { backend, textures: {} } as any);
+	frameBufferTextures.initialize(vdp);
+	assert.equal(drainPresentationProbe(vdp).consumed, false);
+
+	const pixel = new Uint8Array(4);
+	backend.readTextureRegion(frameBufferTextures.displayTexture(), pixel, 1, 1, 0, 0, DEFAULT_TEXTURE_PARAMS);
+	assert.deepEqual(Array.from(pixel), [0x11, 0x22, 0x33, 0xff]);
+});
+
 test('VDP save-state restore drops runtime-only framebuffer presentation work', () => {
 	const { memory, vdp } = createVdp();
 	const saved = vdp.captureSaveState();

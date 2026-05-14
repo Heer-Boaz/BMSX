@@ -51,11 +51,18 @@ void VdpFbmUnit::copyReadbackPixelsFrom(const std::vector<u8>& source, u32 x, u3
 	}
 }
 
-const VdpFrameBufferPresentation& VdpFbmUnit::buildPresentation(const std::vector<u8>& renderReadback) {
-	m_presentationOutput.presentationCount = m_presentationCount;
-	m_presentationOutput.requiresFullSync = m_presentationRequiresFullSync;
-	m_presentationOutput.dirtyRowStart = m_presentationDirtyRowStart;
-	m_presentationOutput.dirtyRowEnd = m_presentationDirtyRowEnd;
+const VdpFrameBufferPresentation& VdpFbmUnit::buildPresentation(const std::vector<u8>& renderReadback, bool forceFullSync) {
+	if (forceFullSync) {
+		m_presentationOutput.presentationCount = 0u;
+		m_presentationOutput.requiresFullSync = true;
+		m_presentationOutput.dirtyRowStart = 0u;
+		m_presentationOutput.dirtyRowEnd = 0u;
+	} else {
+		m_presentationOutput.presentationCount = m_presentationCount;
+		m_presentationOutput.requiresFullSync = m_presentationRequiresFullSync;
+		m_presentationOutput.dirtyRowStart = m_presentationDirtyRowStart;
+		m_presentationOutput.dirtyRowEnd = m_presentationDirtyRowEnd;
+	}
 	m_presentationOutput.dirtySpansByRow = &m_presentationDirtySpansByRow;
 	m_presentationOutput.renderReadback = &renderReadback;
 	m_presentationOutput.displayReadback = &m_displayFrameBufferCpuReadback;

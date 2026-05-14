@@ -727,6 +727,15 @@ Already advanced in this goal:
   VDP still performs VRAM/sample resolution and FBM dimension ownership, but it
   no longer passes framebuffer dimensions through the host-output read path or
   carries separate committed camera/skybox/billboard output mirrors.
+- FBM framebuffer host sync is now a VDP-owned output transaction instead of a
+  renderer pull of raw framebuffer internals. TS and C++ expose the pending
+  presentation drain for normal VBLANK page flips and a forced full-sync
+  transaction for host context restore. The renderer seeds GPU textures from
+  that transaction, so it no longer calls public render/display readback getters
+  or clears the pending presentation latch itself. Dirty framebuffer upload
+  acknowledgement stays inside the VDP owner when that full-sync transaction is
+  consumed, preserving the direct VRAM/readback buffers without adding a scene
+  graph or host facade.
 - Geometry now has mirrored TS/C++ controller phase state (`Idle`, `Busy`,
   `Done`, `Error`, `Rejected`) and the 16-word registerfile count in the
   Geometry contract owner instead of deriving the device lifecycle from
@@ -942,10 +951,10 @@ Open problems to continue with:
 
 If `/goal resume` is invoked, it should mean this order of work:
 
-1. Continue VDP-as-hardware cleanup beyond the now-implemented VOUT beam timing:
-   audit the remaining host-output read/ack lifetime, dirty-surface
-   acknowledgement, and renderer-consumed handles without adding renderer-facing
-   scene APIs or wrapper layers.
+1. Continue VDP-as-hardware cleanup beyond the now-implemented VOUT beam timing
+   and FBM context-sync transaction: audit the remaining dirty-surface
+   acknowledgement and renderer-consumed non-framebuffer surface handles without
+   adding renderer-facing scene APIs or wrapper layers.
 2. Continue auditing Geometry as a device, not as a math helper: register/latch
    ownership, scheduler timing, IRQ/status/fault behavior, scratch/result
    memory, save/load behavior, and TS/C++ parity should be checked as one
@@ -988,8 +997,9 @@ Completed foundation:
 Next recommended work:
 
 1. Continue VDP-as-hardware cleanup beyond the now-implemented VOUT scanline/dot
-   beam: audit host-output transaction lifetime, dirty-surface acknowledgement,
-   and renderer-consumed handles while preserving direct VDP-owned hot paths.
+   beam and FBM full-sync transaction: audit dirty-surface acknowledgement and
+   renderer-consumed non-framebuffer surface handles while preserving direct
+   VDP-owned hot paths.
 2. Continue Geometry as a real coprocessor device beyond the explicit
    controller phase and mirrored XFORM2/SAT2/overlap2d datapaths: re-audit
    register/latch ownership, scheduler timing, scratch/result memory,

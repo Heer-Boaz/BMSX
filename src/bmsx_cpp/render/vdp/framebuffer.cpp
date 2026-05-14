@@ -5,23 +5,20 @@
 #include "render/gameview.h"
 #include "render/texture_manager.h"
 #include "rompack/format.h"
+#include <array>
 #include <utility>
 #include <vector>
 
 namespace bmsx {
+namespace {
+
+const std::array<u8, 4> EMPTY_TEXTURE_SEED{{0, 0, 0, 0}};
+
+} // namespace
 
 VdpFrameBufferTextures::VdpFrameBufferTextures(TextureManager& textureManager, GameView& view)
 	: m_textureManager(textureManager)
 	, m_view(view) {
-}
-
-bool VdpFrameBufferTextures::consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) {
-	if (upload.surfaceId != VDP_RD_SURFACE_FRAMEBUFFER) {
-		return false;
-	}
-	m_frameBufferTextureWidth = upload.surfaceWidth;
-	m_frameBufferTextureHeight = upload.surfaceHeight;
-	return true;
 }
 
 void VdpFrameBufferTextures::consumeVdpFrameBufferPresentation(const VdpFrameBufferPresentation& presentation) {
@@ -73,52 +70,33 @@ void VdpFrameBufferTextures::consumeVdpFrameBufferPresentation(const VdpFrameBuf
 }
 
 void VdpFrameBufferTextures::initialize(VDP& vdp) {
-	const std::vector<u8>* renderReadback = vdp.frameBufferRenderReadback();
-	if (renderReadback == nullptr) {
-		return;
-	}
 	m_frameBufferTextureWidth = vdp.frameBufferWidth();
 	m_frameBufferTextureHeight = vdp.frameBufferHeight();
 	m_renderFrameBufferTexture = m_textureManager.createTextureFromPixelsSync(
 		FRAMEBUFFER_RENDER_TEXTURE_KEY,
-		renderReadback->data(),
-		static_cast<i32>(m_frameBufferTextureWidth),
-		static_cast<i32>(m_frameBufferTextureHeight)
+		EMPTY_TEXTURE_SEED.data(),
+		1,
+		1
 	);
 	m_renderFrameBufferTexture = m_textureManager.resizeTextureForKey(
 		FRAMEBUFFER_RENDER_TEXTURE_KEY,
 		static_cast<i32>(m_frameBufferTextureWidth),
 		static_cast<i32>(m_frameBufferTextureHeight)
 	);
-	m_view.backend()->updateTexture(
-		m_renderFrameBufferTexture,
-		renderReadback->data(),
-		static_cast<i32>(m_frameBufferTextureWidth),
-		static_cast<i32>(m_frameBufferTextureHeight),
-		DEFAULT_TEXTURE_PARAMS
-	);
 	m_view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = m_renderFrameBufferTexture;
-	vdp.drainSurfaceUploads(*this);
 	m_displayFrameBufferTexture = m_textureManager.createTextureFromPixelsSync(
 		FRAMEBUFFER_TEXTURE_KEY,
-		vdp.frameBufferDisplayReadback().data(),
-		static_cast<i32>(m_frameBufferTextureWidth),
-		static_cast<i32>(m_frameBufferTextureHeight)
+		EMPTY_TEXTURE_SEED.data(),
+		1,
+		1
 	);
 	m_displayFrameBufferTexture = m_textureManager.resizeTextureForKey(
 		FRAMEBUFFER_TEXTURE_KEY,
 		static_cast<i32>(m_frameBufferTextureWidth),
 		static_cast<i32>(m_frameBufferTextureHeight)
 	);
-	m_view.backend()->updateTexture(
-		m_displayFrameBufferTexture,
-		vdp.frameBufferDisplayReadback().data(),
-		static_cast<i32>(m_frameBufferTextureWidth),
-		static_cast<i32>(m_frameBufferTextureHeight),
-		DEFAULT_TEXTURE_PARAMS
-	);
 	m_view.textures[FRAMEBUFFER_TEXTURE_KEY] = m_displayFrameBufferTexture;
-	vdp.clearFrameBufferPresentation();
+	vdp.syncFrameBufferPresentation(*this);
 }
 
 void VdpFrameBufferTextures::presentVdpFrameBufferPages(u32 presentationCount) {

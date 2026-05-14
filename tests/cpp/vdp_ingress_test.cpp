@@ -86,6 +86,18 @@ struct PrimarySurfaceProbe final : bmsx::VdpSurfaceUploadSink {
 	}
 };
 
+struct FrameBufferPresentationProbe final : public bmsx::VdpFrameBufferPresentationSink {
+	void consumeVdpFrameBufferPresentation(const bmsx::VdpFrameBufferPresentation& presentation) override {
+		consumed = true;
+		count = presentation.presentationCount;
+		fullSync = presentation.requiresFullSync;
+	}
+
+	bool consumed = false;
+	uint32_t count = 0;
+	bool fullSync = false;
+};
+
 void require(bool condition, const char* message) {
 	if (!condition) {
 		throw std::runtime_error(message);
@@ -319,16 +331,33 @@ void testFrameBufferPresentSwapsDisplayReadback() {
 	h.vdp.advanceWork(workUnits);
 	require(h.vdp.presentReadyFrameOnVblankEdge(), "CLEAR should present framebuffer work");
 	requireDisplayFramePixel(h, 0u, 0u, 0x11u, 0x22u, 0x33u, 0xffu, "VDP present edge should swap CPU-visible display readback page");
-	class PresentationProbe final : public bmsx::VdpFrameBufferPresentationSink {
-	public:
-		void consumeVdpFrameBufferPresentation(const bmsx::VdpFrameBufferPresentation& presentation) override {
-			count = presentation.presentationCount;
-		}
-		uint32_t count = 0;
-	};
-	PresentationProbe probe;
+	FrameBufferPresentationProbe probe;
 	h.vdp.drainFrameBufferPresentation(probe);
 	require(probe.count == 1u, "VDP should latch one pending host texture mirror sync");
+}
+
+void testFrameBufferSyncConsumesPendingPresentation() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff112233u);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_CLEAR);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	const int workUnits = h.vdp.getPendingRenderWorkUnits();
+	require(workUnits > 0, "CLEAR should submit framebuffer render work before host context sync");
+	h.vdp.advanceWork(workUnits);
+	require(h.vdp.presentReadyFrameOnVblankEdge(), "CLEAR should present framebuffer work before host context sync");
+
+	FrameBufferPresentationProbe syncProbe;
+	h.vdp.syncFrameBufferPresentation(syncProbe);
+	require(syncProbe.consumed, "VDP context sync should emit a framebuffer host-output transaction");
+	require(syncProbe.count == 0u, "VDP context sync should not request a texture page swap");
+	require(syncProbe.fullSync, "VDP context sync should force both framebuffer textures to refresh");
+	requireDisplayFramePixel(h, 0u, 0u, 0x11u, 0x22u, 0x33u, 0xffu, "VDP context sync should leave display readback page intact");
+
+	FrameBufferPresentationProbe pendingProbe;
+	h.vdp.drainFrameBufferPresentation(pendingProbe);
+	require(!pendingProbe.consumed, "VDP context sync should consume the pending presentation latch");
 }
 
 void testPmuBankRegistersResolveDrawCtrl() {
@@ -1045,6 +1074,7 @@ int main() {
 		{"BLIT DRAW_CTRL snapshot", testBlitDrawCtrlSnapshot},
 		{"PMU parallax resolved BLIT snapshot", testPmuParallaxResolvedBlitSnapshot},
 		{"framebuffer present swaps display readback", testFrameBufferPresentSwapsDisplayReadback},
+		{"framebuffer context sync consumes pending presentation", testFrameBufferSyncConsumesPendingPresentation},
 		{"PMU bank registers resolve DRAW_CTRL", testPmuBankRegistersResolveDrawCtrl},
 		{"PMU scale uses absolute weight", testPmuScaleUsesAbsoluteWeight},
 		{"FIFO replay and faults", testFifoReplayAndFaults},

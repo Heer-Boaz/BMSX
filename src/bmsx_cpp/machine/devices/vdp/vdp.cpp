@@ -1166,31 +1166,29 @@ void VDP::presentFrameBufferPageOnVblankEdge() {
 	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 }
 
-void VDP::clearFrameBufferPresentation() {
-	if (m_fbm.hasPendingPresentation()) {
-		m_fbm.clearPresentation();
-	}
-}
-
-const std::vector<u8>* VDP::frameBufferRenderReadback() const {
-	const VdpSurfaceUploadSlot* slot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
-	if (slot == nullptr) {
-		return nullptr;
-	}
-	return &slot->cpuReadback;
-}
-
 void VDP::drainFrameBufferPresentation(VdpFrameBufferPresentationSink& sink) {
 	if (!m_fbm.hasPendingPresentation()) {
 		return;
 	}
-	const std::vector<u8>* renderReadback = frameBufferRenderReadback();
-	if (renderReadback == nullptr) {
+	const VdpSurfaceUploadSlot* slot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
+	if (slot == nullptr) {
 		m_fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
 		return;
 	}
-	sink.consumeVdpFrameBufferPresentation(m_fbm.buildPresentation(*renderReadback));
+	sink.consumeVdpFrameBufferPresentation(m_fbm.buildPresentation(slot->cpuReadback));
 	m_fbm.clearPresentation();
+}
+
+void VDP::syncFrameBufferPresentation(VdpFrameBufferPresentationSink& sink) {
+	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
+	if (slot == nullptr) {
+		return;
+	}
+	sink.consumeVdpFrameBufferPresentation(m_fbm.buildPresentation(slot->cpuReadback, true));
+	clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
+	if (m_fbm.hasPendingPresentation()) {
+		m_fbm.clearPresentation();
+	}
 }
 
 bool VDP::beginSubmittedFrame(VdpDexFrameState state) {
@@ -2545,11 +2543,12 @@ void VDP::copySurfacePixels(const VdpSurfaceUploadSlot& surface, uint32_t x, uin
 bool VDP::readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes) {
 	const std::vector<u8>* source = &m_fbm.displayReadback();
 	if (page == VdpFrameBufferPage::Render) {
-		source = frameBufferRenderReadback();
-		if (source == nullptr) {
+		const VdpSurfaceUploadSlot* slot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
+		if (slot == nullptr) {
 			m_fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
 			return false;
 		}
+		source = &slot->cpuReadback;
 	}
 	const size_t rowBytes = static_cast<size_t>(width) * 4u;
 	const size_t expectedBytes = rowBytes * static_cast<size_t>(height);

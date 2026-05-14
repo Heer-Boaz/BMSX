@@ -110,12 +110,19 @@ export class VdpFbmUnit {
 		}
 	}
 
-	public buildPresentation(renderReadback: Uint8Array): VdpFrameBufferPresentation {
+	public buildPresentation(renderReadback: Uint8Array, forceFullSync = false): VdpFrameBufferPresentation {
 		const presentation = this.presentationOutput;
-		presentation.presentationCount = this.presentationCount;
-		presentation.requiresFullSync = this.presentationRequiresFullSync;
-		presentation.dirtyRowStart = this.presentationDirtyRowStart;
-		presentation.dirtyRowEnd = this.presentationDirtyRowEnd;
+		if (forceFullSync) {
+			presentation.presentationCount = 0;
+			presentation.requiresFullSync = true;
+			presentation.dirtyRowStart = 0;
+			presentation.dirtyRowEnd = 0;
+		} else {
+			presentation.presentationCount = this.presentationCount;
+			presentation.requiresFullSync = this.presentationRequiresFullSync;
+			presentation.dirtyRowStart = this.presentationDirtyRowStart;
+			presentation.dirtyRowEnd = this.presentationDirtyRowEnd;
+		}
 		presentation.dirtySpansByRow = this.presentationDirtySpansByRow;
 		presentation.renderReadback = renderReadback;
 		presentation.displayReadback = this.displayFrameBufferCpuReadback;

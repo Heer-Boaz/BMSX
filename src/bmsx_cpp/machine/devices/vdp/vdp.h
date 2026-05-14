@@ -100,11 +100,9 @@ public:
 	bool presentReadyFrameOnVblankEdge();
 	uint32_t frameBufferWidth() const { return m_fbm.width(); }
 	uint32_t frameBufferHeight() const { return m_fbm.height(); }
-		const std::vector<u8>* frameBufferRenderReadback() const;
-		const std::vector<u8>& frameBufferDisplayReadback() const { return m_fbm.displayReadback(); }
-		bool readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes);
-		void drainFrameBufferPresentation(VdpFrameBufferPresentationSink& sink);
-		void clearFrameBufferPresentation();
+	bool readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes);
+	void drainFrameBufferPresentation(VdpFrameBufferPresentationSink& sink);
+	void syncFrameBufferPresentation(VdpFrameBufferPresentationSink& sink);
 	uint32_t readVdpStatus();
 	uint32_t readVdpData();
 
