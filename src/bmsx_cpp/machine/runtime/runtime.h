@@ -46,7 +46,6 @@ class Clock;
 class GameView;
 class Input;
 class MicrotaskQueue;
-class SoundMaster;
 
 constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
 
@@ -97,7 +96,6 @@ public:
 		const RuntimeOptions& options,
 		Clock& clock,
 		Input& input,
-		SoundMaster& soundMaster,
 		MicrotaskQueue& microtasks,
 		GameView& view
 	);

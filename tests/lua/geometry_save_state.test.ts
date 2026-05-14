@@ -27,7 +27,6 @@ import {
 } from '../../src/bmsx/machine/bus/io';
 import {
 	GEO_CTRL_ABORT,
-	GEO_CTRL_START,
 	GEOMETRY_CONTROLLER_PHASE_BUSY,
 	GEOMETRY_CONTROLLER_PHASE_DONE,
 	GEOMETRY_CONTROLLER_PHASE_ERROR,
@@ -74,7 +73,8 @@ import {
 import { Machine } from '../../src/bmsx/machine/machine';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { RAM_BASE } from '../../src/bmsx/machine/memory/map';
-import type { GeometryController, GeometryControllerState } from '../../src/bmsx/machine/devices/geometry/controller';
+import type { GeometryController } from '../../src/bmsx/machine/devices/geometry/controller';
+import type { GeometryControllerState } from '../../src/bmsx/machine/devices/geometry/state';
 
 
 function makeMachine(): Machine {
@@ -88,15 +88,10 @@ function makeMachine(): Machine {
 		}),
 		beginFrame: () => {},
 	};
-	const soundMaster = {
-		addEndedListener: () => () => {},
-		stopAllVoices: () => {},
-	};
 	const machine = new Machine(
 		memory,
 		{ x: 256, y: 212 },
 		input as never,
-		soundMaster as never,
 	);
 	machine.initializeSystemIo();
 	machine.resetDevices();
@@ -125,7 +120,6 @@ function writeNoopXform2Record(memory: Memory, addr: number): void {
 }
 
 function writeXform2BatchRegisters(memory: Memory, jobBase: number, count: number): void {
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
 	memory.writeValue(IO_GEO_SRC0, jobBase);
 	memory.writeValue(IO_GEO_SRC1, jobBase + 0x100);
 	memory.writeValue(IO_GEO_SRC2, jobBase + 0x200);
@@ -145,7 +139,6 @@ const OVERLAP2D_FULL_PASS_PARAM0 = GEO_OVERLAP2D_MODE_FULL_PASS
 	| GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW;
 
 function writeOverlap2dFullPassRegisters(memory: Memory, instanceBase: number, instanceCount: number, src2: number, dst0: number, resultCapacity: number): void {
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	memory.writeValue(IO_GEO_SRC0, instanceBase);
 	memory.writeValue(IO_GEO_SRC1, 0);
 	memory.writeValue(IO_GEO_SRC2, src2);
@@ -178,8 +171,8 @@ function writeOversizeOverlapPoly(memory: Memory, shapeAddr: number): void {
 	memory.writeU32(shapeAddr + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET, 0x3f80_0000);
 }
 
-function startGeometryCommand(memory: Memory, geometry: GeometryController): GeometryControllerState {
-	memory.writeValue(IO_GEO_CTRL, GEO_CTRL_START);
+function startGeometryCommand(memory: Memory, geometry: GeometryController, command: number): GeometryControllerState {
+	memory.writeValue(IO_GEO_CMD, command);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	const capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_BUSY);
@@ -211,7 +204,7 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 		writeNoopXform2Record(memory, jobBase + record * GEO_XFORM2_RECORD_BYTES);
 	}
 	writeXform2BatchRegisters(memory, jobBase, 3);
-	let capturedGeometry = startGeometryCommand(memory, geometry);
+	let capturedGeometry = startGeometryCommand(memory, geometry, IO_CMD_GEO_XFORM2_BATCH);
 
 	geometry.accrueCycles(1, 1);
 	geometry.onService(1);
@@ -220,7 +213,6 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_BUSY);
 
-	memory.writeValue(IO_GEO_CMD, 0xffff);
 	memory.writeValue(IO_GEO_COUNT, 1);
 	const saved = machine.captureSaveState();
 
@@ -232,7 +224,7 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 
 	machine.restoreSaveState(saved);
 	geometry.setTiming(1, 1, machine.scheduler.nowCycles);
-	assert.equal(memory.readIoU32(IO_GEO_CMD), 0xffff);
+	assert.equal(memory.readIoU32(IO_GEO_CMD), IO_CMD_GEO_XFORM2_BATCH);
 	assert.equal(memory.readIoU32(IO_GEO_COUNT), 1);
 	assert.equal(memory.readIoU32(IO_GEO_PROCESSED), 1);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
@@ -267,7 +259,7 @@ test('GEO execution fault ack preserves completed command status', () => {
 	writeNoopXform2Record(memory, jobBase);
 	memory.writeU32(jobBase + 0, 1);
 	writeXform2BatchRegisters(memory, jobBase, 1);
-	let capturedGeometry = startGeometryCommand(memory, geometry);
+	let capturedGeometry = startGeometryCommand(memory, geometry, IO_CMD_GEO_XFORM2_BATCH);
 
 	geometry.accrueCycles(1, 1);
 	geometry.onService(1);
@@ -285,7 +277,7 @@ test('GEO execution fault ack preserves completed command status', () => {
 
 	writeNoopXform2Record(memory, jobBase);
 	writeXform2BatchRegisters(memory, jobBase, 1);
-	memory.writeValue(IO_GEO_CTRL, GEO_CTRL_START);
+	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
 	capturedGeometry = assertGeometryFaultLatch(
 		memory,
 		geometry,
@@ -318,7 +310,6 @@ test('GEO rejected command is explicit controller phase state', () => {
 	const jobBase = RAM_BASE;
 
 	memory.writeValue(IO_GEO_CMD, 0xffff);
-	memory.writeValue(IO_GEO_CTRL, GEO_CTRL_START);
 
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_REJECTED);
 	assert.notEqual(memory.readIoU32(IO_GEO_FAULT), 0);
@@ -333,7 +324,7 @@ test('GEO rejected command is explicit controller phase state', () => {
 
 	writeNoopXform2Record(memory, jobBase);
 	writeXform2BatchRegisters(memory, jobBase, 1);
-	memory.writeValue(IO_GEO_CTRL, GEO_CTRL_START);
+	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
 	capturedGeometry = assertGeometryFaultLatch(
 		memory,
 		geometry,
@@ -366,7 +357,7 @@ test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () =>
 	const jobBase = RAM_BASE + 0x900;
 
 	writeOverlap2dFullPassRegisters(memory, jobBase, 0, jobBase + 0x100, jobBase + 0x300, 1);
-	memory.writeValue(IO_GEO_CTRL, GEO_CTRL_START);
+	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	let rejectedFault = memory.readIoU32(IO_GEO_FAULT);
 	assert.notEqual(rejectedFault, 0);
 	assertGeometryFaultLatch(
@@ -379,7 +370,7 @@ test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () =>
 
 	memory.writeValue(IO_GEO_FAULT_ACK, 1);
 	writeOverlap2dFullPassRegisters(memory, jobBase, 0, 0, 0, 0);
-	memory.writeValue(IO_GEO_CTRL, GEO_CTRL_START);
+	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	rejectedFault = memory.readIoU32(IO_GEO_FAULT);
 	assert.notEqual(rejectedFault, 0);
 	assertGeometryFaultLatch(
@@ -398,7 +389,7 @@ test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () =>
 	writeOversizeOverlapPoly(memory, shapeA);
 	writeOversizeOverlapPoly(memory, shapeB);
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, jobBase + 0x300, 1);
-	memory.writeValue(IO_GEO_CTRL, GEO_CTRL_START);
+	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	geometry.accrueCycles(1, 1);
 	geometry.onService(1);

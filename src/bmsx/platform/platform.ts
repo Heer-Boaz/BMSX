@@ -76,6 +76,7 @@ export function setMicrotaskQueue(queue: MicrotaskQueue): void {
 	activeMicrotaskQueue = queue;
 }
 
+// disable-next-line single_line_method_pattern -- callers schedule through the active platform microtask queue selected by ConsoleCore.
 export function scheduleMicrotask(task: () => void): void {
 	activeMicrotaskQueue.schedule(task);
 }
@@ -131,63 +132,20 @@ export interface FrameLoop {
 	start(tick: (t: MonoTime) => void): { stop(): void };
 }
 
-export interface AudioLoop {
-	start: number;
-	end?: number;
-}
-
-export interface AudioFilterParams {
-	type: BiquadFilterType;
-	frequency: number;
-	q: number;
-	gain: number;
-}
-
-export interface AudioPlaybackParams {
-	offset: number;
-	rate: number;
-	gainLinear: number;
-	loop: AudioLoop | null;
-	filter: AudioFilterParams | null;
-}
-
-export interface AudioClipHandle {
-	readonly duration: number;
-	dispose(): void;
-}
-
-export interface VoiceEndedEvent {
-	clippedAt: number;
-}
-
-export interface VoiceHandle {
-	readonly startedAt: number;
-	readonly startOffset: number;
-	onEnded(cb: (e: VoiceEndedEvent) => void): SubscriptionHandle;
-	setGainLinear(v: number): void;
-	rampGainLinear(target: number, durationSec: number): void;
-	setFilter(p: AudioFilterParams): void;
-	setRate(v: number): void;
-	stop(): void;
-	disconnect(): void;
-}
+export type AudioOutputPuller = (output: Int16Array, frameCount: number, sampleRate: number, targetQueuedFrames: number) => void;
 
 export interface AudioService {
 	readonly available: boolean;
 	currentTime(): number;
-	sampleRate(): number;
-	coreQueuedFrames(): number;
-	setCoreNeedHandler(handler: (() => void) | null): void;
-	clearCoreStream(): void;
+	outputSampleRate(): number;
+	setRuntimeAudioPuller(puller: AudioOutputPuller | null): void;
+	clearRuntimeAudioTransport(): void;
+	pumpRuntimeAudio(): void;
 	resume(): Promise<void>;
 	suspend(): Promise<void>;
 	getMasterGain(): number;
 	setMasterGain(v: number): void;
 	setFrameTimeSec(seconds: number): void;
-	createClipFromBytes(bytes: ArrayBuffer): Promise<AudioClipHandle>;
-	pushCoreFrames(samples: Int16Array, channels: number, sampleRate: number): void;
-	createClipFromPcm(samples: Int16Array, sampleRate: number, channels: number): AudioClipHandle;
-	createVoice(clip: AudioClipHandle, params: AudioPlaybackParams): VoiceHandle;
 }
 
 export interface RngService {

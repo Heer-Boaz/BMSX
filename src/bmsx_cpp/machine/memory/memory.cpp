@@ -740,9 +740,6 @@ bool Memory::isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, ui
 }
 
 bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
-	if (addr >= IO_APU_SELECTED_SLOT_REG0 && addr < IO_APU_SELECTED_SLOT_REG0 + IO_APU_SELECTED_SLOT_REG_COUNT * IO_WORD_SIZE) {
-		return true;
-	}
 	switch (addr) {
 		case IO_SYS_BUS_FAULT_CODE:
 		case IO_SYS_BUS_FAULT_ADDR:

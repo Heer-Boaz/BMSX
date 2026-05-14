@@ -98,7 +98,7 @@ The C++ runtime focuses on mirroring the console machine boundary from the TypeS
 
 - `machine/` owns CPU, memory, MMIO registers, device controllers, firmware, program loading, timing, and runtime state.
 - `render/`, `audio/`, `input/`, and `platform/` adapt machine state to the host.
-- `audio/SoundMaster` is host-side playback/mixing. It is not the final machine APU contract; cart-visible audio should move toward a machine-side MMIO device.
+- `audio/SoundMaster` is the host audio edge for master gain and platform pacing. The machine owns AOUT next to the APU controller; source-DMA buffers, voice ids, cursor/timer state, decode/mixer state, and raw PCM rendering live under `machine/devices/audio`; cart-visible audio state belongs to the APU controller, source-DMA owner, and AOUT owner.
 
 ## Building
 

@@ -102,15 +102,10 @@ function makeMachine(): Machine {
 		}),
 		beginFrame: () => {},
 	};
-	const soundMaster = {
-		addEndedListener: () => () => {},
-		stopAllVoices: () => {},
-	};
 	const machine = new Machine(
 		memory,
 		{ x: 256, y: 212 },
 		input as never,
-		soundMaster as never,
 	);
 	machine.initializeSystemIo();
 	machine.resetDevices();

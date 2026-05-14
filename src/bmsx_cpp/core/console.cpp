@@ -129,7 +129,6 @@ void ConsoleCore::shutdown() {
 	}
 
 	// Clear registry (keeps persistent objects)
-	m_sound_master->resetPlaybackState();
 	registry().deregister(m_sound_master.get(), true);
 	m_sound_master.reset();
 	registry().clear();
@@ -204,9 +203,6 @@ void ConsoleCore::startLoadedRuntimeFrame(bool romLoaded) {
 void ConsoleCore::setHostPaused(bool paused, bool romLoaded) {
 	if (paused) {
 		pause();
-		if (m_sound_master) {
-			m_sound_master->stopAllVoices();
-		}
 		return;
 	}
 
@@ -274,7 +270,6 @@ Runtime& ConsoleCore::ensureRuntime(const RuntimeOptions& options) {
 			options,
 			*clock(),
 			Input::instance(),
-			*soundMaster(),
 			*platform()->microtaskQueue(),
 			*view()
 		);
@@ -557,7 +552,6 @@ void ConsoleCore::unloadRom() {
 		if (m_texture_manager) {
 			m_texture_manager->clear();
 		}
-		m_sound_master->resetPlaybackState();
 		registry().clear();
 		m_rom_loaded = false;
 		m_loaded_cart_has_program = false;
@@ -567,7 +561,6 @@ void ConsoleCore::unloadRom() {
 bool ConsoleCore::rebootLoadedRom() {
 	if (!m_rom_loaded) return false;
 
-	if (m_sound_master) m_sound_master->resetPlaybackState();
 	if (m_texture_manager) m_texture_manager->clear();
 	if (m_view && m_view->backend()->readyForTextureUpload()) {
 		m_view->initializeDefaultTextures();

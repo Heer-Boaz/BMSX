@@ -5,8 +5,7 @@
 
 namespace bmsx {
 
-constexpr uint32_t GEO_CTRL_START = 1u << 0u;
-constexpr uint32_t GEO_CTRL_ABORT = 1u << 1u;
+constexpr uint32_t GEO_CTRL_ABORT = 1u << 0u;
 constexpr uint32_t GEO_STATUS_BUSY = 1u << 0u;
 constexpr uint32_t GEO_STATUS_DONE = 1u << 1u;
 constexpr uint32_t GEO_STATUS_ERROR = 1u << 2u;

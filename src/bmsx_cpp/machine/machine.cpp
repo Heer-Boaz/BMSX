@@ -1,6 +1,5 @@
 #include "machine/machine.h"
 
-#include "audio/soundmaster.h"
 #include "input/manager.h"
 #include "rompack/format.h"
 
@@ -18,20 +17,21 @@ void restoreSharedDeviceState(
 ) {
 	machine.geometryController.restoreState(geometry, machine.scheduler.nowCycles());
 	machine.irqController.restoreState(irq);
-	machine.audioController.restoreState(audio);
+	machine.audioController.restoreState(audio, machine.scheduler.nowCycles());
 	machine.inputController.restoreState(input);
 }
 
 } // namespace
 
-Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, SoundMaster& soundMaster, MicrotaskQueue& microtasks)
+Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, MicrotaskQueue& microtasks)
 	: memory(memoryRef)
 	, frameBufferSize(frameBufferSizeValue)
 	, cpu(memory)
 	, scheduler(cpu)
 	, irqController(memory)
 	, vdp(memory, scheduler, frameBufferSize)
-	, audioController(memory, soundMaster, irqController)
+	, audioOutput()
+	, audioController(memory, audioOutput, irqController, scheduler)
 	, dmaController(memory, irqController, vdp, scheduler)
 	, imgDecController(memory, dmaController, vdp, irqController, scheduler, microtasks)
 	, geometryController(memory, irqController, scheduler)
@@ -61,6 +61,7 @@ void Machine::refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles) {
 	dmaController.setTiming(timing.cpuHz, timing.dmaBytesPerSecIso, timing.dmaBytesPerSecBulk, nowCycles);
 	imgDecController.setTiming(timing.cpuHz, timing.imgDecBytesPerSec, nowCycles);
 	geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
+	audioController.setTiming(timing.cpuHz, nowCycles);
 	vdp.setTiming(timing.cpuHz, timing.vdpWorkUnitsPerSec, nowCycles);
 }
 
@@ -69,6 +70,7 @@ void Machine::advanceDevices(int cycles) {
 	dmaController.accrueCycles(cycles, nextNow);
 	imgDecController.accrueCycles(cycles, nextNow);
 	geometryController.accrueCycles(cycles, nextNow);
+	audioController.accrueCycles(cycles, nextNow);
 	vdp.accrueCycles(cycles, nextNow);
 	scheduler.advanceTo(nextNow);
 }
@@ -84,6 +86,9 @@ void Machine::runDeviceService(uint8_t deviceKind) {
 			return;
 		case DeviceServiceImg:
 			imgDecController.onService(nowCycles);
+			return;
+		case DeviceServiceApu:
+			audioController.onService(nowCycles);
 			return;
 		case DeviceServiceVdp:
 			vdp.onService(nowCycles);

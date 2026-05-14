@@ -13,6 +13,9 @@ void VdpVoutUnit::reset(i32 ditherType, u32 frameBufferWidth, u32 frameBufferHei
 	m_scanoutPhase = VdpVoutScanoutPhase::Active;
 	m_scanoutX = 0u;
 	m_scanoutY = 0u;
+	m_scanoutFrameStartCycle = 0;
+	m_scanoutCyclesPerFrame = 1;
+	m_scanoutVblankStartCycle = 1;
 	m_liveFrameBufferWidth = frameBufferWidth;
 	m_liveFrameBufferHeight = frameBufferHeight;
 	m_visibleDitherType = ditherType;
@@ -39,24 +42,30 @@ void VdpVoutUnit::configureScanout(u32 frameBufferWidth, u32 frameBufferHeight) 
 	m_state = VdpVoutState::RegisterLatched;
 }
 
-void VdpVoutUnit::setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle) {
+void VdpVoutUnit::setScanoutTiming(int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle, i64 nowCycles) {
+	m_scanoutFrameStartCycle = nowCycles - static_cast<i64>(cyclesIntoFrame);
+	m_scanoutCyclesPerFrame = cyclesPerFrame;
+	m_scanoutVblankStartCycle = vblankStartCycle;
+	refreshScanoutBeam(nowCycles);
+}
+
+void VdpVoutUnit::refreshScanoutBeam(i64 nowCycles) {
+	const int cyclesIntoFrame = static_cast<int>((nowCycles - m_scanoutFrameStartCycle) % static_cast<i64>(m_scanoutCyclesPerFrame));
+	const bool vblankActive = m_scanoutVblankStartCycle == 0 || cyclesIntoFrame >= m_scanoutVblankStartCycle;
 	m_scanoutPhase = vblankActive ? VdpVoutScanoutPhase::Vblank : VdpVoutScanoutPhase::Active;
-	if (m_liveFrameBufferWidth == 0u || m_liveFrameBufferHeight == 0u) {
+	if (m_visibleFrameBufferWidth == 0u || m_visibleFrameBufferHeight == 0u) {
 		m_scanoutX = 0u;
 		m_scanoutY = 0u;
 		return;
 	}
 	if (vblankActive) {
-		const int vblankCycles = cyclesPerFrame - vblankStartCycle;
-		const int vblankCycle = cyclesIntoFrame - vblankStartCycle;
-		m_scanoutX = 0u;
-		m_scanoutY = m_liveFrameBufferHeight + static_cast<u32>((static_cast<u64>(vblankCycle) * static_cast<u64>(m_liveFrameBufferHeight)) / static_cast<u64>(vblankCycles));
+		setVblankBeamPosition(cyclesIntoFrame);
 		return;
 	}
-	const u64 totalPixels = static_cast<u64>(m_liveFrameBufferWidth) * static_cast<u64>(m_liveFrameBufferHeight);
-	const u64 pixel = (static_cast<u64>(cyclesIntoFrame) * totalPixels) / static_cast<u64>(vblankStartCycle);
-	m_scanoutX = static_cast<u32>(pixel % static_cast<u64>(m_liveFrameBufferWidth));
-	m_scanoutY = static_cast<u32>(pixel / static_cast<u64>(m_liveFrameBufferWidth));
+	const u64 totalPixels = static_cast<u64>(m_visibleFrameBufferWidth) * static_cast<u64>(m_visibleFrameBufferHeight);
+	const u64 pixel = (static_cast<u64>(cyclesIntoFrame) * totalPixels) / static_cast<u64>(m_scanoutVblankStartCycle);
+	m_scanoutX = static_cast<u32>(pixel % static_cast<u64>(m_visibleFrameBufferWidth));
+	m_scanoutY = static_cast<u32>(pixel / static_cast<u64>(m_visibleFrameBufferWidth));
 }
 
 const VdpVoutFrameOutput& VdpVoutUnit::sealFrame() {
@@ -93,7 +102,8 @@ void VdpVoutUnit::presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled) {
 	m_state = VdpVoutState::FramePresented;
 }
 
-const VdpDeviceOutput& VdpVoutUnit::readDeviceOutput() {
+const VdpDeviceOutput& VdpVoutUnit::readDeviceOutput(i64 nowCycles) {
+	refreshScanoutBeam(nowCycles);
 	m_deviceOutput.ditherType = m_visibleDitherType;
 	m_deviceOutput.scanoutPhase = static_cast<u32>(m_scanoutPhase);
 	m_deviceOutput.scanoutX = m_scanoutX;
@@ -120,6 +130,22 @@ void VdpVoutUnit::resetVisibleSkyboxSamples() {
 		sample.surfaceHeight = 0u;
 		sample.slot = 0u;
 	}
+}
+
+void VdpVoutUnit::setVblankBeamPosition(int cyclesIntoFrame) {
+	if (m_scanoutVblankStartCycle == 0) {
+		const u64 totalPixels = static_cast<u64>(m_visibleFrameBufferWidth) * static_cast<u64>(m_visibleFrameBufferHeight);
+		const u64 pixel = (static_cast<u64>(cyclesIntoFrame) * totalPixels) / static_cast<u64>(m_scanoutCyclesPerFrame);
+		m_scanoutX = static_cast<u32>(pixel % static_cast<u64>(m_visibleFrameBufferWidth));
+		m_scanoutY = m_visibleFrameBufferHeight + static_cast<u32>(pixel / static_cast<u64>(m_visibleFrameBufferWidth));
+		return;
+	}
+	const int vblankCycles = m_scanoutCyclesPerFrame - m_scanoutVblankStartCycle;
+	const int vblankCycle = cyclesIntoFrame - m_scanoutVblankStartCycle;
+	const u64 blankLineCount = (static_cast<u64>(vblankCycles) * static_cast<u64>(m_visibleFrameBufferHeight)) / static_cast<u64>(m_scanoutVblankStartCycle);
+	const u64 blankPixel = (static_cast<u64>(vblankCycle) * static_cast<u64>(m_visibleFrameBufferWidth) * blankLineCount) / static_cast<u64>(vblankCycles);
+	m_scanoutX = static_cast<u32>(blankPixel % static_cast<u64>(m_visibleFrameBufferWidth));
+	m_scanoutY = m_visibleFrameBufferHeight + static_cast<u32>(blankPixel / static_cast<u64>(m_visibleFrameBufferWidth));
 }
 
 } // namespace bmsx

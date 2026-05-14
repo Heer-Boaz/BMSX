@@ -160,8 +160,10 @@ add_library(bmsx_core STATIC
 	common/scratchbuffer.cpp
 
 	# Audio systems
-	audio/biquad_filter.cpp
 	audio/soundmaster.cpp
+	machine/devices/audio/biquad_filter.cpp
+	machine/devices/audio/source.cpp
+	machine/devices/audio/output.cpp
 
 	# Input systems
 	input/player.cpp
@@ -211,6 +213,10 @@ add_library(bmsx_core STATIC
 	lua/syntax/parser.cpp
 	machine/devices/dma/controller.cpp
 	machine/devices/device_status.cpp
+	machine/devices/geometry/addressing.cpp
+	machine/devices/geometry/xform2.cpp
+	machine/devices/geometry/sat2.cpp
+	machine/devices/geometry/overlap2d.cpp
 	machine/devices/geometry/controller.cpp
 	machine/devices/imgdec/controller.cpp
 	machine/devices/input/controller.cpp

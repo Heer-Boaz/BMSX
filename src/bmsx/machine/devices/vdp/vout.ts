@@ -39,6 +39,9 @@ export class VdpVoutUnit {
 	private _scanoutPhase: VdpVoutScanoutPhase = VDP_VOUT_SCANOUT_PHASE_ACTIVE;
 	private scanoutX = 0;
 	private scanoutY = 0;
+	private scanoutFrameStartCycle = 0;
+	private scanoutCyclesPerFrame = 1;
+	private scanoutVblankStartCycle = 1;
 	private liveFrameBufferWidth = 0;
 	private liveFrameBufferHeight = 0;
 	private visibleDither = 0;
@@ -93,6 +96,9 @@ export class VdpVoutUnit {
 		this._scanoutPhase = VDP_VOUT_SCANOUT_PHASE_ACTIVE;
 		this.scanoutX = 0;
 		this.scanoutY = 0;
+		this.scanoutFrameStartCycle = 0;
+		this.scanoutCyclesPerFrame = 1;
+		this.scanoutVblankStartCycle = 1;
 		this.liveFrameBufferWidth = frameBufferWidth;
 		this.liveFrameBufferHeight = frameBufferHeight;
 		this.visibleDither = ditherType;
@@ -119,25 +125,30 @@ export class VdpVoutUnit {
 		this._state = VDP_VOUT_STATE_REGISTER_LATCHED;
 	}
 
-	public setScanoutTiming(vblankActive: boolean, cyclesIntoFrame: number, cyclesPerFrame: number, vblankStartCycle: number): void {
+	public setScanoutTiming(cyclesIntoFrame: number, cyclesPerFrame: number, vblankStartCycle: number, nowCycles: number): void {
+		this.scanoutFrameStartCycle = nowCycles - cyclesIntoFrame;
+		this.scanoutCyclesPerFrame = cyclesPerFrame;
+		this.scanoutVblankStartCycle = vblankStartCycle;
+		this.refreshScanoutBeam(nowCycles);
+	}
+
+	private refreshScanoutBeam(nowCycles: number): void {
+		const cyclesIntoFrame = (nowCycles - this.scanoutFrameStartCycle) % this.scanoutCyclesPerFrame;
+		const vblankActive = this.scanoutVblankStartCycle === 0 || cyclesIntoFrame >= this.scanoutVblankStartCycle;
 		this._scanoutPhase = vblankActive ? VDP_VOUT_SCANOUT_PHASE_VBLANK : VDP_VOUT_SCANOUT_PHASE_ACTIVE;
-		if (this.liveFrameBufferWidth === 0 || this.liveFrameBufferHeight === 0) {
+		if (this.visibleFrameBufferWidth === 0 || this.visibleFrameBufferHeight === 0) {
 			this.scanoutX = 0;
 			this.scanoutY = 0;
 			return;
 		}
 		if (vblankActive) {
-			const vblankCycles = cyclesPerFrame - vblankStartCycle;
-			const vblankCycle = cyclesIntoFrame - vblankStartCycle;
-			const scanoutYNumerator = vblankCycle * this.liveFrameBufferHeight;
-			this.scanoutX = 0;
-			this.scanoutY = this.liveFrameBufferHeight + (scanoutYNumerator - scanoutYNumerator % vblankCycles) / vblankCycles;
+			this.setVblankBeamPosition(cyclesIntoFrame);
 			return;
 		}
-		const pixelNumerator = cyclesIntoFrame * this.liveFrameBufferWidth * this.liveFrameBufferHeight;
-		const pixel = (pixelNumerator - pixelNumerator % vblankStartCycle) / vblankStartCycle;
-		this.scanoutX = pixel % this.liveFrameBufferWidth;
-		this.scanoutY = (pixel - this.scanoutX) / this.liveFrameBufferWidth;
+		const pixelNumerator = cyclesIntoFrame * this.visibleFrameBufferWidth * this.visibleFrameBufferHeight;
+		const pixel = (pixelNumerator - pixelNumerator % this.scanoutVblankStartCycle) / this.scanoutVblankStartCycle;
+		this.scanoutX = pixel % this.visibleFrameBufferWidth;
+		this.scanoutY = (pixel - this.scanoutX) / this.visibleFrameBufferWidth;
 	}
 
 	public sealFrame(): VdpVoutFrameOutput {
@@ -178,7 +189,8 @@ export class VdpVoutUnit {
 		this._state = VDP_VOUT_STATE_FRAME_PRESENTED;
 	}
 
-	public readDeviceOutput(): VdpDeviceOutput {
+	public readDeviceOutput(nowCycles: number): VdpDeviceOutput {
+		this.refreshScanoutBeam(nowCycles);
 		const output = this.deviceOutput;
 		output.ditherType = this.visibleDither;
 		output.scanoutPhase = this._scanoutPhase;
@@ -206,5 +218,23 @@ export class VdpVoutUnit {
 			sample.surfaceHeight = 0;
 			sample.slot = 0;
 		}
+	}
+
+	private setVblankBeamPosition(cyclesIntoFrame: number): void {
+		if (this.scanoutVblankStartCycle === 0) {
+			const pixelNumerator = cyclesIntoFrame * this.visibleFrameBufferWidth * this.visibleFrameBufferHeight;
+			const pixel = (pixelNumerator - pixelNumerator % this.scanoutCyclesPerFrame) / this.scanoutCyclesPerFrame;
+			this.scanoutX = pixel % this.visibleFrameBufferWidth;
+			this.scanoutY = this.visibleFrameBufferHeight + (pixel - this.scanoutX) / this.visibleFrameBufferWidth;
+			return;
+		}
+		const vblankCycles = this.scanoutCyclesPerFrame - this.scanoutVblankStartCycle;
+		const vblankCycle = cyclesIntoFrame - this.scanoutVblankStartCycle;
+		const blankLineNumerator = vblankCycles * this.visibleFrameBufferHeight;
+		const blankLineCount = (blankLineNumerator - blankLineNumerator % this.scanoutVblankStartCycle) / this.scanoutVblankStartCycle;
+		const blankPixelNumerator = vblankCycle * this.visibleFrameBufferWidth * blankLineCount;
+		const blankPixel = (blankPixelNumerator - blankPixelNumerator % vblankCycles) / vblankCycles;
+		this.scanoutX = blankPixel % this.visibleFrameBufferWidth;
+		this.scanoutY = this.visibleFrameBufferHeight + (blankPixel - this.scanoutX) / this.visibleFrameBufferWidth;
 	}
 }

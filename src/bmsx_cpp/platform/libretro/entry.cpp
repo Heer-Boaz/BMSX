@@ -1198,7 +1198,6 @@ void retro_init(void) {
 	g_platform->setLogCallback(logging.log);
 	g_platform->setSystemDirectory(g_system_dir);
 	g_platform->setVideoCallback(video_cb);
-	g_platform->setAudioBatchCallback(audio_batch_cb);
 	g_platform->setInputPollCallback(input_poll_cb);
 	g_platform->setInputStateCallback(input_state_cb);
 	g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);

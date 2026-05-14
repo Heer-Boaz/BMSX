@@ -593,9 +593,8 @@ local play_transition_apu<const> = function(audio_record, transition)
 	if crossfade_samples > 0 and current_music_source_addr ~= 0 then
 		local old_slot<const> = current_music_slot
 		local new_slot<const> = alternate_music_slot()
-		play_music_now(audio_record, transition, 0, new_slot)
-		apu.ramp_slot(new_slot, apu_gain_q12_one, crossfade_samples)
 		apu.stop_slot(old_slot, crossfade_samples)
+		play_music_now(audio_record, transition, apu_gain_q12_one, new_slot)
 		return
 	end
 

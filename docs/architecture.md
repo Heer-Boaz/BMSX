@@ -121,13 +121,21 @@ cart Lua -> BIOS/firmware or cart library -> MMIO/RAM -> machine device -> host 
   `src/bmsx_cpp/machine/runtime/save_state/codec.cpp`. There is no save-state
   version byte and no compatibility layer; the current prop table is the
   contract and old saves are not supported. The APU state persists the raw
-  parameter registerfile, per-slot raw parameter latches, active-slot mask,
+  parameter registerfile, raw command FIFO contents/cursors, per-slot raw
+  parameter latches, per-slot lifecycle phases, per-slot source-DMA byte
+  buffers, per-slot Q16 playback cursors, per-slot fade
+  sample countdowns, and the APU scheduler sample-carry/pending-sample latches,
   cart-visible event latch (`eventKind`, `eventSlot`, `eventSourceAddr`,
-  `eventSequence`), and sticky APU fault/status latch. Pending host starts and
-  play-generation counters are runtime-only; restore cancels them, then derives
-  `APU_STATUS_BUSY` from restored active slots until new `PLAY` commands arrive.
-  Restore rewrites the read-only event and active-slot MMIO mirrors because RAM
-  save-state intentionally excludes IO slots. The string-pool entry field is `tracked`;
+  `eventSequence`), and sticky APU fault/status latch. APU voice ids are
+  runtime-only device tokens; restore mints fresh runtime voice ids and replays
+  active AOUT output from the restored per-slot APU source-DMA buffers, playback
+  cursor, and remaining fade countdown instead of reading cart RAM or
+  preserving host clip handles. AOUT retained host-output queue frames are
+  runtime-only; restore clears that queue inside the APU/AOUT device owner before
+  replaying active voices, so cart-visible output-ring MMIO cannot expose stale
+  pre-restore host samples.
+  Restore rewrites the event, active-slot, and selected-source MMIO mirrors
+  because RAM save-state intentionally excludes IO slots. The string-pool entry field is `tracked`;
   ROM-owned strings remain untracked while runtime-materialized strings restore
   as tracked RAM.
 - World/mundo content should follow the same object-image rule: room templates,
@@ -266,6 +274,12 @@ Current evidence:
   words and surface shape as VDP state rather than backend texture state.
 - Exceptions are reserved for emulator bugs and impossible internal states, such as broken save-state schema, impossible host transaction invariants, null host buffers, or internal surface registration mistakes.
 - `IO_VDP_DITHER` is a live VOUT register owned by mirrored TS/C++ `machine/devices/vdp/vout` units. MMIO writes update the live latch directly, frame seal snapshots the live dither word, and VBlank presentation promotes the sealed word to visible `VdpDeviceOutput.ditherType`; the old `syncRegisters()` read-self-back pass is gone.
+- VOUT also owns the scanout beam timing rather than exposing only a coarse
+  VBlank boolean. The mirrored VOUT units derive active scanline/dot and
+  blanking scanline/dot positions from the runtime frame cycles, visible
+  framebuffer dimensions, and VBlank start cycle; `VdpDeviceOutput.scanoutX/Y`
+  now advances through blanking dots as well as visible pixels while
+  `IO_VDP_STATUS.VBLANK` remains the cart-visible level pin.
 - VDP VRAM power-on garbage is seeded from explicit machine/boot entropy words instead of `Math.random`, `Date.now`, or host wall-clock state.
 - The 19-word `IO_VDP_CMD_ARG0` latch bank is the DEX/2D blitter ingress, not the whole VDP frontend. Direct MMIO writes and FIFO `REG1`/`REGN` replay feed the same latches, `IO_VDP_CMD`/FIFO `CMD` doorbells snapshot those latches, registers 10 and 11 are raw `DRAW_LAYER`/`DRAW_PRIORITY`, and register 12 is `DRAW_CTRL` for DEX flip/PMU control.
 - DEX frame ingress now has an explicit TS/C++ state word instead of a boolean
@@ -355,7 +369,7 @@ Desired direction:
 Status: complete for the machine-tick and host-frame boundary. The machine frame
 loop now owns CPU/device/VBLANK advancement and local tick cleanup only. Host
 time, IDE input, render presentation, game-view host sync, microtasks, runtime
-asset texture/audio flushing, and surfaced runtime-fault presentation sit
+texture/view asset flushing, and surfaced runtime-fault presentation sit
 outside the machine frame loop. TS workbench fault data is an explicit
 workbench-owned runtime state object, not lazy side-table state and not loose
 fields mixed into the machine tick. The render transient-frame owner has moved
@@ -403,20 +417,21 @@ Current evidence:
   directly in `EngineCore`. The TS machine runtime frame folder contains the
   machine tick loop, not IDE input polling or host presentation.
 - TS and C++ frame loops no longer flush runtime asset edits from inside the
-  machine tick. Host frame pumps flush them after the scheduled machine step and
-  before presentation, keeping texture/audio host work outside CPU/VBLANK
-  advancement.
+  machine tick. Host frame pumps flush texture/view assets after the scheduled
+  machine step and before presentation, keeping host resource uploads outside
+  CPU/VBLANK advancement.
 - TS and C++ runtime asset edit flushing is drained at explicit host edges, then
   dispatched to the real owners: render texture upload code handles dirty image
-  assets, and audio code handles dirty audio invalidation. The host edge no
+  assets, while AOUT voices keep their device-owned source snapshots and host
+  audio only pulls PCM. The host edge no
   longer discovers `engineCore` or `EngineCore::instance()`, and machine
   save/resume restore functions no longer import asset flushing to mutate host
-  texture/audio state as a side effect.
+  texture/view state as a side effect.
 - TS IDE resume and C++ libretro save-state load are explicit host edges for
   post-restore asset flushing: they apply the restored machine state first, then
-  flush dirty assets with the current texture/audio/view resources. Native audio
-  dirty assets now invalidate active audio clips instead of being silently
-  ignored.
+  flush dirty assets with the current texture/view resources. Audio playback no
+  longer owns host clips at this edge: active AOUT voices replay from
+  device-owned source snapshots, and host audio only pulls device PCM.
 - TS save-state byte restore still lacks a host-edge asset flush call because
   there is no TS host save-state load entrypoint wired like libretro yet.
 - TS and C++ save/resume/runtime-reset paths clear transient render submissions
@@ -448,8 +463,8 @@ Current evidence:
   supplied to the runtime frame pump, instead of importing `EngineCore` only to
   query `$.platform.clock`.
 - TS and C++ save-machine-state restore deliberately do not flush runtime asset
-  edits directly; post-restore host edges must perform texture/audio flushing
-  with concrete host resources.
+  edits directly; post-restore host edges must perform texture/view flushing
+  with concrete host resources while audio stays on device-owned AOUT snapshots.
 
 Risk:
 
@@ -705,8 +720,9 @@ Already advanced in this goal:
   sealed face samples against VDP-owned VRAM/surface state, and raises the
   returned SBX fault decision.
 - VOUT now owns the live/frame-sealed/visible host-output buffers for dither,
-  active/VBlank scanout phase, scanout X/Y position, framebuffer scanout
-  dimensions, XF, resolved SBX samples, BBU instances, and retained
+  active/VBlank scanout phase, scanline/dot beam position across visible and
+  blanking spans, framebuffer scanout dimensions, XF, resolved SBX samples,
+  BBU instances, and retained
   `VdpDeviceOutput` in both TS and C++.
   VDP still performs VRAM/sample resolution and FBM dimension ownership, but it
   no longer passes framebuffer dimensions through the host-output read path or
@@ -722,11 +738,21 @@ Already advanced in this goal:
   BUSY/DONE restore plus REJECTED command admission.
 - Geometry now exposes `IO_GEO_FAULT_ACK` / `sys_geo_fault_ack` as a
   cart-visible write-one-to-clear fault doorbell. REJECTED and ERROR fault bits
-  stay visible until acknowledged, START/ABORT strobes are ignored while that
-  fault latch is pending, and the ACK register self-clears. The ACK doorbell is
+  stay visible until acknowledged, command doorbells and ABORT strobes are
+  ignored while that fault latch is pending, and the ACK register self-clears.
+  The ACK doorbell is
   append-only in the I/O bank rather than part of the original contiguous
   16-word GEO registerfile, so existing downstream MMIO addresses do not move.
   This adds no legacy save-state compatibility logic.
+- Geometry command ingress is now the `IO_GEO_CMD` doorbell itself. Firmware and
+  carts stage operands in `SRC/DST/COUNT/PARAM/STRIDE`, then write the command
+  word to `IO_GEO_CMD`; the controller snapshots those operand registers into
+  the active job latch, enters BUSY, and schedules device work from that latched
+  state. `IO_GEO_CTRL` no longer has a start bit and is abort-only. A command
+  write during BUSY drops the active job and latches `GEO_FAULT_REJECT_BUSY`;
+  command writes while ERROR/REJECTED is latched are ignored until
+  `IO_GEO_FAULT_ACK`. The old duplicate CTRL-start ingress is intentionally
+  gone, with no compatibility alias.
 - Geometry command/status/fault/policy constants now live with the Geometry
   device contract in mirrored `machine/devices/geometry/contracts.ts` and
   `machine/devices/geometry/contracts.h`. The bus I/O map owns the MMIO
@@ -748,6 +774,19 @@ Already advanced in this goal:
   now stages shapes, instances, summaries, and result reads from those globals
   instead of hard-coding the old stale 48-byte instance / 16-byte pair-table
   notes.
+- Geometry command execution is now split out of the register/timing controller
+  into mirrored datapaths: `GeometryXform2Unit`, `GeometrySat2Unit`, and
+  `GeometryOverlap2dUnit` under `machine/devices/geometry`. The controller owns
+  MMIO latches, phase, timing budget, service scheduling, active-job lifecycle,
+  and IRQ/fault latch transitions. XFORM2 owns record/matrix/vertex/AABB
+  memory traversal, SAT2 owns descriptor/pair/projection/result traversal, and
+  overlap2d owns candidate/full-pass decoding, transient
+  instance/bounds/projection/world-poly/clip/contact scratch, summary/result
+  writes, and cart-originating overlap faults. Shared projection interval
+  scratch is a Geometry data shape, not controller state. All datapath scratch
+  remains transient and unsaved because it is deterministically derived from the
+  active job and RAM operands, while result and summary RAM remain
+  cart-visible device output.
 - APU command, status, fault, filter, event, slot, and fixed-point clock/gain
   constants now live with the mirrored APU device contract in
   `machine/devices/audio/contracts.ts` and
@@ -757,20 +796,85 @@ Already advanced in this goal:
   of re-deriving register layout locally. The public Lua descriptor surface now
   advertises the APU fault/status register and fault-code ABI instead of leaving
   those globals as undocumented constants. The controller also owns the raw
-  parameter registerfile, per-slot raw parameter latches, a mirrored active-slot
-  mask, runtime-only pending-slot command state, sticky fault/status latches, and
-  event latch state; save/load restores only the persistent device latches through
-  the APU owner because RAM save-state does not carry IO slots and pending host
-  starts are runtime-only.
+  parameter registerfile, per-slot raw parameter latches, per-slot source-DMA
+  byte buffers, mirrored per-slot lifecycle phases, a mirrored active-slot
+  mask, runtime-only voice ids, sticky fault/status latches, and event latch
+  state; save/load restores only the
+  persistent device latches through the APU owner because RAM save-state does not
+  carry IO slots and host output handles are runtime-only.
   The active-slot mask is now cart-visible at `IO_APU_ACTIVE_MASK` /
   `sys_apu_active_mask`, while the selected-slot active bit, `APU_STATUS_BUSY`,
   selected-source readback, and
-  `IO_APU_SELECTED_SLOT_REG0` readback window are derived from the per-slot
-  latches and pending/active slot masks instead of asking carts to inspect host
-  voice handles. `STOP_SLOT` cancels a pending slot start before host audio can
-  publish a stale voice. This is still only an early APU hardware-state slice:
-  writable voice/channel register banks, deterministic mixer/timer state, and
-  AOUT output ownership still need hardware-device treatment.
+  `IO_APU_SELECTED_SLOT_REG0` channel register window are derived from the
+  per-slot latches and lifecycle phases instead of asking carts to inspect host
+  voice handles or restoring an independent active-mask truth source. Carts may
+  write the selected-slot window directly: those writes
+  update the raw per-slot channel register bank, persist in APU save-state, and
+  push live playback state such as gain, rate, loop bounds, start cursor, and
+  filter words into AOUT at the AOUT datapath boundary. Source-buffer register
+  writes (`source addr`, byte count, format, frame/data window) now enter the
+  mirrored APU source-DMA owner in `machine/devices/audio/source`: the device
+  reloads the selected slot source bytes from machine memory, restarts the AOUT
+  voice from the device cursor, and keeps the reloaded bytes in save-state
+  instead of routing active source changes through host sound objects or
+  rejecting them as an AOUT limitation. The mirrored
+  `machine/devices/audio/output` owner now contains raw parameter-register playback decode,
+  voice-id shapes, BADP/PCM decode state, loop/rate/gain/filter/fade mixer
+  state, and the raw PCM render path in both TS and C++. The `Machine` owns the
+  AOUT mixer next to the APU controller; the APU controller talks to this AOUT
+  owner directly. SoundMaster is only the host audio edge for
+  latency, master gain, suspension, and native queue pumping. Active APU source
+  bytes are captured by the source-DMA unit at `PLAY` time or selected-channel
+  source-buffer writes and serialized per slot, so
+  restored output replays from device-owned sample snapshots rather than
+  whatever cart RAM happens to contain after load. The browser runtime no longer
+  routes APU playback through asynchronous host clip/voice creation or public
+  host-side core-queue push APIs: the browser host exposes only a runtime-audio
+  pull boundary into its worklet transport, and the native libretro platform
+  drains the same mirrored AOUT mixer into its audio callback. AOUT also owns the
+  reusable host-output queue state in both runtimes: hosts request/pull sample
+  spans from AOUT, AOUT fills/retains queued PCM frames behind a bounded device
+  queue, and platform audio backends consume those spans instead of owning the
+  core output ring bookkeeping themselves. The queue is cart-visible through
+  APU MMIO readback: `IO_APU_OUTPUT_QUEUED_FRAMES`,
+  `IO_APU_OUTPUT_FREE_FRAMES`, and `IO_APU_OUTPUT_CAPACITY_FRAMES` expose the
+  device-owned ring occupancy/capacity, while `APU_STATUS_OUTPUT_EMPTY` and
+  `APU_STATUS_OUTPUT_FULL` are derived from the same AOUT queue state on
+  `IO_APU_STATUS`. The obsolete platform clip/voice facades were deleted from
+  both runtime audio contracts; APU voices are AOUT device records, not host
+  handles.
+  APU restore/reset also clear the retained AOUT output queue at the device
+  owner; host/platform reset paths only clear their transport timing and do not
+  mutate AOUT queue state.
+  Host audio availability is not a cart-visible APU fault; a muted or absent host
+  speaker does not change APU register, active-mask, cursor, or event state.
+  Cart-originating AOUT start/decode faults are now reported through the APU
+  sticky fault/status latch instead of host logging or swallowed output setup:
+  unsupported BADP headers, metadata/range mismatches, invalid encoded blocks,
+  undersized PCM data windows, and non-positive playback step values clear the
+  replacement slot and expose an `APU_FAULT_*` code/detail through
+  `IO_APU_FAULT_CODE` / `IO_APU_FAULT_DETAIL`. Live selected-channel writes
+  that cannot be replayed by AOUT, such as non-positive rate steps or source
+  DMA reloads that fail source/range/decode validation, fault and clear the
+  active channel rather than leaving save-state dependent on stale pre-fault
+  host/AOUT residue.
+  The APU is now a device-scheduled participant in machine time: it accrues
+  fixed 44.1 kHz sample ticks from CPU cycles, advances per-slot Q16 playback
+  cursors at each source's sample rate, wraps looped cursors, owns
+  `Idle`/`Playing`/`Fading` channel phases, owns STOP fade sample countdowns,
+  and raises `APU_EVENT_SLOT_ENDED`/`IRQ_APU` from the device when playback or
+  fade completes. `IO_APU_CMD` is now a doorbell into a bounded device-owned
+  command FIFO. Doorbell writes snapshot the 19-word raw parameter latch bank, clear the
+  visible doorbell/latch pad, and device service drains queued commands in FIFO
+  order. `IO_APU_CMD_QUEUED`, `IO_APU_CMD_FREE`, and
+  `IO_APU_CMD_CAPACITY` expose FIFO occupancy/capacity, while
+  `APU_STATUS_CMD_FIFO_EMPTY`, `APU_STATUS_CMD_FIFO_FULL`, and
+  `APU_FAULT_CMD_FIFO_FULL` come from the same controller-owned queue state.
+  The FIFO is persisted in save-state because it is machine-visible work, not a
+  host backend cache. `SET_SLOT_GAIN` is an APU command that copies the latched
+  `sys_apu_gain_q12` snapshot through the same selected per-slot current-gain
+  register write path used by direct selected-slot MMIO; AOUT decodes the raw
+  Q12 word into output gain at the datapath boundary.
 
 Open problems to continue with:
 
@@ -810,14 +914,16 @@ Open problems to continue with:
    counters, and timing budget state instead of aborting BUSY work at load time,
    so a save-state preserves the device as an active coprocessor rather than
    reconstructing work from visible registers.
-   The overlap datapath now keeps its projection, center, centroid, bounds,
-   instance, world-poly, and clip buffers as mirrored transient controller
-   scratch in both runtimes instead of allocating helper-return objects in the
-   hot SAT/contact path; that scratch remains excluded from save-state because
-   it is deterministically derived from the active job and RAM operands. The
-   controller still needs ownership passes for whether every cart-visible error
-   is represented as device status rather than host exception or ad-hoc
-   rejection. The existing
+   XFORM2, SAT2, and overlap2d command execution now live in mirrored unit-owned
+   datapaths instead of in the generic register/timing controller. XFORM2 owns
+   transform record decoding and result/AABB writes, SAT2 owns pair/descriptor
+   decode plus retained projection scratch and result writes, and overlap2d
+   owns candidate/full-pass decoding, contact scratch, and summary/result
+   writes. That scratch remains excluded from save-state because it is
+   deterministically derived from the active job and RAM operands. The remaining
+   Geometry work is to audit whether every cart-visible error is represented as
+   device status rather than host exception or ad-hoc rejection, and whether the
+   register/latch contract is tight enough for future geometry commands. The existing
    `docs/geo_overlap2d_pass_v1.md` is a good hardware-contract note, but it does
    not certify the whole geometry device.
 
@@ -836,26 +942,33 @@ Open problems to continue with:
 
 If `/goal resume` is invoked, it should mean this order of work:
 
-1. Continue VDP-as-hardware cleanup by extending the current VOUT video-timing
-   ownership toward full scanline/dot timing and host-output ownership without
-   adding renderer-facing scene APIs or wrapper layers.
+1. Continue VDP-as-hardware cleanup beyond the now-implemented VOUT beam timing:
+   audit the remaining host-output read/ack lifetime, dirty-surface
+   acknowledgement, and renderer-consumed handles without adding renderer-facing
+   scene APIs or wrapper layers.
 2. Continue auditing Geometry as a device, not as a math helper: register/latch
    ownership, scheduler timing, IRQ/status/fault behavior, scratch/result
    memory, save/load behavior, and TS/C++ parity should be checked as one
    hardware contract.
-3. Continue the APU hardware contract beyond the new ABI owner: MMIO/FIFO
-   ingress, voice/channel state, mixer/timer ownership, AOUT output, and
-   cart-visible status/fault behavior must stay device-owned instead of growing
-   through host-side sound shortcuts.
-4. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
+3. Continue the APU hardware contract beyond device-owned cursor/timer events,
+   cart-visible AOUT start faults, the mirrored AOUT mixer, cart-visible AOUT
+   output-ring status, the persisted command FIFO, the writable selected
+   channel register bank, the mirrored source-DMA byte-buffer owner, and the
+   mirrored slot lifecycle phases: remaining envelope/generator work must stay
+   device-owned instead of growing through host-side sound shortcuts.
+4. Continue the Input Controller (ICU) cleanup by removing the remaining pass-through APIs and making the
+   device owner the single source of truth for input state, including the
+   active `Input` snapshot, input timing, and any future input features such as
+   buffered input or rumble.
+5. Audit the API surfaces that carts or tools can observe: BIOS/firmware helper
    APIs, Lua API metadata, devtools source APIs, overlay/editor APIs, terminal
    commands, and workspace APIs. Separate cart-visible contracts from editor or
    host-only conveniences.
-5. Continue the IDE/terminal cleanup with `terminal/ui/mode.ts`, because it is
+6. Continue the IDE/terminal cleanup with `terminal/ui/mode.ts`, because it is
    the next concentrated quality hotspot exposed by the current slice.
-6. Clean `code_tab/contexts.ts` state access after terminal mode no longer
+7. Clean `code_tab/contexts.ts` state access after terminal mode no longer
    needs editor/workbench internals by convenience.
-7. Only then perform a fresh completion audit of the active goal against this
+8. Only then perform a fresh completion audit of the active goal against this
    document and the actual working tree. The expected result today is still
    "not complete" unless every open item above has been resolved by concrete
    owner-owned code.
@@ -874,17 +987,26 @@ Completed foundation:
 
 Next recommended work:
 
-1. Continue VDP-as-hardware cleanup by expanding VOUT from current phase/X/Y
-   timing into fuller scanline/dot timing, preserving direct VDP-owned hot paths
-   and the explicit host-output transaction boundary.
-2. Continue Geometry as a real coprocessor device beyond the new explicit
-   controller phase: register/latch ownership, scheduler timing, scratch/result
-   memory, status/fault behavior, and focused TS/C++ tests.
-3. Continue APU hardware slices through MMIO/FIFO/device state/AOUT instead of
-   host sound shortcuts, starting from the mirrored APU contract owner.
-4. Continue TS/C++ parity cleanup subsystem by subsystem, including public API
+1. Continue VDP-as-hardware cleanup beyond the now-implemented VOUT scanline/dot
+   beam: audit host-output transaction lifetime, dirty-surface acknowledgement,
+   and renderer-consumed handles while preserving direct VDP-owned hot paths.
+2. Continue Geometry as a real coprocessor device beyond the explicit
+   controller phase and mirrored XFORM2/SAT2/overlap2d datapaths: re-audit
+   register/latch ownership, scheduler timing, scratch/result memory,
+   status/fault behavior, and focused TS/C++ tests.
+3. Continue APU hardware work through MMIO/FIFO/device state/AOUT instead of
+   host sound shortcuts; after the mirrored AOUT mixer, cart-visible AOUT
+   start faults, cart-visible output-ring status, persisted command FIFO,
+   selected-channel register writes, source-DMA ownership, sample-rate-scaled
+   cursors, and slot lifecycle phases, the next APU step is envelope/generator
+   state owned by the device.
+4. Continue Input Controller (ICU) cleanup by removing the remaining pass-through APIs and making the
+   device owner the single source of truth for input state, including the
+   active `Input` snapshot, input timing, and any future input features such as
+   buffered input or rumble.
+5. Continue TS/C++ parity cleanup subsystem by subsystem, including public API
    surfaces instead of assuming they are already covered.
-5. Clean IDE/editor layering after the machine boundaries are safer, starting
+6. Clean IDE/editor layering after the machine boundaries are safer, starting
    with `terminal/ui/mode.ts` and then code-tab context ownership.
 
 This order protects future feature work. The goal is not to make the codebase

@@ -484,7 +484,6 @@ export class Runtime {
 			options.memory,
 			options.viewport,
 			Input.instance,
-			consoleCore.sndmaster,
 		);
 		this.machine.memory.clearIoSlots();
 		this.machine.initializeSystemIo();

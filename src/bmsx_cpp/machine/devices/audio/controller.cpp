@@ -1,14 +1,13 @@
 #include "machine/devices/audio/controller.h"
 
-#include "audio/soundmaster.h"
 #include "machine/bus/io.h"
+#include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
+#include "machine/scheduler/budget.h"
+#include "machine/scheduler/device.h"
 
-#include <exception>
-#include <optional>
 #include <utility>
-#include <vector>
 
 namespace bmsx {
 namespace {
@@ -22,61 +21,50 @@ constexpr DeviceStatusRegisters APU_DEVICE_STATUS_REGISTERS{
 	APU_FAULT_NONE,
 };
 
-const char* decodeFilterKind(uint32_t kind) {
-	switch (kind) {
-		case APU_FILTER_HIGHPASS:
-			return "highpass";
-		case APU_FILTER_BANDPASS:
-			return "bandpass";
-		case APU_FILTER_NOTCH:
-			return "notch";
-		case APU_FILTER_ALLPASS:
-			return "allpass";
-		case APU_FILTER_PEAKING:
-			return "peaking";
-		case APU_FILTER_LOWSHELF:
-			return "lowshelf";
-		case APU_FILTER_HIGHSHELF:
-			return "highshelf";
-		case APU_FILTER_LOWPASS:
-		default:
-			return "lowpass";
-	}
-}
-
-int32_t apuSamplesToMilliseconds(uint32_t samples) {
-	return static_cast<int32_t>((static_cast<uint64_t>(samples) * 1000ull) / APU_SAMPLE_RATE_HZ);
-}
-
 } // namespace
 
-AudioController::AudioController(Memory& memory, SoundMaster& soundMaster, IrqController& irq)
+AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, IrqController& irq, DeviceScheduler& scheduler)
 	: m_memory(memory)
-	, m_soundMaster(soundMaster)
+	, m_audioOutput(audioOutput)
 	, m_irq(irq)
+	, m_scheduler(scheduler)
 	, m_fault(memory, APU_DEVICE_STATUS_REGISTERS) {
 	m_memory.mapIoRead(IO_APU_STATUS, this, &AudioController::onStatusReadThunk);
 	m_memory.mapIoWrite(IO_APU_CMD, this, &AudioController::onCommandWriteThunk);
 	m_memory.mapIoWrite(IO_APU_SLOT, this, &AudioController::onSlotWriteThunk);
+	m_memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, this, &AudioController::onOutputQueuedFramesReadThunk);
+	m_memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, this, &AudioController::onOutputFreeFramesReadThunk);
+	m_memory.mapIoRead(IO_APU_OUTPUT_CAPACITY_FRAMES, this, &AudioController::onOutputCapacityFramesReadThunk);
+	m_memory.mapIoRead(IO_APU_CMD_QUEUED, this, &AudioController::onCommandQueuedReadThunk);
+	m_memory.mapIoRead(IO_APU_CMD_FREE, this, &AudioController::onCommandFreeReadThunk);
+	m_memory.mapIoRead(IO_APU_CMD_CAPACITY, this, &AudioController::onCommandCapacityReadThunk);
 	for (uint32_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		m_memory.mapIoRead(IO_APU_SELECTED_SLOT_REG0 + index * IO_WORD_SIZE, this, &AudioController::onSelectedSlotRegisterReadThunk);
+		m_memory.mapIoWrite(IO_APU_SELECTED_SLOT_REG0 + index * IO_WORD_SIZE, this, &AudioController::onSelectedSlotRegisterWriteThunk);
 	}
-	m_endedSubscription = ScopedSubscription(m_soundMaster.addEndedListener([this](const ActiveVoiceInfo& info) {
-		emitSlotEvent(APU_EVENT_SLOT_ENDED, info.slot, info.voiceId, info.sourceAddr);
-	}));
 	m_memory.mapIoWrite(IO_APU_FAULT_ACK, this, &AudioController::onFaultAckWriteThunk);
 }
 
+void AudioController::dispose() {
+	m_scheduler.cancelDeviceService(DeviceServiceApu);
+	m_audioOutput.resetPlaybackState();
+}
+
 void AudioController::reset() {
-	for (uint64_t& slotGeneration : m_slotPlayGenerations) {
-		slotGeneration += 1u;
-	}
 	m_eventSequence = 0;
-	m_pendingSlotMask = 0u;
+	resetCommandFifo();
 	m_activeSlotMask = 0u;
+	m_slotPhases.fill(APU_SLOT_PHASE_IDLE);
 	m_slotRegisterWords.fill(0u);
+	m_sourceDma.reset();
+	m_slotPlaybackCursorQ16.fill(0);
+	m_slotFadeSamplesRemaining.fill(0u);
+	m_sampleCarry = 0;
+	m_availableSamples = 0;
 	m_slotVoiceIds.fill(0);
-	m_soundMaster.stopAllVoices();
+	m_nextVoiceId = 1u;
+	m_scheduler.cancelDeviceService(DeviceServiceApu);
+	m_audioOutput.resetPlaybackState();
 	m_fault.resetStatus();
 	clearCommandLatch();
 	m_memory.writeValue(IO_APU_EVENT_KIND, valueNumber(static_cast<double>(APU_EVENT_NONE)));
@@ -92,38 +80,101 @@ AudioControllerState AudioController::captureState() const {
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		state.registerWords[index] = m_memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]);
 	}
+	state.commandFifoCommands = m_commandFifoCommands;
+	state.commandFifoRegisterWords = m_commandFifoRegisterWords;
+	state.commandFifoReadIndex = m_commandFifoReadIndex;
+	state.commandFifoWriteIndex = m_commandFifoWriteIndex;
+	state.commandFifoCount = m_commandFifoCount;
 	state.eventSequence = m_eventSequence;
 	state.eventKind = m_memory.readIoU32(IO_APU_EVENT_KIND);
 	state.eventSlot = m_memory.readIoU32(IO_APU_EVENT_SLOT);
 	state.eventSourceAddr = m_memory.readIoU32(IO_APU_EVENT_SOURCE_ADDR);
-	state.activeSlotMask = m_activeSlotMask;
+	state.slotPhases = m_slotPhases;
 	state.slotRegisterWords = m_slotRegisterWords;
+	state.slotSourceBytes = m_sourceDma.captureState();
+	state.slotPlaybackCursorQ16 = m_slotPlaybackCursorQ16;
+	state.slotFadeSamplesRemaining = m_slotFadeSamplesRemaining;
+	state.sampleCarry = m_sampleCarry;
+	state.availableSamples = m_availableSamples;
 	state.apuStatus = m_fault.status;
 	state.apuFaultCode = m_fault.code;
 	state.apuFaultDetail = m_fault.detail;
 	return state;
 }
 
-void AudioController::restoreState(const AudioControllerState& state) {
-	for (uint64_t& slotGeneration : m_slotPlayGenerations) {
-		slotGeneration += 1u;
-	}
-	m_pendingSlotMask = 0u;
+void AudioController::restoreState(const AudioControllerState& state, int64_t nowCycles) {
+	m_slotVoiceIds.fill(0);
+	m_audioOutput.resetPlaybackState();
+	m_nextVoiceId = 1u;
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		m_memory.writeIoValue(IO_APU_PARAMETER_REGISTER_ADDRS[index], valueNumber(static_cast<double>(state.registerWords[index])));
 	}
+	m_commandFifoCommands = state.commandFifoCommands;
+	m_commandFifoRegisterWords = state.commandFifoRegisterWords;
+	m_commandFifoReadIndex = state.commandFifoReadIndex;
+	m_commandFifoWriteIndex = state.commandFifoWriteIndex;
+	m_commandFifoCount = state.commandFifoCount;
 	m_eventSequence = state.eventSequence;
 	m_memory.writeValue(IO_APU_EVENT_KIND, valueNumber(static_cast<double>(state.eventKind)));
 	m_memory.writeValue(IO_APU_EVENT_SLOT, valueNumber(static_cast<double>(state.eventSlot)));
 	m_memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, valueNumber(static_cast<double>(state.eventSourceAddr)));
 	m_memory.writeValue(IO_APU_EVENT_SEQ, valueNumber(static_cast<double>(m_eventSequence)));
-	m_activeSlotMask = state.activeSlotMask;
+	m_slotPhases = state.slotPhases;
+	m_activeSlotMask = 0u;
+	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
+		if (m_slotPhases[slot] != APU_SLOT_PHASE_IDLE) {
+			m_activeSlotMask |= 1u << slot;
+		}
+	}
 	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_activeSlotMask)));
 	m_slotRegisterWords = state.slotRegisterWords;
-	m_slotVoiceIds.fill(0);
-	m_soundMaster.stopAllVoices();
+	m_sourceDma.restoreState(state.slotSourceBytes);
+	m_slotPlaybackCursorQ16 = state.slotPlaybackCursorQ16;
+	m_slotFadeSamplesRemaining = state.slotFadeSamplesRemaining;
+	m_sampleCarry = state.sampleCarry;
+	m_availableSamples = state.availableSamples;
 	m_fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
+	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
+		if (m_slotPhases[slot] == APU_SLOT_PHASE_IDLE) {
+			continue;
+		}
+		const ApuVoiceId voiceId = m_nextVoiceId;
+		m_nextVoiceId += 1u;
+		m_slotVoiceIds[slot] = voiceId;
+		replayHostOutput(slot, voiceId);
+	}
 	updateSelectedSlotActiveStatus();
+	scheduleNextService(nowCycles);
+}
+
+void AudioController::setTiming(int64_t cpuHz, int64_t nowCycles) {
+	m_cpuHz = cpuHz;
+	if (m_activeSlotMask == 0u && m_commandFifoCount == 0u) {
+		m_sampleCarry = 0;
+		m_availableSamples = 0;
+	}
+	scheduleNextService(nowCycles);
+}
+
+void AudioController::accrueCycles(int cycles, int64_t nowCycles) {
+	if (m_activeSlotMask == 0u || cycles <= 0) {
+		return;
+	}
+	const int64_t wholeSamples = accrueBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, cycles);
+	m_availableSamples += wholeSamples;
+	scheduleNextService(nowCycles);
+}
+
+void AudioController::onService(int64_t nowCycles) {
+	if (m_commandFifoCount > 0u) {
+		drainCommandFifo();
+	}
+	if (m_activeSlotMask == 0u || m_availableSamples == 0) {
+		scheduleNextService(nowCycles);
+		return;
+	}
+	advanceActiveSlots(std::exchange(m_availableSamples, 0));
+	scheduleNextService(nowCycles);
 }
 
 void AudioController::clearCommandLatch() {
@@ -151,22 +202,17 @@ void AudioController::resetCommandLatch() {
 	m_memory.writeValue(IO_APU_FILTER_Q_MILLI, valueNumber(1000.0));
 	m_memory.writeValue(IO_APU_FILTER_GAIN_MILLIDB, valueNumber(0.0));
 	m_memory.writeValue(IO_APU_FADE_SAMPLES, valueNumber(0.0));
-	m_memory.writeValue(IO_APU_TARGET_GAIN_Q12, valueNumber(static_cast<double>(APU_GAIN_Q12_ONE)));
 }
 
 void AudioController::onCommandWrite() {
 	const uint32_t command = m_memory.readIoU32(IO_APU_CMD);
 	switch (command) {
 		case APU_CMD_PLAY:
-			play();
-			clearCommandLatch();
-			return;
 		case APU_CMD_STOP_SLOT:
-			stopSlot();
-			clearCommandLatch();
-			return;
-		case APU_CMD_RAMP_SLOT:
-			rampSlot();
+		case APU_CMD_SET_SLOT_GAIN:
+			if (enqueueCommand(command)) {
+				scheduleNextService(m_scheduler.currentNowCycles());
+			}
 			clearCommandLatch();
 			return;
 		case APU_CMD_NONE:
@@ -174,6 +220,69 @@ void AudioController::onCommandWrite() {
 		default:
 			m_fault.raise(APU_FAULT_BAD_CMD, command);
 			clearCommandLatch();
+			return;
+	}
+}
+
+void AudioController::resetCommandFifo() {
+	m_commandFifoCommands.fill(APU_CMD_NONE);
+	m_commandFifoRegisterWords.fill(0u);
+	m_commandFifoReadIndex = 0u;
+	m_commandFifoWriteIndex = 0u;
+	m_commandFifoCount = 0u;
+}
+
+bool AudioController::enqueueCommand(uint32_t command) {
+	if (m_commandFifoCount == APU_COMMAND_FIFO_CAPACITY) {
+		m_fault.raise(APU_FAULT_CMD_FIFO_FULL, command);
+		return false;
+	}
+	const uint32_t entry = m_commandFifoWriteIndex;
+	m_commandFifoCommands[entry] = command;
+	const size_t base = static_cast<size_t>(entry) * APU_PARAMETER_REGISTER_COUNT;
+	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
+		m_commandFifoRegisterWords[base + index] = m_memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]);
+	}
+	m_commandFifoWriteIndex += 1u;
+	if (m_commandFifoWriteIndex == APU_COMMAND_FIFO_CAPACITY) {
+		m_commandFifoWriteIndex = 0u;
+	}
+	m_commandFifoCount += 1u;
+	return true;
+}
+
+void AudioController::drainCommandFifo() {
+	while (m_commandFifoCount > 0u) {
+		const uint32_t entry = m_commandFifoReadIndex;
+		const uint32_t command = m_commandFifoCommands[entry];
+		const size_t base = static_cast<size_t>(entry) * APU_PARAMETER_REGISTER_COUNT;
+		for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
+			m_commandDispatchRegisterWords[index] = m_commandFifoRegisterWords[base + index];
+			m_commandFifoRegisterWords[base + index] = 0u;
+		}
+		m_commandFifoCommands[entry] = APU_CMD_NONE;
+		m_commandFifoReadIndex += 1u;
+		if (m_commandFifoReadIndex == APU_COMMAND_FIFO_CAPACITY) {
+			m_commandFifoReadIndex = 0u;
+		}
+		m_commandFifoCount -= 1u;
+		executeCommand(command, m_commandDispatchRegisterWords);
+	}
+}
+
+void AudioController::executeCommand(uint32_t command, const ApuParameterRegisterWords& registerWords) {
+	switch (command) {
+		case APU_CMD_PLAY:
+			play(registerWords);
+			return;
+		case APU_CMD_STOP_SLOT:
+			stopSlot(registerWords);
+			return;
+		case APU_CMD_SET_SLOT_GAIN:
+			setSlotGain(registerWords);
+			return;
+		default:
+			m_fault.raise(APU_FAULT_BAD_CMD, command);
 			return;
 	}
 }
@@ -198,12 +307,46 @@ Value AudioController::onStatusReadThunk(void* context, uint32_t) {
 	return static_cast<AudioController*>(context)->onStatusRead();
 }
 
+Value AudioController::onOutputQueuedFramesReadThunk(void* context, uint32_t) {
+	auto& controller = *static_cast<AudioController*>(context);
+	return valueNumber(static_cast<double>(controller.m_audioOutput.queuedOutputFrames()));
+}
+
+Value AudioController::onOutputFreeFramesReadThunk(void* context, uint32_t) {
+	auto& controller = *static_cast<AudioController*>(context);
+	return valueNumber(static_cast<double>(controller.m_audioOutput.freeOutputFrames()));
+}
+
+Value AudioController::onOutputCapacityFramesReadThunk(void* context, uint32_t) {
+	auto& controller = *static_cast<AudioController*>(context);
+	return valueNumber(static_cast<double>(controller.m_audioOutput.capacityOutputFrames()));
+}
+
+Value AudioController::onCommandQueuedReadThunk(void* context, uint32_t) {
+	auto& controller = *static_cast<AudioController*>(context);
+	return valueNumber(static_cast<double>(controller.m_commandFifoCount));
+}
+
+Value AudioController::onCommandFreeReadThunk(void* context, uint32_t) {
+	auto& controller = *static_cast<AudioController*>(context);
+	return valueNumber(static_cast<double>(APU_COMMAND_FIFO_CAPACITY - controller.m_commandFifoCount));
+}
+
+Value AudioController::onCommandCapacityReadThunk(void*, uint32_t) {
+	return valueNumber(static_cast<double>(APU_COMMAND_FIFO_CAPACITY));
+}
+
 Value AudioController::onSelectedSlotRegisterReadThunk(void* context, uint32_t addr) {
 	return static_cast<AudioController*>(context)->onSelectedSlotRegisterRead(addr);
 }
 
-bool AudioController::readSlot(AudioSlot& slot) const {
-	slot = static_cast<AudioSlot>(m_memory.readIoU32(IO_APU_SLOT));
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the APU device instance.
+void AudioController::onSelectedSlotRegisterWriteThunk(void* context, uint32_t addr, Value value) {
+	static_cast<AudioController*>(context)->onSelectedSlotRegisterWrite(addr, value);
+}
+
+bool AudioController::readSlot(const ApuParameterRegisterWords& registerWords, ApuAudioSlot& slot) const {
+	slot = static_cast<ApuAudioSlot>(registerWords[APU_PARAMETER_SLOT_INDEX]);
 	if (slot >= APU_SLOT_COUNT) {
 		m_fault.raise(APU_FAULT_BAD_SLOT, slot);
 		return false;
@@ -211,141 +354,90 @@ bool AudioController::readSlot(AudioSlot& slot) const {
 	return true;
 }
 
-void AudioController::play() {
-	SoundMasterAudioSource source;
-	if (!readAudioSource(source)) {
+void AudioController::play(const ApuParameterRegisterWords& registerWords) {
+	const ApuAudioSource source = resolveApuAudioSource(registerWords);
+	ApuAudioSlot slot = 0;
+	if (!readSlot(registerWords, slot)) {
 		return;
 	}
-	AudioSlot slot = 0;
-	if (!readSlot(slot)) {
+	startPlay(source, slot, registerWords);
+}
+
+void AudioController::startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords) {
+	if (!replaceSlotSourceDma(slot, source)) {
 		return;
 	}
-	startPlay(source, slot, readResolvedPlayRequest(source), captureParameterRegisterWords());
+	const ApuVoiceId voiceId = m_nextVoiceId;
+	m_nextVoiceId += 1u;
+	setSlotActive(slot, registerWords, voiceId);
+	if (!playOutputVoice(slot, voiceId, source, registerWords, 0u)) {
+		return;
+	}
+	scheduleNextService(m_scheduler.currentNowCycles());
 }
 
-std::array<uint32_t, APU_PARAMETER_REGISTER_COUNT> AudioController::captureParameterRegisterWords() const {
-	std::array<uint32_t, APU_PARAMETER_REGISTER_COUNT> words{};
-	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
-		words[index] = m_memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]);
-	}
-	return words;
-}
-
-bool AudioController::readAudioSource(SoundMasterAudioSource& source) const {
-	source.sourceAddr = m_memory.readIoU32(IO_APU_SOURCE_ADDR);
-	source.sourceBytes = m_memory.readIoU32(IO_APU_SOURCE_BYTES);
-	source.sampleRateHz = m_memory.readIoU32(IO_APU_SOURCE_SAMPLE_RATE_HZ);
-	source.channels = m_memory.readIoU32(IO_APU_SOURCE_CHANNELS);
-	source.bitsPerSample = m_memory.readIoU32(IO_APU_SOURCE_BITS_PER_SAMPLE);
-	source.frameCount = m_memory.readIoU32(IO_APU_SOURCE_FRAME_COUNT);
-	source.dataOffset = m_memory.readIoU32(IO_APU_SOURCE_DATA_OFFSET);
-	source.dataBytes = m_memory.readIoU32(IO_APU_SOURCE_DATA_BYTES);
-	source.loopStartSample = m_memory.readIoU32(IO_APU_SOURCE_LOOP_START_SAMPLE);
-	source.loopEndSample = m_memory.readIoU32(IO_APU_SOURCE_LOOP_END_SAMPLE);
-	if (source.sourceBytes == 0) {
-		m_fault.raise(APU_FAULT_SOURCE_BYTES, source.sourceBytes);
-		return false;
-	}
-	if (!m_memory.isReadableMainMemoryRange(source.sourceAddr, source.sourceBytes)) {
-		m_fault.raise(APU_FAULT_SOURCE_RANGE, source.sourceAddr);
-		return false;
-	}
-	if (source.sampleRateHz == 0) {
-		m_fault.raise(APU_FAULT_SOURCE_SAMPLE_RATE, source.sampleRateHz);
-		return false;
-	}
-	if (source.channels < 1 || source.channels > 2) {
-		m_fault.raise(APU_FAULT_SOURCE_CHANNELS, source.channels);
-		return false;
-	}
-	if (source.frameCount == 0) {
-		m_fault.raise(APU_FAULT_SOURCE_FRAME_COUNT, source.frameCount);
-		return false;
-	}
-	if (source.dataBytes == 0 || source.dataOffset + source.dataBytes > source.sourceBytes) {
-		m_fault.raise(APU_FAULT_SOURCE_DATA_RANGE, source.dataOffset);
-		return false;
-	}
-	if (source.bitsPerSample != 4 && source.bitsPerSample != 8 && source.bitsPerSample != 16) {
-		m_fault.raise(APU_FAULT_SOURCE_BIT_DEPTH, source.bitsPerSample);
+bool AudioController::playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples) {
+	const ApuOutputStartResult outputStart = m_audioOutput.playVoice(
+		slot,
+		voiceId,
+		source,
+		m_sourceDma.bytesForSlot(slot),
+		registerWords,
+		m_slotPlaybackCursorQ16[slot],
+		fadeSamples
+	);
+	if (outputStart.faultCode != APU_FAULT_NONE) {
+		m_audioOutput.stopSlot(slot);
+		stopSlotActive(slot);
+		m_fault.raise(outputStart.faultCode, outputStart.faultDetail);
 		return false;
 	}
 	return true;
 }
 
-void AudioController::startPlay(const SoundMasterAudioSource& source, AudioSlot slot, const SoundMasterResolvedPlayRequest& request, const std::array<uint32_t, APU_PARAMETER_REGISTER_COUNT>& registerWords) {
-	if (!m_soundMaster.isRuntimeAudioReady()) {
-		m_fault.raise(APU_FAULT_RUNTIME_UNAVAILABLE, source.sourceAddr);
-		return;
-	}
-	std::vector<u8> bytes(source.sourceBytes);
-	m_memory.readBytes(source.sourceAddr, bytes.data(), bytes.size());
-	const uint32_t bit = 1u << slot;
-	const uint64_t playGeneration = m_slotPlayGenerations[slot] + 1u;
-	m_slotPlayGenerations[slot] = playGeneration;
-	m_pendingSlotMask |= bit;
-	const std::optional<VoiceId> voiceId = m_soundMaster.playResolved(slot, source, std::move(bytes), request);
-	if (playGeneration != m_slotPlayGenerations[slot]) {
-		return;
-	}
-	m_pendingSlotMask &= ~bit;
-	if (!voiceId.has_value()) {
-		m_fault.raise(APU_FAULT_PLAYBACK_REJECTED, source.sourceAddr);
-		return;
-	}
-	setSlotActive(slot, registerWords, *voiceId);
-}
-
-void AudioController::stopSlot() {
-	AudioSlot slot = 0;
-	if (!readSlot(slot)) {
-		return;
-	}
-	const uint32_t bit = 1u << slot;
-	m_slotPlayGenerations[slot] += 1u;
-	m_pendingSlotMask &= ~bit;
-	const uint32_t fadeSamples = m_memory.readIoU32(IO_APU_FADE_SAMPLES);
-	const bool stopped = m_soundMaster.stopSlot(slot, fadeSamples > 0 ? std::optional<i32>(apuSamplesToMilliseconds(fadeSamples)) : std::nullopt);
-	if (!stopped) {
+bool AudioController::replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source) {
+	m_audioOutput.stopSlot(slot);
+	const ApuSourceDmaResult dma = m_sourceDma.loadSlot(m_memory, slot, source);
+	if (dma.faultCode != APU_FAULT_NONE) {
 		stopSlotActive(slot);
+		m_fault.raise(dma.faultCode, dma.faultDetail);
+		return false;
 	}
+	return true;
 }
 
-void AudioController::rampSlot() {
-	AudioSlot slot = 0;
-	if (!readSlot(slot)) {
+void AudioController::stopSlot(const ApuParameterRegisterWords& registerWords) {
+	ApuAudioSlot slot = 0;
+	if (!readSlot(registerWords, slot)) {
 		return;
 	}
-	const f32 targetGain = static_cast<f32>(m_memory.readIoI32(IO_APU_TARGET_GAIN_Q12)) / static_cast<f32>(APU_GAIN_Q12_ONE);
-	const uint32_t fadeSamples = m_memory.readIoU32(IO_APU_FADE_SAMPLES);
-	if (fadeSamples > 0) {
-		m_soundMaster.rampSlotGainLinear(slot, targetGain, static_cast<f64>(fadeSamples) / static_cast<f64>(APU_SAMPLE_RATE_HZ));
+	const uint32_t fadeSamples = registerWords[APU_PARAMETER_FADE_SAMPLES_INDEX];
+	if ((m_activeSlotMask & (1u << slot)) == 0u) {
+		m_audioOutput.stopSlot(slot);
+		stopSlotActive(slot);
 		return;
 	}
-	m_soundMaster.setSlotGainLinear(slot, targetGain);
-}
-
-SoundMasterResolvedPlayRequest AudioController::readResolvedPlayRequest(const SoundMasterAudioSource& source) const {
-	SoundMasterResolvedPlayRequest request;
-	const int32_t rateStepQ16 = m_memory.readIoI32(IO_APU_RATE_STEP_Q16);
-	const int32_t gainQ12 = m_memory.readIoI32(IO_APU_GAIN_Q12);
-	const uint32_t startSample = m_memory.readIoU32(IO_APU_START_SAMPLE);
-	const uint32_t filterKind = m_memory.readIoU32(IO_APU_FILTER_KIND);
-	request.playbackRate = static_cast<f32>(rateStepQ16) / static_cast<f32>(APU_RATE_STEP_Q16_ONE);
-	request.gainLinear = static_cast<f32>(gainQ12) / static_cast<f32>(APU_GAIN_Q12_ONE);
-	request.offsetSeconds = static_cast<f32>(startSample) / static_cast<f32>(source.sampleRateHz);
-	if (filterKind != APU_FILTER_NONE) {
-		FilterModulationParams filter;
-		filter.type = decodeFilterKind(filterKind);
-		filter.frequency = static_cast<f32>(m_memory.readIoI32(IO_APU_FILTER_FREQ_HZ));
-		filter.q = static_cast<f32>(m_memory.readIoI32(IO_APU_FILTER_Q_MILLI)) / 1000.0f;
-		filter.gain = static_cast<f32>(m_memory.readIoI32(IO_APU_FILTER_GAIN_MILLIDB)) / 1000.0f;
-		request.filter = filter;
+	if (fadeSamples > 0u) {
+		m_slotFadeSamplesRemaining[slot] = fadeSamples;
+		setSlotPhase(slot, APU_SLOT_PHASE_FADING);
+		m_audioOutput.stopSlot(slot, fadeSamples);
+		scheduleNextService(m_scheduler.currentNowCycles());
+		return;
 	}
-	return request;
+	m_audioOutput.stopSlot(slot);
+	stopSlotActive(slot);
+	scheduleNextService(m_scheduler.currentNowCycles());
 }
 
-void AudioController::emitSlotEvent(uint32_t kind, AudioSlot slot, VoiceId voiceId, uint32_t sourceAddr) {
+void AudioController::setSlotGain(const ApuParameterRegisterWords& registerWords) {
+	ApuAudioSlot slot = 0;
+	if (!readSlot(registerWords, slot)) {
+		return;
+	}
+	writeSlotRegisterWord(slot, APU_PARAMETER_GAIN_Q12_INDEX, registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
+}
+
+void AudioController::emitSlotEvent(uint32_t kind, ApuAudioSlot slot, ApuVoiceId voiceId, uint32_t sourceAddr) {
 	if (m_slotVoiceIds[slot] != voiceId) {
 		return;
 	}
@@ -358,29 +450,127 @@ void AudioController::emitSlotEvent(uint32_t kind, AudioSlot slot, VoiceId voice
 	m_irq.raise(IRQ_APU);
 }
 
-void AudioController::setSlotActive(AudioSlot slot, const std::array<uint32_t, APU_PARAMETER_REGISTER_COUNT>& registerWords, VoiceId voiceId) {
-	const uint32_t bit = 1u << slot;
-	m_pendingSlotMask &= ~bit;
-	m_activeSlotMask |= bit;
-	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_activeSlotMask)));
+void AudioController::setSlotActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords, ApuVoiceId voiceId) {
+	setSlotPhase(slot, APU_SLOT_PHASE_PLAYING);
 	const size_t base = apuSlotRegisterWordIndex(slot, 0u);
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		m_slotRegisterWords[base + index] = registerWords[index];
 	}
+	m_slotPlaybackCursorQ16[slot] = static_cast<int64_t>(registerWords[APU_PARAMETER_START_SAMPLE_INDEX]) * static_cast<int64_t>(APU_RATE_STEP_Q16_ONE);
+	m_slotFadeSamplesRemaining[slot] = 0u;
 	m_slotVoiceIds[slot] = voiceId;
-	updateSelectedSlotActiveStatus();
 }
 
-void AudioController::stopSlotActive(AudioSlot slot) {
-	const uint32_t bit = 1u << slot;
-	m_activeSlotMask &= ~bit;
-	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_activeSlotMask)));
+void AudioController::stopSlotActive(ApuAudioSlot slot) {
+	setSlotPhase(slot, APU_SLOT_PHASE_IDLE);
 	const size_t base = apuSlotRegisterWordIndex(slot, 0u);
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		m_slotRegisterWords[base + index] = 0u;
 	}
+	m_sourceDma.clearSlot(slot);
+	m_slotPlaybackCursorQ16[slot] = 0;
+	m_slotFadeSamplesRemaining[slot] = 0u;
 	m_slotVoiceIds[slot] = 0;
+}
+
+void AudioController::setSlotPhase(ApuAudioSlot slot, ApuSlotPhase phase) {
+	m_slotPhases[slot] = phase;
+	const uint32_t bit = 1u << slot;
+	if (phase == APU_SLOT_PHASE_IDLE) {
+		m_activeSlotMask &= ~bit;
+	} else {
+		m_activeSlotMask |= bit;
+	}
+	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_activeSlotMask)));
 	updateSelectedSlotActiveStatus();
+}
+
+void AudioController::replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId) {
+	const size_t base = apuSlotRegisterWordIndex(slot, 0u);
+	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
+		m_slotRegisterDispatchWords[index] = m_slotRegisterWords[base + index];
+	}
+	m_audioOutput.playVoice(
+		slot,
+		voiceId,
+		resolveApuAudioSource(m_slotRegisterDispatchWords),
+		m_sourceDma.bytesForSlot(slot),
+		m_slotRegisterDispatchWords,
+		m_slotPlaybackCursorQ16[slot],
+		m_slotFadeSamplesRemaining[slot]
+	);
+}
+
+void AudioController::advanceActiveSlots(int64_t samples) {
+	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
+		const ApuSlotPhase phase = m_slotPhases[slot];
+		if (phase == APU_SLOT_PHASE_IDLE) {
+			continue;
+		}
+		const size_t base = apuSlotRegisterWordIndex(slot, 0u);
+		const u32 sourceAddr = m_slotRegisterWords[base + APU_PARAMETER_SOURCE_ADDR_INDEX];
+		const ApuVoiceId voiceId = m_slotVoiceIds[slot];
+		const u32 fadeSamples = m_slotFadeSamplesRemaining[slot];
+		if (phase == APU_SLOT_PHASE_FADING) {
+			const int64_t cursorSamples = samples < static_cast<int64_t>(fadeSamples) ? samples : static_cast<int64_t>(fadeSamples);
+			const bool endedByCursor = advanceSlotCursor(slot, cursorSamples);
+			if (samples < static_cast<int64_t>(fadeSamples)) {
+				m_slotFadeSamplesRemaining[slot] = static_cast<u32>(static_cast<int64_t>(fadeSamples) - samples);
+				if (endedByCursor) {
+					m_slotFadeSamplesRemaining[slot] = 0u;
+					m_audioOutput.stopSlot(slot);
+					emitSlotEvent(APU_EVENT_SLOT_ENDED, slot, voiceId, sourceAddr);
+				}
+				continue;
+			}
+			m_slotFadeSamplesRemaining[slot] = 0u;
+			m_audioOutput.stopSlot(slot);
+			emitSlotEvent(APU_EVENT_SLOT_ENDED, slot, voiceId, sourceAddr);
+			continue;
+		}
+		if (advanceSlotCursor(slot, samples)) {
+			m_audioOutput.stopSlot(slot);
+			emitSlotEvent(APU_EVENT_SLOT_ENDED, slot, voiceId, sourceAddr);
+		}
+	}
+}
+
+bool AudioController::advanceSlotCursor(ApuAudioSlot slot, int64_t samples) {
+	const size_t base = apuSlotRegisterWordIndex(slot, 0u);
+	const int64_t rateStepQ16 = toSignedWord(m_slotRegisterWords[base + APU_PARAMETER_RATE_STEP_Q16_INDEX]);
+	const uint32_t sourceSampleRateHz = m_slotRegisterWords[base + APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX];
+	const int64_t loopStartQ16 = static_cast<int64_t>(m_slotRegisterWords[base + APU_PARAMETER_SOURCE_LOOP_START_SAMPLE_INDEX]) * static_cast<int64_t>(APU_RATE_STEP_Q16_ONE);
+	const int64_t loopEndQ16 = static_cast<int64_t>(m_slotRegisterWords[base + APU_PARAMETER_SOURCE_LOOP_END_SAMPLE_INDEX]) * static_cast<int64_t>(APU_RATE_STEP_Q16_ONE);
+	int64_t cursorQ16 = advanceApuPlaybackCursorQ16(m_slotPlaybackCursorQ16[slot], samples, rateStepQ16, sourceSampleRateHz);
+	if (loopEndQ16 > loopStartQ16) {
+		if (cursorQ16 >= loopEndQ16) {
+			const int64_t loopLengthQ16 = loopEndQ16 - loopStartQ16;
+			cursorQ16 = loopStartQ16 + ((cursorQ16 - loopStartQ16) % loopLengthQ16);
+		}
+		m_slotPlaybackCursorQ16[slot] = cursorQ16;
+		return false;
+	}
+	m_slotPlaybackCursorQ16[slot] = cursorQ16;
+	const int64_t frameEndQ16 = static_cast<int64_t>(m_slotRegisterWords[base + APU_PARAMETER_SOURCE_FRAME_COUNT_INDEX]) * static_cast<int64_t>(APU_RATE_STEP_Q16_ONE);
+	return rateStepQ16 > 0 && cursorQ16 >= frameEndQ16;
+}
+
+void AudioController::scheduleNextService(int64_t nowCycles) {
+	if (m_commandFifoCount > 0u) {
+		m_scheduler.scheduleDeviceService(DeviceServiceApu, nowCycles);
+		return;
+	}
+	if (m_activeSlotMask == 0u) {
+		m_scheduler.cancelDeviceService(DeviceServiceApu);
+		m_sampleCarry = 0;
+		m_availableSamples = 0;
+		return;
+	}
+	if (m_availableSamples > 0) {
+		m_scheduler.scheduleDeviceService(DeviceServiceApu, nowCycles);
+		return;
+	}
+	m_scheduler.scheduleDeviceService(DeviceServiceApu, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, 1));
 }
 
 void AudioController::updateSelectedSlotActiveStatus() {
@@ -392,21 +582,83 @@ void AudioController::updateSelectedSlotActiveStatus() {
 
 Value AudioController::onStatusRead() const {
 	uint32_t status = m_fault.status;
-	if ((m_activeSlotMask | m_pendingSlotMask) != 0u) {
+	if (m_activeSlotMask != 0u || m_commandFifoCount != 0u) {
 		status |= APU_STATUS_BUSY;
+	}
+	if (m_commandFifoCount == 0u) {
+		status |= APU_STATUS_CMD_FIFO_EMPTY;
+	}
+	if (m_commandFifoCount == APU_COMMAND_FIFO_CAPACITY) {
+		status |= APU_STATUS_CMD_FIFO_FULL;
+	}
+	const size_t queuedFrames = m_audioOutput.queuedOutputFrames();
+	if (queuedFrames == 0u) {
+		status |= APU_STATUS_OUTPUT_EMPTY;
+	}
+	if (queuedFrames >= m_audioOutput.capacityOutputFrames()) {
+		status |= APU_STATUS_OUTPUT_FULL;
 	}
 	return valueNumber(static_cast<double>(status));
 }
 
 Value AudioController::onSelectedSlotRegisterRead(uint32_t addr) const {
 	const uint32_t slot = m_memory.readIoU32(IO_APU_SLOT);
-	const bool active = slot < APU_SLOT_COUNT && (m_activeSlotMask & (1u << slot)) != 0u;
-	if (!active) {
+	if (slot >= APU_SLOT_COUNT) {
 		return valueNumber(0.0);
 	}
 	const size_t parameterIndex = static_cast<size_t>((addr - IO_APU_SELECTED_SLOT_REG0) / IO_WORD_SIZE);
 	const size_t registerIndex = apuSlotRegisterWordIndex(slot, static_cast<uint32_t>(parameterIndex));
 	return valueNumber(static_cast<double>(m_slotRegisterWords[registerIndex]));
+}
+
+void AudioController::onSelectedSlotRegisterWrite(uint32_t addr, Value value) {
+	const uint32_t slot = m_memory.readIoU32(IO_APU_SLOT);
+	if (slot >= APU_SLOT_COUNT) {
+		m_fault.raise(APU_FAULT_BAD_SLOT, slot);
+		return;
+	}
+	writeSlotRegisterWord(slot, (addr - IO_APU_SELECTED_SLOT_REG0) / IO_WORD_SIZE, toU32(value));
+}
+
+void AudioController::writeSlotRegisterWord(ApuAudioSlot slot, uint32_t parameterIndex, uint32_t word) {
+	const size_t base = apuSlotRegisterWordIndex(slot, 0u);
+	m_slotRegisterWords[base + parameterIndex] = word;
+	if (parameterIndex == APU_PARAMETER_START_SAMPLE_INDEX) {
+		m_slotPlaybackCursorQ16[slot] = static_cast<int64_t>(word) * static_cast<int64_t>(APU_RATE_STEP_Q16_ONE);
+	}
+	if ((m_activeSlotMask & (1u << slot)) != 0u) {
+		for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
+			m_slotRegisterDispatchWords[index] = m_slotRegisterWords[base + index];
+			}
+			const ApuAudioSource source = resolveApuAudioSource(m_slotRegisterDispatchWords);
+			if (apuParameterProgramsSourceBuffer(parameterIndex)) {
+				if (!replaceSlotSourceDma(slot, source)) {
+					return;
+				}
+				const ApuVoiceId voiceId = m_nextVoiceId;
+			m_nextVoiceId += 1u;
+			const u32 fadeSamples = m_slotFadeSamplesRemaining[slot];
+			m_slotVoiceIds[slot] = voiceId;
+			if (!playOutputVoice(slot, voiceId, source, m_slotRegisterDispatchWords, fadeSamples)) {
+				return;
+			}
+			scheduleNextService(m_scheduler.currentNowCycles());
+		} else {
+			const ApuOutputStartResult outputWrite = m_audioOutput.writeSlotRegisterWord(
+				slot,
+				source,
+				m_slotRegisterDispatchWords,
+				parameterIndex,
+				m_slotPlaybackCursorQ16[slot]
+			);
+			if (outputWrite.faultCode != APU_FAULT_NONE) {
+				m_audioOutput.stopSlot(slot);
+				stopSlotActive(slot);
+				m_fault.raise(outputWrite.faultCode, outputWrite.faultDetail);
+			}
+		}
+	}
+	updateSelectedSlotActiveStatus();
 }
 
 } // namespace bmsx

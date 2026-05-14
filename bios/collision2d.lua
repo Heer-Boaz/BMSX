@@ -190,11 +190,7 @@ local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_b
 		sys_geo_overlap_pair_bytes,
 		instance_count
 	)
-	memwrite(
-		sys_geo_cmd,
-		sys_geo_cmd_overlap2d_pass,
-		sys_geo_ctrl_start
-	)
+	mem[sys_geo_cmd] = sys_geo_cmd_overlap2d_pass
 	wait_for_geo_completion('overlap batch')
 end
 
@@ -216,11 +212,7 @@ local submit_geo_overlap_full_pass<const> = function(instance_base, result_base,
 		0,
 		0
 	)
-	memwrite(
-		sys_geo_cmd,
-		sys_geo_cmd_overlap2d_pass,
-		sys_geo_ctrl_start
-	)
+	mem[sys_geo_cmd] = sys_geo_cmd_overlap2d_pass
 	local status<const> = mem[sys_geo_status]
 	if (status & geo_status_rejected) ~= 0 or (status & geo_status_error) ~= 0 then
 		ack_geo_irq_if_pending()

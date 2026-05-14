@@ -8,8 +8,9 @@ export const DEVICE_SERVICE_GEO = 1;
 export const DEVICE_SERVICE_DMA = 2;
 export const DEVICE_SERVICE_IMG = 3;
 export const DEVICE_SERVICE_VDP = 4;
+export const DEVICE_SERVICE_APU = 5;
 
-const DEVICE_SERVICE_KIND_COUNT = DEVICE_SERVICE_VDP + 1;
+const DEVICE_SERVICE_KIND_COUNT = DEVICE_SERVICE_APU + 1;
 const TIMER_EVENT_KIND_SHIFT = 8;
 
 function nextTimerGeneration(value: number): number {

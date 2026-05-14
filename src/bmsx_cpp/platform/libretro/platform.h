@@ -28,6 +28,7 @@ class GamepadInput;
 class KeyboardInput;
 class PointerInput;
 class LibretroInputHub;
+class LibretroAudioService;
 class ConsoleCore;
 
 /* ============================================================================
@@ -92,13 +93,13 @@ struct AudioBuffer {
 		samples = 0;
 	}
 
-	void write(const int16_t* src, size_t num_samples) {
-		if (num_samples > buffer.size() / 2) {
-			buffer.resize(num_samples * 2);
+	int16_t* beginWrite(size_t num_samples) {
+		if (num_samples > buffer.size() / 2u) {
+			buffer.resize(num_samples * 2u);
 		}
-		std::copy(src, src + num_samples * 2, buffer.begin());
 		data = buffer.data();
 		samples = num_samples;
+		return buffer.data();
 	}
 
 	// disable-next-line single_line_method_pattern -- audio buffer reserves stereo sample storage at the libretro audio boundary.
@@ -156,7 +157,6 @@ public:
 	// Libretro callback setters
 	void setEnvironmentCallback(retro_environment_t cb) { m_environ_cb = cb; }
 	void setVideoCallback(retro_video_refresh_t cb) { m_video_cb = cb; }
-	void setAudioBatchCallback(retro_audio_sample_batch_t cb) { m_audio_batch_cb = cb; }
 	void setInputPollCallback(retro_input_poll_t cb);
 	void setInputStateCallback(retro_input_state_t cb);
 	void postKeyboardEvent(std::string_view code, bool down);
@@ -228,7 +228,6 @@ public:
 	FrameLoop* frameLoop() override { return m_frame_loop.get(); }
 	Lifecycle* lifecycle() override { return m_lifecycle.get(); }
 	InputHub* inputHub() override { return m_input_hub.get(); }
-	AudioService* audioService() override { return m_audio_service.get(); }
 	GameViewHost* gameviewHost() override { return m_gameview_host.get(); }
 	MicrotaskQueue* microtaskQueue() override { return m_microtask_queue.get(); }
 	std::string_view type() override { return "libretro"; }
@@ -236,7 +235,6 @@ public:
 
 private:
 	void pollInput();
-	void processAudio();
 	void log(retro_log_level level, const char* fmt, ...);
 	bool loadSystemRomFromFile(const std::string& path);
 	bool loadRomOwned(std::vector<uint8_t>&& data);
@@ -244,7 +242,6 @@ private:
 	// Libretro callbacks
 	retro_environment_t m_environ_cb = nullptr;
 	retro_video_refresh_t m_video_cb = nullptr;
-	retro_audio_sample_batch_t m_audio_batch_cb = nullptr;
 	retro_input_poll_t m_input_poll_cb = nullptr;
 	retro_input_state_t m_input_state_cb = nullptr;
 	void (*m_log_cb)(enum retro_log_level, const char*, ...) = nullptr;
@@ -279,7 +276,7 @@ private:
 	std::unique_ptr<FrameLoop> m_frame_loop;
 	std::unique_ptr<Lifecycle> m_lifecycle;
 	std::unique_ptr<InputHub> m_input_hub;
-	std::unique_ptr<AudioService> m_audio_service;
+	std::unique_ptr<LibretroAudioService> m_audio_service;
 	std::unique_ptr<LibretroGameViewHost> m_gameview_host;
 	std::unique_ptr<MicrotaskQueue> m_microtask_queue;
 
@@ -341,47 +338,21 @@ private:
  * LibretroAudioService - Audio handling for libretro
  * ============================================================================ */
 
-class LibretroAudioService : public AudioService {
+class LibretroAudioService final {
 public:
 	explicit LibretroAudioService(LibretroPlatform* platform);
 
-	void setAudioBatchCallback(retro_audio_sample_batch_t cb) { m_audio_batch_cb = cb; }
 	void setTiming(double sampleRate);
 	void resetQueue();
 	void refreshTargetBufferFrames();
 
-	// Collect audio samples from all voices
 	void collectSamples(AudioBuffer& buffer);
-
-	// AudioService interface
-	Voice* createVoice() override;
-	void destroyVoice(Voice* voice) override;
-	MasterVolume* masterVolume() override { return &m_master_volume; }
-	std::string name() override { return "libretro"; }
-	bool ready() override { return true; }
-	float sampleRate() override { return m_sample_rate; }
 
 private:
 	LibretroPlatform* m_platform;
-	retro_audio_sample_batch_t m_audio_batch_cb = nullptr;
 	double m_sample_rate = DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
 	double m_sample_accumulator = 0.0;
-	std::vector<int16_t> m_sample_queue;
-	size_t m_queue_start_samples = 0;
-	size_t m_queue_samples = 0;
 	size_t m_target_buffer_frames = 0;
-
-	class LibretroMasterVolume : public MasterVolume {
-	public:
-		float get() override { return m_volume; }
-		void set(float vol) override { m_volume = vol; }
-	private:
-		float m_volume = 1.0f;
-	};
-
-	LibretroMasterVolume m_master_volume;
-	std::vector<std::unique_ptr<Voice>> m_voices;
-	std::vector<int16_t> m_mix_buffer;
 };
 
 /* ============================================================================

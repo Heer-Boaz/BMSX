@@ -9,8 +9,6 @@ namespace bmsx {
 namespace {
 
 constexpr f32 BIQUAD_PI = 3.14159265358979323846f;
-constexpr f32 DEFAULT_FILTER_FREQUENCY = 350.0f;
-constexpr f32 DEFAULT_FILTER_Q = 1.0f;
 
 enum class BiquadFilterKind {
 	Lowpass,
@@ -89,23 +87,6 @@ void configureBiquadFilter(
 	f32 gain,
 	f32 sampleRate
 ) {
-	if (!std::isfinite(sampleRate) || sampleRate <= 0.0f) {
-		throw BMSX_RUNTIME_ERROR("Biquad filter sampleRate must be positive and finite.");
-	}
-
-	if (type.empty()) {
-		type = "lowpass";
-	}
-	if (frequency <= 0.0f) {
-		frequency = DEFAULT_FILTER_FREQUENCY;
-	}
-	if (q <= 0.0f) {
-		q = DEFAULT_FILTER_Q;
-	}
-	if (!std::isfinite(frequency) || !std::isfinite(q) || !std::isfinite(gain)) {
-		throw BMSX_RUNTIME_ERROR("Biquad filter parameters must be finite.");
-	}
-
 	frequency = std::clamp(frequency, 0.001f, sampleRate * 0.499f);
 
 	const f32 omega = 2.0f * BIQUAD_PI * frequency / sampleRate;

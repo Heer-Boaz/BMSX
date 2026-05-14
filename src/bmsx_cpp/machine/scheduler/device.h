@@ -21,7 +21,8 @@ enum DeviceServiceKind : uint8_t {
 	DeviceServiceDma = 2,
 	DeviceServiceImg = 3,
 	DeviceServiceVdp = 4,
-	DeviceServiceKindCount = 5,
+	DeviceServiceApu = 5,
+	DeviceServiceKindCount = 6,
 };
 
 class DeviceScheduler {

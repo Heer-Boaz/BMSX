@@ -60,27 +60,6 @@ static void installBuiltinRenderPipeline(GameView* view, GPUBackend* backend) {
 	view->rebuildGraph();
 }
 
-class LibretroVoice final : public Voice {
-public:
-	void play() override { m_playing = true; }
-	void stop() override { m_playing = false; }
-	void pause() override { m_playing = false; }
-	void resume() override { m_playing = true; }
-	bool isPlaying() override { return m_playing; }
-	void setVolume(f32 vol) override { m_volume = vol; }
-	void setPitch(f32 pitch) override { m_pitch = pitch; }
-	void setLoop(bool loop) override { m_loop = loop; }
-	SubscriptionHandle onEnded(std::function<void()> handler) override {
-		return SubscriptionHandle::create(std::move(handler));
-	}
-
-private:
-	bool m_playing = false;
-	bool m_loop = false;
-	f32 m_volume = 1.0f;
-	f32 m_pitch = 1.0f;
-};
-
 void appendPathSeparator(std::string& path) {
 	const char last = path.back();
 	if (last != '/' && last != '\\') {
@@ -352,9 +331,7 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 	auto* backend = view->backend();
 	static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackend(backend);
 
-	if (auto* audioService = dynamic_cast<LibretroAudioService*>(m_audio_service.get())) {
-		audioService->setTiming(info.timing.sample_rate);
-	}
+	m_audio_service->setTiming(info.timing.sample_rate);
 }
 
 void LibretroPlatform::setPostProcessOptions(bool enableCrt, bool highDetail) {
@@ -605,7 +582,7 @@ void LibretroPlatform::unloadRom() {
 
 void LibretroPlatform::reset() {
 	m_console->stop();
-	static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
+	m_audio_service->resetQueue();
 	m_audio_buffer.clear();
 
 	if (m_console && m_console->romLoaded()) {
@@ -649,7 +626,7 @@ void LibretroPlatform::runFrame() {
 	pollInput();
 
 	m_console->runHostFrame(m_console->runtime(), *m_microtask_queue, dt, m_platform_paused);
-	processAudio();
+	m_audio_service->collectSamples(m_audio_buffer);
 }
 
 void LibretroPlatform::setPlatformPaused(bool paused) {
@@ -666,12 +643,6 @@ void LibretroPlatform::setPlatformPaused(bool paused) {
 // disable-next-line single_line_method_pattern -- frame input polling stays on the platform API while the libretro hub owns device polling.
 void LibretroPlatform::pollInput() {
 	static_cast<LibretroInputHub*>(m_input_hub.get())->poll();
-}
-
-void LibretroPlatform::processAudio() {
-	if (auto* audioService = dynamic_cast<LibretroAudioService*>(m_audio_service.get())) {
-		audioService->collectSamples(m_audio_buffer);
-	}
 }
 
 void LibretroPlatform::log(LogLevel level, std::string_view message) {
@@ -751,7 +722,7 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 	}
 	try {
 		applyRuntimeSaveStateBytes(runtime, static_cast<const u8*>(data), size);
-		static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
+		m_audio_service->resetQueue();
 		m_audio_buffer.clear();
 		return true;
 	}
@@ -1109,17 +1080,11 @@ LibretroAudioService::LibretroAudioService(LibretroPlatform* platform)
 void LibretroAudioService::setTiming(double sampleRate) {
 	m_sample_rate = sampleRate;
 	m_sample_accumulator = 0.0;
-	m_queue_start_samples = 0;
-	m_queue_samples = 0;
-	m_sample_queue.clear();
 	refreshTargetBufferFrames();
 }
 
 void LibretroAudioService::resetQueue() {
 	m_sample_accumulator = 0.0;
-	m_queue_start_samples = 0;
-	m_queue_samples = 0;
-	m_sample_queue.clear();
 }
 
 void LibretroAudioService::refreshTargetBufferFrames() {
@@ -1143,52 +1108,9 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
 	}
 	m_sample_accumulator -= frames;
 
-	const size_t queuedFrames = m_queue_samples / 2;
 	const size_t targetFrames = frames + m_target_buffer_frames;
-	if (queuedFrames < targetFrames) {
-		const size_t renderFrames = targetFrames - queuedFrames;
-		const size_t renderSamples = renderFrames * 2;
-		if (m_mix_buffer.size() < renderSamples) {
-			m_mix_buffer.resize(renderSamples);
-		}
-		soundMaster->renderSamples(m_mix_buffer.data(), renderFrames, static_cast<i32>(m_sample_rate));
-
-		size_t neededSamples = m_queue_start_samples + m_queue_samples + renderSamples;
-		if (m_queue_start_samples > 0 && neededSamples > m_sample_queue.size()) {
-			std::memmove(m_sample_queue.data(), m_sample_queue.data() + m_queue_start_samples, m_queue_samples * sizeof(int16_t));
-			m_queue_start_samples = 0;
-			neededSamples = m_queue_samples + renderSamples;
-		}
-		if (m_sample_queue.size() < neededSamples) {
-			m_sample_queue.resize(neededSamples);
-		}
-		std::memcpy(m_sample_queue.data() + m_queue_start_samples + m_queue_samples, m_mix_buffer.data(), renderSamples * sizeof(int16_t));
-		m_queue_samples += renderSamples;
-	}
-
-	buffer.write(m_sample_queue.data() + m_queue_start_samples, frames);
-	m_queue_start_samples += frames * 2;
-	m_queue_samples -= frames * 2;
-	if (m_queue_samples == 0) {
-		m_queue_start_samples = 0;
-	}
-}
-
-Voice* LibretroAudioService::createVoice() {
-	auto voice = std::make_unique<LibretroVoice>();
-	Voice* raw = voice.get();
-	m_voices.push_back(std::move(voice));
-	return raw;
-}
-
-void LibretroAudioService::destroyVoice(Voice* voice) {
-	const auto it = std::find_if(m_voices.begin(), m_voices.end(), [voice](const std::unique_ptr<Voice>& owned) {
-		return owned.get() == voice;
-	});
-	if (it == m_voices.end()) {
-		throw BMSX_RUNTIME_ERROR("Attempted to destroy an unknown libretro voice.");
-	}
-	m_voices.erase(it);
+	int16_t* output = buffer.beginWrite(frames);
+	m_platform->console()->runtime().machine.audioOutput.pullOutputFrames(output, frames, static_cast<i32>(m_sample_rate), soundMaster->masterVolume(), targetFrames - frames);
 }
 
 /* ============================================================================

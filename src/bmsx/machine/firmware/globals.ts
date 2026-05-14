@@ -35,7 +35,6 @@ import {
 import { CART_ROM_MAGIC, DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../../rompack/format';
 import {
 	GEO_CTRL_ABORT,
-	GEO_CTRL_START,
 	GEO_FAULT_ABORTED_BY_HOST,
 	GEO_FAULT_BAD_RECORD_ALIGNMENT,
 	GEO_FAULT_BAD_RECORD_FLAGS,
@@ -162,19 +161,20 @@ import {
 	IO_CMD_GEO_XFORM3_BATCH,
 } from '../devices/geometry/contracts';
 import {
+	APU_COMMAND_FIFO_CAPACITY,
 	APU_GAIN_Q12_ONE,
+	APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
 	APU_RATE_STEP_Q16_ONE,
 	APU_SAMPLE_RATE_HZ,
 	APU_CMD_PLAY,
-	APU_CMD_RAMP_SLOT,
+	APU_CMD_SET_SLOT_GAIN,
 	APU_CMD_STOP_SLOT,
 	APU_EVENT_NONE,
 	APU_EVENT_SLOT_ENDED,
 	APU_FAULT_BAD_CMD,
 	APU_FAULT_BAD_SLOT,
+	APU_FAULT_CMD_FIFO_FULL,
 	APU_FAULT_NONE,
-	APU_FAULT_PLAYBACK_REJECTED,
-	APU_FAULT_RUNTIME_UNAVAILABLE,
 	APU_FAULT_SOURCE_BIT_DEPTH,
 	APU_FAULT_SOURCE_BYTES,
 	APU_FAULT_SOURCE_CHANNELS,
@@ -182,6 +182,11 @@ import {
 	APU_FAULT_SOURCE_FRAME_COUNT,
 	APU_FAULT_SOURCE_RANGE,
 	APU_FAULT_SOURCE_SAMPLE_RATE,
+	APU_FAULT_OUTPUT_BLOCK,
+	APU_FAULT_OUTPUT_DATA_RANGE,
+	APU_FAULT_OUTPUT_METADATA,
+	APU_FAULT_OUTPUT_PLAYBACK_RATE,
+	APU_FAULT_UNSUPPORTED_FORMAT,
 	APU_FILTER_ALLPASS,
 	APU_FILTER_BANDPASS,
 	APU_FILTER_HIGHPASS,
@@ -192,7 +197,11 @@ import {
 	APU_FILTER_NOTCH,
 	APU_FILTER_PEAKING,
 	APU_STATUS_BUSY,
+	APU_STATUS_CMD_FIFO_EMPTY,
+	APU_STATUS_CMD_FIFO_FULL,
 	APU_STATUS_FAULT,
+	APU_STATUS_OUTPUT_EMPTY,
+	APU_STATUS_OUTPUT_FULL,
 	APU_STATUS_SELECTED_SLOT_ACTIVE,
 } from '../devices/audio/contracts';
 import {
@@ -231,6 +240,9 @@ import {
 	INP_CTRL_RESET,
 	IO_ARG_STRIDE,
 	IO_APU_CMD,
+	IO_APU_CMD_CAPACITY,
+	IO_APU_CMD_FREE,
+	IO_APU_CMD_QUEUED,
 	IO_APU_EVENT_KIND,
 	IO_APU_EVENT_SEQ,
 	IO_APU_EVENT_SLOT,
@@ -245,6 +257,9 @@ import {
 	IO_APU_FILTER_KIND,
 	IO_APU_FILTER_Q_MILLI,
 	IO_APU_GAIN_Q12,
+	IO_APU_OUTPUT_CAPACITY_FRAMES,
+	IO_APU_OUTPUT_FREE_FRAMES,
+	IO_APU_OUTPUT_QUEUED_FRAMES,
 	IO_APU_RATE_STEP_Q16,
 	IO_APU_SELECTED_SOURCE_ADDR,
 	IO_APU_SELECTED_SLOT_REG0,
@@ -262,7 +277,6 @@ import {
 	IO_APU_SOURCE_LOOP_END_SAMPLE,
 	IO_APU_SOURCE_LOOP_START_SAMPLE,
 	IO_APU_SOURCE_SAMPLE_RATE_HZ,
-	IO_APU_TARGET_GAIN_Q12,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -1488,7 +1502,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_q_milli', IO_APU_FILTER_Q_MILLI);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_filter_gain_millidb', IO_APU_FILTER_GAIN_MILLIDB);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_fade_samples', IO_APU_FADE_SAMPLES);
-	luaPipeline.registerGlobal(runtime, 'sys_apu_target_gain_q12', IO_APU_TARGET_GAIN_Q12);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_cmd', IO_APU_CMD);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_status', IO_APU_STATUS);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_fault_code', IO_APU_FAULT_CODE);
@@ -1502,18 +1515,31 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_apu_active_mask', IO_APU_ACTIVE_MASK);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_selected_slot_regs', IO_APU_SELECTED_SLOT_REG0);
 	luaPipeline.registerGlobal(runtime, 'sys_apu_selected_slot_reg_count', IO_APU_SELECTED_SLOT_REG_COUNT);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_output_queued_frames', IO_APU_OUTPUT_QUEUED_FRAMES);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_output_free_frames', IO_APU_OUTPUT_FREE_FRAMES);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_output_capacity_frames', IO_APU_OUTPUT_CAPACITY_FRAMES);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_cmd_queued', IO_APU_CMD_QUEUED);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_cmd_free', IO_APU_CMD_FREE);
+	luaPipeline.registerGlobal(runtime, 'sys_apu_cmd_capacity', IO_APU_CMD_CAPACITY);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_play', APU_CMD_PLAY);
 	luaPipeline.registerGlobal(runtime, 'apu_cmd_stop_slot', APU_CMD_STOP_SLOT);
-	luaPipeline.registerGlobal(runtime, 'apu_cmd_ramp_slot', APU_CMD_RAMP_SLOT);
+	luaPipeline.registerGlobal(runtime, 'apu_cmd_set_slot_gain', APU_CMD_SET_SLOT_GAIN);
 	luaPipeline.registerGlobal(runtime, 'apu_sample_rate_hz', APU_SAMPLE_RATE_HZ);
 	luaPipeline.registerGlobal(runtime, 'apu_rate_step_q16_one', APU_RATE_STEP_Q16_ONE);
 	luaPipeline.registerGlobal(runtime, 'apu_gain_q12_one', APU_GAIN_Q12_ONE);
+	luaPipeline.registerGlobal(runtime, 'apu_output_queue_capacity_frames', APU_OUTPUT_QUEUE_CAPACITY_FRAMES);
+	luaPipeline.registerGlobal(runtime, 'apu_command_fifo_capacity', APU_COMMAND_FIFO_CAPACITY);
 	luaPipeline.registerGlobal(runtime, 'apu_status_fault', APU_STATUS_FAULT);
 	luaPipeline.registerGlobal(runtime, 'apu_status_selected_slot_active', APU_STATUS_SELECTED_SLOT_ACTIVE);
 	luaPipeline.registerGlobal(runtime, 'apu_status_busy', APU_STATUS_BUSY);
+	luaPipeline.registerGlobal(runtime, 'apu_status_output_empty', APU_STATUS_OUTPUT_EMPTY);
+	luaPipeline.registerGlobal(runtime, 'apu_status_output_full', APU_STATUS_OUTPUT_FULL);
+	luaPipeline.registerGlobal(runtime, 'apu_status_cmd_fifo_empty', APU_STATUS_CMD_FIFO_EMPTY);
+	luaPipeline.registerGlobal(runtime, 'apu_status_cmd_fifo_full', APU_STATUS_CMD_FIFO_FULL);
 	luaPipeline.registerGlobal(runtime, 'apu_fault_none', APU_FAULT_NONE);
 	luaPipeline.registerGlobal(runtime, 'apu_fault_bad_cmd', APU_FAULT_BAD_CMD);
 	luaPipeline.registerGlobal(runtime, 'apu_fault_bad_slot', APU_FAULT_BAD_SLOT);
+	luaPipeline.registerGlobal(runtime, 'apu_fault_cmd_fifo_full', APU_FAULT_CMD_FIFO_FULL);
 	luaPipeline.registerGlobal(runtime, 'apu_fault_source_bytes', APU_FAULT_SOURCE_BYTES);
 	luaPipeline.registerGlobal(runtime, 'apu_fault_source_range', APU_FAULT_SOURCE_RANGE);
 	luaPipeline.registerGlobal(runtime, 'apu_fault_source_sample_rate', APU_FAULT_SOURCE_SAMPLE_RATE);
@@ -1521,8 +1547,11 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'apu_fault_source_frame_count', APU_FAULT_SOURCE_FRAME_COUNT);
 	luaPipeline.registerGlobal(runtime, 'apu_fault_source_data_range', APU_FAULT_SOURCE_DATA_RANGE);
 	luaPipeline.registerGlobal(runtime, 'apu_fault_source_bit_depth', APU_FAULT_SOURCE_BIT_DEPTH);
-	luaPipeline.registerGlobal(runtime, 'apu_fault_runtime_unavailable', APU_FAULT_RUNTIME_UNAVAILABLE);
-	luaPipeline.registerGlobal(runtime, 'apu_fault_playback_rejected', APU_FAULT_PLAYBACK_REJECTED);
+	luaPipeline.registerGlobal(runtime, 'apu_fault_unsupported_format', APU_FAULT_UNSUPPORTED_FORMAT);
+	luaPipeline.registerGlobal(runtime, 'apu_fault_output_metadata', APU_FAULT_OUTPUT_METADATA);
+	luaPipeline.registerGlobal(runtime, 'apu_fault_output_data_range', APU_FAULT_OUTPUT_DATA_RANGE);
+	luaPipeline.registerGlobal(runtime, 'apu_fault_output_playback_rate', APU_FAULT_OUTPUT_PLAYBACK_RATE);
+	luaPipeline.registerGlobal(runtime, 'apu_fault_output_block', APU_FAULT_OUTPUT_BLOCK);
 	luaPipeline.registerGlobal(runtime, 'apu_filter_none', APU_FILTER_NONE);
 	luaPipeline.registerGlobal(runtime, 'apu_filter_lowpass', APU_FILTER_LOWPASS);
 	luaPipeline.registerGlobal(runtime, 'apu_filter_highpass', APU_FILTER_HIGHPASS);
@@ -1569,7 +1598,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'dma_status_error', DMA_STATUS_ERROR);
 	luaPipeline.registerGlobal(runtime, 'dma_status_clipped', DMA_STATUS_CLIPPED);
 	luaPipeline.registerGlobal(runtime, 'dma_status_rejected', DMA_STATUS_REJECTED);
-	luaPipeline.registerGlobal(runtime, 'sys_geo_ctrl_start', GEO_CTRL_START);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_ctrl_abort', GEO_CTRL_ABORT);
 	luaPipeline.registerGlobal(runtime, 'geo_status_busy', GEO_STATUS_BUSY);
 	luaPipeline.registerGlobal(runtime, 'geo_status_done', GEO_STATUS_DONE);

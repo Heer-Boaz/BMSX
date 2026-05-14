@@ -26,7 +26,6 @@ Runtime::Runtime(
 	const RuntimeOptions& options,
 	Clock& clock,
 	Input& input,
-	SoundMaster& soundMaster,
 	MicrotaskQueue& microtasks,
 	GameView& view
 )
@@ -48,7 +47,6 @@ Runtime::Runtime(
 		m_memory,
 		VdpFrameBufferSize{ static_cast<uint32_t>(options.viewport.x), static_cast<uint32_t>(options.viewport.y) },
 		input,
-		soundMaster,
 		microtasks
 	)
 {

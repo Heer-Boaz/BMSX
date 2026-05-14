@@ -2,9 +2,16 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+	APU_COMMAND_FIFO_CAPACITY,
+	APU_COMMAND_FIFO_REGISTER_WORD_COUNT,
 	APU_PARAMETER_REGISTER_COUNT,
+	APU_RATE_STEP_Q16_ONE,
 	APU_PARAMETER_SLOT_INDEX,
 	APU_PARAMETER_SOURCE_ADDR_INDEX,
+	APU_SLOT_COUNT,
+	APU_SLOT_PHASE_FADING,
+	APU_SLOT_PHASE_IDLE,
+	APU_SLOT_PHASE_PLAYING,
 	APU_SLOT_REGISTER_WORD_COUNT,
 	apuSlotRegisterWordIndex,
 } from '../../src/bmsx/machine/devices/audio/contracts';
@@ -32,6 +39,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 	audioSlotRegisterWords[apuSlotRegisterWordIndex(0, APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x1000;
 	audioSlotRegisterWords[apuSlotRegisterWordIndex(1, APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x2000;
 	audioSlotRegisterWords[apuSlotRegisterWordIndex(2, APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x3000;
+	const audioSlotSourceBytes = Array.from({ length: APU_SLOT_COUNT }, (_, slot) => new Uint8Array(slot === 1 ? [9, 8, 7, 6] : []));
 	return {
 		machineState: {
 			machine: {
@@ -68,12 +76,22 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				irq: { pendingFlags: 0xa5a5 },
 				audio: {
 					registerWords: audioRegisterWords,
+					commandFifoCommands: numberedWords(APU_COMMAND_FIFO_CAPACITY),
+					commandFifoRegisterWords: numberedWords(APU_COMMAND_FIFO_REGISTER_WORD_COUNT),
+					commandFifoReadIndex: 1,
+					commandFifoWriteIndex: 2,
+					commandFifoCount: 3,
 					eventSequence: 3,
 					eventKind: 1,
 					eventSlot: 2,
 					eventSourceAddr: 0x2000,
-					activeSlotMask: 5,
+					slotPhases: Array.from({ length: APU_SLOT_COUNT }, (_, slot) => slot === 1 ? APU_SLOT_PHASE_FADING : (slot === 2 ? APU_SLOT_PHASE_PLAYING : APU_SLOT_PHASE_IDLE)),
 					slotRegisterWords: audioSlotRegisterWords,
+					slotSourceBytes: audioSlotSourceBytes,
+					slotPlaybackCursorQ16: Array.from({ length: APU_SLOT_COUNT }, (_, slot) => slot === 1 ? 2 * APU_RATE_STEP_Q16_ONE : 0),
+					slotFadeSamplesRemaining: Array.from({ length: APU_SLOT_COUNT }, (_, slot) => slot === 1 ? 7 : 0),
+					sampleCarry: 8,
+					availableSamples: 9,
 					apuStatus: 1,
 					apuFaultCode: 0x0102,
 					apuFaultDetail: 0x1234,

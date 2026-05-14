@@ -134,7 +134,6 @@ function apu.play(source, slot, rate_step_q16, gain_q12, start_sample, filter_ki
 		filter_q_milli,
 		filter_gain_millidb,
 		0,
-		apu_gain_q12_one,
 		apu_cmd_play
 	)
 end
@@ -161,7 +160,6 @@ function apu.play_plain(source, slot)
 		1000,
 		0,
 		0,
-		apu_gain_q12_one,
 		apu_cmd_play
 	)
 end
@@ -172,11 +170,10 @@ function apu.stop_slot(slot, fade_samples)
 	mem[sys_apu_cmd] = apu_cmd_stop_slot
 end
 
-function apu.ramp_slot(slot, target_gain_q12, fade_samples)
+function apu.set_slot_gain(slot, gain_q12)
 	mem[sys_apu_slot] = slot
-	mem[sys_apu_target_gain_q12] = target_gain_q12
-	mem[sys_apu_fade_samples] = fade_samples
-	mem[sys_apu_cmd] = apu_cmd_ramp_slot
+	mem[sys_apu_gain_q12] = gain_q12
+	mem[sys_apu_cmd] = apu_cmd_set_slot_gain
 end
 
 return apu

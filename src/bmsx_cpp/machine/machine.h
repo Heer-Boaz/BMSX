@@ -15,7 +15,6 @@
 namespace bmsx {
 
 class MicrotaskQueue;
-class SoundMaster;
 class Input;
 
 struct MachineTiming {
@@ -47,7 +46,7 @@ struct MachineSaveState {
 
 class Machine {
 public:
-	Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, SoundMaster& soundMaster, MicrotaskQueue& microtasks);
+	Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Input& input, MicrotaskQueue& microtasks);
 
 	Memory& memory;
 	VdpFrameBufferSize frameBufferSize;
@@ -55,6 +54,7 @@ public:
 	DeviceScheduler scheduler;
 	IrqController irqController;
 	VDP vdp;
+	ApuOutputMixer audioOutput;
 	AudioController audioController;
 	DmaController dmaController;
 	ImgDecController imgDecController;

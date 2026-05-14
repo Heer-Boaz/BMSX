@@ -620,8 +620,8 @@ export class VDP implements VramWriteSink {
 
 
 	public setScanoutTiming(vblankActive: boolean, cyclesIntoFrame: number, cyclesPerFrame: number, vblankStartCycle: number): void {
-		this.vout.setScanoutTiming(vblankActive, cyclesIntoFrame, cyclesPerFrame, vblankStartCycle);
-		this.fault.setStatusFlag(VDP_STATUS_VBLANK, this.vout.vblankActive);
+		this.vout.setScanoutTiming(cyclesIntoFrame, cyclesPerFrame, vblankStartCycle, this.scheduler.currentNowCycles());
+		this.fault.setStatusFlag(VDP_STATUS_VBLANK, vblankActive);
 	}
 
 	public canAcceptVdpSubmit(): boolean {
@@ -2429,7 +2429,7 @@ export class VDP implements VramWriteSink {
 
 	// disable-next-line single_line_method_pattern -- VDP host-output transaction is the public device boundary; VOUT owns the retained payload.
 	public readDeviceOutput(): VdpDeviceOutput {
-		return this.vout.readDeviceOutput();
+		return this.vout.readDeviceOutput(this.scheduler.currentNowCycles());
 	}
 
 	private clearSurfaceUploadDirty(surfaceId: number): void {

@@ -3,7 +3,7 @@ import type { MachineSaveState } from '../../machine';
 import type { CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeRefSegment, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/controller';
 import type { AudioControllerState } from '../../devices/audio/controller';
-import { APU_PARAMETER_REGISTER_COUNT, APU_SLOT_REGISTER_WORD_COUNT } from '../../devices/audio/contracts';
+import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT } from '../../devices/audio/contracts';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/controller';
 import {
@@ -11,7 +11,7 @@ import {
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
 	type GeometryControllerPhase,
 } from '../../devices/geometry/contracts';
-import type { GeometryControllerState, GeometryJobState } from '../../devices/geometry/controller';
+import type { GeometryControllerState, GeometryJobState } from '../../devices/geometry/state';
 import type { VdpSaveState, VdpState, VdpSurfacePixelsState } from '../../devices/vdp/vdp';
 import { SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
 import { VDP_REGISTER_COUNT } from '../../devices/vdp/registers';
@@ -64,6 +64,30 @@ function decodeU32FixedArray(value: unknown, label: string, length: number): num
 			throw new Error(`${label}[${index}] must be a u32 value.`);
 		}
 		out[index] = word >>> 0;
+	}
+	return out;
+}
+
+function decodeI64FixedArray(value: unknown, label: string, length: number): number[] {
+	const entries = requireArray(value, label);
+	if (entries.length !== length) {
+		throw new Error(`${label} must contain ${length} i64 values.`);
+	}
+	const out = new Array<number>(length);
+	for (let index = 0; index < length; index += 1) {
+		out[index] = requireI64(entries[index], `${label}[${index}]`);
+	}
+	return out;
+}
+
+function decodeBinaryFixedArray(value: unknown, label: string, length: number): Uint8Array[] {
+	const entries = requireArray(value, label);
+	if (entries.length !== length) {
+		throw new Error(`${label} must contain ${length} binary entries.`);
+	}
+	const out = new Array<Uint8Array>(length);
+	for (let index = 0; index < length; index += 1) {
+		out[index] = entries[index] as Uint8Array;
 	}
 	return out;
 }
@@ -393,12 +417,22 @@ function decodeVdpSaveState(value: unknown, label: string): VdpSaveState {
 function encodeAudioControllerState(state: AudioControllerState): AudioControllerState {
 	return {
 		registerWords: encodeVector(state.registerWords, (word) => word >>> 0),
+		commandFifoCommands: encodeVector(state.commandFifoCommands, (word) => word >>> 0),
+		commandFifoRegisterWords: encodeVector(state.commandFifoRegisterWords, (word) => word >>> 0),
+		commandFifoReadIndex: state.commandFifoReadIndex >>> 0,
+		commandFifoWriteIndex: state.commandFifoWriteIndex >>> 0,
+		commandFifoCount: state.commandFifoCount >>> 0,
 		eventSequence: state.eventSequence,
 		eventKind: state.eventKind,
 		eventSlot: state.eventSlot,
 		eventSourceAddr: state.eventSourceAddr,
-		activeSlotMask: state.activeSlotMask,
+		slotPhases: encodeVector(state.slotPhases, (phase) => phase >>> 0),
 		slotRegisterWords: encodeVector(state.slotRegisterWords, (word) => word >>> 0),
+		slotSourceBytes: encodeVector(state.slotSourceBytes, (bytes) => bytes),
+		slotPlaybackCursorQ16: encodeVector(state.slotPlaybackCursorQ16, (word) => word),
+		slotFadeSamplesRemaining: encodeVector(state.slotFadeSamplesRemaining, (word) => word >>> 0),
+		sampleCarry: state.sampleCarry,
+		availableSamples: state.availableSamples,
 		apuStatus: state.apuStatus,
 		apuFaultCode: state.apuFaultCode,
 		apuFaultDetail: state.apuFaultDetail,
@@ -409,12 +443,22 @@ function decodeAudioControllerState(value: unknown, label: string): AudioControl
 	const object = requireObject(value, label);
 	return {
 		registerWords: decodeU32FixedArray(requireObjectKey(object, 'registerWords', label, 'machine.audio.registerWords'), 'machine.audio.registerWords', APU_PARAMETER_REGISTER_COUNT),
+		commandFifoCommands: decodeU32FixedArray(requireObjectKey(object, 'commandFifoCommands', label, 'machine.audio.commandFifoCommands'), 'machine.audio.commandFifoCommands', APU_COMMAND_FIFO_CAPACITY),
+		commandFifoRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'commandFifoRegisterWords', label, 'machine.audio.commandFifoRegisterWords'), 'machine.audio.commandFifoRegisterWords', APU_COMMAND_FIFO_REGISTER_WORD_COUNT),
+		commandFifoReadIndex: requireBoundedU32(requireObjectKey(object, 'commandFifoReadIndex', label, 'machine.audio.commandFifoReadIndex'), 'machine.audio.commandFifoReadIndex', 0, APU_COMMAND_FIFO_CAPACITY - 1),
+		commandFifoWriteIndex: requireBoundedU32(requireObjectKey(object, 'commandFifoWriteIndex', label, 'machine.audio.commandFifoWriteIndex'), 'machine.audio.commandFifoWriteIndex', 0, APU_COMMAND_FIFO_CAPACITY - 1),
+		commandFifoCount: requireBoundedU32(requireObjectKey(object, 'commandFifoCount', label, 'machine.audio.commandFifoCount'), 'machine.audio.commandFifoCount', 0, APU_COMMAND_FIFO_CAPACITY),
 		eventSequence: requireBoundedU32(requireObjectKey(object, 'eventSequence', label, 'machine.audio.eventSequence'), 'machine.audio.eventSequence', 0, 0xffffffff),
 		eventKind: requireBoundedU32(requireObjectKey(object, 'eventKind', label, 'machine.audio.eventKind'), 'machine.audio.eventKind', 0, 0xffffffff),
 		eventSlot: requireBoundedU32(requireObjectKey(object, 'eventSlot', label, 'machine.audio.eventSlot'), 'machine.audio.eventSlot', 0, 0xffffffff),
 		eventSourceAddr: requireBoundedU32(requireObjectKey(object, 'eventSourceAddr', label, 'machine.audio.eventSourceAddr'), 'machine.audio.eventSourceAddr', 0, 0xffffffff),
-		activeSlotMask: requireBoundedU32(requireObjectKey(object, 'activeSlotMask', label, 'machine.audio.activeSlotMask'), 'machine.audio.activeSlotMask', 0, 0xffffffff),
+		slotPhases: decodeU32FixedArray(requireObjectKey(object, 'slotPhases', label, 'machine.audio.slotPhases'), 'machine.audio.slotPhases', APU_SLOT_COUNT),
 		slotRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'slotRegisterWords', label, 'machine.audio.slotRegisterWords'), 'machine.audio.slotRegisterWords', APU_SLOT_REGISTER_WORD_COUNT),
+		slotSourceBytes: decodeBinaryFixedArray(requireObjectKey(object, 'slotSourceBytes', label, 'machine.audio.slotSourceBytes'), 'machine.audio.slotSourceBytes', APU_SLOT_COUNT),
+		slotPlaybackCursorQ16: decodeI64FixedArray(requireObjectKey(object, 'slotPlaybackCursorQ16', label, 'machine.audio.slotPlaybackCursorQ16'), 'machine.audio.slotPlaybackCursorQ16', APU_SLOT_COUNT),
+		slotFadeSamplesRemaining: decodeU32FixedArray(requireObjectKey(object, 'slotFadeSamplesRemaining', label, 'machine.audio.slotFadeSamplesRemaining'), 'machine.audio.slotFadeSamplesRemaining', APU_SLOT_COUNT),
+		sampleCarry: requireI64(requireObjectKey(object, 'sampleCarry', label, 'machine.audio.sampleCarry'), 'machine.audio.sampleCarry'),
+		availableSamples: requireI64(requireObjectKey(object, 'availableSamples', label, 'machine.audio.availableSamples'), 'machine.audio.availableSamples'),
 		apuStatus: requireBoundedU32(requireObjectKey(object, 'apuStatus', label, 'machine.audio.apuStatus'), 'machine.audio.apuStatus', 0, 0xffffffff),
 		apuFaultCode: requireBoundedU32(requireObjectKey(object, 'apuFaultCode', label, 'machine.audio.apuFaultCode'), 'machine.audio.apuFaultCode', 0, 0xffffffff),
 		apuFaultDetail: requireBoundedU32(requireObjectKey(object, 'apuFaultDetail', label, 'machine.audio.apuFaultDetail'), 'machine.audio.apuFaultDetail', 0, 0xffffffff),

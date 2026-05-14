@@ -1,5 +1,4 @@
-export const GEO_CTRL_START = 1 << 0;
-export const GEO_CTRL_ABORT = 1 << 1;
+export const GEO_CTRL_ABORT = 1 << 0;
 export const GEO_STATUS_BUSY = 1 << 0;
 export const GEO_STATUS_DONE = 1 << 1;
 export const GEO_STATUS_ERROR = 1 << 2;

@@ -37,19 +37,24 @@ public:
 	void reset(i32 ditherType = 0, u32 frameBufferWidth = 0u, u32 frameBufferHeight = 0u);
 	void writeDitherType(i32 ditherType);
 	void configureScanout(u32 frameBufferWidth, u32 frameBufferHeight);
-	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle);
+	void setScanoutTiming(int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle, i64 nowCycles);
 	const VdpVoutFrameOutput& sealFrame();
 	void presentFrame(VdpSubmittedFrame& frame, bool skyboxEnabled);
 	void presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled);
-	const VdpDeviceOutput& readDeviceOutput();
+	const VdpDeviceOutput& readDeviceOutput(i64 nowCycles);
 
 private:
 	void resetVisibleSkyboxSamples();
+	void refreshScanoutBeam(i64 nowCycles);
+	void setVblankBeamPosition(int cyclesIntoFrame);
 
 	VdpVoutState m_state = VdpVoutState::Idle;
 	VdpVoutScanoutPhase m_scanoutPhase = VdpVoutScanoutPhase::Active;
 	u32 m_scanoutX = 0u;
 	u32 m_scanoutY = 0u;
+	i64 m_scanoutFrameStartCycle = 0;
+	int m_scanoutCyclesPerFrame = 1;
+	int m_scanoutVblankStartCycle = 1;
 	i32 m_liveDitherType = 0;
 	u32 m_liveFrameBufferWidth = 0u;
 	u32 m_liveFrameBufferHeight = 0u;

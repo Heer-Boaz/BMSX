@@ -112,50 +112,6 @@ public:
 };
 
 /* ============================================================================
- * Voice - Single audio source
- * ============================================================================ */
-
-class Voice {
-public:
-	virtual ~Voice() = default;
-	virtual void play() = 0;
-	virtual void stop() = 0;
-	virtual void pause() = 0;
-	virtual void resume() = 0;
-	virtual bool isPlaying() = 0;
-	virtual void setVolume(f32 vol) = 0;
-	virtual void setPitch(f32 pitch) = 0;
-	virtual void setLoop(bool loop) = 0;
-	virtual SubscriptionHandle onEnded(std::function<void()> handler) = 0;
-};
-
-/* ============================================================================
- * MasterVolume - Global volume control
- * ============================================================================ */
-
-class MasterVolume {
-public:
-	virtual ~MasterVolume() = default;
-	virtual f32 get() = 0;
-	virtual void set(f32 vol) = 0;
-};
-
-/* ============================================================================
- * AudioService - Audio playback
- * ============================================================================ */
-
-class AudioService {
-public:
-	virtual ~AudioService() = default;
-	virtual Voice* createVoice() = 0;
-	virtual void destroyVoice(Voice* voice) = 0;
-	virtual MasterVolume* masterVolume() = 0;
-	virtual std::string name() = 0;
-	virtual bool ready() = 0;
-	virtual f32 sampleRate() = 0;
-};
-
-/* ============================================================================
  * GameViewHost - Rendering surface
  * ============================================================================ */
 
@@ -195,7 +151,6 @@ public:
 	virtual FrameLoop* frameLoop() = 0;
 	virtual Lifecycle* lifecycle() = 0;
 	virtual InputHub* inputHub() = 0;
-	virtual AudioService* audioService() = 0;
 	virtual GameViewHost* gameviewHost() = 0;
 	virtual MicrotaskQueue* microtaskQueue() = 0;
 	virtual void requestShutdown() = 0;
