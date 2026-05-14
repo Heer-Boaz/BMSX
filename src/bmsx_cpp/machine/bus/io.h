@@ -360,37 +360,6 @@ constexpr uint32_t IRQ_GEO_DONE = 1 << 7;
 constexpr uint32_t IRQ_GEO_ERROR = 1 << 8;
 constexpr uint32_t IRQ_APU = 1 << 9;
 
-constexpr uint32_t VDP_STATUS_VBLANK = 1u << 0u;
-constexpr uint32_t VDP_STATUS_SUBMIT_BUSY = 1u << 1u;
-// Sticky latch: set when a VDP submit attempt is rejected because the submit path is busy,
-// and cleared only when a later VDP submit attempt is accepted.
-constexpr uint32_t VDP_STATUS_SUBMIT_REJECTED = 1u << 2u;
-constexpr uint32_t VDP_STATUS_FAULT = 1u << 3u;
-constexpr uint32_t VDP_SBX_COMMIT_WRITE = 1u;
-
-constexpr uint32_t VDP_FAULT_NONE = 0u;
-constexpr uint32_t VDP_FAULT_RD_UNSUPPORTED_MODE = 0x0001u;
-constexpr uint32_t VDP_FAULT_RD_SURFACE = 0x0002u;
-constexpr uint32_t VDP_FAULT_RD_OOB = 0x0003u;
-constexpr uint32_t VDP_FAULT_VRAM_WRITE_UNMAPPED = 0x0101u;
-constexpr uint32_t VDP_FAULT_VRAM_WRITE_UNINITIALIZED = 0x0102u;
-constexpr uint32_t VDP_FAULT_VRAM_WRITE_OOB = 0x0103u;
-constexpr uint32_t VDP_FAULT_VRAM_WRITE_UNALIGNED = 0x0104u;
-constexpr uint32_t VDP_FAULT_VRAM_SLOT_DIM = 0x0105u;
-constexpr uint32_t VDP_FAULT_STREAM_BAD_PACKET = 0x0201u;
-constexpr uint32_t VDP_FAULT_SUBMIT_STATE = 0x0202u;
-constexpr uint32_t VDP_FAULT_CMD_BAD_DOORBELL = 0x0203u;
-constexpr uint32_t VDP_FAULT_SUBMIT_BUSY = 0x0204u;
-constexpr uint32_t VDP_FAULT_DEX_INVALID_SCALE = 0x0301u;
-constexpr uint32_t VDP_FAULT_DEX_INVALID_LINE_WIDTH = 0x0302u;
-constexpr uint32_t VDP_FAULT_DEX_SOURCE_SLOT = 0x0303u;
-constexpr uint32_t VDP_FAULT_DEX_SOURCE_OOB = 0x0304u;
-constexpr uint32_t VDP_FAULT_DEX_OVERFLOW = 0x0305u;
-constexpr uint32_t VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL = 0x0306u;
-constexpr uint32_t VDP_FAULT_SBX_SOURCE_OOB = 0x0401u;
-constexpr uint32_t VDP_FAULT_BBU_ZERO_SIZE = 0x0501u;
-constexpr uint32_t VDP_FAULT_BBU_OVERFLOW = 0x0502u;
-constexpr uint32_t VDP_FAULT_BBU_SOURCE_OOB = 0x0503u;
 
 constexpr uint32_t DMA_CTRL_START = 1 << 0;
 constexpr uint32_t DMA_CTRL_STRICT = 1 << 1;
@@ -429,16 +398,5 @@ constexpr uint32_t BUS_FAULT_ACCESS_F64 = 1u << 13u;
 constexpr uint32_t INP_CTRL_COMMIT = 1u;
 constexpr uint32_t INP_CTRL_ARM = 2u;
 constexpr uint32_t INP_CTRL_RESET = 3u;
-
-constexpr uint32_t VDP_SLOT_PRIMARY = 0u;
-constexpr uint32_t VDP_SLOT_SECONDARY = 1u;
-constexpr uint32_t VDP_SLOT_SYSTEM = 2u;
-constexpr uint32_t VDP_SYSTEM_ATLAS_ID = 254u;
-constexpr uint32_t VDP_SLOT_NONE = 0xffffffffu;
-constexpr uint32_t VDP_SLOT_ATLAS_NONE = 0xffffffffu;
-constexpr uint32_t VDP_RD_MODE_RGBA8888 = 0u;
-constexpr uint32_t VDP_RD_STATUS_READY = 1u << 0u;
-constexpr uint32_t VDP_RD_STATUS_OVERFLOW = 1u << 1u;
-constexpr uint32_t VDP_FIFO_CTRL_SEAL = 1u << 0u;
 
 } // namespace bmsx

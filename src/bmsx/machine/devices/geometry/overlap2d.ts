@@ -314,9 +314,11 @@ export class GeometryOverlap2dUnit {
 		const shapeBIsCompound = shapeBKind === GEO_OVERLAP2D_SHAPE_KIND_COMPOUND;
 		const shapeAPieceCount = shapeAIsCompound ? shapeACount : 1;
 		const shapeBPieceCount = shapeBIsCompound ? shapeBCount : 1;
+		if ((shapeAIsCompound && (shapeADataOffset & GEOMETRY_WORD_ALIGN_MASK) !== 0)
+			|| (shapeBIsCompound && (shapeBDataOffset & GEOMETRY_WORD_ALIGN_MASK) !== 0)) {
+			return GEO_FAULT_BAD_RECORD_ALIGNMENT;
+		}
 		if (shapeAPieceCount === 0 || shapeBPieceCount === 0
-			|| (shapeAIsCompound && (shapeADataOffset & GEOMETRY_WORD_ALIGN_MASK) !== 0)
-			|| (shapeBIsCompound && (shapeBDataOffset & GEOMETRY_WORD_ALIGN_MASK) !== 0)
 			|| (!shapeAIsCompound && shapeAKind !== GEO_PRIMITIVE_AABB && shapeAKind !== GEO_PRIMITIVE_CONVEX_POLY)
 			|| (!shapeBIsCompound && shapeBKind !== GEO_PRIMITIVE_AABB && shapeBKind !== GEO_PRIMITIVE_CONVEX_POLY)) {
 			return GEO_FAULT_DESCRIPTOR_KIND;

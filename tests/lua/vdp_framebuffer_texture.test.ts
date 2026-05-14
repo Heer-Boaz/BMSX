@@ -7,8 +7,16 @@ import {
 	IO_VDP_REG_BG_COLOR,
 	IO_VDP_SLOT_PRIMARY_ATLAS,
 	IO_VDP_SLOT_SECONDARY_ATLAS,
-	VDP_SLOT_ATLAS_NONE,
 } from '../../src/bmsx/machine/bus/io';
+import {
+	VDP_SLOT_ATLAS_NONE,
+} from '../../src/bmsx/machine/devices/vdp/contracts';
+import {
+	VDP_CMD_BEGIN_FRAME,
+	VDP_CMD_CLEAR,
+	VDP_CMD_END_FRAME,
+} from '../../src/bmsx/machine/devices/vdp/registers';
+
 import { CPU } from '../../src/bmsx/machine/cpu/cpu';
 import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink } from '../../src/bmsx/machine/devices/vdp/device_output';
 import { VDP } from '../../src/bmsx/machine/devices/vdp/vdp';
@@ -18,10 +26,6 @@ import { DEFAULT_TEXTURE_PARAMS } from '../../src/bmsx/render/backend/texture_pa
 import { HeadlessGPUBackend } from '../../src/bmsx/render/headless/backend';
 import { TextureManager } from '../../src/bmsx/render/texture_manager';
 import { VdpFrameBufferTextures } from '../../src/bmsx/render/vdp/framebuffer';
-
-const VDP_CMD_CLEAR = 1;
-const VDP_CMD_BEGIN_FRAME = 14;
-const VDP_CMD_END_FRAME = 15;
 
 function createVdp(): { memory: Memory; vdp: VDP } {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });

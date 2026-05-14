@@ -1,9 +1,9 @@
 import {
 	SKYBOX_FACE_WORD_COUNT,
 	SKYBOX_FACE_WORD_STRIDE,
+	VDP_FAULT_NONE,
 	VDP_SBX_CONTROL_ENABLE,
 } from './contracts';
-import { VDP_FAULT_NONE } from '../../bus/io';
 
 export const VDP_SBX_PACKET_KIND = 0x12000000;
 export const VDP_SBX_PACKET_PAYLOAD_WORDS = 1 + SKYBOX_FACE_WORD_COUNT;

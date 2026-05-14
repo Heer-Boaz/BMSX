@@ -2,6 +2,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/devices/vdp/bbu.h"
 #include "machine/devices/vdp/contracts.h"
+#include "machine/devices/vdp/registers.h"
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
@@ -19,31 +20,10 @@
 
 namespace {
 
-constexpr uint32_t VDP_CMD_NOP = 0u;
-constexpr uint32_t VDP_CMD_CLEAR = 1u;
-constexpr uint32_t VDP_CMD_FILL_RECT = 2u;
-constexpr uint32_t VDP_CMD_DRAW_LINE = 3u;
-constexpr uint32_t VDP_CMD_BLIT = 4u;
-constexpr uint32_t VDP_CMD_BEGIN_FRAME = 14u;
-constexpr uint32_t VDP_CMD_END_FRAME = 15u;
-
-constexpr uint32_t VDP_PKT_END = 0x00000000u;
-constexpr uint32_t VDP_PKT_CMD = 0x01000000u;
-constexpr uint32_t VDP_PKT_REG1 = 0x02000000u;
-constexpr uint32_t VDP_PKT_REGN = 0x03000000u;
 constexpr uint32_t VDP_BILLBOARD_HEADER = bmsx::VDP_BBU_PACKET_KIND | (bmsx::VDP_BBU_PACKET_PAYLOAD_WORDS << 16u);
 constexpr uint32_t VDP_SKYBOX_HEADER = bmsx::VDP_SBX_PACKET_KIND | (bmsx::VDP_SBX_PACKET_PAYLOAD_WORDS << 16u);
 constexpr uint32_t VDP_XF_MATRIX_HEADER = bmsx::VDP_XF_PACKET_KIND | (bmsx::VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS << 16u);
 constexpr uint32_t VDP_XF_SELECT_HEADER = bmsx::VDP_XF_PACKET_KIND | (bmsx::VDP_XF_SELECT_PACKET_PAYLOAD_WORDS << 16u);
-
-constexpr uint32_t regIndex(uint32_t addr) {
-	return (addr - bmsx::IO_VDP_REG0) / bmsx::IO_WORD_SIZE;
-}
-
-constexpr uint32_t VDP_REG_BG_COLOR = regIndex(bmsx::IO_VDP_REG_BG_COLOR);
-constexpr uint32_t VDP_REG_SRC_SLOT = regIndex(bmsx::IO_VDP_REG_SRC_SLOT);
-constexpr uint32_t VDP_REG_DRAW_PRIORITY = regIndex(bmsx::IO_VDP_REG_DRAW_PRIORITY);
-constexpr uint32_t VDP_REG_SLOT_INDEX = regIndex(bmsx::IO_VDP_REG_SLOT_INDEX);
 
 void writeIo(bmsx::Memory& memory, uint32_t addr, uint32_t value) {
 	memory.writeValue(addr, bmsx::valueNumber(static_cast<double>(value)));
@@ -220,45 +200,45 @@ void writeSbxMmio(bmsx::Memory& memory, uint32_t control = bmsx::VDP_SBX_CONTROL
 void testDirectLifecycle() {
 	Harness h;
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 	expectVdpFault(h, bmsx::VDP_FAULT_SUBMIT_STATE, "END without BEGIN should latch submit-state fault");
 	clearVdpFault(h);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_FILL_RECT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_FILL_RECT);
 	expectVdpFault(h, bmsx::VDP_FAULT_SUBMIT_STATE, "draw without BEGIN should latch submit-state fault");
 	clearVdpFault(h);
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	expectVdpFault(h, bmsx::VDP_FAULT_SUBMIT_STATE, "double BEGIN should latch submit-state fault");
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_NOP);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_NOP);
 	require(h.vdp.canAcceptVdpSubmit(), "double BEGIN should cancel and close the frame");
 }
 
 void testRawRegisterWordsDoNotCancelFrame() {
 	Harness h;
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 4u);
 	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_CTRL) == 4u, "DRAW_CTRL should latch raw representable bits");
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0xffff0000u);
 	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_SCALE_X) == 0xffff0000u, "negative Q16 scale should latch as a raw register word");
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 }
 
 void testLatchSnapshotGeometry() {
 	Harness h;
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_X0, 0u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_Y0, 0u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_X1, 8u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_Y1, 8u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_PRIORITY, 7u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_COLOR, 0xff112233u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_FILL_RECT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_FILL_RECT);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_X1, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_Y1, 0u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 
 	require(h.vdp.getPendingRenderWorkUnits() > 0, "queued rect should keep its captured geometry");
 }
@@ -269,7 +249,7 @@ void testBlitDrawCtrlSnapshot() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
 	writePrimaryPixel(h, 3u, 3u, 0x11u, 0x22u, 0x33u, 0xffu);
 	writeIo(h.memory, bmsx::IO_VDP_PMU_Y, 16u << 16u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
@@ -277,9 +257,9 @@ void testBlitDrawCtrlSnapshot() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_DST_Y, 20u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_PRIORITY, 9u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0xff000003u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BLIT);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
@@ -297,7 +277,7 @@ void testPmuParallaxResolvedBlitSnapshot() {
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
 	writePrimaryPixel(h, 0u, 0u, 0x44u, 0x55u, 0x66u, 0xffu);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
@@ -305,9 +285,9 @@ void testPmuParallaxResolvedBlitSnapshot() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_DST_Y, 40u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_PRIORITY, 9u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00800000u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BLIT);
 	writeIo(h.memory, bmsx::IO_VDP_PMU_Y, 100u << 16u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 
 	writeIo(h.memory, bmsx::IO_VDP_PMU_Y, 8u << 16u);
 	h.vdp.accrueCycles(500, 750);
@@ -321,10 +301,10 @@ void testPmuParallaxResolvedBlitSnapshot() {
 void testFrameBufferPresentSwapsDisplayReadback() {
 	Harness h;
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff112233u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_CLEAR);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_CLEAR);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "CLEAR should submit framebuffer render work");
 	h.vdp.advanceWork(workUnits);
@@ -338,10 +318,10 @@ void testFrameBufferPresentSwapsDisplayReadback() {
 void testFrameBufferSyncConsumesPendingPresentation() {
 	Harness h;
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff112233u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_CLEAR);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_CLEAR);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "CLEAR should submit framebuffer render work before host context sync");
 	h.vdp.advanceWork(workUnits);
@@ -374,7 +354,7 @@ void testPmuBankRegistersResolveDrawCtrl() {
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
 	writePrimaryPixel(h, 0u, 0u, 0x77u, 0x88u, 0x99u, 0xffu);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
@@ -382,8 +362,8 @@ void testPmuBankRegistersResolveDrawCtrl() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_DST_Y, 40u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_PRIORITY, 9u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00800000u | (3u << 8u));
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
@@ -400,7 +380,7 @@ void testPmuScaleUsesAbsoluteWeight() {
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
 	writePrimaryPixel(h, 0u, 0u, 0xaau, 0xbbu, 0xccu, 0xffu);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
@@ -408,8 +388,8 @@ void testPmuScaleUsesAbsoluteWeight() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_DST_Y, 40u << 16);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_PRIORITY, 9u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0xff800000u | (3u << 8u));
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
@@ -420,31 +400,31 @@ void testPmuScaleUsesAbsoluteWeight() {
 void testFifoReplayAndFaults() {
 	Harness replay;
 	sealStream(replay, {
-		VDP_PKT_REG1 | VDP_REG_BG_COLOR,
+		bmsx::VDP_PKT_REG1 | bmsx::VDP_REG_BG_COLOR,
 		0xff010203u,
-		VDP_PKT_CMD | VDP_CMD_CLEAR,
-		VDP_PKT_END,
+		bmsx::VDP_PKT_CMD | bmsx::VDP_CMD_CLEAR,
+		bmsx::VDP_PKT_END,
 	});
 	require(replay.vdp.getPendingRenderWorkUnits() > 0, "FIFO clear should submit render work");
 
 	Harness fault;
 	sealStream(fault, {
-		VDP_PKT_REG1 | VDP_REG_BG_COLOR,
+		bmsx::VDP_PKT_REG1 | bmsx::VDP_REG_BG_COLOR,
 		0xff102030u,
 		0x04000000u,
-		VDP_PKT_END,
+		bmsx::VDP_PKT_END,
 	});
 	expectVdpFault(fault, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "unknown packet kind should latch stream fault");
 	require(fault.memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff102030u, "prior FIFO register write should remain after fault");
 
 	Harness range;
-	sealStream(range, {VDP_PKT_CMD | (1u << 16) | VDP_CMD_CLEAR, VDP_PKT_END});
+	sealStream(range, {bmsx::VDP_PKT_CMD | (1u << 16) | bmsx::VDP_CMD_CLEAR, bmsx::VDP_PKT_END});
 	expectVdpFault(range, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "CMD reserved bits should latch stream fault");
 	clearVdpFault(range);
-	sealStream(range, {VDP_PKT_REG1 | 19u, 0u, VDP_PKT_END});
+	sealStream(range, {bmsx::VDP_PKT_REG1 | 19u, 0u, bmsx::VDP_PKT_END});
 	expectVdpFault(range, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "REG1 range should latch stream fault");
 	clearVdpFault(range);
-	sealStream(range, {VDP_PKT_REGN | (2u << 16) | 18u, 0u, 0u, VDP_PKT_END});
+	sealStream(range, {bmsx::VDP_PKT_REGN | (2u << 16) | 18u, 0u, 0u, bmsx::VDP_PKT_END});
 	expectVdpFault(range, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "REGN range should latch stream fault");
 }
 
@@ -456,7 +436,7 @@ void testStreamDexFaultsAbortSealedFrame() {
 	writeIo(fifo.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
 	writeIo(fifo.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0u);
 	writeIo(fifo.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
-	sealFifo(fifo, {VDP_PKT_CMD | VDP_CMD_BLIT, VDP_PKT_END});
+	sealFifo(fifo, {bmsx::VDP_PKT_CMD | bmsx::VDP_CMD_BLIT, bmsx::VDP_PKT_END});
 	expectVdpFault(fifo, bmsx::VDP_FAULT_DEX_INVALID_SCALE, "FIFO DEX invalid scale should latch a DEX fault");
 	require(fifo.vdp.getPendingRenderWorkUnits() == 0, "FIFO DEX fault should abort the sealed stream frame");
 	require(fifo.vdp.canAcceptVdpSubmit(), "FIFO DEX fault should leave the submit path open");
@@ -468,7 +448,7 @@ void testStreamDexFaultsAbortSealedFrame() {
 	writeIo(dma.memory, bmsx::IO_VDP_REG_SRC_WH, 2u | (16u << 16));
 	writeIo(dma.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0x00010000u);
 	writeIo(dma.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
-	sealStream(dma, {VDP_PKT_CMD | VDP_CMD_BLIT, VDP_PKT_END});
+	sealStream(dma, {bmsx::VDP_PKT_CMD | bmsx::VDP_CMD_BLIT, bmsx::VDP_PKT_END});
 	expectVdpFault(dma, bmsx::VDP_FAULT_DEX_SOURCE_OOB, "DMA DEX source OOB should latch a DEX fault");
 	require(dma.vdp.getPendingRenderWorkUnits() == 0, "DMA DEX fault should abort the sealed stream frame");
 	require(dma.vdp.canAcceptVdpSubmit(), "DMA DEX fault should leave the submit path open");
@@ -483,10 +463,10 @@ void testSlotRegisters() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_INDEX, bmsx::VDP_SLOT_PRIMARY);
 
 	sealStream(h, {
-		VDP_PKT_REGN | (2u << 16) | VDP_REG_SLOT_INDEX,
+		bmsx::VDP_PKT_REGN | (2u << 16) | bmsx::VDP_REG_SLOT_INDEX,
 		bmsx::VDP_SLOT_PRIMARY,
 		16u | (16u << 16),
-		VDP_PKT_END,
+		bmsx::VDP_PKT_END,
 	});
 	h.vdp.drainSurfaceUploads(primary);
 	require(primary.width == 16u && primary.height == 16u, "REGN SLOT_INDEX/SLOT_DIM should apply in order");
@@ -499,13 +479,13 @@ void testSlotRegisters() {
 	require(primary.width == 0u && primary.height == 0u, "invalid SLOT_DIM should not emit a new surface upload");
 
 	clearVdpFault(h);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 15u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 1u | (1u << 16u));
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BLIT);
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "source x=15 should still fit the retained 16px slot");
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 16u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BLIT);
 	expectVdpFault(h, bmsx::VDP_FAULT_DEX_SOURCE_OOB, "source x=16 should fault against the retained 16px slot");
 }
 
@@ -513,11 +493,11 @@ void testBlitSourceFaultsLatchDexFaults() {
 	Harness h;
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0x00010000u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, 99u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BLIT);
 	expectVdpFault(h, bmsx::VDP_FAULT_DEX_SOURCE_SLOT, "DEX invalid source slot should latch a source-slot fault");
 	require(!h.vdp.canAcceptVdpSubmit(), "invalid DEX source slot should keep the direct frame open");
 	clearVdpFault(h);
@@ -525,34 +505,34 @@ void testBlitSourceFaultsLatchDexFaults() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 15u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 2u | (16u << 16));
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BLIT);
 	expectVdpFault(h, bmsx::VDP_FAULT_DEX_SOURCE_OOB, "DEX source rect overflow should latch a source fault");
 	require(!h.vdp.canAcceptVdpSubmit(), "invalid DEX source rect should keep the direct frame open");
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 }
 
 void testBlitAndLineLatchDexFaults() {
 	{
 		Harness h;
 		writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
-		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+		writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 		writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 		writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
 		writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
 		writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_X, 0xffff0000u);
 		writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
 
-		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+		writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BLIT);
 		require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_SCALE_X) == 0xffff0000u, "raw negative Q16 scale should remain latched");
 		expectVdpFault(h, bmsx::VDP_FAULT_DEX_INVALID_SCALE, "invalid DEX scale should latch a device fault");
 		require(!h.vdp.canAcceptVdpSubmit(), "invalid DEX scale should drop the command and keep the direct frame open");
 	}
 	{
 		Harness h;
-		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+		writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 		writeIo(h.memory, bmsx::IO_VDP_REG_LINE_WIDTH, 0u);
 
-		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_DRAW_LINE);
+		writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_DRAW_LINE);
 		require(h.memory.readIoU32(bmsx::IO_VDP_REG_LINE_WIDTH) == 0u, "raw zero line width should remain latched");
 		expectVdpFault(h, bmsx::VDP_FAULT_DEX_INVALID_LINE_WIDTH, "invalid LINE width should latch a device fault");
 		require(!h.vdp.canAcceptVdpSubmit(), "invalid LINE width should drop the command and keep the direct frame open");
@@ -563,7 +543,7 @@ void testUnsupportedDrawCtrlBlendFaultsAtBlitSnapshot() {
 	Harness h;
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
@@ -571,7 +551,7 @@ void testUnsupportedDrawCtrlBlendFaultsAtBlitSnapshot() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x00000004u);
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BLIT);
 	expectVdpFault(h, bmsx::VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, "unsupported DRAW_CTRL blend bits should latch a device fault");
 	require(h.memory.readIoU32(bmsx::IO_VDP_REG_DRAW_CTRL) == 0x00000004u, "DRAW_CTRL raw register bits should remain latched");
 }
@@ -579,13 +559,13 @@ void testUnsupportedDrawCtrlBlendFaultsAtBlitSnapshot() {
 void testBlitterFifoOverflowFaultsInsteadOfThrowing() {
 	Harness h;
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_X0, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_Y0, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_X1, 1u << 16u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_GEOM_Y1, 1u << 16u);
 	for (size_t index = 0; index <= 4096u; ++index) {
-		writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_FILL_RECT);
+		writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_FILL_RECT);
 	}
 
 	expectVdpFault(h, bmsx::VDP_FAULT_DEX_OVERFLOW, "blitter FIFO overflow should latch a device fault");
@@ -599,7 +579,7 @@ void testPmuResolvedScaleFlowsThroughBlitDatapath() {
 	require(h.memory.readIoU32(bmsx::IO_VDP_PMU_SCALE_X) == 0u, "PMU scale register should store zero as raw state");
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16));
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_SLOT, bmsx::VDP_SLOT_PRIMARY);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_UV, 0u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_SRC_WH, 4u | (4u << 16));
@@ -607,8 +587,8 @@ void testPmuResolvedScaleFlowsThroughBlitDatapath() {
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_SCALE_Y, 0x00010000u);
 	writeIo(h.memory, bmsx::IO_VDP_REG_DRAW_CTRL, 0x01000000u);
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BLIT);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BLIT);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 }
 
 void testSbxCommitsOnlyThroughFramePresent() {
@@ -618,16 +598,16 @@ void testSbxCommitsOnlyThroughFramePresent() {
 	writeSbxMmio(h.memory);
 	require(!h.vdp.readDeviceOutput().skyboxEnabled, "live SBX write should not commit visible skybox");
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 	require(!h.vdp.readDeviceOutput().skyboxEnabled, "sealed SBX frame should wait for VBlank present");
 	h.vdp.presentReadyFrameOnVblankEdge();
 	require(h.vdp.readDeviceOutput().skyboxEnabled, "presented frame should commit visible SBX state");
 
 	writeSbxMmio(h.memory, 0u);
 	require(h.vdp.readDeviceOutput().skyboxEnabled, "live SBX clear should not change visible skybox immediately");
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 	h.vdp.presentReadyFrameOnVblankEdge();
 	require(!h.vdp.readDeviceOutput().skyboxEnabled, "presented clear frame should disable visible skybox");
 }
@@ -636,9 +616,9 @@ void testSbxValidatesAtFrameSeal() {
 	Harness h;
 
 	writeSbxMmio(h.memory, bmsx::VDP_SBX_CONTROL_ENABLE, 2u, 1u);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 	expectVdpFault(h, bmsx::VDP_FAULT_SBX_SOURCE_OOB, "SBX source rect overflow should latch a device fault");
 	require(h.vdp.canAcceptVdpSubmit(), "invalid SBX frame should cancel and close the build frame");
 	require(!h.vdp.readDeviceOutput().skyboxEnabled, "invalid SBX state should not become visible");
@@ -649,7 +629,7 @@ void testSbxSkyboxPacketLatchesFrameState() {
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
 	auto stream = skyboxPacket(bmsx::VDP_SBX_CONTROL_ENABLE, 4u, 5u);
-	stream.push_back(VDP_PKT_END);
+	stream.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, stream);
 	h.vdp.presentReadyFrameOnVblankEdge();
 	require(h.vdp.readDeviceOutput().skyboxEnabled, "SKYBOX packet should present visible SBX state");
@@ -664,19 +644,19 @@ void testSbxSkyboxPacketRawControlAndFrameSealFault() {
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
 	auto badControl = skyboxPacket(2u, 4u, 5u);
-	badControl.push_back(VDP_PKT_END);
+	badControl.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, badControl);
 	h.vdp.presentReadyFrameOnVblankEdge();
 	require(!h.vdp.readDeviceOutput().skyboxEnabled, "raw control without enable bit should not show SKYBOX");
 
 	auto badSource = skyboxPacket(bmsx::VDP_SBX_CONTROL_ENABLE, 17u, 1u);
-	badSource.push_back(VDP_PKT_END);
+	badSource.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, badSource);
 	expectVdpFault(h, bmsx::VDP_FAULT_SBX_SOURCE_OOB, "bad-source SKYBOX should latch a device fault");
 	require(!h.vdp.readDeviceOutput().skyboxEnabled, "bad-source SKYBOX should not become visible");
 	clearVdpFault(h);
 	auto acceptedAfterReject = skyboxPacket(bmsx::VDP_SBX_CONTROL_ENABLE, 4u, 5u);
-	acceptedAfterReject.push_back(VDP_PKT_END);
+	acceptedAfterReject.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, acceptedAfterReject);
 	h.vdp.presentReadyFrameOnVblankEdge();
 	require(h.vdp.readDeviceOutput().skyboxEnabled, "SBX should emit valid state after a rejected frame seal");
@@ -703,7 +683,7 @@ void testXfPacketUpdatesRawTransformRegisterState() {
 	stream.insert(stream.end(), projectionPacket.begin(), projectionPacket.end());
 	auto selectPacket = xfSelectRegisterPacket(viewMatrixIndex, projectionMatrixIndex);
 	stream.insert(stream.end(), selectPacket.begin(), selectPacket.end());
-	stream.push_back(VDP_PKT_END);
+	stream.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, stream);
 
 	const bmsx::VdpState state = h.vdp.captureState();
@@ -757,7 +737,7 @@ void testXfPacketFaultsThroughVdpState() {
 		bmsx::VDP_XF_MATRIX_COUNT,
 		0u,
 	};
-	stream.push_back(VDP_PKT_END);
+	stream.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, stream);
 	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "bad XF packet should latch a stream fault");
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad XF packet should not submit render work");
@@ -791,16 +771,16 @@ void testXfStateCommitsWithSubmittedFrame() {
 	auto frameASelect = xfSelectRegisterPacket(2u, 3u);
 	frameA.insert(frameA.end(), frameASelect.begin(), frameASelect.end());
 	frameA.insert(frameA.end(), {
-		VDP_PKT_REGN | (5u << 16u) | VDP_REG_SRC_SLOT,
+		bmsx::VDP_PKT_REGN | (5u << 16u) | bmsx::VDP_REG_SRC_SLOT,
 		bmsx::VDP_SLOT_PRIMARY,
 		0u,
 		4u | (4u << 16u),
 		0u,
 		0u,
-		VDP_PKT_REG1 | VDP_REG_DRAW_PRIORITY,
+		bmsx::VDP_PKT_REG1 | bmsx::VDP_REG_DRAW_PRIORITY,
 		9u,
-		VDP_PKT_CMD | VDP_CMD_BLIT,
-		VDP_PKT_END,
+		bmsx::VDP_PKT_CMD | bmsx::VDP_CMD_BLIT,
+		bmsx::VDP_PKT_END,
 	});
 	sealStream(h, frameA);
 
@@ -809,7 +789,7 @@ void testXfStateCommitsWithSubmittedFrame() {
 	frameB.insert(frameB.end(), frameBProj.begin(), frameBProj.end());
 	auto frameBSelect = xfSelectRegisterPacket(4u, 5u);
 	frameB.insert(frameB.end(), frameBSelect.begin(), frameBSelect.end());
-	frameB.push_back(VDP_PKT_END);
+	frameB.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, frameB);
 
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
@@ -828,7 +808,7 @@ void testBbuBillboardPacketLatchesInstanceRam() {
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
 	auto stream = billboardPacket(2u << 16u);
-	stream.push_back(VDP_PKT_END);
+	stream.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, stream);
 	require(h.vdp.getPendingRenderWorkUnits() == 1, "BILLBOARD should submit BBU render work");
 	h.vdp.advanceWork(1);
@@ -853,28 +833,28 @@ void testBbuFaultsAtBillboardPacketAcceptance() {
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_SLOT_DIM, 16u | (16u << 16u));
 	auto zeroSize = billboardPacket(0u);
-	zeroSize.push_back(VDP_PKT_END);
+	zeroSize.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, zeroSize);
 	expectVdpFault(h, bmsx::VDP_FAULT_BBU_ZERO_SIZE, "zero billboard size should latch a device fault");
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "zero-size BILLBOARD should cancel the build frame");
 	clearVdpFault(h);
 
 	auto badControl = billboardPacket(1u << 16u, 0u, 0u, 1u, 1u, 1u);
-	badControl.push_back(VDP_PKT_END);
+	badControl.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, badControl);
 	expectVdpFault(h, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "BILLBOARD reserved control should latch a stream fault");
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad-control BILLBOARD should cancel the build frame");
 	clearVdpFault(h);
 
 	auto badSource = billboardPacket(1u << 16u, 15u, 0u, 2u, 1u);
-	badSource.push_back(VDP_PKT_END);
+	badSource.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, badSource);
 	expectVdpFault(h, bmsx::VDP_FAULT_BBU_SOURCE_OOB, "BBU source rect overflow should latch a device fault");
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "bad-source BILLBOARD should cancel the build frame");
 	clearVdpFault(h);
 
 	auto acceptedAfterReject = billboardPacket(1u << 16u, 0u, 0u, 1u, 1u);
-	acceptedAfterReject.push_back(VDP_PKT_END);
+	acceptedAfterReject.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, acceptedAfterReject);
 	require(h.vdp.getPendingRenderWorkUnits() == 1, "BBU should leave rejected packet state when the next packet starts");
 	h.vdp.advanceWork(1);
@@ -886,7 +866,7 @@ void testBbuFaultsAtBillboardPacketAcceptance() {
 		auto packet = billboardPacket(1u << 16u, 0u, 0u, 1u, 1u);
 		overflow.insert(overflow.end(), packet.begin(), packet.end());
 	}
-	overflow.push_back(VDP_PKT_END);
+	overflow.push_back(bmsx::VDP_PKT_END);
 	sealStream(h, overflow);
 	expectVdpFault(h, bmsx::VDP_FAULT_BBU_OVERFLOW, "BBU billboard overflow should latch a device fault");
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "overflow BILLBOARD should cancel the build frame");
@@ -895,7 +875,7 @@ void testBbuFaultsAtBillboardPacketAcceptance() {
 void testEmptyFifoFrame() {
 	Harness h;
 
-	sealStream(h, {VDP_PKT_END});
+	sealStream(h, {bmsx::VDP_PKT_END});
 	require(h.vdp.getPendingRenderWorkUnits() == 0, "empty FIFO frame should submit no render work");
 }
 
@@ -1006,8 +986,8 @@ void testDitherRegisterWritesUpdateLiveLatch() {
 	require(h.vdp.frameBufferHeight() == 64u, "FBM live scanout height should update at framebuffer configuration");
 	require(h.vdp.readDeviceOutput().frameBufferWidth == 256u, "VOUT visible scanout width should wait for frame present");
 	require(h.vdp.readDeviceOutput().frameBufferHeight == 212u, "VOUT visible scanout height should wait for frame present");
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 	h.vdp.setDecodedVramSurfaceDimensions(bmsx::VRAM_FRAMEBUFFER_BASE, 96u, 48u);
 	require(h.vdp.frameBufferWidth() == 96u, "FBM live scanout width should accept post-seal configuration");
 	require(h.vdp.frameBufferHeight() == 48u, "FBM live scanout height should accept post-seal configuration");
@@ -1017,8 +997,8 @@ void testDitherRegisterWritesUpdateLiveLatch() {
 	require(h.vdp.readDeviceOutput().ditherType == 3, "presented frame should commit visible DITHER output");
 	require(h.vdp.readDeviceOutput().frameBufferWidth == 128u, "presented frame should commit frame-sealed VOUT scanout width");
 	require(h.vdp.readDeviceOutput().frameBufferHeight == 64u, "presented frame should commit frame-sealed VOUT scanout height");
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 	require(!h.vdp.presentReadyFrameOnVblankEdge(), "next DITHER-only frame should not present framebuffer pages");
 	require(h.vdp.readDeviceOutput().frameBufferWidth == 96u, "next frame should commit the post-seal VOUT scanout width");
 	require(h.vdp.readDeviceOutput().frameBufferHeight == 48u, "next frame should commit the post-seal VOUT scanout height");
@@ -1053,9 +1033,9 @@ void testSaveStateRestoresRegisterFileAndSurfaceGeometry() {
 	h.vdp.readVram(bmsx::VRAM_PRIMARY_SLOT_BASE, restoredPixel.data(), restoredPixel.size());
 	require(restoredPixel == std::array<uint8_t, 4u>{{0xaau, 0xbbu, 0xccu, 0xffu}}, "VDP restore should restore surface pixels");
 
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_CLEAR);
-	writeIo(h.memory, bmsx::IO_VDP_CMD, VDP_CMD_END_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_CLEAR);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "restored BG register should drive CLEAR work");
 	h.vdp.advanceWork(workUnits);

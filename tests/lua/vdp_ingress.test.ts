@@ -39,6 +39,12 @@ import {
 	IO_VDP_SBX_CONTROL,
 	IO_VDP_SBX_FACE0,
 	IO_VDP_STATUS,
+} from '../../src/bmsx/machine/bus/io';
+import { CPU } from '../../src/bmsx/machine/cpu/cpu';
+import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink, VdpSurfaceUpload } from '../../src/bmsx/machine/devices/vdp/device_output';
+import { VDP, VDP_FRAMEBUFFER_PAGE_DISPLAY } from '../../src/bmsx/machine/devices/vdp/vdp';
+import {
+	VDP_BBU_BILLBOARD_LIMIT,
 	VDP_FIFO_CTRL_SEAL,
 	VDP_FAULT_RD_OOB,
 	VDP_FAULT_RD_UNSUPPORTED_MODE,
@@ -59,19 +65,34 @@ import {
 	VDP_FAULT_VRAM_WRITE_UNALIGNED,
 	VDP_FAULT_VRAM_WRITE_UNMAPPED,
 	VDP_RD_MODE_RGBA8888,
+	VDP_RD_SURFACE_PRIMARY,
+	VDP_SBX_CONTROL_ENABLE,
 	VDP_SLOT_ATLAS_NONE,
 	VDP_SLOT_PRIMARY,
 	VDP_SBX_COMMIT_WRITE,
 	VDP_STATUS_FAULT,
 	VDP_STATUS_VBLANK,
-} from '../../src/bmsx/machine/bus/io';
-import { CPU } from '../../src/bmsx/machine/cpu/cpu';
-import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink, VdpSurfaceUpload } from '../../src/bmsx/machine/devices/vdp/device_output';
-import { VDP, VDP_FRAMEBUFFER_PAGE_DISPLAY } from '../../src/bmsx/machine/devices/vdp/vdp';
-import { VDP_BBU_BILLBOARD_LIMIT, VDP_RD_SURFACE_FRAMEBUFFER, VDP_RD_SURFACE_PRIMARY, VDP_SBX_CONTROL_ENABLE } from '../../src/bmsx/machine/devices/vdp/contracts';
+} from '../../src/bmsx/machine/devices/vdp/contracts';
 import { VDP_BBU_PACKET_KIND, VDP_BBU_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/bbu';
 import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_OPCODE_BLIT } from '../../src/bmsx/machine/devices/vdp/blitter';
 import { VDP_DEX_FRAME_IDLE } from '../../src/bmsx/machine/devices/vdp/frame';
+import {
+	VDP_CMD_BEGIN_FRAME,
+	VDP_CMD_BLIT,
+	VDP_CMD_CLEAR,
+	VDP_CMD_DRAW_LINE,
+	VDP_CMD_END_FRAME,
+	VDP_CMD_FILL_RECT,
+	VDP_CMD_NOP,
+	VDP_PKT_CMD,
+	VDP_PKT_END,
+	VDP_PKT_REG1,
+	VDP_PKT_REGN,
+	VDP_REG_BG_COLOR,
+	VDP_REG_DRAW_PRIORITY,
+	VDP_REG_SLOT_INDEX,
+	VDP_REG_SRC_SLOT,
+} from '../../src/bmsx/machine/devices/vdp/registers';
 import { VDP_VOUT_SCANOUT_PHASE_ACTIVE, VDP_VOUT_SCANOUT_PHASE_VBLANK } from '../../src/bmsx/machine/devices/vdp/vout';
 import { VDP_SBX_PACKET_KIND, VDP_SBX_PACKET_PAYLOAD_WORDS } from '../../src/bmsx/machine/devices/vdp/sbx';
 import {
@@ -88,31 +109,10 @@ import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMA
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
 import { createVdpTransformSnapshot, resolveVdpTransformSnapshot } from '../../src/bmsx/render/vdp/transform';
 
-const VDP_CMD_NOP = 0;
-const VDP_CMD_CLEAR = 1;
-const VDP_CMD_FILL_RECT = 2;
-const VDP_CMD_DRAW_LINE = 3;
-const VDP_CMD_BLIT = 4;
-const VDP_CMD_BEGIN_FRAME = 14;
-const VDP_CMD_END_FRAME = 15;
-
-const VDP_PKT_END = 0x00000000;
-const VDP_PKT_CMD = 0x01000000;
-const VDP_PKT_REG1 = 0x02000000;
-const VDP_PKT_REGN = 0x03000000;
 const VDP_BILLBOARD_HEADER = VDP_BBU_PACKET_KIND | (VDP_BBU_PACKET_PAYLOAD_WORDS << 16);
 const VDP_SKYBOX_HEADER = VDP_SBX_PACKET_KIND | (VDP_SBX_PACKET_PAYLOAD_WORDS << 16);
 const VDP_XF_MATRIX_HEADER = VDP_XF_PACKET_KIND | (VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS << 16);
 const VDP_XF_SELECT_HEADER = VDP_XF_PACKET_KIND | (VDP_XF_SELECT_PACKET_PAYLOAD_WORDS << 16);
-
-const VDP_REG_SRC_SLOT = 0;
-const VDP_REG_SRC_UV = 1;
-const VDP_REG_SRC_WH = 2;
-const VDP_REG_DST_X = 3;
-const VDP_REG_DST_Y = 4;
-const VDP_REG_DRAW_PRIORITY = 11;
-const VDP_REG_BG_COLOR = 16;
-const VDP_REG_SLOT_INDEX = 17;
 
 function createVdp(): { memory: Memory; scheduler: DeviceScheduler; vdp: VDP } {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });

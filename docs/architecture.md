@@ -265,6 +265,14 @@ Current evidence:
 - VDP host output is an explicit `VdpHostOutput` read/ack transaction: the renderer reads one output object/value, consumes the ready execution queue/BBU RAM/camera/SBX/dither/dirty-surface/framebuffer handles from that output, and acks execution with the same token. TS no longer returns a reused mutable singleton output object; C++ returns a value. The renderer still receives handles to VDP-owned buffers, so future hardening should add generation/frozen-snapshot semantics only if a concrete race appears.
 - TS and C++ VDP expose the same public host-bridge names for this contract: `readHostOutput()` and `completeHostExecution(...)`, alongside the MMIO/DMA/VRAM entry points, frame/VBlank progression, save-state capture/restore, and surface-dirty clear.
 - TS and C++ VDP expose cart-visible fault latches as VDP status registers: `IO_VDP_STATUS` carries the fault bit, `IO_VDP_FAULT_CODE` / `IO_VDP_FAULT_DETAIL` carry the sticky-first reason, and `IO_VDP_FAULT_ACK` is write-one-to-clear. Save-state stores the sticky fault code/detail plus device state, not raw transient status pins.
+- VDP cart-facing ABI constants are split by owner instead of being dumped into
+  the bus map. `machine/bus/io` owns only MMIO addresses and ordered address
+  banks; mirrored `machine/devices/vdp/registers` owns VDP register indices,
+  packet words, and command opcodes; mirrored
+  `machine/devices/vdp/contracts` owns VDP slot ids, readback modes/status bits,
+  submit/status bits, SBX/FIFO strobes, and VDP fault codes. Firmware globals,
+  device code, render consumers, and focused ingress tests import those values
+  from the VDP owners, with no compatibility aliases left in the bus layer.
 - Cart-originating VDP faults latch and cancel/drop device work instead of throwing host exceptions. Packet/header/count problems use `VDP_FAULT_STREAM_BAD_PACKET`; direct submit state errors use `VDP_FAULT_SUBMIT_STATE`; unknown command doorbells use `VDP_FAULT_CMD_BAD_DOORBELL`; busy submit rejection uses `VDP_FAULT_SUBMIT_BUSY`; DEX source faults use `VDP_FAULT_DEX_SOURCE_SLOT` or `VDP_FAULT_DEX_SOURCE_OOB`; invalid DEX scale and LINE width use their DEX fault codes; SBX/BBU faults use their unit-specific codes.
 - Current per-unit fault policy is explicit and test-covered: direct DEX command faults drop the command and keep the open direct frame; DEX faults reached while replaying a sealed FIFO/DMA stream abort that sealed stream frame; FIFO/DMA stream parser faults abort the stream frame; SBX frame-seal faults reject the frame; BBU packet faults reject the packet/stream frame; submit-busy faults reject the attempt without mutating the visible frame.
 - The TS and C++ VDP save-state stores now include the raw VDP registerfile and saved surface

@@ -65,6 +65,7 @@ import {
 	GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET,
 	GEO_OVERLAP2D_SHAPE_DESC_BYTES,
 	GEO_OVERLAP2D_SHAPE_KIND_OFFSET,
+	GEO_OVERLAP2D_SHAPE_KIND_COMPOUND,
 	GEO_OVERLAP2D_SUMMARY_RESULT_COUNT_OFFSET,
 	GEO_PRIMITIVE_AABB,
 	GEO_PRIMITIVE_CONVEX_POLY,
@@ -556,6 +557,27 @@ test('GEO overlap2d submit rejects reserved src2 and non-RAM result base', () =>
 	writeOverlapAabbShape(memory, shapeA, 0x0000_0000, 0x0000_0000, 0x3f80_0000, 0x3f80_0000);
 	writeOverlapAabbShape(memory, shapeB, 0x3f00_0000, 0x0000_0000, 0x3fc0_0000, 0x3f80_0000);
 	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET, GEO_OVERLAP2D_SHAPE_DESC_BYTES + 1);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
+	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
+	geometry.accrueCycles(1, 1);
+	geometry.onService(1);
+	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
+	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_RECORD_ALIGNMENT);
+	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
+
+	memory.writeValue(IO_GEO_FAULT_ACK, 1);
+	writeOverlap2dInstance(memory, jobBase, shapeA);
+	writeOverlap2dInstance(memory, jobBase + GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
+	writeOverlapAabbShape(memory, shapeB, 0x3f00_0000, 0x0000_0000, 0x3fc0_0000, 0x3f80_0000);
+	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_KIND_OFFSET, GEO_OVERLAP2D_SHAPE_KIND_COMPOUND);
+	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET, 1);
+	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET, GEO_OVERLAP2D_SHAPE_DESC_BYTES + 1);
+	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET, GEO_OVERLAP2D_SHAPE_DESC_BYTES);
+	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET, 0);
+	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET, 0);
+	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET, 0x3f80_0000);
+	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET, 0x3f80_0000);
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
 	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);

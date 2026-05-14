@@ -1,11 +1,13 @@
-import { VDP_BBU_BILLBOARD_LIMIT, type Layer2D, type VdpSlotSource } from './contracts';
-import { decodeSignedQ16_16, decodeUnsignedQ16_16 } from './fixed_point';
-import { packedHigh16, packedLow16 } from '../../common/word';
 import {
+	VDP_BBU_BILLBOARD_LIMIT,
 	VDP_FAULT_BBU_OVERFLOW,
 	VDP_FAULT_BBU_ZERO_SIZE,
 	VDP_FAULT_NONE,
-} from '../../bus/io';
+	type Layer2D,
+	type VdpSlotSource,
+} from './contracts';
+import { decodeSignedQ16_16, decodeUnsignedQ16_16 } from './fixed_point';
+import { packedHigh16, packedLow16 } from '../../common/word';
 
 export const VDP_BBU_PACKET_KIND = 0x11000000;
 export const VDP_BBU_PACKET_PAYLOAD_WORDS = 11;

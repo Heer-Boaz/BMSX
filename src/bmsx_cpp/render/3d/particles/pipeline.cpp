@@ -2,7 +2,7 @@
 
 #if BMSX_ENABLE_GLES2
 #include "core/console.h"
-#include "machine/bus/io.h"
+#include "machine/devices/vdp/contracts.h"
 #include "render/3d/shaders/render_3d_shaders.h"
 #include "render/backend/gles2_backend.h"
 #include "render/gameview.h"

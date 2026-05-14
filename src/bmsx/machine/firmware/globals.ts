@@ -361,6 +361,8 @@ import {
 	IRQ_NEWGAME,
 	IRQ_REINIT,
 	IRQ_VBLANK,
+} from '../bus/io';
+import {
 	VDP_FIFO_CTRL_SEAL,
 	VDP_FAULT_NONE,
 	VDP_FAULT_RD_OOB,
@@ -396,7 +398,8 @@ import {
 	VDP_STATUS_SUBMIT_REJECTED,
 	VDP_STATUS_VBLANK,
 	VDP_SBX_COMMIT_WRITE,
-} from '../bus/io';
+} from '../devices/vdp/contracts';
+
 import {
 	buildMarshalContext,
 	describeMarshalSegment,

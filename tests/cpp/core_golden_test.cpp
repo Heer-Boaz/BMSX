@@ -1109,6 +1109,27 @@ void testGeometryOverlap2dSubmitContractGolden() {
 	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO overlap2d should fault unaligned data offset as execution error");
 	require((memory.readIoU32(bmsx::IO_GEO_FAULT) >> bmsx::GEO_FAULT_CODE_SHIFT) == bmsx::GEO_FAULT_BAD_RECORD_ALIGNMENT, "GEO overlap2d unaligned data offset should expose a record-alignment fault");
 	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Error, "GEO overlap2d unaligned data offset should latch ERROR phase");
+
+	writeIoWord(memory, bmsx::IO_GEO_FAULT_ACK, 1u);
+	writeOverlap2dInstance(memory, jobBase, shapeA);
+	writeOverlap2dInstance(memory, jobBase + bmsx::GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
+	writeOverlapAabbShape(memory, shapeB, 0x3f000000u, 0x00000000u, 0x3fc00000u, 0x3f800000u);
+	memory.writeU32(shapeA + bmsx::GEO_OVERLAP2D_SHAPE_KIND_OFFSET, bmsx::GEO_OVERLAP2D_SHAPE_KIND_COMPOUND);
+	memory.writeU32(shapeA + bmsx::GEO_OVERLAP2D_SHAPE_DATA_COUNT_OFFSET, 1u);
+	memory.writeU32(shapeA + bmsx::GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET, bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + 1u);
+	memory.writeU32(shapeA + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET, bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES);
+	memory.writeU32(shapeA + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_LEFT_OFFSET, 0u);
+	memory.writeU32(shapeA + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_TOP_OFFSET, 0u);
+	memory.writeU32(shapeA + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_RIGHT_OFFSET, 0x3f800000u);
+	memory.writeU32(shapeA + bmsx::GEO_OVERLAP2D_SHAPE_DESC_BYTES + bmsx::GEO_OVERLAP2D_SHAPE_BOUNDS_BOTTOM_OFFSET, 0x3f800000u);
+	writeOverlap2dFullPassRegisters(memory, jobBase, 2u, 0u, resultBase, 1u);
+	writeIoWord(memory, bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_OVERLAP2D_PASS);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == bmsx::GEO_STATUS_BUSY, "GEO overlap2d compound unaligned data offset should enter BUSY before execution fault");
+	machine.geometryController.accrueCycles(1, 1);
+	machine.geometryController.onService(1);
+	require(memory.readIoU32(bmsx::IO_GEO_STATUS) == (bmsx::GEO_STATUS_DONE | bmsx::GEO_STATUS_ERROR), "GEO overlap2d should fault compound unaligned data offset as execution error");
+	require((memory.readIoU32(bmsx::IO_GEO_FAULT) >> bmsx::GEO_FAULT_CODE_SHIFT) == bmsx::GEO_FAULT_BAD_RECORD_ALIGNMENT, "GEO overlap2d compound unaligned data offset should expose a record-alignment fault");
+	require(machine.geometryController.captureState().phase == bmsx::GeometryControllerPhase::Error, "GEO overlap2d compound unaligned data offset should latch ERROR phase");
 }
 
 void testGeometryContractConstantsGolden() {

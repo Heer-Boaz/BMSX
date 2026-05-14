@@ -10,8 +10,12 @@ import { WebGLBackend } from '../../backend/webgl/backend';
 import type { VdpTransformSnapshot } from '../../vdp/transform';
 import { M4 } from '../math';
 import { SYSTEM_SLOT_TEXTURE_KEY, VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
-import { VDP_SLOT_SECONDARY, VDP_SLOT_SYSTEM } from '../../../machine/bus/io';
-import { VDP_BBU_BILLBOARD_LIMIT } from '../../../machine/devices/vdp/contracts';
+
+import {
+	VDP_BBU_BILLBOARD_LIMIT,
+	VDP_SLOT_SECONDARY,
+	VDP_SLOT_SYSTEM,
+} from '../../../machine/devices/vdp/contracts';
 
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);

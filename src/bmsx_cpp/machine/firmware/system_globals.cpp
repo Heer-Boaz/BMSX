@@ -2,6 +2,7 @@
 
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/geometry/contracts.h"
+#include "machine/devices/vdp/contracts.h"
 #include "machine/runtime/runtime.h"
 #include "rompack/format.h"
 

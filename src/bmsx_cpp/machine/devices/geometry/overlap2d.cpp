@@ -190,9 +190,11 @@ uint32_t GeometryOverlap2dUnit::processPair(GeoJob& job, const std::array<uint32
 	const bool shapeBIsCompound = shapeBKind == GEO_OVERLAP2D_SHAPE_KIND_COMPOUND;
 	const uint32_t shapeAPieceCount = shapeAIsCompound ? shapeACount : 1u;
 	const uint32_t shapeBPieceCount = shapeBIsCompound ? shapeBCount : 1u;
+	if ((shapeAIsCompound && (shapeADataOffset & GEOMETRY_WORD_ALIGN_MASK) != 0u)
+		|| (shapeBIsCompound && (shapeBDataOffset & GEOMETRY_WORD_ALIGN_MASK) != 0u)) {
+		return GEO_FAULT_BAD_RECORD_ALIGNMENT;
+	}
 	if (shapeAPieceCount == 0u || shapeBPieceCount == 0u
-		|| (shapeAIsCompound && (shapeADataOffset & GEOMETRY_WORD_ALIGN_MASK) != 0u)
-		|| (shapeBIsCompound && (shapeBDataOffset & GEOMETRY_WORD_ALIGN_MASK) != 0u)
 		|| (!shapeAIsCompound && shapeAKind != GEO_PRIMITIVE_AABB && shapeAKind != GEO_PRIMITIVE_CONVEX_POLY)
 		|| (!shapeBIsCompound && shapeBKind != GEO_PRIMITIVE_AABB && shapeBKind != GEO_PRIMITIVE_CONVEX_POLY)) {
 		return GEO_FAULT_DESCRIPTOR_KIND;
