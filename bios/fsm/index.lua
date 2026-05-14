@@ -2209,7 +2209,7 @@ function state:update()
 			local pattern<const> = entry.pattern
 			local handler<const> = entry.handler
 			mem[sys_inp_player] = player_index
-			mem[sys_inp_query] = pattern
+			mem[sys_inp_query] = string_ref(pattern)
 			if mem[sys_inp_status] ~= 0 then
 				local handled
 				if trace_transitions then

@@ -2,6 +2,16 @@ import { MEMORY_ACCESS_KIND_NAMES } from '../../machine/memory/access_kind';
 import type { LuaSymbolKind } from '../semantic_contracts';
 import type { SemanticSymbolKind } from './symbols';
 
+export const LUA_INTRINSIC_MEMWRITE = 'memwrite';
+export const LUA_INTRINSIC_STRING_REF = 'string_ref';
+
+export const RESERVED_LUA_INTRINSIC_NAMES = [
+	LUA_INTRINSIC_MEMWRITE,
+	LUA_INTRINSIC_STRING_REF,
+] as const;
+
+const RESERVED_LUA_INTRINSIC_NAME_SET = new Set<string>(RESERVED_LUA_INTRINSIC_NAMES);
+
 export function semanticSymbolKindToLuaSymbolKind(kind: SemanticSymbolKind): LuaSymbolKind {
 	switch (kind) {
 		case 'property':
@@ -24,6 +34,10 @@ export function isReservedMemoryMapName(name: string): boolean {
 		}
 	}
 	return false;
+}
+
+export function isReservedIntrinsicName(name: string): boolean {
+	return RESERVED_LUA_INTRINSIC_NAME_SET.has(name);
 }
 
 export function methodPathToPropertyPath(path: string): string | null {
@@ -66,6 +80,9 @@ export function buildLuaKnownNameSet(
 ): Set<string> {
 	const names = new Set<string>();
 	addLuaKnownName(names, 'api');
+	for (const name of RESERVED_LUA_INTRINSIC_NAMES) {
+		addLuaKnownName(names, name);
+	}
 	if (includeSelf) {
 		addLuaKnownName(names, 'self');
 	}

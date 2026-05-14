@@ -2100,6 +2100,8 @@ void testFirmwareDescriptorGolden() {
 	require(assertDescriptor && assertDescriptor->signature == "assert(value [, message])", "assert builtin descriptor should match TS signature");
 	require(std::string_view(bmsx::systemLuaBuiltinGlobals()[0].name) == "timeline", "system global descriptors should keep runtime globals");
 	require(std::string_view(bmsx::systemLuaBuiltinFunctions()[0].name) == "define_fsm", "system builtin descriptors should include define_fsm");
+	const bmsx::LuaBuiltinDescriptor* stringRefDescriptor = bmsx::findDefaultLuaBuiltinDescriptor("string_ref");
+	require(stringRefDescriptor && stringRefDescriptor->signature == "string_ref(value)", "string_ref compiler intrinsic descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_fault_code") != nullptr, "APU fault-code register descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_fault_detail") != nullptr, "APU fault-detail register descriptor should be exposed");
 	require(bmsx::findDefaultLuaBuiltinDescriptor("sys_apu_fault_ack") != nullptr, "APU fault ACK register descriptor should be exposed");

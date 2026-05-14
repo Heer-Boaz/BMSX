@@ -20,9 +20,7 @@ import {
 } from './diagnostics';
 import { compareSourcePosition, sourcePositionInRange, sourceRangeKey, sourceRangeStartKey } from './source_range';
 import { semanticNamePathMatches } from './symbols';
-import { buildLuaKnownNameSet, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
-
-const RESERVED_INTRINSIC_NAME = 'memwrite';
+import { buildLuaKnownNameSet, isReservedIntrinsicName, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
 
 export type LuaSemanticFrontendSource = {
 	path: string;
@@ -91,12 +89,10 @@ export type LuaSemanticFrontendFile = {
 };
 
 export type LuaSemanticFrontend = {
+	snapshot: LuaSemanticWorkspaceSnapshot;
 	files: ReadonlyMap<string, LuaSemanticFrontendFile>;
 	getFile(path: string): LuaSemanticFrontendFile;
 	listFiles(): string[];
-	getDecl(symbolId: SymbolID): Decl;
-	getReferences(symbolId: SymbolID): readonly Ref[];
-	listGlobalDecls(): readonly Decl[];
 	findDeclarationsByNamePath(namePath: readonly string[]): readonly Decl[];
 	getNavigationTargetAt(path: string, line: number, column: number): LuaSemanticNavigationTarget | null;
 	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticResolution;
@@ -152,6 +148,7 @@ export function buildLuaSemanticFrontend(
 		files.set(source.path, createBoundFile(source, diagnostics, knownGlobalNames, moduleTargetsByAlias, sourcesByPath, snapshot));
 	}
 	return {
+		snapshot,
 		files,
 		getFile(path: string): LuaSemanticFrontendFile {
 			const file = files.get(path);
@@ -162,15 +159,6 @@ export function buildLuaSemanticFrontend(
 		},
 		listFiles(): string[] {
 			return preparedSources.map(source => source.path);
-		},
-		getDecl(symbolId: SymbolID): Decl {
-			return snapshot.getDecl(symbolId);
-		},
-		getReferences(symbolId: SymbolID): readonly Ref[] {
-			return snapshot.getReferences(symbolId);
-		},
-		listGlobalDecls(): readonly Decl[] {
-			return snapshot.listGlobalDecls();
 		},
 		findDeclarationsByNamePath(namePath: readonly string[]): readonly Decl[] {
 			const matches: Decl[] = [];
@@ -788,8 +776,4 @@ function lowerBoundReferenceStart(
 		}
 	}
 	return low;
-}
-
-function isReservedIntrinsicName(name: string): boolean {
-	return name === RESERVED_INTRINSIC_NAME;
 }

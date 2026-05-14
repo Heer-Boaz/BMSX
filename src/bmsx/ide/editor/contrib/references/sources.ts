@@ -84,7 +84,7 @@ export function buildReferenceCatalogForExpression(options: {
 		}
 	}
 
-	const decl = frontend.getDecl(options.info.definitionKey);
+	const decl = frontend.snapshot.getDecl(options.info.definitionKey);
 	if (decl) {
 		const meta = metadata.get(decl.file);
 		if (meta) {
@@ -103,7 +103,7 @@ export function buildReferenceCatalogForExpression(options: {
 		}
 	}
 
-	const references = frontend.getReferences(options.info.definitionKey);
+	const references = frontend.snapshot.getReferences(options.info.definitionKey);
 	for (let index = 0; index < references.length; index += 1) {
 		const reference = references[index];
 		const meta = metadata.get(reference.file);
@@ -218,7 +218,7 @@ function prepareProjectSemanticFrontend(
 		}
 		const source = context === environment.activeContext
 			? environment.activeSource
-			: resolveContextSource(context);
+			: getTextSnapshot(context.buffer);
 		const lines = context === environment.activeContext
 			? environment.activeLines
 			: getLinesSnapshot(context.buffer);
@@ -264,10 +264,6 @@ function registerProjectFile(
 		sourceLabel: computeSourceLabel(path),
 		asset_id,
 	});
-}
-
-function resolveContextSource(context: CodeTabContext): string {
-	return getTextSnapshot(context.buffer);
 }
 
 function toDefinitionLocation(

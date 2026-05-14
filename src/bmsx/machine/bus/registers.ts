@@ -9,41 +9,16 @@ export type MmioRegisterSpec = {
 };
 
 export const MMIO_REGISTER_SPECS: ReadonlyArray<MmioRegisterSpec> = [
-	{ name: 'sys_inp_action', address: IO_INP_ACTION, writeRequirement: 'any' },
-	{ name: 'sys_inp_bind', address: IO_INP_BIND, writeRequirement: 'any' },
-	{ name: 'sys_inp_query', address: IO_INP_QUERY, writeRequirement: 'any' },
-	{ name: 'sys_inp_consume', address: IO_INP_CONSUME, writeRequirement: 'any' },
+	{ name: 'sys_inp_action', address: IO_INP_ACTION, writeRequirement: 'string_ref' },
+	{ name: 'sys_inp_bind', address: IO_INP_BIND, writeRequirement: 'string_ref' },
+	{ name: 'sys_inp_query', address: IO_INP_QUERY, writeRequirement: 'string_ref' },
+	{ name: 'sys_inp_consume', address: IO_INP_CONSUME, writeRequirement: 'string_ref' },
 ];
 
-const mmioRegisterSpecByAddress = new Map(
+export const MMIO_REGISTER_SPEC_BY_ADDRESS: ReadonlyMap<number, MmioRegisterSpec> = new Map(
 	MMIO_REGISTER_SPECS.map((spec) => [spec.address, spec]),
 );
 
-const mmioRegisterSpecByName = new Map(
+export const MMIO_REGISTER_SPEC_BY_NAME: ReadonlyMap<string, MmioRegisterSpec> = new Map(
 	MMIO_REGISTER_SPECS.map((spec) => [spec.name, spec]),
 );
-
-export const MMIO_REGISTER_SPEC_BY_ADDRESS: ReadonlyMap<number, MmioRegisterSpec> = mmioRegisterSpecByAddress;
-
-export const MMIO_REGISTER_SPEC_BY_NAME: ReadonlyMap<string, MmioRegisterSpec> = mmioRegisterSpecByName;
-
-export function withTemporaryMmioRegisterSpec<T>(spec: MmioRegisterSpec, run: () => T): T {
-	const previousByAddress = mmioRegisterSpecByAddress.get(spec.address);
-	const previousByName = mmioRegisterSpecByName.get(spec.name);
-	mmioRegisterSpecByAddress.set(spec.address, spec);
-	mmioRegisterSpecByName.set(spec.name, spec);
-	try {
-		return run();
-	} finally {
-		if (previousByAddress === undefined) {
-			mmioRegisterSpecByAddress.delete(spec.address);
-		} else {
-			mmioRegisterSpecByAddress.set(spec.address, previousByAddress);
-		}
-		if (previousByName === undefined) {
-			mmioRegisterSpecByName.delete(spec.name);
-		} else {
-			mmioRegisterSpecByName.set(spec.name, previousByName);
-		}
-	}
-}

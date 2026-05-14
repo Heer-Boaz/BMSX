@@ -56,6 +56,7 @@ import {
 } from './target_semantics';
 import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_kind';
 import { luaModulo } from '../../lua/numeric';
+import { LUA_INTRINSIC_MEMWRITE, LUA_INTRINSIC_STRING_REF, isReservedIntrinsicName } from '../../lua/semantic/common';
 
 export type CompiledProgram = {
 	program: Program;
@@ -78,6 +79,17 @@ type CompileError = {
 	stage: 'entry' | 'module';
 	message: string;
 };
+
+function reservedIntrinsicUsage(name: string): string {
+	switch (name) {
+		case LUA_INTRINSIC_MEMWRITE:
+			return `${name}(base, ...)`;
+		case LUA_INTRINSIC_STRING_REF:
+			return `${name}(value)`;
+		default:
+			return `${name}(...)`;
+	}
+}
 
 export type ProgramModule = {
 	path: string;
@@ -927,7 +939,7 @@ class FunctionBuilder {
 		if (getMemoryAccessKindForName(name) !== null) {
 			throw new Error(`[Compiler] '${name}' is a reserved memory map name and cannot be used as a local or parameter.`);
 		}
-		if (name === 'memwrite') {
+		if (isReservedIntrinsicName(name)) {
 			throw new Error(`[Compiler] '${name}' is a reserved intrinsic name and cannot be used as a local or parameter.`);
 		}
 		const reg = this.localCount;
@@ -1274,7 +1286,7 @@ class FunctionBuilder {
 			throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
 		}
 		if (reference.kind === 'reserved_intrinsic') {
-			throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${name}(base, ...).`);
+			throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${reservedIntrinsicUsage(name)}.`);
 		}
 		if (reference.kind === 'unresolved') {
 			throw new Error(`[Compiler] '${name}' is not defined.`);
@@ -1342,7 +1354,7 @@ class FunctionBuilder {
 			throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
 		}
 		if (reference.kind === 'reserved_intrinsic') {
-			throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${name}(base, ...).`);
+			throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${reservedIntrinsicUsage(name)}.`);
 		}
 		if (reference.kind === 'unresolved') {
 			throw new Error(`[Compiler] '${name}' is not defined.`);
@@ -2027,7 +2039,7 @@ class FunctionBuilder {
 					throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
 				}
 				if (reference.kind === 'reserved_intrinsic') {
-					throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${name}(base, ...).`);
+					throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${reservedIntrinsicUsage(name)}.`);
 				}
 				if (reference.kind === 'unresolved') {
 					throw new Error(`[Compiler] '${name}' is not defined.`);
@@ -2758,9 +2770,16 @@ class FunctionBuilder {
 			return false;
 		}
 		const reference = getResolvedIdentifierReference(this.semantics, expression.callee as LuaIdentifierExpression);
-		if (reference.kind === 'reserved_intrinsic' && this.getReferenceName(reference) === 'memwrite') {
-			this.compileMemWriteIntrinsic(expression, target, resultCount);
-			return true;
+		if (reference.kind === 'reserved_intrinsic') {
+			const name = this.getReferenceName(reference);
+			switch (name) {
+				case LUA_INTRINSIC_MEMWRITE:
+					this.compileMemWriteIntrinsic(expression, target, resultCount);
+					return true;
+				case LUA_INTRINSIC_STRING_REF:
+					this.compileStringRefIntrinsic(expression, target, resultCount);
+					return true;
+			}
 		}
 		return false;
 	}
@@ -2787,6 +2806,36 @@ class FunctionBuilder {
 		this.emitMemoryWordStoreSequence(valueBase, valueCount, addrConst, addrReg);
 		if (resultCount > 0) {
 			this.emitLoadNil(target, resultCount);
+		}
+	}
+
+	private compileStringRefIntrinsic(expression: LuaCallExpression, target: number, resultCount: number): void {
+		if (expression.arguments.length !== 1) {
+			throw new Error('[Compiler] string_ref expects exactly one value.');
+		}
+		const valueExpression = expression.arguments[0];
+		const valueKind = this.flowAnalysis!.evaluateExpressionValueKind(valueExpression, this.currentFlowState);
+		switch (valueKind) {
+			case 'string':
+			case 'string_ref':
+			case 'unknown':
+				break;
+			default:
+				throw new LuaSyntaxError(
+					`string_ref expects a string value (got: ${valueKind}).`,
+					valueExpression.range.path,
+					valueExpression.range.start.line,
+					valueExpression.range.start.column,
+				);
+		}
+		const tempBase = this.tempTop;
+		const valueTarget = resultCount > 0 ? target : this.allocTemp();
+		this.compileExpressionInto(valueExpression, valueTarget, 1);
+		if (resultCount > 1) {
+			this.emitLoadNil(target + 1, resultCount - 1);
+		}
+		if (resultCount === 0) {
+			this.tempTop = tempBase;
 		}
 	}
 
@@ -3039,7 +3088,16 @@ class FunctionBuilder {
 	}
 
 	private isMultiReturnExpression(expression: LuaExpression): boolean {
-		return expression.kind === LuaSyntaxKind.CallExpression || expression.kind === LuaSyntaxKind.VarargExpression;
+		if (expression.kind === LuaSyntaxKind.VarargExpression) return true;
+		if (expression.kind !== LuaSyntaxKind.CallExpression) return false;
+		const call = expression as LuaCallExpression;
+		if (call.methodName === null && call.callee.kind === LuaSyntaxKind.IdentifierExpression) {
+			const reference = getResolvedIdentifierReference(this.semantics, call.callee as LuaIdentifierExpression);
+			if (reference.kind === 'reserved_intrinsic' && this.getReferenceName(reference) === LUA_INTRINSIC_STRING_REF) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private emitDefaultReturn(): void {

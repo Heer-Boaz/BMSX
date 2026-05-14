@@ -44,6 +44,7 @@ import {
 	INP_STATUS_WAS_PRESSED,
 	INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE,
 } from '../../src/bmsx/machine/devices/input/contracts';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../src/bmsx/machine/firmware/builtin_descriptors';
 
 type PushedContext = {
 	id: string;
@@ -301,4 +302,12 @@ test('Input.initialize installs host defaults as the base context', () => {
 	} finally {
 		input.dispose();
 	}
+});
+
+test('ICU firmware descriptors expose string_ref ingress contracts', () => {
+	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('string_ref'), true);
+	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_action'), true);
+	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_bind'), true);
+	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_query'), true);
+	assert.equal(DEFAULT_LUA_BUILTIN_NAMES.includes('sys_inp_consume'), true);
 });

@@ -232,8 +232,12 @@ passes one output command to the selected player's input hardware. Status reads
 expose host output support for the selected player; that support bit is runtime
 capability, not save-state payload.
 
-Remaining ICU work must move toward device hardware, not API cleanup: stricter
-raw string-ref MMIO contracts are the next ICU target.
+ICU string ingress is a raw `string_ref` MMIO contract. The register metadata
+marks action, bind, query, and consume writes as `string_ref`-only; normal Lua
+strings are rejected before program image emission. The ICU consumes interned
+string-id words directly. Dynamic firmware producers use the compiler
+`string_ref(value)` intrinsic at the producer boundary so the device still sees
+raw string-id words rather than a high-level input API.
 
 ## Firmware and Lua layer
 
@@ -293,9 +297,8 @@ should be deleted.
 ## Active work queue
 
 1. Clean or delete remaining hardware notes that are not current contracts.
-2. Continue ICU hardware work: raw string-ref MMIO tightening.
-3. Continue VDP subunit state-machine tightening where boolean ingress state
+2. Continue VDP subunit state-machine tightening where boolean ingress state
    remains.
-4. Continue APU/AOUT proof around deterministic output state and hot-path buffer
+3. Continue APU/AOUT proof around deterministic output state and hot-path buffer
    ownership.
-5. Keep save-state proof expanding through device-visible state, not host queues.
+4. Keep save-state proof expanding through device-visible state, not host queues.

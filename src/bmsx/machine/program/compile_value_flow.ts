@@ -37,6 +37,7 @@ import {
 	classifyAssignmentTargetPreparation,
 	classifyFunctionDeclarationTarget,
 } from './target_semantics';
+import { LUA_INTRINSIC_STRING_REF } from '../../lua/semantic/common';
 
 // ---------------------------------------------------------------------------
 //  Types
@@ -85,7 +86,6 @@ const STRING_REF_VALUE_FACT: CompileValueFact = { kind: 'string_ref', truthiness
 // Functions are currently represented as generic truthy facts; this is enough
 // for short-circuit reasoning without adding a runtime-visible value category.
 const FUNCTION_VALUE_FACT: CompileValueFact = UNKNOWN_TRUTHY_VALUE_FACT;
-
 function unreachableFlowValue(value: never, label: string): never {
 	throw new Error(`[ValueKindFlowAnalyzer] Unhandled ${label}: ${String(value)}`);
 }
@@ -176,6 +176,26 @@ function degradeClosureWrittenSymbolsInState(state: MutableFlowState, closureWri
 	for (const handle of closureWrittenSymbols) {
 		setUnknown(state, handle);
 	}
+}
+
+function isStringRefIntrinsicCall(call: LuaCallExpression, semantics: LuaSemanticFrontendFile): boolean {
+	if (call.methodName !== null || call.callee.kind !== LuaSyntaxKind.IdentifierExpression) return false;
+	const callee = call.callee as LuaIdentifierExpression;
+	if (callee.name !== LUA_INTRINSIC_STRING_REF) return false;
+	return getBoundIdentifierReference(semantics, callee).kind === 'reserved_intrinsic';
+}
+
+function evaluateCallArgumentsState(
+	args: readonly LuaExpression[],
+	state: MutableFlowState,
+	semantics: LuaSemanticFrontendFile,
+	closureWrittenSymbols: ReadonlySet<string>,
+): MutableFlowState {
+	let currentState = state;
+	for (let index = 0; index < args.length; index += 1) {
+		currentState = evaluateExpressionFact(args[index], currentState, semantics, closureWrittenSymbols).state;
+	}
+	return currentState;
 }
 
 // ---------------------------------------------------------------------------
@@ -327,10 +347,25 @@ function evaluateExpressionFact(
 		}
 		case LuaSyntaxKind.CallExpression: {
 			const call = expression as LuaCallExpression;
-			let currentState = evaluateExpressionFact(call.callee, state, semantics, closureWrittenSymbols).state;
-			for (let index = 0; index < call.arguments.length; index += 1) {
-				currentState = evaluateExpressionFact(call.arguments[index], currentState, semantics, closureWrittenSymbols).state;
+			if (isStringRefIntrinsicCall(call, semantics)) {
+				if (call.arguments.length !== 1) {
+					return {
+						fact: UNKNOWN_VALUE_FACT,
+						state: evaluateCallArgumentsState(call.arguments, state, semantics, closureWrittenSymbols),
+					};
+				}
+				const argument = evaluateExpressionFact(call.arguments[0], state, semantics, closureWrittenSymbols);
+				switch (argument.fact.kind) {
+					case 'string':
+					case 'string_ref':
+					case 'unknown':
+						return { fact: STRING_REF_VALUE_FACT, state: argument.state };
+					default:
+						return argument;
+				}
 			}
+			let currentState = evaluateExpressionFact(call.callee, state, semantics, closureWrittenSymbols).state;
+			currentState = evaluateCallArgumentsState(call.arguments, currentState, semantics, closureWrittenSymbols);
 			degradeClosureWrittenSymbolsInState(currentState, closureWrittenSymbols);
 			return { fact: UNKNOWN_VALUE_FACT, state: currentState };
 		}

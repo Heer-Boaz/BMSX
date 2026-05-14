@@ -29,7 +29,7 @@ export function buildIncomingCallHierarchyView(options: {
 	allowedPaths?: ReadonlySet<string>;
 }): CallHierarchyView {
 	const frontend = createEditorSemanticFrontend(options.runtime, options.snapshot);
-	const rootDecl = frontend.getDecl(options.rootSymbolId);
+	const rootDecl = frontend.snapshot.getDecl(options.rootSymbolId);
 	if (!rootDecl) {
 		return null;
 	}

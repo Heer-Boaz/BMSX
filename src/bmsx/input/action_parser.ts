@@ -119,12 +119,14 @@ type ModFn = (get: GetterFn, name: string, win?: number) => boolean;
  */
 type EvalFn = (get: GetterFn) => boolean;
 
+type NodeKind = 'action' | 'operation' | 'function';
+
 /**
  * The base interface for all AST nodes.
  *
  * @property eval - A function to evaluate the node's expression.
  */
-interface NodeBase { eval: EvalFn; }
+interface NodeBase { kind: NodeKind; eval: EvalFn; }
 
 /**
  * Represents a logical operation node in the AST.
@@ -133,7 +135,7 @@ interface NodeBase { eval: EvalFn; }
  * @property left - The left operand node (optional for 'NOT').
  * @property right - The right operand node (optional for 'NOT').
  */
-interface OpNode extends NodeBase { op: 'AND' | 'OR' | 'NOT'; left?: Node; right?: Node; }
+interface OpNode extends NodeBase { kind: 'operation'; op: 'AND' | 'OR' | 'NOT'; left: Node; right?: Node; }
 
 /**
  * Represents an action node in the AST.
@@ -142,6 +144,7 @@ interface OpNode extends NodeBase { op: 'AND' | 'OR' | 'NOT'; left?: Node; right
  * @property mods - A list of modifiers associated with the action.
  */
 interface ActNode extends NodeBase {
+	kind: 'action';
 	name: string;
 	mods: string[];
 	_edgeForJP: boolean; // positive press-like
@@ -159,7 +162,7 @@ interface ActNode extends NodeBase {
  * @property args - A list of argument nodes for the function.
  * @property window - An optional window parameter for time-based functions.
  */
-interface FunNode extends NodeBase { fname: string; args: Node[]; window?: number; }
+interface FunNode extends NodeBase { kind: 'function'; fname: string; args: Node[]; window?: number; }
 
 /**
  * A union type representing all possible AST node types.
@@ -179,11 +182,11 @@ function evalNot(node: Node, get: GetterFn): boolean {
 }
 
 function makeBinaryOpNode(op: 'AND' | 'OR', left: Node, right: Node, evalFn: (left: Node, right: Node, get: GetterFn) => boolean): OpNode {
-	return { op, left, right, eval: get => evalFn(left, right, get) };
+	return { kind: 'operation', op, left, right, eval: get => evalFn(left, right, get) };
 }
 
 function makeNotNode(left: Node): OpNode {
-	return { op: 'NOT', left, eval: get => evalNot(left, get) };
+	return { kind: 'operation', op: 'NOT', left, eval: get => evalNot(left, get) };
 }
 
 /**
@@ -358,7 +361,7 @@ class InputActionParser {
 		this.take(Tokens.Sym, ')'); // Ensure the closing parenthesis is present
 
 		// Return a FunNode representing the parsed function
-		return { fname: base, args, window: win, eval: compileFunction(base, args, win) };
+		return { kind: 'function', fname: base, args, window: win, eval: compileFunction(base, args, win) };
 	}
 
 	/**
@@ -375,13 +378,24 @@ class InputActionParser {
 	private action(): Node {
 		// Ensure the current token is an identifier
 		const name = this.take(Tokens.Ident).value;
-	const mods = this.current()?.value === '[' ? this.parseModifierList() : [];
+		const mods = this.current()?.value === '[' ? this.parseModifierList() : [];
 
-	const node = { name, mods, _edgeForJP: false, _edgeForJR: false, _edgeForWP: false, _edgeForWR: false, _edgeForGP: false, _edgeForRP: false };
-	this.annotateActNode(node);
-	// Return an ActNode representing the parsed action
-	return { ...node, eval: compileAction(name, mods) };
-}
+		const node: ActNode = {
+			kind: 'action',
+			name,
+			mods,
+			_edgeForJP: false,
+			_edgeForJR: false,
+			_edgeForWP: false,
+			_edgeForWR: false,
+			_edgeForGP: false,
+			_edgeForRP: false,
+			eval: compileAction(name, mods),
+		};
+		this.annotateActNode(node);
+		// Return an ActNode representing the parsed action
+		return node;
+	}
 
 	private parseModifierList(): string[] {
 		const mods: string[] = [];
@@ -400,7 +414,7 @@ class InputActionParser {
 		return mods;
 	}
 
-	private annotateActNode(n: Partial<ActNode>) {
+	private annotateActNode(n: ActNode) {
 		// empty mods = implicit press-positive
 		if (n.mods.length === 0) {
 			n._edgeForJP = n._edgeForWP = n._edgeForGP = n._edgeForRP = true;
@@ -441,21 +455,20 @@ class InputActionParser {
 
 	private applyModifiersInPlace(node: Node, mods: string[]): void {
 		if (!mods.length) return;
-		if ((node as ActNode).name !== undefined) {
-			const act = node as ActNode;
-			act.mods.push(...mods);
-			this.annotateActNode(act);
-			act.eval = compileAction(act.name, act.mods);
-			return;
+		switch (node.kind) {
+			case 'action':
+				node.mods.push(...mods);
+				this.annotateActNode(node);
+				node.eval = compileAction(node.name, node.mods);
+				return;
+			case 'operation':
+				this.applyModifiersInPlace(node.left, mods);
+				if (node.right) this.applyModifiersInPlace(node.right, mods);
+				return;
+			case 'function':
+				for (const arg of node.args) this.applyModifiersInPlace(arg, mods);
+				return;
 		}
-		if ((node as OpNode).op) {
-			const op = node as OpNode;
-			if (op.left) this.applyModifiersInPlace(op.left, mods);
-			if (op.right) this.applyModifiersInPlace(op.right, mods);
-			return;
-		}
-		const fn = node as FunNode;
-		for (const arg of fn.args) this.applyModifiersInPlace(arg, mods);
 	}
 }
 
@@ -472,19 +485,19 @@ class InputActionParser {
 function enforceRootModifiers(n: Node) {
 	// Recursive function to walk through the AST nodes
 	const walk = (node: Node, inFun: boolean) => {
-		// If the node is a function, recursively walk through its arguments
-		if ((node as FunNode).fname) { (node as FunNode).args.forEach(a => walk(a, true)); return; }
-		// If the node is an operation, recursively walk through its left and right operands
-		if ((node as OpNode).op) {
-			const o = node as OpNode; // Cast the node to OpNode to access its properties
-			if (o.left) walk(o.left, inFun); // Recursively walk the left operand
-			if (o.right) walk(o.right, inFun); // Recursively walk the right operand
-			return; // Exit after processing both operands
+		switch (node.kind) {
+			case 'function':
+				node.args.forEach(a => walk(a, true));
+				return;
+			case 'operation':
+				walk(node.left, inFun);
+				if (node.right) walk(node.right, inFun);
+				return;
+			case 'action':
+				if (!inFun && node.mods.length === 0)
+					throw new Error(`[Action Parser] Root-level action '${node.name}' must specify a modifier like '[p]', but none found in compiled AST.`);
+				return;
 		}
-		const a = node as ActNode; // Cast the node to ActNode to access its properties
-		if (!inFun && a.mods.length === 0) // If this is a root-level action with no modifiers
-			// throw an error indicating the missing modifier
-			throw new Error(`[Action Parser] Root-level action '${a.name}' must specify a modifier like '[p]', but none found in compiled AST.`);
 	};
 	// Start walking the AST from the root node
 	walk(n, false);
@@ -496,48 +509,46 @@ const EMPTY_ACT_LEAVES: ActNode[] = [];
 function evalAndCollect(node: Node, gs: GetterFn, win?: number, out?: ActNode[]): EvalResult {
 	let leaves = out;
 
-	if ((node as ActNode).name !== undefined) {
+	if (node.kind === 'action') {
 		const ok = node.eval(gs); // uses compileAction predicates
 		if (ok) {
 			if (leaves === undefined) leaves = [];
-			leaves.push(node as ActNode);
+			leaves.push(node);
 		}
 		return { truth: ok, leaves: leaves ?? EMPTY_ACT_LEAVES };
 	}
 
-	if ((node as OpNode).op) {
-		const o = node as OpNode;
-		if (o.op === 'NOT') {
-			const r = evalAndCollect(o.left!, gs, win);
+	if (node.kind === 'operation') {
+		if (node.op === 'NOT') {
+			const r = evalAndCollect(node.left, gs, win);
 			return { truth: !r.truth, leaves: leaves ?? EMPTY_ACT_LEAVES }; // guards only; do not carry leaves
 		}
-		if (o.op === 'AND') {
+		if (node.op === 'AND') {
 			if (leaves === undefined) leaves = [];
-			const l = evalAndCollect(o.left!, gs, win, leaves);
+			const l = evalAndCollect(node.left, gs, win, leaves);
 			if (!l.truth) return { truth: false, leaves };
-			const r = evalAndCollect(o.right!, gs, win, leaves);
+			const r = evalAndCollect(node.right!, gs, win, leaves);
 			return { truth: r.truth, leaves };
 		}
 		// OR with short-circuit
-		const l = evalAndCollect(o.left!, gs, win);
+		const l = evalAndCollect(node.left, gs, win);
 		if (l.truth) return { truth: true, leaves: l.leaves };
-		const r = evalAndCollect(o.right!, gs, win);
+		const r = evalAndCollect(node.right!, gs, win);
 		return { truth: r.truth, leaves: r.leaves };
 	}
 
-	const f = node as FunNode;
-	if (f.fname === '&') {
+	if (node.fname === '&') {
 		let all = true;
 		let acc = out;
 		if (acc === undefined) acc = [];
-		for (const a of f.args) {
+		for (const a of node.args) {
 			const r = evalAndCollect(a, gs, win, acc);
 			if (!r.truth) { all = false; break; }
 		}
 		return { truth: all, leaves: all ? acc : (out ?? EMPTY_ACT_LEAVES) };
 	}
-	if (f.fname === '?') {
-		for (const a of f.args) {
+	if (node.fname === '?') {
+		for (const a of node.args) {
 			const r = evalAndCollect(a, gs, win);
 			if (r.truth) return r; // first winning branch
 		}
@@ -640,7 +651,7 @@ function anyWindowedEdge(args: Node[], gs: GetterFn, win: number | undefined, fl
 		const { truth, leaves } = evalAndCollect(args[i], get, win, []);
 		if (!truth) continue;
 		for (let j = 0; j < leaves.length; j++) {
-			const action = leaves[j] as ActNode;
+			const action = leaves[j]!;
 			if (action[flag] && accepts(get(action.name, win))) return true;
 		}
 	}
@@ -654,7 +665,7 @@ function allWindowedEdges(args: Node[], gs: GetterFn, win: number | undefined, f
 		if (!truth) return false;
 		let hasEligible = false;
 		for (let j = 0; j < leaves.length; j++) {
-			const action = leaves[j] as ActNode;
+			const action = leaves[j]!;
 			if (action[flag]) {
 				hasEligible = true;
 				if (!accepts(get(action.name, win))) return false;
@@ -814,7 +825,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) continue;
 			// At least one eligible contributing leaf is just-pressed
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
+				const a = leaves[j]!;
 				if (a._edgeForJP && gs(a.name).justpressed) return true;
 			}
 		}
@@ -829,7 +840,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) return false;
 			let hasEligible = false;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
+				const a = leaves[j]!;
 				if (a._edgeForJP) {
 					hasEligible = true;
 					if (!gs(a.name).justpressed) return false;
@@ -847,7 +858,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
 			if (!truth) continue;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
+				const a = leaves[j]!;
 				if (a._edgeForGP && gs(a.name).guardedjustpressed) return true;
 			}
 		}
@@ -860,7 +871,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) return false;
 			let hasEligible = false;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
+				const a = leaves[j]!;
 				if (a._edgeForGP) {
 					hasEligible = true;
 					if (!gs(a.name).guardedjustpressed) return false;
@@ -878,7 +889,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
 			if (!truth) continue;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
+				const a = leaves[j]!;
 				if (a._edgeForRP && gs(a.name).repeatpressed) return true;
 			}
 		}
@@ -891,7 +902,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) return false;
 			let hasEligible = false;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
+				const a = leaves[j]!;
 				if (a._edgeForRP) {
 					hasEligible = true;
 					if (!gs(a.name).repeatpressed) return false;
@@ -909,7 +920,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
 			if (!truth) continue;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
+				const a = leaves[j]!;
 				if (a._edgeForJR && gs(a.name).justreleased) return true;
 			}
 		}
@@ -922,7 +933,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) return false;
 			let hasEligible = false;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode;
+				const a = leaves[j]!;
 				if (a._edgeForJR) {
 					hasEligible = true;
 					if (!gs(a.name).justreleased) return false;
@@ -1014,6 +1025,7 @@ export class ActionDefinitionEvaluator {
 
 	static getSimpleActionName(def: string): string | undefined {
 		const ast = this.getCachedOrParse(def);
-		return (ast as ActNode).name;
+		if (ast.kind !== 'action') return undefined;
+		return ast.name;
 	}
 }

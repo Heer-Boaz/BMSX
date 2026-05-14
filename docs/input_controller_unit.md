@@ -30,8 +30,12 @@ device-owned event FIFO, and an output command datapath.
 | `sys_inp_output_status` | R | u32 | Selected-player output status bits. |
 | `sys_inp_output_ctrl` | W | u32 | Output command latch. |
 
-String-ref registers are enforced by the compiler/MMIO contract. The ICU reads
-the string id representation directly.
+The MMIO contract marks `sys_inp_action`, `sys_inp_bind`, `sys_inp_query`, and
+`sys_inp_consume` as `string_ref`-only. Program images that write normal Lua
+strings to those addresses fail before emission. The ICU receives interned
+string-id words and reads that representation directly. Firmware producers that
+construct a string id dynamically must mark the value with the compiler
+intrinsic `string_ref(value)` at the producer boundary.
 
 ## Commands
 
