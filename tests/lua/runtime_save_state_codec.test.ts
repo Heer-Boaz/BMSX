@@ -18,6 +18,7 @@ import {
 import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../src/bmsx/machine/devices/vdp/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../src/bmsx/machine/devices/geometry/contracts';
 import { VDP_REGISTER_COUNT } from '../../src/bmsx/machine/devices/vdp/registers';
+import { VDP_LPU_REGISTER_WORDS } from '../../src/bmsx/machine/devices/vdp/lpu';
 import { VDP_XF_MATRIX_REGISTER_WORDS, VDP_XF_PROJECTION_MATRIX_RESET_INDEX, VDP_XF_VIEW_MATRIX_RESET_INDEX } from '../../src/bmsx/machine/devices/vdp/xf';
 import {
 	VDP_DEX_FRAME_IDLE,
@@ -72,6 +73,7 @@ function createSubmittedFrameState(state = VDP_SUBMITTED_FRAME_EMPTY) {
 		skyboxControl: 5,
 		skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),
 		skyboxSamples: createSkyboxSamples(),
+		lightRegisterWords: numberedWords(VDP_LPU_REGISTER_WORDS),
 	};
 }
 
@@ -245,6 +247,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					blitterSequence: 5,
 					skyboxControl: 5,
 					skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),
+					lightRegisterWords: numberedWords(VDP_LPU_REGISTER_WORDS),
 					pmuSelectedBank: 2,
 					pmuBankWords: numberedWords(VDP_PMU_BANK_WORD_COUNT),
 					ditherType: 1,

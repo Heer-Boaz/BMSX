@@ -5,6 +5,7 @@
 #include "machine/devices/audio/output.h"
 #include "machine/devices/audio/save_state.h"
 #include "machine/devices/audio/source.h"
+#include "machine/devices/audio/slot_bank.h"
 #include "machine/devices/device_status.h"
 #include "machine/memory/memory.h"
 
@@ -54,15 +55,8 @@ private:
 	ApuCommandFifo m_commandFifo;
 	ApuParameterRegisterWords m_commandDispatchRegisterWords{};
 	ApuParameterRegisterWords m_slotRegisterDispatchWords{};
-	uint32_t m_activeSlotMask = 0;
-	std::array<uint32_t, APU_SLOT_COUNT> m_slotPhases{};
-	std::array<uint32_t, APU_SLOT_REGISTER_WORD_COUNT> m_slotRegisterWords{};
+	ApuSlotBank m_slots;
 	ApuSourceDma m_sourceDma;
-	std::array<int64_t, APU_SLOT_COUNT> m_slotPlaybackCursorQ16{};
-	std::array<uint32_t, APU_SLOT_COUNT> m_slotFadeSamplesRemaining{};
-	std::array<uint32_t, APU_SLOT_COUNT> m_slotFadeSamplesTotal{};
-	std::array<ApuVoiceId, APU_SLOT_COUNT> m_slotVoiceIds{};
-	ApuVoiceId m_nextVoiceId = 1;
 	int64_t m_cpuHz = APU_SAMPLE_RATE_HZ;
 	int64_t m_sampleCarry = 0;
 	int64_t m_availableSamples = 0;
@@ -87,7 +81,6 @@ private:
 	void setSlotPhase(ApuAudioSlot slot, ApuSlotPhase phase);
 	bool replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId);
 	void advanceActiveSlots(int64_t samples);
-	bool advanceSlotCursor(ApuAudioSlot slot, int64_t samples);
 	void scheduleNextService(int64_t nowCycles);
 	void updateSelectedSlotActiveStatus();
 	Value onStatusRead() const;

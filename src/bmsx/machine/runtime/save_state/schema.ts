@@ -120,6 +120,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'displayFrameBufferPixels',
 	'skyboxControl',
 	'skyboxFaceWords',
+	'lightRegisterWords',
 	'xf',
 	'matrixWords',
 	'viewMatrixIndex',

@@ -94,12 +94,12 @@ AudioControllerState AudioController::captureState() const {
 	state.eventKind = m_memory.readIoU32(IO_APU_EVENT_KIND);
 	state.eventSlot = m_memory.readIoU32(IO_APU_EVENT_SLOT);
 	state.eventSourceAddr = m_memory.readIoU32(IO_APU_EVENT_SOURCE_ADDR);
-	state.slotPhases = m_slotPhases;
-	state.slotRegisterWords = m_slotRegisterWords;
+	state.slotPhases = m_slots.slotPhases();
+	state.slotRegisterWords = m_slots.slotRegisterWords();
 	state.slotSourceBytes = m_sourceDma.captureState();
-	state.slotPlaybackCursorQ16 = m_slotPlaybackCursorQ16;
-	state.slotFadeSamplesRemaining = m_slotFadeSamplesRemaining;
-	state.slotFadeSamplesTotal = m_slotFadeSamplesTotal;
+	state.slotPlaybackCursorQ16 = m_slots.slotPlaybackCursorQ16();
+	state.slotFadeSamplesRemaining = m_slots.slotFadeSamplesRemaining();
+	state.slotFadeSamplesTotal = m_slots.slotFadeSamplesTotal();
 	state.output = m_audioOutput.captureState();
 	state.sampleCarry = m_sampleCarry;
 	state.availableSamples = m_availableSamples;
@@ -110,9 +110,8 @@ AudioControllerState AudioController::captureState() const {
 }
 
 void AudioController::restoreState(const AudioControllerState& state, int64_t nowCycles) {
-	m_slotVoiceIds.fill(0);
+	m_slots.resetVoiceIds();
 	m_audioOutput.resetPlaybackState();
-	m_nextVoiceId = 1u;
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		m_memory.writeIoValue(IO_APU_PARAMETER_REGISTER_ADDRS[index], valueNumber(static_cast<double>(state.registerWords[index])));
 	}
@@ -122,27 +121,22 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 	m_memory.writeValue(IO_APU_EVENT_SLOT, valueNumber(static_cast<double>(state.eventSlot)));
 	m_memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, valueNumber(static_cast<double>(state.eventSourceAddr)));
 	m_memory.writeValue(IO_APU_EVENT_SEQ, valueNumber(static_cast<double>(m_eventSequence)));
-	m_slotPhases = state.slotPhases;
-	m_activeSlotMask = 0u;
-	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
-		if (m_slotPhases[slot] != APU_SLOT_PHASE_IDLE) {
-			m_activeSlotMask |= 1u << slot;
-		}
-	}
-	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_activeSlotMask)));
-	m_slotRegisterWords = state.slotRegisterWords;
+	m_slots.restore(
+		state.slotPhases,
+		state.slotRegisterWords,
+		state.slotPlaybackCursorQ16,
+		state.slotFadeSamplesRemaining,
+		state.slotFadeSamplesTotal
+	);
+	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_slots.activeMask())));
 	m_sourceDma.restoreState(state.slotSourceBytes);
-	m_slotPlaybackCursorQ16 = state.slotPlaybackCursorQ16;
-	m_slotFadeSamplesRemaining = state.slotFadeSamplesRemaining;
-	m_slotFadeSamplesTotal = state.slotFadeSamplesTotal;
 	m_sampleCarry = state.sampleCarry;
 	m_availableSamples = state.availableSamples;
 	m_fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
 	for (const ApuOutputVoiceState& voiceState : state.output.voices) {
 		const ApuAudioSlot slot = voiceState.slot;
-		const ApuVoiceId voiceId = m_nextVoiceId;
-		m_nextVoiceId += 1u;
-		m_slotVoiceIds[slot] = voiceId;
+		const ApuVoiceId voiceId = m_slots.allocateVoiceId();
+		m_slots.assignVoiceId(slot, voiceId);
 		if (!replayHostOutput(slot, voiceId)) {
 			throw BMSX_RUNTIME_ERROR("[APU] Cannot restore saved AOUT voice.");
 		}

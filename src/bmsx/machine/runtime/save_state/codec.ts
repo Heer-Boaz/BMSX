@@ -26,6 +26,7 @@ import type { VdpSurfacePixelsState, VdpVramState } from '../../devices/vdp/vram
 import type { VdpStreamIngressState } from '../../devices/vdp/ingress';
 import type { VdpReadbackState } from '../../devices/vdp/readback';
 import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT, VDP_BBU_BILLBOARD_LIMIT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
+import { VDP_LPU_REGISTER_WORDS } from '../../devices/vdp/lpu';
 import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_RUN_ENTRY_CAPACITY } from '../../devices/vdp/blitter';
 import {
 	VDP_DEX_FRAME_DIRECT_OPEN,
@@ -702,6 +703,7 @@ function encodeSubmittedFrameState(state: VdpSubmittedFrameSaveState): VdpSubmit
 			surfaceHeight: sample.surfaceHeight,
 			slot: sample.slot,
 		})),
+		lightRegisterWords: state.lightRegisterWords,
 	};
 }
 
@@ -734,6 +736,7 @@ function decodeSubmittedFrameState(value: unknown, label: string): VdpSubmittedF
 		skyboxControl: requireBoundedU32(requireObjectKey(object, 'skyboxControl', label, `${label}.skyboxControl`), `${label}.skyboxControl`, 0, 0xffffffff),
 		skyboxFaceWords: decodeU32FixedArray(requireObjectKey(object, 'skyboxFaceWords', label, `${label}.skyboxFaceWords`), `${label}.skyboxFaceWords`, SKYBOX_FACE_WORD_COUNT),
 		skyboxSamples,
+		lightRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'lightRegisterWords', label, `${label}.lightRegisterWords`), `${label}.lightRegisterWords`, VDP_LPU_REGISTER_WORDS),
 	};
 }
 
@@ -798,6 +801,7 @@ function encodeVdpState(state: VdpState): VdpState {
 		skyboxFaceWords: state.skyboxFaceWords,
 		pmuSelectedBank: state.pmuSelectedBank,
 		pmuBankWords: state.pmuBankWords,
+		lightRegisterWords: state.lightRegisterWords,
 		ditherType: state.ditherType,
 		vdpFaultCode: state.vdpFaultCode,
 		vdpFaultDetail: state.vdpFaultDetail,
@@ -821,6 +825,7 @@ function decodeVdpState(value: unknown, label: string): VdpState {
 		skyboxFaceWords: decodeU32FixedArray(requireObjectKey(object, 'skyboxFaceWords', label, 'machine.vdp.skyboxFaceWords'), 'machine.vdp.skyboxFaceWords', SKYBOX_FACE_WORD_COUNT),
 		pmuSelectedBank: requireBoundedU32(requireObjectKey(object, 'pmuSelectedBank', label, 'machine.vdp.pmuSelectedBank'), 'machine.vdp.pmuSelectedBank', 0, 0xffffffff),
 		pmuBankWords: decodeU32FixedArray(requireObjectKey(object, 'pmuBankWords', label, 'machine.vdp.pmuBankWords'), 'machine.vdp.pmuBankWords', VDP_PMU_BANK_WORD_COUNT),
+		lightRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'lightRegisterWords', label, 'machine.vdp.lightRegisterWords'), 'machine.vdp.lightRegisterWords', VDP_LPU_REGISTER_WORDS),
 		ditherType: requireI32(requireObjectKey(object, 'ditherType', label, 'machine.vdp.ditherType'), 'machine.vdp.ditherType'),
 		vdpFaultCode: requireBoundedU32(requireObjectKey(object, 'vdpFaultCode', label, 'machine.vdp.vdpFaultCode'), 'machine.vdp.vdpFaultCode', 0, 0xffffffff),
 		vdpFaultDetail: requireBoundedU32(requireObjectKey(object, 'vdpFaultDetail', label, 'machine.vdp.vdpFaultDetail'), 'machine.vdp.vdpFaultDetail', 0, 0xffffffff),
