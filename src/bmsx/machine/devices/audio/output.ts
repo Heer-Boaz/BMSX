@@ -8,6 +8,7 @@ import {
 	resetApuBadpDecoder,
 } from './badp_decoder_hot_path';
 import { ApuOutputRing } from './output_ring';
+import { validateApuPcmSourceData } from './pcm_decoder';
 import {
 	captureApuOutputVoiceState,
 	restoreApuOutputVoiceState,
@@ -26,7 +27,6 @@ import {
 	APU_FILTER_NOTCH,
 	APU_FILTER_PEAKING,
 	APU_FAULT_NONE,
-	APU_FAULT_OUTPUT_DATA_RANGE,
 	APU_FAULT_OUTPUT_METADATA,
 	APU_FAULT_OUTPUT_PLAYBACK_RATE,
 	APU_FAULT_SOURCE_BIT_DEPTH,
@@ -237,7 +237,7 @@ export class ApuOutputMixer {
 				badpSeekFrames = badpSeek.frames;
 				badpSeekOffsets = badpSeek.offsets;
 			} else {
-				const pcmResult = this.validatePcmSourceData(source);
+				const pcmResult = validateApuPcmSourceData(source);
 				if (pcmResult.faultCode !== APU_FAULT_NONE) {
 					return pcmResult;
 				}
@@ -657,15 +657,6 @@ export class ApuOutputMixer {
 		}
 		configureBiquadFilter(record.filter, filter.type, filter.frequency, filter.q, filter.gain, outputSampleRate);
 		record.filterSampleRate = outputSampleRate;
-	}
-
-	private validatePcmSourceData(source: ApuAudioSource): ApuOutputStartResult {
-		const bytesPerSample = source.bitsPerSample === 16 ? 2 : 1;
-		const requiredDataBytes = source.frameCount * source.channels * bytesPerSample;
-		if (requiredDataBytes > source.dataBytes) {
-			return { faultCode: APU_FAULT_OUTPUT_DATA_RANGE, faultDetail: source.dataBytes };
-		}
-		return APU_OUTPUT_START_OK;
 	}
 
 	private validateAoutSourceMetadata(source: ApuAudioSource): ApuOutputStartResult {

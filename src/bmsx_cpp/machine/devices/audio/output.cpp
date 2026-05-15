@@ -5,6 +5,7 @@
 #include "machine/devices/audio/output.h"
 
 #include "machine/devices/audio/badp_decoder_hot_path.h"
+#include "machine/devices/audio/pcm_decoder.h"
 
 #include "common/endian.h"
 
@@ -17,15 +18,6 @@ namespace bmsx {
 
 static constexpr f32 MIN_GAIN = 0.0001f;
 static constexpr ApuOutputStartResult APU_OUTPUT_START_OK{};
-static ApuOutputStartResult validatePcmSourceData(const ApuAudioSource& source) {
-	const u64 bytesPerSample = source.bitsPerSample == 16u ? 2u : 1u;
-	const u64 requiredDataBytes = static_cast<u64>(source.frameCount) * static_cast<u64>(source.channels) * bytesPerSample;
-	if (requiredDataBytes > static_cast<u64>(source.dataBytes)) {
-		return {APU_FAULT_OUTPUT_DATA_RANGE, source.dataBytes};
-	}
-	return APU_OUTPUT_START_OK;
-}
-
 static ApuOutputStartResult validateAoutSourceMetadata(const ApuAudioSource& source) {
 	if (source.sampleRateHz == 0u) {
 		return {APU_FAULT_SOURCE_SAMPLE_RATE, source.sampleRateHz};
@@ -168,9 +160,9 @@ ApuOutputStartResult ApuOutputMixer::playVoice(ApuAudioSlot slot, ApuVoiceId voi
 			badpSeekFrames = std::move(badpSeek.frames);
 			badpSeekOffsets = std::move(badpSeek.offsets);
 		} else {
-			const ApuOutputStartResult pcmResult = validatePcmSourceData(source);
+			const ApuPcmValidationResult pcmResult = validateApuPcmSourceData(source);
 			if (pcmResult.faultCode != APU_FAULT_NONE) {
-				return pcmResult;
+				return {pcmResult.faultCode, pcmResult.faultDetail};
 			}
 		}
 	}
