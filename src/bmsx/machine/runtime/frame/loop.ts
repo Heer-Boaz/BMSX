@@ -1,6 +1,5 @@
 import { FrameState, Runtime } from '../runtime';
 import { RunResult } from '../../cpu/cpu';
-import { clearHardwareLighting } from '../../../render/shared/hardware/lighting';
 
 export class FrameLoopState {
 	public currentTimeMs = 0;
@@ -32,7 +31,6 @@ export class FrameLoopState {
 			cycleCarryGranted: 0,
 			activeCpuUsedCycles: 0,
 		};
-		clearHardwareLighting();
 		runtime.machine.vdp.beginFrame();
 		runtime.vblank.beginTick();
 		this.currentFrameState = state;

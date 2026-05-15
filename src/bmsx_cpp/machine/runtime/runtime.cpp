@@ -7,7 +7,6 @@
 #include "machine/runtime/system_irq.h"
 #include "machine/runtime/timing/config.h"
 #include "render/shared/hardware/camera.h"
-#include "render/shared/hardware/lighting.h"
 #include "rompack/format.h"
 #include "rompack/loader.h"
 #include "input/manager.h"
@@ -269,7 +268,6 @@ void Runtime::resetHardwareState() {
 	machine.resetDevices();
 	vblank.reset(*this);
 	resetHardwareCameraBank0();
-	clearHardwareLighting();
 }
 
 void Runtime::refreshMemoryMap() {

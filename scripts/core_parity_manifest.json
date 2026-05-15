@@ -350,7 +350,8 @@
 		"src/bmsx/rompack/toc.ts",
 		"src/bmsx/rompack/source.ts",
 		"src/bmsx/rompack/metadata.ts",
-		"src/bmsx/render/shared/solid_pixels.ts"
+		"src/bmsx/render/shared/solid_pixels.ts",
+		"src/bmsx/render/3d/light.ts"
 	],
 	"public_symbol_parity": [
 		{

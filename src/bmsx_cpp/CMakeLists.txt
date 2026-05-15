@@ -215,7 +215,6 @@ add_library(bmsx_core STATIC
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/renderer.cpp
 	render/shared/hardware/camera.cpp
-	render/shared/hardware/lighting.cpp
 	render/vdp/context_state.cpp
 	render/vdp/framebuffer.cpp
 	render/vdp/surfaces.cpp
