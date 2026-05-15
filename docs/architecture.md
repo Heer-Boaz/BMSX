@@ -148,6 +148,9 @@ Internal units:
   status/fault/code/detail register images and the fault-ack write edge.
 - `DEX` owns direct/stream frame state, submit admission, and the retained
   fixed-capacity framebuffer-command buffer used by the scheduler blitter.
+- `blitter_source` owns DEX source-slot to VRAM-surface admission and source
+  bounds validation before framebuffer blit and tile-run commands enter the
+  retained DEX command buffer.
 - `streamIngress` owns the DMA submit latch, FIFO partial-word bytes, and sealed
   FIFO packet words.
 - `VRAM` owns staging memory, surface slots, dirty spans, CPU readback pixels,

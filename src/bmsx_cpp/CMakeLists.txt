@@ -312,6 +312,7 @@ add_library(bmsx_core STATIC
 	machine/memory/map.cpp
 	machine/devices/vdp/bbu.cpp
 	machine/devices/vdp/blitter.cpp
+	machine/devices/vdp/blitter_source.cpp
 	machine/devices/vdp/fbm.cpp
 	machine/devices/vdp/frame.cpp
 	machine/devices/vdp/ingress.cpp

@@ -9,6 +9,7 @@
 #include "machine/devices/device_status.h"
 #include "machine/devices/vdp/bbu.h"
 #include "machine/devices/vdp/blitter.h"
+#include "machine/devices/vdp/blitter_source.h"
 #include "machine/devices/vdp/budget.h"
 #include "machine/devices/vdp/device_output.h"
 #include "machine/devices/vdp/fbm.h"
@@ -128,6 +129,7 @@ private:
 	DeviceStatusLatch m_fault;
 	ImgDecController* m_imgDecController = nullptr;
 	VdpVramUnit m_vram;
+	VdpBlitterSourcePort m_blitterSourcePort;
 	VdpReadbackUnit m_readback;
 	VdpSbxUnit m_sbx;
 	SkyboxSamples m_sbxSealSamples{};
@@ -254,9 +256,6 @@ private:
 	void clearActiveFrame();
 	void commitActiveVisualState();
 	void finishCommittedFrameOnVblankEdge();
-		bool tryResolveSurfaceIdForSlot(u32 slot, uint32_t& surfaceId, uint32_t faultCode);
-		bool tryResolveBlitterSourceWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, BlitterSource& target, uint32_t faultCode);
-		const VdpSurfaceUploadSlot* tryResolveBlitterSurfaceForSource(const BlitterSource& source, uint32_t faultCode, uint32_t zeroSizeFaultCode);
 
 	void commitLiveVisualState();
 };

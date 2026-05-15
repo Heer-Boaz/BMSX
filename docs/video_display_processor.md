@@ -9,9 +9,11 @@ Host renderers consume VOUT transactions. They do not receive cart intent such
 as sprites, rectangles, labels, glyph runs, tile runs, or scene objects.
 DEX framebuffer commands are stored as retained fixed-capacity command buffers:
 opcode, source, geometry, color, run-entry indexes, and render-cost fields live
-in per-field arrays with a length latch. Build, active, and pending submitted
-frames transfer those buffers by ownership; the hot path does not allocate
-per-command objects or nested glyph/tile vectors.
+in per-field arrays with a length latch. DEX source-slot admission is a
+blitter-source datapath: raw slot words resolve to VDP-owned VRAM surfaces and
+source bounds are checked before blit/tile-run records enter the command buffer.
+Build, active, and pending submitted frames transfer those buffers by ownership;
+the hot path does not allocate per-command objects or nested glyph/tile vectors.
 
 ## Register map
 

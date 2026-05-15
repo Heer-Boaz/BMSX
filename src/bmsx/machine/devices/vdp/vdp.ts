@@ -5,7 +5,6 @@ import {
 	VDP_RD_SURFACE_FRAMEBUFFER,
 	VDP_RD_SURFACE_PRIMARY,
 	VDP_FRAMEBUFFER_PAGE_RENDER,
-	VDP_RD_SURFACE_SECONDARY,
 	VDP_FIFO_CTRL_SEAL,
 	VDP_FAULT_NONE,
 	VDP_FAULT_RD_OOB,
@@ -28,8 +27,6 @@ import {
 	VDP_RD_MODE_RGBA8888,
 	VDP_SLOT_ATLAS_NONE,
 	VDP_SLOT_PRIMARY,
-	VDP_SLOT_SECONDARY,
-	VDP_SLOT_SYSTEM,
 	VDP_STATUS_SUBMIT_BUSY,
 	VDP_STATUS_SUBMIT_REJECTED,
 	VDP_STATUS_FAULT,
@@ -210,6 +207,7 @@ import {
 } from './device_output';
 import { VdpFbmUnit } from './fbm';
 import { VdpStreamIngressUnit } from './ingress';
+import { VdpBlitterSourcePort } from './blitter_source';
 import { VdpUnitRegisterPort } from './unit_register_port';
 import { VdpReadbackUnit } from './readback';
 import {
@@ -238,11 +236,6 @@ const VDP_DEVICE_STATUS_REGISTERS: DeviceStatusRegisters = {
 };
 const VDP_OPEN_BUS_WORD = 0;
 const VDP_SERVICE_BATCH_WORK_UNITS = 128;
-const VDP_SLOT_SURFACE_BINDINGS = [
-	{ slot: VDP_SLOT_SYSTEM, surfaceId: VDP_RD_SURFACE_SYSTEM },
-	{ slot: VDP_SLOT_PRIMARY, surfaceId: VDP_RD_SURFACE_PRIMARY },
-	{ slot: VDP_SLOT_SECONDARY, surfaceId: VDP_RD_SURFACE_SECONDARY },
-] as const;
 
 export class VDP implements VramWriteSink {
 	private readonly vram: VdpVramUnit;
@@ -301,6 +294,7 @@ export class VDP implements VramWriteSink {
 	private readonly fault: DeviceStatusLatch;
 	private readonly vdpRegisters = new Uint32Array(VDP_REGISTER_COUNT);
 	private readonly streamIngress = new VdpStreamIngressUnit();
+	private readonly blitterSourcePort: VdpBlitterSourcePort;
 	private readonly unitRegisterPort: VdpUnitRegisterPort;
 	public lastFrameCommitted = true;
 	public lastFrameCost = 0;
@@ -313,6 +307,7 @@ export class VDP implements VramWriteSink {
 	) {
 		this.fault = new DeviceStatusLatch(memory, VDP_DEVICE_STATUS_REGISTERS);
 		this.vram = new VdpVramUnit(entropySeeds);
+		this.blitterSourcePort = new VdpBlitterSourcePort(this.fault, this.vram);
 		this.unitRegisterPort = new VdpUnitRegisterPort(this.fault, this.xf, this.lpu, this.mfu, this.jtu);
 		this.memory.setVramWriter(this);
 		this.memory.mapIoRead(IO_VDP_RD_STATUS, this.readback.status.bind(this.readback));
@@ -473,23 +468,10 @@ export class VDP implements VramWriteSink {
 			this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, word);
 			return;
 		}
-		let surfaceId = -1;
-		const slotId = this.vdpRegisters[VDP_REG_SLOT_INDEX];
-		for (const binding of VDP_SLOT_SURFACE_BINDINGS) {
-			if (binding.slot === slotId) {
-				surfaceId = binding.surfaceId;
-				break;
-			}
-		}
-		if (surfaceId < 0) {
-			this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, slotId);
+		const slot = this.blitterSourcePort.resolveSlotSurface(this.vdpRegisters[VDP_REG_SLOT_INDEX], VDP_FAULT_VRAM_SLOT_DIM);
+		if (slot === null) {
 			return;
 		}
-			const slot = this.vram.findSurface(surfaceId);
-			if (slot === null) {
-				this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, surfaceId);
-				return;
-			}
 		if (width * height * 4 > slot.capacity) {
 			this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, word);
 			return;
@@ -1184,10 +1166,10 @@ export class VDP implements VramWriteSink {
 		const w = packedLow16(this.vdpRegisters[VDP_REG_SRC_WH]);
 		const h = packedHigh16(this.vdpRegisters[VDP_REG_SRC_WH]);
 		const source = this.latchedSourceScratch;
-		if (!this.tryResolveBlitterSourceWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
+		if (!this.blitterSourcePort.resolveWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
 			return false;
 		}
-		if (this.tryResolveBlitterSurfaceForSource(source, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB) === null) {
+		if (!this.blitterSourcePort.validateSurface(source, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB)) {
 			return false;
 		}
 		const scaleX = decodeSignedQ16_16(this.vdpRegisters[VDP_REG_DRAW_SCALE_X]);
@@ -1853,38 +1835,6 @@ export class VDP implements VramWriteSink {
 		return presentFrameBuffer;
 	}
 
-	private tryResolveBlitterSourceWordsInto(slot: number, u: number, v: number, w: number, h: number, target: VdpBlitterSource, faultCode: number): boolean {
-		for (const binding of VDP_SLOT_SURFACE_BINDINGS) {
-			if (binding.slot === slot) {
-				target.surfaceId = binding.surfaceId;
-				target.srcX = u;
-				target.srcY = v;
-				target.width = w;
-				target.height = h;
-				return true;
-			}
-		}
-		this.fault.raise(faultCode, slot);
-		return false;
-	}
-
-	private tryResolveBlitterSurfaceForSource(source: VdpBlitterSource, faultCode: number, zeroSizeFaultCode: number): VdpSurfaceUploadSlot | null {
-		if (source.width === 0 || source.height === 0) {
-			this.fault.raise(zeroSizeFaultCode, (source.width | (source.height << 16)) >>> 0);
-			return null;
-		}
-		const surface = this.vram.findSurface(source.surfaceId);
-		if (surface === null) {
-			this.fault.raise(faultCode, source.surfaceId);
-			return null;
-		}
-		if (source.srcX + source.width > surface.surfaceWidth || source.srcY + source.height > surface.surfaceHeight) {
-			this.fault.raise(faultCode, (source.srcX | (source.srcY << 16)) >>> 0);
-			return null;
-		}
-		return surface;
-	}
-
 	private latchBillboardPacket(packet: VdpBbuPacket): boolean {
 		const decision = this.bbu.beginPacket(packet, this.buildFrame.billboards.length);
 		if (decision.faultCode !== VDP_FAULT_NONE) {
@@ -2253,18 +2203,11 @@ export class VDP implements VramWriteSink {
 	}
 
 	public configureVramSlotSurface(slotId: number, width: number, height: number): void {
-		for (const binding of VDP_SLOT_SURFACE_BINDINGS) {
-			if (binding.slot === slotId) {
-				const slot = this.vram.findSurface(binding.surfaceId);
-				if (slot === null) {
-					this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, binding.surfaceId);
-					return;
-				}
-				this.resizeVramSlot(slot, width, height);
-				return;
-			}
+		const slot = this.blitterSourcePort.resolveSlotSurface(slotId, VDP_FAULT_VRAM_SLOT_DIM);
+		if (slot === null) {
+			return;
 		}
-		this.fault.raise(VDP_FAULT_VRAM_SLOT_DIM, slotId);
+		this.resizeVramSlot(slot, width, height);
 	}
 
 	public get trackedUsedVramBytes(): number {

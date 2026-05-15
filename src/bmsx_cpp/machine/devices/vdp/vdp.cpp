@@ -39,6 +39,7 @@ VDP::VDP(
 	: m_memory(memory)
 	, m_fault(memory, VDP_DEVICE_STATUS_REGISTERS)
 	, m_vram(entropySeeds)
+	, m_blitterSourcePort(m_fault, m_vram)
 	, m_configuredFrameBufferSize(frameBufferSize)
 	, m_scheduler(scheduler)
 	, m_unitRegisterPort(m_fault, m_xf, m_lpu, m_mfu, m_jtu) {
@@ -194,11 +195,7 @@ void VDP::configureSelectedSlotDimension(u32 word) {
 		m_fault.raise(VDP_FAULT_VRAM_SLOT_DIM, word);
 		return;
 	}
-	uint32_t surfaceId = 0u;
-	if (!tryResolveSurfaceIdForSlot(m_vdpRegisters[VDP_REG_SLOT_INDEX], surfaceId, VDP_FAULT_VRAM_SLOT_DIM)) {
-		return;
-	}
-	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(surfaceId, VDP_FAULT_VRAM_SLOT_DIM);
+	VdpSurfaceUploadSlot* slot = m_blitterSourcePort.resolveSlotSurface(m_vdpRegisters[VDP_REG_SLOT_INDEX], VDP_FAULT_VRAM_SLOT_DIM);
 	if (slot == nullptr) {
 		return;
 	}
@@ -990,10 +987,10 @@ bool VDP::enqueueLatchedBlit() {
 	const u32 w = packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]);
 	const u32 h = packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]);
 	BlitterSource source;
-	if (!tryResolveBlitterSourceWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
+	if (!m_blitterSourcePort.resolveWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
 		return false;
 	}
-	if (tryResolveBlitterSurfaceForSource(source, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB) == nullptr) {
+	if (!m_blitterSourcePort.validateSurface(source, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB)) {
 		return false;
 	}
 	const f32 scaleX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DRAW_SCALE_X]);
@@ -1646,55 +1643,6 @@ bool VDP::presentReadyFrameOnVblankEdge() {
 }
 // end hot-path
 
-bool VDP::tryResolveSurfaceIdForSlot(u32 slot, uint32_t& surfaceId, uint32_t faultCode) {
-	if (slot == VDP_SLOT_SYSTEM) {
-		surfaceId = VDP_RD_SURFACE_SYSTEM;
-		return true;
-	}
-	if (slot == VDP_SLOT_PRIMARY) {
-		surfaceId = VDP_RD_SURFACE_PRIMARY;
-		return true;
-	}
-	if (slot == VDP_SLOT_SECONDARY) {
-		surfaceId = VDP_RD_SURFACE_SECONDARY;
-		return true;
-	}
-	m_fault.raise(faultCode, slot);
-	return false;
-}
-
-bool VDP::tryResolveBlitterSourceWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, BlitterSource& target, uint32_t faultCode) {
-	uint32_t surfaceId = 0u;
-	if (!tryResolveSurfaceIdForSlot(slot, surfaceId, faultCode)) {
-		return false;
-	}
-	target.surfaceId = surfaceId;
-	target.srcX = u;
-	target.srcY = v;
-	target.width = w;
-	target.height = h;
-	return true;
-}
-
-const VdpSurfaceUploadSlot* VDP::tryResolveBlitterSurfaceForSource(const BlitterSource& source, uint32_t faultCode, uint32_t zeroSizeFaultCode) {
-	if (source.width == 0u || source.height == 0u) {
-		m_fault.raise(zeroSizeFaultCode, source.width | (source.height << 16u));
-		return nullptr;
-	}
-	const VdpSurfaceUploadSlot* surface = m_vram.findSurface(source.surfaceId);
-	if (surface == nullptr) {
-		m_fault.raise(faultCode, source.surfaceId);
-		return nullptr;
-	}
-	const uint64_t sourceRight = static_cast<uint64_t>(source.srcX) + static_cast<uint64_t>(source.width);
-	const uint64_t sourceBottom = static_cast<uint64_t>(source.srcY) + static_cast<uint64_t>(source.height);
-	if (sourceRight > surface->surfaceWidth || sourceBottom > surface->surfaceHeight) {
-		m_fault.raise(faultCode, source.srcX | (source.srcY << 16u));
-		return nullptr;
-	}
-	return surface;
-}
-
 bool VDP::latchBillboardPacket(const VdpBbuPacket& packet) {
 	const VdpBbuPacketDecision decision = m_bbu.beginPacket(packet, m_buildFrame.billboards->length);
 	if (decision.faultCode != VDP_FAULT_NONE) {
@@ -1863,7 +1811,7 @@ void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCo
 				continue;
 			}
 			BlitterSource source;
-			if (!tryResolveBlitterSourceWordsInto(
+			if (!m_blitterSourcePort.resolveWordsInto(
 				slot,
 				readTileRunPayloadWord(payload, payloadOffset + 1u),
 				readTileRunPayloadWord(payload, payloadOffset + 2u),
@@ -2010,11 +1958,7 @@ void VDP::setDecodedVramSurfaceDimensions(uint32_t baseAddr, uint32_t width, uin
 }
 
 void VDP::configureVramSlotSurface(uint32_t slotId, uint32_t width, uint32_t height) {
-	uint32_t surfaceId = 0u;
-	if (!tryResolveSurfaceIdForSlot(slotId, surfaceId, VDP_FAULT_VRAM_SLOT_DIM)) {
-		return;
-	}
-	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(surfaceId, VDP_FAULT_VRAM_SLOT_DIM);
+	VdpSurfaceUploadSlot* slot = m_blitterSourcePort.resolveSlotSurface(slotId, VDP_FAULT_VRAM_SLOT_DIM);
 	if (slot == nullptr) {
 		return;
 	}
