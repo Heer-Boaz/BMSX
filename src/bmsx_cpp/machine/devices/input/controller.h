@@ -31,7 +31,7 @@ private:
 	Memory& m_memory;
 	const StringPool& m_strings;
 	InputControllerActionTable m_actionTable;
-	InputControllerRegisterState m_registers;
+	InputControllerRegisterFile m_registers;
 	InputControllerEventFifo m_eventFifo;
 
 public:
@@ -42,7 +42,7 @@ private:
 	InputControllerQueryResult m_queryResult;
 
 	void onRegisterWrite(uint32_t addr, Value value);
-	void onCtrlWrite(u32 command);
+	void onCtrlWrite();
 	Value onEventRegisterRead(uint32_t addr) const;
 	void onEventCtrlWrite(u32 command);
 	Value onOutputRegisterRead(uint32_t addr) const;
@@ -50,8 +50,6 @@ private:
 	void queryAction();
 	void consumeActions();
 	void resetActions();
-	void writeResult(u32 status, u32 value);
-	void mirrorRegisters();
 };
 
 } // namespace bmsx

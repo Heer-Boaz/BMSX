@@ -21,16 +21,14 @@ import {
 	IO_INP_OUTPUT_STATUS,
 	IO_INP_PLAYER,
 	IO_INP_QUERY,
-	IO_INP_STATUS,
-	IO_INP_VALUE,
 } from '../../bus/io';
 import { Memory } from '../../memory/memory';
-import { asStringId, StringValue, type Value } from '../../cpu/cpu';
+import { StringValue, type Value } from '../../cpu/cpu';
 import type { StringPool } from '../../cpu/string_pool';
 import type { InputControllerState } from './save_state';
 import { InputControllerEventFifo } from './event_fifo';
 import { InputControllerActionTable, type InputControllerQueryResult } from './action_table';
-import { createInputControllerRegisterState } from './registers';
+import { InputControllerRegisterFile } from './registers';
 import {
 	INP_EVENT_CTRL_CLEAR,
 	INP_EVENT_CTRL_POP,
@@ -45,7 +43,7 @@ export class InputController {
 	public readonly sampleLatch: InputControllerSampleLatch;
 	private readonly outputPort: InputControllerOutputPort;
 	private readonly queryResult: InputControllerQueryResult = { statusWord: 0, valueQ16: 0 };
-	private registers = createInputControllerRegisterState();
+	private readonly registers = new InputControllerRegisterFile();
 
 	public constructor(
 		private readonly memory: Memory,
@@ -80,17 +78,17 @@ export class InputController {
 	public reset(): void {
 		this.sampleLatch.reset();
 		this.actionTable.reset();
-		this.registers = createInputControllerRegisterState();
+		this.registers.reset();
 		this.eventFifo.clear();
 		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
-		this.mirrorRegisters();
+		this.registers.mirror(this.memory);
 	}
 
 	public captureState(): InputControllerState {
 		return {
 			...this.sampleLatch.captureState(),
-			registers: { ...this.registers },
+			registers: this.registers.captureState(),
 			players: this.actionTable.capturePlayers(),
 			eventFifoEvents: this.eventFifo.captureEvents(),
 			eventFifoOverflow: this.eventFifo.overflow,
@@ -99,50 +97,33 @@ export class InputController {
 
 	public restoreState(state: InputControllerState): void {
 		this.sampleLatch.restoreState(state);
-		this.registers = { ...state.registers };
+		this.registers.restoreState(state.registers);
 		this.actionTable.restorePlayers(state.players);
 		this.eventFifo.restore(state.eventFifoEvents, state.eventFifoOverflow);
 		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
-		this.mirrorRegisters();
+		this.registers.mirror(this.memory);
 	}
 
 	private onRegisterWrite(addr: number, value: Value): void {
+		this.registers.write(addr, value);
 		switch (addr) {
-			case IO_INP_PLAYER:
-				this.registers.player = (value as number) >>> 0;
-				return;
-			case IO_INP_ACTION:
-				this.registers.actionStringId = asStringId(value as StringValue);
-				return;
-			case IO_INP_BIND:
-				this.registers.bindStringId = asStringId(value as StringValue);
-				return;
 			case IO_INP_CTRL:
-				this.onCtrlWrite((value as number) >>> 0);
-				return;
+				this.onCtrlWrite();
+				break;
 			case IO_INP_QUERY:
-				this.registers.queryStringId = asStringId(value as StringValue);
 				this.queryAction();
-				return;
+				break;
 			case IO_INP_CONSUME:
-				this.registers.consumeStringId = asStringId(value as StringValue);
 				this.consumeActions();
-				return;
-			case IO_INP_OUTPUT_INTENSITY_Q16:
-				this.registers.outputIntensityQ16 = (value as number) >>> 0;
-				return;
-			case IO_INP_OUTPUT_DURATION_MS:
-				this.registers.outputDurationMs = (value as number) >>> 0;
-				return;
+				break;
 		}
 	}
 
-	private onCtrlWrite(command: number): void {
-		this.registers.ctrl = command;
-		switch (command) {
+	private onCtrlWrite(): void {
+		switch (this.registers.state.ctrl) {
 			case INP_CTRL_COMMIT:
-				this.actionTable.commitAction(this.registers.player, this.registers.actionStringId, this.registers.bindStringId);
+				this.actionTable.commitAction(this.registers.state.player, this.registers.state.actionStringId, this.registers.state.bindStringId);
 				return;
 			case INP_CTRL_ARM:
 				this.sampleLatch.arm();
@@ -191,7 +172,7 @@ export class InputController {
 	private onOutputRegisterRead(addr: number): Value {
 		switch (addr) {
 			case IO_INP_OUTPUT_STATUS:
-				return this.outputPort.readStatus(this.registers.player);
+				return this.outputPort.readStatus(this.registers.state.player);
 			case IO_INP_OUTPUT_CTRL:
 				return 0;
 		}
@@ -202,45 +183,25 @@ export class InputController {
 		const command = (value as number) >>> 0;
 		switch (command) {
 			case INP_OUTPUT_CTRL_APPLY:
-				this.outputPort.apply(this.registers.player, this.registers.outputIntensityQ16, this.registers.outputDurationMs);
+				this.outputPort.apply(this.registers.state.player, this.registers.state.outputIntensityQ16, this.registers.state.outputDurationMs);
 				break;
 		}
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 	}
 
 	private queryAction(): void {
-		const queryText = this.strings.toString(this.registers.queryStringId);
-		this.actionTable.queryAction(this.registers.player, queryText, this.queryResult);
-		this.writeResult(this.queryResult.statusWord, this.queryResult.valueQ16);
+		const queryText = this.strings.toString(this.registers.state.queryStringId);
+		this.actionTable.queryAction(this.registers.state.player, queryText, this.queryResult);
+		this.registers.writeResult(this.memory, this.queryResult.statusWord, this.queryResult.valueQ16);
 	}
 
 	private consumeActions(): void {
-		const actionNames = this.strings.toString(this.registers.consumeStringId);
-		this.actionTable.consumeActions(this.registers.player, actionNames);
+		const actionNames = this.strings.toString(this.registers.state.consumeStringId);
+		this.actionTable.consumeActions(this.registers.state.player, actionNames);
 	}
 
 	private resetActions(): void {
-		this.actionTable.resetActions(this.registers.player);
-		this.writeResult(0, 0);
-	}
-
-	private writeResult(status: number, value: number): void {
-		this.registers.status = status;
-		this.registers.value = value;
-		this.memory.writeIoValue(IO_INP_STATUS, status);
-		this.memory.writeIoValue(IO_INP_VALUE, value);
-	}
-
-	private mirrorRegisters(): void {
-		this.memory.writeIoValue(IO_INP_PLAYER, this.registers.player);
-		this.memory.writeIoValue(IO_INP_ACTION, StringValue.get(this.registers.actionStringId));
-		this.memory.writeIoValue(IO_INP_BIND, StringValue.get(this.registers.bindStringId));
-		this.memory.writeIoValue(IO_INP_CTRL, this.registers.ctrl);
-		this.memory.writeIoValue(IO_INP_QUERY, StringValue.get(this.registers.queryStringId));
-		this.memory.writeIoValue(IO_INP_STATUS, this.registers.status);
-		this.memory.writeIoValue(IO_INP_VALUE, this.registers.value);
-		this.memory.writeIoValue(IO_INP_CONSUME, StringValue.get(this.registers.consumeStringId));
-		this.memory.writeIoValue(IO_INP_OUTPUT_INTENSITY_Q16, this.registers.outputIntensityQ16);
-		this.memory.writeIoValue(IO_INP_OUTPUT_DURATION_MS, this.registers.outputDurationMs);
+		this.actionTable.resetActions(this.registers.state.player);
+		this.registers.writeResult(this.memory, 0, 0);
 	}
 }

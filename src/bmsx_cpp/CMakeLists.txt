@@ -226,6 +226,7 @@ add_library(bmsx_core STATIC
 	machine/devices/input/controller.cpp
 	machine/devices/input/event_fifo.cpp
 	machine/devices/input/output_port.cpp
+	machine/devices/input/registers.cpp
 	machine/devices/input/sample_latch.cpp
 	machine/devices/input/save_state.cpp
 	machine/devices/audio/controller.cpp

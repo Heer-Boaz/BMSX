@@ -58,49 +58,32 @@ void InputController::onOutputCtrlWriteThunk(void* context, uint32_t, Value valu
 void InputController::reset() {
 	sampleLatch.reset();
 	m_actionTable.reset();
-	m_registers = InputControllerRegisterState{};
+	m_registers.reset();
 	m_eventFifo.clear();
 	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
 	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
-	mirrorRegisters();
+	m_registers.mirror(m_memory);
 }
 
 void InputController::onRegisterWrite(uint32_t addr, Value value) {
+	m_registers.write(addr, value);
 	switch (addr) {
-		case IO_INP_PLAYER:
-			m_registers.player = toU32(value);
-			return;
-		case IO_INP_ACTION:
-			m_registers.actionStringId = asStringId(value);
-			return;
-		case IO_INP_BIND:
-			m_registers.bindStringId = asStringId(value);
-			return;
 		case IO_INP_CTRL:
-			onCtrlWrite(toU32(value));
+			onCtrlWrite();
 			return;
 		case IO_INP_QUERY:
-			m_registers.queryStringId = asStringId(value);
 			queryAction();
 			return;
 		case IO_INP_CONSUME:
-			m_registers.consumeStringId = asStringId(value);
 			consumeActions();
-			return;
-		case IO_INP_OUTPUT_INTENSITY_Q16:
-			m_registers.outputIntensityQ16 = toU32(value);
-			return;
-		case IO_INP_OUTPUT_DURATION_MS:
-			m_registers.outputDurationMs = toU32(value);
 			return;
 	}
 }
 
-void InputController::onCtrlWrite(u32 command) {
-	m_registers.ctrl = command;
-	switch (command) {
+void InputController::onCtrlWrite() {
+	switch (m_registers.state.ctrl) {
 		case INP_CTRL_COMMIT:
-			m_actionTable.commitAction(static_cast<i32>(m_registers.player), m_registers.actionStringId, m_registers.bindStringId);
+			m_actionTable.commitAction(static_cast<i32>(m_registers.state.player), m_registers.state.actionStringId, m_registers.state.bindStringId);
 			return;
 		case INP_CTRL_ARM:
 			sampleLatch.arm();
@@ -148,7 +131,7 @@ void InputController::onEventCtrlWrite(u32 command) {
 Value InputController::onOutputRegisterRead(uint32_t addr) const {
 	switch (addr) {
 		case IO_INP_OUTPUT_STATUS:
-			return valueNumber(static_cast<double>(m_outputPort.readStatus(m_registers.player)));
+			return valueNumber(static_cast<double>(m_outputPort.readStatus(m_registers.state.player)));
 		case IO_INP_OUTPUT_CTRL:
 			return valueNumber(0.0);
 	}
@@ -158,46 +141,26 @@ Value InputController::onOutputRegisterRead(uint32_t addr) const {
 void InputController::onOutputCtrlWrite(u32 command) {
 	switch (command) {
 		case INP_OUTPUT_CTRL_APPLY:
-			m_outputPort.apply(m_registers.player, m_registers.outputIntensityQ16, m_registers.outputDurationMs);
+			m_outputPort.apply(m_registers.state.player, m_registers.state.outputIntensityQ16, m_registers.state.outputDurationMs);
 			break;
 	}
 	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
 }
 
 void InputController::queryAction() {
-	const std::string& queryText = m_strings.toString(m_registers.queryStringId);
-	m_actionTable.queryAction(static_cast<i32>(m_registers.player), queryText, m_queryResult);
-	writeResult(m_queryResult.statusWord, m_queryResult.valueQ16);
+	const std::string& queryText = m_strings.toString(m_registers.state.queryStringId);
+	m_actionTable.queryAction(static_cast<i32>(m_registers.state.player), queryText, m_queryResult);
+	m_registers.writeResult(m_memory, m_queryResult.statusWord, m_queryResult.valueQ16);
 }
 
 void InputController::consumeActions() {
-	const std::string& actionNames = m_strings.toString(m_registers.consumeStringId);
-	m_actionTable.consumeActions(static_cast<i32>(m_registers.player), actionNames);
+	const std::string& actionNames = m_strings.toString(m_registers.state.consumeStringId);
+	m_actionTable.consumeActions(static_cast<i32>(m_registers.state.player), actionNames);
 }
 
 void InputController::resetActions() {
-	m_actionTable.resetActions(static_cast<i32>(m_registers.player));
-	writeResult(0u, 0u);
-}
-
-void InputController::writeResult(u32 status, u32 value) {
-	m_registers.status = status;
-	m_registers.value = value;
-	m_memory.writeIoValue(IO_INP_STATUS, valueNumber(static_cast<double>(status)));
-	m_memory.writeIoValue(IO_INP_VALUE, valueNumber(static_cast<double>(value)));
-}
-
-void InputController::mirrorRegisters() {
-	m_memory.writeIoValue(IO_INP_PLAYER, valueNumber(static_cast<double>(m_registers.player)));
-	m_memory.writeIoValue(IO_INP_ACTION, valueString(m_registers.actionStringId));
-	m_memory.writeIoValue(IO_INP_BIND, valueString(m_registers.bindStringId));
-	m_memory.writeIoValue(IO_INP_CTRL, valueNumber(static_cast<double>(m_registers.ctrl)));
-	m_memory.writeIoValue(IO_INP_QUERY, valueString(m_registers.queryStringId));
-	m_memory.writeIoValue(IO_INP_STATUS, valueNumber(static_cast<double>(m_registers.status)));
-	m_memory.writeIoValue(IO_INP_VALUE, valueNumber(static_cast<double>(m_registers.value)));
-	m_memory.writeIoValue(IO_INP_CONSUME, valueString(m_registers.consumeStringId));
-	m_memory.writeIoValue(IO_INP_OUTPUT_INTENSITY_Q16, valueNumber(static_cast<double>(m_registers.outputIntensityQ16)));
-	m_memory.writeIoValue(IO_INP_OUTPUT_DURATION_MS, valueNumber(static_cast<double>(m_registers.outputDurationMs)));
+	m_actionTable.resetActions(static_cast<i32>(m_registers.state.player));
+	m_registers.writeResult(m_memory, 0u, 0u);
 }
 
 } // namespace bmsx

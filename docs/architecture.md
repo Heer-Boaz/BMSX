@@ -249,8 +249,9 @@ Cart-visible ingress:
 
 State owned by ICU:
 
-- selected player/action/bind/query/consume register words owned by
-  `machine/devices/input/registers`;
+- selected player/action/bind/query/consume register words,
+  `sys_inp_status`/`sys_inp_value` result words, and reset/restore register
+  mirroring owned by `machine/devices/input/registers`;
 - private sample arm, sequence, and last-cycle latches owned by
   `machine/devices/input/sample_latch`;
 - per-player committed action records and mapping contexts owned by

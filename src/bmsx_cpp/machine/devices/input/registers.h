@@ -1,9 +1,12 @@
 #pragma once
 
 #include "common/types.h"
+#include "machine/cpu/cpu.h"
 #include "machine/cpu/string_pool.h"
 
 namespace bmsx {
+
+class Memory;
 
 struct InputControllerRegisterState {
 	u32 player = 1;
@@ -16,6 +19,18 @@ struct InputControllerRegisterState {
 	StringId consumeStringId = 0;
 	u32 outputIntensityQ16 = 0;
 	u32 outputDurationMs = 0;
+};
+
+class InputControllerRegisterFile {
+public:
+	InputControllerRegisterState state;
+
+	void reset();
+	InputControllerRegisterState captureState() const;
+	void restoreState(const InputControllerRegisterState& restoredState);
+	void write(uint32_t addr, Value value);
+	void writeResult(Memory& memory, u32 status, u32 value);
+	void mirror(Memory& memory) const;
 };
 
 } // namespace bmsx

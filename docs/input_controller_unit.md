@@ -37,6 +37,11 @@ string-id words and reads that representation directly. Producers mark literals
 or dynamic string expressions with the existing `&` operator at the producer
 boundary, for example `&'left[p]'` or `&(action .. '[p]')`.
 
+The ICU registerfile owner stores these raw words, accepts the MMIO write
+values, owns the `sys_inp_status`/`sys_inp_value` result latch, and mirrors the
+visible registers after reset/restore. The controller only decodes command
+side-effects after the registerfile has latched the incoming word.
+
 ## Commands
 
 | Command | Value | Effect |
@@ -168,7 +173,7 @@ Selected-player output support is a host capability bit and is not saved.
 - TS output port: `src/bmsx/machine/devices/input/output_port.ts`
 - TS aggregate save state: `src/bmsx/machine/devices/input/save_state.ts`
 - C++: `src/bmsx_cpp/machine/devices/input/controller.cpp/.h`
-- C++ registerfile: `src/bmsx_cpp/machine/devices/input/registers.h`
+- C++ registerfile: `src/bmsx_cpp/machine/devices/input/registers.cpp/.h`
 - C++ sample latch: `src/bmsx_cpp/machine/devices/input/sample_latch.cpp/.h`
 - C++ action table: `src/bmsx_cpp/machine/devices/input/action_table.cpp/.h`
 - C++ constants: `src/bmsx_cpp/machine/devices/input/contracts.h`
