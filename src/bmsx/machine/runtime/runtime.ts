@@ -543,7 +543,7 @@ export class Runtime {
 		this.pendingCall = null;
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
-		this.machine.inputController.cancelArmedSample();
+		this.machine.inputController.sampleLatch.cancel();
 		this.machine.cpu.clearHaltUntilIrq();
 	}
 

@@ -1,5 +1,4 @@
 #include "machine/devices/input/controller.h"
-#include "input/player.h"
 
 #include <stdexcept>
 
@@ -7,9 +6,10 @@ namespace bmsx {
 
 InputController::InputController(Memory& memory, Input& input, const StringPool& strings)
 	: m_memory(memory)
-	, m_input(input)
 	, m_strings(strings)
-	, m_actionTable(input, strings) {
+	, m_actionTable(input, strings)
+	, sampleLatch(input, m_actionTable, m_eventFifo)
+	, m_outputPort(input) {
 	m_memory.mapIoWrite(IO_INP_PLAYER, this, &InputController::onRegisterWriteThunk);
 	m_memory.mapIoWrite(IO_INP_ACTION, this, &InputController::onRegisterWriteThunk);
 	m_memory.mapIoWrite(IO_INP_BIND, this, &InputController::onRegisterWriteThunk);
@@ -56,30 +56,13 @@ void InputController::onOutputCtrlWriteThunk(void* context, uint32_t, Value valu
 }
 
 void InputController::reset() {
-	m_sampleArmed = false;
-	m_sampleSequence = 0;
-	m_lastSampleCycle = 0;
+	sampleLatch.reset();
 	m_actionTable.reset();
 	m_registers = InputControllerRegisterState{};
 	m_eventFifo.clear();
 	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
 	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
 	mirrorRegisters();
-}
-
-void InputController::cancelArmedSample() {
-	m_sampleArmed = false;
-}
-
-void InputController::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
-	if (!m_sampleArmed) {
-		return;
-	}
-	m_sampleSequence += 1u;
-	m_lastSampleCycle = nowCycles;
-	m_input.samplePlayers(currentTimeMs);
-	m_actionTable.sampleCommittedActions(m_eventFifo);
-	m_sampleArmed = false;
 }
 
 void InputController::onRegisterWrite(uint32_t addr, Value value) {
@@ -120,7 +103,7 @@ void InputController::onCtrlWrite(u32 command) {
 			m_actionTable.commitAction(static_cast<i32>(m_registers.player), m_registers.actionStringId, m_registers.bindStringId);
 			return;
 		case INP_CTRL_ARM:
-			m_sampleArmed = true;
+			sampleLatch.arm();
 			return;
 		case INP_CTRL_RESET:
 			resetActions();
@@ -165,7 +148,7 @@ void InputController::onEventCtrlWrite(u32 command) {
 Value InputController::onOutputRegisterRead(uint32_t addr) const {
 	switch (addr) {
 		case IO_INP_OUTPUT_STATUS:
-			return valueNumber(static_cast<double>(readOutputStatus()));
+			return valueNumber(static_cast<double>(m_outputPort.readStatus(m_registers.player)));
 		case IO_INP_OUTPUT_CTRL:
 			return valueNumber(0.0);
 	}
@@ -175,7 +158,7 @@ Value InputController::onOutputRegisterRead(uint32_t addr) const {
 void InputController::onOutputCtrlWrite(u32 command) {
 	switch (command) {
 		case INP_OUTPUT_CTRL_APPLY:
-			applyOutputEffect();
+			m_outputPort.apply(m_registers.player, m_registers.outputIntensityQ16, m_registers.outputDurationMs);
 			break;
 	}
 	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
@@ -195,17 +178,6 @@ void InputController::consumeActions() {
 void InputController::resetActions() {
 	m_actionTable.resetActions(static_cast<i32>(m_registers.player));
 	writeResult(0u, 0u);
-}
-
-u32 InputController::readOutputStatus() const {
-	return m_input.getPlayerInput(static_cast<i32>(m_registers.player))->supportsVibrationEffect() ? INP_OUTPUT_STATUS_SUPPORTED : 0u;
-}
-
-void InputController::applyOutputEffect() {
-	VibrationParams params;
-	params.duration = static_cast<f64>(m_registers.outputDurationMs);
-	params.intensity = decodeInputOutputIntensityQ16(m_registers.outputIntensityQ16);
-	m_input.getPlayerInput(static_cast<i32>(m_registers.player))->applyVibrationEffect(params);
 }
 
 void InputController::writeResult(u32 status, u32 value) {

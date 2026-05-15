@@ -32,28 +32,29 @@ import { InputControllerEventFifo } from './event_fifo';
 import { InputControllerActionTable, type InputControllerQueryResult } from './action_table';
 import { createInputControllerRegisterState } from './registers';
 import {
-	decodeInputOutputIntensityQ16,
 	INP_EVENT_CTRL_CLEAR,
 	INP_EVENT_CTRL_POP,
 	INP_OUTPUT_CTRL_APPLY,
-	INP_OUTPUT_STATUS_SUPPORTED,
 } from './contracts';
+import { InputControllerSampleLatch } from './sample_latch';
+import { InputControllerOutputPort } from './output_port';
 
 export class InputController {
 	private readonly actionTable: InputControllerActionTable;
 	private readonly eventFifo = new InputControllerEventFifo();
+	public readonly sampleLatch: InputControllerSampleLatch;
+	private readonly outputPort: InputControllerOutputPort;
 	private readonly queryResult: InputControllerQueryResult = { statusWord: 0, valueQ16: 0 };
 	private registers = createInputControllerRegisterState();
-	private sampleArmed = false;
-	private sampleSequence = 0;
-	private lastSampleCycle = 0;
 
 	public constructor(
 		private readonly memory: Memory,
-		private readonly input: Input,
+		input: Input,
 		private readonly strings: StringPool,
 	) {
 		this.actionTable = new InputControllerActionTable(input, strings);
+		this.sampleLatch = new InputControllerSampleLatch(input, this.actionTable, this.eventFifo);
+		this.outputPort = new InputControllerOutputPort(input);
 		this.memory.mapIoWrite(IO_INP_PLAYER, this.onRegisterWrite.bind(this));
 		this.memory.mapIoWrite(IO_INP_ACTION, this.onRegisterWrite.bind(this));
 		this.memory.mapIoWrite(IO_INP_BIND, this.onRegisterWrite.bind(this));
@@ -77,9 +78,7 @@ export class InputController {
 	}
 
 	public reset(): void {
-		this.sampleArmed = false;
-		this.sampleSequence = 0;
-		this.lastSampleCycle = 0;
+		this.sampleLatch.reset();
 		this.actionTable.reset();
 		this.registers = createInputControllerRegisterState();
 		this.eventFifo.clear();
@@ -88,26 +87,9 @@ export class InputController {
 		this.mirrorRegisters();
 	}
 
-	public cancelArmedSample(): void {
-		this.sampleArmed = false;
-	}
-
-	public onVblankEdge(currentTimeMs: number, nowCycles: number): void {
-		if (!this.sampleArmed) {
-			return;
-		}
-		this.sampleSequence = (this.sampleSequence + 1) >>> 0;
-		this.lastSampleCycle = nowCycles >>> 0;
-		this.input.samplePlayers(currentTimeMs);
-		this.actionTable.sampleCommittedActions(this.eventFifo);
-		this.sampleArmed = false;
-	}
-
 	public captureState(): InputControllerState {
 		return {
-			sampleArmed: this.sampleArmed,
-			sampleSequence: this.sampleSequence,
-			lastSampleCycle: this.lastSampleCycle,
+			...this.sampleLatch.captureState(),
 			registers: { ...this.registers },
 			players: this.actionTable.capturePlayers(),
 			eventFifoEvents: this.eventFifo.captureEvents(),
@@ -116,9 +98,7 @@ export class InputController {
 	}
 
 	public restoreState(state: InputControllerState): void {
-		this.sampleArmed = state.sampleArmed;
-		this.sampleSequence = state.sampleSequence;
-		this.lastSampleCycle = state.lastSampleCycle;
+		this.sampleLatch.restoreState(state);
 		this.registers = { ...state.registers };
 		this.actionTable.restorePlayers(state.players);
 		this.eventFifo.restore(state.eventFifoEvents, state.eventFifoOverflow);
@@ -165,7 +145,7 @@ export class InputController {
 				this.actionTable.commitAction(this.registers.player, this.registers.actionStringId, this.registers.bindStringId);
 				return;
 			case INP_CTRL_ARM:
-				this.sampleArmed = true;
+				this.sampleLatch.arm();
 				return;
 			case INP_CTRL_RESET:
 				this.resetActions();
@@ -211,7 +191,7 @@ export class InputController {
 	private onOutputRegisterRead(addr: number): Value {
 		switch (addr) {
 			case IO_INP_OUTPUT_STATUS:
-				return this.readOutputStatus();
+				return this.outputPort.readStatus(this.registers.player);
 			case IO_INP_OUTPUT_CTRL:
 				return 0;
 		}
@@ -222,7 +202,7 @@ export class InputController {
 		const command = (value as number) >>> 0;
 		switch (command) {
 			case INP_OUTPUT_CTRL_APPLY:
-				this.applyOutputEffect();
+				this.outputPort.apply(this.registers.player, this.registers.outputIntensityQ16, this.registers.outputDurationMs);
 				break;
 		}
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
@@ -242,18 +222,6 @@ export class InputController {
 	private resetActions(): void {
 		this.actionTable.resetActions(this.registers.player);
 		this.writeResult(0, 0);
-	}
-
-	private readOutputStatus(): number {
-		return this.input.getPlayerInput(this.registers.player).supportsVibrationEffect ? INP_OUTPUT_STATUS_SUPPORTED : 0;
-	}
-
-	private applyOutputEffect(): void {
-		this.input.getPlayerInput(this.registers.player).applyVibrationEffect({
-			effect: 'dual-rumble',
-			duration: this.registers.outputDurationMs,
-			intensity: decodeInputOutputIntensityQ16(this.registers.outputIntensityQ16),
-		});
 	}
 
 	private writeResult(status: number, value: number): void {

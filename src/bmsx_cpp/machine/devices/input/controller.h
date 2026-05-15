@@ -4,7 +4,9 @@
 #include "machine/devices/input/action_table.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/input/event_fifo.h"
+#include "machine/devices/input/output_port.h"
 #include "machine/devices/input/registers.h"
+#include "machine/devices/input/sample_latch.h"
 #include "machine/devices/input/save_state.h"
 #include "input/manager.h"
 #include <string>
@@ -16,8 +18,6 @@ public:
 	InputController(Memory& memory, Input& input, const StringPool& strings);
 
 	void reset();
-	void cancelArmedSample();
-	void onVblankEdge(f64 currentTimeMs, u32 nowCycles);
 	InputControllerState captureState() const;
 	void restoreState(const InputControllerState& state);
 
@@ -29,14 +29,16 @@ private:
 	static void onOutputCtrlWriteThunk(void* context, uint32_t addr, Value value);
 
 	Memory& m_memory;
-	Input& m_input;
 	const StringPool& m_strings;
 	InputControllerActionTable m_actionTable;
 	InputControllerRegisterState m_registers;
-	bool m_sampleArmed = false;
-	u32 m_sampleSequence = 0;
-	u32 m_lastSampleCycle = 0;
 	InputControllerEventFifo m_eventFifo;
+
+public:
+	InputControllerSampleLatch sampleLatch;
+
+private:
+	InputControllerOutputPort m_outputPort;
 	InputControllerQueryResult m_queryResult;
 
 	void onRegisterWrite(uint32_t addr, Value value);
@@ -48,8 +50,6 @@ private:
 	void queryAction();
 	void consumeActions();
 	void resetActions();
-	u32 readOutputStatus() const;
-	void applyOutputEffect();
 	void writeResult(u32 status, u32 value);
 	void mirrorRegisters();
 };

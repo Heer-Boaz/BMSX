@@ -1358,14 +1358,14 @@ void testInputControllerStateGolden() {
 	require(bmsx::asStringId(restored.memory.readValue(bmsx::IO_INP_CONSUME)) == consume, "ICU restore should mirror the consume string register");
 	restored.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(query));
 	require(restored.memory.readIoU32(bmsx::IO_INP_STATUS) == 0u, "restored ICU context should accept a known action query");
-	restored.inputController.onVblankEdge(1000.0 / 60.0, 123u);
+	restored.inputController.sampleLatch.onVblankEdge(1000.0 / 60.0, 123u);
 	require(!restored.inputController.captureState().sampleArmed, "ICU VBlank edge should consume the restored sample arm latch");
 	require(restored.inputController.captureState().sampleSequence == 1u, "ICU VBlank edge should count the sampled frame");
 	require(restored.inputController.captureState().lastSampleCycle == 123u, "ICU VBlank edge should latch the sample cycle");
 	writeIoWord(restored.memory, bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
-	require(restored.inputController.captureState().sampleArmed, "ICU ARM command should set the private sample latch");
-	restored.inputController.cancelArmedSample();
-	require(!restored.inputController.captureState().sampleArmed, "ICU runtime cancellation should clear the private sample latch");
+	require(restored.inputController.captureState().sampleArmed, "ICU ARM command should set the sample latch");
+	restored.inputController.sampleLatch.cancel();
+	require(!restored.inputController.captureState().sampleArmed, "ICU runtime cancellation should clear the sample latch");
 }
 
 void testInputControllerOutputRegisters() {
@@ -1421,7 +1421,7 @@ void testInputControllerRealPlayerContext() {
 	event.pressId = 7;
 	playerTwo->recordButtonEvent(bmsx::InputSource::Gamepad, "a", std::move(event));
 	writeIoWord(h.memory, bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
-	h.inputController.onVblankEdge(1000.0 / 60.0, 456u);
+	h.inputController.sampleLatch.onVblankEdge(1000.0 / 60.0, 456u);
 	h.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(query));
 
 	const uint32_t status = h.memory.readIoU32(bmsx::IO_INP_STATUS);

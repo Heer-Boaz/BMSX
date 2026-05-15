@@ -251,15 +251,16 @@ State owned by ICU:
 
 - selected player/action/bind/query/consume register words owned by
   `machine/devices/input/registers`;
-- private sample arm latch;
-- sample sequence and last sample cycle latches;
+- private sample arm, sequence, and last-cycle latches owned by
+  `machine/devices/input/sample_latch`;
 - per-player committed action records and mapping contexts owned by
   `machine/devices/input/action_table`;
 - per-action sampled `statusWord`, signed-Q16.16 `valueQ16`, `pressTime`, and
   `repeatCount` words owned by the action-table sample latch;
 - event FIFO hardware state: retained event slots, read/write pointers, queued
   count, and overflow latch;
-- output intensity and duration latch words.
+- output intensity and duration latch words; the output command datapath is
+  owned by `machine/devices/input/output_port`.
 
 VBlank consumes the arm latch, asks the input owner to sample players once, and
 then snapshots committed actions. Later MMIO queries evaluate against that ICU
@@ -346,11 +347,5 @@ They must not be prompts, migration journals, marketing copy, or product-pitch
 explanations. If a document cannot be made into a current hardware contract, it
 should be deleted.
 
-## Active work queue
-
-1. Continue splitting monolithic device controllers along hardware-unit
-   boundaries: registerfiles, latches, FIFOs, datapaths, and timing edges.
-2. Keep save-state as passive persistence of live machine state; do not create
-   parallel contracts when the live hardware owner already has the record shape.
-3. Move aggregate persistence plumbing only when the target language can do it
-   without opening private hardware fields as a fake public contract.
+The active work-order checklist lives in `docs/goal.md`; this architecture file
+remains the stable machine contract.

@@ -7,9 +7,10 @@ namespace bmsx {
 
 InputControllerState InputController::captureState() const {
 	InputControllerState state;
-	state.sampleArmed = m_sampleArmed;
-	state.sampleSequence = m_sampleSequence;
-	state.lastSampleCycle = m_lastSampleCycle;
+	const InputControllerSampleLatchState capturedSampleLatch = sampleLatch.captureState();
+	state.sampleArmed = capturedSampleLatch.sampleArmed;
+	state.sampleSequence = capturedSampleLatch.sampleSequence;
+	state.lastSampleCycle = capturedSampleLatch.lastSampleCycle;
 	state.registers = m_registers;
 	state.players = m_actionTable.capturePlayers();
 	state.eventFifoEvents = m_eventFifo.captureEvents();
@@ -18,9 +19,7 @@ InputControllerState InputController::captureState() const {
 }
 
 void InputController::restoreState(const InputControllerState& state) {
-	m_sampleArmed = state.sampleArmed;
-	m_sampleSequence = state.sampleSequence;
-	m_lastSampleCycle = state.lastSampleCycle;
+	sampleLatch.restoreState(state);
 	m_registers = state.registers;
 	m_actionTable.restorePlayers(state.players);
 	m_eventFifo.restore(state.eventFifoEvents, state.eventFifoOverflow);
