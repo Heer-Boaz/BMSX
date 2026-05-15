@@ -202,6 +202,8 @@ void InputControllerActionTable::appendBindings(
 		if (keyboardIt != defaultKeyboard.end()) {
 			const std::vector<KeyboardBinding>& defaultBindings = keyboardIt->second;
 			keyboardBindings.insert(keyboardBindings.end(), defaultBindings.begin(), defaultBindings.end());
+		} else {
+			keyboardBindings.push_back(KeyboardBinding{ binding, std::nullopt });
 		}
 		gamepadBindings.push_back(GamepadBinding{ binding, std::nullopt });
 		start = index + 1;

@@ -254,6 +254,8 @@ export class InputControllerActionTable {
 				for (let bindingIndex = 0; bindingIndex < defaultKeyboardBindings.length; bindingIndex += 1) {
 					keyboardBindings.push(defaultKeyboardBindings[bindingIndex]!);
 				}
+			} else {
+				keyboardBindings.push(binding);
 			}
 			gamepadBindings.push({ id: binding });
 			bindingStart = index + 1;

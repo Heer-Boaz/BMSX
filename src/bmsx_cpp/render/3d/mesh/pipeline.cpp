@@ -2,6 +2,7 @@
 
 #if BMSX_ENABLE_GLES2
 #include "core/console.h"
+#include "machine/runtime/runtime.h"
 #include "render/3d/mesh/rom_source.h"
 #include "render/3d/mesh/vertex_stream.h"
 #include "render/3d/shaders/render_3d_shaders.h"
@@ -269,7 +270,7 @@ void registerMeshPass_GLES2(RenderPassLibrary& registry) {
 	};
 	desc.exec = [](GPUBackend* backend, void* framebuffer, std::any& state) {
 		ConsoleCore& console = ConsoleCore::instance();
-		MeshRuntime runtime{*static_cast<OpenGLES2Backend*>(backend), *console.view(), console.activeRom()};
+		MeshRuntime runtime{*static_cast<OpenGLES2Backend*>(backend), *console.view(), console.runtime().activeRom()};
 		renderMeshBatch(runtime, framebuffer, std::any_cast<MeshPipelineState&>(state));
 	};
 	registry.registerPass(desc);
