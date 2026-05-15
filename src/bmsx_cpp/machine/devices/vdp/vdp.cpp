@@ -40,7 +40,8 @@ VDP::VDP(
 	, m_fault(memory, VDP_DEVICE_STATUS_REGISTERS)
 	, m_vram(entropySeeds)
 	, m_configuredFrameBufferSize(frameBufferSize)
-	, m_scheduler(scheduler) {
+	, m_scheduler(scheduler)
+	, m_unitRegisterPort(m_fault, m_xf, m_lpu, m_mfu, m_jtu) {
 	m_memory.setVramWriter(this);
 	m_memory.mapIoRead(IO_VDP_RD_STATUS, this, &VDP::readVdpStatusThunk);
 	m_memory.mapIoRead(IO_VDP_RD_DATA, this, &VDP::readVdpDataThunk);
@@ -523,11 +524,11 @@ u32 VDP::consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor, u32 end) {
 	const u32 packetKind = word & VDP_PKT_KIND_MASK;
 	const u32 firstRegister = m_memory.readU32(cursor);
 	const u32 registerCount = payloadWords - 1u;
-	if (!acceptUnitRegisterRange(packetKind, firstRegister, registerCount)) {
+	if (!m_unitRegisterPort.acceptRange(packetKind, firstRegister, registerCount)) {
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	for (u32 offset = 0u; offset < registerCount; ++offset) {
-		if (!writeUnitRegisterWord(packetKind, firstRegister + offset, m_memory.readU32(cursor + (offset + 1u) * IO_WORD_SIZE))) {
+		if (!m_unitRegisterPort.writeWord(packetKind, firstRegister + offset, m_memory.readU32(cursor + (offset + 1u) * IO_WORD_SIZE))) {
 			return VDP_REPLAY_PACKET_FAULT;
 		}
 	}
@@ -635,68 +636,15 @@ u32 VDP::consumeUnitRegisterPacketFromWords(const u32* words, u32 word, u32 curs
 	const u32 packetKind = word & VDP_PKT_KIND_MASK;
 	const u32 firstRegister = words[cursor];
 	const u32 registerCount = payloadWords - 1u;
-	if (!acceptUnitRegisterRange(packetKind, firstRegister, registerCount)) {
+	if (!m_unitRegisterPort.acceptRange(packetKind, firstRegister, registerCount)) {
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	for (u32 offset = 0u; offset < registerCount; ++offset) {
-		if (!writeUnitRegisterWord(packetKind, firstRegister + offset, words[cursor + offset + 1u])) {
+		if (!m_unitRegisterPort.writeWord(packetKind, firstRegister + offset, words[cursor + offset + 1u])) {
 			return VDP_REPLAY_PACKET_FAULT;
 		}
 	}
 	return cursor + payloadWords;
-}
-
-bool VDP::acceptUnitRegisterRange(u32 packetKind, u32 firstRegister, u32 registerCount) {
-	switch (packetKind) {
-		case VDP_XF_PACKET_KIND:
-			if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
-				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
-				return false;
-			}
-			return true;
-		case VDP_LPU_PACKET_KIND:
-			if (firstRegister >= VDP_LPU_REGISTER_WORDS || registerCount > VDP_LPU_REGISTER_WORDS - firstRegister) {
-				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
-				return false;
-			}
-			return true;
-		case VDP_MFU_PACKET_KIND:
-			if (firstRegister >= VDP_MFU_WEIGHT_COUNT || registerCount > VDP_MFU_WEIGHT_COUNT - firstRegister) {
-				m_fault.raise(VDP_FAULT_MDU_BAD_MORPH_RANGE, firstRegister);
-				return false;
-			}
-			return true;
-		case VDP_JTU_PACKET_KIND:
-			if (firstRegister >= VDP_JTU_REGISTER_WORDS || registerCount > VDP_JTU_REGISTER_WORDS - firstRegister) {
-				m_fault.raise(VDP_FAULT_MDU_BAD_JOINT_RANGE, firstRegister);
-				return false;
-			}
-			return true;
-	}
-	m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, packetKind);
-	return false;
-}
-
-bool VDP::writeUnitRegisterWord(u32 packetKind, u32 registerIndex, u32 value) {
-	switch (packetKind) {
-		case VDP_XF_PACKET_KIND:
-			if (!m_xf.writeRegister(registerIndex, value)) {
-				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
-				return false;
-			}
-			return true;
-		case VDP_LPU_PACKET_KIND:
-			m_lpu.registerWords[static_cast<size_t>(registerIndex)] = value;
-			return true;
-		case VDP_MFU_PACKET_KIND:
-			m_mfu.weightWords[static_cast<size_t>(registerIndex)] = value;
-			return true;
-		case VDP_JTU_PACKET_KIND:
-			m_jtu.matrixWords[static_cast<size_t>(registerIndex)] = value;
-			return true;
-	}
-	m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, packetKind);
-	return false;
 }
 
 u32 VDP::decodeReg1Packet(u32 word) const {

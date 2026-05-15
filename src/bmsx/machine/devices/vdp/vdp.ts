@@ -20,8 +20,6 @@ import {
 	VDP_FAULT_DEX_SOURCE_OOB,
 	VDP_FAULT_DEX_SOURCE_SLOT,
 	VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL,
-	VDP_FAULT_MDU_BAD_JOINT_RANGE,
-	VDP_FAULT_MDU_BAD_MORPH_RANGE,
 	VDP_FAULT_VRAM_WRITE_OOB,
 	VDP_FAULT_VRAM_SLOT_DIM,
 	VDP_FAULT_VRAM_WRITE_UNALIGNED,
@@ -111,7 +109,6 @@ import {
 import {
 	VdpLpuUnit,
 	VDP_LPU_PACKET_KIND,
-	VDP_LPU_REGISTER_WORDS,
 } from './lpu';
 import {
 	type VdpMduPacket,
@@ -125,7 +122,6 @@ import {
 	VDP_MFU_PACKET_KIND,
 } from './mfu';
 import {
-	VDP_XF_REGISTER_WORDS,
 	VDP_XF_PACKET_KIND,
 	VdpXfUnit,
 } from './xf';
@@ -214,6 +210,7 @@ import {
 } from './device_output';
 import { VdpFbmUnit } from './fbm';
 import { VdpStreamIngressUnit } from './ingress';
+import { VdpUnitRegisterPort } from './unit_register_port';
 import { VdpReadbackUnit } from './readback';
 import {
 	DEFAULT_VDP_ENTROPY_SEEDS,
@@ -304,6 +301,7 @@ export class VDP implements VramWriteSink {
 	private readonly fault: DeviceStatusLatch;
 	private readonly vdpRegisters = new Uint32Array(VDP_REGISTER_COUNT);
 	private readonly streamIngress = new VdpStreamIngressUnit();
+	private readonly unitRegisterPort: VdpUnitRegisterPort;
 	public lastFrameCommitted = true;
 	public lastFrameCost = 0;
 	public lastFrameHeld = false;
@@ -315,6 +313,7 @@ export class VDP implements VramWriteSink {
 	) {
 		this.fault = new DeviceStatusLatch(memory, VDP_DEVICE_STATUS_REGISTERS);
 		this.vram = new VdpVramUnit(entropySeeds);
+		this.unitRegisterPort = new VdpUnitRegisterPort(this.fault, this.xf, this.lpu, this.mfu, this.jtu);
 		this.memory.setVramWriter(this);
 		this.memory.mapIoRead(IO_VDP_RD_STATUS, this.readback.status.bind(this.readback));
 		this.memory.mapIoRead(IO_VDP_RD_DATA, this.readVdpData.bind(this));
@@ -818,11 +817,11 @@ export class VDP implements VramWriteSink {
 		const packetKind = word & VDP_PKT_KIND_MASK;
 		const firstRegister = this.memory.readU32(cursor);
 		const registerCount = payloadWords - 1;
-		if (!this.acceptUnitRegisterRange(packetKind, firstRegister, registerCount)) {
+		if (!this.unitRegisterPort.acceptRange(packetKind, firstRegister, registerCount)) {
 			return -1;
 		}
 		for (let offset = 0; offset < registerCount; offset += 1) {
-			if (!this.writeUnitRegisterWord(packetKind, firstRegister + offset, this.memory.readU32(cursor + (offset + 1) * IO_WORD_SIZE))) {
+			if (!this.unitRegisterPort.writeWord(packetKind, firstRegister + offset, this.memory.readU32(cursor + (offset + 1) * IO_WORD_SIZE))) {
 				return -1;
 			}
 		}
@@ -931,68 +930,15 @@ export class VDP implements VramWriteSink {
 		const packetKind = word & VDP_PKT_KIND_MASK;
 		const firstRegister = words[cursor];
 		const registerCount = payloadWords - 1;
-		if (!this.acceptUnitRegisterRange(packetKind, firstRegister, registerCount)) {
+		if (!this.unitRegisterPort.acceptRange(packetKind, firstRegister, registerCount)) {
 			return -1;
 		}
 		for (let offset = 0; offset < registerCount; offset += 1) {
-			if (!this.writeUnitRegisterWord(packetKind, firstRegister + offset, words[cursor + offset + 1])) {
+			if (!this.unitRegisterPort.writeWord(packetKind, firstRegister + offset, words[cursor + offset + 1])) {
 				return -1;
 			}
 		}
 		return cursor + payloadWords;
-	}
-
-	private acceptUnitRegisterRange(packetKind: number, firstRegister: number, registerCount: number): boolean {
-		switch (packetKind) {
-			case VDP_XF_PACKET_KIND:
-				if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
-					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
-					return false;
-				}
-				return true;
-			case VDP_LPU_PACKET_KIND:
-				if (firstRegister >= VDP_LPU_REGISTER_WORDS || registerCount > VDP_LPU_REGISTER_WORDS - firstRegister) {
-					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
-					return false;
-				}
-				return true;
-			case VDP_MFU_PACKET_KIND:
-				if (firstRegister >= this.mfu.weightWords.length || registerCount > this.mfu.weightWords.length - firstRegister) {
-					this.fault.raise(VDP_FAULT_MDU_BAD_MORPH_RANGE, firstRegister);
-					return false;
-				}
-				return true;
-			case VDP_JTU_PACKET_KIND:
-				if (firstRegister >= this.jtu.matrixWords.length || registerCount > this.jtu.matrixWords.length - firstRegister) {
-					this.fault.raise(VDP_FAULT_MDU_BAD_JOINT_RANGE, firstRegister);
-					return false;
-				}
-				return true;
-		}
-		this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, packetKind);
-		return false;
-	}
-
-	private writeUnitRegisterWord(packetKind: number, registerIndex: number, value: number): boolean {
-		switch (packetKind) {
-			case VDP_XF_PACKET_KIND:
-				if (!this.xf.writeRegister(registerIndex, value)) {
-					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
-					return false;
-				}
-				return true;
-			case VDP_LPU_PACKET_KIND:
-				this.lpu.registerWords[registerIndex] = value >>> 0;
-				return true;
-			case VDP_MFU_PACKET_KIND:
-				this.mfu.weightWords[registerIndex] = value >>> 0;
-				return true;
-			case VDP_JTU_PACKET_KIND:
-				this.jtu.matrixWords[registerIndex] = value >>> 0;
-				return true;
-		}
-		this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, packetKind);
-		return false;
 	}
 
 	private decodeReg1Packet(word: number): number {

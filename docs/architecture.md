@@ -162,6 +162,8 @@ Internal units:
 - `LPU` owns raw ambient, directional, and point-light register words.
 - `MFU` owns raw morph-weight register words.
 - `JTU` owns raw joint-matrix register words.
+- `unit_register_port` owns stream `REG1/REGN` range admission and raw
+  XF/LPU/MFU/JTU register writes.
 - `MDU` owns mesh-packet decode, mesh-source admission, and per-frame mesh draw
   emission limits.
 - `FBM` owns framebuffer pages, display pixels, and presentable display

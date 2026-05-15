@@ -26,6 +26,7 @@
 #include "machine/devices/vdp/vout.h"
 #include "machine/devices/vdp/vram.h"
 #include "machine/devices/vdp/xf.h"
+#include "machine/devices/vdp/unit_register_port.h"
 #include <array>
 #include <vector>
 
@@ -157,6 +158,7 @@ private:
 	VdpFbmUnit m_fbm;
 	VdpFrameBufferSize m_configuredFrameBufferSize;
 	DeviceScheduler& m_scheduler;
+	VdpUnitRegisterPort m_unitRegisterPort;
 
 	VdpSurfaceUploadSlot* findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode);
 	const VdpSurfaceUploadSlot* findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode) const;
@@ -236,8 +238,6 @@ private:
 	u32 consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor, u32 end);
 	u32 consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);
 	u32 consumeUnitRegisterPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);
-	bool acceptUnitRegisterRange(u32 packetKind, u32 firstRegister, u32 registerCount);
-	bool writeUnitRegisterWord(u32 packetKind, u32 registerIndex, u32 value);
 	u32 decodeReg1Packet(u32 word) const;
 	struct RegnPacket {
 		u32 firstRegister = 0;

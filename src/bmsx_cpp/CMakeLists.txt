@@ -323,6 +323,7 @@ add_library(bmsx_core STATIC
 	machine/devices/vdp/readback.cpp
 	machine/devices/vdp/registers.cpp
 	machine/devices/vdp/sbx.cpp
+	machine/devices/vdp/unit_register_port.cpp
 	machine/devices/vdp/save_state.cpp
 	machine/devices/vdp/vout.cpp
 	machine/devices/vdp/vram.cpp
