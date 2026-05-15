@@ -155,6 +155,9 @@ function spritecomponent.new(opts)
 	self.layer = opts.layer or sys_vdp_layer_world
 	self.flip = { flip_h = false, flip_v = false }
 	self.color = opts.color or 0xffffffff
+	-- colorize is a per-sprite RGBA multiplier used by various carts; ensure
+	-- it always exists as a table to avoid nil-field assignment errors.
+	self.colorize = opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
 	self.scale = opts.scale or { x = 1, y = 1 }
 	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
 	self.parallax_weight = opts.parallax_weight or 0
