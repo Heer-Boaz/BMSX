@@ -101,6 +101,9 @@ struct VdpBlitterCommandBuffer {
 	std::array<f32, VDP_BLITTER_RUN_ENTRY_CAPACITY> tileDstY{};
 
 	void reset();
+	bool beginCommandSlot(VdpBlitterCommandType commandType, u32 commandSeq, size_t& index);
+	void commitCommandSlot(size_t index, int commandRenderCost);
+	bool reserve(VdpBlitterCommandType commandType, u32 commandSeq, int commandRenderCost, size_t& index);
 };
 
 using VdpBlitterCommand = VdpBlitterCommandBuffer;

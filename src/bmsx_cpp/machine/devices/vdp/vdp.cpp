@@ -1057,16 +1057,11 @@ bool VDP::reserveBlitterCommand(BlitterCommandType opcode, int renderCost, size_
 		m_fault.raise(VDP_FAULT_SUBMIT_STATE, static_cast<uint32_t>(opcode));
 		return false;
 	}
-	BlitterCommand& queue = *m_buildFrame.queue;
-	index = queue.length;
-	if (index >= VDP_BLITTER_FIFO_CAPACITY) {
-		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(index));
+	if (!m_buildFrame.queue->reserve(opcode, m_blitterSequence, renderCost, index)) {
+		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(m_buildFrame.queue->length));
 		return false;
 	}
-	queue.opcode[index] = opcode;
-	queue.seq[index] = nextBlitterSequence();
-	queue.renderCost[index] = renderCost;
-	queue.length = index + 1u;
+	m_blitterSequence += 1u;
 	m_buildFrame.cost += renderCost;
 	return true;
 }
@@ -1771,14 +1766,12 @@ void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCo
 		return;
 	}
 	BlitterCommand& queue = *m_buildFrame.queue;
-	const size_t commandIndex = queue.length;
-	if (commandIndex >= VDP_BLITTER_FIFO_CAPACITY) {
-		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(commandIndex));
+	size_t commandIndex = 0u;
+	if (!queue.beginCommandSlot(BlitterCommandType::TileRun, m_blitterSequence, commandIndex)) {
+		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(queue.length));
 		return;
 	}
 	const size_t firstTile = queue.tileEntryCount;
-	queue.opcode[commandIndex] = BlitterCommandType::TileRun;
-	queue.seq[commandIndex] = nextBlitterSequence();
 	queue.priority[commandIndex] = priority;
 	queue.layer[commandIndex] = layer;
 	queue.color[commandIndex] = VDP_BLITTER_WHITE;
@@ -1822,8 +1815,8 @@ void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCo
 		return;
 	}
 	const int renderCost = tileRunCost(visibleRowCount, visibleNonEmptyTileCount);
-	queue.renderCost[commandIndex] = renderCost;
-	queue.length = commandIndex + 1u;
+	queue.commitCommandSlot(commandIndex, renderCost);
+	m_blitterSequence += 1u;
 	m_buildFrame.cost += renderCost;
 }
 

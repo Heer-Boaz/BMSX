@@ -8,6 +8,30 @@ void VdpBlitterCommandBuffer::reset() {
 	tileEntryCount = 0u;
 }
 
+bool VdpBlitterCommandBuffer::beginCommandSlot(VdpBlitterCommandType commandType, u32 commandSeq, size_t& index) {
+	index = length;
+	if (index >= VDP_BLITTER_FIFO_CAPACITY) {
+		return false;
+	}
+	opcode[index] = commandType;
+	seq[index] = commandSeq;
+	renderCost[index] = 0;
+	return true;
+}
+
+void VdpBlitterCommandBuffer::commitCommandSlot(size_t index, int commandRenderCost) {
+	renderCost[index] = commandRenderCost;
+	length = index + 1u;
+}
+
+bool VdpBlitterCommandBuffer::reserve(VdpBlitterCommandType commandType, u32 commandSeq, int commandRenderCost, size_t& index) {
+	if (!beginCommandSlot(commandType, commandSeq, index)) {
+		return false;
+	}
+	commitCommandSlot(index, commandRenderCost);
+	return true;
+}
+
 u8 frameBufferColorByte(f32 value) {
 	return static_cast<u8>(value * 255.0f + 0.5f);
 }

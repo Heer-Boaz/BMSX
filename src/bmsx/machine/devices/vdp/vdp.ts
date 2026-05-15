@@ -129,7 +129,7 @@ import { packedHigh16, packedLow16 } from '../../common/word';
 import {
 	VdpBlitterCommandBuffer,
 	type VdpBlitterSource,
-	VDP_BLITTER_FIFO_CAPACITY,
+	type VdpBlitterOpcode,
 	VDP_BLITTER_IMPLICIT_CLEAR,
 	VDP_BLITTER_OPCODE_BLIT,
 	VDP_BLITTER_OPCODE_CLEAR,
@@ -1243,21 +1243,17 @@ export class VDP implements VramWriteSink {
 		resetSubmittedFrameSlot(this.pendingFrame);
 	}
 
-	private reserveBlitterCommand(opcode: number, renderCost: number): number {
+	private reserveBlitterCommand(opcode: VdpBlitterOpcode, renderCost: number): number {
 		if (this.buildFrame.state === VDP_DEX_FRAME_IDLE) {
 			this.fault.raise(VDP_FAULT_SUBMIT_STATE, opcode);
 			return -1;
 		}
-		const queue = this.buildFrame.queue;
-		const index = queue.length;
-		if (index >= VDP_BLITTER_FIFO_CAPACITY) {
-			this.fault.raise(VDP_FAULT_DEX_OVERFLOW, index);
+		const index = this.buildFrame.queue.reserve(opcode, this.blitterSequence, renderCost);
+		if (index < 0) {
+			this.fault.raise(VDP_FAULT_DEX_OVERFLOW, this.buildFrame.queue.length);
 			return -1;
 		}
-		queue.opcode[index] = opcode;
-		queue.seq[index] = this.nextBlitterSequence();
-		queue.renderCost[index] = renderCost;
-		queue.length = index + 1;
+		this.blitterSequence += 1;
 		this.buildFrame.cost += renderCost;
 		return index;
 	}

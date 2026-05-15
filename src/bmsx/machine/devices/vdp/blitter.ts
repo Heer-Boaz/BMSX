@@ -136,6 +136,31 @@ export class VdpBlitterCommandBuffer {
 		this.glyphEntryCount = 0;
 		this.tileEntryCount = 0;
 	}
+
+	public beginCommandSlot(opcode: VdpBlitterOpcode, seq: number): number {
+		const index = this.length;
+		if (index >= VDP_BLITTER_FIFO_CAPACITY) {
+			return -1;
+		}
+		this.opcode[index] = opcode;
+		this.seq[index] = seq;
+		this.renderCost[index] = 0;
+		return index;
+	}
+
+	public commitCommandSlot(index: number, renderCost: number): void {
+		this.renderCost[index] = renderCost;
+		this.length = index + 1;
+	}
+
+	public reserve(opcode: VdpBlitterOpcode, seq: number, renderCost: number): number {
+		const index = this.beginCommandSlot(opcode, seq);
+		if (index < 0) {
+			return -1;
+		}
+		this.commitCommandSlot(index, renderCost);
+		return index;
+	}
 }
 
 export type VdpBlitterCommand = VdpBlitterCommandBuffer;
