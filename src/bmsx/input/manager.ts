@@ -556,9 +556,6 @@ export class Input implements RegisterablePersistent {
 	}
 
 	public static get instance(): Input {
-		if (!Input._instance) {
-			throw new Error('[Input] Input system has not been initialised. Call Input.initialize() first.');
-		}
 		return Input._instance;
 	}
 
@@ -665,31 +662,18 @@ export class Input implements RegisterablePersistent {
 		'touch', // Touchpad button
 	] as const;
 
-	/**
-	 * The mapping of keyboard key names to their corresponding gamepad button names.
-	 * We use this mapping to map keyboard keys to gamepad buttons during the polling of keyboard input and conversion to gamepad input.
-	 * @see BGamepadButton
-	 */
-	public static readonly KEYBOARDKEY2GAMEPADBUTTON = {
-		'ArrowUp': 'up',
-		'ArrowLeft': 'left',
-		'ArrowRight': 'right',
-		'ArrowDown': 'down',
-		'KeyX': 'b',
-		'KeyA': 'x',
-		'KeyZ': 'a',
-		'ShiftLeft': 'y',
-		'KeyQ': 'lb',
-		'KeyW': 'rb',
-		'Digit1': 'lt',
-		'Digit3': 'rt',
-		'ShiftRight': 'select',
-		'Enter': 'start',
-		'KeyF': 'ls',
-		'KeyG': 'rs',
-		'KeyH': 'home',
-		'KeyT': 'touch'
-	} as const;
+	private static createKeyboardToGamepadMap(keyboard: KeyboardInputMapping): Record<string, string> {
+		const inverse: Record<string, string> = {};
+		for (const action in keyboard) {
+			const bindings = keyboard[action];
+			for (let index = 0; index < bindings.length; index += 1) {
+				const binding = bindings[index]!;
+				const id = typeof binding === 'string' ? binding : binding.id;
+				inverse[id] = action;
+			}
+		}
+		return inverse;
+	}
 
 	private static readonly DEFAULT_POINTER_INPUT_MAPPING: PointerInputMapping = Object.freeze({
 		pointer_primary: ['pointer_primary'],
@@ -749,6 +733,8 @@ export class Input implements RegisterablePersistent {
 		gamepad: Input.DEFAULT_GAMEPAD_INPUT_MAPPING,
 		pointer: Input.DEFAULT_POINTER_INPUT_MAPPING,
 	});
+
+	public static readonly KEYBOARDKEY2GAMEPADBUTTON = Object.freeze(Input.createKeyboardToGamepadMap(Input.DEFAULT_KEYBOARD_INPUT_MAPPING));
 
 	private static readonly DEBUG_CAPTURE_KEYS = new Set(['F11']);
 
