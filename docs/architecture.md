@@ -341,6 +341,7 @@ State owned by ICU:
   `machine/devices/input/control_port`;
 - private sample arm, sequence, and last-cycle latches owned by
   `machine/devices/input/sample_latch`;
+- VBlank sample-edge datapath owned by `machine/devices/input/sample_edge`;
 - per-player committed action records and mapping contexts owned by
   `machine/devices/input/action_table`;
 - per-action sampled `statusWord`, signed-Q16.16 `valueQ16`, `pressTime`, and
@@ -354,8 +355,9 @@ State owned by ICU:
 
 The runtime VBlank owner enters through the ICU controller edge. The sample
 latch subunit remains private and only consumes the arm latch into sample
-sequence/last-cycle state. The controller edge then asks the input owner to
-sample players once and snapshots committed actions. Later MMIO queries enter
+sequence/last-cycle state. The mirrored sample-edge datapath then asks the
+input owner to sample players once and snapshots committed actions. Later MMIO
+queries enter
 the query port and evaluate against that ICU snapshot. A root action query
 returns the sampled action status/value words; a compound expression returns
 boolean `1`/`0` in `sys_inp_status` and zero in `sys_inp_value`.

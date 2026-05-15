@@ -75,10 +75,10 @@ They do not query live host input state.
 
 The committed action table owns the mapping context and sampled action words.
 The sample latch owns only the armed-edge sequence and last-cycle latch. The
-controller's VBlank edge service point consumes that latch, samples players
-once, and rings the action table. The runtime calls the ICU, not the sample
-latch subunit. The control port decodes commit/arm/reset command words. The
-query port evaluates query and consume latches against the action table. The
+mirrored sample-edge datapath consumes that latch, samples players once, and
+rings the action table. The runtime calls the ICU controller edge, not the
+sample latch subunit. The control port decodes commit/arm/reset command words.
+The query port evaluates query and consume latches against the action table. The
 event FIFO and output port own their CPU-visible read/control banks. The
 controller maps the remaining selected-player/action/bind/output-latch writes
 into the ICU units.
@@ -177,6 +177,7 @@ Selected-player output support is a host capability bit and is not saved.
 - TS registerfile: `src/bmsx/machine/devices/input/registers.ts`
 - TS control port: `src/bmsx/machine/devices/input/control_port.ts`
 - TS sample latch: `src/bmsx/machine/devices/input/sample_latch.ts`
+- TS sample edge: `src/bmsx/machine/devices/input/sample_edge.ts`
 - TS action table: `src/bmsx/machine/devices/input/action_table.ts`
 - TS query port: `src/bmsx/machine/devices/input/query_port.ts`
 - TS constants: `src/bmsx/machine/devices/input/contracts.ts`
@@ -187,6 +188,7 @@ Selected-player output support is a host capability bit and is not saved.
 - C++ registerfile: `src/bmsx_cpp/machine/devices/input/registers.cpp/.h`
 - C++ control port: `src/bmsx_cpp/machine/devices/input/control_port.cpp/.h`
 - C++ sample latch: `src/bmsx_cpp/machine/devices/input/sample_latch.cpp/.h`
+- C++ sample edge: `src/bmsx_cpp/machine/devices/input/sample_edge.cpp/.h`
 - C++ action table: `src/bmsx_cpp/machine/devices/input/action_table.cpp/.h`
 - C++ query port: `src/bmsx_cpp/machine/devices/input/query_port.cpp/.h`
 - C++ constants: `src/bmsx_cpp/machine/devices/input/contracts.h`

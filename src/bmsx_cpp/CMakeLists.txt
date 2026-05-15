@@ -264,6 +264,7 @@ add_library(bmsx_core STATIC
 	machine/devices/input/query_port.cpp
 	machine/devices/input/registers.cpp
 	machine/devices/input/sample_latch.cpp
+	machine/devices/input/sample_edge.cpp
 	machine/devices/input/save_state.cpp
 	machine/devices/audio/controller.cpp
 	machine/devices/irq/controller.cpp

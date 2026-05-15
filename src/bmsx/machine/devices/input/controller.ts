@@ -26,6 +26,7 @@ import { InputControllerEventFifo } from './event_fifo';
 import { InputControllerActionTable } from './action_table';
 import { InputControllerRegisterFile } from './registers';
 import { InputControllerSampleLatch } from './sample_latch';
+import { InputControllerSampleEdge } from './sample_edge';
 import { InputControllerOutputPort } from './output_port';
 import { InputControllerQueryPort } from './query_port';
 import { InputControllerControlPort } from './control_port';
@@ -34,6 +35,7 @@ export class InputController {
 	private readonly actionTable: InputControllerActionTable;
 	private readonly eventFifo: InputControllerEventFifo;
 	private readonly sampleLatch: InputControllerSampleLatch;
+	private readonly sampleEdge: InputControllerSampleEdge;
 	private readonly controlPort: InputControllerControlPort;
 	private readonly outputPort: InputControllerOutputPort;
 	private readonly queryPort: InputControllerQueryPort;
@@ -41,7 +43,7 @@ export class InputController {
 
 	public constructor(
 		private readonly memory: Memory,
-		private readonly input: Input,
+		input: Input,
 		strings: StringPool,
 	) {
 		this.actionTable = new InputControllerActionTable(input, strings);
@@ -50,6 +52,7 @@ export class InputController {
 		this.controlPort = new InputControllerControlPort(memory, this.registers, this.actionTable, this.sampleLatch);
 		this.outputPort = new InputControllerOutputPort(input, this.registers, memory);
 		this.queryPort = new InputControllerQueryPort(memory, strings, this.registers, this.actionTable);
+		this.sampleEdge = new InputControllerSampleEdge(input, this.sampleLatch, this.actionTable, this.eventFifo);
 		const registerWrite = this.registers.write.bind(this.registers);
 		this.memory.mapIoWrite(IO_INP_PLAYER, registerWrite);
 		this.memory.mapIoWrite(IO_INP_ACTION, registerWrite);
@@ -85,12 +88,9 @@ export class InputController {
 		this.registers.mirror(this.memory);
 	}
 
+	// disable-next-line single_line_method_pattern -- runtime enters at the ICU device boundary; sample_edge owns the VBlank datapath.
 	public onVblankEdge(currentTimeMs: number, nowCycles: number): void {
-		if (!this.sampleLatch.consumeVblankEdge(nowCycles)) {
-			return;
-		}
-		this.input.samplePlayers(currentTimeMs);
-		this.actionTable.sampleCommittedActions(this.eventFifo);
+		this.sampleEdge.onVblankEdge(currentTimeMs, nowCycles);
 	}
 
 	public cancelSampleArm(): void {

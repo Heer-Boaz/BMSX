@@ -9,6 +9,7 @@
 #include "machine/devices/input/query_port.h"
 #include "machine/devices/input/registers.h"
 #include "machine/devices/input/sample_latch.h"
+#include "machine/devices/input/sample_edge.h"
 #include "machine/devices/input/save_state.h"
 #include "input/manager.h"
 #include <string>
@@ -27,11 +28,11 @@ public:
 
 private:
 	Memory& m_memory;
-	Input& m_input;
 	InputControllerActionTable m_actionTable;
 	InputControllerRegisterFile m_registers;
 	InputControllerEventFifo m_eventFifo;
 	InputControllerSampleLatch m_sampleLatch;
+	InputControllerSampleEdge m_sampleEdge;
 	InputControllerControlPort m_controlPort;
 	InputControllerOutputPort m_outputPort;
 	InputControllerQueryPort m_queryPort;

@@ -4,10 +4,10 @@ namespace bmsx {
 
 InputController::InputController(Memory& memory, Input& input, const StringPool& strings)
 	: m_memory(memory)
-	, m_input(input)
 	, m_actionTable(input, strings)
 	, m_eventFifo(memory)
 	, m_sampleLatch()
+	, m_sampleEdge(input, m_sampleLatch, m_actionTable, m_eventFifo)
 	, m_controlPort(memory, m_registers, m_actionTable, m_sampleLatch)
 	, m_outputPort(input, m_registers, memory)
 	, m_queryPort(memory, strings, m_registers, m_actionTable) {
@@ -43,12 +43,9 @@ void InputController::reset() {
 	m_registers.mirror(m_memory);
 }
 
+// disable-next-line single_line_method_pattern -- runtime enters at the ICU device boundary; sample_edge owns the VBlank datapath.
 void InputController::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
-	if (!m_sampleLatch.consumeVblankEdge(nowCycles)) {
-		return;
-	}
-	m_input.samplePlayers(currentTimeMs);
-	m_actionTable.sampleCommittedActions(m_eventFifo);
+	m_sampleEdge.onVblankEdge(currentTimeMs, nowCycles);
 }
 
 void InputController::cancelSampleArm() {
