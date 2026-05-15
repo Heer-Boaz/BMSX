@@ -8,7 +8,6 @@
 #include "render/backend/gles2_backend.h"
 #include "render/gameview.h"
 #include "render/shared/bitmap_font.h"
-#include "render/shared/hardware/camera.h"
 
 #include <GLES2/gl2.h>
 #include <cmath>
@@ -123,7 +122,7 @@ void renderAxisGizmo_GLES2(OpenGLES2Backend& backend, AxisGizmoHostImageSink emi
 	}
 	auto& state = g_axisGizmo;
 	const GameView& view = *ConsoleCore::instance().view();
-	const HardwareCameraState& camera = resolveActiveHardwareCamera();
+	const VdpTransformSnapshot& transform = view.vdpTransform;
 	const f32 aspect = view.offscreenCanvasSize.x / view.offscreenCanvasSize.y;
 	const f32 w = view.viewportSize.x;
 	const f32 h = view.viewportSize.y;
@@ -141,13 +140,13 @@ void renderAxisGizmo_GLES2(OpenGLES2Backend& backend, AxisGizmoHostImageSink emi
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
-	glUniformMatrix4fv(state.uniformView, 1, GL_FALSE, camera.view.data());
+	glUniformMatrix4fv(state.uniformView, 1, GL_FALSE, transform.view.data());
 	glUniform1f(state.uniformAspect, aspect);
 	glUniform1f(state.uniformSize, AXIS_GIZMO_SIZE);
 	glUniform2f(state.uniformOffset, offsetX, offsetY);
 	glDrawArrays(GL_LINES, 0, AXIS_VERTEX_COUNT);
 
-	Render3D::mat4SkyboxFromViewInto(state.axisInvRot, camera.view);
+	state.axisInvRot = transform.skyboxView;
 	state.axisInvRot[8] = -state.axisInvRot[8];
 	state.axisInvRot[9] = -state.axisInvRot[9];
 	state.axisInvRot[10] = -state.axisInvRot[10];
@@ -155,9 +154,9 @@ void renderAxisGizmo_GLES2(OpenGLES2Backend& backend, AxisGizmoHostImageSink emi
 	glUniform2f(state.uniformOffset, offset2X, offset2Y);
 	glDrawArrays(GL_LINES, 0, AXIS_VERTEX_COUNT);
 
-	placeAxisLabel(emitHostImage, emitHostImageContext, offsetX, offsetY, camera.view[0], camera.view[1], static_cast<u32>('X'), AXIS_LABEL_X_COLOR, axisLabelScale(state.axisInvRot[8]), aspect, w, h);
-	placeAxisLabel(emitHostImage, emitHostImageContext, offsetX, offsetY, camera.view[4], camera.view[5], static_cast<u32>('Y'), AXIS_LABEL_Y_COLOR, axisLabelScale(state.axisInvRot[9]), aspect, w, h);
-	placeAxisLabel(emitHostImage, emitHostImageContext, offsetX, offsetY, camera.view[8], camera.view[9], static_cast<u32>('Z'), AXIS_LABEL_Z_COLOR, axisLabelScale(state.axisInvRot[10]), aspect, w, h);
+	placeAxisLabel(emitHostImage, emitHostImageContext, offsetX, offsetY, transform.view[0], transform.view[1], static_cast<u32>('X'), AXIS_LABEL_X_COLOR, axisLabelScale(state.axisInvRot[8]), aspect, w, h);
+	placeAxisLabel(emitHostImage, emitHostImageContext, offsetX, offsetY, transform.view[4], transform.view[5], static_cast<u32>('Y'), AXIS_LABEL_Y_COLOR, axisLabelScale(state.axisInvRot[9]), aspect, w, h);
+	placeAxisLabel(emitHostImage, emitHostImageContext, offsetX, offsetY, transform.view[8], transform.view[9], static_cast<u32>('Z'), AXIS_LABEL_Z_COLOR, axisLabelScale(state.axisInvRot[10]), aspect, w, h);
 	placeAxisLabel(emitHostImage, emitHostImageContext, offset2X, offset2Y, state.axisInvRot[0], state.axisInvRot[1], static_cast<u32>('R'), AXIS_LABEL_R_COLOR, axisLabelScale(state.axisInvRot[8]), aspect, w, h);
 	placeAxisLabel(emitHostImage, emitHostImageContext, offset2X, offset2Y, state.axisInvRot[4], state.axisInvRot[5], static_cast<u32>('U'), AXIS_LABEL_U_COLOR, axisLabelScale(state.axisInvRot[9]), aspect, w, h);
 	placeAxisLabel(emitHostImage, emitHostImageContext, offset2X, offset2Y, state.axisInvRot[8], state.axisInvRot[9], static_cast<u32>('F'), AXIS_LABEL_F_COLOR, axisLabelScale(state.axisInvRot[10]), aspect, w, h);

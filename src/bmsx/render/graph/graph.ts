@@ -9,8 +9,6 @@ import { GPUBackend, TextureHandle } from '../backend/backend';
 import { RenderPassBuilder } from '../backend/pass/builder';
 import { checkWebGLError } from '../backend/webgl/helpers';
 import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/backend';
-import { GameView } from '../gameview';
-import { hardwareCameraBank0 } from '../shared/hardware/camera';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;
@@ -24,23 +22,10 @@ export interface TexDesc {
 	transient?: boolean; // hint: contents not needed after pass (storeOp dont_care)
 }
 
-export interface View {
-	name: string;
-	viewport: { x: number; y: number; w: number; h: number; };
-	viewMatrix: Float32Array;
-	projMatrix: Float32Array;
-	viewProj: Float32Array;
-	invView: Float32Array;
-	invProj: Float32Array;
-	cameraPos: Float32Array | { x: number; y: number; z: number };
-	flags?: number; // bit flags for skybox, ui, etc.
-}
-
 export interface FrameData {
 	frameIndex: number;
 	time: number;
 	delta: number;
-	views: View[];
 }
 
 // FrameData helpers (moved here to simplify file structure)
@@ -53,30 +38,12 @@ export function updateExternalFrameTiming(frameIndex: number, timeSeconds: numbe
 	extDeltaSeconds = deltaSeconds;
 }
 
-export function buildFrameData(view: GameView): FrameData {
-	const mainCam = hardwareCameraBank0;
-	const views: View[] = [];
-	const invView = mainCam.inverseView;
-	const invProj = mainCam.inverseProjection;
-	const cameraPos = mainCam.position;
-	views.push({
-		name: 'Main',
-		viewport: { x: 0, y: 0, w: view.offscreenCanvasSize.x, h: view.offscreenCanvasSize.y },
-		viewMatrix: mainCam.view,
-		projMatrix: mainCam.projection,
-		viewProj: mainCam.viewProjection,
-		invView,
-		invProj,
-		cameraPos,
-		flags: 0,
-	});
-	const frame: FrameData = {
+export function buildFrameData(): FrameData {
+	return {
 		frameIndex: extFrameIndex,
 		time: extTimeSeconds,
 		delta: extDeltaSeconds,
-		views,
 	};
-	return frame;
 }
 
 // Pass authoring interfaces -------------------------------------------------

@@ -16,7 +16,6 @@ import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
 import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
-import { resetHardwareCameraBank0 } from '../../render/shared/hardware/camera';
 import { restoreVdpContextState } from '../../render/vdp/context_state';
 import { clearRuntimeDebuggerPause } from './debug_pause';
 import {
@@ -313,7 +312,6 @@ export function resetFrameState(runtime: Runtime): void {
 export function resetHardwareState(runtime: Runtime): void {
 	runtime.machine.resetDevices();
 	runtime.vblank.reset();
-	resetHardwareCameraBank0();
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {

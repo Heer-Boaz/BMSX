@@ -15,10 +15,7 @@
 #include "machine/devices/vdp/vout.h"
 #include "machine/firmware/builtin_descriptors.h"
 #include "machine/firmware/system_globals.h"
-#include "render/3d/camera.h"
 #include "render/3d/light.h"
-#include "render/shared/camera_state.h"
-#include "render/shared/hardware/camera.h"
 #include "rompack/metadata.h"
 #include "rompack/source.h"
 #include "rompack/toc.h"
@@ -2408,12 +2405,6 @@ void testSystemGlobalsGeometryContractGolden() {
 }
 
 void testRenderSchemaGolden() {
-	const bmsx::Render3D::Mat4 resetProjection = bmsx::buildResetCameraProjection();
-	require(resetProjection[0] > 0.0f && resetProjection[5] > 0.0f, "reset camera projection should have focal scale");
-	bmsx::resetHardwareCameraBank0();
-	const bmsx::ResolvedCameraState camera = bmsx::resolveCameraState();
-	require(camera.view[0] == 1.0f && camera.skyboxView[15] == 1.0f, "resolved camera state should expose reset matrices");
-	require(camera.camPos.x == 0.0f && camera.camPos.y == 0.0f && camera.camPos.z == 0.0f, "resolved camera position should reset to origin");
 	bmsx::AmbientLight light{{1.0f, 0.5f, 0.25f}, 2.0f};
 	require(light.color[0] == 1.0f && light.intensity == 2.0f, "light schema should carry color and intensity");
 }

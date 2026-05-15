@@ -344,7 +344,7 @@ export class GameView implements RenderContext {
 			updateExternalFrameTiming(this.renderFrameIndex, nowSeconds, nowSeconds - this.lastRenderTimeSeconds);
 			this.renderFrameIndex += 1;
 			this.lastRenderTimeSeconds = nowSeconds;
-			const frame = buildFrameData(this);
+			const frame = buildFrameData();
 			renderGraph.execute(frame);
 			this.finalizePresentation();
 		} finally {

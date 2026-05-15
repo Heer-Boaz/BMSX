@@ -2,10 +2,8 @@ import { consoleCore } from '../../core/console';
 import axisFS from './shaders/axis_gizmo.frag.glsl';
 import axisVS from './shaders/axis_gizmo.vert.glsl';
 import type { color } from '../shared/submissions';
-import { M4 } from './math';
 import { WebGLBackend } from '../backend/webgl/backend';
 import { clamp } from '../../common/clamp';
-import { hardwareCameraBank0 } from '../shared/hardware/camera';
 
 let vao: WebGLVertexArrayObject = null;
 let program: WebGLProgram = null;
@@ -115,9 +113,8 @@ export function renderAxisGizmo_WebGL(backend: WebGLBackend, emitHostImage: Axis
 		throw new Error('[AxisGizmo] Pipeline was not bootstrapped.');
 	}
 	const gl = backend.gl as WebGL2RenderingContext;
-	const cam = hardwareCameraBank0;
-	const view = cam.view;
 	const gv = consoleCore.view;
+	const view = gv.vdpTransform.view;
 	if (gv.offscreenCanvasSize.y === 0 || gv.viewportSize.x === 0 || gv.viewportSize.y === 0) {
 		throw new Error('[AxisGizmo] Viewport size is not initialized.');
 	}
@@ -152,7 +149,7 @@ export function renderAxisGizmo_WebGL(backend: WebGLBackend, emitHostImage: Axis
 	const offset2X = offsetX - spacingNDC;
 	const offset2Y = offsetY;
 
-	M4.skyboxFromViewInto(axisInvRot, view);
+	axisInvRot.set(gv.vdpTransform.skyboxView);
 	axisInvRot[8] = -axisInvRot[8];
 	axisInvRot[9] = -axisInvRot[9];
 	axisInvRot[10] = -axisInvRot[10];

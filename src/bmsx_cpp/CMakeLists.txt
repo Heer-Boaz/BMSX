@@ -199,7 +199,6 @@ add_library(bmsx_core STATIC
 	# Render systems
 	render/backend/backend.cpp
 	render/3d/math.cpp
-	render/3d/camera.cpp
 	render/3d/axis_gizmo_pipeline.cpp
 	render/3d/mesh/pipeline.cpp
 	render/3d/mesh/rom_source.cpp
@@ -209,12 +208,10 @@ add_library(bmsx_core STATIC
 	render/gameview.cpp
 	render/backend/frame_uniforms.cpp
 	render/lighting/system.cpp
-	render/shared/camera_state.cpp
 	render/host_overlay/pipeline.cpp
 	render/host_overlay/overlay_queue.cpp
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/renderer.cpp
-	render/shared/hardware/camera.cpp
 	render/vdp/context_state.cpp
 	render/vdp/framebuffer.cpp
 	render/vdp/surfaces.cpp

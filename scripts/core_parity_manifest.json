@@ -324,7 +324,6 @@
 		"src/bmsx/machine/runtime/system_irq.ts",
 		"src/bmsx/render/host_overlay/pipeline.ts",
 		"src/bmsx/render/runtime_state.ts",
-		"src/bmsx/render/shared/camera_state.ts",
 		"src/bmsx/render/shared/glyph_runs.ts",
 		"src/bmsx/render/vdp/source_pixels.ts",
 		"src/bmsx/rompack/format.ts",
@@ -824,39 +823,6 @@
 				{
 					"symbol": "vec3arr",
 					"reason": "TS uses fixed tuple arrays for vec3arr; C++ uses std::array with the same three f32 lanes."
-				}
-			]
-		},
-		{
-			"ts": "src/bmsx/render/shared/camera_state.ts",
-			"cpp": [
-				"src/bmsx_cpp/render/shared/camera_state.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "ResolvedCameraState",
-					"field": "view",
-					"reason": "TS resolved camera view matrix is a Float32Array view; C++ exposes the same matrix as a native Mat4 reference."
-				},
-				{
-					"symbol": "ResolvedCameraState",
-					"field": "proj",
-					"reason": "TS resolved camera projection matrix is a Float32Array view; C++ exposes the same matrix as a native Mat4 reference."
-				},
-				{
-					"symbol": "ResolvedCameraState",
-					"field": "viewProj",
-					"reason": "TS resolved camera view-projection matrix is a Float32Array view; C++ exposes the same matrix as a native Mat4 reference."
-				},
-				{
-					"symbol": "ResolvedCameraState",
-					"field": "skyboxView",
-					"reason": "TS resolved skybox matrix is a Float32Array view; C++ exposes the same matrix as a native Mat4 reference."
-				},
-				{
-					"symbol": "ResolvedCameraState",
-					"field": "camPos",
-					"reason": "TS resolved camera position uses the rompack vec3 alias; C++ exposes the same vector as a native Vec3 reference."
 				}
 			]
 		},
