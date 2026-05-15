@@ -103,23 +103,6 @@ export interface ApuAudioSource {
 	generatorDutyQ12: number;
 }
 
-export function apuParameterProgramsSourceBuffer(parameterIndex: number): boolean {
-	switch (parameterIndex) {
-		case APU_PARAMETER_SOURCE_ADDR_INDEX:
-		case APU_PARAMETER_SOURCE_BYTES_INDEX:
-		case APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX:
-		case APU_PARAMETER_SOURCE_CHANNELS_INDEX:
-		case APU_PARAMETER_SOURCE_BITS_PER_SAMPLE_INDEX:
-		case APU_PARAMETER_SOURCE_FRAME_COUNT_INDEX:
-		case APU_PARAMETER_SOURCE_DATA_OFFSET_INDEX:
-		case APU_PARAMETER_SOURCE_DATA_BYTES_INDEX:
-		case APU_PARAMETER_GENERATOR_KIND_INDEX:
-			return true;
-		default:
-			return false;
-	}
-}
-
 export function advanceApuPlaybackCursorQ16(cursorQ16: number, samples: number, rateStepQ16: number, sourceSampleRateHz: number): number {
 	const deltaNumerator = samples * rateStepQ16 * sourceSampleRateHz;
 	return cursorQ16 + (deltaNumerator - (deltaNumerator % APU_SAMPLE_RATE_HZ)) / APU_SAMPLE_RATE_HZ;
