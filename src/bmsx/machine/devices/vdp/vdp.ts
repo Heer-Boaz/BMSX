@@ -1833,8 +1833,7 @@ export class VDP implements VramWriteSink {
 			this.fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
 			return;
 		}
-		sink.consumeVdpFrameBufferPresentation(this.fbm.buildPresentation(slot.cpuReadback));
-		this.fbm.clearPresentation();
+		this.fbm.drainPresentation(sink, slot.cpuReadback);
 	}
 
 	public syncFrameBufferPresentation(sink: VdpFrameBufferPresentationSink): void {
@@ -1843,11 +1842,8 @@ export class VDP implements VramWriteSink {
 			this.fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
 			return;
 		}
-		sink.consumeVdpFrameBufferPresentation(this.fbm.buildPresentation(slot.cpuReadback, true));
+		this.fbm.syncPresentation(sink, slot.cpuReadback);
 		this.vram.clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
-		if (this.fbm.hasPendingPresentation) {
-			this.fbm.clearPresentation();
-		}
 	}
 
 	// disable-next-line single_line_method_pattern -- VDP exposes the host surface-upload boundary; VRAM owns the retained upload payload and dirty spans.

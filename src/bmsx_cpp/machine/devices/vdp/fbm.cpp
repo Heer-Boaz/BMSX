@@ -79,6 +79,21 @@ void VdpFbmUnit::clearPresentation() {
 	m_state = VdpFbmState::PagePresented;
 }
 
+void VdpFbmUnit::drainPresentation(VdpFrameBufferPresentationSink& sink, const std::vector<u8>& renderReadback) {
+	if (!hasPendingPresentation()) {
+		return;
+	}
+	sink.consumeVdpFrameBufferPresentation(buildPresentation(renderReadback));
+	clearPresentation();
+}
+
+void VdpFbmUnit::syncPresentation(VdpFrameBufferPresentationSink& sink, const std::vector<u8>& renderReadback) {
+	sink.consumeVdpFrameBufferPresentation(buildPresentation(renderReadback, true));
+	if (hasPendingPresentation()) {
+		clearPresentation();
+	}
+}
+
 void VdpFbmUnit::resetPresentation() {
 	m_presentationCount = 0u;
 	m_presentationRequiresFullSync = false;

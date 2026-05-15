@@ -1075,8 +1075,7 @@ void VDP::drainFrameBufferPresentation(VdpFrameBufferPresentationSink& sink) {
 		m_fault.raise(VDP_FAULT_RD_SURFACE, VDP_RD_SURFACE_FRAMEBUFFER);
 		return;
 	}
-	sink.consumeVdpFrameBufferPresentation(m_fbm.buildPresentation(slot->cpuReadback));
-	m_fbm.clearPresentation();
+	m_fbm.drainPresentation(sink, slot->cpuReadback);
 }
 
 void VDP::syncFrameBufferPresentation(VdpFrameBufferPresentationSink& sink) {
@@ -1084,11 +1083,8 @@ void VDP::syncFrameBufferPresentation(VdpFrameBufferPresentationSink& sink) {
 	if (slot == nullptr) {
 		return;
 	}
-	sink.consumeVdpFrameBufferPresentation(m_fbm.buildPresentation(slot->cpuReadback, true));
+	m_fbm.syncPresentation(sink, slot->cpuReadback);
 	m_vram.clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
-	if (m_fbm.hasPendingPresentation()) {
-		m_fbm.clearPresentation();
-	}
 }
 
 bool VDP::beginSubmittedFrame(VdpDexFrameState state) {

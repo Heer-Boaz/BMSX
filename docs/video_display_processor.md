@@ -3,7 +3,7 @@
 This is the CPU-visible contract for the Video Display Processor (VDP). The VDP
 is a machine device with raw register words, command doorbells, FIFO/stream
 packet ingress, VRAM/surface memory, subunit state machines, status/fault
-latches, scheduler-visible render work, and a VOUT host-output transaction edge.
+latches, scheduler-visible render work, an FBM presentation transaction, and a VOUT host-output transaction edge.
 
 Host renderers consume VOUT transactions. They do not receive cart intent such
 as sprites, rectangles, labels, glyph runs, tile runs, or scene objects.

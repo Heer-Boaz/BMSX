@@ -171,8 +171,8 @@ Internal units:
   XF/LPU/MFU/JTU register writes.
 - `MDU` owns mesh-packet decode, mesh-source admission, and per-frame mesh draw
   emission limits.
-- `FBM` owns framebuffer pages, display pixels, and presentable display
-  dimensions.
+- `FBM` owns framebuffer pages, display pixels, presentation transactions, and
+  presentable display dimensions.
 - `XF` owns transform register words.
 - `VOUT` owns live, frame-sealed, and visible host-output buffers, including
   mesh draw records plus sampled LPU/MFU/JTU words, scanout phase, beam

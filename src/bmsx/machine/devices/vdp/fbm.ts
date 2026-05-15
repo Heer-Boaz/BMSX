@@ -1,4 +1,4 @@
-import { createVdpDirtySpans, type VdpDirtySpan, type VdpFrameBufferPresentation, type VdpSurfaceUploadSlot } from './device_output';
+import { createVdpDirtySpans, type VdpDirtySpan, type VdpFrameBufferPresentation, type VdpFrameBufferPresentationSink, type VdpSurfaceUploadSlot } from './device_output';
 
 export const VDP_FBM_STATE_PAGE_WRITABLE = 0;
 export const VDP_FBM_STATE_PAGE_PENDING_PRESENT = 1;
@@ -139,6 +139,21 @@ export class VdpFbmUnit {
 		}
 		this.resetPresentation();
 		this._state = VDP_FBM_STATE_PAGE_PRESENTED;
+	}
+
+	public drainPresentation(sink: VdpFrameBufferPresentationSink, renderReadback: Uint8Array): void {
+		if (!this.hasPendingPresentation) {
+			return;
+		}
+		sink.consumeVdpFrameBufferPresentation(this.buildPresentation(renderReadback));
+		this.clearPresentation();
+	}
+
+	public syncPresentation(sink: VdpFrameBufferPresentationSink, renderReadback: Uint8Array): void {
+		sink.consumeVdpFrameBufferPresentation(this.buildPresentation(renderReadback, true));
+		if (this.hasPendingPresentation) {
+			this.clearPresentation();
+		}
 	}
 
 	private resetPresentation(): void {

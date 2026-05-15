@@ -28,6 +28,8 @@ public:
 	void copyReadbackPixelsFrom(const std::vector<u8>& source, u32 x, u32 y, u32 width, u32 height, u8* out);
 	const VdpFrameBufferPresentation& buildPresentation(const std::vector<u8>& renderReadback, bool forceFullSync = false);
 	void clearPresentation();
+	void drainPresentation(VdpFrameBufferPresentationSink& sink, const std::vector<u8>& renderReadback);
+	void syncPresentation(VdpFrameBufferPresentationSink& sink, const std::vector<u8>& renderReadback);
 
 private:
 	void resetPresentation();
