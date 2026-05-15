@@ -23,17 +23,17 @@ const InputControllerEventState& InputControllerEventFifo::front() const {
 	return m_slots[m_readIndex];
 }
 
-void InputControllerEventFifo::push(u32 player, const InputControllerActionState& action) {
+void InputControllerEventFifo::push(u32 player, StringId actionStringId, u32 statusWord, u32 valueQ16, u32 repeatCount) {
 	if (m_queuedCount == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
 		m_overflowLatched = true;
 		return;
 	}
 	InputControllerEventState& slot = m_slots[m_writeIndex];
 	slot.player = player;
-	slot.actionStringId = action.actionStringId;
-	slot.statusWord = action.statusWord;
-	slot.valueQ16 = action.valueQ16;
-	slot.repeatCount = action.repeatCount;
+	slot.actionStringId = actionStringId;
+	slot.statusWord = statusWord;
+	slot.valueQ16 = valueQ16;
+	slot.repeatCount = repeatCount;
 	m_writeIndex += 1u;
 	if (m_writeIndex == INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
 		m_writeIndex = 0u;

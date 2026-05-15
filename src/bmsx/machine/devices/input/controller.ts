@@ -1,6 +1,4 @@
 import { Input } from '../../../input/manager';
-import { ActionDefinitionEvaluator } from '../../../input/action_parser';
-import type { BGamepadButton, GamepadBinding, GamepadInputMapping, KeyboardBinding, KeyboardInputMapping } from '../../../input/models';
 import {
 	INP_CTRL_COMMIT,
 	INP_CTRL_ARM,
@@ -28,80 +26,24 @@ import {
 } from '../../bus/io';
 import { Memory } from '../../memory/memory';
 import { asStringId, StringValue, type Value } from '../../cpu/cpu';
-import type { StringId, StringPool } from '../../cpu/string_pool';
-import type { InputControllerActionState, InputControllerRegisterState, InputControllerState } from './save_state';
+import type { StringPool } from '../../cpu/string_pool';
+import type { InputControllerState } from './save_state';
 import { InputControllerEventFifo } from './event_fifo';
+import { InputControllerActionTable, type InputControllerQueryResult } from './action_table';
+import { createInputControllerRegisterState } from './registers';
 import {
-	createInputActionSnapshot,
 	decodeInputOutputIntensityQ16,
-	encodeInputActionValueQ16,
-	INP_EVENT_ACTION_STATUS_MASK,
 	INP_EVENT_CTRL_CLEAR,
 	INP_EVENT_CTRL_POP,
 	INP_OUTPUT_CTRL_APPLY,
 	INP_OUTPUT_STATUS_SUPPORTED,
-	INP_STATUS_CONSUMED,
-	INPUT_CONTROLLER_PLAYER_COUNT,
-	packInputActionStatus,
 } from './contracts';
 
-const INP_CONTEXT_ID = 'inp_chip';
-type PlayerChipState = {
-	keyboard: KeyboardInputMapping;
-	gamepad: GamepadInputMapping;
-	actions: InputControllerActionState[];
-	contextPushed: boolean;
-};
-
-const EMPTY_ACTION_SNAPSHOT: InputControllerActionState = {
-	actionStringId: 0,
-	bindStringId: 0,
-	statusWord: 0,
-	valueQ16: 0,
-	pressTime: 0,
-	repeatCount: 0,
-};
-const COMPLEX_QUERY_ACTION_SNAPSHOT: InputControllerActionState = {
-	actionStringId: 0,
-	bindStringId: 0,
-	statusWord: 1,
-	valueQ16: 0,
-	pressTime: 0,
-	repeatCount: 0,
-};
-
-function createResetRegisters(): InputControllerRegisterState {
-	return {
-		player: 1,
-		actionStringId: 0,
-		bindStringId: 0,
-		ctrl: 0,
-		queryStringId: 0,
-		status: 0,
-		value: 0,
-		consumeStringId: 0,
-		outputIntensityQ16: 0,
-		outputDurationMs: 0,
-	};
-}
-
-function createPlayerChipStates(): PlayerChipState[] {
-	const states = new Array<PlayerChipState>(INPUT_CONTROLLER_PLAYER_COUNT);
-	for (let index = 0; index < states.length; index += 1) {
-		states[index] = {
-			keyboard: {},
-			gamepad: {},
-			actions: [],
-			contextPushed: false,
-		};
-	}
-	return states;
-}
-
 export class InputController {
-	private readonly playerStates = createPlayerChipStates();
+	private readonly actionTable: InputControllerActionTable;
 	private readonly eventFifo = new InputControllerEventFifo();
-	private registers = createResetRegisters();
+	private readonly queryResult: InputControllerQueryResult = { statusWord: 0, valueQ16: 0 };
+	private registers = createInputControllerRegisterState();
 	private sampleArmed = false;
 	private sampleSequence = 0;
 	private lastSampleCycle = 0;
@@ -111,6 +53,7 @@ export class InputController {
 		private readonly input: Input,
 		private readonly strings: StringPool,
 	) {
+		this.actionTable = new InputControllerActionTable(input, strings);
 		this.memory.mapIoWrite(IO_INP_PLAYER, this.onRegisterWrite.bind(this));
 		this.memory.mapIoWrite(IO_INP_ACTION, this.onRegisterWrite.bind(this));
 		this.memory.mapIoWrite(IO_INP_BIND, this.onRegisterWrite.bind(this));
@@ -137,11 +80,8 @@ export class InputController {
 		this.sampleArmed = false;
 		this.sampleSequence = 0;
 		this.lastSampleCycle = 0;
-		for (let playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
-			const state = this.playerStates[playerIndex - 1]!;
-			this.clearPlayerActions(playerIndex, state);
-		}
-		this.registers = createResetRegisters();
+		this.actionTable.reset();
+		this.registers = createInputControllerRegisterState();
 		this.eventFifo.clear();
 		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
@@ -159,7 +99,7 @@ export class InputController {
 		this.sampleSequence = (this.sampleSequence + 1) >>> 0;
 		this.lastSampleCycle = nowCycles >>> 0;
 		this.input.samplePlayers(currentTimeMs);
-		this.sampleCommittedActions();
+		this.actionTable.sampleCommittedActions(this.eventFifo);
 		this.sampleArmed = false;
 	}
 
@@ -169,26 +109,18 @@ export class InputController {
 			sampleSequence: this.sampleSequence,
 			lastSampleCycle: this.lastSampleCycle,
 			registers: { ...this.registers },
-			players: this.playerStates.map(state => ({
-				actions: state.actions.map(action => ({ ...action })),
-			})),
+			players: this.actionTable.capturePlayers(),
 			eventFifoEvents: this.eventFifo.captureEvents(),
 			eventFifoOverflow: this.eventFifo.overflow,
 		};
 	}
 
 	public restoreState(state: InputControllerState): void {
-		for (let playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
-			this.clearPlayerActions(playerIndex, this.playerStates[playerIndex - 1]!);
-		}
 		this.sampleArmed = state.sampleArmed;
 		this.sampleSequence = state.sampleSequence;
 		this.lastSampleCycle = state.lastSampleCycle;
 		this.registers = { ...state.registers };
-		for (let playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
-			const restoredPlayer = state.players[playerIndex - 1]!;
-			this.restorePlayerActions(playerIndex, this.playerStates[playerIndex - 1]!, restoredPlayer.actions);
-		}
+		this.actionTable.restorePlayers(state.players);
 		this.eventFifo.restore(state.eventFifoEvents, state.eventFifoOverflow);
 		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
@@ -230,7 +162,7 @@ export class InputController {
 		this.registers.ctrl = command;
 		switch (command) {
 			case INP_CTRL_COMMIT:
-				this.commitAction();
+				this.actionTable.commitAction(this.registers.player, this.registers.actionStringId, this.registers.bindStringId);
 				return;
 			case INP_CTRL_ARM:
 				this.sampleArmed = true;
@@ -298,115 +230,18 @@ export class InputController {
 
 	private queryAction(): void {
 		const queryText = this.strings.toString(this.registers.queryStringId);
-		const state = this.playerStates[this.registers.player - 1]!;
-		const triggered = ActionDefinitionEvaluator.checkActionTriggered(
-			queryText,
-			(actionName) => this.createSnapshotActionState(state, actionName),
-		);
-		if (!triggered) {
-			this.writeResult(0, 0);
-			return;
-		}
-		const selectedAction = this.selectQuerySnapshotAction(state, queryText);
-		this.writeResult(selectedAction.statusWord, selectedAction.valueQ16);
+		this.actionTable.queryAction(this.registers.player, queryText, this.queryResult);
+		this.writeResult(this.queryResult.statusWord, this.queryResult.valueQ16);
 	}
 
 	private consumeActions(): void {
 		const actionNames = this.strings.toString(this.registers.consumeStringId);
-		const playerInput = this.input.getPlayerInput(this.registers.player);
-		const state = this.playerStates[this.registers.player - 1]!;
-		let actionStart = 0;
-		for (let index = 0; index <= actionNames.length; index += 1) {
-			if (index !== actionNames.length && actionNames.charCodeAt(index) !== 44) {
-				continue;
-			}
-			const actionName = actionNames.slice(actionStart, index);
-			playerInput.consumeAction(actionName);
-			this.markSnapshotActionConsumed(state, actionName);
-			actionStart = index + 1;
-		}
-	}
-
-	private commitAction(): void {
-		const playerIndex = this.registers.player;
-		const state = this.playerStates[playerIndex - 1]!;
-		this.installActionMapping(state, this.registers.actionStringId, this.registers.bindStringId);
-		this.upsertAction(state, this.registers.actionStringId, this.registers.bindStringId);
-		const playerInput = this.input.getPlayerInput(playerIndex);
-		playerInput.pushContext(INP_CONTEXT_ID, state.keyboard, state.gamepad, {});
-		state.contextPushed = true;
+		this.actionTable.consumeActions(this.registers.player, actionNames);
 	}
 
 	private resetActions(): void {
-		const playerIndex = this.registers.player;
-		const state = this.playerStates[playerIndex - 1]!;
-		this.clearPlayerActions(playerIndex, state);
+		this.actionTable.resetActions(this.registers.player);
 		this.writeResult(0, 0);
-	}
-
-	private clearPlayerActions(playerIndex: number, state: PlayerChipState): void {
-		if (state.contextPushed) {
-			this.input.getPlayerInput(playerIndex).clearContext(INP_CONTEXT_ID);
-		}
-		state.keyboard = {};
-		state.gamepad = {};
-		state.actions = [];
-		state.contextPushed = false;
-	}
-
-	private restorePlayerActions(playerIndex: number, state: PlayerChipState, actions: readonly InputControllerActionState[]): void {
-		for (let index = 0; index < actions.length; index += 1) {
-			const action = actions[index]!;
-			this.installActionMapping(state, action.actionStringId, action.bindStringId);
-			state.actions.push({ ...action });
-		}
-		if (state.actions.length > 0) {
-			this.input.getPlayerInput(playerIndex).pushContext(INP_CONTEXT_ID, state.keyboard, state.gamepad, {});
-			state.contextPushed = true;
-		}
-	}
-
-	private installActionMapping(state: PlayerChipState, actionStringId: StringId, bindStringId: StringId): void {
-		const actionName = this.strings.toString(actionStringId);
-		const bindingsText = this.strings.toString(bindStringId);
-		const keyboardBindings: KeyboardBinding[] = [];
-		const gamepadBindings: GamepadBinding[] = [];
-		this.appendBindings(bindingsText, keyboardBindings, gamepadBindings);
-		state.keyboard[actionName] = keyboardBindings;
-		state.gamepad[actionName] = gamepadBindings;
-	}
-
-	private upsertAction(state: PlayerChipState, actionStringId: StringId, bindStringId: StringId): void {
-		for (let index = 0; index < state.actions.length; index += 1) {
-			const action = state.actions[index]!;
-			if (action.actionStringId === actionStringId) {
-				action.bindStringId = bindStringId;
-				action.statusWord = 0;
-				action.valueQ16 = 0;
-				action.pressTime = 0;
-				action.repeatCount = 0;
-				return;
-			}
-		}
-		state.actions.push({ actionStringId, bindStringId, statusWord: 0, valueQ16: 0, pressTime: 0, repeatCount: 0 });
-	}
-
-	private sampleCommittedActions(): void {
-		for (let playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
-			const state = this.playerStates[playerIndex - 1]!;
-			const playerInput = this.input.getPlayerInput(playerIndex);
-			for (let actionIndex = 0; actionIndex < state.actions.length; actionIndex += 1) {
-				const action = state.actions[actionIndex]!;
-				const actionState = playerInput.getActionState(this.strings.toString(action.actionStringId));
-				action.statusWord = packInputActionStatus(actionState);
-				action.valueQ16 = encodeInputActionValueQ16(actionState);
-				action.pressTime = actionState.presstime ?? 0;
-				action.repeatCount = actionState.repeatcount >>> 0;
-				if ((action.statusWord & INP_EVENT_ACTION_STATUS_MASK) !== 0) {
-					this.eventFifo.push(playerIndex, action);
-				}
-			}
-		}
 	}
 
 	private readOutputStatus(): number {
@@ -419,40 +254,6 @@ export class InputController {
 			duration: this.registers.outputDurationMs,
 			intensity: decodeInputOutputIntensityQ16(this.registers.outputIntensityQ16),
 		});
-	}
-
-
-	private createSnapshotActionState(state: PlayerChipState, actionName: string) {
-		const action = this.findSnapshotAction(state, actionName);
-		return createInputActionSnapshot(actionName, action.statusWord, action.valueQ16, action.pressTime, action.repeatCount);
-	}
-
-	private selectQuerySnapshotAction(state: PlayerChipState, queryText: string): InputControllerActionState {
-		const actionName = ActionDefinitionEvaluator.getSimpleActionName(queryText);
-		if (actionName === undefined) {
-			return COMPLEX_QUERY_ACTION_SNAPSHOT;
-		}
-		return this.findSnapshotAction(state, actionName);
-	}
-
-	private findSnapshotAction(state: PlayerChipState, actionName: string): InputControllerActionState {
-		for (let index = 0; index < state.actions.length; index += 1) {
-			const action = state.actions[index]!;
-			if (this.strings.toString(action.actionStringId) === actionName) {
-				return action;
-			}
-		}
-		return EMPTY_ACTION_SNAPSHOT;
-	}
-
-	private markSnapshotActionConsumed(state: PlayerChipState, actionName: string): void {
-		for (let index = 0; index < state.actions.length; index += 1) {
-			const action = state.actions[index]!;
-			if (this.strings.toString(action.actionStringId) === actionName) {
-				action.statusWord = (action.statusWord | INP_STATUS_CONSUMED) >>> 0;
-				return;
-			}
-		}
 	}
 
 	private writeResult(status: number, value: number): void {
@@ -473,23 +274,5 @@ export class InputController {
 		this.memory.writeIoValue(IO_INP_CONSUME, StringValue.get(this.registers.consumeStringId));
 		this.memory.writeIoValue(IO_INP_OUTPUT_INTENSITY_Q16, this.registers.outputIntensityQ16);
 		this.memory.writeIoValue(IO_INP_OUTPUT_DURATION_MS, this.registers.outputDurationMs);
-	}
-
-	private appendBindings(bindingsText: string, keyboardBindings: KeyboardBinding[], gamepadBindings: GamepadBinding[]): void {
-		let bindingStart = 0;
-		for (let index = 0; index <= bindingsText.length; index += 1) {
-			if (index !== bindingsText.length && bindingsText.charCodeAt(index) !== 44) {
-				continue;
-			}
-			const binding = bindingsText.slice(bindingStart, index) as BGamepadButton;
-			const defaultKeyboardBindings = Input.DEFAULT_INPUT_MAPPING.keyboard[binding];
-			if (defaultKeyboardBindings) {
-				for (let bindingIndex = 0; bindingIndex < defaultKeyboardBindings.length; bindingIndex += 1) {
-					keyboardBindings.push(defaultKeyboardBindings[bindingIndex]!);
-				}
-			}
-			gamepadBindings.push({ id: binding });
-			bindingStart = index + 1;
-		}
 	}
 }

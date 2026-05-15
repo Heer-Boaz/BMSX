@@ -65,6 +65,9 @@ On VBlank, when armed:
 Later `sys_inp_query` writes read that ICU snapshot. They do not query live host
 input state.
 
+The committed action table owns the mapping context and sampled action words.
+The controller only rings the table from the command latch and VBlank edge.
+
 ## Action snapshot word
 
 Simple root-action queries return the sampled action word in `sys_inp_status`.
@@ -156,12 +159,16 @@ Selected-player output support is a host capability bit and is not saved.
 ## Owners
 
 - TS: `src/bmsx/machine/devices/input/controller.ts`
+- TS registerfile: `src/bmsx/machine/devices/input/registers.ts`
+- TS action table: `src/bmsx/machine/devices/input/action_table.ts`
 - TS constants: `src/bmsx/machine/devices/input/contracts.ts`
 - TS FIFO: `src/bmsx/machine/devices/input/event_fifo.ts`
-- TS save state: `src/bmsx/machine/devices/input/save_state.ts`
+- TS aggregate save state: `src/bmsx/machine/devices/input/save_state.ts`
 - C++: `src/bmsx_cpp/machine/devices/input/controller.cpp/.h`
+- C++ registerfile: `src/bmsx_cpp/machine/devices/input/registers.h`
+- C++ action table: `src/bmsx_cpp/machine/devices/input/action_table.cpp/.h`
 - C++ constants: `src/bmsx_cpp/machine/devices/input/contracts.h`
 - C++ FIFO: `src/bmsx_cpp/machine/devices/input/event_fifo.cpp/.h`
-- C++ save state: `src/bmsx_cpp/machine/devices/input/save_state.cpp/.h`
+- C++ aggregate save state: `src/bmsx_cpp/machine/devices/input/save_state.cpp/.h`
 - Runtime byte codec: `src/bmsx/machine/runtime/save_state/*` and
   `src/bmsx_cpp/machine/runtime/save_state/*`

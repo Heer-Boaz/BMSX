@@ -11,29 +11,18 @@ InputControllerState InputController::captureState() const {
 	state.sampleSequence = m_sampleSequence;
 	state.lastSampleCycle = m_lastSampleCycle;
 	state.registers = m_registers;
-	for (size_t index = 0; index < m_playerStates.size(); index += 1) {
-		state.players[index].actions = m_playerStates[index].actions;
-	}
+	state.players = m_actionTable.capturePlayers();
 	state.eventFifoEvents = m_eventFifo.captureEvents();
 	state.eventFifoOverflow = m_eventFifo.overflow();
 	return state;
 }
 
 void InputController::restoreState(const InputControllerState& state) {
-	for (i32 playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
-		clearPlayerActions(playerIndex, m_playerStates[static_cast<size_t>(playerIndex - 1)]);
-	}
 	m_sampleArmed = state.sampleArmed;
 	m_sampleSequence = state.sampleSequence;
 	m_lastSampleCycle = state.lastSampleCycle;
 	m_registers = state.registers;
-	for (i32 playerIndex = 1; playerIndex <= INPUT_CONTROLLER_PLAYER_COUNT; playerIndex += 1) {
-		restorePlayerActions(
-			playerIndex,
-			m_playerStates[static_cast<size_t>(playerIndex - 1)],
-			state.players[static_cast<size_t>(playerIndex - 1)].actions
-		);
-	}
+	m_actionTable.restorePlayers(state.players);
 	m_eventFifo.restore(state.eventFifoEvents, state.eventFifoOverflow);
 	m_memory.writeIoValue(IO_INP_EVENT_CTRL, valueNumber(0.0));
 	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));

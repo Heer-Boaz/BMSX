@@ -1,11 +1,20 @@
 #pragma once
 
-#include "machine/devices/input/save_state.h"
+#include "machine/cpu/string_pool.h"
+#include "machine/devices/input/contracts.h"
 
 #include <array>
 #include <vector>
 
 namespace bmsx {
+
+struct InputControllerEventState {
+	u32 player = 0;
+	StringId actionStringId = 0;
+	u32 statusWord = 0;
+	u32 valueQ16 = 0;
+	u32 repeatCount = 0;
+};
 
 class InputControllerEventFifo {
 public:
@@ -13,7 +22,7 @@ public:
 	bool overflow() const;
 	u32 statusWord() const;
 	const InputControllerEventState& front() const;
-	void push(u32 player, const InputControllerActionState& action);
+	void push(u32 player, StringId actionStringId, u32 statusWord, u32 valueQ16, u32 repeatCount);
 	void pop();
 	void clear();
 	std::vector<InputControllerEventState> captureEvents() const;

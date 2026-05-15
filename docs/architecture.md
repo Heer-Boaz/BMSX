@@ -249,12 +249,14 @@ Cart-visible ingress:
 
 State owned by ICU:
 
-- selected player/action/bind/query/consume register words;
+- selected player/action/bind/query/consume register words owned by
+  `machine/devices/input/registers`;
 - private sample arm latch;
 - sample sequence and last sample cycle latches;
-- per-player committed action records;
+- per-player committed action records and mapping contexts owned by
+  `machine/devices/input/action_table`;
 - per-action sampled `statusWord`, signed-Q16.16 `valueQ16`, `pressTime`, and
-  `repeatCount` words.
+  `repeatCount` words owned by the action-table sample latch;
 - event FIFO hardware state: retained event slots, read/write pointers, queued
   count, and overflow latch;
 - output intensity and duration latch words.
@@ -270,6 +272,10 @@ snapshots and exposes a front-entry register bank plus pop/clear doorbells.
 `machine/devices/input/event_fifo` owns the retained ring slots, pointers, count,
 and overflow latch on both runtimes. The queue is saved as visible device state;
 it is not a host queue.
+
+`machine/devices/input/save_state` is only the aggregate persistence boundary.
+Live ICU register, action-table, and FIFO record shapes stay in their hardware
+owner files rather than in a parallel save-state contract.
 
 The output register bank is a selected-player output datapath. Carts write an
 unsigned-Q16.16 intensity word and a duration word, then ring the output
@@ -342,10 +348,9 @@ should be deleted.
 
 ## Active work queue
 
-1. Move the remaining VDP TS aggregate capture/restore body out of the VDP
-   datapath only if it can be done without opening private render/device fields
-   as a fake public contract.
-2. Keep save-state proof expanding through device-visible state, not host queues.
-3. Promote the remaining large device aggregate save-state bodies only when the
-   target language can do it without opening private hardware fields as a fake
-   public contract.
+1. Continue splitting monolithic device controllers along hardware-unit
+   boundaries: registerfiles, latches, FIFOs, datapaths, and timing edges.
+2. Keep save-state as passive persistence of live machine state; do not create
+   parallel contracts when the live hardware owner already has the record shape.
+3. Move aggregate persistence plumbing only when the target language can do it
+   without opening private hardware fields as a fake public contract.

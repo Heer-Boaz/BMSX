@@ -1,10 +1,18 @@
-import type { InputControllerActionState, InputControllerEventState } from './save_state';
+import type { StringId } from '../../cpu/string_pool';
 import {
 	INP_EVENT_STATUS_EMPTY,
 	INP_EVENT_STATUS_FULL,
 	INP_EVENT_STATUS_OVERFLOW,
 	INPUT_CONTROLLER_EVENT_FIFO_CAPACITY,
 } from './contracts';
+
+export type InputControllerEventState = {
+	player: number;
+	actionStringId: StringId;
+	statusWord: number;
+	valueQ16: number;
+	repeatCount: number;
+};
 
 function createEventFifoSlots(): InputControllerEventState[] {
 	const slots = new Array<InputControllerEventState>(INPUT_CONTROLLER_EVENT_FIFO_CAPACITY);
@@ -48,17 +56,17 @@ export class InputControllerEventFifo {
 		return this.slots[this.readIndex]!;
 	}
 
-	public push(player: number, action: InputControllerActionState): void {
+	public push(player: number, actionStringId: StringId, statusWord: number, valueQ16: number, repeatCount: number): void {
 		if (this.queuedCount === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
 			this.overflowLatched = true;
 			return;
 		}
 		const slot = this.slots[this.writeIndex]!;
 		slot.player = player;
-		slot.actionStringId = action.actionStringId;
-		slot.statusWord = action.statusWord;
-		slot.valueQ16 = action.valueQ16;
-		slot.repeatCount = action.repeatCount;
+		slot.actionStringId = actionStringId;
+		slot.statusWord = statusWord;
+		slot.valueQ16 = valueQ16;
+		slot.repeatCount = repeatCount;
 		this.writeIndex += 1;
 		if (this.writeIndex === INPUT_CONTROLLER_EVENT_FIFO_CAPACITY) {
 			this.writeIndex = 0;
