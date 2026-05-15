@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/devices/audio/active_slots.h"
+#include "machine/devices/audio/command_executor.h"
 #include "machine/devices/audio/command_fifo.h"
 #include "machine/devices/audio/command_ingress.h"
 #include "machine/devices/audio/contracts.h"
@@ -16,9 +17,6 @@
 #include "machine/devices/device_status.h"
 #include "machine/memory/memory.h"
 
-#include <array>
-#include <cstdint>
-#include <vector>
 
 namespace bmsx {
 
@@ -42,16 +40,12 @@ public:
 private:
 	static void onSlotWriteThunk(void* context, uint32_t addr, Value value);
 	static Value onStatusReadThunk(void* context, uint32_t addr);
-	static Value onSelectedSlotRegisterReadThunk(void* context, uint32_t addr);
-	static void onSelectedSlotRegisterWriteThunk(void* context, uint32_t addr, Value value);
 
 	Memory& m_memory;
 	ApuOutputMixer& m_audioOutput;
 	DeviceScheduler& m_scheduler;
 	ApuEventLatch m_eventLatch;
 	ApuCommandFifo m_commandFifo;
-	ApuParameterRegisterWords m_commandDispatchRegisterWords{};
-	ApuParameterRegisterWords m_slotRegisterDispatchWords{};
 	ApuSlotBank m_slots;
 	DeviceStatusLatch m_fault;
 	ApuSelectedSlotLatch m_selectedSlotLatch;
@@ -61,21 +55,8 @@ private:
 	ApuServiceClock m_serviceClock;
 	ApuCommandIngress m_commandIngress;
 	ApuQueueStatusRegisters m_queueStatusRegisters;
+	ApuCommandExecutor m_commandExecutor;
 
-	void drainCommandFifo();
-	void executeCommand(uint32_t command, const ApuParameterRegisterWords& registerWords);
-	void play(const ApuParameterRegisterWords& registerWords);
-	bool readSlot(const ApuParameterRegisterWords& registerWords, ApuAudioSlot& slot) const;
-	void startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
-	bool playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples);
-	const ApuParameterRegisterWords& fadeOutputRegisterWords(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
-	bool replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source);
-	void stopSlot(const ApuParameterRegisterWords& registerWords);
-	void setSlotGain(const ApuParameterRegisterWords& registerWords);
-	bool replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId);
-	Value onSelectedSlotRegisterRead(uint32_t addr) const;
-	void onSelectedSlotRegisterWrite(uint32_t addr, Value value);
-	void writeSlotRegisterWord(ApuAudioSlot slot, uint32_t parameterIndex, uint32_t word);
 };
 
 } // namespace bmsx

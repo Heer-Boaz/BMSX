@@ -245,7 +245,10 @@ command latch default register image is owned by
 mirrored `machine/devices/audio/command_latch` files. The command-doorbell
 ingress path is owned by mirrored `machine/devices/audio/command_ingress` files;
 it admits command words into the FIFO, clears the command latch, raises command
-faults, and wakes the service clock. The APU event latch
+faults, and wakes the service clock. Command FIFO drain, PLAY/STOP/GAIN command
+execution, the selected-slot register window, source-DMA replacement, and AOUT
+voice replay are owned by mirrored `machine/devices/audio/command_executor`
+files. The APU event latch
 (sequence, kind, slot, source address, and IRQ edge) is owned by mirrored
 `machine/devices/audio/event_latch` files. The command FIFO ring,
 read/write pointers, queued count, and per-entry parameter words are owned by

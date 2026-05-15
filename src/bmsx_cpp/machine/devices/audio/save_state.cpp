@@ -133,7 +133,7 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 		const ApuAudioSlot slot = voiceState.slot;
 		const ApuVoiceId voiceId = m_slots.allocateVoiceId();
 		m_slots.assignVoiceId(slot, voiceId);
-		if (!replayHostOutput(slot, voiceId)) {
+		if (!m_commandExecutor.replayHostOutput(slot, voiceId)) {
 			throw BMSX_RUNTIME_ERROR("[APU] Cannot restore saved AOUT voice.");
 		}
 		m_audioOutput.restoreVoiceState(voiceState);
