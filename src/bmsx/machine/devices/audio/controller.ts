@@ -96,9 +96,7 @@ export class AudioController {
 		this.memory.mapIoRead(IO_APU_STATUS, this.statusRegister.read.bind(this.statusRegister));
 		this.memory.mapIoWrite(IO_APU_CMD, this.commandIngress.onCommandWrite.bind(this.commandIngress));
 		this.memory.mapIoWrite(IO_APU_SLOT, this.selectedSlotLatch.refresh.bind(this.selectedSlotLatch));
-		this.memory.mapIoWrite(IO_APU_FAULT_ACK, () => {
-			this.fault.acknowledge();
-		});
+		this.memory.mapIoWrite(IO_APU_FAULT_ACK, this.fault.acknowledge.bind(this.fault));
 		const queueStatusRegisterRead = this.queueStatusRegisters.read.bind(this.queueStatusRegisters);
 		this.memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, queueStatusRegisterRead);
 		this.memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, queueStatusRegisterRead);

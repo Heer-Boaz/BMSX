@@ -335,9 +335,7 @@ export class VDP implements VramWriteSink {
 		this.memory.mapIoWrite(IO_VDP_FIFO, this.onVdpFifoWrite.bind(this));
 		this.memory.mapIoWrite(IO_VDP_FIFO_CTRL, this.onVdpFifoCtrlWrite.bind(this));
 		this.memory.mapIoWrite(IO_VDP_CMD, this.onVdpCommandWrite.bind(this));
-		this.memory.mapIoWrite(IO_VDP_FAULT_ACK, () => {
-			this.fault.acknowledge();
-		});
+		this.memory.mapIoWrite(IO_VDP_FAULT_ACK, this.fault.acknowledge.bind(this.fault));
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
 			this.memory.mapIoWrite(IO_VDP_REG0 + index * IO_WORD_SIZE, this.onVdpRegisterIoWrite.bind(this));
 		}

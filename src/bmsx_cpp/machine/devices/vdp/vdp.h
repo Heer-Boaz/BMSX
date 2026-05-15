@@ -118,7 +118,6 @@ private:
 	static void onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
 	static void onSbxRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
 	static void onSbxCommitWriteThunk(void* context, uint32_t addr, Value value);
-	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value);
 
 	bool writeVdpRegister(uint32_t index, u32 value);
 	void consumeDirectVdpCommand(u32 cmd);

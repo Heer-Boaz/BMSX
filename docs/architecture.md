@@ -143,7 +143,9 @@ Cart-visible ingress:
 
 Internal units:
 
-- `registers` owns the raw VDP registerfile and MMIO-visible status/fault words.
+- `registers` owns the raw VDP transform, draw, surface, mode, dither, and
+  control words; shared `machine/devices/device_status` owns VDP
+  status/fault/code/detail register images and the fault-ack write edge.
 - `DEX` owns direct/stream frame state, submit admission, and the retained
   fixed-capacity framebuffer-command buffer used by the scheduler blitter.
 - `streamIngress` owns the DMA submit latch, FIFO partial-word bytes, and sealed
@@ -237,7 +239,9 @@ Save-state captures active AOUT voice datapath state. It does not capture the
 already-rendered AOUT output ring; queued frames at the host edge are not
 machine state and are rebuilt from the restored voice datapath. The audio
 save-state data contract lives in dedicated `machine/devices/audio/save_state`
-files on both runtimes. The command latch default register image is owned by
+files on both runtimes. The shared device-status latch owns fault/status/code/detail register images and
+fault-ack writes through mirrored `machine/devices/device_status` files. The
+command latch default register image is owned by
 mirrored `machine/devices/audio/command_latch` files. The command-doorbell
 ingress path is owned by mirrored `machine/devices/audio/command_ingress` files;
 it admits command words into the FIFO, clears the command latch, raises command

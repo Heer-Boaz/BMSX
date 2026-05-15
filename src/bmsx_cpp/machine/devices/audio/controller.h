@@ -41,7 +41,6 @@ public:
 
 private:
 	static void onSlotWriteThunk(void* context, uint32_t addr, Value value);
-	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value);
 	static Value onStatusReadThunk(void* context, uint32_t addr);
 	static Value onSelectedSlotRegisterReadThunk(void* context, uint32_t addr);
 	static void onSelectedSlotRegisterWriteThunk(void* context, uint32_t addr, Value value);

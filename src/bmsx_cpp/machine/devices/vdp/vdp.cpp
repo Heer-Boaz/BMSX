@@ -48,7 +48,7 @@ VDP::VDP(
 	m_memory.mapIoWrite(IO_VDP_FIFO, this, &VDP::onFifoWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_FIFO_CTRL, this, &VDP::onFifoCtrlWriteThunk);
 	m_memory.mapIoWrite(IO_VDP_CMD, this, &VDP::onCommandWriteThunk);
-	m_memory.mapIoWrite(IO_VDP_FAULT_ACK, this, &VDP::onFaultAckWriteThunk);
+	m_memory.mapIoWrite(IO_VDP_FAULT_ACK, &m_fault, &DeviceStatusLatch::acknowledgeWriteThunk);
 	for (uint32_t index = 0; index < VDP_REGISTER_COUNT; ++index) {
 		m_memory.mapIoWrite(IO_VDP_REG0 + index * IO_WORD_SIZE, this, &VDP::onRegisterWriteThunk);
 	}
@@ -873,11 +873,6 @@ void VDP::onSbxRegisterWindowWriteThunk(void* context, uint32_t addr, Value valu
 void VDP::onSbxCommitWriteThunk(void* context, uint32_t, Value) {
 	auto& vdp = *static_cast<VDP*>(context);
 	vdp.onSbxCommitWrite();
-}
-
-void VDP::onFaultAckWriteThunk(void* context, uint32_t, Value) {
-	auto& vdp = *static_cast<VDP*>(context);
-	vdp.m_fault.acknowledge();
 }
 
 void VDP::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {

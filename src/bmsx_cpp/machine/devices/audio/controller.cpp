@@ -48,7 +48,7 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 		m_memory.mapIoRead(IO_APU_SELECTED_SLOT_REG0 + index * IO_WORD_SIZE, this, &AudioController::onSelectedSlotRegisterReadThunk);
 		m_memory.mapIoWrite(IO_APU_SELECTED_SLOT_REG0 + index * IO_WORD_SIZE, this, &AudioController::onSelectedSlotRegisterWriteThunk);
 	}
-	m_memory.mapIoWrite(IO_APU_FAULT_ACK, this, &AudioController::onFaultAckWriteThunk);
+	m_memory.mapIoWrite(IO_APU_FAULT_ACK, &m_fault, &DeviceStatusLatch::acknowledgeWriteThunk);
 }
 
 void AudioController::dispose() {
@@ -124,12 +124,6 @@ void AudioController::executeCommand(uint32_t command, const ApuParameterRegiste
 // disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the APU device instance.
 void AudioController::onSlotWriteThunk(void* context, uint32_t, Value) {
 	static_cast<AudioController*>(context)->m_selectedSlotLatch.refresh();
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the APU device instance.
-void AudioController::onFaultAckWriteThunk(void* context, uint32_t, Value) {
-	auto& controller = *static_cast<AudioController*>(context);
-	controller.m_fault.acknowledge();
 }
 
 Value AudioController::onStatusReadThunk(void* context, uint32_t) {

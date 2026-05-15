@@ -66,4 +66,9 @@ void DeviceStatusLatch::raise(uint32_t raisedCode, uint32_t raisedDetail) const 
 	setStatusFlag(m_registers.faultMask, true);
 }
 
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk into the device status latch owner.
+void DeviceStatusLatch::acknowledgeWriteThunk(void* context, uint32_t, Value) {
+	static_cast<DeviceStatusLatch*>(context)->acknowledge();
+}
+
 } // namespace bmsx
