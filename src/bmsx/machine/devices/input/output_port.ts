@@ -26,7 +26,7 @@ export class InputControllerOutputPort {
 	public readRegister(addr: number): number {
 		switch (addr) {
 			case IO_INP_OUTPUT_STATUS:
-				return this.readStatus(this.registers.state.player);
+				return this.readStatus(this.registers.selectedPlayerIndex());
 			case IO_INP_OUTPUT_CTRL:
 				return 0;
 		}
@@ -36,7 +36,7 @@ export class InputControllerOutputPort {
 	public writeControl(command: number): void {
 		switch (command) {
 			case INP_OUTPUT_CTRL_APPLY:
-				this.apply(this.registers.state.player, this.registers.state.outputIntensityQ16, this.registers.state.outputDurationMs);
+				this.apply(this.registers.selectedPlayerIndex(), this.registers.state.outputIntensityQ16, this.registers.state.outputDurationMs);
 				return;
 		}
 	}

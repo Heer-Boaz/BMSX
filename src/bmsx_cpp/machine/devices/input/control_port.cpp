@@ -29,13 +29,13 @@ void InputControllerControlPort::writeControl(Value value) {
 	m_registers.write(IO_INP_CTRL, value);
 	switch (m_registers.state.ctrl) {
 		case INP_CTRL_COMMIT:
-			m_actionTable.commitAction(static_cast<i32>(m_registers.state.player), m_registers.state.actionStringId, m_registers.state.bindStringId);
+			m_actionTable.commitAction(m_registers.selectedPlayerIndex(), m_registers.state.actionStringId, m_registers.state.bindStringId);
 			return;
 		case INP_CTRL_ARM:
 			m_sampleLatch.arm();
 			return;
 		case INP_CTRL_RESET:
-			m_actionTable.resetActions(static_cast<i32>(m_registers.state.player));
+			m_actionTable.resetActions(m_registers.selectedPlayerIndex());
 			m_registers.writeResult(m_memory, 0u, 0u);
 			return;
 	}

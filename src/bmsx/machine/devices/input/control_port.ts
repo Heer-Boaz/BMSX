@@ -22,13 +22,13 @@ export class InputControllerControlPort {
 		this.registers.write(IO_INP_CTRL, value);
 		switch (this.registers.state.ctrl) {
 			case INP_CTRL_COMMIT:
-				this.actionTable.commitAction(this.registers.state.player, this.registers.state.actionStringId, this.registers.state.bindStringId);
+				this.actionTable.commitAction(this.registers.selectedPlayerIndex(), this.registers.state.actionStringId, this.registers.state.bindStringId);
 				return;
 			case INP_CTRL_ARM:
 				this.sampleLatch.arm();
 				return;
 			case INP_CTRL_RESET:
-				this.actionTable.resetActions(this.registers.state.player);
+				this.actionTable.resetActions(this.registers.selectedPlayerIndex());
 				this.registers.writeResult(this.memory, 0, 0);
 				return;
 		}

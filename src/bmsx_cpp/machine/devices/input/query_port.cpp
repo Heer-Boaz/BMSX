@@ -26,14 +26,14 @@ void InputControllerQueryPort::writeConsumeThunk(void* context, u32, Value value
 void InputControllerQueryPort::writeQuery(Value value) {
 	m_registers.write(IO_INP_QUERY, value);
 	const std::string& queryText = m_strings.toString(m_registers.state.queryStringId);
-	m_actionTable.queryAction(static_cast<i32>(m_registers.state.player), queryText, m_queryResult);
+	m_actionTable.queryAction(m_registers.selectedPlayerIndex(), queryText, m_queryResult);
 	m_registers.writeResult(m_memory, m_queryResult.statusWord, m_queryResult.valueQ16);
 }
 
 void InputControllerQueryPort::writeConsume(Value value) {
 	m_registers.write(IO_INP_CONSUME, value);
 	const std::string& actionNames = m_strings.toString(m_registers.state.consumeStringId);
-	m_actionTable.consumeActions(static_cast<i32>(m_registers.state.player), actionNames);
+	m_actionTable.consumeActions(m_registers.selectedPlayerIndex(), actionNames);
 }
 
 } // namespace bmsx

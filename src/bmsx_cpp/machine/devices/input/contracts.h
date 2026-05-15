@@ -19,6 +19,7 @@ constexpr u32 INP_STATUS_REPEAT_PRESSED = 1u << 10u;
 constexpr u32 INP_STATUS_HAS_VALUE = 1u << 11u;
 
 constexpr i32 INPUT_CONTROLLER_PLAYER_COUNT = 4;
+constexpr u32 INPUT_CONTROLLER_PLAYER_SELECT_MASK = static_cast<u32>(INPUT_CONTROLLER_PLAYER_COUNT - 1);
 constexpr u32 INPUT_CONTROLLER_EVENT_FIFO_CAPACITY = 32u;
 constexpr u32 INP_EVENT_STATUS_EMPTY = 1u << 0u;
 constexpr u32 INP_EVENT_STATUS_FULL = 1u << 1u;
@@ -35,6 +36,10 @@ constexpr u32 INP_EVENT_ACTION_STATUS_MASK = INP_STATUS_JUST_PRESSED
 constexpr u32 INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE = static_cast<u32>(FIX16_ONE);
 constexpr u32 INP_OUTPUT_STATUS_SUPPORTED = 1u << 0u;
 constexpr u32 INP_OUTPUT_CTRL_APPLY = 1u;
+
+inline i32 decodeInputControllerPlayerSelect(u32 playerWord) {
+	return static_cast<i32>(((playerWord - 1u) & INPUT_CONTROLLER_PLAYER_SELECT_MASK) + 1u);
+}
 
 inline f32 decodeInputOutputIntensityQ16(u32 value) {
 	return static_cast<f32>(value) / static_cast<f32>(INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE);

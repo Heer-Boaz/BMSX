@@ -13,6 +13,7 @@ import {
 import { asStringId, StringValue, type Value } from '../../cpu/cpu';
 import type { StringId } from '../../cpu/string_pool';
 import { Memory } from '../../memory/memory';
+import { decodeInputControllerPlayerSelect } from './contracts';
 
 export type InputControllerRegisterState = {
 	player: number;
@@ -55,6 +56,11 @@ export class InputControllerRegisterFile {
 
 	public restoreState(state: InputControllerRegisterState): void {
 		this.state = { ...state };
+	}
+
+	public selectedPlayerIndex(): number {
+		const playerWord = this.state.player;
+		return decodeInputControllerPlayerSelect(playerWord);
 	}
 
 	public write(addr: number, value: Value): void {

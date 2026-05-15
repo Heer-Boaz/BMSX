@@ -30,6 +30,7 @@ public:
 	void reset();
 	InputControllerRegisterState captureState() const;
 	void restoreState(const InputControllerRegisterState& restoredState);
+	i32 selectedPlayerIndex() const;
 	void write(uint32_t addr, Value value);
 	void writeResult(Memory& memory, u32 status, u32 value);
 	void mirror(Memory& memory) const;

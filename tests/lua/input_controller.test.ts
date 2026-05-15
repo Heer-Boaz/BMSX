@@ -199,6 +199,27 @@ test('input controller persists register latches and committed action contexts',
 	assert.equal(restored.controller.captureState().lastSampleCycle, 123);
 });
 
+
+test('input controller decodes selected-player register as a raw hardware selector', () => {
+	const live = createHarness();
+	const actionValue = StringValue.get(live.cpu.stringPool.intern('jump'));
+	const bindValue = StringValue.get(live.cpu.stringPool.intern('a'));
+	const queryValue = StringValue.get(live.cpu.stringPool.intern('jump[p]'));
+
+	live.memory.writeValue(IO_INP_PLAYER, 5);
+	live.memory.writeValue(IO_INP_ACTION, actionValue);
+	live.memory.writeValue(IO_INP_BIND, bindValue);
+	live.memory.writeValue(IO_INP_CTRL, INP_CTRL_COMMIT);
+	live.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
+	live.controller.onVblankEdge(1000 / 60, 91);
+	live.memory.writeValue(IO_INP_QUERY, queryValue);
+
+	assert.equal(live.memory.readIoU32(IO_INP_PLAYER), 5);
+	assert.equal(live.players[0]!.pushed.length, 1);
+	assert.equal(live.players[1]!.pushed.length, 0);
+	assert.equal(live.memory.readIoU32(IO_INP_STATUS), INP_STATUS_PRESSED | INP_STATUS_WAS_PRESSED | INP_STATUS_HAS_VALUE);
+});
+
 test('input controller output registers emit selected player vibration commands', () => {
 	const live = createHarness();
 

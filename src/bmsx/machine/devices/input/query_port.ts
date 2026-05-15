@@ -21,13 +21,13 @@ export class InputControllerQueryPort {
 	public writeQuery(_addr: number, value: Value): void {
 		this.registers.write(IO_INP_QUERY, value);
 		const queryText = this.strings.toString(this.registers.state.queryStringId);
-		this.actionTable.queryAction(this.registers.state.player, queryText, this.queryResult);
+		this.actionTable.queryAction(this.registers.selectedPlayerIndex(), queryText, this.queryResult);
 		this.registers.writeResult(this.memory, this.queryResult.statusWord, this.queryResult.valueQ16);
 	}
 
 	public writeConsume(_addr: number, value: Value): void {
 		this.registers.write(IO_INP_CONSUME, value);
 		const actionNames = this.strings.toString(this.registers.state.consumeStringId);
-		this.actionTable.consumeActions(this.registers.state.player, actionNames);
+		this.actionTable.consumeActions(this.registers.selectedPlayerIndex(), actionNames);
 	}
 }

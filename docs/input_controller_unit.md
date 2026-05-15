@@ -9,7 +9,7 @@ device-owned event FIFO, and an output command datapath.
 
 | Register | Direction | Value | Effect |
 |---|---:|---|---|
-| `sys_inp_player` | W | u32 | Selects player, 1-based. |
+| `sys_inp_player` | W | u32 | Stores the raw selected-player word. ICU datapaths select slot `((word - 1) & 3) + 1`. |
 | `sys_inp_action` | W | interned `&` string id | Action name for the next commit. |
 | `sys_inp_bind` | W | interned `&` string id | Comma-separated binding names for the selected action. |
 | `sys_inp_ctrl` | W | u32 | Command latch. |
@@ -38,7 +38,8 @@ or dynamic string expressions with the existing `&` operator at the producer
 boundary, for example `&'left[p]'` or `&(action .. '[p]')`.
 
 The ICU registerfile owner stores these raw words, accepts the data-latch
-writes, owns the `sys_inp_status`/`sys_inp_value` result latch, and mirrors the
+writes, decodes the selected-player slot from the low two bits at ICU datapath
+boundaries, owns the `sys_inp_status`/`sys_inp_value` result latch, and mirrors the
 visible registers after reset/restore. The control port owns `sys_inp_ctrl`
 command side effects after latching the incoming command word. The query port
 owns `sys_inp_query` and `sys_inp_consume` write side effects after the

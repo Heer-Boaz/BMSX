@@ -1,6 +1,7 @@
 #include "machine/devices/input/registers.h"
 
 #include "machine/bus/io.h"
+#include "machine/devices/input/contracts.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
@@ -20,6 +21,10 @@ InputControllerRegisterState InputControllerRegisterFile::captureState() const {
 
 void InputControllerRegisterFile::restoreState(const InputControllerRegisterState& restoredState) {
 	state = restoredState;
+}
+
+i32 InputControllerRegisterFile::selectedPlayerIndex() const {
+	return decodeInputControllerPlayerSelect(state.player);
 }
 
 void InputControllerRegisterFile::write(uint32_t addr, Value value) {

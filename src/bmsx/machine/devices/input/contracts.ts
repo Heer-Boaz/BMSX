@@ -15,6 +15,7 @@ export const INP_STATUS_REPEAT_PRESSED = 1 << 10;
 export const INP_STATUS_HAS_VALUE = 1 << 11;
 
 export const INPUT_CONTROLLER_PLAYER_COUNT = 4;
+export const INPUT_CONTROLLER_PLAYER_SELECT_MASK = INPUT_CONTROLLER_PLAYER_COUNT - 1;
 export const INPUT_CONTROLLER_EVENT_FIFO_CAPACITY = 32;
 export const INP_EVENT_STATUS_EMPTY = 1 << 0;
 export const INP_EVENT_STATUS_FULL = 1 << 1;
@@ -31,6 +32,10 @@ export const INP_EVENT_ACTION_STATUS_MASK = INP_STATUS_JUST_PRESSED
 export const INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE = FIX16_SCALE;
 export const INP_OUTPUT_STATUS_SUPPORTED = 1 << 0;
 export const INP_OUTPUT_CTRL_APPLY = 1;
+
+export function decodeInputControllerPlayerSelect(playerWord: number): number {
+	return ((((playerWord >>> 0) - 1) >>> 0) & INPUT_CONTROLLER_PLAYER_SELECT_MASK) + 1;
+}
 
 export function decodeInputOutputIntensityQ16(value: number): number {
 	return (value >>> 0) / INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE;

@@ -1365,6 +1365,34 @@ void testInputControllerStateGolden() {
 	require(!restored.inputController.captureState().sampleArmed, "ICU runtime cancellation should clear the sample latch");
 }
 
+void testInputControllerRawPlayerSelectorGolden() {
+	InputHarness live;
+	const bmsx::StringId action = live.cpu.stringPool().intern("jump");
+	const bmsx::StringId bind = live.cpu.stringPool().intern("a");
+
+	writeIoWord(live.memory, bmsx::IO_INP_PLAYER, 5u);
+	live.memory.writeValue(bmsx::IO_INP_ACTION, bmsx::valueString(action));
+	live.memory.writeValue(bmsx::IO_INP_BIND, bmsx::valueString(bind));
+	writeIoWord(live.memory, bmsx::IO_INP_CTRL, bmsx::INP_CTRL_COMMIT);
+	auto* playerOne = bmsx::Input::instance().getPlayerInput(1);
+	bmsx::GamepadInput gamepad("gamepad:raw-player", "raw player rumble");
+	bmsx::u32 calls = 0u;
+	gamepad.setVibrationSupported(true);
+	gamepad.setVibrationCallback([&calls](bmsx::f32, bmsx::f64) {
+		calls += 1u;
+	});
+	playerOne->assignGamepadToPlayer(&gamepad);
+	writeIoWord(live.memory, bmsx::IO_INP_OUTPUT_INTENSITY_Q16, bmsx::INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE);
+	writeIoWord(live.memory, bmsx::IO_INP_OUTPUT_DURATION_MS, 1u);
+	writeIoWord(live.memory, bmsx::IO_INP_OUTPUT_CTRL, bmsx::INP_OUTPUT_CTRL_APPLY);
+
+	require(live.memory.readIoU32(bmsx::IO_INP_PLAYER) == 5u, "ICU should mirror the raw selected-player word");
+	require(live.inputController.captureState().players[0u].actions.size() == 1u, "ICU player selector word 5 should address player slot 1");
+	require(live.inputController.captureState().players[1u].actions.empty(), "ICU player selector word 5 should not address player slot 2");
+	require(calls == 1u, "ICU raw player selector should drive the decoded output slot");
+	playerOne->clearGamepad(&gamepad);
+}
+
 void testInputControllerOutputRegisters() {
 	InputHarness live;
 	bmsx::GamepadInput gamepad("gamepad:1", "test rumble");
@@ -2458,7 +2486,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 43> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 44> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -2491,6 +2519,7 @@ int main() {
 		{"APU selected-slot active state", testApuSelectedSlotActiveStateGolden},
 		{"APU BADP save-state", testApuBadpSaveStateGolden},
 		{"ICU register and action state", testInputControllerStateGolden},
+		{"ICU raw player selector", testInputControllerRawPlayerSelectorGolden},
 		{"ICU output registers", testInputControllerOutputRegisters},
 		{"ICU real PlayerInput context", testInputControllerRealPlayerContext},
 		{"runtime vblank edge completes active tick", testRuntimeVblankEdgeCompletesActiveTickGolden},

@@ -34,7 +34,7 @@ u32 InputControllerOutputPort::readStatus(u32 player) const {
 Value InputControllerOutputPort::readRegister(u32 addr) const {
 	switch (addr) {
 		case IO_INP_OUTPUT_STATUS:
-			return valueNumber(static_cast<double>(readStatus(m_registers.state.player)));
+			return valueNumber(static_cast<double>(readStatus(static_cast<u32>(m_registers.selectedPlayerIndex()))));
 		case IO_INP_OUTPUT_CTRL:
 			return valueNumber(0.0);
 	}
@@ -44,7 +44,7 @@ Value InputControllerOutputPort::readRegister(u32 addr) const {
 void InputControllerOutputPort::writeControl(u32 command) {
 	switch (command) {
 		case INP_OUTPUT_CTRL_APPLY:
-			apply(m_registers.state.player, m_registers.state.outputIntensityQ16, m_registers.state.outputDurationMs);
+			apply(static_cast<u32>(m_registers.selectedPlayerIndex()), m_registers.state.outputIntensityQ16, m_registers.state.outputDurationMs);
 			return;
 	}
 }
