@@ -21,8 +21,11 @@ struct ApuSourceMetadataResult {
 	u32 faultDetail = 0u;
 };
 
+ApuAudioSource resolveApuAudioSource(const ApuParameterRegisterWords& registerWords);
+constexpr bool apuAudioSourceUsesGenerator(const ApuAudioSource& source) {
+	return source.generatorKind != APU_GENERATOR_NONE;
+}
 ApuSourceMetadataResult validateApuAudioSourceMetadata(const ApuAudioSource& source);
-
 
 class ApuSourceDma final {
 public:

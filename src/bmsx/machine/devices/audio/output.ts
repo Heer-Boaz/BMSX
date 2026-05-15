@@ -16,7 +16,7 @@ import {
 	resolveApuOutputPlayback,
 	type ApuOutputPlayback,
 } from './playback';
-import { validateApuAudioSourceMetadata } from './source';
+import { apuAudioSourceUsesGenerator, validateApuAudioSourceMetadata } from './source';
 import {
 	captureApuOutputVoiceState,
 	restoreApuOutputVoiceState,
@@ -53,7 +53,6 @@ import {
 	APU_PARAMETER_START_SAMPLE_INDEX,
 	APU_RATE_STEP_Q16_ONE,
 	APU_SAMPLE_RATE_HZ,
-	apuAudioSourceUsesGenerator,
 	type ApuAudioSlot,
 	type ApuAudioSource,
 	type ApuParameterRegisterWords,

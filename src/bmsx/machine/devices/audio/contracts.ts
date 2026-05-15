@@ -103,27 +103,6 @@ export interface ApuAudioSource {
 	generatorDutyQ12: number;
 }
 
-export function resolveApuAudioSource(registerWords: ApuParameterRegisterWords): ApuAudioSource {
-	return {
-		sourceAddr: registerWords[APU_PARAMETER_SOURCE_ADDR_INDEX]!,
-		sourceBytes: registerWords[APU_PARAMETER_SOURCE_BYTES_INDEX]!,
-		sampleRateHz: registerWords[APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX]!,
-		channels: registerWords[APU_PARAMETER_SOURCE_CHANNELS_INDEX]!,
-		bitsPerSample: registerWords[APU_PARAMETER_SOURCE_BITS_PER_SAMPLE_INDEX]!,
-		frameCount: registerWords[APU_PARAMETER_SOURCE_FRAME_COUNT_INDEX]!,
-		dataOffset: registerWords[APU_PARAMETER_SOURCE_DATA_OFFSET_INDEX]!,
-		dataBytes: registerWords[APU_PARAMETER_SOURCE_DATA_BYTES_INDEX]!,
-		loopStartSample: registerWords[APU_PARAMETER_SOURCE_LOOP_START_SAMPLE_INDEX]!,
-		loopEndSample: registerWords[APU_PARAMETER_SOURCE_LOOP_END_SAMPLE_INDEX]!,
-		generatorKind: registerWords[APU_PARAMETER_GENERATOR_KIND_INDEX]!,
-		generatorDutyQ12: registerWords[APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX]!,
-	};
-}
-
-export function apuAudioSourceUsesGenerator(source: ApuAudioSource): boolean {
-	return source.generatorKind !== APU_GENERATOR_NONE;
-}
-
 export function apuParameterProgramsSourceBuffer(parameterIndex: number): boolean {
 	switch (parameterIndex) {
 		case APU_PARAMETER_SOURCE_ADDR_INDEX:

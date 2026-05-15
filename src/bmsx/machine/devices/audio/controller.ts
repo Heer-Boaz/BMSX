@@ -3,7 +3,7 @@ import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '.
 import { DEVICE_SERVICE_APU, type DeviceScheduler } from '../../scheduler/device';
 import type { ApuOutputMixer } from './output';
 import type { AudioControllerState } from './save_state';
-import { ApuSourceDma } from './source';
+import { ApuSourceDma, resolveApuAudioSource } from './source';
 import { ApuCommandFifo } from './command_fifo';
 import { ApuSlotBank } from './slot_bank';
 import {
@@ -38,7 +38,6 @@ import {
 	APU_STATUS_OUTPUT_FULL,
 	APU_STATUS_SELECTED_SLOT_ACTIVE,
 	apuParameterProgramsSourceBuffer,
-	resolveApuAudioSource,
 	type ApuAudioSlot,
 	type ApuAudioSource,
 	type ApuParameterRegisterWords,
