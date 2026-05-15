@@ -13,7 +13,8 @@ in per-field arrays with a length latch. DEX source-slot admission is a
 blitter-source datapath: raw slot words resolve to VDP-owned VRAM surfaces and
 source bounds are checked before blit/tile-run records enter the command buffer.
 Build, active, and pending submitted frames transfer those buffers by ownership;
-the hot path does not allocate per-command objects or nested glyph/tile vectors.
+mirrored frame owners reset those slots without reallocating retained buffers.
+The hot path does not allocate per-command objects or nested glyph/tile vectors.
 
 ## Register map
 

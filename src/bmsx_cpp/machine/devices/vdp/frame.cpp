@@ -235,6 +235,14 @@ void restoreBbuFrameBufferState(VdpBbuFrameBuffer& billboards, const std::vector
 } // namespace
 
 
+void resetBuildingFrame(VdpBuildingFrame& frame) {
+	frame.queue->reset();
+	frame.billboards->reset();
+	frame.meshes->reset();
+	frame.cost = 0;
+	frame.state = VdpDexFrameState::Idle;
+}
+
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame) {
 	frame.queue->reset();
 	frame.billboards->reset();

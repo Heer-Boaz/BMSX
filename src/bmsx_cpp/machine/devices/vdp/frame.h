@@ -146,6 +146,7 @@ struct VdpSubmittedFrameSaveState {
 	std::array<u32, VDP_LPU_REGISTER_WORDS> lightRegisterWords{};
 };
 
+void resetBuildingFrame(VdpBuildingFrame& frame);
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame);
 VdpBuildingFrameSaveState captureBuildingFrameState(const VdpBuildingFrame& frame);
 void restoreBuildingFrameState(VdpBuildingFrame& frame, const VdpBuildingFrameSaveState& state);

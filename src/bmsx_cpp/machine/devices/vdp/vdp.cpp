@@ -1081,20 +1081,9 @@ void VDP::writeGeometryColorCommand(BlitterCommand& queue, size_t index, Layer2D
 	queue.color[index] = color;
 }
 
-void VDP::resetBuildFrameState() {
-	m_buildFrame.queue->reset();
-	m_buildFrame.billboards->reset();
-	m_buildFrame.meshes->reset();
-	m_buildFrame.cost = 0;
-	m_buildFrame.state = VdpDexFrameState::Idle;
-}
-
 void VDP::resetQueuedFrameState() {
-	resetBuildFrameState();
+	resetBuildingFrame(m_buildFrame);
 	clearActiveFrame();
-	m_pendingFrame.queue->reset();
-	m_pendingFrame.billboards->reset();
-	m_pendingFrame.meshes->reset();
 	resetSubmittedFrameSlot(m_pendingFrame);
 }
 
@@ -1138,14 +1127,14 @@ bool VDP::beginSubmittedFrame(VdpDexFrameState state) {
 		m_fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_BEGIN_FRAME);
 		return false;
 	}
-	resetBuildFrameState();
+	resetBuildingFrame(m_buildFrame);
 	m_blitterSequence = 0u;
 	m_buildFrame.state = state;
 	return true;
 }
 
 void VDP::cancelSubmittedFrame() {
-	resetBuildFrameState();
+	resetBuildingFrame(m_buildFrame);
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 }
@@ -1205,11 +1194,7 @@ bool VDP::sealSubmittedFrame() {
 	frame->ditherType = voutFrame.ditherType;
 	frame->frameBufferWidth = voutFrame.frameBufferWidth;
 	frame->frameBufferHeight = voutFrame.frameBufferHeight;
-	m_buildFrame.queue->reset();
-	m_buildFrame.billboards->reset();
-	m_buildFrame.meshes->reset();
-	m_buildFrame.cost = 0;
-	m_buildFrame.state = VdpDexFrameState::Idle;
+	resetBuildingFrame(m_buildFrame);
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
 	return true;

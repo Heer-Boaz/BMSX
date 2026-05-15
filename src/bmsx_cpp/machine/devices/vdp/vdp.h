@@ -167,7 +167,6 @@ private:
 	void bindVramSurfaces(bool resetSkybox);
 	bool resizeVramSlot(VdpSurfaceUploadSlot& slot, uint32_t width, uint32_t height, uint32_t faultDetail);
 	u32 nextBlitterSequence();
-	void resetBuildFrameState();
 	void resetQueuedFrameState();
 	bool reserveBlitterCommand(BlitterCommandType opcode, int renderCost, size_t& index);
 	void writeGeometryColorCommand(BlitterCommand& queue, size_t index, Layer2D layer, f32 priority, const VdpLatchedGeometry& geometry, u32 color);

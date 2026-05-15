@@ -153,6 +153,8 @@ import {
 	type VdpDexFrameState,
 	type VdpSubmittedFrame,
 	allocateSubmittedFrameSlot,
+	resetBuildingFrame,
+	resetSubmittedFrameSlot,
 	captureBuildingFrameState,
 	createResolvedBlitterSamples,
 	captureSubmittedFrameState,
@@ -1232,44 +1234,13 @@ export class VDP implements VramWriteSink {
 		return this.blitterSequence++;
 	}
 
-	private resetBuildFrameState(): void {
-		this.buildFrame.queue.reset();
-		this.buildFrame.billboards.reset();
-		this.buildFrame.meshes.reset();
-		this.buildFrame.cost = 0;
-		this.buildFrame.state = VDP_DEX_FRAME_IDLE;
-	}
-
-	private resetSubmittedFrameSlot(frame: VdpSubmittedFrame): void {
-		frame.queue.reset();
-		frame.state = VDP_SUBMITTED_FRAME_EMPTY;
-		frame.hasCommands = false;
-		frame.hasFrameBufferCommands = false;
-		frame.cost = 0;
-		frame.workRemaining = 0;
-		frame.ditherType = 0;
-		frame.frameBufferWidth = 0;
-		frame.frameBufferHeight = 0;
-		frame.xf.reset();
-		frame.skyboxControl = 0;
-		frame.skyboxFaceWords.fill(0);
-		frame.billboards.reset();
-		frame.meshes.reset();
-		frame.lightRegisterWords.fill(0);
-		frame.morphWeightWords.fill(0);
-		frame.jointMatrixWords.fill(0);
-	}
-
 	private resetQueuedFrameState(): void {
-		this.resetBuildFrameState();
+		resetBuildingFrame(this.buildFrame);
 		this.clearActiveFrame();
-		this.pendingFrame.queue.reset();
-		this.pendingFrame.billboards.reset();
-		this.pendingFrame.meshes.reset();
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
-		this.resetSubmittedFrameSlot(this.pendingFrame);
+		resetSubmittedFrameSlot(this.pendingFrame);
 	}
 
 	private reserveBlitterCommand(opcode: number, renderCost: number): number {
@@ -1321,14 +1292,14 @@ export class VDP implements VramWriteSink {
 			this.fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_BEGIN_FRAME);
 			return false;
 		}
-		this.resetBuildFrameState();
+		resetBuildingFrame(this.buildFrame);
 		this.blitterSequence = 0;
 		this.buildFrame.state = state;
 		return true;
 	}
 
 	private cancelSubmittedFrame(): void {
-		this.resetBuildFrameState();
+		resetBuildingFrame(this.buildFrame);
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
@@ -1395,11 +1366,7 @@ export class VDP implements VramWriteSink {
 		frame.ditherType = voutFrame.ditherType;
 		frame.frameBufferWidth = voutFrame.frameBufferWidth;
 		frame.frameBufferHeight = voutFrame.frameBufferHeight;
-		this.buildFrame.queue.reset();
-		this.buildFrame.billboards.reset();
-		this.buildFrame.meshes.reset();
-		this.buildFrame.cost = 0;
-		this.buildFrame.state = VDP_DEX_FRAME_IDLE;
+		resetBuildingFrame(this.buildFrame);
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 		return true;
@@ -1415,7 +1382,7 @@ export class VDP implements VramWriteSink {
 		if (this.activeFrame.state === VDP_SUBMITTED_FRAME_QUEUED) {
 			this.activeFrame.state = VDP_SUBMITTED_FRAME_EXECUTING;
 		}
-		this.resetSubmittedFrameSlot(this.pendingFrame);
+		resetSubmittedFrameSlot(this.pendingFrame);
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
 	}
@@ -1797,7 +1764,7 @@ export class VDP implements VramWriteSink {
 
 	private clearActiveFrame(): void {
 		this.activeFrame.queue.reset();
-		this.resetSubmittedFrameSlot(this.activeFrame);
+		resetSubmittedFrameSlot(this.activeFrame);
 	}
 
 	private commitActiveVisualState(): void {

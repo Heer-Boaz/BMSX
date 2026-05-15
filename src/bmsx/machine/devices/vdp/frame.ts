@@ -190,6 +190,34 @@ export function allocateSubmittedFrameSlot(): VdpSubmittedFrame {
 	};
 }
 
+export function resetBuildingFrame(frame: VdpBuildingFrameState): void {
+	frame.queue.reset();
+	frame.billboards.reset();
+	frame.meshes.reset();
+	frame.cost = 0;
+	frame.state = VDP_DEX_FRAME_IDLE;
+}
+
+export function resetSubmittedFrameSlot(frame: VdpSubmittedFrame): void {
+	frame.queue.reset();
+	frame.state = VDP_SUBMITTED_FRAME_EMPTY;
+	frame.hasCommands = false;
+	frame.hasFrameBufferCommands = false;
+	frame.cost = 0;
+	frame.workRemaining = 0;
+	frame.ditherType = 0;
+	frame.frameBufferWidth = 0;
+	frame.frameBufferHeight = 0;
+	frame.xf.reset();
+	frame.skyboxControl = 0;
+	frame.skyboxFaceWords.fill(0);
+	frame.billboards.reset();
+	frame.meshes.reset();
+	frame.lightRegisterWords.fill(0);
+	frame.morphWeightWords.fill(0);
+	frame.jointMatrixWords.fill(0);
+}
+
 function captureBlitterSourceState(
 	surfaceId: number,
 	srcX: number,
