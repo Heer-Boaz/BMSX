@@ -2,6 +2,7 @@
 
 #include "machine/devices/audio/active_slots.h"
 #include "machine/devices/audio/command_fifo.h"
+#include "machine/devices/audio/command_ingress.h"
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/audio/event_latch.h"
 #include "machine/devices/audio/output.h"
@@ -31,7 +32,6 @@ public:
 
 	void reset();
 	void dispose();
-	void onCommandWrite();
 	void setTiming(int64_t cpuHz, int64_t nowCycles);
 	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
@@ -39,7 +39,6 @@ public:
 	void restoreState(const AudioControllerState& state, int64_t nowCycles);
 
 private:
-	static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
 	static void onSlotWriteThunk(void* context, uint32_t addr, Value value);
 	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value);
 	static Value onStatusReadThunk(void* context, uint32_t addr);
@@ -66,8 +65,8 @@ private:
 	ApuActiveSlots m_activeSlots;
 	ApuStatusRegister m_statusRegister;
 	ApuServiceClock m_serviceClock;
+	ApuCommandIngress m_commandIngress;
 
-	bool enqueueCommand(uint32_t command);
 	void drainCommandFifo();
 	void executeCommand(uint32_t command, const ApuParameterRegisterWords& registerWords);
 	void play(const ApuParameterRegisterWords& registerWords);

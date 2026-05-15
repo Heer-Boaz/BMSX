@@ -220,7 +220,7 @@ Cart-visible ingress:
 Internal units:
 
 - APU registerfile/status/fault latch;
-- command FIFO and parameter latch bank;
+- command doorbell ingress, command FIFO, and parameter latch bank;
 - service clock: CPU-cycle sample accrual, carry latch, pending-sample latch, and APU scheduler edge;
 - active-slot datapath: active-mask register image, slot phase transitions, source-byte teardown, selected-slot refresh, and slot-ended event emission;
 - slot bank: slot phases, per-slot register words, playback cursors, fade counters, and voice ids;
@@ -238,7 +238,10 @@ already-rendered AOUT output ring; queued frames at the host edge are not
 machine state and are rebuilt from the restored voice datapath. The audio
 save-state data contract lives in dedicated `machine/devices/audio/save_state`
 files on both runtimes. The command latch default register image is owned by
-mirrored `machine/devices/audio/command_latch` files. The APU event latch
+mirrored `machine/devices/audio/command_latch` files. The command-doorbell
+ingress path is owned by mirrored `machine/devices/audio/command_ingress` files;
+it admits command words into the FIFO, clears the command latch, raises command
+faults, and wakes the service clock. The APU event latch
 (sequence, kind, slot, source address, and IRQ edge) is owned by mirrored
 `machine/devices/audio/event_latch` files. The command FIFO ring,
 read/write pointers, queued count, and per-entry parameter words are owned by

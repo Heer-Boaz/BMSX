@@ -1,5 +1,6 @@
 import { toSignedWord } from '../../common/numeric';
 import { ApuActiveSlots } from './active_slots';
+import { ApuCommandIngress } from './command_ingress';
 import type { DeviceScheduler } from '../../scheduler/device';
 import type { ApuOutputMixer } from './output';
 import type { AudioControllerState } from './save_state';
@@ -13,13 +14,11 @@ import { ApuStatusRegister } from './status_register';
 import { ApuServiceClock } from './service_clock';
 import {
 	APU_COMMAND_FIFO_CAPACITY,
-	APU_CMD_NONE,
 	APU_CMD_PLAY,
 	APU_CMD_SET_SLOT_GAIN,
 	APU_CMD_STOP_SLOT,
 	APU_FAULT_BAD_CMD,
 	APU_FAULT_BAD_SLOT,
-	APU_FAULT_CMD_FIFO_FULL,
 	APU_FAULT_NONE,
 	APU_PARAMETER_REGISTER_COUNT,
 	APU_PARAMETER_FADE_SAMPLES_INDEX,
@@ -75,6 +74,7 @@ export class AudioController {
 	private readonly activeSlots: ApuActiveSlots;
 	private readonly statusRegister: ApuStatusRegister;
 	private readonly serviceClock: ApuServiceClock;
+	private readonly commandIngress: ApuCommandIngress;
 	private readonly fault: DeviceStatusLatch;
 
 	public constructor(
@@ -90,8 +90,9 @@ export class AudioController {
 		this.activeSlots = new ApuActiveSlots(memory, this.audioOutput, this.sourceDma, this.eventLatch, this.slots, this.selectedSlotLatch);
 		this.statusRegister = new ApuStatusRegister(this.fault, this.slots, this.commandFifo, this.audioOutput.outputRing);
 		this.serviceClock = new ApuServiceClock(scheduler, this.commandFifo, this.slots);
+		this.commandIngress = new ApuCommandIngress(memory, this.commandFifo, this.fault, this.serviceClock, scheduler);
 		this.memory.mapIoRead(IO_APU_STATUS, this.statusRegister.read.bind(this.statusRegister));
-		this.memory.mapIoWrite(IO_APU_CMD, this.onCommandWrite.bind(this));
+		this.memory.mapIoWrite(IO_APU_CMD, this.commandIngress.onCommandWrite.bind(this.commandIngress));
 		this.memory.mapIoWrite(IO_APU_SLOT, this.selectedSlotLatch.refresh.bind(this.selectedSlotLatch));
 		this.memory.mapIoWrite(IO_APU_FAULT_ACK, () => {
 			this.fault.acknowledge();
@@ -214,34 +215,6 @@ export class AudioController {
 		}
 		this.activeSlots.advance(this.serviceClock.consumeSamples());
 		this.serviceClock.scheduleNext(nowCycles);
-	}
-
-	public onCommandWrite(): void {
-		const command = this.memory.readIoU32(IO_APU_CMD);
-		switch (command) {
-			case APU_CMD_PLAY:
-			case APU_CMD_STOP_SLOT:
-			case APU_CMD_SET_SLOT_GAIN:
-				if (this.enqueueCommand(command)) {
-					this.serviceClock.scheduleNext(this.scheduler.currentNowCycles());
-				}
-				clearApuCommandLatch(this.memory);
-				return;
-			case APU_CMD_NONE:
-				return;
-			default:
-				this.fault.raise(APU_FAULT_BAD_CMD, command);
-				clearApuCommandLatch(this.memory);
-				return;
-		}
-	}
-
-	private enqueueCommand(command: number): boolean {
-		if (!this.commandFifo.enqueue(command, this.memory)) {
-			this.fault.raise(APU_FAULT_CMD_FIFO_FULL, command);
-			return false;
-		}
-		return true;
 	}
 
 	private drainCommandFifo(): void {

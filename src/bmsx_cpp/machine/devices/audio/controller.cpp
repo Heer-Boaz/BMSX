@@ -32,9 +32,10 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 	, m_selectedSlotLatch(memory, m_fault, m_slots)
 	, m_activeSlots(memory, m_audioOutput, m_sourceDma, m_eventLatch, m_slots, m_selectedSlotLatch)
 	, m_statusRegister(m_fault, m_slots, m_commandFifo, m_audioOutput.outputRing)
-	, m_serviceClock(scheduler, m_commandFifo, m_slots) {
+	, m_serviceClock(scheduler, m_commandFifo, m_slots)
+	, m_commandIngress(memory, m_commandFifo, m_fault, m_serviceClock, scheduler) {
 	m_memory.mapIoRead(IO_APU_STATUS, this, &AudioController::onStatusReadThunk);
-	m_memory.mapIoWrite(IO_APU_CMD, this, &AudioController::onCommandWriteThunk);
+	m_memory.mapIoWrite(IO_APU_CMD, &m_commandIngress, &ApuCommandIngress::writeThunk);
 	m_memory.mapIoWrite(IO_APU_SLOT, this, &AudioController::onSlotWriteThunk);
 	m_memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, this, &AudioController::onOutputQueuedFramesReadThunk);
 	m_memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, this, &AudioController::onOutputFreeFramesReadThunk);
@@ -95,34 +96,6 @@ void AudioController::onService(int64_t nowCycles) {
 	m_serviceClock.scheduleNext(nowCycles);
 }
 
-void AudioController::onCommandWrite() {
-	const uint32_t command = m_memory.readIoU32(IO_APU_CMD);
-	switch (command) {
-		case APU_CMD_PLAY:
-		case APU_CMD_STOP_SLOT:
-		case APU_CMD_SET_SLOT_GAIN:
-			if (enqueueCommand(command)) {
-				m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
-			}
-			clearApuCommandLatch(m_memory);
-			return;
-		case APU_CMD_NONE:
-			return;
-		default:
-			m_fault.raise(APU_FAULT_BAD_CMD, command);
-			clearApuCommandLatch(m_memory);
-			return;
-	}
-}
-
-bool AudioController::enqueueCommand(uint32_t command) {
-	if (!m_commandFifo.enqueue(command, m_memory)) {
-		m_fault.raise(APU_FAULT_CMD_FIFO_FULL, command);
-		return false;
-	}
-	return true;
-}
-
 void AudioController::drainCommandFifo() {
 	while (!m_commandFifo.empty()) {
 		const uint32_t command = m_commandFifo.popInto(m_commandDispatchRegisterWords);
@@ -145,11 +118,6 @@ void AudioController::executeCommand(uint32_t command, const ApuParameterRegiste
 			m_fault.raise(APU_FAULT_BAD_CMD, command);
 			return;
 	}
-}
-
-// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the APU device instance.
-void AudioController::onCommandWriteThunk(void* context, uint32_t, Value) {
-	static_cast<AudioController*>(context)->onCommandWrite();
 }
 
 // disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the APU device instance.
