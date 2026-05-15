@@ -13,6 +13,10 @@ u32 ApuCommandFifo::free() const {
 	return APU_COMMAND_FIFO_CAPACITY - m_queuedCount;
 }
 
+u32 ApuCommandFifo::capacity() const {
+	return APU_COMMAND_FIFO_CAPACITY;
+}
+
 bool ApuCommandFifo::empty() const {
 	return m_queuedCount == 0u;
 }

@@ -31,6 +31,10 @@ export class ApuCommandFifo {
 		return APU_COMMAND_FIFO_CAPACITY - this.queuedCount;
 	}
 
+	public get capacity(): number {
+		return APU_COMMAND_FIFO_CAPACITY;
+	}
+
 	public get empty(): boolean {
 		return this.queuedCount === 0;
 	}

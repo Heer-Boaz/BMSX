@@ -21,6 +21,7 @@ class ApuCommandFifo {
 public:
 	u32 count() const;
 	u32 free() const;
+	u32 capacity() const;
 	bool empty() const;
 	bool full() const;
 	void reset();

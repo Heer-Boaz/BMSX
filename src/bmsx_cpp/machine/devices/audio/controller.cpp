@@ -33,16 +33,17 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 	, m_activeSlots(memory, m_audioOutput, m_sourceDma, m_eventLatch, m_slots, m_selectedSlotLatch)
 	, m_statusRegister(m_fault, m_slots, m_commandFifo, m_audioOutput.outputRing)
 	, m_serviceClock(scheduler, m_commandFifo, m_slots)
-	, m_commandIngress(memory, m_commandFifo, m_fault, m_serviceClock, scheduler) {
+	, m_commandIngress(memory, m_commandFifo, m_fault, m_serviceClock, scheduler)
+	, m_queueStatusRegisters(m_commandFifo, m_audioOutput.outputRing) {
 	m_memory.mapIoRead(IO_APU_STATUS, this, &AudioController::onStatusReadThunk);
 	m_memory.mapIoWrite(IO_APU_CMD, &m_commandIngress, &ApuCommandIngress::writeThunk);
 	m_memory.mapIoWrite(IO_APU_SLOT, this, &AudioController::onSlotWriteThunk);
-	m_memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, this, &AudioController::onOutputQueuedFramesReadThunk);
-	m_memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, this, &AudioController::onOutputFreeFramesReadThunk);
-	m_memory.mapIoRead(IO_APU_OUTPUT_CAPACITY_FRAMES, this, &AudioController::onOutputCapacityFramesReadThunk);
-	m_memory.mapIoRead(IO_APU_CMD_QUEUED, this, &AudioController::onCommandQueuedReadThunk);
-	m_memory.mapIoRead(IO_APU_CMD_FREE, this, &AudioController::onCommandFreeReadThunk);
-	m_memory.mapIoRead(IO_APU_CMD_CAPACITY, this, &AudioController::onCommandCapacityReadThunk);
+	m_memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
+	m_memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
+	m_memory.mapIoRead(IO_APU_OUTPUT_CAPACITY_FRAMES, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
+	m_memory.mapIoRead(IO_APU_CMD_QUEUED, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
+	m_memory.mapIoRead(IO_APU_CMD_FREE, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
+	m_memory.mapIoRead(IO_APU_CMD_CAPACITY, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
 	for (uint32_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		m_memory.mapIoRead(IO_APU_SELECTED_SLOT_REG0 + index * IO_WORD_SIZE, this, &AudioController::onSelectedSlotRegisterReadThunk);
 		m_memory.mapIoWrite(IO_APU_SELECTED_SLOT_REG0 + index * IO_WORD_SIZE, this, &AudioController::onSelectedSlotRegisterWriteThunk);
@@ -134,35 +135,6 @@ void AudioController::onFaultAckWriteThunk(void* context, uint32_t, Value) {
 Value AudioController::onStatusReadThunk(void* context, uint32_t) {
 	auto& controller = *static_cast<AudioController*>(context);
 	return valueNumber(static_cast<double>(controller.m_statusRegister.read()));
-}
-
-Value AudioController::onOutputQueuedFramesReadThunk(void* context, uint32_t) {
-	auto& controller = *static_cast<AudioController*>(context);
-	return valueNumber(static_cast<double>(controller.m_audioOutput.outputRing.queuedFrames()));
-}
-
-Value AudioController::onOutputFreeFramesReadThunk(void* context, uint32_t) {
-	auto& controller = *static_cast<AudioController*>(context);
-	return valueNumber(static_cast<double>(controller.m_audioOutput.outputRing.freeFrames()));
-}
-
-Value AudioController::onOutputCapacityFramesReadThunk(void* context, uint32_t) {
-	auto& controller = *static_cast<AudioController*>(context);
-	return valueNumber(static_cast<double>(controller.m_audioOutput.outputRing.capacityFrames()));
-}
-
-Value AudioController::onCommandQueuedReadThunk(void* context, uint32_t) {
-	auto& controller = *static_cast<AudioController*>(context);
-	return valueNumber(static_cast<double>(controller.m_commandFifo.count()));
-}
-
-Value AudioController::onCommandFreeReadThunk(void* context, uint32_t) {
-	auto& controller = *static_cast<AudioController*>(context);
-	return valueNumber(static_cast<double>(controller.m_commandFifo.free()));
-}
-
-Value AudioController::onCommandCapacityReadThunk(void*, uint32_t) {
-	return valueNumber(static_cast<double>(APU_COMMAND_FIFO_CAPACITY));
 }
 
 Value AudioController::onSelectedSlotRegisterReadThunk(void* context, uint32_t addr) {

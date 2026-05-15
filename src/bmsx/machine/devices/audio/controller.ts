@@ -12,8 +12,8 @@ import { ApuSlotBank } from './slot_bank';
 import { ApuSelectedSlotLatch } from './selected_slot_latch';
 import { ApuStatusRegister } from './status_register';
 import { ApuServiceClock } from './service_clock';
+import { ApuQueueStatusRegisters } from './queue_status_registers';
 import {
-	APU_COMMAND_FIFO_CAPACITY,
 	APU_CMD_PLAY,
 	APU_CMD_SET_SLOT_GAIN,
 	APU_CMD_STOP_SLOT,
@@ -37,12 +37,12 @@ import {
 	IO_APU_CMD_CAPACITY,
 	IO_APU_CMD_FREE,
 	IO_APU_CMD_QUEUED,
-	IO_APU_FAULT_ACK,
-	IO_APU_FAULT_CODE,
-	IO_APU_FAULT_DETAIL,
 	IO_APU_OUTPUT_CAPACITY_FRAMES,
 	IO_APU_OUTPUT_FREE_FRAMES,
 	IO_APU_OUTPUT_QUEUED_FRAMES,
+	IO_APU_FAULT_ACK,
+	IO_APU_FAULT_CODE,
+	IO_APU_FAULT_DETAIL,
 	IO_APU_PARAMETER_REGISTER_ADDRS,
 	IO_APU_SELECTED_SLOT_REG0,
 	IO_APU_SLOT,
@@ -75,6 +75,7 @@ export class AudioController {
 	private readonly statusRegister: ApuStatusRegister;
 	private readonly serviceClock: ApuServiceClock;
 	private readonly commandIngress: ApuCommandIngress;
+	private readonly queueStatusRegisters: ApuQueueStatusRegisters;
 	private readonly fault: DeviceStatusLatch;
 
 	public constructor(
@@ -91,18 +92,20 @@ export class AudioController {
 		this.statusRegister = new ApuStatusRegister(this.fault, this.slots, this.commandFifo, this.audioOutput.outputRing);
 		this.serviceClock = new ApuServiceClock(scheduler, this.commandFifo, this.slots);
 		this.commandIngress = new ApuCommandIngress(memory, this.commandFifo, this.fault, this.serviceClock, scheduler);
+		this.queueStatusRegisters = new ApuQueueStatusRegisters(this.commandFifo, this.audioOutput.outputRing);
 		this.memory.mapIoRead(IO_APU_STATUS, this.statusRegister.read.bind(this.statusRegister));
 		this.memory.mapIoWrite(IO_APU_CMD, this.commandIngress.onCommandWrite.bind(this.commandIngress));
 		this.memory.mapIoWrite(IO_APU_SLOT, this.selectedSlotLatch.refresh.bind(this.selectedSlotLatch));
 		this.memory.mapIoWrite(IO_APU_FAULT_ACK, () => {
 			this.fault.acknowledge();
 		});
-		this.memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, () => this.audioOutput.outputRing.queuedFrames());
-		this.memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, () => this.audioOutput.outputRing.freeFrames());
-		this.memory.mapIoRead(IO_APU_OUTPUT_CAPACITY_FRAMES, () => this.audioOutput.outputRing.capacityFrames());
-		this.memory.mapIoRead(IO_APU_CMD_QUEUED, () => this.commandFifo.count);
-		this.memory.mapIoRead(IO_APU_CMD_FREE, () => this.commandFifo.free);
-		this.memory.mapIoRead(IO_APU_CMD_CAPACITY, () => APU_COMMAND_FIFO_CAPACITY);
+		const queueStatusRegisterRead = this.queueStatusRegisters.read.bind(this.queueStatusRegisters);
+		this.memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, queueStatusRegisterRead);
+		this.memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, queueStatusRegisterRead);
+		this.memory.mapIoRead(IO_APU_OUTPUT_CAPACITY_FRAMES, queueStatusRegisterRead);
+		this.memory.mapIoRead(IO_APU_CMD_QUEUED, queueStatusRegisterRead);
+		this.memory.mapIoRead(IO_APU_CMD_FREE, queueStatusRegisterRead);
+		this.memory.mapIoRead(IO_APU_CMD_CAPACITY, queueStatusRegisterRead);
 		const selectedSlotRegisterRead = this.onSelectedSlotRegisterRead.bind(this);
 		const selectedSlotRegisterWrite = this.onSelectedSlotRegisterWrite.bind(this);
 		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {

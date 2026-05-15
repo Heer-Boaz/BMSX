@@ -6,6 +6,7 @@
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/audio/event_latch.h"
 #include "machine/devices/audio/output.h"
+#include "machine/devices/audio/queue_status_registers.h"
 #include "machine/devices/audio/save_state.h"
 #include "machine/devices/audio/selected_slot_latch.h"
 #include "machine/devices/audio/service_clock.h"
@@ -42,12 +43,6 @@ private:
 	static void onSlotWriteThunk(void* context, uint32_t addr, Value value);
 	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value);
 	static Value onStatusReadThunk(void* context, uint32_t addr);
-	static Value onOutputQueuedFramesReadThunk(void* context, uint32_t addr);
-	static Value onOutputFreeFramesReadThunk(void* context, uint32_t addr);
-	static Value onOutputCapacityFramesReadThunk(void* context, uint32_t addr);
-	static Value onCommandQueuedReadThunk(void* context, uint32_t addr);
-	static Value onCommandFreeReadThunk(void* context, uint32_t addr);
-	static Value onCommandCapacityReadThunk(void* context, uint32_t addr);
 	static Value onSelectedSlotRegisterReadThunk(void* context, uint32_t addr);
 	static void onSelectedSlotRegisterWriteThunk(void* context, uint32_t addr, Value value);
 
@@ -66,6 +61,7 @@ private:
 	ApuStatusRegister m_statusRegister;
 	ApuServiceClock m_serviceClock;
 	ApuCommandIngress m_commandIngress;
+	ApuQueueStatusRegisters m_queueStatusRegisters;
 
 	void drainCommandFifo();
 	void executeCommand(uint32_t command, const ApuParameterRegisterWords& registerWords);

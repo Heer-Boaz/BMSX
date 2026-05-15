@@ -246,7 +246,8 @@ faults, and wakes the service clock. The APU event latch
 `machine/devices/audio/event_latch` files. The command FIFO ring,
 read/write pointers, queued count, and per-entry parameter words are owned by
 mirrored `machine/devices/audio/command_fifo` files and are saved through that
-owner. The APU service clock owns CPU-cycle sample accrual, carry and
+owner. Queue-depth status registers for command FIFO and AOUT output ring state
+are owned by mirrored `machine/devices/audio/queue_status_registers` files. The APU service clock owns CPU-cycle sample accrual, carry and
 pending-sample latches, and the scheduler service edge in mirrored
 `machine/devices/audio/service_clock` files; aggregate save-state stores only
 those latch words.
