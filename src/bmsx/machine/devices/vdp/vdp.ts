@@ -30,6 +30,8 @@ import {
 	VDP_FAULT_SBX_SOURCE_OOB,
 	VDP_FAULT_BBU_SOURCE_OOB,
 	VDP_FAULT_BBU_ZERO_SIZE,
+	VDP_FAULT_MDU_BAD_JOINT_RANGE,
+	VDP_FAULT_MDU_BAD_MORPH_RANGE,
 	VDP_FAULT_VRAM_WRITE_OOB,
 	VDP_FAULT_VRAM_SLOT_DIM,
 	VDP_FAULT_VRAM_WRITE_UNALIGNED,
@@ -114,6 +116,21 @@ import {
 	VDP_BBU_PACKET_KIND,
 	VDP_BBU_PACKET_PAYLOAD_WORDS,
 } from './bbu';
+import {
+	VdpJtuUnit,
+	VDP_JTU_PACKET_KIND,
+} from './jtu';
+import {
+	type VdpMduPacket,
+	VdpMduFrameBuffer,
+	VdpMduUnit,
+	VDP_MDU_PACKET_KIND,
+	VDP_MDU_PACKET_PAYLOAD_WORDS,
+} from './mdu';
+import {
+	VdpMfuUnit,
+	VDP_MFU_PACKET_KIND,
+} from './mfu';
 import {
 	VDP_XF_REGISTER_WORDS,
 	VDP_XF_PACKET_KIND,
@@ -249,12 +266,16 @@ export class VDP implements VramWriteSink {
 		faultDetail: 0,
 	};
 	private readonly xf = new VdpXfUnit();
+	private readonly mfu = new VdpMfuUnit();
+	private readonly jtu = new VdpJtuUnit();
 	private readonly pmu = new VdpPmuUnit();
 	private readonly bbu = new VdpBbuUnit();
+	private readonly mdu = new VdpMduUnit();
 	private readonly vout = new VdpVoutUnit();
 	private readonly buildFrame: VdpBuildingFrameState = {
 		queue: new VdpBlitterCommandBuffer(),
 		billboards: new VdpBbuFrameBuffer(),
+		meshes: new VdpMduFrameBuffer(),
 		state: VDP_DEX_FRAME_IDLE,
 		cost: 0,
 	};
@@ -730,8 +751,37 @@ export class VDP implements VramWriteSink {
 					this.memory.readU32(cursor + IO_WORD_SIZE * 9),
 				)) ? payloadEnd : -1;
 			}
-			case VDP_XF_PACKET_KIND: {
-				return this.consumeXfPacketFromMemory(word, cursor, end);
+			case VDP_XF_PACKET_KIND:
+			case VDP_MFU_PACKET_KIND:
+			case VDP_JTU_PACKET_KIND:
+				return this.consumeUnitRegisterPacketFromMemory(word, cursor, end);
+			case VDP_MDU_PACKET_KIND: {
+				if (!isVdpUnitPacketHeaderValid(word, VDP_MDU_PACKET_PAYLOAD_WORDS)) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+					return -1;
+				}
+				const byteCount = VDP_MDU_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
+				const payloadEnd = cursor + byteCount;
+				if (payloadEnd > end) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+					return -1;
+				}
+				const reserved = this.memory.readU32(cursor + IO_WORD_SIZE * 9);
+				if (reserved !== 0) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, reserved);
+					return -1;
+				}
+				return this.latchMeshPacket(this.mdu.decodePacket(
+					this.memory.readU32(cursor),
+					this.memory.readU32(cursor + IO_WORD_SIZE),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 2),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 3),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 4),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 5),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 6),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 7),
+					this.memory.readU32(cursor + IO_WORD_SIZE * 8),
+				)) ? payloadEnd : -1;
 			}
 			case VDP_SBX_PACKET_KIND: {
 				if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS)) {
@@ -758,7 +808,7 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	private consumeXfPacketFromMemory(word: number, cursor: number, end: number): number {
+	private consumeUnitRegisterPacketFromMemory(word: number, cursor: number, end: number): number {
 		if (vdpUnitPacketHasFlags(word)) {
 			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
@@ -768,22 +818,19 @@ export class VDP implements VramWriteSink {
 			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
 		}
-		const byteCount = payloadWords * IO_WORD_SIZE;
-		const payloadEnd = cursor + byteCount;
+		const payloadEnd = cursor + payloadWords * IO_WORD_SIZE;
 		if (payloadEnd > end) {
 			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
 		}
+		const packetKind = word & VDP_PKT_KIND_MASK;
 		const firstRegister = this.memory.readU32(cursor);
 		const registerCount = payloadWords - 1;
-		if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
-			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+		if (!this.acceptUnitRegisterRange(packetKind, firstRegister, registerCount)) {
 			return -1;
 		}
 		for (let offset = 0; offset < registerCount; offset += 1) {
-			const value = this.memory.readU32(cursor + (offset + 1) * IO_WORD_SIZE);
-			if (!this.xf.writeRegister(firstRegister + offset, value)) {
-				this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
+			if (!this.writeUnitRegisterWord(packetKind, firstRegister + offset, this.memory.readU32(cursor + (offset + 1) * IO_WORD_SIZE))) {
 				return -1;
 			}
 		}
@@ -838,7 +885,29 @@ export class VDP implements VramWriteSink {
 					words[cursor + 9],
 				)) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : -1;
 			case VDP_XF_PACKET_KIND:
-				return this.consumeXfPacketFromWords(words, word, cursor, wordCount);
+			case VDP_MFU_PACKET_KIND:
+			case VDP_JTU_PACKET_KIND:
+				return this.consumeUnitRegisterPacketFromWords(words, word, cursor, wordCount);
+			case VDP_MDU_PACKET_KIND:
+				if (!isVdpUnitPacketHeaderValid(word, VDP_MDU_PACKET_PAYLOAD_WORDS) || cursor + VDP_MDU_PACKET_PAYLOAD_WORDS > wordCount) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+					return -1;
+				}
+				if (words[cursor + 9] !== 0) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, words[cursor + 9]);
+					return -1;
+				}
+				return this.latchMeshPacket(this.mdu.decodePacket(
+					words[cursor],
+					words[cursor + 1],
+					words[cursor + 2],
+					words[cursor + 3],
+					words[cursor + 4],
+					words[cursor + 5],
+					words[cursor + 6],
+					words[cursor + 7],
+					words[cursor + 8],
+				)) ? cursor + VDP_MDU_PACKET_PAYLOAD_WORDS : -1;
 			case VDP_SBX_PACKET_KIND:
 				if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
 					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
@@ -856,7 +925,7 @@ export class VDP implements VramWriteSink {
 		}
 	}
 
-	private consumeXfPacketFromWords(words: Uint32Array, word: number, cursor: number, wordCount: number): number {
+	private consumeUnitRegisterPacketFromWords(words: Uint32Array, word: number, cursor: number, wordCount: number): number {
 		if (vdpUnitPacketHasFlags(word)) {
 			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
@@ -866,20 +935,62 @@ export class VDP implements VramWriteSink {
 			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 			return -1;
 		}
+		const packetKind = word & VDP_PKT_KIND_MASK;
 		const firstRegister = words[cursor];
 		const registerCount = payloadWords - 1;
-		if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
-			this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+		if (!this.acceptUnitRegisterRange(packetKind, firstRegister, registerCount)) {
 			return -1;
 		}
 		for (let offset = 0; offset < registerCount; offset += 1) {
-			const value = words[cursor + offset + 1];
-			if (!this.xf.writeRegister(firstRegister + offset, value)) {
-				this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
+			if (!this.writeUnitRegisterWord(packetKind, firstRegister + offset, words[cursor + offset + 1])) {
 				return -1;
 			}
 		}
 		return cursor + payloadWords;
+	}
+
+	private acceptUnitRegisterRange(packetKind: number, firstRegister: number, registerCount: number): boolean {
+		switch (packetKind) {
+			case VDP_XF_PACKET_KIND:
+				if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+					return false;
+				}
+				return true;
+			case VDP_MFU_PACKET_KIND:
+				if (firstRegister >= this.mfu.weightWords.length || registerCount > this.mfu.weightWords.length - firstRegister) {
+					this.fault.raise(VDP_FAULT_MDU_BAD_MORPH_RANGE, firstRegister);
+					return false;
+				}
+				return true;
+			case VDP_JTU_PACKET_KIND:
+				if (firstRegister >= this.jtu.matrixWords.length || registerCount > this.jtu.matrixWords.length - firstRegister) {
+					this.fault.raise(VDP_FAULT_MDU_BAD_JOINT_RANGE, firstRegister);
+					return false;
+				}
+				return true;
+		}
+		this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, packetKind);
+		return false;
+	}
+
+	private writeUnitRegisterWord(packetKind: number, registerIndex: number, value: number): boolean {
+		switch (packetKind) {
+			case VDP_XF_PACKET_KIND:
+				if (!this.xf.writeRegister(registerIndex, value)) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
+					return false;
+				}
+				return true;
+			case VDP_MFU_PACKET_KIND:
+				this.mfu.weightWords[registerIndex] = value >>> 0;
+				return true;
+			case VDP_JTU_PACKET_KIND:
+				this.jtu.matrixWords[registerIndex] = value >>> 0;
+				return true;
+		}
+		this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, packetKind);
+		return false;
 	}
 
 	private decodeReg1Packet(word: number): number {
@@ -1194,6 +1305,7 @@ export class VDP implements VramWriteSink {
 	private resetBuildFrameState(): void {
 		this.buildFrame.queue.reset();
 		this.buildFrame.billboards.reset();
+		this.buildFrame.meshes.reset();
 		this.buildFrame.cost = 0;
 		this.buildFrame.state = VDP_DEX_FRAME_IDLE;
 	}
@@ -1212,6 +1324,9 @@ export class VDP implements VramWriteSink {
 		frame.skyboxControl = 0;
 		frame.skyboxFaceWords.fill(0);
 		frame.billboards.reset();
+		frame.meshes.reset();
+		frame.morphWeightWords.fill(0);
+		frame.jointMatrixWords.fill(0);
 	}
 
 	private resetQueuedFrameState(): void {
@@ -1219,6 +1334,7 @@ export class VDP implements VramWriteSink {
 		this.clearActiveFrame();
 		this.pendingFrame.queue.reset();
 		this.pendingFrame.billboards.reset();
+		this.pendingFrame.meshes.reset();
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
@@ -1302,8 +1418,9 @@ export class VDP implements VramWriteSink {
 		}
 		const buildQueue = this.buildFrame.queue;
 		const buildBillboards = this.buildFrame.billboards;
+		const buildMeshes = this.buildFrame.meshes;
 		const frameHasFrameBufferCommands = buildQueue.length !== 0;
-		const frameHasCommands = frameHasFrameBufferCommands || buildBillboards.length !== 0;
+		const frameHasCommands = frameHasFrameBufferCommands || buildBillboards.length !== 0 || buildMeshes.length !== 0;
 		const frameCost = buildQueue.length !== 0 && buildQueue.opcode[0] !== VDP_BLITTER_OPCODE_CLEAR
 			? this.buildFrame.cost + VDP_RENDER_CLEAR_COST
 			: this.buildFrame.cost;
@@ -1318,6 +1435,8 @@ export class VDP implements VramWriteSink {
 		frame.xf.matrixWords.set(this.xf.matrixWords);
 		frame.xf.viewMatrixIndex = this.xf.viewMatrixIndex;
 		frame.xf.projectionMatrixIndex = this.xf.projectionMatrixIndex;
+		frame.morphWeightWords.set(this.mfu.weightWords);
+		frame.jointMatrixWords.set(this.jtu.matrixWords);
 		frame.skyboxControl = completedSbx.control;
 		frame.skyboxFaceWords.set(sbxSealFaceWords);
 		const frameSkyboxSamples = frame.skyboxSamples;
@@ -1327,6 +1446,8 @@ export class VDP implements VramWriteSink {
 		frame.queue = buildQueue;
 		this.buildFrame.billboards = frame.billboards;
 		frame.billboards = buildBillboards;
+		this.buildFrame.meshes = frame.meshes;
+		frame.meshes = buildMeshes;
 		if (frameCost === 0) {
 			frame.state = VDP_SUBMITTED_FRAME_READY;
 		} else if (activeFrameEmpty) {
@@ -1344,6 +1465,7 @@ export class VDP implements VramWriteSink {
 		frame.frameBufferHeight = voutFrame.frameBufferHeight;
 		this.buildFrame.queue.reset();
 		this.buildFrame.billboards.reset();
+		this.buildFrame.meshes.reset();
 		this.buildFrame.cost = 0;
 		this.buildFrame.state = VDP_DEX_FRAME_IDLE;
 		this.scheduleNextService(this.scheduler.currentNowCycles());
@@ -1876,6 +1998,16 @@ export class VDP implements VramWriteSink {
 		return true;
 	}
 
+	private latchMeshPacket(packet: VdpMduPacket): boolean {
+		const decision = this.mdu.beginPacket(packet, this.buildFrame.meshes.length);
+		if (decision.faultCode !== VDP_FAULT_NONE) {
+			this.fault.raise(decision.faultCode, decision.faultDetail);
+			return false;
+		}
+		this.mdu.completePacket(this.buildFrame.meshes, packet, this.nextBlitterSequence());
+		return true;
+	}
+
 	private resolveSkyboxSampleInto(
 		slot: number,
 		u: number,
@@ -2154,8 +2286,11 @@ export class VDP implements VramWriteSink {
 		this.pmu.reset();
 		this.syncPmuRegisterWindow();
 		this.xf.reset();
+		this.mfu.reset();
+		this.jtu.reset();
 		this.vout.reset(dither, this.fbm.width, this.fbm.height);
 		this.bbu.reset();
+		this.mdu.reset();
 		this.sbx.reset();
 		this.syncSbxRegisterWindow();
 		this.lastFrameCommitted = true;
@@ -2237,7 +2372,7 @@ export class VDP implements VramWriteSink {
 
 	private commitLiveVisualState(): void {
 		this.sbx.presentLiveState();
-		this.vout.presentLiveState(this.xf, this.sbx.visibleEnabled);
+		this.vout.presentLiveState(this.xf, this.sbx.visibleEnabled, this.mfu, this.jtu);
 		this.resolveSkyboxFrameSamples(this.sbx.liveControlWord, this.sbx.visibleFaceState, this.vout.visibleSkyboxSampleBuffer);
 	}
 

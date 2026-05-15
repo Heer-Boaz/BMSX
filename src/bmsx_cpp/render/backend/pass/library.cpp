@@ -6,6 +6,7 @@
 #include "software_scene.h"
 #include "../../gameview.h"
 #include "../../3d/axis_gizmo_pipeline.h"
+#include "../../3d/mesh/pipeline.h"
 #include "../../3d/particles/pipeline.h"
 #include "../../3d/skybox/pipeline.h"
 #include "../../vdp/framebuffer.h"
@@ -251,6 +252,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 	}
 
 	registerSkyboxPass_GLES2(*this);
+	registerMeshPass_GLES2(*this);
 	registerParticlesPass_GLES2(*this);
 
 	{

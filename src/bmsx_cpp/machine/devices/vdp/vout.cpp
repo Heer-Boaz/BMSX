@@ -6,6 +6,7 @@ namespace bmsx {
 
 VdpVoutUnit::VdpVoutUnit(size_t billboardCapacity) {
 	m_visibleBillboards.reserve(billboardCapacity);
+	m_visibleMeshes.reserve(VDP_MDU_MESH_LIMIT);
 }
 
 void VdpVoutUnit::reset(i32 ditherType, u32 frameBufferWidth, u32 frameBufferHeight) {
@@ -25,6 +26,9 @@ void VdpVoutUnit::reset(i32 ditherType, u32 frameBufferWidth, u32 frameBufferHei
 	m_visibleSkyboxEnabled = false;
 	resetVisibleSkyboxSamples();
 	m_visibleBillboards.clear();
+	m_visibleMeshes.clear();
+	m_visibleMorphWeightWords.fill(0u);
+	m_visibleJointMatrixWords.fill(0u);
 	m_sealedFrameOutput.ditherType = ditherType;
 	m_sealedFrameOutput.frameBufferWidth = frameBufferWidth;
 	m_sealedFrameOutput.frameBufferHeight = frameBufferHeight;
@@ -87,10 +91,14 @@ void VdpVoutUnit::presentFrame(VdpSubmittedFrame& frame, bool skyboxEnabled) {
 	std::swap(m_visibleSkyboxSamples, frame.skyboxSamples);
 	m_visibleBillboards.swap(frame.billboards);
 	frame.billboards.clear();
+	m_visibleMeshes.swap(frame.meshes);
+	frame.meshes.clear();
+	m_visibleMorphWeightWords = frame.morphWeightWords;
+	m_visibleJointMatrixWords = frame.jointMatrixWords;
 	m_state = VdpVoutState::FramePresented;
 }
 
-void VdpVoutUnit::presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled) {
+void VdpVoutUnit::presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled, const VdpMfuUnit& mfu, const VdpJtuUnit& jtu) {
 	m_visibleDitherType = m_liveDitherType;
 	m_visibleFrameBufferWidth = m_liveFrameBufferWidth;
 	m_visibleFrameBufferHeight = m_liveFrameBufferHeight;
@@ -99,6 +107,9 @@ void VdpVoutUnit::presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled) {
 	m_visibleXf.projectionMatrixIndex = xf.projectionMatrixIndex;
 	m_visibleSkyboxEnabled = skyboxEnabled;
 	m_visibleBillboards.clear();
+	m_visibleMeshes.clear();
+	m_visibleMorphWeightWords = mfu.weightWords;
+	m_visibleJointMatrixWords = jtu.matrixWords;
 	m_state = VdpVoutState::FramePresented;
 }
 
@@ -114,6 +125,9 @@ const VdpDeviceOutput& VdpVoutUnit::readDeviceOutput(i64 nowCycles) {
 	m_deviceOutput.skyboxEnabled = m_visibleSkyboxEnabled;
 	m_deviceOutput.skyboxSamples = &m_visibleSkyboxSamples;
 	m_deviceOutput.billboards = &m_visibleBillboards;
+	m_deviceOutput.meshes = &m_visibleMeshes;
+	m_deviceOutput.morphWeightWords = &m_visibleMorphWeightWords;
+	m_deviceOutput.jointMatrixWords = &m_visibleJointMatrixWords;
 	m_deviceOutput.frameBufferWidth = m_visibleFrameBufferWidth;
 	m_deviceOutput.frameBufferHeight = m_visibleFrameBufferHeight;
 	return m_deviceOutput;

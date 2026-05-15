@@ -5,6 +5,7 @@ import { resolveVdpTransformSnapshot } from './transform';
 export function commitVdpViewSnapshot(view: GameView, output: VdpDeviceOutput): void {
 	view.dither_type = output.ditherType;
 	resolveVdpTransformSnapshot(view.vdpTransform, output.xfMatrixWords, output.xfViewMatrixIndex, output.xfProjectionMatrixIndex);
+	view.vdpXfMatrixWords.set(output.xfMatrixWords);
 	if (!output.skyboxEnabled) {
 		view.skyboxRenderReady = false;
 	} else {
@@ -49,4 +50,32 @@ export function commitVdpViewSnapshot(view: GameView, output: VdpDeviceOutput): 
 		slot[index] = billboards.slot[index];
 		surfaceId[index] = billboards.sourceSurfaceId[index];
 	}
+	const meshes = output.meshes;
+	view.vdpMeshCount = meshes.length;
+	const meshModelTokenLo = view.vdpMeshModelTokenLo;
+	const meshModelTokenHi = view.vdpMeshModelTokenHi;
+	const meshIndex = view.vdpMeshIndex;
+	const meshMaterialIndex = view.vdpMeshMaterialIndex;
+	const meshModelMatrixIndex = view.vdpMeshModelMatrixIndex;
+	const meshControl = view.vdpMeshControl;
+	const meshColor = view.vdpMeshColor;
+	const meshMorphBase = view.vdpMeshMorphBase;
+	const meshMorphCount = view.vdpMeshMorphCount;
+	const meshJointBase = view.vdpMeshJointBase;
+	const meshJointCount = view.vdpMeshJointCount;
+	for (let index = 0; index < meshes.length; index += 1) {
+		meshModelTokenLo[index] = meshes.modelTokenLo[index];
+		meshModelTokenHi[index] = meshes.modelTokenHi[index];
+		meshIndex[index] = meshes.meshIndex[index];
+		meshMaterialIndex[index] = meshes.materialIndex[index];
+		meshModelMatrixIndex[index] = meshes.modelMatrixIndex[index];
+		meshControl[index] = meshes.control[index];
+		meshColor[index] = meshes.color[index];
+		meshMorphBase[index] = meshes.morphBase[index];
+		meshMorphCount[index] = meshes.morphCount[index];
+		meshJointBase[index] = meshes.jointBase[index];
+		meshJointCount[index] = meshes.jointCount[index];
+	}
+	view.vdpMorphWeightWords.set(output.morphWeightWords);
+	view.vdpJointMatrixWords.set(output.jointMatrixWords);
 }

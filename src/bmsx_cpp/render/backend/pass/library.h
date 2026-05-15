@@ -56,6 +56,15 @@ struct ParticlePipelineState {
 	f32 ambientIntensity = 1.0f;
 };
 
+struct MeshPipelineState {
+	i32 width = 0;
+	i32 height = 0;
+	std::array<f32, 16> viewProj{};
+	TextureHandle textpagePrimaryTex = nullptr;
+	TextureHandle textpageSecondaryTex = nullptr;
+	TextureHandle systemSlotTex = nullptr;
+};
+
 struct Framebuffer2DPipelineState {
 	i32 width = 0;
 	i32 height = 0;

@@ -121,6 +121,14 @@ file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/particle.frag.glsl"
 	BMSX_RENDER_3D_PARTICLE_FRAGMENT_SHADER
 )
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.vert.glsl"
+	BMSX_RENDER_3D_MESH_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.frag.glsl"
+	BMSX_RENDER_3D_MESH_FRAGMENT_SHADER
+)
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/render_3d_shaders.h.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/3d/shaders/render_3d_shaders.h"
@@ -180,6 +188,7 @@ add_library(bmsx_core STATIC
 	render/3d/math.cpp
 	render/3d/camera.cpp
 	render/3d/axis_gizmo_pipeline.cpp
+	render/3d/mesh/pipeline.cpp
 	render/3d/particles/pipeline.cpp
 	render/3d/skybox/pipeline.cpp
 	render/gameview.cpp
@@ -279,6 +288,9 @@ add_library(bmsx_core STATIC
 	machine/devices/vdp/fbm.cpp
 	machine/devices/vdp/frame.cpp
 	machine/devices/vdp/ingress.cpp
+	machine/devices/vdp/jtu.cpp
+	machine/devices/vdp/mdu.cpp
+	machine/devices/vdp/mfu.cpp
 	machine/devices/vdp/pmu.cpp
 	machine/devices/vdp/readback.cpp
 	machine/devices/vdp/registers.cpp

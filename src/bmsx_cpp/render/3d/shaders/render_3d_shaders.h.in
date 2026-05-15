@@ -8,5 +8,7 @@ constexpr const char* kRender3DSkyboxVertexShader = R"BMSX_GLSL(@BMSX_RENDER_3D_
 constexpr const char* kRender3DSkyboxFragmentShader = R"BMSX_GLSL(@BMSX_RENDER_3D_SKYBOX_FRAGMENT_SHADER@)BMSX_GLSL";
 constexpr const char* kRender3DParticleVertexShader = R"BMSX_GLSL(@BMSX_RENDER_3D_PARTICLE_VERTEX_SHADER@)BMSX_GLSL";
 constexpr const char* kRender3DParticleFragmentShader = R"BMSX_GLSL(@BMSX_RENDER_3D_PARTICLE_FRAGMENT_SHADER@)BMSX_GLSL";
+constexpr const char* kRender3DMeshVertexShader = R"BMSX_GLSL(@BMSX_RENDER_3D_MESH_VERTEX_SHADER@)BMSX_GLSL";
+constexpr const char* kRender3DMeshFragmentShader = R"BMSX_GLSL(@BMSX_RENDER_3D_MESH_FRAGMENT_SHADER@)BMSX_GLSL";
 
 } // namespace bmsx

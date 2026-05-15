@@ -75,9 +75,9 @@ VDP::VDP(
 		m_memory.mapIoWrite(IO_VDP_SBX_FACE0 + index * IO_WORD_SIZE, this, &VDP::onSbxRegisterWindowWriteThunk);
 	}
 	m_memory.mapIoWrite(IO_VDP_SBX_COMMIT, this, &VDP::onSbxCommitWriteThunk);
-	reserveBuildFrameStorage(m_buildFrame);
-	reserveSubmittedFrameStorage(m_activeFrame);
-	reserveSubmittedFrameStorage(m_pendingFrame);
+	reserveFrameStorage(m_buildFrame);
+	reserveFrameStorage(m_activeFrame);
+	reserveFrameStorage(m_pendingFrame);
 }
 
 void VDP::resetIngressState() {
@@ -464,8 +464,36 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 				m_memory.readU32(cursor + IO_WORD_SIZE * 8u),
 				m_memory.readU32(cursor + IO_WORD_SIZE * 9u))) ? payloadEnd : VDP_REPLAY_PACKET_FAULT;
 		}
-		case VDP_XF_PACKET_KIND: {
-			return consumeXfPacketFromMemory(word, cursor, end);
+		case VDP_XF_PACKET_KIND:
+		case VDP_MFU_PACKET_KIND:
+		case VDP_JTU_PACKET_KIND:
+			return consumeUnitRegisterPacketFromMemory(word, cursor, end);
+		case VDP_MDU_PACKET_KIND: {
+			if (!isVdpUnitPacketHeaderValid(word, VDP_MDU_PACKET_PAYLOAD_WORDS)) {
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+				return VDP_REPLAY_PACKET_FAULT;
+			}
+			const u32 byteCount = VDP_MDU_PACKET_PAYLOAD_WORDS * IO_WORD_SIZE;
+			const u32 payloadEnd = cursor + byteCount;
+			if (payloadEnd > end) {
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+				return VDP_REPLAY_PACKET_FAULT;
+			}
+			const u32 reserved = m_memory.readU32(cursor + IO_WORD_SIZE * 9u);
+			if (reserved != 0u) {
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, reserved);
+				return VDP_REPLAY_PACKET_FAULT;
+			}
+			return latchMeshPacket(m_mdu.decodePacket(
+				m_memory.readU32(cursor),
+				m_memory.readU32(cursor + IO_WORD_SIZE),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 2u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 3u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 4u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 5u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 6u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 7u),
+				m_memory.readU32(cursor + IO_WORD_SIZE * 8u))) ? payloadEnd : VDP_REPLAY_PACKET_FAULT;
 		}
 		case VDP_SBX_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS)) {
@@ -491,7 +519,7 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 	}
 }
 
-u32 VDP::consumeXfPacketFromMemory(u32 word, u32 cursor, u32 end) {
+u32 VDP::consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor, u32 end) {
 	if (vdpUnitPacketHasFlags(word)) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
@@ -501,22 +529,19 @@ u32 VDP::consumeXfPacketFromMemory(u32 word, u32 cursor, u32 end) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
-	const u32 byteCount = payloadWords * IO_WORD_SIZE;
-	const u32 payloadEnd = cursor + byteCount;
+	const u32 payloadEnd = cursor + payloadWords * IO_WORD_SIZE;
 	if (payloadEnd > end) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
+	const u32 packetKind = word & VDP_PKT_KIND_MASK;
 	const u32 firstRegister = m_memory.readU32(cursor);
 	const u32 registerCount = payloadWords - 1u;
-	if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+	if (!acceptUnitRegisterRange(packetKind, firstRegister, registerCount)) {
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	for (u32 offset = 0u; offset < registerCount; ++offset) {
-		const u32 value = m_memory.readU32(cursor + (offset + 1u) * IO_WORD_SIZE);
-		if (!m_xf.writeRegister(firstRegister + offset, value)) {
-			m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
+		if (!writeUnitRegisterWord(packetKind, firstRegister + offset, m_memory.readU32(cursor + (offset + 1u) * IO_WORD_SIZE))) {
 			return VDP_REPLAY_PACKET_FAULT;
 		}
 	}
@@ -570,15 +595,36 @@ u32 VDP::consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u3
 				words[cursor + 8u],
 				words[cursor + 9u])) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : VDP_REPLAY_PACKET_FAULT;
 		case VDP_XF_PACKET_KIND:
-			return consumeXfPacketFromWords(words, word, cursor, wordCount);
+		case VDP_MFU_PACKET_KIND:
+		case VDP_JTU_PACKET_KIND:
+			return consumeUnitRegisterPacketFromWords(words, word, cursor, wordCount);
+		case VDP_MDU_PACKET_KIND:
+			if (!isVdpUnitPacketHeaderValid(word, VDP_MDU_PACKET_PAYLOAD_WORDS) || cursor + VDP_MDU_PACKET_PAYLOAD_WORDS > wordCount) {
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
+				return VDP_REPLAY_PACKET_FAULT;
+			}
+			if (words[cursor + 9u] != 0u) {
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, words[cursor + 9u]);
+				return VDP_REPLAY_PACKET_FAULT;
+			}
+			return latchMeshPacket(m_mdu.decodePacket(
+				words[cursor],
+				words[cursor + 1u],
+				words[cursor + 2u],
+				words[cursor + 3u],
+				words[cursor + 4u],
+				words[cursor + 5u],
+				words[cursor + 6u],
+				words[cursor + 7u],
+				words[cursor + 8u])) ? cursor + VDP_MDU_PACKET_PAYLOAD_WORDS : VDP_REPLAY_PACKET_FAULT;
 		case VDP_SBX_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
 				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-				VdpSbxUnit::FaceWords& faceWords = m_sbx.beginPacket(words[cursor]);
-				for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
-					faceWords[index] = words[cursor + static_cast<u32>(index + 1u)];
+			VdpSbxUnit::FaceWords& faceWords = m_sbx.beginPacket(words[cursor]);
+			for (size_t index = 0; index < SKYBOX_FACE_WORD_COUNT; ++index) {
+				faceWords[index] = words[cursor + static_cast<u32>(index + 1u)];
 			}
 			m_sbx.commitPacket();
 			return cursor + VDP_SBX_PACKET_PAYLOAD_WORDS;
@@ -589,7 +635,7 @@ u32 VDP::consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u3
 	}
 }
 
-u32 VDP::consumeXfPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount) {
+u32 VDP::consumeUnitRegisterPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount) {
 	if (vdpUnitPacketHasFlags(word)) {
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
@@ -599,22 +645,63 @@ u32 VDP::consumeXfPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wo
 		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 		return VDP_REPLAY_PACKET_FAULT;
 	}
+	const u32 packetKind = word & VDP_PKT_KIND_MASK;
 	const u32 firstRegister = words[cursor];
 	const u32 registerCount = payloadWords - 1u;
-	if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+	if (!acceptUnitRegisterRange(packetKind, firstRegister, registerCount)) {
 		return VDP_REPLAY_PACKET_FAULT;
 	}
 	for (u32 offset = 0u; offset < registerCount; ++offset) {
-		const u32 value = words[cursor + offset + 1u];
-		if (!m_xf.writeRegister(firstRegister + offset, value)) {
-			m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
+		if (!writeUnitRegisterWord(packetKind, firstRegister + offset, words[cursor + offset + 1u])) {
 			return VDP_REPLAY_PACKET_FAULT;
 		}
 	}
 	return cursor + payloadWords;
 }
-// end repeated-sequence-acceptable
+
+bool VDP::acceptUnitRegisterRange(u32 packetKind, u32 firstRegister, u32 registerCount) {
+	switch (packetKind) {
+		case VDP_XF_PACKET_KIND:
+			if (firstRegister >= VDP_XF_REGISTER_WORDS || registerCount > VDP_XF_REGISTER_WORDS - firstRegister) {
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+				return false;
+			}
+			return true;
+		case VDP_MFU_PACKET_KIND:
+			if (firstRegister >= VDP_MFU_WEIGHT_COUNT || registerCount > VDP_MFU_WEIGHT_COUNT - firstRegister) {
+				m_fault.raise(VDP_FAULT_MDU_BAD_MORPH_RANGE, firstRegister);
+				return false;
+			}
+			return true;
+		case VDP_JTU_PACKET_KIND:
+			if (firstRegister >= VDP_JTU_REGISTER_WORDS || registerCount > VDP_JTU_REGISTER_WORDS - firstRegister) {
+				m_fault.raise(VDP_FAULT_MDU_BAD_JOINT_RANGE, firstRegister);
+				return false;
+			}
+			return true;
+	}
+	m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, packetKind);
+	return false;
+}
+
+bool VDP::writeUnitRegisterWord(u32 packetKind, u32 registerIndex, u32 value) {
+	switch (packetKind) {
+		case VDP_XF_PACKET_KIND:
+			if (!m_xf.writeRegister(registerIndex, value)) {
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
+				return false;
+			}
+			return true;
+		case VDP_MFU_PACKET_KIND:
+			m_mfu.weightWords[static_cast<size_t>(registerIndex)] = value;
+			return true;
+		case VDP_JTU_PACKET_KIND:
+			m_jtu.matrixWords[static_cast<size_t>(registerIndex)] = value;
+			return true;
+	}
+	m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, packetKind);
+	return false;
+}
 
 u32 VDP::decodeReg1Packet(u32 word) const {
 	if ((word & VDP_PKT_RESERVED_MASK) != 0u) {
@@ -1066,6 +1153,7 @@ void VDP::resetBuildFrameState() {
 	recycleBlitterBuffers(m_buildFrame.queue);
 	m_buildFrame.queue.clear();
 	m_buildFrame.billboards.clear();
+	m_buildFrame.meshes.clear();
 	m_buildFrame.cost = 0;
 	m_buildFrame.state = VdpDexFrameState::Idle;
 }
@@ -1075,6 +1163,7 @@ void VDP::resetQueuedFrameState() {
 	clearActiveFrame();
 	recycleBlitterBuffers(m_pendingFrame.queue);
 	m_pendingFrame.billboards.clear();
+	m_pendingFrame.meshes.clear();
 	resetSubmittedFrameSlot(m_pendingFrame);
 }
 
@@ -1159,7 +1248,7 @@ bool VDP::sealSubmittedFrame() {
 		frame = &m_pendingFrame;
 	}
 	const bool frameHasFrameBufferCommands = !m_buildFrame.queue.empty();
-	const bool frameHasCommands = frameHasFrameBufferCommands || !m_buildFrame.billboards.empty();
+	const bool frameHasCommands = frameHasFrameBufferCommands || !m_buildFrame.billboards.empty() || !m_buildFrame.meshes.empty();
 	const int frameCost = (!m_buildFrame.queue.empty() && m_buildFrame.queue.front().type != BlitterCommandType::Clear)
 		? (m_buildFrame.cost + VDP_RENDER_CLEAR_COST)
 		: m_buildFrame.cost;
@@ -1175,11 +1264,14 @@ bool VDP::sealSubmittedFrame() {
 	frame->xf.matrixWords = m_xf.matrixWords;
 	frame->xf.viewMatrixIndex = m_xf.viewMatrixIndex;
 	frame->xf.projectionMatrixIndex = m_xf.projectionMatrixIndex;
+	frame->morphWeightWords = m_mfu.weightWords;
+	frame->jointMatrixWords = m_jtu.matrixWords;
 	frame->skyboxControl = completedSbx.control;
 	frame->skyboxFaceWords = sbxSealFaceWords;
 	std::swap(frame->skyboxSamples, m_sbxSealSamples);
 	frame->queue.swap(m_buildFrame.queue);
 	frame->billboards.swap(m_buildFrame.billboards);
+	frame->meshes.swap(m_buildFrame.meshes);
 	if (frameCost == 0) {
 		frame->state = VdpSubmittedFrameState::Ready;
 	} else if (activeFrameEmpty) {
@@ -1196,6 +1288,7 @@ bool VDP::sealSubmittedFrame() {
 	frame->frameBufferWidth = voutFrame.frameBufferWidth;
 	frame->frameBufferHeight = voutFrame.frameBufferHeight;
 	m_buildFrame.billboards.clear();
+	m_buildFrame.meshes.clear();
 	m_buildFrame.cost = 0;
 	m_buildFrame.state = VdpDexFrameState::Idle;
 	scheduleNextService(m_scheduler.currentNowCycles());
@@ -1713,6 +1806,16 @@ bool VDP::latchBillboardPacket(const VdpBbuPacket& packet) {
 	return true;
 }
 
+bool VDP::latchMeshPacket(const VdpMduPacket& packet) {
+	const VdpMduPacketDecision decision = m_mdu.beginPacket(packet, m_buildFrame.meshes.size());
+	if (decision.faultCode != VDP_FAULT_NONE) {
+		m_fault.raise(decision.faultCode, decision.faultDetail);
+		return false;
+	}
+	m_mdu.completePacket(m_buildFrame.meshes, packet, nextBlitterSequence());
+	return true;
+}
+
 bool VDP::resolveSkyboxSampleInto(
 	u32 slot,
 	u32 u,
@@ -1949,7 +2052,7 @@ void VDP::latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, 
 
 void VDP::commitLiveVisualState() {
 	m_sbx.presentLiveState();
-	m_vout.presentLiveState(m_xf, m_sbx.visibleEnabled());
+	m_vout.presentLiveState(m_xf, m_sbx.visibleEnabled(), m_mfu, m_jtu);
 	resolveSkyboxFrameSamples(m_sbx.visibleControl(), m_sbx.visibleFaceWords(), m_vout.visibleSkyboxSampleBuffer());
 }
 
@@ -2007,8 +2110,11 @@ void VDP::initializeRegisters() {
 	m_pmu.reset();
 	syncPmuRegisterWindow();
 	m_xf.reset();
+	m_mfu.reset();
+	m_jtu.reset();
 	m_vout.reset(dither, m_fbm.width(), m_fbm.height());
 	m_bbu.reset();
+	m_mdu.reset();
 	m_sbx.reset();
 	syncSbxRegisterWindow();
 	m_lastFrameCommitted = true;

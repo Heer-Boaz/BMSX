@@ -121,6 +121,7 @@ public:
 	std::array<u32, SKYBOX_FACE_COUNT> skyboxFaceSurfaceIds{};
 	std::array<i32, SKYBOX_FACE_COUNT * 2> skyboxFaceSizes{};
 	VdpTransformSnapshot vdpTransform{};
+	std::array<u32, VDP_XF_MATRIX_REGISTER_WORDS> vdpXfMatrixWords{};
 	struct VdpBillboardRenderEntry {
 		Vec3 position{0.0f, 0.0f, 0.0f};
 		f32 size = 0.0f;
@@ -136,6 +137,23 @@ public:
 	};
 	std::array<VdpBillboardRenderEntry, VDP_BBU_BILLBOARD_LIMIT> vdpBillboards{};
 	size_t vdpBillboardCount = 0u;
+	struct VdpMeshRenderEntry {
+		u32 modelTokenLo = 0u;
+		u32 modelTokenHi = 0u;
+		u32 meshIndex = 0u;
+		u32 materialIndex = 0u;
+		u32 modelMatrixIndex = 0u;
+		u32 control = 0u;
+		u32 color = 0xffffffffu;
+		u32 morphBase = 0u;
+		u32 morphCount = 0u;
+		u32 jointBase = 0u;
+		u32 jointCount = 0u;
+	};
+	std::array<VdpMeshRenderEntry, VDP_MDU_MESH_LIMIT> vdpMeshes{};
+	size_t vdpMeshCount = 0u;
+	std::array<u32, VDP_MFU_WEIGHT_COUNT> vdpMorphWeightWords{};
+	std::array<u32, VDP_JTU_REGISTER_WORDS> vdpJointMatrixWords{};
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Pipeline registry

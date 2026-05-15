@@ -155,11 +155,16 @@ Internal units:
 - `SBX` owns skybox register-window staging, packet staging, frame seal, and
   sampled face words.
 - `BBU` owns billboard packet decode/source admission/instance emission limits.
+- `MFU` owns raw morph-weight register words.
+- `JTU` owns raw joint-matrix register words.
+- `MDU` owns mesh-packet decode, mesh-source admission, and per-frame mesh draw
+  emission limits.
 - `FBM` owns framebuffer pages, display pixels, and presentable display
   dimensions.
 - `XF` owns transform register words.
-- `VOUT` owns live, frame-sealed, and visible host-output buffers, scanout phase,
-  beam position, and retained `VdpDeviceOutput`.
+- `VOUT` owns live, frame-sealed, and visible host-output buffers, including
+  mesh draw records plus sampled MFU/JTU words, scanout phase, beam position,
+  and retained `VdpDeviceOutput`.
 
 Host render backends consume VOUT output transactions. They do not receive cart
 intent such as sprites, rectangles, labels, or scene objects. VDP save-state
@@ -170,6 +175,16 @@ and `machine/devices/vdp/readback` files. C++ keeps aggregate VDP capture/restor
 method bodies in the VDP save-state translation unit; TS aggregate capture/restore
 stays on the device boundary and imports only the save-state record shapes while
 subunit state is owned by the subunit files.
+
+Mesh rendering follows the same hardware boundary. Cart streams submit model
+asset tokens and raw VDP register words to the MDU/MFU/JTU; VOUT exposes the
+mesh records at the host-output edge. The native GLES2 renderer resolves the
+rompacked model from those VOUT records and samples textures only from VDP VRAM
+slots. Browser/headless TS renderers currently snapshot the VOUT mesh records
+but do not draw them. The native GLES2 path must stay compatible with low-end
+GLES2 targets by expanding mesh, morph, and skinning data on the CPU into a
+retained dynamic vertex stream instead of relying on UBOs, instancing, vertex
+texture fetch, or other GLES3/WebGL2-only features.
 
 ### APU and AOUT
 

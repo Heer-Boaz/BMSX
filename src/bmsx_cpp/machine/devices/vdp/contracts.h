@@ -46,6 +46,17 @@ constexpr size_t VDP_PMU_BANK_SCALE_Y_WORD = 3;
 constexpr size_t VDP_PMU_BANK_CONTROL_WORD = 4;
 constexpr u32 VDP_PMU_Q16_ONE = 0x00010000u;
 constexpr size_t VDP_BBU_BILLBOARD_LIMIT = 1024;
+constexpr size_t VDP_MFU_WEIGHT_COUNT = 64;
+constexpr size_t VDP_JTU_MATRIX_WORDS = 16;
+constexpr size_t VDP_JTU_MATRIX_COUNT = 32;
+constexpr size_t VDP_JTU_REGISTER_WORDS = VDP_JTU_MATRIX_WORDS * VDP_JTU_MATRIX_COUNT;
+constexpr size_t VDP_MDU_MESH_LIMIT = 1024;
+constexpr size_t VDP_MDU_VERTEX_LIMIT = 65536;
+constexpr size_t VDP_MDU_MORPH_WEIGHT_LIMIT = 8;
+constexpr uint32_t VDP_MDU_MATERIAL_MESH_DEFAULT = 0xffffffffu;
+constexpr uint32_t VDP_MDU_CONTROL_TEXTURE_ENABLE = 1u << 0u;
+constexpr uint32_t VDP_MDU_CONTROL_TEXTURE_SLOT_SHIFT = 1u;
+constexpr uint32_t VDP_MDU_CONTROL_TEXTURE_SLOT_MASK = 0x3u << VDP_MDU_CONTROL_TEXTURE_SLOT_SHIFT;
 constexpr uint32_t VDP_RD_SURFACE_SYSTEM = 0u;
 constexpr uint32_t VDP_RD_SURFACE_PRIMARY = 1u;
 constexpr uint32_t VDP_RD_SURFACE_SECONDARY = 2u;
@@ -89,6 +100,11 @@ constexpr uint32_t VDP_FAULT_SBX_SOURCE_OOB = 0x0401u;
 constexpr uint32_t VDP_FAULT_BBU_ZERO_SIZE = 0x0501u;
 constexpr uint32_t VDP_FAULT_BBU_OVERFLOW = 0x0502u;
 constexpr uint32_t VDP_FAULT_BBU_SOURCE_OOB = 0x0503u;
+constexpr uint32_t VDP_FAULT_MDU_OVERFLOW = 0x0601u;
+constexpr uint32_t VDP_FAULT_MDU_BAD_MATRIX = 0x0602u;
+constexpr uint32_t VDP_FAULT_MDU_BAD_MORPH_RANGE = 0x0603u;
+constexpr uint32_t VDP_FAULT_MDU_BAD_JOINT_RANGE = 0x0604u;
+constexpr uint32_t VDP_FAULT_MDU_BAD_TEXTURE_SLOT = 0x0605u;
 
 enum class VdpFrameBufferPage : u8 {
 	Render,

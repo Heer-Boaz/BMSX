@@ -1,6 +1,7 @@
-import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT } from './contracts';
+import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT, VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT } from './contracts';
 import { VdpBbuFrameBuffer } from './bbu';
 import { VdpBlitterCommandBuffer, type VdpResolvedBlitterSample } from './blitter';
+import { VdpMduFrameBuffer } from './mdu';
 import { VdpXfUnit, type VdpXfState } from './xf';
 
 export const VDP_DEX_FRAME_IDLE = 0;
@@ -38,11 +39,15 @@ export type VdpSubmittedFrame = {
 	skyboxFaceWords: Uint32Array;
 	skyboxSamples: VdpResolvedBlitterSample[];
 	billboards: VdpBbuFrameBuffer;
+	meshes: VdpMduFrameBuffer;
+	morphWeightWords: Uint32Array;
+	jointMatrixWords: Uint32Array;
 };
 
 export type VdpBuildingFrameState = {
 	queue: VdpBlitterCommandBuffer;
 	billboards: VdpBbuFrameBuffer;
+	meshes: VdpMduFrameBuffer;
 	state: VdpDexFrameState;
 	cost: number;
 };
@@ -175,6 +180,9 @@ export function allocateSubmittedFrameSlot(): VdpSubmittedFrame {
 		skyboxFaceWords: new Uint32Array(SKYBOX_FACE_WORD_COUNT),
 		skyboxSamples: createResolvedBlitterSamples(),
 		billboards: new VdpBbuFrameBuffer(),
+		meshes: new VdpMduFrameBuffer(),
+		morphWeightWords: new Uint32Array(VDP_MFU_WEIGHT_COUNT),
+		jointMatrixWords: new Uint32Array(VDP_JTU_REGISTER_WORDS),
 	};
 }
 

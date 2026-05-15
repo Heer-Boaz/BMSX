@@ -1,5 +1,6 @@
 import type { VdpBbuFrameBuffer } from './bbu';
 import type { VdpResolvedBlitterSample } from './blitter';
+import type { VdpMduFrameBuffer } from './mdu';
 
 export type VdpDirtySpan = {
 	xStart: number;
@@ -48,6 +49,9 @@ export type VdpDeviceOutput = Readonly<{
 	skyboxEnabled: boolean;
 	skyboxSamples: readonly VdpResolvedBlitterSample[];
 	billboards: VdpBbuFrameBuffer;
+	meshes: VdpMduFrameBuffer;
+	morphWeightWords: ArrayLike<number>;
+	jointMatrixWords: ArrayLike<number>;
 	frameBufferWidth: number;
 	frameBufferHeight: number;
 }>;

@@ -18,7 +18,14 @@ import {
 	VDP_SECONDARY_SLOT_TEXTURE_KEY,
 	SYSTEM_SLOT_TEXTURE_KEY,
 } from 'bmsx/rompack/format';
-import { SKYBOX_FACE_COUNT, VDP_BBU_BILLBOARD_LIMIT } from '../machine/devices/vdp/contracts';
+import {
+	SKYBOX_FACE_COUNT,
+	VDP_BBU_BILLBOARD_LIMIT,
+	VDP_JTU_REGISTER_WORDS,
+	VDP_MDU_MESH_LIMIT,
+	VDP_MFU_WEIGHT_COUNT,
+} from '../machine/devices/vdp/contracts';
+import { VDP_XF_MATRIX_REGISTER_WORDS } from '../machine/devices/vdp/xf';
 import { createVdpTransformSnapshot } from './vdp/transform';
 import type { VdpFrameBufferTextures } from './vdp/framebuffer';
 import type { VdpSlotTextures } from './vdp/slot_textures';
@@ -83,6 +90,7 @@ export class GameView implements RenderContext {
 	public readonly skyboxFaceSurfaceIds = new Uint32Array(SKYBOX_FACE_COUNT);
 	public readonly skyboxFaceSizes = new Int32Array(SKYBOX_FACE_COUNT * 2);
 	public readonly vdpTransform = createVdpTransformSnapshot();
+	public readonly vdpXfMatrixWords = new Uint32Array(VDP_XF_MATRIX_REGISTER_WORDS);
 	public vdpFrameBufferTextures!: VdpFrameBufferTextures;
 	public vdpSlotTextures!: VdpSlotTextures;
 	public readonly vdpBillboardPositionSize = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
@@ -91,6 +99,20 @@ export class GameView implements RenderContext {
 	public readonly vdpBillboardSlot = new Int32Array(VDP_BBU_BILLBOARD_LIMIT);
 	public readonly vdpBillboardSurfaceId = new Uint32Array(VDP_BBU_BILLBOARD_LIMIT);
 	public vdpBillboardCount = 0;
+	public readonly vdpMeshModelTokenLo = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshModelTokenHi = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshMaterialIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshModelMatrixIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshControl = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshColor = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshMorphBase = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshMorphCount = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshJointBase = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshJointCount = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public vdpMeshCount = 0;
+	public readonly vdpMorphWeightWords = new Uint32Array(VDP_MFU_WEIGHT_COUNT);
+	public readonly vdpJointMatrixWords = new Uint32Array(VDP_JTU_REGISTER_WORDS);
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationEnabled = true;
 	// Active texture unit cache

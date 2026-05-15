@@ -1,3 +1,5 @@
+local romdir<const> = require('bios/romdir')
+
 local io_vdp_dither<const> = sys_vdp_dither -- VDP dithering control
 local io_irq_flags<const> = sys_irq_flags -- IRQ flags: bit 0 = DMA done, bit 1 = DMA error, bit 4 = VBlank
 local io_irq_ack<const> = sys_irq_ack -- IRQ acknowledge: write 1 to bits to acknowledge corresponding IRQs
@@ -18,10 +20,19 @@ local vdp_pkt_regn<const> = 0x03000000 -- Register packet with N registers: lowe
 local vdp_pkt_billboard<const> = 0x11000000 -- BILLBOARD packet: BBU command-stream packet, followed by fixed hardware words
 local vdp_pkt_skybox<const> = 0x12000000 -- SKYBOX packet: SBX command-stream packet, followed by control and six face-source records
 local vdp_pkt_xf<const> = 0x13000000 -- XF packet: register-file command for VDP transform state
+local vdp_pkt_mfu<const> = 0x14000000 -- MFU packet: morph-weight register-file command
+local vdp_pkt_jtu<const> = 0x15000000 -- JTU packet: joint-matrix register-file command
+local vdp_pkt_mesh<const> = 0x16000000 -- MDU packet: mesh dispatch command
 local vdp_billboard_payload_words<const> = 11 -- BILLBOARD payload: layer, priority, slot, uv, wh, x, y, z, size, color, control
 local vdp_skybox_payload_words<const> = 31 -- SKYBOX payload: control plus six faces of slot/u/v/w/h
 local vdp_xf_matrix_payload_words<const> = 17 -- XF register write: first register index plus 16 matrix words
 local vdp_xf_select_payload_words<const> = 3 -- XF register write: first register index plus two selected matrix slots
+local vdp_mfu_weight_payload_words<const> = 2 -- MFU register write: first register index plus one Q16.16 weight word
+local vdp_jtu_matrix_payload_words<const> = 17 -- JTU register write: first register index plus 16 matrix words
+local vdp_mesh_payload_words<const> = 10 -- MDU packet: model token, mesh/material, transform, texture, color, morph, joint, reserved
+local vdp_mdu_material_mesh_default<const> = 0xffffffff -- MDU material selector: use the model mesh material
+local vdp_mdu_control_texture_enable<const> = 1 -- MDU control bit: sample a VDP VRAM slot texture
+local vdp_mdu_control_texture_slot_shift<const> = 1 -- MDU control bits 1..2: VDP texture slot selector
 
 local vdp_cmd_clear<const> = 1 -- Clear command: clears a rectangle to the current background color, parameters are in registers (see draw_frame function below)
 local vdp_cmd_fill_rect<const> = 2 -- Fill rectangle command: fills a rectangle with the current draw color, parameters are in registers (see draw_frame function below)
@@ -44,8 +55,10 @@ local q16_one<const> = 0x00010000 -- Q16.16 value 1.0, used directly in VDP comm
 local xf_matrix_words<const> = 16 -- XF matrix register span
 local xf_view_matrix<const> = 0 -- XF matrix slot selected as the view transform
 local xf_proj_matrix<const> = 1 -- XF matrix slot selected as the projection transform
+local xf_model_matrix<const> = 2 -- XF matrix slot consumed by the MDU mesh model transform
 local xf_view_matrix_register<const> = xf_view_matrix * xf_matrix_words -- First word of XF matrix slot 0
 local xf_proj_matrix_register<const> = xf_proj_matrix * xf_matrix_words -- First word of XF matrix slot 1
+local xf_model_matrix_register<const> = xf_model_matrix * xf_matrix_words -- First word of XF matrix slot 2
 local xf_select_register<const> = 128 -- XF register selecting view/projection matrix slots
 local xf_yaw_step<const> = 0.035 -- Radians per frame for the raw XF view matrix
 local xf_proj_x<const> = 0x00016f32 -- Perspective focal-X in Q16.16 for 256x212 aspect
@@ -62,6 +75,7 @@ local irq_vblank<const> = 0x10 -- IRQ flag bit for VBlank start
 local atlas_width<const> = 16 -- Width of the sprite atlas in pixels
 local atlas_height<const> = 16 -- Height of the sprite atlas in pixels
 local atlas_bytes<const> = atlas_width * atlas_height * 4 -- Total size of the sprite atlas in bytes (4 bytes per pixel for RGBA)
+local mesh_record<const> = romdir.cart('baremetalmesh') -- Rompacked mesh asset referenced by the MDU packet token
 
 local frame = 0 -- Frame counter used for animating the sprite and background
 local sprite_x = 112 -- Initial X coordinate of the sprite
@@ -174,6 +188,8 @@ local draw_frame<const> = function()
 	local cw<const> = ((c * q16_one) // 1) & 0xffffffff
 	local sw<const> = ((s * q16_one) // 1) & 0xffffffff
 	local nw<const> = ((-s * q16_one) // 1) & 0xffffffff
+	local morph_weight<const> = (((math.sin(frame * 0.08) + 1) * 0x8000) // 1) & 0xffffffff
+	local joint_y<const> = ((math.sin(frame * 0.11) * 0x3000) // 1) & 0xffffffff
 
 	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4 -- XF register write: matrix slot 0
 	mem[wp], wp = xf_view_matrix_register, wp + 4
@@ -211,6 +227,24 @@ local draw_frame<const> = function()
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = xf_proj_zw, wp + 4
 	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4 -- XF register write: matrix slot 2, the MDU model transform
+	mem[wp], wp = xf_model_matrix_register, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0xfffd0000, wp + 4
+	mem[wp], wp = q16_one, wp + 4
 	mem[wp], wp = vdp_pkt_xf | (vdp_xf_select_payload_words << 16), wp + 4 -- XF register write: select transform slots
 	mem[wp], wp = xf_select_register, wp + 4
 	mem[wp], wp = xf_view_matrix, wp + 4
@@ -347,8 +381,41 @@ local draw_frame<const> = function()
 	mem[wp], wp = 0x00010000 - billboard_shift, wp + 4 -- X = +1.0 minus the same Q16.16 animation offset
 	mem[wp], wp = 0xffffe000, wp + 4 -- Y = -0.125 in signed Q16.16
 	mem[wp], wp = 0xfffc8000, wp + 4 -- Z = -3.5 in signed Q16.16
-		mem[wp], wp = 0x0000a000, wp + 4 -- Size = 0.625 in unsigned Q16.16 under the selected XF matrices
+	mem[wp], wp = 0x0000a000, wp + 4 -- Size = 0.625 in unsigned Q16.16 under the selected XF matrices
 	mem[wp], wp = 0xff60e6ff, wp + 4
+	mem[wp], wp = 0, wp + 4
+
+	mem[wp], wp = vdp_pkt_mfu | (vdp_mfu_weight_payload_words << 16), wp + 4 -- MFU: animate morph target 0 through raw Q16.16 register 0
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = morph_weight, wp + 4
+	mem[wp], wp = vdp_pkt_jtu | (vdp_jtu_matrix_payload_words << 16), wp + 4 -- JTU: joint matrix 0 with a small animated Y translation
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = joint_y, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = vdp_pkt_mesh | (vdp_mesh_payload_words << 16), wp + 4 -- MDU: draw a rompacked mesh, sampling the primary VDP VRAM slot
+	mem[wp], wp = mesh_record.token_lo, wp + 4
+	mem[wp], wp = mesh_record.token_hi, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = vdp_mdu_material_mesh_default, wp + 4
+	mem[wp], wp = xf_model_matrix, wp + 4
+	mem[wp], wp = vdp_mdu_control_texture_enable | (vdp_slot_primary << vdp_mdu_control_texture_slot_shift), wp + 4
+	mem[wp], wp = 0xffffffff, wp + 4
+	mem[wp], wp = 1 << 16, wp + 4
+	mem[wp], wp = 1 << 16, wp + 4
 	mem[wp], wp = 0, wp + 4
 
 	mem[wp], wp = vdp_pkt_end, wp + 4 -- End of packet stream

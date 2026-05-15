@@ -3,6 +3,9 @@
 #include "common/primitives.h"
 #include "machine/devices/vdp/bbu.h"
 #include "machine/devices/vdp/blitter.h"
+#include "machine/devices/vdp/jtu.h"
+#include "machine/devices/vdp/mdu.h"
+#include "machine/devices/vdp/mfu.h"
 #include "machine/devices/vdp/sbx.h"
 #include "machine/devices/vdp/xf.h"
 #include <vector>
@@ -25,6 +28,7 @@ enum class VdpSubmittedFrameState : u8 {
 struct VdpSubmittedFrame {
 	std::vector<VdpBlitterCommand> queue;
 	std::vector<VdpBbuBillboardEntry> billboards;
+	std::vector<VdpMduMeshEntry> meshes;
 	VdpSubmittedFrameState state = VdpSubmittedFrameState::Empty;
 	bool hasCommands = false;
 	bool hasFrameBufferCommands = false;
@@ -37,11 +41,14 @@ struct VdpSubmittedFrame {
 	u32 skyboxControl = 0;
 	VdpSbxUnit::FaceWords skyboxFaceWords{};
 	VdpSkyboxSamples skyboxSamples{};
+	std::array<u32, VDP_MFU_WEIGHT_COUNT> morphWeightWords{};
+	std::array<u32, VDP_JTU_REGISTER_WORDS> jointMatrixWords{};
 };
 
 struct VdpBuildingFrame {
 	std::vector<VdpBlitterCommand> queue;
 	std::vector<VdpBbuBillboardEntry> billboards;
+	std::vector<VdpMduMeshEntry> meshes;
 	VdpDexFrameState state = VdpDexFrameState::Idle;
 	int cost = 0;
 };
@@ -135,8 +142,8 @@ struct VdpSubmittedFrameSaveState {
 	VdpSkyboxSamples skyboxSamples{};
 };
 
-void reserveBuildFrameStorage(VdpBuildingFrame& frame);
-void reserveSubmittedFrameStorage(VdpSubmittedFrame& frame);
+void reserveFrameStorage(VdpBuildingFrame& frame);
+void reserveFrameStorage(VdpSubmittedFrame& frame);
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame);
 VdpBuildingFrameSaveState captureBuildingFrameState(const VdpBuildingFrame& frame);
 void restoreBuildingFrameState(VdpBuildingFrame& frame, const VdpBuildingFrameSaveState& state);

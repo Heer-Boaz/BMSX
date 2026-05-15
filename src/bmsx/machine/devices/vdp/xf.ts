@@ -1,4 +1,5 @@
 import { encodeSignedQ16_16 } from './fixed_point';
+import { setIdentityMatrixWordsAt } from './matrix_words';
 
 export type VdpXfState = {
 	matrixWords: number[];
@@ -22,16 +23,6 @@ const RESET_ASPECT = 256 / 212;
 const RESET_NEAR = 0.1;
 const RESET_FAR = 50;
 const RESET_FOCAL_Y = 0x0001bb68 / 0x00010000;
-
-function setIdentityWordsAt(out: Uint32Array, base: number): void {
-	for (let index = 0; index < VDP_XF_MATRIX_WORDS; index += 1) {
-		out[base + index] = 0;
-	}
-	out[base] = 0x00010000;
-	out[base + 5] = 0x00010000;
-	out[base + 10] = 0x00010000;
-	out[base + 15] = 0x00010000;
-}
 
 function setResetProjectionWordsAt(out: Uint32Array, base: number): void {
 	const depth = (RESET_FAR + RESET_NEAR) / (RESET_NEAR - RESET_FAR);
@@ -57,7 +48,7 @@ export class VdpXfUnit {
 
 	public reset(): void {
 		for (let matrixIndex = 0; matrixIndex < VDP_XF_MATRIX_COUNT; matrixIndex += 1) {
-			setIdentityWordsAt(this.matrixWords, matrixIndex * VDP_XF_MATRIX_WORDS);
+			setIdentityMatrixWordsAt(this.matrixWords, matrixIndex * VDP_XF_MATRIX_WORDS);
 		}
 		setResetProjectionWordsAt(this.matrixWords, VDP_XF_PROJECTION_MATRIX_RESET_INDEX * VDP_XF_MATRIX_WORDS);
 		this.viewMatrixIndex = VDP_XF_VIEW_MATRIX_RESET_INDEX;

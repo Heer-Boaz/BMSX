@@ -14,6 +14,9 @@
 #include "machine/devices/vdp/fbm.h"
 #include "machine/devices/vdp/frame.h"
 #include "machine/devices/vdp/ingress.h"
+#include "machine/devices/vdp/jtu.h"
+#include "machine/devices/vdp/mdu.h"
+#include "machine/devices/vdp/mfu.h"
 #include "machine/devices/vdp/pmu.h"
 #include "machine/devices/vdp/readback.h"
 #include "machine/devices/vdp/registers.h"
@@ -130,8 +133,11 @@ private:
 	VdpSbxUnit m_sbx;
 	SkyboxSamples m_sbxSealSamples{};
 	VdpXfUnit m_xf;
+	VdpMfuUnit m_mfu;
+	VdpJtuUnit m_jtu;
 	VdpPmuUnit m_pmu;
 	VdpBbuUnit m_bbu;
+	VdpMduUnit m_mdu;
 	VdpVoutUnit m_vout;
 	int64_t m_cpuHz = 1;
 	int64_t m_workUnitsPerSec = 1;
@@ -233,9 +239,11 @@ private:
 	void latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
 	bool appendTileRunSource(BlitterCommand& command, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow);
 	u32 consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end);
-	u32 consumeXfPacketFromMemory(u32 word, u32 cursor, u32 end);
+	u32 consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor, u32 end);
 	u32 consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);
-	u32 consumeXfPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);
+	u32 consumeUnitRegisterPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);
+	bool acceptUnitRegisterRange(u32 packetKind, u32 firstRegister, u32 registerCount);
+	bool writeUnitRegisterWord(u32 packetKind, u32 registerIndex, u32 value);
 	u32 decodeReg1Packet(u32 word) const;
 	struct RegnPacket {
 		u32 firstRegister = 0;
@@ -243,6 +251,7 @@ private:
 	};
 		bool decodeRegnPacket(u32 word, RegnPacket& packet) const;
 		bool latchBillboardPacket(const VdpBbuPacket& packet);
+		bool latchMeshPacket(const VdpMduPacket& packet);
 		bool consumeReplayCommandPacket(u32 word);
 		bool executeVdpDrawDoorbell(u32 command);
 	void onVdpFifoWrite();

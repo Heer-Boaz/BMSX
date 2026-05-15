@@ -9,6 +9,7 @@ namespace bmsx {
 void commitVdpViewSnapshot(GameView& view, const VdpDeviceOutput& output) {
 	view.dither_type = static_cast<GameView::DitherType>(output.ditherType);
 	resolveVdpTransformSnapshot(view.vdpTransform, *output.xfMatrixWords, output.xfViewMatrixIndex, output.xfProjectionMatrixIndex);
+	view.vdpXfMatrixWords = *output.xfMatrixWords;
 	if (!output.skyboxEnabled) {
 		view.skyboxRenderReady = false;
 	} else {
@@ -51,6 +52,25 @@ void commitVdpViewSnapshot(GameView& view, const VdpDeviceOutput& output) {
 			static_cast<f32>(entry.source.srcY + entry.source.height) / static_cast<f32>(entry.surfaceHeight),
 		};
 	}
+	const auto& meshes = *output.meshes;
+	view.vdpMeshCount = meshes.size();
+	for (size_t index = 0; index < meshes.size(); ++index) {
+		const VdpMduMeshEntry& entry = meshes[index];
+		GameView::VdpMeshRenderEntry& target = view.vdpMeshes[index];
+		target.modelTokenLo = entry.modelTokenLo;
+		target.modelTokenHi = entry.modelTokenHi;
+		target.meshIndex = entry.meshIndex;
+		target.materialIndex = entry.materialIndex;
+		target.modelMatrixIndex = entry.modelMatrixIndex;
+		target.control = entry.control;
+		target.color = entry.color;
+		target.morphBase = entry.morphBase;
+		target.morphCount = entry.morphCount;
+		target.jointBase = entry.jointBase;
+		target.jointCount = entry.jointCount;
+	}
+	view.vdpMorphWeightWords = *output.morphWeightWords;
+	view.vdpJointMatrixWords = *output.jointMatrixWords;
 }
 
 } // namespace bmsx

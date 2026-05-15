@@ -3,6 +3,9 @@
 #include "common/types.h"
 #include "machine/devices/vdp/bbu.h"
 #include "machine/devices/vdp/blitter.h"
+#include "machine/devices/vdp/jtu.h"
+#include "machine/devices/vdp/mdu.h"
+#include "machine/devices/vdp/mfu.h"
 #include "machine/devices/vdp/xf.h"
 #include <array>
 #include <vector>
@@ -72,6 +75,9 @@ struct VdpDeviceOutput {
 	bool skyboxEnabled = false;
 	const VdpSkyboxSamples* skyboxSamples = nullptr;
 	const std::vector<VdpBbuBillboardEntry>* billboards = nullptr;
+	const std::vector<VdpMduMeshEntry>* meshes = nullptr;
+	const std::array<u32, VDP_MFU_WEIGHT_COUNT>* morphWeightWords = nullptr;
+	const std::array<u32, VDP_JTU_REGISTER_WORDS>* jointMatrixWords = nullptr;
 	uint32_t frameBufferWidth = 0;
 	uint32_t frameBufferHeight = 0;
 };

@@ -1,8 +1,12 @@
 import { VdpBbuFrameBuffer } from './bbu';
+import { VdpJtuUnit } from './jtu';
+import { VdpMduFrameBuffer } from './mdu';
+import { VdpMfuUnit } from './mfu';
 import type { VdpResolvedBlitterSample } from './blitter';
 import type { VdpDeviceOutput } from './device_output';
 import type { VdpSubmittedFrame } from './frame';
 import { createResolvedBlitterSamples } from './frame';
+import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT } from './contracts';
 import { VdpXfUnit } from './xf';
 
 export const VDP_VOUT_STATE_IDLE = 0;
@@ -51,6 +55,9 @@ export class VdpVoutUnit {
 	private visibleSkyboxEnabled = false;
 	private visibleSkyboxSamples = createResolvedBlitterSamples();
 	private visibleBillboards = new VdpBbuFrameBuffer();
+	private visibleMeshes = new VdpMduFrameBuffer();
+	private readonly visibleMorphWeightWords = new Uint32Array(VDP_MFU_WEIGHT_COUNT);
+	private readonly visibleJointMatrixWords = new Uint32Array(VDP_JTU_REGISTER_WORDS);
 	private readonly sealedFrameOutput: VdpVoutFrameOutput = {
 		ditherType: 0,
 		frameBufferWidth: 0,
@@ -67,6 +74,9 @@ export class VdpVoutUnit {
 		skyboxEnabled: false,
 		skyboxSamples: this.visibleSkyboxSamples,
 		billboards: this.visibleBillboards,
+		meshes: this.visibleMeshes,
+		morphWeightWords: this.visibleMorphWeightWords,
+		jointMatrixWords: this.visibleJointMatrixWords,
 		frameBufferWidth: 0,
 		frameBufferHeight: 0,
 	};
@@ -108,6 +118,9 @@ export class VdpVoutUnit {
 		this.visibleSkyboxEnabled = false;
 		this.resetVisibleSkyboxSamples();
 		this.visibleBillboards.reset();
+		this.visibleMeshes.reset();
+		this.visibleMorphWeightWords.fill(0);
+		this.visibleJointMatrixWords.fill(0);
 		this.sealedFrameOutput.ditherType = ditherType;
 		this.sealedFrameOutput.frameBufferWidth = frameBufferWidth;
 		this.sealedFrameOutput.frameBufferHeight = frameBufferHeight;
@@ -174,10 +187,16 @@ export class VdpVoutUnit {
 		frame.billboards = this.visibleBillboards;
 		this.visibleBillboards = frameBillboards;
 		frame.billboards.reset();
+		const frameMeshes = frame.meshes;
+		frame.meshes = this.visibleMeshes;
+		this.visibleMeshes = frameMeshes;
+		frame.meshes.reset();
+		this.visibleMorphWeightWords.set(frame.morphWeightWords);
+		this.visibleJointMatrixWords.set(frame.jointMatrixWords);
 		this._state = VDP_VOUT_STATE_FRAME_PRESENTED;
 	}
 
-	public presentLiveState(xf: VdpXfUnit, skyboxEnabled: boolean): void {
+	public presentLiveState(xf: VdpXfUnit, skyboxEnabled: boolean, mfu: VdpMfuUnit, jtu: VdpJtuUnit): void {
 		this.visibleDither = this.liveDither;
 		this.visibleFrameBufferWidth = this.liveFrameBufferWidth;
 		this.visibleFrameBufferHeight = this.liveFrameBufferHeight;
@@ -186,6 +205,9 @@ export class VdpVoutUnit {
 		this.visibleXf.projectionMatrixIndex = xf.projectionMatrixIndex;
 		this.visibleSkyboxEnabled = skyboxEnabled;
 		this.visibleBillboards.reset();
+		this.visibleMeshes.reset();
+		this.visibleMorphWeightWords.set(mfu.weightWords);
+		this.visibleJointMatrixWords.set(jtu.matrixWords);
 		this._state = VDP_VOUT_STATE_FRAME_PRESENTED;
 	}
 
@@ -201,6 +223,9 @@ export class VdpVoutUnit {
 		output.skyboxEnabled = this.visibleSkyboxEnabled;
 		output.skyboxSamples = this.visibleSkyboxSamples;
 		output.billboards = this.visibleBillboards;
+		output.meshes = this.visibleMeshes;
+		output.morphWeightWords = this.visibleMorphWeightWords;
+		output.jointMatrixWords = this.visibleJointMatrixWords;
 		output.frameBufferWidth = this.visibleFrameBufferWidth;
 		output.frameBufferHeight = this.visibleFrameBufferHeight;
 		return output;

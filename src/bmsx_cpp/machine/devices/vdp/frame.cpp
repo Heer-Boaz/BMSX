@@ -235,19 +235,22 @@ std::vector<VdpBbuBillboardEntry> restoreBbuFrameBufferState(const std::vector<V
 } // namespace
 
 
-void reserveBuildFrameStorage(VdpBuildingFrame& frame) {
+void reserveFrameStorage(VdpBuildingFrame& frame) {
 	frame.queue.reserve(VDP_BLITTER_FIFO_CAPACITY);
 	frame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
+	frame.meshes.reserve(VDP_MDU_MESH_LIMIT);
 }
 
-void reserveSubmittedFrameStorage(VdpSubmittedFrame& frame) {
+void reserveFrameStorage(VdpSubmittedFrame& frame) {
 	frame.queue.reserve(VDP_BLITTER_FIFO_CAPACITY);
 	frame.billboards.reserve(VDP_BBU_BILLBOARD_LIMIT);
+	frame.meshes.reserve(VDP_MDU_MESH_LIMIT);
 }
 
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame) {
 	frame.queue.clear();
 	frame.billboards.clear();
+	frame.meshes.clear();
 	frame.state = VdpSubmittedFrameState::Empty;
 	frame.hasCommands = false;
 	frame.hasFrameBufferCommands = false;
@@ -259,6 +262,8 @@ void resetSubmittedFrameSlot(VdpSubmittedFrame& frame) {
 	frame.xf.reset();
 	frame.skyboxControl = 0;
 	frame.skyboxFaceWords.fill(0u);
+	frame.morphWeightWords.fill(0u);
+	frame.jointMatrixWords.fill(0u);
 }
 
 VdpBuildingFrameSaveState captureBuildingFrameState(const VdpBuildingFrame& frame) {

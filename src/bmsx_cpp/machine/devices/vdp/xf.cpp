@@ -1,6 +1,7 @@
 #include "machine/devices/vdp/xf.h"
 
 #include "machine/devices/vdp/fixed_point.h"
+#include "machine/devices/vdp/matrix_words.h"
 
 namespace bmsx {
 namespace {
@@ -23,17 +24,6 @@ void setResetProjectionWordsAt(std::array<u32, VDP_XF_MATRIX_REGISTER_WORDS>& ou
 	out[base + 14u] = encodeSignedQ16_16(depthOffset);
 }
 
-void setIdentityWordsAt(std::array<u32, VDP_XF_MATRIX_REGISTER_WORDS>& out, u32 matrixIndex) {
-	const size_t base = static_cast<size_t>(matrixIndex * VDP_XF_MATRIX_WORDS);
-	for (size_t index = 0; index < VDP_XF_MATRIX_WORDS; ++index) {
-		out[base + index] = 0u;
-	}
-	out[base + 0u] = 0x00010000u;
-	out[base + 5u] = 0x00010000u;
-	out[base + 10u] = 0x00010000u;
-	out[base + 15u] = 0x00010000u;
-}
-
 } // namespace
 
 VdpXfUnit::VdpXfUnit() {
@@ -42,7 +32,7 @@ VdpXfUnit::VdpXfUnit() {
 
 void VdpXfUnit::reset() {
 	for (u32 matrixIndex = 0u; matrixIndex < VDP_XF_MATRIX_COUNT; ++matrixIndex) {
-		setIdentityWordsAt(matrixWords, matrixIndex);
+		setIdentityMatrixWordsAt(matrixWords, static_cast<size_t>(matrixIndex * VDP_XF_MATRIX_WORDS));
 	}
 	setResetProjectionWordsAt(matrixWords, static_cast<size_t>(VDP_XF_PROJECTION_MATRIX_RESET_INDEX * VDP_XF_MATRIX_WORDS));
 	viewMatrixIndex = VDP_XF_VIEW_MATRIX_RESET_INDEX;
