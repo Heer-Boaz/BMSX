@@ -75,6 +75,8 @@ struct VdpBbuFrameBuffer {
 	void reset();
 };
 
+class VdpVramUnit;
+
 class VdpBbuUnit {
 public:
 	void reset();
@@ -90,6 +92,7 @@ public:
 		u32 sizeWord,
 		u32 color) const;
 	VdpBbuPacketDecision beginPacket(const VdpBbuPacket& packet, size_t targetLength);
+	void resolveSourceInto(const VdpVramUnit& vram, const VdpBbuPacket& packet, VdpBbuSourceResolution& target) const;
 	VdpBbuPacketDecision completePacket(
 		VdpBbuFrameBuffer& target,
 		const VdpBbuPacket& packet,

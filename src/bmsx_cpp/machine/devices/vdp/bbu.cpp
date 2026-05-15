@@ -2,6 +2,7 @@
 
 #include "machine/common/word.h"
 #include "machine/devices/vdp/fixed_point.h"
+#include "machine/devices/vdp/vram.h"
 
 namespace bmsx {
 
@@ -66,6 +67,49 @@ VdpBbuPacketDecision VdpBbuUnit::beginPacket(const VdpBbuPacket& packet, size_t 
 	}
 	decision.state = VdpBbuPacketState::SourceResolve;
 	return decision;
+}
+
+void VdpBbuUnit::resolveSourceInto(const VdpVramUnit& vram, const VdpBbuPacket& packet, VdpBbuSourceResolution& target) const {
+	target.faultCode = VDP_FAULT_NONE;
+	target.faultDetail = 0u;
+	u32 surfaceId = 0u;
+	if (packet.sourceRect.slot == VDP_SLOT_SYSTEM) {
+		surfaceId = VDP_RD_SURFACE_SYSTEM;
+	} else if (packet.sourceRect.slot == VDP_SLOT_PRIMARY) {
+		surfaceId = VDP_RD_SURFACE_PRIMARY;
+	} else if (packet.sourceRect.slot == VDP_SLOT_SECONDARY) {
+		surfaceId = VDP_RD_SURFACE_SECONDARY;
+	} else {
+		target.faultCode = VDP_FAULT_BBU_SOURCE_OOB;
+		target.faultDetail = packet.sourceRect.slot;
+		return;
+	}
+	target.source.surfaceId = surfaceId;
+	target.source.srcX = packet.sourceRect.u;
+	target.source.srcY = packet.sourceRect.v;
+	target.source.width = packet.sourceRect.w;
+	target.source.height = packet.sourceRect.h;
+	target.slot = packet.sourceRect.slot;
+	if (target.source.width == 0u || target.source.height == 0u) {
+		target.faultCode = VDP_FAULT_BBU_ZERO_SIZE;
+		target.faultDetail = target.source.width | (target.source.height << 16u);
+		return;
+	}
+	const VdpSurfaceUploadSlot* surface = vram.findSurface(surfaceId);
+	if (surface == nullptr) {
+		target.faultCode = VDP_FAULT_BBU_SOURCE_OOB;
+		target.faultDetail = surfaceId;
+		return;
+	}
+	const uint64_t sourceRight = static_cast<uint64_t>(target.source.srcX) + static_cast<uint64_t>(target.source.width);
+	const uint64_t sourceBottom = static_cast<uint64_t>(target.source.srcY) + static_cast<uint64_t>(target.source.height);
+	if (sourceRight > surface->surfaceWidth || sourceBottom > surface->surfaceHeight) {
+		target.faultCode = VDP_FAULT_BBU_SOURCE_OOB;
+		target.faultDetail = target.source.srcX | (target.source.srcY << 16u);
+		return;
+	}
+	target.surfaceWidth = surface->surfaceWidth;
+	target.surfaceHeight = surface->surfaceHeight;
 }
 
 VdpBbuPacketDecision VdpBbuUnit::completePacket(

@@ -1,12 +1,20 @@
 import {
 	VDP_BBU_BILLBOARD_LIMIT,
 	VDP_FAULT_BBU_OVERFLOW,
+	VDP_FAULT_BBU_SOURCE_OOB,
 	VDP_FAULT_BBU_ZERO_SIZE,
 	VDP_FAULT_NONE,
+	VDP_RD_SURFACE_PRIMARY,
+	VDP_RD_SURFACE_SECONDARY,
+	VDP_RD_SURFACE_SYSTEM,
+	VDP_SLOT_PRIMARY,
+	VDP_SLOT_SECONDARY,
+	VDP_SLOT_SYSTEM,
 	type Layer2D,
 	type VdpSlotSource,
 } from './contracts';
 import { decodeSignedQ16_16, decodeUnsignedQ16_16 } from './fixed_point';
+import type { VdpVramUnit } from './vram';
 import { packedHigh16, packedLow16 } from '../../common/word';
 
 export const VDP_BBU_PACKET_KIND = 0x11000000;
@@ -163,6 +171,47 @@ export class VdpBbuUnit {
 		}
 		decision.state = VDP_BBU_STATE_SOURCE_RESOLVE;
 		return decision;
+	}
+
+	public resolveSourceInto(vram: VdpVramUnit, packet: VdpBbuPacket, target: VdpBbuSourceResolution): void {
+		target.faultCode = VDP_FAULT_NONE;
+		target.faultDetail = 0;
+		const source = target.source;
+		const slot = packet.sourceRect.slot;
+		if (slot === VDP_SLOT_SYSTEM) {
+			source.surfaceId = VDP_RD_SURFACE_SYSTEM;
+		} else if (slot === VDP_SLOT_PRIMARY) {
+			source.surfaceId = VDP_RD_SURFACE_PRIMARY;
+		} else if (slot === VDP_SLOT_SECONDARY) {
+			source.surfaceId = VDP_RD_SURFACE_SECONDARY;
+		} else {
+			target.faultCode = VDP_FAULT_BBU_SOURCE_OOB;
+			target.faultDetail = slot;
+			return;
+		}
+		source.srcX = packet.sourceRect.u;
+		source.srcY = packet.sourceRect.v;
+		source.width = packet.sourceRect.w;
+		source.height = packet.sourceRect.h;
+		target.slot = slot;
+		if (source.width === 0 || source.height === 0) {
+			target.faultCode = VDP_FAULT_BBU_ZERO_SIZE;
+			target.faultDetail = (source.width | (source.height << 16)) >>> 0;
+			return;
+		}
+		const surface = vram.findSurface(source.surfaceId);
+		if (surface === null) {
+			target.faultCode = VDP_FAULT_BBU_SOURCE_OOB;
+			target.faultDetail = source.surfaceId;
+			return;
+		}
+		if (source.srcX + source.width > surface.surfaceWidth || source.srcY + source.height > surface.surfaceHeight) {
+			target.faultCode = VDP_FAULT_BBU_SOURCE_OOB;
+			target.faultDetail = (source.srcX | (source.srcY << 16)) >>> 0;
+			return;
+		}
+		target.surfaceWidth = surface.surfaceWidth;
+		target.surfaceHeight = surface.surfaceHeight;
 	}
 
 	public completePacket(
