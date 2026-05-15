@@ -204,7 +204,6 @@ while true do
 	mem[sys_dma_ctrl] = dma_ctrl_start
 
 	mem[sys_inp_ctrl] = inp_ctrl_arm
-	print('test')
 	repeat
 		halt_until_irq
 		flags = dispatch_irqs()
