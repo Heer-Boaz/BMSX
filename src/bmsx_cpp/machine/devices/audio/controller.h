@@ -6,6 +6,7 @@
 #include "machine/devices/audio/output.h"
 #include "machine/devices/audio/save_state.h"
 #include "machine/devices/audio/selected_slot_latch.h"
+#include "machine/devices/audio/service_clock.h"
 #include "machine/devices/audio/source.h"
 #include "machine/devices/audio/slot_bank.h"
 #include "machine/devices/audio/status_register.h"
@@ -61,10 +62,8 @@ private:
 	DeviceStatusLatch m_fault;
 	ApuSelectedSlotLatch m_selectedSlotLatch;
 	ApuStatusRegister m_statusRegister;
+	ApuServiceClock m_serviceClock;
 	ApuSourceDma m_sourceDma;
-	int64_t m_cpuHz = APU_SAMPLE_RATE_HZ;
-	int64_t m_sampleCarry = 0;
-	int64_t m_availableSamples = 0;
 
 	bool enqueueCommand(uint32_t command);
 	void drainCommandFifo();
@@ -83,7 +82,6 @@ private:
 	void setSlotPhase(ApuAudioSlot slot, ApuSlotPhase phase);
 	bool replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId);
 	void advanceActiveSlots(int64_t samples);
-	void scheduleNextService(int64_t nowCycles);
 	Value onSelectedSlotRegisterRead(uint32_t addr) const;
 	void onSelectedSlotRegisterWrite(uint32_t addr, Value value);
 	void writeSlotRegisterWord(ApuAudioSlot slot, uint32_t parameterIndex, uint32_t word);

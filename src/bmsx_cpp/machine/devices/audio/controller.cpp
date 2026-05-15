@@ -6,10 +6,8 @@
 #include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
-#include "machine/scheduler/budget.h"
 #include "machine/scheduler/device.h"
 
-#include <utility>
 
 namespace bmsx {
 namespace {
@@ -32,7 +30,8 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 	, m_eventLatch(memory, irq)
 	, m_fault(memory, APU_DEVICE_STATUS_REGISTERS)
 	, m_selectedSlotLatch(memory, m_fault, m_slots)
-	, m_statusRegister(m_fault, m_slots, m_commandFifo, m_audioOutput.outputRing) {
+	, m_statusRegister(m_fault, m_slots, m_commandFifo, m_audioOutput.outputRing)
+	, m_serviceClock(scheduler, m_commandFifo, m_slots) {
 	m_memory.mapIoRead(IO_APU_STATUS, this, &AudioController::onStatusReadThunk);
 	m_memory.mapIoWrite(IO_APU_CMD, this, &AudioController::onCommandWriteThunk);
 	m_memory.mapIoWrite(IO_APU_SLOT, this, &AudioController::onSlotWriteThunk);
@@ -50,7 +49,7 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 }
 
 void AudioController::dispose() {
-	m_scheduler.cancelDeviceService(DeviceServiceApu);
+	m_serviceClock.reset();
 	m_audioOutput.resetPlaybackState();
 }
 
@@ -58,9 +57,7 @@ void AudioController::reset() {
 	m_commandFifo.reset();
 	m_slots.reset();
 	m_sourceDma.reset();
-	m_sampleCarry = 0;
-	m_availableSamples = 0;
-	m_scheduler.cancelDeviceService(DeviceServiceApu);
+	m_serviceClock.reset();
 	m_audioOutput.resetPlaybackState();
 	m_fault.resetStatus();
 	clearApuCommandLatch(m_memory);
@@ -70,33 +67,31 @@ void AudioController::reset() {
 }
 
 void AudioController::setTiming(int64_t cpuHz, int64_t nowCycles) {
-	m_cpuHz = cpuHz;
+	m_serviceClock.setCpuHz(cpuHz);
 	if (m_slots.activeMask() == 0u && m_commandFifo.empty()) {
-		m_sampleCarry = 0;
-		m_availableSamples = 0;
+		m_serviceClock.clearBudget();
 	}
-	scheduleNextService(nowCycles);
+	m_serviceClock.scheduleNext(nowCycles);
 }
 
 void AudioController::accrueCycles(int cycles, int64_t nowCycles) {
 	if (m_slots.activeMask() == 0u || cycles <= 0) {
 		return;
 	}
-	const int64_t wholeSamples = accrueBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, cycles);
-	m_availableSamples += wholeSamples;
-	scheduleNextService(nowCycles);
+	m_serviceClock.accrueCycles(cycles);
+	m_serviceClock.scheduleNext(nowCycles);
 }
 
 void AudioController::onService(int64_t nowCycles) {
 	if (!m_commandFifo.empty()) {
 		drainCommandFifo();
 	}
-	if (m_slots.activeMask() == 0u || m_availableSamples == 0) {
-		scheduleNextService(nowCycles);
+	if (m_slots.activeMask() == 0u || !m_serviceClock.pendingSamples()) {
+		m_serviceClock.scheduleNext(nowCycles);
 		return;
 	}
-	advanceActiveSlots(std::exchange(m_availableSamples, 0));
-	scheduleNextService(nowCycles);
+	advanceActiveSlots(m_serviceClock.consumeSamples());
+	m_serviceClock.scheduleNext(nowCycles);
 }
 
 void AudioController::onCommandWrite() {
@@ -106,7 +101,7 @@ void AudioController::onCommandWrite() {
 		case APU_CMD_STOP_SLOT:
 		case APU_CMD_SET_SLOT_GAIN:
 			if (enqueueCommand(command)) {
-				scheduleNextService(m_scheduler.currentNowCycles());
+				m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
 			}
 			clearApuCommandLatch(m_memory);
 			return;
@@ -237,7 +232,7 @@ void AudioController::startPlay(const ApuAudioSource& source, ApuAudioSlot slot,
 	if (!playOutputVoice(slot, voiceId, source, registerWords, 0u)) {
 		return;
 	}
-	scheduleNextService(m_scheduler.currentNowCycles());
+	m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
 }
 
 bool AudioController::playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples) {
@@ -297,12 +292,12 @@ void AudioController::stopSlot(const ApuParameterRegisterWords& registerWords) {
 		m_slots.setFadeSamples(slot, fadeSamples);
 		setSlotPhase(slot, APU_SLOT_PHASE_FADING);
 		m_audioOutput.stopSlot(slot, fadeSamples);
-		scheduleNextService(m_scheduler.currentNowCycles());
+		m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
 		return;
 	}
 	m_audioOutput.stopSlot(slot);
 	stopSlotActive(slot);
-	scheduleNextService(m_scheduler.currentNowCycles());
+	m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
 }
 
 void AudioController::setSlotGain(const ApuParameterRegisterWords& registerWords) {
@@ -361,25 +356,6 @@ void AudioController::advanceActiveSlots(int64_t samples) {
 	}
 }
 
-void AudioController::scheduleNextService(int64_t nowCycles) {
-	if (!m_commandFifo.empty()) {
-		m_scheduler.scheduleDeviceService(DeviceServiceApu, nowCycles);
-		return;
-	}
-	if (m_slots.activeMask() == 0u) {
-		m_scheduler.cancelDeviceService(DeviceServiceApu);
-		m_sampleCarry = 0;
-		m_availableSamples = 0;
-		return;
-	}
-	if (m_availableSamples > 0) {
-		m_scheduler.scheduleDeviceService(DeviceServiceApu, nowCycles);
-		return;
-	}
-	m_scheduler.scheduleDeviceService(DeviceServiceApu, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, 1));
-}
-
-
 
 Value AudioController::onSelectedSlotRegisterRead(uint32_t addr) const {
 	const uint32_t slot = m_memory.readIoU32(IO_APU_SLOT);
@@ -414,7 +390,7 @@ void AudioController::writeSlotRegisterWord(ApuAudioSlot slot, uint32_t paramete
 			if (!playOutputVoice(slot, voiceId, source, m_slotRegisterDispatchWords, fadeSamples)) {
 				return;
 			}
-			scheduleNextService(m_scheduler.currentNowCycles());
+			m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
 		} else {
 			const ApuParameterRegisterWords& outputRegisterWords = fadeSamples > 0u
 				? fadeOutputRegisterWords(slot, m_slotRegisterDispatchWords)

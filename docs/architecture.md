@@ -221,6 +221,7 @@ Internal units:
 
 - APU registerfile/status/fault latch;
 - command FIFO and parameter latch bank;
+- service clock: CPU-cycle sample accrual, carry latch, pending-sample latch, and APU scheduler edge;
 - slot bank: slot phases, active-mask latch, per-slot register words, playback cursors, fade counters, and voice ids;
 - source bytes DMA bank and metadata validator;
 - playback parameter decoder;
@@ -241,7 +242,10 @@ mirrored `machine/devices/audio/command_latch` files. The APU event latch
 `machine/devices/audio/event_latch` files. The command FIFO ring,
 read/write pointers, queued count, and per-entry parameter words are owned by
 mirrored `machine/devices/audio/command_fifo` files and are saved through that
-owner.
+owner. The APU service clock owns CPU-cycle sample accrual, carry and
+pending-sample latches, and the scheduler service edge in mirrored
+`machine/devices/audio/service_clock` files; aggregate save-state stores only
+those latch words.
 The selected-slot source/status latch is owned by mirrored
 `machine/devices/audio/selected_slot_latch` files. The composite APU status
 register read datapath is owned by mirrored `machine/devices/audio/status_register` files. The APU slot bank owns active

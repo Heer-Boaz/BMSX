@@ -102,8 +102,8 @@ AudioControllerState AudioController::captureState() const {
 	state.slotFadeSamplesRemaining = m_slots.slotFadeSamplesRemaining();
 	state.slotFadeSamplesTotal = m_slots.slotFadeSamplesTotal();
 	state.output = m_audioOutput.captureState();
-	state.sampleCarry = m_sampleCarry;
-	state.availableSamples = m_availableSamples;
+	state.sampleCarry = m_serviceClock.captureSampleCarry();
+	state.availableSamples = m_serviceClock.captureAvailableSamples();
 	state.apuStatus = m_fault.status;
 	state.apuFaultCode = m_fault.code;
 	state.apuFaultDetail = m_fault.detail;
@@ -127,8 +127,7 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 	);
 	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_slots.activeMask())));
 	m_sourceDma.restoreState(state.slotSourceBytes);
-	m_sampleCarry = state.sampleCarry;
-	m_availableSamples = state.availableSamples;
+	m_serviceClock.restore(state.sampleCarry, state.availableSamples);
 	m_fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
 	for (const ApuOutputVoiceState& voiceState : state.output.voices) {
 		const ApuAudioSlot slot = voiceState.slot;
@@ -140,7 +139,7 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 		m_audioOutput.restoreVoiceState(voiceState);
 	}
 	m_selectedSlotLatch.refresh();
-	scheduleNextService(nowCycles);
+	m_serviceClock.scheduleNext(nowCycles);
 }
 
 ApuOutputState ApuOutputMixer::captureState() const {
