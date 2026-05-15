@@ -38,7 +38,7 @@ import {
 } from './contracts';
 import { GEOMETRY_WORD_ALIGN_MASK, resolveGeometryIndexedSpan } from './addressing';
 import { GeometryProjectionSpan } from './projection';
-import type { GeometryJobState } from './state';
+import type { GeometryJobState } from './job';
 import type { Memory } from '../../memory/memory';
 import {
 	FIX16_SCALE,

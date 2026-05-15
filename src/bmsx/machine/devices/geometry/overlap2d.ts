@@ -75,7 +75,7 @@ import {
 	GEO_VERTEX2_Y_OFFSET,
 } from './contracts';
 import { GeometryProjectionSpan } from './projection';
-import type { GeometryJobState } from './state';
+import type { GeometryJobState } from './job';
 
 type PointScratch = { x: number; y: number };
 type GeometryPolyView = {

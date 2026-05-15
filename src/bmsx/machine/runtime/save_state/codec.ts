@@ -19,7 +19,8 @@ import {
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
 	type GeometryControllerPhase,
 } from '../../devices/geometry/contracts';
-import type { GeometryControllerState, GeometryJobState } from '../../devices/geometry/state';
+import type { GeometryJobState } from '../../devices/geometry/job';
+import type { GeometryControllerState } from '../../devices/geometry/save_state';
 import type { VdpSaveState, VdpState } from '../../devices/vdp/save_state';
 import type { VdpSurfacePixelsState, VdpVramState } from '../../devices/vdp/vram';
 import type { VdpStreamIngressState } from '../../devices/vdp/ingress';

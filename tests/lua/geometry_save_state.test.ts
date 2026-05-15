@@ -106,7 +106,7 @@ import { captureMachineSaveState, restoreMachineSaveState } from '../../src/bmsx
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { RAM_BASE } from '../../src/bmsx/machine/memory/map';
 import type { GeometryController } from '../../src/bmsx/machine/devices/geometry/controller';
-import type { GeometryControllerState } from '../../src/bmsx/machine/devices/geometry/state';
+import type { GeometryControllerState } from '../../src/bmsx/machine/devices/geometry/save_state';
 
 
 function makeMachine(): Machine {

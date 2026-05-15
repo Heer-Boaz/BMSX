@@ -226,6 +226,11 @@ faults through GEO status/fault registers. Geometry math helpers are allowed onl
 under the GEO device boundary; cart-visible proof must use RAM/MMIO/status, not a
 private direct helper call.
 
+GEO active-job latch records live in `machine/devices/geometry/job` on both
+runtimes. GEO save-state record shapes live in
+`machine/devices/geometry/save_state`; C++ keeps the aggregate GEO
+capture/restore bodies in the matching save-state translation unit.
+
 ### ICU
 
 ICU is the Input Controller Unit.

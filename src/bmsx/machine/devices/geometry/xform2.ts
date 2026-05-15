@@ -34,7 +34,7 @@ import {
 	GEO_XFORM2_MAX_VERTICES,
 } from './contracts';
 import { GEOMETRY_WORD_ALIGN_MASK, resolveGeometryIndexedSpan } from './addressing';
-import type { GeometryJobState } from './state';
+import type { GeometryJobState } from './job';
 import type { Memory } from '../../memory/memory';
 import { toSignedWord, transformFixed16 } from '../../common/numeric';
 

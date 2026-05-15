@@ -1,5 +1,3 @@
-import type { GeometryControllerPhase } from './contracts';
-
 export type GeometryJobState = {
 	cmd: number;
 	src0: number;
@@ -17,12 +15,4 @@ export type GeometryJobState = {
 	resultCount: number;
 	exactPairCount: number;
 	broadphasePairCount: number;
-};
-
-export type GeometryControllerState = {
-	phase: GeometryControllerPhase;
-	registerWords: number[];
-	activeJob: GeometryJobState | null;
-	workCarry: number;
-	availableWorkUnits: number;
 };

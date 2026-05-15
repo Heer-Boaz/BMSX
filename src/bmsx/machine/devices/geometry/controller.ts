@@ -47,7 +47,8 @@ import {
 import { GeometryOverlap2dUnit } from './overlap2d';
 import { GeometrySat2Unit } from './sat2';
 import { GeometryXform2Unit } from './xform2';
-import type { GeometryControllerState, GeometryJobState } from './state';
+import type { GeometryJobState } from './job';
+import type { GeometryControllerState } from './save_state';
 import type { Value } from '../../cpu/cpu';
 import { Memory } from '../../memory/memory';
 import type { IrqController } from '../irq/controller';

@@ -1,5 +1,5 @@
 import type { AudioControllerState } from './devices/audio/save_state';
-import type { GeometryControllerState } from './devices/geometry/state';
+import type { GeometryControllerState } from './devices/geometry/save_state';
 import type { InputControllerState } from './devices/input/save_state';
 import type { IrqControllerState } from './devices/irq/save_state';
 import type { VdpSaveState, VdpState } from './devices/vdp/save_state';

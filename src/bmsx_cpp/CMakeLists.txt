@@ -220,6 +220,7 @@ add_library(bmsx_core STATIC
 	machine/devices/geometry/sat2.cpp
 	machine/devices/geometry/overlap2d.cpp
 	machine/devices/geometry/controller.cpp
+	machine/devices/geometry/save_state.cpp
 	machine/devices/imgdec/controller.cpp
 	machine/devices/input/controller.cpp
 	machine/devices/input/event_fifo.cpp

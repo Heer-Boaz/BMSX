@@ -146,9 +146,9 @@ no record, in which case the index is `GEO_FAULT_RECORD_INDEX_NONE`.
 
 - TS controller: `src/bmsx/machine/devices/geometry/controller.ts`
 - TS command implementation: `src/bmsx/machine/devices/geometry/overlap2d.ts`
-- TS constants/state: `src/bmsx/machine/devices/geometry/contracts.ts` and
-  `state.ts`
+- TS constants/job/save-state: `src/bmsx/machine/devices/geometry/contracts.ts`,
+  `job.ts`, and `save_state.ts`
 - C++ controller: `src/bmsx_cpp/machine/devices/geometry/controller.cpp/.h`
 - C++ command implementation: `src/bmsx_cpp/machine/devices/geometry/overlap2d.cpp/.h`
-- C++ constants/state: `src/bmsx_cpp/machine/devices/geometry/contracts.h` and
-  `state.h`
+- C++ constants/job/save-state: `src/bmsx_cpp/machine/devices/geometry/contracts.h`,
+  `job.h`, and `save_state.h/.cpp`

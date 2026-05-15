@@ -2,7 +2,7 @@
 
 #include "machine/devices/geometry/contracts.h"
 #include "machine/devices/geometry/projection.h"
-#include "machine/devices/geometry/state.h"
+#include "machine/devices/geometry/job.h"
 #include "machine/memory/memory.h"
 
 #include <array>

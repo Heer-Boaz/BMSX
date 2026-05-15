@@ -2,7 +2,7 @@
 
 #include "machine/cpu/string_pool.h"
 #include "machine/devices/audio/save_state.h"
-#include "machine/devices/geometry/state.h"
+#include "machine/devices/geometry/save_state.h"
 #include "machine/devices/input/save_state.h"
 #include "machine/devices/irq/save_state.h"
 #include "machine/devices/vdp/save_state.h"
