@@ -125,10 +125,10 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 		state.slotFadeSamplesRemaining,
 		state.slotFadeSamplesTotal
 	);
-	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_slots.activeMask())));
 	m_sourceDma.restoreState(state.slotSourceBytes);
 	m_serviceClock.restore(state.sampleCarry, state.availableSamples);
 	m_fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
+	m_activeSlots.writeActiveMask();
 	for (const ApuOutputVoiceState& voiceState : state.output.voices) {
 		const ApuAudioSlot slot = voiceState.slot;
 		const ApuVoiceId voiceId = m_slots.allocateVoiceId();
@@ -138,7 +138,6 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 		}
 		m_audioOutput.restoreVoiceState(voiceState);
 	}
-	m_selectedSlotLatch.refresh();
 	m_serviceClock.scheduleNext(nowCycles);
 }
 

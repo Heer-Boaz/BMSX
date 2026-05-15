@@ -22,6 +22,12 @@ import {
 } from './contracts';
 import { toSignedWord } from '../../common/numeric';
 
+export type ApuSlotAdvanceResult = {
+	ended: boolean;
+	voiceId: ApuVoiceId;
+	sourceAddr: number;
+};
+
 export class ApuSlotBank {
 	private activeMaskWord = 0;
 	private readonly slotPhases = new Uint32Array(APU_SLOT_COUNT);
@@ -146,13 +152,18 @@ export class ApuSlotBank {
 		this.slotFadeSamplesTotal[slot] = samples;
 	}
 
-	public advanceSlot(slot: ApuAudioSlot, samples: number): boolean {
+	public advanceSlot(slot: ApuAudioSlot, samples: number, out: ApuSlotAdvanceResult): void {
+		out.ended = false;
+		out.voiceId = 0;
+		out.sourceAddr = 0;
 		const phase = this.slotPhases[slot]!;
 		if (phase === APU_SLOT_PHASE_IDLE) {
-			return false;
+			return;
 		}
 		const base = apuSlotRegisterWordIndex(slot, 0);
 		const fadeSamples = this.slotFadeSamplesRemaining[slot]!;
+		const voiceId = this.slotVoiceIds[slot]!;
+		const sourceAddr = this.slotRegisterWords[base + APU_PARAMETER_SOURCE_ADDR_INDEX]!;
 		if (phase === APU_SLOT_PHASE_FADING) {
 			const cursorSamples = samples < fadeSamples ? samples : fadeSamples;
 			const endedByCursor = this.advanceSlotCursor(base, slot, cursorSamples);
@@ -160,14 +171,23 @@ export class ApuSlotBank {
 				this.slotFadeSamplesRemaining[slot] = fadeSamples - samples;
 				if (endedByCursor) {
 					this.slotFadeSamplesRemaining[slot] = 0;
-					return true;
+					out.ended = true;
+					out.voiceId = voiceId;
+					out.sourceAddr = sourceAddr;
 				}
-				return false;
+				return;
 			}
 			this.slotFadeSamplesRemaining[slot] = 0;
-			return true;
+			out.ended = true;
+			out.voiceId = voiceId;
+			out.sourceAddr = sourceAddr;
+			return;
 		}
-		return this.advanceSlotCursor(base, slot, samples);
+		if (this.advanceSlotCursor(base, slot, samples)) {
+			out.ended = true;
+			out.voiceId = voiceId;
+			out.sourceAddr = sourceAddr;
+		}
 	}
 
 	public sourceAddr(slot: ApuAudioSlot): number {

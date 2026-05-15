@@ -222,7 +222,8 @@ Internal units:
 - APU registerfile/status/fault latch;
 - command FIFO and parameter latch bank;
 - service clock: CPU-cycle sample accrual, carry latch, pending-sample latch, and APU scheduler edge;
-- slot bank: slot phases, active-mask latch, per-slot register words, playback cursors, fade counters, and voice ids;
+- active-slot datapath: active-mask register image, slot phase transitions, source-byte teardown, selected-slot refresh, and slot-ended event emission;
+- slot bank: slot phases, per-slot register words, playback cursors, fade counters, and voice ids;
 - source bytes DMA bank and metadata validator;
 - playback parameter decoder;
 - mixer/filter datapath and retained mix buffer;
@@ -247,8 +248,12 @@ pending-sample latches, and the scheduler service edge in mirrored
 `machine/devices/audio/service_clock` files; aggregate save-state stores only
 those latch words.
 The selected-slot source/status latch is owned by mirrored
-`machine/devices/audio/selected_slot_latch` files. The composite APU status
-register read datapath is owned by mirrored `machine/devices/audio/status_register` files. The APU slot bank owns active
+`machine/devices/audio/selected_slot_latch` files. The active-slot datapath is
+owned by mirrored `machine/devices/audio/active_slots` files; it writes the
+CPU-visible active-mask register image, clears source-DMA slot bytes when a slot
+stops, refreshes the selected-slot latch, and emits slot-ended events from the
+advance edge. The composite APU status register read datapath is owned by
+mirrored `machine/devices/audio/status_register` files. The APU slot bank owns
 slot phase/register/cursor/fade/voice-id words in mirrored
 `machine/devices/audio/slot_bank` files; aggregate save-state records
 read and restore those live words through that owner.

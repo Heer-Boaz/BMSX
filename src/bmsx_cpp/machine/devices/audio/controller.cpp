@@ -30,6 +30,7 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 	, m_eventLatch(memory, irq)
 	, m_fault(memory, APU_DEVICE_STATUS_REGISTERS)
 	, m_selectedSlotLatch(memory, m_fault, m_slots)
+	, m_activeSlots(memory, m_audioOutput, m_sourceDma, m_eventLatch, m_slots, m_selectedSlotLatch)
 	, m_statusRegister(m_fault, m_slots, m_commandFifo, m_audioOutput.outputRing)
 	, m_serviceClock(scheduler, m_commandFifo, m_slots) {
 	m_memory.mapIoRead(IO_APU_STATUS, this, &AudioController::onStatusReadThunk);
@@ -63,7 +64,7 @@ void AudioController::reset() {
 	clearApuCommandLatch(m_memory);
 	m_eventLatch.reset();
 	m_selectedSlotLatch.reset();
-	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(0.0));
+	m_activeSlots.writeActiveMask();
 }
 
 void AudioController::setTiming(int64_t cpuHz, int64_t nowCycles) {
@@ -90,7 +91,7 @@ void AudioController::onService(int64_t nowCycles) {
 		m_serviceClock.scheduleNext(nowCycles);
 		return;
 	}
-	advanceActiveSlots(m_serviceClock.consumeSamples());
+	m_activeSlots.advance(m_serviceClock.consumeSamples());
 	m_serviceClock.scheduleNext(nowCycles);
 }
 
@@ -228,7 +229,7 @@ void AudioController::startPlay(const ApuAudioSource& source, ApuAudioSlot slot,
 		return;
 	}
 	const ApuVoiceId voiceId = m_slots.allocateVoiceId();
-	setSlotActive(slot, registerWords, voiceId);
+	m_activeSlots.setActive(slot, registerWords, voiceId);
 	if (!playOutputVoice(slot, voiceId, source, registerWords, 0u)) {
 		return;
 	}
@@ -250,7 +251,7 @@ bool AudioController::playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, con
 	);
 	if (outputStart.faultCode != APU_FAULT_NONE) {
 		m_audioOutput.stopSlot(slot);
-		stopSlotActive(slot);
+		m_activeSlots.stop(slot);
 		m_fault.raise(outputStart.faultCode, outputStart.faultDetail);
 		return false;
 	}
@@ -270,7 +271,7 @@ bool AudioController::replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSour
 	m_audioOutput.stopSlot(slot);
 	const ApuSourceDmaResult dma = m_sourceDma.loadSlot(m_memory, slot, source);
 	if (dma.faultCode != APU_FAULT_NONE) {
-		stopSlotActive(slot);
+		m_activeSlots.stop(slot);
 		m_fault.raise(dma.faultCode, dma.faultDetail);
 		return false;
 	}
@@ -285,18 +286,18 @@ void AudioController::stopSlot(const ApuParameterRegisterWords& registerWords) {
 	const uint32_t fadeSamples = registerWords[APU_PARAMETER_FADE_SAMPLES_INDEX];
 	if ((m_slots.activeMask() & (1u << slot)) == 0u) {
 		m_audioOutput.stopSlot(slot);
-		stopSlotActive(slot);
+		m_activeSlots.stop(slot);
 		return;
 	}
 	if (fadeSamples > 0u) {
 		m_slots.setFadeSamples(slot, fadeSamples);
-		setSlotPhase(slot, APU_SLOT_PHASE_FADING);
+		m_activeSlots.setPhase(slot, APU_SLOT_PHASE_FADING);
 		m_audioOutput.stopSlot(slot, fadeSamples);
 		m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
 		return;
 	}
 	m_audioOutput.stopSlot(slot);
-	stopSlotActive(slot);
+	m_activeSlots.stop(slot);
 	m_serviceClock.scheduleNext(m_scheduler.currentNowCycles());
 }
 
@@ -308,32 +309,6 @@ void AudioController::setSlotGain(const ApuParameterRegisterWords& registerWords
 	writeSlotRegisterWord(slot, APU_PARAMETER_GAIN_Q12_INDEX, registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
 }
 
-void AudioController::emitSlotEvent(uint32_t kind, ApuAudioSlot slot, ApuVoiceId voiceId, uint32_t sourceAddr) {
-	if (m_slots.voiceId(slot) != voiceId) {
-		return;
-	}
-	stopSlotActive(slot);
-	m_eventLatch.emit(kind, slot, sourceAddr);
-}
-
-void AudioController::setSlotActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords, ApuVoiceId voiceId) {
-	m_slots.setActive(slot, registerWords, voiceId);
-	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_slots.activeMask())));
-	m_selectedSlotLatch.refresh();
-}
-
-void AudioController::stopSlotActive(ApuAudioSlot slot) {
-	m_slots.clearSlot(slot);
-	m_sourceDma.clearSlot(slot);
-	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_slots.activeMask())));
-	m_selectedSlotLatch.refresh();
-}
-
-void AudioController::setSlotPhase(ApuAudioSlot slot, ApuSlotPhase phase) {
-	m_slots.setPhase(slot, phase);
-	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_slots.activeMask())));
-	m_selectedSlotLatch.refresh();
-}
 
 bool AudioController::replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId) {
 	m_slots.loadRegisterWords(slot, m_slotRegisterDispatchWords);
@@ -346,15 +321,6 @@ bool AudioController::replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId) {
 	);
 }
 
-void AudioController::advanceActiveSlots(int64_t samples) {
-	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
-		const ApuSlotAdvanceResult result = m_slots.advanceSlot(slot, samples);
-		if (result.ended) {
-			m_audioOutput.stopSlot(slot);
-			emitSlotEvent(APU_EVENT_SLOT_ENDED, slot, result.voiceId, result.sourceAddr);
-		}
-	}
-}
 
 
 Value AudioController::onSelectedSlotRegisterRead(uint32_t addr) const {
@@ -404,7 +370,7 @@ void AudioController::writeSlotRegisterWord(ApuAudioSlot slot, uint32_t paramete
 			);
 			if (outputWrite.faultCode != APU_FAULT_NONE) {
 				m_audioOutput.stopSlot(slot);
-				stopSlotActive(slot);
+				m_activeSlots.stop(slot);
 				m_fault.raise(outputWrite.faultCode, outputWrite.faultDetail);
 			}
 		}

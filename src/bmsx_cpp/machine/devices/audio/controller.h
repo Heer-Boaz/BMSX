@@ -1,5 +1,6 @@
 #pragma once
 
+#include "machine/devices/audio/active_slots.h"
 #include "machine/devices/audio/command_fifo.h"
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/audio/event_latch.h"
@@ -61,27 +62,23 @@ private:
 	ApuSlotBank m_slots;
 	DeviceStatusLatch m_fault;
 	ApuSelectedSlotLatch m_selectedSlotLatch;
+	ApuSourceDma m_sourceDma;
+	ApuActiveSlots m_activeSlots;
 	ApuStatusRegister m_statusRegister;
 	ApuServiceClock m_serviceClock;
-	ApuSourceDma m_sourceDma;
 
 	bool enqueueCommand(uint32_t command);
 	void drainCommandFifo();
 	void executeCommand(uint32_t command, const ApuParameterRegisterWords& registerWords);
 	void play(const ApuParameterRegisterWords& registerWords);
-		bool readSlot(const ApuParameterRegisterWords& registerWords, ApuAudioSlot& slot) const;
-		void startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
-		bool playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples);
-		const ApuParameterRegisterWords& fadeOutputRegisterWords(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
-		bool replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source);
-		void stopSlot(const ApuParameterRegisterWords& registerWords);
-		void setSlotGain(const ApuParameterRegisterWords& registerWords);
-		void emitSlotEvent(uint32_t kind, ApuAudioSlot slot, ApuVoiceId voiceId, uint32_t sourceAddr);
-	void setSlotActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords, ApuVoiceId voiceId);
-	void stopSlotActive(ApuAudioSlot slot);
-	void setSlotPhase(ApuAudioSlot slot, ApuSlotPhase phase);
+	bool readSlot(const ApuParameterRegisterWords& registerWords, ApuAudioSlot& slot) const;
+	void startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
+	bool playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples);
+	const ApuParameterRegisterWords& fadeOutputRegisterWords(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
+	bool replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source);
+	void stopSlot(const ApuParameterRegisterWords& registerWords);
+	void setSlotGain(const ApuParameterRegisterWords& registerWords);
 	bool replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId);
-	void advanceActiveSlots(int64_t samples);
 	Value onSelectedSlotRegisterRead(uint32_t addr) const;
 	void onSelectedSlotRegisterWrite(uint32_t addr, Value value);
 	void writeSlotRegisterWord(ApuAudioSlot slot, uint32_t parameterIndex, uint32_t word);
