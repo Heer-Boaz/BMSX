@@ -90,10 +90,11 @@ AudioControllerState AudioController::captureState() const {
 		state.registerWords[index] = m_memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]);
 	}
 	state.commandFifo = m_commandFifo.captureState();
-	state.eventSequence = m_eventSequence;
-	state.eventKind = m_memory.readIoU32(IO_APU_EVENT_KIND);
-	state.eventSlot = m_memory.readIoU32(IO_APU_EVENT_SLOT);
-	state.eventSourceAddr = m_memory.readIoU32(IO_APU_EVENT_SOURCE_ADDR);
+	const ApuEventLatchState event = m_eventLatch.captureState();
+	state.eventSequence = event.eventSequence;
+	state.eventKind = event.eventKind;
+	state.eventSlot = event.eventSlot;
+	state.eventSourceAddr = event.eventSourceAddr;
 	state.slotPhases = m_slots.slotPhases();
 	state.slotRegisterWords = m_slots.slotRegisterWords();
 	state.slotSourceBytes = m_sourceDma.captureState();
@@ -116,11 +117,7 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 		m_memory.writeIoValue(IO_APU_PARAMETER_REGISTER_ADDRS[index], valueNumber(static_cast<double>(state.registerWords[index])));
 	}
 	m_commandFifo.restoreState(state.commandFifo);
-	m_eventSequence = state.eventSequence;
-	m_memory.writeValue(IO_APU_EVENT_KIND, valueNumber(static_cast<double>(state.eventKind)));
-	m_memory.writeValue(IO_APU_EVENT_SLOT, valueNumber(static_cast<double>(state.eventSlot)));
-	m_memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, valueNumber(static_cast<double>(state.eventSourceAddr)));
-	m_memory.writeValue(IO_APU_EVENT_SEQ, valueNumber(static_cast<double>(m_eventSequence)));
+	m_eventLatch.restoreState({state.eventSequence, state.eventKind, state.eventSlot, state.eventSourceAddr});
 	m_slots.restore(
 		state.slotPhases,
 		state.slotRegisterWords,

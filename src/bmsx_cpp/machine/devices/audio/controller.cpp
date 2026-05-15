@@ -28,8 +28,8 @@ constexpr DeviceStatusRegisters APU_DEVICE_STATUS_REGISTERS{
 AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, IrqController& irq, DeviceScheduler& scheduler)
 	: m_memory(memory)
 	, m_audioOutput(audioOutput)
-	, m_irq(irq)
 	, m_scheduler(scheduler)
+	, m_eventLatch(memory, irq)
 	, m_fault(memory, APU_DEVICE_STATUS_REGISTERS) {
 	m_memory.mapIoRead(IO_APU_STATUS, this, &AudioController::onStatusReadThunk);
 	m_memory.mapIoWrite(IO_APU_CMD, this, &AudioController::onCommandWriteThunk);
@@ -53,7 +53,6 @@ void AudioController::dispose() {
 }
 
 void AudioController::reset() {
-	m_eventSequence = 0;
 	m_commandFifo.reset();
 	m_slots.reset();
 	m_sourceDma.reset();
@@ -63,10 +62,7 @@ void AudioController::reset() {
 	m_audioOutput.resetPlaybackState();
 	m_fault.resetStatus();
 	clearApuCommandLatch(m_memory);
-	m_memory.writeValue(IO_APU_EVENT_KIND, valueNumber(static_cast<double>(APU_EVENT_NONE)));
-	m_memory.writeValue(IO_APU_EVENT_SLOT, valueNumber(0.0));
-	m_memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, valueNumber(0.0));
-	m_memory.writeValue(IO_APU_EVENT_SEQ, valueNumber(0.0));
+	m_eventLatch.reset();
 	m_memory.writeValue(IO_APU_SELECTED_SOURCE_ADDR, valueNumber(0.0));
 	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(0.0));
 }
@@ -319,12 +315,7 @@ void AudioController::emitSlotEvent(uint32_t kind, ApuAudioSlot slot, ApuVoiceId
 		return;
 	}
 	stopSlotActive(slot);
-	m_eventSequence += 1u;
-	m_memory.writeValue(IO_APU_EVENT_KIND, valueNumber(static_cast<double>(kind)));
-	m_memory.writeValue(IO_APU_EVENT_SLOT, valueNumber(static_cast<double>(slot)));
-	m_memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, valueNumber(static_cast<double>(sourceAddr)));
-	m_memory.writeValue(IO_APU_EVENT_SEQ, valueNumber(static_cast<double>(m_eventSequence)));
-	m_irq.raise(IRQ_APU);
+	m_eventLatch.emit(kind, slot, sourceAddr);
 }
 
 void AudioController::setSlotActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords, ApuVoiceId voiceId) {

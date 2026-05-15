@@ -2,6 +2,7 @@
 
 #include "machine/devices/audio/command_fifo.h"
 #include "machine/devices/audio/contracts.h"
+#include "machine/devices/audio/event_latch.h"
 #include "machine/devices/audio/output.h"
 #include "machine/devices/audio/save_state.h"
 #include "machine/devices/audio/source.h"
@@ -49,9 +50,8 @@ private:
 
 	Memory& m_memory;
 	ApuOutputMixer& m_audioOutput;
-	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;
-	uint32_t m_eventSequence = 0;
+	ApuEventLatch m_eventLatch;
 	ApuCommandFifo m_commandFifo;
 	ApuParameterRegisterWords m_commandDispatchRegisterWords{};
 	ApuParameterRegisterWords m_slotRegisterDispatchWords{};

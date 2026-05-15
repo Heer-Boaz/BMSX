@@ -5,6 +5,7 @@ import type { ApuOutputMixer } from './output';
 import type { AudioControllerState } from './save_state';
 import { ApuSourceDma, apuParameterProgramsSourceBuffer, resolveApuAudioSource } from './source';
 import { ApuCommandFifo } from './command_fifo';
+import { ApuEventLatch } from './event_latch';
 import { clearApuCommandLatch } from './command_latch';
 import { ApuSlotBank } from './slot_bank';
 import {
@@ -14,7 +15,6 @@ import {
 	APU_CMD_PLAY,
 	APU_CMD_SET_SLOT_GAIN,
 	APU_CMD_STOP_SLOT,
-	APU_EVENT_NONE,
 	APU_EVENT_SLOT_ENDED,
 	APU_FAULT_BAD_CMD,
 	APU_FAULT_BAD_SLOT,
@@ -44,10 +44,6 @@ import {
 	IO_APU_CMD_CAPACITY,
 	IO_APU_CMD_FREE,
 	IO_APU_CMD_QUEUED,
-	IO_APU_EVENT_KIND,
-	IO_APU_EVENT_SEQ,
-	IO_APU_EVENT_SLOT,
-	IO_APU_EVENT_SOURCE_ADDR,
 	IO_APU_ACTIVE_MASK,
 	IO_APU_FAULT_ACK,
 	IO_APU_FAULT_CODE,
@@ -61,7 +57,6 @@ import {
 	IO_APU_SLOT,
 	IO_APU_STATUS,
 	IO_ARG_STRIDE,
-	IRQ_APU,
 } from '../../bus/io';
 import { Memory } from '../../memory/memory';
 import { DeviceStatusLatch, type DeviceStatusRegisters } from '../device_status';
@@ -79,7 +74,7 @@ const APU_DEVICE_STATUS_REGISTERS: DeviceStatusRegisters = {
 
 export class AudioController {
 	private readonly sourceDma: ApuSourceDma;
-	private eventSequence = 0;
+	private readonly eventLatch: ApuEventLatch;
 	private readonly commandFifo = new ApuCommandFifo();
 	private readonly commandDispatchRegisterWords = new Uint32Array(APU_PARAMETER_REGISTER_COUNT);
 	private readonly slotRegisterDispatchWords = new Uint32Array(APU_PARAMETER_REGISTER_COUNT);
@@ -93,10 +88,11 @@ export class AudioController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly audioOutput: ApuOutputMixer,
-		private readonly irq: IrqController,
+		irq: IrqController,
 		private readonly scheduler: DeviceScheduler,
 	) {
 		this.sourceDma = new ApuSourceDma(memory);
+		this.eventLatch = new ApuEventLatch(memory, irq);
 		this.fault = new DeviceStatusLatch(memory, APU_DEVICE_STATUS_REGISTERS);
 		this.memory.mapIoRead(IO_APU_STATUS, this.onStatusRead.bind(this));
 		this.memory.mapIoWrite(IO_APU_CMD, this.onCommandWrite.bind(this));
@@ -125,7 +121,6 @@ export class AudioController {
 	}
 
 	public reset(): void {
-		this.eventSequence = 0;
 		this.commandFifo.reset();
 		this.sourceDma.reset();
 		this.slots.reset();
@@ -135,10 +130,7 @@ export class AudioController {
 		this.audioOutput.resetPlaybackState();
 		this.fault.resetStatus();
 		clearApuCommandLatch(this.memory);
-		this.memory.writeValue(IO_APU_EVENT_KIND, APU_EVENT_NONE);
-		this.memory.writeValue(IO_APU_EVENT_SLOT, 0);
-		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, 0);
-		this.memory.writeValue(IO_APU_EVENT_SEQ, 0);
+		this.eventLatch.reset();
 		this.memory.writeValue(IO_APU_SELECTED_SOURCE_ADDR, 0);
 		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, 0);
 	}
@@ -148,13 +140,14 @@ export class AudioController {
 		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
 			registerWords[index] = this.memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]!);
 		}
+		const event = this.eventLatch.captureState();
 		return {
 			registerWords,
 			commandFifo: this.commandFifo.captureState(),
-			eventSequence: this.eventSequence,
-			eventKind: this.memory.readIoU32(IO_APU_EVENT_KIND),
-			eventSlot: this.memory.readIoU32(IO_APU_EVENT_SLOT),
-			eventSourceAddr: this.memory.readIoU32(IO_APU_EVENT_SOURCE_ADDR),
+			eventSequence: event.eventSequence,
+			eventKind: event.eventKind,
+			eventSlot: event.eventSlot,
+			eventSourceAddr: event.eventSourceAddr,
 			slotPhases: this.slots.captureSlotPhases(),
 			slotRegisterWords: this.slots.captureSlotRegisterWords(),
 			slotSourceBytes: this.sourceDma.captureState(),
@@ -177,11 +170,7 @@ export class AudioController {
 			this.memory.writeIoValue(IO_APU_PARAMETER_REGISTER_ADDRS[index]!, state.registerWords[index]!);
 		}
 		this.commandFifo.restoreState(state.commandFifo);
-		this.eventSequence = state.eventSequence >>> 0;
-		this.memory.writeValue(IO_APU_EVENT_KIND, state.eventKind);
-		this.memory.writeValue(IO_APU_EVENT_SLOT, state.eventSlot);
-		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, state.eventSourceAddr);
-		this.memory.writeValue(IO_APU_EVENT_SEQ, this.eventSequence);
+		this.eventLatch.restoreState(state);
 		this.slots.restore(
 			state.slotPhases,
 			state.slotRegisterWords,
@@ -358,12 +347,7 @@ export class AudioController {
 			return;
 		}
 		this.stopSlotActive(slot);
-		this.eventSequence = (this.eventSequence + 1) >>> 0;
-		this.memory.writeValue(IO_APU_EVENT_KIND, kind);
-		this.memory.writeValue(IO_APU_EVENT_SLOT, slot);
-		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, sourceAddr);
-		this.memory.writeValue(IO_APU_EVENT_SEQ, this.eventSequence);
-		this.irq.raise(IRQ_APU);
+		this.eventLatch.emit(kind, slot, sourceAddr);
 	}
 
 	private setSlotActive(slot: ApuAudioSlot, registerWords: ApuParameterRegisterWords, voiceId: ApuVoiceId): void {
