@@ -1,5 +1,5 @@
 import { clamp, clamp01 } from '../../../common/clamp';
-import { BiquadFilterState, configureBiquadFilter, type BiquadFilterType } from './biquad_filter';
+import { BiquadFilterState, configureBiquadFilter } from './biquad_filter';
 import { readApuBadpSeekTable, type ApuBadpDecoderState } from './badp_decoder';
 import {
 	createApuBadpDecoderState,
@@ -9,6 +9,13 @@ import {
 import { ApuOutputRing } from './output_ring';
 import { validateApuPcmSourceData } from './pcm_decoder';
 import { APU_PCM_SAMPLE_SCALE, readApuPcmSample } from './pcm_decoder_hot_path';
+import {
+	resolveApuGainLinear,
+	resolveApuOutputFilter,
+	resolveApuPlaybackRate,
+	resolveApuOutputPlayback,
+	type ApuOutputPlayback,
+} from './playback';
 import { validateApuAudioSourceMetadata } from './source';
 import {
 	captureApuOutputVoiceState,
@@ -17,16 +24,7 @@ import {
 	type ApuOutputVoiceStateAccess,
 	type ApuOutputVoiceState,
 } from './save_state';
-import { toSignedWord } from '../../common/numeric';
 import {
-	APU_FILTER_ALLPASS,
-	APU_FILTER_BANDPASS,
-	APU_FILTER_HIGHPASS,
-	APU_FILTER_HIGHSHELF,
-	APU_FILTER_LOWSHELF,
-	APU_FILTER_NONE,
-	APU_FILTER_NOTCH,
-	APU_FILTER_PEAKING,
 	APU_FAULT_NONE,
 	APU_FAULT_OUTPUT_METADATA,
 	APU_FAULT_OUTPUT_PLAYBACK_RATE,
@@ -61,21 +59,6 @@ import {
 	type ApuParameterRegisterWords,
 	type ApuVoiceId,
 } from './contracts';
-
-export type ApuFilterType = BiquadFilterType;
-
-export interface ApuOutputFilter {
-	type: ApuFilterType;
-	frequency: number;
-	q: number;
-	gain: number;
-}
-
-export interface ApuOutputPlayback {
-	playbackRate: number;
-	gainLinear: number;
-	filter: ApuOutputFilter | null;
-}
 
 export interface ApuOutputStartResult {
 	faultCode: number;
@@ -113,53 +96,6 @@ function audioFrameIndex(position: number): number {
 function squareGeneratorSample(position: number, dutyQ12: number): number {
 	const frameIndex = audioFrameIndex(position);
 	return (position - frameIndex) * APU_GAIN_Q12_ONE < dutyQ12 ? 1 : -1;
-}
-
-export function resolveApuGainLinear(gainQ12Word: number): number {
-	return toSignedWord(gainQ12Word) / APU_GAIN_Q12_ONE;
-}
-
-function decodeApuFilterType(kind: number): ApuFilterType {
-	switch (kind) {
-		case APU_FILTER_HIGHPASS:
-			return 'highpass';
-		case APU_FILTER_BANDPASS:
-			return 'bandpass';
-		case APU_FILTER_NOTCH:
-			return 'notch';
-		case APU_FILTER_ALLPASS:
-			return 'allpass';
-		case APU_FILTER_PEAKING:
-			return 'peaking';
-		case APU_FILTER_LOWSHELF:
-			return 'lowshelf';
-		case APU_FILTER_HIGHSHELF:
-			return 'highshelf';
-		default:
-			return 'lowpass';
-	}
-}
-
-export function resolveApuOutputFilter(registerWords: ApuParameterRegisterWords): ApuOutputFilter | null {
-	const filterKind = registerWords[APU_PARAMETER_FILTER_KIND_INDEX]!;
-	if (filterKind === APU_FILTER_NONE) {
-		return null;
-	}
-	return {
-		type: decodeApuFilterType(filterKind),
-		frequency: toSignedWord(registerWords[APU_PARAMETER_FILTER_FREQ_HZ_INDEX]!),
-		q: toSignedWord(registerWords[APU_PARAMETER_FILTER_Q_MILLI_INDEX]!) / 1000,
-		gain: toSignedWord(registerWords[APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX]!) / 1000,
-	};
-}
-
-export function resolveApuOutputPlayback(registerWords: ApuParameterRegisterWords): ApuOutputPlayback {
-	const playback: ApuOutputPlayback = {
-		playbackRate: toSignedWord(registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]!) / APU_RATE_STEP_Q16_ONE,
-		gainLinear: resolveApuGainLinear(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]!),
-		filter: resolveApuOutputFilter(registerWords),
-	};
-	return playback;
 }
 
 export class ApuOutputMixer {
@@ -262,7 +198,7 @@ export class ApuOutputMixer {
 				return { faultCode: APU_FAULT_OUTPUT_METADATA, faultDetail: parameterIndex };
 			case APU_PARAMETER_RATE_STEP_Q16_INDEX: {
 				const rateStepQ16Word = registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]!;
-				playbackRate = toSignedWord(rateStepQ16Word) / APU_RATE_STEP_Q16_ONE;
+				playbackRate = resolveApuPlaybackRate(rateStepQ16Word);
 				if (playbackRate <= 0) {
 					return { faultCode: APU_FAULT_OUTPUT_PLAYBACK_RATE, faultDetail: rateStepQ16Word };
 				}

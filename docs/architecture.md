@@ -223,6 +223,7 @@ Internal units:
 - command FIFO and parameter latch bank;
 - slot bank: slot phases, active-mask latch, per-slot register words, playback cursors, fade counters, and voice ids;
 - source bytes DMA bank and metadata validator;
+- playback parameter decoder;
 - mixer/filter datapath and retained mix buffer;
 - AOUT active voice records;
 - PCM source data validator;
@@ -240,7 +241,7 @@ and per-entry parameter words are owned by mirrored
 The APU slot bank owns active slot phase/register/cursor/fade/voice-id words in
 mirrored `machine/devices/audio/slot_bank` files; aggregate save-state records
 read and restore those live words through that owner.
-The APU source metadata validator is owned by mirrored `machine/devices/audio/source` files. The PCM source data validator is owned by mirrored `machine/devices/audio/pcm_decoder` files; scalar PCM sample decode lives in mirrored `pcm_decoder_hot_path` files so AOUT keeps the same retained-buffer hot path without owning sample-format decoding. The BADP decoder and seek-table datapath are owned by mirrored
+The AOUT playback/filter parameter decoder is owned by mirrored `machine/devices/audio/playback` files. The APU source metadata validator is owned by mirrored `machine/devices/audio/source` files. The PCM source data validator is owned by mirrored `machine/devices/audio/pcm_decoder` files; scalar PCM sample decode lives in mirrored `pcm_decoder_hot_path` files so AOUT keeps the same retained-buffer hot path without owning sample-format decoding. The BADP decoder and seek-table datapath are owned by mirrored
 `machine/devices/audio/badp_decoder` files; active decoder latches stay in the
 voice record and are captured through the audio save-state contract. C++ keeps
 its per-sample BADP decode loop in a C++-only `badp_decoder_hot_path` internal

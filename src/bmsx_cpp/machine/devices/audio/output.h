@@ -3,85 +3,20 @@
 #include "machine/devices/audio/badp_decoder.h"
 #include "machine/devices/audio/biquad_filter.h"
 #include "common/types.h"
-#include "machine/common/numeric.h"
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/audio/output_ring.h"
+#include "machine/devices/audio/playback.h"
 #include "machine/devices/audio/save_state.h"
 
 #include <array>
-#include <optional>
-#include <string_view>
 #include <vector>
 
 namespace bmsx {
-
-struct ApuOutputFilter {
-	std::string_view type;
-	f32 frequency = 0.0f;
-	f32 q = 0.0f;
-	f32 gain = 0.0f;
-};
-
-struct ApuOutputPlayback {
-	f32 playbackRate = 1.0f;
-	f32 gainLinear = 1.0f;
-	std::optional<ApuOutputFilter> filter;
-};
 
 struct ApuOutputStartResult {
 	u32 faultCode = APU_FAULT_NONE;
 	u32 faultDetail = 0;
 };
-
-inline f32 resolveApuGainLinear(u32 gainQ12Word) {
-	return static_cast<f32>(toSignedWord(gainQ12Word)) / static_cast<f32>(APU_GAIN_Q12_ONE);
-}
-
-inline std::optional<ApuOutputFilter> resolveApuOutputFilter(const ApuParameterRegisterWords& registerWords) {
-	const u32 filterKind = registerWords[APU_PARAMETER_FILTER_KIND_INDEX];
-	if (filterKind == APU_FILTER_NONE) {
-		return std::nullopt;
-	}
-	ApuOutputFilter filter;
-	switch (filterKind) {
-		case APU_FILTER_HIGHPASS:
-			filter.type = "highpass";
-			break;
-		case APU_FILTER_BANDPASS:
-			filter.type = "bandpass";
-			break;
-		case APU_FILTER_NOTCH:
-			filter.type = "notch";
-			break;
-		case APU_FILTER_ALLPASS:
-			filter.type = "allpass";
-			break;
-		case APU_FILTER_PEAKING:
-			filter.type = "peaking";
-			break;
-		case APU_FILTER_LOWSHELF:
-			filter.type = "lowshelf";
-			break;
-		case APU_FILTER_HIGHSHELF:
-			filter.type = "highshelf";
-			break;
-		default:
-			filter.type = "lowpass";
-			break;
-	}
-	filter.frequency = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_FREQ_HZ_INDEX]));
-	filter.q = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_Q_MILLI_INDEX])) / 1000.0f;
-	filter.gain = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX])) / 1000.0f;
-	return filter;
-}
-
-inline ApuOutputPlayback resolveApuOutputPlayback(const ApuParameterRegisterWords& registerWords) {
-	ApuOutputPlayback playback;
-	playback.playbackRate = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX])) / static_cast<f32>(APU_RATE_STEP_Q16_ONE);
-	playback.gainLinear = resolveApuGainLinear(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
-	playback.filter = resolveApuOutputFilter(registerWords);
-	return playback;
-}
 
 class ApuOutputMixer final {
 public:

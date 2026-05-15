@@ -170,7 +170,7 @@ ApuOutputStartResult ApuOutputMixer::writeSlotRegisterWord(ApuAudioSlot slot, co
 		case APU_PARAMETER_GENERATOR_KIND_INDEX:
 			return {APU_FAULT_OUTPUT_METADATA, parameterIndex};
 		case APU_PARAMETER_RATE_STEP_Q16_INDEX:
-			playbackRate = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX])) / static_cast<f32>(APU_RATE_STEP_Q16_ONE);
+			playbackRate = resolveApuPlaybackRate(registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]);
 			if (playbackRate <= 0.0f) {
 				return {APU_FAULT_OUTPUT_PLAYBACK_RATE, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]};
 			}
