@@ -1,6 +1,6 @@
 import type { LuaFunctionValue, LuaValue } from '../../lua/value';
 import { isLuaCallSignal } from '../../lua/value';
-import { Closure, RunResult, type Program, type ProgramMetadata, type Value } from '../cpu/cpu';
+import { AcceptedInterruptKind, Closure, RunResult, type Program, type ProgramMetadata, type Value } from '../cpu/cpu';
 import { INSTRUCTION_BYTES } from '../cpu/instruction_format';
 import { buildMarshalContext, extendMarshalContext, toNativeValue, toRuntimeValue } from '../runtime/host/native_bridge';
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../runtime/cpu_executor';
@@ -91,6 +91,26 @@ export function installNativeGlobal(runtime: Runtime, name: string, value: unkno
 	}
 }
 
+function runHaltedClosureUntilInterrupt(runtime: Runtime): void {
+	const cpu = runtime.machine.cpu;
+	const scheduler = runtime.machine.scheduler;
+	while (cpu.isHaltedUntilIrq()) {
+		if (cpu.acceptPendingInterrupt(runtime.machine.irqController) !== AcceptedInterruptKind.None) {
+			return;
+		}
+		if (scheduler.hasDueTimer()) {
+			runDueRuntimeTimers(runtime);
+			continue;
+		}
+		const nextDeadline = scheduler.nextDeadline();
+		const cyclesToDeadline = nextDeadline - scheduler.nowCycles;
+		if (cyclesToDeadline <= 0) {
+			continue;
+		}
+		advanceRuntimeTime(runtime, cyclesToDeadline);
+	}
+}
+
 // start repeated-sequence-acceptable -- External closure calls keep frame/budget restore code direct instead of routing through callback plumbing.
 export function callClosureInto(runtime: Runtime, fn: Closure, args: Value[], out: Value[]): void {
 	const cpu = runtime.machine.cpu;
@@ -103,15 +123,14 @@ export function callClosureInto(runtime: Runtime, fn: Closure, args: Value[], ou
 	out.length = 0;
 	try {
 		cpu.callExternal(fn, args);
-		activeBudget = budgetSentinel;
-		const result = cpu.runUntilDepth(depth, budgetSentinel);
-		spentBudget += activeBudget - cpu.instructionBudgetRemaining;
-		activeBudget = 0;
-		if (cpu.getFrameDepth() > depth && cpu.isHaltedUntilIrq()) {
-			throw new Error('Lua host call halted before returning.');
-		}
-		if (cpu.getFrameDepth() > depth && result === RunResult.Yielded) {
-			throw new Error('Lua host call exceeded external call budget before returning.');
+		while (cpu.getFrameDepth() > depth) {
+			activeBudget = budgetSentinel;
+			const result = cpu.runUntilDepth(depth, budgetSentinel);
+			spentBudget += activeBudget - cpu.instructionBudgetRemaining;
+			activeBudget = 0;
+			if (cpu.getFrameDepth() > depth && result === RunResult.Halted) {
+				runHaltedClosureUntilInterrupt(runtime);
+			}
 		}
 	} catch (error) {
 		cpu.unwindToDepth(depth);
@@ -169,7 +188,8 @@ export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args
 				break;
 			}
 			if (result === RunResult.Halted) {
-				throw new Error('Lua host call halted before returning.');
+				runHaltedClosureUntilInterrupt(runtime);
+				continue;
 			}
 			if (consumed <= 0) {
 				runDueRuntimeTimers(runtime);

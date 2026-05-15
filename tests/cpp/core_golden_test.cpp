@@ -146,7 +146,7 @@ void configureInterruptTestProgram(bmsx::Program& program) {
 	program.protos.push_back(returnProto);
 }
 
-void configureThrowingNativeProgram(bmsx::Program& program, bmsx::Value nativeFunction) {
+void configureSingleNativeCallProgram(bmsx::Program& program, bmsx::Value nativeFunction) {
 	program.constPoolStringPool = &program.stringPool;
 	program.constPool.push_back(nativeFunction);
 	program.code.resize(4u * bmsx::INSTRUCTION_BYTES);
@@ -508,9 +508,9 @@ void testCpuHaltRequiresAcceptedInterruptGolden() {
 	} catch (const std::runtime_error& error) {
 		rejectedCall = std::string_view(error.what()).find("Cannot enter CPU while halted until IRQ") != std::string_view::npos;
 	}
-	require(rejectedCall, "external host call must not clear or bypass HALT");
-	require(cpu.isHaltedUntilIrq(), "rejected host call should preserve HALT state");
-	require(cpu.getFrameDepth() == 1, "rejected host call should not push a new frame");
+	require(rejectedCall, "external closure call must not clear or bypass HALT");
+	require(cpu.isHaltedUntilIrq(), "rejected external closure call should preserve HALT state");
+	require(cpu.getFrameDepth() == 1, "rejected external closure call should not push a new frame");
 }
 
 void testCpuExternalHaltDoesNotReturnGolden() {
@@ -525,14 +525,14 @@ void testCpuExternalHaltDoesNotReturnGolden() {
 	bmsx::Closure* haltClosure = cpu.createRootClosure(0);
 	cpu.callExternal(haltClosure);
 	require(cpu.getFrameDepth() == 2, "external call should push a host frame before executing");
-	require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted, "HALT inside host call must not look like a returned call");
-	require(cpu.isHaltedUntilIrq(), "HALT inside host call should keep CPU halted");
-	require(cpu.getFrameDepth() == 2, "halted host call frame should remain active until host unwinds it");
+	require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted, "HALT inside external closure call must not look like a returned call");
+	require(cpu.isHaltedUntilIrq(), "HALT inside external closure call should keep CPU halted");
+	require(cpu.getFrameDepth() == 2, "halted external closure-call frame should remain active until caller unwinds it");
 	cpu.unwindToDepth(1);
 	require(cpu.getFrameDepth() == 1, "host unwinding should restore the caller depth after halted external call");
 }
 
-void testRuntimeHostCallHaltUnwindsGolden() {
+void testRuntimeClosureCallHaltResumesOnScheduledInterruptGolden() {
 	RuntimeHarness harness;
 	bmsx::Runtime& runtime = harness.runtime;
 	bmsx::Program program;
@@ -543,18 +543,42 @@ void testRuntimeHostCallHaltUnwindsGolden() {
 	runtime.machine.cpu.start(1);
 	bmsx::Closure* haltClosure = runtime.machine.cpu.createRootClosure(0);
 	bmsx::NativeResults out;
-	bool rejectedHaltedCall = false;
-	try {
-		runtime.callLuaFunctionInto(haltClosure, bmsx::NativeArgsView(), out);
-	} catch (const std::runtime_error& error) {
-		rejectedHaltedCall = std::string_view(error.what()).find("Lua host call halted before returning") != std::string_view::npos;
-	}
-	require(rejectedHaltedCall, "runtime host-call wrapper should reject HALT before return");
-	require(runtime.machine.cpu.isHaltedUntilIrq(), "runtime host-call rejection should preserve CPU HALT");
-	require(runtime.machine.cpu.getFrameDepth() == 1, "runtime host-call rejection should unwind the external frame");
+	runtime.callLuaFunctionInto(haltClosure, bmsx::NativeArgsView(), out);
+	require(!runtime.machine.cpu.isHaltedUntilIrq(), "runtime closure call should resume HALT after scheduled interrupt");
+	require(runtime.machine.cpu.getFrameDepth() == 1, "runtime closure call should return to the caller depth after scheduled interrupt");
 }
 
-void testRuntimeHostCallThrowChargesSpentBudgetGolden() {
+void testRuntimeClosureCallYieldContinuesGolden() {
+	RuntimeHarness harness;
+	bmsx::Runtime& runtime = harness.runtime;
+	const uint16_t nativeCost = 7u;
+	bmsx::Value yieldingNative = runtime.machine.cpu.createNativeFunction(
+		"yielding_native",
+		[&runtime](bmsx::NativeArgsView, bmsx::NativeResults&) {
+			runtime.machine.cpu.requestYield();
+		},
+		bmsx::NativeFnCost{nativeCost, 0u, 0u}
+	);
+	bmsx::Program program;
+	configureSingleNativeCallProgram(program, yieldingNative);
+	bmsx::ProgramMetadata metadata;
+	runtime.machine.cpu.setProgram(&program, &metadata);
+	runtime.machine.cpu.start(1);
+
+	const int spent = static_cast<int>(bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::LOADK)])
+		+ static_cast<int>(bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::CALL)])
+		+ static_cast<int>(nativeCost)
+		+ static_cast<int>(bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::RET)]);
+	bmsx::NativeResults out;
+	runtime.machine.cpu.instructionBudgetRemaining = 100;
+	runtime.callLuaFunctionInto(runtime.machine.cpu.createRootClosure(0), bmsx::NativeArgsView(), out);
+
+	require(out.empty(), "runtime closure call should return no values from yielding test function");
+	require(runtime.machine.cpu.instructionBudgetRemaining == 100 - spent, "runtime closure call should charge cycles across scheduler yield");
+	require(runtime.machine.cpu.getFrameDepth() == 1, "runtime closure call should return to the caller depth after scheduler yield");
+}
+
+void testRuntimeClosureCallThrowChargesSpentBudgetGolden() {
 	RuntimeHarness harness;
 	bmsx::Runtime& runtime = harness.runtime;
 	const uint16_t nativeCost = 7u;
@@ -566,7 +590,7 @@ void testRuntimeHostCallThrowChargesSpentBudgetGolden() {
 		bmsx::NativeFnCost{nativeCost, 0u, 0u}
 	);
 	bmsx::Program program;
-	configureThrowingNativeProgram(program, throwingNative);
+	configureSingleNativeCallProgram(program, throwingNative);
 	bmsx::ProgramMetadata metadata;
 	runtime.machine.cpu.setProgram(&program, &metadata);
 	runtime.machine.cpu.start(1);
@@ -582,9 +606,9 @@ void testRuntimeHostCallThrowChargesSpentBudgetGolden() {
 	} catch (const std::runtime_error& error) {
 		threw = std::string_view(error.what()).find("native boom") != std::string_view::npos;
 	}
-	require(threw, "runtime host-call wrapper should propagate native exceptions");
-	require(runtime.machine.cpu.instructionBudgetRemaining == 100 - spent, "runtime host-call wrapper should charge cycles spent before exception");
-	require(runtime.machine.cpu.getFrameDepth() == 1, "runtime host-call exception should unwind the external frame");
+	require(threw, "runtime closure-call wrapper should propagate native exceptions");
+	require(runtime.machine.cpu.instructionBudgetRemaining == 100 - spent, "runtime closure-call wrapper should charge cycles spent before exception");
+	require(runtime.machine.cpu.getFrameDepth() == 1, "runtime closure-call exception should unwind the external frame");
 }
 
 void testRuntimeFrameExecutorThrowClosesCpuSliceGolden() {
@@ -598,7 +622,7 @@ void testRuntimeFrameExecutorThrowClosesCpuSliceGolden() {
 		bmsx::NativeFnCost{7u, 0u, 0u}
 	);
 	bmsx::Program program;
-	configureThrowingNativeProgram(program, throwingNative);
+	configureSingleNativeCallProgram(program, throwingNative);
 	bmsx::ProgramMetadata metadata;
 	runtime.machine.cpu.setProgram(&program, &metadata);
 	runtime.machine.cpu.start(0);
@@ -2486,7 +2510,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 44> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 45> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -2497,8 +2521,9 @@ int main() {
 		{"program ROM accounting", testProgramRomAccountingGolden},
 		{"cpu halt requires accepted interrupt", testCpuHaltRequiresAcceptedInterruptGolden},
 		{"cpu external halt does not return", testCpuExternalHaltDoesNotReturnGolden},
-		{"runtime host-call halt unwinds", testRuntimeHostCallHaltUnwindsGolden},
-		{"runtime host-call throw charges spent budget", testRuntimeHostCallThrowChargesSpentBudgetGolden},
+		{"runtime closure-call halt resumes on scheduled interrupt", testRuntimeClosureCallHaltResumesOnScheduledInterruptGolden},
+		{"runtime closure-call yield continues", testRuntimeClosureCallYieldContinuesGolden},
+		{"runtime closure-call throw charges spent budget", testRuntimeClosureCallThrowChargesSpentBudgetGolden},
 		{"runtime frame executor throw closes cpu slice", testRuntimeFrameExecutorThrowClosesCpuSliceGolden},
 		{"cpu nmi preempts maskable irq", testCpuNmiPreemptsMaskableIrqGolden},
 		{"runtime save-state interrupt fields", testRuntimeSaveStateInterruptFieldsGolden},

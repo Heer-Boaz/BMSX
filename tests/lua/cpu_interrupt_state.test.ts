@@ -66,9 +66,11 @@ function makeThrowingNativeProgram(cpu: CPU, nativeFunction: Value): Program {
 }
 
 function makeRuntime(cpu: CPU, sliceStats?: { begin: number; end: number }): Runtime {
+	const irqMemory = new Memory({ systemRom: new Uint8Array(0) });
 	return {
 		machine: {
 			cpu,
+			irqController: new IrqController(irqMemory),
 			scheduler: {
 				nowCycles: 0,
 				hasDueTimer: () => false,
@@ -113,7 +115,7 @@ function makeMachine(): Machine {
 	return machine;
 }
 
-test('CPU host calls cannot wake HALT without an accepted interrupt', () => {
+test('CPU external closure calls cannot wake HALT without an accepted interrupt', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(makeProgram(cpu), makeMetadata());
@@ -128,7 +130,7 @@ test('CPU host calls cannot wake HALT without an accepted interrupt', () => {
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 });
 
-test('CPU host calls rejected while already halted preserve budget state', () => {
+test('CPU external closure calls rejected while already halted preserve budget state', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(makeProgram(cpu), makeMetadata());
@@ -155,7 +157,7 @@ test('CPU host calls rejected while already halted preserve budget state', () =>
 	assert.equal(cpu.getFrameDepth(), 1);
 });
 
-test('CPU host calls that execute HALT before returning throw and unwind', () => {
+test('CPU closure calls that execute HALT without a scheduled interrupt unwind', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	cpu.setProgram(makeProgram(cpu), makeMetadata());
@@ -164,13 +166,34 @@ test('CPU host calls that execute HALT before returning throw and unwind', () =>
 
 	assert.throws(
 		() => callClosureIntoWithScheduler(runtime, { protoIndex: 0, upvalues: [] }, [], []),
-		/Lua host call halted before returning/,
+		/CPU halted with no scheduled interrupt/,
 	);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(cpu.getFrameDepth(), 1);
 });
 
-test('CPU host calls that throw after executing preserve spent budget', () => {
+test('CPU closure calls continue after scheduler yield requests', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	const nativeCost = 7;
+	const yieldingNative = createNativeFunction('yielding_native', () => {
+		cpu.requestYield();
+	}, { base: nativeCost, perArg: 0, perRet: 0 });
+	cpu.setProgram(makeThrowingNativeProgram(cpu, yieldingNative), makeMetadata());
+	cpu.start(1);
+	const spent = BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.CALL] + nativeCost + BASE_CYCLES[OpCode.RET];
+	const runtime = makeRuntime(cpu);
+	const out: Value[] = [];
+
+	cpu.instructionBudgetRemaining = 100;
+	callClosureInto(runtime, { protoIndex: 0, upvalues: [] }, [], out);
+
+	assert.deepEqual(out, []);
+	assert.equal(cpu.instructionBudgetRemaining, 100 - spent);
+	assert.equal(cpu.getFrameDepth(), 1);
+});
+
+test('CPU external closure calls that throw after executing preserve spent budget', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
 	const cpu = new CPU(memory);
 	const nativeCost = 7;
