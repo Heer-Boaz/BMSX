@@ -189,6 +189,8 @@ add_library(bmsx_core STATIC
 	render/3d/camera.cpp
 	render/3d/axis_gizmo_pipeline.cpp
 	render/3d/mesh/pipeline.cpp
+	render/3d/mesh/rom_source.cpp
+	render/3d/mesh/vertex_stream.cpp
 	render/3d/particles/pipeline.cpp
 	render/3d/skybox/pipeline.cpp
 	render/gameview.cpp
