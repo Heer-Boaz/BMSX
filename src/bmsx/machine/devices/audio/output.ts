@@ -1,6 +1,7 @@
 import { clamp, clamp01 } from '../../../common/clamp';
 import { readI16LE, readLE16, readLE32 } from '../../../common/endian';
 import { BiquadFilterState, configureBiquadFilter, type BiquadFilterType } from './biquad_filter';
+import { ApuOutputRing } from './output_ring';
 import {
 	captureApuOutputVoiceState,
 	restoreApuOutputVoiceState,
@@ -206,23 +207,15 @@ export function resolveApuOutputPlayback(registerWords: ApuParameterRegisterWord
 }
 
 export class ApuOutputMixer {
+	public readonly outputRing = new ApuOutputRing();
 	private readonly voices: ApuOutputVoice[] = [];
 	private readonly mixBuffer = new Float32Array(APU_OUTPUT_QUEUE_CAPACITY_SAMPLES);
-	private readonly outputQueue = new Int16Array(APU_OUTPUT_QUEUE_CAPACITY_SAMPLES);
-	private readonly outputRenderBuffer = new Int16Array(APU_OUTPUT_QUEUE_CAPACITY_SAMPLES);
-	private outputQueueReadFrame = 0;
-	private outputQueueFrames = 0;
 	private sampledLeft = 0;
 	private sampledRight = 0;
 
 	public resetPlaybackState(): void {
 		this.voices.length = 0;
-		this.clearOutputQueue();
-	}
-
-	public clearOutputQueue(): void {
-		this.outputQueueReadFrame = 0;
-		this.outputQueueFrames = 0;
+		this.outputRing.clear();
 	}
 
 	public captureState(): ApuOutputState {
@@ -245,24 +238,12 @@ export class ApuOutputMixer {
 		throw new Error('[AOUT] Restored voice state has no active AOUT record.');
 	}
 
-	public queuedOutputFrames(): number {
-		return this.outputQueueFrames;
-	}
-
-	public capacityOutputFrames(): number {
-		return APU_OUTPUT_QUEUE_CAPACITY_FRAMES;
-	}
-
-	public freeOutputFrames(): number {
-		return APU_OUTPUT_QUEUE_CAPACITY_FRAMES - this.outputQueueFrames;
-	}
-
 	public pullOutputFrames(output: Int16Array, frameCount: number, outputSampleRate: number, outputGain: number, targetQueuedFrames = 0): void {
 		if (frameCount > APU_OUTPUT_QUEUE_CAPACITY_FRAMES) {
 			throw new Error('[AOUT] Host pull exceeds the output-ring capacity.');
 		}
 		this.fillOutputQueueTo(frameCount, outputSampleRate, outputGain);
-		this.readOutputQueue(output, frameCount);
+		this.outputRing.read(output, frameCount);
 		this.fillOutputQueueTo(targetQueuedFrames, outputSampleRate, outputGain);
 	}
 
@@ -538,71 +519,15 @@ export class ApuOutputMixer {
 	}
 
 	private fillOutputQueueTo(targetFrames: number, outputSampleRate: number, outputGain: number): void {
-		const capacityFrames = this.outputQueue.length >>> 1;
-		if (targetFrames > capacityFrames) {
-			targetFrames = capacityFrames;
+		if (targetFrames > APU_OUTPUT_QUEUE_CAPACITY_FRAMES) {
+			targetFrames = APU_OUTPUT_QUEUE_CAPACITY_FRAMES;
 		}
-		const framesToRender = targetFrames - this.outputQueueFrames;
+		const framesToRender = targetFrames - this.outputRing.queuedFrames();
 		if (framesToRender <= 0) {
 			return;
 		}
-		this.renderSamples(this.outputRenderBuffer, framesToRender, outputSampleRate, outputGain);
-		this.writeOutputQueue(this.outputRenderBuffer, framesToRender);
-	}
-
-	private writeOutputQueue(samples: Int16Array, frameCount: number): void {
-		const capacityFrames = this.outputQueue.length >>> 1;
-		const writeFrame = (this.outputQueueReadFrame + this.outputQueueFrames) % capacityFrames;
-		let firstSpan = capacityFrames - writeFrame;
-		if (firstSpan > frameCount) {
-			firstSpan = frameCount;
-		}
-		let srcCursor = 0;
-		let dstCursor = writeFrame * 2;
-		for (let frame = 0; frame < firstSpan; frame += 1) {
-			this.outputQueue[dstCursor] = samples[srcCursor]!;
-			this.outputQueue[dstCursor + 1] = samples[srcCursor + 1]!;
-			dstCursor += 2;
-			srcCursor += 2;
-		}
-		const secondSpan = frameCount - firstSpan;
-		dstCursor = 0;
-		for (let frame = 0; frame < secondSpan; frame += 1) {
-			this.outputQueue[dstCursor] = samples[srcCursor]!;
-			this.outputQueue[dstCursor + 1] = samples[srcCursor + 1]!;
-			dstCursor += 2;
-			srcCursor += 2;
-		}
-		this.outputQueueFrames += frameCount;
-	}
-
-	private readOutputQueue(output: Int16Array, frameCount: number): void {
-		const capacityFrames = this.outputQueue.length >>> 1;
-		let firstSpan = capacityFrames - this.outputQueueReadFrame;
-		if (firstSpan > frameCount) {
-			firstSpan = frameCount;
-		}
-		let srcCursor = this.outputQueueReadFrame * 2;
-		let dstCursor = 0;
-		for (let frame = 0; frame < firstSpan; frame += 1) {
-			output[dstCursor] = this.outputQueue[srcCursor]!;
-			output[dstCursor + 1] = this.outputQueue[srcCursor + 1]!;
-			srcCursor += 2;
-			dstCursor += 2;
-		}
-		const secondSpan = frameCount - firstSpan;
-		srcCursor = 0;
-		for (let frame = 0; frame < secondSpan; frame += 1) {
-			output[dstCursor] = this.outputQueue[srcCursor]!;
-			output[dstCursor + 1] = this.outputQueue[srcCursor + 1]!;
-			srcCursor += 2;
-			dstCursor += 2;
-		}
-		this.outputQueueReadFrame = (this.outputQueueReadFrame + frameCount) % capacityFrames;
-		this.outputQueueFrames -= frameCount;
-		if (this.outputQueueFrames === 0) {
-			this.outputQueueReadFrame = 0;
-		}
+		this.renderSamples(this.outputRing.renderBuffer, framesToRender, outputSampleRate, outputGain);
+		this.outputRing.write(this.outputRing.renderBuffer, framesToRender);
 	}
 
 	private buildVoiceFromData(

@@ -223,9 +223,10 @@ Internal units:
 - command FIFO and parameter latch bank;
 - slot bank: slot phases, active-mask latch, per-slot register words, playback cursors, fade counters, and voice ids;
 - source bytes DMA bank;
-- mixer/filter datapath;
-- AOUT active voice records, fixed-capacity output ring, retained render
-  buffer, retained mix buffer, and host-audio pull edge.
+- mixer/filter datapath and retained mix buffer;
+- AOUT active voice records;
+- AOUT fixed-capacity output ring, retained render buffer, and host-audio pull
+  edge.
 
 Save-state captures active AOUT voice datapath state. It does not capture the
 already-rendered AOUT output ring; queued frames at the host edge are not
@@ -237,6 +238,10 @@ and per-entry parameter words are owned by mirrored
 The APU slot bank owns active slot phase/register/cursor/fade/voice-id words in
 mirrored `machine/devices/audio/slot_bank` files; aggregate save-state records
 read and restore those live words through that owner.
+The host-edge AOUT output ring is owned by mirrored
+`machine/devices/audio/output_ring` files; the mixer fills that ring from live
+voice state, and save-state deliberately excludes the already-rendered ring
+frames.
 C++ keeps aggregate capture/restore method bodies in the audio save-state
 translation unit. TS keeps aggregate controller methods at the private-field
 device boundary while command-FIFO state transfer stays on the FIFO hardware

@@ -1693,15 +1693,15 @@ void testAoutOutputQueueGolden() {
 	std::array<bmsx::i16, 4> output{};
 
 	mixer.pullOutputFrames(output.data(), 2u, 48000, 1.0f, 6u);
-	require(mixer.queuedOutputFrames() == 6u, "AOUT should retain target queued output frames after host pull");
+	require(mixer.outputRing.queuedFrames() == 6u, "AOUT should retain target queued output frames after host pull");
 	mixer.pullOutputFrames(output.data(), 2u, 48000, 1.0f);
-	require(mixer.queuedOutputFrames() == 4u, "AOUT host-output queue should be consumed by host pulls");
-	mixer.clearOutputQueue();
-	require(mixer.queuedOutputFrames() == 0u, "AOUT host-output queue clear should reset queued frames");
+	require(mixer.outputRing.queuedFrames() == 4u, "AOUT host-output queue should be consumed by host pulls");
+	mixer.outputRing.clear();
+	require(mixer.outputRing.queuedFrames() == 0u, "AOUT host-output queue clear should reset queued frames");
 	mixer.pullOutputFrames(output.data(), 2u, 48000, 1.0f, 20000u);
-	require(mixer.queuedOutputFrames() == bmsx::APU_OUTPUT_QUEUE_CAPACITY_FRAMES, "AOUT host-output queue should enforce device queue capacity");
-	require(mixer.capacityOutputFrames() == bmsx::APU_OUTPUT_QUEUE_CAPACITY_FRAMES, "AOUT should expose its device queue capacity");
-	require(mixer.freeOutputFrames() == 0u, "AOUT should expose zero free frames when the output queue is full");
+	require(mixer.outputRing.queuedFrames() == bmsx::APU_OUTPUT_QUEUE_CAPACITY_FRAMES, "AOUT host-output queue should enforce device queue capacity");
+	require(mixer.outputRing.capacityFrames() == bmsx::APU_OUTPUT_QUEUE_CAPACITY_FRAMES, "AOUT should expose its device queue capacity");
+	require(mixer.outputRing.freeFrames() == 0u, "AOUT should expose zero free frames when the output queue is full");
 }
 
 void testApuOutputRingStatusGolden() {

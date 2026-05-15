@@ -129,9 +129,9 @@ export class AudioController {
 		this.memory.mapIoWrite(IO_APU_FAULT_ACK, () => {
 			this.fault.acknowledge();
 		});
-		this.memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, () => this.audioOutput.queuedOutputFrames());
-		this.memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, () => this.audioOutput.freeOutputFrames());
-		this.memory.mapIoRead(IO_APU_OUTPUT_CAPACITY_FRAMES, () => this.audioOutput.capacityOutputFrames());
+		this.memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, () => this.audioOutput.outputRing.queuedFrames());
+		this.memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, () => this.audioOutput.outputRing.freeFrames());
+		this.memory.mapIoRead(IO_APU_OUTPUT_CAPACITY_FRAMES, () => this.audioOutput.outputRing.capacityFrames());
 		this.memory.mapIoRead(IO_APU_CMD_QUEUED, () => this.commandFifo.count);
 		this.memory.mapIoRead(IO_APU_CMD_FREE, () => this.commandFifo.free);
 		this.memory.mapIoRead(IO_APU_CMD_CAPACITY, () => APU_COMMAND_FIFO_CAPACITY);
@@ -498,9 +498,9 @@ export class AudioController {
 		const busy = this.slots.activeMask !== 0 || !this.commandFifo.empty;
 		const commandFifoEmpty = this.commandFifo.empty;
 		const commandFifoFull = this.commandFifo.full;
-		const queuedFrames = this.audioOutput.queuedOutputFrames();
+		const queuedFrames = this.audioOutput.outputRing.queuedFrames();
 		const outputEmpty = queuedFrames === 0;
-		const outputFull = queuedFrames >= this.audioOutput.capacityOutputFrames();
+		const outputFull = queuedFrames >= this.audioOutput.outputRing.capacityFrames();
 		return (this.fault.status
 			| (busy ? APU_STATUS_BUSY : 0)
 			| (commandFifoEmpty ? APU_STATUS_CMD_FIFO_EMPTY : 0)

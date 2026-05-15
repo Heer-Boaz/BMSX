@@ -202,17 +202,17 @@ Value AudioController::onStatusReadThunk(void* context, uint32_t) {
 
 Value AudioController::onOutputQueuedFramesReadThunk(void* context, uint32_t) {
 	auto& controller = *static_cast<AudioController*>(context);
-	return valueNumber(static_cast<double>(controller.m_audioOutput.queuedOutputFrames()));
+	return valueNumber(static_cast<double>(controller.m_audioOutput.outputRing.queuedFrames()));
 }
 
 Value AudioController::onOutputFreeFramesReadThunk(void* context, uint32_t) {
 	auto& controller = *static_cast<AudioController*>(context);
-	return valueNumber(static_cast<double>(controller.m_audioOutput.freeOutputFrames()));
+	return valueNumber(static_cast<double>(controller.m_audioOutput.outputRing.freeFrames()));
 }
 
 Value AudioController::onOutputCapacityFramesReadThunk(void* context, uint32_t) {
 	auto& controller = *static_cast<AudioController*>(context);
-	return valueNumber(static_cast<double>(controller.m_audioOutput.capacityOutputFrames()));
+	return valueNumber(static_cast<double>(controller.m_audioOutput.outputRing.capacityFrames()));
 }
 
 Value AudioController::onCommandQueuedReadThunk(void* context, uint32_t) {
@@ -430,11 +430,11 @@ Value AudioController::onStatusRead() const {
 	if (m_commandFifo.full()) {
 		status |= APU_STATUS_CMD_FIFO_FULL;
 	}
-	const size_t queuedFrames = m_audioOutput.queuedOutputFrames();
+	const size_t queuedFrames = m_audioOutput.outputRing.queuedFrames();
 	if (queuedFrames == 0u) {
 		status |= APU_STATUS_OUTPUT_EMPTY;
 	}
-	if (queuedFrames >= m_audioOutput.capacityOutputFrames()) {
+	if (queuedFrames >= m_audioOutput.outputRing.capacityFrames()) {
 		status |= APU_STATUS_OUTPUT_FULL;
 	}
 	return valueNumber(static_cast<double>(status));

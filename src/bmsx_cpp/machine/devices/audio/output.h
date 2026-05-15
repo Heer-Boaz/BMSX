@@ -4,6 +4,7 @@
 #include "common/types.h"
 #include "machine/common/numeric.h"
 #include "machine/devices/audio/contracts.h"
+#include "machine/devices/audio/output_ring.h"
 #include "machine/devices/audio/save_state.h"
 
 #include <array>
@@ -84,14 +85,11 @@ inline ApuOutputPlayback resolveApuOutputPlayback(const ApuParameterRegisterWord
 class ApuOutputMixer final {
 public:
 	ApuOutputMixer() = default;
+	ApuOutputRing outputRing;
 
 	void resetPlaybackState();
-	void clearOutputQueue();
 	ApuOutputState captureState() const;
 	void restoreVoiceState(const ApuOutputVoiceState& state);
-	size_t queuedOutputFrames() const { return m_outputQueueFrames; }
-	size_t capacityOutputFrames() const { return APU_OUTPUT_QUEUE_CAPACITY_FRAMES; }
-	size_t freeOutputFrames() const { return APU_OUTPUT_QUEUE_CAPACITY_FRAMES - m_outputQueueFrames; }
 	void pullOutputFrames(i16* output, size_t frameCount, i32 outputSampleRate, f32 outputGain, size_t targetQueuedFrames = 0);
 	ApuOutputStartResult playVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const std::vector<u8>& sourceBytes, const ApuParameterRegisterWords& registerWords, i64 playbackCursorQ16, u32 stopFadeSamples = 0);
 	ApuOutputStartResult writeSlotRegisterWord(ApuAudioSlot slot, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 parameterIndex, i64 playbackCursorQ16);
@@ -171,17 +169,11 @@ private:
 	void badpDecodeNextFrame(VoiceRecord& record);
 	bool badpReadFrameAt(VoiceRecord& record, size_t frame, i16& outLeft, i16& outRight);
 	void fillOutputQueueTo(size_t targetFrames, i32 outputSampleRate, f32 outputGain);
-	void writeOutputQueue(const i16* samples, size_t frameCount);
-	void readOutputQueue(i16* output, size_t frameCount);
 
 	f32 clampVolume(f32 value) const;
 
 	std::vector<VoiceRecord> m_voices;
 	std::array<f32, APU_OUTPUT_QUEUE_CAPACITY_SAMPLES> m_mixBuffer{};
-	std::array<i16, APU_OUTPUT_QUEUE_CAPACITY_SAMPLES> m_outputQueue{};
-	std::array<i16, APU_OUTPUT_QUEUE_CAPACITY_SAMPLES> m_outputRenderBuffer{};
-	size_t m_outputQueueReadFrame = 0;
-	size_t m_outputQueueFrames = 0;
 };
 
 } // namespace bmsx

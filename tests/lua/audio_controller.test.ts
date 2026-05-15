@@ -160,9 +160,11 @@ function createAudioHarness(): { memory: Memory; audio: AudioController } {
 		stopSlot: () => {},
 		captureState: (): ApuOutputState => ({ voices: [] }),
 		restoreVoiceState: () => {},
-		queuedOutputFrames: () => 0,
-		freeOutputFrames: () => APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
-		capacityOutputFrames: () => APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
+		outputRing: {
+			queuedFrames: () => 0,
+			freeFrames: () => APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
+			capacityFrames: () => APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
+		},
 	};
 	return createAudioControllerHarness(audioOutput);
 }
@@ -221,9 +223,11 @@ function createActiveVoiceAudioHarness(stopSlotWithFade = false): {
 			voices: activeVoice === null ? [] : [createFakeOutputVoiceState(activeVoice)],
 		}),
 		restoreVoiceState: () => {},
-		queuedOutputFrames: () => 0,
-		freeOutputFrames: () => APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
-		capacityOutputFrames: () => APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
+		outputRing: {
+			queuedFrames: () => 0,
+			freeFrames: () => APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
+			capacityFrames: () => APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
+		},
 	};
 	const { memory, audio } = createAudioControllerHarness(audioOutput);
 	return {
@@ -585,15 +589,15 @@ test('AOUT owns reusable host-output queue state', () => {
 	const output = new Int16Array(4);
 
 	mixer.pullOutputFrames(output, 2, 48000, 1, 6);
-	assert.equal(mixer.queuedOutputFrames(), 6);
+	assert.equal(mixer.outputRing.queuedFrames(), 6);
 	mixer.pullOutputFrames(output, 2, 48000, 1);
-	assert.equal(mixer.queuedOutputFrames(), 4);
-	mixer.clearOutputQueue();
-	assert.equal(mixer.queuedOutputFrames(), 0);
+	assert.equal(mixer.outputRing.queuedFrames(), 4);
+	mixer.outputRing.clear();
+	assert.equal(mixer.outputRing.queuedFrames(), 0);
 	mixer.pullOutputFrames(output, 2, 48000, 1, 20000);
-	assert.equal(mixer.queuedOutputFrames(), APU_OUTPUT_QUEUE_CAPACITY_FRAMES);
-	assert.equal(mixer.capacityOutputFrames(), APU_OUTPUT_QUEUE_CAPACITY_FRAMES);
-	assert.equal(mixer.freeOutputFrames(), 0);
+	assert.equal(mixer.outputRing.queuedFrames(), APU_OUTPUT_QUEUE_CAPACITY_FRAMES);
+	assert.equal(mixer.outputRing.capacityFrames(), APU_OUTPUT_QUEUE_CAPACITY_FRAMES);
+	assert.equal(mixer.outputRing.freeFrames(), 0);
 });
 
 test('APU exposes AOUT output-ring status through MMIO', () => {

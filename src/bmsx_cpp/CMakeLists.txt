@@ -186,6 +186,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/command_fifo.cpp
 	machine/devices/audio/source.cpp
 	machine/devices/audio/slot_bank.cpp
+	machine/devices/audio/output_ring.cpp
 	machine/devices/audio/output.cpp
 	machine/devices/audio/save_state.cpp
 

@@ -289,12 +289,7 @@ static inline void advanceLoopedAudioFrame(f64& position,
 
 void ApuOutputMixer::resetPlaybackState() {
 	m_voices.clear();
-	clearOutputQueue();
-}
-
-void ApuOutputMixer::clearOutputQueue() {
-	m_outputQueueReadFrame = 0;
-	m_outputQueueFrames = 0;
+	outputRing.clear();
 }
 
 void ApuOutputMixer::pullOutputFrames(i16* output, size_t frameCount, i32 outputSampleRate, f32 outputGain, size_t targetQueuedFrames) {
@@ -302,7 +297,7 @@ void ApuOutputMixer::pullOutputFrames(i16* output, size_t frameCount, i32 output
 		throw std::runtime_error("[AOUT] Host pull exceeds the output-ring capacity.");
 	}
 	fillOutputQueueTo(frameCount, outputSampleRate, outputGain);
-	readOutputQueue(output, frameCount);
+	outputRing.read(output, frameCount);
 	fillOutputQueueTo(targetQueuedFrames, outputSampleRate, outputGain);
 }
 
@@ -786,51 +781,15 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 }
 
 void ApuOutputMixer::fillOutputQueueTo(size_t targetFrames, i32 outputSampleRate, f32 outputGain) {
-	const size_t capacityFrames = APU_OUTPUT_QUEUE_CAPACITY_FRAMES;
-	if (targetFrames > capacityFrames) {
-		targetFrames = capacityFrames;
+	if (targetFrames > APU_OUTPUT_QUEUE_CAPACITY_FRAMES) {
+		targetFrames = APU_OUTPUT_QUEUE_CAPACITY_FRAMES;
 	}
-	if (m_outputQueueFrames >= targetFrames) {
+	if (outputRing.queuedFrames() >= targetFrames) {
 		return;
 	}
-	const size_t framesToRender = targetFrames - m_outputQueueFrames;
-	renderSamples(m_outputRenderBuffer.data(), framesToRender, outputSampleRate, outputGain);
-	writeOutputQueue(m_outputRenderBuffer.data(), framesToRender);
-}
-
-void ApuOutputMixer::writeOutputQueue(const i16* samples, size_t frameCount) {
-	const size_t capacityFrames = APU_OUTPUT_QUEUE_CAPACITY_FRAMES;
-	const size_t writeFrame = (m_outputQueueReadFrame + m_outputQueueFrames) % capacityFrames;
-	size_t firstSpan = capacityFrames - writeFrame;
-	if (firstSpan > frameCount) {
-		firstSpan = frameCount;
-	}
-	const size_t firstSamples = firstSpan * 2u;
-	std::copy_n(samples, firstSamples, m_outputQueue.data() + writeFrame * 2u);
-	const size_t secondSpan = frameCount - firstSpan;
-	if (secondSpan > 0u) {
-		std::copy_n(samples + firstSamples, secondSpan * 2u, m_outputQueue.data());
-	}
-	m_outputQueueFrames += frameCount;
-}
-
-void ApuOutputMixer::readOutputQueue(i16* output, size_t frameCount) {
-	const size_t capacityFrames = APU_OUTPUT_QUEUE_CAPACITY_FRAMES;
-	size_t firstSpan = capacityFrames - m_outputQueueReadFrame;
-	if (firstSpan > frameCount) {
-		firstSpan = frameCount;
-	}
-	const size_t firstSamples = firstSpan * 2u;
-	std::copy_n(m_outputQueue.data() + m_outputQueueReadFrame * 2u, firstSamples, output);
-	const size_t secondSpan = frameCount - firstSpan;
-	if (secondSpan > 0u) {
-		std::copy_n(m_outputQueue.data(), secondSpan * 2u, output + firstSamples);
-	}
-	m_outputQueueReadFrame = (m_outputQueueReadFrame + frameCount) % capacityFrames;
-	m_outputQueueFrames -= frameCount;
-	if (m_outputQueueFrames == 0u) {
-		m_outputQueueReadFrame = 0;
-	}
+	const size_t framesToRender = targetFrames - outputRing.queuedFrames();
+	renderSamples(outputRing.renderBuffer(), framesToRender, outputSampleRate, outputGain);
+	outputRing.write(outputRing.renderBuffer(), framesToRender);
 }
 
 void ApuOutputMixer::badpLoadBlock(VoiceRecord& record, size_t offset) {
