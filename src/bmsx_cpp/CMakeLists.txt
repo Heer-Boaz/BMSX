@@ -185,6 +185,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/badp_decoder.cpp
 	machine/devices/audio/biquad_filter.cpp
 	machine/devices/audio/command_fifo.cpp
+	machine/devices/audio/command_latch.cpp
 	machine/devices/audio/source.cpp
 	machine/devices/audio/slot_bank.cpp
 	machine/devices/audio/output_ring.cpp

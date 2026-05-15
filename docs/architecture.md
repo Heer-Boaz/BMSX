@@ -235,9 +235,11 @@ Save-state captures active AOUT voice datapath state. It does not capture the
 already-rendered AOUT output ring; queued frames at the host edge are not
 machine state and are rebuilt from the restored voice datapath. The audio
 save-state data contract lives in dedicated `machine/devices/audio/save_state`
-files on both runtimes. The command FIFO ring, read/write pointers, queued count,
-and per-entry parameter words are owned by mirrored
-`machine/devices/audio/command_fifo` files and are saved through that owner.
+files on both runtimes. The command latch default register image is owned by
+mirrored `machine/devices/audio/command_latch` files. The command FIFO ring,
+read/write pointers, queued count, and per-entry parameter words are owned by
+mirrored `machine/devices/audio/command_fifo` files and are saved through that
+owner.
 The APU slot bank owns active slot phase/register/cursor/fade/voice-id words in
 mirrored `machine/devices/audio/slot_bank` files; aggregate save-state records
 read and restore those live words through that owner.

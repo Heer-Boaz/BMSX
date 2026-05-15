@@ -5,11 +5,10 @@ import type { ApuOutputMixer } from './output';
 import type { AudioControllerState } from './save_state';
 import { ApuSourceDma, apuParameterProgramsSourceBuffer, resolveApuAudioSource } from './source';
 import { ApuCommandFifo } from './command_fifo';
+import { clearApuCommandLatch } from './command_latch';
 import { ApuSlotBank } from './slot_bank';
 import {
-	APU_GAIN_Q12_ONE,
 	APU_COMMAND_FIFO_CAPACITY,
-	APU_RATE_STEP_Q16_ONE,
 	APU_SAMPLE_RATE_HZ,
 	APU_CMD_NONE,
 	APU_CMD_PLAY,
@@ -21,8 +20,6 @@ import {
 	APU_FAULT_BAD_SLOT,
 	APU_FAULT_CMD_FIFO_FULL,
 	APU_FAULT_NONE,
-	APU_FILTER_NONE,
-	APU_GENERATOR_NONE,
 	APU_PARAMETER_REGISTER_COUNT,
 	APU_PARAMETER_FADE_SAMPLES_INDEX,
 	APU_PARAMETER_GAIN_Q12_INDEX,
@@ -52,37 +49,17 @@ import {
 	IO_APU_EVENT_SLOT,
 	IO_APU_EVENT_SOURCE_ADDR,
 	IO_APU_ACTIVE_MASK,
-	IO_APU_FADE_SAMPLES,
 	IO_APU_FAULT_ACK,
 	IO_APU_FAULT_CODE,
 	IO_APU_FAULT_DETAIL,
-	IO_APU_FILTER_FREQ_HZ,
-	IO_APU_FILTER_GAIN_MILLIDB,
-	IO_APU_FILTER_KIND,
-	IO_APU_FILTER_Q_MILLI,
-	IO_APU_GAIN_Q12,
-	IO_APU_GENERATOR_DUTY_Q12,
-	IO_APU_GENERATOR_KIND,
 	IO_APU_OUTPUT_CAPACITY_FRAMES,
 	IO_APU_OUTPUT_FREE_FRAMES,
 	IO_APU_OUTPUT_QUEUED_FRAMES,
 	IO_APU_PARAMETER_REGISTER_ADDRS,
-	IO_APU_RATE_STEP_Q16,
 	IO_APU_SELECTED_SOURCE_ADDR,
 	IO_APU_SELECTED_SLOT_REG0,
 	IO_APU_SLOT,
-	IO_APU_START_SAMPLE,
 	IO_APU_STATUS,
-	IO_APU_SOURCE_ADDR,
-	IO_APU_SOURCE_BITS_PER_SAMPLE,
-	IO_APU_SOURCE_BYTES,
-	IO_APU_SOURCE_CHANNELS,
-	IO_APU_SOURCE_DATA_BYTES,
-	IO_APU_SOURCE_DATA_OFFSET,
-	IO_APU_SOURCE_FRAME_COUNT,
-	IO_APU_SOURCE_LOOP_END_SAMPLE,
-	IO_APU_SOURCE_LOOP_START_SAMPLE,
-	IO_APU_SOURCE_SAMPLE_RATE_HZ,
 	IO_ARG_STRIDE,
 	IRQ_APU,
 } from '../../bus/io';
@@ -157,7 +134,7 @@ export class AudioController {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 		this.audioOutput.resetPlaybackState();
 		this.fault.resetStatus();
-		this.clearCommandLatch();
+		clearApuCommandLatch(this.memory);
 		this.memory.writeValue(IO_APU_EVENT_KIND, APU_EVENT_NONE);
 		this.memory.writeValue(IO_APU_EVENT_SLOT, 0);
 		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, 0);
@@ -263,35 +240,6 @@ export class AudioController {
 		this.scheduleNextService(nowCycles);
 	}
 
-	private resetCommandLatch(): void {
-		this.memory.writeValue(IO_APU_SOURCE_ADDR, 0);
-		this.memory.writeValue(IO_APU_SOURCE_BYTES, 0);
-		this.memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, 0);
-		this.memory.writeValue(IO_APU_SOURCE_CHANNELS, 0);
-		this.memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, 0);
-		this.memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, 0);
-		this.memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 0);
-		this.memory.writeValue(IO_APU_SOURCE_DATA_BYTES, 0);
-		this.memory.writeValue(IO_APU_SOURCE_LOOP_START_SAMPLE, 0);
-		this.memory.writeValue(IO_APU_SOURCE_LOOP_END_SAMPLE, 0);
-		this.memory.writeValue(IO_APU_SLOT, 0);
-		this.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-		this.memory.writeValue(IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE);
-		this.memory.writeValue(IO_APU_START_SAMPLE, 0);
-		this.memory.writeValue(IO_APU_FILTER_KIND, APU_FILTER_NONE);
-		this.memory.writeValue(IO_APU_FILTER_FREQ_HZ, 0);
-		this.memory.writeValue(IO_APU_FILTER_Q_MILLI, 1000);
-		this.memory.writeValue(IO_APU_FILTER_GAIN_MILLIDB, 0);
-		this.memory.writeValue(IO_APU_FADE_SAMPLES, 0);
-		this.memory.writeValue(IO_APU_GENERATOR_KIND, APU_GENERATOR_NONE);
-		this.memory.writeValue(IO_APU_GENERATOR_DUTY_Q12, APU_GAIN_Q12_ONE >>> 1);
-	}
-
-	private clearCommandLatch(): void {
-		this.resetCommandLatch();
-		this.memory.writeIoValue(IO_APU_CMD, APU_CMD_NONE);
-	}
-
 	public onCommandWrite(): void {
 		const command = this.memory.readIoU32(IO_APU_CMD);
 		switch (command) {
@@ -301,13 +249,13 @@ export class AudioController {
 				if (this.enqueueCommand(command)) {
 					this.scheduleNextService(this.scheduler.currentNowCycles());
 				}
-				this.clearCommandLatch();
+				clearApuCommandLatch(this.memory);
 				return;
 			case APU_CMD_NONE:
 				return;
 			default:
 				this.fault.raise(APU_FAULT_BAD_CMD, command);
-				this.clearCommandLatch();
+				clearApuCommandLatch(this.memory);
 				return;
 		}
 	}

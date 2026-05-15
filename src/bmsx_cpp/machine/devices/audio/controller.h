@@ -62,8 +62,6 @@ private:
 	int64_t m_availableSamples = 0;
 	DeviceStatusLatch m_fault;
 
-	void clearCommandLatch();
-	void resetCommandLatch();
 	bool enqueueCommand(uint32_t command);
 	void drainCommandFifo();
 	void executeCommand(uint32_t command, const ApuParameterRegisterWords& registerWords);
