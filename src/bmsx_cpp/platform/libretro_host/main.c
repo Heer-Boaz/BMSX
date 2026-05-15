@@ -3672,11 +3672,11 @@ static void load_core(LibretroCore* core, const char* path) {
 }
 
 static void usage(const char* argv0) {
-	fprintf(stderr,
-			"Usage:\n"
-			"  %s --core ./bmsx_libretro.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--input-debug] [--no-audio] [--max-frames N]\n"
-			"  %s --core ./bmsx_libretro.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--input-debug] [--no-audio] [--max-frames N]\n",
-			argv0, argv0);
+	    fprintf(stderr,
+		    "Usage:\n"
+		    "  %s --core ./bmsx_libretro.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N]\n"
+		    "  %s --core ./bmsx_libretro.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N]\n",
+		    argv0, argv0);
 	exit(2);
 }
 
@@ -3710,6 +3710,7 @@ int main(int argc, char** argv) {
 	const char* rom_folder = "";
 	const char* input_timeline = "";
 	bool use_input_timeline = false;
+	bool auto_timeline = false;
 	const char* backend = "software";
 	const char* video_backend = "fb";
 
@@ -3757,6 +3758,10 @@ int main(int argc, char** argv) {
 		if (strcmp(argv[i], "--input-timeline") == 0) {
 			use_input_timeline = true;
 			input_timeline = required_arg(argc, argv, &i);
+			continue;
+		}
+		if (strcmp(argv[i], "--auto-timeline") == 0) {
+			auto_timeline = true;
 			continue;
 		}
 		if (argv[i][0] == '-') {
@@ -3878,9 +3883,18 @@ int main(int argc, char** argv) {
 	core.bmsx_set_frame_time_usec((retro_usec_t)g_frame_usec);
 	g_frame_ns = frame_time_ns_from_scaled(ufps_scaled);
 	input_timeline_bind_keyboard_event(core_keyboard_event);
-	if (use_input_timeline || (rom_folder && rom_folder[0]) || (!no_game && game_path && game_path[0])) {
+	/*
+	 * Configure input timelines only when explicitly requested:
+	 *  - --input-timeline FILE  (use_input_timeline)
+	 *  - --auto-timeline        (auto_timeline)
+	 * Previously the code auto-configured timelines whenever a rom_folder or game was present;
+	 * make that behavior opt-in via --auto-timeline.
+	 */
+	if (use_input_timeline || auto_timeline) {
 		input_timeline_configure(use_input_timeline ? input_timeline : NULL,
-				(rom_folder && rom_folder[0]) ? rom_folder : NULL, game_path, g_frame_usec);
+				(rom_folder && rom_folder[0]) ? rom_folder : NULL,
+				(game_path && game_path[0]) ? game_path : NULL,
+				g_frame_usec);
 	}
 	const bool unpaced_timeline = input_timeline_is_active();
 	uint64_t next_frame_ns = monotonic_ns();
