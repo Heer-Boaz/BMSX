@@ -1,5 +1,6 @@
 #pragma once
 
+#include "machine/devices/audio/badp_decoder.h"
 #include "machine/devices/audio/biquad_filter.h"
 #include "common/types.h"
 #include "machine/common/numeric.h"
@@ -98,20 +99,6 @@ public:
 	void renderSamples(i16* output, size_t frameCount, i32 outputSampleRate, f32 outputGain);
 
 private:
-	struct BadpDecoderState {
-		i32 predictors[2] = {0, 0};
-		i32 stepIndices[2] = {0, 0};
-		size_t nextFrame = 0;
-		size_t blockEnd = 0;
-		size_t blockFrames = 0;
-		size_t blockFrameIndex = 0;
-		size_t payloadOffset = 0;
-		size_t nibbleCursor = 0;
-		i64 decodedFrame = -1;
-		i16 decodedLeft = 0;
-		i16 decodedRight = 0;
-	};
-
 	struct VoiceRecord {
 		ApuVoiceId voiceId = 0;
 		i32 sampleRate = 0;
@@ -138,7 +125,7 @@ private:
 		BiquadFilterState filter;
 		bool finalized = false;
 		bool usesBadp = false;
-		BadpDecoderState badp;
+		ApuBadpDecoderState badp;
 	};
 
 	friend ApuOutputVoiceState captureApuOutputVoiceState(const VoiceRecord& record);
@@ -163,11 +150,6 @@ private:
 	void applyVoiceLoopBounds(VoiceRecord& record, const ApuAudioSource& source);
 	void seekVoice(VoiceRecord& record, u32 startFrame, i64 playbackCursorQ16);
 	void mixVoiceSample(VoiceRecord& record, f32* mix, size_t& outIndex, f32 left, f32 right, f32 gain);
-	void badpLoadBlock(VoiceRecord& record, size_t offset);
-	void badpSeekToFrame(VoiceRecord& record, size_t frame);
-	void badpResetDecoder(VoiceRecord& record, size_t frame);
-	void badpDecodeNextFrame(VoiceRecord& record);
-	bool badpReadFrameAt(VoiceRecord& record, size_t frame, i16& outLeft, i16& outRight);
 	void fillOutputQueueTo(size_t targetFrames, i32 outputSampleRate, f32 outputGain);
 
 	f32 clampVolume(f32 value) const;

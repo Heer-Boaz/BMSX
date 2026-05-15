@@ -225,6 +225,7 @@ Internal units:
 - source bytes DMA bank;
 - mixer/filter datapath and retained mix buffer;
 - AOUT active voice records;
+- BADP block decoder and seek-table datapath;
 - AOUT fixed-capacity output ring, retained render buffer, and host-audio pull
   edge.
 
@@ -238,7 +239,14 @@ and per-entry parameter words are owned by mirrored
 The APU slot bank owns active slot phase/register/cursor/fade/voice-id words in
 mirrored `machine/devices/audio/slot_bank` files; aggregate save-state records
 read and restore those live words through that owner.
-The host-edge AOUT output ring is owned by mirrored
+The BADP decoder and seek-table datapath are owned by mirrored
+`machine/devices/audio/badp_decoder` files; active decoder latches stay in the
+voice record and are captured through the audio save-state contract. C++ keeps
+its per-sample BADP decode loop in a C++-only `badp_decoder_hot_path` internal
+header included only by `output.cpp`, so the hot path remains same-TU inline
+without exposing those helpers through the public audio headers; TS mirrors that
+split in `badp_decoder_hot_path.ts`. The host-edge AOUT output ring
+is owned by mirrored
 `machine/devices/audio/output_ring` files; the mixer fills that ring from live
 voice state, and save-state deliberately excludes the already-rendered ring
 frames.

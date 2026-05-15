@@ -182,6 +182,7 @@ add_library(bmsx_core STATIC
 
 	# Audio systems
 	audio/soundmaster.cpp
+	machine/devices/audio/badp_decoder.cpp
 	machine/devices/audio/biquad_filter.cpp
 	machine/devices/audio/command_fifo.cpp
 	machine/devices/audio/source.cpp

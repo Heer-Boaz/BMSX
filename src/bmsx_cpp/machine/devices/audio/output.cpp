@@ -4,6 +4,8 @@
 
 #include "machine/devices/audio/output.h"
 
+#include "machine/devices/audio/badp_decoder_hot_path.h"
+
 #include "common/endian.h"
 
 #include <algorithm>
@@ -14,41 +16,7 @@
 namespace bmsx {
 
 static constexpr f32 MIN_GAIN = 0.0001f;
-static constexpr i32 BADP_STEP_TABLE[89] = {
-	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
-	19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
-	50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
-	130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
-	337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
-	876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
-	2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
-	5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
-	15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
-};
-static constexpr i32 BADP_INDEX_TABLE[16] = {
-	-1, -1, -1, -1, 2, 4, 6, 8,
-	-1, -1, -1, -1, 2, 4, 6, 8,
-};
-
-static constexpr size_t BADP_HEADER_SIZE = 48;
-static constexpr u16 BADP_VERSION = 1;
-static constexpr u8 BADP_MAGIC[4] = {0x42, 0x41, 0x44, 0x50};
 static constexpr ApuOutputStartResult APU_OUTPUT_START_OK{};
-
-struct BadpSeekTableResult {
-	ApuOutputStartResult startResult;
-	std::vector<u32> frames;
-	std::vector<u32> offsets;
-};
-
-static bool isBadpSource(const u8* data, size_t size) {
-	return size >= BADP_HEADER_SIZE
-		&& data[0] == BADP_MAGIC[0]
-		&& data[1] == BADP_MAGIC[1]
-		&& data[2] == BADP_MAGIC[2]
-		&& data[3] == BADP_MAGIC[3];
-}
-
 static ApuOutputStartResult validatePcmSourceData(const ApuAudioSource& source) {
 	const u64 bytesPerSample = source.bitsPerSample == 16u ? 2u : 1u;
 	const u64 requiredDataBytes = static_cast<u64>(source.frameCount) * static_cast<u64>(source.channels) * bytesPerSample;
@@ -81,128 +49,6 @@ static ApuOutputStartResult validateAoutSourceMetadata(const ApuAudioSource& sou
 		return APU_OUTPUT_START_OK;
 	}
 	return {APU_FAULT_SOURCE_BIT_DEPTH, source.bitsPerSample};
-}
-
-static ApuOutputStartResult validateBadpBlocks(const u8* data, const ApuAudioSource& source, const std::vector<u32>& seekFrames, const std::vector<u32>& seekOffsets) {
-	size_t offset = 0;
-	u32 decodedFrames = 0;
-	size_t seekIndex = 0;
-	while (decodedFrames < source.frameCount) {
-		while (seekIndex < seekOffsets.size() && seekOffsets[seekIndex] == offset) {
-			if (seekFrames[seekIndex] != decodedFrames) {
-				return {APU_FAULT_OUTPUT_METADATA, static_cast<u32>(seekIndex)};
-			}
-			seekIndex += 1u;
-		}
-		if (seekIndex < seekOffsets.size() && seekOffsets[seekIndex] < offset) {
-			return {APU_FAULT_OUTPUT_METADATA, static_cast<u32>(seekIndex)};
-		}
-		const size_t blockOffset = static_cast<size_t>(source.dataOffset) + offset;
-		if (offset + 4u > static_cast<size_t>(source.dataBytes)) {
-			return {APU_FAULT_OUTPUT_BLOCK, static_cast<u32>(offset)};
-		}
-		const size_t blockFrames = static_cast<size_t>(readLE16(data + blockOffset));
-		const size_t blockBytes = static_cast<size_t>(readLE16(data + blockOffset + 2u));
-		if (blockFrames == 0u) {
-			return {APU_FAULT_OUTPUT_BLOCK, static_cast<u32>(offset)};
-		}
-		const size_t blockHeaderBytes = 4u + static_cast<size_t>(source.channels) * 4u;
-		if (blockBytes < blockHeaderBytes) {
-			return {APU_FAULT_OUTPUT_BLOCK, static_cast<u32>(offset)};
-		}
-		const size_t blockEnd = offset + blockBytes;
-		if (blockEnd > static_cast<size_t>(source.dataBytes)) {
-			return {APU_FAULT_OUTPUT_BLOCK, static_cast<u32>(offset)};
-		}
-		size_t channelCursor = blockOffset + 4u;
-		for (u32 channel = 0; channel < source.channels; channel += 1u) {
-			if (data[channelCursor + 2u] > 88u) {
-				return {APU_FAULT_OUTPUT_BLOCK, static_cast<u32>(offset)};
-			}
-			channelCursor += 4u;
-		}
-		if (blockFrames * static_cast<size_t>(source.channels) > (blockBytes - blockHeaderBytes) * 2u) {
-			return {APU_FAULT_OUTPUT_BLOCK, static_cast<u32>(offset)};
-		}
-		decodedFrames += static_cast<u32>(blockFrames);
-		offset = blockEnd;
-	}
-	while (seekIndex < seekOffsets.size()) {
-		if (seekFrames[seekIndex] <= source.frameCount) {
-			return {APU_FAULT_OUTPUT_METADATA, static_cast<u32>(seekIndex)};
-		}
-		seekIndex += 1u;
-	}
-	return APU_OUTPUT_START_OK;
-}
-
-static BadpSeekTableResult readBadpSeekTable(const u8* data, size_t size, const ApuAudioSource& source) {
-	BadpSeekTableResult result{};
-	if (!isBadpSource(data, size)) {
-		result.startResult = {APU_FAULT_UNSUPPORTED_FORMAT, static_cast<u32>(size)};
-		return result;
-	}
-	const u16 version = readLE16(data + 4);
-	if (version != BADP_VERSION) {
-		result.startResult = {APU_FAULT_UNSUPPORTED_FORMAT, version};
-		return result;
-	}
-	const u32 channels = readLE16(data + 6);
-	const u32 sampleRate = readLE32(data + 8);
-	const u32 frames = readLE32(data + 12);
-	const u32 seekEntryCount = readLE32(data + 28);
-	const u32 seekTableOffset = readLE32(data + 32);
-	const u32 dataOffset = readLE32(data + 36);
-	if (channels != source.channels || sampleRate != source.sampleRateHz || frames != source.frameCount || dataOffset != source.dataOffset) {
-		result.startResult = {APU_FAULT_OUTPUT_METADATA, dataOffset};
-		return result;
-	}
-	if (dataOffset < BADP_HEADER_SIZE || dataOffset > size) {
-		result.startResult = {APU_FAULT_OUTPUT_DATA_RANGE, dataOffset};
-		return result;
-	}
-	if (source.dataBytes == 0 || dataOffset + source.dataBytes > size) {
-		result.startResult = {APU_FAULT_OUTPUT_DATA_RANGE, source.dataBytes};
-		return result;
-	}
-	if (seekEntryCount > 0 && (seekTableOffset < BADP_HEADER_SIZE || seekTableOffset >= dataOffset)) {
-		result.startResult = {APU_FAULT_OUTPUT_METADATA, seekTableOffset};
-		return result;
-	}
-	if (seekEntryCount > 0 && static_cast<u64>(seekTableOffset) + static_cast<u64>(seekEntryCount) * 8u > static_cast<u64>(dataOffset)) {
-		result.startResult = {APU_FAULT_OUTPUT_METADATA, seekEntryCount};
-		return result;
-	}
-	const size_t seekCount = seekEntryCount > 0 ? static_cast<size_t>(seekEntryCount) : 1u;
-	result.frames.resize(seekCount);
-	result.offsets.resize(seekCount);
-	if (seekEntryCount > 0) {
-		size_t cursor = static_cast<size_t>(seekTableOffset);
-		for (size_t i = 0; i < seekCount; i += 1) {
-			result.frames[i] = readLE32(data + cursor);
-			result.offsets[i] = readLE32(data + cursor + 4);
-			cursor += 8;
-		}
-	} else {
-		result.frames[0] = 0;
-		result.offsets[0] = 0;
-	}
-	if (result.frames[0] != 0 || result.offsets[0] != 0) {
-		result.startResult = {APU_FAULT_OUTPUT_METADATA, result.offsets[0]};
-		return result;
-	}
-	for (size_t i = 0; i < seekCount; i += 1) {
-		if (result.frames[i] > source.frameCount || result.offsets[i] >= source.dataBytes) {
-			result.startResult = {APU_FAULT_OUTPUT_METADATA, static_cast<u32>(i)};
-			return result;
-		}
-		if (i > 0 && (result.frames[i] < result.frames[i - 1] || result.offsets[i] < result.offsets[i - 1])) {
-			result.startResult = {APU_FAULT_OUTPUT_METADATA, static_cast<u32>(i)};
-			return result;
-		}
-	}
-	result.startResult = validateBadpBlocks(data, source, result.frames, result.offsets);
-	return result;
 }
 
 static inline bool consumeStopTimer(f64& stopAfter, f64 invOutputRate) {
@@ -315,9 +161,9 @@ ApuOutputStartResult ApuOutputMixer::playVoice(ApuAudioSlot slot, ApuVoiceId voi
 	std::vector<u32> badpSeekOffsets;
 	if (!apuAudioSourceUsesGenerator(source)) {
 		if (source.bitsPerSample == 4) {
-			BadpSeekTableResult badpSeek = readBadpSeekTable(sourceBytes.data(), source.sourceBytes, source);
-			if (badpSeek.startResult.faultCode != APU_FAULT_NONE) {
-				return badpSeek.startResult;
+			ApuBadpSeekTableResult badpSeek = readApuBadpSeekTable(sourceBytes.data(), source.sourceBytes, source);
+			if (badpSeek.faultCode != APU_FAULT_NONE) {
+				return {badpSeek.faultCode, badpSeek.faultDetail};
 			}
 			badpSeekFrames = std::move(badpSeek.frames);
 			badpSeekOffsets = std::move(badpSeek.offsets);
@@ -521,6 +367,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 						}
 					}
 				} else if (record.usesBadp) {
+					const u32 badpChannels = static_cast<u32>(record.channels);
 					size_t outIndex = 0;
 					for (size_t frame = 0; frame < frameCount; ++frame) {
 						if (consumeStopTimer(stopAfter, invOutputRate)) {
@@ -548,13 +395,13 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 
 					i16 left0i = 0;
 					i16 right0i = 0;
-					if (!badpReadFrameAt(record, idx0, left0i, right0i)) {
+					if (!readApuBadpFrameAt(record.data, record.frames, badpChannels, record.badpSeekFrames, record.badpSeekOffsets, record.badp, idx0, left0i, right0i)) {
 						ended = true;
 						break;
 					}
 					i16 left1i = left0i;
 					i16 right1i = right0i;
-						if (nextIndex != idx0 && !badpReadFrameAt(record, nextIndex, left1i, right1i)) {
+						if (nextIndex != idx0 && !readApuBadpFrameAt(record.data, record.frames, badpChannels, record.badpSeekFrames, record.badpSeekOffsets, record.badp, nextIndex, left1i, right1i)) {
 							ended = true;
 							break;
 						}
@@ -792,143 +639,6 @@ void ApuOutputMixer::fillOutputQueueTo(size_t targetFrames, i32 outputSampleRate
 	outputRing.write(outputRing.renderBuffer(), framesToRender);
 }
 
-void ApuOutputMixer::badpLoadBlock(VoiceRecord& record, size_t offset) {
-	const u8* data = record.data;
-	BadpDecoderState& badp = record.badp;
-	const size_t blockFrames = static_cast<size_t>(readLE16(data + offset));
-	const size_t blockBytes = static_cast<size_t>(readLE16(data + offset + 2));
-	const size_t blockHeaderBytes = 4 + static_cast<size_t>(record.channels) * 4;
-	const size_t blockEnd = offset + blockBytes;
-	size_t cursor = offset + 4;
-	for (i32 channel = 0; channel < record.channels; channel += 1) {
-		badp.predictors[channel] = readI16LE(data + cursor);
-		const i32 stepIndex = static_cast<i32>(data[cursor + 2]);
-		badp.stepIndices[channel] = stepIndex;
-		cursor += 4;
-	}
-	badp.blockEnd = blockEnd;
-	badp.blockFrames = blockFrames;
-	badp.blockFrameIndex = 0;
-	badp.payloadOffset = offset + blockHeaderBytes;
-	badp.nibbleCursor = 0;
-}
-
-void ApuOutputMixer::badpSeekToFrame(VoiceRecord& record, size_t frame) {
-	BadpDecoderState& badp = record.badp;
-	if (frame == record.frames) {
-		badp.nextFrame = frame;
-		badp.decodedFrame = static_cast<i64>(frame) - 1;
-		badp.decodedLeft = 0;
-		badp.decodedRight = 0;
-		return;
-	}
-
-	size_t seekIndex = 0;
-	size_t lo = 0;
-	size_t hi = record.badpSeekFrames.size() - 1;
-	while (lo <= hi) {
-		const size_t mid = (lo + hi) >> 1;
-		if (record.badpSeekFrames[mid] <= frame) {
-			seekIndex = mid;
-			lo = mid + 1;
-		} else {
-			if (mid == 0) {
-				break;
-			}
-			hi = mid - 1;
-		}
-	}
-
-	size_t currentFrame = static_cast<size_t>(record.badpSeekFrames[seekIndex]);
-	size_t cursor = static_cast<size_t>(record.badpSeekOffsets[seekIndex]);
-	badpLoadBlock(record, cursor);
-	while (currentFrame + badp.blockFrames <= frame) {
-		currentFrame += badp.blockFrames;
-		cursor = badp.blockEnd;
-		badpLoadBlock(record, cursor);
-	}
-	badp.nextFrame = currentFrame;
-	badp.decodedFrame = static_cast<i64>(currentFrame) - 1;
-	while (badp.nextFrame <= frame) {
-		badpDecodeNextFrame(record);
-	}
-}
-
-void ApuOutputMixer::badpResetDecoder(VoiceRecord& record, size_t frame) {
-	record.badp = BadpDecoderState{};
-	badpSeekToFrame(record, frame);
-}
-
-void ApuOutputMixer::badpDecodeNextFrame(VoiceRecord& record) {
-	BadpDecoderState& badp = record.badp;
-	if (badp.blockFrameIndex >= badp.blockFrames) {
-		badpLoadBlock(record, badp.blockEnd);
-	}
-
-	const u8* data = record.data;
-	i32 left = 0;
-	i32 right = 0;
-	for (i32 channel = 0; channel < record.channels; channel += 1) {
-		i32& predictor = badp.predictors[channel];
-		i32& stepIndex = badp.stepIndices[channel];
-		const size_t payloadIndex = badp.payloadOffset + (badp.nibbleCursor >> 1);
-		const u8 packed = data[payloadIndex];
-		const i32 code = (badp.nibbleCursor & 1) == 0 ? static_cast<i32>((packed >> 4) & 0x0f) : static_cast<i32>(packed & 0x0f);
-		badp.nibbleCursor += 1;
-
-		const i32 step = BADP_STEP_TABLE[stepIndex];
-		i32 diff = step >> 3;
-		if ((code & 4) != 0) diff += step;
-		if ((code & 2) != 0) diff += step >> 1;
-		if ((code & 1) != 0) diff += step >> 2;
-		if ((code & 8) != 0) {
-			predictor -= diff;
-		} else {
-			predictor += diff;
-		}
-		if (predictor < -32768) predictor = -32768;
-		if (predictor > 32767) predictor = 32767;
-		stepIndex += BADP_INDEX_TABLE[code];
-		if (stepIndex < 0) stepIndex = 0;
-		if (stepIndex > 88) stepIndex = 88;
-
-		if (channel == 0) {
-			left = predictor;
-		} else {
-			right = predictor;
-		}
-	}
-	if (record.channels == 1) {
-		right = left;
-	}
-	badp.blockFrameIndex += 1;
-	badp.nextFrame += 1;
-	badp.decodedFrame = static_cast<i64>(badp.nextFrame) - 1;
-	badp.decodedLeft = static_cast<i16>(left);
-	badp.decodedRight = static_cast<i16>(right);
-}
-
-bool ApuOutputMixer::badpReadFrameAt(VoiceRecord& record, size_t frame, i16& outLeft, i16& outRight) {
-	if (frame >= record.frames) {
-		return false;
-	}
-	BadpDecoderState& badp = record.badp;
-	if (badp.decodedFrame == static_cast<i64>(frame)) {
-		outLeft = badp.decodedLeft;
-		outRight = badp.decodedRight;
-		return true;
-	}
-	if (frame < badp.nextFrame) {
-		badpSeekToFrame(record, frame);
-	}
-	while (badp.nextFrame <= frame) {
-		badpDecodeNextFrame(record);
-	}
-	outLeft = badp.decodedLeft;
-	outRight = badp.decodedRight;
-	return true;
-}
-
 ApuOutputMixer::VoiceRecord ApuOutputMixer::buildVoiceFromData(ApuAudioSlot slot,
 														 ApuVoiceId voiceId,
 														 const ApuAudioSource& source,
@@ -975,7 +685,7 @@ ApuOutputMixer::VoiceRecord ApuOutputMixer::buildVoiceFromData(ApuAudioSlot slot
 	record.gainRampRemaining = 0.0;
 	record.stopAfter = -1.0;
 	if (record.usesBadp) {
-		badpResetDecoder(record, static_cast<size_t>(audioFrameIndex(record.position)));
+		resetApuBadpDecoder(record.data, record.frames, static_cast<u32>(record.channels), record.badpSeekFrames, record.badpSeekOffsets, record.badp, static_cast<size_t>(audioFrameIndex(record.position)));
 	}
 
 	return record;
@@ -1044,7 +754,7 @@ void ApuOutputMixer::mixVoiceSample(VoiceRecord& record, f32* mix, size_t& outIn
 void ApuOutputMixer::seekVoice(VoiceRecord& record, u32 startFrame, i64 playbackCursorQ16) {
 	record.position = static_cast<f64>(playbackCursorQ16) / static_cast<f64>(APU_RATE_STEP_Q16_ONE);
 	if (record.usesBadp && startFrame <= record.frames) {
-		badpResetDecoder(record, startFrame);
+		resetApuBadpDecoder(record.data, record.frames, static_cast<u32>(record.channels), record.badpSeekFrames, record.badpSeekOffsets, record.badp, startFrame);
 	}
 }
 
