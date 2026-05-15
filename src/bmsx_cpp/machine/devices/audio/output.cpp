@@ -6,6 +6,7 @@
 
 #include "machine/devices/audio/badp_decoder_hot_path.h"
 #include "machine/devices/audio/pcm_decoder.h"
+#include "machine/devices/audio/source.h"
 
 #include "common/endian.h"
 
@@ -18,31 +19,6 @@ namespace bmsx {
 
 static constexpr f32 MIN_GAIN = 0.0001f;
 static constexpr ApuOutputStartResult APU_OUTPUT_START_OK{};
-static ApuOutputStartResult validateAoutSourceMetadata(const ApuAudioSource& source) {
-	if (source.sampleRateHz == 0u) {
-		return {APU_FAULT_SOURCE_SAMPLE_RATE, source.sampleRateHz};
-	}
-	if (source.channels < 1u || source.channels > 2u) {
-		return {APU_FAULT_SOURCE_CHANNELS, source.channels};
-	}
-	if (source.frameCount == 0u) {
-		return {APU_FAULT_SOURCE_FRAME_COUNT, source.frameCount};
-	}
-	if (source.generatorKind != APU_GENERATOR_NONE) {
-		if (source.generatorKind == APU_GENERATOR_SQUARE) {
-			return APU_OUTPUT_START_OK;
-		}
-		return {APU_FAULT_OUTPUT_METADATA, source.generatorKind};
-	}
-	if (source.dataBytes == 0u || source.dataOffset > source.sourceBytes || source.dataBytes > source.sourceBytes - source.dataOffset) {
-		return {APU_FAULT_SOURCE_DATA_RANGE, source.dataOffset};
-	}
-	if (source.bitsPerSample == 4u || source.bitsPerSample == 8u || source.bitsPerSample == 16u) {
-		return APU_OUTPUT_START_OK;
-	}
-	return {APU_FAULT_SOURCE_BIT_DEPTH, source.bitsPerSample};
-}
-
 static inline bool consumeStopTimer(f64& stopAfter, f64 invOutputRate) {
 	if (stopAfter < 0.0) {
 		return false;
@@ -144,9 +120,9 @@ ApuOutputStartResult ApuOutputMixer::playVoice(ApuAudioSlot slot, ApuVoiceId voi
 	if (playback.playbackRate <= 0.0f) {
 		return {APU_FAULT_OUTPUT_PLAYBACK_RATE, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]};
 	}
-	const ApuOutputStartResult metadataResult = validateAoutSourceMetadata(source);
+	const ApuSourceMetadataResult metadataResult = validateApuAudioSourceMetadata(source);
 	if (metadataResult.faultCode != APU_FAULT_NONE) {
-		return metadataResult;
+		return {metadataResult.faultCode, metadataResult.faultDetail};
 	}
 	const f32 initialGain = clampVolume(playback.gainLinear);
 	std::vector<u32> badpSeekFrames;

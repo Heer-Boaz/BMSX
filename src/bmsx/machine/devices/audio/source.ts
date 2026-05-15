@@ -1,6 +1,14 @@
 import { Memory } from '../../memory/memory';
 import {
 	APU_FAULT_NONE,
+	APU_FAULT_OUTPUT_METADATA,
+	APU_FAULT_SOURCE_BIT_DEPTH,
+	APU_FAULT_SOURCE_CHANNELS,
+	APU_FAULT_SOURCE_DATA_RANGE,
+	APU_FAULT_SOURCE_FRAME_COUNT,
+	APU_FAULT_SOURCE_SAMPLE_RATE,
+	APU_GENERATOR_NONE,
+	APU_GENERATOR_SQUARE,
 	APU_FAULT_SOURCE_BYTES,
 	APU_FAULT_SOURCE_RANGE,
 	APU_SLOT_COUNT,
@@ -14,8 +22,42 @@ export type ApuSourceDmaResult = {
 	faultDetail: number;
 };
 
+export type ApuSourceMetadataResult = {
+	faultCode: number;
+	faultDetail: number;
+};
+
 const APU_SOURCE_DMA_OK: ApuSourceDmaResult = { faultCode: APU_FAULT_NONE, faultDetail: 0 };
+const APU_SOURCE_METADATA_OK: ApuSourceMetadataResult = { faultCode: APU_FAULT_NONE, faultDetail: 0 };
 const EMPTY_APU_SOURCE_BYTES = new Uint8Array(0);
+
+export function validateApuAudioSourceMetadata(source: ApuAudioSource): ApuSourceMetadataResult {
+	if (source.sampleRateHz === 0) {
+		return { faultCode: APU_FAULT_SOURCE_SAMPLE_RATE, faultDetail: source.sampleRateHz };
+	}
+	if (source.channels < 1 || source.channels > 2) {
+		return { faultCode: APU_FAULT_SOURCE_CHANNELS, faultDetail: source.channels };
+	}
+	if (source.frameCount === 0) {
+		return { faultCode: APU_FAULT_SOURCE_FRAME_COUNT, faultDetail: source.frameCount };
+	}
+	if (source.generatorKind !== APU_GENERATOR_NONE) {
+		if (source.generatorKind === APU_GENERATOR_SQUARE) {
+			return APU_SOURCE_METADATA_OK;
+		}
+		return { faultCode: APU_FAULT_OUTPUT_METADATA, faultDetail: source.generatorKind };
+	}
+	if (source.dataBytes === 0 || source.dataOffset > source.sourceBytes || source.dataBytes > source.sourceBytes - source.dataOffset) {
+		return { faultCode: APU_FAULT_SOURCE_DATA_RANGE, faultDetail: source.dataOffset };
+	}
+	switch (source.bitsPerSample) {
+		case 4:
+		case 8:
+		case 16:
+			return APU_SOURCE_METADATA_OK;
+	}
+	return { faultCode: APU_FAULT_SOURCE_BIT_DEPTH, faultDetail: source.bitsPerSample };
+}
 
 export class ApuSourceDma {
 	private readonly slotSourceBytes: Uint8Array[] = new Array(APU_SLOT_COUNT).fill(EMPTY_APU_SOURCE_BYTES);

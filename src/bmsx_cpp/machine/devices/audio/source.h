@@ -16,6 +16,13 @@ struct ApuSourceDmaResult {
 	u32 faultDetail = 0u;
 };
 
+struct ApuSourceMetadataResult {
+	u32 faultCode = APU_FAULT_NONE;
+	u32 faultDetail = 0u;
+};
+
+ApuSourceMetadataResult validateApuAudioSourceMetadata(const ApuAudioSource& source);
+
 
 class ApuSourceDma final {
 public:

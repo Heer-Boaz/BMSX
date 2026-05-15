@@ -9,6 +9,7 @@ import {
 } from './badp_decoder_hot_path';
 import { ApuOutputRing } from './output_ring';
 import { validateApuPcmSourceData } from './pcm_decoder';
+import { validateApuAudioSourceMetadata } from './source';
 import {
 	captureApuOutputVoiceState,
 	restoreApuOutputVoiceState,
@@ -29,13 +30,7 @@ import {
 	APU_FAULT_NONE,
 	APU_FAULT_OUTPUT_METADATA,
 	APU_FAULT_OUTPUT_PLAYBACK_RATE,
-	APU_FAULT_SOURCE_BIT_DEPTH,
-	APU_FAULT_SOURCE_CHANNELS,
-	APU_FAULT_SOURCE_DATA_RANGE,
-	APU_FAULT_SOURCE_FRAME_COUNT,
-	APU_FAULT_SOURCE_SAMPLE_RATE,
 	APU_GAIN_Q12_ONE,
-	APU_GENERATOR_NONE,
 	APU_GENERATOR_SQUARE,
 	APU_OUTPUT_QUEUE_CAPACITY_FRAMES,
 	APU_OUTPUT_QUEUE_CAPACITY_SAMPLES,
@@ -222,7 +217,7 @@ export class ApuOutputMixer {
 		if (playback.playbackRate <= 0) {
 			return { faultCode: APU_FAULT_OUTPUT_PLAYBACK_RATE, faultDetail: registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]! };
 		}
-		const metadataResult = this.validateAoutSourceMetadata(source);
+		const metadataResult = validateApuAudioSourceMetadata(source);
 		if (metadataResult.faultCode !== APU_FAULT_NONE) {
 			return metadataResult;
 		}
@@ -657,34 +652,6 @@ export class ApuOutputMixer {
 		}
 		configureBiquadFilter(record.filter, filter.type, filter.frequency, filter.q, filter.gain, outputSampleRate);
 		record.filterSampleRate = outputSampleRate;
-	}
-
-	private validateAoutSourceMetadata(source: ApuAudioSource): ApuOutputStartResult {
-		if (source.sampleRateHz === 0) {
-			return { faultCode: APU_FAULT_SOURCE_SAMPLE_RATE, faultDetail: source.sampleRateHz };
-		}
-		if (source.channels < 1 || source.channels > 2) {
-			return { faultCode: APU_FAULT_SOURCE_CHANNELS, faultDetail: source.channels };
-		}
-		if (source.frameCount === 0) {
-			return { faultCode: APU_FAULT_SOURCE_FRAME_COUNT, faultDetail: source.frameCount };
-		}
-		if (source.generatorKind !== APU_GENERATOR_NONE) {
-			if (source.generatorKind === APU_GENERATOR_SQUARE) {
-				return APU_OUTPUT_START_OK;
-			}
-			return { faultCode: APU_FAULT_OUTPUT_METADATA, faultDetail: source.generatorKind };
-		}
-		if (source.dataBytes === 0 || source.dataOffset > source.sourceBytes || source.dataBytes > source.sourceBytes - source.dataOffset) {
-			return { faultCode: APU_FAULT_SOURCE_DATA_RANGE, faultDetail: source.dataOffset };
-		}
-		switch (source.bitsPerSample) {
-			case 4:
-			case 8:
-			case 16:
-				return APU_OUTPUT_START_OK;
-		}
-		return { faultCode: APU_FAULT_SOURCE_BIT_DEPTH, faultDetail: source.bitsPerSample };
 	}
 
 }

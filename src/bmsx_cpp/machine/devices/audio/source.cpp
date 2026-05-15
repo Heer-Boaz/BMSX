@@ -6,7 +6,33 @@ namespace bmsx {
 
 namespace {
 constexpr ApuSourceDmaResult APU_SOURCE_DMA_OK{};
+constexpr ApuSourceMetadataResult APU_SOURCE_METADATA_OK{};
 } // namespace
+
+ApuSourceMetadataResult validateApuAudioSourceMetadata(const ApuAudioSource& source) {
+	if (source.sampleRateHz == 0u) {
+		return {APU_FAULT_SOURCE_SAMPLE_RATE, source.sampleRateHz};
+	}
+	if (source.channels < 1u || source.channels > 2u) {
+		return {APU_FAULT_SOURCE_CHANNELS, source.channels};
+	}
+	if (source.frameCount == 0u) {
+		return {APU_FAULT_SOURCE_FRAME_COUNT, source.frameCount};
+	}
+	if (source.generatorKind != APU_GENERATOR_NONE) {
+		if (source.generatorKind == APU_GENERATOR_SQUARE) {
+			return APU_SOURCE_METADATA_OK;
+		}
+		return {APU_FAULT_OUTPUT_METADATA, source.generatorKind};
+	}
+	if (source.dataBytes == 0u || source.dataOffset > source.sourceBytes || source.dataBytes > source.sourceBytes - source.dataOffset) {
+		return {APU_FAULT_SOURCE_DATA_RANGE, source.dataOffset};
+	}
+	if (source.bitsPerSample == 4u || source.bitsPerSample == 8u || source.bitsPerSample == 16u) {
+		return APU_SOURCE_METADATA_OK;
+	}
+	return {APU_FAULT_SOURCE_BIT_DEPTH, source.bitsPerSample};
+}
 
 void ApuSourceDma::reset() {
 	for (std::vector<u8>& bytes : m_slotSourceBytes) {
