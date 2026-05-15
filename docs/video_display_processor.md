@@ -107,15 +107,30 @@ FIFO/DMA stream packets use `VDP_PKT_*` headers:
 | `VDP_XF_PACKET_KIND` | Writes XF matrix/select registers. |
 | `VDP_SBX_PACKET_KIND` | Writes SBX packet state. |
 | `VDP_BBU_PACKET_KIND` | Decodes and emits one BBU billboard packet. |
+| `VDP_LPU_PACKET_KIND` | Writes raw LPU ambient, directional, and point-light registers. |
 | `VDP_MFU_PACKET_KIND` | Writes raw MFU morph-weight registers. |
 | `VDP_JTU_PACKET_KIND` | Writes raw JTU joint-matrix registers. |
 | `VDP_MDU_PACKET_KIND` | Decodes and emits one MDU mesh draw record. |
 
-`VDP_MFU_PACKET_KIND` and `VDP_JTU_PACKET_KIND` use the same register-window
-shape as XF packets: the first payload word is the first register index and the
-remaining words are stored contiguously. MFU registers are signed Q16.16 morph
-weights. JTU registers are signed Q16.16 matrix words grouped as 16-word
-column-major joint matrices.
+`VDP_LPU_PACKET_KIND`, `VDP_MFU_PACKET_KIND`, and `VDP_JTU_PACKET_KIND` use the
+same register-window shape as XF packets: the first payload word is the first
+register index and the remaining words are stored contiguously. LPU, MFU, and
+JTU store raw words; the render snapshot datapath decodes LPU words into frame
+lighting, the mesh vertex-stream datapath consumes MFU words as signed Q16.16
+morph weights, and the mesh vertex-stream datapath consumes JTU words as signed
+Q16.16 matrix words grouped as 16-word column-major joint matrices.
+
+LPU register windows:
+
+| Window | Base | Words per record | Records | Word layout |
+|---|---:|---:|---:|---|
+| ambient | 0 | 5 | 1 | control, color R, color G, color B, intensity |
+| directional | 5 | 8 | 4 | control, dir X, dir Y, dir Z, color R, color G, color B, intensity |
+| point | 37 | 9 | 4 | control, pos X, pos Y, pos Z, range, color R, color G, color B, intensity |
+
+Control bit 0 enables the light record. Color, intensity, direction, position,
+and range words are stored raw and decoded as signed Q16.16 only when render
+snapshots build the frame lighting view.
 
 `VDP_MDU_PACKET_KIND` has ten payload words:
 
@@ -156,6 +171,7 @@ BEGIN/END stream commands, and unknown packet kinds fault with
 | Submitted DEX work | `Empty`, `Queued`, `Executing`, `Ready` | `frame.ts/.h`, `vdp.ts/.cpp` |
 | SBX | `Idle`, `PacketOpen`, `FrameSealed`, `FrameRejected` | `sbx.ts/.h/.cpp` |
 | BBU | `Idle`, `PacketDecode`, `SourceResolve`, `InstanceEmit`, `LimitReached`, `PacketRejected` | `bbu.ts/.h/.cpp` |
+| LPU | light registerfile | `lpu.ts/.h/.cpp` |
 | MFU | morph-weight registerfile | `mfu.ts/.h/.cpp` |
 | JTU | joint-matrix registerfile | `jtu.ts/.h/.cpp` |
 | MDU | `Idle`, `PacketDecode`, `InstanceEmit`, `LimitReached`, `PacketRejected` | `mdu.ts/.h/.cpp` |
@@ -175,7 +191,7 @@ BEGIN/END stream commands, and unknown packet kinds fault with
 | Submitted framebuffer work | Scheduler accrues render work units from CPU cycles and advances active DEX work. Work moves from `Executing` to `Ready` when remaining units reach zero. | VBlank presents only `Ready` frames; unfinished frames are held. |
 | SBX | Register-window writes affect live SBX state. Frame seal samples live SBX state. Visible SBX state changes only when a `Ready` frame is presented. | Invalid face sources fault at frame seal; rejected SBX state does not become visible. |
 | BBU | Packet decode/source resolve/instance emit happen during sealed stream replay. Accepted instances are retained in fixed-capacity per-field frame buffers. | Packet faults abort the sealed stream frame through VDP fault registers. |
-| MFU/JTU | Stream packets write raw live register words during sealed stream replay. Frame seal samples the current words into the submitted VOUT payload. | Bad register ranges fault and abort the sealed stream frame. |
+| LPU/MFU/JTU | Stream packets write raw live register words during sealed stream replay. Frame seal samples the current words into the submitted VOUT payload. | Bad register ranges fault and abort the sealed stream frame. |
 | MDU | Mesh packet decode/source admission happens during sealed stream replay. Accepted mesh records are retained in the submitted frame and carry only ROM asset tokens, raw matrix indexes, raw MFU/JTU ranges, color, and VDP texture-slot control. | Packet faults abort the sealed stream frame through VDP fault registers. |
 | FBM | Framebuffer page present happens on VBlank for `Ready` frames with framebuffer work. | Framebuffer presentation and display readback page. |
 | Readback | `IO_VDP_RD_*` reads resolve a registered surface, serve retained cache chunks, advance X/Y, and consume per-frame budget. | Readback status/data and VDP fault registers. |
@@ -218,13 +234,14 @@ VOUT owns live, frame-sealed, and visible host-output buffers. Host backends rea
 interpret cart intent. Mesh output is a VOUT transaction: the native GLES2 host
 renderer resolves the ROM model token at the output edge and samples the selected
 VDP VRAM slot. The browser WebGL2 path resolves the same VOUT records and draws
-the same MDU mesh contract; headless TS currently snapshots MDU output but does
-not rasterize it. The native GLES2 mesh pass expands indexed vertices, morph
+the same MDU mesh contract. TS headless and native software backends rasterize
+VOUT mesh records for capture/proof from the same rompacked source and sampled
+MFU/JTU/LPU state. The native GLES2 mesh pass expands indexed vertices, morph
 targets, and joint matrices on the CPU into a retained dynamic vertex stream.
 Its shader then applies material surface mode, double-sided/unlit flags, alpha
-cutoff, base/emissive color factors, roughness/metallic factors, and frame
-lighting. This keeps the backend compatible with low-end GLES2 targets that do
-not expose UBOs, instancing, or vertex texture fetch.
+cutoff, base/emissive color factors, roughness/metallic factors, and LPU-derived
+frame lighting. This keeps the backend compatible with low-end GLES2 targets that
+do not expose UBOs, instancing, or vertex texture fetch.
 
 Saved VDP state includes:
 
@@ -236,15 +253,17 @@ Saved VDP state includes:
 - readback budget/overflow latches;
 - PMU selected bank and bank words;
 - SBX live face/control words;
+- LPU live light register words;
 - XF matrix words and selected indexes;
 - VOUT/dither/display dimensions that affect future output;
 - VRAM unit state: staging bytes and surface pixels.
 - framebuffer display/readback pixels.
 
 Host GPU textures, WebGL/SDL resources, texture handles, renderer queues, and
-host-side scratch are rebuilt from saved device-visible state. MDU frame output,
-MFU words, and JTU words are visible-frame payload in the current mesh pass and
-are not part of the VDP save-state record in the current implementation.
+host-side scratch are rebuilt from saved device-visible state. MDU frame output
+and sampled LPU/MFU/JTU words are visible-frame payload in the current mesh pass;
+LPU live register words are saved as device state, while sampled per-frame output
+is rebuilt through VOUT presentation.
 DEX command buffers, BBU billboard frame buffers, and MDU mesh frame buffers use
 retained per-field storage on both runtimes. Frame seal, submitted-frame
 promotion, and VOUT presentation transfer those buffers by ownership rather than
@@ -257,16 +276,16 @@ copying per-record objects.
   `save_state.ts`, `ingress.ts`, `vram.ts`, and `readback.ts`
 - TS VDP constants/registers: `src/bmsx/machine/devices/vdp/contracts.ts` and
   `registers.ts`
-- TS subunits: `bbu.ts`, `fbm.ts`, `frame.ts`, `jtu.ts`, `mdu.ts`, `mfu.ts`,
-  `pmu.ts`, `sbx.ts`, `vout.ts`, and `xf.ts`
+- TS subunits: `bbu.ts`, `fbm.ts`, `frame.ts`, `jtu.ts`, `lpu.ts`, `mdu.ts`,
+  `mfu.ts`, `pmu.ts`, `sbx.ts`, `vout.ts`, and `xf.ts`
 - C++ VDP device: `src/bmsx_cpp/machine/devices/vdp/vdp.cpp/.h`
 - C++ VDP save-state, stream ingress, VRAM/surface memory, and readback:
   `save_state.cpp/.h`, `ingress.cpp/.h`, `vram.cpp/.h`, and `readback.cpp/.h`
 - C++ VDP constants/registers: `src/bmsx_cpp/machine/devices/vdp/contracts.h`
   and `registers.h`
 - C++ subunits: `bbu.cpp/.h`, `fbm.cpp/.h`, `frame.cpp/.h`, `jtu.cpp/.h`,
-  `mdu.cpp/.h`, `mfu.cpp/.h`, `pmu.cpp/.h`, `sbx.cpp/.h`, `vout.cpp/.h`, and
-  `xf.cpp/.h`
+  `lpu.cpp/.h`, `mdu.cpp/.h`, `mfu.cpp/.h`, `pmu.cpp/.h`, `sbx.cpp/.h`,
+  `vout.cpp/.h`, and `xf.cpp/.h`
 - Host render output consumers: `src/bmsx/render/vdp/*` and
   `src/bmsx_cpp/render/vdp/*`
 - Runtime save-state codecs: `src/bmsx/machine/runtime/save_state/*` and

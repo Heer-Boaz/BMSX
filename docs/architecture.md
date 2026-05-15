@@ -157,6 +157,7 @@ Internal units:
   sampled face words.
 - `BBU` owns billboard packet decode/source admission, retained
   fixed-capacity billboard frame buffers, and instance emission limits.
+- `LPU` owns raw ambient, directional, and point-light register words.
 - `MFU` owns raw morph-weight register words.
 - `JTU` owns raw joint-matrix register words.
 - `MDU` owns mesh-packet decode, mesh-source admission, and per-frame mesh draw
@@ -165,8 +166,8 @@ Internal units:
   dimensions.
 - `XF` owns transform register words.
 - `VOUT` owns live, frame-sealed, and visible host-output buffers, including
-  mesh draw records plus sampled MFU/JTU words, scanout phase, beam position,
-  and retained `VdpDeviceOutput`.
+  mesh draw records plus sampled LPU/MFU/JTU words, scanout phase, beam
+  position, and retained `VdpDeviceOutput`.
 
 Host render backends consume VOUT output transactions. They do not receive cart
 intent such as sprites, rectangles, labels, or scene objects. VDP save-state
@@ -179,8 +180,11 @@ stays on the device boundary and imports only the save-state record shapes while
 subunit state is owned by the subunit files.
 
 Mesh rendering follows the same hardware boundary. Cart streams submit model
-asset tokens and raw VDP register words to the MDU/MFU/JTU; VOUT exposes the
-mesh records at the host-output edge. The native GLES2 renderer resolves the
+asset tokens and raw VDP register words to the MDU/MFU/JTU/LPU; VOUT exposes the
+mesh and lighting records at the host-output edge. Frame lighting is device
+state: cart streams write raw LPU register words for ambient, directional, and
+point lights; VOUT carries those words with the frame; render snapshots decode
+them at the host-output boundary. The native GLES2 renderer resolves the
 rompacked model from those VOUT records and samples textures only from VDP VRAM
 slots. GLTF material image texture references are ROM metadata, not GPU texture
 ownership; MDU texture sampling is controlled by the raw VDP texture-slot word.
@@ -191,13 +195,15 @@ seal, submitted-frame promotion, and VOUT presentation transfer those buffers by
 ownership rather than copying command, billboard, or mesh records.
 The native GLES2 and browser WebGL2 mesh shaders consume the resolved material
 surface bits (opaque/mask/blend, double-sided, unlit, base color, emissive,
-roughness, and metallic factors) together with the frame lighting state.
-Headless TS currently snapshots the VOUT mesh records but does not rasterize
-them. The native GLES2 path must stay compatible with low-end GLES2 targets by
-expanding mesh, morph, and skinning data on the CPU into a retained dynamic
-vertex stream instead of relying on UBOs, instancing, vertex texture fetch, or
-other GLES3/WebGL2-only features; the browser WebGL2 path follows the same MDU
-output contract while using WebGL2 shader syntax.
+roughness, and metallic factors) together with the LPU-derived frame lighting
+state. TS headless and native software backends also rasterize VOUT mesh records
+for capture/proof through the same rompacked model source and sampled
+MFU/JTU/LPU state rather than a private test hook. The native GLES2 path must
+stay compatible with low-end GLES2 targets by expanding mesh, morph, and skinning
+data on the CPU into a retained dynamic vertex stream instead of relying on UBOs,
+instancing, vertex texture fetch, or other GLES3/WebGL2-only features; the
+browser WebGL2 path follows the same MDU output contract while using WebGL2
+shader syntax.
 
 ### APU and AOUT
 
