@@ -30,6 +30,7 @@ struct VdpState {
 	VdpSbxUnit::FaceWords skyboxFaceWords{};
 	u32 pmuSelectedBank = 0;
 	VdpPmuUnit::BankWords pmuBankWords{};
+	std::array<u32, VDP_LPU_REGISTER_WORDS> lightRegisterWords{};
 	i32 ditherType = 0;
 	u32 vdpFaultCode = VDP_FAULT_NONE;
 	u32 vdpFaultDetail = 0;

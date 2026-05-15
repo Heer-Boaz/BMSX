@@ -542,7 +542,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 			frameShared.view.viewProj = transform.viewProj;
 			frameShared.view.skyboxView = transform.skyboxView;
 			frameShared.view.proj = transform.proj;
-			frameShared.lighting = lightingSystem.update();
+			frameShared.lighting = lightingSystem.update(*view);
 			frameShared.fog.fogD50 = view->atmosphere.fogD50;
 			frameShared.fog.fogStart = view->atmosphere.fogStart;
 			frameShared.fog.fogColorLow = view->atmosphere.fogColorLow;

@@ -19,6 +19,7 @@ export type VdpState = {
 	skyboxFaceWords: number[];
 	pmuSelectedBank: number;
 	pmuBankWords: number[];
+	lightRegisterWords: number[];
 	ditherType: number;
 	vdpFaultCode: number;
 	vdpFaultDetail: number;

@@ -250,6 +250,7 @@ void resetSubmittedFrameSlot(VdpSubmittedFrame& frame) {
 	frame.xf.reset();
 	frame.skyboxControl = 0;
 	frame.skyboxFaceWords.fill(0u);
+	frame.lightRegisterWords.fill(0u);
 	frame.morphWeightWords.fill(0u);
 	frame.jointMatrixWords.fill(0u);
 }
@@ -286,6 +287,7 @@ VdpSubmittedFrameSaveState captureSubmittedFrameState(const VdpSubmittedFrame& f
 	state.skyboxControl = frame.skyboxControl;
 	state.skyboxFaceWords = frame.skyboxFaceWords;
 	state.skyboxSamples = frame.skyboxSamples;
+	state.lightRegisterWords = frame.lightRegisterWords;
 	return state;
 }
 
@@ -304,6 +306,7 @@ void restoreSubmittedFrameState(VdpSubmittedFrame& frame, const VdpSubmittedFram
 	frame.skyboxControl = state.skyboxControl;
 	frame.skyboxFaceWords = state.skyboxFaceWords;
 	frame.skyboxSamples = state.skyboxSamples;
+	frame.lightRegisterWords = state.lightRegisterWords;
 }
 
 } // namespace bmsx

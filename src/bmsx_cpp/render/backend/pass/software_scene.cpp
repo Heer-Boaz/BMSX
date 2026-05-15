@@ -1,12 +1,16 @@
 #include "render/backend/pass/software_scene.h"
 
 #include "render/backend/pass/library.h"
+#include "machine/runtime/runtime.h"
 
 #include "core/console.h"
 #include "render/gameview.h"
+#include "render/3d/mesh/rom_source.h"
+#include "render/3d/mesh/vertex_stream.h"
 #include "render/shared/software_pixels.h"
 #include "render/vdp/slot_textures.h"
 #include <array>
+#include <cstddef>
 
 namespace bmsx {
 namespace {
@@ -30,6 +34,7 @@ struct SoftwareSkyboxSourceRect {
 	u32 height = 0u;
 };
 
+MeshVertexStreamBuilder g_softwareMeshVertexStream{};
 
 SoftwareParticleViewState resolveParticleViewState(const GameView& view) {
 	SoftwareParticleViewState state;
@@ -39,6 +44,100 @@ SoftwareParticleViewState resolveParticleViewState(const GameView& view) {
 	state.viewProj = transform.viewProj;
 	state.camRight = { transform.view[0], transform.view[4], transform.view[8] };
 	return state;
+}
+
+
+void drawSoftwareMeshPoint(SoftwareBackend& backend, i32 screenX, i32 screenY, u8 colorR, u8 colorG, u8 colorB, u8 colorA) {
+	const i32 width = backend.width();
+	const i32 height = backend.height();
+	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
+	const i32 startX = screenX - 1 < 0 ? 0 : screenX - 1;
+	const i32 startY = screenY - 1 < 0 ? 0 : screenY - 1;
+	const i32 endX = screenX + 2 > width ? width : screenX + 2;
+	const i32 endY = screenY + 2 > height ? height : screenY + 2;
+	u32* framebuffer = backend.framebuffer();
+	for (i32 y = startY; y < endY; ++y) {
+		u32* row = framebuffer + static_cast<size_t>(y) * static_cast<size_t>(pixelsPerRow);
+		for (i32 x = startX; x < endX; ++x) {
+			blendSoftwareArgb(row[x], colorR, colorG, colorB, colorA);
+		}
+	}
+}
+
+u8 softwareMeshShadeChannel(u8 channel, f32 shade) {
+	const i32 value = static_cast<i32>(static_cast<f32>(channel) * shade);
+	if (value < 0) {
+		return 0u;
+	}
+	if (value > 255) {
+		return 255u;
+	}
+	return static_cast<u8>(value);
+}
+
+void drawSoftwareMeshEntry(SoftwareBackend& backend, const GameView& view, const RuntimeRomPackage& rom, const GameView::VdpMeshRenderEntry& entry) {
+	const MeshRomDrawSource source = resolveMeshRomDrawSource(rom, entry);
+	const MeshGLES2DrawStream stream = g_softwareMeshVertexStream.build(view, source.model, source.mesh, entry);
+	const Render3D::Mat4& model = *stream.modelMatrix;
+	const std::array<f32, 16>& viewProj = view.vdpTransform.viewProj;
+	const u8 baseR = static_cast<u8>((entry.color >> 16u) & 0xffu);
+	const u8 baseG = static_cast<u8>((entry.color >> 8u) & 0xffu);
+	const u8 baseB = static_cast<u8>(entry.color & 0xffu);
+	f32 lightEnergy = view.vdpAmbientLightColorIntensity[3];
+	for (i32 index = 0; index < view.vdpDirectionalLightCount; ++index) {
+		lightEnergy += view.vdpDirectionalLightIntensities[static_cast<size_t>(index)];
+	}
+	for (i32 index = 0; index < view.vdpPointLightCount; ++index) {
+		lightEnergy += view.vdpPointLightParams[static_cast<size_t>(index) * 2u + 1u];
+	}
+	if (lightEnergy < 0.25f) {
+		lightEnergy = 0.25f;
+	}
+	if (lightEnergy > 1.85f) {
+		lightEnergy = 1.85f;
+	}
+	for (size_t index = 0u; index < stream.vertexCount; ++index) {
+		const MeshGLES2Vertex& vertex = stream.vertices[index];
+		const f32 wx = model[0] * vertex.x + model[4] * vertex.y + model[8] * vertex.z + model[12];
+		const f32 wy = model[1] * vertex.x + model[5] * vertex.y + model[9] * vertex.z + model[13];
+		const f32 wz = model[2] * vertex.x + model[6] * vertex.y + model[10] * vertex.z + model[14];
+		const f32 clipX = viewProj[0] * wx + viewProj[4] * wy + viewProj[8] * wz + viewProj[12];
+		const f32 clipY = viewProj[1] * wx + viewProj[5] * wy + viewProj[9] * wz + viewProj[13];
+		const f32 clipW = viewProj[3] * wx + viewProj[7] * wy + viewProj[11] * wz + viewProj[15];
+		if (clipW <= 0.0f) {
+			continue;
+		}
+		const f32 ndcX = clipX / clipW;
+		const f32 ndcY = clipY / clipW;
+		if (ndcX < -1.1f || ndcX > 1.1f || ndcY < -1.1f || ndcY > 1.1f) {
+			continue;
+		}
+		f32 directional = view.vdpAmbientLightColorIntensity[3];
+		if (view.vdpDirectionalLightCount > 0) {
+			const f32 dot = -(vertex.nx * view.vdpDirectionalLightDirections[0]
+				+ vertex.ny * view.vdpDirectionalLightDirections[1]
+				+ vertex.nz * view.vdpDirectionalLightDirections[2]);
+			if (dot > 0.0f) {
+				directional += dot * view.vdpDirectionalLightIntensities[0];
+			}
+		}
+		f32 shade = directional * 0.7f + lightEnergy * 0.25f;
+		if (shade < 0.18f) {
+			shade = 0.18f;
+		}
+		if (shade > 1.4f) {
+			shade = 1.4f;
+		}
+		const i32 screenX = static_cast<i32>((ndcX * 0.5f + 0.5f) * static_cast<f32>(backend.width()));
+		const i32 screenY = static_cast<i32>((0.5f - ndcY * 0.5f) * static_cast<f32>(backend.height()));
+		drawSoftwareMeshPoint(backend,
+			screenX,
+			screenY,
+			softwareMeshShadeChannel(baseR, shade),
+			softwareMeshShadeChannel(baseG, shade),
+			softwareMeshShadeChannel(baseB, shade),
+			224u);
+	}
 }
 
 size_t resolveSkyboxFace(f32 dirX, f32 dirY, f32 dirZ, SoftwareSkyboxFaceUv& uv) {
@@ -210,12 +309,13 @@ void drawSoftwareBillboardSample(SoftwareBackend& backend,
 } // namespace
 
 void registerSoftwareScenePasses(RenderPassLibrary& registry) {
+	const auto softwareSceneOutputSlot = RenderPassDef::RenderGraphSlot::FrameColor;
 	{
 		RenderPassDef desc;
 		desc.id = "skybox";
 		desc.name = "Skybox";
 		desc.graph = RenderPassDef::RenderPassGraphDef{};
-		desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
+		desc.graph->writes = { softwareSceneOutputSlot };
 		desc.shouldExecute = []() {
 			return ConsoleCore::instance().view()->skyboxRenderReady;
 		};
@@ -228,10 +328,27 @@ void registerSoftwareScenePasses(RenderPassLibrary& registry) {
 
 	{
 		RenderPassDef desc;
+		desc.id = "mesh";
+		desc.name = "Mesh";
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->writes = { softwareSceneOutputSlot };
+		desc.shouldExecute = []() {
+			const GameView* view = ConsoleCore::instance().view();
+			return view->vdpMeshCount > 0u;
+		};
+		desc.exec = [](GPUBackend* backend, void*, std::any&) {
+			auto& console = ConsoleCore::instance();
+			renderSoftwareMeshes(static_cast<SoftwareBackend&>(*backend), *console.view());
+		};
+		registry.registerPass(desc);
+	}
+
+	{
+		RenderPassDef desc;
 		desc.id = "particles";
 		desc.name = "Particles";
 		desc.graph = RenderPassDef::RenderPassGraphDef{};
-		desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
+		desc.graph->writes = { softwareSceneOutputSlot };
 		desc.shouldExecute = []() {
 			const GameView* view = ConsoleCore::instance().view();
 			return view->vdpBillboardCount > 0u;
@@ -249,6 +366,17 @@ void renderSoftwareSkybox(SoftwareBackend& backend, const GameView& view) {
 		return;
 	}
 	writeSkyboxToFramebuffer(backend, view, view.vdpTransform.skyboxView);
+}
+
+
+void renderSoftwareMeshes(SoftwareBackend& backend, const GameView& view) {
+	if (view.vdpMeshCount == 0u) {
+		return;
+	}
+	const RuntimeRomPackage& rom = ConsoleCore::instance().runtime().activeRom();
+	for (size_t index = 0u; index < view.vdpMeshCount; ++index) {
+		drawSoftwareMeshEntry(backend, view, rom, view.vdpMeshes[index]);
+	}
 }
 
 void renderSoftwareParticles(SoftwareBackend& backend, const GameView& view) {

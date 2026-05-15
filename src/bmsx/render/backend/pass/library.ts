@@ -314,7 +314,7 @@ export class RenderPassLibrary {
 				const gv = consoleCore.view;
 				updateAndBindFrameUniforms(gv.backend, offscreenWidth, offscreenHeight, viewportWidth, viewportHeight, frameTime, frameDelta);
 				const transform = gv.vdpTransform;
-				const lighting = lightingSystem.update();
+				const lighting = lightingSystem.update(gv);
 				const frameShared = this.frameSharedState;
 				frameShared.view.camPos = transform.eye;
 				frameShared.view.viewProj = transform.viewProj;

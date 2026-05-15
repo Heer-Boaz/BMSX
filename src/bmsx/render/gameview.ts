@@ -25,6 +25,7 @@ import {
 	VDP_MDU_MESH_LIMIT,
 	VDP_MFU_WEIGHT_COUNT,
 } from '../machine/devices/vdp/contracts';
+import { VDP_LPU_DIRECTIONAL_LIGHT_LIMIT, VDP_LPU_POINT_LIGHT_LIMIT, VDP_LPU_REGISTER_WORDS } from '../machine/devices/vdp/lpu';
 import { VDP_XF_MATRIX_REGISTER_WORDS } from '../machine/devices/vdp/xf';
 import { createVdpTransformSnapshot } from './vdp/transform';
 import type { VdpFrameBufferTextures } from './vdp/framebuffer';
@@ -111,6 +112,16 @@ export class GameView implements RenderContext {
 	public readonly vdpMeshJointBase = new Uint32Array(VDP_MDU_MESH_LIMIT);
 	public readonly vdpMeshJointCount = new Uint32Array(VDP_MDU_MESH_LIMIT);
 	public vdpMeshCount = 0;
+	public readonly vdpLightRegisterWords = new Uint32Array(VDP_LPU_REGISTER_WORDS);
+	public readonly vdpAmbientLightColorIntensity = new Float32Array(4);
+	public readonly vdpDirectionalLightDirections = new Float32Array(VDP_LPU_DIRECTIONAL_LIGHT_LIMIT * 3);
+	public readonly vdpDirectionalLightColors = new Float32Array(VDP_LPU_DIRECTIONAL_LIGHT_LIMIT * 3);
+	public readonly vdpDirectionalLightIntensities = new Float32Array(VDP_LPU_DIRECTIONAL_LIGHT_LIMIT);
+	public vdpDirectionalLightCount = 0;
+	public readonly vdpPointLightPositions = new Float32Array(VDP_LPU_POINT_LIGHT_LIMIT * 3);
+	public readonly vdpPointLightColors = new Float32Array(VDP_LPU_POINT_LIGHT_LIMIT * 3);
+	public readonly vdpPointLightParams = new Float32Array(VDP_LPU_POINT_LIGHT_LIMIT * 2);
+	public vdpPointLightCount = 0;
 	public readonly vdpMorphWeightWords = new Uint32Array(VDP_MFU_WEIGHT_COUNT);
 	public readonly vdpJointMatrixWords = new Uint32Array(VDP_JTU_REGISTER_WORDS);
 	public pipelineRegistry?: RenderPassLibrary;

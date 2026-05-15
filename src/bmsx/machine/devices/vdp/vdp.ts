@@ -121,6 +121,11 @@ import {
 	VDP_JTU_PACKET_KIND,
 } from './jtu';
 import {
+	VdpLpuUnit,
+	VDP_LPU_PACKET_KIND,
+	VDP_LPU_REGISTER_WORDS,
+} from './lpu';
+import {
 	type VdpMduPacket,
 	VdpMduFrameBuffer,
 	VdpMduUnit,
@@ -266,6 +271,7 @@ export class VDP implements VramWriteSink {
 		faultDetail: 0,
 	};
 	private readonly xf = new VdpXfUnit();
+	private readonly lpu = new VdpLpuUnit();
 	private readonly mfu = new VdpMfuUnit();
 	private readonly jtu = new VdpJtuUnit();
 	private readonly pmu = new VdpPmuUnit();
@@ -752,6 +758,7 @@ export class VDP implements VramWriteSink {
 				)) ? payloadEnd : -1;
 			}
 			case VDP_XF_PACKET_KIND:
+			case VDP_LPU_PACKET_KIND:
 			case VDP_MFU_PACKET_KIND:
 			case VDP_JTU_PACKET_KIND:
 				return this.consumeUnitRegisterPacketFromMemory(word, cursor, end);
@@ -885,6 +892,7 @@ export class VDP implements VramWriteSink {
 					words[cursor + 9],
 				)) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : -1;
 			case VDP_XF_PACKET_KIND:
+			case VDP_LPU_PACKET_KIND:
 			case VDP_MFU_PACKET_KIND:
 			case VDP_JTU_PACKET_KIND:
 				return this.consumeUnitRegisterPacketFromWords(words, word, cursor, wordCount);
@@ -957,6 +965,12 @@ export class VDP implements VramWriteSink {
 					return false;
 				}
 				return true;
+			case VDP_LPU_PACKET_KIND:
+				if (firstRegister >= VDP_LPU_REGISTER_WORDS || registerCount > VDP_LPU_REGISTER_WORDS - firstRegister) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+					return false;
+				}
+				return true;
 			case VDP_MFU_PACKET_KIND:
 				if (firstRegister >= this.mfu.weightWords.length || registerCount > this.mfu.weightWords.length - firstRegister) {
 					this.fault.raise(VDP_FAULT_MDU_BAD_MORPH_RANGE, firstRegister);
@@ -981,6 +995,9 @@ export class VDP implements VramWriteSink {
 					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
 					return false;
 				}
+				return true;
+			case VDP_LPU_PACKET_KIND:
+				this.lpu.registerWords[registerIndex] = value >>> 0;
 				return true;
 			case VDP_MFU_PACKET_KIND:
 				this.mfu.weightWords[registerIndex] = value >>> 0;
@@ -1325,6 +1342,7 @@ export class VDP implements VramWriteSink {
 		frame.skyboxFaceWords.fill(0);
 		frame.billboards.reset();
 		frame.meshes.reset();
+		frame.lightRegisterWords.fill(0);
 		frame.morphWeightWords.fill(0);
 		frame.jointMatrixWords.fill(0);
 	}
@@ -1435,6 +1453,7 @@ export class VDP implements VramWriteSink {
 		frame.xf.matrixWords.set(this.xf.matrixWords);
 		frame.xf.viewMatrixIndex = this.xf.viewMatrixIndex;
 		frame.xf.projectionMatrixIndex = this.xf.projectionMatrixIndex;
+		frame.lightRegisterWords.set(this.lpu.registerWords);
 		frame.morphWeightWords.set(this.mfu.weightWords);
 		frame.jointMatrixWords.set(this.jtu.matrixWords);
 		frame.skyboxControl = completedSbx.control;
@@ -2286,6 +2305,7 @@ export class VDP implements VramWriteSink {
 		this.pmu.reset();
 		this.syncPmuRegisterWindow();
 		this.xf.reset();
+		this.lpu.reset();
 		this.mfu.reset();
 		this.jtu.reset();
 		this.vout.reset(dither, this.fbm.width, this.fbm.height);
@@ -2314,6 +2334,7 @@ export class VDP implements VramWriteSink {
 			skyboxFaceWords: this.sbx.captureLiveFaceWords(),
 			pmuSelectedBank: this.pmu.selectedBankIndex,
 			pmuBankWords: this.pmu.captureBankWords(),
+			lightRegisterWords: Array.from(this.lpu.registerWords),
 			ditherType: this.vout.liveDitherType,
 			vdpFaultCode: this.fault.code,
 			vdpFaultDetail: this.fault.detail,
@@ -2344,6 +2365,7 @@ export class VDP implements VramWriteSink {
 		}
 		this.sbx.restoreLiveState(state.skyboxControl, state.skyboxFaceWords);
 		this.pmu.restoreBankWords(state.pmuSelectedBank, state.pmuBankWords);
+		this.lpu.registerWords.set(state.lightRegisterWords);
 		this.syncPmuRegisterWindow();
 		this.syncSbxRegisterWindow();
 		this.memory.writeValue(IO_VDP_DITHER, state.ditherType);
@@ -2372,7 +2394,7 @@ export class VDP implements VramWriteSink {
 
 	private commitLiveVisualState(): void {
 		this.sbx.presentLiveState();
-		this.vout.presentLiveState(this.xf, this.sbx.visibleEnabled, this.mfu, this.jtu);
+		this.vout.presentLiveState(this.xf, this.sbx.visibleEnabled, this.lpu, this.mfu, this.jtu);
 		this.resolveSkyboxFrameSamples(this.sbx.liveControlWord, this.sbx.visibleFaceState, this.vout.visibleSkyboxSampleBuffer);
 	}
 

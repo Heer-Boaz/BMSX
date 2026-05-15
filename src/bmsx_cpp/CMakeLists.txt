@@ -306,6 +306,7 @@ add_library(bmsx_core STATIC
 	machine/devices/vdp/frame.cpp
 	machine/devices/vdp/ingress.cpp
 	machine/devices/vdp/jtu.cpp
+	machine/devices/vdp/lpu.cpp
 	machine/devices/vdp/mdu.cpp
 	machine/devices/vdp/mfu.cpp
 	machine/devices/vdp/pmu.cpp

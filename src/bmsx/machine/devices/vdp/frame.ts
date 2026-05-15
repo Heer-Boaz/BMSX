@@ -3,6 +3,7 @@ import { VdpBbuFrameBuffer } from './bbu';
 import { VdpBlitterCommandBuffer, type VdpResolvedBlitterSample } from './blitter';
 import { VdpMduFrameBuffer } from './mdu';
 import { VdpXfUnit, type VdpXfState } from './xf';
+import { VDP_LPU_REGISTER_WORDS } from './lpu';
 
 export const VDP_DEX_FRAME_IDLE = 0;
 export const VDP_DEX_FRAME_DIRECT_OPEN = 1;
@@ -40,6 +41,7 @@ export type VdpSubmittedFrame = {
 	skyboxSamples: VdpResolvedBlitterSample[];
 	billboards: VdpBbuFrameBuffer;
 	meshes: VdpMduFrameBuffer;
+	lightRegisterWords: Uint32Array;
 	morphWeightWords: Uint32Array;
 	jointMatrixWords: Uint32Array;
 };
@@ -139,6 +141,7 @@ export type VdpSubmittedFrameSaveState = {
 	skyboxControl: number;
 	skyboxFaceWords: number[];
 	skyboxSamples: VdpResolvedBlitterSample[];
+	lightRegisterWords: number[];
 };
 
 export function createResolvedBlitterSample(): VdpResolvedBlitterSample {
@@ -181,6 +184,7 @@ export function allocateSubmittedFrameSlot(): VdpSubmittedFrame {
 		skyboxSamples: createResolvedBlitterSamples(),
 		billboards: new VdpBbuFrameBuffer(),
 		meshes: new VdpMduFrameBuffer(),
+		lightRegisterWords: new Uint32Array(VDP_LPU_REGISTER_WORDS),
 		morphWeightWords: new Uint32Array(VDP_MFU_WEIGHT_COUNT),
 		jointMatrixWords: new Uint32Array(VDP_JTU_REGISTER_WORDS),
 	};
@@ -488,6 +492,7 @@ export function captureSubmittedFrameState(frame: VdpSubmittedFrame): VdpSubmitt
 		skyboxControl: frame.skyboxControl,
 		skyboxFaceWords: Array.from(frame.skyboxFaceWords),
 		skyboxSamples,
+		lightRegisterWords: Array.from(frame.lightRegisterWords),
 	};
 }
 
@@ -508,4 +513,5 @@ export function restoreSubmittedFrameState(frame: VdpSubmittedFrame, state: VdpS
 	for (let index = 0; index < SKYBOX_FACE_COUNT; index += 1) {
 		restoreResolvedBlitterSampleState(frame.skyboxSamples[index], state.skyboxSamples[index]);
 	}
+	frame.lightRegisterWords.set(state.lightRegisterWords);
 }

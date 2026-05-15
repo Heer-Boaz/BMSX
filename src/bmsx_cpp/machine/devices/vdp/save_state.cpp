@@ -19,6 +19,7 @@ void VDP::captureVisualStateFields(VdpState& state) const {
 	state.skyboxFaceWords = m_sbx.liveFaceWords();
 	state.pmuSelectedBank = m_pmu.selectedBank();
 	state.pmuBankWords = m_pmu.captureBankWords();
+	state.lightRegisterWords = m_lpu.registerWords;
 	state.ditherType = m_vout.liveDitherType();
 	state.vdpFaultCode = m_fault.code;
 	state.vdpFaultDetail = m_fault.detail;
@@ -47,6 +48,7 @@ void VDP::restoreState(const VdpState& state) {
 	m_sbx.restoreLiveState(state.skyboxControl, state.skyboxFaceWords);
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(state.ditherType)));
 	m_pmu.restoreBankWords(state.pmuSelectedBank, state.pmuBankWords);
+	m_lpu.registerWords = state.lightRegisterWords;
 	syncPmuRegisterWindow();
 	syncSbxRegisterWindow();
 	m_fault.restore(0u, state.vdpFaultCode, state.vdpFaultDetail);

@@ -1,87 +1,134 @@
 local romdir<const> = require('bios/romdir')
 
-local io_vdp_dither<const> = sys_vdp_dither -- VDP dithering control
-local io_irq_flags<const> = sys_irq_flags -- IRQ flags: bit 0 = DMA done, bit 1 = DMA error, bit 4 = VBlank
-local io_irq_ack<const> = sys_irq_ack -- IRQ acknowledge: write 1 to bits to acknowledge corresponding IRQs
-local io_dma_src<const> = sys_dma_src -- DMA source address
-local io_dma_dst<const> = sys_dma_dst -- DMA destination address
-local io_dma_len<const> = sys_dma_len -- DMA length in bytes
-local io_dma_ctrl<const> = sys_dma_ctrl -- DMA control: write 1 to bit 0 to start DMA
+local io_vdp_dither<const> = sys_vdp_dither
+local io_irq_flags<const> = sys_irq_flags
+local io_irq_ack<const> = sys_irq_ack
+local io_dma_src<const> = sys_dma_src
+local io_dma_dst<const> = sys_dma_dst
+local io_dma_len<const> = sys_dma_len
+local io_dma_ctrl<const> = sys_dma_ctrl
+local io_vdp_fifo<const> = sys_vdp_fifo
+local vdp_stream_base<const> = sys_vdp_stream_base
+local vram_primary_slot_base<const> = sys_vram_primary_slot_base
+local atlas_ram_base<const> = sys_geo_scratch_base
 
-local vdp_stream_base<const> = sys_vdp_stream_base -- Base address for building VDP command streams in RAM before submitting via DMA
-local vram_primary_slot_base<const> = sys_vram_primary_slot_base -- Base VRAM address for the primary surface slot (slot 0)
-local atlas_ram_base<const> = sys_geo_scratch_base -- Base RAM address for building the sprite atlas before uploading to VRAM
-local io_vdp_fifo<const> = sys_vdp_fifo -- VDP FIFO: write 32-bit command words here to send to VDP immediately (bypassing DMA)
+local vdp_pkt_end<const> = 0x00000000
+local vdp_pkt_cmd<const> = 0x01000000
+local vdp_pkt_reg1<const> = 0x02000000
+local vdp_pkt_regn<const> = 0x03000000
+local vdp_pkt_billboard<const> = 0x11000000
+local vdp_pkt_skybox<const> = 0x12000000
+local vdp_pkt_xf<const> = 0x13000000
+local vdp_pkt_mfu<const> = 0x14000000
+local vdp_pkt_mesh<const> = 0x16000000
+local vdp_pkt_lpu<const> = 0x17000000
 
-local vdp_pkt_end<const> = 0x00000000 -- End of packet stream
-local vdp_pkt_cmd<const> = 0x01000000 -- Command packet: lower 16 bits = command ID, upper 8 bits = number of additional data words
-local vdp_pkt_reg1<const> = 0x02000000 -- Register packet: lower 16 bits = register index, upper 8 bits = number of additional data words
-local vdp_pkt_regn<const> = 0x03000000 -- Register packet with N registers: lower 16 bits = starting register index, upper 8 bits = number of registers to set (data words must be in register order)
-local vdp_pkt_billboard<const> = 0x11000000 -- BILLBOARD packet: BBU command-stream packet, followed by fixed hardware words
-local vdp_pkt_skybox<const> = 0x12000000 -- SKYBOX packet: SBX command-stream packet, followed by control and six face-source records
-local vdp_pkt_xf<const> = 0x13000000 -- XF packet: register-file command for VDP transform state
-local vdp_pkt_mfu<const> = 0x14000000 -- MFU packet: morph-weight register-file command
-local vdp_pkt_jtu<const> = 0x15000000 -- JTU packet: joint-matrix register-file command
-local vdp_pkt_mesh<const> = 0x16000000 -- MDU packet: mesh dispatch command
-local vdp_billboard_payload_words<const> = 11 -- BILLBOARD payload: layer, priority, slot, uv, wh, x, y, z, size, color, control
-local vdp_skybox_payload_words<const> = 31 -- SKYBOX payload: control plus six faces of slot/u/v/w/h
-local vdp_xf_matrix_payload_words<const> = 17 -- XF register write: first register index plus 16 matrix words
-local vdp_xf_select_payload_words<const> = 3 -- XF register write: first register index plus two selected matrix slots
-local vdp_mfu_weight_payload_words<const> = 2 -- MFU register write: first register index plus one Q16.16 weight word
-local vdp_jtu_matrix_payload_words<const> = 17 -- JTU register write: first register index plus 16 matrix words
-local vdp_mesh_payload_words<const> = 10 -- MDU packet: model token, mesh/material, transform, texture, color, morph, joint, reserved
-local vdp_mdu_material_mesh_default<const> = 0xffffffff -- MDU material selector: use the model mesh material
-local vdp_mdu_control_texture_enable<const> = 1 -- MDU control bit: sample a VDP VRAM slot texture
-local vdp_mdu_control_texture_slot_shift<const> = 1 -- MDU control bits 1..2: VDP texture slot selector
+local vdp_billboard_payload_words<const> = 11
+local vdp_skybox_payload_words<const> = 31
+local vdp_xf_matrix_payload_words<const> = 17
+local vdp_xf_select_payload_words<const> = 3
+local vdp_mfu_weights_payload_words<const> = 3
+local vdp_lpu_ambient_payload_words<const> = 6
+local vdp_lpu_directional_payload_words<const> = 9
+local vdp_lpu_point_payload_words<const> = 10
+local vdp_mesh_payload_words<const> = 10
 
-local vdp_cmd_clear<const> = 1 -- Clear command: clears a rectangle to the current background color, parameters are in registers (see draw_frame function below)
-local vdp_cmd_fill_rect<const> = 2 -- Fill rectangle command: fills a rectangle with the current draw color, parameters are in registers (see draw_frame function below)
-local vdp_cmd_blit<const> = 4 -- Blit command: draws a sprite from a source slot to the destination coordinates, parameters are in registers (see draw_frame function below)
+local vdp_cmd_clear<const> = 1
+local vdp_cmd_fill_rect<const> = 2
+local vdp_cmd_blit<const> = 4
+local vdp_reg_src_slot<const> = 0
+local vdp_reg_src_uv<const> = 1
+local vdp_reg_src_wh<const> = 2
+local vdp_reg_dst_x<const> = 3
+local vdp_reg_geom_x0<const> = 5
+local vdp_reg_draw_layer<const> = 10
+local vdp_reg_draw_color<const> = 15
+local vdp_reg_bg_color<const> = 16
+local vdp_reg_slot_index<const> = 17
 
-local vdp_reg_src_slot<const> = 0 -- Source slot register index (used for blit commands to specify which VRAM slot to use as the source)
-local vdp_reg_src_uv<const> = 1 -- Source UV register index (used for blit commands to specify the top-left UV coordinates within the source slot)
-local vdp_reg_src_wh<const> = 2 -- Source width/height register index (used for blit commands to specify the width and height of the sprite to draw from the source slot)
-local vdp_reg_dst_x<const> = 3 -- Destination X coordinate register index (used for blit commands to specify the X coordinate on the screen to draw the sprite)
-local vdp_reg_geom_x0<const> = 5 -- Geometry X0 register index (used for clear and fill_rect commands to specify the left edge of the rectangle)
-local vdp_reg_draw_layer<const> = 10 -- Draw layer register index
-local vdp_reg_draw_color<const> = 15 -- Draw color register index (used for fill_rect commands to specify the color to fill with, and for blit commands to specify modulation color)
-local vdp_reg_bg_color<const> = 16 -- Background color register index (used for clear commands to specify the color to clear with)
-local vdp_reg_slot_index<const> = 17 -- Slot index register (used for register packets to specify which VRAM slot to configure)
-local vdp_slot_primary<const> = 0 -- Primary surface slot index (the main VRAM slot used for drawing sprites and backgrounds)
-local vdp_layer_world<const> = 0 -- World layer index (the main layer used for drawing the game world, sprites should be drawn on this layer for correct priority handling)
-local vdp_sbx_control_enable<const> = 1 -- SBX control bit: enable the live skybox face state when latched into a frame
-local draw_ctrl_parallax_half<const> = 0x00800000 -- DRAW_CTRL: PMU bank 0, parallax weight +0.5 in signed Q8.8
-local q16_one<const> = 0x00010000 -- Q16.16 value 1.0, used directly in VDP command words
-local xf_matrix_words<const> = 16 -- XF matrix register span
-local xf_view_matrix<const> = 0 -- XF matrix slot selected as the view transform
-local xf_proj_matrix<const> = 1 -- XF matrix slot selected as the projection transform
-local xf_model_matrix<const> = 2 -- XF matrix slot consumed by the MDU mesh model transform
-local xf_view_matrix_register<const> = xf_view_matrix * xf_matrix_words -- First word of XF matrix slot 0
-local xf_proj_matrix_register<const> = xf_proj_matrix * xf_matrix_words -- First word of XF matrix slot 1
-local xf_model_matrix_register<const> = xf_model_matrix * xf_matrix_words -- First word of XF matrix slot 2
-local xf_select_register<const> = 128 -- XF register selecting view/projection matrix slots
-local xf_yaw_step<const> = 0.035 -- Radians per frame for the raw XF view matrix
-local xf_proj_x<const> = 0x00016f32 -- Perspective focal-X in Q16.16 for 256x212 aspect
-local xf_proj_y<const> = 0x0001bb68 -- Perspective focal-Y in Q16.16, approximately cot(60deg / 2)
-local xf_proj_z<const> = 0xfffefefa -- Perspective depth term in Q16.16 for near 0.1, far 50
-local xf_proj_w<const> = 0xffff0000 -- Perspective W term -1.0 in Q16.16
-local xf_proj_zw<const> = 0xffffccb3 -- Perspective depth offset in Q16.16 for near 0.1, far 50
+local vdp_slot_primary<const> = 0
+local vdp_layer_world<const> = 0
+local vdp_sbx_control_enable<const> = 1
+local vdp_lpu_control_enable<const> = 1
+local vdp_lpu_ambient_register<const> = 0
+local vdp_lpu_directional_register<const> = 5
+local vdp_lpu_point_register<const> = 37
+local vdp_mdu_material_mesh_default<const> = 0xffffffff
+local draw_ctrl_parallax_half<const> = 0x00800000
 
-local dma_ctrl_start<const> = 1 -- Control value to start a DMA transfer when written to the io_dma_ctrl register
-local irq_dma_done<const> = 0x01 -- IRQ flag bit for DMA transfer completion
-local irq_dma_error<const> = 0x02 -- IRQ flag bit for DMA transfer error
-local irq_vblank<const> = 0x10 -- IRQ flag bit for VBlank start
+local q16_one<const> = 0x00010000
+local xf_matrix_words<const> = 16
+local xf_view_matrix<const> = 0
+local xf_proj_matrix<const> = 1
+local xf_model_matrix<const> = 2
+local xf_view_matrix_register<const> = xf_view_matrix * xf_matrix_words
+local xf_proj_matrix_register<const> = xf_proj_matrix * xf_matrix_words
+local xf_model_matrix_register<const> = xf_model_matrix * xf_matrix_words
+local xf_select_register<const> = 128
+local xf_proj_x<const> = 0x00016f32
+local xf_proj_y<const> = 0x0001bb68
+local xf_proj_z<const> = 0xfffefefa
+local xf_proj_w<const> = 0xffff0000
+local xf_proj_zw<const> = 0xffffccb3
 
-local atlas_width<const> = 16 -- Width of the sprite atlas in pixels
-local atlas_height<const> = 16 -- Height of the sprite atlas in pixels
-local atlas_bytes<const> = atlas_width * atlas_height * 4 -- Total size of the sprite atlas in bytes (4 bytes per pixel for RGBA)
-local mesh_record<const> = romdir.cart('baremetalmesh') -- Rompacked mesh asset referenced by the MDU packet token
+local dma_ctrl_start<const> = 1
+local irq_dma_done<const> = 0x01
+local irq_dma_error<const> = 0x02
+local irq_vblank<const> = 0x10
 
-local frame = 0 -- Frame counter used for animating the sprite and background
-local sprite_x = 112 -- Initial X coordinate of the sprite
-local sprite_y = 92 -- Initial Y coordinate of the sprite
-local sprite_step<const> = 2 -- Number of pixels the sprite moves horizontally each frame
-local sprite_direction = 1 -- Initial horizontal movement direction of the sprite (1 = right, -1 = left)
+local atlas_width<const> = 16
+local atlas_height<const> = 16
+local atlas_bytes<const> = atlas_width * atlas_height * 4
+local morph_mesh_record<const> = romdir.cart('animatedmorphsphere')
+
+
+local setup_camera_input<const> = function()
+	mem[sys_inp_player] = 1
+	mem[sys_inp_action] = &'moveforward'
+	mem[sys_inp_bind] = &'up,rb'
+	mem[sys_inp_ctrl] = inp_ctrl_commit
+	mem[sys_inp_action] = &'movebackward'
+	mem[sys_inp_bind] = &'down,y'
+	mem[sys_inp_ctrl] = inp_ctrl_commit
+	mem[sys_inp_action] = &'panleft'
+	mem[sys_inp_bind] = &'left,x'
+	mem[sys_inp_ctrl] = inp_ctrl_commit
+	mem[sys_inp_action] = &'panright'
+	mem[sys_inp_bind] = &'right,rs'
+	mem[sys_inp_ctrl] = inp_ctrl_commit
+	mem[sys_inp_action] = &'panup'
+	mem[sys_inp_bind] = &'lt'
+	mem[sys_inp_ctrl] = inp_ctrl_commit
+	mem[sys_inp_action] = &'pandown'
+	mem[sys_inp_bind] = &'rt'
+	mem[sys_inp_ctrl] = inp_ctrl_commit
+	mem[sys_inp_action] = &'turnleft'
+	mem[sys_inp_bind] = &'lb'
+	mem[sys_inp_ctrl] = inp_ctrl_commit
+	mem[sys_inp_action] = &'turnright'
+	mem[sys_inp_bind] = &'touch'
+	mem[sys_inp_ctrl] = inp_ctrl_commit
+	mem[sys_inp_action] = &'pitchup'
+	mem[sys_inp_bind] = &'b'
+	mem[sys_inp_ctrl] = inp_ctrl_commit
+	mem[sys_inp_action] = &'pitchdown'
+	mem[sys_inp_bind] = &'a'
+	mem[sys_inp_ctrl] = inp_ctrl_commit
+	mem[sys_inp_action] = &'boost'
+	mem[sys_inp_bind] = &'start'
+	mem[sys_inp_ctrl] = inp_ctrl_commit
+end
+
+local frame = 0
+local sprite_x = 112
+local sprite_y = 92
+local sprite_step<const> = 2
+local sprite_direction = 1
+local cam_x = 0.0
+local cam_y = 0.2
+local cam_z = 4.5
+local cam_yaw = 0.0
+local cam_pitch = 0.0
 
 local submit_stream<const> = function(byte_length)
 	mem[io_dma_src] = vdp_stream_base
@@ -108,18 +155,103 @@ local wait_vblank<const> = function()
 	until (flags & irq_vblank) ~= 0
 end
 
-local build_lua_atlas<const> = function()
-	local sky_top<const> = 0xff071a3a -- Opaque sky color used by SBX and BBU samples
-	local sky_mid<const> = 0xff124b7d -- Opaque mid-tone color used by SBX and BBU samples
-	local sky_low<const> = 0xff321a3c -- Opaque lower atlas color used by SBX and BBU samples
-	local star<const> = 0xfffff2a6 -- Bright atlas pixels so the skybox and billboards show high-contrast texels
-	local outline<const> = 0xff18121c -- Dark outline color (used for the outer edge of the sprite)
-	local body<const> = 0xffe64824 -- Main body color (used for the inner area of the sprite)
-	local light<const> = 0xffffdc62 -- Highlight color (used for the top area of the sprite to give a sense of lighting)
-	local core<const> = 0xff2de6ff -- Core color (used for the center of the sprite to give a sense of depth and focus)
+local update_camera<const> = function()
+	mem[sys_inp_player] = 1
+	local yaw_step = 0.035
+	local pitch_step = 0.028
+	mem[sys_inp_query] = &'boost[p]'
+	if mem[sys_inp_status] ~= 0 then
+		yaw_step = 0.055
+		pitch_step = 0.045
+	end
+	mem[sys_inp_query] = &'panleft[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_yaw = cam_yaw + yaw_step
+	end
+	mem[sys_inp_query] = &'panright[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_yaw = cam_yaw - yaw_step
+	end
+	mem[sys_inp_query] = &'turnleft[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_yaw = cam_yaw + yaw_step
+	end
+	mem[sys_inp_query] = &'turnright[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_yaw = cam_yaw - yaw_step
+	end
+	mem[sys_inp_query] = &'pitchup[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_pitch = cam_pitch + pitch_step
+	end
+	mem[sys_inp_query] = &'pitchdown[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_pitch = cam_pitch - pitch_step
+	end
+	if cam_pitch > 1.2 then
+		cam_pitch = 1.2
+	end
+	if cam_pitch < -1.2 then
+		cam_pitch = -1.2
+	end
 
-	local py = 0 -- Y coordinate for iterating over the pixels of the atlas
-	while py < atlas_height do -- Iterate over each pixel row of the atlas
+	local move = 0.075
+	mem[sys_inp_query] = &'boost[p]'
+	if mem[sys_inp_status] ~= 0 then
+		move = 0.18
+	end
+	local sy<const> = math.sin(cam_yaw)
+	local cy<const> = math.cos(cam_yaw)
+	local sp<const> = math.sin(cam_pitch)
+	local cp<const> = math.cos(cam_pitch)
+	local fx<const> = sy * cp
+	local fy<const> = sp
+	local fz<const> = -cy * cp
+	local rx<const> = cy
+	local rz<const> = sy
+	mem[sys_inp_query] = &'moveforward[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_x = cam_x + fx * move
+		cam_y = cam_y + fy * move
+		cam_z = cam_z + fz * move
+	end
+	mem[sys_inp_query] = &'movebackward[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_x = cam_x - fx * move
+		cam_y = cam_y - fy * move
+		cam_z = cam_z - fz * move
+	end
+	mem[sys_inp_query] = &'panup[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_y = cam_y + move
+	end
+	mem[sys_inp_query] = &'pandown[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_y = cam_y - move
+	end
+	mem[sys_inp_query] = &'panleft[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_x = cam_x - rx * move
+		cam_z = cam_z - rz * move
+	end
+	mem[sys_inp_query] = &'panright[p]'
+	if mem[sys_inp_status] ~= 0 then
+		cam_x = cam_x + rx * move
+		cam_z = cam_z + rz * move
+	end
+end
+
+local build_lua_atlas<const> = function()
+	local sky_top<const> = 0xff071a3a
+	local sky_mid<const> = 0xff124b7d
+	local sky_low<const> = 0xff321a3c
+	local star<const> = 0xfffff2a6
+	local outline<const> = 0xff18121c
+	local body<const> = 0xffe64824
+	local light<const> = 0xffffdc62
+	local core<const> = 0xff2de6ff
+	local py = 0
+	while py < atlas_height do
 		local px = 0
 		while px < atlas_width do
 			local dx = px - 7
@@ -130,7 +262,6 @@ local build_lua_atlas<const> = function()
 			if dy < 0 then
 				dy = -dy
 			end
-
 			local color = sky_top
 			if py >= 5 then
 				color = sky_mid
@@ -154,7 +285,6 @@ local build_lua_atlas<const> = function()
 			if py >= 10 and dx <= 2 then
 				color = core
 			end
-
 			mem[atlas_ram_base + ((py * atlas_width + px) * 4)] = color
 			px = px + 1
 		end
@@ -162,54 +292,83 @@ local build_lua_atlas<const> = function()
 	end
 end
 
-local configure_primary_surface<const> = function() -- Configure the primary surface slot in VRAM with the dimensions of the sprite atlas so we can blit from it later. This is done by building a short command stream in RAM and submitting it via DMA.
-	local wp = vdp_stream_base -- Write pointer for building the command stream in RAM
-	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_slot_index, wp + 4 -- Packet to set multiple registers starting at the slot index register
-	mem[wp], wp = vdp_slot_primary, wp + 4 -- Set the slot index to the primary slot (slot 0)
-	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4 -- Set the width and height of the slot to match the dimensions of the sprite atlas
-	mem[wp], wp = vdp_pkt_end, wp + 4 -- End of packet stream
-	submit_stream(wp - vdp_stream_base) -- Submit the command stream via DMA to configure the primary surface slot
-	wait_dma() -- Wait for the DMA transfer to complete before proceeding, ensuring the slot is configured before we try to use it for drawing sprites
+local configure_primary_surface<const> = function()
+	local wp = vdp_stream_base
+	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_slot_index, wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4
+	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
+	mem[wp], wp = vdp_pkt_end, wp + 4
+	submit_stream(wp - vdp_stream_base)
+	wait_dma()
 end
 
-local upload_atlas_to_vram<const> = function() -- Upload the sprite atlas pixel data from RAM to VRAM using DMA. This is done by setting up the DMA source and destination addresses and length, then starting the DMA transfer and waiting for it to complete.
-	mem[io_dma_src] = atlas_ram_base -- Set the DMA source address to the base of the sprite atlas in RAM where we built the pixel data
-	mem[io_dma_dst] = vram_primary_slot_base -- Set the DMA destination address to the base of the primary surface slot in VRAM where we want the atlas to be uploaded
-	mem[io_dma_len] = atlas_bytes -- Set the DMA length to the total size of the sprite atlas in bytes (width * height * 4 bytes per pixel)
-	mem[io_dma_ctrl] = dma_ctrl_start -- Start the DMA transfer by writing the control value to the DMA control register
-	wait_dma() -- Wait for the DMA transfer to complete before proceeding, ensuring the atlas is fully uploaded to VRAM before we try to draw with it
+local upload_atlas_to_vram<const> = function()
+	mem[io_dma_src] = atlas_ram_base
+	mem[io_dma_dst] = vram_primary_slot_base
+	mem[io_dma_len] = atlas_bytes
+	mem[io_dma_ctrl] = dma_ctrl_start
+	wait_dma()
 end
 
 local draw_frame<const> = function()
-	local wp = vdp_stream_base -- Write pointer for building the VDP command stream in RAM for this frame
-	local yaw<const> = frame * xf_yaw_step
-	local c<const> = math.cos(yaw)
-	local s<const> = math.sin(yaw)
-	local cw<const> = ((c * q16_one) // 1) & 0xffffffff
-	local sw<const> = ((s * q16_one) // 1) & 0xffffffff
-	local nw<const> = ((-s * q16_one) // 1) & 0xffffffff
-	local morph_weight<const> = (((math.sin(frame * 0.08) + 1) * 0x8000) // 1) & 0xffffffff
-	local joint_y<const> = ((math.sin(frame * 0.11) * 0x3000) // 1) & 0xffffffff
+	local wp = vdp_stream_base
+	local sy<const> = math.sin(cam_yaw)
+	local cy<const> = math.cos(cam_yaw)
+	local sp<const> = math.sin(cam_pitch)
+	local cp<const> = math.cos(cam_pitch)
+	local fx<const> = sy * cp
+	local fy<const> = sp
+	local fz<const> = -cy * cp
+	local rx<const> = cy
+	local ry<const> = 0.0
+	local rz<const> = sy
+	local ux<const> = -sy * sp
+	local uy<const> = cp
+	local uz<const> = cy * sp
+	local tx<const> = -(rx * cam_x + ry * cam_y + rz * cam_z)
+	local ty<const> = -(ux * cam_x + uy * cam_y + uz * cam_z)
+	local tz<const> = fx * cam_x + fy * cam_y + fz * cam_z
+	local model_yaw<const> = frame * 0.025
+	local model_pitch<const> = frame * 0.014
+	local mc<const> = math.cos(model_yaw)
+	local ms<const> = math.sin(model_yaw)
+	local pc<const> = math.cos(model_pitch)
+	local ps<const> = math.sin(model_pitch)
+	local model_scale<const> = 0x00300000
+	local model_00<const> = ((mc * model_scale) // 1) & 0xffffffff
+	local model_01<const> = ((ms * ps * model_scale) // 1) & 0xffffffff
+	local model_02<const> = ((ms * pc * model_scale) // 1) & 0xffffffff
+	local model_10<const> = 0
+	local model_11<const> = ((pc * model_scale) // 1) & 0xffffffff
+	local model_12<const> = ((-ps * model_scale) // 1) & 0xffffffff
+	local model_20<const> = ((-ms * model_scale) // 1) & 0xffffffff
+	local model_21<const> = ((mc * ps * model_scale) // 1) & 0xffffffff
+	local model_22<const> = ((mc * pc * model_scale) // 1) & 0xffffffff
+	local morph_weight_a<const> = (((math.sin(frame * 0.08) + 1.0) * 0x8000) // 1) & 0xffffffff
+	local morph_weight_b<const> = (((math.sin(frame * 0.11 + 1.7) + 1.0) * 0x6000) // 1) & 0xffffffff
+	local point_x<const> = ((math.sin(frame * 0.04) * 0x00020000) // 1) & 0xffffffff
+	local point_z<const> = ((-2.5 * q16_one + math.cos(frame * 0.04) * 0x00010000) // 1) & 0xffffffff
 
-	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4 -- XF register write: matrix slot 0
+	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4
 	mem[wp], wp = xf_view_matrix_register, wp + 4
-	mem[wp], wp = cw, wp + 4
+	mem[wp], wp = ((rx * q16_one) // 1) & 0xffffffff, wp + 4
+	mem[wp], wp = ((ux * q16_one) // 1) & 0xffffffff, wp + 4
+	mem[wp], wp = ((-fx * q16_one) // 1) & 0xffffffff, wp + 4
 	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = nw, wp + 4
+	mem[wp], wp = ((ry * q16_one) // 1) & 0xffffffff, wp + 4
+	mem[wp], wp = ((uy * q16_one) // 1) & 0xffffffff, wp + 4
+	mem[wp], wp = ((-fy * q16_one) // 1) & 0xffffffff, wp + 4
 	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = ((rz * q16_one) // 1) & 0xffffffff, wp + 4
+	mem[wp], wp = ((uz * q16_one) // 1) & 0xffffffff, wp + 4
+	mem[wp], wp = ((-fz * q16_one) // 1) & 0xffffffff, wp + 4
 	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = ((tx * q16_one) // 1) & 0xffffffff, wp + 4
+	mem[wp], wp = ((ty * q16_one) // 1) & 0xffffffff, wp + 4
+	mem[wp], wp = ((tz * q16_one) // 1) & 0xffffffff, wp + 4
 	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = sw, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = cw, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4 -- XF register write: matrix slot 1
+
+	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4
 	mem[wp], wp = xf_proj_matrix_register, wp + 4
 	mem[wp], wp = xf_proj_x, wp + 4
 	mem[wp], wp = 0, wp + 4
@@ -227,214 +386,204 @@ local draw_frame<const> = function()
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = xf_proj_zw, wp + 4
 	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4 -- XF register write: matrix slot 2, the MDU model transform
+
+	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4
 	mem[wp], wp = xf_model_matrix_register, wp + 4
-	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = model_00, wp + 4
+	mem[wp], wp = model_01, wp + 4
+	mem[wp], wp = model_02, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = model_10, wp + 4
+	mem[wp], wp = model_11, wp + 4
+	mem[wp], wp = model_12, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = model_20, wp + 4
+	mem[wp], wp = model_21, wp + 4
+	mem[wp], wp = model_22, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0xfffd0000, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = vdp_pkt_xf | (vdp_xf_select_payload_words << 16), wp + 4 -- XF register write: select transform slots
+
+	mem[wp], wp = vdp_pkt_xf | (vdp_xf_select_payload_words << 16), wp + 4
 	mem[wp], wp = xf_select_register, wp + 4
 	mem[wp], wp = xf_view_matrix, wp + 4
 	mem[wp], wp = xf_proj_matrix, wp + 4
 
-	mem[wp], wp = vdp_pkt_skybox | (vdp_skybox_payload_words << 16), wp + 4 -- SBX SKYBOX packet: live face words are latched and validated when the frame is sealed
-	mem[wp], wp = vdp_sbx_control_enable, wp + 4 -- Enable the six-face skybox for this frame
-	mem[wp], wp = vdp_slot_primary, wp + 4 -- +X: upper-left atlas quadrant
+	mem[wp], wp = vdp_pkt_lpu | (vdp_lpu_ambient_payload_words << 16), wp + 4
+	mem[wp], wp = vdp_lpu_ambient_register, wp + 4
+	mem[wp], wp = vdp_lpu_control_enable, wp + 4
+	mem[wp], wp = 0x00003800, wp + 4
+	mem[wp], wp = 0x00004300, wp + 4
+	mem[wp], wp = 0x00005700, wp + 4
+	mem[wp], wp = 0x00004000, wp + 4
+	mem[wp], wp = vdp_pkt_lpu | (vdp_lpu_directional_payload_words << 16), wp + 4
+	mem[wp], wp = vdp_lpu_directional_register, wp + 4
+	mem[wp], wp = vdp_lpu_control_enable, wp + 4
+	mem[wp], wp = 0xffff8ccd, wp + 4
+	mem[wp], wp = 0xffff2e14, wp + 4
+	mem[wp], wp = 0xffffa667, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0x0000eb85, wp + 4
+	mem[wp], wp = 0x0000c7ae, wp + 4
+	mem[wp], wp = 0x00014000, wp + 4
+	mem[wp], wp = vdp_pkt_lpu | (vdp_lpu_point_payload_words << 16), wp + 4
+	mem[wp], wp = vdp_lpu_point_register, wp + 4
+	mem[wp], wp = vdp_lpu_control_enable, wp + 4
+	mem[wp], wp = point_x, wp + 4
+	mem[wp], wp = 0x00018000, wp + 4
+	mem[wp], wp = point_z, wp + 4
+	mem[wp], wp = 0x00050000, wp + 4
+	mem[wp], wp = 0x00008000, wp + 4
+	mem[wp], wp = 0x0000d000, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0x00010000, wp + 4
+
+	mem[wp], wp = vdp_pkt_skybox | (vdp_skybox_payload_words << 16), wp + 4
+	mem[wp], wp = vdp_sbx_control_enable, wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 8, wp + 4
 	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4 -- -X: upper-right atlas quadrant
+	mem[wp], wp = vdp_slot_primary, wp + 4
 	mem[wp], wp = 8, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 8, wp + 4
 	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4 -- +Y: lower-left atlas quadrant
+	mem[wp], wp = vdp_slot_primary, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 8, wp + 4
 	mem[wp], wp = 8, wp + 4
 	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4 -- -Y: lower-right atlas quadrant
+	mem[wp], wp = vdp_slot_primary, wp + 4
 	mem[wp], wp = 8, wp + 4
 	mem[wp], wp = 8, wp + 4
 	mem[wp], wp = 8, wp + 4
 	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4 -- +Z: whole atlas
+	mem[wp], wp = vdp_slot_primary, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = atlas_width, wp + 4
 	mem[wp], wp = atlas_height, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4 -- -Z: center atlas sample
+	mem[wp], wp = vdp_slot_primary, wp + 4
 	mem[wp], wp = 4, wp + 4
 	mem[wp], wp = 4, wp + 4
 	mem[wp], wp = 8, wp + 4
 	mem[wp], wp = 8, wp + 4
 
-	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_bg_color, wp + 4 -- Set the background color register for the clear command
-	mem[wp], wp = 0x0005080d, wp + 4 -- Transparent DEX clear: the SBX skybox remains visible behind 2D framebuffer work
-	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_clear, wp + 4 -- Issue a clear command to clear the entire screen to the background color we just set, parameters for the clear command are specified in registers (see below)
+	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_bg_color, wp + 4
+	mem[wp], wp = 0x0005080d, wp + 4
+	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_clear, wp + 4
+	mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4
+	mem[wp], wp = 0 << 16, wp + 4
+	mem[wp], wp = 132 << 16, wp + 4
+	mem[wp], wp = 256 << 16, wp + 4
+	mem[wp], wp = 212 << 16, wp + 4
+	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4
+	mem[wp], wp = vdp_layer_world, wp + 4
+	mem[wp], wp = 10, wp + 4
+	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4
+	mem[wp], wp = 0x70101824, wp + 4
+	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4
 
-	mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4 -- Set multiple geometry registers for the first filled rectangle (the dark red background area)
-	mem[wp], wp = 0 << 16, wp + 4 -- X0 = 0 (left edge of the rectangle)
-	mem[wp], wp = 82 << 16, wp + 4 -- Y0 = 82 (top edge of the rectangle)
-	mem[wp], wp = 256 << 16, wp + 4 -- X1 = 256 (right edge of the rectangle, covering the entire width of the screen)
-	mem[wp], wp = 126 << 16, wp + 4 -- Y1 = 126 (bottom edge of the rectangle, creating a horizontal band across the screen)
-	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4 -- Set the draw layer and priority for this rectangle
-	mem[wp], wp = vdp_layer_world, wp + 4 -- Draw on the world layer
-	mem[wp], wp = 8, wp + 4 -- Priority 8 (lower priority than the sprite which will be drawn later)
-	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4 -- Set the draw color register for the fill_rect command
-	mem[wp], wp = 0xff142438, wp + 4 -- Set the draw color to a slightly lighter dark red for the filled rectangle
-	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4 -- Issue a fill rectangle command to draw the dark red background area, parameters for the fill_rect command are specified in registers (see above)
-
-	mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4 -- Set multiple geometry registers for the second filled rectangle (the dark blue background area below the red band)
-	mem[wp], wp = 0 << 16, wp + 4 -- X0 = 0 (left edge of the rectangle)
-	mem[wp], wp = 126 << 16, wp + 4 -- Y0 = 126 (top edge of the rectangle, starting where the red band ends)
-	mem[wp], wp = 256 << 16, wp + 4 -- X1 = 256 (right edge of the rectangle, covering the entire width of the screen)
-	mem[wp], wp = 212 << 16, wp + 4 -- Y1 = 212 (bottom edge of the rectangle, creating a horizontal band across the screen below the red band)
-	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4 -- Set the draw layer and priority for this rectangle
-	mem[wp], wp = vdp_layer_world, wp + 4 -- Draw on the world layer
-	mem[wp], wp = 10, wp + 4 -- Priority 10 (lower priority than the sprite which will be drawn later)
-	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4 -- Set the draw color register for the fill_rect command
-	mem[wp], wp = 0xff0d1417, wp + 4 -- Set the draw color to a slightly lighter dark blue for the filled rectangle
-	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4 -- Issue a fill rectangle command to draw the dark blue background area, parameters for the fill_rect command are specified in registers (see above)
-
-	mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4 -- Set multiple geometry registers for the third filled rectangle (the thin blue line that separates the red and blue areas)
-	mem[wp], wp = 58 << 16, wp + 4 -- X0 = 58 (left edge of the rectangle, creating a gap on the left side of the screen)
-	mem[wp], wp = 126 << 16, wp + 4 -- Y0 = 126 (top edge of the rectangle, starting where the red band ends)
-	mem[wp], wp = 198 << 16, wp + 4 -- X1 = 198 (right edge of the rectangle, creating a gap on the right side of the screen)
-	mem[wp], wp = 212 << 16, wp + 4 -- Y1 = 212 (bottom edge of the rectangle, matching the bottom edge of the blue band)
-	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4 -- Set the draw layer and priority for this rectangle
-	mem[wp], wp = vdp_layer_world, wp + 4 -- Draw on the world layer
-	mem[wp], wp = 15, wp + 4 -- Priority 15 (higher priority than the other background rectangles, but still lower than the sprite which will be drawn later)
-	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4 -- Set the draw color register for the fill_rect command
-	mem[wp], wp = 0xff29333b, wp + 4 -- Set the draw color to a dark blue-gray for the thin line separating the red and blue areas
-	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4 -- Issue a fill rectangle command to draw the thin line separating the red and blue areas, parameters for the fill_rect command are specified in registers (see above)
-
-	local line_y = 132 + ((frame * 2) % 28) -- Y coordinate for the moving horizontal line, oscillates between 132 and 158 over time to create a simple animation effect on the background
-	while line_y < 212 do -- Draw multiple horizontal lines moving down the screen, starting from line_y and spaced 28 pixels apart, until we reach the bottom of the blue area at Y=212
-		local half_width<const> = 4 + ((line_y - 126) // 6) -- Calculate the half width of the line based on its Y coordinate, creating a simple perspective effect where lines closer to the bottom of the screen are wider
-		mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4 -- Set multiple geometry registers for the moving horizontal line
-		mem[wp], wp = (128 - half_width) << 16, wp + 4 -- X0 = center of the screen minus half the width of the line, creating a line that expands outward from the center as it moves down the screen
-		mem[wp], wp = line_y << 16, wp + 4 -- Y0 = line_y (the current Y coordinate of the line)
-		mem[wp], wp = (128 + half_width) << 16, wp + 4 -- X1 = center of the screen plus half the width of the line, creating a line that expands outward from the center as it moves down the screen
-		mem[wp], wp = (line_y + 2) << 16, wp + 4 -- Y1 = line_y + 2 (the line is 2 pixels tall)
-		mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4 -- Set the draw layer and priority for the moving horizontal line
-		mem[wp], wp = vdp_layer_world, wp + 4 -- Draw on the world layer
-		mem[wp], wp = 18, wp + 4 -- Priority 18 (higher than all the background rectangles, but still lower than the sprite which will be drawn later)
-		mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4 -- Set the draw color register for the fill_rect command
-		mem[wp], wp = 0xffd1c794, wp + 4 -- Set the draw color to a light tan for the moving horizontal lines to create a sense of depth and movement on the background
-		mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4 -- Issue a fill rectangle command to draw the moving horizontal line, parameters for the fill_rect command are specified in registers (see above)
-		line_y = line_y + 28 -- Move the Y coordinate down by 28 pixels for the next line, creating evenly spaced lines as they move down the screen
+	local line_y = 136 + ((frame * 2) % 24)
+	while line_y < 212 do
+		local half_width<const> = 4 + ((line_y - 132) // 5)
+		mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4
+		mem[wp], wp = (128 - half_width) << 16, wp + 4
+		mem[wp], wp = line_y << 16, wp + 4
+		mem[wp], wp = (128 + half_width) << 16, wp + 4
+		mem[wp], wp = (line_y + 2) << 16, wp + 4
+		mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4
+		mem[wp], wp = vdp_layer_world, wp + 4
+		mem[wp], wp = 18, wp + 4
+		mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4
+		mem[wp], wp = 0xffd1c794, wp + 4
+		mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4
+		line_y = line_y + 28
 	end
 
-	mem[wp], wp = vdp_pkt_regn | (3 << 16) | vdp_reg_src_slot, wp + 4 -- Set multiple registers starting at the source slot register for the blit command to draw the sprite
-	mem[wp], wp = vdp_slot_primary, wp + 4 -- Set the source slot to the primary slot where we uploaded the sprite atlas
-	mem[wp], wp = 0, wp + 4 -- Set the source UV coordinates to (0,0) to start drawing from the top-left corner of the atlas
-	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4 -- Set the source width and height to match the dimensions of the sprite atlas, so we draw the entire atlas as a single sprite
+	mem[wp], wp = vdp_pkt_regn | (3 << 16) | vdp_reg_src_slot, wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
+	mem[wp], wp = vdp_pkt_regn | (6 << 16) | vdp_reg_draw_layer, wp + 4
+	mem[wp], wp = vdp_layer_world, wp + 4
+	mem[wp], wp = 80, wp + 4
+	mem[wp], wp = draw_ctrl_parallax_half, wp + 4
+	mem[wp], wp = 0x00030000, wp + 4
+	mem[wp], wp = 0x00030000, wp + 4
+	mem[wp], wp = 0xffffffff, wp + 4
+	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_dst_x, wp + 4
+	mem[wp], wp = sprite_x << 16, wp + 4
+	mem[wp], wp = sprite_y << 16, wp + 4
+	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_blit, wp + 4
 
-	mem[wp], wp = vdp_pkt_regn | (6 << 16) | vdp_reg_draw_layer, wp + 4 -- Set draw layer through draw color registers for the blit command
-	mem[wp], wp = vdp_layer_world, wp + 4 -- Draw on the world layer
-	mem[wp], wp = 80, wp + 4 -- Priority 80 (higher than all the background elements to ensure the sprite is drawn on top)
-	mem[wp], wp = draw_ctrl_parallax_half, wp + 4 -- DRAW_CTRL: no flip, PMU bank 0, DEX parallax weight +0.5
-	mem[wp], wp = 0x00030000, wp + 4 -- DRAW_SCALE_X: 3.0 in Q16.16
-	mem[wp], wp = 0x00030000, wp + 4 -- DRAW_SCALE_Y: 3.0 in Q16.16
-	mem[wp], wp = 0xffffffff, wp + 4 -- DRAW_COLOR: modulation color set to white with full alpha
-
-	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_dst_x, wp + 4 -- Set multiple registers starting at the destination X coordinate register for the blit command to specify where to draw the sprite on the screen
-	mem[wp], wp = sprite_x << 16, wp + 4 -- Set the destination X coordinate for the sprite
-	mem[wp], wp = sprite_y << 16, wp + 4 -- Set the destination Y coordinate for the sprite
-	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_blit, wp + 4 -- Issue the blit command to draw the sprite
-
-	local billboard_shift<const> = ((frame % 64) - 32) * 1024 -- Visible Q16.16 animation term in the selected XF view space
-	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4 -- BBU BILLBOARD packet: fixed-point position and size under the selected XF matrices
-	mem[wp], wp = vdp_layer_world, wp + 4 -- Billboard layer
-	mem[wp], wp = 32, wp + 4 -- Billboard priority
-	mem[wp], wp = vdp_slot_primary, wp + 4 -- Texture slot sampled by the billboard
-	mem[wp], wp = 0, wp + 4 -- Source U/V packed as two u16 words
-	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4 -- Source W/H packed as two u16 words
-	mem[wp], wp = 0xffff0000 + billboard_shift, wp + 4 -- X = -1.0 plus a small Q16.16 animation offset
-	mem[wp], wp = 0x00006000, wp + 4 -- Y = +0.375 in signed Q16.16
-	mem[wp], wp = 0xfffc0000, wp + 4 -- Z = -4.0 in signed Q16.16, in front of the selected perspective transform
-	mem[wp], wp = 0x0000c000, wp + 4 -- Size = 0.75 in unsigned Q16.16 under the selected XF matrices
-	mem[wp], wp = 0xffffd060, wp + 4 -- AARRGGBB billboard modulation color
-	mem[wp], wp = 0, wp + 4 -- Reserved BBU control word
-
-	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4 -- Second BBU billboard, same atlas slot but different fixed-point world position
+	local billboard_shift<const> = ((frame % 64) - 32) * 1024
+	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4
+	mem[wp], wp = vdp_layer_world, wp + 4
+	mem[wp], wp = 32, wp + 4
+	mem[wp], wp = vdp_slot_primary, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
+	mem[wp], wp = 0xffff0000 + billboard_shift, wp + 4
+	mem[wp], wp = 0x00006000, wp + 4
+	mem[wp], wp = 0xfffc0000, wp + 4
+	mem[wp], wp = 0x0000c000, wp + 4
+	mem[wp], wp = 0xffffd060, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4
 	mem[wp], wp = vdp_layer_world, wp + 4
 	mem[wp], wp = 36, wp + 4
 	mem[wp], wp = vdp_slot_primary, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
-	mem[wp], wp = 0x00010000 - billboard_shift, wp + 4 -- X = +1.0 minus the same Q16.16 animation offset
-	mem[wp], wp = 0xffffe000, wp + 4 -- Y = -0.125 in signed Q16.16
-	mem[wp], wp = 0xfffc8000, wp + 4 -- Z = -3.5 in signed Q16.16
-	mem[wp], wp = 0x0000a000, wp + 4 -- Size = 0.625 in unsigned Q16.16 under the selected XF matrices
+	mem[wp], wp = 0x00010000 - billboard_shift, wp + 4
+	mem[wp], wp = 0xffffe000, wp + 4
+	mem[wp], wp = 0xfffc8000, wp + 4
+	mem[wp], wp = 0x0000a000, wp + 4
 	mem[wp], wp = 0xff60e6ff, wp + 4
 	mem[wp], wp = 0, wp + 4
 
-	mem[wp], wp = vdp_pkt_mfu | (vdp_mfu_weight_payload_words << 16), wp + 4 -- MFU: animate morph target 0 through raw Q16.16 register 0
+	mem[wp], wp = vdp_pkt_mfu | (vdp_mfu_weights_payload_words << 16), wp + 4
 	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = morph_weight, wp + 4
-	mem[wp], wp = vdp_pkt_jtu | (vdp_jtu_matrix_payload_words << 16), wp + 4 -- JTU: joint matrix 0 with a small animated Y translation
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = joint_y, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = vdp_pkt_mesh | (vdp_mesh_payload_words << 16), wp + 4 -- MDU: draw a rompacked mesh, sampling the primary VDP VRAM slot
-	mem[wp], wp = mesh_record.token_lo, wp + 4
-	mem[wp], wp = mesh_record.token_hi, wp + 4
+	mem[wp], wp = morph_weight_a, wp + 4
+	mem[wp], wp = morph_weight_b, wp + 4
+	mem[wp], wp = vdp_pkt_mesh | (vdp_mesh_payload_words << 16), wp + 4
+	mem[wp], wp = morph_mesh_record.token_lo, wp + 4
+	mem[wp], wp = morph_mesh_record.token_hi, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = vdp_mdu_material_mesh_default, wp + 4
 	mem[wp], wp = xf_model_matrix, wp + 4
-	mem[wp], wp = vdp_mdu_control_texture_enable | (vdp_slot_primary << vdp_mdu_control_texture_slot_shift), wp + 4
-	mem[wp], wp = 0xffffffff, wp + 4
-	mem[wp], wp = 1 << 16, wp + 4
-	mem[wp], wp = 1 << 16, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0xfff5f8ff, wp + 4
+	mem[wp], wp = 2 << 16, wp + 4
+	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 0, wp + 4
 
-	mem[wp], wp = vdp_pkt_end, wp + 4 -- End of packet stream
-	submit_stream(wp - vdp_stream_base) -- Submit the command stream via DMA to draw the frame, which includes clearing the screen, drawing the background rectangles and lines, and finally drawing the sprite on top
-	wait_dma() -- Wait for the DMA transfer to complete before proceeding, ensuring the entire frame is drawn before we try to draw the next frame or update any variables for animation (like sprite_x)
+	mem[wp], wp = vdp_pkt_end, wp + 4
+	submit_stream(wp - vdp_stream_base)
+	wait_dma()
 end
 
 mem[io_vdp_dither] = 0
 mem[sys_vdp_pmu_bank] = 0
 mem[sys_vdp_pmu_x] = 0
-mem[sys_vdp_pmu_y] = 16 << 16 -- VDP PMU bank 0: +16px Y, so DRAW_CTRL +0.5 resolves to +8px Y
-mem[sys_vdp_pmu_scale_x] = 0x00010000
-mem[sys_vdp_pmu_scale_y] = 0x00010000
+mem[sys_vdp_pmu_y] = 16 << 16
+mem[sys_vdp_pmu_scale_x] = q16_one
+mem[sys_vdp_pmu_scale_y] = q16_one
 mem[sys_vdp_pmu_ctrl] = 0
 build_lua_atlas()
 configure_primary_surface()
 upload_atlas_to_vram()
+setup_camera_input()
+mem[sys_inp_ctrl] = inp_ctrl_arm
 
 while true do
+	wait_vblank()
+	update_camera()
 	frame = frame + 1
 	sprite_x = sprite_x + (sprite_direction * sprite_step)
 	if sprite_x >= 184 then
@@ -446,6 +595,6 @@ while true do
 		sprite_direction = -sprite_direction
 	end
 	sprite_y = 88 + ((frame // 12) % 4)
-	wait_vblank()
 	draw_frame()
+	mem[sys_inp_ctrl] = inp_ctrl_arm
 end

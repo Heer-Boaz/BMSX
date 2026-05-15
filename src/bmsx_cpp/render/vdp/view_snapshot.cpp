@@ -1,10 +1,66 @@
 #include "render/vdp/view_snapshot.h"
 
 #include "machine/devices/vdp/device_output.h"
+#include "machine/devices/vdp/fixed_point.h"
+#include "machine/devices/vdp/lpu.h"
 #include "render/gameview.h"
 #include "render/vdp/transform.h"
 
 namespace bmsx {
+namespace {
+
+void commitVdpLightingSnapshot(GameView& view, const std::array<u32, VDP_LPU_REGISTER_WORDS>& words) {
+	view.vdpLightRegisterWords = words;
+	const size_t ambientBase = VDP_LPU_AMBIENT_REGISTER_BASE;
+	if ((words[ambientBase] & VDP_LPU_CONTROL_ENABLE) != 0u) {
+		view.vdpAmbientLightColorIntensity[0] = decodeSignedQ16_16(words[ambientBase + 1u]);
+		view.vdpAmbientLightColorIntensity[1] = decodeSignedQ16_16(words[ambientBase + 2u]);
+		view.vdpAmbientLightColorIntensity[2] = decodeSignedQ16_16(words[ambientBase + 3u]);
+		view.vdpAmbientLightColorIntensity[3] = decodeSignedQ16_16(words[ambientBase + 4u]);
+	} else {
+		view.vdpAmbientLightColorIntensity = {0.0f, 0.0f, 0.0f, 0.0f};
+	}
+
+	i32 dirCount = 0;
+	for (size_t light = 0u; light < VDP_LPU_DIRECTIONAL_LIGHT_LIMIT; ++light) {
+		const size_t base = VDP_LPU_DIRECTIONAL_REGISTER_BASE + light * VDP_LPU_DIRECTIONAL_REGISTER_WORDS;
+		if ((words[base] & VDP_LPU_CONTROL_ENABLE) == 0u) {
+			continue;
+		}
+		const size_t out = static_cast<size_t>(dirCount) * 3u;
+		view.vdpDirectionalLightDirections[out] = decodeSignedQ16_16(words[base + 1u]);
+		view.vdpDirectionalLightDirections[out + 1u] = decodeSignedQ16_16(words[base + 2u]);
+		view.vdpDirectionalLightDirections[out + 2u] = decodeSignedQ16_16(words[base + 3u]);
+		view.vdpDirectionalLightColors[out] = decodeSignedQ16_16(words[base + 4u]);
+		view.vdpDirectionalLightColors[out + 1u] = decodeSignedQ16_16(words[base + 5u]);
+		view.vdpDirectionalLightColors[out + 2u] = decodeSignedQ16_16(words[base + 6u]);
+		view.vdpDirectionalLightIntensities[static_cast<size_t>(dirCount)] = decodeSignedQ16_16(words[base + 7u]);
+		++dirCount;
+	}
+	view.vdpDirectionalLightCount = dirCount;
+
+	i32 pointCount = 0;
+	for (size_t light = 0u; light < VDP_LPU_POINT_LIGHT_LIMIT; ++light) {
+		const size_t base = VDP_LPU_POINT_REGISTER_BASE + light * VDP_LPU_POINT_REGISTER_WORDS;
+		if ((words[base] & VDP_LPU_CONTROL_ENABLE) == 0u) {
+			continue;
+		}
+		const size_t out = static_cast<size_t>(pointCount) * 3u;
+		const size_t paramOut = static_cast<size_t>(pointCount) * 2u;
+		view.vdpPointLightPositions[out] = decodeSignedQ16_16(words[base + 1u]);
+		view.vdpPointLightPositions[out + 1u] = decodeSignedQ16_16(words[base + 2u]);
+		view.vdpPointLightPositions[out + 2u] = decodeSignedQ16_16(words[base + 3u]);
+		view.vdpPointLightParams[paramOut] = decodeSignedQ16_16(words[base + 4u]);
+		view.vdpPointLightColors[out] = decodeSignedQ16_16(words[base + 5u]);
+		view.vdpPointLightColors[out + 1u] = decodeSignedQ16_16(words[base + 6u]);
+		view.vdpPointLightColors[out + 2u] = decodeSignedQ16_16(words[base + 7u]);
+		view.vdpPointLightParams[paramOut + 1u] = decodeSignedQ16_16(words[base + 8u]);
+		++pointCount;
+	}
+	view.vdpPointLightCount = pointCount;
+}
+
+} // namespace
 
 void commitVdpViewSnapshot(GameView& view, const VdpDeviceOutput& output) {
 	view.dither_type = static_cast<GameView::DitherType>(output.ditherType);
@@ -69,6 +125,7 @@ void commitVdpViewSnapshot(GameView& view, const VdpDeviceOutput& output) {
 	}
 	view.vdpMorphWeightWords = *output.morphWeightWords;
 	view.vdpJointMatrixWords = *output.jointMatrixWords;
+	commitVdpLightingSnapshot(view, *output.lightRegisterWords);
 }
 
 } // namespace bmsx

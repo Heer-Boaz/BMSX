@@ -50,6 +50,7 @@ export type VdpDeviceOutput = Readonly<{
 	skyboxSamples: readonly VdpResolvedBlitterSample[];
 	billboards: VdpBbuFrameBuffer;
 	meshes: VdpMduFrameBuffer;
+	lightRegisterWords: ArrayLike<number>;
 	morphWeightWords: ArrayLike<number>;
 	jointMatrixWords: ArrayLike<number>;
 	frameBufferWidth: number;

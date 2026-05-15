@@ -22,6 +22,7 @@ void VdpVoutUnit::reset(i32 ditherType, u32 frameBufferWidth, u32 frameBufferHei
 	resetVisibleSkyboxSamples();
 	m_visibleBillboards->reset();
 	m_visibleMeshes->reset();
+	m_visibleLightRegisterWords.fill(0u);
 	m_visibleMorphWeightWords.fill(0u);
 	m_visibleJointMatrixWords.fill(0u);
 	m_sealedFrameOutput.ditherType = ditherType;
@@ -88,12 +89,13 @@ void VdpVoutUnit::presentFrame(VdpSubmittedFrame& frame, bool skyboxEnabled) {
 	frame.billboards->reset();
 	m_visibleMeshes.swap(frame.meshes);
 	frame.meshes->reset();
+	m_visibleLightRegisterWords = frame.lightRegisterWords;
 	m_visibleMorphWeightWords = frame.morphWeightWords;
 	m_visibleJointMatrixWords = frame.jointMatrixWords;
 	m_state = VdpVoutState::FramePresented;
 }
 
-void VdpVoutUnit::presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled, const VdpMfuUnit& mfu, const VdpJtuUnit& jtu) {
+void VdpVoutUnit::presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled, const VdpLpuUnit& lpu, const VdpMfuUnit& mfu, const VdpJtuUnit& jtu) {
 	m_visibleDitherType = m_liveDitherType;
 	m_visibleFrameBufferWidth = m_liveFrameBufferWidth;
 	m_visibleFrameBufferHeight = m_liveFrameBufferHeight;
@@ -103,6 +105,7 @@ void VdpVoutUnit::presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled, cons
 	m_visibleSkyboxEnabled = skyboxEnabled;
 	m_visibleBillboards->reset();
 	m_visibleMeshes->reset();
+	m_visibleLightRegisterWords = lpu.registerWords;
 	m_visibleMorphWeightWords = mfu.weightWords;
 	m_visibleJointMatrixWords = jtu.matrixWords;
 	m_state = VdpVoutState::FramePresented;
@@ -121,6 +124,7 @@ const VdpDeviceOutput& VdpVoutUnit::readDeviceOutput(i64 nowCycles) {
 	m_deviceOutput.skyboxSamples = &m_visibleSkyboxSamples;
 	m_deviceOutput.billboards = m_visibleBillboards.get();
 	m_deviceOutput.meshes = m_visibleMeshes.get();
+	m_deviceOutput.lightRegisterWords = &m_visibleLightRegisterWords;
 	m_deviceOutput.morphWeightWords = &m_visibleMorphWeightWords;
 	m_deviceOutput.jointMatrixWords = &m_visibleJointMatrixWords;
 	m_deviceOutput.frameBufferWidth = m_visibleFrameBufferWidth;

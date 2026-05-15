@@ -39,7 +39,7 @@ public:
 	void setScanoutTiming(int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle, i64 nowCycles);
 	const VdpVoutFrameOutput& sealFrame();
 	void presentFrame(VdpSubmittedFrame& frame, bool skyboxEnabled);
-	void presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled, const VdpMfuUnit& mfu, const VdpJtuUnit& jtu);
+	void presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled, const VdpLpuUnit& lpu, const VdpMfuUnit& mfu, const VdpJtuUnit& jtu);
 	const VdpDeviceOutput& readDeviceOutput(i64 nowCycles);
 
 private:
@@ -65,6 +65,7 @@ private:
 	VdpSkyboxSamples m_visibleSkyboxSamples{};
 	std::unique_ptr<VdpBbuFrameBuffer> m_visibleBillboards = std::make_unique<VdpBbuFrameBuffer>();
 	std::unique_ptr<VdpMduFrameBuffer> m_visibleMeshes = std::make_unique<VdpMduFrameBuffer>();
+	std::array<u32, VDP_LPU_REGISTER_WORDS> m_visibleLightRegisterWords{};
 	std::array<u32, VDP_MFU_WEIGHT_COUNT> m_visibleMorphWeightWords{};
 	std::array<u32, VDP_JTU_REGISTER_WORDS> m_visibleJointMatrixWords{};
 	VdpVoutFrameOutput m_sealedFrameOutput;

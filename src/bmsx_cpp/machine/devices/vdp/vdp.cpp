@@ -450,6 +450,7 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 				m_memory.readU32(cursor + IO_WORD_SIZE * 9u))) ? payloadEnd : VDP_REPLAY_PACKET_FAULT;
 		}
 		case VDP_XF_PACKET_KIND:
+		case VDP_LPU_PACKET_KIND:
 		case VDP_MFU_PACKET_KIND:
 		case VDP_JTU_PACKET_KIND:
 			return consumeUnitRegisterPacketFromMemory(word, cursor, end);
@@ -580,6 +581,7 @@ u32 VDP::consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u3
 				words[cursor + 8u],
 				words[cursor + 9u])) ? cursor + VDP_BBU_PACKET_PAYLOAD_WORDS : VDP_REPLAY_PACKET_FAULT;
 		case VDP_XF_PACKET_KIND:
+		case VDP_LPU_PACKET_KIND:
 		case VDP_MFU_PACKET_KIND:
 		case VDP_JTU_PACKET_KIND:
 			return consumeUnitRegisterPacketFromWords(words, word, cursor, wordCount);
@@ -652,6 +654,12 @@ bool VDP::acceptUnitRegisterRange(u32 packetKind, u32 firstRegister, u32 registe
 				return false;
 			}
 			return true;
+		case VDP_LPU_PACKET_KIND:
+			if (firstRegister >= VDP_LPU_REGISTER_WORDS || registerCount > VDP_LPU_REGISTER_WORDS - firstRegister) {
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
+				return false;
+			}
+			return true;
 		case VDP_MFU_PACKET_KIND:
 			if (firstRegister >= VDP_MFU_WEIGHT_COUNT || registerCount > VDP_MFU_WEIGHT_COUNT - firstRegister) {
 				m_fault.raise(VDP_FAULT_MDU_BAD_MORPH_RANGE, firstRegister);
@@ -676,6 +684,9 @@ bool VDP::writeUnitRegisterWord(u32 packetKind, u32 registerIndex, u32 value) {
 				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, value);
 				return false;
 			}
+			return true;
+		case VDP_LPU_PACKET_KIND:
+			m_lpu.registerWords[static_cast<size_t>(registerIndex)] = value;
 			return true;
 		case VDP_MFU_PACKET_KIND:
 			m_mfu.weightWords[static_cast<size_t>(registerIndex)] = value;
@@ -1230,6 +1241,7 @@ bool VDP::sealSubmittedFrame() {
 	frame->xf.matrixWords = m_xf.matrixWords;
 	frame->xf.viewMatrixIndex = m_xf.viewMatrixIndex;
 	frame->xf.projectionMatrixIndex = m_xf.projectionMatrixIndex;
+	frame->lightRegisterWords = m_lpu.registerWords;
 	frame->morphWeightWords = m_mfu.weightWords;
 	frame->jointMatrixWords = m_jtu.matrixWords;
 	frame->skyboxControl = completedSbx.control;
@@ -2073,7 +2085,7 @@ void VDP::latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, 
 
 void VDP::commitLiveVisualState() {
 	m_sbx.presentLiveState();
-	m_vout.presentLiveState(m_xf, m_sbx.visibleEnabled(), m_mfu, m_jtu);
+	m_vout.presentLiveState(m_xf, m_sbx.visibleEnabled(), m_lpu, m_mfu, m_jtu);
 	resolveSkyboxFrameSamples(m_sbx.visibleControl(), m_sbx.visibleFaceWords(), m_vout.visibleSkyboxSampleBuffer());
 }
 
@@ -2131,6 +2143,7 @@ void VDP::initializeRegisters() {
 	m_pmu.reset();
 	syncPmuRegisterWindow();
 	m_xf.reset();
+	m_lpu.reset();
 	m_mfu.reset();
 	m_jtu.reset();
 	m_vout.reset(dither, m_fbm.width(), m_fbm.height());

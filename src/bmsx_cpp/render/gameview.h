@@ -10,6 +10,7 @@
 #include "backend/backend.h"
 #include "shared/submissions.h"
 #include "common/registry.h"
+#include "machine/devices/vdp/lpu.h"
 #include "render/vdp/transform.h"
 #include "common/subscription.h"
 #include <array>
@@ -152,6 +153,16 @@ public:
 	};
 	std::array<VdpMeshRenderEntry, VDP_MDU_MESH_LIMIT> vdpMeshes{};
 	size_t vdpMeshCount = 0u;
+	std::array<u32, VDP_LPU_REGISTER_WORDS> vdpLightRegisterWords{};
+	std::array<f32, 4> vdpAmbientLightColorIntensity{};
+	std::array<f32, VDP_LPU_DIRECTIONAL_LIGHT_LIMIT * 3u> vdpDirectionalLightDirections{};
+	std::array<f32, VDP_LPU_DIRECTIONAL_LIGHT_LIMIT * 3u> vdpDirectionalLightColors{};
+	std::array<f32, VDP_LPU_DIRECTIONAL_LIGHT_LIMIT> vdpDirectionalLightIntensities{};
+	i32 vdpDirectionalLightCount = 0;
+	std::array<f32, VDP_LPU_POINT_LIGHT_LIMIT * 3u> vdpPointLightPositions{};
+	std::array<f32, VDP_LPU_POINT_LIGHT_LIMIT * 3u> vdpPointLightColors{};
+	std::array<f32, VDP_LPU_POINT_LIGHT_LIMIT * 2u> vdpPointLightParams{};
+	i32 vdpPointLightCount = 0;
 	std::array<u32, VDP_MFU_WEIGHT_COUNT> vdpMorphWeightWords{};
 	std::array<u32, VDP_JTU_REGISTER_WORDS> vdpJointMatrixWords{};
 

@@ -1,10 +1,12 @@
 #pragma once
 
-#include "render/shared/hardware/lighting.h"
 #include "common/primitives.h"
+#include "render/3d/light.h"
 #include <optional>
 
 namespace bmsx {
+
+class GameView;
 
 struct LightingFrameState {
 	std::optional<AmbientLight> ambient;
@@ -17,11 +19,10 @@ struct LightingFrameState {
 
 class LightingSystem {
 public:
-	LightingFrameState update();
+	LightingFrameState update(const GameView& view);
 	const LightingFrameState& frameState() const { return m_frameState; }
 
 private:
-	std::optional<AmbientLight> m_lastAmbient;
 	LightingFrameState m_frameState;
 };
 

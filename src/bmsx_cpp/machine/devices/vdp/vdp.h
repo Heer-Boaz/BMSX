@@ -15,6 +15,7 @@
 #include "machine/devices/vdp/frame.h"
 #include "machine/devices/vdp/ingress.h"
 #include "machine/devices/vdp/jtu.h"
+#include "machine/devices/vdp/lpu.h"
 #include "machine/devices/vdp/mdu.h"
 #include "machine/devices/vdp/mfu.h"
 #include "machine/devices/vdp/pmu.h"
@@ -131,6 +132,7 @@ private:
 	VdpSbxUnit m_sbx;
 	SkyboxSamples m_sbxSealSamples{};
 	VdpXfUnit m_xf;
+	VdpLpuUnit m_lpu;
 	VdpMfuUnit m_mfu;
 	VdpJtuUnit m_jtu;
 	VdpPmuUnit m_pmu;

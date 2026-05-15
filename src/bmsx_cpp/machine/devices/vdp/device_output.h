@@ -4,6 +4,7 @@
 #include "machine/devices/vdp/bbu.h"
 #include "machine/devices/vdp/blitter.h"
 #include "machine/devices/vdp/jtu.h"
+#include "machine/devices/vdp/lpu.h"
 #include "machine/devices/vdp/mdu.h"
 #include "machine/devices/vdp/mfu.h"
 #include "machine/devices/vdp/xf.h"
@@ -76,6 +77,7 @@ struct VdpDeviceOutput {
 	const VdpSkyboxSamples* skyboxSamples = nullptr;
 	const VdpBbuFrameBuffer* billboards = nullptr;
 	const VdpMduFrameBuffer* meshes = nullptr;
+	const std::array<u32, VDP_LPU_REGISTER_WORDS>* lightRegisterWords = nullptr;
 	const std::array<u32, VDP_MFU_WEIGHT_COUNT>* morphWeightWords = nullptr;
 	const std::array<u32, VDP_JTU_REGISTER_WORDS>* jointMatrixWords = nullptr;
 	uint32_t frameBufferWidth = 0;
