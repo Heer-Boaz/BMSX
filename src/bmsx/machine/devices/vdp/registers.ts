@@ -45,6 +45,8 @@ export const VDP_CMD_FILL_RECT = 2;
 export const VDP_CMD_DRAW_LINE = 3;
 export const VDP_CMD_BLIT = 4;
 export const VDP_CMD_COPY_RECT = 5;
+export const VDP_CMD_BATCH_BLIT_BEGIN = 6;
+export const VDP_CMD_BATCH_BLIT_ITEM = 7;
 export const VDP_CMD_BEGIN_FRAME = 14;
 export const VDP_CMD_END_FRAME = 15;
 

@@ -3,7 +3,7 @@ import type { FontGlyph } from 'bmsx/render/shared/bitmap_font';
 
 export class EditorFont {
 	private font: Font | null = null;
-	private readonly glyphCache: Map<string, FontGlyph> = new Map();
+	private readonly itemCache: Map<string, FontGlyph> = new Map();
 	private readonly _variant: FontVariant;
 
 	constructor(variant: FontVariant = DEFAULT_FONT_VARIANT) {
@@ -18,13 +18,13 @@ export class EditorFont {
 	}
 
 	public getGlyph(char: string): FontGlyph {
-		let glyph = this.glyphCache.get(char);
-		if (glyph) {
-			return glyph;
+		let item = this.itemCache.get(char);
+		if (item) {
+			return item;
 		}
-		glyph = this.renderFontOwner().getGlyph(char);
-		this.glyphCache.set(char, glyph);
-		return glyph;
+		item = this.renderFontOwner().getGlyph(char);
+		this.itemCache.set(char, item);
+		return item;
 	}
 
 	public advance(char: string): number {

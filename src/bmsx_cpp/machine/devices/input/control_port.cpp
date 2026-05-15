@@ -36,7 +36,7 @@ void InputControllerControlPort::writeControl(Value value) {
 			return;
 		case INP_CTRL_RESET:
 			m_actionTable.resetActions(m_registers.selectedPlayerIndex());
-			m_registers.writeResult(m_memory, 0u, 0u);
+			m_registers.writeResult(m_memory, 0u, 0u, 0u, 0u);
 			return;
 	}
 }

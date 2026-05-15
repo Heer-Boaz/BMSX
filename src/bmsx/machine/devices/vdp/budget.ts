@@ -2,6 +2,8 @@ export const VDP_RENDER_CLEAR_COST = 8;
 export const VDP_RENDER_ALPHA_COST_MULTIPLIER = 2;
 export const VDP_RENDER_TILE_RUN_SETUP_COST = 6;
 export const VDP_RENDER_BILLBOARD_COST = 1;
+export const VDP_RENDER_BATCH_BLIT_SETUP_COST = 4;
+export const VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR = 8;
 export const VDP_RENDER_TILE_RUN_DENSITY_DIVISOR = 16;
 
 export type VdpClippedRect = {

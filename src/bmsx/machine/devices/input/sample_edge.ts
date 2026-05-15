@@ -16,6 +16,6 @@ export class InputControllerSampleEdge {
 			return;
 		}
 		this.input.samplePlayers(currentTimeMs);
-		this.actionTable.sampleCommittedActions(this.eventFifo);
+		this.actionTable.sampleButtons(this.eventFifo);
 	}
 }

@@ -181,10 +181,10 @@ void configureRect(RectRenderSubmission& submission, u32 color) {
 }
 
 void configureGlyphs(GlyphRenderSubmission& submission, const char* text, u32 color) {
-	submission.glyphs.clear();
-	submission.glyphs.emplace_back(text);
-	submission.glyph_start = 0;
-	submission.glyph_end = static_cast<i32>(submission.glyphs[0].size());
+	submission.items.clear();
+	submission.items.emplace_back(text);
+	submission.item_start = 0;
+	submission.item_end = static_cast<i32>(submission.items[0].size());
 	submission.z = 922.0f;
 	submission.color = color;
 	submission.layer = Layer2D::IDE;
@@ -246,8 +246,8 @@ HostOverlayMenu::HostOverlayMenu() {
 	};
 	configureGlyphs(m_titleGlyphs, kTitleText, kTitleColor);
 	configureGlyphs(m_fpsGlyphs, "", kTitleColor);
-	for (GlyphRenderSubmission& glyphs : m_optionGlyphs) {
-		configureGlyphs(glyphs, "", kTextColor);
+	for (GlyphRenderSubmission& items : m_optionGlyphs) {
+		configureGlyphs(items, "", kTextColor);
 	}
 	m_usagePercentCode.fill(-1);
 	for (i32 index = 0; index < UsageBarCount; index += 1) {
@@ -357,7 +357,7 @@ bool HostOverlayMenu::tickInput(ConsoleCore& console) {
 void HostOverlayMenu::queueRenderCommands(ConsoleCore& console, GameView& view) {
 	clearRenderCommands();
 	const Host2DKind rectKind = Host2DKind::Rect;
-	const Host2DKind glyphsKind = Host2DKind::Glyphs;
+	const Host2DKind itemsKind = Host2DKind::Glyphs;
 	if (m_dirtyText) {
 		rebuildText(console, view);
 	}
@@ -384,26 +384,26 @@ void HostOverlayMenu::queueRenderCommands(ConsoleCore& console, GameView& view) 
 	m_titleGlyphs.font = font;
 	m_titleGlyphs.x = static_cast<f32>(left + padding);
 	m_titleGlyphs.y = static_cast<f32>(top);
-	queueCommand(glyphsKind, &m_titleGlyphs);
+	queueCommand(itemsKind, &m_titleGlyphs);
 	for (i32 index = 0; index < kMenuOptionCount; index += 1) {
 		const i32 y = boxTop + padding + index * lineHeight;
 		if (index == m_selected) {
 			m_highlightRect.area = RectBounds{static_cast<f32>(left), static_cast<f32>(y - 2), static_cast<f32>(left + boxWidth), static_cast<f32>(y + lineHeight - 2), 921.0f};
 			queueCommand(rectKind, &m_highlightRect);
 		}
-		GlyphRenderSubmission& glyphs = m_optionGlyphs[static_cast<size_t>(index)];
-		glyphs.font = font;
-		glyphs.x = static_cast<f32>(left + padding);
-		glyphs.y = static_cast<f32>(y);
-		glyphs.color = index == m_selected ? kTextColor : kDimColor;
-		queueCommand(glyphsKind, &glyphs);
+		GlyphRenderSubmission& items = m_optionGlyphs[static_cast<size_t>(index)];
+		items.font = font;
+		items.x = static_cast<f32>(left + padding);
+		items.y = static_cast<f32>(y);
+		items.color = index == m_selected ? kTextColor : kDimColor;
+		queueCommand(itemsKind, &items);
 	}
 }
 
 bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& view) {
 	clearRenderCommands();
 	const Host2DKind rectKind = Host2DKind::Rect;
-	const Host2DKind glyphsKind = Host2DKind::Glyphs;
+	const Host2DKind itemsKind = Host2DKind::Glyphs;
 	if (m_active) {
 		return false;
 	}
@@ -417,14 +417,14 @@ bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& 
 			char buffer[32];
 			std::snprintf(buffer, sizeof(buffer), "%s%d.%d", kFpsPrefix, whole, fpsTenths - whole * 10);
 			m_fpsText = buffer;
-			m_fpsGlyphs.glyphs[0] = m_fpsText;
-			m_fpsGlyphs.glyph_end = static_cast<i32>(m_fpsGlyphs.glyphs[0].size());
+			m_fpsGlyphs.items[0] = m_fpsText;
+			m_fpsGlyphs.item_end = static_cast<i32>(m_fpsGlyphs.items[0].size());
 			m_fpsGlyphs.font = font;
 			m_fpsTextWidth = font->measure(m_fpsText);
 		}
 		m_fpsGlyphs.x = view.viewportSize.x - 8.0f - static_cast<f32>(m_fpsTextWidth);
 		m_fpsGlyphs.y = 8.0f;
-		queueCommand(glyphsKind, &m_fpsGlyphs);
+		queueCommand(itemsKind, &m_fpsGlyphs);
 		queued = true;
 	}
 	if (view.showResourceUsageGizmo) {
@@ -461,15 +461,15 @@ bool HostOverlayMenu::queueFrameOverlayCommands(ConsoleCore& console, GameView& 
 				m_usagePercentCode[offset] = percentCode;
 				char buffer[32];
 				formatUsagePercentCode(buffer, sizeof(buffer), percentCode);
-				percent.glyphs[0] = buffer;
-				percent.glyph_end = static_cast<i32>(percent.glyphs[0].size());
+				percent.items[0] = buffer;
+				percent.item_end = static_cast<i32>(percent.items[0].size());
 			}
 			queueCommand(rectKind, &m_usageBarBackgrounds[offset]);
 			if (fillWidth > 0) {
 				queueCommand(rectKind, &fill);
 			}
-			queueCommand(glyphsKind, &label);
-			queueCommand(glyphsKind, &percent);
+			queueCommand(itemsKind, &label);
+			queueCommand(itemsKind, &percent);
 		}
 		queued = true;
 	}
@@ -522,9 +522,9 @@ void HostOverlayMenu::rebuildText(ConsoleCore& console, GameView& view) {
 		} else {
 			m_lineText[static_cast<size_t>(index)] = std::string(option.label) + "  " + option.values[optionIndex(console, view, index)];
 		}
-		GlyphRenderSubmission& glyphs = m_optionGlyphs[static_cast<size_t>(index)];
-		glyphs.glyphs[0] = m_lineText[static_cast<size_t>(index)];
-		glyphs.glyph_end = static_cast<i32>(glyphs.glyphs[0].size());
+		GlyphRenderSubmission& items = m_optionGlyphs[static_cast<size_t>(index)];
+		items.items[0] = m_lineText[static_cast<size_t>(index)];
+		items.item_end = static_cast<i32>(items.items[0].size());
 	}
 	m_dirtyText = false;
 }

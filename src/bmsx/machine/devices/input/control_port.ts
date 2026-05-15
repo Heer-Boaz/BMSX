@@ -29,7 +29,7 @@ export class InputControllerControlPort {
 				return;
 			case INP_CTRL_RESET:
 				this.actionTable.resetActions(this.registers.selectedPlayerIndex());
-				this.registers.writeResult(this.memory, 0, 0);
+				this.registers.writeResult(this.memory, 0, 0, 0, 0);
 				return;
 		}
 	}

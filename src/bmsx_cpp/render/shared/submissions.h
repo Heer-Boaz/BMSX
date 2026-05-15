@@ -93,9 +93,9 @@ struct GlyphRenderSubmission {
 	f32 x = 0.0f;
 	f32 y = 0.0f;
 	f32 z = 0.0f;
-	std::vector<std::string> glyphs;
-	i32 glyph_start = 0;
-	i32 glyph_end = std::numeric_limits<i32>::max();
+	std::vector<std::string> items;
+	i32 item_start = 0;
+	i32 item_end = std::numeric_limits<i32>::max();
 	BFont* font = nullptr;
 	bmsx::color color = 0xffffffffu; // ARGB32
 	bool has_background_color = false;

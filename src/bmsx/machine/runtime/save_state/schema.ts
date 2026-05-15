@@ -257,7 +257,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'hasBackgroundColor',
 	'backgroundColor',
 	'lineHeight',
-	'glyphs',
+	'items',
 	'tiles',
 	'advance',
 	'positionX',

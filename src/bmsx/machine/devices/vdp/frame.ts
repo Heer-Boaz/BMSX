@@ -62,15 +62,10 @@ export type VdpBlitterSourceSaveState = {
 	height: number;
 };
 
-export type VdpGlyphRunGlyphSaveState = VdpBlitterSourceSaveState & {
+export type VdpBatchBlitItemSaveState = VdpBlitterSourceSaveState & {
 	dstX: number;
 	dstY: number;
 	advance: number;
-};
-
-export type VdpTileRunBlitSaveState = VdpBlitterSourceSaveState & {
-	dstX: number;
-	dstY: number;
 };
 
 export type VdpBlitterCommandSaveState = {
@@ -100,8 +95,7 @@ export type VdpBlitterCommandSaveState = {
 	hasBackgroundColor: boolean;
 	backgroundColor: number;
 	lineHeight: number;
-	glyphs: VdpGlyphRunGlyphSaveState[];
-	tiles: VdpTileRunBlitSaveState[];
+	items: VdpBatchBlitItemSaveState[];
 };
 
 export type VdpBbuBillboardSaveState = {
@@ -228,34 +222,21 @@ function captureBlitterSourceState(
 	return { surfaceId, srcX, srcY, width, height };
 }
 
-function captureGlyphRunGlyphState(queue: VdpBlitterCommandBuffer, index: number): VdpGlyphRunGlyphSaveState {
+function captureBatchBlitItemState(queue: VdpBlitterCommandBuffer, index: number): VdpBatchBlitItemSaveState {
 	return {
 		...captureBlitterSourceState(
-			queue.glyphSurfaceId[index],
-			queue.glyphSrcX[index],
-			queue.glyphSrcY[index],
-			queue.glyphWidth[index],
-			queue.glyphHeight[index],
+			queue.batchBlitSurfaceId[index],
+			queue.batchBlitSrcX[index],
+			queue.batchBlitSrcY[index],
+			queue.batchBlitWidth[index],
+			queue.batchBlitHeight[index],
 		),
-		dstX: queue.glyphDstX[index],
-		dstY: queue.glyphDstY[index],
-		advance: queue.glyphAdvance[index],
+		dstX: queue.batchBlitDstX[index],
+		dstY: queue.batchBlitDstY[index],
+		advance: queue.batchBlitAdvance[index],
 	};
 }
 
-function captureTileRunBlitState(queue: VdpBlitterCommandBuffer, index: number): VdpTileRunBlitSaveState {
-	return {
-		...captureBlitterSourceState(
-			queue.tileSurfaceId[index],
-			queue.tileSrcX[index],
-			queue.tileSrcY[index],
-			queue.tileWidth[index],
-			queue.tileHeight[index],
-		),
-		dstX: queue.tileDstX[index],
-		dstY: queue.tileDstY[index],
-	};
-}
 
 function captureRunEntries<T>(
 	firstEntryByCommand: Uint32Array,
@@ -306,17 +287,11 @@ function captureBlitterCommandState(queue: VdpBlitterCommandBuffer, index: numbe
 		hasBackgroundColor: queue.hasBackgroundColor[index] !== 0,
 		backgroundColor: queue.backgroundColor[index],
 		lineHeight: queue.lineHeight[index],
-		glyphs: captureRunEntries(
-			queue.glyphRunFirstEntry,
-			queue.glyphRunEntryCount,
+		items: captureRunEntries(
+			queue.batchBlitFirstEntry,
+			queue.batchBlitItemCount,
 			index,
-			(entryIndex) => captureGlyphRunGlyphState(queue, entryIndex),
-		),
-		tiles: captureRunEntries(
-			queue.tileRunFirstEntry,
-			queue.tileRunEntryCount,
-			index,
-			(entryIndex) => captureTileRunBlitState(queue, entryIndex),
+			(entryIndex) => captureBatchBlitItemState(queue, entryIndex),
 		),
 	};
 }
@@ -329,26 +304,17 @@ export function captureBlitterCommandBufferState(queue: VdpBlitterCommandBuffer)
 	return commands;
 }
 
-function restoreGlyphRunGlyph(queue: VdpBlitterCommandBuffer, index: number, glyph: VdpGlyphRunGlyphSaveState): void {
-	queue.glyphSurfaceId[index] = glyph.surfaceId;
-	queue.glyphSrcX[index] = glyph.srcX;
-	queue.glyphSrcY[index] = glyph.srcY;
-	queue.glyphWidth[index] = glyph.width;
-	queue.glyphHeight[index] = glyph.height;
-	queue.glyphDstX[index] = glyph.dstX;
-	queue.glyphDstY[index] = glyph.dstY;
-	queue.glyphAdvance[index] = glyph.advance;
+function restoreBatchBlitItem(queue: VdpBlitterCommandBuffer, index: number, item: VdpBatchBlitItemSaveState): void {
+	queue.batchBlitSurfaceId[index] = item.surfaceId;
+	queue.batchBlitSrcX[index] = item.srcX;
+	queue.batchBlitSrcY[index] = item.srcY;
+	queue.batchBlitWidth[index] = item.width;
+	queue.batchBlitHeight[index] = item.height;
+	queue.batchBlitDstX[index] = item.dstX;
+	queue.batchBlitDstY[index] = item.dstY;
+	queue.batchBlitAdvance[index] = item.advance;
 }
 
-function restoreTileRunBlit(queue: VdpBlitterCommandBuffer, index: number, tile: VdpTileRunBlitSaveState): void {
-	queue.tileSurfaceId[index] = tile.surfaceId;
-	queue.tileSrcX[index] = tile.srcX;
-	queue.tileSrcY[index] = tile.srcY;
-	queue.tileWidth[index] = tile.width;
-	queue.tileHeight[index] = tile.height;
-	queue.tileDstX[index] = tile.dstX;
-	queue.tileDstY[index] = tile.dstY;
-}
 
 function restoreBlitterCommand(queue: VdpBlitterCommandBuffer, index: number, command: VdpBlitterCommandSaveState): void {
 	queue.opcode[index] = command.opcode;
@@ -381,18 +347,12 @@ function restoreBlitterCommand(queue: VdpBlitterCommandBuffer, index: number, co
 	queue.hasBackgroundColor[index] = command.hasBackgroundColor ? 1 : 0;
 	queue.backgroundColor[index] = command.backgroundColor;
 	queue.lineHeight[index] = command.lineHeight;
-	queue.glyphRunFirstEntry[index] = queue.glyphEntryCount;
-	queue.glyphRunEntryCount[index] = command.glyphs.length;
-	for (let glyphIndex = 0; glyphIndex < command.glyphs.length; glyphIndex += 1) {
-		restoreGlyphRunGlyph(queue, queue.glyphEntryCount + glyphIndex, command.glyphs[glyphIndex]);
+	queue.batchBlitFirstEntry[index] = queue.batchBlitEntryCount;
+	queue.batchBlitItemCount[index] = command.items.length;
+	for (let itemIndex = 0; itemIndex < command.items.length; itemIndex += 1) {
+		restoreBatchBlitItem(queue, queue.batchBlitEntryCount + itemIndex, command.items[itemIndex]);
 	}
-	queue.glyphEntryCount += command.glyphs.length;
-	queue.tileRunFirstEntry[index] = queue.tileEntryCount;
-	queue.tileRunEntryCount[index] = command.tiles.length;
-	for (let tileIndex = 0; tileIndex < command.tiles.length; tileIndex += 1) {
-		restoreTileRunBlit(queue, queue.tileEntryCount + tileIndex, command.tiles[tileIndex]);
-	}
-	queue.tileEntryCount += command.tiles.length;
+	queue.batchBlitEntryCount += command.items.length;
 }
 
 export function restoreBlitterCommandBufferState(queue: VdpBlitterCommandBuffer, commands: VdpBlitterCommandSaveState[]): void {

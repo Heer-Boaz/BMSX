@@ -1,5 +1,5 @@
 /*
- * glyphs.h - Glyph rendering utilities
+ * items.h - Glyph rendering utilities
  */
 
 #ifndef BMSX_GLYPHS_H

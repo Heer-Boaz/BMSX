@@ -3,7 +3,7 @@ import {
 	hostSystemAtlasImage,
 	hostSystemAtlasPixels,
 } from '../../rompack/host_system_atlas';
-import { forEachGlyphRunGlyph } from '../shared/glyph_runs';
+import { forEachBatchBlitGlyph } from '../shared/glyph_runs';
 import type {
 	GlyphRenderSubmission,
 	Host2DKind,
@@ -28,8 +28,8 @@ export function renderHeadlessHost2DSubmission(target: Uint8Array, width: number
 		case 'rect':
 			drawRect(target, width, height, command);
 			return;
-		case 'glyphs':
-			drawGlyphRun(target, width, height, command);
+		case 'items':
+			drawBatchBlit(target, width, height, command);
 			return;
 		case 'img':
 			drawImage(target, width, height, command);
@@ -45,8 +45,8 @@ export function renderHeadlessHost2DEntry(target: Uint8Array, width: number, hei
 		case 'rect':
 			drawRect(target, width, height, item as RectRenderSubmission);
 			return;
-		case 'glyphs':
-			drawGlyphRun(target, width, height, item as GlyphRenderSubmission);
+		case 'items':
+			drawBatchBlit(target, width, height, item as GlyphRenderSubmission);
 			return;
 		case 'img':
 			drawImage(target, width, height, item as HostImageRenderSubmission);
@@ -129,12 +129,12 @@ function drawImage(target: Uint8Array, width: number, height: number, command: H
 	);
 }
 
-function drawGlyphRun(target: Uint8Array, width: number, height: number, command: GlyphRenderSubmission): void {
+function drawBatchBlit(target: Uint8Array, width: number, height: number, command: GlyphRenderSubmission): void {
 	const colorValue = command.color;
 	const hasBackgroundColor = command.has_background_color;
 	const backgroundColor = command.background_color;
 	const lineHeight = command.font.lineHeight;
-	forEachGlyphRunGlyph(command, (glyph, x, y) => {
+	forEachBatchBlitGlyph(command, (item, x, y) => {
 		if (hasBackgroundColor) {
 			fillRect(
 				target,
@@ -142,12 +142,12 @@ function drawGlyphRun(target: Uint8Array, width: number, height: number, command
 				height,
 				x | 0,
 				y | 0,
-				(x + glyph.advance) | 0,
+				(x + item.advance) | 0,
 				(y + lineHeight) | 0,
 				backgroundColor,
 			);
 		}
-		const source = hostSystemAtlasImage(glyph.imgid);
+		const source = hostSystemAtlasImage(item.imgid);
 		drawHostAtlasRect(
 			target,
 			width,
@@ -158,8 +158,8 @@ function drawGlyphRun(target: Uint8Array, width: number, height: number, command
 			source.h,
 			x | 0,
 			y | 0,
-			glyph.width,
-			glyph.height,
+			item.width,
+			item.height,
 			false,
 			false,
 			colorValue,

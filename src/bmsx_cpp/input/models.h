@@ -313,6 +313,12 @@ struct PointerBinding {
 // Variants for polymorphic binding storage
 using InputBinding = std::variant<KeyboardBinding, GamepadBinding, PointerBinding>;
 
+inline const std::string& inputBindingId(const InputBinding& binding) {
+	return std::visit([](const auto& typedBinding) -> const std::string& {
+		return typedBinding.id;
+	}, binding);
+}
+
 /* ============================================================================
  * Input mapping
  * ============================================================================ */

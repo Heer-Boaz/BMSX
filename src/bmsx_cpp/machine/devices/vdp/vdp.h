@@ -154,6 +154,7 @@ private:
 	std::vector<f32> m_frameBufferPriorityValue;
 	std::vector<u32> m_frameBufferPrioritySeq;
 	u32 m_blitterSequence = 0;
+	int m_activeBatchBlitIndex = -1;
 	bool m_lastFrameCommitted = true;
 	int m_lastFrameCost = 0;
 	bool m_lastFrameHeld = false;
@@ -205,35 +206,13 @@ private:
 		bool enqueueLatchedDrawLine();
 		bool enqueueLatchedBlit();
 		bool enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 priority, Layer2D layer);
+		bool enqueueLatchedBatchBlitBegin();
+	bool enqueueLatchedBatchBlitItem();
 		bool enqueueLatchedCopyRect();
 	void pushVdpFifoWord(u32 word);
 	bool consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(const u32* words, u32 wordCount);
 	void sealVdpFifoTransfer();
-	void latchPayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
-	void latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
-	enum class TileRunPayloadSource : u8 {
-		Memory,
-		WordStream,
-	};
-	struct TileRunPayload {
-		TileRunPayloadSource source;
-		uint32_t memoryBase;
-		const u32* words;
-	};
-	struct TileRunClipWindow {
-		i32 frameWidth = 0;
-		i32 frameHeight = 0;
-		i32 dstX = 0;
-		i32 dstY = 0;
-		i32 srcClipX = 0;
-		i32 srcClipY = 0;
-		bool visible = false;
-	};
-	TileRunClipWindow clipTileRun(i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY) const;
-	u32 readTileRunPayloadWord(const TileRunPayload& payload, u32 wordOffset) const;
-	void latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
-	bool appendTileRunSource(BlitterCommand& queue, size_t commandIndex, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow);
 	u32 consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end);
 	u32 consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor, u32 end);
 	u32 consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);

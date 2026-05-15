@@ -136,8 +136,6 @@ import {
 	VDP_BLITTER_OPCODE_COPY_RECT,
 	VDP_BLITTER_OPCODE_DRAW_LINE,
 	VDP_BLITTER_OPCODE_FILL_RECT,
-	VDP_BLITTER_OPCODE_GLYPH_RUN,
-	VDP_BLITTER_OPCODE_TILE_RUN,
 	VDP_BLITTER_WHITE,
 	vdpColorAlphaByte,
 } from './blitter';
@@ -257,6 +255,7 @@ export class VDP implements VramWriteSink {
 	private readonly bbu = new VdpBbuUnit();
 	private readonly mdu = new VdpMduUnit();
 	private readonly vout = new VdpVoutUnit();
+	private activeBatchBlitIndex: number = -1;
 	private readonly buildFrame: VdpBuildingFrameState = {
 		queue: new VdpBlitterCommandBuffer(),
 		billboards: new VdpBbuFrameBuffer(),
@@ -1007,6 +1006,10 @@ export class VDP implements VramWriteSink {
 				return this.enqueueLatchedDrawLine();
 			case VDP_CMD_BLIT:
 				return this.enqueueLatchedBlit();
+			case VDP_CMD_BATCH_BLIT_BEGIN:
+				return this.enqueueLatchedBatchBlitBegin();
+			case VDP_CMD_BATCH_BLIT_ITEM:
+				return this.enqueueLatchedBatchBlitItem();
 			case VDP_CMD_COPY_RECT:
 				return this.enqueueLatchedCopyRect();
 			default:
@@ -1148,6 +1151,56 @@ export class VDP implements VramWriteSink {
 			return false;
 		}
 		this.buildFrame.queue.writeGeometryColorThickness(index, layer, priority, geometry.x0, geometry.y0, geometry.x1, geometry.y1, color, thickness);
+		return true;
+	}
+
+	private enqueueLatchedBatchBlitBegin(): boolean {
+		const index = this.reserveBlitterCommand(VDP_BLITTER_OPCODE_BATCH_BLIT, VDP_RENDER_BATCH_BLIT_SETUP_COST);
+		if (index < 0) {
+			return false;
+		}
+		const layer = this.vdpRegisters[VDP_REG_DRAW_LAYER] as Layer2D;
+		const priority = this.vdpRegisters[VDP_REG_DRAW_PRIORITY];
+		const drawCtrl = this.drawCtrlScratch;
+		decodeVdpDrawCtrl(this.vdpRegisters[VDP_REG_DRAW_CTRL], drawCtrl);
+		if (drawCtrl.blendMode !== 0) {
+			this.fault.raise(VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, this.vdpRegisters[VDP_REG_DRAW_CTRL]);
+			return false;
+		}
+		const color = this.vdpRegisters[VDP_REG_DRAW_COLOR] >>> 0;
+		this.buildFrame.queue.writeBatchBlitBegin(index, color, drawCtrl.blendMode, layer, priority, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
+		this.activeBatchBlitIndex = index;
+		return true;
+	}
+
+	private enqueueLatchedBatchBlitItem(): boolean {
+		if (this.activeBatchBlitIndex < 0) {
+			this.fault.raise(VDP_FAULT_DEX_CMD_NO_BATCH, 0);
+			return false;
+		}
+		const slot = this.vdpRegisters[VDP_REG_SRC_SLOT];
+		const u = packedLow16(this.vdpRegisters[VDP_REG_SRC_UV]);
+		const v = packedHigh16(this.vdpRegisters[VDP_REG_SRC_UV]);
+		const w = packedLow16(this.vdpRegisters[VDP_REG_SRC_WH]);
+		const h = packedHigh16(this.vdpRegisters[VDP_REG_SRC_WH]);
+		const dstX = (this.vdpRegisters[VDP_REG_DST_X] | 0) >> 16;
+		const dstY = (this.vdpRegisters[VDP_REG_DST_Y] | 0) >> 16;
+		const advance = (this.vdpRegisters[VDP_REG_GEOM_X0] | 0) >> 16;
+
+		const drawCtrl = this.drawCtrlScratch;
+		decodeVdpDrawCtrl(this.vdpRegisters[VDP_REG_DRAW_CTRL], drawCtrl);
+
+		const source = this.latchedSourceScratch;
+		if (!this.fetchSurfaceForBlit(slot, u, v, w, h, drawCtrl.flipH, drawCtrl.flipV, source)) {
+			return true;
+		}
+
+		if (!this.buildFrame.queue.writeBatchBlitItem(this.activeBatchBlitIndex, source.surfaceId, source.srcX, source.srcY, source.width, source.height, dstX, dstY, advance)) {
+			this.fault.raise(VDP_FAULT_BLITTER_OOM_BATCH, 0);
+			return false;
+		}
+		const alphaCost = vdpColorAlphaByte(this.buildFrame.queue.color[this.activeBatchBlitIndex]) < 255 ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
+		this.buildFrame.cost += alphaCost;
 		return true;
 	}
 
@@ -1448,37 +1501,24 @@ export class VDP implements VramWriteSink {
 				this.copyFrameBufferRect(pixels, frameWidth, commands.srcX[index], commands.srcY[index], commands.width[index], commands.height[index], commands.dstX[index], commands.dstY[index], layer, priority, sequence);
 				continue;
 			}
-			if (opcode === VDP_BLITTER_OPCODE_GLYPH_RUN) {
-				const firstGlyph = commands.glyphRunFirstEntry[index];
-				const glyphEnd = firstGlyph + commands.glyphRunEntryCount[index];
+			if (opcode === VDP_BLITTER_OPCODE_BATCH_BLIT) {
+				const firstItem = commands.batchBlitFirstEntry[index];
+				const itemEnd = firstItem + commands.batchBlitItemCount[index];
 				if (commands.hasBackgroundColor[index] !== 0) {
-					for (let glyphIndex = firstGlyph; glyphIndex < glyphEnd; glyphIndex += 1) {
-						this.rasterizeFrameBufferFill(pixels, frameWidth, frameHeight, commands.glyphDstX[glyphIndex], commands.glyphDstY[glyphIndex], commands.glyphDstX[glyphIndex] + commands.glyphAdvance[glyphIndex], commands.glyphDstY[glyphIndex] + commands.lineHeight[index], commands.backgroundColor[index], layer, priority, sequence);
+					for (let itemIndex = firstItem; itemIndex < itemEnd; itemIndex += 1) {
+						this.rasterizeFrameBufferFill(pixels, frameWidth, frameHeight, commands.batchBlitDstX[itemIndex], commands.batchBlitDstY[itemIndex], commands.batchBlitDstX[itemIndex] + commands.batchBlitAdvance[itemIndex], commands.batchBlitDstY[itemIndex] + commands.lineHeight[index], commands.backgroundColor[index], layer, priority, sequence);
 					}
 				}
-				for (let glyphIndex = firstGlyph; glyphIndex < glyphEnd; glyphIndex += 1) {
+				for (let itemIndex = firstItem; itemIndex < itemEnd; itemIndex += 1) {
 					const source = this.latchedSourceScratch;
-					source.surfaceId = commands.glyphSurfaceId[glyphIndex];
-					source.srcX = commands.glyphSrcX[glyphIndex];
-					source.srcY = commands.glyphSrcY[glyphIndex];
-					source.width = commands.glyphWidth[glyphIndex];
-					source.height = commands.glyphHeight[glyphIndex];
-					this.rasterizeFrameBufferBlit(pixels, frameWidth, frameHeight, source, commands.glyphDstX[glyphIndex], commands.glyphDstY[glyphIndex], 1, 1, false, false, color, layer, priority, sequence);
+					source.surfaceId = commands.batchBlitSurfaceId[itemIndex];
+					source.srcX = commands.batchBlitSrcX[itemIndex];
+					source.srcY = commands.batchBlitSrcY[itemIndex];
+					source.width = commands.batchBlitWidth[itemIndex];
+					source.height = commands.batchBlitHeight[itemIndex];
+					this.rasterizeFrameBufferBlit(pixels, frameWidth, frameHeight, source, commands.batchBlitDstX[itemIndex], commands.batchBlitDstY[itemIndex], 1, 1, false, false, color, layer, priority, sequence);
 				}
 				continue;
-			}
-			if (opcode === VDP_BLITTER_OPCODE_TILE_RUN) {
-				const firstTile = commands.tileRunFirstEntry[index];
-				const tileEnd = firstTile + commands.tileRunEntryCount[index];
-				for (let tileIndex = firstTile; tileIndex < tileEnd; tileIndex += 1) {
-					const source = this.latchedSourceScratch;
-					source.surfaceId = commands.tileSurfaceId[tileIndex];
-					source.srcX = commands.tileSrcX[tileIndex];
-					source.srcY = commands.tileSrcY[tileIndex];
-					source.width = commands.tileWidth[tileIndex];
-					source.height = commands.tileHeight[tileIndex];
-					this.rasterizeFrameBufferBlit(pixels, frameWidth, frameHeight, source, commands.tileDstX[tileIndex], commands.tileDstY[tileIndex], 1, 1, false, false, VDP_BLITTER_WHITE, layer, priority, sequence);
-				}
 			}
 		}
 		this.vram.markSlotDirty(frameBufferSlot, 0, frameBufferSlot.surfaceHeight);

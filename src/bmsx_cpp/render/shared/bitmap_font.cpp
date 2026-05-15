@@ -16,7 +16,7 @@ public:
 		: m_romPackage(romPackage) {
 	}
 
-	const ImgMeta& glyphMeta(const std::string& imgid) const override {
+	const ImgMeta& itemMeta(const std::string& imgid) const override {
 		const ImgAsset* entry = m_romPackage.getImg(imgid);
 		if (!entry) {
 			throw BMSX_RUNTIME_ERROR("[BFont] Image '" + imgid + "' was not found.");
@@ -24,7 +24,7 @@ public:
 		return entry->meta;
 	}
 
-	ImageAtlasRect glyphRect(const std::string& imgid) const override {
+	ImageAtlasRect itemRect(const std::string& imgid) const override {
 		return resolveImageAtlasRectFromPackage(m_romPackage, imgid);
 	}
 
@@ -83,13 +83,13 @@ BFont::BFont(RuntimeRomPackage& romPackage, i32 advancePadding)
 	: BFont(romPackage, buildKonamiGlyphMap(), advancePadding) {
 }
 
-BFont::BFont(RuntimeRomPackage& romPackage, GlyphMap glyphmap, i32 advancePadding)
-	: BFont(std::make_shared<RuntimeBitmapFontSource>(romPackage), std::move(glyphmap), advancePadding) {
+BFont::BFont(RuntimeRomPackage& romPackage, GlyphMap itemmap, i32 advancePadding)
+	: BFont(std::make_shared<RuntimeBitmapFontSource>(romPackage), std::move(itemmap), advancePadding) {
 }
 
-BFont::BFont(std::shared_ptr<const BitmapFontSource> source, GlyphMap glyphmap, i32 advancePadding)
+BFont::BFont(std::shared_ptr<const BitmapFontSource> source, GlyphMap itemmap, i32 advancePadding)
 	: m_source(std::move(source))
-	, m_letter_to_img(std::move(glyphmap))
+	, m_letter_to_img(std::move(itemmap))
 	, m_advance_padding(advancePadding) {
 	if (!m_source) {
 		throw BMSX_RUNTIME_ERROR("[BFont] Font source is missing.");
@@ -122,32 +122,32 @@ const std::string& BFont::char_to_img(u32 codepoint) const {
 }
 
 const FontGlyph& BFont::getGlyph(u32 codepoint) {
-	auto it = m_glyphs.find(codepoint);
-	if (it != m_glyphs.end()) {
+	auto it = m_items.find(codepoint);
+	if (it != m_items.end()) {
 		return it->second;
 	}
 	if (codepoint == static_cast<u32>('\t') && m_letter_to_img.find(codepoint) == m_letter_to_img.end()) {
 		const FontGlyph& space = getGlyph(static_cast<u32>(' '));
-		FontGlyph glyph;
-		glyph.imgid = space.imgid;
-		glyph.rect = space.rect;
-		glyph.width = space.advance * TAB_SPACES;
-		glyph.height = space.height;
-		glyph.advance = glyph.width;
-		auto tabResult = m_glyphs.emplace(codepoint, std::move(glyph));
+		FontGlyph item;
+		item.imgid = space.imgid;
+		item.rect = space.rect;
+		item.width = space.advance * TAB_SPACES;
+		item.height = space.height;
+		item.advance = item.width;
+		auto tabResult = m_items.emplace(codepoint, std::move(item));
 		return tabResult.first->second;
 	}
 
 	const std::string& imgid = char_to_img(codepoint);
-	const ImgMeta& meta = m_source->glyphMeta(imgid);
-	FontGlyph glyph;
-	glyph.imgid = imgid;
-	glyph.rect = m_source->glyphRect(imgid);
-	glyph.width = meta.width;
-	glyph.height = meta.height;
-	glyph.advance = glyph.width + m_advance_padding;
+	const ImgMeta& meta = m_source->itemMeta(imgid);
+	FontGlyph item;
+	item.imgid = imgid;
+	item.rect = m_source->itemRect(imgid);
+	item.width = meta.width;
+	item.height = meta.height;
+	item.advance = item.width + m_advance_padding;
 
-	auto result = m_glyphs.emplace(codepoint, std::move(glyph));
+	auto result = m_items.emplace(codepoint, std::move(item));
 	return result.first->second;
 }
 

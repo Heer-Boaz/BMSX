@@ -41,6 +41,8 @@ constexpr u32 VDP_CMD_FILL_RECT = 2u;
 constexpr u32 VDP_CMD_DRAW_LINE = 3u;
 constexpr u32 VDP_CMD_BLIT = 4u;
 constexpr u32 VDP_CMD_COPY_RECT = 5u;
+constexpr u32 VDP_CMD_BATCH_BLIT_BEGIN = 6u;
+constexpr u32 VDP_CMD_BATCH_BLIT_ITEM = 7u;
 constexpr u32 VDP_CMD_BEGIN_FRAME = 14u;
 constexpr u32 VDP_CMD_END_FRAME = 15u;
 

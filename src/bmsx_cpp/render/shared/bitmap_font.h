@@ -28,15 +28,15 @@ constexpr int TAB_SPACES = 2;
 class BitmapFontSource {
 public:
 	virtual ~BitmapFontSource() = default;
-	virtual const ImgMeta& glyphMeta(const std::string& imgid) const = 0;
-	virtual ImageAtlasRect glyphRect(const std::string& imgid) const = 0;
+	virtual const ImgMeta& itemMeta(const std::string& imgid) const = 0;
+	virtual ImageAtlasRect itemRect(const std::string& imgid) const = 0;
 };
 
 class BFont {
 public:
 	explicit BFont(RuntimeRomPackage& romPackage, i32 advancePadding = 0);
-	BFont(RuntimeRomPackage& romPackage, GlyphMap glyphmap, i32 advancePadding = 0);
-	BFont(std::shared_ptr<const BitmapFontSource> source, GlyphMap glyphmap, i32 advancePadding = 0);
+	BFont(RuntimeRomPackage& romPackage, GlyphMap itemmap, i32 advancePadding = 0);
+	BFont(std::shared_ptr<const BitmapFontSource> source, GlyphMap itemmap, i32 advancePadding = 0);
 
 	i32 char_width(char c);
 	i32 char_height(char c);
@@ -50,14 +50,14 @@ public:
 	i32 advance(u32 codepoint);
 
 	i32 lineHeight() const { return m_line_height; }
-	const GlyphMap& glyphMap() const { return m_letter_to_img; }
+	const GlyphMap& itemMap() const { return m_letter_to_img; }
 	i32 advancePadding() const { return m_advance_padding; }
 	i32 measure(const std::string& text);
 
 private:
 	std::shared_ptr<const BitmapFontSource> m_source;
 	GlyphMap m_letter_to_img;
-	std::unordered_map<u32, FontGlyph> m_glyphs;
+	std::unordered_map<u32, FontGlyph> m_items;
 	i32 m_advance_padding = 0;
 	i32 m_line_height = 0;
 };

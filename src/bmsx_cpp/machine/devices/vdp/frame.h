@@ -64,15 +64,10 @@ struct VdpBlitterSourceSaveState {
 	u32 height = 0u;
 };
 
-struct VdpGlyphRunGlyphSaveState : VdpBlitterSourceSaveState {
+struct VdpBatchBlitGlyphSaveState : VdpBlitterSourceSaveState {
 	f32 dstX = 0.0f;
 	f32 dstY = 0.0f;
 	u32 advance = 0u;
-};
-
-struct VdpTileRunBlitSaveState : VdpBlitterSourceSaveState {
-	f32 dstX = 0.0f;
-	f32 dstY = 0.0f;
 };
 
 struct VdpBlitterCommandSaveState {
@@ -102,8 +97,7 @@ struct VdpBlitterCommandSaveState {
 	bool hasBackgroundColor = false;
 	u32 backgroundColor = 0u;
 	u32 lineHeight = 0u;
-	std::vector<VdpGlyphRunGlyphSaveState> glyphs;
-	std::vector<VdpTileRunBlitSaveState> tiles;
+	std::vector<VdpBatchBlitGlyphSaveState> items;
 };
 
 struct VdpBbuBillboardSaveState {

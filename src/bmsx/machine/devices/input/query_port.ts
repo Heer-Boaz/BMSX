@@ -9,7 +9,7 @@ import { InputControllerActionTable, type InputControllerQueryResult } from './a
 import { InputControllerRegisterFile } from './registers';
 
 export class InputControllerQueryPort {
-	private readonly queryResult: InputControllerQueryResult = { statusWord: 0, valueQ16: 0 };
+	private readonly queryResult: InputControllerQueryResult = { statusWord: 0, valueQ16: 0, valueXQ16: 0, valueYQ16: 0 };
 
 	public constructor(
 		private readonly memory: Memory,
@@ -22,7 +22,7 @@ export class InputControllerQueryPort {
 		this.registers.write(IO_INP_QUERY, value);
 		const queryText = this.strings.toString(this.registers.state.queryStringId);
 		this.actionTable.queryAction(this.registers.selectedPlayerIndex(), queryText, this.queryResult);
-		this.registers.writeResult(this.memory, this.queryResult.statusWord, this.queryResult.valueQ16);
+		this.registers.writeResult(this.memory, this.queryResult.statusWord, this.queryResult.valueQ16, this.queryResult.valueXQ16, this.queryResult.valueYQ16);
 	}
 
 	public writeConsume(_addr: number, value: Value): void {

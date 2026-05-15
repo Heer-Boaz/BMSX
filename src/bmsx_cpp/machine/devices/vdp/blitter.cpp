@@ -4,8 +4,7 @@ namespace bmsx {
 
 void VdpBlitterCommandBuffer::reset() {
 	length = 0u;
-	glyphEntryCount = 0u;
-	tileEntryCount = 0u;
+	batchBlitEntryCount = 0u;
 }
 
 void VdpBlitterCommandBuffer::writeClear(size_t index, u32 clearColor) {
@@ -56,13 +55,6 @@ void VdpBlitterCommandBuffer::writeCopyRect(size_t index, Layer2D commandLayer, 
 	dstY[index] = static_cast<f32>(dstYValue);
 }
 
-void VdpBlitterCommandBuffer::writeTileRunHeader(size_t index, Layer2D commandLayer, f32 commandPriority, u32 firstTile) {
-	priority[index] = commandPriority;
-	layer[index] = commandLayer;
-	color[index] = VDP_BLITTER_WHITE;
-	tileRunFirstEntry[index] = firstTile;
-	tileRunEntryCount[index] = 0u;
-}
 
 bool VdpBlitterCommandBuffer::beginCommandSlot(VdpBlitterCommandType commandType, u32 commandSeq, size_t& index) {
 	index = length;
@@ -108,4 +100,30 @@ VdpFrameBufferColor unpackArgbColor(u32 value) {
 	};
 }
 
+bool VdpBlitterCommandBuffer::writeBatchBlitBegin(size_t index, u32 drawColor, u32 drawBlendMode, Layer2D commandLayer, f32 commandPriority, u32 drawPmuBank, f32 parallax) {
+	priority[index] = commandPriority;
+	layer[index] = commandLayer;
+	color[index] = drawColor;
+	parallaxWeight[index] = parallax;
+	batchBlitFirstEntry[index] = batchBlitEntryCount;
+	batchBlitItemCount[index] = 0;
+	return true;
+}
+
+bool VdpBlitterCommandBuffer::writeBatchBlitItem(size_t index, u32 surfaceId, u32 srcX, u32 srcY, u32 width, u32 height, f32 dstX, f32 dstY, f32 advanceX) {
+	if (batchBlitEntryCount >= VDP_BLITTER_RUN_ENTRY_CAPACITY) {
+		return false;
+	}
+	const size_t entryIndex = batchBlitEntryCount++;
+	batchBlitSurfaceId[entryIndex] = surfaceId;
+	batchBlitSrcX[entryIndex] = srcX;
+	batchBlitSrcY[entryIndex] = srcY;
+	batchBlitWidth[entryIndex] = width;
+	batchBlitHeight[entryIndex] = height;
+	batchBlitDstX[entryIndex] = dstX;
+	batchBlitDstY[entryIndex] = dstY;
+	batchBlitAdvance[entryIndex] = advanceX;
+	batchBlitItemCount[index]++;
+	return true;
+}
 } // namespace bmsx

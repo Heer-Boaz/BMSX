@@ -294,7 +294,7 @@ function timeline.new(def)
 	if def.ticks_per_frame ~= nil then
 		self.ticks_per_frame = def.ticks_per_frame
 	else
-		self.ticks_per_frame = 1000000000 / machine_manifest.ufps
+		self.ticks_per_frame = 1000 / machine_manifest.ufps
 	end
 	self.playback_mode = def.playback_mode or 'once'
 	if continuous == nil and frame_source == nil and self.tracks ~= nil then

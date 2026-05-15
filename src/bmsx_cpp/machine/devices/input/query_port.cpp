@@ -27,7 +27,7 @@ void InputControllerQueryPort::writeQuery(Value value) {
 	m_registers.write(IO_INP_QUERY, value);
 	const std::string& queryText = m_strings.toString(m_registers.state.queryStringId);
 	m_actionTable.queryAction(m_registers.selectedPlayerIndex(), queryText, m_queryResult);
-	m_registers.writeResult(m_memory, m_queryResult.statusWord, m_queryResult.valueQ16);
+	m_registers.writeResult(m_memory, m_queryResult.statusWord, m_queryResult.valueQ16, m_queryResult.valueXQ16, m_queryResult.valueYQ16);
 }
 
 void InputControllerQueryPort::writeConsume(Value value) {

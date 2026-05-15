@@ -62,6 +62,14 @@ export function encodeInputActionValueQ16(state: ActionState): number {
 	return state.value == null ? 0 : encodeSignedFix16(state.value);
 }
 
+export function encodeInputActionValueXQ16(state: ActionState): number {
+	return state.value2d == null ? 0 : encodeSignedFix16(state.value2d[0]);
+}
+
+export function encodeInputActionValueYQ16(state: ActionState): number {
+	return state.value2d == null ? 0 : encodeSignedFix16(state.value2d[1]);
+}
+
 export function createInputActionSnapshot(
 	action: string,
 	statusWord: number,

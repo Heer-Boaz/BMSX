@@ -28,11 +28,11 @@ export class OverlayApi {
 	}
 
 	public blit_text_inline_with_font(text: string, x: number, y: number, z: number, colorindex: number, font: BFont): void {
-		this.renderer.glyphRun(text, 0, text.length, x, y, z, font, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
+		this.renderer.itemRun(text, 0, text.length, x, y, z, font, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
 	}
 
 	public blit_text_inline_span_with_font(text: string, start: number, end: number, x: number, y: number, z: number, colorindex: number, font: BFont): void {
-		this.renderer.glyphRun(text, start, end, x, y, z, font, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
+		this.renderer.itemRun(text, start, end, x, y, z, font, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
 	}
 }
 

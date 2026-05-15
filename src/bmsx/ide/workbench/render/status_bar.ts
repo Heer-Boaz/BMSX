@@ -97,10 +97,10 @@ export function renderStatusBar(runtime: Runtime): void {
 	// Draw filename info on the right. The line/col info remains rendered by the editor for now.
 	// const filenameInfo = `${ide_state.metadata.title || 'UNTITLED'}.lua`;
 	const leftX = 0;
-	const glyphSize = measureText('•');
+	const itemSize = measureText('•');
 	const indicatorColor = workspaceState.serverConnected ? constants.COLOR_SERVER_STATUS_CONNECTED : constants.COLOR_SERVER_STATUS_DISCONNECTED;
 	drawEditorText(editorViewState.font, '•', leftX, statusTop + 2, 0, indicatorColor);
-	let textX = leftX + glyphSize;
+	let textX = leftX + itemSize;
 	if (statusLeftInfo && statusLeftInfo.length > 0) {
 		drawEditorText(editorViewState.font, statusLeftInfo, textX, statusTop + 2, 0, statusTextColor);
 	}

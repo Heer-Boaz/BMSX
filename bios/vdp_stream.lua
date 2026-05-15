@@ -9,6 +9,8 @@ local vdp_cmd_clear<const> = 1
 local vdp_cmd_fill_rect<const> = 2
 local vdp_cmd_draw_line<const> = 3
 local vdp_cmd_blit<const> = 4
+local vdp_cmd_batch_blit_begin<const> = 6
+local vdp_cmd_batch_blit_item<const> = 7
 
 local vdp_reg_src_slot<const> = 0
 local vdp_reg_dst_x<const> = 3
@@ -114,4 +116,33 @@ function vdp_stream.blit_source_color(slot, u, v, w, h, x, y, z, layer, scale_x,
 	)
 end
 
+function vdp_stream.batch_blit_begin(z, layer, color, flip_flags, parallax_weight)
+        memwrite(
+                vdp_stream_claim(8),
+                vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer,
+                layer,
+                z,
+                vdp_pkt_reg1 | vdp_reg_draw_ctrl,
+                draw_ctrl(flip_flags, parallax_weight),
+                vdp_pkt_reg1 | vdp_reg_draw_color,
+                color,
+                vdp_pkt_cmd | vdp_cmd_batch_blit_begin
+        )
+end
+
+function vdp_stream.batch_blit_item(slot, u, v, w, h, x, y, advance_x)
+        memwrite(
+                vdp_stream_claim(10),
+                vdp_pkt_regn | (3 << 16) | vdp_reg_src_slot,
+                slot,
+                pack_low_high(u, v),
+                pack_low_high(w, h),
+                vdp_pkt_regn | (2 << 16) | vdp_reg_dst_x,
+                q16(x),
+                q16(y),
+                vdp_pkt_reg1 | vdp_reg_geom_x0,
+                q16(advance_x),
+                vdp_pkt_cmd | vdp_cmd_batch_blit_item
+        )
+end
 return vdp_stream

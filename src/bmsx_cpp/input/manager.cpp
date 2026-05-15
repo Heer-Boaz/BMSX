@@ -58,8 +58,26 @@ void InputStateManager::addInputEvent(InputEvent evt) {
 	};
 	const InputEvent& event = bufferedEvent.event;
 	if (event.eventType == InputEvent::Type::Press) {
+		ButtonState& pending = m_pendingFrameStates[event.identifier];
+		pending.pressed = true;
+		pending.justpressed = true;
+		pending.justreleased = false;
+		pending.consumed = event.consumed;
+		pending.timestamp = event.timestamp;
+		pending.pressedAtMs = event.timestamp;
+		pending.releasedAtMs = std::nullopt;
+		pending.pressId = event.pressId;
+		pending.value = 1.0f;
 		bufferEdge(m_bufferedPressEdges, bufferedEvent);
 	} else {
+		ButtonState& pending = m_pendingFrameStates[event.identifier];
+		pending.pressed = false;
+		pending.justreleased = true;
+		pending.consumed = event.consumed;
+		pending.timestamp = event.timestamp;
+		pending.releasedAtMs = event.timestamp;
+		pending.pressId = event.pressId;
+		pending.value = 0.0f;
 		bufferEdge(m_bufferedReleaseEdges, bufferedEvent);
 	}
 

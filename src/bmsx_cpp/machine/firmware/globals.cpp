@@ -1454,27 +1454,27 @@ void Runtime::setupBuiltins() {
 		(void)out;
 	});
 
-	const Value fontGlyphsKey = key("glyphs");
+	const Value fontGlyphsKey = key("items");
 	const Value fontAdvanceKey = key("advance");
 	const Value fontFallbackGlyphKey = str("?");
-	auto resolveFontGlyph = [&cpu, fontFallbackGlyphKey](Table* glyphs, u32 codepoint) {
-		std::string glyphKey;
-		appendUtf8Codepoint(glyphKey, codepoint);
-		const Value glyph = glyphs->get(valueString(cpu.stringPool().intern(glyphKey)));
-		return isNil(glyph) ? glyphs->get(fontFallbackGlyphKey) : glyph;
+	auto resolveFontGlyph = [&cpu, fontFallbackGlyphKey](Table* items, u32 codepoint) {
+		std::string itemKey;
+		appendUtf8Codepoint(itemKey, codepoint);
+		const Value item = items->get(valueString(cpu.stringPool().intern(itemKey)));
+		return isNil(item) ? items->get(fontFallbackGlyphKey) : item;
 	};
-	registerNativeFunction("font_for_each_glyph", [this, callClosureValue, fontGlyphsKey, resolveFontGlyph, asText](NativeArgsView args, NativeResults& out) {
+	registerNativeFunction("font_for_each_item", [this, callClosureValue, fontGlyphsKey, resolveFontGlyph, asText](NativeArgsView args, NativeResults& out) {
 		Table* descriptor = asTable(args.at(0));
 		const std::string& line = asText(args.at(1));
 		Value callback = args.at(2);
-		Table* glyphs = asTable(descriptor->get(fontGlyphsKey));
+		Table* items = asTable(descriptor->get(fontGlyphsKey));
 		std::array<Value, 1> callArgsStorage;
 		NativeArgsView callArgs(callArgsStorage.data(), callArgsStorage.size());
 		NativeResults callbackOut;
 		size_t index = 0;
 		while (index < line.size()) {
 			const u32 codepoint = readUtf8Codepoint(line, index);
-			callArgsStorage[0] = resolveFontGlyph(glyphs, codepoint);
+			callArgsStorage[0] = resolveFontGlyph(items, codepoint);
 			callbackOut.clear();
 			callClosureValue(callback, callArgs, callbackOut);
 		}
@@ -1483,13 +1483,13 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("font_measure_line_width", [fontGlyphsKey, fontAdvanceKey, resolveFontGlyph, asText](NativeArgsView args, NativeResults& out) {
 		Table* descriptor = asTable(args.at(0));
 		const std::string& line = asText(args.at(1));
-		Table* glyphs = asTable(descriptor->get(fontGlyphsKey));
+		Table* items = asTable(descriptor->get(fontGlyphsKey));
 		double width = 0.0;
 		size_t index = 0;
 		while (index < line.size()) {
 			const u32 codepoint = readUtf8Codepoint(line, index);
-			Table* glyph = asTable(resolveFontGlyph(glyphs, codepoint));
-			width += asNumber(glyph->get(fontAdvanceKey));
+			Table* item = asTable(resolveFontGlyph(items, codepoint));
+			width += asNumber(item->get(fontAdvanceKey));
 		}
 		out.push_back(valueNumber(width));
 	});

@@ -156,6 +156,8 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_inp_query", valueNumber(static_cast<double>(IO_INP_QUERY)));
 	runtime.setGlobal("sys_inp_status", valueNumber(static_cast<double>(IO_INP_STATUS)));
 	runtime.setGlobal("sys_inp_value", valueNumber(static_cast<double>(IO_INP_VALUE)));
+	runtime.setGlobal("sys_inp_value_x", valueNumber(static_cast<double>(IO_INP_VALUE_X)));
+	runtime.setGlobal("sys_inp_value_y", valueNumber(static_cast<double>(IO_INP_VALUE_Y)));
 	runtime.setGlobal("sys_inp_consume", valueNumber(static_cast<double>(IO_INP_CONSUME)));
 	runtime.setGlobal("sys_inp_event_status", valueNumber(static_cast<double>(IO_INP_EVENT_STATUS)));
 	runtime.setGlobal("sys_inp_event_count", valueNumber(static_cast<double>(IO_INP_EVENT_COUNT)));

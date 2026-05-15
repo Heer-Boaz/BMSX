@@ -18,7 +18,7 @@ void InputControllerSampleEdge::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
 		return;
 	}
 	m_input.samplePlayers(currentTimeMs);
-	m_actionTable.sampleCommittedActions(m_eventFifo);
+	m_actionTable.sampleButtons(m_eventFifo);
 }
 
 } // namespace bmsx

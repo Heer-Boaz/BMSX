@@ -609,7 +609,7 @@ export class TerminalMode {
 			highlightColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_HIGHLIGHT),
 			textColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_TEXT),
 			highlightTextColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_HIGHLIGHT_TEXT),
-			drawText: (text, x, y, color) => this.drawGlyphRun(this.currentRenderer, text, x, y, color, params.uppercaseDisplay),
+			drawText: (text, x, y, color) => this.drawBatchBlit(this.currentRenderer, text, x, y, color, params.uppercaseDisplay),
 		});
 	}
 
@@ -641,7 +641,7 @@ export class TerminalMode {
 			highlightColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_HIGHLIGHT),
 			textColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_TEXT),
 			highlightTextColor: resolveThemeTokenColor(constants.COLOR_COMPLETION_HIGHLIGHT_TEXT),
-			drawText: (text, x, y, color) => this.drawGlyphRun(this.currentRenderer, text, x, y, color, params.uppercaseDisplay),
+			drawText: (text, x, y, color) => this.drawBatchBlit(this.currentRenderer, text, x, y, color, params.uppercaseDisplay),
 		});
 	}
 
@@ -707,7 +707,7 @@ export class TerminalMode {
 			for (const line of visibleLines) {
 				const color = line.color;
 				this.drawGlyphBackgrounds(renderer, line.text, PADDING_X, y, uppercaseDisplay);
-				this.drawGlyphRun(renderer, line.text, PADDING_X, y, resolveThemeTokenColor(color), uppercaseDisplay);
+				this.drawBatchBlit(renderer, line.text, PADDING_X, y, resolveThemeTokenColor(color), uppercaseDisplay);
 				y += lineHeight;
 			}
 
@@ -736,7 +736,7 @@ export class TerminalMode {
 			// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
 			const promptColor = resolveThemeTokenColor(OUTPUT_COLORS.prompt);
 			this.drawGlyphBackgrounds(renderer, this.promptPrefix, PADDING_X, inputStartY, uppercaseDisplay);
-			this.drawGlyphRun(renderer, this.promptPrefix, PADDING_X, inputStartY, promptColor, uppercaseDisplay);
+			this.drawBatchBlit(renderer, this.promptPrefix, PADDING_X, inputStartY, promptColor, uppercaseDisplay);
 
 			// draw multi-line input (handles selection and caret)
 			this.drawMultilineInput(renderer, PADDING_X, inputStartY, promptWidth, inputWrap);
@@ -1081,7 +1081,7 @@ export class TerminalMode {
 		const y = Math.max(PADDING_Y, surface.height - PADDING_Y - lineHeight);
 		renderer.fillRect(PADDING_X, y, Math.max(PADDING_X, surface.width - PADDING_X), y + lineHeight, 0, this.characterBackgroundColor, LAYER_2D_IDE);
 		this.drawGlyphBackgrounds(renderer, text, PADDING_X, y, uppercaseDisplay);
-		this.drawGlyphRun(renderer, text, PADDING_X, y, resolveThemeTokenColor(OUTPUT_COLORS.system), uppercaseDisplay);
+		this.drawBatchBlit(renderer, text, PADDING_X, y, resolveThemeTokenColor(OUTPUT_COLORS.system), uppercaseDisplay);
 	}
 
 	private getLinesSnapshot(): string[] {
@@ -1252,17 +1252,17 @@ export class TerminalMode {
 				const ghostWidth = this.measureDisplayText(inlinePreview.suffix, uppercaseDisplay);
 				const prefixWidth = segmentDecoration.caretBaseX - x;
 
-				// draw glyph backgrounds before overlays/text so selection remains visible
+				// draw item backgrounds before overlays/text so selection remains visible
 				this.drawGlyphBackgrounds(renderer, prefixText, x, y, uppercaseDisplay);
 				this.drawGlyphBackgrounds(renderer, inlinePreview.suffix, x + prefixWidth, y, uppercaseDisplay);
 				this.drawGlyphBackgrounds(renderer, suffixText, x + prefixWidth + ghostWidth, y, uppercaseDisplay);
 
-				// draw glyph runs (ghost inserted at caret)
-				this.drawGlyphRun(renderer, prefixText, x, y, inputColor, uppercaseDisplay);
-				this.drawGlyphRun(renderer, inlinePreview.suffix, x + prefixWidth, y, resolveThemeTokenColor(COLOR_COMPLETION_PREVIEW_TEXT), uppercaseDisplay);
-				this.drawGlyphRun(renderer, suffixText, x + prefixWidth + ghostWidth, y, inputColor, uppercaseDisplay);
+				// draw item runs (ghost inserted at caret)
+				this.drawBatchBlit(renderer, prefixText, x, y, inputColor, uppercaseDisplay);
+				this.drawBatchBlit(renderer, inlinePreview.suffix, x + prefixWidth, y, resolveThemeTokenColor(COLOR_COMPLETION_PREVIEW_TEXT), uppercaseDisplay);
+				this.drawBatchBlit(renderer, suffixText, x + prefixWidth + ghostWidth, y, inputColor, uppercaseDisplay);
 			} else {
-				// draw glyph backgrounds before overlays/text so selection remains visible
+				// draw item backgrounds before overlays/text so selection remains visible
 				this.drawGlyphBackgrounds(renderer, seg, x, y, uppercaseDisplay);
 
 				// draw selection background for this segment if selection overlaps
@@ -1270,8 +1270,8 @@ export class TerminalMode {
 					renderer.fillRect(segmentDecoration.selectionLeft, y, segmentDecoration.selectionLeft + segmentDecoration.selectionWidth, y + this.font.lineHeight, 0, this.selectionColor, LAYER_2D_IDE);
 				}
 
-				// draw the glyph run for this segment
-				this.drawGlyphRun(renderer, seg, x, y, inputColor, uppercaseDisplay);
+				// draw the item run for this segment
+				this.drawBatchBlit(renderer, seg, x, y, inputColor, uppercaseDisplay);
 			}
 			if (segmentDecoration.caretInSegment) {
 				const nextChar = segmentDecoration.caretChar;
@@ -1291,7 +1291,7 @@ export class TerminalMode {
 				if (this.blink.cursorVisible) {
 					const renderFont = this.font.renderFont();
 					renderer.fillRect(left, topY, right, bottom, 0, this.caretColor, LAYER_2D_IDE);
-					renderer.glyphRun(nextChar, 0, nextChar.length, left, topY, 0, renderFont, this.characterBackgroundColor, LAYER_2D_IDE);
+					renderer.itemRun(nextChar, 0, nextChar.length, left, topY, 0, renderFont, this.characterBackgroundColor, LAYER_2D_IDE);
 				}
 			}
 		}
@@ -1309,12 +1309,12 @@ export class TerminalMode {
 		renderer.fillRect(originX, originY, originX + width, originY + this.font.lineHeight, 0, this.characterBackgroundColor, LAYER_2D_IDE);
 	}
 
-	private drawGlyphRun(renderer: OverlayRenderer, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {
+	private drawBatchBlit(renderer: OverlayRenderer, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {
 		const display = this.toRenderedGlyphText(text, uppercase);
 		if (!/[^\s]/.test(display)) {
 			return;
 		}
-		renderer.glyphRun(display, 0, display.length, originX, originY, 0, this.font.renderFont(), tint, LAYER_2D_IDE);
+		renderer.itemRun(display, 0, display.length, originX, originY, 0, this.font.renderFont(), tint, LAYER_2D_IDE);
 	}
 
 	private toDisplayText(value: string): string {

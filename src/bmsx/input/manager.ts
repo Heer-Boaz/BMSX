@@ -202,13 +202,27 @@ export class InputStateManager {
 			...event,
 			frame: this.currentFrame + 1,
 		};
+		const pending = this.pendingFrameStates.get(event.identifier) ?? makeButtonState();
+		pending.timestamp = event.timestamp;
+		pending.pressId = event.pressId;
+		pending.consumed = event.consumed;
 		if (bufferedEvent.eventType === 'press') {
+			pending.pressed = true;
+			pending.justpressed = true;
+			pending.justreleased = false;
+			pending.pressedAtMs = event.timestamp;
+			pending.releasedAtMs = null;
+			pending.value = 1;
 			this.inputBuffer.push(bufferedEvent);
 			this.bufferEdge(this.bufferedPressEdges, bufferedEvent);
 		} else {
+			pending.pressed = false;
+			pending.justreleased = true;
+			pending.value = 0;
 			this.inputBuffer.push(bufferedEvent);
 			this.bufferEdge(this.bufferedReleaseEdges, bufferedEvent);
 		}
+		this.pendingFrameStates.set(event.identifier, pending);
 	}
 
 	recordAxis1Sample(identifier: ButtonId, value: number, timestamp: number): void {

@@ -689,11 +689,7 @@ function textcomponent.new(opts)
 	return self
 end
 
-function textcomponent:prepare_render()
-end
-
-
-function textcomponent:submit_glyph_lines(x, y, z, glyphs)
+function textcomponent:render(x, y, z, glyphs)
 	local cursor_y = y
 	local line_offsets<const> = self.line_offsets
 	local line_widths<const> = self.line_widths
@@ -723,10 +719,6 @@ function textcomponent:submit_glyph_lines(x, y, z, glyphs)
 			cursor_y = cursor_y + self.line_height
 		end
 	end
-end
-
-function textcomponent:render(x, y, z, glyphs)
-	self:submit_glyph_lines(x, y, z, glyphs)
 end
 
 -- meshcomponent: minimal render descriptor

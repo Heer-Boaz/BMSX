@@ -62,13 +62,13 @@ export type HostImageRenderSubmission = ImageRenderSubmissionBase & {
 	imgid: string;
 };
 
-export type Host2DKind = 'img' | 'poly' | 'rect' | 'glyphs';
+export type Host2DKind = 'img' | 'poly' | 'rect' | 'items';
 export type Host2DRef = HostImageRenderSubmission | PolyRenderSubmission | RectRenderSubmission | GlyphRenderSubmission;
 export type Host2DSubmission =
 	| ({ type: 'img' } & HostImageRenderSubmission)
 	| ({ type: 'poly' } & PolyRenderSubmission)
 	| ({ type: 'rect' } & RectRenderSubmission)
-	| ({ type: 'glyphs' } & GlyphRenderSubmission);
+	| ({ type: 'items' } & GlyphRenderSubmission);
 
 export type PolyRenderSubmission = {
 	points: Polygon;
@@ -82,9 +82,9 @@ export type GlyphRenderSubmission = {
 	x: number;
 	y: number;
 	z: number;
-	glyphs: string | string[];
-	glyph_start: number;
-	glyph_end: number;
+	items: string | string[];
+	item_start: number;
+	item_end: number;
 	font: BFont | null;
 	color: color;
 	has_background_color: boolean;

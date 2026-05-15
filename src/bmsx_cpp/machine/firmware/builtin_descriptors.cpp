@@ -32,7 +32,7 @@ constexpr std::array<LuaBuiltinDescriptor, 61> kSystemLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"vdp_load_slot", "vdp_load_slot(slot, atlas_id)", "Starts an async atlas load into a VRAM slot; BIOS maps the slot on completion; returns a job id."},
 	LuaBuiltinDescriptor{"vdp_load_system_slot", "vdp_load_system_slot()", "Starts an async load of the system atlas into the system VRAM slot; returns a job id."},
 	LuaBuiltinDescriptor{"vdp_blit_img_color", "vdp_blit_img_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color, parallax_weight)", "BIOS helper that translates an image id to raw VDP blit register/doorbell packets."},
-	LuaBuiltinDescriptor{"vdp_glyph_color", "vdp_glyph_color(glyph, x, y, z, layer, color)", "BIOS helper that emits one raw VDP blit for an already-resolved glyph."},
+	LuaBuiltinDescriptor{"vdp_item_color", "vdp_item_color(item, x, y, z, layer, color)", "BIOS helper that emits one raw VDP blit for an already-resolved item."},
 	LuaBuiltinDescriptor{"vdp_img_rect", "vdp_img_rect(imgid)", "Returns the BIOS-owned atlas rectangle for an image id."},
 	LuaBuiltinDescriptor{"vdp_img_slot", "vdp_img_slot(rect)", "Resolves a cached atlas rectangle to the current VDP slot."},
 	LuaBuiltinDescriptor{"vdp_img_source", "vdp_img_source(rect)", "Resolves a cached atlas rectangle to a transient VDP slot/u/v/w/h source."},
@@ -76,7 +76,7 @@ constexpr std::array<LuaBuiltinDescriptor, 4> kSystemLuaBuiltinGlobals{{
 	LuaBuiltinDescriptor{"sorted_scratchbatch", "sorted_scratchbatch", "Sorted scratch batch module table (sorted_scratchbatch.new; batches support clear, push, get, reserve, for_each, iter, set_compare, sort)."},
 }};
 
-constexpr std::array<LuaBuiltinDescriptor, 522> kDefaultLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 524> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"assert", "assert(value [, message])", ""},
 	LuaBuiltinDescriptor{"error", "error(message [, level])", ""},
 	LuaBuiltinDescriptor{"getmetatable", "getmetatable(object)", ""},
@@ -98,7 +98,7 @@ constexpr std::array<LuaBuiltinDescriptor, 522> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"type", "type(value)", ""},
 	LuaBuiltinDescriptor{"xpcall", "xpcall(f, msgh, ...)", ""},
 	LuaBuiltinDescriptor{"require", "require(moduleName)", ""},
-	LuaBuiltinDescriptor{"font_for_each_glyph", "font_for_each_glyph(font, line, fn)", "Runtime font helper that iterates UTF-8 glyph descriptors for a line."},
+	LuaBuiltinDescriptor{"font_for_each_item", "font_for_each_item(font, line, fn)", "Runtime font helper that iterates UTF-8 item descriptors for a line."},
 	LuaBuiltinDescriptor{"font_measure_line_width", "font_measure_line_width(font, line)", "Runtime font helper that measures a UTF-8 text line."},
 	LuaBuiltinDescriptor{"table.concat", "table.concat(list [, sep [, i [, j]]])", ""},
 	LuaBuiltinDescriptor{"table.insert", "table.insert(list [, pos], value)", ""},
@@ -312,7 +312,9 @@ constexpr std::array<LuaBuiltinDescriptor, 522> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_inp_ctrl", "sys_inp_ctrl", "Input Controller command register; write inp_ctrl_commit, inp_ctrl_arm, or inp_ctrl_reset."},
 	LuaBuiltinDescriptor{"sys_inp_query", "sys_inp_query", "Input Controller query register; write an interned `&` action expression such as left[p] or jump[jp]."},
 	LuaBuiltinDescriptor{"sys_inp_status", "sys_inp_status", "Input Controller query status register; simple action queries return packed inp_status_* bits, complex expressions return 1 or 0."},
-	LuaBuiltinDescriptor{"sys_inp_value", "sys_inp_value", "Input Controller value register for simple single-action queries in signed Q16.16."},
+	LuaBuiltinDescriptor{"sys_inp_value", "sys_inp_value", "Input Controller scalar value register for simple single-action queries in signed Q16.16."},
+	LuaBuiltinDescriptor{"sys_inp_value_x", "sys_inp_value_x", "Input Controller X-axis value register for simple single-action queries in signed Q16.16."},
+	LuaBuiltinDescriptor{"sys_inp_value_y", "sys_inp_value_y", "Input Controller Y-axis value register for simple single-action queries in signed Q16.16."},
 	LuaBuiltinDescriptor{"sys_inp_consume", "sys_inp_consume", "Input Controller consume register; write an interned `&` action name or comma-separated action names to consume them in order."},
 	LuaBuiltinDescriptor{"sys_inp_event_status", "sys_inp_event_status", "Input Controller event FIFO status register."},
 	LuaBuiltinDescriptor{"sys_inp_event_count", "sys_inp_event_count", "Input Controller event FIFO queued-entry count register."},

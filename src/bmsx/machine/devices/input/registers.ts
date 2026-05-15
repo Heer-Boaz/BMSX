@@ -9,6 +9,8 @@ import {
 	IO_INP_QUERY,
 	IO_INP_STATUS,
 	IO_INP_VALUE,
+	IO_INP_VALUE_X,
+	IO_INP_VALUE_Y,
 } from '../../bus/io';
 import { asStringId, StringValue, type Value } from '../../cpu/cpu';
 import type { StringId } from '../../cpu/string_pool';
@@ -23,6 +25,8 @@ export type InputControllerRegisterState = {
 	queryStringId: StringId;
 	status: number;
 	value: number;
+	valueX: number;
+	valueY: number;
 	consumeStringId: StringId;
 	outputIntensityQ16: number;
 	outputDurationMs: number;
@@ -37,6 +41,8 @@ export function createInputControllerRegisterState(): InputControllerRegisterSta
 		queryStringId: 0,
 		status: 0,
 		value: 0,
+		valueX: 0,
+		valueY: 0,
 		consumeStringId: 0,
 		outputIntensityQ16: 0,
 		outputDurationMs: 0,
@@ -92,11 +98,15 @@ export class InputControllerRegisterFile {
 		}
 	}
 
-	public writeResult(memory: Memory, status: number, value: number): void {
+	public writeResult(memory: Memory, status: number, value: number, valueX: number, valueY: number): void {
 		this.state.status = status;
 		this.state.value = value;
+		this.state.valueX = valueX;
+		this.state.valueY = valueY;
 		memory.writeIoValue(IO_INP_STATUS, status);
 		memory.writeIoValue(IO_INP_VALUE, value);
+		memory.writeIoValue(IO_INP_VALUE_X, valueX);
+		memory.writeIoValue(IO_INP_VALUE_Y, valueY);
 	}
 
 	public mirror(memory: Memory): void {
@@ -107,6 +117,8 @@ export class InputControllerRegisterFile {
 		memory.writeIoValue(IO_INP_QUERY, StringValue.get(this.state.queryStringId));
 		memory.writeIoValue(IO_INP_STATUS, this.state.status);
 		memory.writeIoValue(IO_INP_VALUE, this.state.value);
+		memory.writeIoValue(IO_INP_VALUE_X, this.state.valueX);
+		memory.writeIoValue(IO_INP_VALUE_Y, this.state.valueY);
 		memory.writeIoValue(IO_INP_CONSUME, StringValue.get(this.state.consumeStringId));
 		memory.writeIoValue(IO_INP_OUTPUT_INTENSITY_Q16, this.state.outputIntensityQ16);
 		memory.writeIoValue(IO_INP_OUTPUT_DURATION_MS, this.state.outputDurationMs);

@@ -309,6 +309,7 @@ system.vdp_fill_rect_color = vdp_stream.fill_rect_color
 system.vdp_draw_line_color = vdp_stream.draw_line_color
 system.vdp_blit_img_color = vdp_image.write_blit_color
 system.vdp_glyph_color = vdp_image.write_glyph_color
+system.vdp_item_color = vdp_image.write_item_color
 system.vdp_img_rect = vdp_image.rect
 system.vdp_img_slot = vdp_image.slot
 system.vdp_img_source = vdp_image.source

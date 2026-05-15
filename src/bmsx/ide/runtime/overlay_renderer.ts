@@ -9,16 +9,16 @@ import type { Viewport } from '../../rompack/format';
 export type RenderCommand = Host2DSubmission;
 type RectSubmission = Extract<Host2DSubmission, { type: 'rect' }>;
 type ImgSubmission = Extract<Host2DSubmission, { type: 'img' }>;
-type GlyphSubmission = Extract<Host2DSubmission, { type: 'glyphs' }>;
+type GlyphSubmission = Extract<Host2DSubmission, { type: 'items' }>;
 
 type OverlayCommandBuffer = {
 	commands: RenderCommand[];
 	rectPool: RectSubmission[];
 	imagePool: ImgSubmission[];
-	glyphPool: GlyphSubmission[];
+	itemPool: GlyphSubmission[];
 	rectCount: number;
 	imageCount: number;
-	glyphCount: number;
+	itemCount: number;
 };
 
 function createRectSubmission(): RectSubmission {
@@ -48,13 +48,13 @@ function createImageSubmission(): ImgSubmission {
 
 function createGlyphSubmission(): GlyphSubmission {
 	return {
-		type: 'glyphs',
-		glyphs: '',
+		type: 'items',
+		items: '',
 		x: 0,
 		y: 0,
 		z: 0,
-		glyph_start: 0,
-		glyph_end: 0,
+		item_start: 0,
+		item_end: 0,
 		font: null,
 		color: 0xffffffff,
 		has_background_color: false,
@@ -72,10 +72,10 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 		commands: [],
 		rectPool: [],
 		imagePool: [],
-		glyphPool: [],
+		itemPool: [],
 		rectCount: 0,
 		imageCount: 0,
-		glyphCount: 0,
+		itemCount: 0,
 	};
 }
 
@@ -117,7 +117,7 @@ export class OverlayRenderer {
 		buffer.commands.length = 0;
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
-		buffer.glyphCount = 0;
+		buffer.itemCount = 0;
 		const view = consoleCore.view;
 		const offscreen = view.offscreenCanvasSize;
 		const logical = view.viewportSize;
@@ -178,11 +178,11 @@ export class OverlayRenderer {
 		this.activeBuffer.commands.push(submission);
 	}
 
-	public glyphRun(glyphs: string | string[], glyphStart: number, glyphEnd: number, x: number, y: number, z: number, font: BFont, color: color, layer: Layer2D): void {
+	public itemRun(items: string | string[], itemStart: number, itemEnd: number, x: number, y: number, z: number, font: BFont, color: color, layer: Layer2D): void {
 		const submission = this.nextGlyphSubmission();
-		submission.glyphs = glyphs;
-		submission.glyph_start = glyphStart;
-		submission.glyph_end = glyphEnd;
+		submission.items = items;
+		submission.item_start = itemStart;
+		submission.item_end = itemEnd;
 		submission.x = x;
 		submission.y = y;
 		submission.z = z;
@@ -224,12 +224,12 @@ export class OverlayRenderer {
 
 	private nextGlyphSubmission(): GlyphSubmission {
 		const buffer = this.activeBuffer;
-		const index = buffer.glyphCount;
-		buffer.glyphCount = index + 1;
-		let submission = buffer.glyphPool[index];
+		const index = buffer.itemCount;
+		buffer.itemCount = index + 1;
+		let submission = buffer.itemPool[index];
 		if (submission === undefined) {
 			submission = createGlyphSubmission();
-			buffer.glyphPool[index] = submission;
+			buffer.itemPool[index] = submission;
 		}
 		return submission;
 	}
@@ -259,6 +259,6 @@ export class OverlayRenderer {
 		buffer.commands.length = 0;
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
-		buffer.glyphCount = 0;
+		buffer.itemCount = 0;
 	}
 }

@@ -1,6 +1,6 @@
 import { ActionDefinitionEvaluator } from './action_parser';
 import { InputStateManager, makeActionState, makeButtonState } from './manager';
-import type { ActionState, ActionStateQuery, ButtonId, ButtonState, GamepadInputMapping, InputEvent, InputHandler, KeyboardInputMapping, PointerInputMapping } from './models';
+import { inputBindingId, type ActionState, type ActionStateQuery, type ButtonId, type ButtonState, type GamepadInputMapping, type InputEvent, type InputHandler, type KeyboardInputMapping, type PointerInputMapping } from './models';
 import type { VibrationParams } from '../platform';
 import { ContextStack, MappingContext } from './context';
 import { consoleCore } from '../core/console';
@@ -39,10 +39,6 @@ type RawActionRepeatRecord = {
 
 export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
 export type InputSource = typeof INPUT_SOURCES[number];
-
-function bindingId(binding: ButtonId | { id: ButtonId }): ButtonId {
-	return typeof binding === 'string' ? binding : binding.id;
-}
 
 function getOrCreateMapValue<K, V>(map: Map<K, V>, key: K, create: () => V): V {
 	let value = map.get(key);
@@ -115,7 +111,6 @@ export class PlayerInput {
 		return actions.filter(action => this.checkActionTriggered(action.def)).map(action => action.id);
 	}
 
-
 	private getStateManager(source: InputSource): InputStateManager {
 		return this._stateManagers[source];
 	}
@@ -127,14 +122,14 @@ export class PlayerInput {
 		}
 		const ids: ButtonId[] = [];
 		for (let i = 0; i < bindings.length; i += 1) {
-			ids.push(bindingId(bindings[i]));
+			ids.push(inputBindingId(bindings[i]));
 		}
 		return ids;
 	}
 
 	private trackBindings(source: InputSource, bindings: Array<ButtonId | { id: ButtonId }>): void {
 		for (let i = 0; i < bindings.length; i += 1) {
-			this.trackedButtons[source].add(bindingId(bindings[i]));
+			this.trackedButtons[source].add(inputBindingId(bindings[i]));
 		}
 	}
 
@@ -449,7 +444,7 @@ export class PlayerInput {
 		for (const source of INPUT_SOURCES) {
 			const bindings = this.contexts.getBindings(action, source);
 			for (const binding of bindings) {
-				const key = bindingId(binding);
+				const key = inputBindingId(binding);
 				const buttonState = this.getButtonState(key, source);
 				if (buttonState.pressed && !buttonState.consumed) {
 					this.consumeGameplayButton(key, source);
@@ -459,6 +454,7 @@ export class PlayerInput {
 	}
 
 	public consumeRawButton(button: ButtonId, source: InputSource): void {
+		this.consumeGameplayButton(button, source);
 		const handler = this.inputHandlers[source];
 		if (handler) {
 			handler.consumeButton(button);

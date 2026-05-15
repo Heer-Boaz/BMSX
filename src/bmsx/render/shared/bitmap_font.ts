@@ -118,14 +118,14 @@ const DEFAULT_GLYPH_MAP: GlyphMap = {
 };
 
 export class BFont {
-	protected readonly glyphs: Map<string, FontGlyph> = new Map();
+	protected readonly items: Map<string, FontGlyph> = new Map();
 	protected readonly advancePadding: number;
 	protected readonly lineHeightValue: number;
 	protected readonly fallbackCharacter: string = '?';
 	protected letter_to_img: GlyphMap;
 
-	constructor(protected readonly source: BitmapFontSource, glyphmap?: GlyphMap, advancePadding: number = 0) {
-		this.letter_to_img = glyphmap ?? DEFAULT_GLYPH_MAP;
+	constructor(protected readonly source: BitmapFontSource, itemmap?: GlyphMap, advancePadding: number = 0) {
+		this.letter_to_img = itemmap ?? DEFAULT_GLYPH_MAP;
 		this.advancePadding = advancePadding;
 		this.lineHeightValue = this.char_height('A');
 	}
@@ -151,9 +151,9 @@ export class BFont {
 	}
 
 	public getGlyph(char: string): FontGlyph {
-		const glyph = this.glyphs.get(char);
-		if (glyph !== undefined) {
-			return glyph;
+		const item = this.items.get(char);
+		if (item !== undefined) {
+			return item;
 		}
 		if (char === '\t' && this.letter_to_img[char] === undefined) {
 			const space = this.getGlyph(' ');
@@ -165,7 +165,7 @@ export class BFont {
 					height: space.height,
 					advance: tabAdvance,
 			};
-			this.glyphs.set(char, computed);
+			this.items.set(char, computed);
 			return computed;
 		}
 		const imgid = this.char_to_img(char);
@@ -179,7 +179,7 @@ export class BFont {
 				height,
 				advance: width + this.advancePadding,
 		};
-		this.glyphs.set(char, computed);
+		this.items.set(char, computed);
 		return computed;
 	}
 
@@ -191,11 +191,11 @@ export class BFont {
 		return this.lineHeightValue;
 	}
 
-	public get glyphMap(): GlyphMap {
+	public get itemMap(): GlyphMap {
 		return this.letter_to_img;
 	}
 
-	public get glyphAdvancePadding(): number {
+	public get batchBlitAdvancePadding(): number {
 		return this.advancePadding;
 	}
 

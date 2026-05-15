@@ -365,6 +365,8 @@ BinValue encodeInputControllerState(const InputControllerState& state) {
 	registers["queryStringId"] = static_cast<i64>(state.registers.queryStringId);
 	registers["status"] = static_cast<i64>(state.registers.status);
 	registers["value"] = static_cast<i64>(state.registers.value);
+	registers["valueX"] = static_cast<i64>(state.registers.valueX);
+	registers["valueY"] = static_cast<i64>(state.registers.valueY);
 	registers["consumeStringId"] = static_cast<i64>(state.registers.consumeStringId);
 	registers["outputIntensityQ16"] = static_cast<i64>(state.registers.outputIntensityQ16);
 	registers["outputDurationMs"] = static_cast<i64>(state.registers.outputDurationMs);
@@ -410,6 +412,8 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 	state.registers.queryStringId = requireU32(requireField(registers, "queryStringId", "machine.input.registers"), "machine.input.registers.queryStringId");
 	state.registers.status = requireU32(requireField(registers, "status", "machine.input.registers"), "machine.input.registers.status");
 	state.registers.value = requireU32(requireField(registers, "value", "machine.input.registers"), "machine.input.registers.value");
+	state.registers.valueX = requireU32(requireField(registers, "valueX", "machine.input.registers"), "machine.input.registers.valueX");
+	state.registers.valueY = requireU32(requireField(registers, "valueY", "machine.input.registers"), "machine.input.registers.valueY");
 	state.registers.consumeStringId = requireU32(requireField(registers, "consumeStringId", "machine.input.registers"), "machine.input.registers.consumeStringId");
 	state.registers.outputIntensityQ16 = requireU32(requireField(registers, "outputIntensityQ16", "machine.input.registers"), "machine.input.registers.outputIntensityQ16");
 	state.registers.outputDurationMs = requireU32(requireField(registers, "outputDurationMs", "machine.input.registers"), "machine.input.registers.outputDurationMs");
@@ -550,7 +554,7 @@ Source decodeVdpSourceState(const BinValue& value, const char* label) {
 	};
 }
 
-BinValue encodeGlyphRunGlyphState(const VdpGlyphRunGlyphSaveState& state) {
+BinValue encodeBatchBlitGlyphState(const VdpBatchBlitGlyphSaveState& state) {
 	BinObject object = encodeVdpSourceState(state).asObject();
 	object["dstX"] = static_cast<f64>(state.dstX);
 	object["dstY"] = static_cast<f64>(state.dstY);
@@ -558,31 +562,16 @@ BinValue encodeGlyphRunGlyphState(const VdpGlyphRunGlyphSaveState& state) {
 	return BinValue(std::move(object));
 }
 
-VdpGlyphRunGlyphSaveState decodeGlyphRunGlyphState(const BinValue& value, const char* label) {
+VdpBatchBlitGlyphSaveState decodeBatchBlitGlyphState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
-	VdpGlyphRunGlyphSaveState state;
+	VdpBatchBlitGlyphSaveState state;
 	static_cast<VdpBlitterSourceSaveState&>(state) = decodeVdpSourceState<VdpBlitterSourceSaveState>(value, label);
-	state.dstX = static_cast<f32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.glyph.dstX"));
-	state.dstY = static_cast<f32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.glyph.dstY"));
-	state.advance = requireU32(requireField(object, "advance", label), "machine.vdp.glyph.advance");
+	state.dstX = static_cast<f32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.item.dstX"));
+	state.dstY = static_cast<f32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.item.dstY"));
+	state.advance = requireU32(requireField(object, "advance", label), "machine.vdp.item.advance");
 	return state;
 }
 
-BinValue encodeTileRunBlitState(const VdpTileRunBlitSaveState& state) {
-	BinObject object = encodeVdpSourceState(state).asObject();
-	object["dstX"] = static_cast<f64>(state.dstX);
-	object["dstY"] = static_cast<f64>(state.dstY);
-	return BinValue(std::move(object));
-}
-
-VdpTileRunBlitSaveState decodeTileRunBlitState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpTileRunBlitSaveState state;
-	static_cast<VdpBlitterSourceSaveState&>(state) = decodeVdpSourceState<VdpBlitterSourceSaveState>(value, label);
-	state.dstX = static_cast<f32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.tile.dstX"));
-	state.dstY = static_cast<f32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.tile.dstY"));
-	return state;
-}
 
 VdpBlitterCommandType decodeBlitterCommandType(u32 opcode, const char* label) {
 	switch (opcode) {
@@ -591,8 +580,7 @@ VdpBlitterCommandType decodeBlitterCommandType(u32 opcode, const char* label) {
 		case static_cast<u32>(VdpBlitterCommandType::CopyRect): return VdpBlitterCommandType::CopyRect;
 		case static_cast<u32>(VdpBlitterCommandType::FillRect): return VdpBlitterCommandType::FillRect;
 		case static_cast<u32>(VdpBlitterCommandType::DrawLine): return VdpBlitterCommandType::DrawLine;
-		case static_cast<u32>(VdpBlitterCommandType::GlyphRun): return VdpBlitterCommandType::GlyphRun;
-		case static_cast<u32>(VdpBlitterCommandType::TileRun): return VdpBlitterCommandType::TileRun;
+		case static_cast<u32>(VdpBlitterCommandType::BatchBlit): return VdpBlitterCommandType::BatchBlit;
 		default:
 			throw BMSX_RUNTIME_ERROR(std::string(label) + " has an invalid VDP blitter opcode.");
 	}
@@ -626,8 +614,7 @@ BinValue encodeBlitterCommandState(const VdpBlitterCommandSaveState& state) {
 	object["hasBackgroundColor"] = state.hasBackgroundColor;
 	object["backgroundColor"] = static_cast<i64>(state.backgroundColor);
 	object["lineHeight"] = static_cast<i64>(state.lineHeight);
-	object["glyphs"] = encodeVector<VdpGlyphRunGlyphSaveState>(state.glyphs, encodeGlyphRunGlyphState);
-	object["tiles"] = encodeVector<VdpTileRunBlitSaveState>(state.tiles, encodeTileRunBlitState);
+	object["items"] = encodeVector<VdpBatchBlitGlyphSaveState>(state.items, encodeBatchBlitGlyphState);
 	return BinValue(std::move(object));
 }
 
@@ -660,15 +647,10 @@ VdpBlitterCommandSaveState decodeBlitterCommandState(const BinValue& value, cons
 	state.hasBackgroundColor = requireBool(requireField(object, "hasBackgroundColor", label), "machine.vdp.command.hasBackgroundColor");
 	state.backgroundColor = requireU32(requireField(object, "backgroundColor", label), "machine.vdp.command.backgroundColor");
 	state.lineHeight = requireU32(requireField(object, "lineHeight", label), "machine.vdp.command.lineHeight");
-	state.glyphs = decodeVector<VdpGlyphRunGlyphSaveState>(
-		requireField(object, "glyphs", label),
-		"machine.vdp.command.glyphs",
-		[](const BinValue& entry, size_t) { return decodeGlyphRunGlyphState(entry, "machine.vdp.command.glyphs[]"); }
-	);
-	state.tiles = decodeVector<VdpTileRunBlitSaveState>(
-		requireField(object, "tiles", label),
-		"machine.vdp.command.tiles",
-		[](const BinValue& entry, size_t) { return decodeTileRunBlitState(entry, "machine.vdp.command.tiles[]"); }
+	state.items = decodeVector<VdpBatchBlitGlyphSaveState>(
+		requireField(object, "items", label),
+		"machine.vdp.command.items",
+		[](const BinValue& entry, size_t) { return decodeBatchBlitGlyphState(entry, "machine.vdp.command.items[]"); }
 	);
 	return state;
 }
@@ -682,13 +664,11 @@ std::vector<VdpBlitterCommandSaveState> decodeBlitterCommandStates(const BinValu
 	if (commands.size() > VDP_BLITTER_FIFO_CAPACITY) {
 		throw BMSX_RUNTIME_ERROR(std::string(label) + " exceeds the VDP blitter FIFO capacity.");
 	}
-	size_t glyphCount = 0;
-	size_t tileCount = 0;
+	size_t itemCount = 0;
 	for (const VdpBlitterCommandSaveState& command : commands) {
-		glyphCount += command.glyphs.size();
-		tileCount += command.tiles.size();
+		itemCount += command.items.size();
 	}
-	if (glyphCount > VDP_BLITTER_RUN_ENTRY_CAPACITY || tileCount > VDP_BLITTER_RUN_ENTRY_CAPACITY) {
+	if (itemCount > VDP_BLITTER_RUN_ENTRY_CAPACITY) {
 		throw BMSX_RUNTIME_ERROR(std::string(label) + " exceeds the VDP blitter run-entry capacity.");
 	}
 	return commands;

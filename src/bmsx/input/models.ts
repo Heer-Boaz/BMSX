@@ -75,6 +75,10 @@ export type PointerInputMapping = {
 	[action: string]: PointerBinding[];
 };
 
+export function inputBindingId(binding: ButtonId | { id: ButtonId }): ButtonId {
+	return typeof binding === 'string' ? binding : binding.id;
+}
+
 /**
  * Host default input mapping bundle installed as the base context.
  */

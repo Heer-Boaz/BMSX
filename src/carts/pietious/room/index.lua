@@ -526,13 +526,18 @@ local refresh_room_geometry<const> = function(room_state)
 end
 
 local draw_tile_sources<const> = function(sources, tile_count, cols, tile_size, origin_x, origin_y)
+	local begun = false
 	for i = 1, tile_count do
 		local source<const> = sources[i]
 		if source ~= empty_tile_source then
+			if not begun then
+				vdp_stream.batch_blit_begin(0, sys_vdp_layer_world, 0xffffffff, 0, 0)
+				begun = true
+			end
 			local tile_index<const> = i - 1
 			local tile_x<const> = tile_index % cols
 			local tile_y<const> = tile_index // cols
-			vdp_stream.blit_source_color(source.slot, source.u, source.v, source.w, source.h, origin_x + (tile_x * tile_size), origin_y + (tile_y * tile_size), 0, sys_vdp_layer_world, 1, 1, 0, 0xffffffff, 0)
+			vdp_stream.batch_blit_item(source.slot, source.u, source.v, source.w, source.h, origin_x + (tile_x * tile_size), origin_y + (tile_y * tile_size), source.w)
 		end
 	end
 end

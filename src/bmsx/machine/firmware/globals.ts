@@ -2065,24 +2065,24 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.length = 0;
 	}));
 
-	const fontGlyphsKey = key('glyphs');
+	const fontGlyphsKey = key('items');
 	const fontAdvanceKey = key('advance');
 	const fontFallbackGlyphKey = key('?');
-	const resolveFontGlyph = (glyphs: Table, char: string): Value => {
-		const glyph = glyphs.get(runtime.internString(char));
-		return glyph === null ? glyphs.get(fontFallbackGlyphKey) : glyph;
+	const resolveFontGlyph = (items: Table, char: string): Value => {
+		const item = items.get(runtime.internString(char));
+		return item === null ? items.get(fontFallbackGlyphKey) : item;
 	};
-	luaPipeline.registerGlobal(runtime, 'font_for_each_glyph', createNativeFunction('font_for_each_glyph', (args, out) => {
+	luaPipeline.registerGlobal(runtime, 'font_for_each_item', createNativeFunction('font_for_each_item', (args, out) => {
 		const fontDescriptor = args[0] as Table;
 		const line = strings.toString(asStringId(args[1] as StringValue));
 		const callback = args[2];
-		const glyphs = fontDescriptor.get(fontGlyphsKey) as Table;
+		const items = fontDescriptor.get(fontGlyphsKey) as Table;
 		const callArgs = runtime.luaScratch.values.acquire();
 		const callbackOut = runtime.luaScratch.values.acquire();
 		try {
 			callArgs.length = 1;
 			for (const char of line) {
-				callArgs[0] = resolveFontGlyph(glyphs, char);
+				callArgs[0] = resolveFontGlyph(items, char);
 				callbackOut.length = 0;
 				callClosureValue(callback, callArgs, callbackOut);
 			}
@@ -2095,11 +2095,11 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'font_measure_line_width', createNativeFunction('font_measure_line_width', (args, out) => {
 		const fontDescriptor = args[0] as Table;
 		const line = strings.toString(asStringId(args[1] as StringValue));
-		const glyphs = fontDescriptor.get(fontGlyphsKey) as Table;
+		const items = fontDescriptor.get(fontGlyphsKey) as Table;
 		let width = 0;
 		for (const char of line) {
-			const glyph = resolveFontGlyph(glyphs, char) as Table;
-			width += glyph.get(fontAdvanceKey) as number;
+			const item = resolveFontGlyph(items, char) as Table;
+			width += item.get(fontAdvanceKey) as number;
 		}
 		out.push(width);
 	}));

@@ -1,5 +1,5 @@
 /*
- * glyphs.cpp - Glyph rendering utilities
+ * items.cpp - Glyph rendering utilities
  */
 
 #include "glyphs.h"

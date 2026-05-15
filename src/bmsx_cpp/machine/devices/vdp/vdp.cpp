@@ -729,6 +729,10 @@ bool VDP::executeVdpDrawDoorbell(u32 command) {
 			return enqueueLatchedDrawLine();
 		case VDP_CMD_BLIT:
 			return enqueueLatchedBlit();
+		case VDP_CMD_BATCH_BLIT_BEGIN:
+			return enqueueLatchedBatchBlitBegin();
+		case VDP_CMD_BATCH_BLIT_ITEM:
+			return enqueueLatchedBatchBlitItem();
 		case VDP_CMD_COPY_RECT:
 			return enqueueLatchedCopyRect();
 		default:
@@ -1261,18 +1265,18 @@ void VDP::executeFrameBufferCommands(const BlitterCommand& commands) {
 					sequence
 				);
 				break;
-			case BlitterCommandType::GlyphRun: {
-				const size_t firstGlyph = commands.glyphRunFirstEntry[index];
-				const size_t glyphEnd = firstGlyph + commands.glyphRunEntryCount[index];
+			case BlitterCommandType::BatchBlit: {
+				const size_t firstItem = commands.batchBlitFirstEntry[index];
+				const size_t itemEnd = firstItem + commands.batchBlitItemCount[index];
 				if (commands.hasBackgroundColor[index] != 0u) {
 					const FrameBufferColor background = unpackArgbColor(commands.backgroundColor[index]);
-					for (size_t glyphIndex = firstGlyph; glyphIndex < glyphEnd; ++glyphIndex) {
+					for (size_t itemIndex = firstItem; itemIndex < itemEnd; ++itemIndex) {
 						rasterizeFrameBufferFill(
 							pixels,
-							commands.glyphDstX[glyphIndex],
-							commands.glyphDstY[glyphIndex],
-							commands.glyphDstX[glyphIndex] + static_cast<f32>(commands.glyphAdvance[glyphIndex]),
-							commands.glyphDstY[glyphIndex] + static_cast<f32>(commands.lineHeight[index]),
+							commands.batchBlitDstX[itemIndex],
+							commands.batchBlitDstY[itemIndex],
+							commands.batchBlitDstX[itemIndex] + static_cast<f32>(commands.batchBlitAdvance[itemIndex]),
+							commands.batchBlitDstY[itemIndex] + static_cast<f32>(commands.lineHeight[index]),
 							background,
 							layer,
 							priority,
@@ -1280,27 +1284,13 @@ void VDP::executeFrameBufferCommands(const BlitterCommand& commands) {
 						);
 					}
 				}
-				for (size_t glyphIndex = firstGlyph; glyphIndex < glyphEnd; ++glyphIndex) {
-					source.surfaceId = commands.glyphSurfaceId[glyphIndex];
-					source.srcX = commands.glyphSrcX[glyphIndex];
-					source.srcY = commands.glyphSrcY[glyphIndex];
-					source.width = commands.glyphWidth[glyphIndex];
-					source.height = commands.glyphHeight[glyphIndex];
-					rasterizeFrameBufferBlit(pixels, source, commands.glyphDstX[glyphIndex], commands.glyphDstY[glyphIndex], 1.0f, 1.0f, false, false, color, layer, priority, sequence);
-				}
-				break;
-			}
-			case BlitterCommandType::TileRun: {
-				const FrameBufferColor white = unpackArgbColor(VDP_BLITTER_WHITE);
-				const size_t firstTile = commands.tileRunFirstEntry[index];
-				const size_t tileEnd = firstTile + commands.tileRunEntryCount[index];
-				for (size_t tileIndex = firstTile; tileIndex < tileEnd; ++tileIndex) {
-					source.surfaceId = commands.tileSurfaceId[tileIndex];
-					source.srcX = commands.tileSrcX[tileIndex];
-					source.srcY = commands.tileSrcY[tileIndex];
-					source.width = commands.tileWidth[tileIndex];
-					source.height = commands.tileHeight[tileIndex];
-					rasterizeFrameBufferBlit(pixels, source, commands.tileDstX[tileIndex], commands.tileDstY[tileIndex], 1.0f, 1.0f, false, false, white, layer, priority, sequence);
+				for (size_t itemIndex = firstItem; itemIndex < itemEnd; ++itemIndex) {
+					source.surfaceId = commands.batchBlitSurfaceId[itemIndex];
+					source.srcX = commands.batchBlitSrcX[itemIndex];
+					source.srcY = commands.batchBlitSrcY[itemIndex];
+					source.width = commands.batchBlitWidth[itemIndex];
+					source.height = commands.batchBlitHeight[itemIndex];
+					rasterizeFrameBufferBlit(pixels, source, commands.batchBlitDstX[itemIndex], commands.batchBlitDstY[itemIndex], 1.0f, 1.0f, false, false, color, layer, priority, sequence);
 				}
 				break;
 			}
@@ -1637,157 +1627,6 @@ bool VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i
 	return true;
 }
 
-VDP::TileRunClipWindow VDP::clipTileRun(i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY) const {
-	TileRunClipWindow clip;
-	clip.frameWidth = static_cast<i32>(m_fbm.width());
-	clip.frameHeight = static_cast<i32>(m_fbm.height());
-	const i32 totalWidth = cols * tileW;
-	const i32 totalHeight = rows * tileH;
-	clip.dstX = originX - scrollX;
-	clip.dstY = originY - scrollY;
-	i32 writeWidth = totalWidth;
-	i32 writeHeight = totalHeight;
-	if (clip.dstX < 0) {
-		clip.srcClipX = -clip.dstX;
-		writeWidth += clip.dstX;
-		clip.dstX = 0;
-	}
-	if (clip.dstY < 0) {
-		clip.srcClipY = -clip.dstY;
-		writeHeight += clip.dstY;
-		clip.dstY = 0;
-	}
-	const i32 overflowX = (clip.dstX + writeWidth) - clip.frameWidth;
-	if (overflowX > 0) {
-		writeWidth -= overflowX;
-	}
-	const i32 overflowY = (clip.dstY + writeHeight) - clip.frameHeight;
-	if (overflowY > 0) {
-		writeHeight -= overflowY;
-	}
-	clip.visible = writeWidth > 0 && writeHeight > 0;
-	return clip;
-}
-
-u32 VDP::readTileRunPayloadWord(const TileRunPayload& payload, u32 wordOffset) const {
-	if (payload.source == TileRunPayloadSource::Memory) {
-		return m_memory.readU32(payload.memoryBase + wordOffset * IO_WORD_SIZE);
-	}
-	return payload.words[wordOffset];
-}
-
-bool VDP::appendTileRunSource(BlitterCommand& queue, size_t commandIndex, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow) {
-	if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
-		m_fault.raise(VDP_FAULT_DEX_SOURCE_OOB, source.width | (source.height << 16u));
-		return false;
-	}
-	const VdpClippedRect clipped = computeClippedRect(
-		static_cast<double>(tileX),
-		static_cast<double>(tileY),
-		static_cast<double>(tileX + tileW),
-		static_cast<double>(tileY + tileH),
-		static_cast<double>(clip.frameWidth),
-		static_cast<double>(clip.frameHeight)
-	);
-	if (clipped.area == 0.0) {
-		return true;
-	}
-	visibleNonEmptyTileCount += 1;
-	if (lastVisibleRow != row) {
-		lastVisibleRow = row;
-		visibleRowCount += 1;
-	}
-	const size_t tileEntry = queue.tileEntryCount;
-	if (tileEntry >= VDP_BLITTER_RUN_ENTRY_CAPACITY) {
-		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(tileEntry));
-		return false;
-	}
-	queue.tileSurfaceId[tileEntry] = source.surfaceId;
-	queue.tileSrcX[tileEntry] = source.srcX;
-	queue.tileSrcY[tileEntry] = source.srcY;
-	queue.tileWidth[tileEntry] = source.width;
-	queue.tileHeight[tileEntry] = source.height;
-	queue.tileDstX[tileEntry] = static_cast<f32>(tileX);
-	queue.tileDstY[tileEntry] = static_cast<f32>(tileY);
-	queue.tileEntryCount = tileEntry + 1u;
-	queue.tileRunEntryCount[commandIndex] += 1u;
-	return true;
-}
-
-void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer) {
-	if (tileCount != static_cast<uint32_t>(cols * rows)) {
-		m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, tileCount);
-		return;
-	}
-	const TileRunClipWindow clip = clipTileRun(cols, rows, tileW, tileH, originX, originY, scrollX, scrollY);
-	if (!clip.visible) {
-		return;
-	}
-	if (m_buildFrame.state == VdpDexFrameState::Idle) {
-		m_fault.raise(VDP_FAULT_SUBMIT_STATE, static_cast<uint32_t>(BlitterCommandType::TileRun));
-		return;
-	}
-	BlitterCommand& queue = *m_buildFrame.queue;
-	size_t commandIndex = 0u;
-	if (!queue.beginCommandSlot(BlitterCommandType::TileRun, m_blitterSequence, commandIndex)) {
-		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(queue.length));
-		return;
-	}
-	const size_t firstTile = queue.tileEntryCount;
-	queue.writeTileRunHeader(commandIndex, layer, priority, static_cast<u32>(firstTile));
-	int visibleRowCount = 0;
-	int visibleNonEmptyTileCount = 0;
-	i32 lastVisibleRow = -1;
-	for (i32 row = 0; row < rows; row += 1) {
-		const i32 base = row * cols;
-		for (i32 col = 0; col < cols; col += 1) {
-			const u32 payloadOffset = static_cast<u32>(base + col) * 5u;
-			const u32 slot = readTileRunPayloadWord(payload, payloadOffset);
-			if (slot == VDP_SLOT_NONE) {
-				continue;
-			}
-			BlitterSource source;
-			if (!m_blitterSourcePort.resolveWordsInto(
-				slot,
-				readTileRunPayloadWord(payload, payloadOffset + 1u),
-				readTileRunPayloadWord(payload, payloadOffset + 2u),
-				readTileRunPayloadWord(payload, payloadOffset + 3u),
-				readTileRunPayloadWord(payload, payloadOffset + 4u),
-				source,
-				VDP_FAULT_DEX_SOURCE_SLOT)) {
-				queue.tileEntryCount = firstTile;
-				queue.tileRunEntryCount[commandIndex] = 0u;
-				return;
-			}
-			const i32 tileX = clip.dstX + (col * tileW) - clip.srcClipX;
-			const i32 tileY = clip.dstY + (row * tileH) - clip.srcClipY;
-			if (!appendTileRunSource(queue, commandIndex, source, clip, tileW, tileH, tileX, tileY, row, visibleRowCount, visibleNonEmptyTileCount, lastVisibleRow)) {
-				queue.tileEntryCount = firstTile;
-				queue.tileRunEntryCount[commandIndex] = 0u;
-				return;
-			}
-		}
-	}
-	if (queue.tileRunEntryCount[commandIndex] == 0u) {
-		queue.tileEntryCount = firstTile;
-		return;
-	}
-	const int renderCost = tileRunCost(visibleRowCount, visibleNonEmptyTileCount);
-	queue.commitCommandSlot(commandIndex, renderCost);
-	m_blitterSequence += 1u;
-	m_buildFrame.cost += renderCost;
-}
-
-void VDP::latchPayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer) {
-	const TileRunPayload payload{TileRunPayloadSource::Memory, payloadBase, nullptr};
-	latchPayloadTileRunFrom(payload, tileCount, cols, rows, tileW, tileH, originX, originY, scrollX, scrollY, priority, layer);
-}
-
-void VDP::latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer) {
-	const TileRunPayload payload{TileRunPayloadSource::WordStream, 0u, payloadWords};
-	latchPayloadTileRunFrom(payload, tileCount, cols, rows, tileW, tileH, originX, originY, scrollX, scrollY, priority, layer);
-}
-
 void VDP::commitLiveVisualState() {
 	m_sbx.presentLiveState();
 	m_vout.presentLiveState(m_xf, m_sbx.visibleEnabled(), m_lpu, m_mfu, m_jtu);
@@ -1985,4 +1824,50 @@ bool VDP::readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y,
 }
 // end hot-path
 
+bool VDP::enqueueLatchedBatchBlitBegin() {
+	size_t index = 0;
+	if (!reserveBlitterCommand(BlitterCommandType::BatchBlit, VDP_RENDER_BATCH_BLIT_SETUP_COST, index)) {
+		return false;
+	}
+	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
+	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
+	const VdpDrawCtrl drawCtrl = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
+	if (drawCtrl.blendMode != 0) {
+		m_fault.raise(VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, m_vdpRegisters[VDP_REG_DRAW_CTRL]);
+		return false;
+	}
+	const u32 color = m_vdpRegisters[VDP_REG_DRAW_COLOR];
+	m_buildFrame.queue->writeBatchBlitBegin(index, color, drawCtrl.blendMode, layer, priority, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
+	m_activeBatchBlitIndex = static_cast<int>(index);
+	return true;
+}
+
+bool VDP::enqueueLatchedBatchBlitItem() {
+	if (m_activeBatchBlitIndex < 0) {
+		m_fault.raise(VDP_FAULT_DEX_CMD_NO_BATCH, 0);
+		return false;
+	}
+	const u32 slot = m_vdpRegisters[VDP_REG_SRC_SLOT];
+	const u32 u = packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]);
+	const u32 v = packedHigh16(m_vdpRegisters[VDP_REG_SRC_UV]);
+	const u32 w = packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]);
+	const u32 h = packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]);
+	const f32 dstX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_X]);
+	const f32 dstY = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_Y]);
+	const f32 advanceX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_GEOM_X0]);
+	BlitterSource source{};
+	if (!m_blitterSourcePort.resolveWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
+		return false;
+	}
+	if (!m_blitterSourcePort.validateSurface(source, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB)) {
+		return false;
+	}
+	if (!m_buildFrame.queue->writeBatchBlitItem(static_cast<size_t>(m_activeBatchBlitIndex), source.surfaceId, source.srcX, source.srcY, source.width, source.height, dstX, dstY, advanceX)) {
+		m_fault.raise(VDP_FAULT_BLITTER_OOM_BATCH, 0);
+		return false;
+	}
+	const int alphaCost = ((m_buildFrame.queue->color[static_cast<size_t>(m_activeBatchBlitIndex)] >> 24u) < 255u) ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
+	m_buildFrame.cost += alphaCost;
+	return true;
+}
 } // namespace bmsx

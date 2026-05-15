@@ -591,7 +591,7 @@ function textobject:submit_text_lines(x, y, z, glyphs)
 	if tc.background_color ~= nil then
 		self:submit_text_background_lines(x, y, z - 1, glyphs)
 	end
-	tc:submit_glyph_lines(x, y, z, glyphs)
+	tc:render(x, y, z, glyphs)
 end
 
 function textobject:submit_highlight()

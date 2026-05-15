@@ -40,7 +40,7 @@ import {
 	type VdpBlitterCommandSaveState,
 	type VdpBlitterSourceSaveState,
 	type VdpBuildingFrameSaveState,
-	type VdpGlyphRunGlyphSaveState,
+	type VdpBatchBlitGlyphSaveState,
 	type VdpSubmittedFrameSaveState,
 	type VdpTileRunBlitSaveState,
 } from '../../devices/vdp/frame';
@@ -337,6 +337,8 @@ function encodeInputControllerState(state: InputControllerState): InputControlle
 			queryStringId: state.registers.queryStringId >>> 0,
 			status: state.registers.status >>> 0,
 			value: state.registers.value >>> 0,
+			valueX: state.registers.valueX >>> 0,
+			valueY: state.registers.valueY >>> 0,
 			consumeStringId: state.registers.consumeStringId >>> 0,
 			outputIntensityQ16: state.registers.outputIntensityQ16 >>> 0,
 			outputDurationMs: state.registers.outputDurationMs >>> 0,
@@ -421,6 +423,8 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 			queryStringId: requireBoundedU32(requireObjectKey(registers, 'queryStringId', 'machine.input.registers', 'machine.input.registers.queryStringId'), 'machine.input.registers.queryStringId', 0, 0xffffffff),
 			status: requireBoundedU32(requireObjectKey(registers, 'status', 'machine.input.registers', 'machine.input.registers.status'), 'machine.input.registers.status', 0, 0xffffffff),
 			value: requireBoundedU32(requireObjectKey(registers, 'value', 'machine.input.registers', 'machine.input.registers.value'), 'machine.input.registers.value', 0, 0xffffffff),
+			valueX: requireBoundedU32(requireObjectKey(registers, 'valueX', 'machine.input.registers', 'machine.input.registers.valueX'), 'machine.input.registers.valueX', 0, 0xffffffff),
+			valueY: requireBoundedU32(requireObjectKey(registers, 'valueY', 'machine.input.registers', 'machine.input.registers.valueY'), 'machine.input.registers.valueY', 0, 0xffffffff),
 			consumeStringId: requireBoundedU32(requireObjectKey(registers, 'consumeStringId', 'machine.input.registers', 'machine.input.registers.consumeStringId'), 'machine.input.registers.consumeStringId', 0, 0xffffffff),
 			outputIntensityQ16: requireBoundedU32(requireObjectKey(registers, 'outputIntensityQ16', 'machine.input.registers', 'machine.input.registers.outputIntensityQ16'), 'machine.input.registers.outputIntensityQ16', 0, 0xffffffff),
 			outputDurationMs: requireBoundedU32(requireObjectKey(registers, 'outputDurationMs', 'machine.input.registers', 'machine.input.registers.outputDurationMs'), 'machine.input.registers.outputDurationMs', 0, 0xffffffff),
@@ -517,7 +521,7 @@ function decodeBlitterSourceState(value: unknown, label: string): VdpBlitterSour
 	};
 }
 
-function encodeGlyphRunGlyphState(state: VdpGlyphRunGlyphSaveState): VdpGlyphRunGlyphSaveState {
+function encodeBatchBlitGlyphState(state: VdpBatchBlitGlyphSaveState): VdpBatchBlitGlyphSaveState {
 	return {
 		...encodeBlitterSourceState(state),
 		dstX: state.dstX,
@@ -526,7 +530,7 @@ function encodeGlyphRunGlyphState(state: VdpGlyphRunGlyphSaveState): VdpGlyphRun
 	};
 }
 
-function decodeGlyphRunGlyphState(value: unknown, label: string): VdpGlyphRunGlyphSaveState {
+function decodeBatchBlitGlyphState(value: unknown, label: string): VdpBatchBlitGlyphSaveState {
 	const object = requireObject(value, label);
 	return {
 		...decodeBlitterSourceState(value, label),
@@ -557,7 +561,7 @@ function encodeBlitterCommandState(state: VdpBlitterCommandSaveState): VdpBlitte
 	return {
 		...state,
 		source: encodeBlitterSourceState(state.source),
-		glyphs: encodeVector(state.glyphs, encodeGlyphRunGlyphState),
+		items: encodeVector(state.items, encodeBatchBlitGlyphState),
 		tiles: encodeVector(state.tiles, encodeTileRunBlitState),
 	};
 }
@@ -591,7 +595,7 @@ function decodeBlitterCommandState(value: unknown, label: string): VdpBlitterCom
 		hasBackgroundColor: requireBooleanValue(requireObjectKey(object, 'hasBackgroundColor', label, `${label}.hasBackgroundColor`), `${label}.hasBackgroundColor`),
 		backgroundColor: requireBoundedU32(requireObjectKey(object, 'backgroundColor', label, `${label}.backgroundColor`), `${label}.backgroundColor`, 0, 0xffffffff),
 		lineHeight: requireBoundedU32(requireObjectKey(object, 'lineHeight', label, `${label}.lineHeight`), `${label}.lineHeight`, 0, 0xffffffff),
-		glyphs: decodeVector(requireObjectKey(object, 'glyphs', label, `${label}.glyphs`), `${label}.glyphs`, (entry) => decodeGlyphRunGlyphState(entry, `${label}.glyphs[]`)),
+		items: decodeVector(requireObjectKey(object, 'items', label, `${label}.items`), `${label}.items`, (entry) => decodeBatchBlitGlyphState(entry, `${label}.items[]`)),
 		tiles: decodeVector(requireObjectKey(object, 'tiles', label, `${label}.tiles`), `${label}.tiles`, (entry) => decodeTileRunBlitState(entry, `${label}.tiles[]`)),
 	};
 }
@@ -601,13 +605,13 @@ function decodeBlitterCommandStates(value: unknown, label: string): VdpBlitterCo
 	if (commands.length > VDP_BLITTER_FIFO_CAPACITY) {
 		throw new Error(`${label} exceeds the VDP blitter FIFO capacity.`);
 	}
-	let glyphCount = 0;
+	let itemCount = 0;
 	let tileCount = 0;
 	for (let index = 0; index < commands.length; index += 1) {
-		glyphCount += commands[index].glyphs.length;
+		itemCount += commands[index].items.length;
 		tileCount += commands[index].tiles.length;
 	}
-	if (glyphCount > VDP_BLITTER_RUN_ENTRY_CAPACITY || tileCount > VDP_BLITTER_RUN_ENTRY_CAPACITY) {
+	if (itemCount > VDP_BLITTER_RUN_ENTRY_CAPACITY || tileCount > VDP_BLITTER_RUN_ENTRY_CAPACITY) {
 		throw new Error(`${label} exceeds the VDP blitter run-entry capacity.`);
 	}
 	return commands;

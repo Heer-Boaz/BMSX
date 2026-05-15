@@ -66,6 +66,20 @@ inline u32 encodeInputActionValueQ16(const ActionState& state) {
 	return encodeSignedFix16(state.value);
 }
 
+inline u32 encodeInputActionValueXQ16(const ActionState& state) {
+	if (state.value2d.has_value()) {
+		return encodeSignedFix16(state.value2d->x);
+	}
+	return 0u;
+}
+
+inline u32 encodeInputActionValueYQ16(const ActionState& state) {
+	if (state.value2d.has_value()) {
+		return encodeSignedFix16(state.value2d->y);
+	}
+	return 0u;
+}
+
 inline ActionState createInputActionSnapshot(const std::string& action, u32 statusWord, u32 valueQ16, f64 pressTime, u32 repeatCount) {
 	ActionState state(action);
 	state.pressed = (statusWord & INP_STATUS_PRESSED) != 0u;

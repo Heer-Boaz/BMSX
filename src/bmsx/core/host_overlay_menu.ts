@@ -167,8 +167,8 @@ export class HostOverlayMenu {
 	private readonly lineText: string[] = [];
 	private readonly panelRect: RectRenderSubmission = { kind: RectRenderKind.Fill, area: { left: 0, top: 0, right: 1, bottom: 1, z: 920 }, color: COLOR_PANEL, layer: LAYER_2D_IDE };
 	private readonly highlightRect: RectRenderSubmission = { kind: RectRenderKind.Fill, area: { left: 0, top: 0, right: 1, bottom: 1, z: 921 }, color: COLOR_HIGHLIGHT, layer: LAYER_2D_IDE };
-	private readonly titleGlyphs: GlyphRenderSubmission = { x: 0, y: 0, z: 922, glyphs: TITLE_TEXT, glyph_start: 0, glyph_end: TITLE_TEXT.length, font: null, color: COLOR_TITLE, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
-	private readonly fpsGlyphs: GlyphRenderSubmission = { x: 0, y: 0, z: 922, glyphs: '', glyph_start: 0, glyph_end: 0, font: null, color: COLOR_TITLE, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
+	private readonly titleGlyphs: GlyphRenderSubmission = { x: 0, y: 0, z: 922, items: TITLE_TEXT, item_start: 0, item_end: TITLE_TEXT.length, font: null, color: COLOR_TITLE, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
+	private readonly fpsGlyphs: GlyphRenderSubmission = { x: 0, y: 0, z: 922, items: '', item_start: 0, item_end: 0, font: null, color: COLOR_TITLE, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
 	private readonly usagePanelRect: RectRenderSubmission = { kind: RectRenderKind.Fill, area: { left: USAGE_X - 4, top: USAGE_Y - 4, right: USAGE_X - 4 + USAGE_PANEL_WIDTH, bottom: USAGE_Y - 4 + USAGE_PANEL_HEIGHT, z: USAGE_Z }, color: COLOR_USAGE_PANEL, layer: LAYER_2D_IDE };
 	private readonly usageBarBackgrounds: RectRenderSubmission[] = new Array(USAGE_BAR_COUNT);
 	private readonly usageBarFills: RectRenderSubmission[] = new Array(USAGE_BAR_COUNT);
@@ -274,7 +274,7 @@ export class HostOverlayMenu {
 	constructor() {
 		this.optionGlyphs = new Array(this.options.length);
 		for (let index = 0; index < this.options.length; index += 1) {
-			this.optionGlyphs[index] = { x: 0, y: 0, z: 922, glyphs: '', glyph_start: 0, glyph_end: 0, font: null, color: COLOR_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
+			this.optionGlyphs[index] = { x: 0, y: 0, z: 922, items: '', item_start: 0, item_end: 0, font: null, color: COLOR_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
 			this.lineText[index] = '';
 		}
 		for (let index = 0; index < USAGE_BAR_COUNT; index += 1) {
@@ -282,8 +282,8 @@ export class HostOverlayMenu {
 			const label = USAGE_LABELS[index];
 			this.usageBarBackgrounds[index] = { kind: RectRenderKind.Fill, area: { left: USAGE_BAR_X, top: rowY + 1, right: USAGE_BAR_X + USAGE_BAR_WIDTH, bottom: rowY + 1 + USAGE_BAR_HEIGHT, z: USAGE_Z + 1 }, color: COLOR_USAGE_DIM, layer: LAYER_2D_IDE };
 			this.usageBarFills[index] = { kind: RectRenderKind.Fill, area: { left: USAGE_BAR_X, top: rowY + 1, right: USAGE_BAR_X, bottom: rowY + 1 + USAGE_BAR_HEIGHT, z: USAGE_Z + 2 }, color: COLOR_USAGE_OK, layer: LAYER_2D_IDE };
-			this.usageLabels[index] = { x: USAGE_X, y: rowY + 1, z: USAGE_Z + 3, glyphs: label, glyph_start: 0, glyph_end: label.length, font: null, color: COLOR_USAGE_DIM, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
-			this.usagePercents[index] = { x: USAGE_BAR_X + USAGE_BAR_WIDTH + 1, y: rowY + 1, z: USAGE_Z + 3, glyphs: '', glyph_start: 0, glyph_end: 0, font: null, color: COLOR_USAGE_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
+			this.usageLabels[index] = { x: USAGE_X, y: rowY + 1, z: USAGE_Z + 3, items: label, item_start: 0, item_end: label.length, font: null, color: COLOR_USAGE_DIM, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
+			this.usagePercents[index] = { x: USAGE_BAR_X + USAGE_BAR_WIDTH + 1, y: rowY + 1, z: USAGE_Z + 3, items: '', item_start: 0, item_end: 0, font: null, color: COLOR_USAGE_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
 			this.usagePercentCode[index] = -1;
 		}
 	}
@@ -375,7 +375,7 @@ export class HostOverlayMenu {
 		const padding = 4;
 		const titleHeight = lineHeight;
 		const titleGap = 4;
-		let boxWidth = font.measure(this.titleGlyphs.glyphs as string);
+		let boxWidth = font.measure(this.titleGlyphs.items as string);
 		for (let index = 0; index < this.lineText.length; index += 1) {
 			const width = font.measure(this.lineText[index]);
 			if (width > boxWidth) {
@@ -396,7 +396,7 @@ export class HostOverlayMenu {
 		this.titleGlyphs.font = font;
 		this.titleGlyphs.x = left + padding;
 		this.titleGlyphs.y = top;
-		this.queueCommand('glyphs', this.titleGlyphs);
+		this.queueCommand('items', this.titleGlyphs);
 		for (let index = 0; index < this.options.length; index += 1) {
 			const y = boxTop + padding + index * lineHeight;
 			if (index === this.selected) {
@@ -411,7 +411,7 @@ export class HostOverlayMenu {
 			line.x = left + padding;
 			line.y = y;
 			line.color = index === this.selected ? COLOR_TEXT : COLOR_DIM;
-			this.queueCommand('glyphs', line);
+			this.queueCommand('items', line);
 		}
 	}
 
@@ -431,14 +431,14 @@ export class HostOverlayMenu {
 				this.fpsTextTenths = fpsTenths;
 				const whole = (fpsTenths / 10) | 0;
 				const text = `${FPS_PREFIX}${whole}.${fpsTenths - whole * 10}`;
-				this.fpsGlyphs.glyphs = text;
-				this.fpsGlyphs.glyph_start = 0;
-				this.fpsGlyphs.glyph_end = text.length;
+				this.fpsGlyphs.items = text;
+				this.fpsGlyphs.item_start = 0;
+				this.fpsGlyphs.item_end = text.length;
 				this.fpsTextWidth = font.measure(text);
 			}
 			this.fpsGlyphs.x = view.viewportSize.x - 8 - this.fpsTextWidth;
 			this.fpsGlyphs.y = 8;
-			this.queueCommand('glyphs', this.fpsGlyphs);
+			this.queueCommand('items', this.fpsGlyphs);
 			queued = true;
 		}
 		if (view.show_resource_usage_gizmo) {
@@ -467,16 +467,16 @@ export class HostOverlayMenu {
 		if (this.usagePercentCode[index] !== percentCode) {
 			this.usagePercentCode[index] = percentCode;
 			const percentText = usagePercentCodeText(percentCode);
-			pct.glyphs = percentText;
-			pct.glyph_start = 0;
-			pct.glyph_end = percentText.length;
+			pct.items = percentText;
+			pct.item_start = 0;
+			pct.item_end = percentText.length;
 		}
 		this.queueCommand('rect', this.usageBarBackgrounds[index]);
 		if (fillWidth > 0) {
 			this.queueCommand('rect', fill);
 		}
-		this.queueCommand('glyphs', this.usageLabels[index]);
-		this.queueCommand('glyphs', pct);
+		this.queueCommand('items', this.usageLabels[index]);
+		this.queueCommand('items', pct);
 	}
 
 	private toggle(): void {
@@ -520,10 +520,10 @@ export class HostOverlayMenu {
 				? option.label
 				: `${option.label}  ${option.values[option.getIndex()].label}`;
 			this.lineText[index] = line;
-			const glyphs = this.optionGlyphs[index];
-			glyphs.glyphs = line;
-			glyphs.glyph_start = 0;
-			glyphs.glyph_end = line.length;
+			const items = this.optionGlyphs[index];
+			items.items = line;
+			items.item_start = 0;
+			items.item_end = line.length;
 		}
 		this.dirtyText = false;
 	}

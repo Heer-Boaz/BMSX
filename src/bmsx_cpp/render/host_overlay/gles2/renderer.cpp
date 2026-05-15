@@ -155,8 +155,8 @@ void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, std::string_view imgid, 
 	);
 }
 
-void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& glyph, f32 imageX, f32 imageY, u32 color) {
-	const ImageAtlasRect& rect = glyph.rect;
+void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& item, f32 imageX, f32 imageY, u32 color) {
+	const ImageAtlasRect& rect = item.rect;
 	const f32 atlasWidth = static_cast<f32>(hostSystemAtlasWidth());
 	const f32 atlasHeight = static_cast<f32>(hostSystemAtlasHeight());
 	drawQuadGLES2(
@@ -177,13 +177,13 @@ void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& glyph, f32 
 void drawGlyphsGLES2(OpenGLES2Backend& backend, const GlyphRenderSubmission& command) {
 	if (command.has_background_color) {
 		const i32 lineHeight = command.font->lineHeight();
-		forEachGlyphRunGlyph(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, u32) {
+		forEachBatchBlitGlyph(command, [&](const FontGlyph& item, f32 imageX, f32 imageY, f32, u32) {
 			drawQuadGLES2(
 				backend,
 				g_gles2.whiteTexture,
 				static_cast<i32>(imageX),
 				static_cast<i32>(imageY),
-				glyph.advance,
+				item.advance,
 				lineHeight,
 				0.0f,
 				0.0f,
@@ -193,8 +193,8 @@ void drawGlyphsGLES2(OpenGLES2Backend& backend, const GlyphRenderSubmission& com
 			);
 		});
 	}
-	forEachGlyphRunGlyph(command, [&](const FontGlyph& glyph, f32 imageX, f32 imageY, f32, u32 color) {
-		drawGlyphImageGLES2(backend, glyph, imageX, imageY, color);
+	forEachBatchBlitGlyph(command, [&](const FontGlyph& item, f32 imageX, f32 imageY, f32, u32 color) {
+		drawGlyphImageGLES2(backend, item, imageX, imageY, color);
 	});
 }
 

@@ -16,6 +16,8 @@ struct InputControllerRegisterState {
 	StringId queryStringId = 0;
 	u32 status = 0;
 	u32 value = 0;
+	u32 valueX = 0;
+	u32 valueY = 0;
 	StringId consumeStringId = 0;
 	u32 outputIntensityQ16 = 0;
 	u32 outputDurationMs = 0;
@@ -32,7 +34,7 @@ public:
 	void restoreState(const InputControllerRegisterState& restoredState);
 	i32 selectedPlayerIndex() const;
 	void write(uint32_t addr, Value value);
-	void writeResult(Memory& memory, u32 status, u32 value);
+	void writeResult(Memory& memory, u32 status, u32 value, u32 valueX, u32 valueY);
 	void mirror(Memory& memory) const;
 };
 

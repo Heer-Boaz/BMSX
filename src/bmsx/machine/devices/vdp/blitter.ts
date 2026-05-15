@@ -15,50 +15,12 @@ export type VdpResolvedBlitterSample = {
 	slot: number;
 };
 
-export type VdpTileRunInputBase = {
-	cols: number;
-	rows: number;
-	tile_w: number;
-	tile_h: number;
-	origin_x: number;
-	origin_y: number;
-	scroll_x: number;
-	scroll_y: number;
-	z: number;
-	layer: Layer2D;
-};
-
-export type VdpSourceTileRunInput = VdpTileRunInputBase & {
-	sources: Array<VdpSlotSource | false>;
-};
-
-export type VdpPayloadTileRunInput = VdpTileRunInputBase & {
-	payload_base: number;
-	tile_count: number;
-};
-
-export type VdpPayloadWordsTileRunInput = VdpTileRunInputBase & {
-	payload_words: Uint32Array;
-	payload_word_offset: number;
-	tile_count: number;
-};
-
-export const VDP_TILE_RUN_SOURCE_DIRECT = 0;
-export const VDP_TILE_RUN_SOURCE_PAYLOAD = 1;
-export const VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS = 2;
-export type VdpTileRunSourceKind =
-	| typeof VDP_TILE_RUN_SOURCE_DIRECT
-	| typeof VDP_TILE_RUN_SOURCE_PAYLOAD
-	| typeof VDP_TILE_RUN_SOURCE_PAYLOAD_WORDS;
-export type VdpTileRunInput = VdpSourceTileRunInput | VdpPayloadTileRunInput | VdpPayloadWordsTileRunInput;
-
 export const VDP_BLITTER_OPCODE_CLEAR = 1;
 export const VDP_BLITTER_OPCODE_BLIT = 2;
 export const VDP_BLITTER_OPCODE_COPY_RECT = 3;
 export const VDP_BLITTER_OPCODE_FILL_RECT = 4;
 export const VDP_BLITTER_OPCODE_DRAW_LINE = 5;
-export const VDP_BLITTER_OPCODE_GLYPH_RUN = 6;
-export const VDP_BLITTER_OPCODE_TILE_RUN = 7;
+export const VDP_BLITTER_OPCODE_BATCH_BLIT = 6;
 
 export type VdpBlitterOpcode =
 	| typeof VDP_BLITTER_OPCODE_CLEAR
@@ -66,8 +28,7 @@ export type VdpBlitterOpcode =
 	| typeof VDP_BLITTER_OPCODE_COPY_RECT
 	| typeof VDP_BLITTER_OPCODE_FILL_RECT
 	| typeof VDP_BLITTER_OPCODE_DRAW_LINE
-	| typeof VDP_BLITTER_OPCODE_GLYPH_RUN
-	| typeof VDP_BLITTER_OPCODE_TILE_RUN;
+	| typeof VDP_BLITTER_OPCODE_BATCH_BLIT;
 
 export const VDP_BLITTER_FIFO_CAPACITY = 4096;
 export const VDP_BLITTER_RUN_ENTRY_CAPACITY = 16384;
@@ -76,8 +37,7 @@ export const VDP_BLITTER_IMPLICIT_CLEAR = 0xff000000;
 
 export class VdpBlitterCommandBuffer {
 	public length = 0;
-	public glyphEntryCount = 0;
-	public tileEntryCount = 0;
+	public batchBlitEntryCount = 0;
 
 	public readonly opcode = new Uint8Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly seq = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
@@ -109,32 +69,21 @@ export class VdpBlitterCommandBuffer {
 	public readonly backgroundColor = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly hasBackgroundColor = new Uint8Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly lineHeight = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly glyphRunFirstEntry = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly glyphRunEntryCount = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly tileRunFirstEntry = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly tileRunEntryCount = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
+	public readonly batchBlitFirstEntry = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
+	public readonly batchBlitItemCount = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
 
-	public readonly glyphSurfaceId = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly glyphSrcX = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly glyphSrcY = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly glyphWidth = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly glyphHeight = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly glyphDstX = new Float32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly glyphDstY = new Float32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly glyphAdvance = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-
-	public readonly tileSurfaceId = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly tileSrcX = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly tileSrcY = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly tileWidth = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly tileHeight = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly tileDstX = new Float32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly tileDstY = new Float32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
+	public readonly batchBlitSurfaceId = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
+	public readonly batchBlitSrcX = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
+	public readonly batchBlitSrcY = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
+	public readonly batchBlitWidth = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
+	public readonly batchBlitHeight = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
+	public readonly batchBlitDstX = new Float32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
+	public readonly batchBlitDstY = new Float32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
+	public readonly batchBlitAdvance = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
 
 	public reset(): void {
 		this.length = 0;
-		this.glyphEntryCount = 0;
-		this.tileEntryCount = 0;
+		this.batchBlitEntryCount = 0;
 	}
 
 	public writeClear(index: number, clearColor: number): void {
@@ -185,12 +134,33 @@ export class VdpBlitterCommandBuffer {
 		this.dstY[index] = dstYValue;
 	}
 
-	public writeTileRunHeader(index: number, layer: Layer2D, priority: number, firstTile: number): void {
+
+	public writeBatchBlitBegin(index: number, drawColor: number, blendMode: number, layer: Layer2D, priority: number, pmuBank: number, parallax: number): void {
 		this.priority[index] = priority;
 		this.layer[index] = layer;
-		this.color[index] = VDP_BLITTER_WHITE;
-		this.tileRunFirstEntry[index] = firstTile;
-		this.tileRunEntryCount[index] = 0;
+		this.color[index] = drawColor;
+		this.blendMode[index] = blendMode;
+		this.pmuBank[index] = pmuBank;
+		this.parallax[index] = parallax;
+		this.batchBlitFirstEntry[index] = this.batchBlitEntryCount;
+		this.batchBlitItemCount[index] = 0;
+	}
+
+	public writeBatchBlitItem(index: number, surfaceId: number, srcX: number, srcY: number, width: number, height: number, dstX: number, dstY: number, advance: number): boolean {
+		if (this.batchBlitEntryCount >= VDP_BLITTER_RUN_ENTRY_CAPACITY) {
+			return false;
+		}
+		const entryIndex = this.batchBlitEntryCount++;
+		this.batchBlitSurfaceId[entryIndex] = surfaceId;
+		this.batchBlitSrcX[entryIndex] = srcX;
+		this.batchBlitSrcY[entryIndex] = srcY;
+		this.batchBlitWidth[entryIndex] = width;
+		this.batchBlitHeight[entryIndex] = height;
+		this.batchBlitDstX[entryIndex] = dstX;
+		this.batchBlitDstY[entryIndex] = dstY;
+		this.batchBlitAdvance[entryIndex] = advance;
+		this.batchBlitItemCount[index]++;
+		return true;
 	}
 
 	public beginCommandSlot(opcode: VdpBlitterOpcode, seq: number): number {

@@ -36,7 +36,7 @@ import {
 	hostSystemAtlasImage,
 	hostSystemAtlasPixels,
 } from '../../../rompack/host_system_atlas';
-import { forEachGlyphRunGlyph } from '../../shared/glyph_runs';
+import { forEachBatchBlitGlyph } from '../../shared/glyph_runs';
 import { hasPendingOverlayFrame } from '../overlay_queue';
 import { buildHostMenuState, buildHostOverlayState } from '../pipeline';
 import { hostOverlayMenu } from '../../../core/host_overlay_menu';
@@ -329,7 +329,7 @@ function drawPolyCommand(backend: WebGLBackend, state: HostOverlayRuntime, comma
 	return nextBoundTextures;
 }
 
-function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntime, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
+function drawBatchBlitBackgrounds(backend: WebGLBackend, state: HostOverlayRuntime, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
 	if (!command.has_background_color) {
 		return boundTextures;
 	}
@@ -337,9 +337,9 @@ function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntim
 	const lineHeight = font.lineHeight;
 	const nextBoundTextures = bindHostTexture(state.whiteTexture, boundTextures);
 	let count = 0;
-	forEachGlyphRunGlyph(command, (glyph, x, y) => {
+	forEachBatchBlitGlyph(command, (item, x, y) => {
 		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
-		count += pushFillRect(state, count, x, y, x + glyph.advance, y + lineHeight, command.z, command.background_color);
+		count += pushFillRect(state, count, x, y, x + item.advance, y + lineHeight, command.z, command.background_color);
 	});
 	if (count !== 0) {
 		flushWebGLInstanceBatch(backend, HOST_OVERLAY_DRAW_PASS, state, count, INSTANCE_FLOATS);
@@ -347,21 +347,21 @@ function drawGlyphRunBackgrounds(backend: WebGLBackend, state: HostOverlayRuntim
 	return nextBoundTextures;
 }
 
-function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
+function drawBatchBlitGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
 	const currentBoundTextures = bindHostTexture(state.hostAtlasTexture, boundTextures);
 	let count = 0;
-	forEachGlyphRunGlyph(command, (glyph, x, y) => {
-		const source = resolveImageSource(cache, glyph.imgid);
+	forEachBatchBlitGlyph(command, (item, x, y) => {
+		const source = resolveImageSource(cache, item.imgid);
 		ensureWebGLInstanceBufferCapacity(backend, state, count + 1, INSTANCE_FLOATS);
 		writeQuad(
 			state,
 			count,
 			x,
 			y,
-			glyph.width,
+			item.width,
 			0,
 			0,
-			glyph.height,
+			item.height,
 			source.u0,
 			source.v0,
 			source.u1,
@@ -377,9 +377,9 @@ function drawGlyphRunGlyphs(backend: WebGLBackend, state: HostOverlayRuntime, ca
 	return currentBoundTextures;
 }
 
-function drawGlyphRunCommand(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
-	let currentBoundTextures = drawGlyphRunBackgrounds(backend, state, command, boundTextures);
-	currentBoundTextures = drawGlyphRunGlyphs(backend, state, cache, command, currentBoundTextures);
+function drawBatchBlitCommand(backend: WebGLBackend, state: HostOverlayRuntime, cache: Map<string, HostOverlayImageSource>, command: GlyphRenderSubmission, boundTextures: BoundTextureState): BoundTextureState {
+	let currentBoundTextures = drawBatchBlitBackgrounds(backend, state, command, boundTextures);
+	currentBoundTextures = drawBatchBlitGlyphs(backend, state, cache, command, currentBoundTextures);
 	return currentBoundTextures;
 }
 
@@ -413,8 +413,8 @@ export function drawHost2DSubmission_WebGL(backend: WebGLBackend, state: HostOve
 			return drawRectCommand(backend, state, command, boundTextures);
 		case 'img':
 			return drawHostImage(backend, state, imageCache, command.imgid, command.pos.x, command.pos.y, command.pos.z, command.scale.x, command.scale.y, command.flip.flip_h, command.flip.flip_v, command.colorize, boundTextures);
-		case 'glyphs':
-			return drawGlyphRunCommand(backend, state, imageCache, command, boundTextures);
+		case 'items':
+			return drawBatchBlitCommand(backend, state, imageCache, command, boundTextures);
 		case 'poly':
 			return drawPolyCommand(backend, state, command, boundTextures);
 	}
@@ -429,8 +429,8 @@ export function drawHost2DCommand_WebGL(backend: WebGLBackend, state: HostOverla
 			const image = command as HostImageRenderSubmission;
 			return drawHostImage(backend, state, imageCache, image.imgid, image.pos.x, image.pos.y, image.pos.z, image.scale.x, image.scale.y, image.flip.flip_h, image.flip.flip_v, image.colorize, boundTextures);
 		}
-		case 'glyphs':
-			return drawGlyphRunCommand(backend, state, imageCache, command as GlyphRenderSubmission, boundTextures);
+		case 'items':
+			return drawBatchBlitCommand(backend, state, imageCache, command as GlyphRenderSubmission, boundTextures);
 		case 'poly':
 			return drawPolyCommand(backend, state, command as PolyRenderSubmission, boundTextures);
 	}

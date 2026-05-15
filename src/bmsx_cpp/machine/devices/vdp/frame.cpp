@@ -13,49 +13,26 @@ VdpBlitterSourceSaveState captureBlitterCommandSourceState(const VdpBlitterComma
 	};
 }
 
-VdpGlyphRunGlyphSaveState captureGlyphRunGlyphState(const VdpBlitterCommandBuffer& buffer, size_t index) {
-	VdpGlyphRunGlyphSaveState state;
-	state.surfaceId = buffer.glyphSurfaceId[index];
-	state.srcX = buffer.glyphSrcX[index];
-	state.srcY = buffer.glyphSrcY[index];
-	state.width = buffer.glyphWidth[index];
-	state.height = buffer.glyphHeight[index];
-	state.dstX = buffer.glyphDstX[index];
-	state.dstY = buffer.glyphDstY[index];
-	state.advance = buffer.glyphAdvance[index];
+VdpBatchBlitGlyphSaveState captureBatchBlitGlyphState(const VdpBlitterCommandBuffer& buffer, size_t index) {
+	VdpBatchBlitGlyphSaveState state;
+	state.surfaceId = buffer.batchBlitSurfaceId[index];
+	state.srcX = buffer.batchBlitSrcX[index];
+	state.srcY = buffer.batchBlitSrcY[index];
+	state.width = buffer.batchBlitWidth[index];
+	state.height = buffer.batchBlitHeight[index];
+	state.dstX = buffer.batchBlitDstX[index];
+	state.dstY = buffer.batchBlitDstY[index];
+	state.advance = buffer.batchBlitAdvance[index];
 	return state;
 }
 
-VdpTileRunBlitSaveState captureTileRunBlitState(const VdpBlitterCommandBuffer& buffer, size_t index) {
-	VdpTileRunBlitSaveState state;
-	state.surfaceId = buffer.tileSurfaceId[index];
-	state.srcX = buffer.tileSrcX[index];
-	state.srcY = buffer.tileSrcY[index];
-	state.width = buffer.tileWidth[index];
-	state.height = buffer.tileHeight[index];
-	state.dstX = buffer.tileDstX[index];
-	state.dstY = buffer.tileDstY[index];
-	return state;
-}
-
-std::vector<VdpGlyphRunGlyphSaveState> captureGlyphRunGlyphs(const VdpBlitterCommandBuffer& buffer, size_t commandIndex) {
-	std::vector<VdpGlyphRunGlyphSaveState> states;
-	const size_t firstEntry = buffer.glyphRunFirstEntry[commandIndex];
-	const size_t entryEnd = firstEntry + buffer.glyphRunEntryCount[commandIndex];
-	states.reserve(buffer.glyphRunEntryCount[commandIndex]);
+std::vector<VdpBatchBlitGlyphSaveState> captureBatchBlitGlyphs(const VdpBlitterCommandBuffer& buffer, size_t commandIndex) {
+	std::vector<VdpBatchBlitGlyphSaveState> states;
+	const size_t firstEntry = buffer.batchBlitFirstEntry[commandIndex];
+	const size_t entryEnd = firstEntry + buffer.batchBlitItemCount[commandIndex];
+	states.reserve(buffer.batchBlitItemCount[commandIndex]);
 	for (size_t index = firstEntry; index < entryEnd; ++index) {
-		states.push_back(captureGlyphRunGlyphState(buffer, index));
-	}
-	return states;
-}
-
-std::vector<VdpTileRunBlitSaveState> captureTileRunBlits(const VdpBlitterCommandBuffer& buffer, size_t commandIndex) {
-	std::vector<VdpTileRunBlitSaveState> states;
-	const size_t firstEntry = buffer.tileRunFirstEntry[commandIndex];
-	const size_t entryEnd = firstEntry + buffer.tileRunEntryCount[commandIndex];
-	states.reserve(buffer.tileRunEntryCount[commandIndex]);
-	for (size_t index = firstEntry; index < entryEnd; ++index) {
-		states.push_back(captureTileRunBlitState(buffer, index));
+		states.push_back(captureBatchBlitGlyphState(buffer, index));
 	}
 	return states;
 }
@@ -88,8 +65,7 @@ VdpBlitterCommandSaveState captureBlitterCommandState(const VdpBlitterCommandBuf
 	state.hasBackgroundColor = buffer.hasBackgroundColor[index] != 0u;
 	state.backgroundColor = buffer.backgroundColor[index];
 	state.lineHeight = buffer.lineHeight[index];
-	state.glyphs = captureGlyphRunGlyphs(buffer, index);
-	state.tiles = captureTileRunBlits(buffer, index);
+	state.items = captureBatchBlitGlyphs(buffer, index);
 	return state;
 }
 
@@ -102,25 +78,15 @@ std::vector<VdpBlitterCommandSaveState> captureBlitterCommandBufferState(const V
 	return states;
 }
 
-void restoreGlyphRunGlyph(VdpBlitterCommandBuffer& buffer, size_t index, const VdpGlyphRunGlyphSaveState& glyph) {
-	buffer.glyphSurfaceId[index] = glyph.surfaceId;
-	buffer.glyphSrcX[index] = glyph.srcX;
-	buffer.glyphSrcY[index] = glyph.srcY;
-	buffer.glyphWidth[index] = glyph.width;
-	buffer.glyphHeight[index] = glyph.height;
-	buffer.glyphDstX[index] = glyph.dstX;
-	buffer.glyphDstY[index] = glyph.dstY;
-	buffer.glyphAdvance[index] = glyph.advance;
-}
-
-void restoreTileRunBlit(VdpBlitterCommandBuffer& buffer, size_t index, const VdpTileRunBlitSaveState& tile) {
-	buffer.tileSurfaceId[index] = tile.surfaceId;
-	buffer.tileSrcX[index] = tile.srcX;
-	buffer.tileSrcY[index] = tile.srcY;
-	buffer.tileWidth[index] = tile.width;
-	buffer.tileHeight[index] = tile.height;
-	buffer.tileDstX[index] = tile.dstX;
-	buffer.tileDstY[index] = tile.dstY;
+void restoreBatchBlitGlyph(VdpBlitterCommandBuffer& buffer, size_t index, const VdpBatchBlitGlyphSaveState& item) {
+	buffer.batchBlitSurfaceId[index] = item.surfaceId;
+	buffer.batchBlitSrcX[index] = item.srcX;
+	buffer.batchBlitSrcY[index] = item.srcY;
+	buffer.batchBlitWidth[index] = item.width;
+	buffer.batchBlitHeight[index] = item.height;
+	buffer.batchBlitDstX[index] = item.dstX;
+	buffer.batchBlitDstY[index] = item.dstY;
+	buffer.batchBlitAdvance[index] = item.advance;
 }
 
 void restoreBlitterCommand(VdpBlitterCommandBuffer& buffer, size_t index, const VdpBlitterCommandSaveState& state) {
@@ -154,18 +120,12 @@ void restoreBlitterCommand(VdpBlitterCommandBuffer& buffer, size_t index, const 
 	buffer.hasBackgroundColor[index] = state.hasBackgroundColor ? 1u : 0u;
 	buffer.backgroundColor[index] = state.backgroundColor;
 	buffer.lineHeight[index] = state.lineHeight;
-	buffer.glyphRunFirstEntry[index] = static_cast<u32>(buffer.glyphEntryCount);
-	buffer.glyphRunEntryCount[index] = static_cast<u32>(state.glyphs.size());
-	for (size_t glyphIndex = 0u; glyphIndex < state.glyphs.size(); ++glyphIndex) {
-		restoreGlyphRunGlyph(buffer, buffer.glyphEntryCount + glyphIndex, state.glyphs[glyphIndex]);
+	buffer.batchBlitFirstEntry[index] = static_cast<u32>(buffer.batchBlitEntryCount);
+	buffer.batchBlitItemCount[index] = static_cast<u32>(state.items.size());
+	for (size_t itemIndex = 0u; itemIndex < state.items.size(); ++itemIndex) {
+		restoreBatchBlitGlyph(buffer, buffer.batchBlitEntryCount + itemIndex, state.items[itemIndex]);
 	}
-	buffer.glyphEntryCount += state.glyphs.size();
-	buffer.tileRunFirstEntry[index] = static_cast<u32>(buffer.tileEntryCount);
-	buffer.tileRunEntryCount[index] = static_cast<u32>(state.tiles.size());
-	for (size_t tileIndex = 0u; tileIndex < state.tiles.size(); ++tileIndex) {
-		restoreTileRunBlit(buffer, buffer.tileEntryCount + tileIndex, state.tiles[tileIndex]);
-	}
-	buffer.tileEntryCount += state.tiles.size();
+	buffer.batchBlitEntryCount += state.items.size();
 }
 
 void restoreBlitterCommandBufferState(VdpBlitterCommandBuffer& buffer, const std::vector<VdpBlitterCommandSaveState>& states) {

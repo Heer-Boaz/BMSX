@@ -7,7 +7,6 @@
 #include "common/clamp.h"
 #include <algorithm>
 #include <cmath>
-#include <variant>
 
 namespace bmsx {
 namespace {
@@ -87,12 +86,6 @@ void addBufferedPressId(ActionAggregation& aggregation, const InputStateManager&
 	if (pressId.has_value() && (!aggregation.bufferedPressId.has_value() || pressId.value() > aggregation.bufferedPressId.value())) {
 		aggregation.bufferedPressId = pressId;
 	}
-}
-
-const std::string& inputBindingId(const InputBinding& binding) {
-	return std::visit([](const auto& typedBinding) -> const std::string& {
-		return typedBinding.id;
-	}, binding);
 }
 
 void mergeActionAggregation(ActionAggregation& merged, const ActionAggregation& source) {
@@ -450,6 +443,7 @@ void PlayerInput::consumeAction(const std::string& action) {
 }
 
 void PlayerInput::consumeRawButton(const std::string& button, InputSource source) {
+	consumeGameplayButton(button, source);
 	auto* handler = inputHandlers[sourceIndex(source)];
 	if (handler) {
 		handler->consumeButton(button);

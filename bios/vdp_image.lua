@@ -130,4 +130,8 @@ function vdp_image.write_glyph_color(glyph, x, y, z, layer, color)
 	vdp_image.write_blit_color(glyph.imgid, x, y, z, layer, 1, 1, 0, color, 0)
 end
 
+function vdp_image.write_item_color(item, x, y, z, layer, color)
+	vdp_stream.blit_source_color(vdp_image.slot(item), item.u, item.v, item.w, item.h, x, y, z, layer, 1, 1, 0, color, 0)
+end
+
 return vdp_image

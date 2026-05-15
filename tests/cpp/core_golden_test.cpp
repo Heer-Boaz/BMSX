@@ -1334,7 +1334,7 @@ struct InputHarness {
 		, inputController(memory, bmsx::Input::instance(), cpu.stringPool()) {
 			for (bmsx::i32 player = 1; player <= bmsx::PLAYERS_MAX; player += 1) {
 				auto* playerInput = bmsx::Input::instance().getPlayerInput(player);
-				playerInput->clearContext("inp_chip");
+				playerInput->clearContext("base");
 				playerInput->clearEdgeState();
 			}
 			inputController.reset();
@@ -1344,7 +1344,7 @@ struct InputHarness {
 void testInputControllerStateGolden() {
 	InputHarness live;
 	const bmsx::StringId action = live.cpu.stringPool().intern("jump");
-	const bmsx::StringId bind = live.cpu.stringPool().intern("a,left");
+	const bmsx::StringId bind = live.cpu.stringPool().intern("KeyX,a,ArrowLeft,left");
 	const bmsx::StringId query = live.cpu.stringPool().intern("jump[p]");
 	const bmsx::StringId consume = live.cpu.stringPool().intern("jump,dash");
 
@@ -1477,8 +1477,8 @@ void testInputControllerRealPlayerContext() {
 	require((status & bmsx::INP_STATUS_JUST_PRESSED) != 0u, "real PlayerInput context should expose ICU just-pressed snapshot");
 	require((status & bmsx::INP_STATUS_WAS_PRESSED) != 0u, "real PlayerInput context should expose ICU buffered snapshot");
 	require((status & bmsx::INP_STATUS_HAS_VALUE) != 0u, "real PlayerInput context should expose ICU value snapshot");
-	require(h.memory.readIoU32(bmsx::IO_INP_VALUE) == 0u, "real PlayerInput context should expose ICU Q16 value");
-	require(playerTwo->getActionState("jump").justpressed, "real PlayerInput should expose the ICU action edge");
+	require(h.memory.readIoU32(bmsx::IO_INP_VALUE) == static_cast<uint32_t>(bmsx::FIX16_ONE), "real PlayerInput context should expose ICU Q16 value");
+	require(!playerTwo->getActionState("jump").justpressed, "ICU committed mapping should not mutate PlayerInput action contexts");
 	require(h.memory.readIoU32(bmsx::IO_INP_EVENT_COUNT) == 1u, "ICU event FIFO should expose one sampled edge");
 	require(h.memory.readIoU32(bmsx::IO_INP_EVENT_PLAYER) == 2u, "ICU event FIFO should expose the sampled player");
 	require(bmsx::asStringId(h.memory.readValue(bmsx::IO_INP_EVENT_ACTION)) == action, "ICU event FIFO should expose the sampled action");
@@ -1486,8 +1486,11 @@ void testInputControllerRealPlayerContext() {
 	require((eventFlags & bmsx::INP_STATUS_JUST_PRESSED) != 0u, "ICU event FIFO should expose the sampled action edge flags");
 	require((eventFlags & bmsx::INP_STATUS_WAS_PRESSED) != 0u, "ICU event FIFO should expose the sampled action buffer flags");
 	require((eventFlags & bmsx::INP_STATUS_HAS_VALUE) != 0u, "ICU event FIFO should expose the sampled action value flag");
-	require(h.memory.readIoU32(bmsx::IO_INP_EVENT_VALUE) == 0u, "ICU event FIFO should expose the sampled Q16 value");
+	require(h.memory.readIoU32(bmsx::IO_INP_EVENT_VALUE) == static_cast<uint32_t>(bmsx::FIX16_ONE), "ICU event FIFO should expose the sampled Q16 value");
 	require(h.memory.readIoU32(bmsx::IO_INP_EVENT_REPEAT_COUNT) == 0u, "ICU event FIFO should expose the sampled repeat count");
+	h.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(complexQuery));
+	require(h.memory.readIoU32(bmsx::IO_INP_STATUS) == 1u, "compound ICU query should return boolean status");
+	require(h.memory.readIoU32(bmsx::IO_INP_VALUE) == 0u, "compound ICU query should not expose an action value");
 	const bmsx::StringPoolState stringState = h.cpu.stringPool().captureState();
 	const bmsx::InputControllerState savedInput = h.inputController.captureState();
 	InputHarness restored;
@@ -1499,9 +1502,33 @@ void testInputControllerRealPlayerContext() {
 	require(restored.memory.readIoU32(bmsx::IO_INP_EVENT_COUNT) == 0u, "ICU event pop should remove the front event");
 	require((restored.memory.readIoU32(bmsx::IO_INP_EVENT_STATUS) & bmsx::INP_EVENT_STATUS_EMPTY) != 0u, "ICU event status should expose an empty FIFO");
 	require(restored.memory.readIoU32(bmsx::IO_INP_EVENT_CTRL) == 0u, "ICU event control doorbell should self-clear");
-	h.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(complexQuery));
-	require(h.memory.readIoU32(bmsx::IO_INP_STATUS) == 1u, "compound ICU query should return boolean status");
-	require(h.memory.readIoU32(bmsx::IO_INP_VALUE) == 0u, "compound ICU query should not expose an action value");
+}
+
+void testInputControllerBaseMappingQueryGolden() {
+	InputHarness h;
+	const bmsx::StringId titleStartQuery = h.cpu.stringPool().intern("start[jp] || a[jp]");
+	const bmsx::StringId startQuery = h.cpu.stringPool().intern("start[jp]");
+	auto* playerOne = bmsx::Input::instance().getPlayerInput(1);
+
+	bmsx::InputEvent event;
+	event.eventType = bmsx::InputEvent::Type::Press;
+	event.identifier = "Enter";
+	event.timestamp = 0.0;
+	event.consumed = false;
+	event.pressId = 12;
+	playerOne->recordButtonEvent(bmsx::InputSource::Keyboard, "Enter", std::move(event));
+	writeIoWord(h.memory, bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
+	h.inputController.onVblankEdge(1000.0 / 60.0, 111u);
+
+	h.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(titleStartQuery));
+	require(h.memory.readIoU32(bmsx::IO_INP_STATUS) == 1u, "ICU should evaluate base mapping compound queries without a committed action");
+	require(h.memory.readIoU32(bmsx::IO_INP_VALUE) == 0u, "ICU compound base mapping query should not expose an action value");
+
+	h.memory.writeValue(bmsx::IO_INP_QUERY, bmsx::valueString(startQuery));
+	const uint32_t status = h.memory.readIoU32(bmsx::IO_INP_STATUS);
+	require((status & bmsx::INP_STATUS_JUST_PRESSED) != 0u, "ICU should expose base mapping action edges");
+	require((status & bmsx::INP_STATUS_WAS_PRESSED) != 0u, "ICU should expose base mapping buffered presses");
+	require((status & bmsx::INP_STATUS_HAS_VALUE) != 0u, "ICU should expose base mapping action values");
 }
 
 void expectApuFault(const AudioHarness& h, uint32_t code, const char* label) {
@@ -2510,7 +2537,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 45> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 46> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -2547,6 +2574,7 @@ int main() {
 		{"ICU raw player selector", testInputControllerRawPlayerSelectorGolden},
 		{"ICU output registers", testInputControllerOutputRegisters},
 		{"ICU real PlayerInput context", testInputControllerRealPlayerContext},
+		{"ICU base mapping query", testInputControllerBaseMappingQueryGolden},
 		{"runtime vblank edge completes active tick", testRuntimeVblankEdgeCompletesActiveTickGolden},
 		{"memory access and opcode", testAccessKindAndOpcodeGolden},
 		{"timing and hash", testTimingAndHashGolden},

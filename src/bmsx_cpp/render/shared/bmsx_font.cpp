@@ -14,7 +14,7 @@ namespace {
 
 class HostSystemBitmapFontSource final : public BitmapFontSource {
 public:
-	const ImgMeta& glyphMeta(const std::string& imgid) const override {
+	const ImgMeta& itemMeta(const std::string& imgid) const override {
 		const HostSystemAtlasGeneratedImage& image = hostSystemAtlasImage(imgid);
 		m_meta.width = image.width;
 		m_meta.height = image.height;
@@ -22,7 +22,7 @@ public:
 		return m_meta;
 	}
 
-	ImageAtlasRect glyphRect(const std::string& imgid) const override {
+	ImageAtlasRect itemRect(const std::string& imgid) const override {
 		const HostSystemAtlasGeneratedImage& image = hostSystemAtlasImage(imgid);
 		return ImageAtlasRect{
 			BIOS_ATLAS_ID,

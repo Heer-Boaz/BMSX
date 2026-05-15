@@ -9,6 +9,8 @@ constexpr int VDP_RENDER_CLEAR_COST = 8;
 constexpr int VDP_RENDER_ALPHA_COST_MULTIPLIER = 2;
 constexpr int VDP_RENDER_TILE_RUN_SETUP_COST = 6;
 constexpr int VDP_RENDER_BILLBOARD_COST = 1;
+constexpr int VDP_RENDER_BATCH_BLIT_SETUP_COST = 4;
+constexpr int VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR = 8;
 constexpr int VDP_RENDER_TILE_RUN_DENSITY_DIVISOR = 16;
 
 struct VdpClippedRect {
