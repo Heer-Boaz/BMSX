@@ -8,6 +8,7 @@ import { ApuCommandFifo } from './command_fifo';
 import { ApuEventLatch } from './event_latch';
 import { clearApuCommandLatch } from './command_latch';
 import { ApuSlotBank } from './slot_bank';
+import { ApuSelectedSlotLatch } from './selected_slot_latch';
 import {
 	APU_COMMAND_FIFO_CAPACITY,
 	APU_SAMPLE_RATE_HZ,
@@ -24,7 +25,6 @@ import {
 	APU_PARAMETER_FADE_SAMPLES_INDEX,
 	APU_PARAMETER_GAIN_Q12_INDEX,
 	APU_PARAMETER_SLOT_INDEX,
-	APU_PARAMETER_SOURCE_ADDR_INDEX,
 	APU_SLOT_COUNT,
 	APU_SLOT_PHASE_FADING,
 	APU_STATUS_BUSY,
@@ -33,7 +33,6 @@ import {
 	APU_STATUS_FAULT,
 	APU_STATUS_OUTPUT_EMPTY,
 	APU_STATUS_OUTPUT_FULL,
-	APU_STATUS_SELECTED_SLOT_ACTIVE,
 	type ApuAudioSlot,
 	type ApuAudioSource,
 	type ApuParameterRegisterWords,
@@ -52,7 +51,6 @@ import {
 	IO_APU_OUTPUT_FREE_FRAMES,
 	IO_APU_OUTPUT_QUEUED_FRAMES,
 	IO_APU_PARAMETER_REGISTER_ADDRS,
-	IO_APU_SELECTED_SOURCE_ADDR,
 	IO_APU_SELECTED_SLOT_REG0,
 	IO_APU_SLOT,
 	IO_APU_STATUS,
@@ -79,6 +77,7 @@ export class AudioController {
 	private readonly commandDispatchRegisterWords = new Uint32Array(APU_PARAMETER_REGISTER_COUNT);
 	private readonly slotRegisterDispatchWords = new Uint32Array(APU_PARAMETER_REGISTER_COUNT);
 	private readonly slots = new ApuSlotBank();
+	private readonly selectedSlotLatch: ApuSelectedSlotLatch;
 	private cpuHz = APU_SAMPLE_RATE_HZ;
 	private sampleCarry = 0;
 	private availableSamples = 0;
@@ -94,9 +93,10 @@ export class AudioController {
 		this.sourceDma = new ApuSourceDma(memory);
 		this.eventLatch = new ApuEventLatch(memory, irq);
 		this.fault = new DeviceStatusLatch(memory, APU_DEVICE_STATUS_REGISTERS);
+		this.selectedSlotLatch = new ApuSelectedSlotLatch(memory, this.fault, this.slots);
 		this.memory.mapIoRead(IO_APU_STATUS, this.onStatusRead.bind(this));
 		this.memory.mapIoWrite(IO_APU_CMD, this.onCommandWrite.bind(this));
-		this.memory.mapIoWrite(IO_APU_SLOT, this.updateSelectedSlotActiveStatus.bind(this));
+		this.memory.mapIoWrite(IO_APU_SLOT, this.selectedSlotLatch.refresh.bind(this.selectedSlotLatch));
 		this.memory.mapIoWrite(IO_APU_FAULT_ACK, () => {
 			this.fault.acknowledge();
 		});
@@ -131,7 +131,7 @@ export class AudioController {
 		this.fault.resetStatus();
 		clearApuCommandLatch(this.memory);
 		this.eventLatch.reset();
-		this.memory.writeValue(IO_APU_SELECTED_SOURCE_ADDR, 0);
+		this.selectedSlotLatch.reset();
 		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, 0);
 	}
 
@@ -192,7 +192,7 @@ export class AudioController {
 			}
 			this.audioOutput.restoreVoiceState(voiceState);
 		}
-		this.updateSelectedSlotActiveStatus();
+		this.selectedSlotLatch.refresh();
 		this.scheduleNextService(nowCycles);
 	}
 
@@ -353,14 +353,14 @@ export class AudioController {
 	private setSlotActive(slot: ApuAudioSlot, registerWords: ApuParameterRegisterWords, voiceId: ApuVoiceId): void {
 		this.slots.setActive(slot, registerWords, voiceId);
 		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, this.slots.activeMask);
-		this.updateSelectedSlotActiveStatus();
+		this.selectedSlotLatch.refresh();
 	}
 
 	private stopSlotActive(slot: ApuAudioSlot): void {
 		this.slots.clearSlot(slot);
 		this.sourceDma.clearSlot(slot);
 		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, this.slots.activeMask);
-		this.updateSelectedSlotActiveStatus();
+		this.selectedSlotLatch.refresh();
 	}
 
 	private replaceSlotSourceDma(slot: ApuAudioSlot, source: ApuAudioSource): boolean {
@@ -377,7 +377,7 @@ export class AudioController {
 	private setSlotPhase(slot: ApuAudioSlot, phase: number): void {
 		this.slots.setPhase(slot, phase);
 		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, this.slots.activeMask);
-		this.updateSelectedSlotActiveStatus();
+		this.selectedSlotLatch.refresh();
 	}
 
 	private replayHostOutput(slot: ApuAudioSlot, voiceId: ApuVoiceId): boolean {
@@ -417,12 +417,6 @@ export class AudioController {
 		);
 	}
 
-	private updateSelectedSlotActiveStatus(): void {
-		const slot = this.memory.readIoU32(IO_APU_SLOT);
-		const active = slot < APU_SLOT_COUNT && (this.slots.activeMask & (1 << slot)) !== 0;
-		this.memory.writeIoValue(IO_APU_SELECTED_SOURCE_ADDR, active ? this.slots.registerWord(slot, APU_PARAMETER_SOURCE_ADDR_INDEX) : 0);
-		this.fault.setStatusFlag(APU_STATUS_SELECTED_SLOT_ACTIVE, active);
-	}
 
 	private onStatusRead(): number {
 		const busy = this.slots.activeMask !== 0 || !this.commandFifo.empty;
@@ -491,7 +485,7 @@ export class AudioController {
 				}
 			}
 		}
-		this.updateSelectedSlotActiveStatus();
+		this.selectedSlotLatch.refresh();
 	}
 
 	private playOutputVoice(slot: ApuAudioSlot, voiceId: ApuVoiceId, source: ApuAudioSource, registerWords: ApuParameterRegisterWords, fadeSamples: number): boolean {

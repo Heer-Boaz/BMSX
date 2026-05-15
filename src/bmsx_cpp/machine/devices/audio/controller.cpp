@@ -30,7 +30,8 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 	, m_audioOutput(audioOutput)
 	, m_scheduler(scheduler)
 	, m_eventLatch(memory, irq)
-	, m_fault(memory, APU_DEVICE_STATUS_REGISTERS) {
+	, m_fault(memory, APU_DEVICE_STATUS_REGISTERS)
+	, m_selectedSlotLatch(memory, m_fault, m_slots) {
 	m_memory.mapIoRead(IO_APU_STATUS, this, &AudioController::onStatusReadThunk);
 	m_memory.mapIoWrite(IO_APU_CMD, this, &AudioController::onCommandWriteThunk);
 	m_memory.mapIoWrite(IO_APU_SLOT, this, &AudioController::onSlotWriteThunk);
@@ -63,7 +64,7 @@ void AudioController::reset() {
 	m_fault.resetStatus();
 	clearApuCommandLatch(m_memory);
 	m_eventLatch.reset();
-	m_memory.writeValue(IO_APU_SELECTED_SOURCE_ADDR, valueNumber(0.0));
+	m_selectedSlotLatch.reset();
 	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(0.0));
 }
 
@@ -156,7 +157,7 @@ void AudioController::onCommandWriteThunk(void* context, uint32_t, Value) {
 
 // disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the APU device instance.
 void AudioController::onSlotWriteThunk(void* context, uint32_t, Value) {
-	static_cast<AudioController*>(context)->updateSelectedSlotActiveStatus();
+	static_cast<AudioController*>(context)->m_selectedSlotLatch.refresh();
 }
 
 // disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk back into the APU device instance.
@@ -321,20 +322,20 @@ void AudioController::emitSlotEvent(uint32_t kind, ApuAudioSlot slot, ApuVoiceId
 void AudioController::setSlotActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords, ApuVoiceId voiceId) {
 	m_slots.setActive(slot, registerWords, voiceId);
 	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_slots.activeMask())));
-	updateSelectedSlotActiveStatus();
+	m_selectedSlotLatch.refresh();
 }
 
 void AudioController::stopSlotActive(ApuAudioSlot slot) {
 	m_slots.clearSlot(slot);
 	m_sourceDma.clearSlot(slot);
 	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_slots.activeMask())));
-	updateSelectedSlotActiveStatus();
+	m_selectedSlotLatch.refresh();
 }
 
 void AudioController::setSlotPhase(ApuAudioSlot slot, ApuSlotPhase phase) {
 	m_slots.setPhase(slot, phase);
 	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_slots.activeMask())));
-	updateSelectedSlotActiveStatus();
+	m_selectedSlotLatch.refresh();
 }
 
 bool AudioController::replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId) {
@@ -376,12 +377,6 @@ void AudioController::scheduleNextService(int64_t nowCycles) {
 	m_scheduler.scheduleDeviceService(DeviceServiceApu, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, 1));
 }
 
-void AudioController::updateSelectedSlotActiveStatus() {
-	const uint32_t slot = m_memory.readIoU32(IO_APU_SLOT);
-	const bool active = slot < APU_SLOT_COUNT && (m_slots.activeMask() & (1u << slot)) != 0u;
-	m_memory.writeIoValue(IO_APU_SELECTED_SOURCE_ADDR, valueNumber(active ? static_cast<double>(m_slots.registerWord(slot, APU_PARAMETER_SOURCE_ADDR_INDEX)) : 0.0));
-	m_fault.setStatusFlag(APU_STATUS_SELECTED_SLOT_ACTIVE, active);
-}
 
 Value AudioController::onStatusRead() const {
 	uint32_t status = m_fault.status;
@@ -456,7 +451,7 @@ void AudioController::writeSlotRegisterWord(ApuAudioSlot slot, uint32_t paramete
 			}
 		}
 	}
-	updateSelectedSlotActiveStatus();
+	m_selectedSlotLatch.refresh();
 }
 
 } // namespace bmsx

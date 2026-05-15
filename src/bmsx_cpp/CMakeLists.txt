@@ -188,6 +188,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/command_latch.cpp
 	machine/devices/audio/event_latch.cpp
 	machine/devices/audio/source.cpp
+	machine/devices/audio/selected_slot_latch.cpp
 	machine/devices/audio/slot_bank.cpp
 	machine/devices/audio/output_ring.cpp
 	machine/devices/audio/pcm_decoder.cpp

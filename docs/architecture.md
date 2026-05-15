@@ -242,8 +242,10 @@ mirrored `machine/devices/audio/command_latch` files. The APU event latch
 read/write pointers, queued count, and per-entry parameter words are owned by
 mirrored `machine/devices/audio/command_fifo` files and are saved through that
 owner.
-The APU slot bank owns active slot phase/register/cursor/fade/voice-id words in
-mirrored `machine/devices/audio/slot_bank` files; aggregate save-state records
+The selected-slot source/status latch is owned by mirrored
+`machine/devices/audio/selected_slot_latch` files. The APU slot bank owns active
+slot phase/register/cursor/fade/voice-id words in mirrored
+`machine/devices/audio/slot_bank` files; aggregate save-state records
 read and restore those live words through that owner.
 The AOUT playback/filter parameter decoder is owned by mirrored `machine/devices/audio/playback` files. The APU source register decoder, source DMA latch, and source metadata validator are owned by mirrored `machine/devices/audio/source` files. The PCM source data validator is owned by mirrored `machine/devices/audio/pcm_decoder` files; scalar PCM sample decode lives in mirrored `pcm_decoder_hot_path` files so AOUT keeps the same retained-buffer hot path without owning sample-format decoding. The BADP decoder and seek-table datapath are owned by mirrored
 `machine/devices/audio/badp_decoder` files; active decoder latches stay in the

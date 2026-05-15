@@ -139,7 +139,7 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 		}
 		m_audioOutput.restoreVoiceState(voiceState);
 	}
-	updateSelectedSlotActiveStatus();
+	m_selectedSlotLatch.refresh();
 	scheduleNextService(nowCycles);
 }
 

@@ -5,6 +5,7 @@
 #include "machine/devices/audio/event_latch.h"
 #include "machine/devices/audio/output.h"
 #include "machine/devices/audio/save_state.h"
+#include "machine/devices/audio/selected_slot_latch.h"
 #include "machine/devices/audio/source.h"
 #include "machine/devices/audio/slot_bank.h"
 #include "machine/devices/device_status.h"
@@ -56,11 +57,12 @@ private:
 	ApuParameterRegisterWords m_commandDispatchRegisterWords{};
 	ApuParameterRegisterWords m_slotRegisterDispatchWords{};
 	ApuSlotBank m_slots;
+	DeviceStatusLatch m_fault;
+	ApuSelectedSlotLatch m_selectedSlotLatch;
 	ApuSourceDma m_sourceDma;
 	int64_t m_cpuHz = APU_SAMPLE_RATE_HZ;
 	int64_t m_sampleCarry = 0;
 	int64_t m_availableSamples = 0;
-	DeviceStatusLatch m_fault;
 
 	bool enqueueCommand(uint32_t command);
 	void drainCommandFifo();
@@ -80,7 +82,6 @@ private:
 	bool replayHostOutput(ApuAudioSlot slot, ApuVoiceId voiceId);
 	void advanceActiveSlots(int64_t samples);
 	void scheduleNextService(int64_t nowCycles);
-	void updateSelectedSlotActiveStatus();
 	Value onStatusRead() const;
 	Value onSelectedSlotRegisterRead(uint32_t addr) const;
 	void onSelectedSlotRegisterWrite(uint32_t addr, Value value);
