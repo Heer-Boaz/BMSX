@@ -155,8 +155,8 @@ Internal units:
 - `readback` owns the CPU-visible read-surface registry, retained read cache,
   per-frame read budget, and overflow latch.
 - `PMU` owns bank registers, selected bank, and BLIT resolve state.
-- `SBX` owns skybox register-window staging, packet staging, frame seal, and
-  sampled face words.
+- `SBX` owns skybox register-window staging, packet staging, frame seal,
+  VRAM-backed face-source resolution, and sampled face words.
 - `BBU` owns billboard packet decode/source admission, retained
   fixed-capacity billboard frame buffers, and instance emission limits.
 - `LPU` owns raw ambient, directional, and point-light register words.

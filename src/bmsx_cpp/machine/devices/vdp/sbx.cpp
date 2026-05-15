@@ -1,5 +1,7 @@
 #include "machine/devices/vdp/sbx.h"
 
+#include "machine/devices/vdp/vram.h"
+
 namespace bmsx {
 
 void VdpSbxUnit::reset() {
@@ -63,6 +65,70 @@ VdpSbxFrameDecision VdpSbxUnit::completeFrameSeal(const VdpSbxFrameResolution& r
 	decision.faultCode = VDP_FAULT_NONE;
 	decision.faultDetail = 0u;
 	return decision;
+}
+
+bool VdpSbxUnit::resolveFrameSamplesInto(const VdpVramUnit& vram, u32 control, const FaceWords& faceWords, VdpSkyboxSamples& samples, VdpSbxFrameResolution& resolution) const {
+	resolution.faultCode = VDP_FAULT_NONE;
+	resolution.faultDetail = 0u;
+	if ((control & VDP_SBX_CONTROL_ENABLE) == 0u) {
+		return true;
+	}
+	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
+		if (!resolveSampleInto(
+			vram,
+			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_SLOT_WORD),
+			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_U_WORD),
+			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_V_WORD),
+			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_W_WORD),
+			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_H_WORD),
+			samples[index],
+			resolution)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool VdpSbxUnit::resolveSampleInto(const VdpVramUnit& vram, u32 slot, u32 u, u32 v, u32 w, u32 h, VdpResolvedBlitterSample& target, VdpSbxFrameResolution& resolution) const {
+	resolution.faultCode = VDP_FAULT_NONE;
+	resolution.faultDetail = 0u;
+	if (slot == VDP_SLOT_SYSTEM) {
+		target.source.surfaceId = VDP_RD_SURFACE_SYSTEM;
+	} else if (slot == VDP_SLOT_PRIMARY) {
+		target.source.surfaceId = VDP_RD_SURFACE_PRIMARY;
+	} else if (slot == VDP_SLOT_SECONDARY) {
+		target.source.surfaceId = VDP_RD_SURFACE_SECONDARY;
+	} else {
+		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
+		resolution.faultDetail = slot;
+		return false;
+	}
+	target.source.srcX = u;
+	target.source.srcY = v;
+	target.source.width = w;
+	target.source.height = h;
+	if (w == 0u || h == 0u) {
+		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
+		resolution.faultDetail = w | (h << 16u);
+		return false;
+	}
+	const VdpSurfaceUploadSlot* surface = vram.findSurface(target.source.surfaceId);
+	if (surface == nullptr) {
+		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
+		resolution.faultDetail = target.source.surfaceId;
+		return false;
+	}
+	const uint64_t sourceRight = static_cast<uint64_t>(u) + static_cast<uint64_t>(w);
+	const uint64_t sourceBottom = static_cast<uint64_t>(v) + static_cast<uint64_t>(h);
+	if (sourceRight > surface->surfaceWidth || sourceBottom > surface->surfaceHeight) {
+		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
+		resolution.faultDetail = u | (v << 16u);
+		return false;
+	}
+	target.surfaceWidth = surface->surfaceWidth;
+	target.surfaceHeight = surface->surfaceHeight;
+	target.slot = slot;
+	return true;
 }
 
 void VdpSbxUnit::presentFrame(u32 control, const FaceWords& faceWords) {

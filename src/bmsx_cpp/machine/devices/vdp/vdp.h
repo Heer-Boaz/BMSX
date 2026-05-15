@@ -257,10 +257,7 @@ private:
 		bool tryResolveSurfaceIdForSlot(u32 slot, uint32_t& surfaceId, uint32_t faultCode);
 		bool tryResolveBlitterSourceWordsInto(u32 slot, u32 u, u32 v, u32 w, u32 h, BlitterSource& target, uint32_t faultCode);
 		const VdpSurfaceUploadSlot* tryResolveBlitterSurfaceForSource(const BlitterSource& source, uint32_t faultCode, uint32_t zeroSizeFaultCode);
-		bool resolveSkyboxSampleInto(u32 slot, u32 u, u32 v, u32 w, u32 h, ResolvedBlitterSample& target, VdpSbxFrameResolution& resolution) const;
 		void resolveBbuSourceInto(const VdpBbuPacket& packet, VdpBbuSourceResolution& target) const;
-		bool resolveSkyboxFrameSamplesInto(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples, VdpSbxFrameResolution& resolution);
-		bool resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples);
 
 	void commitLiveVisualState();
 };

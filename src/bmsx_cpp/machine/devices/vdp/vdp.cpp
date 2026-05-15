@@ -1227,7 +1227,7 @@ bool VDP::sealSubmittedFrame() {
 	const VdpSbxFrameDecision sbxDecision = m_sbx.beginFrameSeal();
 	const VdpSbxUnit::FaceWords& sbxSealFaceWords = m_sbx.sealFaceWords();
 	VdpSbxFrameResolution sbxResolution;
-	resolveSkyboxFrameSamplesInto(sbxDecision.control, sbxSealFaceWords, m_sbxSealSamples, sbxResolution);
+	m_sbx.resolveFrameSamplesInto(m_vram, sbxDecision.control, sbxSealFaceWords, m_sbxSealSamples, sbxResolution);
 	const VdpSbxFrameDecision completedSbx = m_sbx.completeFrameSeal(sbxResolution);
 	if (completedSbx.faultCode != VDP_FAULT_NONE) {
 		m_fault.raise(completedSbx.faultCode, completedSbx.faultDetail);
@@ -1821,85 +1821,6 @@ bool VDP::latchMeshPacket(const VdpMduPacket& packet) {
 	return true;
 }
 
-bool VDP::resolveSkyboxSampleInto(
-	u32 slot,
-	u32 u,
-	u32 v,
-	u32 w,
-	u32 h,
-	ResolvedBlitterSample& target,
-	VdpSbxFrameResolution& resolution) const {
-	resolution.faultCode = VDP_FAULT_NONE;
-	resolution.faultDetail = 0u;
-	if (slot == VDP_SLOT_SYSTEM) {
-		target.source.surfaceId = VDP_RD_SURFACE_SYSTEM;
-	} else if (slot == VDP_SLOT_PRIMARY) {
-		target.source.surfaceId = VDP_RD_SURFACE_PRIMARY;
-	} else if (slot == VDP_SLOT_SECONDARY) {
-		target.source.surfaceId = VDP_RD_SURFACE_SECONDARY;
-	} else {
-		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
-		resolution.faultDetail = slot;
-		return false;
-	}
-	target.source.srcX = u;
-	target.source.srcY = v;
-	target.source.width = w;
-	target.source.height = h;
-	if (w == 0u || h == 0u) {
-		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
-		resolution.faultDetail = w | (h << 16u);
-		return false;
-	}
-	const VdpSurfaceUploadSlot* surface = m_vram.findSurface(target.source.surfaceId);
-	if (surface == nullptr) {
-		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
-		resolution.faultDetail = target.source.surfaceId;
-		return false;
-	}
-	const uint64_t sourceRight = static_cast<uint64_t>(u) + static_cast<uint64_t>(w);
-	const uint64_t sourceBottom = static_cast<uint64_t>(v) + static_cast<uint64_t>(h);
-	if (sourceRight > surface->surfaceWidth || sourceBottom > surface->surfaceHeight) {
-		resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
-		resolution.faultDetail = u | (v << 16u);
-		return false;
-	}
-	target.surfaceWidth = surface->surfaceWidth;
-	target.surfaceHeight = surface->surfaceHeight;
-	target.slot = slot;
-	return true;
-}
-
-bool VDP::resolveSkyboxFrameSamplesInto(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples, VdpSbxFrameResolution& resolution) {
-	resolution.faultCode = VDP_FAULT_NONE;
-	resolution.faultDetail = 0u;
-	if ((control & VDP_SBX_CONTROL_ENABLE) == 0u) {
-		return true;
-	}
-	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
-		if (!resolveSkyboxSampleInto(
-			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_SLOT_WORD),
-			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_U_WORD),
-			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_V_WORD),
-			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_W_WORD),
-			readSkyboxFaceSourceWord(faceWords, index, SKYBOX_FACE_H_WORD),
-			samples[index],
-			resolution)) {
-			return false;
-		}
-	}
-	return true;
-}
-
-bool VDP::resolveSkyboxFrameSamples(u32 control, const VdpSbxUnit::FaceWords& faceWords, SkyboxSamples& samples) {
-	VdpSbxFrameResolution resolution;
-	if (!resolveSkyboxFrameSamplesInto(control, faceWords, samples, resolution)) {
-		m_fault.raise(resolution.faultCode, resolution.faultDetail);
-		return false;
-	}
-	return true;
-}
-
 bool VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 priority, Layer2D layer) {
 	const VdpClippedRect clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, m_fbm.width(), m_fbm.height());
 	if (clipped.area == 0.0) {
@@ -2081,7 +2002,10 @@ void VDP::latchPayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, 
 void VDP::commitLiveVisualState() {
 	m_sbx.presentLiveState();
 	m_vout.presentLiveState(m_xf, m_sbx.visibleEnabled(), m_lpu, m_mfu, m_jtu);
-	resolveSkyboxFrameSamples(m_sbx.visibleControl(), m_sbx.visibleFaceWords(), m_vout.visibleSkyboxSampleBuffer());
+	VdpSbxFrameResolution resolution;
+	if (!m_sbx.resolveFrameSamplesInto(m_vram, m_sbx.visibleControl(), m_sbx.visibleFaceWords(), m_vout.visibleSkyboxSampleBuffer(), resolution)) {
+		m_fault.raise(resolution.faultCode, resolution.faultDetail);
+	}
 }
 
 // start hot-path -- VDP readback registers are polled by the emulated CPU.

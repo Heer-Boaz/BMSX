@@ -1,5 +1,6 @@
 #pragma once
 
+#include "machine/devices/vdp/blitter.h"
 #include "machine/devices/vdp/contracts.h"
 #include <array>
 
@@ -27,6 +28,8 @@ struct VdpSbxFrameResolution {
 	u32 faultDetail = 0u;
 };
 
+class VdpVramUnit;
+
 class VdpSbxUnit {
 public:
 	using FaceWords = std::array<u32, SKYBOX_FACE_WORD_COUNT>;
@@ -39,6 +42,7 @@ public:
 	void commitPacket();
 	VdpSbxFrameDecision beginFrameSeal();
 	VdpSbxFrameDecision completeFrameSeal(const VdpSbxFrameResolution& resolution);
+	bool resolveFrameSamplesInto(const VdpVramUnit& vram, u32 control, const FaceWords& faceWords, VdpSkyboxSamples& samples, VdpSbxFrameResolution& resolution) const;
 	void presentFrame(u32 control, const FaceWords& faceWords);
 	void presentLiveState();
 	void restoreLiveState(u32 control, const FaceWords& faceWords);
@@ -60,6 +64,8 @@ private:
 	FaceWords m_visibleFaceWords{};
 	u32 m_visibleControl = 0u;
 	VdpSbxFrameDecision m_frameDecision;
+
+	bool resolveSampleInto(const VdpVramUnit& vram, u32 slot, u32 u, u32 v, u32 w, u32 h, VdpResolvedBlitterSample& target, VdpSbxFrameResolution& resolution) const;
 };
 
 u32 readSkyboxFaceSourceWord(const VdpSbxUnit::FaceWords& words, size_t faceIndex, size_t field);

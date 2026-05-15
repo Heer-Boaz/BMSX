@@ -1,13 +1,6 @@
 import {
 	type Layer2D,
-	SKYBOX_FACE_COUNT,
-	SKYBOX_FACE_H_WORD,
-	SKYBOX_FACE_SLOT_WORD,
-	SKYBOX_FACE_U_WORD,
-	SKYBOX_FACE_V_WORD,
-	SKYBOX_FACE_W_WORD,
 	SKYBOX_FACE_WORD_COUNT,
-	VDP_SBX_CONTROL_ENABLE,
 	VDP_RD_SURFACE_SYSTEM,
 	VDP_RD_SURFACE_FRAMEBUFFER,
 	VDP_RD_SURFACE_PRIMARY,
@@ -27,7 +20,6 @@ import {
 	VDP_FAULT_DEX_SOURCE_OOB,
 	VDP_FAULT_DEX_SOURCE_SLOT,
 	VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL,
-	VDP_FAULT_SBX_SOURCE_OOB,
 	VDP_FAULT_BBU_SOURCE_OOB,
 	VDP_FAULT_BBU_ZERO_SIZE,
 	VDP_FAULT_MDU_BAD_JOINT_RANGE,
@@ -105,7 +97,6 @@ import {
 	VdpSbxUnit,
 	VDP_SBX_PACKET_KIND,
 	VDP_SBX_PACKET_PAYLOAD_WORDS,
-	readSkyboxFaceSource,
 } from './sbx';
 import {
 	type VdpBbuPacket,
@@ -148,7 +139,6 @@ import { packedHigh16, packedLow16 } from '../../common/word';
 import {
 	VdpBlitterCommandBuffer,
 	type VdpBlitterSource,
-	type VdpResolvedBlitterSample,
 	VDP_BLITTER_FIFO_CAPACITY,
 	VDP_BLITTER_IMPLICIT_CLEAR,
 	VDP_BLITTER_OPCODE_BLIT,
@@ -1442,7 +1432,7 @@ export class VDP implements VramWriteSink {
 			: this.buildFrame.cost;
 		const sbxDecision = this.sbx.beginFrameSeal();
 		const sbxSealFaceWords = this.sbx.sealFaceState;
-		this.resolveSkyboxFrameSamplesInto(sbxDecision.control, sbxSealFaceWords, this.sbxSealSamples, this.sbxFrameResolutionScratch);
+		this.sbx.resolveFrameSamplesInto(this.vram, sbxDecision.control, sbxSealFaceWords, this.sbxSealSamples, this.sbxFrameResolutionScratch);
 		const completedSbx = this.sbx.completeFrameSeal(this.sbxFrameResolutionScratch);
 		if (completedSbx.faultCode !== VDP_FAULT_NONE) {
 			this.fault.raise(completedSbx.faultCode, completedSbx.faultDetail);
@@ -2025,86 +2015,6 @@ export class VDP implements VramWriteSink {
 		return true;
 	}
 
-	private resolveSkyboxSampleInto(
-		slot: number,
-		u: number,
-		v: number,
-		w: number,
-		h: number,
-		target: VdpResolvedBlitterSample,
-		resolution: VdpSbxFrameResolution,
-	): boolean {
-		resolution.faultCode = VDP_FAULT_NONE;
-		resolution.faultDetail = 0;
-		const source = target.source;
-		if (slot === VDP_SLOT_SYSTEM) {
-			source.surfaceId = VDP_RD_SURFACE_SYSTEM;
-		} else if (slot === VDP_SLOT_PRIMARY) {
-			source.surfaceId = VDP_RD_SURFACE_PRIMARY;
-		} else if (slot === VDP_SLOT_SECONDARY) {
-			source.surfaceId = VDP_RD_SURFACE_SECONDARY;
-		} else {
-			resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
-			resolution.faultDetail = slot;
-			return false;
-		}
-		source.srcX = u;
-		source.srcY = v;
-		source.width = w;
-		source.height = h;
-		if (w === 0 || h === 0) {
-			resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
-			resolution.faultDetail = (w | (h << 16)) >>> 0;
-			return false;
-		}
-		const surface = this.vram.findSurface(source.surfaceId);
-		if (surface === null) {
-			resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
-			resolution.faultDetail = source.surfaceId;
-			return false;
-		}
-		if (u + w > surface.surfaceWidth || v + h > surface.surfaceHeight) {
-			resolution.faultCode = VDP_FAULT_SBX_SOURCE_OOB;
-			resolution.faultDetail = (u | (v << 16)) >>> 0;
-			return false;
-		}
-		target.surfaceWidth = surface.surfaceWidth;
-		target.surfaceHeight = surface.surfaceHeight;
-		target.slot = slot;
-		return true;
-	}
-
-	private resolveSkyboxFrameSamplesInto(control: number, faceWords: Uint32Array, samples: VdpResolvedBlitterSample[], resolution: VdpSbxFrameResolution): boolean {
-		resolution.faultCode = VDP_FAULT_NONE;
-		resolution.faultDetail = 0;
-		if ((control & VDP_SBX_CONTROL_ENABLE) === 0) {
-			return true;
-		}
-		for (let index = 0; index < SKYBOX_FACE_COUNT; index += 1) {
-			if (!this.resolveSkyboxSampleInto(
-				readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_SLOT_WORD),
-				readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_U_WORD),
-				readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_V_WORD),
-				readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_W_WORD),
-				readSkyboxFaceSource(faceWords, index, SKYBOX_FACE_H_WORD),
-				samples[index]!,
-				resolution,
-			)) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private resolveSkyboxFrameSamples(control: number, faceWords: Uint32Array, samples: VdpResolvedBlitterSample[]): boolean {
-		const resolution = this.sbxFrameResolutionScratch;
-		if (!this.resolveSkyboxFrameSamplesInto(control, faceWords, samples, resolution)) {
-			this.fault.raise(resolution.faultCode, resolution.faultDetail);
-			return false;
-		}
-		return true;
-	}
-
 	private enqueueCopyRectWords(srcX: number, srcY: number, width: number, height: number, dstX: number, dstY: number, z: number, layer: Layer2D): boolean {
 		const clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, this.fbm.width, this.fbm.height, this.clippedRectScratchA);
 		if (clipped.area === 0) {
@@ -2393,7 +2303,10 @@ export class VDP implements VramWriteSink {
 	private commitLiveVisualState(): void {
 		this.sbx.presentLiveState();
 		this.vout.presentLiveState(this.xf, this.sbx.visibleEnabled, this.lpu, this.mfu, this.jtu);
-		this.resolveSkyboxFrameSamples(this.sbx.liveControlWord, this.sbx.visibleFaceState, this.vout.visibleSkyboxSampleBuffer);
+		const resolution = this.sbxFrameResolutionScratch;
+		if (!this.sbx.resolveFrameSamplesInto(this.vram, this.sbx.liveControlWord, this.sbx.visibleFaceState, this.vout.visibleSkyboxSampleBuffer, resolution)) {
+			this.fault.raise(resolution.faultCode, resolution.faultDetail);
+		}
 	}
 
 	private bindVramSurfaces(resetSkybox: boolean): void {
