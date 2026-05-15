@@ -9,8 +9,8 @@ Host renderers consume VOUT transactions. They do not receive cart intent such
 as sprites, rectangles, labels, glyph runs, tile runs, or scene objects.
 DEX framebuffer commands are stored as retained fixed-capacity command buffers:
 opcode, source, geometry, color, run-entry indexes, and render-cost fields live
-in per-field arrays with a length latch; the blitter buffer reserves command
-slots by advancing that latch. DEX source-slot admission is a
+in per-field arrays with a length latch; the blitter buffer owns command-slot
+reservation, length-latch updates, and the per-field command writes. DEX source-slot admission is a
 blitter-source datapath: raw slot words resolve to VDP-owned VRAM surfaces and
 source bounds are checked before blit/tile-run records enter the command buffer.
 Build, active, and pending submitted frames transfer those buffers by ownership;

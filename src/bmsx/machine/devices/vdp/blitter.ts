@@ -137,6 +137,62 @@ export class VdpBlitterCommandBuffer {
 		this.tileEntryCount = 0;
 	}
 
+	public writeClear(index: number, clearColor: number): void {
+		this.color[index] = clearColor;
+	}
+
+	public writeGeometryColor(index: number, layer: Layer2D, priority: number, x0: number, y0: number, x1: number, y1: number, drawColor: number): void {
+		this.layer[index] = layer;
+		this.priority[index] = priority;
+		this.x0[index] = x0;
+		this.y0[index] = y0;
+		this.x1[index] = x1;
+		this.y1[index] = y1;
+		this.color[index] = drawColor;
+	}
+
+	public writeGeometryColorThickness(index: number, layer: Layer2D, priority: number, x0: number, y0: number, x1: number, y1: number, drawColor: number, thicknessValue: number): void {
+		this.writeGeometryColor(index, layer, priority, x0, y0, x1, y1, drawColor);
+		this.thickness[index] = thicknessValue;
+	}
+
+	public writeBlit(index: number, layer: Layer2D, priority: number, source: VdpBlitterSource, dstX: number, dstY: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, drawColor: number, parallax: number): void {
+		this.layer[index] = layer;
+		this.priority[index] = priority;
+		this.sourceSurfaceId[index] = source.surfaceId;
+		this.sourceSrcX[index] = source.srcX;
+		this.sourceSrcY[index] = source.srcY;
+		this.sourceWidth[index] = source.width;
+		this.sourceHeight[index] = source.height;
+		this.dstX[index] = dstX;
+		this.dstY[index] = dstY;
+		this.scaleX[index] = scaleX;
+		this.scaleY[index] = scaleY;
+		this.flipH[index] = flipH ? 1 : 0;
+		this.flipV[index] = flipV ? 1 : 0;
+		this.color[index] = drawColor;
+		this.parallaxWeight[index] = parallax;
+	}
+
+	public writeCopyRect(index: number, layer: Layer2D, priority: number, srcXValue: number, srcYValue: number, widthValue: number, heightValue: number, dstXValue: number, dstYValue: number): void {
+		this.layer[index] = layer;
+		this.priority[index] = priority;
+		this.srcX[index] = srcXValue;
+		this.srcY[index] = srcYValue;
+		this.width[index] = widthValue;
+		this.height[index] = heightValue;
+		this.dstX[index] = dstXValue;
+		this.dstY[index] = dstYValue;
+	}
+
+	public writeTileRunHeader(index: number, layer: Layer2D, priority: number, firstTile: number): void {
+		this.priority[index] = priority;
+		this.layer[index] = layer;
+		this.color[index] = VDP_BLITTER_WHITE;
+		this.tileRunFirstEntry[index] = firstTile;
+		this.tileRunEntryCount[index] = 0;
+	}
+
 	public beginCommandSlot(opcode: VdpBlitterOpcode, seq: number): number {
 		const index = this.length;
 		if (index >= VDP_BLITTER_FIFO_CAPACITY) {

@@ -147,7 +147,7 @@ Internal units:
   control words; shared `machine/devices/device_status` owns VDP
   status/fault/code/detail register images and the fault-ack write edge.
 - `DEX` owns direct/stream frame state, submit admission, and the retained
-  fixed-capacity framebuffer-command buffer used by the scheduler blitter, including retained command-slot reservation; mirrored `frame` owners reset build/submitted
+  fixed-capacity framebuffer-command buffer used by the scheduler blitter, including retained command-slot reservation and per-field command writes; mirrored `frame` owners reset build/submitted
   frame slots and carry the
   frame save-state record shape.
 - `blitter_source` owns DEX source-slot to VRAM-surface admission and source

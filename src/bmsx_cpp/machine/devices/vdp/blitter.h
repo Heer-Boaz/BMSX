@@ -101,6 +101,12 @@ struct VdpBlitterCommandBuffer {
 	std::array<f32, VDP_BLITTER_RUN_ENTRY_CAPACITY> tileDstY{};
 
 	void reset();
+	void writeClear(size_t index, u32 clearColor);
+	void writeGeometryColor(size_t index, Layer2D commandLayer, f32 commandPriority, f32 x0Value, f32 y0Value, f32 x1Value, f32 y1Value, u32 drawColor);
+	void writeGeometryColorThickness(size_t index, Layer2D commandLayer, f32 commandPriority, f32 x0Value, f32 y0Value, f32 x1Value, f32 y1Value, u32 drawColor, f32 thicknessValue);
+	void writeBlit(size_t index, Layer2D commandLayer, f32 commandPriority, const VdpBlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleXValue, f32 scaleYValue, bool flipHValue, bool flipVValue, u32 drawColor, f32 parallax);
+	void writeCopyRect(size_t index, Layer2D commandLayer, f32 commandPriority, i32 srcXValue, i32 srcYValue, i32 widthValue, i32 heightValue, i32 dstXValue, i32 dstYValue);
+	void writeTileRunHeader(size_t index, Layer2D commandLayer, f32 commandPriority, u32 firstTile);
 	bool beginCommandSlot(VdpBlitterCommandType commandType, u32 commandSeq, size_t& index);
 	void commitCommandSlot(size_t index, int commandRenderCost);
 	bool reserve(VdpBlitterCommandType commandType, u32 commandSeq, int commandRenderCost, size_t& index);

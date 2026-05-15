@@ -927,7 +927,7 @@ bool VDP::enqueueLatchedClear() {
 	if (!reserveBlitterCommand(BlitterCommandType::Clear, VDP_RENDER_CLEAR_COST, index)) {
 		return false;
 	}
-	m_buildFrame.queue->color[index] = m_vdpRegisters[VDP_REG_BG_COLOR];
+	m_buildFrame.queue->writeClear(index, m_vdpRegisters[VDP_REG_BG_COLOR]);
 	return true;
 }
 
@@ -944,7 +944,7 @@ bool VDP::enqueueLatchedFillRect() {
 	if (!reserveBlitterCommand(BlitterCommandType::FillRect, blitAreaBucket(clipped.area) * (color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1), index)) {
 		return false;
 	}
-	writeGeometryColorCommand(*m_buildFrame.queue, index, layer, priority, geometry, m_vdpRegisters[VDP_REG_DRAW_COLOR]);
+	m_buildFrame.queue->writeGeometryColor(index, layer, priority, geometry.x0, geometry.y0, geometry.x1, geometry.y1, m_vdpRegisters[VDP_REG_DRAW_COLOR]);
 	return true;
 }
 
@@ -968,8 +968,7 @@ bool VDP::enqueueLatchedDrawLine() {
 	if (!reserveBlitterCommand(BlitterCommandType::DrawLine, blitSpanBucket(span) * thicknessMultiplier * alphaCost, index)) {
 		return false;
 	}
-	writeGeometryColorCommand(*m_buildFrame.queue, index, layer, priority, geometry, m_vdpRegisters[VDP_REG_DRAW_COLOR]);
-	m_buildFrame.queue->thickness[index] = thickness;
+	m_buildFrame.queue->writeGeometryColorThickness(index, layer, priority, geometry.x0, geometry.y0, geometry.x1, geometry.y1, m_vdpRegisters[VDP_REG_DRAW_COLOR], thickness);
 	return true;
 }
 
@@ -1017,22 +1016,7 @@ bool VDP::enqueueLatchedBlit() {
 	if (!reserveBlitterCommand(BlitterCommandType::Blit, blitAreaBucket(clipped.area) * (color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1), index)) {
 		return false;
 	}
-	BlitterCommand& queue = *m_buildFrame.queue;
-	queue.layer[index] = layer;
-	queue.priority[index] = priority;
-	queue.sourceSurfaceId[index] = source.surfaceId;
-	queue.sourceSrcX[index] = source.srcX;
-	queue.sourceSrcY[index] = source.srcY;
-	queue.sourceWidth[index] = source.width;
-	queue.sourceHeight[index] = source.height;
-	queue.dstX[index] = resolved.dstX;
-	queue.dstY[index] = resolved.dstY;
-	queue.scaleX[index] = resolved.scaleX;
-	queue.scaleY[index] = resolved.scaleY;
-	queue.flipH[index] = drawCtrl.flipH ? 1u : 0u;
-	queue.flipV[index] = drawCtrl.flipV ? 1u : 0u;
-	queue.color[index] = m_vdpRegisters[VDP_REG_DRAW_COLOR];
-	queue.parallaxWeight[index] = drawCtrl.parallaxWeight;
+	m_buildFrame.queue->writeBlit(index, layer, priority, source, resolved.dstX, resolved.dstY, resolved.scaleX, resolved.scaleY, drawCtrl.flipH, drawCtrl.flipV, m_vdpRegisters[VDP_REG_DRAW_COLOR], drawCtrl.parallaxWeight);
 	return true;
 }
 
@@ -1064,16 +1048,6 @@ bool VDP::reserveBlitterCommand(BlitterCommandType opcode, int renderCost, size_
 	m_blitterSequence += 1u;
 	m_buildFrame.cost += renderCost;
 	return true;
-}
-
-void VDP::writeGeometryColorCommand(BlitterCommand& queue, size_t index, Layer2D layer, f32 priority, const VdpLatchedGeometry& geometry, u32 color) {
-	queue.layer[index] = layer;
-	queue.priority[index] = priority;
-	queue.x0[index] = geometry.x0;
-	queue.y0[index] = geometry.y0;
-	queue.x1[index] = geometry.x1;
-	queue.y1[index] = geometry.y1;
-	queue.color[index] = color;
 }
 
 void VDP::resetQueuedFrameState() {
@@ -1663,15 +1637,7 @@ bool VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i
 	if (!reserveBlitterCommand(BlitterCommandType::CopyRect, blitAreaBucket(clipped.area), index)) {
 		return false;
 	}
-	BlitterCommand& queue = *m_buildFrame.queue;
-	queue.layer[index] = layer;
-	queue.priority[index] = priority;
-	queue.srcX[index] = srcX;
-	queue.srcY[index] = srcY;
-	queue.width[index] = width;
-	queue.height[index] = height;
-	queue.dstX[index] = static_cast<f32>(dstX);
-	queue.dstY[index] = static_cast<f32>(dstY);
+	m_buildFrame.queue->writeCopyRect(index, layer, priority, srcX, srcY, width, height, dstX, dstY);
 	return true;
 }
 
@@ -1772,11 +1738,7 @@ void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCo
 		return;
 	}
 	const size_t firstTile = queue.tileEntryCount;
-	queue.priority[commandIndex] = priority;
-	queue.layer[commandIndex] = layer;
-	queue.color[commandIndex] = VDP_BLITTER_WHITE;
-	queue.tileRunFirstEntry[commandIndex] = static_cast<u32>(firstTile);
-	queue.tileRunEntryCount[commandIndex] = 0u;
+	queue.writeTileRunHeader(commandIndex, layer, priority, static_cast<u32>(firstTile));
 	int visibleRowCount = 0;
 	int visibleNonEmptyTileCount = 0;
 	i32 lastVisibleRow = -1;

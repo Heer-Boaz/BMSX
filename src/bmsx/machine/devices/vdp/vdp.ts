@@ -1104,7 +1104,7 @@ export class VDP implements VramWriteSink {
 		if (index < 0) {
 			return false;
 		}
-		this.buildFrame.queue.color[index] = this.vdpRegisters[VDP_REG_BG_COLOR] >>> 0;
+		this.buildFrame.queue.writeClear(index, this.vdpRegisters[VDP_REG_BG_COLOR] >>> 0);
 		return true;
 	}
 
@@ -1123,7 +1123,7 @@ export class VDP implements VramWriteSink {
 			return false;
 		}
 		const queue = this.buildFrame.queue;
-		this.writeGeometryColorCommand(queue, index, layer, priority, geometry, color);
+		queue.writeGeometryColor(index, layer, priority, geometry.x0, geometry.y0, geometry.x1, geometry.y1, color);
 		return true;
 	}
 
@@ -1147,9 +1147,7 @@ export class VDP implements VramWriteSink {
 		if (index < 0) {
 			return false;
 		}
-		const queue = this.buildFrame.queue;
-		this.writeGeometryColorCommand(queue, index, layer, priority, geometry, color);
-		queue.thickness[index] = thickness;
+		this.buildFrame.queue.writeGeometryColorThickness(index, layer, priority, geometry.x0, geometry.y0, geometry.x1, geometry.y1, color, thickness);
 		return true;
 	}
 
@@ -1199,22 +1197,7 @@ export class VDP implements VramWriteSink {
 		if (index < 0) {
 			return false;
 		}
-		const queue = this.buildFrame.queue;
-		queue.layer[index] = layer;
-		queue.priority[index] = priority;
-		queue.sourceSurfaceId[index] = source.surfaceId;
-		queue.sourceSrcX[index] = source.srcX;
-		queue.sourceSrcY[index] = source.srcY;
-		queue.sourceWidth[index] = source.width;
-		queue.sourceHeight[index] = source.height;
-		queue.dstX[index] = resolved.dstX;
-		queue.dstY[index] = resolved.dstY;
-		queue.scaleX[index] = resolved.scaleX;
-		queue.scaleY[index] = resolved.scaleY;
-		queue.flipH[index] = drawCtrl.flipH ? 1 : 0;
-		queue.flipV[index] = drawCtrl.flipV ? 1 : 0;
-		queue.color[index] = color;
-		queue.parallaxWeight[index] = drawCtrl.parallaxWeight;
+		this.buildFrame.queue.writeBlit(index, layer, priority, source, resolved.dstX, resolved.dstY, resolved.scaleX, resolved.scaleY, drawCtrl.flipH, drawCtrl.flipV, color, drawCtrl.parallaxWeight);
 		return true;
 	}
 
@@ -1256,16 +1239,6 @@ export class VDP implements VramWriteSink {
 		this.blitterSequence += 1;
 		this.buildFrame.cost += renderCost;
 		return index;
-	}
-
-	private writeGeometryColorCommand(queue: VdpBlitterCommandBuffer, index: number, layer: Layer2D, priority: number, geometry: VdpLatchedGeometry, color: number): void {
-		queue.layer[index] = layer;
-		queue.priority[index] = priority;
-		queue.x0[index] = geometry.x0;
-		queue.y0[index] = geometry.y0;
-		queue.x1[index] = geometry.x1;
-		queue.y1[index] = geometry.y1;
-		queue.color[index] = color;
 	}
 
 	private presentFrameBufferPageOnVblankEdge(): void {
@@ -1839,15 +1812,7 @@ export class VDP implements VramWriteSink {
 		if (index < 0) {
 			return false;
 		}
-		const queue = this.buildFrame.queue;
-		queue.layer[index] = layer;
-		queue.priority[index] = z;
-		queue.srcX[index] = srcX;
-		queue.srcY[index] = srcY;
-		queue.width[index] = width;
-		queue.height[index] = height;
-		queue.dstX[index] = dstX;
-		queue.dstY[index] = dstY;
+		this.buildFrame.queue.writeCopyRect(index, layer, z, srcX, srcY, width, height, dstX, dstY);
 		return true;
 	}
 

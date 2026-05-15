@@ -8,6 +8,62 @@ void VdpBlitterCommandBuffer::reset() {
 	tileEntryCount = 0u;
 }
 
+void VdpBlitterCommandBuffer::writeClear(size_t index, u32 clearColor) {
+	color[index] = clearColor;
+}
+
+void VdpBlitterCommandBuffer::writeGeometryColor(size_t index, Layer2D commandLayer, f32 commandPriority, f32 x0Value, f32 y0Value, f32 x1Value, f32 y1Value, u32 drawColor) {
+	layer[index] = commandLayer;
+	priority[index] = commandPriority;
+	x0[index] = x0Value;
+	y0[index] = y0Value;
+	x1[index] = x1Value;
+	y1[index] = y1Value;
+	color[index] = drawColor;
+}
+
+void VdpBlitterCommandBuffer::writeGeometryColorThickness(size_t index, Layer2D commandLayer, f32 commandPriority, f32 x0Value, f32 y0Value, f32 x1Value, f32 y1Value, u32 drawColor, f32 thicknessValue) {
+	writeGeometryColor(index, commandLayer, commandPriority, x0Value, y0Value, x1Value, y1Value, drawColor);
+	thickness[index] = thicknessValue;
+}
+
+void VdpBlitterCommandBuffer::writeBlit(size_t index, Layer2D commandLayer, f32 commandPriority, const VdpBlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleXValue, f32 scaleYValue, bool flipHValue, bool flipVValue, u32 drawColor, f32 parallax) {
+	layer[index] = commandLayer;
+	priority[index] = commandPriority;
+	sourceSurfaceId[index] = source.surfaceId;
+	sourceSrcX[index] = source.srcX;
+	sourceSrcY[index] = source.srcY;
+	sourceWidth[index] = source.width;
+	sourceHeight[index] = source.height;
+	dstX[index] = dstXValue;
+	dstY[index] = dstYValue;
+	scaleX[index] = scaleXValue;
+	scaleY[index] = scaleYValue;
+	flipH[index] = flipHValue ? 1u : 0u;
+	flipV[index] = flipVValue ? 1u : 0u;
+	color[index] = drawColor;
+	parallaxWeight[index] = parallax;
+}
+
+void VdpBlitterCommandBuffer::writeCopyRect(size_t index, Layer2D commandLayer, f32 commandPriority, i32 srcXValue, i32 srcYValue, i32 widthValue, i32 heightValue, i32 dstXValue, i32 dstYValue) {
+	layer[index] = commandLayer;
+	priority[index] = commandPriority;
+	srcX[index] = srcXValue;
+	srcY[index] = srcYValue;
+	width[index] = widthValue;
+	height[index] = heightValue;
+	dstX[index] = static_cast<f32>(dstXValue);
+	dstY[index] = static_cast<f32>(dstYValue);
+}
+
+void VdpBlitterCommandBuffer::writeTileRunHeader(size_t index, Layer2D commandLayer, f32 commandPriority, u32 firstTile) {
+	priority[index] = commandPriority;
+	layer[index] = commandLayer;
+	color[index] = VDP_BLITTER_WHITE;
+	tileRunFirstEntry[index] = firstTile;
+	tileRunEntryCount[index] = 0u;
+}
+
 bool VdpBlitterCommandBuffer::beginCommandSlot(VdpBlitterCommandType commandType, u32 commandSeq, size_t& index) {
 	index = length;
 	if (index >= VDP_BLITTER_FIFO_CAPACITY) {

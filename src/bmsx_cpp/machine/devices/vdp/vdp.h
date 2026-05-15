@@ -169,7 +169,6 @@ private:
 	u32 nextBlitterSequence();
 	void resetQueuedFrameState();
 	bool reserveBlitterCommand(BlitterCommandType opcode, int renderCost, size_t& index);
-	void writeGeometryColorCommand(BlitterCommand& queue, size_t index, Layer2D layer, f32 priority, const VdpLatchedGeometry& geometry, u32 color);
 	bool canAcceptSubmittedFrame() const {
 		return m_pendingFrame.state == VdpSubmittedFrameState::Empty;
 	}
