@@ -243,7 +243,8 @@ read/write pointers, queued count, and per-entry parameter words are owned by
 mirrored `machine/devices/audio/command_fifo` files and are saved through that
 owner.
 The selected-slot source/status latch is owned by mirrored
-`machine/devices/audio/selected_slot_latch` files. The APU slot bank owns active
+`machine/devices/audio/selected_slot_latch` files. The composite APU status
+register read datapath is owned by mirrored `machine/devices/audio/status_register` files. The APU slot bank owns active
 slot phase/register/cursor/fade/voice-id words in mirrored
 `machine/devices/audio/slot_bank` files; aggregate save-state records
 read and restore those live words through that owner.

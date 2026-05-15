@@ -31,7 +31,8 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 	, m_scheduler(scheduler)
 	, m_eventLatch(memory, irq)
 	, m_fault(memory, APU_DEVICE_STATUS_REGISTERS)
-	, m_selectedSlotLatch(memory, m_fault, m_slots) {
+	, m_selectedSlotLatch(memory, m_fault, m_slots)
+	, m_statusRegister(m_fault, m_slots, m_commandFifo, m_audioOutput.outputRing) {
 	m_memory.mapIoRead(IO_APU_STATUS, this, &AudioController::onStatusReadThunk);
 	m_memory.mapIoWrite(IO_APU_CMD, this, &AudioController::onCommandWriteThunk);
 	m_memory.mapIoWrite(IO_APU_SLOT, this, &AudioController::onSlotWriteThunk);
@@ -167,7 +168,8 @@ void AudioController::onFaultAckWriteThunk(void* context, uint32_t, Value) {
 }
 
 Value AudioController::onStatusReadThunk(void* context, uint32_t) {
-	return static_cast<AudioController*>(context)->onStatusRead();
+	auto& controller = *static_cast<AudioController*>(context);
+	return valueNumber(static_cast<double>(controller.m_statusRegister.read()));
 }
 
 Value AudioController::onOutputQueuedFramesReadThunk(void* context, uint32_t) {
@@ -378,26 +380,6 @@ void AudioController::scheduleNextService(int64_t nowCycles) {
 }
 
 
-Value AudioController::onStatusRead() const {
-	uint32_t status = m_fault.status;
-	if (m_slots.activeMask() != 0u || !m_commandFifo.empty()) {
-		status |= APU_STATUS_BUSY;
-	}
-	if (m_commandFifo.empty()) {
-		status |= APU_STATUS_CMD_FIFO_EMPTY;
-	}
-	if (m_commandFifo.full()) {
-		status |= APU_STATUS_CMD_FIFO_FULL;
-	}
-	const size_t queuedFrames = m_audioOutput.outputRing.queuedFrames();
-	if (queuedFrames == 0u) {
-		status |= APU_STATUS_OUTPUT_EMPTY;
-	}
-	if (queuedFrames >= m_audioOutput.outputRing.capacityFrames()) {
-		status |= APU_STATUS_OUTPUT_FULL;
-	}
-	return valueNumber(static_cast<double>(status));
-}
 
 Value AudioController::onSelectedSlotRegisterRead(uint32_t addr) const {
 	const uint32_t slot = m_memory.readIoU32(IO_APU_SLOT);

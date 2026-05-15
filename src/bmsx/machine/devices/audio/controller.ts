@@ -9,6 +9,7 @@ import { ApuEventLatch } from './event_latch';
 import { clearApuCommandLatch } from './command_latch';
 import { ApuSlotBank } from './slot_bank';
 import { ApuSelectedSlotLatch } from './selected_slot_latch';
+import { ApuStatusRegister } from './status_register';
 import {
 	APU_COMMAND_FIFO_CAPACITY,
 	APU_SAMPLE_RATE_HZ,
@@ -27,12 +28,7 @@ import {
 	APU_PARAMETER_SLOT_INDEX,
 	APU_SLOT_COUNT,
 	APU_SLOT_PHASE_FADING,
-	APU_STATUS_BUSY,
-	APU_STATUS_CMD_FIFO_EMPTY,
-	APU_STATUS_CMD_FIFO_FULL,
 	APU_STATUS_FAULT,
-	APU_STATUS_OUTPUT_EMPTY,
-	APU_STATUS_OUTPUT_FULL,
 	type ApuAudioSlot,
 	type ApuAudioSource,
 	type ApuParameterRegisterWords,
@@ -78,6 +74,7 @@ export class AudioController {
 	private readonly slotRegisterDispatchWords = new Uint32Array(APU_PARAMETER_REGISTER_COUNT);
 	private readonly slots = new ApuSlotBank();
 	private readonly selectedSlotLatch: ApuSelectedSlotLatch;
+	private readonly statusRegister: ApuStatusRegister;
 	private cpuHz = APU_SAMPLE_RATE_HZ;
 	private sampleCarry = 0;
 	private availableSamples = 0;
@@ -94,7 +91,8 @@ export class AudioController {
 		this.eventLatch = new ApuEventLatch(memory, irq);
 		this.fault = new DeviceStatusLatch(memory, APU_DEVICE_STATUS_REGISTERS);
 		this.selectedSlotLatch = new ApuSelectedSlotLatch(memory, this.fault, this.slots);
-		this.memory.mapIoRead(IO_APU_STATUS, this.onStatusRead.bind(this));
+		this.statusRegister = new ApuStatusRegister(this.fault, this.slots, this.commandFifo, this.audioOutput.outputRing);
+		this.memory.mapIoRead(IO_APU_STATUS, this.statusRegister.read.bind(this.statusRegister));
 		this.memory.mapIoWrite(IO_APU_CMD, this.onCommandWrite.bind(this));
 		this.memory.mapIoWrite(IO_APU_SLOT, this.selectedSlotLatch.refresh.bind(this.selectedSlotLatch));
 		this.memory.mapIoWrite(IO_APU_FAULT_ACK, () => {
@@ -417,21 +415,6 @@ export class AudioController {
 		);
 	}
 
-
-	private onStatusRead(): number {
-		const busy = this.slots.activeMask !== 0 || !this.commandFifo.empty;
-		const commandFifoEmpty = this.commandFifo.empty;
-		const commandFifoFull = this.commandFifo.full;
-		const queuedFrames = this.audioOutput.outputRing.queuedFrames();
-		const outputEmpty = queuedFrames === 0;
-		const outputFull = queuedFrames >= this.audioOutput.outputRing.capacityFrames();
-		return (this.fault.status
-			| (busy ? APU_STATUS_BUSY : 0)
-			| (commandFifoEmpty ? APU_STATUS_CMD_FIFO_EMPTY : 0)
-			| (commandFifoFull ? APU_STATUS_CMD_FIFO_FULL : 0)
-			| (outputEmpty ? APU_STATUS_OUTPUT_EMPTY : 0)
-			| (outputFull ? APU_STATUS_OUTPUT_FULL : 0)) >>> 0;
-	}
 
 	private onSelectedSlotRegisterRead(addr: number): number {
 		const slot = this.memory.readIoU32(IO_APU_SLOT);
