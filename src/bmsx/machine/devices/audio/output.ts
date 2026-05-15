@@ -1,5 +1,4 @@
 import { clamp, clamp01 } from '../../../common/clamp';
-import { readI16LE } from '../../../common/endian';
 import { BiquadFilterState, configureBiquadFilter, type BiquadFilterType } from './biquad_filter';
 import { readApuBadpSeekTable, type ApuBadpDecoderState } from './badp_decoder';
 import {
@@ -9,6 +8,7 @@ import {
 } from './badp_decoder_hot_path';
 import { ApuOutputRing } from './output_ring';
 import { validateApuPcmSourceData } from './pcm_decoder';
+import { APU_PCM_SAMPLE_SCALE, readApuPcmSample } from './pcm_decoder_hot_path';
 import { validateApuAudioSourceMetadata } from './source';
 import {
 	captureApuOutputVoiceState,
@@ -103,7 +103,6 @@ type ApuOutputVoice = ApuOutputVoiceStateAccess & {
 };
 
 const MIN_GAIN = 0.0001;
-const PCM_SCALE = 1 / 32768;
 const APU_OUTPUT_START_OK: ApuOutputStartResult = { faultCode: APU_FAULT_NONE, faultDetail: 0 };
 const EMPTY_BADP_SEEK_FRAMES = new Uint32Array(0);
 const EMPTY_BADP_SEEK_OFFSETS = new Uint32Array(0);
@@ -611,8 +610,8 @@ export class ApuOutputMixer {
 			if (!readApuBadpFrameAt(record, frame)) {
 				return false;
 			}
-			this.sampledLeft = record.badp.decodedLeft * PCM_SCALE;
-			this.sampledRight = record.badp.decodedRight * PCM_SCALE;
+			this.sampledLeft = record.badp.decodedLeft * APU_PCM_SAMPLE_SCALE;
+			this.sampledRight = record.badp.decodedRight * APU_PCM_SAMPLE_SCALE;
 			return true;
 		}
 		if (frame < 0 || frame >= record.frames) {
@@ -620,14 +619,12 @@ export class ApuOutputMixer {
 		}
 		const baseSample = frame * record.channels;
 		if (record.bitsPerSample === 16) {
-			const byteOffset = record.dataOffset + baseSample * 2;
-			this.sampledLeft = readI16LE(record.sourceBytes, byteOffset) * PCM_SCALE;
-			this.sampledRight = record.channels === 1 ? this.sampledLeft : readI16LE(record.sourceBytes, byteOffset + 2) * PCM_SCALE;
+			this.sampledLeft = readApuPcmSample(record.sourceBytes, record.dataOffset, true, baseSample) * APU_PCM_SAMPLE_SCALE;
+			this.sampledRight = record.channels === 1 ? this.sampledLeft : readApuPcmSample(record.sourceBytes, record.dataOffset, true, baseSample + 1) * APU_PCM_SAMPLE_SCALE;
 			return true;
 		}
-		const byteOffset = record.dataOffset + baseSample;
-		this.sampledLeft = ((record.sourceBytes[byteOffset]! - 128) << 8) * PCM_SCALE;
-		this.sampledRight = record.channels === 1 ? this.sampledLeft : ((record.sourceBytes[byteOffset + 1]! - 128) << 8) * PCM_SCALE;
+		this.sampledLeft = readApuPcmSample(record.sourceBytes, record.dataOffset, false, baseSample) * APU_PCM_SAMPLE_SCALE;
+		this.sampledRight = record.channels === 1 ? this.sampledLeft : readApuPcmSample(record.sourceBytes, record.dataOffset, false, baseSample + 1) * APU_PCM_SAMPLE_SCALE;
 		return true;
 	}
 

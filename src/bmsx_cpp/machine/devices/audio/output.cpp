@@ -6,6 +6,7 @@
 
 #include "machine/devices/audio/badp_decoder_hot_path.h"
 #include "machine/devices/audio/pcm_decoder.h"
+#include "machine/devices/audio/pcm_decoder_hot_path.h"
 #include "machine/devices/audio/source.h"
 
 #include "common/endian.h"
@@ -42,13 +43,6 @@ static inline f32 squareGeneratorSample(f64 position, u32 dutyQ12) {
 
 static inline bool audioPositionIsInteger(f64 position) {
 	return position == static_cast<f64>(audioFrameIndex(position));
-}
-
-static inline i16 readPcmSample(const u8* data, bool is16Bit, size_t sampleIndex) {
-	if (is16Bit) {
-		return readI16LE(data + sampleIndex * 2u);
-	}
-	return static_cast<i16>(static_cast<int>(data[sampleIndex]) - 128) << 8;
 }
 
 static inline void audioSamplePosition(f64 position, i64& index, f64& frac, size_t& index0) {
@@ -260,7 +254,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 	std::fill(m_mixBuffer.begin(), m_mixBuffer.begin() + totalSamples, 0.0f);
 
 	const f64 invOutputRate = 1.0 / static_cast<f64>(outputSampleRate);
-	const f32 sampleScale = 1.0f / 32768.0f;
+	const f32 sampleScale = APU_PCM_SAMPLE_SCALE;
 	f32* mix = m_mixBuffer.data();
 
 	for (size_t i = 0; i < m_voices.size();) {
@@ -413,7 +407,7 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 							break;
 						}
 
-						const f32 sample = static_cast<f32>(readPcmSample(data, is16Bit, posIndex)) * sampleScale;
+						const f32 sample = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, posIndex)) * sampleScale;
 						mixVoiceSample(record, mix, outIndex, sample, sample, gain);
 
 						++posIndex;
@@ -441,8 +435,8 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 						}
 
 						const size_t base = posIndex * static_cast<size_t>(channels);
-						const f32 left = static_cast<f32>(readPcmSample(data, is16Bit, base)) * sampleScale;
-						const f32 right = static_cast<f32>(readPcmSample(data, is16Bit, base + 1)) * sampleScale;
+						const f32 left = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, base)) * sampleScale;
+						const f32 right = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, base + 1)) * sampleScale;
 						mixVoiceSample(record, mix, outIndex, left, right, gain);
 
 						++posIndex;
@@ -476,8 +470,8 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 								audioSamplePosition(position, idx, frac, idx0);
 								const i64 idx1 = wrappedAudioIndex(idx + 1, loopStart, loopEnd);
 
-								const f32 s0 = static_cast<f32>(readPcmSample(data, is16Bit, idx0)) * sampleScale;
-								const f32 s1 = static_cast<f32>(readPcmSample(data, is16Bit, static_cast<size_t>(idx1))) * sampleScale;
+								const f32 s0 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, idx0)) * sampleScale;
+								const f32 s1 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, static_cast<size_t>(idx1))) * sampleScale;
 								const f32 sample = lerpAudioSample(s0, s1, frac);
 								mixVoiceSample(record, mix, outIndex, sample, sample, gain);
 
@@ -498,11 +492,11 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 							f64 frac = 0.0;
 							size_t idx0 = 0;
 							audioSamplePosition(position, idx, frac, idx0);
-							const f32 s0 = static_cast<f32>(readPcmSample(data, is16Bit, idx0)) * sampleScale;
+							const f32 s0 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, idx0)) * sampleScale;
 							f32 s1 = 0.0f;
 							const size_t idx1 = idx0 + 1;
 							if (idx1 < framesInRecord) {
-								s1 = static_cast<f32>(readPcmSample(data, is16Bit, idx1)) * sampleScale;
+								s1 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, idx1)) * sampleScale;
 							}
 								const f32 sample = lerpAudioSample(s0, s1, frac);
 								mixVoiceSample(record, mix, outIndex, sample, sample, gain);
@@ -527,10 +521,10 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 
 							const size_t base0 = idx0 * static_cast<size_t>(channels);
 							const size_t base1 = static_cast<size_t>(idx1) * static_cast<size_t>(channels);
-							const f32 left0 = static_cast<f32>(readPcmSample(data, is16Bit, base0)) * sampleScale;
-							const f32 right0 = static_cast<f32>(readPcmSample(data, is16Bit, base0 + 1)) * sampleScale;
-							const f32 left1 = static_cast<f32>(readPcmSample(data, is16Bit, base1)) * sampleScale;
-							const f32 right1 = static_cast<f32>(readPcmSample(data, is16Bit, base1 + 1)) * sampleScale;
+							const f32 left0 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, base0)) * sampleScale;
+							const f32 right0 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, base0 + 1)) * sampleScale;
+							const f32 left1 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, base1)) * sampleScale;
+							const f32 right1 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, base1 + 1)) * sampleScale;
 
 									mixVoiceSample(record, mix, outIndex, lerpAudioSample(left0, left1, frac), lerpAudioSample(right0, right1, frac), gain);
 
@@ -552,15 +546,15 @@ void ApuOutputMixer::renderSamples(i16* output, size_t frameCount, i32 outputSam
 							size_t idx0 = 0;
 							audioSamplePosition(position, idx, frac, idx0);
 							const size_t base0 = idx0 * static_cast<size_t>(channels);
-							const f32 left0 = static_cast<f32>(readPcmSample(data, is16Bit, base0)) * sampleScale;
-							const f32 right0 = static_cast<f32>(readPcmSample(data, is16Bit, base0 + 1)) * sampleScale;
+							const f32 left0 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, base0)) * sampleScale;
+							const f32 right0 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, base0 + 1)) * sampleScale;
 							f32 left1 = 0.0f;
 							f32 right1 = 0.0f;
 							const size_t idx1 = idx0 + 1;
 							if (idx1 < framesInRecord) {
 								const size_t base1 = idx1 * static_cast<size_t>(channels);
-								left1 = static_cast<f32>(readPcmSample(data, is16Bit, base1)) * sampleScale;
-								right1 = static_cast<f32>(readPcmSample(data, is16Bit, base1 + 1)) * sampleScale;
+								left1 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, base1)) * sampleScale;
+								right1 = static_cast<f32>(readApuPcmSample(data, 0u, is16Bit, base1 + 1)) * sampleScale;
 							}
 
 									mixVoiceSample(record, mix, outIndex, lerpAudioSample(left0, left1, frac), lerpAudioSample(right0, right1, frac), gain);
