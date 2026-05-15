@@ -84,7 +84,7 @@ void Runtime::handleLuaError(const std::string& message) {
 	logDebugState();
 	logLuaCallStack();
 	machine.cpu.clearHaltUntilIrq();
-	machine.inputController.sampleLatch.cancel();
+	machine.inputController.cancelSampleArm();
 	m_pendingCall = PendingCall::None;
 	frameLoop.frameActive = false;
 	m_runtimeFailed = true;

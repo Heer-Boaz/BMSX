@@ -154,7 +154,7 @@ test('input controller persists register latches and committed action contexts',
 	live.memory.writeValue(IO_INP_BIND, bindValue);
 	live.memory.writeValue(IO_INP_CTRL, INP_CTRL_COMMIT);
 	live.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
-	live.controller.sampleLatch.onVblankEdge(1000 / 60, 77);
+	live.controller.onVblankEdge(1000 / 60, 77);
 	live.memory.writeValue(IO_INP_QUERY, queryValue);
 
 	assert.equal(live.memory.readIoU32(IO_INP_STATUS), INP_STATUS_PRESSED | INP_STATUS_WAS_PRESSED | INP_STATUS_HAS_VALUE);
@@ -192,7 +192,7 @@ test('input controller persists register latches and committed action contexts',
 	assert.equal(restored.controller.captureState().players[1]!.actions[0]!.statusWord, INP_STATUS_PRESSED | INP_STATUS_WAS_PRESSED | INP_STATUS_CONSUMED | INP_STATUS_HAS_VALUE);
 	assert.equal(restored.controller.captureState().players[1]!.actions[0]!.valueQ16, 0x8000);
 
-	restored.controller.sampleLatch.onVblankEdge(1000 / 60, 123);
+	restored.controller.onVblankEdge(1000 / 60, 123);
 	assert.equal(restored.samples(), 1);
 	assert.equal(restored.controller.captureState().sampleArmed, false);
 	assert.equal(restored.controller.captureState().sampleSequence, 2);
@@ -221,11 +221,11 @@ test('input controller output registers emit selected player vibration commands'
 	assert.deepEqual(restored.players[1]!.vibrations, [{ effect: 'dual-rumble', duration: 120, intensity: 0.5 }]);
 });
 
-test('input controller sample latch owns arm cancellation', () => {
+test('input controller exposes the VBlank sample edge without leaking the sample latch', () => {
 	const harness = createHarness();
 	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
 	assert.equal(harness.controller.captureState().sampleArmed, true);
-	harness.controller.sampleLatch.cancel();
+	harness.controller.cancelSampleArm();
 	assert.equal(harness.controller.captureState().sampleArmed, false);
 });
 
@@ -242,7 +242,7 @@ test('input controller mappings drive real PlayerInput contexts without a base i
 	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_COMMIT);
 	playerTwo.recordButtonEvent('gamepad', 'a', { eventType: 'press', identifier: 'a', timestamp: 0, consumed: false, pressId: 7 });
 	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
-	harness.controller.sampleLatch.onVblankEdge(1000 / 60, 456);
+	harness.controller.onVblankEdge(1000 / 60, 456);
 	harness.memory.writeValue(IO_INP_QUERY, queryValue);
 
 	const status = harness.memory.readIoU32(IO_INP_STATUS);
@@ -265,7 +265,7 @@ test('input controller event FIFO exposes sampled action edges', () => {
 	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_COMMIT);
 	playerTwo.recordButtonEvent('gamepad', 'a', { eventType: 'press', identifier: 'a', timestamp: 0, consumed: false, pressId: 9 });
 	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
-	harness.controller.sampleLatch.onVblankEdge(1000 / 60, 789);
+	harness.controller.onVblankEdge(1000 / 60, 789);
 
 	assert.equal(harness.memory.readIoU32(IO_INP_EVENT_COUNT), 1);
 	assert.equal(harness.memory.readIoU32(IO_INP_EVENT_PLAYER), 2);

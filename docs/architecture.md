@@ -144,7 +144,8 @@ Cart-visible ingress:
 Internal units:
 
 - `registers` owns the raw VDP registerfile and MMIO-visible status/fault words.
-- `DEX` owns direct/stream frame state and submit admission.
+- `DEX` owns direct/stream frame state, submit admission, and the retained
+  fixed-capacity framebuffer-command buffer used by the scheduler blitter.
 - `streamIngress` owns the DMA submit latch, FIFO partial-word bytes, and sealed
   FIFO packet words.
 - `VRAM` owns staging memory, surface slots, dirty spans, CPU readback pixels,
@@ -154,7 +155,8 @@ Internal units:
 - `PMU` owns bank registers, selected bank, and BLIT resolve state.
 - `SBX` owns skybox register-window staging, packet staging, frame seal, and
   sampled face words.
-- `BBU` owns billboard packet decode/source admission/instance emission limits.
+- `BBU` owns billboard packet decode/source admission, retained
+  fixed-capacity billboard frame buffers, and instance emission limits.
 - `MFU` owns raw morph-weight register words.
 - `JTU` owns raw joint-matrix register words.
 - `MDU` owns mesh-packet decode, mesh-source admission, and per-frame mesh draw
@@ -180,11 +182,22 @@ Mesh rendering follows the same hardware boundary. Cart streams submit model
 asset tokens and raw VDP register words to the MDU/MFU/JTU; VOUT exposes the
 mesh records at the host-output edge. The native GLES2 renderer resolves the
 rompacked model from those VOUT records and samples textures only from VDP VRAM
-slots. Browser/headless TS renderers currently snapshot the VOUT mesh records
-but do not draw them. The native GLES2 path must stay compatible with low-end
-GLES2 targets by expanding mesh, morph, and skinning data on the CPU into a
-retained dynamic vertex stream instead of relying on UBOs, instancing, vertex
-texture fetch, or other GLES3/WebGL2-only features.
+slots. GLTF material image texture references are ROM metadata, not GPU texture
+ownership; MDU texture sampling is controlled by the raw VDP texture-slot word.
+DEX blitter commands, BBU billboard records, and MDU mesh records are retained
+fixed-capacity frame buffers on both runtimes, with per-field raw arrays and a
+length latch rather than per-packet objects or nested run vectors. VDP frame
+seal, submitted-frame promotion, and VOUT presentation transfer those buffers by
+ownership rather than copying command, billboard, or mesh records.
+The native GLES2 and browser WebGL2 mesh shaders consume the resolved material
+surface bits (opaque/mask/blend, double-sided, unlit, base color, emissive,
+roughness, and metallic factors) together with the frame lighting state.
+Headless TS currently snapshots the VOUT mesh records but does not rasterize
+them. The native GLES2 path must stay compatible with low-end GLES2 targets by
+expanding mesh, morph, and skinning data on the CPU into a retained dynamic
+vertex stream instead of relying on UBOs, instancing, vertex texture fetch, or
+other GLES3/WebGL2-only features; the browser WebGL2 path follows the same MDU
+output contract while using WebGL2 shader syntax.
 
 ### APU and AOUT
 
@@ -267,22 +280,33 @@ State owned by ICU:
 - selected player/action/bind/query/consume register words,
   `sys_inp_status`/`sys_inp_value` result words, and reset/restore register
   mirroring owned by `machine/devices/input/registers`;
+- `sys_inp_ctrl` command latch side effects owned by
+  `machine/devices/input/control_port`;
 - private sample arm, sequence, and last-cycle latches owned by
   `machine/devices/input/sample_latch`;
 - per-player committed action records and mapping contexts owned by
   `machine/devices/input/action_table`;
 - per-action sampled `statusWord`, signed-Q16.16 `valueQ16`, `pressTime`, and
-  `repeatCount` words owned by the action-table sample latch;
+  `repeatCount` words owned by the action table;
+- `sys_inp_query`/`sys_inp_consume` write side effects and query-result
+  datapath owned by `machine/devices/input/query_port`;
 - event FIFO hardware state: retained event slots, read/write pointers, queued
-  count, and overflow latch;
+  count, overflow latch, and pop/clear control doorbells;
 - output intensity and duration latch words; the output command datapath is
   owned by `machine/devices/input/output_port`.
 
-VBlank consumes the arm latch, asks the input owner to sample players once, and
-then snapshots committed actions. Later MMIO queries evaluate against that ICU
-snapshot. A root action query returns the sampled action status/value words; a
-compound expression returns boolean `1`/`0` in `sys_inp_status` and zero in
-`sys_inp_value`.
+The runtime VBlank owner enters through the ICU controller edge. The sample
+latch subunit remains private and only consumes the arm latch into sample
+sequence/last-cycle state. The controller edge then asks the input owner to
+sample players once and snapshots committed actions. Later MMIO queries enter
+the query port and evaluate against that ICU snapshot. A root action query
+returns the sampled action status/value words; a compound expression returns
+boolean `1`/`0` in `sys_inp_status` and zero in `sys_inp_value`.
+
+`sys_inp_ctrl` writes enter the control port. The control port latches the raw
+command word through the registerfile, then commits selected action/bind words,
+arms the VBlank sample latch, or resets the selected player's committed action
+records and result words.
 
 The event FIFO is filled at the same sample edge. It queues action edge/repeat
 snapshots and exposes a front-entry register bank plus pop/clear doorbells.

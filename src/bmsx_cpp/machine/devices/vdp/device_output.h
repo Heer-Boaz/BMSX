@@ -74,8 +74,8 @@ struct VdpDeviceOutput {
 	u32 xfProjectionMatrixIndex = 0;
 	bool skyboxEnabled = false;
 	const VdpSkyboxSamples* skyboxSamples = nullptr;
-	const std::vector<VdpBbuBillboardEntry>* billboards = nullptr;
-	const std::vector<VdpMduMeshEntry>* meshes = nullptr;
+	const VdpBbuFrameBuffer* billboards = nullptr;
+	const VdpMduFrameBuffer* meshes = nullptr;
 	const std::array<u32, VDP_MFU_WEIGHT_COUNT>* morphWeightWords = nullptr;
 	const std::array<u32, VDP_JTU_REGISTER_WORDS>* jointMatrixWords = nullptr;
 	uint32_t frameBufferWidth = 0;

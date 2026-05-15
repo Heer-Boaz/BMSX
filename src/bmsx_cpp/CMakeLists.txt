@@ -84,6 +84,19 @@ endif()
 # Core engine library (static)
 # =============================================================================
 
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/axis_gizmo.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/axis_gizmo.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/skybox.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/skybox.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/particle.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/particle.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.frag.glsl"
+)
+
 file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.vert.glsl"
 	BMSX_HOST_OVERLAY_VERTEX_SHADER
@@ -234,9 +247,11 @@ add_library(bmsx_core STATIC
 	machine/devices/geometry/save_state.cpp
 	machine/devices/imgdec/controller.cpp
 	machine/devices/input/action_table.cpp
+	machine/devices/input/control_port.cpp
 	machine/devices/input/controller.cpp
 	machine/devices/input/event_fifo.cpp
 	machine/devices/input/output_port.cpp
+	machine/devices/input/query_port.cpp
 	machine/devices/input/registers.cpp
 	machine/devices/input/sample_latch.cpp
 	machine/devices/input/save_state.cpp

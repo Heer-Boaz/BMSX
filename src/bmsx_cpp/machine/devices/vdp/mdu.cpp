@@ -5,6 +5,10 @@
 
 namespace bmsx {
 
+void VdpMduFrameBuffer::reset() {
+	length = 0u;
+}
+
 void VdpMduUnit::reset() {
 	m_packetDecision.state = VdpMduPacketState::Idle;
 	m_packetDecision.faultCode = VDP_FAULT_NONE;
@@ -78,7 +82,7 @@ VdpMduPacketDecision VdpMduUnit::beginPacket(const VdpMduPacket& packet, size_t 
 	return decision;
 }
 
-VdpMduPacketDecision VdpMduUnit::completePacket(std::vector<VdpMduMeshEntry>& target, const VdpMduPacket& packet, u32 seq) {
+VdpMduPacketDecision VdpMduUnit::completePacket(VdpMduFrameBuffer& target, const VdpMduPacket& packet, u32 seq) {
 	VdpMduPacketDecision& decision = m_packetDecision;
 	latchMesh(target, packet, seq);
 	decision.state = VdpMduPacketState::InstanceEmit;
@@ -87,21 +91,21 @@ VdpMduPacketDecision VdpMduUnit::completePacket(std::vector<VdpMduMeshEntry>& ta
 	return decision;
 }
 
-void VdpMduUnit::latchMesh(std::vector<VdpMduMeshEntry>& target, const VdpMduPacket& packet, u32 seq) const {
-	target.emplace_back();
-	VdpMduMeshEntry& entry = target.back();
-	entry.seq = seq;
-	entry.modelTokenLo = packet.modelTokenLo;
-	entry.modelTokenHi = packet.modelTokenHi;
-	entry.meshIndex = packet.meshIndex;
-	entry.materialIndex = packet.materialIndex;
-	entry.modelMatrixIndex = packet.modelMatrixIndex;
-	entry.control = packet.control;
-	entry.color = packet.color;
-	entry.morphBase = packet.morphBase;
-	entry.morphCount = packet.morphCount;
-	entry.jointBase = packet.jointBase;
-	entry.jointCount = packet.jointCount;
+void VdpMduUnit::latchMesh(VdpMduFrameBuffer& target, const VdpMduPacket& packet, u32 seq) const {
+	const size_t index = target.length;
+	target.seq[index] = seq;
+	target.modelTokenLo[index] = packet.modelTokenLo;
+	target.modelTokenHi[index] = packet.modelTokenHi;
+	target.meshIndex[index] = packet.meshIndex;
+	target.materialIndex[index] = packet.materialIndex;
+	target.modelMatrixIndex[index] = packet.modelMatrixIndex;
+	target.control[index] = packet.control;
+	target.color[index] = packet.color;
+	target.morphBase[index] = packet.morphBase;
+	target.morphCount[index] = packet.morphCount;
+	target.jointBase[index] = packet.jointBase;
+	target.jointCount[index] = packet.jointCount;
+	target.length = index + 1u;
 }
 
 } // namespace bmsx

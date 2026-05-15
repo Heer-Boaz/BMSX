@@ -22,6 +22,7 @@ import { inflate } from 'pako';
 import { RomSourceStack, type RawRomSource } from './source';
 import { decodeRomToc } from './toc';
 import { formatNumberAsHex } from '../common/byte_hex_string';
+import { assetTokenFromAsset } from './tokens';
 
 const utf8Decoder = new TextDecoder();
 
@@ -537,11 +538,20 @@ async function load(source: RawRomSource, res: RomAsset, romPackage: RuntimeRomP
 			const texBuf = (baseAsset.texture_start != null && baseAsset.texture_end != null)
 				? source.getBytes({ ...baseAsset, start: baseAsset.texture_start, end: baseAsset.texture_end })
 				: undefined;
+			let model: GLTFModel;
 			if (opts && opts.loadModelFromBuffer) {
-				romPackage.model[assetKey] = await opts.loadModelFromBuffer(source.getBytes(baseAsset), texBuf);
+				model = await opts.loadModelFromBuffer(source.getBytes(baseAsset), texBuf);
 			} else {
-				romPackage.model[assetKey] = await loadModelFromBuffer(res.resid, source.getBytes(baseAsset), texBuf);
+				model = await loadModelFromBuffer(res.resid, source.getBytes(baseAsset), texBuf);
 			}
+			romPackage.model[assetKey] = model;
+			const token = assetTokenFromAsset(baseAsset);
+			let modelLoMap = romPackage.modelByToken.get(token.hi);
+			if (!modelLoMap) {
+				modelLoMap = new Map();
+				romPackage.modelByToken.set(token.hi, modelLoMap);
+			}
+			modelLoMap.set(token.lo, model);
 			break;
 		}
 		case 'data':
@@ -583,6 +593,7 @@ async function loadRuntimeRomPackageFromSource(source: RawRomSource, index: Cart
 		img: {},
 		audio: {},
 		model: {},
+		modelByToken: new Map(),
 		data: {},
 		bin: {},
 		audioevents: {},

@@ -1,7 +1,3 @@
-import { Input } from '../../../input/manager';
-import { InputControllerActionTable } from './action_table';
-import { InputControllerEventFifo } from './event_fifo';
-
 export type InputControllerSampleLatchState = {
 	sampleArmed: boolean;
 	sampleSequence: number;
@@ -13,12 +9,6 @@ export class InputControllerSampleLatch {
 	private sampleSequence = 0;
 	private lastSampleCycle = 0;
 
-	public constructor(
-		private readonly input: Input,
-		private readonly actionTable: InputControllerActionTable,
-		private readonly eventFifo: InputControllerEventFifo,
-	) {}
-
 	public reset(): void {
 		this.sampleArmed = false;
 		this.sampleSequence = 0;
@@ -29,19 +19,20 @@ export class InputControllerSampleLatch {
 		this.sampleArmed = true;
 	}
 
-	public cancel(): void {
+	public cancel(): boolean {
+		const wasArmed = this.sampleArmed;
 		this.sampleArmed = false;
+		return wasArmed;
 	}
 
-	public onVblankEdge(currentTimeMs: number, nowCycles: number): void {
+	public consumeVblankEdge(nowCycles: number): boolean {
 		if (!this.sampleArmed) {
-			return;
+			return false;
 		}
 		this.sampleSequence = (this.sampleSequence + 1) >>> 0;
 		this.lastSampleCycle = nowCycles >>> 0;
-		this.input.samplePlayers(currentTimeMs);
-		this.actionTable.sampleCommittedActions(this.eventFifo);
 		this.sampleArmed = false;
+		return true;
 	}
 
 	public captureState(): InputControllerSampleLatchState {

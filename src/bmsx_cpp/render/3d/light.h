@@ -2,8 +2,12 @@
 
 #include "common/primitives.h"
 #include <array>
+#include <cstddef>
 
 namespace bmsx {
+
+constexpr size_t RENDER_MAX_DIRECTIONAL_LIGHTS = 4u;
+constexpr size_t RENDER_MAX_POINT_LIGHTS = 4u;
 
 struct AmbientLight {
 	std::array<f32, 3> color = {0.0f, 0.0f, 0.0f};

@@ -441,6 +441,20 @@ static std::vector<u32> readIndexArray(const BinValue& value, std::optional<u32>
 	}
 }
 
+
+static ModelMaterialAlphaMode parseModelMaterialAlphaMode(const std::string& value, const std::string& assetId) {
+	if (value == "OPAQUE") {
+		return ModelMaterialAlphaMode::Opaque;
+	}
+	if (value == "MASK") {
+		return ModelMaterialAlphaMode::Mask;
+	}
+	if (value == "BLEND") {
+		return ModelMaterialAlphaMode::Blend;
+	}
+	throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' material alphaMode is not a GLTF alpha mode.");
+}
+
 static ModelMaterial parseModelMaterial(const BinValue& value, const std::string& assetId) {
 	if (!value.isObject()) {
 		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' material entry is not an object.");
@@ -463,10 +477,18 @@ static ModelMaterial parseModelMaterial(const BinValue& value, const std::string
 	material.emissiveTexture = readOptionalI32(obj, assetId, "emissiveTexture");
 	material.emissiveTexCoord = readOptionalI32(obj, assetId, "emissiveTexCoord");
 	material.emissiveFactor = readOptionalColor(obj, assetId, "emissiveFactor", true);
-	material.alphaMode = readOptionalString(obj, assetId, "alphaMode");
-	material.alphaCutoff = readOptionalF32(obj, assetId, "alphaCutoff");
-	material.doubleSided = readOptionalBool(obj, assetId, "doubleSided");
-	material.unlit = readOptionalBool(obj, assetId, "unlit");
+	if (const std::optional<std::string> alphaMode = readOptionalString(obj, assetId, "alphaMode")) {
+		material.alphaMode = parseModelMaterialAlphaMode(*alphaMode, assetId);
+	}
+	if (const std::optional<f32> alphaCutoff = readOptionalF32(obj, assetId, "alphaCutoff")) {
+		material.alphaCutoff = *alphaCutoff;
+	}
+	if (const std::optional<bool> doubleSided = readOptionalBool(obj, assetId, "doubleSided")) {
+		material.doubleSided = *doubleSided;
+	}
+	if (const std::optional<bool> unlit = readOptionalBool(obj, assetId, "unlit")) {
+		material.unlit = *unlit;
+	}
 	return material;
 }
 

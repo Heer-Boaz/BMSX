@@ -1,7 +1,7 @@
 /// <reference types="@webgpu/types" />
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { Host2DSubmission } from '../shared/submissions';
-import { LightingFrameState } from '../lighting/system';
+import type { LightingDescriptor, LightingFrameState } from '../lighting/system';
 import type { WebGLBackend } from './webgl/backend';
 import type { WebGPUBackend } from './webgpu/backend';
 import type { TextureParams } from './texture_params';
@@ -64,6 +64,7 @@ export type RenderTargetHandle =
 // High-level render pass identifiers
 export type RenderPassId =
 	| 'skybox'
+	| 'mesh'
 	| 'particles'
 	| 'framebuffer_2d'
 	| 'host_overlay'
@@ -234,6 +235,7 @@ export interface GPUBackend {
 
 export interface RenderPassStateRegistry {
 	['skybox']: SkyboxPipelineState;
+	['mesh']: MeshPipelineState;
 	['particles']: ParticlePipelineState;
 	['framebuffer_2d']: Framebuffer2DPipelineState;
 	['host_overlay']: HostOverlayPipelineState;
@@ -320,6 +322,17 @@ export interface ParticlePipelineState {
 	textpagePrimaryTex?: TextureHandle;
 	textpageSecondaryTex?: TextureHandle;
 	systemSlotTex?: TextureHandle;
+}
+
+export interface MeshPipelineState {
+	width: number;
+	height: number;
+	viewProj: Float32Array;
+	cameraPosition: Float32Array;
+	lighting: LightingDescriptor;
+	textpagePrimaryTex: TextureHandle;
+	textpageSecondaryTex: TextureHandle;
+	systemSlotTex: TextureHandle;
 }
 
 export type RenderingViewportType = 'viewport' | 'offscreen';

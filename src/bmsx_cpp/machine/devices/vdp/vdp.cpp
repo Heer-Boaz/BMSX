@@ -18,8 +18,7 @@ namespace {
 
 constexpr int VDP_SERVICE_BATCH_WORK_UNITS = 128;
 constexpr u32 VDP_REPLAY_PACKET_FAULT = 0xffffffffu;
-constexpr VDP::FrameBufferColor VDP_BLITTER_IMPLICIT_CLEAR{0u, 0u, 0u, 255u};
-constexpr VDP::FrameBufferColor VDP_BLITTER_WHITE{255u, 255u, 255u, 255u};
+constexpr VDP::FrameBufferColor VDP_BLITTER_IMPLICIT_CLEAR_COLOR{0u, 0u, 0u, 255u};
 constexpr DeviceStatusRegisters VDP_DEVICE_STATUS_REGISTERS{
 	IO_VDP_STATUS,
 	IO_VDP_FAULT_CODE,
@@ -28,16 +27,6 @@ constexpr DeviceStatusRegisters VDP_DEVICE_STATUS_REGISTERS{
 	VDP_STATUS_FAULT,
 	VDP_FAULT_NONE,
 };
-
-template <typename T>
-std::vector<T> acquireVectorFromPool(std::vector<std::vector<T>>& pool) {
-	if (pool.empty()) {
-		return {};
-	}
-	std::vector<T> values = std::move(pool.back());
-	pool.pop_back();
-	return values;
-}
 
 } // namespace
 
@@ -50,7 +39,6 @@ VDP::VDP(
 	: m_memory(memory)
 	, m_fault(memory, VDP_DEVICE_STATUS_REGISTERS)
 	, m_vram(entropySeeds)
-	, m_vout(VDP_BBU_BILLBOARD_LIMIT)
 	, m_configuredFrameBufferSize(frameBufferSize)
 	, m_scheduler(scheduler) {
 	m_memory.setVramWriter(this);
@@ -75,9 +63,6 @@ VDP::VDP(
 		m_memory.mapIoWrite(IO_VDP_SBX_FACE0 + index * IO_WORD_SIZE, this, &VDP::onSbxRegisterWindowWriteThunk);
 	}
 	m_memory.mapIoWrite(IO_VDP_SBX_COMMIT, this, &VDP::onSbxCommitWriteThunk);
-	reserveFrameStorage(m_buildFrame);
-	reserveFrameStorage(m_activeFrame);
-	reserveFrameStorage(m_pendingFrame);
 }
 
 void VDP::resetIngressState() {
@@ -987,12 +972,12 @@ void VDP::beginFrame() {
 }
 
 bool VDP::enqueueLatchedClear() {
-	BlitterCommand command;
-	command.type = BlitterCommandType::Clear;
-	command.seq = nextBlitterSequence();
-	command.renderCost = VDP_RENDER_CLEAR_COST;
-	command.color = unpackArgbColor(m_vdpRegisters[VDP_REG_BG_COLOR]);
-	return enqueueBlitterCommand(std::move(command));
+	size_t index = 0u;
+	if (!reserveBlitterCommand(BlitterCommandType::Clear, VDP_RENDER_CLEAR_COST, index)) {
+		return false;
+	}
+	m_buildFrame.queue->color[index] = m_vdpRegisters[VDP_REG_BG_COLOR];
+	return true;
 }
 
 bool VDP::enqueueLatchedFillRect() {
@@ -1004,19 +989,12 @@ bool VDP::enqueueLatchedFillRect() {
 		return true;
 	}
 	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
-	BlitterCommand command;
-	assignLayeredBlitterCommand(
-		command,
-		BlitterCommandType::FillRect,
-		blitAreaBucket(clipped.area) * (color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1),
-		layer,
-		priority);
-	command.x0 = geometry.x0;
-	command.y0 = geometry.y0;
-	command.x1 = geometry.x1;
-	command.y1 = geometry.y1;
-	command.color = color;
-	return enqueueBlitterCommand(std::move(command));
+	size_t index = 0u;
+	if (!reserveBlitterCommand(BlitterCommandType::FillRect, blitAreaBucket(clipped.area) * (color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1), index)) {
+		return false;
+	}
+	writeGeometryColorCommand(*m_buildFrame.queue, index, layer, priority, geometry, m_vdpRegisters[VDP_REG_DRAW_COLOR]);
+	return true;
 }
 
 bool VDP::enqueueLatchedDrawLine() {
@@ -1034,16 +1012,14 @@ bool VDP::enqueueLatchedDrawLine() {
 	}
 	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
 	const int thicknessMultiplier = thickness > 1.0f ? 2 : 1;
-	BlitterCommand command;
 	const int alphaCost = color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
-	assignLayeredBlitterCommand(command, BlitterCommandType::DrawLine, blitSpanBucket(span) * thicknessMultiplier * alphaCost, layer, priority);
-	command.x0 = geometry.x0;
-	command.y0 = geometry.y0;
-	command.x1 = geometry.x1;
-	command.y1 = geometry.y1;
-	command.thickness = thickness;
-	command.color = color;
-	return enqueueBlitterCommand(std::move(command));
+	size_t index = 0u;
+	if (!reserveBlitterCommand(BlitterCommandType::DrawLine, blitSpanBucket(span) * thicknessMultiplier * alphaCost, index)) {
+		return false;
+	}
+	writeGeometryColorCommand(*m_buildFrame.queue, index, layer, priority, geometry, m_vdpRegisters[VDP_REG_DRAW_COLOR]);
+	m_buildFrame.queue->thickness[index] = thickness;
+	return true;
 }
 
 bool VDP::enqueueLatchedBlit() {
@@ -1086,23 +1062,27 @@ bool VDP::enqueueLatchedBlit() {
 		return true;
 	}
 	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
-	BlitterCommand command;
-	assignLayeredBlitterCommand(
-		command,
-		BlitterCommandType::Blit,
-		blitAreaBucket(clipped.area) * (color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1),
-		layer,
-		priority);
-	command.source = source;
-	command.dstX = resolved.dstX;
-	command.dstY = resolved.dstY;
-	command.scaleX = resolved.scaleX;
-	command.scaleY = resolved.scaleY;
-	command.flipH = drawCtrl.flipH;
-	command.flipV = drawCtrl.flipV;
-	command.color = color;
-	command.parallaxWeight = drawCtrl.parallaxWeight;
-	return enqueueBlitterCommand(std::move(command));
+	size_t index = 0u;
+	if (!reserveBlitterCommand(BlitterCommandType::Blit, blitAreaBucket(clipped.area) * (color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1), index)) {
+		return false;
+	}
+	BlitterCommand& queue = *m_buildFrame.queue;
+	queue.layer[index] = layer;
+	queue.priority[index] = priority;
+	queue.sourceSurfaceId[index] = source.surfaceId;
+	queue.sourceSrcX[index] = source.srcX;
+	queue.sourceSrcY[index] = source.srcY;
+	queue.sourceWidth[index] = source.width;
+	queue.sourceHeight[index] = source.height;
+	queue.dstX[index] = resolved.dstX;
+	queue.dstY[index] = resolved.dstY;
+	queue.scaleX[index] = resolved.scaleX;
+	queue.scaleY[index] = resolved.scaleY;
+	queue.flipH[index] = drawCtrl.flipH ? 1u : 0u;
+	queue.flipV[index] = drawCtrl.flipV ? 1u : 0u;
+	queue.color[index] = m_vdpRegisters[VDP_REG_DRAW_COLOR];
+	queue.parallaxWeight[index] = drawCtrl.parallaxWeight;
+	return true;
 }
 
 bool VDP::enqueueLatchedCopyRect() {
@@ -1121,39 +1101,39 @@ u32 VDP::nextBlitterSequence() {
 	return m_blitterSequence++;
 }
 
-void VDP::assignLayeredBlitterCommand(BlitterCommand& command, BlitterCommandType type, int renderCost, Layer2D layer, f32 priority) {
-	command.type = type;
-	command.seq = nextBlitterSequence();
-	command.renderCost = renderCost;
-	command.layer = layer;
-	command.priority = priority;
-}
-
-std::vector<VDP::GlyphRunGlyph> VDP::acquireGlyphBuffer() {
-	return acquireVectorFromPool(m_glyphBufferPool);
-}
-
-std::vector<VDP::TileRunBlit> VDP::acquireTileBuffer() {
-	return acquireVectorFromPool(m_tileBufferPool);
-}
-
-void VDP::recycleBlitterBuffers(std::vector<BlitterCommand>& queue) {
-	for (auto& command : queue) {
-		if (command.type == BlitterCommandType::GlyphRun) {
-			command.glyphs.clear();
-			m_glyphBufferPool.push_back(std::move(command.glyphs));
-		} else if (command.type == BlitterCommandType::TileRun) {
-			command.tiles.clear();
-			m_tileBufferPool.push_back(std::move(command.tiles));
-		}
+bool VDP::reserveBlitterCommand(BlitterCommandType opcode, int renderCost, size_t& index) {
+	if (m_buildFrame.state == VdpDexFrameState::Idle) {
+		m_fault.raise(VDP_FAULT_SUBMIT_STATE, static_cast<uint32_t>(opcode));
+		return false;
 	}
+	BlitterCommand& queue = *m_buildFrame.queue;
+	index = queue.length;
+	if (index >= VDP_BLITTER_FIFO_CAPACITY) {
+		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(index));
+		return false;
+	}
+	queue.opcode[index] = opcode;
+	queue.seq[index] = nextBlitterSequence();
+	queue.renderCost[index] = renderCost;
+	queue.length = index + 1u;
+	m_buildFrame.cost += renderCost;
+	return true;
+}
+
+void VDP::writeGeometryColorCommand(BlitterCommand& queue, size_t index, Layer2D layer, f32 priority, const VdpLatchedGeometry& geometry, u32 color) {
+	queue.layer[index] = layer;
+	queue.priority[index] = priority;
+	queue.x0[index] = geometry.x0;
+	queue.y0[index] = geometry.y0;
+	queue.x1[index] = geometry.x1;
+	queue.y1[index] = geometry.y1;
+	queue.color[index] = color;
 }
 
 void VDP::resetBuildFrameState() {
-	recycleBlitterBuffers(m_buildFrame.queue);
-	m_buildFrame.queue.clear();
-	m_buildFrame.billboards.clear();
-	m_buildFrame.meshes.clear();
+	m_buildFrame.queue->reset();
+	m_buildFrame.billboards->reset();
+	m_buildFrame.meshes->reset();
 	m_buildFrame.cost = 0;
 	m_buildFrame.state = VdpDexFrameState::Idle;
 }
@@ -1161,24 +1141,10 @@ void VDP::resetBuildFrameState() {
 void VDP::resetQueuedFrameState() {
 	resetBuildFrameState();
 	clearActiveFrame();
-	recycleBlitterBuffers(m_pendingFrame.queue);
-	m_pendingFrame.billboards.clear();
-	m_pendingFrame.meshes.clear();
+	m_pendingFrame.queue->reset();
+	m_pendingFrame.billboards->reset();
+	m_pendingFrame.meshes->reset();
 	resetSubmittedFrameSlot(m_pendingFrame);
-}
-
-bool VDP::enqueueBlitterCommand(BlitterCommand&& command) {
-	if (m_buildFrame.state == VdpDexFrameState::Idle) {
-		m_fault.raise(VDP_FAULT_SUBMIT_STATE, static_cast<uint32_t>(command.type));
-		return false;
-	}
-	if (m_buildFrame.queue.size() >= VDP_BLITTER_FIFO_CAPACITY) {
-		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(m_buildFrame.queue.size()));
-		return false;
-	}
-	m_buildFrame.cost += command.renderCost;
-	m_buildFrame.queue.push_back(std::move(command));
-	return true;
 }
 
 void VDP::presentFrameBufferPageOnVblankEdge() {
@@ -1247,9 +1213,9 @@ bool VDP::sealSubmittedFrame() {
 		}
 		frame = &m_pendingFrame;
 	}
-	const bool frameHasFrameBufferCommands = !m_buildFrame.queue.empty();
-	const bool frameHasCommands = frameHasFrameBufferCommands || !m_buildFrame.billboards.empty() || !m_buildFrame.meshes.empty();
-	const int frameCost = (!m_buildFrame.queue.empty() && m_buildFrame.queue.front().type != BlitterCommandType::Clear)
+	const bool frameHasFrameBufferCommands = m_buildFrame.queue->length != 0u;
+	const bool frameHasCommands = frameHasFrameBufferCommands || m_buildFrame.billboards->length != 0u || m_buildFrame.meshes->length != 0u;
+	const int frameCost = (m_buildFrame.queue->length != 0u && m_buildFrame.queue->opcode[0] != BlitterCommandType::Clear)
 		? (m_buildFrame.cost + VDP_RENDER_CLEAR_COST)
 		: m_buildFrame.cost;
 	const VdpSbxFrameDecision sbxDecision = m_sbx.beginFrameSeal();
@@ -1287,8 +1253,9 @@ bool VDP::sealSubmittedFrame() {
 	frame->ditherType = voutFrame.ditherType;
 	frame->frameBufferWidth = voutFrame.frameBufferWidth;
 	frame->frameBufferHeight = voutFrame.frameBufferHeight;
-	m_buildFrame.billboards.clear();
-	m_buildFrame.meshes.clear();
+	m_buildFrame.queue->reset();
+	m_buildFrame.billboards->reset();
+	m_buildFrame.meshes->reset();
 	m_buildFrame.cost = 0;
 	m_buildFrame.state = VdpDexFrameState::Idle;
 	scheduleNextService(m_scheduler.currentNowCycles());
@@ -1319,10 +1286,9 @@ void VDP::advanceWork(int workUnits) {
 	if (workUnits >= m_activeFrame.workRemaining) {
 		m_activeFrame.workRemaining = 0;
 		if (m_activeFrame.hasFrameBufferCommands) {
-			executeFrameBufferCommands(m_activeFrame.queue);
+			executeFrameBufferCommands(*m_activeFrame.queue);
 		}
-		recycleBlitterBuffers(m_activeFrame.queue);
-		m_activeFrame.queue.clear();
+		m_activeFrame.queue->reset();
 		m_activeFrame.state = VdpSubmittedFrameState::Ready;
 		refreshSubmitBusyStatus();
 		scheduleNextService(m_scheduler.currentNowCycles());
@@ -1338,8 +1304,8 @@ int VDP::getPendingRenderWorkUnits() const {
 	return m_activeFrame.state == VdpSubmittedFrameState::Ready ? 0 : m_activeFrame.workRemaining;
 }
 
-void VDP::executeFrameBufferCommands(const std::vector<BlitterCommand>& commands) {
-	if (commands.empty()) {
+void VDP::executeFrameBufferCommands(const BlitterCommand& commands) {
+	if (commands.length == 0u) {
 		return;
 	}
 	VdpSurfaceUploadSlot* frameBufferSlot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
@@ -1348,63 +1314,95 @@ void VDP::executeFrameBufferCommands(const std::vector<BlitterCommand>& commands
 	}
 	auto& pixels = frameBufferSlot->cpuReadback;
 	ensureFrameBufferPriorityCapacity(static_cast<size_t>(m_fbm.width()) * static_cast<size_t>(m_fbm.height()));
-	if (commands.front().type != BlitterCommandType::Clear) {
-		fillFrameBuffer(pixels, VDP_BLITTER_IMPLICIT_CLEAR);
+	if (commands.opcode[0] != BlitterCommandType::Clear) {
+		fillFrameBuffer(pixels, VDP_BLITTER_IMPLICIT_CLEAR_COLOR);
 	}
 	resetFrameBufferPriority();
-	for (const auto& command : commands) {
-		switch (command.type) {
-			case BlitterCommandType::Clear:
-				fillFrameBuffer(pixels, command.color);
-				resetFrameBufferPriority();
-				break;
+	BlitterSource source;
+	for (size_t index = 0u; index < commands.length; ++index) {
+		const BlitterCommandType opcode = commands.opcode[index];
+		if (opcode == BlitterCommandType::Clear) {
+			fillFrameBuffer(pixels, unpackArgbColor(commands.color[index]));
+			resetFrameBufferPriority();
+			continue;
+		}
+		const Layer2D layer = commands.layer[index];
+		const f32 priority = commands.priority[index];
+		const u32 sequence = commands.seq[index];
+		const FrameBufferColor color = unpackArgbColor(commands.color[index]);
+		switch (opcode) {
 			case BlitterCommandType::FillRect:
-				rasterizeFrameBufferFill(pixels, command.x0, command.y0, command.x1, command.y1, command.color, command.layer, command.priority, command.seq);
+				rasterizeFrameBufferFill(pixels, commands.x0[index], commands.y0[index], commands.x1[index], commands.y1[index], color, layer, priority, sequence);
 				break;
 			case BlitterCommandType::DrawLine:
-				rasterizeFrameBufferLine(pixels, command.x0, command.y0, command.x1, command.y1, command.thickness, command.color, command.layer, command.priority, command.seq);
+				rasterizeFrameBufferLine(pixels, commands.x0[index], commands.y0[index], commands.x1[index], commands.y1[index], commands.thickness[index], color, layer, priority, sequence);
 				break;
 			case BlitterCommandType::Blit:
-				rasterizeFrameBufferBlit(pixels, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.color, command.layer, command.priority, command.seq);
+				source.surfaceId = commands.sourceSurfaceId[index];
+				source.srcX = commands.sourceSrcX[index];
+				source.srcY = commands.sourceSrcY[index];
+				source.width = commands.sourceWidth[index];
+				source.height = commands.sourceHeight[index];
+				rasterizeFrameBufferBlit(pixels, source, commands.dstX[index], commands.dstY[index], commands.scaleX[index], commands.scaleY[index], commands.flipH[index] != 0u, commands.flipV[index] != 0u, color, layer, priority, sequence);
 				break;
 			case BlitterCommandType::CopyRect:
 				copyFrameBufferRect(
 					pixels,
-					command.srcX,
-					command.srcY,
-					command.width,
-					command.height,
-					static_cast<i32>(std::round(command.dstX)),
-					static_cast<i32>(std::round(command.dstY)),
-					command.layer,
-					command.priority,
-					command.seq
+					commands.srcX[index],
+					commands.srcY[index],
+					commands.width[index],
+					commands.height[index],
+					static_cast<i32>(std::round(commands.dstX[index])),
+					static_cast<i32>(std::round(commands.dstY[index])),
+					layer,
+					priority,
+					sequence
 				);
 				break;
-			case BlitterCommandType::GlyphRun:
-				if (command.backgroundColor.has_value()) {
-					for (const auto& glyph : command.glyphs) {
+			case BlitterCommandType::GlyphRun: {
+				const size_t firstGlyph = commands.glyphRunFirstEntry[index];
+				const size_t glyphEnd = firstGlyph + commands.glyphRunEntryCount[index];
+				if (commands.hasBackgroundColor[index] != 0u) {
+					const FrameBufferColor background = unpackArgbColor(commands.backgroundColor[index]);
+					for (size_t glyphIndex = firstGlyph; glyphIndex < glyphEnd; ++glyphIndex) {
 						rasterizeFrameBufferFill(
 							pixels,
-							glyph.dstX,
-							glyph.dstY,
-							glyph.dstX + static_cast<f32>(glyph.advance),
-							glyph.dstY + static_cast<f32>(command.lineHeight),
-							*command.backgroundColor,
-							command.layer,
-							command.priority,
-							command.seq
+							commands.glyphDstX[glyphIndex],
+							commands.glyphDstY[glyphIndex],
+							commands.glyphDstX[glyphIndex] + static_cast<f32>(commands.glyphAdvance[glyphIndex]),
+							commands.glyphDstY[glyphIndex] + static_cast<f32>(commands.lineHeight[index]),
+							background,
+							layer,
+							priority,
+							sequence
 						);
 					}
 				}
-				for (const auto& glyph : command.glyphs) {
-					rasterizeFrameBufferBlit(pixels, glyph, glyph.dstX, glyph.dstY, 1.0f, 1.0f, false, false, command.color, command.layer, command.priority, command.seq);
+				for (size_t glyphIndex = firstGlyph; glyphIndex < glyphEnd; ++glyphIndex) {
+					source.surfaceId = commands.glyphSurfaceId[glyphIndex];
+					source.srcX = commands.glyphSrcX[glyphIndex];
+					source.srcY = commands.glyphSrcY[glyphIndex];
+					source.width = commands.glyphWidth[glyphIndex];
+					source.height = commands.glyphHeight[glyphIndex];
+					rasterizeFrameBufferBlit(pixels, source, commands.glyphDstX[glyphIndex], commands.glyphDstY[glyphIndex], 1.0f, 1.0f, false, false, color, layer, priority, sequence);
 				}
 				break;
-			case BlitterCommandType::TileRun:
-				for (const auto& tile : command.tiles) {
-					rasterizeFrameBufferBlit(pixels, tile, tile.dstX, tile.dstY, 1.0f, 1.0f, false, false, VDP_BLITTER_WHITE, command.layer, command.priority, command.seq);
+			}
+			case BlitterCommandType::TileRun: {
+				const FrameBufferColor white = unpackArgbColor(VDP_BLITTER_WHITE);
+				const size_t firstTile = commands.tileRunFirstEntry[index];
+				const size_t tileEnd = firstTile + commands.tileRunEntryCount[index];
+				for (size_t tileIndex = firstTile; tileIndex < tileEnd; ++tileIndex) {
+					source.surfaceId = commands.tileSurfaceId[tileIndex];
+					source.srcX = commands.tileSrcX[tileIndex];
+					source.srcY = commands.tileSrcY[tileIndex];
+					source.width = commands.tileWidth[tileIndex];
+					source.height = commands.tileHeight[tileIndex];
+					rasterizeFrameBufferBlit(pixels, source, commands.tileDstX[tileIndex], commands.tileDstY[tileIndex], 1.0f, 1.0f, false, false, white, layer, priority, sequence);
 				}
+				break;
+			}
+			case BlitterCommandType::Clear:
 				break;
 		}
 	}
@@ -1644,7 +1642,7 @@ void VDP::scheduleNextService(int64_t nowCycles) {
 }
 
 void VDP::clearActiveFrame() {
-	recycleBlitterBuffers(m_activeFrame.queue);
+	m_activeFrame.queue->reset();
 	resetSubmittedFrameSlot(m_activeFrame);
 }
 
@@ -1786,7 +1784,7 @@ void VDP::resolveBbuSourceInto(const VdpBbuPacket& packet, VdpBbuSourceResolutio
 }
 
 bool VDP::latchBillboardPacket(const VdpBbuPacket& packet) {
-	const VdpBbuPacketDecision decision = m_bbu.beginPacket(packet, m_buildFrame.billboards.size());
+	const VdpBbuPacketDecision decision = m_bbu.beginPacket(packet, m_buildFrame.billboards->length);
 	if (decision.state != VdpBbuPacketState::SourceResolve) {
 		m_fault.raise(decision.faultCode, decision.faultDetail);
 		return false;
@@ -1794,7 +1792,7 @@ bool VDP::latchBillboardPacket(const VdpBbuPacket& packet) {
 	VdpBbuSourceResolution resolution;
 	resolveBbuSourceInto(packet, resolution);
 	const VdpBbuPacketDecision completed = m_bbu.completePacket(
-		m_buildFrame.billboards,
+		*m_buildFrame.billboards,
 		packet,
 		resolution,
 		resolution.faultCode == VDP_FAULT_NONE ? nextBlitterSequence() : 0u);
@@ -1807,12 +1805,12 @@ bool VDP::latchBillboardPacket(const VdpBbuPacket& packet) {
 }
 
 bool VDP::latchMeshPacket(const VdpMduPacket& packet) {
-	const VdpMduPacketDecision decision = m_mdu.beginPacket(packet, m_buildFrame.meshes.size());
+	const VdpMduPacketDecision decision = m_mdu.beginPacket(packet, m_buildFrame.meshes->length);
 	if (decision.faultCode != VDP_FAULT_NONE) {
 		m_fault.raise(decision.faultCode, decision.faultDetail);
 		return false;
 	}
-	m_mdu.completePacket(m_buildFrame.meshes, packet, nextBlitterSequence());
+	m_mdu.completePacket(*m_buildFrame.meshes, packet, nextBlitterSequence());
 	return true;
 }
 
@@ -1900,15 +1898,20 @@ bool VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i
 	if (clipped.area == 0.0) {
 		return true;
 	}
-	BlitterCommand command;
-	assignLayeredBlitterCommand(command, BlitterCommandType::CopyRect, blitAreaBucket(clipped.area), layer, priority);
-	command.srcX = srcX;
-	command.srcY = srcY;
-	command.width = width;
-	command.height = height;
-	command.dstX = static_cast<f32>(dstX);
-	command.dstY = static_cast<f32>(dstY);
-	return enqueueBlitterCommand(std::move(command));
+	size_t index = 0u;
+	if (!reserveBlitterCommand(BlitterCommandType::CopyRect, blitAreaBucket(clipped.area), index)) {
+		return false;
+	}
+	BlitterCommand& queue = *m_buildFrame.queue;
+	queue.layer[index] = layer;
+	queue.priority[index] = priority;
+	queue.srcX[index] = srcX;
+	queue.srcY[index] = srcY;
+	queue.width[index] = width;
+	queue.height[index] = height;
+	queue.dstX[index] = static_cast<f32>(dstX);
+	queue.dstY[index] = static_cast<f32>(dstY);
+	return true;
 }
 
 VDP::TileRunClipWindow VDP::clipTileRun(i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY) const {
@@ -1950,7 +1953,7 @@ u32 VDP::readTileRunPayloadWord(const TileRunPayload& payload, u32 wordOffset) c
 	return payload.words[wordOffset];
 }
 
-bool VDP::appendTileRunSource(BlitterCommand& command, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow) {
+bool VDP::appendTileRunSource(BlitterCommand& queue, size_t commandIndex, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow) {
 	if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
 		m_fault.raise(VDP_FAULT_DEX_SOURCE_OOB, source.width | (source.height << 16u));
 		return false;
@@ -1971,15 +1974,20 @@ bool VDP::appendTileRunSource(BlitterCommand& command, const BlitterSource& sour
 		lastVisibleRow = row;
 		visibleRowCount += 1;
 	}
-	command.tiles.emplace_back();
-	auto& blit = command.tiles.back();
-	blit.surfaceId = source.surfaceId;
-	blit.srcX = source.srcX;
-	blit.srcY = source.srcY;
-	blit.width = source.width;
-	blit.height = source.height;
-	blit.dstX = static_cast<f32>(tileX);
-	blit.dstY = static_cast<f32>(tileY);
+	const size_t tileEntry = queue.tileEntryCount;
+	if (tileEntry >= VDP_BLITTER_RUN_ENTRY_CAPACITY) {
+		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(tileEntry));
+		return false;
+	}
+	queue.tileSurfaceId[tileEntry] = source.surfaceId;
+	queue.tileSrcX[tileEntry] = source.srcX;
+	queue.tileSrcY[tileEntry] = source.srcY;
+	queue.tileWidth[tileEntry] = source.width;
+	queue.tileHeight[tileEntry] = source.height;
+	queue.tileDstX[tileEntry] = static_cast<f32>(tileX);
+	queue.tileDstY[tileEntry] = static_cast<f32>(tileY);
+	queue.tileEntryCount = tileEntry + 1u;
+	queue.tileRunEntryCount[commandIndex] += 1u;
 	return true;
 }
 
@@ -1992,12 +2000,24 @@ void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCo
 	if (!clip.visible) {
 		return;
 	}
-	BlitterCommand command;
-	command.type = BlitterCommandType::TileRun;
-	command.seq = nextBlitterSequence();
-	command.tiles = acquireTileBuffer();
-	command.priority = priority;
-	command.layer = layer;
+	if (m_buildFrame.state == VdpDexFrameState::Idle) {
+		m_fault.raise(VDP_FAULT_SUBMIT_STATE, static_cast<uint32_t>(BlitterCommandType::TileRun));
+		return;
+	}
+	BlitterCommand& queue = *m_buildFrame.queue;
+	const size_t commandIndex = queue.length;
+	if (commandIndex >= VDP_BLITTER_FIFO_CAPACITY) {
+		m_fault.raise(VDP_FAULT_DEX_OVERFLOW, static_cast<uint32_t>(commandIndex));
+		return;
+	}
+	const size_t firstTile = queue.tileEntryCount;
+	queue.opcode[commandIndex] = BlitterCommandType::TileRun;
+	queue.seq[commandIndex] = nextBlitterSequence();
+	queue.priority[commandIndex] = priority;
+	queue.layer[commandIndex] = layer;
+	queue.color[commandIndex] = VDP_BLITTER_WHITE;
+	queue.tileRunFirstEntry[commandIndex] = static_cast<u32>(firstTile);
+	queue.tileRunEntryCount[commandIndex] = 0u;
 	int visibleRowCount = 0;
 	int visibleNonEmptyTileCount = 0;
 	i32 lastVisibleRow = -1;
@@ -2018,26 +2038,27 @@ void VDP::latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCo
 				readTileRunPayloadWord(payload, payloadOffset + 4u),
 				source,
 				VDP_FAULT_DEX_SOURCE_SLOT)) {
-				command.tiles.clear();
-				m_tileBufferPool.push_back(std::move(command.tiles));
+				queue.tileEntryCount = firstTile;
+				queue.tileRunEntryCount[commandIndex] = 0u;
 				return;
 			}
 			const i32 tileX = clip.dstX + (col * tileW) - clip.srcClipX;
 			const i32 tileY = clip.dstY + (row * tileH) - clip.srcClipY;
-			if (!appendTileRunSource(command, source, clip, tileW, tileH, tileX, tileY, row, visibleRowCount, visibleNonEmptyTileCount, lastVisibleRow)) {
-				command.tiles.clear();
-				m_tileBufferPool.push_back(std::move(command.tiles));
+			if (!appendTileRunSource(queue, commandIndex, source, clip, tileW, tileH, tileX, tileY, row, visibleRowCount, visibleNonEmptyTileCount, lastVisibleRow)) {
+				queue.tileEntryCount = firstTile;
+				queue.tileRunEntryCount[commandIndex] = 0u;
 				return;
 			}
 		}
 	}
-	if (command.tiles.empty()) {
-		command.tiles.clear();
-		m_tileBufferPool.push_back(std::move(command.tiles));
+	if (queue.tileRunEntryCount[commandIndex] == 0u) {
+		queue.tileEntryCount = firstTile;
 		return;
 	}
-	command.renderCost = tileRunCost(visibleRowCount, visibleNonEmptyTileCount);
-	enqueueBlitterCommand(std::move(command));
+	const int renderCost = tileRunCost(visibleRowCount, visibleNonEmptyTileCount);
+	queue.renderCost[commandIndex] = renderCost;
+	queue.length = commandIndex + 1u;
+	m_buildFrame.cost += renderCost;
 }
 
 void VDP::latchPayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer) {

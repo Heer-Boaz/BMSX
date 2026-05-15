@@ -31,7 +31,7 @@ import type { VdpFrameBufferTextures } from './vdp/framebuffer';
 import type { VdpSlotTextures } from './vdp/slot_textures';
 import { renderGate } from 'bmsx/core/taskgate';
 
-const PRESENTATION_PASS_IDS = ['skybox', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
+const PRESENTATION_PASS_IDS = ['skybox', 'mesh', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
 const VDP_BBU_BILLBOARD_VEC4_CAPACITY = VDP_BBU_BILLBOARD_LIMIT * 4;
 
 interface GameViewOpts {

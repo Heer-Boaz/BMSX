@@ -5,6 +5,10 @@
 
 namespace bmsx {
 
+void VdpBbuFrameBuffer::reset() {
+	length = 0u;
+}
+
 void VdpBbuUnit::reset() {
 	m_packetDecision.state = VdpBbuPacketState::Idle;
 	m_packetDecision.faultCode = VDP_FAULT_NONE;
@@ -65,7 +69,7 @@ VdpBbuPacketDecision VdpBbuUnit::beginPacket(const VdpBbuPacket& packet, size_t 
 }
 
 VdpBbuPacketDecision VdpBbuUnit::completePacket(
-	std::vector<VdpBbuBillboardEntry>& target,
+	VdpBbuFrameBuffer& target,
 	const VdpBbuPacket& packet,
 	const VdpBbuSourceResolution& resolution,
 	u32 seq) {
@@ -92,7 +96,7 @@ VdpBbuPacketDecision VdpBbuUnit::completePacket(
 }
 
 void VdpBbuUnit::latchBillboard(
-	std::vector<VdpBbuBillboardEntry>& target,
+	VdpBbuFrameBuffer& target,
 	const VdpBbuPacket& packet,
 	u32 seq,
 	f32 size,
@@ -100,20 +104,24 @@ void VdpBbuUnit::latchBillboard(
 	u32 surfaceWidth,
 	u32 surfaceHeight,
 	u32 slot) {
-	target.emplace_back();
-	VdpBbuBillboardEntry& entry = target.back();
-	entry.seq = seq;
-	entry.layer = packet.layer;
-	entry.priority = packet.priority;
-	entry.positionX = decodeSignedQ16_16(packet.xWord);
-	entry.positionY = decodeSignedQ16_16(packet.yWord);
-	entry.positionZ = decodeSignedQ16_16(packet.zWord);
-	entry.size = size;
-	entry.color = packet.color;
-	entry.source = source;
-	entry.surfaceWidth = surfaceWidth;
-	entry.surfaceHeight = surfaceHeight;
-	entry.slot = slot;
+	const size_t index = target.length;
+	target.seq[index] = seq;
+	target.layer[index] = packet.layer;
+	target.priority[index] = packet.priority;
+	target.positionX[index] = decodeSignedQ16_16(packet.xWord);
+	target.positionY[index] = decodeSignedQ16_16(packet.yWord);
+	target.positionZ[index] = decodeSignedQ16_16(packet.zWord);
+	target.size[index] = size;
+	target.color[index] = packet.color;
+	target.sourceSurfaceId[index] = source.surfaceId;
+	target.sourceSrcX[index] = source.srcX;
+	target.sourceSrcY[index] = source.srcY;
+	target.sourceWidth[index] = source.width;
+	target.sourceHeight[index] = source.height;
+	target.surfaceWidth[index] = surfaceWidth;
+	target.surfaceHeight[index] = surfaceHeight;
+	target.slot[index] = slot;
+	target.length = index + 1u;
 }
 
 } // namespace bmsx

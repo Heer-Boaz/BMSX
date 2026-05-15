@@ -2,6 +2,12 @@
 
 namespace bmsx {
 
+void VdpBlitterCommandBuffer::reset() {
+	length = 0u;
+	glyphEntryCount = 0u;
+	tileEntryCount = 0u;
+}
+
 u8 frameBufferColorByte(f32 value) {
 	return static_cast<u8>(value * 255.0f + 0.5f);
 }

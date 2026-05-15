@@ -1,28 +1,48 @@
 #include "render/shared/hardware/lighting.h"
 
+#include <unordered_map>
+
 namespace bmsx {
 namespace {
 
-std::unordered_map<std::string, AmbientLight> s_ambientLights;
-std::unordered_map<std::string, DirectionalLight> s_directionalLights;
-std::unordered_map<std::string, PointLight> s_pointLights;
+std::vector<AmbientLight> s_ambientLights;
+std::vector<DirectionalLight> s_directionalLights;
+std::vector<PointLight> s_pointLights;
+std::unordered_map<std::string, size_t> s_ambientLightIndices;
+std::unordered_map<std::string, size_t> s_directionalLightIndices;
+std::unordered_map<std::string, size_t> s_pointLightIndices;
 bool s_hardwareLightingDirty = false;
+
+template<typename Light>
+void putHardwareLight(std::vector<Light>& lights, std::unordered_map<std::string, size_t>& indices, const std::string& id, const Light& light) {
+	const auto it = indices.find(id);
+	if (it == indices.end()) {
+		indices[id] = lights.size();
+		lights.push_back(light);
+	} else {
+		lights[it->second] = light;
+	}
+}
+
+void markHardwareLightingDirty() {
+	s_hardwareLightingDirty = true;
+}
 
 } // namespace
 
 void putHardwareAmbientLight(const std::string& id, const AmbientLight& light) {
-	s_ambientLights[id] = light;
-	s_hardwareLightingDirty = true;
+	putHardwareLight(s_ambientLights, s_ambientLightIndices, id, light);
+	markHardwareLightingDirty();
 }
 
 void putHardwareDirectionalLight(const std::string& id, const DirectionalLight& light) {
-	s_directionalLights[id] = light;
-	s_hardwareLightingDirty = true;
+	putHardwareLight(s_directionalLights, s_directionalLightIndices, id, light);
+	markHardwareLightingDirty();
 }
 
 void putHardwarePointLight(const std::string& id, const PointLight& light) {
-	s_pointLights[id] = light;
-	s_hardwareLightingDirty = true;
+	putHardwareLight(s_pointLights, s_pointLightIndices, id, light);
+	markHardwareLightingDirty();
 }
 
 void clearHardwareLighting() {
@@ -30,6 +50,9 @@ void clearHardwareLighting() {
 	s_ambientLights.clear();
 	s_directionalLights.clear();
 	s_pointLights.clear();
+	s_ambientLightIndices.clear();
+	s_directionalLightIndices.clear();
+	s_pointLightIndices.clear();
 	if (hadLights) {
 		s_hardwareLightingDirty = true;
 	}
@@ -43,15 +66,15 @@ bool consumeHardwareLightingDirty() {
 	return true;
 }
 
-const std::unordered_map<std::string, AmbientLight>& getHardwareAmbientLights() {
+const std::vector<AmbientLight>& getHardwareAmbientLights() {
 	return s_ambientLights;
 }
 
-const std::unordered_map<std::string, DirectionalLight>& getHardwareDirectionalLights() {
+const std::vector<DirectionalLight>& getHardwareDirectionalLights() {
 	return s_directionalLights;
 }
 
-const std::unordered_map<std::string, PointLight>& getHardwarePointLights() {
+const std::vector<PointLight>& getHardwarePointLights() {
 	return s_pointLights;
 }
 
@@ -63,8 +86,7 @@ std::optional<AmbientLight> resolveHardwareAmbientLight() {
 	f32 accumR = 0.0f;
 	f32 accumG = 0.0f;
 	f32 accumB = 0.0f;
-	for (const auto& entry : s_ambientLights) {
-		const AmbientLight& light = entry.second;
+	for (const AmbientLight& light : s_ambientLights) {
 		totalIntensity += light.intensity;
 		accumR += light.color[0] * light.intensity;
 		accumG += light.color[1] * light.intensity;

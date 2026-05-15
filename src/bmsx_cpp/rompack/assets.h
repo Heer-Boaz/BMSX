@@ -216,6 +216,12 @@ struct ModelImageOffset {
 	i32 end = 0;
 };
 
+enum class ModelMaterialAlphaMode : u8 {
+	Opaque = 0u,
+	Mask = 1u,
+	Blend = 2u,
+};
+
 struct ModelMaterial {
 	std::optional<std::array<f32, 4>> baseColorFactor;
 	std::optional<f32> metallicFactor;
@@ -233,10 +239,10 @@ struct ModelMaterial {
 	std::optional<i32> emissiveTexture;
 	std::optional<i32> emissiveTexCoord;
 	std::optional<std::array<f32, 4>> emissiveFactor;
-	std::optional<std::string> alphaMode;
-	std::optional<f32> alphaCutoff;
-	std::optional<bool> doubleSided;
-	std::optional<bool> unlit;
+	ModelMaterialAlphaMode alphaMode = ModelMaterialAlphaMode::Opaque;
+	f32 alphaCutoff = 0.5f;
+	bool doubleSided = false;
+	bool unlit = false;
 };
 
 struct ModelAnimationSampler {

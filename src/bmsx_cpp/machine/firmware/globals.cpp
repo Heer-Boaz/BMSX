@@ -192,6 +192,11 @@ Table* buildTableArray(CPU& cpu, const std::vector<T>& values, const BuildFn& bu
 	return table;
 }
 
+const char* modelMaterialAlphaModeName(ModelMaterialAlphaMode alphaMode) {
+	static constexpr std::array<const char*, 3> names{"OPAQUE", "MASK", "BLEND"};
+	return names[static_cast<size_t>(alphaMode)];
+}
+
 template <typename KeyFn>
 Table* buildModelMaterialTable(CPU& cpu, const ModelMaterial& material, const KeyFn& key) {
 	auto* table = cpu.createTable(0, 18);
@@ -243,18 +248,10 @@ Table* buildModelMaterialTable(CPU& cpu, const ModelMaterial& material, const Ke
 	if (material.emissiveFactor) {
 		table->set(key("emissiveFactor"), valueTable(buildNumericArrayTable(cpu, material.emissiveFactor.value())));
 	}
-	if (material.alphaMode) {
-		table->set(key("alphaMode"), valueString(cpu.stringPool().intern(material.alphaMode.value())));
-	}
-	if (material.alphaCutoff) {
-		table->set(key("alphaCutoff"), valueNumber(static_cast<double>(material.alphaCutoff.value())));
-	}
-	if (material.doubleSided) {
-		table->set(key("doubleSided"), valueBool(material.doubleSided.value()));
-	}
-	if (material.unlit) {
-		table->set(key("unlit"), valueBool(material.unlit.value()));
-	}
+	table->set(key("alphaMode"), valueString(cpu.stringPool().intern(modelMaterialAlphaModeName(material.alphaMode))));
+	table->set(key("alphaCutoff"), valueNumber(static_cast<double>(material.alphaCutoff)));
+	table->set(key("doubleSided"), valueBool(material.doubleSided));
+	table->set(key("unlit"), valueBool(material.unlit));
 	return table;
 }
 

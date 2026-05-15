@@ -106,9 +106,11 @@ export function renderParticleBatch(backend: WebGLBackend, gl: WebGL2RenderingCo
 		}
 	}
 	backend.setViewportRect(0, 0, state.width, state.height);
-	gl.enable(gl.BLEND);
-	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-	gl.depthMask(false);
+	backend.setCullEnabled(false);
+	backend.setDepthTestEnabled(false);
+	backend.setBlendEnabled(true);
+	backend.setBlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+	backend.setDepthMask(false);
 	gl.uniformMatrix4fv(viewProjLocation, false, state.viewProj);
 	gl.uniform3fv(cameraRightLocation, camRight);
 	gl.uniform3fv(cameraUpLocation, camUp);
@@ -174,7 +176,7 @@ export function renderParticleBatch(backend: WebGLBackend, gl: WebGL2RenderingCo
 	}
 	drawPreparedParticleInstances(backend, instBuf, framebuffer, vdpPending);
 	backend.bindVertexArray(null);
-	gl.depthMask(true);
+	backend.setDepthMask(true);
 }
 
 export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {

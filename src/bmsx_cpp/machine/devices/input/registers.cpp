@@ -5,6 +5,11 @@
 
 namespace bmsx {
 
+// disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk into the input registerfile instance.
+void InputControllerRegisterFile::writeThunk(void* context, uint32_t addr, Value value) {
+	static_cast<InputControllerRegisterFile*>(context)->write(addr, value);
+}
+
 void InputControllerRegisterFile::reset() {
 	state = InputControllerRegisterState{};
 }

@@ -3,6 +3,7 @@
 #include "common/primitives.h"
 #include "machine/devices/vdp/device_output.h"
 #include "machine/devices/vdp/frame.h"
+#include <memory>
 
 namespace bmsx {
 
@@ -26,8 +27,6 @@ struct VdpVoutFrameOutput {
 
 class VdpVoutUnit {
 public:
-	explicit VdpVoutUnit(size_t billboardCapacity = 0u);
-
 	VdpVoutState state() const { return m_state; }
 	bool vblankActive() const { return m_scanoutPhase == VdpVoutScanoutPhase::Vblank; }
 	i32 liveDitherType() const { return m_liveDitherType; }
@@ -64,8 +63,8 @@ private:
 	VdpXfUnit m_visibleXf;
 	bool m_visibleSkyboxEnabled = false;
 	VdpSkyboxSamples m_visibleSkyboxSamples{};
-	std::vector<VdpBbuBillboardEntry> m_visibleBillboards;
-	std::vector<VdpMduMeshEntry> m_visibleMeshes;
+	std::unique_ptr<VdpBbuFrameBuffer> m_visibleBillboards = std::make_unique<VdpBbuFrameBuffer>();
+	std::unique_ptr<VdpMduFrameBuffer> m_visibleMeshes = std::make_unique<VdpMduFrameBuffer>();
 	std::array<u32, VDP_MFU_WEIGHT_COUNT> m_visibleMorphWeightWords{};
 	std::array<u32, VDP_JTU_REGISTER_WORDS> m_visibleJointMatrixWords{};
 	VdpVoutFrameOutput m_sealedFrameOutput;

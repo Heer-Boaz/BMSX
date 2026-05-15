@@ -55,9 +55,14 @@ export function tokenKeyFromId(id: string): string {
 	return tokenKey(token.lo, token.hi);
 }
 
-export function tokenKeyFromAsset(asset: { id_token_lo?: number; id_token_hi?: number; resid: string }): string {
-	if (typeof asset.id_token_lo === 'number' && typeof asset.id_token_hi === 'number') {
-		return tokenKey(asset.id_token_lo, asset.id_token_hi);
+export function assetTokenFromAsset(asset: { id_token_lo?: number; id_token_hi?: number; resid: string }): AssetToken {
+	if (asset.id_token_lo !== undefined && asset.id_token_hi !== undefined) {
+		return { lo: asset.id_token_lo >>> 0, hi: asset.id_token_hi >>> 0 };
 	}
-	return tokenKeyFromId(asset.resid);
+	return hashAssetId(asset.resid);
+}
+
+export function tokenKeyFromAsset(asset: { id_token_lo?: number; id_token_hi?: number; resid: string }): string {
+	const token = assetTokenFromAsset(asset);
+	return tokenKey(token.lo, token.hi);
 }

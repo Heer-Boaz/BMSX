@@ -37,10 +37,12 @@ string-id words and reads that representation directly. Producers mark literals
 or dynamic string expressions with the existing `&` operator at the producer
 boundary, for example `&'left[p]'` or `&(action .. '[p]')`.
 
-The ICU registerfile owner stores these raw words, accepts the MMIO write
-values, owns the `sys_inp_status`/`sys_inp_value` result latch, and mirrors the
-visible registers after reset/restore. The controller only decodes command
-side-effects after the registerfile has latched the incoming word.
+The ICU registerfile owner stores these raw words, accepts the data-latch
+writes, owns the `sys_inp_status`/`sys_inp_value` result latch, and mirrors the
+visible registers after reset/restore. The control port owns `sys_inp_ctrl`
+command side effects after latching the incoming command word. The query port
+owns `sys_inp_query` and `sys_inp_consume` write side effects after the
+registerfile has latched the incoming string-id word.
 
 ## Commands
 
@@ -67,12 +69,18 @@ On VBlank, when armed:
 5. push edge/repeat action snapshots into the event FIFO;
 6. clear the arm latch.
 
-Later `sys_inp_query` writes read that ICU snapshot. They do not query live host
-input state.
+Later `sys_inp_query` writes enter the query port and read that ICU snapshot.
+They do not query live host input state.
 
 The committed action table owns the mapping context and sampled action words.
-The sample latch owns the armed-edge sequence and rings the action table from
-VBlank. The controller maps MMIO writes into the ICU units.
+The sample latch owns only the armed-edge sequence and last-cycle latch. The
+controller's VBlank edge service point consumes that latch, samples players
+once, and rings the action table. The runtime calls the ICU, not the sample
+latch subunit. The control port decodes commit/arm/reset command words. The
+query port evaluates query and consume latches against the action table. The
+event FIFO and output port own their CPU-visible read/control banks. The
+controller maps the remaining selected-player/action/bind/output-latch writes
+into the ICU units.
 
 ## Action snapshot word
 
@@ -166,16 +174,20 @@ Selected-player output support is a host capability bit and is not saved.
 
 - TS: `src/bmsx/machine/devices/input/controller.ts`
 - TS registerfile: `src/bmsx/machine/devices/input/registers.ts`
+- TS control port: `src/bmsx/machine/devices/input/control_port.ts`
 - TS sample latch: `src/bmsx/machine/devices/input/sample_latch.ts`
 - TS action table: `src/bmsx/machine/devices/input/action_table.ts`
+- TS query port: `src/bmsx/machine/devices/input/query_port.ts`
 - TS constants: `src/bmsx/machine/devices/input/contracts.ts`
 - TS FIFO: `src/bmsx/machine/devices/input/event_fifo.ts`
 - TS output port: `src/bmsx/machine/devices/input/output_port.ts`
 - TS aggregate save state: `src/bmsx/machine/devices/input/save_state.ts`
 - C++: `src/bmsx_cpp/machine/devices/input/controller.cpp/.h`
 - C++ registerfile: `src/bmsx_cpp/machine/devices/input/registers.cpp/.h`
+- C++ control port: `src/bmsx_cpp/machine/devices/input/control_port.cpp/.h`
 - C++ sample latch: `src/bmsx_cpp/machine/devices/input/sample_latch.cpp/.h`
 - C++ action table: `src/bmsx_cpp/machine/devices/input/action_table.cpp/.h`
+- C++ query port: `src/bmsx_cpp/machine/devices/input/query_port.cpp/.h`
 - C++ constants: `src/bmsx_cpp/machine/devices/input/contracts.h`
 - C++ FIFO: `src/bmsx_cpp/machine/devices/input/event_fifo.cpp/.h`
 - C++ output port: `src/bmsx_cpp/machine/devices/input/output_port.cpp/.h`

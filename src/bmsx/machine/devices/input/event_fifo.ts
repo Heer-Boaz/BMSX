@@ -1,5 +1,19 @@
 import type { StringId } from '../../cpu/string_pool';
 import {
+	IO_INP_EVENT_ACTION,
+	IO_INP_EVENT_COUNT,
+	IO_INP_EVENT_CTRL,
+	IO_INP_EVENT_FLAGS,
+	IO_INP_EVENT_PLAYER,
+	IO_INP_EVENT_REPEAT_COUNT,
+	IO_INP_EVENT_STATUS,
+	IO_INP_EVENT_VALUE,
+} from '../../bus/io';
+import { StringValue, type Value } from '../../cpu/cpu';
+import { Memory } from '../../memory/memory';
+import {
+	INP_EVENT_CTRL_CLEAR,
+	INP_EVENT_CTRL_POP,
 	INP_EVENT_STATUS_EMPTY,
 	INP_EVENT_STATUS_FULL,
 	INP_EVENT_STATUS_OVERFLOW,
@@ -35,6 +49,8 @@ export class InputControllerEventFifo {
 	private queuedCount = 0;
 	private overflowLatched = false;
 
+	public constructor(private readonly memory: Memory) {}
+
 	public get count(): number {
 		return this.queuedCount;
 	}
@@ -54,6 +70,44 @@ export class InputControllerEventFifo {
 			return this.slots[0]!;
 		}
 		return this.slots[this.readIndex]!;
+	}
+
+	public readRegister(addr: number): Value {
+		switch (addr) {
+			case IO_INP_EVENT_STATUS:
+				return this.statusWord();
+			case IO_INP_EVENT_COUNT:
+				return this.queuedCount;
+			case IO_INP_EVENT_PLAYER:
+				return this.front().player;
+			case IO_INP_EVENT_ACTION:
+				return StringValue.get(this.front().actionStringId);
+			case IO_INP_EVENT_FLAGS:
+				return this.front().statusWord;
+			case IO_INP_EVENT_VALUE:
+				return this.front().valueQ16;
+			case IO_INP_EVENT_REPEAT_COUNT:
+				return this.front().repeatCount;
+			case IO_INP_EVENT_CTRL:
+				return 0;
+		}
+		throw new Error(`ICU event register read is not mapped for ${addr >>> 0}.`);
+	}
+
+	public writeControl(command: number): void {
+		switch (command) {
+			case INP_EVENT_CTRL_POP:
+				this.pop();
+				return;
+			case INP_EVENT_CTRL_CLEAR:
+				this.clear();
+				return;
+		}
+	}
+
+	public writeEventControlRegister(_addr: number, value: Value): void {
+		this.writeControl((value as number) >>> 0);
+		this.memory.writeIoValue(IO_INP_EVENT_CTRL, 0);
 	}
 
 	public push(player: number, actionStringId: StringId, statusWord: number, valueQ16: number, repeatCount: number): void {

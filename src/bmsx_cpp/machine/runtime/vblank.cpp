@@ -46,7 +46,7 @@ void VblankState::reset(Runtime& runtime) {
 	m_vblankActive = false;
 	m_vblankSequence = 0;
 	m_lastCompletedVblankSequence = 0;
-	runtime.machine.inputController.sampleLatch.cancel();
+	runtime.machine.inputController.cancelSampleArm();
 	runtime.machine.irqController.postLoad();
 	runtime.machine.vdp.resetStatus();
 	if (m_vblankStartCycle == 0) {
@@ -121,7 +121,7 @@ void VblankState::publishVblankTiming(Runtime& runtime, bool active) {
 void VblankState::enterVblank(Runtime& runtime) {
 	m_vblankSequence += 1;
 	runtime.machine.vdp.presentReadyFrameOnVblankEdge();
-	runtime.machine.inputController.sampleLatch.onVblankEdge(runtime.frameLoop.currentTimeSeconds * 1000.0, static_cast<u32>(runtime.machine.scheduler.nowCycles()));
+	runtime.machine.inputController.onVblankEdge(runtime.frameLoop.currentTimeSeconds * 1000.0, static_cast<u32>(runtime.machine.scheduler.nowCycles()));
 	publishVblankTiming(runtime, true);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	if (runtime.frameLoop.frameActive) {

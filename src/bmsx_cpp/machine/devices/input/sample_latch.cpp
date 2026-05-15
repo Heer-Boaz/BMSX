@@ -1,16 +1,6 @@
 #include "machine/devices/input/sample_latch.h"
 
-#include "input/manager.h"
-#include "machine/devices/input/action_table.h"
-#include "machine/devices/input/event_fifo.h"
-
 namespace bmsx {
-
-InputControllerSampleLatch::InputControllerSampleLatch(Input& input, InputControllerActionTable& actionTable, InputControllerEventFifo& eventFifo)
-	: m_input(input)
-	, m_actionTable(actionTable)
-	, m_eventFifo(eventFifo) {
-}
 
 void InputControllerSampleLatch::reset() {
 	m_sampleArmed = false;
@@ -22,19 +12,20 @@ void InputControllerSampleLatch::arm() {
 	m_sampleArmed = true;
 }
 
-void InputControllerSampleLatch::cancel() {
+bool InputControllerSampleLatch::cancel() {
+	const bool wasArmed = m_sampleArmed;
 	m_sampleArmed = false;
+	return wasArmed;
 }
 
-void InputControllerSampleLatch::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
+bool InputControllerSampleLatch::consumeVblankEdge(u32 nowCycles) {
 	if (!m_sampleArmed) {
-		return;
+		return false;
 	}
 	m_sampleSequence += 1u;
 	m_lastSampleCycle = nowCycles;
-	m_input.samplePlayers(currentTimeMs);
-	m_actionTable.sampleCommittedActions(m_eventFifo);
 	m_sampleArmed = false;
+	return true;
 }
 
 InputControllerSampleLatchState InputControllerSampleLatch::captureState() const {

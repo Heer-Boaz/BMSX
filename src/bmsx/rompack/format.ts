@@ -37,6 +37,7 @@ export interface RuntimeRomPackage {
 	img: id2imgres;
 	audio: id2res;
 	model: id2model;
+	modelByToken: Map<number, Map<number, GLTFModel>>;
 	data: id2data;
 	bin: id2res;
 	audioevents: id2audioevent;

@@ -815,17 +815,16 @@ void testBbuBillboardPacketLatchesInstanceRam() {
 	require(!h.vdp.presentReadyFrameOnVblankEdge(), "BILLBOARD should not present framebuffer pages");
 	const auto& output = h.vdp.readDeviceOutput();
 	const auto& billboards = *output.billboards;
-	require(billboards.size() == 1u, "BILLBOARD should latch one instance");
-	const auto& entry = billboards.front();
-	require(entry.slot == bmsx::VDP_SLOT_PRIMARY, "BBU should resolve source slot");
-	require(entry.surfaceWidth == 16u && entry.surfaceHeight == 16u, "BBU should resolve source surface dimensions");
-	require(entry.source.srcX == 2u && entry.source.srcY == 3u, "BBU should resolve source origin");
-	require(entry.source.width == 4u && entry.source.height == 5u, "BBU should resolve source dimensions");
-	require(std::abs(entry.positionX - 10.0f) < 0.0001f, "BBU should decode X");
-	require(std::abs(entry.positionY - 20.0f) < 0.0001f, "BBU should decode Y");
-	require(std::abs(entry.positionZ - 30.0f) < 0.0001f, "BBU should decode Z");
-	require(std::abs(entry.size - 2.0f) < 0.0001f, "BBU should decode size");
-	require(entry.color == 0xff112233u, "BBU should preserve packed ARGB color");
+	require(billboards.length == 1u, "BILLBOARD should latch one instance");
+	require(billboards.slot[0] == bmsx::VDP_SLOT_PRIMARY, "BBU should resolve source slot");
+	require(billboards.surfaceWidth[0] == 16u && billboards.surfaceHeight[0] == 16u, "BBU should resolve source surface dimensions");
+	require(billboards.sourceSrcX[0] == 2u && billboards.sourceSrcY[0] == 3u, "BBU should resolve source origin");
+	require(billboards.sourceWidth[0] == 4u && billboards.sourceHeight[0] == 5u, "BBU should resolve source dimensions");
+	require(std::abs(billboards.positionX[0] - 10.0f) < 0.0001f, "BBU should decode X");
+	require(std::abs(billboards.positionY[0] - 20.0f) < 0.0001f, "BBU should decode Y");
+	require(std::abs(billboards.positionZ[0] - 30.0f) < 0.0001f, "BBU should decode Z");
+	require(std::abs(billboards.size[0] - 2.0f) < 0.0001f, "BBU should decode size");
+	require(billboards.color[0] == 0xff112233u, "BBU should preserve packed ARGB color");
 }
 
 void testBbuFaultsAtBillboardPacketAcceptance() {
@@ -859,7 +858,7 @@ void testBbuFaultsAtBillboardPacketAcceptance() {
 	require(h.vdp.getPendingRenderWorkUnits() == 1, "BBU should leave rejected packet state when the next packet starts");
 	h.vdp.advanceWork(1);
 	require(!h.vdp.presentReadyFrameOnVblankEdge(), "BBU instance-only frame should not present framebuffer pages");
-	require(h.vdp.readDeviceOutput().billboards->size() == 1u, "BBU should emit a valid instance after a rejected packet");
+	require(h.vdp.readDeviceOutput().billboards->length == 1u, "BBU should emit a valid instance after a rejected packet");
 
 	std::vector<uint32_t> overflow;
 	for (size_t index = 0; index <= bmsx::VDP_BBU_BILLBOARD_LIMIT; ++index) {

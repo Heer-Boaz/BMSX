@@ -3,7 +3,7 @@
 #include "render/3d/light.h"
 #include <optional>
 #include <string>
-#include <unordered_map>
+#include <vector>
 
 namespace bmsx {
 
@@ -12,9 +12,9 @@ void putHardwareDirectionalLight(const std::string& id, const DirectionalLight& 
 void putHardwarePointLight(const std::string& id, const PointLight& light);
 void clearHardwareLighting();
 bool consumeHardwareLightingDirty();
-const std::unordered_map<std::string, AmbientLight>& getHardwareAmbientLights();
-const std::unordered_map<std::string, DirectionalLight>& getHardwareDirectionalLights();
-const std::unordered_map<std::string, PointLight>& getHardwarePointLights();
+const std::vector<AmbientLight>& getHardwareAmbientLights();
+const std::vector<DirectionalLight>& getHardwareDirectionalLights();
+const std::vector<PointLight>& getHardwarePointLights();
 std::optional<AmbientLight> resolveHardwareAmbientLight();
 
 } // namespace bmsx

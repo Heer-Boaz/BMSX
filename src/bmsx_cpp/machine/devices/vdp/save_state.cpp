@@ -36,9 +36,6 @@ void VDP::restoreState(const VdpState& state) {
 	restoreBuildingFrameState(m_buildFrame, state.buildFrame);
 	restoreSubmittedFrameState(m_activeFrame, state.activeFrame);
 	restoreSubmittedFrameState(m_pendingFrame, state.pendingFrame);
-	reserveFrameStorage(m_buildFrame);
-	reserveFrameStorage(m_activeFrame);
-	reserveFrameStorage(m_pendingFrame);
 	m_workCarry = state.workCarry;
 	m_availableWorkUnits = state.availableWorkUnits;
 	m_streamIngress.restoreState(state.streamIngress);

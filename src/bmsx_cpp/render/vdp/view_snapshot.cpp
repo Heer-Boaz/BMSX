@@ -30,44 +30,42 @@ void commitVdpViewSnapshot(GameView& view, const VdpDeviceOutput& output) {
 		view.skyboxRenderReady = true;
 	}
 	const auto& billboards = *output.billboards;
-	view.vdpBillboardCount = billboards.size();
-	for (size_t index = 0; index < billboards.size(); ++index) {
-		const VdpBbuBillboardEntry& entry = billboards[index];
+	view.vdpBillboardCount = billboards.length;
+	for (size_t index = 0; index < billboards.length; ++index) {
 		GameView::VdpBillboardRenderEntry& target = view.vdpBillboards[index];
-		target.position = {entry.positionX, entry.positionY, entry.positionZ};
-		target.size = entry.size;
-		target.color = entry.color;
-		target.slot = entry.slot;
-		target.surfaceId = entry.source.surfaceId;
-		target.u = entry.source.srcX;
-		target.v = entry.source.srcY;
-		target.w = entry.source.width;
-		target.h = entry.source.height;
+		target.position = {billboards.positionX[index], billboards.positionY[index], billboards.positionZ[index]};
+		target.size = billboards.size[index];
+		target.color = billboards.color[index];
+		target.slot = billboards.slot[index];
+		target.surfaceId = billboards.sourceSurfaceId[index];
+		target.u = billboards.sourceSrcX[index];
+		target.v = billboards.sourceSrcY[index];
+		target.w = billboards.sourceWidth[index];
+		target.h = billboards.sourceHeight[index];
 		target.uv0 = {
-			static_cast<f32>(entry.source.srcX) / static_cast<f32>(entry.surfaceWidth),
-			static_cast<f32>(entry.source.srcY) / static_cast<f32>(entry.surfaceHeight),
+			static_cast<f32>(billboards.sourceSrcX[index]) / static_cast<f32>(billboards.surfaceWidth[index]),
+			static_cast<f32>(billboards.sourceSrcY[index]) / static_cast<f32>(billboards.surfaceHeight[index]),
 		};
 		target.uv1 = {
-			static_cast<f32>(entry.source.srcX + entry.source.width) / static_cast<f32>(entry.surfaceWidth),
-			static_cast<f32>(entry.source.srcY + entry.source.height) / static_cast<f32>(entry.surfaceHeight),
+			static_cast<f32>(billboards.sourceSrcX[index] + billboards.sourceWidth[index]) / static_cast<f32>(billboards.surfaceWidth[index]),
+			static_cast<f32>(billboards.sourceSrcY[index] + billboards.sourceHeight[index]) / static_cast<f32>(billboards.surfaceHeight[index]),
 		};
 	}
 	const auto& meshes = *output.meshes;
-	view.vdpMeshCount = meshes.size();
-	for (size_t index = 0; index < meshes.size(); ++index) {
-		const VdpMduMeshEntry& entry = meshes[index];
+	view.vdpMeshCount = meshes.length;
+	for (size_t index = 0; index < meshes.length; ++index) {
 		GameView::VdpMeshRenderEntry& target = view.vdpMeshes[index];
-		target.modelTokenLo = entry.modelTokenLo;
-		target.modelTokenHi = entry.modelTokenHi;
-		target.meshIndex = entry.meshIndex;
-		target.materialIndex = entry.materialIndex;
-		target.modelMatrixIndex = entry.modelMatrixIndex;
-		target.control = entry.control;
-		target.color = entry.color;
-		target.morphBase = entry.morphBase;
-		target.morphCount = entry.morphCount;
-		target.jointBase = entry.jointBase;
-		target.jointCount = entry.jointCount;
+		target.modelTokenLo = meshes.modelTokenLo[index];
+		target.modelTokenHi = meshes.modelTokenHi[index];
+		target.meshIndex = meshes.meshIndex[index];
+		target.materialIndex = meshes.materialIndex[index];
+		target.modelMatrixIndex = meshes.modelMatrixIndex[index];
+		target.control = meshes.control[index];
+		target.color = meshes.color[index];
+		target.morphBase = meshes.morphBase[index];
+		target.morphCount = meshes.morphCount[index];
+		target.jointBase = meshes.jointBase[index];
+		target.jointCount = meshes.jointCount[index];
 	}
 	view.vdpMorphWeightWords = *output.morphWeightWords;
 	view.vdpJointMatrixWords = *output.jointMatrixWords;

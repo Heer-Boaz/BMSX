@@ -2,9 +2,11 @@
 
 #include "machine/memory/memory.h"
 #include "machine/devices/input/action_table.h"
+#include "machine/devices/input/control_port.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/input/event_fifo.h"
 #include "machine/devices/input/output_port.h"
+#include "machine/devices/input/query_port.h"
 #include "machine/devices/input/registers.h"
 #include "machine/devices/input/sample_latch.h"
 #include "machine/devices/input/save_state.h"
@@ -18,38 +20,22 @@ public:
 	InputController(Memory& memory, Input& input, const StringPool& strings);
 
 	void reset();
+	void onVblankEdge(f64 currentTimeMs, u32 nowCycles);
+	void cancelSampleArm();
 	InputControllerState captureState() const;
 	void restoreState(const InputControllerState& state);
 
 private:
-	static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
-	static Value onEventRegisterReadThunk(void* context, uint32_t addr);
-	static void onEventCtrlWriteThunk(void* context, uint32_t addr, Value value);
-	static Value onOutputRegisterReadThunk(void* context, uint32_t addr);
-	static void onOutputCtrlWriteThunk(void* context, uint32_t addr, Value value);
-
 	Memory& m_memory;
-	const StringPool& m_strings;
+	Input& m_input;
 	InputControllerActionTable m_actionTable;
 	InputControllerRegisterFile m_registers;
 	InputControllerEventFifo m_eventFifo;
-
-public:
-	InputControllerSampleLatch sampleLatch;
-
-private:
+	InputControllerSampleLatch m_sampleLatch;
+	InputControllerControlPort m_controlPort;
 	InputControllerOutputPort m_outputPort;
-	InputControllerQueryResult m_queryResult;
+	InputControllerQueryPort m_queryPort;
 
-	void onRegisterWrite(uint32_t addr, Value value);
-	void onCtrlWrite();
-	Value onEventRegisterRead(uint32_t addr) const;
-	void onEventCtrlWrite(u32 command);
-	Value onOutputRegisterRead(uint32_t addr) const;
-	void onOutputCtrlWrite(u32 command);
-	void queryAction();
-	void consumeActions();
-	void resetActions();
 };
 
 } // namespace bmsx

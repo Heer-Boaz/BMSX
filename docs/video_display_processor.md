@@ -7,6 +7,11 @@ latches, scheduler-visible render work, and a VOUT host-output transaction edge.
 
 Host renderers consume VOUT transactions. They do not receive cart intent such
 as sprites, rectangles, labels, glyph runs, tile runs, or scene objects.
+DEX framebuffer commands are stored as retained fixed-capacity command buffers:
+opcode, source, geometry, color, run-entry indexes, and render-cost fields live
+in per-field arrays with a length latch. Build, active, and pending submitted
+frames transfer those buffers by ownership; the hot path does not allocate
+per-command objects or nested glyph/tile vectors.
 
 ## Register map
 
@@ -129,8 +134,15 @@ column-major joint matrices.
 
 Model tokens identify ROM model assets only. Textured MDU draws sample the
 selected VDP VRAM slot; they do not consume standalone GLTF image buffers or an
-old material texture-manager path. The native GLES2 output path expands at most
-`VDP_MDU_VERTEX_LIMIT` vertices for one MDU draw record.
+old material texture-manager path. The native GLES2 and browser WebGL2 output
+paths expand at most `VDP_MDU_VERTEX_LIMIT` vertices for one MDU draw record.
+Accepted MDU records are stored in retained fixed-capacity frame buffers on
+both runtimes, using per-field raw word arrays and a live length latch rather
+than per-packet mesh objects. Frame seal, pending/active promotion, and VOUT
+presentation transfer the retained buffers by ownership, not by copying mesh
+records.
+Material image references remain ROM metadata; the shader consumes only material
+scalar/surface state and the VDP-selected VRAM slot.
 
 Malformed stream headers, reserved packet bits, missing payload words, illegal
 BEGIN/END stream commands, and unknown packet kinds fault with
@@ -162,7 +174,7 @@ BEGIN/END stream commands, and unknown packet kinds fault with
 | DMA stream | DMA owner opens the stream-ingress DMA submit latch, copies bytes into VDP stream memory, then seals. The VDP decodes the stream on seal. | Submit busy remains set while DMA submit is active. |
 | Submitted framebuffer work | Scheduler accrues render work units from CPU cycles and advances active DEX work. Work moves from `Executing` to `Ready` when remaining units reach zero. | VBlank presents only `Ready` frames; unfinished frames are held. |
 | SBX | Register-window writes affect live SBX state. Frame seal samples live SBX state. Visible SBX state changes only when a `Ready` frame is presented. | Invalid face sources fault at frame seal; rejected SBX state does not become visible. |
-| BBU | Packet decode/source resolve/instance emit happen during sealed stream replay. Accepted instances are retained in the submitted frame. | Packet faults abort the sealed stream frame through VDP fault registers. |
+| BBU | Packet decode/source resolve/instance emit happen during sealed stream replay. Accepted instances are retained in fixed-capacity per-field frame buffers. | Packet faults abort the sealed stream frame through VDP fault registers. |
 | MFU/JTU | Stream packets write raw live register words during sealed stream replay. Frame seal samples the current words into the submitted VOUT payload. | Bad register ranges fault and abort the sealed stream frame. |
 | MDU | Mesh packet decode/source admission happens during sealed stream replay. Accepted mesh records are retained in the submitted frame and carry only ROM asset tokens, raw matrix indexes, raw MFU/JTU ranges, color, and VDP texture-slot control. | Packet faults abort the sealed stream frame through VDP fault registers. |
 | FBM | Framebuffer page present happens on VBlank for `Ready` frames with framebuffer work. | Framebuffer presentation and display readback page. |
@@ -205,11 +217,14 @@ VOUT owns live, frame-sealed, and visible host-output buffers. Host backends rea
 `VdpDeviceOutput` and VDP surface/presentation transactions. They must not own or
 interpret cart intent. Mesh output is a VOUT transaction: the native GLES2 host
 renderer resolves the ROM model token at the output edge and samples the selected
-VDP VRAM slot. Browser/headless TS renderers currently snapshot MDU output but do
-not draw it. The native GLES2 mesh pass expands indexed vertices, morph targets,
-and joint matrices on the CPU into a retained dynamic vertex stream, keeping the
-backend compatible with low-end GLES2 targets that do not expose UBOs,
-instancing, or vertex texture fetch.
+VDP VRAM slot. The browser WebGL2 path resolves the same VOUT records and draws
+the same MDU mesh contract; headless TS currently snapshots MDU output but does
+not rasterize it. The native GLES2 mesh pass expands indexed vertices, morph
+targets, and joint matrices on the CPU into a retained dynamic vertex stream.
+Its shader then applies material surface mode, double-sided/unlit flags, alpha
+cutoff, base/emissive color factors, roughness/metallic factors, and frame
+lighting. This keeps the backend compatible with low-end GLES2 targets that do
+not expose UBOs, instancing, or vertex texture fetch.
 
 Saved VDP state includes:
 
@@ -230,6 +245,10 @@ Host GPU textures, WebGL/SDL resources, texture handles, renderer queues, and
 host-side scratch are rebuilt from saved device-visible state. MDU frame output,
 MFU words, and JTU words are visible-frame payload in the current mesh pass and
 are not part of the VDP save-state record in the current implementation.
+DEX command buffers, BBU billboard frame buffers, and MDU mesh frame buffers use
+retained per-field storage on both runtimes. Frame seal, submitted-frame
+promotion, and VOUT presentation transfer those buffers by ownership rather than
+copying per-record objects.
 
 ## Owners
 

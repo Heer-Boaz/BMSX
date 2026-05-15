@@ -97,8 +97,6 @@ public:
 	using BlitterSource = VdpBlitterSource;
 	using ResolvedBlitterSample = VdpResolvedBlitterSample;
 	using SkyboxSamples = VdpSkyboxSamples;
-	using GlyphRunGlyph = VdpGlyphRunGlyph;
-	using TileRunBlit = VdpTileRunBlit;
 	using BlitterCommandType = VdpBlitterCommandType;
 	using BlitterCommand = VdpBlitterCommand;
 	using SubmittedFrame = VdpSubmittedFrame;
@@ -151,8 +149,6 @@ private:
 	std::vector<u8> m_frameBufferPriorityLayer;
 	std::vector<f32> m_frameBufferPriorityValue;
 	std::vector<u32> m_frameBufferPrioritySeq;
-	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
-	std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
 	u32 m_blitterSequence = 0;
 	bool m_lastFrameCommitted = true;
 	int m_lastFrameCost = 0;
@@ -166,13 +162,10 @@ private:
 	void bindVramSurfaces(bool resetSkybox);
 	bool resizeVramSlot(VdpSurfaceUploadSlot& slot, uint32_t width, uint32_t height, uint32_t faultDetail);
 	u32 nextBlitterSequence();
-	void assignLayeredBlitterCommand(BlitterCommand& command, BlitterCommandType type, int renderCost, Layer2D layer, f32 priority);
-	std::vector<GlyphRunGlyph> acquireGlyphBuffer();
-	std::vector<TileRunBlit> acquireTileBuffer();
-	void recycleBlitterBuffers(std::vector<BlitterCommand>& queue);
 	void resetBuildFrameState();
 	void resetQueuedFrameState();
-	bool enqueueBlitterCommand(BlitterCommand&& command);
+	bool reserveBlitterCommand(BlitterCommandType opcode, int renderCost, size_t& index);
+	void writeGeometryColorCommand(BlitterCommand& queue, size_t index, Layer2D layer, f32 priority, const VdpLatchedGeometry& geometry, u32 color);
 	bool canAcceptSubmittedFrame() const {
 		return m_pendingFrame.state == VdpSubmittedFrameState::Empty;
 	}
@@ -180,7 +173,7 @@ private:
 	void cancelSubmittedFrame();
 	bool sealSubmittedFrame();
 	void promotePendingFrame();
-	void executeFrameBufferCommands(const std::vector<BlitterCommand>& commands);
+	void executeFrameBufferCommands(const BlitterCommand& commands);
 	void ensureFrameBufferPriorityCapacity(size_t pixelCount);
 	void resetFrameBufferPriority();
 	void fillFrameBuffer(std::vector<u8>& pixels, const FrameBufferColor& color);
@@ -237,7 +230,7 @@ private:
 	TileRunClipWindow clipTileRun(i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY) const;
 	u32 readTileRunPayloadWord(const TileRunPayload& payload, u32 wordOffset) const;
 	void latchPayloadTileRunFrom(const TileRunPayload& payload, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 priority, Layer2D layer);
-	bool appendTileRunSource(BlitterCommand& command, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow);
+	bool appendTileRunSource(BlitterCommand& queue, size_t commandIndex, const BlitterSource& source, const TileRunClipWindow& clip, i32 tileW, i32 tileH, i32 tileX, i32 tileY, i32 row, int& visibleRowCount, int& visibleNonEmptyTileCount, i32& lastVisibleRow);
 	u32 consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end);
 	u32 consumeUnitRegisterPacketFromMemory(u32 word, u32 cursor, u32 end);
 	u32 consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u32 wordCount);

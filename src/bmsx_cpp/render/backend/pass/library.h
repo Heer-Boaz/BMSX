@@ -60,6 +60,14 @@ struct MeshPipelineState {
 	i32 width = 0;
 	i32 height = 0;
 	std::array<f32, 16> viewProj{};
+	std::array<f32, 3> cameraPosition{};
+	std::array<f32, 4> ambientColorIntensity{0.0f, 0.0f, 0.0f, 0.0f};
+	std::array<f32, RENDER_MAX_DIRECTIONAL_LIGHTS * 4u> directionalLightDirections{};
+	std::array<f32, RENDER_MAX_DIRECTIONAL_LIGHTS * 4u> directionalLightColorIntensities{};
+	std::array<f32, RENDER_MAX_POINT_LIGHTS * 4u> pointLightPositionRanges{};
+	std::array<f32, RENDER_MAX_POINT_LIGHTS * 4u> pointLightColorIntensities{};
+	i32 directionalLightCount = 0;
+	i32 pointLightCount = 0;
 	TextureHandle textpagePrimaryTex = nullptr;
 	TextureHandle textpageSecondaryTex = nullptr;
 	TextureHandle systemSlotTex = nullptr;

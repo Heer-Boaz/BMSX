@@ -25,6 +25,8 @@ class InputControllerRegisterFile {
 public:
 	InputControllerRegisterState state;
 
+	static void writeThunk(void* context, uint32_t addr, Value value);
+
 	void reset();
 	InputControllerRegisterState captureState() const;
 	void restoreState(const InputControllerRegisterState& restoredState);

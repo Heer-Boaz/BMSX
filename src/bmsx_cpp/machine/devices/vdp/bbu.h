@@ -2,7 +2,7 @@
 
 #include "common/primitives.h"
 #include "machine/devices/vdp/contracts.h"
-#include <vector>
+#include <array>
 
 namespace bmsx {
 
@@ -53,19 +53,26 @@ struct VdpBbuSourceResolution {
 	u32 slot = 0u;
 };
 
-struct VdpBbuBillboardEntry {
-	u32 seq = 0u;
-	Layer2D layer = Layer2D::World;
-	u32 priority = 0u;
-	f32 positionX = 0.0f;
-	f32 positionY = 0.0f;
-	f32 positionZ = 0.0f;
-	f32 size = 1.0f;
-	u32 color = 0u;
-	VdpBbuSource source;
-	u32 surfaceWidth = 0u;
-	u32 surfaceHeight = 0u;
-	u32 slot = 0u;
+struct VdpBbuFrameBuffer {
+	size_t length = 0u;
+	std::array<u32, VDP_BBU_BILLBOARD_LIMIT> seq{};
+	std::array<Layer2D, VDP_BBU_BILLBOARD_LIMIT> layer{};
+	std::array<u32, VDP_BBU_BILLBOARD_LIMIT> priority{};
+	std::array<f32, VDP_BBU_BILLBOARD_LIMIT> positionX{};
+	std::array<f32, VDP_BBU_BILLBOARD_LIMIT> positionY{};
+	std::array<f32, VDP_BBU_BILLBOARD_LIMIT> positionZ{};
+	std::array<f32, VDP_BBU_BILLBOARD_LIMIT> size{};
+	std::array<u32, VDP_BBU_BILLBOARD_LIMIT> color{};
+	std::array<u32, VDP_BBU_BILLBOARD_LIMIT> sourceSurfaceId{};
+	std::array<u32, VDP_BBU_BILLBOARD_LIMIT> sourceSrcX{};
+	std::array<u32, VDP_BBU_BILLBOARD_LIMIT> sourceSrcY{};
+	std::array<u32, VDP_BBU_BILLBOARD_LIMIT> sourceWidth{};
+	std::array<u32, VDP_BBU_BILLBOARD_LIMIT> sourceHeight{};
+	std::array<u32, VDP_BBU_BILLBOARD_LIMIT> surfaceWidth{};
+	std::array<u32, VDP_BBU_BILLBOARD_LIMIT> surfaceHeight{};
+	std::array<u32, VDP_BBU_BILLBOARD_LIMIT> slot{};
+
+	void reset();
 };
 
 class VdpBbuUnit {
@@ -84,14 +91,14 @@ public:
 		u32 color) const;
 	VdpBbuPacketDecision beginPacket(const VdpBbuPacket& packet, size_t targetLength);
 	VdpBbuPacketDecision completePacket(
-		std::vector<VdpBbuBillboardEntry>& target,
+		VdpBbuFrameBuffer& target,
 		const VdpBbuPacket& packet,
 		const VdpBbuSourceResolution& resolution,
 		u32 seq);
 
 private:
 	void latchBillboard(
-		std::vector<VdpBbuBillboardEntry>& target,
+		VdpBbuFrameBuffer& target,
 		const VdpBbuPacket& packet,
 		u32 seq,
 		f32 size,

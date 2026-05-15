@@ -67,7 +67,7 @@ export class VblankState {
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
 		const runtime = this.runtime;
-		runtime.machine.inputController.sampleLatch.cancel();
+		runtime.machine.inputController.cancelSampleArm();
 		runtime.machine.irqController.postLoad();
 		runtime.machine.vdp.resetStatus();
 		if (this.vblankStartCycle === 0) {
@@ -146,7 +146,7 @@ export class VblankState {
 		const runtime = this.runtime;
 		this.vblankSequence += 1;
 		runtime.machine.vdp.presentReadyFrameOnVblankEdge();
-		runtime.machine.inputController.sampleLatch.onVblankEdge(runtime.frameLoop.currentTimeMs, runtime.machine.scheduler.nowCycles);
+		runtime.machine.inputController.onVblankEdge(runtime.frameLoop.currentTimeMs, runtime.machine.scheduler.nowCycles);
 		this.publishVblankTiming(true);
 		runtime.machine.irqController.raise(IRQ_VBLANK);
 		const frameState = runtime.frameLoop.currentFrameState;

@@ -8,6 +8,7 @@
 #include "machine/devices/vdp/mfu.h"
 #include "machine/devices/vdp/sbx.h"
 #include "machine/devices/vdp/xf.h"
+#include <memory>
 #include <vector>
 
 namespace bmsx {
@@ -26,9 +27,9 @@ enum class VdpSubmittedFrameState : u8 {
 };
 
 struct VdpSubmittedFrame {
-	std::vector<VdpBlitterCommand> queue;
-	std::vector<VdpBbuBillboardEntry> billboards;
-	std::vector<VdpMduMeshEntry> meshes;
+	std::unique_ptr<VdpBlitterCommandBuffer> queue = std::make_unique<VdpBlitterCommandBuffer>();
+	std::unique_ptr<VdpBbuFrameBuffer> billboards = std::make_unique<VdpBbuFrameBuffer>();
+	std::unique_ptr<VdpMduFrameBuffer> meshes = std::make_unique<VdpMduFrameBuffer>();
 	VdpSubmittedFrameState state = VdpSubmittedFrameState::Empty;
 	bool hasCommands = false;
 	bool hasFrameBufferCommands = false;
@@ -46,9 +47,9 @@ struct VdpSubmittedFrame {
 };
 
 struct VdpBuildingFrame {
-	std::vector<VdpBlitterCommand> queue;
-	std::vector<VdpBbuBillboardEntry> billboards;
-	std::vector<VdpMduMeshEntry> meshes;
+	std::unique_ptr<VdpBlitterCommandBuffer> queue = std::make_unique<VdpBlitterCommandBuffer>();
+	std::unique_ptr<VdpBbuFrameBuffer> billboards = std::make_unique<VdpBbuFrameBuffer>();
+	std::unique_ptr<VdpMduFrameBuffer> meshes = std::make_unique<VdpMduFrameBuffer>();
 	VdpDexFrameState state = VdpDexFrameState::Idle;
 	int cost = 0;
 };
@@ -142,8 +143,6 @@ struct VdpSubmittedFrameSaveState {
 	VdpSkyboxSamples skyboxSamples{};
 };
 
-void reserveFrameStorage(VdpBuildingFrame& frame);
-void reserveFrameStorage(VdpSubmittedFrame& frame);
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame);
 VdpBuildingFrameSaveState captureBuildingFrameState(const VdpBuildingFrame& frame);
 void restoreBuildingFrameState(VdpBuildingFrame& frame, const VdpBuildingFrameSaveState& state);

@@ -2,6 +2,7 @@ import { consoleCore } from '../../../core/console';
 import { registerFramebuffer2DPass_WebGL } from '../../2d/framebuffer_pipeline';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../../host_overlay/headless/pipeline';
 import { registerHostOverlayPass_WebGL, registerHostMenuPass_WebGL } from '../../host_overlay/webgl/pipeline';
+import { registerMeshPass_WebGL } from '../../3d/mesh/pipeline';
 import { registerParticlesPass_WebGL } from '../../3d/particles/pipeline';
 import { registerParticlesPass_WebGPU } from '../../3d/particles/pipeline.wgpu';
 import { registerSkyboxPass_WebGL } from '../../3d/skybox/pipeline';
@@ -100,6 +101,7 @@ export class RenderPassLibrary {
 		// Removed: standalone fog pass. Fog state is produced in FrameSharedState.
 
 		registerSkyboxPass_WebGL(this);
+		registerMeshPass_WebGL(this);
 		registerParticlesPass_WebGL(this);
 		registerFramebuffer2DPass_WebGL(this);
 		registerDeviceQuantize_WebGL(this);
