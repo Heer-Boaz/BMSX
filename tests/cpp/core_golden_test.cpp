@@ -1654,38 +1654,12 @@ void testApuDeviceFaultsGolden() {
 	expectApuFault(h, bmsx::APU_FAULT_BAD_SLOT, "invalid APU slot should latch a device fault");
 	clearApuFault(h);
 
-	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_BYTES, 4u);
-	writeApuCommand(h, bmsx::APU_CMD_PLAY);
-	expectApuFault(h, bmsx::APU_FAULT_SOURCE_RANGE, "unreadable APU source should latch a source-range fault");
-	clearApuFault(h);
-
-	writeValidApuSource(h, 8u);
-	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_OFFSET, 0xfffffff0u);
-	writeIoWord(h.memory, bmsx::IO_APU_SOURCE_DATA_BYTES, 0x20u);
-	writeApuCommand(h, bmsx::APU_CMD_PLAY);
-	expectApuFault(h, bmsx::APU_FAULT_SOURCE_DATA_RANGE, "wrapped APU source data window should latch a source-data-range fault");
-	clearApuFault(h);
-
-	writeValidApuSource(h, 4u);
-	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
-	writeApuCommand(h, bmsx::APU_CMD_PLAY);
-	expectApuFault(h, bmsx::APU_FAULT_UNSUPPORTED_FORMAT, "malformed AOUT source should latch an APU fault");
-	require(h.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 0u, "AOUT start fault should clear the replacement active slot");
-	clearApuFault(h);
-
 	writeValidApuSource(h, 8u);
 	writeIoWord(h.memory, bmsx::IO_APU_RATE_STEP_Q16, 0u);
 	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
 	writeApuCommand(h, bmsx::APU_CMD_PLAY);
 	expectApuFault(h, bmsx::APU_FAULT_OUTPUT_PLAYBACK_RATE, "bad AOUT playback step should latch an APU fault");
 	require(h.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 0u, "AOUT playback fault should clear the replacement active slot");
-	clearApuFault(h);
-
-	writeValidApuSource(h, 16u);
-	writeIoWord(h.memory, bmsx::IO_APU_SLOT, 1u);
-	writeApuCommand(h, bmsx::APU_CMD_PLAY);
-	expectApuFault(h, bmsx::APU_FAULT_OUTPUT_DATA_RANGE, "undersized PCM source should latch an AOUT range fault");
-	require(h.memory.readIoU32(bmsx::IO_APU_ACTIVE_MASK) == 0u, "AOUT PCM range fault should clear the replacement active slot");
 	clearApuFault(h);
 }
 

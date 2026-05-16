@@ -1,4 +1,4 @@
-import type { Layer2D, VdpSlotSource } from './contracts';
+import type { Layer2D } from './contracts';
 
 export type VdpBlitterSource = {
 	surfaceId: number;
@@ -135,13 +135,11 @@ export class VdpBlitterCommandBuffer {
 	}
 
 
-	public writeBatchBlitBegin(index: number, drawColor: number, blendMode: number, layer: Layer2D, priority: number, pmuBank: number, parallax: number): void {
-		this.priority[index] = priority;
-		this.layer[index] = layer;
+	public writeBatchBlitBegin(index: number, drawColor: number, commandLayer: Layer2D, commandPriority: number, parallax: number): void {
+		this.priority[index] = commandPriority;
+		this.layer[index] = commandLayer;
 		this.color[index] = drawColor;
-		this.blendMode[index] = blendMode;
-		this.pmuBank[index] = pmuBank;
-		this.parallax[index] = parallax;
+		this.parallaxWeight[index] = parallax;
 		this.batchBlitFirstEntry[index] = this.batchBlitEntryCount;
 		this.batchBlitItemCount[index] = 0;
 	}

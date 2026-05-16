@@ -5,11 +5,8 @@
 #include "machine/devices/audio/output.h"
 
 #include "machine/devices/audio/badp_decoder_hot_path.h"
-#include "machine/devices/audio/pcm_decoder.h"
 #include "machine/devices/audio/pcm_decoder_hot_path.h"
 #include "machine/devices/audio/source.h"
-
-#include "common/endian.h"
 
 #include <algorithm>
 #include <cmath>
@@ -114,26 +111,14 @@ ApuOutputStartResult ApuOutputMixer::playVoice(ApuAudioSlot slot, ApuVoiceId voi
 	if (playback.playbackRate <= 0.0f) {
 		return {APU_FAULT_OUTPUT_PLAYBACK_RATE, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]};
 	}
-	const ApuSourceMetadataResult metadataResult = validateApuAudioSourceMetadata(source);
-	if (metadataResult.faultCode != APU_FAULT_NONE) {
-		return {metadataResult.faultCode, metadataResult.faultDetail};
-	}
 	const f32 initialGain = clampVolume(playback.gainLinear);
 	std::vector<u32> badpSeekFrames;
 	std::vector<u32> badpSeekOffsets;
 	if (!apuAudioSourceUsesGenerator(source)) {
 		if (source.bitsPerSample == 4) {
-			ApuBadpSeekTableResult badpSeek = readApuBadpSeekTable(sourceBytes.data(), source.sourceBytes, source);
-			if (badpSeek.faultCode != APU_FAULT_NONE) {
-				return {badpSeek.faultCode, badpSeek.faultDetail};
-			}
+			ApuBadpSeekTableResult badpSeek = readApuBadpSeekTable(sourceBytes.data());
 			badpSeekFrames = std::move(badpSeek.frames);
 			badpSeekOffsets = std::move(badpSeek.offsets);
-		} else {
-			const ApuPcmValidationResult pcmResult = validateApuPcmSourceData(source);
-			if (pcmResult.faultCode != APU_FAULT_NONE) {
-				return {pcmResult.faultCode, pcmResult.faultDetail};
-			}
 		}
 	}
 	VoiceRecord record = buildVoiceFromData(

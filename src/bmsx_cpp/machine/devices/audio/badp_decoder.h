@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/types.h"
-#include "machine/devices/audio/contracts.h"
 
 #include <vector>
 
@@ -22,13 +21,11 @@ struct ApuBadpDecoderState {
 };
 
 struct ApuBadpSeekTableResult {
-	u32 faultCode = APU_FAULT_NONE;
-	u32 faultDetail = 0;
 	std::vector<u32> frames;
 	std::vector<u32> offsets;
 };
 
-ApuBadpSeekTableResult readApuBadpSeekTable(const u8* data, size_t size, const ApuAudioSource& source);
+ApuBadpSeekTableResult readApuBadpSeekTable(const u8* data);
 
 
 } // namespace bmsx

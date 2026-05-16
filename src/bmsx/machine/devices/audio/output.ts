@@ -7,7 +7,6 @@ import {
 	resetApuBadpDecoder,
 } from './badp_decoder_hot_path';
 import { ApuOutputRing } from './output_ring';
-import { validateApuPcmSourceData } from './pcm_decoder';
 import { APU_PCM_SAMPLE_SCALE, readApuPcmSample } from './pcm_decoder_hot_path';
 import {
 	resolveApuGainLinear,
@@ -16,7 +15,7 @@ import {
 	resolveApuOutputPlayback,
 	type ApuOutputPlayback,
 } from './playback';
-import { apuAudioSourceUsesGenerator, validateApuAudioSourceMetadata } from './source';
+import { apuAudioSourceUsesGenerator } from './source';
 import {
 	captureApuOutputVoiceState,
 	restoreApuOutputVoiceState,
@@ -151,25 +150,13 @@ export class ApuOutputMixer {
 		if (playback.playbackRate <= 0) {
 			return { faultCode: APU_FAULT_OUTPUT_PLAYBACK_RATE, faultDetail: registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]! };
 		}
-		const metadataResult = validateApuAudioSourceMetadata(source);
-		if (metadataResult.faultCode !== APU_FAULT_NONE) {
-			return metadataResult;
-		}
 		let badpSeekFrames: Uint32Array<ArrayBufferLike> = EMPTY_BADP_SEEK_FRAMES;
 		let badpSeekOffsets: Uint32Array<ArrayBufferLike> = EMPTY_BADP_SEEK_OFFSETS;
 		if (!apuAudioSourceUsesGenerator(source)) {
 			if (source.bitsPerSample === 4) {
-				const badpSeek = readApuBadpSeekTable(sourceBytes, source);
-				if (badpSeek.faultCode !== APU_FAULT_NONE) {
-					return { faultCode: badpSeek.faultCode, faultDetail: badpSeek.faultDetail };
-				}
+				const badpSeek = readApuBadpSeekTable(sourceBytes);
 				badpSeekFrames = badpSeek.frames;
 				badpSeekOffsets = badpSeek.offsets;
-			} else {
-				const pcmResult = validateApuPcmSourceData(source);
-				if (pcmResult.faultCode !== APU_FAULT_NONE) {
-					return pcmResult;
-				}
 			}
 		}
 		const record = this.buildVoiceFromData(slot, voiceId, source, sourceBytes, badpSeekFrames, badpSeekOffsets, playback, playbackCursorQ16, clamp01(playback.gainLinear));

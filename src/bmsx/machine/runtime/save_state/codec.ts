@@ -36,13 +36,12 @@ import {
 	VDP_SUBMITTED_FRAME_EXECUTING,
 	VDP_SUBMITTED_FRAME_QUEUED,
 	VDP_SUBMITTED_FRAME_READY,
+	VdpBatchBlitItemSaveState,
 	type VdpBbuBillboardSaveState,
 	type VdpBlitterCommandSaveState,
 	type VdpBlitterSourceSaveState,
 	type VdpBuildingFrameSaveState,
-	type VdpBatchBlitGlyphSaveState,
 	type VdpSubmittedFrameSaveState,
-	type VdpTileRunBlitSaveState,
 } from '../../devices/vdp/frame';
 import { VDP_REGISTER_COUNT } from '../../devices/vdp/registers';
 import { VDP_XF_MATRIX_COUNT, VDP_XF_MATRIX_REGISTER_WORDS, type VdpXfState } from '../../devices/vdp/xf';
@@ -521,7 +520,7 @@ function decodeBlitterSourceState(value: unknown, label: string): VdpBlitterSour
 	};
 }
 
-function encodeBatchBlitGlyphState(state: VdpBatchBlitGlyphSaveState): VdpBatchBlitGlyphSaveState {
+function encodeBatchBlitGlyphState(state: VdpBatchBlitItemSaveState): VdpBatchBlitItemSaveState {
 	return {
 		...encodeBlitterSourceState(state),
 		dstX: state.dstX,
@@ -530,7 +529,7 @@ function encodeBatchBlitGlyphState(state: VdpBatchBlitGlyphSaveState): VdpBatchB
 	};
 }
 
-function decodeBatchBlitGlyphState(value: unknown, label: string): VdpBatchBlitGlyphSaveState {
+function decodeBatchBlitGlyphState(value: unknown, label: string): VdpBatchBlitItemSaveState {
 	const object = requireObject(value, label);
 	return {
 		...decodeBlitterSourceState(value, label),
@@ -540,29 +539,11 @@ function decodeBatchBlitGlyphState(value: unknown, label: string): VdpBatchBlitG
 	};
 }
 
-function encodeTileRunBlitState(state: VdpTileRunBlitSaveState): VdpTileRunBlitSaveState {
-	return {
-		...encodeBlitterSourceState(state),
-		dstX: state.dstX,
-		dstY: state.dstY,
-	};
-}
-
-function decodeTileRunBlitState(value: unknown, label: string): VdpTileRunBlitSaveState {
-	const object = requireObject(value, label);
-	return {
-		...decodeBlitterSourceState(value, label),
-		dstX: requireNumberValue(requireObjectKey(object, 'dstX', label, `${label}.dstX`), `${label}.dstX`),
-		dstY: requireNumberValue(requireObjectKey(object, 'dstY', label, `${label}.dstY`), `${label}.dstY`),
-	};
-}
-
 function encodeBlitterCommandState(state: VdpBlitterCommandSaveState): VdpBlitterCommandSaveState {
 	return {
 		...state,
 		source: encodeBlitterSourceState(state.source),
 		items: encodeVector(state.items, encodeBatchBlitGlyphState),
-		tiles: encodeVector(state.tiles, encodeTileRunBlitState),
 	};
 }
 
@@ -596,7 +577,6 @@ function decodeBlitterCommandState(value: unknown, label: string): VdpBlitterCom
 		backgroundColor: requireBoundedU32(requireObjectKey(object, 'backgroundColor', label, `${label}.backgroundColor`), `${label}.backgroundColor`, 0, 0xffffffff),
 		lineHeight: requireBoundedU32(requireObjectKey(object, 'lineHeight', label, `${label}.lineHeight`), `${label}.lineHeight`, 0, 0xffffffff),
 		items: decodeVector(requireObjectKey(object, 'items', label, `${label}.items`), `${label}.items`, (entry) => decodeBatchBlitGlyphState(entry, `${label}.items[]`)),
-		tiles: decodeVector(requireObjectKey(object, 'tiles', label, `${label}.tiles`), `${label}.tiles`, (entry) => decodeTileRunBlitState(entry, `${label}.tiles[]`)),
 	};
 }
 
@@ -609,7 +589,6 @@ function decodeBlitterCommandStates(value: unknown, label: string): VdpBlitterCo
 	let tileCount = 0;
 	for (let index = 0; index < commands.length; index += 1) {
 		itemCount += commands[index].items.length;
-		tileCount += commands[index].tiles.length;
 	}
 	if (itemCount > VDP_BLITTER_RUN_ENTRY_CAPACITY || tileCount > VDP_BLITTER_RUN_ENTRY_CAPACITY) {
 		throw new Error(`${label} exceeds the VDP blitter run-entry capacity.`);

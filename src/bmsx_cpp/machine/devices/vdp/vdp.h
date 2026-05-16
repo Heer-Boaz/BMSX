@@ -154,6 +154,9 @@ private:
 	std::vector<f32> m_frameBufferPriorityValue;
 	std::vector<u32> m_frameBufferPrioritySeq;
 	u32 m_blitterSequence = 0;
+	// Scratch buffers used to avoid per-call temporaries (parity with TS runtime)
+	BlitterSource m_latchedSourceScratch{};
+	VdpDrawCtrl m_drawCtrlScratch{};
 	int m_activeBatchBlitIndex = -1;
 	bool m_lastFrameCommitted = true;
 	int m_lastFrameCost = 0;

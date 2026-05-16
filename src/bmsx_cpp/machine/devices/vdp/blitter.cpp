@@ -104,6 +104,8 @@ bool VdpBlitterCommandBuffer::writeBatchBlitBegin(size_t index, u32 drawColor, u
 	priority[index] = commandPriority;
 	layer[index] = commandLayer;
 	color[index] = drawColor;
+	blendMode[index] = drawBlendMode;
+	pmuBank[index] = drawPmuBank;
 	parallaxWeight[index] = parallax;
 	batchBlitFirstEntry[index] = batchBlitEntryCount;
 	batchBlitItemCount[index] = 0;

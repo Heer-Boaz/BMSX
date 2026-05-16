@@ -33,6 +33,8 @@ import {
 	VDP_STATUS_VBLANK,
 	VDP_SBX_COMMIT_WRITE,
 	type VdpFrameBufferPage,
+	VDP_FAULT_DEX_CMD_NO_BATCH,
+	VDP_FAULT_BLITTER_OOM_BATCH,
 } from './contracts';
 import {
 	VDP_RENDER_ALPHA_COST_MULTIPLIER,
@@ -42,6 +44,7 @@ import {
 	blitSpanBucket,
 	computeClippedLineSpan,
 	computeClippedRect,
+	VDP_RENDER_BATCH_BLIT_SETUP_COST,
 } from './budget';
 import {
 	IO_VDP_DITHER,
@@ -136,8 +139,8 @@ import {
 	VDP_BLITTER_OPCODE_COPY_RECT,
 	VDP_BLITTER_OPCODE_DRAW_LINE,
 	VDP_BLITTER_OPCODE_FILL_RECT,
-	VDP_BLITTER_WHITE,
 	vdpColorAlphaByte,
+	VDP_BLITTER_OPCODE_BATCH_BLIT,
 } from './blitter';
 import {
 	VDP_DEX_FRAME_DIRECT_OPEN,
@@ -198,6 +201,8 @@ import {
 	decodeVdpDrawCtrl,
 	type VdpDrawCtrl,
 	type VdpLatchedGeometry,
+	VDP_CMD_BATCH_BLIT_BEGIN,
+	VDP_CMD_BATCH_BLIT_ITEM,
 } from './registers';
 import {
 	type VdpDeviceOutput,
@@ -1168,7 +1173,7 @@ export class VDP implements VramWriteSink {
 			return false;
 		}
 		const color = this.vdpRegisters[VDP_REG_DRAW_COLOR] >>> 0;
-		this.buildFrame.queue.writeBatchBlitBegin(index, color, drawCtrl.blendMode, layer, priority, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
+		this.buildFrame.queue.writeBatchBlitBegin(index, color, layer, priority, drawCtrl.parallaxWeight);
 		this.activeBatchBlitIndex = index;
 		return true;
 	}
@@ -1189,12 +1194,13 @@ export class VDP implements VramWriteSink {
 
 		const drawCtrl = this.drawCtrlScratch;
 		decodeVdpDrawCtrl(this.vdpRegisters[VDP_REG_DRAW_CTRL], drawCtrl);
-
 		const source = this.latchedSourceScratch;
-		if (!this.fetchSurfaceForBlit(slot, u, v, w, h, drawCtrl.flipH, drawCtrl.flipV, source)) {
-			return true;
+		if (!this.blitterSourcePort.resolveWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
+			return false;
 		}
-
+		if (!this.blitterSourcePort.validateSurface(source, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB)) {
+			return false;
+		}
 		if (!this.buildFrame.queue.writeBatchBlitItem(this.activeBatchBlitIndex, source.surfaceId, source.srcX, source.srcY, source.width, source.height, dstX, dstY, advance)) {
 			this.fault.raise(VDP_FAULT_BLITTER_OOM_BATCH, 0);
 			return false;

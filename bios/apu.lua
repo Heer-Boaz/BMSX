@@ -1,5 +1,7 @@
 -- apu.lua
 -- BIOS-side APU command helpers. Cart-visible audio control is MMIO.
+local endian<const> = require("bios/common/endian")
+local read_u16le<const> = endian.read_u16le
 
 local apu<const> = {
 	filter_kind = {
@@ -22,14 +24,6 @@ function apu.ms_to_samples(ms)
 	return ms * apu_sample_rate_hz / 1000
 end
 
-local require_record_number<const> = function(record, field)
-	local value<const> = record[field]
-	if type(value) ~= 'number' then
-		error('audio ROM record ' .. tostring(record.resid) .. ' missing field ' .. field)
-	end
-	return value
-end
-
 local rom_base_for_payload<const> = function(payload_id)
 	if payload_id == 'system' then
 		return sys_rom_system_base
@@ -39,31 +33,11 @@ local rom_base_for_payload<const> = function(payload_id)
 	end
 	return sys_rom_cart_base
 end
-
-local read_u16le<const> = function(addr)
-	return mem8[addr] | (mem8[addr + 1] << 8)
-end
-
-local read_badp_source<const> = function(addr, source_bytes, resid)
-	if source_bytes < 48 or mem32le[addr] ~= 0x50444142 then
-		error('audio ROM record ' .. tostring(resid) .. ' is not BADP')
-	end
-	if read_u16le(addr + 4) ~= 1 then
-		error('audio ROM record ' .. tostring(resid) .. ' has unsupported BADP version')
-	end
+local read_badp_source<const> = function(addr, source_bytes)
 	local channels<const> = read_u16le(addr + 6)
 	local sample_rate_hz<const> = mem32le[addr + 8]
 	local frame_count<const> = mem32le[addr + 12]
 	local data_offset<const> = mem32le[addr + 36]
-	if channels < 1 or channels > 2 then
-		error('audio ROM record ' .. tostring(resid) .. ' has invalid channel count')
-	end
-	if sample_rate_hz <= 0 or frame_count <= 0 then
-		error('audio ROM record ' .. tostring(resid) .. ' has invalid BADP timing')
-	end
-	if data_offset < 48 or data_offset >= source_bytes then
-		error('audio ROM record ' .. tostring(resid) .. ' has invalid BADP data offset')
-	end
 	return {
 		sample_rate_hz = sample_rate_hz,
 		channels = channels,
@@ -79,9 +53,9 @@ function apu.source(record)
 	if source ~= nil then
 		return source
 	end
-	local source_addr<const> = rom_base_for_payload(record.payload_id or 'cart') + require_record_number(record, 'start')
-	local source_bytes<const> = require_record_number(record, 'end') - require_record_number(record, 'start')
-	local format<const> = read_badp_source(source_addr, source_bytes, record.resid)
+	local source_addr<const> = rom_base_for_payload(record.payload_id) + record.start
+	local source_bytes<const> = record['end'] - record.start
+	local format<const> = read_badp_source(source_addr, source_bytes)
 	local loop_start_sample = 0
 	local loop_end_sample = 0
 	local meta<const> = record.audiometa
@@ -134,6 +108,8 @@ function apu.play(source, slot, rate_step_q16, gain_q12, start_sample, filter_ki
 		filter_q_milli,
 		filter_gain_millidb,
 		0,
+		0,
+		apu_gain_q12_one,
 		apu_cmd_play
 	)
 end
@@ -160,6 +136,8 @@ function apu.play_plain(source, slot)
 		1000,
 		0,
 		0,
+		0,
+		apu_gain_q12_one,
 		apu_cmd_play
 	)
 end

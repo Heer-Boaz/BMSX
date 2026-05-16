@@ -165,7 +165,7 @@ local define_title_screen_fsm<const> = function()
 					},
 				},
 				input_event_handlers = {
-					['start[jp] || a[jp]'] = function(self)
+					['start[wp{2}] || a[wp{2}]'] = function(self)
 						self.sparkle_sprite:set_enabled(false)
 						self.events:emit('title_start')
 						return '/starting'

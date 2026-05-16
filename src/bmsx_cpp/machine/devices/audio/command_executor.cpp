@@ -117,9 +117,7 @@ void ApuCommandExecutor::play(const ApuParameterRegisterWords& registerWords) {
 }
 
 void ApuCommandExecutor::startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords) {
-	if (!replaceSlotSourceDma(slot, source)) {
-		return;
-	}
+	replaceSlotSourceDma(slot, source);
 	const ApuVoiceId voiceId = m_slots.allocateVoiceId();
 	m_activeSlots.setActive(slot, registerWords, voiceId);
 	if (!playOutputVoice(slot, voiceId, source, registerWords, 0u)) {
@@ -159,15 +157,9 @@ void ApuCommandExecutor::setSlotGain(const ApuParameterRegisterWords& registerWo
 	writeSlotRegisterWord(slot, APU_PARAMETER_GAIN_Q12_INDEX, registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
 }
 
-bool ApuCommandExecutor::replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source) {
+void ApuCommandExecutor::replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source) {
 	m_audioOutput.stopSlot(slot);
-	const ApuSourceDmaResult dma = m_sourceDma.loadSlot(m_memory, slot, source);
-	if (dma.faultCode != APU_FAULT_NONE) {
-		m_activeSlots.stop(slot);
-		m_fault.raise(dma.faultCode, dma.faultDetail);
-		return false;
-	}
-	return true;
+	m_sourceDma.loadSlot(m_memory, slot, source);
 }
 
 void ApuCommandExecutor::writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterIndex, u32 word) {
@@ -177,9 +169,7 @@ void ApuCommandExecutor::writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterI
 		const ApuAudioSource source = resolveApuAudioSource(m_slotRegisterDispatchWords);
 		const u32 fadeSamples = m_slots.fadeSamplesRemaining(slot);
 		if (apuParameterProgramsSourceBuffer(parameterIndex)) {
-			if (!replaceSlotSourceDma(slot, source)) {
-				return;
-			}
+			replaceSlotSourceDma(slot, source);
 			const ApuVoiceId voiceId = m_slots.allocateVoiceId();
 			m_slots.assignVoiceId(slot, voiceId);
 			if (!playOutputVoice(slot, voiceId, source, m_slotRegisterDispatchWords, fadeSamples)) {

@@ -57,7 +57,7 @@ private:
 	void startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
 	void stopSlot(const ApuParameterRegisterWords& registerWords);
 	void setSlotGain(const ApuParameterRegisterWords& registerWords);
-	bool replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source);
+	void replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source);
 	void writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterIndex, u32 word);
 	bool playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples);
 	const ApuParameterRegisterWords& fadeOutputRegisterWords(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);

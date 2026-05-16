@@ -33,6 +33,7 @@ constexpr std::array<LuaBuiltinDescriptor, 61> kSystemLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"vdp_load_system_slot", "vdp_load_system_slot()", "Starts an async load of the system atlas into the system VRAM slot; returns a job id."},
 	LuaBuiltinDescriptor{"vdp_blit_img_color", "vdp_blit_img_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color, parallax_weight)", "BIOS helper that translates an image id to raw VDP blit register/doorbell packets."},
 	LuaBuiltinDescriptor{"vdp_item_color", "vdp_item_color(item, x, y, z, layer, color)", "BIOS helper that emits one raw VDP blit for an already-resolved item."},
+	LuaBuiltinDescriptor{"vdp_glyph_color", "vdp_glyph_color(glyph, x, y, z, layer, color)", "BIOS helper that emits a raw VDP blit for a single glyph."},
 	LuaBuiltinDescriptor{"vdp_img_rect", "vdp_img_rect(imgid)", "Returns the BIOS-owned atlas rectangle for an image id."},
 	LuaBuiltinDescriptor{"vdp_img_slot", "vdp_img_slot(rect)", "Resolves a cached atlas rectangle to the current VDP slot."},
 	LuaBuiltinDescriptor{"vdp_img_source", "vdp_img_source(rect)", "Resolves a cached atlas rectangle to a transient VDP slot/u/v/w/h source."},

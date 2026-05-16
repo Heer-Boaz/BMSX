@@ -64,6 +64,9 @@ struct VdpBlitterCommandBuffer {
 	std::array<u8, VDP_BLITTER_FIFO_CAPACITY> flipV{};
 	std::array<u32, VDP_BLITTER_FIFO_CAPACITY> color{};
 	std::array<f32, VDP_BLITTER_FIFO_CAPACITY> parallaxWeight{};
+	// Blend mode and PMU bank per-command (used for batch-blit setup)
+	std::array<u32, VDP_BLITTER_FIFO_CAPACITY> blendMode{};
+	std::array<u32, VDP_BLITTER_FIFO_CAPACITY> pmuBank{};
 	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> srcX{};
 	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> srcY{};
 	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> width{};

@@ -197,7 +197,6 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/status_register.cpp
 	machine/devices/audio/output_ring.cpp
 	machine/devices/audio/queue_status_registers.cpp
-	machine/devices/audio/pcm_decoder.cpp
 	machine/devices/audio/playback.cpp
 	machine/devices/audio/output.cpp
 	machine/devices/audio/save_state.cpp

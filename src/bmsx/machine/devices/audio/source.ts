@@ -1,14 +1,6 @@
 import { Memory } from '../../memory/memory';
 import {
-	APU_FAULT_NONE,
-	APU_FAULT_OUTPUT_METADATA,
-	APU_FAULT_SOURCE_BIT_DEPTH,
-	APU_FAULT_SOURCE_CHANNELS,
-	APU_FAULT_SOURCE_DATA_RANGE,
-	APU_FAULT_SOURCE_FRAME_COUNT,
-	APU_FAULT_SOURCE_SAMPLE_RATE,
 	APU_GENERATOR_NONE,
-	APU_GENERATOR_SQUARE,
 	APU_PARAMETER_SOURCE_ADDR_INDEX,
 	APU_PARAMETER_SOURCE_BITS_PER_SAMPLE_INDEX,
 	APU_PARAMETER_SOURCE_BYTES_INDEX,
@@ -21,26 +13,12 @@ import {
 	APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX,
 	APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX,
 	APU_PARAMETER_GENERATOR_KIND_INDEX,
-	APU_FAULT_SOURCE_BYTES,
-	APU_FAULT_SOURCE_RANGE,
 	APU_SLOT_COUNT,
 	type ApuAudioSlot,
 	type ApuAudioSource,
 	type ApuParameterRegisterWords,
 } from './contracts';
 
-export type ApuSourceDmaResult = {
-	faultCode: number;
-	faultDetail: number;
-};
-
-export type ApuSourceMetadataResult = {
-	faultCode: number;
-	faultDetail: number;
-};
-
-const APU_SOURCE_DMA_OK: ApuSourceDmaResult = { faultCode: APU_FAULT_NONE, faultDetail: 0 };
-const APU_SOURCE_METADATA_OK: ApuSourceMetadataResult = { faultCode: APU_FAULT_NONE, faultDetail: 0 };
 const EMPTY_APU_SOURCE_BYTES = new Uint8Array(0);
 
 export function resolveApuAudioSource(registerWords: ApuParameterRegisterWords): ApuAudioSource {
@@ -81,34 +59,6 @@ export function apuParameterProgramsSourceBuffer(parameterIndex: number): boolea
 	}
 }
 
-export function validateApuAudioSourceMetadata(source: ApuAudioSource): ApuSourceMetadataResult {
-	if (source.sampleRateHz === 0) {
-		return { faultCode: APU_FAULT_SOURCE_SAMPLE_RATE, faultDetail: source.sampleRateHz };
-	}
-	if (source.channels < 1 || source.channels > 2) {
-		return { faultCode: APU_FAULT_SOURCE_CHANNELS, faultDetail: source.channels };
-	}
-	if (source.frameCount === 0) {
-		return { faultCode: APU_FAULT_SOURCE_FRAME_COUNT, faultDetail: source.frameCount };
-	}
-	if (apuAudioSourceUsesGenerator(source)) {
-		if (source.generatorKind === APU_GENERATOR_SQUARE) {
-			return APU_SOURCE_METADATA_OK;
-		}
-		return { faultCode: APU_FAULT_OUTPUT_METADATA, faultDetail: source.generatorKind };
-	}
-	if (source.dataBytes === 0 || source.dataOffset > source.sourceBytes || source.dataBytes > source.sourceBytes - source.dataOffset) {
-		return { faultCode: APU_FAULT_SOURCE_DATA_RANGE, faultDetail: source.dataOffset };
-	}
-	switch (source.bitsPerSample) {
-		case 4:
-		case 8:
-		case 16:
-			return APU_SOURCE_METADATA_OK;
-	}
-	return { faultCode: APU_FAULT_SOURCE_BIT_DEPTH, faultDetail: source.bitsPerSample };
-}
-
 export class ApuSourceDma {
 	private readonly slotSourceBytes: Uint8Array[] = new Array(APU_SLOT_COUNT).fill(EMPTY_APU_SOURCE_BYTES);
 
@@ -142,14 +92,10 @@ export class ApuSourceDma {
 		this.slotSourceBytes[slot] = EMPTY_APU_SOURCE_BYTES;
 	}
 
-	public loadSlot(slot: ApuAudioSlot, source: ApuAudioSource): ApuSourceDmaResult {
+	public loadSlot(slot: ApuAudioSlot, source: ApuAudioSource): void {
 		if (apuAudioSourceUsesGenerator(source)) {
 			this.clearSlot(slot);
-			return APU_SOURCE_DMA_OK;
-		}
-		const validation = this.validateSource(source);
-		if (validation.faultCode !== APU_FAULT_NONE) {
-			return validation;
+			return;
 		}
 		let bytes = this.slotSourceBytes[slot]!;
 		if (bytes.byteLength !== source.sourceBytes) {
@@ -157,16 +103,5 @@ export class ApuSourceDma {
 			this.slotSourceBytes[slot] = bytes;
 		}
 		this.memory.readBytesInto(source.sourceAddr, bytes, bytes.byteLength);
-		return APU_SOURCE_DMA_OK;
-	}
-
-	private validateSource(source: ApuAudioSource): ApuSourceDmaResult {
-		if (source.sourceBytes === 0) {
-			return { faultCode: APU_FAULT_SOURCE_BYTES, faultDetail: source.sourceBytes };
-		}
-		if (!this.memory.isReadableMainMemoryRange(source.sourceAddr, source.sourceBytes)) {
-			return { faultCode: APU_FAULT_SOURCE_RANGE, faultDetail: source.sourceAddr };
-		}
-		return APU_SOURCE_DMA_OK;
 	}
 }

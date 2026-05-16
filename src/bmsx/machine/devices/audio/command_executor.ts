@@ -13,7 +13,6 @@ import {
 	ApuSourceDma,
 	apuParameterProgramsSourceBuffer,
 	resolveApuAudioSource,
-	type ApuSourceDmaResult,
 } from './source';
 import type { ApuSlotBank } from './slot_bank';
 import {
@@ -120,9 +119,7 @@ export class ApuCommandExecutor {
 	}
 
 	private startPlay(source: ApuAudioSource, slot: ApuAudioSlot, registerWords: ApuParameterRegisterWords): void {
-		if (!this.replaceSlotSourceDma(slot, source)) {
-			return;
-		}
+		this.replaceSlotSourceDma(slot, source);
 		const voiceId = this.slots.allocateVoiceId();
 		this.activeSlots.setActive(slot, registerWords, voiceId);
 		if (!this.playOutputVoice(slot, voiceId, source, registerWords, 0)) {
@@ -162,15 +159,9 @@ export class ApuCommandExecutor {
 		this.writeSlotRegisterWord(slot, APU_PARAMETER_GAIN_Q12_INDEX, registerWords[APU_PARAMETER_GAIN_Q12_INDEX]!);
 	}
 
-	private replaceSlotSourceDma(slot: ApuAudioSlot, source: ApuAudioSource): boolean {
+	private replaceSlotSourceDma(slot: ApuAudioSlot, source: ApuAudioSource): void {
 		this.audioOutput.stopSlot(slot);
-		const dma: ApuSourceDmaResult = this.sourceDma.loadSlot(slot, source);
-		if (dma.faultCode !== APU_FAULT_NONE) {
-			this.activeSlots.stop(slot);
-			this.fault.raise(dma.faultCode, dma.faultDetail);
-			return false;
-		}
-		return true;
+		this.sourceDma.loadSlot(slot, source);
 	}
 
 	private writeSlotRegisterWord(slot: ApuAudioSlot, parameterIndex: number, word: number): void {
@@ -180,9 +171,7 @@ export class ApuCommandExecutor {
 			const source = resolveApuAudioSource(this.slotRegisterDispatchWords);
 			const fadeSamples = this.slots.fadeSamplesRemaining(slot);
 			if (apuParameterProgramsSourceBuffer(parameterIndex)) {
-				if (!this.replaceSlotSourceDma(slot, source)) {
-					return;
-				}
+				this.replaceSlotSourceDma(slot, source);
 				const voiceId = this.slots.allocateVoiceId();
 				this.slots.assignVoiceId(slot, voiceId);
 				if (!this.playOutputVoice(slot, voiceId, source, this.slotRegisterDispatchWords, fadeSamples)) {

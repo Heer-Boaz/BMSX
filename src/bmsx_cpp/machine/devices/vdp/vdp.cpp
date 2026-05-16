@@ -979,8 +979,8 @@ bool VDP::enqueueLatchedDrawLine() {
 bool VDP::enqueueLatchedBlit() {
 	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
 	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
-	const VdpDrawCtrl drawCtrl = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
-	if (drawCtrl.blendMode != 0u) {
+	m_drawCtrlScratch = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
+	if (m_drawCtrlScratch.blendMode != 0u) {
 		m_fault.raise(VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, m_vdpRegisters[VDP_REG_DRAW_CTRL]);
 		return false;
 	}
@@ -989,7 +989,7 @@ bool VDP::enqueueLatchedBlit() {
 	const u32 v = packedHigh16(m_vdpRegisters[VDP_REG_SRC_UV]);
 	const u32 w = packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]);
 	const u32 h = packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]);
-	BlitterSource source;
+	BlitterSource& source = m_latchedSourceScratch;
 	if (!m_blitterSourcePort.resolveWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
 		return false;
 	}
@@ -1008,7 +1008,7 @@ bool VDP::enqueueLatchedBlit() {
 	}
 	const f32 dstX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_X]);
 	const f32 dstY = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_Y]);
-	const VdpResolvedBlitPmu resolved = m_pmu.resolveBlit(dstX, dstY, scaleX, scaleY, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
+	const VdpResolvedBlitPmu resolved = m_pmu.resolveBlit(dstX, dstY, scaleX, scaleY, m_drawCtrlScratch.pmuBank, m_drawCtrlScratch.parallaxWeight);
 	const double dstWidth = static_cast<double>(source.width) * static_cast<double>(resolved.scaleX);
 	const double dstHeight = static_cast<double>(source.height) * static_cast<double>(resolved.scaleY);
 	const VdpClippedRect clipped = computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, m_fbm.width(), m_fbm.height());
@@ -1020,7 +1020,7 @@ bool VDP::enqueueLatchedBlit() {
 	if (!reserveBlitterCommand(BlitterCommandType::Blit, blitAreaBucket(clipped.area) * (color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1), index)) {
 		return false;
 	}
-	m_buildFrame.queue->writeBlit(index, layer, priority, source, resolved.dstX, resolved.dstY, resolved.scaleX, resolved.scaleY, drawCtrl.flipH, drawCtrl.flipV, m_vdpRegisters[VDP_REG_DRAW_COLOR], drawCtrl.parallaxWeight);
+	m_buildFrame.queue->writeBlit(index, layer, priority, source, resolved.dstX, resolved.dstY, resolved.scaleX, resolved.scaleY, m_drawCtrlScratch.flipH, m_drawCtrlScratch.flipV, m_vdpRegisters[VDP_REG_DRAW_COLOR], m_drawCtrlScratch.parallaxWeight);
 	return true;
 }
 
@@ -1831,13 +1831,13 @@ bool VDP::enqueueLatchedBatchBlitBegin() {
 	}
 	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
 	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
-	const VdpDrawCtrl drawCtrl = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
-	if (drawCtrl.blendMode != 0) {
+	m_drawCtrlScratch = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
+	if (m_drawCtrlScratch.blendMode != 0u) {
 		m_fault.raise(VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, m_vdpRegisters[VDP_REG_DRAW_CTRL]);
 		return false;
 	}
 	const u32 color = m_vdpRegisters[VDP_REG_DRAW_COLOR];
-	m_buildFrame.queue->writeBatchBlitBegin(index, color, drawCtrl.blendMode, layer, priority, drawCtrl.pmuBank, drawCtrl.parallaxWeight);
+	m_buildFrame.queue->writeBatchBlitBegin(index, color, m_drawCtrlScratch.blendMode, layer, priority, m_drawCtrlScratch.pmuBank, m_drawCtrlScratch.parallaxWeight);
 	m_activeBatchBlitIndex = static_cast<int>(index);
 	return true;
 }
@@ -1855,7 +1855,10 @@ bool VDP::enqueueLatchedBatchBlitItem() {
 	const f32 dstX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_X]);
 	const f32 dstY = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_Y]);
 	const f32 advanceX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_GEOM_X0]);
-	BlitterSource source{};
+
+	// Use the member scratch buffer to avoid per-call temporaries (parity with TS runtime)
+	BlitterSource& source = m_latchedSourceScratch;
+	m_drawCtrlScratch = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
 	if (!m_blitterSourcePort.resolveWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
 		return false;
 	}

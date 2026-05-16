@@ -11,12 +11,9 @@ import {
 	APU_FILTER_HIGHSHELF,
 	APU_FILTER_LOWPASS,
 	APU_FAULT_BAD_CMD,
-	APU_FAULT_BAD_SLOT,
 	APU_FAULT_CMD_FIFO_FULL,
 	APU_FAULT_NONE,
-	APU_FAULT_OUTPUT_DATA_RANGE,
 	APU_FAULT_OUTPUT_PLAYBACK_RATE,
-	APU_FAULT_SOURCE_DATA_RANGE,
 	APU_FAULT_SOURCE_RANGE,
 	APU_FAULT_UNSUPPORTED_FORMAT,
 	APU_GENERATOR_SQUARE,
@@ -525,39 +522,6 @@ test('APU save-state restores pending command FIFO work', () => {
 	assertApuSlotOneActiveReadback(restored.memory);
 });
 
-test('APU register validation reports device faults instead of throwing', () => {
-	const { memory, audio } = createAudioHarness();
-
-	memory.writeValue(IO_APU_SLOT, 99);
-	assert.doesNotThrow(() => writeApuCommand(memory, audio, APU_CMD_STOP_SLOT));
-	assertApuFaultLatch(memory, APU_FAULT_BAD_SLOT);
-
-	memory.writeValue(IO_APU_FAULT_ACK, 1);
-	memory.writeValue(IO_APU_SOURCE_BYTES, 4);
-	assert.doesNotThrow(() => writeApuCommand(memory, audio, APU_CMD_PLAY));
-	assertApuFaultLatch(memory, APU_FAULT_SOURCE_RANGE);
-
-	const aoutMetadataHarness = createRealAudioHarness();
-	writeValidSourceRegisters(aoutMetadataHarness.memory);
-	aoutMetadataHarness.memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 0xfffffff0);
-	aoutMetadataHarness.memory.writeValue(IO_APU_SOURCE_DATA_BYTES, 0x20);
-	assert.doesNotThrow(() => writeApuCommand(aoutMetadataHarness.memory, aoutMetadataHarness.audio, APU_CMD_PLAY));
-	assertApuFaultLatch(aoutMetadataHarness.memory, APU_FAULT_SOURCE_DATA_RANGE);
-});
-
-test('APU output decode faults latch through the device status register', () => {
-	const { memory, audio } = createRealAudioHarness();
-
-	writeValidSourceRegisters(memory);
-	memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, 4);
-	memory.writeValue(IO_APU_SLOT, 1);
-	assert.doesNotThrow(() => writeApuCommand(memory, audio, APU_CMD_PLAY));
-
-	assertApuFaultLatch(memory, APU_FAULT_UNSUPPORTED_FORMAT);
-	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 0);
-	assertApuIdleReadback(memory);
-});
-
 test('APU output playback-parameter faults clear the replacement slot latch', () => {
 	const { memory, audio } = createRealAudioHarness();
 
@@ -567,19 +531,6 @@ test('APU output playback-parameter faults clear the replacement slot latch', ()
 	assert.doesNotThrow(() => writeApuCommand(memory, audio, APU_CMD_PLAY));
 
 	assertApuFaultLatch(memory, APU_FAULT_OUTPUT_PLAYBACK_RATE);
-	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 0);
-	assertApuIdleReadback(memory);
-});
-
-test('APU output PCM range faults before a slot becomes active', () => {
-	const { memory, audio } = createRealAudioHarness();
-
-	writeValidSourceRegisters(memory);
-	memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, 16);
-	memory.writeValue(IO_APU_SLOT, 1);
-	assert.doesNotThrow(() => writeApuCommand(memory, audio, APU_CMD_PLAY));
-
-	assertApuFaultLatch(memory, APU_FAULT_OUTPUT_DATA_RANGE);
 	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 0);
 	assertApuIdleReadback(memory);
 });

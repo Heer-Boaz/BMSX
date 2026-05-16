@@ -694,6 +694,9 @@ function textcomponent:render(x, y, z, glyphs)
 	local line_offsets<const> = self.line_offsets
 	local line_widths<const> = self.line_widths
 	local line_x_offsets<const> = self.line_x_offsets
+	local background_color<const> = self.background_color
+	local layer<const> = self.layer
+	local color<const> = self.color
 	for i = 1, #glyphs do
 		local line<const> = glyphs[i]
 		local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
@@ -707,11 +710,13 @@ function textcomponent:render(x, y, z, glyphs)
 				line_x = x + ((self.center_block_width - line_width) / 2)
 			end
 			local cursor_x = line_x
+			vdp_stream.batch_blit_begin(z, layer, color, 0, 0)
 			font_module.for_each_glyph(self.font, line, function(glyph)
-				if self.background_color ~= nil then
-					vdp_stream.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, z - 1, self.layer, self.background_color)
+				if background_color ~= nil then
+					vdp_stream.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, z - 1, layer, background_color)
 				end
-				vdp_image.write_glyph_color(glyph, cursor_x, line_y, z, self.layer, self.color)
+				local rect<const> = vdp_image.rect(glyph.imgid)
+				vdp_stream.batch_blit_item(vdp_image.slot(rect), rect.u, rect.v, rect.w, rect.h, cursor_x, line_y, glyph.advance)
 				cursor_x = cursor_x + glyph.advance
 			end)
 		end
