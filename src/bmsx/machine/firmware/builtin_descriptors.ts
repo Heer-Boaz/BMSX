@@ -203,6 +203,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'sys_cart_magic', params: [], signature: 'sys_cart_magic', description: 'Cart ROM magic header value.' },
 	{ name: 'sys_cart_rom_size', params: [], signature: 'sys_cart_rom_size', description: 'Maximum cart ROM size in bytes.' },
 	{ name: 'sys_ram_size', params: [], signature: 'sys_ram_size', description: 'Total system RAM size in bytes.' },
+	{ name: 'sys_hz_scale', params: [], signature: 'sys_hz_scale', description: 'Fixed scale used by machine.ufps refresh-rate values.' },
 	{ name: 'sys_max_cycles_per_frame', params: [], signature: 'sys_max_cycles_per_frame', description: 'Maximum cycles per frame.' },
 	{ name: 'sys_vdp_dither', params: [], signature: 'sys_vdp_dither', description: 'VDP dither register; write to this register to control dithering. Values 0=off, 1=PSX, 2=RGB777 output, 3=MSX10' },
 	{ name: 'sys_vdp_cmd', params: [], signature: 'sys_vdp_cmd', description: 'VDP submit register; write a command opcode here after filling the argument bank.' },

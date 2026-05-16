@@ -5,6 +5,7 @@
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/vdp/contracts.h"
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/timing/constants.h"
 #include "rompack/format.h"
 
 namespace bmsx {
@@ -47,6 +48,7 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_cart_magic", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
 	runtime.setGlobal("sys_cart_rom_size", valueNumber(static_cast<double>(CART_ROM_SIZE)));
 	runtime.setGlobal("sys_ram_size", valueNumber(static_cast<double>(RAM_SIZE)));
+	runtime.setGlobal("sys_hz_scale", valueNumber(static_cast<double>(HZ_SCALE)));
 	runtime.setGlobal("sys_geo_scratch_base", valueNumber(static_cast<double>(GEO_SCRATCH_BASE)));
 	runtime.setGlobal("sys_geo_scratch_size", valueNumber(static_cast<double>(GEO_SCRATCH_SIZE)));
 	runtime.setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(timing.cycleBudgetPerFrame)));

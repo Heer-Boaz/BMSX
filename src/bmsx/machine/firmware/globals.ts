@@ -33,6 +33,7 @@ import {
 	VRAM_SYSTEM_SLOT_SIZE,
 } from '../memory/map';
 import { CART_ROM_MAGIC, DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../../rompack/format';
+import { HZ_SCALE } from '../runtime/timing/constants';
 import {
 	GEO_CTRL_ABORT,
 	GEO_FAULT_ABORTED_BY_HOST,
@@ -1416,6 +1417,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_cart_magic', CART_ROM_MAGIC);
 	luaPipeline.registerGlobal(runtime, 'sys_cart_rom_size', CART_ROM_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_ram_size', RAM_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_hz_scale', HZ_SCALE);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_scratch_base', GEO_SCRATCH_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_geo_scratch_size', GEO_SCRATCH_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.timing.cycleBudgetPerFrame);

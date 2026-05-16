@@ -206,6 +206,7 @@ constexpr std::array<LuaBuiltinDescriptor, 524> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_cart_magic", "sys_cart_magic", "Cart ROM magic header value."},
 	LuaBuiltinDescriptor{"sys_cart_rom_size", "sys_cart_rom_size", "Maximum cart ROM size in bytes."},
 	LuaBuiltinDescriptor{"sys_ram_size", "sys_ram_size", "Total system RAM size in bytes."},
+	LuaBuiltinDescriptor{"sys_hz_scale", "sys_hz_scale", "Fixed scale used by machine.ufps refresh-rate values."},
 	LuaBuiltinDescriptor{"sys_max_cycles_per_frame", "sys_max_cycles_per_frame", "Maximum cycles per frame."},
 	LuaBuiltinDescriptor{"sys_vdp_dither", "sys_vdp_dither", "VDP dither register; write to this register to control dithering. Values 0=off, 1=PSX, 2=RGB777 output, 3=MSX10"},
 	LuaBuiltinDescriptor{"sys_vdp_cmd", "sys_vdp_cmd", "VDP submit register; write a command opcode here after filling the argument bank."},

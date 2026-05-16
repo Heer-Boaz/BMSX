@@ -120,6 +120,7 @@ void Runtime::runSystemBuiltinPrelude() {
 		"vdp_load_system_slot",
 		"vdp_blit_img_color",
 		"vdp_item_color",
+		"vdp_glyph_color",
 		"vdp_img_rect",
 		"vdp_img_slot",
 		"vdp_img_source",
