@@ -56,7 +56,7 @@ import { editorPointerState } from './input/pointer/state';
 import { handleEditorWheelInput } from './input/pointer/wheel';
 import { findCodeTabContext, getActiveCodeTabContext, getActiveCodeTabContextId, createEntryTabContext } from './workbench/ui/code_tab/contexts';
 import { storeActiveCodeTabContext } from './workbench/ui/code_tab/activation';
-import { buildDirtyFilePath } from './workbench/workspace/io';
+import { buildDirtyFilePath, hasWorkspaceStorage } from './workbench/workspace/io';
 import { initializeWorkspaceStorage, runWorkspaceAutosaveTick, stopWorkspaceAutosaveLoop } from './workbench/workspace/storage';
 import { workspaceState } from './workbench/workspace/state';
 import { workspaceSourceCache } from './workspace/cache';
@@ -138,10 +138,12 @@ export function getSourceForChunk(runtime: Runtime, path: string): string {
 		}
 		return getTextSnapshot(context.buffer);
 	}
-	const dirtyPath = buildDirtyFilePath(asset.source_path);
-	const dirtyCached = workspaceSourceCache.get(dirtyPath);
-	if (dirtyCached !== undefined) {
-		return dirtyCached;
+	if (hasWorkspaceStorage()) {
+		const dirtyPath = buildDirtyFilePath(asset.source_path);
+		const dirtyCached = workspaceSourceCache.get(dirtyPath);
+		if (dirtyCached !== undefined) {
+			return dirtyCached;
+		}
 	}
 	return asset.src;
 }

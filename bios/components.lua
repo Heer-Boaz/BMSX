@@ -710,10 +710,8 @@ function textcomponent:render_glyphs(x, y, z, glyphs)
 				line_x = x + ((self.center_block_width - line_width) / 2)
 			end
 			local cursor_x = line_x
-			vdp_stream.batch_blit_begin(z, layer, color, 0, 0)
 			font_module.for_each_glyph(self.font, line, function(glyph)
-				local rect<const> = vdp_image.rect(glyph.imgid)
-				vdp_stream.batch_blit_item(vdp_image.slot(rect), rect.u, rect.v, rect.w, rect.h, cursor_x, line_y, glyph.advance)
+				vdp_image.write_glyph_color(glyph, cursor_x, line_y, z, layer, color)
 				cursor_x = cursor_x + glyph.advance
 			end)
 		end

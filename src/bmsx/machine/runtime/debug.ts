@@ -4,7 +4,7 @@ import { Table, isNativeObject, type LocalSlotDebug, type SourceRange, type Valu
 import { resolveLuaSourceRecordFromRegistries } from '../program/sources';
 import type { Runtime } from './runtime';
 import { workspaceSourceCache } from '../../ide/workspace/cache';
-import { buildDirtyFilePath } from '../../ide/workbench/workspace/io';
+import { buildDirtyFilePath, hasWorkspaceStorage } from '../../ide/workbench/workspace/io';
 import { KEYWORDS } from '../../lua/syntax/token';
 
 const DEBUG_EXPR_PATTERN = /\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\b/g;
@@ -88,9 +88,11 @@ function resourceSourceForPath(runtime: Runtime, path: string): string | null {
 	if (!binding) {
 		return null;
 	}
-	const dirty = workspaceSourceCache.get(buildDirtyFilePath(binding.source_path));
-	if (dirty !== undefined) {
-		return dirty;
+	if (hasWorkspaceStorage()) {
+		const dirty = workspaceSourceCache.get(buildDirtyFilePath(binding.source_path));
+		if (dirty !== undefined) {
+			return dirty;
+		}
 	}
 	return binding.src;
 }

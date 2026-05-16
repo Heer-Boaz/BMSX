@@ -10,7 +10,7 @@ import { SYSTEM_ROM_HELPER_NAMES } from '../../machine/firmware/system_globals';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram, type CompiledProgram } from '../../machine/program/compiler';
 import { linkProgramImages } from '../../machine/program/linker';
 import { workspaceSourceCache } from '../workspace/cache';
-import { buildDirtyFilePath } from '../workbench/workspace/io';
+import { buildDirtyFilePath, hasWorkspaceStorage } from '../workbench/workspace/io';
 import { RuntimeResumeSnapshot, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
 import { resolveLuaSourceRecordFromRegistries, type LuaSourceRegistry } from '../../machine/program/sources';
 import { logDebugState } from '../../machine/runtime/debug';
@@ -808,9 +808,11 @@ export function resourceSourceForChunk(runtime: Runtime, path: string): string {
 	if (!binding) {
 		return null;
 	}
-	const dirty = workspaceSourceCache.get(buildDirtyFilePath(binding.source_path));
-	if (dirty !== undefined) {
-		return dirty;
+	if (hasWorkspaceStorage()) {
+		const dirty = workspaceSourceCache.get(buildDirtyFilePath(binding.source_path));
+		if (dirty !== undefined) {
+			return dirty;
+		}
 	}
 	return binding.src;
 }

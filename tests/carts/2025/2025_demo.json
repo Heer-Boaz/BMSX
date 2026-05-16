@@ -176,6 +176,7 @@
 	{
 		"description": "round 3: skip typing",
 		"frame": 180,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -204,6 +205,7 @@
 	{
 		"description": "round 3: select option 1",
 		"frame": 186,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -230,8 +232,19 @@
 		}
 	},
 	{
+		"description": "capture_200",
+		"frame": 200,
+		"capture": true
+	},
+	{
+		"description": "capture_220",
+		"frame": 220,
+		"capture": true
+	},
+	{
 		"description": "all-out prompt: skip typing",
 		"frame": 240,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
