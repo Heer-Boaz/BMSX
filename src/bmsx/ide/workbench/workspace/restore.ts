@@ -69,7 +69,6 @@ export async function hydrateDirtyFiles(runtime: Runtime, entries: PersistedDirt
 			continue;
 		}
 		workspaceSourceCache.set(entry.dirtyPath, contents);
-		workspaceSourceCache.set(descriptor.path, contents);
 		restoreWorkspaceContextSource(context, contents, entry, true);
 	}
 }

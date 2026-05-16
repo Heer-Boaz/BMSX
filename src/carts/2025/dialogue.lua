@@ -30,6 +30,10 @@ function dialogue.register_methods(director)
 	end
 
 		function director:update_dialogue_prompt()
+			if self.stagger_blocked then
+				oget(globals.text_prompt_id):clear_text()
+				return
+			end
 			local main<const> = oget(globals.text_main_id)
 			if main:is_typing() then
 				oget(globals.text_prompt_id):set_text({ '(B) skip' }, { typed = false, snap = true })

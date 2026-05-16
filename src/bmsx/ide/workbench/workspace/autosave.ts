@@ -119,7 +119,6 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 		}
 		await writeWorkspaceFile(dirtyPath, entry.text);
 		workspaceSourceCache.set(dirtyPath, entry.text);
-		workspaceSourceCache.set(entry.descriptor.path, entry.text);
 	}
 	for (const cachedPath of workspaceSourceCache.keys()) {
 		if (!cachedPath.includes(`/${getWorkspaceDirtyDirSegment()}/`)) {

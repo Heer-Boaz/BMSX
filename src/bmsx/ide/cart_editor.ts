@@ -80,6 +80,7 @@ import {
 } from './navigation/navigation_history';
 import { focusChunkSource } from './workbench/contrib/resources/navigation';
 import { editorChromeState } from './workbench/ui/chrome_state';
+import { tabSessionState } from './workbench/ui/tab/session_state';
 import { activateCodeTab, findTabById, initializeTabs, isResourceViewActive, setActiveTab } from './workbench/ui/tabs';
 import { drawResourcePanel, drawResourceViewer } from './workbench/render/resource_panel';
 import { renderEditorContextMenu } from './workbench/render/context_menu';
@@ -132,16 +133,12 @@ export function getSourceForChunk(runtime: Runtime, path: string): string {
 	]);
 	const context = findCodeTabContext(asset.source_path);
 	if (context) {
-		if (context.id === getActiveCodeTabContext().id) {
+		if (context.id === getActiveCodeTabContext().id && context.id === tabSessionState.activeTabId) {
 			return getTextSnapshot(editorDocumentState.buffer);
 		}
 		return getTextSnapshot(context.buffer);
 	}
 	const dirtyPath = buildDirtyFilePath(asset.source_path);
-	const cached = workspaceSourceCache.get(asset.source_path);
-	if (cached !== undefined) {
-		return cached;
-	}
 	const dirtyCached = workspaceSourceCache.get(dirtyPath);
 	if (dirtyCached !== undefined) {
 		return dirtyCached;
@@ -511,6 +508,7 @@ class RuntimeCartEditor implements CartEditor {
 			resourceVertical: editorViewState.scrollbars.resourceVertical,
 			resourceHorizontal: editorViewState.scrollbars.resourceHorizontal,
 		});
+		initializeWorkspaceStorage(runtime, runtime.cartProjectRootPath ?? runtime.systemProjectRootPath);
 		const initialContext = createEntryTabContext(runtime);
 		configureFontVariant(runtime, editorViewState.fontVariant, initialContext.mode);
 		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
@@ -519,7 +517,6 @@ class RuntimeCartEditor implements CartEditor {
 		resourceSearchState.field = createInlineTextField();
 		lineJumpState.field = createInlineTextField();
 		createResourceState.field = createInlineTextField();
-		initializeWorkspaceStorage(runtime, runtime.cartProjectRootPath);
 		applySearchFieldText(editorSearchState.query, true);
 		applySymbolSearchFieldText(symbolSearchState.query, true);
 		applyResourceSearchFieldText(resourceSearchState.query, true);

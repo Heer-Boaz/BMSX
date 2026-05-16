@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import type { CodeTabContext } from '../../src/bmsx/ide/common/models';
 import type { StorageService } from '../../src/bmsx/platform/platform';
-import { $ } from '../../src/bmsx/core/console';
+import { consoleCore as $ } from '../../src/bmsx/core/console';
 import { PieceTreeBuffer } from '../../src/bmsx/ide/editor/text/piece_tree_buffer';
 import { getTextSnapshot } from '../../src/bmsx/ide/editor/text/source_text';
 import { workspaceSourceCache } from '../../src/bmsx/ide/workspace/cache';
 import {
 	WORKSPACE_METADATA_DIR,
 	WORKSPACE_MARKER_FILE,
+	applyWorkspaceSourceOverrides,
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
@@ -31,6 +32,11 @@ import {
 	writeWorkspaceStateFile,
 } from '../../src/bmsx/ide/workbench/workspace/io';
 import { hydrateDirtyFiles } from '../../src/bmsx/ide/workbench/workspace/restore';
+import { captureActiveCodeTabSource } from '../../src/bmsx/ide/workbench/ui/code_tab/activation';
+import { captureContextText } from '../../src/bmsx/ide/workbench/workspace/context_snapshot';
+import { editorDocumentState } from '../../src/bmsx/ide/editor/editing/document_state';
+import type { LuaSourceRegistry } from '../../src/bmsx/machine/program/sources';
+import { saveLuaResourceSource } from '../../src/bmsx/ide/workspace/workspace';
 
 class MockStorage implements StorageService {
 	private readonly store = new Map<string, string>();
@@ -92,6 +98,7 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 	codeTabSessionState.activeContextReadOnly = false;
 	tabSessionState.tabs = [];
 	tabSessionState.activeTabId = null;
+	editorDocumentState.buffer = new PieceTreeBuffer('');
 	($ as any).platform = ORIGINAL_PLATFORM;
 	globalThis.fetch = ORIGINAL_FETCH;
 }
@@ -221,7 +228,7 @@ test('dirty autosave writes storage before marking source cache', async (t) => {
 
 	assert.equal(storage.getItem(buildWorkspaceStorageKey('offline-cart', dirtyPath)), '-- dirty edit');
 	assert.equal(workspaceSourceCache.get(dirtyPath), '-- dirty edit');
-	assert.equal(workspaceSourceCache.get('src/foo.lua'), '-- dirty edit');
+	assert.equal(workspaceSourceCache.get('src/foo.lua'), undefined);
 });
 
 test('dirty autosave leaves source cache untouched when storage write fails', async (t) => {
@@ -273,4 +280,187 @@ test('dirty restore keeps autosave contents authoritative over canonical source'
 	assert.equal(getTextSnapshot(context.buffer), '-- restored dirty edit');
 	assert.equal(context.dirty, true);
 	assert.equal(storage.getItem(buildWorkspaceStorageKey('offline-cart', dirtyPath)), '-- restored dirty edit');
+	assert.equal(workspaceSourceCache.get('src/foo.lua'), undefined);
+});
+
+test('workspace override application keeps dirty and canonical in separate namespaces', async () => {
+	const storage = new MockStorage();
+	const registry: LuaSourceRegistry = {
+		path2lua: {},
+		module2lua: {},
+		entry_path: 'src/foo.lua',
+		namespace: 'test',
+		projectRootPath: 'offline-cart',
+		can_boot_from_source: true,
+	};
+	const asset = {
+		resid: 'foo',
+		type: 'lua' as const,
+		src: '-- rom source',
+		base_src: '-- rom source',
+		base_update_timestamp: 15,
+		source_path: 'src/foo.lua',
+		module_path: 'src.foo',
+		update_timestamp: 15,
+	};
+	registry.path2lua[asset.source_path] = asset;
+	registry.module2lua[asset.module_path] = asset;
+	storage.setItem(buildWorkspaceStorageKey('offline-cart', 'src/foo.lua'), JSON.stringify({
+		contents: '-- saved source',
+		updatedAt: 25,
+	}));
+	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', 'src/foo.lua');
+	storage.setItem(buildWorkspaceStorageKey('offline-cart', dirtyPath), JSON.stringify({
+		contents: '-- dirty source',
+		updatedAt: 30,
+	}));
+
+	await applyWorkspaceSourceOverrides({
+		registry,
+		storage,
+		includeServer: false,
+		projectRootPath: 'offline-cart',
+		timestampNow: 30,
+	});
+
+	assert.equal(asset.src, '-- dirty source');
+	assert.equal(JSON.parse(storage.getItem(buildWorkspaceStorageKey('offline-cart', 'src/foo.lua'))).contents, '-- saved source');
+	assert.equal(JSON.parse(storage.getItem(buildWorkspaceStorageKey('offline-cart', dirtyPath))).contents, '-- dirty source');
+	assert.equal(workspaceSourceCache.get(dirtyPath), '-- dirty source');
+	assert.equal(workspaceSourceCache.get('src/foo.lua'), undefined);
+	workspaceSourceCache.clear();
+
+	storage.removeItem(buildWorkspaceStorageKey('offline-cart', dirtyPath));
+	await applyWorkspaceSourceOverrides({
+		registry,
+		storage,
+		includeServer: false,
+		projectRootPath: 'offline-cart',
+		timestampNow: 31,
+	});
+
+	assert.equal(asset.src, '-- saved source');
+	assert.equal(workspaceSourceCache.get(dirtyPath), undefined);
+	assert.equal(workspaceSourceCache.get('src/foo.lua'), '-- saved source');
+});
+
+test('stale dirty buffers never win over newer cart code', async () => {
+	const storage = new MockStorage();
+	const registry: LuaSourceRegistry = {
+		path2lua: {},
+		module2lua: {},
+		entry_path: 'src/foo.lua',
+		namespace: 'test',
+		projectRootPath: 'offline-cart',
+		can_boot_from_source: true,
+	};
+	const asset = {
+		resid: 'foo',
+		type: 'lua' as const,
+		src: '-- rom source',
+		base_src: '-- rom source',
+		base_update_timestamp: 100,
+		source_path: 'src/foo.lua',
+		module_path: 'src.foo',
+		update_timestamp: 100,
+	};
+	registry.path2lua[asset.source_path] = asset;
+	registry.module2lua[asset.module_path] = asset;
+	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', 'src/foo.lua');
+	storage.setItem(buildWorkspaceStorageKey('offline-cart', dirtyPath), JSON.stringify({
+		contents: '-- stale dirty source',
+		updatedAt: 50,
+	}));
+
+	await applyWorkspaceSourceOverrides({
+		registry,
+		storage,
+		includeServer: false,
+		projectRootPath: 'offline-cart',
+		timestampNow: 101,
+	});
+
+	assert.equal(asset.src, '-- rom source');
+	assert.equal(storage.getItem(buildWorkspaceStorageKey('offline-cart', dirtyPath)), null);
+	assert.equal(workspaceSourceCache.get(dirtyPath), undefined);
+	assert.equal(workspaceSourceCache.get('src/foo.lua'), undefined);
+});
+
+test('active source capture only trusts the editor buffer while the code tab is foregrounded', () => {
+	const context = installCodeContext('src/foo.lua', '-- tab buffer');
+	codeTabSessionState.activeContextId = context.id;
+	editorDocumentState.buffer = new PieceTreeBuffer('-- editor buffer');
+	tabSessionState.activeTabId = context.id;
+
+	assert.equal(captureContextText(context), '-- editor buffer');
+	assert.equal(captureActiveCodeTabSource(), '-- editor buffer');
+
+	tabSessionState.activeTabId = 'resource:other';
+	assert.equal(captureContextText(context), '-- tab buffer');
+	assert.equal(captureActiveCodeTabSource(), '-- tab buffer');
+});
+
+test('explicit lua save promotes canonical source and removes dirty entry', async (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const registry: LuaSourceRegistry = {
+		path2lua: {},
+		module2lua: {},
+		entry_path: 'src/foo.lua',
+		namespace: 'test',
+		projectRootPath: 'offline-cart',
+		can_boot_from_source: true,
+	};
+	const asset = {
+		resid: 'foo',
+		type: 'lua' as const,
+		src: '-- old source',
+		base_src: '-- rom source',
+		base_update_timestamp: 1,
+		source_path: 'src/foo.lua',
+		module_path: 'src.foo',
+		update_timestamp: 1,
+	};
+	registry.path2lua[asset.source_path] = asset;
+	registry.module2lua[asset.module_path] = asset;
+	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', 'src/foo.lua');
+	storage.setItem(buildWorkspaceStorageKey('offline-cart', dirtyPath), JSON.stringify({
+		contents: '-- dirty source',
+		updatedAt: 2,
+	}));
+	workspaceSourceCache.set(dirtyPath, '-- dirty source');
+	const requests: Array<{ method: string; path: string }> = [];
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+		const rawUrl = String(input);
+		const request = new Request(rawUrl.startsWith('http') ? rawUrl : `http://workspace.local${rawUrl}`, init);
+		const path = request.method === 'POST'
+			? JSON.parse(await request.text()).path
+			: new URL(request.url, 'http://workspace.local').searchParams.get('path') ?? '';
+		requests.push({ method: request.method, path });
+		return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+	};
+	const runtime = {
+		cartLuaSources: registry,
+		systemLuaSources: null,
+		activeLuaSources: registry,
+		cartProjectRootPath: 'offline-cart',
+		systemProjectRootPath: 'src/bmsx',
+		storageService: storage,
+		clock: { dateNow: () => 42 },
+		luaGenericChunksExecuted: new Set<string>(),
+	} as any;
+
+	await saveLuaResourceSource(runtime, 'src/foo.lua', '-- saved source');
+
+	assert.equal(asset.src, '-- saved source');
+	assert.equal(asset.base_update_timestamp, 42);
+	assert.equal(asset.update_timestamp, 42);
+	assert.equal(JSON.parse(storage.getItem(buildWorkspaceStorageKey('offline-cart', 'src/foo.lua'))).contents, '-- saved source');
+	assert.equal(storage.getItem(buildWorkspaceStorageKey('offline-cart', dirtyPath)), null);
+	assert.equal(workspaceSourceCache.get(dirtyPath), undefined);
+	assert.equal(workspaceSourceCache.get('src/foo.lua'), '-- saved source');
+	assert.deepEqual(requests, [
+		{ method: 'POST', path: 'src/foo.lua' },
+		{ method: 'DELETE', path: dirtyPath },
+	]);
 });

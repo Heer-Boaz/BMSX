@@ -3,7 +3,7 @@ import type { CartridgeIndex, CartridgeLayerId, RomLuaAsset } from '../../rompac
 import { utf8FatalDecoder } from '../../common/serializer/binencoder';
 import { PROGRAM_IMAGE_ID, toLuaModulePath } from './loader';
 
-export type LuaSourceRecord = RomLuaAsset & { base_src: string; module_path: string };
+export type LuaSourceRecord = RomLuaAsset & { base_src: string; base_update_timestamp: number; module_path: string };
 type PackedLuaSourceAsset = RomLuaAsset & { source_path: string; payload_id: CartridgeLayerId };
 
 export type LuaSourceRegistry = {
@@ -64,6 +64,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 		const luaRecord = entry as LuaSourceRecord;
 		luaRecord.src = src;
 		luaRecord.base_src = baseSrc;
+		luaRecord.base_update_timestamp = entry.update_timestamp ?? 0;
 		luaRecord.module_path = toLuaModulePath(entry.source_path);
 		registry.path2lua[luaRecord.source_path] = luaRecord;
 		registry.module2lua[luaRecord.module_path] = luaRecord;
@@ -79,6 +80,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 				type: 'lua',
 				src: '',
 				base_src: '',
+				base_update_timestamp: 0,
 				source_path: entryPath,
 				module_path: toLuaModulePath(entryPath),
 				update_timestamp: 0,

@@ -21,6 +21,7 @@ import {
 	updateActiveContextDirtyFlag,
 } from './contexts';
 import { codeTabSessionState } from './session_state';
+import { getActiveTabId } from '../tabs';
 
 export type CodeTabSelection = {
 	row: number;
@@ -62,7 +63,11 @@ export function storeActiveCodeTabContext(): void {
 }
 
 export function captureActiveCodeTabSource(): string {
-	return getTextSnapshot(editorDocumentState.buffer);
+	const context = getActiveCodeTabContext();
+	if (getActiveTabId() === context.id) {
+		return getTextSnapshot(editorDocumentState.buffer);
+	}
+	return getTextSnapshot(context.buffer);
 }
 
 export function commitActiveCodeTabSave(context: CodeTabContext, source: string): void {

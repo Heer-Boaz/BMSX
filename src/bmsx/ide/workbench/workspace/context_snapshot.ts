@@ -118,14 +118,14 @@ export function restoreWorkspaceContextSource(context: CodeTabContext, source: s
 }
 
 export function captureContextText(context: CodeTabContext): string {
-	if (context.id === getActiveCodeTabContextId()) {
+	if (context.id === getActiveCodeTabContextId() && getActiveTabId() === context.id) {
 		return getTextSnapshot(editorDocumentState.buffer);
 	}
 	return getTextSnapshot(context.buffer);
 }
 
 export function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetadata {
-	if (context.id === getActiveCodeTabContextId()) {
+	if (context.id === getActiveCodeTabContextId() && getActiveTabId() === context.id) {
 		return {
 			cursorRow: editorDocumentState.cursorRow,
 			cursorColumn: editorDocumentState.cursorColumn,

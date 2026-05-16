@@ -85,11 +85,12 @@ export async function save(runtime: Runtime): Promise<void> {
 	try {
 		if (context.mode === 'lua') {
 			await saveLuaResourceSource(runtime, targetPath, source);
+			workspaceSourceCache.delete(buildDirtyFilePath(targetPath));
+			workspaceSourceCache.set(targetPath, source);
 		} else {
 			await persistWorkspaceSourceFile(targetPath, source, runtime.cartProjectRootPath);
+			workspaceSourceCache.set(targetPath, source);
 		}
-		workspaceSourceCache.set(targetPath, source);
-		workspaceSourceCache.set(buildDirtyFilePath(targetPath), source);
 		commitActiveCodeTabSave(context, source);
 		if (context.mode === 'lua') {
 			setContextRuntimeSyncState(context, 'restart_pending', null);

@@ -200,7 +200,7 @@ function stagger.play(owner, preset_id, opts)
 		bg_duration = cfg.bg_duration,
 		pose_start = cfg.offset,
 		pose_duration = cfg.pose_duration,
-		text_start = cfg.offset * 2,
+		text_start = 0,
 		text_duration = cfg.text_duration,
 		bg_from = 1,
 		bg_to = cfg.bg_alpha,

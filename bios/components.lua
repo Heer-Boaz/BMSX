@@ -728,15 +728,27 @@ function textcomponent:render(x, y, z, glyphs)
 	if background_color ~= nil then
 		local cursor_y = y
 		local line_offsets<const> = self.line_offsets
+		local line_widths<const> = self.line_widths
+		local line_x_offsets<const> = self.line_x_offsets
 		local layer<const> = self.layer
 		for i = 1, #glyphs do
 			local line<const> = glyphs[i]
 			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
-			local cursor_x = x
-			font_module.for_each_glyph(self.font, line, function(glyph)
-				vdp_stream.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, z - 1, layer, background_color)
-				cursor_x = cursor_x + glyph.advance
-			end)
+			local line_length<const> = string.len(line)
+			if line_length > 0 then
+				local line_x = x
+				if line_x_offsets ~= nil then
+					line_x = x + line_x_offsets[i]
+				elseif self.center_block_width ~= nil then
+					local line_width<const> = line_widths ~= nil and line_widths[i] or font_module.measure_line_width(self.font, line)
+					line_x = x + ((self.center_block_width - line_width) / 2)
+				end
+				local cursor_x = line_x
+				font_module.for_each_glyph(self.font, line, function(glyph)
+					vdp_stream.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, z - 1, layer, background_color)
+					cursor_x = cursor_x + glyph.advance
+				end)
+			end
 			if line_offsets == nil then
 				cursor_y = cursor_y + self.line_height
 			end

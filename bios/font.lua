@@ -80,6 +80,7 @@ local build_descriptor<const> = function(definition)
 	end
 	local line_glyph<const> = glyphs['A'] or glyphs['a'] or glyphs['?']
 	return {
+		items = glyphs,
 		glyphs = glyphs,
 		line_height = definition.line_height or line_glyph.height,
 		advance_padding = advance_padding,
@@ -101,35 +102,12 @@ end
 
 function font.for_each_glyph(id_or_descriptor, line, fn)
 	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
-	local x = 0
-	local y = 0
-	local len<const> = string.len(line)
-	for i = 1, len do
-		local char<const> = string.sub(line, i, i)
-		if char == '\n' then
-			x = 0
-			y = y + descriptor.line_height
-		else
-			local glyph = descriptor.glyphs[char]
-			if glyph == nil then
-				glyph = descriptor.glyphs['?'] or descriptor.glyphs[' ']
-				goto foreach_continue
-			end
-			if glyph ~= nil then
-				fn(glyph, x, y)
-				x = x + glyph.advance
-			end
-		end
-		::foreach_continue::
-	end
+	font_for_each_item(descriptor, line, fn)
 end
 
 function font.measure_line_width(id_or_descriptor, line)
-	local max_w = 0
-	font.for_each_glyph(id_or_descriptor, line, function(glyph, x, y)
-		local end_x<const> = x + glyph.advance
-		if end_x > max_w then max_w = end_x end
-	end)
+	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
+	local max_w<const> = font_measure_line_width(descriptor, line)
 	return max_w
 end
 

@@ -4,7 +4,7 @@ import type { StorageService } from '../../platform';
 import type { Runtime } from '../../machine/runtime/runtime';
 import * as luaPipeline from '../runtime/lua_pipeline';
 import type { LuaResourceCreationRequest, ResourceDescriptor } from '../../rompack/tooling/resource';
-import { joinWorkspacePaths } from './path';
+import { joinWorkspacePaths, resolveWorkspacePath } from './path';
 import {
 	applyWorkspaceSourceOverrides,
 	collectScratchWorkspaceDirtyPaths,
@@ -12,9 +12,12 @@ import {
 	persistWorkspaceSourceFile,
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceStorageKey,
+	persistWorkspaceOverridesToLocalStorage,
 	WORKSPACE_METADATA_DIR,
 	WORKSPACE_STATE_FILE,
 } from './files';
+import { workspaceSourceCache } from './cache';
+import { clearWorkspaceDirtyBuffers } from '../workbench/workspace/autosave';
 
 export * from './files';
 export { joinWorkspacePaths } from './path';
@@ -51,11 +54,23 @@ export async function saveLuaResourceSource(runtime: Runtime, path: string, sour
 	const registry = resolveLuaSourceRegistry(runtime, path);
 	const asset = registry.path2lua[path] ?? registry.module2lua[path];
 	const sourcePath = asset.source_path;
-	await persistWorkspaceSourceFile(sourcePath, source, resolveLuaSourceProjectRootPath(runtime, sourcePath));
+	const projectRootPath = resolveLuaSourceProjectRootPath(runtime, sourcePath);
+	await persistWorkspaceSourceFile(sourcePath, source, projectRootPath);
+	const updatedAt = runtime.clock.dateNow();
 	asset.src = source;
-	asset.update_timestamp = runtime.clock.dateNow();
+	asset.base_update_timestamp = updatedAt;
+	asset.update_timestamp = updatedAt;
 	registry.path2lua[sourcePath] = asset;
 	registry.module2lua[asset.module_path] = asset;
+	persistWorkspaceOverridesToLocalStorage(runtime.storageService, projectRootPath, new Map([[
+		sourcePath,
+		{ source, path: sourcePath, cartPath: sourcePath, updatedAt },
+	]]), updatedAt);
+	const dirtyPath = buildWorkspaceDirtyEntryPath(projectRootPath, sourcePath);
+	runtime.storageService.removeItem(buildWorkspaceStorageKey(projectRootPath, dirtyPath));
+	await deleteWorkspaceServerFile(dirtyPath);
+	workspaceSourceCache.delete(dirtyPath);
+	workspaceSourceCache.set(sourcePath, source);
 	luaPipeline.markSourceChunkAsDirty(runtime, sourcePath);
 }
 
@@ -70,6 +85,7 @@ export async function createLuaResource(runtime: Runtime, request: LuaResourceCr
 		type: 'lua',
 		src: contents,
 		base_src: contents,
+		base_update_timestamp: runtime.clock.dateNow(),
 		source_path: path,
 		module_path: toLuaModulePath(path),
 		update_timestamp: runtime.clock.dateNow(),
@@ -117,10 +133,17 @@ async function discardWorkspaceDirtyPath(storage: StorageService, root: string, 
 	await deleteWorkspaceServerFile(dirtyPath);
 }
 
+async function discardWorkspaceCanonicalPath(storage: StorageService, root: string, cartPath: string): Promise<void> {
+	const storageKey = buildWorkspaceStorageKey(root, cartPath);
+	storage.removeItem(storageKey);
+	await deleteWorkspaceServerFile(resolveWorkspacePath(cartPath, root));
+}
+
 export async function clearWorkspaceArtifacts(runtime: Runtime, cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
 	const root = runtime.cartProjectRootPath;
 	for (const asset of Object.values(cart.path2lua)) {
 		await discardWorkspaceDirtyPath(storage, root, asset.source_path);
+		await discardWorkspaceCanonicalPath(storage, root, asset.source_path);
 	}
 	const statePath = joinWorkspacePaths(root, WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE);
 	const stateKey = buildWorkspaceStorageKey(root, statePath);
@@ -142,11 +165,29 @@ async function clearWorkspaceDirtyFiles(runtime: Runtime, cart: LuaSourceRegistr
 }
 
 export async function resetWorkspaceDirtyBuffersAndStorage(runtime: Runtime): Promise<void> {
-	await clearWorkspaceDirtyFiles(runtime, resolveEditableCartLuaSources(runtime), runtime.storageService);
+	const registry = resolveEditableCartLuaSources(runtime);
+	await clearWorkspaceDirtyFiles(runtime, registry, runtime.storageService);
+	await applyWorkspaceSourceOverrides({
+		registry,
+		storage: runtime.storageService,
+		includeServer: false,
+		projectRootPath: runtime.cartProjectRootPath,
+		timestampNow: runtime.clock.dateNow(),
+	});
+	clearWorkspaceDirtyBuffers(runtime);
 }
 
 export async function nukeWorkspaceState(runtime: Runtime): Promise<void> {
-	await clearWorkspaceArtifacts(runtime, resolveEditableCartLuaSources(runtime), runtime.storageService);
+	const registry = resolveEditableCartLuaSources(runtime);
+	await clearWorkspaceArtifacts(runtime, registry, runtime.storageService);
+	await applyWorkspaceSourceOverrides({
+		registry,
+		storage: runtime.storageService,
+		includeServer: false,
+		projectRootPath: runtime.cartProjectRootPath,
+		timestampNow: runtime.clock.dateNow(),
+	});
+	clearWorkspaceDirtyBuffers(runtime);
 }
 
 export function listResources(runtime: Runtime): ResourceDescriptor[] {

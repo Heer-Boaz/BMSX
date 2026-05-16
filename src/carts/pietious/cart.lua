@@ -57,6 +57,17 @@ local dispatch_irqs<const> = function()
 	return flags
 end
 
+local irq_dma_done<const> = 0x01
+local irq_dma_error<const> = 0x02
+
+local wait_dma<const> = function()
+	local flags = 0
+	repeat
+		halt_until_irq
+		flags = dispatch_irqs()
+	until (flags & (irq_dma_done | irq_dma_error)) ~= 0
+end
+
 local grant_starting_loadout<const> = function()
 	local player<const> = oget('pietolon')
 	player.inventory_items['keyworld1'] = true
@@ -202,6 +213,7 @@ while true do
 	mem[sys_dma_dst] = sys_vdp_fifo
 	mem[sys_dma_len] = vdp_stream_cursor - sys_vdp_stream_base
 	mem[sys_dma_ctrl] = dma_ctrl_start
+	wait_dma()
 
 	mem[sys_inp_ctrl] = inp_ctrl_arm
 	repeat

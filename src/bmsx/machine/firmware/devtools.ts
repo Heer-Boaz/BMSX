@@ -95,10 +95,6 @@ export function getRuntimeLuaResourceSource(runtime: Runtime, path: string): str
 	if (record === null) {
 		throw new Error(`[devtools.get_lua_resource_source] Missing Lua resource for path '${path}'. Available: ${summarizeLuaPaths(runtime, 16)}`);
 	}
-	const cached = workspaceSourceCache.get(record.source_path);
-	if (cached !== undefined) {
-		return cached;
-	}
 	if (hasWorkspaceStorage()) {
 		const dirty = workspaceSourceCache.get(buildDirtyFilePath(record.source_path));
 		if (dirty !== undefined) {
