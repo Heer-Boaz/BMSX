@@ -1869,8 +1869,12 @@ bool VDP::enqueueLatchedBatchBlitItem() {
 		m_fault.raise(VDP_FAULT_BLITTER_OOM_BATCH, 0);
 		return false;
 	}
-	const int alphaCost = ((m_buildFrame.queue->color[static_cast<size_t>(m_activeBatchBlitIndex)] >> 24u) < 255u) ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
-	m_buildFrame.cost += alphaCost;
+	const size_t batchIndex = static_cast<size_t>(m_activeBatchBlitIndex);
+	const int alphaCost = ((m_buildFrame.queue->color[batchIndex] >> 24u) < 255u) ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
+	const u32 itemCount = m_buildFrame.queue->batchBlitItemCount[batchIndex];
+	const u32 previousBuckets = (itemCount + static_cast<u32>(VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR) - 2u) / static_cast<u32>(VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR);
+	const u32 currentBuckets = (itemCount + static_cast<u32>(VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR) - 1u) / static_cast<u32>(VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR);
+	m_buildFrame.cost += static_cast<int>(currentBuckets - previousBuckets) * alphaCost;
 	return true;
 }
 } // namespace bmsx

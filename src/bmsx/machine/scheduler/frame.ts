@@ -93,7 +93,8 @@ export class FrameSchedulerState {
 			return false;
 		}
 		const state = runtime.frameLoop.currentFrameState;
-		return (state !== null && state.cycleBudgetRemaining > 0) || this.hasScheduledFrame();
+		return (state !== null && state.cycleBudgetRemaining > 0 && !runtime.machine.cpu.isHaltedUntilIrq())
+			|| this.hasScheduledFrame();
 	}
 
 	private consumeScheduledFrame(): boolean {

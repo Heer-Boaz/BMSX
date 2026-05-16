@@ -8,6 +8,7 @@ local collision_profiles<const> = require('bios/collision_profiles')
 local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 local font_module<const> = require('bios/font')
 local vdp_image<const> = require('bios/vdp_image')
+local vdp_stream<const> = require('bios/vdp_stream')
 local romdir<const> = require('bios/romdir')
 local world_instance<const> = require('bios/world/index').instance
 local eventemitter<const> = eventemitter_module.eventemitter
@@ -689,12 +690,11 @@ function textcomponent.new(opts)
 	return self
 end
 
-function textcomponent:render(x, y, z, glyphs)
+function textcomponent:render_glyphs(x, y, z, glyphs)
 	local cursor_y = y
 	local line_offsets<const> = self.line_offsets
 	local line_widths<const> = self.line_widths
 	local line_x_offsets<const> = self.line_x_offsets
-	local background_color<const> = self.background_color
 	local layer<const> = self.layer
 	local color<const> = self.color
 	for i = 1, #glyphs do
@@ -712,9 +712,6 @@ function textcomponent:render(x, y, z, glyphs)
 			local cursor_x = line_x
 			vdp_stream.batch_blit_begin(z, layer, color, 0, 0)
 			font_module.for_each_glyph(self.font, line, function(glyph)
-				if background_color ~= nil then
-					vdp_stream.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, z - 1, layer, background_color)
-				end
 				local rect<const> = vdp_image.rect(glyph.imgid)
 				vdp_stream.batch_blit_item(vdp_image.slot(rect), rect.u, rect.v, rect.w, rect.h, cursor_x, line_y, glyph.advance)
 				cursor_x = cursor_x + glyph.advance
@@ -724,6 +721,28 @@ function textcomponent:render(x, y, z, glyphs)
 			cursor_y = cursor_y + self.line_height
 		end
 	end
+end
+
+function textcomponent:render(x, y, z, glyphs)
+	local background_color<const> = self.background_color
+	if background_color ~= nil then
+		local cursor_y = y
+		local line_offsets<const> = self.line_offsets
+		local layer<const> = self.layer
+		for i = 1, #glyphs do
+			local line<const> = glyphs[i]
+			local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
+			local cursor_x = x
+			font_module.for_each_glyph(self.font, line, function(glyph)
+				vdp_stream.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, z - 1, layer, background_color)
+				cursor_x = cursor_x + glyph.advance
+			end)
+			if line_offsets == nil then
+				cursor_y = cursor_y + self.line_height
+			end
+		end
+	end
+	self:render_glyphs(x, y, z, glyphs)
 end
 
 -- meshcomponent: minimal render descriptor

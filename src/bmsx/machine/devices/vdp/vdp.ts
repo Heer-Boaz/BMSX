@@ -38,6 +38,7 @@ import {
 } from './contracts';
 import {
 	VDP_RENDER_ALPHA_COST_MULTIPLIER,
+	VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR,
 	VDP_RENDER_CLEAR_COST,
 	VDP_RENDER_BILLBOARD_COST,
 	blitAreaBucket,
@@ -1206,7 +1207,10 @@ export class VDP implements VramWriteSink {
 			return false;
 		}
 		const alphaCost = vdpColorAlphaByte(this.buildFrame.queue.color[this.activeBatchBlitIndex]) < 255 ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
-		this.buildFrame.cost += alphaCost;
+		const itemCount = this.buildFrame.queue.batchBlitItemCount[this.activeBatchBlitIndex];
+		const previousBuckets = Math.ceil((itemCount - 1) / VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR);
+		const currentBuckets = Math.ceil(itemCount / VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR);
+		this.buildFrame.cost += (currentBuckets - previousBuckets) * alphaCost;
 		return true;
 	}
 

@@ -11,6 +11,8 @@ import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, 
 import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { callClosureInto, callClosureIntoWithScheduler } from '../../src/bmsx/machine/program/executor';
 import { CpuExecutionState } from '../../src/bmsx/machine/runtime/cpu_executor';
+import { FrameLoopState } from '../../src/bmsx/machine/runtime/frame/loop';
+import { FrameSchedulerState } from '../../src/bmsx/machine/scheduler/frame';
 import type { Runtime } from '../../src/bmsx/machine/runtime/runtime';
 
 function makeProto(codeLen: number): Proto {
@@ -113,6 +115,69 @@ function makeMachine(): Machine {
 	machine.initializeSystemIo();
 	machine.resetDevices();
 	return machine;
+}
+
+function makeHaltFrameRuntime(): Runtime {
+	const memory = new Memory({ systemRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	cpu.setProgram(makeProgram(cpu), makeMetadata());
+	cpu.start(0);
+	const scheduler = {
+		nowCycles: 0,
+		hasDueTimer: () => false,
+		nextDeadline: () => Number.MAX_SAFE_INTEGER,
+		beginCpuSlice: () => {},
+		endCpuSlice: () => {},
+	};
+	const runtime = {
+		machine: {
+			cpu,
+			irqController: new IrqController(memory),
+			scheduler,
+			vdp: {
+				beginFrame: () => {},
+			},
+			advanceDevices: (cycles: number) => {
+				scheduler.nowCycles += cycles;
+			},
+		},
+		vblank: {
+			tickCompleted: false,
+			beginTick: () => {},
+			abandonTick: () => {},
+			handleBeginTimer: () => {},
+			handleEndTimer: () => {},
+		},
+		frameScheduler: null as never,
+		frameLoop: null as never,
+		cpuExecution: null as never,
+		timing: {
+			cycleBudgetPerFrame: 100,
+			frameDurationMs: 20,
+		},
+		tickEnabled: true,
+		luaInitialized: true,
+		luaRuntimeFailed: false,
+		pendingCall: 'entry' as const,
+		executionOverlayActive: false,
+		debuggerPaused: false,
+		cartEntryAvailable: true,
+		luaGate: { ready: true },
+		cartBoot: {
+			processPending: () => false,
+		},
+	} as unknown as Runtime;
+	runtime.frameLoop = new FrameLoopState(runtime);
+	runtime.cpuExecution = new CpuExecutionState(runtime);
+	runtime.frameScheduler = {
+		lastTickSequence: 0,
+		startScheduledFrame: () => {
+			runtime.frameLoop.beginFrameState();
+			return true;
+		},
+		refillFrameBudget: () => true,
+	} as never;
+	return runtime;
 }
 
 test('CPU external closure calls cannot wake HALT without an accepted interrupt', () => {
@@ -250,6 +315,32 @@ test('CPU frame executor closes scheduler slice when execution throws', () => {
 		/native boom/,
 	);
 	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
+});
+
+test('frame loop yields after HALT instead of continuing in the same host slice', () => {
+	const runtime = makeHaltFrameRuntime();
+
+	const progressed = runtime.frameLoop.tickUpdate();
+
+	assert.equal(progressed, false);
+	assert.equal(runtime.pendingCall, 'entry');
+	assert.equal(runtime.machine.cpu.isHaltedUntilIrq(), true);
+	assert.notEqual(runtime.frameLoop.currentFrameState, null);
+});
+
+
+test('frame scheduler does not burn active CPU budget while halted for IRQ without host time', () => {
+	const runtime = makeHaltFrameRuntime();
+	runtime.frameScheduler = new FrameSchedulerState(runtime);
+
+	runtime.frameScheduler.run(runtime.timing.frameDurationMs);
+	assert.equal(runtime.machine.cpu.isHaltedUntilIrq(), true);
+	const remaining = runtime.frameLoop.currentFrameState!.cycleBudgetRemaining;
+
+	runtime.frameScheduler.run(0);
+
+	assert.equal(runtime.frameLoop.currentFrameState!.cycleBudgetRemaining, remaining);
+	assert.equal(runtime.machine.cpu.isHaltedUntilIrq(), true);
 });
 
 test('CPU accepts NMI before maskable IRQ and preserves explicit maskable state', () => {

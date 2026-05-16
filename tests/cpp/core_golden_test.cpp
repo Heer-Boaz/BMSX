@@ -643,6 +643,42 @@ void testRuntimeFrameExecutorThrowClosesCpuSliceGolden() {
 	);
 }
 
+void testRuntimeFrameLoopHaltingYieldsToHostGolden() {
+	RuntimeHarness harness;
+	bmsx::Runtime& runtime = harness.runtime;
+	bmsx::RuntimeRomPackage activeRom;
+	bmsx::RuntimeRomPackage systemRom;
+	bmsx::RuntimeRomPackage cartRom;
+	runtime.setRuntimeEnvironment(
+		harness.manifest,
+		bmsx::RuntimeOptions::RomSpan{},
+		bmsx::RuntimeOptions::RomSpan{},
+		activeRom,
+		systemRom,
+		&cartRom
+	);
+
+	bmsx::Program program;
+	configureInterruptTestProgram(program);
+	bmsx::ProgramMetadata metadata;
+	runtime.machine.cpu.setProgram(&program, &metadata);
+	runtime.setLinkedCartEntry(0, {});
+	runtime.startCartProgram();
+	runtime.machine.irqController.reset();
+
+	runtime.setTickEnabled(false);
+	runtime.frameScheduler.run(runtime, runtime.timing.frameDurationMs);
+	runtime.setTickEnabled(true);
+
+	const bool progressed = runtime.frameLoop.tickUpdate(runtime);
+	require(!progressed, "runtime frame loop should yield after HALT instead of continuing in the same host slice");
+	require(runtime.machine.cpu.isHaltedUntilIrq(), "HALT should remain armed for the next host frame");
+	require(runtime.frameLoop.frameActive, "frame loop should keep the active frame until the next host slice");
+	const int remaining = runtime.frameLoop.frameState.cycleBudgetRemaining;
+	runtime.frameScheduler.run(runtime, 0.0);
+	require(runtime.frameLoop.frameState.cycleBudgetRemaining == remaining, "scheduler should not burn active CPU budget while HALTed without host time");
+}
+
 void testCpuNmiPreemptsMaskableIrqGolden() {
 	bmsx::Memory memory;
 	bmsx::IrqController irq(memory);
@@ -2511,7 +2547,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 46> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 47> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -2526,6 +2562,7 @@ int main() {
 		{"runtime closure-call yield continues", testRuntimeClosureCallYieldContinuesGolden},
 		{"runtime closure-call throw charges spent budget", testRuntimeClosureCallThrowChargesSpentBudgetGolden},
 		{"runtime frame executor throw closes cpu slice", testRuntimeFrameExecutorThrowClosesCpuSliceGolden},
+		{"runtime frame loop halting yields to host", testRuntimeFrameLoopHaltingYieldsToHostGolden},
 		{"cpu nmi preempts maskable irq", testCpuNmiPreemptsMaskableIrqGolden},
 		{"runtime save-state interrupt fields", testRuntimeSaveStateInterruptFieldsGolden},
 		{"machine save-state restore preserves irq line", testMachineSaveRestorePreservesIrqLineGolden},

@@ -1,7 +1,6 @@
 local globals<const> = require('globals')
 local story<const> = require('story')
--- local start_node<const> = 'title'
-local start_node<const> = 'combat_wekker'
+local start_node<const> = 'title'
 
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
@@ -260,6 +259,7 @@ function init()
 end
 
 function new_game()
+	reset()
 	mem[sys_inp_player] = 1
 	local w<const> = machine_manifest.render_size.width
 	local h<const> = machine_manifest.render_size.height
@@ -365,7 +365,6 @@ until (flags & irq_vblank) ~= 0
 
 while true do
 	update_world()
-	mem[sys_inp_ctrl] = inp_ctrl_arm
 	repeat
 		halt_until_irq
 		flags = service_irqs()
@@ -382,4 +381,10 @@ while true do
 			mem[sys_dma_ctrl] = dma_ctrl_start
 		end
 	end
+
+	mem[sys_inp_ctrl] = inp_ctrl_arm
+	repeat
+		halt_until_irq
+		flags = service_irqs()
+	until (flags & irq_vblank) ~= 0
 end

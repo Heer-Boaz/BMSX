@@ -21,7 +21,7 @@ public:
 	f64 currentTimeSeconds = 0.0;
 
 private:
-	void runUpdatePhase(Runtime& runtime);
+	bool runUpdatePhase(Runtime& runtime);
 	void finalizeUpdateSlice(Runtime& runtime);
 };
 

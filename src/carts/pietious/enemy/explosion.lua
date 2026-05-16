@@ -17,8 +17,6 @@ local explosion_frames<const> = {
 
 local loot_spawn_sequence = 0
 local explosion_timeline_id<const> = 'enemy_explosion.timeline.explosion'
-local explosion_timeline_frame_event<const> = 'timeline.frame.enemy_explosion.timeline.explosion'
-local explosion_timeline_end_event<const> = 'timeline.end.enemy_explosion.timeline.explosion'
 
 local loot_value_for_type<const> = function(loot_type)
 	if loot_type == 'life' then
@@ -52,26 +50,30 @@ end
 
 function enemy_explosion:ctor()
 	self:gfx(explosion_frames[1])
-	self:define_timeline(timeline.new({
-		id = explosion_timeline_id,
-		frames = explosion_frames,
-		ticks_per_frame = constants.enemy.explosion_frame_steps,
-		playback_mode = 'once',
-	}))
 	self:sync_explosion_sprite(explosion_frames[1])
 end
 
 local define_enemy_explosion_fsm<const> = function()
 	define_fsm('enemy_explosion', {
+		timelines = {
+			[explosion_timeline_id] = {
+				def = {
+					frames = explosion_frames,
+					ticks_per_frame = constants.enemy.explosion_frame_steps,
+					playback_mode = 'once',
+				},
+				autoplay = false,
+				on_frame = function(self, _state, event)
+					self:sync_explosion_sprite(event.frame_value)
+				end,
+				on_end = function(self)
+					self:spawn_loot()
+					self:mark_for_disposal()
+				end,
+			},
+		},
 		initial = 'animating',
 		on = {
-			[explosion_timeline_frame_event] = function(self, _state, event)
-				self:sync_explosion_sprite(event.frame_value)
-			end,
-			[explosion_timeline_end_event] = function(self)
-				self:spawn_loot()
-				self:mark_for_disposal()
-			end,
 			['room.switched'] = {
 				emitter = 'pietolon',
 				go = worldobject.mark_for_disposal,

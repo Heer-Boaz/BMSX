@@ -1,5 +1,4 @@
 import { FrameState, Runtime } from '../runtime';
-import { RunResult } from '../../cpu/cpu';
 
 export class FrameLoopState {
 	public currentTimeMs = 0;
@@ -64,7 +63,10 @@ export class FrameLoopState {
 				return false;
 			}
 		}
-		this.runActiveFrameState(this.currentFrameState);
+		const haltedUntilIrq = this.runActiveFrameState(this.currentFrameState);
+		if (haltedUntilIrq) {
+			return false;
+		}
 		const nextState = this.currentFrameState;
 		if (nextState !== previousState) {
 			return true;
@@ -86,13 +88,16 @@ export class FrameLoopState {
 		runtime.vblank.abandonTick();
 	}
 
-	private runActiveFrameState(state: FrameState): void {
+	private runActiveFrameState(state: FrameState): boolean {
 		const runtime = this.runtime;
 		if (runtime.pendingCall === 'entry') {
-			this.runUpdatePhase(state);
+			const haltedUntilIrq = this.runUpdatePhase(state);
 			state.updateExecuted = runtime.pendingCall !== 'entry';
+			this.finalizeUpdateSlice(state);
+			return haltedUntilIrq;
 		}
 		this.finalizeUpdateSlice(state);
+		return false;
 	}
 
 	private finalizeUpdateSlice(frameState: FrameState): void {
@@ -103,46 +108,44 @@ export class FrameLoopState {
 		}
 	}
 
-	private runUpdatePhase(state: FrameState): void {
+	private runUpdatePhase(state: FrameState): boolean {
 		const runtime = this.runtime;
 		const cpu = runtime.machine.cpu;
 		const cpuExecution = runtime.cpuExecution;
 		if (!runtime.cartEntryAvailable) {
-			return;
+			return false;
 		}
 		if (!runtime.luaGate.ready) {
-			return;
+			return false;
 		}
 		if (state.luaFaulted || runtime.luaRuntimeFailed) {
 			state.luaFaulted = true;
-			return;
+			return false;
 		}
 		if (state.haltGame) {
-			return;
+			return false;
 		}
 		try {
 			while (true) {
-				if (cpu.isHaltedUntilIrq() && cpuExecution.runHaltedUntilIrq(state)) {
-					return;
-				}
-				if (runtime.pendingCall !== 'entry') {
-					return;
-				}
-				const result = runtime.cpuExecution.runWithBudget(state);
 				if (cpu.isHaltedUntilIrq()) {
-					if (cpuExecution.runHaltedUntilIrq(state)) {
-						return;
+					const tickCompleted = cpuExecution.runHaltedUntilIrq(state);
+					if (tickCompleted || cpu.isHaltedUntilIrq()) {
+						return true;
 					}
 					continue;
 				}
-				if (result === RunResult.Halted) {
-					runtime.pendingCall = null;
+				if (runtime.pendingCall !== 'entry') {
+					return false;
 				}
-				return;
+				runtime.cpuExecution.runWithBudget(state);
+				if (cpu.isHaltedUntilIrq()) {
+					return true;
+				}
+				return false;
 			}
 		} catch (error) {
 			state.luaFaulted = true;
-				runtime.machine.cpu.clearHaltUntilIrq();
+			runtime.machine.cpu.clearHaltUntilIrq();
 			runtime.pendingCall = null;
 			throw error;
 		}

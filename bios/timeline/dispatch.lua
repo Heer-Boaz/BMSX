@@ -120,6 +120,15 @@ local dispatch_frame<const> = function(entry, owner, evt, dt_ms, on_frame_payloa
 	local slot<const> = acquire_slot(entry)
 	local payload<const> = slot.frame_payload
 	local time_ms<const> = evt.time_ms
+	-- DEBUG: log explosion timeline frames to help diagnose stuck animation
+	if entry and entry.instance and entry.instance.id == 'enemy_explosion.timeline.explosion' then
+		print(string.format('[DEBUG timeline.frame] id=%s owner=%s frame=%d value=%s dt=%s',
+			entry.instance.id,
+			(owner and (owner.id or tostring(owner))) or 'nil',
+			evt.current or -1,
+			tostring(evt.value),
+			tostring(dt_ms)))
+	end
 	payload.frame_index = evt.current
 	payload.frame_value = evt.value
 	payload.rewound = evt.rewound
@@ -145,6 +154,14 @@ local dispatch_end<const> = function(entry, owner, evt)
 	local payload<const> = slot.end_payload
 	payload.mode = evt.mode
 	payload.wrapped = evt.wrapped
+	-- DEBUG: log explosion timeline end events
+	if entry and entry.instance and entry.instance.id == 'enemy_explosion.timeline.explosion' then
+		print(string.format('[DEBUG timeline.end] id=%s owner=%s mode=%s wrapped=%s',
+			entry.instance.id,
+			(owner and (owner.id or tostring(owner))) or 'nil',
+			tostring(evt.mode),
+			tostring(evt.wrapped)))
+	end
 
 	local base_end_event<const> = slot.base_end_event
 	base_end_event.payload = payload

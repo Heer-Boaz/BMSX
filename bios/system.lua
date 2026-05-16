@@ -205,25 +205,6 @@ local vdp_stream_claim<const> = function(count)
 	return base
 end
 
-local ensure_component_type<const> = function(def_id, def)
-	if components.componentregistry[def_id] then
-		return
-	end
-	local luacomponent<const> = {}
-	luacomponent.__index = luacomponent
-	setmetatable(luacomponent, { __index = components.component })
-	function luacomponent.new(opts)
-		opts = opts or {}
-		opts.type_name = def_id
-		local self<const> = setmetatable(components.component.new(opts), luacomponent)
-		local class_table<const> = def.class
-		apply_class_addons(self, class_table)
-		apply_ctor(self, class_table, opts, def_id)
-		return self
-	end
-	components.register_component(def_id, luacomponent)
-end
-
 local attach_components<const> = function(instance, list)
 	if not list then
 		return
@@ -362,8 +343,24 @@ function system.define_component(definition)
 	if definition.class.update ~= nil then
 		error('define_component: component "' .. tostring(definition.def_id) .. '" cannot declare update(); move frame work into an ECS system or FSM.')
 	end
-	component_definitions[definition.def_id] = definition
-	ensure_component_type(definition.def_id, definition)
+	local def_id<const> = definition.def_id
+	component_definitions[def_id] = definition
+	if components.componentregistry[def_id] then
+		return
+	end
+	local luacomponent<const> = {}
+	luacomponent.__index = luacomponent
+	setmetatable(luacomponent, { __index = components.component })
+	function luacomponent.new(opts)
+		opts = opts or {}
+		opts.type_name = def_id
+		local self<const> = setmetatable(components.component.new(opts), luacomponent)
+		local class_table<const> = definition.class
+		apply_class_addons(self, class_table)
+		apply_ctor(self, class_table, opts, def_id)
+		return self
+	end
+	components.register_component(def_id, luacomponent)
 end
 
 function system.define_effect(definition, opts)
@@ -560,13 +557,6 @@ function system.attach_component(object_or_id, component_or_type)
 end
 
 function system.update_world()
-	-- if ide_editor.is_enabled() then
-	-- 	ide_editor.update()
-	-- 	if ide_editor.is_open() then
-	-- 		ide_editor.draw()
-	-- 		return
-	-- 	end
-	-- end
 	world_instance:update()
 end
 

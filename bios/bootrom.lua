@@ -403,6 +403,9 @@ local update_boot_screen<const> = function()
 		end
 		return
 	end
+	if boot_requested and mem[sys_boot_cart] == 0 then
+		return
+	end
 	render_boot_screen(scroll_delta)
 	if not boot_screen_presented then
 		boot_screen_presented = true

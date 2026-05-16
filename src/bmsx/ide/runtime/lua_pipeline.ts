@@ -38,6 +38,8 @@ import {
 	type ProgramSymbolsImage,
 } from '../../machine/program/loader';
 import {
+	IRQ_IMG_DONE,
+	IRQ_IMG_ERROR,
 	IRQ_NEWGAME,
 	IRQ_REINIT,
 } from '../../machine/bus/io';
@@ -130,6 +132,8 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 		clearCartModuleCacheForHotResume(runtime);
 	} else {
 		runtime.moduleCache.clear();
+		runtime.machine.imgDecController.reset();
+		runtime.machine.irqController.acknowledge(IRQ_IMG_DONE | IRQ_IMG_ERROR);
 	}
 	runtime.machine.vdp.resetIngressState();
 	const prelude = runSystemBuiltinPrelude(runtime, program, metadata);

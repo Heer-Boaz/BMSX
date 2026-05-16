@@ -43,12 +43,8 @@ export class IrqController {
 		}
 	}
 
-	private onFlagsRead(): Value {
-		return this.pendingFlags;
-	}
-
-	private onAckWrite(_addr: number, value: Value): void {
-		const ack = (value as number) >>> 0;
+	public acknowledge(mask: number): void {
+		const ack = mask >>> 0;
 		if (ack !== 0) {
 			const next = (this.pendingFlags & ~ack) >>> 0;
 			if (next !== this.pendingFlags) {
@@ -56,5 +52,13 @@ export class IrqController {
 			}
 		}
 		this.memory.writeIoValue(IO_IRQ_ACK, 0);
+	}
+
+	private onFlagsRead(): Value {
+		return this.pendingFlags;
+	}
+
+	private onAckWrite(_addr: number, value: Value): void {
+		this.acknowledge(value as number);
 	}
 }
