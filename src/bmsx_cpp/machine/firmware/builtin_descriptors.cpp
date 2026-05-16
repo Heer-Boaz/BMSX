@@ -5,7 +5,7 @@
 
 namespace bmsx {
 namespace {
-constexpr std::array<LuaBuiltinDescriptor, 61> kSystemLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 62> kSystemLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"define_fsm", "define_fsm(id, blueprint)", ""},
 	LuaBuiltinDescriptor{"define_prefab", "define_prefab(definition)", ""},
 	LuaBuiltinDescriptor{"define_subsystem", "define_subsystem(definition)", ""},
