@@ -6,6 +6,7 @@ local round<const> = function(x)
 	end
 	return -(((-x) + 0.5) // 1)
 end
+builders.round = round
 
 local shake_hash<const> = function(seed)
 	seed = seed ~ (seed << 13)

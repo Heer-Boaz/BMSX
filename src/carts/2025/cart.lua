@@ -25,20 +25,13 @@ local create_rect_state<const> = function(z)
 		y = 0,
 		width = 0,
 		height = 0,
+		layer = sys_vdp_layer_world,
 		z = z,
 		r = 0,
 		g = 0,
 		b = 0,
 		a = 0,
-		color = 0x00000000,
 	}
-end
-
-local submit_rect_state<const> = function(rect)
-	if not rect.visible or rect.a <= 0 or rect.width <= 0 or rect.height <= 0 then
-		return
-	end
-	vdp_fill_rect_color(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, rect.z, sys_vdp_layer_world, rect.color)
 end
 
 local create_transition_visuals<const> = function()
@@ -75,12 +68,12 @@ local build_director_fsm<const> = function()
 					self.combat_results_visual = create_rect_state(10)
 					self.transition_rc = attach_component(self, 'customvisualcomponent')
 					self.transition_rc:add_producer(function(ctx)
-						submit_rect_state(ctx.parent.combat_results_visual)
-						submit_rect_state(ctx.parent.transition_visual.overlay)
+						ctx.rc:submit_rect(ctx.parent.combat_results_visual)
+						ctx.rc:submit_rect(ctx.parent.transition_visual.overlay)
 						for i = 1, #ctx.parent.transition_visual.panels do
-							submit_rect_state(ctx.parent.transition_visual.panels[i])
+							ctx.rc:submit_rect(ctx.parent.transition_visual.panels[i])
 						end
-						submit_rect_state(ctx.parent.transition_visual.accent)
+						ctx.rc:submit_rect(ctx.parent.transition_visual.accent)
 					end)
 				self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
 				self.inline_pages = {}

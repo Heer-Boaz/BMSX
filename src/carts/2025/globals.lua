@@ -189,7 +189,7 @@ p3_black_g = 0
 p3_black_b = 0
 
 p3_transition_palette_dialogue = {
-	overlay = { r = p3_ink_r, g = p3_ink_g, b = p3_ink_b },
+	overlay = { r = p3_cyan_r, g = p3_cyan_g, b = p3_cyan_b },
 	panel_primary = { r = p3_blue_r, g = p3_blue_g, b = p3_blue_b },
 	panel_secondary = { r = p3_black_r, g = p3_black_g, b = p3_black_b },
 	accent = { r = p3_cyan_r, g = p3_cyan_g, b = p3_cyan_b },
