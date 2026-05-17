@@ -33,6 +33,8 @@ public:
 	void initialize(VDP& vdp);
 	void consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) override;
 	VdpSlotTexturePixels readSurfaceTexturePixels(u32 surfaceId) const;
+	u32 readSurfaceTextureWidth(u32 surfaceId) const;
+	u32 readSurfaceTextureHeight(u32 surfaceId) const;
 
 private:
 	bool isSyncedTextureSize(u32 surfaceId, u32 width, u32 height) const;

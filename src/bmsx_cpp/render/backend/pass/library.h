@@ -27,6 +27,8 @@ namespace bmsx {
 class GameView;
 class RenderGraphRuntime;
 class RenderGraphContext;
+class Runtime;
+struct VdpBlitterCommandBuffer;
 
 /* ============================================================================
  * Render pass state types
@@ -113,6 +115,11 @@ struct DeviceQuantizePipelineState {
 	i32 baseHeight = 0;
 	TextureHandle colorTex = nullptr;
 	i32 ditherType = 0;
+};
+
+struct VdpFrameBufferExecutionPassState {
+	Runtime* runtime = nullptr;
+	VdpBlitterCommandBuffer* commands = nullptr;
 };
 
 struct FrameSharedState {
@@ -227,8 +234,6 @@ public:
 	explicit RenderPassLibrary(GPUBackend* backend);
 	~RenderPassLibrary();
 
-	// Register builtin passes based on backend type
-	void registerBuiltin();
 
 	// Pass registration
 	void registerPass(const RenderPassDef& desc);
@@ -299,8 +304,6 @@ private:
 		bool present = false;
 	};
 
-	void registerBuiltinPassesSoftware();
-	void registerBuiltinPassesOpenGLES2();
 
 	GPUBackend* m_backend;
 	std::vector<RenderPassDef> m_passes;

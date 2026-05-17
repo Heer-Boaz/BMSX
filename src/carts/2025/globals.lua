@@ -37,8 +37,6 @@ transition_accent_out_frames = 4
 transition_text_in_frames = 6
 transition_text_hold_frames = 32
 transition_text_out_frames = 5
-transition_flash_frames = 2
-transition_flash_mix = 0.35
 
 combat_fade_timeline_id = 'combat_fade'
 combat_fade_out_frames = 10
@@ -175,42 +173,48 @@ combat_parallax_momentum_step = 1
 combat_parallax_momentum_limit_steps = 5
 combat_parallax_pmu_scale_q16 = 0x000100f5
 
-p3_blue_r = 0.07
-p3_blue_g = 0.28
-p3_blue_b = 0.8
-p3_cyan_r = 0.32
-p3_cyan_g = 0.86
-p3_cyan_b = 0.98
-p3_ink_r = 0.02
-p3_ink_g = 0.05
-p3_ink_b = 0.12
+p3_blue_r = 0.04
+p3_blue_g = 0.57
+p3_blue_b = 0.93
+p3_blue_color = 0xff0a91ec
+p3_cyan_r = 0.1
+p3_cyan_g = 0.82
+p3_cyan_b = 1
+p3_cyan_color = 0xff1ad1ff
+p3_ink_r = 0.06
+p3_ink_g = 0.16
+p3_ink_b = 0.38
+p3_ink_color = 0xff0f2961
+p3_white_r = 1
+p3_white_g = 1
+p3_white_b = 1
+p3_white_color = 0xffffffff
 p3_black_r = 0
 p3_black_g = 0
 p3_black_b = 0
+p3_black_color = 0xff000000
 
 p3_transition_palette_dialogue = {
-	overlay = { r = p3_cyan_r, g = p3_cyan_g, b = p3_cyan_b },
-	panel_primary = { r = p3_blue_r, g = p3_blue_g, b = p3_blue_b },
-	panel_secondary = { r = p3_black_r, g = p3_black_g, b = p3_black_b },
-	accent = { r = p3_cyan_r, g = p3_cyan_g, b = p3_cyan_b },
+	overlay = p3_blue_color,
+	panel_primary = p3_blue_color,
+	panel_secondary = p3_blue_color,
+	accent = p3_cyan_color,
 }
 p3_transition_palette_combat = {
-	overlay = { r = p3_black_r, g = p3_black_g, b = p3_black_b },
-	panel_primary = { r = p3_black_r, g = p3_black_g, b = p3_black_b },
-	panel_secondary = { r = p3_blue_r, g = p3_blue_g, b = p3_blue_b },
-	accent = { r = p3_cyan_r, g = p3_cyan_g, b = p3_cyan_b },
+	overlay = p3_black_color,
+	panel_primary = p3_black_color,
+	panel_secondary = p3_blue_color,
+	accent = p3_cyan_color,
 }
 p3_transition_palette_ending = {
-	overlay = { r = p3_blue_r, g = p3_blue_g, b = p3_blue_b },
-	panel_primary = { r = p3_blue_r, g = p3_blue_g, b = p3_blue_b },
-	panel_secondary = { r = p3_ink_r, g = p3_ink_g, b = p3_ink_b },
-	accent = { r = p3_cyan_r, g = p3_cyan_g, b = p3_cyan_b },
+	overlay = p3_blue_color,
+	panel_primary = p3_blue_color,
+	panel_secondary = p3_blue_color,
+	accent = p3_cyan_color,
 }
 p3_transition_palette_choice = p3_transition_palette_dialogue
 
-combat_results_bg_r = p3_blue_r
-combat_results_bg_g = p3_blue_g
-combat_results_bg_b = p3_blue_b
+combat_results_bg_color = p3_blue_color
 combat_results_bg_a = 0.85
 
 local clear_texts<const> = function(text_ids)
@@ -242,55 +246,26 @@ local show_background<const> = function(id)
 end
 
 local reset_text_colors<const> = function()
-	local main_color<const> = oget(text_main_id).text_color
-	main_color.r = 1
-	main_color.g = 1
-	main_color.b = 1
-	main_color.a = 1
-	local choice_color<const> = oget(text_choice_id).text_color
-	choice_color.r = 1
-	choice_color.g = 1
-	choice_color.b = 1
-	choice_color.a = 1
-	local prompt_color<const> = oget(text_prompt_id).text_color
-	prompt_color.r = 1
-	prompt_color.g = 1
-	prompt_color.b = 1
-	prompt_color.a = 1
-	local transition_color<const> = oget(text_transition_id).text_color
-	transition_color.r = 1
-	transition_color.g = 1
-	transition_color.b = 1
-	transition_color.a = 1
-	local results_color<const> = oget(text_results_id).text_color
-	results_color.r = 1
-	results_color.g = 1
-	results_color.b = 1
-	results_color.a = 1
+	oget(text_main_id).text_color = p3_white_color
+	oget(text_choice_id).text_color = p3_white_color
+	oget(text_prompt_id).text_color = p3_white_color
+	oget(text_transition_id).text_color = p3_ink_color
+	oget(text_results_id).text_color = p3_white_color
 end
 
 local hide_transition_layers<const> = function()
 	local director<const> = oget(director_instance_id)
 	local overlay<const> = director.transition_visual.overlay
 	overlay.visible = false
-	overlay.r = 0
-	overlay.g = 0
-	overlay.b = 0
-	overlay.a = 0
+	overlay.color = 0
 	for i = 1, #director.transition_visual.panels do
 		local panel<const> = director.transition_visual.panels[i]
 		panel.visible = false
-		panel.r = 0
-		panel.g = 0
-		panel.b = 0
-		panel.a = 0
+		panel.color = 0
 	end
 	local accent<const> = director.transition_visual.accent
 	accent.visible = false
-	accent.r = 0
-	accent.g = 0
-	accent.b = 0
-	accent.a = 0
+	accent.color = 0
 end
 
 local hide_combat_sprites<const> = function()
@@ -338,8 +313,6 @@ return {
 	transition_text_in_frames = transition_text_in_frames,
 	transition_text_hold_frames = transition_text_hold_frames,
 	transition_text_out_frames = transition_text_out_frames,
-	transition_flash_frames = transition_flash_frames,
-	transition_flash_mix = transition_flash_mix,
 	combat_fade_timeline_id = combat_fade_timeline_id,
 	combat_fade_out_frames = combat_fade_out_frames,
 	combat_fade_hold_frames = combat_fade_hold_frames,
@@ -468,22 +441,28 @@ return {
 	p3_blue_r = p3_blue_r,
 	p3_blue_g = p3_blue_g,
 	p3_blue_b = p3_blue_b,
+	p3_blue_color = p3_blue_color,
 	p3_cyan_r = p3_cyan_r,
 	p3_cyan_g = p3_cyan_g,
 	p3_cyan_b = p3_cyan_b,
+	p3_cyan_color = p3_cyan_color,
 	p3_ink_r = p3_ink_r,
 	p3_ink_g = p3_ink_g,
 	p3_ink_b = p3_ink_b,
+	p3_ink_color = p3_ink_color,
+	p3_white_r = p3_white_r,
+	p3_white_g = p3_white_g,
+	p3_white_b = p3_white_b,
+	p3_white_color = p3_white_color,
 	p3_black_r = p3_black_r,
 	p3_black_g = p3_black_g,
 	p3_black_b = p3_black_b,
+	p3_black_color = p3_black_color,
 	p3_transition_palette_dialogue = p3_transition_palette_dialogue,
 	p3_transition_palette_combat = p3_transition_palette_combat,
 	p3_transition_palette_ending = p3_transition_palette_ending,
 	p3_transition_palette_choice = p3_transition_palette_choice,
-	combat_results_bg_r = combat_results_bg_r,
-	combat_results_bg_g = combat_results_bg_g,
-	combat_results_bg_b = combat_results_bg_b,
+	combat_results_bg_color = combat_results_bg_color,
 	combat_results_bg_a = combat_results_bg_a,
 	clear_texts = clear_texts,
 	apply_background = apply_background,

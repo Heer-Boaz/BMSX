@@ -115,6 +115,10 @@ import { Memory } from '../../src/bmsx/machine/memory/memory';
 import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
 import { createVdpTransformSnapshot, resolveVdpTransformSnapshot } from '../../src/bmsx/render/vdp/transform';
+import { drainReadyVdpFrameBufferExecutionForSoftware } from '../../src/bmsx/render/backend/software/vdp_framebuffer_execution';
+import { HeadlessGPUBackend } from '../../src/bmsx/render/headless/backend';
+
+const softwareBackend = new HeadlessGPUBackend();
 
 const VDP_BILLBOARD_HEADER = VDP_BBU_PACKET_KIND | (VDP_BBU_PACKET_PAYLOAD_WORDS << 16);
 const VDP_SKYBOX_HEADER = VDP_SBX_PACKET_KIND | (VDP_SBX_PACKET_PAYLOAD_WORDS << 16);
@@ -295,6 +299,7 @@ test('VDP framebuffer present edge swaps CPU-visible display page', () => {
 	const workUnits = vdp.getPendingRenderWorkUnits();
 	assert.ok(workUnits > 0);
 	vdp.advanceWork(workUnits);
+	drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, vdp);
 
 	const readback = new Uint8Array(4);
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
@@ -362,6 +367,7 @@ test('VDP PMU resolves parallax into BLIT geometry before backend execution', ()
 	assert.equal(command.scaleX[0], 1);
 	assert.equal(command.scaleY[0], 1);
 	vdp.advanceWork(workUnits);
+	drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, vdp);
 	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
 });
 
@@ -399,6 +405,7 @@ test('VDP PMU bank registers resolve DRAW_CTRL bank and signed weight', () => {
 	assert.equal(command.scaleX[0], 1.25);
 	assert.equal(command.scaleY[0], 1);
 	vdp.advanceWork(workUnits);
+	drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, vdp);
 	assert.equal(vdp.getPendingRenderWorkUnits(), 0);
 });
 
@@ -862,6 +869,7 @@ test('VDP save-state restores raw registerfile and surface geometry', () => {
 	const workUnits = vdp.getPendingRenderWorkUnits();
 	assert.ok(workUnits > 0);
 	vdp.advanceWork(workUnits);
+	drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, vdp);
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
 	const displayPixel = new Uint8Array(4);
 	assert.equal(vdp.readFrameBufferPixels(VDP_FRAMEBUFFER_PAGE_DISPLAY, 0, 0, 1, 1, displayPixel), true);
@@ -886,11 +894,13 @@ test('VDP save-state restores active and queued submitted frames', () => {
 
 	memory.writeValue(IO_VDP_REG_BG_COLOR, 0xff303132);
 	vdp.advanceWork(vdp.getPendingRenderWorkUnits());
+	drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, vdp);
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
 
 	vdp.restoreSaveState(saved);
 	assert.equal(vdp.getPendingRenderWorkUnits(), firstFrameWork);
 	vdp.advanceWork(vdp.getPendingRenderWorkUnits());
+	drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, vdp);
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
 	const firstDisplayPixel = new Uint8Array(4);
 	assert.equal(vdp.readFrameBufferPixels(VDP_FRAMEBUFFER_PAGE_DISPLAY, 0, 0, 1, 1, firstDisplayPixel), true);
@@ -898,6 +908,7 @@ test('VDP save-state restores active and queued submitted frames', () => {
 
 	assert.ok(vdp.getPendingRenderWorkUnits() > 0);
 	vdp.advanceWork(vdp.getPendingRenderWorkUnits());
+	drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, vdp);
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
 	const secondDisplayPixel = new Uint8Array(4);
 	assert.equal(vdp.readFrameBufferPixels(VDP_FRAMEBUFFER_PAGE_DISPLAY, 0, 0, 1, 1, secondDisplayPixel), true);
@@ -1100,6 +1111,7 @@ test('VDP XF state is committed with the submitted frame instead of latest live 
 	const workUnits = vdp.getPendingRenderWorkUnits();
 	assert.ok(workUnits > 0);
 	vdp.advanceWork(workUnits);
+	drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, vdp);
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
 	const output = vdp.readDeviceOutput();
 	assert.equal(output.xfViewMatrixIndex, 2);
@@ -1134,6 +1146,7 @@ test('VDP BBU accepts BILLBOARD packets into frame-latched instance RAM', () => 
 	assert.equal((vdp as any).activeFrame.hasCommands, true);
 	assert.equal((vdp as any).activeFrame.hasFrameBufferCommands, false);
 	vdp.advanceWork(1);
+	drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, vdp);
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), false);
 	const output = vdp.readDeviceOutput();
 	const billboards = output.billboards;
@@ -1171,6 +1184,7 @@ test('VDP BBU faults only at BILLBOARD packet latch', () => {
 	sealStream(memory, vdp, [...billboardPacket(1 << 16, 0, 0, 1, 1), VDP_PKT_END]);
 	assert.equal(vdp.getPendingRenderWorkUnits(), 1);
 	vdp.advanceWork(1);
+	drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, vdp);
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), false);
 	assert.equal(vdp.readDeviceOutput().billboards.length, 1);
 

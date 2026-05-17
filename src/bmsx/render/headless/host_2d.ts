@@ -61,13 +61,13 @@ function drawRect(target: Uint8Array, width: number, height: number, command: Re
 	const area = command.area;
 	const colorValue = command.color;
 	if (command.kind === RectRenderKind.Fill) {
-		fillRect(target, width, height, area.left | 0, area.top | 0, area.right | 0, area.bottom | 0, colorValue);
+		fillRect(target, width, height, area.left, area.top, area.right, area.bottom, colorValue);
 		return;
 	}
-	fillRect(target, width, height, area.left | 0, area.top | 0, area.right | 0, (area.top + 1) | 0, colorValue);
-	fillRect(target, width, height, area.left | 0, (area.bottom - 1) | 0, area.right | 0, area.bottom | 0, colorValue);
-	fillRect(target, width, height, area.left | 0, area.top | 0, (area.left + 1) | 0, area.bottom | 0, colorValue);
-	fillRect(target, width, height, (area.right - 1) | 0, area.top | 0, area.right | 0, area.bottom | 0, colorValue);
+	fillRect(target, width, height, area.left, area.top, area.right, area.top + 1, colorValue);
+	fillRect(target, width, height, area.left, area.bottom - 1, area.right, area.bottom, colorValue);
+	fillRect(target, width, height, area.left, area.top, area.left + 1, area.bottom, colorValue);
+	fillRect(target, width, height, area.right - 1, area.top, area.right, area.bottom, colorValue);
 }
 
 function drawPoly(target: Uint8Array, width: number, height: number, command: PolyRenderSubmission): void {
@@ -78,10 +78,10 @@ function drawPoly(target: Uint8Array, width: number, height: number, command: Po
 }
 
 function drawLine(target: Uint8Array, width: number, height: number, x0: number, y0: number, x1: number, y1: number, thickness: number, colorValue: color): void {
-	let ix0 = x0 | 0;
-	let iy0 = y0 | 0;
-	const ix1 = x1 | 0;
-	const iy1 = y1 | 0;
+	let ix0 = x0;
+	let iy0 = y0;
+	const ix1 = x1;
+	const iy1 = y1;
 	let dx = ix1 - ix0;
 	let dy = iy1 - iy0;
 	const sx = dx < 0 ? -1 : 1;
@@ -89,9 +89,10 @@ function drawLine(target: Uint8Array, width: number, height: number, x0: number,
 	if (dx < 0) dx = -dx;
 	if (dy < 0) dy = -dy;
 	let err = dx - dy;
-	const half = (thickness / 2) | 0;
+	const thicknessPixels = thickness;
+	const half = thicknessPixels >> 1;
 	for (;;) {
-		fillRect(target, width, height, ix0 - half, iy0 - half, ix0 + half + 1, iy0 + half + 1, colorValue);
+		fillRect(target, width, height, ix0 - half, iy0 - half, ix0 - half + thicknessPixels, iy0 - half + thicknessPixels, colorValue);
 		if (ix0 === ix1 && iy0 === iy1) {
 			return;
 		}
@@ -119,10 +120,10 @@ function drawImage(target: Uint8Array, width: number, height: number, command: H
 		source.v,
 		source.w,
 		source.h,
-		command.pos.x | 0,
-		command.pos.y | 0,
-		(source.w * scale.x) | 0,
-		(source.h * scale.y) | 0,
+		command.pos.x,
+		command.pos.y,
+		source.w * scale.x,
+		source.h * scale.y,
 		flip.flip_h,
 		flip.flip_v,
 		command.colorize,
@@ -140,10 +141,10 @@ function drawBatchBlit(target: Uint8Array, width: number, height: number, comman
 				target,
 				width,
 				height,
-				x | 0,
-				y | 0,
-				(x + item.advance) | 0,
-				(y + lineHeight) | 0,
+				x,
+				y,
+				x + item.advance,
+				y + lineHeight,
 				backgroundColor,
 			);
 		}
@@ -156,8 +157,8 @@ function drawBatchBlit(target: Uint8Array, width: number, height: number, comman
 			source.v,
 			source.w,
 			source.h,
-			x | 0,
-			y | 0,
+			x,
+			y,
 			item.width,
 			item.height,
 			false,
@@ -168,6 +169,10 @@ function drawBatchBlit(target: Uint8Array, width: number, height: number, comman
 }
 
 function fillRect(target: Uint8Array, width: number, height: number, left: number, top: number, right: number, bottom: number, colorValue: color): void {
+	left = left;
+	top = top;
+	right = right;
+	bottom = bottom;
 	if (left < 0) left = 0;
 	if (top < 0) top = 0;
 	if (right > width) right = width;
@@ -198,22 +203,26 @@ function drawHostAtlasRect(target: Uint8Array,
 	colorValue: color): void {
 	const atlas = hostSystemAtlasPixels();
 	const colorR = (colorValue >>> 16) & 0xff, colorG = (colorValue >>> 8) & 0xff, colorB = colorValue & 0xff, colorA = (colorValue >>> 24) & 0xff;
-	let startX = dstX;
-	let startY = dstY;
-	let endX = dstX + dstW;
-	let endY = dstY + dstH;
+	const dstXi = dstX;
+	const dstYi = dstY;
+	const dstWi = dstW;
+	const dstHi = dstH;
+	let startX = dstXi;
+	let startY = dstYi;
+	let endX = dstXi + dstWi;
+	let endY = dstYi + dstHi;
 	if (startX < 0) startX = 0;
 	if (startY < 0) startY = 0;
 	if (endX > width) endX = width;
 	if (endY > height) endY = height;
 	for (let y = startY; y < endY; y += 1) {
-		const relY = y - dstY;
-		const sampleY = flipV ? (dstH - 1 - relY) : relY;
-		const srcY = sourceY + (((sampleY * sourceH) / dstH) | 0);
+		const relY = y - dstYi;
+		const sampleY = flipV ? (dstHi - 1 - relY) : relY;
+		const srcY = sourceY + ((sampleY * sourceH / dstHi) | 0);
 		for (let x = startX; x < endX; x += 1) {
-			const relX = x - dstX;
-			const sampleX = flipH ? (dstW - 1 - relX) : relX;
-			const srcX = sourceX + (((sampleX * sourceW) / dstW) | 0);
+			const relX = x - dstXi;
+			const sampleX = flipH ? (dstWi - 1 - relX) : relX;
+			const srcX = sourceX + ((sampleX * sourceW / dstWi) | 0);
 			const srcOffset = (srcY * HOST_SYSTEM_ATLAS_WIDTH + srcX) * 4;
 			const sourceAlpha = (atlas[srcOffset + 3] * colorA + 127) / 255;
 			blendPixel(

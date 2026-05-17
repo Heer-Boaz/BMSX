@@ -55,7 +55,6 @@ constexpr const char* kGamepadDevicePrefix = "gamepad:";
 
 static void installBuiltinRenderPipeline(GameView* view, GPUBackend* backend) {
 	auto registry = std::make_unique<RenderPassLibrary>(backend);
-	registry->registerBuiltin();
 	view->setPipelineRegistry(std::move(registry));
 	view->rebuildGraph();
 }
@@ -285,7 +284,6 @@ void LibretroPlatform::switchToSoftwareBackend() {
 	);
 	view->setBackend(std::move(backend));
 	auto registry = std::make_unique<RenderPassLibrary>(view->backend());
-	registry->registerBuiltin();
 	view->setPipelineRegistry(std::move(registry));
 	view->rebuildGraph();
 	setPostProcessOptions(m_crt_postprocessing_enabled, m_postprocess_scale > 1);

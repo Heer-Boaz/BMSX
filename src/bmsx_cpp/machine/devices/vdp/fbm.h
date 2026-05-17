@@ -25,6 +25,7 @@ public:
 	std::vector<u8> captureDisplayReadback() const;
 	void restoreDisplayReadback(const std::vector<u8>& pixels);
 	void presentPage(VdpSurfaceUploadSlot& renderSlot);
+	void presentTexturePage();
 	void copyReadbackPixelsFrom(const std::vector<u8>& source, u32 x, u32 y, u32 width, u32 height, u8* out);
 	const VdpFrameBufferPresentation& buildPresentation(const std::vector<u8>& renderReadback, bool forceFullSync = false);
 	void clearPresentation();
@@ -39,6 +40,7 @@ private:
 	VdpFbmState m_state = VdpFbmState::PageWritable;
 	std::vector<u8> m_displayFrameBufferCpuReadback;
 	u32 m_presentationCount = 0u;
+	bool m_presentationReadbackValid = false;
 	bool m_presentationRequiresFullSync = false;
 	u32 m_presentationDirtyRowStart = 0u;
 	u32 m_presentationDirtyRowEnd = 0u;

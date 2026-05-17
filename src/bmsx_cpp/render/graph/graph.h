@@ -13,7 +13,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace bmsx {
@@ -119,7 +118,8 @@ private:
 		TexDesc desc;
 		TextureHandle tex = nullptr;
 		void* fboColorOnly = nullptr;
-		std::unordered_map<RenderGraphTexHandle, void*> fboWithDepth;
+		void* fboDepthHandle = nullptr;
+		RenderGraphTexHandle fboDepthAttachment = -1;
 		std::vector<i32> writerPasses;
 		std::vector<i32> readPasses;
 		bool present = false;
@@ -146,7 +146,6 @@ private:
 
 	void realizeAll();
 	void destroyResources();
-	void* ensureFBO(RenderGraphTexHandle color, RenderGraphTexHandle depth);
 	bool resolveExecutablePass(i32 orderIndex, bool hasOrder, ExecutablePass& out);
 	WriteTargets writeTargetsForPass(i32 passIndex) const;
 	bool beginClearPass(RenderGraphTexHandle color, RenderGraphTexHandle depth, i32 passIndex, const std::string& label, PassEncoder& passEnc);

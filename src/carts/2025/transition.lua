@@ -2,6 +2,7 @@ local transition<const> = {}
 local globals<const> = require('globals')
 local story<const> = require('story')
 local timeline_builders<const> = require('timeline_builders')
+local color<const> = require('bios/common/color')
 local build_transition_frames<const> = timeline_builders.build_transition_frames
 local build_transition_fade_in_frames<const> = timeline_builders.build_transition_fade_in_frames
 local build_fade_frames<const> = timeline_builders.build_fade_frames
@@ -201,10 +202,7 @@ function transition.register_states(states)
 			overlay.y = 0
 			overlay.width = machine_manifest.render_size.width
 			overlay.height = machine_manifest.render_size.height
-			overlay.r = base.r
-			overlay.g = base.g
-			overlay.b = base.b
-			overlay.a = start_alpha
+			overlay.color = color.with_alpha(base, start_alpha)
 			for i = 1, #self.transition_panels do
 				local panel<const> = self.transition_panels[i]
 				local visual<const> = self.transition_visual.panels[i]
@@ -213,10 +211,7 @@ function transition.register_states(states)
 				visual.y = panel.y
 				visual.width = panel.width
 				visual.height = panel.height
-				visual.r = panel.color.r
-				visual.g = panel.color.g
-				visual.b = panel.color.b
-				visual.a = 0
+				visual.color = color.with_alpha(panel.color, 0)
 			end
 			local accent<const> = self.transition_visual.accent
 			accent.visible = true
@@ -224,10 +219,7 @@ function transition.register_states(states)
 			accent.y = self.transition_accent.y
 			accent.width = self.transition_accent.width
 			accent.height = self.transition_accent.height
-			accent.r = self.transition_accent.color.r
-			accent.g = self.transition_accent.color.g
-			accent.b = self.transition_accent.color.b
-			accent.a = 0
+			accent.color = color.with_alpha(self.transition_accent.color, 0)
 			if self.skip_transition_fade then
 				globals.apply_background(self.transition_target_bg)
 			end
@@ -310,10 +302,7 @@ function transition.register_states(states)
 			overlay.y = 0
 			overlay.width = machine_manifest.render_size.width
 			overlay.height = machine_manifest.render_size.height
-			overlay.r = base.r
-			overlay.g = base.g
-			overlay.b = base.b
-			overlay.a = 1
+			overlay.color = base
 			local target<const> = { overlay = overlay }
 			local frames<const> = build_transition_fade_in_frames(self.transition_palette)
 			self:define_timeline(timeline.new({
@@ -375,10 +364,7 @@ function transition.register_states(states)
 			overlay.y = 0
 			overlay.width = machine_manifest.render_size.width
 			overlay.height = machine_manifest.render_size.height
-			overlay.r = base.r
-			overlay.g = base.g
-			overlay.b = base.b
-			overlay.a = 0
+			overlay.color = color.with_alpha(base, 0)
 			local target<const> = { overlay = overlay }
 			local frames<const> = build_fade_frames({
 				palette = self.fade_palette,
@@ -427,10 +413,7 @@ function transition.register_states(states)
 				overlay.y = 0
 				overlay.width = machine_manifest.render_size.width
 				overlay.height = machine_manifest.render_size.height
-				overlay.r = base.r
-				overlay.g = base.g
-				overlay.b = base.b
-				overlay.a = 1
+				overlay.color = base
 				globals.hide_transition_layers()
 			else
 				globals.hide_transition_layers()

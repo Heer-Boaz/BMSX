@@ -3,7 +3,6 @@ import { Input } from "../input/manager";
 import { GameView } from "../render/gameview";
 import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
-import { ensureBrowserBackendFactory } from "../render/backend/browser_factory";
 import { setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
 import { DEFAULT_UFPS } from '../machine/runtime/timing/constants';
@@ -129,9 +128,6 @@ export class ConsoleCore {
 			this.input.enableOnscreenGamepad();
 		}
 
-		if (typeof document !== 'undefined') {
-			ensureBrowserBackendFactory();
-		}
 		const gview = new GameView({
 			viewportSize,
 			host: resolvedViewHost,
@@ -144,8 +140,7 @@ export class ConsoleCore {
 		const textureManager = new TextureManager(gpuBackend);
 		gview.vdpFrameBufferTextures = new VdpFrameBufferTextures(textureManager, gview);
 		gview.vdpSlotTextures = new VdpSlotTextures(textureManager, gview);
-		const pipelineRegistry = new RenderPassLibrary(gpuBackend);
-		pipelineRegistry.registerBuiltin(gpuBackend);
+		const pipelineRegistry = new RenderPassLibrary(gpuBackend, runtime, gview);
 		gview.pipelineRegistry = pipelineRegistry;
 		gview.applyPresentationPassState();
 		gview.init();
@@ -165,6 +160,7 @@ export class ConsoleCore {
 		});
 
 		await gview.initializeDefaultTextures();
+		restoreVdpContextState(runtime.machine.vdp, gview);
 		await runtime.startPreparedRuntime();
 
 		if (this.debug) {

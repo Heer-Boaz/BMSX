@@ -53,8 +53,6 @@ VdpBlitterCommandSaveState captureBlitterCommandState(const VdpBlitterCommandBuf
 	state.flipV = buffer.flipV[index] != 0u;
 	state.color = buffer.color[index];
 	state.parallaxWeight = buffer.parallaxWeight[index];
-	state.srcX = buffer.srcX[index];
-	state.srcY = buffer.srcY[index];
 	state.width = buffer.width[index];
 	state.height = buffer.height[index];
 	state.x0 = buffer.x0[index];
@@ -108,8 +106,6 @@ void restoreBlitterCommand(VdpBlitterCommandBuffer& buffer, size_t index, const 
 	buffer.flipV[index] = state.flipV ? 1u : 0u;
 	buffer.color[index] = state.color;
 	buffer.parallaxWeight[index] = state.parallaxWeight;
-	buffer.srcX[index] = state.srcX;
-	buffer.srcY[index] = state.srcY;
 	buffer.width[index] = state.width;
 	buffer.height[index] = state.height;
 	buffer.x0[index] = state.x0;
@@ -210,6 +206,7 @@ void resetSubmittedFrameSlot(VdpSubmittedFrame& frame) {
 	frame.state = VdpSubmittedFrameState::Empty;
 	frame.hasCommands = false;
 	frame.hasFrameBufferCommands = false;
+	frame.frameBufferReadbackValid = false;
 	frame.cost = 0;
 	frame.workRemaining = 0;
 	frame.ditherType = 0;
@@ -246,6 +243,7 @@ VdpSubmittedFrameSaveState captureSubmittedFrameState(const VdpSubmittedFrame& f
 	state.billboards = captureBbuFrameBufferState(*frame.billboards);
 	state.hasCommands = frame.hasCommands;
 	state.hasFrameBufferCommands = frame.hasFrameBufferCommands;
+	state.frameBufferReadbackValid = frame.frameBufferReadbackValid;
 	state.cost = frame.cost;
 	state.workRemaining = frame.workRemaining;
 	state.ditherType = frame.ditherType;
@@ -265,6 +263,7 @@ void restoreSubmittedFrameState(VdpSubmittedFrame& frame, const VdpSubmittedFram
 	restoreBbuFrameBufferState(*frame.billboards, state.billboards);
 	frame.hasCommands = state.hasCommands;
 	frame.hasFrameBufferCommands = state.hasFrameBufferCommands;
+	frame.frameBufferReadbackValid = state.frameBufferReadbackValid;
 	frame.cost = state.cost;
 	frame.workRemaining = state.workRemaining;
 	frame.ditherType = state.ditherType;

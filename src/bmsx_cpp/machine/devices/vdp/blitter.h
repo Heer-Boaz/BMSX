@@ -36,7 +36,6 @@ using VdpSkyboxSamples = std::array<VdpResolvedBlitterSample, SKYBOX_FACE_COUNT>
 enum class VdpBlitterCommandType : u8 {
 	Clear = 1,
 	Blit = 2,
-	CopyRect = 3,
 	FillRect = 4,
 	DrawLine = 5,
 	BatchBlit = 6,
@@ -56,8 +55,8 @@ struct VdpBlitterCommandBuffer {
 	std::array<u32, VDP_BLITTER_FIFO_CAPACITY> sourceSrcY{};
 	std::array<u32, VDP_BLITTER_FIFO_CAPACITY> sourceWidth{};
 	std::array<u32, VDP_BLITTER_FIFO_CAPACITY> sourceHeight{};
-	std::array<f32, VDP_BLITTER_FIFO_CAPACITY> dstX{};
-	std::array<f32, VDP_BLITTER_FIFO_CAPACITY> dstY{};
+	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> dstX{};
+	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> dstY{};
 	std::array<f32, VDP_BLITTER_FIFO_CAPACITY> scaleX{};
 	std::array<f32, VDP_BLITTER_FIFO_CAPACITY> scaleY{};
 	std::array<u8, VDP_BLITTER_FIFO_CAPACITY> flipH{};
@@ -67,15 +66,13 @@ struct VdpBlitterCommandBuffer {
 	// Blend mode and PMU bank per-command (used for batch-blit setup)
 	std::array<u32, VDP_BLITTER_FIFO_CAPACITY> blendMode{};
 	std::array<u32, VDP_BLITTER_FIFO_CAPACITY> pmuBank{};
-	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> srcX{};
-	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> srcY{};
 	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> width{};
 	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> height{};
-	std::array<f32, VDP_BLITTER_FIFO_CAPACITY> x0{};
-	std::array<f32, VDP_BLITTER_FIFO_CAPACITY> y0{};
-	std::array<f32, VDP_BLITTER_FIFO_CAPACITY> x1{};
-	std::array<f32, VDP_BLITTER_FIFO_CAPACITY> y1{};
-	std::array<f32, VDP_BLITTER_FIFO_CAPACITY> thickness{};
+	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> x0{};
+	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> y0{};
+	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> x1{};
+	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> y1{};
+	std::array<i32, VDP_BLITTER_FIFO_CAPACITY> thickness{};
 	std::array<u32, VDP_BLITTER_FIFO_CAPACITY> backgroundColor{};
 	std::array<u8, VDP_BLITTER_FIFO_CAPACITY> hasBackgroundColor{};
 	std::array<u32, VDP_BLITTER_FIFO_CAPACITY> lineHeight{};
@@ -88,8 +85,8 @@ struct VdpBlitterCommandBuffer {
 	std::array<u32, VDP_BLITTER_RUN_ENTRY_CAPACITY> batchBlitSrcY{};
 	std::array<u32, VDP_BLITTER_RUN_ENTRY_CAPACITY> batchBlitWidth{};
 	std::array<u32, VDP_BLITTER_RUN_ENTRY_CAPACITY> batchBlitHeight{};
-	std::array<f32, VDP_BLITTER_RUN_ENTRY_CAPACITY> batchBlitDstX{};
-	std::array<f32, VDP_BLITTER_RUN_ENTRY_CAPACITY> batchBlitDstY{};
+	std::array<i32, VDP_BLITTER_RUN_ENTRY_CAPACITY> batchBlitDstX{};
+	std::array<i32, VDP_BLITTER_RUN_ENTRY_CAPACITY> batchBlitDstY{};
 	std::array<u32, VDP_BLITTER_RUN_ENTRY_CAPACITY> batchBlitAdvance{};
 
 	std::array<u32, VDP_BLITTER_RUN_ENTRY_CAPACITY> tileSurfaceId{};
@@ -97,17 +94,16 @@ struct VdpBlitterCommandBuffer {
 	std::array<u32, VDP_BLITTER_RUN_ENTRY_CAPACITY> tileSrcY{};
 	std::array<u32, VDP_BLITTER_RUN_ENTRY_CAPACITY> tileWidth{};
 	std::array<u32, VDP_BLITTER_RUN_ENTRY_CAPACITY> tileHeight{};
-	std::array<f32, VDP_BLITTER_RUN_ENTRY_CAPACITY> tileDstX{};
-	std::array<f32, VDP_BLITTER_RUN_ENTRY_CAPACITY> tileDstY{};
+	std::array<i32, VDP_BLITTER_RUN_ENTRY_CAPACITY> tileDstX{};
+	std::array<i32, VDP_BLITTER_RUN_ENTRY_CAPACITY> tileDstY{};
 
 	void reset();
 	void writeClear(size_t index, u32 clearColor);
-	void writeGeometryColor(size_t index, Layer2D commandLayer, f32 commandPriority, f32 x0Value, f32 y0Value, f32 x1Value, f32 y1Value, u32 drawColor);
-	void writeGeometryColorThickness(size_t index, Layer2D commandLayer, f32 commandPriority, f32 x0Value, f32 y0Value, f32 x1Value, f32 y1Value, u32 drawColor, f32 thicknessValue);
-	void writeBlit(size_t index, Layer2D commandLayer, f32 commandPriority, const VdpBlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleXValue, f32 scaleYValue, bool flipHValue, bool flipVValue, u32 drawColor, f32 parallax);
-	void writeCopyRect(size_t index, Layer2D commandLayer, f32 commandPriority, i32 srcXValue, i32 srcYValue, i32 widthValue, i32 heightValue, i32 dstXValue, i32 dstYValue);
+	void writeGeometryColor(size_t index, Layer2D commandLayer, f32 commandPriority, i32 x0Value, i32 y0Value, i32 x1Value, i32 y1Value, u32 drawColor);
+	void writeGeometryColorThickness(size_t index, Layer2D commandLayer, f32 commandPriority, i32 x0Value, i32 y0Value, i32 x1Value, i32 y1Value, u32 drawColor, i32 thicknessValue);
+	void writeBlit(size_t index, Layer2D commandLayer, f32 commandPriority, const VdpBlitterSource& source, i32 dstXValue, i32 dstYValue, i32 dstWidthValue, i32 dstHeightValue, f32 scaleXValue, f32 scaleYValue, bool flipHValue, bool flipVValue, u32 drawColor, f32 parallax);
 	bool writeBatchBlitBegin(size_t index, u32 drawColor, u32 drawBlendMode, Layer2D commandLayer, f32 commandPriority, u32 drawPmuBank, f32 parallax);
-	bool writeBatchBlitItem(size_t index, u32 surfaceId, u32 srcX, u32 srcY, u32 width, u32 height, f32 dstX, f32 dstY, f32 advanceX);
+	bool writeBatchBlitItem(size_t index, u32 surfaceId, u32 srcX, u32 srcY, u32 width, u32 height, i32 dstX, i32 dstY, u32 advanceX);
 	bool beginCommandSlot(VdpBlitterCommandType commandType, u32 commandSeq, size_t& index);
 	void commitCommandSlot(size_t index, int commandRenderCost);
 	bool reserve(VdpBlitterCommandType commandType, u32 commandSeq, int commandRenderCost, size_t& index);

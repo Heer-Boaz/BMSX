@@ -25,6 +25,7 @@ enum class VdpSubmittedFrameState : u8 {
 	Queued = 1,
 	Executing = 2,
 	Ready = 3,
+	ExecutionPending = 4,
 };
 
 struct VdpSubmittedFrame {
@@ -34,6 +35,7 @@ struct VdpSubmittedFrame {
 	VdpSubmittedFrameState state = VdpSubmittedFrameState::Empty;
 	bool hasCommands = false;
 	bool hasFrameBufferCommands = false;
+	bool frameBufferReadbackValid = false;
 	int cost = 0;
 	int workRemaining = 0;
 	i32 ditherType = 0;
@@ -65,8 +67,8 @@ struct VdpBlitterSourceSaveState {
 };
 
 struct VdpBatchBlitGlyphSaveState : VdpBlitterSourceSaveState {
-	f32 dstX = 0.0f;
-	f32 dstY = 0.0f;
+	i32 dstX = 0;
+	i32 dstY = 0;
 	u32 advance = 0u;
 };
 
@@ -77,23 +79,21 @@ struct VdpBlitterCommandSaveState {
 	Layer2D layer = Layer2D::World;
 	f32 priority = 0.0f;
 	VdpBlitterSourceSaveState source;
-	f32 dstX = 0.0f;
-	f32 dstY = 0.0f;
+	i32 dstX = 0;
+	i32 dstY = 0;
 	f32 scaleX = 1.0f;
 	f32 scaleY = 1.0f;
 	bool flipH = false;
 	bool flipV = false;
 	u32 color = 0u;
 	f32 parallaxWeight = 0.0f;
-	i32 srcX = 0;
-	i32 srcY = 0;
 	i32 width = 0;
 	i32 height = 0;
-	f32 x0 = 0.0f;
-	f32 y0 = 0.0f;
-	f32 x1 = 0.0f;
-	f32 y1 = 0.0f;
-	f32 thickness = 1.0f;
+	i32 x0 = 0;
+	i32 y0 = 0;
+	i32 x1 = 0;
+	i32 y1 = 0;
+	i32 thickness = 1;
 	bool hasBackgroundColor = false;
 	u32 backgroundColor = 0u;
 	u32 lineHeight = 0u;
@@ -128,6 +128,7 @@ struct VdpSubmittedFrameSaveState {
 	std::vector<VdpBbuBillboardSaveState> billboards;
 	bool hasCommands = false;
 	bool hasFrameBufferCommands = false;
+	bool frameBufferReadbackValid = false;
 	int cost = 0;
 	int workRemaining = 0;
 	i32 ditherType = 0;

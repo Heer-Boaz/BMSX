@@ -120,6 +120,7 @@ void VblankState::publishVblankTiming(Runtime& runtime, bool active) {
 
 void VblankState::enterVblank(Runtime& runtime) {
 	m_vblankSequence += 1;
+	runtime.screen.executeReadyVdpFrameBuffer(runtime);
 	runtime.machine.vdp.presentReadyFrameOnVblankEdge();
 	runtime.machine.inputController.onVblankEdge(runtime.frameLoop.currentTimeSeconds * 1000.0, static_cast<u32>(runtime.machine.scheduler.nowCycles()));
 	publishVblankTiming(runtime, true);

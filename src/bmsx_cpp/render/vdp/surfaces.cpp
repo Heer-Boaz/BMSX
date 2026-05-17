@@ -13,7 +13,6 @@ const char* resolveVdpSurfaceTextureKey(uint32_t surfaceId) {
 		case VDP_RD_SURFACE_SYSTEM: return SYSTEM_SLOT_TEXTURE_KEY;
 		case VDP_RD_SURFACE_PRIMARY: return VDP_PRIMARY_SLOT_TEXTURE_KEY;
 		case VDP_RD_SURFACE_SECONDARY: return VDP_SECONDARY_SLOT_TEXTURE_KEY;
-		default: break;
 	}
 	throw BMSX_RUNTIME_ERROR("[VDPSurfaces] unknown surface " + std::to_string(surfaceId) + ".");
 }

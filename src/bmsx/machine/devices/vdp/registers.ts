@@ -44,7 +44,6 @@ export const VDP_CMD_CLEAR = 1;
 export const VDP_CMD_FILL_RECT = 2;
 export const VDP_CMD_DRAW_LINE = 3;
 export const VDP_CMD_BLIT = 4;
-export const VDP_CMD_COPY_RECT = 5;
 export const VDP_CMD_BATCH_BLIT_BEGIN = 6;
 export const VDP_CMD_BATCH_BLIT_ITEM = 7;
 export const VDP_CMD_BEGIN_FRAME = 14;
@@ -74,14 +73,4 @@ export function decodeVdpDrawCtrl(value: number, target: VdpDrawCtrl): void {
 	target.blendMode = (value & VDP_DRAW_CTRL_BLEND_MASK) >>> VDP_DRAW_CTRL_BLEND_SHIFT;
 	target.pmuBank = ((value & VDP_DRAW_CTRL_PMU_BANK_MASK) >>> VDP_DRAW_CTRL_PMU_BANK_SHIFT) & 0xff;
 	target.parallaxWeight = signedQ8_8 / 256;
-}
-
-export function encodeVdpDrawCtrl(flipH: boolean, flipV: boolean, pmuBank: number, parallaxWeight: number): number {
-	const rawQ8_8 = ((parallaxWeight * 256) | 0) & 0xffff;
-	return (
-		(flipH ? VDP_DRAW_CTRL_FLIP_H : 0)
-		| (flipV ? VDP_DRAW_CTRL_FLIP_V : 0)
-		| ((pmuBank & 0xff) << VDP_DRAW_CTRL_PMU_BANK_SHIFT)
-		| (rawQ8_8 << VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT)
-	) >>> 0;
 }

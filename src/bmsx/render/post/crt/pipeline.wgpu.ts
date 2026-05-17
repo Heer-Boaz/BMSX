@@ -1,6 +1,7 @@
-import { GPUBackend, TextureHandle } from '../../backend/backend';
-import { RenderPassLibrary } from '../../backend/pass/library';
-import { WebGPUBackend, WebGPUPassEncoder } from '../../backend/webgpu/backend';
+import type { ColorAttachmentSpec, GPUBackend, RenderPassDesc, RenderPassInstanceHandle, TextureHandle } from '../../backend/backend';
+import type { RenderPassLibrary } from '../../backend/pass/library';
+import type { WebGPUBackend } from '../../backend/webgpu/backend';
+import { buildCrtPassState } from './state';
 
 // Minimal WGSL shaders for present pass (full-screen triangle)
 const VS = /* wgsl */ `
@@ -37,10 +38,13 @@ fn main(@location(0) uv : vec2<f32>) -> @location(0) vec4<f32> {
 interface CRTState { width: number; height: number; baseWidth?: number; baseHeight?: number; colorTex: TextureHandle; options?: any }
 
 export function registerCRT_WebGPU(registry: RenderPassLibrary): void {
+	const presentColorAttachment: ColorAttachmentSpec = { tex: null };
+	const presentPassDesc: RenderPassDesc = { label: 'Present/CRT', color: presentColorAttachment };
 	registry.register({
 		id: 'crt',
 		name: 'Present/CRT (WebGPU)',
 		present: true,
+		graph: { presentInput: 'auto', buildState: buildCrtPassState },
 		// Provide WGSL + binding layout (texture + sampler)
 		vsCode: VS,
 		fsCode: FS,
@@ -51,34 +55,16 @@ export function registerCRT_WebGPU(registry: RenderPassLibrary): void {
 		// Bind sampled texture to bindings (0,1) for this pass
 		prepare: (backend: GPUBackend, st: unknown) => {
 			const state = st as CRTState;
-			if (!state) {
-				throw new Error('[CRT/WebGPU] Pipeline state missing during prepare.');
-			}
-			if (!state.colorTex) {
-				throw new Error('[CRT/WebGPU] colorTex not provided for present pass.');
-			}
 			(backend as WebGPUBackend).bindTextureWithSampler(0, 1, state.colorTex as GPUTexture);
 		},
-		exec: (backend: GPUBackend, fbo: any, _st: unknown) => {
+		exec: (backend: GPUBackend, _fbo: unknown, _st: unknown, pipelineHandle: RenderPassInstanceHandle) => {
 			const wgpu = backend as WebGPUBackend;
-			if (wgpu.type !== 'webgpu' || !wgpu.context) return;
-			// Create a render pass targeting the swapchain texture
 			const swapTex = wgpu.context.getCurrentTexture();
-			const pass = backend.beginRenderPass({ label: 'Present/CRT', color: { tex: swapTex } }) as WebGPUPassEncoder;
-			wgpu.setActivePassEncoder(pass);
-			// Bind the pipeline built at registration time (provided by registry via fbo param)
-			if (!fbo || typeof fbo !== 'object' || !('pipelineHandle' in fbo)) {
-				throw new Error('[CRT/WebGPU] Render pass executed without a valid pipeline handle.');
-			}
-			const ph = fbo.pipelineHandle;
-			if (!ph) {
-				throw new Error('[CRT/WebGPU] Pipeline handle missing for CRT pass.');
-			}
-			wgpu.setGraphicsPipeline(pass, ph);
-			// Draw full-screen triangle
+			presentColorAttachment.tex = swapTex;
+			const pass = backend.beginRenderPass(presentPassDesc);
+			wgpu.setGraphicsPipeline(pass, pipelineHandle);
 			wgpu.draw(pass, 0, 3);
-			(backend as GPUBackend).endRenderPass(pass);
-			wgpu.setActivePassEncoder(null);
+			backend.endRenderPass(pass);
 		},
 	});
 }

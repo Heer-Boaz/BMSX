@@ -4,10 +4,10 @@
 
 #include "backend.h"
 #include "common/clamp.h"
+#include "render/backend/software/vdp_framebuffer_rasterizer.h"
 #include "render/shared/software_pixels.h"
 #include <array>
 #include <algorithm>
-#include <cstring>
 #include <cmath>
 
 namespace bmsx {
@@ -323,6 +323,7 @@ TextureHandle SoftwareBackend::createSolidTexture2D(i32 width, i32 height, u32 c
 	return static_cast<TextureHandle>(ptr);
 }
 
+
 void SoftwareBackend::destroyTexture(TextureHandle handle) {
 	auto* tex = static_cast<SoftwareTexture*>(handle);
 	for (auto it = m_textures.begin(); it != m_textures.end(); ++it) {
@@ -330,16 +331,6 @@ void SoftwareBackend::destroyTexture(TextureHandle handle) {
 			m_textures.erase(it);
 			break;
 		}
-	}
-}
-
-void SoftwareBackend::copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) {
-	auto* src = static_cast<SoftwareTexture*>(source);
-	auto* dst = static_cast<SoftwareTexture*>(destination);
-	for (i32 row = 0; row < height; ++row) {
-		const auto* srcRow = src->data.data() + static_cast<size_t>(srcY + row) * static_cast<size_t>(src->width) + static_cast<size_t>(srcX);
-		auto* dstRow = dst->data.data() + static_cast<size_t>(dstY + row) * static_cast<size_t>(dst->width) + static_cast<size_t>(dstX);
-		std::memcpy(dstRow, srcRow, static_cast<size_t>(width) * sizeof(u32));
 	}
 }
 

@@ -27,13 +27,22 @@ import type { VdpStreamIngressState } from '../../devices/vdp/ingress';
 import type { VdpReadbackState } from '../../devices/vdp/readback';
 import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT, VDP_BBU_BILLBOARD_LIMIT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
 import { VDP_LPU_REGISTER_WORDS } from '../../devices/vdp/lpu';
-import { VDP_BLITTER_FIFO_CAPACITY, VDP_BLITTER_RUN_ENTRY_CAPACITY } from '../../devices/vdp/blitter';
+import {
+	VDP_BLITTER_FIFO_CAPACITY,
+	VDP_BLITTER_OPCODE_BATCH_BLIT,
+	VDP_BLITTER_OPCODE_BLIT,
+	VDP_BLITTER_OPCODE_CLEAR,
+	VDP_BLITTER_OPCODE_DRAW_LINE,
+	VDP_BLITTER_OPCODE_FILL_RECT,
+	VDP_BLITTER_RUN_ENTRY_CAPACITY,
+} from '../../devices/vdp/blitter';
 import {
 	VDP_DEX_FRAME_DIRECT_OPEN,
 	VDP_DEX_FRAME_IDLE,
 	VDP_DEX_FRAME_STREAM_OPEN,
 	VDP_SUBMITTED_FRAME_EMPTY,
 	VDP_SUBMITTED_FRAME_EXECUTING,
+	VDP_SUBMITTED_FRAME_EXECUTION_PENDING,
 	VDP_SUBMITTED_FRAME_QUEUED,
 	VDP_SUBMITTED_FRAME_READY,
 	VdpBatchBlitItemSaveState,
@@ -549,8 +558,19 @@ function encodeBlitterCommandState(state: VdpBlitterCommandSaveState): VdpBlitte
 
 function decodeBlitterCommandState(value: unknown, label: string): VdpBlitterCommandSaveState {
 	const object = requireObject(value, label);
+	const opcode = requireBoundedU32(requireObjectKey(object, 'opcode', label, `${label}.opcode`), `${label}.opcode`, 1, 7);
+	switch (opcode) {
+		case VDP_BLITTER_OPCODE_CLEAR:
+		case VDP_BLITTER_OPCODE_BLIT:
+		case VDP_BLITTER_OPCODE_FILL_RECT:
+		case VDP_BLITTER_OPCODE_DRAW_LINE:
+		case VDP_BLITTER_OPCODE_BATCH_BLIT:
+			break;
+		default:
+			throw new Error(`${label}.opcode is not a supported VDP blitter opcode.`);
+	}
 	return {
-		opcode: requireBoundedU32(requireObjectKey(object, 'opcode', label, `${label}.opcode`), `${label}.opcode`, 1, 7),
+		opcode,
 		seq: requireBoundedU32(requireObjectKey(object, 'seq', label, `${label}.seq`), `${label}.seq`, 0, 0xffffffff),
 		renderCost: requireI32(requireObjectKey(object, 'renderCost', label, `${label}.renderCost`), `${label}.renderCost`),
 		layer: requireBoundedU32(requireObjectKey(object, 'layer', label, `${label}.layer`), `${label}.layer`, 0, 0xff),
@@ -564,8 +584,6 @@ function decodeBlitterCommandState(value: unknown, label: string): VdpBlitterCom
 		flipV: requireBooleanValue(requireObjectKey(object, 'flipV', label, `${label}.flipV`), `${label}.flipV`),
 		color: requireBoundedU32(requireObjectKey(object, 'color', label, `${label}.color`), `${label}.color`, 0, 0xffffffff),
 		parallaxWeight: requireNumberValue(requireObjectKey(object, 'parallaxWeight', label, `${label}.parallaxWeight`), `${label}.parallaxWeight`),
-		srcX: requireI32(requireObjectKey(object, 'srcX', label, `${label}.srcX`), `${label}.srcX`),
-		srcY: requireI32(requireObjectKey(object, 'srcY', label, `${label}.srcY`), `${label}.srcY`),
 		width: requireI32(requireObjectKey(object, 'width', label, `${label}.width`), `${label}.width`),
 		height: requireI32(requireObjectKey(object, 'height', label, `${label}.height`), `${label}.height`),
 		x0: requireNumberValue(requireObjectKey(object, 'x0', label, `${label}.x0`), `${label}.x0`),
@@ -672,6 +690,7 @@ function encodeSubmittedFrameState(state: VdpSubmittedFrameSaveState): VdpSubmit
 		billboards: encodeVector(state.billboards, encodeBbuBillboardState),
 		hasCommands: state.hasCommands,
 		hasFrameBufferCommands: state.hasFrameBufferCommands,
+		frameBufferReadbackValid: state.frameBufferReadbackValid,
 		cost: state.cost,
 		workRemaining: state.workRemaining,
 		ditherType: state.ditherType,
@@ -705,11 +724,12 @@ function decodeSubmittedFrameState(value: unknown, label: string): VdpSubmittedF
 		throw new Error(`${label}.skyboxSamples must contain ${SKYBOX_FACE_COUNT} samples.`);
 	}
 	return {
-		state: requireBoundedU32(requireObjectKey(object, 'state', label, `${label}.state`), `${label}.state`, VDP_SUBMITTED_FRAME_EMPTY, VDP_SUBMITTED_FRAME_READY) as typeof VDP_SUBMITTED_FRAME_EMPTY | typeof VDP_SUBMITTED_FRAME_QUEUED | typeof VDP_SUBMITTED_FRAME_EXECUTING | typeof VDP_SUBMITTED_FRAME_READY,
+		state: requireBoundedU32(requireObjectKey(object, 'state', label, `${label}.state`), `${label}.state`, VDP_SUBMITTED_FRAME_EMPTY, VDP_SUBMITTED_FRAME_EXECUTION_PENDING) as typeof VDP_SUBMITTED_FRAME_EMPTY | typeof VDP_SUBMITTED_FRAME_QUEUED | typeof VDP_SUBMITTED_FRAME_EXECUTING | typeof VDP_SUBMITTED_FRAME_READY | typeof VDP_SUBMITTED_FRAME_EXECUTION_PENDING,
 		queue: decodeBlitterCommandStates(requireObjectKey(object, 'queue', label, `${label}.queue`), `${label}.queue`),
 		billboards: decodeBbuBillboardStates(requireObjectKey(object, 'billboards', label, `${label}.billboards`), `${label}.billboards`),
 		hasCommands: requireBooleanValue(requireObjectKey(object, 'hasCommands', label, `${label}.hasCommands`), `${label}.hasCommands`),
 		hasFrameBufferCommands: requireBooleanValue(requireObjectKey(object, 'hasFrameBufferCommands', label, `${label}.hasFrameBufferCommands`), `${label}.hasFrameBufferCommands`),
+		frameBufferReadbackValid: requireBooleanValue(requireObjectKey(object, 'frameBufferReadbackValid', label, `${label}.frameBufferReadbackValid`), `${label}.frameBufferReadbackValid`),
 		cost: requireI32(requireObjectKey(object, 'cost', label, `${label}.cost`), `${label}.cost`),
 		workRemaining: requireI32(requireObjectKey(object, 'workRemaining', label, `${label}.workRemaining`), `${label}.workRemaining`),
 		ditherType: requireI32(requireObjectKey(object, 'ditherType', label, `${label}.ditherType`), `${label}.ditherType`),

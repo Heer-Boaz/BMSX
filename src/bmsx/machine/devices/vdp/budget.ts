@@ -73,7 +73,9 @@ export function tileRunCost(visibleRows: number, visibleNonEmptyTiles: number): 
 	if (visibleRows <= 0 || visibleNonEmptyTiles <= 0) {
 		return 0;
 	}
-	return VDP_RENDER_TILE_RUN_SETUP_COST + visibleRows + Math.ceil(visibleNonEmptyTiles / VDP_RENDER_TILE_RUN_DENSITY_DIVISOR);
+	const tileRunWork = visibleNonEmptyTiles + VDP_RENDER_TILE_RUN_DENSITY_DIVISOR - 1;
+	const tileRunBuckets = (tileRunWork - (tileRunWork % VDP_RENDER_TILE_RUN_DENSITY_DIVISOR)) / VDP_RENDER_TILE_RUN_DENSITY_DIVISOR;
+	return VDP_RENDER_TILE_RUN_SETUP_COST + visibleRows + tileRunBuckets;
 }
 
 export function computeClippedRect(x0: number, y0: number, x1: number, y1: number, clipWidth: number, clipHeight: number, out: VdpClippedRect): VdpClippedRect {

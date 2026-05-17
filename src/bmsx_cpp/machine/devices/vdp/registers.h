@@ -40,7 +40,6 @@ constexpr u32 VDP_CMD_CLEAR = 1u;
 constexpr u32 VDP_CMD_FILL_RECT = 2u;
 constexpr u32 VDP_CMD_DRAW_LINE = 3u;
 constexpr u32 VDP_CMD_BLIT = 4u;
-constexpr u32 VDP_CMD_COPY_RECT = 5u;
 constexpr u32 VDP_CMD_BATCH_BLIT_BEGIN = 6u;
 constexpr u32 VDP_CMD_BATCH_BLIT_ITEM = 7u;
 constexpr u32 VDP_CMD_BEGIN_FRAME = 14u;
@@ -55,10 +54,10 @@ constexpr u32 VDP_DRAW_CTRL_PMU_BANK_MASK = 0x0000ff00u;
 constexpr u32 VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT = 16u;
 
 struct VdpLatchedGeometry {
-	f32 x0 = 0.0f;
-	f32 y0 = 0.0f;
-	f32 x1 = 0.0f;
-	f32 y1 = 0.0f;
+	i32 x0 = 0;
+	i32 y0 = 0;
+	i32 x1 = 0;
+	i32 y1 = 0;
 };
 
 struct VdpDrawCtrl {
@@ -70,6 +69,5 @@ struct VdpDrawCtrl {
 };
 
 VdpDrawCtrl decodeVdpDrawCtrl(u32 value);
-u32 encodeVdpDrawCtrl(bool flipH, bool flipV, u32 pmuBank, f32 parallaxWeight);
 
 } // namespace bmsx

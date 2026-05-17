@@ -41,7 +41,6 @@ bmsx_cpp/
 │   │   ├── gles2_backend.h
 │   │   ├── gles2_backend.cpp
 │   │   └── pass/
-│   │       ├── builder.h
 │   │       ├── library.h
 │   │       └── library.cpp
 │   ├── graph/

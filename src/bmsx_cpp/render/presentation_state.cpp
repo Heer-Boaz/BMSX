@@ -3,6 +3,8 @@
 #include "core/rom_boot_manager.h"
 #include "common/time.h"
 #include "machine/runtime/runtime.h"
+#include "render/backend/pass/framebuffer_execution.h"
+#include "render/backend/pass/library.h"
 #include "render/test_pattern.h"
 #include "render/vdp/framebuffer.h"
 #include "render/vdp/slot_textures.h"
@@ -144,6 +146,18 @@ void RenderPresentationState::requestHeldPresentation() {
 	if (!m_pendingPresentation) {
 		markPresentation(GameView::PresentationMode::Completed, false);
 	}
+}
+
+void RenderPresentationState::executeReadyVdpFrameBuffer(Runtime& runtime) {
+	VdpBlitterCommandBuffer* commands = runtime.machine.vdp.readyFrameBufferCommands();
+	if (commands == nullptr) {
+		return;
+	}
+	VdpFrameBufferExecutionPassState state;
+	state.runtime = &runtime;
+	state.commands = commands;
+	runtime.view().pipelineRegistry()->setState("vdp_framebuffer_execution", state);
+	runtime.view().pipelineRegistry()->execute("vdp_framebuffer_execution", nullptr);
 }
 
 bool RenderPresentationState::consumePresentation(RenderPresentation& outPresentation) {

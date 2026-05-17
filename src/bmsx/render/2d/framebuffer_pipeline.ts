@@ -1,6 +1,6 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
 import type { RenderContext, RenderPassStateRegistry } from '../backend/backend';
-import { WebGLBackend } from '../backend/webgl/backend';
+import type { WebGLBackend } from '../backend/webgl/backend';
 import { consoleCore } from '../../core/console';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/constants';
 import vertexShaderCode from './shaders/framebuffer_2d.vert.glsl';
@@ -9,7 +9,7 @@ import {
 	bindFullscreenQuad,
 	createFullscreenQuad,
 	deleteFullscreenQuad,
-	FRAMEBUFFER_TEXCOORDS,
+	POST_PROCESS_TEXCOORDS,
 	type FullscreenQuad,
 } from '../backend/webgl/fullscreen_quad';
 
@@ -41,7 +41,7 @@ function renderFrameBuffer(runtime: FrameBuffer2DRuntime, fbo: WebGLFramebuffer,
 		if (fsq) {
 			deleteFullscreenQuad(gl, fsq);
 		}
-		fsq = createFullscreenQuad(gl, state.width, state.height, FRAMEBUFFER_TEXCOORDS, 'Framebuffer2D');
+		fsq = createFullscreenQuad(gl, state.width, state.height, POST_PROCESS_TEXCOORDS, 'Framebuffer2D');
 	}
 	backend.setBlendEnabled(true);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);

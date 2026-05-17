@@ -11,6 +11,7 @@ export type WebGLInstancedBufferRuntime = {
 	instanceTextpageBuffer: WebGLBuffer;
 	floatData: Float32Array;
 	textpageData: Uint8Array;
+	wordData?: Uint32Array;
 	capacity: number;
 };
 
@@ -21,6 +22,9 @@ export type WebGLSpriteQuadUniforms = {
 	texture0: WebGLUniformLocation;
 	texture1: WebGLUniformLocation;
 	texture2: WebGLUniformLocation;
+	parallaxRig: WebGLUniformLocation;
+	parallaxRig2: WebGLUniformLocation;
+	parallaxFlipWindow: WebGLUniformLocation;
 };
 
 export type WebGLInstancedQuadRuntime = WebGLInstancedBufferRuntime & {
@@ -53,6 +57,9 @@ export function getWebGLSpriteQuadUniforms(gl: WebGL2RenderingContext, program: 
 		texture0: gl.getUniformLocation(program, 'u_texture0')!,
 		texture1: gl.getUniformLocation(program, 'u_texture1')!,
 		texture2: gl.getUniformLocation(program, 'u_texture2')!,
+		parallaxRig: gl.getUniformLocation(program, 'u_parallax_rig')!,
+		parallaxRig2: gl.getUniformLocation(program, 'u_parallax_rig2')!,
+		parallaxFlipWindow: gl.getUniformLocation(program, 'u_parallax_flip_window')!,
 	};
 }
 
@@ -61,6 +68,9 @@ export function bindWebGLSpriteQuadTextureUnits(gl: WebGL2RenderingContext, unif
 	gl.uniform1i(uniforms.texture0, TEXTURE_UNIT_TEXTPAGE_PRIMARY);
 	gl.uniform1i(uniforms.texture1, TEXTURE_UNIT_TEXTPAGE_SECONDARY);
 	gl.uniform1i(uniforms.texture2, TEXTURE_UNIT_TEXTPAGE_ENGINE);
+	gl.uniform4f(uniforms.parallaxRig, 0, 1, 0, 0);
+	gl.uniform4f(uniforms.parallaxRig2, 0, 1, 1, 0);
+	gl.uniform1f(uniforms.parallaxFlipWindow, 1);
 }
 
 export function bindWebGLUnitQuadCornerAttribute(backend: WebGLBackend, program: WebGLProgram, cornerBuffer: WebGLBuffer): void {
@@ -128,6 +138,9 @@ export function ensureWebGLInstanceBufferCapacity(backend: WebGLBackend, state: 
 	}
 	state.capacity = capacity;
 	state.floatData = new Float32Array(capacity * instanceFloats);
+	if (state.wordData) {
+		state.wordData = new Uint32Array(state.floatData.buffer);
+	}
 	state.textpageData = new Uint8Array(capacity);
 	backend.bindArrayBuffer(state.instanceFloatBuffer);
 	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData, 0);

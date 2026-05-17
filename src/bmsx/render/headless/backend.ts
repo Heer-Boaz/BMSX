@@ -1,4 +1,6 @@
 import type { color_arr, TextureSource } from '../../rompack/format';
+import type { VDP } from '../../machine/devices/vdp/vdp';
+import type { VdpBlitterCommandBuffer } from '../../machine/devices/vdp/blitter';
 import type {
 	GPUBackend,
 	BackendCaps,
@@ -11,6 +13,11 @@ import type {
 } from '../backend/backend';
 import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../backend/texture_params';
 import { createSolidRgba8Pixels } from '../shared/solid_pixels';
+import { registerVdpFrameBufferExecutionPass_Software } from '../backend/software/vdp_framebuffer_execution';
+import { VdpFrameBufferRasterizer } from '../backend/software/vdp_framebuffer_rasterizer';
+import type { RenderPassLibrary } from '../backend/pass/library';
+import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
+import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../host_overlay/headless/pipeline';
 
 type HeadlessTextureRecord = {
 	id: number;
@@ -91,8 +98,28 @@ export class HeadlessGPUBackend implements GPUBackend {
 	private readonly vaos = new Set<number>();
 	private readonly bound2DByUnit = new Map<number, TextureHandle>();
 	private readonly boundCubeByUnit = new Map<number, TextureHandle>();
+	private vdpFrameBufferRasterizerOwner: VDP | null = null;
+	private vdpFrameBufferRasterizer: VdpFrameBufferRasterizer | null = null;
 	private activeTextureUnit = 0;
 	private frameStats: HeadlessFrameStats = createFrameStats();
+
+	registerBuiltinPasses(registry: RenderPassLibrary): void {
+		registerVdpFrameBufferExecutionPass_Software(registry);
+		registerHeadlessPasses(registry);
+		registerHostOverlayPass_Headless(registry);
+		registerHostMenuPass_Headless(registry);
+		registerHeadlessPresentPass(registry);
+	}
+
+	executeVdpFrameBufferCommands(vdp: VDP, commands: VdpBlitterCommandBuffer, frameBufferPixels: Uint8Array): void {
+		let rasterizer = this.vdpFrameBufferRasterizer;
+		if (rasterizer === null || this.vdpFrameBufferRasterizerOwner !== vdp) {
+			this.vdpFrameBufferRasterizerOwner = vdp;
+			rasterizer = new VdpFrameBufferRasterizer(vdp);
+			this.vdpFrameBufferRasterizer = rasterizer;
+		}
+		rasterizer.executeFrameBufferCommands(commands, vdp.frameBufferWidth, vdp.frameBufferHeight, frameBufferPixels);
+	}
 
 	private getTextureId(handle: TextureHandle): number {
 		return (handle as unknown as { id: number }).id;
@@ -228,6 +255,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return this.createTextureRecord('solid2d', width, height, pixels, null);
 	}
 
+
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], _desc: TextureParams): TextureHandle {
 		const width = faces[0].width;
 		const height = faces[0].height;
@@ -279,24 +307,6 @@ export class HeadlessGPUBackend implements GPUBackend {
 	destroyTexture(handle: TextureHandle): void {
 		const id = this.getTextureId(handle);
 		this.textures.delete(id);
-	}
-
-	copyTextureRegion(source: TextureHandle, destination: TextureHandle, srcX: number, srcY: number, dstX: number, dstY: number, width: number, height: number): void {
-		const srcRecord = this.getTextureRecord(source);
-		const dstRecord = this.getTextureRecord(destination);
-		if (srcRecord.cubemapFaces || dstRecord.cubemapFaces) {
-			throw new Error('[HeadlessBackend] copyTextureRegion only supports 2D textures.');
-		}
-		const srcPixels = this.ensureTexturePixels(srcRecord);
-		const dstPixels = this.ensureTexturePixels(dstRecord);
-		const srcStride = srcRecord.width * 4;
-		const dstStride = dstRecord.width * 4;
-		const rowBytes = width * 4;
-		for (let row = 0; row < height; row += 1) {
-			const srcOffset = (srcY + row) * srcStride + srcX * 4;
-			const dstOffset = (dstY + row) * dstStride + dstX * 4;
-			dstPixels.set(srcPixels.subarray(srcOffset, srcOffset + rowBytes), dstOffset);
-		}
 	}
 
 	createColorTexture(desc: { width: number; height: number; format?: unknown }): TextureHandle {

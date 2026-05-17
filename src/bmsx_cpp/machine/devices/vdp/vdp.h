@@ -29,7 +29,6 @@
 #include "machine/devices/vdp/xf.h"
 #include "machine/devices/vdp/unit_register_port.h"
 #include <array>
-#include <vector>
 
 namespace bmsx {
 
@@ -64,6 +63,10 @@ public:
 	void onService(int64_t nowCycles);
 	void advanceWork(int workUnits);
 	bool presentReadyFrameOnVblankEdge();
+	VdpBlitterCommandBuffer* readyFrameBufferCommands();
+	VdpSurfaceUploadSlot* resolveFrameBufferExecutionSource(uint32_t surfaceId);
+	VdpSurfaceUploadSlot& frameBufferExecutionTarget();
+	void completeReadyFrameBufferExecution(VdpSurfaceUploadSlot* frameBufferSlot);
 	uint32_t frameBufferWidth() const { return m_fbm.width(); }
 	uint32_t frameBufferHeight() const { return m_fbm.height(); }
 	bool readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes);
@@ -110,6 +113,12 @@ public:
 	void syncSurfaceUploads(VdpSurfaceUploadSink& sink);
 
 private:
+	struct VdpLatchedDrawSetup {
+		Layer2D layer = Layer2D::World;
+		f32 priority = 0.0f;
+		VdpDrawCtrl drawCtrl{};
+	};
+
 	static Value readVdpStatusThunk(void* context, uint32_t addr);
 	static Value readVdpDataThunk(void* context, uint32_t addr);
 	static void onFifoWriteThunk(void* context, uint32_t addr, Value value);
@@ -150,13 +159,10 @@ private:
 	BuildingFrame m_buildFrame;
 	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
-	std::vector<u8> m_frameBufferPriorityLayer;
-	std::vector<f32> m_frameBufferPriorityValue;
-	std::vector<u32> m_frameBufferPrioritySeq;
 	u32 m_blitterSequence = 0;
 	// Scratch buffers used to avoid per-call temporaries (parity with TS runtime)
 	BlitterSource m_latchedSourceScratch{};
-	VdpDrawCtrl m_drawCtrlScratch{};
+	VdpLatchedDrawSetup m_latchedDrawSetupScratch{};
 	int m_activeBatchBlitIndex = -1;
 	bool m_lastFrameCommitted = true;
 	int m_lastFrameCost = 0;
@@ -180,15 +186,6 @@ private:
 	void cancelSubmittedFrame();
 	bool sealSubmittedFrame();
 	void promotePendingFrame();
-	void executeFrameBufferCommands(const BlitterCommand& commands);
-	void ensureFrameBufferPriorityCapacity(size_t pixelCount);
-	void resetFrameBufferPriority();
-	void fillFrameBuffer(std::vector<u8>& pixels, const FrameBufferColor& color);
-	void blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a, Layer2D layer, f32 priority, u32 seq);
-	void rasterizeFrameBufferFill(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq);
-	void rasterizeFrameBufferLine(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, f32 thicknessValue, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq);
-	void rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq);
-	void copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 priority, u32 seq);
 	void presentFrameBufferPageOnVblankEdge();
 	void scheduleNextService(int64_t nowCycles);
 	bool hasBlockedSubmitPath() const;
@@ -208,10 +205,10 @@ private:
 		bool enqueueLatchedFillRect();
 		bool enqueueLatchedDrawLine();
 		bool enqueueLatchedBlit();
-		bool enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 priority, Layer2D layer);
 		bool enqueueLatchedBatchBlitBegin();
 	bool enqueueLatchedBatchBlitItem();
-		bool enqueueLatchedCopyRect();
+	bool readLatchedDrawSetup(VdpLatchedDrawSetup& target);
+	bool readLatchedBlitterSource(BlitterSource& target);
 	void pushVdpFifoWord(u32 word);
 	bool consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(const u32* words, u32 wordCount);

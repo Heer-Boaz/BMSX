@@ -1,6 +1,7 @@
-import { consoleCore } from '../../core/console';
-import { RenderPassLibrary } from '../backend/pass/library';
-import { Framebuffer2DPipelineState, ParticlePipelineState, type RenderPassDef } from '../backend/backend';
+import type { Runtime } from '../../machine/runtime/runtime';
+import type { RenderPassLibrary } from '../backend/pass/library';
+import type { Framebuffer2DPipelineState, ParticlePipelineState, RenderPassDef } from '../backend/backend';
+import type { GameView } from '../gameview';
 import { M4 } from '../3d/math';
 import { MESH_NORMAL_OFFSET, MESH_POSITION_OFFSET, MESH_VERTEX_FLOATS, MeshVertexStreamBuilder } from '../3d/mesh/vertex_stream';
 import { resolveMeshRomDrawSource } from '../3d/mesh/rom_source';
@@ -28,7 +29,7 @@ export function registerHeadlessPresentPass(registry: RenderPassLibrary): void {
 		stateOnly: true,
 		graph: { reads: ['frame_color'] },
 		exec: () => {
-			presentHeadlessFrame();
+			presentHeadlessFrame(registry.view as GameView);
 		},
 	});
 }
@@ -40,7 +41,8 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 			stateOnly: true,
 			graph: { skip: true },
 			exec: () => {
-				beginHeadlessScene(consoleCore.view.vdpFrameBufferTextures.width(), consoleCore.view.vdpFrameBufferTextures.height());
+				const view = registry.view as GameView;
+				beginHeadlessScene(view.vdpFrameBufferTextures.width(), view.vdpFrameBufferTextures.height());
 			},
 		});
 	registry.register({ id: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, graph: { skip: true }, exec: () => { /* noop */ } });
@@ -77,7 +79,8 @@ const headlessMeshVertexStream = new MeshVertexStreamBuilder();
 const HEADLESS_VERBOSE_DIFF = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.BMSX_HEADLESS_VERBOSE === '1';
 
 function formatNumber(value: number): string {
-	return Number.isFinite(value) ? value.toFixed(2) : 'NaN';
+	const formatted = value.toFixed(2);
+	return formatted;
 }
 
 function computeDiff(previous: Snapshot, current: Snapshot): Snapshot {
@@ -265,11 +268,11 @@ export function drawHeadlessHostOverlayFrame(commands: readonly Host2DSubmission
 	renderHeadlessSubmissions(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, commands);
 }
 
-function presentHeadlessFrame(): void {
+function presentHeadlessFrame(view: GameView): void {
 	if (!headlessFrameReady) {
 		throw new Error('[HeadlessPresent] Present pass ran before framebuffer pass.');
 	}
-	const host = consoleCore.view.host as unknown as HeadlessPresentHost;
+	const host = view.host as unknown as HeadlessPresentHost;
 	host.presentFrameBuffer({
 		pixels: headlessCompositePixels,
 		srcWidth: headlessFrameWidth,
@@ -279,30 +282,29 @@ function presentHeadlessFrame(): void {
 	});
 }
 
-function rasterizeSkyboxBackground(width: number, height: number): void {
-	const gv = consoleCore.view;
-	const faceSurfaceIds = gv.skyboxFaceSurfaceIds;
-	const faceUvRects = gv.skyboxFaceUvRects;
-	const faceSizes = gv.skyboxFaceSizes;
+function rasterizeSkyboxBackground(view: GameView, width: number, height: number): void {
+	const faceSurfaceIds = view.skyboxFaceSurfaceIds;
+	const faceUvRects = view.skyboxFaceUvRects;
+	const faceSizes = view.skyboxFaceSizes;
 	for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
-		const texture = gv.vdpSlotTextures.readSurfaceTexturePixels(faceSurfaceIds[index]);
+		const texture = view.vdpSlotTextures.readSurfaceTexturePixels(faceSurfaceIds[index]);
 		const uvBase = index * 4;
 		const rectBase = index * 4;
 		const sizeBase = index * 2;
 		headlessSkyboxTextures[index] = texture;
-		headlessSkyboxSourceRects[rectBase + 0] = (faceUvRects[uvBase + 0] * texture.width) | 0;
-		headlessSkyboxSourceRects[rectBase + 1] = (faceUvRects[uvBase + 1] * texture.height) | 0;
+		headlessSkyboxSourceRects[rectBase + 0] = faceUvRects[uvBase + 0] * texture.width;
+		headlessSkyboxSourceRects[rectBase + 1] = faceUvRects[uvBase + 1] * texture.height;
 		headlessSkyboxSourceRects[rectBase + 2] = faceSizes[sizeBase + 0];
 		headlessSkyboxSourceRects[rectBase + 3] = faceSizes[sizeBase + 1];
 	}
-	const view = gv.vdpTransform.skyboxView;
+	const skyboxView = view.vdpTransform.skyboxView;
 	for (let y = 0; y < height; y += 1) {
 		const rayY = 1 - (((y * 2) + 1) / height);
 		for (let x = 0; x < width; x += 1) {
 			const rayX = (((x * 2) + 1) / width) - 1;
-			const dirX = view[0] * rayX + view[4] * rayY + view[8];
-			const dirY = view[1] * rayX + view[5] * rayY + view[9];
-			const dirZ = view[2] * rayX + view[6] * rayY + view[10];
+			const dirX = skyboxView[0] * rayX + skyboxView[4] * rayY + skyboxView[8];
+			const dirY = skyboxView[1] * rayX + skyboxView[5] * rayY + skyboxView[9];
+			const dirZ = skyboxView[2] * rayX + skyboxView[6] * rayY + skyboxView[10];
 			const faceIndex = resolveSkyboxFaceInto(dirX, dirY, dirZ);
 			const texture = headlessSkyboxTextures[faceIndex]!;
 			const rectBase = faceIndex * 4;
@@ -310,8 +312,8 @@ function rasterizeSkyboxBackground(width: number, height: number): void {
 			const sourceY = headlessSkyboxSourceRects[rectBase + 1];
 			const sourceWidth = headlessSkyboxSourceRects[rectBase + 2];
 			const sourceHeight = headlessSkyboxSourceRects[rectBase + 3];
-			let faceX = (headlessSkyboxFaceUv[0] * sourceWidth) | 0;
-			let faceY = (headlessSkyboxFaceUv[1] * sourceHeight) | 0;
+			let faceX = headlessSkyboxFaceUv[0] * sourceWidth;
+			let faceY = headlessSkyboxFaceUv[1] * sourceHeight;
 			if (faceX >= sourceWidth) {
 				faceX = sourceWidth - 1;
 			}
@@ -351,8 +353,8 @@ function rasterizeHeadlessParticleSample(texture: VdpSlotTexturePixels,
 	}
 	const ndcX = clipX / clipW;
 	const ndcY = clipY / clipW;
-	const centerX = ((ndcX * 0.5 + 0.5) * state.width) | 0;
-	const centerY = ((0.5 - ndcY * 0.5) * state.height) | 0;
+	const centerX = Math.round((ndcX * 0.5 + 0.5) * state.width);
+	const centerY = Math.round((0.5 - ndcY * 0.5) * state.height);
 	const halfWorld = size * 0.5;
 	const edgePositionX = positionX + state.camRight[0] * halfWorld;
 	const edgePositionY = positionY + state.camRight[1] * halfWorld;
@@ -365,8 +367,8 @@ function rasterizeHeadlessParticleSample(texture: VdpSlotTexturePixels,
 	}
 	const edgeNdcX = edgeClipX / edgeClipW;
 	const edgeNdcY = edgeClipY / edgeClipW;
-	const edgeScreenX = ((edgeNdcX * 0.5 + 0.5) * state.width) | 0;
-	const edgeScreenY = ((0.5 - edgeNdcY * 0.5) * state.height) | 0;
+	const edgeScreenX = Math.round((edgeNdcX * 0.5 + 0.5) * state.width);
+	const edgeScreenY = Math.round((0.5 - edgeNdcY * 0.5) * state.height);
 	let halfX = edgeScreenX - centerX;
 	let halfY = edgeScreenY - centerY;
 	if (halfX < 0) halfX = -halfX;
@@ -379,9 +381,9 @@ function rasterizeHeadlessParticleSample(texture: VdpSlotTexturePixels,
 	const endX = centerX + half > state.width ? state.width : centerX + half;
 	const endY = centerY + half > state.height ? state.height : centerY + half;
 	for (let y = startY; y < endY; y += 1) {
-		const srcY = sourceY + (((y - startY) * sourceH) / (endY - startY) | 0);
+		const srcY = sourceY + Math.round(((y - startY) * sourceH) / (endY - startY));
 		for (let x = startX; x < endX; x += 1) {
-			const srcX = sourceX + (((x - startX) * sourceW) / (endX - startX) | 0);
+			const srcX = sourceX + Math.round(((x - startX) * sourceW) / (endX - startX));
 			const srcOffset = srcY * texture.stride + srcX * 4;
 			const sourceAlpha = (texture.pixels[srcOffset + 3] * colorA + 127) / 255;
 			const dstOffset = (y * state.width + x) * 4;
@@ -398,8 +400,7 @@ function rasterizeHeadlessParticleSample(texture: VdpSlotTexturePixels,
 	headlessSceneActive = true;
 }
 
-function rasterizeHeadlessVdpBillboard(index: number, state: ParticlePipelineState): void {
-	const view = consoleCore.view;
+function rasterizeHeadlessVdpBillboard(view: GameView, index: number, state: ParticlePipelineState): void {
 	const sourceBase = index * 4;
 	const positionSize = view.vdpBillboardPositionSize;
 	const uvRect = view.vdpBillboardUvRect;
@@ -407,10 +408,10 @@ function rasterizeHeadlessVdpBillboard(index: number, state: ParticlePipelineSta
 	const texture = view.vdpSlotTextures.readSurfaceTexturePixels(view.vdpBillboardSurfaceId[index]);
 	rasterizeHeadlessParticleSample(
 		texture,
-		(uvRect[sourceBase + 0] * texture.width) | 0,
-		(uvRect[sourceBase + 1] * texture.height) | 0,
-		((uvRect[sourceBase + 2] - uvRect[sourceBase + 0]) * texture.width) | 0,
-		((uvRect[sourceBase + 3] - uvRect[sourceBase + 1]) * texture.height) | 0,
+		uvRect[sourceBase + 0] * texture.width,
+		uvRect[sourceBase + 1] * texture.height,
+		(uvRect[sourceBase + 2] - uvRect[sourceBase + 0]) * texture.width,
+		(uvRect[sourceBase + 3] - uvRect[sourceBase + 1]) * texture.height,
 		positionSize[sourceBase + 0],
 		positionSize[sourceBase + 1],
 		positionSize[sourceBase + 2],
@@ -427,17 +428,19 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
 		prepare: () => {
+			const view = registry.view as GameView;
 			registry.setState('framebuffer_2d', {
-				width: consoleCore.view.canvasSize.x,
-				height: consoleCore.view.canvasSize.y,
-				baseWidth: consoleCore.view.viewportSize.x,
-				baseHeight: consoleCore.view.viewportSize.y,
-				colorTex: consoleCore.view.vdpFrameBufferTextures.displayTexture(),
+				width: view.canvasSize.x,
+				height: view.canvasSize.y,
+				baseWidth: view.viewportSize.x,
+				baseHeight: view.viewportSize.y,
+				colorTex: view.vdpFrameBufferTextures.displayTexture(),
 			} as Framebuffer2DPipelineState);
 		},
 			exec: (backend, _fbo, state: Framebuffer2DPipelineState) => {
-				const frameBufferWidth = consoleCore.view.vdpFrameBufferTextures.width();
-				const frameBufferHeight = consoleCore.view.vdpFrameBufferTextures.height();
+				const view = registry.view as GameView;
+				const frameBufferWidth = view.vdpFrameBufferTextures.width();
+				const frameBufferHeight = view.vdpFrameBufferTextures.height();
 				resizeHeadlessScene(frameBufferWidth, frameBufferHeight);
 				if (frameBufferWidth <= 0 || frameBufferHeight <= 0) {
 					throw new Error(`[HeadlessFramebuffer2D] Invalid framebuffer dimensions ${frameBufferWidth}x${frameBufferHeight}.`);
@@ -472,12 +475,13 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 		name: 'HeadlessSkybox',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: () => consoleCore.view.skyboxRenderReady,
+		shouldExecute: () => (registry.view as GameView).skyboxRenderReady,
 		exec: () => {
-			const uvRects = consoleCore.view.skyboxFaceUvRects;
-				const sizes = consoleCore.view.skyboxFaceSizes;
-				const bindings = consoleCore.view.skyboxFaceTextpageBindings;
-				rasterizeSkyboxBackground(headlessSceneWidth, headlessSceneHeight);
+			const view = registry.view as GameView;
+			const uvRects = view.skyboxFaceUvRects;
+				const sizes = view.skyboxFaceSizes;
+				const bindings = view.skyboxFaceTextpageBindings;
+				rasterizeSkyboxBackground(view, headlessSceneWidth, headlessSceneHeight);
 				let headline = 'faces=';
 				for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
 					const uvBase = index * 4;
@@ -509,11 +513,10 @@ const headlessParticleState: ParticlePipelineState = {
 	camUp: new Float32Array(3),
 };
 
-function updateHeadlessParticleState(): ParticlePipelineState {
-	const gv = consoleCore.view;
-	const transform = gv.vdpTransform;
-	headlessParticleState.width = gv.offscreenCanvasSize.x;
-	headlessParticleState.height = gv.offscreenCanvasSize.y;
+function updateHeadlessParticleState(view: GameView): ParticlePipelineState {
+	const transform = view.vdpTransform;
+	headlessParticleState.width = view.offscreenCanvasSize.x;
+	headlessParticleState.height = view.offscreenCanvasSize.y;
 	headlessParticleState.viewProj = transform.viewProj;
 	M4.viewRightUpInto(transform.view, headlessParticleState.camRight, headlessParticleState.camUp);
 	return headlessParticleState;
@@ -532,21 +535,20 @@ function renderHeadlessMeshPoint(screenX: number, screenY: number, colorR: numbe
 	}
 }
 
-function rasterizeHeadlessMesh(entryIndex: number): number {
-	const gv = consoleCore.view;
-	const source = resolveMeshRomDrawSource(consoleCore.runtime, gv, entryIndex);
-	headlessMeshVertexStream.build(gv, source.model, source.mesh, entryIndex);
+function rasterizeHeadlessMesh(runtime: Runtime, view: GameView, entryIndex: number): number {
+	const source = resolveMeshRomDrawSource(runtime, view, entryIndex);
+	headlessMeshVertexStream.build(view, source.model, source.mesh, entryIndex);
 	const vertices = headlessMeshVertexStream.vertices;
 	const model = headlessMeshVertexStream.modelMatrix;
-	const viewProj = gv.vdpTransform.viewProj;
+	const viewProj = view.vdpTransform.viewProj;
 	let plotted = 0;
-	const ambient = gv.vdpAmbientLightColorIntensity;
+	const ambient = view.vdpAmbientLightColorIntensity;
 	let lightEnergy = ambient[3];
-	for (let index = 0; index < gv.vdpDirectionalLightCount; index += 1) {
-		lightEnergy = lightEnergy + gv.vdpDirectionalLightIntensities[index];
+	for (let index = 0; index < view.vdpDirectionalLightCount; index += 1) {
+		lightEnergy = lightEnergy + view.vdpDirectionalLightIntensities[index];
 	}
-	for (let index = 0; index < gv.vdpPointLightCount; index += 1) {
-		lightEnergy = lightEnergy + gv.vdpPointLightParams[index * 2 + 1];
+	for (let index = 0; index < view.vdpPointLightCount; index += 1) {
+		lightEnergy = lightEnergy + view.vdpPointLightParams[index * 2 + 1];
 	}
 	if (lightEnergy < 0.25) {
 		lightEnergy = 0.25;
@@ -554,7 +556,7 @@ function rasterizeHeadlessMesh(entryIndex: number): number {
 	if (lightEnergy > 1.85) {
 		lightEnergy = 1.85;
 	}
-	const baseColor = gv.vdpMeshColor[entryIndex];
+	const baseColor = view.vdpMeshColor[entryIndex];
 	const baseR = (baseColor >>> 16) & 0xff;
 	const baseG = (baseColor >>> 8) & 0xff;
 	const baseB = baseColor & 0xff;
@@ -577,10 +579,10 @@ function rasterizeHeadlessMesh(entryIndex: number): number {
 				const ny = vertices[vertexBase + MESH_NORMAL_OFFSET + 1];
 				const nz = vertices[vertexBase + MESH_NORMAL_OFFSET + 2];
 				let directional = ambient[3];
-				if (gv.vdpDirectionalLightCount > 0) {
-					const dot = -(nx * gv.vdpDirectionalLightDirections[0] + ny * gv.vdpDirectionalLightDirections[1] + nz * gv.vdpDirectionalLightDirections[2]);
+				if (view.vdpDirectionalLightCount > 0) {
+					const dot = -(nx * view.vdpDirectionalLightDirections[0] + ny * view.vdpDirectionalLightDirections[1] + nz * view.vdpDirectionalLightDirections[2]);
 					if (dot > 0) {
-						directional = directional + dot * gv.vdpDirectionalLightIntensities[0];
+						directional = directional + dot * view.vdpDirectionalLightIntensities[0];
 					}
 				}
 				let shade = directional * 0.7 + lightEnergy * 0.25;
@@ -590,8 +592,8 @@ function rasterizeHeadlessMesh(entryIndex: number): number {
 				if (shade > 1.4) {
 					shade = 1.4;
 				}
-				const screenX = ((ndcX * 0.5 + 0.5) * headlessSceneWidth) | 0;
-				const screenY = ((0.5 - ndcY * 0.5) * headlessSceneHeight) | 0;
+				const screenX = Math.round((ndcX * 0.5 + 0.5) * headlessSceneWidth);
+				const screenY = Math.round((0.5 - ndcY * 0.5) * headlessSceneHeight);
 				renderHeadlessMeshPoint(screenX, screenY, baseR * shade, baseG * shade, baseB * shade, 224);
 				plotted = plotted + 1;
 			}
@@ -610,18 +612,19 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 		name: 'HeadlessMesh',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: () => consoleCore.view.vdpMeshCount > 0,
+		shouldExecute: () => (registry.view as GameView).vdpMeshCount > 0,
 		exec: () => {
-			const gv = consoleCore.view;
+			const view = registry.view as GameView;
+			const runtime = registry.runtime as Runtime;
 			let plotted = 0;
-			for (let index = 0; index < gv.vdpMeshCount; index += 1) {
-				plotted = plotted + rasterizeHeadlessMesh(index);
+			for (let index = 0; index < view.vdpMeshCount; index += 1) {
+				plotted = plotted + rasterizeHeadlessMesh(runtime, view, index);
 			}
-			const headline = `draws=${gv.vdpMeshCount} plotted=${plotted} morph=${gv.vdpMeshMorphCount[0]} lights=${gv.vdpDirectionalLightCount}/${gv.vdpPointLightCount}`;
+			const headline = `draws=${view.vdpMeshCount} plotted=${plotted} morph=${view.vdpMeshMorphCount[0]} lights=${view.vdpDirectionalLightCount}/${view.vdpPointLightCount}`;
 			if (HEADLESS_VERBOSE_DIFF) {
 				const snapshot: Snapshot = [headline];
-				for (let index = 0; index < gv.vdpMeshCount; index += 1) {
-					snapshot.push(`[vdp-mesh#${index}] mesh=${gv.vdpMeshIndex[index]} morphBase=${gv.vdpMeshMorphBase[index]} morphCount=${gv.vdpMeshMorphCount[index]} weights=${formatNumber(gv.vdpMorphWeightWords[gv.vdpMeshMorphBase[index]] / 65536)},${formatNumber(gv.vdpMorphWeightWords[gv.vdpMeshMorphBase[index] + 1] / 65536)} ambient=${formatNumber(gv.vdpAmbientLightColorIntensity[3])} dir=${gv.vdpDirectionalLightCount} point=${gv.vdpPointLightCount}`);
+				for (let index = 0; index < view.vdpMeshCount; index += 1) {
+					snapshot.push(`[vdp-mesh#${index}] mesh=${view.vdpMeshIndex[index]} morphBase=${view.vdpMeshMorphBase[index]} morphCount=${view.vdpMeshMorphCount[index]} weights=${formatNumber(view.vdpMorphWeightWords[view.vdpMeshMorphBase[index]] / 65536)},${formatNumber(view.vdpMorphWeightWords[view.vdpMeshMorphBase[index] + 1] / 65536)} ambient=${formatNumber(view.vdpAmbientLightColorIntensity[3])} dir=${view.vdpDirectionalLightCount} point=${view.vdpPointLightCount}`);
 				}
 				previousMeshSnapshot = emitDiff('mesh', previousMeshSnapshot, snapshot);
 			} else {
@@ -638,25 +641,26 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 		name: 'HeadlessParticles',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: () => consoleCore.view.vdpBillboardCount > 0,
+		shouldExecute: () => (registry.view as GameView).vdpBillboardCount > 0,
 		prepare: () => {
-			registry.setState('particles', updateHeadlessParticleState());
+			registry.setState('particles', updateHeadlessParticleState(registry.view as GameView));
 		},
 		exec: (_backend, _fbo, state: unknown) => {
 			const particleState = state as ParticlePipelineState;
-			const count = consoleCore.view.vdpBillboardCount;
+			const view = registry.view as GameView;
+			const count = view.vdpBillboardCount;
 			if (count <= 0) {
 				return;
 			}
 				const headline = `draws=${count} viewport=${particleState.width}x${particleState.height}`;
 				const snapshot: Snapshot | null = HEADLESS_VERBOSE_DIFF ? [headline] : null;
-				const vdpBillboardCount = consoleCore.view.vdpBillboardCount;
-				const positionSize = consoleCore.view.vdpBillboardPositionSize;
+				const vdpBillboardCount = view.vdpBillboardCount;
+				const positionSize = view.vdpBillboardPositionSize;
 				for (let index = 0; index < vdpBillboardCount; index += 1) {
-					rasterizeHeadlessVdpBillboard(index, particleState);
+					rasterizeHeadlessVdpBillboard(view, index, particleState);
 					if (snapshot !== null) {
 						const base = index * 4;
-						snapshot.push(`[vdp-particle#${index}] pos=(${formatNumber(positionSize[base + 0])}, ${formatNumber(positionSize[base + 1])}, ${formatNumber(positionSize[base + 2])}) size=${formatNumber(positionSize[base + 3])} slot=${consoleCore.view.vdpBillboardSlot[index]}`);
+						snapshot.push(`[vdp-particle#${index}] pos=(${formatNumber(positionSize[base + 0])}, ${formatNumber(positionSize[base + 1])}, ${formatNumber(positionSize[base + 2])}) size=${formatNumber(positionSize[base + 3])} slot=${view.vdpBillboardSlot[index]}`);
 					}
 				}
 				if (snapshot !== null) {

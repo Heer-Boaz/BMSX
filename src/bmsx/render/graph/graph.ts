@@ -4,11 +4,16 @@
  * Machine-visible VDP state enters through device output snapshots; this graph
  * only orders frontend texture passes and owns no emulated state.
  */
-import { color_arr } from '../../rompack/format';
-import { GPUBackend, TextureHandle } from '../backend/backend';
-import { RenderPassBuilder } from '../backend/pass/builder';
+import type { color_arr } from '../../rompack/format';
+import type {
+	ColorAttachmentSpec,
+	DepthAttachmentSpec,
+	GPUBackend,
+	PassEncoder,
+	RenderPassDesc,
+	TextureHandle,
+} from '../backend/backend';
 import { checkWebGLError } from '../backend/webgl/helpers';
-import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/backend';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;
@@ -16,7 +21,7 @@ export type RGTexHandle = number;
 export interface TexDesc {
 	width: number;
 	height: number;
-	format?: GLenum; // optional, fallback decided at realization
+	format?: GLenum; // optional backend-owned format selection
 	depth?: boolean; // depth/stencil target if true
 	name?: string;
 	transient?: boolean; // hint: contents not needed after pass (storeOp dont_care)
@@ -69,8 +74,8 @@ export interface RenderPass<SetupOut = unknown> {
 	/**
 	 * Force execution even if the pass has no declared resource dependencies making it unreachable
 	 * from the exported backbuffer resource. Useful for side-effect / state aggregation passes
-	 * (e.g. FrameSharedState) or legacy passes that perform manual FBO rendering without declaring
-	 * writes (migration aid). Long term these should declare proper writeTex() calls and the
+	 * (e.g. FrameSharedState) or passes that perform manual FBO rendering without declaring
+	 * writes while pass ownership is being moved into the graph. Long term these should declare proper writeTex() calls and the
 	 * single-writer restriction relaxed to allow sequential writers.
 	 */
 	alwaysExecute?: boolean;
@@ -82,7 +87,8 @@ interface InternalTexResource {
 	desc: TexDesc;
 	tex: TextureHandle;           // physical texture (may be shared via aliasing)
 	fboColorOnly: FramebufferHandle; // color-only convenience FBO (or equivalent)
-	fboWithDepth?: { depth: RGTexHandle; fbo: FramebufferHandle }; // paired depth FBO cache
+	fboDepthHandle: FramebufferHandle;
+	fboDepthAttachment: RGTexHandle;
 	readers: number;
 	writerPasses: number[]; // supports multiple sequential writers (overlays)
 	readPasses: number[];
@@ -107,8 +113,39 @@ export class RenderGraphRuntime {
 	// Cached per-pass dependency data (populated during compile) for use during execute (transitions, stats)
 	private _passWrites: { tex: RGTexHandle; clear?: { color?: color_arr; depth?: number } }[][] = [];
 	private _setupData: unknown[] = []; // per-pass setup() return values
+	private readonly passContext: PassContext;
+	private readonly passDesc: RenderPassDesc = {};
+	private readonly passColorAttachments: ColorAttachmentSpec[] = [];
+	private readonly passDepthAttachment: DepthAttachmentSpec = { tex: null };
 
-	constructor(backend: GPUBackend) { this.backend = backend; }
+	constructor(backend: GPUBackend) {
+		this.backend = backend;
+		this.passContext = {
+			getTex: (h) => {
+				const resource = this.texResources[h];
+				if (!resource) {
+					throw new Error(`[RenderGraph] Texture handle ${h} is not registered.`);
+				}
+				return resource.tex as TextureHandle;
+			},
+			getFBO: (color, depth) => {
+				const colorRes = this.texResources[color];
+				if (!colorRes) {
+					throw new Error(`[RenderGraph] Color attachment ${color} is not registered.`);
+				}
+				if (depth === undefined) return colorRes.fboColorOnly;
+				const depthRes = this.texResources[depth];
+				if (!depthRes) {
+					throw new Error(`[RenderGraph] Depth attachment ${depth} is not registered.`);
+				}
+				if (colorRes.fboDepthAttachment !== depth) {
+					throw new Error(`[RenderGraph] FBO for color=${color}, depth=${depth} was not compiled.`);
+				}
+				return colorRes.fboDepthHandle;
+			},
+			backend: this.backend,
+		};
+	}
 
 	addPass(pass: RenderPass): void {
 		if (this.compiled) throw Error('RenderGraph already compiled. Add passes before compile().');
@@ -123,7 +160,7 @@ export class RenderGraphRuntime {
 		const self = this;
 		function allocTex(desc: TexDesc): RGTexHandle {
 			const handle = nextHandle++ as RGTexHandle;
-			const res: InternalTexResource = { desc, tex: null, fboColorOnly: null, readers: 0, readPasses: [], writerPasses: [] };
+			const res: InternalTexResource = { desc, tex: null, fboColorOnly: null, fboDepthHandle: null, fboDepthAttachment: 0, readers: 0, readPasses: [], writerPasses: [] };
 			texMap.set(handle, res);
 			return handle;
 		}
@@ -280,104 +317,61 @@ export class RenderGraphRuntime {
 	}
 
 	execute(frame: FrameData): void {
-		checkWebGLError('Before compile');
 		if (!this.compiled) this.compile(frame);
-		checkWebGLError('After compile');
 		const setupData: unknown[] = this._setupData;
 
-			const ctx: PassContext = {
-				getTex: (h) => {
-					const resource = this.texResources[h];
-					if (!resource) {
-						throw new Error(`[RenderGraph] Texture handle ${h} is not registered.`);
-					}
-					return resource.tex as TextureHandle;
-				},
-				getFBO: (color, depth) => {
-					const colorRes = this.texResources[color];
-					if (!colorRes) {
-						throw new Error(`[RenderGraph] Color attachment ${color} is not registered.`);
-					}
-					if (!depth) return colorRes.fboColorOnly;
-					const depthRes = this.texResources[depth];
-					if (!depthRes) {
-						throw new Error(`[RenderGraph] Depth attachment ${depth} is not registered.`);
-					}
-					if (colorRes.fboWithDepth && colorRes.fboWithDepth.depth === depth) return colorRes.fboWithDepth.fbo;
-				// Lazy allocate FBOs on demand
-				return this.ensureFBO(color, depth);
-			},
-			setDebugLabel: undefined,
-			backend: this.backend,
-		};
-
-		checkWebGLError('Before realizeAll');
-
-		// Ensure GL objects exist before first pass that needs them
 		this.realizeAll();
-		checkWebGLError('After realizeAll');
 
-		const order = this.passOrder.length ? this.passOrder : this.passes.map((_, i) => i); // fallback sequential
+		const order = this.passOrder;
+		const desc = this.passDesc;
+		const colorAttachments = this.passColorAttachments;
+		const depthAttachment = this.passDepthAttachment;
 		for (let oi = 0; oi < order.length; oi++) {
-			checkWebGLError(`Before pass execution: ${order[oi]}: ${this.passes[order[oi]].name}`);
 			const i = order[oi];
-			if (this.reachable.length && !this.reachable[i]) continue; // skip culled
+			checkWebGLError(`Before pass execution: ${i}: ${this.passes[i].name}`);
+			if (this.reachable.length && !this.reachable[i]) continue;
 			const pass = this.passes[i];
-				const data = setupData[i];
-				// Begin implicit render pass if this pass writes any textures
-				let rp: { end: () => void } | undefined;
-			const writes: RGTexHandle[] = [];
-			if (this._passWrites[i]) {
-				for (const w of this._passWrites[i]) writes.push(w.tex);
-			} else {
-				for (let th = 0; th < this.texResources.length; th++) {
-					const tr = this.texResources[th];
-					if (tr && tr.writerPasses.includes(i)) writes.push(th as RGTexHandle);
+			const writes = this._passWrites[i];
+			let colorAttachmentCount = 0;
+			let depthRes: InternalTexResource = null;
+			for (let writeIndex = 0; writeIndex < writes.length; writeIndex++) {
+				const resource = this.texResources[writes[writeIndex].tex];
+				if (resource.desc.depth) {
+					depthRes = resource;
+				} else {
+					let colorAttachment = colorAttachments[colorAttachmentCount];
+					if (colorAttachment === undefined) {
+						colorAttachment = { tex: null };
+						colorAttachments[colorAttachmentCount] = colorAttachment;
+					}
+					colorAttachment.tex = resource.tex as TextureHandle;
+					colorAttachment.clear = colorAttachmentCount === 0 && resource.writerPasses[0] === i ? resource.clearOnWrite?.color : undefined;
+					colorAttachment.discardAfter = !!resource.desc.transient;
+					colorAttachmentCount += 1;
 				}
 			}
-			if (writes.length) {
-				// Multi-attachment discovery (color targets first, single depth optional)
-				const colorTargets: InternalTexResource[] = [];
-				let depthRes: InternalTexResource;
-				for (const w of writes) {
-					const r = this.texResources[w]; if (!r) continue;
-					if (r.desc.depth) depthRes = r; else colorTargets.push(r);
+
+			let passEnc: PassEncoder | null = null;
+			if (colorAttachmentCount !== 0 || depthRes !== null) {
+				colorAttachments.length = colorAttachmentCount;
+				desc.label = pass.name;
+				desc.color = colorAttachmentCount !== 0 ? colorAttachments[0] : undefined;
+				desc.colors = colorAttachmentCount !== 0 ? colorAttachments : undefined;
+				if (depthRes !== null) {
+					depthAttachment.tex = depthRes.tex as TextureHandle;
+					depthAttachment.clearDepth = depthRes.writerPasses[0] === i && depthRes.clearOnWrite ? depthRes.clearOnWrite.depth : undefined;
+					depthAttachment.discardAfter = !!depthRes.desc.transient;
+					desc.depth = depthAttachment;
+				} else {
+					desc.depth = undefined;
 				}
-				const colorRes = colorTargets[0]; // legacy single color path
-				// Only perform clears on the FIRST writer pass for a given resource. Subsequent overlay writers
-				// should preserve previous contents (unless they explicitly requested a clear in the future).
-				const isFirstColorWriter = colorRes ? colorRes.writerPasses[0] === i : false;
-				const isFirstDepthWriter = depthRes ? depthRes.writerPasses[0] === i : false;
-				const builder = new RenderPassBuilder(this.backend).label(this.passes[i].name);
-					if (colorTargets.length) {
-						for (let idx = 0; idx < colorTargets.length; idx++) {
-							const ct = colorTargets[idx];
-							let clear: color_arr | undefined;
-							if (idx === 0 && ct === colorRes && isFirstColorWriter) {
-								clear = ct.clearOnWrite?.color;
-							}
-							builder.color(ct.tex as TextureHandle, clear, !!ct.desc.transient);
-					}
-				}
-				if (depthRes) {
-					const depthClear = isFirstDepthWriter && depthRes.clearOnWrite ? depthRes.clearOnWrite.depth : undefined;
-					builder.depth(depthRes.tex as TextureHandle, depthClear, !!depthRes.desc.transient);
-				}
-				const passEnc = builder.begin();
-				// Provide active pass encoder to backend (WebGPU uses it to bind pipeline and draw)
-				if (this.backend.type === 'webgpu') {
-					(this.backend as WebGPUBackend).setActivePassEncoder(passEnc as WebGPUPassEncoder);
-				}
-				rp = {
-					end: () => {
-						if (this.backend.type === 'webgpu') (this.backend as WebGPUBackend).setActivePassEncoder(null);
-						this.backend.endRenderPass(passEnc);
-					}
-				};
+				passEnc = this.backend.beginRenderPass(desc);
 			}
-			pass.execute(ctx, frame, data);
-			if (rp) rp.end();
-			checkWebGLError(`After pass execution: ${i}: ${this.passes[i].name}`);
+
+			pass.execute(this.passContext, frame, setupData[i]);
+			if (passEnc !== null) {
+				this.backend.endRenderPass(passEnc);
+			}
 		}
 	}
 
@@ -388,7 +382,10 @@ export class RenderGraphRuntime {
 			const res = this.texResources[h];
 			if (!res) continue;
 			if (res.tex) continue; // already realized
-			const pid = res.physicalId ?? h; // fallback unique
+			const pid = res.physicalId;
+			if (pid === undefined) {
+				throw new Error('[RenderGraph] Texture was not assigned a physical resource.');
+			}
 			if (!physTex.has(pid)) {
 				const desc = res.desc;
 				const tex = desc.depth ? this.backend.createDepthTexture(desc) : this.backend.createColorTexture(desc);
@@ -400,19 +397,29 @@ export class RenderGraphRuntime {
 				res.fboColorOnly = this.backend.createRenderTarget(res.tex, null) as FramebufferHandle;
 			}
 		}
-	}
 
-	private ensureFBO(color: RGTexHandle, depth: RGTexHandle): FramebufferHandle {
-		const cRes = this.texResources[color];
-		const dRes = this.texResources[depth];
-		if (!cRes || !dRes) {
-			throw new Error(`[RenderGraph] Cannot create FBO for color=${color}, depth=${depth}.`);
+		for (let passIndex = 0; passIndex < this._passWrites.length; passIndex += 1) {
+			const writes = this._passWrites[passIndex];
+			let colorHandle: RGTexHandle = 0;
+			let depthHandle: RGTexHandle = 0;
+			for (let writeIndex = 0; writeIndex < writes.length; writeIndex += 1) {
+				const handle = writes[writeIndex].tex;
+				const resource = this.texResources[handle];
+				if (resource.desc.depth) {
+					depthHandle = handle;
+				} else if (colorHandle === 0) {
+					colorHandle = handle;
+				}
+			}
+			if (colorHandle !== 0 && depthHandle !== 0) {
+				const colorResource = this.texResources[colorHandle];
+				if (colorResource.fboDepthAttachment !== depthHandle) {
+					const depthResource = this.texResources[depthHandle];
+					colorResource.fboDepthHandle = this.backend.createRenderTarget(colorResource.tex, depthResource.tex) as FramebufferHandle;
+					colorResource.fboDepthAttachment = depthHandle;
+				}
+			}
 		}
-		if (cRes.fboWithDepth && cRes.fboWithDepth.depth === depth) return cRes.fboWithDepth.fbo as FramebufferHandle;
-		// Delegate FBO creation to backend abstraction (opaque handle)
-		const fbo = this.backend.createRenderTarget(cRes.tex, dRes.tex) as FramebufferHandle;
-		cRes.fboWithDepth = { depth, fbo };
-		return fbo;
 	}
 
 	invalidate(): void {

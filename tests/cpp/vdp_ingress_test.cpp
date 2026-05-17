@@ -7,6 +7,8 @@
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
+#include "render/backend/backend.h"
+#include "render/backend/software/vdp_framebuffer_execution.h"
 #include "render/vdp/transform.h"
 
 #include <array>
@@ -38,12 +40,16 @@ struct Harness {
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::VDP vdp;
+	std::vector<uint32_t> framebuffer;
+	bmsx::SoftwareBackend softwareBackend;
 
 	Harness()
 		: memory()
 		, cpu(memory)
 		, scheduler(cpu)
-		, vdp(memory, scheduler, {256u, 212u}) {
+		, vdp(memory, scheduler, {256u, 212u})
+		, framebuffer(256u * 212u, 0u)
+		, softwareBackend(framebuffer.data(), 256, 212, 256 * static_cast<int>(sizeof(uint32_t))) {
 		setIo(memory, bmsx::IO_VDP_DITHER, 0u);
 		setIo(memory, bmsx::IO_VDP_SLOT_PRIMARY_ATLAS, bmsx::VDP_SLOT_ATLAS_NONE);
 		setIo(memory, bmsx::IO_VDP_SLOT_SECONDARY_ATLAS, bmsx::VDP_SLOT_ATLAS_NONE);
@@ -264,6 +270,7 @@ void testBlitDrawCtrlSnapshot() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	requireFramePixel(h, 10u, 4u, 0x11u, 0x22u, 0x33u, 0xffu, "DRAW_CTRL flip and parallax should execute inside the VDP");
 }
 
@@ -295,6 +302,7 @@ void testPmuParallaxResolvedBlitSnapshot() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	requireFramePixel(h, 32u, 48u, 0x44u, 0x55u, 0x66u, 0xffu, "PMU should resolve +8px Y before VDP execution");
 }
 
@@ -308,6 +316,7 @@ void testFrameBufferPresentSwapsDisplayReadback() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "CLEAR should submit framebuffer render work");
 	h.vdp.advanceWork(workUnits);
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	require(h.vdp.presentReadyFrameOnVblankEdge(), "CLEAR should present framebuffer work");
 	requireDisplayFramePixel(h, 0u, 0u, 0x11u, 0x22u, 0x33u, 0xffu, "VDP present edge should swap CPU-visible display readback page");
 	FrameBufferPresentationProbe probe;
@@ -325,6 +334,7 @@ void testFrameBufferSyncConsumesPendingPresentation() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "CLEAR should submit framebuffer render work before host context sync");
 	h.vdp.advanceWork(workUnits);
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	require(h.vdp.presentReadyFrameOnVblankEdge(), "CLEAR should present framebuffer work before host context sync");
 
 	FrameBufferPresentationProbe syncProbe;
@@ -368,6 +378,7 @@ void testPmuBankRegistersResolveDrawCtrl() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	requireFramePixel(h, 32u, 46u, 0x77u, 0x88u, 0x99u, 0xffu, "PMU bank Y should resolve inside VDP execution");
 }
 
@@ -394,6 +405,7 @@ void testPmuScaleUsesAbsoluteWeight() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "BLIT should submit render work");
 	h.vdp.advanceWork(workUnits);
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	requireFramePixel(h, 32u, 34u, 0xaau, 0xbbu, 0xccu, 0xffu, "negative PMU weight should invert offset inside VDP execution");
 }
 
@@ -795,6 +807,7 @@ void testXfStateCommitsWithSubmittedFrame() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "frame A should require render work");
 	h.vdp.advanceWork(workUnits);
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	require(h.vdp.presentReadyFrameOnVblankEdge(), "frame A should present framebuffer work");
 	const auto& output = h.vdp.readDeviceOutput();
 	require(output.xfViewMatrixIndex == 2u, "presented XF should keep frame A view index");
@@ -812,6 +825,7 @@ void testBbuBillboardPacketLatchesInstanceRam() {
 	sealStream(h, stream);
 	require(h.vdp.getPendingRenderWorkUnits() == 1, "BILLBOARD should submit BBU render work");
 	h.vdp.advanceWork(1);
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	require(!h.vdp.presentReadyFrameOnVblankEdge(), "BILLBOARD should not present framebuffer pages");
 	const auto& output = h.vdp.readDeviceOutput();
 	const auto& billboards = *output.billboards;
@@ -857,6 +871,7 @@ void testBbuFaultsAtBillboardPacketAcceptance() {
 	sealStream(h, acceptedAfterReject);
 	require(h.vdp.getPendingRenderWorkUnits() == 1, "BBU should leave rejected packet state when the next packet starts");
 	h.vdp.advanceWork(1);
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	require(!h.vdp.presentReadyFrameOnVblankEdge(), "BBU instance-only frame should not present framebuffer pages");
 	require(h.vdp.readDeviceOutput().billboards->length == 1u, "BBU should emit a valid instance after a rejected packet");
 
@@ -1055,6 +1070,7 @@ void testSaveStateRestoresRegisterFileAndSurfaceGeometry() {
 	const int workUnits = h.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "restored BG register should drive CLEAR work");
 	h.vdp.advanceWork(workUnits);
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	require(h.vdp.presentReadyFrameOnVblankEdge(), "restored BG register should present a framebuffer page");
 	requireDisplayFramePixel(h, 0u, 0u, 0x11u, 0x22u, 0x33u, 0xffu, "VDP CLEAR should consume the restored raw BG register");
 }
@@ -1077,16 +1093,19 @@ void testSaveStateRestoresSubmittedFramePipeline() {
 
 	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff303132u);
 	h.vdp.advanceWork(h.vdp.getPendingRenderWorkUnits());
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	require(h.vdp.presentReadyFrameOnVblankEdge(), "mutated first frame should present before restore");
 
 	h.vdp.restoreSaveState(saved);
 	require(h.vdp.getPendingRenderWorkUnits() == firstFrameWork, "save-state restore should restore active submitted frame work");
 	h.vdp.advanceWork(h.vdp.getPendingRenderWorkUnits());
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	require(h.vdp.presentReadyFrameOnVblankEdge(), "restored active submitted frame should present");
 	requireDisplayFramePixel(h, 0u, 0u, 0x10u, 0x11u, 0x12u, 0xffu, "restored active frame should use its saved BG register snapshot");
 
 	require(h.vdp.getPendingRenderWorkUnits() > 0, "save-state restore should keep queued submitted frame work");
 	h.vdp.advanceWork(h.vdp.getPendingRenderWorkUnits());
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(h.softwareBackend, h.vdp);
 	require(h.vdp.presentReadyFrameOnVblankEdge(), "restored queued submitted frame should promote and present");
 	requireDisplayFramePixel(h, 0u, 0u, 0x20u, 0x21u, 0x22u, 0xffu, "restored queued frame should use its saved BG register snapshot");
 }

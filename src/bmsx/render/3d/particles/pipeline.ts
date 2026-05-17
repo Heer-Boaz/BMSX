@@ -6,7 +6,7 @@ import type { PassEncoder, RenderContext, RenderPassStateRegistry } from '../../
 import { RenderPassLibrary } from '../../backend/pass/library';
 import { ParticlePipelineState } from '../../backend/backend';
 import { TEXTURE_UNIT_TEXTPAGE_ENGINE, TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '../../backend/webgl/constants';
-import { WebGLBackend } from '../../backend/webgl/backend';
+import type { WebGLBackend } from '../../backend/webgl/backend';
 import type { VdpTransformSnapshot } from '../../vdp/transform';
 import { M4 } from '../math';
 import { SYSTEM_SLOT_TEXTURE_KEY, VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';

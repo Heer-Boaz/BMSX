@@ -95,6 +95,8 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/particle.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/framebuffer_execution.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/framebuffer_execution.frag.glsl"
 )
 
 file(READ
@@ -145,6 +147,19 @@ file(READ
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/render_3d_shaders.h.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/3d/shaders/render_3d_shaders.h"
+	@ONLY
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/framebuffer_execution.vert.glsl"
+	BMSX_RENDER_VDP_2D_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/framebuffer_execution.frag.glsl"
+	BMSX_RENDER_VDP_2D_FRAGMENT_SHADER
+)
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_framebuffer_shaders.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/backend/gles2/shaders/vdp_framebuffer_shaders.h"
 	@ONLY
 )
 
@@ -226,6 +241,9 @@ add_library(bmsx_core STATIC
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/renderer.cpp
 	render/vdp/context_state.cpp
+	render/backend/gles2/vdp_framebuffer_execution.cpp
+	render/backend/software/vdp_framebuffer_rasterizer.cpp
+	render/backend/software/vdp_framebuffer_execution.cpp
 	render/vdp/framebuffer.cpp
 	render/vdp/surfaces.cpp
 	render/vdp/slot_textures.cpp
@@ -234,6 +252,7 @@ add_library(bmsx_core STATIC
 	render/texture_manager.cpp
 	render/backend/pass/library.cpp
 	render/backend/pass/software_scene.cpp
+	render/backend/pass/framebuffer_execution.cpp
 	render/graph/graph.cpp
 	render/shared/glyphs.cpp
 	render/test_pattern.cpp

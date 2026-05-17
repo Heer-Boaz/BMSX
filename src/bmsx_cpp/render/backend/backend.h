@@ -52,6 +52,11 @@ namespace bmsx {
 
 using TextureHandle = void*;
 
+class RenderPassLibrary;
+class VDP;
+class VdpFrameBufferRasterizer;
+struct VdpBlitterCommandBuffer;
+
 const std::array<u8, 256>& srgbToLinearLut();
 const std::array<u8, 256>& linearToSrgbLut();
 void convertSrgbToLinear(const u8* src, size_t pixels, std::vector<u8>& out);
@@ -163,7 +168,7 @@ public:
 	virtual void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) = 0;
 	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) = 0;
 	virtual void destroyTexture(TextureHandle handle) = 0;
-	virtual void copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) = 0;
+	virtual void registerBuiltinPasses(RenderPassLibrary& registry) = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Render pass management
@@ -201,7 +206,7 @@ public:
 class SoftwareBackend : public GPUBackend {
 	public:
 	SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pitch);
-	~SoftwareBackend() override = default;
+	~SoftwareBackend() override;
 
 	BackendType type() const override { return BackendType::Software; }
 
@@ -213,7 +218,8 @@ class SoftwareBackend : public GPUBackend {
 	void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
 	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) override;
 	void destroyTexture(TextureHandle handle) override;
-	void copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) override;
+	void registerBuiltinPasses(RenderPassLibrary& registry) override;
+	void executeVdpFrameBufferCommands(VDP& vdp, VdpBlitterCommandBuffer& commands, std::vector<u8>& frameBufferPixels);
 
 	// Render pass management
 	void clear(const std::array<f32, 4>* color, const f32* depth) override;
@@ -263,6 +269,8 @@ private:
 
 	// Texture storage
 	std::vector<std::unique_ptr<SoftwareTexture>> m_textures;
+	VDP* m_vdpFrameBufferRasterizerOwner = nullptr;
+	std::unique_ptr<VdpFrameBufferRasterizer> m_vdpFrameBufferRasterizer;
 
 	// Depth buffer (optional)
 	std::vector<f32> m_depthBuffer;

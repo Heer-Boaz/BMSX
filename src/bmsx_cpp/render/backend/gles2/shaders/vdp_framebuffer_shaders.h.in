@@ -1,0 +1,8 @@
+#pragma once
+
+namespace bmsx {
+
+constexpr const char* kRenderVdp2DVertexShader = R"glsl(@BMSX_RENDER_VDP_2D_VERTEX_SHADER@)glsl";
+constexpr const char* kRenderVdp2DFragmentShader = R"glsl(@BMSX_RENDER_VDP_2D_FRAGMENT_SHADER@)glsl";
+
+} // namespace bmsx

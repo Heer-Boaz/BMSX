@@ -11,7 +11,7 @@ void VdpBlitterCommandBuffer::writeClear(size_t index, u32 clearColor) {
 	color[index] = clearColor;
 }
 
-void VdpBlitterCommandBuffer::writeGeometryColor(size_t index, Layer2D commandLayer, f32 commandPriority, f32 x0Value, f32 y0Value, f32 x1Value, f32 y1Value, u32 drawColor) {
+void VdpBlitterCommandBuffer::writeGeometryColor(size_t index, Layer2D commandLayer, f32 commandPriority, i32 x0Value, i32 y0Value, i32 x1Value, i32 y1Value, u32 drawColor) {
 	layer[index] = commandLayer;
 	priority[index] = commandPriority;
 	x0[index] = x0Value;
@@ -21,12 +21,12 @@ void VdpBlitterCommandBuffer::writeGeometryColor(size_t index, Layer2D commandLa
 	color[index] = drawColor;
 }
 
-void VdpBlitterCommandBuffer::writeGeometryColorThickness(size_t index, Layer2D commandLayer, f32 commandPriority, f32 x0Value, f32 y0Value, f32 x1Value, f32 y1Value, u32 drawColor, f32 thicknessValue) {
+void VdpBlitterCommandBuffer::writeGeometryColorThickness(size_t index, Layer2D commandLayer, f32 commandPriority, i32 x0Value, i32 y0Value, i32 x1Value, i32 y1Value, u32 drawColor, i32 thicknessValue) {
 	writeGeometryColor(index, commandLayer, commandPriority, x0Value, y0Value, x1Value, y1Value, drawColor);
 	thickness[index] = thicknessValue;
 }
 
-void VdpBlitterCommandBuffer::writeBlit(size_t index, Layer2D commandLayer, f32 commandPriority, const VdpBlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleXValue, f32 scaleYValue, bool flipHValue, bool flipVValue, u32 drawColor, f32 parallax) {
+void VdpBlitterCommandBuffer::writeBlit(size_t index, Layer2D commandLayer, f32 commandPriority, const VdpBlitterSource& source, i32 dstXValue, i32 dstYValue, i32 dstWidthValue, i32 dstHeightValue, f32 scaleXValue, f32 scaleYValue, bool flipHValue, bool flipVValue, u32 drawColor, f32 parallax) {
 	layer[index] = commandLayer;
 	priority[index] = commandPriority;
 	sourceSurfaceId[index] = source.surfaceId;
@@ -36,6 +36,8 @@ void VdpBlitterCommandBuffer::writeBlit(size_t index, Layer2D commandLayer, f32 
 	sourceHeight[index] = source.height;
 	dstX[index] = dstXValue;
 	dstY[index] = dstYValue;
+	width[index] = dstWidthValue;
+	height[index] = dstHeightValue;
 	scaleX[index] = scaleXValue;
 	scaleY[index] = scaleYValue;
 	flipH[index] = flipHValue ? 1u : 0u;
@@ -43,18 +45,6 @@ void VdpBlitterCommandBuffer::writeBlit(size_t index, Layer2D commandLayer, f32 
 	color[index] = drawColor;
 	parallaxWeight[index] = parallax;
 }
-
-void VdpBlitterCommandBuffer::writeCopyRect(size_t index, Layer2D commandLayer, f32 commandPriority, i32 srcXValue, i32 srcYValue, i32 widthValue, i32 heightValue, i32 dstXValue, i32 dstYValue) {
-	layer[index] = commandLayer;
-	priority[index] = commandPriority;
-	srcX[index] = srcXValue;
-	srcY[index] = srcYValue;
-	width[index] = widthValue;
-	height[index] = heightValue;
-	dstX[index] = static_cast<f32>(dstXValue);
-	dstY[index] = static_cast<f32>(dstYValue);
-}
-
 
 bool VdpBlitterCommandBuffer::beginCommandSlot(VdpBlitterCommandType commandType, u32 commandSeq, size_t& index) {
 	index = length;
@@ -112,7 +102,7 @@ bool VdpBlitterCommandBuffer::writeBatchBlitBegin(size_t index, u32 drawColor, u
 	return true;
 }
 
-bool VdpBlitterCommandBuffer::writeBatchBlitItem(size_t index, u32 surfaceId, u32 srcX, u32 srcY, u32 width, u32 height, f32 dstX, f32 dstY, f32 advanceX) {
+bool VdpBlitterCommandBuffer::writeBatchBlitItem(size_t index, u32 surfaceId, u32 srcX, u32 srcY, u32 width, u32 height, i32 dstX, i32 dstY, u32 advanceX) {
 	if (batchBlitEntryCount >= VDP_BLITTER_RUN_ENTRY_CAPACITY) {
 		return false;
 	}

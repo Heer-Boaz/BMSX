@@ -10,7 +10,11 @@
 #include "../../3d/particles/pipeline.h"
 #include "../../3d/skybox/pipeline.h"
 #include "../../vdp/framebuffer.h"
+#include "framebuffer_execution.h"
+#include "../software/vdp_framebuffer_execution.h"
 #if BMSX_ENABLE_GLES2
+#include "../gles2/vdp_framebuffer_execution.h"
+#include "../gles2_backend.h"
 #include "../../post/crt_pipeline_gles2.h"
 #endif
 #include "../../graph/graph.h"
@@ -129,36 +133,19 @@ void setAutoPresentGraph(RenderPassDef& desc) {
 RenderPassLibrary::RenderPassLibrary(GPUBackend* backend)
 	: m_backend(backend)
 {
+	m_backend->registerBuiltinPasses(*this);
 }
 
 RenderPassLibrary::~RenderPassLibrary() = default;
 
-void RenderPassLibrary::registerBuiltin() {
-	switch (m_backend->type()) {
-		case BackendType::Software:
-			registerBuiltinPassesSoftware();
-			break;
-		case BackendType::OpenGLES2:
-#if BMSX_ENABLE_GLES2
-			registerBuiltinPassesOpenGLES2();
-#else
-			throw BMSX_RUNTIME_ERROR("[RenderPassLibrary] OpenGLES2 backend disabled at compile time.");
-#endif
-			break;
-		case BackendType::Headless:
-			// Minimal headless passes
-			break;
-	}
-}
-
-void RenderPassLibrary::registerBuiltinPassesSoftware() {
+void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	// FrameResolve: per-frame state setup
 	{
 		RenderPassDef desc;
 		setSkippedStatePass(desc, "frame_resolve", "FrameResolve");
 		desc.exec = noopRenderPass;
 		desc.prepare = noopPreparePass;
-		registerPass(desc);
+		registry.registerPass(desc);
 	}
 
 	// FrameShared: aggregated frame state
@@ -166,10 +153,12 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		RenderPassDef desc;
 		setSkippedStatePass(desc, "frame_shared", "FrameShared");
 		desc.exec = noopRenderPass;
-		registerPass(desc);
+		registry.registerPass(desc);
 	}
 
-	registerSoftwareScenePasses(*this);
+	registerVdpFrameBufferExecutionPass_Software(registry);
+
+	registerSoftwareScenePasses(registry);
 
 	{
 		RenderPassDef desc;
@@ -199,7 +188,7 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 				DitherParams{},
 				false);
 		};
-		registerPass(desc);
+		registry.registerPass(desc);
 	}
 
 	// Present pass (software: direct blit)
@@ -222,16 +211,14 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 											softBackend->pitch());
 		};
 		desc.prepare = noopPreparePass;
-		registerPass(desc);
+		registry.registerPass(desc);
 	}
 
-	registerHostOverlayBackendPasses<SoftwareBackend, nullptr, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(*this);
+	registerHostOverlayBackendPasses<SoftwareBackend, nullptr, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(registry);
 }
 
-void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
-#if !BMSX_ENABLE_GLES2
-	throw BMSX_RUNTIME_ERROR("[RenderPassLibrary] OpenGLES2 backend disabled at compile time.");
-#else
+#if BMSX_ENABLE_GLES2
+void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	ConsoleCore* const console = &ConsoleCore::instance();
 
 	// FrameResolve: per-frame state setup
@@ -240,7 +227,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		setSkippedStatePass(desc, "frame_resolve", "FrameResolve");
 		desc.exec = noopRenderPass;
 		desc.prepare = noopPreparePass;
-		registerPass(desc);
+		registry.registerPass(desc);
 	}
 
 	// FrameShared: aggregated frame state
@@ -248,12 +235,14 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		RenderPassDef desc;
 		setSkippedStatePass(desc, "frame_shared", "FrameShared");
 		desc.exec = noopRenderPass;
-		registerPass(desc);
+		registry.registerPass(desc);
 	}
 
-	registerSkyboxPass_GLES2(*this);
-	registerMeshPass_GLES2(*this);
-	registerParticlesPass_GLES2(*this);
+	registerVdpFrameBufferExecutionPass_GLES2(registry);
+
+	registerSkyboxPass_GLES2(registry);
+	registerMeshPass_GLES2(registry);
+	registerParticlesPass_GLES2(registry);
 
 	{
 		RenderPassDef desc;
@@ -271,7 +260,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 			auto& fbState = std::any_cast<Framebuffer2DPipelineState&>(state);
 			CRTPipeline::renderPresentToCurrentTargetGLES2(static_cast<OpenGLES2Backend*>(backend), console->view(), fbState);
 		};
-		registerPass(desc);
+		registry.registerPass(desc);
 	}
 
 	// Device quantize/dither pass (GLES2)
@@ -298,7 +287,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 			return static_cast<i32>(view->dither_type) != 0;
 		};
 		desc.prepare = noopPreparePass;
-		registerPass(desc);
+		registry.registerPass(desc);
 	}
 
 	// Present pass (GLES2, no CRT)
@@ -316,7 +305,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 			return !view->crt_postprocessing_enabled;
 		};
 		desc.prepare = noopPreparePass;
-		registerPass(desc);
+		registry.registerPass(desc);
 	}
 
 	// CRT post-processing / present pass (GLES2)
@@ -337,12 +326,12 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 			return view->crt_postprocessing_enabled;
 		};
 		desc.prepare = noopPreparePass;
-		registerPass(desc);
+		registry.registerPass(desc);
 	}
 
-	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2, shouldRenderAxisGizmo>(*this);
-#endif
+	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2, shouldRenderAxisGizmo>(registry);
 }
+#endif
 
 void RenderPassLibrary::registerPass(const RenderPassDef& desc) {
 	const std::string& idStr = desc.id;

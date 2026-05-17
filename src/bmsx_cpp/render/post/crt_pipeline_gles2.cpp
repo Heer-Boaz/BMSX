@@ -853,7 +853,7 @@ void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTP
 
 void renderPresentToCurrentTargetGLES2(OpenGLES2Backend* backend, GameView* context, const Framebuffer2DPipelineState& state) {
 	(void)context;
-	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, false, false, false, true);
+	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, false, true, false, true);
 }
 
 void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, const DeviceQuantizePipelineState& state) {

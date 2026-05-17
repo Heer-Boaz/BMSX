@@ -7,7 +7,6 @@ local fsmlibrary<const> = require('bios/fsm/library')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 local vdp_stream<const> = require('bios/vdp_stream')
 local font_module<const> = require('bios/font')
-local color<const> = require('bios/common/color')
 
 local textobject<const> = {}
 textobject.__index = textobject
@@ -323,10 +322,10 @@ function textobject.new(opts)
 	self.highlight_vibe_offset_y = 0
 	self.wrapped_line_to_logical_line = {}
 	self.wrapped_line_y_offsets = { 0 }
-	self.text_color = { r = 1, g = 1, b = 1, a = 1 }
-	self.highlight_color = { r = 0, g = 0, b = 0.5, a = 0.7 }
-	self.normal_bg_color = { r = 0, g = 0, b = 0, a = 1 }
-	self.highlight_bg_color = { r = 0, g = 0, b = 0.5, a = 0.7 }
+	self.text_color = opts.text_color or 0xffffffff
+	self.highlight_color = opts.highlight_color or 0xb3000080
+	self.normal_bg_color = opts.normal_bg_color or 0xff000000
+	self.highlight_bg_color = opts.highlight_bg_color or 0xb3000080
 	self.font = opts.font or font_module.get('default')
 	self.dimensions = opts.dimensions or { left = 0, top = 0, right = machine_manifest.render_size.width, bottom = machine_manifest.render_size.height }
 	self.centered_block_x = 0
@@ -341,8 +340,8 @@ function textobject.new(opts)
 			line_height = self.line_height,
 			line_offsets = self.wrapped_line_y_offsets,
 			line_widths = self.displayed_line_widths,
-			color = color.rgba8888(self.text_color),
-			background_color = color.rgba8888(self.normal_bg_color),
+			color = self.text_color,
+			background_color = self.normal_bg_color,
 			offset = self.text_offset,
 		layer = self.layer,
 	})
@@ -551,8 +550,8 @@ function textobject:sync_text_component()
 	self.text_component.line_height = self.line_height
 	self.text_component.line_offsets = self.wrapped_line_y_offsets
 	self.text_component.line_widths = self.displayed_line_widths
-	self.text_component.color = color.rgba8888(self.text_color)
-	self.text_component.background_color = color.rgba8888(self.normal_bg_color)
+	self.text_component.color = self.text_color
+	self.text_component.background_color = self.normal_bg_color
 	self.text_component.layer = self.layer
 end
 
@@ -602,7 +601,7 @@ function textobject:submit_highlight()
 		local offset_y<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
 		local padded_x<const> = horizontal_margin * scale
 		local highlight_z<const> = self.z + self.text_offset.z - 0.5
-		vdp_stream.fill_rect_color(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, highlight_z, self.layer, color.rgba8888(self.highlight_bg_color))
+		vdp_stream.fill_rect_color(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, highlight_z, self.layer, self.highlight_bg_color)
 	end
 end
 

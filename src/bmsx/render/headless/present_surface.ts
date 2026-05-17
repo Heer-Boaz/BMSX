@@ -23,18 +23,30 @@ export class HeadlessPresentSurface {
 			throw new Error(`[HeadlessPresentSurface] Source pixel byte length mismatch (${srcPixels.byteLength} != ${expectedBytes}).`);
 		}
 		this.ensureSize(dstWidth, dstHeight);
+		let srcY = 0;
+		let srcYStep = 0;
 		for (let y = 0; y < dstHeight; y += 1) {
-			const srcY = Math.floor((y * srcHeight) / dstHeight);
 			const dstRow = y * dstWidth * 4;
 			const srcRow = srcY * srcWidth * 4;
+			let srcX = 0;
+			let srcXStep = 0;
 			for (let x = 0; x < dstWidth; x += 1) {
-				const srcX = Math.floor((x * srcWidth) / dstWidth);
 				const srcIndex = srcRow + srcX * 4;
 				const dstIndex = dstRow + x * 4;
 				this.pixels[dstIndex + 0] = srcPixels[srcIndex + 0];
 				this.pixels[dstIndex + 1] = srcPixels[srcIndex + 1];
 				this.pixels[dstIndex + 2] = srcPixels[srcIndex + 2];
 				this.pixels[dstIndex + 3] = srcPixels[srcIndex + 3];
+				srcXStep += srcWidth;
+				while (srcXStep >= dstWidth) {
+					srcXStep -= dstWidth;
+					srcX += 1;
+				}
+			}
+			srcYStep += srcHeight;
+			while (srcYStep >= dstHeight) {
+				srcYStep -= dstHeight;
+				srcY += 1;
 			}
 		}
 	}

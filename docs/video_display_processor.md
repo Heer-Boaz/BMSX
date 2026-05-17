@@ -98,7 +98,6 @@ Direct `IO_VDP_CMD` accepts:
 | `VDP_CMD_FILL_RECT` | Enqueues a rectangle command from the registerfile. |
 | `VDP_CMD_DRAW_LINE` | Enqueues a line command from the registerfile. |
 | `VDP_CMD_BLIT` | Enqueues a blit command from the registerfile through PMU/source resolve. |
-| `VDP_CMD_COPY_RECT` | Enqueues a framebuffer copy command from the registerfile. |
 
 FIFO/DMA stream packets use `VDP_PKT_*` headers:
 
@@ -192,7 +191,8 @@ BEGIN/END stream commands, and unknown packet kinds fault with
 | DEX direct command | BEGIN/END/doorbell writes execute admission immediately. Draw commands enqueue retained work; framebuffer rasterization waits for scheduler work units. | `VDP_STATUS_SUBMIT_BUSY`, `VDP_STATUS_SUBMIT_REJECTED`, and fault registers. |
 | DEX FIFO stream | `IO_VDP_FIFO` collects words through the stream-ingress unit. `VDP_FIFO_CTRL_SEAL` decodes/replays the sealed stream immediately into submitted-frame state. | Stream-ingress partial words and submitted frames keep submit busy set. |
 | DMA stream | DMA owner opens the stream-ingress DMA submit latch, copies bytes into VDP stream memory, then seals. The VDP decodes the stream on seal. | Submit busy remains set while DMA submit is active. |
-| Submitted framebuffer work | Scheduler accrues render work units from CPU cycles and advances active DEX work. Work moves from `Executing` to `Ready` when remaining units reach zero. | VBlank presents only `Ready` frames; unfinished frames are held. |
+| Submitted framebuffer work | Scheduler accrues render work units from CPU cycles and advances active DEX work. Work moves from `Executing` to `ExecutionPending` when retained framebuffer commands are ready for the host backend pass, then to `Ready` only after `completeReadyFrameBufferExecution`. | VBlank presents only `Ready` frames; unfinished or backend-pending frames are held. |
+| Framebuffer execution pass | Host render backend consumes the ready DEX command buffer at the render/presentation boundary. TS headless and native software backends use retained software rasterizers that write the VDP framebuffer VRAM slot and mark CPU readback dirty. WebGL/GLES render the same ordered command stream into the backend framebuffer texture and complete with no CPU-readback slot. | `src/bmsx/render/backend/software/*`, `src/bmsx/render/backend/webgl/vdp_framebuffer_execution.ts`, `src/bmsx_cpp/render/backend/software/*`, and `src/bmsx_cpp/render/backend/gles2/*`. |
 | SBX | Register-window writes affect live SBX state. Frame seal samples live SBX state and resolves face sources against VRAM surface slots. Visible SBX state changes only when a `Ready` frame is presented. | Invalid face sources fault at frame seal; rejected SBX state does not become visible. |
 | BBU | Packet decode, VRAM-backed source resolve, and instance emit happen during sealed stream replay. Accepted instances are retained in fixed-capacity per-field frame buffers. | Packet faults abort the sealed stream frame through VDP fault registers. |
 | XF/LPU/MFU/JTU register port | Stream `REG1/REGN` packets write raw live register words during sealed stream replay. Frame seal samples the current words into the submitted VOUT payload. | Bad register ranges fault and abort the sealed stream frame. |
@@ -290,6 +290,11 @@ copying per-record objects.
 - C++ subunits: `bbu.cpp/.h`, `fbm.cpp/.h`, `frame.cpp/.h`, `jtu.cpp/.h`,
   `lpu.cpp/.h`, `mdu.cpp/.h`, `mfu.cpp/.h`, `pmu.cpp/.h`, `sbx.cpp/.h`,
   `vout.cpp/.h`, and `xf.cpp/.h`
+- Host framebuffer execution passes and software rasterizers:
+  `src/bmsx/render/backend/software/*`,
+  `src/bmsx/render/backend/webgl/vdp_framebuffer_execution.ts`,
+  `src/bmsx_cpp/render/backend/software/*`, and
+  `src/bmsx_cpp/render/backend/gles2/*`
 - Host render output consumers: `src/bmsx/render/vdp/*` and
   `src/bmsx_cpp/render/vdp/*`
 - Runtime save-state codecs: `src/bmsx/machine/runtime/save_state/*` and

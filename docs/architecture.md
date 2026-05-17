@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-05-15.
+Last checked: 2026-05-17.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -153,6 +153,14 @@ Internal units:
 - `blitter_source` owns DEX source-slot to VRAM-surface admission and source
   bounds validation before framebuffer blit and tile-run commands enter the
   retained DEX command buffer.
+- The framebuffer-execution boundary is explicit: VDP owns the retained DEX
+  command buffer, timing state, ready/execution-pending latch, faults, FBM page
+  state, and the framebuffer VRAM slot. Host render backends execute the ready
+  command buffer through the registered `vdp_framebuffer_execution` pass.
+  Software backends use the retained software rasterizer to write the VDP
+  framebuffer slot and return that slot to `completeReadyFrameBufferExecution`;
+  GPU backends render the same command buffer into the backend framebuffer
+  texture and complete without claiming CPU readback ownership.
 - `streamIngress` owns the DMA submit latch, FIFO partial-word bytes, and sealed
   FIFO packet words.
 - `VRAM` owns staging memory, surface slots, dirty spans, CPU readback pixels,
@@ -178,8 +186,9 @@ Internal units:
   mesh draw records plus sampled LPU/MFU/JTU words, scanout phase, beam
   position, and retained `VdpDeviceOutput`.
 
-Host render backends consume VOUT output transactions. They do not receive cart
-intent such as sprites, rectangles, labels, or scene objects. VDP save-state
+Host render backends consume VOUT output transactions and ready VDP framebuffer
+execution buffers. They do not receive cart intent such as sprites, rectangles,
+labels, or scene objects. VDP save-state
 record shapes live in dedicated `machine/devices/vdp/save_state` files on both
 runtimes; the stream-ingress, VRAM/surface-memory, and readback latch/buffer
 owners live in mirrored `machine/devices/vdp/ingress`, `machine/devices/vdp/vram`,

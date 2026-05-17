@@ -43,6 +43,7 @@ struct VdpSurfaceUpload {
 
 struct VdpFrameBufferPresentation {
 	uint32_t presentationCount = 0;
+	bool readbackValid = false;
 	bool requiresFullSync = false;
 	uint32_t dirtyRowStart = 0;
 	uint32_t dirtyRowEnd = 0;

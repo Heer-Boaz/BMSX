@@ -293,27 +293,6 @@ void OpenGLES2Backend::destroyTexture(TextureHandle handle) {
 	delete tex;
 }
 
-void OpenGLES2Backend::copyTextureRegion(TextureHandle source, TextureHandle destination, i32 srcX, i32 srcY, i32 dstX, i32 dstY, i32 width, i32 height) {
-	auto* src = static_cast<GLES2Texture*>(source);
-	auto* dst = static_cast<GLES2Texture*>(destination);
-	const i32 prevActiveUnit = m_active_texture_unit;
-	const GLuint prevUploadBinding = m_bound_texture_2d_by_unit[0];
-	glBindFramebuffer(GL_FRAMEBUFFER, m_readback_fbo);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, src->id, 0);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, dst->id);
-	m_active_texture_unit = 0;
-	m_bound_texture_2d_by_unit[0] = dst->id;
-	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, dstX, dstY, srcX, srcY, width, height);
-	glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
-	glBindTexture(GL_TEXTURE_2D, prevUploadBinding);
-	m_bound_texture_2d_by_unit[0] = prevUploadBinding;
-	if (prevActiveUnit >= 0) {
-		glActiveTexture(GL_TEXTURE0 + prevActiveUnit);
-	}
-	invalidateTextureBindingCache();
-}
-
 void OpenGLES2Backend::clear(const std::array<f32, 4>* color, const f32* depth) {
 	GLbitfield mask = 0;
 	if (color) {
@@ -431,6 +410,7 @@ void OpenGLES2Backend::setFramebufferGetter(FramebufferGetter getter) {
 
 void OpenGLES2Backend::onContextReset() {
 	m_context_ready = true;
+	m_context_generation += 1u;
 	invalidateTextureBindingCache();
 	const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
 	m_supports_srgb_textures = hasExtensionToken(extensions, "GL_EXT_sRGB");
@@ -442,6 +422,7 @@ void OpenGLES2Backend::onContextReset() {
 
 void OpenGLES2Backend::onContextDestroy() {
 	m_context_ready = false;
+	m_context_generation += 1u;
 	invalidateTextureBindingCache();
 	m_supports_srgb_textures = false;
 	if (m_readback_fbo != 0) {

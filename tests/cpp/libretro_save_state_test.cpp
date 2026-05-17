@@ -6,6 +6,8 @@
 #include "machine/memory/map.h"
 #include "machine/runtime/runtime.h"
 #include "platform/libretro/platform.h"
+#include "render/backend/backend.h"
+#include "render/backend/software/vdp_framebuffer_execution.h"
 #include "support/program_cart_fixture.h"
 
 #include <array>
@@ -66,6 +68,9 @@ void testLibretroSaveStateRoundTrip() {
 	const int workUnits = runtime.machine.vdp.getPendingRenderWorkUnits();
 	require(workUnits > 0, "restored VDP BG register should submit CLEAR work after libretro loadState");
 	runtime.machine.vdp.advanceWork(workUnits);
+	std::vector<uint32_t> framebuffer(256u * 212u, 0u);
+	bmsx::SoftwareBackend softwareBackend(framebuffer.data(), 256, 212, 256 * static_cast<int>(sizeof(uint32_t)));
+	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, runtime.machine.vdp);
 	require(runtime.machine.vdp.presentReadyFrameOnVblankEdge(), "restored VDP state should present framebuffer output after libretro loadState");
 	std::array<bmsx::u8, 4u> pixel{};
 	require(runtime.machine.vdp.readFrameBufferPixels(bmsx::VdpFrameBufferPage::Display, 0u, 0u, 1u, 1u, pixel.data(), pixel.size()), "restored VDP framebuffer should be readable");

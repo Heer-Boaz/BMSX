@@ -27,6 +27,7 @@ void VdpFbmUnit::restoreDisplayReadback(const std::vector<u8>& pixels) {
 
 void VdpFbmUnit::presentPage(VdpSurfaceUploadSlot& renderSlot) {
 	if (m_presentationCount == 0u) {
+		m_presentationReadbackValid = true;
 		m_presentationDirtyRowStart = renderSlot.dirtyRowStart;
 		m_presentationDirtyRowEnd = renderSlot.dirtyRowEnd;
 		for (u32 row = renderSlot.dirtyRowStart; row < renderSlot.dirtyRowEnd; ++row) {
@@ -37,6 +38,16 @@ void VdpFbmUnit::presentPage(VdpSurfaceUploadSlot& renderSlot) {
 	}
 	m_presentationCount += 1u;
 	std::swap(renderSlot.cpuReadback, m_displayFrameBufferCpuReadback);
+	m_state = VdpFbmState::PagePendingPresent;
+}
+
+void VdpFbmUnit::presentTexturePage() {
+	if (m_presentationCount == 0u) {
+		m_presentationDirtyRowStart = 0u;
+		m_presentationDirtyRowEnd = 0u;
+	}
+	m_presentationReadbackValid = false;
+	m_presentationCount += 1u;
 	m_state = VdpFbmState::PagePendingPresent;
 }
 
@@ -54,11 +65,13 @@ void VdpFbmUnit::copyReadbackPixelsFrom(const std::vector<u8>& source, u32 x, u3
 const VdpFrameBufferPresentation& VdpFbmUnit::buildPresentation(const std::vector<u8>& renderReadback, bool forceFullSync) {
 	if (forceFullSync) {
 		m_presentationOutput.presentationCount = 0u;
+		m_presentationOutput.readbackValid = true;
 		m_presentationOutput.requiresFullSync = true;
 		m_presentationOutput.dirtyRowStart = 0u;
 		m_presentationOutput.dirtyRowEnd = 0u;
 	} else {
 		m_presentationOutput.presentationCount = m_presentationCount;
+		m_presentationOutput.readbackValid = m_presentationReadbackValid;
 		m_presentationOutput.requiresFullSync = m_presentationRequiresFullSync;
 		m_presentationOutput.dirtyRowStart = m_presentationDirtyRowStart;
 		m_presentationOutput.dirtyRowEnd = m_presentationDirtyRowEnd;
@@ -96,6 +109,7 @@ void VdpFbmUnit::syncPresentation(VdpFrameBufferPresentationSink& sink, const st
 
 void VdpFbmUnit::resetPresentation() {
 	m_presentationCount = 0u;
+	m_presentationReadbackValid = false;
 	m_presentationRequiresFullSync = false;
 	m_presentationDirtyRowStart = 0u;
 	m_presentationDirtyRowEnd = 0u;

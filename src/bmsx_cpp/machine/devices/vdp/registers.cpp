@@ -15,12 +15,4 @@ VdpDrawCtrl decodeVdpDrawCtrl(u32 value) {
 	};
 }
 
-u32 encodeVdpDrawCtrl(bool flipH, bool flipV, u32 pmuBank, f32 parallaxWeight) {
-	const u32 rawQ8_8 = static_cast<u32>(static_cast<i32>(parallaxWeight * 256.0f)) & 0xffffu;
-	return (flipH ? VDP_DRAW_CTRL_FLIP_H : 0u)
-		| (flipV ? VDP_DRAW_CTRL_FLIP_V : 0u)
-		| ((pmuBank & 0xffu) << VDP_DRAW_CTRL_PMU_BANK_SHIFT)
-		| (rawQ8_8 << VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT);
-}
-
 } // namespace bmsx

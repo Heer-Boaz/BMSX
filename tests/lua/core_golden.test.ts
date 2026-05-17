@@ -315,6 +315,7 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 				},
 			},
 			vdp: {
+				readyFrameBufferCommands: null,
 				resetStatus() { },
 				presentReadyFrameOnVblankEdge() {
 					return false;

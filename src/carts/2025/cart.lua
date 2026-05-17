@@ -27,10 +27,7 @@ local create_rect_state<const> = function(z)
 		height = 0,
 		layer = sys_vdp_layer_world,
 		z = z,
-		r = 0,
-		g = 0,
-		b = 0,
-		a = 0,
+		color = 0,
 	}
 end
 
@@ -300,6 +297,8 @@ function new_game()
 			dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
 			blank_lines = 1,
 			pos = { z = 900 },
+			text_color = globals.p3_ink_color,
+			normal_bg_color = globals.p3_white_color,
 			layer = sys_vdp_layer_ui,
 		})
 		inst('p3.text.results', {

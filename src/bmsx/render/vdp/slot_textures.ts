@@ -72,6 +72,22 @@ export class VdpSlotTextures implements VdpSurfaceUploadSink {
 		return pixels;
 	}
 
+	public readSurfaceTextureWidth(surfaceId: number): number {
+		const width = this.syncedTextureWidths[surfaceId];
+		if (width === 0) {
+			throw new Error(`[VDPSlotTextures] Surface ${surfaceId} has no synced texture width.`);
+		}
+		return width;
+	}
+
+	public readSurfaceTextureHeight(surfaceId: number): number {
+		const height = this.syncedTextureHeights[surfaceId];
+		if (height === 0) {
+			throw new Error(`[VDPSlotTextures] Surface ${surfaceId} has no synced texture height.`);
+		}
+		return height;
+	}
+
 	private isSyncedTextureSize(surfaceId: number, width: number, height: number): boolean {
 		return this.syncedTextureWidths[surfaceId] === width && this.syncedTextureHeights[surfaceId] === height;
 	}

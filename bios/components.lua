@@ -9,7 +9,6 @@ local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 local font_module<const> = require('bios/font')
 local vdp_image<const> = require('bios/vdp_image')
 local vdp_stream<const> = require('bios/vdp_stream')
-local color_module<const> = require('bios/common/color')
 local romdir<const> = require('bios/romdir')
 local world_instance<const> = require('bios/world/index').instance
 local eventemitter<const> = eventemitter_module.eventemitter
@@ -860,7 +859,7 @@ function customvisualcomponent:submit_rect(rect)
 	if not rect.visible or rect.width <= 0 or rect.height <= 0 then
 		return
 	end
-	vdp_stream.fill_rect_color(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, rect.z, rect.layer, color_module.rgba8888(rect))
+	vdp_stream.fill_rect_color(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, rect.z, rect.layer, rect.color)
 end
 
 -- function customvisualcomponent:submit_poly(desc)

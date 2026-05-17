@@ -2,11 +2,22 @@
 import { color_arr, type TextureSource } from '../../../rompack/format';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
-import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, type SizedArrayBufferView } from '../backend';
+import { GPUBackend, GraphicsPipelineBindingLayout, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, type SizedArrayBufferView } from '../backend';
 import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
 import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './helpers';
 import { createSolidRgba8Pixels } from '../../shared/solid_pixels';
+import { consoleCore } from '../../../core/console';
+import { registerFramebuffer2DPass_WebGL } from '../../2d/framebuffer_pipeline';
+import { registerSkyboxPass_WebGL } from '../../3d/skybox/pipeline';
+import { registerMeshPass_WebGL } from '../../3d/mesh/pipeline';
+import { registerParticlesPass_WebGL } from '../../3d/particles/pipeline';
+import { registerHostOverlayPass_WebGL, registerHostMenuPass_WebGL } from '../../host_overlay/webgl/pipeline';
+import { registerCRT_WebGL } from '../../post/crt/pipeline';
+import { registerDeviceQuantize_WebGL } from '../../post/device_quantize_pipeline';
+import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
+import type { RenderPassLibrary } from '../pass/library';
+import { registerVdpFrameBufferExecutionPass_WebGL } from './vdp_framebuffer_execution';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
 
@@ -50,6 +61,64 @@ export class WebGLBackend implements GPUBackend {
 	constructor(public gl: WebGL2RenderingContext) {
 		this._context = gl;
 		this.readbackFbo = gl.createFramebuffer()!;
+	}
+
+	registerBuiltinPasses(registry: RenderPassLibrary): void {
+		registry.register({
+			id: 'frame_resolve',
+			name: 'FrameResolve',
+			stateOnly: true,
+			graph: { skip: true },
+			exec: () => { },
+			prepare: (backend) => {
+				const gv = consoleCore.view;
+				updateAndBindFrameUniforms(backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
+			},
+		});
+		registerSkyboxPass_WebGL(registry);
+		registerMeshPass_WebGL(registry);
+		registerParticlesPass_WebGL(registry);
+		registerVdpFrameBufferExecutionPass_WebGL(registry);
+		registerFramebuffer2DPass_WebGL(registry);
+		registerDeviceQuantize_WebGL(registry);
+		registerCRT_WebGL(registry);
+		registerHostOverlayPass_WebGL(registry);
+		registerHostMenuPass_WebGL(registry);
+		registry.register({
+			id: 'frame_shared',
+			name: 'FrameShared',
+			stateOnly: true,
+			graph: { skip: true },
+			exec: () => { },
+		});
+	}
+
+	bindRenderPassPipeline(pass: PassEncoder, pipeline: RenderPassInstanceHandle, bindingLayout?: GraphicsPipelineBindingLayout): void {
+		this.setGraphicsPipeline(pass, pipeline);
+		const uniformList = bindingLayout?.uniforms;
+		if (uniformList) {
+			for (const uniformName of uniformList) {
+				switch (uniformName) {
+					case 'FrameUniforms':
+						this.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
+						break;
+					case 'DirLightBlock':
+						this.setUniformBlockBinding('DirLightBlock', 0);
+						break;
+					case 'PointLightBlock':
+						this.setUniformBlockBinding('PointLightBlock', 1);
+						break;
+				}
+			}
+		}
+	}
+
+	setAlphaBlended2DState(srcFactor: number, dstFactor: number): void {
+		this.setCullEnabled(false);
+		this.setDepthTestEnabled(false);
+		this.setDepthMask(false);
+		this.setBlendEnabled(true);
+		this.setBlendFunc(srcFactor, dstFactor);
 	}
 
 	private bindTexture2DForUpload(texture: WebGLTexture, desc: TextureParams): void {
@@ -142,45 +211,40 @@ export class WebGLBackend implements GPUBackend {
 		return tex;
 	}
 
-	private cubemapFaceTarget(face: number): GLenum {
+
+	private createSkyboxCubemap(): WebGLTexture {
 		const gl = this.gl;
-		switch (face) {
-			case 0: return gl.TEXTURE_CUBE_MAP_POSITIVE_X;
-			case 1: return gl.TEXTURE_CUBE_MAP_NEGATIVE_X;
-			case 2: return gl.TEXTURE_CUBE_MAP_POSITIVE_Y;
-			case 3: return gl.TEXTURE_CUBE_MAP_NEGATIVE_Y;
-			case 4: return gl.TEXTURE_CUBE_MAP_POSITIVE_Z;
-			case 5: return gl.TEXTURE_CUBE_MAP_NEGATIVE_Z;
-			default: throw new Error(`Invalid cubemap face: ${face}`);
-		}
+		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
+		const tex = gl.createTexture()!;
+		gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+		return tex;
+	}
+
+	private bindSkyboxCubemap(cubemap: WebGLTexture): void {
+		const gl = this.gl;
+		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
+		gl.bindTexture(gl.TEXTURE_CUBE_MAP, cubemap);
+	}
+
+	private cubemapFaceTarget(face: number): GLenum {
+		return this.gl.TEXTURE_CUBE_MAP_POSITIVE_X + face;
 	}
 
 	private uploadCubemapSource(target: GLenum, src: TextureSource): void {
 		const gl = this.gl;
-		const data = src.data;
-		if (data) {
-			gl.texImage2D(target, 0, gl.RGBA, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
-		} else {
-			gl.texImage2D(target, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
+		if (src.data) {
+			gl.texImage2D(target, 0, gl.RGBA, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, src.data);
+			this.accountUpload('texture', src.width * src.height * 4);
+			return;
 		}
+		gl.texImage2D(target, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
 		this.accountUpload('texture', src.width * src.height * 4);
 	}
 
-	private bindSkyboxCubemap(tex: WebGLTexture): void {
-		const gl = this.gl;
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
-		gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
-	}
-
-	private createSkyboxCubemap(): WebGLTexture {
-		const tex = this.gl.createTexture()!;
-		this.bindSkyboxCubemap(tex);
-		return tex;
-	}
-
 	private finishSkyboxCubemap(desc: TextureParams): void {
-		GLR.glSetTextureCubeParams(this.gl, desc);
-		this.gl.bindTexture(this.gl.TEXTURE_CUBE_MAP, null);
+		const gl = this.gl;
+		GLR.glSetTextureCubeParams(gl, desc);
+		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
 	}
 
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): WebGLTexture {
@@ -232,24 +296,6 @@ export class WebGLBackend implements GPUBackend {
 		this.gl.deleteTexture(handle);
 	}
 
-	copyTextureRegion(source: WebGLTexture, destination: WebGLTexture, srcX: number, srcY: number, dstX: number, dstY: number, width: number, height: number): void {
-		const gl = this.gl;
-		const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
-		const prevActiveUnit = this.currentActiveTexUnit;
-		const prevTexture = this.boundTex2D[TEXTURE_UNIT_UPLOAD];
-		gl.bindFramebuffer(gl.FRAMEBUFFER, this.readbackFbo);
-		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, source, 0);
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
-		gl.bindTexture(gl.TEXTURE_2D, destination);
-		this.currentActiveTexUnit = TEXTURE_UNIT_UPLOAD;
-		this.boundTex2D[TEXTURE_UNIT_UPLOAD] = destination;
-		gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, dstX, dstY, srcX, srcY, width, height);
-		gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
-		gl.bindTexture(gl.TEXTURE_2D, prevTexture);
-		this.boundTex2D[TEXTURE_UNIT_UPLOAD] = prevTexture;
-		gl.activeTexture(gl.TEXTURE0 + prevActiveUnit);
-		this.currentActiveTexUnit = prevActiveUnit;
-	}
 	createColorTexture(desc: { width: number; height: number; format?: GLenum }): WebGLTexture {
 		const gl = this.gl;
 		const tex = gl.createTexture()!;
@@ -387,8 +433,13 @@ export class WebGLBackend implements GPUBackend {
 		const bytesPerIndex = (type === this.gl.UNSIGNED_INT) ? 4 : (type === this.gl.UNSIGNED_BYTE ? 1 : 2);
 		this.gl.drawElements(this.gl.TRIANGLES, indexCount, type, firstIndex * bytesPerIndex);
 	}
-	// Remove registerCustomPipeline; use PipelineManager.register directly
-	private hashString(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0; return h >>> 0; }
+	private hashString(s: string): number {
+		let h = 0;
+		for (let i = 0; i < s.length; i++) {
+			h = Math.imul(31, h) + s.charCodeAt(i);
+		}
+		return h >>> 0;
+	}
 	getPassState<S = unknown>(label: string): S {
 		return this.extraStates[label] as S;
 	}

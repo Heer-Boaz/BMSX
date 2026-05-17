@@ -18,18 +18,21 @@ export const VDP_SUBMITTED_FRAME_EMPTY = 0;
 export const VDP_SUBMITTED_FRAME_QUEUED = 1;
 export const VDP_SUBMITTED_FRAME_EXECUTING = 2;
 export const VDP_SUBMITTED_FRAME_READY = 3;
+export const VDP_SUBMITTED_FRAME_EXECUTION_PENDING = 4;
 
 export type VdpSubmittedFrameState =
 	| typeof VDP_SUBMITTED_FRAME_EMPTY
 	| typeof VDP_SUBMITTED_FRAME_QUEUED
 	| typeof VDP_SUBMITTED_FRAME_EXECUTING
-	| typeof VDP_SUBMITTED_FRAME_READY;
+	| typeof VDP_SUBMITTED_FRAME_READY
+	| typeof VDP_SUBMITTED_FRAME_EXECUTION_PENDING;
 
 export type VdpSubmittedFrame = {
 	queue: VdpBlitterCommandBuffer;
 	state: VdpSubmittedFrameState;
 	hasCommands: boolean;
 	hasFrameBufferCommands: boolean;
+	frameBufferReadbackValid: boolean;
 	cost: number;
 	workRemaining: number;
 	ditherType: number;
@@ -83,8 +86,6 @@ export type VdpBlitterCommandSaveState = {
 	flipV: boolean;
 	color: number;
 	parallaxWeight: number;
-	srcX: number;
-	srcY: number;
 	width: number;
 	height: number;
 	x0: number;
@@ -126,6 +127,7 @@ export type VdpSubmittedFrameSaveState = {
 	billboards: VdpBbuBillboardSaveState[];
 	hasCommands: boolean;
 	hasFrameBufferCommands: boolean;
+	frameBufferReadbackValid: boolean;
 	cost: number;
 	workRemaining: number;
 	ditherType: number;
@@ -167,6 +169,7 @@ export function allocateSubmittedFrameSlot(): VdpSubmittedFrame {
 		state: VDP_SUBMITTED_FRAME_EMPTY,
 		hasCommands: false,
 		hasFrameBufferCommands: false,
+		frameBufferReadbackValid: false,
 		cost: 0,
 		workRemaining: 0,
 		ditherType: 0,
@@ -197,6 +200,7 @@ export function resetSubmittedFrameSlot(frame: VdpSubmittedFrame): void {
 	frame.state = VDP_SUBMITTED_FRAME_EMPTY;
 	frame.hasCommands = false;
 	frame.hasFrameBufferCommands = false;
+	frame.frameBufferReadbackValid = false;
 	frame.cost = 0;
 	frame.workRemaining = 0;
 	frame.ditherType = 0;
@@ -275,8 +279,6 @@ function captureBlitterCommandState(queue: VdpBlitterCommandBuffer, index: numbe
 		flipV: queue.flipV[index] !== 0,
 		color: queue.color[index],
 		parallaxWeight: queue.parallaxWeight[index],
-		srcX: queue.srcX[index],
-		srcY: queue.srcY[index],
 		width: queue.width[index],
 		height: queue.height[index],
 		x0: queue.x0[index],
@@ -335,8 +337,6 @@ function restoreBlitterCommand(queue: VdpBlitterCommandBuffer, index: number, co
 	queue.flipV[index] = command.flipV ? 1 : 0;
 	queue.color[index] = command.color;
 	queue.parallaxWeight[index] = command.parallaxWeight;
-	queue.srcX[index] = command.srcX;
-	queue.srcY[index] = command.srcY;
 	queue.width[index] = command.width;
 	queue.height[index] = command.height;
 	queue.x0[index] = command.x0;
@@ -471,6 +471,7 @@ export function captureSubmittedFrameState(frame: VdpSubmittedFrame): VdpSubmitt
 		billboards: captureBbuFrameBufferState(frame.billboards),
 		hasCommands: frame.hasCommands,
 		hasFrameBufferCommands: frame.hasFrameBufferCommands,
+		frameBufferReadbackValid: frame.frameBufferReadbackValid,
 		cost: frame.cost,
 		workRemaining: frame.workRemaining,
 		ditherType: frame.ditherType,
@@ -490,6 +491,7 @@ export function restoreSubmittedFrameState(frame: VdpSubmittedFrame, state: VdpS
 	restoreBbuFrameBufferState(frame.billboards, state.billboards);
 	frame.hasCommands = state.hasCommands;
 	frame.hasFrameBufferCommands = state.hasFrameBufferCommands;
+	frame.frameBufferReadbackValid = state.frameBufferReadbackValid;
 	frame.cost = state.cost;
 	frame.workRemaining = state.workRemaining;
 	frame.ditherType = state.ditherType;

@@ -71,6 +71,22 @@ VdpSlotTexturePixels VdpSlotTextures::readSurfaceTexturePixels(u32 surfaceId) co
 	};
 }
 
+u32 VdpSlotTextures::readSurfaceTextureWidth(u32 surfaceId) const {
+	const u32 width = m_syncedTextureWidths[surfaceId];
+	if (width == 0u) {
+		throw BMSX_RUNTIME_ERROR("[VDPSlotTextures] surface texture has no synced width.");
+	}
+	return width;
+}
+
+u32 VdpSlotTextures::readSurfaceTextureHeight(u32 surfaceId) const {
+	const u32 height = m_syncedTextureHeights[surfaceId];
+	if (height == 0u) {
+		throw BMSX_RUNTIME_ERROR("[VDPSlotTextures] surface texture has no synced height.");
+	}
+	return height;
+}
+
 bool VdpSlotTextures::isSyncedTextureSize(u32 surfaceId, u32 width, u32 height) const {
 	return m_syncedTextureWidths[surfaceId] == width && m_syncedTextureHeights[surfaceId] == height;
 }

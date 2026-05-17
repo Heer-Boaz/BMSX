@@ -5,7 +5,7 @@ import type { RenderContext } from '../../backend/backend';
 import { RenderPassLibrary } from '../../backend/pass/library';
 import { SkyboxPipelineState } from '../../backend/backend';
 import { TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '../../backend/webgl/constants';
-import { WebGLBackend } from '../../backend/webgl/backend';
+import type { WebGLBackend } from '../../backend/webgl/backend';
 import { VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
 
 let vaoSkybox: WebGLVertexArrayObject = null;

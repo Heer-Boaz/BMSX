@@ -5,11 +5,7 @@
 #include "machine/memory/map.h"
 #include "machine/devices/imgdec/controller.h"
 #include "machine/scheduler/budget.h"
-#include <algorithm>
-#include <array>
-#include <cmath>
 #include <cstring>
-#include <limits>
 #include <string>
 #include <utility>
 
@@ -18,7 +14,6 @@ namespace {
 
 constexpr int VDP_SERVICE_BATCH_WORK_UNITS = 128;
 constexpr u32 VDP_REPLAY_PACKET_FAULT = 0xffffffffu;
-constexpr VDP::FrameBufferColor VDP_BLITTER_IMPLICIT_CLEAR_COLOR{0u, 0u, 0u, 255u};
 constexpr DeviceStatusRegisters VDP_DEVICE_STATUS_REGISTERS{
 	IO_VDP_STATUS,
 	IO_VDP_FAULT_CODE,
@@ -209,10 +204,10 @@ void VDP::configureSelectedSlotDimension(u32 word) {
 
 VdpLatchedGeometry VDP::readLatchedGeometry() const {
 	VdpLatchedGeometry geometry;
-	geometry.x0 = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_GEOM_X0]);
-	geometry.y0 = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_GEOM_Y0]);
-	geometry.x1 = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_GEOM_X1]);
-	geometry.y1 = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_GEOM_Y1]);
+	geometry.x0 = static_cast<i32>(m_vdpRegisters[VDP_REG_GEOM_X0]) >> 16;
+	geometry.y0 = static_cast<i32>(m_vdpRegisters[VDP_REG_GEOM_Y0]) >> 16;
+	geometry.x1 = static_cast<i32>(m_vdpRegisters[VDP_REG_GEOM_X1]) >> 16;
+	geometry.y1 = static_cast<i32>(m_vdpRegisters[VDP_REG_GEOM_Y1]) >> 16;
 	return geometry;
 }
 
@@ -733,8 +728,6 @@ bool VDP::executeVdpDrawDoorbell(u32 command) {
 			return enqueueLatchedBatchBlitBegin();
 		case VDP_CMD_BATCH_BLIT_ITEM:
 			return enqueueLatchedBatchBlitItem();
-		case VDP_CMD_COPY_RECT:
-			return enqueueLatchedCopyRect();
 		default:
 			m_fault.raise(VDP_FAULT_CMD_BAD_DOORBELL, command);
 			return false;
@@ -955,8 +948,8 @@ bool VDP::enqueueLatchedFillRect() {
 bool VDP::enqueueLatchedDrawLine() {
 	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
 	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
-	const f32 thickness = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_LINE_WIDTH]);
-	if (thickness <= 0.0f) {
+	const i32 thickness = static_cast<i32>(m_vdpRegisters[VDP_REG_LINE_WIDTH]) >> 16;
+	if (thickness <= 0) {
 		m_fault.raise(VDP_FAULT_DEX_INVALID_LINE_WIDTH, m_vdpRegisters[VDP_REG_LINE_WIDTH]);
 		return false;
 	}
@@ -966,7 +959,7 @@ bool VDP::enqueueLatchedDrawLine() {
 		return true;
 	}
 	const FrameBufferColor color = unpackArgbColor(m_vdpRegisters[VDP_REG_DRAW_COLOR]);
-	const int thicknessMultiplier = thickness > 1.0f ? 2 : 1;
+	const int thicknessMultiplier = thickness > 1 ? 2 : 1;
 	const int alphaCost = color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
 	size_t index = 0u;
 	if (!reserveBlitterCommand(BlitterCommandType::DrawLine, blitSpanBucket(span) * thicknessMultiplier * alphaCost, index)) {
@@ -977,23 +970,12 @@ bool VDP::enqueueLatchedDrawLine() {
 }
 
 bool VDP::enqueueLatchedBlit() {
-	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
-	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
-	m_drawCtrlScratch = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
-	if (m_drawCtrlScratch.blendMode != 0u) {
-		m_fault.raise(VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, m_vdpRegisters[VDP_REG_DRAW_CTRL]);
+	VdpLatchedDrawSetup& drawSetup = m_latchedDrawSetupScratch;
+	if (!readLatchedDrawSetup(drawSetup)) {
 		return false;
 	}
-	const u32 slot = m_vdpRegisters[VDP_REG_SRC_SLOT];
-	const u32 u = packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]);
-	const u32 v = packedHigh16(m_vdpRegisters[VDP_REG_SRC_UV]);
-	const u32 w = packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]);
-	const u32 h = packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]);
 	BlitterSource& source = m_latchedSourceScratch;
-	if (!m_blitterSourcePort.resolveWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
-		return false;
-	}
-	if (!m_blitterSourcePort.validateSurface(source, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB)) {
+	if (!readLatchedBlitterSource(source)) {
 		return false;
 	}
 	const f32 scaleX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DRAW_SCALE_X]);
@@ -1006,9 +988,9 @@ bool VDP::enqueueLatchedBlit() {
 		m_fault.raise(VDP_FAULT_DEX_INVALID_SCALE, m_vdpRegisters[VDP_REG_DRAW_SCALE_Y]);
 		return false;
 	}
-	const f32 dstX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_X]);
-	const f32 dstY = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_Y]);
-	const VdpResolvedBlitPmu resolved = m_pmu.resolveBlit(dstX, dstY, scaleX, scaleY, m_drawCtrlScratch.pmuBank, m_drawCtrlScratch.parallaxWeight);
+	const f32 dstX = static_cast<f32>(static_cast<i32>(m_vdpRegisters[VDP_REG_DST_X]) >> 16);
+	const f32 dstY = static_cast<f32>(static_cast<i32>(m_vdpRegisters[VDP_REG_DST_Y]) >> 16);
+	const VdpResolvedBlitPmu resolved = m_pmu.resolveBlit(dstX, dstY, scaleX, scaleY, drawSetup.drawCtrl.pmuBank, drawSetup.drawCtrl.parallaxWeight);
 	const double dstWidth = static_cast<double>(source.width) * static_cast<double>(resolved.scaleX);
 	const double dstHeight = static_cast<double>(source.height) * static_cast<double>(resolved.scaleY);
 	const VdpClippedRect clipped = computeClippedRect(resolved.dstX, resolved.dstY, resolved.dstX + dstWidth, resolved.dstY + dstHeight, m_fbm.width(), m_fbm.height());
@@ -1020,20 +1002,31 @@ bool VDP::enqueueLatchedBlit() {
 	if (!reserveBlitterCommand(BlitterCommandType::Blit, blitAreaBucket(clipped.area) * (color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1), index)) {
 		return false;
 	}
-	m_buildFrame.queue->writeBlit(index, layer, priority, source, resolved.dstX, resolved.dstY, resolved.scaleX, resolved.scaleY, m_drawCtrlScratch.flipH, m_drawCtrlScratch.flipV, m_vdpRegisters[VDP_REG_DRAW_COLOR], m_drawCtrlScratch.parallaxWeight);
+	m_buildFrame.queue->writeBlit(index, drawSetup.layer, drawSetup.priority, source, static_cast<i32>(resolved.dstX), static_cast<i32>(resolved.dstY), static_cast<i32>(dstWidth), static_cast<i32>(dstHeight), resolved.scaleX, resolved.scaleY, drawSetup.drawCtrl.flipH, drawSetup.drawCtrl.flipV, m_vdpRegisters[VDP_REG_DRAW_COLOR], drawSetup.drawCtrl.parallaxWeight);
 	return true;
 }
 
-bool VDP::enqueueLatchedCopyRect() {
-	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
-	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
-	const i32 srcX = static_cast<i32>(packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]));
-	const i32 srcY = static_cast<i32>(packedHigh16(m_vdpRegisters[VDP_REG_SRC_UV]));
-	const i32 width = static_cast<i32>(packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]));
-	const i32 height = static_cast<i32>(packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]));
-	const i32 dstX = static_cast<i32>(m_vdpRegisters[VDP_REG_DST_X]) >> 16;
-	const i32 dstY = static_cast<i32>(m_vdpRegisters[VDP_REG_DST_Y]) >> 16;
-	return enqueueCopyRect(srcX, srcY, width, height, dstX, dstY, priority, layer);
+bool VDP::readLatchedDrawSetup(VdpLatchedDrawSetup& target) {
+	target.layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
+	target.priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
+	target.drawCtrl = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
+	if (target.drawCtrl.blendMode != 0u) {
+		m_fault.raise(VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, m_vdpRegisters[VDP_REG_DRAW_CTRL]);
+		return false;
+	}
+	return true;
+}
+
+bool VDP::readLatchedBlitterSource(BlitterSource& target) {
+	const u32 slot = m_vdpRegisters[VDP_REG_SRC_SLOT];
+	const u32 u = packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]);
+	const u32 v = packedHigh16(m_vdpRegisters[VDP_REG_SRC_UV]);
+	const u32 w = packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]);
+	const u32 h = packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]);
+	if (!m_blitterSourcePort.resolveWordsInto(slot, u, v, w, h, target, VDP_FAULT_DEX_SOURCE_SLOT)) {
+		return false;
+	}
+	return m_blitterSourcePort.validateSurface(target, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB);
 }
 
 u32 VDP::nextBlitterSequence() {
@@ -1063,6 +1056,10 @@ void VDP::resetQueuedFrameState() {
 void VDP::presentFrameBufferPageOnVblankEdge() {
 	VdpSurfaceUploadSlot* slot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
 	if (slot == nullptr) {
+		return;
+	}
+	if (!m_activeFrame.frameBufferReadbackValid) {
+		m_fbm.presentTexturePage();
 		return;
 	}
 	m_fbm.presentPage(*slot);
@@ -1157,6 +1154,7 @@ bool VDP::sealSubmittedFrame() {
 	}
 	frame->hasCommands = frameHasCommands;
 	frame->hasFrameBufferCommands = frameHasFrameBufferCommands;
+	frame->frameBufferReadbackValid = false;
 	frame->cost = frameCost;
 	frame->workRemaining = frameCost;
 	const VdpVoutFrameOutput& voutFrame = m_vout.sealFrame();
@@ -1192,10 +1190,11 @@ void VDP::advanceWork(int workUnits) {
 	if (workUnits >= m_activeFrame.workRemaining) {
 		m_activeFrame.workRemaining = 0;
 		if (m_activeFrame.hasFrameBufferCommands) {
-			executeFrameBufferCommands(*m_activeFrame.queue);
+			m_activeFrame.state = VdpSubmittedFrameState::ExecutionPending;
+		} else {
+			m_activeFrame.queue->reset();
+			m_activeFrame.state = VdpSubmittedFrameState::Ready;
 		}
-		m_activeFrame.queue->reset();
-		m_activeFrame.state = VdpSubmittedFrameState::Ready;
 		refreshSubmitBusyStatus();
 		scheduleNextService(m_scheduler.currentNowCycles());
 		return;
@@ -1207,312 +1206,45 @@ int VDP::getPendingRenderWorkUnits() const {
 	if (m_activeFrame.state == VdpSubmittedFrameState::Empty) {
 		return m_pendingFrame.cost;
 	}
-	return m_activeFrame.state == VdpSubmittedFrameState::Ready ? 0 : m_activeFrame.workRemaining;
+	return (m_activeFrame.state == VdpSubmittedFrameState::Ready || m_activeFrame.state == VdpSubmittedFrameState::ExecutionPending) ? 0 : m_activeFrame.workRemaining;
 }
 
-void VDP::executeFrameBufferCommands(const BlitterCommand& commands) {
-	if (commands.length == 0u) {
-		return;
+VdpBlitterCommandBuffer* VDP::readyFrameBufferCommands() {
+	if (m_activeFrame.state != VdpSubmittedFrameState::ExecutionPending) {
+		return nullptr;
 	}
-	VdpSurfaceUploadSlot* frameBufferSlot = findVramSlotOrFault(VDP_RD_SURFACE_FRAMEBUFFER, VDP_FAULT_RD_SURFACE);
-	if (frameBufferSlot == nullptr) {
-		return;
-	}
-	auto& pixels = frameBufferSlot->cpuReadback;
-	ensureFrameBufferPriorityCapacity(static_cast<size_t>(m_fbm.width()) * static_cast<size_t>(m_fbm.height()));
-	if (commands.opcode[0] != BlitterCommandType::Clear) {
-		fillFrameBuffer(pixels, VDP_BLITTER_IMPLICIT_CLEAR_COLOR);
-	}
-	resetFrameBufferPriority();
-	BlitterSource source;
-	for (size_t index = 0u; index < commands.length; ++index) {
-		const BlitterCommandType opcode = commands.opcode[index];
-		if (opcode == BlitterCommandType::Clear) {
-			fillFrameBuffer(pixels, unpackArgbColor(commands.color[index]));
-			resetFrameBufferPriority();
-			continue;
-		}
-		const Layer2D layer = commands.layer[index];
-		const f32 priority = commands.priority[index];
-		const u32 sequence = commands.seq[index];
-		const FrameBufferColor color = unpackArgbColor(commands.color[index]);
-		switch (opcode) {
-			case BlitterCommandType::FillRect:
-				rasterizeFrameBufferFill(pixels, commands.x0[index], commands.y0[index], commands.x1[index], commands.y1[index], color, layer, priority, sequence);
-				break;
-			case BlitterCommandType::DrawLine:
-				rasterizeFrameBufferLine(pixels, commands.x0[index], commands.y0[index], commands.x1[index], commands.y1[index], commands.thickness[index], color, layer, priority, sequence);
-				break;
-			case BlitterCommandType::Blit:
-				source.surfaceId = commands.sourceSurfaceId[index];
-				source.srcX = commands.sourceSrcX[index];
-				source.srcY = commands.sourceSrcY[index];
-				source.width = commands.sourceWidth[index];
-				source.height = commands.sourceHeight[index];
-				rasterizeFrameBufferBlit(pixels, source, commands.dstX[index], commands.dstY[index], commands.scaleX[index], commands.scaleY[index], commands.flipH[index] != 0u, commands.flipV[index] != 0u, color, layer, priority, sequence);
-				break;
-			case BlitterCommandType::CopyRect:
-				copyFrameBufferRect(
-					pixels,
-					commands.srcX[index],
-					commands.srcY[index],
-					commands.width[index],
-					commands.height[index],
-					static_cast<i32>(std::round(commands.dstX[index])),
-					static_cast<i32>(std::round(commands.dstY[index])),
-					layer,
-					priority,
-					sequence
-				);
-				break;
-			case BlitterCommandType::BatchBlit: {
-				const size_t firstItem = commands.batchBlitFirstEntry[index];
-				const size_t itemEnd = firstItem + commands.batchBlitItemCount[index];
-				if (commands.hasBackgroundColor[index] != 0u) {
-					const FrameBufferColor background = unpackArgbColor(commands.backgroundColor[index]);
-					for (size_t itemIndex = firstItem; itemIndex < itemEnd; ++itemIndex) {
-						rasterizeFrameBufferFill(
-							pixels,
-							commands.batchBlitDstX[itemIndex],
-							commands.batchBlitDstY[itemIndex],
-							commands.batchBlitDstX[itemIndex] + static_cast<f32>(commands.batchBlitAdvance[itemIndex]),
-							commands.batchBlitDstY[itemIndex] + static_cast<f32>(commands.lineHeight[index]),
-							background,
-							layer,
-							priority,
-							sequence
-						);
-					}
-				}
-				for (size_t itemIndex = firstItem; itemIndex < itemEnd; ++itemIndex) {
-					source.surfaceId = commands.batchBlitSurfaceId[itemIndex];
-					source.srcX = commands.batchBlitSrcX[itemIndex];
-					source.srcY = commands.batchBlitSrcY[itemIndex];
-					source.width = commands.batchBlitWidth[itemIndex];
-					source.height = commands.batchBlitHeight[itemIndex];
-					rasterizeFrameBufferBlit(pixels, source, commands.batchBlitDstX[itemIndex], commands.batchBlitDstY[itemIndex], 1.0f, 1.0f, false, false, color, layer, priority, sequence);
-				}
-				break;
-			}
-			case BlitterCommandType::Clear:
-				break;
-		}
-	}
-	m_vram.markSlotDirty(*frameBufferSlot, 0u, frameBufferSlot->surfaceHeight);
-	m_readback.invalidateSurface(VDP_RD_SURFACE_FRAMEBUFFER);
+	return m_activeFrame.queue.get();
 }
 
-void VDP::ensureFrameBufferPriorityCapacity(size_t pixelCount) {
-	if (m_frameBufferPriorityLayer.size() == pixelCount) {
-		return;
+VdpSurfaceUploadSlot* VDP::resolveFrameBufferExecutionSource(uint32_t surfaceId) {
+	VdpSurfaceUploadSlot* slot = m_vram.findSurface(surfaceId);
+	if (slot == nullptr) {
+		m_fault.raise(VDP_FAULT_DEX_SOURCE_SLOT, surfaceId);
 	}
-	m_frameBufferPriorityLayer.resize(pixelCount);
-	m_frameBufferPriorityValue.resize(pixelCount);
-	m_frameBufferPrioritySeq.resize(pixelCount);
+	return slot;
 }
 
-void VDP::resetFrameBufferPriority() {
-	std::fill(m_frameBufferPriorityLayer.begin(), m_frameBufferPriorityLayer.end(), static_cast<u8>(Layer2D::World));
-	std::fill(m_frameBufferPriorityValue.begin(), m_frameBufferPriorityValue.end(), -std::numeric_limits<f32>::infinity());
-	std::fill(m_frameBufferPrioritySeq.begin(), m_frameBufferPrioritySeq.end(), 0u);
+VdpSurfaceUploadSlot& VDP::frameBufferExecutionTarget() {
+	VdpSurfaceUploadSlot* slot = m_vram.findSurface(VDP_RD_SURFACE_FRAMEBUFFER);
+	if (slot == nullptr) {
+		throw BMSX_RUNTIME_ERROR("[VDP] framebuffer execution target has no backing VRAM slot.");
+	}
+	return *slot;
 }
 
-void VDP::fillFrameBuffer(std::vector<u8>& pixels, const FrameBufferColor& color) {
-	for (size_t index = 0; index < pixels.size(); index += 4u) {
-		pixels[index + 0u] = color.r;
-		pixels[index + 1u] = color.g;
-		pixels[index + 2u] = color.b;
-		pixels[index + 3u] = color.a;
+void VDP::completeReadyFrameBufferExecution(VdpSurfaceUploadSlot* frameBufferSlot) {
+	if (m_activeFrame.state != VdpSubmittedFrameState::ExecutionPending) {
+		throw BMSX_RUNTIME_ERROR("VDP framebuffer execution completed without an execution-pending frame.");
 	}
-}
-
-void VDP::blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a, Layer2D layer, f32 priority, u32 seq) {
-	if (a == 0u) {
-		return;
+	if (frameBufferSlot != nullptr) {
+		m_vram.markSlotDirty(*frameBufferSlot, 0u, frameBufferSlot->surfaceHeight);
+		m_readback.invalidateSurface(VDP_RD_SURFACE_FRAMEBUFFER);
 	}
-	const size_t pixelIndex = index >> 2u;
-	const auto currentLayer = static_cast<Layer2D>(m_frameBufferPriorityLayer[pixelIndex]);
-	if (layer < currentLayer) {
-		return;
-	}
-	if (layer == currentLayer) {
-		const f32 currentPriority = m_frameBufferPriorityValue[pixelIndex];
-		if (priority < currentPriority) {
-			return;
-		}
-		if (priority == currentPriority && seq < m_frameBufferPrioritySeq[pixelIndex]) {
-			return;
-		}
-	}
-	if (a == 255u) {
-		pixels[index + 0u] = r;
-		pixels[index + 1u] = g;
-		pixels[index + 2u] = b;
-		pixels[index + 3u] = 255u;
-		m_frameBufferPriorityLayer[pixelIndex] = static_cast<u8>(layer);
-		m_frameBufferPriorityValue[pixelIndex] = priority;
-		m_frameBufferPrioritySeq[pixelIndex] = seq;
-		return;
-	}
-	const u32 inverse = 255u - a;
-	pixels[index + 0u] = static_cast<u8>(((static_cast<u32>(r) * a) + (static_cast<u32>(pixels[index + 0u]) * inverse) + 127u) / 255u);
-	pixels[index + 1u] = static_cast<u8>(((static_cast<u32>(g) * a) + (static_cast<u32>(pixels[index + 1u]) * inverse) + 127u) / 255u);
-	pixels[index + 2u] = static_cast<u8>(((static_cast<u32>(b) * a) + (static_cast<u32>(pixels[index + 2u]) * inverse) + 127u) / 255u);
-	pixels[index + 3u] = static_cast<u8>(a + ((static_cast<u32>(pixels[index + 3u]) * inverse) + 127u) / 255u);
-	m_frameBufferPriorityLayer[pixelIndex] = static_cast<u8>(layer);
-	m_frameBufferPriorityValue[pixelIndex] = priority;
-	m_frameBufferPrioritySeq[pixelIndex] = seq;
-}
-
-void VDP::rasterizeFrameBufferFill(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
-	const i32 frameBufferWidth = static_cast<i32>(m_fbm.width());
-	const i32 frameBufferHeight = static_cast<i32>(m_fbm.height());
-	i32 left = static_cast<i32>(std::round(x0));
-	i32 top = static_cast<i32>(std::round(y0));
-	i32 right = static_cast<i32>(std::round(x1));
-	i32 bottom = static_cast<i32>(std::round(y1));
-	if (right < left) {
-		std::swap(left, right);
-	}
-	if (bottom < top) {
-		std::swap(top, bottom);
-	}
-	left = std::max(0, left);
-	top = std::max(0, top);
-	right = std::min(frameBufferWidth, right);
-	bottom = std::min(frameBufferHeight, bottom);
-	for (i32 y = top; y < bottom; ++y) {
-		size_t index = (static_cast<size_t>(y) * static_cast<size_t>(frameBufferWidth) + static_cast<size_t>(left)) * 4u;
-		for (i32 x = left; x < right; ++x) {
-			blendFrameBufferPixel(pixels, index, color.r, color.g, color.b, color.a, layer, priority, seq);
-			index += 4u;
-		}
-	}
-}
-
-void VDP::rasterizeFrameBufferLine(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, f32 thicknessValue, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
-	const i32 frameBufferWidth = static_cast<i32>(m_fbm.width());
-	const i32 frameBufferHeight = static_cast<i32>(m_fbm.height());
-	i32 currentX = static_cast<i32>(std::round(x0));
-	i32 currentY = static_cast<i32>(std::round(y0));
-	const i32 targetX = static_cast<i32>(std::round(x1));
-	const i32 targetY = static_cast<i32>(std::round(y1));
-	const i32 dx = std::abs(targetX - currentX);
-	const i32 dy = std::abs(targetY - currentY);
-	const i32 sx = currentX < targetX ? 1 : -1;
-	const i32 sy = currentY < targetY ? 1 : -1;
-	i32 err = dx - dy;
-	i32 thickness = static_cast<i32>(std::round(thicknessValue));
-	if (thickness == 0) {
-		thickness = 1;
-	}
-	while (true) {
-		const i32 half = thickness >> 1;
-		for (i32 yy = currentY - half; yy < currentY - half + thickness; ++yy) {
-			if (yy < 0 || yy >= frameBufferHeight) {
-				continue;
-			}
-			for (i32 xx = currentX - half; xx < currentX - half + thickness; ++xx) {
-				if (xx < 0 || xx >= frameBufferWidth) {
-					continue;
-				}
-				const size_t index = (static_cast<size_t>(yy) * static_cast<size_t>(frameBufferWidth) + static_cast<size_t>(xx)) * 4u;
-				blendFrameBufferPixel(pixels, index, color.r, color.g, color.b, color.a, layer, priority, seq);
-			}
-		}
-		if (currentX == targetX && currentY == targetY) {
-			return;
-		}
-		const i32 e2 = err << 1;
-		if (e2 > -dy) {
-			err -= dy;
-			currentX += sx;
-		}
-		if (e2 < dx) {
-			err += dx;
-			currentY += sy;
-		}
-	}
-}
-
-void VDP::rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const FrameBufferColor& color, Layer2D layer, f32 priority, u32 seq) {
-	const i32 frameBufferWidth = static_cast<i32>(m_fbm.width());
-	const i32 frameBufferHeight = static_cast<i32>(m_fbm.height());
-	const VdpSurfaceUploadSlot* sourceSlot = findVramSlotOrFault(source.surfaceId, VDP_FAULT_DEX_SOURCE_SLOT);
-	if (sourceSlot == nullptr) {
-		return;
-	}
-	const auto& sourcePixels = sourceSlot->cpuReadback;
-	const size_t sourceStride = static_cast<size_t>(sourceSlot->surfaceWidth) * 4u;
-	i32 dstW = static_cast<i32>(std::round(static_cast<f32>(source.width) * scaleX));
-	i32 dstH = static_cast<i32>(std::round(static_cast<f32>(source.height) * scaleY));
-	if (dstW == 0) {
-		dstW = 1;
-	}
-	if (dstH == 0) {
-		dstH = 1;
-	}
-	const i32 dstX = static_cast<i32>(std::round(dstXValue));
-	const i32 dstY = static_cast<i32>(std::round(dstYValue));
-	for (i32 y = 0; y < dstH; ++y) {
-		const i32 targetY = dstY + y;
-		if (targetY < 0 || targetY >= frameBufferHeight) {
-			continue;
-		}
-		const i32 srcY = flipV
-			? static_cast<i32>(source.height) - 1 - ((y * static_cast<i32>(source.height)) / dstH)
-			: ((y * static_cast<i32>(source.height)) / dstH);
-		for (i32 x = 0; x < dstW; ++x) {
-			const i32 targetX = dstX + x;
-			if (targetX < 0 || targetX >= frameBufferWidth) {
-				continue;
-			}
-			const i32 srcX = flipH
-				? static_cast<i32>(source.width) - 1 - ((x * static_cast<i32>(source.width)) / dstW)
-				: ((x * static_cast<i32>(source.width)) / dstW);
-			const uint32_t sampleX = source.srcX + static_cast<uint32_t>(srcX);
-			const uint32_t sampleY = source.srcY + static_cast<uint32_t>(srcY);
-				if (sampleX >= sourceSlot->surfaceWidth || sampleY >= sourceSlot->surfaceHeight) {
-				continue;
-			}
-			const size_t srcIndex = (static_cast<size_t>(sampleY) * sourceStride) + (static_cast<size_t>(sampleX) * 4u);
-			const u8 srcA = sourcePixels[srcIndex + 3u];
-			if (srcA == 0u) {
-				continue;
-			}
-			const u8 outA = static_cast<u8>((static_cast<u32>(srcA) * static_cast<u32>(color.a) + 127u) / 255u);
-			const u8 outR = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 0u]) * static_cast<u32>(color.r) + 127u) / 255u);
-			const u8 outG = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 1u]) * static_cast<u32>(color.g) + 127u) / 255u);
-			const u8 outB = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 2u]) * static_cast<u32>(color.b) + 127u) / 255u);
-			const size_t dstIndex = (static_cast<size_t>(targetY) * static_cast<size_t>(frameBufferWidth) + static_cast<size_t>(targetX)) * 4u;
-			blendFrameBufferPixel(pixels, dstIndex, outR, outG, outB, outA, layer, priority, seq);
-		}
-	}
-}
-
-void VDP::copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 priority, u32 seq) {
-	const size_t frameBufferWidth = static_cast<size_t>(m_fbm.width());
-	const size_t rowBytes = static_cast<size_t>(width) * 4u;
-	const bool overlapping =
-		dstX < srcX + width
-		&& dstX + width > srcX
-		&& dstY < srcY + height
-		&& dstY + height > srcY;
-	const i32 startRow = overlapping && dstY > srcY ? height - 1 : 0;
-	const i32 endRow = overlapping && dstY > srcY ? -1 : height;
-	const i32 step = overlapping && dstY > srcY ? -1 : 1;
-	for (i32 row = startRow; row != endRow; row += step) {
-		const size_t sourceIndex = (static_cast<size_t>(srcY + row) * frameBufferWidth + static_cast<size_t>(srcX)) * 4u;
-		const size_t targetIndex = (static_cast<size_t>(dstY + row) * frameBufferWidth + static_cast<size_t>(dstX)) * 4u;
-		std::memmove(pixels.data() + targetIndex, pixels.data() + sourceIndex, rowBytes);
-		const size_t targetPixel = (static_cast<size_t>(dstY + row) * frameBufferWidth) + static_cast<size_t>(dstX);
-		for (i32 col = 0; col < width; ++col) {
-			const size_t pixelIndex = targetPixel + static_cast<size_t>(col);
-			m_frameBufferPriorityLayer[pixelIndex] = static_cast<u8>(layer);
-			m_frameBufferPriorityValue[pixelIndex] = priority;
-			m_frameBufferPrioritySeq[pixelIndex] = seq;
-		}
-	}
+	m_activeFrame.frameBufferReadbackValid = frameBufferSlot != nullptr;
+	m_activeFrame.queue->reset();
+	m_activeFrame.state = VdpSubmittedFrameState::Ready;
+	refreshSubmitBusyStatus();
+	scheduleNextService(m_scheduler.currentNowCycles());
 }
 
 void VDP::scheduleNextService(int64_t nowCycles) {
@@ -1611,19 +1343,6 @@ bool VDP::latchMeshPacket(const VdpMduPacket& packet) {
 		return false;
 	}
 	m_mdu.completePacket(*m_buildFrame.meshes, packet, nextBlitterSequence());
-	return true;
-}
-
-bool VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 priority, Layer2D layer) {
-	const VdpClippedRect clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, m_fbm.width(), m_fbm.height());
-	if (clipped.area == 0.0) {
-		return true;
-	}
-	size_t index = 0u;
-	if (!reserveBlitterCommand(BlitterCommandType::CopyRect, blitAreaBucket(clipped.area), index)) {
-		return false;
-	}
-	m_buildFrame.queue->writeCopyRect(index, layer, priority, srcX, srcY, width, height, dstX, dstY);
 	return true;
 }
 
@@ -1829,15 +1548,12 @@ bool VDP::enqueueLatchedBatchBlitBegin() {
 	if (!reserveBlitterCommand(BlitterCommandType::BatchBlit, VDP_RENDER_BATCH_BLIT_SETUP_COST, index)) {
 		return false;
 	}
-	const Layer2D layer = static_cast<Layer2D>(m_vdpRegisters[VDP_REG_DRAW_LAYER]);
-	const f32 priority = static_cast<f32>(m_vdpRegisters[VDP_REG_DRAW_PRIORITY]);
-	m_drawCtrlScratch = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
-	if (m_drawCtrlScratch.blendMode != 0u) {
-		m_fault.raise(VDP_FAULT_DEX_UNSUPPORTED_DRAW_CTRL, m_vdpRegisters[VDP_REG_DRAW_CTRL]);
+	VdpLatchedDrawSetup& drawSetup = m_latchedDrawSetupScratch;
+	if (!readLatchedDrawSetup(drawSetup)) {
 		return false;
 	}
 	const u32 color = m_vdpRegisters[VDP_REG_DRAW_COLOR];
-	m_buildFrame.queue->writeBatchBlitBegin(index, color, m_drawCtrlScratch.blendMode, layer, priority, m_drawCtrlScratch.pmuBank, m_drawCtrlScratch.parallaxWeight);
+	m_buildFrame.queue->writeBatchBlitBegin(index, color, drawSetup.drawCtrl.blendMode, drawSetup.layer, drawSetup.priority, drawSetup.drawCtrl.pmuBank, drawSetup.drawCtrl.parallaxWeight);
 	m_activeBatchBlitIndex = static_cast<int>(index);
 	return true;
 }
@@ -1847,22 +1563,12 @@ bool VDP::enqueueLatchedBatchBlitItem() {
 		m_fault.raise(VDP_FAULT_DEX_CMD_NO_BATCH, 0);
 		return false;
 	}
-	const u32 slot = m_vdpRegisters[VDP_REG_SRC_SLOT];
-	const u32 u = packedLow16(m_vdpRegisters[VDP_REG_SRC_UV]);
-	const u32 v = packedHigh16(m_vdpRegisters[VDP_REG_SRC_UV]);
-	const u32 w = packedLow16(m_vdpRegisters[VDP_REG_SRC_WH]);
-	const u32 h = packedHigh16(m_vdpRegisters[VDP_REG_SRC_WH]);
-	const f32 dstX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_X]);
-	const f32 dstY = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_DST_Y]);
-	const f32 advanceX = decodeSignedQ16_16(m_vdpRegisters[VDP_REG_GEOM_X0]);
+	const i32 dstX = static_cast<i32>(m_vdpRegisters[VDP_REG_DST_X]) >> 16;
+	const i32 dstY = static_cast<i32>(m_vdpRegisters[VDP_REG_DST_Y]) >> 16;
+	const u32 advanceX = static_cast<u32>(static_cast<i32>(m_vdpRegisters[VDP_REG_GEOM_X0]) >> 16);
 
-	// Use the member scratch buffer to avoid per-call temporaries (parity with TS runtime)
 	BlitterSource& source = m_latchedSourceScratch;
-	m_drawCtrlScratch = decodeVdpDrawCtrl(m_vdpRegisters[VDP_REG_DRAW_CTRL]);
-	if (!m_blitterSourcePort.resolveWordsInto(slot, u, v, w, h, source, VDP_FAULT_DEX_SOURCE_SLOT)) {
-		return false;
-	}
-	if (!m_blitterSourcePort.validateSurface(source, VDP_FAULT_DEX_SOURCE_OOB, VDP_FAULT_DEX_SOURCE_OOB)) {
+	if (!readLatchedBlitterSource(source)) {
 		return false;
 	}
 	if (!m_buildFrame.queue->writeBatchBlitItem(static_cast<size_t>(m_activeBatchBlitIndex), source.surfaceId, source.srcX, source.srcY, source.width, source.height, dstX, dstY, advanceX)) {
@@ -1872,9 +1578,9 @@ bool VDP::enqueueLatchedBatchBlitItem() {
 	const size_t batchIndex = static_cast<size_t>(m_activeBatchBlitIndex);
 	const int alphaCost = ((m_buildFrame.queue->color[batchIndex] >> 24u) < 255u) ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
 	const u32 itemCount = m_buildFrame.queue->batchBlitItemCount[batchIndex];
-	const u32 previousBuckets = (itemCount + static_cast<u32>(VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR) - 2u) / static_cast<u32>(VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR);
-	const u32 currentBuckets = (itemCount + static_cast<u32>(VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR) - 1u) / static_cast<u32>(VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR);
-	m_buildFrame.cost += static_cast<int>(currentBuckets - previousBuckets) * alphaCost;
+	if ((itemCount - 1u) % static_cast<u32>(VDP_RENDER_BATCH_BLIT_ITEM_DENSITY_DIVISOR) == 0u) {
+		m_buildFrame.cost += alphaCost;
+	}
 	return true;
 }
 } // namespace bmsx

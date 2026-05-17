@@ -1,6 +1,8 @@
+import { constructPlatformFromViewHostHandle } from '../../../bmsx_hostplatform/platform';
 import { startCart } from './start_cart';
 
 type BmsxGlobal = {
+	constructPlatformFromViewHostHandle: typeof constructPlatformFromViewHostHandle;
 	startCart: typeof startCart;
 };
 
@@ -11,4 +13,4 @@ declare global {
 
 const globalTarget = globalThis as typeof globalThis & { bmsx?: BmsxGlobal };
 
-globalTarget.bmsx = { startCart };
+globalTarget.bmsx = { constructPlatformFromViewHostHandle, startCart };

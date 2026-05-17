@@ -1,8 +1,10 @@
 import { consoleCore } from '../core/console';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { TickCompletion } from '../machine/scheduler/frame';
+import type { VdpBlitterCommandBuffer } from '../machine/devices/vdp/blitter';
 import * as workbenchMode from '../ide/workbench/mode';
 import { commitVdpViewSnapshot } from './vdp/view_snapshot';
+import type { VdpFrameBufferExecutionPassState } from './backend/backend';
 
 export type RenderPresentationMode = 'partial' | 'completed';
 
@@ -35,6 +37,10 @@ export class RenderPresentationState {
 		visualCommitted: true,
 		vdpFrameCost: 0,
 		vdpFrameHeld: false,
+	};
+	private readonly vdpFrameBufferExecutionPassState: VdpFrameBufferExecutionPassState = {
+		runtime: null as Runtime,
+		commands: null as VdpBlitterCommandBuffer,
 	};
 
 	constructor(private readonly runtime: Runtime) {
@@ -144,6 +150,20 @@ export class RenderPresentationState {
 	public reset(): void {
 		this.clearPresentation();
 		this.resetDebugCounters(0);
+	}
+
+	public executeReadyVdpFrameBuffer(): void {
+		const runtime = this.runtime;
+		const vdp = runtime.machine.vdp;
+		const commands = vdp.readyFrameBufferCommands;
+		if (commands === null) {
+			return;
+		}
+		const state = this.vdpFrameBufferExecutionPassState;
+		state.runtime = runtime;
+		state.commands = commands;
+		runtime.view.pipelineRegistry!.setState('vdp_framebuffer_execution', state);
+		runtime.view.pipelineRegistry!.execute('vdp_framebuffer_execution', null);
 	}
 
 	public runOverlay(): void {

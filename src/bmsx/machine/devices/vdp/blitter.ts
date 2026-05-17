@@ -17,7 +17,6 @@ export type VdpResolvedBlitterSample = {
 
 export const VDP_BLITTER_OPCODE_CLEAR = 1;
 export const VDP_BLITTER_OPCODE_BLIT = 2;
-export const VDP_BLITTER_OPCODE_COPY_RECT = 3;
 export const VDP_BLITTER_OPCODE_FILL_RECT = 4;
 export const VDP_BLITTER_OPCODE_DRAW_LINE = 5;
 export const VDP_BLITTER_OPCODE_BATCH_BLIT = 6;
@@ -25,7 +24,6 @@ export const VDP_BLITTER_OPCODE_BATCH_BLIT = 6;
 export type VdpBlitterOpcode =
 	| typeof VDP_BLITTER_OPCODE_CLEAR
 	| typeof VDP_BLITTER_OPCODE_BLIT
-	| typeof VDP_BLITTER_OPCODE_COPY_RECT
 	| typeof VDP_BLITTER_OPCODE_FILL_RECT
 	| typeof VDP_BLITTER_OPCODE_DRAW_LINE
 	| typeof VDP_BLITTER_OPCODE_BATCH_BLIT;
@@ -49,23 +47,21 @@ export class VdpBlitterCommandBuffer {
 	public readonly sourceSrcY = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly sourceWidth = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly sourceHeight = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly dstX = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly dstY = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
+	public readonly dstX = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
+	public readonly dstY = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly scaleX = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly scaleY = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly flipH = new Uint8Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly flipV = new Uint8Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly color = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly parallaxWeight = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly srcX = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly srcY = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly width = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly height = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly x0 = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly y0 = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly x1 = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly y1 = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
-	public readonly thickness = new Float32Array(VDP_BLITTER_FIFO_CAPACITY);
+	public readonly x0 = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
+	public readonly y0 = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
+	public readonly x1 = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
+	public readonly y1 = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
+	public readonly thickness = new Int32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly backgroundColor = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly hasBackgroundColor = new Uint8Array(VDP_BLITTER_FIFO_CAPACITY);
 	public readonly lineHeight = new Uint32Array(VDP_BLITTER_FIFO_CAPACITY);
@@ -77,8 +73,8 @@ export class VdpBlitterCommandBuffer {
 	public readonly batchBlitSrcY = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
 	public readonly batchBlitWidth = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
 	public readonly batchBlitHeight = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly batchBlitDstX = new Float32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
-	public readonly batchBlitDstY = new Float32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
+	public readonly batchBlitDstX = new Int32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
+	public readonly batchBlitDstY = new Int32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
 	public readonly batchBlitAdvance = new Uint32Array(VDP_BLITTER_RUN_ENTRY_CAPACITY);
 
 	public reset(): void {
@@ -105,7 +101,7 @@ export class VdpBlitterCommandBuffer {
 		this.thickness[index] = thicknessValue;
 	}
 
-	public writeBlit(index: number, layer: Layer2D, priority: number, source: VdpBlitterSource, dstX: number, dstY: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, drawColor: number, parallax: number): void {
+	public writeBlit(index: number, layer: Layer2D, priority: number, source: VdpBlitterSource, dstX: number, dstY: number, dstWidth: number, dstHeight: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, drawColor: number, parallax: number): void {
 		this.layer[index] = layer;
 		this.priority[index] = priority;
 		this.sourceSurfaceId[index] = source.surfaceId;
@@ -115,6 +111,8 @@ export class VdpBlitterCommandBuffer {
 		this.sourceHeight[index] = source.height;
 		this.dstX[index] = dstX;
 		this.dstY[index] = dstY;
+		this.width[index] = dstWidth;
+		this.height[index] = dstHeight;
 		this.scaleX[index] = scaleX;
 		this.scaleY[index] = scaleY;
 		this.flipH[index] = flipH ? 1 : 0;
@@ -122,18 +120,6 @@ export class VdpBlitterCommandBuffer {
 		this.color[index] = drawColor;
 		this.parallaxWeight[index] = parallax;
 	}
-
-	public writeCopyRect(index: number, layer: Layer2D, priority: number, srcXValue: number, srcYValue: number, widthValue: number, heightValue: number, dstXValue: number, dstYValue: number): void {
-		this.layer[index] = layer;
-		this.priority[index] = priority;
-		this.srcX[index] = srcXValue;
-		this.srcY[index] = srcYValue;
-		this.width[index] = widthValue;
-		this.height[index] = heightValue;
-		this.dstX[index] = dstXValue;
-		this.dstY[index] = dstYValue;
-	}
-
 
 	public writeBatchBlitBegin(index: number, drawColor: number, commandLayer: Layer2D, commandPriority: number, parallax: number): void {
 		this.priority[index] = commandPriority;
@@ -190,7 +176,7 @@ export class VdpBlitterCommandBuffer {
 export type VdpBlitterCommand = VdpBlitterCommandBuffer;
 
 export function frameBufferColorByte(value: number): number {
-	return (value * 255 + 0.5) | 0;
+	return value * 255 + 0.5;
 }
 
 export function packFrameBufferColor(source: { r: number; g: number; b: number; a: number }): number {

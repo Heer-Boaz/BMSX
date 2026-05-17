@@ -1,11 +1,11 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
 import type { BootArgs } from '../../src/bmsx/rompack/format';
-import { constructPlatformFromViewHostHandle } from '../../src/bmsx_hostplatform/platform';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
 const initialStartingGamepadIndex: number = null;
 type BMSX = {
+	constructPlatformFromViewHostHandle: (handle: HTMLCanvasElement, options: { audioContext: AudioContext; debug: boolean }) => BootArgs['platform'];
 	startCart: typeof import('../../src/bmsx/machine/program/start_cart').startCart;
 };
 
@@ -122,7 +122,7 @@ export const bootrom = {
 				if (!(gamescreen instanceof HTMLCanvasElement)) {
 					throw new Error('#gamescreen must be a <canvas> to construct a Platform.');
 				}
-				const platform = constructPlatformFromViewHostHandle(gamescreen, { audioContext: bootrom.sndcontext, debug: this.debug });
+				const platform = globalThis.bmsx.constructPlatformFromViewHostHandle(gamescreen, { audioContext: bootrom.sndcontext, debug: this.debug });
 				bootrom.platform = platform;
 				bootrom.viewHost = platform.gameviewHost;
 			}

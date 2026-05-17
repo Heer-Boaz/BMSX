@@ -1,10 +1,13 @@
 /// <reference types="@webgpu/types" />
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
+import type { VdpBlitterCommandBuffer } from '../../machine/devices/vdp/blitter';
+import type { Runtime } from '../../machine/runtime/runtime';
 import type { Host2DSubmission } from '../shared/submissions';
 import type { LightingDescriptor, LightingFrameState } from '../lighting/system';
 import type { WebGLBackend } from './webgl/backend';
 import type { WebGPUBackend } from './webgpu/backend';
 import type { TextureParams } from './texture_params';
+import type { RenderPassLibrary } from './pass/library';
 
 /*
  * TS/C++ parity boundary:
@@ -97,6 +100,7 @@ export type RenderGraphSlot = 'frame_color' | 'frame_depth' | 'frame_history_a' 
 export interface RenderGraphPassContext {
 	view: RenderContext;
 	getTex(slot: RenderGraphSlot): TextureHandle;
+	deviceColorEnabled: boolean;
 }
 
 export interface RenderPassGraphDef<S = unknown> {
@@ -146,7 +150,7 @@ export interface RenderPassDef<S = unknown> {
 	 * (e.g., buffers, VAOs, default textures). Called once at registration time.
 	 */
 	bootstrap?: (backend: GPUBackend) => void;
-	exec: (backend: AnyBackend, fbo: unknown, state: S) => void;
+	exec: (backend: AnyBackend, fbo: unknown, state: S, pipelineHandle: RenderPassInstanceHandle | null) => void;
 	prepare?: (backend: GPUBackend, state: S) => void;
 }
 
@@ -192,7 +196,6 @@ export interface GPUBackend {
 	createCubemapEmpty(size: number, desc: TextureParams): TextureHandle;
 	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void;
 	destroyTexture(handle: TextureHandle): void;
-	copyTextureRegion(source: TextureHandle, destination: TextureHandle, srcX: number, srcY: number, dstX: number, dstY: number, width: number, height: number): void;
 	createColorTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): RenderTargetHandle;
@@ -200,9 +203,11 @@ export interface GPUBackend {
 	beginRenderPass(desc: RenderPassDesc): PassEncoder;
 	endRenderPass(pass: PassEncoder): void;
 	getCaps(): BackendCaps;
+	registerBuiltinPasses(registry: RenderPassLibrary): void;
 	createRenderPassInstance?(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle;
 	destroyRenderPassInstance?(p: RenderPassInstanceHandle): void;
 	setGraphicsPipeline?(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void;
+	bindRenderPassPipeline?(pass: PassEncoder, pipeline: RenderPassInstanceHandle, bindingLayout?: GraphicsPipelineBindingLayout): void;
 	draw(pass: PassEncoder, first: number, count: number): void;
 	drawIndexed(pass: PassEncoder, indexCount: number, firstIndex: number, indexType?: number): void;
 	setPassState<S = unknown>(label: RenderPassId, state: S): void;
@@ -238,6 +243,7 @@ export interface RenderPassStateRegistry {
 	['mesh']: MeshPipelineState;
 	['particles']: ParticlePipelineState;
 	['framebuffer_2d']: Framebuffer2DPipelineState;
+	['vdp_framebuffer_execution']: VdpFrameBufferExecutionPassState;
 	['host_overlay']: HostOverlayPipelineState;
 	['host_menu']: HostMenuPipelineState;
 	['device_quantize']: DeviceQuantizePipelineState;
@@ -249,6 +255,12 @@ export interface RenderPassStateRegistry {
 	['sprites']: never;
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;
+
+
+export type VdpFrameBufferExecutionPassState = {
+	runtime: Runtime;
+	commands: VdpBlitterCommandBuffer;
+};
 
 export type Framebuffer2DPipelineState = {
 	width: number;

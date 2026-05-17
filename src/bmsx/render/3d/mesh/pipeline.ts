@@ -12,7 +12,7 @@ import { SYSTEM_SLOT_TEXTURE_KEY, VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SL
 import type { GameView } from '../../gameview';
 import type { MeshPipelineState, PassEncoder, TextureHandle } from '../../backend/backend';
 import { RenderPassLibrary } from '../../backend/pass/library';
-import { WebGLBackend } from '../../backend/webgl/backend';
+import type { WebGLBackend } from '../../backend/webgl/backend';
 import { TEXTURE_UNIT_TEXTPAGE_PRIMARY } from '../../backend/webgl/constants';
 import { buildLightingDescriptorPooled, resetLightingDescriptorPools } from '../../lighting/system';
 import meshFS from '../shaders/mesh.frag.glsl';

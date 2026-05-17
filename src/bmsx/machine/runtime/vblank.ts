@@ -145,6 +145,7 @@ export class VblankState {
 	private enterVblank(): void {
 		const runtime = this.runtime;
 		this.vblankSequence += 1;
+		runtime.screen.executeReadyVdpFrameBuffer();
 		runtime.machine.vdp.presentReadyFrameOnVblankEdge();
 		runtime.machine.inputController.onVblankEdge(runtime.frameLoop.currentTimeMs, runtime.machine.scheduler.nowCycles);
 		this.publishVblankTiming(true);

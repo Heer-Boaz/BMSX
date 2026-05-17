@@ -3,6 +3,7 @@ local globals<const> = require('globals')
 local story<const> = require('story')
 local timeline_builders<const> = require('timeline_builders')
 local stagger<const> = require('stagger')
+local color_module<const> = require('bios/common/color')
 
 local stat_label<const> = function(stat_id)
 	if stat_id == 'planning' then
@@ -288,15 +289,12 @@ function combat.define_fsm()
 	local finish_combat_results_fade_in<const> = function(self)
 		local bg<const> = oget(globals.director_instance_id).combat_results_visual
 		bg.visible = true
-		bg.r = globals.combat_results_bg_r
-		bg.g = globals.combat_results_bg_g
-		bg.b = globals.combat_results_bg_b
-		bg.a = globals.combat_results_bg_a
+		bg.color = color_module.with_alpha(globals.combat_results_bg_color, globals.combat_results_bg_a)
 		local maya_b<const> = oget(globals.combat_maya_b_id)
 		maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 		maya_b.x = self.combat_results_maya_target_x
 		local results<const> = oget(globals.text_results_id)
-		results.text_color = { r = 1, g = 1, b = 1, a = 1 }
+		results.text_color = globals.p3_white_color
 		results.centered_block_x = self.combat_results_text_target_x
 		return '/combat_results'
 	end
@@ -306,10 +304,7 @@ function combat.define_fsm()
 		oget(globals.text_results_id):clear_text()
 		local bg<const> = oget(globals.director_instance_id).combat_results_visual
 		bg.visible = false
-		bg.r = 1
-		bg.g = 1
-		bg.b = 1
-		bg.a = 1
+		bg.color = globals.p3_white_color
 		globals.hide_combat_sprites()
 		local next_kind<const> = story[self.node_id].kind
 		if next_kind == 'transition' then
@@ -352,10 +347,7 @@ function combat.define_fsm()
 			overlay.y = 0
 			overlay.width = machine_manifest.render_size.width
 			overlay.height = machine_manifest.render_size.height
-			overlay.r = 0
-			overlay.g = 0
-			overlay.b = 0
-			overlay.a = 0
+			overlay.color = 0
 			self:play_timeline(globals.combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
 		input_eval = 'first',
@@ -369,10 +361,7 @@ function combat.define_fsm()
 		leaving_state = function(self)
 			local overlay<const> = oget(globals.director_instance_id).transition_visual.overlay
 			overlay.visible = false
-			overlay.r = 0
-			overlay.g = 0
-			overlay.b = 0
-			overlay.a = 0
+			overlay.color = 0
 		end,
 	}
 
@@ -397,10 +386,7 @@ function combat.define_fsm()
 			overlay.y = 0
 			overlay.width = machine_manifest.render_size.width
 			overlay.height = machine_manifest.render_size.height
-			overlay.r = 0
-			overlay.g = 0
-			overlay.b = 0
-			overlay.a = 0
+			overlay.color = 0
 			self:play_timeline(globals.combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
 		input_eval = 'first',
@@ -755,10 +741,7 @@ function combat.define_fsm()
 				overlay.y = 0
 					overlay.width = machine_manifest.render_size.width
 					overlay.height = machine_manifest.render_size.height
-					overlay.r = 0
-					overlay.g = 0
-					overlay.b = 0
-					overlay.a = 0
+					overlay.color = 0
 			local targets<const> = {
 				monster = monster,
 				maya_a = maya_a,
@@ -816,10 +799,7 @@ function combat.define_fsm()
 				monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				overlay.visible = false
-				overlay.r = 0
-				overlay.g = 0
-				overlay.b = 0
-				overlay.a = 0
+				overlay.color = 0
 		end,
 	}
 
@@ -855,10 +835,7 @@ function combat.define_fsm()
 				overlay.y = 0
 					overlay.width = machine_manifest.render_size.width
 					overlay.height = machine_manifest.render_size.height
-					overlay.r = 0
-					overlay.g = 0
-					overlay.b = 0
-					overlay.a = 0
+					overlay.color = 0
 			local targets<const> = {
 				monster = monster,
 				maya_a = maya_a,
@@ -916,10 +893,7 @@ function combat.define_fsm()
 				monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				overlay.visible = false
-				overlay.r = 0
-				overlay.g = 0
-				overlay.b = 0
-				overlay.a = 0
+				overlay.color = 0
 		end,
 	}
 
@@ -1145,10 +1119,7 @@ function combat.define_fsm()
 				bg.y = 0
 				bg.width = machine_manifest.render_size.width
 				bg.height = machine_manifest.render_size.height
-				bg.r = globals.combat_results_bg_r
-				bg.g = globals.combat_results_bg_g
-				bg.b = globals.combat_results_bg_b
-				bg.a = 0
+				bg.color = color_module.with_alpha(globals.combat_results_bg_color, 0)
 
 			local maya_b<const> = oget(globals.combat_maya_b_id)
 			maya_b:gfx('maya_b')
@@ -1167,7 +1138,7 @@ function combat.define_fsm()
 			end
 			oget(globals.text_results_id):set_text(lines, { typed = false, snap = true })
 			local results<const> = oget(globals.text_results_id)
-			results.text_color = { r = 1, g = 1, b = 1, a = 0 }
+			results.text_color = color_module.with_alpha(globals.p3_white_color, 0)
 			self.combat_results_text_target_x = results.centered_block_x / 2
 			self.combat_results_text_start_x = -machine_manifest.render_size.width
 			results.centered_block_x = self.combat_results_text_start_x

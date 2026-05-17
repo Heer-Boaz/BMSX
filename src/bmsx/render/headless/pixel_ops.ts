@@ -5,7 +5,7 @@ export function colorByte(value: number): number {
 	if (value >= 1) {
 		return 255;
 	}
-	return (value * 255 + 0.5) | 0;
+	return Math.round(value * 255);
 }
 
 export function blendPixel(target: Uint8Array, offset: number, r: number, g: number, b: number, a: number): void {

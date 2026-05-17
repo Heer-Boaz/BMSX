@@ -47,7 +47,8 @@ type BiasConfig = {
 };
 
 function garbageForceThreshold(maxBias: number, threshold: number): number {
-	return ((maxBias * threshold) / VRAM_GARBAGE_FORCE_T_DEN) | 0;
+	const scaled = maxBias * threshold;
+	return (scaled - (scaled % VRAM_GARBAGE_FORCE_T_DEN)) / VRAM_GARBAGE_FORCE_T_DEN;
 }
 
 function makeBiasConfig(vramBytes: number): BiasConfig {

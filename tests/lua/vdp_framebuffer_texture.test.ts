@@ -26,6 +26,7 @@ import { DEFAULT_TEXTURE_PARAMS } from '../../src/bmsx/render/backend/texture_pa
 import { HeadlessGPUBackend } from '../../src/bmsx/render/headless/backend';
 import { TextureManager } from '../../src/bmsx/render/texture_manager';
 import { VdpFrameBufferTextures } from '../../src/bmsx/render/vdp/framebuffer';
+import { drainReadyVdpFrameBufferExecutionForSoftware } from '../../src/bmsx/render/backend/software/vdp_framebuffer_execution';
 
 function createVdp(): { memory: Memory; vdp: VDP } {
 	const memory = new Memory({ systemRom: new Uint8Array(0) });
@@ -41,7 +42,7 @@ function createVdp(): { memory: Memory; vdp: VDP } {
 	return { memory, vdp };
 }
 
-function submitClearFrame(memory: Memory, vdp: VDP): void {
+function submitClearFrame(memory: Memory, vdp: VDP, backend: HeadlessGPUBackend): void {
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
 	memory.writeValue(IO_VDP_REG_BG_COLOR, 0xff112233);
 	memory.writeValue(IO_VDP_CMD, VDP_CMD_CLEAR);
@@ -49,6 +50,7 @@ function submitClearFrame(memory: Memory, vdp: VDP): void {
 	const workUnits = vdp.getPendingRenderWorkUnits();
 	assert.ok(workUnits > 0);
 	vdp.advanceWork(workUnits);
+	drainReadyVdpFrameBufferExecutionForSoftware(backend, vdp);
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
 }
 
@@ -74,7 +76,7 @@ test('VDP framebuffer texture syncs from presented device page', () => {
 	const frameBufferTextures = new VdpFrameBufferTextures(textureManager, { backend, textures: {} } as any);
 	frameBufferTextures.initialize(vdp);
 
-	submitClearFrame(memory, vdp);
+	submitClearFrame(memory, vdp, backend);
 	vdp.drainFrameBufferPresentation(frameBufferTextures);
 	assert.equal(drainPresentationProbe(vdp).consumed, false);
 
@@ -85,9 +87,8 @@ test('VDP framebuffer texture syncs from presented device page', () => {
 
 test('VDP framebuffer context sync consumes pending presentation through the device transaction', () => {
 	const { memory, vdp } = createVdp();
-	submitClearFrame(memory, vdp);
-
 	const backend = new HeadlessGPUBackend();
+	submitClearFrame(memory, vdp, backend);
 	const textureManager = new TextureManager(backend);
 	const frameBufferTextures = new VdpFrameBufferTextures(textureManager, { backend, textures: {} } as any);
 	frameBufferTextures.initialize(vdp);
@@ -100,9 +101,10 @@ test('VDP framebuffer context sync consumes pending presentation through the dev
 
 test('VDP save-state restore drops runtime-only framebuffer presentation work', () => {
 	const { memory, vdp } = createVdp();
+	const backend = new HeadlessGPUBackend();
 	const saved = vdp.captureSaveState();
 
-	submitClearFrame(memory, vdp);
+	submitClearFrame(memory, vdp, backend);
 
 	vdp.restoreSaveState(saved);
 	assert.equal(drainPresentationProbe(vdp).consumed, false);

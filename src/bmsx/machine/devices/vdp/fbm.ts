@@ -21,12 +21,14 @@ export class VdpFbmUnit {
 	private _state: VdpFbmState = VDP_FBM_STATE_PAGE_WRITABLE;
 	private displayFrameBufferCpuReadback: Uint8Array = new Uint8Array(0);
 	private presentationCount = 0;
+	private presentationReadbackValid = false;
 	private presentationRequiresFullSync = false;
 	private presentationDirtyRowStart = 0;
 	private presentationDirtyRowEnd = 0;
 	private presentationDirtySpansByRow: VdpDirtySpan[] = [];
 	private readonly presentationOutput: MutableVdpFrameBufferPresentation = {
 		presentationCount: 0,
+		readbackValid: false,
 		requiresFullSync: false,
 		dirtyRowStart: 0,
 		dirtyRowEnd: 0,
@@ -81,6 +83,7 @@ export class VdpFbmUnit {
 
 	public presentPage(renderSlot: VdpSurfaceUploadSlot): void {
 		if (this.presentationCount === 0) {
+			this.presentationReadbackValid = true;
 			this.presentationDirtyRowStart = renderSlot.dirtyRowStart;
 			this.presentationDirtyRowEnd = renderSlot.dirtyRowEnd;
 			for (let row = renderSlot.dirtyRowStart; row < renderSlot.dirtyRowEnd; row += 1) {
@@ -99,6 +102,16 @@ export class VdpFbmUnit {
 		this._state = VDP_FBM_STATE_PAGE_PENDING_PRESENT;
 	}
 
+	public presentTexturePage(): void {
+		if (this.presentationCount === 0) {
+			this.presentationDirtyRowStart = 0;
+			this.presentationDirtyRowEnd = 0;
+		}
+		this.presentationReadbackValid = false;
+		this.presentationCount += 1;
+		this._state = VDP_FBM_STATE_PAGE_PENDING_PRESENT;
+	}
+
 	public copyReadbackPixelsFrom(source: Uint8Array, x: number, y: number, width: number, height: number, out: Uint8Array): void {
 		this._state = VDP_FBM_STATE_READBACK_REQUESTED;
 		const rowBytes = width * 4;
@@ -114,11 +127,13 @@ export class VdpFbmUnit {
 		const presentation = this.presentationOutput;
 		if (forceFullSync) {
 			presentation.presentationCount = 0;
+			presentation.readbackValid = true;
 			presentation.requiresFullSync = true;
 			presentation.dirtyRowStart = 0;
 			presentation.dirtyRowEnd = 0;
 		} else {
 			presentation.presentationCount = this.presentationCount;
+			presentation.readbackValid = this.presentationReadbackValid;
 			presentation.requiresFullSync = this.presentationRequiresFullSync;
 			presentation.dirtyRowStart = this.presentationDirtyRowStart;
 			presentation.dirtyRowEnd = this.presentationDirtyRowEnd;
@@ -158,6 +173,7 @@ export class VdpFbmUnit {
 
 	private resetPresentation(): void {
 		this.presentationCount = 0;
+		this.presentationReadbackValid = false;
 		this.presentationRequiresFullSync = false;
 		this.presentationDirtyRowStart = 0;
 		this.presentationDirtyRowEnd = 0;

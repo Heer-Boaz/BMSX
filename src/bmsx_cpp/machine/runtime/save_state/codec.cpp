@@ -566,8 +566,8 @@ VdpBatchBlitGlyphSaveState decodeBatchBlitGlyphState(const BinValue& value, cons
 	const BinObject& object = requireObject(value, label);
 	VdpBatchBlitGlyphSaveState state;
 	static_cast<VdpBlitterSourceSaveState&>(state) = decodeVdpSourceState<VdpBlitterSourceSaveState>(value, label);
-	state.dstX = static_cast<f32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.item.dstX"));
-	state.dstY = static_cast<f32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.item.dstY"));
+	state.dstX = static_cast<i32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.item.dstX"));
+	state.dstY = static_cast<i32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.item.dstY"));
 	state.advance = requireU32(requireField(object, "advance", label), "machine.vdp.item.advance");
 	return state;
 }
@@ -577,7 +577,6 @@ VdpBlitterCommandType decodeBlitterCommandType(u32 opcode, const char* label) {
 	switch (opcode) {
 		case static_cast<u32>(VdpBlitterCommandType::Clear): return VdpBlitterCommandType::Clear;
 		case static_cast<u32>(VdpBlitterCommandType::Blit): return VdpBlitterCommandType::Blit;
-		case static_cast<u32>(VdpBlitterCommandType::CopyRect): return VdpBlitterCommandType::CopyRect;
 		case static_cast<u32>(VdpBlitterCommandType::FillRect): return VdpBlitterCommandType::FillRect;
 		case static_cast<u32>(VdpBlitterCommandType::DrawLine): return VdpBlitterCommandType::DrawLine;
 		case static_cast<u32>(VdpBlitterCommandType::BatchBlit): return VdpBlitterCommandType::BatchBlit;
@@ -602,8 +601,6 @@ BinValue encodeBlitterCommandState(const VdpBlitterCommandSaveState& state) {
 	object["flipV"] = state.flipV;
 	object["color"] = static_cast<i64>(state.color);
 	object["parallaxWeight"] = static_cast<f64>(state.parallaxWeight);
-	object["srcX"] = static_cast<i64>(state.srcX);
-	object["srcY"] = static_cast<i64>(state.srcY);
 	object["width"] = static_cast<i64>(state.width);
 	object["height"] = static_cast<i64>(state.height);
 	object["x0"] = static_cast<f64>(state.x0);
@@ -627,23 +624,21 @@ VdpBlitterCommandSaveState decodeBlitterCommandState(const BinValue& value, cons
 	state.layer = static_cast<Layer2D>(requireBoundedU32(requireField(object, "layer", label), "machine.vdp.command.layer", 0u, 0xffu));
 	state.priority = static_cast<f32>(requireNumber(requireField(object, "priority", label), "machine.vdp.command.priority"));
 	state.source = decodeVdpSourceState<VdpBlitterSourceSaveState>(requireField(object, "source", label), "machine.vdp.command.source");
-	state.dstX = static_cast<f32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.command.dstX"));
-	state.dstY = static_cast<f32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.command.dstY"));
+	state.dstX = static_cast<i32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.command.dstX"));
+	state.dstY = static_cast<i32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.command.dstY"));
 	state.scaleX = static_cast<f32>(requireNumber(requireField(object, "scaleX", label), "machine.vdp.command.scaleX"));
 	state.scaleY = static_cast<f32>(requireNumber(requireField(object, "scaleY", label), "machine.vdp.command.scaleY"));
 	state.flipH = requireBool(requireField(object, "flipH", label), "machine.vdp.command.flipH");
 	state.flipV = requireBool(requireField(object, "flipV", label), "machine.vdp.command.flipV");
 	state.color = requireU32(requireField(object, "color", label), "machine.vdp.command.color");
 	state.parallaxWeight = static_cast<f32>(requireNumber(requireField(object, "parallaxWeight", label), "machine.vdp.command.parallaxWeight"));
-	state.srcX = requireI32(requireField(object, "srcX", label), "machine.vdp.command.srcX");
-	state.srcY = requireI32(requireField(object, "srcY", label), "machine.vdp.command.srcY");
 	state.width = requireI32(requireField(object, "width", label), "machine.vdp.command.width");
 	state.height = requireI32(requireField(object, "height", label), "machine.vdp.command.height");
-	state.x0 = static_cast<f32>(requireNumber(requireField(object, "x0", label), "machine.vdp.command.x0"));
-	state.y0 = static_cast<f32>(requireNumber(requireField(object, "y0", label), "machine.vdp.command.y0"));
-	state.x1 = static_cast<f32>(requireNumber(requireField(object, "x1", label), "machine.vdp.command.x1"));
-	state.y1 = static_cast<f32>(requireNumber(requireField(object, "y1", label), "machine.vdp.command.y1"));
-	state.thickness = static_cast<f32>(requireNumber(requireField(object, "thickness", label), "machine.vdp.command.thickness"));
+	state.x0 = static_cast<i32>(requireNumber(requireField(object, "x0", label), "machine.vdp.command.x0"));
+	state.y0 = static_cast<i32>(requireNumber(requireField(object, "y0", label), "machine.vdp.command.y0"));
+	state.x1 = static_cast<i32>(requireNumber(requireField(object, "x1", label), "machine.vdp.command.x1"));
+	state.y1 = static_cast<i32>(requireNumber(requireField(object, "y1", label), "machine.vdp.command.y1"));
+	state.thickness = static_cast<i32>(requireNumber(requireField(object, "thickness", label), "machine.vdp.command.thickness"));
 	state.hasBackgroundColor = requireBool(requireField(object, "hasBackgroundColor", label), "machine.vdp.command.hasBackgroundColor");
 	state.backgroundColor = requireU32(requireField(object, "backgroundColor", label), "machine.vdp.command.backgroundColor");
 	state.lineHeight = requireU32(requireField(object, "lineHeight", label), "machine.vdp.command.lineHeight");
@@ -778,6 +773,7 @@ BinValue encodeSubmittedFrameState(const VdpSubmittedFrameSaveState& state) {
 		{"billboards", encodeVector<VdpBbuBillboardSaveState>(state.billboards, encodeBbuBillboardState)},
 		{"hasCommands", state.hasCommands},
 		{"hasFrameBufferCommands", state.hasFrameBufferCommands},
+		{"frameBufferReadbackValid", state.frameBufferReadbackValid},
 		{"cost", static_cast<i64>(state.cost)},
 		{"workRemaining", static_cast<i64>(state.workRemaining)},
 		{"ditherType", static_cast<i64>(state.ditherType)},
@@ -793,11 +789,12 @@ BinValue encodeSubmittedFrameState(const VdpSubmittedFrameSaveState& state) {
 VdpSubmittedFrameSaveState decodeSubmittedFrameState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpSubmittedFrameSaveState state;
-	state.state = static_cast<VdpSubmittedFrameState>(requireBoundedU32(requireField(object, "state", label), "machine.vdp.submittedFrame.state", 0u, 3u));
+	state.state = static_cast<VdpSubmittedFrameState>(requireBoundedU32(requireField(object, "state", label), "machine.vdp.submittedFrame.state", 0u, 4u));
 	state.queue = decodeBlitterCommandStates(requireField(object, "queue", label), "machine.vdp.submittedFrame.queue");
 	state.billboards = decodeBbuBillboardStates(requireField(object, "billboards", label), "machine.vdp.submittedFrame.billboards");
 	state.hasCommands = requireBool(requireField(object, "hasCommands", label), "machine.vdp.submittedFrame.hasCommands");
 	state.hasFrameBufferCommands = requireBool(requireField(object, "hasFrameBufferCommands", label), "machine.vdp.submittedFrame.hasFrameBufferCommands");
+	state.frameBufferReadbackValid = requireBool(requireField(object, "frameBufferReadbackValid", label), "machine.vdp.submittedFrame.frameBufferReadbackValid");
 	state.cost = requireI32(requireField(object, "cost", label), "machine.vdp.submittedFrame.cost");
 	state.workRemaining = requireI32(requireField(object, "workRemaining", label), "machine.vdp.submittedFrame.workRemaining");
 	state.ditherType = requireI32(requireField(object, "ditherType", label), "machine.vdp.submittedFrame.ditherType");

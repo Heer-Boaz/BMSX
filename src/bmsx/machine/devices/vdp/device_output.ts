@@ -59,6 +59,7 @@ export type VdpDeviceOutput = Readonly<{
 
 export type VdpFrameBufferPresentation = Readonly<{
 	presentationCount: number;
+	readbackValid: boolean;
 	requiresFullSync: boolean;
 	dirtyRowStart: number;
 	dirtyRowEnd: number;

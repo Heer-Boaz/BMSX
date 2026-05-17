@@ -1,6 +1,6 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
 import type { RenderContext, RenderGraphPassContext, RenderPassStateRegistry } from '../backend/backend';
-import { WebGLBackend } from '../backend/webgl/backend';
+import type { WebGLBackend } from '../backend/webgl/backend';
 import { consoleCore } from '../../core/console';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/constants';
 import fragmentShaderDeviceCode from './shaders/device_quantize.frag.glsl';

@@ -1,5 +1,6 @@
 local stagger<const> = {}
 local globals<const> = require('globals')
+local color_module<const> = require('bios/common/color')
 local stagger_timeline_prefix<const> = 'p3.stagger.'
 
 local presets<const> = {
@@ -79,8 +80,7 @@ local tween_u<const> = function(time, start_time, duration, ease)
 end
 
 local apply_text_alpha<const> = function(text_obj, alpha)
-	local color<const> = text_obj.text_color
-	color.a = alpha
+	text_obj.text_color = color_module.with_alpha(text_obj.text_color, alpha)
 end
 
 local apply_bg_alpha<const> = function(bg, base, alpha)
@@ -230,7 +230,7 @@ function stagger.play(owner, preset_id, opts)
 	end
 
 	if text_main then
-		text_base_alpha = text_main.text_color.a
+		text_base_alpha = color_module.alpha(text_main.text_color)
 		apply_text_alpha(text_main, 0)
 	end
 	if text_choice then
