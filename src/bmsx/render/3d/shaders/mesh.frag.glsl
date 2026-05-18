@@ -85,9 +85,36 @@ vec3 meshLitColor(vec3 baseColor) {
 	return lighting;
 }
 
+float meshMaskThreshold() {
+	vec2 cell = mod(floor(gl_FragCoord.xy), 4.0);
+	if (cell.y < 0.5) {
+		if (cell.x < 0.5) return 0.03125;
+		if (cell.x < 1.5) return 0.53125;
+		if (cell.x < 2.5) return 0.15625;
+		return 0.65625;
+	}
+	if (cell.y < 1.5) {
+		if (cell.x < 0.5) return 0.78125;
+		if (cell.x < 1.5) return 0.28125;
+		if (cell.x < 2.5) return 0.90625;
+		return 0.40625;
+	}
+	if (cell.y < 2.5) {
+		if (cell.x < 0.5) return 0.21875;
+		if (cell.x < 1.5) return 0.71875;
+		if (cell.x < 2.5) return 0.09375;
+		return 0.59375;
+	}
+	if (cell.x < 0.5) return 0.96875;
+	if (cell.x < 1.5) return 0.46875;
+	if (cell.x < 2.5) return 0.84375;
+	return 0.34375;
+}
+
 void main() {
 	vec4 surfaceColor = meshSurfaceColor();
-	if (u_surface == MESH_SURFACE_MASK && surfaceColor.a < u_alphaCutoff) {
+	float maskCoverage = clamp(surfaceColor.a + (0.5 - u_alphaCutoff), 0.0, 1.0);
+	if (u_surface == MESH_SURFACE_MASK && maskCoverage < meshMaskThreshold()) {
 		discard;
 	}
 	vec3 color = u_unlit != 0 ? surfaceColor.rgb : meshLitColor(surfaceColor.rgb);

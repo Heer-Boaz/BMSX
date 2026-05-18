@@ -27,20 +27,19 @@
 
 namespace bmsx {
 
+void writeRenderPassViewportSize(i32& width, i32& height, i32& baseWidth, i32& baseHeight, const GameView& view) {
+	width = static_cast<i32>(view.offscreenCanvasSize.x);
+	height = static_cast<i32>(view.offscreenCanvasSize.y);
+	baseWidth = static_cast<i32>(view.viewportSize.x);
+	baseHeight = static_cast<i32>(view.viewportSize.y);
+}
+
 namespace {
 
 void noopRenderPass(GPUBackend*, void*, std::any&) {
 }
 
 void noopPreparePass(GPUBackend*, std::any&) {
-}
-
-template<typename T>
-void setPassViewportSize(T& state, const GameView* view) {
-	state.width = static_cast<i32>(view->offscreenCanvasSize.x);
-	state.height = static_cast<i32>(view->offscreenCanvasSize.y);
-	state.baseWidth = static_cast<i32>(view->viewportSize.x);
-	state.baseHeight = static_cast<i32>(view->viewportSize.y);
 }
 
 void setSkippedStatePass(RenderPassDef& desc, const char* id, const char* name) {
@@ -55,7 +54,7 @@ void setSkippedStatePass(RenderPassDef& desc, const char* id, const char* name) 
 DeviceQuantizePipelineState buildDeviceQuantizeState(const RenderPassDef::RenderGraphPassContext& ctx) {
 	auto* view = ctx.view;
 	DeviceQuantizePipelineState state;
-	setPassViewportSize(state, view);
+	writeRenderPassViewportSize(state.width, state.height, state.baseWidth, state.baseHeight, *view);
 	state.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
 	state.ditherType = static_cast<i32>(view->dither_type);
 	return state;
@@ -66,7 +65,7 @@ CRTPipelineState buildCRTPipelineState(const RenderPassDef::RenderGraphPassConte
 										RenderPassDef::RenderPassGraphDef::PresentInput presentInput) {
 	auto* view = ctx.view;
 	CRTPipelineState crtState;
-	setPassViewportSize(crtState, view);
+	writeRenderPassViewportSize(crtState.width, crtState.height, crtState.baseWidth, crtState.baseHeight, *view);
 	crtState.width = static_cast<i32>(view->canvasSize.x);
 	crtState.height = static_cast<i32>(view->canvasSize.y);
 	crtState.srcWidth = static_cast<i32>(view->offscreenCanvasSize.x);
@@ -120,6 +119,19 @@ void setAutoPresentGraph(RenderPassDef& desc) {
 	};
 }
 
+void registerFrameStatePasses(RenderPassLibrary& registry) {
+	RenderPassDef frameResolve;
+	setSkippedStatePass(frameResolve, "frame_resolve", "FrameResolve");
+	frameResolve.exec = noopRenderPass;
+	frameResolve.prepare = noopPreparePass;
+	registry.registerPass(frameResolve);
+
+	RenderPassDef frameShared;
+	setSkippedStatePass(frameShared, "frame_shared", "FrameShared");
+	frameShared.exec = noopRenderPass;
+	registry.registerPass(frameShared);
+}
+
 } // namespace
 
 RenderPassLibrary::RenderPassLibrary(GPUBackend* backend, GameView* view)
@@ -134,22 +146,7 @@ RenderPassLibrary::~RenderPassLibrary() = default;
 void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	GameView* const view = registry.view();
 
-	// FrameResolve: per-frame state setup
-	{
-		RenderPassDef desc;
-		setSkippedStatePass(desc, "frame_resolve", "FrameResolve");
-		desc.exec = noopRenderPass;
-		desc.prepare = noopPreparePass;
-		registry.registerPass(desc);
-	}
-
-	// FrameShared: aggregated frame state
-	{
-		RenderPassDef desc;
-		setSkippedStatePass(desc, "frame_shared", "FrameShared");
-		desc.exec = noopRenderPass;
-		registry.registerPass(desc);
-	}
+	registerFrameStatePasses(registry);
 
 	registerVdpFrameBufferExecutionPass(registry);
 
@@ -185,22 +182,7 @@ void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	GameView* const view = registry.view();
 
-	// FrameResolve: per-frame state setup
-	{
-		RenderPassDef desc;
-		setSkippedStatePass(desc, "frame_resolve", "FrameResolve");
-		desc.exec = noopRenderPass;
-		desc.prepare = noopPreparePass;
-		registry.registerPass(desc);
-	}
-
-	// FrameShared: aggregated frame state
-	{
-		RenderPassDef desc;
-		setSkippedStatePass(desc, "frame_shared", "FrameShared");
-		desc.exec = noopRenderPass;
-		registry.registerPass(desc);
-	}
+	registerFrameStatePasses(registry);
 
 	registerVdpFrameBufferExecutionPass(registry);
 

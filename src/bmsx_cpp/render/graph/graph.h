@@ -148,6 +148,7 @@ private:
 	void destroyResources();
 	bool resolveExecutablePass(i32 orderIndex, bool hasOrder, ExecutablePass& out);
 	WriteTargets writeTargetsForPass(i32 passIndex) const;
+	InternalTexResource& colorResourceForDepthAttachment(RenderGraphTexHandle colorHandle, RenderGraphTexHandle depthHandle);
 	bool beginClearPass(RenderGraphTexHandle color, RenderGraphTexHandle depth, i32 passIndex, const std::string& label, PassEncoder& passEnc);
 
 	GPUBackend* m_backend;

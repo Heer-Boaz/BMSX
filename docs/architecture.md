@@ -193,7 +193,11 @@ Internal units:
 
 Host render backends consume VOUT output transactions and ready VDP framebuffer
 execution buffers. They do not receive cart intent such as sprites, rectangles,
-labels, or scene objects. VDP save-state
+labels, or scene objects. Backend-local mechanics such as render-pass viewport
+state, framebuffer attachment ownership, and GLES/WebGL fullscreen-quad buffers
+remain backend/rendergraph ownership; passes share those owners instead of
+duplicating setup sequences in individual postprocess or presentation files.
+VDP save-state
 record shapes live in dedicated `machine/devices/vdp/save_state` files on both
 runtimes; the stream-ingress, VRAM/surface-memory, and readback latch/buffer
 owners live in mirrored `machine/devices/vdp/ingress`, `machine/devices/vdp/vram`,
@@ -219,14 +223,19 @@ ownership rather than copying command, billboard, or mesh records.
 The native GLES2 and browser WebGL2 mesh shaders consume the resolved material
 surface bits (opaque/mask/blend, double-sided, unlit, base color, emissive,
 roughness, and metallic factors) together with the LPU-derived frame lighting
-state. TS headless and native software backends also rasterize VOUT mesh records
-for capture/proof through the same rompacked model source and sampled
-MFU/JTU/LPU state rather than a private test hook. The native GLES2 path must
-stay compatible with low-end GLES2 targets by expanding mesh, morph, and skinning
-data on the CPU into a retained dynamic vertex stream instead of relying on UBOs,
-instancing, vertex texture fetch, or other GLES3/WebGL2-only features; the
-browser WebGL2 path follows the same MDU output contract while using WebGL2
-shader syntax.
+state, and masked mesh surfaces use the same frame-coordinate 4x4 coverage
+pattern on both shader dialects. TS headless and native software backends also
+rasterize VOUT mesh records for capture/proof through the same rompacked model
+source and sampled MFU/JTU/LPU state rather than a private test hook; their
+software point rasterizers consume the resolved stream material color instead
+of rereading packet color words. The mesh vertex-stream owner exposes the
+element layout of that resolved stream; byte offsets and GL attribute binding
+belong only to the concrete WebGL/GLES2 backend pipeline boundary. The native
+GLES2 path must stay compatible with low-end GLES2 targets by expanding mesh,
+morph, and skinning data on the CPU into retained fixed-capacity vertex storage
+instead of relying on UBOs, instancing, vertex texture fetch, or other
+GLES3/WebGL2-only features; the browser WebGL2 path follows the same MDU output
+contract while using WebGL2 shader syntax.
 
 ### APU and AOUT
 

@@ -20,7 +20,6 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace bmsx {
 namespace {
@@ -104,7 +103,8 @@ struct Vdp2DBlitGles2Runtime {
 	GLuint frameBufferObject = 0;
 	GLuint attachedColorTextureId = 0;
 	u32 contextGeneration = 0u;
-	std::vector<Vdp2DBlitGles2Vertex> vertices;
+	std::array<Vdp2DBlitGles2Vertex, VDP_2D_MAX_BATCH_VERTICES> vertices{};
+	size_t vertexCount = 0u;
 	std::array<size_t, VDP_BLITTER_FIFO_CAPACITY> commandOrder{};
 };
 
@@ -129,7 +129,7 @@ void destroyGles2Vdp2DBlitRuntime() {
 	state.backend = nullptr;
 	state.attachedColorTextureId = 0u;
 	state.contextGeneration = 0u;
-	state.vertices.clear();
+	state.vertexCount = 0u;
 }
 
 GLint gles2Attrib(GLuint program, const char* name) {
@@ -180,9 +180,6 @@ void bindGles2Vdp2DBlitRuntime(OpenGLES2Backend& backend) {
 	state.uniformParallaxFlipWindow = gles2Uniform(state.program, "u_parallax_flip_window");
 	glGenBuffers(1, &state.vertexBuffer);
 	glGenFramebuffers(1, &state.frameBufferObject);
-	if (state.vertices.capacity() < VDP_2D_MAX_BATCH_VERTICES) {
-		state.vertices.reserve(VDP_2D_MAX_BATCH_VERTICES);
-	}
 	glUseProgram(state.program);
 	glUniform1i(state.uniformTexture0, 0);
 	glUniform1i(state.uniformTexture1, 1);
@@ -206,7 +203,7 @@ void bindGles2Vdp2DBlitTarget(OpenGLES2Backend& backend, TextureHandle renderTex
 
 
 void pushGles2Vertex(
-	std::vector<Vdp2DBlitGles2Vertex>& vertices,
+	Vdp2DBlitGles2Runtime& state,
 	f32 cornerX,
 	f32 cornerY,
 	f32 originX,
@@ -224,7 +221,7 @@ void pushGles2Vertex(
 	float slotId,
 	const Vdp2DBlitGles2Color& color
 ) {
-	vertices.push_back(Vdp2DBlitGles2Vertex{
+	state.vertices[state.vertexCount] = Vdp2DBlitGles2Vertex{
 		cornerX,
 		cornerY,
 		originX,
@@ -244,11 +241,12 @@ void pushGles2Vertex(
 		color.g,
 		color.b,
 		color.a,
-	});
+	};
+	++state.vertexCount;
 }
 
 void appendGles2Quad(
-	std::vector<Vdp2DBlitGles2Vertex>& vertices,
+	Vdp2DBlitGles2Runtime& state,
 	f32 originX,
 	f32 originY,
 	f32 axisXX,
@@ -272,12 +270,12 @@ void appendGles2Quad(
 		static_cast<f32>(colorBytes.a) / 255.0f,
 	};
 	for (const auto& corner : VDP_2D_QUAD_CORNERS) {
-		pushGles2Vertex(vertices, corner[0], corner[1], originX, originY, axisXX, axisXY, axisYX, axisYY, u0, v0, u1, v1, z, fx, slotId, vertexColor);
+		pushGles2Vertex(state, corner[0], corner[1], originX, originY, axisXX, axisXY, axisYX, axisYY, u0, v0, u1, v1, z, fx, slotId, vertexColor);
 	}
 }
 
 
-void appendGles2FillRect(const VdpBlitterCommandBuffer& commands, size_t index, std::vector<Vdp2DBlitGles2Vertex>& vertices) {
+void appendGles2FillRect(Vdp2DBlitGles2Runtime& state, const VdpBlitterCommandBuffer& commands, size_t index) {
 	i32 left = commands.x0[index];
 	i32 top = commands.y0[index];
 	i32 right = commands.x1[index];
@@ -292,7 +290,7 @@ void appendGles2FillRect(const VdpBlitterCommandBuffer& commands, size_t index, 
 		return;
 	}
 	appendGles2Quad(
-		vertices,
+		state,
 		static_cast<f32>(left),
 		static_cast<f32>(top),
 		static_cast<f32>(right - left),
@@ -310,7 +308,7 @@ void appendGles2FillRect(const VdpBlitterCommandBuffer& commands, size_t index, 
 	);
 }
 
-void appendGles2Line(const VdpBlitterCommandBuffer& commands, size_t index, std::vector<Vdp2DBlitGles2Vertex>& vertices) {
+void appendGles2Line(Vdp2DBlitGles2Runtime& state, const VdpBlitterCommandBuffer& commands, size_t index) {
 	const f32 x0 = static_cast<f32>(commands.x0[index]);
 	const f32 y0 = static_cast<f32>(commands.y0[index]);
 	const f32 dx = static_cast<f32>(commands.x1[index] - commands.x0[index]);
@@ -319,7 +317,7 @@ void appendGles2Line(const VdpBlitterCommandBuffer& commands, size_t index, std:
 	const f32 length = std::hypot(dx, dy);
 	if (length == 0.0f) {
 		const f32 half = thickness * 0.5f;
-		appendGles2Quad(vertices, x0 - half, y0 - half, thickness, 0.0f, 0.0f, thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, commands.priority[index], 0.0f, commands.color[index], VDP_2D_DRAW_SOLID);
+		appendGles2Quad(state, x0 - half, y0 - half, thickness, 0.0f, 0.0f, thickness, SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, commands.priority[index], 0.0f, commands.color[index], VDP_2D_DRAW_SOLID);
 		return;
 	}
 	const f32 tangentX = dx / length;
@@ -328,7 +326,7 @@ void appendGles2Line(const VdpBlitterCommandBuffer& commands, size_t index, std:
 	const f32 normalY = tangentX;
 	const f32 half = thickness * 0.5f;
 	appendGles2Quad(
-		vertices,
+		state,
 		x0 - tangentX * half - normalX * half,
 		y0 - tangentY * half - normalY * half,
 		dx + tangentX * thickness,
@@ -346,7 +344,7 @@ void appendGles2Line(const VdpBlitterCommandBuffer& commands, size_t index, std:
 	);
 }
 
-void appendGles2Blit(GameView& view, const VdpBlitterCommandBuffer& commands, size_t index, std::vector<Vdp2DBlitGles2Vertex>& vertices) {
+void appendGles2Blit(Vdp2DBlitGles2Runtime& state, GameView& view, const VdpBlitterCommandBuffer& commands, size_t index) {
 	const u32 surfaceId = commands.sourceSurfaceId[index];
 	const u32 surfaceWidth = view.vdpSlotTextures().readSurfaceTextureWidth(surfaceId);
 	const u32 surfaceHeight = view.vdpSlotTextures().readSurfaceTextureHeight(surfaceId);
@@ -361,7 +359,7 @@ void appendGles2Blit(GameView& view, const VdpBlitterCommandBuffer& commands, si
 		std::swap(v0, v1);
 	}
 	appendGles2Quad(
-		vertices,
+		state,
 		static_cast<f32>(commands.dstX[index]),
 		static_cast<f32>(commands.dstY[index]),
 		static_cast<f32>(commands.width[index]),
@@ -379,7 +377,7 @@ void appendGles2Blit(GameView& view, const VdpBlitterCommandBuffer& commands, si
 	);
 }
 
-void appendGles2BatchBlitItem(GameView& view, const VdpBlitterCommandBuffer& commands, size_t commandIndex, size_t itemIndex, std::vector<Vdp2DBlitGles2Vertex>& vertices) {
+void appendGles2BatchBlitItem(Vdp2DBlitGles2Runtime& state, GameView& view, const VdpBlitterCommandBuffer& commands, size_t commandIndex, size_t itemIndex) {
 	const u32 surfaceId = commands.batchBlitSurfaceId[itemIndex];
 	const u32 surfaceWidth = view.vdpSlotTextures().readSurfaceTextureWidth(surfaceId);
 	const u32 surfaceHeight = view.vdpSlotTextures().readSurfaceTextureHeight(surfaceId);
@@ -388,7 +386,7 @@ void appendGles2BatchBlitItem(GameView& view, const VdpBlitterCommandBuffer& com
 	const u32 width = commands.batchBlitWidth[itemIndex];
 	const u32 height = commands.batchBlitHeight[itemIndex];
 	appendGles2Quad(
-		vertices,
+		state,
 		static_cast<f32>(commands.batchBlitDstX[itemIndex]),
 		static_cast<f32>(commands.batchBlitDstY[itemIndex]),
 		static_cast<f32>(width),
@@ -435,27 +433,27 @@ size_t buildGles2CommandOrder(Vdp2DBlitGles2Runtime& state, const VdpBlitterComm
 	return orderCount;
 }
 
-void appendGles2Command(GameView& view, const VdpBlitterCommandBuffer& commands, size_t index, std::vector<Vdp2DBlitGles2Vertex>& vertices) {
+void appendGles2Command(GameView& view, Vdp2DBlitGles2Runtime& state, const VdpBlitterCommandBuffer& commands, size_t index) {
 	switch (commands.opcode[index]) {
 		case VdpBlitterCommandType::FillRect:
-			appendGles2FillRect(commands, index, vertices);
+			appendGles2FillRect(state, commands, index);
 			break;
 		case VdpBlitterCommandType::DrawLine:
-			appendGles2Line(commands, index, vertices);
+			appendGles2Line(state, commands, index);
 			break;
 		case VdpBlitterCommandType::Blit:
-			appendGles2Blit(view, commands, index, vertices);
+			appendGles2Blit(state, view, commands, index);
 			break;
 		case VdpBlitterCommandType::BatchBlit: {
 			const size_t firstItem = commands.batchBlitFirstEntry[index];
 			const size_t itemEnd = firstItem + commands.batchBlitItemCount[index];
 			if (commands.hasBackgroundColor[index] != 0u) {
 				for (size_t itemIndex = firstItem; itemIndex < itemEnd; ++itemIndex) {
-					appendGles2Quad(vertices, static_cast<f32>(commands.batchBlitDstX[itemIndex]), static_cast<f32>(commands.batchBlitDstY[itemIndex]), static_cast<f32>(commands.batchBlitAdvance[itemIndex]), 0.0f, 0.0f, static_cast<f32>(commands.lineHeight[index]), SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, commands.priority[index], commands.parallaxWeight[index], commands.backgroundColor[index], VDP_2D_DRAW_SOLID);
+					appendGles2Quad(state, static_cast<f32>(commands.batchBlitDstX[itemIndex]), static_cast<f32>(commands.batchBlitDstY[itemIndex]), static_cast<f32>(commands.batchBlitAdvance[itemIndex]), 0.0f, 0.0f, static_cast<f32>(commands.lineHeight[index]), SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, commands.priority[index], commands.parallaxWeight[index], commands.backgroundColor[index], VDP_2D_DRAW_SOLID);
 				}
 			}
 			for (size_t itemIndex = firstItem; itemIndex < itemEnd; ++itemIndex) {
-				appendGles2BatchBlitItem(view, commands, index, itemIndex, vertices);
+				appendGles2BatchBlitItem(state, view, commands, index, itemIndex);
 			}
 			break;
 		}
@@ -467,7 +465,7 @@ void appendGles2Command(GameView& view, const VdpBlitterCommandBuffer& commands,
 void appendGles2CommandSegment(GameView& view, Vdp2DBlitGles2Runtime& state, const VdpBlitterCommandBuffer& commands, size_t start, size_t end) {
 	const size_t orderCount = buildGles2CommandOrder(state, commands, start, end);
 	for (size_t orderIndex = 0u; orderIndex < orderCount; ++orderIndex) {
-		appendGles2Command(view, commands, state.commandOrder[orderIndex], state.vertices);
+		appendGles2Command(view, state, commands, state.commandOrder[orderIndex]);
 	}
 }
 
@@ -499,7 +497,7 @@ void bindGles2ExecutionState(Runtime& runtime, OpenGLES2Backend& backend) {
 	VDP& vdp = runtime.machine.vdp;
 	GameView& view = runtime.view();
 	Vdp2DBlitGles2Runtime& state = g_vdp2dBlit;
-	state.vertices.clear();
+	state.vertexCount = 0u;
 	vdp.drainSurfaceUploads(view.vdpSlotTextures());
 	bindGles2Vdp2DBlitTarget(backend, view.vdpFrameBufferTextures().renderTexture(), vdp.frameBufferWidth(), vdp.frameBufferHeight());
 	glUseProgram(state.program);
@@ -540,17 +538,17 @@ void clearGles2Vdp2DBlitTarget(u32 color) {
 }
 
 void flushGles2Vdp2DBlitVertices(Vdp2DBlitGles2Runtime& state) {
-	if (state.vertices.empty()) {
+	if (state.vertexCount == 0u) {
 		return;
 	}
 	glBufferData(
 		GL_ARRAY_BUFFER,
-		static_cast<GLsizeiptr>(state.vertices.size() * sizeof(Vdp2DBlitGles2Vertex)),
+		static_cast<GLsizeiptr>(state.vertexCount * sizeof(Vdp2DBlitGles2Vertex)),
 		state.vertices.data(),
 		GL_STREAM_DRAW
 	);
-	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(state.vertices.size()));
-	state.vertices.clear();
+	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(state.vertexCount));
+	state.vertexCount = 0u;
 }
 
 void executeGles2Vdp2DBlitCommands(Runtime& runtime, const VdpBlitterCommandBuffer& commands) {

@@ -64,8 +64,8 @@ void drawSoftwareMeshPoint(SoftwareBackend& backend, i32 screenX, i32 screenY, u
 	}
 }
 
-u8 softwareMeshShadeChannel(u8 channel, f32 shade) {
-	const i32 value = static_cast<i32>(static_cast<f32>(channel) * shade);
+u8 softwareMeshColorByte(f32 channel, f32 shade) {
+	const i32 value = static_cast<i32>(channel * 255.0f * shade);
 	if (value < 0) {
 		return 0u;
 	}
@@ -77,12 +77,9 @@ u8 softwareMeshShadeChannel(u8 channel, f32 shade) {
 
 void drawSoftwareMeshEntry(SoftwareBackend& backend, const GameView& view, const RuntimeRomPackage& rom, const GameView::VdpMeshRenderEntry& entry) {
 	const MeshRomDrawSource source = resolveMeshRomDrawSource(rom, entry);
-	const MeshGLES2DrawStream stream = g_softwareMeshVertexStream.build(view, source.model, source.mesh, entry);
+	const MeshDrawStream stream = g_softwareMeshVertexStream.build(view, source.model, source.mesh, entry);
 	const Render3D::Mat4& model = *stream.modelMatrix;
 	const std::array<f32, 16>& viewProj = view.vdpTransform.viewProj;
-	const u8 baseR = static_cast<u8>((entry.color >> 16u) & 0xffu);
-	const u8 baseG = static_cast<u8>((entry.color >> 8u) & 0xffu);
-	const u8 baseB = static_cast<u8>(entry.color & 0xffu);
 	f32 lightEnergy = view.vdpAmbientLightColorIntensity[3];
 	for (i32 index = 0; index < view.vdpDirectionalLightCount; ++index) {
 		lightEnergy += view.vdpDirectionalLightIntensities[static_cast<size_t>(index)];
@@ -97,7 +94,7 @@ void drawSoftwareMeshEntry(SoftwareBackend& backend, const GameView& view, const
 		lightEnergy = 1.85f;
 	}
 	for (size_t index = 0u; index < stream.vertexCount; ++index) {
-		const MeshGLES2Vertex& vertex = stream.vertices[index];
+		const MeshStreamVertex& vertex = stream.vertices[index];
 		const f32 wx = model[0] * vertex.x + model[4] * vertex.y + model[8] * vertex.z + model[12];
 		const f32 wy = model[1] * vertex.x + model[5] * vertex.y + model[9] * vertex.z + model[13];
 		const f32 wz = model[2] * vertex.x + model[6] * vertex.y + model[10] * vertex.z + model[14];
@@ -133,10 +130,10 @@ void drawSoftwareMeshEntry(SoftwareBackend& backend, const GameView& view, const
 		drawSoftwareMeshPoint(backend,
 			screenX,
 			screenY,
-			softwareMeshShadeChannel(baseR, shade),
-			softwareMeshShadeChannel(baseG, shade),
-			softwareMeshShadeChannel(baseB, shade),
-			224u);
+			softwareMeshColorByte(vertex.r, shade),
+			softwareMeshColorByte(vertex.g, shade),
+			softwareMeshColorByte(vertex.b, shade),
+			softwareMeshColorByte(vertex.a, 1.0f));
 	}
 }
 

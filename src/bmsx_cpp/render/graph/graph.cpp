@@ -382,6 +382,14 @@ RenderGraphRuntime::WriteTargets RenderGraphRuntime::writeTargetsForPass(i32 pas
 	return targets;
 }
 
+RenderGraphRuntime::InternalTexResource& RenderGraphRuntime::colorResourceForDepthAttachment(RenderGraphTexHandle colorHandle, RenderGraphTexHandle depthHandle) {
+	auto& colorRes = m_texResources[colorHandle];
+	if (colorRes.fboDepthHandle != nullptr && colorRes.fboDepthAttachment != depthHandle) {
+		throw BMSX_RUNTIME_ERROR("[RenderGraph] Color target has more than one depth attachment.");
+	}
+	return colorRes;
+}
+
 bool RenderGraphRuntime::beginClearPass(RenderGraphTexHandle colorHandle,
 										RenderGraphTexHandle depthHandle,
 										i32 passIndex,
@@ -476,35 +484,23 @@ void RenderGraphRuntime::realizeAll() {
 				}
 			}
 		}
-		for (const auto& writes : m_passWrites) {
-			RenderGraphTexHandle colorHandle = -1;
-			RenderGraphTexHandle depthHandle = -1;
-			for (RenderGraphTexHandle handle : writes) {
-				const auto& res = m_texResources[handle];
-				if (res.desc.depth) {
-					depthHandle = handle;
-				} else if (colorHandle < 0) {
-					colorHandle = handle;
-				}
-			}
-			if (colorHandle >= 0 && depthHandle >= 0) {
-				auto& colorRes = m_texResources[colorHandle];
-				if (colorRes.fboDepthHandle != nullptr && colorRes.fboDepthAttachment != depthHandle) {
-					throw BMSX_RUNTIME_ERROR("[RenderGraph] Color target has more than one depth attachment.");
-				}
+		for (i32 passIndex = 0; passIndex < static_cast<i32>(m_passWrites.size()); ++passIndex) {
+			const WriteTargets targets = writeTargetsForPass(passIndex);
+			if (targets.color >= 0 && targets.depth >= 0) {
+				auto& colorRes = colorResourceForDepthAttachment(targets.color, targets.depth);
 				if (colorRes.fboDepthHandle == nullptr) {
 					auto* glTex = OpenGLES2Backend::asTexture(colorRes.tex);
-					auto& depthRes = m_texResources[depthHandle];
+					auto& depthRes = m_texResources[targets.depth];
 					auto* depthTarget = static_cast<GLES2DepthTarget*>(depthRes.tex);
 					const GLuint fbo = createGLES2ColorFramebuffer(glTex->id);
 					glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthTarget->id);
 					colorRes.fboDepthHandle = reinterpret_cast<void*>(static_cast<uintptr_t>(fbo));
-					colorRes.fboDepthAttachment = depthHandle;
+					colorRes.fboDepthAttachment = targets.depth;
 					if (kRenderGraphVerboseLog) {
 						const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 						std::fprintf(stderr,
 										"[BMSX][RG] create color+depth fbo=%u colorHandle=%d depthHandle=%d status=0x%x\n",
-										static_cast<unsigned>(fbo), colorHandle, depthHandle,
+										static_cast<unsigned>(fbo), targets.color, targets.depth,
 										static_cast<unsigned>(status));
 					}
 				}
@@ -534,24 +530,12 @@ void RenderGraphRuntime::realizeAll() {
 			res.tex = reinterpret_cast<TextureHandle>(tex);
 			res.fboColorOnly = reinterpret_cast<void*>(tex);
 		}
-		for (const auto& writes : m_passWrites) {
-			RenderGraphTexHandle colorHandle = -1;
-			RenderGraphTexHandle depthHandle = -1;
-			for (RenderGraphTexHandle handle : writes) {
-				const auto& res = m_texResources[handle];
-				if (res.desc.depth) {
-					depthHandle = handle;
-				} else if (colorHandle < 0) {
-					colorHandle = handle;
-				}
-			}
-			if (colorHandle >= 0 && depthHandle >= 0) {
-				auto& colorRes = m_texResources[colorHandle];
-				if (colorRes.fboDepthHandle != nullptr && colorRes.fboDepthAttachment != depthHandle) {
-					throw BMSX_RUNTIME_ERROR("[RenderGraph] Color target has more than one depth attachment.");
-				}
+		for (i32 passIndex = 0; passIndex < static_cast<i32>(m_passWrites.size()); ++passIndex) {
+			const WriteTargets targets = writeTargetsForPass(passIndex);
+			if (targets.color >= 0 && targets.depth >= 0) {
+				auto& colorRes = colorResourceForDepthAttachment(targets.color, targets.depth);
 				colorRes.fboDepthHandle = colorRes.fboColorOnly;
-				colorRes.fboDepthAttachment = depthHandle;
+				colorRes.fboDepthAttachment = targets.depth;
 			}
 		}
 

@@ -5,6 +5,7 @@
 #include "pipeline.h"
 
 #include "core/console.h"
+#include "render/backend/gles2/fullscreen_quad.h"
 #include <cstdio>
 #include <stdexcept>
 #include <string>
@@ -62,10 +63,7 @@ struct CRTGLES2State {
 	GLint uniform_blur_intensity = -1;
 	GLint uniform_glow_color = -1;
 	GLint uniform_texture = -1;
-	GLuint vbo_pos = 0;
-	GLuint vbo_uv = 0;
-	i32 width = -1;
-	i32 height = -1;
+	GLES2ScreenQuad quad;
 };
 
 CRTGLES2State g_crt;
@@ -80,10 +78,7 @@ struct DeviceQuantizeGLES2State {
 	GLint uniform_fragscale = -1;
 	GLint uniform_dither_type = -1;
 	GLint uniform_texture = -1;
-	GLuint vbo_pos = 0;
-	GLuint vbo_uv = 0;
-	i32 width = -1;
-	i32 height = -1;
+	GLES2ScreenQuad quad;
 };
 
 DeviceQuantizeGLES2State g_device;
@@ -626,39 +621,6 @@ void main(){
 		return program;
 	}
 
-template<typename State>
-void updatePostProcessQuad(State& state, i32 width, i32 height) {
-	if (state.width == width && state.height == height) return;
-
-	state.width = width;
-	state.height = height;
-
-	const float w = static_cast<float>(width);
-	const float h = static_cast<float>(height);
-	const float positions[12] = {
-		0.0f, 0.0f,
-		0.0f, h,
-		w, 0.0f,
-		w, 0.0f,
-		0.0f, h,
-		w, h
-	};
-	const float texcoords[12] = {
-		0.0f, 1.0f,
-		0.0f, 0.0f,
-		1.0f, 1.0f,
-		1.0f, 1.0f,
-		0.0f, 0.0f,
-		1.0f, 0.0f
-	};
-
-	glBindBuffer(GL_ARRAY_BUFFER, state.vbo_pos);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(positions), positions, GL_STATIC_DRAW);
-
-	glBindBuffer(GL_ARRAY_BUFFER, state.vbo_uv);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(texcoords), texcoords, GL_STATIC_DRAW);
-}
-
 } // namespace
 
 void initPresentGLES2(OpenGLES2Backend* backend) {
@@ -703,8 +665,7 @@ void initDeviceQuantizeGLES2(OpenGLES2Backend* backend) {
 	g_device.uniform_dither_type = glGetUniformLocation(g_device.program, "u_dither_type");
 	g_device.uniform_texture = glGetUniformLocation(g_device.program, "u_texture");
 
-	glGenBuffers(1, &g_device.vbo_pos);
-	glGenBuffers(1, &g_device.vbo_uv);
+	createGLES2ScreenQuad(g_device.quad);
 
 	glUseProgram(g_device.program);
 	glUniform1i(g_device.uniform_texture, kTexUnitPostProcess);
@@ -740,8 +701,7 @@ void initGLES2(OpenGLES2Backend* backend) {
 	g_crt.uniform_glow_color = glGetUniformLocation(g_crt.program, "u_glowColor");
 	g_crt.uniform_texture = glGetUniformLocation(g_crt.program, "u_texture");
 
-	glGenBuffers(1, &g_crt.vbo_pos);
-	glGenBuffers(1, &g_crt.vbo_uv);
+	createGLES2ScreenQuad(g_crt.quad);
 
 	glUseProgram(g_crt.program);
 	// Re-apply sampler binding every draw; shared contexts can clobber uniform state.
@@ -761,11 +721,9 @@ void initGLES2(OpenGLES2Backend* backend) {
 void shutdownGLES2(OpenGLES2Backend* backend) {
 	(void)backend;
 	if (g_crt.program != 0) glDeleteProgram(g_crt.program);
-	if (g_crt.vbo_pos != 0) glDeleteBuffers(1, &g_crt.vbo_pos);
-	if (g_crt.vbo_uv != 0) glDeleteBuffers(1, &g_crt.vbo_uv);
+	destroyGLES2ScreenQuad(g_crt.quad);
 	if (g_device.program != 0) glDeleteProgram(g_device.program);
-	if (g_device.vbo_pos != 0) glDeleteBuffers(1, &g_device.vbo_pos);
-	if (g_device.vbo_uv != 0) glDeleteBuffers(1, &g_device.vbo_uv);
+	destroyGLES2ScreenQuad(g_device.quad);
 	if (g_present.program != 0) glDeleteProgram(g_present.program);
 	if (g_present.vbo_pos != 0) glDeleteBuffers(1, &g_present.vbo_pos);
 	if (g_present.vbo_uv != 0) glDeleteBuffers(1, &g_present.vbo_uv);
@@ -857,19 +815,13 @@ void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, con
 	glUseProgram(g_device.program);
 	glUniform1i(g_device.uniform_texture, kTexUnitPostProcess);
 
-	updatePostProcessQuad(g_device, state.width, state.height);
+	updateGLES2PostProcessQuad(g_device.quad, state.width, state.height);
 
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_BLEND);
 
-	glBindBuffer(GL_ARRAY_BUFFER, g_device.vbo_pos);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_device.attrib_pos));
-	glVertexAttribPointer(static_cast<GLuint>(g_device.attrib_pos), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
-
-	glBindBuffer(GL_ARRAY_BUFFER, g_device.vbo_uv);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_device.attrib_uv));
-	glVertexAttribPointer(static_cast<GLuint>(g_device.attrib_uv), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+	bindGLES2ScreenQuad(g_device.quad, g_device.attrib_pos, g_device.attrib_uv);
 
 	glUniform2f(g_device.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
 	glUniform2f(g_device.uniform_src_resolution, static_cast<float>(state.baseWidth), static_cast<float>(state.baseHeight));
@@ -896,7 +848,7 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
 						static_cast<unsigned>(srcTex->id), state.width,
 						state.height, state.baseWidth, state.baseHeight);
 	}
-	updatePostProcessQuad(g_crt, state.width, state.height);
+	updateGLES2PostProcessQuad(g_crt.quad, state.width, state.height);
 
 	backend->setRenderTarget(backend->backbuffer(), state.width, state.height);
 
@@ -904,13 +856,7 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_BLEND);
 
-	glBindBuffer(GL_ARRAY_BUFFER, g_crt.vbo_pos);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_crt.attrib_pos));
-	glVertexAttribPointer(static_cast<GLuint>(g_crt.attrib_pos), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
-
-	glBindBuffer(GL_ARRAY_BUFFER, g_crt.vbo_uv);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_crt.attrib_uv));
-	glVertexAttribPointer(static_cast<GLuint>(g_crt.attrib_uv), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+	bindGLES2ScreenQuad(g_crt.quad, g_crt.attrib_pos, g_crt.attrib_uv);
 
 	glUniform2f(g_crt.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
 	glUniform2f(g_crt.uniform_src_resolution, static_cast<float>(state.baseWidth), static_cast<float>(state.baseHeight));

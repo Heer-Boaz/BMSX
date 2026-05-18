@@ -30,6 +30,8 @@ class RenderGraphContext;
 class Runtime;
 struct VdpBlitterCommandBuffer;
 
+void writeRenderPassViewportSize(i32& width, i32& height, i32& baseWidth, i32& baseHeight, const GameView& view);
+
 /* ============================================================================
  * Render pass state types
  * ============================================================================ */

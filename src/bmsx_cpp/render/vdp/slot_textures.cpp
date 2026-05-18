@@ -13,6 +13,13 @@ namespace {
 
 const std::array<u8, 4> EMPTY_TEXTURE_SEED{{0, 0, 0, 0}};
 
+u32 readSyncedSurfaceDimension(u32 dimension, const char* name) {
+	if (dimension == 0u) {
+		throw BMSX_RUNTIME_ERROR(std::string("[VDPSlotTextures] surface texture has no synced ") + name + ".");
+	}
+	return dimension;
+}
+
 } // namespace
 
 VdpSlotTextures::VdpSlotTextures(TextureManager& textureManager, GameView& view)
@@ -72,19 +79,11 @@ VdpSlotTexturePixels VdpSlotTextures::readSurfaceTexturePixels(u32 surfaceId) co
 }
 
 u32 VdpSlotTextures::readSurfaceTextureWidth(u32 surfaceId) const {
-	const u32 width = m_syncedTextureWidths[surfaceId];
-	if (width == 0u) {
-		throw BMSX_RUNTIME_ERROR("[VDPSlotTextures] surface texture has no synced width.");
-	}
-	return width;
+	return readSyncedSurfaceDimension(m_syncedTextureWidths[surfaceId], "width");
 }
 
 u32 VdpSlotTextures::readSurfaceTextureHeight(u32 surfaceId) const {
-	const u32 height = m_syncedTextureHeights[surfaceId];
-	if (height == 0u) {
-		throw BMSX_RUNTIME_ERROR("[VDPSlotTextures] surface texture has no synced height.");
-	}
-	return height;
+	return readSyncedSurfaceDimension(m_syncedTextureHeights[surfaceId], "height");
 }
 
 bool VdpSlotTextures::isSyncedTextureSize(u32 surfaceId, u32 width, u32 height) const {

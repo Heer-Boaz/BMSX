@@ -3,7 +3,7 @@ import type { RenderPassLibrary } from '../backend/pass/library';
 import type { Framebuffer2DPipelineState, ParticlePipelineState, RenderPassDef } from '../backend/backend';
 import type { GameView } from '../gameview';
 import { M4 } from '../3d/math';
-import { MESH_NORMAL_OFFSET, MESH_POSITION_OFFSET, MESH_VERTEX_FLOATS, MeshVertexStreamBuilder } from '../3d/mesh/vertex_stream';
+import { MESH_COLOR_FLOAT_OFFSET, MESH_NORMAL_FLOAT_OFFSET, MESH_POSITION_FLOAT_OFFSET, MESH_VERTEX_FLOATS, MeshVertexStreamBuilder } from '../3d/mesh/vertex_stream';
 import { resolveMeshRomDrawSource } from '../3d/mesh/rom_source';
 import type { Host2DSubmission } from '../shared/submissions';
 import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
@@ -556,15 +556,11 @@ function rasterizeHeadlessMesh(runtime: Runtime, view: GameView, entryIndex: num
 	if (lightEnergy > 1.85) {
 		lightEnergy = 1.85;
 	}
-	const baseColor = view.vdpMeshColor[entryIndex];
-	const baseR = (baseColor >>> 16) & 0xff;
-	const baseG = (baseColor >>> 8) & 0xff;
-	const baseB = baseColor & 0xff;
 	let vertexBase = 0;
 	while (vertexBase < headlessMeshVertexStream.vertexCount * MESH_VERTEX_FLOATS) {
-		const x = vertices[vertexBase + MESH_POSITION_OFFSET + 0];
-		const y = vertices[vertexBase + MESH_POSITION_OFFSET + 1];
-		const z = vertices[vertexBase + MESH_POSITION_OFFSET + 2];
+		const x = vertices[vertexBase + MESH_POSITION_FLOAT_OFFSET + 0];
+		const y = vertices[vertexBase + MESH_POSITION_FLOAT_OFFSET + 1];
+		const z = vertices[vertexBase + MESH_POSITION_FLOAT_OFFSET + 2];
 		const wx = model[0] * x + model[4] * y + model[8] * z + model[12];
 		const wy = model[1] * x + model[5] * y + model[9] * z + model[13];
 		const wz = model[2] * x + model[6] * y + model[10] * z + model[14];
@@ -575,9 +571,9 @@ function rasterizeHeadlessMesh(runtime: Runtime, view: GameView, entryIndex: num
 			const ndcX = clipX / clipW;
 			const ndcY = clipY / clipW;
 			if (ndcX >= -1.1 && ndcX <= 1.1 && ndcY >= -1.1 && ndcY <= 1.1) {
-				const nx = vertices[vertexBase + MESH_NORMAL_OFFSET + 0];
-				const ny = vertices[vertexBase + MESH_NORMAL_OFFSET + 1];
-				const nz = vertices[vertexBase + MESH_NORMAL_OFFSET + 2];
+				const nx = vertices[vertexBase + MESH_NORMAL_FLOAT_OFFSET + 0];
+				const ny = vertices[vertexBase + MESH_NORMAL_FLOAT_OFFSET + 1];
+				const nz = vertices[vertexBase + MESH_NORMAL_FLOAT_OFFSET + 2];
 				let directional = ambient[3];
 				if (view.vdpDirectionalLightCount > 0) {
 					const dot = -(nx * view.vdpDirectionalLightDirections[0] + ny * view.vdpDirectionalLightDirections[1] + nz * view.vdpDirectionalLightDirections[2]);
@@ -594,7 +590,14 @@ function rasterizeHeadlessMesh(runtime: Runtime, view: GameView, entryIndex: num
 				}
 				const screenX = Math.round((ndcX * 0.5 + 0.5) * headlessSceneWidth);
 				const screenY = Math.round((0.5 - ndcY * 0.5) * headlessSceneHeight);
-				renderHeadlessMeshPoint(screenX, screenY, baseR * shade, baseG * shade, baseB * shade, 224);
+				renderHeadlessMeshPoint(
+					screenX,
+					screenY,
+					vertices[vertexBase + MESH_COLOR_FLOAT_OFFSET + 0] * 255 * shade,
+					vertices[vertexBase + MESH_COLOR_FLOAT_OFFSET + 1] * 255 * shade,
+					vertices[vertexBase + MESH_COLOR_FLOAT_OFFSET + 2] * 255 * shade,
+					vertices[vertexBase + MESH_COLOR_FLOAT_OFFSET + 3] * 255,
+				);
 				plotted = plotted + 1;
 			}
 		}

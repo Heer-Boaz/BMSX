@@ -10,7 +10,7 @@ namespace {
 
 struct ResolvedMeshMaterial {
 	std::array<f32, 4> color{1.0f, 1.0f, 1.0f, 1.0f};
-	MeshGLES2DrawMaterial draw{};
+	MeshDrawMaterial draw{};
 };
 
 void decodeMatrixWordsInto(Render3D::Mat4& target, const u32* words) {
@@ -111,7 +111,7 @@ void writeSkinnedNormalInto(Vec3& out,
 	out = weighted;
 }
 
-void writeMeshVertex(MeshGLES2Vertex& target,
+void writeMeshVertex(MeshStreamVertex& target,
 					 const std::array<Render3D::Mat4, VDP_JTU_MATRIX_COUNT>& jointMatrices,
 					 const std::array<f32, VDP_MDU_MORPH_WEIGHT_LIMIT>& morphWeights,
 					 const ModelMesh& mesh,
@@ -177,9 +177,9 @@ void writeMeshVertex(MeshGLES2Vertex& target,
 
 i32 meshSurfaceMode(ModelMaterialAlphaMode alphaMode) {
 	switch (alphaMode) {
-		case ModelMaterialAlphaMode::Opaque: return MESH_GLES2_SURFACE_OPAQUE;
-		case ModelMaterialAlphaMode::Mask: return MESH_GLES2_SURFACE_MASK;
-		case ModelMaterialAlphaMode::Blend: return MESH_GLES2_SURFACE_BLEND;
+		case ModelMaterialAlphaMode::Opaque: return MESH_SURFACE_OPAQUE;
+		case ModelMaterialAlphaMode::Mask: return MESH_SURFACE_MASK;
+		case ModelMaterialAlphaMode::Blend: return MESH_SURFACE_BLEND;
 	}
 	throw BMSX_RUNTIME_ERROR("[MeshPipeline] material alpha mode is outside the GLES2 mesh surface modes.");
 }
@@ -223,7 +223,7 @@ ResolvedMeshMaterial resolveMeshMaterial(const ModelAsset& model, const ModelMes
 
 } // namespace
 
-MeshGLES2DrawStream MeshVertexStreamBuilder::build(const GameView& view,
+MeshDrawStream MeshVertexStreamBuilder::build(const GameView& view,
 											 const ModelAsset& model,
 											 const ModelMesh& mesh,
 											 const GameView::VdpMeshRenderEntry& entry) {

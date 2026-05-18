@@ -19,18 +19,22 @@ import meshFS from '../shaders/mesh.frag.glsl';
 import meshVS from '../shaders/mesh.vert.glsl';
 import { resolveMeshRomDrawSource } from './rom_source';
 import {
-	MESH_COLOR_OFFSET,
-	MESH_GLES2_SURFACE_BLEND,
-	MESH_NORMAL_OFFSET,
-	MESH_POSITION_OFFSET,
-	MESH_UV_OFFSET,
-	MESH_VERTEX_BYTES,
+	MESH_COLOR_FLOAT_OFFSET,
+	MESH_SURFACE_BLEND,
+	MESH_NORMAL_FLOAT_OFFSET,
+	MESH_POSITION_FLOAT_OFFSET,
+	MESH_UV_FLOAT_OFFSET,
 	MESH_VERTEX_FLOATS,
 	MeshVertexStreamBuilder,
 	type ResolvedMeshMaterial,
 } from './vertex_stream';
 
 const MESH_TEXTURE_UNIT = TEXTURE_UNIT_SLOT_PRIMARY;
+const MESH_VERTEX_STRIDE_BYTES = MESH_VERTEX_FLOATS * Float32Array.BYTES_PER_ELEMENT;
+const MESH_POSITION_BYTE_OFFSET = MESH_POSITION_FLOAT_OFFSET * Float32Array.BYTES_PER_ELEMENT;
+const MESH_NORMAL_BYTE_OFFSET = MESH_NORMAL_FLOAT_OFFSET * Float32Array.BYTES_PER_ELEMENT;
+const MESH_UV_BYTE_OFFSET = MESH_UV_FLOAT_OFFSET * Float32Array.BYTES_PER_ELEMENT;
+const MESH_COLOR_BYTE_OFFSET = MESH_COLOR_FLOAT_OFFSET * Float32Array.BYTES_PER_ELEMENT;
 const meshVertexStream = new MeshVertexStreamBuilder();
 const meshCameraPosition = new Float32Array(3);
 const meshAmbient = new Float32Array(4);
@@ -115,7 +119,7 @@ function applyMeshMaterialDrawState(backend: WebGLBackend, gl: WebGL2RenderingCo
 	if (!material.doubleSided) {
 		gl.cullFace(gl.BACK);
 	}
-	if (material.surface === MESH_GLES2_SURFACE_BLEND) {
+	if (material.surface === MESH_SURFACE_BLEND) {
 		backend.setBlendEnabled(true);
 		backend.setBlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 		backend.setDepthMask(false);
@@ -178,10 +182,10 @@ export function initMeshPipeline(backend: WebGLBackend): void {
 	gl.enableVertexAttribArray(meshNormalLocation);
 	gl.enableVertexAttribArray(meshUvLocation);
 	gl.enableVertexAttribArray(meshColorLocation);
-	gl.vertexAttribPointer(meshPositionLocation, 3, gl.FLOAT, false, MESH_VERTEX_BYTES, MESH_POSITION_OFFSET);
-	gl.vertexAttribPointer(meshNormalLocation, 3, gl.FLOAT, false, MESH_VERTEX_BYTES, MESH_NORMAL_OFFSET);
-	gl.vertexAttribPointer(meshUvLocation, 2, gl.FLOAT, false, MESH_VERTEX_BYTES, MESH_UV_OFFSET);
-	gl.vertexAttribPointer(meshColorLocation, 4, gl.FLOAT, false, MESH_VERTEX_BYTES, MESH_COLOR_OFFSET);
+	gl.vertexAttribPointer(meshPositionLocation, 3, gl.FLOAT, false, MESH_VERTEX_STRIDE_BYTES, MESH_POSITION_BYTE_OFFSET);
+	gl.vertexAttribPointer(meshNormalLocation, 3, gl.FLOAT, false, MESH_VERTEX_STRIDE_BYTES, MESH_NORMAL_BYTE_OFFSET);
+	gl.vertexAttribPointer(meshUvLocation, 2, gl.FLOAT, false, MESH_VERTEX_STRIDE_BYTES, MESH_UV_BYTE_OFFSET);
+	gl.vertexAttribPointer(meshColorLocation, 4, gl.FLOAT, false, MESH_VERTEX_STRIDE_BYTES, MESH_COLOR_BYTE_OFFSET);
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(null);
 }

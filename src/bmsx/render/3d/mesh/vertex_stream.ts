@@ -10,15 +10,14 @@ import type { GLTFMaterial, GLTFMesh, GLTFModel } from '../../../rompack/format'
 import type { GameView } from '../../gameview';
 import { M4 } from '../math';
 
-export const MESH_GLES2_SURFACE_OPAQUE = 0;
-export const MESH_GLES2_SURFACE_MASK = 1;
-export const MESH_GLES2_SURFACE_BLEND = 2;
+export const MESH_SURFACE_OPAQUE = 0;
+export const MESH_SURFACE_MASK = 1;
+export const MESH_SURFACE_BLEND = 2;
 export const MESH_VERTEX_FLOATS = 12;
-export const MESH_VERTEX_BYTES = MESH_VERTEX_FLOATS * 4;
-export const MESH_POSITION_OFFSET = 0;
-export const MESH_NORMAL_OFFSET = 3 * 4;
-export const MESH_UV_OFFSET = 6 * 4;
-export const MESH_COLOR_OFFSET = 8 * 4;
+export const MESH_POSITION_FLOAT_OFFSET = 0;
+export const MESH_NORMAL_FLOAT_OFFSET = 3;
+export const MESH_UV_FLOAT_OFFSET = 6;
+export const MESH_COLOR_FLOAT_OFFSET = 8;
 
 export interface ResolvedMeshMaterial {
 	color0: number;
@@ -45,7 +44,7 @@ export class MeshVertexStreamBuilder {
 		color1: 1,
 		color2: 1,
 		color3: 1,
-		surface: MESH_GLES2_SURFACE_OPAQUE,
+		surface: MESH_SURFACE_OPAQUE,
 		alphaCutoff: 0.5,
 		metallicFactor: 1,
 		roughnessFactor: 1,
@@ -92,9 +91,9 @@ export class MeshVertexStreamBuilder {
 	private meshSurfaceMode(alphaMode: GLTFMaterial['alphaMode']): number {
 		switch (alphaMode) {
 			case undefined:
-			case 'OPAQUE': return MESH_GLES2_SURFACE_OPAQUE;
-			case 'MASK': return MESH_GLES2_SURFACE_MASK;
-			case 'BLEND': return MESH_GLES2_SURFACE_BLEND;
+			case 'OPAQUE': return MESH_SURFACE_OPAQUE;
+			case 'MASK': return MESH_SURFACE_MASK;
+			case 'BLEND': return MESH_SURFACE_BLEND;
 		}
 		throw new Error('[MeshPipeline] material alpha mode is outside the WebGL mesh surface modes.');
 	}
@@ -110,7 +109,7 @@ export class MeshVertexStreamBuilder {
 	private resolveMeshMaterial(model: GLTFModel, mesh: GLTFMesh, materialWord: number, colorWord: number): void {
 		const target = this.material;
 		this.writePacketColor(colorWord);
-		target.surface = MESH_GLES2_SURFACE_OPAQUE;
+		target.surface = MESH_SURFACE_OPAQUE;
 		target.alphaCutoff = 0.5;
 		target.metallicFactor = 1;
 		target.roughnessFactor = 1;

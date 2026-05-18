@@ -96,10 +96,10 @@ void bindMeshVertexLayout(const MeshGLES2Program& program) {
 	glEnableVertexAttribArray(static_cast<GLuint>(program.attribNormal));
 	glEnableVertexAttribArray(static_cast<GLuint>(program.attribUv));
 	glEnableVertexAttribArray(static_cast<GLuint>(program.attribColor));
-	glVertexAttribPointer(program.attribPosition, 3, GL_FLOAT, GL_FALSE, sizeof(MeshGLES2Vertex), reinterpret_cast<const void*>(offsetof(MeshGLES2Vertex, x)));
-	glVertexAttribPointer(program.attribNormal, 3, GL_FLOAT, GL_FALSE, sizeof(MeshGLES2Vertex), reinterpret_cast<const void*>(offsetof(MeshGLES2Vertex, nx)));
-	glVertexAttribPointer(program.attribUv, 2, GL_FLOAT, GL_FALSE, sizeof(MeshGLES2Vertex), reinterpret_cast<const void*>(offsetof(MeshGLES2Vertex, u)));
-	glVertexAttribPointer(program.attribColor, 4, GL_FLOAT, GL_FALSE, sizeof(MeshGLES2Vertex), reinterpret_cast<const void*>(offsetof(MeshGLES2Vertex, r)));
+	glVertexAttribPointer(program.attribPosition, 3, GL_FLOAT, GL_FALSE, sizeof(MeshStreamVertex), reinterpret_cast<const void*>(offsetof(MeshStreamVertex, x)));
+	glVertexAttribPointer(program.attribNormal, 3, GL_FLOAT, GL_FALSE, sizeof(MeshStreamVertex), reinterpret_cast<const void*>(offsetof(MeshStreamVertex, nx)));
+	glVertexAttribPointer(program.attribUv, 2, GL_FLOAT, GL_FALSE, sizeof(MeshStreamVertex), reinterpret_cast<const void*>(offsetof(MeshStreamVertex, u)));
+	glVertexAttribPointer(program.attribColor, 4, GL_FLOAT, GL_FALSE, sizeof(MeshStreamVertex), reinterpret_cast<const void*>(offsetof(MeshStreamVertex, r)));
 }
 
 void uploadMeshFrameUniforms(const MeshGLES2Program& program, const MeshPipelineState& state) {
@@ -124,7 +124,7 @@ void setupMeshDrawState(OpenGLES2Backend& backend, void* framebuffer, MeshGLES2P
 	bindMeshVertexLayout(program);
 }
 
-void applyMeshMaterialDrawState(const MeshGLES2Program& program, const MeshGLES2DrawMaterial& material) {
+void applyMeshMaterialDrawState(const MeshGLES2Program& program, const MeshDrawMaterial& material) {
 	glUniform1i(program.uniformSurface, material.surface);
 	glUniform1f(program.uniformAlphaCutoff, material.alphaCutoff);
 	glUniform1f(program.uniformMetallicFactor, material.metallicFactor);
@@ -138,7 +138,7 @@ void applyMeshMaterialDrawState(const MeshGLES2Program& program, const MeshGLES2
 		glEnable(GL_CULL_FACE);
 		glCullFace(GL_BACK);
 	}
-	if (material.surface == MESH_GLES2_SURFACE_BLEND) {
+	if (material.surface == MESH_SURFACE_BLEND) {
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glDepthMask(GL_FALSE);
@@ -148,12 +148,12 @@ void applyMeshMaterialDrawState(const MeshGLES2Program& program, const MeshGLES2
 	}
 }
 
-void uploadMeshDrawStream(const MeshGLES2Program& program, const MeshGLES2DrawStream& stream) {
+void uploadMeshDrawStream(const MeshGLES2Program& program, const MeshDrawStream& stream) {
 	glUniformMatrix4fv(program.uniformModel, 1, GL_FALSE, stream.modelMatrix->data());
 	glUniformMatrix3fv(program.uniformNormalMatrix, 1, GL_FALSE, stream.normalMatrix->data());
 	glBufferData(
 		GL_ARRAY_BUFFER,
-		static_cast<GLsizeiptr>(stream.vertexCount * sizeof(MeshGLES2Vertex)),
+		static_cast<GLsizeiptr>(stream.vertexCount * sizeof(MeshStreamVertex)),
 		stream.vertices,
 		GL_STREAM_DRAW
 	);
@@ -236,7 +236,7 @@ void renderMeshBatch(const MeshRuntime& runtime, void* framebuffer, const MeshPi
 	for (size_t index = 0u; index < view.vdpMeshCount; ++index) {
 		const GameView::VdpMeshRenderEntry& submission = view.vdpMeshes[index];
 		const MeshRomDrawSource source = resolveMeshRomDrawSource(runtime.rom, submission);
-		const MeshGLES2DrawStream stream = program.vertexStream.build(view, source.model, source.mesh, submission);
+		const MeshDrawStream stream = program.vertexStream.build(view, source.model, source.mesh, submission);
 		const bool useTexture = (submission.control & VDP_MDU_CONTROL_TEXTURE_ENABLE) != 0u;
 		glUniform1i(program.uniformUseTexture, useTexture ? 1 : 0);
 		applyMeshMaterialDrawState(program, stream.material);

@@ -390,6 +390,7 @@ target_compile_definitions(bmsx_core PUBLIC
 if(BMSX_ENABLE_GLES2)
 	target_sources(bmsx_core PRIVATE
 		render/backend/gles2/backend.cpp
+		render/backend/gles2/fullscreen_quad.cpp
 		render/post/crt/pipeline.cpp
 	)
 	find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
