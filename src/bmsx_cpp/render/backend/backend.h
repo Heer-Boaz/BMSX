@@ -8,6 +8,10 @@
  *   ColorAttachmentSpec, DepthAttachmentSpec, RenderPassDesc, PassEncoder,
  *   GPUBackend texture methods, render-pass methods, draw methods except TS
  *   drawIndexed indexType, frame lifecycle, getCaps(), and stats.
+ * - Shared render semantics above this boundary are VDP/VOUT/mesh stream
+ *   records. Concrete WebGL/GLES pass code owns GPU API binding such as shader
+ *   programs, VAO/buffer state, glVertexAttribPointer calls, uniform binding,
+ *   texture units, and draw-call issue.
  * - TS-only public symbols in render/backend/backend.ts are browser/WebGL
  *   render-graph plumbing: TextureFormat, BufferHandle, BackendContext,
  *   RenderTargetHandle, PresentationMode, GraphicsPipelineBindingLayout,
@@ -30,7 +34,9 @@
  *   accountUpload(). TS drawIndexed also carries WebGL indexType because WebGL
  *   drawElements needs the index-buffer scalar format at the backend boundary.
  *   C++ exposes these responsibilities on concrete native backends and pass
- *   owners instead of the common interface.
+ *   owners instead of the common interface. There is intentionally no
+ *   GPUBackend vertex-layout API; attribute packing and pointer setup belong to
+ *   concrete pass code.
  * - C++-only public symbols here are native/libretro backend storage and
  *   ownership: BackendType, FrameStats, SoftwareTexture, DitherParams,
  *   SoftwareBackend, and readyForTextureUpload().
@@ -158,7 +164,8 @@ struct PassEncoder {
 /* ============================================================================
  * GPUBackend - Abstract rendering backend interface
  *
- * For libretro, we implement SoftwareBackend which renders to a framebuffer.
+ * This boundary exposes render-pass execution and texture ownership. Concrete
+ * OpenGL ES pass files own program-specific GPU binding.
  * ============================================================================ */
 
 class GPUBackend {

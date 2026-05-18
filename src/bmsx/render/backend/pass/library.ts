@@ -56,19 +56,19 @@ export class RenderPassLibrary {
 
 	register<S = unknown>(desc: RenderPassDef<S>): void {
 		const idStr = String(desc.id);
-		if (this.registered.has(idStr)) throw new Error(`Pipeline '${desc.id}' already registered`);
+		if (this.registered.has(idStr)) throw new Error(`Render pass '${desc.id}' already registered`);
 		let pipelineHandle: RenderPassInstanceHandle | null = null;
 		if (desc.sharedPipelineWith) {
 			const sharedPassId = String(desc.sharedPipelineWith);
 			const sharedPass = this.registered.get(sharedPassId);
 			if (!sharedPass) {
-				throw new Error(`Pipeline '${desc.id}' cannot share pipeline with unregistered pass '${sharedPassId}'`);
+				throw new Error(`Render pass '${desc.id}' cannot share GPU pipeline with unregistered pass '${sharedPassId}'`);
 			}
 			if (!sharedPass.pipelineHandle) {
-				throw new Error(`Pipeline '${desc.id}' cannot share pipeline with pass '${sharedPassId}' because it has no pipeline handle`);
+				throw new Error(`Render pass '${desc.id}' cannot share GPU pipeline with pass '${sharedPassId}' because it has no pipeline handle`);
 			}
 			if (desc.vsCode || desc.fsCode) {
-				throw new Error(`Pipeline '${desc.id}' cannot define shaders when sharedPipelineWith='${sharedPassId}'`);
+				throw new Error(`Render pass '${desc.id}' cannot define shaders when sharedPipelineWith='${sharedPassId}'`);
 			}
 			pipelineHandle = sharedPass.pipelineHandle;
 		} else if (this.backend.createRenderPassInstance && (desc.vsCode || desc.fsCode)) {
@@ -96,7 +96,7 @@ export class RenderPassLibrary {
 	}
 
 	setState<PState extends RenderPassStateId>(id: PState, state: RenderPassStateRegistry[PState]): void {
-		const p = this.registered.get(String(id)); if (!p) throw new Error(`Pipeline '${String(id)}' not found`);
+		const p = this.registered.get(String(id)); if (!p) throw new Error(`Render pass '${String(id)}' not found`);
 		p.state = state;
 	}
 	getState<PState extends RenderPassStateId>(id: PState): RenderPassStateRegistry[PState] {
@@ -104,7 +104,7 @@ export class RenderPassLibrary {
 	}
 
 	execute(id: string, fbo: unknown): void {
-		const p = this.registered.get(String(id)); if (!p) throw new Error(`Pipeline '${id}' not found`);
+		const p = this.registered.get(String(id)); if (!p) throw new Error(`Render pass '${id}' not found`);
 		const backend = this.backend;
 		if (p.pipelineHandle) {
 			const stubPass: PassEncoder = { fbo, desc: { label: id } as RenderPassDesc };
@@ -124,7 +124,7 @@ export class RenderPassLibrary {
 	insertPipelinePass(pass: RenderPassDef, index: number): void {
 		if (index < 0 || index > this.passes.length) index = this.passes.length;
 		this.passes.splice(index, 0, pass);
-		// Caller must ensure pass conforms to RegisteredPipeline if execution desired
+		// Caller must register executable passes before insertion.
 	}
 
 	// Build render graph from current pass registry with Clear/Present wiring

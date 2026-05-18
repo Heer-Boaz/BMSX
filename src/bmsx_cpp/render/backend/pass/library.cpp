@@ -264,7 +264,7 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 void RenderPassLibrary::registerPass(const RenderPassDef& desc) {
 	const std::string& idStr = desc.id;
 	if (m_registered.find(idStr) != m_registered.end()) {
-		throw BMSX_RUNTIME_ERROR("Pipeline '" + idStr + "' already registered");
+		throw BMSX_RUNTIME_ERROR("Render pass '" + idStr + "' already registered");
 	}
 
 	RegisteredPassRec rec;
@@ -290,7 +290,7 @@ bool RenderPassLibrary::has(const std::string& id) const {
 void RenderPassLibrary::execute(const std::string& id, void* fbo) {
 	auto it = m_registered.find(id);
 	if (it == m_registered.end()) {
-		throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
+		throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
 	}
 
 	auto& rec = it->second;

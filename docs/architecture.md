@@ -197,6 +197,14 @@ labels, or scene objects. Backend-local mechanics such as render-pass viewport
 state, framebuffer attachment ownership, and GLES/WebGL fullscreen-quad buffers
 remain backend/rendergraph ownership; passes share those owners instead of
 duplicating setup sequences in individual postprocess or presentation files.
+Shared render code owns BMSX semantics: VDP framebuffer execution buffers, VOUT
+presentation transactions, mesh stream records, and resolved device lighting or
+material words. Concrete WebGL/GLES2 pass code owns GPU API binding: program
+objects, VAO/buffer binding, `vertexAttribPointer`/`glVertexAttribPointer`
+calls, uniform-block binding, texture-unit binding, and draw-call issue. There
+is no shared `GPUBackend` vertex-layout facade; the shared boundary may name the
+resolved stream fields, but byte offsets and attribute locations are consumed at
+the concrete backend-pass boundary.
 VDP save-state
 record shapes live in dedicated `machine/devices/vdp/save_state` files on both
 runtimes; the stream-ingress, VRAM/surface-memory, and readback latch/buffer

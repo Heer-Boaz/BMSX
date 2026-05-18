@@ -16,6 +16,10 @@ import type { RenderPassLibrary } from './pass/library';
  *   ColorAttachmentSpec, DepthAttachmentSpec, RenderPassDesc, PassEncoder,
  *   GPUBackend texture methods, render-pass methods, draw methods except TS
  *   drawIndexed indexType, frame lifecycle, getCaps(), and stats.
+ * - Shared render semantics above this boundary are VDP/VOUT/mesh stream
+ *   records. Concrete WebGL/GLES pass code owns GPU API binding such as shader
+ *   programs, VAO/buffer state, vertexAttribPointer calls, uniform block
+ *   binding, texture units, and draw-call issue.
  * - TS-only public symbols here are browser/WebGL/WebGPU render-graph plumbing:
  *   TextureFormat, BufferHandle, BackendContext, RenderTargetHandle,
  *   PresentationMode, GraphicsPipelineBindingLayout, RenderGraphSlot,
@@ -38,7 +42,9 @@ import type { RenderPassLibrary } from './pass/library';
  *   accountUpload(). TS drawIndexed also carries WebGL indexType because WebGL
  *   drawElements needs the index-buffer scalar format at the backend boundary.
  *   C++ exposes these responsibilities on concrete native backends and pass
- *   owners instead of the common interface.
+ *   owners instead of the common interface. There is intentionally no
+ *   GPUBackend vertex-layout API; attribute packing and pointer setup belong to
+ *   concrete pass code.
  * - C++-only public symbols in backend.h are native/libretro backend storage
  *   and ownership: BackendType, FrameStats, SoftwareTexture, DitherParams,
  *   SoftwareBackend, and readyForTextureUpload().
@@ -96,7 +102,8 @@ export interface BackendCaps {
 }
 export type PresentationMode = 'partial' | 'completed';
 
-// Optional shader resource layout description for WebGL pipeline setup
+// Shader resource binding description. This is not a vertex layout contract;
+// concrete WebGL/GLES pass code binds vertex attributes directly.
 export interface GraphicsPipelineBindingLayout {
 	uniforms?: string[];
 	textures?: { name: string }[];
@@ -163,7 +170,8 @@ export interface RenderPassDef<S = unknown> {
 	prepare?: (backend: GPUBackend, state: S) => void;
 }
 
-// Minimal shader build description for backend pipeline creation
+// Minimal shader build description for backend pipeline creation. Vertex stream
+// layout is owned by each concrete pass, not by this shared backend interface.
 export interface GraphicsPipelineBuildDesc {
 	label?: string;
 	vsCode?: string;

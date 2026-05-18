@@ -156,7 +156,8 @@ struct RenderPassDef {
 	std::string vsCode;
 	std::string fsCode;
 
-	// Binding layout description
+	// Shader resource binding description. Vertex attribute layout is owned by
+	// the concrete WebGL/GLES pass code, not by RenderPassLibrary or GPUBackend.
 	struct BindingLayout {
 		std::vector<std::string> uniforms;
 		std::vector<std::string> textures;
@@ -242,7 +243,7 @@ public:
 	void setState(const std::string& id, T&& state) {
 		auto it = m_registered.find(id);
 		if (it == m_registered.end()) {
-			throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
+			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
 		}
 		it->second.state = std::forward<T>(state);
 	}
@@ -251,7 +252,7 @@ public:
 	T getState(const std::string& id) const {
 		auto it = m_registered.find(id);
 		if (it == m_registered.end()) {
-			throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
+			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
 		}
 		return std::any_cast<T>(it->second.state);
 	}
@@ -260,7 +261,7 @@ public:
 	T& getStateRef(const std::string& id) {
 		auto it = m_registered.find(id);
 		if (it == m_registered.end()) {
-			throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
+			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
 		}
 		return std::any_cast<T&>(it->second.state);
 	}
@@ -269,7 +270,7 @@ public:
 	const T& getStateRef(const std::string& id) const {
 		auto it = m_registered.find(id);
 		if (it == m_registered.end()) {
-			throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
+			throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
 		}
 		return std::any_cast<const T&>(it->second.state);
 	}
