@@ -64,9 +64,6 @@ private:
 	Render3D::Mat4 m_modelMatrix{};
 	Render3D::Mat3 m_normalMatrix{};
 	size_t m_vertexCount = 0u;
-
-	void decodeMorphWeights(const GameView& view, const GameView::VdpMeshRenderEntry& entry, size_t morphCount);
-	void decodeJointMatrices(const GameView& view, const GameView::VdpMeshRenderEntry& entry);
 };
 
 } // namespace bmsx

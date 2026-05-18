@@ -451,6 +451,18 @@ export const M4 = {
 		},
 
 	// Transform helpers
+	transformAffinePoint3At(out: Float32Array, outBase: number, m: Mat4Float32, matrixBase: number, x: number, y: number, z: number): Float32Array {
+		out[outBase] = m[matrixBase] * x + m[matrixBase + 4] * y + m[matrixBase + 8] * z + m[matrixBase + 12];
+		out[outBase + 1] = m[matrixBase + 1] * x + m[matrixBase + 5] * y + m[matrixBase + 9] * z + m[matrixBase + 13];
+		out[outBase + 2] = m[matrixBase + 2] * x + m[matrixBase + 6] * y + m[matrixBase + 10] * z + m[matrixBase + 14];
+		return out;
+	},
+	transformDir3At(out: Float32Array, outBase: number, m: Mat4Float32, matrixBase: number, x: number, y: number, z: number): Float32Array {
+		out[outBase] = m[matrixBase] * x + m[matrixBase + 4] * y + m[matrixBase + 8] * z;
+		out[outBase + 1] = m[matrixBase + 1] * x + m[matrixBase + 5] * y + m[matrixBase + 9] * z;
+		out[outBase + 2] = m[matrixBase + 2] * x + m[matrixBase + 6] * y + m[matrixBase + 10] * z;
+		return out;
+	},
 	transformPoint3(out: Float32Array, m: Mat4Float32, x: number, y: number, z: number): Float32Array {
 		const w = m[3] * x + m[7] * y + m[11] * z + m[15];
 		const iw = w ? 1 / w : 1;

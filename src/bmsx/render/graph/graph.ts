@@ -421,11 +421,4 @@ export class RenderGraphRuntime {
 			}
 		}
 	}
-
-	invalidate(): void {
-		this.compiled = false;
-		this.passOrder = [];
-		this.reachable = [];
-		this.texResources = [];
-	}
 }

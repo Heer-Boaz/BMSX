@@ -546,6 +546,12 @@ void mat4Normal3Into(Mat3& out, const Mat4& model) {
 	out[6] = inv[2]; out[7] = inv[5]; out[8] = inv[8];
 }
 
+void mat4TransformAffinePoint3Into(Vec3& out, const Mat4& m, f32 x, f32 y, f32 z) {
+	out.x = m[0] * x + m[4] * y + m[8] * z + m[12];
+	out.y = m[1] * x + m[5] * y + m[9] * z + m[13];
+	out.z = m[2] * x + m[6] * y + m[10] * z + m[14];
+}
+
 void mat4TransformPoint3Into(Vec3& out, const Mat4& m, f32 x, f32 y, f32 z) {
 	const f32 w = m[3] * x + m[7] * y + m[11] * z + m[15];
 	const f32 iw = w == 0.0f ? 1.0f : 1.0f / w;

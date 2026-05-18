@@ -91,7 +91,6 @@ export function setupParticleLocations(backend: WebGLBackend): void {
 }
 export function renderParticleBatch(backend: WebGLBackend, gl: WebGL2RenderingContext, context: RenderContext, framebuffer: WebGLFramebuffer, state: ParticlePipelineState): void {
 	const vdpPending = context.vdpBillboardCount;
-	if (vdpPending === 0) return;
 	camRight.set(state.camRight);
 	camUp.set(state.camUp);
 	let needsSystemSlot = false;

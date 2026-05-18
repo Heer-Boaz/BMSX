@@ -1259,8 +1259,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 	const int64_t ufps_scaled = bmsx_get_ufps();
 	struct retro_system_av_info av = g_cached_av_info;
 	if (!g_cached_av_info_valid) {
-		memset(&av, 0, sizeof(av));
-		retro_get_system_av_info(&av);
+		initialize_default_av_info(av);
 	}
 	const auto& manifest = g_platform->console()->machineManifest();
 	apply_manifest_av_info(av, manifest, ufps_scaled);

@@ -3836,15 +3836,6 @@ int main(int argc, char** argv) {
 	fprintf(stderr, "[libretro-host] need_fullpath=%s\n",
 			sysinfo.need_fullpath ? "true" : "false");
 
-	struct retro_system_av_info av;
-	memset(&av, 0, sizeof(av));
-	core.retro_get_system_av_info(&av);
-	update_geometry(&av.geometry);
-	fprintf(stderr, "[libretro-host] av: base=%ux%u max=%ux%u fps=%.2f sr=%.2f\n",
-			av.geometry.base_width, av.geometry.base_height,
-			av.geometry.max_width, av.geometry.max_height,
-			av.timing.fps, av.timing.sample_rate);
-
 	core.retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
 
 	void* game_buf = NULL;
@@ -3867,6 +3858,15 @@ int main(int argc, char** argv) {
 	if (!loaded_ok) {
 		die("retro_load_game failed");
 	}
+
+	struct retro_system_av_info av;
+	memset(&av, 0, sizeof(av));
+	core.retro_get_system_av_info(&av);
+	update_geometry(&av.geometry);
+	fprintf(stderr, "[libretro-host] av: base=%ux%u max=%ux%u fps=%.2f sr=%.2f\n",
+			av.geometry.base_width, av.geometry.base_height,
+			av.geometry.max_width, av.geometry.max_height,
+			av.timing.fps, av.timing.sample_rate);
 
 	const int64_t ufps_scaled = core.bmsx_get_ufps();
 	g_target_fps = (double)ufps_scaled / (double)kHzScale;

@@ -5,7 +5,8 @@ import {
 	VDP_MDU_MORPH_WEIGHT_LIMIT,
 	VDP_MDU_VERTEX_LIMIT,
 } from '../../../machine/devices/vdp/contracts';
-import { decodeSignedQ16_16 } from '../../../machine/devices/vdp/fixed_point';
+import { decodeSignedQ16_16WordsInto } from '../../../machine/devices/vdp/fixed_point';
+import { VDP_XF_MATRIX_WORDS } from '../../../machine/devices/vdp/xf';
 import type { GLTFMaterial, GLTFMesh, GLTFModel } from '../../../rompack/format';
 import type { GameView } from '../../gameview';
 import { M4 } from '../math';
@@ -61,19 +62,21 @@ export class MeshVertexStreamBuilder {
 
 	build(view: GameView, model: GLTFModel, mesh: GLTFMesh, entryIndex: number): void {
 		const modelMatrixIndex = view.vdpMeshModelMatrixIndex[entryIndex];
-		this.decodeMatrixWordsInto(this.modelMatrix, view.vdpXfMatrixWords, modelMatrixIndex * 16);
+		decodeSignedQ16_16WordsInto(this.modelMatrix, 0, view.vdpXfMatrixWords, modelMatrixIndex * VDP_XF_MATRIX_WORDS, VDP_XF_MATRIX_WORDS);
 		M4.normal3Into(this.normalMatrix, this.modelMatrix);
 		this.resolveMeshMaterial(model, mesh, view.vdpMeshMaterialIndex[entryIndex], view.vdpMeshColor[entryIndex]);
-		const vertexCount = mesh.indices ? mesh.indices.length : mesh.positions.length / 3;
-		if (vertexCount > VDP_MDU_VERTEX_LIMIT) {
-			throw new Error('[MeshPipeline] VDP mesh packet expands beyond the MDU vertex stream limit.');
-		}
+		const sourceVertexCount = mesh.indices ? mesh.indices.length : mesh.positions.length / 3;
+		const vertexCount = sourceVertexCount > VDP_MDU_VERTEX_LIMIT ? VDP_MDU_VERTEX_LIMIT : sourceVertexCount;
 		const morphCount = this.meshMorphTargetCount(mesh, view.vdpMeshMorphCount[entryIndex]);
-		this.decodeMorphWeights(view, view.vdpMeshMorphBase[entryIndex], morphCount);
+		decodeSignedQ16_16WordsInto(this.morphWeights, 0, view.vdpMorphWeightWords, view.vdpMeshMorphBase[entryIndex], morphCount);
 		const jointCount = view.vdpMeshJointCount[entryIndex];
 		const skinningEnabled = this.meshHasSkinningSource(mesh, jointCount);
 		if (skinningEnabled) {
-			this.decodeJointMatrices(view, view.vdpMeshJointBase[entryIndex], jointCount);
+			const jointBase = view.vdpMeshJointBase[entryIndex];
+			const words = view.vdpJointMatrixWords;
+			for (let jointIndex = 0; jointIndex < jointCount; jointIndex += 1) {
+				decodeSignedQ16_16WordsInto(this.jointMatrices, jointIndex * VDP_JTU_MATRIX_WORDS, words, (jointBase + jointIndex) * VDP_JTU_MATRIX_WORDS, VDP_JTU_MATRIX_WORDS);
+			}
 		}
 		this.vertexCount = vertexCount;
 		const indices = mesh.indices;
@@ -95,7 +98,7 @@ export class MeshVertexStreamBuilder {
 			case 'MASK': return MESH_SURFACE_MASK;
 			case 'BLEND': return MESH_SURFACE_BLEND;
 		}
-		throw new Error('[MeshPipeline] material alpha mode is outside the WebGL mesh surface modes.');
+		return MESH_SURFACE_OPAQUE;
 	}
 
 	private writePacketColor(color: number): void {
@@ -126,7 +129,7 @@ export class MeshVertexStreamBuilder {
 		}
 		const materials = model.materials;
 		if (!materials || materialIndex >= materials.length) {
-			throw new Error('[MeshPipeline] VDP mesh packet references a material index outside the model.');
+			return;
 		}
 		const material = materials[materialIndex];
 		const baseColor = material.baseColorFactor;
@@ -154,42 +157,6 @@ export class MeshVertexStreamBuilder {
 		}
 		target.doubleSided = !!material.doubleSided;
 		target.unlit = !!material.unlit;
-	}
-
-	private decodeMatrixWordsInto(target: Float32Array, words: ArrayLike<number>, base: number): void {
-		for (let index = 0; index < 16; index += 1) {
-			target[index] = decodeSignedQ16_16(words[base + index] >>> 0);
-		}
-	}
-
-	private decodeMorphWeights(view: GameView, morphBase: number, morphCount: number): void {
-		const words = view.vdpMorphWeightWords;
-		for (let index = 0; index < morphCount; index += 1) {
-			this.morphWeights[index] = decodeSignedQ16_16(words[morphBase + index] >>> 0);
-		}
-	}
-
-	private decodeJointMatrices(view: GameView, jointBase: number, jointCount: number): void {
-		const words = view.vdpJointMatrixWords;
-		for (let index = 0; index < jointCount; index += 1) {
-			this.decodeMatrixWordsInto(this.jointMatrices, words, (jointBase + index) * VDP_JTU_MATRIX_WORDS);
-		}
-	}
-
-	private transformPointAffineInto(outBase: number, x: number, y: number, z: number, matrixBase: number): void {
-		const vertices = this.vertices;
-		const matrices = this.jointMatrices;
-		vertices[outBase] = matrices[matrixBase] * x + matrices[matrixBase + 4] * y + matrices[matrixBase + 8] * z + matrices[matrixBase + 12];
-		vertices[outBase + 1] = matrices[matrixBase + 1] * x + matrices[matrixBase + 5] * y + matrices[matrixBase + 9] * z + matrices[matrixBase + 13];
-		vertices[outBase + 2] = matrices[matrixBase + 2] * x + matrices[matrixBase + 6] * y + matrices[matrixBase + 10] * z + matrices[matrixBase + 14];
-	}
-
-	private transformVectorInto(outBase: number, x: number, y: number, z: number, matrixBase: number): void {
-		const vertices = this.vertices;
-		const matrices = this.jointMatrices;
-		vertices[outBase] = matrices[matrixBase] * x + matrices[matrixBase + 4] * y + matrices[matrixBase + 8] * z;
-		vertices[outBase + 1] = matrices[matrixBase + 1] * x + matrices[matrixBase + 5] * y + matrices[matrixBase + 9] * z;
-		vertices[outBase + 2] = matrices[matrixBase + 2] * x + matrices[matrixBase + 6] * y + matrices[matrixBase + 10] * z;
 	}
 
 	private writeMeshVertex(mesh: GLTFMesh,
@@ -242,8 +209,8 @@ export class MeshVertexStreamBuilder {
 				const scratchBase = outputBase;
 				if (joint < jointCount) {
 					const matrixBase = joint * VDP_JTU_MATRIX_WORDS;
-					this.transformPointAffineInto(scratchBase, x, y, z, matrixBase);
-					this.transformVectorInto(scratchBase + 3, nx, ny, nz, matrixBase);
+					M4.transformAffinePoint3At(this.vertices, scratchBase, this.jointMatrices, matrixBase, x, y, z);
+					M4.transformDir3At(this.vertices, scratchBase + 3, this.jointMatrices, matrixBase, nx, ny, nz);
 				} else {
 					this.vertices[scratchBase] = x;
 					this.vertices[scratchBase + 1] = y;

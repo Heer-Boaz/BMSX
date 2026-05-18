@@ -13,24 +13,6 @@ struct ResolvedMeshMaterial {
 	MeshDrawMaterial draw{};
 };
 
-void decodeMatrixWordsInto(Render3D::Mat4& target, const u32* words) {
-	for (size_t index = 0u; index < VDP_XF_MATRIX_WORDS; ++index) {
-		target[index] = decodeSignedQ16_16(words[index]);
-	}
-}
-
-void transformPointAffineInto(Vec3& out, const Render3D::Mat4& m, f32 x, f32 y, f32 z) {
-	out.x = m[0] * x + m[4] * y + m[8] * z + m[12];
-	out.y = m[1] * x + m[5] * y + m[9] * z + m[13];
-	out.z = m[2] * x + m[6] * y + m[10] * z + m[14];
-}
-
-void transformVectorInto(Vec3& out, const Render3D::Mat4& m, f32 x, f32 y, f32 z) {
-	out.x = m[0] * x + m[4] * y + m[8] * z;
-	out.y = m[1] * x + m[5] * y + m[9] * z;
-	out.z = m[2] * x + m[6] * y + m[10] * z;
-}
-
 void accumulateWeightedVector(Vec3& weighted, const Vec3& transformed, f32 weight) {
 	weighted.x += transformed.x * weight;
 	weighted.y += transformed.y * weight;
@@ -59,12 +41,6 @@ bool meshHasSkinningSource(const ModelMesh& mesh, const GameView::VdpMeshRenderE
 	return entry.jointCount != 0u && mesh.jointIndices.size() >= influenceCount && mesh.jointWeights.size() >= influenceCount;
 }
 
-void acceptMeshVertexStream(size_t outputVertexCount) {
-	if (outputVertexCount > VDP_MDU_VERTEX_LIMIT) {
-		throw BMSX_RUNTIME_ERROR("[MeshPipeline] VDP mesh packet expands beyond the MDU vertex stream limit.");
-	}
-}
-
 void writeSkinnedPositionInto(Vec3& out,
 							  const std::array<Render3D::Mat4, VDP_JTU_MATRIX_COUNT>& jointMatrices,
 							  const ModelMesh& mesh,
@@ -79,7 +55,7 @@ void writeSkinnedPositionInto(Vec3& out,
 	for (size_t influence = 0u; influence < 4u; ++influence) {
 		const u16 joint = mesh.jointIndices[influenceBase + influence];
 		if (joint < jointCount) {
-			transformPointAffineInto(transformed, jointMatrices[joint], x, y, z);
+			Render3D::mat4TransformAffinePoint3Into(transformed, jointMatrices[joint], x, y, z);
 		} else {
 			Render3D::vec3Set(transformed, x, y, z);
 		}
@@ -102,7 +78,7 @@ void writeSkinnedNormalInto(Vec3& out,
 	for (size_t influence = 0u; influence < 4u; ++influence) {
 		const u16 joint = mesh.jointIndices[influenceBase + influence];
 		if (joint < jointCount) {
-			transformVectorInto(transformed, jointMatrices[joint], x, y, z);
+			Render3D::mat4TransformDir3Into(transformed, jointMatrices[joint], x, y, z);
 		} else {
 			Render3D::vec3Set(transformed, x, y, z);
 		}
@@ -181,7 +157,7 @@ i32 meshSurfaceMode(ModelMaterialAlphaMode alphaMode) {
 		case ModelMaterialAlphaMode::Mask: return MESH_SURFACE_MASK;
 		case ModelMaterialAlphaMode::Blend: return MESH_SURFACE_BLEND;
 	}
-	throw BMSX_RUNTIME_ERROR("[MeshPipeline] material alpha mode is outside the GLES2 mesh surface modes.");
+	return MESH_SURFACE_OPAQUE;
 }
 
 ResolvedMeshMaterial resolveMeshMaterial(const ModelAsset& model, const ModelMesh& mesh, const GameView::VdpMeshRenderEntry& entry) {
@@ -190,9 +166,6 @@ ResolvedMeshMaterial resolveMeshMaterial(const ModelAsset& model, const ModelMes
 	u32 materialIndex = entry.materialIndex;
 	if (materialIndex == VDP_MDU_MATERIAL_MESH_DEFAULT && mesh.materialIndex.has_value()) {
 		materialIndex = static_cast<u32>(*mesh.materialIndex);
-	}
-	if (materialIndex != VDP_MDU_MATERIAL_MESH_DEFAULT && materialIndex >= model.materials.size()) {
-		throw BMSX_RUNTIME_ERROR("[MeshPipeline] VDP mesh packet references a material index outside the model.");
 	}
 	if (materialIndex < model.materials.size()) {
 		const ModelMaterial& modelMaterial = model.materials[materialIndex];
@@ -227,16 +200,18 @@ MeshDrawStream MeshVertexStreamBuilder::build(const GameView& view,
 											 const ModelAsset& model,
 											 const ModelMesh& mesh,
 											 const GameView::VdpMeshRenderEntry& entry) {
-	decodeMatrixWordsInto(m_modelMatrix, view.vdpXfMatrixWords.data() + static_cast<size_t>(entry.modelMatrixIndex * VDP_XF_MATRIX_WORDS));
+	decodeSignedQ16_16WordsInto(m_modelMatrix.data(), view.vdpXfMatrixWords.data() + static_cast<size_t>(entry.modelMatrixIndex * VDP_XF_MATRIX_WORDS), VDP_XF_MATRIX_WORDS);
 	Render3D::mat4Normal3Into(m_normalMatrix, m_modelMatrix);
 	const ResolvedMeshMaterial material = resolveMeshMaterial(model, mesh, entry);
-	const size_t outputVertexCount = mesh.indices.empty() ? mesh.positions.size() / 3u : mesh.indices.size();
-	acceptMeshVertexStream(outputVertexCount);
+	const size_t sourceVertexCount = mesh.indices.empty() ? mesh.positions.size() / 3u : mesh.indices.size();
+	const size_t outputVertexCount = sourceVertexCount > VDP_MDU_VERTEX_LIMIT ? VDP_MDU_VERTEX_LIMIT : sourceVertexCount;
 	const size_t morphCount = meshMorphTargetCount(mesh, entry);
-	decodeMorphWeights(view, entry, morphCount);
+	decodeSignedQ16_16WordsInto(m_morphWeights.data(), view.vdpMorphWeightWords.data() + entry.morphBase, morphCount);
 	const bool skinningEnabled = meshHasSkinningSource(mesh, entry);
 	if (skinningEnabled) {
-		decodeJointMatrices(view, entry);
+		for (u32 index = 0u; index < entry.jointCount; ++index) {
+			decodeSignedQ16_16WordsInto(m_jointMatrices[index].data(), view.vdpJointMatrixWords.data() + static_cast<size_t>((entry.jointBase + index) * VDP_JTU_MATRIX_WORDS), VDP_JTU_MATRIX_WORDS);
+		}
 	}
 	m_vertexCount = outputVertexCount;
 	if (mesh.indices.empty()) {
@@ -249,18 +224,6 @@ MeshDrawStream MeshVertexStreamBuilder::build(const GameView& view,
 		}
 	}
 	return {m_vertices.data(), m_vertexCount, &m_modelMatrix, &m_normalMatrix, material.draw};
-}
-
-void MeshVertexStreamBuilder::decodeMorphWeights(const GameView& view, const GameView::VdpMeshRenderEntry& entry, size_t morphCount) {
-	for (size_t index = 0u; index < morphCount; ++index) {
-		m_morphWeights[index] = decodeSignedQ16_16(view.vdpMorphWeightWords[entry.morphBase + index]);
-	}
-}
-
-void MeshVertexStreamBuilder::decodeJointMatrices(const GameView& view, const GameView::VdpMeshRenderEntry& entry) {
-	for (u32 index = 0u; index < entry.jointCount; ++index) {
-		decodeMatrixWordsInto(m_jointMatrices[index], view.vdpJointMatrixWords.data() + static_cast<size_t>((entry.jointBase + index) * VDP_JTU_MATRIX_WORDS));
-	}
 }
 
 } // namespace bmsx

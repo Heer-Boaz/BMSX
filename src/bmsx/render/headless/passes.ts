@@ -4,14 +4,14 @@ import type { Framebuffer2DPipelineState, ParticlePipelineState, RenderPassDef }
 import type { GameView } from '../gameview';
 import { M4 } from '../3d/math';
 import { MESH_COLOR_FLOAT_OFFSET, MESH_NORMAL_FLOAT_OFFSET, MESH_POSITION_FLOAT_OFFSET, MESH_VERTEX_FLOATS, MeshVertexStreamBuilder } from '../3d/mesh/vertex_stream';
-import { resolveMeshRomDrawSource } from '../3d/mesh/rom_source';
+import { hasMeshRomDrawSources, resolveMeshRomDrawSource } from '../3d/mesh/rom_source';
 import type { Host2DSubmission } from '../shared/submissions';
 import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
 import type { VdpSlotTexturePixels } from '../vdp/slot_textures';
 import { DEFAULT_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { HeadlessPresentHost } from './view';
 import { hostOverlayMenu } from '../../core/host_overlay_menu';
-import { renderHeadlessHost2DEntry, renderHeadlessSubmissions } from './host_2d';
+import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './host_2d';
 import { blendPixel } from './pixel_ops';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
@@ -69,7 +69,6 @@ let headlessFrameWidth = 0;
 let headlessFrameHeight = 0;
 let headlessPresentWidth = 0;
 let headlessPresentHeight = 0;
-let headlessFrameReady = false;
 let headlessSceneActive = false;
 const headlessSkyboxTextures = new Array<VdpSlotTexturePixels>(SKYBOX_FACE_KEYS.length);
 const headlessSkyboxSourceRects = new Int32Array(SKYBOX_FACE_KEYS.length * 4);
@@ -185,7 +184,6 @@ function beginHeadlessScene(width: number, height: number): void {
 	resizeHeadlessScene(width, height);
 	headlessScenePixels.fill(0);
 	headlessSceneActive = false;
-	headlessFrameReady = false;
 }
 
 function resolveSkyboxFaceInto(dirX: number, dirY: number, dirZ: number): number {
@@ -247,14 +245,10 @@ function writeHeadlessFrame(frameBufferPixels: Uint8Array, frameBufferWidth: num
 	headlessFrameHeight = frameBufferHeight;
 	headlessPresentWidth = presentWidth;
 	headlessPresentHeight = presentHeight;
-	headlessFrameReady = true;
 	return pixels;
 }
 
 export function drawHeadlessHostMenuLayer(): void {
-	if (!headlessFrameReady) {
-		throw new Error('[HeadlessPresent] Host menu pass ran before framebuffer pass.');
-	}
 	const count = hostOverlayMenu.queuedCommandCount();
 	for (let index = 0; index < count; index += 1) {
 		renderHeadlessHost2DEntry(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, hostOverlayMenu.commandKind(index), hostOverlayMenu.commandRef(index));
@@ -262,16 +256,12 @@ export function drawHeadlessHostMenuLayer(): void {
 }
 
 export function drawHeadlessHostOverlayFrame(commands: readonly Host2DSubmission[]): void {
-	if (!headlessFrameReady) {
-		throw new Error('[HeadlessPresent] Host overlay pass ran before framebuffer pass.');
+	for (let index = 0; index < commands.length; index += 1) {
+		renderHeadlessHost2DSubmission(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, commands[index]);
 	}
-	renderHeadlessSubmissions(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, commands);
 }
 
 function presentHeadlessFrame(view: GameView): void {
-	if (!headlessFrameReady) {
-		throw new Error('[HeadlessPresent] Present pass ran before framebuffer pass.');
-	}
 	const host = view.host as unknown as HeadlessPresentHost;
 	host.presentFrameBuffer({
 		pixels: headlessCompositePixels,
@@ -615,7 +605,7 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 		name: 'HeadlessMesh',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: () => (registry.view as GameView).vdpMeshCount > 0,
+		shouldExecute: () => hasMeshRomDrawSources(registry.runtime as Runtime, registry.view as GameView),
 		exec: () => {
 			const view = registry.view as GameView;
 			const runtime = registry.runtime as Runtime;
@@ -638,6 +628,25 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 	registry.register(pass);
 }
 
+function renderHeadlessParticles(view: GameView, state: ParticlePipelineState): void {
+	const count = view.vdpBillboardCount;
+	const headline = `draws=${count} viewport=${state.width}x${state.height}`;
+	const snapshot: Snapshot | null = HEADLESS_VERBOSE_DIFF ? [headline] : null;
+	const positionSize = view.vdpBillboardPositionSize;
+	for (let index = 0; index < count; index += 1) {
+		rasterizeHeadlessVdpBillboard(view, index, state);
+		if (snapshot !== null) {
+			const base = index * 4;
+			snapshot.push(`[vdp-particle#${index}] pos=(${formatNumber(positionSize[base + 0])}, ${formatNumber(positionSize[base + 1])}, ${formatNumber(positionSize[base + 2])}) size=${formatNumber(positionSize[base + 3])} slot=${view.vdpBillboardSlot[index]}`);
+		}
+	}
+	if (snapshot !== null) {
+		previousParticleSnapshot = emitDiff('particles', previousParticleSnapshot, snapshot);
+	} else {
+		previousParticleHeadline = emitHeadlessHeadline('particles', previousParticleHeadline, headline);
+	}
+}
+
 function registerParticlePass(registry: RenderPassLibrary): void {
 	const pass: RenderPassDef<ParticlePipelineState> = {
 		id: 'particles',
@@ -649,29 +658,8 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 			registry.setState('particles', updateHeadlessParticleState(registry.view as GameView));
 		},
 		exec: (_backend, _fbo, state: unknown) => {
-			const particleState = state as ParticlePipelineState;
-			const view = registry.view as GameView;
-			const count = view.vdpBillboardCount;
-			if (count <= 0) {
-				return;
-			}
-				const headline = `draws=${count} viewport=${particleState.width}x${particleState.height}`;
-				const snapshot: Snapshot | null = HEADLESS_VERBOSE_DIFF ? [headline] : null;
-				const vdpBillboardCount = view.vdpBillboardCount;
-				const positionSize = view.vdpBillboardPositionSize;
-				for (let index = 0; index < vdpBillboardCount; index += 1) {
-					rasterizeHeadlessVdpBillboard(view, index, particleState);
-					if (snapshot !== null) {
-						const base = index * 4;
-						snapshot.push(`[vdp-particle#${index}] pos=(${formatNumber(positionSize[base + 0])}, ${formatNumber(positionSize[base + 1])}, ${formatNumber(positionSize[base + 2])}) size=${formatNumber(positionSize[base + 3])} slot=${view.vdpBillboardSlot[index]}`);
-					}
-				}
-				if (snapshot !== null) {
-					previousParticleSnapshot = emitDiff('particles', previousParticleSnapshot, snapshot);
-				} else {
-					previousParticleHeadline = emitHeadlessHeadline('particles', previousParticleHeadline, headline);
-				}
-			},
-		};
+			renderHeadlessParticles(registry.view as GameView, state as ParticlePipelineState);
+		},
+	};
 	registry.register(pass);
 }

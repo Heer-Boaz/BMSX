@@ -57,7 +57,7 @@ TextureHandle textureForMeshEntry(const MeshPipelineState& state, const GameView
 		case VDP_SLOT_SECONDARY: return state.slotSecondaryTex;
 		case VDP_SLOT_SYSTEM: return state.systemSlotTex;
 	}
-	throw BMSX_RUNTIME_ERROR("[MeshPipeline] VDP mesh packet selected a texture slot outside the VDP slot set.");
+	return state.systemSlotTex;
 }
 
 void setupMeshProgramLocations(MeshGLES2Program& program) {
@@ -228,9 +228,6 @@ void initMeshPipeline(OpenGLES2Backend& backend) {
 void renderMeshBatch(const MeshRuntime& runtime, void* framebuffer, const MeshPipelineState& pipelineState) {
 	OpenGLES2Backend& backend = runtime.backend;
 	const GameView& view = runtime.context;
-	if (view.vdpMeshCount == 0u) {
-		return;
-	}
 	MeshGLES2Program& program = g_mesh;
 	setupMeshDrawState(backend, framebuffer, program, pipelineState);
 	for (size_t index = 0u; index < view.vdpMeshCount; ++index) {
@@ -266,7 +263,7 @@ void registerMeshPass_GLES2(RenderPassLibrary& registry) {
 		return buildMeshPipelineState(ctx, registry.getStateRef<FrameSharedState>("frame_shared"));
 	};
 	desc.shouldExecute = []() {
-		return ConsoleCore::instance().view()->vdpMeshCount > 0u;
+		return hasMeshRomDrawSources(ConsoleCore::instance().runtime().activeRom(), *ConsoleCore::instance().view());
 	};
 	desc.exec = [](GPUBackend* backend, void* framebuffer, std::any& state) {
 		ConsoleCore& console = ConsoleCore::instance();

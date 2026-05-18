@@ -17,7 +17,7 @@ import { TEXTURE_UNIT_SLOT_PRIMARY } from '../../backend/webgl/constants';
 import { buildLightingDescriptorPooled, resetLightingDescriptorPools } from '../../lighting/system';
 import meshFS from '../shaders/mesh.frag.glsl';
 import meshVS from '../shaders/mesh.vert.glsl';
-import { resolveMeshRomDrawSource } from './rom_source';
+import { hasMeshRomDrawSources, resolveMeshRomDrawSource } from './rom_source';
 import {
 	MESH_COLOR_FLOAT_OFFSET,
 	MESH_SURFACE_BLEND,
@@ -78,7 +78,7 @@ function textureForMeshControl(state: MeshPipelineState, control: number): Textu
 		case VDP_SLOT_SECONDARY: return state.slotSecondaryTex;
 		case VDP_SLOT_SYSTEM: return state.systemSlotTex;
 	}
-	throw new Error('[MeshPipeline] VDP mesh packet selected a texture slot outside the VDP slot set.');
+	return state.systemSlotTex;
 }
 
 function uploadMeshFrameUniforms(gl: WebGL2RenderingContext, state: MeshPipelineState): void {
@@ -192,9 +192,6 @@ export function initMeshPipeline(backend: WebGLBackend): void {
 
 export function renderMeshBatch(backend: WebGLBackend, view: GameView, runtime: Runtime, state: MeshPipelineState): void {
 	const meshCount = view.vdpMeshCount;
-	if (meshCount === 0) {
-		return;
-	}
 	const gl = backend.gl;
 	backend.setViewportRect(0, 0, state.width, state.height);
 	backend.setDepthTestEnabled(true);
@@ -242,7 +239,7 @@ export function registerMeshPass_WebGL(registry: RenderPassLibrary): void {
 		},
 		writesDepth: true,
 		depthTest: true,
-		shouldExecute: () => consoleCore.view.vdpMeshCount !== 0,
+		shouldExecute: () => hasMeshRomDrawSources(consoleCore.runtime, consoleCore.view),
 		exec: (backend, _fbo, state) => {
 			renderMeshBatch(backend as WebGLBackend, consoleCore.view, consoleCore.runtime, state as MeshPipelineState);
 		},

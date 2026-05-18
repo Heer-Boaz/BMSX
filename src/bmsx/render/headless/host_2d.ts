@@ -17,12 +17,6 @@ import type {
 import { RectRenderKind } from '../shared/submissions';
 import { blendPixel } from './pixel_ops';
 
-export function renderHeadlessSubmissions(target: Uint8Array, width: number, height: number, commands: readonly Host2DSubmission[]): void {
-	for (let index = 0; index < commands.length; index += 1) {
-		renderHeadlessHost2DSubmission(target, width, height, commands[index]);
-	}
-}
-
 export function renderHeadlessHost2DSubmission(target: Uint8Array, width: number, height: number, command: Host2DSubmission): void {
 	switch (command.type) {
 		case 'rect':

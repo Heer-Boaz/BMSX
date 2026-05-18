@@ -8,24 +8,33 @@ export interface MeshRomDrawSource {
 }
 
 const meshRomDrawSource: MeshRomDrawSource = {
-	model: null as unknown as GLTFModel,
-	mesh: null as unknown as GLTFMesh,
+	model: null,
+	mesh: null,
 };
+
+export function hasMeshRomDrawSources(runtime: Runtime, view: GameView): boolean {
+	const meshCount = view.vdpMeshCount;
+	if (meshCount === 0) {
+		return false;
+	}
+	for (let entryIndex = 0; entryIndex < meshCount; entryIndex += 1) {
+		const tokenHiModels = runtime.activePackage.modelByToken.get(view.vdpMeshModelTokenHi[entryIndex]);
+		if (!tokenHiModels) {
+			return false;
+		}
+		const model = tokenHiModels.get(view.vdpMeshModelTokenLo[entryIndex]);
+		if (!model || !model.meshes[view.vdpMeshIndex[entryIndex]]) {
+			return false;
+		}
+	}
+	return true;
+}
 
 export function resolveMeshRomDrawSource(runtime: Runtime, view: GameView, entryIndex: number): MeshRomDrawSource {
 	const tokenHiModels = runtime.activePackage.modelByToken.get(view.vdpMeshModelTokenHi[entryIndex]);
-	if (!tokenHiModels) {
-		throw new Error('[MeshPipeline] VDP mesh packet references a model token that is not in the active ROM.');
-	}
 	const model = tokenHiModels.get(view.vdpMeshModelTokenLo[entryIndex]);
-	if (!model) {
-		throw new Error('[MeshPipeline] VDP mesh packet references a model token that is not in the active ROM.');
-	}
 	const meshIndex = view.vdpMeshIndex[entryIndex];
 	const mesh = model.meshes[meshIndex];
-	if (!mesh) {
-		throw new Error('[MeshPipeline] VDP mesh packet references a mesh index outside the model.');
-	}
 	meshRomDrawSource.model = model;
 	meshRomDrawSource.mesh = mesh;
 	return meshRomDrawSource;

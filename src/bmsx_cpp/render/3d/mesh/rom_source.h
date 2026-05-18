@@ -11,6 +11,7 @@ struct MeshRomDrawSource {
 	const ModelMesh& mesh;
 };
 
+bool hasMeshRomDrawSources(const RuntimeRomPackage& rom, const GameView& view);
 MeshRomDrawSource resolveMeshRomDrawSource(const RuntimeRomPackage& rom, const GameView::VdpMeshRenderEntry& entry);
 
 } // namespace bmsx

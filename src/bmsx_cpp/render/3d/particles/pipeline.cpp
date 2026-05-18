@@ -214,9 +214,6 @@ void setupParticleUniforms() {
 void renderParticleBatch(ParticleRuntime& runtime, void* framebuffer, const ParticlePipelineState& pipelineState) {
 	OpenGLES2Backend& backend = runtime.backend;
 	const GameView& view = runtime.context;
-	if (view.vdpBillboardCount == 0u) {
-		return;
-	}
 	auto& state = g_particles;
 	state.vertexCount = 0u;
 	for (size_t index = 0; index < view.vdpBillboardCount; index += 1u) {
