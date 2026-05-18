@@ -1,5 +1,4 @@
-import type { GPUBackend } from './backend';
-import { WebGLBackend } from './webgl/backend';
+import type { BufferHandle, GPUBackend } from './backend';
 
 // Minimal per-frame uniform buffer (foundation for future shader blocks)
 // Binding indices: keep distinct from lighting UBOs (0,1)
@@ -7,7 +6,7 @@ import { WebGLBackend } from './webgl/backend';
 // DirLightBlock = 0, PointLightBlock = 1 in mesh pipeline. Keep frame at 2.
 export const FRAME_UNIFORM_BINDING = 2;
 
-let ubo: WebGLBuffer = null;
+let ubo: BufferHandle = null;
 // Layout (std140-friendly):
 // [0..3]   offscreenSize: (offW, offH), logicalSize: (baseW, baseH)
 // [4..7]   timing: (time, delta, 0, 0)
@@ -18,16 +17,9 @@ let ubo: WebGLBuffer = null;
 const buf = new Float32Array(48);
 
 export function initFrameUniforms(backend: GPUBackend): void {
-	if (ubo || !backend.createUniformBuffer) return;
+	if (ubo) return;
 	// Allocate a small UBO with fixed size
-	ubo = backend.createUniformBuffer!(buf.byteLength, 'dynamic') as WebGLBuffer;
-}
-
-function frameBindingIndexFor(backend: GPUBackend): number {
-	// WebGL path uses binding 2 to avoid collisions with mesh light UBOs (0,1)
-	// WebGPU bind group conventionally uses binding 0 for the frame uniform buffer
-	const isWebGL = typeof (backend as WebGLBackend).gl !== 'undefined';
-	return isWebGL ? FRAME_UNIFORM_BINDING : 0;
+	ubo = backend.createUniformBuffer(buf.byteLength, 'dynamic');
 }
 
 export function updateAndBindFrameUniforms(
@@ -44,9 +36,7 @@ export function updateAndBindFrameUniforms(
 	ambientColor: readonly [number, number, number] | null = null,
 	ambientIntensity = 0,
 ): void {
-	if (!backend.updateUniformBuffer || !backend.bindUniformBufferBase) return;
 	if (!ubo) initFrameUniforms(backend);
-	if (!ubo) return;
 	// Layout: [offW, offH, baseW, baseH, time, delta, 0, 0, ...]
 	buf[0] = offscreenX;
 	buf[1] = offscreenY;
@@ -70,6 +60,6 @@ export function updateAndBindFrameUniforms(
 	buf[43] = 0;
 	if (ambientColor !== null) { buf[44] = ambientColor[0]; buf[45] = ambientColor[1]; buf[46] = ambientColor[2]; buf[47] = ambientIntensity; }
 	else { buf[44] = buf[45] = buf[46] = buf[47] = 0; }
-	backend.updateUniformBuffer(ubo as WebGLBuffer, buf);
-	backend.bindUniformBufferBase(frameBindingIndexFor(backend), ubo as WebGLBuffer);
+	backend.updateUniformBuffer(ubo, buf);
+	backend.bindUniformBufferBase(backend.type === 'webgl2' ? FRAME_UNIFORM_BINDING : 0, ubo);
 }

@@ -276,6 +276,8 @@ export class VDP implements VramWriteSink {
 	};
 	private activeFrame: VdpSubmittedFrame = allocateSubmittedFrameSlot();
 	private pendingFrame: VdpSubmittedFrame = allocateSubmittedFrameSlot();
+	private displayTextureFrame: VdpSubmittedFrame = allocateSubmittedFrameSlot();
+	private displayTextureFrameReplayPending = false;
 	private readonly clippedRectScratchA = { width: 0, height: 0, area: 0 };
 	private readonly latchedSourceScratch: VdpBlitterSource = { surfaceId: 0, srcX: 0, srcY: 0, width: 0, height: 0 };
 	private readonly bbuSourceResolutionScratch: VdpBbuSourceResolution = {
@@ -1273,6 +1275,8 @@ export class VDP implements VramWriteSink {
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
 		resetSubmittedFrameSlot(this.pendingFrame);
+		resetSubmittedFrameSlot(this.displayTextureFrame);
+		this.displayTextureFrameReplayPending = false;
 	}
 
 	private reserveBlitterCommand(opcode: VdpBlitterOpcode, renderCost: number): number {
@@ -1457,6 +1461,10 @@ export class VDP implements VramWriteSink {
 		return this.activeFrame.state === VDP_SUBMITTED_FRAME_EXECUTION_PENDING ? this.activeFrame.queue : null;
 	}
 
+	public get readyDisplayFrameBufferReplayCommands(): VdpBlitterCommandBuffer | null {
+		return this.displayTextureFrameReplayPending ? this.displayTextureFrame.queue : null;
+	}
+
 	public resolveFrameBufferExecutionSource(surfaceId: number): VdpSurfaceUploadSlot | null {
 		const slot = this.vram.findSurface(surfaceId);
 		if (slot === null) {
@@ -1473,19 +1481,46 @@ export class VDP implements VramWriteSink {
 		return slot;
 	}
 
-	public completeReadyFrameBufferExecution(frameBufferSlot: VdpSurfaceUploadSlot | null): void {
+	public completeReadyFrameBufferExecution(frameBufferSlot: VdpSurfaceUploadSlot): void {
 		if (this.activeFrame.state !== VDP_SUBMITTED_FRAME_EXECUTION_PENDING) {
 			throw new Error('VDP framebuffer execution completed without an execution-pending frame.');
 		}
-		if (frameBufferSlot !== null) {
-			this.vram.markSlotDirty(frameBufferSlot, 0, frameBufferSlot.surfaceHeight);
-			this.readback.invalidateSurface(VDP_RD_SURFACE_FRAMEBUFFER);
-		}
-		this.activeFrame.frameBufferReadbackValid = frameBufferSlot !== null;
+		this.vram.markSlotDirty(frameBufferSlot, 0, frameBufferSlot.surfaceHeight);
+		this.readback.invalidateSurface(VDP_RD_SURFACE_FRAMEBUFFER);
+		this.activeFrame.frameBufferReadbackValid = true;
 		this.activeFrame.queue.reset();
 		this.activeFrame.state = VDP_SUBMITTED_FRAME_READY;
 		this.refreshSubmitBusyStatus();
 		this.scheduleNextService(this.scheduler.currentNowCycles());
+	}
+
+	public completeReadyFrameBufferTextureExecution(): void {
+		if (this.activeFrame.state !== VDP_SUBMITTED_FRAME_EXECUTION_PENDING) {
+			throw new Error('VDP framebuffer texture execution completed without an execution-pending frame.');
+		}
+		this.activeFrame.frameBufferReadbackValid = false;
+		this.activeFrame.state = VDP_SUBMITTED_FRAME_READY;
+		this.refreshSubmitBusyStatus();
+		this.scheduleNextService(this.scheduler.currentNowCycles());
+	}
+
+	public completeDisplayFrameBufferReplay(frameBufferSlot: VdpSurfaceUploadSlot): void {
+		if (!this.displayTextureFrameReplayPending) {
+			throw new Error('VDP framebuffer display replay completed without a pending display frame.');
+		}
+		this.vram.markSlotDirty(frameBufferSlot, 0, frameBufferSlot.surfaceHeight);
+		this.readback.invalidateSurface(VDP_RD_SURFACE_FRAMEBUFFER);
+		this.fbm.presentPage(frameBufferSlot);
+		this.vram.clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
+		this.displayTextureFrameReplayPending = false;
+	}
+
+	public completeDisplayFrameBufferTextureReplay(): void {
+		if (!this.displayTextureFrameReplayPending) {
+			throw new Error('VDP framebuffer texture display replay completed without a pending display frame.');
+		}
+		this.fbm.presentTexturePage();
+		this.displayTextureFrameReplayPending = false;
 	}
 
 	private scheduleNextService(nowCycles: number): void {
@@ -1516,6 +1551,28 @@ export class VDP implements VramWriteSink {
 		this.vout.presentFrame(this.activeFrame, this.sbx.visibleEnabled);
 	}
 
+	private finishCommittedFrameOnVblankEdge(retainTextureFrame: boolean): void {
+		this.commitActiveVisualState();
+		this.lastFrameCommitted = true;
+		this.lastFrameHeld = false;
+		if (retainTextureFrame) {
+			const displayedFrame = this.activeFrame;
+			this.activeFrame = this.displayTextureFrame;
+			this.displayTextureFrame = displayedFrame;
+			this.displayTextureFrameReplayPending = false;
+			resetSubmittedFrameSlot(this.activeFrame);
+		} else {
+			if (this.activeFrame.hasFrameBufferCommands && this.activeFrame.frameBufferReadbackValid) {
+				resetSubmittedFrameSlot(this.displayTextureFrame);
+				this.displayTextureFrameReplayPending = false;
+			}
+			this.clearActiveFrame();
+		}
+		this.promotePendingFrame();
+		this.scheduleNextService(this.scheduler.currentNowCycles());
+		this.refreshSubmitBusyStatus();
+	}
+
 	public presentReadyFrameOnVblankEdge(): boolean {
 		if (this.activeFrame.state === VDP_SUBMITTED_FRAME_EMPTY) {
 			this.lastFrameCommitted = false;
@@ -1533,16 +1590,10 @@ export class VDP implements VramWriteSink {
 			return false;
 		}
 		const presentFrameBuffer = this.activeFrame.hasFrameBufferCommands;
-		this.commitActiveVisualState();
 		if (presentFrameBuffer) {
 			this.presentFrameBufferPageOnVblankEdge();
 		}
-		this.lastFrameCommitted = true;
-		this.lastFrameHeld = false;
-		this.clearActiveFrame();
-		this.promotePendingFrame();
-		this.scheduleNextService(this.scheduler.currentNowCycles());
-		this.refreshSubmitBusyStatus();
+		this.finishCommittedFrameOnVblankEdge(presentFrameBuffer && !this.activeFrame.frameBufferReadbackValid);
 		return presentFrameBuffer;
 	}
 
@@ -1771,6 +1822,7 @@ export class VDP implements VramWriteSink {
 			buildFrame: captureBuildingFrameState(this.buildFrame),
 			activeFrame: captureSubmittedFrameState(this.activeFrame),
 			pendingFrame: captureSubmittedFrameState(this.pendingFrame),
+			displayTextureFrame: captureSubmittedFrameState(this.displayTextureFrame),
 			workCarry: this.workCarry,
 			availableWorkUnits: this.availableWorkUnits,
 			streamIngress: this.streamIngress.captureState(),
@@ -1788,11 +1840,19 @@ export class VDP implements VramWriteSink {
 	}
 
 	public captureSaveState(): VdpSaveState {
-		return {
+		const state: VdpSaveState = {
 			...this.captureState(),
 			vram: this.vram.captureState(),
 			displayFrameBufferPixels: this.fbm.captureDisplayReadback(),
 		};
+		if (
+			state.activeFrame.state === VDP_SUBMITTED_FRAME_READY &&
+			state.activeFrame.hasFrameBufferCommands &&
+			!state.activeFrame.frameBufferReadbackValid
+		) {
+			state.activeFrame.state = VDP_SUBMITTED_FRAME_EXECUTION_PENDING;
+		}
+		return state;
 	}
 
 	public restoreState(state: VdpState): void {
@@ -1801,6 +1861,11 @@ export class VDP implements VramWriteSink {
 		restoreBuildingFrameState(this.buildFrame, state.buildFrame);
 		restoreSubmittedFrameState(this.activeFrame, state.activeFrame);
 		restoreSubmittedFrameState(this.pendingFrame, state.pendingFrame);
+		restoreSubmittedFrameState(this.displayTextureFrame, state.displayTextureFrame);
+		this.displayTextureFrameReplayPending =
+			this.displayTextureFrame.state === VDP_SUBMITTED_FRAME_READY &&
+			this.displayTextureFrame.hasFrameBufferCommands &&
+			!this.displayTextureFrame.frameBufferReadbackValid;
 		this.workCarry = state.workCarry;
 		this.availableWorkUnits = state.availableWorkUnits;
 		this.streamIngress.restoreState(state.streamIngress);

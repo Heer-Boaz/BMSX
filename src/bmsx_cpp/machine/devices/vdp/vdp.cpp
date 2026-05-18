@@ -1051,6 +1051,8 @@ void VDP::resetQueuedFrameState() {
 	resetBuildingFrame(m_buildFrame);
 	clearActiveFrame();
 	resetSubmittedFrameSlot(m_pendingFrame);
+	resetSubmittedFrameSlot(m_displayTextureFrame);
+	m_displayTextureFrameReplayPending = false;
 }
 
 void VDP::presentFrameBufferPageOnVblankEdge() {
@@ -1216,6 +1218,10 @@ VdpBlitterCommandBuffer* VDP::readyFrameBufferCommands() {
 	return m_activeFrame.queue.get();
 }
 
+VdpBlitterCommandBuffer* VDP::readyDisplayFrameBufferReplayCommands() {
+	return m_displayTextureFrameReplayPending ? m_displayTextureFrame.queue.get() : nullptr;
+}
+
 VdpSurfaceUploadSlot* VDP::resolveFrameBufferExecutionSource(uint32_t surfaceId) {
 	VdpSurfaceUploadSlot* slot = m_vram.findSurface(surfaceId);
 	if (slot == nullptr) {
@@ -1232,19 +1238,46 @@ VdpSurfaceUploadSlot& VDP::frameBufferExecutionTarget() {
 	return *slot;
 }
 
-void VDP::completeReadyFrameBufferExecution(VdpSurfaceUploadSlot* frameBufferSlot) {
+void VDP::completeReadyFrameBufferExecution(VdpSurfaceUploadSlot& frameBufferSlot) {
 	if (m_activeFrame.state != VdpSubmittedFrameState::ExecutionPending) {
 		throw BMSX_RUNTIME_ERROR("VDP framebuffer execution completed without an execution-pending frame.");
 	}
-	if (frameBufferSlot != nullptr) {
-		m_vram.markSlotDirty(*frameBufferSlot, 0u, frameBufferSlot->surfaceHeight);
-		m_readback.invalidateSurface(VDP_RD_SURFACE_FRAMEBUFFER);
-	}
-	m_activeFrame.frameBufferReadbackValid = frameBufferSlot != nullptr;
+	m_vram.markSlotDirty(frameBufferSlot, 0u, frameBufferSlot.surfaceHeight);
+	m_readback.invalidateSurface(VDP_RD_SURFACE_FRAMEBUFFER);
+	m_activeFrame.frameBufferReadbackValid = true;
 	m_activeFrame.queue->reset();
 	m_activeFrame.state = VdpSubmittedFrameState::Ready;
 	refreshSubmitBusyStatus();
 	scheduleNextService(m_scheduler.currentNowCycles());
+}
+
+void VDP::completeReadyFrameBufferTextureExecution() {
+	if (m_activeFrame.state != VdpSubmittedFrameState::ExecutionPending) {
+		throw BMSX_RUNTIME_ERROR("VDP framebuffer texture execution completed without an execution-pending frame.");
+	}
+	m_activeFrame.frameBufferReadbackValid = false;
+	m_activeFrame.state = VdpSubmittedFrameState::Ready;
+	refreshSubmitBusyStatus();
+	scheduleNextService(m_scheduler.currentNowCycles());
+}
+
+void VDP::completeDisplayFrameBufferReplay(VdpSurfaceUploadSlot& frameBufferSlot) {
+	if (!m_displayTextureFrameReplayPending) {
+		throw BMSX_RUNTIME_ERROR("VDP framebuffer display replay completed without a pending display frame.");
+	}
+	m_vram.markSlotDirty(frameBufferSlot, 0u, frameBufferSlot.surfaceHeight);
+	m_readback.invalidateSurface(VDP_RD_SURFACE_FRAMEBUFFER);
+	m_fbm.presentPage(frameBufferSlot);
+	m_vram.clearSurfaceUploadDirty(VDP_RD_SURFACE_FRAMEBUFFER);
+	m_displayTextureFrameReplayPending = false;
+}
+
+void VDP::completeDisplayFrameBufferTextureReplay() {
+	if (!m_displayTextureFrameReplayPending) {
+		throw BMSX_RUNTIME_ERROR("VDP framebuffer texture display replay completed without a pending display frame.");
+	}
+	m_fbm.presentTexturePage();
+	m_displayTextureFrameReplayPending = false;
 }
 
 void VDP::scheduleNextService(int64_t nowCycles) {
@@ -1279,11 +1312,21 @@ void VDP::commitActiveVisualState() {
 	m_vout.presentFrame(m_activeFrame, m_sbx.visibleEnabled());
 }
 
-void VDP::finishCommittedFrameOnVblankEdge() {
+void VDP::finishCommittedFrameOnVblankEdge(bool retainTextureFrame) {
 	commitActiveVisualState();
 	m_lastFrameCommitted = true;
 	m_lastFrameHeld = false;
-	clearActiveFrame();
+	if (retainTextureFrame) {
+		std::swap(m_activeFrame, m_displayTextureFrame);
+		m_displayTextureFrameReplayPending = false;
+		resetSubmittedFrameSlot(m_activeFrame);
+	} else {
+		if (m_activeFrame.hasFrameBufferCommands && m_activeFrame.frameBufferReadbackValid) {
+			resetSubmittedFrameSlot(m_displayTextureFrame);
+			m_displayTextureFrameReplayPending = false;
+		}
+		clearActiveFrame();
+	}
 	promotePendingFrame();
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
@@ -1306,11 +1349,12 @@ bool VDP::presentReadyFrameOnVblankEdge() {
 		return false;
 	}
 	if (m_activeFrame.hasFrameBufferCommands) {
+		const bool retainTextureFrame = !m_activeFrame.frameBufferReadbackValid;
 		presentFrameBufferPageOnVblankEdge();
-		finishCommittedFrameOnVblankEdge();
+		finishCommittedFrameOnVblankEdge(retainTextureFrame);
 		return true;
 	}
-	finishCommittedFrameOnVblankEdge();
+	finishCommittedFrameOnVblankEdge(false);
 	return false;
 }
 // end hot-path

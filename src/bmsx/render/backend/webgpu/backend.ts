@@ -15,7 +15,7 @@ const WEBGPU_ZERO_CLEAR: GPUColor = [0, 0, 0, 0];
 export type WebGPUPassEncoder = PassEncoder & { encoder: GPURenderPassEncoder };
 
 export class WebGPUBackend implements GPUBackend {
-	get type(): 'webgl2' | 'webgpu' {
+	get type(): 'webgpu' {
 		return 'webgpu';
 	}
 
@@ -88,6 +88,13 @@ export class WebGPUBackend implements GPUBackend {
 	getFrameStats() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded, vertexBytes: 0, indexBytes: 0, uniformBytes: this._bytesUploaded, textureBytes: 0 }; }
 	accountUpload(_kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
 		this._bytesUploaded += bytes;
+	}
+
+	bootstrapVdp2DBlit(): void {
+	}
+
+	executeVdp2DBlit(_state: VdpFrameBufferExecutionPassState): void {
+		throw new Error('[VDPFrameBufferWebGPU] VDP framebuffer execution is not implemented for WebGPU.');
 	}
 
 	createTexture(data: Uint8Array, width: number, height: number, _desc: TextureParams): TextureHandle {

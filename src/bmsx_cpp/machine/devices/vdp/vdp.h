@@ -64,9 +64,13 @@ public:
 	void advanceWork(int workUnits);
 	bool presentReadyFrameOnVblankEdge();
 	VdpBlitterCommandBuffer* readyFrameBufferCommands();
+	VdpBlitterCommandBuffer* readyDisplayFrameBufferReplayCommands();
 	VdpSurfaceUploadSlot* resolveFrameBufferExecutionSource(uint32_t surfaceId);
 	VdpSurfaceUploadSlot& frameBufferExecutionTarget();
-	void completeReadyFrameBufferExecution(VdpSurfaceUploadSlot* frameBufferSlot);
+	void completeReadyFrameBufferExecution(VdpSurfaceUploadSlot& frameBufferSlot);
+	void completeReadyFrameBufferTextureExecution();
+	void completeDisplayFrameBufferReplay(VdpSurfaceUploadSlot& frameBufferSlot);
+	void completeDisplayFrameBufferTextureReplay();
 	uint32_t frameBufferWidth() const { return m_fbm.width(); }
 	uint32_t frameBufferHeight() const { return m_fbm.height(); }
 	bool readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes);
@@ -159,6 +163,8 @@ private:
 	BuildingFrame m_buildFrame;
 	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
+	SubmittedFrame m_displayTextureFrame;
+	bool m_displayTextureFrameReplayPending = false;
 	u32 m_blitterSequence = 0;
 	// Scratch buffers used to avoid per-call temporaries (parity with TS runtime)
 	BlitterSource m_latchedSourceScratch{};
@@ -232,7 +238,7 @@ private:
 	void onVdpCommandWrite();
 	void clearActiveFrame();
 	void commitActiveVisualState();
-	void finishCommittedFrameOnVblankEdge();
+	void finishCommittedFrameOnVblankEdge(bool retainTextureFrame);
 
 	void commitLiveVisualState();
 };

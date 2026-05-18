@@ -480,7 +480,7 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 			const view = registry.view as GameView;
 			const uvRects = view.skyboxFaceUvRects;
 				const sizes = view.skyboxFaceSizes;
-				const bindings = view.skyboxFaceTextpageBindings;
+				const bindings = view.skyboxFaceSlotBindings;
 				rasterizeSkyboxBackground(view, headlessSceneWidth, headlessSceneHeight);
 				let headline = 'faces=';
 				for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {

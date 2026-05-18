@@ -4,7 +4,7 @@
 #include "core/console.h"
 #include "machine/devices/vdp/contracts.h"
 #include "render/3d/shaders/render_3d_shaders.h"
-#include "render/backend/gles2_backend.h"
+#include "render/backend/gles2/backend.h"
 #include "render/gameview.h"
 #include "rompack/format.h"
 
@@ -16,9 +16,9 @@
 namespace bmsx {
 namespace {
 
-constexpr f32 PARTICLE_TEXTPAGE_PRIMARY = 0.0f;
-constexpr f32 PARTICLE_TEXTPAGE_SECONDARY = 1.0f;
-constexpr f32 PARTICLE_TEXTPAGE_SYSTEM = 2.0f;
+constexpr f32 PARTICLE_SLOT_PRIMARY = 0.0f;
+constexpr f32 PARTICLE_SLOT_SECONDARY = 1.0f;
+constexpr f32 PARTICLE_SLOT_SYSTEM = 2.0f;
 constexpr i32 PARTICLE_TEXTURE_UNIT_PRIMARY = 0;
 constexpr i32 PARTICLE_TEXTURE_UNIT_SECONDARY = 1;
 constexpr i32 PARTICLE_TEXTURE_UNIT_SYSTEM = 2;
@@ -34,7 +34,7 @@ struct ParticleGLES2Vertex {
 	f32 z = 0.0f;
 	f32 u = 0.0f;
 	f32 v = 0.0f;
-	f32 textpageId = 0.0f;
+	f32 slotId = 0.0f;
 	f32 r = 1.0f;
 	f32 g = 1.0f;
 	f32 b = 1.0f;
@@ -47,7 +47,7 @@ struct ParticleGLES2Runtime {
 	GLuint program = 0;
 	GLint attribPosition = -1;
 	GLint attribUv = -1;
-	GLint attribTextpageId = -1;
+	GLint attribSlotId = -1;
 	GLint attribColor = -1;
 	GLint attribAmbientMode = -1;
 	GLint attribAmbientFactor = -1;
@@ -63,20 +63,20 @@ struct ParticleGLES2Runtime {
 
 ParticleGLES2Runtime g_particles{};
 
-f32 textpageIdForSlot(u32 slot) {
+f32 slotIdForSlot(u32 slot) {
 	switch (slot) {
-		case VDP_SLOT_PRIMARY: return PARTICLE_TEXTPAGE_PRIMARY;
-		case VDP_SLOT_SECONDARY: return PARTICLE_TEXTPAGE_SECONDARY;
-		case VDP_SLOT_SYSTEM: return PARTICLE_TEXTPAGE_SYSTEM;
+		case VDP_SLOT_PRIMARY: return PARTICLE_SLOT_PRIMARY;
+		case VDP_SLOT_SECONDARY: return PARTICLE_SLOT_SECONDARY;
+		case VDP_SLOT_SYSTEM: return PARTICLE_SLOT_SYSTEM;
 	}
 	throw BMSX_RUNTIME_ERROR("[ParticlesPipeline] particle slot is outside the VDP texture slot set.");
 }
 
-void bindParticleTextpages(OpenGLES2Backend& backend, const ParticlePipelineState& state) {
+void bindParticleSlots(OpenGLES2Backend& backend, const ParticlePipelineState& state) {
 	backend.setActiveTextureUnit(PARTICLE_TEXTURE_UNIT_PRIMARY);
-	backend.bindTexture2D(state.textpagePrimaryTex);
+	backend.bindTexture2D(state.slotPrimaryTex);
 	backend.setActiveTextureUnit(PARTICLE_TEXTURE_UNIT_SECONDARY);
-	backend.bindTexture2D(state.textpageSecondaryTex);
+	backend.bindTexture2D(state.slotSecondaryTex);
 	backend.setActiveTextureUnit(PARTICLE_TEXTURE_UNIT_SYSTEM);
 	backend.bindTexture2D(state.systemSlotTex);
 }
@@ -87,7 +87,7 @@ void writeParticleVertex(ParticleGLES2Vertex& vertex,
 							f32 z,
 							f32 u,
 							f32 v,
-							f32 textpageId,
+							f32 slotId,
 							f32 r,
 							f32 g,
 							f32 b,
@@ -99,7 +99,7 @@ void writeParticleVertex(ParticleGLES2Vertex& vertex,
 	vertex.z = z;
 	vertex.u = u;
 	vertex.v = v;
-	vertex.textpageId = textpageId;
+	vertex.slotId = slotId;
 	vertex.r = r;
 	vertex.g = g;
 	vertex.b = b;
@@ -119,7 +119,7 @@ void appendParticleQuad(ParticleGLES2Runtime& runtime,
 						const Vec3& position,
 						f32 size,
 						u32 color,
-						f32 textpageId,
+						f32 slotId,
 						const std::array<f32, 2>& uv0,
 						const std::array<f32, 2>& uv1,
 						i32 ambientMode,
@@ -148,12 +148,12 @@ void appendParticleQuad(ParticleGLES2Runtime& runtime,
 	const f32 z11 = position.z + halfRightZ - halfUpZ;
 	const f32 ambientModeValue = static_cast<f32>(ambientMode);
 	ParticleGLES2Vertex* const vertices = runtime.vertices.data() + runtime.vertexCount;
-	writeParticleVertex(vertices[0], x00, y00, z00, uv0[0], uv1[1], textpageId, r, g, b, a, ambientModeValue, ambientFactor);
-	writeParticleVertex(vertices[1], x10, y10, z10, uv1[0], uv1[1], textpageId, r, g, b, a, ambientModeValue, ambientFactor);
-	writeParticleVertex(vertices[2], x01, y01, z01, uv0[0], uv0[1], textpageId, r, g, b, a, ambientModeValue, ambientFactor);
-	writeParticleVertex(vertices[3], x01, y01, z01, uv0[0], uv0[1], textpageId, r, g, b, a, ambientModeValue, ambientFactor);
-	writeParticleVertex(vertices[4], x10, y10, z10, uv1[0], uv1[1], textpageId, r, g, b, a, ambientModeValue, ambientFactor);
-	writeParticleVertex(vertices[5], x11, y11, z11, uv1[0], uv0[1], textpageId, r, g, b, a, ambientModeValue, ambientFactor);
+	writeParticleVertex(vertices[0], x00, y00, z00, uv0[0], uv1[1], slotId, r, g, b, a, ambientModeValue, ambientFactor);
+	writeParticleVertex(vertices[1], x10, y10, z10, uv1[0], uv1[1], slotId, r, g, b, a, ambientModeValue, ambientFactor);
+	writeParticleVertex(vertices[2], x01, y01, z01, uv0[0], uv0[1], slotId, r, g, b, a, ambientModeValue, ambientFactor);
+	writeParticleVertex(vertices[3], x01, y01, z01, uv0[0], uv0[1], slotId, r, g, b, a, ambientModeValue, ambientFactor);
+	writeParticleVertex(vertices[4], x10, y10, z10, uv1[0], uv1[1], slotId, r, g, b, a, ambientModeValue, ambientFactor);
+	writeParticleVertex(vertices[5], x11, y11, z11, uv1[0], uv0[1], slotId, r, g, b, a, ambientModeValue, ambientFactor);
 	runtime.vertexCount += 6u;
 }
 
@@ -166,8 +166,8 @@ ParticlePipelineState buildParticlePipelineState(const RenderPassDef::RenderGrap
 	state.viewProj = transform.viewProj;
 	state.camRight = {transform.view[0], transform.view[4], transform.view[8]};
 	state.camUp = {transform.view[1], transform.view[5], transform.view[9]};
-	state.textpagePrimaryTex = ctx.view->textures.at(VDP_PRIMARY_SLOT_TEXTURE_KEY);
-	state.textpageSecondaryTex = ctx.view->textures.at(VDP_SECONDARY_SLOT_TEXTURE_KEY);
+	state.slotPrimaryTex = ctx.view->textures.at(VDP_PRIMARY_SLOT_TEXTURE_KEY);
+	state.slotSecondaryTex = ctx.view->textures.at(VDP_SECONDARY_SLOT_TEXTURE_KEY);
 	state.systemSlotTex = ctx.view->textures.at(SYSTEM_SLOT_TEXTURE_KEY);
 	if (frameShared.lighting.ambient.has_value()) {
 		state.ambientColor = frameShared.lighting.ambient->color;
@@ -188,7 +188,7 @@ void setupParticleLocations() {
 	auto& state = g_particles;
 	state.attribPosition = glGetAttribLocation(state.program, "a_position");
 	state.attribUv = glGetAttribLocation(state.program, "a_uv");
-	state.attribTextpageId = glGetAttribLocation(state.program, "a_textpage_id");
+	state.attribSlotId = glGetAttribLocation(state.program, "a_slot_id");
 	state.attribColor = glGetAttribLocation(state.program, "a_color");
 	state.attribAmbientMode = glGetAttribLocation(state.program, "a_ambient_mode");
 	state.attribAmbientFactor = glGetAttribLocation(state.program, "a_ambient_factor");
@@ -203,9 +203,9 @@ void setupParticleUniforms() {
 	state.uniformTexture2 = glGetUniformLocation(state.program, "u_texture2");
 	state.uniformAmbientColorIntensity = glGetUniformLocation(state.program, "u_ambient_color_intensity");
 	glUseProgram(state.program);
-	// TS WebGL2 can reserve texture unit 11 for the engine/system textpage.
+	// TS WebGL2 can reserve texture unit 11 for the engine/system slot.
 	// The SNES-mini GLES2 floor only requires a much smaller texture-unit set,
-	// so this GLES2 pass binds its three particle textpages to local units 0..2.
+	// so this GLES2 pass binds its three particle slots to local units 0..2.
 	glUniform1i(state.uniformTexture0, PARTICLE_TEXTURE_UNIT_PRIMARY);
 	glUniform1i(state.uniformTexture1, PARTICLE_TEXTURE_UNIT_SECONDARY);
 	glUniform1i(state.uniformTexture2, PARTICLE_TEXTURE_UNIT_SYSTEM);
@@ -228,7 +228,7 @@ void renderParticleBatch(ParticleRuntime& runtime, void* framebuffer, const Part
 			submission.position,
 			submission.size,
 			submission.color,
-			textpageIdForSlot(submission.slot),
+			slotIdForSlot(submission.slot),
 			submission.uv0,
 			submission.uv1,
 			0,
@@ -248,17 +248,17 @@ void renderParticleBatch(ParticleRuntime& runtime, void* framebuffer, const Part
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDepthMask(GL_FALSE);
-	bindParticleTextpages(backend, pipelineState);
+	bindParticleSlots(backend, pipelineState);
 	glBindBuffer(GL_ARRAY_BUFFER, state.vertexBuffer);
 	glEnableVertexAttribArray(static_cast<GLuint>(state.attribPosition));
 	glEnableVertexAttribArray(static_cast<GLuint>(state.attribUv));
-	glEnableVertexAttribArray(static_cast<GLuint>(state.attribTextpageId));
+	glEnableVertexAttribArray(static_cast<GLuint>(state.attribSlotId));
 	glEnableVertexAttribArray(static_cast<GLuint>(state.attribColor));
 	glEnableVertexAttribArray(static_cast<GLuint>(state.attribAmbientMode));
 	glEnableVertexAttribArray(static_cast<GLuint>(state.attribAmbientFactor));
 	glVertexAttribPointer(state.attribPosition, 3, GL_FLOAT, GL_FALSE, sizeof(ParticleGLES2Vertex), reinterpret_cast<const void*>(offsetof(ParticleGLES2Vertex, x)));
 	glVertexAttribPointer(state.attribUv, 2, GL_FLOAT, GL_FALSE, sizeof(ParticleGLES2Vertex), reinterpret_cast<const void*>(offsetof(ParticleGLES2Vertex, u)));
-	glVertexAttribPointer(state.attribTextpageId, 1, GL_FLOAT, GL_FALSE, sizeof(ParticleGLES2Vertex), reinterpret_cast<const void*>(offsetof(ParticleGLES2Vertex, textpageId)));
+	glVertexAttribPointer(state.attribSlotId, 1, GL_FLOAT, GL_FALSE, sizeof(ParticleGLES2Vertex), reinterpret_cast<const void*>(offsetof(ParticleGLES2Vertex, slotId)));
 	glVertexAttribPointer(state.attribColor, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleGLES2Vertex), reinterpret_cast<const void*>(offsetof(ParticleGLES2Vertex, r)));
 	glVertexAttribPointer(state.attribAmbientMode, 1, GL_FLOAT, GL_FALSE, sizeof(ParticleGLES2Vertex), reinterpret_cast<const void*>(offsetof(ParticleGLES2Vertex, ambientMode)));
 	glVertexAttribPointer(state.attribAmbientFactor, 1, GL_FLOAT, GL_FALSE, sizeof(ParticleGLES2Vertex), reinterpret_cast<const void*>(offsetof(ParticleGLES2Vertex, ambientFactor)));

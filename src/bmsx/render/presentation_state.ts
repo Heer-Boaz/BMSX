@@ -4,7 +4,11 @@ import type { TickCompletion } from '../machine/scheduler/frame';
 import type { VdpBlitterCommandBuffer } from '../machine/devices/vdp/blitter';
 import * as workbenchMode from '../ide/workbench/mode';
 import { commitVdpViewSnapshot } from './vdp/view_snapshot';
-import type { VdpFrameBufferExecutionPassState } from './backend/backend';
+import {
+	VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE,
+	VDP_FRAMEBUFFER_EXECUTION_TARGET_DISPLAY_REPLAY,
+	type VdpFrameBufferExecutionPassState,
+} from './backend/backend';
 
 export type RenderPresentationMode = 'partial' | 'completed';
 
@@ -41,6 +45,7 @@ export class RenderPresentationState {
 	private readonly vdpFrameBufferExecutionPassState: VdpFrameBufferExecutionPassState = {
 		runtime: null as Runtime,
 		commands: null as VdpBlitterCommandBuffer,
+		target: VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE,
 	};
 
 	constructor(private readonly runtime: Runtime) {
@@ -96,6 +101,7 @@ export class RenderPresentationState {
 	private presentFrame(hostDeltaMs: number, mode: RenderPresentationMode, commitFrame = mode === 'completed'): void {
 		const runtime = this.runtime;
 		consoleCore.deltatime = hostDeltaMs;
+		this.executeDisplayVdpFrameBufferReplay();
 		runtime.machine.vdp.drainFrameBufferPresentation(consoleCore.view.vdpFrameBufferTextures);
 		runtime.machine.vdp.drainSurfaceUploads(consoleCore.view.vdpSlotTextures);
 		commitVdpViewSnapshot(consoleCore.view, runtime.machine.vdp.readDeviceOutput());
@@ -162,6 +168,22 @@ export class RenderPresentationState {
 		const state = this.vdpFrameBufferExecutionPassState;
 		state.runtime = runtime;
 		state.commands = commands;
+		state.target = VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE;
+		runtime.view.pipelineRegistry!.setState('vdp_framebuffer_execution', state);
+		runtime.view.pipelineRegistry!.execute('vdp_framebuffer_execution', null);
+	}
+
+	private executeDisplayVdpFrameBufferReplay(): void {
+		const runtime = this.runtime;
+		const vdp = runtime.machine.vdp;
+		const commands = vdp.readyDisplayFrameBufferReplayCommands;
+		if (commands === null) {
+			return;
+		}
+		const state = this.vdpFrameBufferExecutionPassState;
+		state.runtime = runtime;
+		state.commands = commands;
+		state.target = VDP_FRAMEBUFFER_EXECUTION_TARGET_DISPLAY_REPLAY;
 		runtime.view.pipelineRegistry!.setState('vdp_framebuffer_execution', state);
 		runtime.view.pipelineRegistry!.execute('vdp_framebuffer_execution', null);
 	}

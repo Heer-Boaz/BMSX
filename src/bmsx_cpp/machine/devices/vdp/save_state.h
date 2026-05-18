@@ -21,6 +21,7 @@ struct VdpState {
 	VdpBuildingFrameSaveState buildFrame;
 	VdpSubmittedFrameSaveState activeFrame;
 	VdpSubmittedFrameSaveState pendingFrame;
+	VdpSubmittedFrameSaveState displayTextureFrame;
 	i64 workCarry = 0;
 	int availableWorkUnits = 0;
 	VdpStreamIngressState streamIngress;

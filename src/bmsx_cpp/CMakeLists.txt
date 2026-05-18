@@ -95,8 +95,10 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/particle.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.frag.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/framebuffer_execution.vert.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/framebuffer_execution.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.frag.glsl"
 )
 
 file(READ
@@ -150,16 +152,29 @@ configure_file(
 	@ONLY
 )
 file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/framebuffer_execution.vert.glsl"
-	BMSX_RENDER_VDP_2D_VERTEX_SHADER
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.vert.glsl"
+	BMSX_RENDER_2D_VERTEX_SHADER
 )
 file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/framebuffer_execution.frag.glsl"
-	BMSX_RENDER_VDP_2D_FRAGMENT_SHADER
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.frag.glsl"
+	BMSX_RENDER_2D_FRAGMENT_SHADER
 )
 configure_file(
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_framebuffer_shaders.h.in"
-	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/backend/gles2/shaders/vdp_framebuffer_shaders.h"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d_shaders.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/2d/shaders/2d_shaders.h"
+	@ONLY
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.vert.glsl"
+	BMSX_RENDER_FRAMEBUFFER_2D_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.frag.glsl"
+	BMSX_RENDER_FRAMEBUFFER_2D_FRAGMENT_SHADER
+)
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d_shaders.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/2d/shaders/framebuffer_2d_shaders.h"
 	@ONLY
 )
 
@@ -226,6 +241,7 @@ add_library(bmsx_core STATIC
 
 	# Render systems
 	render/backend/backend.cpp
+	render/2d/framebuffer_pipeline.cpp
 	render/3d/math.cpp
 	render/3d/axis_gizmo_pipeline.cpp
 	render/3d/mesh/pipeline.cpp
@@ -239,9 +255,10 @@ add_library(bmsx_core STATIC
 	render/host_overlay/pipeline.cpp
 	render/host_overlay/overlay_queue.cpp
 	render/host_overlay/software/renderer.cpp
-	render/host_overlay/gles2/renderer.cpp
+	render/host_overlay/gles2/pipeline.cpp
 	render/vdp/context_state.cpp
-	render/backend/gles2/vdp_framebuffer_execution.cpp
+	render/2d/vdp_blit_pipeline.cpp
+	render/backend/gles2/vdp_2d_blit.cpp
 	render/backend/software/vdp_framebuffer_rasterizer.cpp
 	render/backend/software/vdp_framebuffer_execution.cpp
 	render/vdp/framebuffer.cpp
@@ -254,8 +271,6 @@ add_library(bmsx_core STATIC
 	render/backend/pass/software_scene.cpp
 	render/backend/pass/framebuffer_execution.cpp
 	render/graph/graph.cpp
-	render/shared/glyphs.cpp
-	render/test_pattern.cpp
 
 	# Machine runtime (Lua bytecode interpreter)
 	machine/cpu/cpu.cpp
@@ -374,8 +389,8 @@ target_compile_definitions(bmsx_core PUBLIC
 
 if(BMSX_ENABLE_GLES2)
 	target_sources(bmsx_core PRIVATE
-		render/backend/gles2_backend.cpp
-		render/post/crt_pipeline_gles2.cpp
+		render/backend/gles2/backend.cpp
+		render/post/crt/pipeline.cpp
 	)
 	find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
 	target_link_libraries(bmsx_core PUBLIC ${GLESV2_LIBRARY})

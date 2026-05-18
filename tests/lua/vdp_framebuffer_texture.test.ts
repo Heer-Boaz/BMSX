@@ -16,6 +16,11 @@ import {
 	VDP_CMD_CLEAR,
 	VDP_CMD_END_FRAME,
 } from '../../src/bmsx/machine/devices/vdp/registers';
+import {
+	VDP_SUBMITTED_FRAME_EMPTY,
+	VDP_SUBMITTED_FRAME_EXECUTION_PENDING,
+	VDP_SUBMITTED_FRAME_READY,
+} from '../../src/bmsx/machine/devices/vdp/frame';
 
 import { CPU } from '../../src/bmsx/machine/cpu/cpu';
 import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink } from '../../src/bmsx/machine/devices/vdp/device_output';
@@ -51,6 +56,18 @@ function submitClearFrame(memory: Memory, vdp: VDP, backend: HeadlessGPUBackend)
 	assert.ok(workUnits > 0);
 	vdp.advanceWork(workUnits);
 	drainReadyVdpFrameBufferExecutionForSoftware(backend, vdp);
+	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
+}
+
+function submitClearTextureFrame(memory: Memory, vdp: VDP): void {
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_REG_BG_COLOR, 0xff112233);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_CLEAR);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	const workUnits = vdp.getPendingRenderWorkUnits();
+	assert.ok(workUnits > 0);
+	vdp.advanceWork(workUnits);
+	vdp.completeReadyFrameBufferTextureExecution();
 	assert.equal(vdp.presentReadyFrameOnVblankEdge(), true);
 }
 
@@ -108,4 +125,53 @@ test('VDP save-state restore drops runtime-only framebuffer presentation work', 
 
 	vdp.restoreSaveState(saved);
 	assert.equal(drainPresentationProbe(vdp).consumed, false);
+});
+
+test('VDP save-state replays the displayed GPU framebuffer command frame', () => {
+	const { memory, vdp } = createVdp();
+	submitClearTextureFrame(memory, vdp);
+
+	const saved = vdp.captureSaveState();
+	assert.equal(saved.activeFrame.state, VDP_SUBMITTED_FRAME_EMPTY);
+	assert.equal(saved.displayTextureFrame.state, VDP_SUBMITTED_FRAME_READY);
+	assert.equal(saved.displayTextureFrame.hasFrameBufferCommands, true);
+	assert.equal(saved.displayTextureFrame.frameBufferReadbackValid, false);
+	assert.equal(saved.displayTextureFrame.queue.length, 1);
+
+	const restored = createVdp();
+	restored.vdp.restoreSaveState(saved);
+	const commands = restored.vdp.readyDisplayFrameBufferReplayCommands;
+	assert.notEqual(commands, null);
+	assert.equal(commands!.length, 1);
+	restored.vdp.completeDisplayFrameBufferTextureReplay();
+	assert.equal(drainPresentationProbe(restored.vdp).consumed, true);
+	assert.equal(restored.vdp.readyDisplayFrameBufferReplayCommands, null);
+});
+
+test('VDP save-state keeps displayed GPU framebuffer replay separate from active work', () => {
+	const { memory, vdp } = createVdp();
+	submitClearTextureFrame(memory, vdp);
+
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_BEGIN_FRAME);
+	memory.writeValue(IO_VDP_REG_BG_COLOR, 0xff445566);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_CLEAR);
+	memory.writeValue(IO_VDP_CMD, VDP_CMD_END_FRAME);
+	const workUnits = vdp.getPendingRenderWorkUnits();
+	assert.ok(workUnits > 0);
+	vdp.advanceWork(workUnits);
+
+	const saved = vdp.captureSaveState();
+	assert.equal(saved.activeFrame.state, VDP_SUBMITTED_FRAME_EXECUTION_PENDING);
+	assert.equal(saved.activeFrame.queue.length, 1);
+	assert.equal(saved.displayTextureFrame.state, VDP_SUBMITTED_FRAME_READY);
+	assert.equal(saved.displayTextureFrame.queue.length, 1);
+
+	const restored = createVdp();
+	restored.vdp.restoreSaveState(saved);
+	assert.equal(restored.vdp.readyDisplayFrameBufferReplayCommands!.length, 1);
+	assert.equal(restored.vdp.readyFrameBufferCommands!.length, 1);
+	restored.vdp.completeDisplayFrameBufferTextureReplay();
+	assert.equal(restored.vdp.readyFrameBufferCommands!.length, 1);
+	restored.vdp.completeReadyFrameBufferTextureExecution();
+	assert.equal(restored.vdp.presentReadyFrameOnVblankEdge(), true);
 });

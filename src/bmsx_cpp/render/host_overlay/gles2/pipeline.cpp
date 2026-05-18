@@ -1,4 +1,4 @@
-#include "render/host_overlay/gles2/renderer.h"
+#include "render/host_overlay/gles2/pipeline.h"
 
 #if BMSX_ENABLE_GLES2
 #include "core/console.h"

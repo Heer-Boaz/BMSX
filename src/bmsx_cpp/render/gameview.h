@@ -118,7 +118,7 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	bool skyboxRenderReady = false;
 	std::array<f32, SKYBOX_FACE_COUNT * 4> skyboxFaceUvRects{};
-	std::array<i32, SKYBOX_FACE_COUNT> skyboxFaceTextpageBindings{};
+	std::array<i32, SKYBOX_FACE_COUNT> skyboxFaceSlotBindings{};
 	std::array<u32, SKYBOX_FACE_COUNT> skyboxFaceSurfaceIds{};
 	std::array<i32, SKYBOX_FACE_COUNT * 2> skyboxFaceSizes{};
 	VdpTransformSnapshot vdpTransform{};

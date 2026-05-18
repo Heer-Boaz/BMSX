@@ -77,7 +77,7 @@ void commitVdpViewSnapshot(GameView& view, const VdpDeviceOutput& output) {
 			view.skyboxFaceUvRects[uvBase + 1u] = static_cast<f32>(source.srcY) / static_cast<f32>(sample.surfaceHeight);
 			view.skyboxFaceUvRects[uvBase + 2u] = static_cast<f32>(source.width) / static_cast<f32>(sample.surfaceWidth);
 			view.skyboxFaceUvRects[uvBase + 3u] = static_cast<f32>(source.height) / static_cast<f32>(sample.surfaceHeight);
-			view.skyboxFaceTextpageBindings[index] = static_cast<i32>(sample.slot);
+			view.skyboxFaceSlotBindings[index] = static_cast<i32>(sample.slot);
 			view.skyboxFaceSurfaceIds[index] = source.surfaceId;
 			const size_t sizeBase = index * 2u;
 			view.skyboxFaceSizes[sizeBase + 0u] = static_cast<i32>(source.width);

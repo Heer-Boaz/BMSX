@@ -4,7 +4,7 @@
 
 #include "graph.h"
 #if BMSX_ENABLE_GLES2
-#include "../backend/gles2_backend.h"
+#include "../backend/gles2/backend.h"
 #endif
 #include <algorithm>
 #include <cstdint>

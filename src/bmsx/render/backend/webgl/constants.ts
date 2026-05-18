@@ -16,9 +16,9 @@ export const SPRITE_DRAW_OFFSET = 0;
 
 // Centralized texture unit assignments for WebGL. Keep these stable.
 // Used by pipelines, backend, and view code.
-export const TEXTURE_UNIT_TEXTPAGE_PRIMARY = 0;
-export const TEXTURE_UNIT_TEXTPAGE_SECONDARY = 1;
-export const TEXTURE_UNIT_TEXTPAGE_ENGINE = 11;
+export const TEXTURE_UNIT_SLOT_PRIMARY = 0;
+export const TEXTURE_UNIT_SLOT_SECONDARY = 1;
+export const TEXTURE_UNIT_SLOT_SYSTEM = 11;
 export const TEXTURE_UNIT_ALBEDO = 2;
 export const TEXTURE_UNIT_NORMAL = 3;
 export const TEXTURE_UNIT_METALLIC_ROUGHNESS = 4;

@@ -1,37 +1,27 @@
-#version 300 es
 precision highp float;
 
-in vec2 a_corner;
+attribute vec2 a_corner;
 
-in vec2 i_origin;
-in vec2 i_axis_x;
-in vec2 i_axis_y;
-in vec2 i_uv0;
-in vec2 i_uv1;
-in float i_z;
-in float i_fx;
-in uint i_slot_id;
-in vec4 i_color;
+attribute vec2 i_origin;
+attribute vec2 i_axis_x;
+attribute vec2 i_axis_y;
+attribute vec2 i_uv0;
+attribute vec2 i_uv1;
+attribute float i_z;
+attribute float i_fx;
+attribute float i_slot_id;
+attribute vec4 i_color;
 
 uniform float u_scale;
-uniform vec4 u_parallax_rig; // (vy, scale, impact, impact_t)
-uniform vec4 u_parallax_rig2; // (bias_px, parallax_strength, scale_strength, flip_strength)
+uniform vec2 u_logical_size;
+uniform float u_time;
+uniform vec4 u_parallax_rig;
+uniform vec4 u_parallax_rig2;
 uniform float u_parallax_flip_window;
 
-// Frame-shared UBO (std140). Only first fields are used in this shader.
-layout(std140) uniform FrameUniforms {
-	vec2 u_offscreenSize;
-	vec2 u_logicalSize;
-	vec4 u_timeDelta; // x=time, y=delta, z,w unused
-	mat4 u_view;
-	mat4 u_proj;
-	vec4 u_cameraPos; // xyz, w pad
-	vec4 u_ambient_frame; // rgb,intensity (kept for block parity with FS)
-};
-
-out vec2 v_texcoord;
-out vec4 v_color_override;
-flat out uint v_slot_id;
+varying vec2 v_texcoord;
+varying vec4 v_color_override;
+varying float v_slot_id;
 
 float wobble(float t) {
 	return sin(t * 2.2) * 0.5 + sin(t * 1.1 + 1.7) * 0.5;
@@ -40,7 +30,7 @@ float wobble(float t) {
 void main() {
 	float depth = smoothstep(0.0, 1.0, i_z);
 	float weight = (i_fx * 2.0 - 1.0) * depth;
-	float dy_px = (u_parallax_rig2.x + wobble(u_timeDelta.x) * u_parallax_rig.x) * weight * u_parallax_rig2.y;
+	float dy_px = (u_parallax_rig2.x + wobble(u_time) * u_parallax_rig.x) * weight * u_parallax_rig2.y;
 	float flipWindowSeconds = max(u_parallax_flip_window, 0.0001);
 	float hold = 0.2 * flipWindowSeconds;
 	float flipU = clamp((u_parallax_rig.w - hold) / max(flipWindowSeconds - hold, 0.0001), 0.0, 1.0);
@@ -57,7 +47,7 @@ void main() {
 	vec2 pos = i_origin + i_axis_x * a_corner.x + i_axis_y * a_corner.y;
 	vec2 parallaxPos = (pos - center) * parallaxScale + center + vec2(0.0, dy_px);
 	vec2 scaledPosition = parallaxPos * u_scale;
-	vec2 clipSpace = ((scaledPosition / u_logicalSize) * 2.0 - 1.0) * vec2(1.0, -1.0);
+	vec2 clipSpace = ((scaledPosition / u_logical_size) * 2.0 - 1.0) * vec2(1.0, -1.0);
 
 	gl_Position = vec4(clipSpace, i_z, 1.0);
 	v_texcoord = mix(i_uv0, i_uv1, a_corner);

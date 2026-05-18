@@ -5,23 +5,22 @@
 #include "library.h"
 #include "software_scene.h"
 #include "../../gameview.h"
+#include "../../2d/framebuffer_pipeline.h"
 #include "../../3d/axis_gizmo_pipeline.h"
 #include "../../3d/mesh/pipeline.h"
 #include "../../3d/particles/pipeline.h"
 #include "../../3d/skybox/pipeline.h"
 #include "../../vdp/framebuffer.h"
 #include "framebuffer_execution.h"
-#include "../software/vdp_framebuffer_execution.h"
+#include "../../2d/vdp_blit_pipeline.h"
 #if BMSX_ENABLE_GLES2
-#include "../gles2/vdp_framebuffer_execution.h"
-#include "../gles2_backend.h"
-#include "../../post/crt_pipeline_gles2.h"
+#include "../gles2/backend.h"
+#include "../../post/crt/pipeline.h"
 #endif
 #include "../../graph/graph.h"
-#include "../../host_overlay/gles2/renderer.h"
+#include "../../host_overlay/gles2/pipeline.h"
 #include "../../host_overlay/pass_registration.h"
 #include "../../host_overlay/software/renderer.h"
-#include "core/console.h"
 #include "machine/runtime/runtime.h"
 #include <algorithm>
 #include <stdexcept>
@@ -50,13 +49,6 @@ void setSkippedStatePass(RenderPassDef& desc, const char* id, const char* name) 
 	desc.stateOnly = true;
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->skip = true;
-}
-
-Framebuffer2DPipelineState buildFramebuffer2DState(const RenderPassDef::RenderGraphPassContext& ctx) {
-	Framebuffer2DPipelineState state;
-	setPassViewportSize(state, ctx.view);
-	state.colorTex = ctx.view->vdpFrameBufferTextures().displayTexture();
-	return state;
 }
 
 #if BMSX_ENABLE_GLES2
@@ -130,8 +122,9 @@ void setAutoPresentGraph(RenderPassDef& desc) {
 
 } // namespace
 
-RenderPassLibrary::RenderPassLibrary(GPUBackend* backend)
+RenderPassLibrary::RenderPassLibrary(GPUBackend* backend, GameView* view)
 	: m_backend(backend)
+	, m_view(view)
 {
 	m_backend->registerBuiltinPasses(*this);
 }
@@ -139,6 +132,8 @@ RenderPassLibrary::RenderPassLibrary(GPUBackend* backend)
 RenderPassLibrary::~RenderPassLibrary() = default;
 
 void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
+	GameView* const view = registry.view();
+
 	// FrameResolve: per-frame state setup
 	{
 		RenderPassDef desc;
@@ -156,40 +151,10 @@ void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 		registry.registerPass(desc);
 	}
 
-	registerVdpFrameBufferExecutionPass_Software(registry);
+	registerVdpFrameBufferExecutionPass(registry);
 
 	registerSoftwareScenePasses(registry);
-
-	{
-		RenderPassDef desc;
-		desc.id = "framebuffer_2d";
-		desc.name = "Framebuffer2D";
-		desc.graph = RenderPassDef::RenderPassGraphDef{};
-		desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
-		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-			return buildFramebuffer2DState(ctx);
-		};
-		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
-			auto& fbState = std::any_cast<Framebuffer2DPipelineState&>(state);
-			auto* softBackend = static_cast<SoftwareBackend*>(backend);
-			softBackend->blitTexture(fbState.colorTex,
-				0,
-				0,
-				fbState.baseWidth,
-				fbState.baseHeight,
-				0,
-				0,
-				fbState.width,
-				fbState.height,
-				0.0f,
-				0xffffffffu,
-				false,
-				false,
-				DitherParams{},
-				false);
-		};
-		registry.registerPass(desc);
-	}
+	registerFramebuffer2DPass_Software(registry);
 
 	// Present pass (software: direct blit)
 	{
@@ -197,9 +162,8 @@ void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 		desc.id = "present";
 		desc.name = "Present";
 		setAutoPresentGraph(desc);
-		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
+		desc.exec = [view](GPUBackend* backend, void*, std::any& state) {
 			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			auto* view = ConsoleCore::instance().view();
 			auto* colorTex = static_cast<SoftwareTexture*>(crtState.colorTex);
 			auto* softBackend = static_cast<SoftwareBackend*>(backend);
 			view->applyCRTPostProcessing(colorTex->data.data(),
@@ -219,7 +183,7 @@ void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 
 #if BMSX_ENABLE_GLES2
 void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
-	ConsoleCore* const console = &ConsoleCore::instance();
+	GameView* const view = registry.view();
 
 	// FrameResolve: per-frame state setup
 	{
@@ -238,30 +202,12 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 		registry.registerPass(desc);
 	}
 
-	registerVdpFrameBufferExecutionPass_GLES2(registry);
+	registerVdpFrameBufferExecutionPass(registry);
 
 	registerSkyboxPass_GLES2(registry);
 	registerMeshPass_GLES2(registry);
 	registerParticlesPass_GLES2(registry);
-
-	{
-		RenderPassDef desc;
-		desc.id = "framebuffer_2d";
-		desc.name = "Framebuffer2D";
-		desc.graph = RenderPassDef::RenderPassGraphDef{};
-		desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
-		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-			return buildFramebuffer2DState(ctx);
-		};
-		desc.bootstrap = [](GPUBackend* backend) {
-			CRTPipeline::initPresentGLES2(static_cast<OpenGLES2Backend*>(backend));
-		};
-		desc.exec = [console](GPUBackend* backend, void*, std::any& state) {
-			auto& fbState = std::any_cast<Framebuffer2DPipelineState&>(state);
-			CRTPipeline::renderPresentToCurrentTargetGLES2(static_cast<OpenGLES2Backend*>(backend), console->view(), fbState);
-		};
-		registry.registerPass(desc);
-	}
+	registerFramebuffer2DPass_GLES2(registry);
 
 	// Device quantize/dither pass (GLES2)
 	{
@@ -277,13 +223,12 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 		desc.bootstrap = [](GPUBackend* backend) {
 			CRTPipeline::initDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
-		desc.exec = [console](GPUBackend* backend, void* fbo, std::any& state) {
+		desc.exec = [view](GPUBackend* backend, void* fbo, std::any& state) {
 			(void)fbo;
 			auto& deviceState = std::any_cast<DeviceQuantizePipelineState&>(state);
-			CRTPipeline::renderDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend), console->view(), deviceState);
+			CRTPipeline::renderDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend), view, deviceState);
 		};
-		desc.shouldExecute = [console]() {
-			const auto* view = console->view();
+		desc.shouldExecute = [view]() {
 			return static_cast<i32>(view->dither_type) != 0;
 		};
 		desc.prepare = noopPreparePass;
@@ -296,12 +241,14 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 		desc.id = "present";
 		desc.name = "Present";
 		setAutoPresentGraph(desc);
-		desc.exec = [console](GPUBackend* backend, void*, std::any& state) {
-			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			CRTPipeline::renderPresentGLES2(static_cast<OpenGLES2Backend*>(backend), console->view(), crtState);
+		desc.bootstrap = [](GPUBackend* backend) {
+			CRTPipeline::initPresentGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
-		desc.shouldExecute = [console]() {
-			const auto* view = console->view();
+		desc.exec = [view](GPUBackend* backend, void*, std::any& state) {
+			auto& crtState = std::any_cast<CRTPipelineState&>(state);
+			CRTPipeline::renderPresentGLES2(static_cast<OpenGLES2Backend*>(backend), view, crtState);
+		};
+		desc.shouldExecute = [view]() {
 			return !view->crt_postprocessing_enabled;
 		};
 		desc.prepare = noopPreparePass;
@@ -317,12 +264,11 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 		desc.bootstrap = [](GPUBackend* backend) {
 			CRTPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
-		desc.exec = [console](GPUBackend* backend, void*, std::any& state) {
+		desc.exec = [view](GPUBackend* backend, void*, std::any& state) {
 			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), console->view(), crtState);
+			CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), view, crtState);
 		};
-		desc.shouldExecute = [console]() {
-			const auto* view = console->view();
+		desc.shouldExecute = [view]() {
 			return view->crt_postprocessing_enabled;
 		};
 		desc.prepare = noopPreparePass;

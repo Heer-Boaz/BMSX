@@ -18,8 +18,9 @@
 #include "../../machine/runtime/runtime.h"
 #include "../../machine/runtime/save_state/codec.h"
 #if BMSX_ENABLE_GLES2
-#include "render/backend/gles2_backend.h"
-#include "render/post/crt_pipeline_gles2.h"
+#include "render/2d/framebuffer_pipeline.h"
+#include "render/backend/gles2/backend.h"
+#include "render/post/crt/pipeline.h"
 #endif
 #include <chrono>
 #include <cstring>
@@ -54,7 +55,7 @@ constexpr const char* kPointerDeviceId = "pointer:0";
 constexpr const char* kGamepadDevicePrefix = "gamepad:";
 
 static void installBuiltinRenderPipeline(GameView* view, GPUBackend* backend) {
-	auto registry = std::make_unique<RenderPassLibrary>(backend);
+	auto registry = std::make_unique<RenderPassLibrary>(backend, view);
 	view->setPipelineRegistry(std::move(registry));
 	view->rebuildGraph();
 }
@@ -264,30 +265,13 @@ void LibretroPlatform::onContextDestroy() {
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
 	m_console->texmanager()->clear();
 	m_render_surfaces_need_refresh = true;
+	shutdownFramebuffer2DGLES2();
 	CRTPipeline::shutdownGLES2(backend);
 	backend->onContextDestroy();
 	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
 #else
 	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
 #endif
-}
-
-void LibretroPlatform::switchToSoftwareBackend() {
-	m_backend_type = BackendType::Software;
-	auto* view = m_console->view();
-	view->crt_postprocessing_enabled = m_crt_postprocessing_enabled;
-	auto backend = std::make_unique<SoftwareBackend>(
-		m_framebuffer.data,
-		static_cast<i32>(m_framebuffer.width),
-		static_cast<i32>(m_framebuffer.height),
-		static_cast<i32>(m_framebuffer.pitch)
-	);
-	view->setBackend(std::move(backend));
-	auto registry = std::make_unique<RenderPassLibrary>(view->backend());
-	view->setPipelineRegistry(std::move(registry));
-	view->rebuildGraph();
-	setPostProcessOptions(m_crt_postprocessing_enabled, m_postprocess_scale > 1);
-	m_console->refreshRenderSurfaces();
 }
 
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {

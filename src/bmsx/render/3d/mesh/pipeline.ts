@@ -13,7 +13,7 @@ import type { GameView } from '../../gameview';
 import type { MeshPipelineState, PassEncoder, TextureHandle } from '../../backend/backend';
 import { RenderPassLibrary } from '../../backend/pass/library';
 import type { WebGLBackend } from '../../backend/webgl/backend';
-import { TEXTURE_UNIT_TEXTPAGE_PRIMARY } from '../../backend/webgl/constants';
+import { TEXTURE_UNIT_SLOT_PRIMARY } from '../../backend/webgl/constants';
 import { buildLightingDescriptorPooled, resetLightingDescriptorPools } from '../../lighting/system';
 import meshFS from '../shaders/mesh.frag.glsl';
 import meshVS from '../shaders/mesh.vert.glsl';
@@ -30,7 +30,7 @@ import {
 	type ResolvedMeshMaterial,
 } from './vertex_stream';
 
-const MESH_TEXTURE_UNIT = TEXTURE_UNIT_TEXTPAGE_PRIMARY;
+const MESH_TEXTURE_UNIT = TEXTURE_UNIT_SLOT_PRIMARY;
 const meshVertexStream = new MeshVertexStreamBuilder();
 const meshCameraPosition = new Float32Array(3);
 const meshAmbient = new Float32Array(4);
@@ -70,8 +70,8 @@ let meshUnlitLocation: WebGLUniformLocation;
 function textureForMeshControl(state: MeshPipelineState, control: number): TextureHandle {
 	const slot = (control & VDP_MDU_CONTROL_TEXTURE_SLOT_MASK) >>> VDP_MDU_CONTROL_TEXTURE_SLOT_SHIFT;
 	switch (slot) {
-		case VDP_SLOT_PRIMARY: return state.textpagePrimaryTex;
-		case VDP_SLOT_SECONDARY: return state.textpageSecondaryTex;
+		case VDP_SLOT_PRIMARY: return state.slotPrimaryTex;
+		case VDP_SLOT_SECONDARY: return state.slotSecondaryTex;
 		case VDP_SLOT_SYSTEM: return state.systemSlotTex;
 	}
 	throw new Error('[MeshPipeline] VDP mesh packet selected a texture slot outside the VDP slot set.');
@@ -252,8 +252,8 @@ export function registerMeshPass_WebGL(registry: RenderPassLibrary): void {
 				viewProj: gv.vdpTransform.viewProj,
 				cameraPosition: gv.vdpTransform.eye,
 				lighting: buildLightingDescriptorPooled(frameShared.lighting),
-				textpagePrimaryTex: gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY],
-				textpageSecondaryTex: gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY],
+				slotPrimaryTex: gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY],
+				slotSecondaryTex: gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY],
 				systemSlotTex: gv.textures[SYSTEM_SLOT_TEXTURE_KEY],
 			});
 		},

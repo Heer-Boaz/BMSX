@@ -87,7 +87,7 @@ export class GameView implements RenderContext {
 	public textures: { [k: string]: TextureHandle } = {};
 	public skyboxRenderReady = false;
 	public readonly skyboxFaceUvRects = new Float32Array(SKYBOX_FACE_COUNT * 4);
-	public readonly skyboxFaceTextpageBindings = new Int32Array(SKYBOX_FACE_COUNT);
+	public readonly skyboxFaceSlotBindings = new Int32Array(SKYBOX_FACE_COUNT);
 	public readonly skyboxFaceSurfaceIds = new Uint32Array(SKYBOX_FACE_COUNT);
 	public readonly skyboxFaceSizes = new Int32Array(SKYBOX_FACE_COUNT * 2);
 	public readonly vdpTransform = createVdpTransformSnapshot();
@@ -490,7 +490,7 @@ export class GameView implements RenderContext {
 		const fallback = this.backend.createSolidTexture2D(1, 1, 0xffffffff);
 		this.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY] = fallback; // Start with fallback to avoid undefined states and race conditions
 		this.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY] = fallback;
-		this.textures['_textpage_fallback'] = fallback;
+		this.textures['_slot_fallback'] = fallback;
 		this.textures[SYSTEM_SLOT_TEXTURE_KEY] = fallback;
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, 0xffffffff);
@@ -521,7 +521,7 @@ export class GameView implements RenderContext {
 	}
 
 	set activeTexUnit(u: number) {
-		if (this.backendType !== 'webgl2') return; // Texture units are not a thing in WebGPU
+		if (this.backendType !== 'webgl2') return;
 		const backend = this.backend;
 		this._activeTexUnit = u;
 		if (u != null) {
@@ -534,7 +534,7 @@ export class GameView implements RenderContext {
 	}
 
 	bind2DTex(tex: TextureHandle): void {
-		if (this.backendType !== 'webgl2') return; // Texture units are not a thing in WebGPU
+		if (this.backendType !== 'webgl2') return;
 		const backend = this.backend;
 		const bindTexture2D = backend.bindTexture2D;
 		if (!bindTexture2D) {
@@ -544,7 +544,7 @@ export class GameView implements RenderContext {
 	}
 
 	bindCubemapTex(tex: TextureHandle): void {
-		if (this.backendType !== 'webgl2') return; // Texture units are not a thing in WebGPU
+		if (this.backendType !== 'webgl2') return;
 		const backend = this.backend;
 		const bindTextureCube = backend.bindTextureCube;
 		if (!bindTextureCube) {

@@ -62,9 +62,9 @@ export type HostOverlayRuntime = {
 	vao: WebGLVertexArrayObject;
 	cornerBuffer: WebGLBuffer;
 	instanceFloatBuffer: WebGLBuffer;
-	instanceTextpageBuffer: WebGLBuffer;
+	instanceSlotBuffer: WebGLBuffer;
 	floatData: Float32Array;
-	textpageData: Uint8Array;
+	slotData: Uint8Array;
 	capacity: number;
 	whiteTexture: WebGLTexture;
 	hostAtlasTexture: WebGLTexture;
@@ -78,7 +78,7 @@ const INITIAL_BATCH_CAPACITY = 256;
 const SOLID_TEXCOORD_0 = 0;
 const SOLID_TEXCOORD_1 = 1;
 const HOST_OVERLAY_TEXTURE_UNIT = 0;
-const HOST_OVERLAY_TEXTPAGE_ID = 0;
+const HOST_OVERLAY_SLOT_ID = 0;
 const HOST_OVERLAY_DRAW_PASS: PassEncoder = { fbo: null, desc: { label: 'host_overlay' } as RenderPassDesc };
 const AXIS_GIZMO_LABEL_CAPACITY = 6;
 const axisLabelImgIds = new Array<string>(AXIS_GIZMO_LABEL_CAPACITY);
@@ -123,7 +123,7 @@ export function destroyHostOverlayRuntime_WebGL(runtimeToDestroy: HostOverlayRun
 	const gl = runtimeToDestroy.gl;
 	gl.deleteBuffer(runtimeToDestroy.cornerBuffer);
 	gl.deleteBuffer(runtimeToDestroy.instanceFloatBuffer);
-	gl.deleteBuffer(runtimeToDestroy.instanceTextpageBuffer);
+	gl.deleteBuffer(runtimeToDestroy.instanceSlotBuffer);
 	gl.deleteVertexArray(runtimeToDestroy.vao);
 	gl.deleteTexture(runtimeToDestroy.whiteTexture);
 	gl.deleteTexture(runtimeToDestroy.hostAtlasTexture);
@@ -164,7 +164,7 @@ function writeQuad(state: HostOverlayRuntime, index: number, originX: number, or
 	data[base + 13] = ((colorValue >>> 8) & 0xff) / 255;
 	data[base + 14] = (colorValue & 0xff) / 255;
 	data[base + 15] = ((colorValue >>> 24) & 0xff) / 255;
-	state.textpageData[index] = HOST_OVERLAY_TEXTPAGE_ID;
+	state.slotData[index] = HOST_OVERLAY_SLOT_ID;
 }
 
 function resolveImageSource(cache: Map<string, HostOverlayImageSource>, imgid: string): HostOverlayImageSource {

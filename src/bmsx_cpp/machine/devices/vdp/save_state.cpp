@@ -10,6 +10,7 @@ void VDP::captureVisualStateFields(VdpState& state) const {
 	state.buildFrame = captureBuildingFrameState(m_buildFrame);
 	state.activeFrame = captureSubmittedFrameState(m_activeFrame);
 	state.pendingFrame = captureSubmittedFrameState(m_pendingFrame);
+	state.displayTextureFrame = captureSubmittedFrameState(m_displayTextureFrame);
 	state.workCarry = m_workCarry;
 	state.availableWorkUnits = m_availableWorkUnits;
 	state.streamIngress = m_streamIngress.captureState();
@@ -37,6 +38,11 @@ void VDP::restoreState(const VdpState& state) {
 	restoreBuildingFrameState(m_buildFrame, state.buildFrame);
 	restoreSubmittedFrameState(m_activeFrame, state.activeFrame);
 	restoreSubmittedFrameState(m_pendingFrame, state.pendingFrame);
+	restoreSubmittedFrameState(m_displayTextureFrame, state.displayTextureFrame);
+	m_displayTextureFrameReplayPending =
+		m_displayTextureFrame.state == VdpSubmittedFrameState::Ready &&
+		m_displayTextureFrame.hasFrameBufferCommands &&
+		!m_displayTextureFrame.frameBufferReadbackValid;
 	m_workCarry = state.workCarry;
 	m_availableWorkUnits = state.availableWorkUnits;
 	m_streamIngress.restoreState(state.streamIngress);
@@ -66,6 +72,13 @@ VdpSaveState VDP::captureSaveState() const {
 	captureVisualStateFields(state);
 	state.vram = m_vram.captureState();
 	state.displayFrameBufferPixels = m_fbm.captureDisplayReadback();
+	if (
+		state.activeFrame.state == VdpSubmittedFrameState::Ready &&
+		state.activeFrame.hasFrameBufferCommands &&
+		!state.activeFrame.frameBufferReadbackValid
+	) {
+		state.activeFrame.state = VdpSubmittedFrameState::ExecutionPending;
+	}
 	return state;
 }
 

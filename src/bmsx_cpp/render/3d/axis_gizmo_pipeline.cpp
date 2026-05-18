@@ -5,7 +5,7 @@
 #include "core/console.h"
 #include "render/3d/math.h"
 #include "render/3d/shaders/render_3d_shaders.h"
-#include "render/backend/gles2_backend.h"
+#include "render/backend/gles2/backend.h"
 #include "render/gameview.h"
 #include "render/shared/bitmap_font.h"
 

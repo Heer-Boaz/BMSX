@@ -2,12 +2,11 @@
 import { color_arr, type TextureSource } from '../../../rompack/format';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
-import { GPUBackend, GraphicsPipelineBindingLayout, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, type SizedArrayBufferView } from '../backend';
+import { GPUBackend, GraphicsPipelineBindingLayout, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, type SizedArrayBufferView, type VdpFrameBufferExecutionPassState } from '../backend';
 import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
 import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './helpers';
 import { createSolidRgba8Pixels } from '../../shared/solid_pixels';
-import { consoleCore } from '../../../core/console';
 import { registerFramebuffer2DPass_WebGL } from '../../2d/framebuffer_pipeline';
 import { registerSkyboxPass_WebGL } from '../../3d/skybox/pipeline';
 import { registerMeshPass_WebGL } from '../../3d/mesh/pipeline';
@@ -18,11 +17,12 @@ import { registerDeviceQuantize_WebGL } from '../../post/device_quantize_pipelin
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 import { registerVdpFrameBufferExecutionPass_WebGL } from './vdp_framebuffer_execution';
+import { bootstrapVdp2DBlitWebGL, executeVdp2DBlitWebGL, type WebGLVdp2DBlitBootstrap } from './vdp_2d_blit';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
 
 export class WebGLBackend implements GPUBackend {
-	get type(): 'webgl2' | 'webgpu' {
+	get type(): 'webgl2' {
 		return 'webgl2';
 	}
 
@@ -56,6 +56,7 @@ export class WebGLBackend implements GPUBackend {
 	private attribCache = new WeakMap<WebGLProgram, Map<string, number>>();
 	private bufferSizes = new WeakMap<WebGLBuffer, number>();
 	private frameStats = { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: 0, vertexBytes: 0, indexBytes: 0, uniformBytes: 0, textureBytes: 0 };
+	private vdp2dBlitRuntime: WebGLVdp2DBlitBootstrap;
 	private _context: WebGL2RenderingContext;
 	public get context(): WebGL2RenderingContext { return this._context; }
 	constructor(public gl: WebGL2RenderingContext) {
@@ -71,7 +72,7 @@ export class WebGLBackend implements GPUBackend {
 			graph: { skip: true },
 			exec: () => { },
 			prepare: (backend) => {
-				const gv = consoleCore.view;
+				const gv = registry.view;
 				updateAndBindFrameUniforms(backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
 			},
 		});
@@ -91,6 +92,15 @@ export class WebGLBackend implements GPUBackend {
 			graph: { skip: true },
 			exec: () => { },
 		});
+	}
+
+
+	bootstrapVdp2DBlit(): void {
+		this.vdp2dBlitRuntime = bootstrapVdp2DBlitWebGL(this);
+	}
+
+	executeVdp2DBlit(state: VdpFrameBufferExecutionPassState): void {
+		executeVdp2DBlitWebGL(this, this.vdp2dBlitRuntime, state);
 	}
 
 	bindRenderPassPipeline(pass: PassEncoder, pipeline: RenderPassInstanceHandle, bindingLayout?: GraphicsPipelineBindingLayout): void {

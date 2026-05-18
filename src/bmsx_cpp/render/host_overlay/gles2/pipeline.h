@@ -5,7 +5,7 @@
 #include "render/host_overlay/commands.h"
 
 #if BMSX_ENABLE_GLES2
-#include "render/backend/gles2_backend.h"
+#include "render/backend/gles2/backend.h"
 #endif
 
 namespace bmsx {

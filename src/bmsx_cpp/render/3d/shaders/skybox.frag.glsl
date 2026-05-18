@@ -1,7 +1,7 @@
 precision mediump float;
 
-uniform sampler2D u_textpage_primary;
-uniform sampler2D u_textpage_secondary;
+uniform sampler2D u_slot_primary;
+uniform sampler2D u_slot_secondary;
 // GLES2 parity note: TS WebGL2 uses uniform arrays indexed by skybox face.
 // The SNES-mini GLES2 floor has stricter shader-indexing behavior, so this
 // backend keeps the same six face records but exposes them as scalar uniforms.
@@ -11,12 +11,12 @@ uniform vec4 u_face_uv_rect2;
 uniform vec4 u_face_uv_rect3;
 uniform vec4 u_face_uv_rect4;
 uniform vec4 u_face_uv_rect5;
-uniform float u_face_textpage0;
-uniform float u_face_textpage1;
-uniform float u_face_textpage2;
-uniform float u_face_textpage3;
-uniform float u_face_textpage4;
-uniform float u_face_textpage5;
+uniform float u_face_slot0;
+uniform float u_face_slot1;
+uniform float u_face_slot2;
+uniform float u_face_slot3;
+uniform float u_face_slot4;
+uniform float u_face_slot5;
 uniform vec3 u_skyTint;
 uniform float u_skyExposure;
 
@@ -75,23 +75,23 @@ vec4 face_uv_rect(int faceIndex) {
 	return u_face_uv_rect5;
 }
 
-float face_textpage(int faceIndex) {
-	if (faceIndex == 0) return u_face_textpage0;
-	if (faceIndex == 1) return u_face_textpage1;
-	if (faceIndex == 2) return u_face_textpage2;
-	if (faceIndex == 3) return u_face_textpage3;
-	if (faceIndex == 4) return u_face_textpage4;
-	return u_face_textpage5;
+float face_slot(int faceIndex) {
+	if (faceIndex == 0) return u_face_slot0;
+	if (faceIndex == 1) return u_face_slot1;
+	if (faceIndex == 2) return u_face_slot2;
+	if (faceIndex == 3) return u_face_slot3;
+	if (faceIndex == 4) return u_face_slot4;
+	return u_face_slot5;
 }
 
 void main() {
 	vec2 faceUv;
 	int faceIndex = resolve_skybox_face(v_texcoord, faceUv);
 	vec4 rect = face_uv_rect(faceIndex);
-	vec2 textpageUv = rect.xy + faceUv * rect.zw;
-	vec3 texColor = face_textpage(faceIndex) < 0.5
-		? texture2D(u_textpage_primary, textpageUv).rgb
-		: texture2D(u_textpage_secondary, textpageUv).rgb;
+	vec2 slotUv = rect.xy + faceUv * rect.zw;
+	vec3 texColor = face_slot(faceIndex) < 0.5
+		? texture2D(u_slot_primary, slotUv).rgb
+		: texture2D(u_slot_secondary, slotUv).rgb;
 	texColor *= u_skyTint * u_skyExposure;
 	gl_FragColor = vec4(texColor, 1.0);
 }

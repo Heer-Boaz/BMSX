@@ -33,6 +33,7 @@ private:
 	void recordPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused);
 	void flushDebugReport(const Runtime& runtime);
 	void markPresentation(GameView::PresentationMode mode, bool commitFrame);
+	void executeDisplayVdpFrameBufferReplay(Runtime& runtime);
 	bool consumePresentation(RenderPresentation& outPresentation);
 
 	bool m_pendingPresentation = false;

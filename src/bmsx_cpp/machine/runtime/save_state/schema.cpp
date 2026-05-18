@@ -234,6 +234,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"buildFrame",
 	"activeFrame",
 	"pendingFrame",
+	"displayTextureFrame",
 	"state",
 	"queue",
 	"billboards",

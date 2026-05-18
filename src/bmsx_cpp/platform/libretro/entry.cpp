@@ -19,7 +19,6 @@
 
 #include "libretro.h"
 #include "platform.h"
-#include "core/taskgate.h"
 #include "core/console.h"
 #include "core/system.h"
 #include "machine/runtime/timing/constants.h"
@@ -55,12 +54,8 @@ static bool g_hw_context_pending = false;
 static bool g_hw_context_ready = false;
 static bmsx::BackendType g_active_backend = bmsx::BackendType::Software;
 static bmsx::BackendType g_hw_render_backend = bmsx::BackendType::Software;
-static TaskGate g_task_gate;
-static GateGroup g_backend_gate = g_task_gate.group("libretro-backend");
-static GateToken g_backend_fallback_token;
-static GateToken g_backend_option_pending_token;
-static GateToken g_backend_option_failed_token;
 static std::string g_hw_render_failure_reason;
+static std::string g_backend_error;
 static std::string g_system_dir;
 
 static std::string sanitizeSystemDir(std::string_view path) {
@@ -540,8 +535,7 @@ static bmsx::BackendType resolve_backend_preference(RenderBackendPreference pref
 static bool is_hardware_backend(bmsx::BackendType type);
 static const char* backend_label(bmsx::BackendType type);
 static void apply_backend_preference(RenderBackendPreference preference);
-static void handle_backend_fallback(bmsx::BackendType backend, const char* reason);
-static void try_update_backend_option();
+static void fail_hardware_backend(bmsx::BackendType backend, const char* reason);
 static bool read_crt_postprocessing_enabled();
 static bool read_postprocess_detail_enabled();
 static bool read_crt_noise_enabled();
@@ -598,32 +592,7 @@ static const char* backend_label(bmsx::BackendType type) {
 }
 
 static bool isHardwareBackendActive() {
-	return is_hardware_backend(g_active_backend);
-}
-
-static void try_update_backend_option() {
-	if (!g_backend_option_pending_token.active) {
-		return;
-	}
-	retro_variable var;
-	var.key = kOptionRenderBackend;
-	var.value = kRenderBackendSoftware;
-	if (environ_cb(RETRO_ENVIRONMENT_SET_VARIABLE, &var)) {
-		g_backend_gate.end(g_backend_option_pending_token);
-		if (g_backend_option_failed_token.active) {
-			g_backend_gate.end(g_backend_option_failed_token);
-		}
-		return;
-	}
-	if (!g_backend_option_failed_token.active) {
-		GateScope scope;
-		scope.category = "option-update";
-		scope.tag = "set-variable-failed";
-		g_backend_gate.ensure(g_backend_option_failed_token, true, scope);
-		logging.log(RETRO_LOG_WARN,
-					"[BMSX] Failed to update core option '%s' to software\n",
-					kOptionRenderBackend);
-	}
+	return g_backend_error.empty() && is_hardware_backend(g_active_backend);
 }
 
 static void set_crt_option_values(bool enabled) {
@@ -821,9 +790,9 @@ static RenderBackendPreference parse_backend_preference(const char* value) {
 		return RenderBackendPreference::GLES2;
 	}
 	logging.log(RETRO_LOG_WARN,
-				"[BMSX] Unknown render backend option '%s', using software\n",
+				"[BMSX] Unknown render backend option '%s', using automatic backend selection\n",
 				value);
-	return RenderBackendPreference::Software;
+	return RenderBackendPreference::Auto;
 }
 
 static bool parse_toggle_option(const char* value, const char* label, bool default_value) {
@@ -919,12 +888,20 @@ static int read_dither_type() {
 	return 0;
 }
 
+static void fail_hardware_backend(bmsx::BackendType backend, const char* reason) {
+	g_active_backend = backend;
+	g_backend_error = reason;
+	g_hw_render_supported = false;
+	g_hw_context_pending = false;
+	g_hw_context_ready = false;
+	logging.log(RETRO_LOG_ERROR, "%s\n", reason);
+	retro_message msg;
+	msg.msg = g_backend_error.c_str();
+	msg.frames = 240;
+	environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
+}
+
 static void apply_backend_preference(RenderBackendPreference preference) {
-	if (g_backend_fallback_token.active) {
-		g_backend_preference = RenderBackendPreference::Software;
-		g_active_backend = bmsx::BackendType::Software;
-		return;
-	}
 	g_backend_preference = preference;
 	const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
 	if (g_hw_render_requested) {
@@ -942,74 +919,28 @@ static void apply_backend_preference(RenderBackendPreference preference) {
 			if (!g_hw_render_failure_reason.empty()) {
 				reason =
 					std::string("[BMSX] ") + backend_label(desired_backend) +
-					" backend failed: " + g_hw_render_failure_reason +
-					"; using software backend";
+					" backend failed: " + g_hw_render_failure_reason;
 			} else {
 				reason =
 					std::string("[BMSX] ") + backend_label(desired_backend) +
-					" backend failed to start; using software backend";
+					" backend failed to start.";
 			}
-			handle_backend_fallback(desired_backend, reason.c_str());
+			fail_hardware_backend(desired_backend, reason.c_str());
 			return;
 		}
+		g_backend_error.clear();
 		g_active_backend = desired_backend;
 		return;
 	}
 
+	g_backend_error.clear();
 	g_active_backend = desired_backend;
-}
-
-static void handle_backend_fallback(bmsx::BackendType backend, const char* reason) {
-	logging.log(RETRO_LOG_INFO, "[BMSX] handle_backend_fallback called. Reason: %s\n", reason);
-	const bool was_active = g_backend_fallback_token.active;
-	GateScope scope;
-	scope.blocking = true;
-	scope.category = "backend-fallback";
-	scope.tag = backend_label(backend);
-	g_backend_gate.ensure(g_backend_fallback_token, true, scope);
-	if (was_active) {
-		return;
-	}
-	logging.log(RETRO_LOG_WARN, "%s\n", reason);
-	if (!g_hw_render_failure_reason.empty()) {
-		logging.log(RETRO_LOG_ERROR,
-					"[BMSX] %s backend error: %s\n",
-					backend_label(backend),
-					g_hw_render_failure_reason.c_str());
-	}
-	static char fallback_message[128];
-	std::snprintf(fallback_message, sizeof(fallback_message),
-					"BMSX: %s failed, reverted to Software rendering.",
-					backend_label(backend));
-	retro_message msg;
-	msg.msg = fallback_message;
-	msg.frames = 240;
-	environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
-	GateScope option_scope;
-	option_scope.category = "option-update";
-	option_scope.tag = "render-backend";
-	g_backend_gate.ensure(g_backend_option_pending_token, true, option_scope);
-	try_update_backend_option();
-	g_backend_preference = RenderBackendPreference::Software;
-	g_active_backend = bmsx::BackendType::Software;
-	g_hw_render_supported = false;
-	g_hw_render_requested = false;
-	g_hw_render_backend = bmsx::BackendType::Software;
-	g_hw_context_pending = false;
-	g_hw_context_ready = false;
-	if (g_platform) {
-		g_platform->switchToSoftwareBackend();
-	}
-	set_core_options(BMSX_ENABLE_GLES2);
 }
 
 static void request_hw_context_for_backend(bmsx::BackendType backend) {
 	g_hw_render_supported = false;
 	g_hw_render_requested = false;
 	g_hw_render_backend = bmsx::BackendType::Software;
-	if (g_backend_fallback_token.active) {
-		return;
-	}
 	if (!is_hardware_backend(backend)) {
 		return;
 	}
@@ -1032,9 +963,6 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &g_hw_render)) {
 		g_hw_render_failure_reason = "RETRO_ENVIRONMENT_SET_HW_RENDER rejected by frontend";
-		logging.log(RETRO_LOG_WARN,
-					"[BMSX] Failed to request %s hw render context\n",
-					backend_label(backend));
 		g_hw_render_supported = false;
 		g_hw_render_requested = false;
 		g_hw_render_backend = bmsx::BackendType::Software;
@@ -1172,9 +1100,10 @@ void retro_init(void) {
 	if (!isHardwareBackendActive()) {
 	const bmsx::BackendType desired_backend = resolve_backend_preference(g_backend_preference);
 	if (is_hardware_backend(desired_backend)) {
-		logging.log(RETRO_LOG_WARN,
-					"[BMSX] %s hardware backend not initialized; using software backend\n",
-					backend_label(desired_backend));
+		const std::string reason =
+			std::string("[BMSX] ") + backend_label(desired_backend) +
+			" hardware backend was requested but not initialized.";
+		fail_hardware_backend(desired_backend, reason.c_str());
 	} else {
 		logging.log(RETRO_LOG_INFO,
 					"[BMSX] Software backend selected via core option\n");
@@ -1222,7 +1151,7 @@ void retro_init(void) {
 		const std::string reason =
 			std::string("[BMSX] ") + backend_label(g_active_backend) +
 			" setup failed: " + err.what();
-		handle_backend_fallback(g_active_backend, reason.c_str());
+		fail_hardware_backend(g_active_backend, reason.c_str());
 	}
 	}
 	if (g_cached_av_info_valid) {
@@ -1297,6 +1226,10 @@ void retro_set_controller_port_device(unsigned port, unsigned device) {
  */
 
 bool retro_load_game(const struct retro_game_info* game) {
+	if (!g_backend_error.empty()) {
+		logging.log(RETRO_LOG_ERROR, "%s\n", g_backend_error.c_str());
+		return false;
+	}
 	if (!game) {
 		logging.log(RETRO_LOG_INFO,
 					"[BMSX] No game provided, loading empty cart\n");
@@ -1364,7 +1297,6 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
-	try_update_backend_option();
 	if (isHardwareBackendActive() && g_hw_context_pending && g_platform) {
 	try {
 		g_platform->onContextReset();
@@ -1380,15 +1312,16 @@ void retro_run(void) {
 		const std::string reason =
 			std::string("[BMSX] ") + backend_label(g_active_backend) +
 			" context reset failed: " + err.what();
-		handle_backend_fallback(g_active_backend, reason.c_str());
+		fail_hardware_backend(g_active_backend, reason.c_str());
+		return;
 	}
 	}
 	if (isHardwareBackendActive() && !g_hw_context_ready) {
-	logging.log(RETRO_LOG_WARN, "[BMSX] retro_run: HW backend active but context not ready. g_hw_context_pending=%d\n", g_hw_context_pending);
 	const std::string reason =
 		std::string("[BMSX] ") + backend_label(g_active_backend) +
-		" hw render context not initialized; falling back to software";
-	handle_backend_fallback(g_active_backend, reason.c_str());
+		" hw render context not initialized.";
+	fail_hardware_backend(g_active_backend, reason.c_str());
+	return;
 	}
 	bool vars_updated = false;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &vars_updated) && vars_updated) {

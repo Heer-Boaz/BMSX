@@ -1,16 +1,16 @@
 import type { WebGLBackend } from './backend';
 import {
-	TEXTURE_UNIT_TEXTPAGE_ENGINE,
-	TEXTURE_UNIT_TEXTPAGE_PRIMARY,
-	TEXTURE_UNIT_TEXTPAGE_SECONDARY,
+	TEXTURE_UNIT_SLOT_SYSTEM,
+	TEXTURE_UNIT_SLOT_PRIMARY,
+	TEXTURE_UNIT_SLOT_SECONDARY,
 } from './constants';
 import type { PassEncoder } from '../backend';
 
 export type WebGLInstancedBufferRuntime = {
 	instanceFloatBuffer: WebGLBuffer;
-	instanceTextpageBuffer: WebGLBuffer;
+	instanceSlotBuffer: WebGLBuffer;
 	floatData: Float32Array;
-	textpageData: Uint8Array;
+	slotData: Uint8Array;
 	wordData?: Uint32Array;
 	capacity: number;
 };
@@ -44,9 +44,9 @@ const UNIT_QUAD_CORNERS = new Float32Array([
 export function createWebGLInstanceBuffers(backend: WebGLBackend, capacity: number, instanceFloats: number): WebGLInstancedBufferRuntime {
 	return {
 		instanceFloatBuffer: backend.createVertexBuffer(new Float32Array(capacity * instanceFloats), 'dynamic') as WebGLBuffer,
-		instanceTextpageBuffer: backend.createVertexBuffer(new Uint8Array(capacity), 'dynamic') as WebGLBuffer,
+		instanceSlotBuffer: backend.createVertexBuffer(new Uint8Array(capacity), 'dynamic') as WebGLBuffer,
 		floatData: new Float32Array(capacity * instanceFloats),
-		textpageData: new Uint8Array(capacity),
+		slotData: new Uint8Array(capacity),
 		capacity,
 	};
 }
@@ -65,9 +65,9 @@ export function getWebGLSpriteQuadUniforms(gl: WebGL2RenderingContext, program: 
 
 export function bindWebGLSpriteQuadTextureUnits(gl: WebGL2RenderingContext, uniforms: WebGLSpriteQuadUniforms): void {
 	gl.uniform1f(uniforms.scale, 1);
-	gl.uniform1i(uniforms.texture0, TEXTURE_UNIT_TEXTPAGE_PRIMARY);
-	gl.uniform1i(uniforms.texture1, TEXTURE_UNIT_TEXTPAGE_SECONDARY);
-	gl.uniform1i(uniforms.texture2, TEXTURE_UNIT_TEXTPAGE_ENGINE);
+	gl.uniform1i(uniforms.texture0, TEXTURE_UNIT_SLOT_PRIMARY);
+	gl.uniform1i(uniforms.texture1, TEXTURE_UNIT_SLOT_SECONDARY);
+	gl.uniform1i(uniforms.texture2, TEXTURE_UNIT_SLOT_SYSTEM);
 	gl.uniform4f(uniforms.parallaxRig, 0, 1, 0, 0);
 	gl.uniform4f(uniforms.parallaxRig2, 0, 1, 1, 0);
 	gl.uniform1f(uniforms.parallaxFlipWindow, 1);
@@ -92,10 +92,10 @@ export function bindWebGLInstancedFloatAttributes(backend: WebGLBackend, program
 	}
 }
 
-export function bindWebGLTextpageIdAttribute(backend: WebGLBackend, program: WebGLProgram, textpageBuffer: WebGLBuffer): void {
+export function bindWebGLSlotIdAttribute(backend: WebGLBackend, program: WebGLProgram, slotBuffer: WebGLBuffer): void {
 	const gl = backend.gl as WebGL2RenderingContext;
-	backend.bindArrayBuffer(textpageBuffer);
-	const location = gl.getAttribLocation(program, 'i_textpage_id');
+	backend.bindArrayBuffer(slotBuffer);
+	const location = gl.getAttribLocation(program, 'i_slot_id');
 	gl.enableVertexAttribArray(location);
 	gl.vertexAttribIPointer(location, 1, gl.UNSIGNED_BYTE, 1, 0);
 	gl.vertexAttribDivisor(location, 1);
@@ -123,7 +123,7 @@ export function bindWebGLInstancedQuadVertexArray(
 	bindWebGLUnitQuadCornerAttribute(backend, program, quad.cornerBuffer);
 	backend.bindArrayBuffer(quad.instanceFloatBuffer);
 	bindWebGLInstancedFloatAttributes(backend, program, strideBytes, attributes);
-	bindWebGLTextpageIdAttribute(backend, program, quad.instanceTextpageBuffer);
+	bindWebGLSlotIdAttribute(backend, program, quad.instanceSlotBuffer);
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(null);
 }
@@ -141,18 +141,18 @@ export function ensureWebGLInstanceBufferCapacity(backend: WebGLBackend, state: 
 	if (state.wordData) {
 		state.wordData = new Uint32Array(state.floatData.buffer);
 	}
-	state.textpageData = new Uint8Array(capacity);
+	state.slotData = new Uint8Array(capacity);
 	backend.bindArrayBuffer(state.instanceFloatBuffer);
 	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData, 0);
-	backend.bindArrayBuffer(state.instanceTextpageBuffer);
-	backend.updateVertexBuffer(state.instanceTextpageBuffer, state.textpageData, 0);
+	backend.bindArrayBuffer(state.instanceSlotBuffer);
+	backend.updateVertexBuffer(state.instanceSlotBuffer, state.slotData, 0);
 	backend.bindArrayBuffer(null);
 }
 
 export function flushWebGLInstanceBatch(backend: WebGLBackend, pass: PassEncoder, state: WebGLInstancedBufferRuntime, count: number, instanceFloats: number): void {
 	backend.bindArrayBuffer(state.instanceFloatBuffer);
 	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData, 0, 0, count * instanceFloats);
-	backend.bindArrayBuffer(state.instanceTextpageBuffer);
-	backend.updateVertexBuffer(state.instanceTextpageBuffer, state.textpageData, 0, 0, count);
+	backend.bindArrayBuffer(state.instanceSlotBuffer);
+	backend.updateVertexBuffer(state.instanceSlotBuffer, state.slotData, 0, 0, count);
 	backend.drawInstanced(pass, 6, count, 0, 0);
 }

@@ -4,7 +4,7 @@ import skyboxVS from '../shaders/skybox.vert.glsl';
 import type { RenderContext } from '../../backend/backend';
 import { RenderPassLibrary } from '../../backend/pass/library';
 import { SkyboxPipelineState } from '../../backend/backend';
-import { TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '../../backend/webgl/constants';
+import { TEXTURE_UNIT_SLOT_PRIMARY, TEXTURE_UNIT_SLOT_SECONDARY } from '../../backend/webgl/constants';
 import type { WebGLBackend } from '../../backend/webgl/backend';
 import { VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
 
@@ -13,10 +13,10 @@ let skyboxProgram: WebGLProgram;
 let skyboxPositionLocation: number;
 let skyboxViewLocation: WebGLUniformLocation;
 let skyboxProjectionLocation: WebGLUniformLocation;
-let skyboxTextpagePrimaryLocation: WebGLUniformLocation;
-let skyboxTextpageSecondaryLocation: WebGLUniformLocation;
+let skyboxSlotPrimaryLocation: WebGLUniformLocation;
+let skyboxSlotSecondaryLocation: WebGLUniformLocation;
 let skyboxFaceUvRectLocation: WebGLUniformLocation;
-let skyboxFaceTextpageLocation: WebGLUniformLocation;
+let skyboxFaceSlotLocation: WebGLUniformLocation;
 let skyboxTintLocation: WebGLUniformLocation;
 let skyboxExposureLocation: WebGLUniformLocation;
 export let skyboxBuffer: WebGLBuffer;
@@ -49,14 +49,14 @@ export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
 	skyboxPositionLocation = gl.getAttribLocation(skyboxProgram, 'a_position');
 	skyboxViewLocation = gl.getUniformLocation(skyboxProgram, 'u_view')!;
 	skyboxProjectionLocation = gl.getUniformLocation(skyboxProgram, 'u_projection')!;
-	skyboxTextpagePrimaryLocation = gl.getUniformLocation(skyboxProgram, 'u_textpage_primary')!;
-	skyboxTextpageSecondaryLocation = gl.getUniformLocation(skyboxProgram, 'u_textpage_secondary')!;
+	skyboxSlotPrimaryLocation = gl.getUniformLocation(skyboxProgram, 'u_slot_primary')!;
+	skyboxSlotSecondaryLocation = gl.getUniformLocation(skyboxProgram, 'u_slot_secondary')!;
 	skyboxFaceUvRectLocation = gl.getUniformLocation(skyboxProgram, 'u_face_uv_rect[0]')!;
-	skyboxFaceTextpageLocation = gl.getUniformLocation(skyboxProgram, 'u_face_textpage[0]')!;
+	skyboxFaceSlotLocation = gl.getUniformLocation(skyboxProgram, 'u_face_slot[0]')!;
 	skyboxTintLocation = gl.getUniformLocation(skyboxProgram, 'u_skyTint')!;
 	skyboxExposureLocation = gl.getUniformLocation(skyboxProgram, 'u_skyExposure')!;
-	gl.uniform1i(skyboxTextpagePrimaryLocation, TEXTURE_UNIT_TEXTPAGE_PRIMARY);
-	gl.uniform1i(skyboxTextpageSecondaryLocation, TEXTURE_UNIT_TEXTPAGE_SECONDARY);
+	gl.uniform1i(skyboxSlotPrimaryLocation, TEXTURE_UNIT_SLOT_PRIMARY);
+	gl.uniform1i(skyboxSlotSecondaryLocation, TEXTURE_UNIT_SLOT_SECONDARY);
 	gl.uniform3f(skyboxTintLocation, 1.0, 1.0, 1.0);
 	gl.uniform1f(skyboxExposureLocation, 1.0);
 }
@@ -102,13 +102,13 @@ export function drawSkybox(runtime: SkyboxRuntime, framebuffer: WebGLFramebuffer
 	gl.uniformMatrix4fv(skyboxViewLocation, false, state.view);
 	gl.uniformMatrix4fv(skyboxProjectionLocation, false, state.proj);
 	gl.uniform4fv(skyboxFaceUvRectLocation, state.faceUvRects);
-	gl.uniform1iv(skyboxFaceTextpageLocation, state.faceTextpageBindings);
+	gl.uniform1iv(skyboxFaceSlotLocation, state.faceSlotBindings);
 	gl.uniform3f(skyboxTintLocation, 1.0, 1.0, 1.0);
 	gl.uniform1f(skyboxExposureLocation, 1.0);
-	context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_PRIMARY;
-	context.bind2DTex(state.textpagePrimaryTex);
-	context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_SECONDARY;
-	context.bind2DTex(state.textpageSecondaryTex);
+	context.activeTexUnit = TEXTURE_UNIT_SLOT_PRIMARY;
+	context.bind2DTex(state.slotPrimaryTex);
+	context.activeTexUnit = TEXTURE_UNIT_SLOT_SECONDARY;
+	context.bind2DTex(state.slotSecondaryTex);
 	const passStub = { fbo: framebuffer, desc: { label: 'skybox' } };
 	backend.draw(passStub, 0, 36);
 	backend.bindVertexArray(null);
@@ -122,8 +122,8 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 		fsCode: skyboxFS,
 		bindingLayout: {
 			uniforms: ['FrameUniforms'],
-			textures: [{ name: 'u_textpage_primary' }, { name: 'u_textpage_secondary' }],
-			samplers: [{ name: 's_textpage_primary' }, { name: 's_textpage_secondary' }],
+			textures: [{ name: 'u_slot_primary' }, { name: 'u_slot_secondary' }],
+			samplers: [{ name: 's_slot_primary' }, { name: 's_slot_secondary' }],
 		},
 		bootstrap: (backend) => {
 			initSkyboxPipeline(backend as WebGLBackend);
@@ -143,10 +143,10 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 				height: size.y,
 				view: gv.vdpTransform.skyboxView,
 				proj: gv.vdpTransform.proj,
-				textpagePrimaryTex: gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY],
-				textpageSecondaryTex: gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY],
+				slotPrimaryTex: gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY],
+				slotSecondaryTex: gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY],
 				faceUvRects: gv.skyboxFaceUvRects,
-				faceTextpageBindings: gv.skyboxFaceTextpageBindings,
+				faceSlotBindings: gv.skyboxFaceSlotBindings,
 			});
 		},
 	});

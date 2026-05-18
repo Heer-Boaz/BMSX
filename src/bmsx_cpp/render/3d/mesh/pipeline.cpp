@@ -6,7 +6,7 @@
 #include "render/3d/mesh/rom_source.h"
 #include "render/3d/mesh/vertex_stream.h"
 #include "render/3d/shaders/render_3d_shaders.h"
-#include "render/backend/gles2_backend.h"
+#include "render/backend/gles2/backend.h"
 #include "render/gameview.h"
 
 #include <GLES2/gl2.h>
@@ -53,8 +53,8 @@ MeshGLES2Program g_mesh{};
 TextureHandle textureForMeshEntry(const MeshPipelineState& state, const GameView::VdpMeshRenderEntry& entry) {
 	const u32 slot = (entry.control & VDP_MDU_CONTROL_TEXTURE_SLOT_MASK) >> VDP_MDU_CONTROL_TEXTURE_SLOT_SHIFT;
 	switch (slot) {
-		case VDP_SLOT_PRIMARY: return state.textpagePrimaryTex;
-		case VDP_SLOT_SECONDARY: return state.textpageSecondaryTex;
+		case VDP_SLOT_PRIMARY: return state.slotPrimaryTex;
+		case VDP_SLOT_SECONDARY: return state.slotSecondaryTex;
 		case VDP_SLOT_SYSTEM: return state.systemSlotTex;
 	}
 	throw BMSX_RUNTIME_ERROR("[MeshPipeline] VDP mesh packet selected a texture slot outside the VDP slot set.");
@@ -209,8 +209,8 @@ MeshPipelineState buildMeshPipelineState(const RenderPassDef::RenderGraphPassCon
 	state.height = static_cast<i32>(ctx.view->offscreenCanvasSize.y);
 	state.viewProj = ctx.view->vdpTransform.viewProj;
 	state.cameraPosition = frameShared.view.camPos;
-	state.textpagePrimaryTex = ctx.view->textures.at(VDP_PRIMARY_SLOT_TEXTURE_KEY);
-	state.textpageSecondaryTex = ctx.view->textures.at(VDP_SECONDARY_SLOT_TEXTURE_KEY);
+	state.slotPrimaryTex = ctx.view->textures.at(VDP_PRIMARY_SLOT_TEXTURE_KEY);
+	state.slotSecondaryTex = ctx.view->textures.at(VDP_SECONDARY_SLOT_TEXTURE_KEY);
 	state.systemSlotTex = ctx.view->textures.at(SYSTEM_SLOT_TEXTURE_KEY);
 	writeAmbientState(state, frameShared.lighting);
 	writeDirectionalLightState(state, frameShared.lighting);

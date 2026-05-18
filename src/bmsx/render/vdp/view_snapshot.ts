@@ -82,7 +82,7 @@ export function commitVdpViewSnapshot(view: GameView, output: VdpDeviceOutput): 
 		view.skyboxRenderReady = false;
 	} else {
 		const faceUvRects = view.skyboxFaceUvRects;
-		const faceTextpageBindings = view.skyboxFaceTextpageBindings;
+		const faceSlotBindings = view.skyboxFaceSlotBindings;
 		const faceSurfaceIds = view.skyboxFaceSurfaceIds;
 		const faceSizes = view.skyboxFaceSizes;
 		for (let index = 0; index < output.skyboxSamples.length; index += 1) {
@@ -92,7 +92,7 @@ export function commitVdpViewSnapshot(view: GameView, output: VdpDeviceOutput): 
 			faceUvRects[uvBase + 1] = sample.source.srcY / sample.surfaceHeight;
 			faceUvRects[uvBase + 2] = sample.source.width / sample.surfaceWidth;
 			faceUvRects[uvBase + 3] = sample.source.height / sample.surfaceHeight;
-			faceTextpageBindings[index] = sample.slot;
+			faceSlotBindings[index] = sample.slot;
 			faceSurfaceIds[index] = sample.source.surfaceId;
 			const sizeBase = index * 2;
 			faceSizes[sizeBase + 0] = sample.source.width;

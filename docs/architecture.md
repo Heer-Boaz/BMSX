@@ -159,8 +159,13 @@ Internal units:
   command buffer through the registered `vdp_framebuffer_execution` pass.
   Software backends use the retained software rasterizer to write the VDP
   framebuffer slot and return that slot to `completeReadyFrameBufferExecution`;
-  GPU backends render the same command buffer into the backend framebuffer
-  texture and complete without claiming CPU readback ownership.
+  GPU backends render the same command buffer on the GPU into the backend
+  framebuffer texture and complete without claiming CPU readback ownership.
+  A GPU backend must not fall back to, route through, or upload the result of
+  the retained software rasterizer. The VDP keeps the displayed GPU-texture
+  framebuffer command frame as a device latch; restore replays that latch
+  through the framebuffer execution pass before display presentation instead of
+  reading pixels back from the GPU.
 - `streamIngress` owns the DMA submit latch, FIFO partial-word bytes, and sealed
   FIFO packet words.
 - `VRAM` owns staging memory, surface slots, dirty spans, CPU readback pixels,
@@ -179,8 +184,8 @@ Internal units:
   XF/LPU/MFU/JTU register writes.
 - `MDU` owns mesh-packet decode, mesh-source admission, and per-frame mesh draw
   emission limits.
-- `FBM` owns framebuffer pages, display pixels, presentation transactions, and
-  presentable display dimensions.
+- `FBM` owns framebuffer pages, display pixels, GPU texture presentation latches,
+  presentation transactions, and presentable display dimensions.
 - `XF` owns transform register words.
 - `VOUT` owns live, frame-sealed, and visible host-output buffers, including
   mesh draw records plus sampled LPU/MFU/JTU words, scanout phase, beam

@@ -857,6 +857,7 @@ BinValue encodeVdpState(const VdpState& state) {
 	object["buildFrame"] = encodeBuildingFrameState(state.buildFrame);
 	object["activeFrame"] = encodeSubmittedFrameState(state.activeFrame);
 	object["pendingFrame"] = encodeSubmittedFrameState(state.pendingFrame);
+	object["displayTextureFrame"] = encodeSubmittedFrameState(state.displayTextureFrame);
 	object["workCarry"] = static_cast<i64>(state.workCarry);
 	object["availableWorkUnits"] = static_cast<i64>(state.availableWorkUnits);
 	object["streamIngress"] = encodeVdpStreamIngressState(state.streamIngress);
@@ -880,6 +881,7 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 	state.buildFrame = decodeBuildingFrameState(requireField(object, "buildFrame", label), "machine.vdp.buildFrame");
 	state.activeFrame = decodeSubmittedFrameState(requireField(object, "activeFrame", label), "machine.vdp.activeFrame");
 	state.pendingFrame = decodeSubmittedFrameState(requireField(object, "pendingFrame", label), "machine.vdp.pendingFrame");
+	state.displayTextureFrame = decodeSubmittedFrameState(requireField(object, "displayTextureFrame", label), "machine.vdp.displayTextureFrame");
 	state.workCarry = requireI64(requireField(object, "workCarry", label), "machine.vdp.workCarry");
 	state.availableWorkUnits = requireI32(requireField(object, "availableWorkUnits", label), "machine.vdp.availableWorkUnits");
 	state.streamIngress = decodeVdpStreamIngressState(requireField(object, "streamIngress", label), "machine.vdp.streamIngress");
@@ -954,6 +956,7 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	state.buildFrame = base.buildFrame;
 	state.activeFrame = base.activeFrame;
 	state.pendingFrame = base.pendingFrame;
+	state.displayTextureFrame = base.displayTextureFrame;
 	state.workCarry = base.workCarry;
 	state.availableWorkUnits = base.availableWorkUnits;
 	state.streamIngress = base.streamIngress;

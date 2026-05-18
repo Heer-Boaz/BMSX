@@ -5,7 +5,7 @@ import particleVS from '../shaders/particle.vert.glsl';
 import type { PassEncoder, RenderContext, RenderPassStateRegistry } from '../../backend/backend';
 import { RenderPassLibrary } from '../../backend/pass/library';
 import { ParticlePipelineState } from '../../backend/backend';
-import { TEXTURE_UNIT_TEXTPAGE_ENGINE, TEXTURE_UNIT_TEXTPAGE_PRIMARY, TEXTURE_UNIT_TEXTPAGE_SECONDARY } from '../../backend/webgl/constants';
+import { TEXTURE_UNIT_SLOT_SYSTEM, TEXTURE_UNIT_SLOT_PRIMARY, TEXTURE_UNIT_SLOT_SECONDARY } from '../../backend/webgl/constants';
 import type { WebGLBackend } from '../../backend/webgl/backend';
 import type { VdpTransformSnapshot } from '../../vdp/transform';
 import { M4 } from '../math';
@@ -20,7 +20,7 @@ import {
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);
 const PARTICLE_INSTANCE_LIMIT = VDP_BBU_BILLBOARD_LIMIT;
-const INSTANCE_FLOATS = 13; // vec4(position+size) + vec4(color) + vec4(uvrect) + textpageId
+const INSTANCE_FLOATS = 13; // vec4(position+size) + vec4(color) + vec4(uvrect) + slotId
 const BYTES_PER_FLOAT = 4;
 const INSTANCE_BYTES = INSTANCE_FLOATS * BYTES_PER_FLOAT;
 let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffers: WebGLBuffer[] = []; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let texture0Location: WebGLUniformLocation; let texture1Location: WebGLUniformLocation; let texture2Location: WebGLUniformLocation; let ambientModeLocation: WebGLUniformLocation; let ambientFactorLocation: WebGLUniformLocation; const instanceData = new Float32Array(PARTICLE_INSTANCE_LIMIT * INSTANCE_FLOATS);
@@ -73,9 +73,9 @@ export function setupParticleUniforms(backend: WebGLBackend): void {
 	texture2Location = gl.getUniformLocation(particleProgram, 'u_texture2')!;
 	ambientModeLocation = gl.getUniformLocation(particleProgram, 'u_particleAmbientMode')!;
 	ambientFactorLocation = gl.getUniformLocation(particleProgram, 'u_particleAmbientFactor')!;
-	gl.uniform1i(texture0Location, TEXTURE_UNIT_TEXTPAGE_PRIMARY);
-	gl.uniform1i(texture1Location, TEXTURE_UNIT_TEXTPAGE_SECONDARY);
-	gl.uniform1i(texture2Location, TEXTURE_UNIT_TEXTPAGE_ENGINE);
+	gl.uniform1i(texture0Location, TEXTURE_UNIT_SLOT_PRIMARY);
+	gl.uniform1i(texture1Location, TEXTURE_UNIT_SLOT_SECONDARY);
+	gl.uniform1i(texture2Location, TEXTURE_UNIT_SLOT_SYSTEM);
 }
 
 export function setupParticleLocations(backend: WebGLBackend): void {
@@ -95,14 +95,14 @@ export function renderParticleBatch(backend: WebGLBackend, gl: WebGL2RenderingCo
 	camRight.set(state.camRight);
 	camUp.set(state.camUp);
 	let needsSystemSlot = false;
-	let needsSecondaryTextpage = false;
+	let needsSecondarySlot = false;
 	const vdpSlots = context.vdpBillboardSlot;
 	for (let index = 0; index < vdpPending; index += 1) {
 		const slot = vdpSlots[index];
 		if (slot === VDP_SLOT_SYSTEM) {
 			needsSystemSlot = true;
 		} else if (slot === VDP_SLOT_SECONDARY) {
-			needsSecondaryTextpage = true;
+			needsSecondarySlot = true;
 		}
 	}
 	backend.setViewportRect(0, 0, state.width, state.height);
@@ -116,26 +116,26 @@ export function renderParticleBatch(backend: WebGLBackend, gl: WebGL2RenderingCo
 	gl.uniform3fv(cameraUpLocation, camUp);
 	gl.uniform1i(ambientModeLocation, 0);
 	gl.uniform1f(ambientFactorLocation, 1.0);
-	const textpagePrimaryTex = state.textpagePrimaryTex;
-	if (!textpagePrimaryTex) {
+	const slotPrimaryTex = state.slotPrimaryTex;
+	if (!slotPrimaryTex) {
 		throw new Error(`[ParticlesPipeline] Texture '${VDP_PRIMARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
 	}
-	const textpageSecondaryTex = state.textpageSecondaryTex;
+	const slotSecondaryTex = state.slotSecondaryTex;
 	const systemSlotTex = state.systemSlotTex;
-	if (needsSecondaryTextpage && !textpageSecondaryTex) {
+	if (needsSecondarySlot && !slotSecondaryTex) {
 		throw new Error(`[ParticlesPipeline] Texture '${VDP_SECONDARY_SLOT_TEXTURE_KEY}' missing from view textures.`);
 	}
 	if (needsSystemSlot && !systemSlotTex) {
 		throw new Error(`[ParticlesPipeline] Texture '${SYSTEM_SLOT_TEXTURE_KEY}' missing from view textures.`);
 	}
-	context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_PRIMARY;
-	context.bind2DTex(textpagePrimaryTex);
-	if (textpageSecondaryTex) {
-		context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_SECONDARY;
-		context.bind2DTex(textpageSecondaryTex);
+	context.activeTexUnit = TEXTURE_UNIT_SLOT_PRIMARY;
+	context.bind2DTex(slotPrimaryTex);
+	if (slotSecondaryTex) {
+		context.activeTexUnit = TEXTURE_UNIT_SLOT_SECONDARY;
+		context.bind2DTex(slotSecondaryTex);
 	}
 	if (systemSlotTex) {
-		context.activeTexUnit = TEXTURE_UNIT_TEXTPAGE_ENGINE;
+		context.activeTexUnit = TEXTURE_UNIT_SLOT_SYSTEM;
 		context.bind2DTex(systemSlotTex);
 	}
 	backend.bindVertexArray(vao);
@@ -206,8 +206,8 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 				const gv = consoleCore.view;
 				const size = gv.offscreenCanvasSize;
 				const state = updateParticleTransformState(size.x, size.y, gv.vdpTransform);
-				state.textpagePrimaryTex = gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY];
-				state.textpageSecondaryTex = gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY];
+				state.slotPrimaryTex = gv.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY];
+				state.slotSecondaryTex = gv.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY];
 				state.systemSlotTex = gv.textures[SYSTEM_SLOT_TEXTURE_KEY];
 				registry.setState('particles', state);
 			},

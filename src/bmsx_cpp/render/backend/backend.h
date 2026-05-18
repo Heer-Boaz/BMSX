@@ -8,7 +8,7 @@
  *   ColorAttachmentSpec, DepthAttachmentSpec, RenderPassDesc, PassEncoder,
  *   GPUBackend texture methods, render-pass methods, draw methods except TS
  *   drawIndexed indexType, frame lifecycle, getCaps(), and stats.
- * - TS-only public symbols in render/backend/backend.ts are browser/WebGL/WebGPU
+ * - TS-only public symbols in render/backend/backend.ts are browser/WebGL
  *   render-graph plumbing: TextureFormat, BufferHandle, BackendContext,
  *   RenderTargetHandle, PresentationMode, GraphicsPipelineBindingLayout,
  *   RenderGraphSlot, RenderGraphPassContext, RenderPassGraphDef, RenderPassDef,
@@ -53,9 +53,21 @@ namespace bmsx {
 using TextureHandle = void*;
 
 class RenderPassLibrary;
+class Runtime;
 class VDP;
 class VdpFrameBufferRasterizer;
 struct VdpBlitterCommandBuffer;
+
+enum class VdpFrameBufferExecutionTarget : u8 {
+	ActiveFrame = 0,
+	DisplayReplay = 1,
+};
+
+struct VdpFrameBufferExecutionPassState {
+	Runtime* runtime = nullptr;
+	VdpBlitterCommandBuffer* commands = nullptr;
+	VdpFrameBufferExecutionTarget target = VdpFrameBufferExecutionTarget::ActiveFrame;
+};
 
 const std::array<u8, 256>& srgbToLinearLut();
 const std::array<u8, 256>& linearToSrgbLut();
@@ -169,6 +181,8 @@ public:
 	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) = 0;
 	virtual void destroyTexture(TextureHandle handle) = 0;
 	virtual void registerBuiltinPasses(RenderPassLibrary& registry) = 0;
+	virtual void bootstrapVdp2DBlit() = 0;
+	virtual void executeVdp2DBlit(VdpFrameBufferExecutionPassState& state) = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Render pass management
@@ -219,6 +233,8 @@ class SoftwareBackend : public GPUBackend {
 	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) override;
 	void destroyTexture(TextureHandle handle) override;
 	void registerBuiltinPasses(RenderPassLibrary& registry) override;
+	void bootstrapVdp2DBlit() override;
+	void executeVdp2DBlit(VdpFrameBufferExecutionPassState& state) override;
 	void executeVdpFrameBufferCommands(VDP& vdp, VdpBlitterCommandBuffer& commands, std::vector<u8>& frameBufferPixels);
 
 	// Render pass management

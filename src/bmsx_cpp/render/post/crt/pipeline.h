@@ -1,13 +1,13 @@
 /*
- * crt_pipeline_gles2.h - GLES2 CRT post-processing pipeline
+ * crt/pipeline.h - GLES2 CRT post-processing pipeline
  */
 
-#ifndef BMSX_CRT_PIPELINE_GLES2_H
-#define BMSX_CRT_PIPELINE_GLES2_H
+#ifndef BMSX_CRT_PIPELINE_H
+#define BMSX_CRT_PIPELINE_H
 
-#include "../gameview.h"
-#include "../backend/pass/library.h"
-#include "../backend/gles2_backend.h"
+#include "render/gameview.h"
+#include "render/backend/pass/library.h"
+#include "render/backend/gles2/backend.h"
 
 namespace bmsx {
 namespace CRTPipeline {
@@ -17,11 +17,10 @@ void initPresentGLES2(OpenGLES2Backend* backend);
 void initDeviceQuantizeGLES2(OpenGLES2Backend* backend);
 void shutdownGLES2(OpenGLES2Backend* backend);
 void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state);
-void renderPresentToCurrentTargetGLES2(OpenGLES2Backend* backend, GameView* context, const Framebuffer2DPipelineState& state);
 void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state);
 void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, const DeviceQuantizePipelineState& state);
 
 } // namespace CRTPipeline
 } // namespace bmsx
 
-#endif // BMSX_CRT_PIPELINE_GLES2_H
+#endif // BMSX_CRT_PIPELINE_H

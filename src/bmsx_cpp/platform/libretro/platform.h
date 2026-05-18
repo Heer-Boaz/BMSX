@@ -167,7 +167,6 @@ public:
 	void setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer);
 	void onContextReset();
 	void onContextDestroy();
-	void switchToSoftwareBackend();
 	void setPostProcessOptions(bool enableCrt, bool highDetail);
 	void setCrtEffectOptions(bool applyNoise,
 								bool applyColorBleed,

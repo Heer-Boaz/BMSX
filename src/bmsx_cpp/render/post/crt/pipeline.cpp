@@ -1,8 +1,8 @@
 /*
- * crt_pipeline_gles2.cpp - GLES2 CRT post-processing pipeline
+ * crt/pipeline.cpp - GLES2 CRT post-processing pipeline
  */
 
-#include "crt_pipeline_gles2.h"
+#include "pipeline.h"
 
 #include "core/console.h"
 #include <cstdio>
@@ -849,11 +849,6 @@ static void renderPresentQuadGLES2(
 void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state) {
 	(void)context;
 	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, true, true, true, false);
-}
-
-void renderPresentToCurrentTargetGLES2(OpenGLES2Backend* backend, GameView* context, const Framebuffer2DPipelineState& state) {
-	(void)context;
-	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, false, true, false, true);
 }
 
 void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, const DeviceQuantizePipelineState& state) {

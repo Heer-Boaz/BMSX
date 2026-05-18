@@ -7,7 +7,7 @@
 
 #include "gameview.h"
 #if BMSX_ENABLE_GLES2
-#include "backend/gles2_backend.h"
+#include "backend/gles2/backend.h"
 #endif
 #include "backend/pass/library.h"
 #include "graph/graph.h"

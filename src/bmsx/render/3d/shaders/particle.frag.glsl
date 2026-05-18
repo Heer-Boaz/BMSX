@@ -3,7 +3,7 @@ precision mediump float;
 
 in vec4 v_color;
 in vec2 v_texcoord;
-flat in int v_textpage_id;
+flat in int v_slot_id;
 uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
 uniform sampler2D u_texture2;
@@ -24,9 +24,9 @@ const int VDP_SLOT_SYSTEM = 2;
 
 void main() {
 	vec4 tex;
-	if (v_textpage_id == 0) {
+	if (v_slot_id == 0) {
 		tex = texture(u_texture0, v_texcoord);
-	} else if (v_textpage_id == VDP_SLOT_SYSTEM) {
+	} else if (v_slot_id == VDP_SLOT_SYSTEM) {
 		tex = texture(u_texture2, v_texcoord);
 	} else {
 		tex = texture(u_texture1, v_texcoord);

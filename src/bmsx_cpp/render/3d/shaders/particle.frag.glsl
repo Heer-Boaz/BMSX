@@ -10,7 +10,7 @@ uniform vec4 u_ambient_color_intensity;
 
 varying vec2 v_texcoord;
 varying vec4 v_color;
-varying float v_textpage_id;
+varying float v_slot_id;
 // GLES2 parity note: TS uses batch uniforms for particle ambient mode/factor.
 // The old-GLES2 C++ path expands all particles into one stream, so these values
 // ride with each expanded vertex instead of requiring extension instancing.
@@ -19,9 +19,9 @@ varying float v_ambient_factor;
 
 void main() {
 	vec4 texColor;
-	if (v_textpage_id < 0.5) {
+	if (v_slot_id < 0.5) {
 		texColor = texture2D(u_texture0, v_texcoord);
-	} else if (v_textpage_id < 1.5) {
+	} else if (v_slot_id < 1.5) {
 		texColor = texture2D(u_texture1, v_texcoord);
 	} else {
 		texColor = texture2D(u_texture2, v_texcoord);

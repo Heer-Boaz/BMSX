@@ -39,10 +39,10 @@ struct SkyboxPipelineState {
 	i32 height = 0;
 	std::array<f32, 16> view{};
 	std::array<f32, 16> proj{};
-	TextureHandle textpagePrimaryTex = nullptr;
-	TextureHandle textpageSecondaryTex = nullptr;
+	TextureHandle slotPrimaryTex = nullptr;
+	TextureHandle slotSecondaryTex = nullptr;
 	std::array<f32, SKYBOX_FACE_COUNT * 4> faceUvRects{};
-	std::array<i32, SKYBOX_FACE_COUNT> faceTextpageBindings{};
+	std::array<i32, SKYBOX_FACE_COUNT> faceSlotBindings{};
 };
 
 struct ParticlePipelineState {
@@ -51,8 +51,8 @@ struct ParticlePipelineState {
 	std::array<f32, 16> viewProj{};
 	std::array<f32, 3> camRight{};
 	std::array<f32, 3> camUp{};
-	TextureHandle textpagePrimaryTex = nullptr;
-	TextureHandle textpageSecondaryTex = nullptr;
+	TextureHandle slotPrimaryTex = nullptr;
+	TextureHandle slotSecondaryTex = nullptr;
 	TextureHandle systemSlotTex = nullptr;
 	std::array<f32, 3> ambientColor{1.0f, 1.0f, 1.0f};
 	f32 ambientIntensity = 1.0f;
@@ -70,8 +70,8 @@ struct MeshPipelineState {
 	std::array<f32, RENDER_MAX_POINT_LIGHTS * 4u> pointLightColorIntensities{};
 	i32 directionalLightCount = 0;
 	i32 pointLightCount = 0;
-	TextureHandle textpagePrimaryTex = nullptr;
-	TextureHandle textpageSecondaryTex = nullptr;
+	TextureHandle slotPrimaryTex = nullptr;
+	TextureHandle slotSecondaryTex = nullptr;
 	TextureHandle systemSlotTex = nullptr;
 };
 
@@ -115,11 +115,6 @@ struct DeviceQuantizePipelineState {
 	i32 baseHeight = 0;
 	TextureHandle colorTex = nullptr;
 	i32 ditherType = 0;
-};
-
-struct VdpFrameBufferExecutionPassState {
-	Runtime* runtime = nullptr;
-	VdpBlitterCommandBuffer* commands = nullptr;
 };
 
 struct FrameSharedState {
@@ -231,9 +226,10 @@ struct RenderPassToken {
 
 class RenderPassLibrary {
 public:
-	explicit RenderPassLibrary(GPUBackend* backend);
+	RenderPassLibrary(GPUBackend* backend, GameView* view);
 	~RenderPassLibrary();
 
+	GameView* view() const { return m_view; }
 
 	// Pass registration
 	void registerPass(const RenderPassDef& desc);
@@ -306,6 +302,7 @@ private:
 
 
 	GPUBackend* m_backend;
+	GameView* m_view;
 	std::vector<RenderPassDef> m_passes;
 	std::unordered_map<std::string, RegisteredPassRec> m_registered;
 	std::unordered_map<std::string, bool> m_passEnabled;

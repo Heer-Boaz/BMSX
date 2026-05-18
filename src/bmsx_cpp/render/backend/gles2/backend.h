@@ -1,11 +1,11 @@
 /*
- * gles2_backend.h - OpenGL ES 2.0 backend for BMSX
+ * gles2/backend.h - OpenGL ES 2.0 backend for BMSX
  */
 
 #ifndef BMSX_GLES2_BACKEND_H
 #define BMSX_GLES2_BACKEND_H
 
-#include "backend.h"
+#include "render/backend/backend.h"
 #include <cstdint>
 #include <array>
 
@@ -38,6 +38,8 @@ public:
 	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) override;
 	void destroyTexture(TextureHandle handle) override;
 	void registerBuiltinPasses(RenderPassLibrary& registry) override;
+	void bootstrapVdp2DBlit() override;
+	void executeVdp2DBlit(VdpFrameBufferExecutionPassState& state) override;
 
 	void clear(const std::array<f32, 4>* color, const f32* depth) override;
 	PassEncoder beginRenderPass(const RenderPassDesc& desc) override;

@@ -1110,6 +1110,71 @@ void testSaveStateRestoresSubmittedFramePipeline() {
 	requireDisplayFramePixel(h, 0u, 0u, 0x20u, 0x21u, 0x22u, 0xffu, "restored queued frame should use its saved BG register snapshot");
 }
 
+void testSaveStateReplaysDisplayedGpuFrameBufferFrame() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff112233u);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_CLEAR);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
+	const int workUnits = h.vdp.getPendingRenderWorkUnits();
+	require(workUnits > 0, "GPU framebuffer CLEAR should submit active framebuffer work");
+	h.vdp.advanceWork(workUnits);
+	h.vdp.completeReadyFrameBufferTextureExecution();
+	require(h.vdp.presentReadyFrameOnVblankEdge(), "GPU framebuffer texture frame should present");
+
+	const bmsx::VdpSaveState saved = h.vdp.captureSaveState();
+	require(saved.activeFrame.state == bmsx::VdpSubmittedFrameState::Empty, "save-state should keep the submitted pipeline empty after a displayed-only GPU frame");
+	require(saved.displayTextureFrame.state == bmsx::VdpSubmittedFrameState::Ready, "save-state should retain displayed GPU texture frames in the display latch");
+	require(saved.displayTextureFrame.hasFrameBufferCommands, "save-state should keep the displayed GPU framebuffer command flag");
+	require(!saved.displayTextureFrame.frameBufferReadbackValid, "save-state should not claim CPU readback for a displayed GPU texture frame");
+	require(saved.displayTextureFrame.queue.size() == 1u, "save-state should retain the displayed GPU framebuffer command buffer");
+
+	Harness restored;
+	restored.vdp.restoreSaveState(saved);
+	bmsx::VdpBlitterCommandBuffer* commands = restored.vdp.readyDisplayFrameBufferReplayCommands();
+	require(commands != nullptr, "restored GPU framebuffer replay should expose execution-pending commands");
+	require(commands->length == 1u, "restored GPU framebuffer replay should expose the retained command buffer");
+	restored.vdp.completeDisplayFrameBufferTextureReplay();
+	FrameBufferPresentationProbe presentation;
+	restored.vdp.drainFrameBufferPresentation(presentation);
+	require(presentation.consumed, "restored GPU framebuffer replay should queue a display texture presentation");
+	require(restored.vdp.readyDisplayFrameBufferReplayCommands() == nullptr, "display replay should drain once");
+}
+
+void testSaveStateKeepsDisplayedGpuFrameSeparateFromActiveWork() {
+	Harness h;
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff112233u);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_CLEAR);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
+	h.vdp.advanceWork(h.vdp.getPendingRenderWorkUnits());
+	h.vdp.completeReadyFrameBufferTextureExecution();
+	require(h.vdp.presentReadyFrameOnVblankEdge(), "GPU framebuffer texture frame should present before active-work save");
+
+	writeIo(h.memory, bmsx::IO_VDP_REG_BG_COLOR, 0xff445566u);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_CLEAR);
+	writeIo(h.memory, bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
+	h.vdp.advanceWork(h.vdp.getPendingRenderWorkUnits());
+
+	const bmsx::VdpSaveState saved = h.vdp.captureSaveState();
+	require(saved.activeFrame.state == bmsx::VdpSubmittedFrameState::ExecutionPending, "active GPU framebuffer work should stay active in save-state");
+	require(saved.activeFrame.queue.size() == 1u, "active GPU framebuffer work should retain its command buffer");
+	require(saved.displayTextureFrame.state == bmsx::VdpSubmittedFrameState::Ready, "displayed GPU framebuffer should stay in the display latch");
+	require(saved.displayTextureFrame.queue.size() == 1u, "displayed GPU framebuffer should retain its command buffer");
+
+	Harness restored;
+	restored.vdp.restoreSaveState(saved);
+	require(restored.vdp.readyDisplayFrameBufferReplayCommands() != nullptr, "restore should expose displayed GPU replay commands");
+	require(restored.vdp.readyFrameBufferCommands() != nullptr, "restore should keep active GPU execution commands");
+	restored.vdp.completeDisplayFrameBufferTextureReplay();
+	require(restored.vdp.readyFrameBufferCommands() != nullptr, "display replay should not consume active GPU execution commands");
+	restored.vdp.completeReadyFrameBufferTextureExecution();
+	require(restored.vdp.presentReadyFrameOnVblankEdge(), "active GPU framebuffer work should still present after display replay");
+}
+
 } // namespace
 
 int main() {
@@ -1152,6 +1217,8 @@ int main() {
 		{"VDP dither live latch", testDitherRegisterWritesUpdateLiveLatch},
 		{"VDP save-state registerfile/surface geometry", testSaveStateRestoresRegisterFileAndSurfaceGeometry},
 		{"VDP save-state submitted-frame pipeline", testSaveStateRestoresSubmittedFramePipeline},
+		{"VDP save-state displayed GPU framebuffer replay", testSaveStateReplaysDisplayedGpuFrameBufferFrame},
+		{"VDP save-state displayed GPU framebuffer with active work", testSaveStateKeepsDisplayedGpuFrameSeparateFromActiveWork},
 	};
 
 	for (const auto& test : tests) {

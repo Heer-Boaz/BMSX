@@ -1,19 +1,22 @@
 import type { color_arr, TextureSource } from '../../rompack/format';
 import type { VDP } from '../../machine/devices/vdp/vdp';
 import type { VdpBlitterCommandBuffer } from '../../machine/devices/vdp/blitter';
-import type {
-	GPUBackend,
-	BackendCaps,
-	TextureHandle,
-	RenderPassDesc,
-	PassEncoder,
-	RenderPassInstanceHandle,
-	RenderPassId,
-	SizedArrayBufferView,
+import {
+	VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE,
+	type GPUBackend,
+	type BackendCaps,
+	type TextureHandle,
+	type RenderPassDesc,
+	type PassEncoder,
+	type RenderPassInstanceHandle,
+	type VdpFrameBufferExecutionPassState,
+	type RenderPassId,
+	type SizedArrayBufferView,
 } from '../backend/backend';
 import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../backend/texture_params';
 import { createSolidRgba8Pixels } from '../shared/solid_pixels';
-import { registerVdpFrameBufferExecutionPass_Software } from '../backend/software/vdp_framebuffer_execution';
+import { registerVdpFrameBufferExecutionPass } from '../2d/vdp_blit_pipeline';
+import { drainReadyVdpFrameBufferExecutionForSoftware } from '../backend/software/vdp_framebuffer_execution';
 import { VdpFrameBufferRasterizer } from '../backend/software/vdp_framebuffer_rasterizer';
 import type { RenderPassLibrary } from '../backend/pass/library';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
@@ -104,11 +107,26 @@ export class HeadlessGPUBackend implements GPUBackend {
 	private frameStats: HeadlessFrameStats = createFrameStats();
 
 	registerBuiltinPasses(registry: RenderPassLibrary): void {
-		registerVdpFrameBufferExecutionPass_Software(registry);
+		registerVdpFrameBufferExecutionPass(registry);
 		registerHeadlessPasses(registry);
 		registerHostOverlayPass_Headless(registry);
 		registerHostMenuPass_Headless(registry);
 		registerHeadlessPresentPass(registry);
+	}
+
+
+	bootstrapVdp2DBlit(): void {
+	}
+
+	executeVdp2DBlit(state: VdpFrameBufferExecutionPassState): void {
+		const vdp = state.runtime.machine.vdp;
+		if (state.target === VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE) {
+			drainReadyVdpFrameBufferExecutionForSoftware(this, vdp);
+			return;
+		}
+		const frameBufferSlot = vdp.frameBufferExecutionTarget();
+		this.executeVdpFrameBufferCommands(vdp, state.commands, frameBufferSlot.cpuReadback);
+		vdp.completeDisplayFrameBufferReplay(frameBufferSlot);
 	}
 
 	executeVdpFrameBufferCommands(vdp: VDP, commands: VdpBlitterCommandBuffer, frameBufferPixels: Uint8Array): void {

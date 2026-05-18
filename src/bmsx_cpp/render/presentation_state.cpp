@@ -5,7 +5,6 @@
 #include "machine/runtime/runtime.h"
 #include "render/backend/pass/framebuffer_execution.h"
 #include "render/backend/pass/library.h"
-#include "render/test_pattern.h"
 #include "render/vdp/framebuffer.h"
 #include "render/vdp/slot_textures.h"
 #include "render/vdp/view_snapshot.h"
@@ -156,6 +155,20 @@ void RenderPresentationState::executeReadyVdpFrameBuffer(Runtime& runtime) {
 	VdpFrameBufferExecutionPassState state;
 	state.runtime = &runtime;
 	state.commands = commands;
+	state.target = VdpFrameBufferExecutionTarget::ActiveFrame;
+	runtime.view().pipelineRegistry()->setState("vdp_framebuffer_execution", state);
+	runtime.view().pipelineRegistry()->execute("vdp_framebuffer_execution", nullptr);
+}
+
+void RenderPresentationState::executeDisplayVdpFrameBufferReplay(Runtime& runtime) {
+	VdpBlitterCommandBuffer* commands = runtime.machine.vdp.readyDisplayFrameBufferReplayCommands();
+	if (commands == nullptr) {
+		return;
+	}
+	VdpFrameBufferExecutionPassState state;
+	state.runtime = &runtime;
+	state.commands = commands;
+	state.target = VdpFrameBufferExecutionTarget::DisplayReplay;
 	runtime.view().pipelineRegistry()->setState("vdp_framebuffer_execution", state);
 	runtime.view().pipelineRegistry()->execute("vdp_framebuffer_execution", nullptr);
 }
@@ -202,10 +215,8 @@ bool RenderPresentationState::render(ConsoleCore& console, Runtime& runtime, boo
 			? false
 			: m_presentationScratch.commitFrame;
 		recordPresentation(presentMode, commitFrame, pausedPresent);
-		if (!console.romLoaded()) {
-			renderTestPattern(*console.m_view, console.m_total_time);
-		}
 
+		executeDisplayVdpFrameBufferReplay(runtime);
 		runtime.machine.vdp.drainFrameBufferPresentation(console.m_view->vdpFrameBufferTextures());
 		runtime.machine.vdp.drainSurfaceUploads(console.m_view->vdpSlotTextures());
 		commitVdpViewSnapshot(*console.m_view, runtime.machine.vdp.readDeviceOutput());

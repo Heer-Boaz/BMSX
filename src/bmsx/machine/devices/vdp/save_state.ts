@@ -10,6 +10,7 @@ export type VdpState = {
 	buildFrame: VdpBuildingFrameSaveState;
 	activeFrame: VdpSubmittedFrameSaveState;
 	pendingFrame: VdpSubmittedFrameSaveState;
+	displayTextureFrame: VdpSubmittedFrameSaveState;
 	workCarry: number;
 	availableWorkUnits: number;
 	streamIngress: VdpStreamIngressState;

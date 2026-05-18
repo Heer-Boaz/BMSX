@@ -85,9 +85,6 @@ class HeadlessGameViewCanvas implements GameViewCanvas {
 	requestWebGL2Context(_attributes: WebGLContextAttributes): WebGL2RenderingContext {
 		throw new Error('[HeadlessGameViewCanvas] WebGL2 context is not available in headless mode.');
 	}
-	requestWebGPUContext(): GPUCanvasContext {
-		throw new Error('[HeadlessGameViewCanvas] WebGPU context is not available in headless mode.');
-	}
 }
 
 class HeadlessWindowEventHub implements WindowEventHub {

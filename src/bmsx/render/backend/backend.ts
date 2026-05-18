@@ -1,4 +1,5 @@
 /// <reference types="@webgpu/types" />
+
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { VdpBlitterCommandBuffer } from '../../machine/devices/vdp/blitter';
 import type { Runtime } from '../../machine/runtime/runtime';
@@ -44,23 +45,31 @@ import type { RenderPassLibrary } from './pass/library';
  */
 
 export type TextureFormat = 'rgba8unorm' | 'bgra8unorm' | 'rgb8unorm' | 'depth24plus' | 'depth32float' | string | number;
-export type TextureHandle = WebGLTexture | GPUTexture;
-export type BufferHandle = WebGLBuffer | GPUBuffer | null;
-export type BackendContext =  WebGL2RenderingContext | GPUCanvasContext | null;
+export type HeadlessTextureHandle = { id: number; kind: string };
+export type HeadlessBufferHandle = { id: number; kind: string };
+export type TextureHandle = WebGLTexture | GPUTexture | HeadlessTextureHandle;
+export type BufferHandle = WebGLBuffer | GPUBuffer | HeadlessBufferHandle | null;
+export type BackendContext = WebGL2RenderingContext | GPUCanvasContext | null;
 export type SizedArrayBufferView = ArrayBufferView & { readonly BYTES_PER_ELEMENT?: number; readonly length?: number };
 // ---- Unified "FBO" a.k.a. render target ------------------------------------
 
-export type RenderTargetHandle =
-	| WebGLFramebuffer               // persistent GL object
-	| {
-		size: vec2;
-		colors: GPUTexture[];                // textures you own
-		depth?: GPUTexture;
-		colorViews: GPUTextureView[];        // pre-created views for speed
-		depthView?: GPUTextureView;
-		sampleCount?: number;
-		format?: GPUTextureFormat;           // optional bookkeeping
-	};
+export type WebGPURenderTargetHandle = {
+	size: vec2;
+	colors: GPUTexture[];
+	depth?: GPUTexture;
+	colorViews: GPUTextureView[];
+	depthView?: GPUTextureView;
+	sampleCount?: number;
+	format?: GPUTextureFormat;
+};
+
+export type HeadlessRenderTargetHandle = {
+	size: vec2;
+	colors: TextureHandle[];
+	depth?: TextureHandle;
+};
+
+export type RenderTargetHandle = WebGLFramebuffer | WebGPURenderTargetHandle | HeadlessRenderTargetHandle;
 
 // keep your existing alias names for other handles:
 
@@ -87,7 +96,7 @@ export interface BackendCaps {
 }
 export type PresentationMode = 'partial' | 'completed';
 
-// Optional shader resource layout description (for WebGPU or future WebGL wrappers)
+// Optional shader resource layout description for WebGL pipeline setup
 export interface GraphicsPipelineBindingLayout {
 	uniforms?: string[];
 	textures?: { name: string }[];
@@ -204,6 +213,8 @@ export interface GPUBackend {
 	endRenderPass(pass: PassEncoder): void;
 	getCaps(): BackendCaps;
 	registerBuiltinPasses(registry: RenderPassLibrary): void;
+	bootstrapVdp2DBlit(): void;
+	executeVdp2DBlit(state: VdpFrameBufferExecutionPassState): void;
 	createRenderPassInstance?(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle;
 	destroyRenderPassInstance?(p: RenderPassInstanceHandle): void;
 	setGraphicsPipeline?(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void;
@@ -213,7 +224,7 @@ export interface GPUBackend {
 	setPassState<S = unknown>(label: RenderPassId, state: S): void;
 	getPassState<S = unknown>(label: RenderPassId): S;
 
-	// Optional buffer/VAO helpers (WebGL-backed today; WebGPU mapping later)
+	// Optional buffer/VAO helpers
 	createVertexBuffer?(data: ArrayBufferView, usage: 'static' | 'dynamic'): BufferHandle;
 	updateVertexBuffer?(buf: BufferHandle, data: ArrayBufferView, dstOffset?: number, sourceOffset?: number, elementCount?: number): void;
 	bindArrayBuffer?(buf: BufferHandle): void;
@@ -257,9 +268,17 @@ export interface RenderPassStateRegistry {
 export type RenderPassStateId = keyof RenderPassStateRegistry;
 
 
+export const VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE = 0;
+export const VDP_FRAMEBUFFER_EXECUTION_TARGET_DISPLAY_REPLAY = 1;
+
+export type VdpFrameBufferExecutionTarget =
+	| typeof VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE
+	| typeof VDP_FRAMEBUFFER_EXECUTION_TARGET_DISPLAY_REPLAY;
+
 export type VdpFrameBufferExecutionPassState = {
 	runtime: Runtime;
 	commands: VdpBlitterCommandBuffer;
+	target: VdpFrameBufferExecutionTarget;
 };
 
 export type Framebuffer2DPipelineState = {
@@ -319,10 +338,10 @@ export interface SkyboxPipelineState {
 	height: number;
 	view: Float32Array;
 	proj: Float32Array;
-	textpagePrimaryTex: TextureHandle;
-	textpageSecondaryTex: TextureHandle;
+	slotPrimaryTex: TextureHandle;
+	slotSecondaryTex: TextureHandle;
 	faceUvRects: Float32Array;
-	faceTextpageBindings: Int32Array;
+	faceSlotBindings: Int32Array;
 }
 
 export interface ParticlePipelineState {
@@ -331,8 +350,8 @@ export interface ParticlePipelineState {
 	viewProj: Float32Array;
 	camRight: Float32Array;
 	camUp: Float32Array;
-	textpagePrimaryTex?: TextureHandle;
-	textpageSecondaryTex?: TextureHandle;
+	slotPrimaryTex?: TextureHandle;
+	slotSecondaryTex?: TextureHandle;
 	systemSlotTex?: TextureHandle;
 }
 
@@ -342,8 +361,8 @@ export interface MeshPipelineState {
 	viewProj: Float32Array;
 	cameraPosition: Float32Array;
 	lighting: LightingDescriptor;
-	textpagePrimaryTex: TextureHandle;
-	textpageSecondaryTex: TextureHandle;
+	slotPrimaryTex: TextureHandle;
+	slotSecondaryTex: TextureHandle;
 	systemSlotTex: TextureHandle;
 }
 

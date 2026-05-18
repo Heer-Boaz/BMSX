@@ -3,7 +3,7 @@
 #if BMSX_ENABLE_GLES2
 #include "core/console.h"
 #include "render/3d/shaders/render_3d_shaders.h"
-#include "render/backend/gles2_backend.h"
+#include "render/backend/gles2/backend.h"
 #include "render/gameview.h"
 #include "rompack/format.h"
 
@@ -19,31 +19,31 @@ struct SkyboxGLES2Runtime {
 	GLint attribPosition = -1;
 	GLint uniformView = -1;
 	GLint uniformProjection = -1;
-	GLint uniformTextpagePrimary = -1;
-	GLint uniformTextpageSecondary = -1;
+	GLint uniformSlotPrimary = -1;
+	GLint uniformSlotSecondary = -1;
 	GLint uniformFaceUvRect0 = -1;
 	GLint uniformFaceUvRect1 = -1;
 	GLint uniformFaceUvRect2 = -1;
 	GLint uniformFaceUvRect3 = -1;
 	GLint uniformFaceUvRect4 = -1;
 	GLint uniformFaceUvRect5 = -1;
-	GLint uniformFaceTextpage0 = -1;
-	GLint uniformFaceTextpage1 = -1;
-	GLint uniformFaceTextpage2 = -1;
-	GLint uniformFaceTextpage3 = -1;
-	GLint uniformFaceTextpage4 = -1;
-	GLint uniformFaceTextpage5 = -1;
+	GLint uniformFaceSlot0 = -1;
+	GLint uniformFaceSlot1 = -1;
+	GLint uniformFaceSlot2 = -1;
+	GLint uniformFaceSlot3 = -1;
+	GLint uniformFaceSlot4 = -1;
+	GLint uniformFaceSlot5 = -1;
 	GLint uniformTint = -1;
 	GLint uniformExposure = -1;
 };
 
 SkyboxGLES2Runtime g_skybox{};
 
-void bindSkyboxTextpages(OpenGLES2Backend& backend, const SkyboxPipelineState& state) {
+void bindSkyboxSlots(OpenGLES2Backend& backend, const SkyboxPipelineState& state) {
 	backend.setActiveTextureUnit(0);
-	backend.bindTexture2D(state.textpagePrimaryTex);
+	backend.bindTexture2D(state.slotPrimaryTex);
 	backend.setActiveTextureUnit(1);
-	backend.bindTexture2D(state.textpageSecondaryTex);
+	backend.bindTexture2D(state.slotSecondaryTex);
 }
 
 } // namespace
@@ -59,9 +59,9 @@ void setupSkyboxLocations() {
 	state.attribPosition = glGetAttribLocation(state.program, "a_position");
 	state.uniformView = glGetUniformLocation(state.program, "u_view");
 	state.uniformProjection = glGetUniformLocation(state.program, "u_projection");
-	state.uniformTextpagePrimary = glGetUniformLocation(state.program, "u_textpage_primary");
-	state.uniformTextpageSecondary = glGetUniformLocation(state.program, "u_textpage_secondary");
-	// TS WebGL2 uses u_face_uv_rect[6] and u_face_textpage[6]. For the
+	state.uniformSlotPrimary = glGetUniformLocation(state.program, "u_slot_primary");
+	state.uniformSlotSecondary = glGetUniformLocation(state.program, "u_slot_secondary");
+	// TS WebGL2 uses u_face_uv_rect[6] and u_face_slot[6]. For the
 	// SNES-mini GLES2 target we keep the same face data in SkyboxPipelineState
 	// but bind it to scalar uniforms to avoid non-portable dynamic array
 	// indexing in old GLES2 fragment shaders.
@@ -71,17 +71,17 @@ void setupSkyboxLocations() {
 	state.uniformFaceUvRect3 = glGetUniformLocation(state.program, "u_face_uv_rect3");
 	state.uniformFaceUvRect4 = glGetUniformLocation(state.program, "u_face_uv_rect4");
 	state.uniformFaceUvRect5 = glGetUniformLocation(state.program, "u_face_uv_rect5");
-	state.uniformFaceTextpage0 = glGetUniformLocation(state.program, "u_face_textpage0");
-	state.uniformFaceTextpage1 = glGetUniformLocation(state.program, "u_face_textpage1");
-	state.uniformFaceTextpage2 = glGetUniformLocation(state.program, "u_face_textpage2");
-	state.uniformFaceTextpage3 = glGetUniformLocation(state.program, "u_face_textpage3");
-	state.uniformFaceTextpage4 = glGetUniformLocation(state.program, "u_face_textpage4");
-	state.uniformFaceTextpage5 = glGetUniformLocation(state.program, "u_face_textpage5");
+	state.uniformFaceSlot0 = glGetUniformLocation(state.program, "u_face_slot0");
+	state.uniformFaceSlot1 = glGetUniformLocation(state.program, "u_face_slot1");
+	state.uniformFaceSlot2 = glGetUniformLocation(state.program, "u_face_slot2");
+	state.uniformFaceSlot3 = glGetUniformLocation(state.program, "u_face_slot3");
+	state.uniformFaceSlot4 = glGetUniformLocation(state.program, "u_face_slot4");
+	state.uniformFaceSlot5 = glGetUniformLocation(state.program, "u_face_slot5");
 	state.uniformTint = glGetUniformLocation(state.program, "u_skyTint");
 	state.uniformExposure = glGetUniformLocation(state.program, "u_skyExposure");
 	glUseProgram(state.program);
-	glUniform1i(state.uniformTextpagePrimary, 0);
-	glUniform1i(state.uniformTextpageSecondary, 1);
+	glUniform1i(state.uniformSlotPrimary, 0);
+	glUniform1i(state.uniformSlotSecondary, 1);
 	glUniform3f(state.uniformTint, 1.0f, 1.0f, 1.0f);
 	glUniform1f(state.uniformExposure, 1.0f);
 }
@@ -133,15 +133,15 @@ void drawSkybox(SkyboxRuntime& runtime, void* framebuffer, const SkyboxPipelineS
 	glUniform4fv(state.uniformFaceUvRect3, 1, faceUvRects + 12u);
 	glUniform4fv(state.uniformFaceUvRect4, 1, faceUvRects + 16u);
 	glUniform4fv(state.uniformFaceUvRect5, 1, faceUvRects + 20u);
-	glUniform1f(state.uniformFaceTextpage0, static_cast<f32>(pipelineState.faceTextpageBindings[0]));
-	glUniform1f(state.uniformFaceTextpage1, static_cast<f32>(pipelineState.faceTextpageBindings[1]));
-	glUniform1f(state.uniformFaceTextpage2, static_cast<f32>(pipelineState.faceTextpageBindings[2]));
-	glUniform1f(state.uniformFaceTextpage3, static_cast<f32>(pipelineState.faceTextpageBindings[3]));
-	glUniform1f(state.uniformFaceTextpage4, static_cast<f32>(pipelineState.faceTextpageBindings[4]));
-	glUniform1f(state.uniformFaceTextpage5, static_cast<f32>(pipelineState.faceTextpageBindings[5]));
+	glUniform1f(state.uniformFaceSlot0, static_cast<f32>(pipelineState.faceSlotBindings[0]));
+	glUniform1f(state.uniformFaceSlot1, static_cast<f32>(pipelineState.faceSlotBindings[1]));
+	glUniform1f(state.uniformFaceSlot2, static_cast<f32>(pipelineState.faceSlotBindings[2]));
+	glUniform1f(state.uniformFaceSlot3, static_cast<f32>(pipelineState.faceSlotBindings[3]));
+	glUniform1f(state.uniformFaceSlot4, static_cast<f32>(pipelineState.faceSlotBindings[4]));
+	glUniform1f(state.uniformFaceSlot5, static_cast<f32>(pipelineState.faceSlotBindings[5]));
 	glUniform3f(state.uniformTint, 1.0f, 1.0f, 1.0f);
 	glUniform1f(state.uniformExposure, 1.0f);
-	bindSkyboxTextpages(backend, pipelineState);
+	bindSkyboxSlots(backend, pipelineState);
 	glDrawArrays(GL_TRIANGLES, 0, SKYBOX_VERTEX_COUNT);
 	glDepthMask(GL_TRUE);
 }
@@ -164,10 +164,10 @@ void registerSkyboxPass_GLES2(RenderPassLibrary& registry) {
 		state.height = static_cast<i32>(ctx.view->offscreenCanvasSize.y);
 		state.view = ctx.view->vdpTransform.skyboxView;
 		state.proj = ctx.view->vdpTransform.proj;
-		state.textpagePrimaryTex = ctx.view->textures.at(VDP_PRIMARY_SLOT_TEXTURE_KEY);
-		state.textpageSecondaryTex = ctx.view->textures.at(VDP_SECONDARY_SLOT_TEXTURE_KEY);
+		state.slotPrimaryTex = ctx.view->textures.at(VDP_PRIMARY_SLOT_TEXTURE_KEY);
+		state.slotSecondaryTex = ctx.view->textures.at(VDP_SECONDARY_SLOT_TEXTURE_KEY);
 		state.faceUvRects = ctx.view->skyboxFaceUvRects;
-		state.faceTextpageBindings = ctx.view->skyboxFaceTextpageBindings;
+		state.faceSlotBindings = ctx.view->skyboxFaceSlotBindings;
 		return state;
 	};
 	desc.exec = [](GPUBackend* backend, void* framebuffer, std::any& state) {
