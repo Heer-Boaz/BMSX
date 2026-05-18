@@ -213,7 +213,6 @@ export interface GPUBackend {
 	endRenderPass(pass: PassEncoder): void;
 	getCaps(): BackendCaps;
 	registerBuiltinPasses(registry: RenderPassLibrary): void;
-	bootstrapVdp2DBlit(): void;
 	executeVdp2DBlit(state: VdpFrameBufferExecutionPassState): void;
 	createRenderPassInstance?(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle;
 	destroyRenderPassInstance?(p: RenderPassInstanceHandle): void;

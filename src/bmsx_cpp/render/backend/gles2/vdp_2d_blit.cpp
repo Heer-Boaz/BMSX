@@ -38,6 +38,8 @@ constexpr std::array<float, VDP_RD_SURFACE_COUNT> VDP_2D_SLOT_BY_SURFACE{{
 }};
 constexpr float SOLID_TEXCOORD_0 = 0.0f;
 constexpr float SOLID_TEXCOORD_1 = 1.0f;
+constexpr size_t VDP_2D_MAX_BATCH_QUADS = VDP_BLITTER_FIFO_CAPACITY + VDP_BLITTER_RUN_ENTRY_CAPACITY * 2u;
+constexpr size_t VDP_2D_MAX_BATCH_VERTICES = VDP_2D_MAX_BATCH_QUADS * 6u;
 constexpr std::array<std::array<f32, 2>, 6> VDP_2D_QUAD_CORNERS{{
 	{{0.0f, 0.0f}},
 	{{0.0f, 1.0f}},
@@ -103,7 +105,7 @@ struct Vdp2DBlitGles2Runtime {
 	GLuint attachedColorTextureId = 0;
 	u32 contextGeneration = 0u;
 	std::vector<Vdp2DBlitGles2Vertex> vertices;
-	std::vector<size_t> commandOrder;
+	std::array<size_t, VDP_BLITTER_FIFO_CAPACITY> commandOrder{};
 };
 
 Vdp2DBlitGles2Runtime g_vdp2dBlit;
@@ -128,7 +130,6 @@ void destroyGles2Vdp2DBlitRuntime() {
 	state.attachedColorTextureId = 0u;
 	state.contextGeneration = 0u;
 	state.vertices.clear();
-	state.commandOrder.clear();
 }
 
 GLint gles2Attrib(GLuint program, const char* name) {
@@ -179,6 +180,9 @@ void bindGles2Vdp2DBlitRuntime(OpenGLES2Backend& backend) {
 	state.uniformParallaxFlipWindow = gles2Uniform(state.program, "u_parallax_flip_window");
 	glGenBuffers(1, &state.vertexBuffer);
 	glGenFramebuffers(1, &state.frameBufferObject);
+	if (state.vertices.capacity() < VDP_2D_MAX_BATCH_VERTICES) {
+		state.vertices.reserve(VDP_2D_MAX_BATCH_VERTICES);
+	}
 	glUseProgram(state.program);
 	glUniform1i(state.uniformTexture0, 0);
 	glUniform1i(state.uniformTexture1, 1);
@@ -417,11 +421,7 @@ bool gles2CommandComesBefore(const VdpBlitterCommandBuffer& commands, size_t lef
 }
 
 size_t buildGles2CommandOrder(Vdp2DBlitGles2Runtime& state, const VdpBlitterCommandBuffer& commands, size_t start, size_t end) {
-	std::vector<size_t>& order = state.commandOrder;
-	const size_t count = end - start;
-	if (order.size() < count) {
-		order.resize(count);
-	}
+	auto& order = state.commandOrder;
 	size_t orderCount = 0u;
 	for (size_t commandIndex = start; commandIndex < end; ++commandIndex) {
 		size_t insertAt = orderCount;
@@ -495,14 +495,10 @@ void bindGles2VertexLayout(const Vdp2DBlitGles2Runtime& state) {
 	glVertexAttribPointer(state.attribColor, 4, GL_FLOAT, GL_FALSE, sizeof(Vdp2DBlitGles2Vertex), reinterpret_cast<const void*>(offsetof(Vdp2DBlitGles2Vertex, r)));
 }
 
-void bindGles2ExecutionState(Runtime& runtime, OpenGLES2Backend& backend, const VdpBlitterCommandBuffer& commands) {
+void bindGles2ExecutionState(Runtime& runtime, OpenGLES2Backend& backend) {
 	VDP& vdp = runtime.machine.vdp;
 	GameView& view = runtime.view();
 	Vdp2DBlitGles2Runtime& state = g_vdp2dBlit;
-	const size_t estimatedVertexCount = (commands.length + commands.batchBlitEntryCount) * 6u;
-	if (state.vertices.capacity() < estimatedVertexCount) {
-		state.vertices.reserve(estimatedVertexCount);
-	}
 	state.vertices.clear();
 	vdp.drainSurfaceUploads(view.vdpSlotTextures());
 	bindGles2Vdp2DBlitTarget(backend, view.vdpFrameBufferTextures().renderTexture(), vdp.frameBufferWidth(), vdp.frameBufferHeight());
@@ -561,7 +557,7 @@ void executeGles2Vdp2DBlitCommands(Runtime& runtime, const VdpBlitterCommandBuff
 	GameView& view = runtime.view();
 	auto& backend = *static_cast<OpenGLES2Backend*>(view.backend());
 	bindGles2Vdp2DBlitRuntime(backend);
-	bindGles2ExecutionState(runtime, backend, commands);
+	bindGles2ExecutionState(runtime, backend);
 	Vdp2DBlitGles2Runtime& state = g_vdp2dBlit;
 	if (commands.length == 0u || commands.opcode[0] != VdpBlitterCommandType::Clear) {
 		clearGles2Vdp2DBlitTarget(VDP_BLITTER_IMPLICIT_CLEAR);
@@ -585,10 +581,6 @@ void executeGles2Vdp2DBlitCommands(Runtime& runtime, const VdpBlitterCommandBuff
 } // namespace
 
 #if BMSX_ENABLE_GLES2
-void OpenGLES2Backend::bootstrapVdp2DBlit() {
-	bindGles2Vdp2DBlitRuntime(*this);
-}
-
 void OpenGLES2Backend::executeVdp2DBlit(VdpFrameBufferExecutionPassState& state) {
 	executeGles2Vdp2DBlitCommands(*state.runtime, *state.commands);
 	if (state.target == VdpFrameBufferExecutionTarget::ActiveFrame) {

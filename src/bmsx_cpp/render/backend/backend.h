@@ -181,7 +181,6 @@ public:
 	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) = 0;
 	virtual void destroyTexture(TextureHandle handle) = 0;
 	virtual void registerBuiltinPasses(RenderPassLibrary& registry) = 0;
-	virtual void bootstrapVdp2DBlit() = 0;
 	virtual void executeVdp2DBlit(VdpFrameBufferExecutionPassState& state) = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -233,7 +232,6 @@ class SoftwareBackend : public GPUBackend {
 	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) override;
 	void destroyTexture(TextureHandle handle) override;
 	void registerBuiltinPasses(RenderPassLibrary& registry) override;
-	void bootstrapVdp2DBlit() override;
 	void executeVdp2DBlit(VdpFrameBufferExecutionPassState& state) override;
 	void executeVdpFrameBufferCommands(VDP& vdp, VdpBlitterCommandBuffer& commands, std::vector<u8>& frameBufferPixels);
 

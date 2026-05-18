@@ -7,9 +7,6 @@ export function registerVdpFrameBufferExecutionPass(registry: RenderPassLibrary)
 		name: 'VDP2DBlitExecution',
 		stateOnly: true,
 		graph: { skip: true },
-		bootstrap: (backend) => {
-			backend.bootstrapVdp2DBlit();
-		},
 		exec: (backend, _fbo, state) => {
 			backend.executeVdp2DBlit(state);
 		},

@@ -38,7 +38,6 @@ public:
 	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) override;
 	void destroyTexture(TextureHandle handle) override;
 	void registerBuiltinPasses(RenderPassLibrary& registry) override;
-	void bootstrapVdp2DBlit() override;
 	void executeVdp2DBlit(VdpFrameBufferExecutionPassState& state) override;
 
 	void clear(const std::array<f32, 4>* color, const f32* depth) override;

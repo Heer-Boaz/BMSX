@@ -14,7 +14,7 @@ interface MeshOptions {
 	tangents?: Float32Array;
 	indices?: Uint8Array | Uint16Array | Uint32Array;
 	color?: color;
-	textpageId?: number;
+	slotId?: number;
 	material?: Material;
 	morphPositions?: Float32Array[];
 	morphNormals?: Float32Array[];
@@ -43,7 +43,7 @@ export class Mesh {
 	/** Optional index buffer */
 	public indices?: Uint8Array | Uint16Array | Uint32Array;
 	public color: color;
-	public textpageId: number;
+	public slotId: number;
 	public material?: Material;
 	public shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
 	public morphPositions?: Float32Array[];
@@ -67,7 +67,7 @@ export class Mesh {
 		this.tangents = opts.tangents;
 		this.indices = opts.indices;
 		this.color = opts.color ?? DEFAULT_VERTEX_COLOR;
-		this.textpageId = opts.textpageId ?? 255;
+		this.slotId = opts.slotId ?? 255;
 		this.material = opts.material;
 		this.morphPositions = opts.morphPositions;
 		this.morphNormals = opts.morphNormals;

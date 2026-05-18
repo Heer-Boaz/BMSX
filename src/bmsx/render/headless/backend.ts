@@ -114,10 +114,6 @@ export class HeadlessGPUBackend implements GPUBackend {
 		registerHeadlessPresentPass(registry);
 	}
 
-
-	bootstrapVdp2DBlit(): void {
-	}
-
 	executeVdp2DBlit(state: VdpFrameBufferExecutionPassState): void {
 		const vdp = state.runtime.machine.vdp;
 		if (state.target === VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE) {

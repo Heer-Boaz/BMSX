@@ -90,9 +90,6 @@ export class WebGPUBackend implements GPUBackend {
 		this._bytesUploaded += bytes;
 	}
 
-	bootstrapVdp2DBlit(): void {
-	}
-
 	executeVdp2DBlit(_state: VdpFrameBufferExecutionPassState): void {
 		throw new Error('[VDPFrameBufferWebGPU] VDP framebuffer execution is not implemented for WebGPU.');
 	}

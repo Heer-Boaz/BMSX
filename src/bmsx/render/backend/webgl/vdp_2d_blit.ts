@@ -5,6 +5,8 @@ import {
 	VDP_BLITTER_OPCODE_CLEAR,
 	VDP_BLITTER_OPCODE_DRAW_LINE,
 	VDP_BLITTER_OPCODE_FILL_RECT,
+	VDP_BLITTER_FIFO_CAPACITY,
+	VDP_BLITTER_RUN_ENTRY_CAPACITY,
 	type VdpBlitterCommandBuffer,
 } from '../../../machine/devices/vdp/blitter';
 import {
@@ -17,10 +19,8 @@ import { type color_arr, FRAMEBUFFER_RENDER_TEXTURE_KEY, SYSTEM_SLOT_TEXTURE_KEY
 import type { GameView } from '../../gameview';
 import type { WebGLBackend } from './backend';
 import {
-	VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE,
 	type PassEncoder,
 	type RenderPassInstanceHandle,
-	type VdpFrameBufferExecutionPassState,
 } from '../backend';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import { TEXTURE_UNIT_SLOT_SYSTEM, TEXTURE_UNIT_SLOT_PRIMARY, TEXTURE_UNIT_SLOT_SECONDARY } from './constants';
@@ -35,7 +35,7 @@ import fragmentShaderCode from '../../2d/shaders/2d.frag.glsl';
 
 const INSTANCE_WORDS = 16;
 const INSTANCE_STRIDE_BYTES = INSTANCE_WORDS * 4;
-const INITIAL_BATCH_CAPACITY = 256;
+const VDP_2D_MAX_BATCH_CAPACITY = VDP_BLITTER_FIFO_CAPACITY + VDP_BLITTER_RUN_ENTRY_CAPACITY * 2;
 const VDP_2D_SLOT_PRIMARY = 0;
 const VDP_2D_SLOT_SECONDARY = 1;
 const VDP_2D_SLOT_SYSTEM = 2;
@@ -87,7 +87,7 @@ function getProgramUniform(gl: WebGL2RenderingContext, program: WebGLProgram, na
 	return location;
 }
 
-function createWebGLRuntime(backend: WebGLBackend): WebGLVdp2DBlitRuntime {
+export function createWebGLVdp2DBlitRuntime(backend: WebGLBackend): WebGLVdp2DBlitRuntime {
 	const gl = backend.gl as WebGL2RenderingContext;
 	const pipeline = backend.createRenderPassInstance({
 		label: 'VDP2DBlit',
@@ -107,9 +107,10 @@ function createWebGLRuntime(backend: WebGLBackend): WebGLVdp2DBlitRuntime {
 		0, 1,
 		1, 1,
 	]), 'static') as WebGLBuffer;
-	const instanceFloatData = new Float32Array(INITIAL_BATCH_CAPACITY * INSTANCE_WORDS);
+	const instanceFloatData = new Float32Array(VDP_2D_MAX_BATCH_CAPACITY * INSTANCE_WORDS);
+	const instanceSlotData = new Uint8Array(VDP_2D_MAX_BATCH_CAPACITY);
 	const instanceFloatBuffer = backend.createVertexBuffer(instanceFloatData, 'dynamic') as WebGLBuffer;
-	const instanceSlotBuffer = backend.createVertexBuffer(new Uint8Array(INITIAL_BATCH_CAPACITY), 'dynamic') as WebGLBuffer;
+	const instanceSlotBuffer = backend.createVertexBuffer(instanceSlotData, 'dynamic') as WebGLBuffer;
 	backend.bindVertexArray(vao);
 	bindWebGLUnitQuadCornerAttribute(backend, program, cornerBuffer);
 	backend.bindArrayBuffer(instanceFloatBuffer);
@@ -125,9 +126,9 @@ function createWebGLRuntime(backend: WebGLBackend): WebGLVdp2DBlitRuntime {
 		instanceFloatBuffer,
 		instanceSlotBuffer,
 		floatData: instanceFloatData,
-		slotData: new Uint8Array(INITIAL_BATCH_CAPACITY),
-		commandOrder: new Uint32Array(INITIAL_BATCH_CAPACITY),
-		capacity: INITIAL_BATCH_CAPACITY,
+		slotData: instanceSlotData,
+		commandOrder: new Uint32Array(VDP_BLITTER_FIFO_CAPACITY),
+		capacity: VDP_2D_MAX_BATCH_CAPACITY,
 		scale: getProgramUniform(gl, program, 'u_scale'),
 		texture0: getProgramUniform(gl, program, 'u_texture0'),
 		texture1: getProgramUniform(gl, program, 'u_texture1'),
@@ -136,17 +137,6 @@ function createWebGLRuntime(backend: WebGLBackend): WebGLVdp2DBlitRuntime {
 		parallaxRig2: getProgramUniform(gl, program, 'u_parallax_rig2'),
 		parallaxFlipWindow: getProgramUniform(gl, program, 'u_parallax_flip_window'),
 	};
-}
-
-function growCommandOrder(state: WebGLVdp2DBlitRuntime, count: number): void {
-	if (count <= state.commandOrder.length) {
-		return;
-	}
-	let capacity = state.commandOrder.length;
-	while (capacity < count) {
-		capacity *= 2;
-	}
-	state.commandOrder = new Uint32Array(capacity);
 }
 
 function commandComesBefore(commands: VdpBlitterCommandBuffer, left: number, right: number): boolean {
@@ -164,8 +154,6 @@ function commandComesBefore(commands: VdpBlitterCommandBuffer, left: number, rig
 }
 
 function buildCommandOrder(state: WebGLVdp2DBlitRuntime, commands: VdpBlitterCommandBuffer, start: number, end: number): number {
-	const count = end - start;
-	growCommandOrder(state, count);
 	const order = state.commandOrder;
 	let orderCount = 0;
 	for (let commandIndex = start; commandIndex < end; commandIndex += 1) {
@@ -202,28 +190,6 @@ function writeQuad(state: WebGLVdp2DBlitRuntime, index: number, originX: number,
 	state.slotData[index] = slotId;
 }
 
-
-function growBatchBuffers(backend: WebGLBackend, state: WebGLVdp2DBlitRuntime, count: number): void {
-	if (count <= state.capacity) {
-		return;
-	}
-	let capacity = state.capacity;
-	while (capacity < count) {
-		capacity *= 2;
-	}
-	const oldFloatData = state.floatData;
-	const oldSlotData = state.slotData;
-	state.floatData = new Float32Array(capacity * INSTANCE_WORDS);
-	state.floatData.set(oldFloatData.subarray(0, state.capacity * INSTANCE_WORDS));
-	state.slotData = new Uint8Array(capacity);
-	state.slotData.set(oldSlotData.subarray(0, state.capacity));
-	state.capacity = capacity;
-	backend.bindArrayBuffer(state.instanceFloatBuffer);
-	backend.updateVertexBuffer(state.instanceFloatBuffer, state.floatData, 0);
-	backend.bindArrayBuffer(state.instanceSlotBuffer);
-	backend.updateVertexBuffer(state.instanceSlotBuffer, state.slotData, 0);
-	backend.bindArrayBuffer(null);
-}
 
 function flushBatch(backend: WebGLBackend, pass: PassEncoder, state: WebGLVdp2DBlitRuntime, count: number): number {
 	if (count !== 0) {
@@ -315,9 +281,8 @@ function appendBatchBlitItem(view: GameView, state: WebGLVdp2DBlitRuntime, comma
 	return 1;
 }
 
-function appendCommand(view: GameView, backend: WebGLBackend, state: WebGLVdp2DBlitRuntime, commands: VdpBlitterCommandBuffer, commandIndex: number, batchCount: number): number {
+function appendCommand(view: GameView, state: WebGLVdp2DBlitRuntime, commands: VdpBlitterCommandBuffer, commandIndex: number, batchCount: number): number {
 	const opcode = commands.opcode[commandIndex];
-	growBatchBuffers(backend, state, batchCount + 1);
 	if (opcode === VDP_BLITTER_OPCODE_FILL_RECT) {
 		return batchCount + appendFillRect(state, commands, commandIndex, batchCount);
 	}
@@ -332,24 +297,22 @@ function appendCommand(view: GameView, backend: WebGLBackend, state: WebGLVdp2DB
 		const itemEnd = firstItem + commands.batchBlitItemCount[commandIndex];
 		if (commands.hasBackgroundColor[commandIndex] !== 0) {
 			for (let itemIndex = firstItem; itemIndex < itemEnd; itemIndex += 1) {
-				growBatchBuffers(backend, state, batchCount + 1);
 				writeQuad(state, batchCount, commands.batchBlitDstX[itemIndex], commands.batchBlitDstY[itemIndex], commands.batchBlitAdvance[itemIndex], 0, 0, commands.lineHeight[commandIndex], SOLID_TEXCOORD_0, SOLID_TEXCOORD_0, SOLID_TEXCOORD_1, SOLID_TEXCOORD_1, commands.priority[commandIndex], commands.parallaxWeight[commandIndex], commands.backgroundColor[commandIndex], VDP_2D_DRAW_SOLID);
 				batchCount += 1;
 			}
 		}
 		for (let itemIndex = firstItem; itemIndex < itemEnd; itemIndex += 1) {
-			growBatchBuffers(backend, state, batchCount + 1);
 			batchCount += appendBatchBlitItem(view, state, commands, commandIndex, itemIndex, batchCount);
 		}
 	}
 	return batchCount;
 }
 
-function appendSortedCommandSegment(view: GameView, backend: WebGLBackend, state: WebGLVdp2DBlitRuntime, commands: VdpBlitterCommandBuffer, start: number, end: number, batchCount: number): number {
+function appendSortedCommandSegment(view: GameView, state: WebGLVdp2DBlitRuntime, commands: VdpBlitterCommandBuffer, start: number, end: number, batchCount: number): number {
 	const orderCount = buildCommandOrder(state, commands, start, end);
 	const order = state.commandOrder;
 	for (let orderIndex = 0; orderIndex < orderCount; orderIndex += 1) {
-		batchCount = appendCommand(view, backend, state, commands, order[orderIndex], batchCount);
+		batchCount = appendCommand(view, state, commands, order[orderIndex], batchCount);
 	}
 	return batchCount;
 }
@@ -380,7 +343,7 @@ function bindVdp2DBlitState(runtime: Runtime, backend: WebGLBackend, pass: PassE
 	backend.bindVertexArray(state.vao);
 }
 
-function executeVdp2DBlitCommandsWebGL(runtime: Runtime, backend: WebGLBackend, state: WebGLVdp2DBlitRuntime, commands: VdpBlitterCommandBuffer): void {
+export function executeVdp2DBlitCommandsWebGL(runtime: Runtime, backend: WebGLBackend, state: WebGLVdp2DBlitRuntime, commands: VdpBlitterCommandBuffer): void {
 	const view = runtime.view;
 	runtime.machine.vdp.drainSurfaceUploads(view.vdpSlotTextures);
 	const renderTexture = view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY];
@@ -397,7 +360,7 @@ function executeVdp2DBlitCommandsWebGL(runtime: Runtime, backend: WebGLBackend, 
 	for (let commandIndex = 0; commandIndex < commands.length; commandIndex += 1) {
 		const opcode = commands.opcode[commandIndex];
 		if (opcode === VDP_BLITTER_OPCODE_CLEAR) {
-			batchCount = appendSortedCommandSegment(view, backend, state, commands, segmentStart, commandIndex, batchCount);
+			batchCount = appendSortedCommandSegment(view, state, commands, segmentStart, commandIndex, batchCount);
 			batchCount = flushBatch(backend, pass, state, batchCount);
 			const color = commands.color[commandIndex];
 			clearColorScratch[0] = ((color >>> 16) & 0xff) / 255;
@@ -409,7 +372,7 @@ function executeVdp2DBlitCommandsWebGL(runtime: Runtime, backend: WebGLBackend, 
 			continue;
 		}
 	}
-	batchCount = appendSortedCommandSegment(view, backend, state, commands, segmentStart, commands.length, batchCount);
+	batchCount = appendSortedCommandSegment(view, state, commands, segmentStart, commands.length, batchCount);
 	flushBatch(backend, pass, state, batchCount);
 	backend.bindVertexArray(null);
 	backend.setBlendEnabled(false);
@@ -418,16 +381,3 @@ function executeVdp2DBlitCommandsWebGL(runtime: Runtime, backend: WebGLBackend, 
 }
 
 export type WebGLVdp2DBlitBootstrap = WebGLVdp2DBlitRuntime;
-
-export function bootstrapVdp2DBlitWebGL(backend: WebGLBackend): WebGLVdp2DBlitBootstrap {
-	return createWebGLRuntime(backend);
-}
-
-export function executeVdp2DBlitWebGL(backend: WebGLBackend, runtime: WebGLVdp2DBlitBootstrap, state: VdpFrameBufferExecutionPassState): void {
-	executeVdp2DBlitCommandsWebGL(state.runtime, backend, runtime, state.commands);
-	if (state.target === VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE) {
-		state.runtime.machine.vdp.completeReadyFrameBufferTextureExecution();
-	} else {
-		state.runtime.machine.vdp.completeDisplayFrameBufferTextureReplay();
-	}
-}

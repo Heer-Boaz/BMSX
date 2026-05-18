@@ -19,9 +19,6 @@ void SoftwareBackend::executeVdpFrameBufferCommands(VDP& vdp, VdpBlitterCommandB
 	m_vdpFrameBufferRasterizer->executeFrameBufferCommands(commands, vdp.frameBufferWidth(), vdp.frameBufferHeight(), frameBufferPixels);
 }
 
-void SoftwareBackend::bootstrapVdp2DBlit() {
-}
-
 void SoftwareBackend::executeVdp2DBlit(VdpFrameBufferExecutionPassState& state) {
 	VDP& vdp = state.runtime->machine.vdp;
 	if (state.target == VdpFrameBufferExecutionTarget::ActiveFrame) {

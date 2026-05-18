@@ -10,9 +10,6 @@ namespace bmsx {
 void registerVdpFrameBufferExecutionPass(RenderPassLibrary& registry) {
 	RenderPassDef desc;
 	configureVdpFrameBufferExecutionPass(desc);
-	desc.bootstrap = [](GPUBackend* backend) {
-		backend->bootstrapVdp2DBlit();
-	};
 	desc.exec = [](GPUBackend* backend, void*, std::any& state) {
 		auto& executionState = std::any_cast<VdpFrameBufferExecutionPassState&>(state);
 		backend->executeVdp2DBlit(executionState);

@@ -2,7 +2,7 @@
 import { color_arr, type TextureSource } from '../../../rompack/format';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
-import { GPUBackend, GraphicsPipelineBindingLayout, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, type SizedArrayBufferView, type VdpFrameBufferExecutionPassState } from '../backend';
+import { GPUBackend, GraphicsPipelineBindingLayout, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE, type SizedArrayBufferView, type VdpFrameBufferExecutionPassState } from '../backend';
 import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
 import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './helpers';
@@ -16,8 +16,8 @@ import { registerCRT_WebGL } from '../../post/crt/pipeline';
 import { registerDeviceQuantize_WebGL } from '../../post/device_quantize_pipeline';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
-import { registerVdpFrameBufferExecutionPass_WebGL } from './vdp_framebuffer_execution';
-import { bootstrapVdp2DBlitWebGL, executeVdp2DBlitWebGL, type WebGLVdp2DBlitBootstrap } from './vdp_2d_blit';
+import { registerVdpFrameBufferExecutionPass } from '../../2d/vdp_blit_pipeline';
+import { createWebGLVdp2DBlitRuntime, executeVdp2DBlitCommandsWebGL, type WebGLVdp2DBlitBootstrap } from './vdp_2d_blit';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
 
@@ -79,7 +79,8 @@ export class WebGLBackend implements GPUBackend {
 		registerSkyboxPass_WebGL(registry);
 		registerMeshPass_WebGL(registry);
 		registerParticlesPass_WebGL(registry);
-		registerVdpFrameBufferExecutionPass_WebGL(registry);
+		this.vdp2dBlitRuntime = createWebGLVdp2DBlitRuntime(this);
+		registerVdpFrameBufferExecutionPass(registry);
 		registerFramebuffer2DPass_WebGL(registry);
 		registerDeviceQuantize_WebGL(registry);
 		registerCRT_WebGL(registry);
@@ -95,12 +96,14 @@ export class WebGLBackend implements GPUBackend {
 	}
 
 
-	bootstrapVdp2DBlit(): void {
-		this.vdp2dBlitRuntime = bootstrapVdp2DBlitWebGL(this);
-	}
-
 	executeVdp2DBlit(state: VdpFrameBufferExecutionPassState): void {
-		executeVdp2DBlitWebGL(this, this.vdp2dBlitRuntime, state);
+		const runtime = state.runtime;
+		executeVdp2DBlitCommandsWebGL(runtime, this, this.vdp2dBlitRuntime, state.commands);
+		if (state.target === VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE) {
+			runtime.machine.vdp.completeReadyFrameBufferTextureExecution();
+		} else {
+			runtime.machine.vdp.completeDisplayFrameBufferTextureReplay();
+		}
 	}
 
 	bindRenderPassPipeline(pass: PassEncoder, pipeline: RenderPassInstanceHandle, bindingLayout?: GraphicsPipelineBindingLayout): void {

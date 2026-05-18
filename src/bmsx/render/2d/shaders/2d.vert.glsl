@@ -59,7 +59,7 @@ void main() {
 	vec2 scaledPosition = parallaxPos * u_scale;
 	vec2 clipSpace = ((scaledPosition / u_logicalSize) * 2.0 - 1.0) * vec2(1.0, -1.0);
 
-	gl_Position = vec4(clipSpace, i_z, 1.0);
+	gl_Position = vec4(clipSpace, 0.0, 1.0);
 	v_texcoord = mix(i_uv0, i_uv1, a_corner);
 	v_color_override = i_color;
 	v_slot_id = i_slot_id;
