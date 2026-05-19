@@ -118,6 +118,7 @@ import {
 	VDP_MDU_PACKET_KIND,
 	VDP_MDU_PACKET_PAYLOAD_WORDS,
 } from './mdu';
+import { VdpMeshSourceBank } from './mesh_source';
 import {
 	VdpMfuUnit,
 	VDP_MFU_PACKET_KIND,
@@ -311,6 +312,7 @@ export class VDP implements VramWriteSink {
 	private readonly streamIngress = new VdpStreamIngressUnit();
 	private readonly blitterSourcePort: VdpBlitterSourcePort;
 	private readonly unitRegisterPort: VdpUnitRegisterPort;
+	public readonly meshSources = new VdpMeshSourceBank();
 	public lastFrameCommitted = true;
 	public lastFrameCost = 0;
 	public lastFrameHeld = false;
@@ -751,7 +753,7 @@ export class VDP implements VramWriteSink {
 					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
-				const reserved = this.memory.readU32(cursor + IO_WORD_SIZE * 9);
+				const reserved = this.memory.readU32(cursor + IO_WORD_SIZE * 8);
 				if (reserved !== 0) {
 					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, reserved);
 					return -1;
@@ -765,7 +767,6 @@ export class VDP implements VramWriteSink {
 					this.memory.readU32(cursor + IO_WORD_SIZE * 5),
 					this.memory.readU32(cursor + IO_WORD_SIZE * 6),
 					this.memory.readU32(cursor + IO_WORD_SIZE * 7),
-					this.memory.readU32(cursor + IO_WORD_SIZE * 8),
 				)) ? payloadEnd : -1;
 			}
 			case VDP_SBX_PACKET_KIND: {
@@ -879,8 +880,8 @@ export class VDP implements VramWriteSink {
 					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 					return -1;
 				}
-				if (words[cursor + 9] !== 0) {
-					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, words[cursor + 9]);
+				if (words[cursor + 8] !== 0) {
+					this.fault.raise(VDP_FAULT_STREAM_BAD_PACKET, words[cursor + 8]);
 					return -1;
 				}
 				return this.latchMeshPacket(this.mdu.decodePacket(
@@ -892,7 +893,6 @@ export class VDP implements VramWriteSink {
 					words[cursor + 5],
 					words[cursor + 6],
 					words[cursor + 7],
-					words[cursor + 8],
 				)) ? cursor + VDP_MDU_PACKET_PAYLOAD_WORDS : -1;
 			case VDP_SBX_PACKET_KIND:
 				if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
@@ -1625,7 +1625,7 @@ export class VDP implements VramWriteSink {
 			this.fault.raise(decision.faultCode, decision.faultDetail);
 			return false;
 		}
-		this.mdu.completePacket(this.buildFrame.meshes, packet, this.nextBlitterSequence());
+		this.mdu.completePacket(this.buildFrame.meshes, packet, this.meshSources.resolveSource(packet.sourceAddr), this.nextBlitterSequence());
 		return true;
 	}
 

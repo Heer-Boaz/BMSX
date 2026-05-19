@@ -458,7 +458,7 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			const u32 reserved = m_memory.readU32(cursor + IO_WORD_SIZE * 9u);
+			const u32 reserved = m_memory.readU32(cursor + IO_WORD_SIZE * 8u);
 			if (reserved != 0u) {
 				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, reserved);
 				return VDP_REPLAY_PACKET_FAULT;
@@ -471,8 +471,7 @@ u32 VDP::consumeReplayPacketFromMemory(u32 word, u32 cursor, u32 end) {
 				m_memory.readU32(cursor + IO_WORD_SIZE * 4u),
 				m_memory.readU32(cursor + IO_WORD_SIZE * 5u),
 				m_memory.readU32(cursor + IO_WORD_SIZE * 6u),
-				m_memory.readU32(cursor + IO_WORD_SIZE * 7u),
-				m_memory.readU32(cursor + IO_WORD_SIZE * 8u))) ? payloadEnd : VDP_REPLAY_PACKET_FAULT;
+				m_memory.readU32(cursor + IO_WORD_SIZE * 7u))) ? payloadEnd : VDP_REPLAY_PACKET_FAULT;
 		}
 		case VDP_SBX_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS)) {
@@ -583,8 +582,8 @@ u32 VDP::consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u3
 				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
-			if (words[cursor + 9u] != 0u) {
-				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, words[cursor + 9u]);
+			if (words[cursor + 8u] != 0u) {
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, words[cursor + 8u]);
 				return VDP_REPLAY_PACKET_FAULT;
 			}
 			return latchMeshPacket(m_mdu.decodePacket(
@@ -595,8 +594,7 @@ u32 VDP::consumeReplayPacketFromWords(const u32* words, u32 word, u32 cursor, u3
 				words[cursor + 4u],
 				words[cursor + 5u],
 				words[cursor + 6u],
-				words[cursor + 7u],
-				words[cursor + 8u])) ? cursor + VDP_MDU_PACKET_PAYLOAD_WORDS : VDP_REPLAY_PACKET_FAULT;
+				words[cursor + 7u])) ? cursor + VDP_MDU_PACKET_PAYLOAD_WORDS : VDP_REPLAY_PACKET_FAULT;
 		case VDP_SBX_PACKET_KIND: {
 			if (!isVdpUnitPacketHeaderValid(word, VDP_SBX_PACKET_PAYLOAD_WORDS) || cursor + VDP_SBX_PACKET_PAYLOAD_WORDS > wordCount) {
 				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, word);
@@ -1386,7 +1384,7 @@ bool VDP::latchMeshPacket(const VdpMduPacket& packet) {
 		m_fault.raise(decision.faultCode, decision.faultDetail);
 		return false;
 	}
-	m_mdu.completePacket(*m_buildFrame.meshes, packet, nextBlitterSequence());
+	m_mdu.completePacket(*m_buildFrame.meshes, packet, m_meshSources.resolveSource(packet.sourceAddr), nextBlitterSequence());
 	return true;
 }
 

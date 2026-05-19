@@ -2,12 +2,13 @@
 
 #include "common/primitives.h"
 #include "machine/devices/vdp/contracts.h"
+#include "machine/devices/vdp/mesh_source.h"
 #include <array>
 
 namespace bmsx {
 
 constexpr u32 VDP_MDU_PACKET_KIND = 0x16000000u;
-constexpr u32 VDP_MDU_PACKET_PAYLOAD_WORDS = 10u;
+constexpr u32 VDP_MDU_PACKET_PAYLOAD_WORDS = 9u;
 
 enum class VdpMduPacketState : u8 {
 	Idle = 0,
@@ -18,8 +19,7 @@ enum class VdpMduPacketState : u8 {
 };
 
 struct VdpMduPacket {
-	u32 modelTokenLo = 0u;
-	u32 modelTokenHi = 0u;
+	u32 sourceAddr = 0u;
 	u32 meshIndex = 0u;
 	u32 materialIndex = 0u;
 	u32 modelMatrixIndex = 0u;
@@ -40,8 +40,9 @@ struct VdpMduPacketDecision {
 struct VdpMduFrameBuffer {
 	size_t length = 0u;
 	std::array<u32, VDP_MDU_MESH_LIMIT> seq{};
-	std::array<u32, VDP_MDU_MESH_LIMIT> modelTokenLo{};
-	std::array<u32, VDP_MDU_MESH_LIMIT> modelTokenHi{};
+	std::array<u32, VDP_MDU_MESH_LIMIT> sourceAddr{};
+	std::array<const VdpMeshSourceMesh*, VDP_MDU_MESH_LIMIT> sourceMesh{};
+	std::array<const VdpMeshSourceMaterial*, VDP_MDU_MESH_LIMIT> sourceMaterial{};
 	std::array<u32, VDP_MDU_MESH_LIMIT> meshIndex{};
 	std::array<u32, VDP_MDU_MESH_LIMIT> materialIndex{};
 	std::array<u32, VDP_MDU_MESH_LIMIT> modelMatrixIndex{};
@@ -59,8 +60,7 @@ class VdpMduUnit {
 public:
 	void reset();
 	VdpMduPacket decodePacket(
-		u32 modelTokenLo,
-		u32 modelTokenHi,
+		u32 sourceAddr,
 		u32 meshIndex,
 		u32 materialIndex,
 		u32 modelMatrixIndex,
@@ -69,10 +69,10 @@ public:
 		u32 morphRange,
 		u32 jointRange) const;
 	VdpMduPacketDecision beginPacket(const VdpMduPacket& packet, size_t targetLength);
-	VdpMduPacketDecision completePacket(VdpMduFrameBuffer& target, const VdpMduPacket& packet, u32 seq);
+	VdpMduPacketDecision completePacket(VdpMduFrameBuffer& target, const VdpMduPacket& packet, const VdpMeshSourceModel& source, u32 seq);
 
 private:
-	void latchMesh(VdpMduFrameBuffer& target, const VdpMduPacket& packet, u32 seq) const;
+	void latchMesh(VdpMduFrameBuffer& target, const VdpMduPacket& packet, const VdpMeshSourceModel& source, u32 seq) const;
 
 	VdpMduPacketDecision m_packetDecision;
 };

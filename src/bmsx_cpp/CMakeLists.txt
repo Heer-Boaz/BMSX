@@ -230,6 +230,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/playback.cpp
 	machine/devices/audio/output.cpp
 	machine/devices/audio/save_state.cpp
+	machine/devices/vdp/mesh_source.cpp
 
 	# Input systems
 	input/player.cpp
@@ -245,7 +246,6 @@ add_library(bmsx_core STATIC
 	render/3d/math.cpp
 	render/3d/axis_gizmo_pipeline.cpp
 	render/3d/mesh/pipeline.cpp
-	render/3d/mesh/rom_source.cpp
 	render/3d/mesh/vertex_stream.cpp
 	render/3d/particles/pipeline.cpp
 	render/3d/skybox/pipeline.cpp

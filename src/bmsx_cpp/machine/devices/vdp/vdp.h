@@ -92,6 +92,8 @@ public:
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
 	int lastFrameCost() const { return m_lastFrameCost; }
 	bool lastFrameHeld() const { return m_lastFrameHeld; }
+	VdpMeshSourceBank& meshSources() { return m_meshSources; }
+	const VdpMeshSourceBank& meshSources() const { return m_meshSources; }
 	bool needsImmediateSchedulerService() const {
 		return m_activeFrame.state == VdpSubmittedFrameState::Empty && m_pendingFrame.state != VdpSubmittedFrameState::Empty;
 	}
@@ -153,6 +155,7 @@ private:
 	VdpPmuUnit m_pmu;
 	VdpBbuUnit m_bbu;
 	VdpMduUnit m_mdu;
+	VdpMeshSourceBank m_meshSources;
 	VdpVoutUnit m_vout;
 	int64_t m_cpuHz = 1;
 	int64_t m_workUnitsPerSec = 1;

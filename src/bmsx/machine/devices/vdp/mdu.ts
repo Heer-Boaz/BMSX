@@ -10,15 +10,23 @@ import {
 	VDP_MDU_CONTROL_TEXTURE_SLOT_MASK,
 	VDP_MDU_CONTROL_TEXTURE_SLOT_SHIFT,
 	VDP_MDU_MESH_LIMIT,
+	VDP_MDU_MATERIAL_MESH_DEFAULT,
 	VDP_MDU_MORPH_WEIGHT_LIMIT,
 	VDP_MFU_WEIGHT_COUNT,
 	VDP_SLOT_SYSTEM,
 } from './contracts';
 import { VDP_XF_MATRIX_COUNT } from './xf';
 import { packedHigh16, packedLow16 } from '../../common/word';
+import {
+	VDP_EMPTY_MESH_SOURCE_MATERIAL,
+	VDP_EMPTY_MESH_SOURCE_MESH,
+	type VdpMeshSourceMaterial,
+	type VdpMeshSourceMesh,
+	type VdpMeshSourceModel,
+} from './mesh_source';
 
 export const VDP_MDU_PACKET_KIND = 0x16000000;
-export const VDP_MDU_PACKET_PAYLOAD_WORDS = 10;
+export const VDP_MDU_PACKET_PAYLOAD_WORDS = 9;
 export const VDP_MDU_STATE_IDLE = 0;
 export const VDP_MDU_STATE_PACKET_DECODE = 1;
 export const VDP_MDU_STATE_INSTANCE_EMIT = 2;
@@ -33,8 +41,7 @@ export type VdpMduPacketState =
 	| typeof VDP_MDU_STATE_PACKET_REJECTED;
 
 export type VdpMduPacket = {
-	modelTokenLo: number;
-	modelTokenHi: number;
+	sourceAddr: number;
 	meshIndex: number;
 	materialIndex: number;
 	modelMatrixIndex: number;
@@ -55,8 +62,9 @@ export type VdpMduPacketDecision = {
 export class VdpMduFrameBuffer {
 	public length = 0;
 	public readonly seq = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly modelTokenLo = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly modelTokenHi = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly sourceAddr = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly sourceMesh = new Array<VdpMeshSourceMesh>(VDP_MDU_MESH_LIMIT).fill(VDP_EMPTY_MESH_SOURCE_MESH);
+	public readonly sourceMaterial = new Array<VdpMeshSourceMaterial>(VDP_MDU_MESH_LIMIT).fill(VDP_EMPTY_MESH_SOURCE_MATERIAL);
 	public readonly meshIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);
 	public readonly materialIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);
 	public readonly modelMatrixIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);
@@ -74,8 +82,7 @@ export class VdpMduFrameBuffer {
 
 export class VdpMduUnit {
 	private readonly packetScratch: VdpMduPacket = {
-		modelTokenLo: 0,
-		modelTokenHi: 0,
+		sourceAddr: 0,
 		meshIndex: 0,
 		materialIndex: 0,
 		modelMatrixIndex: 0,
@@ -100,8 +107,7 @@ export class VdpMduUnit {
 	}
 
 	public decodePacket(
-		modelTokenLo: number,
-		modelTokenHi: number,
+		sourceAddr: number,
 		meshIndex: number,
 		materialIndex: number,
 		modelMatrixIndex: number,
@@ -111,8 +117,7 @@ export class VdpMduUnit {
 		jointRange: number,
 	): VdpMduPacket {
 		const packet = this.packetScratch;
-		packet.modelTokenLo = modelTokenLo >>> 0;
-		packet.modelTokenHi = modelTokenHi >>> 0;
+		packet.sourceAddr = sourceAddr >>> 0;
 		packet.meshIndex = meshIndex >>> 0;
 		packet.materialIndex = materialIndex >>> 0;
 		packet.modelMatrixIndex = modelMatrixIndex >>> 0;
@@ -167,20 +172,26 @@ export class VdpMduUnit {
 		return decision;
 	}
 
-	public completePacket(target: VdpMduFrameBuffer, packet: VdpMduPacket, seq: number): VdpMduPacketDecision {
+	public completePacket(target: VdpMduFrameBuffer, packet: VdpMduPacket, source: VdpMeshSourceModel, seq: number): VdpMduPacketDecision {
 		const decision = this.packetDecision;
-		this.latchMesh(target, packet, seq);
+		this.latchMesh(target, packet, source, seq);
 		decision.state = VDP_MDU_STATE_INSTANCE_EMIT;
 		decision.faultCode = VDP_FAULT_NONE;
 		decision.faultDetail = 0;
 		return decision;
 	}
 
-	private latchMesh(target: VdpMduFrameBuffer, packet: VdpMduPacket, seq: number): void {
+	private latchMesh(target: VdpMduFrameBuffer, packet: VdpMduPacket, source: VdpMeshSourceModel, seq: number): void {
 		const index = target.length;
+		const mesh = packet.meshIndex < source.meshes.length ? source.meshes[packet.meshIndex] : VDP_EMPTY_MESH_SOURCE_MESH;
+		let materialIndex = packet.materialIndex;
+		if (materialIndex === VDP_MDU_MATERIAL_MESH_DEFAULT) {
+			materialIndex = mesh.materialIndex;
+		}
 		target.seq[index] = seq;
-		target.modelTokenLo[index] = packet.modelTokenLo;
-		target.modelTokenHi[index] = packet.modelTokenHi;
+		target.sourceAddr[index] = packet.sourceAddr;
+		target.sourceMesh[index] = mesh;
+		target.sourceMaterial[index] = materialIndex < source.materials.length ? source.materials[materialIndex] : VDP_EMPTY_MESH_SOURCE_MATERIAL;
 		target.meshIndex[index] = packet.meshIndex;
 		target.materialIndex[index] = packet.materialIndex;
 		target.modelMatrixIndex[index] = packet.modelMatrixIndex;

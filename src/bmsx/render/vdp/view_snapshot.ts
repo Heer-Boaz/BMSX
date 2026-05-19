@@ -124,8 +124,9 @@ export function commitVdpViewSnapshot(view: GameView, output: VdpDeviceOutput): 
 	}
 	const meshes = output.meshes;
 	view.vdpMeshCount = meshes.length;
-	const meshModelTokenLo = view.vdpMeshModelTokenLo;
-	const meshModelTokenHi = view.vdpMeshModelTokenHi;
+	const meshSourceAddr = view.vdpMeshSourceAddr;
+	const meshSourceMesh = view.vdpMeshSourceMesh;
+	const meshSourceMaterial = view.vdpMeshSourceMaterial;
 	const meshIndex = view.vdpMeshIndex;
 	const meshMaterialIndex = view.vdpMeshMaterialIndex;
 	const meshModelMatrixIndex = view.vdpMeshModelMatrixIndex;
@@ -136,8 +137,9 @@ export function commitVdpViewSnapshot(view: GameView, output: VdpDeviceOutput): 
 	const meshJointBase = view.vdpMeshJointBase;
 	const meshJointCount = view.vdpMeshJointCount;
 	for (let index = 0; index < meshes.length; index += 1) {
-		meshModelTokenLo[index] = meshes.modelTokenLo[index];
-		meshModelTokenHi[index] = meshes.modelTokenHi[index];
+		meshSourceAddr[index] = meshes.sourceAddr[index];
+		meshSourceMesh[index] = meshes.sourceMesh[index];
+		meshSourceMaterial[index] = meshes.sourceMaterial[index];
 		meshIndex[index] = meshes.meshIndex[index];
 		meshMaterialIndex[index] = meshes.materialIndex[index];
 		meshModelMatrixIndex[index] = meshes.modelMatrixIndex[index];

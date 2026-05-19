@@ -1420,6 +1420,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 					textureSize = static_cast<size_t>(textureBufEnd - textureBufStart);
 				}
 				ModelAsset modelAsset = parseModelAsset(assetId, modelValue, textureData, textureSize);
+				modelAsset.rom = romInfo;
 				romPackage.model[assetToken] = std::move(modelAsset);
 				break;
 			}

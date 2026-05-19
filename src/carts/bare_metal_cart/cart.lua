@@ -31,7 +31,7 @@ local vdp_mfu_weights_payload_words<const> = 3
 local vdp_lpu_ambient_payload_words<const> = 6
 local vdp_lpu_directional_payload_words<const> = 9
 local vdp_lpu_point_payload_words<const> = 10
-local vdp_mesh_payload_words<const> = 10
+local vdp_mesh_payload_words<const> = 9
 
 local vdp_cmd_clear<const> = 1
 local vdp_cmd_fill_rect<const> = 2
@@ -79,7 +79,7 @@ local irq_vblank<const> = 0x10
 local atlas_width<const> = 16
 local atlas_height<const> = 16
 local atlas_bytes<const> = atlas_width * atlas_height * 4
-local morph_mesh_record<const> = romdir.cart('animatedmorphsphere')
+local morph_mesh_addr<const> = romdir.cart('animatedmorphsphere').addr
 
 
 local setup_camera_input<const> = function()
@@ -560,8 +560,7 @@ local draw_frame<const> = function()
 	mem[wp], wp = morph_weight_a, wp + 4
 	mem[wp], wp = morph_weight_b, wp + 4
 	mem[wp], wp = vdp_pkt_mesh | (vdp_mesh_payload_words << 16), wp + 4
-	mem[wp], wp = morph_mesh_record.token_lo, wp + 4
-	mem[wp], wp = morph_mesh_record.token_hi, wp + 4
+	mem[wp], wp = morph_mesh_addr, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = vdp_mdu_material_mesh_default, wp + 4
 	mem[wp], wp = xf_model_matrix, wp + 4

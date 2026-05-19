@@ -2,8 +2,6 @@
 
 #if BMSX_ENABLE_GLES2
 #include "core/console.h"
-#include "machine/runtime/runtime.h"
-#include "render/3d/mesh/rom_source.h"
 #include "render/3d/mesh/vertex_stream.h"
 #include "render/3d/shaders/render_3d_shaders.h"
 #include "render/backend/gles2/backend.h"
@@ -225,15 +223,12 @@ void initMeshPipeline(OpenGLES2Backend& backend) {
 	setupMeshProgramLocations(g_mesh);
 }
 
-void renderMeshBatch(const MeshRuntime& runtime, void* framebuffer, const MeshPipelineState& pipelineState) {
-	OpenGLES2Backend& backend = runtime.backend;
-	const GameView& view = runtime.context;
+void renderMeshBatch(OpenGLES2Backend& backend, const GameView& view, void* framebuffer, const MeshPipelineState& pipelineState) {
 	MeshGLES2Program& program = g_mesh;
 	setupMeshDrawState(backend, framebuffer, program, pipelineState);
 	for (size_t index = 0u; index < view.vdpMeshCount; ++index) {
 		const GameView::VdpMeshRenderEntry& submission = view.vdpMeshes[index];
-		const MeshRomDrawSource source = resolveMeshRomDrawSource(runtime.rom, submission);
-		const MeshDrawStream stream = program.vertexStream.build(view, source.model, source.mesh, submission);
+		const MeshDrawStream stream = program.vertexStream.build(view, *submission.sourceMesh, *submission.sourceMaterial, submission);
 		const bool useTexture = (submission.control & VDP_MDU_CONTROL_TEXTURE_ENABLE) != 0u;
 		glUniform1i(program.uniformUseTexture, useTexture ? 1 : 0);
 		applyMeshMaterialDrawState(program, stream.material);
@@ -263,12 +258,11 @@ void registerMeshPass_GLES2(RenderPassLibrary& registry) {
 		return buildMeshPipelineState(ctx, registry.getStateRef<FrameSharedState>("frame_shared"));
 	};
 	desc.shouldExecute = []() {
-		return hasMeshRomDrawSources(ConsoleCore::instance().runtime().activeRom(), *ConsoleCore::instance().view());
+		return ConsoleCore::instance().view()->vdpMeshCount > 0u;
 	};
 	desc.exec = [](GPUBackend* backend, void* framebuffer, std::any& state) {
 		ConsoleCore& console = ConsoleCore::instance();
-		MeshRuntime runtime{*static_cast<OpenGLES2Backend*>(backend), *console.view(), console.runtime().activeRom()};
-		renderMeshBatch(runtime, framebuffer, std::any_cast<MeshPipelineState&>(state));
+		renderMeshBatch(*static_cast<OpenGLES2Backend*>(backend), *console.view(), framebuffer, std::any_cast<MeshPipelineState&>(state));
 	};
 	registry.registerPass(desc);
 }

@@ -7,7 +7,6 @@ import {
 	VDP_SLOT_SECONDARY,
 	VDP_SLOT_SYSTEM,
 } from '../../../machine/devices/vdp/contracts';
-import type { Runtime } from '../../../machine/runtime/runtime';
 import { SYSTEM_SLOT_TEXTURE_KEY, VDP_PRIMARY_SLOT_TEXTURE_KEY, VDP_SECONDARY_SLOT_TEXTURE_KEY } from '../../../rompack/format';
 import type { GameView } from '../../gameview';
 import type { MeshPipelineState, PassEncoder, TextureHandle } from '../../backend/backend';
@@ -17,7 +16,6 @@ import { TEXTURE_UNIT_SLOT_PRIMARY } from '../../backend/webgl/constants';
 import { buildLightingDescriptorPooled, resetLightingDescriptorPools } from '../../lighting/system';
 import meshFS from '../shaders/mesh.frag.glsl';
 import meshVS from '../shaders/mesh.vert.glsl';
-import { hasMeshRomDrawSources, resolveMeshRomDrawSource } from './rom_source';
 import {
 	MESH_COLOR_FLOAT_OFFSET,
 	MESH_SURFACE_BLEND,
@@ -190,7 +188,7 @@ export function initMeshPipeline(backend: WebGLBackend): void {
 	backend.bindArrayBuffer(null);
 }
 
-export function renderMeshBatch(backend: WebGLBackend, view: GameView, runtime: Runtime, state: MeshPipelineState): void {
+export function renderMeshBatch(backend: WebGLBackend, view: GameView, state: MeshPipelineState): void {
 	const meshCount = view.vdpMeshCount;
 	const gl = backend.gl;
 	backend.setViewportRect(0, 0, state.width, state.height);
@@ -202,8 +200,7 @@ export function renderMeshBatch(backend: WebGLBackend, view: GameView, runtime: 
 	uploadMeshFrameUniforms(gl, state);
 	meshPassEncoder.fbo = null;
 	for (let entryIndex = 0; entryIndex < meshCount; entryIndex += 1) {
-		const source = resolveMeshRomDrawSource(runtime, view, entryIndex);
-		meshVertexStream.build(view, source.model, source.mesh, entryIndex);
+		meshVertexStream.build(view, view.vdpMeshSourceMesh[entryIndex], view.vdpMeshSourceMaterial[entryIndex], entryIndex);
 		const control = view.vdpMeshControl[entryIndex];
 		const useTexture = (control & VDP_MDU_CONTROL_TEXTURE_ENABLE) !== 0;
 		gl.uniform1i(meshUseTextureLocation, useTexture ? 1 : 0);
@@ -239,9 +236,9 @@ export function registerMeshPass_WebGL(registry: RenderPassLibrary): void {
 		},
 		writesDepth: true,
 		depthTest: true,
-		shouldExecute: () => hasMeshRomDrawSources(consoleCore.runtime, consoleCore.view),
+		shouldExecute: () => consoleCore.view.vdpMeshCount > 0,
 		exec: (backend, _fbo, state) => {
-			renderMeshBatch(backend as WebGLBackend, consoleCore.view, consoleCore.runtime, state as MeshPipelineState);
+			renderMeshBatch(backend as WebGLBackend, consoleCore.view, state as MeshPipelineState);
 		},
 		prepare: (_backend, _state) => {
 			const gv = consoleCore.view;

@@ -2,6 +2,7 @@
 
 #include "common/types.h"
 #include "machine/devices/vdp/contracts.h"
+#include "machine/devices/vdp/mesh_source.h"
 #include "render/3d/math.h"
 #include "render/gameview.h"
 
@@ -9,9 +10,6 @@
 #include <cstddef>
 
 namespace bmsx {
-
-struct ModelAsset;
-struct ModelMesh;
 
 constexpr i32 MESH_SURFACE_OPAQUE = 0;
 constexpr i32 MESH_SURFACE_MASK = 1;
@@ -53,8 +51,8 @@ struct MeshDrawStream {
 class MeshVertexStreamBuilder {
 public:
 	MeshDrawStream build(const GameView& view,
-								const ModelAsset& model,
-								const ModelMesh& mesh,
+								const VdpMeshSourceMesh& mesh,
+								const VdpMeshSourceMaterial& sourceMaterial,
 								const GameView::VdpMeshRenderEntry& entry);
 
 private:

@@ -25,6 +25,12 @@ import {
 	VDP_MDU_MESH_LIMIT,
 	VDP_MFU_WEIGHT_COUNT,
 } from '../machine/devices/vdp/contracts';
+import {
+	VDP_EMPTY_MESH_SOURCE_MATERIAL,
+	VDP_EMPTY_MESH_SOURCE_MESH,
+	type VdpMeshSourceMaterial,
+	type VdpMeshSourceMesh,
+} from '../machine/devices/vdp/mesh_source';
 import { VDP_LPU_DIRECTIONAL_LIGHT_LIMIT, VDP_LPU_POINT_LIGHT_LIMIT, VDP_LPU_REGISTER_WORDS } from '../machine/devices/vdp/lpu';
 import { VDP_XF_MATRIX_REGISTER_WORDS } from '../machine/devices/vdp/xf';
 import { createVdpTransformSnapshot } from './vdp/transform';
@@ -100,8 +106,9 @@ export class GameView implements RenderContext {
 	public readonly vdpBillboardSlot = new Int32Array(VDP_BBU_BILLBOARD_LIMIT);
 	public readonly vdpBillboardSurfaceId = new Uint32Array(VDP_BBU_BILLBOARD_LIMIT);
 	public vdpBillboardCount = 0;
-	public readonly vdpMeshModelTokenLo = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly vdpMeshModelTokenHi = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshSourceAddr = new Uint32Array(VDP_MDU_MESH_LIMIT);
+	public readonly vdpMeshSourceMesh = new Array<VdpMeshSourceMesh>(VDP_MDU_MESH_LIMIT).fill(VDP_EMPTY_MESH_SOURCE_MESH);
+	public readonly vdpMeshSourceMaterial = new Array<VdpMeshSourceMaterial>(VDP_MDU_MESH_LIMIT).fill(VDP_EMPTY_MESH_SOURCE_MATERIAL);
 	public readonly vdpMeshIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);
 	public readonly vdpMeshMaterialIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);
 	public readonly vdpMeshModelMatrixIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);

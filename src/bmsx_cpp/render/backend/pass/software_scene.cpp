@@ -1,11 +1,9 @@
 #include "render/backend/pass/software_scene.h"
 
 #include "render/backend/pass/library.h"
-#include "machine/runtime/runtime.h"
 
 #include "core/console.h"
 #include "render/gameview.h"
-#include "render/3d/mesh/rom_source.h"
 #include "render/3d/mesh/vertex_stream.h"
 #include "render/shared/software_pixels.h"
 #include "render/vdp/slot_textures.h"
@@ -75,9 +73,8 @@ u8 softwareMeshColorByte(f32 channel, f32 shade) {
 	return static_cast<u8>(value);
 }
 
-void drawSoftwareMeshEntry(SoftwareBackend& backend, const GameView& view, const RuntimeRomPackage& rom, const GameView::VdpMeshRenderEntry& entry) {
-	const MeshRomDrawSource source = resolveMeshRomDrawSource(rom, entry);
-	const MeshDrawStream stream = g_softwareMeshVertexStream.build(view, source.model, source.mesh, entry);
+void drawSoftwareMeshEntry(SoftwareBackend& backend, const GameView& view, const GameView::VdpMeshRenderEntry& entry) {
+	const MeshDrawStream stream = g_softwareMeshVertexStream.build(view, *entry.sourceMesh, *entry.sourceMaterial, entry);
 	const Render3D::Mat4& model = *stream.modelMatrix;
 	const std::array<f32, 16>& viewProj = view.vdpTransform.viewProj;
 	f32 lightEnergy = view.vdpAmbientLightColorIntensity[3];
@@ -333,7 +330,7 @@ void registerSoftwareScenePasses(RenderPassLibrary& registry) {
 		desc.graph->writes = { softwareSceneOutputSlot };
 		desc.shouldExecute = []() {
 			auto& console = ConsoleCore::instance();
-			return hasMeshRomDrawSources(console.runtime().activeRom(), *console.view());
+			return console.view()->vdpMeshCount > 0u;
 		};
 		desc.exec = [](GPUBackend* backend, void*, std::any&) {
 			auto& console = ConsoleCore::instance();
@@ -361,9 +358,8 @@ void registerSoftwareScenePasses(RenderPassLibrary& registry) {
 }
 
 void renderSoftwareMeshes(SoftwareBackend& backend, const GameView& view) {
-	const RuntimeRomPackage& rom = ConsoleCore::instance().runtime().activeRom();
 	for (size_t index = 0u; index < view.vdpMeshCount; ++index) {
-		drawSoftwareMeshEntry(backend, view, rom, view.vdpMeshes[index]);
+		drawSoftwareMeshEntry(backend, view, view.vdpMeshes[index]);
 	}
 }
 

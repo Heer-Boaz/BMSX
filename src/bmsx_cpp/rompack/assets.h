@@ -308,6 +308,7 @@ struct ModelMesh {
 
 struct ModelAsset {
 	AssetId id;
+	RomAssetInfo rom;
 	std::vector<ModelMesh> meshes;
 	std::vector<ModelMaterial> materials;
 	std::vector<ModelAnimation> animations;

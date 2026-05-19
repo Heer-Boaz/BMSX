@@ -111,8 +111,9 @@ void commitVdpViewSnapshot(GameView& view, const VdpDeviceOutput& output) {
 	view.vdpMeshCount = meshes.length;
 	for (size_t index = 0; index < meshes.length; ++index) {
 		GameView::VdpMeshRenderEntry& target = view.vdpMeshes[index];
-		target.modelTokenLo = meshes.modelTokenLo[index];
-		target.modelTokenHi = meshes.modelTokenHi[index];
+		target.sourceAddr = meshes.sourceAddr[index];
+		target.sourceMesh = meshes.sourceMesh[index];
+		target.sourceMaterial = meshes.sourceMaterial[index];
 		target.meshIndex = meshes.meshIndex[index];
 		target.materialIndex = meshes.materialIndex[index];
 		target.modelMatrixIndex = meshes.modelMatrixIndex[index];

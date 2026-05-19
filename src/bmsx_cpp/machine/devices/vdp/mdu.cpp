@@ -16,8 +16,7 @@ void VdpMduUnit::reset() {
 }
 
 VdpMduPacket VdpMduUnit::decodePacket(
-	u32 modelTokenLo,
-	u32 modelTokenHi,
+	u32 sourceAddr,
 	u32 meshIndex,
 	u32 materialIndex,
 	u32 modelMatrixIndex,
@@ -26,8 +25,7 @@ VdpMduPacket VdpMduUnit::decodePacket(
 	u32 morphRange,
 	u32 jointRange) const {
 	VdpMduPacket packet;
-	packet.modelTokenLo = modelTokenLo;
-	packet.modelTokenHi = modelTokenHi;
+	packet.sourceAddr = sourceAddr;
 	packet.meshIndex = meshIndex;
 	packet.materialIndex = materialIndex;
 	packet.modelMatrixIndex = modelMatrixIndex;
@@ -82,20 +80,33 @@ VdpMduPacketDecision VdpMduUnit::beginPacket(const VdpMduPacket& packet, size_t 
 	return decision;
 }
 
-VdpMduPacketDecision VdpMduUnit::completePacket(VdpMduFrameBuffer& target, const VdpMduPacket& packet, u32 seq) {
+VdpMduPacketDecision VdpMduUnit::completePacket(VdpMduFrameBuffer& target, const VdpMduPacket& packet, const VdpMeshSourceModel& source, u32 seq) {
 	VdpMduPacketDecision& decision = m_packetDecision;
-	latchMesh(target, packet, seq);
+	latchMesh(target, packet, source, seq);
 	decision.state = VdpMduPacketState::InstanceEmit;
 	decision.faultCode = VDP_FAULT_NONE;
 	decision.faultDetail = 0u;
 	return decision;
 }
 
-void VdpMduUnit::latchMesh(VdpMduFrameBuffer& target, const VdpMduPacket& packet, u32 seq) const {
+void VdpMduUnit::latchMesh(VdpMduFrameBuffer& target, const VdpMduPacket& packet, const VdpMeshSourceModel& source, u32 seq) const {
 	const size_t index = target.length;
+	const VdpMeshSourceMesh* mesh = &emptyVdpMeshSourceMesh();
+	if (packet.meshIndex < source.meshes.size()) {
+		mesh = &source.meshes[packet.meshIndex];
+	}
+	u32 materialIndex = packet.materialIndex;
+	if (materialIndex == VDP_MDU_MATERIAL_MESH_DEFAULT) {
+		materialIndex = mesh->materialIndex;
+	}
+	const VdpMeshSourceMaterial* material = &emptyVdpMeshSourceMaterial();
+	if (materialIndex < source.materials.size()) {
+		material = &source.materials[materialIndex];
+	}
 	target.seq[index] = seq;
-	target.modelTokenLo[index] = packet.modelTokenLo;
-	target.modelTokenHi[index] = packet.modelTokenHi;
+	target.sourceAddr[index] = packet.sourceAddr;
+	target.sourceMesh[index] = mesh;
+	target.sourceMaterial[index] = material;
 	target.meshIndex[index] = packet.meshIndex;
 	target.materialIndex[index] = packet.materialIndex;
 	target.modelMatrixIndex[index] = packet.modelMatrixIndex;

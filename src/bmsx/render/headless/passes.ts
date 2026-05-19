@@ -1,10 +1,8 @@
-import type { Runtime } from '../../machine/runtime/runtime';
 import type { RenderPassLibrary } from '../backend/pass/library';
 import type { Framebuffer2DPipelineState, ParticlePipelineState, RenderPassDef } from '../backend/backend';
 import type { GameView } from '../gameview';
 import { M4 } from '../3d/math';
 import { MESH_COLOR_FLOAT_OFFSET, MESH_NORMAL_FLOAT_OFFSET, MESH_POSITION_FLOAT_OFFSET, MESH_VERTEX_FLOATS, MeshVertexStreamBuilder } from '../3d/mesh/vertex_stream';
-import { hasMeshRomDrawSources, resolveMeshRomDrawSource } from '../3d/mesh/rom_source';
 import type { Host2DSubmission } from '../shared/submissions';
 import { SKYBOX_FACE_KEYS } from '../../machine/devices/vdp/contracts';
 import type { VdpSlotTexturePixels } from '../vdp/slot_textures';
@@ -525,9 +523,8 @@ function renderHeadlessMeshPoint(screenX: number, screenY: number, colorR: numbe
 	}
 }
 
-function rasterizeHeadlessMesh(runtime: Runtime, view: GameView, entryIndex: number): number {
-	const source = resolveMeshRomDrawSource(runtime, view, entryIndex);
-	headlessMeshVertexStream.build(view, source.model, source.mesh, entryIndex);
+function rasterizeHeadlessMesh(view: GameView, entryIndex: number): number {
+	headlessMeshVertexStream.build(view, view.vdpMeshSourceMesh[entryIndex], view.vdpMeshSourceMaterial[entryIndex], entryIndex);
 	const vertices = headlessMeshVertexStream.vertices;
 	const model = headlessMeshVertexStream.modelMatrix;
 	const viewProj = view.vdpTransform.viewProj;
@@ -605,13 +602,12 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 		name: 'HeadlessMesh',
 		stateOnly: true,
 		graph: { writes: ['frame_color'] },
-		shouldExecute: () => hasMeshRomDrawSources(registry.runtime as Runtime, registry.view as GameView),
+		shouldExecute: () => (registry.view as GameView).vdpMeshCount > 0,
 		exec: () => {
 			const view = registry.view as GameView;
-			const runtime = registry.runtime as Runtime;
 			let plotted = 0;
 			for (let index = 0; index < view.vdpMeshCount; index += 1) {
-				plotted = plotted + rasterizeHeadlessMesh(runtime, view, index);
+				plotted = plotted + rasterizeHeadlessMesh(view, index);
 			}
 			const headline = `draws=${view.vdpMeshCount} plotted=${plotted} morph=${view.vdpMeshMorphCount[0]} lights=${view.vdpDirectionalLightCount}/${view.vdpPointLightCount}`;
 			if (HEADLESS_VERBOSE_DIFF) {

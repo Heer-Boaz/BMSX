@@ -1,13 +1,17 @@
 import {
 	VDP_JTU_MATRIX_COUNT,
 	VDP_JTU_MATRIX_WORDS,
-	VDP_MDU_MATERIAL_MESH_DEFAULT,
 	VDP_MDU_MORPH_WEIGHT_LIMIT,
 	VDP_MDU_VERTEX_LIMIT,
 } from '../../../machine/devices/vdp/contracts';
 import { decodeSignedQ16_16WordsInto } from '../../../machine/devices/vdp/fixed_point';
+import {
+	VDP_MESH_ALPHA_BLEND,
+	VDP_MESH_ALPHA_MASK,
+	type VdpMeshSourceMaterial,
+	type VdpMeshSourceMesh,
+} from '../../../machine/devices/vdp/mesh_source';
 import { VDP_XF_MATRIX_WORDS } from '../../../machine/devices/vdp/xf';
-import type { GLTFMaterial, GLTFMesh, GLTFModel } from '../../../rompack/format';
 import type { GameView } from '../../gameview';
 import { M4 } from '../math';
 
@@ -60,12 +64,12 @@ export class MeshVertexStreamBuilder {
 	private readonly jointMatrices = new Float32Array(VDP_JTU_MATRIX_COUNT * VDP_JTU_MATRIX_WORDS);
 	private readonly morphWeights = new Float32Array(VDP_MDU_MORPH_WEIGHT_LIMIT);
 
-	build(view: GameView, model: GLTFModel, mesh: GLTFMesh, entryIndex: number): void {
+	build(view: GameView, mesh: VdpMeshSourceMesh, sourceMaterial: VdpMeshSourceMaterial, entryIndex: number): void {
 		const modelMatrixIndex = view.vdpMeshModelMatrixIndex[entryIndex];
 		decodeSignedQ16_16WordsInto(this.modelMatrix, 0, view.vdpXfMatrixWords, modelMatrixIndex * VDP_XF_MATRIX_WORDS, VDP_XF_MATRIX_WORDS);
 		M4.normal3Into(this.normalMatrix, this.modelMatrix);
-		this.resolveMeshMaterial(model, mesh, view.vdpMeshMaterialIndex[entryIndex], view.vdpMeshColor[entryIndex]);
-		const sourceVertexCount = mesh.indices ? mesh.indices.length : mesh.positions.length / 3;
+		this.resolveMeshMaterial(sourceMaterial, view.vdpMeshColor[entryIndex]);
+		const sourceVertexCount = mesh.hasIndices ? mesh.indices.length : mesh.positions.length / 3;
 		const vertexCount = sourceVertexCount > VDP_MDU_VERTEX_LIMIT ? VDP_MDU_VERTEX_LIMIT : sourceVertexCount;
 		const morphCount = this.meshMorphTargetCount(mesh, view.vdpMeshMorphCount[entryIndex]);
 		decodeSignedQ16_16WordsInto(this.morphWeights, 0, view.vdpMorphWeightWords, view.vdpMeshMorphBase[entryIndex], morphCount);
@@ -79,8 +83,8 @@ export class MeshVertexStreamBuilder {
 			}
 		}
 		this.vertexCount = vertexCount;
-		const indices = mesh.indices;
-		if (indices) {
+		if (mesh.hasIndices) {
+			const indices = mesh.indices;
 			for (let index = 0; index < vertexCount; index += 1) {
 				this.writeMeshVertex(mesh, indices[index], index * MESH_VERTEX_FLOATS, morphCount, skinningEnabled, jointCount);
 			}
@@ -91,12 +95,10 @@ export class MeshVertexStreamBuilder {
 		}
 	}
 
-	private meshSurfaceMode(alphaMode: GLTFMaterial['alphaMode']): number {
+	private meshSurfaceMode(alphaMode: number): number {
 		switch (alphaMode) {
-			case undefined:
-			case 'OPAQUE': return MESH_SURFACE_OPAQUE;
-			case 'MASK': return MESH_SURFACE_MASK;
-			case 'BLEND': return MESH_SURFACE_BLEND;
+			case VDP_MESH_ALPHA_MASK: return MESH_SURFACE_MASK;
+			case VDP_MESH_ALPHA_BLEND: return MESH_SURFACE_BLEND;
 		}
 		return MESH_SURFACE_OPAQUE;
 	}
@@ -109,57 +111,25 @@ export class MeshVertexStreamBuilder {
 		target.color3 = ((color >>> 24) & 0xff) / 255;
 	}
 
-	private resolveMeshMaterial(model: GLTFModel, mesh: GLTFMesh, materialWord: number, colorWord: number): void {
+	private resolveMeshMaterial(source: VdpMeshSourceMaterial, colorWord: number): void {
 		const target = this.material;
 		this.writePacketColor(colorWord);
-		target.surface = MESH_SURFACE_OPAQUE;
-		target.alphaCutoff = 0.5;
-		target.metallicFactor = 1;
-		target.roughnessFactor = 1;
-		target.emissive0 = 0;
-		target.emissive1 = 0;
-		target.emissive2 = 0;
-		target.doubleSided = false;
-		target.unlit = false;
-		const materialIndex = materialWord === VDP_MDU_MATERIAL_MESH_DEFAULT && mesh.materialIndex !== undefined
-			? mesh.materialIndex >>> 0
-			: materialWord >>> 0;
-		if (materialIndex === VDP_MDU_MATERIAL_MESH_DEFAULT) {
-			return;
-		}
-		const materials = model.materials;
-		if (!materials || materialIndex >= materials.length) {
-			return;
-		}
-		const material = materials[materialIndex];
-		const baseColor = material.baseColorFactor;
-		if (baseColor) {
-			target.color0 *= baseColor[0];
-			target.color1 *= baseColor[1];
-			target.color2 *= baseColor[2];
-			target.color3 *= baseColor[3];
-		}
-		target.surface = this.meshSurfaceMode(material.alphaMode);
-		if (material.alphaCutoff !== undefined) {
-			target.alphaCutoff = material.alphaCutoff;
-		}
-		if (material.metallicFactor !== undefined) {
-			target.metallicFactor = material.metallicFactor;
-		}
-		if (material.roughnessFactor !== undefined) {
-			target.roughnessFactor = material.roughnessFactor;
-		}
-		const emissive = material.emissiveFactor;
-		if (emissive) {
-			target.emissive0 = emissive[0];
-			target.emissive1 = emissive[1];
-			target.emissive2 = emissive[2];
-		}
-		target.doubleSided = !!material.doubleSided;
-		target.unlit = !!material.unlit;
+		target.color0 *= source.baseColor0;
+		target.color1 *= source.baseColor1;
+		target.color2 *= source.baseColor2;
+		target.color3 *= source.baseColor3;
+		target.surface = this.meshSurfaceMode(source.alphaMode);
+		target.alphaCutoff = source.alphaCutoff;
+		target.metallicFactor = source.metallicFactor;
+		target.roughnessFactor = source.roughnessFactor;
+		target.emissive0 = source.emissive0;
+		target.emissive1 = source.emissive1;
+		target.emissive2 = source.emissive2;
+		target.doubleSided = source.doubleSided;
+		target.unlit = source.unlit;
 	}
 
-	private writeMeshVertex(mesh: GLTFMesh,
+	private writeMeshVertex(mesh: VdpMeshSourceMesh,
 		vertexIndex: number,
 		outputBase: number,
 		morphCount: number,
@@ -173,7 +143,7 @@ export class MeshVertexStreamBuilder {
 		let ny = 0;
 		let nz = 1;
 		const normals = mesh.normals;
-		if (normals && positionBase + 2 < normals.length) {
+		if (positionBase + 2 < normals.length) {
 			nx = normals[positionBase];
 			ny = normals[positionBase + 1];
 			nz = normals[positionBase + 2];
@@ -186,7 +156,7 @@ export class MeshVertexStreamBuilder {
 			x += morph[positionBase] * weight;
 			y += morph[positionBase + 1] * weight;
 			z += morph[positionBase + 2] * weight;
-			if (morphNormals && morphIndex < morphNormals.length) {
+			if (morphIndex < morphNormals.length) {
 				const morphNormal = morphNormals[morphIndex];
 				nx += morphNormal[positionBase] * weight;
 				ny += morphNormal[positionBase + 1] * weight;
@@ -235,10 +205,10 @@ export class MeshVertexStreamBuilder {
 		}
 		const uvBase = vertexIndex * 2;
 		const texcoords = mesh.texcoords;
-		const hasTexcoord = texcoords && uvBase + 1 < texcoords.length;
+		const hasTexcoord = uvBase + 1 < texcoords.length;
 		const colorBase = vertexIndex * 4;
 		const colors = mesh.colors;
-		const hasColor = colors && colorBase + 3 < colors.length;
+		const hasColor = colorBase + 3 < colors.length;
 		const vertices = this.vertices;
 		const material = this.material;
 		vertices[outputBase] = x;
@@ -255,16 +225,13 @@ export class MeshVertexStreamBuilder {
 		vertices[outputBase + 11] = hasColor ? colors[colorBase + 3] * material.color3 : material.color3;
 	}
 
-	private meshMorphTargetCount(mesh: GLTFMesh, packetMorphCount: number): number {
+	private meshMorphTargetCount(mesh: VdpMeshSourceMesh, packetMorphCount: number): number {
 		const morphPositions = mesh.morphPositions;
-		if (!morphPositions) {
-			return 0;
-		}
 		return packetMorphCount < morphPositions.length ? packetMorphCount : morphPositions.length;
 	}
 
-	private meshHasSkinningSource(mesh: GLTFMesh, jointCount: number): boolean {
+	private meshHasSkinningSource(mesh: VdpMeshSourceMesh, jointCount: number): boolean {
 		const influenceCount = (mesh.positions.length / 3) * 4;
-		return jointCount !== 0 && !!mesh.jointIndices && !!mesh.jointWeights && mesh.jointIndices.length >= influenceCount && mesh.jointWeights.length >= influenceCount;
+		return jointCount !== 0 && mesh.jointIndices.length >= influenceCount && mesh.jointWeights.length >= influenceCount;
 	}
 }

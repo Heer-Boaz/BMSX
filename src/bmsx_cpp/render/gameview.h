@@ -11,6 +11,7 @@
 #include "shared/submissions.h"
 #include "common/registry.h"
 #include "machine/devices/vdp/lpu.h"
+#include "machine/devices/vdp/mesh_source.h"
 #include "render/vdp/transform.h"
 #include "common/subscription.h"
 #include <array>
@@ -139,8 +140,9 @@ public:
 	std::array<VdpBillboardRenderEntry, VDP_BBU_BILLBOARD_LIMIT> vdpBillboards{};
 	size_t vdpBillboardCount = 0u;
 	struct VdpMeshRenderEntry {
-		u32 modelTokenLo = 0u;
-		u32 modelTokenHi = 0u;
+		u32 sourceAddr = 0u;
+		const VdpMeshSourceMesh* sourceMesh = nullptr;
+		const VdpMeshSourceMaterial* sourceMaterial = nullptr;
 		u32 meshIndex = 0u;
 		u32 materialIndex = 0u;
 		u32 modelMatrixIndex = 0u;
