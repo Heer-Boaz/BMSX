@@ -1,6 +1,5 @@
 local stagger<const> = {}
 local globals<const> = require('globals')
-local color_module<const> = require('bios/common/color')
 local stagger_timeline_prefix<const> = 'p3.stagger.'
 
 local presets<const> = {
@@ -80,15 +79,13 @@ local tween_u<const> = function(time, start_time, duration, ease)
 end
 
 local apply_text_alpha<const> = function(text_obj, alpha)
-	text_obj.text_color = color_module.with_alpha(text_obj.text_color, alpha)
+	local ab<const> = ((alpha * 255 + 0.5) // 1) & 0xff
+	text_obj.text_color = (ab << 24) | (text_obj.text_color & 0x00ffffff)
 end
 
 local apply_bg_alpha<const> = function(bg, base, alpha)
-	local color<const> = bg.sprite_component.colorize
-	color.r = base.r
-	color.g = base.g
-	color.b = base.b
-	color.a = alpha
+	local ab<const> = ((alpha * 255 + 0.5) // 1) & 0xff
+	bg.sprite_component.color = (ab << 24) | (base & 0x00ffffff)
 end
 
 local pose_apply<const> = function(entry, scale, nudge)
@@ -217,20 +214,20 @@ function stagger.play(owner, preset_id, opts)
 	local text_base_alpha = 1
 
 	if bg then
-		local base<const> = bg.sprite_component.colorize
-		timeline_cfg.bg_base_color = { r = base.r, g = base.g, b = base.b, a = base.a }
+		local base<const> = bg.sprite_component.color
+		local base_alpha<const> = ((base >> 24) & 0xff) / 255
+		timeline_cfg.bg_base_color = base
+		timeline_cfg.bg_from = base_alpha
 		if opts.bg_dim ~= nil and not opts.bg_dim then
-			timeline_cfg.bg_from = base.a
-			timeline_cfg.bg_to = base.a
+			timeline_cfg.bg_to = base_alpha
 		elseif opts.bg_alpha ~= nil then
-			timeline_cfg.bg_from = base.a
 			timeline_cfg.bg_to = opts.bg_alpha
 		end
 		apply_bg_alpha(bg, timeline_cfg.bg_base_color, timeline_cfg.bg_from)
 	end
 
 	if text_main then
-		text_base_alpha = color_module.alpha(text_main.text_color)
+		text_base_alpha = ((text_main.text_color >> 24) & 0xff) / 255
 		apply_text_alpha(text_main, 0)
 	end
 	if text_choice then

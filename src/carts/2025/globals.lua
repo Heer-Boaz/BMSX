@@ -37,6 +37,8 @@ transition_accent_out_frames = 4
 transition_text_in_frames = 6
 transition_text_hold_frames = 32
 transition_text_out_frames = 5
+transition_flash_frames = 2
+transition_flash_mix_byte = 89
 
 combat_fade_timeline_id = 'combat_fade'
 combat_fade_out_frames = 10
@@ -173,18 +175,18 @@ combat_parallax_momentum_step = 1
 combat_parallax_momentum_limit_steps = 5
 combat_parallax_pmu_scale_q16 = 0x000100f5
 
-p3_blue_r = 0.04
-p3_blue_g = 0.57
-p3_blue_b = 0.93
-p3_blue_color = 0xff0a91ec
-p3_cyan_r = 0.1
-p3_cyan_g = 0.82
-p3_cyan_b = 1
-p3_cyan_color = 0xff1ad1ff
-p3_ink_r = 0.06
-p3_ink_g = 0.16
-p3_ink_b = 0.38
-p3_ink_color = 0xff0f2961
+p3_blue_r = 0.07
+p3_blue_g = 0.28
+p3_blue_b = 0.8
+p3_blue_color = 0xff1247cc
+p3_cyan_r = 0.32
+p3_cyan_g = 0.86
+p3_cyan_b = 0.98
+p3_cyan_color = 0xff52dbfa
+p3_ink_r = 0.02
+p3_ink_g = 0.05
+p3_ink_b = 0.12
+p3_ink_color = 0xff050d1f
 p3_white_r = 1
 p3_white_g = 1
 p3_white_b = 1
@@ -195,9 +197,9 @@ p3_black_b = 0
 p3_black_color = 0xff000000
 
 p3_transition_palette_dialogue = {
-	overlay = p3_blue_color,
+	overlay = p3_ink_color,
 	panel_primary = p3_blue_color,
-	panel_secondary = p3_blue_color,
+	panel_secondary = p3_black_color,
 	accent = p3_cyan_color,
 }
 p3_transition_palette_combat = {
@@ -209,13 +211,14 @@ p3_transition_palette_combat = {
 p3_transition_palette_ending = {
 	overlay = p3_blue_color,
 	panel_primary = p3_blue_color,
-	panel_secondary = p3_blue_color,
+	panel_secondary = p3_ink_color,
 	accent = p3_cyan_color,
 }
 p3_transition_palette_choice = p3_transition_palette_dialogue
 
 combat_results_bg_color = p3_blue_color
-combat_results_bg_a = 0.85
+combat_results_bg_alpha_byte = 0xd9
+combat_results_bg_visible_color = (combat_results_bg_alpha_byte << 24) | (combat_results_bg_color & 0x00ffffff)
 
 local clear_texts<const> = function(text_ids)
 	for i = 1, #text_ids do
@@ -237,11 +240,7 @@ local show_background<const> = function(id)
 		bg:gfx(id)
 	end
 	bg.visible = true
-	local color<const> = bg.sprite_component.colorize
-	color.r = 1
-	color.g = 1
-	color.b = 1
-	color.a = 1
+	bg.sprite_component.color = p3_white_color
 	return bg
 end
 
@@ -313,6 +312,8 @@ return {
 	transition_text_in_frames = transition_text_in_frames,
 	transition_text_hold_frames = transition_text_hold_frames,
 	transition_text_out_frames = transition_text_out_frames,
+	transition_flash_frames = transition_flash_frames,
+	transition_flash_mix_byte = transition_flash_mix_byte,
 	combat_fade_timeline_id = combat_fade_timeline_id,
 	combat_fade_out_frames = combat_fade_out_frames,
 	combat_fade_hold_frames = combat_fade_hold_frames,
@@ -463,7 +464,8 @@ return {
 	p3_transition_palette_ending = p3_transition_palette_ending,
 	p3_transition_palette_choice = p3_transition_palette_choice,
 	combat_results_bg_color = combat_results_bg_color,
-	combat_results_bg_a = combat_results_bg_a,
+	combat_results_bg_alpha_byte = combat_results_bg_alpha_byte,
+	combat_results_bg_visible_color = combat_results_bg_visible_color,
 	clear_texts = clear_texts,
 	apply_background = apply_background,
 	show_background = show_background,

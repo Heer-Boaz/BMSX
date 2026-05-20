@@ -754,6 +754,7 @@
 			"description": "Choose ROM to build",
 			"options": [
 				"bare_metal_cart",
+				"fade_probe",
 				"pietious",
 				"nemesis_s",
 				"esther",

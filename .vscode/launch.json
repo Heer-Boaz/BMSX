@@ -237,6 +237,7 @@
 			"description": "Choose cart to debug/run",
 			"options": [
 				"bare_metal_cart",
+				"fade_probe",
 				"pietious",
 				"nemesis_s",
 				"esther",

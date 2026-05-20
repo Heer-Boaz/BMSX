@@ -1,6 +1,5 @@
 local builders<const> = {}
 local globals<const> = require('globals')
-local color<const> = require('bios/common/color')
 local round<const> = function(x)
 	if x >= 0 then
 		return (x + 0.5) // 1
@@ -42,6 +41,14 @@ local panel_motion<const> = function(frame_index, panel, in_frames, hold_frames,
 		return panel.x_hold + (panel.x_out - panel.x_hold) * eased, panel.y, 1 - eased
 	end
 	return panel.x_out, panel.y, 0
+end
+
+local flash_mix_byte<const> = function(frame_index, flash_frame)
+	if frame_index < flash_frame or frame_index >= (flash_frame + globals.transition_flash_frames) then
+		return 0
+	end
+	local remaining<const> = globals.transition_flash_frames - 1 - (frame_index - flash_frame)
+	return (remaining * globals.transition_flash_mix_byte) // (globals.transition_flash_frames - 1)
 end
 
 function builders.build_all_out_shake(total_frames)
@@ -127,8 +134,9 @@ function builders.build_combat_fade_frames()
 			local u<const> = frame_index / (globals.combat_fade_out_frames - 1)
 			a = easing.smoothstep(u)
 		end
+		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
 		frames[#frames + 1] = {
-			overlay = { color = color.with_alpha(globals.p3_black_color, a) },
+			overlay = { color = ab << 24 },
 		}
 	end
 	return frames
@@ -161,7 +169,7 @@ function builders.build_combat_focus_frames(params)
 			x = x,
 			y = y,
 			sprite_component = {
-				colorize = { r = 1, g = 1, b = 1, a = 1 },
+				color = globals.p3_white_color,
 				scale = { x = s, y = s },
 			},
 		}
@@ -179,13 +187,14 @@ function builders.build_combat_focus_frames(params)
 		local x<const> = center_x - (monster_sx * sx) / 2
 		local y<const> = bottom_y - (monster_sy * sy)
 		local alpha<const> = 1 - easing.ease_in_quad(u)
+		local ab<const> = ((alpha * 255 + 0.5) // 1) & 0xff
 
 		frames[#frames + 1] = {
 			visible = alpha > 0,
 			x = x,
 			y = y,
 			sprite_component = {
-				colorize = { r = 1, g = 1, b = 1, a = alpha },
+				color = (ab << 24) | (globals.p3_white_color & 0x00ffffff),
 				scale = { x = sx, y = sy },
 			},
 		}
@@ -434,7 +443,7 @@ function builders.build_combat_exchange_frames(params)
 		local maya_x = maya_base_x
 		local maya_y = maya_base_y
 		local maya_scale = { x = 1, y = 1 }
-		local maya_colorize = { r = 1, g = 1, b = 1, a = 1 }
+		local maya_flash = false
 		local overlay_alpha = 0
 		local bob = 0
 
@@ -459,7 +468,7 @@ function builders.build_combat_exchange_frames(params)
 			if params.flash then
 				local flash_index<const> = i - impact_start
 				if (flash_index % 2) == 1 then
-					maya_colorize = { r = params.flash_r, g = params.flash_g, b = params.flash_b, a = 1 }
+					maya_flash = true
 				end
 			end
 			local cam_dx<const> = round(shake_signed(i * 19 + 5) * params.cam_shake_x * impact_u)
@@ -474,7 +483,8 @@ function builders.build_combat_exchange_frames(params)
 
 		local overlay_color = 0
 		if overlay_alpha > 0 then
-			overlay_color = color.rgba8888(params.flash_r, params.flash_g, params.flash_b, overlay_alpha)
+			local ab<const> = ((overlay_alpha * 255 + 0.5) // 1) & 0xff
+			overlay_color = (ab << 24) | (params.flash_color & 0x00ffffff)
 		end
 
 		frames[#frames + 1] = {
@@ -482,7 +492,7 @@ function builders.build_combat_exchange_frames(params)
 				x = monster_x,
 				y = monster_y,
 				sprite_component = {
-					colorize = { r = 1, g = 1, b = 1, a = 1 },
+					color = globals.p3_white_color,
 					scale = { x = s, y = s },
 				},
 			},
@@ -490,7 +500,7 @@ function builders.build_combat_exchange_frames(params)
 				x = maya_x,
 				y = maya_y,
 				sprite_component = {
-					colorize = maya_colorize,
+					color = maya_flash and params.flash_color or globals.p3_white_color,
 					scale = maya_scale,
 				},
 			},
@@ -578,11 +588,11 @@ function builders.build_combat_hit_frames(params)
 			y = 1 + (globals.combat_hit_scale_y * kick),
 		}
 
-		local monster_colorize = { r = 1, g = 1, b = 1, a = 1 }
+		local monster_flash = false
 		if frame_index >= globals.combat_hit_stop_frames and frame_index < recover_start then
 			local flash_index<const> = frame_index - globals.combat_hit_stop_frames
 			if (flash_index % 2) == 1 then
-				monster_colorize = { r = 1, g = 0.2, b = 0.2, a = 1 }
+				monster_flash = true
 			end
 		end
 
@@ -611,7 +621,7 @@ function builders.build_combat_hit_frames(params)
 				x = monster_x,
 				y = monster_y,
 				sprite_component = {
-					colorize = monster_colorize,
+					color = monster_flash and 0xffff3333 or globals.p3_white_color,
 					scale = monster_scale,
 				},
 			},
@@ -638,16 +648,18 @@ function builders.build_combat_results_fade_in_frames(params)
 	for frame_index = 0, globals.combat_results_fade_in_frames - 1 do
 		local u<const> = frame_index / (globals.combat_results_fade_in_frames - 1)
 		local a<const> = easing.smoothstep(u)
+		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
+		local bg_ab<const> = ((globals.combat_results_bg_alpha_byte * a + 0.5) // 1) & 0xff
 		frames[#frames + 1] = {
 			bg = {
-				color = color.with_alpha(globals.combat_results_bg_color, globals.combat_results_bg_a * a),
+				color = (bg_ab << 24) | (globals.combat_results_bg_color & 0x00ffffff),
 			},
 			maya_b = {
-				sprite_component = { colorize = { r = 1, g = 1, b = 1, a = a } },
+				sprite_component = { color = (ab << 24) | (globals.p3_white_color & 0x00ffffff) },
 				x = maya_start_x + (maya_target_x - maya_start_x) * a,
 			},
 			results = {
-				text_color = color.with_alpha(globals.p3_white_color, a),
+				text_color = (ab << 24) | (globals.p3_white_color & 0x00ffffff),
 				centered_block_x = text_start_x + (text_target_x - text_start_x) * a,
 			},
 		}
@@ -661,15 +673,17 @@ function builders.build_combat_results_fade_out_frames()
 	for frame_index = 0, globals.combat_results_fade_out_frames - 1 do
 		local u<const> = frame_index / (globals.combat_results_fade_out_frames - 1)
 		local a<const> = 1 - easing.smoothstep(u)
+		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
+		local bg_ab<const> = ((globals.combat_results_bg_alpha_byte * a + 0.5) // 1) & 0xff
 		frames[#frames + 1] = {
 			bg = {
-				color = color.with_alpha(globals.combat_results_bg_color, globals.combat_results_bg_a * a),
+				color = (bg_ab << 24) | (globals.combat_results_bg_color & 0x00ffffff),
 			},
 			maya_b = {
-				sprite_component = { colorize = { r = 1, g = 1, b = 1, a = a } },
+				sprite_component = { color = (ab << 24) | (globals.p3_white_color & 0x00ffffff) },
 			},
 			results = {
-				text_color = color.with_alpha(globals.p3_white_color, a),
+				text_color = (ab << 24) | (globals.p3_white_color & 0x00ffffff),
 			},
 		}
 	end
@@ -681,9 +695,10 @@ function builders.build_combat_exit_fade_in_frames()
 	for frame_index = 0, globals.combat_exit_fade_in_frames - 1 do
 		local u<const> = frame_index / (globals.combat_exit_fade_in_frames - 1)
 		local c<const> = easing.smoothstep(u)
+		local cb<const> = ((c * 255 + 0.5) // 1) & 0xff
 		frames[#frames + 1] = {
 			sprite_component = {
-				colorize = { r = c, g = c, b = c, a = 1 },
+				color = 0xff000000 | (cb << 16) | (cb << 8) | cb,
 			},
 		}
 	end
@@ -707,6 +722,13 @@ function builders.build_transition_frames(params)
 	local text_out_start<const> = globals.transition_text_in_frames + globals.transition_text_hold_frames
 	local text_out_end<const> = text_out_start + globals.transition_text_out_frames
 	local base<const> = palette.overlay
+	local accent<const> = palette.accent
+	local base_r<const> = (base >> 16) & 0xff
+	local base_g<const> = (base >> 8) & 0xff
+	local base_b<const> = base & 0xff
+	local accent_r<const> = (accent >> 16) & 0xff
+	local accent_g<const> = (accent >> 8) & 0xff
+	local accent_b<const> = accent & 0xff
 
 	for frame_index = 0, finish_frame do
 		local fade_alpha = 1
@@ -722,19 +744,21 @@ function builders.build_transition_frames(params)
 			end
 		end
 
-			local panel_states<const> = {}
-			for i = 1, #panels do
-				local panel<const> = panels[i]
-				local x<const> , y<const> , a<const> = panel_motion(frame_index, panel, globals.transition_panel_in_frames, globals.transition_panel_hold_frames, globals.transition_panel_out_frames)
-				panel_states[i] = {
-					visible = a > 0,
-					x = x,
-					y = y,
-					color = color.with_alpha(panel.color, a),
-				}
-			end
+		local panel_states<const> = {}
+		for i = 1, #panels do
+			local panel<const> = panels[i]
+			local x<const> , y<const> , a<const> = panel_motion(frame_index, panel, globals.transition_panel_in_frames, globals.transition_panel_hold_frames, globals.transition_panel_out_frames)
+			local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
+			panel_states[i] = {
+				visible = a > 0,
+				x = x,
+				y = y,
+				color = (ab << 24) | (panel.color & 0x00ffffff),
+			}
+		end
 
 		local ax<const> , ay<const> , aa<const> = panel_motion(frame_index, accent_panel, globals.transition_accent_in_frames, globals.transition_accent_hold_frames, globals.transition_accent_out_frames)
+		local accent_ab<const> = ((aa * 255 + 0.5) // 1) & 0xff
 
 		local text_x = end_x
 		if frame_index < globals.transition_text_in_frames then
@@ -748,17 +772,23 @@ function builders.build_transition_frames(params)
 			text_x = center_x + (end_x - center_x) * easing.smoothstep(u)
 		end
 
-			frames[#frames + 1] = {
-				overlay = { color = color.with_alpha(base, fade_alpha) },
-				panels = panel_states,
-				accent = {
-					visible = aa > 0,
-					x = ax,
-					y = ay,
-					color = color.with_alpha(accent_panel.color, aa),
-				},
-				text = { centered_block_x = text_x },
-			}
+		local mix<const> = skip_fade and 0 or flash_mix_byte(frame_index, swap_frame)
+		local inverse<const> = 255 - mix
+		local overlay_ab<const> = ((fade_alpha * 255 + 0.5) // 1) & 0xff
+		local overlay_r<const> = (((base_r * inverse) + (accent_r * mix) + 127) // 255) & 0xff
+		local overlay_g<const> = (((base_g * inverse) + (accent_g * mix) + 127) // 255) & 0xff
+		local overlay_b<const> = (((base_b * inverse) + (accent_b * mix) + 127) // 255) & 0xff
+		frames[#frames + 1] = {
+			overlay = { color = (overlay_ab << 24) | (overlay_r << 16) | (overlay_g << 8) | overlay_b },
+			panels = panel_states,
+			accent = {
+				visible = aa > 0,
+				x = ax,
+				y = ay,
+				color = (accent_ab << 24) | (accent_panel.color & 0x00ffffff),
+			},
+			text = { centered_block_x = text_x },
+		}
 	end
 
 	return frames
@@ -767,13 +797,14 @@ end
 function builders.build_transition_fade_in_frames(palette)
 	local frames<const> = {}
 	local base<const> = palette.overlay
-		for frame_index = 0, globals.overgang_fade_in_frames - 1 do
-			local u<const> = frame_index / (globals.overgang_fade_in_frames - 1)
-			local a<const> = 1 - easing.smoothstep(u)
-			frames[#frames + 1] = {
-				overlay = { color = color.with_alpha(base, a) },
-			}
-		end
+	for frame_index = 0, globals.overgang_fade_in_frames - 1 do
+		local u<const> = frame_index / (globals.overgang_fade_in_frames - 1)
+		local a<const> = 1 - easing.smoothstep(u)
+		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
+		frames[#frames + 1] = {
+			overlay = { color = (ab << 24) | (base & 0x00ffffff) },
+		}
+	end
 	return frames
 end
 
@@ -781,7 +812,15 @@ function builders.build_fade_frames(params)
 	local frames<const> = {}
 	local palette<const> = params.palette
 	local hold_black<const> = params.hold_black
-	local base<const> = hold_black and globals.p3_black_color or palette.overlay
+	local base<const> = palette.overlay
+	local accent<const> = palette.accent
+	local base_r<const> = (base >> 16) & 0xff
+	local base_g<const> = (base >> 8) & 0xff
+	local base_b<const> = base & 0xff
+	local accent_r<const> = (accent >> 16) & 0xff
+	local accent_g<const> = (accent >> 8) & 0xff
+	local accent_b<const> = accent & 0xff
+	local swap_frame<const> = globals.fade_out_frames - 1
 	local fade_in_start<const> = globals.fade_out_frames + globals.fade_hold_frames
 
 	for frame_index = 0, globals.fade_frame_count - 1 do
@@ -799,10 +838,17 @@ function builders.build_fade_frames(params)
 				a = 1 - easing.smoothstep(u)
 			end
 		end
+
+		local mix<const> = flash_mix_byte(frame_index, swap_frame)
+		local inverse<const> = 255 - mix
+		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
+		local rb<const> = (((base_r * inverse) + (accent_r * mix) + 127) // 255) & 0xff
+		local gb<const> = (((base_g * inverse) + (accent_g * mix) + 127) // 255) & 0xff
+		local bb<const> = (((base_b * inverse) + (accent_b * mix) + 127) // 255) & 0xff
 		frames[#frames + 1] = {
-				overlay = { color = color.with_alpha(base, a) },
+			overlay = { color = (ab << 24) | (rb << 16) | (gb << 8) | bb },
 		}
-		end
+	end
 
 	return frames
 end

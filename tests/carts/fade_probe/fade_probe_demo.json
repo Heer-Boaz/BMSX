@@ -1,0 +1,7 @@
+[
+	{ "description": "alpha ramp early", "frame": 8, "capture": true },
+	{ "description": "alpha ramp quarter", "frame": 16, "capture": true },
+	{ "description": "alpha ramp half", "frame": 24, "capture": true },
+	{ "description": "alpha ramp late", "frame": 32, "capture": true },
+	{ "description": "alpha ramp full", "frame": 48, "capture": true }
+]

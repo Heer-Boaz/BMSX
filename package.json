@@ -4,7 +4,6 @@
 	"version": "1.0.0",
 	"description": "",
 	"dependencies": {
-		"@openai/codex": "^0.115.0",
 		"blob": "*",
 		"node-fetch": "*",
 		"npm": "*",
