@@ -340,6 +340,7 @@
 		"src/bmsx/machine/common/hash.ts",
 		"src/bmsx/machine/devices/audio/biquad_filter.ts",
 		"src/bmsx/machine/devices/audio/output.ts",
+		"src/bmsx/machine/devices/vdp/rpu.ts",
 		"src/bmsx/machine/memory/access_kind.ts",
 		"src/bmsx/machine/cpu/string_pool.ts",
 		"src/bmsx/machine/cpu/opcode_info.ts",

@@ -357,6 +357,7 @@ add_library(bmsx_core STATIC
 	machine/devices/vdp/pmu.cpp
 	machine/devices/vdp/readback.cpp
 	machine/devices/vdp/registers.cpp
+	machine/devices/vdp/rpu.cpp
 	machine/devices/vdp/sbx.cpp
 	machine/devices/vdp/unit_register_port.cpp
 	machine/devices/vdp/save_state.cpp

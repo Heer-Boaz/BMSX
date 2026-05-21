@@ -61,13 +61,13 @@ private:
 	u32 m_visibleFrameBufferWidth = 0u;
 	u32 m_visibleFrameBufferHeight = 0u;
 	VdpXfUnit m_visibleXf;
-	bool m_visibleSkyboxEnabled = false;
 	VdpSkyboxSamples m_visibleSkyboxSamples{};
 	std::unique_ptr<VdpBbuFrameBuffer> m_visibleBillboards = std::make_unique<VdpBbuFrameBuffer>();
 	std::unique_ptr<VdpMduFrameBuffer> m_visibleMeshes = std::make_unique<VdpMduFrameBuffer>();
 	std::array<u32, VDP_LPU_REGISTER_WORDS> m_visibleLightRegisterWords{};
 	std::array<u32, VDP_MFU_WEIGHT_COUNT> m_visibleMorphWeightWords{};
 	std::array<u32, VDP_JTU_REGISTER_WORDS> m_visibleJointMatrixWords{};
+	std::unique_ptr<VdpRpuFrameOutput> m_visibleRpuFrame = createVdpRpuFrameOutput();
 	VdpVoutFrameOutput m_sealedFrameOutput;
 	VdpDeviceOutput m_deviceOutput;
 };

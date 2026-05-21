@@ -1,6 +1,4 @@
-import type { VdpBbuFrameBuffer } from './bbu';
-import type { VdpResolvedBlitterSample } from './blitter';
-import type { VdpMduFrameBuffer } from './mdu';
+import type { VdpRpuFrameOutput } from './rpu';
 
 export type VdpDirtySpan = {
 	xStart: number;
@@ -43,18 +41,9 @@ export type VdpDeviceOutput = Readonly<{
 	scanoutPhase: number;
 	scanoutX: number;
 	scanoutY: number;
-	xfMatrixWords: ArrayLike<number>;
-	xfViewMatrixIndex: number;
-	xfProjectionMatrixIndex: number;
-	skyboxEnabled: boolean;
-	skyboxSamples: readonly VdpResolvedBlitterSample[];
-	billboards: VdpBbuFrameBuffer;
-	meshes: VdpMduFrameBuffer;
-	lightRegisterWords: ArrayLike<number>;
-	morphWeightWords: ArrayLike<number>;
-	jointMatrixWords: ArrayLike<number>;
 	frameBufferWidth: number;
 	frameBufferHeight: number;
+	rpu: VdpRpuFrameOutput;
 }>;
 
 export type VdpFrameBufferPresentation = Readonly<{

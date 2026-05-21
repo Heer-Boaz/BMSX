@@ -35,6 +35,7 @@ import { VDP_LPU_DIRECTIONAL_LIGHT_LIMIT, VDP_LPU_POINT_LIGHT_LIMIT, VDP_LPU_REG
 import { VDP_XF_MATRIX_REGISTER_WORDS } from '../machine/devices/vdp/xf';
 import { createVdpTransformSnapshot } from './vdp/transform';
 import type { VdpFrameBufferTextures } from './vdp/framebuffer';
+import type { VdpRpuFrameOutput } from '../machine/devices/vdp/rpu';
 import type { VdpSlotTextures } from './vdp/slot_textures';
 import { renderGate } from 'bmsx/core/taskgate';
 
@@ -131,6 +132,7 @@ export class GameView implements RenderContext {
 	public vdpPointLightCount = 0;
 	public readonly vdpMorphWeightWords = new Uint32Array(VDP_MFU_WEIGHT_COUNT);
 	public readonly vdpJointMatrixWords = new Uint32Array(VDP_JTU_REGISTER_WORDS);
+	public vdpRpuFrame!: VdpRpuFrameOutput;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationEnabled = true;
 	// Active texture unit cache

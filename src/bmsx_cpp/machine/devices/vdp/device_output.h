@@ -1,14 +1,7 @@
 #pragma once
 
 #include "common/types.h"
-#include "machine/devices/vdp/bbu.h"
-#include "machine/devices/vdp/blitter.h"
-#include "machine/devices/vdp/jtu.h"
-#include "machine/devices/vdp/lpu.h"
-#include "machine/devices/vdp/mdu.h"
-#include "machine/devices/vdp/mfu.h"
-#include "machine/devices/vdp/xf.h"
-#include <array>
+#include "machine/devices/vdp/rpu.h"
 #include <vector>
 
 namespace bmsx {
@@ -71,18 +64,9 @@ struct VdpDeviceOutput {
 	u32 scanoutPhase = 0u;
 	u32 scanoutX = 0u;
 	u32 scanoutY = 0u;
-	const std::array<u32, VDP_XF_MATRIX_REGISTER_WORDS>* xfMatrixWords = nullptr;
-	u32 xfViewMatrixIndex = 0;
-	u32 xfProjectionMatrixIndex = 0;
-	bool skyboxEnabled = false;
-	const VdpSkyboxSamples* skyboxSamples = nullptr;
-	const VdpBbuFrameBuffer* billboards = nullptr;
-	const VdpMduFrameBuffer* meshes = nullptr;
-	const std::array<u32, VDP_LPU_REGISTER_WORDS>* lightRegisterWords = nullptr;
-	const std::array<u32, VDP_MFU_WEIGHT_COUNT>* morphWeightWords = nullptr;
-	const std::array<u32, VDP_JTU_REGISTER_WORDS>* jointMatrixWords = nullptr;
 	uint32_t frameBufferWidth = 0;
 	uint32_t frameBufferHeight = 0;
+	const VdpRpuFrameOutput* rpu = nullptr;
 };
 
 } // namespace bmsx

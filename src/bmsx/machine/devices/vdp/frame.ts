@@ -4,6 +4,14 @@ import { VdpBlitterCommandBuffer, type VdpResolvedBlitterSample } from './blitte
 import { VdpMduFrameBuffer } from './mdu';
 import { VdpXfUnit, type VdpXfState } from './xf';
 import { VDP_LPU_REGISTER_WORDS } from './lpu';
+import {
+	captureVdpRpuFrameState,
+	createVdpRpuFrameOutput,
+	resetVdpRpuFrameOutput,
+	restoreVdpRpuFrameState,
+	type VdpRpuFrameOutput,
+	type VdpRpuFrameSaveState,
+} from './rpu';
 
 export const VDP_DEX_FRAME_IDLE = 0;
 export const VDP_DEX_FRAME_DIRECT_OPEN = 1;
@@ -47,12 +55,14 @@ export type VdpSubmittedFrame = {
 	lightRegisterWords: Uint32Array;
 	morphWeightWords: Uint32Array;
 	jointMatrixWords: Uint32Array;
+	rpu: VdpRpuFrameOutput;
 };
 
 export type VdpBuildingFrameState = {
 	queue: VdpBlitterCommandBuffer;
 	billboards: VdpBbuFrameBuffer;
 	meshes: VdpMduFrameBuffer;
+	rpu: VdpRpuFrameOutput;
 	state: VdpDexFrameState;
 	cost: number;
 };
@@ -118,6 +128,7 @@ export type VdpBuildingFrameSaveState = {
 	state: VdpDexFrameState;
 	queue: VdpBlitterCommandSaveState[];
 	billboards: VdpBbuBillboardSaveState[];
+	rpu: VdpRpuFrameSaveState;
 	cost: number;
 };
 
@@ -138,6 +149,7 @@ export type VdpSubmittedFrameSaveState = {
 	skyboxFaceWords: number[];
 	skyboxSamples: VdpResolvedBlitterSample[];
 	lightRegisterWords: number[];
+	rpu: VdpRpuFrameSaveState;
 };
 
 export function createResolvedBlitterSample(): VdpResolvedBlitterSample {
@@ -184,6 +196,7 @@ export function allocateSubmittedFrameSlot(): VdpSubmittedFrame {
 		lightRegisterWords: new Uint32Array(VDP_LPU_REGISTER_WORDS),
 		morphWeightWords: new Uint32Array(VDP_MFU_WEIGHT_COUNT),
 		jointMatrixWords: new Uint32Array(VDP_JTU_REGISTER_WORDS),
+		rpu: createVdpRpuFrameOutput(),
 	};
 }
 
@@ -191,6 +204,7 @@ export function resetBuildingFrame(frame: VdpBuildingFrameState): void {
 	frame.queue.reset();
 	frame.billboards.reset();
 	frame.meshes.reset();
+	resetVdpRpuFrameOutput(frame.rpu);
 	frame.cost = 0;
 	frame.state = VDP_DEX_FRAME_IDLE;
 }
@@ -214,6 +228,7 @@ export function resetSubmittedFrameSlot(frame: VdpSubmittedFrame): void {
 	frame.lightRegisterWords.fill(0);
 	frame.morphWeightWords.fill(0);
 	frame.jointMatrixWords.fill(0);
+	resetVdpRpuFrameOutput(frame.rpu);
 }
 
 function captureBlitterSourceState(
@@ -449,6 +464,7 @@ export function captureBuildingFrameState(frame: VdpBuildingFrameState): VdpBuil
 		state: frame.state,
 		queue: captureBlitterCommandBufferState(frame.queue),
 		billboards: captureBbuFrameBufferState(frame.billboards),
+		rpu: captureVdpRpuFrameState(frame.rpu),
 		cost: frame.cost,
 	};
 }
@@ -457,6 +473,7 @@ export function restoreBuildingFrameState(frame: VdpBuildingFrameState, state: V
 	frame.state = state.state;
 	restoreBlitterCommandBufferState(frame.queue, state.queue);
 	restoreBbuFrameBufferState(frame.billboards, state.billboards);
+	restoreVdpRpuFrameState(frame.rpu, state.rpu);
 	frame.cost = state.cost;
 }
 
@@ -482,6 +499,7 @@ export function captureSubmittedFrameState(frame: VdpSubmittedFrame): VdpSubmitt
 		skyboxFaceWords: Array.from(frame.skyboxFaceWords),
 		skyboxSamples,
 		lightRegisterWords: Array.from(frame.lightRegisterWords),
+		rpu: captureVdpRpuFrameState(frame.rpu),
 	};
 }
 
@@ -504,4 +522,5 @@ export function restoreSubmittedFrameState(frame: VdpSubmittedFrame, state: VdpS
 		restoreResolvedBlitterSampleState(frame.skyboxSamples[index], state.skyboxSamples[index]);
 	}
 	frame.lightRegisterWords.set(state.lightRegisterWords);
+	restoreVdpRpuFrameState(frame.rpu, state.rpu);
 }

@@ -195,6 +195,7 @@ void resetBuildingFrame(VdpBuildingFrame& frame) {
 	frame.queue->reset();
 	frame.billboards->reset();
 	frame.meshes->reset();
+	resetVdpRpuFrameOutput(*frame.rpu);
 	frame.cost = 0;
 	frame.state = VdpDexFrameState::Idle;
 }
@@ -218,6 +219,7 @@ void resetSubmittedFrameSlot(VdpSubmittedFrame& frame) {
 	frame.lightRegisterWords.fill(0u);
 	frame.morphWeightWords.fill(0u);
 	frame.jointMatrixWords.fill(0u);
+	resetVdpRpuFrameOutput(*frame.rpu);
 }
 
 VdpBuildingFrameSaveState captureBuildingFrameState(const VdpBuildingFrame& frame) {
@@ -225,6 +227,7 @@ VdpBuildingFrameSaveState captureBuildingFrameState(const VdpBuildingFrame& fram
 	state.state = frame.state;
 	state.queue = captureBlitterCommandBufferState(*frame.queue);
 	state.billboards = captureBbuFrameBufferState(*frame.billboards);
+	state.rpu = captureVdpRpuFrameState(*frame.rpu);
 	state.cost = frame.cost;
 	return state;
 }
@@ -233,6 +236,7 @@ void restoreBuildingFrameState(VdpBuildingFrame& frame, const VdpBuildingFrameSa
 	frame.state = state.state;
 	restoreBlitterCommandBufferState(*frame.queue, state.queue);
 	restoreBbuFrameBufferState(*frame.billboards, state.billboards);
+	restoreVdpRpuFrameState(*frame.rpu, state.rpu);
 	frame.cost = state.cost;
 }
 
@@ -254,6 +258,7 @@ VdpSubmittedFrameSaveState captureSubmittedFrameState(const VdpSubmittedFrame& f
 	state.skyboxFaceWords = frame.skyboxFaceWords;
 	state.skyboxSamples = frame.skyboxSamples;
 	state.lightRegisterWords = frame.lightRegisterWords;
+	state.rpu = captureVdpRpuFrameState(*frame.rpu);
 	return state;
 }
 
@@ -274,6 +279,7 @@ void restoreSubmittedFrameState(VdpSubmittedFrame& frame, const VdpSubmittedFram
 	frame.skyboxFaceWords = state.skyboxFaceWords;
 	frame.skyboxSamples = state.skyboxSamples;
 	frame.lightRegisterWords = state.lightRegisterWords;
+	restoreVdpRpuFrameState(*frame.rpu, state.rpu);
 }
 
 } // namespace bmsx

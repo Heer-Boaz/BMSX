@@ -7,6 +7,7 @@
 #include "machine/devices/vdp/lpu.h"
 #include "machine/devices/vdp/mdu.h"
 #include "machine/devices/vdp/mfu.h"
+#include "machine/devices/vdp/rpu.h"
 #include "machine/devices/vdp/sbx.h"
 #include "machine/devices/vdp/xf.h"
 #include <memory>
@@ -32,6 +33,7 @@ struct VdpSubmittedFrame {
 	std::unique_ptr<VdpBlitterCommandBuffer> queue = std::make_unique<VdpBlitterCommandBuffer>();
 	std::unique_ptr<VdpBbuFrameBuffer> billboards = std::make_unique<VdpBbuFrameBuffer>();
 	std::unique_ptr<VdpMduFrameBuffer> meshes = std::make_unique<VdpMduFrameBuffer>();
+	std::unique_ptr<VdpRpuFrameOutput> rpu = createVdpRpuFrameOutput();
 	VdpSubmittedFrameState state = VdpSubmittedFrameState::Empty;
 	bool hasCommands = false;
 	bool hasFrameBufferCommands = false;
@@ -54,6 +56,7 @@ struct VdpBuildingFrame {
 	std::unique_ptr<VdpBlitterCommandBuffer> queue = std::make_unique<VdpBlitterCommandBuffer>();
 	std::unique_ptr<VdpBbuFrameBuffer> billboards = std::make_unique<VdpBbuFrameBuffer>();
 	std::unique_ptr<VdpMduFrameBuffer> meshes = std::make_unique<VdpMduFrameBuffer>();
+	std::unique_ptr<VdpRpuFrameOutput> rpu = createVdpRpuFrameOutput();
 	VdpDexFrameState state = VdpDexFrameState::Idle;
 	int cost = 0;
 };
@@ -119,6 +122,7 @@ struct VdpBuildingFrameSaveState {
 	VdpDexFrameState state = VdpDexFrameState::Idle;
 	std::vector<VdpBlitterCommandSaveState> queue;
 	std::vector<VdpBbuBillboardSaveState> billboards;
+	VdpRpuFrameSaveState rpu;
 	int cost = 0;
 };
 
@@ -139,6 +143,7 @@ struct VdpSubmittedFrameSaveState {
 	VdpSbxUnit::FaceWords skyboxFaceWords{};
 	VdpSkyboxSamples skyboxSamples{};
 	std::array<u32, VDP_LPU_REGISTER_WORDS> lightRegisterWords{};
+	VdpRpuFrameSaveState rpu;
 };
 
 void resetBuildingFrame(VdpBuildingFrame& frame);

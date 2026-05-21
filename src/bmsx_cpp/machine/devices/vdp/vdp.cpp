@@ -1120,7 +1120,8 @@ bool VDP::sealSubmittedFrame() {
 		frame = &m_pendingFrame;
 	}
 	const bool frameHasFrameBufferCommands = m_buildFrame.queue->length != 0u;
-	const bool frameHasCommands = frameHasFrameBufferCommands || m_buildFrame.billboards->length != 0u || m_buildFrame.meshes->length != 0u;
+	const bool frameHasRpuCommands = m_buildFrame.rpu->commands.passCount != 0u || m_buildFrame.rpu->commands.drawCount != 0u;
+	const bool frameHasCommands = frameHasFrameBufferCommands || m_buildFrame.billboards->length != 0u || m_buildFrame.meshes->length != 0u || frameHasRpuCommands;
 	const int frameCost = (m_buildFrame.queue->length != 0u && m_buildFrame.queue->opcode[0] != BlitterCommandType::Clear)
 		? (m_buildFrame.cost + VDP_RENDER_CLEAR_COST)
 		: m_buildFrame.cost;
@@ -1145,6 +1146,7 @@ bool VDP::sealSubmittedFrame() {
 	frame->queue.swap(m_buildFrame.queue);
 	frame->billboards.swap(m_buildFrame.billboards);
 	frame->meshes.swap(m_buildFrame.meshes);
+	frame->rpu.swap(m_buildFrame.rpu);
 	if (frameCost == 0) {
 		frame->state = VdpSubmittedFrameState::Ready;
 	} else if (activeFrameEmpty) {

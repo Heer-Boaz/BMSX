@@ -127,6 +127,7 @@ import {
 	VDP_XF_PACKET_KIND,
 	VdpXfUnit,
 } from './xf';
+import { createVdpRpuFrameOutput } from './rpu';
 import { VdpVoutUnit } from './vout';
 import { decodeSignedQ16_16 } from './fixed_point';
 import { isVdpUnitPacketHeaderValid, vdpUnitPacketHasFlags, vdpUnitPacketPayloadWords } from './packet';
@@ -272,6 +273,7 @@ export class VDP implements VramWriteSink {
 		queue: new VdpBlitterCommandBuffer(),
 		billboards: new VdpBbuFrameBuffer(),
 		meshes: new VdpMduFrameBuffer(),
+		rpu: createVdpRpuFrameOutput(),
 		state: VDP_DEX_FRAME_IDLE,
 		cost: 0,
 	};
@@ -1347,8 +1349,10 @@ export class VDP implements VramWriteSink {
 		const buildQueue = this.buildFrame.queue;
 		const buildBillboards = this.buildFrame.billboards;
 		const buildMeshes = this.buildFrame.meshes;
+		const buildRpu = this.buildFrame.rpu;
 		const frameHasFrameBufferCommands = buildQueue.length !== 0;
-		const frameHasCommands = frameHasFrameBufferCommands || buildBillboards.length !== 0 || buildMeshes.length !== 0;
+		const frameHasRpuCommands = buildRpu.commands.passCount !== 0 || buildRpu.commands.drawCount !== 0;
+		const frameHasCommands = frameHasFrameBufferCommands || buildBillboards.length !== 0 || buildMeshes.length !== 0 || frameHasRpuCommands;
 		const frameCost = buildQueue.length !== 0 && buildQueue.opcode[0] !== VDP_BLITTER_OPCODE_CLEAR
 			? this.buildFrame.cost + VDP_RENDER_CLEAR_COST
 			: this.buildFrame.cost;
@@ -1377,6 +1381,8 @@ export class VDP implements VramWriteSink {
 		frame.billboards = buildBillboards;
 		this.buildFrame.meshes = frame.meshes;
 		frame.meshes = buildMeshes;
+		this.buildFrame.rpu = frame.rpu;
+		frame.rpu = buildRpu;
 		if (frameCost === 0) {
 			frame.state = VDP_SUBMITTED_FRAME_READY;
 		} else if (activeFrameEmpty) {
