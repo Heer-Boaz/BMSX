@@ -80,3 +80,34 @@ test('compileLoadChunk keeps & as the string-id unary operator for generated fie
 	apply.invoke([target], []);
 	assert.equal(target.get(StringValue.get(stringPool.intern('field'))), StringValue.get(stringPool.intern('value')));
 });
+
+test('compileLoadChunk reads assignment values from parameter paths', () => {
+	const stringPool = new StringPool();
+	const runtime = {
+		createApiRuntimeError(message: string) {
+			return new Error(message);
+		},
+		internString(value: string) {
+			return StringValue.get(stringPool.intern(value));
+		},
+	} as any;
+	const loader = compileLoadChunk(runtime, [
+		'return function(target, frame)',
+		'\ttarget["visual"]["color"] = frame["visual"]["color"]',
+		'end',
+	].join('\n'), 'timeline_apply.parameter_value');
+	const loaded: any[] = [];
+	loader.invoke([], loaded);
+	assert.equal(loaded.length, 1);
+	const apply = loaded[0];
+	const target = new Table(0, 1);
+	const targetVisual = new Table(0, 1);
+	target.set(StringValue.get(stringPool.intern('visual')), targetVisual);
+	const frame = new Table(0, 1);
+	const frameVisual = new Table(0, 1);
+	const color = 0xff010203;
+	frameVisual.set(StringValue.get(stringPool.intern('color')), color);
+	frame.set(StringValue.get(stringPool.intern('visual')), frameVisual);
+	apply.invoke([target, frame], []);
+	assert.equal(targetVisual.get(StringValue.get(stringPool.intern('color'))), color);
+});

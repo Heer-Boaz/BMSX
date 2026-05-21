@@ -89,7 +89,7 @@ Value getPathStepValue(Value target, const LoadSubsetPathStep& step) {
 				return object->get(step.key);
 		}
 	}
-	throw BMSX_RUNTIME_ERROR("[loadstring] attempted to index a non-table value (" + describeValueType(target) + ").");
+	throw BMSX_RUNTIME_ERROR("[load] attempted to index a non-table value (" + describeValueType(target) + ").");
 }
 
 void setPathStepValue(Value target, const LoadSubsetPathStep& step, Value value) {
@@ -121,7 +121,7 @@ void setPathStepValue(Value target, const LoadSubsetPathStep& step, Value value)
 				return;
 		}
 	}
-	throw BMSX_RUNTIME_ERROR("[loadstring] attempted to assign through a non-table value (" + describeValueType(target) + ").");
+	throw BMSX_RUNTIME_ERROR("[load] attempted to assign through a non-table value (" + describeValueType(target) + ").");
 }
 
 Value resolveValueExpr(NativeArgsView args, const LoadSubsetValueExpr& expr) {
@@ -137,9 +137,9 @@ Value resolveValueExpr(NativeArgsView args, const LoadSubsetValueExpr& expr) {
 
 [[noreturn]] void fail(const std::string& chunkName, const std::string& message, const LuaSourceRange* range = nullptr) {
 	if (range != nullptr) {
-		throw BMSX_RUNTIME_ERROR("[loadstring:" + chunkName + "] " + message + " at " + std::to_string(range->start.line) + ":" + std::to_string(range->start.column) + ".");
+		throw BMSX_RUNTIME_ERROR("[load:" + chunkName + "] " + message + " at " + std::to_string(range->start.line) + ":" + std::to_string(range->start.column) + ".");
 	}
-	throw BMSX_RUNTIME_ERROR("[loadstring:" + chunkName + "] " + message + ".");
+	throw BMSX_RUNTIME_ERROR("[load:" + chunkName + "] " + message + ".");
 }
 
 LoadSubsetPathStep compilePathStep(Runtime& runtime, const std::string& chunkName, const LuaExpression& expression) {
@@ -325,7 +325,7 @@ LoadSubsetCompiledFunction compileFunctionExpression(Runtime& runtime, const std
 	compiled.ops.reserve(functionExpression.body.body.size());
 	for (const LuaStatement& statement : functionExpression.body.body) {
 		if (statement.kind != LuaSyntaxKind::AssignmentStatement) {
-			fail(chunkName, "only assignment statements are supported inside loadstring functions", &statement.range);
+			fail(chunkName, "only assignment statements are supported inside load functions", &statement.range);
 		}
 		compiled.ops.push_back(compileAssignment(runtime, chunkName, statement, paramIndexByName));
 	}
@@ -355,7 +355,7 @@ LoadSubsetCompiledFunction compileChunk(Runtime& runtime, const std::string& chu
 }
 
 Value buildNativeFunction(Runtime& runtime, const LoadSubsetCompiledFunction& compiled, const std::string& chunkName) {
-	return runtime.machine.cpu.createNativeFunction("loadstring:" + chunkName, [&runtime, chunkName, compiled](NativeArgsView args, NativeResults& out) {
+	return runtime.machine.cpu.createNativeFunction("load:" + chunkName, [&runtime, chunkName, compiled](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		out.clear();
 		out.push_back(runtime.machine.cpu.createNativeFunction(chunkName + ":inner", [compiled](NativeArgsView innerArgs, NativeResults& innerOut) {

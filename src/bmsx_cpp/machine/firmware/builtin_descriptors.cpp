@@ -87,7 +87,7 @@ constexpr std::array<LuaBuiltinDescriptor, 524> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"pcall", "pcall(f, ...)", ""},
 	LuaBuiltinDescriptor{"print", "print(...)", ""},
 	LuaBuiltinDescriptor{"loadstring", "loadstring(source [, chunkname])", "Compiles a restricted runtime Lua source subset into a chunk function; intended for small generated helpers."},
-	LuaBuiltinDescriptor{"load", "load(source [, chunkname [, mode [, env]]])", "Compiles the same restricted runtime Lua source subset as loadstring; only text mode is supported."},
+	LuaBuiltinDescriptor{"load", "load(source [, chunkname [, mode [, env]]])", "Compiles a restricted runtime Lua source subset into a chunk function; only text mode is supported."},
 	LuaBuiltinDescriptor{"clock_now", "clock_now()", "Returns the current platform clock value."},
 	LuaBuiltinDescriptor{"rawequal", "rawequal(v1, v2)", ""},
 	LuaBuiltinDescriptor{"rawget", "rawget(table, index)", ""},

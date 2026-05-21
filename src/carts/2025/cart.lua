@@ -351,17 +351,14 @@ end
 
 mem[sys_inp_ctrl] = inp_ctrl_arm
 local flags
-repeat
-	halt_until_irq
-	flags = service_irqs()
-until (flags & irq_vblank) ~= 0
 
 while true do
-	update_world()
 	repeat
 		halt_until_irq
 		flags = service_irqs()
 	until (flags & irq_vblank) ~= 0
+
+	update_world()
 	vdp_stream_cursor = sys_vdp_stream_base
 	draw_world()
 	vdp_stream_finish()
@@ -376,8 +373,4 @@ while true do
 	end
 
 	mem[sys_inp_ctrl] = inp_ctrl_arm
-	repeat
-		halt_until_irq
-		flags = service_irqs()
-	until (flags & irq_vblank) ~= 0
 end

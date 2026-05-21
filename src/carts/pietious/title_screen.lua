@@ -87,6 +87,18 @@ local build_title_sparkle_frames<const> = function()
 	return timeline.build_frame_sequence(frames)
 end
 
+local apply_title_sparkle_frame<const> = function(self, frame)
+	self.phase = frame.phase
+	local sprite<const> = self.sparkle_sprite
+	local sprite_frame<const> = frame.sparkle_sprite
+	sprite:set_enabled(sprite_frame.enabled)
+	if sprite_frame.enabled then
+		sprite:set_imgid(sprite_frame.imgid)
+		sprite.offset.x = sprite_frame.offset.x
+		sprite.offset.y = sprite_frame.offset.y
+	end
+end
+
 local build_title_start_frames<const> = function()
 	local frames<const> = {}
 	for _ = 1, constants.flow.title_start_blink_cycles do
@@ -154,7 +166,7 @@ local define_title_screen_fsm<const> = function()
 						def = {
 							frames = build_title_sparkle_frames(),
 							playback_mode = 'once',
-							apply = true,
+							apply = apply_title_sparkle_frame,
 						},
 						autoplay = true,
 						stop_on_exit = true,

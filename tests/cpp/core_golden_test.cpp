@@ -2534,6 +2534,33 @@ void testLoadCompilerStringIdUnaryGolden() {
 	require(target->getStringKey(field) == bmsx::valueString(value), "load compiler should preserve & field/value as string ids");
 }
 
+void testLoadCompilerParameterValueGolden() {
+	RuntimeHarness harness;
+	bmsx::Runtime& runtime = harness.runtime;
+	const bmsx::Value loader = bmsx::compileLoadChunk(
+		runtime,
+		"return function(target, frame)\n\ttarget[\"visual\"][\"color\"] = frame[\"visual\"][\"color\"]\nend",
+		"timeline_apply_parameter_value"
+	);
+	bmsx::NativeResults outerOut;
+	bmsx::asNativeFunction(loader)->invoke(bmsx::NativeArgsView(), outerOut);
+	require(outerOut.size() == 1u && bmsx::valueIsNativeFunction(outerOut[0]), "load compiler should return one generated function");
+	bmsx::Table* target = runtime.machine.cpu.createTable(0, 1);
+	bmsx::Table* targetVisual = runtime.machine.cpu.createTable(0, 1);
+	bmsx::Table* frame = runtime.machine.cpu.createTable(0, 1);
+	bmsx::Table* frameVisual = runtime.machine.cpu.createTable(0, 1);
+	const bmsx::StringId visual = runtime.machine.cpu.stringPool().intern("visual");
+	const bmsx::StringId color = runtime.machine.cpu.stringPool().intern("color");
+	const bmsx::Value colorValue = bmsx::valueNumber(0xff010203u);
+	target->setStringKey(visual, bmsx::valueTable(targetVisual));
+	frameVisual->setStringKey(color, colorValue);
+	frame->setStringKey(visual, bmsx::valueTable(frameVisual));
+	const bmsx::Value args[] = {bmsx::valueTable(target), bmsx::valueTable(frame)};
+	bmsx::NativeResults innerOut;
+	bmsx::asNativeFunction(outerOut[0])->invoke(bmsx::NativeArgsView(args, 2u), innerOut);
+	require(targetVisual->getStringKey(color) == colorValue, "load compiler should read assignment values from parameter paths");
+}
+
 void testProgramLoaderModulePathsGolden() {
 	require(bmsx::toLuaModulePath("cart.lua") == "cart", "module path should strip lua suffix");
 	require(bmsx::toLuaModulePath("bios/font.lua") == "bios/font", "module path should preserve bios namespace");
@@ -2547,7 +2574,7 @@ void testProgramLoaderModulePathsGolden() {
 } // namespace
 
 int main() {
-	const std::array<std::pair<const char*, void (*)()>, 47> tests{{
+	const std::array<std::pair<const char*, void (*)()>, 48> tests{{
 		{"memory", testMemoryGolden},
 		{"raw memory bus faults", testRawMemoryBusFaults},
 		{"dma memory fault status", testDmaMemoryFaultStatus},
@@ -2594,6 +2621,7 @@ int main() {
 		{"system globals geometry contract", testSystemGlobalsGeometryContractGolden},
 		{"render schema", testRenderSchemaGolden},
 		{"load compiler string-id unary", testLoadCompilerStringIdUnaryGolden},
+		{"load compiler parameter value", testLoadCompilerParameterValueGolden},
 		{"program loader module paths", testProgramLoaderModulePathsGolden},
 	}};
 	for (const auto& test : tests) {

@@ -92,7 +92,7 @@ const getPathStepValue = (runtime: Runtime, target: Value, step: LoadSubsetPathS
 		}
 		return target.get(step.key);
 	}
-	throw runtime.createApiRuntimeError(`[loadstring] attempted to index a non-table value (${describeValue(target)}).`);
+	throw runtime.createApiRuntimeError(`[load] attempted to index a non-table value (${describeValue(target)}).`);
 };
 
 const setPathStepValue = (runtime: Runtime, target: Value, step: LoadSubsetPathStep, value: Value): void => {
@@ -120,7 +120,7 @@ const setPathStepValue = (runtime: Runtime, target: Value, step: LoadSubsetPathS
 		target.set(step.key, value);
 		return;
 	}
-	throw runtime.createApiRuntimeError(`[loadstring] attempted to assign through a non-table value (${describeValue(target)}).`);
+	throw runtime.createApiRuntimeError(`[load] attempted to assign through a non-table value (${describeValue(target)}).`);
 };
 
 const resolveValueExpr = (runtime: Runtime, args: ReadonlyArray<Value>, expr: LoadSubsetValueExpr): Value => {
@@ -154,9 +154,9 @@ const buildNativeFunction = (runtime: Runtime, compiled: LoadSubsetCompiledFunct
 
 const fail = (runtime: Runtime, chunkName: string, message: string, range?: LuaSourceRange): never => {
 	if (range !== undefined) {
-		throw runtime.createApiRuntimeError(`[loadstring:${chunkName}] ${message} at ${range.start.line}:${range.start.column}.`);
+		throw runtime.createApiRuntimeError(`[load:${chunkName}] ${message} at ${range.start.line}:${range.start.column}.`);
 	}
-	throw runtime.createApiRuntimeError(`[loadstring:${chunkName}] ${message}`);
+	throw runtime.createApiRuntimeError(`[load:${chunkName}] ${message}`);
 };
 
 const compileParamPath = (
@@ -306,7 +306,7 @@ const compileFunctionExpression = (runtime: Runtime, chunkName: string, fn: LuaF
 	for (let index = 0; index < fn.body.body.length; index += 1) {
 		const statement = fn.body.body[index]!;
 		if (statement.kind !== LuaSyntaxKind.AssignmentStatement) {
-			fail(runtime, chunkName, 'only assignment statements are supported inside loadstring functions', statement.range);
+			fail(runtime, chunkName, 'only assignment statements are supported inside load functions', statement.range);
 		}
 		ops.push(compileAssignment(runtime, chunkName, statement as LuaAssignmentStatement, paramIndexByName));
 	}
@@ -342,7 +342,7 @@ export function compileLoadChunk(runtime: Runtime, source: string, chunkName: st
 	const chunk = parser.parseChunk();
 	const compiled = compileChunk(runtime, chunkName, chunk);
 	const compiledFunction = buildNativeFunction(runtime, compiled, `${chunkName}:inner`);
-	return createNativeFunction(`loadstring:${chunkName}`, (_args, out) => {
+	return createNativeFunction(`load:${chunkName}`, (_args, out) => {
 		out.push(compiledFunction);
 	});
 }

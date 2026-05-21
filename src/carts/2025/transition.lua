@@ -368,6 +368,7 @@ function transition.register_states(states)
 			local frames<const> = build_fade_frames({
 				palette = self.fade_palette,
 				hold_black = self.fade_hold_black,
+				frame_count = next_kind == 'transition' and globals.fade_out_frames or globals.fade_frame_count,
 			})
 			self:define_timeline(timeline.new({
 				id = globals.fade_timeline_id,
@@ -393,6 +394,9 @@ function transition.register_states(states)
 		on = {
 			['fade.swap_bg'] = {
 				go = function(self)
+					if self.fade_hold_black then
+						return
+					end
 					globals.apply_background(self.fade_target_bg)
 				end,
 			},
@@ -404,19 +408,7 @@ function transition.register_states(states)
 		},
 		leaving_state = function(self)
 			self:stop_timeline(globals.fade_timeline_id)
-			if self.fade_hold_black then
-				local base<const> = self.fade_palette.overlay
-				local overlay<const> = self.transition_visual.overlay
-				overlay.visible = true
-				overlay.x = 0
-				overlay.y = 0
-				overlay.width = machine_manifest.render_size.width
-				overlay.height = machine_manifest.render_size.height
-				overlay.color = base
-				globals.hide_transition_layers()
-			else
-				globals.hide_transition_layers()
-			end
+			globals.hide_transition_layers()
 			self.fade_hold_black = false
 		end,
 	}

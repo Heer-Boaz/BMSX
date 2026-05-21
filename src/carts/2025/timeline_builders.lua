@@ -43,14 +43,6 @@ local panel_motion<const> = function(frame_index, panel, in_frames, hold_frames,
 	return panel.x_out, panel.y, 0
 end
 
-local flash_mix_byte<const> = function(frame_index, flash_frame)
-	if frame_index < flash_frame or frame_index >= (flash_frame + globals.transition_flash_frames) then
-		return 0
-	end
-	local remaining<const> = globals.transition_flash_frames - 1 - (frame_index - flash_frame)
-	return (remaining * globals.transition_flash_mix_byte) // (globals.transition_flash_frames - 1)
-end
-
 function builders.build_all_out_shake(total_frames)
 	local ramp_in_frames<const> = 10
 	local ramp_out_frames<const> = 18
@@ -718,17 +710,9 @@ function builders.build_transition_frames(params)
 	local center_x<const> = params.center_x
 	local start_x<const> = params.start_x
 	local end_x<const> = params.end_x
-	local swap_frame<const> = fade_out_frames - 1
 	local text_out_start<const> = globals.transition_text_in_frames + globals.transition_text_hold_frames
 	local text_out_end<const> = text_out_start + globals.transition_text_out_frames
 	local base<const> = palette.overlay
-	local accent<const> = palette.accent
-	local base_r<const> = (base >> 16) & 0xff
-	local base_g<const> = (base >> 8) & 0xff
-	local base_b<const> = base & 0xff
-	local accent_r<const> = (accent >> 16) & 0xff
-	local accent_g<const> = (accent >> 8) & 0xff
-	local accent_b<const> = accent & 0xff
 
 	for frame_index = 0, finish_frame do
 		local fade_alpha = 1
@@ -772,14 +756,9 @@ function builders.build_transition_frames(params)
 			text_x = center_x + (end_x - center_x) * easing.smoothstep(u)
 		end
 
-		local mix<const> = skip_fade and 0 or flash_mix_byte(frame_index, swap_frame)
-		local inverse<const> = 255 - mix
 		local overlay_ab<const> = ((fade_alpha * 255 + 0.5) // 1) & 0xff
-		local overlay_r<const> = (((base_r * inverse) + (accent_r * mix) + 127) // 255) & 0xff
-		local overlay_g<const> = (((base_g * inverse) + (accent_g * mix) + 127) // 255) & 0xff
-		local overlay_b<const> = (((base_b * inverse) + (accent_b * mix) + 127) // 255) & 0xff
 		frames[#frames + 1] = {
-			overlay = { color = (overlay_ab << 24) | (overlay_r << 16) | (overlay_g << 8) | overlay_b },
+			overlay = { color = (overlay_ab << 24) | (base & 0x00ffffff) },
 			panels = panel_states,
 			accent = {
 				visible = aa > 0,
@@ -812,41 +791,25 @@ function builders.build_fade_frames(params)
 	local frames<const> = {}
 	local palette<const> = params.palette
 	local hold_black<const> = params.hold_black
+	local frame_count<const> = params.frame_count
 	local base<const> = palette.overlay
-	local accent<const> = palette.accent
-	local base_r<const> = (base >> 16) & 0xff
-	local base_g<const> = (base >> 8) & 0xff
-	local base_b<const> = base & 0xff
-	local accent_r<const> = (accent >> 16) & 0xff
-	local accent_g<const> = (accent >> 8) & 0xff
-	local accent_b<const> = accent & 0xff
-	local swap_frame<const> = globals.fade_out_frames - 1
 	local fade_in_start<const> = globals.fade_out_frames + globals.fade_hold_frames
 
-	for frame_index = 0, globals.fade_frame_count - 1 do
-		local a = 0
+	for frame_index = 0, frame_count - 1 do
+		local a
 		if frame_index < globals.fade_out_frames then
-			local u<const> = frame_index / (globals.fade_out_frames - 1)
-			a = easing.smoothstep(u)
+			a = easing.smoothstep(frame_index / (globals.fade_out_frames - 1))
 		else
-			if hold_black then
-				a = 1
-			elseif frame_index < fade_in_start then
+			if hold_black or frame_index < fade_in_start then
 				a = 1
 			else
-				local u<const> = (frame_index - fade_in_start) / (globals.fade_in_frames - 1)
-				a = 1 - easing.smoothstep(u)
+				a = 1 - easing.smoothstep((frame_index - fade_in_start) / (globals.fade_in_frames - 1))
 			end
 		end
 
-		local mix<const> = flash_mix_byte(frame_index, swap_frame)
-		local inverse<const> = 255 - mix
 		local ab<const> = ((a * 255 + 0.5) // 1) & 0xff
-		local rb<const> = (((base_r * inverse) + (accent_r * mix) + 127) // 255) & 0xff
-		local gb<const> = (((base_g * inverse) + (accent_g * mix) + 127) // 255) & 0xff
-		local bb<const> = (((base_b * inverse) + (accent_b * mix) + 127) // 255) & 0xff
 		frames[#frames + 1] = {
-			overlay = { color = (ab << 24) | (rb << 16) | (gb << 8) | bb },
+			overlay = { color = (ab << 24) | (base & 0x00ffffff) },
 		}
 	end
 

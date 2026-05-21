@@ -485,7 +485,7 @@ local process_timeline_frame_payload<const> = function(_, entry, owner, payload)
 	end
 	local compiled_apply_frames<const> = entry.compiled_apply_frames
 	if compiled_apply_frames ~= nil then
-		compiled_apply_frames[payload.frame_index + 1](target)
+		compiled_apply_frames[payload.frame_index + 1](target, payload.frame_value)
 	end
 end
 

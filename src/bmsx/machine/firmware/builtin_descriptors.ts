@@ -82,7 +82,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'pcall', params: ['func', 'arg...'], signature: 'pcall(f, ...)' },
 	{ name: 'print', params: ['...'], signature: 'print(...)' },
 	{ name: 'loadstring', params: ['source', 'chunkname?'], signature: 'loadstring(source [, chunkname])', description: 'Compiles a restricted runtime Lua source subset into a chunk function; intended for small generated helpers.' },
-	{ name: 'load', params: ['source', 'chunkname?', 'mode?', 'env?'], signature: 'load(source [, chunkname [, mode [, env]]])', description: 'Compiles the same restricted runtime Lua source subset as loadstring; only text mode is supported.' },
+	{ name: 'load', params: ['source', 'chunkname?', 'mode?', 'env?'], signature: 'load(source [, chunkname [, mode [, env]]])', description: 'Compiles a restricted runtime Lua source subset into a chunk function; only text mode is supported.' },
 	{ name: 'clock_now', params: [], signature: 'clock_now()', description: 'Returns the current platform clock value.' },
 	{ name: 'rawequal', params: ['v1', 'v2'], signature: 'rawequal(v1, v2)' },
 	{ name: 'rawget', params: ['table', 'index'], signature: 'rawget(table, index)' },
