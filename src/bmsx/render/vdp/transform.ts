@@ -1,4 +1,4 @@
-import { decodeSignedQ16_16 } from '../../machine/devices/vdp/fixed_point';
+import { decodeSignedQ16_16 } from '../../common/fixed_point';
 import { VDP_XF_MATRIX_WORDS } from '../../machine/devices/vdp/xf';
 import { extractFrustumPlanesInto, M4 } from '../3d/math';
 
@@ -6,7 +6,7 @@ export type VdpTransformSnapshot = {
 	view: Float32Array;
 	proj: Float32Array;
 	viewProj: Float32Array;
-	skyboxView: Float32Array;
+	viewRotationInverse: Float32Array;
 	frustumPlanes: Float32Array;
 	eye: Float32Array;
 };
@@ -16,7 +16,7 @@ export function createVdpTransformSnapshot(): VdpTransformSnapshot {
 		view: new Float32Array(16),
 		proj: new Float32Array(16),
 		viewProj: new Float32Array(16),
-		skyboxView: new Float32Array(16),
+		viewRotationInverse: new Float32Array(16),
 		frustumPlanes: new Float32Array(24),
 		eye: new Float32Array(3),
 	};
@@ -30,7 +30,7 @@ export function resolveVdpTransformSnapshot(target: VdpTransformSnapshot, matrix
 		target.proj[index] = decodeSignedQ16_16(matrixWords[projectionBase + index] >>> 0);
 	}
 	M4.mulInto(target.viewProj, target.proj, target.view);
-	M4.skyboxFromViewInto(target.skyboxView, target.view);
+	M4.viewRotationInverseFromViewInto(target.viewRotationInverse, target.view);
 	extractFrustumPlanesInto(target.frustumPlanes, target.viewProj);
-	M4.affineViewEyeInto(target.eye, target.view, target.skyboxView);
+	M4.affineViewEyeInto(target.eye, target.view, target.viewRotationInverse);
 }

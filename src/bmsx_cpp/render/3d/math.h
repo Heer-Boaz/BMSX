@@ -56,7 +56,7 @@ void mat4InvertInto(Mat4& out, const Mat4& a);
 void mat4LookAtInto(Mat4& out, const Vec3& eye, const Vec3& target, const Vec3& up);
 void mat4InvertRigidInto(Mat4& out, const Mat4& m);
 void mat4ViewFromBasisInto(Mat4& out, const Vec3& pos, const Vec3& right, const Vec3& up, const Vec3& back);
-void mat4SkyboxFromViewInto(Mat4& out, const Mat4& view);
+void mat4ViewRotationInverseFromViewInto(Mat4& out, const Mat4& view);
 void mat4SetTranslationSelf(Mat4& m, f32 x, f32 y, f32 z);
 void mat4GetTranslationInto(Vec3& out, const Mat4& m);
 void mat4SetRotationSelfFromQuat(Mat4& m, const Quat& q);

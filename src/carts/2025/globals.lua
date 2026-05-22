@@ -171,7 +171,7 @@ combat_monster_hover_amp = 3
 combat_monster_dodge_distance = 64
 combat_parallax_momentum_step = 1
 combat_parallax_momentum_limit_steps = 5
-combat_parallax_pmu_scale_q16 = 0x000100f5
+combat_parallax_scale_delta = 245 / 65536
 
 p3_blue_r = 0.07
 p3_blue_g = 0.28
@@ -434,7 +434,7 @@ return {
 	combat_monster_dodge_distance = combat_monster_dodge_distance,
 	combat_parallax_momentum_step = combat_parallax_momentum_step,
 	combat_parallax_momentum_limit_steps = combat_parallax_momentum_limit_steps,
-	combat_parallax_pmu_scale_q16 = combat_parallax_pmu_scale_q16,
+	combat_parallax_scale_delta = combat_parallax_scale_delta,
 	p3_blue_r = p3_blue_r,
 	p3_blue_g = p3_blue_g,
 	p3_blue_b = p3_blue_b,

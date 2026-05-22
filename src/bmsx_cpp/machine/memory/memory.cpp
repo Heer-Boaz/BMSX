@@ -134,13 +134,13 @@ u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const {
 void Memory::writeVramU16LE(uint32_t addr, uint32_t value) {
 	u8 bytes[2] = {0, 0};
 	writeLE16(bytes, value);
-	m_vramWriter->writeVram(addr, bytes, 2);
+	m_vramWriter->writeVram(addr, bytes, 0u, 2);
 }
 
 void Memory::writeVramU32LE(uint32_t addr, uint32_t value) {
 	u8 bytes[4] = {0, 0, 0, 0};
 	writeLE32(bytes, value);
-	m_vramWriter->writeVram(addr, bytes, 4);
+	m_vramWriter->writeVram(addr, bytes, 0u, 4);
 }
 
 Value Memory::readIoSlotValue(int slot, uint32_t addr) const {
@@ -347,7 +347,7 @@ u8 Memory::readMappedU8(uint32_t addr) const {
 
 void Memory::writeU8(uint32_t addr, u8 value) {
 	if (isVramMappedRange(addr, 1)) {
-		m_vramWriter->writeVram(addr, &value, 1);
+		m_vramWriter->writeVram(addr, &value, 0u, 1);
 		return;
 	}
 	if (m_overlayRom.data != nullptr && addr >= OVERLAY_ROM_BASE && addr < OVERLAY_ROM_BASE + m_overlayRom.size) {
@@ -366,7 +366,7 @@ void Memory::writeMappedU8(uint32_t addr, u8 value) {
 		return;
 	}
 	if (isVramMappedRange(addr, 1)) {
-		m_vramWriter->writeVram(addr, &value, 1);
+		m_vramWriter->writeVram(addr, &value, 0u, 1);
 		return;
 	}
 	if (writeRamU8(addr, value)) {
@@ -631,7 +631,7 @@ void Memory::writeMappedF64LE(uint32_t addr, double value) {
 
 bool Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
 	if (isVramMappedRange(addr, length)) {
-		m_vramWriter->writeVram(addr, data, length);
+		m_vramWriter->writeVram(addr, data, 0u, length);
 		return true;
 	}
 	size_t offset = 0;

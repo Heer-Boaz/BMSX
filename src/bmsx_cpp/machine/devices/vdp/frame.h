@@ -1,151 +1,80 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/devices/vdp/bbu.h"
-#include "machine/devices/vdp/blitter.h"
 #include "machine/devices/vdp/jtu.h"
 #include "machine/devices/vdp/lpu.h"
-#include "machine/devices/vdp/mdu.h"
 #include "machine/devices/vdp/mfu.h"
 #include "machine/devices/vdp/rpu.h"
-#include "machine/devices/vdp/sbx.h"
 #include "machine/devices/vdp/xf.h"
 #include <memory>
-#include <vector>
 
 namespace bmsx {
 
+constexpr u8 VDP_DEX_FRAME_IDLE = 0u;
+constexpr u8 VDP_DEX_FRAME_DIRECT_OPEN = 1u;
+constexpr u8 VDP_DEX_FRAME_STREAM_OPEN = 2u;
+
 enum class VdpDexFrameState : u8 {
-	Idle = 0,
-	DirectOpen = 1,
-	StreamOpen = 2,
+	Idle = VDP_DEX_FRAME_IDLE,
+	DirectOpen = VDP_DEX_FRAME_DIRECT_OPEN,
+	StreamOpen = VDP_DEX_FRAME_STREAM_OPEN,
 };
 
+constexpr u8 VDP_SUBMITTED_FRAME_EMPTY = 0u;
+constexpr u8 VDP_SUBMITTED_FRAME_QUEUED = 1u;
+constexpr u8 VDP_SUBMITTED_FRAME_EXECUTING = 2u;
+constexpr u8 VDP_SUBMITTED_FRAME_READY = 3u;
+
 enum class VdpSubmittedFrameState : u8 {
-	Empty = 0,
-	Queued = 1,
-	Executing = 2,
-	Ready = 3,
-	ExecutionPending = 4,
+	Empty = VDP_SUBMITTED_FRAME_EMPTY,
+	Queued = VDP_SUBMITTED_FRAME_QUEUED,
+	Executing = VDP_SUBMITTED_FRAME_EXECUTING,
+	Ready = VDP_SUBMITTED_FRAME_READY,
 };
 
 struct VdpSubmittedFrame {
-	std::unique_ptr<VdpBlitterCommandBuffer> queue = std::make_unique<VdpBlitterCommandBuffer>();
-	std::unique_ptr<VdpBbuFrameBuffer> billboards = std::make_unique<VdpBbuFrameBuffer>();
-	std::unique_ptr<VdpMduFrameBuffer> meshes = std::make_unique<VdpMduFrameBuffer>();
 	std::unique_ptr<VdpRpuFrameOutput> rpu = createVdpRpuFrameOutput();
 	VdpSubmittedFrameState state = VdpSubmittedFrameState::Empty;
 	bool hasCommands = false;
-	bool hasFrameBufferCommands = false;
-	bool frameBufferReadbackValid = false;
 	int cost = 0;
 	int workRemaining = 0;
 	i32 ditherType = 0;
 	u32 frameBufferWidth = 0u;
 	u32 frameBufferHeight = 0u;
 	VdpXfUnit xf;
-	u32 skyboxControl = 0;
-	VdpSbxUnit::FaceWords skyboxFaceWords{};
-	VdpSkyboxSamples skyboxSamples{};
 	std::array<u32, VDP_LPU_REGISTER_WORDS> lightRegisterWords{};
 	std::array<u32, VDP_MFU_WEIGHT_COUNT> morphWeightWords{};
 	std::array<u32, VDP_JTU_REGISTER_WORDS> jointMatrixWords{};
 };
 
 struct VdpBuildingFrame {
-	std::unique_ptr<VdpBlitterCommandBuffer> queue = std::make_unique<VdpBlitterCommandBuffer>();
-	std::unique_ptr<VdpBbuFrameBuffer> billboards = std::make_unique<VdpBbuFrameBuffer>();
-	std::unique_ptr<VdpMduFrameBuffer> meshes = std::make_unique<VdpMduFrameBuffer>();
 	std::unique_ptr<VdpRpuFrameOutput> rpu = createVdpRpuFrameOutput();
 	VdpDexFrameState state = VdpDexFrameState::Idle;
 	int cost = 0;
 };
 
-struct VdpBlitterSourceSaveState {
-	u32 surfaceId = 0u;
-	u32 srcX = 0u;
-	u32 srcY = 0u;
-	u32 width = 0u;
-	u32 height = 0u;
-};
-
-struct VdpBatchBlitGlyphSaveState : VdpBlitterSourceSaveState {
-	i32 dstX = 0;
-	i32 dstY = 0;
-	u32 advance = 0u;
-};
-
-struct VdpBlitterCommandSaveState {
-	VdpBlitterCommandType opcode = VdpBlitterCommandType::Clear;
-	u32 seq = 0u;
-	int renderCost = 0;
-	Layer2D layer = Layer2D::World;
-	f32 priority = 0.0f;
-	VdpBlitterSourceSaveState source;
-	i32 dstX = 0;
-	i32 dstY = 0;
-	f32 scaleX = 1.0f;
-	f32 scaleY = 1.0f;
-	bool flipH = false;
-	bool flipV = false;
-	u32 color = 0u;
-	f32 parallaxWeight = 0.0f;
-	i32 width = 0;
-	i32 height = 0;
-	i32 x0 = 0;
-	i32 y0 = 0;
-	i32 x1 = 0;
-	i32 y1 = 0;
-	i32 thickness = 1;
-	bool hasBackgroundColor = false;
-	u32 backgroundColor = 0u;
-	u32 lineHeight = 0u;
-	std::vector<VdpBatchBlitGlyphSaveState> items;
-};
-
-struct VdpBbuBillboardSaveState {
-	u32 seq = 0u;
-	Layer2D layer = Layer2D::World;
-	u32 priority = 0u;
-	f32 positionX = 0.0f;
-	f32 positionY = 0.0f;
-	f32 positionZ = 0.0f;
-	f32 size = 1.0f;
-	u32 color = 0u;
-	VdpBlitterSourceSaveState source;
-	u32 surfaceWidth = 0u;
-	u32 surfaceHeight = 0u;
-	u32 slot = 0u;
-};
-
 struct VdpBuildingFrameSaveState {
 	VdpDexFrameState state = VdpDexFrameState::Idle;
-	std::vector<VdpBlitterCommandSaveState> queue;
-	std::vector<VdpBbuBillboardSaveState> billboards;
 	VdpRpuFrameSaveState rpu;
 	int cost = 0;
 };
 
 struct VdpSubmittedFrameSaveState {
 	VdpSubmittedFrameState state = VdpSubmittedFrameState::Empty;
-	std::vector<VdpBlitterCommandSaveState> queue;
-	std::vector<VdpBbuBillboardSaveState> billboards;
 	bool hasCommands = false;
-	bool hasFrameBufferCommands = false;
-	bool frameBufferReadbackValid = false;
 	int cost = 0;
 	int workRemaining = 0;
 	i32 ditherType = 0;
 	u32 frameBufferWidth = 0u;
 	u32 frameBufferHeight = 0u;
 	VdpXfState xf;
-	u32 skyboxControl = 0u;
-	VdpSbxUnit::FaceWords skyboxFaceWords{};
-	VdpSkyboxSamples skyboxSamples{};
 	std::array<u32, VDP_LPU_REGISTER_WORDS> lightRegisterWords{};
+	std::array<u32, VDP_MFU_WEIGHT_COUNT> morphWeightWords{};
+	std::array<u32, VDP_JTU_REGISTER_WORDS> jointMatrixWords{};
 	VdpRpuFrameSaveState rpu;
 };
 
+VdpSubmittedFrame allocateSubmittedFrameSlot();
 void resetBuildingFrame(VdpBuildingFrame& frame);
 void resetSubmittedFrameSlot(VdpSubmittedFrame& frame);
 VdpBuildingFrameSaveState captureBuildingFrameState(const VdpBuildingFrame& frame);

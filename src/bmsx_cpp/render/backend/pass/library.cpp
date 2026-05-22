@@ -2,28 +2,23 @@
  * library.cpp - Render pass library implementation
  */
 
+// TODO: TOTAAL ANDERS DAN `library.ts`!!
+
 #include "library.h"
-#include "software_scene.h"
+#include "common/primitives.h"
 #include "../../gameview.h"
 #include "../../2d/framebuffer_pipeline.h"
-#include "../../3d/axis_gizmo_pipeline.h"
-#include "../../3d/mesh/pipeline.h"
-#include "../../3d/particles/pipeline.h"
-#include "../../3d/skybox/pipeline.h"
+#include "../../backend/software/vdp_rpu.h"
 #include "../../vdp/framebuffer.h"
-#include "framebuffer_execution.h"
-#include "../../2d/vdp_blit_pipeline.h"
-#if BMSX_ENABLE_GLES2
-#include "../gles2/backend.h"
-#include "../../post/crt/pipeline.h"
-#endif
 #include "../../graph/graph.h"
-#include "../../host_overlay/gles2/pipeline.h"
 #include "../../host_overlay/pass_registration.h"
 #include "../../host_overlay/software/renderer.h"
 #include "machine/runtime/runtime.h"
 #include <algorithm>
 #include <stdexcept>
+#include <cstddef>
+#include <memory>
+#include <vector>
 
 namespace bmsx {
 
@@ -50,19 +45,8 @@ void setSkippedStatePass(RenderPassDef& desc, const char* id, const char* name) 
 	desc.graph->skip = true;
 }
 
-#if BMSX_ENABLE_GLES2
-DeviceQuantizePipelineState buildDeviceQuantizeState(const RenderPassDef::RenderGraphPassContext& ctx) {
-	auto* view = ctx.view;
-	DeviceQuantizePipelineState state;
-	writeRenderPassViewportSize(state.width, state.height, state.baseWidth, state.baseHeight, *view);
-	state.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
-	state.ditherType = static_cast<i32>(view->dither_type);
-	return state;
-}
-#endif
-
-CRTPipelineState buildCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx,
-										RenderPassDef::RenderPassGraphDef::PresentInput presentInput) {
+CRTPipelineState buildAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx,
+													RenderPassDef::RenderPassGraphDef::PresentInput presentInput) {
 	auto* view = ctx.view;
 	CRTPipelineState crtState;
 	writeRenderPassViewportSize(crtState.width, crtState.height, crtState.baseWidth, crtState.baseHeight, *view);
@@ -110,12 +94,14 @@ CRTPipelineState buildCRTPipelineState(const RenderPassDef::RenderGraphPassConte
 	return crtState;
 }
 
+} // namespace
+
 void setAutoPresentGraph(RenderPassDef& desc) {
 	desc.present = true;
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
 	desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-		return buildCRTPipelineState(ctx, RenderPassDef::RenderPassGraphDef::PresentInput::Auto);
+		return buildAutoCRTPipelineState(ctx, RenderPassDef::RenderPassGraphDef::PresentInput::Auto);
 	};
 }
 
@@ -131,9 +117,6 @@ void registerFrameStatePasses(RenderPassLibrary& registry) {
 	frameShared.exec = noopRenderPass;
 	registry.registerPass(frameShared);
 }
-
-} // namespace
-
 RenderPassLibrary::RenderPassLibrary(GPUBackend* backend, GameView* view)
 	: m_backend(backend)
 	, m_view(view)
@@ -148,9 +131,7 @@ void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 
 	registerFrameStatePasses(registry);
 
-	registerVdpFrameBufferExecutionPass(registry);
-
-	registerSoftwareScenePasses(registry);
+	registerVdpRpuPassSoftware(registry);
 	registerFramebuffer2DPass_Software(registry);
 
 	// Present pass (software: direct blit)
@@ -177,89 +158,6 @@ void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 
 	registerHostOverlayBackendPasses<SoftwareBackend, nullptr, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(registry);
 }
-
-#if BMSX_ENABLE_GLES2
-void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
-	GameView* const view = registry.view();
-
-	registerFrameStatePasses(registry);
-
-	registerVdpFrameBufferExecutionPass(registry);
-
-	registerSkyboxPass_GLES2(registry);
-	registerMeshPass_GLES2(registry);
-	registerParticlesPass_GLES2(registry);
-	registerFramebuffer2DPass_GLES2(registry);
-
-	// Device quantize/dither pass (GLES2)
-	{
-		RenderPassDef desc;
-		desc.id = "device_quantize";
-		desc.name = "DeviceQuantize";
-		desc.graph = RenderPassDef::RenderPassGraphDef{};
-		desc.graph->reads = { RenderPassDef::RenderGraphSlot::FrameColor };
-		desc.graph->writes = { RenderPassDef::RenderGraphSlot::DeviceColor };
-		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-			return buildDeviceQuantizeState(ctx);
-		};
-		desc.bootstrap = [](GPUBackend* backend) {
-			CRTPipeline::initDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend));
-		};
-		desc.exec = [view](GPUBackend* backend, void* fbo, std::any& state) {
-			(void)fbo;
-			auto& deviceState = std::any_cast<DeviceQuantizePipelineState&>(state);
-			CRTPipeline::renderDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend), view, deviceState);
-		};
-		desc.shouldExecute = [view]() {
-			return static_cast<i32>(view->dither_type) != 0;
-		};
-		desc.prepare = noopPreparePass;
-		registry.registerPass(desc);
-	}
-
-	// Present pass (GLES2, no CRT)
-	{
-		RenderPassDef desc;
-		desc.id = "present";
-		desc.name = "Present";
-		setAutoPresentGraph(desc);
-		desc.bootstrap = [](GPUBackend* backend) {
-			CRTPipeline::initPresentGLES2(static_cast<OpenGLES2Backend*>(backend));
-		};
-		desc.exec = [view](GPUBackend* backend, void*, std::any& state) {
-			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			CRTPipeline::renderPresentGLES2(static_cast<OpenGLES2Backend*>(backend), view, crtState);
-		};
-		desc.shouldExecute = [view]() {
-			return !view->crt_postprocessing_enabled;
-		};
-		desc.prepare = noopPreparePass;
-		registry.registerPass(desc);
-	}
-
-	// CRT post-processing / present pass (GLES2)
-	{
-		RenderPassDef desc;
-		desc.id = "crt";
-		desc.name = "Present/CRT";
-		setAutoPresentGraph(desc);
-		desc.bootstrap = [](GPUBackend* backend) {
-			CRTPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend));
-		};
-		desc.exec = [view](GPUBackend* backend, void*, std::any& state) {
-			auto& crtState = std::any_cast<CRTPipelineState&>(state);
-			CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), view, crtState);
-		};
-		desc.shouldExecute = [view]() {
-			return view->crt_postprocessing_enabled;
-		};
-		desc.prepare = noopPreparePass;
-		registry.registerPass(desc);
-	}
-
-	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2, shouldRenderAxisGizmo>(registry);
-}
-#endif
 
 void RenderPassLibrary::registerPass(const RenderPassDef& desc) {
 	const std::string& idStr = desc.id;
@@ -457,7 +355,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 				transform.eye.z,
 			};
 			frameShared.view.viewProj = transform.viewProj;
-			frameShared.view.skyboxView = transform.skyboxView;
+			frameShared.view.viewRotationInverse = transform.viewRotationInverse;
 			frameShared.view.proj = transform.proj;
 			frameShared.lighting = lightingSystem.update(*view);
 			frameShared.fog.fogD50 = view->atmosphere.fogD50;

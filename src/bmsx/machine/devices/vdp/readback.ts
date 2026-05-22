@@ -30,22 +30,6 @@ type VdpReadCache = {
 const VDP_READBACK_BUDGET_BYTES = 4096;
 const VDP_READBACK_MAX_CHUNK_PIXELS = 256;
 
-function createReadSurfaceEntries(): VdpReadSurface[] {
-	const entries: VdpReadSurface[] = [];
-	for (let surfaceId = 0; surfaceId < VDP_RD_SURFACE_COUNT; surfaceId += 1) {
-		entries.push({ surfaceId, registered: false });
-	}
-	return entries;
-}
-
-function createReadCaches(): VdpReadCache[] {
-	const entries: VdpReadCache[] = [];
-	for (let surfaceId = 0; surfaceId < VDP_RD_SURFACE_COUNT; surfaceId += 1) {
-		entries.push({ x0: 0, y: 0, width: 0, data: new Uint8Array(VDP_READBACK_MAX_CHUNK_PIXELS * 4) });
-	}
-	return entries;
-}
-
 export class VdpReadbackUnit {
 	public resolvedSurfaceId = 0;
 	public faultCode = VDP_FAULT_NONE;
@@ -54,10 +38,17 @@ export class VdpReadbackUnit {
 	public nextX = 0;
 	public nextY = 0;
 	public advanceReadPosition = false;
-	private readonly readSurfaces = createReadSurfaceEntries();
-	private readonly readCaches = createReadCaches();
+	private readonly readSurfaces: VdpReadSurface[] = [];
+	private readonly readCaches: VdpReadCache[] = [];
 	private readBudgetBytes = VDP_READBACK_BUDGET_BYTES;
 	private readOverflow = false;
+
+	public constructor() {
+		for (let surfaceId = 0; surfaceId < VDP_RD_SURFACE_COUNT; surfaceId += 1) {
+			this.readSurfaces[surfaceId] = { surfaceId, registered: false };
+			this.readCaches[surfaceId] = { x0: 0, y: 0, width: 0, data: new Uint8Array(VDP_READBACK_MAX_CHUNK_PIXELS * 4) };
+		}
+	}
 
 	public resetSurfaceRegistry(): void {
 		for (let surfaceId = 0; surfaceId < VDP_RD_SURFACE_COUNT; surfaceId += 1) {

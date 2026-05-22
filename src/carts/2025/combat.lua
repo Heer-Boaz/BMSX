@@ -88,6 +88,29 @@ end
 local combat_director<const> = {}
 combat_director.__index = combat_director
 
+local apply_combat_draw_parallax<const> = function(obj, weight, offset_base_y)
+	local sc<const> = obj.sprite_component
+	local draw_offset<const> = sc.draw_offset
+	local draw_scale<const> = sc.draw_scale
+	draw_offset.y = offset_base_y * weight
+	if weight < 0 then
+		draw_scale.x = 1 - (globals.combat_parallax_scale_delta * weight)
+		draw_scale.y = draw_scale.x
+	else
+		draw_scale.x = 1 + (globals.combat_parallax_scale_delta * weight)
+		draw_scale.y = draw_scale.x
+	end
+end
+
+local reset_combat_draw_parallax<const> = function(obj)
+	local sc<const> = obj.sprite_component
+	local draw_offset<const> = sc.draw_offset
+	local draw_scale<const> = sc.draw_scale
+	draw_offset.y = 0
+	draw_scale.x = 1
+	draw_scale.y = 1
+end
+
 function combat_director:start_combat(node_id, skip_fade_in)
 	self.node_id = node_id
 	self.combat_node_id = node_id
@@ -125,13 +148,13 @@ local refresh_combat_parallax<const> = function(self)
 	local momentum<const> = self.combat_parallax_momentum_steps
 	local hero_weight<const> = (10 - momentum) / 15
 	local monster_weight<const> = -(10 + momentum) / 15
+	local offset_base_y<const> = (11 - momentum) / 10
 	local hero<const> = oget(globals.combat_maya_a_id)
 	local hero_b<const> = oget(globals.combat_maya_b_id)
 	local monster<const> = oget(globals.combat_monster_id)
-	hero.sprite_component.parallax_weight = hero_weight
-	hero_b.sprite_component.parallax_weight = hero_weight
-	monster.sprite_component.parallax_weight = monster_weight
-	vdp_pmu_write_bank(0, 0, ((11 - momentum) << 16) // 10, combat_parallax_pmu_scale_q16, combat_parallax_pmu_scale_q16, 0)
+	apply_combat_draw_parallax(hero, hero_weight, offset_base_y)
+	apply_combat_draw_parallax(hero_b, hero_weight, offset_base_y)
+	apply_combat_draw_parallax(monster, monster_weight, offset_base_y)
 end
 
 function combat_director:reset_combat_parallax()
@@ -142,13 +165,12 @@ end
 
 function combat_director:disable_combat_parallax()
 	self.combat_parallax_enabled = false
-	vdp_pmu_write_bank(0, 0, 0, 0x00010000, 0x00010000, 0)
 	local hero<const> = oget(globals.combat_maya_a_id)
 	local hero_b<const> = oget(globals.combat_maya_b_id)
 	local monster<const> = oget(globals.combat_monster_id)
-	hero.sprite_component.parallax_weight = 0
-	hero_b.sprite_component.parallax_weight = 0
-	monster.sprite_component.parallax_weight = 0
+	reset_combat_draw_parallax(hero)
+	reset_combat_draw_parallax(hero_b)
+	reset_combat_draw_parallax(monster)
 end
 
 function combat_director:push_combat_momentum(side, power)

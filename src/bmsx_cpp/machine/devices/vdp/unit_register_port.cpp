@@ -32,13 +32,13 @@ bool VdpUnitRegisterPort::acceptRange(u32 packetKind, u32 firstRegister, u32 reg
 			return true;
 		case VDP_MFU_PACKET_KIND:
 			if (firstRegister >= VDP_MFU_WEIGHT_COUNT || registerCount > VDP_MFU_WEIGHT_COUNT - firstRegister) {
-				m_fault.raise(VDP_FAULT_MDU_BAD_MORPH_RANGE, firstRegister);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
 				return false;
 			}
 			return true;
 		case VDP_JTU_PACKET_KIND:
 			if (firstRegister >= VDP_JTU_REGISTER_WORDS || registerCount > VDP_JTU_REGISTER_WORDS - firstRegister) {
-				m_fault.raise(VDP_FAULT_MDU_BAD_JOINT_RANGE, firstRegister);
+				m_fault.raise(VDP_FAULT_STREAM_BAD_PACKET, firstRegister);
 				return false;
 			}
 			return true;

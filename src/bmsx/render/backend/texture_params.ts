@@ -20,3 +20,12 @@ export const DEFAULT_TEXTURE_PARAMS: Readonly<TextureParams> = Object.freeze({
 	magFilter: TEXTURE_FILTER_NEAREST,
 	srgb: true,
 });
+
+export const RAW_RGBA_TEXTURE_PARAMS: Readonly<TextureParams> = Object.freeze({
+	size: Object.freeze({ x: 0, y: 0 }),
+	wrapS: TEXTURE_WRAP_CLAMP_TO_EDGE,
+	wrapT: TEXTURE_WRAP_CLAMP_TO_EDGE,
+	minFilter: TEXTURE_FILTER_NEAREST,
+	magFilter: TEXTURE_FILTER_NEAREST,
+	srgb: false,
+});

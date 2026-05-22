@@ -1,11 +1,11 @@
 [
 	{
-		"description": "PMU-resolved parallax sprite, early frame",
+		"description": "RPU cart-authored 2D and 3D draws, early frame",
 		"frame": 6,
 		"capture": true
 	},
 	{
-		"description": "PMU-resolved parallax sprite, later frame",
+		"description": "RPU cart-authored 2D and 3D draws, later frame",
 		"frame": 14,
 		"capture": true
 	}

@@ -10,7 +10,7 @@ namespace bmsx {
 
 struct VdpStreamIngressState {
 	bool dmaSubmitActive = false;
-	std::array<u8, 4> fifoWordScratch{{0, 0, 0, 0}};
+	std::array<u8, 4> fifoWordScratch{};
 	int fifoWordByteCount = 0;
 	std::vector<u32> fifoStreamWords;
 	u32 fifoStreamWordCount = 0;
@@ -19,7 +19,7 @@ struct VdpStreamIngressState {
 class VdpStreamIngressUnit {
 public:
 	bool dmaSubmitActive = false;
-	std::array<u8, 4> fifoWordScratch{{0, 0, 0, 0}};
+	std::array<u8, 4> fifoWordScratch{};
 	int fifoWordByteCount = 0;
 	std::array<u32, VDP_STREAM_CAPACITY_WORDS> fifoStreamWords{};
 	u32 fifoStreamWordCount = 0;

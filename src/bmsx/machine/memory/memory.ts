@@ -79,8 +79,8 @@ const BUS_ACCESS_WRITE_U16 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16;
 const BUS_ACCESS_WRITE_U32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32;
 
 export type VramWriteSink = {
-	writeVram(addr: number, bytes: Uint8Array, srcOffset?: number, length?: number): void;
-	readVram(addr: number, out: Uint8Array): void;
+	writeVram(addr: number, data: Uint8Array, srcOffset?: number, length?: number): void;
+	readVram(addr: number, out: Uint8Array, length?: number): void;
 };
 
 export type IoReadHandler = (addr: number) => Value;
@@ -726,10 +726,10 @@ export class Memory {
 		this.writeMappedU32LE(addr + 4, this.mappedFloatView.getUint32(4, true));
 	}
 
-	public readBytesInto(addr: number, out: Uint8Array, length: number): boolean {
+	public readBytesInto(addr: number, out: Uint8Array, length: number, dstOffset = 0): boolean {
 		if (isVramMappedRange(addr, length)) {
 			for (let index = 0; index < length; index += 1) {
-				out[index] = 0;
+				out[dstOffset + index] = 0;
 			}
 			this.raiseBusFault(BUS_FAULT_VRAM_RANGE, addr, BUS_ACCESS_READ_U8);
 			return false;
@@ -760,12 +760,12 @@ export class Memory {
 		}
 		if (data !== undefined) {
 			for (let index = 0; index < length; index += 1) {
-				out[index] = data[offset + index]!;
+				out[dstOffset + index] = data[offset + index]!;
 			}
 			return true;
 		}
 		for (let index = 0; index < length; index += 1) {
-			out[index] = 0;
+			out[dstOffset + index] = 0;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 		return false;

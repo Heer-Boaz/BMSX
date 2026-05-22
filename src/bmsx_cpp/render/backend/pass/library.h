@@ -10,7 +10,6 @@
 #include "../backend.h"
 #include "../../lighting/system.h"
 #include "../../shared/submissions.h"
-#include "machine/devices/vdp/contracts.h"
 #include <array>
 #include <string>
 #include <vector>
@@ -28,7 +27,7 @@ class GameView;
 class RenderGraphRuntime;
 class RenderGraphContext;
 class Runtime;
-struct VdpBlitterCommandBuffer;
+struct VdpRpuFrameOutput;
 
 void writeRenderPassViewportSize(i32& width, i32& height, i32& baseWidth, i32& baseHeight, const GameView& view);
 
@@ -36,53 +35,18 @@ void writeRenderPassViewportSize(i32& width, i32& height, i32& baseWidth, i32& b
  * Render pass state types
  * ============================================================================ */
 
-struct SkyboxPipelineState {
-	i32 width = 0;
-	i32 height = 0;
-	std::array<f32, 16> view{};
-	std::array<f32, 16> proj{};
-	TextureHandle slotPrimaryTex = nullptr;
-	TextureHandle slotSecondaryTex = nullptr;
-	std::array<f32, SKYBOX_FACE_COUNT * 4> faceUvRects{};
-	std::array<i32, SKYBOX_FACE_COUNT> faceSlotBindings{};
-};
-
-struct ParticlePipelineState {
-	i32 width = 0;
-	i32 height = 0;
-	std::array<f32, 16> viewProj{};
-	std::array<f32, 3> camRight{};
-	std::array<f32, 3> camUp{};
-	TextureHandle slotPrimaryTex = nullptr;
-	TextureHandle slotSecondaryTex = nullptr;
-	TextureHandle systemSlotTex = nullptr;
-	std::array<f32, 3> ambientColor{1.0f, 1.0f, 1.0f};
-	f32 ambientIntensity = 1.0f;
-};
-
-struct MeshPipelineState {
-	i32 width = 0;
-	i32 height = 0;
-	std::array<f32, 16> viewProj{};
-	std::array<f32, 3> cameraPosition{};
-	std::array<f32, 4> ambientColorIntensity{0.0f, 0.0f, 0.0f, 0.0f};
-	std::array<f32, RENDER_MAX_DIRECTIONAL_LIGHTS * 4u> directionalLightDirections{};
-	std::array<f32, RENDER_MAX_DIRECTIONAL_LIGHTS * 4u> directionalLightColorIntensities{};
-	std::array<f32, RENDER_MAX_POINT_LIGHTS * 4u> pointLightPositionRanges{};
-	std::array<f32, RENDER_MAX_POINT_LIGHTS * 4u> pointLightColorIntensities{};
-	i32 directionalLightCount = 0;
-	i32 pointLightCount = 0;
-	TextureHandle slotPrimaryTex = nullptr;
-	TextureHandle slotSecondaryTex = nullptr;
-	TextureHandle systemSlotTex = nullptr;
-};
-
 struct Framebuffer2DPipelineState {
 	i32 width = 0;
 	i32 height = 0;
 	i32 baseWidth = 0;
 	i32 baseHeight = 0;
 	TextureHandle colorTex = nullptr;
+};
+
+struct VdpRpuPipelineState {
+	i32 width = 0;
+	i32 height = 0;
+	const VdpRpuFrameOutput* frame = nullptr;
 };
 
 struct CRTPipelineOptions {
@@ -124,7 +88,7 @@ struct FrameSharedState {
 	struct {
 		std::array<f32, 3> camPos;
 		std::array<f32, 16> viewProj;
-		std::array<f32, 16> skyboxView;
+		std::array<f32, 16> viewRotationInverse;
 		std::array<f32, 16> proj;
 	} view;
 
@@ -222,6 +186,9 @@ struct RenderPassToken {
 	std::function<void(bool)> set;
 	std::function<bool()> isEnabled;
 };
+
+void setAutoPresentGraph(RenderPassDef& desc);
+void registerFrameStatePasses(RenderPassLibrary& registry);
 
 /* ============================================================================
  * RenderPassLibrary

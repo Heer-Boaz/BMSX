@@ -1,9 +1,14 @@
 #include "machine/devices/vdp/readback.h"
 
 #include <algorithm>
-#include <cstring>
 
 namespace bmsx {
+VdpReadbackUnit::VdpReadbackUnit() {
+	for (u32 surfaceId = 0u; surfaceId < VDP_RD_SURFACE_COUNT; ++surfaceId) {
+		m_readSurfaces[surfaceId].surfaceId = surfaceId;
+	}
+}
+
 void VdpReadbackUnit::resetSurfaceRegistry() {
 	for (u32 surfaceId = 0u; surfaceId < VDP_RD_SURFACE_COUNT; ++surfaceId) {
 		m_readSurfaces[surfaceId].surfaceId = surfaceId;
@@ -110,35 +115,37 @@ void VdpReadbackUnit::restoreState(const VdpReadbackState& state) {
 VdpReadbackUnit::ReadCache& VdpReadbackUnit::getReadCache(u32 surfaceId, const VdpSurfaceUploadSlot& surface, u32 x, u32 y) {
 	ReadCache& cache = m_readCaches[surfaceId];
 	if (cache.width == 0u || cache.y != y || x < cache.x0 || x >= cache.x0 + cache.width) {
-		prefetchReadCache(surfaceId, surface, x, y);
+		prefetchReadCache(cache, surface, x, y);
 	}
 	return cache;
 }
 
 // start numeric-sanitization-acceptable -- readback chunk width is the minimum of hardware cap, remaining surface span, and per-frame read budget.
-void VdpReadbackUnit::prefetchReadCache(u32 surfaceId, const VdpSurfaceUploadSlot& surface, u32 x, u32 y) {
+void VdpReadbackUnit::prefetchReadCache(ReadCache& cache, const VdpSurfaceUploadSlot& surface, u32 x, u32 y) {
 	const u32 maxPixelsByBudget = m_readBudgetBytes / 4u;
 	if (maxPixelsByBudget == 0u) {
 		m_readOverflow = true;
-		m_readCaches[surfaceId].width = 0u;
+		cache.width = 0u;
 		return;
 	}
 	const u32 chunkW = std::min(ReadbackMaxChunkPixels, std::min(surface.surfaceWidth - x, maxPixelsByBudget));
-	ReadCache& cache = m_readCaches[surfaceId];
-	copySurfacePixels(surface, x, y, chunkW, 1u, cache.data);
+	copySurfacePixels(cache, surface, x, y, chunkW, 1u);
 	cache.x0 = x;
 	cache.y = y;
 	cache.width = chunkW;
 }
 // end numeric-sanitization-acceptable
 
-void VdpReadbackUnit::copySurfacePixels(const VdpSurfaceUploadSlot& surface, u32 x, u32 y, u32 width, u32 height, std::array<u8, ReadbackMaxChunkPixels * 4u>& out) {
+void VdpReadbackUnit::copySurfacePixels(ReadCache& cache, const VdpSurfaceUploadSlot& surface, u32 x, u32 y, u32 width, u32 height) {
 	const u32 stride = surface.surfaceWidth * 4u;
 	const u32 rowBytes = width * 4u;
+	std::array<u8, ReadbackMaxChunkPixels * 4u>& out = cache.data;
 	for (u32 row = 0u; row < height; ++row) {
 		const size_t srcOffset = static_cast<size_t>(y + row) * static_cast<size_t>(stride) + static_cast<size_t>(x) * 4u;
 		const size_t dstOffset = static_cast<size_t>(row) * static_cast<size_t>(rowBytes);
-		std::memcpy(out.data() + dstOffset, surface.cpuReadback.data() + srcOffset, rowBytes);
+		for (size_t byteIndex = 0u; byteIndex < rowBytes; ++byteIndex) {
+			out[dstOffset + byteIndex] = surface.cpuReadback[srcOffset + byteIndex];
+		}
 	}
 }
 

@@ -1,10 +1,9 @@
 /// <reference types="@webgpu/types" />
 
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
-import type { VdpBlitterCommandBuffer } from '../../machine/devices/vdp/blitter';
-import type { Runtime } from '../../machine/runtime/runtime';
+import type { VdpRpuFrameOutput } from '../../machine/devices/vdp/rpu';
 import type { Host2DSubmission } from '../shared/submissions';
-import type { LightingDescriptor, LightingFrameState } from '../lighting/system';
+import type { LightingFrameState } from '../lighting/system';
 import type { WebGLBackend } from './webgl/backend';
 import type { WebGPUBackend } from './webgpu/backend';
 import type { TextureParams } from './texture_params';
@@ -16,7 +15,7 @@ import type { RenderPassLibrary } from './pass/library';
  *   ColorAttachmentSpec, DepthAttachmentSpec, RenderPassDesc, PassEncoder,
  *   GPUBackend texture methods, render-pass methods, draw methods except TS
  *   drawIndexed indexType, frame lifecycle, getCaps(), and stats.
- * - Shared render semantics above this boundary are VDP/VOUT/mesh stream
+ * - Shared render semantics above this boundary are VDP/VOUT/RPU command
  *   records. Concrete WebGL/GLES pass code owns GPU API binding such as shader
  *   programs, VAO/buffer state, vertexAttribPointer calls, uniform block
  *   binding, texture units, and draw-call issue.
@@ -81,9 +80,7 @@ export type RenderTargetHandle = WebGLFramebuffer | WebGPURenderTargetHandle | H
 
 // High-level render pass identifiers
 export type RenderPassId =
-	| 'skybox'
-	| 'mesh'
-	| 'particles'
+	| 'vdp_rpu'
 	| 'framebuffer_2d'
 	| 'host_overlay'
 	| 'host_menu'
@@ -221,7 +218,6 @@ export interface GPUBackend {
 	endRenderPass(pass: PassEncoder): void;
 	getCaps(): BackendCaps;
 	registerBuiltinPasses(registry: RenderPassLibrary): void;
-	executeVdp2DBlit(state: VdpFrameBufferExecutionPassState): void;
 	createRenderPassInstance?(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle;
 	destroyRenderPassInstance?(p: RenderPassInstanceHandle): void;
 	setGraphicsPipeline?(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void;
@@ -257,11 +253,8 @@ export interface GPUBackend {
 }
 
 export interface RenderPassStateRegistry {
-	['skybox']: SkyboxPipelineState;
-	['mesh']: MeshPipelineState;
-	['particles']: ParticlePipelineState;
+	['vdp_rpu']: VdpRpuPipelineState;
 	['framebuffer_2d']: Framebuffer2DPipelineState;
-	['vdp_framebuffer_execution']: VdpFrameBufferExecutionPassState;
 	['host_overlay']: HostOverlayPipelineState;
 	['host_menu']: HostMenuPipelineState;
 	['device_quantize']: DeviceQuantizePipelineState;
@@ -274,18 +267,10 @@ export interface RenderPassStateRegistry {
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;
 
-
-export const VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE = 0;
-export const VDP_FRAMEBUFFER_EXECUTION_TARGET_DISPLAY_REPLAY = 1;
-
-export type VdpFrameBufferExecutionTarget =
-	| typeof VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE
-	| typeof VDP_FRAMEBUFFER_EXECUTION_TARGET_DISPLAY_REPLAY;
-
-export type VdpFrameBufferExecutionPassState = {
-	runtime: Runtime;
-	commands: VdpBlitterCommandBuffer;
-	target: VdpFrameBufferExecutionTarget;
+export type VdpRpuPipelineState = {
+	width: number;
+	height: number;
+	frame: VdpRpuFrameOutput;
 };
 
 export type Framebuffer2DPipelineState = {
@@ -320,12 +305,8 @@ export interface RenderContext {
 	commitPresentationFrame: boolean;
 	presentationHistorySourceIndex: 0 | 1;
 	presentationHistoryDestinationIndex: 0 | 1;
-	vdpBillboardCount: number;
-	vdpBillboardPositionSize: Float32Array;
-	vdpBillboardColor: Uint32Array;
-	vdpBillboardUvRect: Float32Array;
-	vdpBillboardSlot: Int32Array;
 	activeTexUnit: number;
+	vdpRpuFrame: VdpRpuFrameOutput;
 	bind2DTex(tex: TextureHandle): void;
 	bindCubemapTex(tex: TextureHandle): void;
 
@@ -339,39 +320,6 @@ export type FogUniforms = {
 	fogYMin: number;
 	fogYMax: number;
 };
-
-export interface SkyboxPipelineState {
-	width: number;
-	height: number;
-	view: Float32Array;
-	proj: Float32Array;
-	slotPrimaryTex: TextureHandle;
-	slotSecondaryTex: TextureHandle;
-	faceUvRects: Float32Array;
-	faceSlotBindings: Int32Array;
-}
-
-export interface ParticlePipelineState {
-	width: number;
-	height: number;
-	viewProj: Float32Array;
-	camRight: Float32Array;
-	camUp: Float32Array;
-	slotPrimaryTex?: TextureHandle;
-	slotSecondaryTex?: TextureHandle;
-	systemSlotTex?: TextureHandle;
-}
-
-export interface MeshPipelineState {
-	width: number;
-	height: number;
-	viewProj: Float32Array;
-	cameraPosition: Float32Array;
-	lighting: LightingDescriptor;
-	slotPrimaryTex: TextureHandle;
-	slotSecondaryTex: TextureHandle;
-	systemSlotTex: TextureHandle;
-}
 
 export type RenderingViewportType = 'viewport' | 'offscreen';
 
@@ -415,7 +363,7 @@ export interface FrameSharedState {
 	view: {
 		camPos: Float32Array | { x: number; y: number; z: number; };
 		viewProj: Float32Array;
-		skyboxView: Float32Array;
+		viewRotationInverse: Float32Array;
 		proj: Float32Array;
 	};
 	lighting: LightingFrameState;

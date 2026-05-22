@@ -12,7 +12,7 @@ namespace bmsx {
 constexpr u32 ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
 constexpr u32 ROM_TOC_HEADER_SIZE = 48;
 constexpr u32 ROM_TOC_ENTRY_SIZE = 88;
-constexpr u32 ROM_TOC_INVALID_U32 = 0xffffffffu;
+constexpr u32 ROM_TOC_INVALID_U32 = 0xffffffffU;
 constexpr u32 ROM_TOC_OP_NONE = 0;
 constexpr u32 ROM_TOC_OP_DELETE = 1;
 constexpr u32 ROM_TOC_ASSET_TYPE_IMAGE = 1;
@@ -44,10 +44,10 @@ enum class AssetTypeKind {
 	Unknown,
 };
 
-std::string assetTypeFromId(u32 id);
-u32 assetTypeToId(std::string_view type);
-AssetTypeKind resolveAssetTypeKind(std::string_view assetType);
-RomTocPayload decodeRomToc(const u8* data, size_t size);
-std::vector<u8> encodeRomToc(const RomTocPayload& payload);
+auto assetTypeFromId(u32 id) -> std::string;
+auto assetTypeToId(std::string_view type) -> u32;
+auto resolveAssetTypeKind(std::string_view assetType) -> AssetTypeKind;
+auto decodeRomToc(const u8* data, size_t size) -> RomTocPayload;
+auto encodeRomToc(const RomTocPayload& payload) -> std::vector<u8>;
 
 } // namespace bmsx

@@ -49,9 +49,6 @@ constexpr u32 VDP_DRAW_CTRL_FLIP_H = 0x00000001u;
 constexpr u32 VDP_DRAW_CTRL_FLIP_V = 0x00000002u;
 constexpr u32 VDP_DRAW_CTRL_BLEND_SHIFT = 2u;
 constexpr u32 VDP_DRAW_CTRL_BLEND_MASK = 0x000000fcu;
-constexpr u32 VDP_DRAW_CTRL_PMU_BANK_SHIFT = 8u;
-constexpr u32 VDP_DRAW_CTRL_PMU_BANK_MASK = 0x0000ff00u;
-constexpr u32 VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT = 16u;
 
 struct VdpLatchedGeometry {
 	i32 x0 = 0;
@@ -64,10 +61,8 @@ struct VdpDrawCtrl {
 	bool flipH = false;
 	bool flipV = false;
 	u32 blendMode = 0u;
-	u32 pmuBank = 0u;
-	f32 parallaxWeight = 0.0f;
 };
 
-VdpDrawCtrl decodeVdpDrawCtrl(u32 value);
+void decodeVdpDrawCtrl(u32 value, VdpDrawCtrl& target);
 
 } // namespace bmsx

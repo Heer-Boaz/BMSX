@@ -6,7 +6,7 @@
 namespace bmsx {
 
 inline constexpr size_t VRAM_GARBAGE_CHUNK_BYTES = 64u * 1024u;
-inline constexpr uint32_t VRAM_GARBAGE_SPACE_SALT = 0x5652414dU;
+inline constexpr uint32_t VRAM_GARBAGE_SPACE_SALT = 0x5652414du;
 
 struct VramGarbageStream {
 	uint32_t machineSeed = 0;
@@ -15,6 +15,6 @@ struct VramGarbageStream {
 	uint32_t addr = 0;
 };
 
-void fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& stream);
+void fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& s);
 
 } // namespace bmsx

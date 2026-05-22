@@ -42,7 +42,6 @@ function createImageSubmission(): ImgSubmission {
 		ambient_affected: false,
 		ambient_factor: 1,
 		layer: LAYER_2D_IDE,
-		parallax_weight: 0,
 	};
 }
 
@@ -174,7 +173,6 @@ export class OverlayRenderer {
 		submission.ambient_affected = false;
 		submission.ambient_factor = 1;
 		submission.layer = layer;
-		submission.parallax_weight = 0;
 		this.activeBuffer.commands.push(submission);
 	}
 

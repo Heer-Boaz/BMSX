@@ -1369,6 +1369,18 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	if (present_w == 0 || present_h == 0) {
 		return false;
 	}
+	if (core_cart_program_active() && input_timeline_should_capture_frame(g_frame_number)) {
+		fprintf(stderr, "[SCREENSHOT] Capturing frame %u (%ux%u)\n", g_frame_number, present_w, present_h);
+		uint8_t* pixels = malloc((size_t)present_w * (size_t)present_h * 4u);
+		if (pixels) {
+			glBindFramebuffer_ptr(GL_FRAMEBUFFER, g_hw_fbo);
+			glReadPixels_ptr(0, 0, (GLsizei)present_w, (GLsizei)present_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+			char filename[128];
+			snprintf(filename, sizeof(filename), "frame_%05u.png", g_frame_number);
+			screenshot_save_png(filename, present_w, present_h, pixels);
+			free(pixels);
+		}
+	}
 	int dst_x = 0, dst_y = 0, dst_w = 0, dst_h = 0;
 	compute_dst_rect(g_fb.width, g_fb.height, present_w, present_h, &dst_x, &dst_y, &dst_w, &dst_h);
 	if (dst_w <= 0 || dst_h <= 0) {
@@ -1386,20 +1398,7 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	hw_bind_static_blit_vbo(g_blit_vbo);
 	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
 	msg_render_hw();
-	
-	// Capture screenshot if requested by the active input timeline.
-	if (core_cart_program_active() && input_timeline_should_capture_frame(g_frame_number)) {
-		fprintf(stderr, "[SCREENSHOT] Capturing frame %u (%ux%u)\n", g_frame_number, g_fb.width, g_fb.height);
-		uint8_t* pixels = malloc(g_fb.width * g_fb.height * 4);
-		if (pixels) {
-			glReadPixels_ptr(0, 0, g_fb.width, g_fb.height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-			char filename[128];
-			snprintf(filename, sizeof(filename), "frame_%05u.png", g_frame_number);
-			screenshot_save_png(filename, g_fb.width, g_fb.height, pixels);
-			free(pixels);
-		}
-	}
-	
+
 	if (core_cart_program_active()) {
 		g_frame_number++;
 	}
@@ -3672,10 +3671,10 @@ static void load_core(LibretroCore* core, const char* path) {
 }
 
 static void usage(const char* argv0) {
-	    fprintf(stderr,
+	fprintf(stderr,
 		    "Usage:\n"
-		    "  %s --core ./bmsx_libretro.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N]\n"
-		    "  %s --core ./bmsx_libretro.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N]\n",
+		    "  %s --core ./bmsx_libretro.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off]\n"
+		    "  %s --core ./bmsx_libretro.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--auto-timeline] [--input-debug] [--no-audio] [--max-frames N] [--crt-postprocessing on|off]\n",
 		    argv0, argv0);
 	exit(2);
 }
@@ -3749,6 +3748,14 @@ int main(int argc, char** argv) {
 		}
 		if (strcmp(argv[i], "--max-frames") == 0) {
 			g_max_run_frames = parse_positive_u64_arg(required_arg(argc, argv, &i), "--max-frames");
+			continue;
+		}
+		if (strcmp(argv[i], "--crt-postprocessing") == 0) {
+			const char* value = required_arg(argc, argv, &i);
+			if (strcmp(value, "on") != 0 && strcmp(value, "off") != 0) {
+				die("Invalid --crt-postprocessing %s (expected on|off)", value);
+			}
+			snprintf(g_opt_crt_postprocessing, sizeof(g_opt_crt_postprocessing), "%s", value);
 			continue;
 		}
 		if (strcmp(argv[i], "--rom-folder") == 0) {

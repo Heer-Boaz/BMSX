@@ -15,7 +15,7 @@ import {
 	APU_SLOT_REGISTER_WORD_COUNT,
 	apuSlotRegisterWordIndex,
 } from '../../src/bmsx/machine/devices/audio/contracts';
-import { SKYBOX_FACE_COUNT, SKYBOX_FACE_WORD_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../src/bmsx/machine/devices/vdp/contracts';
+import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../src/bmsx/machine/devices/vdp/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../src/bmsx/machine/devices/geometry/contracts';
 import { VDP_REGISTER_COUNT } from '../../src/bmsx/machine/devices/vdp/registers';
 import { VDP_LPU_REGISTER_WORDS } from '../../src/bmsx/machine/devices/vdp/lpu';
@@ -25,6 +25,7 @@ import {
 	VDP_SUBMITTED_FRAME_EMPTY,
 	VDP_SUBMITTED_FRAME_EXECUTING,
 } from '../../src/bmsx/machine/devices/vdp/frame';
+import { captureVdpRpuFrameState, createVdpRpuFrameOutput, VDP_RPU_FRAME_IDLE } from '../../src/bmsx/machine/devices/vdp/rpu';
 import type { RuntimeSaveState } from '../../src/bmsx/machine/runtime/contracts';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../src/bmsx/machine/runtime/save_state/codec';
 import { decodeBinaryWithPropTable } from '../../src/bmsx/common/serializer/binencoder';
@@ -38,29 +39,10 @@ function numberedWords(count: number): number[] {
 	return words;
 }
 
-function createSkyboxSamples() {
-	return Array.from({ length: SKYBOX_FACE_COUNT }, (_, face) => ({
-		source: {
-			surfaceId: face,
-			srcX: face + 1,
-			srcY: face + 2,
-			width: face + 3,
-			height: face + 4,
-		},
-		surfaceWidth: face + 5,
-		surfaceHeight: face + 6,
-		slot: face + 7,
-	}));
-}
-
 function createSubmittedFrameState(state = VDP_SUBMITTED_FRAME_EMPTY) {
 	return {
 		state,
-		queue: [],
-		billboards: [],
 		hasCommands: state !== VDP_SUBMITTED_FRAME_EMPTY,
-		hasFrameBufferCommands: state !== VDP_SUBMITTED_FRAME_EMPTY,
-		frameBufferReadbackValid: state !== VDP_SUBMITTED_FRAME_EMPTY,
 		cost: state === VDP_SUBMITTED_FRAME_EMPTY ? 0 : 9,
 		workRemaining: state === VDP_SUBMITTED_FRAME_EMPTY ? 0 : 7,
 		ditherType: 2,
@@ -71,10 +53,21 @@ function createSubmittedFrameState(state = VDP_SUBMITTED_FRAME_EMPTY) {
 			viewMatrixIndex: VDP_XF_VIEW_MATRIX_RESET_INDEX,
 			projectionMatrixIndex: VDP_XF_PROJECTION_MATRIX_RESET_INDEX,
 		},
-		skyboxControl: 5,
-		skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),
-		skyboxSamples: createSkyboxSamples(),
 		lightRegisterWords: numberedWords(VDP_LPU_REGISTER_WORDS),
+		morphWeightWords: numberedWords(VDP_MFU_WEIGHT_COUNT),
+		jointMatrixWords: numberedWords(VDP_JTU_REGISTER_WORDS),
+		rpu: captureVdpRpuFrameState(createVdpRpuFrameOutput()),
+	};
+}
+
+function createRpuState() {
+	return {
+		buildState: VDP_RPU_FRAME_IDLE,
+		openPassIndex: 0,
+		openDrawIndex: 0,
+		buffers: [],
+		bufferImages: [],
+		surfaces: [],
 	};
 }
 
@@ -228,13 +221,12 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					vdpRegisterWords: numberedWords(VDP_REGISTER_COUNT),
 					buildFrame: {
 						state: VDP_DEX_FRAME_IDLE,
-						queue: [],
-						billboards: [],
+										rpu: captureVdpRpuFrameState(createVdpRpuFrameOutput()),
 						cost: 0,
 					},
 					activeFrame: createSubmittedFrameState(VDP_SUBMITTED_FRAME_EXECUTING),
 					pendingFrame: createSubmittedFrameState(),
-					displayTextureFrame: createSubmittedFrameState(),
+					rpu: createRpuState(),
 					workCarry: 12,
 					availableWorkUnits: 3,
 					streamIngress: {
@@ -248,10 +240,9 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						readBudgetBytes: 12,
 						readOverflow: true,
 					},
-					blitterSequence: 5,
-					skyboxControl: 5,
-					skyboxFaceWords: numberedWords(SKYBOX_FACE_WORD_COUNT),
 					lightRegisterWords: numberedWords(VDP_LPU_REGISTER_WORDS),
+					morphWeightWords: numberedWords(VDP_MFU_WEIGHT_COUNT),
+					jointMatrixWords: numberedWords(VDP_JTU_REGISTER_WORDS),
 					pmuSelectedBank: 2,
 					pmuBankWords: numberedWords(VDP_PMU_BANK_WORD_COUNT),
 					ditherType: 1,
@@ -342,13 +333,6 @@ test('runtime save-state bytes start at the current property-table payload', () 
 });
 
 test('runtime save-state codec rejects invalid VDP fixed register snapshots before device restore', () => {
-	const badSkyboxState = createRuntimeSaveState();
-	badSkyboxState.machineState.machine.vdp.skyboxFaceWords = numberedWords(SKYBOX_FACE_WORD_COUNT - 1);
-	assert.throws(
-		() => decodeRuntimeSaveState(encodeRuntimeSaveState(badSkyboxState)),
-		/machine\.vdp\.skyboxFaceWords must contain/,
-	);
-
 	const badPmuState = createRuntimeSaveState();
 	badPmuState.machineState.machine.vdp.pmuBankWords = numberedWords(VDP_PMU_BANK_WORD_COUNT - 1);
 	assert.throws(

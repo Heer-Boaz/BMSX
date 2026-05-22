@@ -4,7 +4,7 @@
 require('bios/msx_colors')
 local clamp_int<const> = require('bios/util/clamp_int')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
-local vdp_stream<const> = require('bios/vdp_stream')
+local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
 local vdp_image<const> = require('bios/vdp_image')
 local font_module<const> = require('bios/font')
 
@@ -221,7 +221,7 @@ local build_info<const> = function()
 	local machine_view_label<const> = machine_manifest and machine_manifest.render_size or '--'
 	local machine_cpu_raw<const> = machine_manifest and machine_manifest.cpu_freq_hz
 	local machine_cpu_label<const> = format_cpu_mhz_from_hz(machine_cpu_raw)
-	local vram_total<const> = sys_vram_system_slot_size + sys_vram_primary_slot_size + sys_vram_secondary_slot_size + sys_vram_framebuffer_size + sys_vram_staging_size
+	local vram_total<const> = sys_vram_size
 
 	return {
 		machine_view = machine_view_label,
@@ -419,8 +419,8 @@ render_boot_screen = function(scroll_delta)
 	local top<const> = content_top
 	local font<const> = font_module.get('default')
 
-	vdp_stream.clear_color(color_bg)
-	vdp_stream.fill_rect_color(0, 0, width, 24, 0, sys_vdp_layer_world, color_header_bg)
+	vdp_rpu_quads.clear_color(color_bg)
+	vdp_rpu_quads.fill_rect_color(0, 0, width, 24, 0, sys_vdp_layer_world, color_header_bg)
 	local info<const> = build_info()
 	local cart_present<const> = mem[cart_rom_base] == cart_rom_magic
 	local elapsed<const> = os.clock() - boot_start
@@ -474,7 +474,7 @@ while true do
 	mem[sys_inp_player] = 1
 	vdp_stream_cursor = sys_vdp_stream_base
 	update_boot_screen()
-	vdp_stream.finish()
+	vdp_rpu_quads.finish_frame()
 	do local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
 		if used_bytes ~= 0 then
 			mem[sys_dma_src] = sys_vdp_stream_base

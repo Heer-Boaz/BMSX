@@ -1,6 +1,5 @@
 #include "machine/devices/vdp/fbm.h"
 
-#include <cstring>
 #include <utility>
 
 namespace bmsx {
@@ -8,19 +7,32 @@ namespace bmsx {
 void VdpFbmUnit::configure(u32 width, u32 height) {
 	m_width = width;
 	m_height = height;
-	m_displayFrameBufferCpuReadback.assign(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 0u);
-	m_presentationDirtySpansByRow.assign(height, VdpDirtySpan{});
+	const size_t byteLength = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
+	m_displayFrameBufferCpuReadback.resize(byteLength);
+	for (size_t index = 0u; index < byteLength; ++index) {
+		m_displayFrameBufferCpuReadback[index] = 0u;
+	}
+	m_presentationDirtySpansByRow = createVdpDirtySpans(height);
 	resetPresentation();
 }
 
 std::vector<u8> VdpFbmUnit::captureDisplayReadback() const {
-	return m_displayFrameBufferCpuReadback;
+	std::vector<u8> pixels;
+	pixels.resize(m_displayFrameBufferCpuReadback.size());
+	for (size_t index = 0u; index < m_displayFrameBufferCpuReadback.size(); ++index) {
+		pixels[index] = m_displayFrameBufferCpuReadback[index];
+	}
+	return pixels;
 }
 
 void VdpFbmUnit::restoreDisplayReadback(const std::vector<u8>& pixels) {
-	m_displayFrameBufferCpuReadback = pixels;
+	m_displayFrameBufferCpuReadback.resize(pixels.size());
+	for (size_t index = 0u; index < pixels.size(); ++index) {
+		m_displayFrameBufferCpuReadback[index] = pixels[index];
+	}
 	for (VdpDirtySpan& span : m_presentationDirtySpansByRow) {
-		span = VdpDirtySpan{};
+		span.xStart = 0u;
+		span.xEnd = 0u;
 	}
 	resetPresentation();
 }
@@ -31,7 +43,8 @@ void VdpFbmUnit::presentPage(VdpSurfaceUploadSlot& renderSlot) {
 		m_presentationDirtyRowStart = renderSlot.dirtyRowStart;
 		m_presentationDirtyRowEnd = renderSlot.dirtyRowEnd;
 		for (u32 row = renderSlot.dirtyRowStart; row < renderSlot.dirtyRowEnd; ++row) {
-			m_presentationDirtySpansByRow[row] = renderSlot.dirtySpansByRow[row];
+			m_presentationDirtySpansByRow[row].xStart = renderSlot.dirtySpansByRow[row].xStart;
+			m_presentationDirtySpansByRow[row].xEnd = renderSlot.dirtySpansByRow[row].xEnd;
 		}
 	} else {
 		m_presentationRequiresFullSync = true;
@@ -58,7 +71,9 @@ void VdpFbmUnit::copyReadbackPixelsFrom(const std::vector<u8>& source, u32 x, u3
 	for (u32 row = 0; row < height; ++row) {
 		const size_t srcOffset = static_cast<size_t>(y + row) * stride + static_cast<size_t>(x) * 4u;
 		const size_t dstOffset = static_cast<size_t>(row) * rowBytes;
-		std::memcpy(out + dstOffset, source.data() + srcOffset, rowBytes);
+		for (size_t byteIndex = 0u; byteIndex < rowBytes; ++byteIndex) {
+			out[dstOffset + byteIndex] = source[srcOffset + byteIndex];
+		}
 	}
 }
 
@@ -86,7 +101,8 @@ const VdpFrameBufferPresentation& VdpFbmUnit::buildPresentation(const std::vecto
 
 void VdpFbmUnit::clearPresentation() {
 	for (u32 row = m_presentationDirtyRowStart; row < m_presentationDirtyRowEnd; ++row) {
-		m_presentationDirtySpansByRow[row] = VdpDirtySpan{};
+		m_presentationDirtySpansByRow[row].xStart = 0u;
+		m_presentationDirtySpansByRow[row].xEnd = 0u;
 	}
 	resetPresentation();
 	m_state = VdpFbmState::PagePresented;

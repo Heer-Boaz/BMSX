@@ -9,7 +9,7 @@ import vertexShaderCRTCode from '../shaders/crt.vert.glsl';
 import {
 	bindFullscreenQuad,
 	createFullscreenQuad,
-	deleteFullscreenQuad,
+	updateFullscreenQuad,
 	POST_PROCESS_TEXCOORDS,
 	type FullscreenQuad,
 } from '../../backend/webgl/fullscreen_quad';
@@ -17,12 +17,15 @@ import {
 // interface CRTState { width: number; height: number; baseWidth: number; baseHeight: number; outWidth: number; outHeight: number; colorTex?: TextureHandle; options?: any }
 
 let fsq: FullscreenQuad = null;
+const crtColorBleedScratch = new Float32Array(3);
+const crtGlowColorScratch = new Float32Array(3);
 
 
-interface CRTRuntime {
-	backend: WebGLBackend;
-	gl: WebGL2RenderingContext;
-	context: RenderContext;
+function writeCrtVec3(out: Float32Array, src: readonly number[]): Float32Array {
+	out[0] = src[0];
+	out[1] = src[1];
+	out[2] = src[2];
+	return out;
 }
 
 export function registerCRT_WebGL(registry: RenderPassLibrary): void {
@@ -35,8 +38,7 @@ export function registerCRT_WebGL(registry: RenderPassLibrary): void {
 		present: true,
 		graph: { presentInput: 'auto', buildState: buildCrtPassState },
 		exec: (be: WebGLBackend, _fbo, state: RenderPassStateRegistry['crt']) => {
-			const runtime: CRTRuntime = { backend: be, gl: be.gl as WebGL2RenderingContext, context: consoleCore.view };
-			renderCRT(runtime, state);
+			renderCRT(be.gl as WebGL2RenderingContext, consoleCore.view, state);
 		},
 		prepare: (be: WebGLBackend, state: RenderPassStateRegistry['crt']) => {
 			const gl = be.gl;
@@ -58,34 +60,41 @@ function bindCRTUniforms(backend: WebGLBackend, state: RenderPassStateRegistry['
 	backend.setUniform1f('u_scale', 1.0);
 	backend.setUniform1f('u_fragscale', state.width / state.baseWidth);
 	const opts = state.options;
-	const booleans: Array<[string, boolean]> = [
-		['u_enableNoise', opts.enableNoise],
-		['u_enableColorBleed', opts.enableColorBleed],
-		['u_enableScanlines', opts.enableScanlines],
-		['u_enableBlur', opts.enableBlur],
-		['u_enableGlow', opts.enableGlow],
-		['u_enableFringing', opts.enableFringing],
-		['u_enableAperture', opts.enableAperture],
-	];
-	for (const [name, val] of booleans) backend.setUniform1i(name, val ? 1 : 0);
+	backend.setUniform1i('u_enableNoise', opts.enableNoise ? 1 : 0);
+	backend.setUniform1i('u_enableColorBleed', opts.enableColorBleed ? 1 : 0);
+	backend.setUniform1i('u_enableScanlines', opts.enableScanlines ? 1 : 0);
+	backend.setUniform1i('u_enableBlur', opts.enableBlur ? 1 : 0);
+	backend.setUniform1i('u_enableGlow', opts.enableGlow ? 1 : 0);
+	backend.setUniform1i('u_enableFringing', opts.enableFringing ? 1 : 0);
+	backend.setUniform1i('u_enableAperture', opts.enableAperture ? 1 : 0);
 	backend.setUniform1f('u_noiseIntensity', opts.noiseIntensity);
-	backend.setUniform3fv('u_colorBleed', new Float32Array(opts.colorBleed));
+	backend.setUniform3fv('u_colorBleed', writeCrtVec3(crtColorBleedScratch, opts.colorBleed));
 	backend.setUniform1f('u_blurIntensity', opts.blurIntensity);
-	backend.setUniform3fv('u_glowColor', new Float32Array(opts.glowColor));
+	backend.setUniform3fv('u_glowColor', writeCrtVec3(crtGlowColorScratch, opts.glowColor));
 	backend.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 }
 
-function renderCRT(runtime: CRTRuntime, state: RenderPassStateRegistry['crt']): void {
-	const { gl, context } = runtime;
+function renderCRT(gl: WebGL2RenderingContext, context: RenderContext, state: RenderPassStateRegistry['crt']): void {
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	const outW = state.width;
 	const outH = state.height;
 	gl.viewport(0, 0, outW, outH);
-	if (!fsq || fsq.w !== outW || fsq.h !== outH) {
-		if (fsq) deleteFullscreenQuad(gl, fsq);
-		fsq = createFullscreenQuad(gl, outW, outH, POST_PROCESS_TEXCOORDS, 'CRT');
+	if (!fsq) {
+		fsq = {
+			gl,
+			positionBuffer: null,
+			texcoordBuffer: null,
+			positionAttrib: -1,
+			texcoordAttrib: -1,
+			width: -1,
+			height: -1,
+			texcoords: POST_PROCESS_TEXCOORDS,
+			label: 'CRT',
+		};
+		createFullscreenQuad(fsq);
 	}
-	bindFullscreenQuad(gl, fsq);
+	updateFullscreenQuad(fsq, outW, outH);
+	bindFullscreenQuad(fsq, fsq.positionAttrib, fsq.texcoordAttrib);
 	if (state.colorTex) {
 		context.activeTexUnit = TEXTURE_UNIT_POST_PROCESSING_SOURCE;
 		context.bind2DTex(state.colorTex);

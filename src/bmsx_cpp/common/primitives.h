@@ -19,7 +19,7 @@
 #include <stdexcept>
 #include <utility>
 
-#if defined(BMSX_SNESMINI_LEGACY)
+#ifdef BMSX_SNESMINI_LEGACY
 #define BMSX_RUNTIME_ERROR(message) std::runtime_error(std::string(message))
 #else
 #define BMSX_RUNTIME_ERROR(message) std::runtime_error(message)
@@ -36,12 +36,12 @@ namespace bmsx {
  * ============================================================================ */
 
 struct Transform2D {
-	Vec2 position{0.0f, 0.0f};
-	f32 rotation = 0.0f;  // radians
-	Vec2 scale{1.0f, 1.0f};
+	Vec2 position{.x=0.0F, .y=0.0F};
+	f32 rotation = 0.0F;  // radians
+	Vec2 scale{.x=1.0F, .y=1.0F};
 
 	Transform2D() = default;
-	Transform2D(Vec2 pos, f32 rot = 0.0f, Vec2 scl = {1.0f, 1.0f})
+	Transform2D(Vec2 pos, f32 rot = 0.0F, Vec2 scl = {.x=1.0F, .y=1.0F})
 		: position(pos), rotation(rot), scale(scl) {}
 };
 
@@ -52,23 +52,23 @@ struct Transform2D {
 struct TimeSpan {
 	i64 ticks = 0;  // In microseconds
 
-	static TimeSpan fromSeconds(f64 seconds) {
+	static auto fromSeconds(f64 seconds) -> TimeSpan {
 		return {static_cast<i64>(seconds * 1000000.0)};
 	}
 
-	static TimeSpan fromMilliseconds(i64 ms) {
+	static auto fromMilliseconds(i64 ms) -> TimeSpan {
 		return {ms * 1000};
 	}
 
-	f64 toSeconds() const { return ticks / 1000000.0; }
-	i64 toMilliseconds() const { return ticks / 1000; }
+	[[nodiscard]] auto toSeconds() const -> f64 { return ticks / 1000000.0; }
+	[[nodiscard]] auto toMilliseconds() const -> i64 { return ticks / 1000; }
 
-	TimeSpan operator+(const TimeSpan& other) const { return {ticks + other.ticks}; }
-	TimeSpan operator-(const TimeSpan& other) const { return {ticks - other.ticks}; }
-	bool operator<(const TimeSpan& other) const { return ticks < other.ticks; }
-	bool operator>(const TimeSpan& other) const { return ticks > other.ticks; }
-	bool operator<=(const TimeSpan& other) const { return ticks <= other.ticks; }
-	bool operator>=(const TimeSpan& other) const { return ticks >= other.ticks; }
+	auto operator+(const TimeSpan& other) const -> TimeSpan { return {ticks + other.ticks}; }
+	auto operator-(const TimeSpan& other) const -> TimeSpan { return {ticks - other.ticks}; }
+	auto operator<(const TimeSpan& other) const -> bool { return ticks < other.ticks; }
+	auto operator>(const TimeSpan& other) const -> bool { return ticks > other.ticks; }
+	auto operator<=(const TimeSpan& other) const -> bool { return ticks <= other.ticks; }
+	auto operator>=(const TimeSpan& other) const -> bool { return ticks >= other.ticks; }
 };
 
 /* ============================================================================
@@ -90,17 +90,17 @@ struct Span {
 	template<typename Container>
 	Span(Container& c) : data_(c.data()), size_(c.size()) {}
 
-	T* data() const { return data_; }
-	size_t size() const { return size_; }
-	bool empty() const { return size_ == 0; }
+	auto data() const -> T* { return data_; }
+	[[nodiscard]] auto size() const -> size_t { return size_; }
+	[[nodiscard]] auto empty() const -> bool { return size_ == 0; }
 
-	T& operator[](size_t i) { return data_[i]; }
-	const T& operator[](size_t i) const { return data_[i]; }
+	auto operator[](size_t i) -> T& { return data_[i]; }
+	auto operator[](size_t i) const -> const T& { return data_[i]; }
 
-	T* begin() { return data_; }
-	T* end() { return data_ + size_; }
-	const T* begin() const { return data_; }
-	const T* end() const { return data_ + size_; }
+	auto begin() -> T* { return data_; }
+	auto end() -> T* { return data_ + size_; }
+	auto begin() const -> const T* { return data_; }
+	auto end() const -> const T* { return data_ + size_; }
 };
 
 /* ============================================================================
@@ -110,30 +110,30 @@ struct Span {
 template<typename T, typename E = std::string>
 class Result {
 public:
-	static Result ok(T value) {
+	static auto ok(T value) -> Result {
 		Result r;
 		r.m_value = std::move(value);
 		r.m_is_ok = true;
 		return r;
 	}
 
-	static Result err(E error) {
+	static auto err(E error) -> Result {
 		Result r;
 		r.m_error = std::move(error);
 		r.m_is_ok = false;
 		return r;
 	}
 
-	bool isOk() const { return m_is_ok; }
-	bool isErr() const { return !m_is_ok; }
+	[[nodiscard]] auto isOk() const -> bool { return m_is_ok; }
+	[[nodiscard]] auto isErr() const -> bool { return !m_is_ok; }
 
-	T& value() { return m_value; }
-	const T& value() const { return m_value; }
+	auto value() -> T& { return m_value; }
+	auto value() const -> const T& { return m_value; }
 
-	E& error() { return m_error; }
-	const E& error() const { return m_error; }
+	auto error() -> E& { return m_error; }
+	auto error() const -> const E& { return m_error; }
 
-	T valueOr(T default_value) const {
+	auto valueOr(T default_value) const -> T {
 		return m_is_ok ? m_value : default_value;
 	}
 

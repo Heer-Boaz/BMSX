@@ -1,5 +1,5 @@
 /*
- * framebuffer_pipeline.h - 2D framebuffer presentation pass
+ * framebuffer_pipeline.h - host-managed framebuffer texture presentation pass
  */
 
 #ifndef BMSX_RENDER_2D_FRAMEBUFFER_PIPELINE_H

@@ -22,6 +22,7 @@ public:
 	u32 nextY = 0u;
 	bool advanceReadPosition = false;
 
+	VdpReadbackUnit();
 	void resetSurfaceRegistry();
 	void registerSurface(u32 surfaceId);
 	void invalidateSurface(u32 surfaceId);
@@ -48,8 +49,8 @@ private:
 	};
 
 	ReadCache& getReadCache(u32 surfaceId, const VdpSurfaceUploadSlot& surface, u32 x, u32 y);
-	void prefetchReadCache(u32 surfaceId, const VdpSurfaceUploadSlot& surface, u32 x, u32 y);
-	void copySurfacePixels(const VdpSurfaceUploadSlot& surface, u32 x, u32 y, u32 width, u32 height, std::array<u8, ReadbackMaxChunkPixels * 4u>& out);
+	void prefetchReadCache(ReadCache& cache, const VdpSurfaceUploadSlot& surface, u32 x, u32 y);
+	void copySurfacePixels(ReadCache& cache, const VdpSurfaceUploadSlot& surface, u32 x, u32 y, u32 width, u32 height);
 
 	std::array<ReadSurface, VDP_RD_SURFACE_COUNT> m_readSurfaces{};
 	std::array<ReadCache, VDP_RD_SURFACE_COUNT> m_readCaches{};

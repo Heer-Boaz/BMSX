@@ -8,7 +8,7 @@
  *   ColorAttachmentSpec, DepthAttachmentSpec, RenderPassDesc, PassEncoder,
  *   GPUBackend texture methods, render-pass methods, draw methods except TS
  *   drawIndexed indexType, frame lifecycle, getCaps(), and stats.
- * - Shared render semantics above this boundary are VDP/VOUT/mesh stream
+ * - Shared render semantics above this boundary are VDP/VOUT/RPU command
  *   records. Concrete WebGL/GLES pass code owns GPU API binding such as shader
  *   programs, VAO/buffer state, glVertexAttribPointer calls, uniform binding,
  *   texture units, and draw-call issue.
@@ -59,21 +59,7 @@ namespace bmsx {
 using TextureHandle = void*;
 
 class RenderPassLibrary;
-class Runtime;
 class VDP;
-class VdpFrameBufferRasterizer;
-struct VdpBlitterCommandBuffer;
-
-enum class VdpFrameBufferExecutionTarget : u8 {
-	ActiveFrame = 0,
-	DisplayReplay = 1,
-};
-
-struct VdpFrameBufferExecutionPassState {
-	Runtime* runtime = nullptr;
-	VdpBlitterCommandBuffer* commands = nullptr;
-	VdpFrameBufferExecutionTarget target = VdpFrameBufferExecutionTarget::ActiveFrame;
-};
 
 const std::array<u8, 256>& srgbToLinearLut();
 const std::array<u8, 256>& linearToSrgbLut();
@@ -188,7 +174,6 @@ public:
 	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) = 0;
 	virtual void destroyTexture(TextureHandle handle) = 0;
 	virtual void registerBuiltinPasses(RenderPassLibrary& registry) = 0;
-	virtual void executeVdp2DBlit(VdpFrameBufferExecutionPassState& state) = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Render pass management
@@ -239,8 +224,6 @@ class SoftwareBackend : public GPUBackend {
 	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) override;
 	void destroyTexture(TextureHandle handle) override;
 	void registerBuiltinPasses(RenderPassLibrary& registry) override;
-	void executeVdp2DBlit(VdpFrameBufferExecutionPassState& state) override;
-	void executeVdpFrameBufferCommands(VDP& vdp, VdpBlitterCommandBuffer& commands, std::vector<u8>& frameBufferPixels);
 
 	// Render pass management
 	void clear(const std::array<f32, 4>* color, const f32* depth) override;
@@ -290,8 +273,6 @@ private:
 
 	// Texture storage
 	std::vector<std::unique_ptr<SoftwareTexture>> m_textures;
-	VDP* m_vdpFrameBufferRasterizerOwner = nullptr;
-	std::unique_ptr<VdpFrameBufferRasterizer> m_vdpFrameBufferRasterizer;
 
 	// Depth buffer (optional)
 	std::vector<f32> m_depthBuffer;

@@ -59,6 +59,10 @@ export type VdpVramState = {
 	surfacePixels: VdpSurfacePixelsState[];
 };
 
+function vramSurfaceByteSize(width: number, height: number): number {
+	return width * height * 4;
+}
+
 type MutableVdpSurfaceUpload = {
 	-readonly [Key in keyof VdpSurfaceUpload]: VdpSurfaceUpload[Key];
 };
@@ -102,7 +106,7 @@ export function defaultVdpVramSurfaces(frameBufferSize: VdpFrameBufferSize): Vdp
 }
 
 export class VdpVramUnit {
-	public readonly slots: VdpSurfaceUploadSlot[] = [];
+	private readonly _slots: VdpSurfaceUploadSlot[] = [];
 	private readonly staging = new Uint8Array(VRAM_STAGING_SIZE);
 	private readonly garbageScratch = new Uint8Array(VRAM_GARBAGE_CHUNK_BYTES);
 	private readonly seedPixel = new Uint8Array(4);
@@ -124,9 +128,13 @@ export class VdpVramUnit {
 		this.bootSeed = entropySeeds.bootSeed >>> 0;
 	}
 
+	public get slots(): VdpSurfaceUploadSlot[] {
+		return this._slots;
+	}
+
 	public initializeSurfaces(surfaces: readonly VdpVramSurface[]): void {
-		this.slots.length = 0;
-		fillVramGarbageScratch(this.staging, {
+		this._slots.length = 0;
+		fillVramGarbageScratch(this.staging, this.staging.byteLength, {
 			machineSeed: this.machineSeed,
 			bootSeed: this.bootSeed,
 			slotSalt: VRAM_GARBAGE_SPACE_SALT >>> 0,
@@ -148,12 +156,12 @@ export class VdpVramUnit {
 		return true;
 	}
 
-	public readStaging(addr: number, out: Uint8Array): boolean {
-		if (addr < VRAM_STAGING_BASE || addr + out.byteLength > VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
+	public readStaging(addr: number, out: Uint8Array, length: number): boolean {
+		if (addr < VRAM_STAGING_BASE || addr + length > VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
 			return false;
 		}
 		const offset = addr - VRAM_STAGING_BASE;
-		for (let index = 0; index < out.byteLength; index += 1) {
+		for (let index = 0; index < length; index += 1) {
 			out[index] = this.staging[offset + index]!;
 		}
 		return true;
@@ -178,9 +186,9 @@ export class VdpVramUnit {
 		}
 	}
 
-	public readSurfaceBytes(slot: VdpSurfaceUploadSlot, offset: number, out: Uint8Array): void {
+	public readSurfaceBytes(slot: VdpSurfaceUploadSlot, offset: number, out: Uint8Array, length: number): void {
 		const stride = slot.surfaceWidth * 4;
-		let remaining = out.byteLength;
+		let remaining = length;
 		let cursor = 0;
 		let row = (offset / stride) >>> 0;
 		let rowOffset = offset - row * stride;
@@ -200,7 +208,7 @@ export class VdpVramUnit {
 	}
 
 	public setSlotLogicalDimensions(slot: VdpSurfaceUploadSlot, width: number, height: number): boolean {
-		const byteLength = width * height * 4;
+		const byteLength = vramSurfaceByteSize(width, height);
 		if (width <= 0 || height <= 0 || byteLength > slot.capacity) {
 			return false;
 		}
@@ -247,8 +255,8 @@ export class VdpVramUnit {
 	}
 
 	public findMappedSlot(addr: number, length: number): VdpSurfaceUploadSlot | null {
-		for (let index = 0; index < this.slots.length; index += 1) {
-			const slot = this.slots[index]!;
+		for (let index = 0; index < this._slots.length; index += 1) {
+			const slot = this._slots[index]!;
 			if (addr >= slot.baseAddr && addr + length <= slot.baseAddr + slot.capacity) {
 				return slot;
 			}
@@ -257,8 +265,8 @@ export class VdpVramUnit {
 	}
 
 	public findSurface(surfaceId: number): VdpSurfaceUploadSlot | null {
-		for (let index = 0; index < this.slots.length; index += 1) {
-			const slot = this.slots[index]!;
+		for (let index = 0; index < this._slots.length; index += 1) {
+			const slot = this._slots[index]!;
 			if (slot.surfaceId === surfaceId) {
 				return slot;
 			}
@@ -268,9 +276,6 @@ export class VdpVramUnit {
 
 	public clearSurfaceUploadDirty(surfaceId: number): void {
 		const slot = this.findSurface(surfaceId);
-		if (slot === null) {
-			throw new Error(`[VDP VRAM] upload surface ${surfaceId} has no backing slot.`);
-		}
 		for (let row = slot.dirtyRowStart; row < slot.dirtyRowEnd; row += 1) {
 			const span = slot.dirtySpansByRow[row]!;
 			span.xStart = 0;
@@ -281,8 +286,8 @@ export class VdpVramUnit {
 	}
 
 	public drainSurfaceUploads(sink: VdpSurfaceUploadSink): void {
-		for (let index = 0; index < this.slots.length; index += 1) {
-			const slot = this.slots[index]!;
+		for (let index = 0; index < this._slots.length; index += 1) {
+			const slot = this._slots[index]!;
 			if (slot.surfaceId !== VDP_RD_SURFACE_FRAMEBUFFER && slot.dirtyRowStart < slot.dirtyRowEnd) {
 				this.emitSurfaceUpload(sink, slot, false);
 			}
@@ -290,8 +295,8 @@ export class VdpVramUnit {
 	}
 
 	public syncSurfaceUploads(sink: VdpSurfaceUploadSink): void {
-		for (let index = 0; index < this.slots.length; index += 1) {
-			const slot = this.slots[index]!;
+		for (let index = 0; index < this._slots.length; index += 1) {
+			const slot = this._slots[index]!;
 			if (slot.surfaceId !== VDP_RD_SURFACE_FRAMEBUFFER) {
 				this.emitSurfaceUpload(sink, slot, true);
 			}
@@ -299,14 +304,20 @@ export class VdpVramUnit {
 	}
 
 	public captureState(): VdpVramState {
+		const staging = new Uint8Array(this.staging.byteLength);
+		for (let index = 0; index < this.staging.byteLength; index += 1) {
+			staging[index] = this.staging[index]!;
+		}
 		return {
-			staging: this.staging.slice(),
+			staging,
 			surfacePixels: this.captureSurfacePixels(),
 		};
 	}
 
 	public restoreState(state: VdpVramState): void {
-		this.staging.set(state.staging);
+		for (let index = 0; index < state.staging.byteLength; index += 1) {
+			this.staging[index] = state.staging[index]!;
+		}
 		for (let index = 0; index < state.surfacePixels.length; index += 1) {
 			this.restoreSurfacePixels(state.surfacePixels[index]!);
 		}
@@ -314,8 +325,8 @@ export class VdpVramUnit {
 
 	public get trackedUsedBytes(): number {
 		let usedBytes = 0;
-		for (let index = 0; index < this.slots.length; index += 1) {
-			const slot = this.slots[index]!;
+		for (let index = 0; index < this._slots.length; index += 1) {
+			const slot = this._slots[index]!;
 			usedBytes += slot.surfaceWidth * slot.surfaceHeight * 4;
 		}
 		return usedBytes;
@@ -326,11 +337,8 @@ export class VdpVramUnit {
 	}
 
 	private registerSlot(surface: VdpVramSurface): void {
-		const byteLength = surface.width * surface.height * 4;
-		if (surface.width <= 0 || surface.height <= 0 || byteLength > surface.capacity) {
-			throw new Error(`[VDP VRAM] invalid surface ${surface.surfaceId} dimensions.`);
-		}
-		fillVramGarbageScratch(this.seedPixel, {
+		const byteLength = vramSurfaceByteSize(surface.width, surface.height);
+		fillVramGarbageScratch(this.seedPixel, this.seedPixel.byteLength, {
 			machineSeed: this.machineSeed,
 			bootSeed: this.bootSeed,
 			slotSalt: VRAM_GARBAGE_SPACE_SALT >>> 0,
@@ -347,21 +355,25 @@ export class VdpVramUnit {
 			dirtyRowEnd: 0,
 			dirtySpansByRow: createVdpDirtySpans(surface.height),
 		};
-		this.slots.push(slot);
+		this._slots.push(slot);
 		if (slot.surfaceId !== VDP_RD_SURFACE_SYSTEM) {
 			this.seedSlotPixels(slot);
 		}
 	}
 
 	private captureSurfacePixels(): VdpSurfacePixelsState[] {
-		const surfaces = new Array<VdpSurfacePixelsState>(this.slots.length);
-		for (let index = 0; index < this.slots.length; index += 1) {
-			const slot = this.slots[index]!;
+		const surfaces: VdpSurfacePixelsState[] = [];
+		for (let index = 0; index < this._slots.length; index += 1) {
+			const slot = this._slots[index]!;
+			const pixels = new Uint8Array(slot.cpuReadback.byteLength);
+			for (let byteIndex = 0; byteIndex < slot.cpuReadback.byteLength; byteIndex += 1) {
+				pixels[byteIndex] = slot.cpuReadback[byteIndex]!;
+			}
 			surfaces[index] = {
 				surfaceId: slot.surfaceId,
 				surfaceWidth: slot.surfaceWidth,
 				surfaceHeight: slot.surfaceHeight,
-				pixels: slot.cpuReadback.slice(),
+				pixels,
 			};
 		}
 		return surfaces;
@@ -369,13 +381,9 @@ export class VdpVramUnit {
 
 	private restoreSurfacePixels(state: VdpSurfacePixelsState): void {
 		const slot = this.findSurface(state.surfaceId);
-		if (slot === null) {
-			throw new Error(`[VDP VRAM] saved surface ${state.surfaceId} has no backing slot.`);
+		for (let index = 0; index < state.pixels.byteLength; index += 1) {
+			slot.cpuReadback[index] = state.pixels[index]!;
 		}
-		if (!this.setSlotLogicalDimensions(slot, state.surfaceWidth, state.surfaceHeight)) {
-			throw new Error(`[VDP VRAM] saved surface ${state.surfaceId} has invalid dimensions.`);
-		}
-		slot.cpuReadback.set(state.pixels);
 		this.markSlotDirty(slot, 0, slot.surfaceHeight);
 	}
 
@@ -447,14 +455,13 @@ export class VdpVramUnit {
 				const rowsRemaining = height - y;
 				const rows = rowsPerChunk < rowsRemaining ? rowsPerChunk : rowsRemaining;
 				const chunkBytes = rowPixels * rows * 4;
-				const chunk = this.garbageScratch.subarray(0, chunkBytes);
-				fillVramGarbageScratch(chunk, stream);
+				fillVramGarbageScratch(this.garbageScratch, chunkBytes, stream);
 				if (!frameBufferSlot) {
 					this.markSlotDirty(slot, y, rows);
 				}
 				for (let row = 0; row < rows; row += 1) {
 					const rowOffset = row * rowPixels * 4;
-					this.updateCpuReadback(slot, chunk, rowOffset, rowPixels * 4, 0, y + row);
+					this.updateCpuReadback(slot, this.garbageScratch, rowOffset, rowPixels * 4, 0, y + row);
 				}
 				y += rows;
 			}
@@ -464,12 +471,11 @@ export class VdpVramUnit {
 					const widthRemaining = width - x;
 					const segmentWidth = maxPixels < widthRemaining ? maxPixels : widthRemaining;
 					const segmentBytes = segmentWidth * 4;
-					const segment = this.garbageScratch.subarray(0, segmentBytes);
-					fillVramGarbageScratch(segment, stream);
+					fillVramGarbageScratch(this.garbageScratch, segmentBytes, stream);
 					if (!frameBufferSlot) {
 						this.markSlotDirty(slot, y, 1);
 					}
-					this.updateCpuReadback(slot, segment, 0, segmentBytes, x, y);
+					this.updateCpuReadback(slot, this.garbageScratch, 0, segmentBytes, x, y);
 					x += segmentWidth;
 				}
 			}

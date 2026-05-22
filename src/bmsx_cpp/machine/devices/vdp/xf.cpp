@@ -1,6 +1,6 @@
 #include "machine/devices/vdp/xf.h"
 
-#include "machine/devices/vdp/fixed_point.h"
+#include "common/fixed_point.h"
 #include "machine/devices/vdp/matrix_words.h"
 
 namespace bmsx {
@@ -62,11 +62,19 @@ bool VdpXfUnit::writeRegister(u32 registerIndex, u32 word) {
 }
 
 VdpXfState VdpXfUnit::captureState() const {
-	return VdpXfState{matrixWords, viewMatrixIndex, projectionMatrixIndex};
+	VdpXfState state;
+	for (size_t index = 0u; index < state.matrixWords.size(); ++index) {
+		state.matrixWords[index] = matrixWords[index];
+	}
+	state.viewMatrixIndex = viewMatrixIndex;
+	state.projectionMatrixIndex = projectionMatrixIndex;
+	return state;
 }
 
 void VdpXfUnit::restoreState(const VdpXfState& state) {
-	matrixWords = state.matrixWords;
+	for (size_t index = 0u; index < matrixWords.size(); ++index) {
+		matrixWords[index] = state.matrixWords[index];
+	}
 	viewMatrixIndex = state.viewMatrixIndex;
 	projectionMatrixIndex = state.projectionMatrixIndex;
 }

@@ -73,13 +73,13 @@ enum class OpCode : u8 {
 	HALT,
 };
 
-inline constexpr size_t OPCODE_COUNT = 64u;
+inline constexpr size_t OPCODE_COUNT = 64U;
 
 extern const std::array<const char*, OPCODE_COUNT> OPCODE_NAMES;
 extern const std::array<u8, OPCODE_COUNT> BASE_CYCLES;
 extern const std::array<u8, OPCODE_COUNT> OPCODE_USES_BX;
 extern const std::array<const char*, OPCODE_COUNT> OPCODE_CATEGORY;
 
-const char* getOpcodeName(OpCode op);
+auto getOpcodeName(OpCode op) -> const char*;
 
 } // namespace bmsx

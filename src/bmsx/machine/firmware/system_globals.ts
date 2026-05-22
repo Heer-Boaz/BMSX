@@ -31,7 +31,6 @@ const SYSTEM_LUA_BUILTIN_FUNCTION_NAMES = [
 	'vdp_img_slot',
 	'vdp_img_source',
 	'vdp_write_source',
-	'vdp_pmu_write_bank',
 	'vdp_stream_claim',
 	'vdp_stream_finish',
 	'vdp_clear_color',

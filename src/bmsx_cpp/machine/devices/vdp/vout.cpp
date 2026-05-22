@@ -1,7 +1,5 @@
 #include "machine/devices/vdp/vout.h"
 
-#include <utility>
-
 namespace bmsx {
 
 void VdpVoutUnit::reset(i32 ditherType, u32 frameBufferWidth, u32 frameBufferHeight) {
@@ -17,13 +15,6 @@ void VdpVoutUnit::reset(i32 ditherType, u32 frameBufferWidth, u32 frameBufferHei
 	m_visibleDitherType = ditherType;
 	m_visibleFrameBufferWidth = frameBufferWidth;
 	m_visibleFrameBufferHeight = frameBufferHeight;
-	m_visibleXf.reset();
-	resetVisibleSkyboxSamples();
-	m_visibleBillboards->reset();
-	m_visibleMeshes->reset();
-	m_visibleLightRegisterWords.fill(0u);
-	m_visibleMorphWeightWords.fill(0u);
-	m_visibleJointMatrixWords.fill(0u);
 	resetVdpRpuFrameOutput(*m_visibleRpuFrame);
 	m_sealedFrameOutput.ditherType = ditherType;
 	m_sealedFrameOutput.frameBufferWidth = frameBufferWidth;
@@ -76,38 +67,19 @@ const VdpVoutFrameOutput& VdpVoutUnit::sealFrame() {
 	return m_sealedFrameOutput;
 }
 
-void VdpVoutUnit::presentFrame(VdpSubmittedFrame& frame, bool) {
+void VdpVoutUnit::presentFrame(VdpSubmittedFrame& frame) {
 	m_visibleDitherType = frame.ditherType;
 	m_visibleFrameBufferWidth = frame.frameBufferWidth;
 	m_visibleFrameBufferHeight = frame.frameBufferHeight;
-	m_visibleXf.matrixWords = frame.xf.matrixWords;
-	m_visibleXf.viewMatrixIndex = frame.xf.viewMatrixIndex;
-	m_visibleXf.projectionMatrixIndex = frame.xf.projectionMatrixIndex;
-	std::swap(m_visibleSkyboxSamples, frame.skyboxSamples);
-	m_visibleBillboards.swap(frame.billboards);
-	frame.billboards->reset();
-	m_visibleMeshes.swap(frame.meshes);
-	frame.meshes->reset();
-	m_visibleLightRegisterWords = frame.lightRegisterWords;
-	m_visibleMorphWeightWords = frame.morphWeightWords;
-	m_visibleJointMatrixWords = frame.jointMatrixWords;
 	m_visibleRpuFrame.swap(frame.rpu);
 	resetVdpRpuFrameOutput(*frame.rpu);
 	m_state = VdpVoutState::FramePresented;
 }
 
-void VdpVoutUnit::presentLiveState(const VdpXfUnit& xf, bool, const VdpLpuUnit& lpu, const VdpMfuUnit& mfu, const VdpJtuUnit& jtu) {
+void VdpVoutUnit::presentLiveState() {
 	m_visibleDitherType = m_liveDitherType;
 	m_visibleFrameBufferWidth = m_liveFrameBufferWidth;
 	m_visibleFrameBufferHeight = m_liveFrameBufferHeight;
-	m_visibleXf.matrixWords = xf.matrixWords;
-	m_visibleXf.viewMatrixIndex = xf.viewMatrixIndex;
-	m_visibleXf.projectionMatrixIndex = xf.projectionMatrixIndex;
-	m_visibleBillboards->reset();
-	m_visibleMeshes->reset();
-	m_visibleLightRegisterWords = lpu.registerWords;
-	m_visibleMorphWeightWords = mfu.weightWords;
-	m_visibleJointMatrixWords = jtu.matrixWords;
 	resetVdpRpuFrameOutput(*m_visibleRpuFrame);
 	m_state = VdpVoutState::FramePresented;
 }
@@ -122,19 +94,6 @@ const VdpDeviceOutput& VdpVoutUnit::readDeviceOutput(i64 nowCycles) {
 	m_deviceOutput.frameBufferHeight = m_visibleFrameBufferHeight;
 	m_deviceOutput.rpu = m_visibleRpuFrame.get();
 	return m_deviceOutput;
-}
-
-void VdpVoutUnit::resetVisibleSkyboxSamples() {
-	for (VdpResolvedBlitterSample& sample : m_visibleSkyboxSamples) {
-		sample.source.surfaceId = 0u;
-		sample.source.srcX = 0u;
-		sample.source.srcY = 0u;
-		sample.source.width = 0u;
-		sample.source.height = 0u;
-		sample.surfaceWidth = 0u;
-		sample.surfaceHeight = 0u;
-		sample.slot = 0u;
-	}
 }
 
 void VdpVoutUnit::setVblankBeamPosition(int cyclesIntoFrame) {

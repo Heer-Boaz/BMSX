@@ -1,12 +1,17 @@
 #include "texture_manager.h"
+#include "render/backend/texture_params.h"
+#include "render/backend/backend.h"
+#include "common/types.h"
 #include <iomanip>
+#include <ios>
 #include <sstream>
+#include <string>
 #include <utility>
 
 namespace bmsx {
 namespace {
 
-std::string textureParamsKey(const TextureParams& desc) {
+auto textureParamsKey(const TextureParams& desc) -> std::string {
 	std::ostringstream oss;
 	oss << "size=" << std::fixed << std::setprecision(3)
 		<< desc.size.x << "x" << desc.size.y
@@ -34,7 +39,7 @@ TextureManager::~TextureManager() {
 	}
 }
 
-TextureManager& TextureManager::instance() {
+auto TextureManager::instance() -> TextureManager& {
 	return *s_instance;
 }
 
@@ -45,36 +50,36 @@ void TextureManager::setBackend(GPUBackend* backend) {
 	m_backend = backend;
 }
 
-TextureKey TextureManager::makeKey(const std::string& uri, const TextureParams& desc) const {
+auto TextureManager::makeKey(const std::string& uri, const TextureParams& desc) const -> TextureKey {
 	return uri + "|" + textureParamsKey(desc);
 }
 
-TextureHandle TextureManager::createTextureFromPixelsSync(const std::string& keyBase,
+auto TextureManager::createTextureFromPixelsSync(const std::string& keyBase,
 												const u8* pixels,
 												i32 width,
 												i32 height,
-												const TextureParams& desc) {
+												const TextureParams& desc) -> TextureHandle {
 	const TextureKey key = makeKey(keyBase, desc);
 	auto it = m_gpuCache.find(key);
 	if (it != m_gpuCache.end()) {
 		return it->second.handle;
 	}
 	TextureHandle handle = m_backend->createTexture(pixels, width, height, desc);
-	m_gpuCache.emplace(key, GPUCacheEntry{handle, desc});
+	m_gpuCache.emplace(key, GPUCacheEntry{.handle=handle, .desc=desc});
 	return handle;
 }
 
-TextureHandle TextureManager::resizeTextureForKey(const std::string& keyBase, i32 width, i32 height, const TextureParams& desc) {
+auto TextureManager::resizeTextureForKey(const std::string& keyBase, i32 width, i32 height, const TextureParams& desc) -> TextureHandle {
 	GPUCacheEntry& entry = m_gpuCache.at(makeKey(keyBase, desc));
 	entry.handle = m_backend->resizeTexture(entry.handle, width, height, entry.desc);
 	return entry.handle;
 }
 
-TextureHandle TextureManager::getTexture(const TextureKey& key) const {
+auto TextureManager::getTexture(const TextureKey& key) const -> TextureHandle {
 	return m_gpuCache.at(key).handle;
 }
 
-TextureHandle TextureManager::getTextureByUri(const std::string& uri, const TextureParams& desc) const {
+auto TextureManager::getTextureByUri(const std::string& uri, const TextureParams& desc) const -> TextureHandle {
 	return getTexture(makeKey(uri, desc));
 }
 

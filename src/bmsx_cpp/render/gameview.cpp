@@ -109,7 +109,6 @@ void GameView::initializeDefaultTextures() {
 	TextureHandle fallback = m_backend->createSolidTexture2D(1, 1, 0xffffffffu);
 	textures[VDP_PRIMARY_SLOT_TEXTURE_KEY] = fallback;
 	textures[VDP_SECONDARY_SLOT_TEXTURE_KEY] = fallback;
-	skyboxRenderReady = false;
 	textures[SYSTEM_SLOT_TEXTURE_KEY] = fallback;
 
 	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, 0xffffffffu);
@@ -159,7 +158,7 @@ void GameView::finalizePresentation() {
 /**
  * Main render loop - executes the render graph.
  *
- * The render graph calls individual pipelines (sprites, meshes, particles, CRT, etc.)
+ * The render graph executes the RPU, framebuffer texture presentation when explicitly enabled, post, and host passes
  * in the correct order.
  */
 void GameView::drawgame() {
@@ -455,6 +454,17 @@ void GameView::applyCRTPostProcessing(const u32* src,
 										i32 dstPitch) {
 	const i32 dstPixelsPerRow = dstPitch / sizeof(u32);
 	const size_t srcSize = static_cast<size_t>(srcWidth) * static_cast<size_t>(srcHeight);
+	const bool enableCrt = crt_postprocessing_enabled;
+	const i32 ditherType = static_cast<i32>(dither_type);
+
+	if (!enableCrt && ditherType == 0 && srcWidth == dstWidth && srcHeight == dstHeight) {
+		for (i32 y = 0; y < dstHeight; ++y) {
+			std::memcpy(dst + static_cast<size_t>(y) * static_cast<size_t>(dstPixelsPerRow),
+						src + static_cast<size_t>(y) * static_cast<size_t>(srcWidth),
+						static_cast<size_t>(srcWidth) * sizeof(u32));
+		}
+		return;
+	}
 
 	if (m_crtScratchBuffer.size() < srcSize) {
 		m_crtScratchBuffer.resize(srcSize);
@@ -473,7 +483,6 @@ void GameView::applyCRTPostProcessing(const u32* src,
 	noiseState = noiseState * 1664525u + 1013904223u;
 	const f32 random = static_cast<f32>((noiseState >> 8) & 0xFFFFFF) / 16777215.0f;
 
-	const bool enableCrt = crt_postprocessing_enabled;
 	const bool useNoise = enableCrt && applyNoise;
 	const bool useColorBleed = enableCrt && applyColorBleed;
 	const bool useScanlines = enableCrt && applyScanlines;
@@ -482,7 +491,6 @@ void GameView::applyCRTPostProcessing(const u32* src,
 	const bool useFringing = enableCrt && applyFringing;
 	const bool useAperture = enableCrt && applyAperture;
 	const f32 blurMix = clamp01(blurIntensity);
-	const i32 ditherType = static_cast<i32>(dither_type);
 	const bool useDither = ditherType != 0;
 
 	const u32* scratch = m_crtScratchBuffer.data();

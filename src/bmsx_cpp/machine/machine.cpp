@@ -20,7 +20,6 @@ Machine::Machine(Memory& memoryRef, VdpFrameBufferSize frameBufferSizeValue, Inp
 	, geometryController(memory, irqController, scheduler)
 	, inputController(memory, input, cpu.stringPool())
 {
-	vdp.attachImgDecController(imgDecController);
 }
 
 void Machine::initializeSystemIo() {

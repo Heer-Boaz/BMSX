@@ -1,4 +1,4 @@
-import { encodeSignedQ16_16 } from './fixed_point';
+import { encodeSignedQ16_16 } from '../../../common/fixed_point';
 import { setIdentityMatrixWordsAt } from './matrix_words';
 
 export type VdpXfState = {
@@ -78,7 +78,7 @@ export class VdpXfUnit {
 	}
 
 	public captureState(): VdpXfState {
-		const matrixWords = new Array<number>(VDP_XF_MATRIX_REGISTER_WORDS);
+		const matrixWords: number[] = [];
 		for (let index = 0; index < VDP_XF_MATRIX_REGISTER_WORDS; index += 1) {
 			matrixWords[index] = this.matrixWords[index] >>> 0;
 		}
@@ -90,7 +90,9 @@ export class VdpXfUnit {
 	}
 
 	public restoreState(state: VdpXfState): void {
-		this.matrixWords.set(state.matrixWords);
+		for (let index = 0; index < VDP_XF_MATRIX_REGISTER_WORDS; index += 1) {
+			this.matrixWords[index] = state.matrixWords[index]!;
+		}
 		this.viewMatrixIndex = state.viewMatrixIndex;
 		this.projectionMatrixIndex = state.projectionMatrixIndex;
 	}

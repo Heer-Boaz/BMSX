@@ -33,22 +33,20 @@ export interface FrameData {
 	delta: number;
 }
 
-// FrameData helpers (moved here to simplify file structure)
-let extFrameIndex = 0;
-let extTimeSeconds = 0;
-let extDeltaSeconds = 0;
+const externalFrameData: FrameData = {
+	frameIndex: 0,
+	time: 0,
+	delta: 0,
+};
+
 export function updateExternalFrameTiming(frameIndex: number, timeSeconds: number, deltaSeconds: number): void {
-	extFrameIndex = frameIndex;
-	extTimeSeconds = timeSeconds;
-	extDeltaSeconds = deltaSeconds;
+	externalFrameData.frameIndex = frameIndex;
+	externalFrameData.time = timeSeconds;
+	externalFrameData.delta = deltaSeconds;
 }
 
 export function buildFrameData(): FrameData {
-	return {
-		frameIndex: extFrameIndex,
-		time: extTimeSeconds,
-		delta: extDeltaSeconds,
-	};
+	return externalFrameData;
 }
 
 // Pass authoring interfaces -------------------------------------------------

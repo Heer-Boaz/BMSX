@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/image_decode.h"
 #include "machine/devices/dma/image_copy.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
@@ -43,11 +44,6 @@ public:
 private:
 	static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
 
-	struct DecodedImage {
-		std::vector<uint8_t> pixels;
-		uint32_t width = 0;
-		uint32_t height = 0;
-	};
 	struct ImgDecJob {
 		std::vector<uint8_t> buffer;
 		uint32_t dst = 0;

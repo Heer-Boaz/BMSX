@@ -51,8 +51,8 @@ export class HeadlessPresentSurface {
 		}
 	}
 
-	public copyPixels(): Uint8Array {
-		return new Uint8Array(this.pixels);
+	public borrowPixels(): Uint8Array {
+		return this.pixels;
 	}
 
 	private ensureSize(width: number, height: number): void {

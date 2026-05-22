@@ -1,5 +1,5 @@
 /*
- * framebuffer_pipeline.cpp - 2D framebuffer presentation pass
+ * framebuffer_pipeline.cpp - host-managed framebuffer texture presentation pass
  */
 
 #include "framebuffer_pipeline.h"
@@ -35,7 +35,7 @@ struct Framebuffer2DGLES2State {
 	GLint uniformResolution = -1;
 	GLint uniformScale = -1;
 	GLint uniformTexture = -1;
-	GLES2ScreenQuad quad;
+	FullscreenQuad quad;
 };
 
 Framebuffer2DGLES2State g_framebuffer2d;
@@ -47,7 +47,7 @@ void initFramebuffer2DGLES2(OpenGLES2Backend& backend) {
 	g_framebuffer2d.uniformResolution = glGetUniformLocation(g_framebuffer2d.program, "u_resolution");
 	g_framebuffer2d.uniformScale = glGetUniformLocation(g_framebuffer2d.program, "u_scale");
 	g_framebuffer2d.uniformTexture = glGetUniformLocation(g_framebuffer2d.program, "u_texture");
-	createGLES2ScreenQuad(g_framebuffer2d.quad);
+	createFullscreenQuad(g_framebuffer2d.quad);
 	glUseProgram(g_framebuffer2d.program);
 	glUniform1i(g_framebuffer2d.uniformTexture, kFramebuffer2DTextureUnit);
 }
@@ -55,14 +55,14 @@ void initFramebuffer2DGLES2(OpenGLES2Backend& backend) {
 void renderFramebuffer2DGLES2(OpenGLES2Backend& backend, const Framebuffer2DPipelineState& state) {
 	glUseProgram(g_framebuffer2d.program);
 	glUniform1i(g_framebuffer2d.uniformTexture, kFramebuffer2DTextureUnit);
-	updateGLES2PostProcessQuad(g_framebuffer2d.quad, state.width, state.height);
+	updateFullscreenQuad(g_framebuffer2d.quad, state.width, state.height);
 
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	bindGLES2ScreenQuad(g_framebuffer2d.quad, g_framebuffer2d.attribPos, g_framebuffer2d.attribTex);
+	bindFullscreenQuad(g_framebuffer2d.quad, g_framebuffer2d.attribPos, g_framebuffer2d.attribTex);
 
 	glUniform2f(g_framebuffer2d.uniformResolution, static_cast<float>(state.width), static_cast<float>(state.height));
 	glUniform1f(g_framebuffer2d.uniformScale, 1.0f);
@@ -77,6 +77,7 @@ void renderFramebuffer2DGLES2(OpenGLES2Backend& backend, const Framebuffer2DPipe
 } // namespace
 
 void registerFramebuffer2DPass_Software(RenderPassLibrary& registry) {
+	GameView* const view = registry.view();
 	RenderPassDef desc;
 	desc.id = "framebuffer_2d";
 	desc.name = "Framebuffer2D";
@@ -84,6 +85,9 @@ void registerFramebuffer2DPass_Software(RenderPassLibrary& registry) {
 	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
 	desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
 		return buildFramebuffer2DState(ctx);
+	};
+	desc.shouldExecute = [view]() {
+		return view->presentWorkbenchFrameBufferTexture && view->vdpRpuFrame->commands.passCount == 0u;
 	};
 	desc.exec = [](GPUBackend* backend, void*, std::any& state) {
 		auto& fbState = std::any_cast<Framebuffer2DPipelineState&>(state);
@@ -109,6 +113,7 @@ void registerFramebuffer2DPass_Software(RenderPassLibrary& registry) {
 
 #if BMSX_ENABLE_GLES2
 void registerFramebuffer2DPass_GLES2(RenderPassLibrary& registry) {
+	GameView* const view = registry.view();
 	RenderPassDef desc;
 	desc.id = "framebuffer_2d";
 	desc.name = "Framebuffer2D";
@@ -116,6 +121,9 @@ void registerFramebuffer2DPass_GLES2(RenderPassLibrary& registry) {
 	desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
 	desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
 		return buildFramebuffer2DState(ctx);
+	};
+	desc.shouldExecute = [view]() {
+		return view->presentWorkbenchFrameBufferTexture && view->vdpRpuFrame->commands.passCount == 0u;
 	};
 	desc.bootstrap = [](GPUBackend* backend) {
 		initFramebuffer2DGLES2(*static_cast<OpenGLES2Backend*>(backend));
@@ -129,7 +137,7 @@ void registerFramebuffer2DPass_GLES2(RenderPassLibrary& registry) {
 
 void shutdownFramebuffer2DGLES2() {
 	if (g_framebuffer2d.program != 0) glDeleteProgram(g_framebuffer2d.program);
-	destroyGLES2ScreenQuad(g_framebuffer2d.quad);
+	destroyFullscreenQuad(g_framebuffer2d.quad);
 	g_framebuffer2d = Framebuffer2DGLES2State{};
 }
 #endif

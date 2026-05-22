@@ -31,7 +31,7 @@ local frame_delta_ms<const> = (1000 * sys_hz_scale) / machine_manifest.ufps
 
 local ecs<const> = require('bios/ecs/index')
 local registry<const> = require('bios/registry')
-local vdp_stream<const> = require('bios/vdp_stream')
+local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
 
 local tickgroup<const> = ecs.tickgroup
 local world_instance
@@ -432,7 +432,7 @@ end
 --   Affects the default world query helpers (objects(), objects_with_components()).
 function world_class:set_space(space_id)
 	if self.active_space_id ~= space_id then
-		vdp_stream.clear_color(0xff000000)
+		vdp_rpu_quads.clear_color(0xff000000)
 	end
 	self.active_space_id = space_id
 	self.active_space = self._spaces[space_id]

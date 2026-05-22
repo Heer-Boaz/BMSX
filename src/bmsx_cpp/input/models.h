@@ -8,6 +8,7 @@
 #include "common/primitives.h"
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 #include <optional>
 #include <variant>
@@ -59,19 +60,19 @@ enum class KeyModifier : u8 {
 	Meta  = 1 << 3
 };
 
-inline KeyModifier operator|(KeyModifier a, KeyModifier b) {
+inline auto operator|(KeyModifier a, KeyModifier b) -> KeyModifier {
 	return static_cast<KeyModifier>(static_cast<u8>(a) | static_cast<u8>(b));
 }
 
-inline KeyModifier operator&(KeyModifier a, KeyModifier b) {
+inline auto operator&(KeyModifier a, KeyModifier b) -> KeyModifier {
 	return static_cast<KeyModifier>(static_cast<u8>(a) & static_cast<u8>(b));
 }
 
-inline KeyModifier& operator|=(KeyModifier& a, KeyModifier b) {
+inline auto operator|=(KeyModifier& a, KeyModifier b) -> KeyModifier& {
 	return a = a | b;
 }
 
-inline bool hasModifier(KeyModifier mask, KeyModifier flag) {
+inline auto hasModifier(KeyModifier mask, KeyModifier flag) -> bool {
 	return (static_cast<u8>(mask) & static_cast<u8>(flag)) != 0;
 }
 
@@ -113,8 +114,8 @@ enum class GamepadButton : u8 {
 };
 
 // Convert GamepadButton enum to string ID
-inline std::string gamepadButtonToString(GamepadButton btn) {
-	static const char* names[] = {
+inline auto gamepadButtonToString(GamepadButton btn) -> std::string {
+	static const char* const names[] = {
 		"a", "b", "x", "y",
 		"lb", "rb", "lt", "rt",
 		"select", "start", "ls", "rs",
@@ -149,7 +150,7 @@ struct ButtonState {
 	std::optional<f64> releasedAtMs;// Timestamp when released
 	std::optional<i32> pressId;     // Unique press identifier
 	
-	f32 value = 0.0f;               // Analog value (0-1 for buttons, full range for axes)
+	f32 value = 0.0F;               // Analog value (0-1 for buttons, full range for axes)
 	std::optional<Vec2> value2d;    // 2D value for sticks
 	
 	// Default constructor
@@ -168,40 +169,40 @@ struct ButtonState {
 		pressedAtMs.reset();
 		releasedAtMs.reset();
 		pressId.reset();
-		value = 0.0f;
+		value = 0.0F;
 		value2d.reset();
 	}
 };
 
-inline f64 buttonTimestampOr(const ButtonState& state, f64 fallback) {
+inline auto buttonTimestampOr(const ButtonState& state, f64 fallback) -> f64 {
 	if (state.timestamp.has_value()) {
 		return state.timestamp.value();
 	}
 	return fallback;
 }
 
-inline f64 buttonPressedAtOr(const ButtonState& state, f64 fallback) {
+inline auto buttonPressedAtOr(const ButtonState& state, f64 fallback) -> f64 {
 	if (state.pressedAtMs.has_value()) {
 		return state.pressedAtMs.value();
 	}
 	return buttonTimestampOr(state, fallback);
 }
 
-inline f64 buttonReleasedAtOr(const ButtonState& state, f64 fallback) {
+inline auto buttonReleasedAtOr(const ButtonState& state, f64 fallback) -> f64 {
 	if (state.releasedAtMs.has_value()) {
 		return state.releasedAtMs.value();
 	}
 	return buttonTimestampOr(state, fallback);
 }
 
-inline i32 buttonPressIdOr(const ButtonState& state, i32 fallback) {
+inline auto buttonPressIdOr(const ButtonState& state, i32 fallback) -> i32 {
 	if (state.pressId.has_value()) {
 		return state.pressId.value();
 	}
 	return fallback;
 }
 
-inline i32 resolveButtonPressId(const std::optional<i32>& incoming, const ButtonState& state, i32& nextPressId) {
+inline auto resolveButtonPressId(const std::optional<i32>& incoming, const ButtonState& state, i32& nextPressId) -> i32 {
 	if (incoming.has_value()) {
 		return incoming.value();
 	}
@@ -211,7 +212,7 @@ inline i32 resolveButtonPressId(const std::optional<i32>& incoming, const Button
 	return nextPressId++;
 }
 
-inline f64 buttonPressTimeOrZero(const ButtonState& state) {
+inline auto buttonPressTimeOrZero(const ButtonState& state) -> f64 {
 	if (state.presstime.has_value()) {
 		return state.presstime.value();
 	}
@@ -235,18 +236,18 @@ struct ActionState : ButtonState {
 	
 	ActionState() = default;
 	
-	explicit ActionState(const std::string& actionName)
-		: action(actionName) {}
+	explicit ActionState(std::string  actionName)
+		: action(std::move(actionName)) {}
 	
-	ActionState(const std::string& actionName, const ButtonState& state)
-		: ButtonState(state), action(actionName) {}
+	ActionState(std::string  actionName, const ButtonState& state)
+		: ButtonState(state), action(std::move(actionName)) {}
 };
 
-inline bool actionFlag(const std::optional<bool>& flag) {
+inline auto actionFlag(const std::optional<bool>& flag) -> bool {
 	return flag.has_value() && flag.value();
 }
 
-inline i32 actionRepeatCount(const ActionState& state) {
+inline auto actionRepeatCount(const ActionState& state) -> i32 {
 	if (state.repeatcount.has_value()) {
 		return state.repeatcount.value();
 	}
@@ -258,7 +259,7 @@ inline i32 actionRepeatCount(const ActionState& state) {
  * ============================================================================ */
 
 struct VibrationParams {
-	f32 intensity = 0.0f;  // 0-1
+	f32 intensity = 0.0F;  // 0-1
 	f64 duration = 0.0;    // milliseconds
 };
 
@@ -276,7 +277,7 @@ public:
 	virtual void pollInput() = 0;
 	
 	// Get state of a specific button
-	virtual ButtonState getButtonState(const ButtonId& button) = 0;
+	virtual auto getButtonState(const ButtonId& button) -> ButtonState = 0;
 	
 	// Mark a button as consumed
 	virtual void consumeButton(const ButtonId& button) = 0;
@@ -285,10 +286,10 @@ public:
 	virtual void reset(const std::vector<std::string>* except = nullptr) = 0;
 	
 	// Gamepad index (0 for keyboard, 0-3 for gamepads)
-	virtual i32 gamepadIndex() const = 0;
+	[[nodiscard]] virtual auto gamepadIndex() const -> i32 = 0;
 	
 	// Vibration support
-	virtual bool supportsVibrationEffect() const = 0;
+	[[nodiscard]] virtual auto supportsVibrationEffect() const -> bool = 0;
 	virtual void applyVibrationEffect(const VibrationParams& params) = 0;
 };
 
@@ -313,7 +314,7 @@ struct PointerBinding {
 // Variants for polymorphic binding storage
 using InputBinding = std::variant<KeyboardBinding, GamepadBinding, PointerBinding>;
 
-inline const std::string& inputBindingId(const InputBinding& binding) {
+inline auto inputBindingId(const InputBinding& binding) -> const std::string& {
 	return std::visit([](const auto& typedBinding) -> const std::string& {
 		return typedBinding.id;
 	}, binding);

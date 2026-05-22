@@ -89,16 +89,12 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/axis_gizmo.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/axis_gizmo.frag.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/skybox.vert.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/skybox.frag.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/particle.vert.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/particle.frag.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.vert.glsl"
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/2d.frag.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/2d/shaders/framebuffer_2d.frag.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.frag.glsl"
 )
 
 file(READ
@@ -121,30 +117,6 @@ file(READ
 file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/axis_gizmo.frag.glsl"
 	BMSX_RENDER_3D_AXIS_GIZMO_FRAGMENT_SHADER
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/skybox.vert.glsl"
-	BMSX_RENDER_3D_SKYBOX_VERTEX_SHADER
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/skybox.frag.glsl"
-	BMSX_RENDER_3D_SKYBOX_FRAGMENT_SHADER
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/particle.vert.glsl"
-	BMSX_RENDER_3D_PARTICLE_VERTEX_SHADER
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/particle.frag.glsl"
-	BMSX_RENDER_3D_PARTICLE_FRAGMENT_SHADER
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.vert.glsl"
-	BMSX_RENDER_3D_MESH_VERTEX_SHADER
-)
-file(READ
-	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/mesh.frag.glsl"
-	BMSX_RENDER_3D_MESH_FRAGMENT_SHADER
 )
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/3d/shaders/render_3d_shaders.h.in"
@@ -177,6 +149,19 @@ configure_file(
 	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/2d/shaders/framebuffer_2d_shaders.h"
 	@ONLY
 )
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.vert.glsl"
+	BMSX_VDP_RPU_VERTEX_SHADER
+)
+file(READ
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu.frag.glsl"
+	BMSX_VDP_RPU_FRAGMENT_SHADER
+)
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/vdp_rpu_shaders.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/backend/gles2/shaders/vdp_rpu_shaders.h"
+	@ONLY
+)
 
 add_library(bmsx_core STATIC
 	# Platform abstraction
@@ -195,6 +180,7 @@ add_library(bmsx_core STATIC
 	core/system.cpp
 	machine/terminal/terminal.cpp
 	common/registry.cpp
+	common/image_decode.cpp
 	rompack/loader.cpp
 	rompack/tokens.cpp
 	rompack/toc.cpp
@@ -230,7 +216,6 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/playback.cpp
 	machine/devices/audio/output.cpp
 	machine/devices/audio/save_state.cpp
-	machine/devices/vdp/mesh_source.cpp
 
 	# Input systems
 	input/player.cpp
@@ -242,13 +227,10 @@ add_library(bmsx_core STATIC
 
 	# Render systems
 	render/backend/backend.cpp
+	render/backend/software/vdp_rpu.cpp
 	render/2d/framebuffer_pipeline.cpp
 	render/3d/math.cpp
 	render/3d/axis_gizmo_pipeline.cpp
-	render/3d/mesh/pipeline.cpp
-	render/3d/mesh/vertex_stream.cpp
-	render/3d/particles/pipeline.cpp
-	render/3d/skybox/pipeline.cpp
 	render/gameview.cpp
 	render/backend/frame_uniforms.cpp
 	render/lighting/system.cpp
@@ -257,10 +239,6 @@ add_library(bmsx_core STATIC
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/pipeline.cpp
 	render/vdp/context_state.cpp
-	render/2d/vdp_blit_pipeline.cpp
-	render/backend/gles2/vdp_2d_blit.cpp
-	render/backend/software/vdp_framebuffer_rasterizer.cpp
-	render/backend/software/vdp_framebuffer_execution.cpp
 	render/vdp/framebuffer.cpp
 	render/vdp/surfaces.cpp
 	render/vdp/slot_textures.cpp
@@ -268,8 +246,6 @@ add_library(bmsx_core STATIC
 	render/vdp/view_snapshot.cpp
 	render/texture_manager.cpp
 	render/backend/pass/library.cpp
-	render/backend/pass/software_scene.cpp
-	render/backend/pass/framebuffer_execution.cpp
 	render/graph/graph.cpp
 
 	# Machine runtime (Lua bytecode interpreter)
@@ -344,23 +320,18 @@ add_library(bmsx_core STATIC
 	machine/memory/access_kind.cpp
 	machine/memory/memory.cpp
 	machine/memory/map.cpp
-	machine/devices/vdp/bbu.cpp
-	machine/devices/vdp/blitter.cpp
-	machine/devices/vdp/blitter_source.cpp
+	machine/devices/vdp/slot_surface.cpp
 	machine/devices/vdp/fbm.cpp
 	machine/devices/vdp/frame.cpp
 	machine/devices/vdp/ingress.cpp
 	machine/devices/vdp/jtu.cpp
 	machine/devices/vdp/lpu.cpp
-	machine/devices/vdp/mdu.cpp
 	machine/devices/vdp/mfu.cpp
 	machine/devices/vdp/pmu.cpp
 	machine/devices/vdp/readback.cpp
 	machine/devices/vdp/registers.cpp
 	machine/devices/vdp/rpu.cpp
-	machine/devices/vdp/sbx.cpp
 	machine/devices/vdp/unit_register_port.cpp
-	machine/devices/vdp/save_state.cpp
 	machine/devices/vdp/vout.cpp
 	machine/devices/vdp/vram.cpp
 	machine/devices/vdp/xf.cpp
@@ -392,6 +363,7 @@ if(BMSX_ENABLE_GLES2)
 	target_sources(bmsx_core PRIVATE
 		render/backend/gles2/backend.cpp
 		render/backend/gles2/fullscreen_quad.cpp
+		render/backend/gles2/vdp_rpu.cpp
 		render/post/crt/pipeline.cpp
 	)
 	find_library(GLESV2_LIBRARY GLESv2 REQUIRED)

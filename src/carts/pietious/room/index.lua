@@ -1,7 +1,7 @@
 local constants<const> = require('constants')
 local castle_map<const> = require('castle/map')
 local timeline<const> = require('bios/timeline/index')
-local vdp_stream<const> = require('bios/vdp_stream')
+local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
 
 local room<const> = {}
 local water_surface_timeline_id<const> = 'r.ws'
@@ -525,19 +525,6 @@ local refresh_room_geometry<const> = function(room_state)
 	room_state:rebuild_room_tiles()
 end
 
-local draw_tile_sources<const> = function(sources, tile_count, cols, tile_size, origin_x, origin_y)
-	vdp_stream.batch_blit_begin(0, sys_vdp_layer_world, 0xffffffff, 0, 0)
-	for i = 1, tile_count do
-		local source<const> = sources[i]
-		if source ~= empty_tile_source then
-			local tile_index<const> = i - 1
-			local tile_x<const> = tile_index % cols
-			local tile_y<const> = tile_index // cols
-			vdp_stream.batch_blit_item(source.slot, source.u, source.v, source.w, source.h, origin_x + (tile_x * tile_size), origin_y + (tile_y * tile_size), source.w)
-		end
-	end
-end
-
 local apply_room_template<const> = function(room_state, template)
 	local map_rows<const> = build_screen_rows(
 		template.map_rows,
@@ -886,9 +873,9 @@ function room_object:ctor()
 	self.last_water_surface_frame = 1
 	self.water_surface_sources = {}
 	for i = 1, #water_surface_frame_imgids do
-		self.water_surface_sources[i] = vdp_img_rect(water_surface_frame_imgids[i])
+		self.water_surface_sources[i] = vdp_img_source(vdp_img_rect(water_surface_frame_imgids[i]))
 	end
-	self.water_body_source = vdp_img_rect('water_body_msx')
+	self.water_body_source = vdp_img_source(vdp_img_rect('water_body_msx'))
 	self.tiles_visible = false
 	self:bind_visual()
 end
@@ -941,7 +928,7 @@ function room_object:rebuild_room_tiles()
 					tile_id = dissolve_prefix .. tostring(dissolve_index)
 				end
 			end
-			room_tile_sources[tile_index] = vdp_img_rect(tile_id)
+			room_tile_sources[tile_index] = vdp_img_source(vdp_img_rect(tile_id))
 			::continue::
 		end
 	end
@@ -1016,7 +1003,7 @@ function room_object:render_tiles()
 	if tile_count == 0 then
 		return
 	end
-	draw_tile_sources(self.room_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y)
+	vdp_rpu_quads.tile_run_sources(self.room_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y, empty_tile_source)
 end
 
 function room_object:render_water()
@@ -1024,7 +1011,7 @@ function room_object:render_water()
 	if tile_count == 0 then
 		return
 	end
-	draw_tile_sources(self.water_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size))
+	vdp_rpu_quads.tile_run_sources(self.water_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size), empty_tile_source)
 end
 
 function room_object:render_room()

@@ -34,10 +34,10 @@ public:
 	void recordAxis2Sample(const std::string& button, f32 x, f32 y, f64 timestamp);
 	void latchButtonState(const std::string& button, const ButtonState& rawState, f64 currentTimeMs);
 	void consumeBufferedEvent(const std::string& identifier, std::optional<i32> pressId);
-	ButtonState getButtonState(const std::string& button, std::optional<i32> windowFrames = std::nullopt) const;
-	std::optional<i32> getLatestUnconsumedEdgeId(const std::string& button, InputEvent::Type eventType) const;
-	bool hasTrackedButton(const std::string& button) const;
-	i64 frame() const { return m_currentFrame; }
+	auto getButtonState(const std::string& button, std::optional<i32> windowFrames = std::nullopt) const -> ButtonState;
+	auto getLatestUnconsumedEdgeId(const std::string& button, InputEvent::Type eventType) const -> std::optional<i32>;
+	auto hasTrackedButton(const std::string& button) const -> bool;
+	auto frame() const -> i64 { return m_currentFrame; }
 	void resetEdgeState();
 	void clear();
 
@@ -64,8 +64,8 @@ private:
 	static constexpr i32 BUFFER_FRAME_RETENTION = 150;
 	static constexpr i32 RECENT_BUFFERED_EDGE_FRAMES = 2;
 
-	std::optional<BufferedEdgeRecord> getBufferedEdgeRecord(const std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const std::string& button, i32 windowFrames) const;
-	bool isBufferedFrameInWindow(i64 frame, i32 windowFrames) const;
+	auto getBufferedEdgeRecord(const std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const std::string& button, i32 windowFrames) const -> std::optional<BufferedEdgeRecord>;
+	auto isBufferedFrameInWindow(i64 frame, i32 windowFrames) const -> bool;
 	void bufferEdge(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const BufferedInputEvent& event);
 	void consumeBufferedEdge(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap, const std::string& identifier, std::optional<i32> pressId);
 	void pruneOldEvents();
@@ -110,7 +110,7 @@ public:
 	// Singleton access
 	// ─────────────────────────────────────────────────────────────────────────
 	
-	static Input& instance();
+	static auto instance() -> Input&;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Lifecycle
@@ -124,7 +124,7 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	
 	// Get player input for a specific player index
-	PlayerInput* getPlayerInput(i32 playerIndex);
+	auto getPlayerInput(i32 playerIndex) -> PlayerInput*;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Device management
@@ -143,10 +143,10 @@ public:
 	void assignGamepadToPlayer(InputHandler* gamepad, i32 playerIndex);
 	
 	// Get first available player index for gamepad
-	std::optional<i32> getFirstAvailablePlayerIndexForGamepadAssignment(i32 from = 1, bool reverse = false);
+	auto getFirstAvailablePlayerIndexForGamepadAssignment(i32 from = 1, bool reverse = false) -> std::optional<i32>;
 	
 	// Check if player index is available for gamepad assignment
-	bool isPlayerIndexAvailableForGamepadAssignment(i32 playerIndex);
+	auto isPlayerIndexAvailableForGamepadAssignment(i32 playerIndex) -> bool;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Input mapping
@@ -173,11 +173,11 @@ public:
 	
 	// Handle gamepad button event
 	void handleGamepadButtonEvent(const std::string& deviceId, const std::string& button, 
-									bool down, f32 value = 1.0f);
+									bool down, f32 value = 1.0F);
 	
 	// Handle gamepad axis event
 	void handleGamepadAxisEvent(const std::string& deviceId, const std::string& axis, 
-									f32 x, f32 y = 0.0f);
+									f32 x, f32 y = 0.0F);
 	
 	// Handle pointer button event
 	void handlePointerButtonEvent(const std::string& deviceId, const std::string& button, bool down);
@@ -197,7 +197,7 @@ private:
 	~Input();
 	
 	Input(const Input&) = delete;
-	Input& operator=(const Input&) = delete;
+	auto operator=(const Input&) -> Input& = delete;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Data members
@@ -228,7 +228,7 @@ private:
 	void enqueueButtonEvent(i32 playerIndex, InputSource source, const std::string& code, 
 							InputEvent::Type type, f64 timestamp, 
 							std::optional<i32> pressId);
-	i32 resolvePlatformPressId(const std::string& deviceId, const std::string& code, bool down);
+	auto resolvePlatformPressId(const std::string& deviceId, const std::string& code, bool down) -> i32;
 };
 
 /* ============================================================================
@@ -236,12 +236,12 @@ private:
  * ============================================================================ */
 
 // Create a default button state
-ButtonState makeButtonState();
-ButtonState makeButtonState(const ButtonState& init);
+auto makeButtonState() -> ButtonState;
+auto makeButtonState(const ButtonState& init) -> ButtonState;
 
 // Create a default action state
-ActionState makeActionState(const std::string& action);
-ActionState makeActionState(const std::string& action, const ButtonState& state);
+auto makeActionState(const std::string& action) -> ActionState;
+auto makeActionState(const std::string& action, const ButtonState& state) -> ActionState;
 
 // Reset an object map, optionally excluding certain keys
 template<typename MapType>
@@ -268,8 +268,8 @@ void resetObject(MapType& map, const std::vector<std::string>* except = nullptr)
 }
 
 // Get pressed state for a button from a state map
-ButtonState getPressedState(const std::unordered_map<std::string, ButtonState>& states, 
-							const std::string& button);
+auto getPressedState(const std::unordered_map<std::string, ButtonState>& states,
+							const std::string& button) -> ButtonState;
 
 } // namespace bmsx
 

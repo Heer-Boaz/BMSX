@@ -7,22 +7,17 @@
 #include "machine/memory/map.h"
 #include "machine/scheduler/device.h"
 #include "machine/devices/device_status.h"
-#include "machine/devices/vdp/bbu.h"
-#include "machine/devices/vdp/blitter.h"
-#include "machine/devices/vdp/blitter_source.h"
-#include "machine/devices/vdp/budget.h"
+#include "machine/devices/vdp/slot_surface.h"
 #include "machine/devices/vdp/device_output.h"
 #include "machine/devices/vdp/fbm.h"
 #include "machine/devices/vdp/frame.h"
 #include "machine/devices/vdp/ingress.h"
 #include "machine/devices/vdp/jtu.h"
 #include "machine/devices/vdp/lpu.h"
-#include "machine/devices/vdp/mdu.h"
 #include "machine/devices/vdp/mfu.h"
 #include "machine/devices/vdp/pmu.h"
 #include "machine/devices/vdp/readback.h"
 #include "machine/devices/vdp/registers.h"
-#include "machine/devices/vdp/sbx.h"
 #include "machine/devices/vdp/save_state.h"
 #include "machine/devices/vdp/vout.h"
 #include "machine/devices/vdp/vram.h"
@@ -32,7 +27,6 @@
 
 namespace bmsx {
 
-class ImgDecController;
 class VDP;
 
 class VDP : public Memory::VramWriter {
@@ -55,7 +49,7 @@ public:
 	void endDmaSubmit();
 	bool sealDmaTransfer(uint32_t src, size_t byteLength);
 	void writeVdpFifoBytes(const u8* data, size_t length);
-	void writeVram(uint32_t addr, const u8* data, size_t length) override;
+	void writeVram(uint32_t addr, const u8* data, size_t srcOffset, size_t length) override;
 	void readVram(uint32_t addr, u8* out, size_t length) const override;
 	void beginFrame();
 	void setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles);
@@ -63,14 +57,6 @@ public:
 	void onService(int64_t nowCycles);
 	void advanceWork(int workUnits);
 	bool presentReadyFrameOnVblankEdge();
-	VdpBlitterCommandBuffer* readyFrameBufferCommands();
-	VdpBlitterCommandBuffer* readyDisplayFrameBufferReplayCommands();
-	VdpSurfaceUploadSlot* resolveFrameBufferExecutionSource(uint32_t surfaceId);
-	VdpSurfaceUploadSlot& frameBufferExecutionTarget();
-	void completeReadyFrameBufferExecution(VdpSurfaceUploadSlot& frameBufferSlot);
-	void completeReadyFrameBufferTextureExecution();
-	void completeDisplayFrameBufferReplay(VdpSurfaceUploadSlot& frameBufferSlot);
-	void completeDisplayFrameBufferTextureReplay();
 	uint32_t frameBufferWidth() const { return m_fbm.width(); }
 	uint32_t frameBufferHeight() const { return m_fbm.height(); }
 	bool readFrameBufferPixels(VdpFrameBufferPage page, uint32_t x, uint32_t y, uint32_t width, uint32_t height, u8* out, size_t outBytes);
@@ -81,7 +67,6 @@ public:
 	void initializeVramSurfaces();
 	void setDecodedVramSurfaceDimensions(uint32_t baseAddr, uint32_t width, uint32_t height);
 	void configureVramSlotSurface(uint32_t slotId, uint32_t width, uint32_t height);
-	void attachImgDecController(ImgDecController& controller);
 	void captureVisualStateFields(VdpState& state) const;
 	VdpState captureState() const;
 	void restoreState(const VdpState& state);
@@ -92,8 +77,6 @@ public:
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
 	int lastFrameCost() const { return m_lastFrameCost; }
 	bool lastFrameHeld() const { return m_lastFrameHeld; }
-	VdpMeshSourceBank& meshSources() { return m_meshSources; }
-	const VdpMeshSourceBank& meshSources() const { return m_meshSources; }
 	bool needsImmediateSchedulerService() const {
 		return m_activeFrame.state == VdpSubmittedFrameState::Empty && m_pendingFrame.state != VdpSubmittedFrameState::Empty;
 	}
@@ -105,12 +88,6 @@ public:
 	}
 	int getPendingRenderWorkUnits() const;
 
-	using FrameBufferColor = VdpFrameBufferColor;
-	using BlitterSource = VdpBlitterSource;
-	using ResolvedBlitterSample = VdpResolvedBlitterSample;
-	using SkyboxSamples = VdpSkyboxSamples;
-	using BlitterCommandType = VdpBlitterCommandType;
-	using BlitterCommand = VdpBlitterCommand;
 	using SubmittedFrame = VdpSubmittedFrame;
 	using BuildingFrame = VdpBuildingFrame;
 
@@ -119,12 +96,6 @@ public:
 	void syncSurfaceUploads(VdpSurfaceUploadSink& sink);
 
 private:
-	struct VdpLatchedDrawSetup {
-		Layer2D layer = Layer2D::World;
-		f32 priority = 0.0f;
-		VdpDrawCtrl drawCtrl{};
-	};
-
 	static Value readVdpStatusThunk(void* context, uint32_t addr);
 	static Value readVdpDataThunk(void* context, uint32_t addr);
 	static void onFifoWriteThunk(void* context, uint32_t addr, Value value);
@@ -133,8 +104,6 @@ private:
 	static void onDitherWriteThunk(void* context, uint32_t addr, Value value);
 	static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
 	static void onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
-	static void onSbxRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
-	static void onSbxCommitWriteThunk(void* context, uint32_t addr, Value value);
 
 	bool writeVdpRegister(uint32_t index, u32 value);
 	void consumeDirectVdpCommand(u32 cmd);
@@ -142,20 +111,15 @@ private:
 
 	Memory& m_memory;
 	DeviceStatusLatch m_fault;
-	ImgDecController* m_imgDecController = nullptr;
 	VdpVramUnit m_vram;
-	VdpBlitterSourcePort m_blitterSourcePort;
+	VdpSlotSurfacePort m_slotSurfacePort;
 	VdpReadbackUnit m_readback;
-	VdpSbxUnit m_sbx;
-	SkyboxSamples m_sbxSealSamples{};
 	VdpXfUnit m_xf;
 	VdpLpuUnit m_lpu;
 	VdpMfuUnit m_mfu;
 	VdpJtuUnit m_jtu;
 	VdpPmuUnit m_pmu;
-	VdpBbuUnit m_bbu;
-	VdpMduUnit m_mdu;
-	VdpMeshSourceBank m_meshSources;
+	VdpRpuUnit m_rpu;
 	VdpVoutUnit m_vout;
 	int64_t m_cpuHz = 1;
 	int64_t m_workUnitsPerSec = 1;
@@ -166,13 +130,8 @@ private:
 	BuildingFrame m_buildFrame;
 	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
-	SubmittedFrame m_displayTextureFrame;
-	bool m_displayTextureFrameReplayPending = false;
-	u32 m_blitterSequence = 0;
 	// Scratch buffers used to avoid per-call temporaries (parity with TS runtime)
-	BlitterSource m_latchedSourceScratch{};
-	VdpLatchedDrawSetup m_latchedDrawSetupScratch{};
-	int m_activeBatchBlitIndex = -1;
+	VdpPmuRegisterWindow m_pmuRegisterWindowScratch{};
 	bool m_lastFrameCommitted = true;
 	int m_lastFrameCost = 0;
 	bool m_lastFrameHeld = false;
@@ -183,11 +142,9 @@ private:
 
 	VdpSurfaceUploadSlot* findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode);
 	const VdpSurfaceUploadSlot* findVramSlotOrFault(uint32_t surfaceId, uint32_t faultCode) const;
-	void bindVramSurfaces(bool resetSkybox);
+	void bindVramSurfaces();
 	bool resizeVramSlot(VdpSurfaceUploadSlot& slot, uint32_t width, uint32_t height, uint32_t faultDetail);
-	u32 nextBlitterSequence();
 	void resetQueuedFrameState();
-	bool reserveBlitterCommand(BlitterCommandType opcode, int renderCost, size_t& index);
 	bool canAcceptSubmittedFrame() const {
 		return m_pendingFrame.state == VdpSubmittedFrameState::Empty;
 	}
@@ -195,7 +152,6 @@ private:
 	void cancelSubmittedFrame();
 	bool sealSubmittedFrame();
 	void promotePendingFrame();
-	void presentFrameBufferPageOnVblankEdge();
 	void scheduleNextService(int64_t nowCycles);
 	bool hasBlockedSubmitPath() const;
 		void refreshSubmitBusyStatus();
@@ -205,19 +161,7 @@ private:
 	void writePmuBankSelect(u32 value);
 	void onPmuRegisterWindowWrite(uint32_t addr);
 	void syncPmuRegisterWindow();
-	void onSbxRegisterWindowWrite(uint32_t addr, Value value);
-	void onSbxCommitWrite();
-	void syncSbxRegisterWindow();
 	void configureSelectedSlotDimension(u32 word);
-	VdpLatchedGeometry readLatchedGeometry() const;
-		bool enqueueLatchedClear();
-		bool enqueueLatchedFillRect();
-		bool enqueueLatchedDrawLine();
-		bool enqueueLatchedBlit();
-		bool enqueueLatchedBatchBlitBegin();
-	bool enqueueLatchedBatchBlitItem();
-	bool readLatchedDrawSetup(VdpLatchedDrawSetup& target);
-	bool readLatchedBlitterSource(BlitterSource& target);
 	void pushVdpFifoWord(u32 word);
 	bool consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
 	void consumeSealedVdpWordStream(const u32* words, u32 wordCount);
@@ -232,8 +176,6 @@ private:
 		u32 count = 0;
 	};
 		bool decodeRegnPacket(u32 word, RegnPacket& packet) const;
-		bool latchBillboardPacket(const VdpBbuPacket& packet);
-		bool latchMeshPacket(const VdpMduPacket& packet);
 		bool consumeReplayCommandPacket(u32 word);
 		bool executeVdpDrawDoorbell(u32 command);
 	void onVdpFifoWrite();
@@ -241,7 +183,7 @@ private:
 	void onVdpCommandWrite();
 	void clearActiveFrame();
 	void commitActiveVisualState();
-	void finishCommittedFrameOnVblankEdge(bool retainTextureFrame);
+	void finishCommittedFrameOnVblankEdge();
 
 	void commitLiveVisualState();
 };

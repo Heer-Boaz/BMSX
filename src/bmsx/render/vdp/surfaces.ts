@@ -24,7 +24,7 @@ export function resolveVdpRenderSurfaceForUpload(surface: VdpSurfaceUpload): Vdp
 	};
 }
 
-function resolveVdpSurfaceTextureKey(surfaceId: number): string {
+export function resolveVdpSurfaceTextureKey(surfaceId: number): string {
 	if (surfaceId === VDP_RD_SURFACE_SYSTEM) {
 		return SYSTEM_SLOT_TEXTURE_KEY;
 	}

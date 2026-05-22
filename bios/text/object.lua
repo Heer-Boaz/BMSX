@@ -5,7 +5,7 @@ local worldobject<const> = require('bios/world/object')
 local components<const> = require('bios/components')
 local fsmlibrary<const> = require('bios/fsm/library')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
-local vdp_stream<const> = require('bios/vdp_stream')
+local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
 local font_module<const> = require('bios/font')
 
 local textobject<const> = {}
@@ -575,7 +575,7 @@ function textobject:submit_text_background_lines(x, y, z, glyphs)
 			elseif tc.center_block_width ~= nil then
 				line_x = x + ((tc.center_block_width - line_width) / 2)
 			end
-			vdp_stream.fill_rect_color(line_x, line_y, line_x + line_width, line_y + tc.font.line_height, z, tc.layer, background_color)
+			vdp_rpu_quads.fill_rect_color(line_x, line_y, line_x + line_width, line_y + tc.font.line_height, z, tc.layer, background_color)
 		end
 		if line_offsets == nil then
 			cursor_y = cursor_y + tc.line_height
@@ -601,7 +601,7 @@ function textobject:submit_highlight()
 		local offset_y<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
 		local padded_x<const> = horizontal_margin * scale
 		local highlight_z<const> = self.z + self.text_offset.z - 0.5
-		vdp_stream.fill_rect_color(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, highlight_z, self.layer, self.highlight_bg_color)
+		vdp_rpu_quads.fill_rect_color(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, highlight_z, self.layer, self.highlight_bg_color)
 	end
 end
 

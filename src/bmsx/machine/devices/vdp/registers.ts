@@ -28,9 +28,6 @@ export const VDP_DRAW_CTRL_FLIP_H = 0x00000001;
 export const VDP_DRAW_CTRL_FLIP_V = 0x00000002;
 export const VDP_DRAW_CTRL_BLEND_SHIFT = 2;
 export const VDP_DRAW_CTRL_BLEND_MASK = 0x000000fc;
-export const VDP_DRAW_CTRL_PMU_BANK_SHIFT = 8;
-export const VDP_DRAW_CTRL_PMU_BANK_MASK = 0x0000ff00;
-export const VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT = 16;
 
 export const VDP_PKT_KIND_MASK = 0xff000000;
 export const VDP_PKT_RESERVED_MASK = 0x00ff0000;
@@ -60,17 +57,11 @@ export type VdpDrawCtrl = {
 	flipH: boolean;
 	flipV: boolean;
 	blendMode: number;
-	pmuBank: number;
-	parallaxWeight: number;
 };
 
 
 export function decodeVdpDrawCtrl(value: number, target: VdpDrawCtrl): void {
-	const rawQ8_8 = (value >>> VDP_DRAW_CTRL_PMU_WEIGHT_SHIFT) & 0xffff;
-	const signedQ8_8 = (rawQ8_8 & 0x8000) !== 0 ? rawQ8_8 - 0x10000 : rawQ8_8;
 	target.flipH = (value & VDP_DRAW_CTRL_FLIP_H) !== 0;
 	target.flipV = (value & VDP_DRAW_CTRL_FLIP_V) !== 0;
 	target.blendMode = (value & VDP_DRAW_CTRL_BLEND_MASK) >>> VDP_DRAW_CTRL_BLEND_SHIFT;
-	target.pmuBank = ((value & VDP_DRAW_CTRL_PMU_BANK_MASK) >>> VDP_DRAW_CTRL_PMU_BANK_SHIFT) & 0xff;
-	target.parallaxWeight = signedQ8_8 / 256;
 }

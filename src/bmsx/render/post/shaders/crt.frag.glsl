@@ -204,6 +204,10 @@ void main(){
 
 	// base (texture() returns linear if the texture is SRGB8_A8)
 	vec3 color = texture(u_texture, v_texcoord).rgb;
+	if (!u_enableNoise && !u_enableColorBleed && !u_enableScanlines && !u_enableBlur && !u_enableGlow && !u_enableFringing && !u_enableAperture) {
+		outputColor = vec4(color, 1.0);
+		return;
+	}
 
 	// 1) signal tweak
 	if (u_enableColorBleed) color += u_colorBleed;

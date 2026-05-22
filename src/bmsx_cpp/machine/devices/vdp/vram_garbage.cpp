@@ -45,7 +45,12 @@ struct BiasConfig {
 	int threshold2 = 0;
 };
 
-BiasConfig makeBiasConfig(uint32_t vramBytes) {
+int garbageForceThreshold(int maxBias, int threshold) {
+	const int scaled = maxBias * threshold;
+	return (scaled - (scaled % VRAM_GARBAGE_FORCE_T_DEN)) / VRAM_GARBAGE_FORCE_T_DEN;
+}
+
+BiasConfig& makeBiasConfig(uint32_t vramBytes, BiasConfig& target) {
 	const uint32_t maxOctaveBytes = vramBytes >> 1u;
 	int weightSum = VRAM_GARBAGE_WEIGHT_BLOCK + VRAM_GARBAGE_WEIGHT_ROW + VRAM_GARBAGE_WEIGHT_PAGE;
 	uint32_t activeOctaves = 0;
@@ -58,15 +63,14 @@ BiasConfig makeBiasConfig(uint32_t vramBytes) {
 		activeOctaves = i + 1u;
 	}
 	const int maxBias = weightSum * 127;
-	BiasConfig config;
-	config.activeOctaves = activeOctaves;
-	config.threshold0 = (maxBias * VRAM_GARBAGE_FORCE_T0) / VRAM_GARBAGE_FORCE_T_DEN;
-	config.threshold1 = (maxBias * VRAM_GARBAGE_FORCE_T1) / VRAM_GARBAGE_FORCE_T_DEN;
-	config.threshold2 = (maxBias * VRAM_GARBAGE_FORCE_T2) / VRAM_GARBAGE_FORCE_T_DEN;
-	return config;
+	target.activeOctaves = activeOctaves;
+	target.threshold0 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T0);
+	target.threshold1 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T1);
+	target.threshold2 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T2);
+	return target;
 }
 
-BlockGen initBlockGen(uint32_t biasSeed, uint32_t bootSeedMix, uint32_t blockIndex, const BiasConfig& biasConfig) {
+BlockGen& initBlockGen(uint32_t biasSeed, uint32_t bootSeedMix, uint32_t blockIndex, const BiasConfig& biasConfig, BlockGen& target) {
 	const uint32_t pageIndex = blockIndex >> 7u;
 	const uint32_t rowIndex = blockIndex >> 3u;
 
@@ -119,13 +123,13 @@ BlockGen initBlockGen(uint32_t biasSeed, uint32_t bootSeedMix, uint32_t blockInd
 	if (jitterLevel <= 0) weak = 0;
 	weak &= ~forceMask;
 
-	BlockGen gen;
-	gen.forceMask = forceMask;
-	gen.prefWord = prefWord;
-	gen.weakMask = weak;
-	gen.baseState = (blkH ^ 0xa1b2c3d4U) | 1u;
-	gen.bootState = (fmix32((bootSeedMix ^ (blockIndex * 0x7f4a7c15U) ^ 0x31415926U)) | 1u);
-	return gen;
+	target.forceMask = forceMask;
+	target.prefWord = prefWord;
+	target.weakMask = weak;
+	target.baseState = (blkH ^ 0xa1b2c3d4U) | 1u;
+	target.bootState = (fmix32((bootSeedMix ^ (blockIndex * 0x7f4a7c15U) ^ 0x31415926U)) | 1u);
+	target.genWordPos = 0u;
+	return target;
 }
 
 uint32_t nextWord(BlockGen& gen) {
@@ -150,7 +154,8 @@ void fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& s) {
 	const uint32_t biasSeed = s.machineSeed ^ s.slotSalt;
 	const uint32_t bootSeedMix = s.bootSeed ^ s.slotSalt;
 	const uint32_t vramBytes = (VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE) - VRAM_STAGING_BASE;
-	const BiasConfig biasConfig = makeBiasConfig(vramBytes);
+	BiasConfig biasConfig;
+	makeBiasConfig(vramBytes, biasConfig);
 
 	const size_t BLOCK_BYTES = 32u;
 	const uint32_t BLOCK_SHIFT = 5u;
@@ -166,7 +171,8 @@ void fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& s) {
 		const uint32_t startOff = addr - blockBase;
 		const size_t maxBytesThisBlock = std::min<size_t>(BLOCK_BYTES - startOff, total - out);
 
-		BlockGen gen = initBlockGen(biasSeed, bootSeedMix, blockIndex, biasConfig);
+		BlockGen gen;
+		initBlockGen(biasSeed, bootSeedMix, blockIndex, biasConfig, gen);
 
 		if (aligned4 && startOff == 0u && maxBytesThisBlock == BLOCK_BYTES) {
 			for (uint32_t w = 0; w < 8u; ++w) {

@@ -61,10 +61,13 @@ local stage_geo_aabb_shape<const> = function(collider, shape_addr)
 	mem[shape_addr + sys_geo_overlap_shape_data_count_offset] = sys_geo_overlap_aabb_data_count
 	mem[shape_addr + sys_geo_overlap_shape_data_offset_offset] = sys_geo_overlap_shape_desc_bytes
 	mem[shape_addr + sys_geo_overlap_shape_bounds_offset_offset] = sys_geo_overlap_shape_desc_bytes
-	memf32le[shape_addr + sys_geo_overlap_shape_desc_bytes + sys_geo_overlap_shape_bounds_left_offset] = area.left - tx
-	memf32le[shape_addr + sys_geo_overlap_shape_desc_bytes + sys_geo_overlap_shape_bounds_top_offset] = area.top - ty
-	memf32le[shape_addr + sys_geo_overlap_shape_desc_bytes + sys_geo_overlap_shape_bounds_right_offset] = area.right - tx
-	memf32le[shape_addr + sys_geo_overlap_shape_desc_bytes + sys_geo_overlap_shape_bounds_bottom_offset] = area.bottom - ty
+	memwritef32(
+		shape_addr + sys_geo_overlap_shape_desc_bytes + sys_geo_overlap_shape_bounds_left_offset,
+		area.left - tx,
+		area.top - ty,
+		area.right - tx,
+		area.bottom - ty
+	)
 	return shape_addr
 end
 
@@ -75,8 +78,11 @@ local stage_geo_overlap_instance<const> = function(collider, batch_token, instan
 	local instance_addr<const> = instance_base + collider._geo_overlap_instance_index * sys_geo_overlap_instance_bytes
 	local shape_ref<const> = collider._overlap_geo_shape_ref or stage_geo_aabb_shape(collider, aabb_shape_addr)
 	mem[instance_addr + sys_geo_overlap_instance_shape_offset] = shape_ref
-	memf32le[instance_addr + sys_geo_overlap_instance_tx_offset] = collider._overlap_geo_tx
-	memf32le[instance_addr + sys_geo_overlap_instance_ty_offset] = collider._overlap_geo_ty
+	memwritef32(
+		instance_addr + sys_geo_overlap_instance_tx_offset,
+		collider._overlap_geo_tx,
+		collider._overlap_geo_ty
+	)
 	mem[instance_addr + sys_geo_overlap_instance_layer_offset] = collider.layer
 	mem[instance_addr + sys_geo_overlap_instance_mask_offset] = collider.mask
 	collider._geo_overlap_stage_token = batch_token

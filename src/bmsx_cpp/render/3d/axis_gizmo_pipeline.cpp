@@ -146,7 +146,7 @@ void renderAxisGizmo_GLES2(OpenGLES2Backend& backend, AxisGizmoHostImageSink emi
 	glUniform2f(state.uniformOffset, offsetX, offsetY);
 	glDrawArrays(GL_LINES, 0, AXIS_VERTEX_COUNT);
 
-	state.axisInvRot = transform.skyboxView;
+	state.axisInvRot = transform.viewRotationInverse;
 	state.axisInvRot[8] = -state.axisInvRot[8];
 	state.axisInvRot[9] = -state.axisInvRot[9];
 	state.axisInvRot[10] = -state.axisInvRot[10];

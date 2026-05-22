@@ -4,7 +4,6 @@
 
 #include "backend.h"
 #include "common/clamp.h"
-#include "render/backend/software/vdp_framebuffer_rasterizer.h"
 #include "render/shared/software_pixels.h"
 #include <array>
 #include <algorithm>
@@ -234,6 +233,8 @@ SoftwareBackend::SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pi
 	, m_pitch(pitch) {
 	m_depthBuffer.resize(width * height, 1.0f);
 }
+
+SoftwareBackend::~SoftwareBackend() = default;
 
 void SoftwareBackend::setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch) {
 	m_framebuffer = fb;

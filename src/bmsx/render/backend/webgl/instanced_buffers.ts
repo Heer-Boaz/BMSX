@@ -22,9 +22,6 @@ export type WebGLSpriteQuadUniforms = {
 	texture0: WebGLUniformLocation;
 	texture1: WebGLUniformLocation;
 	texture2: WebGLUniformLocation;
-	parallaxRig: WebGLUniformLocation;
-	parallaxRig2: WebGLUniformLocation;
-	parallaxFlipWindow: WebGLUniformLocation;
 };
 
 export type WebGLInstancedQuadRuntime = WebGLInstancedBufferRuntime & {
@@ -57,9 +54,6 @@ export function getWebGLSpriteQuadUniforms(gl: WebGL2RenderingContext, program: 
 		texture0: gl.getUniformLocation(program, 'u_texture0')!,
 		texture1: gl.getUniformLocation(program, 'u_texture1')!,
 		texture2: gl.getUniformLocation(program, 'u_texture2')!,
-		parallaxRig: gl.getUniformLocation(program, 'u_parallax_rig')!,
-		parallaxRig2: gl.getUniformLocation(program, 'u_parallax_rig2')!,
-		parallaxFlipWindow: gl.getUniformLocation(program, 'u_parallax_flip_window')!,
 	};
 }
 
@@ -68,9 +62,6 @@ export function bindWebGLSpriteQuadTextureUnits(gl: WebGL2RenderingContext, unif
 	gl.uniform1i(uniforms.texture0, TEXTURE_UNIT_SLOT_PRIMARY);
 	gl.uniform1i(uniforms.texture1, TEXTURE_UNIT_SLOT_SECONDARY);
 	gl.uniform1i(uniforms.texture2, TEXTURE_UNIT_SLOT_SYSTEM);
-	gl.uniform4f(uniforms.parallaxRig, 0, 1, 0, 0);
-	gl.uniform4f(uniforms.parallaxRig2, 0, 1, 1, 0);
-	gl.uniform1f(uniforms.parallaxFlipWindow, 1);
 }
 
 export function bindWebGLUnitQuadCornerAttribute(backend: WebGLBackend, program: WebGLProgram, cornerBuffer: WebGLBuffer): void {
@@ -104,10 +95,15 @@ export function bindWebGLSlotIdAttribute(backend: WebGLBackend, program: WebGLPr
 export function createWebGLInstancedQuadRuntime(backend: WebGLBackend, gl: WebGL2RenderingContext, program: WebGLProgram, capacity: number, instanceFloats: number): WebGLInstancedQuadRuntime {
 	const uniforms = getWebGLSpriteQuadUniforms(gl, program);
 	bindWebGLSpriteQuadTextureUnits(gl, uniforms);
+	const buffers = createWebGLInstanceBuffers(backend, capacity, instanceFloats);
 	return {
 		cornerBuffer: backend.createVertexBuffer(UNIT_QUAD_CORNERS, 'static') as WebGLBuffer,
 		uniforms,
-		...createWebGLInstanceBuffers(backend, capacity, instanceFloats),
+		instanceFloatBuffer: buffers.instanceFloatBuffer,
+		instanceSlotBuffer: buffers.instanceSlotBuffer,
+		floatData: buffers.floatData,
+		slotData: buffers.slotData,
+		capacity: buffers.capacity,
 	};
 }
 

@@ -1,7 +1,5 @@
 #include "machine/devices/vdp/ingress.h"
 
-#include <algorithm>
-
 namespace bmsx {
 
 void VdpStreamIngressUnit::reset() {
@@ -56,7 +54,10 @@ VdpStreamIngressState VdpStreamIngressUnit::captureState() const {
 	state.dmaSubmitActive = dmaSubmitActive;
 	state.fifoWordScratch = fifoWordScratch;
 	state.fifoWordByteCount = fifoWordByteCount;
-	state.fifoStreamWords.assign(fifoStreamWords.begin(), fifoStreamWords.begin() + fifoStreamWordCount);
+	state.fifoStreamWords.resize(fifoStreamWordCount);
+	for (u32 index = 0u; index < fifoStreamWordCount; index += 1u) {
+		state.fifoStreamWords[index] = fifoStreamWords[index];
+	}
 	state.fifoStreamWordCount = fifoStreamWordCount;
 	return state;
 }
@@ -65,7 +66,9 @@ void VdpStreamIngressUnit::restoreState(const VdpStreamIngressState& state) {
 	dmaSubmitActive = state.dmaSubmitActive;
 	fifoWordScratch = state.fifoWordScratch;
 	fifoWordByteCount = state.fifoWordByteCount;
-	std::copy(state.fifoStreamWords.begin(), state.fifoStreamWords.end(), fifoStreamWords.begin());
+	for (u32 index = 0u; index < state.fifoStreamWordCount; index += 1u) {
+		fifoStreamWords[index] = state.fifoStreamWords[index];
+	}
 	fifoStreamWordCount = state.fifoStreamWordCount;
 }
 

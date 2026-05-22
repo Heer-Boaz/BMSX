@@ -18,101 +18,7 @@ namespace bmsx {
 namespace {
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 
-u32 romBaseForPayloadId(const std::optional<std::string>& payloadId) {
-	if (payloadId.has_value()) {
-		if (*payloadId == "system") {
-			return SYSTEM_ROM_BASE;
-		}
-		if (*payloadId == "overlay") {
-			return OVERLAY_ROM_BASE;
-		}
-	}
-	return CART_ROM_BASE;
-}
-
-VdpMeshAlphaMode vdpMeshAlphaModeFromModel(ModelMaterialAlphaMode alphaMode) {
-	switch (alphaMode) {
-		case ModelMaterialAlphaMode::Mask: return VdpMeshAlphaMode::Mask;
-		case ModelMaterialAlphaMode::Blend: return VdpMeshAlphaMode::Blend;
-		case ModelMaterialAlphaMode::Opaque: return VdpMeshAlphaMode::Opaque;
-	}
-	return VdpMeshAlphaMode::Opaque;
-}
-
-VdpMeshSourceMaterial createVdpMeshSourceMaterial(const ModelMaterial& material) {
-	VdpMeshSourceMaterial source;
-	if (material.baseColorFactor.has_value()) {
-		source.baseColorFactor = *material.baseColorFactor;
-	}
-	if (material.metallicFactor.has_value()) {
-		source.metallicFactor = *material.metallicFactor;
-	}
-	if (material.roughnessFactor.has_value()) {
-		source.roughnessFactor = *material.roughnessFactor;
-	}
-	if (material.emissiveFactor.has_value()) {
-		const auto& emissiveFactor = *material.emissiveFactor;
-		source.emissiveFactor = {emissiveFactor[0], emissiveFactor[1], emissiveFactor[2]};
-	}
-	source.alphaMode = vdpMeshAlphaModeFromModel(material.alphaMode);
-	source.alphaCutoff = material.alphaCutoff;
-	source.doubleSided = material.doubleSided;
-	source.unlit = material.unlit;
-	return source;
-}
-
-VdpMeshSourceMesh createVdpMeshSourceMesh(const ModelMesh& mesh) {
-	VdpMeshSourceMesh source;
-	source.positions = &mesh.positions;
-	source.texcoords = &mesh.texcoords;
-	source.normals = &mesh.normals;
-	source.indices = &mesh.indices;
-	source.hasIndices = !mesh.indices.empty();
-	if (mesh.materialIndex.has_value()) {
-		source.materialIndex = static_cast<u32>(*mesh.materialIndex);
-	}
-	source.morphPositions = &mesh.morphPositions;
-	source.morphNormals = &mesh.morphNormals;
-	source.jointIndices = &mesh.jointIndices;
-	source.jointWeights = &mesh.jointWeights;
-	source.colors = &mesh.colors;
-	return source;
-}
-
-VdpMeshSourceModel createVdpMeshSourceModel(const ModelAsset& model) {
-	VdpMeshSourceModel source;
-	source.meshes.reserve(model.meshes.size());
-	for (const ModelMesh& mesh : model.meshes) {
-		source.meshes.push_back(createVdpMeshSourceMesh(mesh));
-	}
-	source.materials.reserve(model.materials.size());
-	for (const ModelMaterial& material : model.materials) {
-		source.materials.push_back(createVdpMeshSourceMaterial(material));
-	}
-	return source;
-}
-
-void registerVdpMeshSourcesFromRomPackage(VdpMeshSourceBank& bank, const RuntimeRomPackage& romPackage) {
-	for (const auto& entry : romPackage.model) {
-		const ModelAsset& model = entry.second;
-		const u32 sourceAddr = romBaseForPayloadId(model.rom.payloadId) + static_cast<u32>(*model.rom.start);
-		bank.registerSource(sourceAddr, createVdpMeshSourceModel(model));
-	}
-}
-
-void configureVdpMeshSourcesFromRuntime(Runtime& runtime, RuntimeRomPackage& activeRom, RuntimeRomPackage& systemRom, RuntimeRomPackage* cartRom) {
-	VdpMeshSourceBank& bank = runtime.machine.vdp.meshSources();
-	bank.clear();
-	registerVdpMeshSourcesFromRomPackage(bank, systemRom);
-	if (cartRom != nullptr) {
-		registerVdpMeshSourcesFromRomPackage(bank, *cartRom);
-	}
-	if (&activeRom != &systemRom && &activeRom != cartRom) {
-		registerVdpMeshSourcesFromRomPackage(bank, activeRom);
-	}
-}
-
-}
+} // namespace
 
 Runtime::Runtime(
 	const RuntimeOptions& options,
@@ -255,7 +161,6 @@ void Runtime::setRuntimeEnvironment(
 	m_activeRomPackage = &activeRom;
 	m_systemRomPackage = &systemRom;
 	m_cartRomPackage = cartRom;
-	configureVdpMeshSourcesFromRuntime(*this, activeRom, systemRom, cartRom);
 }
 
 void Runtime::setLinkedCartEntry(int entryProtoIndex, std::vector<std::string> staticModulePaths) {
@@ -372,12 +277,10 @@ void Runtime::refreshMemoryMapGlobals() {
 	setGlobal("sys_vram_system_slot_base", valueNumber(static_cast<double>(VRAM_SYSTEM_SLOT_BASE)));
 	setGlobal("sys_vram_primary_slot_base", valueNumber(static_cast<double>(VRAM_PRIMARY_SLOT_BASE)));
 	setGlobal("sys_vram_secondary_slot_base", valueNumber(static_cast<double>(VRAM_SECONDARY_SLOT_BASE)));
-	setGlobal("sys_vram_framebuffer_base", valueNumber(static_cast<double>(VRAM_FRAMEBUFFER_BASE)));
 	setGlobal("sys_vram_staging_base", valueNumber(static_cast<double>(VRAM_STAGING_BASE)));
 	setGlobal("sys_vram_system_slot_size", valueNumber(static_cast<double>(VRAM_SYSTEM_SLOT_SIZE)));
 	setGlobal("sys_vram_primary_slot_size", valueNumber(static_cast<double>(VRAM_PRIMARY_SLOT_SIZE)));
 	setGlobal("sys_vram_secondary_slot_size", valueNumber(static_cast<double>(VRAM_SECONDARY_SLOT_SIZE)));
-	setGlobal("sys_vram_framebuffer_size", valueNumber(static_cast<double>(VRAM_FRAMEBUFFER_SIZE)));
 	setGlobal("sys_vram_staging_size", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
 	setGlobal("sys_vram_size", valueNumber(static_cast<double>(machine.vdp.trackedTotalVramBytes())));
 }

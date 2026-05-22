@@ -23,24 +23,17 @@ struct VdpPmuRegisterWindow {
 	u32 control = 0;
 };
 
-struct VdpResolvedBlitPmu {
-	f32 dstX = 0.0f;
-	f32 dstY = 0.0f;
-	f32 scaleX = 1.0f;
-	f32 scaleY = 1.0f;
-};
-
 class VdpPmuUnit {
 public:
+	VdpPmuUnit();
 	void reset();
-	u32 selectedBank() const { return m_selectedBank; }
+	u32 selectedBankIndex() const { return m_selectedBank; }
 	void selectBank(u32 bank);
-	void writeSelectedBankRegister(VdpPmuRegister reg, u32 value);
-	VdpPmuRegisterWindow registerWindow() const;
+	void writeSelectedBankRegister(VdpPmuRegister pmuRegister, u32 value);
+	void writeRegisterWindow(VdpPmuRegisterWindow& target) const;
 	using BankWords = std::array<u32, VDP_PMU_BANK_WORD_COUNT>;
-	BankWords captureBankWords() const;
+	void captureBankWords(BankWords& target) const;
 	void restoreBankWords(u32 selectedBank, const BankWords& words);
-	VdpResolvedBlitPmu resolveBlit(f32 dstX, f32 dstY, f32 scaleX, f32 scaleY, u32 pmuBank, f32 parallaxWeight) const;
 
 private:
 	std::array<VdpPmuBank, VDP_PMU_BANK_COUNT> m_banks{};

@@ -55,7 +55,7 @@ import {
 } from './target_semantics';
 import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_kind';
 import { luaModulo } from '../../lua/numeric';
-import { LUA_INTRINSIC_MEMWRITE, isReservedIntrinsicName } from '../../lua/semantic/common';
+import { LUA_INTRINSIC_MEMWRITE, LUA_INTRINSIC_MEMWRITEF32, isReservedIntrinsicName } from '../../lua/semantic/common';
 
 export type CompiledProgram = {
 	program: Program;
@@ -82,6 +82,8 @@ type CompileError = {
 function reservedIntrinsicUsage(name: string): string {
 	switch (name) {
 		case LUA_INTRINSIC_MEMWRITE:
+			return `${name}(base, ...)`;
+		case LUA_INTRINSIC_MEMWRITEF32:
 			return `${name}(base, ...)`;
 		default:
 			return `${name}(...)`;
@@ -2770,6 +2772,9 @@ class FunctionBuilder {
 				case LUA_INTRINSIC_MEMWRITE:
 					this.compileMemWriteIntrinsic(expression, target, resultCount);
 					return true;
+				case LUA_INTRINSIC_MEMWRITEF32:
+					this.compileMemWriteF32Intrinsic(expression, target, resultCount);
+					return true;
 			}
 		}
 		return false;
@@ -2795,6 +2800,31 @@ class FunctionBuilder {
 			this.compileExpressionInto(expression.arguments[index + 1], valueBase + index, 1);
 		}
 		this.emitMemoryWordStoreSequence(valueBase, valueCount, addrConst, addrReg);
+		if (resultCount > 0) {
+			this.emitLoadNil(target, resultCount);
+		}
+	}
+
+	private compileMemWriteF32Intrinsic(expression: LuaCallExpression, target: number, resultCount: number): void {
+		if (expression.arguments.length < 2) {
+			throw new Error('[Compiler] memwritef32 expects a base address and at least one f32 value.');
+		}
+		const addrExpression = expression.arguments[0];
+		for (let index = 1; index < expression.arguments.length; index += 1) {
+			this.validateMemoryStore(addrExpression, expression.arguments[index]);
+		}
+		const addrReg = this.allocTemp();
+		this.compileExpressionInto(addrExpression, addrReg, 1);
+		const valueReg = this.allocTemp();
+		const stepOperand = this.encodeConstOperand(this.program.constIndex(4));
+		const valueCount = expression.arguments.length - 1;
+		for (let index = 0; index < valueCount; index += 1) {
+			this.compileExpressionInto(expression.arguments[index + 1], valueReg, 1);
+			this.emitMemoryStore(MemoryAccessKind.F32LE, undefined, addrReg, valueReg);
+			if (index + 1 < valueCount) {
+				this.emitABC(OpCode.ADD, addrReg, addrReg, stepOperand, RK_C);
+			}
+		}
 		if (resultCount > 0) {
 			this.emitLoadNil(target, resultCount);
 		}

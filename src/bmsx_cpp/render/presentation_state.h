@@ -24,7 +24,6 @@ public:
 	void clearPresentation();
 	void reset();
 	void requestHeldPresentation();
-	void executeReadyVdpFrameBuffer(Runtime& runtime);
 	void syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence);
 	bool render(ConsoleCore& console, Runtime& runtime, bool heldPresent = false);
 
@@ -33,7 +32,6 @@ private:
 	void recordPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused);
 	void flushDebugReport(const Runtime& runtime);
 	void markPresentation(GameView::PresentationMode mode, bool commitFrame);
-	void executeDisplayVdpFrameBufferReplay(Runtime& runtime);
 	bool consumePresentation(RenderPresentation& outPresentation);
 
 	bool m_pendingPresentation = false;

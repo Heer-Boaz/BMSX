@@ -3,13 +3,25 @@
  */
 
 #include "backend.h"
+#include "render/post/crt/pipeline.h"
+#include "render/host_overlay/pass_registration.h"
+#include "render/host_overlay/gles2/pipeline.h"
+#include "render/gameview.h"
+#include "render/backend/pass/library.h"
+#include "render/backend/gles2/vdp_rpu.h"
+#include "render/3d/axis_gizmo_pipeline.h"
+#include "render/2d/framebuffer_pipeline.h"
+#include "core/console.h"
 #include "render/shared/solid_pixels.h"
 
 #include <array>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
+#include <string_view>
 #include <vector>
+#if defined(__unix__) || defined(__APPLE__)
+#include <dlfcn.h>
+#endif
 
 namespace {
 constexpr bool kGLES2VerboseLog = false;
@@ -71,24 +83,26 @@ bool hasExtensionToken(const char* extensions, const char* needle) {
 	if (extensions == nullptr || needle == nullptr || *needle == '\0') {
 		return false;
 	}
-	const size_t needleLen = std::strlen(needle);
-	if (needleLen == 0 || std::strchr(needle, ' ') != nullptr) {
+	const std::string_view extensionTokens(extensions);
+	const std::string_view token(needle);
+	if (token.empty() || token.find(' ') != std::string_view::npos) {
 		return false;
 	}
-	const char* cursor = extensions;
-	while (true) {
-		const char* match = std::strstr(cursor, needle);
-		if (match == nullptr) {
-			return false;
+	size_t position = 0u;
+	while (position < extensionTokens.size()) {
+		const size_t match = extensionTokens.find(token, position);
+		if (match == std::string_view::npos) {
+			break;
 		}
-		const char* matchEnd = match + needleLen;
-		const bool leftBoundary = (match == extensions) || (match[-1] == ' ');
-		const bool rightBoundary = (*matchEnd == '\0') || (*matchEnd == ' ');
+		const size_t matchEnd = match + token.size();
+		const bool leftBoundary = match == 0u || extensionTokens[match - 1u] == ' ';
+		const bool rightBoundary = matchEnd == extensionTokens.size() || extensionTokens[matchEnd] == ' ';
 		if (leftBoundary && rightBoundary) {
 			return true;
 		}
-		cursor = matchEnd;
+		position = matchEnd;
 	}
+	return false;
 }
 
 }  // namespace
@@ -126,6 +140,124 @@ static const u8* prepareGLES2TextureStorageData(const u8* data, i32 width, i32 h
 	- Performance: keep end-of-frame reset minimal and only call glFinish in strict
 	debug mode.
 */
+
+namespace {
+
+DeviceQuantizePipelineState buildDeviceQuantizeState(const RenderPassDef::RenderGraphPassContext& ctx) {
+	auto* view = ctx.view;
+	DeviceQuantizePipelineState state;
+	writeRenderPassViewportSize(state.width, state.height, state.baseWidth, state.baseHeight, *view);
+	state.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
+	state.ditherType = static_cast<i32>(view->dither_type);
+	return state;
+}
+
+} // namespace
+
+void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
+	GameView* const view = registry.view();
+
+	registerFrameStatePasses(registry);
+
+	registerVdpRpuPass(registry);
+	registerFramebuffer2DPass_GLES2(registry);
+
+	// Device quantize/dither pass (GLES2)
+	{
+		RenderPassDef desc;
+		desc.id = "device_quantize";
+		desc.name = "DeviceQuantize";
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->reads = { RenderPassDef::RenderGraphSlot::FrameColor };
+		desc.graph->writes = { RenderPassDef::RenderGraphSlot::DeviceColor };
+		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
+			return buildDeviceQuantizeState(ctx);
+		};
+		desc.bootstrap = [](GPUBackend* backend) {
+			CRTPipeline::initDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend));
+		};
+		desc.exec = [view](GPUBackend* backend, void* fbo, std::any& state) {
+			(void)fbo;
+			auto& deviceState = std::any_cast<DeviceQuantizePipelineState&>(state);
+			CRTPipeline::renderDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend), view, deviceState);
+		};
+		desc.shouldExecute = [view]() {
+			return static_cast<i32>(view->dither_type) != 0;
+		};
+		registry.registerPass(desc);
+	}
+
+	// Present pass (GLES2, no CRT)
+	{
+		RenderPassDef desc;
+		desc.id = "present";
+		desc.name = "Present";
+		setAutoPresentGraph(desc);
+		desc.bootstrap = [](GPUBackend* backend) {
+			CRTPipeline::initPresentGLES2(static_cast<OpenGLES2Backend*>(backend));
+		};
+		desc.exec = [view](GPUBackend* backend, void*, std::any& state) {
+			auto& crtState = std::any_cast<CRTPipelineState&>(state);
+			CRTPipeline::renderPresentGLES2(static_cast<OpenGLES2Backend*>(backend), view, crtState);
+		};
+		desc.shouldExecute = [view]() {
+			return !view->crt_postprocessing_enabled;
+		};
+		registry.registerPass(desc);
+	}
+
+	// CRT post-processing / present pass (GLES2)
+	{
+		RenderPassDef desc;
+		desc.id = "crt";
+		desc.name = "Present/CRT";
+		setAutoPresentGraph(desc);
+		desc.bootstrap = [](GPUBackend* backend) {
+			CRTPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend));
+		};
+		desc.exec = [view](GPUBackend* backend, void*, std::any& state) {
+			auto& crtState = std::any_cast<CRTPipelineState&>(state);
+			CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), view, crtState);
+		};
+		desc.shouldExecute = [view]() {
+			return view->crt_postprocessing_enabled;
+		};
+		registry.registerPass(desc);
+	}
+
+	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2, shouldRenderAxisGizmo>(registry);
+}
+
+void* OpenGLES2Backend::resolveProcAddress(const char* name) const {
+#if defined(__unix__) || defined(__APPLE__)
+	void* proc = dlsym(RTLD_DEFAULT, name);
+	if (proc) {
+		return proc;
+	}
+	void* eglProc = dlsym(RTLD_DEFAULT, "eglGetProcAddress");
+	if (eglProc) {
+		using EglGetProcAddress = void* (*)(const char*);
+		auto getProcAddress = reinterpret_cast<EglGetProcAddress>(eglProc);
+		return getProcAddress(name);
+	}
+#else
+	(void)name;
+#endif
+	return nullptr;
+}
+
+void* OpenGLES2Backend::resolveProcAddress(const char* coreName, const char* angleName, const char* extName) const {
+	void* proc = resolveProcAddress(coreName);
+	if (proc) {
+		return proc;
+	}
+	proc = resolveProcAddress(angleName);
+	if (proc) {
+		return proc;
+	}
+	return resolveProcAddress(extName);
+}
+
 OpenGLES2Backend::OpenGLES2Backend(i32 width, i32 height)
 	: m_width(width), m_height(height) {}
 
@@ -271,7 +403,9 @@ void OpenGLES2Backend::readTextureRegion(TextureHandle handle, u8* out, i32 widt
 	if (readTarget != out) {
 		std::vector<u8> encoded;
 		convertLinearToSrgb(readTarget, static_cast<size_t>(width) * static_cast<size_t>(height), encoded);
-		std::memcpy(out, encoded.data(), encoded.size());
+		for (size_t index = 0u; index < encoded.size(); ++index) {
+			out[index] = encoded[index];
+		}
 	}
 }
 
@@ -369,6 +503,7 @@ void OpenGLES2Backend::beginFrame() {
 	m_current_fbo = m_backbuffer_fbo;
 	glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
 	glViewport(0, 0, m_width, m_height);
+	glDisable(GL_DITHER);
 	glDisable(GL_SCISSOR_TEST);
 	glDisable(GL_STENCIL_TEST);
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -412,11 +547,15 @@ void OpenGLES2Backend::onContextReset() {
 	m_context_ready = true;
 	m_context_generation += 1u;
 	invalidateTextureBindingCache();
+	glDisable(GL_DITHER);
 	const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
 	m_supports_srgb_textures = hasExtensionToken(extensions, "GL_EXT_sRGB");
+	m_supports_uint_indices = hasExtensionToken(extensions, "GL_OES_element_index_uint");
 	glGenFramebuffers(1, &m_readback_fbo);
 	if (kGLES2VerboseLog) {
-		std::fprintf(stderr, "[BMSX][GLES2] EXT_sRGB=%d\n", m_supports_srgb_textures ? 1 : 0);
+		std::fprintf(stderr, "[BMSX][GLES2] EXT_sRGB=%d OES_element_index_uint=%d\n",
+			m_supports_srgb_textures ? 1 : 0,
+			m_supports_uint_indices ? 1 : 0);
 	}
 }
 
@@ -425,6 +564,7 @@ void OpenGLES2Backend::onContextDestroy() {
 	m_context_generation += 1u;
 	invalidateTextureBindingCache();
 	m_supports_srgb_textures = false;
+	m_supports_uint_indices = false;
 	if (m_readback_fbo != 0) {
 		glDeleteFramebuffers(1, &m_readback_fbo);
 		m_readback_fbo = 0;

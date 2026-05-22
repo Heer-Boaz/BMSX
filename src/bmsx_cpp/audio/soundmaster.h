@@ -23,25 +23,25 @@ public:
 	SoundMaster();
 	~SoundMaster() override = default;
 
-	const Identifier& registryId() const override;
-	bool isRegistryPersistent() const override { return true; }
+	[[nodiscard]] auto registryId() const -> const Identifier& override;
+	[[nodiscard]] auto isRegistryPersistent() const -> bool override { return true; }
 
 
-	f32 masterVolume() const { return m_masterVolume; }
+	[[nodiscard]] auto masterVolume() const -> f32 { return m_masterVolume; }
 	void setMasterVolume(f32 value);
 
 
 	void setMixerUfpsScaled(i64 ufpsScaled);
 	void setLatencyProfile(MixLatencyProfile profile);
-	f64 mixFrameTimeSec() const { return m_mixFrameTimeSec; }
-	f64 mixTargetAheadSec() const { return m_mixTargetAheadSec; }
+	[[nodiscard]] auto mixFrameTimeSec() const -> f64 { return m_mixFrameTimeSec; }
+	[[nodiscard]] auto mixTargetAheadSec() const -> f64 { return m_mixTargetAheadSec; }
 
 private:
-	f32 clampVolume(f32 value) const;
-	f64 profileOverheadSec() const;
+	[[nodiscard]] auto clampVolume(f32 value) const -> f32;
+	[[nodiscard]] auto profileOverheadSec() const -> f64;
 	void recomputeMixTarget();
 
-	f32 m_masterVolume = 1.0f;
+	f32 m_masterVolume = 1.0F;
 	i64 m_mixUfpsScaled;
 	f64 m_mixFrameTimeSec;
 	f64 m_mixTargetAheadSec;

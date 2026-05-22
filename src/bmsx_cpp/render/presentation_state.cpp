@@ -3,7 +3,6 @@
 #include "core/rom_boot_manager.h"
 #include "common/time.h"
 #include "machine/runtime/runtime.h"
-#include "render/backend/pass/framebuffer_execution.h"
 #include "render/backend/pass/library.h"
 #include "render/vdp/framebuffer.h"
 #include "render/vdp/slot_textures.h"
@@ -147,32 +146,6 @@ void RenderPresentationState::requestHeldPresentation() {
 	}
 }
 
-void RenderPresentationState::executeReadyVdpFrameBuffer(Runtime& runtime) {
-	VdpBlitterCommandBuffer* commands = runtime.machine.vdp.readyFrameBufferCommands();
-	if (commands == nullptr) {
-		return;
-	}
-	VdpFrameBufferExecutionPassState state;
-	state.runtime = &runtime;
-	state.commands = commands;
-	state.target = VdpFrameBufferExecutionTarget::ActiveFrame;
-	runtime.view().pipelineRegistry()->setState("vdp_framebuffer_execution", state);
-	runtime.view().pipelineRegistry()->execute("vdp_framebuffer_execution", nullptr);
-}
-
-void RenderPresentationState::executeDisplayVdpFrameBufferReplay(Runtime& runtime) {
-	VdpBlitterCommandBuffer* commands = runtime.machine.vdp.readyDisplayFrameBufferReplayCommands();
-	if (commands == nullptr) {
-		return;
-	}
-	VdpFrameBufferExecutionPassState state;
-	state.runtime = &runtime;
-	state.commands = commands;
-	state.target = VdpFrameBufferExecutionTarget::DisplayReplay;
-	runtime.view().pipelineRegistry()->setState("vdp_framebuffer_execution", state);
-	runtime.view().pipelineRegistry()->execute("vdp_framebuffer_execution", nullptr);
-}
-
 bool RenderPresentationState::consumePresentation(RenderPresentation& outPresentation) {
 	if (!m_pendingPresentation) {
 		return false;
@@ -216,7 +189,6 @@ bool RenderPresentationState::render(ConsoleCore& console, Runtime& runtime, boo
 			: m_presentationScratch.commitFrame;
 		recordPresentation(presentMode, commitFrame, pausedPresent);
 
-		executeDisplayVdpFrameBufferReplay(runtime);
 		runtime.machine.vdp.drainFrameBufferPresentation(console.m_view->vdpFrameBufferTextures());
 		runtime.machine.vdp.drainSurfaceUploads(console.m_view->vdpSlotTextures());
 		commitVdpViewSnapshot(*console.m_view, runtime.machine.vdp.readDeviceOutput());

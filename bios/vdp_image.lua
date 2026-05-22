@@ -1,16 +1,12 @@
 local round_to_nearest<const> = require('bios/util/round_to_nearest')
 local romdir<const> = require('bios/romdir')
-local vdp_stream<const> = require('bios/vdp_stream')
+local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
 
 local vdp_image<const> = {}
 local cache<const> = {}
 
 local atlas_name<const> = function(atlas_id)
 	return string.format('_atlas_%02d', atlas_id)
-end
-
-local resolve_img_record<const> = function(imgid)
-	return romdir.image(imgid)
 end
 
 local slot_atlas_addr<const> = function(slot)
@@ -25,19 +21,16 @@ end
 
 function vdp_image.bind_slot_atlas(slot, atlas_id)
 	if mem[sys_vdp_slot_primary_atlas] == atlas_id then
-		mem[sys_vdp_slot_primary_atlas] = sys_vdp_atlas_none
+		mem[sys_vdp_slot_primary_atlas] = sys_vdp_slot_none
 	end
 	if mem[sys_vdp_slot_secondary_atlas] == atlas_id then
-		mem[sys_vdp_slot_secondary_atlas] = sys_vdp_atlas_none
+		mem[sys_vdp_slot_secondary_atlas] = sys_vdp_slot_none
 	end
 	mem[slot_atlas_addr(slot)] = atlas_id
 end
 
 local require_meta<const> = function(imgid)
-	local record<const> = resolve_img_record(imgid)
-	if record == nil then
-		error('image ROM entry "' .. tostring(imgid) .. '" was not found.')
-	end
+	local record<const> = romdir.image(imgid)
 	local meta<const> = record.imgmeta
 	if meta == nil then
 		error('image ROM entry "' .. tostring(imgid) .. '" missing imgmeta.')
@@ -52,7 +45,7 @@ local require_meta<const> = function(imgid)
 end
 
 local require_atlas_meta<const> = function(atlas_id, imgid)
-	local atlas<const> = resolve_img_record(atlas_name(atlas_id))
+	local atlas<const> = romdir.image(atlas_name(atlas_id))
 	if atlas == nil or atlas.imgmeta == nil then
 		error('atlas ' .. tostring(atlas_id) .. ' for image "' .. tostring(imgid) .. '" was not found.')
 	end
@@ -121,17 +114,17 @@ function vdp_image.write_source(dst, rect)
 	mem[dst + (sys_vdp_arg_stride * 4)] = rect.h
 end
 
-function vdp_image.write_blit_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color, parallax_weight)
+function vdp_image.write_blit_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color)
 	local rect<const> = vdp_image.rect(imgid)
-	vdp_stream.blit_source_color(vdp_image.slot(rect), rect.u, rect.v, rect.w, rect.h, x, y, z, layer, scale_x, scale_y, flip_flags, color, parallax_weight)
+	vdp_rpu_quads.blit_source_color(vdp_image.slot(rect), rect.u, rect.v, rect.w, rect.h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
 end
 
 function vdp_image.write_glyph_color(glyph, x, y, z, layer, color)
-	vdp_image.write_blit_color(glyph.imgid, x, y, z, layer, 1, 1, 0, color, 0)
+	vdp_image.write_blit_color(glyph.imgid, x, y, z, layer, 1, 1, 0, color)
 end
 
 function vdp_image.write_item_color(item, x, y, z, layer, color)
-	vdp_stream.blit_source_color(vdp_image.slot(item), item.u, item.v, item.w, item.h, x, y, z, layer, 1, 1, 0, color, 0)
+	vdp_rpu_quads.blit_source_color(vdp_image.slot(item), item.u, item.v, item.w, item.h, x, y, z, layer, 1, 1, 0, color)
 end
 
 return vdp_image

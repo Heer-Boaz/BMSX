@@ -11,19 +11,19 @@ constexpr int FIX16_SHIFT = 16;
 constexpr i64 FIX16_ONE = i64{1} << FIX16_SHIFT;
 constexpr double FIX16_SCALE = 65536.0;
 
-inline i32 toSignedWord(u32 value) {
+inline auto toSignedWord(u32 value) -> i32 {
 	return static_cast<i32>(value);
 }
 
-inline u32 encodeSignedFix16(f32 value) {
+inline auto encodeSignedFix16(f32 value) -> u32 {
 	return static_cast<u32>(static_cast<i32>(value * static_cast<f32>(FIX16_SCALE)));
 }
 
-inline f32 decodeSignedFix16(u32 value) {
+inline auto decodeSignedFix16(u32 value) -> f32 {
 	return static_cast<f32>(toSignedWord(value)) / static_cast<f32>(FIX16_SCALE);
 }
 
-inline size_t nextPowerOfTwo(size_t value) {
+inline auto nextPowerOfTwo(size_t value) -> size_t {
 	if (value == 0) {
 		return 0;
 	}
@@ -34,7 +34,7 @@ inline size_t nextPowerOfTwo(size_t value) {
 	return power;
 }
 
-inline size_t ceilLog2(size_t value) {
+inline auto ceilLog2(size_t value) -> size_t {
 	size_t log = 0;
 	size_t power = 1;
 	while (power < value) {
@@ -44,23 +44,23 @@ inline size_t ceilLog2(size_t value) {
 	return log;
 }
 
-inline int ceilDiv4(int value) {
+inline auto ceilDiv4(int value) -> int {
 	return (value + 3) >> 2;
 }
 
-inline f32 f32BitsToNumber(u32 bits) {
-	f32 value = 0.0f;
+inline auto f32BitsToNumber(u32 bits) -> f32 {
+	f32 value = 0.0F;
 	std::memcpy(&value, &bits, sizeof(value));
 	return value;
 }
 
-inline u32 numberToF32Bits(f32 value) {
-	u32 bits = 0u;
+inline auto numberToF32Bits(f32 value) -> u32 {
+	u32 bits = 0U;
 	std::memcpy(&bits, &value, sizeof(bits));
 	return bits;
 }
 
-inline i32 saturateI32(i64 value) {
+inline auto saturateI32(i64 value) -> i32 {
 	if (value < static_cast<i64>(std::numeric_limits<i32>::min())) {
 		return std::numeric_limits<i32>::min();
 	}
@@ -70,7 +70,7 @@ inline i32 saturateI32(i64 value) {
 	return static_cast<i32>(value);
 }
 
-inline i32 saturateRoundedI32(double value) {
+inline auto saturateRoundedI32(double value) -> i32 {
 	if (value <= static_cast<double>(std::numeric_limits<i32>::min())) {
 		return std::numeric_limits<i32>::min();
 	}
@@ -89,7 +89,7 @@ inline i32 saturateRoundedI32(double value) {
 	return result;
 }
 
-inline i64 saturatingAdd64(i64 lhs, i64 rhs) {
+inline auto saturatingAdd64(i64 lhs, i64 rhs) -> i64 {
 	if (rhs > 0 && lhs > (std::numeric_limits<i64>::max() - rhs)) {
 		return std::numeric_limits<i64>::max();
 	}
@@ -99,7 +99,7 @@ inline i64 saturatingAdd64(i64 lhs, i64 rhs) {
 	return lhs + rhs;
 }
 
-inline i32 transformFixed16(i32 m0, i32 m1, i32 tx, i32 x, i32 y) {
+inline auto transformFixed16(i32 m0, i32 m1, i32 tx, i32 x, i32 y) -> i32 {
 	i64 accum = 0;
 	accum = saturatingAdd64(accum, static_cast<i64>(m0) * static_cast<i64>(x));
 	accum = saturatingAdd64(accum, static_cast<i64>(m1) * static_cast<i64>(y));

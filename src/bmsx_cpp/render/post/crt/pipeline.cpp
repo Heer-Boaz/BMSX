@@ -63,7 +63,7 @@ struct CRTGLES2State {
 	GLint uniform_blur_intensity = -1;
 	GLint uniform_glow_color = -1;
 	GLint uniform_texture = -1;
-	GLES2ScreenQuad quad;
+	FullscreenQuad quad;
 };
 
 CRTGLES2State g_crt;
@@ -78,7 +78,7 @@ struct DeviceQuantizeGLES2State {
 	GLint uniform_fragscale = -1;
 	GLint uniform_dither_type = -1;
 	GLint uniform_texture = -1;
-	GLES2ScreenQuad quad;
+	FullscreenQuad quad;
 };
 
 DeviceQuantizeGLES2State g_device;
@@ -139,7 +139,7 @@ void main() {
 	if (u_output_srgb) {
 		color.rgb = linear_to_srgb(color.rgb);
 	}
-	gl_FragColor = color;
+	gl_FragColor = vec4(color.rgb, 1.0);
 }
 )";
 
@@ -665,7 +665,7 @@ void initDeviceQuantizeGLES2(OpenGLES2Backend* backend) {
 	g_device.uniform_dither_type = glGetUniformLocation(g_device.program, "u_dither_type");
 	g_device.uniform_texture = glGetUniformLocation(g_device.program, "u_texture");
 
-	createGLES2ScreenQuad(g_device.quad);
+	createFullscreenQuad(g_device.quad);
 
 	glUseProgram(g_device.program);
 	glUniform1i(g_device.uniform_texture, kTexUnitPostProcess);
@@ -701,7 +701,7 @@ void initGLES2(OpenGLES2Backend* backend) {
 	g_crt.uniform_glow_color = glGetUniformLocation(g_crt.program, "u_glowColor");
 	g_crt.uniform_texture = glGetUniformLocation(g_crt.program, "u_texture");
 
-	createGLES2ScreenQuad(g_crt.quad);
+	createFullscreenQuad(g_crt.quad);
 
 	glUseProgram(g_crt.program);
 	// Re-apply sampler binding every draw; shared contexts can clobber uniform state.
@@ -721,9 +721,9 @@ void initGLES2(OpenGLES2Backend* backend) {
 void shutdownGLES2(OpenGLES2Backend* backend) {
 	(void)backend;
 	if (g_crt.program != 0) glDeleteProgram(g_crt.program);
-	destroyGLES2ScreenQuad(g_crt.quad);
+	destroyFullscreenQuad(g_crt.quad);
 	if (g_device.program != 0) glDeleteProgram(g_device.program);
-	destroyGLES2ScreenQuad(g_device.quad);
+	destroyFullscreenQuad(g_device.quad);
 	if (g_present.program != 0) glDeleteProgram(g_present.program);
 	if (g_present.vbo_pos != 0) glDeleteBuffers(1, &g_present.vbo_pos);
 	if (g_present.vbo_uv != 0) glDeleteBuffers(1, &g_present.vbo_uv);
@@ -806,7 +806,7 @@ static void renderPresentQuadGLES2(
 
 void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state) {
 	(void)context;
-	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, true, true, true, false);
+	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, true, true, false, false);
 }
 
 void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, const DeviceQuantizePipelineState& state) {
@@ -815,13 +815,13 @@ void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, con
 	glUseProgram(g_device.program);
 	glUniform1i(g_device.uniform_texture, kTexUnitPostProcess);
 
-	updateGLES2PostProcessQuad(g_device.quad, state.width, state.height);
+	updateFullscreenQuad(g_device.quad, state.width, state.height);
 
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_BLEND);
 
-	bindGLES2ScreenQuad(g_device.quad, g_device.attrib_pos, g_device.attrib_uv);
+	bindFullscreenQuad(g_device.quad, g_device.attrib_pos, g_device.attrib_uv);
 
 	glUniform2f(g_device.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
 	glUniform2f(g_device.uniform_src_resolution, static_cast<float>(state.baseWidth), static_cast<float>(state.baseHeight));
@@ -848,7 +848,7 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
 						static_cast<unsigned>(srcTex->id), state.width,
 						state.height, state.baseWidth, state.baseHeight);
 	}
-	updateGLES2PostProcessQuad(g_crt.quad, state.width, state.height);
+	updateFullscreenQuad(g_crt.quad, state.width, state.height);
 
 	backend->setRenderTarget(backend->backbuffer(), state.width, state.height);
 
@@ -856,7 +856,7 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_BLEND);
 
-	bindGLES2ScreenQuad(g_crt.quad, g_crt.attrib_pos, g_crt.attrib_uv);
+	bindFullscreenQuad(g_crt.quad, g_crt.attrib_pos, g_crt.attrib_uv);
 
 	glUniform2f(g_crt.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
 	glUniform2f(g_crt.uniform_src_resolution, static_cast<float>(state.baseWidth), static_cast<float>(state.baseHeight));

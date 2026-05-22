@@ -21,8 +21,6 @@ import {
 	SYSTEM_ROM_BASE,
 	VDP_STREAM_BUFFER_BASE,
 	VDP_STREAM_CAPACITY_WORDS,
-	VRAM_FRAMEBUFFER_BASE,
-	VRAM_FRAMEBUFFER_SIZE,
 	VRAM_PRIMARY_SLOT_BASE,
 	VRAM_PRIMARY_SLOT_SIZE,
 	VRAM_SECONDARY_SLOT_BASE,
@@ -369,18 +367,10 @@ import {
 	IO_VDP_FAULT_CODE,
 	IO_VDP_FAULT_DETAIL,
 	IO_VDP_FAULT_ACK,
-	IO_VDP_SLOT_PRIMARY_ATLAS,
-	IO_VDP_SLOT_SECONDARY_ATLAS,
-	IO_VDP_CMD,
-	IO_VDP_CMD_ARG_COUNT,
+	IO_VDP_SLOT_PRIMARY,
+	IO_VDP_SLOT_SECONDARY,
 	IO_VDP_FIFO,
 	IO_VDP_FIFO_CTRL,
-	IO_VDP_PMU_BANK,
-	IO_VDP_PMU_CTRL,
-	IO_VDP_PMU_SCALE_X,
-	IO_VDP_PMU_SCALE_Y,
-	IO_VDP_PMU_X,
-	IO_VDP_PMU_Y,
 	IO_VDP_RD_DATA,
 	IO_VDP_RD_MODE,
 	IO_VDP_RD_STATUS,
@@ -388,9 +378,6 @@ import {
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_STATUS,
-	IO_VDP_SBX_COMMIT,
-	IO_VDP_SBX_CONTROL,
-	IO_VDP_SBX_FACE0,
 	IRQ_DMA_DONE,
 	IRQ_DMA_ERROR,
 	IRQ_APU,
@@ -412,14 +399,6 @@ import {
 	VDP_FAULT_SUBMIT_STATE,
 	VDP_FAULT_CMD_BAD_DOORBELL,
 	VDP_FAULT_SUBMIT_BUSY,
-	VDP_FAULT_DEX_INVALID_LINE_WIDTH,
-	VDP_FAULT_DEX_INVALID_SCALE,
-	VDP_FAULT_DEX_SOURCE_OOB,
-	VDP_FAULT_DEX_SOURCE_SLOT,
-	VDP_FAULT_SBX_SOURCE_OOB,
-	VDP_FAULT_BBU_OVERFLOW,
-	VDP_FAULT_BBU_SOURCE_OOB,
-	VDP_FAULT_BBU_ZERO_SIZE,
 	VDP_FAULT_VRAM_SLOT_DIM,
 	VDP_FAULT_VRAM_WRITE_OOB,
 	VDP_FAULT_VRAM_WRITE_UNALIGNED,
@@ -429,7 +408,6 @@ import {
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
 	VDP_SLOT_NONE,
-	VDP_SLOT_ATLAS_NONE,
 	VDP_SLOT_PRIMARY,
 	VDP_SLOT_SECONDARY,
 	VDP_SLOT_SYSTEM,
@@ -437,7 +415,6 @@ import {
 	VDP_STATUS_SUBMIT_BUSY,
 	VDP_STATUS_SUBMIT_REJECTED,
 	VDP_STATUS_VBLANK,
-	VDP_SBX_COMMIT_WRITE,
 } from '../devices/vdp/contracts';
 
 import {
@@ -1422,26 +1399,14 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_geo_scratch_size', GEO_SCRATCH_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.timing.cycleBudgetPerFrame);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_dither', IO_VDP_DITHER);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_primary_atlas', IO_VDP_SLOT_PRIMARY_ATLAS);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_secondary_atlas', IO_VDP_SLOT_SECONDARY_ATLAS);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_atlas_none', VDP_SLOT_ATLAS_NONE);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd', IO_VDP_CMD);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_arg_count', IO_VDP_CMD_ARG_COUNT);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_primary_atlas', IO_VDP_SLOT_PRIMARY);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_secondary_atlas', IO_VDP_SLOT_SECONDARY);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_none', VDP_SLOT_NONE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_stream_base', VDP_STREAM_BUFFER_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_stream_capacity', VDP_STREAM_CAPACITY_WORDS);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo', IO_VDP_FIFO);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl', IO_VDP_FIFO_CTRL);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl_seal', VDP_FIFO_CTRL_SEAL);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_bank', IO_VDP_PMU_BANK);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_x', IO_VDP_PMU_X);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_y', IO_VDP_PMU_Y);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_scale_x', IO_VDP_PMU_SCALE_X);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_scale_y', IO_VDP_PMU_SCALE_Y);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_pmu_ctrl', IO_VDP_PMU_CTRL);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_sbx_control', IO_VDP_SBX_CONTROL);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_sbx_faces', IO_VDP_SBX_FACE0);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_sbx_commit', IO_VDP_SBX_COMMIT);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_sbx_commit_write', VDP_SBX_COMMIT_WRITE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_primary', VDP_SLOT_PRIMARY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_secondary', VDP_SLOT_SECONDARY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_slot_system', VDP_SLOT_SYSTEM);
@@ -1476,14 +1441,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_submit_state', VDP_FAULT_SUBMIT_STATE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_cmd_bad_doorbell', VDP_FAULT_CMD_BAD_DOORBELL);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_submit_busy', VDP_FAULT_SUBMIT_BUSY);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_dex_invalid_scale', VDP_FAULT_DEX_INVALID_SCALE);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_dex_invalid_line_width', VDP_FAULT_DEX_INVALID_LINE_WIDTH);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_dex_source_slot', VDP_FAULT_DEX_SOURCE_SLOT);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_dex_source_oob', VDP_FAULT_DEX_SOURCE_OOB);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_sbx_source_oob', VDP_FAULT_SBX_SOURCE_OOB);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_bbu_zero_size', VDP_FAULT_BBU_ZERO_SIZE);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_bbu_overflow', VDP_FAULT_BBU_OVERFLOW);
-	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_bbu_source_oob', VDP_FAULT_BBU_SOURCE_OOB);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_world', 0);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ui', 1);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ide', 2);
@@ -1655,12 +1612,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vram_system_slot_base', VRAM_SYSTEM_SLOT_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_slot_base', VRAM_PRIMARY_SLOT_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_slot_base', VRAM_SECONDARY_SLOT_BASE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_base', VRAM_FRAMEBUFFER_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_staging_base', VRAM_STAGING_BASE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_system_slot_size', VRAM_SYSTEM_SLOT_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_primary_slot_size', VRAM_PRIMARY_SLOT_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_secondary_slot_size', VRAM_SECONDARY_SLOT_SIZE);
-	luaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_size', VRAM_FRAMEBUFFER_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.vramTotalBytes());
 	luaPipeline.registerGlobal(runtime, 'irq_dma_done', IRQ_DMA_DONE);

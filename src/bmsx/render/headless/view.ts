@@ -114,6 +114,7 @@ export class HeadlessGameViewHost implements GameViewHost {
 	private readonly overlays = new Map<string, HeadlessOverlay>();
 	private readonly presentedFrameListeners = new Set<(frame: HeadlessPresentedFrame) => void>();
 	private readonly presentSurface = new HeadlessPresentSurface();
+	private readonly presentedFrameScratch: HeadlessPresentedFrame = { frameIndex: 0, width: 0, height: 0 };
 	private presentedFrameIndex = 0;
 	private readonly viewportCapability: ViewportMetricsProvider;
 	private readonly overlayCapability: OverlayManager;
@@ -175,11 +176,10 @@ export class HeadlessGameViewHost implements GameViewHost {
 
 	public presentFrameBuffer(frame: HeadlessPresentedFrameBuffer): void {
 		this.presentSurface.present2D(frame.pixels, frame.srcWidth, frame.srcHeight, frame.dstWidth, frame.dstHeight);
-		const presentedFrame: HeadlessPresentedFrame = {
-			frameIndex: this.presentedFrameIndex,
-			width: frame.dstWidth,
-			height: frame.dstHeight,
-		};
+		const presentedFrame = this.presentedFrameScratch;
+		presentedFrame.frameIndex = this.presentedFrameIndex;
+		presentedFrame.width = frame.dstWidth;
+		presentedFrame.height = frame.dstHeight;
 		this.presentedFrameIndex += 1;
 		for (const listener of this.presentedFrameListeners) {
 			listener(presentedFrame);
@@ -204,9 +204,8 @@ export class HeadlessGameViewHost implements GameViewHost {
 		};
 	}
 
-	public copyPresentedFramePixels(): Uint8Array {
-		const pixels = this.presentSurface.copyPixels();
-		return pixels;
+	public borrowPresentedFramePixels(): Uint8Array {
+		return this.presentSurface.borrowPixels();
 	}
 
 	public get presentedFrameWidth(): number {

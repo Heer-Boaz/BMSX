@@ -386,7 +386,7 @@ export const M4 = {
 		out[3] = 0; out[7] = 0; out[11] = 0; out[15] = 1; return out;
 	},
 
-	skyboxFromViewInto(out: Mat4Float32, view: Mat4Float32): Mat4Float32 {
+	viewRotationInverseFromViewInto(out: Mat4Float32, view: Mat4Float32): Mat4Float32 {
 		const a00 = view[0], a01 = view[4], a02 = view[8];
 		const a10 = view[1], a11 = view[5], a12 = view[9];
 		const a20 = view[2], a21 = view[6], a22 = view[10];

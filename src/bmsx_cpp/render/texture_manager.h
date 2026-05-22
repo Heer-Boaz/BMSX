@@ -13,19 +13,25 @@ public:
 	explicit TextureManager(GPUBackend* backend);
 	~TextureManager();
 
-	static TextureManager& instance();
+	// Non-copyable and non-movable
+	TextureManager(const TextureManager&) = delete;
+	TextureManager& operator=(const TextureManager&) = delete;
+	TextureManager(TextureManager&&) = delete;
+	TextureManager& operator=(TextureManager&&) = delete;
+
+	static auto instance() -> TextureManager&;
 
 	void setBackend(GPUBackend* backend);
-	TextureKey makeKey(const std::string& uri, const TextureParams& desc = {}) const;
+	auto makeKey(const std::string& uri, const TextureParams& desc = {}) const -> TextureKey;
 
-	TextureHandle createTextureFromPixelsSync(const std::string& keyBase,
+	auto createTextureFromPixelsSync(const std::string& keyBase,
 											const u8* pixels,
 											i32 width,
 											i32 height,
-											const TextureParams& desc = {});
-	TextureHandle resizeTextureForKey(const std::string& keyBase, i32 width, i32 height, const TextureParams& desc = {});
-	TextureHandle getTexture(const TextureKey& key) const;
-	TextureHandle getTextureByUri(const std::string& uri, const TextureParams& desc = {}) const;
+											const TextureParams& desc = {}) -> TextureHandle;
+	auto resizeTextureForKey(const std::string& keyBase, i32 width, i32 height, const TextureParams& desc = {}) -> TextureHandle;
+	auto getTexture(const TextureKey& key) const -> TextureHandle;
+	auto getTextureByUri(const std::string& uri, const TextureParams& desc = {}) const -> TextureHandle;
 	void swapTextureHandlesByUri(const std::string& uriA, const std::string& uriB, const TextureParams& descA = {}, const TextureParams& descB = {});
 	void clear();
 

@@ -38,9 +38,9 @@ struct InputEvt {
 	InputEvtType type = InputEvtType::ButtonDown;
 	std::string deviceId;
 	std::string code;
-	f32 value = 0.0f;
-	f32 x = 0.0f;
-	f32 y = 0.0f;
+	f32 value = 0.0F;
+	f32 x = 0.0F;
+	f32 y = 0.0F;
 };
 
 /* ============================================================================
@@ -50,8 +50,8 @@ struct InputEvt {
 struct ViewportDimensions {
 	i32 width = 0;
 	i32 height = 0;
-	f32 viewportScale = 1.0f;
-	f32 canvasScale = 1.0f;
+	f32 viewportScale = 1.0F;
+	f32 canvasScale = 1.0F;
 };
 
 /* ============================================================================
@@ -72,9 +72,9 @@ enum class LogLevel {
 class Clock {
 public:
 	virtual ~Clock() = default;
-	virtual f64 now() = 0;       // Current time in milliseconds
-	virtual f64 origin() = 0;    // Start time
-	virtual f64 elapsed() = 0;   // Time since origin
+	virtual auto now() -> f64 = 0;       // Current time in milliseconds
+	virtual auto origin() -> f64 = 0;    // Start time
+	virtual auto elapsed() -> f64 = 0;   // Time since origin
 };
 
 /* ============================================================================
@@ -86,7 +86,7 @@ public:
 	virtual ~FrameLoop() = default;
 	virtual void start(std::function<void(f64 now, f64 dt)> callback) = 0;
 	virtual void stop() = 0;
-	virtual bool isRunning() = 0;
+	virtual auto isRunning() -> bool = 0;
 };
 
 /* ============================================================================
@@ -96,7 +96,7 @@ public:
 class Lifecycle {
 public:
 	virtual ~Lifecycle() = default;
-	virtual SubscriptionHandle onWillExit(std::function<void()> handler) = 0;
+	virtual auto onWillExit(std::function<void()> handler) -> SubscriptionHandle = 0;
 };
 
 /* ============================================================================
@@ -106,8 +106,8 @@ public:
 class InputHub {
 public:
 	virtual ~InputHub() = default;
-	virtual SubscriptionHandle subscribe(std::function<void(const InputEvt&)> handler) = 0;
-	virtual std::optional<InputEvt> nextEvt() = 0;
+	virtual auto subscribe(std::function<void(const InputEvt&)> handler) -> SubscriptionHandle = 0;
+	virtual auto nextEvt() -> std::optional<InputEvt> = 0;
 	virtual void clearEvtQ() = 0;
 };
 
@@ -118,14 +118,14 @@ public:
 class GameViewHost {
 public:
 	virtual ~GameViewHost() = default;
-	virtual void* getCapability(std::string_view name) = 0;
-	virtual ViewportDimensions getSize(Vec2 viewportSize, Vec2 canvasSize) = 0;
-	virtual SubscriptionHandle onResize(std::function<void(const ViewportDimensions&)> handler) = 0;
-	virtual SubscriptionHandle onFocusChange(std::function<void(bool)> handler) = 0;
+	virtual auto getCapability(std::string_view name) -> void* = 0;
+	virtual auto getSize(Vec2 viewportSize, Vec2 canvasSize) -> ViewportDimensions = 0;
+	virtual auto onResize(std::function<void(const ViewportDimensions&)> handler) -> SubscriptionHandle = 0;
+	virtual auto onFocusChange(std::function<void(bool)> handler) -> SubscriptionHandle = 0;
 
 	// Create a GPU backend for rendering (platform-specific implementation)
 	// Returns nullptr if the platform doesn't provide its own backend
-	virtual std::unique_ptr<GPUBackend> createBackend() { return nullptr; } // Dummy implementation
+	virtual auto createBackend() -> std::unique_ptr<GPUBackend> { return nullptr; } // Dummy implementation
 };
 
 /* ============================================================================
@@ -147,14 +147,14 @@ class Platform {
 public:
 	virtual ~Platform() = default;
 
-	virtual Clock* clock() = 0;
-	virtual FrameLoop* frameLoop() = 0;
-	virtual Lifecycle* lifecycle() = 0;
-	virtual InputHub* inputHub() = 0;
-	virtual GameViewHost* gameviewHost() = 0;
-	virtual MicrotaskQueue* microtaskQueue() = 0;
+	virtual auto clock() -> Clock* = 0;
+	virtual auto frameLoop() -> FrameLoop* = 0;
+	virtual auto lifecycle() -> Lifecycle* = 0;
+	virtual auto inputHub() -> InputHub* = 0;
+	virtual auto gameviewHost() -> GameViewHost* = 0;
+	virtual auto microtaskQueue() -> MicrotaskQueue* = 0;
 	virtual void requestShutdown() = 0;
-	virtual std::string_view type() = 0;
+	virtual auto type() -> std::string_view = 0;
 	virtual void log(LogLevel level, std::string_view message) = 0;
 };
 
@@ -176,7 +176,7 @@ public:
 	DefaultLifecycle();
 	~DefaultLifecycle() override;
 
-	SubscriptionHandle onWillExit(std::function<void()> handler) override;
+	auto onWillExit(std::function<void()> handler) -> SubscriptionHandle override;
 	void triggerExit();
 
 private:

@@ -8,9 +8,7 @@
 #include "machine/memory/memory.h"
 #include "machine/scheduler/budget.h"
 #include "platform/platform.h"
-#include "vendor/stb_image.h"
 
-#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -279,35 +277,16 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 	const uint64_t token = m_decodeToken + 1;
 	m_decodeToken = token;
 	m_microtasks.queueMicrotask([this, dst, targetCapacity, token, buffer = std::move(buffer)]() mutable {
-		int width = 0;
-		int height = 0;
-		int comp = 0;
-		unsigned char* pixels = stbi_load_from_memory(
-			buffer.data(),
-			static_cast<int>(buffer.size()),
-			&width,
-			&height,
-			&comp,
-			STBI_rgb_alpha
-		);
-		(void)comp;
-		if (!pixels || width <= 0 || height <= 0) {
-			if (pixels) {
-				stbi_image_free(pixels);
-			}
+		DecodedImage result;
+		try {
+			result = decodePngToRgba(buffer.data(), buffer.size());
+		} catch (...) {
 			if (token == m_decodeToken) {
 				m_pendingError = std::make_exception_ptr(imageDecoderFault("PNG decode failed."));
 				scheduleNextService(m_scheduler.currentNowCycles());
 			}
 			return;
 		}
-		const size_t byteCount = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
-		DecodedImage result;
-		result.width = static_cast<uint32_t>(width);
-		result.height = static_cast<uint32_t>(height);
-		result.pixels.resize(byteCount);
-		std::memcpy(result.pixels.data(), pixels, byteCount);
-		stbi_image_free(pixels);
 		if (token == m_decodeToken) {
 			m_pendingResult = std::move(result);
 			m_pendingTargetBase = dst;

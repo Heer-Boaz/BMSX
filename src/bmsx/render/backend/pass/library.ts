@@ -13,6 +13,7 @@ interface RegisteredPassRec {
 	exec: (backend: AnyBackend, fbo: unknown, state: unknown, pipelineHandle: RenderPassInstanceHandle | null) => void;
 	prepare?: (backend: AnyBackend, state: unknown) => void;
 	pipelineHandle: RenderPassInstanceHandle | null;
+	passEncoder: PassEncoder;
 	state?: unknown;
 	bindingLayout?: RenderPassDef['bindingLayout'];
 	present?: boolean;
@@ -26,7 +27,7 @@ export class RenderPassLibrary {
 		view: {
 			camPos: new Float32Array(3),
 			viewProj: new Float32Array(16),
-			skyboxView: new Float32Array(16),
+			viewRotationInverse: new Float32Array(16),
 			proj: new Float32Array(16),
 		},
 		lighting: {
@@ -77,17 +78,24 @@ export class RenderPassLibrary {
 				vsCode: desc.vsCode,
 				fsCode: desc.fsCode,
 				bindingLayout: desc.bindingLayout,
-				usesDepth: !!(desc.writesDepth || desc.depthTest),
+				usesDepth: !!(desc.writesDepth || desc.depthTest), // TODO: HAAL ALIASING WEG!!!!!
 				depthTest: !!desc.depthTest,
 				depthWrite: desc.depthWrite ?? !!desc.writesDepth,
 			});
 		}
-		const rec: RegisteredPassRec = { id: idStr, exec: desc.exec, prepare: desc.prepare, pipelineHandle, bindingLayout: desc.bindingLayout, present: !!desc.present };
+		const rec: RegisteredPassRec = {
+			id: idStr,
+			exec: desc.exec,
+			prepare: desc.prepare,
+			pipelineHandle,
+			passEncoder: { fbo: null, desc: { label: idStr } as RenderPassDesc },
+			bindingLayout: desc.bindingLayout,
+			present: !!desc.present,
+		};
 		// One-time bootstrap for GPU resources
 		if (desc.bootstrap) {
 			if (pipelineHandle && this.backend.bindRenderPassPipeline) {
-				const stubPass: PassEncoder = { fbo: null, desc: { label: desc.id } as RenderPassDesc };
-				this.backend.bindRenderPassPipeline(stubPass, pipelineHandle, desc.bindingLayout);
+				this.backend.bindRenderPassPipeline(rec.passEncoder, pipelineHandle, desc.bindingLayout);
 			}
 			desc.bootstrap(this.backend);
 		}
@@ -107,11 +115,12 @@ export class RenderPassLibrary {
 		const p = this.registered.get(String(id)); if (!p) throw new Error(`Render pass '${id}' not found`);
 		const backend = this.backend;
 		if (p.pipelineHandle) {
-			const stubPass: PassEncoder = { fbo, desc: { label: id } as RenderPassDesc };
+			const passEncoder = p.passEncoder;
+			passEncoder.fbo = fbo;
 			if (backend.bindRenderPassPipeline) {
-				backend.bindRenderPassPipeline(stubPass, p.pipelineHandle, p.bindingLayout);
+				backend.bindRenderPassPipeline(passEncoder, p.pipelineHandle, p.bindingLayout);
 			} else {
-				backend.setGraphicsPipeline(stubPass, p.pipelineHandle);
+				backend.setGraphicsPipeline(passEncoder, p.pipelineHandle);
 			}
 		}
 		p.prepare?.(backend, p.state);
@@ -165,22 +174,22 @@ export class RenderPassLibrary {
 			deviceColorEnabled,
 		};
 
-			rg.addPass({
-				name: 'FrameTargets',
-				setup: (io) => {
-					const color = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'FrameColor' });
-					const depth = io.createTex({ width: offscreenWidth, height: offscreenHeight, depth: true, name: 'FrameDepth' });
-					deviceColorHandle = null;
-					if (deviceColorEnabled) {
-						deviceColorHandle = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'DeviceColor', transient: true });
-					}
-					io.exportToBackbuffer(color);
-					frameColorHandle = color;
-					frameDepthHandle = depth;
-					return null;
-				},
-				execute: () => { },
-			});
+		rg.addPass({
+			name: 'FrameTargets',
+			setup: (io) => {
+				const color = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'FrameColor' });
+				const depth = io.createTex({ width: offscreenWidth, height: offscreenHeight, depth: true, name: 'FrameDepth' });
+				deviceColorHandle = null;
+				if (deviceColorEnabled) {
+					deviceColorHandle = io.createTex({ width: offscreenWidth, height: offscreenHeight, name: 'DeviceColor', transient: true });
+				}
+				io.exportToBackbuffer(color);
+				frameColorHandle = color;
+				frameDepthHandle = depth;
+				return null;
+			},
+			execute: () => { },
+		});
 
 		rg.addPass({
 			name: 'FrameClear',
@@ -218,7 +227,7 @@ export class RenderPassLibrary {
 				const frameShared = this.frameSharedState;
 				frameShared.view.camPos = transform.eye;
 				frameShared.view.viewProj = transform.viewProj;
-				frameShared.view.skyboxView = transform.skyboxView;
+				frameShared.view.viewRotationInverse = transform.viewRotationInverse;
 				frameShared.view.proj = transform.proj;
 				frameShared.lighting = lighting;
 				frameShared.fog.fogD50 = gv.atmosphere.fogD50;
@@ -257,8 +266,8 @@ export class RenderPassLibrary {
 						transform.eye,
 					);
 				}
-				},
-			});
+			},
+		});
 
 		// Build pass sequence from registry
 		for (const desc of passList) {
@@ -294,8 +303,8 @@ export class RenderPassLibrary {
 						const passId = desc.id as RenderPassStateId;
 						this.setState(passId, builtState);
 					}
-						if (data.present) {
-							this.execute(desc.id, null);
+					if (data.present) {
+						this.execute(desc.id, null);
 					} else if (isStateOnly) {
 						// Even for state-only passes, route through execute() to keep behavior uniform.
 						this.execute(desc.id, null);

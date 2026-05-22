@@ -47,7 +47,6 @@ type ImageRenderSubmissionBase = {
 	ambient_affected: boolean;
 	ambient_factor: number;
 	layer: Layer2D;
-	parallax_weight: number;
 };
 
 export type ImgRenderSubmission = ImageRenderSubmissionBase & {

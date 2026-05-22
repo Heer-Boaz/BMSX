@@ -19,18 +19,9 @@ import {
 	SYSTEM_SLOT_TEXTURE_KEY,
 } from 'bmsx/rompack/format';
 import {
-	SKYBOX_FACE_COUNT,
-	VDP_BBU_BILLBOARD_LIMIT,
 	VDP_JTU_REGISTER_WORDS,
-	VDP_MDU_MESH_LIMIT,
 	VDP_MFU_WEIGHT_COUNT,
 } from '../machine/devices/vdp/contracts';
-import {
-	VDP_EMPTY_MESH_SOURCE_MATERIAL,
-	VDP_EMPTY_MESH_SOURCE_MESH,
-	type VdpMeshSourceMaterial,
-	type VdpMeshSourceMesh,
-} from '../machine/devices/vdp/mesh_source';
 import { VDP_LPU_DIRECTIONAL_LIGHT_LIMIT, VDP_LPU_POINT_LIGHT_LIMIT, VDP_LPU_REGISTER_WORDS } from '../machine/devices/vdp/lpu';
 import { VDP_XF_MATRIX_REGISTER_WORDS } from '../machine/devices/vdp/xf';
 import { createVdpTransformSnapshot } from './vdp/transform';
@@ -39,8 +30,7 @@ import type { VdpRpuFrameOutput } from '../machine/devices/vdp/rpu';
 import type { VdpSlotTextures } from './vdp/slot_textures';
 import { renderGate } from 'bmsx/core/taskgate';
 
-const PRESENTATION_PASS_IDS = ['skybox', 'mesh', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
-const VDP_BBU_BILLBOARD_VEC4_CAPACITY = VDP_BBU_BILLBOARD_LIMIT * 4;
+const PRESENTATION_PASS_IDS = ['vdp_rpu', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay', 'host_menu'];
 
 interface GameViewOpts {
 	host: GameViewHost;
@@ -92,34 +82,10 @@ export class GameView implements RenderContext {
 	private lightingSystem: LightingSystem = null;
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
-	public skyboxRenderReady = false;
-	public readonly skyboxFaceUvRects = new Float32Array(SKYBOX_FACE_COUNT * 4);
-	public readonly skyboxFaceSlotBindings = new Int32Array(SKYBOX_FACE_COUNT);
-	public readonly skyboxFaceSurfaceIds = new Uint32Array(SKYBOX_FACE_COUNT);
-	public readonly skyboxFaceSizes = new Int32Array(SKYBOX_FACE_COUNT * 2);
 	public readonly vdpTransform = createVdpTransformSnapshot();
 	public readonly vdpXfMatrixWords = new Uint32Array(VDP_XF_MATRIX_REGISTER_WORDS);
 	public vdpFrameBufferTextures!: VdpFrameBufferTextures;
 	public vdpSlotTextures!: VdpSlotTextures;
-	public readonly vdpBillboardPositionSize = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
-	public readonly vdpBillboardColor = new Uint32Array(VDP_BBU_BILLBOARD_LIMIT);
-	public readonly vdpBillboardUvRect = new Float32Array(VDP_BBU_BILLBOARD_VEC4_CAPACITY);
-	public readonly vdpBillboardSlot = new Int32Array(VDP_BBU_BILLBOARD_LIMIT);
-	public readonly vdpBillboardSurfaceId = new Uint32Array(VDP_BBU_BILLBOARD_LIMIT);
-	public vdpBillboardCount = 0;
-	public readonly vdpMeshSourceAddr = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly vdpMeshSourceMesh = new Array<VdpMeshSourceMesh>(VDP_MDU_MESH_LIMIT).fill(VDP_EMPTY_MESH_SOURCE_MESH);
-	public readonly vdpMeshSourceMaterial = new Array<VdpMeshSourceMaterial>(VDP_MDU_MESH_LIMIT).fill(VDP_EMPTY_MESH_SOURCE_MATERIAL);
-	public readonly vdpMeshIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly vdpMeshMaterialIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly vdpMeshModelMatrixIndex = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly vdpMeshControl = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly vdpMeshColor = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly vdpMeshMorphBase = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly vdpMeshMorphCount = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly vdpMeshJointBase = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public readonly vdpMeshJointCount = new Uint32Array(VDP_MDU_MESH_LIMIT);
-	public vdpMeshCount = 0;
 	public readonly vdpLightRegisterWords = new Uint32Array(VDP_LPU_REGISTER_WORDS);
 	public readonly vdpAmbientLightColorIntensity = new Float32Array(4);
 	public readonly vdpDirectionalLightDirections = new Float32Array(VDP_LPU_DIRECTIONAL_LIGHT_LIMIT * 3);
@@ -133,6 +99,7 @@ export class GameView implements RenderContext {
 	public readonly vdpMorphWeightWords = new Uint32Array(VDP_MFU_WEIGHT_COUNT);
 	public readonly vdpJointMatrixWords = new Uint32Array(VDP_JTU_REGISTER_WORDS);
 	public vdpRpuFrame!: VdpRpuFrameOutput;
+	public presentWorkbenchFrameBufferTexture = false;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationEnabled = true;
 	// Active texture unit cache
@@ -501,7 +468,7 @@ export class GameView implements RenderContext {
 		this.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY] = fallback;
 		this.textures['_slot_fallback'] = fallback;
 		this.textures[SYSTEM_SLOT_TEXTURE_KEY] = fallback;
-		// Default material textures for meshes
+		// Default material textures for imported model assets
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, 0xffffffff);
 		// Normal map default (0.5,0.5,1.0)
 		this.textures['_default_normal'] = this.backend.createSolidTexture2D(1, 1, 0xff7f7fff);

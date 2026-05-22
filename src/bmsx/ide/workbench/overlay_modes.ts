@@ -1,6 +1,5 @@
 import { consoleCore } from '../../core/console';
 import { Input } from '../../input/manager';
-import { shallowcopy } from '../../common/shallowcopy';
 import type { Runtime } from '../../machine/runtime/runtime';
 
 type RenderTargetVec2 = { x: number; y: number };
@@ -30,9 +29,9 @@ function getRenderTargetState(runtime: Runtime): RenderTargetState {
 function captureCurrentTargets(): RenderTargetSnapshot {
 	const view = consoleCore.view;
 	return {
-		viewportSize: shallowcopy(view.viewportSize),
-		canvasSize: shallowcopy(view.canvasSize),
-		offscreenSize: shallowcopy(view.offscreenCanvasSize),
+		viewportSize: { x: view.viewportSize.x, y: view.viewportSize.y },
+		canvasSize: { x: view.canvasSize.x, y: view.canvasSize.y },
+		offscreenSize: { x: view.offscreenCanvasSize.x, y: view.offscreenCanvasSize.y },
 	};
 }
 
@@ -107,6 +106,7 @@ export function isManagedOverlayEditorActive(runtime: Runtime): boolean {
 export function updateGamePipelineExts(runtime: Runtime): void {
 	const overlayActive = runtime.terminal.isActive || isManagedOverlayEditorActive(runtime);
 	runtime.executionOverlayActive = overlayActive;
+	consoleCore.view.presentWorkbenchFrameBufferTexture = overlayActive;
 	Input.instance.setGameplayCaptureEnabled(!overlayActive);
 	updateOverlayAudioSuspension(runtime);
 }

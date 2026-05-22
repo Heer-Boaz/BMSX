@@ -42,9 +42,9 @@ export class VdpStreamIngressUnit {
 		return 0;
 	}
 
-	public writeBytes(bytes: Uint8Array): number {
-		for (let index = 0; index < bytes.byteLength; index += 1) {
-			this.fifoWordScratch[this.fifoWordByteCount] = bytes[index]!;
+	public writeBytes(data: Uint8Array, length = data.byteLength): number {
+		for (let index = 0; index < length; index += 1) {
+			this.fifoWordScratch[this.fifoWordByteCount] = data[index]!;
 			this.fifoWordByteCount += 1;
 			if (this.fifoWordByteCount !== 4) {
 				continue;
@@ -65,20 +65,32 @@ export class VdpStreamIngressUnit {
 	}
 
 	public captureState(): VdpStreamIngressState {
+		const fifoWordScratch = [0, 0, 0, 0];
+		for (let index = 0; index < this.fifoWordScratch.length; index += 1) {
+			fifoWordScratch[index] = this.fifoWordScratch[index]!;
+		}
+		const fifoStreamWords: number[] = [];
+		for (let index = 0; index < this.fifoStreamWordCount; index += 1) {
+			fifoStreamWords[index] = this.fifoStreamWords[index]!;
+		}
 		return {
 			dmaSubmitActive: this.dmaSubmitActive,
-			fifoWordScratch: Array.from(this.fifoWordScratch),
+			fifoWordScratch,
 			fifoWordByteCount: this.fifoWordByteCount,
-			fifoStreamWords: Array.from(this.fifoStreamWords.subarray(0, this.fifoStreamWordCount)),
+			fifoStreamWords,
 			fifoStreamWordCount: this.fifoStreamWordCount,
 		};
 	}
 
 	public restoreState(state: VdpStreamIngressState): void {
 		this.dmaSubmitActive = state.dmaSubmitActive;
-		this.fifoWordScratch.set(state.fifoWordScratch);
+		for (let index = 0; index < this.fifoWordScratch.length; index += 1) {
+			this.fifoWordScratch[index] = state.fifoWordScratch[index]!;
+		}
 		this.fifoWordByteCount = state.fifoWordByteCount;
-		this.fifoStreamWords.set(state.fifoStreamWords);
+		for (let index = 0; index < state.fifoStreamWordCount; index += 1) {
+			this.fifoStreamWords[index] = state.fifoStreamWords[index]!;
+		}
 		this.fifoStreamWordCount = state.fifoStreamWordCount;
 	}
 }

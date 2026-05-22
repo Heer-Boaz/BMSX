@@ -12,7 +12,7 @@
 --      moderesolution (30) — resolve mode / space switches
 --      physics        (40) — movement, collision, position integration
 --      animation      (50) — advance timelines, sprite frame selection
---      presentation   (60) — emit 2D blits / submit render work
+--      presentation   (60) — emit RPU data / submit render work
 --      eventflush     (70) — flush deferred events after all updates
 --
 -- 2. USE ECS SYSTEMS FOR SHARED PER-FRAME WORK.

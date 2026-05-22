@@ -1,11 +1,9 @@
 /// <reference types="@webgpu/types" />
 import { color_arr, type TextureSource } from '../../../rompack/format';
-import { BackendCaps, ColorAttachmentSpec, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureFormat, TextureHandle, type VdpFrameBufferExecutionPassState } from '../backend';
+import { BackendCaps, ColorAttachmentSpec, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureFormat, TextureHandle } from '../backend';
 import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
 import { createSolidRgba8Pixels, writeSolidRgba8Pixels } from '../../shared/solid_pixels';
 import { consoleCore } from '../../../core/console';
-import { registerSkyboxPass_WebGPU } from '../../3d/skybox/pipeline.wgpu';
-import { registerParticlesPass_WebGPU } from '../../3d/particles/pipeline.wgpu';
 import { registerCRT_WebGPU } from '../../post/crt/pipeline.wgpu';
 import { updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
@@ -67,18 +65,7 @@ export class WebGPUBackend implements GPUBackend {
 			},
 		});
 		registry.register({ id: 'frame_shared', name: 'FrameShared', stateOnly: true, graph: { skip: true }, exec: () => { } });
-		registry.register<VdpFrameBufferExecutionPassState>({
-			id: 'vdp_framebuffer_execution',
-			name: 'VDPFrameBufferExecution',
-			stateOnly: true,
-			graph: { skip: true },
-			exec: () => {
-				throw new Error('[VDPFrameBufferWebGPU] VDP framebuffer execution is not implemented for WebGPU.');
-			},
-		});
 		registry.register({ id: 'framebuffer_2d', name: 'Framebuffer2D', stateOnly: true, exec: () => { } });
-		registerSkyboxPass_WebGPU(registry);
-		registerParticlesPass_WebGPU(registry);
 		registerCRT_WebGPU(registry);
 	}
 
@@ -88,10 +75,6 @@ export class WebGPUBackend implements GPUBackend {
 	getFrameStats() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded, vertexBytes: 0, indexBytes: 0, uniformBytes: this._bytesUploaded, textureBytes: 0 }; }
 	accountUpload(_kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
 		this._bytesUploaded += bytes;
-	}
-
-	executeVdp2DBlit(_state: VdpFrameBufferExecutionPassState): void {
-		throw new Error('[VDPFrameBufferWebGPU] VDP framebuffer execution is not implemented for WebGPU.');
 	}
 
 	createTexture(data: Uint8Array, width: number, height: number, _desc: TextureParams): TextureHandle {

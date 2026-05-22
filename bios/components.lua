@@ -5,10 +5,9 @@ local eventemitter_module<const> = require('bios/eventemitter')
 local timeline_module<const> = require('bios/timeline/index')
 local timeline_dispatch<const> = require('bios/timeline/dispatch')
 local collision_profiles<const> = require('bios/collision_profiles')
-local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 local font_module<const> = require('bios/font')
 local vdp_image<const> = require('bios/vdp_image')
-local vdp_stream<const> = require('bios/vdp_stream')
+local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
 local romdir<const> = require('bios/romdir')
 local world_instance<const> = require('bios/world/index').instance
 local eventemitter<const> = eventemitter_module.eventemitter
@@ -161,7 +160,8 @@ function spritecomponent.new(opts)
 	self.colorize = opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
 	self.scale = opts.scale or { x = 1, y = 1 }
 	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
-	self.parallax_weight = opts.parallax_weight or 0
+	self.draw_offset = opts.draw_offset or { x = 0, y = 0, z = 0 }
+	self.draw_scale = opts.draw_scale or { x = 1, y = 1 }
 	self.collider_local_id = opts.collider_local_id
 	self:set_imgid(opts.imgid)
 	return self
@@ -743,7 +743,7 @@ function textcomponent:render(x, y, z, glyphs)
 				end
 				local cursor_x = line_x
 				font_module.for_each_glyph(self.font, line, function(glyph)
-					vdp_stream.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, z - 1, layer, background_color)
+					vdp_rpu_quads.fill_rect_color(cursor_x, line_y, cursor_x + glyph.width, line_y + glyph.height, z - 1, layer, background_color)
 					cursor_x = cursor_x + glyph.advance
 				end)
 			end
@@ -820,9 +820,6 @@ end
 local customvisualcomponent<const> = {}
 customvisualcomponent.__index = customvisualcomponent
 setmetatable(customvisualcomponent, { __index = component })
-local customvisual_scratch_items<const> = scratchrecordbatch.new(2):reserve(2)
-local customvisual_mesh_options<const> = customvisual_scratch_items[1]
-local customvisual_particle_options<const> = customvisual_scratch_items[2]
 
 function customvisualcomponent.new(opts)
 	opts = opts or {}
@@ -859,7 +856,7 @@ function customvisualcomponent:submit_rect(rect)
 	if not rect.visible or rect.width <= 0 or rect.height <= 0 then
 		return
 	end
-	vdp_stream.fill_rect_color(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, rect.z, rect.layer, rect.color)
+	vdp_rpu_quads.fill_rect_color(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height, rect.z, rect.layer, rect.color)
 end
 
 -- function customvisualcomponent:submit_poly(desc)
@@ -874,13 +871,6 @@ end
 -- 		local x1<const> = points[((i + 1) % n) * 2 + 1]
 -- 		local y1<const> = points[((i + 1) % n) * 2 + 2]
 -- 	end
--- end
-
--- function customvisualcomponent:submit_mesh(desc)
--- 	customvisual_mesh_options.joint_matrices = desc.joint_matrices
--- 	customvisual_mesh_options.morph_weights = desc.morph_weights
--- 	customvisual_mesh_options.receive_shadow = desc.receive_shadow
--- 	put_mesh(desc.mesh, desc.matrix, customvisual_mesh_options)
 -- end
 
 -- inputintentcomponent: declarative input -> state bindings

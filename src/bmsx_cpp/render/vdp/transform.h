@@ -9,7 +9,7 @@ struct VdpTransformSnapshot {
 	Render3D::Mat4 view{};
 	Render3D::Mat4 proj{};
 	Render3D::Mat4 viewProj{};
-	Render3D::Mat4 skyboxView{};
+	Render3D::Mat4 viewRotationInverse{};
 	Render3D::PlanePack frustumPlanes{};
 	Vec3 eye{};
 };

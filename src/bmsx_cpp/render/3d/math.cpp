@@ -461,7 +461,7 @@ void mat4ViewFromBasisInto(Mat4& out, const Vec3& pos, const Vec3& right, const 
 	out[3] = 0.0f; out[7] = 0.0f; out[11] = 0.0f; out[15] = 1.0f;
 }
 
-void mat4SkyboxFromViewInto(Mat4& out, const Mat4& view) {
+void mat4ViewRotationInverseFromViewInto(Mat4& out, const Mat4& view) {
 	const f32 a00 = view[0], a01 = view[4], a02 = view[8];
 	const f32 a10 = view[1], a11 = view[5], a12 = view[9];
 	const f32 a20 = view[2], a21 = view[6], a22 = view[10];

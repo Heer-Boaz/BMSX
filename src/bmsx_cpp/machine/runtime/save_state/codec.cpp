@@ -531,192 +531,6 @@ GeometryControllerState decodeGeometryControllerState(const BinValue& value, con
 	return state;
 }
 
-template<typename Source>
-BinValue encodeVdpSourceState(const Source& state) {
-	return BinValue(BinObject{
-		{"surfaceId", static_cast<i64>(state.surfaceId)},
-		{"srcX", static_cast<i64>(state.srcX)},
-		{"srcY", static_cast<i64>(state.srcY)},
-		{"width", static_cast<i64>(state.width)},
-		{"height", static_cast<i64>(state.height)},
-	});
-}
-
-template<typename Source>
-Source decodeVdpSourceState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	return Source{
-		requireU32(requireField(object, "surfaceId", label), "machine.vdp.source.surfaceId"),
-		requireU32(requireField(object, "srcX", label), "machine.vdp.source.srcX"),
-		requireU32(requireField(object, "srcY", label), "machine.vdp.source.srcY"),
-		requireU32(requireField(object, "width", label), "machine.vdp.source.width"),
-		requireU32(requireField(object, "height", label), "machine.vdp.source.height"),
-	};
-}
-
-BinValue encodeBatchBlitGlyphState(const VdpBatchBlitGlyphSaveState& state) {
-	BinObject object = encodeVdpSourceState(state).asObject();
-	object["dstX"] = static_cast<f64>(state.dstX);
-	object["dstY"] = static_cast<f64>(state.dstY);
-	object["advance"] = static_cast<i64>(state.advance);
-	return BinValue(std::move(object));
-}
-
-VdpBatchBlitGlyphSaveState decodeBatchBlitGlyphState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpBatchBlitGlyphSaveState state;
-	static_cast<VdpBlitterSourceSaveState&>(state) = decodeVdpSourceState<VdpBlitterSourceSaveState>(value, label);
-	state.dstX = static_cast<i32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.item.dstX"));
-	state.dstY = static_cast<i32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.item.dstY"));
-	state.advance = requireU32(requireField(object, "advance", label), "machine.vdp.item.advance");
-	return state;
-}
-
-
-VdpBlitterCommandType decodeBlitterCommandType(u32 opcode, const char* label) {
-	switch (opcode) {
-		case static_cast<u32>(VdpBlitterCommandType::Clear): return VdpBlitterCommandType::Clear;
-		case static_cast<u32>(VdpBlitterCommandType::Blit): return VdpBlitterCommandType::Blit;
-		case static_cast<u32>(VdpBlitterCommandType::FillRect): return VdpBlitterCommandType::FillRect;
-		case static_cast<u32>(VdpBlitterCommandType::DrawLine): return VdpBlitterCommandType::DrawLine;
-		case static_cast<u32>(VdpBlitterCommandType::BatchBlit): return VdpBlitterCommandType::BatchBlit;
-		default:
-			throw BMSX_RUNTIME_ERROR(std::string(label) + " has an invalid VDP blitter opcode.");
-	}
-}
-
-BinValue encodeBlitterCommandState(const VdpBlitterCommandSaveState& state) {
-	BinObject object;
-	object["opcode"] = static_cast<i64>(static_cast<u32>(state.opcode));
-	object["seq"] = static_cast<i64>(state.seq);
-	object["renderCost"] = static_cast<i64>(state.renderCost);
-	object["layer"] = static_cast<i64>(static_cast<u32>(state.layer));
-	object["priority"] = static_cast<f64>(state.priority);
-	object["source"] = encodeVdpSourceState(state.source);
-	object["dstX"] = static_cast<f64>(state.dstX);
-	object["dstY"] = static_cast<f64>(state.dstY);
-	object["scaleX"] = static_cast<f64>(state.scaleX);
-	object["scaleY"] = static_cast<f64>(state.scaleY);
-	object["flipH"] = state.flipH;
-	object["flipV"] = state.flipV;
-	object["color"] = static_cast<i64>(state.color);
-	object["parallaxWeight"] = static_cast<f64>(state.parallaxWeight);
-	object["width"] = static_cast<i64>(state.width);
-	object["height"] = static_cast<i64>(state.height);
-	object["x0"] = static_cast<f64>(state.x0);
-	object["y0"] = static_cast<f64>(state.y0);
-	object["x1"] = static_cast<f64>(state.x1);
-	object["y1"] = static_cast<f64>(state.y1);
-	object["thickness"] = static_cast<f64>(state.thickness);
-	object["hasBackgroundColor"] = state.hasBackgroundColor;
-	object["backgroundColor"] = static_cast<i64>(state.backgroundColor);
-	object["lineHeight"] = static_cast<i64>(state.lineHeight);
-	object["items"] = encodeVector<VdpBatchBlitGlyphSaveState>(state.items, encodeBatchBlitGlyphState);
-	return BinValue(std::move(object));
-}
-
-VdpBlitterCommandSaveState decodeBlitterCommandState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpBlitterCommandSaveState state;
-	state.opcode = decodeBlitterCommandType(requireU32(requireField(object, "opcode", label), "machine.vdp.command.opcode"), label);
-	state.seq = requireU32(requireField(object, "seq", label), "machine.vdp.command.seq");
-	state.renderCost = requireI32(requireField(object, "renderCost", label), "machine.vdp.command.renderCost");
-	state.layer = static_cast<Layer2D>(requireBoundedU32(requireField(object, "layer", label), "machine.vdp.command.layer", 0u, 0xffu));
-	state.priority = static_cast<f32>(requireNumber(requireField(object, "priority", label), "machine.vdp.command.priority"));
-	state.source = decodeVdpSourceState<VdpBlitterSourceSaveState>(requireField(object, "source", label), "machine.vdp.command.source");
-	state.dstX = static_cast<i32>(requireNumber(requireField(object, "dstX", label), "machine.vdp.command.dstX"));
-	state.dstY = static_cast<i32>(requireNumber(requireField(object, "dstY", label), "machine.vdp.command.dstY"));
-	state.scaleX = static_cast<f32>(requireNumber(requireField(object, "scaleX", label), "machine.vdp.command.scaleX"));
-	state.scaleY = static_cast<f32>(requireNumber(requireField(object, "scaleY", label), "machine.vdp.command.scaleY"));
-	state.flipH = requireBool(requireField(object, "flipH", label), "machine.vdp.command.flipH");
-	state.flipV = requireBool(requireField(object, "flipV", label), "machine.vdp.command.flipV");
-	state.color = requireU32(requireField(object, "color", label), "machine.vdp.command.color");
-	state.parallaxWeight = static_cast<f32>(requireNumber(requireField(object, "parallaxWeight", label), "machine.vdp.command.parallaxWeight"));
-	state.width = requireI32(requireField(object, "width", label), "machine.vdp.command.width");
-	state.height = requireI32(requireField(object, "height", label), "machine.vdp.command.height");
-	state.x0 = static_cast<i32>(requireNumber(requireField(object, "x0", label), "machine.vdp.command.x0"));
-	state.y0 = static_cast<i32>(requireNumber(requireField(object, "y0", label), "machine.vdp.command.y0"));
-	state.x1 = static_cast<i32>(requireNumber(requireField(object, "x1", label), "machine.vdp.command.x1"));
-	state.y1 = static_cast<i32>(requireNumber(requireField(object, "y1", label), "machine.vdp.command.y1"));
-	state.thickness = static_cast<i32>(requireNumber(requireField(object, "thickness", label), "machine.vdp.command.thickness"));
-	state.hasBackgroundColor = requireBool(requireField(object, "hasBackgroundColor", label), "machine.vdp.command.hasBackgroundColor");
-	state.backgroundColor = requireU32(requireField(object, "backgroundColor", label), "machine.vdp.command.backgroundColor");
-	state.lineHeight = requireU32(requireField(object, "lineHeight", label), "machine.vdp.command.lineHeight");
-	state.items = decodeVector<VdpBatchBlitGlyphSaveState>(
-		requireField(object, "items", label),
-		"machine.vdp.command.items",
-		[](const BinValue& entry, size_t) { return decodeBatchBlitGlyphState(entry, "machine.vdp.command.items[]"); }
-	);
-	return state;
-}
-
-std::vector<VdpBlitterCommandSaveState> decodeBlitterCommandStates(const BinValue& value, const char* label) {
-	std::vector<VdpBlitterCommandSaveState> commands = decodeVector<VdpBlitterCommandSaveState>(
-		value,
-		label,
-		[](const BinValue& entry, size_t) { return decodeBlitterCommandState(entry, "machine.vdp.commands[]"); }
-	);
-	if (commands.size() > VDP_BLITTER_FIFO_CAPACITY) {
-		throw BMSX_RUNTIME_ERROR(std::string(label) + " exceeds the VDP blitter FIFO capacity.");
-	}
-	size_t itemCount = 0;
-	for (const VdpBlitterCommandSaveState& command : commands) {
-		itemCount += command.items.size();
-	}
-	if (itemCount > VDP_BLITTER_RUN_ENTRY_CAPACITY) {
-		throw BMSX_RUNTIME_ERROR(std::string(label) + " exceeds the VDP blitter run-entry capacity.");
-	}
-	return commands;
-}
-
-BinValue encodeBbuBillboardState(const VdpBbuBillboardSaveState& state) {
-	return BinValue(BinObject{
-		{"seq", static_cast<i64>(state.seq)},
-		{"layer", static_cast<i64>(static_cast<u32>(state.layer))},
-		{"priority", static_cast<i64>(state.priority)},
-		{"positionX", static_cast<f64>(state.positionX)},
-		{"positionY", static_cast<f64>(state.positionY)},
-		{"positionZ", static_cast<f64>(state.positionZ)},
-		{"size", static_cast<f64>(state.size)},
-		{"color", static_cast<i64>(state.color)},
-		{"source", encodeVdpSourceState(state.source)},
-		{"surfaceWidth", static_cast<i64>(state.surfaceWidth)},
-		{"surfaceHeight", static_cast<i64>(state.surfaceHeight)},
-		{"slot", static_cast<i64>(state.slot)},
-	});
-}
-
-VdpBbuBillboardSaveState decodeBbuBillboardState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpBbuBillboardSaveState state;
-	state.seq = requireU32(requireField(object, "seq", label), "machine.vdp.billboard.seq");
-	state.layer = static_cast<Layer2D>(requireBoundedU32(requireField(object, "layer", label), "machine.vdp.billboard.layer", 0u, 0xffu));
-	state.priority = requireU32(requireField(object, "priority", label), "machine.vdp.billboard.priority");
-	state.positionX = static_cast<f32>(requireNumber(requireField(object, "positionX", label), "machine.vdp.billboard.positionX"));
-	state.positionY = static_cast<f32>(requireNumber(requireField(object, "positionY", label), "machine.vdp.billboard.positionY"));
-	state.positionZ = static_cast<f32>(requireNumber(requireField(object, "positionZ", label), "machine.vdp.billboard.positionZ"));
-	state.size = static_cast<f32>(requireNumber(requireField(object, "size", label), "machine.vdp.billboard.size"));
-	state.color = requireU32(requireField(object, "color", label), "machine.vdp.billboard.color");
-	state.source = decodeVdpSourceState<VdpBlitterSourceSaveState>(requireField(object, "source", label), "machine.vdp.billboard.source");
-	state.surfaceWidth = requireU32(requireField(object, "surfaceWidth", label), "machine.vdp.billboard.surfaceWidth");
-	state.surfaceHeight = requireU32(requireField(object, "surfaceHeight", label), "machine.vdp.billboard.surfaceHeight");
-	state.slot = requireU32(requireField(object, "slot", label), "machine.vdp.billboard.slot");
-	return state;
-}
-
-std::vector<VdpBbuBillboardSaveState> decodeBbuBillboardStates(const BinValue& value, const char* label) {
-	std::vector<VdpBbuBillboardSaveState> billboards = decodeVector<VdpBbuBillboardSaveState>(
-		value,
-		label,
-		[](const BinValue& entry, size_t) { return decodeBbuBillboardState(entry, "machine.vdp.billboards[]"); }
-	);
-	if (billboards.size() > VDP_BBU_BILLBOARD_LIMIT) {
-		throw BMSX_RUNTIME_ERROR(std::string(label) + " exceeds the VDP BBU billboard capacity.");
-	}
-	return billboards;
-}
-
-
 template<typename T>
 const std::vector<T>& requireVectorSize(const std::vector<T>& values, size_t expected, const char* label) {
 	if (values.size() != expected) {
@@ -810,37 +624,64 @@ VdpRpuConstantBankSaveState decodeRpuConstantBankState(const BinValue& value, co
 	return state;
 }
 
-BinValue encodeRpuBufferRevisionState(const VdpRpuBufferRevisionSaveState& state) {
+BinValue encodeRpuBufferRecordState(const VdpRpuBufferRecordSaveState& state) {
 	return BinValue(BinObject{
 		{"bufferId", static_cast<i64>(state.bufferId)},
-		{"revision", static_cast<i64>(state.revision)},
-		{"bytes", encodeVector<u8>(state.bytes, encodeScalar<i64, u8>)},
+		{"liveRevision", static_cast<i64>(state.liveRevision)},
+		{"byteLength", static_cast<i64>(state.byteLength)},
+		{"usage", static_cast<i64>(state.usage)},
 	});
 }
 
-VdpRpuBufferRevisionSaveState decodeRpuBufferRevisionState(const BinValue& value, const char* label) {
+VdpRpuBufferRecordSaveState decodeRpuBufferRecordState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
-	VdpRpuBufferRevisionSaveState state;
-	state.bufferId = requireU32(requireField(object, "bufferId", label), "machine.vdp.rpu.bufferRevision.bufferId");
-	state.revision = requireU32(requireField(object, "revision", label), "machine.vdp.rpu.bufferRevision.revision");
-	state.bytes = decodeU8Vector(requireField(object, "bytes", label), "machine.vdp.rpu.bufferRevision.bytes", std::numeric_limits<size_t>::max());
+	VdpRpuBufferRecordSaveState state;
+	state.bufferId = requireBoundedU32(requireField(object, "bufferId", label), "machine.vdp.rpu.buffer.bufferId", 0u, static_cast<u32>(VDP_RPU_BUFFER_CAPACITY - 1u));
+	state.liveRevision = requireU32(requireField(object, "liveRevision", label), "machine.vdp.rpu.buffer.liveRevision");
+	state.byteLength = requireBoundedU32(requireField(object, "byteLength", label), "machine.vdp.rpu.buffer.byteLength", 0u, static_cast<u32>(VDP_RPU_BUFFER_SLOT_BYTE_CAPACITY));
+	state.usage = requireU32(requireField(object, "usage", label), "machine.vdp.rpu.buffer.usage");
 	return state;
 }
 
-BinValue encodeRpuSurfaceRevisionState(const VdpRpuSurfaceRevisionSaveState& state) {
+BinValue encodeRpuBufferImageState(const VdpRpuBufferImageSaveState& state) {
 	return BinValue(BinObject{
-		{"surfaceId", static_cast<i64>(state.surfaceId)},
-		{"revision", static_cast<i64>(state.revision)},
-		{"bytes", encodeVector<u8>(state.bytes, encodeScalar<i64, u8>)},
+		{"bufferId", static_cast<i64>(state.bufferId)},
+		{"bytes", BinValue(BinBinary(state.bytes.begin(), state.bytes.end()))},
 	});
 }
 
-VdpRpuSurfaceRevisionSaveState decodeRpuSurfaceRevisionState(const BinValue& value, const char* label) {
+VdpRpuBufferImageSaveState decodeRpuBufferImageState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
-	VdpRpuSurfaceRevisionSaveState state;
-	state.surfaceId = requireU32(requireField(object, "surfaceId", label), "machine.vdp.rpu.surfaceRevision.surfaceId");
-	state.revision = requireU32(requireField(object, "revision", label), "machine.vdp.rpu.surfaceRevision.revision");
-	state.bytes = decodeU8Vector(requireField(object, "bytes", label), "machine.vdp.rpu.surfaceRevision.bytes", std::numeric_limits<size_t>::max());
+	VdpRpuBufferImageSaveState state;
+	state.bufferId = requireBoundedU32(requireField(object, "bufferId", label), "machine.vdp.rpu.bufferImage.bufferId", 0u, static_cast<u32>(VDP_RPU_BUFFER_CAPACITY - 1u));
+	const BinBinary& bytes = requireBinary(requireField(object, "bytes", label), "machine.vdp.rpu.bufferImage.bytes");
+	if (bytes.size() > VDP_RPU_BUFFER_SLOT_BYTE_CAPACITY) {
+		throw BMSX_RUNTIME_ERROR("machine.vdp.rpu.bufferImage.bytes exceeds capacity.");
+	}
+	state.bytes = bytes;
+	return state;
+}
+
+BinValue encodeRpuSurfaceRecordState(const VdpRpuSurfaceRecordSaveState& state) {
+	return BinValue(BinObject{
+		{"surfaceId", static_cast<i64>(state.surfaceId)},
+		{"liveRevision", static_cast<i64>(state.liveRevision)},
+		{"width", static_cast<i64>(state.width)},
+		{"height", static_cast<i64>(state.height)},
+		{"format", static_cast<i64>(state.format)},
+		{"usage", static_cast<i64>(state.usage)},
+	});
+}
+
+VdpRpuSurfaceRecordSaveState decodeRpuSurfaceRecordState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpRpuSurfaceRecordSaveState state;
+	state.surfaceId = requireBoundedU32(requireField(object, "surfaceId", label), "machine.vdp.rpu.surface.surfaceId", 0u, static_cast<u32>(VDP_RPU_SURFACE_CAPACITY - 1u));
+	state.liveRevision = requireU32(requireField(object, "liveRevision", label), "machine.vdp.rpu.surface.liveRevision");
+	state.width = requireBoundedU32(requireField(object, "width", label), "machine.vdp.rpu.surface.width", 0u, 0xffffu);
+	state.height = requireBoundedU32(requireField(object, "height", label), "machine.vdp.rpu.surface.height", 0u, 0xffffu);
+	state.format = requireBoundedU32(requireField(object, "format", label), "machine.vdp.rpu.surface.format", 0u, 0xffu);
+	state.usage = requireBoundedU32(requireField(object, "usage", label), "machine.vdp.rpu.surface.usage", 0u, 0xffu);
 	return state;
 }
 
@@ -876,6 +717,7 @@ BinValue encodeRpuCommandBufferState(const VdpRpuCommandBufferSaveState& state) 
 		{"drawFirstTextureBinding", encodeVector<u32>(state.drawFirstTextureBinding, encodeScalar<i64, u32>)},
 		{"drawTextureBindingCount", encodeVector<u8>(state.drawTextureBindingCount, encodeScalar<i64, u8>)},
 		{"streamLayoutId", encodeVector<u16>(state.streamLayoutId, encodeScalar<i64, u16>)},
+		{"streamSlot", encodeVector<u8>(state.streamSlot, encodeScalar<i64, u8>)},
 		{"streamBufferRef", encodeVector<u16>(state.streamBufferRef, encodeScalar<i64, u16>)},
 		{"streamByteOffset", encodeVector<u32>(state.streamByteOffset, encodeScalar<i64, u32>)},
 		{"streamStepRate", encodeVector<u8>(state.streamStepRate, encodeScalar<i64, u8>)},
@@ -922,6 +764,7 @@ VdpRpuCommandBufferSaveState decodeRpuCommandBufferState(const BinValue& value, 
 	state.drawFirstTextureBinding = requireVectorSize(decodeU32Vector(requireField(object, "drawFirstTextureBinding", label), "machine.vdp.rpu.commands.drawFirstTextureBinding", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawFirstTextureBinding");
 	state.drawTextureBindingCount = requireVectorSize(decodeU8Vector(requireField(object, "drawTextureBindingCount", label), "machine.vdp.rpu.commands.drawTextureBindingCount", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawTextureBindingCount");
 	state.streamLayoutId = requireVectorSize(decodeU16Vector(requireField(object, "streamLayoutId", label), "machine.vdp.rpu.commands.streamLayoutId", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamLayoutId");
+	state.streamSlot = requireVectorSize(decodeU8Vector(requireField(object, "streamSlot", label), "machine.vdp.rpu.commands.streamSlot", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamSlot");
 	state.streamBufferRef = requireVectorSize(decodeU16Vector(requireField(object, "streamBufferRef", label), "machine.vdp.rpu.commands.streamBufferRef", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamBufferRef");
 	state.streamByteOffset = requireVectorSize(decodeU32Vector(requireField(object, "streamByteOffset", label), "machine.vdp.rpu.commands.streamByteOffset", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamByteOffset");
 	state.streamStepRate = requireVectorSize(decodeU8Vector(requireField(object, "streamStepRate", label), "machine.vdp.rpu.commands.streamStepRate", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamStepRate");
@@ -940,8 +783,6 @@ BinValue encodeRpuFrameState(const VdpRpuFrameSaveState& state) {
 		{"commands", encodeRpuCommandBufferState(state.commands)},
 		{"bufferRefs", encodeVector<VdpRpuFrameBufferRefSaveState>(state.bufferRefs, encodeRpuFrameBufferRefState)},
 		{"surfaceRefs", encodeVector<VdpRpuFrameSurfaceRefSaveState>(state.surfaceRefs, encodeRpuFrameSurfaceRefState)},
-		{"bufferRevisions", encodeVector<VdpRpuBufferRevisionSaveState>(state.bufferRevisions, encodeRpuBufferRevisionState)},
-		{"surfaceRevisions", encodeVector<VdpRpuSurfaceRevisionSaveState>(state.surfaceRevisions, encodeRpuSurfaceRevisionState)},
 		{"constantWords", encodeVector<u32>(state.constantWords, encodeScalar<i64, u32>)},
 		{"constantBanks", encodeVector<VdpRpuConstantBankSaveState>(state.constantBanks, encodeRpuConstantBankState)},
 	});
@@ -953,8 +794,6 @@ VdpRpuFrameSaveState decodeRpuFrameState(const BinValue& value, const char* labe
 	state.commands = decodeRpuCommandBufferState(requireField(object, "commands", label), "machine.vdp.rpu.commands");
 	state.bufferRefs = decodeVector<VdpRpuFrameBufferRefSaveState>(requireField(object, "bufferRefs", label), "machine.vdp.rpu.bufferRefs", [](const BinValue& entry, size_t) { return decodeRpuFrameBufferRefState(entry, "machine.vdp.rpu.bufferRefs[]"); });
 	state.surfaceRefs = decodeVector<VdpRpuFrameSurfaceRefSaveState>(requireField(object, "surfaceRefs", label), "machine.vdp.rpu.surfaceRefs", [](const BinValue& entry, size_t) { return decodeRpuFrameSurfaceRefState(entry, "machine.vdp.rpu.surfaceRefs[]"); });
-	state.bufferRevisions = decodeVector<VdpRpuBufferRevisionSaveState>(requireField(object, "bufferRevisions", label), "machine.vdp.rpu.bufferRevisions", [](const BinValue& entry, size_t) { return decodeRpuBufferRevisionState(entry, "machine.vdp.rpu.bufferRevisions[]"); });
-	state.surfaceRevisions = decodeVector<VdpRpuSurfaceRevisionSaveState>(requireField(object, "surfaceRevisions", label), "machine.vdp.rpu.surfaceRevisions", [](const BinValue& entry, size_t) { return decodeRpuSurfaceRevisionState(entry, "machine.vdp.rpu.surfaceRevisions[]"); });
 	state.constantWords = decodeU32Vector(requireField(object, "constantWords", label), "machine.vdp.rpu.constantWords", VDP_RPU_CONSTANT_WORD_CAPACITY);
 	state.constantBanks = decodeVector<VdpRpuConstantBankSaveState>(requireField(object, "constantBanks", label), "machine.vdp.rpu.constantBanks", [](const BinValue& entry, size_t) { return decodeRpuConstantBankState(entry, "machine.vdp.rpu.constantBanks[]"); });
 	if (state.bufferRefs.size() > VDP_RPU_BUFFER_REF_CAPACITY || state.surfaceRefs.size() > VDP_RPU_SURFACE_REF_CAPACITY || state.constantBanks.size() > VDP_RPU_CONSTANT_BANK_CAPACITY) {
@@ -963,11 +802,32 @@ VdpRpuFrameSaveState decodeRpuFrameState(const BinValue& value, const char* labe
 	return state;
 }
 
+BinValue encodeRpuState(const VdpRpuSaveState& state) {
+	return BinValue(BinObject{
+		{"buildState", static_cast<i64>(state.buildState)},
+		{"openPassIndex", static_cast<i64>(state.openPassIndex)},
+		{"openDrawIndex", static_cast<i64>(state.openDrawIndex)},
+		{"buffers", encodeVector<VdpRpuBufferRecordSaveState>(state.buffers, encodeRpuBufferRecordState)},
+		{"bufferImages", encodeVector<VdpRpuBufferImageSaveState>(state.bufferImages, encodeRpuBufferImageState)},
+		{"surfaces", encodeVector<VdpRpuSurfaceRecordSaveState>(state.surfaces, encodeRpuSurfaceRecordState)},
+	});
+}
+
+VdpRpuSaveState decodeRpuState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	VdpRpuSaveState state;
+	state.buildState = requireBoundedU32(requireField(object, "buildState", label), "machine.vdp.rpu.buildState", VDP_RPU_FRAME_IDLE, VDP_RPU_DRAW_OPEN);
+	state.openPassIndex = requireBoundedU32(requireField(object, "openPassIndex", label), "machine.vdp.rpu.openPassIndex", 0u, static_cast<u32>(VDP_RPU_PASS_CAPACITY));
+	state.openDrawIndex = requireBoundedU32(requireField(object, "openDrawIndex", label), "machine.vdp.rpu.openDrawIndex", 0u, static_cast<u32>(VDP_RPU_DRAW_CAPACITY));
+	state.buffers = decodeVector<VdpRpuBufferRecordSaveState>(requireField(object, "buffers", label), "machine.vdp.rpu.buffers", [](const BinValue& entry, size_t) { return decodeRpuBufferRecordState(entry, "machine.vdp.rpu.buffers[]"); });
+	state.bufferImages = decodeVector<VdpRpuBufferImageSaveState>(requireField(object, "bufferImages", label), "machine.vdp.rpu.bufferImages", [](const BinValue& entry, size_t) { return decodeRpuBufferImageState(entry, "machine.vdp.rpu.bufferImages[]"); });
+	state.surfaces = decodeVector<VdpRpuSurfaceRecordSaveState>(requireField(object, "surfaces", label), "machine.vdp.rpu.surfaces", [](const BinValue& entry, size_t) { return decodeRpuSurfaceRecordState(entry, "machine.vdp.rpu.surfaces[]"); });
+	return state;
+}
+
 BinValue encodeBuildingFrameState(const VdpBuildingFrameSaveState& state) {
 	return BinValue(BinObject{
 		{"state", static_cast<i64>(static_cast<u32>(state.state))},
-		{"queue", encodeVector<VdpBlitterCommandSaveState>(state.queue, encodeBlitterCommandState)},
-		{"billboards", encodeVector<VdpBbuBillboardSaveState>(state.billboards, encodeBbuBillboardState)},
 		{"rpu", encodeRpuFrameState(state.rpu)},
 		{"cost", static_cast<i64>(state.cost)},
 	});
@@ -977,61 +837,24 @@ VdpBuildingFrameSaveState decodeBuildingFrameState(const BinValue& value, const 
 	const BinObject& object = requireObject(value, label);
 	VdpBuildingFrameSaveState state;
 	state.state = static_cast<VdpDexFrameState>(requireBoundedU32(requireField(object, "state", label), "machine.vdp.buildFrame.state", 0u, 2u));
-	state.queue = decodeBlitterCommandStates(requireField(object, "queue", label), "machine.vdp.buildFrame.queue");
-	state.billboards = decodeBbuBillboardStates(requireField(object, "billboards", label), "machine.vdp.buildFrame.billboards");
 	state.rpu = decodeRpuFrameState(requireField(object, "rpu", label), "machine.vdp.buildFrame.rpu");
 	state.cost = requireI32(requireField(object, "cost", label), "machine.vdp.buildFrame.cost");
 	return state;
 }
 
-BinValue encodeResolvedBlitterSampleState(const VdpResolvedBlitterSample& state) {
-	return BinValue(BinObject{
-		{"source", encodeVdpSourceState(state.source)},
-		{"surfaceWidth", static_cast<i64>(state.surfaceWidth)},
-		{"surfaceHeight", static_cast<i64>(state.surfaceHeight)},
-		{"slot", static_cast<i64>(state.slot)},
-	});
-}
-
-VdpResolvedBlitterSample decodeResolvedBlitterSampleState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpResolvedBlitterSample state;
-	state.source = decodeVdpSourceState<VdpBlitterSource>(requireField(object, "source", label), "machine.vdp.sample.source");
-	state.surfaceWidth = requireU32(requireField(object, "surfaceWidth", label), "machine.vdp.sample.surfaceWidth");
-	state.surfaceHeight = requireU32(requireField(object, "surfaceHeight", label), "machine.vdp.sample.surfaceHeight");
-	state.slot = requireU32(requireField(object, "slot", label), "machine.vdp.sample.slot");
-	return state;
-}
-
-VdpSkyboxSamples decodeSkyboxSampleStates(const BinValue& value, const char* label) {
-	const BinArray& array = requireArray(value, label);
-	if (array.size() != SKYBOX_FACE_COUNT) {
-		throw BMSX_RUNTIME_ERROR(std::string(label) + " must contain one sample per skybox face.");
-	}
-	VdpSkyboxSamples samples{};
-	for (size_t index = 0; index < SKYBOX_FACE_COUNT; ++index) {
-		samples[index] = decodeResolvedBlitterSampleState(array[index], "machine.vdp.skyboxSamples[]");
-	}
-	return samples;
-}
-
 BinValue encodeSubmittedFrameState(const VdpSubmittedFrameSaveState& state) {
 	return BinValue(BinObject{
 		{"state", static_cast<i64>(static_cast<u32>(state.state))},
-		{"queue", encodeVector<VdpBlitterCommandSaveState>(state.queue, encodeBlitterCommandState)},
-		{"billboards", encodeVector<VdpBbuBillboardSaveState>(state.billboards, encodeBbuBillboardState)},
 		{"hasCommands", state.hasCommands},
-		{"hasFrameBufferCommands", state.hasFrameBufferCommands},
-		{"frameBufferReadbackValid", state.frameBufferReadbackValid},
 		{"cost", static_cast<i64>(state.cost)},
 		{"workRemaining", static_cast<i64>(state.workRemaining)},
 		{"ditherType", static_cast<i64>(state.ditherType)},
 		{"frameBufferWidth", static_cast<i64>(state.frameBufferWidth)},
 		{"frameBufferHeight", static_cast<i64>(state.frameBufferHeight)},
 		{"xf", encodeVdpXfState(state.xf)},
-		{"skyboxControl", static_cast<i64>(state.skyboxControl)},
-		{"skyboxFaceWords", encodeFixedArray(state.skyboxFaceWords, encodeScalar<i64, u32>)},
-		{"skyboxSamples", encodeFixedArray(state.skyboxSamples, encodeResolvedBlitterSampleState)},
+		{"lightRegisterWords", encodeFixedArray(state.lightRegisterWords, encodeScalar<i64, u32>)},
+		{"morphWeightWords", encodeFixedArray(state.morphWeightWords, encodeScalar<i64, u32>)},
+		{"jointMatrixWords", encodeFixedArray(state.jointMatrixWords, encodeScalar<i64, u32>)},
 		{"rpu", encodeRpuFrameState(state.rpu)},
 	});
 }
@@ -1039,21 +862,17 @@ BinValue encodeSubmittedFrameState(const VdpSubmittedFrameSaveState& state) {
 VdpSubmittedFrameSaveState decodeSubmittedFrameState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpSubmittedFrameSaveState state;
-	state.state = static_cast<VdpSubmittedFrameState>(requireBoundedU32(requireField(object, "state", label), "machine.vdp.submittedFrame.state", 0u, 4u));
-	state.queue = decodeBlitterCommandStates(requireField(object, "queue", label), "machine.vdp.submittedFrame.queue");
-	state.billboards = decodeBbuBillboardStates(requireField(object, "billboards", label), "machine.vdp.submittedFrame.billboards");
+	state.state = static_cast<VdpSubmittedFrameState>(requireBoundedU32(requireField(object, "state", label), "machine.vdp.submittedFrame.state", 0u, 3u));
 	state.hasCommands = requireBool(requireField(object, "hasCommands", label), "machine.vdp.submittedFrame.hasCommands");
-	state.hasFrameBufferCommands = requireBool(requireField(object, "hasFrameBufferCommands", label), "machine.vdp.submittedFrame.hasFrameBufferCommands");
-	state.frameBufferReadbackValid = requireBool(requireField(object, "frameBufferReadbackValid", label), "machine.vdp.submittedFrame.frameBufferReadbackValid");
 	state.cost = requireI32(requireField(object, "cost", label), "machine.vdp.submittedFrame.cost");
 	state.workRemaining = requireI32(requireField(object, "workRemaining", label), "machine.vdp.submittedFrame.workRemaining");
 	state.ditherType = requireI32(requireField(object, "ditherType", label), "machine.vdp.submittedFrame.ditherType");
 	state.frameBufferWidth = requireU32(requireField(object, "frameBufferWidth", label), "machine.vdp.submittedFrame.frameBufferWidth");
 	state.frameBufferHeight = requireU32(requireField(object, "frameBufferHeight", label), "machine.vdp.submittedFrame.frameBufferHeight");
 	state.xf = decodeVdpXfState(requireField(object, "xf", label), "machine.vdp.submittedFrame.xf");
-	state.skyboxControl = requireU32(requireField(object, "skyboxControl", label), "machine.vdp.submittedFrame.skyboxControl");
-	state.skyboxFaceWords = decodeU32Array<SKYBOX_FACE_WORD_COUNT>(requireField(object, "skyboxFaceWords", label), "machine.vdp.submittedFrame.skyboxFaceWords");
-	state.skyboxSamples = decodeSkyboxSampleStates(requireField(object, "skyboxSamples", label), "machine.vdp.submittedFrame.skyboxSamples");
+	state.lightRegisterWords = decodeU32Array<VDP_LPU_REGISTER_WORDS>(requireField(object, "lightRegisterWords", label), "machine.vdp.submittedFrame.lightRegisterWords");
+	state.morphWeightWords = decodeU32Array<VDP_MFU_WEIGHT_COUNT>(requireField(object, "morphWeightWords", label), "machine.vdp.submittedFrame.morphWeightWords");
+	state.jointMatrixWords = decodeU32Array<VDP_JTU_REGISTER_WORDS>(requireField(object, "jointMatrixWords", label), "machine.vdp.submittedFrame.jointMatrixWords");
 	state.rpu = decodeRpuFrameState(requireField(object, "rpu", label), "machine.vdp.submittedFrame.rpu");
 	return state;
 }
@@ -1108,16 +927,16 @@ BinValue encodeVdpState(const VdpState& state) {
 	object["buildFrame"] = encodeBuildingFrameState(state.buildFrame);
 	object["activeFrame"] = encodeSubmittedFrameState(state.activeFrame);
 	object["pendingFrame"] = encodeSubmittedFrameState(state.pendingFrame);
-	object["displayTextureFrame"] = encodeSubmittedFrameState(state.displayTextureFrame);
+	object["rpu"] = encodeRpuState(state.rpu);
 	object["workCarry"] = static_cast<i64>(state.workCarry);
 	object["availableWorkUnits"] = static_cast<i64>(state.availableWorkUnits);
 	object["streamIngress"] = encodeVdpStreamIngressState(state.streamIngress);
 	object["readback"] = encodeVdpReadbackState(state.readback);
-	object["blitterSequence"] = static_cast<i64>(state.blitterSequence);
-	object["skyboxControl"] = static_cast<i64>(state.skyboxControl);
-	object["skyboxFaceWords"] = encodeFixedArray(state.skyboxFaceWords, encodeScalar<i64, u32>);
 	object["pmuSelectedBank"] = static_cast<i64>(state.pmuSelectedBank);
 	object["pmuBankWords"] = encodeFixedArray(state.pmuBankWords, encodeScalar<i64, u32>);
+	object["lightRegisterWords"] = encodeFixedArray(state.lightRegisterWords, encodeScalar<i64, u32>);
+	object["morphWeightWords"] = encodeFixedArray(state.morphWeightWords, encodeScalar<i64, u32>);
+	object["jointMatrixWords"] = encodeFixedArray(state.jointMatrixWords, encodeScalar<i64, u32>);
 	object["ditherType"] = static_cast<i64>(state.ditherType);
 	object["vdpFaultCode"] = static_cast<i64>(state.vdpFaultCode);
 	object["vdpFaultDetail"] = static_cast<i64>(state.vdpFaultDetail);
@@ -1132,16 +951,16 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 	state.buildFrame = decodeBuildingFrameState(requireField(object, "buildFrame", label), "machine.vdp.buildFrame");
 	state.activeFrame = decodeSubmittedFrameState(requireField(object, "activeFrame", label), "machine.vdp.activeFrame");
 	state.pendingFrame = decodeSubmittedFrameState(requireField(object, "pendingFrame", label), "machine.vdp.pendingFrame");
-	state.displayTextureFrame = decodeSubmittedFrameState(requireField(object, "displayTextureFrame", label), "machine.vdp.displayTextureFrame");
+	state.rpu = decodeRpuState(requireField(object, "rpu", label), "machine.vdp.rpu");
 	state.workCarry = requireI64(requireField(object, "workCarry", label), "machine.vdp.workCarry");
 	state.availableWorkUnits = requireI32(requireField(object, "availableWorkUnits", label), "machine.vdp.availableWorkUnits");
 	state.streamIngress = decodeVdpStreamIngressState(requireField(object, "streamIngress", label), "machine.vdp.streamIngress");
 	state.readback = decodeVdpReadbackState(requireField(object, "readback", label), "machine.vdp.readback");
-	state.blitterSequence = requireU32(requireField(object, "blitterSequence", label), "machine.vdp.blitterSequence");
-	state.skyboxControl = requireU32(requireField(object, "skyboxControl", label), "machine.vdp.skyboxControl");
-	state.skyboxFaceWords = decodeU32Array<SKYBOX_FACE_WORD_COUNT>(requireField(object, "skyboxFaceWords", label), "machine.vdp.skyboxFaceWords");
 	state.pmuSelectedBank = requireU32(requireField(object, "pmuSelectedBank", label), "machine.vdp.pmuSelectedBank");
 	state.pmuBankWords = decodeU32Array<VDP_PMU_BANK_WORD_COUNT>(requireField(object, "pmuBankWords", label), "machine.vdp.pmuBankWords");
+	state.lightRegisterWords = decodeU32Array<VDP_LPU_REGISTER_WORDS>(requireField(object, "lightRegisterWords", label), "machine.vdp.lightRegisterWords");
+	state.morphWeightWords = decodeU32Array<VDP_MFU_WEIGHT_COUNT>(requireField(object, "morphWeightWords", label), "machine.vdp.morphWeightWords");
+	state.jointMatrixWords = decodeU32Array<VDP_JTU_REGISTER_WORDS>(requireField(object, "jointMatrixWords", label), "machine.vdp.jointMatrixWords");
 	state.ditherType = requireI32(requireField(object, "ditherType", label), "machine.vdp.ditherType");
 	state.vdpFaultCode = requireU32(requireField(object, "vdpFaultCode", label), "machine.vdp.vdpFaultCode");
 	state.vdpFaultDetail = requireU32(requireField(object, "vdpFaultDetail", label), "machine.vdp.vdpFaultDetail");
@@ -1199,20 +1018,16 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	VdpSaveState state;
 	state.xf = base.xf;
 	state.vdpRegisterWords = base.vdpRegisterWords;
-	state.skyboxControl = base.skyboxControl;
-	state.skyboxFaceWords = base.skyboxFaceWords;
 	state.pmuSelectedBank = base.pmuSelectedBank;
 	state.pmuBankWords = base.pmuBankWords;
 	state.ditherType = base.ditherType;
 	state.buildFrame = base.buildFrame;
 	state.activeFrame = base.activeFrame;
 	state.pendingFrame = base.pendingFrame;
-	state.displayTextureFrame = base.displayTextureFrame;
 	state.workCarry = base.workCarry;
 	state.availableWorkUnits = base.availableWorkUnits;
 	state.streamIngress = base.streamIngress;
 	state.readback = base.readback;
-	state.blitterSequence = base.blitterSequence;
 	state.vdpFaultCode = base.vdpFaultCode;
 	state.vdpFaultDetail = base.vdpFaultDetail;
 	state.vram = decodeVdpVramState(requireField(object, "vram", label), "machine.vdp.vram");

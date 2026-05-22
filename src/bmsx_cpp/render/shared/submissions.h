@@ -43,7 +43,7 @@ enum class RectRenderKind { Rect, Fill };
 struct RectRenderSubmission {
 	RectRenderKind kind = RectRenderKind::Rect;
 	RenderRectBounds area;
-	bmsx::color color = 0xffffffffu; // ARGB32
+	bmsx::color color = 0xffffffffU; // ARGB32
 	Layer2D layer = Layer2D::World;
 };
 
@@ -54,34 +54,32 @@ struct ImgRenderSubmission {
 	uint32_t v = 0;
 	uint32_t w = 0;
 	uint32_t h = 0;
-	RenderVec2 pos{0.0f, 0.0f, 0.0f};  // x, y, z (z for depth sorting)
-	RenderScale2 scale{1.0f, 1.0f};
+	RenderVec2 pos{.x=0.0F, .y=0.0F, .z=0.0F};  // x, y, z (z for depth sorting)
+	RenderScale2 scale{.x=1.0F, .y=1.0F};
 	FlipOptions flip;
-	bmsx::color colorize = 0xffffffffu; // ARGB32 tint; white = no tint
+	bmsx::color colorize = 0xffffffffU; // ARGB32 tint; white = no tint
 	bool ambient_affected = false;
-	f32 ambient_factor = 1.0f;
+	f32 ambient_factor = 1.0F;
 	Layer2D layer = Layer2D::World;
-	f32 parallax_weight = 0.0f;
 };
 
 struct HostImageRenderSubmission {
 	std::string imgid;
-	RenderVec2 pos{0.0f, 0.0f, 0.0f};
-	RenderScale2 scale{1.0f, 1.0f};
+	RenderVec2 pos{.x=0.0F, .y=0.0F, .z=0.0F};
+	RenderScale2 scale{.x=1.0F, .y=1.0F};
 	FlipOptions flip;
-	bmsx::color colorize = 0xffffffffu; // ARGB32 tint; white = no tint
+	bmsx::color colorize = 0xffffffffU; // ARGB32 tint; white = no tint
 	bool ambient_affected = false;
-	f32 ambient_factor = 1.0f;
+	f32 ambient_factor = 1.0F;
 	Layer2D layer = Layer2D::World;
-	f32 parallax_weight = 0.0f;
 };
 
 // Polygon render (outline)
 struct PolyRenderSubmission {
 	std::vector<f32> points;
-	f32 z = 0.0f;
-	bmsx::color color = 0xffffffffu; // ARGB32
-	f32 thickness = 1.0f;
+	f32 z = 0.0F;
+	bmsx::color color = 0xffffffffU; // ARGB32
+	f32 thickness = 1.0F;
 	Layer2D layer = Layer2D::World;
 };
 
@@ -90,16 +88,16 @@ enum class TextBaseline { Top, Hanging, Middle, Alphabetic, Ideographic, Bottom 
 
 // Glyph/text render
 struct GlyphRenderSubmission {
-	f32 x = 0.0f;
-	f32 y = 0.0f;
-	f32 z = 0.0f;
+	f32 x = 0.0F;
+	f32 y = 0.0F;
+	f32 z = 0.0F;
 	std::vector<std::string> items;
 	i32 item_start = 0;
 	i32 item_end = std::numeric_limits<i32>::max();
 	BFont* font = nullptr;
-	bmsx::color color = 0xffffffffu; // ARGB32
+	bmsx::color color = 0xffffffffU; // ARGB32
 	bool has_background_color = false;
-	bmsx::color background_color = 0xff000000u; // ARGB32
+	bmsx::color background_color = 0xff000000U; // ARGB32
 	i32 wrap_chars = 0;
 	i32 center_block_width = 0;
 	TextAlign align = TextAlign::Start;

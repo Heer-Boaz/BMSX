@@ -72,7 +72,7 @@ export type HostOverlayRuntime = {
 	uniforms: WebGLSpriteQuadUniforms;
 };
 
-const INSTANCE_FLOATS = 16;
+const INSTANCE_FLOATS = 15;
 const INSTANCE_STRIDE_BYTES = INSTANCE_FLOATS * 4;
 const INITIAL_BATCH_CAPACITY = 256;
 const SOLID_TEXCOORD_0 = 0;
@@ -81,21 +81,19 @@ const HOST_OVERLAY_TEXTURE_UNIT = 0;
 const HOST_OVERLAY_SLOT_ID = 0;
 const HOST_OVERLAY_DRAW_PASS: PassEncoder = { fbo: null, desc: { label: 'host_overlay' } as RenderPassDesc };
 const AXIS_GIZMO_LABEL_CAPACITY = 6;
-const axisLabelImgIds = new Array<string>(AXIS_GIZMO_LABEL_CAPACITY);
+const axisLabelImgIds = ['', '', '', '', '', ''];
 const axisLabelX = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
 const axisLabelY = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
 const axisLabelZ = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
 const axisLabelScale = new Float32Array(AXIS_GIZMO_LABEL_CAPACITY);
-const axisLabelColors = new Array<color>(AXIS_GIZMO_LABEL_CAPACITY);
+const axisLabelColors = [0, 0, 0, 0, 0, 0];
 const INSTANCE_FLOAT_ATTRIBUTES: readonly WebGLInstancedFloatAttribute[] = [
 	['i_origin', 2, 0],
 	['i_axis_x', 2, 2 * 4],
 	['i_axis_y', 2, 4 * 4],
 	['i_uv0', 2, 6 * 4],
 	['i_uv1', 2, 8 * 4],
-	['i_z', 1, 10 * 4],
-	['i_fx', 1, 11 * 4],
-	['i_color', 4, 12 * 4],
+	['i_color', 4, 11 * 4],
 ];
 
 let runtime: HostOverlayRuntime | null = null;
@@ -112,7 +110,13 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverla
 		gl,
 		program,
 		vao,
-		...quad,
+		cornerBuffer: quad.cornerBuffer,
+		uniforms: quad.uniforms,
+		instanceFloatBuffer: quad.instanceFloatBuffer,
+		instanceSlotBuffer: quad.instanceSlotBuffer,
+		floatData: quad.floatData,
+		slotData: quad.slotData,
+		capacity: quad.capacity,
 		whiteTexture,
 		hostAtlasTexture,
 		imageCache: new Map<string, HostOverlayImageSource>(),
@@ -159,11 +163,10 @@ function writeQuad(state: HostOverlayRuntime, index: number, originX: number, or
 	data[base + 8] = u1;
 	data[base + 9] = v1;
 	data[base + 10] = 1 - z / ZCOORD_MAX;
-	data[base + 11] = 0.5;
-	data[base + 12] = ((colorValue >>> 16) & 0xff) / 255;
-	data[base + 13] = ((colorValue >>> 8) & 0xff) / 255;
-	data[base + 14] = (colorValue & 0xff) / 255;
-	data[base + 15] = ((colorValue >>> 24) & 0xff) / 255;
+	data[base + 11] = ((colorValue >>> 16) & 0xff) / 255;
+	data[base + 12] = ((colorValue >>> 8) & 0xff) / 255;
+	data[base + 13] = (colorValue & 0xff) / 255;
+	data[base + 14] = ((colorValue >>> 24) & 0xff) / 255;
 	state.slotData[index] = HOST_OVERLAY_SLOT_ID;
 }
 
@@ -394,9 +397,6 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 	updateAndBindFrameUniforms(backend, passState.width, passState.height, passState.overlayWidth, passState.overlayHeight, passState.time, passState.delta);
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	gl.uniform1f(state.uniforms.scale, 1);
-	gl.uniform4f(state.uniforms.parallaxRig, 0, 1, 0, 0);
-	gl.uniform4f(state.uniforms.parallaxRig2, 0, 1, 1, 0);
-	gl.uniform1f(state.uniforms.parallaxFlipWindow, 1);
 	backend.setViewportRect(0, 0, passState.width, passState.height);
 	backend.setAlphaBlended2DState(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	backend.bindVertexArray(state.vao);

@@ -86,10 +86,10 @@ Saved:
 - CPU registers, stack/frame/root runtime values, string pool ownership, RAM/IO
   state, scheduler/VBlank state, device registerfiles/latches/FIFOs/buffers, and
   device-visible memory.
-- VDP registerfile, DEX build/submitted-frame state, named stream-ingress
+- VDP registerfile, build/submitted-frame state, RPU retained buffers,
+  surfaces, constants, passes, and draw commands, named stream-ingress
   latches/FIFO words, readback budget/overflow latches, surfaces,
-  display/readback pixels, and PMU/SBX/BBU/VOUT state that determines future
-  output.
+  display/readback pixels, and PMU/VOUT state that determines future output.
 - APU command/source/output state that determines future audio output,
   including the command FIFO ring, queued parameter latch words, active AOUT
   voice position, gain-ramp, filter history, and BADP decoder state.
@@ -143,68 +143,48 @@ Cart-visible ingress:
 
 Internal units:
 
-- `registers` owns the raw VDP transform, draw, surface, mode, dither, and
+- `registers` owns the raw VDP transform, surface, mode, dither, and
   control words; shared `machine/devices/device_status` owns VDP
   status/fault/code/detail register images and the fault-ack write edge.
-- `DEX` owns direct/stream frame state, submit admission, and the retained
-  fixed-capacity framebuffer-command buffer used by the scheduler blitter, including retained command-slot reservation and per-field command writes; mirrored `frame` owners reset build/submitted
-  frame slots and carry the
-  frame save-state record shape.
-- `blitter_source` owns DEX source-slot to VRAM-surface admission and source
-  bounds validation before framebuffer blit and tile-run commands enter the
-  retained DEX command buffer.
-- The framebuffer-execution boundary is explicit: VDP owns the retained DEX
-  command buffer, timing state, ready/execution-pending latch, faults, FBM page
-  state, and the framebuffer VRAM slot. Host render backends execute the ready
-  command buffer through the registered `vdp_framebuffer_execution` pass.
-  Software backends use the retained software rasterizer to write the VDP
-  framebuffer slot and return that slot to `completeReadyFrameBufferExecution`;
-  GPU backends render the same command buffer on the GPU into the backend
-  framebuffer texture and complete without claiming CPU readback ownership.
-  A GPU backend must not fall back to, route through, or upload the result of
-  the retained software rasterizer. The VDP keeps the displayed GPU-texture
-  framebuffer command frame as a device latch; restore replays that latch
-  through the framebuffer execution pass before display presentation instead of
-  reading pixels back from the GPU.
+- The old framebuffer texture presentation path is IDE/terminal host plumbing
+  only. Cart and BIOS drawing code must emit RPU packets; they must not
+  target the IDE/terminal framebuffer texture presentation pass.
 - `streamIngress` owns the DMA submit latch, FIFO partial-word bytes, and sealed
   FIFO packet words.
 - `VRAM` owns staging memory, surface slots, dirty spans, CPU readback pixels,
   and surface-upload transactions.
 - `readback` owns the CPU-visible read-surface registry, retained read cache,
   per-frame read budget, and overflow latch.
-- `PMU` owns bank registers, selected bank, and BLIT resolve state.
-- `SBX` owns skybox register-window staging, packet staging, frame seal,
-  VRAM-backed face-source resolution, and sampled face words.
-- `BBU` owns billboard packet decode, VRAM-backed source admission, retained
-  fixed-capacity billboard frame buffers, and instance emission limits.
+- `PMU` owns bank registers and selected bank state. It no longer resolves
+  blitter parallax or any other render semantic for the VDP.
+- `RPU` owns the raw cart-visible render contract: buffer records, surface
+  records, constant banks, fixed stream layouts, fixed shader-variant ids,
+  retained render passes, and retained draw commands.
 - `LPU` owns raw ambient, directional, and point-light register words.
 - `MFU` owns raw morph-weight register words.
 - `JTU` owns raw joint-matrix register words.
 - `unit_register_port` owns stream `REG1/REGN` range admission and raw
   XF/LPU/MFU/JTU register writes.
-- `MDU` owns mesh-packet decode, mesh-source admission, and per-frame mesh draw
-  emission limits.
 - `FBM` owns framebuffer pages, display pixels, GPU texture presentation latches,
   presentation transactions, and presentable display dimensions.
 - `XF` owns transform register words.
 - `VOUT` owns live, frame-sealed, and visible host-output buffers, including
-  mesh draw records plus sampled LPU/MFU/JTU words, scanout phase, beam
-  position, and retained `VdpDeviceOutput`.
+  the retained RPU frame, scanout phase, beam position, and retained
+  `VdpDeviceOutput`.
 
-Host render backends consume VOUT output transactions and ready VDP framebuffer
-execution buffers. They do not receive cart intent such as sprites, rectangles,
-labels, or scene objects. Backend-local mechanics such as render-pass viewport
-state, framebuffer attachment ownership, and GLES/WebGL fullscreen-quad buffers
-remain backend/rendergraph ownership; passes share those owners instead of
-duplicating setup sequences in individual postprocess or presentation files.
-Shared render code owns BMSX semantics: VDP framebuffer execution buffers, VOUT
-presentation transactions, mesh stream records, and resolved device lighting or
-material words. Concrete WebGL/GLES2 pass code owns GPU API binding: program
+Host render backends consume VOUT output transactions. They do not receive cart
+intent such as sprites, rectangles, labels, tile runs, scene objects,
+billboards, meshes, parallax, particles, or skyboxes.
+The cart expresses those effects by uploading raw RPU vertex, instance,
+constant, texture, surface, pass, and draw data. Backend-local mechanics such
+as render-pass viewport state, framebuffer attachment ownership, shader program
 objects, VAO/buffer binding, `vertexAttribPointer`/`glVertexAttribPointer`
-calls, uniform-block binding, texture-unit binding, and draw-call issue. There
-is no shared `GPUBackend` vertex-layout facade; the shared boundary may name the
-resolved stream fields, but byte offsets and attribute locations are consumed at
-the concrete backend-pass boundary.
+calls, texture-unit binding, and draw-call issue remain concrete backend
+ownership. The browser WebGL RPU pass lives in
+`render/backend/webgl/vdp_rpu.ts`; the native GLES2 RPU pass lives in
+`render/backend/gles2/vdp_rpu.cpp`; both consume external `vdp_rpu` shader
+files. There is no shared render/rpu pipeline and no shared `GPUBackend`
+vertex-layout facade.
 VDP save-state
 record shapes live in dedicated `machine/devices/vdp/save_state` files on both
 runtimes; the stream-ingress, VRAM/surface-memory, and readback latch/buffer
@@ -213,37 +193,6 @@ and `machine/devices/vdp/readback` files. C++ keeps aggregate VDP capture/restor
 method bodies in the VDP save-state translation unit; TS aggregate capture/restore
 stays on the device boundary and imports only the save-state record shapes while
 subunit state is owned by the subunit files.
-
-Mesh rendering follows the same hardware boundary. Cart streams submit model
-asset tokens and raw VDP register words to the MDU/MFU/JTU/LPU; VOUT exposes the
-mesh and lighting records at the host-output edge. Frame lighting is device
-state: cart streams write raw LPU register words for ambient, directional, and
-point lights; VOUT carries those words with the frame; render snapshots decode
-them at the host-output boundary. The native GLES2 renderer resolves the
-rompacked model from those VOUT records and samples textures only from VDP VRAM
-slots. GLTF material image texture references are ROM metadata, not GPU texture
-ownership; MDU texture sampling is controlled by the raw VDP texture-slot word.
-DEX blitter commands, BBU billboard records, and MDU mesh records are retained
-fixed-capacity frame buffers on both runtimes, with per-field raw arrays and a
-length latch rather than per-packet objects or nested run vectors. VDP frame
-seal, submitted-frame promotion, and VOUT presentation transfer those buffers by
-ownership rather than copying command, billboard, or mesh records.
-The native GLES2 and browser WebGL2 mesh shaders consume the resolved material
-surface bits (opaque/mask/blend, double-sided, unlit, base color, emissive,
-roughness, and metallic factors) together with the LPU-derived frame lighting
-state, and masked mesh surfaces use the same frame-coordinate 4x4 coverage
-pattern on both shader dialects. TS headless and native software backends also
-rasterize VOUT mesh records for capture/proof through the same rompacked model
-source and sampled MFU/JTU/LPU state rather than a private test hook; their
-software point rasterizers consume the resolved stream material color instead
-of rereading packet color words. The mesh vertex-stream owner exposes the
-element layout of that resolved stream; byte offsets and GL attribute binding
-belong only to the concrete WebGL/GLES2 backend pipeline boundary. The native
-GLES2 path must stay compatible with low-end GLES2 targets by expanding mesh,
-morph, and skinning data on the CPU into retained fixed-capacity vertex storage
-instead of relying on UBOs, instancing, vertex texture fetch, or other
-GLES3/WebGL2-only features; the browser WebGL2 path follows the same MDU output
-contract while using WebGL2 shader syntax.
 
 ### APU and AOUT
 

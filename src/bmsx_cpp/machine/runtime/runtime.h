@@ -59,7 +59,7 @@ struct RuntimeOptions {
 	};
 
 	int playerIndex = 0;
-	Vec2 viewport{0.0f, 0.0f};
+	Vec2 viewport{.x=0.0F, .y=0.0F};
 	RomSpan systemRomBytes;
 	RomSpan cartRomBytes;
 	const MachineManifest* machineManifest = nullptr;
@@ -83,11 +83,11 @@ public:
 	friend class FrameLoopState;
 	friend class FrameSchedulerState;
 	friend class CartBootState;
-	friend RuntimeSaveState captureRuntimeSaveState(Runtime& runtime);
+	friend auto captureRuntimeSaveState(Runtime& runtime) -> RuntimeSaveState;
 	friend void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state);
-	friend RuntimeResumeSnapshot captureRuntimeResumeSnapshot(const Runtime& runtime);
+	friend auto captureRuntimeResumeSnapshot(const Runtime& runtime) -> RuntimeResumeSnapshot;
 	friend void applyRuntimeResumeSnapshot(Runtime& runtime, const RuntimeResumeSnapshot& state);
-	friend CpuRuntimeState captureRuntimeCpuState(const Runtime& runtime);
+	friend auto captureRuntimeCpuState(const Runtime& runtime) -> CpuRuntimeState;
 	friend void applyRuntimeCpuState(Runtime& runtime, const CpuRuntimeState& state);
 	friend void registerMathAndEasingBuiltins(Runtime& runtime);
 	friend void seedSystemGlobals(Runtime& runtime);
@@ -103,7 +103,7 @@ public:
 
 	// Non-copyable
 	Runtime(const Runtime&) = delete;
-	Runtime& operator=(const Runtime&) = delete;
+	auto operator=(const Runtime&) -> Runtime& = delete;
 
 	/**
 	 * Boot the runtime with a compiled program.
@@ -119,48 +119,48 @@ public:
 	/**
 	 * Check if the runtime is initialized.
 	 */
-	bool isInitialized() const { return m_luaInitialized; }
+	auto isInitialized() const -> bool { return m_luaInitialized; }
 
 	/**
 	 * Check if the runtime has failed.
 	 */
-	bool hasRuntimeFailed() const { return m_runtimeFailed; }
+	auto hasRuntimeFailed() const -> bool { return m_runtimeFailed; }
 
 	/**
 	 * Enable/disable tick execution.
 	 */
 	void setTickEnabled(bool enabled) { m_tickEnabled = enabled; }
-	bool isTickEnabled() const { return m_tickEnabled; }
+	auto isTickEnabled() const -> bool { return m_tickEnabled; }
 
-	bool isCartProgramStarted() const { return m_cartProgramStarted; }
-	bool isRebootRequested() const { return m_rebootRequested; }
+	auto isCartProgramStarted() const -> bool { return m_cartProgramStarted; }
+	auto isRebootRequested() const -> bool { return m_rebootRequested; }
 	void clearRebootRequest() { m_rebootRequested = false; }
-	bool hasCartEntry() const { return m_cartEntryProtoIndex.has_value(); }
+	auto hasCartEntry() const -> bool { return m_cartEntryProtoIndex.has_value(); }
 	void setLinkedCartEntry(int entryProtoIndex, std::vector<std::string> staticModulePaths);
 	void enterSystemFirmware();
 	void enterCartProgram();
 	void startCartProgram();
 
-	f64 frameDeltaMs() const { return frameLoop.frameDeltaMs; }
-	Clock& clock() const { return m_clock; }
-	uint32_t baseRamUsedBytes() const;
-	uint32_t ramUsedBytes() const;
-	uint32_t ramTotalBytes() const;
-	uint32_t vramUsedBytes() const;
-	uint32_t vramTotalBytes() const;
+	auto frameDeltaMs() const -> f64 { return frameLoop.frameDeltaMs; }
+	auto clock() const -> Clock& { return m_clock; }
+	auto baseRamUsedBytes() const -> uint32_t;
+	auto ramUsedBytes() const -> uint32_t;
+	auto ramTotalBytes() const -> uint32_t;
+	auto vramUsedBytes() const -> uint32_t;
+	auto vramTotalBytes() const -> uint32_t;
 
-	GameView& view() { return m_view; }
-	const GameView& view() const { return m_view; }
-	const MachineManifest& machineManifest() const { return *m_machineManifest; }
-	const CartManifest* cartManifest() const;
-	const std::string* cartEntryPath() const;
-	const std::string* cartProjectRootPath() const;
-	RuntimeRomPackage& activeRom();
-	const RuntimeRomPackage& activeRom() const;
-	RuntimeRomPackage& systemRom();
-	const RuntimeRomPackage& systemRom() const;
-	RuntimeRomPackage* cartRom();
-	const RuntimeRomPackage* cartRom() const;
+	auto view() -> GameView& { return m_view; }
+	auto view() const -> const GameView& { return m_view; }
+	auto machineManifest() const -> const MachineManifest& { return *m_machineManifest; }
+	auto cartManifest() const -> const CartManifest*;
+	auto cartEntryPath() const -> const std::string*;
+	auto cartProjectRootPath() const -> const std::string*;
+	auto activeRom() -> RuntimeRomPackage&;
+	auto activeRom() const -> const RuntimeRomPackage&;
+	auto systemRom() -> RuntimeRomPackage&;
+	auto systemRom() const -> const RuntimeRomPackage&;
+	auto cartRom() -> RuntimeRomPackage*;
+	auto cartRom() const -> const RuntimeRomPackage*;
 	void setRuntimeEnvironment(
 		const MachineManifest& machineManifest,
 		RuntimeOptions::RomSpan systemRomBytes,
@@ -182,7 +182,7 @@ public:
 	 */
 	void setGlobal(std::string_view name, const Value& value);
 
-	Value internString(std::string_view name) { return valueString(machine.cpu.stringPool().intern(name)); }
+	auto internString(std::string_view name) -> Value { return valueString(machine.cpu.stringPool().intern(name)); }
 
 	/**
 	 * Register a native function as a global.
@@ -191,24 +191,24 @@ public:
 
 	void resetHardwareState();
 	void resetRuntimeForProgramReload();
-	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
-	i64 lastTickSequence() const { return frameScheduler.lastTickSequence; }
-	int lastTickBudgetRemaining() const { return frameScheduler.lastTickBudgetRemaining; }
-	int cpuUsageCyclesUsed() const {
+	auto updateCountTotal() const -> i64 { return m_debugUpdateCountTotal; }
+	auto lastTickSequence() const -> i64 { return frameScheduler.lastTickSequence; }
+	auto lastTickBudgetRemaining() const -> int { return frameScheduler.lastTickBudgetRemaining; }
+	auto cpuUsageCyclesUsed() const -> int {
 		return frameLoop.frameActive
 			? frameLoop.frameState.activeCpuUsedCycles
 			: frameScheduler.lastTickCpuUsedCycles;
 	}
-	int cpuUsageCyclesGranted() const {
+	auto cpuUsageCyclesGranted() const -> int {
 		return frameLoop.frameActive
 			? frameLoop.frameState.cycleBudgetGranted
 			: (frameScheduler.lastTickSequence == 0 ? timing.cycleBudgetPerFrame : frameScheduler.lastTickCpuBudgetGranted);
 	}
-	int vdpWorkUnitsPerSec() const { return timing.vdpWorkUnitsPerSec; }
-	bool lastTickVisualFrameCommitted() const { return frameScheduler.lastTickVisualFrameCommitted; }
-	int vdpUsageWorkUnitsLast() const { return machine.vdp.lastFrameCost(); }
-	bool vdpUsageFrameHeld() const { return machine.vdp.lastFrameHeld(); }
-	bool isDrawPending() const { return m_runtimeFailed || m_pendingCall == PendingCall::Entry; }
+	auto vdpWorkUnitsPerSec() const -> int { return timing.vdpWorkUnitsPerSec; }
+	auto lastTickVisualFrameCommitted() const -> bool { return frameScheduler.lastTickVisualFrameCommitted; }
+	auto vdpUsageWorkUnitsLast() const -> int { return machine.vdp.lastFrameCost(); }
+	auto vdpUsageFrameHeld() const -> bool { return machine.vdp.lastFrameHeld(); }
+	auto isDrawPending() const -> bool { return m_runtimeFailed || m_pendingCall == PendingCall::Entry; }
 	void refreshMemoryMap();
 	RenderPresentationState screen;
 	TimingState timing;
@@ -229,12 +229,12 @@ private:
 	void runStaticModuleInitializers(const std::vector<std::string>& paths);
 	void runStaticModuleInitializer(const std::string& path);
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
-	Value requireModule(const std::string& moduleName);
-	const std::regex& buildLuaPatternRegex(const std::string& pattern);
-	std::string translateLuaPatternEscape(char token, bool inClass) const;
-	std::string valueToString(const Value& value) const;
-	double nextRandom();
-	std::string formatLuaString(const std::string& templateStr, NativeArgsView args, size_t argStart) const;
+	auto requireModule(const std::string& moduleName) -> Value;
+	auto buildLuaPatternRegex(const std::string& pattern) -> const std::regex&;
+	auto translateLuaPatternEscape(char token, bool inClass) const -> std::string;
+	auto valueToString(const Value& value) const -> std::string;
+	auto nextRandom() -> double;
+	auto formatLuaString(const std::string& templateStr, NativeArgsView args, size_t argStart) const -> std::string;
 	void logDebugState() const;
 	void logLuaCallStack() const;
 	void refreshMemoryMapGlobals();

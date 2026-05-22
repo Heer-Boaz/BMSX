@@ -6,6 +6,7 @@ import {
 import { setIdentityMatrixWordsAt } from './matrix_words';
 
 export const VDP_JTU_PACKET_KIND = 0x15000000;
+export const VDP_JTU_MATRIX_PACKET_PAYLOAD_WORDS = 1 + VDP_JTU_MATRIX_WORDS;
 
 export class VdpJtuUnit {
 	public readonly matrixWords = new Uint32Array(VDP_JTU_REGISTER_WORDS);

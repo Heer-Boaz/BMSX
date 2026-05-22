@@ -3,6 +3,7 @@
 #include "common/types.h"
 #include "machine/devices/vdp/contracts.h"
 #include "machine/devices/vdp/device_output.h"
+#include "render/backend/backend.h"
 #include <array>
 #include <string>
 
@@ -35,6 +36,7 @@ public:
 	VdpSlotTexturePixels readSurfaceTexturePixels(u32 surfaceId) const;
 	u32 readSurfaceTextureWidth(u32 surfaceId) const;
 	u32 readSurfaceTextureHeight(u32 surfaceId) const;
+	TextureHandle readSurfaceTextureHandle(u32 surfaceId) const;
 
 private:
 	bool isSyncedTextureSize(u32 surfaceId, u32 width, u32 height) const;

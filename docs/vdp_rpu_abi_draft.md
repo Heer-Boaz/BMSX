@@ -58,7 +58,7 @@ export const VDP_RPU_FEATURE_INSTANCED_ARRAYS = 1 << 0;
 export const VDP_RPU_FEATURE_UINT_INDEX = 1 << 1;
 export const VDP_RPU_FEATURE_DEPTH_TEXTURE = 1 << 2;
 
-export const VDP_RPU_REQUIRED_FEATURES = VDP_RPU_FEATURE_INSTANCED_ARRAYS;
+export const VDP_RPU_REQUIRED_FEATURES = VDP_RPU_FEATURE_INSTANCED_ARRAYS | VDP_RPU_FEATURE_UINT_INDEX;
 ```
 
 Baseline decisions:
@@ -66,9 +66,30 @@ Baseline decisions:
 - WebGL1 requires `ANGLE_instanced_arrays`.
 - GLES2 requires an equivalent instancing extension.
 - `U16` indices are core.
-- `U32` indices require `VDP_RPU_FEATURE_UINT_INDEX`.
+- `U32` indices are part of the baseline RPU backend contract. WebGL2 provides this directly; GLES2 must expose `GL_OES_element_index_uint` during backend initialization.
 - Depth attachments are renderbuffer-style in the baseline.
 - Sampling from a depth texture requires `VDP_RPU_FEATURE_DEPTH_TEXTURE`.
+
+## Representable weird command buffers
+
+The RPU is an emulated hardware unit, not a high-level host graphics API. Packet
+admission may still fault structural stream/resource errors such as malformed
+packet lengths, impossible buffer ranges, or missing resources. Backend feature
+availability is a host/backend initialization contract, not a cart-visible RPU
+fault. After admission, however, a representable retained command buffer is
+backend input as-is. The WebGL/GLES2 executor must not add a second semantic
+validation layer that rejects cart-visible draws because they
+look like mismatched layouts, odd state combinations, or nonsense constants.
+Raw pipeline bits, primitive/index selector bits, sampler bits, color masks,
+usage bits, format bits, slot words, and defined-or-unknown stream layout ids
+are retained as programmed. Shader selection is a fixed low-bit selector, so
+high bits do not create an unavailable host shader; they decode to one of the
+fixed variants. Those cases should flow to the GPU and produce
+deterministic-but-weird rendered output.
+Draw vertex/instance/index counts are also raw words. Buffer pin byte-span
+calculation uses register-word arithmetic; count overflow wraps into the pinned
+span instead of becoming a semantic draw rejection. The backend still receives
+the original draw counts.
 
 ## Stream packet header
 
@@ -97,6 +118,7 @@ export const VDP_RPU_OP_SURFACE_DEFINE = 8;
 export const VDP_RPU_OP_CONSTANT_BANK_DEFINE = 16;
 export const VDP_RPU_OP_CONSTANT_UPLOAD_DMA = 17;
 export const VDP_RPU_OP_CONSTANT_UPLOAD_INLINE = 18;
+export const VDP_RPU_OP_CONSTANT_UPLOAD_DEVICE = 19;
 
 export const VDP_RPU_OP_BEGIN_PASS = 32;
 export const VDP_RPU_OP_END_PASS = 33;
@@ -118,6 +140,7 @@ export const VDP_RPU_SURFACE_DEFINE_WORDS = 4;
 
 export const VDP_RPU_CONSTANT_BANK_DEFINE_WORDS = 4;
 export const VDP_RPU_CONSTANT_UPLOAD_DMA_WORDS = 5;
+export const VDP_RPU_CONSTANT_UPLOAD_DEVICE_WORDS = 6;
 
 export const VDP_RPU_BEGIN_PASS_WORDS = 8;
 export const VDP_RPU_END_PASS_WORDS = 1;
@@ -129,6 +152,12 @@ export const VDP_RPU_END_DRAW_WORDS = 1;
 
 export const VDP_RPU_BUFFER_UPLOAD_INLINE_MIN_WORDS = 4;
 export const VDP_RPU_CONSTANT_UPLOAD_INLINE_MIN_WORDS = 4;
+
+export const VDP_RPU_CONSTANT_SOURCE_XF_Q16 = 0;
+export const VDP_RPU_CONSTANT_SOURCE_LPU_RAW = 1;
+export const VDP_RPU_CONSTANT_SOURCE_MFU_Q16 = 2;
+export const VDP_RPU_CONSTANT_SOURCE_JTU_Q16 = 3;
+export const VDP_RPU_CONSTANT_SOURCE_MASK = 0x00000003;
 ```
 
 Variable inline uploads must have enough data words for their byte/word count. Extra trailing words are part of the packet payload only when the header word count includes them.
@@ -206,6 +235,15 @@ export type VdpRpuConstantUploadDmaPacket = readonly [
 	wordCount: number,
 ];
 
+export type VdpRpuConstantUploadDevicePacket = readonly [
+	op: typeof VDP_RPU_OP_CONSTANT_UPLOAD_DEVICE,
+	bankId: number,
+	dstWordOffset: number,
+	sourceWord: number,
+	sourceWordOffset: number,
+	wordCount: number,
+];
+
 export type VdpRpuBeginPassPacket = readonly [
 	op: typeof VDP_RPU_OP_BEGIN_PASS,
 	colorSurfaceId: number,
@@ -254,6 +292,41 @@ export type VdpRpuBindTexturePacket = readonly [
 ];
 ```
 
+Stream slots are fixed shader inputs, not semantic unit categories. Slot `0`
+feeds the vertex attribute stream for the selected fixed shader variant. Slot
+`1` feeds the instance attribute stream for instanced variants. Other
+representable slot values are retained but not consumed by the baseline fixed
+shader inputs. Multiple binds to the same consumed slot are deterministic: the
+last bind in the draw wins.
+
+## Device constant upload
+
+`CONSTANT_UPLOAD_DEVICE` is the bridge from existing VDP datapath registers to
+ordinary RPU constant banks. It does not add semantic host-output categories:
+XF/LPU/MFU/JTU remain VDP-owned registerfiles, and the RPU copies their raw
+words into `constantWords` during packet admission. After that, the backend sees
+only normal bound constants.
+
+Payload:
+
+```ts
+[
+	VDP_RPU_OP_CONSTANT_UPLOAD_DEVICE,
+	bankId,
+	dstWordOffset,
+	sourceWord,
+	sourceWordOffset,
+	wordCount,
+]
+```
+
+Source selector is `sourceWord & VDP_RPU_CONSTANT_SOURCE_MASK`; high bits are
+weird-but-representable and ignored. `XF_Q16`, `MFU_Q16`, and `JTU_Q16` decode
+signed Q16.16 register words to IEEE `f32` words before writing the RPU constant
+bank. `LPU_RAW` copies the light register words unchanged. Out-of-range source
+or destination spans are structural range faults. There is still no
+`VdpDeviceOutput.xf`, `.lpu`, `.mfu`, or `.jtu` payload.
+
 ## Resource usage and revisions
 
 ```ts
@@ -274,7 +347,9 @@ export const VDP_RPU_FORMAT_MASK = 0x000000ff;
 export const VDP_RPU_USAGE_SHIFT = 8;
 ```
 
-The resource model is multi-revision backing store:
+The runtime resource model is a fixed RPU-owned buffer arena plus resource
+records. Retained command buffers pin refs into that arena; they do not own
+immutable per-frame byte copies.
 
 ```ts
 export type VdpRpuBufferRecord = {
@@ -282,12 +357,6 @@ export type VdpRpuBufferRecord = {
 	liveRevision: number;
 	byteLength: number;
 	usage: number;
-};
-
-export type VdpRpuBufferRevision = {
-	bufferId: number;
-	revision: number;
-	bytes: Uint8Array;
 };
 
 export type VdpRpuSurfaceRecord = {
@@ -298,30 +367,37 @@ export type VdpRpuSurfaceRecord = {
 	format: number;
 	usage: number;
 };
-
-export type VdpRpuSurfaceRevision = {
-	surfaceId: number;
-	revision: number;
-	bytes: Uint8Array;
-};
 ```
 
 Rules:
 
 - `BUFFER_DEFINE` and `SURFACE_DEFINE` create or replace the live record with a new revision.
-- Uploads mutate the live revision only while no sealed/pending/visible frame pins that revision range.
-- Uploads against pinned live data create a new live revision at the resource boundary.
-- Draw admission pins exact `(id, revision, offset, length)` refs.
-- VOUT keeps pinned refs alive while a frame is visible.
-- Revisions without live, pending, active, or visible refs may be released.
-- Host output receives pinned refs plus immutable pinned revision payloads, never mutable live state.
+- Uploads mutate the RPU arena bytes directly and bump the live revision word.
+- Draw admission pins exact `(id, revision, offset, length)` refs into that arena.
+- VOUT keeps retained refs visible, but those refs are live aliases to RPU
+  arena storage, not snapshots.
+- If the cart mutates a buffer after a submitted or visible command buffer has
+  pinned it, the retained command sees the current arena bytes. That is
+  representable emulator behavior: it may render weirdly, and the backend must
+  not reject it as a high-level API misuse.
+- Structural resource errors still fault at admission: missing resources,
+  out-of-range byte spans, capacity overflow, zero-size surfaces, or malformed
+  packets.
+- Buffer usage bits and surface usage/format mismatches are retained raw
+  metadata. They are not a high-level API validation gate for draws, texture
+  binds, or pass attachments.
+- Host backends materialize pinned RPU-owned `RGBA8` color attachments as GPU
+  textures and pinned `DEPTH16` depth attachments as renderbuffers. The retained
+  command buffer carries only raw surface refs; attachment storage is backend
+  runtime cache, not serialized frame state.
+- Save-state is the persistence boundary that serializes the live RPU arena
+  prefixes needed by defined buffers; restored frame refs are rebound to that
+  arena.
 
 Frame resources:
 
 ```ts
 export type VdpRpuFrameResources = Readonly<{
-	bufferRevisions: VdpRpuBufferRevision[];
-	surfaceRevisions: VdpRpuSurfaceRevision[];
 	bufferRefs: VdpRpuFrameBufferRefs;
 	surfaceRefs: VdpRpuFrameSurfaceRefs;
 	constantWords: Uint32Array;
@@ -335,6 +411,7 @@ export class VdpRpuFrameBufferRefs {
 	public readonly byteOffset = new Uint32Array(VDP_RPU_BUFFER_REF_CAPACITY);
 	public readonly byteLength = new Uint32Array(VDP_RPU_BUFFER_REF_CAPACITY);
 	public readonly usage = new Uint8Array(VDP_RPU_BUFFER_REF_CAPACITY);
+	public readonly bytes: Uint8Array[];
 }
 
 export class VdpRpuFrameSurfaceRefs {
@@ -425,13 +502,15 @@ export const VDP_RPU_DRAW_INDEX_TYPE_SHIFT = 8;
 export const VDP_RPU_DRAW_INDEX_TYPE_MASK = 0x0000ff00;
 ```
 
-Reserved-bit rules:
+Representable raw-word rules:
 
-- `(passOps & ~VDP_RPU_PASS_OPS_MASK) !== 0` faults.
-- `(pipelineWord & ~VDP_RPU_PIPELINE_WORD_MASK) !== 0` faults.
-- `(samplerWord & ~VDP_RPU_SAMPLER_WORD_MASK) !== 0` faults.
-- Unknown enum values in blend/depth/cull/filter/wrap/primitive/index fields fault.
-- NPOT texture surfaces require clamp wrapping and non-mip filtering.
+- `passOps`, `pipelineWord`, `samplerWord`, primitive bits, and index-type bits are retained as raw words after structural packet/resource admission.
+- Unknown enum values in blend/depth/cull/filter/wrap/primitive/index fields do not fault merely because they are weird.
+- Unknown stream layout ids do not fault once the buffer range can be pinned;
+  admission uses the baseline `V2_C4` stride for range pinning, and the backend
+  consumes the retained layout id through its deterministic layout decoder.
+- The backend maps the retained raw words onto WebGL/GLES2 state deterministically; weird-but-representable state may render weirdly.
+- NPOT texture/sampler combinations are cart-visible hardware state, not a high-level API validation point.
 
 ## Retained command buffer
 
@@ -470,6 +549,7 @@ export class VdpRpuCommandBuffer {
 	public readonly drawTextureBindingCount = new Uint8Array(VDP_RPU_DRAW_CAPACITY);
 
 	public readonly streamLayoutId = new Uint16Array(VDP_RPU_STREAM_BINDING_CAPACITY);
+	public readonly streamSlot = new Uint8Array(VDP_RPU_STREAM_BINDING_CAPACITY);
 	public readonly streamBufferRef = new Uint16Array(VDP_RPU_STREAM_BINDING_CAPACITY);
 	public readonly streamByteOffset = new Uint32Array(VDP_RPU_STREAM_BINDING_CAPACITY);
 	public readonly streamStepRate = new Uint8Array(VDP_RPU_STREAM_BINDING_CAPACITY);
@@ -625,6 +705,14 @@ export const VDP_RPU_STREAM_LAYOUTS: readonly VdpRpuStreamLayoutSpec[] = [
 ```
 
 Instance affine and UV-rect fields are raw layout fields. They are not a sprite, billboard, parallax, or skybox contract.
+The baseline host executor maps `V2_T2_C4_I_AFFINE2` and `V3_C4_I_MAT4` to
+GPU instanced drawcalls. It must not expand instances on the CPU; a backend
+without instanced arrays lacks the required RPU feature.
+The `V3_N3_T2_C4_C0_C1` and `V3_N3_T2_C4_J4_W4_C0_C1` variants are likewise
+fixed GPU datapaths: C0 is the transform matrix block, C1 is the raw fragment
+lighting/material block, and the skinned variant reads raw joint matrices from
+constant slot 1. The VDP does not interpret those values as mesh, model, or
+gameplay semantics; the shader consumes the programmed words directly.
 
 ## Shader variants
 
@@ -637,6 +725,7 @@ export const VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1 = 4;
 export const VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1 = 5;
 export const VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2 = 6;
 export const VDP_RPU_SHADER_V3_C4_I_MAT4 = 7;
+export const VDP_RPU_SHADER_VARIANT_MASK = 0x00000007;
 
 export type VdpRpuShaderConstantSlotSpec = Readonly<{
 	slot: number;
@@ -739,17 +828,20 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 
 `C0`, `C1`, and `C2` are generic constant slots. Their contents are defined by the fixed shader variant and uploaded by the cart as raw words.
 
+`BEGIN_DRAW.shaderVariant` is decoded with `VDP_RPU_SHADER_VARIANT_MASK`.
+The retained command buffer stores the decoded fixed variant selector; high
+shader-word bits are weird-but-representable cart state, not a host-shader
+validation fault.
+
 ## Fault model
 
 ```ts
 export const VDP_FAULT_RPU_BAD_PACKET = 0x0700;
-export const VDP_FAULT_RPU_BAD_SHADER = 0x0701;
 export const VDP_FAULT_RPU_BAD_STREAM_LAYOUT = 0x0702;
 export const VDP_FAULT_RPU_BUFFER_OOB = 0x0703;
 export const VDP_FAULT_RPU_STALE_RESOURCE = 0x0704;
 export const VDP_FAULT_RPU_BAD_SURFACE_USAGE = 0x0705;
 export const VDP_FAULT_RPU_BAD_CONSTANT_RANGE = 0x0706;
-export const VDP_FAULT_RPU_UNSUPPORTED_FEATURE = 0x0707;
 export const VDP_FAULT_RPU_COMMAND_OVERFLOW = 0x0708;
 export const VDP_FAULT_RPU_BAD_STATE = 0x0709;
 ```
@@ -761,13 +853,11 @@ Admission mapping:
 | Bad RPU packet kind, payload count, reserved header flags, or variable payload length | `VDP_FAULT_RPU_BAD_PACKET` |
 | RPU op in the wrong lifecycle state | `VDP_FAULT_RPU_BAD_STATE` |
 | Pass, draw, stream, constant, texture, buffer-ref, or surface-ref capacity overflow | `VDP_FAULT_RPU_COMMAND_OVERFLOW` |
-| Unknown shader variant | `VDP_FAULT_RPU_BAD_SHADER` |
-| Stream layout does not match the shader variant slot | `VDP_FAULT_RPU_BAD_STREAM_LAYOUT` |
-| Buffer id missing, usage mismatch, or byte range OOB | `VDP_FAULT_RPU_BUFFER_OOB` |
-| Missing pinned resource revision at seal/present | `VDP_FAULT_RPU_STALE_RESOURCE` |
-| Surface id missing, usage mismatch, format mismatch, or attachment OOB | `VDP_FAULT_RPU_BAD_SURFACE_USAGE` |
+| Stream binding outside fixed command storage | `VDP_FAULT_RPU_BAD_STREAM_LAYOUT` |
+| Buffer id missing or byte range OOB | `VDP_FAULT_RPU_BUFFER_OOB` |
+| RPU arena/resource-table save-state cannot be rebound to retained refs | `VDP_FAULT_RPU_STALE_RESOURCE` |
+| Surface id missing, zero-size surface, or surface-ref capacity overflow | `VDP_FAULT_RPU_BAD_SURFACE_USAGE` |
 | Constant bank missing or range outside bank/table | `VDP_FAULT_RPU_BAD_CONSTANT_RANGE` |
-| Required backend feature unavailable or unsupported sampler/index mode | `VDP_FAULT_RPU_UNSUPPORTED_FEATURE` |
 
 ## Frame handoff ownership
 
@@ -865,8 +955,6 @@ export type VdpRpuFrameSaveState = {
 	commands: VdpRpuCommandBufferSaveState;
 	bufferRefs: VdpRpuFrameBufferRefSaveState[];
 	surfaceRefs: VdpRpuFrameSurfaceRefSaveState[];
-	bufferRevisions: VdpRpuBufferRevisionSaveState[];
-	surfaceRevisions: VdpRpuSurfaceRevisionSaveState[];
 	constantWords: number[];
 	constantBanks: VdpRpuConstantBankSaveState[];
 };
@@ -878,9 +966,8 @@ export type VdpRpuBufferRecordSaveState = {
 	usage: number;
 };
 
-export type VdpRpuBufferRevisionSaveState = {
+export type VdpRpuBufferImageSaveState = {
 	bufferId: number;
-	revision: number;
 	bytes: number[];
 };
 
@@ -893,22 +980,13 @@ export type VdpRpuSurfaceRecordSaveState = {
 	usage: number;
 };
 
-export type VdpRpuSurfaceRevisionSaveState = {
-	surfaceId: number;
-	revision: number;
-	bytes: number[];
-};
-
 export type VdpRpuSaveState = {
 	buildState: number;
+	openPassIndex: number;
+	openDrawIndex: number;
 	buffers: VdpRpuBufferRecordSaveState[];
-	bufferRevisions: VdpRpuBufferRevisionSaveState[];
+	bufferImages: VdpRpuBufferImageSaveState[];
 	surfaces: VdpRpuSurfaceRecordSaveState[];
-	surfaceRevisions: VdpRpuSurfaceRevisionSaveState[];
-	buildingFrame: VdpRpuFrameSaveState;
-	activeFrame: VdpRpuFrameSaveState;
-	pendingFrame: VdpRpuFrameSaveState;
-	visibleFrame: VdpRpuFrameSaveState;
 };
 ```
 

@@ -75,8 +75,8 @@ struct ImgMeta {
 	};
 
 	// Center point for rotation/positioning
-	f32 centerX = 0.0f;
-	f32 centerY = 0.0f;
+	f32 centerX = 0.0F;
+	f32 centerY = 0.0F;
 	bool hasCenterpoint = false;
 
 	std::optional<HitPolygons> hitpolygons;
@@ -130,13 +130,15 @@ enum class AudioType {
 	Ui,
 };
 
-inline AudioType audioTypeFromString(const std::string& value) {
-	if (value == "music") return AudioType::Music;
-	if (value == "ui") return AudioType::Ui;
+inline auto audioTypeFromString(const std::string& value) -> AudioType {
+	if (value == "music") { return AudioType::Music;
+}
+	if (value == "ui") { return AudioType::Ui;
+}
 	return AudioType::Sfx;
 }
 
-inline const char* audioTypeToString(AudioType type) {
+inline auto audioTypeToString(AudioType type) -> const char* {
 	switch (type) {
 		case AudioType::Music: return "music";
 		case AudioType::Ui: return "ui";
@@ -217,9 +219,9 @@ struct ModelImageOffset {
 };
 
 enum class ModelMaterialAlphaMode : u8 {
-	Opaque = 0u,
-	Mask = 1u,
-	Blend = 2u,
+	Opaque = 0U,
+	Mask = 1U,
+	Blend = 2U,
 };
 
 struct ModelMaterial {
@@ -240,7 +242,7 @@ struct ModelMaterial {
 	std::optional<i32> emissiveTexCoord;
 	std::optional<std::array<f32, 4>> emissiveFactor;
 	ModelMaterialAlphaMode alphaMode = ModelMaterialAlphaMode::Opaque;
-	f32 alphaCutoff = 0.5f;
+	f32 alphaCutoff = 0.5F;
 	bool doubleSided = false;
 	bool unlit = false;
 };

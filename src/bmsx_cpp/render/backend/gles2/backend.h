@@ -38,7 +38,6 @@ public:
 	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) override;
 	void destroyTexture(TextureHandle handle) override;
 	void registerBuiltinPasses(RenderPassLibrary& registry) override;
-	void executeVdp2DBlit(VdpFrameBufferExecutionPassState& state) override;
 
 	void clear(const std::array<f32, 4>* color, const f32* depth) override;
 	PassEncoder beginRenderPass(const RenderPassDesc& desc) override;
@@ -61,16 +60,18 @@ public:
 
 	void setActiveTextureUnit(i32 unit);
 	void bindTexture2D(TextureHandle tex);
+	void invalidateTextureBindingCache();
 	void setRenderTarget(GLuint fbo, i32 width, i32 height);
 	GLuint buildProgram(const char* vertexShaderSource, const char* fragmentShaderSource, const char* label);
+	void* resolveProcAddress(const char* name) const;
+	void* resolveProcAddress(const char* coreName, const char* angleName, const char* extName) const;
+	bool supportsUintIndices() const { return m_supports_uint_indices; }
 	GLuint backbuffer() const { return m_backbuffer_fbo; }
 	u32 contextGeneration() const { return m_context_generation; }
 
 	static GLES2Texture* asTexture(TextureHandle handle) { return static_cast<GLES2Texture*>(handle); }
 
 private:
-	void invalidateTextureBindingCache();
-
 	static constexpr i32 kTrackedTextureUnits = 16;
 	FramebufferGetter m_get_framebuffer = nullptr;
 	GLuint m_current_fbo = 0;
@@ -84,6 +85,7 @@ private:
 	u32 m_context_generation = 0;
 	bool m_context_ready = false;
 	bool m_supports_srgb_textures = false;
+	bool m_supports_uint_indices = false;
 };
 
 } // namespace bmsx

@@ -6,8 +6,6 @@
 #include <string>
 
 namespace bmsx {
-namespace {
-
 const char* resolveVdpSurfaceTextureKey(uint32_t surfaceId) {
 	switch (surfaceId) {
 		case VDP_RD_SURFACE_SYSTEM: return SYSTEM_SLOT_TEXTURE_KEY;
@@ -16,8 +14,6 @@ const char* resolveVdpSurfaceTextureKey(uint32_t surfaceId) {
 	}
 	throw BMSX_RUNTIME_ERROR("[VDPSurfaces] unknown surface " + std::to_string(surfaceId) + ".");
 }
-
-} // namespace
 
 VdpRenderSurfaceInfo resolveVdpRenderSurfaceForUpload(const VdpSurfaceUpload& upload) {
 	return VdpRenderSurfaceInfo{

@@ -29,7 +29,6 @@ local eventemitter_module<const> = require('bios/eventemitter')
 local eventemitter<const> = eventemitter_module.eventemitter
 eventemitter_module.eventemitter = eventemitter
 eventemitter_module.instance = eventemitter.instance
--- local ide_editor = require('ide_editor')
 local bool01<const> = require('bios/util/bool01')
 local deep_clone<const> = require('bios/util/deep_clone')
 local velocity<const> = require('bios/util/velocity')
@@ -46,9 +45,8 @@ local timeline<const> = require('bios/timeline/index')
 local aem<const> = require('bios/aem')
 local progression<const> = require('bios/progression')
 local romdir<const> = require('bios/romdir')
-local vdp_stream<const> = require('bios/vdp_stream')
+local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
 local vdp_image<const> = require('bios/vdp_image')
-local vdp_pmu<const> = require('bios/vdp_pmu')
 
 local world_instance<const> = world_module.instance
 
@@ -65,8 +63,8 @@ local cart_irq_handlers<const> = {}
 local sys_atlas_id<const> = 254
 vdp_stream_cursor = sys_vdp_stream_base
 vdp_stream_limit = sys_vdp_stream_base + (sys_vdp_stream_capacity * sys_vdp_arg_stride)
-mem[sys_vdp_slot_primary_atlas] = sys_vdp_atlas_none
-mem[sys_vdp_slot_secondary_atlas] = sys_vdp_atlas_none
+mem[sys_vdp_slot_primary_atlas] = sys_vdp_slot_none
+mem[sys_vdp_slot_secondary_atlas] = sys_vdp_slot_none
 
 local excluded_class_keys<const> = {
 	def_id = true,
@@ -284,10 +282,10 @@ system.clear_map = clear_map
 system.scratchbatch = scratchbatch
 system.sorted_scratchbatch = sorted_scratchbatch
 system.vdp_stream_claim = vdp_stream_claim
-system.vdp_stream_finish = vdp_stream.finish
-system.vdp_clear_color = vdp_stream.clear_color
-system.vdp_fill_rect_color = vdp_stream.fill_rect_color
-system.vdp_draw_line_color = vdp_stream.draw_line_color
+system.vdp_stream_finish = vdp_rpu_quads.finish_frame
+system.vdp_clear_color = vdp_rpu_quads.clear_color
+system.vdp_fill_rect_color = vdp_rpu_quads.fill_rect_color
+system.vdp_draw_line_color = vdp_rpu_quads.draw_line_color
 system.vdp_blit_img_color = vdp_image.write_blit_color
 system.vdp_glyph_color = vdp_image.write_glyph_color
 system.vdp_item_color = vdp_image.write_item_color
@@ -295,7 +293,6 @@ system.vdp_img_rect = vdp_image.rect
 system.vdp_img_slot = vdp_image.slot
 system.vdp_img_source = vdp_image.source
 system.vdp_write_source = vdp_image.write_source
-system.vdp_pmu_write_bank = vdp_pmu.write_bank
 system.rom_data = romdir.data
 system.consume_axis_accum = velocity.consume_axis_accum
 system.deep_clone = deep_clone
@@ -374,8 +371,10 @@ function system.vdp_load_slot(slot, atlas_id)
 	end
 	local atlas_name<const> = string.format('_atlas_%02d', atlas_id)
 	local atlas<const> = romdir.cart_atlas(atlas_name)
+	local atlas_meta<const> = romdir.image(atlas_name).imgmeta
 	local src<const> = atlas.addr
 	local len<const> = atlas.len
+	vdp_rpu_quads.set_slot_dim(slot, atlas_meta.width, atlas_meta.height)
 	local dst
 	local cap
 	if slot == sys_vdp_slot_primary then
@@ -410,8 +409,10 @@ function system.vdp_load_system_slot()
 	end
 	local atlas_name<const> = string.format('_atlas_%02d', sys_atlas_id)
 	local atlas<const> = romdir.system_rom_atlas(atlas_name)
+	local atlas_meta<const> = romdir.system_image(atlas_name).imgmeta
 	local src<const> = atlas.addr
 	local len<const> = atlas.len
+	vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, atlas_meta.width, atlas_meta.height)
 	vdp_load_job_seq = vdp_load_job_seq + 1
 	vdp_load_queue_tail = vdp_load_queue_tail + 1
 	vdp_load_queue[vdp_load_queue_tail] = {
@@ -569,35 +570,26 @@ function system.irq(flags)
 	local fatal
 	if (flags & irq_img_done) ~= 0 then
 		ack = ack | irq_img_done
-		if vdp_active_job == nil then
-			fatal = 'irq: img_DONE without pending atlas load'
-		else
-			local allow_handler = vdp_active_job.allow_handler
-			if allow_handler == nil then
-				allow_handler = true
-			end
-				if allow_handler and vdp_load_handler ~= nil then
-					vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'done')
-			end
-			vdp_active_job = nil
-			vdp_try_start_next_job()
+		local allow_handler = vdp_active_job.allow_handler
+		if allow_handler == nil then
+			allow_handler = true
 		end
+		if allow_handler and vdp_load_handler ~= nil then
+			vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'done')
+		end
+		vdp_active_job = nil
+		vdp_try_start_next_job()
 	end
 	if (flags & irq_img_error) ~= 0 then
 		ack = ack | irq_img_error
-		if vdp_active_job == nil then
-			fatal = 'irq: img_ERROR without pending atlas load'
-		else
-			local allow_handler = vdp_active_job.allow_handler
-			if allow_handler == nil then
-				allow_handler = true
-			end
-			if allow_handler and vdp_load_handler ~= nil then
-				vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'error')
-			end
-			vdp_active_job = nil
-			fatal = 'irq: IMGDEC failed while loading atlas'
+		local allow_handler = vdp_active_job.allow_handler
+		if allow_handler == nil then
+			allow_handler = true
 		end
+		if allow_handler and vdp_load_handler ~= nil then
+			vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'error')
+		end
+		vdp_active_job = nil
 	end
 	ack = ack | (flags & ~(irq_img_done | irq_img_error))
 	if fatal == nil then

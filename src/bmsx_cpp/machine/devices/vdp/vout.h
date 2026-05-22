@@ -7,16 +7,24 @@
 
 namespace bmsx {
 
+inline constexpr u8 VDP_VOUT_STATE_IDLE = 0u;
+inline constexpr u8 VDP_VOUT_STATE_REGISTER_LATCHED = 1u;
+inline constexpr u8 VDP_VOUT_STATE_FRAME_SEALED = 2u;
+inline constexpr u8 VDP_VOUT_STATE_FRAME_PRESENTED = 3u;
+
+inline constexpr u8 VDP_VOUT_SCANOUT_PHASE_ACTIVE = 0u;
+inline constexpr u8 VDP_VOUT_SCANOUT_PHASE_VBLANK = 1u;
+
 enum class VdpVoutState : u8 {
-	Idle = 0,
-	RegisterLatched = 1,
-	FrameSealed = 2,
-	FramePresented = 3,
+	Idle = VDP_VOUT_STATE_IDLE,
+	RegisterLatched = VDP_VOUT_STATE_REGISTER_LATCHED,
+	FrameSealed = VDP_VOUT_STATE_FRAME_SEALED,
+	FramePresented = VDP_VOUT_STATE_FRAME_PRESENTED,
 };
 
 enum class VdpVoutScanoutPhase : u8 {
-	Active = 0,
-	Vblank = 1,
+	Active = VDP_VOUT_SCANOUT_PHASE_ACTIVE,
+	Vblank = VDP_VOUT_SCANOUT_PHASE_VBLANK,
 };
 
 struct VdpVoutFrameOutput {
@@ -31,19 +39,17 @@ public:
 	bool vblankActive() const { return m_scanoutPhase == VdpVoutScanoutPhase::Vblank; }
 	i32 liveDitherType() const { return m_liveDitherType; }
 	i32 visibleDitherType() const { return m_visibleDitherType; }
-	VdpSkyboxSamples& visibleSkyboxSampleBuffer() { return m_visibleSkyboxSamples; }
 
 	void reset(i32 ditherType = 0, u32 frameBufferWidth = 0u, u32 frameBufferHeight = 0u);
 	void writeDitherType(i32 ditherType);
 	void configureScanout(u32 frameBufferWidth, u32 frameBufferHeight);
 	void setScanoutTiming(int cyclesIntoFrame, int cyclesPerFrame, int vblankStartCycle, i64 nowCycles);
 	const VdpVoutFrameOutput& sealFrame();
-	void presentFrame(VdpSubmittedFrame& frame, bool skyboxEnabled);
-	void presentLiveState(const VdpXfUnit& xf, bool skyboxEnabled, const VdpLpuUnit& lpu, const VdpMfuUnit& mfu, const VdpJtuUnit& jtu);
+	void presentFrame(VdpSubmittedFrame& frame);
+	void presentLiveState();
 	const VdpDeviceOutput& readDeviceOutput(i64 nowCycles);
 
 private:
-	void resetVisibleSkyboxSamples();
 	void refreshScanoutBeam(i64 nowCycles);
 	void setVblankBeamPosition(int cyclesIntoFrame);
 
@@ -60,13 +66,6 @@ private:
 	i32 m_visibleDitherType = 0;
 	u32 m_visibleFrameBufferWidth = 0u;
 	u32 m_visibleFrameBufferHeight = 0u;
-	VdpXfUnit m_visibleXf;
-	VdpSkyboxSamples m_visibleSkyboxSamples{};
-	std::unique_ptr<VdpBbuFrameBuffer> m_visibleBillboards = std::make_unique<VdpBbuFrameBuffer>();
-	std::unique_ptr<VdpMduFrameBuffer> m_visibleMeshes = std::make_unique<VdpMduFrameBuffer>();
-	std::array<u32, VDP_LPU_REGISTER_WORDS> m_visibleLightRegisterWords{};
-	std::array<u32, VDP_MFU_WEIGHT_COUNT> m_visibleMorphWeightWords{};
-	std::array<u32, VDP_JTU_REGISTER_WORDS> m_visibleJointMatrixWords{};
 	std::unique_ptr<VdpRpuFrameOutput> m_visibleRpuFrame = createVdpRpuFrameOutput();
 	VdpVoutFrameOutput m_sealedFrameOutput;
 	VdpDeviceOutput m_deviceOutput;

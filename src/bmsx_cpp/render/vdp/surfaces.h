@@ -12,6 +12,7 @@ struct VdpRenderSurfaceInfo {
 	uint32_t height = 0;
 };
 
+const char* resolveVdpSurfaceTextureKey(uint32_t surfaceId);
 VdpRenderSurfaceInfo resolveVdpRenderSurfaceForUpload(const VdpSurfaceUpload& upload);
 
 } // namespace bmsx

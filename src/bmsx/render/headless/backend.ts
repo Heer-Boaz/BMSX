@@ -1,23 +1,15 @@
 import type { color_arr, TextureSource } from '../../rompack/format';
-import type { VDP } from '../../machine/devices/vdp/vdp';
-import type { VdpBlitterCommandBuffer } from '../../machine/devices/vdp/blitter';
 import {
-	VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE,
 	type GPUBackend,
 	type BackendCaps,
 	type TextureHandle,
 	type RenderPassDesc,
 	type PassEncoder,
 	type RenderPassInstanceHandle,
-	type VdpFrameBufferExecutionPassState,
 	type RenderPassId,
-	type SizedArrayBufferView,
 } from '../backend/backend';
 import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../backend/texture_params';
 import { createSolidRgba8Pixels } from '../shared/solid_pixels';
-import { registerVdpFrameBufferExecutionPass } from '../2d/vdp_blit_pipeline';
-import { drainReadyVdpFrameBufferExecutionForSoftware } from '../backend/software/vdp_framebuffer_execution';
-import { VdpFrameBufferRasterizer } from '../backend/software/vdp_framebuffer_rasterizer';
 import type { RenderPassLibrary } from '../backend/pass/library';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../host_overlay/headless/pipeline';
@@ -28,13 +20,13 @@ type HeadlessTextureRecord = {
 	width: number;
 	height: number;
 	pixels: Uint8Array | null;
-	cubemapFaces: Array<Uint8Array | null> | null;
+	cubemapFaces: [Uint8Array | null, Uint8Array | null, Uint8Array | null, Uint8Array | null, Uint8Array | null, Uint8Array | null] | null;
 };
 
 type HeadlessBufferRecord = {
 	id: number;
 	usage: 'static' | 'dynamic';
-	bytes: Uint8Array;
+	byteLength: number;
 };
 
 type HeadlessFrameStats = {
@@ -72,19 +64,27 @@ function createFrameStats(): HeadlessFrameStats {
 	};
 }
 
-function toBytes(data: ArrayBufferView): Uint8Array {
-	return new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
-}
-
 function arrayBufferViewElementCount(data: ArrayBufferView): number {
-	const sized = data as SizedArrayBufferView;
 	const bytesPerElement = arrayBufferViewBytesPerElement(data);
+	const sized = data as ArrayBufferView & { readonly length?: number };
 	return data instanceof DataView ? data.byteLength : sized.length ?? data.byteLength / bytesPerElement;
 }
 
 function arrayBufferViewBytesPerElement(data: ArrayBufferView): number {
-	const sized = data as SizedArrayBufferView;
+	const sized = data as ArrayBufferView & { readonly BYTES_PER_ELEMENT?: number };
 	return data instanceof DataView ? 1 : sized.BYTES_PER_ELEMENT ?? 1;
+}
+
+function resetFrameStats(stats: HeadlessFrameStats): void {
+	stats.draws = 0;
+	stats.drawIndexed = 0;
+	stats.drawsInstanced = 0;
+	stats.drawIndexedInstanced = 0;
+	stats.bytesUploaded = 0;
+	stats.vertexBytes = 0;
+	stats.indexBytes = 0;
+	stats.uniformBytes = 0;
+	stats.textureBytes = 0;
 }
 
 function textureByteLength(width: number, height: number): number {
@@ -101,38 +101,15 @@ export class HeadlessGPUBackend implements GPUBackend {
 	private readonly vaos = new Set<number>();
 	private readonly bound2DByUnit = new Map<number, TextureHandle>();
 	private readonly boundCubeByUnit = new Map<number, TextureHandle>();
-	private vdpFrameBufferRasterizerOwner: VDP | null = null;
-	private vdpFrameBufferRasterizer: VdpFrameBufferRasterizer | null = null;
 	private activeTextureUnit = 0;
-	private frameStats: HeadlessFrameStats = createFrameStats();
+	private readonly frameStats: HeadlessFrameStats = createFrameStats();
+	private readonly passEncoderScratch: PassEncoder = { fbo: null, desc: {} };
 
 	registerBuiltinPasses(registry: RenderPassLibrary): void {
-		registerVdpFrameBufferExecutionPass(registry);
 		registerHeadlessPasses(registry);
 		registerHostOverlayPass_Headless(registry);
 		registerHostMenuPass_Headless(registry);
 		registerHeadlessPresentPass(registry);
-	}
-
-	executeVdp2DBlit(state: VdpFrameBufferExecutionPassState): void {
-		const vdp = state.runtime.machine.vdp;
-		if (state.target === VDP_FRAMEBUFFER_EXECUTION_TARGET_ACTIVE) {
-			drainReadyVdpFrameBufferExecutionForSoftware(this, vdp);
-			return;
-		}
-		const frameBufferSlot = vdp.frameBufferExecutionTarget();
-		this.executeVdpFrameBufferCommands(vdp, state.commands, frameBufferSlot.cpuReadback);
-		vdp.completeDisplayFrameBufferReplay(frameBufferSlot);
-	}
-
-	executeVdpFrameBufferCommands(vdp: VDP, commands: VdpBlitterCommandBuffer, frameBufferPixels: Uint8Array): void {
-		let rasterizer = this.vdpFrameBufferRasterizer;
-		if (rasterizer === null || this.vdpFrameBufferRasterizerOwner !== vdp) {
-			this.vdpFrameBufferRasterizerOwner = vdp;
-			rasterizer = new VdpFrameBufferRasterizer(vdp);
-			this.vdpFrameBufferRasterizer = rasterizer;
-		}
-		rasterizer.executeFrameBufferCommands(commands, vdp.frameBufferWidth, vdp.frameBufferHeight, frameBufferPixels);
 	}
 
 	private getTextureId(handle: TextureHandle): number {
@@ -148,7 +125,13 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return record;
 	}
 
-	private createTextureRecord(kind: string, width: number, height: number, pixels: Uint8Array | null, cubemapFaces: Array<Uint8Array | null> | null): TextureHandle {
+	private createTextureRecord(
+		kind: string,
+		width: number,
+		height: number,
+		pixels: Uint8Array | null,
+		cubemapFaces: [Uint8Array | null, Uint8Array | null, Uint8Array | null, Uint8Array | null, Uint8Array | null, Uint8Array | null] | null,
+	): TextureHandle {
 		const handle = makeTextureHandle(kind);
 		const id = this.getTextureId(handle);
 		this.textures.set(id, { id, kind, width, height, pixels, cubemapFaces });
@@ -159,26 +142,24 @@ export class HeadlessGPUBackend implements GPUBackend {
 		recordMap: Map<number, HeadlessBufferRecord>,
 		kind: 'vertex' | 'uniform',
 		usage: 'static' | 'dynamic',
-		bytes: Uint8Array,
+		byteLength: number,
 	): unknown {
 		const id = ++bufferIdSeq;
-		recordMap.set(id, { id, usage, bytes });
-		this.accountUpload(kind, bytes.byteLength);
+		recordMap.set(id, { id, usage, byteLength });
+		this.accountUpload(kind, byteLength);
 		return { id, kind: `${kind}-buffer` };
 	}
 
-	private normalizeTextureSource(src: TextureSource): Uint8Array {
+	private textureSourcePixels(src: TextureSource): Uint8Array {
 		const expectedBytes = textureByteLength(src.width, src.height);
 		if (!src.data) {
-			return new Uint8Array(expectedBytes);
+			throw new Error('[HeadlessBackend] Texture source has no pixels.');
 		}
 		const bytes = src.data;
-		if (bytes.byteLength === expectedBytes) {
-			return new Uint8Array(bytes);
+		if (bytes.byteLength !== expectedBytes) {
+			throw new Error(`[HeadlessBackend] Texture source byte length mismatch (${bytes.byteLength} != ${expectedBytes}).`);
 		}
-		const normalized = new Uint8Array(expectedBytes);
-		normalized.set(bytes.subarray(0, Math.min(bytes.byteLength, expectedBytes)));
-		return normalized;
+		return bytes;
 	}
 
 	private ensureTexturePixels(record: HeadlessTextureRecord): Uint8Array {
@@ -201,16 +182,15 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createTexture(data: Uint8Array, width: number, height: number, _desc: TextureParams): TextureHandle {
-		const pixels = new Uint8Array(data);
 		this.accountUpload('texture', textureByteLength(width, height));
-		return this.createTextureRecord('texture', width, height, pixels, null);
+		return this.createTextureRecord('texture', width, height, data, null);
 	}
 
 	updateTexture(handle: TextureHandle, data: Uint8Array, width: number, height: number, _desc: TextureParams): void {
 		const record = this.getTextureRecord(handle);
 		record.width = width;
 		record.height = height;
-		record.pixels = new Uint8Array(data);
+		record.pixels = data;
 		record.cubemapFaces = null;
 		this.accountUpload('texture', textureByteLength(width, height));
 	}
@@ -259,7 +239,9 @@ export class HeadlessGPUBackend implements GPUBackend {
 		for (let row = 0; row < height; row += 1) {
 			const srcOffset = (y + row) * srcStride + x * 4;
 			const outOffset = row * outStride;
-			out.set(src.subarray(srcOffset, srcOffset + outStride), outOffset);
+			for (let index = 0; index < outStride; index += 1) {
+				out[outOffset + index] = src[srcOffset + index];
+			}
 		}
 	}
 
@@ -273,32 +255,47 @@ export class HeadlessGPUBackend implements GPUBackend {
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], _desc: TextureParams): TextureHandle {
 		const width = faces[0].width;
 		const height = faces[0].height;
-		const facePixels = faces.map((face) => {
+		const facePixels: [Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array] = [
+			this.textureSourcePixels(faces[0]),
+			this.textureSourcePixels(faces[1]),
+			this.textureSourcePixels(faces[2]),
+			this.textureSourcePixels(faces[3]),
+			this.textureSourcePixels(faces[4]),
+			this.textureSourcePixels(faces[5]),
+		];
+		for (let faceIndex = 0; faceIndex < 6; faceIndex += 1) {
+			const face = faces[faceIndex];
 			if (face.width !== width || face.height !== height) {
 				throw new Error('[HeadlessBackend] Cubemap faces must all have identical dimensions.');
 			}
-			const normalized = this.normalizeTextureSource(face);
-			this.accountUpload('texture', normalized.byteLength);
-			return normalized;
-		});
+			this.accountUpload('texture', facePixels[faceIndex].byteLength);
+		}
 		return this.createTextureRecord('cubemap', width, height, null, facePixels);
 	}
 
 	createSolidCubemap(size: number, color: number, _desc: TextureParams): TextureHandle {
-		const face = createSolidRgba8Pixels(size, size, color);
-		const faces: Array<Uint8Array> = [];
-		for (let i = 0; i < 6; i += 1) {
-			faces.push(new Uint8Array(face));
-		}
-		this.accountUpload('texture', face.byteLength * 6);
+		const faces: [Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array] = [
+			createSolidRgba8Pixels(size, size, color),
+			createSolidRgba8Pixels(size, size, color),
+			createSolidRgba8Pixels(size, size, color),
+			createSolidRgba8Pixels(size, size, color),
+			createSolidRgba8Pixels(size, size, color),
+			createSolidRgba8Pixels(size, size, color),
+		];
+		this.accountUpload('texture', faces[0].byteLength * 6);
 		return this.createTextureRecord('solidCubemap', size, size, null, faces);
 	}
 
 	createCubemapEmpty(size: number, _desc: TextureParams): TextureHandle {
-		const faces: Array<Uint8Array> = [];
-		for (let i = 0; i < 6; i += 1) {
-			faces.push(new Uint8Array(textureByteLength(size, size)));
-		}
+		const byteLength = textureByteLength(size, size);
+		const faces: [Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array] = [
+			new Uint8Array(byteLength),
+			new Uint8Array(byteLength),
+			new Uint8Array(byteLength),
+			new Uint8Array(byteLength),
+			new Uint8Array(byteLength),
+			new Uint8Array(byteLength),
+		];
 		return this.createTextureRecord('cubemapEmpty', size, size, null, faces);
 	}
 
@@ -313,7 +310,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		if (src.width !== record.width || src.height !== record.height) {
 			throw new Error(`[HeadlessBackend] Cubemap face size mismatch: expected ${record.width}x${record.height}, got ${src.width}x${src.height}.`);
 		}
-		const pixels = this.normalizeTextureSource(src);
+		const pixels = this.textureSourcePixels(src);
 		record.cubemapFaces[face] = pixels;
 		this.accountUpload('texture', pixels.byteLength);
 	}
@@ -354,7 +351,9 @@ export class HeadlessGPUBackend implements GPUBackend {
 	clear(_color: color_arr | undefined, _depth: number | undefined): void { }
 
 	beginRenderPass(desc: RenderPassDesc): PassEncoder {
-		return { fbo: null, desc };
+		this.passEncoderScratch.fbo = null;
+		this.passEncoderScratch.desc = desc;
+		return this.passEncoderScratch;
 	}
 
 	endRenderPass(_pass: PassEncoder): void { }
@@ -393,8 +392,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createVertexBuffer(data: ArrayBufferView, usage: 'static' | 'dynamic'): unknown {
-		const bytes = toBytes(data);
-		return this.createBufferRecord(this.vertexBuffers, 'vertex', usage, bytes);
+		return this.createBufferRecord(this.vertexBuffers, 'vertex', usage, data.byteLength);
 	}
 
 	updateVertexBuffer(buf: unknown, data: ArrayBufferView, dstOffset = 0, sourceOffset = 0, elementCount?: number): void {
@@ -406,15 +404,10 @@ export class HeadlessGPUBackend implements GPUBackend {
 		const bytesPerElement = arrayBufferViewBytesPerElement(data);
 		const uploadElements = elementCount === undefined ? arrayBufferViewElementCount(data) - sourceOffset : elementCount;
 		const uploadBytes = uploadElements * bytesPerElement;
-		const sourceByteOffset = data.byteOffset + sourceOffset * bytesPerElement;
-		const sourceBytes = new Uint8Array(data.buffer, sourceByteOffset, uploadBytes);
 		const needed = dstOffset + uploadBytes;
-		if (needed > record.bytes.byteLength) {
-			const grown = new Uint8Array(needed);
-			grown.set(record.bytes, 0);
-			record.bytes = grown;
+		if (needed > record.byteLength) {
+			record.byteLength = needed;
 		}
-		record.bytes.set(sourceBytes, dstOffset);
 		this.accountUpload('vertex', uploadBytes);
 	}
 
@@ -433,8 +426,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): unknown {
-		const bytes = new Uint8Array(byteSize);
-		return this.createBufferRecord(this.uniformBuffers, 'uniform', usage, bytes);
+		return this.createBufferRecord(this.uniformBuffers, 'uniform', usage, byteSize);
 	}
 
 	updateUniformBuffer(buf: unknown, data: ArrayBufferView, dstByteOffset = 0): void {
@@ -443,21 +435,17 @@ export class HeadlessGPUBackend implements GPUBackend {
 		if (!record) {
 			throw new Error(`[HeadlessBackend] Uniform buffer ${id} is not tracked.`);
 		}
-		const src = toBytes(data);
-		const needed = dstByteOffset + src.byteLength;
-		if (needed > record.bytes.byteLength) {
-			const grown = new Uint8Array(needed);
-			grown.set(record.bytes, 0);
-			record.bytes = grown;
+		const needed = dstByteOffset + data.byteLength;
+		if (needed > record.byteLength) {
+			record.byteLength = needed;
 		}
-		record.bytes.set(src, dstByteOffset);
-		this.accountUpload('uniform', src.byteLength);
+		this.accountUpload('uniform', data.byteLength);
 	}
 
 	bindUniformBufferBase(_bindingIndex: number, _buf: unknown): void { }
 
 	beginFrame(): void {
-		this.frameStats = createFrameStats();
+		resetFrameStats(this.frameStats);
 	}
 
 	endFrame(): void { }

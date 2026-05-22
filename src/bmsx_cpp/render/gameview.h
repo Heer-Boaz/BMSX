@@ -11,7 +11,6 @@
 #include "shared/submissions.h"
 #include "common/registry.h"
 #include "machine/devices/vdp/lpu.h"
-#include "machine/devices/vdp/mesh_source.h"
 #include "machine/devices/vdp/rpu.h"
 #include "render/vdp/transform.h"
 #include "common/subscription.h"
@@ -118,44 +117,8 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Video snapshot fields (owned by VDP, consumed by renderer)
 	// ─────────────────────────────────────────────────────────────────────────
-	bool skyboxRenderReady = false;
-	std::array<f32, SKYBOX_FACE_COUNT * 4> skyboxFaceUvRects{};
-	std::array<i32, SKYBOX_FACE_COUNT> skyboxFaceSlotBindings{};
-	std::array<u32, SKYBOX_FACE_COUNT> skyboxFaceSurfaceIds{};
-	std::array<i32, SKYBOX_FACE_COUNT * 2> skyboxFaceSizes{};
 	VdpTransformSnapshot vdpTransform{};
 	std::array<u32, VDP_XF_MATRIX_REGISTER_WORDS> vdpXfMatrixWords{};
-	struct VdpBillboardRenderEntry {
-		Vec3 position{0.0f, 0.0f, 0.0f};
-		f32 size = 0.0f;
-		u32 color = 0u;
-		u32 slot = 0u;
-		u32 surfaceId = 0u;
-		u32 u = 0u;
-		u32 v = 0u;
-		u32 w = 0u;
-		u32 h = 0u;
-		std::array<f32, 2> uv0{0.0f, 0.0f};
-		std::array<f32, 2> uv1{0.0f, 0.0f};
-	};
-	std::array<VdpBillboardRenderEntry, VDP_BBU_BILLBOARD_LIMIT> vdpBillboards{};
-	size_t vdpBillboardCount = 0u;
-	struct VdpMeshRenderEntry {
-		u32 sourceAddr = 0u;
-		const VdpMeshSourceMesh* sourceMesh = nullptr;
-		const VdpMeshSourceMaterial* sourceMaterial = nullptr;
-		u32 meshIndex = 0u;
-		u32 materialIndex = 0u;
-		u32 modelMatrixIndex = 0u;
-		u32 control = 0u;
-		u32 color = 0xffffffffu;
-		u32 morphBase = 0u;
-		u32 morphCount = 0u;
-		u32 jointBase = 0u;
-		u32 jointCount = 0u;
-	};
-	std::array<VdpMeshRenderEntry, VDP_MDU_MESH_LIMIT> vdpMeshes{};
-	size_t vdpMeshCount = 0u;
 	std::array<u32, VDP_LPU_REGISTER_WORDS> vdpLightRegisterWords{};
 	std::array<f32, 4> vdpAmbientLightColorIntensity{};
 	std::array<f32, VDP_LPU_DIRECTIONAL_LIGHT_LIMIT * 3u> vdpDirectionalLightDirections{};
@@ -169,6 +132,7 @@ public:
 	std::array<u32, VDP_MFU_WEIGHT_COUNT> vdpMorphWeightWords{};
 	std::array<u32, VDP_JTU_REGISTER_WORDS> vdpJointMatrixWords{};
 	const VdpRpuFrameOutput* vdpRpuFrame = nullptr;
+	bool presentWorkbenchFrameBufferTexture = false;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Pipeline registry

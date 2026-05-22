@@ -1,5 +1,5 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
-import type { RenderContext, RenderGraphPassContext, RenderPassStateRegistry } from '../backend/backend';
+import type { RenderContext, RenderGraphPassContext, RenderPassStateRegistry, TextureHandle } from '../backend/backend';
 import type { WebGLBackend } from '../backend/webgl/backend';
 import { consoleCore } from '../../core/console';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/constants';
@@ -9,17 +9,31 @@ import type { GameView } from '../gameview';
 import {
 	bindFullscreenQuad,
 	createFullscreenQuad,
-	deleteFullscreenQuad,
+	updateFullscreenQuad,
 	POST_PROCESS_TEXCOORDS,
 	type FullscreenQuad,
 } from '../backend/webgl/fullscreen_quad';
 
 let fsq: FullscreenQuad = null;
 
-interface DeviceQuantizeRuntime {
-	backend: WebGLBackend;
-	gl: WebGL2RenderingContext;
-	context: RenderContext;
+const deviceQuantizeStateScratch: RenderPassStateRegistry['device_quantize'] = {
+	width: 0,
+	height: 0,
+	baseWidth: 0,
+	baseHeight: 0,
+	colorTex: null as unknown as TextureHandle,
+	ditherType: 0,
+};
+
+function buildDeviceQuantizeState(ctx: RenderGraphPassContext): RenderPassStateRegistry['device_quantize'] {
+	const state = deviceQuantizeStateScratch;
+	state.width = ctx.view.offscreenCanvasSize.x;
+	state.height = ctx.view.offscreenCanvasSize.y;
+	state.baseWidth = ctx.view.viewportSize.x;
+	state.baseHeight = ctx.view.viewportSize.y;
+	state.colorTex = ctx.getTex('frame_color');
+	state.ditherType = (ctx.view as GameView).dither_type;
+	return state;
 }
 
 export function registerDeviceQuantize_WebGL(registry: RenderPassLibrary): void {
@@ -29,21 +43,13 @@ export function registerDeviceQuantize_WebGL(registry: RenderPassLibrary): void 
 		graph: {
 			reads: ['frame_color'],
 			writes: ['device_color'],
-			buildState: (ctx: RenderGraphPassContext): RenderPassStateRegistry['device_quantize'] => ({
-				width: ctx.view.offscreenCanvasSize.x,
-				height: ctx.view.offscreenCanvasSize.y,
-				baseWidth: ctx.view.viewportSize.x,
-				baseHeight: ctx.view.viewportSize.y,
-				colorTex: ctx.getTex('frame_color'),
-				ditherType: (ctx.view as GameView).dither_type,
-			}),
+			buildState: buildDeviceQuantizeState,
 		},
 		vsCode: vertexShaderCRTCode,
 		fsCode: fragmentShaderDeviceCode,
 		shouldExecute: () => consoleCore.view.dither_type !== 0,
 		exec: (be: WebGLBackend, fbo, state: RenderPassStateRegistry['device_quantize']) => {
-			const runtime: DeviceQuantizeRuntime = { backend: be, gl: be.gl as WebGL2RenderingContext, context: consoleCore.view };
-			renderDeviceQuantize(runtime, fbo as WebGLFramebuffer, state);
+			renderDeviceQuantize(be.gl as WebGL2RenderingContext, consoleCore.view, fbo as WebGLFramebuffer, state);
 		},
 		prepare: (be: WebGLBackend, state: RenderPassStateRegistry['device_quantize']) => {
 			const gl = be.gl;
@@ -65,15 +71,25 @@ function bindDeviceQuantizeUniforms(backend: WebGLBackend, state: RenderPassStat
 	backend.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 }
 
-function renderDeviceQuantize(runtime: DeviceQuantizeRuntime, fbo: WebGLFramebuffer, state: RenderPassStateRegistry['device_quantize']): void {
-	const { gl, context } = runtime;
+function renderDeviceQuantize(gl: WebGL2RenderingContext, context: RenderContext, fbo: WebGLFramebuffer, state: RenderPassStateRegistry['device_quantize']): void {
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 	gl.viewport(0, 0, state.width, state.height);
-	if (!fsq || fsq.w !== state.width || fsq.h !== state.height) {
-		if (fsq) deleteFullscreenQuad(gl, fsq);
-		fsq = createFullscreenQuad(gl, state.width, state.height, POST_PROCESS_TEXCOORDS, 'DeviceQuantize');
+	if (!fsq) {
+		fsq = {
+			gl,
+			positionBuffer: null,
+			texcoordBuffer: null,
+			positionAttrib: -1,
+			texcoordAttrib: -1,
+			width: -1,
+			height: -1,
+			texcoords: POST_PROCESS_TEXCOORDS,
+			label: 'DeviceQuantize',
+		};
+		createFullscreenQuad(fsq);
 	}
-	bindFullscreenQuad(gl, fsq);
+	updateFullscreenQuad(fsq, state.width, state.height);
+	bindFullscreenQuad(fsq, fsq.positionAttrib, fsq.texcoordAttrib);
 	if (state.colorTex) {
 		context.activeTexUnit = TEXTURE_UNIT_POST_PROCESSING_SOURCE;
 		context.bind2DTex(state.colorTex);

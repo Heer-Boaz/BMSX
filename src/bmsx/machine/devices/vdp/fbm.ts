@@ -68,11 +68,18 @@ export class VdpFbmUnit {
 	}
 
 	public captureDisplayReadback(): Uint8Array {
-		return this.displayFrameBufferCpuReadback.slice(0, this._width * this._height * 4);
+		const byteLength = this._width * this._height * 4;
+		const pixels = new Uint8Array(byteLength);
+		for (let index = 0; index < byteLength; index += 1) {
+			pixels[index] = this.displayFrameBufferCpuReadback[index]!;
+		}
+		return pixels;
 	}
 
 	public restoreDisplayReadback(pixels: Uint8Array): void {
-		this.displayFrameBufferCpuReadback = pixels.slice();
+		for (let index = 0; index < pixels.byteLength; index += 1) {
+			this.displayFrameBufferCpuReadback[index] = pixels[index]!;
+		}
 		for (let row = 0; row < this.presentationDirtySpansByRow.length; row += 1) {
 			const span = this.presentationDirtySpansByRow[row]!;
 			span.xStart = 0;
@@ -119,7 +126,9 @@ export class VdpFbmUnit {
 		for (let row = 0; row < height; row += 1) {
 			const srcOffset = (y + row) * stride + x * 4;
 			const dstOffset = row * rowBytes;
-			out.set(source.subarray(srcOffset, srcOffset + rowBytes), dstOffset);
+			for (let byteIndex = 0; byteIndex < rowBytes; byteIndex += 1) {
+				out[dstOffset + byteIndex] = source[srcOffset + byteIndex]!;
+			}
 		}
 	}
 

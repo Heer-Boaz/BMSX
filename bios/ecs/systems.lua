@@ -507,9 +507,10 @@ function spriterendersystem:update()
 			goto continue_sprite_render
 		end
 		local offset<const> = sc.offset
-		local x<const> = obj.x + offset.x
-		local y<const> = obj.y + offset.y
-		local z<const> = obj.z + offset.z
+		local draw_offset<const> = sc.draw_offset
+		local x<const> = obj.x + offset.x + draw_offset.x
+		local y<const> = obj.y + offset.y + draw_offset.y
+		local z<const> = obj.z + offset.z + draw_offset.z
 		local flip_flags = 0
 		if sc.flip.flip_h then
 			flip_flags = flip_flags | 1
@@ -517,7 +518,8 @@ function spriterendersystem:update()
 		if sc.flip.flip_v then
 			flip_flags = flip_flags | 2
 		end
-		vdp_image.write_blit_color(sc.imgid, x, y, z, sc.layer, sc.scale.x, sc.scale.y, flip_flags, sc.color, sc.parallax_weight)
+		local draw_scale<const> = sc.draw_scale
+		vdp_image.write_blit_color(sc.imgid, x, y, z, sc.layer, sc.scale.x * draw_scale.x, sc.scale.y * draw_scale.y, flip_flags, sc.color)
 		::continue_sprite_render::
 	end
 end
@@ -599,7 +601,6 @@ function meshrendersystem:update()
 			mesh_render_options.joint_matrices = mc.joint_matrices
 			mesh_render_options.morph_weights = mc.morph_weights
 			mesh_render_options.receive_shadow = mc.receive_shadow
-			-- put_mesh(mc.mesh, mc.matrix, mesh_render_options)
 		end
 	end
 end

@@ -37,7 +37,7 @@ public:
 		class VramWriter {
 		public:
 			virtual ~VramWriter() = default;
-			virtual void writeVram(uint32_t addr, const u8* data, size_t length) = 0;
+			virtual void writeVram(uint32_t addr, const u8* data, size_t srcOffset, size_t length) = 0;
 			virtual void readVram(uint32_t addr, u8* out, size_t length) const = 0;
 		};
 		using IoReadHandler = Value (*)(void* context, uint32_t addr);

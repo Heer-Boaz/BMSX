@@ -109,6 +109,7 @@ function spriteobject:draw()
 		return
 	end
 	local offset<const> = sc.offset
+	local draw_offset<const> = sc.draw_offset
 	local flip_flags = 0
 	if sc.flip.flip_h then
 		flip_flags = flip_flags | 1
@@ -116,7 +117,18 @@ function spriteobject:draw()
 	if sc.flip.flip_v then
 		flip_flags = flip_flags | 2
 	end
-	vdp_image.write_blit_color(sc.imgid, self.x + offset.x, self.y + offset.y, self.z + offset.z, sc.layer, sc.scale.x, sc.scale.y, flip_flags, sc.color, sc.parallax_weight)
+	local draw_scale<const> = sc.draw_scale
+	vdp_image.write_blit_color(
+		sc.imgid,
+		self.x + offset.x + draw_offset.x,
+		self.y + offset.y + draw_offset.y,
+		self.z + offset.z + draw_offset.z,
+		sc.layer,
+		sc.scale.x * draw_scale.x,
+		sc.scale.y * draw_scale.y,
+		flip_flags,
+		sc.color
+	)
 end
 
 return spriteobject

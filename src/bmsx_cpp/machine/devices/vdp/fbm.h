@@ -6,11 +6,16 @@
 
 namespace bmsx {
 
+inline constexpr u8 VDP_FBM_STATE_PAGE_WRITABLE = 0u;
+inline constexpr u8 VDP_FBM_STATE_PAGE_PENDING_PRESENT = 1u;
+inline constexpr u8 VDP_FBM_STATE_PAGE_PRESENTED = 2u;
+inline constexpr u8 VDP_FBM_STATE_READBACK_REQUESTED = 3u;
+
 enum class VdpFbmState : u8 {
-	PageWritable = 0,
-	PagePendingPresent = 1,
-	PagePresented = 2,
-	ReadbackRequested = 3,
+	PageWritable = VDP_FBM_STATE_PAGE_WRITABLE,
+	PagePendingPresent = VDP_FBM_STATE_PAGE_PENDING_PRESENT,
+	PagePresented = VDP_FBM_STATE_PAGE_PRESENTED,
+	ReadbackRequested = VDP_FBM_STATE_READBACK_REQUESTED,
 };
 
 class VdpFbmUnit {

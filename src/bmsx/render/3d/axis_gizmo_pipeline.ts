@@ -149,7 +149,7 @@ export function renderAxisGizmo_WebGL(backend: WebGLBackend, emitHostImage: Axis
 	const offset2X = offsetX - spacingNDC;
 	const offset2Y = offsetY;
 
-	axisInvRot.set(gv.vdpTransform.skyboxView);
+	axisInvRot.set(gv.vdpTransform.viewRotationInverse);
 	axisInvRot[8] = -axisInvRot[8];
 	axisInvRot[9] = -axisInvRot[9];
 	axisInvRot[10] = -axisInvRot[10];

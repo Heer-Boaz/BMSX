@@ -4,15 +4,6 @@
 local mesh<const> = {}
 mesh.__index = mesh
 
-local vec_slice<const> = function(tbl, step)
-	local len<const> = #tbl
-	local out<const> = {}
-	for i = 1, len, step do
-		out[#out + 1] = { tbl[i], tbl[i + 1], tbl[i + 2] }
-	end
-	return out
-end
-
 function mesh.new(opts)
 	local self<const> = setmetatable({}, mesh)
 	opts = opts or {}
@@ -51,6 +42,7 @@ function mesh:has_normals()
 	return self.normals and #self.normals >= self:vertex_count() * 3
 end
 
+-- TODO: BULLSHIT GC-CHURN!!!!!!!!!!!!!!!!!!!
 function mesh:update_bounds()
 	if #self.positions < 3 then
 		self.bounding_center = { 0, 0, 0 }
@@ -88,10 +80,6 @@ function mesh:update_bounds()
 		end
 	end
 	self.bounding_radius = math.sqrt(max_dist_sq)
-end
-
-function mesh:vertices()
-	return vec_slice(self.positions, 3)
 end
 
 return mesh

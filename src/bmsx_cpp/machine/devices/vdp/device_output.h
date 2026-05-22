@@ -11,6 +11,11 @@ struct VdpDirtySpan {
 	uint32_t xEnd = 0;
 };
 
+inline std::vector<VdpDirtySpan> createVdpDirtySpans(u32 height) {
+	std::vector<VdpDirtySpan> spans(height);
+	return spans;
+}
+
 struct VdpSurfaceUploadSlot {
 	uint32_t baseAddr = 0;
 	uint32_t capacity = 0;

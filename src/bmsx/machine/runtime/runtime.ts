@@ -70,7 +70,6 @@ import {
 	RAM_SIZE,
 	configureMemoryMap,
 } from '../memory/map';
-import { configureVdpMeshSourcesFromRomLayers } from '../devices/vdp/mesh_source';
 
 // Flip back to 'msx' to restore default font in machine/editor
 export const EDITOR_FONT_VARIANT: FontVariant = 'tiny';
@@ -141,11 +140,11 @@ export class Runtime {
 	}
 
 	public vdpUsageWorkUnitsLast(): number {
-		return this.machine.vdp.lastFrameCost;
+		return this.machine.vdp.lastFrameCost();
 	}
 
 	public vdpUsageFrameHeld(): boolean {
-		return this.machine.vdp.lastFrameHeld;
+		return this.machine.vdp.lastFrameHeld();
 	}
 
 	public shortcutDisposers: Array<() => void> = [];
@@ -396,7 +395,6 @@ export class Runtime {
 		this.cartRomSource = params.cartRomSource;
 		this.activeRomSource = params.systemRomSource;
 		this.systemProjectRootPath = params.systemSources.projectRootPath || DEFAULT_SYSTEM_PROJECT_ROOT_PATH;
-		configureVdpMeshSourcesFromRomLayers(this.machine.vdp.meshSources, params.systemRom, params.cartRom, params.overlayRom);
 		this.cartBoot.reset();
 	}
 

@@ -7,7 +7,6 @@
 #include "machine/devices/vdp/pmu.h"
 #include "machine/devices/vdp/readback.h"
 #include "machine/devices/vdp/registers.h"
-#include "machine/devices/vdp/sbx.h"
 #include "machine/devices/vdp/vram.h"
 #include "machine/devices/vdp/xf.h"
 #include <array>
@@ -21,17 +20,16 @@ struct VdpState {
 	VdpBuildingFrameSaveState buildFrame;
 	VdpSubmittedFrameSaveState activeFrame;
 	VdpSubmittedFrameSaveState pendingFrame;
-	VdpSubmittedFrameSaveState displayTextureFrame;
+	VdpRpuSaveState rpu;
 	i64 workCarry = 0;
 	int availableWorkUnits = 0;
 	VdpStreamIngressState streamIngress;
 	VdpReadbackState readback;
-	u32 blitterSequence = 0;
-	u32 skyboxControl = 0;
-	VdpSbxUnit::FaceWords skyboxFaceWords{};
 	u32 pmuSelectedBank = 0;
 	VdpPmuUnit::BankWords pmuBankWords{};
 	std::array<u32, VDP_LPU_REGISTER_WORDS> lightRegisterWords{};
+	std::array<u32, VDP_MFU_WEIGHT_COUNT> morphWeightWords{};
+	std::array<u32, VDP_JTU_REGISTER_WORDS> jointMatrixWords{};
 	i32 ditherType = 0;
 	u32 vdpFaultCode = VDP_FAULT_NONE;
 	u32 vdpFaultDetail = 0;

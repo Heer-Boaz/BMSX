@@ -1,4 +1,10 @@
-local romdir<const> = require('bios/romdir')
+local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
+local vdp_rpu<const> = require('bios/vdp_rpu')
+local vdp_xf<const> = require('bios/vdp_xf')
+local vdp_lpu<const> = require('bios/vdp_lpu')
+local vdp_jtu<const> = require('bios/vdp_jtu')
+local vdp_mfu<const> = require('bios/vdp_mfu')
+local numeric<const> = require('bios/common/numeric')
 
 local io_vdp_dither<const> = sys_vdp_dither
 local io_irq_flags<const> = sys_irq_flags
@@ -10,66 +16,7 @@ local io_dma_ctrl<const> = sys_dma_ctrl
 local io_vdp_fifo<const> = sys_vdp_fifo
 local vdp_stream_base<const> = sys_vdp_stream_base
 local vram_primary_slot_base<const> = sys_vram_primary_slot_base
-local atlas_ram_base<const> = sys_geo_scratch_base
-
-local vdp_pkt_end<const> = 0x00000000
-local vdp_pkt_cmd<const> = 0x01000000
-local vdp_pkt_reg1<const> = 0x02000000
-local vdp_pkt_regn<const> = 0x03000000
-local vdp_pkt_billboard<const> = 0x11000000
-local vdp_pkt_skybox<const> = 0x12000000
-local vdp_pkt_xf<const> = 0x13000000
-local vdp_pkt_mfu<const> = 0x14000000
-local vdp_pkt_mesh<const> = 0x16000000
-local vdp_pkt_lpu<const> = 0x17000000
-
-local vdp_billboard_payload_words<const> = 11
-local vdp_skybox_payload_words<const> = 31
-local vdp_xf_matrix_payload_words<const> = 17
-local vdp_xf_select_payload_words<const> = 3
-local vdp_mfu_weights_payload_words<const> = 3
-local vdp_lpu_ambient_payload_words<const> = 6
-local vdp_lpu_directional_payload_words<const> = 9
-local vdp_lpu_point_payload_words<const> = 10
-local vdp_mesh_payload_words<const> = 9
-
-local vdp_cmd_clear<const> = 1
-local vdp_cmd_fill_rect<const> = 2
-local vdp_cmd_blit<const> = 4
-local vdp_reg_src_slot<const> = 0
-local vdp_reg_src_uv<const> = 1
-local vdp_reg_src_wh<const> = 2
-local vdp_reg_dst_x<const> = 3
-local vdp_reg_geom_x0<const> = 5
-local vdp_reg_draw_layer<const> = 10
-local vdp_reg_draw_color<const> = 15
-local vdp_reg_bg_color<const> = 16
-local vdp_reg_slot_index<const> = 17
-
-local vdp_slot_primary<const> = 0
-local vdp_layer_world<const> = 0
-local vdp_sbx_control_enable<const> = 1
-local vdp_lpu_control_enable<const> = 1
-local vdp_lpu_ambient_register<const> = 0
-local vdp_lpu_directional_register<const> = 5
-local vdp_lpu_point_register<const> = 37
-local vdp_mdu_material_mesh_default<const> = 0xffffffff
-local draw_ctrl_parallax_half<const> = 0x00800000
-
-local q16_one<const> = 0x00010000
-local xf_matrix_words<const> = 16
-local xf_view_matrix<const> = 0
-local xf_proj_matrix<const> = 1
-local xf_model_matrix<const> = 2
-local xf_view_matrix_register<const> = xf_view_matrix * xf_matrix_words
-local xf_proj_matrix_register<const> = xf_proj_matrix * xf_matrix_words
-local xf_model_matrix_register<const> = xf_model_matrix * xf_matrix_words
-local xf_select_register<const> = 128
-local xf_proj_x<const> = 0x00016f32
-local xf_proj_y<const> = 0x0001bb68
-local xf_proj_z<const> = 0xfffefefa
-local xf_proj_w<const> = 0xffff0000
-local xf_proj_zw<const> = 0xffffccb3
+local scratch_base<const> = sys_geo_scratch_base
 
 local dma_ctrl_start<const> = 1
 local irq_dma_done<const> = 0x01
@@ -79,71 +26,105 @@ local irq_vblank<const> = 0x10
 local atlas_width<const> = 16
 local atlas_height<const> = 16
 local atlas_bytes<const> = atlas_width * atlas_height * 4
-local morph_mesh_addr<const> = romdir.cart('animatedmorphsphere').addr
+local screen_width<const> = 256
+local screen_height<const> = 212
+local inv_half_screen_width<const> = 1.0 / 128.0
+local inv_half_screen_height<const> = 1.0 / 106.0
 
+local quad_buffer<const> = 1
+local background_buffer<const> = 2
+local mesh_buffer<const> = 3
+local instance_buffer<const> = 4
+local mesh_index_buffer<const> = 5
+local vector_buffer<const> = 6
+local mat4_vertex_buffer<const> = 7
+local mat4_instance_buffer<const> = 8
+local scene_color_surface<const> = 4
+local scene_depth_surface<const> = 5
+local quad_vertex_count<const> = 4
+local quad_vertex_stride<const> = 20
+local quad_vertex_bytes<const> = quad_vertex_count * quad_vertex_stride
+local background_vertex_count<const> = 12
+local background_vertex_stride<const> = 12
+local background_vertex_bytes<const> = background_vertex_count * background_vertex_stride
+local vector_vertex_count<const> = 24
+local vector_vertex_stride<const> = 12
+local vector_vertex_bytes<const> = vector_vertex_count * vector_vertex_stride
+local mat4_vertex_count<const> = 3
+local mat4_vertex_stride<const> = 16
+local mat4_vertex_bytes<const> = mat4_vertex_count * mat4_vertex_stride
+local mat4_instance_count<const> = 2
+local mat4_instance_stride<const> = 68
+local mat4_instance_bytes<const> = mat4_instance_count * mat4_instance_stride
+local mesh_vertex_count<const> = 24
+local mesh_vertex_stride<const> = 44
+local mesh_vertex_bytes<const> = mesh_vertex_count * mesh_vertex_stride
+local mesh_index_count<const> = 24
+local mesh_index_bytes<const> = mesh_index_count * 2
+local sprite_instance_count<const> = 5
+local present_instance_count<const> = 1
+local instance_count<const> = sprite_instance_count + present_instance_count
+local instance_stride<const> = 48
+local instance_bytes<const> = instance_count * instance_stride
+local present_instance_offset<const> = sprite_instance_count * instance_stride
+local c0_words<const> = 16
+local c1_words<const> = 64
+local joint_words<const> = 384
+local mfu_words<const> = 1
+local c0_bytes<const> = c0_words * 4
+local c1_bytes<const> = c1_words * 4
+local joint_matrix_bytes<const> = c0_bytes
 
-local setup_camera_input<const> = function()
-	mem[sys_inp_player] = 1
-	mem[sys_inp_action] = &'moveforward'
-	mem[sys_inp_bind] = &'k:KeyW,g:x'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'movebackward'
-	mem[sys_inp_bind] = &'k:KeyS,g:y'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'turnleft'
-	mem[sys_inp_bind] = &'k:KeyA,g:left'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'turnright'
-	mem[sys_inp_bind] = &'k:KeyD,g:right'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'panleft'
-	mem[sys_inp_bind] = &'k:KeyQ,g:lb'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'panright'
-	mem[sys_inp_bind] = &'k:KeyE,g:rb'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'panup'
-	mem[sys_inp_bind] = &'k:KeyR,g:home'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'pandown'
-	mem[sys_inp_bind] = &'k:KeyF,g:select'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'pitchup'
-	mem[sys_inp_bind] = &'k:KeyT,g:up'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'pitchdown'
-	mem[sys_inp_bind] = &'k:KeyG,g:down'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'rotateleft'
-	mem[sys_inp_bind] = &'k:Digit1,g:lt'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'rotateright'
-	mem[sys_inp_bind] = &'k:Digit3,g:rt'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'fire'
-	mem[sys_inp_bind] = &'k:ShiftLeft,g:a'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-	mem[sys_inp_action] = &'mouselook'
-	mem[sys_inp_bind] = &'k:pointer_delta'
-	mem[sys_inp_ctrl] = inp_ctrl_commit
-end
+local quad_vertex_addr<const> = scratch_base + atlas_bytes
+local background_vertex_addr<const> = quad_vertex_addr + quad_vertex_bytes
+local vector_vertex_addr<const> = background_vertex_addr + background_vertex_bytes
+local mat4_vertex_addr<const> = vector_vertex_addr + vector_vertex_bytes
+local mat4_instance_addr<const> = mat4_vertex_addr + mat4_vertex_bytes
+local mesh_vertex_addr<const> = mat4_instance_addr + mat4_instance_bytes
+local mesh_index_addr<const> = mesh_vertex_addr + mesh_vertex_bytes
+local instance_addr<const> = mesh_index_addr + mesh_index_bytes
+local c0_addr<const> = instance_addr + instance_bytes
+local c1_addr<const> = c0_addr + c0_bytes
+local joint0_addr<const> = c1_addr + c1_bytes
+local joint1_addr<const> = joint0_addr + joint_matrix_bytes
+local mfu_addr<const> = joint1_addr + joint_matrix_bytes
+local mesh_matrix_index<const> = 2
+local mesh_joint_matrix_index<const> = 1
+
+local white<const> = 0xffffffff
+local q16_one<const> = numeric.q16(1.0)
+local sky_top<const> = 0xff071a3a
+local sky_horizon<const> = 0xff071a3a
+local ground_far<const> = 0xff071a3a
+local ground_near<const> = 0xff071a3a
+local vector_tint<const> = 0xfffff2a6
+local mat4_tint_a<const> = 0xff001dc4
+local mat4_tint_b<const> = 0xff48a6ff
+local sprite_tint<const> = 0xffffffff
+local parallax_far_tint<const> = 0xff00ffff
+local parallax_near_tint<const> = 0xffffff00
+local billboard_tint_a<const> = 0xffffffff
+local billboard_tint_b<const> = 0xffffffff
+local mesh_tint<const> = white
+local mesh_joint_word<const> = 0x00000001
+local mesh_weight_word<const> = 0x000000ff
+
+local sampler_nearest<const> = vdp_rpu.sampler(vdp_rpu.filter_nearest, vdp_rpu.filter_nearest, vdp_rpu.wrap_clamp, vdp_rpu.wrap_clamp)
 
 local frame = 0
 local sprite_x = 112
 local sprite_y = 92
-local sprite_step<const> = 2
+local sprite_step<const> = 4
 local sprite_direction = 1
-local cam_x = 0.0
-local cam_y = 0.2
-local cam_z = 4.5
-local cam_yaw = 0.0
-local cam_pitch = 0.0
 
-local submit_stream<const> = function(byte_length)
-	mem[io_dma_src] = vdp_stream_base
-	mem[io_dma_dst] = io_vdp_fifo
-	mem[io_dma_len] = byte_length
-	mem[io_dma_ctrl] = dma_ctrl_start
+local submit_current_stream<const> = function()
+	local used_bytes<const> = vdp_stream_cursor - vdp_stream_base
+	if used_bytes ~= 0 then
+		mem[io_dma_src] = vdp_stream_base
+		mem[io_dma_dst] = io_vdp_fifo
+		mem[io_dma_len] = used_bytes
+		mem[io_dma_ctrl] = dma_ctrl_start
+	end
 end
 
 local wait_dma<const> = function()
@@ -164,103 +145,12 @@ local wait_vblank<const> = function()
 	until (flags & irq_vblank) ~= 0
 end
 
-local update_camera<const> = function()
-	mem[sys_inp_player] = 1
-	local yaw_step = 0.035
-	local pitch_step = 0.028
-	mem[sys_inp_query] = &'fire[p]'
-	if mem[sys_inp_status] ~= 0 then
-		yaw_step = 0.055
-		pitch_step = 0.045
-	end
-	mem[sys_inp_query] = &'mouselook[p]'
-	if mem[sys_inp_status] ~= 0 then
-		local mouse_x<const> = u32_to_i32(mem[sys_inp_value_x]) / q16_one
-		local mouse_y<const> = u32_to_i32(mem[sys_inp_value_y]) / q16_one
-		cam_yaw = cam_yaw - mouse_x * 0.0025
-		cam_pitch = cam_pitch - mouse_y * 0.0025
-	end
-	mem[sys_inp_query] = &'turnleft[p]'
-	if mem[sys_inp_status] ~= 0 then
-		cam_yaw = cam_yaw + yaw_step
-	end
-	mem[sys_inp_query] = &'turnright[p]'
-	if mem[sys_inp_status] ~= 0 then
-		cam_yaw = cam_yaw - yaw_step
-	end
-	mem[sys_inp_query] = &'pitchup[p]'
-	if mem[sys_inp_status] ~= 0 then
-		cam_pitch = cam_pitch + pitch_step
-	end
-	mem[sys_inp_query] = &'pitchdown[p]'
-	if mem[sys_inp_status] ~= 0 then
-		cam_pitch = cam_pitch - pitch_step
-	end
-	if cam_pitch > 1.2 then
-		cam_pitch = 1.2
-	end
-	if cam_pitch < -1.2 then
-		cam_pitch = -1.2
-	end
-
-	local move = 0.075
-	mem[sys_inp_query] = &'fire[p]'
-	if mem[sys_inp_status] ~= 0 then
-		move = 0.18
-	end
-	local sy<const> = math.sin(cam_yaw)
-	local cy<const> = math.cos(cam_yaw)
-	local sp<const> = math.sin(cam_pitch)
-	local cp<const> = math.cos(cam_pitch)
-	local fx<const> = sy * cp
-	local fy<const> = sp
-	local fz<const> = -cy * cp
-	local rx<const> = cy
-	local rz<const> = sy
-	mem[sys_inp_query] = &'moveforward[p]'
-	if mem[sys_inp_status] ~= 0 then
-		cam_x = cam_x + fx * move
-		cam_y = cam_y + fy * move
-		cam_z = cam_z + fz * move
-	end
-	mem[sys_inp_query] = &'movebackward[p]'
-	if mem[sys_inp_status] ~= 0 then
-		cam_x = cam_x - fx * move
-		cam_y = cam_y - fy * move
-		cam_z = cam_z - fz * move
-	end
-	mem[sys_inp_query] = &'panup[p]'
-	if mem[sys_inp_status] ~= 0 then
-		cam_y = cam_y + move
-	end
-	mem[sys_inp_query] = &'pandown[p]'
-	if mem[sys_inp_status] ~= 0 then
-		cam_y = cam_y - move
-	end
-	mem[sys_inp_query] = &'panleft[p]'
-	if mem[sys_inp_status] ~= 0 then
-		cam_x = cam_x - rx * move
-		cam_z = cam_z - rz * move
-	end
-	mem[sys_inp_query] = &'panright[p]'
-	if mem[sys_inp_status] ~= 0 then
-		cam_x = cam_x + rx * move
-		cam_z = cam_z + rz * move
-	end
-end
-
 local build_lua_atlas<const> = function()
-	local sky_top<const> = 0xff071a3a
-	local sky_mid<const> = 0xff124b7d
-	local sky_low<const> = 0xff321a3c
-	local star<const> = 0xfffff2a6
-	local outline<const> = 0xff18121c
-	local body<const> = 0xffe64824
-	local light<const> = 0xffffdc62
-	local core<const> = 0xff2de6ff
+	local px = 0
 	local py = 0
+	local wp = scratch_base
 	while py < atlas_height do
-		local px = 0
+		px = 0
 		while px < atlas_width do
 			local dx = px - 7
 			if dx < 0 then
@@ -270,327 +160,1017 @@ local build_lua_atlas<const> = function()
 			if dy < 0 then
 				dy = -dy
 			end
-			local color = sky_top
+			local color = 0xff071a3a
 			if py >= 5 then
-				color = sky_mid
+				color = 0xff124b7d
 			end
 			if py >= 11 then
-				color = sky_low
+				color = 0xff321a3c
 			end
 			if ((px * 3 + py * 5) & 15) == 0 then
-				color = star
+				color = 0xfffff2a6
 			end
 			local distance<const> = dx + dy
 			if distance <= 8 then
-				color = outline
+				color = 0xff18121c
 			end
 			if distance <= 6 then
-				color = body
+				color = 0xffe64824
 			end
 			if distance <= 3 and py <= 7 then
-				color = light
+				color = 0xffffdc62
 			end
 			if py >= 10 and dx <= 2 then
-				color = core
+				color = 0xff2de6ff
 			end
-			mem[atlas_ram_base + ((py * atlas_width + px) * 4)] = color
+			mem[wp], wp = color, wp + 4
 			px = px + 1
 		end
 		py = py + 1
 	end
 end
 
-local configure_primary_surface<const> = function()
-	local wp = vdp_stream_base
-	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_slot_index, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4
-	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
-	mem[wp], wp = vdp_pkt_end, wp + 4
-	submit_stream(wp - vdp_stream_base)
-	wait_dma()
-end
-
 local upload_atlas_to_vram<const> = function()
-	mem[io_dma_src] = atlas_ram_base
+	mem[io_dma_src] = scratch_base
 	mem[io_dma_dst] = vram_primary_slot_base
 	mem[io_dma_len] = atlas_bytes
 	mem[io_dma_ctrl] = dma_ctrl_start
 	wait_dma()
 end
 
-local draw_frame<const> = function()
-	local wp = vdp_stream_base
-	local sy<const> = math.sin(cam_yaw)
-	local cy<const> = math.cos(cam_yaw)
-	local sp<const> = math.sin(cam_pitch)
-	local cp<const> = math.cos(cam_pitch)
-	local fx<const> = sy * cp
-	local fy<const> = sp
-	local fz<const> = -cy * cp
-	local rx<const> = cy
-	local ry<const> = 0.0
-	local rz<const> = sy
-	local ux<const> = -sy * sp
-	local uy<const> = cp
-	local uz<const> = cy * sp
-	local tx<const> = -(rx * cam_x + ry * cam_y + rz * cam_z)
-	local ty<const> = -(ux * cam_x + uy * cam_y + uz * cam_z)
-	local tz<const> = fx * cam_x + fy * cam_y + fz * cam_z
-	local model_yaw<const> = frame * 0.025
-	local model_pitch<const> = frame * 0.014
-	local mc<const> = math.cos(model_yaw)
-	local ms<const> = math.sin(model_yaw)
-	local pc<const> = math.cos(model_pitch)
-	local ps<const> = math.sin(model_pitch)
-	local model_scale<const> = 0x00300000
-	local model_00<const> = ((mc * model_scale) // 1) & 0xffffffff
-	local model_01<const> = ((ms * ps * model_scale) // 1) & 0xffffffff
-	local model_02<const> = ((ms * pc * model_scale) // 1) & 0xffffffff
-	local model_10<const> = 0
-	local model_11<const> = ((pc * model_scale) // 1) & 0xffffffff
-	local model_12<const> = ((-ps * model_scale) // 1) & 0xffffffff
-	local model_20<const> = ((-ms * model_scale) // 1) & 0xffffffff
-	local model_21<const> = ((mc * ps * model_scale) // 1) & 0xffffffff
-	local model_22<const> = ((mc * pc * model_scale) // 1) & 0xffffffff
-	local morph_weight_a<const> = (((math.sin(frame * 0.08) + 1.0) * 0x8000) // 1) & 0xffffffff
-	local morph_weight_b<const> = (((math.sin(frame * 0.11 + 1.7) + 1.0) * 0x6000) // 1) & 0xffffffff
-	local point_x<const> = ((math.sin(frame * 0.04) * 0x00020000) // 1) & 0xffffffff
-	local point_z<const> = ((-2.5 * q16_one + math.cos(frame * 0.04) * 0x00010000) // 1) & 0xffffffff
+local write_background_vertices<const> = function()
+	local wp = background_vertex_addr
+	memwritef32(wp,
+		-1.0,
+		1.0
+	)
+	wp = wp + 8
+	mem[wp], wp = sky_top, wp + 4
+	memwritef32(wp,
+		1.0,
+		1.0
+	)
+	wp = wp + 8
+	mem[wp], wp = sky_top, wp + 4
+	memwritef32(wp,
+		-1.0,
+		-0.24
+	)
+	wp = wp + 8
+	mem[wp], wp = sky_horizon, wp + 4
+	memwritef32(wp,
+		1.0,
+		1.0
+	)
+	wp = wp + 8
+	mem[wp], wp = sky_top, wp + 4
+	memwritef32(wp,
+		1.0,
+		-0.24
+	)
+	wp = wp + 8
+	mem[wp], wp = sky_horizon, wp + 4
+	memwritef32(wp,
+		-1.0,
+		-0.24
+	)
+	wp = wp + 8
+	mem[wp], wp = sky_horizon, wp + 4
+	memwritef32(wp,
+		-1.0,
+		-0.24
+	)
+	wp = wp + 8
+	mem[wp], wp = ground_far, wp + 4
+	memwritef32(wp,
+		1.0,
+		-0.24
+	)
+	wp = wp + 8
+	mem[wp], wp = ground_far, wp + 4
+	memwritef32(wp,
+		-1.0,
+		-1.0
+	)
+	wp = wp + 8
+	mem[wp], wp = ground_near, wp + 4
+	memwritef32(wp,
+		1.0,
+		-0.24
+	)
+	wp = wp + 8
+	mem[wp], wp = ground_far, wp + 4
+	memwritef32(wp,
+		1.0,
+		-1.0
+	)
+	wp = wp + 8
+	mem[wp], wp = ground_near, wp + 4
+	memwritef32(wp,
+		-1.0,
+		-1.0
+	)
+	wp = wp + 8
+	mem[wp], wp = ground_near, wp + 4
+end
 
-	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4
-	mem[wp], wp = xf_view_matrix_register, wp + 4
-	mem[wp], wp = ((rx * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = ((ux * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = ((-fx * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = ((ry * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = ((uy * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = ((-fy * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = ((rz * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = ((uz * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = ((-fz * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = ((tx * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = ((ty * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = ((tz * q16_one) // 1) & 0xffffffff, wp + 4
-	mem[wp], wp = q16_one, wp + 4
+local write_quad_vertices<const> = function()
+	local wp = quad_vertex_addr
+	memwritef32(wp,
+		0.0,
+		0.0,
+		0.0,
+		0.0
+	)
+	wp = wp + 16
+	mem[wp], wp = white, wp + 4
+	memwritef32(wp,
+		1.0,
+		0.0,
+		1.0,
+		0.0
+	)
+	wp = wp + 16
+	mem[wp], wp = white, wp + 4
+	memwritef32(wp,
+		0.0,
+		1.0,
+		0.0,
+		1.0
+	)
+	wp = wp + 16
+	mem[wp], wp = white, wp + 4
+	memwritef32(wp,
+		1.0,
+		1.0,
+		1.0,
+		1.0
+	)
+	wp = wp + 16
+	mem[wp], wp = white, wp + 4
+end
 
-	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4
-	mem[wp], wp = xf_proj_matrix_register, wp + 4
-	mem[wp], wp = xf_proj_x, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = xf_proj_y, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = xf_proj_z, wp + 4
-	mem[wp], wp = xf_proj_w, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = xf_proj_zw, wp + 4
-	mem[wp], wp = 0, wp + 4
+local write_vector_vertices<const> = function()
+	local wp = vector_vertex_addr
+	memwritef32(wp,
+		-0.88,
+		-0.94
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.88,
+		-0.94
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		-0.88,
+		-0.90
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.88,
+		-0.94
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.88,
+		-0.90
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		-0.88,
+		-0.90
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		-0.72,
+		-0.78
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.72,
+		-0.78
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		-0.72,
+		-0.74
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.72,
+		-0.78
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.72,
+		-0.74
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		-0.72,
+		-0.74
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		-0.92,
+		-0.62
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		-0.86,
+		-0.62
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		-0.92,
+		-0.56
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		-0.86,
+		-0.62
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		-0.86,
+		-0.56
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		-0.92,
+		-0.56
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.86,
+		-0.62
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.92,
+		-0.62
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.86,
+		-0.56
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.92,
+		-0.62
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.92,
+		-0.56
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+	memwritef32(wp,
+		0.86,
+		-0.56
+	)
+	wp = wp + 8
+	mem[wp], wp = vector_tint, wp + 4
+end
 
-	mem[wp], wp = vdp_pkt_xf | (vdp_xf_matrix_payload_words << 16), wp + 4
-	mem[wp], wp = xf_model_matrix_register, wp + 4
-	mem[wp], wp = model_00, wp + 4
-	mem[wp], wp = model_01, wp + 4
-	mem[wp], wp = model_02, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = model_10, wp + 4
-	mem[wp], wp = model_11, wp + 4
-	mem[wp], wp = model_12, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = model_20, wp + 4
-	mem[wp], wp = model_21, wp + 4
-	mem[wp], wp = model_22, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
+local write_mat4_vertices<const> = function()
+	local wp = mat4_vertex_addr
+	memwritef32(wp,
+		0.0,
+		0.12,
+		0.0
+	)
+	wp = wp + 12
+	mem[wp], wp = white, wp + 4
+	memwritef32(wp,
+		-0.10,
+		-0.08,
+		0.0
+	)
+	wp = wp + 12
+	mem[wp], wp = white, wp + 4
+	memwritef32(wp,
+		0.10,
+		-0.08,
+		0.0
+	)
+	wp = wp + 12
+	mem[wp], wp = white, wp + 4
+end
 
-	mem[wp], wp = vdp_pkt_xf | (vdp_xf_select_payload_words << 16), wp + 4
-	mem[wp], wp = xf_select_register, wp + 4
-	mem[wp], wp = xf_view_matrix, wp + 4
-	mem[wp], wp = xf_proj_matrix, wp + 4
+local write_mesh_vertices<const> = function(morph_a, morph_b)
+	local top_y<const> = 0.62 + morph_a
+	local bottom_y<const> = -0.62 - morph_b
+	local radius_x<const> = 0.56 + morph_b
+	local radius_z<const> = 0.56 + morph_a
+	local mesh_uv<const> = 0.46875
+	local wp = mesh_vertex_addr
+	memwritef32(wp,
+		0.0,
+		top_y,
+		0.0,
+		0.0,
+		top_y,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		0.0,
+		radius_z,
+		0.0,
+		0.0,
+		radius_z,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		radius_x,
+		0.0,
+		0.0,
+		radius_x,
+		0.0,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		top_y,
+		0.0,
+		0.0,
+		top_y,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		-radius_x,
+		0.0,
+		0.0,
+		-radius_x,
+		0.0,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		0.0,
+		radius_z,
+		0.0,
+		0.0,
+		radius_z,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		top_y,
+		0.0,
+		0.0,
+		top_y,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		0.0,
+		-radius_z,
+		0.0,
+		0.0,
+		-radius_z,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		-radius_x,
+		0.0,
+		0.0,
+		-radius_x,
+		0.0,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		top_y,
+		0.0,
+		0.0,
+		top_y,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		radius_x,
+		0.0,
+		0.0,
+		radius_x,
+		0.0,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		0.0,
+		-radius_z,
+		0.0,
+		0.0,
+		-radius_z,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		bottom_y,
+		0.0,
+		0.0,
+		bottom_y,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		radius_x,
+		0.0,
+		0.0,
+		radius_x,
+		0.0,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		0.0,
+		radius_z,
+		0.0,
+		0.0,
+		radius_z,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		bottom_y,
+		0.0,
+		0.0,
+		bottom_y,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		0.0,
+		radius_z,
+		0.0,
+		0.0,
+		radius_z,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		-radius_x,
+		0.0,
+		0.0,
+		-radius_x,
+		0.0,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		bottom_y,
+		0.0,
+		0.0,
+		bottom_y,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		-radius_x,
+		0.0,
+		0.0,
+		-radius_x,
+		0.0,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		0.0,
+		-radius_z,
+		0.0,
+		0.0,
+		-radius_z,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		bottom_y,
+		0.0,
+		0.0,
+		bottom_y,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		0.0,
+		0.0,
+		-radius_z,
+		0.0,
+		0.0,
+		-radius_z,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+	memwritef32(wp,
+		radius_x,
+		0.0,
+		0.0,
+		radius_x,
+		0.0,
+		0.0,
+		mesh_uv,
+		mesh_uv
+	)
+	wp = wp + 32
+	mem[wp], wp = mesh_tint, wp + 4
+	mem[wp], wp = mesh_joint_word, wp + 4
+	mem[wp], wp = mesh_weight_word, wp + 4
+end
 
-	mem[wp], wp = vdp_pkt_lpu | (vdp_lpu_ambient_payload_words << 16), wp + 4
-	mem[wp], wp = vdp_lpu_ambient_register, wp + 4
-	mem[wp], wp = vdp_lpu_control_enable, wp + 4
-	mem[wp], wp = 0x00003800, wp + 4
-	mem[wp], wp = 0x00004300, wp + 4
-	mem[wp], wp = 0x00005700, wp + 4
-	mem[wp], wp = 0x00004000, wp + 4
-	mem[wp], wp = vdp_pkt_lpu | (vdp_lpu_directional_payload_words << 16), wp + 4
-	mem[wp], wp = vdp_lpu_directional_register, wp + 4
-	mem[wp], wp = vdp_lpu_control_enable, wp + 4
-	mem[wp], wp = 0xffff8ccd, wp + 4
-	mem[wp], wp = 0xffff2e14, wp + 4
-	mem[wp], wp = 0xffffa667, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0x0000eb85, wp + 4
-	mem[wp], wp = 0x0000c7ae, wp + 4
-	mem[wp], wp = 0x00014000, wp + 4
-	mem[wp], wp = vdp_pkt_lpu | (vdp_lpu_point_payload_words << 16), wp + 4
-	mem[wp], wp = vdp_lpu_point_register, wp + 4
-	mem[wp], wp = vdp_lpu_control_enable, wp + 4
-	mem[wp], wp = point_x, wp + 4
-	mem[wp], wp = 0x00018000, wp + 4
-	mem[wp], wp = point_z, wp + 4
-	mem[wp], wp = 0x00050000, wp + 4
-	mem[wp], wp = 0x00008000, wp + 4
-	mem[wp], wp = 0x0000d000, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0x00010000, wp + 4
-
-	mem[wp], wp = vdp_pkt_skybox | (vdp_skybox_payload_words << 16), wp + 4
-	mem[wp], wp = vdp_sbx_control_enable, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = atlas_width, wp + 4
-	mem[wp], wp = atlas_height, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4
-	mem[wp], wp = 4, wp + 4
-	mem[wp], wp = 4, wp + 4
-	mem[wp], wp = 8, wp + 4
-	mem[wp], wp = 8, wp + 4
-
-	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_bg_color, wp + 4
-	mem[wp], wp = 0x0005080d, wp + 4
-	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_clear, wp + 4
-	mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4
-	mem[wp], wp = 0 << 16, wp + 4
-	mem[wp], wp = 132 << 16, wp + 4
-	mem[wp], wp = 256 << 16, wp + 4
-	mem[wp], wp = 212 << 16, wp + 4
-	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4
-	mem[wp], wp = vdp_layer_world, wp + 4
-	mem[wp], wp = 10, wp + 4
-	mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4
-	mem[wp], wp = 0x70101824, wp + 4
-	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4
-
-	local line_y = 136 + ((frame * 2) % 24)
-	while line_y < 212 do
-		local half_width<const> = 4 + ((line_y - 132) // 5)
-		mem[wp], wp = vdp_pkt_regn | (4 << 16) | vdp_reg_geom_x0, wp + 4
-		mem[wp], wp = (128 - half_width) << 16, wp + 4
-		mem[wp], wp = line_y << 16, wp + 4
-		mem[wp], wp = (128 + half_width) << 16, wp + 4
-		mem[wp], wp = (line_y + 2) << 16, wp + 4
-		mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_draw_layer, wp + 4
-		mem[wp], wp = vdp_layer_world, wp + 4
-		mem[wp], wp = 18, wp + 4
-		mem[wp], wp = vdp_pkt_reg1 | vdp_reg_draw_color, wp + 4
-		mem[wp], wp = 0xffd1c794, wp + 4
-		mem[wp], wp = vdp_pkt_cmd | vdp_cmd_fill_rect, wp + 4
-		line_y = line_y + 28
+local write_mesh_indices<const> = function()
+	local wp = mesh_index_addr
+	local index = 0
+	while index < mesh_index_count do
+		mem[wp], wp = ((index + 1) << 16) | index, wp + 4
+		index = index + 2
 	end
+end
 
-	mem[wp], wp = vdp_pkt_regn | (3 << 16) | vdp_reg_src_slot, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
-	mem[wp], wp = vdp_pkt_regn | (6 << 16) | vdp_reg_draw_layer, wp + 4
-	mem[wp], wp = vdp_layer_world, wp + 4
-	mem[wp], wp = 80, wp + 4
-	mem[wp], wp = draw_ctrl_parallax_half, wp + 4
-	mem[wp], wp = 0x00030000, wp + 4
-	mem[wp], wp = 0x00030000, wp + 4
-	mem[wp], wp = 0xffffffff, wp + 4
-	mem[wp], wp = vdp_pkt_regn | (2 << 16) | vdp_reg_dst_x, wp + 4
-	mem[wp], wp = sprite_x << 16, wp + 4
-	mem[wp], wp = sprite_y << 16, wp + 4
-	mem[wp], wp = vdp_pkt_cmd | vdp_cmd_blit, wp + 4
+local write_lighting_constants<const> = function()
+	local wp = c1_addr
+	local end_addr<const> = c1_addr + c1_bytes
+	while wp < end_addr do
+		mem[wp], wp = 0, wp + 4
+	end
+	wp = c1_addr
+	memwritef32(wp,
+		-0.45,
+		0.70,
+		0.55,
+		0.0,
+		1.0,
+		1.0,
+		1.0,
+		1.0,
+		0.0,
+		0.0,
+		0.0,
+		0.0
+	)
+	wp = wp + 48
+end
 
-	local billboard_shift<const> = ((frame % 64) - 32) * 1024
-	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4
-	mem[wp], wp = vdp_layer_world, wp + 4
-	mem[wp], wp = 32, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
-	mem[wp], wp = 0xffff0000 + billboard_shift, wp + 4
-	mem[wp], wp = 0x00006000, wp + 4
-	mem[wp], wp = 0xfffc0000, wp + 4
-	mem[wp], wp = 0x0000c000, wp + 4
-	mem[wp], wp = 0xffffd060, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = vdp_pkt_billboard | (vdp_billboard_payload_words << 16), wp + 4
-	mem[wp], wp = vdp_layer_world, wp + 4
-	mem[wp], wp = 36, wp + 4
-	mem[wp], wp = vdp_slot_primary, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = (atlas_width & 0xffff) | (atlas_height << 16), wp + 4
-	mem[wp], wp = 0x00010000 - billboard_shift, wp + 4
-	mem[wp], wp = 0xffffe000, wp + 4
-	mem[wp], wp = 0xfffc8000, wp + 4
-	mem[wp], wp = 0x0000a000, wp + 4
-	mem[wp], wp = 0xff60e6ff, wp + 4
-	mem[wp], wp = 0, wp + 4
+local write_mesh_constants<const> = function()
+	local mesh_phase<const> = frame % 16
+	local mesh_translate_x<const> = 0.125 + mesh_phase * 0.03125
+	local scale<const> = 1.0
+	memwrite(c0_addr,
+		numeric.q16(scale), 0, 0, 0,
+		0, numeric.q16(scale), 0, 0,
+		0, 0, numeric.q16(scale), 0,
+		numeric.q16(mesh_translate_x), numeric.q16(0.05), 0, numeric.q16(1.0)
+	)
+end
 
-	mem[wp], wp = vdp_pkt_mfu | (vdp_mfu_weights_payload_words << 16), wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = morph_weight_a, wp + 4
-	mem[wp], wp = morph_weight_b, wp + 4
-	mem[wp], wp = vdp_pkt_mesh | (vdp_mesh_payload_words << 16), wp + 4
-	mem[wp], wp = morph_mesh_addr, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = vdp_mdu_material_mesh_default, wp + 4
-	mem[wp], wp = xf_model_matrix, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0xfff5f8ff, wp + 4
-	mem[wp], wp = 2 << 16, wp + 4
+local write_joint_constants<const> = function()
+	local joint_phase<const> = frame % 8
+	local joint_translate_x<const> = (joint_phase - 4) * 0.03125
+	local wp = joint0_addr
+	mem[wp], wp = q16_one, wp + 4
 	mem[wp], wp = 0, wp + 4
 	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	wp = joint1_addr
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = numeric.q16(joint_translate_x), wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = q16_one, wp + 4
+end
 
-	mem[wp], wp = vdp_pkt_end, wp + 4
-	submit_stream(wp - vdp_stream_base)
+local write_mfu_constants<const> = function()
+	mem[mfu_addr] = 0
+end
+
+local write_instances<const> = function()
+	local wp = instance_addr
+	local parallax_x<const> = -32.0 + ((frame % 96) * 0.5)
+	local parallax_phase<const> = (frame % 16) * 4
+	local billboard_phase<const> = (frame % 8) * 4
+	local parallax_near_x<const> = -256.0 + parallax_phase * 2
+	local billboard_x_a<const> = 54.0 + billboard_phase
+	local billboard_y_a<const> = 114.0
+	local billboard_x_b<const> = 174.0 - billboard_phase
+	local billboard_y_b<const> = 70.0
+	memwritef32(wp,
+		512.0 * inv_half_screen_width,
+		0.0,
+		parallax_x * inv_half_screen_width - 1.0,
+		0.70,
+		0.0,
+		-96.0 * inv_half_screen_height,
+		1.0 - 24.0 * inv_half_screen_height,
+		0.0,
+		0.0,
+		1.0,
+		1.0
+	)
+	wp = wp + 44
+	mem[wp], wp = parallax_far_tint, wp + 4
+	memwritef32(wp,
+		512.0 * inv_half_screen_width,
+		0.0,
+		parallax_near_x * inv_half_screen_width - 1.0,
+		0.42,
+		0.0,
+		-64.0 * inv_half_screen_height,
+		1.0 - 48.0 * inv_half_screen_height,
+		0.0,
+		0.0,
+		1.0,
+		1.0
+	)
+	wp = wp + 44
+	mem[wp], wp = parallax_near_tint, wp + 4
+	memwritef32(wp,
+		48.0 * inv_half_screen_width,
+		0.0,
+		sprite_x * inv_half_screen_width - 1.0,
+		0.20,
+		0.0,
+		-48.0 * inv_half_screen_height,
+		1.0 - sprite_y * inv_half_screen_height,
+		0.0,
+		0.0,
+		1.0,
+		1.0
+	)
+	wp = wp + 44
+	mem[wp], wp = sprite_tint, wp + 4
+	memwritef32(wp,
+		38.0 * inv_half_screen_width,
+		0.0,
+		billboard_x_a * inv_half_screen_width - 1.0,
+		0.12,
+		0.0,
+		-38.0 * inv_half_screen_height,
+		1.0 - billboard_y_a * inv_half_screen_height,
+		0.0,
+		0.0,
+		1.0,
+		1.0
+	)
+	wp = wp + 44
+	mem[wp], wp = billboard_tint_a, wp + 4
+	memwritef32(wp,
+		32.0 * inv_half_screen_width,
+		0.0,
+		billboard_x_b * inv_half_screen_width - 1.0,
+		0.14,
+		0.0,
+		-32.0 * inv_half_screen_height,
+		1.0 - billboard_y_b * inv_half_screen_height,
+		0.0,
+		0.0,
+		1.0,
+		1.0
+	)
+	wp = wp + 44
+	mem[wp], wp = billboard_tint_b, wp + 4
+	memwritef32(wp,
+		2.0,
+		0.0,
+		-1.0,
+		0.0,
+		0.0,
+		-2.0,
+		1.0,
+		0.0,
+		0.0,
+		1.0,
+		1.0
+	)
+	wp = wp + 44
+	mem[wp], wp = white, wp + 4
+end
+
+local write_mat4_instances<const> = function()
+	local bob<const> = 0.0
+	local wp = mat4_instance_addr
+	memwritef32(wp,
+		1.0,
+		0.0,
+		0.0,
+		0.0,
+		0.0,
+		1.0,
+		0.0,
+		0.0,
+		0.0,
+		0.0,
+		1.0,
+		0.0,
+		-0.72,
+		0.58 + bob,
+		0.0,
+		1.0
+	)
+	wp = wp + 64
+	mem[wp], wp = mat4_tint_a, wp + 4
+	memwritef32(wp,
+		0.72,
+		0.0,
+		0.0,
+		0.0,
+		0.0,
+		0.72,
+		0.0,
+		0.0,
+		0.0,
+		0.0,
+		1.0,
+		0.0,
+		0.72,
+		0.50 - bob,
+		0.0,
+		1.0
+	)
+	wp = wp + 64
+	mem[wp], wp = mat4_tint_b, wp + 4
+end
+
+local initialize_vdp_resources<const> = function()
+	write_quad_vertices()
+	write_background_vertices()
+	write_vector_vertices()
+	write_mat4_vertices()
+	write_mesh_indices()
+	write_lighting_constants()
+	vdp_stream_cursor = vdp_stream_base
+	vdp_rpu_quads.set_slot_dim(sys_vdp_slot_primary, atlas_width, atlas_height)
+	vdp_rpu.surface_define(vdp_rpu.surface_primary, atlas_width, atlas_height, vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_texture))
+	vdp_rpu.surface_define(scene_color_surface, screen_width, screen_height, vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_color | vdp_rpu.surface_usage_texture))
+	vdp_rpu.surface_define(scene_depth_surface, screen_width, screen_height, vdp_rpu.surface_usage(vdp_rpu.surface_format_depth16, vdp_rpu.surface_usage_depth))
+	vdp_rpu.buffer_define(quad_buffer, quad_vertex_bytes, vdp_rpu.usage_vertex)
+	vdp_rpu.buffer_upload_dma(quad_buffer, 0, quad_vertex_addr, quad_vertex_bytes)
+	vdp_rpu.buffer_define(background_buffer, background_vertex_bytes, vdp_rpu.usage_vertex)
+	vdp_rpu.buffer_upload_dma(background_buffer, 0, background_vertex_addr, background_vertex_bytes)
+	vdp_rpu.buffer_define(vector_buffer, vector_vertex_bytes, vdp_rpu.usage_vertex)
+	vdp_rpu.buffer_upload_dma(vector_buffer, 0, vector_vertex_addr, vector_vertex_bytes)
+	vdp_rpu.buffer_define(mat4_vertex_buffer, mat4_vertex_bytes, vdp_rpu.usage_vertex)
+	vdp_rpu.buffer_upload_dma(mat4_vertex_buffer, 0, mat4_vertex_addr, mat4_vertex_bytes)
+	vdp_rpu.buffer_define(mat4_instance_buffer, mat4_instance_bytes, vdp_rpu.usage_vertex)
+	vdp_rpu.buffer_define(mesh_buffer, mesh_vertex_bytes, vdp_rpu.usage_vertex)
+	vdp_rpu.buffer_define(mesh_index_buffer, mesh_index_bytes, vdp_rpu.usage_index)
+	vdp_rpu.buffer_upload_dma(mesh_index_buffer, 0, mesh_index_addr, mesh_index_bytes)
+	vdp_rpu.buffer_define(instance_buffer, instance_bytes, vdp_rpu.usage_vertex)
+	vdp_rpu_quads.finish_frame()
+	submit_current_stream()
+	wait_dma()
+end
+
+local draw_frame<const> = function()
+	local morph_a<const> = 0.0
+	local morph_b<const> = 0.0
+	write_mesh_vertices(morph_a, morph_b)
+	write_mesh_constants()
+	write_joint_constants()
+	write_mfu_constants()
+	write_instances()
+	write_mat4_instances()
+	vdp_stream_cursor = vdp_stream_base
+	vdp_xf.matrix_words(mesh_matrix_index, c0_addr)
+	vdp_lpu.register_words(0, c1_addr, c1_words)
+	vdp_jtu.matrix_words(0, joint0_addr)
+	vdp_jtu.matrix_words(mesh_joint_matrix_index, joint1_addr)
+	vdp_mfu.register_words(0, mfu_addr, mfu_words)
+	vdp_rpu.buffer_upload_dma(mesh_buffer, 0, mesh_vertex_addr, mesh_vertex_bytes)
+	vdp_rpu.buffer_upload_dma(mat4_instance_buffer, 0, mat4_instance_addr, mat4_instance_bytes)
+	vdp_rpu.buffer_upload_dma(instance_buffer, 0, instance_addr, instance_bytes)
+	vdp_rpu.constant_bank_define(0, 0, c0_words)
+	vdp_rpu.constant_bank_define(1, c0_words, c1_words)
+	vdp_rpu.constant_bank_define(2, c0_words + c1_words, joint_words)
+	vdp_rpu.constant_upload_device(0, 0, vdp_rpu.constant_source_xf_q16, mesh_matrix_index * vdp_xf.matrix_words_per_matrix, c0_words)
+	vdp_rpu.constant_upload_device(1, 0, vdp_rpu.constant_source_lpu_raw, 0, c1_words)
+	vdp_rpu.constant_upload_device(1, 8, vdp_rpu.constant_source_mfu_q16, 0, mfu_words)
+	vdp_rpu.constant_upload_device(2, 0, vdp_rpu.constant_source_jtu_q16, 0, joint_words)
+	vdp_rpu.begin_pass(scene_color_surface, scene_depth_surface, 0, 0, screen_width, screen_height, vdp_rpu.pass_color_clear | vdp_rpu.pass_depth_clear, 0xff071a3a, 0xffffffff)
+	vdp_rpu.begin_draw(vdp_rpu.shader_v2_c4, vdp_rpu.primitive_index(vdp_rpu.prim_triangles, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), background_vertex_count, 1, vdp_rpu.resource_none, 0, 0)
+	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_c4, background_buffer, 0, 0)
+	vdp_rpu.end_draw()
+	vdp_rpu.begin_draw(vdp_rpu.shader_v2_c4, vdp_rpu.primitive_index(vdp_rpu.prim_triangles, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), vector_vertex_count, 1, vdp_rpu.resource_none, 0, 0)
+	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_c4, vector_buffer, 0, 0)
+	vdp_rpu.end_draw()
+	vdp_rpu.begin_draw(vdp_rpu.shader_v2_c4, vdp_rpu.primitive_index(vdp_rpu.prim_lines, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), 2, 1, vdp_rpu.resource_none, 0, 0)
+	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_c4, vector_buffer, vector_vertex_stride * 2, 0)
+	vdp_rpu.end_draw()
+	vdp_rpu.begin_draw(vdp_rpu.shader_v2_c4, vdp_rpu.primitive_index(vdp_rpu.prim_points, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_alpha, vdp_rpu.depth_lequal, vdp_rpu.cull_none, vdp_rpu.pipe_depth_write, vdp_rpu.pipe_color_write_rgba), 1, 1, vdp_rpu.resource_none, 0, 0)
+	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_c4, vector_buffer, vector_vertex_stride * 2, 0)
+	vdp_rpu.end_draw()
+	vdp_rpu.begin_draw(vdp_rpu.shader_v2_t2_c4_i_affine2, vdp_rpu.primitive_index(vdp_rpu.prim_triangle_strip, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_lequal, vdp_rpu.cull_none, vdp_rpu.pipe_depth_write, vdp_rpu.pipe_color_write_rgba), quad_vertex_count, sprite_instance_count, vdp_rpu.resource_none, 0, 0)
+	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_t2_c4, quad_buffer, 0, 0)
+	vdp_rpu.bind_stream(1, vdp_rpu.layout_i_affine2_trect_c4, instance_buffer, 0, 1)
+	vdp_rpu.bind_texture(0, vdp_rpu.surface_primary, sampler_nearest)
+	vdp_rpu.end_draw()
+	vdp_rpu.begin_draw(vdp_rpu.shader_v3_c4_i_mat4, vdp_rpu.primitive_index(vdp_rpu.prim_triangles, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), mat4_vertex_count, mat4_instance_count, vdp_rpu.resource_none, 0, 0)
+	vdp_rpu.bind_stream(0, vdp_rpu.layout_v3_c4, mat4_vertex_buffer, 0, 0)
+	vdp_rpu.bind_stream(1, vdp_rpu.layout_i_mat4_c4, mat4_instance_buffer, 0, 1)
+	vdp_rpu.end_draw()
+	vdp_rpu.begin_draw(vdp_rpu.shader_v3_c4_c0, vdp_rpu.primitive_index(vdp_rpu.prim_triangles, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), mat4_vertex_count, 1, vdp_rpu.resource_none, 0, 0)
+	vdp_rpu.bind_stream(0, vdp_rpu.layout_v3_c4, mat4_vertex_buffer, 0, 0)
+	vdp_rpu.bind_constants(0, 0, 0, c0_words)
+	vdp_rpu.end_draw()
+	vdp_rpu.begin_draw(vdp_rpu.shader_v3_n3_t2_c4_j4_w4_c0_c1, vdp_rpu.primitive_index(vdp_rpu.prim_triangles, vdp_rpu.index_u16), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), mesh_vertex_count, 1, mesh_index_buffer, 0, mesh_index_count)
+	vdp_rpu.bind_stream(0, vdp_rpu.layout_v3_n3_t2_c4_j4_w4, mesh_buffer, 0, 0)
+	vdp_rpu.bind_constants(0, 0, 0, c0_words)
+	vdp_rpu.bind_constants(1, 2, 0, joint_words)
+	vdp_rpu.bind_constants(2, 1, 0, c1_words)
+	vdp_rpu.bind_texture(0, vdp_rpu.surface_primary, sampler_nearest)
+	vdp_rpu.end_draw()
+	vdp_rpu.end_pass()
+	vdp_rpu.begin_pass(vdp_rpu.resource_none, vdp_rpu.resource_none, 0, 0, screen_width, screen_height, 0, 0, 0)
+	vdp_rpu.begin_draw(vdp_rpu.shader_v2_t2_c4_i_affine2, vdp_rpu.primitive_index(vdp_rpu.prim_triangle_strip, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), quad_vertex_count, present_instance_count, vdp_rpu.resource_none, 0, 0)
+	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_t2_c4, quad_buffer, 0, 0)
+	vdp_rpu.bind_stream(1, vdp_rpu.layout_i_affine2_trect_c4, instance_buffer, present_instance_offset, 1)
+	vdp_rpu.bind_texture(0, scene_color_surface, sampler_nearest)
+	vdp_rpu.end_draw()
+	vdp_rpu.end_pass()
+	vdp_rpu_quads.finish_frame()
+	submit_current_stream()
 	wait_dma()
 end
 
 mem[io_vdp_dither] = 0
-mem[sys_vdp_pmu_bank] = 0
-mem[sys_vdp_pmu_x] = 0
-mem[sys_vdp_pmu_y] = 16 << 16
-mem[sys_vdp_pmu_scale_x] = q16_one
-mem[sys_vdp_pmu_scale_y] = q16_one
-mem[sys_vdp_pmu_ctrl] = 0
 build_lua_atlas()
-configure_primary_surface()
+initialize_vdp_resources()
 upload_atlas_to_vram()
-setup_camera_input()
-mem[sys_inp_ctrl] = inp_ctrl_arm
 
 while true do
 	wait_vblank()
-	update_camera()
 	frame = frame + 1
 	sprite_x = sprite_x + (sprite_direction * sprite_step)
 	if sprite_x >= 184 then
@@ -603,5 +1183,4 @@ while true do
 	end
 	sprite_y = 88 + ((frame // 12) % 4)
 	draw_frame()
-	mem[sys_inp_ctrl] = inp_ctrl_arm
 end

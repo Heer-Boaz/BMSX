@@ -19,6 +19,8 @@ struct VdpEntropySeeds {
 	u32 bootSeed = 0x7652414du;
 };
 
+inline constexpr VdpEntropySeeds DEFAULT_VDP_ENTROPY_SEEDS{};
+
 struct VdpVramSurface {
 	u32 surfaceId = 0u;
 	u32 baseAddr = 0u;
@@ -43,12 +45,12 @@ std::array<VdpVramSurface, VDP_RD_SURFACE_COUNT> defaultVdpVramSurfaces(VdpFrame
 
 class VdpVramUnit {
 public:
-	explicit VdpVramUnit(VdpEntropySeeds entropySeeds = {});
+	explicit VdpVramUnit(VdpEntropySeeds entropySeeds = DEFAULT_VDP_ENTROPY_SEEDS);
 
 	void initializeSurfaces(const std::array<VdpVramSurface, VDP_RD_SURFACE_COUNT>& surfaces);
-	bool writeStaging(u32 addr, const u8* data, size_t length);
+	bool writeStaging(u32 addr, const u8* bytes, size_t srcOffset, size_t length);
 	bool readStaging(u32 addr, u8* out, size_t length) const;
-	void writeSurfaceBytes(VdpSurfaceUploadSlot& slot, u32 offset, const u8* data, size_t length);
+	void writeSurfaceBytes(VdpSurfaceUploadSlot& slot, u32 offset, const u8* bytes, size_t srcOffset, size_t length);
 	void readSurfaceBytes(const VdpSurfaceUploadSlot& slot, u32 offset, u8* out, size_t length) const;
 	bool setSlotLogicalDimensions(VdpSurfaceUploadSlot& slot, u32 width, u32 height);
 	void markSlotDirty(VdpSurfaceUploadSlot& slot, u32 startRow, u32 rowCount);
@@ -73,6 +75,7 @@ private:
 	void restoreSurfacePixels(const VdpSurfacePixelsState& state);
 	void emitSurfaceUpload(VdpSurfaceUploadSink& sink, const VdpSurfaceUploadSlot& slot, bool requiresFullSync);
 	void markSlotDirtySpan(VdpSurfaceUploadSlot& slot, u32 row, u32 xStart, u32 xEnd);
+	void updateCpuReadback(VdpSurfaceUploadSlot& surface, const u8* bytes, size_t srcOffset, size_t length, u32 x, u32 y);
 	void seedSlotPixels(VdpSurfaceUploadSlot& slot);
 
 	std::vector<VdpSurfaceUploadSlot> m_slots;

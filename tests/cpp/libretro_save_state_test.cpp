@@ -6,8 +6,6 @@
 #include "machine/memory/map.h"
 #include "machine/runtime/runtime.h"
 #include "platform/libretro/platform.h"
-#include "render/backend/backend.h"
-#include "render/backend/software/vdp_framebuffer_execution.h"
 #include "support/program_cart_fixture.h"
 
 #include <array>
@@ -62,19 +60,34 @@ void testLibretroSaveStateRoundTrip() {
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "libretro loadState should restore asserted IRQ line state");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "libretro loadState should restore cart-visible IRQ flags");
 
-	memory.writeMappedU32LE(bmsx::IO_VDP_CMD, bmsx::VDP_CMD_BEGIN_FRAME);
-	memory.writeMappedU32LE(bmsx::IO_VDP_CMD, bmsx::VDP_CMD_CLEAR);
-	memory.writeMappedU32LE(bmsx::IO_VDP_CMD, bmsx::VDP_CMD_END_FRAME);
-	const int workUnits = runtime.machine.vdp.getPendingRenderWorkUnits();
-	require(workUnits > 0, "restored VDP BG register should submit CLEAR work after libretro loadState");
-	runtime.machine.vdp.advanceWork(workUnits);
-	std::vector<uint32_t> framebuffer(256u * 212u, 0u);
-	bmsx::SoftwareBackend softwareBackend(framebuffer.data(), 256, 212, 256 * static_cast<int>(sizeof(uint32_t)));
-	bmsx::drainReadyVdpFrameBufferExecutionForSoftware(softwareBackend, runtime.machine.vdp);
-	require(runtime.machine.vdp.presentReadyFrameOnVblankEdge(), "restored VDP state should present framebuffer output after libretro loadState");
-	std::array<bmsx::u8, 4u> pixel{};
-	require(runtime.machine.vdp.readFrameBufferPixels(bmsx::VdpFrameBufferPage::Display, 0u, 0u, 1u, 1u, pixel.data(), pixel.size()), "restored VDP framebuffer should be readable");
-	require(pixel == std::array<bmsx::u8, 4u>{{0x11u, 0x22u, 0x33u, 0xffu}}, "restored VDP registerfile should determine visible framebuffer output");
+	constexpr uint32_t rpuHeader = 0x18000000u;
+	constexpr uint32_t resourceNone = 0xffffffffu;
+	constexpr uint32_t opBeginPass = 32u;
+	constexpr uint32_t opEndPass = 33u;
+	constexpr uint32_t opBeginDraw = 40u;
+	constexpr uint32_t opEndDraw = 44u;
+	constexpr uint32_t shaderV2C4 = 0u;
+	constexpr uint32_t primitiveTriangles = 0u;
+	constexpr uint32_t indexNone = 0u;
+	constexpr uint32_t pipeColorWriteRgba = 0x000f0000u;
+	const uint32_t rpuWords[] = {
+		rpuHeader | (8u << 16u), opBeginPass, resourceNone, resourceNone, 0u, 256u | (212u << 16u), 1u, 0xff112233u, 0xffffffffu,
+		rpuHeader | (9u << 16u), opBeginDraw, shaderV2C4, primitiveTriangles | (indexNone << 8u), pipeColorWriteRgba, 3u, 1u, resourceNone, 0u, 0u,
+		rpuHeader | (1u << 16u), opEndDraw,
+		rpuHeader | (1u << 16u), opEndPass,
+		bmsx::VDP_PKT_END,
+	};
+	for (const uint32_t word : rpuWords) {
+		memory.writeMappedU32LE(bmsx::IO_VDP_FIFO, word);
+	}
+	memory.writeMappedU32LE(bmsx::IO_VDP_FIFO_CTRL, bmsx::VDP_FIFO_CTRL_SEAL);
+	require(memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_NONE, "restored VDP should accept RPU packets after libretro loadState");
+	runtime.machine.vdp.advanceWork(runtime.machine.vdp.getPendingRenderWorkUnits());
+	require(!runtime.machine.vdp.presentReadyFrameOnVblankEdge(), "RPU frame should not use legacy framebuffer presentation after libretro loadState");
+	const bmsx::VdpDeviceOutput& output = runtime.machine.vdp.readDeviceOutput();
+	require(output.rpu->commands.passCount == 1u, "restored runtime should publish retained RPU pass output");
+	require(output.rpu->commands.drawCount == 1u, "restored runtime should publish retained RPU draw output");
+	require(output.rpu->commands.passClearColor[0u] == 0xff112233u, "restored runtime should retain RPU clear constants");
 }
 
 void testInputInitializeInstallsBaseContext() {

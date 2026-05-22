@@ -19,18 +19,18 @@ void registerHostOverlayPass(RenderPassLibrary& registry) {
 		return buildHostOverlayState();
 	};
 	if constexpr (Bootstrap != nullptr) {
-		desc.bootstrap = [](GPUBackend* backend) {
+		desc.bootstrap = [](GPUBackend* backend) -> auto {
 			Bootstrap(*static_cast<Backend*>(backend));
 		};
 	}
-	desc.shouldExecute = []() {
+	desc.shouldExecute = []() -> auto {
 		if constexpr (ShouldExecuteExtra != nullptr) {
 			return hasPendingOverlayFrame() || ShouldExecuteExtra();
 		} else {
 			return hasPendingOverlayFrame();
 		}
 	};
-	desc.exec = [](GPUBackend* backend, void*, std::any& stateAny) {
+	desc.exec = [](GPUBackend* backend, void*, std::any& stateAny) -> auto {
 		Backend& typedBackend = *static_cast<Backend*>(backend);
 		const HostOverlayPipelineState& state = std::any_cast<HostOverlayPipelineState&>(stateAny);
 		Begin(typedBackend, state);
@@ -53,12 +53,12 @@ void registerHostMenuPass(RenderPassLibrary& registry) {
 	desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
 		return buildHostMenuState(*ctx.view);
 	};
-	desc.shouldExecute = []() {
-		return hostOverlayMenu().queuedCommandCount() != 0u;
+	desc.shouldExecute = []() -> auto {
+		return hostOverlayMenu().queuedCommandCount() != 0U;
 	};
-	desc.exec = [](GPUBackend* backend, void*, std::any& stateAny) {
+	desc.exec = [](GPUBackend* backend, void*, std::any& stateAny) -> auto {
 		Backend& typedBackend = *static_cast<Backend*>(backend);
-		HostOverlayMenu& menu = hostOverlayMenu();
+		HostOverlayMenu const& menu = hostOverlayMenu();
 		Begin(typedBackend, std::any_cast<HostMenuPipelineState&>(stateAny));
 		const size_t commandCount = menu.queuedCommandCount();
 		for (size_t index = 0; index < commandCount; index += 1) {

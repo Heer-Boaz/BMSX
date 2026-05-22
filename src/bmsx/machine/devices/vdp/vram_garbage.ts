@@ -8,9 +8,9 @@ import {
 export const VRAM_GARBAGE_CHUNK_BYTES = 64 * 1024;
 export const VRAM_GARBAGE_SPACE_SALT = 0x5652414d;
 
-const VRAM_GARBAGE_WEIGHT_BLOCK = 1;
-const VRAM_GARBAGE_WEIGHT_ROW = 2;
-const VRAM_GARBAGE_WEIGHT_PAGE = 4;
+export const VRAM_GARBAGE_WEIGHT_BLOCK = 1;
+export const VRAM_GARBAGE_WEIGHT_ROW = 2;
+export const VRAM_GARBAGE_WEIGHT_PAGE = 4;
 const VRAM_GARBAGE_OCTAVES = [
 	{ shift: 11, weight: 8, mul: 0x165667b1, mix: 0xd3a2646c },
 	{ shift: 15, weight: 12, mul: 0x27d4eb2f, mix: 0x6c8e9cf5 },
@@ -18,10 +18,10 @@ const VRAM_GARBAGE_OCTAVES = [
 	{ shift: 19, weight: 20, mul: 0xa24baed5, mix: 0x9e3779b9 },
 	{ shift: 21, weight: 24, mul: 0x6a09e667, mix: 0xbb67ae85 },
 ] as const;
-const VRAM_GARBAGE_FORCE_T0 = 120;
-const VRAM_GARBAGE_FORCE_T1 = 280;
-const VRAM_GARBAGE_FORCE_T2 = 480;
-const VRAM_GARBAGE_FORCE_T_DEN = 1000;
+export const VRAM_GARBAGE_FORCE_T0 = 120;
+export const VRAM_GARBAGE_FORCE_T1 = 280;
+export const VRAM_GARBAGE_FORCE_T2 = 480;
+export const VRAM_GARBAGE_FORCE_T_DEN = 1000;
 
 export type VramGarbageStream = {
 	machineSeed: number;
@@ -46,12 +46,27 @@ type BiasConfig = {
 	threshold2: number;
 };
 
+const VRAM_GARBAGE_BIAS_CONFIG: BiasConfig = {
+	activeOctaves: 0,
+	threshold0: 0,
+	threshold1: 0,
+	threshold2: 0,
+};
+const VRAM_GARBAGE_BLOCK_GEN: BlockGen = {
+	forceMask: 0,
+	prefWord: 0,
+	weakMask: 0,
+	baseState: 0,
+	bootState: 0,
+	genWordPos: 0,
+};
+
 function garbageForceThreshold(maxBias: number, threshold: number): number {
 	const scaled = maxBias * threshold;
 	return (scaled - (scaled % VRAM_GARBAGE_FORCE_T_DEN)) / VRAM_GARBAGE_FORCE_T_DEN;
 }
 
-function makeBiasConfig(vramBytes: number): BiasConfig {
+function makeBiasConfig(vramBytes: number, target: BiasConfig): BiasConfig {
 	const maxOctaveBytes = vramBytes >>> 1;
 	let weightSum = VRAM_GARBAGE_WEIGHT_BLOCK + VRAM_GARBAGE_WEIGHT_ROW + VRAM_GARBAGE_WEIGHT_PAGE;
 	let activeOctaves = 0;
@@ -65,15 +80,14 @@ function makeBiasConfig(vramBytes: number): BiasConfig {
 		activeOctaves = i + 1;
 	}
 	const maxBias = weightSum * 127;
-	return {
-		activeOctaves,
-		threshold0: garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T0),
-		threshold1: garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T1),
-		threshold2: garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T2),
-	};
+	target.activeOctaves = activeOctaves;
+	target.threshold0 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T0);
+	target.threshold1 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T1);
+	target.threshold2 = garbageForceThreshold(maxBias, VRAM_GARBAGE_FORCE_T2);
+	return target;
 }
 
-function initBlockGen(biasSeed: number, bootSeedMix: number, blockIndex: number, biasConfig: BiasConfig): BlockGen {
+function initBlockGen(biasSeed: number, bootSeedMix: number, blockIndex: number, biasConfig: BiasConfig, target: BlockGen): BlockGen {
 	const pageIndex = blockIndex >>> 7;
 	const rowIndex = blockIndex >>> 3;
 
@@ -133,14 +147,13 @@ function initBlockGen(biasSeed: number, bootSeedMix: number, blockIndex: number,
 	const baseState = ((blkH ^ 0xa1b2c3d4) >>> 0) | 1;
 	const bootState = (fmix32((bootSeedMix ^ Math.imul(blockIndex, 0x7f4a7c15) ^ 0x31415926) >>> 0) | 1) >>> 0;
 
-	return {
-		forceMask,
-		prefWord,
-		weakMask: weak >>> 0,
-		baseState,
-		bootState,
-		genWordPos: 0,
-	};
+	target.forceMask = forceMask;
+	target.prefWord = prefWord;
+	target.weakMask = weak >>> 0;
+	target.baseState = baseState;
+	target.bootState = bootState;
+	target.genWordPos = 0;
+	return target;
 }
 
 function nextWord(gen: BlockGen): number {
@@ -156,14 +169,14 @@ function nextWord(gen: BlockGen): number {
 	return word >>> 0;
 }
 
-export function fillVramGarbageScratch(buffer: Uint8Array, s: VramGarbageStream): void {
-	const total = buffer.byteLength;
+export function fillVramGarbageScratch(buffer: Uint8Array, length: number, s: VramGarbageStream): void {
+	const total = length;
 	const startAddr = s.addr >>> 0;
 
 	const biasSeed = (s.machineSeed ^ s.slotSalt) >>> 0;
 	const bootSeedMix = (s.bootSeed ^ s.slotSalt) >>> 0;
 	const vramBytes = (VRAM_SECONDARY_SLOT_BASE + VRAM_SECONDARY_SLOT_SIZE - VRAM_STAGING_BASE) >>> 0;
-	const biasConfig = makeBiasConfig(vramBytes);
+	const biasConfig = makeBiasConfig(vramBytes, VRAM_GARBAGE_BIAS_CONFIG);
 
 	const BLOCK_BYTES = 32;
 	const BLOCK_SHIFT = 5;
@@ -181,7 +194,7 @@ export function fillVramGarbageScratch(buffer: Uint8Array, s: VramGarbageStream)
 		const writeRemaining = total - out;
 		const maxBytesThisBlock = blockRemaining < writeRemaining ? blockRemaining : writeRemaining;
 
-		const gen = initBlockGen(biasSeed, bootSeedMix, blockIndex, biasConfig);
+		const gen = initBlockGen(biasSeed, bootSeedMix, blockIndex, biasConfig, VRAM_GARBAGE_BLOCK_GEN);
 
 		if (aligned4 && startOff === 0 && maxBytesThisBlock === BLOCK_BYTES) {
 			for (let w = 0; w < 8; w += 1) {
