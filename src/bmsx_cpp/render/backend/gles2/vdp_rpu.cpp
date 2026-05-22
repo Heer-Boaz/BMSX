@@ -41,6 +41,7 @@ struct VdpRpuGLES2Runtime {
 	GLint uniformJoint = -1;
 	GLint uniformT0 = -1;
 	GLint uniformTextureEnabled = -1;
+	GLint uniformTextureFlipY = -1;
 	GLint uniformInstanceMode = -1;
 	GLint uniformSkinningMode = -1;
 	GLint uniformLightingMode = -1;
@@ -500,6 +501,7 @@ void setVdpRpuTextureSampler(u32 samplerWord) {
 void bindVdpRpuNeutralTexture(OpenGLES2Backend& backend) {
 	backend.setActiveTextureUnit(0);
 	glBindTexture(GL_TEXTURE_2D, g_vdpRpu.neutralTexture);
+	glUniform1i(g_vdpRpu.uniformTextureFlipY, 0);
 	backend.invalidateTextureBindingCache();
 }
 
@@ -525,10 +527,12 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 			runtime.backend.setActiveTextureUnit(0);
 			if (surfaceId < VDP_RD_SURFACE_COUNT) {
 				runtime.backend.bindTexture2D(runtime.context.vdpSlotTextures().readSurfaceTextureHandle(surfaceId));
+				glUniform1i(g_vdpRpu.uniformTextureFlipY, 0);
 			} else {
 				ensureVdpRpuSurfaceStorage(runtime.backend, frame, surfaceRef);
 				runtime.backend.invalidateTextureBindingCache();
 				glBindTexture(GL_TEXTURE_2D, g_vdpRpu.surfaceTexture[surfaceId]);
+				glUniform1i(g_vdpRpu.uniformTextureFlipY, 1);
 			}
 			setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
 			glUniform1i(g_vdpRpu.uniformT0, 0);
@@ -626,6 +630,7 @@ void setupVdpRpuLocations(OpenGLES2Backend& backend) {
 	runtime.uniformJoint = glGetUniformLocation(runtime.program, "u_joint[0]");
 	runtime.uniformT0 = glGetUniformLocation(runtime.program, "u_t0");
 	runtime.uniformTextureEnabled = glGetUniformLocation(runtime.program, "u_textureEnabled");
+	runtime.uniformTextureFlipY = glGetUniformLocation(runtime.program, "u_textureFlipY");
 	runtime.uniformInstanceMode = glGetUniformLocation(runtime.program, "u_instanceMode");
 	runtime.uniformSkinningMode = glGetUniformLocation(runtime.program, "u_skinningMode");
 	runtime.uniformLightingMode = glGetUniformLocation(runtime.program, "u_lightingMode");
@@ -663,6 +668,7 @@ void setupVdpRpuLocations(OpenGLES2Backend& backend) {
 	glUniformMatrix4fv(runtime.uniformJoint, 24, GL_FALSE, runtime.defaultJointFloats.data());
 	glUniform1i(runtime.uniformT0, 0);
 	glUniform1i(runtime.uniformTextureEnabled, 0);
+	glUniform1i(runtime.uniformTextureFlipY, 0);
 	glUniform1i(runtime.uniformInstanceMode, static_cast<GLint>(VDP_RPU_INSTANCE_MODE_NONE));
 	glUniform1i(runtime.uniformSkinningMode, 0);
 	glUniform1i(runtime.uniformLightingMode, 0);

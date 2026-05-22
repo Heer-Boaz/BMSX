@@ -457,7 +457,7 @@ void GameView::applyCRTPostProcessing(const u32* src,
 	const bool enableCrt = crt_postprocessing_enabled;
 	const i32 ditherType = static_cast<i32>(dither_type);
 
-	if (!enableCrt && ditherType == 0 && srcWidth == dstWidth && srcHeight == dstHeight) {
+	if (!enableCrt && srcWidth == dstWidth && srcHeight == dstHeight) {
 		for (i32 y = 0; y < dstHeight; ++y) {
 			std::memcpy(dst + static_cast<size_t>(y) * static_cast<size_t>(dstPixelsPerRow),
 						src + static_cast<size_t>(y) * static_cast<size_t>(srcWidth),

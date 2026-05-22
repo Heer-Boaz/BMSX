@@ -440,9 +440,10 @@ void sampleTexture(GameView& view, const VdpRpuFrameOutput& frame, size_t drawIn
 		if (sx >= width) sx = width - 1;
 		if (sy >= height) sy = height - 1;
 		const size_t offset = static_cast<size_t>(sy) * slot.stride + static_cast<size_t>(sx) * 4u;
-		ctx.attr[0] = static_cast<f64>(slot.pixels[offset]) * (1.0 / 255.0);
-		ctx.attr[1] = static_cast<f64>(slot.pixels[offset + 1u]) * (1.0 / 255.0);
-		ctx.attr[2] = static_cast<f64>(slot.pixels[offset + 2u]) * (1.0 / 255.0);
+		const auto& srgbToLinear = srgbToLinearLut();
+		ctx.attr[0] = static_cast<f64>(srgbToLinear[slot.pixels[offset]]) * (1.0 / 255.0);
+		ctx.attr[1] = static_cast<f64>(srgbToLinear[slot.pixels[offset + 1u]]) * (1.0 / 255.0);
+		ctx.attr[2] = static_cast<f64>(srgbToLinear[slot.pixels[offset + 2u]]) * (1.0 / 255.0);
 		ctx.attr[3] = static_cast<f64>(slot.pixels[offset + 3u]) * (1.0 / 255.0);
 		return;
 	}
@@ -465,6 +466,11 @@ void sampleTexture(GameView& view, const VdpRpuFrameOutput& frame, size_t drawIn
 
 void writePixel(SoftwareRpuTarget& target, i32 x, i32 y, f64 z, u32 pipelineWord, f64 r, f64 g, f64 b, f64 a) {
 	if (x < 0 || y < 0 || x >= target.width || y >= target.height) return;
+	const u8 srcR = floatByte(r);
+	const u8 srcG = floatByte(g);
+	const u8 srcB = floatByte(b);
+	const u8 srcA = floatByte(a);
+	if (srcA == 0u) return;
 	const size_t pixelIndex = static_cast<size_t>(y) * static_cast<size_t>(target.width) + static_cast<size_t>(x);
 	const u32 depthMode = (pipelineWord & VDP_RPU_PIPE_DEPTH_MASK) >> 4u;
 	if (depthMode != VDP_RPU_DEPTH_NONE) {
@@ -482,10 +488,6 @@ void writePixel(SoftwareRpuTarget& target, i32 x, i32 y, f64 z, u32 pipelineWord
 	if (colorMask == 0u) return;
 	const size_t targetIndex = static_cast<size_t>(y) * static_cast<size_t>(target.stride) + static_cast<size_t>(x);
 	u32 dst = target.pixels[targetIndex];
-	const u8 srcR = floatByte(r);
-	const u8 srcG = floatByte(g);
-	const u8 srcB = floatByte(b);
-	const u8 srcA = floatByte(a);
 	const u32 blend = pipelineWord & VDP_RPU_PIPE_BLEND_MASK;
 	if (blend == VDP_RPU_BLEND_ALPHA) {
 		const u32 invA = 255u - srcA;

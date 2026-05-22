@@ -181,11 +181,9 @@ private:
 	void onVdpFifoWrite();
 	void onVdpFifoCtrlWrite();
 	void onVdpCommandWrite();
-	void clearActiveFrame();
 	void commitActiveVisualState();
 	void finishCommittedFrameOnVblankEdge();
 
-	void commitLiveVisualState();
 };
 
 } // namespace bmsx

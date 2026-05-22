@@ -1,3 +1,4 @@
+local vdp_stream<const> = require('bios/vdp_stream')
 local numeric<const> = require('bios/common/numeric')
 
 local vdp_rpu<const> = {}
@@ -129,7 +130,7 @@ end
 
 function vdp_rpu.buffer_define(buffer_id, byte_length, usage)
 	memwrite(
-		vdp_stream_claim(5),
+		vdp_stream.claim(5),
 		header(words_buffer_define),
 		op_buffer_define,
 		buffer_id,
@@ -140,7 +141,7 @@ end
 
 function vdp_rpu.buffer_upload_dma(buffer_id, dst_byte_offset, src_addr, byte_length)
 	memwrite(
-		vdp_stream_claim(6),
+		vdp_stream.claim(6),
 		header(words_buffer_upload_dma),
 		op_buffer_upload_dma,
 		buffer_id,
@@ -153,7 +154,7 @@ end
 function vdp_rpu.buffer_upload_inline(buffer_id, dst_byte_offset, byte_length, ...)
 	local data_words<const> = (byte_length + 3) >> 2
 	memwrite(
-		vdp_stream_claim(5 + data_words),
+		vdp_stream.claim(5 + data_words),
 		header(words_buffer_upload_inline_min + data_words),
 		op_buffer_upload_inline,
 		buffer_id,
@@ -165,7 +166,7 @@ end
 
 function vdp_rpu.buffer_discard(buffer_id)
 	memwrite(
-		vdp_stream_claim(3),
+		vdp_stream.claim(3),
 		header(words_buffer_discard),
 		op_buffer_discard,
 		buffer_id
@@ -174,7 +175,7 @@ end
 
 function vdp_rpu.surface_define(surface_id, width, height, format_usage)
 	memwrite(
-		vdp_stream_claim(5),
+		vdp_stream.claim(5),
 		header(words_surface_define),
 		op_surface_define,
 		surface_id,
@@ -185,7 +186,7 @@ end
 
 function vdp_rpu.constant_bank_define(bank_id, first_word, word_count)
 	memwrite(
-		vdp_stream_claim(5),
+		vdp_stream.claim(5),
 		header(words_constant_bank_define),
 		op_constant_bank_define,
 		bank_id,
@@ -196,7 +197,7 @@ end
 
 function vdp_rpu.constant_upload_dma(bank_id, dst_word_offset, src_addr, word_count)
 	memwrite(
-		vdp_stream_claim(6),
+		vdp_stream.claim(6),
 		header(words_constant_upload_dma),
 		op_constant_upload_dma,
 		bank_id,
@@ -208,7 +209,7 @@ end
 
 function vdp_rpu.constant_upload_inline(bank_id, dst_word_offset, word_count, ...)
 	memwrite(
-		vdp_stream_claim(5 + word_count),
+		vdp_stream.claim(5 + word_count),
 		header(words_constant_upload_inline_min + word_count),
 		op_constant_upload_inline,
 		bank_id,
@@ -220,7 +221,7 @@ end
 
 function vdp_rpu.constant_upload_device(bank_id, dst_word_offset, source, source_word_offset, word_count)
 	memwrite(
-		vdp_stream_claim(7),
+		vdp_stream.claim(7),
 		header(words_constant_upload_device),
 		op_constant_upload_device,
 		bank_id,
@@ -233,7 +234,7 @@ end
 
 function vdp_rpu.begin_pass(color_surface_id, depth_surface_id, viewport_x, viewport_y, viewport_w, viewport_h, pass_ops, clear_color, clear_depth_word)
 	memwrite(
-		vdp_stream_claim(9),
+		vdp_stream.claim(9),
 		header(words_begin_pass),
 		op_begin_pass,
 		color_surface_id,
@@ -248,7 +249,7 @@ end
 
 function vdp_rpu.end_pass()
 	memwrite(
-		vdp_stream_claim(2),
+		vdp_stream.claim(2),
 		header(words_end_pass),
 		op_end_pass
 	)
@@ -256,7 +257,7 @@ end
 
 function vdp_rpu.begin_draw(shader_variant, primitive_index_type, pipeline_word, vertex_count, instance_count, index_buffer_id, index_byte_offset, index_count)
 	memwrite(
-		vdp_stream_claim(10),
+		vdp_stream.claim(10),
 		header(words_begin_draw),
 		op_begin_draw,
 		shader_variant,
@@ -272,7 +273,7 @@ end
 
 function vdp_rpu.bind_stream(stream_slot, layout_id, buffer_id, byte_offset, step_rate)
 	memwrite(
-		vdp_stream_claim(7),
+		vdp_stream.claim(7),
 		header(words_bind_stream),
 		op_bind_stream,
 		stream_slot,
@@ -285,7 +286,7 @@ end
 
 function vdp_rpu.bind_constants(binding_slot, bank_id, first_word, word_count)
 	memwrite(
-		vdp_stream_claim(6),
+		vdp_stream.claim(6),
 		header(words_bind_constants),
 		op_bind_constants,
 		binding_slot,
@@ -297,7 +298,7 @@ end
 
 function vdp_rpu.bind_texture(texture_slot, surface_id, sampler_word)
 	memwrite(
-		vdp_stream_claim(5),
+		vdp_stream.claim(5),
 		header(words_bind_texture),
 		op_bind_texture,
 		texture_slot,
@@ -308,7 +309,7 @@ end
 
 function vdp_rpu.end_draw()
 	memwrite(
-		vdp_stream_claim(2),
+		vdp_stream.claim(2),
 		header(words_end_draw),
 		op_end_draw
 	)

@@ -762,7 +762,7 @@ void VDP::beginFrame() {
 
 void VDP::resetQueuedFrameState() {
 	resetBuildingFrame(m_buildFrame);
-	clearActiveFrame();
+	resetSubmittedFrameSlot(m_activeFrame);
 	resetSubmittedFrameSlot(m_pendingFrame);
 }
 
@@ -825,7 +825,6 @@ bool VDP::sealSubmittedFrame() {
 		frame = &m_pendingFrame;
 	}
 	const bool frameHasRpuCommands = m_buildFrame.rpu->commands.passCount != 0u || m_buildFrame.rpu->commands.drawCount != 0u;
-	const bool frameHasCommands = frameHasRpuCommands;
 	const int frameCost = m_buildFrame.cost;
 	for (size_t index = 0u; index < frame->xf.matrixWords.size(); ++index) {
 		frame->xf.matrixWords[index] = m_xf.matrixWords[index];
@@ -849,7 +848,7 @@ bool VDP::sealSubmittedFrame() {
 	} else {
 		frame->state = VdpSubmittedFrameState::Queued;
 	}
-	frame->hasCommands = frameHasCommands;
+	frame->hasCommands = frameHasRpuCommands;
 	frame->cost = frameCost;
 	frame->workRemaining = frameCost;
 	const VdpVoutFrameOutput& voutFrame = m_vout.sealFrame();
@@ -917,23 +916,22 @@ void VDP::scheduleNextService(int64_t nowCycles) {
 	m_scheduler.scheduleDeviceService(DeviceServiceVdp, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, targetUnits - m_availableWorkUnits));
 }
 
-void VDP::clearActiveFrame() {
-	resetSubmittedFrameSlot(m_activeFrame);
-}
 
 const VdpDeviceOutput& VDP::readDeviceOutput() {
 	return m_vout.readDeviceOutput(m_scheduler.currentNowCycles());
 }
 
 void VDP::commitActiveVisualState() {
-	m_vout.presentFrame(m_activeFrame);
+	if (m_activeFrame.hasCommands) {
+		m_vout.presentFrame(m_activeFrame);
+	}
 }
 
 void VDP::finishCommittedFrameOnVblankEdge() {
 	commitActiveVisualState();
 	m_lastFrameCommitted = true;
 	m_lastFrameHeld = false;
-	clearActiveFrame();
+	resetSubmittedFrameSlot(m_activeFrame);
 	promotePendingFrame();
 	scheduleNextService(m_scheduler.currentNowCycles());
 	refreshSubmitBusyStatus();
@@ -960,9 +958,6 @@ bool VDP::presentReadyFrameOnVblankEdge() {
 }
 // end hot-path
 
-void VDP::commitLiveVisualState() {
-	m_vout.presentLiveState();
-}
 
 // start hot-path -- VDP readback registers are polled by the emulated CPU.
 Value VDP::readVdpStatusThunk(void* context, uint32_t addr) {
@@ -1094,7 +1089,7 @@ void VDP::bindVramSurfaces() {
 			m_vout.configureScanout(slot.surfaceWidth, slot.surfaceHeight);
 		}
 	}
-	commitLiveVisualState();
+	m_vout.presentLiveState();
 }
 
 bool VDP::resizeVramSlot(VdpSurfaceUploadSlot& slot, uint32_t width, uint32_t height, uint32_t faultDetail) {
@@ -1220,7 +1215,7 @@ void VDP::restoreState(const VdpState& state) {
 	if (needsImmediateSchedulerService() || hasPendingRenderWork()) {
 		scheduleNextService(m_scheduler.currentNowCycles());
 	}
-	commitLiveVisualState();
+	m_vout.presentLiveState();
 }
 
 VdpSaveState VDP::captureSaveState() const {
@@ -1236,7 +1231,7 @@ void VDP::restoreSaveState(const VdpSaveState& state) {
 	m_vram.restoreState(state.vram);
 	bindVramSurfaces();
 	m_fbm.restoreDisplayReadback(state.displayFrameBufferPixels);
-	commitLiveVisualState();
+	m_vout.presentLiveState();
 }
 
 

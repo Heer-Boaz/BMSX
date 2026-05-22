@@ -17,10 +17,8 @@ import {
 	VDP_RPU_ATTR_WEIGHTS,
 	VDP_RPU_BLEND_ADD,
 	VDP_RPU_BLEND_ALPHA,
-	VDP_RPU_BLEND_NONE,
 	VDP_RPU_DEPTH_LESS,
 	VDP_RPU_DEPTH_NONE,
-	VDP_RPU_FILTER_LINEAR,
 	VDP_RPU_INDEX_NONE,
 	VDP_RPU_INDEX_U16,
 	VDP_RPU_INSTANCE_MODE_AFFINE2,
@@ -37,15 +35,14 @@ import {
 	VDP_RPU_PRIM_TRIANGLE_STRIP,
 	VDP_RPU_REF_NONE,
 	VDP_RPU_RESOURCE_NONE,
-	VDP_RPU_SAMPLER_MAG_FILTER_MASK,
 	VDP_RPU_SURFACE_CAPACITY,
 	VDP_RPU_SURFACE_FORMAT_DEPTH16,
 	resolveVdpRpuShaderVariantSpec,
 	resolveVdpRpuStreamLayoutSpec,
 	type VdpRpuFrameOutput,
 	type VdpRpuShaderVariantSpec,
-	type VdpRpuStreamLayoutSpec,
 } from '../../../machine/devices/vdp/rpu';
+import { SRGB_BYTE_TO_LINEAR_FLOAT } from '../color_space';
 import type { GameView } from '../../gameview';
 import type { VdpSlotTexturePixels } from '../../vdp/slot_textures';
 
@@ -179,7 +176,7 @@ function fillColorTarget(pixels: Uint8Array, color: number): void {
 	}
 }
 
-function passColorTarget(view: GameView, frame: VdpRpuFrameOutput, passIndex: number, defaultPixels: Uint8Array, defaultWidth: number, defaultHeight: number): { pixels: Uint8Array; width: number; height: number } {
+function passColorTarget(frame: VdpRpuFrameOutput, passIndex: number, defaultPixels: Uint8Array, defaultWidth: number, defaultHeight: number): { pixels: Uint8Array; width: number; height: number } {
 	const colorRef = frame.commands.passColorSurfaceRef[passIndex];
 	if (colorRef === VDP_RPU_REF_NONE) {
 		return { pixels: defaultPixels, width: defaultWidth, height: defaultHeight };
@@ -522,6 +519,18 @@ function sampleTexture(view: GameView, frame: VdpRpuFrameOutput, bindingIndex: n
 		pixels = slot.pixels;
 		width = slot.width;
 		height = slot.height;
+		let sx = (u * width) | 0;
+		let sy = (v * height) | 0;
+		if (sx < 0) sx = 0;
+		if (sy < 0) sy = 0;
+		if (sx >= width) sx = width - 1;
+		if (sy >= height) sy = height - 1;
+		const offset = (sy * width + sx) * 4;
+		attr[0] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset]];
+		attr[1] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset + 1]];
+		attr[2] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset + 2]];
+		attr[3] = pixels[offset + 3] * (1 / 255);
+		return;
 	} else {
 		syncSurfaceStorage(frame, surfaceRef);
 		pixels = softwareRpuSurfacePixels[surfaceId] as Uint8Array;
@@ -543,6 +552,11 @@ function sampleTexture(view: GameView, frame: VdpRpuFrameOutput, bindingIndex: n
 
 function writePixel(pixels: Uint8Array, depth: Float64Array, width: number, height: number, x: number, y: number, z: number, pipelineWord: number, r: number, g: number, b: number, a: number): void {
 	if (x < 0 || y < 0 || x >= width || y >= height) return;
+	const srcR = floatByte(r);
+	const srcG = floatByte(g);
+	const srcB = floatByte(b);
+	const srcA = floatByte(a);
+	if (srcA === 0) return;
 	const pixelIndex = y * width + x;
 	const depthMode = (pipelineWord & VDP_RPU_PIPE_DEPTH_MASK) >>> 4;
 	if (depthMode !== VDP_RPU_DEPTH_NONE) {
@@ -559,10 +573,6 @@ function writePixel(pixels: Uint8Array, depth: Float64Array, width: number, heig
 	const colorMask = (pipelineWord & VDP_RPU_PIPE_COLOR_WRITE_MASK) >>> 16;
 	if (colorMask === 0) return;
 	const offset = pixelIndex * 4;
-	const srcR = floatByte(r);
-	const srcG = floatByte(g);
-	const srcB = floatByte(b);
-	const srcA = floatByte(a);
 	const blend = pipelineWord & VDP_RPU_PIPE_BLEND_MASK;
 	if (blend === VDP_RPU_BLEND_ALPHA) {
 		const invA = 255 - srcA;
@@ -718,7 +728,7 @@ export function renderVdpRpuSoftwareFrame(view: GameView, frame: VdpRpuFrameOutp
 	}
 	const commands = frame.commands;
 	for (let passIndex = 0; passIndex < commands.passCount; passIndex += 1) {
-		const colorTarget = passColorTarget(view, frame, passIndex, defaultPixels, defaultWidth, defaultHeight);
+		const colorTarget = passColorTarget(frame, passIndex, defaultPixels, defaultWidth, defaultHeight);
 		const depthTarget = passDepthTarget(frame, passIndex, defaultDepth, colorTarget.width, colorTarget.height);
 		const passOps = commands.passOps[passIndex];
 		if ((passOps & VDP_RPU_PASS_COLOR_CLEAR) !== 0) {

@@ -77,6 +77,14 @@ function commitHeadlessFrame(frameBufferWidth: number, frameBufferHeight: number
 	headlessPresentHeight = presentHeight;
 }
 
+function fillHeadlessFrame(width: number, height: number): void {
+	resizeHeadlessFrame(width, height);
+	headlessCompositePixels.fill(0);
+	for (let offset = 3; offset < headlessCompositePixels.length; offset += 4) {
+		headlessCompositePixels[offset] = 255;
+	}
+}
+
 function countHeadlessActivePixels(): number {
 	let active = 0;
 	for (let index = 3; index < headlessCompositePixels.length; index += 4) {
@@ -99,7 +107,7 @@ function registerHeadlessRpuPass(registry: RenderPassLibrary): void {
 			const frame = view.vdpRpuFrame;
 			const width = view.offscreenCanvasSize.x;
 			const height = view.offscreenCanvasSize.y;
-			resizeHeadlessFrame(width, height);
+			fillHeadlessFrame(width, height);
 			renderVdpRpuSoftwareFrame(view, frame, headlessCompositePixels, width, height);
 			commitHeadlessFrame(width, height, view.canvasSize.x, view.canvasSize.y);
 			const headline = `pixels=${headlessCompositePixels.length >> 2} active=${countHeadlessActivePixels()} framebuffer=${width}x${height} present=${view.canvasSize.x}x${view.canvasSize.y} passes=${frame.commands.passCount}`;

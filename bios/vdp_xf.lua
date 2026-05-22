@@ -1,3 +1,4 @@
+local vdp_stream<const> = require('bios/vdp_stream')
 local vdp_xf<const> = {}
 
 local packet_kind<const> = 0x13000000
@@ -13,7 +14,7 @@ local header<const> = function(payload_words)
 end
 
 function vdp_xf.matrix_words(matrix_index, src_addr)
-	local wp = vdp_stream_claim(1 + matrix_packet_payload_words)
+	local wp = vdp_stream.claim(1 + matrix_packet_payload_words)
 	mem[wp], wp = header(matrix_packet_payload_words), wp + 4
 	mem[wp], wp = matrix_index * matrix_words_per_matrix, wp + 4
 	local index = 0
@@ -25,7 +26,7 @@ end
 
 function vdp_xf.select(view_matrix_index, projection_matrix_index)
 	memwrite(
-		vdp_stream_claim(1 + select_packet_payload_words),
+		vdp_stream.claim(1 + select_packet_payload_words),
 		header(select_packet_payload_words),
 		view_matrix_index_register,
 		view_matrix_index,

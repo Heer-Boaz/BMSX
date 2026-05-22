@@ -45,6 +45,7 @@ local timeline<const> = require('bios/timeline/index')
 local aem<const> = require('bios/aem')
 local progression<const> = require('bios/progression')
 local romdir<const> = require('bios/romdir')
+local vdp_stream<const> = require('bios/vdp_stream')
 local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
 local vdp_image<const> = require('bios/vdp_image')
 
@@ -53,16 +54,7 @@ local world_instance<const> = world_module.instance
 local definitions<const> = {}
 local subsystem_definitions<const> = {}
 local component_definitions<const> = {}
-local vdp_load_job_seq = 0
-local vdp_load_queue<const> = {}
-local vdp_load_queue_head
-local vdp_load_queue_tail
-local vdp_active_job
-local vdp_load_handler
 local cart_irq_handlers<const> = {}
-local sys_atlas_id<const> = 254
-vdp_stream_cursor = sys_vdp_stream_base
-vdp_stream_limit = sys_vdp_stream_base + (sys_vdp_stream_capacity * sys_vdp_arg_stride)
 mem[sys_vdp_slot_primary_atlas] = sys_vdp_slot_none
 mem[sys_vdp_slot_secondary_atlas] = sys_vdp_slot_none
 
@@ -147,62 +139,6 @@ local apply_ctor<const> = function(instance, class_table, ctor_args, def_id)
 	end
 end
 
-local vdp_dequeue_job<const> = function()
-	if vdp_load_queue_head == nil or vdp_load_queue_tail == nil then
-		return nil
-	end
-	if vdp_load_queue_head > vdp_load_queue_tail then
-		return nil
-	end
-	local job<const> = vdp_load_queue[vdp_load_queue_head]
-	vdp_load_queue[vdp_load_queue_head] = nil
-	vdp_load_queue_head = vdp_load_queue_head + 1
-	if vdp_load_queue_head > vdp_load_queue_tail then
-		vdp_load_queue_head = nil
-		vdp_load_queue_tail = nil
-	end
-	return job
-end
-
-local vdp_start_job<const> = function(job)
-	vdp_active_job = job
-	if job.slot ~= nil then
-		vdp_image.bind_slot_atlas(job.slot, job.atlas_id)
-	end
-	mem[sys_img_src] = job.src
-	mem[sys_img_len] = job.len
-	mem[sys_img_dst] = job.dst
-	mem[sys_img_cap] = job.cap
-	mem[sys_img_ctrl] = img_ctrl_start
-end
-
-local vdp_try_start_next_job<const> = function()
-	if vdp_active_job ~= nil then
-		return
-	end
-	local status<const> = mem[sys_img_status]
-	if (status & img_status_busy) ~= 0 then
-		return
-	end
-	local job<const> = vdp_dequeue_job()
-	if job == nil then
-		return
-	end
-	vdp_start_job(job)
-end
-
-local vdp_stream_capacity_bytes<const> = sys_vdp_stream_capacity * sys_vdp_arg_stride
-local vdp_stream_claim<const> = function(count)
-	local base<const> = vdp_stream_cursor
-	local bytes<const> = count * sys_vdp_arg_stride
-	local next<const> = base + bytes
-	if next > sys_vdp_stream_base + vdp_stream_capacity_bytes then
-		error('vdp_stream overflow (' .. tostring(next - sys_vdp_stream_base) .. ' > ' .. tostring(vdp_stream_capacity_bytes) .. ')')
-	end
-	vdp_stream_cursor = next
-	return base
-end
-
 local attach_components<const> = function(instance, list)
 	if not list then
 		return
@@ -281,11 +217,13 @@ system.bool01 = bool01
 system.clear_map = clear_map
 system.scratchbatch = scratchbatch
 system.sorted_scratchbatch = sorted_scratchbatch
-system.vdp_stream_claim = vdp_stream_claim
+system.vdp_stream_claim = vdp_stream.claim
 system.vdp_stream_finish = vdp_rpu_quads.finish_frame
 system.vdp_clear_color = vdp_rpu_quads.clear_color
 system.vdp_fill_rect_color = vdp_rpu_quads.fill_rect_color
 system.vdp_draw_line_color = vdp_rpu_quads.draw_line_color
+system.vdp_load_slot = vdp_image.load_slot
+system.vdp_load_system_slot = vdp_image.load_system_slot
 system.vdp_blit_img_color = vdp_image.write_blit_color
 system.vdp_glyph_color = vdp_image.write_glyph_color
 system.vdp_item_color = vdp_image.write_item_color
@@ -362,71 +300,6 @@ end
 
 function system.define_effect(definition, opts)
 	action_effects.register_effect(definition, opts)
-end
-
-function system.vdp_load_slot(slot, atlas_id)
-	if vdp_load_queue_head == nil then
-		vdp_load_queue_head = 1
-		vdp_load_queue_tail = 0
-	end
-	local atlas_name<const> = string.format('_atlas_%02d', atlas_id)
-	local atlas<const> = romdir.cart_atlas(atlas_name)
-	local atlas_meta<const> = romdir.image(atlas_name).imgmeta
-	local src<const> = atlas.addr
-	local len<const> = atlas.len
-	vdp_rpu_quads.set_slot_dim(slot, atlas_meta.width, atlas_meta.height)
-	local dst
-	local cap
-	if slot == sys_vdp_slot_primary then
-		dst = sys_vram_primary_slot_base
-		cap = sys_vram_primary_slot_size
-	elseif slot == sys_vdp_slot_secondary then
-		dst = sys_vram_secondary_slot_base
-		cap = sys_vram_secondary_slot_size
-	else
-		error('vdp_load_slot: invalid slot ' .. tostring(slot))
-	end
-	vdp_load_job_seq = vdp_load_job_seq + 1
-	vdp_load_queue_tail = vdp_load_queue_tail + 1
-	vdp_load_queue[vdp_load_queue_tail] = {
-		job_id = vdp_load_job_seq,
-		slot = slot,
-		atlas_id = atlas_id,
-		allow_handler = true,
-		src = src,
-		len = len,
-		dst = dst,
-		cap = cap,
-	}
-	vdp_try_start_next_job()
-	return vdp_load_job_seq
-end
-
-function system.vdp_load_system_slot()
-	if vdp_load_queue_head == nil then
-		vdp_load_queue_head = 1
-		vdp_load_queue_tail = 0
-	end
-	local atlas_name<const> = string.format('_atlas_%02d', sys_atlas_id)
-	local atlas<const> = romdir.system_rom_atlas(atlas_name)
-	local atlas_meta<const> = romdir.system_image(atlas_name).imgmeta
-	local src<const> = atlas.addr
-	local len<const> = atlas.len
-	vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, atlas_meta.width, atlas_meta.height)
-	vdp_load_job_seq = vdp_load_job_seq + 1
-	vdp_load_queue_tail = vdp_load_queue_tail + 1
-	vdp_load_queue[vdp_load_queue_tail] = {
-		job_id = vdp_load_job_seq,
-		slot = nil,
-		atlas_id = sys_atlas_id,
-		allow_handler = false,
-		src = src,
-		len = len,
-		dst = sys_vram_system_slot_base,
-		cap = sys_vram_system_slot_size,
-	}
-	vdp_try_start_next_job()
-	return vdp_load_job_seq
 end
 
 function system.inst(definition_id, addons)
@@ -566,31 +439,8 @@ function system.draw_world()
 end
 
 function system.irq(flags)
-	local ack = 0
+	local ack = vdp_image.irq(flags)
 	local fatal
-	if (flags & irq_img_done) ~= 0 then
-		ack = ack | irq_img_done
-		local allow_handler = vdp_active_job.allow_handler
-		if allow_handler == nil then
-			allow_handler = true
-		end
-		if allow_handler and vdp_load_handler ~= nil then
-			vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'done')
-		end
-		vdp_active_job = nil
-		vdp_try_start_next_job()
-	end
-	if (flags & irq_img_error) ~= 0 then
-		ack = ack | irq_img_error
-		local allow_handler = vdp_active_job.allow_handler
-		if allow_handler == nil then
-			allow_handler = true
-		end
-		if allow_handler and vdp_load_handler ~= nil then
-			vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'error')
-		end
-		vdp_active_job = nil
-	end
 	ack = ack | (flags & ~(irq_img_done | irq_img_error))
 	if fatal == nil then
 		for mask, handler in pairs(cart_irq_handlers) do
@@ -637,16 +487,7 @@ function system.on_irq(mask, handler)
 	cart_irq_handlers[mask] = handler
 end
 
-function system.on_vdp_load(handler)
-	if handler == nil then
-		vdp_load_handler = nil
-		return
-	end
-	if type(handler) ~= 'function' then
-		error('on_vdp_load: handler must be a function')
-	end
-	vdp_load_handler = handler
-end
+system.on_vdp_load = vdp_image.on_load
 
 function system.reset()
 	world_instance:clear()

@@ -84,6 +84,7 @@ let vdpRpuC1Location: WebGLUniformLocation = null;
 let vdpRpuJointLocation: WebGLUniformLocation = null;
 let vdpRpuT0Location: WebGLUniformLocation = null;
 let vdpRpuTextureEnabledLocation: WebGLUniformLocation = null;
+let vdpRpuTextureFlipYLocation: WebGLUniformLocation = null;
 let vdpRpuInstanceModeLocation: WebGLUniformLocation = null;
 let vdpRpuSkinningModeLocation: WebGLUniformLocation = null;
 let vdpRpuLightingModeLocation: WebGLUniformLocation = null;
@@ -617,6 +618,7 @@ function bindVdpRpuNeutralTexture(backend: WebGLBackend): void {
 	const gl = vdpRpuGl;
 	backend.setActiveTexture(0);
 	gl.bindTexture(gl.TEXTURE_2D, vdpRpuNeutralTexture);
+	gl.uniform1i(vdpRpuTextureFlipYLocation, 0);
 	backend.invalidateTextureBindingCache();
 }
 
@@ -644,10 +646,12 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 			backend.setActiveTexture(0);
 			if (surfaceId < VDP_RD_SURFACE_COUNT) {
 				backend.bindTexture2D(runtime.context.vdpSlotTextures.readSurfaceTextureHandle(surfaceId) as WebGLTexture);
+				gl.uniform1i(vdpRpuTextureFlipYLocation, 0);
 			} else {
 				ensureVdpRpuSurfaceStorage(backend, frame, surfaceRef);
 				backend.invalidateTextureBindingCache();
 				gl.bindTexture(gl.TEXTURE_2D, vdpRpuSurfaceTexture[surfaceId]);
+				gl.uniform1i(vdpRpuTextureFlipYLocation, 1);
 			}
 			setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
 			gl.uniform1i(vdpRpuT0Location, 0);
@@ -749,6 +753,7 @@ export function setupVdpRpuLocations(backend: WebGLBackend): void {
 	vdpRpuJointLocation = gl.getUniformLocation(vdpRpuProgram, 'u_joint[0]')!;
 	vdpRpuT0Location = gl.getUniformLocation(vdpRpuProgram, 'u_t0')!;
 	vdpRpuTextureEnabledLocation = gl.getUniformLocation(vdpRpuProgram, 'u_textureEnabled')!;
+	vdpRpuTextureFlipYLocation = gl.getUniformLocation(vdpRpuProgram, 'u_textureFlipY')!;
 	vdpRpuInstanceModeLocation = gl.getUniformLocation(vdpRpuProgram, 'u_instanceMode')!;
 	vdpRpuSkinningModeLocation = gl.getUniformLocation(vdpRpuProgram, 'u_skinningMode')!;
 	vdpRpuLightingModeLocation = gl.getUniformLocation(vdpRpuProgram, 'u_lightingMode')!;
@@ -757,6 +762,7 @@ export function setupVdpRpuLocations(backend: WebGLBackend): void {
 	gl.uniformMatrix4fv(vdpRpuJointLocation, false, vdpRpuDefaultJointFloats);
 	gl.uniform1i(vdpRpuT0Location, 0);
 	gl.uniform1i(vdpRpuTextureEnabledLocation, 0);
+	gl.uniform1i(vdpRpuTextureFlipYLocation, 0);
 	gl.uniform1i(vdpRpuInstanceModeLocation, VDP_RPU_INSTANCE_MODE_NONE);
 	gl.uniform1i(vdpRpuSkinningModeLocation, 0);
 	gl.uniform1i(vdpRpuLightingModeLocation, 0);

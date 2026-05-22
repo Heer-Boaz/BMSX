@@ -1,3 +1,4 @@
+local vdp_stream<const> = require('bios/vdp_stream')
 local vdp_rpu<const> = require('bios/vdp_rpu')
 
 local vdp_rpu_quads<const> = {}
@@ -17,9 +18,9 @@ local instance_capacity<const> = 1024
 local instance_bytes<const> = instance_stride * instance_capacity
 local quad_addr<const> = sys_geo_scratch_base + sys_geo_scratch_size - 0x10000
 local instance_addr<const> = quad_addr + quad_vertex_bytes
-local vdp_pkt_end<const> = 0
 local white<const> = 0xffffffff
 local draw_order_depth_scale<const> = 2.0 / 1048576.0
+local tile_run_depth<const> = 1.0 - ((sys_vdp_layer_world * 4096.0) * draw_order_depth_scale)
 local slot_surface<const> = {}
 slot_surface[sys_vdp_slot_system] = vdp_rpu.surface_system
 slot_surface[sys_vdp_slot_primary] = vdp_rpu.surface_primary
@@ -73,18 +74,11 @@ local write_quad_vertices<const> = function()
 	mem[wp], wp = white, wp + 4
 end
 
-local define_quad_resources<const> = function()
+local define_static_resources<const> = function()
 	write_quad_vertices()
 	vdp_rpu.buffer_define(quad_buffer, quad_vertex_bytes, vdp_rpu.usage_vertex)
 	vdp_rpu.buffer_upload_dma(quad_buffer, 0, quad_addr, quad_vertex_bytes)
 	vdp_rpu.buffer_define(instance_buffer, instance_bytes, vdp_rpu.usage_vertex)
-end
-
-local define_surface_for_draw<const> = function(surface_id)
-	if surface_id == vdp_rpu.resource_none then
-		return
-	end
-	vdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_texture))
 end
 
 local begin_pass<const> = function()
@@ -108,8 +102,6 @@ local flush_instances<const> = function()
 	if instance_count == 0 then
 		return
 	end
-	define_quad_resources()
-	define_surface_for_draw(current_surface)
 	begin_pass()
 	vdp_rpu.buffer_upload_dma(instance_buffer, 0, instance_addr, instance_count * instance_stride)
 	vdp_rpu.begin_draw(vdp_rpu.shader_v2_t2_c4_i_affine2, vdp_rpu.primitive_index(vdp_rpu.prim_triangle_strip, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_alpha, vdp_rpu.depth_lequal, vdp_rpu.cull_none, vdp_rpu.pipe_depth_write, vdp_rpu.pipe_color_write_rgba), quad_vertex_count, instance_count, vdp_rpu.resource_none, 0, 0)
@@ -175,6 +167,18 @@ function vdp_rpu_quads.set_slot_dim(slot, width, height)
 	local surface_id<const> = slot_surface[slot]
 	surface_width[surface_id] = width
 	surface_height[surface_id] = height
+end
+
+local define_slot_surface<const> = function(slot)
+	local surface_id<const> = slot_surface[slot]
+	vdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_texture))
+end
+
+function vdp_rpu_quads.submit_slot_resources(slot)
+	vdp_stream.reset()
+	define_static_resources()
+	define_slot_surface(slot)
+	vdp_stream.submit_cpu_fifo()
 end
 
 function vdp_rpu_quads.clear_color(color)
@@ -257,7 +261,7 @@ function vdp_rpu_quads.tile_run_sources(sources, tile_count, cols, tile_size, or
 			write_instance(
 				(origin_x + (tile_x * tile_size)) * ndc_x_scale - 1.0,
 				1.0 - (origin_y + (tile_y * tile_size)) * ndc_y_scale,
-				1.0 - ((tile_index + 1.0) * draw_order_depth_scale),
+				tile_run_depth,
 				source.w * ndc_x_scale,
 				0.0,
 				0.0,
@@ -283,10 +287,11 @@ function vdp_rpu_quads.finish_frame()
 		vdp_rpu.end_pass()
 		frame_active = nil
 	end
+	pending_clear = nil
+	pending_clear_color = nil
+	instance_count = 0
 	current_surface = vdp_rpu.resource_none
-	if vdp_stream_cursor ~= sys_vdp_stream_base then
-		mem[vdp_stream_claim(1)] = vdp_pkt_end
-	end
+	vdp_stream.terminate()
 end
 
 return vdp_rpu_quads

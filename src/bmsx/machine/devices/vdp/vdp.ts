@@ -881,7 +881,7 @@ export class VDP implements VramWriteSink {
 
 	private resetQueuedFrameState(): void {
 		resetBuildingFrame(this.buildFrame);
-		this.clearActiveFrame();
+		resetSubmittedFrameSlot(this.activeFrame);
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_VDP);
@@ -931,7 +931,6 @@ export class VDP implements VramWriteSink {
 		}
 		const buildRpu = this.buildFrame.rpu;
 		const frameHasRpuCommands = buildRpu.commands.passCount !== 0 || buildRpu.commands.drawCount !== 0;
-		const frameHasCommands = frameHasRpuCommands;
 		const frameCost = this.buildFrame.cost;
 		for (let index = 0; index < this.xf.matrixWords.length; index += 1) {
 			frame.xf.matrixWords[index] = this.xf.matrixWords[index]!;
@@ -956,7 +955,7 @@ export class VDP implements VramWriteSink {
 		} else {
 			frame.state = VDP_SUBMITTED_FRAME_QUEUED;
 		}
-		frame.hasCommands = frameHasCommands;
+		frame.hasCommands = frameHasRpuCommands;
 		frame.cost = frameCost;
 		frame.workRemaining = frameCost;
 		const voutFrame = this.vout.sealFrame();
@@ -1040,19 +1039,18 @@ export class VDP implements VramWriteSink {
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_VDP, nowCycles + cyclesUntilBudgetUnits(this.cpuHz, this.workUnitsPerSec, this.workCarry, targetUnits - this.availableWorkUnits));
 	}
 
-	private clearActiveFrame(): void {
-		resetSubmittedFrameSlot(this.activeFrame);
-	}
 
 	private commitActiveVisualState(): void {
-		this.vout.presentFrame(this.activeFrame);
+		if (this.activeFrame.hasCommands) {
+			this.vout.presentFrame(this.activeFrame);
+		}
 	}
 
 	private finishCommittedFrameOnVblankEdge(): void {
 		this.commitActiveVisualState();
 		this.m_lastFrameCommitted = true;
 		this.m_lastFrameHeld = false;
-		this.clearActiveFrame();
+		resetSubmittedFrameSlot(this.activeFrame);
 		this.promotePendingFrame();
 		this.scheduleNextService(this.scheduler.currentNowCycles());
 		this.refreshSubmitBusyStatus();
@@ -1362,7 +1360,7 @@ export class VDP implements VramWriteSink {
 		if (this.needsImmediateSchedulerService() || this.hasPendingRenderWork()) {
 			this.scheduleNextService(this.scheduler.currentNowCycles());
 		}
-		this.commitLiveVisualState();
+		this.vout.presentLiveState();
 	}
 
 	public restoreSaveState(state: VdpSaveState): void {
@@ -1370,7 +1368,7 @@ export class VDP implements VramWriteSink {
 		this.vram.restoreState(state.vram);
 		this.bindVramSurfaces();
 		this.fbm.restoreDisplayReadback(state.displayFrameBufferPixels);
-		this.commitLiveVisualState();
+		this.vout.presentLiveState();
 	}
 
 	// disable-next-line single_line_method_pattern -- VDP host-output transaction is the public device boundary; VOUT owns the retained payload.
@@ -1378,9 +1376,6 @@ export class VDP implements VramWriteSink {
 		return this.vout.readDeviceOutput(this.scheduler.currentNowCycles());
 	}
 
-	private commitLiveVisualState(): void {
-		this.vout.presentLiveState();
-	}
 
 	private bindVramSurfaces(): void {
 		this.readback.resetSurfaceRegistry();
@@ -1394,7 +1389,7 @@ export class VDP implements VramWriteSink {
 				this.vout.configureScanout(slot.surfaceWidth, slot.surfaceHeight);
 			}
 		}
-		this.commitLiveVisualState();
+		this.vout.presentLiveState();
 	}
 
 	private findVramSlotOrFault(surfaceId: number, faultCode: number): VdpSurfaceUploadSlot | null {
