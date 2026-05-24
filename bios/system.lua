@@ -439,16 +439,17 @@ function system.draw_world()
 end
 
 function system.irq(flags)
-	local ack = vdp_image.irq(flags)
+	local ack = flags
 	local fatal
-	ack = ack | (flags & ~(irq_img_done | irq_img_error))
 	if fatal == nil then
 		for mask, handler in pairs(cart_irq_handlers) do
 			if mask ~= irq_reinit and mask ~= irq_newgame and (flags & mask) ~= 0 then
 				handler(flags & mask, flags)
+				ack = ack | (flags & mask)
 			end
 		end
 		if (flags & irq_reinit) ~= 0 then
+			ack = ack | irq_reinit
 			local reinit_handler<const> = cart_irq_handlers[irq_reinit]
 			if reinit_handler ~= nil then
 				reinit_handler(flags & irq_reinit, flags)
@@ -457,6 +458,7 @@ function system.irq(flags)
 			end
 		end
 		if (flags & irq_newgame) ~= 0 then
+			ack = ack | irq_newgame
 			local newgame_handler<const> = cart_irq_handlers[irq_newgame]
 			if newgame_handler ~= nil then
 				newgame_handler(flags & irq_newgame, flags)
@@ -486,8 +488,6 @@ function system.on_irq(mask, handler)
 	end
 	cart_irq_handlers[mask] = handler
 end
-
-system.on_vdp_load = vdp_image.on_load
 
 function system.reset()
 	world_instance:clear()

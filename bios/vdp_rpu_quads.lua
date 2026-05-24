@@ -169,15 +169,11 @@ function vdp_rpu_quads.set_slot_dim(slot, width, height)
 	surface_height[surface_id] = height
 end
 
-local define_slot_surface<const> = function(slot)
-	local surface_id<const> = slot_surface[slot]
-	vdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_texture))
-end
-
 function vdp_rpu_quads.submit_slot_resources(slot)
 	vdp_stream.reset()
 	define_static_resources()
-	define_slot_surface(slot)
+	local surface_id<const> = slot_surface[slot]
+	vdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_texture))
 	vdp_stream.submit_cpu_fifo()
 end
 
