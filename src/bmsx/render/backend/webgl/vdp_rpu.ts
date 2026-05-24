@@ -229,11 +229,12 @@ function ensureVdpRpuBufferStorage(
 		|| bufferByteOffset[bufferId] !== refs.byteOffset[refIndex]
 		|| bufferByteLength[bufferId] !== refs.byteLength[refIndex]
 	) {
-		gl.bufferData(target, refs.byteLength[refIndex], gl.STREAM_DRAW);
-		gl.bufferSubData(target, 0, refs.bytes[refIndex], refs.byteOffset[refIndex], refs.byteLength[refIndex]);
+		const byteLength = refs.byteLength[refIndex];
+		gl.bufferData(target, byteLength, gl.STREAM_DRAW);
+		gl.bufferSubData(target, 0, refs.bytes[refIndex], refs.byteOffset[refIndex], byteLength);
 		bufferRevision[bufferId] = refs.revision[refIndex];
 		bufferByteOffset[bufferId] = refs.byteOffset[refIndex];
-		bufferByteLength[bufferId] = refs.byteLength[refIndex];
+		bufferByteLength[bufferId] = byteLength;
 	}
 	return buffer;
 }
@@ -398,7 +399,7 @@ function vdpRpuAttributeType(componentType: number): number {
 	}
 }
 
-function bindVdpRpuStreamAttribute(attribute: VdpRpuStreamAttributeSpec, byteStride: number, divisor: number): void {
+function bindVdpRpuStreamAttribute(attribute: VdpRpuStreamAttributeSpec, byteStride: number, byteOffsetBase: number, divisor: number): void {
 	const gl = vdpRpuGl;
 	const location = vdpRpuAttributeLocation(attribute.attribute);
 	gl.enableVertexAttribArray(location);
@@ -408,7 +409,7 @@ function bindVdpRpuStreamAttribute(attribute: VdpRpuStreamAttributeSpec, byteStr
 		vdpRpuAttributeType(attribute.componentType),
 		attribute.normalized !== 0,
 		byteStride,
-		attribute.byteOffset,
+		byteOffsetBase + attribute.byteOffset,
 	);
 	gl.vertexAttribDivisor(location, divisor);
 }
@@ -430,8 +431,9 @@ function bindVdpRpuVertexStream(frame: VdpRpuFrameOutput, streamBindingIndex: nu
 		vdpRpuVertexBufferByteOffset,
 		vdpRpuVertexBufferByteLength,
 	);
+	const byteOffsetBase = commands.streamByteOffset[streamBindingIndex] - frame.resources.bufferRefs.sourceByteOffset[refIndex];
 	for (let index = 0; index < layout.attributeCount; index += 1) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0);
+		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, byteOffsetBase, 0);
 	}
 }
 
@@ -497,8 +499,9 @@ function bindVdpRpuInstanceStream(frame: VdpRpuFrameOutput, streamBindingIndex: 
 		vdpRpuInstanceBufferByteOffset,
 		vdpRpuInstanceBufferByteLength,
 	);
+	const byteOffsetBase = commands.streamByteOffset[streamBindingIndex] - frame.resources.bufferRefs.sourceByteOffset[refIndex];
 	for (let index = 0; index < layout.attributeCount; index += 1) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, stepRate);
+		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, byteOffsetBase, stepRate);
 	}
 }
 
@@ -661,7 +664,7 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 	bindVdpRpuNeutralTexture(backend);
 }
 
-function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, drawIndex: number): void {
+function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: number, instanceCount: number, indexCount: number): void {
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
 	setVdpRpuPipelineState(commands.drawPipelineWord[drawIndex]);
@@ -681,21 +684,13 @@ function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, dra
 	bindVdpRpuDrawStreams(frame, drawIndex, instanceMode);
 	const primitive = vdpRpuPrimitive(commands.drawPrimitive[drawIndex]);
 	const indexType = commands.drawIndexType[drawIndex];
-	if (indexType === VDP_RPU_INDEX_NONE) {
-		if (instanceMode !== VDP_RPU_INSTANCE_MODE_NONE) {
-			gl.drawArraysInstanced(primitive, 0, commands.drawVertexCount[drawIndex], commands.drawInstanceCount[drawIndex]);
-			return;
-		}
-		gl.drawArrays(primitive, 0, commands.drawVertexCount[drawIndex]);
-		return;
-	}
 	const indexRef = commands.drawIndexBufferRef[drawIndex];
-	if (indexRef === VDP_RPU_REF_NONE) {
+	if (indexType === VDP_RPU_INDEX_NONE || indexRef === VDP_RPU_REF_NONE) {
 		if (instanceMode !== VDP_RPU_INSTANCE_MODE_NONE) {
-			gl.drawArraysInstanced(primitive, 0, commands.drawVertexCount[drawIndex], commands.drawInstanceCount[drawIndex]);
+			gl.drawArraysInstanced(primitive, 0, vertexCount, instanceCount);
 			return;
 		}
-		gl.drawArrays(primitive, 0, commands.drawVertexCount[drawIndex]);
+		gl.drawArrays(primitive, 0, vertexCount);
 		return;
 	}
 	ensureVdpRpuBufferStorage(
@@ -707,12 +702,12 @@ function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, dra
 		vdpRpuIndexBufferByteOffset,
 		vdpRpuIndexBufferByteLength,
 	);
-	const indexByteOffset = commands.drawIndexByteOffset[drawIndex];
+	const indexByteOffset = commands.drawIndexByteOffset[drawIndex] - frame.resources.bufferRefs.sourceByteOffset[indexRef];
 	if (instanceMode !== VDP_RPU_INSTANCE_MODE_NONE) {
-		gl.drawElementsInstanced(primitive, commands.drawIndexCount[drawIndex], vdpRpuIndexType(indexType), indexByteOffset, commands.drawInstanceCount[drawIndex]);
+		gl.drawElementsInstanced(primitive, indexCount, vdpRpuIndexType(indexType), indexByteOffset, instanceCount);
 		return;
 	}
-	gl.drawElements(primitive, commands.drawIndexCount[drawIndex], vdpRpuIndexType(indexType), indexByteOffset);
+	gl.drawElements(primitive, indexCount, vdpRpuIndexType(indexType), indexByteOffset);
 }
 
 export function initVdpRpuPipeline(backend: WebGLBackend): void {
@@ -805,10 +800,17 @@ export function renderVdpRpuFrame(runtime: VdpRpuRuntime, framebuffer: WebGLFram
 		if (clearMask !== 0) {
 			gl.clear(clearMask);
 		}
-		const firstDraw = commands.passFirstDraw[passIndex];
-		const drawEnd = firstDraw + commands.passDrawCount[passIndex];
-		for (let drawIndex = firstDraw; drawIndex < drawEnd; drawIndex += 1) {
-			drawVdpRpuCommand(runtime, frame, drawIndex);
+		const firstBatch = commands.passFirstBatch[passIndex];
+		const batchEnd = firstBatch + commands.passBatchCount[passIndex];
+		for (let batchIndex = firstBatch; batchIndex < batchEnd; batchIndex += 1) {
+			drawVdpRpuCommand(
+				runtime,
+				frame,
+				commands.batchFirstDraw[batchIndex],
+				commands.batchVertexCount[batchIndex],
+				commands.batchInstanceCount[batchIndex],
+				commands.batchIndexCount[batchIndex],
+			);
 		}
 	}
 	gl.colorMask(true, true, true, true);

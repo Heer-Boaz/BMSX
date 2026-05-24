@@ -288,7 +288,7 @@ GLenum vdpRpuAttributeType(u32 componentType) {
 	}
 }
 
-void bindVdpRpuStreamAttribute(const VdpRpuStreamAttributeSpec& attribute, u32 byteStride, u32 divisor) {
+void bindVdpRpuStreamAttribute(const VdpRpuStreamAttributeSpec& attribute, u32 byteStride, u32 byteOffsetBase, u32 divisor) {
 	const auto& runtime = g_vdpRpu;
 	const GLint location = vdpRpuAttributeLocation(attribute.attribute);
 	glEnableVertexAttribArray(static_cast<GLuint>(location));
@@ -298,7 +298,7 @@ void bindVdpRpuStreamAttribute(const VdpRpuStreamAttributeSpec& attribute, u32 b
 		vdpRpuAttributeType(attribute.componentType),
 		attribute.normalized != 0u ? GL_TRUE : GL_FALSE,
 		static_cast<GLsizei>(byteStride),
-		reinterpret_cast<const void*>(static_cast<uintptr_t>(attribute.byteOffset))
+		reinterpret_cast<const void*>(static_cast<uintptr_t>(byteOffsetBase + attribute.byteOffset))
 	);
 	runtime.vertexAttribDivisor(static_cast<GLuint>(location), divisor);
 }
@@ -319,8 +319,9 @@ void bindVdpRpuVertexStream(const VdpRpuFrameOutput& frame, size_t streamBinding
 		g_vdpRpu.vertexBufferByteOffset,
 		g_vdpRpu.vertexBufferByteLength
 	);
+	const u32 byteOffsetBase = commands.streamByteOffset[streamBindingIndex] - frame.resources.bufferRefs.sourceByteOffset[refIndex];
 	for (size_t index = 0u; index < layout.attributeCount; ++index) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0u);
+		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, byteOffsetBase, 0u);
 	}
 }
 
@@ -385,8 +386,9 @@ void bindVdpRpuInstanceStream(const VdpRpuFrameOutput& frame, size_t streamBindi
 		g_vdpRpu.instanceBufferByteOffset,
 		g_vdpRpu.instanceBufferByteLength
 	);
+	const u32 byteOffsetBase = commands.streamByteOffset[streamBindingIndex] - frame.resources.bufferRefs.sourceByteOffset[refIndex];
 	for (size_t index = 0u; index < layout.attributeCount; ++index) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, stepRate);
+		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, byteOffsetBase, stepRate);
 	}
 }
 
@@ -542,7 +544,7 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 	bindVdpRpuNeutralTexture(runtime.backend);
 }
 
-void drawVdpRpuCommand(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& frame, size_t drawIndex) {
+void drawVdpRpuCommand(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCount, u32 instanceCount, u32 indexCount) {
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	setVdpRpuPipelineState(commands.drawPipelineWord[drawIndex]);
 	const VdpRpuShaderVariantSpec& shaderVariant = resolveVdpRpuShaderVariantSpec(commands.drawShaderVariant[drawIndex]);
@@ -561,21 +563,13 @@ void drawVdpRpuCommand(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& frame, s
 	bindVdpRpuDrawStreams(frame, drawIndex, instanceMode);
 	const GLenum primitive = vdpRpuPrimitive(commands.drawPrimitive[drawIndex]);
 	const u32 indexType = commands.drawIndexType[drawIndex];
-	if (indexType == VDP_RPU_INDEX_NONE) {
-		if (instanceMode != VDP_RPU_INSTANCE_MODE_NONE) {
-			g_vdpRpu.drawArraysInstanced(primitive, 0, static_cast<GLsizei>(commands.drawVertexCount[drawIndex]), static_cast<GLsizei>(commands.drawInstanceCount[drawIndex]));
-			return;
-		}
-		glDrawArrays(primitive, 0, static_cast<GLsizei>(commands.drawVertexCount[drawIndex]));
-		return;
-	}
 	const u16 indexRef = commands.drawIndexBufferRef[drawIndex];
-	if (indexRef == VDP_RPU_REF_NONE) {
+	if (indexType == VDP_RPU_INDEX_NONE || indexRef == VDP_RPU_REF_NONE) {
 		if (instanceMode != VDP_RPU_INSTANCE_MODE_NONE) {
-			g_vdpRpu.drawArraysInstanced(primitive, 0, static_cast<GLsizei>(commands.drawVertexCount[drawIndex]), static_cast<GLsizei>(commands.drawInstanceCount[drawIndex]));
+			g_vdpRpu.drawArraysInstanced(primitive, 0, static_cast<GLsizei>(vertexCount), static_cast<GLsizei>(instanceCount));
 			return;
 		}
-		glDrawArrays(primitive, 0, static_cast<GLsizei>(commands.drawVertexCount[drawIndex]));
+		glDrawArrays(primitive, 0, static_cast<GLsizei>(vertexCount));
 		return;
 	}
 	ensureVdpRpuBufferStorage(
@@ -587,12 +581,12 @@ void drawVdpRpuCommand(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& frame, s
 		g_vdpRpu.indexBufferByteOffset,
 		g_vdpRpu.indexBufferByteLength
 	);
-	const void* indexByteOffset = reinterpret_cast<const void*>(static_cast<uintptr_t>(commands.drawIndexByteOffset[drawIndex]));
+	const void* indexByteOffset = reinterpret_cast<const void*>(static_cast<uintptr_t>(commands.drawIndexByteOffset[drawIndex] - frame.resources.bufferRefs.sourceByteOffset[indexRef]));
 	if (instanceMode != VDP_RPU_INSTANCE_MODE_NONE) {
-		g_vdpRpu.drawElementsInstanced(primitive, static_cast<GLsizei>(commands.drawIndexCount[drawIndex]), vdpRpuIndexType(indexType), indexByteOffset, static_cast<GLsizei>(commands.drawInstanceCount[drawIndex]));
+		g_vdpRpu.drawElementsInstanced(primitive, static_cast<GLsizei>(indexCount), vdpRpuIndexType(indexType), indexByteOffset, static_cast<GLsizei>(instanceCount));
 		return;
 	}
-	glDrawElements(primitive, static_cast<GLsizei>(commands.drawIndexCount[drawIndex]), vdpRpuIndexType(indexType), indexByteOffset);
+	glDrawElements(primitive, static_cast<GLsizei>(indexCount), vdpRpuIndexType(indexType), indexByteOffset);
 }
 
 } // namespace
@@ -708,10 +702,17 @@ void renderVdpRpuFrame(VdpRpuRuntime& runtime, void* framebuffer, const VdpRpuPi
 		if (clearMask != 0u) {
 			glClear(clearMask);
 		}
-		const size_t firstDraw = commands.passFirstDraw[passIndex];
-		const size_t drawEnd = firstDraw + commands.passDrawCount[passIndex];
-		for (size_t drawIndex = firstDraw; drawIndex < drawEnd; ++drawIndex) {
-			drawVdpRpuCommand(runtime, frame, drawIndex);
+		const size_t firstBatch = commands.passFirstBatch[passIndex];
+		const size_t batchEnd = firstBatch + commands.passBatchCount[passIndex];
+		for (size_t batchIndex = firstBatch; batchIndex < batchEnd; ++batchIndex) {
+			drawVdpRpuCommand(
+				runtime,
+				frame,
+				commands.batchFirstDraw[batchIndex],
+				commands.batchVertexCount[batchIndex],
+				commands.batchInstanceCount[batchIndex],
+				commands.batchIndexCount[batchIndex]
+			);
 		}
 	}
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);

@@ -43,9 +43,11 @@ import {
 	VDP_RPU_BUFFER_CAPACITY,
 	VDP_RPU_BUFFER_REF_CAPACITY,
 	VDP_RPU_BUFFER_SLOT_BYTE_CAPACITY,
+	VDP_RPU_FRAME_BUFFER_BYTE_CAPACITY,
 	VDP_RPU_CONSTANT_BANK_CAPACITY,
 	VDP_RPU_CONSTANT_BINDING_CAPACITY,
 	VDP_RPU_CONSTANT_WORD_CAPACITY,
+	VDP_RPU_DRAW_BATCH_CAPACITY,
 	VDP_RPU_DRAW_CAPACITY,
 	VDP_RPU_PASS_CAPACITY,
 	VDP_RPU_STREAM_BINDING_CAPACITY,
@@ -579,6 +581,7 @@ function encodeVdpRpuFrameBufferRefState(state: VdpRpuFrameBufferRefSaveState): 
 	return {
 		bufferId: state.bufferId,
 		revision: state.revision,
+		sourceByteOffset: state.sourceByteOffset,
 		byteOffset: state.byteOffset,
 		byteLength: state.byteLength,
 		usage: state.usage,
@@ -590,6 +593,7 @@ function decodeVdpRpuFrameBufferRefState(value: unknown, label: string): VdpRpuF
 	return {
 		bufferId: requireBoundedU32(requireObjectKey(object, 'bufferId', label, `${label}.bufferId`), `${label}.bufferId`, 0, 0xffffffff),
 		revision: requireBoundedU32(requireObjectKey(object, 'revision', label, `${label}.revision`), `${label}.revision`, 0, 0xffffffff),
+		sourceByteOffset: requireBoundedU32(requireObjectKey(object, 'sourceByteOffset', label, `${label}.sourceByteOffset`), `${label}.sourceByteOffset`, 0, 0xffffffff),
 		byteOffset: requireBoundedU32(requireObjectKey(object, 'byteOffset', label, `${label}.byteOffset`), `${label}.byteOffset`, 0, 0xffffffff),
 		byteLength: requireBoundedU32(requireObjectKey(object, 'byteLength', label, `${label}.byteLength`), `${label}.byteLength`, 0, 0xffffffff),
 		usage: requireBoundedU32(requireObjectKey(object, 'usage', label, `${label}.usage`), `${label}.usage`, 0, 0xff),
@@ -697,11 +701,14 @@ function encodeVdpRpuCommandBufferState(state: VdpRpuCommandBufferSaveState): Vd
 	return {
 		passCount: state.passCount,
 		drawCount: state.drawCount,
+		drawBatchCount: state.drawBatchCount,
 		streamBindingCount: state.streamBindingCount,
 		constantBindingCount: state.constantBindingCount,
 		textureBindingCount: state.textureBindingCount,
 		passFirstDraw: state.passFirstDraw,
 		passDrawCount: state.passDrawCount,
+		passFirstBatch: state.passFirstBatch,
+		passBatchCount: state.passBatchCount,
 		passColorSurfaceRef: state.passColorSurfaceRef,
 		passDepthSurfaceRef: state.passDepthSurfaceRef,
 		passViewportXY: state.passViewportXY,
@@ -724,6 +731,11 @@ function encodeVdpRpuCommandBufferState(state: VdpRpuCommandBufferSaveState): Vd
 		drawConstantBindingCount: state.drawConstantBindingCount,
 		drawFirstTextureBinding: state.drawFirstTextureBinding,
 		drawTextureBindingCount: state.drawTextureBindingCount,
+		batchFirstDraw: state.batchFirstDraw,
+		batchDrawCount: state.batchDrawCount,
+		batchVertexCount: state.batchVertexCount,
+		batchInstanceCount: state.batchInstanceCount,
+		batchIndexCount: state.batchIndexCount,
 		streamLayoutId: state.streamLayoutId,
 		streamSlot: state.streamSlot,
 		streamBufferRef: state.streamBufferRef,
@@ -743,17 +755,21 @@ function decodeVdpRpuCommandBufferState(value: unknown, label: string): VdpRpuCo
 	const object = requireObject(value, label);
 	const passCount = requireBoundedU32(requireObjectKey(object, 'passCount', label, `${label}.passCount`), `${label}.passCount`, 0, VDP_RPU_PASS_CAPACITY);
 	const drawCount = requireBoundedU32(requireObjectKey(object, 'drawCount', label, `${label}.drawCount`), `${label}.drawCount`, 0, VDP_RPU_DRAW_CAPACITY);
+	const drawBatchCount = requireBoundedU32(requireObjectKey(object, 'drawBatchCount', label, `${label}.drawBatchCount`), `${label}.drawBatchCount`, 0, VDP_RPU_DRAW_BATCH_CAPACITY);
 	const streamBindingCount = requireBoundedU32(requireObjectKey(object, 'streamBindingCount', label, `${label}.streamBindingCount`), `${label}.streamBindingCount`, 0, VDP_RPU_STREAM_BINDING_CAPACITY);
 	const constantBindingCount = requireBoundedU32(requireObjectKey(object, 'constantBindingCount', label, `${label}.constantBindingCount`), `${label}.constantBindingCount`, 0, VDP_RPU_CONSTANT_BINDING_CAPACITY);
 	const textureBindingCount = requireBoundedU32(requireObjectKey(object, 'textureBindingCount', label, `${label}.textureBindingCount`), `${label}.textureBindingCount`, 0, VDP_RPU_TEXTURE_BINDING_CAPACITY);
 	return {
 		passCount,
 		drawCount,
+		drawBatchCount,
 		streamBindingCount,
 		constantBindingCount,
 		textureBindingCount,
 		passFirstDraw: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'passFirstDraw', label, `${label}.passFirstDraw`), `${label}.passFirstDraw`, VDP_RPU_PASS_CAPACITY), `${label}.passFirstDraw`, passCount),
 		passDrawCount: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'passDrawCount', label, `${label}.passDrawCount`), `${label}.passDrawCount`, VDP_RPU_PASS_CAPACITY), `${label}.passDrawCount`, passCount),
+		passFirstBatch: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'passFirstBatch', label, `${label}.passFirstBatch`), `${label}.passFirstBatch`, VDP_RPU_PASS_CAPACITY), `${label}.passFirstBatch`, passCount),
+		passBatchCount: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'passBatchCount', label, `${label}.passBatchCount`), `${label}.passBatchCount`, VDP_RPU_PASS_CAPACITY), `${label}.passBatchCount`, passCount),
 		passColorSurfaceRef: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'passColorSurfaceRef', label, `${label}.passColorSurfaceRef`), `${label}.passColorSurfaceRef`, VDP_RPU_PASS_CAPACITY), `${label}.passColorSurfaceRef`, passCount),
 		passDepthSurfaceRef: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'passDepthSurfaceRef', label, `${label}.passDepthSurfaceRef`), `${label}.passDepthSurfaceRef`, VDP_RPU_PASS_CAPACITY), `${label}.passDepthSurfaceRef`, passCount),
 		passViewportXY: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'passViewportXY', label, `${label}.passViewportXY`), `${label}.passViewportXY`, VDP_RPU_PASS_CAPACITY), `${label}.passViewportXY`, passCount),
@@ -776,6 +792,11 @@ function decodeVdpRpuCommandBufferState(value: unknown, label: string): VdpRpuCo
 		drawConstantBindingCount: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'drawConstantBindingCount', label, `${label}.drawConstantBindingCount`), `${label}.drawConstantBindingCount`, VDP_RPU_DRAW_CAPACITY), `${label}.drawConstantBindingCount`, drawCount),
 		drawFirstTextureBinding: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'drawFirstTextureBinding', label, `${label}.drawFirstTextureBinding`), `${label}.drawFirstTextureBinding`, VDP_RPU_DRAW_CAPACITY), `${label}.drawFirstTextureBinding`, drawCount),
 		drawTextureBindingCount: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'drawTextureBindingCount', label, `${label}.drawTextureBindingCount`), `${label}.drawTextureBindingCount`, VDP_RPU_DRAW_CAPACITY), `${label}.drawTextureBindingCount`, drawCount),
+		batchFirstDraw: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'batchFirstDraw', label, `${label}.batchFirstDraw`), `${label}.batchFirstDraw`, VDP_RPU_DRAW_BATCH_CAPACITY), `${label}.batchFirstDraw`, drawBatchCount),
+		batchDrawCount: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'batchDrawCount', label, `${label}.batchDrawCount`), `${label}.batchDrawCount`, VDP_RPU_DRAW_BATCH_CAPACITY), `${label}.batchDrawCount`, drawBatchCount),
+		batchVertexCount: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'batchVertexCount', label, `${label}.batchVertexCount`), `${label}.batchVertexCount`, VDP_RPU_DRAW_BATCH_CAPACITY), `${label}.batchVertexCount`, drawBatchCount),
+		batchInstanceCount: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'batchInstanceCount', label, `${label}.batchInstanceCount`), `${label}.batchInstanceCount`, VDP_RPU_DRAW_BATCH_CAPACITY), `${label}.batchInstanceCount`, drawBatchCount),
+		batchIndexCount: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'batchIndexCount', label, `${label}.batchIndexCount`), `${label}.batchIndexCount`, VDP_RPU_DRAW_BATCH_CAPACITY), `${label}.batchIndexCount`, drawBatchCount),
 		streamLayoutId: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'streamLayoutId', label, `${label}.streamLayoutId`), `${label}.streamLayoutId`, VDP_RPU_STREAM_BINDING_CAPACITY), `${label}.streamLayoutId`, streamBindingCount),
 		streamSlot: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'streamSlot', label, `${label}.streamSlot`), `${label}.streamSlot`, VDP_RPU_STREAM_BINDING_CAPACITY), `${label}.streamSlot`, streamBindingCount),
 		streamBufferRef: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'streamBufferRef', label, `${label}.streamBufferRef`), `${label}.streamBufferRef`, VDP_RPU_STREAM_BINDING_CAPACITY), `${label}.streamBufferRef`, streamBindingCount),
@@ -795,6 +816,7 @@ function encodeVdpRpuFrameState(state: VdpRpuFrameSaveState): VdpRpuFrameSaveSta
 	return {
 		commands: encodeVdpRpuCommandBufferState(state.commands),
 		bufferRefs: encodeVector(state.bufferRefs, encodeVdpRpuFrameBufferRefState),
+		bufferBytes: state.bufferBytes,
 		surfaceRefs: encodeVector(state.surfaceRefs, encodeVdpRpuFrameSurfaceRefState),
 		constantWords: state.constantWords,
 		constantBanks: encodeVector(state.constantBanks, encodeVdpRpuConstantBankState),
@@ -808,6 +830,7 @@ function decodeVdpRpuFrameState(value: unknown, label: string): VdpRpuFrameSaveS
 		`${label}.bufferRefs`,
 		(entry, index) => decodeVdpRpuFrameBufferRefState(entry, `${label}.bufferRefs[${index}]`),
 	);
+	const bufferBytes = decodeBoundedU8Vector(requireObjectKey(object, 'bufferBytes', label, `${label}.bufferBytes`), `${label}.bufferBytes`, VDP_RPU_FRAME_BUFFER_BYTE_CAPACITY);
 	const surfaceRefs = decodeVector(
 		requireObjectKey(object, 'surfaceRefs', label, `${label}.surfaceRefs`),
 		`${label}.surfaceRefs`,
@@ -830,6 +853,7 @@ function decodeVdpRpuFrameState(value: unknown, label: string): VdpRpuFrameSaveS
 	return {
 		commands: decodeVdpRpuCommandBufferState(requireObjectKey(object, 'commands', label, `${label}.commands`), `${label}.commands`),
 		bufferRefs,
+		bufferBytes,
 		surfaceRefs,
 		constantWords: decodeBoundedU32Vector(requireObjectKey(object, 'constantWords', label, `${label}.constantWords`), `${label}.constantWords`, VDP_RPU_CONSTANT_WORD_CAPACITY),
 		constantBanks,

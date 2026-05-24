@@ -44,11 +44,6 @@ local create_transition_visuals<const> = function()
 	}
 end
 
--- Example: optional hook for textpage load completion.
-local on_vdp_load_example<const> = function(job_id, slot, textpage_id, status)
-	-- Example: handle "done"/"error".
-end
-
 function director:apply_effects(effects)
 	for i = 1, #effects do
 		local effect<const> = effects[i]
@@ -241,7 +236,6 @@ function init()
 	on_irq(irq_newgame, function()
 		new_game()
 	end)
-	on_vdp_load(on_vdp_load_example) -- Example registration; remove if not needed.
 	vdp_load_slot(sys_vdp_slot_primary, 0)
 	combat_module.define_fsm()
 	build_director_fsm()

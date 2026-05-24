@@ -133,7 +133,6 @@ void Runtime::runSystemBuiltinPrelude() {
 		"rom_data",
 		"irq",
 		"on_irq",
-		"on_vdp_load",
 		"bool01",
 		"clear_map",
 		"deep_clone",

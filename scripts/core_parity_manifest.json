@@ -1981,29 +1981,29 @@
 		{
 			"file": "src/carts/bare_metal_cart/cart.lua",
 			"substrings": [
-				"vdp_xf.matrix_words(mesh_matrix_index, c0_addr)",
-				"vdp_lpu.register_words(0, c1_addr, c1_words)",
-				"vdp_jtu.matrix_words(mesh_joint_matrix_index, joint1_addr)",
-				"vdp_mfu.register_words(0, mfu_addr, mfu_words)",
-				"vdp_rpu.constant_upload_device(0, 0, vdp_rpu.constant_source_xf_q16",
-				"vdp_rpu.constant_upload_device(1, 0, vdp_rpu.constant_source_lpu_raw",
-				"vdp_rpu.constant_upload_device(1, 8, vdp_rpu.constant_source_mfu_q16",
-				"vdp_rpu.constant_upload_device(2, 0, vdp_rpu.constant_source_jtu_q16",
-				"vdp_rpu.begin_pass(scene_color_surface, scene_depth_surface",
-				"vdp_rpu.bind_texture(0, scene_color_surface, sampler_nearest)",
-				"vdp_rpu.shader_v2_c4",
-				"vdp_rpu.prim_lines",
-				"vdp_rpu.prim_points",
-				"vdp_rpu.shader_v2_t2_c4_i_affine2",
-				"vdp_rpu.shader_v3_c4_i_mat4",
-				"vdp_rpu.layout_i_mat4_c4",
-				"vdp_rpu.shader_v3_n3_t2_c4_j4_w4_c0_c1",
-				"vdp_rpu.index_u16",
-				"vdp_rpu.surface_primary",
+				"xf_matrix_packet_header",
+				"lpu_packet_header",
+				"jtu_matrix_packet_header",
+				"mfu_packet_header",
+				"sys_rpu_constant_source_xf_q16",
+				"sys_rpu_constant_source_lpu_raw",
+				"sys_rpu_constant_source_mfu_q16",
+				"sys_rpu_constant_source_jtu_q16",
+				"rpu_header_begin_pass, sys_rpu_op_begin_pass, scene_color_surface, scene_depth_surface",
+				"rpu_header_bind_texture, sys_rpu_op_bind_texture, 0, scene_color_surface, sampler_nearest",
+				"sys_rpu_shader_v2_c4",
+				"rpu_primitive_lines",
+				"rpu_primitive_points",
+				"sys_rpu_shader_v2_t2_c4_i_affine2",
+				"sys_rpu_shader_v3_c4_i_mat4",
+				"sys_rpu_layout_i_mat4_c4",
+				"sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1",
+				"sys_rpu_index_u16",
+				"sys_rpu_surface_primary",
 				"parallax_x * inv_half_screen_width - 1.0",
-				"vdp_rpu.bind_stream(1, vdp_rpu.layout_i_affine2_trect_c4, instance_buffer, 0, 1)",
-				"vdp_rpu.bind_stream(1, vdp_rpu.layout_i_mat4_c4, mat4_instance_buffer, 0, 1)",
-				"vdp_rpu.bind_stream(0, vdp_rpu.layout_v3_n3_t2_c4_j4_w4, mesh_buffer, 0, 0)"
+				"rpu_header_bind_stream, sys_rpu_op_bind_stream, 1, sys_rpu_layout_i_affine2_trect_c4, instance_buffer, 0, 1",
+				"rpu_header_bind_stream, sys_rpu_op_bind_stream, 1, sys_rpu_layout_i_mat4_c4, mat4_instance_buffer, 0, 1",
+				"rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v3_n3_t2_c4_j4_w4, mesh_buffer, 0, 0"
 			],
 			"reason": "bare_metal_cart_must_demonstrate_legacy_render_features_through_rpu_and_vdp_devices"
 		},
@@ -2020,7 +2020,7 @@
 			"substrings": [
 				"import vdpRpuVertexShader from './shaders/vdp_rpu.vert.glsl';",
 				"import vdpRpuFragmentShader from './shaders/vdp_rpu.frag.glsl';",
-				"gl.bufferSubData(target, 0, refs.bytes[refIndex], refs.byteOffset[refIndex], refs.byteLength[refIndex]);"
+				"gl.bufferSubData(target, 0, refs.bytes[refIndex], refs.byteOffset[refIndex], byteLength);"
 			],
 			"reason": "webgl_rpu_backend_must_load_external_shader_files"
 		},
@@ -2121,7 +2121,7 @@
 			"file": "src/carts/bare_metal_cart/cart.lua",
 			"substrings": [
 				"local instance_stride<const> = 48",
-				"vdp_rpu.pipeline(vdp_rpu.blend_alpha, vdp_rpu.depth_lequal, vdp_rpu.cull_none, vdp_rpu.pipe_depth_write, vdp_rpu.pipe_color_write_rgba)"
+				"rpu_pipeline_depth_alpha<const> = sys_rpu_blend_alpha | (sys_rpu_depth_lequal << 4) | (sys_rpu_cull_none << 8) | sys_rpu_pipe_depth_write | sys_rpu_pipe_color_write_rgba"
 			],
 			"reason": "bare_metal_cart_affine_sprite_instances_must_demonstrate_gpu_depth_ordering_with_new_rpu"
 		},
@@ -2171,7 +2171,6 @@
 				"function registerHeadlessRpuPass(registry: RenderPassLibrary): void",
 				"id: 'vdp_rpu'",
 				"shouldExecute: () => (registry.view as GameView).vdpRpuFrame.commands.passCount !== 0",
-				"findHeadlessRpuDrawTextureFill(view, firstDraw, drawEnd)",
 				"commitHeadlessFrame(width, height, view.canvasSize.x, view.canvasSize.y)"
 			],
 			"reason": "headless_explicit_software_backend_must_present_rpu_frames_without_reintroducing_legacy_scene_passes"
@@ -2208,7 +2207,7 @@
 				"const bufferRef = this.pinBuffer(frame, bufferId, byteOffset, byteLength, VDP_RPU_BUFFER_USAGE_VERTEX);\n\t\tconst bindingIndex = frame.commands.streamBindingCount;",
 				"if (!this.acceptConstantRange(frame, bankId, firstWord, wordCount)) {\n\t\t\tboundBankId = VDP_RPU_REF_NONE;",
 				"const surfaceRef = this.pinSurface(frame, surfaceId);\n\t\tconst bindingIndex = frame.commands.textureBindingCount;",
-				"return VDP_RPU_REF_NONE;\n\t\t}\n\t\tconst refIndex = frame.resources.bufferRefs.length;",
+				"return VDP_RPU_REF_NONE;\n\t\t}\n\t\tconst refs = frame.resources.bufferRefs;",
 				"return VDP_RPU_REF_NONE;\n\t\t}\n\t\tconst refIndex = frame.resources.surfaceRefs.length;"
 			],
 			"reason": "cart_visible_rpu_draw_resource_refs_must_retain_ref_none_instead_of_device_faulting"
@@ -2220,7 +2219,7 @@
 				"const i32 bufferRef = pinBuffer(frame, bufferId, byteOffset, byteLength, VDP_RPU_BUFFER_USAGE_VERTEX);\n\tconst size_t bindingIndex = frame.commands.streamBindingCount;",
 				"if (!acceptConstantRange(frame, bankId, firstWord, wordCount)) {\n\t\tboundBankId = VDP_RPU_REF_NONE;",
 				"const i32 surfaceRef = pinSurface(frame, surfaceId);\n\tconst size_t bindingIndex = frame.commands.textureBindingCount;",
-				"return static_cast<i32>(VDP_RPU_REF_NONE);\n\t}\n\tconst size_t refIndex = frame.resources.bufferRefs.length;",
+				"return static_cast<i32>(VDP_RPU_REF_NONE);\n\t}\n\tVdpRpuFrameBufferRefs& refs = frame.resources.bufferRefs;",
 				"return static_cast<i32>(VDP_RPU_REF_NONE);\n\t}\n\tconst size_t refIndex = frame.resources.surfaceRefs.length;"
 			],
 			"reason": "native_cart_visible_rpu_draw_resource_refs_must_retain_ref_none_instead_of_device_faulting"
@@ -2233,7 +2232,7 @@
 				"if (constantBank === VDP_RPU_REF_NONE) {\n\t\t\t\tgl.uniform4fv(vdpRpuC1Location, vdpRpuDefaultC1Floats);",
 				"if (constantBank === VDP_RPU_REF_NONE) {\n\t\t\t\tgl.uniformMatrix4fv(vdpRpuJointLocation, false, vdpRpuDefaultJointFloats);",
 				"if (surfaceRef === VDP_RPU_REF_NONE) {\n\t\t\t\tbindVdpRpuNeutralTexture(backend);",
-				"if (indexRef === VDP_RPU_REF_NONE) {\n\t\tif (instanceMode !== VDP_RPU_INSTANCE_MODE_NONE) {"
+				"if (indexType === VDP_RPU_INDEX_NONE || indexRef === VDP_RPU_REF_NONE) {\n\t\tif (instanceMode !== VDP_RPU_INSTANCE_MODE_NONE) {"
 			],
 			"reason": "webgl_rpu_backend_must_consume_ref_none_draw_bindings_without_oob_resource_indexing"
 		},
@@ -2245,28 +2244,29 @@
 				"if (constantBank == VDP_RPU_REF_NONE) {\n\t\t\t\tglUniform4fv(runtime.uniformC1, 16, runtime.defaultC1Floats.data());",
 				"if (constantBank == VDP_RPU_REF_NONE) {\n\t\t\t\tglUniformMatrix4fv(runtime.uniformJoint, 24, GL_FALSE, runtime.defaultJointFloats.data());",
 				"if (surfaceRef == VDP_RPU_REF_NONE) {\n\t\t\t\tbindVdpRpuNeutralTexture(runtime.backend);",
-				"if (indexRef == VDP_RPU_REF_NONE) {\n\t\tif (instanceMode != VDP_RPU_INSTANCE_MODE_NONE) {"
+				"if (indexType == VDP_RPU_INDEX_NONE || indexRef == VDP_RPU_REF_NONE) {\n\t\tif (instanceMode != VDP_RPU_INSTANCE_MODE_NONE) {"
 			],
 			"reason": "gles2_rpu_backend_must_consume_ref_none_draw_bindings_without_oob_resource_indexing"
 		},
 		{
 			"file": "src/carts/bare_metal_cart/cart.lua",
 			"substrings": [
-				"vdp_xf.matrix_words(mesh_matrix_index, c0_addr)",
-				"vdp_jtu.matrix_words(0, joint0_addr)",
-				"vdp_jtu.matrix_words(mesh_joint_matrix_index, joint1_addr)",
-				"vdp_rpu.constant_upload_device(0, 0, vdp_rpu.constant_source_xf_q16, mesh_matrix_index * vdp_xf.matrix_words_per_matrix, c0_words)",
-				"vdp_rpu.constant_upload_device(2, 0, vdp_rpu.constant_source_jtu_q16, 0, joint_words)"
+				"mem[wp], wp = xf_matrix_packet_header, wp + 4",
+				"mem[wp], wp = mesh_matrix_index * sys_vdp_xf_matrix_words, wp + 4",
+				"mem[wp], wp = jtu_matrix_packet_header, wp + 4",
+				"mem[wp], wp = mesh_joint_matrix_index * sys_vdp_jtu_matrix_words, wp + 4",
+				"rpu_header_constant_upload_device, sys_rpu_op_constant_upload_device, 0, 0, sys_rpu_constant_source_xf_q16, mesh_matrix_index * sys_vdp_xf_matrix_words, c0_words",
+				"rpu_header_constant_upload_device, sys_rpu_op_constant_upload_device, 2, 0, sys_rpu_constant_source_jtu_q16, 0, joint_words"
 			],
 			"reason": "bare_metal_mesh_matrices_must_flow_through_xf_and_jtu_devices_before_rpu_constant_binding"
 		},
 		{
 			"file": "src/carts/bare_metal_cart/cart.lua",
 			"substrings": [
-				"vdp_rpu.constant_upload_device(1, 0, vdp_rpu.constant_source_lpu_raw, 0, c1_words)",
-				"vdp_rpu.constant_upload_device(1, 8, vdp_rpu.constant_source_mfu_q16, 0, mfu_words)",
-				"vdp_lpu.register_words(0, c1_addr, c1_words)",
-				"vdp_mfu.register_words(0, mfu_addr, mfu_words)"
+				"mem[wp], wp = lpu_packet_header, wp + 4",
+				"mem[wp], wp = mfu_packet_header, wp + 4",
+				"rpu_header_constant_upload_device, sys_rpu_op_constant_upload_device, 1, 0, sys_rpu_constant_source_lpu_raw, 0, c1_words",
+				"rpu_header_constant_upload_device, sys_rpu_op_constant_upload_device, 1, 8, sys_rpu_constant_source_mfu_q16, 0, mfu_words"
 			],
 			"reason": "bare_metal_lighting_and_morph_constants_must_flow_through_lpu_and_mfu_devices_before_rpu_constant_binding"
 		},
@@ -3313,13 +3313,13 @@
 		{
 			"file": "bios/vdp_rpu_quads.lua",
 			"start": "\twrite_quad_vertices()",
-			"end": "\nend\n\nlocal define_surface_for_draw",
+			"end": "\nend\n\nlocal begin_pass",
 			"reason": "vdp_rpu_quads_resource_setup_must_not_allocate_after_module_init"
 		},
 		{
 			"file": "bios/vdp_rpu_quads.lua",
-			"start": "\tif surface_id == vdp_rpu.resource_none then",
-			"end": "\nend\n\nlocal begin_pass",
+			"start": "\tvdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_texture))",
+			"end": "\nend\n\nfunction vdp_rpu_quads.submit_slot_resources",
 			"reason": "vdp_rpu_quads_surface_setup_must_not_allocate_after_module_init"
 		},
 		{
@@ -3351,12 +3351,6 @@
 			"start": "\tswitch_surface(surface_id)",
 			"end": "\nend\n\nfunction vdp_rpu_quads.set_slot_dim",
 			"reason": "vdp_rpu_quads_queue_quad_must_not_allocate"
-		},
-		{
-			"file": "bios/vdp_rpu_quads.lua",
-			"start": "\tsurface_width[surface_id] = width",
-			"end": "\nend\n\nfunction vdp_rpu_quads.clear_color",
-			"reason": "vdp_rpu_quads_slot_dim_must_not_allocate"
 		},
 		{
 			"file": "bios/vdp_rpu_quads.lua",
@@ -3558,7 +3552,6 @@
 				"commitHeadlessFrame",
 				"fillHeadlessFrame",
 				"countHeadlessActivePixels",
-				"findHeadlessRpuDrawTextureFill",
 				"presentHeadlessFrame"
 			],
 			"reason": "headless_rpu_and_present_hot_helpers_must_not_allocate_per_frame"

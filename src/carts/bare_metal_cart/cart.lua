@@ -1,9 +1,3 @@
-local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
-local vdp_rpu<const> = require('bios/vdp_rpu')
-local vdp_xf<const> = require('bios/vdp_xf')
-local vdp_lpu<const> = require('bios/vdp_lpu')
-local vdp_jtu<const> = require('bios/vdp_jtu')
-local vdp_mfu<const> = require('bios/vdp_mfu')
 local numeric<const> = require('bios/common/numeric')
 
 local io_vdp_dither<const> = sys_vdp_dither
@@ -109,7 +103,36 @@ local mesh_tint<const> = white
 local mesh_joint_word<const> = 0x00000001
 local mesh_weight_word<const> = 0x000000ff
 
-local sampler_nearest<const> = vdp_rpu.sampler(vdp_rpu.filter_nearest, vdp_rpu.filter_nearest, vdp_rpu.wrap_clamp, vdp_rpu.wrap_clamp)
+local rpu_header_buffer_define<const> = sys_rpu_packet_kind | (sys_rpu_words_buffer_define << 16)
+local rpu_header_buffer_upload_dma<const> = sys_rpu_packet_kind | (sys_rpu_words_buffer_upload_dma << 16)
+local rpu_header_surface_define<const> = sys_rpu_packet_kind | (sys_rpu_words_surface_define << 16)
+local rpu_header_constant_bank_define<const> = sys_rpu_packet_kind | (sys_rpu_words_constant_bank_define << 16)
+local rpu_header_constant_upload_device<const> = sys_rpu_packet_kind | (sys_rpu_words_constant_upload_device << 16)
+local rpu_header_begin_pass<const> = sys_rpu_packet_kind | (sys_rpu_words_begin_pass << 16)
+local rpu_header_end_pass<const> = sys_rpu_packet_kind | (sys_rpu_words_end_pass << 16)
+local rpu_header_begin_draw<const> = sys_rpu_packet_kind | (sys_rpu_words_begin_draw << 16)
+local rpu_header_bind_stream<const> = sys_rpu_packet_kind | (sys_rpu_words_bind_stream << 16)
+local rpu_header_bind_constants<const> = sys_rpu_packet_kind | (sys_rpu_words_bind_constants << 16)
+local rpu_header_bind_texture<const> = sys_rpu_packet_kind | (sys_rpu_words_bind_texture << 16)
+local rpu_header_end_draw<const> = sys_rpu_packet_kind | (sys_rpu_words_end_draw << 16)
+local xf_matrix_packet_header<const> = sys_vdp_xf_packet_kind | ((1 + sys_vdp_xf_matrix_words) << 16)
+local lpu_packet_header<const> = sys_vdp_lpu_packet_kind | ((1 + c1_words) << 16)
+local jtu_matrix_packet_header<const> = sys_vdp_jtu_packet_kind | ((1 + sys_vdp_jtu_matrix_words) << 16)
+local mfu_packet_header<const> = sys_vdp_mfu_packet_kind | ((1 + mfu_words) << 16)
+local rpu_surface_rgba_texture<const> = sys_rpu_surface_format_rgba8 | (sys_rpu_surface_usage_texture << 8)
+local rpu_surface_rgba_color_texture<const> = sys_rpu_surface_format_rgba8 | ((sys_rpu_surface_usage_color | sys_rpu_surface_usage_texture) << 8)
+local rpu_surface_depth<const> = sys_rpu_surface_format_depth16 | (sys_rpu_surface_usage_depth << 8)
+local rpu_primitive_triangles<const> = sys_rpu_prim_triangles | (sys_rpu_index_none << 8)
+local rpu_primitive_triangle_strip<const> = sys_rpu_prim_triangle_strip | (sys_rpu_index_none << 8)
+local rpu_primitive_lines<const> = sys_rpu_prim_lines | (sys_rpu_index_none << 8)
+local rpu_primitive_points<const> = sys_rpu_prim_points | (sys_rpu_index_none << 8)
+local rpu_primitive_indexed_triangles<const> = sys_rpu_prim_triangles | (sys_rpu_index_u16 << 8)
+local rpu_pipeline_opaque<const> = sys_rpu_blend_none | (sys_rpu_depth_none << 4) | (sys_rpu_cull_none << 8) | sys_rpu_pipe_color_write_rgba
+local rpu_pipeline_depth_opaque<const> = sys_rpu_blend_none | (sys_rpu_depth_lequal << 4) | (sys_rpu_cull_none << 8) | sys_rpu_pipe_depth_write | sys_rpu_pipe_color_write_rgba
+local rpu_pipeline_depth_alpha<const> = sys_rpu_blend_alpha | (sys_rpu_depth_lequal << 4) | (sys_rpu_cull_none << 8) | sys_rpu_pipe_depth_write | sys_rpu_pipe_color_write_rgba
+local sampler_nearest<const> = sys_rpu_filter_nearest | (sys_rpu_filter_nearest << 2) | (sys_rpu_wrap_clamp << 4) | (sys_rpu_wrap_clamp << 6)
+
+local vdp_stream_cursor = vdp_stream_base
 
 local frame = 0
 local sprite_x = 112
@@ -1070,25 +1093,41 @@ local initialize_vdp_resources<const> = function()
 	write_mat4_vertices()
 	write_mesh_indices()
 	write_lighting_constants()
-	vdp_stream_cursor = vdp_stream_base
-	vdp_rpu_quads.set_slot_dim(sys_vdp_slot_primary, atlas_width, atlas_height)
-	vdp_rpu.surface_define(vdp_rpu.surface_primary, atlas_width, atlas_height, vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_texture))
-	vdp_rpu.surface_define(scene_color_surface, screen_width, screen_height, vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_color | vdp_rpu.surface_usage_texture))
-	vdp_rpu.surface_define(scene_depth_surface, screen_width, screen_height, vdp_rpu.surface_usage(vdp_rpu.surface_format_depth16, vdp_rpu.surface_usage_depth))
-	vdp_rpu.buffer_define(quad_buffer, quad_vertex_bytes, vdp_rpu.usage_vertex)
-	vdp_rpu.buffer_upload_dma(quad_buffer, 0, quad_vertex_addr, quad_vertex_bytes)
-	vdp_rpu.buffer_define(background_buffer, background_vertex_bytes, vdp_rpu.usage_vertex)
-	vdp_rpu.buffer_upload_dma(background_buffer, 0, background_vertex_addr, background_vertex_bytes)
-	vdp_rpu.buffer_define(vector_buffer, vector_vertex_bytes, vdp_rpu.usage_vertex)
-	vdp_rpu.buffer_upload_dma(vector_buffer, 0, vector_vertex_addr, vector_vertex_bytes)
-	vdp_rpu.buffer_define(mat4_vertex_buffer, mat4_vertex_bytes, vdp_rpu.usage_vertex)
-	vdp_rpu.buffer_upload_dma(mat4_vertex_buffer, 0, mat4_vertex_addr, mat4_vertex_bytes)
-	vdp_rpu.buffer_define(mat4_instance_buffer, mat4_instance_bytes, vdp_rpu.usage_vertex)
-	vdp_rpu.buffer_define(mesh_buffer, mesh_vertex_bytes, vdp_rpu.usage_vertex)
-	vdp_rpu.buffer_define(mesh_index_buffer, mesh_index_bytes, vdp_rpu.usage_index)
-	vdp_rpu.buffer_upload_dma(mesh_index_buffer, 0, mesh_index_addr, mesh_index_bytes)
-	vdp_rpu.buffer_define(instance_buffer, instance_bytes, vdp_rpu.usage_vertex)
-	vdp_rpu_quads.finish_frame()
+	local wp = vdp_stream_base
+	memwrite(wp, rpu_header_surface_define, sys_rpu_op_surface_define, sys_rpu_surface_primary, atlas_width | (atlas_height << 16), rpu_surface_rgba_texture)
+	wp = wp + 20
+	memwrite(wp, rpu_header_surface_define, sys_rpu_op_surface_define, scene_color_surface, screen_width | (screen_height << 16), rpu_surface_rgba_color_texture)
+	wp = wp + 20
+	memwrite(wp, rpu_header_surface_define, sys_rpu_op_surface_define, scene_depth_surface, screen_width | (screen_height << 16), rpu_surface_depth)
+	wp = wp + 20
+	memwrite(wp, rpu_header_buffer_define, sys_rpu_op_buffer_define, quad_buffer, quad_vertex_bytes, sys_rpu_usage_vertex)
+	wp = wp + 20
+	memwrite(wp, rpu_header_buffer_upload_dma, sys_rpu_op_buffer_upload_dma, quad_buffer, 0, quad_vertex_addr, quad_vertex_bytes)
+	wp = wp + 24
+	memwrite(wp, rpu_header_buffer_define, sys_rpu_op_buffer_define, background_buffer, background_vertex_bytes, sys_rpu_usage_vertex)
+	wp = wp + 20
+	memwrite(wp, rpu_header_buffer_upload_dma, sys_rpu_op_buffer_upload_dma, background_buffer, 0, background_vertex_addr, background_vertex_bytes)
+	wp = wp + 24
+	memwrite(wp, rpu_header_buffer_define, sys_rpu_op_buffer_define, vector_buffer, vector_vertex_bytes, sys_rpu_usage_vertex)
+	wp = wp + 20
+	memwrite(wp, rpu_header_buffer_upload_dma, sys_rpu_op_buffer_upload_dma, vector_buffer, 0, vector_vertex_addr, vector_vertex_bytes)
+	wp = wp + 24
+	memwrite(wp, rpu_header_buffer_define, sys_rpu_op_buffer_define, mat4_vertex_buffer, mat4_vertex_bytes, sys_rpu_usage_vertex)
+	wp = wp + 20
+	memwrite(wp, rpu_header_buffer_upload_dma, sys_rpu_op_buffer_upload_dma, mat4_vertex_buffer, 0, mat4_vertex_addr, mat4_vertex_bytes)
+	wp = wp + 24
+	memwrite(wp, rpu_header_buffer_define, sys_rpu_op_buffer_define, mat4_instance_buffer, mat4_instance_bytes, sys_rpu_usage_vertex)
+	wp = wp + 20
+	memwrite(wp, rpu_header_buffer_define, sys_rpu_op_buffer_define, mesh_buffer, mesh_vertex_bytes, sys_rpu_usage_vertex)
+	wp = wp + 20
+	memwrite(wp, rpu_header_buffer_define, sys_rpu_op_buffer_define, mesh_index_buffer, mesh_index_bytes, sys_rpu_usage_index)
+	wp = wp + 20
+	memwrite(wp, rpu_header_buffer_upload_dma, sys_rpu_op_buffer_upload_dma, mesh_index_buffer, 0, mesh_index_addr, mesh_index_bytes)
+	wp = wp + 24
+	memwrite(wp, rpu_header_buffer_define, sys_rpu_op_buffer_define, instance_buffer, instance_bytes, sys_rpu_usage_vertex)
+	wp = wp + 20
+	mem[wp], wp = sys_vdp_pkt_end, wp + 4
+	vdp_stream_cursor = wp
 	submit_current_stream()
 	wait_dma()
 end
@@ -1102,64 +1141,142 @@ local draw_frame<const> = function()
 	write_mfu_constants()
 	write_instances()
 	write_mat4_instances()
-	vdp_stream_cursor = vdp_stream_base
-	vdp_xf.matrix_words(mesh_matrix_index, c0_addr)
-	vdp_lpu.register_words(0, c1_addr, c1_words)
-	vdp_jtu.matrix_words(0, joint0_addr)
-	vdp_jtu.matrix_words(mesh_joint_matrix_index, joint1_addr)
-	vdp_mfu.register_words(0, mfu_addr, mfu_words)
-	vdp_rpu.buffer_upload_dma(mesh_buffer, 0, mesh_vertex_addr, mesh_vertex_bytes)
-	vdp_rpu.buffer_upload_dma(mat4_instance_buffer, 0, mat4_instance_addr, mat4_instance_bytes)
-	vdp_rpu.buffer_upload_dma(instance_buffer, 0, instance_addr, instance_bytes)
-	vdp_rpu.constant_bank_define(0, 0, c0_words)
-	vdp_rpu.constant_bank_define(1, c0_words, c1_words)
-	vdp_rpu.constant_bank_define(2, c0_words + c1_words, joint_words)
-	vdp_rpu.constant_upload_device(0, 0, vdp_rpu.constant_source_xf_q16, mesh_matrix_index * vdp_xf.matrix_words_per_matrix, c0_words)
-	vdp_rpu.constant_upload_device(1, 0, vdp_rpu.constant_source_lpu_raw, 0, c1_words)
-	vdp_rpu.constant_upload_device(1, 8, vdp_rpu.constant_source_mfu_q16, 0, mfu_words)
-	vdp_rpu.constant_upload_device(2, 0, vdp_rpu.constant_source_jtu_q16, 0, joint_words)
-	vdp_rpu.begin_pass(scene_color_surface, scene_depth_surface, 0, 0, screen_width, screen_height, vdp_rpu.pass_color_clear | vdp_rpu.pass_depth_clear, 0xff071a3a, 0xffffffff)
-	vdp_rpu.begin_draw(vdp_rpu.shader_v2_c4, vdp_rpu.primitive_index(vdp_rpu.prim_triangles, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), background_vertex_count, 1, vdp_rpu.resource_none, 0, 0)
-	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_c4, background_buffer, 0, 0)
-	vdp_rpu.end_draw()
-	vdp_rpu.begin_draw(vdp_rpu.shader_v2_c4, vdp_rpu.primitive_index(vdp_rpu.prim_triangles, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), vector_vertex_count, 1, vdp_rpu.resource_none, 0, 0)
-	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_c4, vector_buffer, 0, 0)
-	vdp_rpu.end_draw()
-	vdp_rpu.begin_draw(vdp_rpu.shader_v2_c4, vdp_rpu.primitive_index(vdp_rpu.prim_lines, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), 2, 1, vdp_rpu.resource_none, 0, 0)
-	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_c4, vector_buffer, vector_vertex_stride * 2, 0)
-	vdp_rpu.end_draw()
-	vdp_rpu.begin_draw(vdp_rpu.shader_v2_c4, vdp_rpu.primitive_index(vdp_rpu.prim_points, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_alpha, vdp_rpu.depth_lequal, vdp_rpu.cull_none, vdp_rpu.pipe_depth_write, vdp_rpu.pipe_color_write_rgba), 1, 1, vdp_rpu.resource_none, 0, 0)
-	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_c4, vector_buffer, vector_vertex_stride * 2, 0)
-	vdp_rpu.end_draw()
-	vdp_rpu.begin_draw(vdp_rpu.shader_v2_t2_c4_i_affine2, vdp_rpu.primitive_index(vdp_rpu.prim_triangle_strip, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_lequal, vdp_rpu.cull_none, vdp_rpu.pipe_depth_write, vdp_rpu.pipe_color_write_rgba), quad_vertex_count, sprite_instance_count, vdp_rpu.resource_none, 0, 0)
-	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_t2_c4, quad_buffer, 0, 0)
-	vdp_rpu.bind_stream(1, vdp_rpu.layout_i_affine2_trect_c4, instance_buffer, 0, 1)
-	vdp_rpu.bind_texture(0, vdp_rpu.surface_primary, sampler_nearest)
-	vdp_rpu.end_draw()
-	vdp_rpu.begin_draw(vdp_rpu.shader_v3_c4_i_mat4, vdp_rpu.primitive_index(vdp_rpu.prim_triangles, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), mat4_vertex_count, mat4_instance_count, vdp_rpu.resource_none, 0, 0)
-	vdp_rpu.bind_stream(0, vdp_rpu.layout_v3_c4, mat4_vertex_buffer, 0, 0)
-	vdp_rpu.bind_stream(1, vdp_rpu.layout_i_mat4_c4, mat4_instance_buffer, 0, 1)
-	vdp_rpu.end_draw()
-	vdp_rpu.begin_draw(vdp_rpu.shader_v3_c4_c0, vdp_rpu.primitive_index(vdp_rpu.prim_triangles, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), mat4_vertex_count, 1, vdp_rpu.resource_none, 0, 0)
-	vdp_rpu.bind_stream(0, vdp_rpu.layout_v3_c4, mat4_vertex_buffer, 0, 0)
-	vdp_rpu.bind_constants(0, 0, 0, c0_words)
-	vdp_rpu.end_draw()
-	vdp_rpu.begin_draw(vdp_rpu.shader_v3_n3_t2_c4_j4_w4_c0_c1, vdp_rpu.primitive_index(vdp_rpu.prim_triangles, vdp_rpu.index_u16), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), mesh_vertex_count, 1, mesh_index_buffer, 0, mesh_index_count)
-	vdp_rpu.bind_stream(0, vdp_rpu.layout_v3_n3_t2_c4_j4_w4, mesh_buffer, 0, 0)
-	vdp_rpu.bind_constants(0, 0, 0, c0_words)
-	vdp_rpu.bind_constants(1, 2, 0, joint_words)
-	vdp_rpu.bind_constants(2, 1, 0, c1_words)
-	vdp_rpu.bind_texture(0, vdp_rpu.surface_primary, sampler_nearest)
-	vdp_rpu.end_draw()
-	vdp_rpu.end_pass()
-	vdp_rpu.begin_pass(vdp_rpu.resource_none, vdp_rpu.resource_none, 0, 0, screen_width, screen_height, 0, 0, 0)
-	vdp_rpu.begin_draw(vdp_rpu.shader_v2_t2_c4_i_affine2, vdp_rpu.primitive_index(vdp_rpu.prim_triangle_strip, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_none, vdp_rpu.depth_none, vdp_rpu.cull_none, 0, vdp_rpu.pipe_color_write_rgba), quad_vertex_count, present_instance_count, vdp_rpu.resource_none, 0, 0)
-	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_t2_c4, quad_buffer, 0, 0)
-	vdp_rpu.bind_stream(1, vdp_rpu.layout_i_affine2_trect_c4, instance_buffer, present_instance_offset, 1)
-	vdp_rpu.bind_texture(0, scene_color_surface, sampler_nearest)
-	vdp_rpu.end_draw()
-	vdp_rpu.end_pass()
-	vdp_rpu_quads.finish_frame()
+	local wp = vdp_stream_base
+	mem[wp], wp = xf_matrix_packet_header, wp + 4
+	mem[wp], wp = mesh_matrix_index * sys_vdp_xf_matrix_words, wp + 4
+	local index = 0
+	while index < sys_vdp_xf_matrix_words do
+		mem[wp], wp = mem[c0_addr + index * 4], wp + 4
+		index = index + 1
+	end
+	mem[wp], wp = lpu_packet_header, wp + 4
+	mem[wp], wp = 0, wp + 4
+	index = 0
+	while index < c1_words do
+		mem[wp], wp = mem[c1_addr + index * 4], wp + 4
+		index = index + 1
+	end
+	mem[wp], wp = jtu_matrix_packet_header, wp + 4
+	mem[wp], wp = 0, wp + 4
+	index = 0
+	while index < sys_vdp_jtu_matrix_words do
+		mem[wp], wp = mem[joint0_addr + index * 4], wp + 4
+		index = index + 1
+	end
+	mem[wp], wp = jtu_matrix_packet_header, wp + 4
+	mem[wp], wp = mesh_joint_matrix_index * sys_vdp_jtu_matrix_words, wp + 4
+	index = 0
+	while index < sys_vdp_jtu_matrix_words do
+		mem[wp], wp = mem[joint1_addr + index * 4], wp + 4
+		index = index + 1
+	end
+	mem[wp], wp = mfu_packet_header, wp + 4
+	mem[wp], wp = 0, wp + 4
+	mem[wp], wp = mem[mfu_addr], wp + 4
+	memwrite(wp, rpu_header_buffer_upload_dma, sys_rpu_op_buffer_upload_dma, mesh_buffer, 0, mesh_vertex_addr, mesh_vertex_bytes)
+	wp = wp + 24
+	memwrite(wp, rpu_header_buffer_upload_dma, sys_rpu_op_buffer_upload_dma, mat4_instance_buffer, 0, mat4_instance_addr, mat4_instance_bytes)
+	wp = wp + 24
+	memwrite(wp, rpu_header_buffer_upload_dma, sys_rpu_op_buffer_upload_dma, instance_buffer, 0, instance_addr, instance_bytes)
+	wp = wp + 24
+	memwrite(wp, rpu_header_constant_bank_define, sys_rpu_op_constant_bank_define, 0, 0, c0_words)
+	wp = wp + 20
+	memwrite(wp, rpu_header_constant_bank_define, sys_rpu_op_constant_bank_define, 1, c0_words, c1_words)
+	wp = wp + 20
+	memwrite(wp, rpu_header_constant_bank_define, sys_rpu_op_constant_bank_define, 2, c0_words + c1_words, joint_words)
+	wp = wp + 20
+	memwrite(wp, rpu_header_constant_upload_device, sys_rpu_op_constant_upload_device, 0, 0, sys_rpu_constant_source_xf_q16, mesh_matrix_index * sys_vdp_xf_matrix_words, c0_words)
+	wp = wp + 28
+	memwrite(wp, rpu_header_constant_upload_device, sys_rpu_op_constant_upload_device, 1, 0, sys_rpu_constant_source_lpu_raw, 0, c1_words)
+	wp = wp + 28
+	memwrite(wp, rpu_header_constant_upload_device, sys_rpu_op_constant_upload_device, 1, 8, sys_rpu_constant_source_mfu_q16, 0, mfu_words)
+	wp = wp + 28
+	memwrite(wp, rpu_header_constant_upload_device, sys_rpu_op_constant_upload_device, 2, 0, sys_rpu_constant_source_jtu_q16, 0, joint_words)
+	wp = wp + 28
+	memwrite(wp, rpu_header_begin_pass, sys_rpu_op_begin_pass, scene_color_surface, scene_depth_surface, 0, screen_width | (screen_height << 16), sys_rpu_pass_color_clear | sys_rpu_pass_depth_clear, 0xff071a3a, 0xffffffff)
+	wp = wp + 36
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v2_c4, rpu_primitive_triangles, rpu_pipeline_opaque, background_vertex_count, 1, sys_rpu_resource_none, 0, 0)
+	wp = wp + 40
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v2_c4, background_buffer, 0, 0)
+	wp = wp + 28
+	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
+	wp = wp + 8
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v2_c4, rpu_primitive_triangles, rpu_pipeline_opaque, vector_vertex_count, 1, sys_rpu_resource_none, 0, 0)
+	wp = wp + 40
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v2_c4, vector_buffer, 0, 0)
+	wp = wp + 28
+	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
+	wp = wp + 8
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v2_c4, rpu_primitive_lines, rpu_pipeline_opaque, 2, 1, sys_rpu_resource_none, 0, 0)
+	wp = wp + 40
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v2_c4, vector_buffer, vector_vertex_stride * 2, 0)
+	wp = wp + 28
+	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
+	wp = wp + 8
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v2_c4, rpu_primitive_points, rpu_pipeline_depth_alpha, 1, 1, sys_rpu_resource_none, 0, 0)
+	wp = wp + 40
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v2_c4, vector_buffer, vector_vertex_stride * 2, 0)
+	wp = wp + 28
+	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
+	wp = wp + 8
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v2_t2_c4_i_affine2, rpu_primitive_triangle_strip, rpu_pipeline_depth_opaque, quad_vertex_count, sprite_instance_count, sys_rpu_resource_none, 0, 0)
+	wp = wp + 40
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v2_t2_c4, quad_buffer, 0, 0)
+	wp = wp + 28
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 1, sys_rpu_layout_i_affine2_trect_c4, instance_buffer, 0, 1)
+	wp = wp + 28
+	memwrite(wp, rpu_header_bind_texture, sys_rpu_op_bind_texture, 0, sys_rpu_surface_primary, sampler_nearest)
+	wp = wp + 20
+	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
+	wp = wp + 8
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v3_c4_i_mat4, rpu_primitive_triangles, rpu_pipeline_opaque, mat4_vertex_count, mat4_instance_count, sys_rpu_resource_none, 0, 0)
+	wp = wp + 40
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v3_c4, mat4_vertex_buffer, 0, 0)
+	wp = wp + 28
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 1, sys_rpu_layout_i_mat4_c4, mat4_instance_buffer, 0, 1)
+	wp = wp + 28
+	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
+	wp = wp + 8
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v3_c4_c0, rpu_primitive_triangles, rpu_pipeline_opaque, mat4_vertex_count, 1, sys_rpu_resource_none, 0, 0)
+	wp = wp + 40
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v3_c4, mat4_vertex_buffer, 0, 0)
+	wp = wp + 28
+	memwrite(wp, rpu_header_bind_constants, sys_rpu_op_bind_constants, 0, 0, 0, c0_words)
+	wp = wp + 24
+	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
+	wp = wp + 8
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1, rpu_primitive_indexed_triangles, rpu_pipeline_opaque, mesh_vertex_count, 1, mesh_index_buffer, 0, mesh_index_count)
+	wp = wp + 40
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v3_n3_t2_c4_j4_w4, mesh_buffer, 0, 0)
+	wp = wp + 28
+	memwrite(wp, rpu_header_bind_constants, sys_rpu_op_bind_constants, 0, 0, 0, c0_words)
+	wp = wp + 24
+	memwrite(wp, rpu_header_bind_constants, sys_rpu_op_bind_constants, 1, 2, 0, joint_words)
+	wp = wp + 24
+	memwrite(wp, rpu_header_bind_constants, sys_rpu_op_bind_constants, 2, 1, 0, c1_words)
+	wp = wp + 24
+	memwrite(wp, rpu_header_bind_texture, sys_rpu_op_bind_texture, 0, sys_rpu_surface_primary, sampler_nearest)
+	wp = wp + 20
+	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
+	wp = wp + 8
+	memwrite(wp, rpu_header_end_pass, sys_rpu_op_end_pass)
+	wp = wp + 8
+	memwrite(wp, rpu_header_begin_pass, sys_rpu_op_begin_pass, sys_rpu_resource_none, sys_rpu_resource_none, 0, screen_width | (screen_height << 16), 0, 0, 0)
+	wp = wp + 36
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v2_t2_c4_i_affine2, rpu_primitive_triangle_strip, rpu_pipeline_opaque, quad_vertex_count, present_instance_count, sys_rpu_resource_none, 0, 0)
+	wp = wp + 40
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v2_t2_c4, quad_buffer, 0, 0)
+	wp = wp + 28
+	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 1, sys_rpu_layout_i_affine2_trect_c4, instance_buffer, present_instance_offset, 1)
+	wp = wp + 28
+	memwrite(wp, rpu_header_bind_texture, sys_rpu_op_bind_texture, 0, scene_color_surface, sampler_nearest)
+	wp = wp + 20
+	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
+	wp = wp + 8
+	memwrite(wp, rpu_header_end_pass, sys_rpu_op_end_pass)
+	wp = wp + 8
+	mem[wp], wp = sys_vdp_pkt_end, wp + 4
+	vdp_stream_cursor = wp
 	submit_current_stream()
 	wait_dma()
 end

@@ -389,7 +389,104 @@ import {
 	IRQ_REINIT,
 	IRQ_VBLANK,
 } from '../bus/io';
+import { VDP_PKT_END } from '../devices/vdp/registers';
 import {
+	VDP_RPU_PACKET_KIND,
+	VDP_RPU_OP_BUFFER_DEFINE,
+	VDP_RPU_OP_BUFFER_UPLOAD_DMA,
+	VDP_RPU_OP_BUFFER_UPLOAD_INLINE,
+	VDP_RPU_OP_BUFFER_DISCARD,
+	VDP_RPU_OP_SURFACE_DEFINE,
+	VDP_RPU_OP_CONSTANT_BANK_DEFINE,
+	VDP_RPU_OP_CONSTANT_UPLOAD_DMA,
+	VDP_RPU_OP_CONSTANT_UPLOAD_INLINE,
+	VDP_RPU_OP_CONSTANT_UPLOAD_DEVICE,
+	VDP_RPU_OP_BEGIN_PASS,
+	VDP_RPU_OP_END_PASS,
+	VDP_RPU_OP_BEGIN_DRAW,
+	VDP_RPU_OP_BIND_STREAM,
+	VDP_RPU_OP_BIND_CONSTANTS,
+	VDP_RPU_OP_BIND_TEXTURE,
+	VDP_RPU_OP_END_DRAW,
+	VDP_RPU_BUFFER_DEFINE_WORDS,
+	VDP_RPU_BUFFER_UPLOAD_DMA_WORDS,
+	VDP_RPU_BUFFER_UPLOAD_INLINE_MIN_WORDS,
+	VDP_RPU_BUFFER_DISCARD_WORDS,
+	VDP_RPU_SURFACE_DEFINE_WORDS,
+	VDP_RPU_CONSTANT_BANK_DEFINE_WORDS,
+	VDP_RPU_CONSTANT_UPLOAD_DMA_WORDS,
+	VDP_RPU_CONSTANT_UPLOAD_INLINE_MIN_WORDS,
+	VDP_RPU_CONSTANT_UPLOAD_DEVICE_WORDS,
+	VDP_RPU_BEGIN_PASS_WORDS,
+	VDP_RPU_END_PASS_WORDS,
+	VDP_RPU_BEGIN_DRAW_WORDS,
+	VDP_RPU_BIND_STREAM_WORDS,
+	VDP_RPU_BIND_CONSTANTS_WORDS,
+	VDP_RPU_BIND_TEXTURE_WORDS,
+	VDP_RPU_END_DRAW_WORDS,
+	VDP_RPU_RESOURCE_NONE,
+	VDP_RPU_BUFFER_USAGE_VERTEX,
+	VDP_RPU_BUFFER_USAGE_INDEX,
+	VDP_RPU_BUFFER_USAGE_CONSTANT,
+	VDP_RPU_SURFACE_FORMAT_RGBA8,
+	VDP_RPU_SURFACE_FORMAT_DEPTH16,
+	VDP_RPU_SURFACE_USAGE_COLOR,
+	VDP_RPU_SURFACE_USAGE_DEPTH,
+	VDP_RPU_SURFACE_USAGE_TEXTURE,
+	VDP_RPU_PASS_COLOR_CLEAR,
+	VDP_RPU_PASS_DEPTH_CLEAR,
+	VDP_RPU_PASS_COLOR_STORE,
+	VDP_RPU_PASS_DEPTH_STORE,
+	VDP_RPU_BLEND_NONE,
+	VDP_RPU_BLEND_ALPHA,
+	VDP_RPU_BLEND_ADD,
+	VDP_RPU_DEPTH_NONE,
+	VDP_RPU_DEPTH_LESS,
+	VDP_RPU_DEPTH_LEQUAL,
+	VDP_RPU_CULL_NONE,
+	VDP_RPU_CULL_BACK,
+	VDP_RPU_CULL_FRONT,
+	VDP_RPU_PIPE_DEPTH_WRITE,
+	VDP_RPU_PIPE_COLOR_WRITE_MASK,
+	VDP_RPU_FILTER_NEAREST,
+	VDP_RPU_FILTER_LINEAR,
+	VDP_RPU_WRAP_CLAMP,
+	VDP_RPU_WRAP_REPEAT,
+	VDP_RPU_PRIM_TRIANGLES,
+	VDP_RPU_PRIM_TRIANGLE_STRIP,
+	VDP_RPU_PRIM_LINES,
+	VDP_RPU_PRIM_POINTS,
+	VDP_RPU_INDEX_NONE,
+	VDP_RPU_INDEX_U16,
+	VDP_RPU_INDEX_U32,
+	VDP_RPU_LAYOUT_V2_C4,
+	VDP_RPU_LAYOUT_V2_T2_C4,
+	VDP_RPU_LAYOUT_V3_C4,
+	VDP_RPU_LAYOUT_V3_T2_C4,
+	VDP_RPU_LAYOUT_V3_N3_C4,
+	VDP_RPU_LAYOUT_V3_N3_T2_C4,
+	VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4,
+	VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4,
+	VDP_RPU_LAYOUT_I_MAT4_C4,
+	VDP_RPU_SHADER_V2_C4,
+	VDP_RPU_SHADER_V2_T2_C4,
+	VDP_RPU_SHADER_V3_C4_C0,
+	VDP_RPU_SHADER_V3_T2_C4_C0,
+	VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1,
+	VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1,
+	VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2,
+	VDP_RPU_SHADER_V3_C4_I_MAT4,
+	VDP_RPU_CONSTANT_SOURCE_XF_Q16,
+	VDP_RPU_CONSTANT_SOURCE_LPU_RAW,
+	VDP_RPU_CONSTANT_SOURCE_MFU_Q16,
+	VDP_RPU_CONSTANT_SOURCE_JTU_Q16,
+} from '../devices/vdp/rpu';
+import { VDP_XF_MATRIX_WORDS, VDP_XF_PACKET_KIND } from '../devices/vdp/xf';
+import { VDP_JTU_PACKET_KIND } from '../devices/vdp/jtu';
+import { VDP_MFU_PACKET_KIND } from '../devices/vdp/mfu';
+import { VDP_LPU_PACKET_KIND } from '../devices/vdp/lpu';
+import {
+	VDP_JTU_MATRIX_WORDS,
 	VDP_FIFO_CTRL_SEAL,
 	VDP_FAULT_NONE,
 	VDP_FAULT_RD_OOB,
@@ -405,6 +502,9 @@ import {
 	VDP_FAULT_VRAM_WRITE_UNINITIALIZED,
 	VDP_FAULT_VRAM_WRITE_UNMAPPED,
 	VDP_RD_MODE_RGBA8888,
+	VDP_RD_SURFACE_SYSTEM,
+	VDP_RD_SURFACE_PRIMARY,
+	VDP_RD_SURFACE_SECONDARY,
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
 	VDP_SLOT_NONE,
@@ -1441,6 +1541,107 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_submit_state', VDP_FAULT_SUBMIT_STATE);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_cmd_bad_doorbell', VDP_FAULT_CMD_BAD_DOORBELL);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_fault_submit_busy', VDP_FAULT_SUBMIT_BUSY);
+
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_xf_packet_kind', VDP_XF_PACKET_KIND);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_xf_matrix_words', VDP_XF_MATRIX_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_jtu_packet_kind', VDP_JTU_PACKET_KIND);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_jtu_matrix_words', VDP_JTU_MATRIX_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_mfu_packet_kind', VDP_MFU_PACKET_KIND);
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_lpu_packet_kind', VDP_LPU_PACKET_KIND);
+
+	luaPipeline.registerGlobal(runtime, 'sys_vdp_pkt_end', VDP_PKT_END);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_packet_kind', VDP_RPU_PACKET_KIND);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_buffer_define', VDP_RPU_OP_BUFFER_DEFINE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_buffer_upload_dma', VDP_RPU_OP_BUFFER_UPLOAD_DMA);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_buffer_upload_inline', VDP_RPU_OP_BUFFER_UPLOAD_INLINE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_buffer_discard', VDP_RPU_OP_BUFFER_DISCARD);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_surface_define', VDP_RPU_OP_SURFACE_DEFINE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_constant_bank_define', VDP_RPU_OP_CONSTANT_BANK_DEFINE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_constant_upload_dma', VDP_RPU_OP_CONSTANT_UPLOAD_DMA);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_constant_upload_inline', VDP_RPU_OP_CONSTANT_UPLOAD_INLINE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_constant_upload_device', VDP_RPU_OP_CONSTANT_UPLOAD_DEVICE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_begin_pass', VDP_RPU_OP_BEGIN_PASS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_end_pass', VDP_RPU_OP_END_PASS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_begin_draw', VDP_RPU_OP_BEGIN_DRAW);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_bind_stream', VDP_RPU_OP_BIND_STREAM);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_bind_constants', VDP_RPU_OP_BIND_CONSTANTS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_bind_texture', VDP_RPU_OP_BIND_TEXTURE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_end_draw', VDP_RPU_OP_END_DRAW);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_buffer_define', VDP_RPU_BUFFER_DEFINE_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_buffer_upload_dma', VDP_RPU_BUFFER_UPLOAD_DMA_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_buffer_upload_inline_min', VDP_RPU_BUFFER_UPLOAD_INLINE_MIN_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_buffer_discard', VDP_RPU_BUFFER_DISCARD_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_surface_define', VDP_RPU_SURFACE_DEFINE_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_constant_bank_define', VDP_RPU_CONSTANT_BANK_DEFINE_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_constant_upload_dma', VDP_RPU_CONSTANT_UPLOAD_DMA_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_constant_upload_inline_min', VDP_RPU_CONSTANT_UPLOAD_INLINE_MIN_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_constant_upload_device', VDP_RPU_CONSTANT_UPLOAD_DEVICE_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_begin_pass', VDP_RPU_BEGIN_PASS_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_end_pass', VDP_RPU_END_PASS_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_begin_draw', VDP_RPU_BEGIN_DRAW_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_bind_stream', VDP_RPU_BIND_STREAM_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_bind_constants', VDP_RPU_BIND_CONSTANTS_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_bind_texture', VDP_RPU_BIND_TEXTURE_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_end_draw', VDP_RPU_END_DRAW_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_resource_none', VDP_RPU_RESOURCE_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_usage_vertex', VDP_RPU_BUFFER_USAGE_VERTEX);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_usage_index', VDP_RPU_BUFFER_USAGE_INDEX);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_usage_constant', VDP_RPU_BUFFER_USAGE_CONSTANT);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_format_rgba8', VDP_RPU_SURFACE_FORMAT_RGBA8);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_format_depth16', VDP_RPU_SURFACE_FORMAT_DEPTH16);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_usage_color', VDP_RPU_SURFACE_USAGE_COLOR);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_usage_depth', VDP_RPU_SURFACE_USAGE_DEPTH);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_usage_texture', VDP_RPU_SURFACE_USAGE_TEXTURE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_pass_color_clear', VDP_RPU_PASS_COLOR_CLEAR);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_pass_depth_clear', VDP_RPU_PASS_DEPTH_CLEAR);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_pass_color_store', VDP_RPU_PASS_COLOR_STORE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_pass_depth_store', VDP_RPU_PASS_DEPTH_STORE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_blend_none', VDP_RPU_BLEND_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_blend_alpha', VDP_RPU_BLEND_ALPHA);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_blend_add', VDP_RPU_BLEND_ADD);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_depth_none', VDP_RPU_DEPTH_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_depth_less', VDP_RPU_DEPTH_LESS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_depth_lequal', VDP_RPU_DEPTH_LEQUAL);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_cull_none', VDP_RPU_CULL_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_cull_back', VDP_RPU_CULL_BACK);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_cull_front', VDP_RPU_CULL_FRONT);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_pipe_depth_write', VDP_RPU_PIPE_DEPTH_WRITE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_pipe_color_write_rgba', VDP_RPU_PIPE_COLOR_WRITE_MASK);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_filter_nearest', VDP_RPU_FILTER_NEAREST);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_filter_linear', VDP_RPU_FILTER_LINEAR);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_wrap_clamp', VDP_RPU_WRAP_CLAMP);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_wrap_repeat', VDP_RPU_WRAP_REPEAT);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_prim_triangles', VDP_RPU_PRIM_TRIANGLES);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_prim_triangle_strip', VDP_RPU_PRIM_TRIANGLE_STRIP);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_prim_lines', VDP_RPU_PRIM_LINES);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_prim_points', VDP_RPU_PRIM_POINTS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_index_none', VDP_RPU_INDEX_NONE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_index_u16', VDP_RPU_INDEX_U16);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_index_u32', VDP_RPU_INDEX_U32);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_v2_c4', VDP_RPU_LAYOUT_V2_C4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_v2_t2_c4', VDP_RPU_LAYOUT_V2_T2_C4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_v3_c4', VDP_RPU_LAYOUT_V3_C4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_v3_t2_c4', VDP_RPU_LAYOUT_V3_T2_C4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_v3_n3_c4', VDP_RPU_LAYOUT_V3_N3_C4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_v3_n3_t2_c4', VDP_RPU_LAYOUT_V3_N3_T2_C4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_v3_n3_t2_c4_j4_w4', VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_i_affine2_trect_c4', VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_i_mat4_c4', VDP_RPU_LAYOUT_I_MAT4_C4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_shader_v2_c4', VDP_RPU_SHADER_V2_C4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_shader_v2_t2_c4', VDP_RPU_SHADER_V2_T2_C4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_shader_v3_c4_c0', VDP_RPU_SHADER_V3_C4_C0);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_shader_v3_t2_c4_c0', VDP_RPU_SHADER_V3_T2_C4_C0);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_shader_v3_n3_t2_c4_c0_c1', VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1', VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_shader_v2_t2_c4_i_affine2', VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_shader_v3_c4_i_mat4', VDP_RPU_SHADER_V3_C4_I_MAT4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_constant_source_xf_q16', VDP_RPU_CONSTANT_SOURCE_XF_Q16);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_constant_source_lpu_raw', VDP_RPU_CONSTANT_SOURCE_LPU_RAW);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_constant_source_mfu_q16', VDP_RPU_CONSTANT_SOURCE_MFU_Q16);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_constant_source_jtu_q16', VDP_RPU_CONSTANT_SOURCE_JTU_Q16);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_system', VDP_RD_SURFACE_SYSTEM);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_primary', VDP_RD_SURFACE_PRIMARY);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_secondary', VDP_RD_SURFACE_SECONDARY);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_world', 0);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ui', 1);
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ide', 2);

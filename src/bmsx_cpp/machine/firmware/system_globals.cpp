@@ -4,6 +4,12 @@
 #include "machine/devices/geometry/contracts.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/vdp/contracts.h"
+#include "machine/devices/vdp/registers.h"
+#include "machine/devices/vdp/rpu.h"
+#include "machine/devices/vdp/xf.h"
+#include "machine/devices/vdp/jtu.h"
+#include "machine/devices/vdp/mfu.h"
+#include "machine/devices/vdp/lpu.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/timing/constants.h"
 #include "rompack/format.h"
@@ -95,6 +101,107 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_vdp_fault_submit_state", valueNumber(static_cast<double>(VDP_FAULT_SUBMIT_STATE)));
 	runtime.setGlobal("sys_vdp_fault_cmd_bad_doorbell", valueNumber(static_cast<double>(VDP_FAULT_CMD_BAD_DOORBELL)));
 	runtime.setGlobal("sys_vdp_fault_submit_busy", valueNumber(static_cast<double>(VDP_FAULT_SUBMIT_BUSY)));
+
+	runtime.setGlobal("sys_vdp_xf_packet_kind", valueNumber(static_cast<double>(VDP_XF_PACKET_KIND)));
+	runtime.setGlobal("sys_vdp_xf_matrix_words", valueNumber(static_cast<double>(VDP_XF_MATRIX_WORDS)));
+	runtime.setGlobal("sys_vdp_jtu_packet_kind", valueNumber(static_cast<double>(VDP_JTU_PACKET_KIND)));
+	runtime.setGlobal("sys_vdp_jtu_matrix_words", valueNumber(static_cast<double>(VDP_JTU_MATRIX_WORDS)));
+	runtime.setGlobal("sys_vdp_mfu_packet_kind", valueNumber(static_cast<double>(VDP_MFU_PACKET_KIND)));
+	runtime.setGlobal("sys_vdp_lpu_packet_kind", valueNumber(static_cast<double>(VDP_LPU_PACKET_KIND)));
+
+	runtime.setGlobal("sys_vdp_pkt_end", valueNumber(static_cast<double>(VDP_PKT_END)));
+	runtime.setGlobal("sys_rpu_packet_kind", valueNumber(static_cast<double>(VDP_RPU_PACKET_KIND)));
+	runtime.setGlobal("sys_rpu_op_buffer_define", valueNumber(static_cast<double>(VDP_RPU_OP_BUFFER_DEFINE)));
+	runtime.setGlobal("sys_rpu_op_buffer_upload_dma", valueNumber(static_cast<double>(VDP_RPU_OP_BUFFER_UPLOAD_DMA)));
+	runtime.setGlobal("sys_rpu_op_buffer_upload_inline", valueNumber(static_cast<double>(VDP_RPU_OP_BUFFER_UPLOAD_INLINE)));
+	runtime.setGlobal("sys_rpu_op_buffer_discard", valueNumber(static_cast<double>(VDP_RPU_OP_BUFFER_DISCARD)));
+	runtime.setGlobal("sys_rpu_op_surface_define", valueNumber(static_cast<double>(VDP_RPU_OP_SURFACE_DEFINE)));
+	runtime.setGlobal("sys_rpu_op_constant_bank_define", valueNumber(static_cast<double>(VDP_RPU_OP_CONSTANT_BANK_DEFINE)));
+	runtime.setGlobal("sys_rpu_op_constant_upload_dma", valueNumber(static_cast<double>(VDP_RPU_OP_CONSTANT_UPLOAD_DMA)));
+	runtime.setGlobal("sys_rpu_op_constant_upload_inline", valueNumber(static_cast<double>(VDP_RPU_OP_CONSTANT_UPLOAD_INLINE)));
+	runtime.setGlobal("sys_rpu_op_constant_upload_device", valueNumber(static_cast<double>(VDP_RPU_OP_CONSTANT_UPLOAD_DEVICE)));
+	runtime.setGlobal("sys_rpu_op_begin_pass", valueNumber(static_cast<double>(VDP_RPU_OP_BEGIN_PASS)));
+	runtime.setGlobal("sys_rpu_op_end_pass", valueNumber(static_cast<double>(VDP_RPU_OP_END_PASS)));
+	runtime.setGlobal("sys_rpu_op_begin_draw", valueNumber(static_cast<double>(VDP_RPU_OP_BEGIN_DRAW)));
+	runtime.setGlobal("sys_rpu_op_bind_stream", valueNumber(static_cast<double>(VDP_RPU_OP_BIND_STREAM)));
+	runtime.setGlobal("sys_rpu_op_bind_constants", valueNumber(static_cast<double>(VDP_RPU_OP_BIND_CONSTANTS)));
+	runtime.setGlobal("sys_rpu_op_bind_texture", valueNumber(static_cast<double>(VDP_RPU_OP_BIND_TEXTURE)));
+	runtime.setGlobal("sys_rpu_op_end_draw", valueNumber(static_cast<double>(VDP_RPU_OP_END_DRAW)));
+	runtime.setGlobal("sys_rpu_words_buffer_define", valueNumber(static_cast<double>(VDP_RPU_BUFFER_DEFINE_WORDS)));
+	runtime.setGlobal("sys_rpu_words_buffer_upload_dma", valueNumber(static_cast<double>(VDP_RPU_BUFFER_UPLOAD_DMA_WORDS)));
+	runtime.setGlobal("sys_rpu_words_buffer_upload_inline_min", valueNumber(static_cast<double>(VDP_RPU_BUFFER_UPLOAD_INLINE_MIN_WORDS)));
+	runtime.setGlobal("sys_rpu_words_buffer_discard", valueNumber(static_cast<double>(VDP_RPU_BUFFER_DISCARD_WORDS)));
+	runtime.setGlobal("sys_rpu_words_surface_define", valueNumber(static_cast<double>(VDP_RPU_SURFACE_DEFINE_WORDS)));
+	runtime.setGlobal("sys_rpu_words_constant_bank_define", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_BANK_DEFINE_WORDS)));
+	runtime.setGlobal("sys_rpu_words_constant_upload_dma", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_UPLOAD_DMA_WORDS)));
+	runtime.setGlobal("sys_rpu_words_constant_upload_inline_min", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_UPLOAD_INLINE_MIN_WORDS)));
+	runtime.setGlobal("sys_rpu_words_constant_upload_device", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_UPLOAD_DEVICE_WORDS)));
+	runtime.setGlobal("sys_rpu_words_begin_pass", valueNumber(static_cast<double>(VDP_RPU_BEGIN_PASS_WORDS)));
+	runtime.setGlobal("sys_rpu_words_end_pass", valueNumber(static_cast<double>(VDP_RPU_END_PASS_WORDS)));
+	runtime.setGlobal("sys_rpu_words_begin_draw", valueNumber(static_cast<double>(VDP_RPU_BEGIN_DRAW_WORDS)));
+	runtime.setGlobal("sys_rpu_words_bind_stream", valueNumber(static_cast<double>(VDP_RPU_BIND_STREAM_WORDS)));
+	runtime.setGlobal("sys_rpu_words_bind_constants", valueNumber(static_cast<double>(VDP_RPU_BIND_CONSTANTS_WORDS)));
+	runtime.setGlobal("sys_rpu_words_bind_texture", valueNumber(static_cast<double>(VDP_RPU_BIND_TEXTURE_WORDS)));
+	runtime.setGlobal("sys_rpu_words_end_draw", valueNumber(static_cast<double>(VDP_RPU_END_DRAW_WORDS)));
+	runtime.setGlobal("sys_rpu_resource_none", valueNumber(static_cast<double>(VDP_RPU_RESOURCE_NONE)));
+	runtime.setGlobal("sys_rpu_usage_vertex", valueNumber(static_cast<double>(VDP_RPU_BUFFER_USAGE_VERTEX)));
+	runtime.setGlobal("sys_rpu_usage_index", valueNumber(static_cast<double>(VDP_RPU_BUFFER_USAGE_INDEX)));
+	runtime.setGlobal("sys_rpu_usage_constant", valueNumber(static_cast<double>(VDP_RPU_BUFFER_USAGE_CONSTANT)));
+	runtime.setGlobal("sys_rpu_surface_format_rgba8", valueNumber(static_cast<double>(VDP_RPU_SURFACE_FORMAT_RGBA8)));
+	runtime.setGlobal("sys_rpu_surface_format_depth16", valueNumber(static_cast<double>(VDP_RPU_SURFACE_FORMAT_DEPTH16)));
+	runtime.setGlobal("sys_rpu_surface_usage_color", valueNumber(static_cast<double>(VDP_RPU_SURFACE_USAGE_COLOR)));
+	runtime.setGlobal("sys_rpu_surface_usage_depth", valueNumber(static_cast<double>(VDP_RPU_SURFACE_USAGE_DEPTH)));
+	runtime.setGlobal("sys_rpu_surface_usage_texture", valueNumber(static_cast<double>(VDP_RPU_SURFACE_USAGE_TEXTURE)));
+	runtime.setGlobal("sys_rpu_pass_color_clear", valueNumber(static_cast<double>(VDP_RPU_PASS_COLOR_CLEAR)));
+	runtime.setGlobal("sys_rpu_pass_depth_clear", valueNumber(static_cast<double>(VDP_RPU_PASS_DEPTH_CLEAR)));
+	runtime.setGlobal("sys_rpu_pass_color_store", valueNumber(static_cast<double>(VDP_RPU_PASS_COLOR_STORE)));
+	runtime.setGlobal("sys_rpu_pass_depth_store", valueNumber(static_cast<double>(VDP_RPU_PASS_DEPTH_STORE)));
+	runtime.setGlobal("sys_rpu_blend_none", valueNumber(static_cast<double>(VDP_RPU_BLEND_NONE)));
+	runtime.setGlobal("sys_rpu_blend_alpha", valueNumber(static_cast<double>(VDP_RPU_BLEND_ALPHA)));
+	runtime.setGlobal("sys_rpu_blend_add", valueNumber(static_cast<double>(VDP_RPU_BLEND_ADD)));
+	runtime.setGlobal("sys_rpu_depth_none", valueNumber(static_cast<double>(VDP_RPU_DEPTH_NONE)));
+	runtime.setGlobal("sys_rpu_depth_less", valueNumber(static_cast<double>(VDP_RPU_DEPTH_LESS)));
+	runtime.setGlobal("sys_rpu_depth_lequal", valueNumber(static_cast<double>(VDP_RPU_DEPTH_LEQUAL)));
+	runtime.setGlobal("sys_rpu_cull_none", valueNumber(static_cast<double>(VDP_RPU_CULL_NONE)));
+	runtime.setGlobal("sys_rpu_cull_back", valueNumber(static_cast<double>(VDP_RPU_CULL_BACK)));
+	runtime.setGlobal("sys_rpu_cull_front", valueNumber(static_cast<double>(VDP_RPU_CULL_FRONT)));
+	runtime.setGlobal("sys_rpu_pipe_depth_write", valueNumber(static_cast<double>(VDP_RPU_PIPE_DEPTH_WRITE)));
+	runtime.setGlobal("sys_rpu_pipe_color_write_rgba", valueNumber(static_cast<double>(VDP_RPU_PIPE_COLOR_WRITE_MASK)));
+	runtime.setGlobal("sys_rpu_filter_nearest", valueNumber(static_cast<double>(VDP_RPU_FILTER_NEAREST)));
+	runtime.setGlobal("sys_rpu_filter_linear", valueNumber(static_cast<double>(VDP_RPU_FILTER_LINEAR)));
+	runtime.setGlobal("sys_rpu_wrap_clamp", valueNumber(static_cast<double>(VDP_RPU_WRAP_CLAMP)));
+	runtime.setGlobal("sys_rpu_wrap_repeat", valueNumber(static_cast<double>(VDP_RPU_WRAP_REPEAT)));
+	runtime.setGlobal("sys_rpu_prim_triangles", valueNumber(static_cast<double>(VDP_RPU_PRIM_TRIANGLES)));
+	runtime.setGlobal("sys_rpu_prim_triangle_strip", valueNumber(static_cast<double>(VDP_RPU_PRIM_TRIANGLE_STRIP)));
+	runtime.setGlobal("sys_rpu_prim_lines", valueNumber(static_cast<double>(VDP_RPU_PRIM_LINES)));
+	runtime.setGlobal("sys_rpu_prim_points", valueNumber(static_cast<double>(VDP_RPU_PRIM_POINTS)));
+	runtime.setGlobal("sys_rpu_index_none", valueNumber(static_cast<double>(VDP_RPU_INDEX_NONE)));
+	runtime.setGlobal("sys_rpu_index_u16", valueNumber(static_cast<double>(VDP_RPU_INDEX_U16)));
+	runtime.setGlobal("sys_rpu_index_u32", valueNumber(static_cast<double>(VDP_RPU_INDEX_U32)));
+	runtime.setGlobal("sys_rpu_layout_v2_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_V2_C4)));
+	runtime.setGlobal("sys_rpu_layout_v2_t2_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_V2_T2_C4)));
+	runtime.setGlobal("sys_rpu_layout_v3_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_V3_C4)));
+	runtime.setGlobal("sys_rpu_layout_v3_t2_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_V3_T2_C4)));
+	runtime.setGlobal("sys_rpu_layout_v3_n3_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_V3_N3_C4)));
+	runtime.setGlobal("sys_rpu_layout_v3_n3_t2_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_V3_N3_T2_C4)));
+	runtime.setGlobal("sys_rpu_layout_v3_n3_t2_c4_j4_w4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4)));
+	runtime.setGlobal("sys_rpu_layout_i_affine2_trect_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4)));
+	runtime.setGlobal("sys_rpu_layout_i_mat4_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_I_MAT4_C4)));
+	runtime.setGlobal("sys_rpu_shader_v2_c4", valueNumber(static_cast<double>(VDP_RPU_SHADER_V2_C4)));
+	runtime.setGlobal("sys_rpu_shader_v2_t2_c4", valueNumber(static_cast<double>(VDP_RPU_SHADER_V2_T2_C4)));
+	runtime.setGlobal("sys_rpu_shader_v3_c4_c0", valueNumber(static_cast<double>(VDP_RPU_SHADER_V3_C4_C0)));
+	runtime.setGlobal("sys_rpu_shader_v3_t2_c4_c0", valueNumber(static_cast<double>(VDP_RPU_SHADER_V3_T2_C4_C0)));
+	runtime.setGlobal("sys_rpu_shader_v3_n3_t2_c4_c0_c1", valueNumber(static_cast<double>(VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1)));
+	runtime.setGlobal("sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1", valueNumber(static_cast<double>(VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1)));
+	runtime.setGlobal("sys_rpu_shader_v2_t2_c4_i_affine2", valueNumber(static_cast<double>(VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2)));
+	runtime.setGlobal("sys_rpu_shader_v3_c4_i_mat4", valueNumber(static_cast<double>(VDP_RPU_SHADER_V3_C4_I_MAT4)));
+	runtime.setGlobal("sys_rpu_constant_source_xf_q16", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_SOURCE_XF_Q16)));
+	runtime.setGlobal("sys_rpu_constant_source_lpu_raw", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_SOURCE_LPU_RAW)));
+	runtime.setGlobal("sys_rpu_constant_source_mfu_q16", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_SOURCE_MFU_Q16)));
+	runtime.setGlobal("sys_rpu_constant_source_jtu_q16", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_SOURCE_JTU_Q16)));
+	runtime.setGlobal("sys_rpu_surface_system", valueNumber(static_cast<double>(VDP_RD_SURFACE_SYSTEM)));
+	runtime.setGlobal("sys_rpu_surface_primary", valueNumber(static_cast<double>(VDP_RD_SURFACE_PRIMARY)));
+	runtime.setGlobal("sys_rpu_surface_secondary", valueNumber(static_cast<double>(VDP_RD_SURFACE_SECONDARY)));
 	runtime.setGlobal("sys_vdp_layer_world", valueNumber(0.0));
 	runtime.setGlobal("sys_vdp_layer_ui", valueNumber(1.0));
 	runtime.setGlobal("sys_vdp_layer_ide", valueNumber(2.0));

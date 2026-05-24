@@ -159,6 +159,39 @@ std::vector<f64>* passDepthTarget(const VdpRpuFrameOutput& frame, size_t passInd
 	return &g_rpuSoftware.surfaces[surfaceId].depth;
 }
 
+void setDefaultAttribute(u32 attributeId) {
+	SoftwareRpuContext& ctx = g_rpuSoftware;
+	ctx.attr[0] = 0.0; ctx.attr[1] = 0.0; ctx.attr[2] = 0.0; ctx.attr[3] = 1.0;
+	switch (attributeId) {
+		case VDP_RPU_ATTR_COLOR:
+		case VDP_RPU_ATTR_INSTANCE_COLOR:
+			ctx.attr[0] = 1.0; ctx.attr[1] = 1.0; ctx.attr[2] = 1.0;
+			break;
+		case VDP_RPU_ATTR_JOINTS:
+			ctx.attr[3] = 0.0;
+			ctx.joint = {0u, 0u, 0u, 0u};
+			break;
+		case VDP_RPU_ATTR_NORMAL:
+			ctx.attr[2] = 1.0;
+			break;
+		case VDP_RPU_ATTR_WEIGHTS:
+			ctx.attr[0] = 1.0; ctx.attr[3] = 0.0;
+			break;
+		case VDP_RPU_ATTR_INSTANCE0:
+			ctx.attr[0] = 1.0; ctx.attr[3] = 0.0;
+			break;
+		case VDP_RPU_ATTR_INSTANCE1:
+			ctx.attr[1] = 1.0; ctx.attr[3] = 0.0;
+			break;
+		case VDP_RPU_ATTR_INSTANCE2:
+			ctx.attr[2] = 1.0; ctx.attr[3] = 0.0;
+			break;
+		case VDP_RPU_ATTR_INSTANCE_UVRECT:
+			ctx.attr[2] = 1.0;
+			break;
+	}
+}
+
 void fillColorTarget(SoftwareRpuTarget& target, u32 color) {
 	const u32 packed = packArgb(colorByteR(color), colorByteG(color), colorByteB(color), colorByteA(color));
 	for (i32 y = 0; y < target.height; ++y) {
@@ -174,14 +207,13 @@ void readAttribute(const VdpRpuFrameOutput& frame, size_t bindingIndex, u32 elem
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	const VdpRpuStreamLayoutSpec& layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[bindingIndex]);
 	const u16 refIndex = commands.streamBufferRef[bindingIndex];
+	setDefaultAttribute(attributeId);
+	if (refIndex == VDP_RPU_REF_NONE) {
+		return;
+	}
 	const VdpRpuFrameBufferRefs& refs = frame.resources.bufferRefs;
 	const u8* bytes = refs.bytes[refIndex];
-	const u32 elementOffset = refs.byteOffset[refIndex] + elementIndex * layout.byteStride;
-	ctx.attr[0] = 0.0;
-	ctx.attr[1] = 0.0;
-	ctx.attr[2] = 0.0;
-	ctx.attr[3] = 1.0;
-	ctx.joint = {0u, 0u, 0u, 0u};
+	const u32 elementOffset = refs.byteOffset[refIndex] + commands.streamByteOffset[bindingIndex] - refs.sourceByteOffset[refIndex] + elementIndex * layout.byteStride;
 	for (size_t index = 0; index < layout.attributeCount; ++index) {
 		const VdpRpuStreamAttributeSpec& spec = layout.attributes[index];
 		if (spec.attribute != attributeId) continue;
@@ -211,20 +243,12 @@ void readAttribute(const VdpRpuFrameOutput& frame, size_t bindingIndex, u32 elem
 	}
 }
 
-size_t streamBinding(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 streamSlot) {
-	const auto& commands = frame.commands;
-	const size_t bindingEnd = commands.drawFirstStreamBinding[drawIndex] + commands.drawStreamBindingCount[drawIndex];
-	for (size_t bindingIndex = commands.drawFirstStreamBinding[drawIndex]; bindingIndex < bindingEnd; ++bindingIndex) {
-		if (commands.streamSlot[bindingIndex] == streamSlot) return bindingIndex;
-	}
-	return bindingEnd;
-}
-
-size_t findConstantBinding(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 slot) {
-	const auto& commands = frame.commands;
-	const size_t bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
-	for (size_t bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; ++bindingIndex) {
-		if (commands.constantBindingSlot[bindingIndex] == slot) return bindingIndex;
+size_t findBindingSlot(const u8* slots, size_t firstBinding, size_t bindingCount, u32 slot) {
+	const size_t bindingEnd = firstBinding + bindingCount;
+	for (size_t bindingIndex = firstBinding; bindingIndex < bindingEnd; ++bindingIndex) {
+		if (slots[bindingIndex] == slot) {
+			return bindingIndex;
+		}
 	}
 	return bindingEnd;
 }
@@ -281,11 +305,30 @@ void applySkin(const VdpRpuFrameOutput& frame, size_t bindingIndex, f64 x, f64 y
 	ctx.attr[6] = snz;
 }
 
+void applyDefaultSkin(f64 x, f64 y, f64 z, f64 nx, f64 ny, f64 nz) {
+	SoftwareRpuContext& ctx = g_rpuSoftware;
+	const f64 weightSum = ctx.attr[16] + ctx.attr[17] + ctx.attr[18] + ctx.attr[19];
+	ctx.attr[0] = x * weightSum;
+	ctx.attr[1] = y * weightSum;
+	ctx.attr[2] = z * weightSum;
+	ctx.attr[3] = weightSum;
+	ctx.attr[4] = nx * weightSum;
+	ctx.attr[5] = ny * weightSum;
+	ctx.attr[6] = nz * weightSum;
+}
+
 void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuShaderVariantSpec& shaderVariant, u32 vertexIndex, u32 instanceIndex, size_t outIndex, i32 width, i32 height) {
 	SoftwareRpuContext& ctx = g_rpuSoftware;
-	const size_t bindingEnd = frame.commands.drawFirstStreamBinding[drawIndex] + frame.commands.drawStreamBindingCount[drawIndex];
-	const size_t vertexBinding = streamBinding(frame, drawIndex, 0u);
-	const size_t instanceBinding = streamBinding(frame, drawIndex, 1u);
+	const VdpRpuCommandBuffer& commands = frame.commands;
+	const size_t streamFirstBinding = commands.drawFirstStreamBinding[drawIndex];
+	const size_t streamBindingCount = commands.drawStreamBindingCount[drawIndex];
+	const size_t bindingEnd = streamFirstBinding + streamBindingCount;
+	const size_t constantFirstBinding = commands.drawFirstConstantBinding[drawIndex];
+	const size_t constantBindingCount = commands.drawConstantBindingCount[drawIndex];
+	const size_t constantBindingEnd = constantFirstBinding + constantBindingCount;
+	const u8* constantBindingSlot = commands.constantBindingSlot.data();
+	const size_t vertexBinding = findBindingSlot(commands.streamSlot.data(), streamFirstBinding, streamBindingCount, 0u);
+	const size_t instanceBinding = findBindingSlot(commands.streamSlot.data(), streamFirstBinding, streamBindingCount, 1u);
 	f64 px = 0.0;
 	f64 py = 0.0;
 	f64 pz = 0.0;
@@ -299,6 +342,11 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 	f64 nx = 0.0;
 	f64 ny = 0.0;
 	f64 nz = 1.0;
+	ctx.attr[16] = 1.0;
+	ctx.attr[17] = 0.0;
+	ctx.attr[18] = 0.0;
+	ctx.attr[19] = 0.0;
+	ctx.joint = {0u, 0u, 0u, 0u};
 	if (vertexBinding != bindingEnd) {
 		readAttribute(frame, vertexBinding, vertexIndex, VDP_RPU_ATTR_POS);
 		px = ctx.attr[0]; py = ctx.attr[1]; pz = ctx.attr[2];
@@ -309,19 +357,20 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 		readAttribute(frame, vertexBinding, vertexIndex, VDP_RPU_ATTR_NORMAL);
 		nx = ctx.attr[0]; ny = ctx.attr[1]; nz = ctx.attr[2];
 		readAttribute(frame, vertexBinding, vertexIndex, VDP_RPU_ATTR_JOINTS);
-		const std::array<u8, 4> joints = ctx.joint;
 		readAttribute(frame, vertexBinding, vertexIndex, VDP_RPU_ATTR_WEIGHTS);
 		ctx.attr[16] = ctx.attr[0]; ctx.attr[17] = ctx.attr[1]; ctx.attr[18] = ctx.attr[2]; ctx.attr[19] = ctx.attr[3];
-		ctx.joint = joints;
 	}
 	if (shaderVariant.jointConstantSlot != VDP_RPU_RESOURCE_NONE) {
-		const size_t jointBinding = findConstantBinding(frame, drawIndex, shaderVariant.jointConstantSlot);
-		if (jointBinding != frame.commands.drawFirstConstantBinding[drawIndex] + frame.commands.drawConstantBindingCount[drawIndex]) {
+		const size_t jointBinding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, shaderVariant.jointConstantSlot);
+		if (jointBinding == constantBindingEnd || commands.constantBank[jointBinding] == VDP_RPU_REF_NONE) {
+			applyDefaultSkin(px, py, pz, nx, ny, nz);
+		} else {
 			applySkin(frame, jointBinding, px, py, pz, nx, ny, nz);
-			px = ctx.attr[0]; py = ctx.attr[1]; pz = ctx.attr[2]; pw = ctx.attr[3];
-			nx = ctx.attr[4]; ny = ctx.attr[5]; nz = ctx.attr[6];
 		}
+		px = ctx.attr[0]; py = ctx.attr[1]; pz = ctx.attr[2]; pw = ctx.attr[3];
+		nx = ctx.attr[4]; ny = ctx.attr[5]; nz = ctx.attr[6];
 	}
+	bool applyInstanceColor = false;
 	if (shaderVariant.instanceMode == VDP_RPU_INSTANCE_MODE_AFFINE2 && instanceBinding != bindingEnd) {
 		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE0);
 		const f64 i0x = ctx.attr[0]; const f64 i0y = ctx.attr[1]; const f64 i0z = ctx.attr[2]; const f64 i0w = ctx.attr[3];
@@ -329,8 +378,6 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 		const f64 i1x = ctx.attr[0]; const f64 i1y = ctx.attr[1]; const f64 i1z = ctx.attr[2];
 		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE_UVRECT);
 		const f64 uvx = ctx.attr[0]; const f64 uvy = ctx.attr[1]; const f64 uvz = ctx.attr[2]; const f64 uvw = ctx.attr[3];
-		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE_COLOR);
-		const f64 cr = ctx.attr[0]; const f64 cg = ctx.attr[1]; const f64 cb = ctx.attr[2]; const f64 ca = ctx.attr[3];
 		const f64 oldX = px;
 		const f64 oldY = py;
 		px = i0x * oldX + i0y * oldY + i0z;
@@ -339,7 +386,7 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 		pw = 1.0;
 		u = uvx + u * uvz;
 		v = uvy + v * uvw;
-		r *= cr; g *= cg; b *= cb; a *= ca;
+		applyInstanceColor = true;
 	} else if (shaderVariant.instanceMode == VDP_RPU_INSTANCE_MODE_MAT4 && instanceBinding != bindingEnd) {
 		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE0);
 		const f64 m00 = ctx.attr[0]; const f64 m10 = ctx.attr[1]; const f64 m20 = ctx.attr[2]; const f64 m30 = ctx.attr[3];
@@ -349,25 +396,27 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 		const f64 m02 = ctx.attr[0]; const f64 m12 = ctx.attr[1]; const f64 m22 = ctx.attr[2]; const f64 m32 = ctx.attr[3];
 		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE3);
 		const f64 m03 = ctx.attr[0]; const f64 m13 = ctx.attr[1]; const f64 m23 = ctx.attr[2]; const f64 m33 = ctx.attr[3];
-		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE_COLOR);
-		const f64 cr = ctx.attr[0]; const f64 cg = ctx.attr[1]; const f64 cb = ctx.attr[2]; const f64 ca = ctx.attr[3];
 		const f64 oldX = px; const f64 oldY = py; const f64 oldZ = pz; const f64 oldW = pw;
 		px = m00 * oldX + m01 * oldY + m02 * oldZ + m03 * oldW;
 		py = m10 * oldX + m11 * oldY + m12 * oldZ + m13 * oldW;
 		pz = m20 * oldX + m21 * oldY + m22 * oldZ + m23 * oldW;
 		pw = m30 * oldX + m31 * oldY + m32 * oldZ + m33 * oldW;
-		r *= cr; g *= cg; b *= cb; a *= ca;
+		applyInstanceColor = true;
+	}
+	if (applyInstanceColor) {
+		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE_COLOR);
+		r *= ctx.attr[0]; g *= ctx.attr[1]; b *= ctx.attr[2]; a *= ctx.attr[3];
 	}
 	if (shaderVariant.usesC0 != 0u) {
-		const size_t c0Binding = findConstantBinding(frame, drawIndex, 0u);
-		if (c0Binding != frame.commands.drawFirstConstantBinding[drawIndex] + frame.commands.drawConstantBindingCount[drawIndex]) {
+		const size_t c0Binding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, 0u);
+		if (c0Binding != constantBindingEnd && commands.constantBank[c0Binding] != VDP_RPU_REF_NONE) {
 			transformMatrix(frame, c0Binding, px, py, pz);
 			px = ctx.attr[0]; py = ctx.attr[1]; pz = ctx.attr[2]; pw = ctx.attr[3];
 		}
 	}
 	if (shaderVariant.lightingConstantSlot != VDP_RPU_RESOURCE_NONE) {
-		const size_t c1Binding = findConstantBinding(frame, drawIndex, shaderVariant.lightingConstantSlot);
-		if (c1Binding != frame.commands.drawFirstConstantBinding[drawIndex] + frame.commands.drawConstantBindingCount[drawIndex]) {
+		const size_t c1Binding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, shaderVariant.lightingConstantSlot);
+		if (c1Binding != constantBindingEnd && commands.constantBank[c1Binding] != VDP_RPU_REF_NONE) {
 			const f64 lx = constantF32(frame, c1Binding, 0u);
 			const f64 ly = constantF32(frame, c1Binding, 1u);
 			const f64 lz = constantF32(frame, c1Binding, 2u);
@@ -399,9 +448,12 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 u32 readIndex(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 index) {
 	const auto& commands = frame.commands;
 	const u16 refIndex = commands.drawIndexBufferRef[drawIndex];
+	if (refIndex == VDP_RPU_REF_NONE) {
+		return index;
+	}
 	const auto& refs = frame.resources.bufferRefs;
 	const u8* bytes = refs.bytes[refIndex];
-	const u32 offset = refs.byteOffset[refIndex] + index * (commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_U16 ? 2u : 4u);
+	const u32 offset = refs.byteOffset[refIndex] + commands.drawIndexByteOffset[drawIndex] - refs.sourceByteOffset[refIndex] + index * (commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_U16 ? 2u : 4u);
 	return commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_U16 ? readU16(bytes, offset) : readU32(bytes, offset);
 }
 
@@ -440,10 +492,9 @@ void sampleTexture(GameView& view, const VdpRpuFrameOutput& frame, size_t drawIn
 		if (sx >= width) sx = width - 1;
 		if (sy >= height) sy = height - 1;
 		const size_t offset = static_cast<size_t>(sy) * slot.stride + static_cast<size_t>(sx) * 4u;
-		const auto& srgbToLinear = srgbToLinearLut();
-		ctx.attr[0] = static_cast<f64>(srgbToLinear[slot.pixels[offset]]) * (1.0 / 255.0);
-		ctx.attr[1] = static_cast<f64>(srgbToLinear[slot.pixels[offset + 1u]]) * (1.0 / 255.0);
-		ctx.attr[2] = static_cast<f64>(srgbToLinear[slot.pixels[offset + 2u]]) * (1.0 / 255.0);
+		ctx.attr[0] = static_cast<f64>(slot.pixels[offset]) * (1.0 / 255.0);
+		ctx.attr[1] = static_cast<f64>(slot.pixels[offset + 1u]) * (1.0 / 255.0);
+		ctx.attr[2] = static_cast<f64>(slot.pixels[offset + 2u]) * (1.0 / 255.0);
 		ctx.attr[3] = static_cast<f64>(slot.pixels[offset + 3u]) * (1.0 / 255.0);
 		return;
 	}
@@ -601,18 +652,19 @@ void drawPoint(const VdpRpuFrameOutput& frame, size_t drawIndex, SoftwareRpuTarg
 	}
 }
 
-void drawCommand(GameView& view, const VdpRpuFrameOutput& frame, size_t drawIndex, SoftwareRpuTarget& target) {
+void drawCommand(GameView& view, const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCount, u32 instanceCount, u32 indexCount, SoftwareRpuTarget& target) {
 	const auto& commands = frame.commands;
 	const VdpRpuShaderVariantSpec& shaderVariant = resolveVdpRpuShaderVariantSpec(commands.drawShaderVariant[drawIndex]);
 	const size_t texture = shaderVariant.textureSlotCount == 0u ? commands.drawFirstTextureBinding[drawIndex] + commands.drawTextureBindingCount[drawIndex] : textureBinding(frame, drawIndex);
 	const u32 primitive = commands.drawPrimitive[drawIndex];
-	const u32 instanceCount = shaderVariant.instanceMode == VDP_RPU_INSTANCE_MODE_NONE ? 1u : commands.drawInstanceCount[drawIndex];
-	for (u32 instanceIndex = 0; instanceIndex < instanceCount; ++instanceIndex) {
+	const u32 drawnInstanceCount = shaderVariant.instanceMode == VDP_RPU_INSTANCE_MODE_NONE ? 1u : instanceCount;
+	const bool drawIndexed = commands.drawIndexType[drawIndex] != VDP_RPU_INDEX_NONE && commands.drawIndexBufferRef[drawIndex] != VDP_RPU_REF_NONE;
+	for (u32 instanceIndex = 0; instanceIndex < drawnInstanceCount; ++instanceIndex) {
 		if (primitive == VDP_RPU_PRIM_LINES) {
-			const u32 count = commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_NONE ? commands.drawVertexCount[drawIndex] : commands.drawIndexCount[drawIndex];
+			const u32 count = drawIndexed ? indexCount : vertexCount;
 			for (u32 vertex = 0; vertex + 1u < count; vertex += 2u) {
-				const u32 v0 = commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_NONE ? vertex : readIndex(frame, drawIndex, vertex);
-				const u32 v1 = commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_NONE ? vertex + 1u : readIndex(frame, drawIndex, vertex + 1u);
+				const u32 v0 = drawIndexed ? readIndex(frame, drawIndex, vertex) : vertex;
+				const u32 v1 = drawIndexed ? readIndex(frame, drawIndex, vertex + 1u) : vertex + 1u;
 				writeVertex(frame, drawIndex, shaderVariant, v0, instanceIndex, 0u, target.width, target.height);
 				writeVertex(frame, drawIndex, shaderVariant, v1, instanceIndex, 1u, target.width, target.height);
 				drawLine(frame, drawIndex, target);
@@ -620,24 +672,24 @@ void drawCommand(GameView& view, const VdpRpuFrameOutput& frame, size_t drawInde
 			continue;
 		}
 		if (primitive == VDP_RPU_PRIM_POINTS) {
-			const u32 count = commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_NONE ? commands.drawVertexCount[drawIndex] : commands.drawIndexCount[drawIndex];
+			const u32 count = drawIndexed ? indexCount : vertexCount;
 			for (u32 vertex = 0; vertex < count; ++vertex) {
-				const u32 v0 = commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_NONE ? vertex : readIndex(frame, drawIndex, vertex);
+				const u32 v0 = drawIndexed ? readIndex(frame, drawIndex, vertex) : vertex;
 				writeVertex(frame, drawIndex, shaderVariant, v0, instanceIndex, 0u, target.width, target.height);
 				drawPoint(frame, drawIndex, target);
 			}
 			continue;
 		}
-		const u32 count = commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_NONE ? commands.drawVertexCount[drawIndex] : commands.drawIndexCount[drawIndex];
+		const u32 count = drawIndexed ? indexCount : vertexCount;
 		const u32 triangleStep = primitive == VDP_RPU_PRIM_TRIANGLE_STRIP ? 1u : 3u;
 		const u32 triangleLimit = primitive == VDP_RPU_PRIM_TRIANGLE_STRIP ? count - 2u : count;
 		for (u32 vertex = 0; vertex < triangleLimit; vertex += triangleStep) {
 			const u32 i0 = vertex;
 			const u32 i1 = primitive == VDP_RPU_PRIM_TRIANGLE_STRIP && (vertex & 1u) != 0u ? vertex + 2u : vertex + 1u;
 			const u32 i2 = primitive == VDP_RPU_PRIM_TRIANGLE_STRIP && (vertex & 1u) != 0u ? vertex + 1u : vertex + 2u;
-			const u32 v0 = commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_NONE ? i0 : readIndex(frame, drawIndex, i0);
-			const u32 v1 = commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_NONE ? i1 : readIndex(frame, drawIndex, i1);
-			const u32 v2 = commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_NONE ? i2 : readIndex(frame, drawIndex, i2);
+			const u32 v0 = drawIndexed ? readIndex(frame, drawIndex, i0) : i0;
+			const u32 v1 = drawIndexed ? readIndex(frame, drawIndex, i1) : i1;
+			const u32 v2 = drawIndexed ? readIndex(frame, drawIndex, i2) : i2;
 			writeVertex(frame, drawIndex, shaderVariant, v0, instanceIndex, 0u, target.width, target.height);
 			writeVertex(frame, drawIndex, shaderVariant, v1, instanceIndex, 1u, target.width, target.height);
 			writeVertex(frame, drawIndex, shaderVariant, v2, instanceIndex, 2u, target.width, target.height);
@@ -663,10 +715,18 @@ void renderVdpRpuSoftwareFrame(SoftwareBackend& backend, GameView& view, const V
 		} else if (passIndex == 0u) {
 			std::fill(target.depth->begin(), target.depth->end(), SOFTWARE_RPU_DEFAULT_CLEAR_DEPTH);
 		}
-		const size_t firstDraw = commands.passFirstDraw[passIndex];
-		const size_t drawEnd = firstDraw + commands.passDrawCount[passIndex];
-		for (size_t drawIndex = firstDraw; drawIndex < drawEnd; ++drawIndex) {
-			drawCommand(view, frame, drawIndex, target);
+		const size_t firstBatch = commands.passFirstBatch[passIndex];
+		const size_t batchEnd = firstBatch + commands.passBatchCount[passIndex];
+		for (size_t batchIndex = firstBatch; batchIndex < batchEnd; ++batchIndex) {
+			drawCommand(
+				view,
+				frame,
+				commands.batchFirstDraw[batchIndex],
+				commands.batchVertexCount[batchIndex],
+				commands.batchInstanceCount[batchIndex],
+				commands.batchIndexCount[batchIndex],
+				target
+			);
 		}
 	}
 }

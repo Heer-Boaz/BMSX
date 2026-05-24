@@ -42,7 +42,6 @@ import {
 	type VdpRpuFrameOutput,
 	type VdpRpuShaderVariantSpec,
 } from '../../../machine/devices/vdp/rpu';
-import { SRGB_BYTE_TO_LINEAR_FLOAT } from '../color_space';
 import type { GameView } from '../../gameview';
 import type { VdpSlotTexturePixels } from '../../vdp/slot_textures';
 
@@ -197,15 +196,49 @@ function passDepthTarget(frame: VdpRpuFrameOutput, passIndex: number, defaultDep
 	return { depth: softwareRpuSurfaceDepth[surfaceId] as Float64Array, width: frame.resources.surfaceRefs.width[depthRef], height: frame.resources.surfaceRefs.height[depthRef] };
 }
 
+function setDefaultAttribute(attributeId: number): void {
+	attr[0] = 0; attr[1] = 0; attr[2] = 0; attr[3] = 1;
+	switch (attributeId) {
+		case VDP_RPU_ATTR_COLOR:
+		case VDP_RPU_ATTR_INSTANCE_COLOR:
+			attr[0] = 1; attr[1] = 1; attr[2] = 1;
+			break;
+		case VDP_RPU_ATTR_JOINTS:
+			attr[3] = 0;
+			attrJoint[0] = 0; attrJoint[1] = 0; attrJoint[2] = 0; attrJoint[3] = 0;
+			break;
+		case VDP_RPU_ATTR_NORMAL:
+			attr[2] = 1;
+			break;
+		case VDP_RPU_ATTR_WEIGHTS:
+			attr[0] = 1; attr[3] = 0;
+			break;
+		case VDP_RPU_ATTR_INSTANCE0:
+			attr[0] = 1; attr[3] = 0;
+			break;
+		case VDP_RPU_ATTR_INSTANCE1:
+			attr[1] = 1; attr[3] = 0;
+			break;
+		case VDP_RPU_ATTR_INSTANCE2:
+			attr[2] = 1; attr[3] = 0;
+			break;
+		case VDP_RPU_ATTR_INSTANCE_UVRECT:
+			attr[2] = 1;
+			break;
+	}
+}
+
 function readAttribute(frame: VdpRpuFrameOutput, bindingIndex: number, elementIndex: number, attributeId: number): void {
 	const commands = frame.commands;
 	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[bindingIndex]);
 	const refIndex = commands.streamBufferRef[bindingIndex];
+	setDefaultAttribute(attributeId);
+	if (refIndex === VDP_RPU_REF_NONE) {
+		return;
+	}
 	const refs = frame.resources.bufferRefs;
 	const bytes = refs.bytes[refIndex]!;
-	const elementOffset = refs.byteOffset[refIndex] + elementIndex * layout.byteStride;
-	attr[0] = 0; attr[1] = 0; attr[2] = 0; attr[3] = 1;
-	attrJoint[0] = 0; attrJoint[1] = 0; attrJoint[2] = 0; attrJoint[3] = 0;
+	const elementOffset = refs.byteOffset[refIndex] + commands.streamByteOffset[bindingIndex] - refs.sourceByteOffset[refIndex] + elementIndex * layout.byteStride;
 	for (let index = 0; index < layout.attributeCount; index += 1) {
 		const spec = layout.attributes[index];
 		if (spec.attribute !== attributeId) {
@@ -237,22 +270,10 @@ function readAttribute(frame: VdpRpuFrameOutput, bindingIndex: number, elementIn
 	}
 }
 
-function streamBinding(frame: VdpRpuFrameOutput, drawIndex: number, streamSlot: number): number {
-	const commands = frame.commands;
-	const bindingEnd = commands.drawFirstStreamBinding[drawIndex] + commands.drawStreamBindingCount[drawIndex];
-	for (let bindingIndex = commands.drawFirstStreamBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
-		if (commands.streamSlot[bindingIndex] === streamSlot) {
-			return bindingIndex;
-		}
-	}
-	return -1;
-}
-
-function findConstantBinding(frame: VdpRpuFrameOutput, drawIndex: number, slot: number): number {
-	const commands = frame.commands;
-	const bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
-	for (let bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
-		if (commands.constantBindingSlot[bindingIndex] === slot) {
+function findBindingSlot(slots: Uint8Array, firstBinding: number, bindingCount: number, slot: number): number {
+	const bindingEnd = firstBinding + bindingCount;
+	for (let bindingIndex = firstBinding; bindingIndex < bindingEnd; bindingIndex += 1) {
+		if (slots[bindingIndex] === slot) {
 			return bindingIndex;
 		}
 	}
@@ -315,9 +336,26 @@ function applySkin(frame: VdpRpuFrameOutput, bindingIndex: number, x: number, y:
 	attr[6] = snz;
 }
 
+function applyDefaultSkin(x: number, y: number, z: number, nx: number, ny: number, nz: number): void {
+	const weightSum = attr[16] + attr[17] + attr[18] + attr[19];
+	attr[0] = x * weightSum;
+	attr[1] = y * weightSum;
+	attr[2] = z * weightSum;
+	attr[3] = weightSum;
+	attr[4] = nx * weightSum;
+	attr[5] = ny * weightSum;
+	attr[6] = nz * weightSum;
+}
+
 function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant: VdpRpuShaderVariantSpec, vertexIndex: number, instanceIndex: number, outIndex: number, width: number, height: number): void {
-	const vertexBinding = streamBinding(frame, drawIndex, 0);
-	const instanceBinding = streamBinding(frame, drawIndex, 1);
+	const commands = frame.commands;
+	const streamFirstBinding = commands.drawFirstStreamBinding[drawIndex];
+	const streamBindingCount = commands.drawStreamBindingCount[drawIndex];
+	const constantFirstBinding = commands.drawFirstConstantBinding[drawIndex];
+	const constantBindingCount = commands.drawConstantBindingCount[drawIndex];
+	const constantBindingSlot = commands.constantBindingSlot;
+	const vertexBinding = findBindingSlot(commands.streamSlot, streamFirstBinding, streamBindingCount, 0);
+	const instanceBinding = findBindingSlot(commands.streamSlot, streamFirstBinding, streamBindingCount, 1);
 	let px = 0;
 	let py = 0;
 	let pz = 0;
@@ -331,6 +369,14 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 	let nx = 0;
 	let ny = 0;
 	let nz = 1;
+	attr[16] = 1;
+	attr[17] = 0;
+	attr[18] = 0;
+	attr[19] = 0;
+	attrJoint[0] = 0;
+	attrJoint[1] = 0;
+	attrJoint[2] = 0;
+	attrJoint[3] = 0;
 	if (vertexBinding >= 0) {
 		readAttribute(frame, vertexBinding, vertexIndex, VDP_RPU_ATTR_POS);
 		px = attr[0];
@@ -349,33 +395,28 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 		ny = attr[1];
 		nz = attr[2];
 		readAttribute(frame, vertexBinding, vertexIndex, VDP_RPU_ATTR_JOINTS);
-		const j0 = attrJoint[0];
-		const j1 = attrJoint[1];
-		const j2 = attrJoint[2];
-		const j3 = attrJoint[3];
 		readAttribute(frame, vertexBinding, vertexIndex, VDP_RPU_ATTR_WEIGHTS);
 		attr[16] = attr[0];
 		attr[17] = attr[1];
 		attr[18] = attr[2];
 		attr[19] = attr[3];
-		attrJoint[0] = j0;
-		attrJoint[1] = j1;
-		attrJoint[2] = j2;
-		attrJoint[3] = j3;
 	}
 	if (shaderVariant.jointConstantSlot !== VDP_RPU_RESOURCE_NONE) {
-		const jointBinding = findConstantBinding(frame, drawIndex, shaderVariant.jointConstantSlot);
-		if (jointBinding >= 0) {
+		const jointBinding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, shaderVariant.jointConstantSlot);
+		if (jointBinding < 0 || commands.constantBank[jointBinding] === VDP_RPU_REF_NONE) {
+			applyDefaultSkin(px, py, pz, nx, ny, nz);
+		} else {
 			applySkin(frame, jointBinding, px, py, pz, nx, ny, nz);
-			px = attr[0];
-			py = attr[1];
-			pz = attr[2];
-			pw = attr[3];
-			nx = attr[4];
-			ny = attr[5];
-			nz = attr[6];
 		}
+		px = attr[0];
+		py = attr[1];
+		pz = attr[2];
+		pw = attr[3];
+		nx = attr[4];
+		ny = attr[5];
+		nz = attr[6];
 	}
+	let applyInstanceColor = false;
 	if (shaderVariant.instanceMode === VDP_RPU_INSTANCE_MODE_AFFINE2 && instanceBinding >= 0) {
 		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE0);
 		const i0x = attr[0];
@@ -391,11 +432,6 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 		const uvy = attr[1];
 		const uvz = attr[2];
 		const uvw = attr[3];
-		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE_COLOR);
-		const cr = attr[0];
-		const cg = attr[1];
-		const cb = attr[2];
-		const ca = attr[3];
 		const oldX = px;
 		const oldY = py;
 		px = i0x * oldX + i0y * oldY + i0z;
@@ -404,10 +440,7 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 		pw = 1;
 		u = uvx + u * uvz;
 		v = uvy + v * uvw;
-		r *= cr;
-		g *= cg;
-		b *= cb;
-		a *= ca;
+		applyInstanceColor = true;
 	} else if (shaderVariant.instanceMode === VDP_RPU_INSTANCE_MODE_MAT4 && instanceBinding >= 0) {
 		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE0);
 		const m00 = attr[0]; const m10 = attr[1]; const m20 = attr[2]; const m30 = attr[3];
@@ -417,21 +450,23 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 		const m02 = attr[0]; const m12 = attr[1]; const m22 = attr[2]; const m32 = attr[3];
 		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE3);
 		const m03 = attr[0]; const m13 = attr[1]; const m23 = attr[2]; const m33 = attr[3];
-		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE_COLOR);
-		const cr = attr[0]; const cg = attr[1]; const cb = attr[2]; const ca = attr[3];
 		const oldX = px; const oldY = py; const oldZ = pz; const oldW = pw;
 		px = m00 * oldX + m01 * oldY + m02 * oldZ + m03 * oldW;
 		py = m10 * oldX + m11 * oldY + m12 * oldZ + m13 * oldW;
 		pz = m20 * oldX + m21 * oldY + m22 * oldZ + m23 * oldW;
 		pw = m30 * oldX + m31 * oldY + m32 * oldZ + m33 * oldW;
-		r *= cr;
-		g *= cg;
-		b *= cb;
-		a *= ca;
+		applyInstanceColor = true;
+	}
+	if (applyInstanceColor) {
+		readAttribute(frame, instanceBinding, instanceIndex, VDP_RPU_ATTR_INSTANCE_COLOR);
+		r *= attr[0];
+		g *= attr[1];
+		b *= attr[2];
+		a *= attr[3];
 	}
 	if (shaderVariant.usesC0 !== 0) {
-		const c0Binding = findConstantBinding(frame, drawIndex, 0);
-		if (c0Binding >= 0) {
+		const c0Binding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, 0);
+		if (c0Binding >= 0 && commands.constantBank[c0Binding] !== VDP_RPU_REF_NONE) {
 			transformMatrix(frame, c0Binding, px, py, pz);
 			px = attr[0];
 			py = attr[1];
@@ -440,8 +475,8 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 		}
 	}
 	if (shaderVariant.lightingConstantSlot !== VDP_RPU_RESOURCE_NONE) {
-		const c1Binding = findConstantBinding(frame, drawIndex, shaderVariant.lightingConstantSlot);
-		if (c1Binding >= 0) {
+		const c1Binding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, shaderVariant.lightingConstantSlot);
+		if (c1Binding >= 0 && commands.constantBank[c1Binding] !== VDP_RPU_REF_NONE) {
 			const lx = constantF32(frame, c1Binding, 0);
 			const ly = constantF32(frame, c1Binding, 1);
 			const lz = constantF32(frame, c1Binding, 2);
@@ -476,10 +511,14 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 function readIndex(frame: VdpRpuFrameOutput, drawIndex: number, index: number): number {
 	const commands = frame.commands;
 	const refIndex = commands.drawIndexBufferRef[drawIndex];
+	if (refIndex === VDP_RPU_REF_NONE) {
+		return index;
+	}
 	const refs = frame.resources.bufferRefs;
 	const bytes = refs.bytes[refIndex]!;
-	const offset = refs.byteOffset[refIndex] + index * (commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_U16 ? 2 : 4);
-	return commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_U16 ? readU16(bytes, offset) : readU32(bytes, offset);
+	const indexType = commands.drawIndexType[drawIndex];
+	const offset = refs.byteOffset[refIndex] + commands.drawIndexByteOffset[drawIndex] - refs.sourceByteOffset[refIndex] + index * (indexType === VDP_RPU_INDEX_U16 ? 2 : 4);
+	return indexType === VDP_RPU_INDEX_U16 ? readU16(bytes, offset) : readU32(bytes, offset);
 }
 
 function textureBinding(frame: VdpRpuFrameOutput, drawIndex: number): number {
@@ -519,18 +558,6 @@ function sampleTexture(view: GameView, frame: VdpRpuFrameOutput, bindingIndex: n
 		pixels = slot.pixels;
 		width = slot.width;
 		height = slot.height;
-		let sx = (u * width) | 0;
-		let sy = (v * height) | 0;
-		if (sx < 0) sx = 0;
-		if (sy < 0) sy = 0;
-		if (sx >= width) sx = width - 1;
-		if (sy >= height) sy = height - 1;
-		const offset = (sy * width + sx) * 4;
-		attr[0] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset]];
-		attr[1] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset + 1]];
-		attr[2] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset + 2]];
-		attr[3] = pixels[offset + 3] * (1 / 255);
-		return;
 	} else {
 		syncSurfaceStorage(frame, surfaceRef);
 		pixels = softwareRpuSurfacePixels[surfaceId] as Uint8Array;
@@ -676,18 +703,23 @@ function drawPoint(frame: VdpRpuFrameOutput, drawIndex: number, pixels: Uint8Arr
 	}
 }
 
-function drawCommand(view: GameView, frame: VdpRpuFrameOutput, drawIndex: number, pixels: Uint8Array, depth: Float64Array, width: number, height: number): void {
+function drawCommand(view: GameView, frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: number, instanceCount: number, indexCount: number, pixels: Uint8Array, depth: Float64Array, width: number, height: number): void {
 	const commands = frame.commands;
 	const shaderVariant = resolveVdpRpuShaderVariantSpec(commands.drawShaderVariant[drawIndex]);
 	const texture = shaderVariant.textureSlotCount === 0 ? -1 : textureBinding(frame, drawIndex);
 	const primitive = commands.drawPrimitive[drawIndex];
-	const instanceCount = shaderVariant.instanceMode === VDP_RPU_INSTANCE_MODE_NONE ? 1 : commands.drawInstanceCount[drawIndex];
-	for (let instanceIndex = 0; instanceIndex < instanceCount; instanceIndex += 1) {
+	const drawnInstanceCount = shaderVariant.instanceMode === VDP_RPU_INSTANCE_MODE_NONE ? 1 : instanceCount;
+	const drawIndexed = commands.drawIndexType[drawIndex] !== VDP_RPU_INDEX_NONE && commands.drawIndexBufferRef[drawIndex] !== VDP_RPU_REF_NONE;
+	const elementCount = drawIndexed ? indexCount : vertexCount;
+	for (let instanceIndex = 0; instanceIndex < drawnInstanceCount; instanceIndex += 1) {
 		if (primitive === VDP_RPU_PRIM_LINES) {
-			const count = commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_NONE ? commands.drawVertexCount[drawIndex] : commands.drawIndexCount[drawIndex];
-			for (let vertex = 0; vertex + 1 < count; vertex += 2) {
-				const v0 = commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_NONE ? vertex : readIndex(frame, drawIndex, vertex);
-				const v1 = commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_NONE ? vertex + 1 : readIndex(frame, drawIndex, vertex + 1);
+			for (let vertex = 0; vertex + 1 < elementCount; vertex += 2) {
+				let v0 = vertex;
+				let v1 = vertex + 1;
+				if (drawIndexed) {
+					v0 = readIndex(frame, drawIndex, vertex);
+					v1 = readIndex(frame, drawIndex, vertex + 1);
+				}
 				writeVertex(frame, drawIndex, shaderVariant, v0, instanceIndex, 0, width, height);
 				writeVertex(frame, drawIndex, shaderVariant, v1, instanceIndex, 1, width, height);
 				drawLine(frame, drawIndex, pixels, depth, width, height);
@@ -695,24 +727,31 @@ function drawCommand(view: GameView, frame: VdpRpuFrameOutput, drawIndex: number
 			continue;
 		}
 		if (primitive === VDP_RPU_PRIM_POINTS) {
-			const count = commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_NONE ? commands.drawVertexCount[drawIndex] : commands.drawIndexCount[drawIndex];
-			for (let vertex = 0; vertex < count; vertex += 1) {
-				const v0 = commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_NONE ? vertex : readIndex(frame, drawIndex, vertex);
+			for (let vertex = 0; vertex < elementCount; vertex += 1) {
+				let v0 = vertex;
+				if (drawIndexed) {
+					v0 = readIndex(frame, drawIndex, vertex);
+				}
 				writeVertex(frame, drawIndex, shaderVariant, v0, instanceIndex, 0, width, height);
 				drawPoint(frame, drawIndex, pixels, depth, width, height);
 			}
 			continue;
 		}
-		const count = commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_NONE ? commands.drawVertexCount[drawIndex] : commands.drawIndexCount[drawIndex];
 		const triangleStep = primitive === VDP_RPU_PRIM_TRIANGLE_STRIP ? 1 : 3;
-		const triangleLimit = primitive === VDP_RPU_PRIM_TRIANGLE_STRIP ? count - 2 : count;
+		const triangleLimit = primitive === VDP_RPU_PRIM_TRIANGLE_STRIP ? elementCount - 2 : elementCount;
 		for (let vertex = 0; vertex < triangleLimit; vertex += triangleStep) {
 			const i0 = vertex;
-			const i1 = primitive === VDP_RPU_PRIM_TRIANGLE_STRIP && (vertex & 1) !== 0 ? vertex + 2 : vertex + 1;
-			const i2 = primitive === VDP_RPU_PRIM_TRIANGLE_STRIP && (vertex & 1) !== 0 ? vertex + 1 : vertex + 2;
-			const v0 = commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_NONE ? i0 : readIndex(frame, drawIndex, i0);
-			const v1 = commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_NONE ? i1 : readIndex(frame, drawIndex, i1);
-			const v2 = commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_NONE ? i2 : readIndex(frame, drawIndex, i2);
+			const stripFlipped = primitive === VDP_RPU_PRIM_TRIANGLE_STRIP && (vertex & 1) !== 0;
+			const i1 = stripFlipped ? vertex + 2 : vertex + 1;
+			const i2 = stripFlipped ? vertex + 1 : vertex + 2;
+			let v0 = i0;
+			let v1 = i1;
+			let v2 = i2;
+			if (drawIndexed) {
+				v0 = readIndex(frame, drawIndex, i0);
+				v1 = readIndex(frame, drawIndex, i1);
+				v2 = readIndex(frame, drawIndex, i2);
+			}
 			writeVertex(frame, drawIndex, shaderVariant, v0, instanceIndex, 0, width, height);
 			writeVertex(frame, drawIndex, shaderVariant, v1, instanceIndex, 1, width, height);
 			writeVertex(frame, drawIndex, shaderVariant, v2, instanceIndex, 2, width, height);
@@ -739,10 +778,21 @@ export function renderVdpRpuSoftwareFrame(view: GameView, frame: VdpRpuFrameOutp
 		} else if (passIndex === 0) {
 			depthTarget.depth.fill(SOFTWARE_RPU_DEFAULT_CLEAR_DEPTH);
 		}
-		const firstDraw = commands.passFirstDraw[passIndex];
-		const drawEnd = firstDraw + commands.passDrawCount[passIndex];
-		for (let drawIndex = firstDraw; drawIndex < drawEnd; drawIndex += 1) {
-			drawCommand(view, frame, drawIndex, colorTarget.pixels, depthTarget.depth, colorTarget.width, colorTarget.height);
+		const firstBatch = commands.passFirstBatch[passIndex];
+		const batchEnd = firstBatch + commands.passBatchCount[passIndex];
+		for (let batchIndex = firstBatch; batchIndex < batchEnd; batchIndex += 1) {
+			drawCommand(
+				view,
+				frame,
+				commands.batchFirstDraw[batchIndex],
+				commands.batchVertexCount[batchIndex],
+				commands.batchInstanceCount[batchIndex],
+				commands.batchIndexCount[batchIndex],
+				colorTarget.pixels,
+				depthTarget.depth,
+				colorTarget.width,
+				colorTarget.height,
+			);
 		}
 	}
 }

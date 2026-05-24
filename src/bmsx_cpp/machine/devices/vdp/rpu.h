@@ -17,6 +17,7 @@ namespace bmsx {
 
 constexpr size_t VDP_RPU_PASS_CAPACITY = 64u;
 constexpr size_t VDP_RPU_DRAW_CAPACITY = 4096u;
+constexpr size_t VDP_RPU_DRAW_BATCH_CAPACITY = VDP_RPU_DRAW_CAPACITY;
 constexpr size_t VDP_RPU_STREAM_BINDING_CAPACITY = 8192u;
 constexpr size_t VDP_RPU_CONSTANT_BINDING_CAPACITY = 8192u;
 constexpr size_t VDP_RPU_TEXTURE_BINDING_CAPACITY = 4096u;
@@ -24,6 +25,7 @@ constexpr size_t VDP_RPU_BUFFER_CAPACITY = 1024u;
 constexpr size_t VDP_RPU_BUFFER_SLOT_BYTE_CAPACITY = 0x00010000u;
 constexpr size_t VDP_RPU_BUFFER_BYTE_CAPACITY = VDP_RPU_BUFFER_CAPACITY * VDP_RPU_BUFFER_SLOT_BYTE_CAPACITY;
 constexpr size_t VDP_RPU_BUFFER_REF_CAPACITY = 4096u;
+constexpr size_t VDP_RPU_FRAME_BUFFER_BYTE_CAPACITY = 0x00400000u;
 constexpr size_t VDP_RPU_SURFACE_CAPACITY = 256u;
 constexpr size_t VDP_RPU_SURFACE_REF_CAPACITY = 1024u;
 constexpr size_t VDP_RPU_CONSTANT_BANK_CAPACITY = 256u;
@@ -194,8 +196,11 @@ constexpr u32 VDP_FAULT_RPU_BAD_STATE = 0x0709U;
 struct VdpRpuFrameBufferRefs {
 	VdpRpuFrameBufferRefs();
 	size_t length = 0U;
+	size_t snapshotByteLength = 0U;
+	std::array<u8, VDP_RPU_FRAME_BUFFER_BYTE_CAPACITY> snapshotBytes{};
 	std::array<u32, VDP_RPU_BUFFER_REF_CAPACITY> bufferId{};
 	std::array<u32, VDP_RPU_BUFFER_REF_CAPACITY> revision{};
+	std::array<u32, VDP_RPU_BUFFER_REF_CAPACITY> sourceByteOffset{};
 	std::array<u32, VDP_RPU_BUFFER_REF_CAPACITY> byteOffset{};
 	std::array<u32, VDP_RPU_BUFFER_REF_CAPACITY> byteLength{};
 	std::array<u8, VDP_RPU_BUFFER_REF_CAPACITY> usage{};
@@ -229,11 +234,14 @@ struct VdpRpuFrameResources {
 struct VdpRpuCommandBuffer {
 	size_t passCount = 0U;
 	size_t drawCount = 0U;
+	size_t drawBatchCount = 0U;
 	size_t streamBindingCount = 0U;
 	size_t constantBindingCount = 0U;
 	size_t textureBindingCount = 0U;
 	std::array<u32, VDP_RPU_PASS_CAPACITY> passFirstDraw{};
 	std::array<u16, VDP_RPU_PASS_CAPACITY> passDrawCount{};
+	std::array<u32, VDP_RPU_PASS_CAPACITY> passFirstBatch{};
+	std::array<u16, VDP_RPU_PASS_CAPACITY> passBatchCount{};
 	std::array<u16, VDP_RPU_PASS_CAPACITY> passColorSurfaceRef{};
 	std::array<u16, VDP_RPU_PASS_CAPACITY> passDepthSurfaceRef{};
 	std::array<u32, VDP_RPU_PASS_CAPACITY> passViewportXY{};
@@ -256,6 +264,11 @@ struct VdpRpuCommandBuffer {
 	std::array<u8, VDP_RPU_DRAW_CAPACITY> drawConstantBindingCount{};
 	std::array<u32, VDP_RPU_DRAW_CAPACITY> drawFirstTextureBinding{};
 	std::array<u8, VDP_RPU_DRAW_CAPACITY> drawTextureBindingCount{};
+	std::array<u32, VDP_RPU_DRAW_BATCH_CAPACITY> batchFirstDraw{};
+	std::array<u16, VDP_RPU_DRAW_BATCH_CAPACITY> batchDrawCount{};
+	std::array<u32, VDP_RPU_DRAW_BATCH_CAPACITY> batchVertexCount{};
+	std::array<u32, VDP_RPU_DRAW_BATCH_CAPACITY> batchInstanceCount{};
+	std::array<u32, VDP_RPU_DRAW_BATCH_CAPACITY> batchIndexCount{};
 	std::array<u16, VDP_RPU_STREAM_BINDING_CAPACITY> streamLayoutId{};
 	std::array<u8, VDP_RPU_STREAM_BINDING_CAPACITY> streamSlot{};
 	std::array<u16, VDP_RPU_STREAM_BINDING_CAPACITY> streamBufferRef{};
@@ -340,11 +353,14 @@ auto resolveVdpRpuShaderVariantSpec(u32 shaderVariant) -> const VdpRpuShaderVari
 struct VdpRpuCommandBufferSaveState {
 	size_t passCount = 0U;
 	size_t drawCount = 0U;
+	size_t drawBatchCount = 0U;
 	size_t streamBindingCount = 0U;
 	size_t constantBindingCount = 0U;
 	size_t textureBindingCount = 0U;
 	std::vector<u32> passFirstDraw;
 	std::vector<u16> passDrawCount;
+	std::vector<u32> passFirstBatch;
+	std::vector<u16> passBatchCount;
 	std::vector<u16> passColorSurfaceRef;
 	std::vector<u16> passDepthSurfaceRef;
 	std::vector<u32> passViewportXY;
@@ -367,6 +383,11 @@ struct VdpRpuCommandBufferSaveState {
 	std::vector<u8> drawConstantBindingCount;
 	std::vector<u32> drawFirstTextureBinding;
 	std::vector<u8> drawTextureBindingCount;
+	std::vector<u32> batchFirstDraw;
+	std::vector<u16> batchDrawCount;
+	std::vector<u32> batchVertexCount;
+	std::vector<u32> batchInstanceCount;
+	std::vector<u32> batchIndexCount;
 	std::vector<u16> streamLayoutId;
 	std::vector<u8> streamSlot;
 	std::vector<u16> streamBufferRef;
@@ -384,6 +405,7 @@ struct VdpRpuCommandBufferSaveState {
 struct VdpRpuFrameBufferRefSaveState {
 	u32 bufferId = 0U;
 	u32 revision = 0U;
+	u32 sourceByteOffset = 0U;
 	u32 byteOffset = 0U;
 	u32 byteLength = 0U;
 	u32 usage = 0U;
@@ -428,6 +450,7 @@ struct VdpRpuSurfaceRecordSaveState {
 struct VdpRpuFrameSaveState {
 	VdpRpuCommandBufferSaveState commands{};
 	std::vector<VdpRpuFrameBufferRefSaveState> bufferRefs;
+	std::vector<u8> bufferBytes;
 	std::vector<VdpRpuFrameSurfaceRefSaveState> surfaceRefs;
 	std::vector<u32> constantWords;
 	std::vector<VdpRpuConstantBankSaveState> constantBanks;
@@ -509,6 +532,14 @@ private:
 	auto acceptBindStream(VdpRpuFrameOutput& frame, u32 streamSlot, u32 layoutId, u32 bufferId, u32 byteOffset, u32 stepRate) -> bool;
 	auto acceptBindConstants(VdpRpuFrameOutput& frame, u32 bindingSlot, u32 bankId, u32 firstWord, u32 wordCount) -> bool;
 	auto acceptBindTexture(VdpRpuFrameOutput& frame, u32 textureSlot, u32 surfaceId, u32 samplerWord) -> bool;
+	auto recordDrawBatch(VdpRpuFrameOutput& frame, u32 drawIndex) -> bool;
+	[[nodiscard]] auto canMergeDrawIntoBatch(const VdpRpuCommandBuffer& commands, size_t batchIndex, u32 drawIndex) const -> bool;
+	[[nodiscard]] auto sameDrawConstants(const VdpRpuCommandBuffer& commands, u32 leftDraw, u32 rightDraw) const -> bool;
+	[[nodiscard]] auto sameDrawTextures(const VdpRpuCommandBuffer& commands, u32 leftDraw, u32 rightDraw) const -> bool;
+	[[nodiscard]] auto compatibleDrawStreams(const VdpRpuCommandBuffer& commands, size_t batchIndex, u32 drawIndex) const -> bool;
+	[[nodiscard]] auto drawStreamBinding(const VdpRpuCommandBuffer& commands, u32 drawIndex, u32 streamSlot) const -> u32;
+	[[nodiscard]] auto streamOffsetMatchesBatchHead(const VdpRpuCommandBuffer& commands, size_t batchIndex, u32 drawIndex, u32 streamSlot) const -> bool;
+	[[nodiscard]] auto streamOffsetIsBatchTail(const VdpRpuCommandBuffer& commands, size_t batchIndex, u32 drawIndex, u32 streamSlot, u32 elementCount) const -> bool;
 	auto pinBuffer(VdpRpuFrameOutput& frame, u32 bufferId, u32 byteOffset, u32 byteLength, u32 usage) -> i32;
 	auto pinSurface(VdpRpuFrameOutput& frame, u32 surfaceId) -> i32;
 	[[nodiscard]] auto acceptBufferRange(u32 bufferId, u32 byteOffset, u32 byteLength) const -> bool;

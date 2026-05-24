@@ -17,6 +17,7 @@ const VDP_RPU_EMPTY_BYTES = new Uint8Array(0);
 
 export const VDP_RPU_PASS_CAPACITY = 64;
 export const VDP_RPU_DRAW_CAPACITY = 4096;
+export const VDP_RPU_DRAW_BATCH_CAPACITY = VDP_RPU_DRAW_CAPACITY;
 export const VDP_RPU_STREAM_BINDING_CAPACITY = 8192;
 export const VDP_RPU_CONSTANT_BINDING_CAPACITY = 8192;
 export const VDP_RPU_TEXTURE_BINDING_CAPACITY = 4096;
@@ -25,6 +26,7 @@ export const VDP_RPU_BUFFER_SLOT_BYTE_CAPACITY = 0x00010000;
 export const VDP_RPU_BUFFER_BYTE_CAPACITY =
 	VDP_RPU_BUFFER_CAPACITY * VDP_RPU_BUFFER_SLOT_BYTE_CAPACITY;
 export const VDP_RPU_BUFFER_REF_CAPACITY = 4096;
+export const VDP_RPU_FRAME_BUFFER_BYTE_CAPACITY = 0x00400000;
 export const VDP_RPU_SURFACE_CAPACITY = 256;
 export const VDP_RPU_SURFACE_REF_CAPACITY = 1024;
 export const VDP_RPU_CONSTANT_BANK_CAPACITY = 256;
@@ -230,8 +232,11 @@ export type VdpRpuFrameOutput = Readonly<{
 
 export class VdpRpuFrameBufferRefs {
 	public length = 0;
+	public snapshotByteLength = 0;
+	public readonly snapshotBytes = new Uint8Array(VDP_RPU_FRAME_BUFFER_BYTE_CAPACITY);
 	public readonly bufferId = new Uint32Array(VDP_RPU_BUFFER_REF_CAPACITY);
 	public readonly revision = new Uint32Array(VDP_RPU_BUFFER_REF_CAPACITY);
+	public readonly sourceByteOffset = new Uint32Array(VDP_RPU_BUFFER_REF_CAPACITY);
 	public readonly byteOffset = new Uint32Array(VDP_RPU_BUFFER_REF_CAPACITY);
 	public readonly byteLength = new Uint32Array(VDP_RPU_BUFFER_REF_CAPACITY);
 	public readonly usage = new Uint8Array(VDP_RPU_BUFFER_REF_CAPACITY);
@@ -264,11 +269,14 @@ export class VdpRpuConstantBankTable {
 export class VdpRpuCommandBuffer {
 	public passCount = 0;
 	public drawCount = 0;
+	public drawBatchCount = 0;
 	public streamBindingCount = 0;
 	public constantBindingCount = 0;
 	public textureBindingCount = 0;
 	public readonly passFirstDraw = new Uint32Array(VDP_RPU_PASS_CAPACITY);
 	public readonly passDrawCount = new Uint16Array(VDP_RPU_PASS_CAPACITY);
+	public readonly passFirstBatch = new Uint32Array(VDP_RPU_PASS_CAPACITY);
+	public readonly passBatchCount = new Uint16Array(VDP_RPU_PASS_CAPACITY);
 	public readonly passColorSurfaceRef = new Uint16Array(VDP_RPU_PASS_CAPACITY);
 	public readonly passDepthSurfaceRef = new Uint16Array(VDP_RPU_PASS_CAPACITY);
 	public readonly passViewportXY = new Uint32Array(VDP_RPU_PASS_CAPACITY);
@@ -291,6 +299,11 @@ export class VdpRpuCommandBuffer {
 	public readonly drawConstantBindingCount = new Uint8Array(VDP_RPU_DRAW_CAPACITY);
 	public readonly drawFirstTextureBinding = new Uint32Array(VDP_RPU_DRAW_CAPACITY);
 	public readonly drawTextureBindingCount = new Uint8Array(VDP_RPU_DRAW_CAPACITY);
+	public readonly batchFirstDraw = new Uint32Array(VDP_RPU_DRAW_BATCH_CAPACITY);
+	public readonly batchDrawCount = new Uint16Array(VDP_RPU_DRAW_BATCH_CAPACITY);
+	public readonly batchVertexCount = new Uint32Array(VDP_RPU_DRAW_BATCH_CAPACITY);
+	public readonly batchInstanceCount = new Uint32Array(VDP_RPU_DRAW_BATCH_CAPACITY);
+	public readonly batchIndexCount = new Uint32Array(VDP_RPU_DRAW_BATCH_CAPACITY);
 	public readonly streamLayoutId = new Uint16Array(VDP_RPU_STREAM_BINDING_CAPACITY);
 	public readonly streamSlot = new Uint8Array(VDP_RPU_STREAM_BINDING_CAPACITY);
 	public readonly streamBufferRef = new Uint16Array(VDP_RPU_STREAM_BINDING_CAPACITY);
@@ -588,11 +601,14 @@ export function resolveVdpRpuShaderVariantSpec(shaderVariant: number): VdpRpuSha
 export type VdpRpuCommandBufferSaveState = {
 	passCount: number;
 	drawCount: number;
+	drawBatchCount: number;
 	streamBindingCount: number;
 	constantBindingCount: number;
 	textureBindingCount: number;
 	passFirstDraw: number[];
 	passDrawCount: number[];
+	passFirstBatch: number[];
+	passBatchCount: number[];
 	passColorSurfaceRef: number[];
 	passDepthSurfaceRef: number[];
 	passViewportXY: number[];
@@ -615,6 +631,11 @@ export type VdpRpuCommandBufferSaveState = {
 	drawConstantBindingCount: number[];
 	drawFirstTextureBinding: number[];
 	drawTextureBindingCount: number[];
+	batchFirstDraw: number[];
+	batchDrawCount: number[];
+	batchVertexCount: number[];
+	batchInstanceCount: number[];
+	batchIndexCount: number[];
 	streamLayoutId: number[];
 	streamSlot: number[];
 	streamBufferRef: number[];
@@ -632,6 +653,7 @@ export type VdpRpuCommandBufferSaveState = {
 export type VdpRpuFrameBufferRefSaveState = {
 	bufferId: number;
 	revision: number;
+	sourceByteOffset: number;
 	byteOffset: number;
 	byteLength: number;
 	usage: number;
@@ -655,6 +677,7 @@ export type VdpRpuConstantBankSaveState = {
 export type VdpRpuFrameSaveState = {
 	commands: VdpRpuCommandBufferSaveState;
 	bufferRefs: VdpRpuFrameBufferRefSaveState[];
+	bufferBytes: number[];
 	surfaceRefs: VdpRpuFrameSurfaceRefSaveState[];
 	constantWords: number[];
 	constantBanks: VdpRpuConstantBankSaveState[];
@@ -706,10 +729,12 @@ export function createVdpRpuFrameOutput(): VdpRpuFrameOutput {
 export function resetVdpRpuFrameOutput(frame: VdpRpuFrameOutput): void {
 	frame.commands.passCount = 0;
 	frame.commands.drawCount = 0;
+	frame.commands.drawBatchCount = 0;
 	frame.commands.streamBindingCount = 0;
 	frame.commands.constantBindingCount = 0;
 	frame.commands.textureBindingCount = 0;
 	frame.resources.bufferRefs.length = 0;
+	frame.resources.bufferRefs.snapshotByteLength = 0;
 	frame.resources.surfaceRefs.length = 0;
 	frame.resources.constantBanks.length = 0;
 }
@@ -895,7 +920,7 @@ export class VdpRpuUnit {
 
 	public rebindFrameResources(frame: VdpRpuFrameOutput): void {
 		for (let index = 0; index < frame.resources.bufferRefs.length; index += 1) {
-			frame.resources.bufferRefs.bytes[index] = this.bufferBytes;
+			frame.resources.bufferRefs.bytes[index] = frame.resources.bufferRefs.snapshotBytes;
 		}
 	}
 
@@ -1364,6 +1389,8 @@ export class VdpRpuUnit {
 		const passIndex = frame.commands.passCount;
 		frame.commands.passFirstDraw[passIndex] = frame.commands.drawCount;
 		frame.commands.passDrawCount[passIndex] = 0;
+		frame.commands.passFirstBatch[passIndex] = frame.commands.drawBatchCount;
+		frame.commands.passBatchCount[passIndex] = 0;
 		frame.commands.passColorSurfaceRef[passIndex] = colorRef;
 		frame.commands.passDepthSurfaceRef[passIndex] = depthRef;
 		frame.commands.passViewportXY[passIndex] = viewportXY >>> 0;
@@ -1384,6 +1411,7 @@ export class VdpRpuUnit {
 			return false;
 		}
 		frame.commands.passDrawCount[this.openPassIndex] = frame.commands.drawCount - frame.commands.passFirstDraw[this.openPassIndex];
+		frame.commands.passBatchCount[this.openPassIndex] = frame.commands.drawBatchCount - frame.commands.passFirstBatch[this.openPassIndex];
 		this.buildState = VDP_RPU_FRAME_OPEN;
 		this.lastPacketCost = VDP_RPU_PACKET_COST;
 		return true;
@@ -1435,9 +1463,194 @@ export class VdpRpuUnit {
 		frame.commands.drawStreamBindingCount[drawIndex] = frame.commands.streamBindingCount - frame.commands.drawFirstStreamBinding[drawIndex];
 		frame.commands.drawConstantBindingCount[drawIndex] = frame.commands.constantBindingCount - frame.commands.drawFirstConstantBinding[drawIndex];
 		frame.commands.drawTextureBindingCount[drawIndex] = frame.commands.textureBindingCount - frame.commands.drawFirstTextureBinding[drawIndex];
+		if (!this.recordDrawBatch(frame, drawIndex)) {
+			return false;
+		}
 		this.buildState = VDP_RPU_PASS_OPEN;
 		this.lastPacketCost = VDP_RPU_PACKET_COST;
 		return true;
+	}
+
+	private recordDrawBatch(frame: VdpRpuFrameOutput, drawIndex: number): boolean {
+		const commands = frame.commands;
+		if (commands.drawBatchCount > commands.passFirstBatch[this.openPassIndex]) {
+			const batchIndex = commands.drawBatchCount - 1;
+			if (this.canMergeDrawIntoBatch(commands, batchIndex, drawIndex)) {
+				commands.batchDrawCount[batchIndex] += 1;
+				if (commands.drawIndexType[drawIndex] === VDP_RPU_INDEX_NONE) {
+					const shaderVariant = resolveVdpRpuShaderVariantSpec(commands.drawShaderVariant[drawIndex]);
+					if (shaderVariant.instanceMode === VDP_RPU_INSTANCE_MODE_NONE) {
+						commands.batchVertexCount[batchIndex] = (commands.batchVertexCount[batchIndex] + commands.drawVertexCount[drawIndex]) >>> 0;
+					} else {
+						commands.batchInstanceCount[batchIndex] = (commands.batchInstanceCount[batchIndex] + commands.drawInstanceCount[drawIndex]) >>> 0;
+					}
+				} else {
+					const shaderVariant = resolveVdpRpuShaderVariantSpec(commands.drawShaderVariant[drawIndex]);
+					if (shaderVariant.instanceMode === VDP_RPU_INSTANCE_MODE_NONE) {
+						commands.batchIndexCount[batchIndex] = (commands.batchIndexCount[batchIndex] + commands.drawIndexCount[drawIndex]) >>> 0;
+					} else {
+						commands.batchInstanceCount[batchIndex] = (commands.batchInstanceCount[batchIndex] + commands.drawInstanceCount[drawIndex]) >>> 0;
+					}
+				}
+				return true;
+			}
+		}
+		if (commands.drawBatchCount >= VDP_RPU_DRAW_BATCH_CAPACITY) {
+			this.fault.raise(VDP_FAULT_RPU_COMMAND_OVERFLOW, drawIndex);
+			return false;
+		}
+		const batchIndex = commands.drawBatchCount;
+		commands.batchFirstDraw[batchIndex] = drawIndex;
+		commands.batchDrawCount[batchIndex] = 1;
+		commands.batchVertexCount[batchIndex] = commands.drawVertexCount[drawIndex];
+		commands.batchInstanceCount[batchIndex] = commands.drawInstanceCount[drawIndex];
+		commands.batchIndexCount[batchIndex] = commands.drawIndexCount[drawIndex];
+		commands.drawBatchCount += 1;
+		return true;
+	}
+
+	private canMergeDrawIntoBatch(commands: VdpRpuCommandBuffer, batchIndex: number, drawIndex: number): boolean {
+		const firstDraw = commands.batchFirstDraw[batchIndex];
+		if (commands.drawPrimitive[firstDraw] === VDP_RPU_PRIM_TRIANGLE_STRIP) {
+			return false;
+		}
+		if (
+			commands.drawShaderVariant[firstDraw] !== commands.drawShaderVariant[drawIndex]
+			|| commands.drawPrimitive[firstDraw] !== commands.drawPrimitive[drawIndex]
+			|| commands.drawPipelineWord[firstDraw] !== commands.drawPipelineWord[drawIndex]
+			|| commands.drawIndexType[firstDraw] !== commands.drawIndexType[drawIndex]
+			|| commands.drawIndexBufferRef[firstDraw] !== commands.drawIndexBufferRef[drawIndex]
+			|| !this.sameDrawConstants(commands, firstDraw, drawIndex)
+			|| !this.sameDrawTextures(commands, firstDraw, drawIndex)
+			|| !this.compatibleDrawStreams(commands, batchIndex, drawIndex)
+		) {
+			return false;
+		}
+		const shaderVariant = resolveVdpRpuShaderVariantSpec(commands.drawShaderVariant[firstDraw]);
+		if (shaderVariant.instanceMode === VDP_RPU_INSTANCE_MODE_NONE) {
+			const batchElementCount = commands.drawIndexType[firstDraw] === VDP_RPU_INDEX_NONE ? commands.batchVertexCount[batchIndex] : commands.batchIndexCount[batchIndex];
+			const drawElementCount = commands.drawIndexType[firstDraw] === VDP_RPU_INDEX_NONE ? commands.drawVertexCount[drawIndex] : commands.drawIndexCount[drawIndex];
+			if (commands.drawPrimitive[firstDraw] === VDP_RPU_PRIM_LINES) {
+				if (((batchElementCount | drawElementCount) & 1) !== 0) {
+					return false;
+				}
+			} else if (commands.drawPrimitive[firstDraw] === VDP_RPU_PRIM_TRIANGLES && (batchElementCount % 3 !== 0 || drawElementCount % 3 !== 0)) {
+				return false;
+			}
+		}
+		if (commands.drawIndexType[firstDraw] === VDP_RPU_INDEX_NONE) {
+			if (shaderVariant.instanceMode === VDP_RPU_INSTANCE_MODE_NONE) {
+				return this.streamOffsetIsBatchTail(commands, batchIndex, drawIndex, 0, commands.batchVertexCount[batchIndex]);
+			}
+			return commands.drawVertexCount[firstDraw] === commands.drawVertexCount[drawIndex]
+				&& this.streamOffsetMatchesBatchHead(commands, batchIndex, drawIndex, 0)
+				&& this.streamOffsetIsBatchTail(commands, batchIndex, drawIndex, 1, commands.batchInstanceCount[batchIndex]);
+		}
+		if (shaderVariant.instanceMode === VDP_RPU_INSTANCE_MODE_NONE) {
+			const indexBytes = commands.drawIndexType[firstDraw] === VDP_RPU_INDEX_U16 ? 2 : 4;
+			return commands.drawIndexByteOffset[drawIndex] === commands.drawIndexByteOffset[firstDraw] + commands.batchIndexCount[batchIndex] * indexBytes
+				&& this.streamOffsetMatchesBatchHead(commands, batchIndex, drawIndex, 0);
+		}
+		return commands.drawIndexByteOffset[drawIndex] === commands.drawIndexByteOffset[firstDraw]
+			&& commands.drawIndexCount[drawIndex] === commands.drawIndexCount[firstDraw]
+			&& commands.drawVertexCount[drawIndex] === commands.drawVertexCount[firstDraw]
+			&& this.streamOffsetMatchesBatchHead(commands, batchIndex, drawIndex, 0)
+			&& this.streamOffsetIsBatchTail(commands, batchIndex, drawIndex, 1, commands.batchInstanceCount[batchIndex]);
+	}
+
+	private sameDrawConstants(commands: VdpRpuCommandBuffer, leftDraw: number, rightDraw: number): boolean {
+		const leftCount = commands.drawConstantBindingCount[leftDraw];
+		if (leftCount !== commands.drawConstantBindingCount[rightDraw]) {
+			return false;
+		}
+		const leftFirst = commands.drawFirstConstantBinding[leftDraw];
+		const rightFirst = commands.drawFirstConstantBinding[rightDraw];
+		for (let offset = 0; offset < leftCount; offset += 1) {
+			const left = leftFirst + offset;
+			const right = rightFirst + offset;
+			if (
+				commands.constantBindingSlot[left] !== commands.constantBindingSlot[right]
+				|| commands.constantBank[left] !== commands.constantBank[right]
+				|| commands.constantFirstWord[left] !== commands.constantFirstWord[right]
+				|| commands.constantWordCount[left] !== commands.constantWordCount[right]
+			) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private sameDrawTextures(commands: VdpRpuCommandBuffer, leftDraw: number, rightDraw: number): boolean {
+		const leftCount = commands.drawTextureBindingCount[leftDraw];
+		if (leftCount !== commands.drawTextureBindingCount[rightDraw]) {
+			return false;
+		}
+		const leftFirst = commands.drawFirstTextureBinding[leftDraw];
+		const rightFirst = commands.drawFirstTextureBinding[rightDraw];
+		for (let offset = 0; offset < leftCount; offset += 1) {
+			const left = leftFirst + offset;
+			const right = rightFirst + offset;
+			if (
+				commands.textureSlot[left] !== commands.textureSlot[right]
+				|| commands.textureSurfaceRef[left] !== commands.textureSurfaceRef[right]
+				|| commands.textureSamplerWord[left] !== commands.textureSamplerWord[right]
+			) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private compatibleDrawStreams(commands: VdpRpuCommandBuffer, batchIndex: number, drawIndex: number): boolean {
+		const firstDraw = commands.batchFirstDraw[batchIndex];
+		const firstCount = commands.drawStreamBindingCount[firstDraw];
+		if (firstCount !== commands.drawStreamBindingCount[drawIndex]) {
+			return false;
+		}
+		const firstBinding = commands.drawFirstStreamBinding[firstDraw];
+		const drawBinding = commands.drawFirstStreamBinding[drawIndex];
+		for (let offset = 0; offset < firstCount; offset += 1) {
+			const left = firstBinding + offset;
+			const right = drawBinding + offset;
+			if (
+				commands.streamSlot[left] !== commands.streamSlot[right]
+				|| commands.streamLayoutId[left] !== commands.streamLayoutId[right]
+				|| commands.streamBufferRef[left] !== commands.streamBufferRef[right]
+				|| commands.streamStepRate[left] !== commands.streamStepRate[right]
+			) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private drawStreamBinding(commands: VdpRpuCommandBuffer, drawIndex: number, streamSlot: number): number {
+		const bindingEnd = commands.drawFirstStreamBinding[drawIndex] + commands.drawStreamBindingCount[drawIndex];
+		for (let bindingIndex = commands.drawFirstStreamBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
+			if (commands.streamSlot[bindingIndex] === streamSlot) {
+				return bindingIndex;
+			}
+		}
+		return VDP_RPU_REF_NONE;
+	}
+
+	private streamOffsetMatchesBatchHead(commands: VdpRpuCommandBuffer, batchIndex: number, drawIndex: number, streamSlot: number): boolean {
+		const firstBinding = this.drawStreamBinding(commands, commands.batchFirstDraw[batchIndex], streamSlot);
+		const drawBinding = this.drawStreamBinding(commands, drawIndex, streamSlot);
+		if (firstBinding === VDP_RPU_REF_NONE || drawBinding === VDP_RPU_REF_NONE) {
+			return firstBinding === drawBinding;
+		}
+		return commands.streamByteOffset[firstBinding] === commands.streamByteOffset[drawBinding];
+	}
+
+	private streamOffsetIsBatchTail(commands: VdpRpuCommandBuffer, batchIndex: number, drawIndex: number, streamSlot: number, elementCount: number): boolean {
+		const firstBinding = this.drawStreamBinding(commands, commands.batchFirstDraw[batchIndex], streamSlot);
+		const drawBinding = this.drawStreamBinding(commands, drawIndex, streamSlot);
+		if (firstBinding === VDP_RPU_REF_NONE || drawBinding === VDP_RPU_REF_NONE) {
+			return false;
+		}
+		const stride = this.streamLayoutStride(commands.streamLayoutId[firstBinding]);
+		return commands.streamByteOffset[drawBinding] === commands.streamByteOffset[firstBinding] + elementCount * stride;
 	}
 
 	private acceptBindStream(frame: VdpRpuFrameOutput, streamSlot: number, layoutId: number, bufferId: number, byteOffset: number, stepRate: number): boolean {
@@ -1500,17 +1713,55 @@ export class VdpRpuUnit {
 	}
 
 	private pinBuffer(frame: VdpRpuFrameOutput, bufferId: number, byteOffset: number, byteLength: number, usage: number): number {
-		if (frame.resources.bufferRefs.length >= VDP_RPU_BUFFER_REF_CAPACITY || !this.acceptBufferRange(bufferId, byteOffset, byteLength)) {
+		if (!this.acceptBufferRange(bufferId, byteOffset, byteLength) || byteLength > VDP_RPU_FRAME_BUFFER_BYTE_CAPACITY) {
 			return VDP_RPU_REF_NONE;
 		}
-		const refIndex = frame.resources.bufferRefs.length;
-		frame.resources.bufferRefs.bufferId[refIndex] = bufferId;
-		frame.resources.bufferRefs.revision[refIndex] = this.bufferRevision[bufferId];
-		frame.resources.bufferRefs.byteOffset[refIndex] = (this.bufferByteBase(bufferId) + byteOffset) >>> 0;
-		frame.resources.bufferRefs.byteLength[refIndex] = byteLength >>> 0;
-		frame.resources.bufferRefs.usage[refIndex] = usage;
-		frame.resources.bufferRefs.bytes[refIndex] = this.bufferBytes;
-		frame.resources.bufferRefs.length += 1;
+		const refs = frame.resources.bufferRefs;
+		const revision = this.bufferRevision[bufferId];
+		const bufferOffset = this.bufferByteBase(bufferId);
+		const requestEnd = (byteOffset + byteLength) >>> 0;
+		const snapshotByteLimit = VDP_RPU_FRAME_BUFFER_BYTE_CAPACITY - byteLength;
+		for (let refIndex = 0; refIndex < refs.length; refIndex += 1) {
+			if (refs.bufferId[refIndex] === bufferId && refs.revision[refIndex] === revision && refs.usage[refIndex] === usage) {
+				const sourceByteOffset = refs.sourceByteOffset[refIndex];
+				const sourceByteEnd = (sourceByteOffset + refs.byteLength[refIndex]) >>> 0;
+				if (byteOffset >= sourceByteOffset && requestEnd <= sourceByteEnd) {
+					return refIndex;
+				}
+				if (byteOffset === sourceByteEnd) {
+					if (refs.snapshotByteLength > snapshotByteLimit) {
+						return VDP_RPU_REF_NONE;
+					}
+					const snapshotOffset = refs.byteOffset[refIndex] + refs.byteLength[refIndex];
+					for (let index = 0; index < byteLength; index += 1) {
+						refs.snapshotBytes[snapshotOffset + index] = this.bufferBytes[bufferOffset + byteOffset + index];
+					}
+					refs.byteLength[refIndex] = (refs.byteLength[refIndex] + byteLength) >>> 0;
+					refs.snapshotByteLength += byteLength;
+					return refIndex;
+				}
+			}
+		}
+		if (refs.length >= VDP_RPU_BUFFER_REF_CAPACITY) {
+			return VDP_RPU_REF_NONE;
+		}
+		if (refs.snapshotByteLength > snapshotByteLimit) {
+			return VDP_RPU_REF_NONE;
+		}
+		const snapshotOffset = refs.snapshotByteLength;
+		for (let index = 0; index < byteLength; index += 1) {
+			refs.snapshotBytes[snapshotOffset + index] = this.bufferBytes[bufferOffset + byteOffset + index];
+		}
+		const refIndex = refs.length;
+		refs.bufferId[refIndex] = bufferId;
+		refs.revision[refIndex] = revision;
+		refs.sourceByteOffset[refIndex] = byteOffset;
+		refs.byteOffset[refIndex] = snapshotOffset;
+		refs.byteLength[refIndex] = byteLength;
+		refs.usage[refIndex] = usage;
+		refs.bytes[refIndex] = refs.snapshotBytes;
+		refs.length += 1;
+		refs.snapshotByteLength += byteLength;
 		return refIndex;
 	}
 
@@ -1568,11 +1819,14 @@ function captureVdpRpuCommandBufferState(commands: VdpRpuCommandBuffer): VdpRpuC
 	return {
 		passCount: commands.passCount,
 		drawCount: commands.drawCount,
+		drawBatchCount: commands.drawBatchCount,
 		streamBindingCount: commands.streamBindingCount,
 		constantBindingCount: commands.constantBindingCount,
 		textureBindingCount: commands.textureBindingCount,
 		passFirstDraw: captureVdpRpuArrayState(commands.passFirstDraw, commands.passCount),
 		passDrawCount: captureVdpRpuArrayState(commands.passDrawCount, commands.passCount),
+		passFirstBatch: captureVdpRpuArrayState(commands.passFirstBatch, commands.passCount),
+		passBatchCount: captureVdpRpuArrayState(commands.passBatchCount, commands.passCount),
 		passColorSurfaceRef: captureVdpRpuArrayState(commands.passColorSurfaceRef, commands.passCount),
 		passDepthSurfaceRef: captureVdpRpuArrayState(commands.passDepthSurfaceRef, commands.passCount),
 		passViewportXY: captureVdpRpuArrayState(commands.passViewportXY, commands.passCount),
@@ -1595,6 +1849,11 @@ function captureVdpRpuCommandBufferState(commands: VdpRpuCommandBuffer): VdpRpuC
 		drawConstantBindingCount: captureVdpRpuArrayState(commands.drawConstantBindingCount, commands.drawCount),
 		drawFirstTextureBinding: captureVdpRpuArrayState(commands.drawFirstTextureBinding, commands.drawCount),
 		drawTextureBindingCount: captureVdpRpuArrayState(commands.drawTextureBindingCount, commands.drawCount),
+		batchFirstDraw: captureVdpRpuArrayState(commands.batchFirstDraw, commands.drawBatchCount),
+		batchDrawCount: captureVdpRpuArrayState(commands.batchDrawCount, commands.drawBatchCount),
+		batchVertexCount: captureVdpRpuArrayState(commands.batchVertexCount, commands.drawBatchCount),
+		batchInstanceCount: captureVdpRpuArrayState(commands.batchInstanceCount, commands.drawBatchCount),
+		batchIndexCount: captureVdpRpuArrayState(commands.batchIndexCount, commands.drawBatchCount),
 		streamLayoutId: captureVdpRpuArrayState(commands.streamLayoutId, commands.streamBindingCount),
 		streamSlot: captureVdpRpuArrayState(commands.streamSlot, commands.streamBindingCount),
 		streamBufferRef: captureVdpRpuArrayState(commands.streamBufferRef, commands.streamBindingCount),
@@ -1613,11 +1872,14 @@ function captureVdpRpuCommandBufferState(commands: VdpRpuCommandBuffer): VdpRpuC
 function restoreVdpRpuCommandBufferState(commands: VdpRpuCommandBuffer, state: VdpRpuCommandBufferSaveState): void {
 	commands.passCount = state.passCount;
 	commands.drawCount = state.drawCount;
+	commands.drawBatchCount = state.drawBatchCount;
 	commands.streamBindingCount = state.streamBindingCount;
 	commands.constantBindingCount = state.constantBindingCount;
 	commands.textureBindingCount = state.textureBindingCount;
 	restoreVdpRpuArrayState(commands.passFirstDraw, state.passFirstDraw);
 	restoreVdpRpuArrayState(commands.passDrawCount, state.passDrawCount);
+	restoreVdpRpuArrayState(commands.passFirstBatch, state.passFirstBatch);
+	restoreVdpRpuArrayState(commands.passBatchCount, state.passBatchCount);
 	restoreVdpRpuArrayState(commands.passColorSurfaceRef, state.passColorSurfaceRef);
 	restoreVdpRpuArrayState(commands.passDepthSurfaceRef, state.passDepthSurfaceRef);
 	restoreVdpRpuArrayState(commands.passViewportXY, state.passViewportXY);
@@ -1640,6 +1902,11 @@ function restoreVdpRpuCommandBufferState(commands: VdpRpuCommandBuffer, state: V
 	restoreVdpRpuArrayState(commands.drawConstantBindingCount, state.drawConstantBindingCount);
 	restoreVdpRpuArrayState(commands.drawFirstTextureBinding, state.drawFirstTextureBinding);
 	restoreVdpRpuArrayState(commands.drawTextureBindingCount, state.drawTextureBindingCount);
+	restoreVdpRpuArrayState(commands.batchFirstDraw, state.batchFirstDraw);
+	restoreVdpRpuArrayState(commands.batchDrawCount, state.batchDrawCount);
+	restoreVdpRpuArrayState(commands.batchVertexCount, state.batchVertexCount);
+	restoreVdpRpuArrayState(commands.batchInstanceCount, state.batchInstanceCount);
+	restoreVdpRpuArrayState(commands.batchIndexCount, state.batchIndexCount);
 	restoreVdpRpuArrayState(commands.streamLayoutId, state.streamLayoutId);
 	restoreVdpRpuArrayState(commands.streamSlot, state.streamSlot);
 	restoreVdpRpuArrayState(commands.streamBufferRef, state.streamBufferRef);
@@ -1660,6 +1927,7 @@ function captureVdpRpuFrameBufferRefsState(refs: VdpRpuFrameBufferRefs): VdpRpuF
 		states[index] = {
 			bufferId: refs.bufferId[index],
 			revision: refs.revision[index],
+			sourceByteOffset: refs.sourceByteOffset[index],
 			byteOffset: refs.byteOffset[index],
 			byteLength: refs.byteLength[index],
 			usage: refs.usage[index],
@@ -1674,6 +1942,7 @@ function restoreVdpRpuFrameBufferRefsState(refs: VdpRpuFrameBufferRefs, states: 
 		const state = states[index];
 		refs.bufferId[index] = state.bufferId;
 		refs.revision[index] = state.revision;
+		refs.sourceByteOffset[index] = state.sourceByteOffset;
 		refs.byteOffset[index] = state.byteOffset;
 		refs.byteLength[index] = state.byteLength;
 		refs.usage[index] = state.usage;
@@ -1746,6 +2015,7 @@ export function captureVdpRpuFrameState(frame: VdpRpuFrameOutput): VdpRpuFrameSa
 	return {
 		commands: captureVdpRpuCommandBufferState(frame.commands),
 		bufferRefs: captureVdpRpuFrameBufferRefsState(frame.resources.bufferRefs),
+		bufferBytes: captureVdpRpuArrayState(frame.resources.bufferRefs.snapshotBytes, frame.resources.bufferRefs.snapshotByteLength),
 		surfaceRefs: captureVdpRpuFrameSurfaceRefsState(frame.resources.surfaceRefs),
 		constantWords: captureVdpRpuConstantWords(frame),
 		constantBanks: captureVdpRpuConstantBankState(frame.resources.constantBanks),
@@ -1756,6 +2026,11 @@ export function restoreVdpRpuFrameState(frame: VdpRpuFrameOutput, state: VdpRpuF
 	resetVdpRpuFrameOutput(frame);
 	restoreVdpRpuCommandBufferState(frame.commands, state.commands);
 	restoreVdpRpuFrameBufferRefsState(frame.resources.bufferRefs, state.bufferRefs);
+	restoreVdpRpuArrayState(frame.resources.bufferRefs.snapshotBytes, state.bufferBytes);
+	frame.resources.bufferRefs.snapshotByteLength = state.bufferBytes.length;
+	for (let index = 0; index < frame.resources.bufferRefs.length; index += 1) {
+		frame.resources.bufferRefs.bytes[index] = frame.resources.bufferRefs.snapshotBytes;
+	}
 	restoreVdpRpuFrameSurfaceRefsState(frame.resources.surfaceRefs, state.surfaceRefs);
 	restoreVdpRpuArrayState(frame.resources.constantWords, state.constantWords);
 	restoreVdpRpuConstantBankState(frame.resources.constantBanks, state.constantBanks);
