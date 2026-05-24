@@ -1,4 +1,4 @@
-local font<const> = require('bios/font')
+local font<const> = require('engine/font')
 
 local glyphs<const> = {
 	[' '] = 'pf_sp',

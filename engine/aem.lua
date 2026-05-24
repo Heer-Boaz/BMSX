@@ -2,8 +2,8 @@
 -- BIOS Audio Event Map dispatcher. AEM rules decide what to play; APU writes live in apu.lua.
 
 local apu<const> = require('bios/apu')
-local eventemitter<const> = require('bios/eventemitter').eventemitter
-local compile_matcher<const> = require('bios/event_matcher').compile
+local eventemitter<const> = require('engine/eventemitter').eventemitter
+local compile_matcher<const> = require('engine/event_matcher').compile
 local romdir<const> = require('bios/romdir')
 
 local global_actor_key<const> = false

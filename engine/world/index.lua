@@ -29,8 +29,8 @@ local frame_delta_ms<const> = (1000 * sys_hz_scale) / machine_manifest.ufps
 --    If you need to
 --    defer a spawn/despawn, use a queue and process it after the loop.
 
-local ecs<const> = require('bios/ecs/index')
-local registry<const> = require('bios/registry')
+local ecs<const> = require('engine/ecs/index')
+local registry<const> = require('engine/registry')
 local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
 
 local tickgroup<const> = ecs.tickgroup
@@ -620,7 +620,7 @@ function world_class:rebind_subsystem_systems(subsys)
 	if self._subsystems_by_id[subsys.id] ~= subsys or subsys.dispose_flag then
 		return
 	end
-	local subsystem_module<const> = require('bios/subsystem/index')
+	local subsystem_module<const> = require('engine/subsystem/index')
 	local systems<const> = {
 		subsystem_module.create_update_system(subsys),
 		subsystem_module.create_animation_system(subsys),

@@ -7,6 +7,7 @@ local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
 local vdp_image<const> = require('bios/vdp_image')
 local font_module<const> = require('bios/font')
+local system<const> = require('bios/system')
 
 local reset_scroll_state<const> = function(state) state.top = 0 end
 
@@ -361,19 +362,19 @@ function init()
 	system_slot_ready = false
 	system_slot_failed = false
 	reset_scroll_state(boot_scroll_state)
-	on_irq(irq_img_done, function()
+	system.on_irq(irq_img_done, function()
 		system_slot_ready = true
 	end)
-	on_irq(irq_img_error, function()
+	system.on_irq(irq_img_error, function()
 		system_slot_failed = true
 	end)
-	on_irq(irq_reinit, function()
+	system.on_irq(irq_reinit, function()
 		init()
 	end)
-	on_irq(irq_newgame, function()
+	system.on_irq(irq_newgame, function()
 		new_game()
 	end)
-	vdp_load_system_slot()
+	vdp_image.load_system_slot()
 end
 
 function new_game()
@@ -459,11 +460,12 @@ end
 local service_irqs<const> = function()
 	local flags<const> = mem[sys_irq_flags]
 	if flags ~= 0 then
-		irq(flags)
+		system.irq(flags)
 	end
 	return flags
 end
 
+init()
 mem[sys_inp_ctrl] = inp_ctrl_arm
 while true do
 	local flags

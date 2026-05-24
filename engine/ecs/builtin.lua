@@ -1,10 +1,10 @@
 -- ecs_builtin.lua
 -- built-in ecs pipeline registration for the system ROM runtime
 
-local ecs<const> = require('bios/ecs/index')
-local ecs_pipeline<const> = require('bios/ecs/pipeline')
-local ecs_systems<const> = require('bios/ecs/systems')
-local input_action_effect_system<const> = require('bios/input/action_effect/system')
+local ecs<const> = require('engine/ecs/index')
+local ecs_pipeline<const> = require('engine/ecs/pipeline')
+local ecs_systems<const> = require('engine/ecs/systems')
+local input_action_effect_system<const> = require('engine/input/action_effect/system')
 
 local registered = false
 

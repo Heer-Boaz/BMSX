@@ -25,6 +25,7 @@ export interface RomPackerOptions {
 	/** Always false on this branch; carts are Lua/data only. */
 	shouldBundleCartCode: boolean;
 	extraLuaRoots: string[];
+	libraryLuaRoots: string[];
 }
 
 export type resourcetype = asset_type;

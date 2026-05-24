@@ -47,8 +47,8 @@
 --    driven by named gameplay events.  Transient per-frame state belongs in the
 --    object FSM or in worldobject fields directly.
 
-local eventemitter<const> = require('bios/eventemitter').eventemitter
-local event_matcher<const> = require('bios/event_matcher')
+local eventemitter<const> = require('engine/eventemitter').eventemitter
+local event_matcher<const> = require('engine/event_matcher')
 
 local progression<const> = {
 	_inited = false,

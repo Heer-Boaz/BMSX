@@ -1,3 +1,4 @@
+require('engine/prelude')
 local constants<const> = require('constants')
 local stage_module<const> = require('stage')
 local player_module<const> = require('player/index')

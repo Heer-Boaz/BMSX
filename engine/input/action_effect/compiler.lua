@@ -1,8 +1,8 @@
 -- input_action_effect_compiler.lua
 -- compile input action effect programs into executable bindings
 
-local action_effects<const> = require('bios/action_effects')
-local eventemitter<const> = require('bios/eventemitter')
+local action_effects<const> = require('engine/action_effects')
+local eventemitter<const> = require('engine/eventemitter')
 
 local compile_effect_list
 

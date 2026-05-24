@@ -36,8 +36,8 @@
 --      self:gfx('enemy')
 --      self.collider:apply_collision_profile('enemy')  -- sets layer/mask
 
-local worldobject<const> = require('bios/world/object')
-local components<const> = require('bios/components')
+local worldobject<const> = require('engine/world/object')
+local components<const> = require('engine/components')
 local vdp_image<const> = require('bios/vdp_image')
 local romdir<const> = require('bios/romdir')
 

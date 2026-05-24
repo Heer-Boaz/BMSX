@@ -1,4 +1,3 @@
-local vdp_stream<const> = require('bios/vdp_stream')
 local vdp_rpu<const> = require('bios/vdp_rpu')
 
 local vdp_rpu_quads<const> = {}
@@ -170,11 +169,11 @@ function vdp_rpu_quads.set_slot_dim(slot, width, height)
 end
 
 function vdp_rpu_quads.submit_slot_resources(slot)
-	vdp_stream.reset()
+	vdp_stream_reset()
 	define_static_resources()
 	local surface_id<const> = slot_surface[slot]
 	vdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_texture))
-	vdp_stream.submit_cpu_fifo()
+	vdp_stream_submit_cpu_fifo()
 end
 
 function vdp_rpu_quads.clear_color(color)
@@ -287,7 +286,9 @@ function vdp_rpu_quads.finish_frame()
 	pending_clear_color = nil
 	instance_count = 0
 	current_surface = vdp_rpu.resource_none
-	vdp_stream.terminate()
+	if vdp_stream_cursor ~= sys_vdp_stream_base then
+		mem[vdp_stream_claim(1)] = sys_vdp_pkt_end
+	end
 end
 
 return vdp_rpu_quads

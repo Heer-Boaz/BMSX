@@ -1,7 +1,7 @@
 local constants<const> = require('constants')
 local castle_map<const> = require('castle/map')
-local timeline<const> = require('bios/timeline/index')
-local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
+local timeline<const> = require('engine/timeline/index')
+local vdp_tile_run_sources<const> = require('engine/system').vdp_tile_run_sources
 
 local room<const> = {}
 local water_surface_timeline_id<const> = 'r.ws'
@@ -1003,7 +1003,7 @@ function room_object:render_tiles()
 	if tile_count == 0 then
 		return
 	end
-	vdp_rpu_quads.tile_run_sources(self.room_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y, empty_tile_source)
+	vdp_tile_run_sources(self.room_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y, empty_tile_source)
 end
 
 function room_object:render_water()
@@ -1011,7 +1011,7 @@ function room_object:render_water()
 	if tile_count == 0 then
 		return
 	end
-	vdp_rpu_quads.tile_run_sources(self.water_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size), empty_tile_source)
+	vdp_tile_run_sources(self.water_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size), empty_tile_source)
 end
 
 function room_object:render_room()

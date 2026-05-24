@@ -16,8 +16,8 @@
 -- its mask timeline without showing any text.
 
 local constants<const> = require('constants')
-local font_module<const> = require('bios/font')
-local vdp_glyph_color<const> = require('bios/system').vdp_glyph_color
+local font_module<const> = require('engine/font')
+local vdp_glyph_color<const> = require('engine/system').vdp_glyph_color
 
 local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
 	local cursor_x = x

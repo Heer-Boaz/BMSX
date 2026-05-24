@@ -10,7 +10,7 @@
 -- the object already has an FSM.
 
 local constants<const> = require('constants')
-local font_module<const> = require('bios/font')
+local font_module<const> = require('engine/font')
 
 local draw_glyph_line_color<const> = function(font, line, x, y, z, layer, color)
 	local cursor_x = x

@@ -93,76 +93,13 @@ void Runtime::handleLuaError(const std::string& message) {
 void Runtime::runSystemBuiltinPrelude() {
 	std::cout << "[Runtime] prelude: binding system ROM builtins" << std::endl;
 	static const std::array systemBuiltinNames = {
-		"define_fsm",
-		"define_prefab",
-		"define_subsystem",
-		"define_component",
-		"define_effect",
-		"inst",
-		"inst_subsystem",
-		"oget",
-		"rget",
-		"subsystem",
-		"add_space",
-		"set_space",
-		"get_space",
-		"attach_component",
-		"update_world",
-		"draw_world",
-		"reset",
-		"configure_ecs",
-		"apply_default_pipeline",
-		"enlist",
-		"delist",
-		"grant_effect",
-		"trigger_effect",
-		"vdp_load_slot",
-		"vdp_load_system_slot",
-		"vdp_blit_img_color",
-		"vdp_item_color",
-		"vdp_glyph_color",
-		"vdp_img_rect",
-		"vdp_img_slot",
-		"vdp_img_source",
-		"vdp_write_source",
-		"vdp_stream_claim",
-		"vdp_stream_finish",
-		"vdp_clear_color",
-		"vdp_fill_rect_color",
-		"vdp_draw_line_color",
 		"rom_data",
-		"irq",
-		"on_irq",
-		"bool01",
-		"clear_map",
-		"deep_clone",
-		"consume_axis_accum",
-		"set_velocity",
-		"move_with_velocity",
-		"rect_overlaps",
-		"clamp_int",
-		"div_toward_zero",
-		"round_to_nearest",
-		"rol8",
-		"swap_remove",
-		"objects_by_type",
-		"all_objects_by_type",
-		"objects_by_tag",
-		"all_objects_by_tag",
-		"find_by_type",
-		"find_any_by_type",
-		"find_by_tag",
-		"find_any_by_tag",
-		"timeline",
-		"eventemitter",
-		"scratchbatch",
-		"sorted_scratchbatch",
-		};
-		const Value systemValue = requireModule("bios/system");
-		Table* systemModule = nullptr;
-		if (valueIsTable(systemValue)) {
-			systemModule = asTable(systemValue);
-		}
+	};
+	const Value systemValue = requireModule("bios/system");
+	Table* systemModule = nullptr;
+	if (valueIsTable(systemValue)) {
+		systemModule = asTable(systemValue);
+	}
 	machine.cpu.syncGlobalSlotsToTable();
 	for (const char* name : systemBuiltinNames) {
 		std::string exportName = "res__bios__system__";

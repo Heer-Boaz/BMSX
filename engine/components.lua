@@ -1,15 +1,15 @@
 -- components.lua
 -- base component primitives for system rom
 
-local eventemitter_module<const> = require('bios/eventemitter')
-local timeline_module<const> = require('bios/timeline/index')
-local timeline_dispatch<const> = require('bios/timeline/dispatch')
-local collision_profiles<const> = require('bios/collision_profiles')
-local font_module<const> = require('bios/font')
+local eventemitter_module<const> = require('engine/eventemitter')
+local timeline_module<const> = require('engine/timeline/index')
+local timeline_dispatch<const> = require('engine/timeline/dispatch')
+local collision_profiles<const> = require('engine/collision_profiles')
+local font_module<const> = require('engine/font')
 local vdp_image<const> = require('bios/vdp_image')
 local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
 local romdir<const> = require('bios/romdir')
-local world_instance<const> = require('bios/world/index').instance
+local world_instance<const> = require('engine/world/index').instance
 local eventemitter<const> = eventemitter_module.eventemitter
 local timeline<const> = timeline_module.timeline
 

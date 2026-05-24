@@ -21,7 +21,7 @@ const { join, parse, relative, resolve, sep } = require('path');
 // @ts-ignore
 const { access, mkdir, readdir, readFile, stat, writeFile, unlink, copyFile, open } = require('fs/promises');
 // @ts-ignore
-const { createWriteStream, statSync } = require('fs');
+const { createWriteStream, readFileSync, statSync } = require('fs');
 // @ts-ignore
 const { once } = require('events');
 // @ts-ignore
@@ -901,10 +901,87 @@ export type ResourceScanOptions = {
 	 * Defaults to `dist/bmsx-bios[.debug].rom` (based on `debug`).
 	 */
 	biosRomFilePath?: string;
+	libraryLuaPaths?: string[];
 };
 
 function isWorkspaceStateDirectory(name: string): boolean {
 	return name.toLowerCase() === WORKSPACE_STATE_DIR_NAME;
+}
+
+function collectLiteralLuaRequires(source: string, path: string): string[] {
+	const lexer = new LuaLexer(source, path);
+	const tokens = lexer.scanTokens();
+	const parser = new LuaParser(tokens, path, splitText(source));
+	const chunk = parser.parseChunk();
+	const requires: string[] = [];
+	const visited = new WeakSet<object>();
+	const visit = (node: unknown): void => {
+		if (node === null || typeof node !== 'object') {
+			return;
+		}
+		if (visited.has(node)) {
+			return;
+		}
+		visited.add(node);
+		if (Array.isArray(node)) {
+			for (let index = 0; index < node.length; index += 1) {
+				visit(node[index]);
+			}
+			return;
+		}
+		const record = node as Record<string, unknown>;
+		const callee = record.callee as Record<string, unknown> | undefined;
+		const args = record.arguments as ReadonlyArray<Record<string, unknown>> | undefined;
+		if (callee?.name === 'require' && args && args.length > 0 && typeof args[0].value === 'string') {
+			requires.push(args[0].value);
+		}
+		const values = Object.values(record);
+		for (let index = 0; index < values.length; index += 1) {
+			visit(values[index]);
+		}
+	};
+	visit(chunk);
+	return requires;
+}
+
+function collectLibraryLuaClosure(seedFiles: readonly string[], libraryRoots: readonly string[], virtualRoot: string): string[] {
+	const moduleFileByPath = new Map<string, string>();
+	for (const root of libraryRoots) {
+		if (!root || root.length === 0) {
+			continue;
+		}
+		for (const file of collectCartSourceFiles([root])) {
+			const sourcePath = resolveVirtualSourcePath(file, virtualRoot) ?? toWorkspaceRelativePath(file);
+			moduleFileByPath.set(toLuaModulePath(sourcePath), file);
+		}
+	}
+	const includedFiles: string[] = [];
+	const queuedModules: string[] = [];
+	const seenModules = new Set<string>();
+	const scanRequires = (file: string): void => {
+		const source = readFileSync(file, 'utf8');
+		const modules = collectLiteralLuaRequires(source, file);
+		for (let index = 0; index < modules.length; index += 1) {
+			const modulePath = modules[index];
+			if (!moduleFileByPath.has(modulePath) || seenModules.has(modulePath)) {
+				continue;
+			}
+			seenModules.add(modulePath);
+			queuedModules.push(modulePath);
+		}
+	};
+	for (let index = 0; index < seedFiles.length; index += 1) {
+		scanRequires(seedFiles[index]);
+	}
+	let queueIndex = 0;
+	while (queueIndex < queuedModules.length) {
+		const modulePath = queuedModules[queueIndex];
+		queueIndex += 1;
+		const file = moduleFileByPath.get(modulePath)!;
+		includedFiles.push(file);
+		scanRequires(file);
+	}
+	return includedFiles.sort((a, b) => a.localeCompare(b));
 }
 
 export async function getResMetaList(respaths: string[], _romname?: string, options: ResourceScanOptions = {}): Promise<Resource[]> {
@@ -937,6 +1014,14 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 			for (const file of collectCartSourceFiles([luaRoot])) {
 				pushFile(file);
 			}
+		}
+	}
+	const seedFiles = arrayOfFiles.filter(file => file.toLowerCase().endsWith('.lua'));
+	const libraryLuaRoots = options.libraryLuaPaths;
+	if (libraryLuaRoots) {
+		const libraryFiles = collectLibraryLuaClosure(seedFiles, libraryLuaRoots, virtualRoot);
+		for (let index = 0; index < libraryFiles.length; index += 1) {
+			pushFile(libraryFiles[index]);
 		}
 	}
 	arrayOfFiles.sort((a, b) => a.localeCompare(b));
@@ -2012,3 +2097,4 @@ export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 // Define common assets path
 export const commonResPath = `./src/bmsx/res`;
 export const biosLuaPath = './bios';
+export const engineLuaPath = './engine';

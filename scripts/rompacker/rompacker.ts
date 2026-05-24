@@ -7,7 +7,7 @@ import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../src/bmsx/core/sys
 import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
-import { appendProgramImage, biosLuaPath, buildLuaProgramContextAssets, commonResPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
+import { appendProgramImage, biosLuaPath, buildLuaProgramContextAssets, commonResPath, engineLuaPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag } from './rombuilder';
 import { generateHostSystemAtlasArtifactsFromAssets } from './host_system_atlas';
 import type { RomPackerOptions } from './rompacker.rompack';
 import type { RomAsset } from '../../src/bmsx/rompack/format';
@@ -230,6 +230,7 @@ function parseOptions(args: string[]): ParsedOptions {
 	let respath = mode === 'bios' ? './src/bmsx/res' : '';
 
 	let extraLuaRoots: string[] = [];
+	let libraryLuaRoots: string[] = [];
 	if (mode === 'bios') {
 		respath = getParamOrEnv(args, '-respath', 'RES_PATH', './src/bmsx/res', KNOWN_FLAGS);
 		bootloader_path = normalizePathKey(bootloader_path);
@@ -245,6 +246,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		bootloader_path = normalizePathKey(defaultBootloaderPath);
 		respath = resolvedCart.respath;
 		extraLuaRoots = [resolvedCart.cartRoot];
+		libraryLuaRoots = [normalizePathKey(engineLuaPath)];
 	}
 
 	return {
@@ -261,6 +263,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		mode,
 		shouldBundleCartCode: false,
 		extraLuaRoots,
+		libraryLuaRoots,
 	};
 }
 
@@ -587,7 +590,7 @@ async function main() {
 		const args = process.argv.slice(2);
 		const options = parseOptions(args);
 
-		let { title, rom_name, bootloader_path, respath, force, debug, useTextureAtlas, optLevel, mode, extraLuaRoots } = options;
+		let { title, rom_name, bootloader_path, respath, force, debug, useTextureAtlas, optLevel, mode, extraLuaRoots, libraryLuaRoots } = options;
 
 		if (mode === 'bios') {
 			progress = new ProgressReporter(biosBuildTasks);
@@ -613,8 +616,9 @@ async function main() {
 
 		const resourceRoots = isBIOSMode
 			? [respath || commonResPath, biosLuaPath]
-			: [respath || commonResPath, commonResPath, biosLuaPath];
+			: [respath || commonResPath, commonResPath];
 		const extraLuaPathSet = new Set<string>(extraLuaRoots.map(normalizePathKey));
+		const libraryLuaPathSet = new Set<string>(libraryLuaRoots.map(normalizePathKey));
 
 		if (!rom_name && !isBIOSMode) {
 			throw new Error('Missing required argument: --romname or ROM_NAME environment variable.');
@@ -667,12 +671,12 @@ async function main() {
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
 
 		if (!force) {
-			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasId: false, debug }));
+			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet], resolveAtlasId: false, debug }));
 			if (!rebuildRequired && resourceRoots.length > 1) {
 				for (let i = 1; i < resourceRoots.length; i++) {
 					const candidate = resourceRoots[i];
 					if (!candidate || candidate === respath) continue;
-					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasId: true, debug }));
+					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet], resolveAtlasId: true, debug }));
 					rebuildRequired = rebuildRequired || needs;
 					if (rebuildRequired) break;
 				}
@@ -693,6 +697,7 @@ async function main() {
 		if (rebuildRequired) {
 			const romResMetaList = await progress.runWithDetail('Scan resources', () => getResMetaList(resourceRoots, rom_name, {
 				extraLuaPaths: Array.from(extraLuaPathSet),
+				libraryLuaPaths: Array.from(libraryLuaPathSet),
 				virtualRoot,
 				resolveAtlasId: true,
 			}));
@@ -716,9 +721,11 @@ async function main() {
 			await progress.taskCompleted();
 			if (!isBIOSMode) {
 				const cartLuaRoots = Array.from(extraLuaPathSet);
+				const engineLuaRoots = Array.from(libraryLuaPathSet);
 				const biosLuaRoots = [normalizePathKey(biosLuaPath)];
-				await progress.runWithDetail('Lint cart + BIOS Lua', async () => {
+				await progress.runWithDetail('Lint cart + engine + BIOS Lua', async () => {
 					await lintCartSources({ roots: cartLuaRoots, profile: 'cart' });
+					await lintCartSources({ roots: engineLuaRoots, profile: 'bios' });
 					await lintCartSources({ roots: biosLuaRoots, profile: 'bios' });
 				});
 				await progress.taskCompleted();

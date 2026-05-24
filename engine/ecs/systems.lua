@@ -54,11 +54,11 @@ local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
 --    Use collision_profiles to assign named layer+mask presets rather than
 --    setting layer/mask directly.
 
-local ecs<const> = require('bios/ecs/index')
+local ecs<const> = require('engine/ecs/index')
 local clear_map<const> = require('bios/util/clear_map')
-local collision2d<const> = require('bios/collision2d')
+local collision2d<const> = require('engine/collision2d')
 local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
-local world_instance<const> = require('bios/world/index').instance
+local world_instance<const> = require('engine/world/index').instance
 local vdp_image<const> = require('bios/vdp_image')
 
 local tickgroup<const> = ecs.tickgroup

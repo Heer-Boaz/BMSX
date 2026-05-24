@@ -1,7 +1,7 @@
 -- ecs_pipeline.lua
 -- ecs pipeline registry and builder for the system ROM runtime
 
-local registry<const> = require('bios/registry')
+local registry<const> = require('engine/registry')
 
 local ecspipelineregistry<const> = {}
 ecspipelineregistry.__index = ecspipelineregistry

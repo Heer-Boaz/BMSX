@@ -1,3 +1,4 @@
+require('engine/prelude')
 function init()
 end
 

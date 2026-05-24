@@ -1,4 +1,4 @@
-local behaviourtree<const> = require('bios/behaviourtree')
+local behaviourtree<const> = require('engine/behaviourtree')
 local enemy_base<const> = require('enemies/enemy_base')
 
 local paperfoe<const> = {}

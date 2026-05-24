@@ -1,4 +1,4 @@
-local vdp_stream<const> = require('bios/vdp_stream')
+require('bios/vdp_rpu')
 local vdp_lpu<const> = {}
 
 local packet_kind<const> = 0x17000000
@@ -8,7 +8,7 @@ local header<const> = function(payload_words)
 end
 
 function vdp_lpu.register_words(first_register, src_addr, word_count)
-	local wp = vdp_stream.claim(2 + word_count)
+	local wp = vdp_stream_claim(2 + word_count)
 	mem[wp], wp = header(1 + word_count), wp + 4
 	mem[wp], wp = first_register, wp + 4
 	local index = 0

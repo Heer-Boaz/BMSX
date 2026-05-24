@@ -2150,8 +2150,8 @@
 		{
 			"file": "src/carts/pietious/room/index.lua",
 			"substrings": [
-				"vdp_rpu_quads.tile_run_sources(self.room_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y, empty_tile_source)",
-				"vdp_rpu_quads.tile_run_sources(self.water_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size), empty_tile_source)"
+				"vdp_tile_run_sources(self.room_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y, empty_tile_source)",
+				"vdp_tile_run_sources(self.water_tile_sources, tile_count, self.tile_columns, self.tile_size, self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size), empty_tile_source)"
 			],
 			"reason": "pietious_room_tiles_must_use_rpu_tile_run_path"
 		},
@@ -2316,34 +2316,33 @@
 		{
 			"file": "src/bmsx/machine/firmware/builtin_descriptors.ts",
 			"substrings": [
-				"description: 'Emits cart-authored RPU solid-quad data for a filled rectangle.'",
-				"description: 'Emits cart-authored RPU quad data for a line command.'"
+				"{ name: 'rom_data', params: ['id'], signature: 'rom_data(id)'"
 			],
-			"reason": "ts_firmware_vdp_draw_descriptors_must_describe_rpu_packets_not_legacy_blitter_commands"
+			"reason": "ts_firmware_system_builtins_must_stay_tiny_after_engine_split"
 		},
 		{
 			"file": "src/bmsx_cpp/machine/firmware/builtin_descriptors.cpp",
 			"substrings": [
-				"\"Emits cart-authored RPU solid-quad data for a filled rectangle.\"",
-				"\"Emits cart-authored RPU quad data for a line command.\""
+				"constexpr std::array<LuaBuiltinDescriptor, 1> kSystemLuaBuiltinFunctions",
+				"LuaBuiltinDescriptor{\"rom_data\", \"rom_data(id)\""
 			],
-			"reason": "native_firmware_vdp_draw_descriptors_must_describe_rpu_packets_not_legacy_blitter_commands"
+			"reason": "native_firmware_system_builtins_must_stay_tiny_after_engine_split"
 		},
 		{
 			"file": "bios/vdp_rpu_quads.lua",
 			"substrings": [
 				"function vdp_rpu_quads.finish_frame()",
-				"mem[vdp_stream_claim(1)] = vdp_pkt_end"
+				"mem[vdp_stream_claim(1)] = sys_vdp_pkt_end"
 			],
 			"reason": "rpu_quad_owner_finishes_stream_without_deleted_vdp_stream_forwarder"
 		},
 		{
 			"file": "bios/system.lua",
 			"substrings": [
-				"system.vdp_stream_finish = vdp_rpu_quads.finish_frame",
-				"system.vdp_clear_color = vdp_rpu_quads.clear_color"
+				"system.rom_data = romdir.data",
+				"function system.irq(flags)"
 			],
-			"reason": "bios_system_globals_bind_directly_to_rpu_quad_owner_not_vdp_stream_forwarder"
+			"reason": "bios_system_lua_must_stay_tiny_after_engine_split"
 		}
 	],
 	"strict_file_layout": [
@@ -3319,7 +3318,7 @@
 		{
 			"file": "bios/vdp_rpu_quads.lua",
 			"start": "\tvdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_texture))",
-			"end": "\nend\n\nfunction vdp_rpu_quads.submit_slot_resources",
+			"end": "\nend\n\nfunction vdp_rpu_quads.clear_color",
 			"reason": "vdp_rpu_quads_surface_setup_must_not_allocate_after_module_init"
 		},
 		{

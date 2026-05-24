@@ -1,3 +1,4 @@
+require('engine/prelude')
 local frame = 0
 
 local width<const> = 160

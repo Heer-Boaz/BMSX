@@ -58,13 +58,13 @@
 --    Moving an object to a non-active space hides it from gameplay queries
 --    without destroying it (components, subscriptions, and FSM persist).
 --    Pattern: move enemies to 'transition' during screen transitions, not despawn.
-local eventemitter<const> = require('bios/eventemitter')
-local fsm<const> = require('bios/fsm/index')
-local fsmlibrary<const> = require('bios/fsm/library')
-local components<const> = require('bios/components')
-local behaviourtree<const> = require('bios/behaviourtree')
-local world_instance<const> = require('bios/world/index').instance
-local registry_instance<const> = require('bios/registry').instance
+local eventemitter<const> = require('engine/eventemitter')
+local fsm<const> = require('engine/fsm/index')
+local fsmlibrary<const> = require('engine/fsm/library')
+local components<const> = require('engine/components')
+local behaviourtree<const> = require('engine/behaviourtree')
+local world_instance<const> = require('engine/world/index').instance
+local registry_instance<const> = require('engine/registry').instance
 
 local worldobject<const> = {}
 worldobject.__index = worldobject

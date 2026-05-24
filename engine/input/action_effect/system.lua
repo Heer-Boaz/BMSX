@@ -1,13 +1,13 @@
 -- input_action_effect_system.lua
 -- input intent + input action effect ecs system
 
-local ecs<const> = require('bios/ecs/index')
-local action_effects<const> = require('bios/action_effects')
-local compiler<const> = require('bios/input/action_effect/compiler')
-local dsl<const> = require('bios/input/action_effect/dsl')
+local ecs<const> = require('engine/ecs/index')
+local action_effects<const> = require('engine/action_effects')
+local compiler<const> = require('engine/input/action_effect/compiler')
+local dsl<const> = require('engine/input/action_effect/dsl')
 local romdir<const> = require('bios/romdir')
 local scratchbatch<const> = require('bios/util/scratchbatch')
-local world_instance<const> = require('bios/world/index').instance
+local world_instance<const> = require('engine/world/index').instance
 local inputintentcomponent<const> = 'inputintentcomponent'
 local inputactioneffectcomponent<const> = 'inputactioneffectcomponent'
 local actioneffectcomponentid<const> = 'actioneffectcomponent'

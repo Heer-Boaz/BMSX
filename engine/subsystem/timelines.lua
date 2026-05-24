@@ -1,5 +1,5 @@
-local timeline_module<const> = require("bios/timeline/index")
-local timeline_dispatch<const> = require("bios/timeline/dispatch")
+local timeline_module<const> = require("engine/timeline/index")
+local timeline_dispatch<const> = require("engine/timeline/dispatch")
 
 local subsystemtimelines<const> = {}
 subsystemtimelines.__index = subsystemtimelines

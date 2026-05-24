@@ -1,5 +1,5 @@
 
-local progression<const> = require('bios/progression')
+local progression<const> = require('engine/progression')
 local constants<const> = require('constants')
 
 local room_spawner<const> = {}
