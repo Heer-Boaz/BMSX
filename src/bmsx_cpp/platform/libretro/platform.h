@@ -197,7 +197,7 @@ public:
 
 	// Emulation control
 	void reset();
-	void runFrame();
+	bool runFrame();
 
 	// State access
 	const Framebuffer& getFramebuffer() const { return m_framebuffer; }

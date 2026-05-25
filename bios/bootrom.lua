@@ -1,12 +1,12 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
-require('bios/msx_colors')
+require('system/msx_colors')
 local clamp_int<const> = require('bios/util/clamp_int')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
-local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
-local vdp_image<const> = require('bios/vdp_image')
-local font_module<const> = require('bios/font')
+local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
+local vdp_image<const> = require('system/vdp_image')
+local font_module<const> = require('system/font')
 local system<const> = require('bios/system')
 
 local reset_scroll_state<const> = function(state) state.top = 0 end

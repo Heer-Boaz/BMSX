@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-05-17.
+Last checked: 2026-05-25.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -374,6 +374,12 @@ operator at the producer boundary, for example `&(action .. '[p]')`, so the
 device still sees raw string-id words rather than a high-level input API.
 
 ## Firmware and Lua layer
+
+`bios/` is the system ROM entry layer: `bootrom.lua`, `system.lua`, and shared
+common/util helpers. Device-facing system-ROM Lua helpers that are also useful
+to cart libraries live in `system/` instead of pretending to be BIOS entry
+points. They remain firmware code: helpers emit RAM/MMIO words and do not own
+host renderer/audio state.
 
 BIOS and cart libraries may hide register programming behind helpers, but those
 helpers must write/read the same RAM/MMIO words the cart could use directly.

@@ -29,10 +29,10 @@ local swap_remove<const> = require('bios/util/swap_remove')
 local timeline<const> = require('engine/timeline/index')
 local aem<const> = require('engine/aem')
 local progression<const> = require('engine/progression')
-local romdir<const> = require('bios/romdir')
+local romdir<const> = require('system/romdir')
 local font_module<const> = require('engine/font')
-local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
-local vdp_image<const> = require('bios/vdp_image')
+local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
+local vdp_image<const> = require('system/vdp_image')
 
 local world_instance<const> = world_module.instance
 

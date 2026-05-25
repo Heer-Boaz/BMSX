@@ -1,4 +1,4 @@
-local vdp_image<const> = require('bios/vdp_image')
+local vdp_image<const> = require('system/vdp_image')
 
 local font<const> = {}
 

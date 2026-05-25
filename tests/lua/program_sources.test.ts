@@ -114,7 +114,7 @@ test('ROM TOC decode gives Lua assets an explicit zero update timestamp', () => 
 
 test('toLuaModulePath normalizes source paths through the loader contract', () => {
 	assert.equal(toLuaModulePath('cart.lua'), 'cart');
-	assert.equal(toLuaModulePath('bios/font.lua'), 'bios/font');
+	assert.equal(toLuaModulePath('system/font.lua'), 'system/font');
 	assert.equal(SYSTEM_BOOT_ENTRY_PATH, 'bios/bootrom.lua');
 	assert.equal(toLuaModulePath(SYSTEM_BOOT_ENTRY_PATH), 'bios/bootrom');
 	assert.equal(toLuaModulePath('src/carts/pietious/cart.lua'), 'cart');

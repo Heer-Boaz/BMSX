@@ -1,6 +1,6 @@
 local round_to_nearest<const> = require('bios/util/round_to_nearest')
-local romdir<const> = require('bios/romdir')
-local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
+local romdir<const> = require('system/romdir')
+local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 
 local vdp_image<const> = {}
 local cache<const> = {}

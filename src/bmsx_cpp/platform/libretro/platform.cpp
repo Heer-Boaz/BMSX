@@ -581,8 +581,8 @@ void LibretroPlatform::reset() {
 	log(RETRO_LOG_INFO, "[BMSX] Game reset (runtime rebooted)\n");
 }
 
-void LibretroPlatform::runFrame() {
-	if (!m_rom_loaded || !m_console) return;
+bool LibretroPlatform::runFrame() {
+	if (!m_rom_loaded || !m_console) return false;
 
 #if ENABLE_PERFORMANCE_LOGS
 	const auto frameStart = std::chrono::steady_clock::now();
@@ -607,8 +607,9 @@ void LibretroPlatform::runFrame() {
 	// input for this host frame.
 	pollInput();
 
-	m_console->runHostFrame(m_console->runtime(), *m_microtask_queue, dt, m_platform_paused);
+	const bool presented = m_console->runHostFrame(m_console->runtime(), *m_microtask_queue, dt, m_platform_paused);
 	m_audio_service->collectSamples(m_audio_buffer);
+	return presented;
 }
 
 void LibretroPlatform::setPlatformPaused(bool paused) {

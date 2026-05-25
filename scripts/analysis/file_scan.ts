@@ -10,7 +10,7 @@ function splitNullDelimited(buffer: Buffer): string[] {
 	return buffer.toString('utf8').split('\0').filter(Boolean);
 }
 
-let gitFilesCache: string[] | undefined;
+let gitTrackedFilesCache: string[] | undefined;
 
 function requestedRootKeys(roots: readonly string[]): string[] {
 	const keys: string[] = [];
@@ -36,21 +36,25 @@ function pathIsUnderRequestedRoot(path: string, roots: readonly string[]): boole
 	return false;
 }
 
-function gitTrackedAndUntrackedFiles(): string[] {
-	if (gitFilesCache !== undefined) {
-		return gitFilesCache;
+function gitTrackedFiles(): string[] {
+	if (gitTrackedFilesCache !== undefined) {
+		return gitTrackedFilesCache;
 	}
 	const tracked = spawnSync('git', ['ls-files', '-z'], { cwd: process.cwd(), encoding: 'buffer' });
 	if (tracked.status !== 0) {
 		throw new Error('git ls-files failed; source scanning requires a Git worktree.');
 	}
+	gitTrackedFilesCache = splitNullDelimited(tracked.stdout);
+	return gitTrackedFilesCache;
+}
+
+function gitTrackedAndUntrackedFiles(): string[] {
 	const untracked = spawnSync('git', ['ls-files', '-z', '--others', '--exclude-standard'], { cwd: process.cwd(), encoding: 'buffer' });
 	if (untracked.status !== 0) {
 		throw new Error('git ls-files --others --exclude-standard failed; source scanning requires Git exclude support.');
 	}
-	const files = new Set([...splitNullDelimited(tracked.stdout), ...splitNullDelimited(untracked.stdout)]);
-	gitFilesCache = Array.from(files);
-	return gitFilesCache;
+	const files = new Set([...gitTrackedFiles(), ...splitNullDelimited(untracked.stdout)]);
+	return Array.from(files);
 }
 
 export function collectSourceFiles(roots: readonly string[], extensions: ReadonlySet<string>): string[] {

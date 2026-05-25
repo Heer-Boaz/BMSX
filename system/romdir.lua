@@ -1,4 +1,4 @@
-local bin<const> = require('bios/bin')
+local bin<const> = require('system/bin')
 
 local romdir<const> = {}
 

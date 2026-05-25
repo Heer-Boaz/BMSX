@@ -1,4 +1,4 @@
-require('bios/vdp_rpu')
+require('system/vdp_rpu')
 local vdp_xf<const> = {}
 
 local packet_kind<const> = 0x13000000

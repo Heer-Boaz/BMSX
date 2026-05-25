@@ -95,13 +95,14 @@ export async function createLuaResource(runtime: Runtime, request: LuaResourceCr
 		registry.module2lua[asset.module_path] = asset;
 		registry.can_boot_from_source = true;
 	};
-	const registry = runtime.systemLuaSources && asset.source_path.startsWith('bios/')
+	const systemSource = asset.source_path.startsWith('bios/') || asset.source_path.startsWith('system/');
+	const registry = runtime.systemLuaSources && systemSource
 		? runtime.systemLuaSources
 		: resolveEditableCartLuaSources(runtime);
 	registerAsset(registry);
 	luaPipeline.invalidateModuleLookups(runtime);
 	const filesystemPath = asset.source_path;
-	await persistWorkspaceSourceFile(filesystemPath, contents, asset.source_path.startsWith('bios/') ? runtime.systemProjectRootPath : runtime.cartProjectRootPath);
+	await persistWorkspaceSourceFile(filesystemPath, contents, systemSource ? runtime.systemProjectRootPath : runtime.cartProjectRootPath);
 	runtime.luaGenericChunksExecuted.delete(asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;

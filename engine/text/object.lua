@@ -5,7 +5,7 @@ local worldobject<const> = require('engine/world/object')
 local components<const> = require('engine/components')
 local fsmlibrary<const> = require('engine/fsm/library')
 local wrap_text_lines<const> = require('bios/util/wrap_text_lines')
-local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
+local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local font_module<const> = require('engine/font')
 
 local textobject<const> = {}

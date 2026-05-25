@@ -51,6 +51,7 @@ bool CpuExecutionState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameSta
 			}
 			const int idleCycles = static_cast<int>(std::min<i64>(cycleBudgetRemaining, cyclesToTarget));
 			cycleBudgetRemaining -= idleCycles;
+			frameState.cycleBudgetRemaining = cycleBudgetRemaining;
 			tickCompleted = advanceRuntimeTime(runtime, idleCycles);
 			continue;
 		}

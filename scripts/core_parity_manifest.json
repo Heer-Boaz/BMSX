@@ -772,12 +772,12 @@
 				"src/bmsx/machine/devices/vdp/rpu.ts",
 				"src/bmsx_cpp/machine/devices/vdp/contracts.h",
 				"src/bmsx_cpp/machine/devices/vdp/rpu.cpp",
-				"bios/vdp_rpu.lua",
-				"bios/vdp_rpu_quads.lua",
-				"bios/vdp_xf.lua",
-				"bios/vdp_lpu.lua",
-				"bios/vdp_mfu.lua",
-				"bios/vdp_jtu.lua",
+				"system/vdp_rpu.lua",
+				"system/vdp_rpu_quads.lua",
+				"system/vdp_xf.lua",
+				"system/vdp_lpu.lua",
+				"system/vdp_mfu.lua",
+				"system/vdp_jtu.lua",
 				"src/carts/bare_metal_cart/cart.lua",
 				"src/bmsx/render/backend/webgl/instanced_buffers.ts",
 				"src/bmsx/render/host_overlay/webgl/pipeline.ts",
@@ -873,7 +873,7 @@
 	],
 	"strict_lua_vdp_abi_parity": [
 		{
-			"lua": "bios/vdp_rpu.lua",
+			"lua": "system/vdp_rpu.lua",
 			"ts": [
 				"src/bmsx/machine/devices/vdp/rpu.ts",
 				"src/bmsx/machine/devices/vdp/contracts.ts"
@@ -1320,7 +1320,7 @@
 			"reason": "rpu_bios_packet_constants_and_cart_visible_public_helpers_must_match_the_ts_cpp_device_abi"
 		},
 		{
-			"lua": "bios/vdp_xf.lua",
+			"lua": "system/vdp_xf.lua",
 			"ts": [
 				"src/bmsx/machine/devices/vdp/xf.ts"
 			],
@@ -1361,7 +1361,7 @@
 			"reason": "xf_bios_packet_constants_must_match_the_ts_cpp_device_abi"
 		},
 		{
-			"lua": "bios/vdp_lpu.lua",
+			"lua": "system/vdp_lpu.lua",
 			"ts": [
 				"src/bmsx/machine/devices/vdp/lpu.ts"
 			],
@@ -1375,7 +1375,7 @@
 			"reason": "lpu_bios_packet_constants_must_match_the_ts_cpp_device_abi"
 		},
 		{
-			"lua": "bios/vdp_mfu.lua",
+			"lua": "system/vdp_mfu.lua",
 			"ts": [
 				"src/bmsx/machine/devices/vdp/mfu.ts"
 			],
@@ -1389,7 +1389,7 @@
 			"reason": "mfu_bios_packet_constants_must_match_the_ts_cpp_device_abi"
 		},
 		{
-			"lua": "bios/vdp_jtu.lua",
+			"lua": "system/vdp_jtu.lua",
 			"ts": [
 				"src/bmsx/machine/devices/vdp/jtu.ts",
 				"src/bmsx/machine/devices/vdp/contracts.ts"
@@ -1883,18 +1883,21 @@
 		{
 			"roots": [
 				"bios",
+				"system",
 				"src/carts"
 			],
 			"substrings": [
 				"require('bios/vdp_stream')",
 				"require(\"bios/vdp_stream\")",
+				"require('system/vdp_stream')",
+				"require(\"system/vdp_stream\")",
 				"vdp_stream."
 			],
 			"reason": "cart_bios_rpu_draw_code_must_call_the_rpu_quad_owner_directly_not_deleted_vdp_stream_forwarder"
 		},
 		{
 			"roots": [
-				"bios/vdp_rpu_quads.lua",
+				"system/vdp_rpu_quads.lua",
 				"src/carts/bare_metal_cart/cart.lua",
 				"src/carts/2025",
 				"src/carts/pietious"
@@ -1909,7 +1912,7 @@
 		},
 		{
 			"roots": [
-				"bios/vdp_rpu_quads.lua",
+				"system/vdp_rpu_quads.lua",
 				"src/carts"
 			],
 			"substrings": [
@@ -1958,7 +1961,7 @@
 			"reason": "render_pass_execute_must_reuse_registered_pass_encoder_instead_of_allocating_per_execute"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"substrings": [
 				"function vdp_rpu.buffer_upload_inline",
 				"function vdp_rpu.buffer_discard",
@@ -2099,7 +2102,7 @@
 			"reason": "native_workbench_framebuffer_texture_presentation_must_not_run_for_rpu_cart_frames"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"substrings": [
 				"vdp_rpu.begin_draw(vdp_rpu.shader_v2_t2_c4_i_affine2",
 				"vdp_rpu.bind_stream(1, vdp_rpu.layout_i_affine2_trect_c4, instance_buffer, 0, 1)",
@@ -2108,7 +2111,7 @@
 			"reason": "bios_rpu_quad_batcher_must_emit_instanced_gpu_draws_for_cart_bios_quad_work"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"substrings": [
 				"local instance_stride<const> = 48",
 				"local draw_order_depth_scale<const> = 2.0 / 1048576.0",
@@ -2140,7 +2143,7 @@
 			"reason": "gles2_rpu_affine_instance_layout_must_carry_cart_authored_depth"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"substrings": [
 				"function vdp_rpu_quads.tile_run_sources",
 				"write_instance(\n\t\t\t\t(origin_x + (tile_x * tile_size)) * ndc_x_scale - 1.0,"
@@ -2329,7 +2332,7 @@
 			"reason": "native_firmware_system_builtins_must_stay_tiny_after_engine_split"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"substrings": [
 				"function vdp_rpu_quads.finish_frame()",
 				"mem[vdp_stream_claim(1)] = sys_vdp_pkt_end"
@@ -2394,6 +2397,7 @@
 				"src/bmsx_cpp/render/backend/pass/software_scene.h",
 				"src/bmsx_cpp/render/backend/pass/software_scene.cpp",
 				"bios/vdp_pmu.lua",
+				"system/vdp_pmu.lua",
 				"src/bmsx/render/2d/vdp_blit_pipeline.ts",
 				"src/bmsx/render/backend/webgl/vdp_2d_blit.ts",
 				"src/bmsx_cpp/render/2d/vdp_blit_pipeline.cpp",
@@ -2402,6 +2406,7 @@
 				"src/bmsx_cpp/render/backend/pass/framebuffer_execution.cpp",
 				"src/bmsx_cpp/render/backend/pass/framebuffer_execution.h",
 				"bios/vdp_stream.lua",
+				"system/vdp_stream.lua",
 				"src/bmsx/machine/devices/vdp/blitter.ts",
 				"src/bmsx/machine/devices/vdp/blitter_source.ts",
 				"src/bmsx_cpp/machine/devices/vdp/blitter.h",
@@ -3148,97 +3153,97 @@
 	],
 	"strict_lua_no_heap_regions": [
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\treturn primitive | (index_type << 8)",
 			"end": "\nend\n\nfunction vdp_rpu.pipeline",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\treturn blend | (depth << 4) | (cull << 8) | depth_write | color_write_mask",
 			"end": "\nend\n\nfunction vdp_rpu.sampler",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\tmemwrite(\n\t\tvdp_stream_claim(6),\n\t\theader(words_buffer_upload_dma),",
 			"end": "\nend\n\nfunction vdp_rpu.buffer_upload_inline",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\tmemwrite(\n\t\tvdp_stream_claim(5),\n\t\theader(words_constant_bank_define),",
 			"end": "\nend\n\nfunction vdp_rpu.constant_upload_dma",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\tmemwrite(\n\t\tvdp_stream_claim(7),\n\t\theader(words_constant_upload_device),",
 			"end": "\nend\n\nfunction vdp_rpu.begin_pass",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\tmemwrite(\n\t\tvdp_stream_claim(9),\n\t\theader(words_begin_pass),",
 			"end": "\nend\n\nfunction vdp_rpu.end_pass",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\tmemwrite(\n\t\tvdp_stream_claim(2),\n\t\theader(words_end_pass),",
 			"end": "\nend\n\nfunction vdp_rpu.begin_draw",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\tmemwrite(\n\t\tvdp_stream_claim(10),\n\t\theader(words_begin_draw),",
 			"end": "\nend\n\nfunction vdp_rpu.bind_stream",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\tmemwrite(\n\t\tvdp_stream_claim(7),\n\t\theader(words_bind_stream),",
 			"end": "\nend\n\nfunction vdp_rpu.bind_constants",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\tmemwrite(\n\t\tvdp_stream_claim(6),\n\t\theader(words_bind_constants),",
 			"end": "\nend\n\nfunction vdp_rpu.bind_texture",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\tmemwrite(\n\t\tvdp_stream_claim(5),\n\t\theader(words_bind_texture),",
 			"end": "\nend\n\nfunction vdp_rpu.end_draw",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_rpu.lua",
+			"file": "system/vdp_rpu.lua",
 			"start": "\tmemwrite(\n\t\tvdp_stream_claim(2),\n\t\theader(words_end_draw),",
 			"end": "\nend\n\n\nvdp_rpu.usage_vertex",
 			"reason": "vdp_rpu_hot_packet_helpers_must_not_allocate_tables_closures_or_strings"
 		},
 		{
-			"file": "bios/vdp_xf.lua",
+			"file": "system/vdp_xf.lua",
 			"start": "\tlocal wp = vdp_stream_claim(1 + matrix_packet_payload_words)",
 			"end": "\nend\n\nfunction vdp_xf.select",
 			"reason": "vdp_device_constant_upload_helpers_must_write_words_without_per_frame_heap_or_gc_work"
 		},
 		{
-			"file": "bios/vdp_lpu.lua",
+			"file": "system/vdp_lpu.lua",
 			"start": "\tlocal wp = vdp_stream_claim(2 + word_count)",
 			"end": "\nend\n\nreturn vdp_lpu",
 			"reason": "vdp_device_constant_upload_helpers_must_write_words_without_per_frame_heap_or_gc_work"
 		},
 		{
-			"file": "bios/vdp_mfu.lua",
+			"file": "system/vdp_mfu.lua",
 			"start": "\tlocal wp = vdp_stream_claim(2 + word_count)",
 			"end": "\nend\n\nreturn vdp_mfu",
 			"reason": "vdp_device_constant_upload_helpers_must_write_words_without_per_frame_heap_or_gc_work"
 		},
 		{
-			"file": "bios/vdp_jtu.lua",
+			"file": "system/vdp_jtu.lua",
 			"start": "\tlocal wp = vdp_stream_claim(1 + matrix_packet_payload_words)",
 			"end": "\nend\n\nvdp_jtu.matrix_words_per_matrix",
 			"reason": "vdp_device_constant_upload_helpers_must_write_words_without_per_frame_heap_or_gc_work"
@@ -3310,79 +3315,79 @@
 			"reason": "bare_metal_cart_main_loop_must_not_allocate_tables_closures_or_strings_per_frame"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\twrite_quad_vertices()",
 			"end": "\nend\n\nlocal begin_pass",
 			"reason": "vdp_rpu_quads_resource_setup_must_not_allocate_after_module_init"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tvdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_texture))",
 			"end": "\nend\n\nfunction vdp_rpu_quads.clear_color",
 			"reason": "vdp_rpu_quads_surface_setup_must_not_allocate_after_module_init"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tif frame_active then",
 			"end": "\nend\n\nlocal flush_instances",
 			"reason": "vdp_rpu_quads_pass_begin_must_not_allocate"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tif instance_count == 0 then",
 			"end": "\nend\n\nlocal switch_surface",
 			"reason": "vdp_rpu_quads_instance_flush_must_not_allocate"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tif current_surface == surface_id then",
 			"end": "\nend\n\nlocal write_instance",
 			"reason": "vdp_rpu_quads_surface_switch_must_not_allocate"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tif instance_count == instance_capacity then",
 			"end": "\nend\n\nlocal queue_quad",
 			"reason": "vdp_rpu_quads_instance_write_must_not_allocate"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tswitch_surface(surface_id)",
 			"end": "\nend\n\nfunction vdp_rpu_quads.set_slot_dim",
 			"reason": "vdp_rpu_quads_queue_quad_must_not_allocate"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tif instance_count ~= 0 then",
 			"end": "\nend\n\nfunction vdp_rpu_quads.fill_rect_color",
 			"reason": "vdp_rpu_quads_clear_must_not_allocate"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tqueue_quad(vdp_rpu.resource_none, 0.0, 0.0, 1.0, 1.0, x0, y0, x1 - x0, y1 - y0, z, layer, color)",
 			"end": "\nend\n\nfunction vdp_rpu_quads.draw_line_color",
 			"reason": "vdp_rpu_quads_fill_rect_must_not_allocate"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tlocal dx<const> = x1 - x0",
 			"end": "\nend\n\nfunction vdp_rpu_quads.blit_source_color",
 			"reason": "vdp_rpu_quads_line_must_not_allocate"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tlocal inv_w<const> = 1.0 / surface_width[surface_id]",
 			"end": "\nend\n\nfunction vdp_rpu_quads.tile_run_sources",
 			"reason": "vdp_rpu_quads_blit_must_not_allocate"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tif instance_count ~= 0 then\n\t\tflush_instances()\n\telseif pending_clear then",
 			"end": "\nend\n\nreturn vdp_rpu_quads",
 			"reason": "vdp_rpu_quads_finish_frame_must_not_allocate"
 		},
 		{
-			"file": "bios/vdp_rpu_quads.lua",
+			"file": "system/vdp_rpu_quads.lua",
 			"start": "\tlocal index = 1",
 			"end": "\nend\n\nfunction vdp_rpu_quads.finish_frame",
 			"reason": "vdp_rpu_quads_tile_run_must_write_instances_without_heap_or_gc_work"

@@ -1,4 +1,4 @@
-local romdir<const> = require('bios/romdir')
+local romdir<const> = require('system/romdir')
 
 local system<const> = {}
 local irq_handlers<const> = {}

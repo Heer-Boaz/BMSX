@@ -83,8 +83,8 @@ Belangrijkste gerealiseerde stappen:
    - `CONSTANT_UPLOAD_DEVICE` kopieert XF/LPU/MFU/JTU-registerwoorden naar normale RPU constant banks;
    - XF/MFU/JTU Q16.16 words worden bij de RPU-boundary naar f32-constantwords gedecodeerd;
    - LPU-registerwoorden blijven raw;
-   - `bare_metal_cart` routeert de mesh C0-matrix via een centrale `bios/vdp_xf.lua` helper en uploadt daarna vanuit XF naar de RPU;
-   - `bare_metal_cart` routeert C1 lighting constants via een centrale `bios/vdp_lpu.lua` helper en uploadt daarna raw vanuit LPU naar de RPU;
+   - `bare_metal_cart` routeert de mesh C0-matrix via een centrale `system/vdp_xf.lua` helper en uploadt daarna vanuit XF naar de RPU;
+   - `bare_metal_cart` routeert C1 lighting constants via een centrale `system/vdp_lpu.lua` helper en uploadt daarna raw vanuit LPU naar de RPU;
    - BIOS/cart buffer writes gebruiken nu write-pointer assignments (`mem[wp], wp = ...` / `memwritef32(...)`) voor sequentiele vertex-, instance- en constantdata in plaats van lokale addr+stride schrijfpatronen.
 
 ## Laatste validatie die groen was
@@ -101,7 +101,7 @@ cmake --build build-debug --target bmsx_core --parallel 2
 npm run audit:core-parity
 npm run build:bios -- --force
 npm run build:game -- bare_metal_cart --force
-rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" src/bmsx/machine/devices/vdp src/bmsx/render/backend/webgl src/bmsx_cpp/machine/devices/vdp src/bmsx_cpp/render/backend/gles2 bios/vdp_rpu.lua bios/vdp_rpu_quads.lua bios/vdp_xf.lua bios/vdp_lpu.lua src/carts/bare_metal_cart/cart.lua && exit 1 || true
+rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" src/bmsx/machine/devices/vdp src/bmsx/render/backend/webgl src/bmsx_cpp/machine/devices/vdp src/bmsx_cpp/render/backend/gles2 system/vdp_rpu.lua system/vdp_rpu_quads.lua system/vdp_xf.lua system/vdp_lpu.lua src/carts/bare_metal_cart/cart.lua && exit 1 || true
 git diff --check
 ```
 
@@ -175,7 +175,7 @@ cmake --build build-debug --target bmsx_core --parallel 2
 cmake --build build-cpp-tests-make --target bmsx_vdp_ingress_tests --parallel 2
 ./build-cpp-tests-make/bmsx_vdp_ingress_tests
 npm run audit:core-parity
-rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" src/bmsx/machine/devices/vdp src/bmsx/render/backend/webgl src/bmsx_cpp/machine/devices/vdp src/bmsx_cpp/render/backend/gles2 bios/vdp_rpu.lua bios/vdp_rpu_quads.lua bios/vdp_xf.lua bios/vdp_lpu.lua src/carts/bare_metal_cart/cart.lua && exit 1 || true
+rg -n "Number\\.isFinite|Number\\.isNaN|isNaN|typeof .*number|Math\\.floor|Math\\.ceil" src/bmsx/machine/devices/vdp src/bmsx/render/backend/webgl src/bmsx_cpp/machine/devices/vdp src/bmsx_cpp/render/backend/gles2 system/vdp_rpu.lua system/vdp_rpu_quads.lua system/vdp_xf.lua system/vdp_lpu.lua src/carts/bare_metal_cart/cart.lua && exit 1 || true
 git diff --check
 ```
 

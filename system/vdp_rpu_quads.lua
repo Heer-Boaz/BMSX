@@ -1,4 +1,4 @@
-local vdp_rpu<const> = require('bios/vdp_rpu')
+local vdp_rpu<const> = require('system/vdp_rpu')
 
 local vdp_rpu_quads<const> = {}
 

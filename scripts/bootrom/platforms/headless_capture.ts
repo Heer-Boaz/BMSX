@@ -11,8 +11,22 @@ export interface ScheduledHeadlessCapture {
 	source: string;
 }
 
+export interface ScheduledHeadlessFrameCapture {
+	frame: number;
+	outputFrame: number;
+	description: string;
+	source: string;
+}
+
 interface PendingHeadlessCapture {
 	deadlineMs: number;
+	description: string;
+	source: string;
+}
+
+interface PendingHeadlessFrameCapture {
+	frame: number;
+	outputFrame: number;
 	description: string;
 	source: string;
 }
@@ -38,6 +52,7 @@ export function deriveHeadlessCaptureOutputDir(sourcePath: string): string {
 export class HeadlessCaptureCoordinator {
 	private readonly gate = taskGate.group('headless:capture');
 	private readonly pending: PendingHeadlessCapture[] = [];
+	private readonly pendingFrames: PendingHeadlessFrameCapture[] = [];
 	private readonly capturedFrames = new Set<number>();
 	private readonly writeFailures: unknown[] = [];
 	private readonly frameSubscription;
@@ -60,6 +75,15 @@ export class HeadlessCaptureCoordinator {
 		});
 	}
 
+	public scheduleFrame(capture: ScheduledHeadlessFrameCapture): void {
+		this.pendingFrames.push({
+			frame: capture.frame,
+			outputFrame: capture.outputFrame,
+			description: capture.description,
+			source: capture.source,
+		});
+	}
+
 	public canCaptureNow(): boolean {
 		const frame = this.lastPresentedFrame;
 		return !!frame && !this.capturedFrames.has(frame.frameIndex);
@@ -74,11 +98,11 @@ export class HeadlessCaptureCoordinator {
 	}
 
 	public async flushWrites(drainPendingCaptures = false): Promise<void> {
-		if (drainPendingCaptures && this.pending.length > 0) {
+		if (drainPendingCaptures && this.hasDrainablePendingCaptures()) {
 			this.capturePendingFromLatestFrame();
 		}
-		while ((drainPendingCaptures && this.pending.length > 0) || !this.gate.ready) {
-			if (drainPendingCaptures && this.pending.length > 0) {
+		while ((drainPendingCaptures && this.hasDrainablePendingCaptures()) || !this.gate.ready) {
+			if (drainPendingCaptures && this.hasDrainablePendingCaptures()) {
 				this.capturePendingFromLatestFrame();
 			}
 			await sleep(1);
@@ -105,6 +129,17 @@ export class HeadlessCaptureCoordinator {
 			writeIndex += 1;
 		}
 		this.pending.length = writeIndex;
+		writeIndex = 0;
+		for (let readIndex = 0; readIndex < this.pendingFrames.length; readIndex += 1) {
+			const pending = this.pendingFrames[readIndex]!;
+			if (this.shouldCaptureFrame(pending, frame.frameIndex)) {
+				this.captureFrame(frame, pending.outputFrame);
+				continue;
+			}
+			this.pendingFrames[writeIndex] = pending;
+			writeIndex += 1;
+		}
+		this.pendingFrames.length = writeIndex;
 	};
 
 	private capturePendingFromLatestFrame(): void {
@@ -123,20 +158,51 @@ export class HeadlessCaptureCoordinator {
 			writeIndex += 1;
 		}
 		this.pending.length = writeIndex;
+		writeIndex = 0;
+		for (let readIndex = 0; readIndex < this.pendingFrames.length; readIndex += 1) {
+			const pending = this.pendingFrames[readIndex]!;
+			if (this.shouldCaptureFrame(pending, frame.frameIndex)) {
+				this.captureFrame(frame, pending.outputFrame);
+				continue;
+			}
+			this.pendingFrames[writeIndex] = pending;
+			writeIndex += 1;
+		}
+		this.pendingFrames.length = writeIndex;
 	}
 
 	private shouldCapture(capture: PendingHeadlessCapture): boolean {
 		return this.nowMs() >= capture.deadlineMs;
 	}
 
-	private captureFrame(frame: HeadlessPresentedFrame): void {
-		if (this.capturedFrames.has(frame.frameIndex)) {
+	private shouldCaptureFrame(capture: PendingHeadlessFrameCapture, frameIndex: number): boolean {
+		return frameIndex >= capture.frame;
+	}
+
+	private hasDrainablePendingCaptures(): boolean {
+		if (this.pending.length > 0) {
+			return true;
+		}
+		const frame = this.lastPresentedFrame;
+		if (!frame) {
+			return false;
+		}
+		for (let index = 0; index < this.pendingFrames.length; index += 1) {
+			if (this.shouldCaptureFrame(this.pendingFrames[index]!, frame.frameIndex)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private captureFrame(frame: HeadlessPresentedFrame, outputFrameIndex = frame.frameIndex): void {
+		if (this.capturedFrames.has(outputFrameIndex)) {
 			return;
 		}
-		this.capturedFrames.add(frame.frameIndex);
+		this.capturedFrames.add(outputFrameIndex);
 		const pixels = this.host.borrowPresentedFramePixels();
 		const png = encodePng(frame.width, frame.height, pixels);
-		const filename = this.buildFilename(frame.frameIndex);
+		const filename = this.buildFilename(outputFrameIndex);
 		const outputPath = path.join(this.outputDir, filename);
 		const writePromise = this.gate.trackFn(async () => {
 			await fs.mkdir(this.outputDir, { recursive: true });

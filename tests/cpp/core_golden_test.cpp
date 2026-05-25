@@ -2633,7 +2633,7 @@ autosx::Nat -> intiveResults innerOut;
 
 void testProgramLoaderModulePathsGolden() {
 	require(bmsx::toLuaModulePath("cart.lua") == "cart", "module path should strip lua suffix");
-	require(bmsx::toLuaModulePath("bios/font.lua") == "bios/font", "module path should preserve bios namespace");
+	require(bmsx::toLuaModulePath("system/font.lua") == "system/font", "module path should preserve system namespace");
 	require(bmsx::toLuaModulePath("src/carts/pietious/cart.lua") == "cart", "module path should strip cart workspace root");
 	require(bmsx::toLuaModulePath("src/carts/pietious/room/index.lua") == "room/index", "module path should strip cart name");
 	require(bmsx::toLuaModulePath(R"(src\carts\pietious\room\index.lua)") == "room/index", "module path should normalize source separators");

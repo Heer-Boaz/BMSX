@@ -127,7 +127,7 @@ extern "C" RETRO_API void bmsx_focus_changed(bool focused) {
 extern "C" RETRO_API bool bmsx_is_cart_program_active(void) {
 	// disable-next-line or_nil_fallback_pattern -- libretro may query this before platform creation; nullptr is the external host boundary.
 	auto* console = g_platform ? g_platform->console() : nullptr;
-	return console && console->hasRuntime() && console->runtime().isCartProgramStarted();
+	return console && console->hasRuntime() && console->runtime().isCartProgramStarted() && console->runtime().isInitialized();
 }
 
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
@@ -1453,7 +1453,7 @@ void retro_run(void) {
 
 	// Run one frame
 //   const auto runStart = std::chrono::steady_clock::now();
-	g_platform->runFrame();
+	const bool video_frame_presented = g_platform->runFrame();
 //   const auto runEnd = std::chrono::steady_clock::now();
 //   const double runMs = std::chrono::duration<double, std::milli>(runEnd - runStart).count();
 //   const auto& tickTiming = g_platform->console()->lastTickTiming();
@@ -1508,11 +1508,13 @@ void retro_run(void) {
 //   }
 
 	// Output video
-	const auto& fb = g_platform->getFramebuffer();
-	if (isHardwareBackendActive()) {
-	video_cb(RETRO_HW_FRAME_BUFFER_VALID, fb.width, fb.height, 0);
-	} else {
-	video_cb(fb.data, fb.width, fb.height, fb.pitch);
+	if (video_frame_presented) {
+		const auto& fb = g_platform->getFramebuffer();
+		if (isHardwareBackendActive()) {
+			video_cb(RETRO_HW_FRAME_BUFFER_VALID, fb.width, fb.height, 0);
+		} else {
+			video_cb(fb.data, fb.width, fb.height, fb.pitch);
+		}
 	}
 
 	// Output audio

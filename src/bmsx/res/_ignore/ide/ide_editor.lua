@@ -1642,7 +1642,7 @@ function editor.init(path)
 	if type(path) ~= "string" then
 		path = nil
 	end
-	state.font = require('bios/font').get('default')
+	state.font = require('system/font').get('default')
 	state.line_height = state.font.lineheight
 	state.char_advance = state.font:advance("M")
 	state.header_height = state.line_height + 4

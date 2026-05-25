@@ -90,7 +90,7 @@ public:
 	bool acceptHostFrame(f64 deltaTime) const;
 	void startLoadedRuntimeFrame(bool romLoaded);
 	void setHostPaused(bool paused, bool romLoaded);
-	void runHostFrame(
+	bool runHostFrame(
 		Runtime& runtime,
 		MicrotaskQueue& microtasks,
 		f64 deltaTime,

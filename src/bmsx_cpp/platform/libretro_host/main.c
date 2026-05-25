@@ -227,6 +227,8 @@ static bool g_has_frame_time_cb = false;
 static unsigned g_last_video_w = 0;
 static unsigned g_last_video_h = 0;
 static bool g_drop_video = false;
+static bool g_core_presented_frame = false;
+static bool g_input_timeline_frame_pending = true;
 
 static GLuint g_hw_fbo = 0;
 static GLuint g_hw_tex = 0;
@@ -2038,7 +2040,9 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				g_geom_dirty = true;
 			}
 		}
-			hw_present_frame(width, height);
+			if (hw_present_frame(width, height)) {
+				g_core_presented_frame = true;
+			}
 #ifdef BMSX_LIBRETRO_HOST_SDL
 			if (g_use_sdl) {
 				SDL_GL_SwapWindow(g_sdl_window);
@@ -2126,6 +2130,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		}
 		msg_render_software();
 		step_software_frame_capture();
+		g_core_presented_frame = true;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
 			sdl_present();
@@ -2175,6 +2180,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		}
 		msg_render_software();
 		step_software_frame_capture();
+		g_core_presented_frame = true;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
 			sdl_present();
@@ -3934,11 +3940,19 @@ int main(int argc, char** argv) {
 			g_frame_time_cb.callback(frame_time_usec);
 		}
 		last_core_frame_ns = now_ns;
-		if (core_cart_program_active()) {
+		const bool cart_program_active = core_cart_program_active();
+		if (!cart_program_active) {
+			g_input_timeline_frame_pending = true;
+		} else if (g_input_timeline_frame_pending) {
 			input_timeline_tick_frame();
+			g_input_timeline_frame_pending = false;
 		}
+		g_core_presented_frame = false;
 		core.retro_run();
 		++g_run_frame_count;
+		if (core_cart_program_active() && g_core_presented_frame) {
+			g_input_timeline_frame_pending = true;
+		}
 		if (core_cart_program_active() && input_timeline_should_auto_quit(kInputTimelineAutoQuitGraceFrames)) {
 			fprintf(stderr, "[libretro-host] input timeline completed, exiting\n");
 			g_should_quit = 1;

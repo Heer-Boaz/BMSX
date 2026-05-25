@@ -754,6 +754,10 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 	return imgmeta;
 }
 
+export function buildImgMeta(res: ImageResource): ImgMeta {
+	return buildImgMetaFromCollisionBuild(res, buildImageCollisionBuild(res));
+}
+
 /**
  * Compresses the given content using the zip algorithm and returns the compressed  content as a Uint8Array.
  *
@@ -784,8 +788,12 @@ function compileLuaChunkBuffer(source: string, path: string): Buffer {
 	return Buffer.from(encoded);
 }
 
-export async function buildLuaProgramContextAssets(luaRoot: string, virtualRoot: string): Promise<RomAsset[]> {
-	const files = (await getFiles(luaRoot, [], '.lua')).sort((a, b) => a.localeCompare(b));
+export async function buildLuaProgramContextAssets(luaRoots: readonly string[], virtualRoot: string): Promise<RomAsset[]> {
+	const files: string[] = [];
+	for (let index = 0; index < luaRoots.length; index += 1) {
+		files.push(...await getFiles(luaRoots[index], [], '.lua'));
+	}
+	files.sort((a, b) => a.localeCompare(b));
 	const assets: RomAsset[] = [];
 	for (const file of files) {
 		const sourcePath = normalizeWorkspacePath(resolveVirtualSourcePath(file, virtualRoot) ?? toWorkspaceRelativePath(file));
@@ -2097,4 +2105,5 @@ export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 // Define common assets path
 export const commonResPath = `./src/bmsx/res`;
 export const biosLuaPath = './bios';
+export const systemLuaPath = './system';
 export const engineLuaPath = './engine';

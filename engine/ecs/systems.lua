@@ -59,7 +59,7 @@ local clear_map<const> = require('bios/util/clear_map')
 local collision2d<const> = require('engine/collision2d')
 local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
 local world_instance<const> = require('engine/world/index').instance
-local vdp_image<const> = require('bios/vdp_image')
+local vdp_image<const> = require('system/vdp_image')
 
 local tickgroup<const> = ecs.tickgroup
 local ecsystem<const> = ecs.ecsystem

@@ -31,7 +31,7 @@ local frame_delta_ms<const> = (1000 * sys_hz_scale) / machine_manifest.ufps
 
 local ecs<const> = require('engine/ecs/index')
 local registry<const> = require('engine/registry')
-local vdp_rpu_quads<const> = require('bios/vdp_rpu_quads')
+local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 
 local tickgroup<const> = ecs.tickgroup
 local world_instance

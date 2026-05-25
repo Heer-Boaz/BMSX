@@ -13,14 +13,14 @@ namespace {
 constexpr double MAX_FRAME_DELTA_MS = 250.0;
 }
 
-void ConsoleCore::runHostFrame(
+bool ConsoleCore::runHostFrame(
 	Runtime& runtime,
 	MicrotaskQueue& microtasks,
 	f64 deltaTime,
 	bool platformPaused
 ) {
 	if (!acceptHostFrame(deltaTime)) {
-		return;
+		return false;
 	}
 	try {
 		const auto tickStart = std::chrono::steady_clock::now();
@@ -49,7 +49,7 @@ void ConsoleCore::runHostFrame(
 				runtime.frameScheduler.clearQueuedTime();
 				if (!rebootLoadedRom()) {
 					runtime.handleLuaError("Runtime fault: reboot to bootrom failed.");
-					return;
+					return false;
 				}
 			}
 			const RuntimeFrameStepResult stepResult = runRuntimeFrameStep(runtime, hostDeltaMs);
@@ -74,7 +74,7 @@ void ConsoleCore::runHostFrame(
 		if (hostMenuActive) {
 			runtime.screen.requestHeldPresentation();
 		}
-		runtime.screen.render(*this, runtime, platformPaused);
+		return runtime.screen.render(*this, runtime, platformPaused);
 	} catch (const std::exception& e) {
 		runtime.frameLoop.abandonFrameState(runtime);
 		runtime.handleLuaError(e.what());
@@ -82,6 +82,7 @@ void ConsoleCore::runHostFrame(
 		runtime.frameLoop.abandonFrameState(runtime);
 		runtime.handleLuaError("Unhandled host frame exception.");
 	}
+	return false;
 }
 
 } // namespace bmsx

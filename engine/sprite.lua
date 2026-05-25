@@ -38,8 +38,8 @@
 
 local worldobject<const> = require('engine/world/object')
 local components<const> = require('engine/components')
-local vdp_image<const> = require('bios/vdp_image')
-local romdir<const> = require('bios/romdir')
+local vdp_image<const> = require('system/vdp_image')
+local romdir<const> = require('system/romdir')
 
 local spriteobject<const> = {}
 spriteobject.__index = spriteobject

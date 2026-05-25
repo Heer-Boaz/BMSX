@@ -34,7 +34,7 @@ function makeRegistry(sourcePaths: readonly string[]): LuaSourceRegistry {
 test('listSymbols hides compiler-generated module export slots through loader module paths', () => {
 	const stringPool = new StringPool();
 	const globals = new Table(0, 8);
-	globals.set(StringValue.get(stringPool.intern('bios__font__get')), true);
+	globals.set(StringValue.get(stringPool.intern('system__font__get')), true);
 	globals.set(StringValue.get(stringPool.intern('room__index__spawn')), true);
 	globals.set(StringValue.get(stringPool.intern('font__get')), true);
 	globals.set(StringValue.get(stringPool.intern('player_score')), true);
@@ -46,13 +46,13 @@ test('listSymbols hides compiler-generated module export slots through loader mo
 				stringPool,
 			},
 		},
-		systemLuaSources: makeRegistry(['bios/font.lua']),
+		systemLuaSources: makeRegistry(['system/font.lua']),
 		cartLuaSources: makeRegistry(['src/carts/pietious/room/index.lua']),
 	} as Runtime;
 
 	const names = listSymbols(runtime).map(symbol => symbol.name);
 
-	assert.equal(names.includes('bios__font__get'), false);
+	assert.equal(names.includes('system__font__get'), false);
 	assert.equal(names.includes('room__index__spawn'), false);
 	assert.equal(names.includes('font__get'), true);
 	assert.equal(names.includes('player_score'), true);
