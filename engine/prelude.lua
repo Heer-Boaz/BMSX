@@ -25,6 +25,7 @@ grant_effect = system.grant_effect
 trigger_effect = system.trigger_effect
 vdp_load_slot = system.vdp_load_slot
 vdp_load_system_slot = system.vdp_load_system_slot
+vdp_wait_image_decode = system.vdp_wait_image_decode
 vdp_blit_img_color = system.vdp_blit_img_color
 vdp_item_color = system.vdp_item_color
 vdp_glyph_color = system.vdp_glyph_color

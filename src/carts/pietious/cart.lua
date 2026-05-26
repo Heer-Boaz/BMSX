@@ -185,6 +185,7 @@ function init()
 	director_module.register_director_definition()
 	register_collision_profiles()
 	vdp_load_slot(sys_vdp_slot_primary, 0)
+	vdp_wait_image_decode()
 	init_epoch = init_epoch + 1
 	pending_title_boot_epoch = init_epoch
 end

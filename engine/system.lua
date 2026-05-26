@@ -208,6 +208,7 @@ system.vdp_draw_line_color = vdp_rpu_quads.draw_line_color
 system.vdp_tile_run_sources = vdp_rpu_quads.tile_run_sources
 system.vdp_load_slot = vdp_image.load_slot
 system.vdp_load_system_slot = vdp_image.load_system_slot
+system.vdp_wait_image_decode = vdp_image.wait_decode
 system.vdp_blit_img_color = vdp_image.write_blit_color
 system.vdp_glyph_color = vdp_image.write_glyph_color
 system.vdp_item_color = vdp_image.write_item_color

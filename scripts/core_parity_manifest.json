@@ -2106,9 +2106,9 @@
 			"substrings": [
 				"vdp_rpu.begin_draw(vdp_rpu.shader_v2_t2_c4_i_affine2",
 				"vdp_rpu.bind_stream(1, vdp_rpu.layout_i_affine2_trect_c4, instance_buffer, 0, 1)",
-				"vdp_rpu.buffer_upload_dma(instance_buffer, 0, instance_addr, instance_count * instance_stride)"
+				"vdp_rpu.buffer_upload_dma(instance_buffer, 0, instance_batch_addr, byte_length)"
 			],
-			"reason": "bios_rpu_quad_batcher_must_emit_instanced_gpu_draws_for_cart_bios_quad_work"
+			"reason": "bios_rpu_quad_batcher_must_emit_instanced_gpu_draws_with_preserved_dma_sources_for_cart_bios_quad_work"
 		},
 		{
 			"file": "system/vdp_rpu_quads.lua",
@@ -3346,7 +3346,7 @@
 		},
 		{
 			"file": "system/vdp_rpu_quads.lua",
-			"start": "\tif instance_count == instance_capacity then",
+			"start": "\tif instance_count == instance_batch_capacity then",
 			"end": "\nend\n\nlocal queue_quad",
 			"reason": "vdp_rpu_quads_instance_write_must_not_allocate"
 		},

@@ -39,6 +39,14 @@ local start_decode<const> = function(src, len, dst, cap)
 	mem[sys_img_ctrl] = img_ctrl_start
 end
 
+function vdp_image.wait_decode()
+	while (mem[sys_img_status] & img_status_busy) ~= 0 do
+	end
+	if (mem[sys_img_status] & img_status_error) ~= 0 then
+		error('VDP image decode failed.')
+	end
+end
+
 function vdp_image.load_slot(slot, atlas_id)
 	local name<const> = atlas_name(atlas_id)
 	local atlas<const> = romdir.cart_atlas(name)
