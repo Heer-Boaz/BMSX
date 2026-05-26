@@ -22,7 +22,7 @@ export class EditorDocumentState {
 	public lastHistoryTimestamp = 0;
 	public savePointDepth = 0;
 	public textVersion = 0;
-	public lastContentEditAtMs: number = null;
+	public lastContentEditAtMs: number;
 	public saveGeneration = 0;
 	public appliedGeneration = 0;
 	public lastSavedSource = '';

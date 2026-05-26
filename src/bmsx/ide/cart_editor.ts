@@ -1,7 +1,6 @@
 import { consoleCore } from '../core/console';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { Viewport } from '../rompack/format';
-import { resolveLuaSource, type LuaSourceResolution } from '../machine/program/sources';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { CodeTabMode, FaultSnapshot, RuntimeErrorDetails } from './common/models';
@@ -38,6 +37,7 @@ import { resetSemanticWorkspace } from './editor/contrib/intellisense/semantic/w
 import { updateRuntimeErrorOverlay } from './editor/contrib/runtime_error/overlay';
 import { getTextSnapshot } from './editor/text/source_text';
 import { editorDocumentState } from './editor/editing/document_state';
+import { clearSingleCursorSelection } from './editor/editing/cursor/state';
 import { editorDiagnosticsState } from './editor/contrib/diagnostics/state';
 import { processDiagnosticsQueue } from './editor/contrib/diagnostics/controller';
 import { applyLineJumpFieldText } from './editor/contrib/find/line_jump';
@@ -52,7 +52,7 @@ import { handleEditorInput } from './input/keyboard/dispatch';
 import { captureKeys } from './editor/input/keyboard/capture_keys';
 import { editorInput } from './editor/input/keyboard/text_input';
 import { handleTextEditorPointerInput } from './input/pointer/dispatch';
-import { editorPointerState } from './input/pointer/state';
+import { clearEditorPointerSelectionState, editorPointerState } from './input/pointer/state';
 import { handleEditorWheelInput } from './input/pointer/wheel';
 import { findCodeTabContext, getActiveCodeTabContext, getActiveCodeTabContextId, createEntryTabContext } from './workbench/ui/code_tab/contexts';
 import { storeActiveCodeTabContext } from './workbench/ui/code_tab/activation';
@@ -89,7 +89,6 @@ import { renderTabBar } from './workbench/render/tab_bar';
 import { renderTopBar, renderTopBarDropdown } from './workbench/render/top_bar';
 import type { ChromeRenderContext } from './workbench/render/chrome_context';
 
-const cartEditorLuaSourceResolution: LuaSourceResolution = { registry: null, record: null };
 
 type RenderRuntimeFaultOverlayOptions = {
 	snapshot: FaultSnapshot;
@@ -128,10 +127,11 @@ export type CartEditor = {
 };
 
 export function getSourceForChunk(runtime: Runtime, path: string): string {
-	if (!resolveLuaSource(cartEditorLuaSourceResolution, path, runtime.activeLuaSources, runtime.cartLuaSources, runtime.systemLuaSources)) {
+	const luaSource = runtime.resolveLuaSource(path);
+	if (!luaSource) {
 		throw new Error(`Missing Lua source for '${path}'.`);
 	}
-	const asset = cartEditorLuaSourceResolution.record!;
+	const asset = luaSource.record;
 	const context = findCodeTabContext(asset.source_path);
 	if (context) {
 		if (context.id === getActiveCodeTabContext().id && context.id === tabSessionState.activeTabId) {
@@ -139,7 +139,7 @@ export function getSourceForChunk(runtime: Runtime, path: string): string {
 		}
 		return getTextSnapshot(context.buffer);
 	}
-	return readWorkspaceLuaSourceText(cartEditorLuaSourceResolution.registry!, asset);
+	return readWorkspaceLuaSourceText(luaSource.registry, asset);
 }
 
 class RuntimeCartEditor implements CartEditor {
@@ -253,10 +253,8 @@ class RuntimeCartEditor implements CartEditor {
 		}
 		this.runtime.editor.completion.closeSession();
 		editorInput.applyOverrides(false, captureKeys);
-		editorDocumentState.selectionAnchor = null;
-		editorPointerState.pointerSelecting = false;
-		editorPointerState.pointerPrimaryWasPressed = false;
-		editorPointerState.pointerAuxWasPressed = false;
+		clearSingleCursorSelection(editorDocumentState);
+		clearEditorPointerSelectionState();
 		editorChromeState.tabDragState = null;
 		clearGotoHoverHighlight();
 		editorViewState.scrollbarController.cancel();
@@ -363,9 +361,7 @@ class RuntimeCartEditor implements CartEditor {
 		workspaceSourceCache.clear();
 		workspaceState.autosaveSignature = null;
 		initializeWorkspaceStorage(this.runtime, null);
-		editorPointerState.pointerSelecting = false;
-		editorPointerState.pointerPrimaryWasPressed = false;
-		editorPointerState.pointerAuxWasPressed = false;
+		clearEditorPointerSelectionState();
 		clearGotoHoverHighlight();
 		editorCaretState.cursorRevealSuspended = false;
 		editorSearchState.active = false;

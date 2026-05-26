@@ -1,5 +1,4 @@
 import { renameController } from './controller';
-import { extractHoverExpression } from '../intellisense/engine';
 import { closeSearch } from '../find/search';
 import { getActiveCodeTabContext, isEditableCodeTab } from '../../../workbench/ui/code_tab/contexts';
 import { closeResourceSearch } from '../../../workbench/contrib/resources/search';
@@ -32,7 +31,6 @@ export function openRenamePrompt(runtime: Runtime): void {
 		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,
 		cursorColumn: editorDocumentState.cursorColumn,
-		extractExpression: (row, column) => extractHoverExpression(row, column),
 		path: context.descriptor.path,
 	});
 	if (started) {

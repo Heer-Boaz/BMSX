@@ -1,4 +1,4 @@
-import { resolveLuaSource, type LuaSourceRecord, type LuaSourceRegistry, type LuaSourceResolution } from '../../machine/program/sources';
+import { resolveLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../machine/program/sources';
 import { toLuaModulePath } from '../../machine/program/loader';
 import type { StorageService } from '../../platform';
 import type { Runtime } from '../../machine/runtime/runtime';
@@ -26,14 +26,23 @@ function resolveEditableCartLuaSources(runtime: Runtime): LuaSourceRegistry {
 	return runtime.cartLuaSources ?? runtime.activeLuaSources;
 }
 
-const workspaceLuaSourceResolution: LuaSourceResolution = { registry: null, record: null };
 
 export async function saveLuaResourceSource(runtime: Runtime, path: string, source: string): Promise<void> {
-	if (!resolveLuaSource(workspaceLuaSourceResolution, path, runtime.cartLuaSources, runtime.systemLuaSources)) {
+	let registry = runtime.systemLuaSources;
+	let asset: LuaSourceRecord | null = null;
+	const cartRegistry = runtime.cartLuaSources;
+	if (cartRegistry) {
+		asset = resolveLuaSourceRecord(cartRegistry, path);
+		if (asset) {
+			registry = cartRegistry;
+		}
+	}
+	if (!asset) {
+		asset = resolveLuaSourceRecord(registry, path);
+	}
+	if (!asset) {
 		throw new Error(`Missing Lua source registry for '${path}'.`);
 	}
-	const registry = workspaceLuaSourceResolution.registry!;
-	const asset = workspaceLuaSourceResolution.record!;
 	const sourcePath = asset.source_path;
 	const projectRootPath = registry.projectRootPath;
 	await persistWorkspaceSourceFile(sourcePath, source, projectRootPath);

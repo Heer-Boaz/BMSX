@@ -20,7 +20,7 @@ export function resolveCallHierarchyViewAt(runtime: Runtime, row: number, column
 	const snapshot = buildEditorSemanticSnapshot(runtime, path, editorDocumentState.buffer, editorDocumentState.textVersion);
 	const frontend = createEditorSemanticFrontend(runtime, snapshot);
 	const resolution = frontend.findReferencesByPosition(path, row + 1, column + 1);
-	const expression = extractHoverExpression(row, column)?.expression;
+	const expression = extractHoverExpression(row, column, path)?.expression;
 	if (!resolution || !expression) {
 		return { kind: 'missing_definition' };
 	}

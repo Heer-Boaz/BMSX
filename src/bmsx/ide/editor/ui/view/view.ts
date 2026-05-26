@@ -26,6 +26,7 @@ import {
 import { rewrapRuntimeErrorOverlays } from '../../../runtime_error/navigation';
 import { bottomMargin, topMargin } from '../../../workbench/common/layout';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
+import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
 import type { InlineFieldMetrics } from '../inline/text_field';
 
 function advanceInlineFieldChar(ch: string): number {
@@ -555,7 +556,7 @@ export function setFontVariant(runtime: Runtime, variant: FontVariant, activeCod
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
-	requestSemanticRefresh();
+	requestSemanticRefresh(getActiveCodeTabContext());
 	markDiagnosticsDirty(activeContextId);
 }
 

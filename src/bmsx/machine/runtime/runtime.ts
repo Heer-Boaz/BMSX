@@ -33,7 +33,13 @@ import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
 import { LuaJsBridge } from './host/native_bridge';
 import { RuntimeOptions } from './contracts';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_SYSTEM_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
-import { buildLuaSources, resolveLuaSource, type LuaSourceRegistry, type LuaSourceResolution } from '../program/sources';
+import {
+	buildLuaSources,
+	resolveLuaSourceRecord as resolveRegistryLuaSourceRecord,
+	type LuaSourceMatch,
+	type LuaSourceRecord,
+	type LuaSourceRegistry,
+} from '../program/sources';
 import * as workbenchMode from '../../ide/workbench/mode';
 import { deactivateEditor, deactivateTerminalMode } from '../../ide/workbench/overlay_modes';
 import { handleLuaError } from '../../ide/workbench/runtime_errors';
@@ -86,7 +92,6 @@ export type FrameState = {
 	activeCpuUsedCycles: number;
 };
 
-const runtimeLuaSourceResolution: LuaSourceResolution = { registry: null, record: null };
 
 export class Runtime {
 	public readonly storageService: StorageService;
@@ -521,16 +526,44 @@ export class Runtime {
 		if (!currentPath) {
 			return 'runtime';
 		}
-		if (!resolveLuaSource(
-			runtimeLuaSourceResolution,
-			currentPath,
-			this.activeLuaSources,
-			this.cartLuaSources,
-			this.systemLuaSources,
-		)) {
-			return 'runtime';
+		const record = this.resolveLuaSourceRecord(currentPath);
+		return record ? record.source_path : 'runtime';
+	}
+
+	public resolveLuaSourceRecord(path: string): LuaSourceRecord | null {
+		const activeRecord = resolveRegistryLuaSourceRecord(this.activeLuaSources, path);
+		if (activeRecord) {
+			return activeRecord;
 		}
-		return runtimeLuaSourceResolution.record!.source_path;
+		const cartSources = this.cartLuaSources;
+		if (cartSources) {
+			const cartRecord = resolveRegistryLuaSourceRecord(cartSources, path);
+			if (cartRecord) {
+				return cartRecord;
+			}
+		}
+		return resolveRegistryLuaSourceRecord(this.systemLuaSources, path);
+	}
+
+	public resolveLuaSource(path: string): LuaSourceMatch | null {
+		const activeSources = this.activeLuaSources;
+		const activeRecord = resolveRegistryLuaSourceRecord(activeSources, path);
+		if (activeRecord) {
+			return { registry: activeSources, record: activeRecord };
+		}
+		const cartSources = this.cartLuaSources;
+		if (cartSources) {
+			const cartRecord = resolveRegistryLuaSourceRecord(cartSources, path);
+			if (cartRecord) {
+				return { registry: cartSources, record: cartRecord };
+			}
+		}
+		const systemSources = this.systemLuaSources;
+		const systemRecord = resolveRegistryLuaSourceRecord(systemSources, path);
+		if (systemRecord) {
+			return { registry: systemSources, record: systemRecord };
+		}
+		return null;
 	}
 
 	private constructor(options: RuntimeOptions, view: GameView) {

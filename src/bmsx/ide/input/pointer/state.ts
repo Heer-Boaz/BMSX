@@ -35,6 +35,12 @@ export function resetPointerClickTracking(): void {
 	editorPointerState.lastPointerClickColumn = -1;
 }
 
+export function clearEditorPointerSelectionState(): void {
+	editorPointerState.pointerSelecting = false;
+	editorPointerState.pointerPrimaryWasPressed = false;
+	editorPointerState.pointerAuxWasPressed = false;
+}
+
 export function stopPointerSelection(snapshot: PointerSnapshot): void {
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;

@@ -180,12 +180,12 @@ export function undo(): void {
 	updateDesiredColumn();
 	resetBlink();
 	ensureCursorVisible();
-	requestSemanticRefresh();
+	const context = getActiveCodeTabContext();
+	requestSemanticRefresh(context);
 
 	editorDocumentState.dirty = editorDocumentState.undoStack.length !== editorDocumentState.savePointDepth;
 	updateActiveContextDirtyFlag();
 	editorDocumentState.saveGeneration = editorDocumentState.saveGeneration + 1;
-	const context = getActiveCodeTabContext();
 	if (context) {
 		context.saveGeneration = editorDocumentState.saveGeneration;
 		context.textVersion = editorDocumentState.textVersion;
@@ -249,12 +249,12 @@ export function redo(): void {
 	updateDesiredColumn();
 	resetBlink();
 	ensureCursorVisible();
-	requestSemanticRefresh();
+	const context = getActiveCodeTabContext();
+	requestSemanticRefresh(context);
 
 	editorDocumentState.dirty = editorDocumentState.undoStack.length !== editorDocumentState.savePointDepth;
 	updateActiveContextDirtyFlag();
 	editorDocumentState.saveGeneration = editorDocumentState.saveGeneration + 1;
-	const context = getActiveCodeTabContext();
 	if (context) {
 		context.saveGeneration = editorDocumentState.saveGeneration;
 		context.textVersion = editorDocumentState.textVersion;
@@ -317,5 +317,5 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 	if (!options?.preserveScroll) {
 		ensureCursorVisible();
 	}
-	requestSemanticRefresh();
+	requestSemanticRefresh(getActiveCodeTabContext());
 }

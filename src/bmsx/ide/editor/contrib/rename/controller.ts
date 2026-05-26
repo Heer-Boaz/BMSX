@@ -13,8 +13,7 @@ import { handleRenameControllerInput } from './input';
 import { validateRenameIdentifier } from './validation';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 
-export type RenameStartOptions = Omit<ReferenceLookupOptions, 'runtime'> & {
-};
+export type RenameStartOptions = Omit<ReferenceLookupOptions, 'runtime'>;
 
 const EMPTY_RENAME_MATCHES: SearchMatch[] = [];
 

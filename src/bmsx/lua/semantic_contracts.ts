@@ -38,21 +38,6 @@ export type LuaBuiltinDescriptor = {
 	description?: string;
 };
 
-export type LuaHoverRequest = {
-	expression: string;
-	path: string;
-	row: number;
-	column: number;
-};
-
-export type LuaMemberCompletionRequest = {
-	objectName?: string;
-	prefix?: string;
-	path: string;
-	expression?: string;
-	operator: '.' | ':';
-};
-
 export type LuaMemberCompletion = {
 	name: string;
 	kind: 'method' | 'property';

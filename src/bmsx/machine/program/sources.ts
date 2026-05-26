@@ -15,9 +15,9 @@ export type LuaSourceRegistry = {
 	can_boot_from_source: boolean;
 };
 
-export type LuaSourceResolution = {
-	registry: LuaSourceRegistry | null;
-	record: LuaSourceRecord | null;
+export type LuaSourceMatch = {
+	registry: LuaSourceRegistry;
+	record: LuaSourceRecord;
 };
 
 export function resolveLuaSourceRecord(registry: LuaSourceRegistry, path: string): LuaSourceRecord | null {
@@ -30,24 +30,6 @@ export function resolveLuaSourceRecord(registry: LuaSourceRegistry, path: string
 		return moduleRecord;
 	}
 	return null;
-}
-
-export function resolveLuaSource(out: LuaSourceResolution, path: string, registry0: LuaSourceRegistry | null, registry1: LuaSourceRegistry | null = null, registry2: LuaSourceRegistry | null = null): boolean {
-	for (let index = 0; index < 3; index += 1) {
-		const registry = index === 0 ? registry0 : index === 1 ? registry1 : registry2;
-		if (registry === null) {
-			continue;
-		}
-		const record = resolveLuaSourceRecord(registry, path);
-		if (record !== null) {
-			out.registry = registry;
-			out.record = record;
-			return true;
-		}
-	}
-	out.registry = null;
-	out.record = null;
-	return false;
 }
 
 function isAllowedPayloadId(payloadId: CartridgeLayerId, allowedPayloadIds: readonly CartridgeLayerId[]): boolean {

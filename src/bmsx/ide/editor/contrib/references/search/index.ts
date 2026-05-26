@@ -1,7 +1,7 @@
 import * as constants from '../../../../common/constants';
 import { renameController } from '../../rename/controller';
 import { showEditorMessage } from '../../../../common/feedback_state';
-import { extractHoverExpression, navigateToLuaDefinition } from '../../intellisense/engine';
+import { navigateToLuaDefinition } from '../../../../workbench/ui/code_tab/activation';
 import { getActiveCodeTabContext } from '../../../../workbench/ui/code_tab/contexts';
 import { resetBlink } from '../../../render/caret';
 import { applySymbolSearchFieldText, closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../../symbols/shared';
@@ -31,7 +31,6 @@ export function openReferenceSearchPopup(runtime: Runtime): void {
 		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,
 		cursorColumn: editorDocumentState.cursorColumn,
-		extractExpression: (row, column) => extractHoverExpression(row, column),
 		path: context.descriptor.path,
 	});
 	if (result.kind === 'error') {

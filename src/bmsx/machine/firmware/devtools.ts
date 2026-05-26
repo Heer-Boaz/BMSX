@@ -3,9 +3,8 @@ import { createLuaTable, type LuaTable } from '../../lua/value';
 import { LuaNativeFunction, type LuaInterpreter } from '../../lua/runtime';
 import type { ResourceDescriptor } from '../../rompack/tooling/resource';
 import type { Runtime } from '../runtime/runtime';
-import { resolveLuaSource, resolveLuaSourceRecord, type LuaSourceRegistry, type LuaSourceResolution } from '../program/sources';
+import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../program/sources';
 
-const devtoolsLuaSourceResolution: LuaSourceResolution = { registry: null, record: null };
 
 function listRuntimeLuaRegistries(runtime: Runtime): LuaSourceRegistry[] {
 	const registries: LuaSourceRegistry[] = [];
@@ -75,16 +74,11 @@ export function getRuntimeLuaEntryPath(runtime: Runtime): string {
 }
 
 export function getRuntimeLuaResourceSource(runtime: Runtime, path: string): string {
-	if (!resolveLuaSource(
-		devtoolsLuaSourceResolution,
-		path,
-		runtime.activeLuaSources,
-		runtime.cartLuaSources,
-		runtime.systemLuaSources,
-	)) {
+	const record = runtime.resolveLuaSourceRecord(path);
+	if (!record) {
 		throw new Error(`[devtools.get_lua_resource_source] Missing Lua resource for path '${path}'. Available: ${summarizeLuaPaths(runtime, 16)}`);
 	}
-	return devtoolsLuaSourceResolution.record!.src;
+	return record.src;
 }
 
 function buildRuntimeResourceDescriptorTable(runtime: Runtime, descriptor: ResourceDescriptor): Table {

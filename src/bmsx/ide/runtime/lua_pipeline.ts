@@ -11,7 +11,7 @@ import { compileLuaChunkToProgram, appendLuaChunkToProgram, type CompiledProgram
 import { linkProgramImages } from '../../machine/program/linker';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import { RuntimeResumeSnapshot, SymbolEntry, SymbolKind } from '../../machine/runtime/contracts';
-import { resolveLuaSource, resolveLuaSourceRecord, type LuaSourceRegistry, type LuaSourceResolution } from '../../machine/program/sources';
+import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/program/sources';
 import { logDebugState } from '../../machine/runtime/debug';
 import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
 import { restoreRuntimeLuaSnapshot } from '../../machine/runtime/resume_snapshot';
@@ -50,7 +50,6 @@ import { callClosure } from '../../machine/program/executor';
 
 const SYSTEM_BUILTIN_PRELUDE_PATH = 'bios/system_builtin_prelude.lua';
 const REQUIRED_SYSTEM_ROM_HELPERS: ReadonlyArray<string> = ['clock_now'];
-const luaSourceResolution: LuaSourceResolution = { registry: null, record: null };
 
 function applyUfpsScaled(runtime: Runtime, ufps: number): number {
 	const ufpsScaled = resolveUfpsScaled(ufps);
@@ -187,11 +186,11 @@ function clearEditorCompletionCache(runtime: Runtime): void {
 }
 
 export function reloadLuaProgramState(runtime: Runtime, runInit = true): void {
-	if (!resolveLuaSource(luaSourceResolution, runtime.activeLuaSources.entry_path, runtime.activeLuaSources)) {
+	const record = resolveLuaSourceRecord(runtime.activeLuaSources, runtime.activeLuaSources.entry_path);
+	if (!record) {
 		console.info('No Lua entry point defined; cannot reload program. Please save the entry point and try again.');
 		return;
 	}
-	const record = luaSourceResolution.record!;
 	runtime._luaPath = record.source_path;
 	if (!runtime.interpreter) {
 		if (!bootLuaProgram(runtime)) {
@@ -729,10 +728,11 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, runInit = tru
 }
 
 export function resourceSourceForChunk(runtime: Runtime, path: string): string {
-	if (!resolveLuaSource(luaSourceResolution, path, runtime.activeLuaSources, runtime.cartLuaSources, runtime.systemLuaSources)) {
+	const luaSource = runtime.resolveLuaSource(path);
+	if (!luaSource) {
 		throw new Error(`Missing Lua source for '${path}'.`);
 	}
-	return readWorkspaceLuaSourceText(luaSourceResolution.registry!, luaSourceResolution.record!);
+	return readWorkspaceLuaSourceText(luaSource.registry, luaSource.record);
 }
 
 export function listLuaSourceRegistries(runtime: Runtime): Array<{ registry: LuaSourceRegistry; readOnly: boolean }> {

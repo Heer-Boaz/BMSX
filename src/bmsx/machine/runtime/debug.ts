@@ -1,13 +1,11 @@
 import { describeInstructionAtPc, formatSourceSnippet, type InstructionOperandDebugInfo } from '../cpu/disassembler';
 import { valueToString } from '../firmware/globals';
 import { Table, isNativeObject, type LocalSlotDebug, type SourceRange, type Value } from '../cpu/cpu';
-import { resolveLuaSource, type LuaSourceResolution } from '../program/sources';
 import type { Runtime } from './runtime';
 import { KEYWORDS } from '../../lua/syntax/token';
 
 const DEBUG_EXPR_PATTERN = /\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\b/g;
 const MAX_DEBUG_EXPRESSIONS = 8;
-const debugLuaSourceResolution: LuaSourceResolution = { registry: null, record: null };
 
 function comparePosition(line: number, column: number, otherLine: number, otherColumn: number): number {
 	if (line < otherLine) {
@@ -79,16 +77,11 @@ function extractExpressionCandidates(range: SourceRange, sourceText: string): st
 }
 
 function resourceSourceForPath(runtime: Runtime, path: string): string | null {
-	if (!resolveLuaSource(
-		debugLuaSourceResolution,
-		path,
-		runtime.activeLuaSources,
-		runtime.cartLuaSources,
-		runtime.systemLuaSources,
-	)) {
-		return null;
+	const record = runtime.resolveLuaSourceRecord(path);
+	if (record) {
+		return record.src;
 	}
-	return debugLuaSourceResolution.record!.src;
+	return null;
 }
 
 function formatInstructionOperandDebug(runtime: Runtime, operand: InstructionOperandDebugInfo, registers: ReadonlyArray<Value>): string {

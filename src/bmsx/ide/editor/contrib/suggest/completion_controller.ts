@@ -4,13 +4,11 @@ import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
 import {
 	getApiCompletionData,
-	intellisenseUiReady,
 	listGlobalLuaSymbols,
 	listLuaBuiltinFunctions,
 	listLuaSymbols,
 	buildMemberCompletionItems,
 	type LuaScopedSymbol,
-	shouldAutoTriggerCompletions,
 } from '../intellisense/engine';
 import { getKeywordCompletions } from './keyword_completions';
 import { isReservedMemoryMapName } from '../../../../lua/semantic/common';
@@ -33,7 +31,7 @@ import { LuaLexer } from '../../../../lua/syntax/lexer';
 import { buildCanonicalCompletionItems, filterCompletionItems, resolveCompletionWordRange } from './completion_model';
 import { assignRowColumn } from '../../../common/state';
 import * as TextEditing from '../../editing/text_editing_and_selection';
-import { getActiveCodeTabContext, isActiveLuaCodeTab } from '../../../workbench/ui/code_tab/contexts';
+import { getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../workbench/ui/code_tab/contexts';
 import { prepareUndo } from '../../editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../ui/view/caret/caret';
 import { resetBlink } from '../../render/caret';
@@ -41,6 +39,10 @@ import { ModuleAliasEntry } from '../../../../lua/semantic/model';
 import { getActiveSemanticDefinitions, getLuaModuleAliases } from '../diagnostics/controller';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor/state';
 import type { Runtime } from '../../../../machine/runtime/runtime';
+import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
+import { editorRuntimeState } from '../../common/runtime_state';
+import { editorSearchState, lineJumpState } from '../find/widget_state';
+import { symbolSearchState } from '../symbols/search/state';
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;
@@ -69,11 +71,28 @@ export class CompletionController {
 	}
 
 	protected isCompletionReady(): boolean {
-		return intellisenseUiReady();
+		if (!isActiveLuaCodeTab()) {
+			return false;
+		}
+		if (isReadOnlyCodeTab()) {
+			return false;
+		}
+		if (editorSearchState.active || symbolSearchState.active || lineJumpState.active || resourceSearchState.active || createResourceState.active) {
+			return false;
+		}
+		return true;
 	}
 
 	protected shouldAutoTrigger(): boolean {
-		return shouldAutoTriggerCompletions();
+		if (!this.isCompletionReady()) {
+			return false;
+		}
+		const lastEditAt = editorDocumentState.lastContentEditAtMs;
+		if (lastEditAt === undefined) {
+			return false;
+		}
+		const now = editorRuntimeState.clockNow();
+		return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
 	}
 
 	protected getBuffer() {
@@ -544,12 +563,7 @@ export class CompletionController {
 			};
 			appendItems(this.getModuleMemberCompletionItems(context));
 			const path = this.getActivePath();
-			const runtimeItems = buildMemberCompletionItems(this.runtime, {
-				objectName: context.objectName,
-				operator: context.operator,
-				prefix: context.prefix,
-				path,
-			});
+			const runtimeItems = buildMemberCompletionItems(this.runtime, context.objectName, context.operator, path);
 			appendItems(runtimeItems);
 			if (merged.length > 0) {
 				return buildCanonicalCompletionItems(merged);

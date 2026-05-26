@@ -5,7 +5,7 @@ import { buildEditorContextMenuEntries } from '../../../workbench/contrib/contex
 import { editorContextMenuState } from '../../../workbench/contrib/context_menu/state';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from '../../../workbench/contrib/context_menu/widget';
 import { executeEditorContextMenuAction } from '../../../workbench/contrib/context_menu/actions';
-import { isEditableCodeTab } from '../../../workbench/ui/code_tab/contexts';
+import { getActiveCodeTabContext, isEditableCodeTab } from '../../../workbench/ui/code_tab/contexts';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 
 export const CONTEXT_MENU_POINTER_IGNORED = 0;
@@ -48,7 +48,7 @@ export function handleEditorContextMenuPointerSession(runtime: Runtime, snapshot
 export function openEditorContextMenuAtPointer(runtime: Runtime, snapshot: PointerSnapshot): boolean {
 	const bounds = getCodeAreaBounds();
 	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
-	const token = resolveContextMenuToken(target.row, target.column);
+	const token = resolveContextMenuToken(target.row, target.column, getActiveCodeTabContext().descriptor.path);
 	if (!token) {
 		return false;
 	}

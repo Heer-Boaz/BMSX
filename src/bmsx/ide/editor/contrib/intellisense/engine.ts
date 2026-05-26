@@ -14,11 +14,9 @@ import { buildMarshalContext, toNativeValue } from '../../../../machine/runtime/
 import { buildLuaSemanticFrontend } from '../../../../lua/semantic/frontend';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import { resolveLuaSource, type LuaSourceRecord, type LuaSourceResolution } from '../../../../machine/program/sources';
+import type { LuaSourceRecord } from '../../../../machine/program/sources';
 import { asStringId, valueIsString } from '../../../../machine/cpu/cpu';
-import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
-import { beginNavigationCapture, completeNavigation } from '../../../navigation/navigation_history';
-import { focusChunkSource } from '../../../workbench/contrib/resources/navigation';
+import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { intellisenseUiState } from './ui_state';
@@ -27,15 +25,10 @@ import { tryShowLuaErrorOverlay } from '../../../runtime_error/navigation';
 import { resolvePointerTextPosition } from '../../ui/view/view';
 import type { CodeAreaBounds } from '../../ui/view/view';
 import * as constants from '../../../common/constants';
-import { activateCodeTab, setActiveTab } from '../../../workbench/ui/tabs';
-import { findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../workbench/ui/code_tab/contexts';
 import { buildEditorSemanticFrontend } from './frontend';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { showEditorMessage } from '../../../common/feedback_state';
-import { editorPointerState } from '../../../input/pointer/state';
-import { editorSearchState, lineJumpState } from '../find/widget_state';
-import { symbolSearchState } from '../symbols/search/state';
-import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
+import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
 import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, LuaSemanticModel, type FileSemanticData, type ModuleAliasEntry } from '../../../../lua/semantic/model';
 import { getOrCreateSemanticWorkspace } from './semantic/workspace/state';
@@ -49,6 +42,7 @@ import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../lua/syntax/to
 import { splitText } from '../../../../common/text_lines';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/document_state';
+import { clearSingleCursorSelection } from '../../editing/cursor/state';
 import { editorViewState } from '../../ui/view/state';
 import { referenceState } from '../references/state';
 export const PREVIEW_MAX_ENTRIES = 12;
@@ -56,7 +50,6 @@ export const PREVIEW_MAX_DEPTH = 2;
 
 const SYMBOL_PRIORITY_ORDER: LuaDefinitionKind[] = ['table_field', 'function', 'constant', 'parameter', 'variable', 'assignment'];
 const LOCAL_DEFINITION_PRIORITY_ORDER: LuaDefinitionKind[] = ['parameter', 'table_field', 'function', 'constant', 'variable', 'assignment'];
-const intellisenseLuaSourceResolution: LuaSourceResolution = { registry: null, record: null };
 
 function isHiddenNativeMemberName(name: string): boolean {
 	switch (name) {
@@ -516,68 +509,33 @@ function wrapHoverLines(lines: string[]): string[] {
 
 export function buildHoverContentLines(result: LuaHoverResult): string[] {
 	const lines: string[] = [];
-	const push = (value: string) => { lines.push(value); };
 	if (result.state === 'not_defined') {
-		push(`${result.expression} = not defined`);
+		lines.push(`${result.expression} = not defined`);
 		return wrapHoverLines(lines);
 	}
 	const valueLines = result.lines.length > 0 ? result.lines : [''];
 	if (valueLines.length === 1) {
 		const suffix = formatHoverValueTypeSuffix(result.valueType);
-		push(`${result.expression} = ${valueLines[0]}${suffix}`);
+		lines.push(`${result.expression} = ${valueLines[0]}${suffix}`);
 		return wrapHoverLines(lines);
 	}
 	const suffix = formatHoverValueTypeSuffix(result.valueType);
-	push(`${result.expression}${suffix}`);
-	for (const line of valueLines) push(`  ${line}`);
+	lines.push(`${result.expression}${suffix}`);
+	for (const line of valueLines) lines.push(`  ${line}`);
 	return wrapHoverLines(lines);
 }
 
-export function intellisenseUiReady(): boolean {
-	if (!isActiveLuaCodeTab()) {
-		return false;
-	}
-	if (isReadOnlyCodeTab()) {
-		return false;
-	}
-	if (editorSearchState.active || symbolSearchState.active || lineJumpState.active || resourceSearchState.active || createResourceState.active) {
-		return false;
-	}
-	return true;
-}
-
-export function shouldAutoTriggerCompletions(): boolean {
-	if (!intellisenseUiReady()) {
-		return false;
-	}
-	const lastEditAt = editorDocumentState.lastContentEditAtMs;
-	if (lastEditAt === null) {
-		return false;
-	}
-	const now = editorRuntimeState.clockNow();
-	return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
-} export function updateHoverTooltip(runtime: Runtime, snapshot: PointerSnapshot, bounds?: CodeAreaBounds): void {
-	if (!isActiveLuaCodeTab()) {
-		clearHoverTooltip();
-		return;
-	}
-	const context = getActiveCodeTabContext();
+export function updateHoverTooltip(runtime: Runtime, snapshot: PointerSnapshot, context: CodeTabContext, bounds?: CodeAreaBounds): void {
 	const pointer = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 	const row = pointer.row;
 	const column = pointer.column;
-	const token = extractHoverExpression(row, column);
+	const path = context.descriptor.path;
+	const token = extractHoverExpression(row, column, path);
 	if (!token) {
 		clearHoverTooltip();
 		return;
 	}
-	const path = context.descriptor.path;
-	const request: LuaHoverRequest = {
-		expression: token.expression,
-		path,
-		row: row + 1,
-		column: token.startColumn + 1,
-	};
-	const inspection = safeInspectLuaExpression(runtime, request);
+	const inspection = safeInspectLuaExpression(runtime, token.expression, path, row + 1, token.startColumn + 1, context);
 	const previousInspection = intellisenseUiState.lastInspectorResult;
 	intellisenseUiState.lastInspectorResult = inspection;
 	if (!inspection) {
@@ -632,15 +590,11 @@ export function clearHoverTooltip(): void {
 	intellisenseUiState.lastInspectorResult = null;
 }
 
-export function buildMemberCompletionItems(runtime: Runtime, request: LuaMemberCompletionRequest): LuaCompletionItem[] {
-	if (request.objectName.length === 0) {
+export function buildMemberCompletionItems(runtime: Runtime, objectName: string, operator: '.' | ':', path: string): LuaCompletionItem[] {
+	if (objectName.length === 0) {
 		return [];
 	}
-	const response = listLuaObjectMembers(runtime, {
-		path: request.path,
-		expression: request.objectName,
-		operator: request.operator,
-	});
+	const response = listLuaObjectMembers(runtime, objectName, path, operator);
 	if (response.length === 0) {
 		return [];
 	}
@@ -666,12 +620,11 @@ export function buildMemberCompletionItems(runtime: Runtime, request: LuaMemberC
 	return items;
 }
 
-export function requestSemanticRefresh(context?: CodeTabContext): void {
-	const activeContext = context ?? getActiveCodeTabContext();
-	if (activeContext.mode !== 'lua') {
+export function requestSemanticRefresh(context: CodeTabContext): void {
+	if (context.mode !== 'lua') {
 		return;
 	}
-	const path = activeContext.descriptor.path;
+	const path = context.descriptor.path;
 	editorViewState.layout.requestSemanticUpdate(editorDocumentState.buffer, editorDocumentState.textVersion, path);
 }
 export function resolveSemanticDefinitionLocation(
@@ -726,7 +679,7 @@ export function findDefinitionAtPosition(
 	return null;
 }
 
-export function extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number; } {
+export function extractHoverExpression(row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
 	if (row < 0 || row >= editorDocumentState.buffer.getLineCount()) {
 		return null;
 	}
@@ -738,8 +691,6 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	if (line.length === 0) {
 		return null;
 	}
-	const context = getActiveCodeTabContext();
-	const path = context.descriptor.path;
 	const source = getTextSnapshot(editorDocumentState.buffer);
 	const tokenMatch = findContextMenuTokenMatch(row, safeColumn, path, source);
 	if (tokenMatch && tokenMatch.token.type === LuaTokenType.String) {
@@ -937,7 +888,7 @@ function findContextMenuTokenMatch(row: number, column: number, path: string, so
 	return adjacent;
 }
 
-function resolveIdentifierExpressionForKeyword(row: number, match: ContextMenuTokenMatch): { expression: string; startColumn: number; endColumn: number; } {
+function resolveIdentifierExpressionForKeyword(row: number, match: ContextMenuTokenMatch, path: string): { expression: string; startColumn: number; endColumn: number; } {
 	if (match.token.type !== LuaTokenType.Local && match.token.type !== LuaTokenType.Function) {
 		return null;
 	}
@@ -951,7 +902,7 @@ function resolveIdentifierExpressionForKeyword(row: number, match: ContextMenuTo
 		if (token.type !== LuaTokenType.Identifier) {
 			continue;
 		}
-		return extractHoverExpression(row, token.column - 1);
+		return extractHoverExpression(row, token.column - 1, path);
 	}
 	return null;
 }
@@ -976,7 +927,7 @@ function buildContextMenuToken(
 	};
 }
 
-export function resolveContextMenuToken(row: number, column: number): EditorContextToken {
+export function resolveContextMenuToken(row: number, column: number, path: string): EditorContextToken {
 	if (row < 0 || row >= editorDocumentState.buffer.getLineCount()) {
 		return null;
 	}
@@ -988,7 +939,7 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 	if (isLuaCommentContext(editorDocumentState.buffer, row, safeColumn)) {
 		return null;
 	}
-	const expression = extractHoverExpression(row, safeColumn);
+	const expression = extractHoverExpression(row, safeColumn, path);
 	if (expression) {
 		const segmentText = line.slice(expression.startColumn, expression.endColumn);
 		const isKeyword = KEYWORDS.has(segmentText);
@@ -1004,14 +955,12 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 			);
 		}
 	}
-	const context = getActiveCodeTabContext();
-	const path = context.descriptor.path;
 	const source = getTextSnapshot(editorDocumentState.buffer);
 	const match = findContextMenuTokenMatch(row, safeColumn, path, source);
 	if (!match) {
 		return null;
 	}
-	const keywordExpression = resolveIdentifierExpressionForKeyword(row, match);
+	const keywordExpression = resolveIdentifierExpressionForKeyword(row, match, path);
 	if (keywordExpression) {
 		const keywordText = line.slice(keywordExpression.startColumn, keywordExpression.endColumn);
 		return buildContextMenuToken(
@@ -1052,7 +1001,7 @@ export function refreshGotoHoverHighlight(runtime: Runtime, row: number, column:
 	}
 	const path = context.descriptor.path;
 	const semanticDefinition = resolveSemanticDefinitionLocation(runtime, context, row + 1, column + 1);
-	const token = extractHoverExpression(row, column);
+	const token = extractHoverExpression(row, column, path);
 	if (!semanticDefinition && !token) {
 		clearGotoHoverHighlight();
 		return;
@@ -1070,12 +1019,7 @@ export function refreshGotoHoverHighlight(runtime: Runtime, row: number, column:
 	}
 	let definition = semanticDefinition;
 	if (!definition) {
-		const inspection = safeInspectLuaExpression(runtime, {
-			expression: token.expression,
-			path,
-			row: row + 1,
-			column: column + 1,
-		});
+		const inspection = safeInspectLuaExpression(runtime, token.expression, path, row + 1, column + 1, context);
 		definition = inspection?.definition;
 	}
 	if (!definition) {
@@ -1098,78 +1042,33 @@ export function clearReferenceHighlights(): void {
 	referenceState.clear();
 }
 
-export function tryGotoDefinitionAt(runtime: Runtime, row: number, column: number): boolean {
-	const context = getActiveCodeTabContext();
+export function resolveDefinitionAt(runtime: Runtime, context: CodeTabContext, row: number, column: number): LuaDefinitionLocation {
 	if (context.mode !== 'lua') {
-		return false;
+		return null;
 	}
 	let definition = resolveSemanticDefinitionLocation(runtime, context, row + 1, column + 1);
 	if (definition) {
-		navigateToLuaDefinition(runtime, definition);
-		return true;
-	}
-	const token = extractHoverExpression(row, column);
-	if (!token) {
-		showEditorMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
-		return false;
+		return definition;
 	}
 	const path = context.descriptor.path;
-	if (!definition) {
-		const inspection = safeInspectLuaExpression(runtime, {
-			expression: token.expression,
-			path,
-			row: row + 1,
-			column: column + 1,
-		});
-		definition = inspection?.definition;
+	const token = extractHoverExpression(row, column, path);
+	if (!token) {
+		showEditorMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
+		return null;
 	}
+	const inspection = safeInspectLuaExpression(runtime, token.expression, path, row + 1, column + 1, context);
+	definition = inspection?.definition;
 	if (!definition) {
 		if (!intellisenseUiState.inspectorRequestFailed) {
 			showEditorMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
 		}
-		return false;
-	}
-	navigateToLuaDefinition(runtime, definition);
-	return true;
-}
-
-export function navigateToLuaDefinition(runtime: Runtime, definition: LuaDefinitionLocation): void {
-	const navigationCheckpoint = beginNavigationCapture();
-	clearReferenceHighlights();
-	let targetContextId: string = null;
-	try {
-		focusChunkSource(runtime, definition.path);
-		const context = findCodeTabContext(definition.path);
-		if (context) {
-			targetContextId = context.id;
-		}
-	} catch (error) {
-		const message = extractErrorMessage(error);
-		showEditorMessage(`Failed to open definition: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
-		return;
-	}
-	if (targetContextId) {
-		setActiveTab(targetContextId);
-	} else {
-		activateCodeTab();
-	}
-	applyDefinitionSelection(definition.range);
-	editorCaretState.cursorRevealSuspended = false;
-	clearHoverTooltip();
-	clearGotoHoverHighlight();
-	completeNavigation(navigationCheckpoint);
-	showEditorMessage('Jumped to definition', constants.COLOR_STATUS_SUCCESS, 1.6);
-}
-
-export function inspectLuaExpression(runtime: Runtime, request: LuaHoverRequest): LuaHoverResult {
-	if (!request) {
 		return null;
 	}
-	const expressionRaw = request.expression;
-	if (typeof expressionRaw !== 'string') {
-		return null;
-	}
-	const trimmed = expressionRaw.trim();
+	return definition;
+}
+
+export function inspectLuaExpression(runtime: Runtime, expression: string, path: string, row: number, column: number, activeContext: CodeTabContext): LuaHoverResult {
+	const trimmed = expression.trim();
 	if (trimmed.length === 0) {
 		return null;
 	}
@@ -1177,10 +1076,8 @@ export function inspectLuaExpression(runtime: Runtime, request: LuaHoverRequest)
 	if (!chain) {
 		return null;
 	}
-	const usageRow = request.row;
-	const usageColumn = request.column;
-	const resolved = resolveLuaChainValue(runtime, chain, request.path, usageRow, usageColumn);
-	const staticDefinition = findStaticDefinitionLocation(runtime, chain, usageRow, usageColumn, request.path);
+	const resolved = resolveLuaChainValue(runtime, chain, path, row, column);
+	const staticDefinition = findStaticDefinitionLocation(runtime, chain, row, column, path, activeContext);
 	if (!resolved) {
 		if (!staticDefinition) {
 			return null;
@@ -1234,8 +1131,8 @@ export function inspectLuaExpression(runtime: Runtime, request: LuaHoverRequest)
 	};
 }
 
-export function listLuaObjectMembers(runtime: Runtime, request: LuaMemberCompletionRequest): LuaMemberCompletion[] {
-	const trimmed = request.expression.trim();
+export function listLuaObjectMembers(runtime: Runtime, expression: string, path: string, operator: '.' | ':'): LuaMemberCompletion[] {
+	const trimmed = expression.trim();
 	if (trimmed.length === 0) {
 		return [];
 	}
@@ -1243,7 +1140,7 @@ export function listLuaObjectMembers(runtime: Runtime, request: LuaMemberComplet
 	if (!chain) {
 		return [];
 	}
-	const resolved = resolveLuaChainValue(runtime, chain, request.path, null, null);
+	const resolved = resolveLuaChainValue(runtime, chain, path, null, null);
 	if (!resolved || resolved.kind !== 'value') {
 		return [];
 	}
@@ -1252,11 +1149,11 @@ export function listLuaObjectMembers(runtime: Runtime, request: LuaMemberComplet
 		return [];
 	}
 	if (value instanceof LuaNativeValue) {
-		return getNativeMemberCompletionEntries(runtime, value, request.operator);
+		return getNativeMemberCompletionEntries(runtime, value, operator);
 	}
 	if (isLuaTable(value)) {
 		const typeName = resolveTableTypeName(runtime, value);
-		return buildTableMemberCompletionEntries(value, request.operator, typeName);
+		return buildTableMemberCompletionEntries(value, operator, typeName);
 	}
 	return [];
 }
@@ -1395,12 +1292,11 @@ export function listGlobalLuaSymbols(runtime: Runtime): LuaSymbolEntry[] {
 	return entries;
 }
 
-export function findStaticDefinitionLocation(runtime: Runtime, chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string): LuaDefinitionLocation {
+export function findStaticDefinitionLocation(runtime: Runtime, chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string, activeContext: CodeTabContext): LuaDefinitionLocation {
 	if (chain.length === 0) {
 		return null;
 	}
 	if (preferredChunk) {
-		const activeContext = getActiveCodeTabContext();
 		if (activeContext.descriptor.path === preferredChunk) {
 			const source = getTextSnapshot(editorDocumentState.buffer);
 			prepareRuntimeSemanticWorkspaceForEditorBuffer(runtime, {
@@ -1787,13 +1683,8 @@ function resolveRuntimeLocalChainValue(
 	if (!metadata?.localSlotsByProto) {
 		return null;
 	}
-	const requestedPath = resolveLuaSource(
-		intellisenseLuaSourceResolution,
-		path,
-		runtime.activeLuaSources,
-		runtime.cartLuaSources,
-		runtime.systemLuaSources,
-	) ? intellisenseLuaSourceResolution.record!.source_path : path;
+	const requestedRecord = runtime.resolveLuaSourceRecord(path);
+	const requestedPath = requestedRecord ? requestedRecord.source_path : path;
 	const cpu = runtime.machine.cpu;
 	// Use the fault snapshot when the fault overlay is active — by hover time, the crash
 	// frame has been popped from the live CPU stack, so we must use the saved registers.
@@ -2545,14 +2436,10 @@ export function getBuiltinIdentifiersSnapshot(runtime: Runtime): { epoch: number
 	return entry;
 }
 
-export function getBuiltinIdentifierSet(runtime: Runtime): ReadonlySet<string> {
-	return getBuiltinIdentifiersSnapshot(runtime).ids;
-}
-
-export function safeInspectLuaExpression(runtime: Runtime, request: LuaHoverRequest): LuaHoverResult {
+export function safeInspectLuaExpression(runtime: Runtime, expression: string, path: string, row: number, column: number, activeContext: CodeTabContext): LuaHoverResult {
 	intellisenseUiState.inspectorRequestFailed = false;
 	try {
-		return inspectLuaExpression(runtime, request);
+		return inspectLuaExpression(runtime, expression, path, row, column, activeContext);
 	} catch (error) {
 		intellisenseUiState.inspectorRequestFailed = true;
 		const handled = tryShowLuaErrorOverlay(runtime, error);
@@ -2571,10 +2458,8 @@ export function applyDefinitionSelection(range: LuaDefinitionLocation['range']):
 	const startColumn = clamp(range.startColumn - 1, 0, startLine.length);
 	editorDocumentState.cursorRow = startRow;
 	editorDocumentState.cursorColumn = startColumn;
-	editorDocumentState.selectionAnchor = null;
-	editorPointerState.pointerSelecting = false;
-	editorPointerState.pointerPrimaryWasPressed = false;
-	editorPointerState.pointerAuxWasPressed = false;
+	clearSingleCursorSelection(editorDocumentState);
+	clearEditorPointerSelectionState();
 	updateDesiredColumn();
 	resetBlink();
 	editorCaretState.cursorRevealSuspended = false;

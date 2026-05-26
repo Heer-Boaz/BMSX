@@ -24,7 +24,7 @@ export function updateCodeAreaPointerFeedback(
 	if (isCodeTabActive()) {
 		const altDown = isAltDown();
 		if (!snapshot.primaryPressed && !pointerSelecting && insideCodeArea && altDown) {
-			updateHoverTooltip(runtime, snapshot, bounds);
+			updateHoverTooltip(runtime, snapshot, activeContext, bounds);
 		} else {
 			clearHoverTooltip();
 		}

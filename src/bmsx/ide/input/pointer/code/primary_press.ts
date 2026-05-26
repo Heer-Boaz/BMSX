@@ -4,7 +4,7 @@ import { setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/s
 import { focusPrimaryEditorSurface } from '../../../workbench/ui/focus';
 import { resolvePointerTextPosition } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
-import { tryGotoDefinitionAt } from '../../../editor/contrib/intellisense/engine';
+import { tryGotoDefinitionAt } from '../../../workbench/ui/code_tab/activation';
 import type { PointerSnapshot } from '../../../common/models';
 import * as TextEditing from '../../../editor/editing/text_editing_and_selection';
 import * as constants from '../../../common/constants';

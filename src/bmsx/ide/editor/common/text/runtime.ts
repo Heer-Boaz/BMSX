@@ -37,16 +37,14 @@ export function markTextMutated(): void {
 	editorDocumentState.saveGeneration += 1;
 	editorDocumentState.dirty = editorDocumentState.undoStack.length !== editorDocumentState.savePointDepth;
 	const context = getActiveCodeTabContext();
-	if (context) {
-		context.saveGeneration = editorDocumentState.saveGeneration;
-	}
+	context.saveGeneration = editorDocumentState.saveGeneration;
 	editorViewState.maxLineLengthDirty = true;
-	markDiagnosticsDirty(getActiveCodeTabContext().id);
+	markDiagnosticsDirty(context.id);
 	bumpTextVersion();
 	clearReferenceHighlights();
 	updateActiveContextDirtyFlag();
 	editorViewState.layout.ensureVisualLinesDirty();
-	requestSemanticRefresh();
+	requestSemanticRefresh(context);
 	clearForwardNavigationHistory();
 	const editContext = editorRuntimeState.pendingEditContext;
 	editorRuntimeState.pendingEditContext = null;

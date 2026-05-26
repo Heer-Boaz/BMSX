@@ -4,24 +4,33 @@ import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStat
 import { editorDiagnosticsState } from '../../../editor/contrib/diagnostics/state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { syncRuntimeErrorOverlayFromContext } from '../../../runtime_error/navigation';
+import type { LuaDefinitionLocation } from '../../../../lua/semantic_contracts';
+import type { Runtime } from '../../../../machine/runtime/runtime';
+import { extractErrorMessage } from '../../../../lua/value';
 import { ensureCursorVisible, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
+import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { refreshActiveDiagnostics } from '../../../editor/contrib/diagnostics/controller';
 import { markDiagnosticsDirty } from '../../../editor/contrib/diagnostics/analysis';
-import { requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
+import { applyDefinitionSelection, clearGotoHoverHighlight, clearHoverTooltip, clearReferenceHighlights, requestSemanticRefresh, resolveDefinitionAt } from '../../../editor/contrib/intellisense/engine';
 import { resetBlink } from '../../../editor/render/caret';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import { editorPointerState } from '../../../input/pointer/state';
 import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
 import { breakUndoSequence } from '../../../editor/editing/undo_controller';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
+import { beginNavigationCapture, completeNavigation } from '../../../navigation/navigation_history';
+import { showEditorMessage } from '../../../common/feedback_state';
+import * as constants from '../../../common/constants';
+import { focusChunkSource } from '../../contrib/resources/navigation';
 import {
+	findCodeTabContext,
 	getActiveCodeTabContext,
 	setTabDirty,
 	setTabRuntimeSyncState,
 	updateActiveContextDirtyFlag,
 } from './contexts';
 import { codeTabSessionState } from './session_state';
-import { getActiveTabId } from '../tabs';
+import { activateCodeTab, getActiveTabId, setActiveTab } from '../tabs';
 
 export type CodeTabSelection = {
 	row: number;
@@ -120,4 +129,40 @@ export function activateCodeEditorTab(tabId: string, selection?: CodeTabSelectio
 		applyActiveCodeTabSelection(selection);
 	}
 	refreshActiveDiagnostics();
+}
+
+export function tryGotoDefinitionAt(runtime: Runtime, row: number, column: number): boolean {
+	const definition = resolveDefinitionAt(runtime, getActiveCodeTabContext(), row, column);
+	if (!definition) {
+		return false;
+	}
+	navigateToLuaDefinition(runtime, definition);
+	return true;
+}
+
+export function navigateToLuaDefinition(runtime: Runtime, definition: LuaDefinitionLocation): void {
+	const navigationCheckpoint = beginNavigationCapture();
+	clearReferenceHighlights();
+	let targetContextId: string = null;
+	try {
+		focusChunkSource(runtime, definition.path);
+		const context = findCodeTabContext(definition.path);
+		if (context) {
+			targetContextId = context.id;
+		}
+	} catch (error) {
+		const message = extractErrorMessage(error);
+		showEditorMessage(`Failed to open definition: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
+		return;
+	}
+	if (targetContextId) {
+		setActiveTab(targetContextId);
+	} else {
+		activateCodeTab();
+	}
+	applyDefinitionSelection(definition.range);
+	editorCaretState.cursorRevealSuspended = false;
+	clearHoverTooltip();
+	clearGotoHoverHighlight();
+	completeNavigation(navigationCheckpoint);
 }
