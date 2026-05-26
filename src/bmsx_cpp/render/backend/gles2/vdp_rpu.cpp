@@ -542,6 +542,7 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 		}
 	}
 	bindVdpRpuNeutralTexture(runtime.backend);
+	glUniform1i(g_vdpRpu.uniformTextureEnabled, 0);
 }
 
 void drawVdpRpuCommand(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCount, u32 instanceCount, u32 indexCount) {

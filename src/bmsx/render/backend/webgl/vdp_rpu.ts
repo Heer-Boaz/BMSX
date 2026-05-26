@@ -662,6 +662,7 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 		}
 	}
 	bindVdpRpuNeutralTexture(backend);
+	gl.uniform1i(vdpRpuTextureEnabledLocation, 0);
 }
 
 function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: number, instanceCount: number, indexCount: number): void {
