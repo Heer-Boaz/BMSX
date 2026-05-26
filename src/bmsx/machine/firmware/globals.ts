@@ -2191,7 +2191,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	luaPipeline.registerGlobal(runtime, 'require', createNativeFunction('require', (args, out) => {
 		const moduleName = strings.toString(asStringId(args[0] as StringValue)).trim();
-		out.push(luaPipeline.requireModule(runtime, moduleName));
+		out.push(runtime.requireModule(moduleName));
 	}));
 	luaPipeline.registerGlobal(runtime, 'array', createNativeFunction('array', (args, out) => {
 		const ctxBase = buildMarshalContext(runtime);

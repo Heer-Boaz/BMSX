@@ -149,9 +149,8 @@ export class VblankState {
 		runtime.machine.inputController.onVblankEdge(runtime.frameLoop.currentTimeMs, runtime.machine.scheduler.nowCycles);
 		this.publishVblankTiming(true);
 		runtime.machine.irqController.raise(IRQ_VBLANK);
-		const frameState = runtime.frameLoop.currentFrameState;
-		if (frameState !== null) {
-			this.completeTickIfPending(frameState, this.vblankSequence);
+		if (runtime.frameLoop.frameActive) {
+			this.completeTickIfPending(runtime.frameLoop.frameState, this.vblankSequence);
 		}
 	}
 

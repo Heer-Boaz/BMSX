@@ -11,7 +11,7 @@ public:
 		bool processPending();
 
 private:
-		bool pollSystemBootRequest();
+		void pollSystemBootRequest();
 		void request();
 
 		Runtime& m_runtime;

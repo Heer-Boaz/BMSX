@@ -3,9 +3,9 @@ import { createLuaTable, type LuaTable } from '../../lua/value';
 import { LuaNativeFunction, type LuaInterpreter } from '../../lua/runtime';
 import type { ResourceDescriptor } from '../../rompack/tooling/resource';
 import type { Runtime } from '../runtime/runtime';
-import type { LuaSourceRecord, LuaSourceRegistry } from '../program/sources';
-import { workspaceSourceCache } from '../../ide/workspace/cache';
-import { buildDirtyFilePath, hasWorkspaceStorage } from '../../ide/workbench/workspace/io';
+import { resolveLuaSource, resolveLuaSourceRecord, type LuaSourceRegistry, type LuaSourceResolution } from '../program/sources';
+
+const devtoolsLuaSourceResolution: LuaSourceResolution = { registry: null, record: null };
 
 function listRuntimeLuaRegistries(runtime: Runtime): LuaSourceRegistry[] {
 	const registries: LuaSourceRegistry[] = [];
@@ -13,18 +13,13 @@ function listRuntimeLuaRegistries(runtime: Runtime): LuaSourceRegistry[] {
 	if (active !== null) {
 		registries.push(active);
 	}
+	if (runtime.cartLuaSources !== null && runtime.cartLuaSources !== active) {
+		registries.push(runtime.cartLuaSources);
+	}
 	if (runtime.systemLuaSources !== null && runtime.systemLuaSources !== active) {
 		registries.push(runtime.systemLuaSources);
 	}
 	return registries;
-}
-
-function resolveLuaSourceRecordBySourcePath(registry: LuaSourceRegistry, path: string): LuaSourceRecord | null {
-	const record = registry.path2lua[path];
-	if (record === undefined) {
-		return null;
-	}
-	return record;
 }
 
 function summarizeLuaPaths(runtime: Runtime, limit: number): string {
@@ -47,17 +42,6 @@ function summarizeLuaPaths(runtime: Runtime, limit: number): string {
 		}
 	}
 	return values.join(', ');
-}
-
-function resolveRuntimeLuaSourceRecord(runtime: Runtime, path: string): LuaSourceRecord | null {
-	const registries = listRuntimeLuaRegistries(runtime);
-	for (let index = 0; index < registries.length; index += 1) {
-		const resolved = resolveLuaSourceRecordBySourcePath(registries[index], path);
-		if (resolved !== null) {
-			return resolved;
-		}
-	}
-	return null;
 }
 
 export function listRuntimeLuaResources(runtime: Runtime): ResourceDescriptor[] {
@@ -86,22 +70,21 @@ export function listRuntimeLuaResources(runtime: Runtime): ResourceDescriptor[] 
 export function getRuntimeLuaEntryPath(runtime: Runtime): string {
 	const registry = runtime.activeLuaSources;
 	const entryPath = registry.entry_path;
-	const record = resolveLuaSourceRecordBySourcePath(registry, entryPath);
+	const record = resolveLuaSourceRecord(registry, entryPath);
 	return record ? record.source_path : entryPath;
 }
 
 export function getRuntimeLuaResourceSource(runtime: Runtime, path: string): string {
-	const record = resolveRuntimeLuaSourceRecord(runtime, path);
-	if (record === null) {
+	if (!resolveLuaSource(
+		devtoolsLuaSourceResolution,
+		path,
+		runtime.activeLuaSources,
+		runtime.cartLuaSources,
+		runtime.systemLuaSources,
+	)) {
 		throw new Error(`[devtools.get_lua_resource_source] Missing Lua resource for path '${path}'. Available: ${summarizeLuaPaths(runtime, 16)}`);
 	}
-	if (hasWorkspaceStorage()) {
-		const dirty = workspaceSourceCache.get(buildDirtyFilePath(record.source_path));
-		if (dirty !== undefined) {
-			return dirty;
-		}
-	}
-	return record.src;
+	return devtoolsLuaSourceResolution.record!.src;
 }
 
 function buildRuntimeResourceDescriptorTable(runtime: Runtime, descriptor: ResourceDescriptor): Table {

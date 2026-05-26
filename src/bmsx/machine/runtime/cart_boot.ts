@@ -1,9 +1,8 @@
 import { IO_SYS_BOOT_CART } from '../bus/io';
-import * as luaPipeline from '../../ide/runtime/lua_pipeline';
 import { Runtime } from './runtime';
 
 export class CartBootState {
-	public pending = false;
+	private pending = false;
 
 	constructor(private readonly runtime: Runtime) {
 	}
@@ -12,29 +11,27 @@ export class CartBootState {
 		this.pending = false;
 	}
 
-	public processPending(): void {
+	public processPending(): boolean {
 		const runtime = this.runtime;
 		this.pollSystemBootRequest();
 		if (!this.pending) {
-			return;
+			return false;
 		}
 		if (!runtime.luaGate.ready) {
-			return;
+			return false;
 		}
 		const frameLoop = runtime.frameLoop;
 		const hasPendingCall = runtime.pendingCall !== null;
-		if (frameLoop.currentFrameState !== null || hasPendingCall) {
-			luaPipeline.resetFrameState(runtime);
+		if (frameLoop.frameActive || hasPendingCall) {
+			frameLoop.resetFrameState();
 		}
 		if (hasPendingCall) {
 			runtime.pendingCall = null;
-			runtime.machine.cpu.clearHaltUntilIrq();
 		}
 		runtime.frameScheduler.clearQueuedTime();
 		this.pending = false;
-		if (!luaPipeline.startCartProgram(runtime)) {
-			throw new Error('cannot start cart: no cart entry point is installed.');
-		}
+		runtime.startCartProgram();
+		return true;
 	}
 
 	private request(): void {

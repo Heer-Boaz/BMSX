@@ -195,8 +195,8 @@ export class ConsoleCore {
 			runtime.frameScheduler.clearQueuedTime();
 			runtime.screen.clearPresentation();
 			runtime.frameLoop.abandonFrameState();
-			runtime.frameLoop.drawFrameState = null;
-				runtime.machine.cpu.clearHaltUntilIrq();
+			runtime.overlayDrawFrameOwner = null;
+			runtime.machine.cpu.clearHaltUntilIrq();
 			runtime.vblank.reset();
 			runtime.overlayRenderer.abandonFrame();
 

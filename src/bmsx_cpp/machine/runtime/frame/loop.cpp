@@ -43,12 +43,24 @@ void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 	abandonFrameState(runtime);
 }
 
+bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
+	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
+		const bool haltedUntilIrq = runUpdatePhase(runtime);
+		frameState.updateExecuted = runtime.m_pendingCall != Runtime::PendingCall::Entry;
+		finalizeUpdateSlice(runtime);
+		return haltedUntilIrq;
+	}
+	finalizeUpdateSlice(runtime);
+	return false;
+}
+
 bool FrameLoopState::runUpdatePhase(Runtime& runtime) {
+	auto& cpu = runtime.machine.cpu;
 	try {
 		while (true) {
-			if (runtime.machine.cpu.isHaltedUntilIrq()) {
+			if (cpu.isHaltedUntilIrq()) {
 				const bool tickCompleted = runtime.cpuExecution.runHaltedUntilIrq(runtime, frameState);
-				if (tickCompleted || runtime.machine.cpu.isHaltedUntilIrq()) {
+				if (tickCompleted || cpu.isHaltedUntilIrq()) {
 					return true;
 				}
 				continue;
@@ -57,14 +69,14 @@ bool FrameLoopState::runUpdatePhase(Runtime& runtime) {
 				return false;
 			}
 			runtime.cpuExecution.runWithBudget(runtime, frameState);
-			if (runtime.machine.cpu.isHaltedUntilIrq()) {
+			if (cpu.isHaltedUntilIrq()) {
 				return true;
 			}
 			return false;
 		}
 	} catch (...) {
 		frameState.luaFaulted = true;
-		runtime.machine.cpu.clearHaltUntilIrq();
+		cpu.clearHaltUntilIrq();
 		runtime.m_pendingCall = Runtime::PendingCall::None;
 		throw;
 	}
@@ -95,19 +107,14 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		}
 	}
 
-	if (runtime.m_pendingCall == PendingCall::Entry) {
-		const bool haltedUntilIrq = runUpdatePhase(runtime);
-		if (haltedUntilIrq) {
-			return false;
-		}
-	}
-
 	if (startedFrame) {
 		runtime.m_debugUpdateCountTotal += 1;
 	}
 
-	frameState.updateExecuted = runtime.m_pendingCall != PendingCall::Entry;
-	finalizeUpdateSlice(runtime);
+	const bool haltedUntilIrq = runActiveFrameState(runtime);
+	if (haltedUntilIrq) {
+		return false;
+	}
 	const bool nextFrameActive = frameActive;
 	if (nextFrameActive != previousFrameActive) {
 		return true;

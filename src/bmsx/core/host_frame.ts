@@ -2,10 +2,14 @@ import { consoleCore } from './console';
 import { hostOverlayMenu } from './host_overlay_menu';
 import * as workbenchMode from '../ide/workbench/mode';
 import type { Runtime } from '../machine/runtime/runtime';
-import { createRuntimeFrameStepResult, runRuntimeFrameStepInto } from '../machine/runtime/frame/step';
+import { runRuntimeFrameStepInto, type RuntimeFrameStepResult } from '../machine/runtime/frame/step';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;
-const hostFrameStepResult = createRuntimeFrameStepResult();
+const hostFrameStepResult: RuntimeFrameStepResult = {
+	previousTickSequence: 0,
+	tickSequence: 0,
+	tickAdvanced: false,
+};
 
 export function runConsoleHostFrame(runtime: Runtime, currentTime: number, runReady: boolean): void {
 	const console = consoleCore;

@@ -15,22 +15,39 @@ export type LuaSourceRegistry = {
 	can_boot_from_source: boolean;
 };
 
-export function resolveLuaSourceRecordFromRegistries(path: string, registries: ReadonlyArray<LuaSourceRegistry | null>): LuaSourceRecord | null {
-	for (let index = 0; index < registries.length; index += 1) {
-		const registry = registries[index];
+export type LuaSourceResolution = {
+	registry: LuaSourceRegistry | null;
+	record: LuaSourceRecord | null;
+};
+
+export function resolveLuaSourceRecord(registry: LuaSourceRegistry, path: string): LuaSourceRecord | null {
+	const record = registry.path2lua[path];
+	if (record) {
+		return record;
+	}
+	const moduleRecord = registry.module2lua[path];
+	if (moduleRecord) {
+		return moduleRecord;
+	}
+	return null;
+}
+
+export function resolveLuaSource(out: LuaSourceResolution, path: string, registry0: LuaSourceRegistry | null, registry1: LuaSourceRegistry | null = null, registry2: LuaSourceRegistry | null = null): boolean {
+	for (let index = 0; index < 3; index += 1) {
+		const registry = index === 0 ? registry0 : index === 1 ? registry1 : registry2;
 		if (registry === null) {
 			continue;
 		}
-		const record = registry.path2lua[path];
-		if (record) {
-			return record;
-		}
-		const moduleRecord = registry.module2lua[path];
-		if (moduleRecord) {
-			return moduleRecord;
+		const record = resolveLuaSourceRecord(registry, path);
+		if (record !== null) {
+			out.registry = registry;
+			out.record = record;
+			return true;
 		}
 	}
-	return null;
+	out.registry = null;
+	out.record = null;
+	return false;
 }
 
 function isAllowedPayloadId(payloadId: CartridgeLayerId, allowedPayloadIds: readonly CartridgeLayerId[]): boolean {

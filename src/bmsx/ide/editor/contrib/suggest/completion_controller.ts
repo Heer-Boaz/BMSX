@@ -7,7 +7,7 @@ import {
 	intellisenseUiReady,
 	listGlobalLuaSymbols,
 	listLuaBuiltinFunctions,
-	listLuaModuleSymbols,
+	listLuaSymbols,
 	buildMemberCompletionItems,
 	type LuaScopedSymbol,
 	shouldAutoTriggerCompletions,
@@ -784,7 +784,7 @@ export class CompletionController {
 		}
 		let symbols: LuaSymbolEntry[] = [];
 		try {
-			symbols = listLuaModuleSymbols(this.runtime, moduleAlias.module);
+			symbols = listLuaSymbols(this.runtime, moduleAlias.module);
 		} catch {
 			symbols = [];
 		}

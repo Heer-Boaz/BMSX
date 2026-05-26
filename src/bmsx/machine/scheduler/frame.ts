@@ -92,8 +92,7 @@ export class FrameSchedulerState {
 		if (!runtime.luaInitialized || !runtime.tickEnabled || runtime.luaRuntimeFailed) {
 			return false;
 		}
-		const state = runtime.frameLoop.currentFrameState;
-		return (state !== null && state.cycleBudgetRemaining > 0 && !runtime.machine.cpu.isHaltedUntilIrq())
+		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0 && !runtime.machine.cpu.isHaltedUntilIrq())
 			|| this.hasScheduledFrame();
 	}
 
@@ -217,7 +216,7 @@ export class FrameSchedulerState {
 				this.clearQueuedTime();
 				break;
 			}
-			if (runtime.frameLoop.currentFrameState !== null && !progressed) {
+			if (runtime.frameLoop.frameActive && !progressed) {
 				break;
 			}
 		}

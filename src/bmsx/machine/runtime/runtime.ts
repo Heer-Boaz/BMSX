@@ -21,6 +21,7 @@ import {
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import { buildRuntimeRomLayer, type RuntimeRomLayer } from '../../rompack/loader';
 import { StringValue, Table, type Value, type ProgramMetadata, type NativeFunction, type NativeObject } from '../cpu/cpu';
+import { IRQ_NEWGAME, IRQ_REINIT } from '../bus/io';
 import type { TerminalMode } from '../../ide/terminal/ui/mode';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { Font, type FontVariant } from '../../render/shared/bmsx_font';
@@ -32,7 +33,7 @@ import { LuaFunctionRedirectCache } from '../firmware/handler_registry';
 import { LuaJsBridge } from './host/native_bridge';
 import { RuntimeOptions } from './contracts';
 import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry, DEFAULT_SYSTEM_PROJECT_ROOT_PATH } from '../../ide/workspace/workspace';
-import { buildLuaSources, resolveLuaSourceRecordFromRegistries, type LuaSourceRegistry } from '../program/sources';
+import { buildLuaSources, resolveLuaSource, type LuaSourceRegistry, type LuaSourceResolution } from '../program/sources';
 import * as workbenchMode from '../../ide/workbench/mode';
 import { deactivateEditor, deactivateTerminalMode } from '../../ide/workbench/overlay_modes';
 import { handleLuaError } from '../../ide/workbench/runtime_errors';
@@ -53,9 +54,10 @@ import { CpuExecutionState } from './cpu_executor';
 import { CartBootState } from './cart_boot';
 import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
-import { invokeClosureHandler, invokeLuaHandler } from '../program/executor';
+import { callClosureInto, invokeClosureHandler, invokeLuaHandler } from '../program/executor';
 import { resolvePositiveSafeInteger, resolveRuntimeRenderSize } from '../specs';
 import { resolveRuntimeMemoryMapSpecs } from '../memory/specs';
+import { raiseSystemIrq } from './system_irq';
 import {
 	applyActiveMachineTiming,
 	refreshDeviceTimings,
@@ -83,6 +85,8 @@ export type FrameState = {
 	cycleCarryGranted: number;
 	activeCpuUsedCycles: number;
 };
+
+const runtimeLuaSourceResolution: LuaSourceResolution = { registry: null, record: null };
 
 export class Runtime {
 	public readonly storageService: StorageService;
@@ -128,21 +132,21 @@ export class Runtime {
 	}
 
 	public cpuUsageCyclesUsed(): number {
-		const frameState = this.frameLoop.currentFrameState;
-		return frameState === null ? this.frameScheduler.lastTickCpuUsedCycles : frameState.activeCpuUsedCycles;
+		return this.frameLoop.frameActive ? this.frameLoop.frameState.activeCpuUsedCycles : this.frameScheduler.lastTickCpuUsedCycles;
 	}
 
 	public cpuUsageCyclesGranted(): number {
-		const frameState = this.frameLoop.currentFrameState;
-		return frameState === null
-			? (this.frameScheduler.lastTickSequence === 0 ? this.timing.cycleBudgetPerFrame : this.frameScheduler.lastTickCpuBudgetGranted)
-			: frameState.cycleBudgetGranted;
+		return this.frameLoop.frameActive
+			? this.frameLoop.frameState.cycleBudgetGranted
+			: (this.frameScheduler.lastTickSequence === 0 ? this.timing.cycleBudgetPerFrame : this.frameScheduler.lastTickCpuBudgetGranted);
 	}
 
+	// disable-next-line single_line_method_pattern -- runtime telemetry boundary mirrors native Runtime and keeps host UI out of VDP internals.
 	public vdpUsageWorkUnitsLast(): number {
 		return this.machine.vdp.lastFrameCost();
 	}
 
+	// disable-next-line single_line_method_pattern -- runtime telemetry boundary mirrors native Runtime and keeps host UI out of VDP internals.
 	public vdpUsageFrameHeld(): boolean {
 		return this.machine.vdp.lastFrameHeld();
 	}
@@ -171,6 +175,7 @@ export class Runtime {
 		return this.luaRuntimeFailed;
 	}
 	private includeJsStackTraces = false;
+	public overlayDrawFrameOwner: 'terminal' | 'ide' | null = null;
 	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
 	public readonly frameScheduler: FrameSchedulerState;
 	public readonly frameLoop: FrameLoopState;
@@ -429,20 +434,103 @@ export class Runtime {
 		}
 	}
 
+	public startCartProgram(): void {
+		const entryProtoIndex = this.cartEntryProtoIndex;
+		if (entryProtoIndex === null) {
+			throw new Error('cannot start cart: no cart entry point is loaded.');
+		}
+		this.enterCartProgram();
+		this._luaPath = this.activeLuaSources.entry_path;
+		this.startLoadedProgram(entryProtoIndex, this.cartStaticModulePaths, true, true);
+	}
+
+	public startLoadedProgram(entryProtoIndex: number, staticModulePaths: ReadonlyArray<string>, runInit: boolean, runNewGame: boolean): void {
+		this.runStaticModuleInitializers(staticModulePaths);
+		this.machine.cpu.start(entryProtoIndex);
+		this.pendingCall = 'entry';
+		this.finishLuaEntryLifecycle(runInit, runNewGame);
+	}
+
+	public finishLuaEntryLifecycle(runInit: boolean, runNewGame: boolean): void {
+		if (runInit) {
+			this.queueLifecycleHandlers(true, runNewGame);
+		}
+		this.luaInitialized = true;
+	}
+
+	private runStaticModuleInitializers(paths: ReadonlyArray<string>): void {
+		for (let index = 0; index < paths.length; index += 1) {
+			this.runStaticModuleInitializer(paths[index]);
+		}
+		this.machine.cpu.syncGlobalSlotsToTable();
+	}
+
+	private runStaticModuleInitializer(path: string): void {
+		if (this.moduleCache.has(path)) {
+			return;
+		}
+		const protoIndex = this.moduleProtos.get(path);
+		if (protoIndex === undefined) {
+			throw this.createApiRuntimeError(`static module init failed: module '${path}' is not compiled.`);
+		}
+		this.moduleCache.set(path, true);
+		const results = this.luaScratch.values.acquire();
+		try {
+			callClosureInto(this, { protoIndex, upvalues: [] }, [], results);
+		} catch (error) {
+			this.moduleCache.delete(path);
+			throw error;
+		} finally {
+			this.luaScratch.values.release(results);
+		}
+		this.moduleCache.delete(path);
+	}
+
+	private queueLifecycleHandlers(runInit: boolean, runNewGame: boolean): void {
+		const irqMask = (runInit ? IRQ_REINIT : 0) | (runNewGame ? IRQ_NEWGAME : 0);
+		if (irqMask !== 0) {
+			raiseSystemIrq(this, irqMask);
+		}
+	}
+
+	public requireModule(moduleName: string): Value {
+		const cached = this.moduleCache.get(moduleName);
+		if (cached !== undefined) {
+			return cached;
+		}
+		const protoIndex = this.moduleProtos.get(moduleName);
+		if (protoIndex === undefined) {
+			throw this.createApiRuntimeError(`require('${moduleName}') failed: module not compiled.`);
+		}
+		this.moduleCache.set(moduleName, true);
+		const results = this.luaScratch.values.acquire();
+		let value: Value = null;
+		try {
+			callClosureInto(this, { protoIndex, upvalues: [] }, [], results);
+			value = results.length > 0 ? results[0] : null;
+		} finally {
+			this.luaScratch.values.release(results);
+		}
+		const cachedValue = value === null ? true : value;
+		this.moduleCache.set(moduleName, cachedValue);
+		return cachedValue;
+	}
+
 	public resolveCurrentModuleId(): string {
 		const currentPath = this.currentPath;
 		if (!currentPath) {
 			return 'runtime';
 		}
-		const binding = resolveLuaSourceRecordFromRegistries(currentPath, [
+		if (!resolveLuaSource(
+			runtimeLuaSourceResolution,
+			currentPath,
 			this.activeLuaSources,
 			this.cartLuaSources,
 			this.systemLuaSources,
-		]);
-		if (!binding) {
+		)) {
 			return 'runtime';
 		}
-		return binding.source_path;
+		return runtimeLuaSourceResolution.record!.source_path;
 	}
 
 	private constructor(options: RuntimeOptions, view: GameView) {

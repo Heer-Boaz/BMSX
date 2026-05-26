@@ -144,6 +144,9 @@ export function deactivateTerminalMode(runtime: Runtime): void {
 		return;
 	}
 	runtime.terminal.deactivate();
+	if (runtime.overlayDrawFrameOwner === 'terminal') {
+		runtime.overlayDrawFrameOwner = null;
+	}
 	updateGamePipelineExts(runtime);
 }
 
@@ -191,6 +194,9 @@ export function deactivateEditor(runtime: Runtime): void {
 	const editor = runtime.editor;
 	if (editor.isActive) {
 		editor.deactivate();
+	}
+	if (runtime.overlayDrawFrameOwner === 'ide') {
+		runtime.overlayDrawFrameOwner = null;
 	}
 	popRenderTargetOwner(runtime, 'editor');
 	updateGamePipelineExts(runtime);

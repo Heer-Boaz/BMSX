@@ -1,4 +1,4 @@
-import type { LuaSourceRegistry } from '../../machine/program/sources';
+import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/sources';
 import type { HttpResponse, StorageService } from '../../platform/index';
 import { workspaceSourceCache } from './cache';
 import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './path';
@@ -25,6 +25,16 @@ export function buildWorkspaceDirtyEntryPath(projectRootPath: string, resourcePa
 	const tempName = baseName.startsWith('~') ? baseName : `~${baseName}`;
 	segments.push(tempName);
 	return joinWorkspacePaths(projectRootPath, WORKSPACE_METADATA_DIR, WORKSPACE_DIRTY_DIR, ...segments);
+}
+
+export function readWorkspaceLuaSourceText(registry: LuaSourceRegistry, record: LuaSourceRecord): string {
+	if (workspaceSourceCache.size !== 0) {
+		const dirty = workspaceSourceCache.get(buildWorkspaceDirtyEntryPath(registry.projectRootPath, record.source_path));
+		if (dirty !== undefined) {
+			return dirty;
+		}
+	}
+	return record.src;
 }
 
 export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: string): string {

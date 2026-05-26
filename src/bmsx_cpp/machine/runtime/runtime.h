@@ -189,6 +189,10 @@ public:
 	 */
 	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost = std::nullopt);
 
+	void startLoadedProgram(int entryProtoIndex, const std::vector<std::string>& staticModulePaths, bool runInit, bool runNewGame);
+	void finishLuaEntryLifecycle(bool runInit, bool runNewGame);
+	auto requireModule(const std::string& moduleName) -> Value;
+
 	void resetHardwareState();
 	void resetRuntimeForProgramReload();
 	auto updateCountTotal() const -> i64 { return m_debugUpdateCountTotal; }
@@ -229,7 +233,6 @@ private:
 	void runStaticModuleInitializers(const std::vector<std::string>& paths);
 	void runStaticModuleInitializer(const std::string& path);
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
-	auto requireModule(const std::string& moduleName) -> Value;
 	auto buildLuaPatternRegex(const std::string& pattern) -> const std::regex&;
 	auto translateLuaPatternEscape(char token, bool inClass) const -> std::string;
 	auto valueToString(const Value& value) const -> std::string;

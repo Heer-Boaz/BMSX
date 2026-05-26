@@ -4,13 +4,11 @@
 
 namespace bmsx {
 
-RuntimeFrameStepResult runRuntimeFrameStep(Runtime& runtime, f64 hostDeltaMs) {
-	RuntimeFrameStepResult result;
-	result.previousTickSequence = runtime.frameScheduler.lastTickSequence;
+void runRuntimeFrameStepInto(RuntimeFrameStepResult& out, Runtime& runtime, f64 hostDeltaMs) {
+	out.previousTickSequence = runtime.frameScheduler.lastTickSequence;
 	runtime.frameScheduler.run(runtime, hostDeltaMs);
-	result.tickSequence = runtime.frameScheduler.lastTickSequence;
-	result.tickAdvanced = result.tickSequence != result.previousTickSequence;
-	return result;
+	out.tickSequence = runtime.frameScheduler.lastTickSequence;
+	out.tickAdvanced = out.tickSequence != out.previousTickSequence;
 }
 
 } // namespace bmsx

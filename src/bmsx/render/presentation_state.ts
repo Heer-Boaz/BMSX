@@ -149,7 +149,7 @@ export class RenderPresentationState {
 	public runOverlay(): void {
 		const runtime = this.runtime;
 		this.clearPresentation();
-		if (runtime.frameLoop.currentFrameState !== null) {
+		if (runtime.frameLoop.frameActive) {
 			runtime.frameLoop.abandonFrameState();
 		}
 		runtime.frameScheduler.clearQueuedTime();
@@ -225,7 +225,7 @@ export class RenderPresentationState {
 			+ `tick_deferred=${this.debugPresentTickDeferred} tick_held=${this.debugPresentTickHeld} `
 			+ `present_partial=${this.debugPresentPartialPresents} present_commit=${this.debugPresentCommitPresents} `
 			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
-			+ `draw_pending=${runtime.isDrawPending || runtime.workbenchFaultState.faultSnapshot !== null ? 1 : 0} active_tick=${runtime.frameLoop.currentFrameState !== null ? 1 : 0}`
+			+ `draw_pending=${runtime.isDrawPending || runtime.workbenchFaultState.faultSnapshot !== null ? 1 : 0} active_tick=${runtime.frameLoop.frameActive ? 1 : 0}`
 		);
 		this.resetDebugCounters(currentTime);
 	}

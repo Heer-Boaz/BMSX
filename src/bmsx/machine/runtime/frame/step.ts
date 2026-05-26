@@ -6,14 +6,6 @@ export type RuntimeFrameStepResult = {
 	tickAdvanced: boolean;
 };
 
-export function createRuntimeFrameStepResult(): RuntimeFrameStepResult {
-	return {
-		previousTickSequence: 0,
-		tickSequence: 0,
-		tickAdvanced: false,
-	};
-}
-
 export function runRuntimeFrameStepInto(out: RuntimeFrameStepResult, runtime: Runtime, hostDeltaMs: number): void {
 	const previousTickSequence = runtime.frameScheduler.lastTickSequence;
 	runtime.frameScheduler.run(hostDeltaMs);

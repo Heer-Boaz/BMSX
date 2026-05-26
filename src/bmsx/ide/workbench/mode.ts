@@ -9,7 +9,7 @@ import { editorDebuggerState } from './contrib/debugger/state';
 import { showEditorWarningBanner } from '../common/feedback_state';
 import { seedDefaultLuaBuiltins } from '../../machine/firmware/builtins';
 import { TerminalMode } from '../terminal/ui/mode';
-import type { FrameState, Runtime } from '../../machine/runtime/runtime';
+import type { Runtime } from '../../machine/runtime/runtime';
 import type { Viewport } from '../../rompack/format';
 import { api as overlay_api } from '../runtime/overlay_api';
 import { createCartEditor } from '../cart_editor';
@@ -283,6 +283,8 @@ export function clearFaultState(runtime: Runtime): { cleared: boolean; resumedDe
 
 export function surfaceHostFrameError(runtime: Runtime, error: unknown, hostDeltaMs: number): void {
 	runtime.frameLoop.abandonFrameState();
+	runtime.overlayDrawFrameOwner = null;
+	runtime.overlayRenderer.abandonFrame();
 	handleLuaError(runtime, error);
 	runtime.screen.presentErrorOverlay(hostDeltaMs);
 }
@@ -291,13 +293,12 @@ export function tickTerminalMode(runtime: Runtime): void {
 	if (!runtime.terminal.isActive) {
 		return;
 	}
-	const state = beginOverlayUpdateFrame(runtime);
-	if (state === null) {
+	if (!beginOverlayUpdateFrame(runtime)) {
 		return;
 	}
 	const deltaSeconds = runtime.frameLoop.frameDeltaMs / 1000;
 	runtime.terminal.update(deltaSeconds);
-	finishOverlayUpdateFrame(runtime, state);
+	finishOverlayUpdateFrame(runtime, 'terminal');
 }
 
 export function tickTerminalModeDraw(runtime: Runtime): void {
@@ -307,16 +308,11 @@ export function tickTerminalModeDraw(runtime: Runtime): void {
 	if (!runtime.tickEnabled) {
 		return;
 	}
-	const state = runtime.frameLoop.drawFrameState;
-	if (state !== null) {
-		runtime.frameLoop.currentFrameState = state;
-	}
 	try {
 		drawTerminal(runtime);
 	} finally {
-		if (state !== null) {
-			runtime.frameLoop.drawFrameState = null;
-			runtime.frameLoop.abandonFrameState();
+		if (runtime.overlayDrawFrameOwner === 'terminal') {
+			runtime.overlayDrawFrameOwner = null;
 		}
 	}
 }
@@ -325,27 +321,27 @@ export function tickIDE(runtime: Runtime): void {
 	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor.isActive) {
 		return;
 	}
-	const state = beginOverlayUpdateFrame(runtime);
-	if (state === null) {
+	if (!beginOverlayUpdateFrame(runtime)) {
 		return;
 	}
 	const deltaSeconds = runtime.frameLoop.frameDeltaMs / 1000;
 	runtime.editor.update(deltaSeconds);
-	finishOverlayUpdateFrame(runtime, state);
+	finishOverlayUpdateFrame(runtime, 'ide');
 }
 
-function beginOverlayUpdateFrame(runtime: Runtime): FrameState | null {
+function beginOverlayUpdateFrame(runtime: Runtime): boolean {
 	if (!runtime.tickEnabled) {
-		return null;
+		return false;
 	}
-	if (runtime.frameLoop.currentFrameState !== null || runtime.frameLoop.drawFrameState !== null) {
-		return null;
+	if (runtime.frameLoop.frameActive || runtime.overlayDrawFrameOwner !== null) {
+		return false;
 	}
-	return runtime.frameLoop.beginFrameState();
+	runtime.frameLoop.beginFrameState();
+	return true;
 }
 
-function finishOverlayUpdateFrame(runtime: Runtime, state: FrameState): void {
-	runtime.frameLoop.drawFrameState = state;
+function finishOverlayUpdateFrame(runtime: Runtime, owner: 'terminal' | 'ide'): void {
+	runtime.overlayDrawFrameOwner = owner;
 	runtime.frameLoop.abandonFrameState();
 }
 
@@ -356,16 +352,11 @@ export function tickIDEDraw(runtime: Runtime): void {
 	if (!runtime.tickEnabled) {
 		return;
 	}
-	const state = runtime.frameLoop.drawFrameState;
-	if (state !== null) {
-		runtime.frameLoop.currentFrameState = state;
-	}
 	try {
 		drawIde(runtime);
 	} finally {
-		if (state !== null) {
-			runtime.frameLoop.drawFrameState = null;
-			runtime.frameLoop.abandonFrameState();
+		if (runtime.overlayDrawFrameOwner === 'ide') {
+			runtime.overlayDrawFrameOwner = null;
 		}
 	}
 }

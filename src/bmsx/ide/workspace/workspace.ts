@@ -1,4 +1,4 @@
-import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/program/sources';
+import { resolveLuaSource, type LuaSourceRecord, type LuaSourceRegistry, type LuaSourceResolution } from '../../machine/program/sources';
 import { toLuaModulePath } from '../../machine/program/loader';
 import type { StorageService } from '../../platform';
 import type { Runtime } from '../../machine/runtime/runtime';
@@ -26,35 +26,16 @@ function resolveEditableCartLuaSources(runtime: Runtime): LuaSourceRegistry {
 	return runtime.cartLuaSources ?? runtime.activeLuaSources;
 }
 
-export function resolveLuaSourceRegistry(runtime: Runtime, path: string): LuaSourceRegistry {
-	const cart = runtime.cartLuaSources;
-	if (cart && (cart.path2lua[path] || cart.module2lua[path])) {
-		return cart;
-	}
-	const system = runtime.systemLuaSources;
-	if (system && (system.path2lua[path] || system.module2lua[path])) {
-		return system;
-	}
-	throw new Error(`Missing Lua source registry for '${path}'.`);
-}
-
-export function resolveLuaSourceProjectRootPath(runtime: Runtime, path: string): string {
-	const cart = runtime.cartLuaSources;
-	if (cart && (cart.path2lua[path] || cart.module2lua[path])) {
-		return runtime.cartProjectRootPath;
-	}
-	const system = runtime.systemLuaSources;
-	if (system && (system.path2lua[path] || system.module2lua[path])) {
-		return runtime.systemProjectRootPath;
-	}
-	return runtime.cartProjectRootPath;
-}
+const workspaceLuaSourceResolution: LuaSourceResolution = { registry: null, record: null };
 
 export async function saveLuaResourceSource(runtime: Runtime, path: string, source: string): Promise<void> {
-	const registry = resolveLuaSourceRegistry(runtime, path);
-	const asset = registry.path2lua[path] ?? registry.module2lua[path];
+	if (!resolveLuaSource(workspaceLuaSourceResolution, path, runtime.cartLuaSources, runtime.systemLuaSources)) {
+		throw new Error(`Missing Lua source registry for '${path}'.`);
+	}
+	const registry = workspaceLuaSourceResolution.registry!;
+	const asset = workspaceLuaSourceResolution.record!;
 	const sourcePath = asset.source_path;
-	const projectRootPath = resolveLuaSourceProjectRootPath(runtime, sourcePath);
+	const projectRootPath = registry.projectRootPath;
 	await persistWorkspaceSourceFile(sourcePath, source, projectRootPath);
 	const updatedAt = runtime.clock.dateNow();
 	asset.src = source;

@@ -12,6 +12,6 @@ struct RuntimeFrameStepResult {
 	bool tickAdvanced = false;
 };
 
-RuntimeFrameStepResult runRuntimeFrameStep(Runtime& runtime, f64 hostDeltaMs);
+void runRuntimeFrameStepInto(RuntimeFrameStepResult& out, Runtime& runtime, f64 hostDeltaMs);
 
 } // namespace bmsx

@@ -175,7 +175,7 @@ void Runtime::enterSystemFirmware() {
 
 void Runtime::enterCartProgram() {
 	if (!m_cartRomPackage) {
-		throw std::runtime_error("cannot enter cart program: cart ROM is not installed.");
+		throw std::runtime_error("cannot enter cart program: cart ROM is not configured.");
 	}
 	m_cartProgramStarted = true;
 	m_activeRomPackage = m_cartRomPackage;
@@ -183,15 +183,10 @@ void Runtime::enterCartProgram() {
 
 void Runtime::startCartProgram() {
 	if (!m_cartEntryProtoIndex) {
-		throw std::runtime_error("cannot start cart: no cart entry point is installed.");
+		throw std::runtime_error("cannot start cart: no cart entry point is loaded.");
 	}
 	enterCartProgram();
-	runStaticModuleInitializers(m_cartStaticModulePaths);
-	machine.cpu.start(*m_cartEntryProtoIndex);
-	enforceLuaHeapBudget();
-	m_pendingCall = PendingCall::Entry;
-	queueLifecycleHandlers(true, true);
-	m_luaInitialized = true;
+	startLoadedProgram(*m_cartEntryProtoIndex, m_cartStaticModulePaths, true, true);
 }
 
 void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int entryProtoIndex, const std::vector<std::string>& staticModulePaths) {
@@ -208,17 +203,26 @@ void Runtime::boot(const ProgramImage& image, ProgramMetadata* metadata, int ent
 		if (systemRom().hasProgram()) {
 			runSystemBuiltinPrelude();
 		}
-		runStaticModuleInitializers(staticModulePaths);
-		enforceLuaHeapBudget();
-
-		machine.cpu.start(entryProtoIndex);
-		enforceLuaHeapBudget();
-		m_pendingCall = PendingCall::Entry;
-		queueLifecycleHandlers(true, true);
-		m_luaInitialized = true;
+		startLoadedProgram(entryProtoIndex, staticModulePaths, true, true);
 	} catch (const std::exception& e) {
 		handleLuaError(e.what());
 	}
+}
+
+void Runtime::startLoadedProgram(int entryProtoIndex, const std::vector<std::string>& staticModulePaths, bool runInit, bool runNewGame) {
+	runStaticModuleInitializers(staticModulePaths);
+	enforceLuaHeapBudget();
+	machine.cpu.start(entryProtoIndex);
+	enforceLuaHeapBudget();
+	m_pendingCall = PendingCall::Entry;
+	finishLuaEntryLifecycle(runInit, runNewGame);
+}
+
+void Runtime::finishLuaEntryLifecycle(bool runInit, bool runNewGame) {
+	if (runInit) {
+		queueLifecycleHandlers(true, runNewGame);
+	}
+	m_luaInitialized = true;
 }
 
 void Runtime::resetRuntimeForProgramReload() {

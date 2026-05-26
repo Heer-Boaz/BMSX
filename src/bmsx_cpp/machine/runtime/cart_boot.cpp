@@ -19,18 +19,17 @@ void CartBootState::request() {
 		m_pending = true;
 }
 
-bool CartBootState::pollSystemBootRequest() {
+void CartBootState::pollSystemBootRequest() {
 	Runtime& runtime = m_runtime;
 	if (runtime.isCartProgramStarted()) {
-		return false;
+		return;
 	}
 	if (runtime.machine.memory.readIoU32(IO_SYS_BOOT_CART) == 0u) {
-		return false;
+		return;
 	}
 	runtime.machine.memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	runtime.frameScheduler.clearQueuedTime();
 	request();
-	return true;
 }
 
 bool CartBootState::processPending() {
@@ -39,12 +38,12 @@ bool CartBootState::processPending() {
 	if (!m_pending) {
 		return false;
 	}
-	if (runtime.frameLoop.frameActive) {
+	const bool hasPendingCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
+	if (runtime.frameLoop.frameActive || hasPendingCall) {
 		runtime.frameLoop.resetFrameState(runtime);
 	}
-	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
+	if (hasPendingCall) {
 		runtime.m_pendingCall = Runtime::PendingCall::None;
-		runtime.machine.cpu.clearHaltUntilIrq();
 	}
 	runtime.frameScheduler.clearQueuedTime();
 	m_pending = false;

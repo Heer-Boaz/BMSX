@@ -21,6 +21,7 @@ public:
 	f64 currentTimeSeconds = 0.0;
 
 private:
+	bool runActiveFrameState(Runtime& runtime);
 	bool runUpdatePhase(Runtime& runtime);
 	void finalizeUpdateSlice(Runtime& runtime);
 };

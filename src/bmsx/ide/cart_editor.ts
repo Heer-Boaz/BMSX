@@ -1,7 +1,7 @@
 import { consoleCore } from '../core/console';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { Viewport } from '../rompack/format';
-import { resolveLuaSourceRecordFromRegistries } from '../machine/program/sources';
+import { resolveLuaSource, type LuaSourceResolution } from '../machine/program/sources';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { CodeTabMode, FaultSnapshot, RuntimeErrorDetails } from './common/models';
@@ -56,7 +56,7 @@ import { editorPointerState } from './input/pointer/state';
 import { handleEditorWheelInput } from './input/pointer/wheel';
 import { findCodeTabContext, getActiveCodeTabContext, getActiveCodeTabContextId, createEntryTabContext } from './workbench/ui/code_tab/contexts';
 import { storeActiveCodeTabContext } from './workbench/ui/code_tab/activation';
-import { buildDirtyFilePath, hasWorkspaceStorage } from './workbench/workspace/io';
+import { readWorkspaceLuaSourceText } from './workspace/files';
 import { initializeWorkspaceStorage, runWorkspaceAutosaveTick, stopWorkspaceAutosaveLoop } from './workbench/workspace/storage';
 import { workspaceState } from './workbench/workspace/state';
 import { workspaceSourceCache } from './workspace/cache';
@@ -88,6 +88,8 @@ import { renderStatusBar } from './workbench/render/status_bar';
 import { renderTabBar } from './workbench/render/tab_bar';
 import { renderTopBar, renderTopBarDropdown } from './workbench/render/top_bar';
 import type { ChromeRenderContext } from './workbench/render/chrome_context';
+
+const cartEditorLuaSourceResolution: LuaSourceResolution = { registry: null, record: null };
 
 type RenderRuntimeFaultOverlayOptions = {
 	snapshot: FaultSnapshot;
@@ -126,11 +128,10 @@ export type CartEditor = {
 };
 
 export function getSourceForChunk(runtime: Runtime, path: string): string {
-	const asset = resolveLuaSourceRecordFromRegistries(path, [
-		runtime.activeLuaSources,
-		runtime.cartLuaSources,
-		runtime.systemLuaSources,
-	]);
+	if (!resolveLuaSource(cartEditorLuaSourceResolution, path, runtime.activeLuaSources, runtime.cartLuaSources, runtime.systemLuaSources)) {
+		throw new Error(`Missing Lua source for '${path}'.`);
+	}
+	const asset = cartEditorLuaSourceResolution.record!;
 	const context = findCodeTabContext(asset.source_path);
 	if (context) {
 		if (context.id === getActiveCodeTabContext().id && context.id === tabSessionState.activeTabId) {
@@ -138,14 +139,7 @@ export function getSourceForChunk(runtime: Runtime, path: string): string {
 		}
 		return getTextSnapshot(context.buffer);
 	}
-	if (hasWorkspaceStorage()) {
-		const dirtyPath = buildDirtyFilePath(asset.source_path);
-		const dirtyCached = workspaceSourceCache.get(dirtyPath);
-		if (dirtyCached !== undefined) {
-			return dirtyCached;
-		}
-	}
-	return asset.src;
+	return readWorkspaceLuaSourceText(cartEditorLuaSourceResolution.registry!, asset);
 }
 
 class RuntimeCartEditor implements CartEditor {

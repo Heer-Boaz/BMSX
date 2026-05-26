@@ -52,7 +52,8 @@ bool ConsoleCore::runHostFrame(
 					return false;
 				}
 			}
-			const RuntimeFrameStepResult stepResult = runRuntimeFrameStep(runtime, hostDeltaMs);
+			RuntimeFrameStepResult stepResult;
+			runRuntimeFrameStepInto(stepResult, runtime, hostDeltaMs);
 			runtime.screen.syncAfterRuntimeUpdate(runtime, stepResult.previousTickSequence);
 		} else {
 			runtime.frameScheduler.clearQueuedTime();
