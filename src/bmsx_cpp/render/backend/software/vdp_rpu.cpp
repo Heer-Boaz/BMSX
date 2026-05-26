@@ -492,9 +492,10 @@ void sampleTexture(GameView& view, const VdpRpuFrameOutput& frame, size_t drawIn
 		if (sx >= width) sx = width - 1;
 		if (sy >= height) sy = height - 1;
 		const size_t offset = static_cast<size_t>(sy) * slot.stride + static_cast<size_t>(sx) * 4u;
-		ctx.attr[0] = static_cast<f64>(slot.pixels[offset]) * (1.0 / 255.0);
-		ctx.attr[1] = static_cast<f64>(slot.pixels[offset + 1u]) * (1.0 / 255.0);
-		ctx.attr[2] = static_cast<f64>(slot.pixels[offset + 2u]) * (1.0 / 255.0);
+		const auto& srgbToLinear = srgbToLinearLut();
+		ctx.attr[0] = static_cast<f64>(srgbToLinear[slot.pixels[offset]]) * (1.0 / 255.0);
+		ctx.attr[1] = static_cast<f64>(srgbToLinear[slot.pixels[offset + 1u]]) * (1.0 / 255.0);
+		ctx.attr[2] = static_cast<f64>(srgbToLinear[slot.pixels[offset + 2u]]) * (1.0 / 255.0);
 		ctx.attr[3] = static_cast<f64>(slot.pixels[offset + 3u]) * (1.0 / 255.0);
 		return;
 	}

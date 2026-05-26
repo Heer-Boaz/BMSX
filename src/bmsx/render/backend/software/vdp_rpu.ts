@@ -42,6 +42,7 @@ import {
 	type VdpRpuFrameOutput,
 	type VdpRpuShaderVariantSpec,
 } from '../../../machine/devices/vdp/rpu';
+import { SRGB_BYTE_TO_LINEAR_FLOAT } from '../color_space';
 import type { GameView } from '../../gameview';
 import type { VdpSlotTexturePixels } from '../../vdp/slot_textures';
 
@@ -571,6 +572,13 @@ function sampleTexture(view: GameView, frame: VdpRpuFrameOutput, bindingIndex: n
 	if (sx >= width) sx = width - 1;
 	if (sy >= height) sy = height - 1;
 	const offset = (sy * width + sx) * 4;
+	if (surfaceId < VDP_RD_SURFACE_COUNT) {
+		attr[0] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset]];
+		attr[1] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset + 1]];
+		attr[2] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset + 2]];
+		attr[3] = pixels[offset + 3] * (1 / 255);
+		return;
+	}
 	attr[0] = pixels[offset] * (1 / 255);
 	attr[1] = pixels[offset + 1] * (1 / 255);
 	attr[2] = pixels[offset + 2] * (1 / 255);
