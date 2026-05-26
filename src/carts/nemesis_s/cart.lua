@@ -28,7 +28,6 @@ function init()
 	director_module.register_director_definition()
 	player_module.register_player_definition()
 	vdp_load_slot(sys_vdp_slot_primary, 0)
-	vdp_wait_image_decode()
 end
 
 function new_game()
