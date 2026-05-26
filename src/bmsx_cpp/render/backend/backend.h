@@ -171,7 +171,7 @@ public:
 	virtual TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) = 0;
 	virtual void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) = 0;
 	virtual void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) = 0;
-	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) = 0;
+	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) = 0;
 	virtual void destroyTexture(TextureHandle handle) = 0;
 	virtual void registerBuiltinPasses(RenderPassLibrary& registry) = 0;
 
@@ -221,7 +221,7 @@ class SoftwareBackend : public GPUBackend {
 	TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) override;
 	void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
 	void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
-	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params = DEFAULT_TEXTURE_PARAMS) override;
+	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) override;
 	void destroyTexture(TextureHandle handle) override;
 	void registerBuiltinPasses(RenderPassLibrary& registry) override;
 

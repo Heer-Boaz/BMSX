@@ -3,7 +3,7 @@ import { color_arr, type TextureSource } from '../../../rompack/format';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
 import { GPUBackend, GraphicsPipelineBindingLayout, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, type SizedArrayBufferView } from '../backend';
-import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
+import { RGBA8_LINEAR_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
 import { TEXTURE_UNIT_CUBEMAP, TEXTURE_UNIT_UPLOAD } from './constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './helpers';
 import { createSolidRgba8Pixels } from '../../shared/solid_pixels';
@@ -196,7 +196,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
 	}
 
-	createSolidTexture2D(width: number, height: number, color: number, desc: TextureParams = DEFAULT_TEXTURE_PARAMS): WebGLTexture {
+	createSolidTexture2D(width: number, height: number, color: number, desc: TextureParams): WebGLTexture {
 		const gl = this.gl;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		const tex = gl.createTexture()!;
@@ -313,7 +313,7 @@ export class WebGLBackend implements GPUBackend {
 		// Use RGBA8 when no explicit format was requested; invalid explicit formats must fail in GL.
 			const internal = (desc.format === undefined ? gl.RGBA8 : desc.format) as GLenum;
 			gl.texImage2D(gl.TEXTURE_2D, 0, internal, desc.width, desc.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(desc.width * desc.height * 4));
-			GLR.glSetTexture2DParams(gl);
+			GLR.glSetTexture2DParams(gl, RGBA8_LINEAR_TEXTURE_PARAMS);
 			gl.bindTexture(gl.TEXTURE_2D, null);
 			this.texInfo.set(tex, { w: desc.width, h: desc.height, srgb: false });
 			return tex;
@@ -325,7 +325,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindTexture(gl.TEXTURE_2D, tex);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, desc.width, desc.height, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
 		this.accountUpload('texture', desc.width * desc.height * 2);
-		GLR.glSetTexture2DParams(gl);
+		GLR.glSetTexture2DParams(gl, RGBA8_LINEAR_TEXTURE_PARAMS);
 		return tex;
 	}
 	createRenderTarget(color?: WebGLTexture, depth?: WebGLTexture): RenderTargetHandle {

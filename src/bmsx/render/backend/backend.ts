@@ -204,7 +204,7 @@ export interface GPUBackend {
 	resizeTexture(handle: TextureHandle, width: number, height: number, desc: TextureParams): TextureHandle;
 	updateTextureRegion(handle: TextureHandle, data: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams, sourceOffset?: number): void;
 	readTextureRegion(handle: TextureHandle, out: Uint8Array, width: number, height: number, x: number, y: number, desc: TextureParams): void;
-	createSolidTexture2D(width: number, height: number, color: number, desc?: TextureParams): TextureHandle;
+	createSolidTexture2D(width: number, height: number, color: number, desc: TextureParams): TextureHandle;
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): TextureHandle;
 	createSolidCubemap(size: number, color: number, desc: TextureParams): TextureHandle;
 	createCubemapEmpty(size: number, desc: TextureParams): TextureHandle;

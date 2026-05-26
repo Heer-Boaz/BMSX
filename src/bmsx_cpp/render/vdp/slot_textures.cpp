@@ -43,7 +43,7 @@ void VdpSlotTextures::consumeVdpSurfaceUpload(const VdpSurfaceUpload& upload) {
 	const u32 height = upload.surfaceHeight;
 	const bool forceFullUpload = !isSyncedTextureSize(upload.surfaceId, width, height);
 	if (forceFullUpload) {
-		const TextureHandle handle = m_textureManager.resizeTextureForKey(surface.textureKey, static_cast<i32>(width), static_cast<i32>(height), DEFAULT_TEXTURE_PARAMS);
+		const TextureHandle handle = m_textureManager.resizeTextureForKey(surface.textureKey, static_cast<i32>(width), static_cast<i32>(height), RGBA8_SRGB_TEXTURE_PARAMS);
 		m_view.textures[surface.textureKey] = handle;
 		noteSyncedTextureSize(upload.surfaceId, width, height);
 	}
@@ -84,7 +84,7 @@ auto VdpSlotTextures::readSurfaceTextureHeight(u32 surfaceId) const -> u32 {
 }
 
 auto VdpSlotTextures::readSurfaceTextureHandle(u32 surfaceId) const -> TextureHandle {
-	return m_textureManager.getTextureByUri(resolveVdpSurfaceTextureKey(surfaceId), DEFAULT_TEXTURE_PARAMS);
+	return m_textureManager.getTextureByUri(resolveVdpSurfaceTextureKey(surfaceId), RGBA8_SRGB_TEXTURE_PARAMS);
 }
 
 auto VdpSlotTextures::isSyncedTextureSize(u32 surfaceId, u32 width, u32 height) const -> bool {
@@ -110,13 +110,13 @@ void VdpSlotTextures::uploadVdpSlotRows(const std::string& textureKey, const Vdp
 	const u8* pixels = upload.cpuReadback->data() + byteOffset;
 	noteSlotTexturePixels(upload);
 	m_view.backend()->updateTextureRegion(
-		m_textureManager.getTextureByUri(textureKey, DEFAULT_TEXTURE_PARAMS),
+		m_textureManager.getTextureByUri(textureKey, RGBA8_SRGB_TEXTURE_PARAMS),
 		pixels,
 		static_cast<i32>(upload.surfaceWidth),
 		static_cast<i32>(rowEnd - rowStart),
 		0,
 		static_cast<i32>(rowStart),
-		DEFAULT_TEXTURE_PARAMS
+		RGBA8_SRGB_TEXTURE_PARAMS
 	);
 }
 
@@ -126,24 +126,24 @@ void VdpSlotTextures::uploadVdpSlotSpan(const std::string& textureKey, const Vdp
 	const u8* pixels = upload.cpuReadback->data() + byteOffset;
 	noteSlotTexturePixels(upload);
 	m_view.backend()->updateTextureRegion(
-		m_textureManager.getTextureByUri(textureKey, DEFAULT_TEXTURE_PARAMS),
+		m_textureManager.getTextureByUri(textureKey, RGBA8_SRGB_TEXTURE_PARAMS),
 		pixels,
 		static_cast<i32>(xEnd - xStart),
 		1,
 		static_cast<i32>(xStart),
 		static_cast<i32>(row),
-		DEFAULT_TEXTURE_PARAMS
+		RGBA8_SRGB_TEXTURE_PARAMS
 	);
 }
 
 void VdpSlotTextures::initializeVdpSlotTexture(const VdpSurfaceUpload& upload) {
 	const VdpRenderSurfaceInfo surface = resolveVdpRenderSurfaceForUpload(upload);
-	m_textureManager.createTextureFromPixelsSync(surface.textureKey, EMPTY_TEXTURE_SEED.data(), 1, 1, DEFAULT_TEXTURE_PARAMS);
+	m_textureManager.createTextureFromPixelsSync(surface.textureKey, EMPTY_TEXTURE_SEED.data(), 1, 1, RGBA8_SRGB_TEXTURE_PARAMS);
 	const TextureHandle handle = m_textureManager.resizeTextureForKey(
 		surface.textureKey,
 		static_cast<i32>(upload.surfaceWidth),
 		static_cast<i32>(upload.surfaceHeight),
-		DEFAULT_TEXTURE_PARAMS
+		RGBA8_SRGB_TEXTURE_PARAMS
 	);
 	m_view.textures[surface.textureKey] = handle;
 	noteSyncedTextureSize(upload.surfaceId, upload.surfaceWidth, upload.surfaceHeight);

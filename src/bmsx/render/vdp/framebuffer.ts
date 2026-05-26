@@ -2,15 +2,11 @@ import type { TextureHandle } from '../backend/backend';
 import type { VDP } from '../../machine/devices/vdp/vdp';
 import type { VdpFrameBufferPresentation, VdpFrameBufferPresentationSink } from '../../machine/devices/vdp/device_output';
 import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY } from '../../rompack/format';
-import { DEFAULT_TEXTURE_PARAMS } from '../backend/texture_params';
+import { RGBA8_LINEAR_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { TextureManager } from '../texture_manager';
 import type { GameView } from '../gameview';
 
 const EMPTY_TEXTURE_SEED = new Uint8Array(4);
-const VDP_FRAMEBUFFER_TEXTURE_PARAMS = Object.freeze({
-	...DEFAULT_TEXTURE_PARAMS,
-	srgb: false,
-});
 
 export class VdpFrameBufferTextures implements VdpFrameBufferPresentationSink {
 	private renderFrameBufferTexture: TextureHandle = null as TextureHandle;
@@ -38,22 +34,22 @@ export class VdpFrameBufferTextures implements VdpFrameBufferPresentationSink {
 		}
 		if (presentationCount !== 1 || presentation.requiresFullSync) {
 			this.view.backend.updateTextureRegion(
-				this.textureManager.getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY, VDP_FRAMEBUFFER_TEXTURE_PARAMS),
+				this.textureManager.getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY, RGBA8_LINEAR_TEXTURE_PARAMS),
 				presentation.renderReadback,
 				frameBufferWidth,
 				frameBufferHeight,
 				0,
 				0,
-				VDP_FRAMEBUFFER_TEXTURE_PARAMS
+				RGBA8_LINEAR_TEXTURE_PARAMS
 			);
 			this.view.backend.updateTextureRegion(
-				this.textureManager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY, VDP_FRAMEBUFFER_TEXTURE_PARAMS),
+				this.textureManager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY, RGBA8_LINEAR_TEXTURE_PARAMS),
 				presentation.displayReadback,
 				frameBufferWidth,
 				frameBufferHeight,
 				0,
 				0,
-				VDP_FRAMEBUFFER_TEXTURE_PARAMS
+				RGBA8_LINEAR_TEXTURE_PARAMS
 			);
 			return;
 		}
@@ -67,13 +63,13 @@ export class VdpFrameBufferTextures implements VdpFrameBufferPresentationSink {
 			}
 			const byteStart = row * rowBytes + span.xStart * 4;
 			this.view.backend.updateTextureRegion(
-				this.textureManager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY, VDP_FRAMEBUFFER_TEXTURE_PARAMS),
+				this.textureManager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY, RGBA8_LINEAR_TEXTURE_PARAMS),
 				displayReadback,
 				span.xEnd - span.xStart,
 				1,
 				span.xStart,
 				row,
-				VDP_FRAMEBUFFER_TEXTURE_PARAMS,
+				RGBA8_LINEAR_TEXTURE_PARAMS,
 				byteStart
 			);
 		}
@@ -87,13 +83,13 @@ export class VdpFrameBufferTextures implements VdpFrameBufferPresentationSink {
 			EMPTY_TEXTURE_SEED,
 			1,
 			1,
-			VDP_FRAMEBUFFER_TEXTURE_PARAMS
+			RGBA8_LINEAR_TEXTURE_PARAMS
 		);
 		this.renderFrameBufferTexture = this.textureManager.resizeTextureForKey(
 			FRAMEBUFFER_RENDER_TEXTURE_KEY,
 			vdp.frameBufferWidth,
 			vdp.frameBufferHeight,
-			VDP_FRAMEBUFFER_TEXTURE_PARAMS
+			RGBA8_LINEAR_TEXTURE_PARAMS
 		);
 		this.view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = this.renderFrameBufferTexture;
 		this.displayFrameBufferTexture = this.textureManager.createTextureFromPixelsSync(
@@ -101,13 +97,13 @@ export class VdpFrameBufferTextures implements VdpFrameBufferPresentationSink {
 			EMPTY_TEXTURE_SEED,
 			1,
 			1,
-			VDP_FRAMEBUFFER_TEXTURE_PARAMS
+			RGBA8_LINEAR_TEXTURE_PARAMS
 		);
 		this.displayFrameBufferTexture = this.textureManager.resizeTextureForKey(
 			FRAMEBUFFER_TEXTURE_KEY,
 			vdp.frameBufferWidth,
 			vdp.frameBufferHeight,
-			VDP_FRAMEBUFFER_TEXTURE_PARAMS
+			RGBA8_LINEAR_TEXTURE_PARAMS
 		);
 		this.view.textures[FRAMEBUFFER_TEXTURE_KEY] = this.displayFrameBufferTexture;
 		vdp.syncFrameBufferPresentation(this);
@@ -133,16 +129,16 @@ export class VdpFrameBufferTextures implements VdpFrameBufferPresentationSink {
 		this.textureManager.swapTextureHandlesByUri(
 			FRAMEBUFFER_TEXTURE_KEY,
 			FRAMEBUFFER_RENDER_TEXTURE_KEY,
-			VDP_FRAMEBUFFER_TEXTURE_PARAMS,
-			VDP_FRAMEBUFFER_TEXTURE_PARAMS
+			RGBA8_LINEAR_TEXTURE_PARAMS,
+			RGBA8_LINEAR_TEXTURE_PARAMS
 		);
 		this.view.textures[FRAMEBUFFER_TEXTURE_KEY] = this.textureManager.getTextureByUri(
 			FRAMEBUFFER_TEXTURE_KEY,
-			VDP_FRAMEBUFFER_TEXTURE_PARAMS
+			RGBA8_LINEAR_TEXTURE_PARAMS
 		);
 		this.view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = this.textureManager.getTextureByUri(
 			FRAMEBUFFER_RENDER_TEXTURE_KEY,
-			VDP_FRAMEBUFFER_TEXTURE_PARAMS
+			RGBA8_LINEAR_TEXTURE_PARAMS
 		);
 		const renderTexture = this.renderFrameBufferTexture;
 		this.renderFrameBufferTexture = this.displayFrameBufferTexture;

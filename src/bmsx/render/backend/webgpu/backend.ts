@@ -1,7 +1,7 @@
 /// <reference types="@webgpu/types" />
 import { color_arr, type TextureSource } from '../../../rompack/format';
 import { BackendCaps, ColorAttachmentSpec, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureFormat, TextureHandle } from '../backend';
-import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
+import type { TextureParams } from '../texture_params';
 import { createSolidRgba8Pixels, writeSolidRgba8Pixels } from '../../shared/solid_pixels';
 import { consoleCore } from '../../../core/console';
 import { registerCRT_WebGPU } from '../../post/crt/pipeline.wgpu';
@@ -132,7 +132,7 @@ export class WebGPUBackend implements GPUBackend {
 		throw new Error('[WebGPUBackend] Texture readback is not yet supported, but it will be implemented in the future.');
 	}
 
-	createSolidTexture2D(width: number, height: number, color: number, _desc: TextureParams = DEFAULT_TEXTURE_PARAMS): TextureHandle {
+	createSolidTexture2D(width: number, height: number, color: number, _desc: TextureParams): TextureHandle {
 		const texture = this.device.createTexture({
 			size: { width, height, depthOrArrayLayers: 1 },
 			format: 'rgba8unorm',

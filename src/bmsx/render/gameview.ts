@@ -4,6 +4,7 @@ import { multiply_vec2 } from '../common/vector';
 import { shallowcopy } from '../common/shallowcopy';
 import type { vec2 } from '../rompack/format';
 import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, TextureHandle } from './backend/backend';
+import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from './backend/texture_params';
 import { RenderPassLibrary } from './backend/pass/library';
 import { CRTDitherType as DitherType } from './backend/backend';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/graph';
@@ -463,17 +464,17 @@ export class GameView implements RenderContext {
 		return this._backend;
 	}
 	public async initializeDefaultTextures(): Promise<void> {
-		const fallback = this.backend.createSolidTexture2D(1, 1, 0xffffffff);
+		const fallback = this.backend.createSolidTexture2D(1, 1, 0xffffffff, RGBA8_SRGB_TEXTURE_PARAMS);
 		this.textures[VDP_PRIMARY_SLOT_TEXTURE_KEY] = fallback; // Start with fallback to avoid undefined states and race conditions
 		this.textures[VDP_SECONDARY_SLOT_TEXTURE_KEY] = fallback;
 		this.textures['_slot_fallback'] = fallback;
 		this.textures[SYSTEM_SLOT_TEXTURE_KEY] = fallback;
 		// Default material textures for imported model assets
-		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, 0xffffffff);
+		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, 0xffffffff, RGBA8_SRGB_TEXTURE_PARAMS);
 		// Normal map default (0.5,0.5,1.0)
-		this.textures['_default_normal'] = this.backend.createSolidTexture2D(1, 1, 0xff7f7fff);
+		this.textures['_default_normal'] = this.backend.createSolidTexture2D(1, 1, 0xff7f7fff, RGBA8_LINEAR_TEXTURE_PARAMS);
 		// Metallic/Roughness default: neutral (mr.g=1 keeps roughnessFactor, mr.b=1 keeps metallicFactor)
-		this.textures['_default_mr'] = this.backend.createSolidTexture2D(1, 1, 0xffffffff);
+		this.textures['_default_mr'] = this.backend.createSolidTexture2D(1, 1, 0xffffffff, RGBA8_LINEAR_TEXTURE_PARAMS);
 	}
 
 	// (single handleResize implementation above in the class)

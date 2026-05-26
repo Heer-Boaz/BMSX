@@ -469,9 +469,7 @@ void RenderGraphRuntime::realizeAll() {
 									i, static_cast<unsigned>(depth->id), depth->width, depth->height);
 				}
 			} else {
-				TextureParams params;
-					params.srgb = false;
-					res.tex = gles->createTexture(nullptr, res.desc.width, res.desc.height, params);
+				res.tex = gles->createTexture(nullptr, res.desc.width, res.desc.height, RGBA8_LINEAR_TEXTURE_PARAMS);
 					auto* glTex = OpenGLES2Backend::asTexture(res.tex);
 					const GLuint fbo = createGLES2ColorFramebuffer(glTex->id);
 					res.fboColorOnly = reinterpret_cast<void*>(static_cast<uintptr_t>(fbo));

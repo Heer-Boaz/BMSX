@@ -2,7 +2,7 @@
 // Moved out of backend.ts to keep backend focused on orchestration.
 import { consoleCore } from '../../../core/console';
 import { formatNumberAsHex } from '../../../common/byte_hex_string';
-import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
+import { RGBA8_SRGB_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
 import { TEXTURE_UNIT_SHADOW_MAP } from './constants';
 
 function getRenderContext() {
@@ -106,11 +106,11 @@ export function glCreateTexture(
 		backend.accountUpload('texture', size.x * size.y * 4);
 	}
 
-	glSetTexture2DParams(gl);
+	glSetTexture2DParams(gl, RGBA8_SRGB_TEXTURE_PARAMS);
 	return tex;
 }
 
-export function glSetTexture2DParams(gl: WebGL2RenderingContext, desc: TextureParams = DEFAULT_TEXTURE_PARAMS): void {
+export function glSetTexture2DParams(gl: WebGL2RenderingContext, desc: TextureParams): void {
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter);

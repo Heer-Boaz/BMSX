@@ -7,7 +7,7 @@ import type {
 	RenderPassStateRegistry,
 } from '../../backend/backend';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../../backend/frame_uniforms';
-import { DEFAULT_TEXTURE_PARAMS } from '../../backend/texture_params';
+import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from '../../backend/texture_params';
 import type { WebGLBackend } from '../../backend/webgl/backend';
 import {
 	bindWebGLInstancedQuadVertexArray,
@@ -103,8 +103,8 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverla
 	const gl = backend.gl as WebGL2RenderingContext;
 	const vao = backend.createVertexArray() as WebGLVertexArrayObject;
 	const quad = createWebGLInstancedQuadRuntime(backend, gl, program, INITIAL_BATCH_CAPACITY, INSTANCE_FLOATS);
-	const whiteTexture = backend.createSolidTexture2D(1, 1, 0xffffffff) as WebGLTexture;
-	const hostAtlasTexture = backend.createTexture(hostSystemAtlasPixels(), HOST_SYSTEM_ATLAS_WIDTH, HOST_SYSTEM_ATLAS_HEIGHT, DEFAULT_TEXTURE_PARAMS) as WebGLTexture;
+	const whiteTexture = backend.createSolidTexture2D(1, 1, 0xffffffff, RGBA8_LINEAR_TEXTURE_PARAMS) as WebGLTexture;
+	const hostAtlasTexture = backend.createTexture(hostSystemAtlasPixels(), HOST_SYSTEM_ATLAS_WIDTH, HOST_SYSTEM_ATLAS_HEIGHT, RGBA8_SRGB_TEXTURE_PARAMS) as WebGLTexture;
 	bindWebGLInstancedQuadVertexArray(backend, vao, program, quad, INSTANCE_STRIDE_BYTES, INSTANCE_FLOAT_ATTRIBUTES);
 	return {
 		gl,

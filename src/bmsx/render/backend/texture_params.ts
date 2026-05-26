@@ -12,7 +12,7 @@ export interface TextureParams {
 	srgb: boolean;
 }
 
-export const DEFAULT_TEXTURE_PARAMS: Readonly<TextureParams> = Object.freeze({
+export const RGBA8_SRGB_TEXTURE_PARAMS: Readonly<TextureParams> = Object.freeze({
 	size: Object.freeze({ x: 0, y: 0 }),
 	wrapS: TEXTURE_WRAP_CLAMP_TO_EDGE,
 	wrapT: TEXTURE_WRAP_CLAMP_TO_EDGE,
@@ -21,7 +21,7 @@ export const DEFAULT_TEXTURE_PARAMS: Readonly<TextureParams> = Object.freeze({
 	srgb: true,
 });
 
-export const RAW_RGBA_TEXTURE_PARAMS: Readonly<TextureParams> = Object.freeze({
+export const RGBA8_LINEAR_TEXTURE_PARAMS: Readonly<TextureParams> = Object.freeze({
 	size: Object.freeze({ x: 0, y: 0 }),
 	wrapS: TEXTURE_WRAP_CLAMP_TO_EDGE,
 	wrapT: TEXTURE_WRAP_CLAMP_TO_EDGE,

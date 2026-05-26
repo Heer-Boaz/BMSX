@@ -218,8 +218,7 @@ void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend) {
 	g_gles2.uniformColor = glGetUniformLocation(g_gles2.program, "u_color");
 	g_gles2.uniformTexture = glGetUniformLocation(g_gles2.program, "u_texture");
 	glGenBuffers(1, &g_gles2.vbo);
-	TextureParams params;
-	params.srgb = false;
+	const TextureParams& params = RGBA8_LINEAR_TEXTURE_PARAMS;
 	const u8 whitePixel[4] = {255u, 255u, 255u, 255u};
 	g_gles2.whiteTexture = backend.createTexture(whitePixel, 1, 1, params);
 	g_gles2.hostAtlasTexture = backend.createTexture(hostSystemAtlasPixels().data(), static_cast<i32>(hostSystemAtlasWidth()), static_cast<i32>(hostSystemAtlasHeight()), params);

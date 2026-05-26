@@ -1,7 +1,7 @@
 import type { VDP } from '../../machine/devices/vdp/vdp';
 import type { VdpSurfaceUpload, VdpSurfaceUploadSink } from '../../machine/devices/vdp/device_output';
 import { VDP_RD_SURFACE_COUNT } from '../../machine/devices/vdp/contracts';
-import { DEFAULT_TEXTURE_PARAMS } from '../backend/texture_params';
+import { RGBA8_SRGB_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { TextureManager } from '../texture_manager';
 import type { GameView } from '../gameview';
 import type { TextureHandle } from '../backend/backend';
@@ -46,7 +46,7 @@ export class VdpSlotTextures implements VdpSurfaceUploadSink {
 		const textureKey = surface.textureKey;
 		const forceFullUpload = !this.isSyncedTextureSize(slot.surfaceId, width, height);
 		if (forceFullUpload) {
-			const handle = this.textureManager.resizeTextureForKey(textureKey, width, height, DEFAULT_TEXTURE_PARAMS);
+			const handle = this.textureManager.resizeTextureForKey(textureKey, width, height, RGBA8_SRGB_TEXTURE_PARAMS);
 			this.view.textures[textureKey] = handle;
 			this.noteSyncedTextureSize(slot.surfaceId, width, height);
 		}
@@ -66,7 +66,7 @@ export class VdpSlotTextures implements VdpSurfaceUploadSink {
 	}
 
 	public readSurfaceTextureHandle(surfaceId: number): TextureHandle {
-		return this.textureManager.getTextureByUri(resolveVdpSurfaceTextureKey(surfaceId), DEFAULT_TEXTURE_PARAMS);
+		return this.textureManager.getTextureByUri(resolveVdpSurfaceTextureKey(surfaceId), RGBA8_SRGB_TEXTURE_PARAMS);
 	}
 
 	public readSurfaceTexturePixels(surfaceId: number): VdpSlotTexturePixels {
@@ -109,13 +109,13 @@ export class VdpSlotTextures implements VdpSurfaceUploadSink {
 		const byteOffset = rowStart * rowBytes;
 		this.noteSlotTexturePixels(slot);
 		this.view.backend.updateTextureRegion(
-			this.textureManager.getTextureByUri(textureKey, DEFAULT_TEXTURE_PARAMS),
+			this.textureManager.getTextureByUri(textureKey, RGBA8_SRGB_TEXTURE_PARAMS),
 			slot.cpuReadback,
 			slot.surfaceWidth,
 			rowEnd - rowStart,
 			0,
 			rowStart,
-			DEFAULT_TEXTURE_PARAMS,
+			RGBA8_SRGB_TEXTURE_PARAMS,
 			byteOffset
 		);
 	}
@@ -125,13 +125,13 @@ export class VdpSlotTextures implements VdpSurfaceUploadSink {
 		const byteOffset = row * rowBytes + xStart * 4;
 		this.noteSlotTexturePixels(slot);
 		this.view.backend.updateTextureRegion(
-			this.textureManager.getTextureByUri(textureKey, DEFAULT_TEXTURE_PARAMS),
+			this.textureManager.getTextureByUri(textureKey, RGBA8_SRGB_TEXTURE_PARAMS),
 			slot.cpuReadback,
 			xEnd - xStart,
 			1,
 			xStart,
 			row,
-			DEFAULT_TEXTURE_PARAMS,
+			RGBA8_SRGB_TEXTURE_PARAMS,
 			byteOffset
 		);
 	}
@@ -141,8 +141,8 @@ export class VdpSlotTextures implements VdpSurfaceUploadSink {
 		const textureKey = surface.textureKey;
 		const width = slot.surfaceWidth;
 		const height = slot.surfaceHeight;
-		this.textureManager.createTextureFromPixelsSync(textureKey, EMPTY_TEXTURE_SEED, 1, 1, DEFAULT_TEXTURE_PARAMS);
-		const handle = this.textureManager.resizeTextureForKey(textureKey, width, height, DEFAULT_TEXTURE_PARAMS);
+		this.textureManager.createTextureFromPixelsSync(textureKey, EMPTY_TEXTURE_SEED, 1, 1, RGBA8_SRGB_TEXTURE_PARAMS);
+		const handle = this.textureManager.resizeTextureForKey(textureKey, width, height, RGBA8_SRGB_TEXTURE_PARAMS);
 		this.view.textures[textureKey] = handle;
 		this.noteSyncedTextureSize(slot.surfaceId, width, height);
 		this.uploadVdpSlotRows(textureKey, slot, 0, height);

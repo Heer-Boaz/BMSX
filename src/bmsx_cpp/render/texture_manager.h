@@ -22,17 +22,17 @@ public:
 	static auto instance() -> TextureManager&;
 
 	void setBackend(GPUBackend* backend);
-	auto makeKey(const std::string& uri, const TextureParams& desc = {}) const -> TextureKey;
+	auto makeKey(const std::string& uri, const TextureParams& desc) const -> TextureKey;
 
 	auto createTextureFromPixelsSync(const std::string& keyBase,
 											const u8* pixels,
 											i32 width,
 											i32 height,
-											const TextureParams& desc = {}) -> TextureHandle;
-	auto resizeTextureForKey(const std::string& keyBase, i32 width, i32 height, const TextureParams& desc = {}) -> TextureHandle;
+											const TextureParams& desc) -> TextureHandle;
+	auto resizeTextureForKey(const std::string& keyBase, i32 width, i32 height, const TextureParams& desc) -> TextureHandle;
 	auto getTexture(const TextureKey& key) const -> TextureHandle;
-	auto getTextureByUri(const std::string& uri, const TextureParams& desc = {}) const -> TextureHandle;
-	void swapTextureHandlesByUri(const std::string& uriA, const std::string& uriB, const TextureParams& descA = {}, const TextureParams& descB = {});
+	auto getTextureByUri(const std::string& uri, const TextureParams& desc) const -> TextureHandle;
+	void swapTextureHandlesByUri(const std::string& uriA, const std::string& uriB, const TextureParams& descA, const TextureParams& descB);
 	void clear();
 
 private:

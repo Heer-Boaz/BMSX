@@ -8,7 +8,7 @@ import {
 	type RenderPassInstanceHandle,
 	type RenderPassId,
 } from '../backend/backend';
-import { DEFAULT_TEXTURE_PARAMS, type TextureParams } from '../backend/texture_params';
+import type { TextureParams } from '../backend/texture_params';
 import { createSolidRgba8Pixels } from '../shared/solid_pixels';
 import type { RenderPassLibrary } from '../backend/pass/library';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
@@ -245,7 +245,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		}
 	}
 
-	createSolidTexture2D(width: number, height: number, color: number, _desc: TextureParams = DEFAULT_TEXTURE_PARAMS): TextureHandle {
+	createSolidTexture2D(width: number, height: number, color: number, _desc: TextureParams): TextureHandle {
 		const pixels = createSolidRgba8Pixels(width, height, color);
 		this.accountUpload('texture', pixels.byteLength);
 		return this.createTextureRecord('solid2d', width, height, pixels, null);

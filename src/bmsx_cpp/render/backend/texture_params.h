@@ -16,7 +16,7 @@ struct TextureParams {
 	bool srgb = true;
 };
 
-inline const TextureParams DEFAULT_TEXTURE_PARAMS{.size = {.x = 0.0F, .y = 0.0F}, .wrapS = TEXTURE_WRAP_CLAMP_TO_EDGE, .wrapT = TEXTURE_WRAP_CLAMP_TO_EDGE, .minFilter = TEXTURE_FILTER_NEAREST, .magFilter = TEXTURE_FILTER_NEAREST, .srgb = true};
-inline const TextureParams RAW_RGBA_TEXTURE_PARAMS{.size = {.x = 0.0F, .y = 0.0F}, .wrapS = TEXTURE_WRAP_CLAMP_TO_EDGE, .wrapT = TEXTURE_WRAP_CLAMP_TO_EDGE, .minFilter = TEXTURE_FILTER_NEAREST, .magFilter = TEXTURE_FILTER_NEAREST, .srgb = false};
+inline const TextureParams RGBA8_SRGB_TEXTURE_PARAMS{.size = {.x = 0.0F, .y = 0.0F}, .wrapS = TEXTURE_WRAP_CLAMP_TO_EDGE, .wrapT = TEXTURE_WRAP_CLAMP_TO_EDGE, .minFilter = TEXTURE_FILTER_NEAREST, .magFilter = TEXTURE_FILTER_NEAREST, .srgb = true};
+inline const TextureParams RGBA8_LINEAR_TEXTURE_PARAMS{.size = {.x = 0.0F, .y = 0.0F}, .wrapS = TEXTURE_WRAP_CLAMP_TO_EDGE, .wrapT = TEXTURE_WRAP_CLAMP_TO_EDGE, .minFilter = TEXTURE_FILTER_NEAREST, .magFilter = TEXTURE_FILTER_NEAREST, .srgb = false};
 
 } // namespace bmsx

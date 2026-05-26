@@ -2,7 +2,7 @@ import type { RenderPassLibrary } from '../backend/pass/library';
 import type { Framebuffer2DPipelineState, RenderPassDef } from '../backend/backend';
 import type { GameView } from '../gameview';
 import type { Host2DSubmission } from '../shared/submissions';
-import { DEFAULT_TEXTURE_PARAMS } from '../backend/texture_params';
+import { RGBA8_SRGB_TEXTURE_PARAMS } from '../backend/texture_params';
 import type { HeadlessPresentHost, HeadlessPresentedFrameBuffer } from './view';
 import { hostOverlayMenu } from '../../core/host_overlay_menu';
 import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './host_2d';
@@ -164,7 +164,7 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			const frameBufferWidth = view.vdpFrameBufferTextures.width();
 			const frameBufferHeight = view.vdpFrameBufferTextures.height();
 			resizeHeadlessFrame(frameBufferWidth, frameBufferHeight);
-			backend.readTextureRegion(state.colorTex, headlessCompositePixels, frameBufferWidth, frameBufferHeight, 0, 0, DEFAULT_TEXTURE_PARAMS);
+			backend.readTextureRegion(state.colorTex, headlessCompositePixels, frameBufferWidth, frameBufferHeight, 0, 0, RGBA8_SRGB_TEXTURE_PARAMS);
 			commitHeadlessFrame(frameBufferWidth, frameBufferHeight, state.width, state.height);
 			const headline = `pixels=${headlessCompositePixels.length >> 2} active=${countHeadlessActivePixels()} framebuffer=${frameBufferWidth}x${frameBufferHeight} present=${state.width}x${state.height} logical=${state.baseWidth}x${state.baseHeight}`;
 			previousFrameBufferHeadline = emitHeadlessHeadline('framebuffer', previousFrameBufferHeadline, headline);
