@@ -1,12 +1,6 @@
 local builders<const> = {}
 local globals<const> = require('globals')
-local round<const> = function(x)
-	if x >= 0 then
-		return (x + 0.5) // 1
-	end
-	return -(((-x) + 0.5) // 1)
-end
-builders.round = round
+local round_number<const> = require('bios/common/numeric').round_number
 
 local shake_hash<const> = function(seed)
 	seed = seed ~ (seed << 13)
@@ -114,7 +108,7 @@ function builders.build_all_out_shake(total_frames)
 			dy = dy + (shake_signed(6000 + frame_index * 23 + 5) * boom_amp_y * boom)
 		end
 
-		return round(dx * intensity), round(dy * intensity)
+		return round_number(dx * intensity), round_number(dy * intensity)
 	end
 end
 
@@ -463,8 +457,8 @@ function builders.build_combat_exchange_frames(params)
 					maya_flash = true
 				end
 			end
-			local cam_dx<const> = round(shake_signed(i * 19 + 5) * params.cam_shake_x * impact_u)
-			local cam_dy<const> = round(shake_signed(i * 23 + 11) * params.cam_shake_y * impact_u)
+			local cam_dx<const> = round_number(shake_signed(i * 19 + 5) * params.cam_shake_x * impact_u)
+			local cam_dy<const> = round_number(shake_signed(i * 23 + 11) * params.cam_shake_y * impact_u)
 			monster_x = monster_x + cam_dx
 			monster_y = monster_y + cam_dy
 			maya_x = maya_x + cam_dx
@@ -569,8 +563,8 @@ function builders.build_combat_hit_frames(params)
 		if frame_index >= globals.combat_hit_stop_frames and frame_index < (globals.combat_hit_stop_frames + globals.combat_hit_shake_frames) then
 			local k<const> = frame_index - globals.combat_hit_stop_frames
 			local intensity<const> = (globals.combat_hit_shake_frames - k) / globals.combat_hit_shake_frames
-			dx = dx + round(shake_signed(frame_index * 31 + 7) * globals.combat_hit_shake_x * intensity)
-			dy = dy + round(shake_signed(frame_index * 37 + 11) * globals.combat_hit_shake_y * intensity)
+			dx = dx + round_number(shake_signed(frame_index * 31 + 7) * globals.combat_hit_shake_x * intensity)
+			dy = dy + round_number(shake_signed(frame_index * 37 + 11) * globals.combat_hit_shake_y * intensity)
 		end
 
 		local monster_x<const> = base_x + dx
