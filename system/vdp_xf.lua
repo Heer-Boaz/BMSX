@@ -9,13 +9,9 @@ local view_matrix_index_register<const> = matrix_register_words
 local matrix_packet_payload_words<const> = 1 + matrix_words_per_matrix
 local select_packet_payload_words<const> = 3
 
-local header<const> = function(payload_words)
-	return packet_kind | (payload_words << 16)
-end
-
 function vdp_xf.matrix_words(matrix_index, src_addr)
 	local wp = vdp_stream_claim(1 + matrix_packet_payload_words)
-	mem[wp], wp = header(matrix_packet_payload_words), wp + 4
+	mem[wp], wp = packet_kind | (matrix_packet_payload_words << 16), wp + 4
 	mem[wp], wp = matrix_index * matrix_words_per_matrix, wp + 4
 	local index = 0
 	while index < matrix_words_per_matrix do
@@ -27,7 +23,7 @@ end
 function vdp_xf.select(view_matrix_index, projection_matrix_index)
 	memwrite(
 		vdp_stream_claim(1 + select_packet_payload_words),
-		header(select_packet_payload_words),
+		packet_kind | (select_packet_payload_words << 16),
 		view_matrix_index_register,
 		view_matrix_index,
 		projection_matrix_index

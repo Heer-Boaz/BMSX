@@ -164,6 +164,7 @@ const CART_LINT_RULES: readonly LintRuleName[] = [
 	'useless_catch_pattern',
 	'useless_terminal_return_pattern',
 	'visual_update_pattern',
+	'vdp_lua_tiny_function_pattern',
 ];
 
 setActiveLintRules(new Set(CART_LINT_RULES));
@@ -314,6 +315,17 @@ export function lintFunctionBody(
 	isMethodDeclaration: boolean,
 ): void {
 	const isNamedFunction = functionName !== '<anonymous>';
+	if (functionExpression.range.path.startsWith('system/vdp') && functionExpression.body.body.length !== 0) {
+		const bodyLineCount = functionExpression.body.range.end.line - functionExpression.body.range.start.line + 1;
+		if (bodyLineCount <= 2) {
+			pushIssue(
+				issues,
+				'vdp_lua_tiny_function_pattern',
+				functionExpression,
+				`Tiny Lua VDP function is forbidden ("${functionName}"). Inline the packet/write logic at the VDP owner instead of adding a wrapper call.`,
+			);
+		}
+	}
 	lintSinglePropertyOptionsParameter(functionExpression, issues);
 	const isVisualUpdateLike = lintVisualUpdatePattern(functionName, functionExpression, issues);
 	const isGetterOrSetter = lintGetterSetterPattern(functionName, functionExpression, issues);

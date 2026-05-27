@@ -5,10 +5,6 @@ local vdp_rpu_quads<const> = require('system/vdp_rpu_quads')
 local vdp_image<const> = {}
 local cache<const> = {}
 
-local atlas_name<const> = function(atlas_id)
-	return string.format('_atlas_%02d', atlas_id)
-end
-
 local system_atlas_id<const> = 254
 
 local slot_atlas_addr<const> = function(slot)
@@ -48,7 +44,7 @@ function vdp_image.wait_decode()
 end
 
 function vdp_image.load_slot(slot, atlas_id)
-	local name<const> = atlas_name(atlas_id)
+	local name<const> = string.format('_atlas_%02d', atlas_id)
 	local atlas<const> = romdir.cart_atlas(name)
 	local atlas_meta<const> = romdir.image(name).imgmeta
 	local dst
@@ -69,7 +65,7 @@ function vdp_image.load_slot(slot, atlas_id)
 end
 
 function vdp_image.load_system_slot()
-	local name<const> = atlas_name(system_atlas_id)
+	local name<const> = string.format('_atlas_%02d', system_atlas_id)
 	local atlas<const> = romdir.system_rom_atlas(name)
 	local atlas_meta<const> = romdir.system_image(name).imgmeta
 	vdp_rpu_quads.set_slot_dim(sys_vdp_slot_system, atlas_meta.width, atlas_meta.height)
@@ -93,7 +89,7 @@ local require_meta<const> = function(imgid)
 end
 
 local require_atlas_meta<const> = function(atlas_id, imgid)
-	local atlas<const> = romdir.image(atlas_name(atlas_id))
+	local atlas<const> = romdir.image(string.format('_atlas_%02d', atlas_id))
 	if atlas == nil or atlas.imgmeta == nil then
 		error('atlas ' .. tostring(atlas_id) .. ' for image "' .. tostring(imgid) .. '" was not found.')
 	end
@@ -164,15 +160,20 @@ end
 
 function vdp_image.write_blit_color(imgid, x, y, z, layer, scale_x, scale_y, flip_flags, color)
 	local rect<const> = vdp_image.rect(imgid)
-	vdp_rpu_quads.blit_source_color(vdp_image.slot(rect), rect.u, rect.v, rect.w, rect.h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
+	local slot<const> = vdp_image.slot(rect)
+	vdp_rpu_quads.blit_source_color(slot, rect.u, rect.v, rect.w, rect.h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
+end
+
+function vdp_image.write_blit_affine_color(imgid, origin_x, origin_y, z, layer, axis_xx, axis_xy, axis_yx, axis_yy, flip_flags, color)
+	local rect<const> = vdp_image.rect(imgid)
+	local slot<const> = vdp_image.slot(rect)
+	vdp_rpu_quads.blit_source_affine_color(slot, rect.u, rect.v, rect.w, rect.h, origin_x, origin_y, z, layer, axis_xx, axis_xy, axis_yx, axis_yy, flip_flags, color)
 end
 
 function vdp_image.write_glyph_color(glyph, x, y, z, layer, color)
-	vdp_image.write_blit_color(glyph.imgid, x, y, z, layer, 1, 1, 0, color)
-end
-
-function vdp_image.write_item_color(item, x, y, z, layer, color)
-	vdp_rpu_quads.blit_source_color(vdp_image.slot(item), item.u, item.v, item.w, item.h, x, y, z, layer, 1, 1, 0, color)
+	local rect<const> = vdp_image.rect(glyph.imgid)
+	local slot<const> = vdp_image.slot(rect)
+	vdp_rpu_quads.blit_source_color(slot, rect.u, rect.v, rect.w, rect.h, x, y, z, layer, 1, 1, 0, color)
 end
 
 return vdp_image

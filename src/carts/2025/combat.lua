@@ -88,42 +88,45 @@ end
 local combat_director<const> = {}
 combat_director.__index = combat_director
 
-local apply_combat_draw_parallax<const> = function(obj, weight, offset_base_y)
-	local sc<const> = obj.sprite_component
-	local draw_offset<const> = sc.draw_offset
-	local draw_scale<const> = sc.draw_scale
-	draw_offset.y = offset_base_y * weight
+local combat_parallax_scale<const> = function(weight)
 	if weight < 0 then
-		draw_scale.x = 1 - (globals.combat_parallax_scale_delta * weight)
-		draw_scale.y = draw_scale.x
-	else
-		draw_scale.x = 1 + (globals.combat_parallax_scale_delta * weight)
-		draw_scale.y = draw_scale.x
+		return 1 - (globals.combat_parallax_scale_delta * weight)
 	end
+	return 1 + (globals.combat_parallax_scale_delta * weight)
 end
 
-local reset_combat_draw_parallax<const> = function(obj)
+local draw_combat_parallax_sprite<const> = function(obj, weight, offset_base_y)
 	local sc<const> = obj.sprite_component
+	local offset<const> = sc.offset
 	local draw_offset<const> = sc.draw_offset
+	local scale<const> = sc.scale
 	local draw_scale<const> = sc.draw_scale
-	draw_offset.y = 0
-	draw_scale.x = 1
-	draw_scale.y = 1
-end
-
-local apply_combat_parallax<const> = function(self, maya_back, monster, offset_base_y)
-	local momentum<const> = self.combat_parallax_momentum_steps
-	local maya_weight<const> = (10 - momentum) / 15
-	local monster_weight<const> = -(10 + momentum) / 15
-	apply_combat_draw_parallax(maya_back, maya_weight, offset_base_y)
-	apply_combat_draw_parallax(monster, monster_weight, offset_base_y)
+	local parallax_scale<const> = combat_parallax_scale(weight)
+	local flip_flags = 0
+	if sc.flip.flip_h then
+		flip_flags = flip_flags | 1
+	end
+	if sc.flip.flip_v then
+		flip_flags = flip_flags | 2
+	end
+	vdp_blit_img_affine_color(
+		sc.imgid,
+		obj.x + offset.x + draw_offset.x,
+		obj.y + offset.y + draw_offset.y + (offset_base_y * weight),
+		obj.z + offset.z + draw_offset.z,
+		sc.layer,
+		obj.sx * scale.x * draw_scale.x * parallax_scale,
+		0.0,
+		0.0,
+		obj.sy * scale.y * draw_scale.y * parallax_scale,
+		flip_flags,
+		sc.color
+	)
 end
 
 local refresh_combat_parallax<const> = function(self)
 	local momentum<const> = self.combat_parallax_momentum_steps
-	local maya_back<const> = oget(globals.combat_maya_a_id)
-	local monster<const> = oget(globals.combat_monster_id)
-	apply_combat_parallax(self, maya_back, monster, (11 - momentum) / 10)
+	self.combat_parallax_offset_base_y = (11 - momentum) / 10
 end
 
 local combat_hover_track<const> = function(target, params, _event, time_seconds)
@@ -131,7 +134,7 @@ local combat_hover_track<const> = function(target, params, _event, time_seconds)
 	local hover<const> = (easing.smoothstep(w) - 0.5) * 2 * globals.combat_monster_hover_amp
 	local momentum<const> = target.combat_parallax_momentum_steps
 	params.monster.y = params.monster_base_y + hover
-	apply_combat_parallax(target, params.maya_back, params.monster, ((11 - momentum) / 10) - hover)
+	target.combat_parallax_offset_base_y = ((11 - momentum) / 10) - hover
 end
 
 function combat_director:start_combat(node_id, skip_fade_in)
@@ -175,12 +178,7 @@ end
 
 function combat_director:disable_combat_parallax()
 	self.combat_parallax_enabled = false
-	local hero<const> = oget(globals.combat_maya_a_id)
-	local hero_b<const> = oget(globals.combat_maya_b_id)
-	local monster<const> = oget(globals.combat_monster_id)
-	reset_combat_draw_parallax(hero)
-	reset_combat_draw_parallax(hero_b)
-	reset_combat_draw_parallax(monster)
+	self.combat_parallax_draw_active = false
 end
 
 function combat_director:push_combat_momentum(side, power)
@@ -219,22 +217,29 @@ function combat.define_fsm()
 				slash_color = 0x00ffffff,
 				slash_z = globals.combat_hit_slash_z,
 			}
-				self.combat_hit_slash_rc = attach_component(self, 'customvisualcomponent')
-				self.combat_hit_slash_rc:add_producer(function(ctx)
-					local frame<const> = ctx.parent.combat_hit_slash_frame
-					if not frame.slash_active then
-						return
-					end
-					local points<const> = frame.slash_points
-					local x0<const> = points[1]
-					local y0<const> = points[2]
-					local x1<const> = points[3]
-					local y1<const> = points[4]
-					local z<const> = frame.slash_z
-					local color<const> = frame.slash_color
-					local thickness<const> = frame.slash_thickness
-					vdp_draw_line_color(x0, y0, x1, y1, z, sys_vdp_layer_world, color, thickness)
-				end)
+			self.combat_hit_slash_rc = attach_component(self, 'customvisualcomponent')
+			self.combat_hit_slash_rc:add_producer(function(ctx)
+				local director<const> = ctx.parent
+				if director.combat_parallax_draw_active then
+					local momentum<const> = director.combat_parallax_momentum_steps
+					local offset_base_y<const> = director.combat_parallax_offset_base_y
+					draw_combat_parallax_sprite(oget(globals.combat_monster_id), -(10 + momentum) / 15, offset_base_y)
+					draw_combat_parallax_sprite(oget(globals.combat_maya_a_id), (10 - momentum) / 15, offset_base_y)
+				end
+				local frame<const> = director.combat_hit_slash_frame
+				if not frame.slash_active then
+					return
+				end
+				local points<const> = frame.slash_points
+				local x0<const> = points[1]
+				local y0<const> = points[2]
+				local x1<const> = points[3]
+				local y1<const> = points[4]
+				local z<const> = frame.slash_z
+				local color<const> = frame.slash_color
+				local thickness<const> = frame.slash_thickness
+				vdp_draw_line_color(x0, y0, x1, y1, z, sys_vdp_layer_world, color, thickness)
+			end)
 			globals.hide_combat_sprites()
 			return '/idle'
 		end,
@@ -508,6 +513,9 @@ function combat.define_fsm()
 					maya_b_base_y = self.combat_maya_b_base_y,
 				},
 			})
+			monster.visible = false
+			maya_a.visible = false
+			self.combat_parallax_draw_active = true
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -556,10 +564,12 @@ function combat.define_fsm()
 				target = self,
 				params = {
 					monster = monster,
-					maya_back = maya_a,
 					monster_base_y = self.combat_monster_base_y,
 				},
 			})
+			monster.visible = false
+			maya_a.visible = false
+			self.combat_parallax_draw_active = true
 		end,
 		update = function(self)
 			if self.stagger_blocked then
@@ -614,6 +624,9 @@ function combat.define_fsm()
 		},
 		leaving_state = function(self)
 			self:stop_timeline(globals.combat_hover_timeline_id)
+			self.combat_parallax_draw_active = false
+			oget(globals.combat_monster_id).visible = true
+			oget(globals.combat_maya_a_id).visible = true
 			refresh_combat_parallax(self)
 		end,
 	}
@@ -635,6 +648,7 @@ function combat.define_fsm()
 			oget(globals.text_main_id):set_text({ 'RAAK!' }, { typed = false, snap = true })
 			self:push_combat_momentum('hero', combat_parallax_momentum_step)
 			local monster<const> = oget(globals.combat_monster_id)
+			local maya_a<const> = oget(globals.combat_maya_a_id)
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			monster.sprite_component.scale = { x = 1, y = 1 }
@@ -653,6 +667,9 @@ function combat.define_fsm()
 					monster_sy = monster.sy,
 				},
 			})
+			monster.visible = false
+			maya_a.visible = false
+			self.combat_parallax_draw_active = true
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -683,6 +700,7 @@ function combat.define_fsm()
 				globals.clear_texts(globals.text_ids_choice_prompt)
 				oget(globals.text_main_id):set_text({ 'ONTWIJKT!' }, { typed = false, snap = true })
 				local monster<const> = oget(globals.combat_monster_id)
+				local maya_a<const> = oget(globals.combat_maya_a_id)
 				monster.sprite_component.scale = { x = 1, y = 1 }
 				self.combat_dodge_dir = -self.combat_dodge_dir
 				self:play_timeline(globals.combat_dodge_timeline_id, {
@@ -694,6 +712,9 @@ function combat.define_fsm()
 						base_x = self.combat_monster_base_x,
 				},
 			})
+			monster.visible = false
+			maya_a.visible = false
+			self.combat_parallax_draw_active = true
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -772,6 +793,9 @@ function combat.define_fsm()
 					overlay_alpha = globals.combat_exchange_hit_overlay_alpha,
 				},
 			})
+			monster.visible = false
+			maya_a.visible = false
+			self.combat_parallax_draw_active = true
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -864,6 +888,9 @@ function combat.define_fsm()
 					overlay_alpha = 0,
 				},
 			})
+			monster.visible = false
+			maya_a.visible = false
+			self.combat_parallax_draw_active = true
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -929,10 +956,12 @@ function combat.define_fsm()
 				target = self,
 				params = {
 					monster = monster,
-					maya_back = maya_a,
 					monster_base_y = self.combat_monster_base_y,
 				},
 			})
+			monster.visible = false
+			maya_a.visible = false
+			self.combat_parallax_draw_active = true
 		end,
 		update = function(self)
 			local main<const> = oget(globals.text_main_id)
@@ -958,6 +987,9 @@ function combat.define_fsm()
 		leaving_state = function(self)
 			self:stop_timeline(globals.combat_hover_timeline_id)
 			self:stop_timeline(combat_all_out_prompt_timeline_id)
+			self.combat_parallax_draw_active = false
+			oget(globals.combat_monster_id).visible = true
+			oget(globals.combat_maya_a_id).visible = true
 			local portrait<const> = oget(globals.combat_all_out_id)
 			portrait.visible = false
 			portrait.sprite_component.scale = { x = 1, y = 1 }
@@ -974,7 +1006,7 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			self:disable_combat_parallax() -- Disable parallax during "All Out" sequence.
+			self:disable_combat_parallax()
 			globals.clear_texts(globals.text_ids_all)
 			local all_out<const> = oget(globals.combat_all_out_id)
 			all_out:gfx('all_out')
@@ -1086,7 +1118,7 @@ function combat.define_fsm()
 
 	states.combat_results_setup = {
 		entering_state = function(self)
-			self:disable_combat_parallax() -- Not required, as the "All Out" state already does this, but just to be safe.
+			self:disable_combat_parallax()
 			local node<const> = story[self.node_id]
 				local rewards<const> = node.rewards[self.combat_points + 1]
 			self.combat_rewards = rewards
@@ -1460,7 +1492,9 @@ function combat.register_director()
 			combat_results_text_target_x = 0,
 			combat_results_text_start_x = 0,
 			combat_parallax_enabled = false,
+			combat_parallax_draw_active = false,
 			combat_parallax_momentum_steps = 0,
+			combat_parallax_offset_base_y = 0,
 			skip_combat_fade_in = false,
 			skip_transition_fade = false,
 			combat_node_id = nil,

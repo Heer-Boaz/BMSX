@@ -52,6 +52,28 @@ test('cart lua linter rejects math.floor references in cart and bios profiles', 
 	);
 });
 
+test('cart lua linter rejects tiny Lua VDP functions in system VDP modules', async () => {
+	const root = join(process.cwd(), 'system', 'vdp_lint_fixture');
+	const filePath = join(root, 'sample.lua');
+	try {
+		await rm(root, { recursive: true, force: true });
+		await mkdir(root, { recursive: true });
+		await writeFile(filePath, [
+			'local vdp_bad<const> = {}',
+			'function vdp_bad.draw()',
+			'\tvdp_bad.submit(1)',
+			'end',
+			'return vdp_bad',
+		].join('\n'));
+		await assert.rejects(
+			lintCartSources({ roots: [root], profile: 'bios' }),
+			/Tiny Lua VDP function is forbidden \("vdp_bad\.draw"\)\. Inline the packet\/write logic at the VDP owner instead of adding a wrapper call\./,
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test('cart lua linter rejects custom random helpers in cart and bios profiles', async () => {
 	await withCartLintFixture(
 		'cart_lua_linter_random_helper',

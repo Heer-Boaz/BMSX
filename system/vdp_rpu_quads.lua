@@ -21,6 +21,9 @@ local instance_frame_capacity<const> = instance_frame_bytes // instance_stride
 local instance_batch_capacity<const> = 1024
 local instance_buffer_bytes<const> = instance_stride * instance_batch_capacity
 local instance_frame_end<const> = instance_addr + (instance_stride * instance_frame_capacity)
+local quad_primitive_index<const> = vdp_rpu.prim_triangle_strip | (vdp_rpu.index_none << 8)
+local quad_pipeline<const> = vdp_rpu.blend_alpha | (vdp_rpu.depth_lequal << 4) | (vdp_rpu.cull_none << 8) | vdp_rpu.pipe_depth_write | vdp_rpu.pipe_color_write_rgba
+local quad_sampler<const> = vdp_rpu.filter_nearest | (vdp_rpu.filter_nearest << 2) | (vdp_rpu.wrap_clamp << 4) | (vdp_rpu.wrap_clamp << 6)
 local white<const> = 0xffffffff
 local draw_order_depth_scale<const> = 2.0 / 1048576.0
 local tile_run_depth<const> = 1.0 - ((sys_vdp_layer_world * 4096.0) * draw_order_depth_scale)
@@ -110,11 +113,11 @@ local flush_instances<const> = function()
 	local byte_length<const> = instance_count * instance_stride
 	begin_pass()
 	vdp_rpu.buffer_upload_dma(instance_buffer, 0, instance_batch_addr, byte_length)
-	vdp_rpu.begin_draw(vdp_rpu.shader_v2_t2_c4_i_affine2, vdp_rpu.primitive_index(vdp_rpu.prim_triangle_strip, vdp_rpu.index_none), vdp_rpu.pipeline(vdp_rpu.blend_alpha, vdp_rpu.depth_lequal, vdp_rpu.cull_none, vdp_rpu.pipe_depth_write, vdp_rpu.pipe_color_write_rgba), quad_vertex_count, instance_count, vdp_rpu.resource_none, 0, 0)
+	vdp_rpu.begin_draw(vdp_rpu.shader_v2_t2_c4_i_affine2, quad_primitive_index, quad_pipeline, quad_vertex_count, instance_count, vdp_rpu.resource_none, 0, 0)
 	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_t2_c4, quad_buffer, 0, 0)
 	vdp_rpu.bind_stream(1, vdp_rpu.layout_i_affine2_trect_c4, instance_buffer, 0, 1)
 	if current_surface ~= vdp_rpu.resource_none then
-		vdp_rpu.bind_texture(0, current_surface, vdp_rpu.sampler(vdp_rpu.filter_nearest, vdp_rpu.filter_nearest, vdp_rpu.wrap_clamp, vdp_rpu.wrap_clamp))
+		vdp_rpu.bind_texture(0, current_surface, quad_sampler)
 	end
 	vdp_rpu.end_draw()
 	instance_batch_addr = instance_batch_addr + byte_length
@@ -155,24 +158,6 @@ local write_instance<const> = function(origin_x, origin_y, depth_z, axis_xx, axi
 	instance_count = instance_count + 1
 end
 
-local queue_quad<const> = function(surface_id, u0, v0, du, dv, x, y, width, height, z, layer, color)
-	switch_surface(surface_id)
-	write_instance(
-		x * ndc_x_scale - 1.0,
-		1.0 - y * ndc_y_scale,
-		1.0 - (((layer * 4096.0) + z) * draw_order_depth_scale),
-		width * ndc_x_scale,
-		0.0,
-		0.0,
-		-height * ndc_y_scale,
-		u0,
-		v0,
-		du,
-		dv,
-		color
-	)
-end
-
 function vdp_rpu_quads.set_slot_dim(slot, width, height)
 	local surface_id<const> = slot_surface[slot]
 	surface_width[surface_id] = width
@@ -180,10 +165,10 @@ function vdp_rpu_quads.set_slot_dim(slot, width, height)
 end
 
 function vdp_rpu_quads.submit_slot_resources(slot)
-	vdp_stream_reset()
+	vdp_stream_cursor = sys_vdp_stream_base
 	define_static_resources()
 	local surface_id<const> = slot_surface[slot]
-	vdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_usage(vdp_rpu.surface_format_rgba8, vdp_rpu.surface_usage_texture))
+	vdp_rpu.surface_define(surface_id, surface_width[surface_id], surface_height[surface_id], vdp_rpu.surface_format_rgba8 | (vdp_rpu.surface_usage_texture << vdp_rpu.usage_shift))
 	vdp_stream_submit_cpu_fifo()
 end
 
@@ -200,7 +185,21 @@ function vdp_rpu_quads.clear_color(color)
 end
 
 function vdp_rpu_quads.fill_rect_color(x0, y0, x1, y1, z, layer, color)
-	queue_quad(vdp_rpu.resource_none, 0.0, 0.0, 1.0, 1.0, x0, y0, x1 - x0, y1 - y0, z, layer, color)
+	switch_surface(vdp_rpu.resource_none)
+	write_instance(
+		x0 * ndc_x_scale - 1.0,
+		1.0 - y0 * ndc_y_scale,
+		1.0 - (((layer * 4096.0) + z) * draw_order_depth_scale),
+		(x1 - x0) * ndc_x_scale,
+		0.0,
+		0.0,
+		-(y1 - y0) * ndc_y_scale,
+		0.0,
+		0.0,
+		1.0,
+		1.0,
+		color
+	)
 end
 
 function vdp_rpu_quads.draw_line_color(x0, y0, x1, y1, z, layer, color, thickness)
@@ -208,7 +207,21 @@ function vdp_rpu_quads.draw_line_color(x0, y0, x1, y1, z, layer, color, thicknes
 	local dy<const> = y1 - y0
 	local half<const> = thickness * 0.5
 	if dx == 0 and dy == 0 then
-		queue_quad(vdp_rpu.resource_none, 0.0, 0.0, 1.0, 1.0, x0 - half, y0 - half, thickness, thickness, z, layer, color)
+		switch_surface(vdp_rpu.resource_none)
+		write_instance(
+			(x0 - half) * ndc_x_scale - 1.0,
+			1.0 - (y0 - half) * ndc_y_scale,
+			1.0 - (((layer * 4096.0) + z) * draw_order_depth_scale),
+			thickness * ndc_x_scale,
+			0.0,
+			0.0,
+			-thickness * ndc_y_scale,
+			0.0,
+			0.0,
+			1.0,
+			1.0,
+			color
+		)
 		return
 	end
 	local length<const> = math.sqrt(dx * dx + dy * dy)
@@ -233,7 +246,7 @@ function vdp_rpu_quads.draw_line_color(x0, y0, x1, y1, z, layer, color, thicknes
 	)
 end
 
-function vdp_rpu_quads.blit_source_color(slot, u, v, w, h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
+function vdp_rpu_quads.blit_source_affine_color(slot, u, v, w, h, origin_x, origin_y, z, layer, axis_xx, axis_xy, axis_yx, axis_yy, flip_flags, color)
 	local surface_id<const> = slot_surface[slot]
 	local inv_w<const> = 1.0 / surface_width[surface_id]
 	local inv_h<const> = 1.0 / surface_height[surface_id]
@@ -249,7 +262,54 @@ function vdp_rpu_quads.blit_source_color(slot, u, v, w, h, x, y, z, layer, scale
 		v0 = v0 + dv
 		dv = -dv
 	end
-	queue_quad(surface_id, u0, v0, du, dv, x, y, w * scale_x, h * scale_y, z, layer, color)
+	switch_surface(surface_id)
+	write_instance(
+		origin_x * ndc_x_scale - 1.0,
+		1.0 - origin_y * ndc_y_scale,
+		1.0 - (((layer * 4096.0) + z) * draw_order_depth_scale),
+		axis_xx * ndc_x_scale,
+		axis_xy * ndc_x_scale,
+		-axis_yx * ndc_y_scale,
+		-axis_yy * ndc_y_scale,
+		u0,
+		v0,
+		du,
+		dv,
+		color
+	)
+end
+
+function vdp_rpu_quads.blit_source_color(slot, u, v, w, h, x, y, z, layer, scale_x, scale_y, flip_flags, color)
+	local texture_surface_id<const> = slot_surface[slot]
+	local inv_w<const> = 1.0 / surface_width[texture_surface_id]
+	local inv_h<const> = 1.0 / surface_height[texture_surface_id]
+	local u0 = u * inv_w
+	local v0 = v * inv_h
+	local du = w * inv_w
+	local dv = h * inv_h
+	if (flip_flags & 1) ~= 0 then
+		u0 = u0 + du
+		du = -du
+	end
+	if (flip_flags & 2) ~= 0 then
+		v0 = v0 + dv
+		dv = -dv
+	end
+	switch_surface(texture_surface_id)
+	write_instance(
+		x * ndc_x_scale - 1.0,
+		1.0 - y * ndc_y_scale,
+		1.0 - (((layer * 4096.0) + z) * draw_order_depth_scale),
+		w * scale_x * ndc_x_scale,
+		0.0,
+		0.0,
+		-(h * scale_y) * ndc_y_scale,
+		u0,
+		v0,
+		du,
+		dv,
+		color
+	)
 end
 
 function vdp_rpu_quads.tile_run_sources(sources, tile_count, cols, tile_size, origin_x, origin_y, empty_source)
