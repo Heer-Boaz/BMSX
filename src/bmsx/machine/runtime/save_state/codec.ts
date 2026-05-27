@@ -25,7 +25,7 @@ import type { VdpSaveState, VdpState } from '../../devices/vdp/save_state';
 import type { VdpSurfacePixelsState, VdpVramState } from '../../devices/vdp/vram';
 import type { VdpStreamIngressState } from '../../devices/vdp/ingress';
 import type { VdpReadbackState } from '../../devices/vdp/readback';
-import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../devices/vdp/contracts';
+import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT } from '../../devices/vdp/contracts';
 import { VDP_LPU_REGISTER_WORDS } from '../../devices/vdp/lpu';
 import {
 	VDP_DEX_FRAME_DIRECT_OPEN,
@@ -1004,8 +1004,6 @@ function encodeVdpState(state: VdpState): VdpState {
 		availableWorkUnits: state.availableWorkUnits,
 		streamIngress: encodeVdpStreamIngressState(state.streamIngress),
 		readback: encodeVdpReadbackState(state.readback),
-		pmuSelectedBank: state.pmuSelectedBank,
-		pmuBankWords: state.pmuBankWords,
 		lightRegisterWords: state.lightRegisterWords,
 		morphWeightWords: state.morphWeightWords,
 		jointMatrixWords: state.jointMatrixWords,
@@ -1028,8 +1026,6 @@ function decodeVdpState(value: unknown, label: string): VdpState {
 		availableWorkUnits: requireI32(requireObjectKey(object, 'availableWorkUnits', label, 'machine.vdp.availableWorkUnits'), 'machine.vdp.availableWorkUnits'),
 		streamIngress: decodeVdpStreamIngressState(requireObjectKey(object, 'streamIngress', label, 'machine.vdp.streamIngress'), 'machine.vdp.streamIngress'),
 		readback: decodeVdpReadbackState(requireObjectKey(object, 'readback', label, 'machine.vdp.readback'), 'machine.vdp.readback'),
-		pmuSelectedBank: requireBoundedU32(requireObjectKey(object, 'pmuSelectedBank', label, 'machine.vdp.pmuSelectedBank'), 'machine.vdp.pmuSelectedBank', 0, 0xffffffff),
-		pmuBankWords: decodeU32FixedArray(requireObjectKey(object, 'pmuBankWords', label, 'machine.vdp.pmuBankWords'), 'machine.vdp.pmuBankWords', VDP_PMU_BANK_WORD_COUNT),
 		lightRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'lightRegisterWords', label, 'machine.vdp.lightRegisterWords'), 'machine.vdp.lightRegisterWords', VDP_LPU_REGISTER_WORDS),
 		morphWeightWords: decodeU32FixedArray(requireObjectKey(object, 'morphWeightWords', label, 'machine.vdp.morphWeightWords'), 'machine.vdp.morphWeightWords', VDP_MFU_WEIGHT_COUNT),
 		jointMatrixWords: decodeU32FixedArray(requireObjectKey(object, 'jointMatrixWords', label, 'machine.vdp.jointMatrixWords'), 'machine.vdp.jointMatrixWords', VDP_JTU_REGISTER_WORDS),

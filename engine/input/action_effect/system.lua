@@ -95,7 +95,7 @@ function inputactioneffectsystem:process_input_action_programs()
 		local queued<const> = env.queued_events
 		for i = 1, #queued do
 			local evt<const> = queued[i]
-			obj:emit_gameplay_fact(evt)
+			obj:emit_gameplay_fact(evt)S
 			queued[i] = nil
 		end
 		::continue::

@@ -89,7 +89,7 @@ Saved:
 - VDP registerfile, build/submitted-frame state, RPU retained buffers,
   surfaces, constants, passes, and draw commands, named stream-ingress
   latches/FIFO words, readback budget/overflow latches, surfaces,
-  display/readback pixels, and PMU/VOUT state that determines future output.
+  display/readback pixels, and VOUT state that determines future output.
 - APU command/source/output state that determines future audio output,
   including the command FIFO ring, queued parameter latch words, active AOUT
   voice position, gain-ramp, filter history, and BADP decoder state.
@@ -155,8 +155,6 @@ Internal units:
   and surface-upload transactions.
 - `readback` owns the CPU-visible read-surface registry, retained read cache,
   per-frame read budget, and overflow latch.
-- `PMU` owns bank registers and selected bank state. It no longer resolves
-  blitter parallax or any other render semantic for the VDP.
 - `RPU` owns the raw cart-visible render contract: buffer records, surface
   records, constant banks, fixed stream layouts, fixed shader-variant ids,
   retained render passes, and retained draw commands.

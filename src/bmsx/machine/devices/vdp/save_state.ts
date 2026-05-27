@@ -16,8 +16,6 @@ export type VdpState = {
 	availableWorkUnits: number;
 	streamIngress: VdpStreamIngressState;
 	readback: VdpReadbackState;
-	pmuSelectedBank: number;
-	pmuBankWords: number[];
 	lightRegisterWords: number[];
 	morphWeightWords: number[];
 	jointMatrixWords: number[];

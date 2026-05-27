@@ -129,8 +129,6 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"matrixWords",
 	"viewMatrixIndex",
 	"projectionMatrixIndex",
-	"pmuSelectedBank",
-	"pmuBankWords",
 	"vdpFaultCode",
 	"vdpFaultDetail",
 	"tracked",

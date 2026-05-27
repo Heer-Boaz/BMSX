@@ -494,14 +494,6 @@
 			"reason": "vdp_vram_garbage_stream_contract"
 		},
 		{
-			"ts": "src/bmsx/machine/devices/vdp/pmu.ts",
-			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/pmu.h",
-				"src/bmsx_cpp/machine/devices/vdp/pmu.cpp"
-			],
-			"reason": "vdp_pmu_registerfile_runtime_contract"
-		},
-		{
 			"ts": "src/bmsx/machine/devices/vdp/readback.ts",
 			"cpp": [
 				"src/bmsx_cpp/machine/devices/vdp/readback.h",
@@ -570,8 +562,7 @@
 				"src/bmsx_cpp/machine/devices/vdp/contracts.h"
 			],
 			"symbols": [
-				"VdpSlotSource",
-				"VdpPmuBank"
+				"VdpSlotSource"
 			],
 			"reason": "vdp_shared_register_shape_contract"
 		},
@@ -751,16 +742,6 @@
 				"VdpReadbackState"
 			],
 			"reason": "vdp_readback_state_shape_contract"
-		},
-		{
-			"ts": "src/bmsx/machine/devices/vdp/pmu.ts",
-			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/pmu.h"
-			],
-			"symbols": [
-				"VdpPmuRegisterWindow"
-			],
-			"reason": "vdp_pmu_register_window_shape_contract"
 		}
 	],
 	"strict_runtime_no_churn": [
@@ -794,7 +775,6 @@
 				"src/bmsx/machine/devices/vdp/lpu.ts",
 				"src/bmsx/machine/devices/vdp/mfu.ts",
 				"src/bmsx/machine/devices/vdp/jtu.ts",
-				"src/bmsx/machine/devices/vdp/pmu.ts",
 				"src/bmsx_cpp/machine/devices/vdp/vdp.cpp",
 				"src/bmsx_cpp/machine/devices/vdp/frame.cpp",
 				"src/bmsx_cpp/machine/devices/vdp/ingress.cpp",
@@ -803,7 +783,6 @@
 				"src/bmsx_cpp/machine/devices/vdp/lpu.cpp",
 				"src/bmsx_cpp/machine/devices/vdp/mfu.cpp",
 				"src/bmsx_cpp/machine/devices/vdp/jtu.cpp",
-				"src/bmsx_cpp/machine/devices/vdp/pmu.cpp",
 				"src/bmsx_cpp/machine/devices/vdp/save_state.h",
 				"src/bmsx/machine/devices/vdp/vram.ts",
 				"src/bmsx/machine/devices/vdp/fbm.ts",
@@ -1673,19 +1652,6 @@
 		},
 		{
 			"roots": [
-				"bios",
-				"src/carts",
-				"src/bmsx/machine/firmware",
-				"src/bmsx_cpp/machine/firmware"
-			],
-			"substrings": [
-				"vdp_pmu_write_bank",
-				"sys_vdp_pmu"
-			],
-			"reason": "pmu_registers_are_not_cart_bios_or_firmware_visible_rpu_draw_state"
-		},
-		{
-			"roots": [
 				"src/bmsx/render/graph/graph.ts"
 			],
 			"substrings": [
@@ -2397,8 +2363,6 @@
 				"src/bmsx_cpp/render/3d/shaders/skybox.frag.glsl",
 				"src/bmsx_cpp/render/backend/pass/software_scene.h",
 				"src/bmsx_cpp/render/backend/pass/software_scene.cpp",
-				"bios/vdp_pmu.lua",
-				"system/vdp_pmu.lua",
 				"src/bmsx/render/2d/vdp_blit_pipeline.ts",
 				"src/bmsx/render/backend/webgl/vdp_2d_blit.ts",
 				"src/bmsx_cpp/render/2d/vdp_blit_pipeline.cpp",
@@ -2617,14 +2581,6 @@
 				"src/bmsx_cpp/machine/devices/vdp/slot_surface.cpp"
 			],
 			"reason": "vdp_slot_surface_port_filename_parity"
-		},
-		{
-			"ts": "src/bmsx/machine/devices/vdp/pmu.ts",
-			"cpp": [
-				"src/bmsx_cpp/machine/devices/vdp/pmu.h",
-				"src/bmsx_cpp/machine/devices/vdp/pmu.cpp"
-			],
-			"reason": "vdp_pmu_registerfile_filename_parity"
 		},
 		{
 			"ts": "src/bmsx/machine/devices/vdp/readback.ts",

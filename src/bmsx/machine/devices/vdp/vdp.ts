@@ -33,12 +33,6 @@ import {
 	IO_VDP_CMD,
 	IO_VDP_FIFO,
 	IO_VDP_FIFO_CTRL,
-	IO_VDP_PMU_BANK,
-	IO_VDP_PMU_CTRL,
-	IO_VDP_PMU_SCALE_X,
-	IO_VDP_PMU_SCALE_Y,
-	IO_VDP_PMU_X,
-	IO_VDP_PMU_Y,
 	IO_VDP_REG0,
 	IO_VDP_SLOT_PRIMARY,
 	IO_VDP_SLOT_SECONDARY,
@@ -60,11 +54,6 @@ import {
 	VDP_STREAM_BUFFER_SIZE,
 	IO_WORD_SIZE,
 } from '../../memory/map';
-import {
-	type VdpPmuRegisterWindow,
-	VdpPmuRegister,
-	VdpPmuUnit,
-} from './pmu';
 import {
 	VdpJtuUnit,
 	VDP_JTU_PACKET_KIND,
@@ -168,7 +157,6 @@ export class VDP implements VramWriteSink {
 	private readonly lpu = new VdpLpuUnit();
 	private readonly mfu = new VdpMfuUnit();
 	private readonly jtu = new VdpJtuUnit();
-	private readonly pmu = new VdpPmuUnit();
 	private readonly rpu: VdpRpuUnit;
 	private readonly vout = new VdpVoutUnit();
 	private readonly buildFrame: VdpBuildingFrameState = {
@@ -178,7 +166,6 @@ export class VDP implements VramWriteSink {
 	};
 	private activeFrame: VdpSubmittedFrame = allocateSubmittedFrameSlot();
 	private pendingFrame: VdpSubmittedFrame = allocateSubmittedFrameSlot();
-	private readonly pmuRegisterWindowScratch: VdpPmuRegisterWindow = { bank: 0, x: 0, y: 0, scaleX: 0, scaleY: 0, control: 0 };
 	private readonly regnPacketScratch = { firstRegister: 0, count: 0 };
 		private cpuHz = 1;
 	private workUnitsPerSec = 1;
@@ -222,13 +209,6 @@ export class VDP implements VramWriteSink {
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
 			this.memory.mapIoWrite(IO_VDP_REG0 + index * IO_WORD_SIZE, this.onRegisterWriteThunk.bind(this, this));
 		}
-		const pmuRegisterWindowWrite = this.onPmuRegisterWindowWriteThunk.bind(this, this);
-		this.memory.mapIoWrite(IO_VDP_PMU_BANK, pmuRegisterWindowWrite);
-		this.memory.mapIoWrite(IO_VDP_PMU_X, pmuRegisterWindowWrite);
-		this.memory.mapIoWrite(IO_VDP_PMU_Y, pmuRegisterWindowWrite);
-		this.memory.mapIoWrite(IO_VDP_PMU_SCALE_X, pmuRegisterWindowWrite);
-		this.memory.mapIoWrite(IO_VDP_PMU_SCALE_Y, pmuRegisterWindowWrite);
-		this.memory.mapIoWrite(IO_VDP_PMU_CTRL, pmuRegisterWindowWrite);
 	}
 
 	public initializeVramSurfaces(): void {
@@ -292,47 +272,6 @@ export class VDP implements VramWriteSink {
 		this.vout.writeDitherType(value as number);
 	}
 
-	private writePmuBankSelect(value: number): void {
-		this.pmu.selectBank(value);
-		this.syncPmuRegisterWindow();
-	}
-
-	private onPmuRegisterWindowWrite(addr: number): void {
-		const word = this.memory.readIoU32(addr) >>> 0;
-		switch (addr) {
-			case IO_VDP_PMU_BANK:
-				this.writePmuBankSelect(word);
-				return;
-			case IO_VDP_PMU_X:
-				this.pmu.writeSelectedBankRegister(VdpPmuRegister.X, word);
-				break;
-			case IO_VDP_PMU_Y:
-				this.pmu.writeSelectedBankRegister(VdpPmuRegister.Y, word);
-				break;
-			case IO_VDP_PMU_SCALE_X:
-				this.pmu.writeSelectedBankRegister(VdpPmuRegister.ScaleX, word);
-				break;
-			case IO_VDP_PMU_SCALE_Y:
-				this.pmu.writeSelectedBankRegister(VdpPmuRegister.ScaleY, word);
-				break;
-			case IO_VDP_PMU_CTRL:
-				this.pmu.writeSelectedBankRegister(VdpPmuRegister.Control, word);
-				break;
-		}
-		this.memory.writeIoValue(addr, word);
-	}
-
-	private syncPmuRegisterWindow(): void {
-		const window = this.pmuRegisterWindowScratch;
-		this.pmu.writeRegisterWindow(window);
-		this.memory.writeIoValue(IO_VDP_PMU_BANK, window.bank);
-		this.memory.writeIoValue(IO_VDP_PMU_X, window.x);
-		this.memory.writeIoValue(IO_VDP_PMU_Y, window.y);
-		this.memory.writeIoValue(IO_VDP_PMU_SCALE_X, window.scaleX);
-		this.memory.writeIoValue(IO_VDP_PMU_SCALE_Y, window.scaleY);
-		this.memory.writeIoValue(IO_VDP_PMU_CTRL, window.control);
-	}
-
 	private configureSelectedSlotDimension(word: number): void {
 		const width = packedLow16(word);
 		const height = packedHigh16(word);
@@ -387,11 +326,6 @@ export class VDP implements VramWriteSink {
 	private onRegisterWriteThunk(context: VDP, addr: number, value: Value): void {
 		void value;
 		context.onVdpRegisterWrite(addr);
-	}
-
-	private onPmuRegisterWindowWriteThunk(context: VDP, addr: number, value: Value): void {
-		void value;
-		context.onPmuRegisterWindowWrite(addr);
 	}
 
 
@@ -1257,8 +1191,6 @@ export class VDP implements VramWriteSink {
 		this.memory.writeIoValue(IO_VDP_SLOT_SECONDARY, VDP_SLOT_NONE);
 		this.memory.writeIoValue(IO_VDP_CMD, 0);
 		this.resetVdpRegisters();
-		this.pmu.reset();
-		this.syncPmuRegisterWindow();
 		this.xf.reset();
 		this.lpu.reset();
 		this.mfu.reset();
@@ -1284,8 +1216,6 @@ export class VDP implements VramWriteSink {
 		state.availableWorkUnits = this.availableWorkUnits;
 		state.streamIngress = this.streamIngress.captureState();
 		state.readback = this.readback.captureState();
-		state.pmuSelectedBank = this.pmu.selectedBankIndex;
-		this.pmu.captureBankWords(state.pmuBankWords);
 		const lightRegisterWords = state.lightRegisterWords;
 		for (let index = 0; index < this.lpu.registerWords.length; index += 1) {
 			lightRegisterWords[index] = this.lpu.registerWords[index]!;
@@ -1306,7 +1236,6 @@ export class VDP implements VramWriteSink {
 	public captureState(): VdpState {
 		const state = {
 			vdpRegisterWords: [],
-			pmuBankWords: [],
 			lightRegisterWords: [],
 			morphWeightWords: [],
 			jointMatrixWords: [],
@@ -1341,7 +1270,6 @@ export class VDP implements VramWriteSink {
 		for (let index = 0; index < VDP_REGISTER_COUNT; index += 1) {
 			this.memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, this.vdpRegisters[index]);
 		}
-		this.pmu.restoreBankWords(state.pmuSelectedBank, state.pmuBankWords);
 		for (let index = 0; index < this.lpu.registerWords.length; index += 1) {
 			this.lpu.registerWords[index] = state.lightRegisterWords[index]!;
 		}
@@ -1351,7 +1279,6 @@ export class VDP implements VramWriteSink {
 		for (let index = 0; index < this.jtu.matrixWords.length; index += 1) {
 			this.jtu.matrixWords[index] = state.jointMatrixWords[index]!;
 		}
-		this.syncPmuRegisterWindow();
 		this.memory.writeValue(IO_VDP_DITHER, state.ditherType);
 		this.fault.restore(0, state.vdpFaultCode, state.vdpFaultDetail);
 		this.fault.setStatusFlag(VDP_STATUS_FAULT, this.fault.code !== VDP_FAULT_NONE);

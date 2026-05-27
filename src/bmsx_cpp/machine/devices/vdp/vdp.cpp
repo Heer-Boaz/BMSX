@@ -48,12 +48,6 @@ VDP::VDP(
 	for (uint32_t index = 0; index < VDP_REGISTER_COUNT; ++index) {
 		m_memory.mapIoWrite(IO_VDP_REG0 + index * IO_WORD_SIZE, this, &VDP::onRegisterWriteThunk);
 	}
-	m_memory.mapIoWrite(IO_VDP_PMU_BANK, this, &VDP::onPmuRegisterWindowWriteThunk);
-	m_memory.mapIoWrite(IO_VDP_PMU_X, this, &VDP::onPmuRegisterWindowWriteThunk);
-	m_memory.mapIoWrite(IO_VDP_PMU_Y, this, &VDP::onPmuRegisterWindowWriteThunk);
-	m_memory.mapIoWrite(IO_VDP_PMU_SCALE_X, this, &VDP::onPmuRegisterWindowWriteThunk);
-	m_memory.mapIoWrite(IO_VDP_PMU_SCALE_Y, this, &VDP::onPmuRegisterWindowWriteThunk);
-	m_memory.mapIoWrite(IO_VDP_PMU_CTRL, this, &VDP::onPmuRegisterWindowWriteThunk);
 }
 
 void VDP::resetIngressState() {
@@ -110,47 +104,6 @@ void VDP::onVdpRegisterWrite(uint32_t addr) {
 void VDP::onDitherWrite(Value value) {
 	const i32 ditherType = toI32(asNumber(value));
 	m_vout.writeDitherType(ditherType);
-}
-
-void VDP::writePmuBankSelect(u32 value) {
-	m_pmu.selectBank(value);
-	syncPmuRegisterWindow();
-}
-
-void VDP::onPmuRegisterWindowWrite(uint32_t addr) {
-	const u32 value = m_memory.readIoU32(addr);
-	switch (addr) {
-	case IO_VDP_PMU_BANK:
-		writePmuBankSelect(value);
-		return;
-	case IO_VDP_PMU_X:
-		m_pmu.writeSelectedBankRegister(VdpPmuRegister::X, value);
-		break;
-	case IO_VDP_PMU_Y:
-		m_pmu.writeSelectedBankRegister(VdpPmuRegister::Y, value);
-		break;
-	case IO_VDP_PMU_SCALE_X:
-		m_pmu.writeSelectedBankRegister(VdpPmuRegister::ScaleX, value);
-		break;
-	case IO_VDP_PMU_SCALE_Y:
-		m_pmu.writeSelectedBankRegister(VdpPmuRegister::ScaleY, value);
-		break;
-	case IO_VDP_PMU_CTRL:
-		m_pmu.writeSelectedBankRegister(VdpPmuRegister::Control, value);
-		break;
-	}
-	m_memory.writeIoValue(addr, valueNumber(static_cast<double>(value)));
-}
-
-void VDP::syncPmuRegisterWindow() {
-	VdpPmuRegisterWindow& window = m_pmuRegisterWindowScratch;
-	m_pmu.writeRegisterWindow(window);
-	m_memory.writeIoValue(IO_VDP_PMU_BANK, valueNumber(static_cast<double>(window.bank)));
-	m_memory.writeIoValue(IO_VDP_PMU_X, valueNumber(static_cast<double>(window.x)));
-	m_memory.writeIoValue(IO_VDP_PMU_Y, valueNumber(static_cast<double>(window.y)));
-	m_memory.writeIoValue(IO_VDP_PMU_SCALE_X, valueNumber(static_cast<double>(window.scaleX)));
-	m_memory.writeIoValue(IO_VDP_PMU_SCALE_Y, valueNumber(static_cast<double>(window.scaleY)));
-	m_memory.writeIoValue(IO_VDP_PMU_CTRL, valueNumber(static_cast<double>(window.control)));
 }
 
 void VDP::configureSelectedSlotDimension(u32 word) {
@@ -646,12 +599,6 @@ void VDP::onRegisterWriteThunk(void* context, uint32_t addr, Value value) {
 	vdp.onVdpRegisterWrite(addr);
 }
 
-void VDP::onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value) {
-	(void)value;
-	auto& vdp = *static_cast<VDP*>(context);
-	vdp.onPmuRegisterWindowWrite(addr);
-}
-
 void VDP::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
 	m_cpuHz = cpuHz;
 	m_workUnitsPerSec = workUnitsPerSec;
@@ -1016,8 +963,6 @@ void VDP::initializeRegisters() {
 	m_memory.writeIoValue(IO_VDP_SLOT_SECONDARY, valueNumber(static_cast<double>(VDP_SLOT_NONE)));
 	m_memory.writeIoValue(IO_VDP_CMD, valueNumber(0.0));
 	resetVdpRegisters();
-	m_pmu.reset();
-	syncPmuRegisterWindow();
 	m_xf.reset();
 	m_lpu.reset();
 	m_mfu.reset();
@@ -1155,8 +1100,6 @@ void VDP::captureVisualStateFields(VdpState& state) const {
 	state.availableWorkUnits = m_availableWorkUnits;
 	state.streamIngress = m_streamIngress.captureState();
 	state.readback = m_readback.captureState();
-	state.pmuSelectedBank = m_pmu.selectedBankIndex();
-	m_pmu.captureBankWords(state.pmuBankWords);
 	for (size_t index = 0u; index < state.lightRegisterWords.size(); ++index) {
 		state.lightRegisterWords[index] = m_lpu.registerWords[index];
 	}
@@ -1197,7 +1140,6 @@ void VDP::restoreState(const VdpState& state) {
 		m_memory.writeIoValue(IO_VDP_REG0 + index * IO_WORD_SIZE, valueNumber(static_cast<double>(m_vdpRegisters[index])));
 	}
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(state.ditherType)));
-	m_pmu.restoreBankWords(state.pmuSelectedBank, state.pmuBankWords);
 	for (size_t index = 0u; index < m_lpu.registerWords.size(); ++index) {
 		m_lpu.registerWords[index] = state.lightRegisterWords[index];
 	}
@@ -1207,7 +1149,6 @@ void VDP::restoreState(const VdpState& state) {
 	for (size_t index = 0u; index < m_jtu.matrixWords.size(); ++index) {
 		m_jtu.matrixWords[index] = state.jointMatrixWords[index];
 	}
-	syncPmuRegisterWindow();
 	m_fault.restore(0u, state.vdpFaultCode, state.vdpFaultDetail);
 	m_fault.setStatusFlag(VDP_STATUS_FAULT, m_fault.code != VDP_FAULT_NONE);
 	refreshSubmitBusyStatus();

@@ -15,7 +15,7 @@ import {
 	APU_SLOT_REGISTER_WORD_COUNT,
 	apuSlotRegisterWordIndex,
 } from '../../src/bmsx/machine/devices/audio/contracts';
-import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT, VDP_PMU_BANK_WORD_COUNT } from '../../src/bmsx/machine/devices/vdp/contracts';
+import { VDP_JTU_REGISTER_WORDS, VDP_MFU_WEIGHT_COUNT } from '../../src/bmsx/machine/devices/vdp/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../src/bmsx/machine/devices/geometry/contracts';
 import { VDP_REGISTER_COUNT } from '../../src/bmsx/machine/devices/vdp/registers';
 import { VDP_LPU_REGISTER_WORDS } from '../../src/bmsx/machine/devices/vdp/lpu';
@@ -243,8 +243,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					lightRegisterWords: numberedWords(VDP_LPU_REGISTER_WORDS),
 					morphWeightWords: numberedWords(VDP_MFU_WEIGHT_COUNT),
 					jointMatrixWords: numberedWords(VDP_JTU_REGISTER_WORDS),
-					pmuSelectedBank: 2,
-					pmuBankWords: numberedWords(VDP_PMU_BANK_WORD_COUNT),
+
 					ditherType: 1,
 					vdpFaultCode: 0,
 					vdpFaultDetail: 0,
@@ -333,13 +332,6 @@ test('runtime save-state bytes start at the current property-table payload', () 
 });
 
 test('runtime save-state codec rejects invalid VDP fixed register snapshots before device restore', () => {
-	const badPmuState = createRuntimeSaveState();
-	badPmuState.machineState.machine.vdp.pmuBankWords = numberedWords(VDP_PMU_BANK_WORD_COUNT - 1);
-	assert.throws(
-		() => decodeRuntimeSaveState(encodeRuntimeSaveState(badPmuState)),
-		/machine\.vdp\.pmuBankWords must contain/,
-	);
-
 	const badVdpRegisterState = createRuntimeSaveState();
 	badVdpRegisterState.machineState.machine.vdp.vdpRegisterWords = numberedWords(VDP_REGISTER_COUNT - 1);
 	assert.throws(

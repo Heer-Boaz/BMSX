@@ -33,8 +33,6 @@ through VOUT. The old framebuffer texture presentation path is IDE/terminal host
 | `IO_VDP_CMD_ARG0` / `IO_VDP_REG0..IO_VDP_REG_SLOT_DIM` | W/R | raw u32 words | VDP registerfile | Raw argument latches and slot setup words. |
 | `IO_VDP_FIFO` | W | packet word | VDP stream | Appends one word to the FIFO ingress buffer. |
 | `IO_VDP_FIFO_CTRL` | W | control bits | VDP stream | `VDP_FIFO_CTRL_SEAL` seals and replays the FIFO packet stream. |
-| `IO_VDP_PMU_BANK` | W/R | u32 | PMU | Selects the PMU bank register window. |
-| `IO_VDP_PMU_X/Y/SCALE_X/SCALE_Y/CTRL` | W/R | raw u32 words | PMU | Writes the selected PMU bank words. |
 
 The old cart-visible SBX MMIO window is retired and intentionally left as an
 unassigned hole so IRQ/DMA and later public MMIO addresses do not move during
@@ -127,7 +125,6 @@ BEGIN/END stream commands, and unknown packet kinds fault with
 | FBM | `PageWritable`, `PagePendingPresent`, `PagePresented` | `fbm.ts/.h/.cpp` |
 | Readback | `Ready`, `BudgetExhausted`, `OverflowLatched` | `readback.ts/.h/.cpp` |
 | VOUT | `Idle`, `RegisterLatched`, `FrameSealed`, `FramePresented` | `vout.ts/.h/.cpp` |
-| PMU | selected bank and bank registerfile | `pmu.ts/.h/.cpp` |
 | XF | matrix registerfile and selected matrix indexes | `xf.ts/.h/.cpp` |
 | RPU | retained render command buffer and raw resources | `rpu.ts/.h/.cpp` |
 
@@ -186,7 +183,6 @@ Saved VDP state includes:
   RPU resources/commands;
 - VDP status/fault words;
 - readback budget/overflow latches;
-- PMU selected bank and bank words;
 - LPU live light register words;
 - XF matrix words and selected indexes;
 - VOUT/dither/display dimensions that affect future output;
@@ -206,7 +202,7 @@ restore.
   `save_state.ts`, `ingress.ts`, `vram.ts`, and `readback.ts`
 - TS VDP constants/registers: `src/bmsx/machine/devices/vdp/contracts.ts` and
   `registers.ts`
-- TS subunits: `fbm.ts`, `frame.ts`, `jtu.ts`, `lpu.ts`, `mfu.ts`, `pmu.ts`,
+- TS subunits: `fbm.ts`, `frame.ts`, `jtu.ts`, `lpu.ts`, `mfu.ts`,
   `rpu.ts`, `vout.ts`, and `xf.ts`
 - C++ VDP device: `src/bmsx_cpp/machine/devices/vdp/vdp.cpp/.h`
 - C++ VDP save-state, stream ingress, VRAM/surface memory, and readback:
@@ -214,7 +210,7 @@ restore.
 - C++ VDP constants/registers: `src/bmsx_cpp/machine/devices/vdp/contracts.h`
   and `registers.h`
 - C++ subunits: `fbm.cpp/.h`, `frame.cpp/.h`, `jtu.cpp/.h`, `lpu.cpp/.h`,
-  `mfu.cpp/.h`, `pmu.cpp/.h`, `rpu.cpp/.h`, `vout.cpp/.h`, and `xf.cpp/.h`
+  `mfu.cpp/.h`, `rpu.cpp/.h`, `vout.cpp/.h`, and `xf.cpp/.h`
 - Host framebuffer/RPU execution passes and software framebuffer rasterizers:
   `src/bmsx/render/backend/software/*`,
   `src/bmsx/render/backend/webgl/vdp_2d_blit.ts`,

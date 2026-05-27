@@ -952,8 +952,6 @@ BinValue encodeVdpState(const VdpState& state) {
 	object["availableWorkUnits"] = static_cast<i64>(state.availableWorkUnits);
 	object["streamIngress"] = encodeVdpStreamIngressState(state.streamIngress);
 	object["readback"] = encodeVdpReadbackState(state.readback);
-	object["pmuSelectedBank"] = static_cast<i64>(state.pmuSelectedBank);
-	object["pmuBankWords"] = encodeFixedArray(state.pmuBankWords, encodeScalar<i64, u32>);
 	object["lightRegisterWords"] = encodeFixedArray(state.lightRegisterWords, encodeScalar<i64, u32>);
 	object["morphWeightWords"] = encodeFixedArray(state.morphWeightWords, encodeScalar<i64, u32>);
 	object["jointMatrixWords"] = encodeFixedArray(state.jointMatrixWords, encodeScalar<i64, u32>);
@@ -976,8 +974,6 @@ VdpState decodeVdpState(const BinValue& value, const char* label) {
 	state.availableWorkUnits = requireI32(requireField(object, "availableWorkUnits", label), "machine.vdp.availableWorkUnits");
 	state.streamIngress = decodeVdpStreamIngressState(requireField(object, "streamIngress", label), "machine.vdp.streamIngress");
 	state.readback = decodeVdpReadbackState(requireField(object, "readback", label), "machine.vdp.readback");
-	state.pmuSelectedBank = requireU32(requireField(object, "pmuSelectedBank", label), "machine.vdp.pmuSelectedBank");
-	state.pmuBankWords = decodeU32Array<VDP_PMU_BANK_WORD_COUNT>(requireField(object, "pmuBankWords", label), "machine.vdp.pmuBankWords");
 	state.lightRegisterWords = decodeU32Array<VDP_LPU_REGISTER_WORDS>(requireField(object, "lightRegisterWords", label), "machine.vdp.lightRegisterWords");
 	state.morphWeightWords = decodeU32Array<VDP_MFU_WEIGHT_COUNT>(requireField(object, "morphWeightWords", label), "machine.vdp.morphWeightWords");
 	state.jointMatrixWords = decodeU32Array<VDP_JTU_REGISTER_WORDS>(requireField(object, "jointMatrixWords", label), "machine.vdp.jointMatrixWords");
@@ -1038,8 +1034,6 @@ VdpSaveState decodeVdpSaveState(const BinValue& value, const char* label) {
 	VdpSaveState state;
 	state.xf = base.xf;
 	state.vdpRegisterWords = base.vdpRegisterWords;
-	state.pmuSelectedBank = base.pmuSelectedBank;
-	state.pmuBankWords = base.pmuBankWords;
 	state.ditherType = base.ditherType;
 	state.buildFrame = base.buildFrame;
 	state.activeFrame = base.activeFrame;

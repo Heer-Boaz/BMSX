@@ -12,24 +12,6 @@ export type VdpSlotSource = {
 	h: number;
 };
 
-export type VdpPmuBank = {
-	xQ16: number;
-	yQ16: number;
-	scaleXQ16: number;
-	scaleYQ16: number;
-	control: number;
-};
-
-export const VDP_PMU_BANK_COUNT = 256;
-export const VDP_PMU_BANK_WORD_STRIDE = 5;
-export const VDP_PMU_BANK_WORD_COUNT = VDP_PMU_BANK_COUNT * VDP_PMU_BANK_WORD_STRIDE;
-export const VDP_PMU_BANK_X_WORD = 0;
-export const VDP_PMU_BANK_Y_WORD = 1;
-export const VDP_PMU_BANK_SCALE_X_WORD = 2;
-export const VDP_PMU_BANK_SCALE_Y_WORD = 3;
-export const VDP_PMU_BANK_CONTROL_WORD = 4;
-export const VDP_PMU_Q16_ONE = 0x00010000;
-
 export const VDP_MFU_WEIGHT_COUNT = 64;
 export const VDP_JTU_MATRIX_WORDS = 16;
 export const VDP_JTU_MATRIX_COUNT = 32;

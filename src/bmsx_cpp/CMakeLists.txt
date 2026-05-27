@@ -327,7 +327,6 @@ add_library(bmsx_core STATIC
 	machine/devices/vdp/jtu.cpp
 	machine/devices/vdp/lpu.cpp
 	machine/devices/vdp/mfu.cpp
-	machine/devices/vdp/pmu.cpp
 	machine/devices/vdp/readback.cpp
 	machine/devices/vdp/registers.cpp
 	machine/devices/vdp/rpu.cpp

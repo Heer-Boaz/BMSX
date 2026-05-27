@@ -15,7 +15,6 @@
 #include "machine/devices/vdp/jtu.h"
 #include "machine/devices/vdp/lpu.h"
 #include "machine/devices/vdp/mfu.h"
-#include "machine/devices/vdp/pmu.h"
 #include "machine/devices/vdp/readback.h"
 #include "machine/devices/vdp/registers.h"
 #include "machine/devices/vdp/save_state.h"
@@ -103,7 +102,6 @@ private:
 	static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
 	static void onDitherWriteThunk(void* context, uint32_t addr, Value value);
 	static void onRegisterWriteThunk(void* context, uint32_t addr, Value value);
-	static void onPmuRegisterWindowWriteThunk(void* context, uint32_t addr, Value value);
 
 	bool writeVdpRegister(uint32_t index, u32 value);
 	void consumeDirectVdpCommand(u32 cmd);
@@ -118,7 +116,6 @@ private:
 	VdpLpuUnit m_lpu;
 	VdpMfuUnit m_mfu;
 	VdpJtuUnit m_jtu;
-	VdpPmuUnit m_pmu;
 	VdpRpuUnit m_rpu;
 	VdpVoutUnit m_vout;
 	int64_t m_cpuHz = 1;
@@ -131,7 +128,6 @@ private:
 	SubmittedFrame m_activeFrame;
 	SubmittedFrame m_pendingFrame;
 	// Scratch buffers used to avoid per-call temporaries (parity with TS runtime)
-	VdpPmuRegisterWindow m_pmuRegisterWindowScratch{};
 	bool m_lastFrameCommitted = true;
 	int m_lastFrameCost = 0;
 	bool m_lastFrameHeld = false;
@@ -158,9 +154,6 @@ private:
 		void resetVdpRegisters();
 		void onDitherWrite(Value value);
 		void onVdpRegisterWrite(uint32_t addr);
-	void writePmuBankSelect(u32 value);
-	void onPmuRegisterWindowWrite(uint32_t addr);
-	void syncPmuRegisterWindow();
 	void configureSelectedSlotDimension(u32 word);
 	void pushVdpFifoWord(u32 word);
 	bool consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
