@@ -6,7 +6,7 @@ model_reasoning_effort = "xhigh"
 personality = "pragmatic"
 
 [features]
-fast_mode = false
+fast_mode = true
 
 [notice]
 fast_default_opt_out = true
