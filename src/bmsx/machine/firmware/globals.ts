@@ -466,6 +466,9 @@ import {
 	VDP_RPU_LAYOUT_V3_N3_C4,
 	VDP_RPU_LAYOUT_V3_N3_T2_C4,
 	VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4,
+	VDP_RPU_LAYOUT_V3_DM3,
+	VDP_RPU_SHADER_FLAG_MORPH,
+	VDP_RPU_SHADER_FLAG_T1,
 	VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4,
 	VDP_RPU_LAYOUT_I_MAT4_C4,
 	VDP_RPU_SHADER_V2_C4,
@@ -1625,6 +1628,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_v3_n3_c4', VDP_RPU_LAYOUT_V3_N3_C4);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_v3_n3_t2_c4', VDP_RPU_LAYOUT_V3_N3_T2_C4);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_v3_n3_t2_c4_j4_w4', VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_v3_dm3', VDP_RPU_LAYOUT_V3_DM3);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_shader_flag_morph', VDP_RPU_SHADER_FLAG_MORPH);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_shader_flag_t1', VDP_RPU_SHADER_FLAG_T1);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_i_affine2_trect_c4', VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_layout_i_mat4_c4', VDP_RPU_LAYOUT_I_MAT4_C4);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_shader_v2_c4', VDP_RPU_SHADER_V2_C4);

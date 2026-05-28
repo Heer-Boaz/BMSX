@@ -1,12 +1,12 @@
 [
 	{
 		"description": "RPU cart-authored 2D and 3D draws, early frame",
-		"frame": 6,
+		"frame": 1000,
 		"capture": true
 	},
 	{
 		"description": "RPU cart-authored 2D and 3D draws, later frame",
-		"frame": 14,
+		"frame": 1016,
 		"capture": true
 	}
 ]

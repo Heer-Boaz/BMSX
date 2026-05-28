@@ -185,6 +185,7 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_rpu_layout_v3_n3_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_V3_N3_C4)));
 	runtime.setGlobal("sys_rpu_layout_v3_n3_t2_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_V3_N3_T2_C4)));
 	runtime.setGlobal("sys_rpu_layout_v3_n3_t2_c4_j4_w4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4)));
+	runtime.setGlobal("sys_rpu_layout_v3_dm3", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_V3_DM3)));
 	runtime.setGlobal("sys_rpu_layout_i_affine2_trect_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4)));
 	runtime.setGlobal("sys_rpu_layout_i_mat4_c4", valueNumber(static_cast<double>(VDP_RPU_LAYOUT_I_MAT4_C4)));
 	runtime.setGlobal("sys_rpu_shader_v2_c4", valueNumber(static_cast<double>(VDP_RPU_SHADER_V2_C4)));
@@ -193,6 +194,8 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_rpu_shader_v3_t2_c4_c0", valueNumber(static_cast<double>(VDP_RPU_SHADER_V3_T2_C4_C0)));
 	runtime.setGlobal("sys_rpu_shader_v3_n3_t2_c4_c0_c1", valueNumber(static_cast<double>(VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1)));
 	runtime.setGlobal("sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1", valueNumber(static_cast<double>(VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1)));
+	runtime.setGlobal("sys_rpu_shader_flag_morph", valueNumber(static_cast<double>(VDP_RPU_SHADER_FLAG_MORPH)));
+	runtime.setGlobal("sys_rpu_shader_flag_t1", valueNumber(static_cast<double>(VDP_RPU_SHADER_FLAG_T1)));
 	runtime.setGlobal("sys_rpu_shader_v2_t2_c4_i_affine2", valueNumber(static_cast<double>(VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2)));
 	runtime.setGlobal("sys_rpu_shader_v3_c4_i_mat4", valueNumber(static_cast<double>(VDP_RPU_SHADER_V3_C4_I_MAT4)));
 	runtime.setGlobal("sys_rpu_constant_source_xf_q16", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_SOURCE_XF_Q16)));

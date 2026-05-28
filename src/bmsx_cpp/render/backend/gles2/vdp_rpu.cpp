@@ -30,6 +30,8 @@ struct VdpRpuGLES2Runtime {
 	GLint attribNormal = -1;
 	GLint attribJoints = -1;
 	GLint attribWeights = -1;
+	GLint attribMorphPos = -1;
+	GLint attribMorphNrm = -1;
 	GLint attribInstance0 = -1;
 	GLint attribInstance1 = -1;
 	GLint attribInstance2 = -1;
@@ -37,23 +39,30 @@ struct VdpRpuGLES2Runtime {
 	GLint attribInstanceColor = -1;
 	GLint attribInstanceUvRect = -1;
 	GLint uniformC0 = -1;
+	GLint uniformNm = -1;
 	GLint uniformC1 = -1;
 	GLint uniformJoint = -1;
 	GLint uniformT0 = -1;
+	GLint uniformT1 = -1;
 	GLint uniformTextureEnabled = -1;
 	GLint uniformTextureFlipY = -1;
+	GLint uniformT1Mode = -1;
 	GLint uniformInstanceMode = -1;
 	GLint uniformSkinningMode = -1;
+	GLint uniformMorphMode = -1;
+	GLint uniformNormalMode = -1;
 	GLint uniformLightingMode = -1;
 	VdpRpuDrawArraysInstancedProc drawArraysInstanced = nullptr;
 	VdpRpuDrawElementsInstancedProc drawElementsInstanced = nullptr;
 	VdpRpuVertexAttribDivisorProc vertexAttribDivisor = nullptr;
 	std::array<u8, 4u> neutralTexturePixel{};
 	std::array<f32, 16u> identityC0{};
+	std::array<f32, 9u> identityNm{};
 	std::array<f32, 16u> c0Floats{};
-	std::array<f32, 64u> c1Floats{};
+	std::array<f32, 9u> nmFloats{};
+	std::array<f32, 68u> c1Floats{};
 	std::array<f32, 384u> jointFloats{};
-	std::array<f32, 64u> defaultC1Floats{};
+	std::array<f32, 68u> defaultC1Floats{};
 	std::array<f32, 384u> defaultJointFloats{};
 	std::array<GLuint, VDP_RPU_BUFFER_CAPACITY> vertexBufferObject{};
 	std::array<u32, VDP_RPU_BUFFER_CAPACITY> vertexBufferRevision{};
@@ -63,6 +72,10 @@ struct VdpRpuGLES2Runtime {
 	std::array<u32, VDP_RPU_BUFFER_CAPACITY> instanceBufferRevision{};
 	std::array<u32, VDP_RPU_BUFFER_CAPACITY> instanceBufferByteOffset{};
 	std::array<u32, VDP_RPU_BUFFER_CAPACITY> instanceBufferByteLength{};
+	std::array<GLuint, VDP_RPU_BUFFER_CAPACITY> morphBufferObject{};
+	std::array<u32, VDP_RPU_BUFFER_CAPACITY> morphBufferRevision{};
+	std::array<u32, VDP_RPU_BUFFER_CAPACITY> morphBufferByteOffset{};
+	std::array<u32, VDP_RPU_BUFFER_CAPACITY> morphBufferByteLength{};
 	std::array<GLuint, VDP_RPU_BUFFER_CAPACITY> indexBufferObject{};
 	std::array<u32, VDP_RPU_BUFFER_CAPACITY> indexBufferRevision{};
 	std::array<u32, VDP_RPU_BUFFER_CAPACITY> indexBufferByteOffset{};
@@ -257,6 +270,10 @@ GLint vdpRpuAttributeLocation(u32 attribute) {
 			return runtime.attribJoints;
 		case VDP_RPU_ATTR_WEIGHTS:
 			return runtime.attribWeights;
+		case VDP_RPU_ATTR_MORPH_POS:
+			return runtime.attribMorphPos;
+		case VDP_RPU_ATTR_MORPH_NRM:
+			return runtime.attribMorphNrm;
 		case VDP_RPU_ATTR_INSTANCE0:
 			return runtime.attribInstance0;
 		case VDP_RPU_ATTR_INSTANCE1:
@@ -345,6 +362,12 @@ void setVdpRpuDefaultVertexAttributes() {
 	glDisableVertexAttribArray(static_cast<GLuint>(runtime.attribWeights));
 	glVertexAttrib4f(static_cast<GLuint>(runtime.attribWeights), 1.0f, 0.0f, 0.0f, 0.0f);
 	runtime.vertexAttribDivisor(static_cast<GLuint>(runtime.attribWeights), 0u);
+	glDisableVertexAttribArray(static_cast<GLuint>(runtime.attribMorphPos));
+	glVertexAttrib3f(static_cast<GLuint>(runtime.attribMorphPos), 0.0f, 0.0f, 0.0f);
+	runtime.vertexAttribDivisor(static_cast<GLuint>(runtime.attribMorphPos), 0u);
+	glDisableVertexAttribArray(static_cast<GLuint>(runtime.attribMorphNrm));
+	glVertexAttrib3f(static_cast<GLuint>(runtime.attribMorphNrm), 0.0f, 0.0f, 0.0f);
+	runtime.vertexAttribDivisor(static_cast<GLuint>(runtime.attribMorphNrm), 0u);
 }
 
 void setVdpRpuDefaultInstanceAttributes() {
@@ -392,17 +415,42 @@ void bindVdpRpuInstanceStream(const VdpRpuFrameOutput& frame, size_t streamBindi
 	}
 }
 
+void bindVdpRpuMorphStream(const VdpRpuFrameOutput& frame, size_t streamBindingIndex) {
+	const VdpRpuCommandBuffer& commands = frame.commands;
+	const u16 refIndex = commands.streamBufferRef[streamBindingIndex];
+	if (refIndex == VDP_RPU_REF_NONE) {
+		return;
+	}
+	const VdpRpuStreamLayoutSpec& layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
+	ensureVdpRpuBufferStorage(
+		frame,
+		refIndex,
+		GL_ARRAY_BUFFER,
+		g_vdpRpu.morphBufferObject,
+		g_vdpRpu.morphBufferRevision,
+		g_vdpRpu.morphBufferByteOffset,
+		g_vdpRpu.morphBufferByteLength
+	);
+	const u32 byteOffsetBase = commands.streamByteOffset[streamBindingIndex] - frame.resources.bufferRefs.sourceByteOffset[refIndex];
+	for (size_t index = 0u; index < layout.attributeCount; ++index) {
+		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, byteOffsetBase, 0u);
+	}
+}
+
 void bindVdpRpuDrawStreams(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 instanceMode) {
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	const size_t bindingEnd = commands.drawFirstStreamBinding[drawIndex] + commands.drawStreamBindingCount[drawIndex];
 	size_t vertexBinding = bindingEnd;
 	size_t instanceBinding = bindingEnd;
+	size_t morphBinding = bindingEnd;
 	for (size_t bindingIndex = commands.drawFirstStreamBinding[drawIndex]; bindingIndex < bindingEnd; ++bindingIndex) {
 		const u32 streamSlot = commands.streamSlot[bindingIndex];
 		if (streamSlot == 0u) {
 			vertexBinding = bindingIndex;
 		} else if (streamSlot == 1u) {
 			instanceBinding = bindingIndex;
+		} else if (streamSlot == 2u) {
+			morphBinding = bindingIndex;
 		}
 	}
 	if (vertexBinding != bindingEnd) {
@@ -411,9 +459,12 @@ void bindVdpRpuDrawStreams(const VdpRpuFrameOutput& frame, size_t drawIndex, u32
 	if (instanceMode != VDP_RPU_INSTANCE_MODE_NONE && instanceBinding != bindingEnd) {
 		bindVdpRpuInstanceStream(frame, instanceBinding);
 	}
+	if (morphBinding != bindingEnd) {
+		bindVdpRpuMorphStream(frame, morphBinding);
+	}
 }
 
-void setVdpRpuC0Constants(const VdpRpuFrameOutput& frame, size_t drawIndex) {
+void setVdpRpuC0Constants(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 normalMode) {
 	VdpRpuGLES2Runtime& runtime = g_vdpRpu;
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	const size_t bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
@@ -422,6 +473,9 @@ void setVdpRpuC0Constants(const VdpRpuFrameOutput& frame, size_t drawIndex) {
 			const u16 constantBank = commands.constantBank[bindingIndex];
 			if (constantBank == VDP_RPU_REF_NONE) {
 				glUniformMatrix4fv(runtime.uniformC0, 1, GL_FALSE, runtime.identityC0.data());
+				if (normalMode != 0u) {
+					glUniformMatrix3fv(runtime.uniformNm, 1, GL_FALSE, runtime.identityNm.data());
+				}
 				return;
 			}
 			const u32 firstWord = frame.resources.constantBanks.firstWord[constantBank] + commands.constantFirstWord[bindingIndex];
@@ -429,10 +483,19 @@ void setVdpRpuC0Constants(const VdpRpuFrameOutput& frame, size_t drawIndex) {
 				runtime.c0Floats[index] = std::bit_cast<f32>(frame.resources.constantWords[firstWord + index]);
 			}
 			glUniformMatrix4fv(runtime.uniformC0, 1, GL_FALSE, runtime.c0Floats.data());
+			if (normalMode != 0u) {
+				for (size_t index = 0u; index < 9u; ++index) {
+					runtime.nmFloats[index] = std::bit_cast<f32>(frame.resources.constantWords[firstWord + 16u + index]);
+				}
+				glUniformMatrix3fv(runtime.uniformNm, 1, GL_FALSE, runtime.nmFloats.data());
+			}
 			return;
 		}
 	}
 	glUniformMatrix4fv(runtime.uniformC0, 1, GL_FALSE, runtime.identityC0.data());
+	if (normalMode != 0u) {
+		glUniformMatrix3fv(runtime.uniformNm, 1, GL_FALSE, runtime.identityNm.data());
+	}
 }
 
 void setVdpRpuC1Constants(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuShaderVariantSpec& shaderVariant) {
@@ -440,7 +503,7 @@ void setVdpRpuC1Constants(const VdpRpuFrameOutput& frame, size_t drawIndex, cons
 	const u32 constantSlot = shaderVariant.lightingConstantSlot;
 	if (constantSlot == VDP_RPU_RESOURCE_NONE) {
 		glUniform1i(runtime.uniformLightingMode, 0);
-		glUniform4fv(runtime.uniformC1, 16, runtime.defaultC1Floats.data());
+		glUniform4fv(runtime.uniformC1, 17, runtime.defaultC1Floats.data());
 		return;
 	}
 	glUniform1i(runtime.uniformLightingMode, 1);
@@ -450,18 +513,18 @@ void setVdpRpuC1Constants(const VdpRpuFrameOutput& frame, size_t drawIndex, cons
 		if (commands.constantBindingSlot[bindingIndex] == constantSlot) {
 			const u16 constantBank = commands.constantBank[bindingIndex];
 			if (constantBank == VDP_RPU_REF_NONE) {
-				glUniform4fv(runtime.uniformC1, 16, runtime.defaultC1Floats.data());
+				glUniform4fv(runtime.uniformC1, 17, runtime.defaultC1Floats.data());
 				return;
 			}
 			const u32 firstWord = frame.resources.constantBanks.firstWord[constantBank] + commands.constantFirstWord[bindingIndex];
-			for (size_t index = 0u; index < 64u; ++index) {
+			for (size_t index = 0u; index < 68u; ++index) {
 				runtime.c1Floats[index] = std::bit_cast<f32>(frame.resources.constantWords[firstWord + index]);
 			}
-			glUniform4fv(runtime.uniformC1, 16, runtime.c1Floats.data());
+			glUniform4fv(runtime.uniformC1, 17, runtime.c1Floats.data());
 			return;
 		}
 	}
-	glUniform4fv(runtime.uniformC1, 16, runtime.defaultC1Floats.data());
+	glUniform4fv(runtime.uniformC1, 17, runtime.defaultC1Floats.data());
 }
 
 void setVdpRpuJointConstants(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuShaderVariantSpec& shaderVariant) {
@@ -507,57 +570,92 @@ void bindVdpRpuNeutralTexture(OpenGLES2Backend& backend) {
 	backend.invalidateTextureBindingCache();
 }
 
-void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuShaderVariantSpec& shaderVariant) {
+void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuShaderVariantSpec& shaderVariant, u32 rawVariantWord) {
+	const bool t1Flag = (rawVariantWord & VDP_RPU_SHADER_FLAG_T1) != 0u;
 	if (shaderVariant.textureSlotCount == 0u) {
 		bindVdpRpuNeutralTexture(runtime.backend);
 		glUniform1i(g_vdpRpu.uniformTextureEnabled, 0);
+		glUniform1i(g_vdpRpu.uniformT1Mode, 0);
 		return;
 	}
 	glUniform1i(g_vdpRpu.uniformTextureEnabled, 1);
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	const size_t bindingEnd = commands.drawFirstTextureBinding[drawIndex] + commands.drawTextureBindingCount[drawIndex];
+	bool foundT0 = false;
+	bool foundT1 = false;
 	for (size_t bindingIndex = commands.drawFirstTextureBinding[drawIndex]; bindingIndex < bindingEnd; ++bindingIndex) {
-		if (commands.textureSlot[bindingIndex] == 0u) {
+		const u32 slot = commands.textureSlot[bindingIndex];
+		if (slot == 0u && !foundT0) {
+			foundT0 = true;
 			const u16 surfaceRef = commands.textureSurfaceRef[bindingIndex];
 			if (surfaceRef == VDP_RPU_REF_NONE) {
 				bindVdpRpuNeutralTexture(runtime.backend);
 				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
 				glUniform1i(g_vdpRpu.uniformT0, 0);
-				return;
-			}
-			const u32 surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
-			runtime.backend.setActiveTextureUnit(0);
-			if (surfaceId < VDP_RD_SURFACE_COUNT) {
-				runtime.backend.bindTexture2D(runtime.context.vdpSlotTextures().readSurfaceTextureHandle(surfaceId));
-				glUniform1i(g_vdpRpu.uniformTextureFlipY, 0);
 			} else {
-				ensureVdpRpuSurfaceStorage(runtime.backend, frame, surfaceRef);
-				runtime.backend.invalidateTextureBindingCache();
-				glBindTexture(GL_TEXTURE_2D, g_vdpRpu.surfaceTexture[surfaceId]);
-				glUniform1i(g_vdpRpu.uniformTextureFlipY, 1);
+				const u32 surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
+				runtime.backend.setActiveTextureUnit(0);
+				if (surfaceId < VDP_RD_SURFACE_COUNT) {
+					runtime.backend.bindTexture2D(runtime.context.vdpSlotTextures().readSurfaceTextureHandle(surfaceId));
+					glUniform1i(g_vdpRpu.uniformTextureFlipY, 0);
+				} else {
+					ensureVdpRpuSurfaceStorage(runtime.backend, frame, surfaceRef);
+					runtime.backend.invalidateTextureBindingCache();
+					glBindTexture(GL_TEXTURE_2D, g_vdpRpu.surfaceTexture[surfaceId]);
+					glUniform1i(g_vdpRpu.uniformTextureFlipY, 1);
+				}
+				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
+				glUniform1i(g_vdpRpu.uniformT0, 0);
 			}
-			setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
-			glUniform1i(g_vdpRpu.uniformT0, 0);
-			return;
+		} else if (slot == 1u && t1Flag && !foundT1) {
+			foundT1 = true;
+			const u16 surfaceRef = commands.textureSurfaceRef[bindingIndex];
+			if (surfaceRef != VDP_RPU_REF_NONE) {
+				const u32 surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
+				runtime.backend.setActiveTextureUnit(1);
+				if (surfaceId < VDP_RD_SURFACE_COUNT) {
+					runtime.backend.bindTexture2D(runtime.context.vdpSlotTextures().readSurfaceTextureHandle(surfaceId));
+				} else {
+					ensureVdpRpuSurfaceStorage(runtime.backend, frame, surfaceRef);
+					runtime.backend.invalidateTextureBindingCache();
+					glBindTexture(GL_TEXTURE_2D, g_vdpRpu.surfaceTexture[surfaceId]);
+				}
+				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
+				glUniform1i(g_vdpRpu.uniformT1, 1);
+				glUniform1i(g_vdpRpu.uniformT1Mode, 1);
+			}
 		}
 	}
-	bindVdpRpuNeutralTexture(runtime.backend);
-	glUniform1i(g_vdpRpu.uniformTextureEnabled, 0);
+	if (!foundT0) {
+		bindVdpRpuNeutralTexture(runtime.backend);
+		glUniform1i(g_vdpRpu.uniformTextureEnabled, 0);
+	}
+	if (!foundT1 || !t1Flag) {
+		glUniform1i(g_vdpRpu.uniformT1Mode, 0);
+	}
 }
 
 void drawVdpRpuCommand(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCount, u32 instanceCount, u32 indexCount) {
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	setVdpRpuPipelineState(commands.drawPipelineWord[drawIndex]);
-	const VdpRpuShaderVariantSpec& shaderVariant = resolveVdpRpuShaderVariantSpec(commands.drawShaderVariant[drawIndex]);
+	const u32 rawVariantWord = commands.drawShaderVariant[drawIndex];
+	const VdpRpuShaderVariantSpec& shaderVariant = resolveVdpRpuShaderVariantSpec(rawVariantWord);
 	const u32 instanceMode = shaderVariant.instanceMode;
+	const u32 morphMode = (rawVariantWord & VDP_RPU_SHADER_FLAG_MORPH) != 0u ? 1u : 0u;
+	const u32 normalMode = shaderVariant.lightingConstantSlot != VDP_RPU_RESOURCE_NONE ? 1u : 0u;
 	glUniform1i(g_vdpRpu.uniformInstanceMode, static_cast<GLint>(instanceMode));
+	glUniform1i(g_vdpRpu.uniformMorphMode, static_cast<GLint>(morphMode));
+	glUniform1i(g_vdpRpu.uniformNormalMode, static_cast<GLint>(normalMode));
 	setVdpRpuDefaultVertexAttributes();
 	setVdpRpuDefaultInstanceAttributes();
-	bindVdpRpuTextureBindings(runtime, frame, drawIndex, shaderVariant);
+	bindVdpRpuTextureBindings(runtime, frame, drawIndex, shaderVariant, rawVariantWord);
 	if (shaderVariant.usesC0 != 0u) {
-		setVdpRpuC0Constants(frame, drawIndex);
+		setVdpRpuC0Constants(frame, drawIndex, normalMode);
 	} else {
 		glUniformMatrix4fv(g_vdpRpu.uniformC0, 1, GL_FALSE, g_vdpRpu.identityC0.data());
+		if (normalMode != 0u) {
+			glUniformMatrix3fv(g_vdpRpu.uniformNm, 1, GL_FALSE, g_vdpRpu.identityNm.data());
+		}
 	}
 	setVdpRpuC1Constants(frame, drawIndex, shaderVariant);
 	setVdpRpuJointConstants(frame, drawIndex, shaderVariant);
@@ -614,6 +712,8 @@ void setupVdpRpuLocations(OpenGLES2Backend& backend) {
 	runtime.attribNormal = glGetAttribLocation(runtime.program, "a_normal");
 	runtime.attribJoints = glGetAttribLocation(runtime.program, "a_joints");
 	runtime.attribWeights = glGetAttribLocation(runtime.program, "a_weights");
+	runtime.attribMorphPos = glGetAttribLocation(runtime.program, "a_morph_pos");
+	runtime.attribMorphNrm = glGetAttribLocation(runtime.program, "a_morph_nrm");
 	runtime.attribInstance0 = glGetAttribLocation(runtime.program, "a_instance0");
 	runtime.attribInstance1 = glGetAttribLocation(runtime.program, "a_instance1");
 	runtime.attribInstance2 = glGetAttribLocation(runtime.program, "a_instance2");
@@ -621,13 +721,18 @@ void setupVdpRpuLocations(OpenGLES2Backend& backend) {
 	runtime.attribInstanceColor = glGetAttribLocation(runtime.program, "a_instance_color");
 	runtime.attribInstanceUvRect = glGetAttribLocation(runtime.program, "a_instance_uvrect");
 	runtime.uniformC0 = glGetUniformLocation(runtime.program, "u_c0");
+	runtime.uniformNm = glGetUniformLocation(runtime.program, "u_nm");
 	runtime.uniformC1 = glGetUniformLocation(runtime.program, "u_c1[0]");
 	runtime.uniformJoint = glGetUniformLocation(runtime.program, "u_joint[0]");
 	runtime.uniformT0 = glGetUniformLocation(runtime.program, "u_t0");
+	runtime.uniformT1 = glGetUniformLocation(runtime.program, "u_t1");
 	runtime.uniformTextureEnabled = glGetUniformLocation(runtime.program, "u_textureEnabled");
 	runtime.uniformTextureFlipY = glGetUniformLocation(runtime.program, "u_textureFlipY");
+	runtime.uniformT1Mode = glGetUniformLocation(runtime.program, "u_t1Mode");
 	runtime.uniformInstanceMode = glGetUniformLocation(runtime.program, "u_instanceMode");
 	runtime.uniformSkinningMode = glGetUniformLocation(runtime.program, "u_skinningMode");
+	runtime.uniformMorphMode = glGetUniformLocation(runtime.program, "u_morphMode");
+	runtime.uniformNormalMode = glGetUniformLocation(runtime.program, "u_normalMode");
 	runtime.uniformLightingMode = glGetUniformLocation(runtime.program, "u_lightingMode");
 	void* drawArraysInstancedProc = backend.resolveProcAddress("glDrawArraysInstanced", "glDrawArraysInstancedANGLE", "glDrawArraysInstancedEXT");
 	void* drawElementsInstancedProc = backend.resolveProcAddress("glDrawElementsInstanced", "glDrawElementsInstancedANGLE", "glDrawElementsInstancedEXT");
@@ -645,11 +750,14 @@ void setupVdpRpuLocations(OpenGLES2Backend& backend) {
 	runtime.identityC0[5] = 1.0f;
 	runtime.identityC0[10] = 1.0f;
 	runtime.identityC0[15] = 1.0f;
-	runtime.defaultC1Floats[2] = 1.0f;
-	runtime.defaultC1Floats[4] = 1.0f;
-	runtime.defaultC1Floats[5] = 1.0f;
-	runtime.defaultC1Floats[6] = 1.0f;
-	runtime.defaultC1Floats[7] = 1.0f;
+	runtime.identityNm[0] = 1.0f;
+	runtime.identityNm[4] = 1.0f;
+	runtime.identityNm[8] = 1.0f;
+	// Default C1: white ambient (intensity 1.0), all lights disabled
+	runtime.defaultC1Floats[0] = 1.0f; // ambient.r
+	runtime.defaultC1Floats[1] = 1.0f; // ambient.g
+	runtime.defaultC1Floats[2] = 1.0f; // ambient.b
+	runtime.defaultC1Floats[3] = 1.0f; // ambient.intensity
 	for (size_t jointIndex = 0u; jointIndex < 24u; ++jointIndex) {
 		const size_t base = jointIndex * 16u;
 		runtime.defaultJointFloats[base] = 1.0f;
@@ -659,13 +767,18 @@ void setupVdpRpuLocations(OpenGLES2Backend& backend) {
 	}
 	glUseProgram(runtime.program);
 	glUniformMatrix4fv(runtime.uniformC0, 1, GL_FALSE, runtime.identityC0.data());
-	glUniform4fv(runtime.uniformC1, 16, runtime.defaultC1Floats.data());
+	glUniformMatrix3fv(runtime.uniformNm, 1, GL_FALSE, runtime.identityNm.data());
+	glUniform4fv(runtime.uniformC1, 17, runtime.defaultC1Floats.data());
 	glUniformMatrix4fv(runtime.uniformJoint, 24, GL_FALSE, runtime.defaultJointFloats.data());
 	glUniform1i(runtime.uniformT0, 0);
+	glUniform1i(runtime.uniformT1, 1);
 	glUniform1i(runtime.uniformTextureEnabled, 0);
 	glUniform1i(runtime.uniformTextureFlipY, 0);
+	glUniform1i(runtime.uniformT1Mode, 0);
 	glUniform1i(runtime.uniformInstanceMode, static_cast<GLint>(VDP_RPU_INSTANCE_MODE_NONE));
 	glUniform1i(runtime.uniformSkinningMode, 0);
+	glUniform1i(runtime.uniformMorphMode, 0);
+	glUniform1i(runtime.uniformNormalMode, 0);
 	glUniform1i(runtime.uniformLightingMode, 0);
 }
 

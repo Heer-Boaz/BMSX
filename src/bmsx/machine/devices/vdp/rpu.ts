@@ -181,6 +181,8 @@ export const VDP_RPU_ATTR_INSTANCE2 = 8;
 export const VDP_RPU_ATTR_INSTANCE3 = 9;
 export const VDP_RPU_ATTR_INSTANCE_COLOR = 10;
 export const VDP_RPU_ATTR_INSTANCE_UVRECT = 11;
+export const VDP_RPU_ATTR_MORPH_POS = 12;
+export const VDP_RPU_ATTR_MORPH_NRM = 13;
 export const VDP_RPU_ATTR_F32 = 0;
 export const VDP_RPU_ATTR_U8 = 1;
 export const VDP_RPU_ATTR_U8N = 2;
@@ -193,6 +195,7 @@ export const VDP_RPU_LAYOUT_V3_T2_C4 = 3;
 export const VDP_RPU_LAYOUT_V3_N3_C4 = 4;
 export const VDP_RPU_LAYOUT_V3_N3_T2_C4 = 5;
 export const VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4 = 6;
+export const VDP_RPU_LAYOUT_V3_DM3 = 8;
 export const VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4 = 32;
 export const VDP_RPU_LAYOUT_I_MAT4_C4 = 33;
 
@@ -205,6 +208,8 @@ export const VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1 = 5;
 export const VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2 = 6;
 export const VDP_RPU_SHADER_V3_C4_I_MAT4 = 7;
 export const VDP_RPU_SHADER_VARIANT_MASK = 0x00000007;
+export const VDP_RPU_SHADER_FLAG_MORPH = 1 << 3;
+export const VDP_RPU_SHADER_FLAG_T1 = 1 << 4;
 export const VDP_RPU_INSTANCE_MODE_NONE = 0;
 export const VDP_RPU_INSTANCE_MODE_AFFINE2 = 1;
 export const VDP_RPU_INSTANCE_MODE_MAT4 = 2;
@@ -407,6 +412,15 @@ export const VDP_RPU_STREAM_LAYOUTS: readonly VdpRpuStreamLayoutSpec[] = [
 		],
 	},
 	{
+		id: VDP_RPU_LAYOUT_V3_DM3,
+		byteStride: 24,
+		attributeCount: 2,
+		attributes: [
+			{ attribute: VDP_RPU_ATTR_MORPH_POS, componentCount: 3, componentType: VDP_RPU_ATTR_F32, normalized: 0, byteOffset: 0 },
+			{ attribute: VDP_RPU_ATTR_MORPH_NRM, componentCount: 3, componentType: VDP_RPU_ATTR_F32, normalized: 0, byteOffset: 12 },
+		],
+	},
+	{
 		id: VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4,
 		byteStride: 48,
 		attributeCount: 4,
@@ -522,7 +536,7 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 		constantSlotCount: 2,
 		constantSlots: [
 			{ slot: 0, maxWords: 32, vertexVisible: 1, fragmentVisible: 0 },
-			{ slot: 1, maxWords: 64, vertexVisible: 0, fragmentVisible: 1 },
+			{ slot: 1, maxWords: 72, vertexVisible: 0, fragmentVisible: 1 },
 		],
 	},
 	{
@@ -539,7 +553,7 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 		constantSlots: [
 			{ slot: 0, maxWords: 32, vertexVisible: 1, fragmentVisible: 0 },
 			{ slot: 1, maxWords: 384, vertexVisible: 1, fragmentVisible: 0 },
-			{ slot: 2, maxWords: 64, vertexVisible: 0, fragmentVisible: 1 },
+			{ slot: 2, maxWords: 72, vertexVisible: 0, fragmentVisible: 1 },
 		],
 	},
 	{
@@ -584,10 +598,12 @@ export function resolveVdpRpuStreamLayoutSpec(layoutId: number): VdpRpuStreamLay
 			return VDP_RPU_STREAM_LAYOUTS[5];
 		case VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4:
 			return VDP_RPU_STREAM_LAYOUTS[6];
-		case VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4:
+		case VDP_RPU_LAYOUT_V3_DM3:
 			return VDP_RPU_STREAM_LAYOUTS[7];
-		case VDP_RPU_LAYOUT_I_MAT4_C4:
+		case VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4:
 			return VDP_RPU_STREAM_LAYOUTS[8];
+		case VDP_RPU_LAYOUT_I_MAT4_C4:
+			return VDP_RPU_STREAM_LAYOUTS[9];
 		case VDP_RPU_LAYOUT_V2_C4:
 		default:
 			return VDP_RPU_STREAM_LAYOUTS[0];

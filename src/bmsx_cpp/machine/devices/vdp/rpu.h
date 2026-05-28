@@ -156,6 +156,8 @@ constexpr u32 VDP_RPU_ATTR_INSTANCE2 = 8u;
 constexpr u32 VDP_RPU_ATTR_INSTANCE3 = 9u;
 constexpr u32 VDP_RPU_ATTR_INSTANCE_COLOR = 10u;
 constexpr u32 VDP_RPU_ATTR_INSTANCE_UVRECT = 11u;
+constexpr u32 VDP_RPU_ATTR_MORPH_POS = 12u;
+constexpr u32 VDP_RPU_ATTR_MORPH_NRM = 13u;
 constexpr u32 VDP_RPU_ATTR_F32 = 0u;
 constexpr u32 VDP_RPU_ATTR_U8 = 1u;
 constexpr u32 VDP_RPU_ATTR_U8N = 2u;
@@ -168,6 +170,7 @@ constexpr u32 VDP_RPU_LAYOUT_V3_T2_C4 = 3u;
 constexpr u32 VDP_RPU_LAYOUT_V3_N3_C4 = 4u;
 constexpr u32 VDP_RPU_LAYOUT_V3_N3_T2_C4 = 5u;
 constexpr u32 VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4 = 6u;
+constexpr u32 VDP_RPU_LAYOUT_V3_DM3 = 8u;
 constexpr u32 VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4 = 32u;
 constexpr u32 VDP_RPU_LAYOUT_I_MAT4_C4 = 33u;
 
@@ -180,6 +183,8 @@ constexpr u32 VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1 = 5u;
 constexpr u32 VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2 = 6u;
 constexpr u32 VDP_RPU_SHADER_V3_C4_I_MAT4 = 7u;
 constexpr u32 VDP_RPU_SHADER_VARIANT_MASK = 0x00000007u;
+constexpr u32 VDP_RPU_SHADER_FLAG_MORPH = 0x00000008u;
+constexpr u32 VDP_RPU_SHADER_FLAG_T1 = 0x00000010u;
 constexpr u32 VDP_RPU_INSTANCE_MODE_NONE = 0U;
 constexpr u32 VDP_RPU_INSTANCE_MODE_AFFINE2 = 1U;
 constexpr u32 VDP_RPU_INSTANCE_MODE_MAT4 = 2U;
@@ -324,7 +329,7 @@ struct VdpRpuShaderVariantSpec {
 	std::array<VdpRpuShaderConstantSlotSpec, 3U> constantSlots{};
 };
 
-inline constexpr std::array<VdpRpuStreamLayoutSpec, 9U> VDP_RPU_STREAM_LAYOUTS{{
+inline constexpr std::array<VdpRpuStreamLayoutSpec, 10U> VDP_RPU_STREAM_LAYOUTS{{
 	{.id=VDP_RPU_LAYOUT_V2_C4, .byteStride=12U, .attributeCount=2U, .attributes={{{.attribute=VDP_RPU_ATTR_POS, .componentCount=2U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=0U}, {.attribute=VDP_RPU_ATTR_COLOR, .componentCount=4U, .componentType=VDP_RPU_ATTR_U8N, .normalized=1U, .byteOffset=8U}}}},
 	{.id=VDP_RPU_LAYOUT_V2_T2_C4, .byteStride=20U, .attributeCount=3U, .attributes={{{.attribute=VDP_RPU_ATTR_POS, .componentCount=2U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=0U}, {.attribute=VDP_RPU_ATTR_UV0, .componentCount=2U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=8U}, {.attribute=VDP_RPU_ATTR_COLOR, .componentCount=4U, .componentType=VDP_RPU_ATTR_U8N, .normalized=1U, .byteOffset=16U}}}},
 	{.id=VDP_RPU_LAYOUT_V3_C4, .byteStride=16U, .attributeCount=2U, .attributes={{{.attribute=VDP_RPU_ATTR_POS, .componentCount=3U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=0U}, {.attribute=VDP_RPU_ATTR_COLOR, .componentCount=4U, .componentType=VDP_RPU_ATTR_U8N, .normalized=1U, .byteOffset=12U}}}},
@@ -332,6 +337,7 @@ inline constexpr std::array<VdpRpuStreamLayoutSpec, 9U> VDP_RPU_STREAM_LAYOUTS{{
 	{.id=VDP_RPU_LAYOUT_V3_N3_C4, .byteStride=28U, .attributeCount=3U, .attributes={{{.attribute=VDP_RPU_ATTR_POS, .componentCount=3U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=0U}, {.attribute=VDP_RPU_ATTR_NORMAL, .componentCount=3U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=12U}, {.attribute=VDP_RPU_ATTR_COLOR, .componentCount=4U, .componentType=VDP_RPU_ATTR_U8N, .normalized=1U, .byteOffset=24U}}}},
 	{.id=VDP_RPU_LAYOUT_V3_N3_T2_C4, .byteStride=36U, .attributeCount=4U, .attributes={{{.attribute=VDP_RPU_ATTR_POS, .componentCount=3U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=0U}, {.attribute=VDP_RPU_ATTR_NORMAL, .componentCount=3U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=12U}, {.attribute=VDP_RPU_ATTR_UV0, .componentCount=2U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=24U}, {.attribute=VDP_RPU_ATTR_COLOR, .componentCount=4U, .componentType=VDP_RPU_ATTR_U8N, .normalized=1U, .byteOffset=32U}}}},
 	{.id=VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4, .byteStride=44U, .attributeCount=6U, .attributes={{{.attribute=VDP_RPU_ATTR_POS, .componentCount=3U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=0U}, {.attribute=VDP_RPU_ATTR_NORMAL, .componentCount=3U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=12U}, {.attribute=VDP_RPU_ATTR_UV0, .componentCount=2U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=24U}, {.attribute=VDP_RPU_ATTR_COLOR, .componentCount=4U, .componentType=VDP_RPU_ATTR_U8N, .normalized=1U, .byteOffset=32U}, {.attribute=VDP_RPU_ATTR_JOINTS, .componentCount=4U, .componentType=VDP_RPU_ATTR_U8, .normalized=0U, .byteOffset=36U}, {.attribute=VDP_RPU_ATTR_WEIGHTS, .componentCount=4U, .componentType=VDP_RPU_ATTR_U8N, .normalized=1U, .byteOffset=40U}}}},
+	{.id=VDP_RPU_LAYOUT_V3_DM3, .byteStride=24U, .attributeCount=2U, .attributes={{{.attribute=VDP_RPU_ATTR_MORPH_POS, .componentCount=3U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=0U}, {.attribute=VDP_RPU_ATTR_MORPH_NRM, .componentCount=3U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=12U}}}},
 	{.id=VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4, .byteStride=48U, .attributeCount=4U, .attributes={{{.attribute=VDP_RPU_ATTR_INSTANCE0, .componentCount=4U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=0U}, {.attribute=VDP_RPU_ATTR_INSTANCE1, .componentCount=3U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=16U}, {.attribute=VDP_RPU_ATTR_INSTANCE_UVRECT, .componentCount=4U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=28U}, {.attribute=VDP_RPU_ATTR_INSTANCE_COLOR, .componentCount=4U, .componentType=VDP_RPU_ATTR_U8N, .normalized=1U, .byteOffset=44U}}}},
 	{.id=VDP_RPU_LAYOUT_I_MAT4_C4, .byteStride=68U, .attributeCount=5U, .attributes={{{.attribute=VDP_RPU_ATTR_INSTANCE0, .componentCount=4U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=0U}, {.attribute=VDP_RPU_ATTR_INSTANCE1, .componentCount=4U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=16U}, {.attribute=VDP_RPU_ATTR_INSTANCE2, .componentCount=4U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=32U}, {.attribute=VDP_RPU_ATTR_INSTANCE3, .componentCount=4U, .componentType=VDP_RPU_ATTR_F32, .normalized=0U, .byteOffset=48U}, {.attribute=VDP_RPU_ATTR_INSTANCE_COLOR, .componentCount=4U, .componentType=VDP_RPU_ATTR_U8N, .normalized=1U, .byteOffset=64U}}}},
 }};
@@ -341,8 +347,8 @@ inline constexpr std::array<VdpRpuShaderVariantSpec, 8U> VDP_RPU_SHADER_VARIANTS
 	{VDP_RPU_SHADER_V2_T2_C4, 0U, VDP_RPU_LAYOUT_V2_T2_C4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 1u, 0U, VDP_RPU_RESOURCE_NONE, VDP_RPU_RESOURCE_NONE, 0U, {}},
 	{VDP_RPU_SHADER_V3_C4_C0, 0U, VDP_RPU_LAYOUT_V3_C4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 0U, 1U, VDP_RPU_RESOURCE_NONE, VDP_RPU_RESOURCE_NONE, 1U, {{{.slot=0U, .maxWords=32U, .vertexVisible=1U, .fragmentVisible=0U}}}},
 	{VDP_RPU_SHADER_V3_T2_C4_C0, 0U, VDP_RPU_LAYOUT_V3_T2_C4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 1U, 1U, VDP_RPU_RESOURCE_NONE, VDP_RPU_RESOURCE_NONE, 1u, {{{.slot=0U, .maxWords=32U, .vertexVisible=1U, .fragmentVisible=0U}}}},
-	{VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1, 0U, VDP_RPU_LAYOUT_V3_N3_T2_C4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 1u, 1U, 1U, VDP_RPU_RESOURCE_NONE, 2U, {{{.slot=0U, .maxWords=32U, .vertexVisible=1u, .fragmentVisible=0U}, {.slot=1U, .maxWords=64U, .vertexVisible=0U, .fragmentVisible=1U}}}},
-	{VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1, 0u, VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 1U, 1U, 2U, 1U, 3U, {{{.slot=0U, .maxWords=32U, .vertexVisible=1U, .fragmentVisible=0U}, {.slot=1U, .maxWords=384U, .vertexVisible=1U, .fragmentVisible=0U}, {.slot=2U, .maxWords=64U, .vertexVisible=0U, .fragmentVisible=1U}}}},
+	{VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1, 0U, VDP_RPU_LAYOUT_V3_N3_T2_C4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 1u, 1U, 1U, VDP_RPU_RESOURCE_NONE, 2U, {{{.slot=0U, .maxWords=32U, .vertexVisible=1u, .fragmentVisible=0U}, {.slot=1U, .maxWords=72U, .vertexVisible=0U, .fragmentVisible=1U}}}},
+	{VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1, 0u, VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 1U, 1U, 2U, 1U, 3U, {{{.slot=0U, .maxWords=32U, .vertexVisible=1U, .fragmentVisible=0U}, {.slot=1U, .maxWords=384U, .vertexVisible=1U, .fragmentVisible=0U}, {.slot=2U, .maxWords=72U, .vertexVisible=0U, .fragmentVisible=1U}}}},
 	{VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2, VDP_RPU_FEATURE_INSTANCED_ARRAYS, VDP_RPU_LAYOUT_V2_T2_C4, VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4, VDP_RPU_INSTANCE_MODE_AFFINE2, 1U, 0U, VDP_RPU_RESOURCE_NONE, VDP_RPU_RESOURCE_NONE, 0U, {}},
 	{.id=VDP_RPU_SHADER_V3_C4_I_MAT4, .requiredFeatureMask=VDP_RPU_FEATURE_INSTANCED_ARRAYS, .vertexLayout=VDP_RPU_LAYOUT_V3_C4, .instanceLayout=VDP_RPU_LAYOUT_I_MAT4_C4, .instanceMode=VDP_RPU_INSTANCE_MODE_MAT4, .textureSlotCount=0U, .usesC0=0U, .lightingConstantSlot=VDP_RPU_RESOURCE_NONE, .jointConstantSlot=VDP_RPU_RESOURCE_NONE, .constantSlotCount=0U, .constantSlots={}},
 }};

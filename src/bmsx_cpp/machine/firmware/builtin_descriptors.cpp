@@ -12,7 +12,7 @@ constexpr std::array<LuaBuiltinDescriptor, 1> kSystemLuaBuiltinFunctions{{
 constexpr std::array<LuaBuiltinDescriptor, 0> kSystemLuaBuiltinGlobals{{
 }};
 
-constexpr std::array<LuaBuiltinDescriptor, 602> kDefaultLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 605> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"assert", "assert(value [, message])", ""},
 	LuaBuiltinDescriptor{"error", "error(message [, level])", ""},
 	LuaBuiltinDescriptor{"getmetatable", "getmetatable(object)", ""},
@@ -228,6 +228,7 @@ constexpr std::array<LuaBuiltinDescriptor, 602> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_rpu_layout_v3_n3_c4", "sys_rpu_layout_v3_n3_c4", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_layout_v3_n3_t2_c4", "sys_rpu_layout_v3_n3_t2_c4", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_layout_v3_n3_t2_c4_j4_w4", "sys_rpu_layout_v3_n3_t2_c4_j4_w4", "Raw RPU packet ABI constant."},
+	LuaBuiltinDescriptor{"sys_rpu_layout_v3_dm3", "sys_rpu_layout_v3_dm3", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_layout_i_affine2_trect_c4", "sys_rpu_layout_i_affine2_trect_c4", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_layout_i_mat4_c4", "sys_rpu_layout_i_mat4_c4", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_shader_v2_c4", "sys_rpu_shader_v2_c4", "Raw RPU packet ABI constant."},
@@ -236,6 +237,8 @@ constexpr std::array<LuaBuiltinDescriptor, 602> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_rpu_shader_v3_t2_c4_c0", "sys_rpu_shader_v3_t2_c4_c0", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_shader_v3_n3_t2_c4_c0_c1", "sys_rpu_shader_v3_n3_t2_c4_c0_c1", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1", "sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1", "Raw RPU packet ABI constant."},
+	LuaBuiltinDescriptor{"sys_rpu_shader_flag_morph", "sys_rpu_shader_flag_morph", "Raw RPU packet ABI constant."},
+	LuaBuiltinDescriptor{"sys_rpu_shader_flag_t1", "sys_rpu_shader_flag_t1", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_shader_v2_t2_c4_i_affine2", "sys_rpu_shader_v2_t2_c4_i_affine2", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_shader_v3_c4_i_mat4", "sys_rpu_shader_v3_c4_i_mat4", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_constant_source_xf_q16", "sys_rpu_constant_source_xf_q16", "Raw RPU packet ABI constant."},

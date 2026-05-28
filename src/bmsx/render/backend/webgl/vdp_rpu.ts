@@ -35,6 +35,8 @@ import {
 	VDP_RPU_ATTR_INSTANCE_COLOR,
 	VDP_RPU_ATTR_INSTANCE_UVRECT,
 	VDP_RPU_ATTR_JOINTS,
+	VDP_RPU_ATTR_MORPH_NRM,
+	VDP_RPU_ATTR_MORPH_POS,
 	VDP_RPU_ATTR_NORMAL,
 	VDP_RPU_ATTR_POS,
 	VDP_RPU_ATTR_S16N,
@@ -43,6 +45,8 @@ import {
 	VDP_RPU_ATTR_UV0,
 	VDP_RPU_ATTR_WEIGHTS,
 	VDP_RPU_INSTANCE_MODE_NONE,
+	VDP_RPU_SHADER_FLAG_MORPH,
+	VDP_RPU_SHADER_FLAG_T1,
 	resolveVdpRpuStreamLayoutSpec,
 	resolveVdpRpuShaderVariantSpec,
 	VDP_RPU_REF_NONE,
@@ -73,6 +77,8 @@ let vdpRpuColorLocation = -1;
 let vdpRpuNormalLocation = -1;
 let vdpRpuJointsLocation = -1;
 let vdpRpuWeightsLocation = -1;
+let vdpRpuMorphPosLocation = -1;
+let vdpRpuMorphNrmLocation = -1;
 let vdpRpuInstance0Location = -1;
 let vdpRpuInstance1Location = -1;
 let vdpRpuInstance2Location = -1;
@@ -80,13 +86,18 @@ let vdpRpuInstance3Location = -1;
 let vdpRpuInstanceColorLocation = -1;
 let vdpRpuInstanceUvRectLocation = -1;
 let vdpRpuC0Location: WebGLUniformLocation = null;
+let vdpRpuNmLocation: WebGLUniformLocation = null;
 let vdpRpuC1Location: WebGLUniformLocation = null;
 let vdpRpuJointLocation: WebGLUniformLocation = null;
 let vdpRpuT0Location: WebGLUniformLocation = null;
+let vdpRpuT1Location: WebGLUniformLocation = null;
 let vdpRpuTextureEnabledLocation: WebGLUniformLocation = null;
 let vdpRpuTextureFlipYLocation: WebGLUniformLocation = null;
+let vdpRpuT1ModeLocation: WebGLUniformLocation = null;
 let vdpRpuInstanceModeLocation: WebGLUniformLocation = null;
 let vdpRpuSkinningModeLocation: WebGLUniformLocation = null;
+let vdpRpuMorphModeLocation: WebGLUniformLocation = null;
+let vdpRpuNormalModeLocation: WebGLUniformLocation = null;
 let vdpRpuLightingModeLocation: WebGLUniformLocation = null;
 const vdpRpuVertexBufferObject: (WebGLBuffer | null)[] = [];
 const vdpRpuVertexBufferRevision = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
@@ -96,6 +107,10 @@ const vdpRpuInstanceBufferObject: (WebGLBuffer | null)[] = [];
 const vdpRpuInstanceBufferRevision = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
 const vdpRpuInstanceBufferByteOffset = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
 const vdpRpuInstanceBufferByteLength = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
+const vdpRpuMorphBufferObject: (WebGLBuffer | null)[] = [];
+const vdpRpuMorphBufferRevision = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
+const vdpRpuMorphBufferByteOffset = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
+const vdpRpuMorphBufferByteLength = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
 const vdpRpuIndexBufferObject: (WebGLBuffer | null)[] = [];
 const vdpRpuIndexBufferRevision = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
 const vdpRpuIndexBufferByteOffset = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
@@ -112,6 +127,7 @@ const vdpRpuNoColorDrawBuffers = [0];
 for (let index = 0; index < VDP_RPU_BUFFER_CAPACITY; index += 1) {
 	vdpRpuVertexBufferObject[index] = null;
 	vdpRpuInstanceBufferObject[index] = null;
+	vdpRpuMorphBufferObject[index] = null;
 	vdpRpuIndexBufferObject[index] = null;
 }
 for (let index = 0; index < VDP_RPU_SURFACE_CAPACITY; index += 1) {
@@ -127,16 +143,23 @@ vdpRpuIdentityC0[10] = 1;
 vdpRpuIdentityC0[15] = 1;
 const vdpRpuC0Words = new Uint32Array(16);
 const vdpRpuC0Floats = new Float32Array(vdpRpuC0Words.buffer);
-const vdpRpuC1Words = new Uint32Array(64);
+// Normal matrix: 9 floats packed at C0 words 16-24
+const vdpRpuNmWords = new Uint32Array(9);
+const vdpRpuNmFloats = new Float32Array(vdpRpuNmWords.buffer);
+const vdpRpuIdentityNm = new Float32Array(9);
+vdpRpuIdentityNm[0] = 1;
+vdpRpuIdentityNm[4] = 1;
+vdpRpuIdentityNm[8] = 1;
+const vdpRpuC1Words = new Uint32Array(68);
 const vdpRpuC1Floats = new Float32Array(vdpRpuC1Words.buffer);
 const vdpRpuJointWords = new Uint32Array(384);
 const vdpRpuJointFloats = new Float32Array(vdpRpuJointWords.buffer);
-const vdpRpuDefaultC1Floats = new Float32Array(64);
-vdpRpuDefaultC1Floats[2] = 1;
-vdpRpuDefaultC1Floats[4] = 1;
-vdpRpuDefaultC1Floats[5] = 1;
-vdpRpuDefaultC1Floats[6] = 1;
-vdpRpuDefaultC1Floats[7] = 1;
+// Default C1: white ambient (intensity 1.0), all lights disabled
+const vdpRpuDefaultC1Floats = new Float32Array(68);
+vdpRpuDefaultC1Floats[0] = 1; // ambient.r
+vdpRpuDefaultC1Floats[1] = 1; // ambient.g
+vdpRpuDefaultC1Floats[2] = 1; // ambient.b
+vdpRpuDefaultC1Floats[3] = 1; // ambient.intensity
 const vdpRpuDefaultJointFloats = new Float32Array(384);
 for (let jointIndex = 0; jointIndex < 24; jointIndex += 1) {
 	const base = jointIndex * 16;
@@ -367,6 +390,10 @@ function vdpRpuAttributeLocation(attribute: number): number {
 			return vdpRpuJointsLocation;
 		case VDP_RPU_ATTR_WEIGHTS:
 			return vdpRpuWeightsLocation;
+		case VDP_RPU_ATTR_MORPH_POS:
+			return vdpRpuMorphPosLocation;
+		case VDP_RPU_ATTR_MORPH_NRM:
+			return vdpRpuMorphNrmLocation;
 		case VDP_RPU_ATTR_INSTANCE0:
 			return vdpRpuInstance0Location;
 		case VDP_RPU_ATTR_INSTANCE1:
@@ -457,6 +484,12 @@ function setVdpRpuDefaultVertexAttributes(): void {
 	gl.disableVertexAttribArray(vdpRpuWeightsLocation);
 	gl.vertexAttrib4f(vdpRpuWeightsLocation, 1, 0, 0, 0);
 	gl.vertexAttribDivisor(vdpRpuWeightsLocation, 0);
+	gl.disableVertexAttribArray(vdpRpuMorphPosLocation);
+	gl.vertexAttrib3f(vdpRpuMorphPosLocation, 0, 0, 0);
+	gl.vertexAttribDivisor(vdpRpuMorphPosLocation, 0);
+	gl.disableVertexAttribArray(vdpRpuMorphNrmLocation);
+	gl.vertexAttrib3f(vdpRpuMorphNrmLocation, 0, 0, 0);
+	gl.vertexAttribDivisor(vdpRpuMorphNrmLocation, 0);
 }
 
 function setVdpRpuDefaultInstanceAttributes(): void {
@@ -505,17 +538,43 @@ function bindVdpRpuInstanceStream(frame: VdpRpuFrameOutput, streamBindingIndex: 
 	}
 }
 
+function bindVdpRpuMorphStream(frame: VdpRpuFrameOutput, streamBindingIndex: number): void {
+	const gl = vdpRpuGl;
+	const commands = frame.commands;
+	const refIndex = commands.streamBufferRef[streamBindingIndex];
+	if (refIndex === VDP_RPU_REF_NONE) {
+		return;
+	}
+	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
+	ensureVdpRpuBufferStorage(
+		frame,
+		refIndex,
+		gl.ARRAY_BUFFER,
+		vdpRpuMorphBufferObject,
+		vdpRpuMorphBufferRevision,
+		vdpRpuMorphBufferByteOffset,
+		vdpRpuMorphBufferByteLength,
+	);
+	const byteOffsetBase = commands.streamByteOffset[streamBindingIndex] - frame.resources.bufferRefs.sourceByteOffset[refIndex];
+	for (let index = 0; index < layout.attributeCount; index += 1) {
+		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, byteOffsetBase, 0);
+	}
+}
+
 function bindVdpRpuDrawStreams(frame: VdpRpuFrameOutput, drawIndex: number, instanceMode: number): void {
 	const commands = frame.commands;
 	const bindingEnd = commands.drawFirstStreamBinding[drawIndex] + commands.drawStreamBindingCount[drawIndex];
 	let vertexBinding = -1;
 	let instanceBinding = -1;
+	let morphBinding = -1;
 	for (let bindingIndex = commands.drawFirstStreamBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
 		const streamSlot = commands.streamSlot[bindingIndex];
 		if (streamSlot === 0) {
 			vertexBinding = bindingIndex;
 		} else if (streamSlot === 1) {
 			instanceBinding = bindingIndex;
+		} else if (streamSlot === 2) {
+			morphBinding = bindingIndex;
 		}
 	}
 	if (vertexBinding >= 0) {
@@ -524,9 +583,12 @@ function bindVdpRpuDrawStreams(frame: VdpRpuFrameOutput, drawIndex: number, inst
 	if (instanceMode !== VDP_RPU_INSTANCE_MODE_NONE && instanceBinding >= 0) {
 		bindVdpRpuInstanceStream(frame, instanceBinding);
 	}
+	if (morphBinding >= 0) {
+		bindVdpRpuMorphStream(frame, morphBinding);
+	}
 }
 
-function setVdpRpuC0Constants(frame: VdpRpuFrameOutput, drawIndex: number): void {
+function setVdpRpuC0Constants(frame: VdpRpuFrameOutput, drawIndex: number, normalMode: number): void {
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
 	const bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
@@ -535,6 +597,9 @@ function setVdpRpuC0Constants(frame: VdpRpuFrameOutput, drawIndex: number): void
 			const constantBank = commands.constantBank[bindingIndex];
 			if (constantBank === VDP_RPU_REF_NONE) {
 				gl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuIdentityC0);
+				if (normalMode !== 0) {
+					gl.uniformMatrix3fv(vdpRpuNmLocation, false, vdpRpuIdentityNm);
+				}
 				return;
 			}
 			const firstWord = frame.resources.constantBanks.firstWord[constantBank] + commands.constantFirstWord[bindingIndex];
@@ -543,10 +608,19 @@ function setVdpRpuC0Constants(frame: VdpRpuFrameOutput, drawIndex: number): void
 				vdpRpuC0Words[index] = constantWords[firstWord + index];
 			}
 			gl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuC0Floats);
+			if (normalMode !== 0) {
+				for (let index = 0; index < 9; index += 1) {
+					vdpRpuNmWords[index] = constantWords[firstWord + 16 + index];
+				}
+				gl.uniformMatrix3fv(vdpRpuNmLocation, false, vdpRpuNmFloats);
+			}
 			return;
 		}
 	}
 	gl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuIdentityC0);
+	if (normalMode !== 0) {
+		gl.uniformMatrix3fv(vdpRpuNmLocation, false, vdpRpuIdentityNm);
+	}
 }
 
 function setVdpRpuC1Constants(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant: VdpRpuShaderVariantSpec): void {
@@ -569,7 +643,7 @@ function setVdpRpuC1Constants(frame: VdpRpuFrameOutput, drawIndex: number, shade
 			}
 			const firstWord = frame.resources.constantBanks.firstWord[constantBank] + commands.constantFirstWord[bindingIndex];
 			const constantWords = frame.resources.constantWords;
-			for (let index = 0; index < 64; index += 1) {
+			for (let index = 0; index < 68; index += 1) {
 				vdpRpuC1Words[index] = constantWords[firstWord + index];
 			}
 			gl.uniform4fv(vdpRpuC1Location, vdpRpuC1Floats);
@@ -625,60 +699,95 @@ function bindVdpRpuNeutralTexture(backend: WebGLBackend): void {
 	backend.invalidateTextureBindingCache();
 }
 
-function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant: VdpRpuShaderVariantSpec): void {
+function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant: VdpRpuShaderVariantSpec, rawVariantWord: number): void {
 	const backend = runtime.backend;
 	const gl = vdpRpuGl;
+	const t1Flag = (rawVariantWord & VDP_RPU_SHADER_FLAG_T1) !== 0;
 	if (shaderVariant.textureSlotCount === 0) {
 		bindVdpRpuNeutralTexture(backend);
 		gl.uniform1i(vdpRpuTextureEnabledLocation, 0);
+		gl.uniform1i(vdpRpuT1ModeLocation, 0);
 		return;
 	}
 	gl.uniform1i(vdpRpuTextureEnabledLocation, 1);
 	const commands = frame.commands;
 	const bindingEnd = commands.drawFirstTextureBinding[drawIndex] + commands.drawTextureBindingCount[drawIndex];
+	let foundT0 = false;
+	let foundT1 = false;
 	for (let bindingIndex = commands.drawFirstTextureBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
-		if (commands.textureSlot[bindingIndex] === 0) {
+		const slot = commands.textureSlot[bindingIndex];
+		if (slot === 0 && !foundT0) {
+			foundT0 = true;
 			const surfaceRef = commands.textureSurfaceRef[bindingIndex];
 			if (surfaceRef === VDP_RPU_REF_NONE) {
 				bindVdpRpuNeutralTexture(backend);
 				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
 				gl.uniform1i(vdpRpuT0Location, 0);
-				return;
-			}
-			const surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
-			backend.setActiveTexture(0);
-			if (surfaceId < VDP_RD_SURFACE_COUNT) {
-				backend.bindTexture2D(runtime.context.vdpSlotTextures.readSurfaceTextureHandle(surfaceId) as WebGLTexture);
-				gl.uniform1i(vdpRpuTextureFlipYLocation, 0);
 			} else {
-				ensureVdpRpuSurfaceStorage(backend, frame, surfaceRef);
-				backend.invalidateTextureBindingCache();
-				gl.bindTexture(gl.TEXTURE_2D, vdpRpuSurfaceTexture[surfaceId]);
-				gl.uniform1i(vdpRpuTextureFlipYLocation, 1);
+				const surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
+				backend.setActiveTexture(0);
+				if (surfaceId < VDP_RD_SURFACE_COUNT) {
+					backend.bindTexture2D(runtime.context.vdpSlotTextures.readSurfaceTextureHandle(surfaceId) as WebGLTexture);
+					gl.uniform1i(vdpRpuTextureFlipYLocation, 0);
+				} else {
+					ensureVdpRpuSurfaceStorage(backend, frame, surfaceRef);
+					backend.invalidateTextureBindingCache();
+					gl.bindTexture(gl.TEXTURE_2D, vdpRpuSurfaceTexture[surfaceId]);
+					gl.uniform1i(vdpRpuTextureFlipYLocation, 1);
+				}
+				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
+				gl.uniform1i(vdpRpuT0Location, 0);
 			}
-			setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
-			gl.uniform1i(vdpRpuT0Location, 0);
-			return;
+		} else if (slot === 1 && t1Flag && !foundT1) {
+			foundT1 = true;
+			const surfaceRef = commands.textureSurfaceRef[bindingIndex];
+			if (surfaceRef !== VDP_RPU_REF_NONE) {
+				const surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
+				backend.setActiveTexture(1);
+				if (surfaceId < VDP_RD_SURFACE_COUNT) {
+					backend.bindTexture2D(runtime.context.vdpSlotTextures.readSurfaceTextureHandle(surfaceId) as WebGLTexture);
+				} else {
+					ensureVdpRpuSurfaceStorage(backend, frame, surfaceRef);
+					backend.invalidateTextureBindingCache();
+					gl.bindTexture(gl.TEXTURE_2D, vdpRpuSurfaceTexture[surfaceId]);
+				}
+				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
+				gl.uniform1i(vdpRpuT1Location, 1);
+				gl.uniform1i(vdpRpuT1ModeLocation, 1);
+			}
 		}
 	}
-	bindVdpRpuNeutralTexture(backend);
-	gl.uniform1i(vdpRpuTextureEnabledLocation, 0);
+	if (!foundT0) {
+		bindVdpRpuNeutralTexture(backend);
+		gl.uniform1i(vdpRpuTextureEnabledLocation, 0);
+	}
+	if (!foundT1 || !t1Flag) {
+		gl.uniform1i(vdpRpuT1ModeLocation, 0);
+	}
 }
 
 function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: number, instanceCount: number, indexCount: number): void {
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
 	setVdpRpuPipelineState(commands.drawPipelineWord[drawIndex]);
-	const shaderVariant = resolveVdpRpuShaderVariantSpec(commands.drawShaderVariant[drawIndex]);
+	const rawVariantWord = commands.drawShaderVariant[drawIndex];
+	const shaderVariant = resolveVdpRpuShaderVariantSpec(rawVariantWord);
 	const instanceMode = shaderVariant.instanceMode;
+	const morphMode = (rawVariantWord & VDP_RPU_SHADER_FLAG_MORPH) !== 0 ? 1 : 0;
+	const normalMode = shaderVariant.lightingConstantSlot !== VDP_RPU_RESOURCE_NONE ? 1 : 0;
 	gl.uniform1i(vdpRpuInstanceModeLocation, instanceMode);
+	gl.uniform1i(vdpRpuMorphModeLocation, morphMode);
+	gl.uniform1i(vdpRpuNormalModeLocation, normalMode);
 	setVdpRpuDefaultVertexAttributes();
 	setVdpRpuDefaultInstanceAttributes();
-	bindVdpRpuTextureBindings(runtime, frame, drawIndex, shaderVariant);
+	bindVdpRpuTextureBindings(runtime, frame, drawIndex, shaderVariant, rawVariantWord);
 	if (shaderVariant.usesC0 !== 0) {
-		setVdpRpuC0Constants(frame, drawIndex);
+		setVdpRpuC0Constants(frame, drawIndex, normalMode);
 	} else {
 		gl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuIdentityC0);
+		if (normalMode !== 0) {
+			gl.uniformMatrix3fv(vdpRpuNmLocation, false, vdpRpuIdentityNm);
+		}
 	}
 	setVdpRpuC1Constants(frame, drawIndex, shaderVariant);
 	setVdpRpuJointConstants(frame, drawIndex, shaderVariant);
@@ -738,6 +847,8 @@ export function setupVdpRpuLocations(backend: WebGLBackend): void {
 	vdpRpuNormalLocation = gl.getAttribLocation(vdpRpuProgram, 'a_normal');
 	vdpRpuJointsLocation = gl.getAttribLocation(vdpRpuProgram, 'a_joints');
 	vdpRpuWeightsLocation = gl.getAttribLocation(vdpRpuProgram, 'a_weights');
+	vdpRpuMorphPosLocation = gl.getAttribLocation(vdpRpuProgram, 'a_morph_pos');
+	vdpRpuMorphNrmLocation = gl.getAttribLocation(vdpRpuProgram, 'a_morph_nrm');
 	vdpRpuInstance0Location = gl.getAttribLocation(vdpRpuProgram, 'a_instance0');
 	vdpRpuInstance1Location = gl.getAttribLocation(vdpRpuProgram, 'a_instance1');
 	vdpRpuInstance2Location = gl.getAttribLocation(vdpRpuProgram, 'a_instance2');
@@ -745,22 +856,32 @@ export function setupVdpRpuLocations(backend: WebGLBackend): void {
 	vdpRpuInstanceColorLocation = gl.getAttribLocation(vdpRpuProgram, 'a_instance_color');
 	vdpRpuInstanceUvRectLocation = gl.getAttribLocation(vdpRpuProgram, 'a_instance_uvrect');
 	vdpRpuC0Location = gl.getUniformLocation(vdpRpuProgram, 'u_c0')!;
+	vdpRpuNmLocation = gl.getUniformLocation(vdpRpuProgram, 'u_nm')!;
 	vdpRpuC1Location = gl.getUniformLocation(vdpRpuProgram, 'u_c1[0]')!;
 	vdpRpuJointLocation = gl.getUniformLocation(vdpRpuProgram, 'u_joint[0]')!;
 	vdpRpuT0Location = gl.getUniformLocation(vdpRpuProgram, 'u_t0')!;
+	vdpRpuT1Location = gl.getUniformLocation(vdpRpuProgram, 'u_t1')!;
 	vdpRpuTextureEnabledLocation = gl.getUniformLocation(vdpRpuProgram, 'u_textureEnabled')!;
 	vdpRpuTextureFlipYLocation = gl.getUniformLocation(vdpRpuProgram, 'u_textureFlipY')!;
+	vdpRpuT1ModeLocation = gl.getUniformLocation(vdpRpuProgram, 'u_t1Mode')!;
 	vdpRpuInstanceModeLocation = gl.getUniformLocation(vdpRpuProgram, 'u_instanceMode')!;
 	vdpRpuSkinningModeLocation = gl.getUniformLocation(vdpRpuProgram, 'u_skinningMode')!;
+	vdpRpuMorphModeLocation = gl.getUniformLocation(vdpRpuProgram, 'u_morphMode')!;
+	vdpRpuNormalModeLocation = gl.getUniformLocation(vdpRpuProgram, 'u_normalMode')!;
 	vdpRpuLightingModeLocation = gl.getUniformLocation(vdpRpuProgram, 'u_lightingMode')!;
 	gl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuIdentityC0);
+	gl.uniformMatrix3fv(vdpRpuNmLocation, false, vdpRpuIdentityNm);
 	gl.uniform4fv(vdpRpuC1Location, vdpRpuDefaultC1Floats);
 	gl.uniformMatrix4fv(vdpRpuJointLocation, false, vdpRpuDefaultJointFloats);
 	gl.uniform1i(vdpRpuT0Location, 0);
+	gl.uniform1i(vdpRpuT1Location, 1);
 	gl.uniform1i(vdpRpuTextureEnabledLocation, 0);
 	gl.uniform1i(vdpRpuTextureFlipYLocation, 0);
+	gl.uniform1i(vdpRpuT1ModeLocation, 0);
 	gl.uniform1i(vdpRpuInstanceModeLocation, VDP_RPU_INSTANCE_MODE_NONE);
 	gl.uniform1i(vdpRpuSkinningModeLocation, 0);
+	gl.uniform1i(vdpRpuMorphModeLocation, 0);
+	gl.uniform1i(vdpRpuNormalModeLocation, 0);
 	gl.uniform1i(vdpRpuLightingModeLocation, 0);
 }
 

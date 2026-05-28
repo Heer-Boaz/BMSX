@@ -5,6 +5,8 @@ attribute vec4 a_color;
 attribute vec3 a_normal;
 attribute vec4 a_joints;
 attribute vec4 a_weights;
+attribute vec3 a_morph_pos;
+attribute vec3 a_morph_nrm;
 attribute vec4 a_instance0;
 attribute vec4 a_instance1;
 attribute vec4 a_instance2;
@@ -12,15 +14,23 @@ attribute vec4 a_instance3;
 attribute vec4 a_instance_color;
 attribute vec4 a_instance_uvrect;
 uniform mat4 u_c0;
+uniform mat3 u_nm;
 uniform mat4 u_joint[24];
 uniform int u_instanceMode;
 uniform int u_skinningMode;
+uniform int u_morphMode;
+uniform int u_normalMode;
 varying vec2 v_uv0;
 varying vec4 v_color;
 varying vec3 v_normal;
+varying vec3 v_pos;
 void main() {
 	vec4 position = vec4(a_position, 1.0);
 	vec3 normal = a_normal;
+	if (u_morphMode != 0) {
+		position.xyz += a_morph_pos;
+		normal += a_morph_nrm;
+	}
 	if (u_skinningMode != 0) {
 		int j0 = int(a_joints.x);
 		int j1 = int(a_joints.y);
@@ -32,7 +42,8 @@ void main() {
 	}
 	v_uv0 = a_uv0;
 	v_color = a_color;
-	v_normal = normal;
+	v_normal = u_normalMode != 0 ? u_nm * normalize(normal) : normalize(normal);
+	v_pos = position.xyz;
 	if (u_instanceMode == 1) {
 		vec2 p = vec2(dot(a_instance0.xy, a_position.xy) + a_instance0.z, dot(a_instance1.xy, a_position.xy) + a_instance1.z);
 		position = vec4(p, a_instance0.w, 1.0);

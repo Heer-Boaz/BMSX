@@ -21,10 +21,12 @@ const VdpRpuStreamLayoutSpec& resolveVdpRpuStreamLayoutSpec(u32 layoutId) {
 			return VDP_RPU_STREAM_LAYOUTS[5u];
 		case VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4:
 			return VDP_RPU_STREAM_LAYOUTS[6u];
-		case VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4:
+		case VDP_RPU_LAYOUT_V3_DM3:
 			return VDP_RPU_STREAM_LAYOUTS[7u];
-		case VDP_RPU_LAYOUT_I_MAT4_C4:
+		case VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4:
 			return VDP_RPU_STREAM_LAYOUTS[8u];
+		case VDP_RPU_LAYOUT_I_MAT4_C4:
+			return VDP_RPU_STREAM_LAYOUTS[9u];
 		case VDP_RPU_LAYOUT_V2_C4:
 		default:
 			return VDP_RPU_STREAM_LAYOUTS[0u];
