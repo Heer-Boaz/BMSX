@@ -151,3 +151,25 @@ return mem[base + 196], &scene[1][0], sizeof(draw), offsetof(draw.constants.eye)
 
 	assert.deepEqual(result, [0x12345678, TEST_RAM_BASE + 108, 36, 20]);
 });
+
+test('struct address-of keeps memwrite intrinsics on displaced memory opcodes', () => {
+	const source = `
+struct tri
+	xy: f32[3]
+	color: word
+	joint: word
+	weight: word
+end
+local base<const> = ${TEST_RAM_BASE}
+local packets<const> = ref tri[2] at base
+memwritef32(&packets[1].xy[0], 1.0, 2.0, 3.0)
+memwrite(&packets[1].color, 7, 8, 9)
+return mem[base + sizeof(tri) + offsetof(tri.color)], mem[base + sizeof(tri) + offsetof(tri.weight)]
+`;
+	const compiled = compileSource(source);
+	const disassembly = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
+
+	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 4, 24/);
+	assert.match(disassembly, /STORE_MEM_WORDS_D r\d+, r\d+, 3, 36/);
+	assert.deepEqual(runCompiledLua(source), [7, 9]);
+});

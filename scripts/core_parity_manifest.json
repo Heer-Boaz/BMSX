@@ -2090,7 +2090,7 @@
 		{
 			"file": "src/carts/bare_metal_cart/cart.lua",
 			"substrings": [
-				"local instance_stride<const> = 48",
+				"local instance_stride<const> = sizeof(sprite_instance)",
 				"rpu_pipeline_depth_alpha<const> = sys_rpu_blend_alpha | (sys_rpu_depth_lequal << 4) | (sys_rpu_cull_none << 8) | sys_rpu_pipe_depth_write | sys_rpu_pipe_color_write_rgba"
 			],
 			"reason": "bare_metal_cart_affine_sprite_instances_must_demonstrate_gpu_depth_ordering_with_new_rpu"
@@ -3237,7 +3237,7 @@
 		},
 		{
 			"file": "src/carts/bare_metal_cart/cart.lua",
-			"start": "\tlocal wp = instance_addr\n\tlocal parallax_x<const> = -32.0 + ((frame % 96) * 0.5)",
+			"start": "\tlocal instances<const> = ref sprite_instance[instance_count] at instance_addr\n\tlocal parallax_x<const> = -32.0 + ((frame % 96) * 0.5)",
 			"end": "\nend\n\nlocal write_mat4_instances",
 			"reason": "bare_metal_cart_instance_hot_helper_must_not_allocate_tables_closures_or_strings"
 		},

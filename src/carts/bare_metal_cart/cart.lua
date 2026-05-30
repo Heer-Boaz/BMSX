@@ -30,9 +30,42 @@ local screen_height<const> = 212
 local inv_half_screen_width<const> = 1.0 / 128.0
 local inv_half_screen_height<const> = 1.0 / 106.0
 
+struct bg_vertex
+	xy: f32[2]
+	color: word
+end
+
+struct quad_vertex
+	xyzuv: f32[4]
+	color: word
+end
+
+struct mat4_vertex
+	pos: f32[3]
+	color: word
+end
+
 struct mat4_instance
 	mvp: f32[16]
 	color: word
+end
+
+struct sprite_instance
+	matrix: f32[11]
+	color: word
+end
+
+struct mesh_vertex
+	pos: f32[3]
+	normal: f32[3]
+	uv: f32[2]
+	color: word
+	joint: word
+	weight: word
+end
+
+struct q16_matrix
+	m: word[16]
 end
 
 local quad_buffer<const> = 1
@@ -47,29 +80,29 @@ local morph_buffer<const> = 9
 local scene_color_surface<const> = 4
 local scene_depth_surface<const> = 5
 local quad_vertex_count<const> = 4
-local quad_vertex_stride<const> = 20
+local quad_vertex_stride<const> = sizeof(quad_vertex)
 local quad_vertex_bytes<const> = quad_vertex_count * quad_vertex_stride
 local background_vertex_count<const> = 12
-local background_vertex_stride<const> = 12
+local background_vertex_stride<const> = sizeof(bg_vertex)
 local background_vertex_bytes<const> = background_vertex_count * background_vertex_stride
 local vector_vertex_count<const> = 24
-local vector_vertex_stride<const> = 12
+local vector_vertex_stride<const> = sizeof(bg_vertex)
 local vector_vertex_bytes<const> = vector_vertex_count * vector_vertex_stride
 local mat4_vertex_count<const> = 3
-local mat4_vertex_stride<const> = 16
+local mat4_vertex_stride<const> = sizeof(mat4_vertex)
 local mat4_vertex_bytes<const> = mat4_vertex_count * mat4_vertex_stride
 local mat4_instance_count<const> = 2
 local mat4_instance_stride<const> = sizeof(mat4_instance)
 local mat4_instance_bytes<const> = mat4_instance_count * mat4_instance_stride
 local mesh_vertex_count<const> = 24
-local mesh_vertex_stride<const> = 44
+local mesh_vertex_stride<const> = sizeof(mesh_vertex)
 local mesh_vertex_bytes<const> = mesh_vertex_count * mesh_vertex_stride
 local mesh_index_count<const> = 24
 local mesh_index_bytes<const> = mesh_index_count * 2
 local sprite_instance_count<const> = 5
 local present_instance_count<const> = 1
 local instance_count<const> = sprite_instance_count + present_instance_count
-local instance_stride<const> = 48
+local instance_stride<const> = sizeof(sprite_instance)
 local instance_bytes<const> = instance_count * instance_stride
 local present_instance_offset<const> = sprite_instance_count * instance_stride
 local c0_words<const> = 16
@@ -78,7 +111,7 @@ local joint_words<const> = 384
 local mfu_words<const> = 1
 local c0_bytes<const> = c0_words * 4
 local c1_bytes<const> = c1_words * 4
-local joint_matrix_bytes<const> = c0_bytes
+local joint_matrix_bytes<const> = sizeof(q16_matrix)
 local morph_vertex_stride<const> = 24
 local morph_vertex_bytes<const> = mesh_vertex_count * morph_vertex_stride
 
@@ -250,288 +283,245 @@ local upload_atlas_to_vram<const> = function()
 end
 
 local write_background_vertices<const> = function()
-	local wp = background_vertex_addr
-	memwritef32(wp,
+	local vertices<const> = ref bg_vertex[background_vertex_count] at background_vertex_addr
+	memwritef32(&vertices[0].xy[0],
 		-1.0,
 		1.0
 	)
-	wp = wp + 8
-	mem[wp], wp = sky_top, wp + 4
-	memwritef32(wp,
+	vertices[0].color = sky_top
+	memwritef32(&vertices[1].xy[0],
 		1.0,
 		1.0
 	)
-	wp = wp + 8
-	mem[wp], wp = sky_top, wp + 4
-	memwritef32(wp,
+	vertices[1].color = sky_top
+	memwritef32(&vertices[2].xy[0],
 		-1.0,
 		-0.24
 	)
-	wp = wp + 8
-	mem[wp], wp = sky_horizon, wp + 4
-	memwritef32(wp,
+	vertices[2].color = sky_horizon
+	memwritef32(&vertices[3].xy[0],
 		1.0,
 		1.0
 	)
-	wp = wp + 8
-	mem[wp], wp = sky_top, wp + 4
-	memwritef32(wp,
+	vertices[3].color = sky_top
+	memwritef32(&vertices[4].xy[0],
 		1.0,
 		-0.24
 	)
-	wp = wp + 8
-	mem[wp], wp = sky_horizon, wp + 4
-	memwritef32(wp,
+	vertices[4].color = sky_horizon
+	memwritef32(&vertices[5].xy[0],
 		-1.0,
 		-0.24
 	)
-	wp = wp + 8
-	mem[wp], wp = sky_horizon, wp + 4
-	memwritef32(wp,
+	vertices[5].color = sky_horizon
+	memwritef32(&vertices[6].xy[0],
 		-1.0,
 		-0.24
 	)
-	wp = wp + 8
-	mem[wp], wp = ground_far, wp + 4
-	memwritef32(wp,
+	vertices[6].color = ground_far
+	memwritef32(&vertices[7].xy[0],
 		1.0,
 		-0.24
 	)
-	wp = wp + 8
-	mem[wp], wp = ground_far, wp + 4
-	memwritef32(wp,
+	vertices[7].color = ground_far
+	memwritef32(&vertices[8].xy[0],
 		-1.0,
 		-1.0
 	)
-	wp = wp + 8
-	mem[wp], wp = ground_near, wp + 4
-	memwritef32(wp,
+	vertices[8].color = ground_near
+	memwritef32(&vertices[9].xy[0],
 		1.0,
 		-0.24
 	)
-	wp = wp + 8
-	mem[wp], wp = ground_far, wp + 4
-	memwritef32(wp,
+	vertices[9].color = ground_far
+	memwritef32(&vertices[10].xy[0],
 		1.0,
 		-1.0
 	)
-	wp = wp + 8
-	mem[wp], wp = ground_near, wp + 4
-	memwritef32(wp,
+	vertices[10].color = ground_near
+	memwritef32(&vertices[11].xy[0],
 		-1.0,
 		-1.0
 	)
-	wp = wp + 8
-	mem[wp], wp = ground_near, wp + 4
+	vertices[11].color = ground_near
 end
 
 local write_quad_vertices<const> = function()
-	local wp = quad_vertex_addr
-	memwritef32(wp,
+	local vertices<const> = ref quad_vertex[quad_vertex_count] at quad_vertex_addr
+	memwritef32(&vertices[0].xyzuv[0],
 		0.0,
 		0.0,
 		0.0,
 		0.0
 	)
-	wp = wp + 16
-	mem[wp], wp = white, wp + 4
-	memwritef32(wp,
+	vertices[0].color = white
+	memwritef32(&vertices[1].xyzuv[0],
 		1.0,
 		0.0,
 		1.0,
 		0.0
 	)
-	wp = wp + 16
-	mem[wp], wp = white, wp + 4
-	memwritef32(wp,
+	vertices[1].color = white
+	memwritef32(&vertices[2].xyzuv[0],
 		0.0,
 		1.0,
 		0.0,
 		1.0
 	)
-	wp = wp + 16
-	mem[wp], wp = white, wp + 4
-	memwritef32(wp,
+	vertices[2].color = white
+	memwritef32(&vertices[3].xyzuv[0],
 		1.0,
 		1.0,
 		1.0,
 		1.0
 	)
-	wp = wp + 16
-	mem[wp], wp = white, wp + 4
+	vertices[3].color = white
 end
 
 local write_vector_vertices<const> = function()
-	local wp = vector_vertex_addr
-	memwritef32(wp,
+	local vertices<const> = ref bg_vertex[vector_vertex_count] at vector_vertex_addr
+	memwritef32(&vertices[0].xy[0],
 		-0.88,
 		-0.94
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[0].color = vector_tint
+	memwritef32(&vertices[1].xy[0],
 		0.88,
 		-0.94
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[1].color = vector_tint
+	memwritef32(&vertices[2].xy[0],
 		-0.88,
 		-0.90
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[2].color = vector_tint
+	memwritef32(&vertices[3].xy[0],
 		0.88,
 		-0.94
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[3].color = vector_tint
+	memwritef32(&vertices[4].xy[0],
 		0.88,
 		-0.90
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[4].color = vector_tint
+	memwritef32(&vertices[5].xy[0],
 		-0.88,
 		-0.90
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[5].color = vector_tint
+	memwritef32(&vertices[6].xy[0],
 		-0.72,
 		-0.78
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[6].color = vector_tint
+	memwritef32(&vertices[7].xy[0],
 		0.72,
 		-0.78
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[7].color = vector_tint
+	memwritef32(&vertices[8].xy[0],
 		-0.72,
 		-0.74
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[8].color = vector_tint
+	memwritef32(&vertices[9].xy[0],
 		0.72,
 		-0.78
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[9].color = vector_tint
+	memwritef32(&vertices[10].xy[0],
 		0.72,
 		-0.74
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[10].color = vector_tint
+	memwritef32(&vertices[11].xy[0],
 		-0.72,
 		-0.74
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[11].color = vector_tint
+	memwritef32(&vertices[12].xy[0],
 		-0.92,
 		-0.62
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[12].color = vector_tint
+	memwritef32(&vertices[13].xy[0],
 		-0.86,
 		-0.62
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[13].color = vector_tint
+	memwritef32(&vertices[14].xy[0],
 		-0.92,
 		-0.56
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[14].color = vector_tint
+	memwritef32(&vertices[15].xy[0],
 		-0.86,
 		-0.62
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[15].color = vector_tint
+	memwritef32(&vertices[16].xy[0],
 		-0.86,
 		-0.56
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[16].color = vector_tint
+	memwritef32(&vertices[17].xy[0],
 		-0.92,
 		-0.56
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[17].color = vector_tint
+	memwritef32(&vertices[18].xy[0],
 		0.86,
 		-0.62
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[18].color = vector_tint
+	memwritef32(&vertices[19].xy[0],
 		0.92,
 		-0.62
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[19].color = vector_tint
+	memwritef32(&vertices[20].xy[0],
 		0.86,
 		-0.56
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[20].color = vector_tint
+	memwritef32(&vertices[21].xy[0],
 		0.92,
 		-0.62
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[21].color = vector_tint
+	memwritef32(&vertices[22].xy[0],
 		0.92,
 		-0.56
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
-	memwritef32(wp,
+	vertices[22].color = vector_tint
+	memwritef32(&vertices[23].xy[0],
 		0.86,
 		-0.56
 	)
-	wp = wp + 8
-	mem[wp], wp = vector_tint, wp + 4
+	vertices[23].color = vector_tint
 end
 
 local write_mat4_vertices<const> = function()
-	local wp = mat4_vertex_addr
-	memwritef32(wp,
+	local vertices<const> = ref mat4_vertex[mat4_vertex_count] at mat4_vertex_addr
+	memwritef32(&vertices[0].pos[0],
 		0.0,
 		0.12,
 		0.0
 	)
-	wp = wp + 12
-	mem[wp], wp = white, wp + 4
-	memwritef32(wp,
+	vertices[0].color = white
+	memwritef32(&vertices[1].pos[0],
 		-0.10,
 		-0.08,
 		0.0
 	)
-	wp = wp + 12
-	mem[wp], wp = white, wp + 4
-	memwritef32(wp,
+	vertices[1].color = white
+	memwritef32(&vertices[2].pos[0],
 		0.10,
 		-0.08,
 		0.0
 	)
-	wp = wp + 12
-	mem[wp], wp = white, wp + 4
+	vertices[2].color = white
 end
 
 local write_mesh_vertices<const> = function(morph_a, morph_b)
@@ -540,8 +530,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 	local radius_x<const> = 0.56 + morph_b
 	local radius_z<const> = 0.56 + morph_a
 	local mesh_uv<const> = 0.46875
-	local wp = mesh_vertex_addr
-	memwritef32(wp,
+	local vertices<const> = ref mesh_vertex[mesh_vertex_count] at mesh_vertex_addr
+	memwritef32(&vertices[0].pos[0],
 		0.0,
 		top_y,
 		0.0,
@@ -551,11 +541,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[0].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[1].pos[0],
 		0.0,
 		0.0,
 		radius_z,
@@ -565,11 +552,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[1].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[2].pos[0],
 		radius_x,
 		0.0,
 		0.0,
@@ -579,11 +563,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[2].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[3].pos[0],
 		0.0,
 		top_y,
 		0.0,
@@ -593,11 +574,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[3].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[4].pos[0],
 		-radius_x,
 		0.0,
 		0.0,
@@ -607,11 +585,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[4].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[5].pos[0],
 		0.0,
 		0.0,
 		radius_z,
@@ -621,11 +596,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[5].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[6].pos[0],
 		0.0,
 		top_y,
 		0.0,
@@ -635,11 +607,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[6].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[7].pos[0],
 		0.0,
 		0.0,
 		-radius_z,
@@ -649,11 +618,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[7].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[8].pos[0],
 		-radius_x,
 		0.0,
 		0.0,
@@ -663,11 +629,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[8].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[9].pos[0],
 		0.0,
 		top_y,
 		0.0,
@@ -677,11 +640,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[9].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[10].pos[0],
 		radius_x,
 		0.0,
 		0.0,
@@ -691,11 +651,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[10].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[11].pos[0],
 		0.0,
 		0.0,
 		-radius_z,
@@ -705,11 +662,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[11].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[12].pos[0],
 		0.0,
 		bottom_y,
 		0.0,
@@ -719,11 +673,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[12].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[13].pos[0],
 		radius_x,
 		0.0,
 		0.0,
@@ -733,11 +684,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[13].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[14].pos[0],
 		0.0,
 		0.0,
 		radius_z,
@@ -747,11 +695,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[14].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[15].pos[0],
 		0.0,
 		bottom_y,
 		0.0,
@@ -761,11 +706,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[15].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[16].pos[0],
 		0.0,
 		0.0,
 		radius_z,
@@ -775,11 +717,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[16].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[17].pos[0],
 		-radius_x,
 		0.0,
 		0.0,
@@ -789,11 +728,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[17].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[18].pos[0],
 		0.0,
 		bottom_y,
 		0.0,
@@ -803,11 +739,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[18].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[19].pos[0],
 		-radius_x,
 		0.0,
 		0.0,
@@ -817,11 +750,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[19].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[20].pos[0],
 		0.0,
 		0.0,
 		-radius_z,
@@ -831,11 +761,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[20].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[21].pos[0],
 		0.0,
 		bottom_y,
 		0.0,
@@ -845,11 +772,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[21].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[22].pos[0],
 		0.0,
 		0.0,
 		-radius_z,
@@ -859,11 +783,8 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
-	memwritef32(wp,
+	memwrite(&vertices[22].color, mesh_tint, mesh_joint_word, mesh_weight_word)
+	memwritef32(&vertices[23].pos[0],
 		radius_x,
 		0.0,
 		0.0,
@@ -873,10 +794,7 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 		mesh_uv,
 		mesh_uv
 	)
-	wp = wp + 32
-	mem[wp], wp = mesh_tint, wp + 4
-	mem[wp], wp = mesh_joint_word, wp + 4
-	mem[wp], wp = mesh_weight_word, wp + 4
+	memwrite(&vertices[23].color, mesh_tint, mesh_joint_word, mesh_weight_word)
 end
 
 local write_mesh_indices<const> = function()
@@ -980,40 +898,19 @@ end
 local write_joint_constants<const> = function()
 	local joint_phase<const> = frame % 8
 	local joint_translate_x<const> = (joint_phase - 4) * 0.03125
-	local wp = joint0_addr
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	wp = joint1_addr
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = numeric.q16(joint_translate_x), wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = 0, wp + 4
-	mem[wp], wp = q16_one, wp + 4
+	local joints<const> = ref q16_matrix[2] at joint0_addr
+	memwrite(&joints[0].m[0],
+		q16_one, 0, 0, 0,
+		0, q16_one, 0, 0,
+		0, 0, q16_one, 0,
+		0, 0, 0, q16_one
+	)
+	memwrite(&joints[1].m[0],
+		q16_one, 0, 0, 0,
+		0, q16_one, 0, 0,
+		0, 0, q16_one, 0,
+		numeric.q16(joint_translate_x), 0, 0, q16_one
+	)
 end
 
 local write_mfu_constants<const> = function()
@@ -1120,7 +1017,7 @@ local update_camera<const> = function()
 end
 
 local write_instances<const> = function()
-	local wp = instance_addr
+	local instances<const> = ref sprite_instance[instance_count] at instance_addr
 	local parallax_x<const> = -32.0 + ((frame % 96) * 0.5)
 	local parallax_phase<const> = (frame % 16) * 4
 	local billboard_phase<const> = (frame % 8) * 4
@@ -1129,7 +1026,7 @@ local write_instances<const> = function()
 	local billboard_y_a<const> = 114.0
 	local billboard_x_b<const> = 174.0 - billboard_phase
 	local billboard_y_b<const> = 70.0
-	memwritef32(wp,
+	memwritef32(&instances[0].matrix[0],
 		512.0 * inv_half_screen_width,
 		0.0,
 		parallax_x * inv_half_screen_width - 1.0,
@@ -1142,9 +1039,8 @@ local write_instances<const> = function()
 		1.0,
 		1.0
 	)
-	wp = wp + 44
-	mem[wp], wp = parallax_far_tint, wp + 4
-	memwritef32(wp,
+	instances[0].color = parallax_far_tint
+	memwritef32(&instances[1].matrix[0],
 		512.0 * inv_half_screen_width,
 		0.0,
 		parallax_near_x * inv_half_screen_width - 1.0,
@@ -1157,9 +1053,8 @@ local write_instances<const> = function()
 		1.0,
 		1.0
 	)
-	wp = wp + 44
-	mem[wp], wp = parallax_near_tint, wp + 4
-	memwritef32(wp,
+	instances[1].color = parallax_near_tint
+	memwritef32(&instances[2].matrix[0],
 		48.0 * inv_half_screen_width,
 		0.0,
 		sprite_x * inv_half_screen_width - 1.0,
@@ -1172,9 +1067,8 @@ local write_instances<const> = function()
 		1.0,
 		1.0
 	)
-	wp = wp + 44
-	mem[wp], wp = sprite_tint, wp + 4
-	memwritef32(wp,
+	instances[2].color = sprite_tint
+	memwritef32(&instances[3].matrix[0],
 		38.0 * inv_half_screen_width,
 		0.0,
 		billboard_x_a * inv_half_screen_width - 1.0,
@@ -1187,9 +1081,8 @@ local write_instances<const> = function()
 		1.0,
 		1.0
 	)
-	wp = wp + 44
-	mem[wp], wp = billboard_tint_a, wp + 4
-	memwritef32(wp,
+	instances[3].color = billboard_tint_a
+	memwritef32(&instances[4].matrix[0],
 		32.0 * inv_half_screen_width,
 		0.0,
 		billboard_x_b * inv_half_screen_width - 1.0,
@@ -1202,9 +1095,8 @@ local write_instances<const> = function()
 		1.0,
 		1.0
 	)
-	wp = wp + 44
-	mem[wp], wp = billboard_tint_b, wp + 4
-	memwritef32(wp,
+	instances[4].color = billboard_tint_b
+	memwritef32(&instances[5].matrix[0],
 		2.0,
 		0.0,
 		-1.0,
@@ -1217,8 +1109,7 @@ local write_instances<const> = function()
 		1.0,
 		1.0
 	)
-	wp = wp + 44
-	mem[wp], wp = white, wp + 4
+	instances[5].color = white
 end
 
 local write_mat4_instances<const> = function()

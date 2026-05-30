@@ -223,6 +223,12 @@ type AssignmentTarget =
 	| { kind: 'table'; tableReg: number; keyConst?: number; keyReg?: number }
 	| { kind: 'memory'; accessKind: MemoryAccessKind; addrConst?: number; addrReg?: number; addrOffsetBytes?: number; validateAddress?: LuaExpression };
 
+type CompiledMemoryAddress = {
+	addrConst: number | undefined;
+	addrReg: number | undefined;
+	addrOffsetBytes: number | undefined;
+};
+
 const RK_B = 1;
 const RK_C = 2;
 
@@ -3037,6 +3043,43 @@ class FunctionBuilder {
 		return null;
 	}
 
+	private tryCompileStructAddressOfExpression(expression: LuaExpression): StructAddress | null {
+		if (expression.kind !== LuaSyntaxKind.UnaryExpression) {
+			return null;
+		}
+		const unary = expression as LuaUnaryExpression;
+		if (unary.operator !== LuaUnaryOperator.StringId) {
+			return null;
+		}
+		return this.tryResolveStructAddress(unary.operand);
+	}
+
+	private compileMemoryAddressExpression(expression: LuaExpression): CompiledMemoryAddress {
+		const structAddress = this.tryCompileStructAddressOfExpression(expression);
+		if (structAddress !== null) {
+			return {
+				addrConst: undefined,
+				addrReg: structAddress.baseReg,
+				addrOffsetBytes: structAddress.byteOffset,
+			};
+		}
+		const addrConst = this.tryGetNumericConstIndex(expression);
+		if (addrConst !== undefined) {
+			return { addrConst, addrReg: undefined, addrOffsetBytes: undefined };
+		}
+		const displaced = this.tryCompileDisplacedAddress(expression);
+		if (displaced !== null) {
+			return {
+				addrConst: undefined,
+				addrReg: displaced.baseReg,
+				addrOffsetBytes: displaced.byteOffset,
+			};
+		}
+		const addrReg = this.allocTemp();
+		this.compileExpressionInto(expression, addrReg, 1);
+		return { addrConst: undefined, addrReg, addrOffsetBytes: undefined };
+	}
+
 	private compileMemoryTarget(target: Extract<ReturnType<typeof classifyAssignmentTargetPreparation>, { kind: 'memory' }>): Extract<AssignmentTarget, { kind: 'memory' }> {
 		const addrConst = this.tryGetNumericConstIndex(target.index);
 		if (addrConst !== undefined) {
@@ -3304,25 +3347,13 @@ class FunctionBuilder {
 		for (let index = 1; index < expression.arguments.length; index += 1) {
 			this.validateMemoryStore(addrExpression, expression.arguments[index]);
 		}
-		const addrConst = this.tryGetNumericConstIndex(addrExpression);
-		let addrReg: number | undefined;
-		let addrOffsetBytes: number | undefined;
-		if (addrConst === undefined) {
-			const displaced = this.tryCompileDisplacedAddress(addrExpression);
-			if (displaced !== null) {
-				addrReg = displaced.baseReg;
-				addrOffsetBytes = displaced.byteOffset;
-			} else {
-				addrReg = this.allocTemp();
-				this.compileExpressionInto(addrExpression, addrReg, 1);
-			}
-		}
+		const address = this.compileMemoryAddressExpression(addrExpression);
 		const valueCount = expression.arguments.length - 1;
 		const valueBase = this.allocTempBlock(valueCount);
 		for (let index = 0; index < valueCount; index += 1) {
 			this.compileExpressionInto(expression.arguments[index + 1], valueBase + index, 1);
 		}
-		this.emitMemoryWordStoreSequence(valueBase, valueCount, addrConst, addrReg, addrOffsetBytes);
+		this.emitMemoryWordStoreSequence(valueBase, valueCount, address.addrConst, address.addrReg, address.addrOffsetBytes);
 		if (resultCount > 0) {
 			this.emitLoadNil(target, resultCount);
 		}
@@ -3336,16 +3367,25 @@ class FunctionBuilder {
 		for (let index = 1; index < expression.arguments.length; index += 1) {
 			this.validateMemoryStore(addrExpression, expression.arguments[index]);
 		}
-		const addrReg = this.allocTemp();
-		this.compileExpressionInto(addrExpression, addrReg, 1);
+		const address = this.compileMemoryAddressExpression(addrExpression);
 		const valueReg = this.allocTemp();
-		const stepOperand = this.encodeConstOperand(this.program.constIndex(4));
 		const valueCount = expression.arguments.length - 1;
-		for (let index = 0; index < valueCount; index += 1) {
-			this.compileExpressionInto(expression.arguments[index + 1], valueReg, 1);
-			this.emitMemoryStore(MemoryAccessKind.F32LE, undefined, addrReg, undefined, valueReg);
-			if (index + 1 < valueCount) {
-				this.emitABC(OpCode.ADD, addrReg, addrReg, stepOperand, RK_C);
+		if (address.addrReg !== undefined) {
+			const baseOffset = address.addrOffsetBytes ?? 0;
+			for (let index = 0; index < valueCount; index += 1) {
+				this.compileExpressionInto(expression.arguments[index + 1], valueReg, 1);
+				this.emitMemoryStore(MemoryAccessKind.F32LE, undefined, address.addrReg, baseOffset + index * 4, valueReg);
+			}
+		} else {
+			const addrReg = this.allocTemp();
+			this.compileExpressionInto(addrExpression, addrReg, 1);
+			const stepOperand = this.encodeConstOperand(this.program.constIndex(4));
+			for (let index = 0; index < valueCount; index += 1) {
+				this.compileExpressionInto(expression.arguments[index + 1], valueReg, 1);
+				this.emitMemoryStore(MemoryAccessKind.F32LE, undefined, addrReg, undefined, valueReg);
+				if (index + 1 < valueCount) {
+					this.emitABC(OpCode.ADD, addrReg, addrReg, stepOperand, RK_C);
+				}
 			}
 		}
 		if (resultCount > 0) {
