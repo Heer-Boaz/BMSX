@@ -1070,12 +1070,12 @@ local update_camera<const> = function()
 	local active<const> = active_cam_id == side_cam.id and side_cam or free_cam
 	-- Speed settings
 	local yaw_step = 0.035
-	local pitch_step = 0.028
+	local pitch_step = 0.035
 	local move = 0.075
 	mem[sys_inp_query] = &'boost[p]'
 	if mem[sys_inp_status] ~= 0 then
 		yaw_step = 0.055
-		pitch_step = 0.045
+		pitch_step = 0.055
 		move = 0.18
 	end
 	-- Rotation: screen-space look (yaw around camera-up, pitch around camera-right)
@@ -1450,7 +1450,7 @@ local draw_frame<const> = function()
 	wp = wp + 20
 	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
 	wp = wp + 8
-	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v3_c4_i_mat4, rpu_primitive_triangles, rpu_pipeline_opaque, mat4_vertex_count, mat4_instance_count, sys_rpu_resource_none, 0, 0)
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v3_c4_i_mat4, rpu_primitive_triangles, rpu_pipeline_depth_opaque, mat4_vertex_count, mat4_instance_count, sys_rpu_resource_none, 0, 0)
 	wp = wp + 40
 	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v3_c4, mat4_vertex_buffer, 0, 0)
 	wp = wp + 28
@@ -1458,7 +1458,7 @@ local draw_frame<const> = function()
 	wp = wp + 28
 	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
 	wp = wp + 8
-	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v3_c4_c0, rpu_primitive_triangles, rpu_pipeline_opaque, mat4_vertex_count, 1, sys_rpu_resource_none, 0, 0)
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v3_c4_c0, rpu_primitive_triangles, rpu_pipeline_depth_opaque, mat4_vertex_count, 1, sys_rpu_resource_none, 0, 0)
 	wp = wp + 40
 	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v3_c4, mat4_vertex_buffer, 0, 0)
 	wp = wp + 28
@@ -1466,7 +1466,7 @@ local draw_frame<const> = function()
 	wp = wp + 24
 	memwrite(wp, rpu_header_end_draw, sys_rpu_op_end_draw)
 	wp = wp + 8
-	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1 | sys_rpu_shader_flag_morph | sys_rpu_shader_flag_t1, rpu_primitive_indexed_triangles, rpu_pipeline_opaque, mesh_vertex_count, 1, mesh_index_buffer, 0, mesh_index_count)
+	memwrite(wp, rpu_header_begin_draw, sys_rpu_op_begin_draw, sys_rpu_shader_v3_n3_t2_c4_j4_w4_c0_c1 | sys_rpu_shader_flag_morph | sys_rpu_shader_flag_t1, rpu_primitive_indexed_triangles, rpu_pipeline_depth_opaque, mesh_vertex_count, 1, mesh_index_buffer, 0, mesh_index_count)
 	wp = wp + 40
 	memwrite(wp, rpu_header_bind_stream, sys_rpu_op_bind_stream, 0, sys_rpu_layout_v3_n3_t2_c4_j4_w4, mesh_buffer, 0, 0)
 	wp = wp + 28
