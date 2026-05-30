@@ -188,6 +188,22 @@ test('parses unary bitwise not', () => {
 	assert.equal(unary.operator, LuaUnaryOperator.BitwiseNot);
 });
 
+test('parses pointer local types while preserving unary ampersand', () => {
+	const path = parseChunk('local view<const>: *tri[count] = base\nreturn &view[0]');
+	const localStatement = path.body[0] as LuaLocalAssignmentStatement;
+	const pointerTypeRef = localStatement.pointerTypeRefs[0];
+	assert.notEqual(pointerTypeRef, null);
+	assert.equal(pointerTypeRef!.name, 'tri');
+	assert.equal((pointerTypeRef!.arrayLengths[0] as LuaIdentifierExpression).name, 'count');
+	assert.equal((localStatement.values[0] as LuaIdentifierExpression).name, 'base');
+
+	const returnStatement = path.body[1] as LuaReturnStatement;
+	const addressOf = returnStatement.expressions[0] as LuaUnaryExpression;
+	assert.equal(addressOf.kind, LuaSyntaxKind.UnaryExpression);
+	assert.equal(addressOf.operator, LuaUnaryOperator.StringId);
+	assert.equal(addressOf.operand.kind, LuaSyntaxKind.IndexExpression);
+});
+
 test('parses paren-less single string argument calls', () => {
 	const simpleChunk = parseChunk('f "x"');
 	const simpleCall = simpleChunk.body[0] as LuaCallStatement;

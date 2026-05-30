@@ -46,7 +46,6 @@ export const enum LuaSyntaxKind {
 	CallExpression,
 	MemberExpression,
 	IndexExpression,
-	MemoryViewExpression,
 	SizeOfExpression,
 	OffsetOfExpression,
 }
@@ -106,7 +105,6 @@ export type LuaExpression =
 	| LuaCallExpression
 	| LuaMemberExpression
 	| LuaIndexExpression
-	| LuaMemoryViewExpression
 	| LuaSizeOfExpression
 	| LuaOffsetOfExpression;
 
@@ -144,6 +142,7 @@ export type LuaLocalAssignmentStatement = LuaNode & {
 	readonly kind: LuaSyntaxKind.LocalAssignmentStatement;
 	readonly names: ReadonlyArray<LuaIdentifierExpression>;
 	readonly attributes: ReadonlyArray<LuaLocalAttribute | null>;
+	readonly pointerTypeRefs: ReadonlyArray<LuaTypeReference | null>;
 	readonly values: ReadonlyArray<LuaExpression>;
 };
 
@@ -383,12 +382,6 @@ export type LuaIndexExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.IndexExpression;
 	readonly base: LuaExpression;
 	readonly index: LuaExpression;
-};
-
-export type LuaMemoryViewExpression = LuaNode & {
-	readonly kind: LuaSyntaxKind.MemoryViewExpression;
-	readonly typeRef: LuaTypeReference;
-	readonly address: LuaExpression;
 };
 
 export type LuaSizeOfExpression = LuaNode & {

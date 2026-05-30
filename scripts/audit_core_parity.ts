@@ -657,6 +657,27 @@ const STRICT_LUA_NO_HEAP_PATTERNS: readonly [string, RegExp][] = [
 	['string concat', /\.\./],
 ];
 
+const LUA_STRUCT_AGGREGATE_MEMWRITE_START = /\bmemwrite\s*\(\s*&/;
+
+function updateLuaStructAggregateMemwriteDepth(line: string, depth: { value: number }): boolean {
+	let scanStart = 0;
+	if (depth.value === 0) {
+		const match = LUA_STRUCT_AGGREGATE_MEMWRITE_START.exec(line);
+		if (!match) return false;
+		scanStart = match.index;
+	}
+	for (let index = scanStart; index < line.length; index += 1) {
+		const char = line[index];
+		if (char === '(') {
+			depth.value += 1;
+		} else if (char === ')') {
+			depth.value -= 1;
+			if (depth.value === 0) break;
+		}
+	}
+	return true;
+}
+
 function stripLineComment(line: string): string {
 	const slashCommentIndex = line.indexOf('//');
 	const dashCommentIndex = line.indexOf('--');
@@ -750,9 +771,12 @@ function auditStrictLuaNoHeapRegions(manifest: Manifest): string[] {
 		}
 		const prefixLineCount = text.slice(0, startIndex).split('\n').length - 1;
 		const regionLines = text.slice(startIndex, endIndex).split('\n');
+		const structAggregateMemwriteDepth = { value: 0 };
 		for (let index = 0; index < regionLines.length; index += 1) {
 			const line = stripLineComment(regionLines[index]);
+			const inStructAggregateMemwrite = updateLuaStructAggregateMemwriteDepth(line, structAggregateMemwriteDepth);
 			for (const [label, pattern] of STRICT_LUA_NO_HEAP_PATTERNS) {
+				if (label === 'table literal' && inStructAggregateMemwrite) continue;
 				if (pattern.test(line)) errors.push(`${entry.file}:${prefixLineCount + index + 1}: forbidden lua heap/gc pattern ${label}`);
 			}
 		}

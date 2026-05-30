@@ -126,7 +126,7 @@ A struct reference is a typed raw address. The register value is the address; th
 Proposed syntax:
 
 ```lua
-local draw<const> = ref RpuDraw at rpu_draw_addr
+local draw<const>: *RpuDraw = rpu_draw_addr
 draw.header = header
 draw.shader = shader
 draw.vertex_count = 3
@@ -135,7 +135,7 @@ draw.vertex_count = 3
 Array view:
 
 ```lua
-local draws<const> = ref RpuDraw[128] at display_list_addr
+local draws<const>: *RpuDraw[128] = display_list_addr
 draws[i].header = header
 draws[i].vertex_count = vertex_count
 ```
@@ -143,7 +143,7 @@ draws[i].vertex_count = vertex_count
 Multi-dimensional array view:
 
 ```lua
-local scene_draws<const> = ref RpuDraw[pass_count][draw_capacity] at scene_draw_buffer_addr
+local scene_draws<const>: *RpuDraw[pass_count][draw_capacity] = scene_draw_buffer_addr
 
 scene_draws[pass_index][draw_index].header = header
 scene_draws[pass_index][draw_index].vertex_count = vertex_count
@@ -173,7 +173,7 @@ struct DrawRecord
 	constants: CameraConstants
 end
 
-local draws<const> = ref DrawRecord[pass_count][draw_capacity] at scene_draw_buffer_addr
+local draws<const>: *DrawRecord[pass_count][draw_capacity] = scene_draw_buffer_addr
 
 draws[0][3].constants.view_proj[12] = camera_tx_q16
 draws[0][3].constants.view_proj[13] = camera_ty_q16
@@ -186,22 +186,22 @@ owned memory region.
 ROM view:
 
 ```lua
-local mesh<const> = ref VertexP3C4[mesh_vertex_count] at mesh_rom_addr
+local mesh<const>: *VertexP3C4[mesh_vertex_count] = mesh_rom_addr
 local color<const> = mesh[0].color
 ```
 
-The `ref Type at address` expression is the primary syntax for creating a
-memory view. This keeps Lua 5.4 local attributes intact: `<const>` remains the
-only local attribute used here, and the struct type lives in the expression that
-creates the view.
+The `local p: *Type = address` local declaration is the primary syntax for
+creating a memory view. This keeps Lua 5.4 local attributes intact: `<const>`
+remains the only local attribute used here, and the struct type lives in the
+local declaration that creates the view.
 
 ```lua
-local name<const> = ref StructName[array_count] at base_addr
+local name<const>: *StructName[array_count] = base_addr
 ```
 
 The address expression stays visible and the compiler gets a typed view for
 field lowering. `<const>` freezes the local binding; it does not make the
-pointed RAM immutable. BMSX structs are address-backed only, so `ref` always
+pointed RAM immutable. BMSX structs are address-backed only, so `local p: *Type = address`
 means memory view, not by-value struct storage.
 
 The compiler resolves:
@@ -279,7 +279,7 @@ ROM struct views are readable. ROM writes should follow the existing bus/memory 
 Binary cart resources should expose address and length constants that can be bound to struct-array views:
 
 ```lua
-local vertices<const> = ref VertexP3C4[rom_mesh_vertex_count] at rom_mesh_vertices_addr
+local vertices<const>: *VertexP3C4[rom_mesh_vertex_count] = rom_mesh_vertices_addr
 ```
 
 This lets static assets be read by CPU or submitted by DMA without repacking into Lua strings.
@@ -289,7 +289,7 @@ This lets static assets be read by CPU or submitted by DMA without repacking int
 Struct support should make DMA source/destination programming address-based:
 
 ```lua
-local packets<const> = ref RpuTriangle[triangle_capacity] at sys_vdp_stream_base
+local packets<const>: *RpuTriangle[triangle_capacity] = sys_vdp_stream_base
 packets[0].header = rpu_triangle_header
 packets[0].xy[0] = xy0
 packets[0].xy[1] = xy1
@@ -310,7 +310,7 @@ to a raw address plus a byte count. A complete scene buffer can therefore be
 submitted in one DMA operation:
 
 ```lua
-local scene<const> = ref RpuDraw[pass_count][draw_capacity] at scene_draw_buffer_addr
+local scene<const>: *RpuDraw[pass_count][draw_capacity] = scene_draw_buffer_addr
 
 mem[sys_dma_src] = &scene[0][0]
 mem[sys_dma_dst] = sys_vdp_fifo
@@ -380,9 +380,9 @@ Files likely touched:
 Work:
 
 1. Add contextual parsing for `struct Name ... end` and field declarations.
-2. Add a typed memory-view expression: `ref Type at address`.
+2. Add typed pointer local declarations: `local p: *Type = address`.
 3. Add AST nodes for struct declarations, field declarations, type references,
-   array lengths, and memory-view expressions.
+   array lengths, and pointer local type annotations.
 4. Add a semantic struct table per file/module.
 5. Compute `size`, `alignment`, field offsets, field memory access kind, and array stride during semantic analysis.
 6. Reject duplicate field names, unknown field types, non-constant array lengths, and recursive layouts.
@@ -401,7 +401,7 @@ Files likely touched:
 Work:
 
 1. Add compiler value kinds for raw address, struct reference, struct array reference, and struct lvalue.
-2. Resolve `ref T at expr` and `ref T[N] at expr` as typed address views.
+2. Resolve `local p: *T = expr` and `local p: *T[N] = expr` as typed address views.
 3. Resolve `view.field`, `view[index]`, `view[index].field`, and fixed array fields such as `tri.xy[2]` to byte addresses.
 4. Resolve `&view[index]` and `&view.field` to raw address values.
 5. Keep the runtime register representation as a number; no object envelope.
@@ -483,7 +483,7 @@ Deliverable: a small, reviewable cart change proving the syntax improves the pri
 Add or update:
 
 - `docs/lua_struct_support_plan.md` for this implementation plan.
-- Lua language documentation for `struct`, `ref Type at address`, `sizeof`, `offsetof`, and `&` address-of behavior.
+- Lua language documentation for `struct`, `local p: *Type = address`, `sizeof`, `offsetof`, and `&` address-of behavior.
 - `docs/video_display_processor.md` examples showing struct-array DMA into the VDP stream buffer after implementation.
 
 The VDP/RPU hardware contract should still be written in packet/register terms. Struct definitions are a producer-side way to fill those packets; they are not the device contract itself.
@@ -493,7 +493,7 @@ The VDP/RPU hardware contract should still be written in packet/register terms. 
 Use the smallest relevant checks while iterating, then the full slice gate before landing:
 
 1. Phase 0 cart syntax sketch accepted before parser/compiler work starts.
-2. Parser/semantic tests for struct declarations, memory-view expressions, field offsets, `sizeof`, and `offsetof`.
+2. Parser/semantic tests for struct declarations, pointer local declarations, field offsets, `sizeof`, and `offsetof`.
 3. Compiled Lua CPU tests for RAM byte layout using `mem8`, `mem16le`, `mem32le`, `memf32le` reads after struct writes.
 4. ROM fixture test for struct reads from a binary resource.
 5. DMA/VDP integration test for struct-array packet submission.

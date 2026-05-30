@@ -306,14 +306,6 @@ function evaluateExpressionFact(
 			const index = evaluateExpressionFact(indexExpression.index, base.state, semantics, closureWrittenSymbols);
 			return { fact: UNKNOWN_VALUE_FACT, state: index.state };
 		}
-		case LuaSyntaxKind.MemoryViewExpression: {
-			let currentState = state;
-			for (const lengthExpression of expression.typeRef.arrayLengths) {
-				currentState = evaluateExpressionFact(lengthExpression, currentState, semantics, closureWrittenSymbols).state;
-			}
-			const address = evaluateExpressionFact(expression.address, currentState, semantics, closureWrittenSymbols);
-			return { fact: NUMBER_VALUE_FACT, state: address.state };
-		}
 		case LuaSyntaxKind.SizeOfExpression: {
 			let currentState = state;
 			for (const lengthExpression of expression.typeRef.arrayLengths) {

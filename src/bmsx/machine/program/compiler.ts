@@ -21,7 +21,6 @@ import {
 	type LuaLabelStatement,
 	type LuaLocalAssignmentStatement,
 	type LuaLocalFunctionStatement,
-	type LuaMemoryViewExpression,
 	type LuaMemberExpression,
 	type LuaNumericLiteralExpression,
 	type LuaOffsetOfExpression,
@@ -32,10 +31,12 @@ import {
 	type LuaStructDeclarationStatement,
 	type LuaStructFieldDeclaration,
 	type LuaReturnStatement,
+	type LuaTableArrayField,
 	type LuaTypeReference,
 	type LuaUnaryExpression,
 	type LuaSourceRange,
 	type LuaTableConstructorExpression,
+	type LuaTableIdentifierField,
 	type LuaWhileStatement,
 	type LuaGotoStatement,
 } from '../../lua/syntax/ast';
@@ -221,12 +222,14 @@ type AssignmentTarget =
 	| { kind: 'upvalue'; upvalue: number }
 	| { kind: 'global'; slot: number; system: boolean }
 	| { kind: 'table'; tableReg: number; keyConst?: number; keyReg?: number }
+	| { kind: 'struct'; address: StructAddress }
 	| { kind: 'memory'; accessKind: MemoryAccessKind; addrConst?: number; addrReg?: number; addrOffsetBytes?: number; validateAddress?: LuaExpression };
 
 type CompiledMemoryAddress = {
 	addrConst: number | undefined;
 	addrReg: number | undefined;
 	addrOffsetBytes: number | undefined;
+	structType: StructResolvedType | null;
 };
 
 const RK_B = 1;
@@ -2123,6 +2126,7 @@ class FunctionBuilder {
 		const tempsBase = this.tempTop;
 		const names = statement.names;
 		const attributes = statement.attributes;
+		const pointerTypeRefs = statement.pointerTypeRefs;
 		const values = statement.values;
 		if (names.length === 1 && attributes[0] === 'const' && values.length === 1 && values[0].kind === LuaSyntaxKind.FunctionExpression) {
 			const decl = this.requireBoundDeclaration(names[0].range, `local '${names[0].name}'`);
@@ -2264,12 +2268,12 @@ class FunctionBuilder {
 				initializerClosureProtoIndex,
 				initializerModuleBinding,
 			);
-			const initializerExpression = i < values.length ? values[i] : undefined;
-			if (initializerExpression !== undefined && initializerExpression.kind === LuaSyntaxKind.MemoryViewExpression) {
+			const pointerTypeRef = pointerTypeRefs[i];
+			if (pointerTypeRef !== null) {
 				const binding = this.localBindings.get(decl.id);
 				if (binding !== undefined) {
 					binding.structView = {
-						type: this.resolveStructTypeReference((initializerExpression as LuaMemoryViewExpression).typeRef),
+						type: this.resolveStructTypeReference(pointerTypeRef),
 					};
 				}
 			}
@@ -2298,6 +2302,10 @@ class FunctionBuilder {
 					this.validateMemoryStore(target.validateAddress, statement.right[i]);
 				}
 			}
+			if (this.assignmentTargetsContainStruct(targets)) {
+				this.compileStructAssignments(targets, statement.right);
+				return;
+			}
 		}
 		const targetPaths: Array<string[] | null> = new Array(statement.left.length);
 		for (let index = 0; index < statement.left.length; index += 1) {
@@ -2320,8 +2328,12 @@ class FunctionBuilder {
 		for (let i = 0; i < expressions.length; i += 1) {
 			const expr = expressions[i] as LuaAssignableExpression;
 			if (expr.kind === LuaSyntaxKind.MemberExpression || expr.kind === LuaSyntaxKind.IndexExpression) {
-				const structAddress = this.tryResolveStructScalarAddress(expr);
+				const structAddress = this.tryResolveStructAddress(expr);
 				if (structAddress !== null) {
+					if (structAddress.type.accessKind === null) {
+						targets.push({ kind: 'struct', address: structAddress });
+						continue;
+					}
 					targets.push({
 						kind: 'memory',
 						accessKind: structAddress.type.accessKind!,
@@ -2397,6 +2409,28 @@ class FunctionBuilder {
 		return targets;
 	}
 
+	private assignmentTargetsContainStruct(targets: ReadonlyArray<AssignmentTarget>): boolean {
+		for (let index = 0; index < targets.length; index += 1) {
+			if (targets[index].kind === 'struct') {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private compileStructAssignments(targets: ReadonlyArray<AssignmentTarget>, expressions: ReadonlyArray<LuaExpression>): void {
+		if (targets.length !== expressions.length) {
+			throw new Error('[Compiler] Struct aggregate assignment requires one initializer per target.');
+		}
+		for (let index = 0; index < targets.length; index += 1) {
+			const target = targets[index];
+			if (target.kind !== 'struct') {
+				throw new Error('[Compiler] Struct aggregate assignment cannot be mixed with scalar assignment targets.');
+			}
+			this.compileStructAggregateStore(target.address, expressions[index]);
+		}
+	}
+
 	private compileAssignmentValues(expressions: ReadonlyArray<LuaExpression>, targetCount: number, targetPaths: ReadonlyArray<ReadonlyArray<string> | null>): number[] {
 		const values: number[] = [];
 		if (expressions.length === 0) {
@@ -2451,6 +2485,8 @@ class FunctionBuilder {
 			case 'memory':
 				this.emitMemoryStore(target.accessKind, target.addrConst, target.addrReg, target.addrOffsetBytes, valueReg);
 				return;
+			case 'struct':
+				throw new Error('[Compiler] Struct assignment requires an aggregate initializer.');
 			default:
 				throw new Error('Unsupported assignment target kind.');
 		}
@@ -2829,9 +2865,6 @@ class FunctionBuilder {
 				case LuaSyntaxKind.IndexExpression:
 					this.compileIndexExpression(expression, target);
 					return;
-				case LuaSyntaxKind.MemoryViewExpression:
-					this.compileExpressionInto((expression as LuaMemoryViewExpression).address, target, 1);
-					return;
 				case LuaSyntaxKind.SizeOfExpression:
 					this.emitLoadConst(target, this.resolveStructTypeReference((expression as LuaSizeOfExpression).typeRef).size);
 					return;
@@ -3061,11 +3094,12 @@ class FunctionBuilder {
 				addrConst: undefined,
 				addrReg: structAddress.baseReg,
 				addrOffsetBytes: structAddress.byteOffset,
+				structType: structAddress.type,
 			};
 		}
 		const addrConst = this.tryGetNumericConstIndex(expression);
 		if (addrConst !== undefined) {
-			return { addrConst, addrReg: undefined, addrOffsetBytes: undefined };
+			return { addrConst, addrReg: undefined, addrOffsetBytes: undefined, structType: null };
 		}
 		const displaced = this.tryCompileDisplacedAddress(expression);
 		if (displaced !== null) {
@@ -3073,11 +3107,12 @@ class FunctionBuilder {
 				addrConst: undefined,
 				addrReg: displaced.baseReg,
 				addrOffsetBytes: displaced.byteOffset,
+				structType: null,
 			};
 		}
 		const addrReg = this.allocTemp();
 		this.compileExpressionInto(expression, addrReg, 1);
-		return { addrConst: undefined, addrReg, addrOffsetBytes: undefined };
+		return { addrConst: undefined, addrReg, addrOffsetBytes: undefined, structType: null };
 	}
 
 	private compileMemoryTarget(target: Extract<ReturnType<typeof classifyAssignmentTargetPreparation>, { kind: 'memory' }>): Extract<AssignmentTarget, { kind: 'memory' }> {
@@ -3179,6 +3214,130 @@ class FunctionBuilder {
 			throw new Error(`[Compiler] Struct expression '${address.type.name}' is an address range; use '&' to pass its address or select a scalar field.`);
 		}
 		return address;
+	}
+
+	private requireStructAggregateTable(expression: LuaExpression, type: StructResolvedType): LuaTableConstructorExpression {
+		if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
+			return expression as LuaTableConstructorExpression;
+		}
+		if (expression.kind === LuaSyntaxKind.CallExpression) {
+			const call = expression as LuaCallExpression;
+			if (call.methodName === null && call.callee.kind === LuaSyntaxKind.IdentifierExpression && call.arguments.length === 1) {
+				const callee = call.callee as LuaIdentifierExpression;
+				if (callee.name === type.name && call.arguments[0].kind === LuaSyntaxKind.TableConstructorExpression) {
+					return call.arguments[0] as LuaTableConstructorExpression;
+				}
+			}
+		}
+		throw new Error(`[Compiler] Struct aggregate for '${type.name}' must be a table literal in struct context.`);
+	}
+
+	private collectStructAggregateArrayValues(table: LuaTableConstructorExpression): LuaExpression[] {
+		const values: LuaExpression[] = [];
+		for (let index = 0; index < table.fields.length; index += 1) {
+			const field = table.fields[index];
+			if (field.kind !== LuaTableFieldKind.Array) {
+				throw new Error('[Compiler] Positional struct aggregate cannot mix keyed fields.');
+			}
+			values.push((field as LuaTableArrayField).value);
+		}
+		return values;
+	}
+
+	private structAggregateHasNamedFields(table: LuaTableConstructorExpression): boolean {
+		for (let index = 0; index < table.fields.length; index += 1) {
+			if (table.fields[index].kind === LuaTableFieldKind.IdentifierKey) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private compileStructAggregateStore(address: StructAddress, expression: LuaExpression): void {
+		if (address.type.accessKind !== null) {
+			const valueReg = this.allocTemp();
+			this.compileExpressionInto(expression, valueReg, 1);
+			this.emitMemoryStore(address.type.accessKind, undefined, address.baseReg, address.byteOffset, valueReg);
+			return;
+		}
+		if (address.type.dimensions.length > 0) {
+			this.compileStructArrayAggregateStore(address, expression);
+			return;
+		}
+		if (address.type.struct === null) {
+			throw new Error(`[Compiler] Type '${address.type.name}' cannot be initialized with a struct aggregate.`);
+		}
+		const table = this.requireStructAggregateTable(expression, address.type);
+		if (this.structAggregateHasNamedFields(table)) {
+			this.compileNamedStructAggregateStore(address, table);
+			return;
+		}
+		this.compilePositionalStructAggregateStore(address, table);
+	}
+
+	private compileStructArrayAggregateStore(address: StructAddress, expression: LuaExpression): void {
+		const table = this.requireStructAggregateTable(expression, address.type);
+		const values = this.collectStructAggregateArrayValues(table);
+		const elementType = this.typeAfterStructIndex(address.type);
+		const expectedCount = address.type.dimensions[0];
+		if (values.length !== expectedCount) {
+			throw new Error(`[Compiler] Struct array aggregate for '${address.type.name}' expects ${expectedCount} entries.`);
+		}
+		if (elementType.accessKind === MemoryAccessKind.Word && values.length > 1) {
+			const valueBase = this.allocTempBlock(values.length);
+			for (let index = 0; index < values.length; index += 1) {
+				this.compileExpressionInto(values[index], valueBase + index, 1);
+			}
+			this.emitMemoryWordStoreSequence(valueBase, values.length, undefined, address.baseReg, address.byteOffset);
+			return;
+		}
+		for (let index = 0; index < values.length; index += 1) {
+			this.compileStructAggregateStore({
+				baseReg: address.baseReg,
+				byteOffset: address.byteOffset + index * elementType.size,
+				type: elementType,
+			}, values[index]);
+		}
+	}
+
+	private compileNamedStructAggregateStore(address: StructAddress, table: LuaTableConstructorExpression): void {
+		const struct = address.type.struct!;
+		const seen = new Set<string>();
+		for (let index = 0; index < table.fields.length; index += 1) {
+			const aggregateField = table.fields[index];
+			if (aggregateField.kind !== LuaTableFieldKind.IdentifierKey) {
+				throw new Error('[Compiler] Named struct aggregate cannot mix positional fields.');
+			}
+			const namedField = aggregateField as LuaTableIdentifierField;
+			const layoutField = struct.fields.get(namedField.name);
+			if (layoutField === undefined) {
+				throw new Error(`[Compiler] Unknown field '${namedField.name}' on struct '${struct.name}'.`);
+			}
+			if (seen.has(namedField.name)) {
+				throw new Error(`[Compiler] Duplicate field '${namedField.name}' in struct aggregate '${struct.name}'.`);
+			}
+			seen.add(namedField.name);
+			this.compileStructAggregateStore(this.resolveStructFieldAddress(address, namedField.name), namedField.value);
+		}
+		if (seen.size !== struct.fields.size) {
+			throw new Error(`[Compiler] Struct aggregate '${struct.name}' must initialize every field.`);
+		}
+	}
+
+	private compilePositionalStructAggregateStore(address: StructAddress, table: LuaTableConstructorExpression): void {
+		const struct = address.type.struct!;
+		const values = this.collectStructAggregateArrayValues(table);
+		const fields = Array.from(struct.fields.values());
+		if (fields.length === 1 && fields[0].type.dimensions.length > 0 && values.length !== 1) {
+			this.compileStructAggregateStore(this.resolveStructFieldAddress(address, fields[0].name), table);
+			return;
+		}
+		if (values.length !== fields.length) {
+			throw new Error(`[Compiler] Struct aggregate '${struct.name}' expects ${fields.length} positional fields.`);
+		}
+		for (let index = 0; index < fields.length; index += 1) {
+			this.compileStructAggregateStore(this.resolveStructFieldAddress(address, fields[index].name), values[index]);
+		}
 	}
 
 	private emitStructAddressValue(address: StructAddress, target: number, resultCount: number): void {
@@ -3348,6 +3507,22 @@ class FunctionBuilder {
 			this.validateMemoryStore(addrExpression, expression.arguments[index]);
 		}
 		const address = this.compileMemoryAddressExpression(addrExpression);
+		if (address.structType !== null && address.structType.accessKind === null) {
+			const baseReg = address.addrReg!;
+			let byteOffset = address.addrOffsetBytes ?? 0;
+			for (let index = 1; index < expression.arguments.length; index += 1) {
+				this.compileStructAggregateStore({
+					baseReg,
+					byteOffset,
+					type: address.structType,
+				}, expression.arguments[index]);
+				byteOffset += address.structType.size;
+			}
+			if (resultCount > 0) {
+				this.emitLoadNil(target, resultCount);
+			}
+			return;
+		}
 		const valueCount = expression.arguments.length - 1;
 		const valueBase = this.allocTempBlock(valueCount);
 		for (let index = 0; index < valueCount; index += 1) {

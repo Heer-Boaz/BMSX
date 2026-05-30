@@ -33,7 +33,6 @@ import type {
 	LuaLabelStatement,
 	LuaLocalAssignmentStatement,
 	LuaLocalFunctionStatement,
-	LuaMemoryViewExpression,
 	LuaMemberExpression,
 	LuaNilLiteralExpression,
 	LuaNode,
@@ -326,6 +325,7 @@ export class LuaParser {
 	private parseLocalAssignment(localToken: LuaToken): LuaLocalAssignmentStatement {
 		const names: LuaIdentifierExpression[] = [];
 		const attributes: (LuaLocalAttribute | null)[] = [];
+		const pointerTypeRefs: (LuaTypeReference | null)[] = [];
 		let endPosition = this.positionFromToken(localToken);
 		do {
 			const nameToken = this.consume(LuaTokenType.Identifier, 'Expected local variable name.');
@@ -335,6 +335,11 @@ export class LuaParser {
 			attributes.push(attribute);
 			if (attribute !== null) {
 				endPosition = this.positionFromToken(this.previous());
+			}
+			const pointerTypeRef = this.parseLocalPointerTypeReference();
+			pointerTypeRefs.push(pointerTypeRef);
+			if (pointerTypeRef !== null) {
+				endPosition = pointerTypeRef.range.end;
 			}
 		} while (this.match(LuaTokenType.Comma));
 		const values: LuaExpression[] = [];
@@ -351,6 +356,7 @@ export class LuaParser {
 			},
 			names,
 			attributes,
+			pointerTypeRefs,
 			values,
 		};
 	}
@@ -374,6 +380,14 @@ export class LuaParser {
 			throw this.error(attributeToken, 'To-be-closed locals are not supported.');
 		}
 		throw this.error(attributeToken, `Unsupported local attribute '${attributeToken.lexeme}'.`);
+	}
+
+	private parseLocalPointerTypeReference(): LuaTypeReference | null {
+		if (!this.match(LuaTokenType.Colon)) {
+			return null;
+		}
+		this.consume(LuaTokenType.Star, 'Expected "*" after ":" in local pointer type.');
+		return this.parseTypeReference();
 	}
 
 	private parseFunctionDeclaration(): LuaFunctionDeclarationStatement {
@@ -910,9 +924,6 @@ export class LuaParser {
 			case LuaTokenType.String:
 				return this.parseStringLiteral();
 			case LuaTokenType.Identifier:
-				if (token.lexeme === 'ref') {
-					return this.parseMemoryViewExpression();
-				}
 				if (token.lexeme === 'sizeof') {
 					return this.parseSizeOfExpression();
 				}
@@ -935,26 +946,6 @@ export class LuaParser {
 			default:
 				throw this.error(token, 'Unexpected token.');
 		}
-	}
-
-	private parseMemoryViewExpression(): LuaExpression {
-		const refToken = this.advance();
-		const typeRef = this.parseTypeReference();
-		const atToken = this.consume(LuaTokenType.Identifier, 'Expected "at" in memory view expression.');
-		if (atToken.lexeme !== 'at') {
-			throw this.error(atToken, 'Expected "at" in memory view expression.');
-		}
-		const address = this.parseExpression();
-		return {
-			kind: LuaSyntaxKind.MemoryViewExpression,
-			range: {
-				path: this.path,
-				start: this.positionFromToken(refToken),
-				end: address.range.end,
-			},
-			typeRef,
-			address,
-		};
 	}
 
 	private parseSizeOfExpression(): LuaExpression {
@@ -1320,14 +1311,6 @@ export class LuaParser {
 					visitExpression(indexExpression.index);
 					break;
 				}
-				case LuaSyntaxKind.MemoryViewExpression: {
-					const viewExpression = expression as LuaMemoryViewExpression;
-					for (const lengthExpression of viewExpression.typeRef.arrayLengths) {
-						visitExpression(lengthExpression);
-					}
-					visitExpression(viewExpression.address);
-					break;
-				}
 				case LuaSyntaxKind.SizeOfExpression: {
 					const sizeExpression = expression as LuaSizeOfExpression;
 					for (const lengthExpression of sizeExpression.typeRef.arrayLengths) {
@@ -1373,6 +1356,12 @@ export class LuaParser {
 					const path = [identifier.name];
 					const kind = localAssignment.attributes[index] === 'const' ? 'constant' : 'variable';
 					pushDefinition(path, identifier.range, currentScope, kind);
+					const pointerTypeRef = localAssignment.pointerTypeRefs[index];
+					if (pointerTypeRef !== null) {
+						for (const lengthExpression of pointerTypeRef.arrayLengths) {
+							visitExpression(lengthExpression);
+						}
+					}
 					recordAssignmentValue(path, mappedValues[index], currentScope);
 				}
 					for (const value of localAssignment.values) {

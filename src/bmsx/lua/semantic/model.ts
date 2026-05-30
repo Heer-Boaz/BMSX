@@ -1393,6 +1393,12 @@ class SemanticBuilder {
 					const kind = localAssignment.attributes[index] === 'const' ? 'constant' : 'local';
 					const decl = this.declareLocal(name, kind, false);
 					pending.push(decl);
+					const pointerTypeRef = localAssignment.pointerTypeRefs[index];
+					if (pointerTypeRef !== null) {
+						for (const lengthExpression of pointerTypeRef.arrayLengths) {
+							this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+						}
+					}
 				}
 				const valueLimit = localAssignment.values.length;
 				for (let index = 0; index < valueLimit; index += 1) {
@@ -1639,13 +1645,6 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.UnaryExpression: {
 				this.visitExpression(expression.operand, context);
-				return null;
-			}
-			case LuaSyntaxKind.MemoryViewExpression: {
-				for (const lengthExpression of expression.typeRef.arrayLengths) {
-					this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
-				}
-				this.visitExpression(expression.address, { tableBaseDecl: null, tableBasePath: null });
 				return null;
 			}
 			case LuaSyntaxKind.SizeOfExpression: {

@@ -6,7 +6,6 @@ import {
 	type LuaCallExpression,
 	type LuaIndexExpression,
 	type LuaMemberExpression,
-	type LuaMemoryViewExpression,
 	type LuaSizeOfExpression,
 	type LuaTableConstructorExpression,
 	type LuaUnaryExpression,
@@ -58,14 +57,6 @@ export function visitLuaExpressionChildren(
 			const indexExpression = expression as LuaIndexExpression;
 			visit(indexExpression.base);
 			visit(indexExpression.index);
-			return;
-		}
-		case LuaSyntaxKind.MemoryViewExpression: {
-			const view = expression as LuaMemoryViewExpression;
-			for (const lengthExpression of view.typeRef.arrayLengths) {
-				visit(lengthExpression);
-			}
-			visit(view.address);
 			return;
 		}
 		case LuaSyntaxKind.SizeOfExpression: {

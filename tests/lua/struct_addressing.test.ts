@@ -123,7 +123,7 @@ struct tri
 	color: word
 end
 local base<const> = ${TEST_RAM_BASE}
-local packets<const> = ref tri[2] at base
+local packets<const>: *tri[2] = base
 packets[0].header = 0x11111111
 packets[0].xy[2] = 0x22222222
 packets[1].color = 0x33333333
@@ -144,7 +144,7 @@ struct draw
 	constants: camera
 end
 local base<const> = ${TEST_RAM_BASE}
-local scene<const> = ref draw[2][3] at base
+local scene<const>: *draw[2][3] = base
 scene[1][2].constants.view[3] = 0x12345678
 return mem[base + 196], &scene[1][0], sizeof(draw), offsetof(draw.constants.eye)
 `);
@@ -161,7 +161,7 @@ struct tri
 	weight: word
 end
 local base<const> = ${TEST_RAM_BASE}
-local packets<const> = ref tri[2] at base
+local packets<const>: *tri[2] = base
 memwritef32(&packets[1].xy[0], 1.0, 2.0, 3.0)
 memwrite(&packets[1].color, 7, 8, 9)
 return mem[base + sizeof(tri) + offsetof(tri.color)], mem[base + sizeof(tri) + offsetof(tri.weight)]
@@ -172,4 +172,49 @@ return mem[base + sizeof(tri) + offsetof(tri.color)], mem[base + sizeof(tri) + o
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 4, 24/);
 	assert.match(disassembly, /STORE_MEM_WORDS_D r\d+, r\d+, 3, 36/);
 	assert.deepEqual(runCompiledLua(source), [7, 9]);
+});
+
+test('struct aggregate assignment lowers table literals without runtime tables', () => {
+	const source = `
+struct tri
+	xy: f32[3]
+	color: word
+	joint: word
+	weight: word
+end
+local base<const> = ${TEST_RAM_BASE}
+local packets<const>: *tri[2] = base
+packets[0] = { xy = { 1.0, 2.0, 3.0 }, color = 4, joint = 5, weight = 6 }
+packets[1] = { { 7.0, 8.0, 9.0 }, 10, 11, 12 }
+return mem[base + offsetof(tri.color)], mem[base + offsetof(tri.weight)], mem[base + sizeof(tri) + offsetof(tri.color)], mem[base + sizeof(tri) + offsetof(tri.weight)]
+`;
+	const compiled = compileSource(source);
+	const disassembly = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
+
+	assert.equal(disassembly.includes('NEWT'), false);
+	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 4, 0/);
+	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 12/);
+	assert.deepEqual(runCompiledLua(source), [4, 6, 10, 12]);
+});
+
+test('memwrite accepts typed struct aggregates and advances by struct size', () => {
+	const source = `
+struct q16_matrix
+	m: word[4]
+end
+local base<const> = ${TEST_RAM_BASE}
+local matrices<const>: *q16_matrix[2] = base
+memwrite(&matrices[0],
+	{ 1, 2, 3, 4 },
+	q16_matrix { 5, 6, 7, 8 }
+)
+return mem[base], mem[base + sizeof(q16_matrix) + 12]
+`;
+	const compiled = compileSource(source);
+	const disassembly = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
+
+	assert.equal(disassembly.includes('NEWT'), false);
+	assert.match(disassembly, /STORE_MEM_WORDS_D r\d+, r\d+, 4, 0/);
+	assert.match(disassembly, /STORE_MEM_WORDS_D r\d+, r\d+, 4, 16/);
+	assert.deepEqual(runCompiledLua(source), [1, 8]);
 });

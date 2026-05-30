@@ -64,6 +64,11 @@ struct mesh_vertex
 	weight: word
 end
 
+struct morph_vertex
+	pos_delta: f32[3]
+	normal_delta: f32[3]
+end
+
 struct q16_matrix
 	m: word[16]
 end
@@ -112,7 +117,7 @@ local mfu_words<const> = 1
 local c0_bytes<const> = c0_words * 4
 local c1_bytes<const> = c1_words * 4
 local joint_matrix_bytes<const> = sizeof(q16_matrix)
-local morph_vertex_stride<const> = 24
+local morph_vertex_stride<const> = sizeof(morph_vertex)
 local morph_vertex_bytes<const> = mesh_vertex_count * morph_vertex_stride
 
 local quad_vertex_addr<const> = scratch_base + atlas_bytes
@@ -133,6 +138,7 @@ local mesh_matrix_index<const> = 2
 local mesh_joint_matrix_index<const> = 1
 
 local white<const> = 0xffffffff
+local othercolor<const> = 0x00ffffff
 local q16_one<const> = numeric.q16(1.0)
 local sky_top<const> = 0xff071a3a
 local sky_horizon<const> = 0xff071a3a
@@ -144,8 +150,8 @@ local mat4_tint_b<const> = 0xff48a6ff
 local sprite_tint<const> = 0xffffffff
 local parallax_far_tint<const> = 0xff00ffff
 local parallax_near_tint<const> = 0xffffff00
-local billboard_tint_a<const> = 0xffffffff
-local billboard_tint_b<const> = 0xffffffff
+local billboard_tint_a<const> = white
+local billboard_tint_b<const> = othercolor
 local mesh_tint<const> = white
 local mesh_joint_word<const> = 0x00000001
 local mesh_weight_word<const> = 0x000000ff
@@ -283,245 +289,70 @@ local upload_atlas_to_vram<const> = function()
 end
 
 local write_background_vertices<const> = function()
-	local vertices<const> = ref bg_vertex[background_vertex_count] at background_vertex_addr
-	memwritef32(&vertices[0].xy[0],
-		-1.0,
-		1.0
+	local vertices<const>: *bg_vertex[background_vertex_count] = background_vertex_addr
+	memwrite(&vertices[0],
+		{ { -1.0, 1.0 }, sky_top },
+		{ { 1.0, 1.0 }, sky_top },
+		{ { -1.0, -0.24 }, sky_horizon },
+		{ { 1.0, 1.0 }, sky_top },
+		{ { 1.0, -0.24 }, sky_horizon },
+		{ { -1.0, -0.24 }, sky_horizon },
+		{ { -1.0, -0.24 }, ground_far },
+		{ { 1.0, -0.24 }, ground_far },
+		{ { -1.0, -1.0 }, ground_near },
+		{ { 1.0, -0.24 }, ground_far },
+		{ { 1.0, -1.0 }, ground_near },
+		{ { -1.0, -1.0 }, ground_near }
 	)
-	vertices[0].color = sky_top
-	memwritef32(&vertices[1].xy[0],
-		1.0,
-		1.0
-	)
-	vertices[1].color = sky_top
-	memwritef32(&vertices[2].xy[0],
-		-1.0,
-		-0.24
-	)
-	vertices[2].color = sky_horizon
-	memwritef32(&vertices[3].xy[0],
-		1.0,
-		1.0
-	)
-	vertices[3].color = sky_top
-	memwritef32(&vertices[4].xy[0],
-		1.0,
-		-0.24
-	)
-	vertices[4].color = sky_horizon
-	memwritef32(&vertices[5].xy[0],
-		-1.0,
-		-0.24
-	)
-	vertices[5].color = sky_horizon
-	memwritef32(&vertices[6].xy[0],
-		-1.0,
-		-0.24
-	)
-	vertices[6].color = ground_far
-	memwritef32(&vertices[7].xy[0],
-		1.0,
-		-0.24
-	)
-	vertices[7].color = ground_far
-	memwritef32(&vertices[8].xy[0],
-		-1.0,
-		-1.0
-	)
-	vertices[8].color = ground_near
-	memwritef32(&vertices[9].xy[0],
-		1.0,
-		-0.24
-	)
-	vertices[9].color = ground_far
-	memwritef32(&vertices[10].xy[0],
-		1.0,
-		-1.0
-	)
-	vertices[10].color = ground_near
-	memwritef32(&vertices[11].xy[0],
-		-1.0,
-		-1.0
-	)
-	vertices[11].color = ground_near
 end
 
 local write_quad_vertices<const> = function()
-	local vertices<const> = ref quad_vertex[quad_vertex_count] at quad_vertex_addr
-	memwritef32(&vertices[0].xyzuv[0],
-		0.0,
-		0.0,
-		0.0,
-		0.0
+	local vertices<const>: *quad_vertex[quad_vertex_count] = quad_vertex_addr
+	memwrite(&vertices[0],
+		{ { 0.0, 0.0, 0.0, 0.0 }, white },
+		{ { 1.0, 0.0, 1.0, 0.0 }, white },
+		{ { 0.0, 1.0, 0.0, 1.0 }, white },
+		{ { 1.0, 1.0, 1.0, 1.0 }, white }
 	)
-	vertices[0].color = white
-	memwritef32(&vertices[1].xyzuv[0],
-		1.0,
-		0.0,
-		1.0,
-		0.0
-	)
-	vertices[1].color = white
-	memwritef32(&vertices[2].xyzuv[0],
-		0.0,
-		1.0,
-		0.0,
-		1.0
-	)
-	vertices[2].color = white
-	memwritef32(&vertices[3].xyzuv[0],
-		1.0,
-		1.0,
-		1.0,
-		1.0
-	)
-	vertices[3].color = white
 end
 
 local write_vector_vertices<const> = function()
-	local vertices<const> = ref bg_vertex[vector_vertex_count] at vector_vertex_addr
-	memwritef32(&vertices[0].xy[0],
-		-0.88,
-		-0.94
+	local vertices<const>: *bg_vertex[vector_vertex_count] = vector_vertex_addr
+	memwrite(&vertices[0],
+		{ { -0.88, -0.94 }, vector_tint },
+		{ { 0.88, -0.94 }, vector_tint },
+		{ { -0.88, -0.90 }, vector_tint },
+		{ { 0.88, -0.94 }, vector_tint },
+		{ { 0.88, -0.90 }, vector_tint },
+		{ { -0.88, -0.90 }, vector_tint },
+		{ { -0.72, -0.78 }, vector_tint },
+		{ { 0.72, -0.78 }, vector_tint },
+		{ { -0.72, -0.74 }, vector_tint },
+		{ { 0.72, -0.78 }, vector_tint },
+		{ { 0.72, -0.74 }, vector_tint },
+		{ { -0.72, -0.74 }, vector_tint },
+		{ { -0.92, -0.62 }, vector_tint },
+		{ { -0.86, -0.62 }, vector_tint },
+		{ { -0.92, -0.56 }, vector_tint },
+		{ { -0.86, -0.62 }, vector_tint },
+		{ { -0.86, -0.56 }, vector_tint },
+		{ { -0.92, -0.56 }, vector_tint },
+		{ { 0.86, -0.62 }, vector_tint },
+		{ { 0.92, -0.62 }, vector_tint },
+		{ { 0.86, -0.56 }, vector_tint },
+		{ { 0.92, -0.62 }, vector_tint },
+		{ { 0.92, -0.56 }, vector_tint },
+		{ { 0.86, -0.56 }, vector_tint }
 	)
-	vertices[0].color = vector_tint
-	memwritef32(&vertices[1].xy[0],
-		0.88,
-		-0.94
-	)
-	vertices[1].color = vector_tint
-	memwritef32(&vertices[2].xy[0],
-		-0.88,
-		-0.90
-	)
-	vertices[2].color = vector_tint
-	memwritef32(&vertices[3].xy[0],
-		0.88,
-		-0.94
-	)
-	vertices[3].color = vector_tint
-	memwritef32(&vertices[4].xy[0],
-		0.88,
-		-0.90
-	)
-	vertices[4].color = vector_tint
-	memwritef32(&vertices[5].xy[0],
-		-0.88,
-		-0.90
-	)
-	vertices[5].color = vector_tint
-	memwritef32(&vertices[6].xy[0],
-		-0.72,
-		-0.78
-	)
-	vertices[6].color = vector_tint
-	memwritef32(&vertices[7].xy[0],
-		0.72,
-		-0.78
-	)
-	vertices[7].color = vector_tint
-	memwritef32(&vertices[8].xy[0],
-		-0.72,
-		-0.74
-	)
-	vertices[8].color = vector_tint
-	memwritef32(&vertices[9].xy[0],
-		0.72,
-		-0.78
-	)
-	vertices[9].color = vector_tint
-	memwritef32(&vertices[10].xy[0],
-		0.72,
-		-0.74
-	)
-	vertices[10].color = vector_tint
-	memwritef32(&vertices[11].xy[0],
-		-0.72,
-		-0.74
-	)
-	vertices[11].color = vector_tint
-	memwritef32(&vertices[12].xy[0],
-		-0.92,
-		-0.62
-	)
-	vertices[12].color = vector_tint
-	memwritef32(&vertices[13].xy[0],
-		-0.86,
-		-0.62
-	)
-	vertices[13].color = vector_tint
-	memwritef32(&vertices[14].xy[0],
-		-0.92,
-		-0.56
-	)
-	vertices[14].color = vector_tint
-	memwritef32(&vertices[15].xy[0],
-		-0.86,
-		-0.62
-	)
-	vertices[15].color = vector_tint
-	memwritef32(&vertices[16].xy[0],
-		-0.86,
-		-0.56
-	)
-	vertices[16].color = vector_tint
-	memwritef32(&vertices[17].xy[0],
-		-0.92,
-		-0.56
-	)
-	vertices[17].color = vector_tint
-	memwritef32(&vertices[18].xy[0],
-		0.86,
-		-0.62
-	)
-	vertices[18].color = vector_tint
-	memwritef32(&vertices[19].xy[0],
-		0.92,
-		-0.62
-	)
-	vertices[19].color = vector_tint
-	memwritef32(&vertices[20].xy[0],
-		0.86,
-		-0.56
-	)
-	vertices[20].color = vector_tint
-	memwritef32(&vertices[21].xy[0],
-		0.92,
-		-0.62
-	)
-	vertices[21].color = vector_tint
-	memwritef32(&vertices[22].xy[0],
-		0.92,
-		-0.56
-	)
-	vertices[22].color = vector_tint
-	memwritef32(&vertices[23].xy[0],
-		0.86,
-		-0.56
-	)
-	vertices[23].color = vector_tint
 end
 
 local write_mat4_vertices<const> = function()
-	local vertices<const> = ref mat4_vertex[mat4_vertex_count] at mat4_vertex_addr
-	memwritef32(&vertices[0].pos[0],
-		0.0,
-		0.12,
-		0.0
+	local vertices<const>: *mat4_vertex[mat4_vertex_count] = mat4_vertex_addr
+	memwrite(&vertices[0],
+		{ { 0.0, 0.12, 0.0 }, white },
+		{ { -0.10, -0.08, 0.0 }, white },
+		{ { 0.10, -0.08, 0.0 }, white }
 	)
-	vertices[0].color = white
-	memwritef32(&vertices[1].pos[0],
-		-0.10,
-		-0.08,
-		0.0
-	)
-	vertices[1].color = white
-	memwritef32(&vertices[2].pos[0],
-		0.10,
-		-0.08,
-		0.0
-	)
-	vertices[2].color = white
 end
 
 local write_mesh_vertices<const> = function(morph_a, morph_b)
@@ -530,271 +361,33 @@ local write_mesh_vertices<const> = function(morph_a, morph_b)
 	local radius_x<const> = 0.56 + morph_b
 	local radius_z<const> = 0.56 + morph_a
 	local mesh_uv<const> = 0.46875
-	local vertices<const> = ref mesh_vertex[mesh_vertex_count] at mesh_vertex_addr
-	memwritef32(&vertices[0].pos[0],
-		0.0,
-		top_y,
-		0.0,
-		0.0,
-		top_y,
-		0.0,
-		mesh_uv,
-		mesh_uv
+	local vertices<const>: *mesh_vertex[mesh_vertex_count] = mesh_vertex_addr
+	memwrite(&vertices[0],
+		{ { 0.0, top_y, 0.0 }, { 0.0, top_y, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, 0.0, radius_z }, { 0.0, 0.0, radius_z }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { radius_x, 0.0, 0.0 }, { radius_x, 0.0, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, top_y, 0.0 }, { 0.0, top_y, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { -radius_x, 0.0, 0.0 }, { -radius_x, 0.0, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, 0.0, radius_z }, { 0.0, 0.0, radius_z }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, top_y, 0.0 }, { 0.0, top_y, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, 0.0, -radius_z }, { 0.0, 0.0, -radius_z }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { -radius_x, 0.0, 0.0 }, { -radius_x, 0.0, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, top_y, 0.0 }, { 0.0, top_y, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { radius_x, 0.0, 0.0 }, { radius_x, 0.0, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, 0.0, -radius_z }, { 0.0, 0.0, -radius_z }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, bottom_y, 0.0 }, { 0.0, bottom_y, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { radius_x, 0.0, 0.0 }, { radius_x, 0.0, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, 0.0, radius_z }, { 0.0, 0.0, radius_z }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, bottom_y, 0.0 }, { 0.0, bottom_y, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, 0.0, radius_z }, { 0.0, 0.0, radius_z }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { -radius_x, 0.0, 0.0 }, { -radius_x, 0.0, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, bottom_y, 0.0 }, { 0.0, bottom_y, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { -radius_x, 0.0, 0.0 }, { -radius_x, 0.0, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, 0.0, -radius_z }, { 0.0, 0.0, -radius_z }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, bottom_y, 0.0 }, { 0.0, bottom_y, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { 0.0, 0.0, -radius_z }, { 0.0, 0.0, -radius_z }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word },
+		{ { radius_x, 0.0, 0.0 }, { radius_x, 0.0, 0.0 }, { mesh_uv, mesh_uv }, mesh_tint, mesh_joint_word, mesh_weight_word }
 	)
-	memwrite(&vertices[0].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[1].pos[0],
-		0.0,
-		0.0,
-		radius_z,
-		0.0,
-		0.0,
-		radius_z,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[1].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[2].pos[0],
-		radius_x,
-		0.0,
-		0.0,
-		radius_x,
-		0.0,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[2].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[3].pos[0],
-		0.0,
-		top_y,
-		0.0,
-		0.0,
-		top_y,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[3].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[4].pos[0],
-		-radius_x,
-		0.0,
-		0.0,
-		-radius_x,
-		0.0,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[4].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[5].pos[0],
-		0.0,
-		0.0,
-		radius_z,
-		0.0,
-		0.0,
-		radius_z,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[5].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[6].pos[0],
-		0.0,
-		top_y,
-		0.0,
-		0.0,
-		top_y,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[6].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[7].pos[0],
-		0.0,
-		0.0,
-		-radius_z,
-		0.0,
-		0.0,
-		-radius_z,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[7].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[8].pos[0],
-		-radius_x,
-		0.0,
-		0.0,
-		-radius_x,
-		0.0,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[8].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[9].pos[0],
-		0.0,
-		top_y,
-		0.0,
-		0.0,
-		top_y,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[9].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[10].pos[0],
-		radius_x,
-		0.0,
-		0.0,
-		radius_x,
-		0.0,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[10].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[11].pos[0],
-		0.0,
-		0.0,
-		-radius_z,
-		0.0,
-		0.0,
-		-radius_z,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[11].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[12].pos[0],
-		0.0,
-		bottom_y,
-		0.0,
-		0.0,
-		bottom_y,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[12].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[13].pos[0],
-		radius_x,
-		0.0,
-		0.0,
-		radius_x,
-		0.0,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[13].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[14].pos[0],
-		0.0,
-		0.0,
-		radius_z,
-		0.0,
-		0.0,
-		radius_z,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[14].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[15].pos[0],
-		0.0,
-		bottom_y,
-		0.0,
-		0.0,
-		bottom_y,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[15].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[16].pos[0],
-		0.0,
-		0.0,
-		radius_z,
-		0.0,
-		0.0,
-		radius_z,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[16].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[17].pos[0],
-		-radius_x,
-		0.0,
-		0.0,
-		-radius_x,
-		0.0,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[17].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[18].pos[0],
-		0.0,
-		bottom_y,
-		0.0,
-		0.0,
-		bottom_y,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[18].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[19].pos[0],
-		-radius_x,
-		0.0,
-		0.0,
-		-radius_x,
-		0.0,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[19].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[20].pos[0],
-		0.0,
-		0.0,
-		-radius_z,
-		0.0,
-		0.0,
-		-radius_z,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[20].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[21].pos[0],
-		0.0,
-		bottom_y,
-		0.0,
-		0.0,
-		bottom_y,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[21].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[22].pos[0],
-		0.0,
-		0.0,
-		-radius_z,
-		0.0,
-		0.0,
-		-radius_z,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[22].color, mesh_tint, mesh_joint_word, mesh_weight_word)
-	memwritef32(&vertices[23].pos[0],
-		radius_x,
-		0.0,
-		0.0,
-		radius_x,
-		0.0,
-		0.0,
-		mesh_uv,
-		mesh_uv
-	)
-	memwrite(&vertices[23].color, mesh_tint, mesh_joint_word, mesh_weight_word)
 end
 
 local write_mesh_indices<const> = function()
@@ -898,18 +491,10 @@ end
 local write_joint_constants<const> = function()
 	local joint_phase<const> = frame % 8
 	local joint_translate_x<const> = (joint_phase - 4) * 0.03125
-	local joints<const> = ref q16_matrix[2] at joint0_addr
-	memwrite(&joints[0].m[0],
-		q16_one, 0, 0, 0,
-		0, q16_one, 0, 0,
-		0, 0, q16_one, 0,
-		0, 0, 0, q16_one
-	)
-	memwrite(&joints[1].m[0],
-		q16_one, 0, 0, 0,
-		0, q16_one, 0, 0,
-		0, 0, q16_one, 0,
-		numeric.q16(joint_translate_x), 0, 0, q16_one
+	local joints<const>: *q16_matrix[2] = joint0_addr
+	memwrite(&joints[0],
+		{ q16_one, 0, 0, 0, 0, q16_one, 0, 0, 0, 0, q16_one, 0, 0, 0, 0, q16_one },
+		{ q16_one, 0, 0, 0, 0, q16_one, 0, 0, 0, 0, q16_one, 0, numeric.q16(joint_translate_x), 0, 0, q16_one }
 	)
 end
 
@@ -1017,7 +602,7 @@ local update_camera<const> = function()
 end
 
 local write_instances<const> = function()
-	local instances<const> = ref sprite_instance[instance_count] at instance_addr
+	local instances<const>: *sprite_instance[instance_count] = instance_addr
 	local parallax_x<const> = -32.0 + ((frame % 96) * 0.5)
 	local parallax_phase<const> = (frame % 16) * 4
 	local billboard_phase<const> = (frame % 8) * 4
@@ -1026,90 +611,14 @@ local write_instances<const> = function()
 	local billboard_y_a<const> = 114.0
 	local billboard_x_b<const> = 174.0 - billboard_phase
 	local billboard_y_b<const> = 70.0
-	memwritef32(&instances[0].matrix[0],
-		512.0 * inv_half_screen_width,
-		0.0,
-		parallax_x * inv_half_screen_width - 1.0,
-		0.70,
-		0.0,
-		-96.0 * inv_half_screen_height,
-		1.0 - 24.0 * inv_half_screen_height,
-		0.0,
-		0.0,
-		1.0,
-		1.0
+	memwrite(&instances[0],
+		{ { 512.0 * inv_half_screen_width, 0.0, parallax_x * inv_half_screen_width - 1.0, 0.70, 0.0, -96.0 * inv_half_screen_height, 1.0 - 24.0 * inv_half_screen_height, 0.0, 0.0, 1.0, 1.0 }, parallax_far_tint },
+		{ { 512.0 * inv_half_screen_width, 0.0, parallax_near_x * inv_half_screen_width - 1.0, 0.42, 0.0, -64.0 * inv_half_screen_height, 1.0 - 48.0 * inv_half_screen_height, 0.0, 0.0, 1.0, 1.0 }, parallax_near_tint },
+		{ { 48.0 * inv_half_screen_width, 0.0, sprite_x * inv_half_screen_width - 1.0, 0.20, 0.0, -48.0 * inv_half_screen_height, 1.0 - sprite_y * inv_half_screen_height, 0.0, 0.0, 1.0, 1.0 }, sprite_tint },
+		{ { 38.0 * inv_half_screen_width, 0.0, billboard_x_a * inv_half_screen_width - 1.0, 0.12, 0.0, -38.0 * inv_half_screen_height, 1.0 - billboard_y_a * inv_half_screen_height, 0.0, 0.0, 1.0, 1.0 }, billboard_tint_a },
+		{ { 32.0 * inv_half_screen_width, 0.0, billboard_x_b * inv_half_screen_width - 1.0, 0.14, 0.0, -32.0 * inv_half_screen_height, 1.0 - billboard_y_b * inv_half_screen_height, 0.0, 0.0, 1.0, 1.0 }, billboard_tint_b },
+		{ { 2.0, 0.0, -1.0, 0.0, 0.0, -2.0, 1.0, 0.0, 0.0, 1.0, 1.0 }, white }
 	)
-	instances[0].color = parallax_far_tint
-	memwritef32(&instances[1].matrix[0],
-		512.0 * inv_half_screen_width,
-		0.0,
-		parallax_near_x * inv_half_screen_width - 1.0,
-		0.42,
-		0.0,
-		-64.0 * inv_half_screen_height,
-		1.0 - 48.0 * inv_half_screen_height,
-		0.0,
-		0.0,
-		1.0,
-		1.0
-	)
-	instances[1].color = parallax_near_tint
-	memwritef32(&instances[2].matrix[0],
-		48.0 * inv_half_screen_width,
-		0.0,
-		sprite_x * inv_half_screen_width - 1.0,
-		0.20,
-		0.0,
-		-48.0 * inv_half_screen_height,
-		1.0 - sprite_y * inv_half_screen_height,
-		0.0,
-		0.0,
-		1.0,
-		1.0
-	)
-	instances[2].color = sprite_tint
-	memwritef32(&instances[3].matrix[0],
-		38.0 * inv_half_screen_width,
-		0.0,
-		billboard_x_a * inv_half_screen_width - 1.0,
-		0.12,
-		0.0,
-		-38.0 * inv_half_screen_height,
-		1.0 - billboard_y_a * inv_half_screen_height,
-		0.0,
-		0.0,
-		1.0,
-		1.0
-	)
-	instances[3].color = billboard_tint_a
-	memwritef32(&instances[4].matrix[0],
-		32.0 * inv_half_screen_width,
-		0.0,
-		billboard_x_b * inv_half_screen_width - 1.0,
-		0.14,
-		0.0,
-		-32.0 * inv_half_screen_height,
-		1.0 - billboard_y_b * inv_half_screen_height,
-		0.0,
-		0.0,
-		1.0,
-		1.0
-	)
-	instances[4].color = billboard_tint_b
-	memwritef32(&instances[5].matrix[0],
-		2.0,
-		0.0,
-		-1.0,
-		0.0,
-		0.0,
-		-2.0,
-		1.0,
-		0.0,
-		0.0,
-		1.0,
-		1.0
-	)
-	instances[5].color = white
 end
 
 local write_mat4_instances<const> = function()
@@ -1153,7 +662,7 @@ local write_mat4_instances<const> = function()
 	local vm2_03<const> = crx * wx2 + cry * wy2 + crz * wz2 + v_tx
 	local vm2_13<const> = cux * wx2 + cuy * wy2 + cuz * wz2 + v_ty
 	local vm2_23<const> = -cfx * wx2 - cfy * wy2 - cfz * wz2 + v_tz
-	local mat4_instances<const> = ref mat4_instance[mat4_instance_count] at mat4_instance_addr
+	local mat4_instances<const>: *mat4_instance[mat4_instance_count] = mat4_instance_addr
 	-- Instance 1 MVP (column-major: [col0,col1,col2,col3], each 4 floats = [r0,r1,r2,r3])
 	memwritef32(&mat4_instances[0].mvp[0],
 		pvc0r0,                    -- col0 r0
