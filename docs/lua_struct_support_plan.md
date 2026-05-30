@@ -6,6 +6,26 @@ Add first-class `struct` support to BMSX Lua so cart, BIOS, and engine code can 
 
 The feature is a compiler and ABI feature. A struct value is not a Lua table and does not allocate a runtime object. A struct reference is a typed address view over BMSX memory. Field reads and writes lower to existing memory loads and stores at deterministic byte offsets.
 
+## Design invariant: retained console-style scene memory
+
+The purpose of BMSX Lua structs is to make RAM/ROM-resident machine layouts the
+owned representation. After the feature is complete, code must be able to define
+a retained scene/device buffer as structs, nested structs, fixed arrays, arrays
+of structs, and arrays of arrays of structs; fill that memory directly; patch
+only changed fields or records across frames; and DMA-copy either the whole
+buffer or any byte-contiguous dirty subrange to VRAM/VDP/RPU by passing a raw
+address and byte count.
+
+The intended programming model is similar to programming fixed-layout
+console/arcade graphics memory: static records can remain resident, dynamic
+records such as camera constants or transforms can be overwritten in place, and
+submission is a copy of already-owned machine memory rather than construction of
+Lua tables, temporary strings, packet builders, or cart-local encoding wrappers.
+
+Struct types never cross the device boundary. They exist only so the compiler
+can prove offsets, strides, sizes, address-of expressions, and valid field
+accesses. The device receives bytes/words in deterministic BMSX layout.
+
 ## Disease being removed
 
 Current low-level VDP/RPU cart code manually orders packet words, repeats field offsets, and builds packet streams through ad-hoc Lua expressions. `string.pack` can create bytes, but it creates an intermediate string and still requires a copy into RAM before DMA can see the data. Wrapper functions only hide the ugliness; they do not make the RAM layout the owned representation.
@@ -82,6 +102,22 @@ The layout must be deterministic and BMSX-owned, not inherited from the host com
 4. Arrays use `sizeof(element)` stride.
 5. Nested structs are allowed only after field access, arrays, and DMA references are proven; initial implementation can reject nested structs at parse/semantic time.
 6. `sizeof(T)` and `offsetof(T.field)` are compile-time constants.
+7. Multi-dimensional fixed arrays are layout syntax, not Lua tables. `T[A][B]`
+   is a contiguous array of `A` rows, each row containing `B` contiguous `T`
+   elements. The address of `view[i][j]` is:
+
+   ```lua
+   base + ((i * B) + j) * sizeof(T)
+   ```
+
+8. Fixed-size array fields inside structs follow the same rule. If nested
+   structs are enabled, arrays of structs and arrays of arrays of structs must
+   remain plain contiguous memory with no descriptors, row objects, table
+   headers, pointer indirections, or runtime length metadata.
+9. Subarrays are addressable machine ranges. Taking the address of a row,
+   element, nested struct, or field returns the address of the first byte in
+   that contiguous layout range. The byte size is derived from `sizeof(...)`
+   and the fixed extents known at compile time.
 
 ### Typed memory views
 
@@ -103,6 +139,49 @@ local draws<const> = ref RpuDraw[128] at display_list_addr
 draws[i].header = header
 draws[i].vertex_count = vertex_count
 ```
+
+Multi-dimensional array view:
+
+```lua
+local scene_draws<const> = ref RpuDraw[pass_count][draw_capacity] at scene_draw_buffer_addr
+
+scene_draws[pass_index][draw_index].header = header
+scene_draws[pass_index][draw_index].vertex_count = vertex_count
+
+local row_addr<const> = &scene_draws[pass_index][0]
+local row_bytes<const> = sizeof(RpuDraw) * draw_capacity
+```
+
+This is a typed address view over one contiguous memory region. There are no Lua
+row objects. `scene_draws[pass_index]` denotes a byte-contiguous subrange, and
+`scene_draws[pass_index][draw_index]` denotes one record inside that range.
+
+Nested struct and array-field view, after nested structs are enabled:
+
+```lua
+struct CameraConstants
+	view_proj: word[16]
+	eye: f32[4]
+end
+
+struct DrawRecord
+	header: word
+	shader: word
+	primitive: word
+	pipeline: word
+	vertex_count: word
+	constants: CameraConstants
+end
+
+local draws<const> = ref DrawRecord[pass_count][draw_capacity] at scene_draw_buffer_addr
+
+draws[0][3].constants.view_proj[12] = camera_tx_q16
+draws[0][3].constants.view_proj[13] = camera_ty_q16
+draws[0][3].constants.view_proj[14] = camera_tz_q16
+```
+
+The compiler lowers every access to deterministic byte offsets inside the same
+owned memory region.
 
 ROM view:
 
@@ -159,7 +238,26 @@ Initial implementation should not support implicit whole-struct assignment:
 b = a
 ```
 
-When needed, whole-record copy should be an explicit memory/DMA operation with an address and byte count. Field assignment remains direct and visible.
+When needed, whole-record copy should be an explicit memory/DMA operation with
+an address and byte count. Field assignment remains direct and visible.
+
+Explicit copies are part of the intended machine-memory model. The compiler
+should make struct-derived addresses and byte counts first-class inputs to any
+raw memory-copy or DMA-copy primitive:
+
+```lua
+memcopy(&dst_mesh[0], &src_mesh[0], sizeof(VertexP3C4) * mesh_vertex_count)
+
+mem[sys_dma_src] = &scene_draws[0][0]
+mem[sys_dma_dst] = vram_scene_buffer
+mem[sys_dma_len] = sizeof(RpuDraw) * pass_count * draw_capacity
+mem[sys_dma_ctrl] = dma_ctrl_start
+```
+
+This is not whole-struct assignment. It is explicit address-and-byte-count
+machine copying. The source and destination may be complete struct arrays,
+multi-dimensional array rows, individual records, or other byte-contiguous
+layout ranges.
 
 ## RAM and ROM ownership
 
@@ -206,7 +304,41 @@ mem[sys_dma_len] = byte_count
 mem[sys_dma_ctrl] = dma_ctrl_start
 ```
 
-For ROM-to-device or RAM-to-device DMA, the DMA unit consumes raw addresses and byte counts. Struct typing never crosses into the device; the device receives bytes/words and decodes its own packet format.
+The DMA invariant is that any struct view, struct array view, nested struct
+field, fixed array field, or multi-dimensional struct-array row can be reduced
+to a raw address plus a byte count. A complete scene buffer can therefore be
+submitted in one DMA operation:
+
+```lua
+local scene<const> = ref RpuDraw[pass_count][draw_capacity] at scene_draw_buffer_addr
+
+mem[sys_dma_src] = &scene[0][0]
+mem[sys_dma_dst] = sys_vdp_fifo
+mem[sys_dma_len] = sizeof(RpuDraw) * pass_count * draw_capacity
+mem[sys_dma_ctrl] = dma_ctrl_start
+```
+
+A single changed row or range can be submitted without rebuilding the rest:
+
+```lua
+local pass_addr<const> = &scene[active_pass][0]
+local pass_bytes<const> = sizeof(RpuDraw) * dirty_draw_count
+
+mem[sys_dma_src] = pass_addr
+mem[sys_dma_dst] = sys_vdp_fifo
+mem[sys_dma_len] = pass_bytes
+mem[sys_dma_ctrl] = dma_ctrl_start
+```
+
+A changed camera, transform, or constant block can be patched in RAM and then
+copied either as part of the whole scene buffer or as its own smaller contiguous
+range. The feature is successful only if code can retain scene/device records in
+RAM across frames and mutate the changed parts in place instead of rebuilding
+packets, strings, tables, or wrapper-owned buffers.
+
+For ROM-to-device or RAM-to-device DMA, the DMA unit consumes raw addresses and
+byte counts. Struct typing never crosses into the device; the device receives
+bytes/words and decodes its own packet format.
 
 ## Compiler implementation plan
 
@@ -384,3 +516,16 @@ The feature is ready when all of these are true:
   acceptable in the final migration.
 - No random cart file owns local VDP/RPU encoding helpers.
 - No runtime struct object, table facade, compatibility fallback, or defensive repair path is introduced.
+- Struct support allows retained RAM scene/device buffers whose layout is made
+  of structs, fixed arrays, nested structs, arrays of structs, and eventually
+  arrays of arrays of structs.
+- Multi-dimensional struct arrays are contiguous BMSX-owned memory with
+  deterministic row-major stride and no runtime row/table objects.
+- A full struct-array scene buffer can be DMA-submitted by `&view[0][0]` plus
+  `sizeof(Element) * total_element_count`.
+- A changed subrange, such as one pass row, one transform table, one camera
+  constant block, or one record range, can be patched in RAM and DMA-submitted
+  without rebuilding unrelated records.
+- The programming model supports retained console-style scene memory: prepare
+  stable records once, mutate changed fields in place, and DMA either the whole
+  buffer or only dirty contiguous regions.
