@@ -20,6 +20,7 @@ export type LuaSymbolKind =
 	| 'function'
 	| 'table_field'
 	| 'parameter'
+	| 'type'
 	| 'assignment';
 
 export type LuaSymbolEntry = {

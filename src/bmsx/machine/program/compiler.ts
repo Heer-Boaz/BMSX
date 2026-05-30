@@ -21,12 +21,18 @@ import {
 	type LuaLabelStatement,
 	type LuaLocalAssignmentStatement,
 	type LuaLocalFunctionStatement,
+	type LuaMemoryViewExpression,
 	type LuaMemberExpression,
 	type LuaNumericLiteralExpression,
+	type LuaOffsetOfExpression,
 	type LuaStatement,
 	type LuaBooleanLiteralExpression,
+	type LuaSizeOfExpression,
 	type LuaStringLiteralExpression,
+	type LuaStructDeclarationStatement,
+	type LuaStructFieldDeclaration,
 	type LuaReturnStatement,
+	type LuaTypeReference,
 	type LuaUnaryExpression,
 	type LuaSourceRange,
 	type LuaTableConstructorExpression,
@@ -131,6 +137,7 @@ type LocalBinding = {
 	hasConstValue: boolean;
 	constClosureProtoIndex: number | null;
 	moduleBinding: ModuleBinding | null;
+	structView: StructView | null;
 };
 
 type ModuleBinding = {
@@ -158,6 +165,50 @@ type ModuleCompileContext = {
 	staticExternalModulePathSet: Set<string>;
 };
 
+type PrimitiveStructType = {
+	size: number;
+	alignment: number;
+	accessKind: MemoryAccessKind;
+};
+
+type StructResolvedType = {
+	name: string;
+	baseSize: number;
+	baseAlignment: number;
+	baseAccessKind: MemoryAccessKind | null;
+	baseStruct: StructLayout | null;
+	size: number;
+	alignment: number;
+	accessKind: MemoryAccessKind | null;
+	struct: StructLayout | null;
+	dimensions: number[];
+};
+
+type StructFieldLayout = {
+	name: string;
+	type: StructResolvedType;
+	offset: number;
+	size: number;
+	accessKind: MemoryAccessKind | null;
+};
+
+type StructLayout = {
+	name: string;
+	size: number;
+	alignment: number;
+	fields: Map<string, StructFieldLayout>;
+};
+
+type StructView = {
+	type: StructResolvedType;
+};
+
+type StructAddress = {
+	baseReg: number;
+	byteOffset: number;
+	type: StructResolvedType;
+};
+
 function isExternalRootModuleBinding(binding: ModuleBinding): boolean {
 	if (!binding.external) {
 		return false;
@@ -170,15 +221,13 @@ type AssignmentTarget =
 	| { kind: 'upvalue'; upvalue: number }
 	| { kind: 'global'; slot: number; system: boolean }
 	| { kind: 'table'; tableReg: number; keyConst?: number; keyReg?: number }
-	| { kind: 'memory'; accessKind: MemoryAccessKind; addrConst?: number; addrReg?: number };
+	| { kind: 'memory'; accessKind: MemoryAccessKind; addrConst?: number; addrReg?: number; addrOffsetBytes?: number; validateAddress?: LuaExpression };
 
 const RK_B = 1;
 const RK_C = 2;
 
 const isConstBxOp = (op: OpCode): boolean =>
-	op === OpCode.LOADK
-	|| op === OpCode.GETG
-	|| op === OpCode.SETG;
+	op === OpCode.LOADK;
 
 const isGlobalSlotOp = (op: OpCode): boolean =>
 	op === OpCode.GETSYS
@@ -193,7 +242,28 @@ const isFieldConstOp = (op: OpCode): boolean =>
 	|| op === OpCode.SETFIELD
 	|| op === OpCode.SELF;
 
+const isDisplacedMemoryOp = (op: OpCode): boolean =>
+	op === OpCode.LOAD_MEM_D
+	|| op === OpCode.STORE_MEM_D
+	|| op === OpCode.STORE_MEM_WORDS_D;
+
+const MAX_DISPLACED_MEMORY_WORD_OFFSET = 0xff;
+const MAX_DISPLACED_MEMORY_BYTE_OFFSET = MAX_DISPLACED_MEMORY_WORD_OFFSET << 2;
+
 const MAX_SPECIALIZED_TABLE_OPERAND = MAX_EXT_REGISTER_BC;
+
+const PRIMITIVE_STRUCT_TYPES: ReadonlyMap<string, PrimitiveStructType> = new Map([
+	['u8', { size: 1, alignment: 1, accessKind: MemoryAccessKind.U8 }],
+	['i8', { size: 1, alignment: 1, accessKind: MemoryAccessKind.U8 }],
+	['u16', { size: 2, alignment: 2, accessKind: MemoryAccessKind.U16LE }],
+	['i16', { size: 2, alignment: 2, accessKind: MemoryAccessKind.U16LE }],
+	['u32', { size: 4, alignment: 4, accessKind: MemoryAccessKind.U32LE }],
+	['i32', { size: 4, alignment: 4, accessKind: MemoryAccessKind.U32LE }],
+	['f32', { size: 4, alignment: 4, accessKind: MemoryAccessKind.F32LE }],
+	['f64', { size: 8, alignment: 4, accessKind: MemoryAccessKind.F64LE }],
+	['addr', { size: 4, alignment: 4, accessKind: MemoryAccessKind.U32LE }],
+	['word', { size: 4, alignment: 4, accessKind: MemoryAccessKind.Word }],
+]);
 
 const isSmallSignedImmediate = (value: number): boolean =>
 	Number.isInteger(value) && value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX;
@@ -218,6 +288,8 @@ class ProgramBuilder {
 	public readonly protoInstructionSets: Array<InstructionSet | null> = [];
 	public readonly protoFixedEntryPC: boolean[] = [];
 	public readonly protoIds: string[] = [];
+	public readonly structDeclarations = new Map<string, LuaStructDeclarationStatement>();
+	public readonly structLayouts = new Map<string, StructLayout>();
 	private readonly protoIdMap: Map<string, number> = new Map();
 	private readonly assignedProtoIds: Set<string> = new Set();
 
@@ -292,6 +364,11 @@ class ProgramBuilder {
 			return { system: true, slot: this.resolveSystemGlobalSlot(name) };
 		}
 		return { system: false, slot: this.resolveGlobalSlot(name) };
+	}
+
+	public registerStructDeclaration(statement: LuaStructDeclarationStatement): void {
+		this.structDeclarations.set(statement.name.name, statement);
+		this.structLayouts.delete(statement.name.name);
 	}
 
 	private resolveSystemGlobalSlot(name: string): number {
@@ -600,6 +677,7 @@ class FunctionBuilder {
 	}
 
 	public compileChunk(chunk: LuaChunk): void {
+		this.registerStructDeclarations(chunk.body);
 		this.flowAnalysis = new ValueKindFlowAnalyzer(chunk.body, this.semantics);
 		this.pushScope(chunk.range);
 		for (let i = 0; i < chunk.body.length; i += 1) {
@@ -612,6 +690,7 @@ class FunctionBuilder {
 	}
 
 	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean): void {
+		this.registerStructDeclarations(expression.body.body);
 		this.flowAnalysis = new ValueKindFlowAnalyzer(expression.body.body, this.semantics);
 		this.pushScope(expression.body.range);
 		if (implicitSelf) {
@@ -629,6 +708,170 @@ class FunctionBuilder {
 		this.popScope();
 		this.withRange(expression.range, () => this.emitDefaultReturn());
 		this.finalizeLabels();
+	}
+
+	private registerStructDeclarations(statements: ReadonlyArray<LuaStatement>): void {
+		for (let index = 0; index < statements.length; index += 1) {
+			const statement = statements[index];
+			if (statement.kind === LuaSyntaxKind.StructDeclarationStatement) {
+				this.program.registerStructDeclaration(statement as LuaStructDeclarationStatement);
+			}
+		}
+	}
+
+	private alignStructOffset(offset: number, alignment: number): number {
+		return (offset + alignment - 1) & ~(alignment - 1);
+	}
+
+	private requireStructArrayLength(expression: LuaExpression): number {
+		const value = this.tryEvaluateCompileTimeNumber(expression);
+		if (value === undefined || !Number.isInteger(value) || value <= 0) {
+			throw new Error('[Compiler] Struct array length must be a positive compile-time integer.');
+		}
+		return value;
+	}
+
+	private makeStructResolvedType(
+		name: string,
+		baseSize: number,
+		baseAlignment: number,
+		baseAccessKind: MemoryAccessKind | null,
+		baseStruct: StructLayout | null,
+		dimensions: ReadonlyArray<number>,
+	): StructResolvedType {
+		let size = baseSize;
+		for (let index = 0; index < dimensions.length; index += 1) {
+			size *= dimensions[index];
+		}
+		const isElement = dimensions.length === 0;
+		return {
+			name,
+			baseSize,
+			baseAlignment,
+			baseAccessKind,
+			baseStruct,
+			size,
+			alignment: baseAlignment,
+			accessKind: isElement ? baseAccessKind : null,
+			struct: isElement ? baseStruct : null,
+			dimensions: Array.from(dimensions),
+		};
+	}
+
+	private resolveStructTypeReference(typeRef: LuaTypeReference, resolving: Set<string> = new Set()): StructResolvedType {
+		const primitive = PRIMITIVE_STRUCT_TYPES.get(typeRef.name);
+		let baseSize: number;
+		let baseAlignment: number;
+		let baseAccessKind: MemoryAccessKind | null;
+		let baseStruct: StructLayout | null;
+		if (primitive !== undefined) {
+			baseSize = primitive.size;
+			baseAlignment = primitive.alignment;
+			baseAccessKind = primitive.accessKind;
+			baseStruct = null;
+		} else {
+			const layout = this.resolveStructLayout(typeRef.name, resolving);
+			baseSize = layout.size;
+			baseAlignment = layout.alignment;
+			baseAccessKind = null;
+			baseStruct = layout;
+		}
+		const dimensions: number[] = [];
+		for (let index = 0; index < typeRef.arrayLengths.length; index += 1) {
+			dimensions.push(this.requireStructArrayLength(typeRef.arrayLengths[index]));
+		}
+		return this.makeStructResolvedType(typeRef.name, baseSize, baseAlignment, baseAccessKind, baseStruct, dimensions);
+	}
+
+	private resolveStructLayout(name: string, resolving: Set<string> = new Set()): StructLayout {
+		const existing = this.program.structLayouts.get(name);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const declaration = this.program.structDeclarations.get(name);
+		if (declaration === undefined) {
+			throw new Error(`[Compiler] Unknown struct type '${name}'.`);
+		}
+		if (resolving.has(name)) {
+			throw new Error(`[Compiler] Recursive struct layout '${name}' is not supported.`);
+		}
+		resolving.add(name);
+		let offset = 0;
+		let alignment = 1;
+		const fields = new Map<string, StructFieldLayout>();
+		for (let index = 0; index < declaration.fields.length; index += 1) {
+			const field = declaration.fields[index] as LuaStructFieldDeclaration;
+			if (fields.has(field.name)) {
+				throw new Error(`[Compiler] Duplicate field '${field.name}' in struct '${name}'.`);
+			}
+			const type = this.resolveStructTypeReference(field.typeRef, resolving);
+			offset = this.alignStructOffset(offset, type.alignment);
+			fields.set(field.name, {
+				name: field.name,
+				type,
+				offset,
+				size: type.size,
+				accessKind: type.accessKind,
+			});
+			offset += type.size;
+			alignment = Math.max(alignment, type.alignment);
+		}
+		const layout: StructLayout = {
+			name,
+			size: this.alignStructOffset(offset, alignment),
+			alignment,
+			fields,
+		};
+		this.program.structLayouts.set(name, layout);
+		resolving.delete(name);
+		return layout;
+	}
+
+	private typeAfterStructIndex(type: StructResolvedType): StructResolvedType {
+		if (type.dimensions.length === 0) {
+			throw new Error(`[Compiler] Type '${type.name}' is not an array.`);
+		}
+		return this.makeStructResolvedType(
+			type.name,
+			type.baseSize,
+			type.baseAlignment,
+			type.baseAccessKind,
+			type.baseStruct,
+			type.dimensions.slice(1),
+		);
+	}
+
+	private resolveOffsetOf(typeName: string, fieldPath: ReadonlyArray<string>): number {
+		const layout = this.resolveStructLayout(typeName);
+		let offset = 0;
+		let current = this.makeStructResolvedType(typeName, layout.size, layout.alignment, null, layout, []);
+		for (let index = 0; index < fieldPath.length; index += 1) {
+			if (current.struct === null) {
+				throw new Error(`[Compiler] offsetof cannot select '${fieldPath[index]}' through non-struct type '${current.name}'.`);
+			}
+			const field = current.struct.fields.get(fieldPath[index]);
+			if (field === undefined) {
+				throw new Error(`[Compiler] Unknown field '${fieldPath[index]}' on struct '${current.struct.name}'.`);
+			}
+			offset += field.offset;
+			current = field.type;
+		}
+		return offset;
+	}
+
+	private resolveStructFieldAddress(base: StructAddress, fieldName: string): StructAddress {
+		if (base.type.struct === null) {
+			throw new Error(`[Compiler] Cannot select field '${fieldName}' from non-struct type '${base.type.name}'.`);
+		}
+		const field = base.type.struct.fields.get(fieldName);
+		if (field === undefined) {
+			throw new Error(`[Compiler] Unknown field '${fieldName}' on struct '${base.type.struct.name}'.`);
+		}
+		return {
+			baseReg: base.baseReg,
+			byteOffset: base.byteOffset + field.offset,
+			type: field.type,
+		};
 	}
 
 	public getCode(): Uint8Array {
@@ -708,6 +951,13 @@ class FunctionBuilder {
 		for (let index = 0; index < instructions.length; index += 1) {
 			const instr = instructions[index];
 			if (instr.format === 'ABC') {
+				if (isDisplacedMemoryOp(instr.op)) {
+					const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
+					const bWide = needsWideUnsigned(instr.b, MAX_OPERAND_BITS, 0);
+					const cWide = needsWideUnsigned(instr.c, MAX_OPERAND_BITS, 0);
+					wideFlags[index] = aWide || bWide || cWide;
+					continue;
+				}
 				const bWidthValue = instr.b;
 				const cWidthValue = instr.c;
 				const forceWide = ((instr.rkMask & RK_B) !== 0 && instr.b < 0)
@@ -792,6 +1042,24 @@ class FunctionBuilder {
 			const hasWide = wideFlags[index];
 			const range = ranges[index];
 			if (instr.format === 'ABC') {
+				if (isDisplacedMemoryOp(instr.op)) {
+					const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
+					const bSplit = splitUnsignedOperand(instr.b, 'B', MAX_OPERAND_BITS, 0, hasWide);
+					const cSplit = splitUnsignedOperand(instr.c, 'C', MAX_OPERAND_BITS, 0, hasWide);
+					const disp = instr.disp ?? 0;
+					if (disp < 0 || disp > MAX_DISPLACED_MEMORY_WORD_OFFSET) {
+						throw new Error(`[FunctionBuilder] Displacement operand exceeds range: ${disp}`);
+					}
+					if (hasWide) {
+						writeInstruction(code, cursor, OpCode.WIDE, aSplit.wide, bSplit.wide, cSplit.wide);
+						finalRanges[cursor] = range;
+						cursor += 1;
+					}
+					writeInstruction(code, cursor, instr.op, aSplit.low, bSplit.low, cSplit.low, disp);
+					finalRanges[cursor] = range;
+					cursor += 1;
+					continue;
+				}
 				const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, EXT_A_BITS, hasWide);
 				const bSplit = (instr.rkMask & RK_B)
 					? splitSignedOperand(instr.b, 'B', MAX_OPERAND_BITS, EXT_B_BITS, hasWide)
@@ -958,6 +1226,7 @@ class FunctionBuilder {
 			hasConstValue,
 			constClosureProtoIndex,
 			moduleBinding,
+			structView: null,
 		};
 		this.localBindings.set(symbolHandle, binding);
 		const scope = this.scopeStack[this.scopeStack.length - 1];
@@ -1428,6 +1697,20 @@ class FunctionBuilder {
 		this.ranges.push(this.currentRange);
 	}
 
+	private emitABCd(op: OpCode, a: number, b: number, c: number, disp: number): void {
+		this.code.push({
+			op,
+			a,
+			b,
+			c,
+			disp,
+			format: 'ABC',
+			rkMask: 0,
+			target: null,
+		});
+		this.ranges.push(this.currentRange);
+	}
+
 	private emitABx(op: OpCode, a: number, bx: number): void {
 		this.code.push({
 			op,
@@ -1595,6 +1878,12 @@ class FunctionBuilder {
 				return this.evaluateCompileTimeUnaryExpression(expression as LuaUnaryExpression);
 			case LuaSyntaxKind.BinaryExpression:
 				return this.evaluateCompileTimeBinaryExpression(expression as LuaBinaryExpression);
+			case LuaSyntaxKind.SizeOfExpression:
+				return this.resolveStructTypeReference((expression as LuaSizeOfExpression).typeRef).size;
+			case LuaSyntaxKind.OffsetOfExpression: {
+				const offsetOf = expression as LuaOffsetOfExpression;
+				return this.resolveOffsetOf(offsetOf.typeName, offsetOf.fieldPath);
+			}
 			default:
 				return undefined;
 		}
@@ -1816,6 +2105,8 @@ class FunctionBuilder {
 				case LuaSyntaxKind.LabelStatement:
 					this.compileLabel(statement as LuaLabelStatement);
 					return;
+				case LuaSyntaxKind.StructDeclarationStatement:
+					return;
 				default:
 					throw new Error(`Unsupported statement kind: ${(statement as LuaStatement).kind}`);
 			}
@@ -1967,13 +2258,24 @@ class FunctionBuilder {
 				initializerClosureProtoIndex,
 				initializerModuleBinding,
 			);
+			const initializerExpression = i < values.length ? values[i] : undefined;
+			if (initializerExpression !== undefined && initializerExpression.kind === LuaSyntaxKind.MemoryViewExpression) {
+				const binding = this.localBindings.get(decl.id);
+				if (binding !== undefined) {
+					binding.structView = {
+						type: this.resolveStructTypeReference((initializerExpression as LuaMemoryViewExpression).typeRef),
+					};
+				}
+			}
 			if (initializerValue !== undefined) {
 				this.emitLoadConst(target, initializerValue);
 				continue;
 			}
 			const valueReg = valueRegs[i];
 			if (valueReg !== undefined) {
-				this.emitABC(OpCode.MOV, target, valueReg, 0);
+				if (valueReg !== target) {
+					this.emitABC(OpCode.MOV, target, valueReg, 0);
+				}
 			} else {
 				this.emitLoadNil(target, 1);
 			}
@@ -1985,9 +2287,9 @@ class FunctionBuilder {
 		const targets = this.compileAssignmentTargets(statement.left);
 		if (statement.operator === LuaAssignmentOperator.Assign) {
 			for (let i = 0; i < targets.length; i += 1) {
-				if (targets[i].kind === 'memory' && i < statement.right.length) {
-					const lhsExpr = statement.left[i] as LuaIndexExpression;
-					this.validateMemoryStore(lhsExpr.index, statement.right[i]);
+				const target = targets[i];
+				if (target.kind === 'memory' && target.validateAddress !== undefined && i < statement.right.length) {
+					this.validateMemoryStore(target.validateAddress, statement.right[i]);
 				}
 			}
 		}
@@ -2011,6 +2313,18 @@ class FunctionBuilder {
 		const targets: AssignmentTarget[] = [];
 		for (let i = 0; i < expressions.length; i += 1) {
 			const expr = expressions[i] as LuaAssignableExpression;
+			if (expr.kind === LuaSyntaxKind.MemberExpression || expr.kind === LuaSyntaxKind.IndexExpression) {
+				const structAddress = this.tryResolveStructScalarAddress(expr);
+				if (structAddress !== null) {
+					targets.push({
+						kind: 'memory',
+						accessKind: structAddress.type.accessKind!,
+						addrReg: structAddress.baseReg,
+						addrOffsetBytes: structAddress.byteOffset,
+					});
+					continue;
+				}
+			}
 			const targetPreparation = classifyAssignmentTargetPreparation(this.semantics, expr);
 			if (targetPreparation.kind === 'identifier') {
 				const identifier = expr as LuaIdentifierExpression;
@@ -2129,7 +2443,7 @@ class FunctionBuilder {
 				return;
 			}
 			case 'memory':
-				this.emitMemoryStore(target.accessKind, target.addrConst, target.addrReg, valueReg);
+				this.emitMemoryStore(target.accessKind, target.addrConst, target.addrReg, target.addrOffsetBytes, valueReg);
 				return;
 			default:
 				throw new Error('Unsupported assignment target kind.');
@@ -2174,9 +2488,9 @@ class FunctionBuilder {
 				return;
 			}
 			case 'memory':
-				this.emitMemoryLoad(temp, target.accessKind, target.addrConst, target.addrReg);
+				this.emitMemoryLoad(temp, target.accessKind, target.addrConst, target.addrReg, target.addrOffsetBytes);
 				this.emitABC(op, temp, temp, valueReg, RK_B | RK_C);
-				this.emitMemoryStore(target.accessKind, target.addrConst, target.addrReg, temp);
+				this.emitMemoryStore(target.accessKind, target.addrConst, target.addrReg, target.addrOffsetBytes, temp);
 				return;
 			default:
 				throw new Error('Unsupported compound assignment target.');
@@ -2219,7 +2533,7 @@ class FunctionBuilder {
 			if (clause.condition) {
 				const condReg = this.allocTemp();
 				this.compileExpressionInto(clause.condition, condReg, 1);
-				const jumpToNext = this.emitJumpPlaceholder(OpCode.BR_FALSE, condReg);
+				const jumpToNext = this.emitJumpPlaceholder(OpCode.JMPIFNOT, condReg);
 				this.pushScope(clause.block.range);
 				for (let j = 0; j < clause.block.body.length; j += 1) {
 					this.compileStatement(clause.block.body[j]);
@@ -2247,7 +2561,7 @@ class FunctionBuilder {
 		const loopStart = this.code.length;
 		const condReg = this.allocTemp();
 		this.compileExpressionInto(statement.condition, condReg, 1);
-		const jumpOut = this.emitJumpPlaceholder(OpCode.BR_FALSE, condReg);
+		const jumpOut = this.emitJumpPlaceholder(OpCode.JMPIFNOT, condReg);
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
 		this.pushScope(statement.block.range);
@@ -2277,7 +2591,7 @@ class FunctionBuilder {
 		this.loopStack.pop();
 		const condReg = this.allocTemp();
 		this.compileExpressionInto(statement.condition, condReg, 1);
-		this.emitAsBx(OpCode.BR_FALSE, condReg, loopStart - (this.code.length + 1));
+		this.emitAsBx(OpCode.JMPIFNOT, condReg, loopStart - (this.code.length + 1));
 		for (let i = 0; i < ctx.breakJumps.length; i += 1) {
 			this.patchJump(ctx.breakJumps[i], this.code.length);
 		}
@@ -2509,6 +2823,17 @@ class FunctionBuilder {
 				case LuaSyntaxKind.IndexExpression:
 					this.compileIndexExpression(expression, target);
 					return;
+				case LuaSyntaxKind.MemoryViewExpression:
+					this.compileExpressionInto((expression as LuaMemoryViewExpression).address, target, 1);
+					return;
+				case LuaSyntaxKind.SizeOfExpression:
+					this.emitLoadConst(target, this.resolveStructTypeReference((expression as LuaSizeOfExpression).typeRef).size);
+					return;
+				case LuaSyntaxKind.OffsetOfExpression: {
+					const offsetOf = expression as LuaOffsetOfExpression;
+					this.emitLoadConst(target, this.resolveOffsetOf(offsetOf.typeName, offsetOf.fieldPath));
+					return;
+				}
 				case LuaSyntaxKind.VarargExpression:
 					this.emitABC(OpCode.VARARG, target, resultCount, 0);
 					return;
@@ -2529,6 +2854,11 @@ class FunctionBuilder {
 		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaMemberExpression);
 		if (slotName !== undefined) {
 			this.emitModuleExportLoad(slotName, target);
+			return;
+		}
+		const structAddress = this.tryResolveStructScalarAddress(expression as LuaMemberExpression);
+		if (structAddress !== null) {
+			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
 			return;
 		}
 		/*
@@ -2561,6 +2891,11 @@ class FunctionBuilder {
 			this.emitModuleExportLoad(slotName, target);
 			return;
 		}
+		const structAddress = this.tryResolveStructScalarAddress(expression as LuaIndexExpression);
+		if (structAddress !== null) {
+			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
+			return;
+		}
 		/*
 			For index access on compile-time-only module roots, if the key is statically known and not
 			exported, emit a link-time placeholder so the linker can resolve it to a global slot.
@@ -2581,7 +2916,7 @@ class FunctionBuilder {
 		const targetPreparation = classifyAssignmentTargetPreparation(this.semantics, expression as LuaIndexExpression);
 		if (targetPreparation.kind === 'memory') {
 			const memoryTarget = this.compileMemoryTarget(targetPreparation);
-			this.emitMemoryLoad(target, memoryTarget.accessKind, memoryTarget.addrConst, memoryTarget.addrReg);
+			this.emitMemoryLoad(target, memoryTarget.accessKind, memoryTarget.addrConst, memoryTarget.addrReg, memoryTarget.addrOffsetBytes);
 			return;
 		}
 		const baseReg = this.allocTemp();
@@ -2666,24 +3001,197 @@ class FunctionBuilder {
 		return this.program.constIndex(constValue);
 	}
 
+	private tryEvaluateCompileTimeNumber(expression: LuaExpression): number | undefined {
+		const constValue = this.evaluateCompileTimeExpression(expression);
+		if (constValue === undefined || constValue === null || constValue === true || constValue === false || valueIsString(constValue)) {
+			return undefined;
+		}
+		return constValue as number;
+	}
+
+	private tryCompileDisplacedAddress(expression: LuaExpression): { baseReg: number; byteOffset: number } | null {
+		if (expression.kind !== LuaSyntaxKind.BinaryExpression) {
+			return null;
+		}
+		const binary = expression as LuaBinaryExpression;
+		if (binary.operator !== LuaBinaryOperator.Add && binary.operator !== LuaBinaryOperator.Subtract) {
+			return null;
+		}
+		const rightOffset = this.tryEvaluateCompileTimeNumber(binary.right);
+		if (rightOffset !== undefined) {
+			const baseReg = this.allocTemp();
+			this.compileExpressionInto(binary.left, baseReg, 1);
+			return {
+				baseReg,
+				byteOffset: binary.operator === LuaBinaryOperator.Subtract ? -rightOffset : rightOffset,
+			};
+		}
+		if (binary.operator === LuaBinaryOperator.Add) {
+			const leftOffset = this.tryEvaluateCompileTimeNumber(binary.left);
+			if (leftOffset !== undefined) {
+				const baseReg = this.allocTemp();
+				this.compileExpressionInto(binary.right, baseReg, 1);
+				return { baseReg, byteOffset: leftOffset };
+			}
+		}
+		return null;
+	}
+
 	private compileMemoryTarget(target: Extract<ReturnType<typeof classifyAssignmentTargetPreparation>, { kind: 'memory' }>): Extract<AssignmentTarget, { kind: 'memory' }> {
 		const addrConst = this.tryGetNumericConstIndex(target.index);
 		if (addrConst !== undefined) {
-			return { kind: 'memory', accessKind: target.accessKind, addrConst };
+			return { kind: 'memory', accessKind: target.accessKind, addrConst, validateAddress: target.index };
+		}
+		const displaced = this.tryCompileDisplacedAddress(target.index);
+		if (displaced !== null) {
+			return {
+				kind: 'memory',
+				accessKind: target.accessKind,
+				addrReg: displaced.baseReg,
+				addrOffsetBytes: displaced.byteOffset,
+				validateAddress: target.index,
+			};
 		}
 		const addrReg = this.allocTemp();
 		this.compileExpressionInto(target.index, addrReg, 1);
-		return { kind: 'memory', accessKind: target.accessKind, addrReg };
+		return { kind: 'memory', accessKind: target.accessKind, addrReg, validateAddress: target.index };
 	}
 
-	private emitMemoryLoad(target: number, accessKind: MemoryAccessKind, addrConst: number | undefined, addrReg: number | undefined): void {
-		const addrOperand = addrConst !== undefined ? this.encodeConstOperand(addrConst) : addrReg;
-		this.emitABC(OpCode.LOAD_MEM, target, addrOperand, accessKind, addrConst !== undefined ? RK_B : 0);
+	private compileStructIndexAddress(base: StructAddress, indexExpression: LuaExpression): StructAddress {
+		const elementType = this.typeAfterStructIndex(base.type);
+		const stride = elementType.size;
+		const staticIndex = this.tryEvaluateCompileTimeNumber(indexExpression);
+		if (staticIndex !== undefined) {
+			if (!Number.isInteger(staticIndex)) {
+				throw new Error('[Compiler] Struct array index must be an integer when used as a compile-time offset.');
+			}
+			return {
+				baseReg: base.baseReg,
+				byteOffset: base.byteOffset + staticIndex * stride,
+				type: elementType,
+			};
+		}
+		const indexReg = this.allocTemp();
+		this.compileExpressionInto(indexExpression, indexReg, 1);
+		let offsetReg = indexReg;
+		if (stride !== 1) {
+			offsetReg = this.allocTemp();
+			this.emitABC(OpCode.MUL, offsetReg, indexReg, this.encodeConstOperand(this.program.constIndex(stride)), RK_C);
+		}
+		const baseReg = this.emitOffsetAddress(base.baseReg, base.byteOffset);
+		const nextBaseReg = this.allocTemp();
+		this.emitABC(OpCode.ADD, nextBaseReg, baseReg, offsetReg, 0);
+		return {
+			baseReg: nextBaseReg,
+			byteOffset: 0,
+			type: elementType,
+		};
 	}
 
-	private emitMemoryStore(accessKind: MemoryAccessKind, addrConst: number | undefined, addrReg: number | undefined, valueReg: number): void {
-		const addrOperand = addrConst !== undefined ? this.encodeConstOperand(addrConst) : addrReg;
-		this.emitABC(OpCode.STORE_MEM, valueReg, addrOperand, accessKind, addrConst !== undefined ? RK_B : 0);
+	private tryResolveStructAddress(expression: LuaExpression): StructAddress | null {
+		switch (expression.kind) {
+			case LuaSyntaxKind.IdentifierExpression: {
+				const reference = getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression);
+				const binding = this.resolveReferenceVisibleBinding(reference);
+				if (binding === null || binding.structView === null) {
+					return null;
+				}
+				const localReg = this.resolveReferenceLocal(reference);
+				if (localReg !== null) {
+					return {
+						baseReg: localReg,
+						byteOffset: 0,
+						type: binding.structView.type,
+					};
+				}
+				const baseReg = this.allocTemp();
+				this.emitReferenceLoad(reference, baseReg);
+				return {
+					baseReg,
+					byteOffset: 0,
+					type: binding.structView.type,
+				};
+			}
+			case LuaSyntaxKind.MemberExpression: {
+				const member = expression as LuaMemberExpression;
+				const base = this.tryResolveStructAddress(member.base);
+				return base === null ? null : this.resolveStructFieldAddress(base, member.identifier);
+			}
+			case LuaSyntaxKind.IndexExpression: {
+				const index = expression as LuaIndexExpression;
+				const base = this.tryResolveStructAddress(index.base);
+				return base === null ? null : this.compileStructIndexAddress(base, index.index);
+			}
+			default:
+				return null;
+		}
+	}
+
+	private tryResolveStructScalarAddress(expression: LuaExpression): StructAddress | null {
+		const address = this.tryResolveStructAddress(expression);
+		if (address === null) {
+			return null;
+		}
+		if (address.type.accessKind === null) {
+			throw new Error(`[Compiler] Struct expression '${address.type.name}' is an address range; use '&' to pass its address or select a scalar field.`);
+		}
+		return address;
+	}
+
+	private emitStructAddressValue(address: StructAddress, target: number, resultCount: number): void {
+		if (resultCount === 0) {
+			return;
+		}
+		if (address.byteOffset === 0) {
+			if (address.baseReg !== target) {
+				this.emitABC(OpCode.MOV, target, address.baseReg, 0);
+			}
+		} else {
+			this.emitABC(OpCode.ADD, target, address.baseReg, this.encodeConstOperand(this.program.constIndex(address.byteOffset)), RK_C);
+		}
+		if (resultCount > 1) {
+			this.emitLoadNil(target + 1, resultCount - 1);
+		}
+	}
+
+	private canUseDisplacedMemoryOpcode(byteOffset: number): boolean {
+		return byteOffset >= 0 && byteOffset <= MAX_DISPLACED_MEMORY_BYTE_OFFSET && (byteOffset & 0x3) === 0;
+	}
+
+	private emitOffsetAddress(baseReg: number, byteOffset: number): number {
+		if (byteOffset === 0) {
+			return baseReg;
+		}
+		const addrReg = this.allocTemp();
+		const offsetOperand = this.encodeConstOperand(this.program.constIndex(byteOffset));
+		this.emitABC(OpCode.ADD, addrReg, baseReg, offsetOperand, RK_C);
+		return addrReg;
+	}
+
+	private emitMemoryLoad(target: number, accessKind: MemoryAccessKind, addrConst: number | undefined, addrReg: number | undefined, addrOffsetBytes: number | undefined): void {
+		const byteOffset = addrOffsetBytes ?? 0;
+		if (addrReg !== undefined && this.canUseDisplacedMemoryOpcode(byteOffset)) {
+			this.emitABCd(OpCode.LOAD_MEM_D, target, addrReg, accessKind, byteOffset >> 2);
+			return;
+		}
+		if (addrConst !== undefined) {
+			this.emitABC(OpCode.LOAD_MEM, target, this.encodeConstOperand(addrConst), accessKind, RK_B);
+			return;
+		}
+		this.emitABC(OpCode.LOAD_MEM, target, this.emitOffsetAddress(addrReg!, byteOffset), accessKind, 0);
+	}
+
+	private emitMemoryStore(accessKind: MemoryAccessKind, addrConst: number | undefined, addrReg: number | undefined, addrOffsetBytes: number | undefined, valueReg: number): void {
+		const byteOffset = addrOffsetBytes ?? 0;
+		if (addrReg !== undefined && this.canUseDisplacedMemoryOpcode(byteOffset)) {
+			this.emitABCd(OpCode.STORE_MEM_D, valueReg, addrReg, accessKind, byteOffset >> 2);
+			return;
+		}
+		if (addrConst !== undefined) {
+			this.emitABC(OpCode.STORE_MEM, valueReg, this.encodeConstOperand(addrConst), accessKind, RK_B);
+			return;
+		}
+		this.emitABC(OpCode.STORE_MEM, valueReg, this.emitOffsetAddress(addrReg!, byteOffset), accessKind, 0);
 	}
 
 	private tryResolveConstantMemoryAddress(addressExpression: LuaExpression): number | undefined {
@@ -2752,13 +3260,21 @@ class FunctionBuilder {
 		);
 	}
 
-	private emitMemoryWordStoreSequence(valueBase: number, valueCount: number, addrConst: number | undefined, addrReg: number | undefined): void {
+	private emitMemoryWordStoreSequence(valueBase: number, valueCount: number, addrConst: number | undefined, addrReg: number | undefined, addrOffsetBytes: number | undefined = undefined): void {
 		if (valueCount === 1) {
-			this.emitMemoryStore(MemoryAccessKind.Word, addrConst, addrReg, valueBase);
+			this.emitMemoryStore(MemoryAccessKind.Word, addrConst, addrReg, addrOffsetBytes, valueBase);
 			return;
 		}
-		const addrOperand = addrConst !== undefined ? this.encodeConstOperand(addrConst) : addrReg;
-		this.emitABC(OpCode.STORE_MEM_WORDS, valueBase, addrOperand, valueCount, addrConst !== undefined ? RK_B : 0);
+		const byteOffset = addrOffsetBytes ?? 0;
+		if (addrReg !== undefined && this.canUseDisplacedMemoryOpcode(byteOffset)) {
+			this.emitABCd(OpCode.STORE_MEM_WORDS_D, valueBase, addrReg, valueCount, byteOffset >> 2);
+			return;
+		}
+		if (addrConst !== undefined) {
+			this.emitABC(OpCode.STORE_MEM_WORDS, valueBase, this.encodeConstOperand(addrConst), valueCount, RK_B);
+			return;
+		}
+		this.emitABC(OpCode.STORE_MEM_WORDS, valueBase, this.emitOffsetAddress(addrReg!, byteOffset), valueCount, 0);
 	}
 
 	private tryCompileIntrinsicCall(expression: LuaCallExpression, target: number, resultCount: number): boolean {
@@ -2790,16 +3306,23 @@ class FunctionBuilder {
 		}
 		const addrConst = this.tryGetNumericConstIndex(addrExpression);
 		let addrReg: number | undefined;
+		let addrOffsetBytes: number | undefined;
 		if (addrConst === undefined) {
-			addrReg = this.allocTemp();
-			this.compileExpressionInto(addrExpression, addrReg, 1);
+			const displaced = this.tryCompileDisplacedAddress(addrExpression);
+			if (displaced !== null) {
+				addrReg = displaced.baseReg;
+				addrOffsetBytes = displaced.byteOffset;
+			} else {
+				addrReg = this.allocTemp();
+				this.compileExpressionInto(addrExpression, addrReg, 1);
+			}
 		}
 		const valueCount = expression.arguments.length - 1;
 		const valueBase = this.allocTempBlock(valueCount);
 		for (let index = 0; index < valueCount; index += 1) {
 			this.compileExpressionInto(expression.arguments[index + 1], valueBase + index, 1);
 		}
-		this.emitMemoryWordStoreSequence(valueBase, valueCount, addrConst, addrReg);
+		this.emitMemoryWordStoreSequence(valueBase, valueCount, addrConst, addrReg, addrOffsetBytes);
 		if (resultCount > 0) {
 			this.emitLoadNil(target, resultCount);
 		}
@@ -2820,7 +3343,7 @@ class FunctionBuilder {
 		const valueCount = expression.arguments.length - 1;
 		for (let index = 0; index < valueCount; index += 1) {
 			this.compileExpressionInto(expression.arguments[index + 1], valueReg, 1);
-			this.emitMemoryStore(MemoryAccessKind.F32LE, undefined, addrReg, valueReg);
+			this.emitMemoryStore(MemoryAccessKind.F32LE, undefined, addrReg, undefined, valueReg);
 			if (index + 1 < valueCount) {
 				this.emitABC(OpCode.ADD, addrReg, addrReg, stepOperand, RK_C);
 			}
@@ -2831,6 +3354,11 @@ class FunctionBuilder {
 	}
 
 	private compileStringIdUnaryExpression(expression: LuaUnaryExpression, target: number, resultCount: number): void {
+		const structAddress = this.tryResolveStructAddress(expression.operand);
+		if (structAddress !== null) {
+			this.emitStructAddressValue(structAddress, target, resultCount);
+			return;
+		}
 		const valueKind = this.flowAnalysis!.evaluateExpressionValueKind(expression.operand, this.currentFlowState);
 		switch (valueKind) {
 			case 'string':
@@ -2980,14 +3508,14 @@ class FunctionBuilder {
 
 	private compileAndExpression(expression: any, target: number): void {
 		this.compileExpressionInto(expression.left, target, 1);
-		const jump = this.emitJumpPlaceholder(OpCode.BR_FALSE, target);
+		const jump = this.emitJumpPlaceholder(OpCode.JMPIFNOT, target);
 		this.compileExpressionInto(expression.right, target, 1);
 		this.patchJump(jump, this.code.length);
 	}
 
 	private compileOrExpression(expression: any, target: number): void {
 		this.compileExpressionInto(expression.left, target, 1);
-		const jumpEnd = this.emitJumpPlaceholder(OpCode.BR_TRUE, target);
+		const jumpEnd = this.emitJumpPlaceholder(OpCode.JMPIF, target);
 		this.compileExpressionInto(expression.right, target, 1);
 		this.patchJump(jumpEnd, this.code.length);
 	}

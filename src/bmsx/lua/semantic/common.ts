@@ -22,6 +22,8 @@ export function semanticSymbolKindToLuaSymbolKind(kind: SemanticSymbolKind): Lua
 			return 'parameter';
 		case 'constant':
 			return 'constant';
+		case 'type':
+			return 'type';
 		default:
 			return 'variable';
 	}

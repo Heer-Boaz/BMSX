@@ -19,14 +19,6 @@ DISPATCH_LABEL(LOADNIL) {
 	DISPATCH_CONTINUE();
 }
 
-DISPATCH_LABEL(LOADBOOL) {
-	SET_REGISTER_FAST(a, valueBool(b != 0));
-	if (c != 0) {
-		SKIP_NEXT_INSTRUCTION();
-	}
-	DISPATCH_CONTINUE();
-}
-
 DISPATCH_LABEL(KNIL) {
 	SET_REGISTER_FAST(a, valueNil());
 	DISPATCH_CONTINUE();
@@ -59,18 +51,6 @@ DISPATCH_LABEL(KM1) {
 
 DISPATCH_LABEL(KSMI) {
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(sbx)));
-	DISPATCH_CONTINUE();
-}
-
-DISPATCH_LABEL(GETG) {
-	const Value& key = m_program->constPool[static_cast<size_t>(bx)];
-	SET_REGISTER_FAST(a, globals->get(key));
-	DISPATCH_CONTINUE();
-}
-
-DISPATCH_LABEL(SETG) {
-	const Value& key = m_program->constPool[static_cast<size_t>(bx)];
-	globals->set(key, REG(a));
 	DISPATCH_CONTINUE();
 }
 
@@ -417,22 +397,12 @@ DISPATCH_LABEL(LE) {
 	DISPATCH_CONTINUE();
 }
 
-DISPATCH_LABEL(TEST) {
-	const Value& val = REG(a);
-	if (isTruthy(val) != (c != 0)) {
-		SKIP_NEXT_INSTRUCTION();
-	}
-	DISPATCH_CONTINUE();
+DISPATCH_LABEL(RESERVED0) {
+	throw BMSX_RUNTIME_ERROR("Reserved opcode 0 executed.");
 }
 
-DISPATCH_LABEL(TESTSET) {
-	const Value& val = REG(b);
-	if (isTruthy(val) == (c != 0)) {
-		SET_REGISTER_FAST(a, val);
-	} else {
-		SKIP_NEXT_INSTRUCTION();
-	}
-	DISPATCH_CONTINUE();
+DISPATCH_LABEL(RESERVED1) {
+	throw BMSX_RUNTIME_ERROR("Reserved opcode 1 executed.");
 }
 
 DISPATCH_LABEL(JMP) {
@@ -448,20 +418,6 @@ DISPATCH_LABEL(JMPIF) {
 }
 
 DISPATCH_LABEL(JMPIFNOT) {
-	if (!isTruthy(REG(a))) {
-		FRAME.pc += sbx * INSTRUCTION_BYTES;
-	}
-	DISPATCH_CONTINUE();
-}
-
-DISPATCH_LABEL(BR_TRUE) {
-	if (isTruthy(REG(a))) {
-		FRAME.pc += sbx * INSTRUCTION_BYTES;
-	}
-	DISPATCH_CONTINUE();
-}
-
-DISPATCH_LABEL(BR_FALSE) {
 	if (!isTruthy(REG(a))) {
 		FRAME.pc += sbx * INSTRUCTION_BYTES;
 	}
@@ -569,6 +525,25 @@ DISPATCH_LABEL(RET) {
 	DISPATCH_CONTINUE();
 }
 
+DISPATCH_LABEL(LOAD_MEM_D) {
+	const uint32_t addr = static_cast<uint32_t>(requireRegisterNumber(FRAME, b)) + (static_cast<uint32_t>(disp) << 2);
+	SET_REGISTER_FAST(a, readMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c)));
+	DISPATCH_CONTINUE();
+}
+
+DISPATCH_LABEL(STORE_MEM_D) {
+	const uint32_t addr = static_cast<uint32_t>(requireRegisterNumber(FRAME, b)) + (static_cast<uint32_t>(disp) << 2);
+	writeMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c), REG(a));
+	DISPATCH_CONTINUE();
+}
+
+DISPATCH_LABEL(STORE_MEM_WORDS_D) {
+	const uint32_t addr = static_cast<uint32_t>(requireRegisterNumber(FRAME, b)) + (static_cast<uint32_t>(disp) << 2);
+	CYCLES_ADD(ceilDiv4(c));
+	writeMappedWordSequence(FRAME, addr, a, c);
+	DISPATCH_CONTINUE();
+}
+
 DISPATCH_LABEL(LOAD_MEM) {
 	const uint32_t addr = static_cast<uint32_t>(requireRKNumber(FRAME, rkB));
 	SET_REGISTER_FAST(a, readMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c)));
@@ -586,4 +561,12 @@ DISPATCH_LABEL(STORE_MEM_WORDS) {
 	CYCLES_ADD(ceilDiv4(c));
 	writeMappedWordSequence(FRAME, addr, a, c);
 	DISPATCH_CONTINUE();
+}
+
+DISPATCH_LABEL(RESERVED2) {
+	throw BMSX_RUNTIME_ERROR("Reserved opcode 2 executed.");
+}
+
+DISPATCH_LABEL(RESERVED3) {
+	throw BMSX_RUNTIME_ERROR("Reserved opcode 3 executed.");
 }

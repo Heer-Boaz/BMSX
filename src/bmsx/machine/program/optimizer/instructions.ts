@@ -13,6 +13,7 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	a: instruction.a,
 	b: instruction.b,
 	c: instruction.c,
+	disp: instruction.disp,
 	format: instruction.format,
 	rkMask: instruction.rkMask,
 	target: instruction.target,
@@ -37,8 +38,6 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.KSMI:
 			case OpCode.LOADK:
 			case OpCode.LOADNIL:
-			case OpCode.LOADBOOL:
-			case OpCode.GETG:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
 			case OpCode.GETI:
@@ -48,20 +47,21 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.GETUP:
 				updateMax(instruction.a);
 				break;
-			case OpCode.SETG:
 			case OpCode.SETSYS:
 			case OpCode.SETGL:
 			case OpCode.SETUP:
-			case OpCode.TEST:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
-			case OpCode.BR_TRUE:
-			case OpCode.BR_FALSE:
 			case OpCode.LOAD_MEM:
 				updateMax(instruction.a);
 				if (instruction.op === OpCode.LOAD_MEM && isRegisterOperand(instruction, RK_B, instruction.b)) {
 					updateMax(instruction.b);
 				}
+				break;
+			case OpCode.LOAD_MEM_D:
+			case OpCode.STORE_MEM_D:
+				updateMax(instruction.a);
+				updateMax(instruction.b);
 				break;
 			case OpCode.STORE_MEM_WORDS:
 				updateMax(instruction.a);
@@ -69,6 +69,11 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 				if (isRegisterOperand(instruction, RK_B, instruction.b)) {
 					updateMax(instruction.b);
 				}
+				break;
+			case OpCode.STORE_MEM_WORDS_D:
+				updateMax(instruction.a);
+				updateMax(lastRegisterInRange(instruction.a, instruction.c));
+				updateMax(instruction.b);
 				break;
 			case OpCode.MOV:
 			case OpCode.UNM:
@@ -120,10 +125,6 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 				updateMax(instruction.a);
 				updateMax(instruction.b);
 				updateMax(lastRegisterInRange(instruction.b, instruction.c));
-				break;
-			case OpCode.TESTSET:
-				updateMax(instruction.a);
-				updateMax(instruction.b);
 				break;
 			case OpCode.VARARG:
 				updateMax(instruction.a);
@@ -186,8 +187,6 @@ export const isPureInstruction = (instruction: Instruction): boolean => {
 		case OpCode.GETUP:
 		case OpCode.VARARG:
 			return true;
-		case OpCode.LOADBOOL:
-			return instruction.c === 0;
 		default:
 			return false;
 	}

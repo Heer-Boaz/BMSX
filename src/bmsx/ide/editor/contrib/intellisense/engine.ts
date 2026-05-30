@@ -209,7 +209,7 @@ export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures
 	}
 	const items: LuaCompletionItem[] = [];
 	const signatures: Map<string, ApiCompletionMetadata> = new Map();
-	const entries = Object.entries(API_METHOD_METADATA);
+	const entries: [string, ApiMethodMetadata][] = Object.entries(API_METHOD_METADATA);
 	for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
 		const [name, metadata] = entries[entryIndex];
 		let params: string[] = [];

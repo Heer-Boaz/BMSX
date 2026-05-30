@@ -1,6 +1,6 @@
 import { OpCode, Table, asStringId, isNativeFunction, isNativeObject, valueIsString, type Program, type ProgramMetadata, type Proto, type SourceRange, type Value } from './cpu';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
-import { OPCODE_USES_BX } from './opcode_info';
+import { OPCODE_USES_BX, OPCODE_USES_DISP, getOpcodeName } from './opcode_info';
 import { formatNumber } from '../common/number_format';
 
 export type DisassemblyOptions = {
@@ -29,6 +29,7 @@ type DecodedInstruction = {
 	sbx: number;
 	rkBitsB: number;
 	rkBitsC: number;
+	disp: number;
 	rawWords: number[];
 };
 
@@ -48,7 +49,7 @@ type ResolvedOptions = {
 	pcBias: number;
 };
 
-type OperandField = 'a' | 'b' | 'c' | 'bx' | 'sbx' | 'mode';
+type OperandField = 'a' | 'b' | 'c' | 'bx' | 'sbx' | 'disp' | 'mode';
 
 export type InstructionOperandDebugInfo = {
 	field: OperandField;
@@ -103,76 +104,7 @@ const formatHexWord = (word: number, options: ResolvedOptions): string => {
 
 const SOURCE_COMMENT_MAX_CHARS = 120;
 
-const getOpName = (op: OpCode): string => {
-	switch (op) {
-		case OpCode.WIDE: return 'WIDE';
-		case OpCode.MOV: return 'MOV';
-		case OpCode.LOADK: return 'LOADK';
-		case OpCode.LOADNIL: return 'LOADNIL';
-		case OpCode.LOADBOOL: return 'LOADBOOL';
-		case OpCode.KNIL: return 'KNIL';
-		case OpCode.KFALSE: return 'KFALSE';
-		case OpCode.KTRUE: return 'KTRUE';
-		case OpCode.K0: return 'K0';
-		case OpCode.K1: return 'K1';
-		case OpCode.KM1: return 'KM1';
-		case OpCode.KSMI: return 'KSMI';
-		case OpCode.GETG: return 'GETG';
-		case OpCode.SETG: return 'SETG';
-		case OpCode.GETSYS: return 'GETSYS';
-		case OpCode.SETSYS: return 'SETSYS';
-		case OpCode.GETGL: return 'GETGL';
-		case OpCode.SETGL: return 'SETGL';
-		case OpCode.GETI: return 'GETI';
-		case OpCode.SETI: return 'SETI';
-		case OpCode.GETFIELD: return 'GETFIELD';
-		case OpCode.SETFIELD: return 'SETFIELD';
-		case OpCode.SELF: return 'SELF';
-		case OpCode.HALT: return 'HALT';
-		case OpCode.GETT: return 'GETT';
-		case OpCode.SETT: return 'SETT';
-		case OpCode.NEWT: return 'NEWT';
-		case OpCode.ADD: return 'ADD';
-		case OpCode.SUB: return 'SUB';
-		case OpCode.MUL: return 'MUL';
-		case OpCode.DIV: return 'DIV';
-		case OpCode.MOD: return 'MOD';
-		case OpCode.FLOORDIV: return 'FLOORDIV';
-		case OpCode.POW: return 'POW';
-		case OpCode.BAND: return 'BAND';
-		case OpCode.BOR: return 'BOR';
-		case OpCode.BXOR: return 'BXOR';
-		case OpCode.SHL: return 'SHL';
-		case OpCode.SHR: return 'SHR';
-		case OpCode.CONCAT: return 'CONCAT';
-		case OpCode.CONCATN: return 'CONCATN';
-		case OpCode.UNM: return 'UNM';
-		case OpCode.NOT: return 'NOT';
-		case OpCode.LEN: return 'LEN';
-		case OpCode.BNOT: return 'BNOT';
-		case OpCode.EQ: return 'EQ';
-		case OpCode.LT: return 'LT';
-		case OpCode.LE: return 'LE';
-		case OpCode.TEST: return 'TEST';
-		case OpCode.TESTSET: return 'TESTSET';
-		case OpCode.JMP: return 'JMP';
-		case OpCode.JMPIF: return 'JMPIF';
-		case OpCode.JMPIFNOT: return 'JMPIFNOT';
-		case OpCode.CLOSURE: return 'CLOSURE';
-		case OpCode.GETUP: return 'GETUP';
-		case OpCode.SETUP: return 'SETUP';
-		case OpCode.VARARG: return 'VARARG';
-		case OpCode.CALL: return 'CALL';
-		case OpCode.RET: return 'RET';
-		case OpCode.LOAD_MEM: return 'LOAD_MEM';
-		case OpCode.STORE_MEM: return 'STORE_MEM';
-		case OpCode.STORE_MEM_WORDS: return 'STORE_MEM_WORDS';
-		case OpCode.BR_TRUE: return 'BR_TRUE';
-		case OpCode.BR_FALSE: return 'BR_FALSE';
-		default:
-			throw new Error(`[Disassembler] Unknown opcode ${op}.`);
-	}
-};
+const getOpName = (op: OpCode): string => getOpcodeName(op);
 
 const formatBool = (value: number): string => (value !== 0 ? 'true' : 'false');
 
@@ -364,14 +296,17 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 		const nextA = (nextWord >>> 12) & 0x3f;
 		const nextB = (nextWord >>> 6) & 0x3f;
 		const nextC = nextWord & 0x3f;
-		const usesBx = OPCODE_USES_BX[nextOp] !== 0;
-		const extA = usesBx ? 0 : (nextExt >>> 6) & 0x3;
-		const extB = usesBx ? 0 : (nextExt >>> 3) & 0x7;
-		const extC = usesBx ? 0 : (nextExt & 0x7);
-		const aShift = MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+		const usesDisp = OPCODE_USES_DISP[nextOp] !== 0;
+		const usesBx = !usesDisp && OPCODE_USES_BX[nextOp] !== 0;
+		const extA = usesBx || usesDisp ? 0 : (nextExt >>> 6) & 0x3;
+		const extB = usesBx || usesDisp ? 0 : (nextExt >>> 3) & 0x7;
+		const extC = usesBx || usesDisp ? 0 : (nextExt & 0x7);
+		const aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+		const bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
+		const cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
 		const a = (aLow << aShift) | (extA << MAX_OPERAND_BITS) | nextA;
-		const b = (wideB << (MAX_OPERAND_BITS + EXT_B_BITS)) | (extB << MAX_OPERAND_BITS) | nextB;
-		const c = (cLow << (MAX_OPERAND_BITS + EXT_C_BITS)) | (extC << MAX_OPERAND_BITS) | nextC;
+		const b = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | nextB;
+		const c = (cLow << cShift) | (extC << MAX_OPERAND_BITS) | nextC;
 		const bxLow = (nextB << 6) | nextC;
 		const bxExt = usesBx ? nextExt : 0;
 		const bx = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | (bxExt << MAX_BX_BITS) | bxLow;
@@ -389,13 +324,15 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 			sbx,
 			rkBitsB,
 			rkBitsC,
+			disp: nextExt,
 			rawWords: [word, nextWord],
 		};
 	}
-	const usesBx = OPCODE_USES_BX[op] !== 0;
-	const extA = usesBx ? 0 : (ext >>> 6) & 0x3;
-	const extB = usesBx ? 0 : (ext >>> 3) & 0x7;
-	const extC = usesBx ? 0 : (ext & 0x7);
+	const usesDisp = OPCODE_USES_DISP[op] !== 0;
+	const usesBx = !usesDisp && OPCODE_USES_BX[op] !== 0;
+	const extA = usesBx || usesDisp ? 0 : (ext >>> 6) & 0x3;
+	const extB = usesBx || usesDisp ? 0 : (ext >>> 3) & 0x7;
+	const extC = usesBx || usesDisp ? 0 : (ext & 0x7);
 	const a = (extA << MAX_OPERAND_BITS) | aLow;
 	const b = (extB << MAX_OPERAND_BITS) | bLow;
 	const c = (extC << MAX_OPERAND_BITS) | cLow;
@@ -415,6 +352,7 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 		sbx,
 		rkBitsB,
 		rkBitsC,
+		disp: ext,
 		rawWords: [word],
 	};
 };
@@ -525,12 +463,6 @@ const buildInstructionOperands = (
 			return [registerOperand('a', 'dst', a), plainOperand('bx', 'const', formatConst(program, bx, options))];
 		case OpCode.LOADNIL:
 			return [registerOperand('a', 'base', a), plainOperand('b', 'count', b.toString())];
-		case OpCode.LOADBOOL:
-			return [registerOperand('a', 'dst', a), plainOperand('b', 'value', formatBool(b)), plainOperand('c', 'skip-next', formatBool(c))];
-		case OpCode.GETG:
-			return [registerOperand('a', 'dst', a), plainOperand('bx', 'global', formatConst(program, bx, options))];
-		case OpCode.SETG:
-			return [registerOperand('a', 'src', a), plainOperand('bx', 'global', formatConst(program, bx, options))];
 		case OpCode.GETSYS:
 			return [registerOperand('a', 'dst', a), plainOperand('bx', 'slot', formatGlobalSlotOperand(metadata, bx, true))];
 		case OpCode.SETSYS:
@@ -580,10 +512,6 @@ const buildInstructionOperands = (
 		case OpCode.LT:
 		case OpCode.LE:
 			return [plainOperand('a', 'expect', formatBool(a)), rkOperand('b', 'left', program, b, decoded.rkBitsB, options), rkOperand('c', 'right', program, c, decoded.rkBitsC, options)];
-		case OpCode.TEST:
-			return [registerOperand('a', 'value', a), plainOperand('c', 'expect', formatBool(c))];
-		case OpCode.TESTSET:
-			return [registerOperand('a', 'dst', a), registerOperand('b', 'value', b), plainOperand('c', 'expect', formatBool(c))];
 		case OpCode.JMP:
 			return [plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options))];
 		case OpCode.JMPIF:
@@ -601,6 +529,12 @@ const buildInstructionOperands = (
 			return [registerOperand('a', 'callee', a), plainOperand('b', 'args', formatCount(b)), plainOperand('c', 'returns', formatCount(c))];
 		case OpCode.RET:
 			return [registerOperand('a', 'base', a), plainOperand('b', 'count', formatCount(b))];
+		case OpCode.LOAD_MEM_D:
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'base', b), plainOperand('c', 'kind', c.toString()), plainOperand('disp', 'disp', `${decoded.disp << 2}`)];
+		case OpCode.STORE_MEM_D:
+			return [registerOperand('a', 'src', a), registerOperand('b', 'base', b), plainOperand('c', 'kind', c.toString()), plainOperand('disp', 'disp', `${decoded.disp << 2}`)];
+		case OpCode.STORE_MEM_WORDS_D:
+			return [registerOperand('a', 'src_base', a), registerOperand('b', 'base', b), plainOperand('c', 'count', c.toString()), plainOperand('disp', 'disp', `${decoded.disp << 2}`)];
 		case OpCode.LOAD_MEM:
 			return [registerOperand('a', 'dst', a), rkOperand('b', 'addr', program, b, decoded.rkBitsB, options)];
 		case OpCode.STORE_MEM:
@@ -672,12 +606,6 @@ const formatInstruction = (
 			return `LOADK r${a}, ${formatConst(program, bx, options)}`;
 		case OpCode.LOADNIL:
 			return `LOADNIL r${a}, ${b}`;
-		case OpCode.LOADBOOL:
-			return `LOADBOOL r${a}, ${formatBool(b)}, ${formatBool(c)}`;
-		case OpCode.GETG:
-			return `GETG r${a}, ${formatConst(program, bx, options)}`;
-		case OpCode.SETG:
-			return `SETG r${a}, ${formatConst(program, bx, options)}`;
 		case OpCode.GETSYS:
 			return `GETSYS r${a}, ${formatGlobalSlotOperand(metadata, bx, true)}`;
 		case OpCode.SETSYS:
@@ -744,20 +672,12 @@ const formatInstruction = (
 			return `LT ${formatBool(a)}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.LE:
 			return `LE ${formatBool(a)}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
-		case OpCode.TEST:
-			return `TEST r${a}, ${formatBool(c)}`;
-		case OpCode.TESTSET:
-			return `TESTSET r${a}, r${b}, ${formatBool(c)}`;
 		case OpCode.JMP:
 			return `JMP ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.JMPIF:
 			return `JMPIF r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.JMPIFNOT:
 			return `JMPIFNOT r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
-		case OpCode.BR_TRUE:
-			return `BR_TRUE r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
-		case OpCode.BR_FALSE:
-			return `BR_FALSE r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.CLOSURE: {
 			if (!metadata) {
 				return `CLOSURE r${a}, p${bx}`;
@@ -778,6 +698,12 @@ const formatInstruction = (
 			return `CALL r${a}, ${formatCount(b)}, ${formatCount(c)}`;
 		case OpCode.RET:
 			return `RET r${a}, ${formatCount(b)}`;
+		case OpCode.LOAD_MEM_D:
+			return `LOAD_MEM_D r${a}, r${b}, ${c}, ${decoded.disp << 2}`;
+		case OpCode.STORE_MEM_D:
+			return `STORE_MEM_D r${a}, r${b}, ${c}, ${decoded.disp << 2}`;
+		case OpCode.STORE_MEM_WORDS_D:
+			return `STORE_MEM_WORDS_D r${a}, r${b}, ${c}, ${decoded.disp << 2}`;
 		case OpCode.LOAD_MEM:
 			return `LOAD_MEM r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}`;
 		case OpCode.STORE_MEM:

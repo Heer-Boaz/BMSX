@@ -228,6 +228,32 @@ function evaluateBinaryOperatorFact(operator: LuaBinaryOperator): CompileValueFa
 	}
 }
 
+function rootIdentifierOfPathExpression(expression: LuaExpression): LuaIdentifierExpression | null {
+	switch (expression.kind) {
+		case LuaSyntaxKind.IdentifierExpression:
+			return expression as LuaIdentifierExpression;
+		case LuaSyntaxKind.MemberExpression:
+			return rootIdentifierOfPathExpression(expression.base);
+		case LuaSyntaxKind.IndexExpression:
+			return rootIdentifierOfPathExpression((expression as LuaIndexExpression).base);
+		default:
+			return null;
+	}
+}
+
+function pathRootValueFact(
+	expression: LuaExpression,
+	state: MutableFlowState,
+	semantics: LuaSemanticFrontendFile,
+): CompileValueFact | null {
+	const root = rootIdentifierOfPathExpression(expression);
+	if (root === null) {
+		return null;
+	}
+	const handle = getIdentifierSymbolHandle(semantics, root);
+	return handle === null ? null : state.get(handle) ?? UNKNOWN_VALUE_FACT;
+}
+
 function evaluateExpressionFact(
 	expression: LuaExpression,
 	state: MutableFlowState,
@@ -280,6 +306,23 @@ function evaluateExpressionFact(
 			const index = evaluateExpressionFact(indexExpression.index, base.state, semantics, closureWrittenSymbols);
 			return { fact: UNKNOWN_VALUE_FACT, state: index.state };
 		}
+		case LuaSyntaxKind.MemoryViewExpression: {
+			let currentState = state;
+			for (const lengthExpression of expression.typeRef.arrayLengths) {
+				currentState = evaluateExpressionFact(lengthExpression, currentState, semantics, closureWrittenSymbols).state;
+			}
+			const address = evaluateExpressionFact(expression.address, currentState, semantics, closureWrittenSymbols);
+			return { fact: NUMBER_VALUE_FACT, state: address.state };
+		}
+		case LuaSyntaxKind.SizeOfExpression: {
+			let currentState = state;
+			for (const lengthExpression of expression.typeRef.arrayLengths) {
+				currentState = evaluateExpressionFact(lengthExpression, currentState, semantics, closureWrittenSymbols).state;
+			}
+			return { fact: NUMBER_VALUE_FACT, state: currentState };
+		}
+		case LuaSyntaxKind.OffsetOfExpression:
+			return { fact: NUMBER_VALUE_FACT, state };
 		case LuaSyntaxKind.UnaryExpression: {
 			const unary = expression;
 			const operand = evaluateExpressionFact(unary.operand, state, semantics, closureWrittenSymbols);
@@ -297,6 +340,12 @@ function evaluateExpressionFact(
 				case LuaUnaryOperator.BitwiseNot:
 					return { fact: NUMBER_VALUE_FACT, state: operand.state };
 				case LuaUnaryOperator.StringId:
+					if (unary.operand.kind === LuaSyntaxKind.MemberExpression || unary.operand.kind === LuaSyntaxKind.IndexExpression) {
+						const rootFact = pathRootValueFact(unary.operand, operand.state, semantics);
+						if (rootFact?.kind === 'number') {
+							return { fact: NUMBER_VALUE_FACT, state: operand.state };
+						}
+					}
 					switch (operand.fact.kind) {
 						case 'string':
 						case 'string_id':
@@ -475,6 +524,7 @@ function collectNestedClosureWritesFromStatement(
 			return;
 		case LuaSyntaxKind.BreakStatement:
 		case LuaSyntaxKind.HaltUntilIrqStatement:
+		case LuaSyntaxKind.StructDeclarationStatement:
 		case LuaSyntaxKind.GotoStatement:
 		case LuaSyntaxKind.LabelStatement:
 			return;
@@ -616,6 +666,7 @@ function collectLexicalWritesInStatement(
 			return;
 		case LuaSyntaxKind.BreakStatement:
 		case LuaSyntaxKind.HaltUntilIrqStatement:
+		case LuaSyntaxKind.StructDeclarationStatement:
 		case LuaSyntaxKind.GotoStatement:
 		case LuaSyntaxKind.LabelStatement:
 			return;
@@ -823,6 +874,7 @@ export class ValueKindFlowAnalyzer {
 				return;
 			case LuaSyntaxKind.BreakStatement:
 			case LuaSyntaxKind.HaltUntilIrqStatement:
+			case LuaSyntaxKind.StructDeclarationStatement:
 			case LuaSyntaxKind.GotoStatement:
 			case LuaSyntaxKind.LabelStatement:
 				return;

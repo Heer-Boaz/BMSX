@@ -1135,13 +1135,14 @@ void CPU::decodeProgram() {
 		const uint8_t aLow = static_cast<uint8_t>((instr >> 12) & 0x3f);
 		const uint8_t bLow = static_cast<uint8_t>((instr >> 6) & 0x3f);
 		const uint8_t cLow = static_cast<uint8_t>(instr & 0x3f);
-		const bool usesBx = OPCODE_USES_BX[op] != 0u;
-		const uint8_t extA = usesBx ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
-		const uint8_t extB = usesBx ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
-		const uint8_t extC = usesBx ? 0 : static_cast<uint8_t>(ext & 0x7);
-		const int aShift = MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-		const int bShift = MAX_OPERAND_BITS + EXT_B_BITS;
-		const int cShift = MAX_OPERAND_BITS + EXT_C_BITS;
+		const bool usesDisp = OPCODE_USES_DISP[op] != 0u;
+		const bool usesBx = !usesDisp && OPCODE_USES_BX[op] != 0u;
+		const uint8_t extA = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
+		const uint8_t extB = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
+		const uint8_t extC = (usesBx || usesDisp) ? 0 : static_cast<uint8_t>(ext & 0x7);
+		const int aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+		const int bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
+		const int cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
 		const uint32_t bxLow = (static_cast<uint32_t>(bLow) << MAX_OPERAND_BITS) | static_cast<uint32_t>(cLow);
 		const uint32_t rkRawB = (static_cast<uint32_t>(wideB) << bShift)
 			| (static_cast<uint32_t>(extB) << MAX_OPERAND_BITS)
@@ -1162,6 +1163,7 @@ void CPU::decodeProgram() {
 		decoded.sbx = signExtend(decoded.bx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
 		decoded.rkB = signExtend(rkRawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
 		decoded.rkC = signExtend(rkRawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
+		decoded.disp = ext;
 		m_decoded[wordIndex] = decoded;
 	}
 }
@@ -1862,6 +1864,7 @@ RunResult CPU::run(int instructionBudget) {
 	int sbx = 0;
 	int rkB = 0;
 	int rkC = 0;
+	int disp = 0;
 	Value* registers = nullptr;
 #if BMSX_USE_COMPUTED_GOTO
 #pragma GCC diagnostic push
@@ -1905,6 +1908,7 @@ dispatch_loop_check:
 	sbx = decoded->sbx;
 	rkB = decoded->rkB;
 	rkC = decoded->rkC;
+	disp = decoded->disp;
 
 #define FRAME (*frame)
 #define REG(index) registers[static_cast<size_t>(index)]
@@ -2002,6 +2006,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	int sbx = 0;
 	int rkB = 0;
 	int rkC = 0;
+	int disp = 0;
 	Value* registers = nullptr;
 #if BMSX_USE_COMPUTED_GOTO
 #pragma GCC diagnostic push
@@ -2045,6 +2050,7 @@ dispatch_loop_check:
 	sbx = decoded->sbx;
 	rkB = decoded->rkB;
 	rkC = decoded->rkC;
+	disp = decoded->disp;
 
 #define FRAME (*frame)
 #define REG(index) registers[static_cast<size_t>(index)]
@@ -2248,6 +2254,7 @@ void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded
 	const int sbx = decoded.sbx;
 	const int rkB = decoded.rkB;
 	const int rkC = decoded.rkC;
+	const int disp = decoded.disp;
 	Value* registers = frame.registers;
 
 #define FRAME frame

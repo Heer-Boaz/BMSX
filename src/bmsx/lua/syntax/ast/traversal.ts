@@ -6,6 +6,8 @@ import {
 	type LuaCallExpression,
 	type LuaIndexExpression,
 	type LuaMemberExpression,
+	type LuaMemoryViewExpression,
+	type LuaSizeOfExpression,
 	type LuaTableConstructorExpression,
 	type LuaUnaryExpression,
 } from './index';
@@ -58,6 +60,21 @@ export function visitLuaExpressionChildren(
 			visit(indexExpression.index);
 			return;
 		}
+		case LuaSyntaxKind.MemoryViewExpression: {
+			const view = expression as LuaMemoryViewExpression;
+			for (const lengthExpression of view.typeRef.arrayLengths) {
+				visit(lengthExpression);
+			}
+			visit(view.address);
+			return;
+		}
+		case LuaSyntaxKind.SizeOfExpression: {
+			const sizeOf = expression as LuaSizeOfExpression;
+			for (const lengthExpression of sizeOf.typeRef.arrayLengths) {
+				visit(lengthExpression);
+			}
+			return;
+		}
 		case LuaSyntaxKind.TableConstructorExpression: {
 			const table = expression as LuaTableConstructorExpression;
 			for (let index = 0; index < table.fields.length; index += 1) {
@@ -83,6 +100,7 @@ export function visitLuaExpressionChildren(
 		case LuaSyntaxKind.BooleanLiteralExpression:
 		case LuaSyntaxKind.NilLiteralExpression:
 		case LuaSyntaxKind.VarargExpression:
+		case LuaSyntaxKind.OffsetOfExpression:
 		case LuaSyntaxKind.IdentifierExpression:
 			return;
 		default:

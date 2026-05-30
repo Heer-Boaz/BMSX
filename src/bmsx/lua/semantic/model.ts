@@ -17,6 +17,7 @@ import {
 	type LuaAssignmentStatement,
 	type LuaLocalAssignmentStatement,
 	type LuaStringLiteralExpression,
+	type LuaStructDeclarationStatement,
 	type LuaFunctionDeclarationStatement,
 	type LuaDefinitionInfo,
 	type LuaSourceRange,
@@ -1565,6 +1566,16 @@ class SemanticBuilder {
 				this.visitExpression(callStatement.expression, { tableBaseDecl: null, tableBasePath: null });
 				break;
 			}
+			case LuaSyntaxKind.StructDeclarationStatement: {
+				const structDeclaration = statement as LuaStructDeclarationStatement;
+				this.declareType(structDeclaration.name);
+				for (const field of structDeclaration.fields) {
+					for (const lengthExpression of field.typeRef.arrayLengths) {
+						this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+					}
+				}
+				break;
+			}
 			default: {
 				this.visitGenericStatement(statement);
 				break;
@@ -1630,6 +1641,21 @@ class SemanticBuilder {
 				this.visitExpression(expression.operand, context);
 				return null;
 			}
+			case LuaSyntaxKind.MemoryViewExpression: {
+				for (const lengthExpression of expression.typeRef.arrayLengths) {
+					this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+				}
+				this.visitExpression(expression.address, { tableBaseDecl: null, tableBasePath: null });
+				return null;
+			}
+			case LuaSyntaxKind.SizeOfExpression: {
+				for (const lengthExpression of expression.typeRef.arrayLengths) {
+					this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+				}
+				return null;
+			}
+			case LuaSyntaxKind.OffsetOfExpression:
+				return null;
 			case LuaSyntaxKind.VarargExpression:
 			case LuaSyntaxKind.NumericLiteralExpression:
 			case LuaSyntaxKind.StringLiteralExpression:
@@ -1923,6 +1949,27 @@ class SemanticBuilder {
 			active: true,
 		});
 		this.addBinding(scope, decl);
+		this.recordDefinitionAnnotation(decl);
+		return decl;
+	}
+
+	private declareType(name: LuaIdentifierExpression): InternalDecl {
+		const scope = this.currentScope();
+		const range = buildIdentifierRange(name, this.tokenMap, this.path);
+		const decl = this.createDecl({
+			namePath: [name.name],
+			name: name.name,
+			kind: 'type',
+			range,
+			scopeRange: scope.range,
+			scopeRef: scope,
+			isGlobal: scope.kind === 'path',
+			active: true,
+		});
+		this.addBinding(scope, decl);
+		if (decl.isGlobal) {
+			this.globalsByKey.set(decl.symbolKey, decl);
+		}
 		this.recordDefinitionAnnotation(decl);
 		return decl;
 	}
@@ -2291,6 +2338,8 @@ function symbolKindToDefinitionKind(kind: SemanticSymbolKind): LuaDefinitionInfo
 			return 'table_field';
 		case 'constant':
 			return 'constant';
+		case 'type':
+			return 'type';
 		case 'global':
 		case 'local':
 		default:

@@ -33,6 +33,7 @@ import type {
 	LuaLabelStatement,
 	LuaLocalAssignmentStatement,
 	LuaLocalFunctionStatement,
+	LuaMemoryViewExpression,
 	LuaMemberExpression,
 	LuaNilLiteralExpression,
 	LuaNode,
@@ -43,6 +44,9 @@ import type {
 	LuaSourceRange,
 	LuaStatement,
 	LuaStringLiteralExpression,
+	LuaSizeOfExpression,
+	LuaStructDeclarationStatement,
+	LuaStructFieldDeclaration,
 	LuaLocalAttribute,
 	LuaTableArrayField,
 	LuaTableConstructorExpression,
@@ -51,10 +55,11 @@ import type {
 	LuaTableIdentifierField,
 	LuaGotoStatement,
 	LuaUnaryExpression,
+	LuaTypeReference,
 	LuaVarargExpression,
 	LuaWhileStatement,
-LuaDefinitionInfo,
-LuaDefinitionKind,
+	LuaDefinitionInfo,
+	LuaDefinitionKind,
 } from './ast';
 
 type ParsedArguments = {
@@ -201,6 +206,9 @@ export class LuaParser {
 		if (token.type === LuaTokenType.DoubleColon) {
 			return this.parseLabelStatement();
 		}
+		if (token.type === LuaTokenType.Identifier && token.lexeme === 'struct') {
+			return this.parseStructDeclaration();
+		}
 		switch (token.type) {
 			case LuaTokenType.Local:
 				return this.parseLocalStatement();
@@ -227,6 +235,39 @@ export class LuaParser {
 			default:
 				return this.parseAssignmentOrCall();
 		}
+	}
+
+	private parseStructDeclaration(): LuaStructDeclarationStatement {
+		const structToken = this.advance();
+		const nameToken = this.consume(LuaTokenType.Identifier, 'Expected struct name.');
+		const name = this.createIdentifierExpression(nameToken);
+		const fields: LuaStructFieldDeclaration[] = [];
+		while (!this.check(LuaTokenType.End) && !this.isAtEnd()) {
+			if (this.match(LuaTokenType.Semicolon)) {
+				continue;
+			}
+			const fieldToken = this.consume(LuaTokenType.Identifier, 'Expected struct field name.');
+			this.consume(LuaTokenType.Colon, 'Expected ":" after struct field name.');
+			const typeRef = this.parseTypeReference();
+			fields.push({
+				name: fieldToken.lexeme,
+				typeRef,
+				range: {
+					path: this.path,
+					start: this.positionFromToken(fieldToken),
+					end: typeRef.range.end,
+				},
+			});
+			this.match(LuaTokenType.Comma);
+			this.match(LuaTokenType.Semicolon);
+		}
+		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after struct declaration.');
+		return {
+			kind: LuaSyntaxKind.StructDeclarationStatement,
+			range: this.rangeFromTokenAndToken(structToken, endToken),
+			name,
+			fields,
+		};
 	}
 
 	private parseLocalStatement(): LuaStatement {
@@ -869,6 +910,15 @@ export class LuaParser {
 			case LuaTokenType.String:
 				return this.parseStringLiteral();
 			case LuaTokenType.Identifier:
+				if (token.lexeme === 'ref') {
+					return this.parseMemoryViewExpression();
+				}
+				if (token.lexeme === 'sizeof') {
+					return this.parseSizeOfExpression();
+				}
+				if (token.lexeme === 'offsetof') {
+					return this.parseOffsetOfExpression();
+				}
 				return this.parseIdentifier();
 				case LuaTokenType.Vararg:
 					return this.createTokenOnlyExpression(this.advance(), LuaSyntaxKind.VarargExpression);
@@ -885,6 +935,59 @@ export class LuaParser {
 			default:
 				throw this.error(token, 'Unexpected token.');
 		}
+	}
+
+	private parseMemoryViewExpression(): LuaExpression {
+		const refToken = this.advance();
+		const typeRef = this.parseTypeReference();
+		const atToken = this.consume(LuaTokenType.Identifier, 'Expected "at" in memory view expression.');
+		if (atToken.lexeme !== 'at') {
+			throw this.error(atToken, 'Expected "at" in memory view expression.');
+		}
+		const address = this.parseExpression();
+		return {
+			kind: LuaSyntaxKind.MemoryViewExpression,
+			range: {
+				path: this.path,
+				start: this.positionFromToken(refToken),
+				end: address.range.end,
+			},
+			typeRef,
+			address,
+		};
+	}
+
+	private parseSizeOfExpression(): LuaExpression {
+		const sizeofToken = this.advance();
+		this.consume(LuaTokenType.LeftParen, 'Expected "(" after sizeof.');
+		const typeRef = this.parseTypeReference();
+		const rightParen = this.consume(LuaTokenType.RightParen, 'Expected ")" after sizeof type.');
+		return {
+			kind: LuaSyntaxKind.SizeOfExpression,
+			range: this.rangeFromTokenAndToken(sizeofToken, rightParen),
+			typeRef,
+		};
+	}
+
+	private parseOffsetOfExpression(): LuaExpression {
+		const offsetofToken = this.advance();
+		this.consume(LuaTokenType.LeftParen, 'Expected "(" after offsetof.');
+		const typeToken = this.consume(LuaTokenType.Identifier, 'Expected struct type name in offsetof.');
+		const fieldPath: string[] = [];
+		this.consume(LuaTokenType.Dot, 'Expected "." after offsetof struct type.');
+		const firstField = this.consume(LuaTokenType.Identifier, 'Expected field name in offsetof.');
+		fieldPath.push(firstField.lexeme);
+		while (this.match(LuaTokenType.Dot)) {
+			const fieldToken = this.consume(LuaTokenType.Identifier, 'Expected field name in offsetof.');
+			fieldPath.push(fieldToken.lexeme);
+		}
+		const rightParen = this.consume(LuaTokenType.RightParen, 'Expected ")" after offsetof path.');
+		return {
+			kind: LuaSyntaxKind.OffsetOfExpression,
+			range: this.rangeFromTokenAndToken(offsetofToken, rightParen),
+			typeName: typeToken.lexeme,
+			fieldPath,
+		};
 	}
 
 		private createTokenOnlyExpression(token: LuaToken, kind: LuaSyntaxKind.NilLiteralExpression): LuaNilLiteralExpression;
@@ -925,6 +1028,26 @@ export class LuaParser {
 	private parseIdentifier(): LuaIdentifierExpression {
 		const token = this.advance();
 		return this.createIdentifierExpression(token);
+	}
+
+	private parseTypeReference(): LuaTypeReference {
+		const nameToken = this.consume(LuaTokenType.Identifier, 'Expected type name.');
+		const arrayLengths: LuaExpression[] = [];
+		while (this.match(LuaTokenType.LeftBracket)) {
+			const length = this.parseExpression();
+			arrayLengths.push(length);
+			this.consume(LuaTokenType.RightBracket, 'Expected "]" after type array length.');
+		}
+		const end = arrayLengths.length > 0 ? arrayLengths[arrayLengths.length - 1].range.end : this.positionFromToken(nameToken);
+		return {
+			name: nameToken.lexeme,
+			arrayLengths,
+			range: {
+				path: this.path,
+				start: this.positionFromToken(nameToken),
+				end,
+			},
+		};
 	}
 
 	private parseTableConstructorExpression(leftBrace: LuaToken): LuaTableConstructorExpression {
@@ -1197,6 +1320,23 @@ export class LuaParser {
 					visitExpression(indexExpression.index);
 					break;
 				}
+				case LuaSyntaxKind.MemoryViewExpression: {
+					const viewExpression = expression as LuaMemoryViewExpression;
+					for (const lengthExpression of viewExpression.typeRef.arrayLengths) {
+						visitExpression(lengthExpression);
+					}
+					visitExpression(viewExpression.address);
+					break;
+				}
+				case LuaSyntaxKind.SizeOfExpression: {
+					const sizeExpression = expression as LuaSizeOfExpression;
+					for (const lengthExpression of sizeExpression.typeRef.arrayLengths) {
+						visitExpression(lengthExpression);
+					}
+					break;
+				}
+				case LuaSyntaxKind.OffsetOfExpression:
+					break;
 				case LuaSyntaxKind.TableConstructorExpression: {
 					const tableExpression = expression as LuaTableConstructorExpression;
 					for (const field of tableExpression.fields) {
@@ -1310,6 +1450,16 @@ export class LuaParser {
 				}
 				case LuaSyntaxKind.HaltUntilIrqStatement:
 					break;
+			case LuaSyntaxKind.StructDeclarationStatement: {
+				const structDeclaration = statement as LuaStructDeclarationStatement;
+				pushDefinition([structDeclaration.name.name], structDeclaration.name.range, currentScope, 'type');
+				for (const field of structDeclaration.fields) {
+					for (const lengthExpression of field.typeRef.arrayLengths) {
+						visitExpression(lengthExpression);
+					}
+				}
+				break;
+			}
 			case LuaSyntaxKind.ForNumericStatement: {
 				const forNumeric = statement as LuaForNumericStatement;
 				pushDefinition([forNumeric.variable.name], forNumeric.variable.range, forNumeric.block.range, 'variable');

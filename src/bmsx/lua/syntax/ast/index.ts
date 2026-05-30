@@ -29,6 +29,7 @@ export const enum LuaSyntaxKind {
 	ForGenericStatement,
 	DoStatement,
 	HaltUntilIrqStatement,
+	StructDeclarationStatement,
 	CallStatement,
 	GotoStatement,
 	LabelStatement,
@@ -45,6 +46,9 @@ export const enum LuaSyntaxKind {
 	CallExpression,
 	MemberExpression,
 	IndexExpression,
+	MemoryViewExpression,
+	SizeOfExpression,
+	OffsetOfExpression,
 }
 
 export type LuaNode = {
@@ -66,6 +70,7 @@ export type LuaDefinitionKind =
 	| 'function'
 	| 'table_field'
 	| 'parameter'
+	| 'type'
 	| 'assignment';
 
 export type LuaStatement =
@@ -82,6 +87,7 @@ export type LuaStatement =
 	| LuaForGenericStatement
 	| LuaDoStatement
 	| LuaHaltUntilIrqStatement
+	| LuaStructDeclarationStatement
 	| LuaGotoStatement
 	| LuaLabelStatement
 	| LuaCallStatement;
@@ -99,7 +105,10 @@ export type LuaExpression =
 	| LuaUnaryExpression
 	| LuaCallExpression
 	| LuaMemberExpression
-	| LuaIndexExpression;
+	| LuaIndexExpression
+	| LuaMemoryViewExpression
+	| LuaSizeOfExpression
+	| LuaOffsetOfExpression;
 
 export type LuaChunk = LuaNode & {
 	readonly kind: LuaSyntaxKind.Chunk;
@@ -209,6 +218,24 @@ export type LuaDoStatement = LuaNode & {
 
 export type LuaHaltUntilIrqStatement = LuaNode & {
 	readonly kind: LuaSyntaxKind.HaltUntilIrqStatement;
+};
+
+export type LuaTypeReference = {
+	readonly name: string;
+	readonly arrayLengths: ReadonlyArray<LuaExpression>;
+	readonly range: LuaSourceRange;
+};
+
+export type LuaStructFieldDeclaration = {
+	readonly name: string;
+	readonly typeRef: LuaTypeReference;
+	readonly range: LuaSourceRange;
+};
+
+export type LuaStructDeclarationStatement = LuaNode & {
+	readonly kind: LuaSyntaxKind.StructDeclarationStatement;
+	readonly name: LuaIdentifierExpression;
+	readonly fields: ReadonlyArray<LuaStructFieldDeclaration>;
 };
 
 export type LuaCallStatement = LuaNode & {
@@ -356,6 +383,23 @@ export type LuaIndexExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.IndexExpression;
 	readonly base: LuaExpression;
 	readonly index: LuaExpression;
+};
+
+export type LuaMemoryViewExpression = LuaNode & {
+	readonly kind: LuaSyntaxKind.MemoryViewExpression;
+	readonly typeRef: LuaTypeReference;
+	readonly address: LuaExpression;
+};
+
+export type LuaSizeOfExpression = LuaNode & {
+	readonly kind: LuaSyntaxKind.SizeOfExpression;
+	readonly typeRef: LuaTypeReference;
+};
+
+export type LuaOffsetOfExpression = LuaNode & {
+	readonly kind: LuaSyntaxKind.OffsetOfExpression;
+	readonly typeName: string;
+	readonly fieldPath: ReadonlyArray<string>;
 };
 
 export type LuaAssignableExpression = LuaIdentifierExpression | LuaMemberExpression | LuaIndexExpression;

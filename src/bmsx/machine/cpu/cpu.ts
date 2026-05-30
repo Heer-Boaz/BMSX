@@ -7,7 +7,7 @@ import {
 	enforceLuaHeapBudget
 } from '../memory/lua_heap_usage';
 import { formatNumber } from '../common/number_format';
-import { BASE_CYCLES, OPCODE_USES_BX, OpCode } from './opcode_info';
+import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode } from './opcode_info';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { MEMORY_ACCESS_KIND_NAMES, MemoryAccessKind } from '../memory/access_kind';
@@ -1437,6 +1437,7 @@ export class CPU {
 	private decodedSbx: Int32Array | null = null;
 	private decodedRkB: Int32Array | null = null;
 	private decodedRkC: Int32Array | null = null;
+	private decodedDisp: Uint8Array | null = null;
 	private decodedWords: Uint32Array | null = null;
 	private tableLoadCaches: TableLoadInlineCache[] = [];
 	public stringIndexTable: Table | null = null;
@@ -1796,6 +1797,7 @@ export class CPU {
 		const decodedSbx = new Int32Array(instructionCount);
 		const decodedRkB = new Int32Array(instructionCount);
 		const decodedRkC = new Int32Array(instructionCount);
+		const decodedDisp = new Uint8Array(instructionCount);
 		const decodedWords = new Uint32Array(instructionCount);
 		for (let wordIndex = 0; wordIndex < instructionCount; wordIndex += 1) {
 			let width = 1;
@@ -1820,13 +1822,14 @@ export class CPU {
 			const aLow = (instr >>> 12) & 0x3f;
 			const bLow = (instr >>> 6) & 0x3f;
 			const cLow = instr & 0x3f;
-			const usesBx = OPCODE_USES_BX[op] !== 0;
-			const extA = usesBx ? 0 : (ext >>> 6) & 0x3;
-			const extB = usesBx ? 0 : (ext >>> 3) & 0x7;
-			const extC = usesBx ? 0 : (ext & 0x7);
-			const aShift = MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-			const bShift = MAX_OPERAND_BITS + EXT_B_BITS;
-			const cShift = MAX_OPERAND_BITS + EXT_C_BITS;
+			const usesDisp = OPCODE_USES_DISP[op] !== 0;
+			const usesBx = !usesDisp && OPCODE_USES_BX[op] !== 0;
+			const extA = usesBx || usesDisp ? 0 : (ext >>> 6) & 0x3;
+			const extB = usesBx || usesDisp ? 0 : (ext >>> 3) & 0x7;
+			const extC = usesBx || usesDisp ? 0 : (ext & 0x7);
+			const aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+			const bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
+			const cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
 			const bxLow = (bLow << MAX_OPERAND_BITS) | cLow;
 			const rawB = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
 			const rawC = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
@@ -1840,6 +1843,7 @@ export class CPU {
 			decodedSbx[wordIndex] = signExtend(decodedBx[wordIndex], MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
 			decodedRkB[wordIndex] = signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
 			decodedRkC[wordIndex] = signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			decodedDisp[wordIndex] = ext;
 		}
 		this.decodedWidths = decodedWidths;
 		this.decodedOps = decodedOps;
@@ -1850,6 +1854,7 @@ export class CPU {
 		this.decodedSbx = decodedSbx;
 		this.decodedRkB = decodedRkB;
 		this.decodedRkC = decodedRkC;
+		this.decodedDisp = decodedDisp;
 		this.decodedWords = decodedWords;
 		this.tableLoadCaches = new Array<TableLoadInlineCache>(instructionCount);
 		for (let index = 0; index < instructionCount; index += 1) {
@@ -1988,6 +1993,7 @@ export class CPU {
 		const decodedSbx = this.decodedSbx!;
 		const decodedRkB = this.decodedRkB!;
 		const decodedRkC = this.decodedRkC!;
+		const decodedDisp = this.decodedDisp!;
 		const decodedWords = this.decodedWords!;
 		while (frames.length > targetDepth) {
 			if (this.haltedUntilIrq) {
@@ -2023,6 +2029,7 @@ export class CPU {
 				decodedSbx[wordIndex],
 				decodedRkB[wordIndex],
 				decodedRkC[wordIndex],
+				decodedDisp[wordIndex],
 			);
 		}
 		return RunResult.Halted;
@@ -2072,6 +2079,7 @@ export class CPU {
 		const decodedSbx = this.decodedSbx!;
 		const decodedRkB = this.decodedRkB!;
 		const decodedRkC = this.decodedRkC!;
+		const decodedDisp = this.decodedDisp!;
 		const decodedWords = this.decodedWords!;
 		const width = decodedWidths[wordIndex];
 		const op = decodedOps[wordIndex];
@@ -2093,6 +2101,7 @@ export class CPU {
 			decodedSbx[wordIndex],
 			decodedRkB[wordIndex],
 			decodedRkC[wordIndex],
+			decodedDisp[wordIndex],
 		);
 	}
 
@@ -2255,6 +2264,7 @@ export class CPU {
 		sbx: number,
 		rkB: number,
 		rkC: number,
+		disp: number,
 	): void {
 		const registers = frame.registers;
 		switch (op) {
@@ -2293,22 +2303,6 @@ export class CPU {
 						this.setRegisterNilFast(frame, registers, a + index);
 					}
 					return;
-				case OpCode.LOADBOOL:
-					this.setRegisterBoolFast(frame, registers, a, b !== 0);
-					if (c !== 0) {
-						this.skipNextInstruction(frame);
-					}
-					return;
-				case OpCode.GETG: {
-					const key = this.program.constPool[bx];
-					this.setRegisterFast(frame, registers, a, this.globals.get(key));
-					return;
-				}
-				case OpCode.SETG: {
-					const key = this.program.constPool[bx];
-					this.globals.set(key, registers.get(a));
-					return;
-				}
 				case OpCode.GETSYS:
 					this.setRegisterFast(frame, registers, a, this.getSystemGlobalBySlot(bx));
 					return;
@@ -2523,22 +2517,6 @@ export class CPU {
 					}
 					return;
 				}
-				case OpCode.TEST: {
-					const ok = registers.isTruthy(a);
-					if (ok !== (c !== 0)) {
-						this.skipNextInstruction(frame);
-					}
-					return;
-				}
-				case OpCode.TESTSET: {
-					const ok = registers.isTruthy(b);
-					if (ok === (c !== 0)) {
-						this.copyRegisterFast(frame, registers, a, b);
-						return;
-					}
-					this.skipNextInstruction(frame);
-					return;
-				}
 				case OpCode.JMP: {
 					frame.pc += sbx * INSTRUCTION_BYTES;
 					return;
@@ -2550,18 +2528,6 @@ export class CPU {
 					return;
 				}
 				case OpCode.JMPIFNOT: {
-					if (!registers.isTruthy(a)) {
-						frame.pc += sbx * INSTRUCTION_BYTES;
-					}
-					return;
-				}
-				case OpCode.BR_TRUE: {
-					if (registers.isTruthy(a)) {
-						frame.pc += sbx * INSTRUCTION_BYTES;
-					}
-					return;
-				}
-				case OpCode.BR_FALSE: {
 					if (!registers.isTruthy(a)) {
 						frame.pc += sbx * INSTRUCTION_BYTES;
 					}
@@ -2662,6 +2628,22 @@ export class CPU {
 					this.releaseFrame(frame);
 					return;
 				}
+				case OpCode.LOAD_MEM_D: {
+					const addr = registers.getNumber(b) + (disp << 2);
+					this.setRegisterFast(frame, registers, a, this.readMappedMemoryValue(addr, c));
+					return;
+				}
+				case OpCode.STORE_MEM_D: {
+					const addr = registers.getNumber(b) + (disp << 2);
+					this.writeMappedMemoryValue(addr, c, registers.get(a));
+					return;
+				}
+				case OpCode.STORE_MEM_WORDS_D: {
+					const addr = registers.getNumber(b) + (disp << 2);
+					this.charge(CEIL_DIV4(c));
+					this.writeMappedWordSequence(frame, addr, a, c);
+					return;
+				}
 				case OpCode.LOAD_MEM: {
 					const addr = this.readRKNumber(frame, rkB);
 					this.setRegisterFast(frame, registers, a, this.readMappedMemoryValue(addr, c));
@@ -2677,7 +2659,7 @@ export class CPU {
 					this.charge(CEIL_DIV4(c));
 					this.writeMappedWordSequence(frame, addr, a, c);
 					return;
-			}
+				}
 			default:
 				throw new Error('Unknown opcode.');
 		}

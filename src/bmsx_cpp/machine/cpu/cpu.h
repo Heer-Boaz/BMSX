@@ -546,6 +546,7 @@ struct DecodedInstruction {
 	uint16_t c = 0;
 	uint8_t op = 0;
 	uint8_t width = 1;
+	uint8_t disp = 0;
 };
 
 struct Upvalue : GCObject {

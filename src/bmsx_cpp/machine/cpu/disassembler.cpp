@@ -25,6 +25,7 @@ struct DecodedDebugInstruction {
 	int sbx = 0;
 	int rkBitsB = 0;
 	int rkBitsC = 0;
+	int disp = 0;
 };
 
 struct RkDebugValue {
@@ -137,18 +138,23 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 		const int nextA = static_cast<int>((nextWord >> 12) & 0x3f);
 		const int nextB = static_cast<int>((nextWord >> 6) & 0x3f);
 		const int nextC = static_cast<int>(nextWord & 0x3f);
-		const bool usesBx = OPCODE_USES_BX[static_cast<size_t>(nextOp)] != 0u;
-		const int extA = usesBx ? 0 : static_cast<int>((nextExt >> 6) & 0x3);
-		const int extB = usesBx ? 0 : static_cast<int>((nextExt >> 3) & 0x7);
-		const int extC = usesBx ? 0 : static_cast<int>(nextExt & 0x7);
-		const int aShift = MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+		const bool usesDisp = OPCODE_USES_DISP[static_cast<size_t>(nextOp)] != 0u;
+		const bool usesBx = !usesDisp && OPCODE_USES_BX[static_cast<size_t>(nextOp)] != 0u;
+		const int extA = (usesBx || usesDisp) ? 0 : static_cast<int>((nextExt >> 6) & 0x3);
+		const int extB = (usesBx || usesDisp) ? 0 : static_cast<int>((nextExt >> 3) & 0x7);
+		const int extC = (usesBx || usesDisp) ? 0 : static_cast<int>(nextExt & 0x7);
+		const int aShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+		const int bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
+		const int cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
 		const int a = (aLow << aShift) | (extA << MAX_OPERAND_BITS) | nextA;
-		const int b = (wideB << (MAX_OPERAND_BITS + EXT_B_BITS)) | (extB << MAX_OPERAND_BITS) | nextB;
-		const int c = (cLow << (MAX_OPERAND_BITS + EXT_C_BITS)) | (extC << MAX_OPERAND_BITS) | nextC;
+		const int b = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | nextB;
+		const int c = (cLow << cShift) | (extC << MAX_OPERAND_BITS) | nextC;
 		const uint32_t bxLow = (static_cast<uint32_t>(nextB) << 6U) | static_cast<uint32_t>(nextC);
 		const uint32_t bxExt = usesBx ? nextExt : 0U;
 		const uint32_t bx = (static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS)) | (bxExt << MAX_BX_BITS) | bxLow;
 		const int sbxBits = MAX_BX_BITS + EXT_BX_BITS + MAX_OPERAND_BITS;
+		const int rkBbits = usesDisp ? MAX_OPERAND_BITS + MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS + MAX_OPERAND_BITS;
+		const int rkCbits = usesDisp ? MAX_OPERAND_BITS + MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS + MAX_OPERAND_BITS;
 		return DecodedDebugInstruction{
 			pc + INSTRUCTION_BYTES,
 			nextOp,
@@ -157,14 +163,16 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 			c,
 			static_cast<int>(bx),
 			signExtend(bx, sbxBits),
-			MAX_OPERAND_BITS + EXT_B_BITS + MAX_OPERAND_BITS,
-			MAX_OPERAND_BITS + EXT_C_BITS + MAX_OPERAND_BITS,
+			rkBbits,
+			rkCbits,
+			static_cast<int>(nextExt),
 		};
 	}
-	const bool usesBx = OPCODE_USES_BX[static_cast<size_t>(op)] != 0u;
-	const int extA = usesBx ? 0 : static_cast<int>((ext >> 6) & 0x3);
-	const int extB = usesBx ? 0 : static_cast<int>((ext >> 3) & 0x7);
-	const int extC = usesBx ? 0 : static_cast<int>(ext & 0x7);
+	const bool usesDisp = OPCODE_USES_DISP[static_cast<size_t>(op)] != 0u;
+	const bool usesBx = !usesDisp && OPCODE_USES_BX[static_cast<size_t>(op)] != 0u;
+	const int extA = (usesBx || usesDisp) ? 0 : static_cast<int>((ext >> 6) & 0x3);
+	const int extB = (usesBx || usesDisp) ? 0 : static_cast<int>((ext >> 3) & 0x7);
+	const int extC = (usesBx || usesDisp) ? 0 : static_cast<int>(ext & 0x7);
 	const int a = (extA << MAX_OPERAND_BITS) | aLow;
 	const int b = (extB << MAX_OPERAND_BITS) | bLow;
 	const int c = (extC << MAX_OPERAND_BITS) | cLow;
@@ -179,8 +187,9 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 		c,
 		static_cast<int>(bx),
 		signExtend(bx, MAX_BX_BITS + EXT_BX_BITS),
-		MAX_OPERAND_BITS + EXT_B_BITS,
-		MAX_OPERAND_BITS + EXT_C_BITS,
+		usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS,
+		usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS,
+		static_cast<int>(ext),
 	};
 }
 
@@ -229,12 +238,6 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "LOADK r" + std::to_string(decoded.a) + ", " + formatConstValue(program, decoded.bx);
 		case OpCode::LOADNIL:
 			return "LOADNIL r" + std::to_string(decoded.a) + ", " + std::to_string(decoded.b);
-		case OpCode::LOADBOOL:
-			return "LOADBOOL r" + std::to_string(decoded.a) + ", " + formatBoolLiteral(decoded.b) + ", " + formatBoolLiteral(decoded.c);
-		case OpCode::GETG:
-			return "GETG r" + std::to_string(decoded.a) + ", " + formatConstValue(program, decoded.bx);
-		case OpCode::SETG:
-			return "SETG r" + std::to_string(decoded.a) + ", " + formatConstValue(program, decoded.bx);
 		case OpCode::GETSYS:
 			return "GETSYS r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(metadata, decoded.bx, true);
 		case OpCode::SETSYS:
@@ -284,20 +287,12 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::LT:
 		case OpCode::LE:
 			return std::string(getOpcodeName(decoded.op)) + " " + formatBoolLiteral(decoded.a) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
-		case OpCode::TEST:
-			return "TEST r" + std::to_string(decoded.a) + ", " + formatBoolLiteral(decoded.c);
-		case OpCode::TESTSET:
-			return "TESTSET r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + formatBoolLiteral(decoded.c);
 		case OpCode::JMP:
 			return "JMP " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::JMPIF:
 			return "JMPIF r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::JMPIFNOT:
 			return "JMPIFNOT r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
-		case OpCode::BR_TRUE:
-			return "BR_TRUE r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
-		case OpCode::BR_FALSE:
-			return "BR_FALSE r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::CLOSURE:
 			return "CLOSURE r" + std::to_string(decoded.a) + ", " + formatProtoOperand(metadata, decoded.bx);
 		case OpCode::GETUP:
@@ -310,12 +305,23 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "CALL r" + std::to_string(decoded.a) + ", " + formatCountLiteral(decoded.b) + ", " + formatCountLiteral(decoded.c);
 		case OpCode::RET:
 			return "RET r" + std::to_string(decoded.a) + ", " + formatCountLiteral(decoded.b);
+		case OpCode::LOAD_MEM_D:
+			return "LOAD_MEM_D r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c) + ", " + std::to_string(decoded.disp << 2);
+		case OpCode::STORE_MEM_D:
+			return "STORE_MEM_D r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c) + ", " + std::to_string(decoded.disp << 2);
+		case OpCode::STORE_MEM_WORDS_D:
+			return "STORE_MEM_WORDS_D r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c) + ", " + std::to_string(decoded.disp << 2);
 		case OpCode::LOAD_MEM:
 			return "LOAD_MEM r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB);
 		case OpCode::STORE_MEM:
 			return "STORE_MEM r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB);
 		case OpCode::STORE_MEM_WORDS:
 			return "STORE_MEM_WORDS r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB) + ", " + std::to_string(decoded.c);
+		case OpCode::RESERVED0:
+		case OpCode::RESERVED1:
+		case OpCode::RESERVED2:
+		case OpCode::RESERVED3:
+			return std::string(getOpcodeName(decoded.op));
 		case OpCode::HALT:
 			return "HALT";
 		case OpCode::WIDE:
@@ -346,12 +352,6 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("dst", decoded.a), plainOperand("const", formatConstValue(program, decoded.bx))};
 		case OpCode::LOADNIL:
 			return {registerOperand("base", decoded.a), plainOperand("count", std::to_string(decoded.b))};
-		case OpCode::LOADBOOL:
-			return {registerOperand("dst", decoded.a), plainOperand("value", formatBoolLiteral(decoded.b)), plainOperand("skip-next", formatBoolLiteral(decoded.c))};
-		case OpCode::GETG:
-			return {registerOperand("dst", decoded.a), plainOperand("global", formatConstValue(program, decoded.bx))};
-		case OpCode::SETG:
-			return {registerOperand("src", decoded.a), plainOperand("global", formatConstValue(program, decoded.bx))};
 		case OpCode::GETSYS:
 			return {registerOperand("dst", decoded.a), plainOperand("slot", formatGlobalSlotOperand(metadata, decoded.bx, true))};
 		case OpCode::SETSYS:
@@ -401,17 +401,10 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::LT:
 		case OpCode::LE:
 			return {plainOperand("expect", formatBoolLiteral(decoded.a)), rkOperand("left", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), rkOperand("right", program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
-		case OpCode::TEST:
-			return {registerOperand("value", decoded.a), plainOperand("expect", formatBoolLiteral(decoded.c))};
-		case OpCode::TESTSET:
-			return {registerOperand("dst", decoded.a), registerOperand("value", decoded.b), plainOperand("expect", formatBoolLiteral(decoded.c))};
 		case OpCode::JMP:
 			return {plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
 		case OpCode::JMPIF:
 		case OpCode::JMPIFNOT:
-			return {registerOperand("cond", decoded.a), plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
-		case OpCode::BR_TRUE:
-		case OpCode::BR_FALSE:
 			return {registerOperand("cond", decoded.a), plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
 		case OpCode::CLOSURE:
 			return {registerOperand("dst", decoded.a), plainOperand("proto", formatProtoOperand(metadata, decoded.bx))};
@@ -425,12 +418,23 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("callee", decoded.a), plainOperand("args", formatCountLiteral(decoded.b)), plainOperand("returns", formatCountLiteral(decoded.c))};
 		case OpCode::RET:
 			return {registerOperand("base", decoded.a), plainOperand("count", formatCountLiteral(decoded.b))};
+		case OpCode::LOAD_MEM_D:
+			return {registerOperand("dst", decoded.a), registerOperand("base", decoded.b), plainOperand("kind", std::to_string(decoded.c)), plainOperand("disp", std::to_string(decoded.disp << 2))};
+		case OpCode::STORE_MEM_D:
+			return {registerOperand("src", decoded.a), registerOperand("base", decoded.b), plainOperand("kind", std::to_string(decoded.c)), plainOperand("disp", std::to_string(decoded.disp << 2))};
+		case OpCode::STORE_MEM_WORDS_D:
+			return {registerOperand("src_base", decoded.a), registerOperand("base", decoded.b), plainOperand("count", std::to_string(decoded.c)), plainOperand("disp", std::to_string(decoded.disp << 2))};
 		case OpCode::LOAD_MEM:
 			return {registerOperand("dst", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB)};
 		case OpCode::STORE_MEM:
 			return {registerOperand("src", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB)};
 		case OpCode::STORE_MEM_WORDS:
 			return {registerOperand("src_base", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), plainOperand("count", std::to_string(decoded.c))};
+		case OpCode::RESERVED0:
+		case OpCode::RESERVED1:
+		case OpCode::RESERVED2:
+		case OpCode::RESERVED3:
+			return {};
 		case OpCode::HALT:
 			return {};
 		case OpCode::WIDE:

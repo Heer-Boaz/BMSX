@@ -13,7 +13,6 @@ import {
 	isTruthy,
 	replaceWithConst,
 	replaceWithJump,
-	replaceWithMov,
 	type ConstValue,
 } from './values';
 
@@ -24,6 +23,7 @@ export type Instruction = {
 	a: number;
 	b: number;
 	c: number;
+	disp?: number;
 	format: InstructionFormat;
 	rkMask: number;
 	target: number | null;
@@ -53,16 +53,10 @@ type InstructionRegisterOperand = 'a' | 'b' | 'c';
 const RK_B = 1;
 const RK_C = 2;
 
-const isSkipInstruction = (instruction: Instruction): boolean => {
-	if (instruction.op === OpCode.LOADBOOL) {
-		return instruction.c !== 0;
-	}
-	return instruction.op === OpCode.TEST
-		|| instruction.op === OpCode.TESTSET
-		|| instruction.op === OpCode.EQ
+const isSkipInstruction = (instruction: Instruction): boolean =>
+	instruction.op === OpCode.EQ
 		|| instruction.op === OpCode.LT
 		|| instruction.op === OpCode.LE;
-};
 
 const getConstForOperand = (
 	operand: number,
@@ -182,21 +176,6 @@ const removeUnreachable = (set: InstructionSet): InstructionSet => {
 				pushWorklistCandidate(worklist, index + 1, count);
 				break;
 			}
-			case OpCode.BR_TRUE:
-			case OpCode.BR_FALSE: {
-				pushWorklistCandidate(worklist, getJumpTarget(instruction), count);
-				pushWorklistCandidate(worklist, index + 1, count);
-				break;
-			}
-			case OpCode.LOADBOOL: {
-				pushWorklistCandidate(worklist, index + 1, count);
-				if (instruction.c !== 0 && index + 2 < count) {
-					worklist.push(index + 2);
-				}
-				break;
-			}
-			case OpCode.TEST:
-			case OpCode.TESTSET:
 			case OpCode.EQ:
 			case OpCode.LT:
 			case OpCode.LE: {
@@ -374,8 +353,6 @@ const computeBlockConstantIn = (
 		outMaps[i] = new Map();
 	}
 	const nilConst: ConstValue = { value: null, constIndex: context.constIndex(null) };
-	const trueConst: ConstValue = { value: true, constIndex: context.constIndex(true) };
-	const falseConst: ConstValue = { value: false, constIndex: context.constIndex(false) };
 
 	let changed = true;
 	while (changed) {
@@ -411,10 +388,6 @@ const computeBlockConstantIn = (
 					case OpCode.LOADK: {
 						const index = instruction.b;
 						constants.set(instruction.a, { value: context.constPool[index], constIndex: index });
-						break;
-					}
-					case OpCode.LOADBOOL: {
-						constants.set(instruction.a, instruction.b !== 0 ? trueConst : falseConst);
 						break;
 					}
 					case OpCode.LOADNIL: {
@@ -462,7 +435,6 @@ const computeBlockConstantIn = (
 						constants.delete(instruction.a);
 						break;
 					}
-					case OpCode.GETG:
 					case OpCode.GETSYS:
 					case OpCode.GETGL:
 					case OpCode.GETT:
@@ -474,6 +446,7 @@ const computeBlockConstantIn = (
 					case OpCode.CLOSURE:
 					case OpCode.GETUP:
 					case OpCode.LOAD_MEM:
+					case OpCode.LOAD_MEM_D:
 						constants.delete(instruction.a);
 						break;
 					case OpCode.SELF:
@@ -490,9 +463,6 @@ const computeBlockConstantIn = (
 						clearRegisterRange(constants, instruction.a, countValue);
 						break;
 					}
-					case OpCode.TESTSET:
-						constants.delete(instruction.a);
-						break;
 					default:
 						break;
 				}
@@ -516,8 +486,6 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 	let removed = 0;
 	const blocks = buildBasicBlocks(instructions);
 	const nilConst: ConstValue = { value: null, constIndex: context.constIndex(null) };
-	const trueConst: ConstValue = { value: true, constIndex: context.constIndex(true) };
-	const falseConst: ConstValue = { value: false, constIndex: context.constIndex(false) };
 	const blockConstIn = computeBlockConstantIn(instructions, context);
 
 	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
@@ -545,48 +513,6 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					}
 				}
 			}
-			if (instruction.op === OpCode.BR_TRUE || instruction.op === OpCode.BR_FALSE) {
-				const value = constants.get(instruction.a);
-				if (value) {
-					const truthy = isTruthy(value.value);
-					const shouldJump = instruction.op === OpCode.BR_TRUE ? truthy : !truthy;
-					if (shouldJump) {
-						replaceWithJump(instruction, getJumpTarget(instruction));
-					} else {
-						keep[i] = false;
-						removed += 1;
-						continue;
-					}
-				}
-			}
-
-			if (instruction.op === OpCode.TEST) {
-				const value = constants.get(instruction.a);
-				if (value) {
-					const expected = instruction.c !== 0;
-					const shouldSkip = isTruthy(value.value) !== expected;
-					if (shouldSkip) {
-						replaceWithJump(instruction, Math.min(i + 2, count));
-					} else {
-						keep[i] = false;
-						removed += 1;
-						continue;
-					}
-				}
-			}
-
-			if (instruction.op === OpCode.TESTSET) {
-				const value = constants.get(instruction.b);
-				if (value) {
-					const expected = instruction.c !== 0;
-					if (isTruthy(value.value) === expected) {
-						replaceWithMov(instruction, instruction.a, instruction.b);
-					} else {
-						replaceWithJump(instruction, Math.min(i + 2, count));
-					}
-				}
-			}
-
 			if (instruction.op === OpCode.EQ || instruction.op === OpCode.LT || instruction.op === OpCode.LE) {
 				const left = getConstForOperand(instruction.b, (instruction.rkMask & RK_B) !== 0, constants, context);
 				const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
@@ -659,10 +585,6 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					constants.set(instruction.a, { value: context.constPool[index], constIndex: index });
 					break;
 				}
-				case OpCode.LOADBOOL: {
-					constants.set(instruction.a, instruction.b !== 0 ? trueConst : falseConst);
-					break;
-				}
 				case OpCode.LOADNIL: {
 					for (let offset = 0; offset < instruction.b; offset += 1) {
 						constants.set(instruction.a + offset, nilConst);
@@ -679,8 +601,6 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					clearRegisterRange(constants, instruction.a, countValue);
 					break;
 				}
-				case OpCode.TESTSET:
-				case OpCode.GETG:
 				case OpCode.GETSYS:
 				case OpCode.GETGL:
 				case OpCode.GETT:
@@ -692,6 +612,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				case OpCode.CLOSURE:
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
+				case OpCode.LOAD_MEM_D:
 				case OpCode.UNM:
 				case OpCode.NOT:
 				case OpCode.LEN:
@@ -751,8 +672,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 	const blocks = buildBasicBlocks(instructions);
 	const blockConstIn = computeBlockConstantIn(instructions, context);
 	const nilConst: ConstValue = { value: null, constIndex: context.constIndex(null) };
-	const trueConst: ConstValue = { value: true, constIndex: context.constIndex(true) };
-	const falseConst: ConstValue = { value: false, constIndex: context.constIndex(false) };
 
 	const invalidateCopiesUsing = (copies: Map<number, number>, register: number): void => {
 		let updated = true;
@@ -920,22 +839,11 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 						rewriteCopyInstructionOperand(instruction, 'b', copies);
 						break;
 					}
-					case OpCode.TEST:
 					case OpCode.JMPIF:
 					case OpCode.JMPIFNOT: {
 						rewriteCopyInstructionOperand(instruction, 'a', copies);
 						break;
 					}
-					case OpCode.BR_TRUE:
-					case OpCode.BR_FALSE: {
-						rewriteCopyInstructionOperand(instruction, 'a', copies);
-						break;
-					}
-					case OpCode.TESTSET: {
-						rewriteCopyInstructionOperand(instruction, 'b', copies);
-						break;
-					}
-				case OpCode.SETG:
 				case OpCode.SETSYS:
 				case OpCode.SETGL:
 					case OpCode.SETUP:
@@ -950,6 +858,16 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 						rewriteRkInstructionOperand(instruction, 'b', RK_B, constants, copies);
 						break;
 					}
+					case OpCode.LOAD_MEM_D:
+						rewriteCopyInstructionOperand(instruction, 'b', copies);
+						break;
+					case OpCode.STORE_MEM_D:
+						rewriteCopyInstructionOperand(instruction, 'a', copies);
+						rewriteCopyInstructionOperand(instruction, 'b', copies);
+						break;
+					case OpCode.STORE_MEM_WORDS_D:
+						rewriteCopyInstructionOperand(instruction, 'b', copies);
+						break;
 					case OpCode.LOAD_MEM: {
 						rewriteRkInstructionOperand(instruction, 'b', RK_B, constants, copies);
 						break;
@@ -972,10 +890,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.LOADK: {
 					const index = instruction.b;
 					setConst(constants, copies, instruction.a, { value: context.constPool[index], constIndex: index });
-					break;
-				}
-				case OpCode.LOADBOOL: {
-					setConst(constants, copies, instruction.a, instruction.b !== 0 ? trueConst : falseConst);
 					break;
 				}
 				case OpCode.LOADNIL: {
@@ -1023,7 +937,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					killRegister(constants, copies, instruction.a);
 					break;
 				}
-				case OpCode.GETG:
 				case OpCode.GETSYS:
 				case OpCode.GETGL:
 				case OpCode.GETT:
@@ -1035,6 +948,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.CLOSURE:
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
+				case OpCode.LOAD_MEM_D:
 					killRegister(constants, copies, instruction.a);
 					break;
 				case OpCode.SELF:
@@ -1065,9 +979,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					}
 					break;
 				}
-				case OpCode.TESTSET:
-					killRegister(constants, copies, instruction.a);
-					break;
 				default:
 					break;
 			}
@@ -1117,19 +1028,23 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 			case OpCode.BNOT:
 					pushRegister(uses, instruction.b);
 					break;
-			case OpCode.SETG:
 			case OpCode.SETSYS:
 			case OpCode.SETGL:
 			case OpCode.SETUP:
-			case OpCode.TEST:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
-			case OpCode.BR_TRUE:
-			case OpCode.BR_FALSE:
 					pushRegister(uses, instruction.a);
 					break;
-				case OpCode.TESTSET:
+			case OpCode.LOAD_MEM_D:
+			case OpCode.STORE_MEM_D:
+			case OpCode.STORE_MEM_WORDS_D:
 					pushRegister(uses, instruction.b);
+					if (instruction.op === OpCode.STORE_MEM_D) {
+						pushRegister(uses, instruction.a);
+					}
+					if (instruction.op === OpCode.STORE_MEM_WORDS_D) {
+						pushRegisterRange(uses, instruction.a, instruction.c);
+					}
 					break;
 			case OpCode.GETI:
 			case OpCode.GETFIELD:
@@ -1229,8 +1144,6 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 			case OpCode.KM1:
 			case OpCode.KSMI:
 			case OpCode.LOADK:
-			case OpCode.LOADBOOL:
-			case OpCode.GETG:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
 			case OpCode.GETI:
@@ -1258,13 +1171,11 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 			case OpCode.CLOSURE:
 			case OpCode.GETUP:
 			case OpCode.LOAD_MEM:
+			case OpCode.LOAD_MEM_D:
 					pushRegister(defs, instruction.a);
 					break;
 				case OpCode.SELF:
 					pushRegisterRange(defs, instruction.a, 2);
-					break;
-				case OpCode.TESTSET:
-					pushRegister(defs, instruction.a);
 					break;
 			case OpCode.SETI:
 			case OpCode.SETFIELD:
@@ -1657,8 +1568,6 @@ const applyClosureTransferForInlining = (
 			return;
 		}
 		case OpCode.LOADK:
-		case OpCode.LOADBOOL:
-		case OpCode.GETG:
 		case OpCode.GETSYS:
 		case OpCode.GETGL:
 		case OpCode.GETI:
@@ -1685,7 +1594,7 @@ const applyClosureTransferForInlining = (
 		case OpCode.BNOT:
 		case OpCode.GETUP:
 		case OpCode.LOAD_MEM:
-		case OpCode.TESTSET:
+		case OpCode.LOAD_MEM_D:
 			closures.delete(instruction.a);
 			return;
 		case OpCode.SELF:
@@ -1844,8 +1753,6 @@ const buildInlineExpansion = (
 				mapped.b = mapRegister(mapped.b);
 				break;
 			case OpCode.LOADK:
-			case OpCode.LOADBOOL:
-			case OpCode.GETG:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
 			case OpCode.GETI:
@@ -1855,6 +1762,10 @@ const buildInlineExpansion = (
 				if (mapped.op === OpCode.GETI || mapped.op === OpCode.GETFIELD) {
 					mapped.b = mapRegister(mapped.b);
 				}
+				break;
+			case OpCode.LOAD_MEM_D:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = mapRegister(mapped.b);
 				break;
 			case OpCode.SELF:
 				mapped.a = mapRegister(mapped.a);
@@ -1905,21 +1816,21 @@ const buildInlineExpansion = (
 				mapped.a = mapRegister(mapped.a);
 				mapped.b = mapRegister(mapped.b);
 				break;
-			case OpCode.TEST:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
-			case OpCode.BR_TRUE:
-			case OpCode.BR_FALSE:
 				mapped.a = mapRegister(mapped.a);
 				break;
-			case OpCode.TESTSET:
-				mapped.a = mapRegister(mapped.a);
-				mapped.b = mapRegister(mapped.b);
-				break;
-			case OpCode.SETG:
 			case OpCode.SETSYS:
 			case OpCode.SETGL:
 				mapped.a = mapRegister(mapped.a);
+				break;
+			case OpCode.STORE_MEM_D:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = mapRegister(mapped.b);
+				break;
+			case OpCode.STORE_MEM_WORDS_D:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = mapRegister(mapped.b);
 				break;
 			case OpCode.JMP:
 				break;

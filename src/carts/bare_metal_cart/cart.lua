@@ -30,6 +30,11 @@ local screen_height<const> = 212
 local inv_half_screen_width<const> = 1.0 / 128.0
 local inv_half_screen_height<const> = 1.0 / 106.0
 
+struct mat4_instance
+	mvp: f32[16]
+	color: word
+end
+
 local quad_buffer<const> = 1
 local background_buffer<const> = 2
 local mesh_buffer<const> = 3
@@ -54,7 +59,7 @@ local mat4_vertex_count<const> = 3
 local mat4_vertex_stride<const> = 16
 local mat4_vertex_bytes<const> = mat4_vertex_count * mat4_vertex_stride
 local mat4_instance_count<const> = 2
-local mat4_instance_stride<const> = 68
+local mat4_instance_stride<const> = sizeof(mat4_instance)
 local mat4_instance_bytes<const> = mat4_instance_count * mat4_instance_stride
 local mesh_vertex_count<const> = 24
 local mesh_vertex_stride<const> = 44
@@ -1257,9 +1262,9 @@ local write_mat4_instances<const> = function()
 	local vm2_03<const> = crx * wx2 + cry * wy2 + crz * wz2 + v_tx
 	local vm2_13<const> = cux * wx2 + cuy * wy2 + cuz * wz2 + v_ty
 	local vm2_23<const> = -cfx * wx2 - cfy * wy2 - cfz * wz2 + v_tz
-	local wp = mat4_instance_addr
+	local mat4_instances<const> = ref mat4_instance[mat4_instance_count] at mat4_instance_addr
 	-- Instance 1 MVP (column-major: [col0,col1,col2,col3], each 4 floats = [r0,r1,r2,r3])
-	memwritef32(wp,
+	memwritef32(&mat4_instances[0].mvp[0],
 		pvc0r0,                    -- col0 r0
 		pvc0r1,                    -- col0 r1
 		pvc0r2,                    -- col0 r2
@@ -1277,10 +1282,9 @@ local write_mat4_instances<const> = function()
 		proj_a  * vm1_23 + proj_b, -- col3 r2
 		-vm1_23                    -- col3 r3
 	)
-	wp = wp + 64
-	mem[wp], wp = mat4_tint_a, wp + 4
+	mat4_instances[0].color = mat4_tint_a
 	-- Instance 2 MVP: xy scale applied to cols 0 and 1
-	memwritef32(wp,
+	memwritef32(&mat4_instances[1].mvp[0],
 		pvc0r0 * sc2,              -- col0 r0
 		pvc0r1 * sc2,              -- col0 r1
 		pvc0r2 * sc2,              -- col0 r2
@@ -1298,8 +1302,7 @@ local write_mat4_instances<const> = function()
 		proj_a  * vm2_23 + proj_b, -- col3 r2
 		-vm2_23                    -- col3 r3
 	)
-	wp = wp + 64
-	mem[wp], wp = mat4_tint_b, wp + 4
+	mat4_instances[1].color = mat4_tint_b
 end
 
 local initialize_vdp_resources<const> = function()

@@ -547,7 +547,7 @@ export function formatCpuProfilerReport(snapshot: CpuProfilerSnapshot, options: 
 	);
 	const callGroupRows = collectCpuProfilerOpcodeGroupProtos(snapshot, opcode => opcode === OpCode.CALL || opcode === OpCode.RET);
 	const memoryGroupRows = collectCpuProfilerOpcodeGroupProtos(snapshot, opcode =>
-		opcode === OpCode.LOAD_MEM || opcode === OpCode.STORE_MEM || opcode === OpCode.STORE_MEM_WORDS
+		opcode === OpCode.LOAD_MEM || opcode === OpCode.STORE_MEM || opcode === OpCode.STORE_MEM_WORDS || opcode === OpCode.LOAD_MEM_D || opcode === OpCode.STORE_MEM_D || opcode === OpCode.STORE_MEM_WORDS_D
 	);
 	const concatGroupRows = collectCpuProfilerOpcodeGroupProtos(snapshot, opcode => opcode === OpCode.CONCAT || opcode === OpCode.CONCATN);
 	const opcodeRows = collectTopOpcodesFromCounts(snapshot.opcodeCounts, snapshot.totalInstructions, snapshot.totalBaseCycles, topOpcodes);

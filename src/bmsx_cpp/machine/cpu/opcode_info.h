@@ -11,7 +11,7 @@ enum class OpCode : u8 {
 	MOV,
 	LOADK,
 	LOADNIL,
-	LOADBOOL,
+	LOAD_MEM_D,
 	KNIL,
 	KFALSE,
 	KTRUE,
@@ -19,8 +19,8 @@ enum class OpCode : u8 {
 	K1,
 	KM1,
 	KSMI,
-	GETG,
-	SETG,
+	STORE_MEM_D,
+	STORE_MEM_WORDS_D,
 	GETT,
 	SETT,
 	NEWT,
@@ -45,8 +45,8 @@ enum class OpCode : u8 {
 	EQ,
 	LT,
 	LE,
-	TEST,
-	TESTSET,
+	RESERVED0,
+	RESERVED1,
 	JMP,
 	JMPIF,
 	JMPIFNOT,
@@ -59,8 +59,8 @@ enum class OpCode : u8 {
 	LOAD_MEM,
 	STORE_MEM,
 	STORE_MEM_WORDS,
-	BR_TRUE,
-	BR_FALSE,
+	RESERVED2,
+	RESERVED3,
 	GETSYS,
 	SETSYS,
 	GETGL,
@@ -78,6 +78,7 @@ inline constexpr size_t OPCODE_COUNT = 64U;
 extern const std::array<const char*, OPCODE_COUNT> OPCODE_NAMES;
 extern const std::array<u8, OPCODE_COUNT> BASE_CYCLES;
 extern const std::array<u8, OPCODE_COUNT> OPCODE_USES_BX;
+extern const std::array<u8, OPCODE_COUNT> OPCODE_USES_DISP;
 extern const std::array<const char*, OPCODE_COUNT> OPCODE_CATEGORY;
 
 auto getOpcodeName(OpCode op) -> const char*;

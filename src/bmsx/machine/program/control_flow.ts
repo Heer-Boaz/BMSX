@@ -9,9 +9,7 @@ export type Block = {
 export const isJump = (instruction: Instruction): boolean =>
 	instruction.op === OpCode.JMP
 	|| instruction.op === OpCode.JMPIF
-	|| instruction.op === OpCode.JMPIFNOT
-	|| instruction.op === OpCode.BR_TRUE
-	|| instruction.op === OpCode.BR_FALSE;
+	|| instruction.op === OpCode.JMPIFNOT;
 
 export const getJumpTarget = (instruction: Instruction): number => {
 	if (instruction.target === null) {
@@ -97,8 +95,6 @@ export const buildBasicBlocks = (instructions: Instruction[]): Block[] => {
 				break;
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
-			case OpCode.BR_TRUE:
-			case OpCode.BR_FALSE:
 				addJumpLeader(instruction);
 				if (next < count) {
 					leaders.add(next);
@@ -109,16 +105,6 @@ export const buildBasicBlocks = (instructions: Instruction[]): Block[] => {
 					leaders.add(next);
 				}
 				break;
-			case OpCode.LOADBOOL:
-				if (next < count) {
-					leaders.add(next);
-				}
-				if (instruction.c !== 0 && nextNext < count) {
-					leaders.add(nextNext);
-				}
-				break;
-			case OpCode.TEST:
-			case OpCode.TESTSET:
 			case OpCode.EQ:
 			case OpCode.LT:
 			case OpCode.LE:
@@ -198,19 +184,9 @@ export const buildBlockGraph = (instructions: Instruction[], blocks: Block[]): {
 				break;
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
-			case OpCode.BR_TRUE:
-			case OpCode.BR_FALSE:
 				addIndexSuccessor(blockIndex, getJumpTarget(instruction));
 				addIndexSuccessor(blockIndex, nextIndex);
 				break;
-			case OpCode.LOADBOOL:
-				addIndexSuccessor(blockIndex, nextIndex);
-				if (instruction.c !== 0) {
-					addIndexSuccessor(blockIndex, nextNextIndex);
-				}
-				break;
-			case OpCode.TEST:
-			case OpCode.TESTSET:
 			case OpCode.EQ:
 			case OpCode.LT:
 			case OpCode.LE:
