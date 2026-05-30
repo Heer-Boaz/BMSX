@@ -621,7 +621,7 @@ export class LuaParser {
 	}
 
 	private parseAssignmentOrCall(): LuaStatement {
-		const expression = this.parsePrefixExpression();
+		const expression = this.parseAssignmentTargetExpression();
 		if (this.check(LuaTokenType.Comma) || this.isAssignmentOperator(this.current().type)) {
 			return this.parseAssignment(expression);
 		}
@@ -635,7 +635,7 @@ export class LuaParser {
 		const targets: LuaAssignableExpression[] = [];
 		targets.push(this.requireAssignable(firstExpression));
 		while (this.match(LuaTokenType.Comma)) {
-			const next = this.parsePrefixExpression();
+			const next = this.parseAssignmentTargetExpression();
 			targets.push(this.requireAssignable(next));
 		}
 		const operatorToken = this.current();
@@ -671,6 +671,10 @@ export class LuaParser {
 			right: values,
 			operator,
 		};
+	}
+
+	private parseAssignmentTargetExpression(): LuaExpression {
+		return this.check(LuaTokenType.Star) ? this.parseUnaryExpression() : this.parsePrefixExpression();
 	}
 
 	private createCallStatement(expression: LuaCallExpression): LuaCallStatement {
@@ -782,6 +786,11 @@ export class LuaParser {
 			const operand = this.parseUnaryExpression();
 			return this.createUnaryExpression(operatorToken, operand, LuaUnaryOperator.BitwiseNot);
 		}
+		if (this.match(LuaTokenType.Star)) {
+			const operatorToken = this.previous();
+			const operand = this.parseUnaryExpression();
+			return this.createUnaryExpression(operatorToken, operand, LuaUnaryOperator.Dereference);
+		}
 		return this.parseRightAssociativeExpression(this.parsePrefixExpression, LuaTokenType.Caret, this.parseUnaryExpression, LuaBinaryOperator.Exponent);
 	}
 
@@ -809,11 +818,18 @@ export class LuaParser {
 	private matchBinaryOperator(operators: readonly LuaBinaryOperatorSpec[]): LuaBinaryOperator | null {
 		for (let index = 0; index < operators.length; index += 1) {
 			const [tokenType, operator] = operators[index];
+			if (tokenType === LuaTokenType.Star && this.startsOnNewLine(this.current())) {
+				continue;
+			}
 			if (this.match(tokenType)) {
 				return operator;
 			}
 		}
 		return null;
+	}
+
+	private startsOnNewLine(token: LuaToken): boolean {
+		return this.previous().endLine < token.line;
 	}
 
 	private parsePrefixExpression(): LuaExpression {
@@ -832,8 +848,8 @@ export class LuaParser {
 				expression = indexNode;
 				continue;
 			}
-			if (this.match(LuaTokenType.Dot)) {
-				const identifierToken = this.consume(LuaTokenType.Identifier, 'Expected identifier after ".".');
+			if (this.match(LuaTokenType.Dot) || this.match(LuaTokenType.Arrow)) {
+				const identifierToken = this.consume(LuaTokenType.Identifier, 'Expected identifier after member access operator.');
 				const range = this.rangeFromNodeAndToken(expression, identifierToken);
 				const memberNode: LuaMemberExpression = {
 					kind: LuaSyntaxKind.MemberExpression,
@@ -1531,7 +1547,8 @@ export class LuaParser {
 		if (
 			expression.kind === LuaSyntaxKind.IdentifierExpression ||
 			expression.kind === LuaSyntaxKind.MemberExpression ||
-			expression.kind === LuaSyntaxKind.IndexExpression
+			expression.kind === LuaSyntaxKind.IndexExpression ||
+			(expression.kind === LuaSyntaxKind.UnaryExpression && expression.operator === LuaUnaryOperator.Dereference)
 		) {
 			return expression as LuaAssignableExpression;
 		}

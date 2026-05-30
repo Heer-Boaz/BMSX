@@ -357,6 +357,7 @@ export const enum LuaUnaryOperator {
 	Length,
 	BitwiseNot,
 	StringId,
+	Dereference,
 }
 
 export type LuaUnaryExpression = LuaNode & {
@@ -395,4 +396,4 @@ export type LuaOffsetOfExpression = LuaNode & {
 	readonly fieldPath: ReadonlyArray<string>;
 };
 
-export type LuaAssignableExpression = LuaIdentifierExpression | LuaMemberExpression | LuaIndexExpression;
+export type LuaAssignableExpression = LuaIdentifierExpression | LuaMemberExpression | LuaIndexExpression | LuaUnaryExpression;

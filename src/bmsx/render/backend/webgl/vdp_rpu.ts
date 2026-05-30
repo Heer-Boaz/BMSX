@@ -10,7 +10,6 @@ import {
 	VDP_RPU_DEPTH_NONE,
 	VDP_RPU_INDEX_NONE,
 	VDP_RPU_INDEX_U16,
-	VDP_RPU_FILTER_LINEAR,
 	VDP_RPU_PASS_COLOR_CLEAR,
 	VDP_RPU_PASS_DEPTH_CLEAR,
 	VDP_RPU_PIPE_BLEND_MASK,
@@ -22,10 +21,6 @@ import {
 	VDP_RPU_PRIM_POINTS,
 	VDP_RPU_PRIM_TRIANGLES,
 	VDP_RPU_PRIM_TRIANGLE_STRIP,
-	VDP_RPU_SAMPLER_MAG_FILTER_MASK,
-	VDP_RPU_SAMPLER_MIN_FILTER_MASK,
-	VDP_RPU_SAMPLER_WRAP_U_MASK,
-	VDP_RPU_SAMPLER_WRAP_V_MASK,
 	VDP_RPU_ATTR_COLOR,
 	VDP_RPU_ATTR_F32,
 	VDP_RPU_ATTR_INSTANCE0,
@@ -53,7 +48,6 @@ import {
 	VDP_RPU_RESOURCE_NONE,
 	VDP_RPU_SURFACE_CAPACITY,
 	VDP_RPU_SURFACE_FORMAT_DEPTH16,
-	VDP_RPU_WRAP_REPEAT,
 	type VdpRpuFrameOutput,
 	type VdpRpuShaderVariantSpec,
 	type VdpRpuStreamAttributeSpec,
@@ -683,14 +677,6 @@ function setVdpRpuJointConstants(frame: VdpRpuFrameOutput, drawIndex: number, sh
 	gl.uniformMatrix4fv(vdpRpuJointLocation, false, vdpRpuDefaultJointFloats);
 }
 
-function setVdpRpuTextureSampler(samplerWord: number): void {
-	const gl = vdpRpuGl;
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, (samplerWord & VDP_RPU_SAMPLER_MIN_FILTER_MASK) === VDP_RPU_FILTER_LINEAR ? gl.LINEAR : gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, (samplerWord & VDP_RPU_SAMPLER_MAG_FILTER_MASK) === (VDP_RPU_FILTER_LINEAR << 2) ? gl.LINEAR : gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, (samplerWord & VDP_RPU_SAMPLER_WRAP_U_MASK) === (VDP_RPU_WRAP_REPEAT << 4) ? gl.REPEAT : gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, (samplerWord & VDP_RPU_SAMPLER_WRAP_V_MASK) === (VDP_RPU_WRAP_REPEAT << 6) ? gl.REPEAT : gl.CLAMP_TO_EDGE);
-}
-
 function bindVdpRpuNeutralTexture(backend: WebGLBackend): void {
 	const gl = vdpRpuGl;
 	backend.setActiveTexture(0);
@@ -721,7 +707,6 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 			const surfaceRef = commands.textureSurfaceRef[bindingIndex];
 			if (surfaceRef === VDP_RPU_REF_NONE) {
 				bindVdpRpuNeutralTexture(backend);
-				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
 				gl.uniform1i(vdpRpuT0Location, 0);
 			} else {
 				const surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
@@ -735,7 +720,6 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 					gl.bindTexture(gl.TEXTURE_2D, vdpRpuSurfaceTexture[surfaceId]);
 					gl.uniform1i(vdpRpuTextureFlipYLocation, 1);
 				}
-				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
 				gl.uniform1i(vdpRpuT0Location, 0);
 			}
 		} else if (slot === 1 && t1Flag && !foundT1) {
@@ -751,7 +735,6 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 					backend.invalidateTextureBindingCache();
 					gl.bindTexture(gl.TEXTURE_2D, vdpRpuSurfaceTexture[surfaceId]);
 				}
-				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
 				gl.uniform1i(vdpRpuT1Location, 1);
 				gl.uniform1i(vdpRpuT1ModeLocation, 1);
 			}

@@ -737,7 +737,6 @@ BinValue encodeRpuCommandBufferState(const VdpRpuCommandBufferSaveState& state) 
 		{"constantWordCount", encodeVector<u16>(state.constantWordCount, encodeScalar<i64, u16>)},
 		{"textureSlot", encodeVector<u8>(state.textureSlot, encodeScalar<i64, u8>)},
 		{"textureSurfaceRef", encodeVector<u16>(state.textureSurfaceRef, encodeScalar<i64, u16>)},
-		{"textureSamplerWord", encodeVector<u32>(state.textureSamplerWord, encodeScalar<i64, u32>)},
 	});
 }
 
@@ -792,7 +791,6 @@ VdpRpuCommandBufferSaveState decodeRpuCommandBufferState(const BinValue& value, 
 	state.constantWordCount = requireVectorSize(decodeU16Vector(requireField(object, "constantWordCount", label), "machine.vdp.rpu.commands.constantWordCount", VDP_RPU_CONSTANT_BINDING_CAPACITY), state.constantBindingCount, "machine.vdp.rpu.commands.constantWordCount");
 	state.textureSlot = requireVectorSize(decodeU8Vector(requireField(object, "textureSlot", label), "machine.vdp.rpu.commands.textureSlot", VDP_RPU_TEXTURE_BINDING_CAPACITY), state.textureBindingCount, "machine.vdp.rpu.commands.textureSlot");
 	state.textureSurfaceRef = requireVectorSize(decodeU16Vector(requireField(object, "textureSurfaceRef", label), "machine.vdp.rpu.commands.textureSurfaceRef", VDP_RPU_TEXTURE_BINDING_CAPACITY), state.textureBindingCount, "machine.vdp.rpu.commands.textureSurfaceRef");
-	state.textureSamplerWord = requireVectorSize(decodeU32Vector(requireField(object, "textureSamplerWord", label), "machine.vdp.rpu.commands.textureSamplerWord", VDP_RPU_TEXTURE_BINDING_CAPACITY), state.textureBindingCount, "machine.vdp.rpu.commands.textureSamplerWord");
 	return state;
 }
 

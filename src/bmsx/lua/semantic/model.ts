@@ -1726,6 +1726,12 @@ class SemanticBuilder {
 				return this.assignMember(target);
 			case LuaSyntaxKind.IndexExpression:
 				return this.assignIndex(target);
+			case LuaSyntaxKind.UnaryExpression:
+				if (target.operator === LuaUnaryOperator.Dereference) {
+					this.visitExpression(target.operand, { tableBaseDecl: null, tableBasePath: null });
+					return { decl: null, namePath: null, path: null };
+				}
+				throw new Error('[LuaSemanticModel] Unsupported unary assignment target.');
 			default:
 				return { decl: null, namePath: null, path: null };
 		}

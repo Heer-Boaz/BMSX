@@ -68,7 +68,7 @@ constexpr u32 VDP_RPU_END_PASS_WORDS = 1u;
 constexpr u32 VDP_RPU_BEGIN_DRAW_WORDS = 9u;
 constexpr u32 VDP_RPU_BIND_STREAM_WORDS = 6u;
 constexpr u32 VDP_RPU_BIND_CONSTANTS_WORDS = 5u;
-constexpr u32 VDP_RPU_BIND_TEXTURE_WORDS = 4u;
+constexpr u32 VDP_RPU_BIND_TEXTURE_WORDS = 3u;
 constexpr u32 VDP_RPU_END_DRAW_WORDS = 1u;
 constexpr u32 VDP_RPU_BUFFER_UPLOAD_INLINE_MIN_WORDS = 4u;
 constexpr u32 VDP_RPU_CONSTANT_UPLOAD_INLINE_MIN_WORDS = 4u;
@@ -122,16 +122,6 @@ constexpr u32 VDP_RPU_PIPE_CULL_MASK = 0x00000f00u;
 constexpr u32 VDP_RPU_PIPE_DEPTH_WRITE = 0x00001000u;
 constexpr u32 VDP_RPU_PIPE_COLOR_WRITE_MASK = 0x000f0000u;
 constexpr u32 VDP_RPU_PIPELINE_WORD_MASK = VDP_RPU_PIPE_BLEND_MASK | VDP_RPU_PIPE_DEPTH_MASK | VDP_RPU_PIPE_CULL_MASK | VDP_RPU_PIPE_DEPTH_WRITE | VDP_RPU_PIPE_COLOR_WRITE_MASK;
-
-constexpr u32 VDP_RPU_FILTER_NEAREST = 0u;
-constexpr u32 VDP_RPU_FILTER_LINEAR = 1u;
-constexpr u32 VDP_RPU_WRAP_CLAMP = 0u;
-constexpr u32 VDP_RPU_WRAP_REPEAT = 1u;
-constexpr u32 VDP_RPU_SAMPLER_MIN_FILTER_MASK = 0x00000003u;
-constexpr u32 VDP_RPU_SAMPLER_MAG_FILTER_MASK = 0x0000000cu;
-constexpr u32 VDP_RPU_SAMPLER_WRAP_U_MASK = 0x00000030u;
-constexpr u32 VDP_RPU_SAMPLER_WRAP_V_MASK = 0x000000c0u;
-constexpr u32 VDP_RPU_SAMPLER_WORD_MASK = VDP_RPU_SAMPLER_MIN_FILTER_MASK | VDP_RPU_SAMPLER_MAG_FILTER_MASK | VDP_RPU_SAMPLER_WRAP_U_MASK | VDP_RPU_SAMPLER_WRAP_V_MASK;
 
 constexpr u32 VDP_RPU_PRIM_TRIANGLES = 0u;
 constexpr u32 VDP_RPU_PRIM_TRIANGLE_STRIP = 1u;
@@ -285,7 +275,6 @@ struct VdpRpuCommandBuffer {
 	std::array<u16, VDP_RPU_CONSTANT_BINDING_CAPACITY> constantWordCount{};
 	std::array<u8, VDP_RPU_TEXTURE_BINDING_CAPACITY> textureSlot{};
 	std::array<u16, VDP_RPU_TEXTURE_BINDING_CAPACITY> textureSurfaceRef{};
-	std::array<u32, VDP_RPU_TEXTURE_BINDING_CAPACITY> textureSamplerWord{};
 };
 
 struct VdpRpuFrameOutput {
@@ -405,7 +394,6 @@ struct VdpRpuCommandBufferSaveState {
 	std::vector<u16> constantWordCount;
 	std::vector<u8> textureSlot;
 	std::vector<u16> textureSurfaceRef;
-	std::vector<u32> textureSamplerWord;
 };
 
 struct VdpRpuFrameBufferRefSaveState {
@@ -537,7 +525,7 @@ private:
 	auto acceptEndDraw(VdpRpuFrameOutput& frame) -> bool;
 	auto acceptBindStream(VdpRpuFrameOutput& frame, u32 streamSlot, u32 layoutId, u32 bufferId, u32 byteOffset, u32 stepRate) -> bool;
 	auto acceptBindConstants(VdpRpuFrameOutput& frame, u32 bindingSlot, u32 bankId, u32 firstWord, u32 wordCount) -> bool;
-	auto acceptBindTexture(VdpRpuFrameOutput& frame, u32 textureSlot, u32 surfaceId, u32 samplerWord) -> bool;
+	auto acceptBindTexture(VdpRpuFrameOutput& frame, u32 textureSlot, u32 surfaceId) -> bool;
 	auto recordDrawBatch(VdpRpuFrameOutput& frame, u32 drawIndex) -> bool;
 	[[nodiscard]] auto canMergeDrawIntoBatch(const VdpRpuCommandBuffer& commands, size_t batchIndex, u32 drawIndex) const -> bool;
 	[[nodiscard]] auto sameDrawConstants(const VdpRpuCommandBuffer& commands, u32 leftDraw, u32 rightDraw) const -> bool;

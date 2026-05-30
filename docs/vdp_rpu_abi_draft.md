@@ -80,7 +80,7 @@ fault. After admission, however, a representable retained command buffer is
 backend input as-is. The WebGL/GLES2 executor must not add a second semantic
 validation layer that rejects cart-visible draws because they
 look like mismatched layouts, odd state combinations, or nonsense constants.
-Raw pipeline bits, primitive/index selector bits, sampler bits, color masks,
+Raw pipeline bits, primitive/index selector bits, color masks,
 usage bits, format bits, slot words, and defined-or-unknown stream layout ids
 are retained as programmed. Shader selection is a fixed low-bit selector, so
 high bits do not create an unavailable host shader; they decode to one of the
@@ -147,7 +147,7 @@ export const VDP_RPU_END_PASS_WORDS = 1;
 export const VDP_RPU_BEGIN_DRAW_WORDS = 9;
 export const VDP_RPU_BIND_STREAM_WORDS = 6;
 export const VDP_RPU_BIND_CONSTANTS_WORDS = 5;
-export const VDP_RPU_BIND_TEXTURE_WORDS = 4;
+export const VDP_RPU_BIND_TEXTURE_WORDS = 3;
 export const VDP_RPU_END_DRAW_WORDS = 1;
 
 export const VDP_RPU_BUFFER_UPLOAD_INLINE_MIN_WORDS = 4;
@@ -288,7 +288,6 @@ export type VdpRpuBindTexturePacket = readonly [
 	op: typeof VDP_RPU_OP_BIND_TEXTURE,
 	textureSlot: number,
 	surfaceId: number,
-	samplerWord: number,
 ];
 ```
 
@@ -432,7 +431,7 @@ export class VdpRpuConstantBankTable {
 }
 ```
 
-## Pass, pipeline, sampler, and primitive words
+## Pass, pipeline, and primitive words
 
 ```ts
 export const VDP_RPU_PASS_COLOR_CLEAR = 1 << 0;
@@ -471,23 +470,6 @@ export const VDP_RPU_PIPELINE_WORD_MASK =
 	| VDP_RPU_PIPE_DEPTH_WRITE
 	| VDP_RPU_PIPE_COLOR_WRITE_MASK;
 
-export const VDP_RPU_FILTER_NEAREST = 0;
-export const VDP_RPU_FILTER_LINEAR = 1;
-
-export const VDP_RPU_WRAP_CLAMP = 0;
-export const VDP_RPU_WRAP_REPEAT = 1;
-
-export const VDP_RPU_SAMPLER_MIN_FILTER_MASK = 0x00000003;
-export const VDP_RPU_SAMPLER_MAG_FILTER_MASK = 0x0000000c;
-export const VDP_RPU_SAMPLER_WRAP_U_MASK = 0x00000030;
-export const VDP_RPU_SAMPLER_WRAP_V_MASK = 0x000000c0;
-
-export const VDP_RPU_SAMPLER_WORD_MASK =
-	VDP_RPU_SAMPLER_MIN_FILTER_MASK
-	| VDP_RPU_SAMPLER_MAG_FILTER_MASK
-	| VDP_RPU_SAMPLER_WRAP_U_MASK
-	| VDP_RPU_SAMPLER_WRAP_V_MASK;
-
 export const VDP_RPU_PRIM_TRIANGLES = 0;
 export const VDP_RPU_PRIM_TRIANGLE_STRIP = 1;
 export const VDP_RPU_PRIM_LINES = 2;
@@ -504,13 +486,12 @@ export const VDP_RPU_DRAW_INDEX_TYPE_MASK = 0x0000ff00;
 
 Representable raw-word rules:
 
-- `passOps`, `pipelineWord`, `samplerWord`, primitive bits, and index-type bits are retained as raw words after structural packet/resource admission.
-- Unknown enum values in blend/depth/cull/filter/wrap/primitive/index fields do not fault merely because they are weird.
+- `passOps`, `pipelineWord`, primitive bits, and index-type bits are retained as raw words after structural packet/resource admission.
+- Unknown enum values in blend/depth/cull/primitive/index fields do not fault merely because they are weird.
 - Unknown stream layout ids do not fault once the buffer range can be pinned;
   admission uses the baseline `V2_C4` stride for range pinning, and the backend
   consumes the retained layout id through its deterministic layout decoder.
-- The backend maps the retained raw words onto WebGL/GLES2 state deterministically; weird-but-representable state may render weirdly.
-- NPOT texture/sampler combinations are cart-visible hardware state, not a high-level API validation point.
+- The backend maps the retained raw words onto WebGL/GLES2 state deterministically; weird-but-representable state may render weirdly. Texture sampling is fixed nearest/clamp and is not part of the packet ABI.
 
 ## Retained command buffer
 
@@ -561,7 +542,6 @@ export class VdpRpuCommandBuffer {
 
 	public readonly textureSlot = new Uint8Array(VDP_RPU_TEXTURE_BINDING_CAPACITY);
 	public readonly textureSurfaceRef = new Uint16Array(VDP_RPU_TEXTURE_BINDING_CAPACITY);
-	public readonly textureSamplerWord = new Uint32Array(VDP_RPU_TEXTURE_BINDING_CAPACITY);
 }
 ```
 
@@ -925,7 +905,6 @@ export type VdpRpuCommandBufferSaveState = {
 
 	textureSlot: number[];
 	textureSurfaceRef: number[];
-	textureSamplerWord: number[];
 };
 
 export type VdpRpuFrameBufferRefSaveState = {

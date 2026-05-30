@@ -14,7 +14,71 @@ local geo_direct_result_base<const> = geo_direct_pair_base + sys_geo_overlap_pai
 local geo_direct_summary_base<const> = geo_direct_result_base + sys_geo_overlap_result_bytes
 local geo_overlap_batch_base<const> = geo_direct_summary_base + sys_geo_overlap_summary_bytes
 local geo_overlap_batch_size<const> = sys_geo_scratch_size - geo_direct_query_scratch_bytes
+struct geo_overlap_aabb_shape
+	kind: word
+	data_count: word
+	data_offset: word
+	bounds_offset: word
+	bounds: f32[4]
+end
+
+struct geo_overlap_instance
+	shape: word
+	tx: f32
+	ty: f32
+	layer: word
+	mask: word
+end
+
+struct geo_overlap_pair
+	instance_a: word
+	instance_b: word
+	meta: word
+end
+
+struct geo_overlap_result
+	nx: f32
+	ny: f32
+	depth: f32
+	px: f32
+	py: f32
+	piece_a: word
+	piece_b: word
+	feature_meta: word
+	pair_meta: word
+end
+
+struct geo_overlap_summary
+	result_count: word
+	exact_pair_count: word
+	broadphase_pair_count: word
+	flags: word
+end
+
+struct geo_src_registers
+	instance_base: word
+	pair_base: word
+	reserved: word
+	result_base: word
+	summary_base: word
+	count: word
+end
+
+struct geo_param_registers
+	param0: word
+	param1: word
+	stride0: word
+	stride1: word
+	stride2: word
+end
+
 local geo_batch_token = 0
+local geo_fault_register<const>: *word = sys_geo_fault
+local irq_flags_register<const>: *word = sys_irq_flags
+local irq_ack_register<const>: *word = sys_irq_ack
+local geo_cmd_register<const>: *word = sys_geo_cmd
+local geo_status_register<const>: *word = sys_geo_status
+
 local direct_query_contact<const> = {
 	normal = { x = 0, y = 0 },
 	depth = 0,
@@ -33,7 +97,7 @@ local next_geo_batch_token<const> = function()
 end
 
 local unpack_geo_fault<const> = function()
-	local fault<const> = mem[sys_geo_fault]
+	local fault<const> = geo_fault_register[0]
 	local fault_u<const> = fault < 0 and (fault + 0x100000000) or fault
 	local fault_code<const> = (fault_u >> sys_geo_fault_code_shift) & sys_geo_fault_code_mask
 	local fault_index<const> = fault_u & sys_geo_fault_record_index_mask
@@ -46,10 +110,10 @@ local raise_geo_fault<const> = function(label)
 end
 
 local ack_geo_irq_if_pending<const> = function()
-	local flags<const> = mem[sys_irq_flags]
+	local flags<const> = irq_flags_register[0]
 	local geo_flags<const> = flags & geo_irq_mask
 	if geo_flags ~= 0 then
-		mem[sys_irq_ack] = geo_flags
+		irq_ack_register[0] = geo_flags
 	end
 end
 
@@ -57,17 +121,15 @@ local stage_geo_aabb_shape<const> = function(collider, shape_addr)
 	local area<const> = collider._world_area_cache
 	local tx<const> = collider._overlap_geo_tx
 	local ty<const> = collider._overlap_geo_ty
-	mem[shape_addr + sys_geo_overlap_shape_kind_offset] = sys_geo_primitive_aabb
-	mem[shape_addr + sys_geo_overlap_shape_data_count_offset] = sys_geo_overlap_aabb_data_count
-	mem[shape_addr + sys_geo_overlap_shape_data_offset_offset] = sys_geo_overlap_shape_desc_bytes
-	mem[shape_addr + sys_geo_overlap_shape_bounds_offset_offset] = sys_geo_overlap_shape_desc_bytes
-	memwritef32(
-		shape_addr + sys_geo_overlap_shape_desc_bytes + sys_geo_overlap_shape_bounds_left_offset,
-		area.left - tx,
-		area.top - ty,
-		area.right - tx,
-		area.bottom - ty
-	)
+	local shape<const>: *geo_overlap_aabb_shape = shape_addr
+	shape->kind = sys_geo_primitive_aabb
+	shape->data_count = sys_geo_overlap_aabb_data_count
+	shape->data_offset = sys_geo_overlap_shape_desc_bytes
+	shape->bounds_offset = sys_geo_overlap_shape_desc_bytes
+	shape->bounds[0] = area.left - tx
+	shape->bounds[1] = area.top - ty
+	shape->bounds[2] = area.right - tx
+	shape->bounds[3] = area.bottom - ty
 	return shape_addr
 end
 
@@ -77,24 +139,22 @@ local stage_geo_overlap_instance<const> = function(collider, batch_token, instan
 	end
 	local instance_addr<const> = instance_base + collider._geo_overlap_instance_index * sys_geo_overlap_instance_bytes
 	local shape_ref<const> = collider._overlap_geo_shape_ref or stage_geo_aabb_shape(collider, aabb_shape_addr)
-	mem[instance_addr + sys_geo_overlap_instance_shape_offset] = shape_ref
-	memwritef32(
-		instance_addr + sys_geo_overlap_instance_tx_offset,
-		collider._overlap_geo_tx,
-		collider._overlap_geo_ty
-	)
-	mem[instance_addr + sys_geo_overlap_instance_layer_offset] = collider.layer
-	mem[instance_addr + sys_geo_overlap_instance_mask_offset] = collider.mask
+	local instance<const>: *geo_overlap_instance = instance_addr
+	instance->shape = shape_ref
+	instance->tx = collider._overlap_geo_tx
+	instance->ty = collider._overlap_geo_ty
+	instance->layer = collider.layer
+	instance->mask = collider.mask
 	collider._geo_overlap_stage_token = batch_token
 end
 
 local wait_for_geo_completion<const> = function(label)
 	while true do
 		halt_until_irq
-		local flags<const> = mem[sys_irq_flags]
+		local flags<const> = irq_flags_register[0]
 		local geo_flags<const> = flags & geo_irq_mask
 		if geo_flags ~= 0 then
-			mem[sys_irq_ack] = geo_flags
+			irq_ack_register[0] = geo_flags
 			if (geo_flags & irq_geo_error) ~= 0 then
 				raise_geo_fault(label)
 			end
@@ -133,10 +193,11 @@ local ensure_pair_contacts<const> = function(pair)
 end
 
 local decode_overlap_results<const> = function(colliders, collider_count, result_base, summary_base, pairs)
-	local result_count<const> = mem[summary_base + sys_geo_overlap_summary_result_count_offset]
+	local results<const>: *geo_overlap_result = result_base
+	local summary<const>: *geo_overlap_summary = summary_base
+	local result_count<const> = summary.result_count
 	for i = 0, result_count - 1 do
-		local result_addr<const> = result_base + i * sys_geo_overlap_result_bytes
-		local pair_meta<const> = mem[result_addr + sys_geo_overlap_result_pair_meta_offset]
+		local pair_meta<const> = results[i].pair_meta
 		local instance_a_index<const> = (pair_meta >> sys_geo_overlap_pair_meta_instance_a_shift) & sys_geo_overlap_pair_meta_instance_a_mask
 		local instance_b_index<const> = pair_meta & sys_geo_overlap_pair_meta_instance_b_mask
 		if instance_a_index < 0 or instance_a_index >= collider_count or instance_b_index <= instance_a_index or instance_b_index >= collider_count then
@@ -150,14 +211,14 @@ local decode_overlap_results<const> = function(colliders, collider_count, result
 		pair.hit = true
 		pair.geo_pair_index = -1
 		local contact<const>, contact_other<const> = ensure_pair_contacts(pair)
-		local normal_x<const> = memf32le[result_addr + sys_geo_overlap_result_nx_offset]
-		local normal_y<const> = memf32le[result_addr + sys_geo_overlap_result_ny_offset]
-		local depth<const> = memf32le[result_addr + sys_geo_overlap_result_depth_offset]
-		local point_x<const> = memf32le[result_addr + sys_geo_overlap_result_px_offset]
-		local point_y<const> = memf32le[result_addr + sys_geo_overlap_result_py_offset]
-		local piece_a<const> = mem[result_addr + sys_geo_overlap_result_piece_a_offset]
-		local piece_b<const> = mem[result_addr + sys_geo_overlap_result_piece_b_offset]
-		local feature_meta<const> = mem[result_addr + sys_geo_overlap_result_feature_meta_offset]
+		local normal_x<const> = results[i].nx
+		local normal_y<const> = results[i].ny
+		local depth<const> = results[i].depth
+		local point_x<const> = results[i].px
+		local point_y<const> = results[i].py
+		local piece_a<const> = results[i].piece_a
+		local piece_b<const> = results[i].piece_b
+		local feature_meta<const> = results[i].feature_meta
 		contact.normal.x = normal_x
 		contact.normal.y = normal_y
 		contact.depth = depth
@@ -179,47 +240,39 @@ local decode_overlap_results<const> = function(colliders, collider_count, result
 end
 
 local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_base, result_base, summary_base, instance_count, pair_count)
-	memwrite(
-		sys_geo_src0,
-		instance_base,
-		pair_base,
-		0,
-		result_base,
-		summary_base,
-		pair_count
-	)
-	memwrite(
-		sys_geo_param0,
-		geo_overlap_candidate_param0,
-		pair_count,
-		sys_geo_overlap_instance_bytes,
-		sys_geo_overlap_pair_bytes,
-		instance_count
-	)
-	mem[sys_geo_cmd] = sys_geo_cmd_overlap2d_pass
+	local src<const>: *geo_src_registers = sys_geo_src0
+	local param<const>: *geo_param_registers = sys_geo_param0
+	src->instance_base = instance_base
+	src->pair_base = pair_base
+	src->reserved = 0
+	src->result_base = result_base
+	src->summary_base = summary_base
+	src->count = pair_count
+	param->param0 = geo_overlap_candidate_param0
+	param->param1 = pair_count
+	param->stride0 = sys_geo_overlap_instance_bytes
+	param->stride1 = sys_geo_overlap_pair_bytes
+	param->stride2 = instance_count
+	geo_cmd_register[0] = sys_geo_cmd_overlap2d_pass
 	wait_for_geo_completion('overlap batch')
 end
 
 local submit_geo_overlap_full_pass<const> = function(instance_base, result_base, summary_base, instance_count, result_capacity)
-	memwrite(
-		sys_geo_src0,
-		instance_base,
-		0,
-		0,
-		result_base,
-		summary_base,
-		instance_count
-	)
-	memwrite(
-		sys_geo_param0,
-		geo_overlap_full_pass_param0,
-		result_capacity,
-		sys_geo_overlap_instance_bytes,
-		0,
-		0
-	)
-	mem[sys_geo_cmd] = sys_geo_cmd_overlap2d_pass
-	local status<const> = mem[sys_geo_status]
+	local src<const>: *geo_src_registers = sys_geo_src0
+	local param<const>: *geo_param_registers = sys_geo_param0
+	src->instance_base = instance_base
+	src->pair_base = 0
+	src->reserved = 0
+	src->result_base = result_base
+	src->summary_base = summary_base
+	src->count = instance_count
+	param->param0 = geo_overlap_full_pass_param0
+	param->param1 = result_capacity
+	param->stride0 = sys_geo_overlap_instance_bytes
+	param->stride1 = 0
+	param->stride2 = 0
+	geo_cmd_register[0] = sys_geo_cmd_overlap2d_pass
+	local status<const> = geo_status_register[0]
 	if (status & geo_status_rejected) ~= 0 or (status & geo_status_error) ~= 0 then
 		ack_geo_irq_if_pending()
 		raise_geo_fault('overlap full pass')
@@ -272,12 +325,10 @@ function collision2d.collides(a, b)
 	b._geo_overlap_instance_index = 1
 	stage_geo_overlap_instance(a, batch_token, geo_direct_instance_base, geo_direct_shape_base)
 	stage_geo_overlap_instance(b, batch_token, geo_direct_instance_base, geo_direct_shape_base + sys_geo_overlap_aabb_shape_bytes)
-	memwrite(
-		geo_direct_pair_base,
-		0,
-		1,
-		1
-	)
+	local direct_pair<const>: *geo_overlap_pair = geo_direct_pair_base
+	direct_pair->instance_a = 0
+	direct_pair->instance_b = 1
+	direct_pair->meta = 1
 	submit_geo_overlap_candidate_batch(
 		geo_direct_instance_base,
 		geo_direct_pair_base,
@@ -290,18 +341,20 @@ function collision2d.collides(a, b)
 	a._world_polys_cache_valid = false
 	b._overlap_cache_valid = false
 	b._world_polys_cache_valid = false
-	if mem[geo_direct_summary_base + sys_geo_overlap_summary_result_count_offset] == 0 then
+	local direct_summary<const>: *geo_overlap_summary = geo_direct_summary_base
+	if direct_summary.result_count == 0 then
 		return nil
 	end
+	local direct_result<const>: *geo_overlap_result = geo_direct_result_base
 	local contact<const> = direct_query_contact
-	contact.normal.x = memf32le[geo_direct_result_base + sys_geo_overlap_result_nx_offset]
-	contact.normal.y = memf32le[geo_direct_result_base + sys_geo_overlap_result_ny_offset]
-	contact.depth = memf32le[geo_direct_result_base + sys_geo_overlap_result_depth_offset]
-	contact.point.x = memf32le[geo_direct_result_base + sys_geo_overlap_result_px_offset]
-	contact.point.y = memf32le[geo_direct_result_base + sys_geo_overlap_result_py_offset]
-	contact.piece_a = mem[geo_direct_result_base + sys_geo_overlap_result_piece_a_offset]
-	contact.piece_b = mem[geo_direct_result_base + sys_geo_overlap_result_piece_b_offset]
-	contact.feature_meta = mem[geo_direct_result_base + sys_geo_overlap_result_feature_meta_offset]
+	contact.normal.x = direct_result.nx
+	contact.normal.y = direct_result.ny
+	contact.depth = direct_result.depth
+	contact.point.x = direct_result.px
+	contact.point.y = direct_result.py
+	contact.piece_a = direct_result.piece_a
+	contact.piece_b = direct_result.piece_b
+	contact.feature_meta = direct_result.feature_meta
 	return contact
 end
 

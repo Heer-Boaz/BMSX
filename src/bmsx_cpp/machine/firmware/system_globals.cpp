@@ -167,10 +167,6 @@ void seedSystemGlobals(Runtime& runtime) {
 	runtime.setGlobal("sys_rpu_cull_front", valueNumber(static_cast<double>(VDP_RPU_CULL_FRONT)));
 	runtime.setGlobal("sys_rpu_pipe_depth_write", valueNumber(static_cast<double>(VDP_RPU_PIPE_DEPTH_WRITE)));
 	runtime.setGlobal("sys_rpu_pipe_color_write_rgba", valueNumber(static_cast<double>(VDP_RPU_PIPE_COLOR_WRITE_MASK)));
-	runtime.setGlobal("sys_rpu_filter_nearest", valueNumber(static_cast<double>(VDP_RPU_FILTER_NEAREST)));
-	runtime.setGlobal("sys_rpu_filter_linear", valueNumber(static_cast<double>(VDP_RPU_FILTER_LINEAR)));
-	runtime.setGlobal("sys_rpu_wrap_clamp", valueNumber(static_cast<double>(VDP_RPU_WRAP_CLAMP)));
-	runtime.setGlobal("sys_rpu_wrap_repeat", valueNumber(static_cast<double>(VDP_RPU_WRAP_REPEAT)));
 	runtime.setGlobal("sys_rpu_prim_triangles", valueNumber(static_cast<double>(VDP_RPU_PRIM_TRIANGLES)));
 	runtime.setGlobal("sys_rpu_prim_triangle_strip", valueNumber(static_cast<double>(VDP_RPU_PRIM_TRIANGLE_STRIP)));
 	runtime.setGlobal("sys_rpu_prim_lines", valueNumber(static_cast<double>(VDP_RPU_PRIM_LINES)));

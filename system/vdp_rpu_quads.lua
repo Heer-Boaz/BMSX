@@ -2,6 +2,16 @@ local vdp_rpu<const> = require('system/vdp_rpu')
 
 local vdp_rpu_quads<const> = {}
 
+struct rpu_quad_vertex
+	xyzuv: f32[4]
+	color: word
+end
+
+struct rpu_quad_instance
+	matrix: f32[11]
+	color: word
+end
+
 local screen_width<const> = machine_manifest.render_size.width
 local screen_height<const> = machine_manifest.render_size.height
 local ndc_x_scale<const> = 2.0 / screen_width
@@ -9,10 +19,10 @@ local ndc_y_scale<const> = 2.0 / screen_height
 
 local quad_buffer<const> = 900
 local instance_buffer<const> = 901
-local quad_vertex_stride<const> = 20
+local quad_vertex_stride<const> = sizeof(rpu_quad_vertex)
 local quad_vertex_count<const> = 4
 local quad_vertex_bytes<const> = quad_vertex_stride * quad_vertex_count
-local instance_stride<const> = 48
+local instance_stride<const> = sizeof(rpu_quad_instance)
 local staging_bytes<const> = 0x30000
 local quad_addr<const> = sys_geo_scratch_base + sys_geo_scratch_size - staging_bytes
 local instance_addr<const> = quad_addr + quad_vertex_bytes
@@ -23,7 +33,6 @@ local instance_buffer_bytes<const> = instance_stride * instance_batch_capacity
 local instance_frame_end<const> = instance_addr + (instance_stride * instance_frame_capacity)
 local quad_primitive_index<const> = vdp_rpu.prim_triangle_strip | (vdp_rpu.index_none << 8)
 local quad_pipeline<const> = vdp_rpu.blend_alpha | (vdp_rpu.depth_lequal << 4) | (vdp_rpu.cull_none << 8) | vdp_rpu.pipe_depth_write | vdp_rpu.pipe_color_write_rgba
-local quad_sampler<const> = vdp_rpu.filter_nearest | (vdp_rpu.filter_nearest << 2) | (vdp_rpu.wrap_clamp << 4) | (vdp_rpu.wrap_clamp << 6)
 local white<const> = 0xffffffff
 local draw_order_depth_scale<const> = 2.0 / 1048576.0
 local tile_run_depth<const> = 1.0 - ((sys_vdp_layer_world * 4096.0) * draw_order_depth_scale)
@@ -47,39 +56,27 @@ instance_batch_addr = instance_addr
 current_surface = vdp_rpu.resource_none
 
 local write_quad_vertices<const> = function()
-	local wp = quad_addr
-	memwritef32(wp,
-		0.0,
-		0.0,
-		0.0,
-		0.0
-	)
-	wp = wp + 16
-	mem[wp], wp = white, wp + 4
-	memwritef32(wp,
-		1.0,
-		0.0,
-		1.0,
-		0.0
-	)
-	wp = wp + 16
-	mem[wp], wp = white, wp + 4
-	memwritef32(wp,
-		0.0,
-		1.0,
-		0.0,
-		1.0
-	)
-	wp = wp + 16
-	mem[wp], wp = white, wp + 4
-	memwritef32(wp,
-		1.0,
-		1.0,
-		1.0,
-		1.0
-	)
-	wp = wp + 16
-	mem[wp], wp = white, wp + 4
+	local vertices<const>: *rpu_quad_vertex[quad_vertex_count] = quad_addr
+	vertices[0].xyzuv[0] = 0.0
+	vertices[0].xyzuv[1] = 0.0
+	vertices[0].xyzuv[2] = 0.0
+	vertices[0].xyzuv[3] = 0.0
+	vertices[0].color = white
+	vertices[1].xyzuv[0] = 1.0
+	vertices[1].xyzuv[1] = 0.0
+	vertices[1].xyzuv[2] = 1.0
+	vertices[1].xyzuv[3] = 0.0
+	vertices[1].color = white
+	vertices[2].xyzuv[0] = 0.0
+	vertices[2].xyzuv[1] = 1.0
+	vertices[2].xyzuv[2] = 0.0
+	vertices[2].xyzuv[3] = 1.0
+	vertices[2].color = white
+	vertices[3].xyzuv[0] = 1.0
+	vertices[3].xyzuv[1] = 1.0
+	vertices[3].xyzuv[2] = 1.0
+	vertices[3].xyzuv[3] = 1.0
+	vertices[3].color = white
 end
 
 local define_static_resources<const> = function()
@@ -117,7 +114,7 @@ local flush_instances<const> = function()
 	vdp_rpu.bind_stream(0, vdp_rpu.layout_v2_t2_c4, quad_buffer, 0, 0)
 	vdp_rpu.bind_stream(1, vdp_rpu.layout_i_affine2_trect_c4, instance_buffer, 0, 1)
 	if current_surface ~= vdp_rpu.resource_none then
-		vdp_rpu.bind_texture(0, current_surface, quad_sampler)
+		vdp_rpu.bind_texture(0, current_surface)
 	end
 	vdp_rpu.end_draw()
 	instance_batch_addr = instance_batch_addr + byte_length
@@ -136,25 +133,23 @@ local write_instance<const> = function(origin_x, origin_y, depth_z, axis_xx, axi
 	if instance_count == instance_batch_capacity then
 		flush_instances()
 	end
-	local wp = instance_batch_addr + instance_count * instance_stride
+	local wp<const> = instance_batch_addr + instance_count * instance_stride
 	if wp == instance_frame_end then
 		error('VDP RPU quad instance staging exhausted.')
 	end
-	memwritef32(wp,
-		axis_xx,
-		axis_xy,
-		origin_x,
-		depth_z,
-		axis_yx,
-		axis_yy,
-		origin_y,
-		u0,
-		v0,
-		du,
-		dv
-	)
-	wp = wp + 44
-	mem[wp] = (color & 0xff00ff00) | ((color & 0x00ff0000) >> 16) | ((color & 0x000000ff) << 16)
+	local instance<const>: *rpu_quad_instance = wp
+	instance->matrix[0] = axis_xx
+	instance->matrix[1] = axis_xy
+	instance->matrix[2] = origin_x
+	instance->matrix[3] = depth_z
+	instance->matrix[4] = axis_yx
+	instance->matrix[5] = axis_yy
+	instance->matrix[6] = origin_y
+	instance->matrix[7] = u0
+	instance->matrix[8] = v0
+	instance->matrix[9] = du
+	instance->matrix[10] = dv
+	instance->color = (color & 0xff00ff00) | ((color & 0x00ff0000) >> 16) | ((color & 0x000000ff) << 16)
 	instance_count = instance_count + 1
 end
 
@@ -359,7 +354,8 @@ function vdp_rpu_quads.finish_frame()
 	instance_batch_addr = instance_addr
 	current_surface = vdp_rpu.resource_none
 	if vdp_stream_cursor ~= sys_vdp_stream_base then
-		mem[vdp_stream_claim(1)] = sys_vdp_pkt_end
+		local end_packet<const>: *word = vdp_stream_claim(1)
+		*end_packet = sys_vdp_pkt_end
 	end
 end
 

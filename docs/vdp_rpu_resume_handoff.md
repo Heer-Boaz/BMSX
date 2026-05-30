@@ -85,7 +85,7 @@ Belangrijkste gerealiseerde stappen:
    - LPU-registerwoorden blijven raw;
    - `bare_metal_cart` routeert de mesh C0-matrix via een centrale `system/vdp_xf.lua` helper en uploadt daarna vanuit XF naar de RPU;
    - `bare_metal_cart` routeert C1 lighting constants via een centrale `system/vdp_lpu.lua` helper en uploadt daarna raw vanuit LPU naar de RPU;
-   - BIOS/cart buffer writes gebruiken nu write-pointer assignments (`mem[wp], wp = ...` / `memwritef32(...)`) voor sequentiele vertex-, instance- en constantdata in plaats van lokale addr+stride schrijfpatronen.
+   - BIOS/cart buffer writes gebruiken typed pointers met expliciete scalar field/index stores (`ptr->field = ...`, `ptr[i].field = ...`, `*word_ptr = ...`) in plaats van oude raw-write intrinsics of typed aggregate stores.
 
 ## Laatste validatie die groen was
 

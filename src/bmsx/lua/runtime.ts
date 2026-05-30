@@ -1358,6 +1358,8 @@ export class LuaInterpreter {
 					return this.bitwiseNot(operand);
 				}
 				return this.unaryMetamethodOrThrow(operand, '__bnot', expression.range, 'Bitwise not operand must be a number or define __bnot metamethod.');
+			case LuaUnaryOperator.Dereference:
+				throw this.runtimeErrorAt(expression.range, 'Pointer dereference is only supported by the BMSX compiler.');
 			default:
 				throw this.runtimeErrorAt(expression.range, 'Unsupported unary operator.');
 		}

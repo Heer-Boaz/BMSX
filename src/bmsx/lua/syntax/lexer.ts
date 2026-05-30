@@ -118,6 +118,10 @@ export class LuaLexer {
 					this.skipComment();
 					return;
 				}
+				if (this.match('>')) {
+					this.pushToken(tokens, LuaTokenType.Arrow, null);
+					return;
+				}
 				this.pushToken(tokens, this.match('=') ? LuaTokenType.MinusEqual : LuaTokenType.Minus, null);
 				return;
 			case '*':

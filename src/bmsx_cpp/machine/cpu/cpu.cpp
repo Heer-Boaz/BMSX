@@ -921,6 +921,25 @@ NativeResultsScratchScope::~NativeResultsScratchScope() {
 	}
 }
 
+CPU::NativeLocalRootsScope::NativeLocalRootsScope(CPU& cpu) noexcept
+	: m_cpu(&cpu)
+	, m_base(cpu.m_nativeLocalRoots.size()) {
+	cpu.m_nativeLocalRootScopeDepth += 1;
+}
+
+CPU::NativeLocalRootsScope::NativeLocalRootsScope(NativeLocalRootsScope&& other) noexcept
+	: m_cpu(other.m_cpu)
+	, m_base(other.m_base) {
+	other.m_cpu = nullptr;
+	other.m_base = 0;
+}
+
+CPU::NativeLocalRootsScope::~NativeLocalRootsScope() {
+	if (m_cpu) {
+		m_cpu->releaseNativeLocalRoots(m_base);
+	}
+}
+
 CPU::CPU(Memory& memory)
 	: m_memory(memory)
 	, m_stringPool(true) {
@@ -938,11 +957,14 @@ Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, 
 	native->cycleBase = resolvedCost.base;
 	native->cyclePerArg = resolvedCost.perArg;
 	native->cyclePerRet = resolvedCost.perRet;
-	native->invoke = [invoke = std::move(fn)](NativeArgsView args, NativeResults& out) {
+	native->invoke = [this, invoke = std::move(fn)](NativeArgsView args, NativeResults& out) {
+		auto localRoots = acquireNativeLocalRoots();
 		out.clear();
 		invoke(args, out);
 	};
-	return valueNativeFunction(native);
+	const Value value = valueNativeFunction(native);
+	trackNativeLocalRoot(value);
+	return value;
 }
 
 Value CPU::createNativeObject(
@@ -961,11 +983,15 @@ Value CPU::createNativeObject(
 	native->len = std::move(len);
 	native->nextEntry = std::move(nextEntry);
 	native->mark = std::move(mark);
-	return valueNativeObject(native);
+	const Value value = valueNativeObject(native);
+	trackNativeLocalRoot(value);
+	return value;
 }
 
 Table* CPU::createTable(int arraySize, int hashSize) {
-	return m_heap.allocate<Table>(ObjType::Table, arraySize, hashSize);
+	Table* table = m_heap.allocate<Table>(ObjType::Table, arraySize, hashSize);
+	trackNativeLocalRoot(valueTable(table));
+	return table;
 }
 
 Closure* CPU::createRootClosure(int protoIndex) {
@@ -2933,6 +2959,21 @@ void CPU::releaseNativeReturnScratch(NativeResults& out) {
 	m_nativeReturnScratchIndex -= 1;
 }
 
+CPU::NativeLocalRootsScope CPU::acquireNativeLocalRoots() {
+	return NativeLocalRootsScope(*this);
+}
+
+void CPU::releaseNativeLocalRoots(size_t base) {
+	m_nativeLocalRoots.resize(base);
+	m_nativeLocalRootScopeDepth -= 1;
+}
+
+void CPU::trackNativeLocalRoot(Value value) {
+	if (m_nativeLocalRootScopeDepth > 0) {
+		m_nativeLocalRoots.push_back(value);
+	}
+}
+
 void CPU::markRoots(GcHeap& heap) {
 	if (globals) {
 		heap.markObject(globals);
@@ -2954,6 +2995,9 @@ void CPU::markRoots(GcHeap& heap) {
 		for (size_t valueIndex = 0; valueIndex < scratch.size(); ++valueIndex) {
 			heap.markValue(scratch[valueIndex]);
 		}
+	}
+	for (const Value value : m_nativeLocalRoots) {
+		heap.markValue(value);
 	}
 	for (const auto& value : m_systemGlobalValues) {
 		heap.markValue(value);

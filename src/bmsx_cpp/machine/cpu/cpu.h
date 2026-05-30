@@ -938,6 +938,22 @@ private:
 	void refreshFrameRegisterPointers();
 	NativeResultsScratchScope acquireNativeReturnScratch();
 	void releaseNativeReturnScratch(NativeResults& out);
+	class NativeLocalRootsScope {
+	public:
+		explicit NativeLocalRootsScope(CPU& cpu) noexcept;
+		NativeLocalRootsScope(const NativeLocalRootsScope&) = delete;
+		NativeLocalRootsScope& operator=(const NativeLocalRootsScope&) = delete;
+		NativeLocalRootsScope(NativeLocalRootsScope&& other) noexcept;
+		NativeLocalRootsScope& operator=(NativeLocalRootsScope&& other) = delete;
+		~NativeLocalRootsScope();
+
+	private:
+		CPU* m_cpu = nullptr;
+		size_t m_base = 0;
+	};
+	NativeLocalRootsScope acquireNativeLocalRoots();
+	void releaseNativeLocalRoots(size_t base);
+	void trackNativeLocalRoot(Value value);
 
 	void decodeProgram();
 	void requireRunnableForCall() const;
@@ -962,6 +978,8 @@ private:
 
 	ScratchBuffer<NativeResults> m_nativeReturnScratch;
 	size_t m_nativeReturnScratchIndex = 0;
+	std::vector<Value> m_nativeLocalRoots;
+	int m_nativeLocalRootScopeDepth = 0;
 
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;
 	static constexpr int MAX_POOLED_FRAMES = 32;

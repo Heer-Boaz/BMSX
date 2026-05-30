@@ -2,13 +2,7 @@ import { MEMORY_ACCESS_KIND_NAMES } from '../../machine/memory/access_kind';
 import type { LuaSymbolKind } from '../semantic_contracts';
 import type { SemanticSymbolKind } from './symbols';
 
-export const LUA_INTRINSIC_MEMWRITE = 'memwrite';
-export const LUA_INTRINSIC_MEMWRITEF32 = 'memwritef32';
-
-export const RESERVED_LUA_INTRINSIC_NAMES = [
-	LUA_INTRINSIC_MEMWRITE,
-	LUA_INTRINSIC_MEMWRITEF32,
-] as const;
+export const RESERVED_LUA_INTRINSIC_NAMES = [] as const;
 
 const RESERVED_LUA_INTRINSIC_NAME_SET = new Set<string>(RESERVED_LUA_INTRINSIC_NAMES);
 

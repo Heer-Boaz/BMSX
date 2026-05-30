@@ -1,8 +1,10 @@
 import {
 	LuaSyntaxKind,
+	LuaUnaryOperator,
 	type LuaAssignableExpression,
 	type LuaExpression,
 	type LuaFunctionDeclarationStatement,
+	type LuaUnaryExpression,
 } from '../../lua/syntax/ast';
 import type { LuaBoundReference, LuaSemanticFrontendFile } from '../../lua/semantic/frontend';
 import { getMemoryAccessKindForName, MemoryAccessKind } from '../memory/access_kind';
@@ -30,6 +32,10 @@ export type AssignmentTargetPreparation =
 		readonly baseReference: LuaBoundReference;
 		readonly accessKind: MemoryAccessKind;
 		readonly index: LuaExpression;
+	}
+	| {
+		readonly kind: 'dereference';
+		readonly operand: LuaExpression;
 	};
 
 export function classifyAssignmentTargetPreparation(
@@ -65,8 +71,16 @@ export function classifyAssignmentTargetPreparation(
 				base: expression.base,
 				index: expression.index,
 			};
-		// default:
-			// throw new Error(`[LuaTargetSemantics] Unsupported assignment target kind: ${String(expression.kind)}`);
+		case LuaSyntaxKind.UnaryExpression: {
+			const unary = expression as LuaUnaryExpression;
+			if (unary.operator === LuaUnaryOperator.Dereference) {
+				return {
+					kind: 'dereference',
+					operand: unary.operand,
+				};
+			}
+			throw new Error(`[LuaTargetSemantics] Unsupported unary assignment target.`);
+		}
 	}
 }
 

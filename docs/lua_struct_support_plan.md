@@ -46,6 +46,9 @@ The real representation should be the RAM or ROM record layout itself:
 - Do not add runtime validation for internal compiler-emitted struct records.
 - Do not add safe fallbacks for stale, corrupt, or weird but representable memory contents.
 - Do not change VDP/RPU packet decoding into a high-level semantic API.
+- Do not add typed struct aggregate assignment (`*ptr = T { ... }` or
+  `ptr[i] = T { ... }`). It reads like Lua table construction while writing
+  raw memory.
 
 ## Language model
 
@@ -231,11 +234,14 @@ local bytes<const> = sizeof(RpuDraw) * draw_count
 
 ### Struct copies
 
-Initial implementation should not support implicit whole-struct assignment:
+The implementation does not support implicit whole-struct assignment or typed
+aggregate stores:
 
 ```lua
--- reject initially; hidden copies are not the model
+-- hidden copies and aggregate stores are not the model
 b = a
+*p = T { field = value }
+p[i] = T { field = value }
 ```
 
 When needed, whole-record copy should be an explicit memory/DMA operation with
@@ -420,7 +426,9 @@ Work:
 1. Lower field reads to `LOAD_MEM` with the field's access kind.
 2. Lower field writes to `STORE_MEM` with the field's access kind.
 3. Lower runs of adjacent word fields to `STORE_MEM_WORDS` only as an optimization, not as a new semantic path.
-4. Keep `memwrite` as the raw-word intrinsic and allow struct-derived addresses and compile-time sizes as inputs.
+4. Use typed pointers and scalar field/index assignments (`ptr->field`,
+   `ptr[i].field`, `ptr->array[j]`, `*word_ptr`) as the source surface for
+   raw-word stores.
 5. Do not add a new VM opcode unless an actual measured hot path requires it.
 
 Deliverable: no CPU runtime change required for the first working slice.

@@ -6,13 +6,21 @@ local matrix_words_per_matrix<const> = 16
 local matrix_count<const> = 32
 local matrix_packet_payload_words<const> = 1 + matrix_words_per_matrix
 
+struct jtu_matrix_packet_header
+	header: word
+	matrix_word_offset: word
+end
+
 function vdp_jtu.matrix_words(matrix_index, src_addr)
-	local wp = vdp_stream_claim(1 + matrix_packet_payload_words)
-	mem[wp], wp = packet_kind | (matrix_packet_payload_words << 16), wp + 4
-	mem[wp], wp = matrix_index * matrix_words_per_matrix, wp + 4
+	local base<const> = vdp_stream_claim(1 + matrix_packet_payload_words)
+	local packet<const>: *jtu_matrix_packet_header = base
+	local data<const>: *word = base + sizeof(jtu_matrix_packet_header)
+	local src<const>: *word = src_addr
+	packet->header = packet_kind | (matrix_packet_payload_words << 16)
+	packet->matrix_word_offset = matrix_index * matrix_words_per_matrix
 	local index = 0
 	while index < matrix_words_per_matrix do
-		mem[wp], wp = mem[src_addr + index * 4], wp + 4
+		data[index] = src[index]
 		index = index + 1
 	end
 end

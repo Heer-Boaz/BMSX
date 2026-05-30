@@ -112,7 +112,6 @@ VdpRpuCommandBufferSaveState captureVdpRpuCommandBufferState(const VdpRpuCommand
 	state.constantWordCount = captureVdpRpuArrayState(commands.constantWordCount, commands.constantBindingCount);
 	state.textureSlot = captureVdpRpuArrayState(commands.textureSlot, commands.textureBindingCount);
 	state.textureSurfaceRef = captureVdpRpuArrayState(commands.textureSurfaceRef, commands.textureBindingCount);
-	state.textureSamplerWord = captureVdpRpuArrayState(commands.textureSamplerWord, commands.textureBindingCount);
 	return state;
 }
 
@@ -165,7 +164,6 @@ void restoreVdpRpuCommandBufferState(VdpRpuCommandBuffer& commands, const VdpRpu
 	restoreVdpRpuArrayState(commands.constantWordCount, state.constantWordCount);
 	restoreVdpRpuArrayState(commands.textureSlot, state.textureSlot);
 	restoreVdpRpuArrayState(commands.textureSurfaceRef, state.textureSurfaceRef);
-	restoreVdpRpuArrayState(commands.textureSamplerWord, state.textureSamplerWord);
 }
 
 std::vector<VdpRpuFrameBufferRefSaveState> captureVdpRpuFrameBufferRefsState(const VdpRpuFrameBufferRefs& refs) {
@@ -496,7 +494,7 @@ bool VdpRpuUnit::consumePacketPayloadFromMemory(VdpRpuFrameOutput& frame, u32 op
 		case VDP_RPU_OP_BIND_CONSTANTS:
 			return payloadWords == VDP_RPU_BIND_CONSTANTS_WORDS && acceptBindConstants(frame, m_memory.readU32(cursor + IO_WORD_SIZE), m_memory.readU32(cursor + IO_WORD_SIZE * 2u), m_memory.readU32(cursor + IO_WORD_SIZE * 3u), m_memory.readU32(cursor + IO_WORD_SIZE * 4u));
 		case VDP_RPU_OP_BIND_TEXTURE:
-			return payloadWords == VDP_RPU_BIND_TEXTURE_WORDS && acceptBindTexture(frame, m_memory.readU32(cursor + IO_WORD_SIZE), m_memory.readU32(cursor + IO_WORD_SIZE * 2u), m_memory.readU32(cursor + IO_WORD_SIZE * 3u));
+			return payloadWords == VDP_RPU_BIND_TEXTURE_WORDS && acceptBindTexture(frame, m_memory.readU32(cursor + IO_WORD_SIZE), m_memory.readU32(cursor + IO_WORD_SIZE * 2u));
 		case VDP_RPU_OP_END_DRAW:
 			return payloadWords == VDP_RPU_END_DRAW_WORDS && acceptEndDraw(frame);
 		default:
@@ -540,7 +538,7 @@ bool VdpRpuUnit::consumePacketPayloadFromWords(VdpRpuFrameOutput& frame, const u
 		case VDP_RPU_OP_BIND_CONSTANTS:
 			return payloadWords == VDP_RPU_BIND_CONSTANTS_WORDS && acceptBindConstants(frame, words[cursor + 1u], words[cursor + 2u], words[cursor + 3u], words[cursor + 4u]);
 		case VDP_RPU_OP_BIND_TEXTURE:
-			return payloadWords == VDP_RPU_BIND_TEXTURE_WORDS && acceptBindTexture(frame, words[cursor + 1u], words[cursor + 2u], words[cursor + 3u]);
+			return payloadWords == VDP_RPU_BIND_TEXTURE_WORDS && acceptBindTexture(frame, words[cursor + 1u], words[cursor + 2u]);
 		case VDP_RPU_OP_END_DRAW:
 			return payloadWords == VDP_RPU_END_DRAW_WORDS && acceptEndDraw(frame);
 		default:
@@ -1012,7 +1010,6 @@ bool VdpRpuUnit::sameDrawTextures(const VdpRpuCommandBuffer& commands, u32 leftD
 		if (
 			commands.textureSlot[left] != commands.textureSlot[right]
 			|| commands.textureSurfaceRef[left] != commands.textureSurfaceRef[right]
-			|| commands.textureSamplerWord[left] != commands.textureSamplerWord[right]
 		) {
 			return false;
 		}
@@ -1116,7 +1113,7 @@ bool VdpRpuUnit::acceptBindConstants(VdpRpuFrameOutput& frame, u32 bindingSlot, 
 	return true;
 }
 
-bool VdpRpuUnit::acceptBindTexture(VdpRpuFrameOutput& frame, u32 textureSlot, u32 surfaceId, u32 samplerWord) {
+bool VdpRpuUnit::acceptBindTexture(VdpRpuFrameOutput& frame, u32 textureSlot, u32 surfaceId) {
 	if (m_buildState != VDP_RPU_DRAW_OPEN || frame.commands.textureBindingCount >= VDP_RPU_TEXTURE_BINDING_CAPACITY) {
 		m_fault.raise(VDP_FAULT_RPU_BAD_SURFACE_USAGE, surfaceId);
 		return false;
@@ -1125,7 +1122,6 @@ bool VdpRpuUnit::acceptBindTexture(VdpRpuFrameOutput& frame, u32 textureSlot, u3
 	const size_t bindingIndex = frame.commands.textureBindingCount;
 	frame.commands.textureSlot[bindingIndex] = static_cast<u8>(textureSlot);
 	frame.commands.textureSurfaceRef[bindingIndex] = static_cast<u16>(surfaceRef);
-	frame.commands.textureSamplerWord[bindingIndex] = samplerWord;
 	frame.commands.textureBindingCount += 1u;
 	lastPacketCost = VDP_RPU_BIND_COST;
 	return true;

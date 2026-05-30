@@ -448,10 +448,6 @@ import {
 	VDP_RPU_CULL_FRONT,
 	VDP_RPU_PIPE_DEPTH_WRITE,
 	VDP_RPU_PIPE_COLOR_WRITE_MASK,
-	VDP_RPU_FILTER_NEAREST,
-	VDP_RPU_FILTER_LINEAR,
-	VDP_RPU_WRAP_CLAMP,
-	VDP_RPU_WRAP_REPEAT,
 	VDP_RPU_PRIM_TRIANGLES,
 	VDP_RPU_PRIM_TRIANGLE_STRIP,
 	VDP_RPU_PRIM_LINES,
@@ -1610,10 +1606,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_cull_front', VDP_RPU_CULL_FRONT);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_pipe_depth_write', VDP_RPU_PIPE_DEPTH_WRITE);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_pipe_color_write_rgba', VDP_RPU_PIPE_COLOR_WRITE_MASK);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_filter_nearest', VDP_RPU_FILTER_NEAREST);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_filter_linear', VDP_RPU_FILTER_LINEAR);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_wrap_clamp', VDP_RPU_WRAP_CLAMP);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_wrap_repeat', VDP_RPU_WRAP_REPEAT);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_prim_triangles', VDP_RPU_PRIM_TRIANGLES);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_prim_triangle_strip', VDP_RPU_PRIM_TRIANGLE_STRIP);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_prim_lines', VDP_RPU_PRIM_LINES);

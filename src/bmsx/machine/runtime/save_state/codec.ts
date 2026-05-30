@@ -747,7 +747,6 @@ function encodeVdpRpuCommandBufferState(state: VdpRpuCommandBufferSaveState): Vd
 		constantWordCount: state.constantWordCount,
 		textureSlot: state.textureSlot,
 		textureSurfaceRef: state.textureSurfaceRef,
-		textureSamplerWord: state.textureSamplerWord,
 	};
 }
 
@@ -808,7 +807,6 @@ function decodeVdpRpuCommandBufferState(value: unknown, label: string): VdpRpuCo
 		constantWordCount: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'constantWordCount', label, `${label}.constantWordCount`), `${label}.constantWordCount`, VDP_RPU_CONSTANT_BINDING_CAPACITY), `${label}.constantWordCount`, constantBindingCount),
 		textureSlot: requireVectorCount(decodeBoundedU8Vector(requireObjectKey(object, 'textureSlot', label, `${label}.textureSlot`), `${label}.textureSlot`, VDP_RPU_TEXTURE_BINDING_CAPACITY), `${label}.textureSlot`, textureBindingCount),
 		textureSurfaceRef: requireVectorCount(decodeBoundedU16Vector(requireObjectKey(object, 'textureSurfaceRef', label, `${label}.textureSurfaceRef`), `${label}.textureSurfaceRef`, VDP_RPU_TEXTURE_BINDING_CAPACITY), `${label}.textureSurfaceRef`, textureBindingCount),
-		textureSamplerWord: requireVectorCount(decodeBoundedU32Vector(requireObjectKey(object, 'textureSamplerWord', label, `${label}.textureSamplerWord`), `${label}.textureSamplerWord`, VDP_RPU_TEXTURE_BINDING_CAPACITY), `${label}.textureSamplerWord`, textureBindingCount),
 	};
 }
 

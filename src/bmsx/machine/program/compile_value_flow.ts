@@ -331,6 +331,8 @@ function evaluateExpressionFact(
 				case LuaUnaryOperator.Negate:
 				case LuaUnaryOperator.BitwiseNot:
 					return { fact: NUMBER_VALUE_FACT, state: operand.state };
+				case LuaUnaryOperator.Dereference:
+					return { fact: UNKNOWN_VALUE_FACT, state: operand.state };
 				case LuaUnaryOperator.StringId:
 					if (unary.operand.kind === LuaSyntaxKind.MemberExpression || unary.operand.kind === LuaSyntaxKind.IndexExpression) {
 						const rootFact = pathRootValueFact(unary.operand, operand.state, semantics);
@@ -922,8 +924,9 @@ export class ValueKindFlowAnalyzer {
 				this.evalExprFact(target.base);
 				this.evalExprFact(target.index);
 				return;
-			// default:
-				// unreachableFlowValue(target.kind, 'assignment target preparation');
+			case 'dereference':
+				this.evalExprFact(target.operand);
+				return;
 		}
 	}
 

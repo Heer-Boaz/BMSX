@@ -12,7 +12,7 @@ constexpr std::array<LuaBuiltinDescriptor, 1> kSystemLuaBuiltinFunctions{{
 constexpr std::array<LuaBuiltinDescriptor, 0> kSystemLuaBuiltinGlobals{{
 }};
 
-constexpr std::array<LuaBuiltinDescriptor, 605> kDefaultLuaBuiltinFunctions{{
+constexpr std::array<LuaBuiltinDescriptor, 599> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"assert", "assert(value [, message])", ""},
 	LuaBuiltinDescriptor{"error", "error(message [, level])", ""},
 	LuaBuiltinDescriptor{"getmetatable", "getmetatable(object)", ""},
@@ -105,8 +105,6 @@ constexpr std::array<LuaBuiltinDescriptor, 605> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"cart_manifest", "cart_manifest", "Flattened cart manifest table, or nil when unavailable."},
 	LuaBuiltinDescriptor{"machine_manifest", "machine_manifest", "Flattened machine manifest table."},
 	LuaBuiltinDescriptor{"cart_project_root_path", "cart_project_root_path", "Workspace-relative cart project root path, or nil when unavailable."},
-	LuaBuiltinDescriptor{"memwrite", "memwrite(base, ...)", "Reserved compiler intrinsic for burst word writes. Lowers directly to a memory-write opcode and is not a first-class Lua value."},
-	LuaBuiltinDescriptor{"memwritef32", "memwritef32(base, ...)", "Reserved compiler intrinsic for sequential little-endian float32 writes. Lowers directly to mapped-memory stores and is not a first-class Lua value."},
 	LuaBuiltinDescriptor{"mem", "mem[addr]", "Reserved memory-mapped 32-bit word space for direct `mem[addr]` reads/writes. Not a first-class Lua value. Invalid or read-only writes raise a fault."},
 	LuaBuiltinDescriptor{"mem8", "mem8[addr]", "Reserved memory-mapped byte space for direct `mem8[addr]` reads/writes. Not a first-class Lua value."},
 	LuaBuiltinDescriptor{"mem16le", "mem16le[addr]", "Reserved memory-mapped little-endian 16-bit space for direct `mem16le[addr]` reads/writes. Not a first-class Lua value."},
@@ -210,10 +208,6 @@ constexpr std::array<LuaBuiltinDescriptor, 605> kDefaultLuaBuiltinFunctions{{
 	LuaBuiltinDescriptor{"sys_rpu_cull_front", "sys_rpu_cull_front", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_pipe_depth_write", "sys_rpu_pipe_depth_write", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_pipe_color_write_rgba", "sys_rpu_pipe_color_write_rgba", "Raw RPU packet ABI constant."},
-	LuaBuiltinDescriptor{"sys_rpu_filter_nearest", "sys_rpu_filter_nearest", "Raw RPU packet ABI constant."},
-	LuaBuiltinDescriptor{"sys_rpu_filter_linear", "sys_rpu_filter_linear", "Raw RPU packet ABI constant."},
-	LuaBuiltinDescriptor{"sys_rpu_wrap_clamp", "sys_rpu_wrap_clamp", "Raw RPU packet ABI constant."},
-	LuaBuiltinDescriptor{"sys_rpu_wrap_repeat", "sys_rpu_wrap_repeat", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_prim_triangles", "sys_rpu_prim_triangles", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_prim_triangle_strip", "sys_rpu_prim_triangle_strip", "Raw RPU packet ABI constant."},
 	LuaBuiltinDescriptor{"sys_rpu_prim_lines", "sys_rpu_prim_lines", "Raw RPU packet ABI constant."},

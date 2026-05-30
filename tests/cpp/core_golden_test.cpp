@@ -878,7 +878,6 @@ void testRuntimeSaveStateInterruptFieldsGolden() {
 	activeRpu.commands.constantWordCount = {16U};
 	activeRpu.commands.textureSlot = {0U};
 	activeRpu.commands.textureSurfaceRef = {0U};
-	activeRpu.commands.textureSamplerWord = {bmsx::VDP_RPU_FILTER_LINEAR | (bmsx::VDP_RPU_FILTER_LINEAR << 2U)};
 	activeRpu.bufferRefs.push_back(bmsx::VdpRpuFrameBufferRefSaveState{.bufferId=7U, .revision=8U, .byteOffset=0U, .byteLength=36U, .usage=bmsx::VDP_RPU_BUFFER_USAGE_VERTEX});
 	activeRpu.surfaceRefs.push_back(bmsx::VdpRpuFrameSurfaceRefSaveState{.surfaceId=9U, .revision=10U, .width=256U, .height=212U, .format=bmsx::VDP_RPU_SURFACE_FORMAT_RGBA8, .usage=bmsx::VDP_RPU_SURFACE_USAGE_COLOR | bmsx::VDP_RPU_SURFACE_USAGE_TEXTURE});
 	activeRpu.surfaceRefs.push_back(bmsx::VdpRpuFrameSurfaceRefSaveState{.surfaceId=11U, .revision=12U, .width=256U, .height=212U, .format=bmsx::VDP_RPU_SURFACE_FORMAT_DEPTH16, .usage=bmsx::VDP_RPU_SURFACE_USAGE_DEPTH});

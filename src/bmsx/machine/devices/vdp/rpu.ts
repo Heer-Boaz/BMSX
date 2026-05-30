@@ -69,7 +69,7 @@ export const VDP_RPU_END_PASS_WORDS = 1;
 export const VDP_RPU_BEGIN_DRAW_WORDS = 9;
 export const VDP_RPU_BIND_STREAM_WORDS = 6;
 export const VDP_RPU_BIND_CONSTANTS_WORDS = 5;
-export const VDP_RPU_BIND_TEXTURE_WORDS = 4;
+export const VDP_RPU_BIND_TEXTURE_WORDS = 3;
 export const VDP_RPU_END_DRAW_WORDS = 1;
 export const VDP_RPU_BUFFER_UPLOAD_INLINE_MIN_WORDS = 4;
 export const VDP_RPU_CONSTANT_UPLOAD_INLINE_MIN_WORDS = 4;
@@ -144,20 +144,6 @@ export const VDP_RPU_PIPELINE_WORD_MASK =
 	| VDP_RPU_PIPE_DEPTH_WRITE
 	| VDP_RPU_PIPE_COLOR_WRITE_MASK;
 
-export const VDP_RPU_FILTER_NEAREST = 0;
-export const VDP_RPU_FILTER_LINEAR = 1;
-export const VDP_RPU_WRAP_CLAMP = 0;
-export const VDP_RPU_WRAP_REPEAT = 1;
-export const VDP_RPU_SAMPLER_MIN_FILTER_MASK = 0x00000003;
-export const VDP_RPU_SAMPLER_MAG_FILTER_MASK = 0x0000000c;
-export const VDP_RPU_SAMPLER_WRAP_U_MASK = 0x00000030;
-export const VDP_RPU_SAMPLER_WRAP_V_MASK = 0x000000c0;
-export const VDP_RPU_SAMPLER_WORD_MASK =
-	VDP_RPU_SAMPLER_MIN_FILTER_MASK
-	| VDP_RPU_SAMPLER_MAG_FILTER_MASK
-	| VDP_RPU_SAMPLER_WRAP_U_MASK
-	| VDP_RPU_SAMPLER_WRAP_V_MASK;
-
 export const VDP_RPU_PRIM_TRIANGLES = 0;
 export const VDP_RPU_PRIM_TRIANGLE_STRIP = 1;
 export const VDP_RPU_PRIM_LINES = 2;
@@ -208,8 +194,8 @@ export const VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1 = 5;
 export const VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2 = 6;
 export const VDP_RPU_SHADER_V3_C4_I_MAT4 = 7;
 export const VDP_RPU_SHADER_VARIANT_MASK = 0x00000007;
-export const VDP_RPU_SHADER_FLAG_MORPH = 1 << 3;
-export const VDP_RPU_SHADER_FLAG_T1 = 1 << 4;
+export const VDP_RPU_SHADER_FLAG_MORPH = 0x00000008;
+export const VDP_RPU_SHADER_FLAG_T1 = 0x00000010;
 export const VDP_RPU_INSTANCE_MODE_NONE = 0;
 export const VDP_RPU_INSTANCE_MODE_AFFINE2 = 1;
 export const VDP_RPU_INSTANCE_MODE_MAT4 = 2;
@@ -320,7 +306,6 @@ export class VdpRpuCommandBuffer {
 	public readonly constantWordCount = new Uint16Array(VDP_RPU_CONSTANT_BINDING_CAPACITY);
 	public readonly textureSlot = new Uint8Array(VDP_RPU_TEXTURE_BINDING_CAPACITY);
 	public readonly textureSurfaceRef = new Uint16Array(VDP_RPU_TEXTURE_BINDING_CAPACITY);
-	public readonly textureSamplerWord = new Uint32Array(VDP_RPU_TEXTURE_BINDING_CAPACITY);
 }
 
 export type VdpRpuStreamAttributeSpec = Readonly<{
@@ -663,7 +648,6 @@ export type VdpRpuCommandBufferSaveState = {
 	constantWordCount: number[];
 	textureSlot: number[];
 	textureSurfaceRef: number[];
-	textureSamplerWord: number[];
 };
 
 export type VdpRpuFrameBufferRefSaveState = {
@@ -1091,7 +1075,6 @@ export class VdpRpuUnit {
 						frame,
 						this.memory.readU32(cursor + IO_WORD_SIZE),
 						this.memory.readU32(cursor + IO_WORD_SIZE * 2),
-						this.memory.readU32(cursor + IO_WORD_SIZE * 3),
 					);
 			case VDP_RPU_OP_END_DRAW:
 				return payloadWords === VDP_RPU_END_DRAW_WORDS && this.acceptEndDraw(frame);
@@ -1136,7 +1119,7 @@ export class VdpRpuUnit {
 			case VDP_RPU_OP_BIND_CONSTANTS:
 				return payloadWords === VDP_RPU_BIND_CONSTANTS_WORDS && this.acceptBindConstants(frame, words[cursor + 1], words[cursor + 2], words[cursor + 3], words[cursor + 4]);
 			case VDP_RPU_OP_BIND_TEXTURE:
-				return payloadWords === VDP_RPU_BIND_TEXTURE_WORDS && this.acceptBindTexture(frame, words[cursor + 1], words[cursor + 2], words[cursor + 3]);
+				return payloadWords === VDP_RPU_BIND_TEXTURE_WORDS && this.acceptBindTexture(frame, words[cursor + 1], words[cursor + 2]);
 			case VDP_RPU_OP_END_DRAW:
 				return payloadWords === VDP_RPU_END_DRAW_WORDS && this.acceptEndDraw(frame);
 			default:
@@ -1609,7 +1592,6 @@ export class VdpRpuUnit {
 			if (
 				commands.textureSlot[left] !== commands.textureSlot[right]
 				|| commands.textureSurfaceRef[left] !== commands.textureSurfaceRef[right]
-				|| commands.textureSamplerWord[left] !== commands.textureSamplerWord[right]
 			) {
 				return false;
 			}
@@ -1713,7 +1695,7 @@ export class VdpRpuUnit {
 		return true;
 	}
 
-	private acceptBindTexture(frame: VdpRpuFrameOutput, textureSlot: number, surfaceId: number, samplerWord: number): boolean {
+	private acceptBindTexture(frame: VdpRpuFrameOutput, textureSlot: number, surfaceId: number): boolean {
 		if (this.buildState !== VDP_RPU_DRAW_OPEN || frame.commands.textureBindingCount >= VDP_RPU_TEXTURE_BINDING_CAPACITY) {
 			this.fault.raise(VDP_FAULT_RPU_BAD_SURFACE_USAGE, surfaceId);
 			return false;
@@ -1722,7 +1704,6 @@ export class VdpRpuUnit {
 		const bindingIndex = frame.commands.textureBindingCount;
 		frame.commands.textureSlot[bindingIndex] = textureSlot;
 		frame.commands.textureSurfaceRef[bindingIndex] = surfaceRef;
-		frame.commands.textureSamplerWord[bindingIndex] = samplerWord >>> 0;
 		frame.commands.textureBindingCount += 1;
 		this.lastPacketCost = VDP_RPU_BIND_COST;
 		return true;
@@ -1881,7 +1862,6 @@ function captureVdpRpuCommandBufferState(commands: VdpRpuCommandBuffer): VdpRpuC
 		constantWordCount: captureVdpRpuArrayState(commands.constantWordCount, commands.constantBindingCount),
 		textureSlot: captureVdpRpuArrayState(commands.textureSlot, commands.textureBindingCount),
 		textureSurfaceRef: captureVdpRpuArrayState(commands.textureSurfaceRef, commands.textureBindingCount),
-		textureSamplerWord: captureVdpRpuArrayState(commands.textureSamplerWord, commands.textureBindingCount),
 	};
 }
 
@@ -1934,7 +1914,6 @@ function restoreVdpRpuCommandBufferState(commands: VdpRpuCommandBuffer, state: V
 	restoreVdpRpuArrayState(commands.constantWordCount, state.constantWordCount);
 	restoreVdpRpuArrayState(commands.textureSlot, state.textureSlot);
 	restoreVdpRpuArrayState(commands.textureSurfaceRef, state.textureSurfaceRef);
-	restoreVdpRpuArrayState(commands.textureSamplerWord, state.textureSamplerWord);
 }
 
 function captureVdpRpuFrameBufferRefsState(refs: VdpRpuFrameBufferRefs): VdpRpuFrameBufferRefSaveState[] {

@@ -556,13 +556,6 @@ void setVdpRpuJointConstants(const VdpRpuFrameOutput& frame, size_t drawIndex, c
 	glUniformMatrix4fv(runtime.uniformJoint, 24, GL_FALSE, runtime.defaultJointFloats.data());
 }
 
-void setVdpRpuTextureSampler(u32 samplerWord) {
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (samplerWord & VDP_RPU_SAMPLER_MIN_FILTER_MASK) == VDP_RPU_FILTER_LINEAR ? GL_LINEAR : GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (samplerWord & VDP_RPU_SAMPLER_MAG_FILTER_MASK) == (VDP_RPU_FILTER_LINEAR << 2u) ? GL_LINEAR : GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (samplerWord & VDP_RPU_SAMPLER_WRAP_U_MASK) == (VDP_RPU_WRAP_REPEAT << 4u) ? GL_REPEAT : GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (samplerWord & VDP_RPU_SAMPLER_WRAP_V_MASK) == (VDP_RPU_WRAP_REPEAT << 6u) ? GL_REPEAT : GL_CLAMP_TO_EDGE);
-}
-
 void bindVdpRpuNeutralTexture(OpenGLES2Backend& backend) {
 	backend.setActiveTextureUnit(0);
 	glBindTexture(GL_TEXTURE_2D, g_vdpRpu.neutralTexture);
@@ -590,7 +583,6 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 			const u16 surfaceRef = commands.textureSurfaceRef[bindingIndex];
 			if (surfaceRef == VDP_RPU_REF_NONE) {
 				bindVdpRpuNeutralTexture(runtime.backend);
-				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
 				glUniform1i(g_vdpRpu.uniformT0, 0);
 			} else {
 				const u32 surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
@@ -604,7 +596,6 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 					glBindTexture(GL_TEXTURE_2D, g_vdpRpu.surfaceTexture[surfaceId]);
 					glUniform1i(g_vdpRpu.uniformTextureFlipY, 1);
 				}
-				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
 				glUniform1i(g_vdpRpu.uniformT0, 0);
 			}
 		} else if (slot == 1u && t1Flag && !foundT1) {
@@ -620,7 +611,6 @@ void bindVdpRpuTextureBindings(VdpRpuRuntime& runtime, const VdpRpuFrameOutput& 
 					runtime.backend.invalidateTextureBindingCache();
 					glBindTexture(GL_TEXTURE_2D, g_vdpRpu.surfaceTexture[surfaceId]);
 				}
-				setVdpRpuTextureSampler(commands.textureSamplerWord[bindingIndex]);
 				glUniform1i(g_vdpRpu.uniformT1, 1);
 				glUniform1i(g_vdpRpu.uniformT1Mode, 1);
 			}

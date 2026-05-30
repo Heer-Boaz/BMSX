@@ -11,13 +11,18 @@ function vdp_stream_claim(count)
 end
 
 function vdp_stream_submit_cpu_fifo()
-	mem[vdp_stream_claim(1)] = sys_vdp_pkt_end
-	local read_ptr = sys_vdp_stream_base
-	while read_ptr < vdp_stream_cursor do
-		mem[sys_vdp_fifo] = mem[read_ptr]
-		read_ptr = read_ptr + sys_vdp_arg_stride
+	local end_packet<const>: *word = vdp_stream_claim(1)
+	local stream<const>: *word = sys_vdp_stream_base
+	local fifo<const>: *word = sys_vdp_fifo
+	local fifo_ctrl<const>: *word = sys_vdp_fifo_ctrl
+	*end_packet = sys_vdp_pkt_end
+	local word_count<const> = (vdp_stream_cursor - sys_vdp_stream_base) // sys_vdp_arg_stride
+	local index = 0
+	while index < word_count do
+		*fifo = stream[index]
+		index = index + 1
 	end
-	mem[sys_vdp_fifo_ctrl] = sys_vdp_fifo_ctrl_seal
+	*fifo_ctrl = sys_vdp_fifo_ctrl_seal
 	vdp_stream_cursor = sys_vdp_stream_base
 end
 
@@ -51,7 +56,7 @@ local words_end_pass<const> = 1
 local words_begin_draw<const> = 9
 local words_bind_stream<const> = 6
 local words_bind_constants<const> = 5
-local words_bind_texture<const> = 4
+local words_bind_texture<const> = 3
 local words_end_draw<const> = 1
 local words_buffer_upload_inline_min<const> = 4
 local words_constant_upload_inline_min<const> = 4
@@ -92,11 +97,6 @@ local index_u16<const> = 1
 local index_u32<const> = 2
 local resource_none<const> = 0xffffffff
 
-local filter_nearest<const> = 0
-local filter_linear<const> = 1
-local wrap_clamp<const> = 0
-local wrap_repeat<const> = 1
-
 local layout_v2_c4<const> = 0
 local layout_v2_t2_c4<const> = 1
 local layout_v3_c4<const> = 2
@@ -129,191 +129,305 @@ local surface_system<const> = 0
 local surface_primary<const> = 1
 local surface_secondary<const> = 2
 
+struct rpu_buffer_define_packet
+	header: word
+	op: word
+	buffer_id: word
+	byte_length: word
+	usage: word
+end
+
+struct rpu_buffer_upload_dma_packet
+	header: word
+	op: word
+	buffer_id: word
+	dst_byte_offset: word
+	src_addr: word
+	byte_length: word
+end
+
+struct rpu_buffer_upload_inline_header
+	header: word
+	op: word
+	buffer_id: word
+	dst_byte_offset: word
+	byte_length: word
+end
+
+struct rpu_buffer_discard_packet
+	header: word
+	op: word
+	buffer_id: word
+end
+
+struct rpu_surface_define_packet
+	header: word
+	op: word
+	surface_id: word
+	size: word
+	format_usage: word
+end
+
+struct rpu_constant_bank_define_packet
+	header: word
+	op: word
+	bank_id: word
+	first_word: word
+	word_count: word
+end
+
+struct rpu_constant_upload_dma_packet
+	header: word
+	op: word
+	bank_id: word
+	dst_word_offset: word
+	src_addr: word
+	word_count: word
+end
+
+struct rpu_constant_upload_inline_header
+	header: word
+	op: word
+	bank_id: word
+	dst_word_offset: word
+	word_count: word
+end
+
+struct rpu_constant_upload_device_packet
+	header: word
+	op: word
+	bank_id: word
+	dst_word_offset: word
+	source: word
+	source_word_offset: word
+	word_count: word
+end
+
+struct rpu_begin_pass_packet
+	header: word
+	op: word
+	color_surface_id: word
+	depth_surface_id: word
+	viewport_xy: word
+	viewport_wh: word
+	pass_ops: word
+	clear_color: word
+	clear_depth_word: word
+end
+
+struct rpu_end_pass_packet
+	header: word
+	op: word
+end
+
+struct rpu_begin_draw_packet
+	header: word
+	op: word
+	shader_variant: word
+	primitive_index_type: word
+	pipeline_word: word
+	vertex_count: word
+	instance_count: word
+	index_buffer_id: word
+	index_byte_offset: word
+	index_count: word
+end
+
+struct rpu_bind_stream_packet
+	header: word
+	op: word
+	stream_slot: word
+	layout_id: word
+	buffer_id: word
+	byte_offset: word
+	step_rate: word
+end
+
+struct rpu_bind_constants_packet
+	header: word
+	op: word
+	binding_slot: word
+	bank_id: word
+	first_word: word
+	word_count: word
+end
+
+struct rpu_bind_texture_packet
+	header: word
+	op: word
+	texture_slot: word
+	surface_id: word
+end
+
+struct rpu_end_draw_packet
+	header: word
+	op: word
+end
+
 function vdp_rpu.buffer_define(buffer_id, byte_length, usage)
-	memwrite(
-		vdp_stream_claim(5),
-		packet_kind | (words_buffer_define << 16),
-		op_buffer_define,
-		buffer_id,
-		byte_length,
-		usage
-	)
+	local packet<const>: *rpu_buffer_define_packet = vdp_stream_claim(sizeof(rpu_buffer_define_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_buffer_define << 16)
+	packet->op = op_buffer_define
+	packet->buffer_id = buffer_id
+	packet->byte_length = byte_length
+	packet->usage = usage
 end
 
 function vdp_rpu.buffer_upload_dma(buffer_id, dst_byte_offset, src_addr, byte_length)
-	memwrite(
-		vdp_stream_claim(6),
-		packet_kind | (words_buffer_upload_dma << 16),
-		op_buffer_upload_dma,
-		buffer_id,
-		dst_byte_offset,
-		src_addr,
-		byte_length
-	)
+	local packet<const>: *rpu_buffer_upload_dma_packet = vdp_stream_claim(sizeof(rpu_buffer_upload_dma_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_buffer_upload_dma << 16)
+	packet->op = op_buffer_upload_dma
+	packet->buffer_id = buffer_id
+	packet->dst_byte_offset = dst_byte_offset
+	packet->src_addr = src_addr
+	packet->byte_length = byte_length
 end
 
 function vdp_rpu.buffer_upload_inline(buffer_id, dst_byte_offset, byte_length, ...)
 	local data_words<const> = (byte_length + 3) >> 2
-	memwrite(
-		vdp_stream_claim(5 + data_words),
-		packet_kind | ((words_buffer_upload_inline_min + data_words) << 16),
-		op_buffer_upload_inline,
-		buffer_id,
-		dst_byte_offset,
-		byte_length,
-		...
-	)
+	local base<const> = vdp_stream_claim((sizeof(rpu_buffer_upload_inline_header) // sys_vdp_arg_stride) + data_words)
+	local packet<const>: *rpu_buffer_upload_inline_header = base
+	local data<const>: *word = base + sizeof(rpu_buffer_upload_inline_header)
+	packet->header = packet_kind | ((words_buffer_upload_inline_min + data_words) << 16)
+	packet->op = op_buffer_upload_inline
+	packet->buffer_id = buffer_id
+	packet->dst_byte_offset = dst_byte_offset
+	packet->byte_length = byte_length
+	local index = 0
+	while index < data_words do
+		data[index] = select(index + 1, ...)
+		index = index + 1
+	end
 end
 
 function vdp_rpu.buffer_discard(buffer_id)
-	memwrite(
-		vdp_stream_claim(3),
-		packet_kind | (words_buffer_discard << 16),
-		op_buffer_discard,
-		buffer_id
-	)
+	local packet<const>: *rpu_buffer_discard_packet = vdp_stream_claim(sizeof(rpu_buffer_discard_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_buffer_discard << 16)
+	packet->op = op_buffer_discard
+	packet->buffer_id = buffer_id
 end
 
 function vdp_rpu.surface_define(surface_id, width, height, format_usage)
-	memwrite(
-		vdp_stream_claim(5),
-		packet_kind | (words_surface_define << 16),
-		op_surface_define,
-		surface_id,
-		numeric.pack_low_high(width, height),
-		format_usage
-	)
+	local packet<const>: *rpu_surface_define_packet = vdp_stream_claim(sizeof(rpu_surface_define_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_surface_define << 16)
+	packet->op = op_surface_define
+	packet->surface_id = surface_id
+	packet->size = numeric.pack_low_high(width, height)
+	packet->format_usage = format_usage
 end
 
 function vdp_rpu.constant_bank_define(bank_id, first_word, word_count)
-	memwrite(
-		vdp_stream_claim(5),
-		packet_kind | (words_constant_bank_define << 16),
-		op_constant_bank_define,
-		bank_id,
-		first_word,
-		word_count
-	)
+	local packet<const>: *rpu_constant_bank_define_packet = vdp_stream_claim(sizeof(rpu_constant_bank_define_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_constant_bank_define << 16)
+	packet->op = op_constant_bank_define
+	packet->bank_id = bank_id
+	packet->first_word = first_word
+	packet->word_count = word_count
 end
 
 function vdp_rpu.constant_upload_dma(bank_id, dst_word_offset, src_addr, word_count)
-	memwrite(
-		vdp_stream_claim(6),
-		packet_kind | (words_constant_upload_dma << 16),
-		op_constant_upload_dma,
-		bank_id,
-		dst_word_offset,
-		src_addr,
-		word_count
-	)
+	local packet<const>: *rpu_constant_upload_dma_packet = vdp_stream_claim(sizeof(rpu_constant_upload_dma_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_constant_upload_dma << 16)
+	packet->op = op_constant_upload_dma
+	packet->bank_id = bank_id
+	packet->dst_word_offset = dst_word_offset
+	packet->src_addr = src_addr
+	packet->word_count = word_count
 end
 
 function vdp_rpu.constant_upload_inline(bank_id, dst_word_offset, word_count, ...)
-	memwrite(
-		vdp_stream_claim(5 + word_count),
-		packet_kind | ((words_constant_upload_inline_min + word_count) << 16),
-		op_constant_upload_inline,
-		bank_id,
-		dst_word_offset,
-		word_count,
-		...
-	)
+	local base<const> = vdp_stream_claim((sizeof(rpu_constant_upload_inline_header) // sys_vdp_arg_stride) + word_count)
+	local packet<const>: *rpu_constant_upload_inline_header = base
+	local data<const>: *word = base + sizeof(rpu_constant_upload_inline_header)
+	packet->header = packet_kind | ((words_constant_upload_inline_min + word_count) << 16)
+	packet->op = op_constant_upload_inline
+	packet->bank_id = bank_id
+	packet->dst_word_offset = dst_word_offset
+	packet->word_count = word_count
+	local index = 0
+	while index < word_count do
+		data[index] = select(index + 1, ...)
+		index = index + 1
+	end
 end
 
 function vdp_rpu.constant_upload_device(bank_id, dst_word_offset, source, source_word_offset, word_count)
-	memwrite(
-		vdp_stream_claim(7),
-		packet_kind | (words_constant_upload_device << 16),
-		op_constant_upload_device,
-		bank_id,
-		dst_word_offset,
-		source,
-		source_word_offset,
-		word_count
-	)
+	local packet<const>: *rpu_constant_upload_device_packet = vdp_stream_claim(sizeof(rpu_constant_upload_device_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_constant_upload_device << 16)
+	packet->op = op_constant_upload_device
+	packet->bank_id = bank_id
+	packet->dst_word_offset = dst_word_offset
+	packet->source = source
+	packet->source_word_offset = source_word_offset
+	packet->word_count = word_count
 end
 
 function vdp_rpu.begin_pass(color_surface_id, depth_surface_id, viewport_x, viewport_y, viewport_w, viewport_h, pass_ops, clear_color, clear_depth_word)
-	memwrite(
-		vdp_stream_claim(9),
-		packet_kind | (words_begin_pass << 16),
-		op_begin_pass,
-		color_surface_id,
-		depth_surface_id,
-		numeric.pack_low_high(viewport_x, viewport_y),
-		numeric.pack_low_high(viewport_w, viewport_h),
-		pass_ops,
-		clear_color,
-		clear_depth_word
-	)
+	local packet<const>: *rpu_begin_pass_packet = vdp_stream_claim(sizeof(rpu_begin_pass_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_begin_pass << 16)
+	packet->op = op_begin_pass
+	packet->color_surface_id = color_surface_id
+	packet->depth_surface_id = depth_surface_id
+	packet->viewport_xy = numeric.pack_low_high(viewport_x, viewport_y)
+	packet->viewport_wh = numeric.pack_low_high(viewport_w, viewport_h)
+	packet->pass_ops = pass_ops
+	packet->clear_color = clear_color
+	packet->clear_depth_word = clear_depth_word
 end
 
 function vdp_rpu.end_pass()
-	memwrite(
-		vdp_stream_claim(2),
-		packet_kind | (words_end_pass << 16),
-		op_end_pass
-	)
+	local packet<const>: *rpu_end_pass_packet = vdp_stream_claim(sizeof(rpu_end_pass_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_end_pass << 16)
+	packet->op = op_end_pass
 end
 
 function vdp_rpu.begin_draw(shader_variant, primitive_index_type, pipeline_word, vertex_count, instance_count, index_buffer_id, index_byte_offset, index_count)
-	memwrite(
-		vdp_stream_claim(10),
-		packet_kind | (words_begin_draw << 16),
-		op_begin_draw,
-		shader_variant,
-		primitive_index_type,
-		pipeline_word,
-		vertex_count,
-		instance_count,
-		index_buffer_id,
-		index_byte_offset,
-		index_count
-	)
+	local packet<const>: *rpu_begin_draw_packet = vdp_stream_claim(sizeof(rpu_begin_draw_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_begin_draw << 16)
+	packet->op = op_begin_draw
+	packet->shader_variant = shader_variant
+	packet->primitive_index_type = primitive_index_type
+	packet->pipeline_word = pipeline_word
+	packet->vertex_count = vertex_count
+	packet->instance_count = instance_count
+	packet->index_buffer_id = index_buffer_id
+	packet->index_byte_offset = index_byte_offset
+	packet->index_count = index_count
 end
 
 function vdp_rpu.bind_stream(stream_slot, layout_id, buffer_id, byte_offset, step_rate)
-	memwrite(
-		vdp_stream_claim(7),
-		packet_kind | (words_bind_stream << 16),
-		op_bind_stream,
-		stream_slot,
-		layout_id,
-		buffer_id,
-		byte_offset,
-		step_rate
-	)
+	local packet<const>: *rpu_bind_stream_packet = vdp_stream_claim(sizeof(rpu_bind_stream_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_bind_stream << 16)
+	packet->op = op_bind_stream
+	packet->stream_slot = stream_slot
+	packet->layout_id = layout_id
+	packet->buffer_id = buffer_id
+	packet->byte_offset = byte_offset
+	packet->step_rate = step_rate
 end
 
 function vdp_rpu.bind_constants(binding_slot, bank_id, first_word, word_count)
-	memwrite(
-		vdp_stream_claim(6),
-		packet_kind | (words_bind_constants << 16),
-		op_bind_constants,
-		binding_slot,
-		bank_id,
-		first_word,
-		word_count
-	)
+	local packet<const>: *rpu_bind_constants_packet = vdp_stream_claim(sizeof(rpu_bind_constants_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_bind_constants << 16)
+	packet->op = op_bind_constants
+	packet->binding_slot = binding_slot
+	packet->bank_id = bank_id
+	packet->first_word = first_word
+	packet->word_count = word_count
 end
 
-function vdp_rpu.bind_texture(texture_slot, surface_id, sampler_word)
-	memwrite(
-		vdp_stream_claim(5),
-		packet_kind | (words_bind_texture << 16),
-		op_bind_texture,
-		texture_slot,
-		surface_id,
-		sampler_word
-	)
+function vdp_rpu.bind_texture(texture_slot, surface_id)
+	local packet<const>: *rpu_bind_texture_packet = vdp_stream_claim(sizeof(rpu_bind_texture_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_bind_texture << 16)
+	packet->op = op_bind_texture
+	packet->texture_slot = texture_slot
+	packet->surface_id = surface_id
 end
 
 function vdp_rpu.end_draw()
-	memwrite(
-		vdp_stream_claim(2),
-		packet_kind | (words_end_draw << 16),
-		op_end_draw
-	)
+	local packet<const>: *rpu_end_draw_packet = vdp_stream_claim(sizeof(rpu_end_draw_packet) // sys_vdp_arg_stride)
+	packet->header = packet_kind | (words_end_draw << 16)
+	packet->op = op_end_draw
 end
 
 
@@ -349,10 +463,6 @@ vdp_rpu.index_none = index_none
 vdp_rpu.index_u16 = index_u16
 vdp_rpu.index_u32 = index_u32
 vdp_rpu.resource_none = resource_none
-vdp_rpu.filter_nearest = filter_nearest
-vdp_rpu.filter_linear = filter_linear
-vdp_rpu.wrap_clamp = wrap_clamp
-vdp_rpu.wrap_repeat = wrap_repeat
 vdp_rpu.layout_v2_c4 = layout_v2_c4
 vdp_rpu.layout_v2_t2_c4 = layout_v2_t2_c4
 vdp_rpu.layout_v3_c4 = layout_v3_c4

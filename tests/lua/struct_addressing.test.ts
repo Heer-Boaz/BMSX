@@ -152,7 +152,7 @@ return mem[base + 196], &scene[1][0], sizeof(draw), offsetof(draw.constants.eye)
 	assert.deepEqual(result, [0x12345678, TEST_RAM_BASE + 108, 36, 20]);
 });
 
-test('struct address-of keeps memwrite intrinsics on displaced memory opcodes', () => {
+test('pointer arrow fields lower scalar reads and writes to displaced memory opcodes', () => {
 	const source = `
 struct tri
 	xy: f32[3]
@@ -161,60 +161,59 @@ struct tri
 	weight: word
 end
 local base<const> = ${TEST_RAM_BASE}
-local packets<const>: *tri[2] = base
-memwritef32(&packets[1].xy[0], 1.0, 2.0, 3.0)
-memwrite(&packets[1].color, 7, 8, 9)
-return mem[base + sizeof(tri) + offsetof(tri.color)], mem[base + sizeof(tri) + offsetof(tri.weight)]
+local packet<const>: *tri = base + sizeof(tri)
+packet->xy[0] = 1.0
+packet->xy[1] = 2.0
+packet->xy[2] = 3.0
+packet->color = 7
+packet->joint = 8
+packet->weight = 9
+return packet->color, packet->weight
 `;
 	const compiled = compileSource(source);
 	const disassembly = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
 
-	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 4, 24/);
-	assert.match(disassembly, /STORE_MEM_WORDS_D r\d+, r\d+, 3, 36/);
+	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 4, 0/);
+	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 20/);
 	assert.deepEqual(runCompiledLua(source), [7, 9]);
 });
 
-test('struct aggregate assignment lowers table literals without runtime tables', () => {
-	const source = `
-struct tri
-	xy: f32[3]
-	color: word
-	joint: word
-	weight: word
-end
-local base<const> = ${TEST_RAM_BASE}
-local packets<const>: *tri[2] = base
-packets[0] = { xy = { 1.0, 2.0, 3.0 }, color = 4, joint = 5, weight = 6 }
-packets[1] = { { 7.0, 8.0, 9.0 }, 10, 11, 12 }
-return mem[base + offsetof(tri.color)], mem[base + offsetof(tri.weight)], mem[base + sizeof(tri) + offsetof(tri.color)], mem[base + sizeof(tri) + offsetof(tri.weight)]
-`;
-	const compiled = compileSource(source);
-	const disassembly = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
-
-	assert.equal(disassembly.includes('NEWT'), false);
-	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 4, 0/);
-	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 12/);
-	assert.deepEqual(runCompiledLua(source), [4, 6, 10, 12]);
-});
-
-test('memwrite accepts typed struct aggregates and advances by struct size', () => {
+test('pointer dereference and indexed pointer fields lower to direct memory stores', () => {
 	const source = `
 struct q16_matrix
 	m: word[4]
 end
 local base<const> = ${TEST_RAM_BASE}
-local matrices<const>: *q16_matrix[2] = base
-memwrite(&matrices[0],
-	{ 1, 2, 3, 4 },
-	q16_matrix { 5, 6, 7, 8 }
-)
+local matrices<const>: *q16_matrix = base
+matrices->m[0] = 1
+matrices->m[1] = 2
+matrices->m[2] = 3
+matrices->m[3] = 4
+matrices[1].m[0] = 5
+matrices[1].m[1] = 6
+matrices[1].m[2] = 7
+matrices[1].m[3] = 8
 return mem[base], mem[base + sizeof(q16_matrix) + 12]
 `;
 	const compiled = compileSource(source);
 	const disassembly = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
 
 	assert.equal(disassembly.includes('NEWT'), false);
-	assert.match(disassembly, /STORE_MEM_WORDS_D r\d+, r\d+, 4, 0/);
-	assert.match(disassembly, /STORE_MEM_WORDS_D r\d+, r\d+, 4, 16/);
+	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 0/);
+	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 28/);
 	assert.deepEqual(runCompiledLua(source), [1, 8]);
+});
+
+test('compiler rejects whole-struct assignment targets', () => {
+	assert.throws(
+		() => compileSource(`
+struct q16_matrix
+	m: word[4]
+end
+local base<const> = ${TEST_RAM_BASE}
+local matrices<const>: *q16_matrix = base
+*matrices = 1
+`),
+		/Whole-struct assignment is not supported/,
+	);
 });

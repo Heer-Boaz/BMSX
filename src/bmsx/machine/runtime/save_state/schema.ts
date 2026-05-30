@@ -323,7 +323,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'constantWordCount',
 	'textureSlot',
 	'textureSurfaceRef',
-	'textureSamplerWord',
 	'bufferId',
 	'revision',
 	'byteOffset',

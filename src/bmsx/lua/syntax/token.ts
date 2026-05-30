@@ -8,6 +8,7 @@ export const enum LuaTokenType {
 	Plus,
 	PlusEqual,
 	Minus,
+	Arrow,
 	MinusEqual,
 	Star,
 	StarEqual,

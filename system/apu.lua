@@ -3,6 +3,31 @@
 local endian<const> = require("bios/common/endian")
 local read_u16le<const> = endian.read_u16le
 
+struct apu_command_registers
+	source_addr: word
+	source_bytes: word
+	sample_rate_hz: word
+	channels: word
+	bits_per_sample: word
+	frame_count: word
+	data_offset: word
+	data_bytes: word
+	loop_start_sample: word
+	loop_end_sample: word
+	slot: word
+	rate_step_q16: word
+	gain_q12: word
+	start_sample: word
+	filter_kind: word
+	filter_freq_hz: word
+	filter_q_milli: word
+	filter_gain_millidb: word
+	fade_samples: word
+	generator_kind: word
+	generator_duty_q12: word
+	cmd: word
+end
+
 local apu<const> = {
 	filter_kind = {
 		lowpass = apu_filter_lowpass,
@@ -15,6 +40,8 @@ local apu<const> = {
 		highshelf = apu_filter_highshelf,
 	},
 }
+
+local command_registers<const>: *apu_command_registers = sys_apu_source_addr
 
 function apu.seconds_to_samples(seconds)
 	return seconds * apu_sample_rate_hz
@@ -34,10 +61,11 @@ local rom_base_for_payload<const> = function(payload_id)
 	return sys_rom_cart_base
 end
 local read_badp_source<const> = function(addr, source_bytes)
+	local header<const>: *word = addr
 	local channels<const> = read_u16le(addr + 6)
-	local sample_rate_hz<const> = mem32le[addr + 8]
-	local frame_count<const> = mem32le[addr + 12]
-	local data_offset<const> = mem32le[addr + 36]
+	local sample_rate_hz<const> = header[2]
+	local frame_count<const> = header[3]
+	local data_offset<const> = header[9]
 	return {
 		sample_rate_hz = sample_rate_hz,
 		channels = channels,
@@ -87,71 +115,65 @@ function apu.loop_start_sample(record)
 end
 
 function apu.play(source, slot, rate_step_q16, gain_q12, start_sample, filter_kind, filter_freq_hz, filter_q_milli, filter_gain_millidb)
-	memwrite(
-		sys_apu_source_addr,
-		source.source_addr,
-		source.source_bytes,
-		source.sample_rate_hz,
-		source.channels,
-		source.bits_per_sample,
-		source.frame_count,
-		source.data_offset,
-		source.data_bytes,
-		source.loop_start_sample,
-		source.loop_end_sample,
-		slot,
-		rate_step_q16,
-		gain_q12,
-		start_sample,
-		filter_kind,
-		filter_freq_hz,
-		filter_q_milli,
-		filter_gain_millidb,
-		0,
-		0,
-		apu_gain_q12_one,
-		apu_cmd_play
-	)
+	command_registers->source_addr = source.source_addr
+	command_registers->source_bytes = source.source_bytes
+	command_registers->sample_rate_hz = source.sample_rate_hz
+	command_registers->channels = source.channels
+	command_registers->bits_per_sample = source.bits_per_sample
+	command_registers->frame_count = source.frame_count
+	command_registers->data_offset = source.data_offset
+	command_registers->data_bytes = source.data_bytes
+	command_registers->loop_start_sample = source.loop_start_sample
+	command_registers->loop_end_sample = source.loop_end_sample
+	command_registers->slot = slot
+	command_registers->rate_step_q16 = rate_step_q16
+	command_registers->gain_q12 = gain_q12
+	command_registers->start_sample = start_sample
+	command_registers->filter_kind = filter_kind
+	command_registers->filter_freq_hz = filter_freq_hz
+	command_registers->filter_q_milli = filter_q_milli
+	command_registers->filter_gain_millidb = filter_gain_millidb
+	command_registers->fade_samples = 0
+	command_registers->generator_kind = 0
+	command_registers->generator_duty_q12 = apu_gain_q12_one
+	command_registers->cmd = apu_cmd_play
 end
 
 function apu.play_plain(source, slot)
-	memwrite(
-		sys_apu_source_addr,
-		source.source_addr,
-		source.source_bytes,
-		source.sample_rate_hz,
-		source.channels,
-		source.bits_per_sample,
-		source.frame_count,
-		source.data_offset,
-		source.data_bytes,
-		source.loop_start_sample,
-		source.loop_end_sample,
-		slot,
-		apu_rate_step_q16_one,
-		apu_gain_q12_one,
-		0,
-		apu_filter_none,
-		0,
-		1000,
-		0,
-		0,
-		0,
-		apu_gain_q12_one,
-		apu_cmd_play
-	)
+	command_registers->source_addr = source.source_addr
+	command_registers->source_bytes = source.source_bytes
+	command_registers->sample_rate_hz = source.sample_rate_hz
+	command_registers->channels = source.channels
+	command_registers->bits_per_sample = source.bits_per_sample
+	command_registers->frame_count = source.frame_count
+	command_registers->data_offset = source.data_offset
+	command_registers->data_bytes = source.data_bytes
+	command_registers->loop_start_sample = source.loop_start_sample
+	command_registers->loop_end_sample = source.loop_end_sample
+	command_registers->slot = slot
+	command_registers->rate_step_q16 = apu_rate_step_q16_one
+	command_registers->gain_q12 = apu_gain_q12_one
+	command_registers->start_sample = 0
+	command_registers->filter_kind = apu_filter_none
+	command_registers->filter_freq_hz = 0
+	command_registers->filter_q_milli = 1000
+	command_registers->filter_gain_millidb = 0
+	command_registers->fade_samples = 0
+	command_registers->generator_kind = 0
+	command_registers->generator_duty_q12 = apu_gain_q12_one
+	command_registers->cmd = apu_cmd_play
 end
 
 function apu.stop_slot(slot, fade_samples)
-	mem[sys_apu_slot] = slot
-	mem[sys_apu_fade_samples] = fade_samples
-	mem[sys_apu_cmd] = apu_cmd_stop_slot
+	command_registers->slot = slot
+	command_registers->fade_samples = fade_samples
+	command_registers->cmd = apu_cmd_stop_slot
 end
 
 function apu.set_slot_gain(slot, gain_q12)
-	mem[sys_apu_slot] = slot
-	mem[sys_apu_gain_q12] = gain_q12
-	mem[sys_apu_cmd] = apu_cmd_set_slot_gain
+	command_registers->slot = slot
+	command_registers->gain_q12 = gain_q12
+	command_registers->cmd = apu_cmd_set_slot_gain
 end
 
 return apu

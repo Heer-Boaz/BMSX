@@ -2683,7 +2683,7 @@ export const applyGlobalOptimizations = (
 			// Keep RK replacement for non-string constants only.
 			// If we add new string-producing opcodes, extend this exclusion too.
 			// (Currently CONCAT is the only such op in this pass.)
-			// When memwrite (STORE_MEM_WORDS) sources become string constants,
+			// When burst memory-store sources become string constants,
 			// that would encode the constant literal directly instead of the register
 			// and produces the wrong text.
 			if (
