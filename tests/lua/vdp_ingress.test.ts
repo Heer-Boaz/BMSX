@@ -78,12 +78,45 @@ import {
 } from '../../src/bmsx/machine/devices/vdp/registers';
 import { VDP_VOUT_SCANOUT_PHASE_ACTIVE, VDP_VOUT_SCANOUT_PHASE_VBLANK } from '../../src/bmsx/machine/devices/vdp/vout';
 import {
-	VDP_RPU_BUFFER_USAGE_VERTEX,
+	VDP_RPU_EXEC_PASS_LIST_WORDS,
+	VDP_RPU_INDEX_NONE,
 	VDP_RPU_LAYOUT_V2_C4,
+	VDP_RPU_OP_EXEC_PASS_LIST,
+	VDP_RPU_OP_SEAL_FRAME,
+	VDP_RPU_PACKET_KIND,
+	VDP_RPU_PARAM_MEM_SIZE,
+	VDP_RPU_PASS_COLOR_CLEAR,
+	VDP_RPU_PRIM_TRIANGLES,
+	VDP_RPU_SEAL_FRAME_WORDS,
 	VDP_RPU_SHADER_FLAG_MORPH,
 	VDP_RPU_SHADER_FLAG_T1,
 	VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1,
 } from '../../src/bmsx/machine/devices/vdp/rpu';
+import {
+	RPU_DRAW_DESC_CONSTANT_DESCS_ADDR_OFFSET,
+	RPU_DRAW_DESC_INDEX_COUNT_OFFSET,
+	RPU_DRAW_DESC_INDEX_TYPE_OFFSET,
+	RPU_DRAW_DESC_INDEX_VRAM_ADDR_OFFSET,
+	RPU_DRAW_DESC_INSTANCE_COUNT_OFFSET,
+	RPU_DRAW_DESC_PIPELINE_WORD_OFFSET,
+	RPU_DRAW_DESC_SHADER_VARIANT_OFFSET,
+	RPU_DRAW_DESC_STREAM_DESCS_ADDR_OFFSET,
+	RPU_DRAW_DESC_TEXTURE_DESCS_ADDR_OFFSET,
+	RPU_DRAW_DESC_VERTEX_COUNT_OFFSET,
+	RPU_PASS_DESC_CLEAR_COLOR_OFFSET,
+	RPU_PASS_DESC_CLEAR_DEPTH_WORD_OFFSET,
+	RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET,
+	RPU_PASS_DESC_DEPTH_SURFACE_DESC_ADDR_OFFSET,
+	RPU_PASS_DESC_DRAW_COUNT_OFFSET,
+	RPU_PASS_DESC_DRAW_DESCS_ADDR_OFFSET,
+	RPU_PASS_DESC_OPS_OFFSET,
+	RPU_PASS_DESC_VIEWPORT_WH_OFFSET,
+	RPU_PASS_DESC_VIEWPORT_XY_OFFSET,
+	RPU_STREAM_DESC_BYTE_LENGTH_OFFSET,
+	RPU_STREAM_DESC_LAYOUT_ID_OFFSET,
+	RPU_STREAM_DESC_VRAM_ADDR_OFFSET,
+	readRpuDescU32,
+} from '../../src/bmsx/machine/devices/vdp/rpu_desc';
 import {
 	VDP_XF_MATRIX_COUNT,
 	VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS,
@@ -94,7 +127,7 @@ import {
 	VDP_XF_VIEW_MATRIX_INDEX_REGISTER,
 } from '../../src/bmsx/machine/devices/vdp/xf';
 import { Memory } from '../../src/bmsx/machine/memory/memory';
-import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE } from '../../src/bmsx/machine/memory/map';
+import { IO_WORD_SIZE, VDP_STREAM_BUFFER_BASE, VRAM_FRAMEBUFFER_BASE, VRAM_PRIMARY_SLOT_BASE, VRAM_STAGING_BASE } from '../../src/bmsx/machine/memory/map';
 import { DeviceScheduler } from '../../src/bmsx/machine/scheduler/device';
 import { createVdpTransformSnapshot, resolveVdpTransformSnapshot } from '../../src/bmsx/render/vdp/transform';
 
@@ -227,27 +260,42 @@ test('VDP direct registers latch raw representable words without closing an open
 
 test('VDP stream retains RPU pass and draw commands as device output', () => {
 	const { memory, vdp } = createVdp();
-	const rpuHeader = 0x18000000;
-	const resourceNone = 0xffffffff;
-	const opBufferDefine = 1;
-	const opBeginPass = 32;
-	const opEndPass = 33;
-	const opBeginDraw = 40;
-	const opBindStream = 41;
-	const opEndDraw = 44;
-	const streamBuffer = 7;
+	const passDescAddr = 0x100;
+	const drawDescAddr = 0x140;
+	const streamDescAddr = 0x200;
+	const streamVramAddr = 0x300;
 	const shaderVariantWord = VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1 | VDP_RPU_SHADER_FLAG_MORPH | VDP_RPU_SHADER_FLAG_T1;
-	const primitiveTriangles = 0;
-	const indexNone = 0;
 	const pipeColorWriteRgba = 0x000f0000;
 
+	memory.writeU32(VRAM_STAGING_BASE + streamVramAddr, 0x00112233);
+	memory.writeU32(VRAM_STAGING_BASE + streamVramAddr + 4, 0x44556677);
+	memory.writeU32(VRAM_STAGING_BASE + streamVramAddr + 8, 0x8899aabb);
+	memory.writeU32(VRAM_STAGING_BASE + streamDescAddr + RPU_STREAM_DESC_VRAM_ADDR_OFFSET, streamVramAddr);
+	memory.writeU32(VRAM_STAGING_BASE + streamDescAddr + RPU_STREAM_DESC_BYTE_LENGTH_OFFSET, 36);
+	memory.writeU32(VRAM_STAGING_BASE + streamDescAddr + RPU_STREAM_DESC_LAYOUT_ID_OFFSET, VDP_RPU_LAYOUT_V2_C4 | (1 << 16) | (2 << 24));
+	memory.writeU32(VRAM_STAGING_BASE + drawDescAddr + RPU_DRAW_DESC_SHADER_VARIANT_OFFSET, shaderVariantWord | (VDP_RPU_PRIM_TRIANGLES << 16));
+	memory.writeU32(VRAM_STAGING_BASE + drawDescAddr + RPU_DRAW_DESC_PIPELINE_WORD_OFFSET, pipeColorWriteRgba);
+	memory.writeU32(VRAM_STAGING_BASE + drawDescAddr + RPU_DRAW_DESC_VERTEX_COUNT_OFFSET, 3);
+	memory.writeU32(VRAM_STAGING_BASE + drawDescAddr + RPU_DRAW_DESC_INSTANCE_COUNT_OFFSET, 5);
+	memory.writeU32(VRAM_STAGING_BASE + drawDescAddr + RPU_DRAW_DESC_INDEX_VRAM_ADDR_OFFSET, 0);
+	memory.writeU32(VRAM_STAGING_BASE + drawDescAddr + RPU_DRAW_DESC_INDEX_COUNT_OFFSET, 0);
+	memory.writeU32(VRAM_STAGING_BASE + drawDescAddr + RPU_DRAW_DESC_INDEX_TYPE_OFFSET, VDP_RPU_INDEX_NONE | (1 << 8));
+	memory.writeU32(VRAM_STAGING_BASE + drawDescAddr + RPU_DRAW_DESC_STREAM_DESCS_ADDR_OFFSET, streamDescAddr);
+	memory.writeU32(VRAM_STAGING_BASE + drawDescAddr + RPU_DRAW_DESC_CONSTANT_DESCS_ADDR_OFFSET, 0);
+	memory.writeU32(VRAM_STAGING_BASE + drawDescAddr + RPU_DRAW_DESC_TEXTURE_DESCS_ADDR_OFFSET, 0);
+	memory.writeU32(VRAM_STAGING_BASE + passDescAddr + RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET, 0);
+	memory.writeU32(VRAM_STAGING_BASE + passDescAddr + RPU_PASS_DESC_DEPTH_SURFACE_DESC_ADDR_OFFSET, 0);
+	memory.writeU32(VRAM_STAGING_BASE + passDescAddr + RPU_PASS_DESC_VIEWPORT_XY_OFFSET, 0);
+	memory.writeU32(VRAM_STAGING_BASE + passDescAddr + RPU_PASS_DESC_VIEWPORT_WH_OFFSET, 256 | (212 << 16));
+	memory.writeU32(VRAM_STAGING_BASE + passDescAddr + RPU_PASS_DESC_OPS_OFFSET, VDP_RPU_PASS_COLOR_CLEAR);
+	memory.writeU32(VRAM_STAGING_BASE + passDescAddr + RPU_PASS_DESC_CLEAR_COLOR_OFFSET, 0xff102030);
+	memory.writeU32(VRAM_STAGING_BASE + passDescAddr + RPU_PASS_DESC_CLEAR_DEPTH_WORD_OFFSET, 0xffffffff);
+	memory.writeU32(VRAM_STAGING_BASE + passDescAddr + RPU_PASS_DESC_DRAW_DESCS_ADDR_OFFSET, drawDescAddr);
+	memory.writeU32(VRAM_STAGING_BASE + passDescAddr + RPU_PASS_DESC_DRAW_COUNT_OFFSET, 1);
+
 	sealFifo(memory, [
-		rpuHeader | (4 << 16), opBufferDefine, streamBuffer, 64, VDP_RPU_BUFFER_USAGE_VERTEX,
-		rpuHeader | (8 << 16), opBeginPass, resourceNone, resourceNone, 0, 256 | (212 << 16), 1, 0xff102030, 0xffffffff,
-		rpuHeader | (9 << 16), opBeginDraw, shaderVariantWord, primitiveTriangles | (indexNone << 8), pipeColorWriteRgba, 3, 5, resourceNone, 0, 0,
-		rpuHeader | (6 << 16), opBindStream, 1, VDP_RPU_LAYOUT_V2_C4, streamBuffer, 0, 2,
-		rpuHeader | (1 << 16), opEndDraw,
-		rpuHeader | (1 << 16), opEndPass,
+		VDP_RPU_PACKET_KIND | (VDP_RPU_EXEC_PASS_LIST_WORDS << 16), VDP_RPU_OP_EXEC_PASS_LIST | (1 << 8), passDescAddr,
+		VDP_RPU_PACKET_KIND | (VDP_RPU_SEAL_FRAME_WORDS << 16), VDP_RPU_OP_SEAL_FRAME,
 		VDP_PKT_END,
 	]);
 
@@ -261,8 +309,11 @@ test('VDP stream retains RPU pass and draw commands as device output', () => {
 	assert.equal(output.rpu.commands.drawShaderVariant[0], shaderVariantWord);
 	assert.equal(output.rpu.commands.drawVertexCount[0], 3);
 	assert.equal(output.rpu.commands.drawInstanceCount[0], 5);
+	assert.equal(output.rpu.commands.streamVramAddr[0], streamVramAddr);
+	assert.equal(output.rpu.commands.streamByteLength[0], 36);
 	assert.equal(output.rpu.commands.streamStepRate[0], 2);
-	assert.equal(output.rpu.resources.bufferRefs.byteLength[0], 36);
+	assert.equal(output.rpu.vdpVram.length, VDP_RPU_PARAM_MEM_SIZE);
+	assert.equal(readRpuDescU32(output.rpu.vdpVram, streamVramAddr), 0x00112233);
 });
 
 test('VDP packet FIFO faults cancel the frame while preserving prior register side effects', () => {

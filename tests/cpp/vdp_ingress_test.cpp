@@ -4,6 +4,7 @@
 #include "machine/devices/vdp/frame.h"
 #include "machine/devices/vdp/registers.h"
 #include "machine/devices/vdp/rpu.h"
+#include "machine/devices/vdp/rpu_desc.h"
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
@@ -130,27 +131,42 @@ void testRawRegisterWordsDoNotCancelFrame() {
 
 void testRpuFrameRetainsPassAndDraw() {
 	Harness h;
-	constexpr uint32_t rpuHeader = 0x18000000u;
-	constexpr uint32_t resourceNone = 0xffffffffu;
-	constexpr uint32_t opBufferDefine = 1u;
-	constexpr uint32_t opBeginPass = 32u;
-	constexpr uint32_t opEndPass = 33u;
-	constexpr uint32_t opBeginDraw = 40u;
-	constexpr uint32_t opBindStream = 41u;
-	constexpr uint32_t opEndDraw = 44u;
-	constexpr uint32_t streamBuffer = 7u;
+	constexpr uint32_t passDescAddr = 0x100u;
+	constexpr uint32_t drawDescAddr = 0x140u;
+	constexpr uint32_t streamDescAddr = 0x200u;
+	constexpr uint32_t streamVramAddr = 0x300u;
 	constexpr uint32_t shaderVariantWord = bmsx::VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1 | bmsx::VDP_RPU_SHADER_FLAG_MORPH | bmsx::VDP_RPU_SHADER_FLAG_T1;
-	constexpr uint32_t primitiveTriangles = 0u;
-	constexpr uint32_t indexNone = 0u;
 	constexpr uint32_t pipeColorWriteRgba = 0x000f0000u;
 
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + streamVramAddr, 0x00112233u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + streamVramAddr + 4u, 0x44556677u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + streamVramAddr + 8u, 0x8899aabbu);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + streamDescAddr + bmsx::RPU_STREAM_DESC_VRAM_ADDR_OFFSET, streamVramAddr);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + streamDescAddr + bmsx::RPU_STREAM_DESC_BYTE_LENGTH_OFFSET, 36u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + streamDescAddr + bmsx::RPU_STREAM_DESC_LAYOUT_ID_OFFSET, bmsx::VDP_RPU_LAYOUT_V2_C4 | (1u << 16u) | (2u << 24u));
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_SHADER_VARIANT_OFFSET, shaderVariantWord | (bmsx::VDP_RPU_PRIM_TRIANGLES << 16u));
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_PIPELINE_WORD_OFFSET, pipeColorWriteRgba);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_VERTEX_COUNT_OFFSET, 3u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_INSTANCE_COUNT_OFFSET, 5u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_INDEX_VRAM_ADDR_OFFSET, 0u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_INDEX_COUNT_OFFSET, 0u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_INDEX_TYPE_OFFSET, bmsx::VDP_RPU_INDEX_NONE | (1u << 8u));
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_STREAM_DESCS_ADDR_OFFSET, streamDescAddr);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_CONSTANT_DESCS_ADDR_OFFSET, 0u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + drawDescAddr + bmsx::RPU_DRAW_DESC_TEXTURE_DESCS_ADDR_OFFSET, 0u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_COLOR_SURFACE_DESC_ADDR_OFFSET, 0u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_DEPTH_SURFACE_DESC_ADDR_OFFSET, 0u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_VIEWPORT_XY_OFFSET, 0u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_VIEWPORT_WH_OFFSET, 256u | (212u << 16u));
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_OPS_OFFSET, bmsx::VDP_RPU_PASS_COLOR_CLEAR);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_CLEAR_COLOR_OFFSET, 0xff102030u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_CLEAR_DEPTH_WORD_OFFSET, 0xffffffffu);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_DRAW_DESCS_ADDR_OFFSET, drawDescAddr);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + passDescAddr + bmsx::RPU_PASS_DESC_DRAW_COUNT_OFFSET, 1u);
+
 	sealFifo(h, {
-		rpuHeader | (4u << 16u), opBufferDefine, streamBuffer, 64u, bmsx::VDP_RPU_BUFFER_USAGE_VERTEX,
-		rpuHeader | (8u << 16u), opBeginPass, resourceNone, resourceNone, 0u, 256u | (212u << 16u), 1u, 0xff102030u, 0xffffffffu,
-		rpuHeader | (9u << 16u), opBeginDraw, shaderVariantWord, primitiveTriangles | (indexNone << 8u), pipeColorWriteRgba, 3u, 5u, resourceNone, 0u, 0u,
-		rpuHeader | (6u << 16u), opBindStream, 1u, bmsx::VDP_RPU_LAYOUT_V2_C4, streamBuffer, 0u, 2u,
-		rpuHeader | (1u << 16u), opEndDraw,
-		rpuHeader | (1u << 16u), opEndPass,
+		bmsx::VDP_RPU_PACKET_KIND | (bmsx::VDP_RPU_EXEC_PASS_LIST_WORDS << 16u), bmsx::VDP_RPU_OP_EXEC_PASS_LIST | (1u << 8u), passDescAddr,
+		bmsx::VDP_RPU_PACKET_KIND | (bmsx::VDP_RPU_SEAL_FRAME_WORDS << 16u), bmsx::VDP_RPU_OP_SEAL_FRAME,
 		bmsx::VDP_PKT_END,
 	});
 
@@ -164,32 +180,37 @@ void testRpuFrameRetainsPassAndDraw() {
 	require(output.rpu->commands.drawShaderVariant[0u] == shaderVariantWord, "RPU draw should retain shader flags");
 	require(output.rpu->commands.drawVertexCount[0u] == 3u, "RPU draw should retain vertex count");
 	require(output.rpu->commands.drawInstanceCount[0u] == 5u, "RPU draw should retain instance count");
+	require(output.rpu->commands.streamVramAddr[0u] == streamVramAddr, "RPU stream should retain VDP-local address");
+	require(output.rpu->commands.streamByteLength[0u] == 36u, "RPU stream should retain declared byte window");
 	require(output.rpu->commands.streamStepRate[0u] == 2u, "RPU stream should retain step rate");
-	require(output.rpu->resources.bufferRefs.byteLength[0u] == 36u, "RPU instance stream pin should use step-rate element count");
 }
 
 void testFifoReplayAndFaults() {
-	Harness badPacket;
-	sealStream(badPacket, {
-		bmsx::VDP_PKT_REG1 | bmsx::VDP_REG_BG_COLOR,
-		0xff102030u,
-		0x04000000u,
-		bmsx::VDP_PKT_END,
-	});
-	expectVdpFault(badPacket, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "bad packet should fault");
-	require(badPacket.memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff102030u, "prior register packet side effects should remain visible");
-	require(badPacket.vdp.getPendingRenderWorkUnits() == 0, "bad packet should not submit render work");
-
-	Harness reserved;
-	sealStream(reserved, {bmsx::VDP_PKT_CMD | (1u << 16u) | bmsx::VDP_CMD_CLEAR, bmsx::VDP_PKT_END});
-	expectVdpFault(reserved, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "reserved command packet bits should fault");
-	clearVdpFault(reserved);
-	sealStream(reserved, {bmsx::VDP_PKT_REG1 | 19u, 0u, bmsx::VDP_PKT_END});
-	expectVdpFault(reserved, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "REG1 out of range should fault");
-
-	Harness retiredDoorbell;
-	sealStream(retiredDoorbell, {bmsx::VDP_PKT_CMD | bmsx::VDP_CMD_CLEAR, bmsx::VDP_PKT_END});
-	expectVdpFault(retiredDoorbell, bmsx::VDP_FAULT_CMD_BAD_DOORBELL, "retired DEX command packet should fault as a bad doorbell");
+	{
+		Harness badPacket;
+		sealStream(badPacket, {
+			bmsx::VDP_PKT_REG1 | bmsx::VDP_REG_BG_COLOR,
+			0xff102030u,
+			0x04000000u,
+			bmsx::VDP_PKT_END,
+		});
+		expectVdpFault(badPacket, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "bad packet should fault");
+		require(badPacket.memory.readIoU32(bmsx::IO_VDP_REG_BG_COLOR) == 0xff102030u, "prior register packet side effects should remain visible");
+		require(badPacket.vdp.getPendingRenderWorkUnits() == 0, "bad packet should not submit render work");
+	}
+	{
+		Harness reserved;
+		sealStream(reserved, {bmsx::VDP_PKT_CMD | (1u << 16u) | bmsx::VDP_CMD_CLEAR, bmsx::VDP_PKT_END});
+		expectVdpFault(reserved, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "reserved command packet bits should fault");
+		clearVdpFault(reserved);
+		sealStream(reserved, {bmsx::VDP_PKT_REG1 | 19u, 0u, bmsx::VDP_PKT_END});
+		expectVdpFault(reserved, bmsx::VDP_FAULT_STREAM_BAD_PACKET, "REG1 out of range should fault");
+	}
+	{
+		Harness retiredDoorbell;
+		sealStream(retiredDoorbell, {bmsx::VDP_PKT_CMD | bmsx::VDP_CMD_CLEAR, bmsx::VDP_PKT_END});
+		expectVdpFault(retiredDoorbell, bmsx::VDP_FAULT_CMD_BAD_DOORBELL, "retired DEX command packet should fault as a bad doorbell");
+	}
 }
 
 void testXfPacketUpdatesRawTransformRegisterState() {

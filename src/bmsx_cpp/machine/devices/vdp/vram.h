@@ -48,6 +48,7 @@ public:
 	explicit VdpVramUnit(VdpEntropySeeds entropySeeds = DEFAULT_VDP_ENTROPY_SEEDS);
 
 	void initializeSurfaces(const std::array<VdpVramSurface, VDP_RD_SURFACE_COUNT>& surfaces);
+	void setExternalStaging(u8* bytes, size_t length);
 	bool writeStaging(u32 addr, const u8* bytes, size_t srcOffset, size_t length);
 	bool readStaging(u32 addr, u8* out, size_t length) const;
 	void writeSurfaceBytes(VdpSurfaceUploadSlot& slot, u32 offset, const u8* bytes, size_t srcOffset, size_t length);
@@ -80,7 +81,9 @@ private:
 
 	std::vector<VdpSurfaceUploadSlot> m_slots;
 	VdpSurfaceUpload m_surfaceUploadOutput;
-	std::vector<u8> m_staging;
+	std::vector<u8> m_ownedStaging;
+	u8* m_staging = nullptr;
+	size_t m_stagingLength = 0u;
 	std::vector<u8> m_garbageScratch;
 	std::array<u8, 4u> m_seedPixel{{0u, 0u, 0u, 0u}};
 	u32 m_machineSeed = 0u;

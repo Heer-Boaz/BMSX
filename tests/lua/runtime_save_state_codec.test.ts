@@ -63,11 +63,7 @@ function createSubmittedFrameState(state = VDP_SUBMITTED_FRAME_EMPTY) {
 function createRpuState() {
 	return {
 		buildState: VDP_RPU_FRAME_IDLE,
-		openPassIndex: 0,
-		openDrawIndex: 0,
-		buffers: [],
-		bufferImages: [],
-		surfaces: [],
+		vdpVram: [21, 22, 23],
 	};
 }
 
@@ -317,6 +313,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.audio, state.machineState.machine.audio);
 	assert.deepEqual(decoded.machineState.machine.input, state.machineState.machine.input);
 	assert.deepEqual(decoded.machineState.machine.vdp.activeFrame, state.machineState.machine.vdp.activeFrame);
+	assert.deepEqual(decoded.machineState.machine.vdp.rpu, state.machineState.machine.vdp.rpu);
 	assert.deepEqual(decoded.machineState.machine.vdp.streamIngress.fifoWordScratch, state.machineState.machine.vdp.streamIngress.fifoWordScratch);
 	assert.deepEqual(decoded.machineState.machine.vdp.streamIngress.fifoStreamWords, state.machineState.machine.vdp.streamIngress.fifoStreamWords);
 	assert.deepEqual(decoded.machineState.machine.vdp.readback, state.machineState.machine.vdp.readback);

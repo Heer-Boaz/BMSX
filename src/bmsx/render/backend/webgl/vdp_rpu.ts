@@ -1,9 +1,7 @@
-import { VDP_RD_SURFACE_COUNT } from '../../../machine/devices/vdp/contracts';
 import {
 	VDP_RPU_BLEND_ADD,
 	VDP_RPU_BLEND_ALPHA,
 	VDP_RPU_BLEND_NONE,
-	VDP_RPU_BUFFER_CAPACITY,
 	VDP_RPU_CULL_FRONT,
 	VDP_RPU_CULL_NONE,
 	VDP_RPU_DEPTH_LESS,
@@ -44,18 +42,24 @@ import {
 	VDP_RPU_SHADER_FLAG_T1,
 	resolveVdpRpuStreamLayoutSpec,
 	resolveVdpRpuShaderVariantSpec,
-	VDP_RPU_REF_NONE,
 	VDP_RPU_RESOURCE_NONE,
-	VDP_RPU_SURFACE_CAPACITY,
 	VDP_RPU_SURFACE_FORMAT_DEPTH16,
 	type VdpRpuFrameOutput,
 	type VdpRpuShaderVariantSpec,
 	type VdpRpuStreamAttributeSpec,
 } from '../../../machine/devices/vdp/rpu';
+import {
+	RPU_SURFACE_DESC_BASE_ADDR_OFFSET,
+	RPU_SURFACE_DESC_FORMAT_OFFSET,
+	RPU_SURFACE_DESC_HEIGHT_OFFSET,
+	RPU_SURFACE_DESC_PITCH_BYTES_OFFSET,
+	RPU_SURFACE_DESC_WIDTH_OFFSET,
+	readRpuDescU16,
+	readRpuDescU32,
+} from '../../../machine/devices/vdp/rpu_desc';
 import type { RenderPassStateRegistry } from '../backend';
 import type { RenderPassLibrary } from '../pass/library';
 import type { WebGLBackend } from './backend';
-import type { GameView } from '../../gameview';
 import vdpRpuVertexShader from './shaders/vdp_rpu.vert.glsl';
 import vdpRpuFragmentShader from './shaders/vdp_rpu.frag.glsl';
 
@@ -93,41 +97,30 @@ let vdpRpuSkinningModeLocation: WebGLUniformLocation = null;
 let vdpRpuMorphModeLocation: WebGLUniformLocation = null;
 let vdpRpuNormalModeLocation: WebGLUniformLocation = null;
 let vdpRpuLightingModeLocation: WebGLUniformLocation = null;
-const vdpRpuVertexBufferObject: (WebGLBuffer | null)[] = [];
-const vdpRpuVertexBufferRevision = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuVertexBufferByteOffset = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuVertexBufferByteLength = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuInstanceBufferObject: (WebGLBuffer | null)[] = [];
-const vdpRpuInstanceBufferRevision = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuInstanceBufferByteOffset = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuInstanceBufferByteLength = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuMorphBufferObject: (WebGLBuffer | null)[] = [];
-const vdpRpuMorphBufferRevision = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuMorphBufferByteOffset = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuMorphBufferByteLength = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuIndexBufferObject: (WebGLBuffer | null)[] = [];
-const vdpRpuIndexBufferRevision = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuIndexBufferByteOffset = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuIndexBufferByteLength = new Uint32Array(VDP_RPU_BUFFER_CAPACITY);
-const vdpRpuSurfaceTexture: (WebGLTexture | null)[] = [];
-const vdpRpuSurfaceDepthBuffer: (WebGLRenderbuffer | null)[] = [];
-const vdpRpuSurfaceFramebuffer: (WebGLFramebuffer | null)[] = [];
-const vdpRpuSurfaceRevision = new Uint32Array(VDP_RPU_SURFACE_CAPACITY);
-const vdpRpuSurfaceWidth = new Uint32Array(VDP_RPU_SURFACE_CAPACITY);
-const vdpRpuSurfaceHeight = new Uint32Array(VDP_RPU_SURFACE_CAPACITY);
-const vdpRpuSurfaceFormat = new Uint8Array(VDP_RPU_SURFACE_CAPACITY);
+const VDP_RPU_GL_BUFFER_VERTEX = 0;
+const VDP_RPU_GL_BUFFER_INSTANCE = 1;
+const VDP_RPU_GL_BUFFER_MORPH = 2;
+const VDP_RPU_GL_BUFFER_INDEX = 3;
+const VDP_RPU_GL_BUFFER_COUNT = 4;
+const vdpRpuBufferObject: (WebGLBuffer | null)[] = [];
+let vdpRpuFrameSerial = 0;
+type VdpRpuWebglSurface = {
+	baseAddr: number;
+	pitchBytes: number;
+	width: number;
+	height: number;
+	format: number;
+	renderedFrame: number;
+	uploadedFrame: number;
+	texture: WebGLTexture | null;
+	depthBuffer: WebGLRenderbuffer | null;
+	framebuffer: WebGLFramebuffer | null;
+};
+const vdpRpuSurfaces = new Map<number, VdpRpuWebglSurface>();
 const vdpRpuColorDrawBuffers = [0];
 const vdpRpuNoColorDrawBuffers = [0];
-for (let index = 0; index < VDP_RPU_BUFFER_CAPACITY; index += 1) {
-	vdpRpuVertexBufferObject[index] = null;
-	vdpRpuInstanceBufferObject[index] = null;
-	vdpRpuMorphBufferObject[index] = null;
-	vdpRpuIndexBufferObject[index] = null;
-}
-for (let index = 0; index < VDP_RPU_SURFACE_CAPACITY; index += 1) {
-	vdpRpuSurfaceTexture[index] = null;
-	vdpRpuSurfaceDepthBuffer[index] = null;
-	vdpRpuSurfaceFramebuffer[index] = null;
+for (let index = 0; index < VDP_RPU_GL_BUFFER_COUNT; index += 1) {
+	vdpRpuBufferObject[index] = null;
 }
 
 const vdpRpuIdentityC0 = new Float32Array(16);
@@ -171,12 +164,10 @@ const vdpRpuPipelineStateScratch: RenderPassStateRegistry['vdp_rpu'] = {
 
 export type VdpRpuRuntime = {
 	backend: WebGLBackend;
-	context: GameView;
 };
 
 const vdpRpuRuntimeScratch: VdpRpuRuntime = {
 	backend: null,
-	context: null,
 };
 
 function vdpRpuPrimitive(primitive: number): number {
@@ -199,125 +190,138 @@ function vdpRpuIndexType(indexType: number): number {
 	return indexType === VDP_RPU_INDEX_U16 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT;
 }
 
-function deleteVdpRpuSurfaceStorage(surfaceId: number): void {
+function deleteVdpRpuSurfaceStorage(surface: VdpRpuWebglSurface): void {
 	const gl = vdpRpuGl;
-	const color = vdpRpuSurfaceTexture[surfaceId];
-	if (color !== null) {
-		gl.deleteTexture(color);
-		vdpRpuSurfaceTexture[surfaceId] = null;
+	if (surface.texture !== null) {
+		gl.deleteTexture(surface.texture);
+		surface.texture = null;
 	}
-	const depth = vdpRpuSurfaceDepthBuffer[surfaceId];
-	if (depth !== null) {
-		gl.deleteRenderbuffer(depth);
-		vdpRpuSurfaceDepthBuffer[surfaceId] = null;
+	if (surface.depthBuffer !== null) {
+		gl.deleteRenderbuffer(surface.depthBuffer);
+		surface.depthBuffer = null;
 	}
-	const framebuffer = vdpRpuSurfaceFramebuffer[surfaceId];
-	if (framebuffer !== null) {
-		gl.deleteFramebuffer(framebuffer);
-		vdpRpuSurfaceFramebuffer[surfaceId] = null;
+	if (surface.framebuffer !== null) {
+		gl.deleteFramebuffer(surface.framebuffer);
+		surface.framebuffer = null;
 	}
 }
 
-function ensureVdpRpuBufferStorage(
-	frame: VdpRpuFrameOutput,
-	refIndex: number,
-	target: number,
-	bufferObject: (WebGLBuffer | null)[],
-	bufferRevision: Uint32Array,
-	bufferByteOffset: Uint32Array,
-	bufferByteLength: Uint32Array,
-): WebGLBuffer {
+function uploadVdpRpuBuffer(frame: VdpRpuFrameOutput, bufferSlot: number, target: number, vramAddr: number, byteLength: number): WebGLBuffer {
 	const backend = vdpRpuBackend;
 	const gl = vdpRpuGl;
-	const refs = frame.resources.bufferRefs;
-	const bufferId = refs.bufferId[refIndex];
-	let buffer = bufferObject[bufferId];
+	let buffer = vdpRpuBufferObject[bufferSlot];
 	if (buffer === null) {
 		buffer = gl.createBuffer()!;
-		bufferObject[bufferId] = buffer;
+		vdpRpuBufferObject[bufferSlot] = buffer;
 	}
 	if (target === gl.ARRAY_BUFFER) {
 		backend.bindArrayBuffer(buffer);
 	} else {
 		backend.bindElementArrayBuffer(buffer);
 	}
-	if (
-		bufferRevision[bufferId] !== refs.revision[refIndex]
-		|| bufferByteOffset[bufferId] !== refs.byteOffset[refIndex]
-		|| bufferByteLength[bufferId] !== refs.byteLength[refIndex]
-	) {
-		const byteLength = refs.byteLength[refIndex];
-		gl.bufferData(target, byteLength, gl.STREAM_DRAW);
-		gl.bufferSubData(target, 0, refs.bytes[refIndex], refs.byteOffset[refIndex], byteLength);
-		bufferRevision[bufferId] = refs.revision[refIndex];
-		bufferByteOffset[bufferId] = refs.byteOffset[refIndex];
-		bufferByteLength[bufferId] = byteLength;
-	}
+	gl.bufferData(target, byteLength, gl.STREAM_DRAW);
+	gl.bufferSubData(target, 0, frame.vdpVram, vramAddr, byteLength);
 	return buffer;
 }
 
-function ensureVdpRpuSurfaceStorage(backend: WebGLBackend, frame: VdpRpuFrameOutput, surfaceRef: number): void {
+function ensureVdpRpuSurfaceStorage(backend: WebGLBackend, frame: VdpRpuFrameOutput, surfaceDescAddr: number): VdpRpuWebglSurface {
 	const gl = vdpRpuGl;
-	const refs = frame.resources.surfaceRefs;
-	const surfaceId = refs.surfaceId[surfaceRef];
-	const revision = refs.revision[surfaceRef];
-	const width = refs.width[surfaceRef];
-	const height = refs.height[surfaceRef];
-	const format = refs.format[surfaceRef];
-	if (
-		vdpRpuSurfaceRevision[surfaceId] === revision
-		&& vdpRpuSurfaceWidth[surfaceId] === width
-		&& vdpRpuSurfaceHeight[surfaceId] === height
-		&& vdpRpuSurfaceFormat[surfaceId] === format
-	) {
-		return;
+	const vram = frame.vdpVram;
+	let surface = vdpRpuSurfaces.get(surfaceDescAddr);
+	if (surface === undefined) {
+		surface = {
+			baseAddr: 0,
+			pitchBytes: 0,
+			width: 0,
+			height: 0,
+			format: 0,
+			renderedFrame: 0,
+			uploadedFrame: 0,
+			texture: null,
+			depthBuffer: null,
+			framebuffer: null,
+		};
+		vdpRpuSurfaces.set(surfaceDescAddr, surface);
 	}
-	deleteVdpRpuSurfaceStorage(surfaceId);
+	const baseAddr = readRpuDescU32(vram, surfaceDescAddr + RPU_SURFACE_DESC_BASE_ADDR_OFFSET);
+	const pitchBytes = readRpuDescU16(vram, surfaceDescAddr + RPU_SURFACE_DESC_PITCH_BYTES_OFFSET);
+	const width = readRpuDescU16(vram, surfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET);
+	const height = readRpuDescU16(vram, surfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET);
+	const format = vram[surfaceDescAddr + RPU_SURFACE_DESC_FORMAT_OFFSET]!;
+	if (
+		(surface.texture !== null || surface.depthBuffer !== null)
+		&& surface.baseAddr === baseAddr
+		&& surface.pitchBytes === pitchBytes
+		&& surface.width === width
+		&& surface.height === height
+		&& surface.format === format
+	) {
+		return surface;
+	}
+	deleteVdpRpuSurfaceStorage(surface);
 	backend.setActiveTexture(0);
 	if (format === VDP_RPU_SURFACE_FORMAT_DEPTH16) {
-		const depth = gl.createRenderbuffer()!;
-		gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+		const depthBuffer = gl.createRenderbuffer()!;
+		gl.bindRenderbuffer(gl.RENDERBUFFER, depthBuffer);
 		gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
-		vdpRpuSurfaceDepthBuffer[surfaceId] = depth;
+		surface.depthBuffer = depthBuffer;
 	} else {
-		const color = gl.createTexture()!;
-		gl.bindTexture(gl.TEXTURE_2D, color);
+		const texture = gl.createTexture()!;
+		gl.bindTexture(gl.TEXTURE_2D, texture);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-		vdpRpuSurfaceTexture[surfaceId] = color;
+		surface.texture = texture;
 	}
 	backend.invalidateTextureBindingCache();
-	vdpRpuSurfaceFramebuffer[surfaceId] = gl.createFramebuffer()!;
-	vdpRpuSurfaceRevision[surfaceId] = revision;
-	vdpRpuSurfaceWidth[surfaceId] = width;
-	vdpRpuSurfaceHeight[surfaceId] = height;
-	vdpRpuSurfaceFormat[surfaceId] = format;
+	surface.baseAddr = baseAddr;
+	surface.pitchBytes = pitchBytes;
+	surface.width = width;
+	surface.height = height;
+	surface.format = format;
+	surface.renderedFrame = 0;
+	surface.uploadedFrame = 0;
+	surface.framebuffer = gl.createFramebuffer()!;
+	return surface;
+}
+
+function uploadVdpRpuTextureSurface(backend: WebGLBackend, frame: VdpRpuFrameOutput, surface: VdpRpuWebglSurface): void {
+	if (surface.renderedFrame === vdpRpuFrameSerial || surface.uploadedFrame === vdpRpuFrameSerial || surface.format === VDP_RPU_SURFACE_FORMAT_DEPTH16) {
+		return;
+	}
+	const gl = vdpRpuGl;
+	backend.setActiveTexture(0);
+	gl.bindTexture(gl.TEXTURE_2D, surface.texture);
+	gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+	gl.pixelStorei(gl.UNPACK_ROW_LENGTH, surface.pitchBytes >> 2);
+	gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, surface.width, surface.height, gl.RGBA, gl.UNSIGNED_BYTE, frame.vdpVram, surface.baseAddr);
+	gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+	backend.invalidateTextureBindingCache();
+	surface.uploadedFrame = vdpRpuFrameSerial;
 }
 
 function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutput, passIndex: number, framebuffer: WebGLFramebuffer, width: number, height: number): void {
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
-	const colorRef = commands.passColorSurfaceRef[passIndex];
-	const depthRef = commands.passDepthSurfaceRef[passIndex];
-	if (colorRef === VDP_RPU_REF_NONE && depthRef === VDP_RPU_REF_NONE) {
+	const colorSurfaceDescAddr = commands.passColorSurfaceDescAddr[passIndex];
+	const depthSurfaceDescAddr = commands.passDepthSurfaceDescAddr[passIndex];
+	if (colorSurfaceDescAddr === 0 && depthSurfaceDescAddr === 0) {
 		gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 		backend.setViewportRect(0, 0, width, height);
 		vdpRpuColorDrawBuffers[0] = gl.COLOR_ATTACHMENT0;
 		gl.drawBuffers(vdpRpuColorDrawBuffers);
 		return;
 	}
-	const targetRef = colorRef !== VDP_RPU_REF_NONE ? colorRef : depthRef;
-	ensureVdpRpuSurfaceStorage(backend, frame, targetRef);
-	const targetSurfaceId = frame.resources.surfaceRefs.surfaceId[targetRef];
-	const targetFramebuffer = vdpRpuSurfaceFramebuffer[targetSurfaceId]!;
-	gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
-	if (colorRef !== VDP_RPU_REF_NONE) {
-		ensureVdpRpuSurfaceStorage(backend, frame, colorRef);
-		const colorSurfaceId = frame.resources.surfaceRefs.surfaceId[colorRef];
-		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, vdpRpuSurfaceTexture[colorSurfaceId], 0);
+	const targetSurface = colorSurfaceDescAddr !== 0
+		? ensureVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr)
+		: ensureVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
+	gl.bindFramebuffer(gl.FRAMEBUFFER, targetSurface.framebuffer);
+	if (colorSurfaceDescAddr !== 0) {
+		const colorSurface = ensureVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr);
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, colorSurface.texture, 0);
+		colorSurface.renderedFrame = vdpRpuFrameSerial;
 		vdpRpuColorDrawBuffers[0] = gl.COLOR_ATTACHMENT0;
 		gl.drawBuffers(vdpRpuColorDrawBuffers);
 	} else {
@@ -325,10 +329,10 @@ function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutp
 		vdpRpuNoColorDrawBuffers[0] = gl.NONE;
 		gl.drawBuffers(vdpRpuNoColorDrawBuffers);
 	}
-	if (depthRef !== VDP_RPU_REF_NONE) {
-		ensureVdpRpuSurfaceStorage(backend, frame, depthRef);
-		const depthSurfaceId = frame.resources.surfaceRefs.surfaceId[depthRef];
-		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, vdpRpuSurfaceDepthBuffer[depthSurfaceId]);
+	if (depthSurfaceDescAddr !== 0) {
+		const depthSurface = ensureVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
+		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthSurface.depthBuffer);
+		depthSurface.renderedFrame = vdpRpuFrameSerial;
 	} else {
 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, null);
 	}
@@ -438,23 +442,10 @@ function bindVdpRpuStreamAttribute(attribute: VdpRpuStreamAttributeSpec, byteStr
 function bindVdpRpuVertexStream(frame: VdpRpuFrameOutput, streamBindingIndex: number): void {
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
-	const refIndex = commands.streamBufferRef[streamBindingIndex];
-	if (refIndex === VDP_RPU_REF_NONE) {
-		return;
-	}
 	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
-	ensureVdpRpuBufferStorage(
-		frame,
-		refIndex,
-		gl.ARRAY_BUFFER,
-		vdpRpuVertexBufferObject,
-		vdpRpuVertexBufferRevision,
-		vdpRpuVertexBufferByteOffset,
-		vdpRpuVertexBufferByteLength,
-	);
-	const byteOffsetBase = commands.streamByteOffset[streamBindingIndex] - frame.resources.bufferRefs.sourceByteOffset[refIndex];
+	uploadVdpRpuBuffer(frame, VDP_RPU_GL_BUFFER_VERTEX, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
 	for (let index = 0; index < layout.attributeCount; index += 1) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, byteOffsetBase, 0);
+		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0, 0);
 	}
 }
 
@@ -511,47 +502,21 @@ function setVdpRpuDefaultInstanceAttributes(): void {
 function bindVdpRpuInstanceStream(frame: VdpRpuFrameOutput, streamBindingIndex: number): void {
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
-	const refIndex = commands.streamBufferRef[streamBindingIndex];
 	const stepRate = commands.streamStepRate[streamBindingIndex];
-	if (refIndex === VDP_RPU_REF_NONE) {
-		return;
-	}
 	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
-	ensureVdpRpuBufferStorage(
-		frame,
-		refIndex,
-		gl.ARRAY_BUFFER,
-		vdpRpuInstanceBufferObject,
-		vdpRpuInstanceBufferRevision,
-		vdpRpuInstanceBufferByteOffset,
-		vdpRpuInstanceBufferByteLength,
-	);
-	const byteOffsetBase = commands.streamByteOffset[streamBindingIndex] - frame.resources.bufferRefs.sourceByteOffset[refIndex];
+	uploadVdpRpuBuffer(frame, VDP_RPU_GL_BUFFER_INSTANCE, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
 	for (let index = 0; index < layout.attributeCount; index += 1) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, byteOffsetBase, stepRate);
+		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0, stepRate);
 	}
 }
 
 function bindVdpRpuMorphStream(frame: VdpRpuFrameOutput, streamBindingIndex: number): void {
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
-	const refIndex = commands.streamBufferRef[streamBindingIndex];
-	if (refIndex === VDP_RPU_REF_NONE) {
-		return;
-	}
 	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
-	ensureVdpRpuBufferStorage(
-		frame,
-		refIndex,
-		gl.ARRAY_BUFFER,
-		vdpRpuMorphBufferObject,
-		vdpRpuMorphBufferRevision,
-		vdpRpuMorphBufferByteOffset,
-		vdpRpuMorphBufferByteLength,
-	);
-	const byteOffsetBase = commands.streamByteOffset[streamBindingIndex] - frame.resources.bufferRefs.sourceByteOffset[refIndex];
+	uploadVdpRpuBuffer(frame, VDP_RPU_GL_BUFFER_MORPH, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
 	for (let index = 0; index < layout.attributeCount; index += 1) {
-		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, byteOffsetBase, 0);
+		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0, 0);
 	}
 }
 
@@ -588,23 +553,14 @@ function setVdpRpuC0Constants(frame: VdpRpuFrameOutput, drawIndex: number, norma
 	const bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
 	for (let bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
 		if (commands.constantBindingSlot[bindingIndex] === 0) {
-			const constantBank = commands.constantBank[bindingIndex];
-			if (constantBank === VDP_RPU_REF_NONE) {
-				gl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuIdentityC0);
-				if (normalMode !== 0) {
-					gl.uniformMatrix3fv(vdpRpuNmLocation, false, vdpRpuIdentityNm);
-				}
-				return;
-			}
-			const firstWord = frame.resources.constantBanks.firstWord[constantBank] + commands.constantFirstWord[bindingIndex];
-			const constantWords = frame.resources.constantWords;
+			const constantByteAddr = commands.constantVramAddr[bindingIndex];
 			for (let index = 0; index < 16; index += 1) {
-				vdpRpuC0Words[index] = constantWords[firstWord + index];
+				vdpRpuC0Words[index] = readRpuDescU32(frame.vdpVram, constantByteAddr + index * 4);
 			}
 			gl.uniformMatrix4fv(vdpRpuC0Location, false, vdpRpuC0Floats);
 			if (normalMode !== 0) {
 				for (let index = 0; index < 9; index += 1) {
-					vdpRpuNmWords[index] = constantWords[firstWord + 16 + index];
+					vdpRpuNmWords[index] = readRpuDescU32(frame.vdpVram, constantByteAddr + (16 + index) * 4);
 				}
 				gl.uniformMatrix3fv(vdpRpuNmLocation, false, vdpRpuNmFloats);
 			}
@@ -630,15 +586,9 @@ function setVdpRpuC1Constants(frame: VdpRpuFrameOutput, drawIndex: number, shade
 	const bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
 	for (let bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
 		if (commands.constantBindingSlot[bindingIndex] === constantSlot) {
-			const constantBank = commands.constantBank[bindingIndex];
-			if (constantBank === VDP_RPU_REF_NONE) {
-				gl.uniform4fv(vdpRpuC1Location, vdpRpuDefaultC1Floats);
-				return;
-			}
-			const firstWord = frame.resources.constantBanks.firstWord[constantBank] + commands.constantFirstWord[bindingIndex];
-			const constantWords = frame.resources.constantWords;
+			const constantByteAddr = commands.constantVramAddr[bindingIndex];
 			for (let index = 0; index < 68; index += 1) {
-				vdpRpuC1Words[index] = constantWords[firstWord + index];
+				vdpRpuC1Words[index] = readRpuDescU32(frame.vdpVram, constantByteAddr + index * 4);
 			}
 			gl.uniform4fv(vdpRpuC1Location, vdpRpuC1Floats);
 			return;
@@ -660,15 +610,9 @@ function setVdpRpuJointConstants(frame: VdpRpuFrameOutput, drawIndex: number, sh
 	const bindingEnd = commands.drawFirstConstantBinding[drawIndex] + commands.drawConstantBindingCount[drawIndex];
 	for (let bindingIndex = commands.drawFirstConstantBinding[drawIndex]; bindingIndex < bindingEnd; bindingIndex += 1) {
 		if (commands.constantBindingSlot[bindingIndex] === constantSlot) {
-			const constantBank = commands.constantBank[bindingIndex];
-			if (constantBank === VDP_RPU_REF_NONE) {
-				gl.uniformMatrix4fv(vdpRpuJointLocation, false, vdpRpuDefaultJointFloats);
-				return;
-			}
-			const firstWord = frame.resources.constantBanks.firstWord[constantBank] + commands.constantFirstWord[bindingIndex];
-			const constantWords = frame.resources.constantWords;
+			const constantByteAddr = commands.constantVramAddr[bindingIndex];
 			for (let index = 0; index < 384; index += 1) {
-				vdpRpuJointWords[index] = constantWords[firstWord + index];
+				vdpRpuJointWords[index] = readRpuDescU32(frame.vdpVram, constantByteAddr + index * 4);
 			}
 			gl.uniformMatrix4fv(vdpRpuJointLocation, false, vdpRpuJointFloats);
 			return;
@@ -704,37 +648,26 @@ function bindVdpRpuTextureBindings(runtime: VdpRpuRuntime, frame: VdpRpuFrameOut
 		const slot = commands.textureSlot[bindingIndex];
 		if (slot === 0 && !foundT0) {
 			foundT0 = true;
-			const surfaceRef = commands.textureSurfaceRef[bindingIndex];
-			if (surfaceRef === VDP_RPU_REF_NONE) {
+			const surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];
+			if (surfaceDescAddr === 0) {
 				bindVdpRpuNeutralTexture(backend);
 				gl.uniform1i(vdpRpuT0Location, 0);
 			} else {
-				const surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
+				const surface = ensureVdpRpuSurfaceStorage(backend, frame, surfaceDescAddr);
+				uploadVdpRpuTextureSurface(backend, frame, surface);
 				backend.setActiveTexture(0);
-				if (surfaceId < VDP_RD_SURFACE_COUNT) {
-					backend.bindTexture2D(runtime.context.vdpSlotTextures.readSurfaceTextureHandle(surfaceId) as WebGLTexture);
-					gl.uniform1i(vdpRpuTextureFlipYLocation, 0);
-				} else {
-					ensureVdpRpuSurfaceStorage(backend, frame, surfaceRef);
-					backend.invalidateTextureBindingCache();
-					gl.bindTexture(gl.TEXTURE_2D, vdpRpuSurfaceTexture[surfaceId]);
-					gl.uniform1i(vdpRpuTextureFlipYLocation, 1);
-				}
+				gl.bindTexture(gl.TEXTURE_2D, surface.texture);
+				gl.uniform1i(vdpRpuTextureFlipYLocation, surface.renderedFrame === vdpRpuFrameSerial ? 1 : 0);
 				gl.uniform1i(vdpRpuT0Location, 0);
 			}
 		} else if (slot === 1 && t1Flag && !foundT1) {
 			foundT1 = true;
-			const surfaceRef = commands.textureSurfaceRef[bindingIndex];
-			if (surfaceRef !== VDP_RPU_REF_NONE) {
-				const surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
+			const surfaceDescAddr = commands.textureSurfaceDescAddr[bindingIndex];
+			if (surfaceDescAddr !== 0) {
+				const surface = ensureVdpRpuSurfaceStorage(backend, frame, surfaceDescAddr);
+				uploadVdpRpuTextureSurface(backend, frame, surface);
 				backend.setActiveTexture(1);
-				if (surfaceId < VDP_RD_SURFACE_COUNT) {
-					backend.bindTexture2D(runtime.context.vdpSlotTextures.readSurfaceTextureHandle(surfaceId) as WebGLTexture);
-				} else {
-					ensureVdpRpuSurfaceStorage(backend, frame, surfaceRef);
-					backend.invalidateTextureBindingCache();
-					gl.bindTexture(gl.TEXTURE_2D, vdpRpuSurfaceTexture[surfaceId]);
-				}
+				gl.bindTexture(gl.TEXTURE_2D, surface.texture);
 				gl.uniform1i(vdpRpuT1Location, 1);
 				gl.uniform1i(vdpRpuT1ModeLocation, 1);
 			}
@@ -777,8 +710,8 @@ function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, dra
 	bindVdpRpuDrawStreams(frame, drawIndex, instanceMode);
 	const primitive = vdpRpuPrimitive(commands.drawPrimitive[drawIndex]);
 	const indexType = commands.drawIndexType[drawIndex];
-	const indexRef = commands.drawIndexBufferRef[drawIndex];
-	if (indexType === VDP_RPU_INDEX_NONE || indexRef === VDP_RPU_REF_NONE) {
+	const indexVramAddr = commands.drawIndexVramAddr[drawIndex];
+	if (indexType === VDP_RPU_INDEX_NONE || indexVramAddr === 0) {
 		if (instanceMode !== VDP_RPU_INSTANCE_MODE_NONE) {
 			gl.drawArraysInstanced(primitive, 0, vertexCount, instanceCount);
 			return;
@@ -786,21 +719,13 @@ function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, dra
 		gl.drawArrays(primitive, 0, vertexCount);
 		return;
 	}
-	ensureVdpRpuBufferStorage(
-		frame,
-		indexRef,
-		gl.ELEMENT_ARRAY_BUFFER,
-		vdpRpuIndexBufferObject,
-		vdpRpuIndexBufferRevision,
-		vdpRpuIndexBufferByteOffset,
-		vdpRpuIndexBufferByteLength,
-	);
-	const indexByteOffset = commands.drawIndexByteOffset[drawIndex] - frame.resources.bufferRefs.sourceByteOffset[indexRef];
+	const indexByteLength = indexCount * (indexType === VDP_RPU_INDEX_U16 ? 2 : 4);
+	uploadVdpRpuBuffer(frame, VDP_RPU_GL_BUFFER_INDEX, gl.ELEMENT_ARRAY_BUFFER, indexVramAddr, indexByteLength);
 	if (instanceMode !== VDP_RPU_INSTANCE_MODE_NONE) {
-		gl.drawElementsInstanced(primitive, indexCount, vdpRpuIndexType(indexType), indexByteOffset, instanceCount);
+		gl.drawElementsInstanced(primitive, indexCount, vdpRpuIndexType(indexType), 0, instanceCount);
 		return;
 	}
-	gl.drawElements(primitive, indexCount, vdpRpuIndexType(indexType), indexByteOffset);
+	gl.drawElements(primitive, indexCount, vdpRpuIndexType(indexType), 0);
 }
 
 export function initVdpRpuPipeline(backend: WebGLBackend): void {
@@ -876,6 +801,7 @@ export function renderVdpRpuFrame(runtime: VdpRpuRuntime, framebuffer: WebGLFram
 	const frame = state.frame;
 	backend.bindVertexArray(vdpRpuVertexArray);
 	const commands = frame.commands;
+	vdpRpuFrameSerial += 1;
 	for (let passIndex = 0; passIndex < commands.passCount; passIndex += 1) {
 		bindVdpRpuPassFramebuffer(backend, frame, passIndex, framebuffer, state.width, state.height);
 		const viewportXY = commands.passViewportXY[passIndex];
@@ -905,16 +831,16 @@ export function renderVdpRpuFrame(runtime: VdpRpuRuntime, framebuffer: WebGLFram
 		if (clearMask !== 0) {
 			gl.clear(clearMask);
 		}
-		const firstBatch = commands.passFirstBatch[passIndex];
-		const batchEnd = firstBatch + commands.passBatchCount[passIndex];
-		for (let batchIndex = firstBatch; batchIndex < batchEnd; batchIndex += 1) {
+		const firstDraw = commands.passFirstDraw[passIndex];
+		const drawEnd = firstDraw + commands.passDrawCount[passIndex];
+		for (let drawIndex = firstDraw; drawIndex < drawEnd; drawIndex += 1) {
 			drawVdpRpuCommand(
 				runtime,
 				frame,
-				commands.batchFirstDraw[batchIndex],
-				commands.batchVertexCount[batchIndex],
-				commands.batchInstanceCount[batchIndex],
-				commands.batchIndexCount[batchIndex],
+				drawIndex,
+				commands.drawVertexCount[drawIndex],
+				commands.drawInstanceCount[drawIndex],
+				commands.drawIndexCount[drawIndex],
 			);
 		}
 	}
@@ -943,7 +869,6 @@ export function registerVdpRpuPass(registry: RenderPassLibrary): void {
 		shouldExecute: () => view.vdpRpuFrame.commands.passCount !== 0,
 		exec: (backend, fbo) => {
 			vdpRpuRuntimeScratch.backend = backend as WebGLBackend;
-			vdpRpuRuntimeScratch.context = view;
 			vdpRpuPipelineStateScratch.width = view.offscreenCanvasSize.x;
 			vdpRpuPipelineStateScratch.height = view.offscreenCanvasSize.y;
 			vdpRpuPipelineStateScratch.frame = view.vdpRpuFrame;

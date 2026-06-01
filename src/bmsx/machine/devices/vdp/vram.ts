@@ -107,7 +107,7 @@ export function defaultVdpVramSurfaces(frameBufferSize: VdpFrameBufferSize): Vdp
 
 export class VdpVramUnit {
 	private readonly _slots: VdpSurfaceUploadSlot[] = [];
-	private readonly staging = new Uint8Array(VRAM_STAGING_SIZE);
+	private staging: Uint8Array = new Uint8Array(VRAM_STAGING_SIZE);
 	private readonly garbageScratch = new Uint8Array(VRAM_GARBAGE_CHUNK_BYTES);
 	private readonly seedPixel = new Uint8Array(4);
 	private readonly surfaceUploadOutput: MutableVdpSurfaceUpload = {
@@ -126,6 +126,10 @@ export class VdpVramUnit {
 	public constructor(entropySeeds: VdpEntropySeeds = DEFAULT_VDP_ENTROPY_SEEDS) {
 		this.machineSeed = entropySeeds.machineSeed >>> 0;
 		this.bootSeed = entropySeeds.bootSeed >>> 0;
+	}
+
+	public setExternalStaging(buffer: Uint8Array): void {
+		this.staging = buffer;
 	}
 
 	public get slots(): VdpSurfaceUploadSlot[] {

@@ -1,4 +1,3 @@
-import { VDP_RD_SURFACE_COUNT } from '../../../machine/devices/vdp/contracts';
 import {
 	VDP_RPU_ATTR_COLOR,
 	VDP_RPU_ATTR_F32,
@@ -35,29 +34,48 @@ import {
 	VDP_RPU_PRIM_LINES,
 	VDP_RPU_PRIM_POINTS,
 	VDP_RPU_PRIM_TRIANGLE_STRIP,
-	VDP_RPU_REF_NONE,
 	VDP_RPU_RESOURCE_NONE,
 	VDP_RPU_SHADER_FLAG_MORPH,
 	VDP_RPU_SHADER_FLAG_T1,
-	VDP_RPU_SURFACE_CAPACITY,
-	VDP_RPU_SURFACE_FORMAT_DEPTH16,
 	resolveVdpRpuShaderVariantSpec,
 	resolveVdpRpuStreamLayoutSpec,
 	type VdpRpuFrameOutput,
 	type VdpRpuShaderVariantSpec,
 } from '../../../machine/devices/vdp/rpu';
-import { SRGB_BYTE_TO_LINEAR_FLOAT } from '../color_space';
-import type { GameView } from '../../gameview';
-import type { VdpSlotTexturePixels } from '../../vdp/slot_textures';
+import {
+	RPU_SURFACE_DESC_BASE_ADDR_OFFSET,
+	RPU_SURFACE_DESC_HEIGHT_OFFSET,
+	RPU_SURFACE_DESC_PITCH_BYTES_OFFSET,
+	RPU_SURFACE_DESC_WIDTH_OFFSET,
+	readRpuDescU16,
+	readRpuDescU32,
+} from '../../../machine/devices/vdp/rpu_desc';
 
 const SOFTWARE_RPU_DEFAULT_CLEAR_DEPTH = 1.0;
 const SOFTWARE_RPU_POINT_SIZE = 3;
-const softwareRpuSurfacePixels: (Uint8Array | null)[] = [];
-const softwareRpuSurfaceDepth: (Float64Array | null)[] = [];
-const softwareRpuSurfaceRevision = new Uint32Array(VDP_RPU_SURFACE_CAPACITY);
-const softwareRpuSurfaceWidth = new Uint32Array(VDP_RPU_SURFACE_CAPACITY);
-const softwareRpuSurfaceHeight = new Uint32Array(VDP_RPU_SURFACE_CAPACITY);
-const softwareRpuSurfaceFormat = new Uint8Array(VDP_RPU_SURFACE_CAPACITY);
+type SoftwareRpuColorTarget = {
+	pixels: Uint8Array;
+	baseOffset: number;
+	pitchBytes: number;
+	width: number;
+	height: number;
+};
+type SoftwareRpuTextureSource = {
+	enabled: boolean;
+	pixels: Uint8Array;
+	baseOffset: number;
+	pitchBytes: number;
+	width: number;
+	height: number;
+};
+type SoftwareRpuDepthSurface = {
+	width: number;
+	height: number;
+	depth: Float64Array;
+};
+const softwareRpuDepthSurfaces = new Map<number, SoftwareRpuDepthSurface>();
+const softwareRpuTexture0: SoftwareRpuTextureSource = { enabled: false, pixels: new Uint8Array(0), baseOffset: 0, pitchBytes: 0, width: 0, height: 0 };
+const softwareRpuTexture1: SoftwareRpuTextureSource = { enabled: false, pixels: new Uint8Array(0), baseOffset: 0, pitchBytes: 0, width: 0, height: 0 };
 const softwareRpuFloatWord = new Uint32Array(1);
 const softwareRpuFloatValue = new Float32Array(softwareRpuFloatWord.buffer);
 let softwareRpuDefaultDepth = new Float64Array(256 * 212);
@@ -79,21 +97,8 @@ const vertexNz = new Float64Array(4);
 const attr = new Float64Array(24);
 const attrJoint = new Uint8Array(4);
 
-for (let index = 0; index < VDP_RPU_SURFACE_CAPACITY; index += 1) {
-	softwareRpuSurfacePixels[index] = null;
-	softwareRpuSurfaceDepth[index] = null;
-}
-
-function readU16(bytes: Uint8Array, offset: number): number {
-	return bytes[offset]! | (bytes[offset + 1]! << 8);
-}
-
-function readU32(bytes: Uint8Array, offset: number): number {
-	return (bytes[offset]! | (bytes[offset + 1]! << 8) | (bytes[offset + 2]! << 16) | (bytes[offset + 3]! << 24)) >>> 0;
-}
-
 function readF32(bytes: Uint8Array, offset: number): number {
-	softwareRpuFloatWord[0] = readU32(bytes, offset);
+	softwareRpuFloatWord[0] = readRpuDescU32(bytes, offset);
 	return softwareRpuFloatValue[0];
 }
 
@@ -141,64 +146,52 @@ function prepareDefaultDepth(width: number, height: number): Float64Array {
 	return softwareRpuDefaultDepth;
 }
 
-function syncSurfaceStorage(frame: VdpRpuFrameOutput, surfaceRef: number): void {
-	const refs = frame.resources.surfaceRefs;
-	const surfaceId = refs.surfaceId[surfaceRef];
-	const revision = refs.revision[surfaceRef];
-	const width = refs.width[surfaceRef];
-	const height = refs.height[surfaceRef];
-	const format = refs.format[surfaceRef];
-	if (softwareRpuSurfaceRevision[surfaceId] === revision
-		&& softwareRpuSurfaceWidth[surfaceId] === width
-		&& softwareRpuSurfaceHeight[surfaceId] === height
-		&& softwareRpuSurfaceFormat[surfaceId] === format) {
-		return;
-	}
-	softwareRpuSurfaceRevision[surfaceId] = revision;
-	softwareRpuSurfaceWidth[surfaceId] = width;
-	softwareRpuSurfaceHeight[surfaceId] = height;
-	softwareRpuSurfaceFormat[surfaceId] = format;
-	if (format === VDP_RPU_SURFACE_FORMAT_DEPTH16) {
-		softwareRpuSurfaceDepth[surfaceId] = new Float64Array(width * height);
-		softwareRpuSurfacePixels[surfaceId] = null;
-		return;
-	}
-	softwareRpuSurfacePixels[surfaceId] = new Uint8Array(width * height * 4);
-	softwareRpuSurfaceDepth[surfaceId] = null;
-}
-
-function fillColorTarget(pixels: Uint8Array, color: number): void {
+function fillColorTarget(target: SoftwareRpuColorTarget, color: number): void {
 	const r = colorByteR(color);
 	const g = colorByteG(color);
 	const b = colorByteB(color);
 	const a = colorByteA(color);
-	for (let offset = 0; offset < pixels.length; offset += 4) {
-		pixels[offset] = r;
-		pixels[offset + 1] = g;
-		pixels[offset + 2] = b;
-		pixels[offset + 3] = a;
+	for (let y = 0; y < target.height; y += 1) {
+		let offset = target.baseOffset + y * target.pitchBytes;
+		const end = offset + target.width * 4;
+		for (; offset < end; offset += 4) {
+			target.pixels[offset] = r;
+			target.pixels[offset + 1] = g;
+			target.pixels[offset + 2] = b;
+			target.pixels[offset + 3] = a;
+		}
 	}
 }
 
-function passColorTarget(frame: VdpRpuFrameOutput, passIndex: number, defaultPixels: Uint8Array, defaultWidth: number, defaultHeight: number): { pixels: Uint8Array; width: number; height: number } {
-	const colorRef = frame.commands.passColorSurfaceRef[passIndex];
-	if (colorRef === VDP_RPU_REF_NONE) {
-		return { pixels: defaultPixels, width: defaultWidth, height: defaultHeight };
+function passColorTarget(frame: VdpRpuFrameOutput, passIndex: number, defaultPixels: Uint8Array, defaultWidth: number, defaultHeight: number): SoftwareRpuColorTarget {
+	const colorSurfaceDescAddr = frame.commands.passColorSurfaceDescAddr[passIndex];
+	if (colorSurfaceDescAddr === 0) {
+		return { pixels: defaultPixels, baseOffset: 0, pitchBytes: defaultWidth * 4, width: defaultWidth, height: defaultHeight };
 	}
-	syncSurfaceStorage(frame, colorRef);
-	const surfaceId = frame.resources.surfaceRefs.surfaceId[colorRef];
-	const pixels = softwareRpuSurfacePixels[surfaceId] as Uint8Array;
-	return { pixels, width: frame.resources.surfaceRefs.width[colorRef], height: frame.resources.surfaceRefs.height[colorRef] };
+	const vram = frame.vdpVram;
+	return {
+		pixels: vram,
+		baseOffset: readRpuDescU32(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_BASE_ADDR_OFFSET),
+		pitchBytes: readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_PITCH_BYTES_OFFSET),
+		width: readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET),
+		height: readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET),
+	};
 }
 
 function passDepthTarget(frame: VdpRpuFrameOutput, passIndex: number, defaultDepth: Float64Array, defaultWidth: number, defaultHeight: number): { depth: Float64Array; width: number; height: number } {
-	const depthRef = frame.commands.passDepthSurfaceRef[passIndex];
-	if (depthRef === VDP_RPU_REF_NONE) {
+	const depthSurfaceDescAddr = frame.commands.passDepthSurfaceDescAddr[passIndex];
+	if (depthSurfaceDescAddr === 0) {
 		return { depth: defaultDepth, width: defaultWidth, height: defaultHeight };
 	}
-	syncSurfaceStorage(frame, depthRef);
-	const surfaceId = frame.resources.surfaceRefs.surfaceId[depthRef];
-	return { depth: softwareRpuSurfaceDepth[surfaceId] as Float64Array, width: frame.resources.surfaceRefs.width[depthRef], height: frame.resources.surfaceRefs.height[depthRef] };
+	const vram = frame.vdpVram;
+	const width = readRpuDescU16(vram, depthSurfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET);
+	const height = readRpuDescU16(vram, depthSurfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET);
+	let surface = softwareRpuDepthSurfaces.get(depthSurfaceDescAddr);
+	if (surface === undefined || surface.width !== width || surface.height !== height) {
+		surface = { width, height, depth: new Float64Array(width * height) };
+		softwareRpuDepthSurfaces.set(depthSurfaceDescAddr, surface);
+	}
+	return { depth: surface.depth, width, height };
 }
 
 function setDefaultAttribute(attributeId: number): void {
@@ -236,14 +229,9 @@ function setDefaultAttribute(attributeId: number): void {
 function readAttribute(frame: VdpRpuFrameOutput, bindingIndex: number, elementIndex: number, attributeId: number): void {
 	const commands = frame.commands;
 	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[bindingIndex]);
-	const refIndex = commands.streamBufferRef[bindingIndex];
 	setDefaultAttribute(attributeId);
-	if (refIndex === VDP_RPU_REF_NONE) {
-		return;
-	}
-	const refs = frame.resources.bufferRefs;
-	const bytes = refs.bytes[refIndex]!;
-	const elementOffset = refs.byteOffset[refIndex] + commands.streamByteOffset[bindingIndex] - refs.sourceByteOffset[refIndex] + elementIndex * layout.byteStride;
+	const bytes = frame.vdpVram;
+	const elementOffset = commands.streamVramAddr[bindingIndex] + elementIndex * layout.byteStride;
 	for (let index = 0; index < layout.attributeCount; index += 1) {
 		const spec = layout.attributes[index];
 		if (spec.attribute !== attributeId) {
@@ -286,12 +274,7 @@ function findBindingSlot(slots: Uint8Array, firstBinding: number, bindingCount: 
 }
 
 function constantWord(frame: VdpRpuFrameOutput, bindingIndex: number, wordIndex: number): number {
-	const commands = frame.commands;
-	const bank = commands.constantBank[bindingIndex];
-	if (bank === VDP_RPU_REF_NONE) {
-		return 0;
-	}
-	return frame.resources.constantWords[frame.resources.constantBanks.firstWord[bank] + commands.constantFirstWord[bindingIndex] + wordIndex];
+	return readRpuDescU32(frame.vdpVram, frame.commands.constantVramAddr[bindingIndex] + wordIndex * 4);
 }
 
 function constantF32(frame: VdpRpuFrameOutput, bindingIndex: number, wordIndex: number): number {
@@ -417,7 +400,7 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 	}
 	if (shaderVariant.jointConstantSlot !== VDP_RPU_RESOURCE_NONE) {
 		const jointBinding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, shaderVariant.jointConstantSlot);
-		if (jointBinding < 0 || commands.constantBank[jointBinding] === VDP_RPU_REF_NONE) {
+		if (jointBinding < 0) {
 			applyDefaultSkin(px, py, pz, nx, ny, nz);
 		} else {
 			applySkin(frame, jointBinding, px, py, pz, nx, ny, nz);
@@ -482,7 +465,7 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 	const modelX = px; const modelY = py; const modelZ = pz;
 	if (shaderVariant.usesC0 !== 0) {
 		const c0Binding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, 0);
-		if (c0Binding >= 0 && commands.constantBank[c0Binding] !== VDP_RPU_REF_NONE) {
+		if (c0Binding >= 0) {
 			transformMatrix(frame, c0Binding, px, py, pz);
 			px = attr[0];
 			py = attr[1];
@@ -492,12 +475,11 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 	}
 	if (shaderVariant.lightingConstantSlot !== VDP_RPU_RESOURCE_NONE) {
 		const c1Binding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, shaderVariant.lightingConstantSlot);
-		if (c1Binding >= 0 && commands.constantBank[c1Binding] !== VDP_RPU_REF_NONE) {
+		if (c1Binding >= 0) {
 			// Apply normal matrix from C0 if available
 			let lnx = nx; let lny = ny; let lnz = nz;
 			const c0BindingNm = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, 0);
-			if (c0BindingNm >= 0 && commands.constantBank[c0BindingNm] !== VDP_RPU_REF_NONE
-				&& commands.constantWordCount[c0BindingNm] >= 25) {
+			if (c0BindingNm >= 0) {
 				lnx = constantF32(frame, c0BindingNm, 16) * nx + constantF32(frame, c0BindingNm, 19) * ny + constantF32(frame, c0BindingNm, 22) * nz;
 				lny = constantF32(frame, c0BindingNm, 17) * nx + constantF32(frame, c0BindingNm, 20) * ny + constantF32(frame, c0BindingNm, 23) * nz;
 				lnz = constantF32(frame, c0BindingNm, 18) * nx + constantF32(frame, c0BindingNm, 21) * ny + constantF32(frame, c0BindingNm, 24) * nz;
@@ -581,15 +563,9 @@ function writeVertex(frame: VdpRpuFrameOutput, drawIndex: number, shaderVariant:
 
 function readIndex(frame: VdpRpuFrameOutput, drawIndex: number, index: number): number {
 	const commands = frame.commands;
-	const refIndex = commands.drawIndexBufferRef[drawIndex];
-	if (refIndex === VDP_RPU_REF_NONE) {
-		return index;
-	}
-	const refs = frame.resources.bufferRefs;
-	const bytes = refs.bytes[refIndex]!;
 	const indexType = commands.drawIndexType[drawIndex];
-	const offset = refs.byteOffset[refIndex] + commands.drawIndexByteOffset[drawIndex] - refs.sourceByteOffset[refIndex] + index * (indexType === VDP_RPU_INDEX_U16 ? 2 : 4);
-	return indexType === VDP_RPU_INDEX_U16 ? readU16(bytes, offset) : readU32(bytes, offset);
+	const offset = commands.drawIndexVramAddr[drawIndex] + index * (indexType === VDP_RPU_INDEX_U16 ? 2 : 4);
+	return indexType === VDP_RPU_INDEX_U16 ? readRpuDescU16(frame.vdpVram, offset) : readRpuDescU32(frame.vdpVram, offset);
 }
 
 function textureBinding(frame: VdpRpuFrameOutput, drawIndex: number): number {
@@ -614,66 +590,55 @@ function textureBinding1(frame: VdpRpuFrameOutput, drawIndex: number): number {
 	return -1;
 }
 
-function sampleTexture(view: GameView, frame: VdpRpuFrameOutput, bindingIndex: number, u: number, v: number): void {
+function resolveTextureSource(frame: VdpRpuFrameOutput, bindingIndex: number, source: SoftwareRpuTextureSource): void {
 	if (bindingIndex < 0) {
+		source.enabled = false;
+		return;
+	}
+	const surfaceDescAddr = frame.commands.textureSurfaceDescAddr[bindingIndex];
+	if (surfaceDescAddr === 0) {
+		source.enabled = false;
+		return;
+	}
+	const vram = frame.vdpVram;
+	source.enabled = true;
+	source.pixels = vram;
+	source.baseOffset = readRpuDescU32(vram, surfaceDescAddr + RPU_SURFACE_DESC_BASE_ADDR_OFFSET);
+	source.pitchBytes = readRpuDescU16(vram, surfaceDescAddr + RPU_SURFACE_DESC_PITCH_BYTES_OFFSET);
+	source.width = readRpuDescU16(vram, surfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET);
+	source.height = readRpuDescU16(vram, surfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET);
+}
+
+function sampleTexture(source: SoftwareRpuTextureSource, u: number, v: number): void {
+	if (!source.enabled) {
 		attr[0] = 0;
 		attr[1] = 0;
 		attr[2] = 0;
 		attr[3] = 0;
 		return;
 	}
-	const commands = frame.commands;
-	const surfaceRef = commands.textureSurfaceRef[bindingIndex];
-	if (surfaceRef === VDP_RPU_REF_NONE) {
-		attr[0] = 0;
-		attr[1] = 0;
-		attr[2] = 0;
-		attr[3] = 0;
-		return;
-	}
-	const surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
-	let pixels: Uint8Array;
-	let width: number;
-	let height: number;
-	if (surfaceId < VDP_RD_SURFACE_COUNT) {
-		const slot: VdpSlotTexturePixels = view.vdpSlotTextures.readSurfaceTexturePixels(surfaceId);
-		pixels = slot.pixels;
-		width = slot.width;
-		height = slot.height;
-	} else {
-		syncSurfaceStorage(frame, surfaceRef);
-		pixels = softwareRpuSurfacePixels[surfaceId] as Uint8Array;
-		width = softwareRpuSurfaceWidth[surfaceId];
-		height = softwareRpuSurfaceHeight[surfaceId];
-	}
-	let sx = (u * width) | 0;
-	let sy = (v * height) | 0;
+	let sx = (u * source.width) | 0;
+	let sy = (v * source.height) | 0;
 	if (sx < 0) sx = 0;
 	if (sy < 0) sy = 0;
-	if (sx >= width) sx = width - 1;
-	if (sy >= height) sy = height - 1;
-	const offset = (sy * width + sx) * 4;
-	if (surfaceId < VDP_RD_SURFACE_COUNT) {
-		attr[0] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset]];
-		attr[1] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset + 1]];
-		attr[2] = SRGB_BYTE_TO_LINEAR_FLOAT[pixels[offset + 2]];
-		attr[3] = pixels[offset + 3] * (1 / 255);
-		return;
-	}
+	if (sx >= source.width) sx = source.width - 1;
+	if (sy >= source.height) sy = source.height - 1;
+	const offset = source.baseOffset + sy * source.pitchBytes + sx * 4;
+	const pixels = source.pixels;
 	attr[0] = pixels[offset] * (1 / 255);
 	attr[1] = pixels[offset + 1] * (1 / 255);
 	attr[2] = pixels[offset + 2] * (1 / 255);
 	attr[3] = pixels[offset + 3] * (1 / 255);
 }
 
-function writePixel(pixels: Uint8Array, depth: Float64Array, width: number, height: number, x: number, y: number, z: number, pipelineWord: number, r: number, g: number, b: number, a: number): void {
-	if (x < 0 || y < 0 || x >= width || y >= height) return;
+function writePixel(target: SoftwareRpuColorTarget, depth: Float64Array, x: number, y: number, z: number, pipelineWord: number, r: number, g: number, b: number, a: number): void {
+	if (x < 0 || y < 0 || x >= target.width || y >= target.height) return;
 	const srcR = floatByte(r);
 	const srcG = floatByte(g);
 	const srcB = floatByte(b);
 	const srcA = floatByte(a);
 	if (srcA === 0) return;
-	const pixelIndex = y * width + x;
+	const pixelIndex = y * target.width + x;
 	const depthMode = (pipelineWord & VDP_RPU_PIPE_DEPTH_MASK) >>> 4;
 	if (depthMode !== VDP_RPU_DEPTH_NONE) {
 		const currentDepth = depth[pixelIndex];
@@ -688,7 +653,8 @@ function writePixel(pixels: Uint8Array, depth: Float64Array, width: number, heig
 	}
 	const colorMask = (pipelineWord & VDP_RPU_PIPE_COLOR_WRITE_MASK) >>> 16;
 	if (colorMask === 0) return;
-	const offset = pixelIndex * 4;
+	const pixels = target.pixels;
+	const offset = target.baseOffset + y * target.pitchBytes + x * 4;
 	const blend = pipelineWord & VDP_RPU_PIPE_BLEND_MASK;
 	if (blend === VDP_RPU_BLEND_ALPHA) {
 		const invA = 255 - srcA;
@@ -711,7 +677,7 @@ function writePixel(pixels: Uint8Array, depth: Float64Array, width: number, heig
 	if ((colorMask & 8) !== 0) pixels[offset + 3] = srcA;
 }
 
-function drawTriangle(view: GameView, frame: VdpRpuFrameOutput, drawIndex: number, pixels: Uint8Array, depth: Float64Array, width: number, height: number, texture: number, t1Texture: number): void {
+function drawTriangle(frame: VdpRpuFrameOutput, drawIndex: number, target: SoftwareRpuColorTarget, depth: Float64Array, texture: SoftwareRpuTextureSource, t1Texture: SoftwareRpuTextureSource): void {
 	const x0 = vertexX[0]; const y0 = vertexY[0];
 	const x1 = vertexX[1]; const y1 = vertexY[1];
 	const x2 = vertexX[2]; const y2 = vertexY[2];
@@ -723,8 +689,8 @@ function drawTriangle(view: GameView, frame: VdpRpuFrameOutput, drawIndex: numbe
 	let maxY = rasterCeil(y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2));
 	if (minX < 0) minX = 0;
 	if (minY < 0) minY = 0;
-	if (maxX > width) maxX = width;
-	if (maxY > height) maxY = height;
+	if (maxX > target.width) maxX = target.width;
+	if (maxY > target.height) maxY = target.height;
 	const invArea = 1 / area;
 	const pipelineWord = frame.commands.drawPipelineWord[drawIndex];
 	for (let y = minY; y < maxY; y += 1) {
@@ -739,31 +705,31 @@ function drawTriangle(view: GameView, frame: VdpRpuFrameOutput, drawIndex: numbe
 			let g = vertexG[0] * w0 + vertexG[1] * w1 + vertexG[2] * w2;
 			let b = vertexB[0] * w0 + vertexB[1] * w1 + vertexB[2] * w2;
 			let a = vertexA[0] * w0 + vertexA[1] * w1 + vertexA[2] * w2;
-			if (texture >= 0) {
+			if (texture.enabled) {
 				const u = vertexU[0] * w0 + vertexU[1] * w1 + vertexU[2] * w2;
 				const v = vertexV[0] * w0 + vertexV[1] * w1 + vertexV[2] * w2;
-				sampleTexture(view, frame, texture, u, v);
+				sampleTexture(texture, u, v);
 				r *= attr[0];
 				g *= attr[1];
 				b *= attr[2];
 				a *= attr[3];
 			}
-			if (t1Texture >= 0) {
+			if (t1Texture.enabled) {
 				const u = vertexU[0] * w0 + vertexU[1] * w1 + vertexU[2] * w2;
 				const v = vertexV[0] * w0 + vertexV[1] * w1 + vertexV[2] * w2;
-				sampleTexture(view, frame, t1Texture, u, v);
+				sampleTexture(t1Texture, u, v);
 				r *= attr[0];
 				g *= attr[1];
 				b *= attr[2];
 				a *= attr[3];
 			}
 			const z = vertexZ[0] * w0 + vertexZ[1] * w1 + vertexZ[2] * w2;
-			writePixel(pixels, depth, width, height, x, y, z, pipelineWord, r, g, b, a);
+			writePixel(target, depth, x, y, z, pipelineWord, r, g, b, a);
 		}
 	}
 }
 
-function drawLine(frame: VdpRpuFrameOutput, drawIndex: number, pixels: Uint8Array, depth: Float64Array, width: number, height: number): void {
+function drawLine(frame: VdpRpuFrameOutput, drawIndex: number, target: SoftwareRpuColorTarget, depth: Float64Array): void {
 	let x0 = rasterRound(vertexX[0]);
 	let y0 = rasterRound(vertexY[0]);
 	const x1 = rasterRound(vertexX[1]);
@@ -775,7 +741,7 @@ function drawLine(frame: VdpRpuFrameOutput, drawIndex: number, pixels: Uint8Arra
 	let err = dx - dy;
 	const pipelineWord = frame.commands.drawPipelineWord[drawIndex];
 	while (true) {
-		writePixel(pixels, depth, width, height, x0, y0, vertexZ[0], pipelineWord, vertexR[0], vertexG[0], vertexB[0], vertexA[0]);
+		writePixel(target, depth, x0, y0, vertexZ[0], pipelineWord, vertexR[0], vertexG[0], vertexB[0], vertexA[0]);
 		if (x0 === x1 && y0 === y1) return;
 		const e2 = err << 1;
 		if (e2 > -dy) {
@@ -789,27 +755,27 @@ function drawLine(frame: VdpRpuFrameOutput, drawIndex: number, pixels: Uint8Arra
 	}
 }
 
-function drawPoint(frame: VdpRpuFrameOutput, drawIndex: number, pixels: Uint8Array, depth: Float64Array, width: number, height: number): void {
+function drawPoint(frame: VdpRpuFrameOutput, drawIndex: number, target: SoftwareRpuColorTarget, depth: Float64Array): void {
 	const cx = rasterRound(vertexX[0]);
 	const cy = rasterRound(vertexY[0]);
 	const half = SOFTWARE_RPU_POINT_SIZE >> 1;
 	const pipelineWord = frame.commands.drawPipelineWord[drawIndex];
 	for (let y = cy - half; y <= cy + half; y += 1) {
 		for (let x = cx - half; x <= cx + half; x += 1) {
-			writePixel(pixels, depth, width, height, x, y, vertexZ[0], pipelineWord, vertexR[0], vertexG[0], vertexB[0], vertexA[0]);
+			writePixel(target, depth, x, y, vertexZ[0], pipelineWord, vertexR[0], vertexG[0], vertexB[0], vertexA[0]);
 		}
 	}
 }
 
-function drawCommand(view: GameView, frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: number, instanceCount: number, indexCount: number, pixels: Uint8Array, depth: Float64Array, width: number, height: number): void {
+function drawCommand(frame: VdpRpuFrameOutput, drawIndex: number, vertexCount: number, instanceCount: number, indexCount: number, target: SoftwareRpuColorTarget, depth: Float64Array): void {
 	const commands = frame.commands;
 	const rawVariantWord = commands.drawShaderVariant[drawIndex];
 	const shaderVariant = resolveVdpRpuShaderVariantSpec(rawVariantWord);
-	const texture = shaderVariant.textureSlotCount === 0 ? -1 : textureBinding(frame, drawIndex);
-	const t1Texture = (rawVariantWord & VDP_RPU_SHADER_FLAG_T1) !== 0 ? textureBinding1(frame, drawIndex) : -1;
+	resolveTextureSource(frame, shaderVariant.textureSlotCount === 0 ? -1 : textureBinding(frame, drawIndex), softwareRpuTexture0);
+	resolveTextureSource(frame, (rawVariantWord & VDP_RPU_SHADER_FLAG_T1) !== 0 ? textureBinding1(frame, drawIndex) : -1, softwareRpuTexture1);
 	const primitive = commands.drawPrimitive[drawIndex];
 	const drawnInstanceCount = shaderVariant.instanceMode === VDP_RPU_INSTANCE_MODE_NONE ? 1 : instanceCount;
-	const drawIndexed = commands.drawIndexType[drawIndex] !== VDP_RPU_INDEX_NONE && commands.drawIndexBufferRef[drawIndex] !== VDP_RPU_REF_NONE;
+	const drawIndexed = commands.drawIndexType[drawIndex] !== VDP_RPU_INDEX_NONE && commands.drawIndexVramAddr[drawIndex] !== 0;
 	const elementCount = drawIndexed ? indexCount : vertexCount;
 	for (let instanceIndex = 0; instanceIndex < drawnInstanceCount; instanceIndex += 1) {
 		if (primitive === VDP_RPU_PRIM_LINES) {
@@ -820,9 +786,9 @@ function drawCommand(view: GameView, frame: VdpRpuFrameOutput, drawIndex: number
 					v0 = readIndex(frame, drawIndex, vertex);
 					v1 = readIndex(frame, drawIndex, vertex + 1);
 				}
-				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, width, height);
-				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1, width, height);
-				drawLine(frame, drawIndex, pixels, depth, width, height);
+				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, target.width, target.height);
+				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1, target.width, target.height);
+				drawLine(frame, drawIndex, target, depth);
 			}
 			continue;
 		}
@@ -832,8 +798,8 @@ function drawCommand(view: GameView, frame: VdpRpuFrameOutput, drawIndex: number
 				if (drawIndexed) {
 					v0 = readIndex(frame, drawIndex, vertex);
 				}
-				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, width, height);
-				drawPoint(frame, drawIndex, pixels, depth, width, height);
+				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, target.width, target.height);
+				drawPoint(frame, drawIndex, target, depth);
 			}
 			continue;
 		}
@@ -852,15 +818,15 @@ function drawCommand(view: GameView, frame: VdpRpuFrameOutput, drawIndex: number
 				v1 = readIndex(frame, drawIndex, i1);
 				v2 = readIndex(frame, drawIndex, i2);
 			}
-			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, width, height);
-			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1, width, height);
-			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v2, instanceIndex, 2, width, height);
-			drawTriangle(view, frame, drawIndex, pixels, depth, width, height, texture, t1Texture);
+			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0, target.width, target.height);
+			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1, target.width, target.height);
+			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v2, instanceIndex, 2, target.width, target.height);
+			drawTriangle(frame, drawIndex, target, depth, softwareRpuTexture0, softwareRpuTexture1);
 		}
 	}
 }
 
-export function renderVdpRpuSoftwareFrame(view: GameView, frame: VdpRpuFrameOutput, defaultPixels: Uint8Array, defaultWidth: number, defaultHeight: number): void {
+export function renderVdpRpuSoftwareFrame(frame: VdpRpuFrameOutput, defaultPixels: Uint8Array, defaultWidth: number, defaultHeight: number): void {
 	let defaultDepth = prepareDefaultDepth(defaultWidth, defaultHeight);
 	if (defaultDepth.length !== defaultWidth * defaultHeight) {
 		defaultDepth = new Float64Array(defaultWidth * defaultHeight);
@@ -871,27 +837,24 @@ export function renderVdpRpuSoftwareFrame(view: GameView, frame: VdpRpuFrameOutp
 		const depthTarget = passDepthTarget(frame, passIndex, defaultDepth, colorTarget.width, colorTarget.height);
 		const passOps = commands.passOps[passIndex];
 		if ((passOps & VDP_RPU_PASS_COLOR_CLEAR) !== 0) {
-			fillColorTarget(colorTarget.pixels, commands.passClearColor[passIndex]);
+			fillColorTarget(colorTarget, commands.passClearColor[passIndex]);
 		}
 		if ((passOps & VDP_RPU_PASS_DEPTH_CLEAR) !== 0) {
 			depthTarget.depth.fill(commands.passClearDepthWord[passIndex] * (1 / 0xffffffff));
 		} else if (passIndex === 0) {
 			depthTarget.depth.fill(SOFTWARE_RPU_DEFAULT_CLEAR_DEPTH);
 		}
-		const firstBatch = commands.passFirstBatch[passIndex];
-		const batchEnd = firstBatch + commands.passBatchCount[passIndex];
-		for (let batchIndex = firstBatch; batchIndex < batchEnd; batchIndex += 1) {
+		const firstDraw = commands.passFirstDraw[passIndex];
+		const drawEnd = firstDraw + commands.passDrawCount[passIndex];
+		for (let drawIndex = firstDraw; drawIndex < drawEnd; drawIndex += 1) {
 			drawCommand(
-				view,
 				frame,
-				commands.batchFirstDraw[batchIndex],
-				commands.batchVertexCount[batchIndex],
-				commands.batchInstanceCount[batchIndex],
-				commands.batchIndexCount[batchIndex],
-				colorTarget.pixels,
+				drawIndex,
+				commands.drawVertexCount[drawIndex],
+				commands.drawInstanceCount[drawIndex],
+				commands.drawIndexCount[drawIndex],
+				colorTarget,
 				depthTarget.depth,
-				colorTarget.width,
-				colorTarget.height,
 			);
 		}
 	}

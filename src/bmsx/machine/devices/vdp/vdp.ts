@@ -191,11 +191,11 @@ export class VDP implements VramWriteSink {
 		this.rpu = new VdpRpuUnit(
 			this.memory,
 			this.fault,
-			this.xf.matrixWords,
-			this.lpu.registerWords,
-			this.mfu.weightWords,
-			this.jtu.matrixWords,
 		);
+		this.vram.setExternalStaging(this.rpu.vdpVram);
+		this.rpu.rebindFrameResources(this.buildFrame.rpu);
+		this.rpu.rebindFrameResources(this.activeFrame.rpu);
+		this.rpu.rebindFrameResources(this.pendingFrame.rpu);
 		this.slotSurfacePort = new VdpSlotSurfacePort(this.fault, this.vram);
 		this.unitRegisterPort = new VdpUnitRegisterPort(this.fault, this.xf, this.lpu, this.mfu, this.jtu);
 		this.memory.setVramWriter(this);
@@ -851,7 +851,8 @@ export class VDP implements VramWriteSink {
 			this.fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_END_FRAME);
 			return false;
 		}
-		if (!this.rpu.endFrame(this.buildFrame.rpu)) {
+		const sealedByFifo = this.rpu.lastPacketSealedFrame;
+		if (!sealedByFifo && !this.rpu.endFrame(this.buildFrame.rpu)) {
 			return false;
 		}
 		const activeFrameEmpty = this.activeFrame.state === VDP_SUBMITTED_FRAME_EMPTY;

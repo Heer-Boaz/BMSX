@@ -33,10 +33,14 @@ VDP::VDP(
 	, m_fault(memory, VDP_DEVICE_STATUS_REGISTERS)
 	, m_vram(entropySeeds)
 	, m_slotSurfacePort(m_fault, m_vram)
-	, m_rpu(m_memory, m_fault, m_xf.matrixWords, m_lpu.registerWords, m_mfu.weightWords, m_jtu.matrixWords)
+	, m_rpu(m_memory, m_fault)
 	, m_configuredFrameBufferSize(frameBufferSize)
 	, m_scheduler(scheduler)
 	, m_unitRegisterPort(m_fault, m_xf, m_lpu, m_mfu, m_jtu) {
+	m_vram.setExternalStaging(m_rpu.vdpVram.data(), m_rpu.vdpVram.size());
+	m_rpu.rebindFrameResources(*m_buildFrame.rpu);
+	m_rpu.rebindFrameResources(*m_activeFrame.rpu);
+	m_rpu.rebindFrameResources(*m_pendingFrame.rpu);
 	m_memory.setVramWriter(this);
 	m_memory.mapIoRead(IO_VDP_RD_STATUS, this, &VDP::readVdpStatusThunk);
 	m_memory.mapIoRead(IO_VDP_RD_DATA, this, &VDP::readVdpDataThunk);
@@ -759,7 +763,8 @@ bool VDP::sealSubmittedFrame() {
 		m_fault.raise(VDP_FAULT_SUBMIT_STATE, VDP_CMD_END_FRAME);
 		return false;
 	}
-	if (!m_rpu.endFrame(*m_buildFrame.rpu)) {
+	const bool sealedByFifo = m_rpu.lastPacketSealedFrame;
+	if (!sealedByFifo && !m_rpu.endFrame(*m_buildFrame.rpu)) {
 		return false;
 	}
 	const bool activeFrameEmpty = m_activeFrame.state == VdpSubmittedFrameState::Empty;

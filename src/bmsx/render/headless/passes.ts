@@ -108,7 +108,7 @@ function registerHeadlessRpuPass(registry: RenderPassLibrary): void {
 			const width = view.offscreenCanvasSize.x;
 			const height = view.offscreenCanvasSize.y;
 			fillHeadlessFrame(width, height);
-			renderVdpRpuSoftwareFrame(view, frame, headlessCompositePixels, width, height);
+			renderVdpRpuSoftwareFrame(frame, headlessCompositePixels, width, height);
 			commitHeadlessFrame(width, height, view.canvasSize.x, view.canvasSize.y);
 			const headline = `pixels=${headlessCompositePixels.length >> 2} active=${countHeadlessActivePixels()} framebuffer=${width}x${height} present=${view.canvasSize.x}x${view.canvasSize.y} passes=${frame.commands.passCount}`;
 			previousRpuHeadline = emitHeadlessHeadline('rpu', previousRpuHeadline, headline);

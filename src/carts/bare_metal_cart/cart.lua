@@ -6,7 +6,7 @@ local cam_screen_look<const>  = camobj.cam_screen_look
 local cam_move<const>         = camobj.cam_move
 
 local vdp_stream_base<const> = sys_vdp_stream_base
-local vram_primary_slot_base<const> = sys_vram_primary_slot_base
+local vram_staging_base<const> = sys_vram_staging_base
 local scratch_base<const> = sys_geo_scratch_base
 
 local vdp_dither_register<const>: *word = sys_vdp_dither
@@ -79,106 +79,13 @@ struct q16_matrix
 	m: word[16]
 end
 
-struct bm_rpu_buffer_define_packet
+struct bm_rpu_exec_pass_list_packet
 	header: word
 	op: word
-	buffer_id: word
-	byte_length: word
-	usage: word
+	pass_desc_addr: word
 end
 
-struct bm_rpu_buffer_upload_dma_packet
-	header: word
-	op: word
-	buffer_id: word
-	dst_byte_offset: word
-	src_addr: word
-	byte_length: word
-end
-
-struct bm_rpu_surface_define_packet
-	header: word
-	op: word
-	surface_id: word
-	size: word
-	format_usage: word
-end
-
-struct bm_rpu_constant_bank_define_packet
-	header: word
-	op: word
-	bank_id: word
-	first_word: word
-	word_count: word
-end
-
-struct bm_rpu_constant_upload_device_packet
-	header: word
-	op: word
-	bank_id: word
-	dst_word_offset: word
-	source: word
-	source_word_offset: word
-	word_count: word
-end
-
-struct bm_rpu_begin_pass_packet
-	header: word
-	op: word
-	color_surface_id: word
-	depth_surface_id: word
-	viewport_xy: word
-	viewport_wh: word
-	pass_ops: word
-	clear_color: word
-	clear_depth_word: word
-end
-
-struct bm_rpu_end_pass_packet
-	header: word
-	op: word
-end
-
-struct bm_rpu_begin_draw_packet
-	header: word
-	op: word
-	shader_variant: word
-	primitive_index_type: word
-	pipeline_word: word
-	vertex_count: word
-	instance_count: word
-	index_buffer_id: word
-	index_byte_offset: word
-	index_count: word
-end
-
-struct bm_rpu_bind_stream_packet
-	header: word
-	op: word
-	stream_slot: word
-	layout_id: word
-	buffer_id: word
-	byte_offset: word
-	step_rate: word
-end
-
-struct bm_rpu_bind_constants_packet
-	header: word
-	op: word
-	binding_slot: word
-	bank_id: word
-	first_word: word
-	word_count: word
-end
-
-struct bm_rpu_bind_texture_packet
-	header: word
-	op: word
-	texture_slot: word
-	surface_id: word
-end
-
-struct bm_rpu_end_draw_packet
+struct bm_rpu_seal_frame_packet
 	header: word
 	op: word
 end
@@ -198,63 +105,37 @@ struct bm_jtu_matrix_packet_header
 	matrix_word_offset: word
 end
 
-struct bm_mfu_register_packet_header
-	header: word
-	first_register: word
-end
-
 struct bm_surface_define_desc
-	surface_id: word
-	size: word
-	format_usage: word
+	desc_addr: word
+	base_addr: word
+	pitch_bytes: word
+	width: word
+	height: word
+	format: word
 end
 
 struct bm_buffer_define_desc
-	buffer_id: word
+	vram_addr: word
 	byte_length: word
-	usage: word
 	upload_src_addr: word
 	upload_byte_length: word
 end
 
 struct bm_buffer_upload_desc
-	buffer_id: word
-	dst_byte_offset: word
+	vram_addr: word
 	src_addr: word
 	byte_length: word
 end
 
-struct bm_matrix_upload_desc
-	packet_kind: word
-	matrix_word_count: word
-	matrix_index: word
+struct bm_constant_upload_desc
+	vram_addr: word
 	src_addr: word
-end
-
-struct bm_register_upload_desc
-	packet_kind: word
-	first_register: word
-	src_addr: word
-	word_count: word
-end
-
-struct bm_constant_bank_desc
-	bank_id: word
-	first_word: word
-	word_count: word
-end
-
-struct bm_constant_device_upload_desc
-	bank_id: word
-	dst_word_offset: word
-	source: word
-	source_word_offset: word
-	word_count: word
+	byte_length: word
 end
 
 struct bm_pass_desc
-	color_surface_id: word
-	depth_surface_id: word
+	color_surface_desc_addr: word
+	depth_surface_desc_addr: word
 	viewport_xy: word
 	viewport_wh: word
 	pass_ops: word
@@ -270,8 +151,7 @@ struct bm_draw_desc
 	pipeline_word: word
 	vertex_count: word
 	instance_count: word
-	index_buffer_id: word
-	index_byte_offset: word
+	index_vram_addr: word
 	index_count: word
 	stream_first: word
 	stream_count: word
@@ -284,35 +164,22 @@ end
 struct bm_stream_bind_desc
 	stream_slot: word
 	layout_id: word
-	buffer_id: word
-	byte_offset: word
+	vram_addr: word
+	byte_length: word
 	step_rate: word
 end
 
 struct bm_constant_bind_desc
 	binding_slot: word
-	bank_id: word
-	first_word: word
-	word_count: word
+	vram_addr: word
+	byte_length: word
 end
 
 struct bm_sampled_surface_bind_desc
 	texture_slot: word
-	surface_id: word
+	surface_desc_addr: word
 end
 
-local quad_buffer<const> = 1
-local background_buffer<const> = 2
-local mesh_buffer<const> = 3
-local instance_buffer<const> = 4
-local mesh_index_buffer<const> = 5
-local vector_buffer<const> = 6
-local mat4_vertex_buffer<const> = 7
-local mat4_instance_buffer<const> = 8
-local morph_buffer<const> = 9
-local scene_color_surface<const> = 4
-local scene_depth_surface<const> = 5
-local atlas_surface<const> = sys_rpu_surface_primary
 local quad_vertex_count<const> = 4
 local quad_vertex_stride<const> = sizeof(quad_vertex)
 local quad_vertex_bytes<const> = quad_vertex_count * quad_vertex_stride
@@ -339,13 +206,13 @@ local instance_count<const> = sprite_instance_count + present_instance_count
 local instance_stride<const> = sizeof(sprite_instance)
 local instance_bytes<const> = instance_count * instance_stride
 local present_instance_offset<const> = sprite_instance_count * instance_stride
-local c0_words<const> = 16
+local c0_words<const> = 25
 local c1_words<const> = 68
 local joint_words<const> = 384
-local mfu_words<const> = 1
 local c0_bytes<const> = c0_words * 4
 local c1_bytes<const> = c1_words * 4
 local joint_matrix_bytes<const> = sizeof(q16_matrix)
+local joint_bytes<const> = joint_words * 4
 local morph_vertex_stride<const> = sizeof(morph_vertex)
 local morph_vertex_bytes<const> = mesh_vertex_count * morph_vertex_stride
 
@@ -361,15 +228,11 @@ local c0_addr<const> = instance_addr + instance_bytes
 local c1_addr<const> = c0_addr + c0_bytes
 local joint0_addr<const> = c1_addr + c1_bytes
 local joint1_addr<const> = joint0_addr + joint_matrix_bytes
-local mfu_addr<const> = joint1_addr + joint_matrix_bytes
-local morph_vertex_addr<const> = mfu_addr + mfu_words * 4
+local morph_vertex_addr<const> = joint0_addr + joint_bytes
 local surface_desc_count<const> = 3
 local buffer_desc_count<const> = 9
-local matrix_upload_desc_count<const> = 3
-local register_upload_desc_count<const> = 2
 local frame_buffer_upload_desc_count<const> = 4
-local constant_bank_desc_count<const> = 3
-local constant_device_upload_desc_count<const> = 4
+local constant_upload_desc_count<const> = 3
 local pass_desc_count<const> = 2
 local draw_desc_count<const> = 9
 local stream_bind_desc_count<const> = 13
@@ -381,22 +244,42 @@ local present_draw_first<const> = 8
 local present_draw_count<const> = 1
 local surface_desc_addr<const> = morph_vertex_addr + morph_vertex_bytes
 local buffer_desc_addr<const> = surface_desc_addr + surface_desc_count * sizeof(bm_surface_define_desc)
-local matrix_upload_desc_addr<const> = buffer_desc_addr + buffer_desc_count * sizeof(bm_buffer_define_desc)
-local register_upload_desc_addr<const> = matrix_upload_desc_addr + matrix_upload_desc_count * sizeof(bm_matrix_upload_desc)
-local frame_buffer_upload_desc_addr<const> = register_upload_desc_addr + register_upload_desc_count * sizeof(bm_register_upload_desc)
-local constant_bank_desc_addr<const> = frame_buffer_upload_desc_addr + frame_buffer_upload_desc_count * sizeof(bm_buffer_upload_desc)
-local constant_device_upload_desc_addr<const> = constant_bank_desc_addr + constant_bank_desc_count * sizeof(bm_constant_bank_desc)
-local pass_desc_addr<const> = constant_device_upload_desc_addr + constant_device_upload_desc_count * sizeof(bm_constant_device_upload_desc)
+local frame_buffer_upload_desc_addr<const> = buffer_desc_addr + buffer_desc_count * sizeof(bm_buffer_define_desc)
+local constant_upload_desc_addr<const> = frame_buffer_upload_desc_addr + frame_buffer_upload_desc_count * sizeof(bm_buffer_upload_desc)
+local pass_desc_addr<const> = constant_upload_desc_addr + constant_upload_desc_count * sizeof(bm_constant_upload_desc)
 local draw_desc_addr<const> = pass_desc_addr + pass_desc_count * sizeof(bm_pass_desc)
 local stream_bind_desc_addr<const> = draw_desc_addr + draw_desc_count * sizeof(bm_draw_desc)
 local constant_bind_desc_addr<const> = stream_bind_desc_addr + stream_bind_desc_count * sizeof(bm_stream_bind_desc)
 local sampled_surface_bind_desc_addr<const> = constant_bind_desc_addr + constant_bind_desc_count * sizeof(bm_constant_bind_desc)
-local mesh_matrix_index<const> = 2
-local mesh_joint_matrix_index<const> = 1
+
+local rpu_atlas_vram_addr<const> = 0
+local rpu_quad_vertex_vram_addr<const> = rpu_atlas_vram_addr + atlas_bytes
+local rpu_background_vertex_vram_addr<const> = rpu_quad_vertex_vram_addr + quad_vertex_bytes
+local rpu_vector_vertex_vram_addr<const> = rpu_background_vertex_vram_addr + background_vertex_bytes
+local rpu_mat4_vertex_vram_addr<const> = rpu_vector_vertex_vram_addr + vector_vertex_bytes
+local rpu_mat4_instance_vram_addr<const> = rpu_mat4_vertex_vram_addr + mat4_vertex_bytes
+local rpu_mesh_vertex_vram_addr<const> = rpu_mat4_instance_vram_addr + mat4_instance_bytes
+local rpu_mesh_index_vram_addr<const> = rpu_mesh_vertex_vram_addr + mesh_vertex_bytes
+local rpu_instance_vram_addr<const> = rpu_mesh_index_vram_addr + mesh_index_bytes
+local rpu_c0_vram_addr<const> = rpu_instance_vram_addr + instance_bytes
+local rpu_c1_vram_addr<const> = rpu_c0_vram_addr + c0_bytes
+local rpu_joint_vram_addr<const> = rpu_c1_vram_addr + c1_bytes
+local rpu_morph_vertex_vram_addr<const> = rpu_joint_vram_addr + joint_bytes
+local rpu_surface_desc_vram_addr<const> = rpu_morph_vertex_vram_addr + morph_vertex_bytes
+local rpu_pass_desc_vram_addr<const> = rpu_surface_desc_vram_addr + surface_desc_count * sys_rpu_surface_desc_bytes
+local rpu_draw_desc_vram_addr<const> = rpu_pass_desc_vram_addr + pass_desc_count * sys_rpu_pass_desc_bytes
+local rpu_stream_desc_vram_addr<const> = rpu_draw_desc_vram_addr + draw_desc_count * sys_rpu_draw_desc_bytes
+local rpu_constant_desc_vram_addr<const> = rpu_stream_desc_vram_addr + stream_bind_desc_count * sys_rpu_stream_desc_bytes
+local rpu_texture_desc_vram_addr<const> = rpu_constant_desc_vram_addr + constant_bind_desc_count * sys_rpu_constant_desc_bytes
+local rpu_scene_color_vram_addr<const> = rpu_texture_desc_vram_addr + sampled_surface_bind_desc_count * sys_rpu_texture_desc_bytes
+local rpu_scene_depth_vram_addr<const> = rpu_scene_color_vram_addr + screen_width * screen_height * 4
+
+local atlas_surface<const> = rpu_surface_desc_vram_addr
+local scene_color_surface<const> = rpu_surface_desc_vram_addr + sys_rpu_surface_desc_bytes
+local scene_depth_surface<const> = rpu_surface_desc_vram_addr + (sys_rpu_surface_desc_bytes * 2)
 
 local white<const> = 0xffffffff
 local othercolor<const> = 0x00ffffff
-local q16_one<const> = numeric.q16(1.0)
 local sky_top<const> = 0xff071a3a
 local sky_horizon<const> = 0xff071a3a
 local ground_far<const> = 0xff071a3a
@@ -413,9 +296,6 @@ local mesh_tint<const> = white
 local mesh_joint_word<const> = 0x00000001
 local mesh_weight_word<const> = 0x000000ff
 
-local rpu_surface_rgba_texture<const> = sys_rpu_surface_format_rgba8 | (sys_rpu_surface_usage_texture << 8)
-local rpu_surface_rgba_color_texture<const> = sys_rpu_surface_format_rgba8 | ((sys_rpu_surface_usage_color | sys_rpu_surface_usage_texture) << 8)
-local rpu_surface_depth<const> = sys_rpu_surface_format_depth16 | (sys_rpu_surface_usage_depth << 8)
 local rpu_primitive_triangles<const> = sys_rpu_prim_triangles | (sys_rpu_index_none << 8)
 local rpu_primitive_triangle_strip<const> = sys_rpu_prim_triangle_strip | (sys_rpu_index_none << 8)
 local rpu_primitive_lines<const> = sys_rpu_prim_lines | (sys_rpu_index_none << 8)
@@ -517,7 +397,7 @@ end
 
 local upload_atlas_to_vram<const> = function()
 	*dma_src_register = scratch_base
-	*dma_dst_register = vram_primary_slot_base
+	*dma_dst_register = vram_staging_base + rpu_atlas_vram_addr
 	*dma_len_register = atlas_bytes
 	*dma_ctrl_register = dma_ctrl_start
 	wait_interrupt(irq_dma_done | irq_dma_error)
@@ -1058,66 +938,52 @@ local write_mesh_constants<const> = function()
 	-- P row0=[proj_fx,0,0,0], row1=[0,proj_fy,0,0], row2=[0,0,proj_a,proj_b], row3=[0,0,-1,0]
 	-- Each MVP column j: (proj_fx*vm_0j, proj_fy*vm_1j, proj_a*vm_2j + proj_b*w, -vm_2j)
 	-- where w=0 for cols 0-2, w=1 for col 3 (homogeneous row of VM = (0,0,0,1))
-	local c0<const>: *q16_matrix = c0_addr
-	c0->m[0] = numeric.q16(proj_fx * vm_00)
-	c0->m[1] = numeric.q16(proj_fy * vm_10)
-	c0->m[2] = numeric.q16(proj_a * vm_20)
-	c0->m[3] = numeric.q16(-vm_20)
-	c0->m[4] = numeric.q16(proj_fx * vm_01)
-	c0->m[5] = numeric.q16(proj_fy * vm_11)
-	c0->m[6] = numeric.q16(proj_a * vm_21)
-	c0->m[7] = numeric.q16(-vm_21)
-	c0->m[8] = numeric.q16(proj_fx * vm_02)
-	c0->m[9] = numeric.q16(proj_fy * vm_12)
-	c0->m[10] = numeric.q16(proj_a * vm_22)
-	c0->m[11] = numeric.q16(-vm_22)
-	c0->m[12] = numeric.q16(proj_fx * vm_03)
-	c0->m[13] = numeric.q16(proj_fy * vm_13)
-	c0->m[14] = numeric.q16(proj_a * vm_23 + proj_b)
-	c0->m[15] = numeric.q16(-vm_23)
+	local c0<const>: *f32 = c0_addr
+	local clear_index = 0
+	while clear_index < c0_words do
+		c0[clear_index] = 0.0
+		clear_index = clear_index + 1
+	end
+	c0[0] = proj_fx * vm_00
+	c0[1] = proj_fy * vm_10
+	c0[2] = proj_a * vm_20
+	c0[3] = -vm_20
+	c0[4] = proj_fx * vm_01
+	c0[5] = proj_fy * vm_11
+	c0[6] = proj_a * vm_21
+	c0[7] = -vm_21
+	c0[8] = proj_fx * vm_02
+	c0[9] = proj_fy * vm_12
+	c0[10] = proj_a * vm_22
+	c0[11] = -vm_22
+	c0[12] = proj_fx * vm_03
+	c0[13] = proj_fy * vm_13
+	c0[14] = proj_a * vm_23 + proj_b
+	c0[15] = -vm_23
+	c0[16] = 1.0
+	c0[20] = 1.0
+	c0[24] = 1.0
 end
 
 local write_joint_constants<const> = function()
 	local joint_phase<const> = frame % 8
 	local joint_translate_x<const> = (joint_phase - 4) * 0.03125
-	local joints<const>: *q16_matrix[2] = joint0_addr
-	joints[0].m[0] = q16_one
-	joints[0].m[1] = 0
-	joints[0].m[2] = 0
-	joints[0].m[3] = 0
-	joints[0].m[4] = 0
-	joints[0].m[5] = q16_one
-	joints[0].m[6] = 0
-	joints[0].m[7] = 0
-	joints[0].m[8] = 0
-	joints[0].m[9] = 0
-	joints[0].m[10] = q16_one
-	joints[0].m[11] = 0
-	joints[0].m[12] = 0
-	joints[0].m[13] = 0
-	joints[0].m[14] = 0
-	joints[0].m[15] = q16_one
-	joints[1].m[0] = q16_one
-	joints[1].m[1] = 0
-	joints[1].m[2] = 0
-	joints[1].m[3] = 0
-	joints[1].m[4] = 0
-	joints[1].m[5] = q16_one
-	joints[1].m[6] = 0
-	joints[1].m[7] = 0
-	joints[1].m[8] = 0
-	joints[1].m[9] = 0
-	joints[1].m[10] = q16_one
-	joints[1].m[11] = 0
-	joints[1].m[12] = numeric.q16(joint_translate_x)
-	joints[1].m[13] = 0
-	joints[1].m[14] = 0
-	joints[1].m[15] = q16_one
-end
-
-local write_mfu_constants<const> = function()
-	local mfu<const>: *word = mfu_addr
-	*mfu = 0
+	local joints<const>: *f32 = joint0_addr
+	local joint_index = 0
+	while joint_index < 24 do
+		local base<const> = joint_index * 16
+		local word_index = 0
+		while word_index < 16 do
+			joints[base + word_index] = 0.0
+			word_index = word_index + 1
+		end
+		joints[base] = 1.0
+		joints[base + 5] = 1.0
+		joints[base + 10] = 1.0
+		joints[base + 15] = 1.0
+		joint_index = joint_index + 1
+	end
+	joints[16 + 12] = joint_translate_x
 end
 
 local setup_camera_input<const> = function()
@@ -1385,141 +1251,103 @@ end
 
 local write_vdp_command_descriptors<const> = function()
 	local surfaces<const>: *bm_surface_define_desc[surface_desc_count] = surface_desc_addr
-	surfaces[0].surface_id = atlas_surface
-	surfaces[0].size = atlas_width | (atlas_height << 16)
-	surfaces[0].format_usage = rpu_surface_rgba_texture
-	surfaces[1].surface_id = scene_color_surface
-	surfaces[1].size = screen_width | (screen_height << 16)
-	surfaces[1].format_usage = rpu_surface_rgba_color_texture
-	surfaces[2].surface_id = scene_depth_surface
-	surfaces[2].size = screen_width | (screen_height << 16)
-	surfaces[2].format_usage = rpu_surface_depth
+	surfaces[0].desc_addr = atlas_surface
+	surfaces[0].base_addr = rpu_atlas_vram_addr
+	surfaces[0].pitch_bytes = atlas_width * 4
+	surfaces[0].width = atlas_width
+	surfaces[0].height = atlas_height
+	surfaces[0].format = sys_rpu_surface_format_rgba8
+	surfaces[1].desc_addr = scene_color_surface
+	surfaces[1].base_addr = rpu_scene_color_vram_addr
+	surfaces[1].pitch_bytes = screen_width * 4
+	surfaces[1].width = screen_width
+	surfaces[1].height = screen_height
+	surfaces[1].format = sys_rpu_surface_format_rgba8
+	surfaces[2].desc_addr = scene_depth_surface
+	surfaces[2].base_addr = rpu_scene_depth_vram_addr
+	surfaces[2].pitch_bytes = screen_width * 2
+	surfaces[2].width = screen_width
+	surfaces[2].height = screen_height
+	surfaces[2].format = sys_rpu_surface_format_depth16
+
+	local surface_words<const>: *word = vram_staging_base + rpu_surface_desc_vram_addr
+	local surface_index = 0
+	while surface_index < surface_desc_count do
+		local surface<const>: *bm_surface_define_desc = &surfaces[surface_index]
+		local word_base<const> = (surface->desc_addr - rpu_surface_desc_vram_addr) // 4
+		surface_words[word_base] = surface->base_addr
+		surface_words[word_base + 1] = surface->pitch_bytes | (surface->width << 16)
+		surface_words[word_base + 2] = surface->height | (surface->format << 16)
+		surface_words[word_base + 3] = 0
+		surface_index = surface_index + 1
+	end
 
 	local buffers<const>: *bm_buffer_define_desc[buffer_desc_count] = buffer_desc_addr
-	buffers[0].buffer_id = quad_buffer
+	buffers[0].vram_addr = rpu_quad_vertex_vram_addr
 	buffers[0].byte_length = quad_vertex_bytes
-	buffers[0].usage = sys_rpu_usage_vertex
 	buffers[0].upload_src_addr = quad_vertex_addr
 	buffers[0].upload_byte_length = quad_vertex_bytes
-	buffers[1].buffer_id = background_buffer
+	buffers[1].vram_addr = rpu_background_vertex_vram_addr
 	buffers[1].byte_length = background_vertex_bytes
-	buffers[1].usage = sys_rpu_usage_vertex
 	buffers[1].upload_src_addr = background_vertex_addr
 	buffers[1].upload_byte_length = background_vertex_bytes
-	buffers[2].buffer_id = vector_buffer
+	buffers[2].vram_addr = rpu_vector_vertex_vram_addr
 	buffers[2].byte_length = vector_vertex_bytes
-	buffers[2].usage = sys_rpu_usage_vertex
 	buffers[2].upload_src_addr = vector_vertex_addr
 	buffers[2].upload_byte_length = vector_vertex_bytes
-	buffers[3].buffer_id = mat4_vertex_buffer
+	buffers[3].vram_addr = rpu_mat4_vertex_vram_addr
 	buffers[3].byte_length = mat4_vertex_bytes
-	buffers[3].usage = sys_rpu_usage_vertex
 	buffers[3].upload_src_addr = mat4_vertex_addr
 	buffers[3].upload_byte_length = mat4_vertex_bytes
-	buffers[4].buffer_id = mat4_instance_buffer
+	buffers[4].vram_addr = rpu_mat4_instance_vram_addr
 	buffers[4].byte_length = mat4_instance_bytes
-	buffers[4].usage = sys_rpu_usage_vertex
 	buffers[4].upload_src_addr = 0
 	buffers[4].upload_byte_length = 0
-	buffers[5].buffer_id = mesh_buffer
+	buffers[5].vram_addr = rpu_mesh_vertex_vram_addr
 	buffers[5].byte_length = mesh_vertex_bytes
-	buffers[5].usage = sys_rpu_usage_vertex
 	buffers[5].upload_src_addr = 0
 	buffers[5].upload_byte_length = 0
-	buffers[6].buffer_id = mesh_index_buffer
+	buffers[6].vram_addr = rpu_mesh_index_vram_addr
 	buffers[6].byte_length = mesh_index_bytes
-	buffers[6].usage = sys_rpu_usage_index
 	buffers[6].upload_src_addr = mesh_index_addr
 	buffers[6].upload_byte_length = mesh_index_bytes
-	buffers[7].buffer_id = morph_buffer
+	buffers[7].vram_addr = rpu_morph_vertex_vram_addr
 	buffers[7].byte_length = morph_vertex_bytes
-	buffers[7].usage = sys_rpu_usage_vertex
 	buffers[7].upload_src_addr = 0
 	buffers[7].upload_byte_length = 0
-	buffers[8].buffer_id = instance_buffer
+	buffers[8].vram_addr = rpu_instance_vram_addr
 	buffers[8].byte_length = instance_bytes
-	buffers[8].usage = sys_rpu_usage_vertex
 	buffers[8].upload_src_addr = 0
 	buffers[8].upload_byte_length = 0
 
-	local matrix_uploads<const>: *bm_matrix_upload_desc[matrix_upload_desc_count] = matrix_upload_desc_addr
-	matrix_uploads[0].packet_kind = sys_vdp_xf_packet_kind
-	matrix_uploads[0].matrix_word_count = sys_vdp_xf_matrix_words
-	matrix_uploads[0].matrix_index = mesh_matrix_index
-	matrix_uploads[0].src_addr = c0_addr
-	matrix_uploads[1].packet_kind = sys_vdp_jtu_packet_kind
-	matrix_uploads[1].matrix_word_count = sys_vdp_jtu_matrix_words
-	matrix_uploads[1].matrix_index = 0
-	matrix_uploads[1].src_addr = joint0_addr
-	matrix_uploads[2].packet_kind = sys_vdp_jtu_packet_kind
-	matrix_uploads[2].matrix_word_count = sys_vdp_jtu_matrix_words
-	matrix_uploads[2].matrix_index = mesh_joint_matrix_index
-	matrix_uploads[2].src_addr = joint1_addr
-
-	local register_uploads<const>: *bm_register_upload_desc[register_upload_desc_count] = register_upload_desc_addr
-	register_uploads[0].packet_kind = sys_vdp_lpu_packet_kind
-	register_uploads[0].first_register = 0
-	register_uploads[0].src_addr = c1_addr
-	register_uploads[0].word_count = c1_words
-	register_uploads[1].packet_kind = sys_vdp_mfu_packet_kind
-	register_uploads[1].first_register = 0
-	register_uploads[1].src_addr = mfu_addr
-	register_uploads[1].word_count = mfu_words
-
 	local frame_uploads<const>: *bm_buffer_upload_desc[frame_buffer_upload_desc_count] = frame_buffer_upload_desc_addr
-	frame_uploads[0].buffer_id = mesh_buffer
-	frame_uploads[0].dst_byte_offset = 0
+	frame_uploads[0].vram_addr = rpu_mesh_vertex_vram_addr
 	frame_uploads[0].src_addr = mesh_vertex_addr
 	frame_uploads[0].byte_length = mesh_vertex_bytes
-	frame_uploads[1].buffer_id = morph_buffer
-	frame_uploads[1].dst_byte_offset = 0
+	frame_uploads[1].vram_addr = rpu_morph_vertex_vram_addr
 	frame_uploads[1].src_addr = morph_vertex_addr
 	frame_uploads[1].byte_length = morph_vertex_bytes
-	frame_uploads[2].buffer_id = mat4_instance_buffer
-	frame_uploads[2].dst_byte_offset = 0
+	frame_uploads[2].vram_addr = rpu_mat4_instance_vram_addr
 	frame_uploads[2].src_addr = mat4_instance_addr
 	frame_uploads[2].byte_length = mat4_instance_bytes
-	frame_uploads[3].buffer_id = instance_buffer
-	frame_uploads[3].dst_byte_offset = 0
+	frame_uploads[3].vram_addr = rpu_instance_vram_addr
 	frame_uploads[3].src_addr = instance_addr
 	frame_uploads[3].byte_length = instance_bytes
 
-	local constant_banks<const>: *bm_constant_bank_desc[constant_bank_desc_count] = constant_bank_desc_addr
-	constant_banks[0].bank_id = 0
-	constant_banks[0].first_word = 0
-	constant_banks[0].word_count = c0_words
-	constant_banks[1].bank_id = 1
-	constant_banks[1].first_word = c0_words
-	constant_banks[1].word_count = c1_words
-	constant_banks[2].bank_id = 2
-	constant_banks[2].first_word = c0_words + c1_words
-	constant_banks[2].word_count = joint_words
-
-	local device_uploads<const>: *bm_constant_device_upload_desc[constant_device_upload_desc_count] = constant_device_upload_desc_addr
-	device_uploads[0].bank_id = 0
-	device_uploads[0].dst_word_offset = 0
-	device_uploads[0].source = sys_rpu_constant_source_xf_q16
-	device_uploads[0].source_word_offset = mesh_matrix_index * sys_vdp_xf_matrix_words
-	device_uploads[0].word_count = c0_words
-	device_uploads[1].bank_id = 1
-	device_uploads[1].dst_word_offset = 0
-	device_uploads[1].source = sys_rpu_constant_source_lpu_raw
-	device_uploads[1].source_word_offset = 0
-	device_uploads[1].word_count = c1_words
-	device_uploads[2].bank_id = 1
-	device_uploads[2].dst_word_offset = 8
-	device_uploads[2].source = sys_rpu_constant_source_mfu_q16
-	device_uploads[2].source_word_offset = 0
-	device_uploads[2].word_count = mfu_words
-	device_uploads[3].bank_id = 2
-	device_uploads[3].dst_word_offset = 0
-	device_uploads[3].source = sys_rpu_constant_source_jtu_q16
-	device_uploads[3].source_word_offset = 0
-	device_uploads[3].word_count = joint_words
+	local constant_uploads<const>: *bm_constant_upload_desc[constant_upload_desc_count] = constant_upload_desc_addr
+	constant_uploads[0].vram_addr = rpu_c0_vram_addr
+	constant_uploads[0].src_addr = c0_addr
+	constant_uploads[0].byte_length = c0_bytes
+	constant_uploads[1].vram_addr = rpu_c1_vram_addr
+	constant_uploads[1].src_addr = c1_addr
+	constant_uploads[1].byte_length = c1_bytes
+	constant_uploads[2].vram_addr = rpu_joint_vram_addr
+	constant_uploads[2].src_addr = joint0_addr
+	constant_uploads[2].byte_length = joint_bytes
 
 	local passes<const>: *bm_pass_desc[pass_desc_count] = pass_desc_addr
-	passes[0].color_surface_id = scene_color_surface
-	passes[0].depth_surface_id = scene_depth_surface
+	passes[0].color_surface_desc_addr = scene_color_surface
+	passes[0].depth_surface_desc_addr = scene_depth_surface
 	passes[0].viewport_xy = 0
 	passes[0].viewport_wh = screen_width | (screen_height << 16)
 	passes[0].pass_ops = sys_rpu_pass_color_clear | sys_rpu_pass_depth_clear
@@ -1527,8 +1355,8 @@ local write_vdp_command_descriptors<const> = function()
 	passes[0].clear_depth_word = 0xffffffff
 	passes[0].first_draw = scene_draw_first
 	passes[0].draw_count = scene_draw_count
-	passes[1].color_surface_id = sys_rpu_resource_none
-	passes[1].depth_surface_id = sys_rpu_resource_none
+	passes[1].color_surface_desc_addr = 0
+	passes[1].depth_surface_desc_addr = 0
 	passes[1].viewport_xy = 0
 	passes[1].viewport_wh = screen_width | (screen_height << 16)
 	passes[1].pass_ops = 0
@@ -1543,8 +1371,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[0].pipeline_word = rpu_pipeline_opaque
 	draws[0].vertex_count = background_vertex_count
 	draws[0].instance_count = 1
-	draws[0].index_buffer_id = sys_rpu_resource_none
-	draws[0].index_byte_offset = 0
+	draws[0].index_vram_addr = 0
 	draws[0].index_count = 0
 	draws[0].stream_first = 0
 	draws[0].stream_count = 1
@@ -1557,8 +1384,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[1].pipeline_word = rpu_pipeline_opaque
 	draws[1].vertex_count = vector_vertex_count
 	draws[1].instance_count = 1
-	draws[1].index_buffer_id = sys_rpu_resource_none
-	draws[1].index_byte_offset = 0
+	draws[1].index_vram_addr = 0
 	draws[1].index_count = 0
 	draws[1].stream_first = 1
 	draws[1].stream_count = 1
@@ -1571,8 +1397,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[2].pipeline_word = rpu_pipeline_opaque
 	draws[2].vertex_count = 2
 	draws[2].instance_count = 1
-	draws[2].index_buffer_id = sys_rpu_resource_none
-	draws[2].index_byte_offset = 0
+	draws[2].index_vram_addr = 0
 	draws[2].index_count = 0
 	draws[2].stream_first = 2
 	draws[2].stream_count = 1
@@ -1585,8 +1410,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[3].pipeline_word = rpu_pipeline_depth_alpha
 	draws[3].vertex_count = 1
 	draws[3].instance_count = 1
-	draws[3].index_buffer_id = sys_rpu_resource_none
-	draws[3].index_byte_offset = 0
+	draws[3].index_vram_addr = 0
 	draws[3].index_count = 0
 	draws[3].stream_first = 3
 	draws[3].stream_count = 1
@@ -1599,8 +1423,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[4].pipeline_word = rpu_pipeline_depth_opaque
 	draws[4].vertex_count = quad_vertex_count
 	draws[4].instance_count = sprite_instance_count
-	draws[4].index_buffer_id = sys_rpu_resource_none
-	draws[4].index_byte_offset = 0
+	draws[4].index_vram_addr = 0
 	draws[4].index_count = 0
 	draws[4].stream_first = 4
 	draws[4].stream_count = 2
@@ -1613,8 +1436,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[5].pipeline_word = rpu_pipeline_depth_opaque
 	draws[5].vertex_count = mat4_vertex_count
 	draws[5].instance_count = mat4_instance_count
-	draws[5].index_buffer_id = sys_rpu_resource_none
-	draws[5].index_byte_offset = 0
+	draws[5].index_vram_addr = 0
 	draws[5].index_count = 0
 	draws[5].stream_first = 6
 	draws[5].stream_count = 2
@@ -1627,8 +1449,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[6].pipeline_word = rpu_pipeline_depth_opaque
 	draws[6].vertex_count = mat4_vertex_count
 	draws[6].instance_count = 1
-	draws[6].index_buffer_id = sys_rpu_resource_none
-	draws[6].index_byte_offset = 0
+	draws[6].index_vram_addr = 0
 	draws[6].index_count = 0
 	draws[6].stream_first = 8
 	draws[6].stream_count = 1
@@ -1641,8 +1462,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[7].pipeline_word = rpu_pipeline_depth_opaque
 	draws[7].vertex_count = mesh_vertex_count
 	draws[7].instance_count = 1
-	draws[7].index_buffer_id = mesh_index_buffer
-	draws[7].index_byte_offset = 0
+	draws[7].index_vram_addr = rpu_mesh_index_vram_addr
 	draws[7].index_count = mesh_index_count
 	draws[7].stream_first = 9
 	draws[7].stream_count = 2
@@ -1655,8 +1475,7 @@ local write_vdp_command_descriptors<const> = function()
 	draws[8].pipeline_word = rpu_pipeline_opaque
 	draws[8].vertex_count = quad_vertex_count
 	draws[8].instance_count = present_instance_count
-	draws[8].index_buffer_id = sys_rpu_resource_none
-	draws[8].index_byte_offset = 0
+	draws[8].index_vram_addr = 0
 	draws[8].index_count = 0
 	draws[8].stream_first = 11
 	draws[8].stream_count = 2
@@ -1666,99 +1485,99 @@ local write_vdp_command_descriptors<const> = function()
 	draws[8].sampled_surface_count = 1
 
 	local streams<const>: *bm_stream_bind_desc[stream_bind_desc_count] = stream_bind_desc_addr
-	streams[0].stream_slot = 0
-	streams[0].layout_id = sys_rpu_layout_v2_c4
-	streams[0].buffer_id = background_buffer
-	streams[0].byte_offset = 0
-	streams[0].step_rate = 0
-	streams[1].stream_slot = 0
-	streams[1].layout_id = sys_rpu_layout_v2_c4
-	streams[1].buffer_id = vector_buffer
-	streams[1].byte_offset = 0
-	streams[1].step_rate = 0
-	streams[2].stream_slot = 0
-	streams[2].layout_id = sys_rpu_layout_v2_c4
-	streams[2].buffer_id = vector_buffer
-	streams[2].byte_offset = vector_vertex_stride * 2
-	streams[2].step_rate = 0
-	streams[3].stream_slot = 0
-	streams[3].layout_id = sys_rpu_layout_v2_c4
-	streams[3].buffer_id = vector_buffer
-	streams[3].byte_offset = vector_vertex_stride * 2
-	streams[3].step_rate = 0
-	streams[4].stream_slot = 0
-	streams[4].layout_id = sys_rpu_layout_v2_t2_c4
-	streams[4].buffer_id = quad_buffer
-	streams[4].byte_offset = 0
-	streams[4].step_rate = 0
-	streams[5].stream_slot = 1
-	streams[5].layout_id = sys_rpu_layout_i_affine2_trect_c4
-	streams[5].buffer_id = instance_buffer
-	streams[5].byte_offset = 0
-	streams[5].step_rate = 1
-	streams[6].stream_slot = 0
-	streams[6].layout_id = sys_rpu_layout_v3_c4
-	streams[6].buffer_id = mat4_vertex_buffer
-	streams[6].byte_offset = 0
-	streams[6].step_rate = 0
-	streams[7].stream_slot = 1
-	streams[7].layout_id = sys_rpu_layout_i_mat4_c4
-	streams[7].buffer_id = mat4_instance_buffer
-	streams[7].byte_offset = 0
-	streams[7].step_rate = 1
-	streams[8].stream_slot = 0
-	streams[8].layout_id = sys_rpu_layout_v3_c4
-	streams[8].buffer_id = mat4_vertex_buffer
-	streams[8].byte_offset = 0
-	streams[8].step_rate = 0
-	streams[9].stream_slot = 0
-	streams[9].layout_id = sys_rpu_layout_v3_n3_t2_c4_j4_w4
-	streams[9].buffer_id = mesh_buffer
-	streams[9].byte_offset = 0
-	streams[9].step_rate = 0
-	streams[10].stream_slot = 2
-	streams[10].layout_id = sys_rpu_layout_v3_dm3
-	streams[10].buffer_id = morph_buffer
-	streams[10].byte_offset = 0
-	streams[10].step_rate = 0
-	streams[11].stream_slot = 0
-	streams[11].layout_id = sys_rpu_layout_v2_t2_c4
-	streams[11].buffer_id = quad_buffer
-	streams[11].byte_offset = 0
-	streams[11].step_rate = 0
-	streams[12].stream_slot = 1
-	streams[12].layout_id = sys_rpu_layout_i_affine2_trect_c4
-	streams[12].buffer_id = instance_buffer
-	streams[12].byte_offset = present_instance_offset
-	streams[12].step_rate = 1
+	streams[0].stream_slot = 0; streams[0].layout_id = sys_rpu_layout_v2_c4; streams[0].vram_addr = rpu_background_vertex_vram_addr; streams[0].byte_length = background_vertex_bytes; streams[0].step_rate = 0
+	streams[1].stream_slot = 0; streams[1].layout_id = sys_rpu_layout_v2_c4; streams[1].vram_addr = rpu_vector_vertex_vram_addr; streams[1].byte_length = vector_vertex_bytes; streams[1].step_rate = 0
+	streams[2].stream_slot = 0; streams[2].layout_id = sys_rpu_layout_v2_c4; streams[2].vram_addr = rpu_vector_vertex_vram_addr + vector_vertex_stride * 2; streams[2].byte_length = vector_vertex_bytes - vector_vertex_stride * 2; streams[2].step_rate = 0
+	streams[3].stream_slot = 0; streams[3].layout_id = sys_rpu_layout_v2_c4; streams[3].vram_addr = rpu_vector_vertex_vram_addr + vector_vertex_stride * 2; streams[3].byte_length = vector_vertex_bytes - vector_vertex_stride * 2; streams[3].step_rate = 0
+	streams[4].stream_slot = 0; streams[4].layout_id = sys_rpu_layout_v2_t2_c4; streams[4].vram_addr = rpu_quad_vertex_vram_addr; streams[4].byte_length = quad_vertex_bytes; streams[4].step_rate = 0
+	streams[5].stream_slot = 1; streams[5].layout_id = sys_rpu_layout_i_affine2_trect_c4; streams[5].vram_addr = rpu_instance_vram_addr; streams[5].byte_length = instance_bytes; streams[5].step_rate = 1
+	streams[6].stream_slot = 0; streams[6].layout_id = sys_rpu_layout_v3_c4; streams[6].vram_addr = rpu_mat4_vertex_vram_addr; streams[6].byte_length = mat4_vertex_bytes; streams[6].step_rate = 0
+	streams[7].stream_slot = 1; streams[7].layout_id = sys_rpu_layout_i_mat4_c4; streams[7].vram_addr = rpu_mat4_instance_vram_addr; streams[7].byte_length = mat4_instance_bytes; streams[7].step_rate = 1
+	streams[8].stream_slot = 0; streams[8].layout_id = sys_rpu_layout_v3_c4; streams[8].vram_addr = rpu_mat4_vertex_vram_addr; streams[8].byte_length = mat4_vertex_bytes; streams[8].step_rate = 0
+	streams[9].stream_slot = 0; streams[9].layout_id = sys_rpu_layout_v3_n3_t2_c4_j4_w4; streams[9].vram_addr = rpu_mesh_vertex_vram_addr; streams[9].byte_length = mesh_vertex_bytes; streams[9].step_rate = 0
+	streams[10].stream_slot = 2; streams[10].layout_id = sys_rpu_layout_v3_dm3; streams[10].vram_addr = rpu_morph_vertex_vram_addr; streams[10].byte_length = morph_vertex_bytes; streams[10].step_rate = 0
+	streams[11].stream_slot = 0; streams[11].layout_id = sys_rpu_layout_v2_t2_c4; streams[11].vram_addr = rpu_quad_vertex_vram_addr; streams[11].byte_length = quad_vertex_bytes; streams[11].step_rate = 0
+	streams[12].stream_slot = 1; streams[12].layout_id = sys_rpu_layout_i_affine2_trect_c4; streams[12].vram_addr = rpu_instance_vram_addr + present_instance_offset; streams[12].byte_length = instance_bytes - present_instance_offset; streams[12].step_rate = 1
 
 	local constants<const>: *bm_constant_bind_desc[constant_bind_desc_count] = constant_bind_desc_addr
-	constants[0].binding_slot = 0
-	constants[0].bank_id = 0
-	constants[0].first_word = 0
-	constants[0].word_count = c0_words
-	constants[1].binding_slot = 0
-	constants[1].bank_id = 0
-	constants[1].first_word = 0
-	constants[1].word_count = c0_words
-	constants[2].binding_slot = 1
-	constants[2].bank_id = 2
-	constants[2].first_word = 0
-	constants[2].word_count = joint_words
-	constants[3].binding_slot = 2
-	constants[3].bank_id = 1
-	constants[3].first_word = 0
-	constants[3].word_count = c1_words
+	constants[0].binding_slot = 0; constants[0].vram_addr = rpu_c0_vram_addr; constants[0].byte_length = c0_bytes
+	constants[1].binding_slot = 0; constants[1].vram_addr = rpu_c0_vram_addr; constants[1].byte_length = c0_bytes
+	constants[2].binding_slot = 1; constants[2].vram_addr = rpu_joint_vram_addr; constants[2].byte_length = joint_bytes
+	constants[3].binding_slot = 2; constants[3].vram_addr = rpu_c1_vram_addr; constants[3].byte_length = c1_bytes
 
 	local sampled_surface_binds<const>: *bm_sampled_surface_bind_desc[sampled_surface_bind_desc_count] = sampled_surface_bind_desc_addr
-	sampled_surface_binds[0].texture_slot = 0
-	sampled_surface_binds[0].surface_id = atlas_surface
-	sampled_surface_binds[1].texture_slot = 0
-	sampled_surface_binds[1].surface_id = atlas_surface
-	sampled_surface_binds[2].texture_slot = 1
-	sampled_surface_binds[2].surface_id = atlas_surface
-	sampled_surface_binds[3].texture_slot = 0
-	sampled_surface_binds[3].surface_id = scene_color_surface
+	sampled_surface_binds[0].texture_slot = 0; sampled_surface_binds[0].surface_desc_addr = atlas_surface
+	sampled_surface_binds[1].texture_slot = 0; sampled_surface_binds[1].surface_desc_addr = atlas_surface
+	sampled_surface_binds[2].texture_slot = 1; sampled_surface_binds[2].surface_desc_addr = atlas_surface
+	sampled_surface_binds[3].texture_slot = 0; sampled_surface_binds[3].surface_desc_addr = scene_color_surface
+
+	local pass_words<const>: *word = vram_staging_base + rpu_pass_desc_vram_addr
+	local pass_index = 0
+	while pass_index < pass_desc_count do
+		local pass<const>: *bm_pass_desc = &passes[pass_index]
+		local word_base<const> = (pass_index * sys_rpu_pass_desc_bytes) // 4
+		pass_words[word_base] = pass->color_surface_desc_addr
+		pass_words[word_base + 1] = pass->depth_surface_desc_addr
+		pass_words[word_base + 2] = pass->viewport_xy
+		pass_words[word_base + 3] = pass->viewport_wh
+		pass_words[word_base + 4] = pass->pass_ops
+		pass_words[word_base + 5] = pass->clear_color
+		pass_words[word_base + 6] = pass->clear_depth_word
+		pass_words[word_base + 7] = rpu_draw_desc_vram_addr + pass->first_draw * sys_rpu_draw_desc_bytes
+		pass_words[word_base + 8] = pass->draw_count
+		pass_index = pass_index + 1
+	end
+
+	local draw_words<const>: *word = vram_staging_base + rpu_draw_desc_vram_addr
+	local draw_index = 0
+	while draw_index < draw_desc_count do
+		local draw<const>: *bm_draw_desc = &draws[draw_index]
+		local word_base<const> = (draw_index * sys_rpu_draw_desc_bytes) // 4
+		draw_words[word_base] = draw->shader_variant | ((draw->primitive_index_type & 0xff) << 16)
+		draw_words[word_base + 1] = draw->pipeline_word
+		draw_words[word_base + 2] = draw->vertex_count
+		draw_words[word_base + 3] = draw->instance_count
+		draw_words[word_base + 4] = draw->index_vram_addr
+		draw_words[word_base + 5] = draw->index_count
+		draw_words[word_base + 6] = ((draw->primitive_index_type >> 8) & 0xff) | (draw->stream_count << 8) | (draw->constant_count << 16) | (draw->sampled_surface_count << 24)
+		draw_words[word_base + 7] = rpu_stream_desc_vram_addr + draw->stream_first * sys_rpu_stream_desc_bytes
+		draw_words[word_base + 8] = rpu_constant_desc_vram_addr + draw->constant_first * sys_rpu_constant_desc_bytes
+		draw_words[word_base + 9] = rpu_texture_desc_vram_addr + draw->sampled_surface_first * sys_rpu_texture_desc_bytes
+		draw_words[word_base + 10] = 0
+		draw_index = draw_index + 1
+	end
+
+	local stream_words<const>: *word = vram_staging_base + rpu_stream_desc_vram_addr
+	local stream_index = 0
+	while stream_index < stream_bind_desc_count do
+		local stream<const>: *bm_stream_bind_desc = &streams[stream_index]
+		local word_base<const> = (stream_index * sys_rpu_stream_desc_bytes) // 4
+		stream_words[word_base] = stream->vram_addr
+		stream_words[word_base + 1] = stream->byte_length
+		stream_words[word_base + 2] = stream->layout_id | (stream->stream_slot << 16) | (stream->step_rate << 24)
+		stream_index = stream_index + 1
+	end
+
+	local constant_words<const>: *word = vram_staging_base + rpu_constant_desc_vram_addr
+	local constant_index = 0
+	while constant_index < constant_bind_desc_count do
+		local constant<const>: *bm_constant_bind_desc = &constants[constant_index]
+		local word_base<const> = (constant_index * sys_rpu_constant_desc_bytes) // 4
+		constant_words[word_base] = constant->vram_addr
+		constant_words[word_base + 1] = constant->byte_length
+		constant_words[word_base + 2] = constant->binding_slot
+		constant_index = constant_index + 1
+	end
+
+	local texture_words<const>: *word = vram_staging_base + rpu_texture_desc_vram_addr
+	local sampled_surface_index = 0
+	while sampled_surface_index < sampled_surface_bind_desc_count do
+		local sampled_surface_bind<const>: *bm_sampled_surface_bind_desc = &sampled_surface_binds[sampled_surface_index]
+		local word_base<const> = (sampled_surface_index * sys_rpu_texture_desc_bytes) // 4
+		texture_words[word_base] = sampled_surface_bind->surface_desc_addr
+		texture_words[word_base + 1] = sampled_surface_bind->texture_slot
+		sampled_surface_index = sampled_surface_index + 1
+	end
 end
 
 
@@ -1770,49 +1589,19 @@ local initialize_vdp_resources<const> = function()
 	write_mesh_indices()
 	write_lighting_constants()
 	write_vdp_command_descriptors()
-	local wp = vdp_stream_base
-	local surfaces<const>: *bm_surface_define_desc[surface_desc_count] = surface_desc_addr
-	local surface_index = 0
-	while surface_index < surface_desc_count do
-		local desc<const>: *bm_surface_define_desc = &surfaces[surface_index]
-		local packet<const>: *bm_rpu_surface_define_packet = wp
-		packet->header = sys_rpu_packet_kind | (sys_rpu_words_surface_define << 16)
-		packet->op = sys_rpu_op_surface_define
-		packet->surface_id = desc->surface_id
-		packet->size = desc->size
-		packet->format_usage = desc->format_usage
-		wp = wp + sizeof(bm_rpu_surface_define_packet)
-		surface_index = surface_index + 1
-	end
 	local buffers<const>: *bm_buffer_define_desc[buffer_desc_count] = buffer_desc_addr
 	local buffer_index = 0
 	while buffer_index < buffer_desc_count do
 		local desc<const>: *bm_buffer_define_desc = &buffers[buffer_index]
-		local define_packet<const>: *bm_rpu_buffer_define_packet = wp
-		define_packet->header = sys_rpu_packet_kind | (sys_rpu_words_buffer_define << 16)
-		define_packet->op = sys_rpu_op_buffer_define
-		define_packet->buffer_id = desc->buffer_id
-		define_packet->byte_length = desc->byte_length
-		define_packet->usage = desc->usage
-		wp = wp + sizeof(bm_rpu_buffer_define_packet)
 		if desc->upload_byte_length ~= 0 then
-			local upload_packet<const>: *bm_rpu_buffer_upload_dma_packet = wp
-			upload_packet->header = sys_rpu_packet_kind | (sys_rpu_words_buffer_upload_dma << 16)
-			upload_packet->op = sys_rpu_op_buffer_upload_dma
-			upload_packet->buffer_id = desc->buffer_id
-			upload_packet->dst_byte_offset = 0
-			upload_packet->src_addr = desc->upload_src_addr
-			upload_packet->byte_length = desc->upload_byte_length
-			wp = wp + sizeof(bm_rpu_buffer_upload_dma_packet)
+			*dma_src_register = desc->upload_src_addr
+			*dma_dst_register = vram_staging_base + desc->vram_addr
+			*dma_len_register = desc->upload_byte_length
+			*dma_ctrl_register = dma_ctrl_start
+			wait_interrupt(irq_dma_done | irq_dma_error)
 		end
 		buffer_index = buffer_index + 1
 	end
-	local end_packet<const>: *word = wp
-	*end_packet = sys_vdp_pkt_end
-	wp = wp + sys_vdp_arg_stride
-	vdp_stream_cursor = wp
-	submit_current_stream()
-	wait_interrupt(irq_dma_done | irq_dma_error)
 end
 
 
@@ -1825,174 +1614,40 @@ local draw_frame<const> = function()
 	write_morph_deltas()
 	write_mesh_constants()
 	write_joint_constants()
-	write_mfu_constants()
 	write_instances()
 	write_mat4_instances()
-	local wp = vdp_stream_base
-	local matrix_uploads<const>: *bm_matrix_upload_desc[matrix_upload_desc_count] = matrix_upload_desc_addr
-	local matrix_upload_index = 0
-	while matrix_upload_index < matrix_upload_desc_count do
-		local desc<const>: *bm_matrix_upload_desc = &matrix_uploads[matrix_upload_index]
-		local packet<const>: *bm_xf_matrix_packet_header = wp
-		local data<const>: *word = wp + sizeof(bm_xf_matrix_packet_header)
-		local src<const>: *word = desc->src_addr
-		packet->header = desc->packet_kind | ((1 + desc->matrix_word_count) << 16)
-		packet->matrix_word_offset = desc->matrix_index * desc->matrix_word_count
-		local word_index = 0
-		while word_index < desc->matrix_word_count do
-			data[word_index] = src[word_index]
-			word_index = word_index + 1
-		end
-		wp = wp + ((2 + desc->matrix_word_count) * sys_vdp_arg_stride)
-		matrix_upload_index = matrix_upload_index + 1
-	end
-	local register_uploads<const>: *bm_register_upload_desc[register_upload_desc_count] = register_upload_desc_addr
-	local register_upload_index = 0
-	while register_upload_index < register_upload_desc_count do
-		local desc<const>: *bm_register_upload_desc = &register_uploads[register_upload_index]
-		local packet<const>: *bm_lpu_register_packet_header = wp
-		local data<const>: *word = wp + sizeof(bm_lpu_register_packet_header)
-		local src<const>: *word = desc->src_addr
-		packet->header = desc->packet_kind | ((1 + desc->word_count) << 16)
-		packet->first_register = desc->first_register
-		local word_index = 0
-		while word_index < desc->word_count do
-			data[word_index] = src[word_index]
-			word_index = word_index + 1
-		end
-		wp = wp + ((2 + desc->word_count) * sys_vdp_arg_stride)
-		register_upload_index = register_upload_index + 1
-	end
 	local frame_uploads<const>: *bm_buffer_upload_desc[frame_buffer_upload_desc_count] = frame_buffer_upload_desc_addr
 	local frame_upload_index = 0
 	while frame_upload_index < frame_buffer_upload_desc_count do
 		local desc<const>: *bm_buffer_upload_desc = &frame_uploads[frame_upload_index]
-		local packet<const>: *bm_rpu_buffer_upload_dma_packet = wp
-		packet->header = sys_rpu_packet_kind | (sys_rpu_words_buffer_upload_dma << 16)
-		packet->op = sys_rpu_op_buffer_upload_dma
-		packet->buffer_id = desc->buffer_id
-		packet->dst_byte_offset = desc->dst_byte_offset
-		packet->src_addr = desc->src_addr
-		packet->byte_length = desc->byte_length
-		wp = wp + sizeof(bm_rpu_buffer_upload_dma_packet)
+		*dma_src_register = desc->src_addr
+		*dma_dst_register = vram_staging_base + desc->vram_addr
+		*dma_len_register = desc->byte_length
+		*dma_ctrl_register = dma_ctrl_start
+		wait_interrupt(irq_dma_done | irq_dma_error)
 		frame_upload_index = frame_upload_index + 1
 	end
-	local constant_banks<const>: *bm_constant_bank_desc[constant_bank_desc_count] = constant_bank_desc_addr
-	local constant_bank_index = 0
-	while constant_bank_index < constant_bank_desc_count do
-		local desc<const>: *bm_constant_bank_desc = &constant_banks[constant_bank_index]
-		local packet<const>: *bm_rpu_constant_bank_define_packet = wp
-		packet->header = sys_rpu_packet_kind | (sys_rpu_words_constant_bank_define << 16)
-		packet->op = sys_rpu_op_constant_bank_define
-		packet->bank_id = desc->bank_id
-		packet->first_word = desc->first_word
-		packet->word_count = desc->word_count
-		wp = wp + sizeof(bm_rpu_constant_bank_define_packet)
-		constant_bank_index = constant_bank_index + 1
+	local constant_uploads<const>: *bm_constant_upload_desc[constant_upload_desc_count] = constant_upload_desc_addr
+	local constant_upload_index = 0
+	while constant_upload_index < constant_upload_desc_count do
+		local desc<const>: *bm_constant_upload_desc = &constant_uploads[constant_upload_index]
+		*dma_src_register = desc->src_addr
+		*dma_dst_register = vram_staging_base + desc->vram_addr
+		*dma_len_register = desc->byte_length
+		*dma_ctrl_register = dma_ctrl_start
+		wait_interrupt(irq_dma_done | irq_dma_error)
+		constant_upload_index = constant_upload_index + 1
 	end
-	local device_uploads<const>: *bm_constant_device_upload_desc[constant_device_upload_desc_count] = constant_device_upload_desc_addr
-	local device_upload_index = 0
-	while device_upload_index < constant_device_upload_desc_count do
-		local desc<const>: *bm_constant_device_upload_desc = &device_uploads[device_upload_index]
-		local packet<const>: *bm_rpu_constant_upload_device_packet = wp
-		packet->header = sys_rpu_packet_kind | (sys_rpu_words_constant_upload_device << 16)
-		packet->op = sys_rpu_op_constant_upload_device
-		packet->bank_id = desc->bank_id
-		packet->dst_word_offset = desc->dst_word_offset
-		packet->source = desc->source
-		packet->source_word_offset = desc->source_word_offset
-		packet->word_count = desc->word_count
-		wp = wp + sizeof(bm_rpu_constant_upload_device_packet)
-		device_upload_index = device_upload_index + 1
-	end
-	local passes<const>: *bm_pass_desc[pass_desc_count] = pass_desc_addr
-	local draws<const>: *bm_draw_desc[draw_desc_count] = draw_desc_addr
-	local streams<const>: *bm_stream_bind_desc[stream_bind_desc_count] = stream_bind_desc_addr
-	local constants<const>: *bm_constant_bind_desc[constant_bind_desc_count] = constant_bind_desc_addr
-	local sampled_surface_binds<const>: *bm_sampled_surface_bind_desc[sampled_surface_bind_desc_count] = sampled_surface_bind_desc_addr
-	local pass_index = 0
-	while pass_index < pass_desc_count do
-		local pass<const>: *bm_pass_desc = &passes[pass_index]
-		local pass_packet<const>: *bm_rpu_begin_pass_packet = wp
-		pass_packet->header = sys_rpu_packet_kind | (sys_rpu_words_begin_pass << 16)
-		pass_packet->op = sys_rpu_op_begin_pass
-		pass_packet->color_surface_id = pass->color_surface_id
-		pass_packet->depth_surface_id = pass->depth_surface_id
-		pass_packet->viewport_xy = pass->viewport_xy
-		pass_packet->viewport_wh = pass->viewport_wh
-		pass_packet->pass_ops = pass->pass_ops
-		pass_packet->clear_color = pass->clear_color
-		pass_packet->clear_depth_word = pass->clear_depth_word
-		wp = wp + sizeof(bm_rpu_begin_pass_packet)
-		local draw_index = pass->first_draw
-		local draw_end<const> = draw_index + pass->draw_count
-		while draw_index < draw_end do
-			local draw<const>: *bm_draw_desc = &draws[draw_index]
-			local draw_packet<const>: *bm_rpu_begin_draw_packet = wp
-			draw_packet->header = sys_rpu_packet_kind | (sys_rpu_words_begin_draw << 16)
-			draw_packet->op = sys_rpu_op_begin_draw
-			draw_packet->shader_variant = draw->shader_variant
-			draw_packet->primitive_index_type = draw->primitive_index_type
-			draw_packet->pipeline_word = draw->pipeline_word
-			draw_packet->vertex_count = draw->vertex_count
-			draw_packet->instance_count = draw->instance_count
-			draw_packet->index_buffer_id = draw->index_buffer_id
-			draw_packet->index_byte_offset = draw->index_byte_offset
-			draw_packet->index_count = draw->index_count
-			wp = wp + sizeof(bm_rpu_begin_draw_packet)
-			local stream_index = draw->stream_first
-			local stream_end<const> = stream_index + draw->stream_count
-			while stream_index < stream_end do
-				local stream<const>: *bm_stream_bind_desc = &streams[stream_index]
-				local packet<const>: *bm_rpu_bind_stream_packet = wp
-				packet->header = sys_rpu_packet_kind | (sys_rpu_words_bind_stream << 16)
-				packet->op = sys_rpu_op_bind_stream
-				packet->stream_slot = stream->stream_slot
-				packet->layout_id = stream->layout_id
-				packet->buffer_id = stream->buffer_id
-				packet->byte_offset = stream->byte_offset
-				packet->step_rate = stream->step_rate
-				wp = wp + sizeof(bm_rpu_bind_stream_packet)
-				stream_index = stream_index + 1
-			end
-			local constant_index = draw->constant_first
-			local constant_end<const> = constant_index + draw->constant_count
-			while constant_index < constant_end do
-				local constant<const>: *bm_constant_bind_desc = &constants[constant_index]
-				local packet<const>: *bm_rpu_bind_constants_packet = wp
-				packet->header = sys_rpu_packet_kind | (sys_rpu_words_bind_constants << 16)
-				packet->op = sys_rpu_op_bind_constants
-				packet->binding_slot = constant->binding_slot
-				packet->bank_id = constant->bank_id
-				packet->first_word = constant->first_word
-				packet->word_count = constant->word_count
-				wp = wp + sizeof(bm_rpu_bind_constants_packet)
-				constant_index = constant_index + 1
-			end
-			local sampled_surface_index = draw->sampled_surface_first
-			local sampled_surface_end<const> = sampled_surface_index + draw->sampled_surface_count
-			while sampled_surface_index < sampled_surface_end do
-				local sampled_surface_bind<const>: *bm_sampled_surface_bind_desc = &sampled_surface_binds[sampled_surface_index]
-				local packet<const>: *bm_rpu_bind_texture_packet = wp
-				packet->header = sys_rpu_packet_kind | (sys_rpu_words_bind_texture << 16)
-				packet->op = sys_rpu_op_bind_texture
-				packet->texture_slot = sampled_surface_bind->texture_slot
-				packet->surface_id = sampled_surface_bind->surface_id
-				wp = wp + sizeof(bm_rpu_bind_texture_packet)
-				sampled_surface_index = sampled_surface_index + 1
-			end
-			local end_draw_packet<const>: *bm_rpu_end_draw_packet = wp
-			end_draw_packet->header = sys_rpu_packet_kind | (sys_rpu_words_end_draw << 16)
-			end_draw_packet->op = sys_rpu_op_end_draw
-			wp = wp + sizeof(bm_rpu_end_draw_packet)
-			draw_index = draw_index + 1
-		end
-		local end_pass_packet<const>: *bm_rpu_end_pass_packet = wp
-		end_pass_packet->header = sys_rpu_packet_kind | (sys_rpu_words_end_pass << 16)
-		end_pass_packet->op = sys_rpu_op_end_pass
-		wp = wp + sizeof(bm_rpu_end_pass_packet)
-		pass_index = pass_index + 1
-	end
+	local wp = vdp_stream_base
+	local exec_packet<const>: *bm_rpu_exec_pass_list_packet = wp
+	exec_packet->header = sys_rpu_packet_kind | (sys_rpu_words_exec_pass_list << 16)
+	exec_packet->op = sys_rpu_op_exec_pass_list | (pass_desc_count << 8)
+	exec_packet->pass_desc_addr = rpu_pass_desc_vram_addr
+	wp = wp + sizeof(bm_rpu_exec_pass_list_packet)
+	local seal_packet<const>: *bm_rpu_seal_frame_packet = wp
+	seal_packet->header = sys_rpu_packet_kind | (sys_rpu_words_seal_frame << 16)
+	seal_packet->op = sys_rpu_op_seal_frame
+	wp = wp + sizeof(bm_rpu_seal_frame_packet)
 	local end_packet<const>: *word = wp
 	*end_packet = sys_vdp_pkt_end
 	wp = wp + sys_vdp_arg_stride

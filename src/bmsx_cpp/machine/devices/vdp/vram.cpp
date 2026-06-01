@@ -23,7 +23,9 @@ std::array<VdpVramSurface, VDP_RD_SURFACE_COUNT> defaultVdpVramSurfaces(VdpFrame
 }
 
 VdpVramUnit::VdpVramUnit(VdpEntropySeeds entropySeeds)
-	: m_staging(VRAM_STAGING_SIZE)
+	: m_ownedStaging(VRAM_STAGING_SIZE)
+	, m_staging(m_ownedStaging.data())
+	, m_stagingLength(m_ownedStaging.size())
 	, m_garbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
 	, m_machineSeed(entropySeeds.machineSeed)
 	, m_bootSeed(entropySeeds.bootSeed) {}
@@ -32,10 +34,15 @@ void VdpVramUnit::initializeSurfaces(const std::array<VdpVramSurface, VDP_RD_SUR
 	m_slots.clear();
 	m_slots.reserve(surfaces.size());
 	VramGarbageStream stream{m_machineSeed, m_bootSeed, VRAM_GARBAGE_SPACE_SALT, VRAM_STAGING_BASE};
-	fillVramGarbageScratch(m_staging.data(), m_staging.size(), stream);
+	fillVramGarbageScratch(m_staging, m_stagingLength, stream);
 	for (const auto& surface : surfaces) {
 		registerSlot(surface);
 	}
+}
+
+void VdpVramUnit::setExternalStaging(u8* bytes, size_t length) {
+	m_staging = bytes;
+	m_stagingLength = length;
 }
 
 bool VdpVramUnit::writeStaging(u32 addr, const u8* bytes, size_t srcOffset, size_t length) {
@@ -214,13 +221,15 @@ void VdpVramUnit::syncSurfaceUploads(VdpSurfaceUploadSink& sink) {
 
 VdpVramState VdpVramUnit::captureState() const {
 	VdpVramState state;
-	state.staging = m_staging;
+	state.staging.assign(m_staging, m_staging + m_stagingLength);
 	state.surfacePixels = captureSurfacePixels();
 	return state;
 }
 
 void VdpVramUnit::restoreState(const VdpVramState& state) {
-	m_staging = state.staging;
+	for (size_t index = 0u; index < state.staging.size(); ++index) {
+		m_staging[index] = state.staging[index];
+	}
 	for (const VdpSurfacePixelsState& surface : state.surfacePixels) {
 		restoreSurfacePixels(surface);
 	}

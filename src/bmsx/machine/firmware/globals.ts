@@ -392,47 +392,13 @@ import {
 import { VDP_PKT_END } from '../devices/vdp/registers';
 import {
 	VDP_RPU_PACKET_KIND,
-	VDP_RPU_OP_BUFFER_DEFINE,
-	VDP_RPU_OP_BUFFER_UPLOAD_DMA,
-	VDP_RPU_OP_BUFFER_UPLOAD_INLINE,
-	VDP_RPU_OP_BUFFER_DISCARD,
-	VDP_RPU_OP_SURFACE_DEFINE,
-	VDP_RPU_OP_CONSTANT_BANK_DEFINE,
-	VDP_RPU_OP_CONSTANT_UPLOAD_DMA,
-	VDP_RPU_OP_CONSTANT_UPLOAD_INLINE,
-	VDP_RPU_OP_CONSTANT_UPLOAD_DEVICE,
-	VDP_RPU_OP_BEGIN_PASS,
-	VDP_RPU_OP_END_PASS,
-	VDP_RPU_OP_BEGIN_DRAW,
-	VDP_RPU_OP_BIND_STREAM,
-	VDP_RPU_OP_BIND_CONSTANTS,
-	VDP_RPU_OP_BIND_TEXTURE,
-	VDP_RPU_OP_END_DRAW,
-	VDP_RPU_BUFFER_DEFINE_WORDS,
-	VDP_RPU_BUFFER_UPLOAD_DMA_WORDS,
-	VDP_RPU_BUFFER_UPLOAD_INLINE_MIN_WORDS,
-	VDP_RPU_BUFFER_DISCARD_WORDS,
-	VDP_RPU_SURFACE_DEFINE_WORDS,
-	VDP_RPU_CONSTANT_BANK_DEFINE_WORDS,
-	VDP_RPU_CONSTANT_UPLOAD_DMA_WORDS,
-	VDP_RPU_CONSTANT_UPLOAD_INLINE_MIN_WORDS,
-	VDP_RPU_CONSTANT_UPLOAD_DEVICE_WORDS,
-	VDP_RPU_BEGIN_PASS_WORDS,
-	VDP_RPU_END_PASS_WORDS,
-	VDP_RPU_BEGIN_DRAW_WORDS,
-	VDP_RPU_BIND_STREAM_WORDS,
-	VDP_RPU_BIND_CONSTANTS_WORDS,
-	VDP_RPU_BIND_TEXTURE_WORDS,
-	VDP_RPU_END_DRAW_WORDS,
+	VDP_RPU_OP_EXEC_PASS_LIST,
+	VDP_RPU_OP_SEAL_FRAME,
+	VDP_RPU_EXEC_PASS_LIST_WORDS,
+	VDP_RPU_SEAL_FRAME_WORDS,
 	VDP_RPU_RESOURCE_NONE,
-	VDP_RPU_BUFFER_USAGE_VERTEX,
-	VDP_RPU_BUFFER_USAGE_INDEX,
-	VDP_RPU_BUFFER_USAGE_CONSTANT,
 	VDP_RPU_SURFACE_FORMAT_RGBA8,
 	VDP_RPU_SURFACE_FORMAT_DEPTH16,
-	VDP_RPU_SURFACE_USAGE_COLOR,
-	VDP_RPU_SURFACE_USAGE_DEPTH,
-	VDP_RPU_SURFACE_USAGE_TEXTURE,
 	VDP_RPU_PASS_COLOR_CLEAR,
 	VDP_RPU_PASS_DEPTH_CLEAR,
 	VDP_RPU_PASS_COLOR_STORE,
@@ -480,6 +446,14 @@ import {
 	VDP_RPU_CONSTANT_SOURCE_MFU_Q16,
 	VDP_RPU_CONSTANT_SOURCE_JTU_Q16,
 } from '../devices/vdp/rpu';
+import {
+	RPU_SURFACE_DESC_SIZE,
+	RPU_STREAM_DESC_SIZE,
+	RPU_CONSTANT_DESC_SIZE,
+	RPU_TEXTURE_DESC_SIZE,
+	RPU_DRAW_DESC_SIZE,
+	RPU_PASS_DESC_SIZE,
+} from '../devices/vdp/rpu_desc';
 import { VDP_XF_MATRIX_WORDS, VDP_XF_PACKET_KIND } from '../devices/vdp/xf';
 import { VDP_JTU_PACKET_KIND } from '../devices/vdp/jtu';
 import { VDP_MFU_PACKET_KIND } from '../devices/vdp/mfu';
@@ -1550,47 +1524,19 @@ export function seedLuaGlobals(runtime: Runtime): void {
 
 	luaPipeline.registerGlobal(runtime, 'sys_vdp_pkt_end', VDP_PKT_END);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_packet_kind', VDP_RPU_PACKET_KIND);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_buffer_define', VDP_RPU_OP_BUFFER_DEFINE);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_buffer_upload_dma', VDP_RPU_OP_BUFFER_UPLOAD_DMA);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_buffer_upload_inline', VDP_RPU_OP_BUFFER_UPLOAD_INLINE);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_buffer_discard', VDP_RPU_OP_BUFFER_DISCARD);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_surface_define', VDP_RPU_OP_SURFACE_DEFINE);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_constant_bank_define', VDP_RPU_OP_CONSTANT_BANK_DEFINE);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_constant_upload_dma', VDP_RPU_OP_CONSTANT_UPLOAD_DMA);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_constant_upload_inline', VDP_RPU_OP_CONSTANT_UPLOAD_INLINE);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_constant_upload_device', VDP_RPU_OP_CONSTANT_UPLOAD_DEVICE);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_begin_pass', VDP_RPU_OP_BEGIN_PASS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_end_pass', VDP_RPU_OP_END_PASS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_begin_draw', VDP_RPU_OP_BEGIN_DRAW);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_bind_stream', VDP_RPU_OP_BIND_STREAM);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_bind_constants', VDP_RPU_OP_BIND_CONSTANTS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_bind_texture', VDP_RPU_OP_BIND_TEXTURE);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_end_draw', VDP_RPU_OP_END_DRAW);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_buffer_define', VDP_RPU_BUFFER_DEFINE_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_buffer_upload_dma', VDP_RPU_BUFFER_UPLOAD_DMA_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_buffer_upload_inline_min', VDP_RPU_BUFFER_UPLOAD_INLINE_MIN_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_buffer_discard', VDP_RPU_BUFFER_DISCARD_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_surface_define', VDP_RPU_SURFACE_DEFINE_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_constant_bank_define', VDP_RPU_CONSTANT_BANK_DEFINE_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_constant_upload_dma', VDP_RPU_CONSTANT_UPLOAD_DMA_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_constant_upload_inline_min', VDP_RPU_CONSTANT_UPLOAD_INLINE_MIN_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_constant_upload_device', VDP_RPU_CONSTANT_UPLOAD_DEVICE_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_begin_pass', VDP_RPU_BEGIN_PASS_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_end_pass', VDP_RPU_END_PASS_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_begin_draw', VDP_RPU_BEGIN_DRAW_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_bind_stream', VDP_RPU_BIND_STREAM_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_bind_constants', VDP_RPU_BIND_CONSTANTS_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_bind_texture', VDP_RPU_BIND_TEXTURE_WORDS);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_end_draw', VDP_RPU_END_DRAW_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_exec_pass_list', VDP_RPU_OP_EXEC_PASS_LIST);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_op_seal_frame', VDP_RPU_OP_SEAL_FRAME);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_exec_pass_list', VDP_RPU_EXEC_PASS_LIST_WORDS);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_words_seal_frame', VDP_RPU_SEAL_FRAME_WORDS);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_resource_none', VDP_RPU_RESOURCE_NONE);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_usage_vertex', VDP_RPU_BUFFER_USAGE_VERTEX);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_usage_index', VDP_RPU_BUFFER_USAGE_INDEX);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_usage_constant', VDP_RPU_BUFFER_USAGE_CONSTANT);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_format_rgba8', VDP_RPU_SURFACE_FORMAT_RGBA8);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_format_depth16', VDP_RPU_SURFACE_FORMAT_DEPTH16);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_usage_color', VDP_RPU_SURFACE_USAGE_COLOR);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_usage_depth', VDP_RPU_SURFACE_USAGE_DEPTH);
-	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_usage_texture', VDP_RPU_SURFACE_USAGE_TEXTURE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_surface_desc_bytes', RPU_SURFACE_DESC_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_stream_desc_bytes', RPU_STREAM_DESC_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_constant_desc_bytes', RPU_CONSTANT_DESC_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_texture_desc_bytes', RPU_TEXTURE_DESC_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_draw_desc_bytes', RPU_DRAW_DESC_SIZE);
+	luaPipeline.registerGlobal(runtime, 'sys_rpu_pass_desc_bytes', RPU_PASS_DESC_SIZE);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_pass_color_clear', VDP_RPU_PASS_COLOR_CLEAR);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_pass_depth_clear', VDP_RPU_PASS_DEPTH_CLEAR);
 	luaPipeline.registerGlobal(runtime, 'sys_rpu_pass_color_store', VDP_RPU_PASS_COLOR_STORE);

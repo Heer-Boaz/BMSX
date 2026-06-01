@@ -2,16 +2,17 @@
 
 #include "machine/devices/vdp/contracts.h"
 #include "machine/devices/vdp/rpu.h"
+#include "machine/devices/vdp/rpu_desc.h"
 #include "render/backend/backend.h"
 #include "render/backend/pass/library.h"
 #include "render/gameview.h"
-#include "render/vdp/slot_textures.h"
 
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
+#include <unordered_map>
 #include <vector>
 
 namespace bmsx {
@@ -20,25 +21,35 @@ namespace {
 constexpr f64 SOFTWARE_RPU_DEFAULT_CLEAR_DEPTH = 1.0;
 constexpr i32 SOFTWARE_RPU_POINT_SIZE = 3;
 
-struct SoftwareRpuSurface {
-	std::vector<u32> pixels;
-	std::vector<f64> depth;
-	u32 revision = 0;
-	u32 width = 0;
-	u32 height = 0;
-	u8 format = 0;
-};
-
 struct SoftwareRpuTarget {
-	u32* pixels = nullptr;
+	u32* argbPixels = nullptr;
+	u8* rgbaBytes = nullptr;
+	u32 baseOffset = 0u;
+	i32 pitchBytes = 0;
+	i32 stridePixels = 0;
 	i32 width = 0;
 	i32 height = 0;
-	i32 stride = 0;
+	bool defaultArgb = false;
 	std::vector<f64>* depth = nullptr;
 };
 
+struct SoftwareRpuTextureSource {
+	bool enabled = false;
+	const u8* pixels = nullptr;
+	u32 baseOffset = 0u;
+	u32 pitchBytes = 0u;
+	i32 width = 0;
+	i32 height = 0;
+};
+
+struct SoftwareRpuDepthSurface {
+	i32 width = 0;
+	i32 height = 0;
+	std::vector<f64> depth;
+};
+
 struct SoftwareRpuContext {
-	std::array<SoftwareRpuSurface, VDP_RPU_SURFACE_CAPACITY> surfaces{};
+	std::unordered_map<u32, SoftwareRpuDepthSurface> depthSurfaces{};
 	std::vector<f64> defaultDepth;
 	std::array<f64, 4> vx{};
 	std::array<f64, 4> vy{};
@@ -55,23 +66,12 @@ struct SoftwareRpuContext {
 
 SoftwareRpuContext g_rpuSoftware{};
 
-inline u16 readU16(const u8* bytes, u32 offset) {
-	return static_cast<u16>(bytes[offset] | (static_cast<u16>(bytes[offset + 1u]) << 8u));
-}
-
-inline u32 readU32(const u8* bytes, u32 offset) {
-	return static_cast<u32>(bytes[offset])
-		| (static_cast<u32>(bytes[offset + 1u]) << 8u)
-		| (static_cast<u32>(bytes[offset + 2u]) << 16u)
-		| (static_cast<u32>(bytes[offset + 3u]) << 24u);
-}
-
 inline f32 wordAsF32(u32 word) {
 	return std::bit_cast<f32>(word);
 }
 
 inline f32 readF32(const u8* bytes, u32 offset) {
-	return wordAsF32(readU32(bytes, offset));
+	return wordAsF32(readRpuDescU32(bytes, offset));
 }
 
 inline i32 rasterFloor(f64 value) {
@@ -107,30 +107,6 @@ inline u8 colorByteG(u32 color) { return static_cast<u8>((color >> 8u) & 0xffu);
 inline u8 colorByteB(u32 color) { return static_cast<u8>(color & 0xffu); }
 inline u8 colorByteA(u32 color) { return static_cast<u8>((color >> 24u) & 0xffu); }
 
-void syncSurfaceStorage(const VdpRpuFrameOutput& frame, u16 surfaceRef) {
-	const auto& refs = frame.resources.surfaceRefs;
-	const u32 surfaceId = refs.surfaceId[surfaceRef];
-	SoftwareRpuSurface& surface = g_rpuSoftware.surfaces[surfaceId];
-	const u32 revision = refs.revision[surfaceRef];
-	const u32 width = refs.width[surfaceRef];
-	const u32 height = refs.height[surfaceRef];
-	const u8 format = refs.format[surfaceRef];
-	if (surface.revision == revision && surface.width == width && surface.height == height && surface.format == format) {
-		return;
-	}
-	surface.revision = revision;
-	surface.width = width;
-	surface.height = height;
-	surface.format = format;
-	if (format == VDP_RPU_SURFACE_FORMAT_DEPTH16) {
-		surface.depth.assign(static_cast<size_t>(width) * static_cast<size_t>(height), SOFTWARE_RPU_DEFAULT_CLEAR_DEPTH);
-		surface.pixels.clear();
-		return;
-	}
-	surface.pixels.assign(static_cast<size_t>(width) * static_cast<size_t>(height), 0u);
-	surface.depth.clear();
-}
-
 void prepareDefaultDepth(i32 width, i32 height) {
 	const size_t count = static_cast<size_t>(width) * static_cast<size_t>(height);
 	if (g_rpuSoftware.defaultDepth.size() != count) {
@@ -139,24 +115,44 @@ void prepareDefaultDepth(i32 width, i32 height) {
 }
 
 SoftwareRpuTarget passColorTarget(SoftwareBackend& backend, const VdpRpuFrameOutput& frame, size_t passIndex) {
-	const u16 colorRef = frame.commands.passColorSurfaceRef[passIndex];
-	if (colorRef == VDP_RPU_REF_NONE) {
-		return SoftwareRpuTarget{backend.framebuffer(), backend.width(), backend.height(), backend.pitch() / static_cast<i32>(sizeof(u32)), &g_rpuSoftware.defaultDepth};
+	const u32 colorSurfaceDescAddr = frame.commands.passColorSurfaceDescAddr[passIndex];
+	if (colorSurfaceDescAddr == 0u) {
+		return SoftwareRpuTarget{backend.framebuffer(), nullptr, 0u, backend.pitch(), backend.pitch() / static_cast<i32>(sizeof(u32)), backend.width(), backend.height(), true, &g_rpuSoftware.defaultDepth};
 	}
-	syncSurfaceStorage(frame, colorRef);
-	const u32 surfaceId = frame.resources.surfaceRefs.surfaceId[colorRef];
-	SoftwareRpuSurface& surface = g_rpuSoftware.surfaces[surfaceId];
-	return SoftwareRpuTarget{surface.pixels.data(), static_cast<i32>(surface.width), static_cast<i32>(surface.height), static_cast<i32>(surface.width), &g_rpuSoftware.defaultDepth};
+	u8* vram = frame.vdpVram->data();
+	return SoftwareRpuTarget{
+		nullptr,
+		vram,
+		readRpuDescU32(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_BASE_ADDR_OFFSET),
+		static_cast<i32>(readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_PITCH_BYTES_OFFSET)),
+		0,
+		static_cast<i32>(readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET)),
+		static_cast<i32>(readRpuDescU16(vram, colorSurfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET)),
+		false,
+		&g_rpuSoftware.defaultDepth,
+	};
 }
 
-std::vector<f64>* passDepthTarget(const VdpRpuFrameOutput& frame, size_t passIndex) {
-	const u16 depthRef = frame.commands.passDepthSurfaceRef[passIndex];
-	if (depthRef == VDP_RPU_REF_NONE) {
+std::vector<f64>* passDepthTarget(const VdpRpuFrameOutput& frame, size_t passIndex, i32 defaultWidth, i32 defaultHeight) {
+	const u32 depthSurfaceDescAddr = frame.commands.passDepthSurfaceDescAddr[passIndex];
+	if (depthSurfaceDescAddr == 0u) {
+		const size_t count = static_cast<size_t>(defaultWidth) * static_cast<size_t>(defaultHeight);
+		if (g_rpuSoftware.defaultDepth.size() != count) {
+			g_rpuSoftware.defaultDepth.assign(count, SOFTWARE_RPU_DEFAULT_CLEAR_DEPTH);
+		}
 		return &g_rpuSoftware.defaultDepth;
 	}
-	syncSurfaceStorage(frame, depthRef);
-	const u32 surfaceId = frame.resources.surfaceRefs.surfaceId[depthRef];
-	return &g_rpuSoftware.surfaces[surfaceId].depth;
+	const u8* vram = frame.vdpVram->data();
+	const i32 width = static_cast<i32>(readRpuDescU16(vram, depthSurfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET));
+	const i32 height = static_cast<i32>(readRpuDescU16(vram, depthSurfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET));
+	SoftwareRpuDepthSurface& surface = g_rpuSoftware.depthSurfaces[depthSurfaceDescAddr];
+	const size_t count = static_cast<size_t>(width) * static_cast<size_t>(height);
+	if (surface.width != width || surface.height != height || surface.depth.size() != count) {
+		surface.width = width;
+		surface.height = height;
+		surface.depth.assign(count, SOFTWARE_RPU_DEFAULT_CLEAR_DEPTH);
+	}
+	return &surface.depth;
 }
 
 void setDefaultAttribute(u32 attributeId) {
@@ -193,11 +189,28 @@ void setDefaultAttribute(u32 attributeId) {
 }
 
 void fillColorTarget(SoftwareRpuTarget& target, u32 color) {
-	const u32 packed = packArgb(colorByteR(color), colorByteG(color), colorByteB(color), colorByteA(color));
+	const u8 r = colorByteR(color);
+	const u8 g = colorByteG(color);
+	const u8 b = colorByteB(color);
+	const u8 a = colorByteA(color);
+	if (target.defaultArgb) {
+		const u32 packed = packArgb(r, g, b, a);
+		for (i32 y = 0; y < target.height; ++y) {
+			u32* row = target.argbPixels + static_cast<size_t>(y) * static_cast<size_t>(target.stridePixels);
+			for (i32 x = 0; x < target.width; ++x) {
+				row[x] = packed;
+			}
+		}
+		return;
+	}
 	for (i32 y = 0; y < target.height; ++y) {
-		u32* row = target.pixels + static_cast<size_t>(y) * static_cast<size_t>(target.stride);
-		for (i32 x = 0; x < target.width; ++x) {
-			row[x] = packed;
+		u32 offset = target.baseOffset + static_cast<u32>(y * target.pitchBytes);
+		const u32 end = offset + static_cast<u32>(target.width * 4);
+		for (; offset < end; offset += 4u) {
+			target.rgbaBytes[offset] = r;
+			target.rgbaBytes[offset + 1u] = g;
+			target.rgbaBytes[offset + 2u] = b;
+			target.rgbaBytes[offset + 3u] = a;
 		}
 	}
 }
@@ -206,14 +219,9 @@ void readAttribute(const VdpRpuFrameOutput& frame, size_t bindingIndex, u32 elem
 	SoftwareRpuContext& ctx = g_rpuSoftware;
 	const VdpRpuCommandBuffer& commands = frame.commands;
 	const VdpRpuStreamLayoutSpec& layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[bindingIndex]);
-	const u16 refIndex = commands.streamBufferRef[bindingIndex];
 	setDefaultAttribute(attributeId);
-	if (refIndex == VDP_RPU_REF_NONE) {
-		return;
-	}
-	const VdpRpuFrameBufferRefs& refs = frame.resources.bufferRefs;
-	const u8* bytes = refs.bytes[refIndex];
-	const u32 elementOffset = refs.byteOffset[refIndex] + commands.streamByteOffset[bindingIndex] - refs.sourceByteOffset[refIndex] + elementIndex * layout.byteStride;
+	const u8* bytes = frame.vdpVram->data();
+	const u32 elementOffset = commands.streamVramAddr[bindingIndex] + elementIndex * layout.byteStride;
 	for (size_t index = 0; index < layout.attributeCount; ++index) {
 		const VdpRpuStreamAttributeSpec& spec = layout.attributes[index];
 		if (spec.attribute != attributeId) continue;
@@ -254,10 +262,7 @@ size_t findBindingSlot(const u8* slots, size_t firstBinding, size_t bindingCount
 }
 
 u32 constantWord(const VdpRpuFrameOutput& frame, size_t bindingIndex, u32 wordIndex) {
-	const auto& commands = frame.commands;
-	const u16 bank = commands.constantBank[bindingIndex];
-	if (bank == VDP_RPU_REF_NONE) return 0u;
-	return frame.resources.constantWords[frame.resources.constantBanks.firstWord[bank] + commands.constantFirstWord[bindingIndex] + wordIndex];
+	return readRpuDescU32(frame.vdpVram->data(), frame.commands.constantVramAddr[bindingIndex] + wordIndex * 4u);
 }
 
 f64 constantF32(const VdpRpuFrameOutput& frame, size_t bindingIndex, u32 wordIndex) {
@@ -371,7 +376,7 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 	}
 	if (shaderVariant.jointConstantSlot != VDP_RPU_RESOURCE_NONE) {
 		const size_t jointBinding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, shaderVariant.jointConstantSlot);
-		if (jointBinding == constantBindingEnd || commands.constantBank[jointBinding] == VDP_RPU_REF_NONE) {
+		if (jointBinding == constantBindingEnd) {
 			applyDefaultSkin(px, py, pz, nx, ny, nz);
 		} else {
 			applySkin(frame, jointBinding, px, py, pz, nx, ny, nz);
@@ -420,19 +425,18 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 	const f64 modelX = px; const f64 modelY = py; const f64 modelZ = pz;
 	if (shaderVariant.usesC0 != 0u) {
 		const size_t c0Binding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, 0u);
-		if (c0Binding != constantBindingEnd && commands.constantBank[c0Binding] != VDP_RPU_REF_NONE) {
+		if (c0Binding != constantBindingEnd) {
 			transformMatrix(frame, c0Binding, px, py, pz);
 			px = ctx.attr[0]; py = ctx.attr[1]; pz = ctx.attr[2]; pw = ctx.attr[3];
 		}
 	}
 	if (shaderVariant.lightingConstantSlot != VDP_RPU_RESOURCE_NONE) {
 		const size_t c1Binding = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, shaderVariant.lightingConstantSlot);
-		if (c1Binding != constantBindingEnd && commands.constantBank[c1Binding] != VDP_RPU_REF_NONE) {
+		if (c1Binding != constantBindingEnd) {
 			// Apply normal matrix from C0 if available
 			f64 lnx = nx; f64 lny = ny; f64 lnz = nz;
 			const size_t c0BindingNm = findBindingSlot(constantBindingSlot, constantFirstBinding, constantBindingCount, 0u);
-			if (c0BindingNm != constantBindingEnd && commands.constantBank[c0BindingNm] != VDP_RPU_REF_NONE
-				&& commands.constantWordCount[c0BindingNm] >= 25u) {
+			if (c0BindingNm != constantBindingEnd) {
 				lnx = constantF32(frame, c0BindingNm, 16u) * nx + constantF32(frame, c0BindingNm, 19u) * ny + constantF32(frame, c0BindingNm, 22u) * nz;
 				lny = constantF32(frame, c0BindingNm, 17u) * nx + constantF32(frame, c0BindingNm, 20u) * ny + constantF32(frame, c0BindingNm, 23u) * nz;
 				lnz = constantF32(frame, c0BindingNm, 18u) * nx + constantF32(frame, c0BindingNm, 21u) * ny + constantF32(frame, c0BindingNm, 24u) * nz;
@@ -513,14 +517,9 @@ void writeVertex(const VdpRpuFrameOutput& frame, size_t drawIndex, const VdpRpuS
 
 u32 readIndex(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 index) {
 	const auto& commands = frame.commands;
-	const u16 refIndex = commands.drawIndexBufferRef[drawIndex];
-	if (refIndex == VDP_RPU_REF_NONE) {
-		return index;
-	}
-	const auto& refs = frame.resources.bufferRefs;
-	const u8* bytes = refs.bytes[refIndex];
-	const u32 offset = refs.byteOffset[refIndex] + commands.drawIndexByteOffset[drawIndex] - refs.sourceByteOffset[refIndex] + index * (commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_U16 ? 2u : 4u);
-	return commands.drawIndexType[drawIndex] == VDP_RPU_INDEX_U16 ? readU16(bytes, offset) : readU32(bytes, offset);
+	const u32 indexType = commands.drawIndexType[drawIndex];
+	const u32 offset = commands.drawIndexVramAddr[drawIndex] + index * (indexType == VDP_RPU_INDEX_U16 ? 2u : 4u);
+	return indexType == VDP_RPU_INDEX_U16 ? readRpuDescU16(frame.vdpVram->data(), offset) : readRpuDescU32(frame.vdpVram->data(), offset);
 }
 
 size_t textureBinding(const VdpRpuFrameOutput& frame, size_t drawIndex) {
@@ -541,54 +540,42 @@ size_t textureBinding1(const VdpRpuFrameOutput& frame, size_t drawIndex) {
 	return bindingEnd;
 }
 
-void sampleTexture(GameView& view, const VdpRpuFrameOutput& frame, size_t drawIndex, size_t bindingIndex, f64 u, f64 v) {
-	SoftwareRpuContext& ctx = g_rpuSoftware;
-	const size_t bindingEnd = frame.commands.drawFirstTextureBinding[drawIndex] + frame.commands.drawTextureBindingCount[drawIndex];
+void resolveTextureSource(const VdpRpuFrameOutput& frame, size_t bindingIndex, size_t bindingEnd, SoftwareRpuTextureSource& source) {
 	if (bindingIndex == bindingEnd) {
+		source.enabled = false;
+		return;
+	}
+	const u32 surfaceDescAddr = frame.commands.textureSurfaceDescAddr[bindingIndex];
+	if (surfaceDescAddr == 0u) {
+		source.enabled = false;
+		return;
+	}
+	const u8* vram = frame.vdpVram->data();
+	source.enabled = true;
+	source.pixels = vram;
+	source.baseOffset = readRpuDescU32(vram, surfaceDescAddr + RPU_SURFACE_DESC_BASE_ADDR_OFFSET);
+	source.pitchBytes = readRpuDescU16(vram, surfaceDescAddr + RPU_SURFACE_DESC_PITCH_BYTES_OFFSET);
+	source.width = static_cast<i32>(readRpuDescU16(vram, surfaceDescAddr + RPU_SURFACE_DESC_WIDTH_OFFSET));
+	source.height = static_cast<i32>(readRpuDescU16(vram, surfaceDescAddr + RPU_SURFACE_DESC_HEIGHT_OFFSET));
+}
+
+void sampleTexture(const SoftwareRpuTextureSource& source, f64 u, f64 v) {
+	SoftwareRpuContext& ctx = g_rpuSoftware;
+	if (!source.enabled) {
 		ctx.attr[0] = 0.0; ctx.attr[1] = 0.0; ctx.attr[2] = 0.0; ctx.attr[3] = 0.0;
 		return;
 	}
-	const u16 surfaceRef = frame.commands.textureSurfaceRef[bindingIndex];
-	if (surfaceRef == VDP_RPU_REF_NONE) {
-		ctx.attr[0] = 0.0; ctx.attr[1] = 0.0; ctx.attr[2] = 0.0; ctx.attr[3] = 0.0;
-		return;
-	}
-	const u32 surfaceId = frame.resources.surfaceRefs.surfaceId[surfaceRef];
-	i32 width = 0;
-	i32 height = 0;
-	if (surfaceId < VDP_RD_SURFACE_COUNT) {
-		const VdpSlotTexturePixels slot = view.vdpSlotTextures().readSurfaceTexturePixels(surfaceId);
-		width = static_cast<i32>(slot.width);
-		height = static_cast<i32>(slot.height);
-		i32 sx = static_cast<i32>(u * static_cast<f64>(width));
-		i32 sy = static_cast<i32>(v * static_cast<f64>(height));
-		if (sx < 0) sx = 0;
-		if (sy < 0) sy = 0;
-		if (sx >= width) sx = width - 1;
-		if (sy >= height) sy = height - 1;
-		const size_t offset = static_cast<size_t>(sy) * slot.stride + static_cast<size_t>(sx) * 4u;
-		const auto& srgbToLinear = srgbToLinearLut();
-		ctx.attr[0] = static_cast<f64>(srgbToLinear[slot.pixels[offset]]) * (1.0 / 255.0);
-		ctx.attr[1] = static_cast<f64>(srgbToLinear[slot.pixels[offset + 1u]]) * (1.0 / 255.0);
-		ctx.attr[2] = static_cast<f64>(srgbToLinear[slot.pixels[offset + 2u]]) * (1.0 / 255.0);
-		ctx.attr[3] = static_cast<f64>(slot.pixels[offset + 3u]) * (1.0 / 255.0);
-		return;
-	}
-	syncSurfaceStorage(frame, surfaceRef);
-	SoftwareRpuSurface& surface = g_rpuSoftware.surfaces[surfaceId];
-	width = static_cast<i32>(surface.width);
-	height = static_cast<i32>(surface.height);
-	i32 sx = static_cast<i32>(u * static_cast<f64>(width));
-	i32 sy = static_cast<i32>(v * static_cast<f64>(height));
+	i32 sx = static_cast<i32>(u * static_cast<f64>(source.width));
+	i32 sy = static_cast<i32>(v * static_cast<f64>(source.height));
 	if (sx < 0) sx = 0;
 	if (sy < 0) sy = 0;
-	if (sx >= width) sx = width - 1;
-	if (sy >= height) sy = height - 1;
-	const u32 color = surface.pixels[static_cast<size_t>(sy) * static_cast<size_t>(width) + static_cast<size_t>(sx)];
-	ctx.attr[0] = static_cast<f64>(colorByteR(color)) * (1.0 / 255.0);
-	ctx.attr[1] = static_cast<f64>(colorByteG(color)) * (1.0 / 255.0);
-	ctx.attr[2] = static_cast<f64>(colorByteB(color)) * (1.0 / 255.0);
-	ctx.attr[3] = static_cast<f64>(colorByteA(color)) * (1.0 / 255.0);
+	if (sx >= source.width) sx = source.width - 1;
+	if (sy >= source.height) sy = source.height - 1;
+	const u32 offset = source.baseOffset + static_cast<u32>(sy) * source.pitchBytes + static_cast<u32>(sx) * 4u;
+	ctx.attr[0] = static_cast<f64>(source.pixels[offset]) * (1.0 / 255.0);
+	ctx.attr[1] = static_cast<f64>(source.pixels[offset + 1u]) * (1.0 / 255.0);
+	ctx.attr[2] = static_cast<f64>(source.pixels[offset + 2u]) * (1.0 / 255.0);
+	ctx.attr[3] = static_cast<f64>(source.pixels[offset + 3u]) * (1.0 / 255.0);
 }
 
 void writePixel(SoftwareRpuTarget& target, i32 x, i32 y, f64 z, u32 pipelineWord, f64 r, f64 g, f64 b, f64 a) {
@@ -613,46 +600,70 @@ void writePixel(SoftwareRpuTarget& target, i32 x, i32 y, f64 z, u32 pipelineWord
 	}
 	const u32 colorMask = (pipelineWord & VDP_RPU_PIPE_COLOR_WRITE_MASK) >> 16u;
 	if (colorMask == 0u) return;
-	const size_t targetIndex = static_cast<size_t>(y) * static_cast<size_t>(target.stride) + static_cast<size_t>(x);
-	u32 dst = target.pixels[targetIndex];
 	const u32 blend = pipelineWord & VDP_RPU_PIPE_BLEND_MASK;
-	if (blend == VDP_RPU_BLEND_ALPHA) {
-		const u32 invA = 255u - srcA;
+	if (target.defaultArgb) {
+		const size_t targetIndex = static_cast<size_t>(y) * static_cast<size_t>(target.stridePixels) + static_cast<size_t>(x);
+		u32 dst = target.argbPixels[targetIndex];
+		if (blend == VDP_RPU_BLEND_ALPHA) {
+			const u32 invA = 255u - srcA;
+			u8 outR = colorByteR(dst);
+			u8 outG = colorByteG(dst);
+			u8 outB = colorByteB(dst);
+			u8 outA = colorByteA(dst);
+			if ((colorMask & 1u) != 0u) outR = clampByte((static_cast<f64>(srcR) * srcA + static_cast<f64>(outR) * invA + 127.0) / 255.0);
+			if ((colorMask & 2u) != 0u) outG = clampByte((static_cast<f64>(srcG) * srcA + static_cast<f64>(outG) * invA + 127.0) / 255.0);
+			if ((colorMask & 4u) != 0u) outB = clampByte((static_cast<f64>(srcB) * srcA + static_cast<f64>(outB) * invA + 127.0) / 255.0);
+			if ((colorMask & 8u) != 0u) outA = clampByte(static_cast<f64>(srcA) + (static_cast<f64>(outA) * invA + 127.0) / 255.0);
+			target.argbPixels[targetIndex] = packArgb(outR, outG, outB, outA);
+			return;
+		}
+		if (blend == VDP_RPU_BLEND_ADD) {
+			u8 outR = colorByteR(dst);
+			u8 outG = colorByteG(dst);
+			u8 outB = colorByteB(dst);
+			u8 outA = colorByteA(dst);
+			if ((colorMask & 1u) != 0u) outR = clampByte(outR + (static_cast<f64>(srcR) * srcA + 127.0) / 255.0);
+			if ((colorMask & 2u) != 0u) outG = clampByte(outG + (static_cast<f64>(srcG) * srcA + 127.0) / 255.0);
+			if ((colorMask & 4u) != 0u) outB = clampByte(outB + (static_cast<f64>(srcB) * srcA + 127.0) / 255.0);
+			if ((colorMask & 8u) != 0u) outA = clampByte(outA + srcA);
+			target.argbPixels[targetIndex] = packArgb(outR, outG, outB, outA);
+			return;
+		}
 		u8 outR = colorByteR(dst);
 		u8 outG = colorByteG(dst);
 		u8 outB = colorByteB(dst);
 		u8 outA = colorByteA(dst);
-		if ((colorMask & 1u) != 0u) outR = clampByte((static_cast<f64>(srcR) * srcA + static_cast<f64>(outR) * invA + 127.0) / 255.0);
-		if ((colorMask & 2u) != 0u) outG = clampByte((static_cast<f64>(srcG) * srcA + static_cast<f64>(outG) * invA + 127.0) / 255.0);
-		if ((colorMask & 4u) != 0u) outB = clampByte((static_cast<f64>(srcB) * srcA + static_cast<f64>(outB) * invA + 127.0) / 255.0);
-		if ((colorMask & 8u) != 0u) outA = clampByte(static_cast<f64>(srcA) + (static_cast<f64>(outA) * invA + 127.0) / 255.0);
-		target.pixels[targetIndex] = packArgb(outR, outG, outB, outA);
+		if ((colorMask & 1u) != 0u) outR = srcR;
+		if ((colorMask & 2u) != 0u) outG = srcG;
+		if ((colorMask & 4u) != 0u) outB = srcB;
+		if ((colorMask & 8u) != 0u) outA = srcA;
+		target.argbPixels[targetIndex] = packArgb(outR, outG, outB, outA);
+		return;
+	}
+	const u32 offset = target.baseOffset + static_cast<u32>(y * target.pitchBytes + x * 4);
+	u8* pixels = target.rgbaBytes;
+	if (blend == VDP_RPU_BLEND_ALPHA) {
+		const u32 invA = 255u - srcA;
+		if ((colorMask & 1u) != 0u) pixels[offset] = clampByte((static_cast<f64>(srcR) * srcA + static_cast<f64>(pixels[offset]) * invA + 127.0) / 255.0);
+		if ((colorMask & 2u) != 0u) pixels[offset + 1u] = clampByte((static_cast<f64>(srcG) * srcA + static_cast<f64>(pixels[offset + 1u]) * invA + 127.0) / 255.0);
+		if ((colorMask & 4u) != 0u) pixels[offset + 2u] = clampByte((static_cast<f64>(srcB) * srcA + static_cast<f64>(pixels[offset + 2u]) * invA + 127.0) / 255.0);
+		if ((colorMask & 8u) != 0u) pixels[offset + 3u] = clampByte(static_cast<f64>(srcA) + (static_cast<f64>(pixels[offset + 3u]) * invA + 127.0) / 255.0);
 		return;
 	}
 	if (blend == VDP_RPU_BLEND_ADD) {
-		u8 outR = colorByteR(dst);
-		u8 outG = colorByteG(dst);
-		u8 outB = colorByteB(dst);
-		u8 outA = colorByteA(dst);
-		if ((colorMask & 1u) != 0u) outR = clampByte(outR + (static_cast<f64>(srcR) * srcA + 127.0) / 255.0);
-		if ((colorMask & 2u) != 0u) outG = clampByte(outG + (static_cast<f64>(srcG) * srcA + 127.0) / 255.0);
-		if ((colorMask & 4u) != 0u) outB = clampByte(outB + (static_cast<f64>(srcB) * srcA + 127.0) / 255.0);
-		if ((colorMask & 8u) != 0u) outA = clampByte(outA + srcA);
-		target.pixels[targetIndex] = packArgb(outR, outG, outB, outA);
+		if ((colorMask & 1u) != 0u) pixels[offset] = clampByte(pixels[offset] + (static_cast<f64>(srcR) * srcA + 127.0) / 255.0);
+		if ((colorMask & 2u) != 0u) pixels[offset + 1u] = clampByte(pixels[offset + 1u] + (static_cast<f64>(srcG) * srcA + 127.0) / 255.0);
+		if ((colorMask & 4u) != 0u) pixels[offset + 2u] = clampByte(pixels[offset + 2u] + (static_cast<f64>(srcB) * srcA + 127.0) / 255.0);
+		if ((colorMask & 8u) != 0u) pixels[offset + 3u] = clampByte(pixels[offset + 3u] + srcA);
 		return;
 	}
-	u8 outR = colorByteR(dst);
-	u8 outG = colorByteG(dst);
-	u8 outB = colorByteB(dst);
-	u8 outA = colorByteA(dst);
-	if ((colorMask & 1u) != 0u) outR = srcR;
-	if ((colorMask & 2u) != 0u) outG = srcG;
-	if ((colorMask & 4u) != 0u) outB = srcB;
-	if ((colorMask & 8u) != 0u) outA = srcA;
-	target.pixels[targetIndex] = packArgb(outR, outG, outB, outA);
+	if ((colorMask & 1u) != 0u) pixels[offset] = srcR;
+	if ((colorMask & 2u) != 0u) pixels[offset + 1u] = srcG;
+	if ((colorMask & 4u) != 0u) pixels[offset + 2u] = srcB;
+	if ((colorMask & 8u) != 0u) pixels[offset + 3u] = srcA;
 }
 
-void drawTriangle(GameView& view, const VdpRpuFrameOutput& frame, size_t drawIndex, SoftwareRpuTarget& target, size_t texture, size_t t1Texture) {
+void drawTriangle(const VdpRpuFrameOutput& frame, size_t drawIndex, SoftwareRpuTarget& target, const SoftwareRpuTextureSource& texture, const SoftwareRpuTextureSource& t1Texture) {
 	SoftwareRpuContext& ctx = g_rpuSoftware;
 	const f64 x0 = ctx.vx[0]; const f64 y0 = ctx.vy[0];
 	const f64 x1 = ctx.vx[1]; const f64 y1 = ctx.vy[1];
@@ -669,7 +680,6 @@ void drawTriangle(GameView& view, const VdpRpuFrameOutput& frame, size_t drawInd
 	if (maxY > target.height) maxY = target.height;
 	const f64 invArea = 1.0 / area;
 	const u32 pipelineWord = frame.commands.drawPipelineWord[drawIndex];
-	const size_t textureEnd = frame.commands.drawFirstTextureBinding[drawIndex] + frame.commands.drawTextureBindingCount[drawIndex];
 	for (i32 y = minY; y < maxY; ++y) {
 		const f64 py = static_cast<f64>(y) + 0.5;
 		for (i32 x = minX; x < maxX; ++x) {
@@ -682,16 +692,16 @@ void drawTriangle(GameView& view, const VdpRpuFrameOutput& frame, size_t drawInd
 			f64 g = ctx.vg[0] * w0 + ctx.vg[1] * w1 + ctx.vg[2] * w2;
 			f64 b = ctx.vb[0] * w0 + ctx.vb[1] * w1 + ctx.vb[2] * w2;
 			f64 a = ctx.va[0] * w0 + ctx.va[1] * w1 + ctx.va[2] * w2;
-			if (texture != textureEnd) {
+			if (texture.enabled) {
 				const f64 u = ctx.vu[0] * w0 + ctx.vu[1] * w1 + ctx.vu[2] * w2;
 				const f64 v = ctx.vv[0] * w0 + ctx.vv[1] * w1 + ctx.vv[2] * w2;
-				sampleTexture(view, frame, drawIndex, texture, u, v);
+				sampleTexture(texture, u, v);
 				r *= ctx.attr[0]; g *= ctx.attr[1]; b *= ctx.attr[2]; a *= ctx.attr[3];
 			}
-			if (t1Texture != textureEnd) {
+			if (t1Texture.enabled) {
 				const f64 u = ctx.vu[0] * w0 + ctx.vu[1] * w1 + ctx.vu[2] * w2;
 				const f64 v = ctx.vv[0] * w0 + ctx.vv[1] * w1 + ctx.vv[2] * w2;
-				sampleTexture(view, frame, drawIndex, t1Texture, u, v);
+				sampleTexture(t1Texture, u, v);
 				r *= ctx.attr[0]; g *= ctx.attr[1]; b *= ctx.attr[2]; a *= ctx.attr[3];
 			}
 			const f64 z = ctx.vz[0] * w0 + ctx.vz[1] * w1 + ctx.vz[2] * w2;
@@ -734,20 +744,22 @@ void drawPoint(const VdpRpuFrameOutput& frame, size_t drawIndex, SoftwareRpuTarg
 	}
 }
 
-void drawCommand(GameView& view, const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCount, u32 instanceCount, u32 indexCount, SoftwareRpuTarget& target) {
+void drawCommand(const VdpRpuFrameOutput& frame, size_t drawIndex, u32 vertexCount, u32 instanceCount, u32 indexCount, SoftwareRpuTarget& target) {
 	const auto& commands = frame.commands;
 	const u16 rawVariantWord = commands.drawShaderVariant[drawIndex];
 	const VdpRpuShaderVariantSpec& shaderVariant = resolveVdpRpuShaderVariantSpec(rawVariantWord);
 	const size_t textureEnd = commands.drawFirstTextureBinding[drawIndex] + commands.drawTextureBindingCount[drawIndex];
-	const size_t texture = shaderVariant.textureSlotCount == 0u ? textureEnd : textureBinding(frame, drawIndex);
-	const size_t t1Texture = (rawVariantWord & VDP_RPU_SHADER_FLAG_T1) != 0u ? textureBinding1(frame, drawIndex) : textureEnd;
+	SoftwareRpuTextureSource texture{};
+	SoftwareRpuTextureSource t1Texture{};
+	resolveTextureSource(frame, shaderVariant.textureSlotCount == 0u ? textureEnd : textureBinding(frame, drawIndex), textureEnd, texture);
+	resolveTextureSource(frame, (rawVariantWord & VDP_RPU_SHADER_FLAG_T1) != 0u ? textureBinding1(frame, drawIndex) : textureEnd, textureEnd, t1Texture);
 	const u32 primitive = commands.drawPrimitive[drawIndex];
 	const u32 drawnInstanceCount = shaderVariant.instanceMode == VDP_RPU_INSTANCE_MODE_NONE ? 1u : instanceCount;
-	const bool drawIndexed = commands.drawIndexType[drawIndex] != VDP_RPU_INDEX_NONE && commands.drawIndexBufferRef[drawIndex] != VDP_RPU_REF_NONE;
+	const bool drawIndexed = commands.drawIndexType[drawIndex] != VDP_RPU_INDEX_NONE && commands.drawIndexVramAddr[drawIndex] != 0u;
+	const u32 elementCount = drawIndexed ? indexCount : vertexCount;
 	for (u32 instanceIndex = 0; instanceIndex < drawnInstanceCount; ++instanceIndex) {
 		if (primitive == VDP_RPU_PRIM_LINES) {
-			const u32 count = drawIndexed ? indexCount : vertexCount;
-			for (u32 vertex = 0; vertex + 1u < count; vertex += 2u) {
+			for (u32 vertex = 0; vertex + 1u < elementCount; vertex += 2u) {
 				const u32 v0 = drawIndexed ? readIndex(frame, drawIndex, vertex) : vertex;
 				const u32 v1 = drawIndexed ? readIndex(frame, drawIndex, vertex + 1u) : vertex + 1u;
 				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0u, target.width, target.height);
@@ -757,17 +769,15 @@ void drawCommand(GameView& view, const VdpRpuFrameOutput& frame, size_t drawInde
 			continue;
 		}
 		if (primitive == VDP_RPU_PRIM_POINTS) {
-			const u32 count = drawIndexed ? indexCount : vertexCount;
-			for (u32 vertex = 0; vertex < count; ++vertex) {
+			for (u32 vertex = 0; vertex < elementCount; ++vertex) {
 				const u32 v0 = drawIndexed ? readIndex(frame, drawIndex, vertex) : vertex;
 				writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0u, target.width, target.height);
 				drawPoint(frame, drawIndex, target);
 			}
 			continue;
 		}
-		const u32 count = drawIndexed ? indexCount : vertexCount;
 		const u32 triangleStep = primitive == VDP_RPU_PRIM_TRIANGLE_STRIP ? 1u : 3u;
-		const u32 triangleLimit = primitive == VDP_RPU_PRIM_TRIANGLE_STRIP ? count - 2u : count;
+		const u32 triangleLimit = primitive == VDP_RPU_PRIM_TRIANGLE_STRIP ? elementCount - 2u : elementCount;
 		for (u32 vertex = 0; vertex < triangleLimit; vertex += triangleStep) {
 			const u32 i0 = vertex;
 			const u32 i1 = primitive == VDP_RPU_PRIM_TRIANGLE_STRIP && (vertex & 1u) != 0u ? vertex + 2u : vertex + 1u;
@@ -778,19 +788,19 @@ void drawCommand(GameView& view, const VdpRpuFrameOutput& frame, size_t drawInde
 			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v0, instanceIndex, 0u, target.width, target.height);
 			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v1, instanceIndex, 1u, target.width, target.height);
 			writeVertex(frame, drawIndex, shaderVariant, rawVariantWord, v2, instanceIndex, 2u, target.width, target.height);
-			drawTriangle(view, frame, drawIndex, target, texture, t1Texture);
+			drawTriangle(frame, drawIndex, target, texture, t1Texture);
 		}
 	}
 }
 
 } // namespace
 
-void renderVdpRpuSoftwareFrame(SoftwareBackend& backend, GameView& view, const VdpRpuFrameOutput& frame) {
+void renderVdpRpuSoftwareFrame(SoftwareBackend& backend, GameView&, const VdpRpuFrameOutput& frame) {
 	prepareDefaultDepth(backend.width(), backend.height());
 	const auto& commands = frame.commands;
 	for (size_t passIndex = 0; passIndex < commands.passCount; ++passIndex) {
 		SoftwareRpuTarget target = passColorTarget(backend, frame, passIndex);
-		target.depth = passDepthTarget(frame, passIndex);
+		target.depth = passDepthTarget(frame, passIndex, target.width, target.height);
 		const u32 passOps = commands.passOps[passIndex];
 		if ((passOps & VDP_RPU_PASS_COLOR_CLEAR) != 0u) {
 			fillColorTarget(target, commands.passClearColor[passIndex]);
@@ -800,16 +810,15 @@ void renderVdpRpuSoftwareFrame(SoftwareBackend& backend, GameView& view, const V
 		} else if (passIndex == 0u) {
 			std::fill(target.depth->begin(), target.depth->end(), SOFTWARE_RPU_DEFAULT_CLEAR_DEPTH);
 		}
-		const size_t firstBatch = commands.passFirstBatch[passIndex];
-		const size_t batchEnd = firstBatch + commands.passBatchCount[passIndex];
-		for (size_t batchIndex = firstBatch; batchIndex < batchEnd; ++batchIndex) {
+		const size_t firstDraw = commands.passFirstDraw[passIndex];
+		const size_t drawEnd = firstDraw + commands.passDrawCount[passIndex];
+		for (size_t drawIndex = firstDraw; drawIndex < drawEnd; ++drawIndex) {
 			drawCommand(
-				view,
 				frame,
-				commands.batchFirstDraw[batchIndex],
-				commands.batchVertexCount[batchIndex],
-				commands.batchInstanceCount[batchIndex],
-				commands.batchIndexCount[batchIndex],
+				drawIndex,
+				commands.drawVertexCount[drawIndex],
+				commands.drawInstanceCount[drawIndex],
+				commands.drawIndexCount[drawIndex],
 				target
 			);
 		}

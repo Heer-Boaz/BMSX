@@ -6,6 +6,7 @@
 #include "machine/devices/vdp/contracts.h"
 #include "machine/devices/vdp/registers.h"
 #include "machine/devices/vdp/rpu.h"
+#include "machine/devices/vdp/rpu_desc.h"
 #include "machine/devices/vdp/xf.h"
 #include "machine/devices/vdp/jtu.h"
 #include "machine/devices/vdp/mfu.h"
@@ -111,47 +112,19 @@ void seedSystemGlobals(Runtime& runtime) {
 
 	runtime.setGlobal("sys_vdp_pkt_end", valueNumber(static_cast<double>(VDP_PKT_END)));
 	runtime.setGlobal("sys_rpu_packet_kind", valueNumber(static_cast<double>(VDP_RPU_PACKET_KIND)));
-	runtime.setGlobal("sys_rpu_op_buffer_define", valueNumber(static_cast<double>(VDP_RPU_OP_BUFFER_DEFINE)));
-	runtime.setGlobal("sys_rpu_op_buffer_upload_dma", valueNumber(static_cast<double>(VDP_RPU_OP_BUFFER_UPLOAD_DMA)));
-	runtime.setGlobal("sys_rpu_op_buffer_upload_inline", valueNumber(static_cast<double>(VDP_RPU_OP_BUFFER_UPLOAD_INLINE)));
-	runtime.setGlobal("sys_rpu_op_buffer_discard", valueNumber(static_cast<double>(VDP_RPU_OP_BUFFER_DISCARD)));
-	runtime.setGlobal("sys_rpu_op_surface_define", valueNumber(static_cast<double>(VDP_RPU_OP_SURFACE_DEFINE)));
-	runtime.setGlobal("sys_rpu_op_constant_bank_define", valueNumber(static_cast<double>(VDP_RPU_OP_CONSTANT_BANK_DEFINE)));
-	runtime.setGlobal("sys_rpu_op_constant_upload_dma", valueNumber(static_cast<double>(VDP_RPU_OP_CONSTANT_UPLOAD_DMA)));
-	runtime.setGlobal("sys_rpu_op_constant_upload_inline", valueNumber(static_cast<double>(VDP_RPU_OP_CONSTANT_UPLOAD_INLINE)));
-	runtime.setGlobal("sys_rpu_op_constant_upload_device", valueNumber(static_cast<double>(VDP_RPU_OP_CONSTANT_UPLOAD_DEVICE)));
-	runtime.setGlobal("sys_rpu_op_begin_pass", valueNumber(static_cast<double>(VDP_RPU_OP_BEGIN_PASS)));
-	runtime.setGlobal("sys_rpu_op_end_pass", valueNumber(static_cast<double>(VDP_RPU_OP_END_PASS)));
-	runtime.setGlobal("sys_rpu_op_begin_draw", valueNumber(static_cast<double>(VDP_RPU_OP_BEGIN_DRAW)));
-	runtime.setGlobal("sys_rpu_op_bind_stream", valueNumber(static_cast<double>(VDP_RPU_OP_BIND_STREAM)));
-	runtime.setGlobal("sys_rpu_op_bind_constants", valueNumber(static_cast<double>(VDP_RPU_OP_BIND_CONSTANTS)));
-	runtime.setGlobal("sys_rpu_op_bind_texture", valueNumber(static_cast<double>(VDP_RPU_OP_BIND_TEXTURE)));
-	runtime.setGlobal("sys_rpu_op_end_draw", valueNumber(static_cast<double>(VDP_RPU_OP_END_DRAW)));
-	runtime.setGlobal("sys_rpu_words_buffer_define", valueNumber(static_cast<double>(VDP_RPU_BUFFER_DEFINE_WORDS)));
-	runtime.setGlobal("sys_rpu_words_buffer_upload_dma", valueNumber(static_cast<double>(VDP_RPU_BUFFER_UPLOAD_DMA_WORDS)));
-	runtime.setGlobal("sys_rpu_words_buffer_upload_inline_min", valueNumber(static_cast<double>(VDP_RPU_BUFFER_UPLOAD_INLINE_MIN_WORDS)));
-	runtime.setGlobal("sys_rpu_words_buffer_discard", valueNumber(static_cast<double>(VDP_RPU_BUFFER_DISCARD_WORDS)));
-	runtime.setGlobal("sys_rpu_words_surface_define", valueNumber(static_cast<double>(VDP_RPU_SURFACE_DEFINE_WORDS)));
-	runtime.setGlobal("sys_rpu_words_constant_bank_define", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_BANK_DEFINE_WORDS)));
-	runtime.setGlobal("sys_rpu_words_constant_upload_dma", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_UPLOAD_DMA_WORDS)));
-	runtime.setGlobal("sys_rpu_words_constant_upload_inline_min", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_UPLOAD_INLINE_MIN_WORDS)));
-	runtime.setGlobal("sys_rpu_words_constant_upload_device", valueNumber(static_cast<double>(VDP_RPU_CONSTANT_UPLOAD_DEVICE_WORDS)));
-	runtime.setGlobal("sys_rpu_words_begin_pass", valueNumber(static_cast<double>(VDP_RPU_BEGIN_PASS_WORDS)));
-	runtime.setGlobal("sys_rpu_words_end_pass", valueNumber(static_cast<double>(VDP_RPU_END_PASS_WORDS)));
-	runtime.setGlobal("sys_rpu_words_begin_draw", valueNumber(static_cast<double>(VDP_RPU_BEGIN_DRAW_WORDS)));
-	runtime.setGlobal("sys_rpu_words_bind_stream", valueNumber(static_cast<double>(VDP_RPU_BIND_STREAM_WORDS)));
-	runtime.setGlobal("sys_rpu_words_bind_constants", valueNumber(static_cast<double>(VDP_RPU_BIND_CONSTANTS_WORDS)));
-	runtime.setGlobal("sys_rpu_words_bind_texture", valueNumber(static_cast<double>(VDP_RPU_BIND_TEXTURE_WORDS)));
-	runtime.setGlobal("sys_rpu_words_end_draw", valueNumber(static_cast<double>(VDP_RPU_END_DRAW_WORDS)));
+	runtime.setGlobal("sys_rpu_op_exec_pass_list", valueNumber(static_cast<double>(VDP_RPU_OP_EXEC_PASS_LIST)));
+	runtime.setGlobal("sys_rpu_op_seal_frame", valueNumber(static_cast<double>(VDP_RPU_OP_SEAL_FRAME)));
+	runtime.setGlobal("sys_rpu_words_exec_pass_list", valueNumber(static_cast<double>(VDP_RPU_EXEC_PASS_LIST_WORDS)));
+	runtime.setGlobal("sys_rpu_words_seal_frame", valueNumber(static_cast<double>(VDP_RPU_SEAL_FRAME_WORDS)));
 	runtime.setGlobal("sys_rpu_resource_none", valueNumber(static_cast<double>(VDP_RPU_RESOURCE_NONE)));
-	runtime.setGlobal("sys_rpu_usage_vertex", valueNumber(static_cast<double>(VDP_RPU_BUFFER_USAGE_VERTEX)));
-	runtime.setGlobal("sys_rpu_usage_index", valueNumber(static_cast<double>(VDP_RPU_BUFFER_USAGE_INDEX)));
-	runtime.setGlobal("sys_rpu_usage_constant", valueNumber(static_cast<double>(VDP_RPU_BUFFER_USAGE_CONSTANT)));
 	runtime.setGlobal("sys_rpu_surface_format_rgba8", valueNumber(static_cast<double>(VDP_RPU_SURFACE_FORMAT_RGBA8)));
 	runtime.setGlobal("sys_rpu_surface_format_depth16", valueNumber(static_cast<double>(VDP_RPU_SURFACE_FORMAT_DEPTH16)));
-	runtime.setGlobal("sys_rpu_surface_usage_color", valueNumber(static_cast<double>(VDP_RPU_SURFACE_USAGE_COLOR)));
-	runtime.setGlobal("sys_rpu_surface_usage_depth", valueNumber(static_cast<double>(VDP_RPU_SURFACE_USAGE_DEPTH)));
-	runtime.setGlobal("sys_rpu_surface_usage_texture", valueNumber(static_cast<double>(VDP_RPU_SURFACE_USAGE_TEXTURE)));
+	runtime.setGlobal("sys_rpu_surface_desc_bytes", valueNumber(static_cast<double>(RPU_SURFACE_DESC_SIZE)));
+	runtime.setGlobal("sys_rpu_stream_desc_bytes", valueNumber(static_cast<double>(RPU_STREAM_DESC_SIZE)));
+	runtime.setGlobal("sys_rpu_constant_desc_bytes", valueNumber(static_cast<double>(RPU_CONSTANT_DESC_SIZE)));
+	runtime.setGlobal("sys_rpu_texture_desc_bytes", valueNumber(static_cast<double>(RPU_TEXTURE_DESC_SIZE)));
+	runtime.setGlobal("sys_rpu_draw_desc_bytes", valueNumber(static_cast<double>(RPU_DRAW_DESC_SIZE)));
+	runtime.setGlobal("sys_rpu_pass_desc_bytes", valueNumber(static_cast<double>(RPU_PASS_DESC_SIZE)));
 	runtime.setGlobal("sys_rpu_pass_color_clear", valueNumber(static_cast<double>(VDP_RPU_PASS_COLOR_CLEAR)));
 	runtime.setGlobal("sys_rpu_pass_depth_clear", valueNumber(static_cast<double>(VDP_RPU_PASS_DEPTH_CLEAR)));
 	runtime.setGlobal("sys_rpu_pass_color_store", valueNumber(static_cast<double>(VDP_RPU_PASS_COLOR_STORE)));

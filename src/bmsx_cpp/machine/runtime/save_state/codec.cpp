@@ -563,144 +563,17 @@ std::vector<u8> decodeU8Vector(const BinValue& value, const char* label, size_t 
 	return values;
 }
 
-BinValue encodeRpuFrameBufferRefState(const VdpRpuFrameBufferRefSaveState& state) {
-	return BinValue(BinObject{
-		{"bufferId", static_cast<i64>(state.bufferId)},
-		{"revision", static_cast<i64>(state.revision)},
-		{"sourceByteOffset", static_cast<i64>(state.sourceByteOffset)},
-		{"byteOffset", static_cast<i64>(state.byteOffset)},
-		{"byteLength", static_cast<i64>(state.byteLength)},
-		{"usage", static_cast<i64>(state.usage)},
-	});
-}
-
-VdpRpuFrameBufferRefSaveState decodeRpuFrameBufferRefState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpRpuFrameBufferRefSaveState state;
-	state.bufferId = requireU32(requireField(object, "bufferId", label), "machine.vdp.rpu.bufferRef.bufferId");
-	state.revision = requireU32(requireField(object, "revision", label), "machine.vdp.rpu.bufferRef.revision");
-	state.sourceByteOffset = requireU32(requireField(object, "sourceByteOffset", label), "machine.vdp.rpu.bufferRef.sourceByteOffset");
-	state.byteOffset = requireU32(requireField(object, "byteOffset", label), "machine.vdp.rpu.bufferRef.byteOffset");
-	state.byteLength = requireU32(requireField(object, "byteLength", label), "machine.vdp.rpu.bufferRef.byteLength");
-	state.usage = requireBoundedU32(requireField(object, "usage", label), "machine.vdp.rpu.bufferRef.usage", 0u, 0xffu);
-	return state;
-}
-
-BinValue encodeRpuFrameSurfaceRefState(const VdpRpuFrameSurfaceRefSaveState& state) {
-	return BinValue(BinObject{
-		{"surfaceId", static_cast<i64>(state.surfaceId)},
-		{"revision", static_cast<i64>(state.revision)},
-		{"width", static_cast<i64>(state.width)},
-		{"height", static_cast<i64>(state.height)},
-		{"format", static_cast<i64>(state.format)},
-		{"usage", static_cast<i64>(state.usage)},
-	});
-}
-
-VdpRpuFrameSurfaceRefSaveState decodeRpuFrameSurfaceRefState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpRpuFrameSurfaceRefSaveState state;
-	state.surfaceId = requireU32(requireField(object, "surfaceId", label), "machine.vdp.rpu.surfaceRef.surfaceId");
-	state.revision = requireU32(requireField(object, "revision", label), "machine.vdp.rpu.surfaceRef.revision");
-	state.width = requireBoundedU32(requireField(object, "width", label), "machine.vdp.rpu.surfaceRef.width", 0u, 0xffffu);
-	state.height = requireBoundedU32(requireField(object, "height", label), "machine.vdp.rpu.surfaceRef.height", 0u, 0xffffu);
-	state.format = requireBoundedU32(requireField(object, "format", label), "machine.vdp.rpu.surfaceRef.format", 0u, 0xffu);
-	state.usage = requireBoundedU32(requireField(object, "usage", label), "machine.vdp.rpu.surfaceRef.usage", 0u, 0xffu);
-	return state;
-}
-
-BinValue encodeRpuConstantBankState(const VdpRpuConstantBankSaveState& state) {
-	return BinValue(BinObject{
-		{"firstWord", static_cast<i64>(state.firstWord)},
-		{"wordCount", static_cast<i64>(state.wordCount)},
-		{"epoch", static_cast<i64>(state.epoch)},
-	});
-}
-
-VdpRpuConstantBankSaveState decodeRpuConstantBankState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpRpuConstantBankSaveState state;
-	state.firstWord = requireU32(requireField(object, "firstWord", label), "machine.vdp.rpu.constantBank.firstWord");
-	state.wordCount = requireBoundedU32(requireField(object, "wordCount", label), "machine.vdp.rpu.constantBank.wordCount", 0u, 0xffffu);
-	state.epoch = requireU32(requireField(object, "epoch", label), "machine.vdp.rpu.constantBank.epoch");
-	return state;
-}
-
-BinValue encodeRpuBufferRecordState(const VdpRpuBufferRecordSaveState& state) {
-	return BinValue(BinObject{
-		{"bufferId", static_cast<i64>(state.bufferId)},
-		{"liveRevision", static_cast<i64>(state.liveRevision)},
-		{"byteLength", static_cast<i64>(state.byteLength)},
-		{"usage", static_cast<i64>(state.usage)},
-	});
-}
-
-VdpRpuBufferRecordSaveState decodeRpuBufferRecordState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpRpuBufferRecordSaveState state;
-	state.bufferId = requireBoundedU32(requireField(object, "bufferId", label), "machine.vdp.rpu.buffer.bufferId", 0u, static_cast<u32>(VDP_RPU_BUFFER_CAPACITY - 1u));
-	state.liveRevision = requireU32(requireField(object, "liveRevision", label), "machine.vdp.rpu.buffer.liveRevision");
-	state.byteLength = requireBoundedU32(requireField(object, "byteLength", label), "machine.vdp.rpu.buffer.byteLength", 0u, static_cast<u32>(VDP_RPU_BUFFER_SLOT_BYTE_CAPACITY));
-	state.usage = requireU32(requireField(object, "usage", label), "machine.vdp.rpu.buffer.usage");
-	return state;
-}
-
-BinValue encodeRpuBufferImageState(const VdpRpuBufferImageSaveState& state) {
-	return BinValue(BinObject{
-		{"bufferId", static_cast<i64>(state.bufferId)},
-		{"bytes", BinValue(BinBinary(state.bytes.begin(), state.bytes.end()))},
-	});
-}
-
-VdpRpuBufferImageSaveState decodeRpuBufferImageState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpRpuBufferImageSaveState state;
-	state.bufferId = requireBoundedU32(requireField(object, "bufferId", label), "machine.vdp.rpu.bufferImage.bufferId", 0u, static_cast<u32>(VDP_RPU_BUFFER_CAPACITY - 1u));
-	const BinBinary& bytes = requireBinary(requireField(object, "bytes", label), "machine.vdp.rpu.bufferImage.bytes");
-	if (bytes.size() > VDP_RPU_BUFFER_SLOT_BYTE_CAPACITY) {
-		throw BMSX_RUNTIME_ERROR("machine.vdp.rpu.bufferImage.bytes exceeds capacity.");
-	}
-	state.bytes = bytes;
-	return state;
-}
-
-BinValue encodeRpuSurfaceRecordState(const VdpRpuSurfaceRecordSaveState& state) {
-	return BinValue(BinObject{
-		{"surfaceId", static_cast<i64>(state.surfaceId)},
-		{"liveRevision", static_cast<i64>(state.liveRevision)},
-		{"width", static_cast<i64>(state.width)},
-		{"height", static_cast<i64>(state.height)},
-		{"format", static_cast<i64>(state.format)},
-		{"usage", static_cast<i64>(state.usage)},
-	});
-}
-
-VdpRpuSurfaceRecordSaveState decodeRpuSurfaceRecordState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	VdpRpuSurfaceRecordSaveState state;
-	state.surfaceId = requireBoundedU32(requireField(object, "surfaceId", label), "machine.vdp.rpu.surface.surfaceId", 0u, static_cast<u32>(VDP_RPU_SURFACE_CAPACITY - 1u));
-	state.liveRevision = requireU32(requireField(object, "liveRevision", label), "machine.vdp.rpu.surface.liveRevision");
-	state.width = requireBoundedU32(requireField(object, "width", label), "machine.vdp.rpu.surface.width", 0u, 0xffffu);
-	state.height = requireBoundedU32(requireField(object, "height", label), "machine.vdp.rpu.surface.height", 0u, 0xffffu);
-	state.format = requireBoundedU32(requireField(object, "format", label), "machine.vdp.rpu.surface.format", 0u, 0xffu);
-	state.usage = requireBoundedU32(requireField(object, "usage", label), "machine.vdp.rpu.surface.usage", 0u, 0xffu);
-	return state;
-}
-
 BinValue encodeRpuCommandBufferState(const VdpRpuCommandBufferSaveState& state) {
 	return BinValue(BinObject{
 		{"passCount", static_cast<i64>(state.passCount)},
 		{"drawCount", static_cast<i64>(state.drawCount)},
-		{"drawBatchCount", static_cast<i64>(state.drawBatchCount)},
 		{"streamBindingCount", static_cast<i64>(state.streamBindingCount)},
 		{"constantBindingCount", static_cast<i64>(state.constantBindingCount)},
 		{"textureBindingCount", static_cast<i64>(state.textureBindingCount)},
 		{"passFirstDraw", encodeVector<u32>(state.passFirstDraw, encodeScalar<i64, u32>)},
 		{"passDrawCount", encodeVector<u16>(state.passDrawCount, encodeScalar<i64, u16>)},
-		{"passFirstBatch", encodeVector<u32>(state.passFirstBatch, encodeScalar<i64, u32>)},
-		{"passBatchCount", encodeVector<u16>(state.passBatchCount, encodeScalar<i64, u16>)},
-		{"passColorSurfaceRef", encodeVector<u16>(state.passColorSurfaceRef, encodeScalar<i64, u16>)},
-		{"passDepthSurfaceRef", encodeVector<u16>(state.passDepthSurfaceRef, encodeScalar<i64, u16>)},
+		{"passColorSurfaceDescAddr", encodeVector<u32>(state.passColorSurfaceDescAddr, encodeScalar<i64, u32>)},
+		{"passDepthSurfaceDescAddr", encodeVector<u32>(state.passDepthSurfaceDescAddr, encodeScalar<i64, u32>)},
 		{"passViewportXY", encodeVector<u32>(state.passViewportXY, encodeScalar<i64, u32>)},
 		{"passViewportWH", encodeVector<u32>(state.passViewportWH, encodeScalar<i64, u32>)},
 		{"passOps", encodeVector<u32>(state.passOps, encodeScalar<i64, u32>)},
@@ -711,8 +584,7 @@ BinValue encodeRpuCommandBufferState(const VdpRpuCommandBufferSaveState& state) 
 		{"drawPipelineWord", encodeVector<u32>(state.drawPipelineWord, encodeScalar<i64, u32>)},
 		{"drawVertexCount", encodeVector<u32>(state.drawVertexCount, encodeScalar<i64, u32>)},
 		{"drawInstanceCount", encodeVector<u32>(state.drawInstanceCount, encodeScalar<i64, u32>)},
-		{"drawIndexBufferRef", encodeVector<u16>(state.drawIndexBufferRef, encodeScalar<i64, u16>)},
-		{"drawIndexByteOffset", encodeVector<u32>(state.drawIndexByteOffset, encodeScalar<i64, u32>)},
+		{"drawIndexVramAddr", encodeVector<u32>(state.drawIndexVramAddr, encodeScalar<i64, u32>)},
 		{"drawIndexCount", encodeVector<u32>(state.drawIndexCount, encodeScalar<i64, u32>)},
 		{"drawIndexType", encodeVector<u8>(state.drawIndexType, encodeScalar<i64, u8>)},
 		{"drawFirstStreamBinding", encodeVector<u32>(state.drawFirstStreamBinding, encodeScalar<i64, u32>)},
@@ -721,22 +593,16 @@ BinValue encodeRpuCommandBufferState(const VdpRpuCommandBufferSaveState& state) 
 		{"drawConstantBindingCount", encodeVector<u8>(state.drawConstantBindingCount, encodeScalar<i64, u8>)},
 		{"drawFirstTextureBinding", encodeVector<u32>(state.drawFirstTextureBinding, encodeScalar<i64, u32>)},
 		{"drawTextureBindingCount", encodeVector<u8>(state.drawTextureBindingCount, encodeScalar<i64, u8>)},
-		{"batchFirstDraw", encodeVector<u32>(state.batchFirstDraw, encodeScalar<i64, u32>)},
-		{"batchDrawCount", encodeVector<u16>(state.batchDrawCount, encodeScalar<i64, u16>)},
-		{"batchVertexCount", encodeVector<u32>(state.batchVertexCount, encodeScalar<i64, u32>)},
-		{"batchInstanceCount", encodeVector<u32>(state.batchInstanceCount, encodeScalar<i64, u32>)},
-		{"batchIndexCount", encodeVector<u32>(state.batchIndexCount, encodeScalar<i64, u32>)},
 		{"streamLayoutId", encodeVector<u16>(state.streamLayoutId, encodeScalar<i64, u16>)},
 		{"streamSlot", encodeVector<u8>(state.streamSlot, encodeScalar<i64, u8>)},
-		{"streamBufferRef", encodeVector<u16>(state.streamBufferRef, encodeScalar<i64, u16>)},
-		{"streamByteOffset", encodeVector<u32>(state.streamByteOffset, encodeScalar<i64, u32>)},
+		{"streamVramAddr", encodeVector<u32>(state.streamVramAddr, encodeScalar<i64, u32>)},
+		{"streamByteLength", encodeVector<u32>(state.streamByteLength, encodeScalar<i64, u32>)},
 		{"streamStepRate", encodeVector<u8>(state.streamStepRate, encodeScalar<i64, u8>)},
 		{"constantBindingSlot", encodeVector<u8>(state.constantBindingSlot, encodeScalar<i64, u8>)},
-		{"constantBank", encodeVector<u16>(state.constantBank, encodeScalar<i64, u16>)},
-		{"constantFirstWord", encodeVector<u16>(state.constantFirstWord, encodeScalar<i64, u16>)},
-		{"constantWordCount", encodeVector<u16>(state.constantWordCount, encodeScalar<i64, u16>)},
+		{"constantVramAddr", encodeVector<u32>(state.constantVramAddr, encodeScalar<i64, u32>)},
+		{"constantByteLength", encodeVector<u32>(state.constantByteLength, encodeScalar<i64, u32>)},
 		{"textureSlot", encodeVector<u8>(state.textureSlot, encodeScalar<i64, u8>)},
-		{"textureSurfaceRef", encodeVector<u16>(state.textureSurfaceRef, encodeScalar<i64, u16>)},
+		{"textureSurfaceDescAddr", encodeVector<u32>(state.textureSurfaceDescAddr, encodeScalar<i64, u32>)},
 	});
 }
 
@@ -745,16 +611,13 @@ VdpRpuCommandBufferSaveState decodeRpuCommandBufferState(const BinValue& value, 
 	VdpRpuCommandBufferSaveState state;
 	state.passCount = requireBoundedU32(requireField(object, "passCount", label), "machine.vdp.rpu.commands.passCount", 0u, static_cast<u32>(VDP_RPU_PASS_CAPACITY));
 	state.drawCount = requireBoundedU32(requireField(object, "drawCount", label), "machine.vdp.rpu.commands.drawCount", 0u, static_cast<u32>(VDP_RPU_DRAW_CAPACITY));
-	state.drawBatchCount = requireBoundedU32(requireField(object, "drawBatchCount", label), "machine.vdp.rpu.commands.drawBatchCount", 0u, static_cast<u32>(VDP_RPU_DRAW_BATCH_CAPACITY));
 	state.streamBindingCount = requireBoundedU32(requireField(object, "streamBindingCount", label), "machine.vdp.rpu.commands.streamBindingCount", 0u, static_cast<u32>(VDP_RPU_STREAM_BINDING_CAPACITY));
 	state.constantBindingCount = requireBoundedU32(requireField(object, "constantBindingCount", label), "machine.vdp.rpu.commands.constantBindingCount", 0u, static_cast<u32>(VDP_RPU_CONSTANT_BINDING_CAPACITY));
 	state.textureBindingCount = requireBoundedU32(requireField(object, "textureBindingCount", label), "machine.vdp.rpu.commands.textureBindingCount", 0u, static_cast<u32>(VDP_RPU_TEXTURE_BINDING_CAPACITY));
 	state.passFirstDraw = requireVectorSize(decodeU32Vector(requireField(object, "passFirstDraw", label), "machine.vdp.rpu.commands.passFirstDraw", VDP_RPU_PASS_CAPACITY), state.passCount, "machine.vdp.rpu.commands.passFirstDraw");
 	state.passDrawCount = requireVectorSize(decodeU16Vector(requireField(object, "passDrawCount", label), "machine.vdp.rpu.commands.passDrawCount", VDP_RPU_PASS_CAPACITY), state.passCount, "machine.vdp.rpu.commands.passDrawCount");
-	state.passFirstBatch = requireVectorSize(decodeU32Vector(requireField(object, "passFirstBatch", label), "machine.vdp.rpu.commands.passFirstBatch", VDP_RPU_PASS_CAPACITY), state.passCount, "machine.vdp.rpu.commands.passFirstBatch");
-	state.passBatchCount = requireVectorSize(decodeU16Vector(requireField(object, "passBatchCount", label), "machine.vdp.rpu.commands.passBatchCount", VDP_RPU_PASS_CAPACITY), state.passCount, "machine.vdp.rpu.commands.passBatchCount");
-	state.passColorSurfaceRef = requireVectorSize(decodeU16Vector(requireField(object, "passColorSurfaceRef", label), "machine.vdp.rpu.commands.passColorSurfaceRef", VDP_RPU_PASS_CAPACITY), state.passCount, "machine.vdp.rpu.commands.passColorSurfaceRef");
-	state.passDepthSurfaceRef = requireVectorSize(decodeU16Vector(requireField(object, "passDepthSurfaceRef", label), "machine.vdp.rpu.commands.passDepthSurfaceRef", VDP_RPU_PASS_CAPACITY), state.passCount, "machine.vdp.rpu.commands.passDepthSurfaceRef");
+	state.passColorSurfaceDescAddr = requireVectorSize(decodeU32Vector(requireField(object, "passColorSurfaceDescAddr", label), "machine.vdp.rpu.commands.passColorSurfaceDescAddr", VDP_RPU_PASS_CAPACITY), state.passCount, "machine.vdp.rpu.commands.passColorSurfaceDescAddr");
+	state.passDepthSurfaceDescAddr = requireVectorSize(decodeU32Vector(requireField(object, "passDepthSurfaceDescAddr", label), "machine.vdp.rpu.commands.passDepthSurfaceDescAddr", VDP_RPU_PASS_CAPACITY), state.passCount, "machine.vdp.rpu.commands.passDepthSurfaceDescAddr");
 	state.passViewportXY = requireVectorSize(decodeU32Vector(requireField(object, "passViewportXY", label), "machine.vdp.rpu.commands.passViewportXY", VDP_RPU_PASS_CAPACITY), state.passCount, "machine.vdp.rpu.commands.passViewportXY");
 	state.passViewportWH = requireVectorSize(decodeU32Vector(requireField(object, "passViewportWH", label), "machine.vdp.rpu.commands.passViewportWH", VDP_RPU_PASS_CAPACITY), state.passCount, "machine.vdp.rpu.commands.passViewportWH");
 	state.passOps = requireVectorSize(decodeU32Vector(requireField(object, "passOps", label), "machine.vdp.rpu.commands.passOps", VDP_RPU_PASS_CAPACITY), state.passCount, "machine.vdp.rpu.commands.passOps");
@@ -765,8 +628,7 @@ VdpRpuCommandBufferSaveState decodeRpuCommandBufferState(const BinValue& value, 
 	state.drawPipelineWord = requireVectorSize(decodeU32Vector(requireField(object, "drawPipelineWord", label), "machine.vdp.rpu.commands.drawPipelineWord", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawPipelineWord");
 	state.drawVertexCount = requireVectorSize(decodeU32Vector(requireField(object, "drawVertexCount", label), "machine.vdp.rpu.commands.drawVertexCount", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawVertexCount");
 	state.drawInstanceCount = requireVectorSize(decodeU32Vector(requireField(object, "drawInstanceCount", label), "machine.vdp.rpu.commands.drawInstanceCount", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawInstanceCount");
-	state.drawIndexBufferRef = requireVectorSize(decodeU16Vector(requireField(object, "drawIndexBufferRef", label), "machine.vdp.rpu.commands.drawIndexBufferRef", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawIndexBufferRef");
-	state.drawIndexByteOffset = requireVectorSize(decodeU32Vector(requireField(object, "drawIndexByteOffset", label), "machine.vdp.rpu.commands.drawIndexByteOffset", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawIndexByteOffset");
+	state.drawIndexVramAddr = requireVectorSize(decodeU32Vector(requireField(object, "drawIndexVramAddr", label), "machine.vdp.rpu.commands.drawIndexVramAddr", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawIndexVramAddr");
 	state.drawIndexCount = requireVectorSize(decodeU32Vector(requireField(object, "drawIndexCount", label), "machine.vdp.rpu.commands.drawIndexCount", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawIndexCount");
 	state.drawIndexType = requireVectorSize(decodeU8Vector(requireField(object, "drawIndexType", label), "machine.vdp.rpu.commands.drawIndexType", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawIndexType");
 	state.drawFirstStreamBinding = requireVectorSize(decodeU32Vector(requireField(object, "drawFirstStreamBinding", label), "machine.vdp.rpu.commands.drawFirstStreamBinding", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawFirstStreamBinding");
@@ -775,33 +637,22 @@ VdpRpuCommandBufferSaveState decodeRpuCommandBufferState(const BinValue& value, 
 	state.drawConstantBindingCount = requireVectorSize(decodeU8Vector(requireField(object, "drawConstantBindingCount", label), "machine.vdp.rpu.commands.drawConstantBindingCount", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawConstantBindingCount");
 	state.drawFirstTextureBinding = requireVectorSize(decodeU32Vector(requireField(object, "drawFirstTextureBinding", label), "machine.vdp.rpu.commands.drawFirstTextureBinding", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawFirstTextureBinding");
 	state.drawTextureBindingCount = requireVectorSize(decodeU8Vector(requireField(object, "drawTextureBindingCount", label), "machine.vdp.rpu.commands.drawTextureBindingCount", VDP_RPU_DRAW_CAPACITY), state.drawCount, "machine.vdp.rpu.commands.drawTextureBindingCount");
-	state.batchFirstDraw = requireVectorSize(decodeU32Vector(requireField(object, "batchFirstDraw", label), "machine.vdp.rpu.commands.batchFirstDraw", VDP_RPU_DRAW_BATCH_CAPACITY), state.drawBatchCount, "machine.vdp.rpu.commands.batchFirstDraw");
-	state.batchDrawCount = requireVectorSize(decodeU16Vector(requireField(object, "batchDrawCount", label), "machine.vdp.rpu.commands.batchDrawCount", VDP_RPU_DRAW_BATCH_CAPACITY), state.drawBatchCount, "machine.vdp.rpu.commands.batchDrawCount");
-	state.batchVertexCount = requireVectorSize(decodeU32Vector(requireField(object, "batchVertexCount", label), "machine.vdp.rpu.commands.batchVertexCount", VDP_RPU_DRAW_BATCH_CAPACITY), state.drawBatchCount, "machine.vdp.rpu.commands.batchVertexCount");
-	state.batchInstanceCount = requireVectorSize(decodeU32Vector(requireField(object, "batchInstanceCount", label), "machine.vdp.rpu.commands.batchInstanceCount", VDP_RPU_DRAW_BATCH_CAPACITY), state.drawBatchCount, "machine.vdp.rpu.commands.batchInstanceCount");
-	state.batchIndexCount = requireVectorSize(decodeU32Vector(requireField(object, "batchIndexCount", label), "machine.vdp.rpu.commands.batchIndexCount", VDP_RPU_DRAW_BATCH_CAPACITY), state.drawBatchCount, "machine.vdp.rpu.commands.batchIndexCount");
 	state.streamLayoutId = requireVectorSize(decodeU16Vector(requireField(object, "streamLayoutId", label), "machine.vdp.rpu.commands.streamLayoutId", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamLayoutId");
 	state.streamSlot = requireVectorSize(decodeU8Vector(requireField(object, "streamSlot", label), "machine.vdp.rpu.commands.streamSlot", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamSlot");
-	state.streamBufferRef = requireVectorSize(decodeU16Vector(requireField(object, "streamBufferRef", label), "machine.vdp.rpu.commands.streamBufferRef", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamBufferRef");
-	state.streamByteOffset = requireVectorSize(decodeU32Vector(requireField(object, "streamByteOffset", label), "machine.vdp.rpu.commands.streamByteOffset", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamByteOffset");
+	state.streamVramAddr = requireVectorSize(decodeU32Vector(requireField(object, "streamVramAddr", label), "machine.vdp.rpu.commands.streamVramAddr", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamVramAddr");
+	state.streamByteLength = requireVectorSize(decodeU32Vector(requireField(object, "streamByteLength", label), "machine.vdp.rpu.commands.streamByteLength", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamByteLength");
 	state.streamStepRate = requireVectorSize(decodeU8Vector(requireField(object, "streamStepRate", label), "machine.vdp.rpu.commands.streamStepRate", VDP_RPU_STREAM_BINDING_CAPACITY), state.streamBindingCount, "machine.vdp.rpu.commands.streamStepRate");
 	state.constantBindingSlot = requireVectorSize(decodeU8Vector(requireField(object, "constantBindingSlot", label), "machine.vdp.rpu.commands.constantBindingSlot", VDP_RPU_CONSTANT_BINDING_CAPACITY), state.constantBindingCount, "machine.vdp.rpu.commands.constantBindingSlot");
-	state.constantBank = requireVectorSize(decodeU16Vector(requireField(object, "constantBank", label), "machine.vdp.rpu.commands.constantBank", VDP_RPU_CONSTANT_BINDING_CAPACITY), state.constantBindingCount, "machine.vdp.rpu.commands.constantBank");
-	state.constantFirstWord = requireVectorSize(decodeU16Vector(requireField(object, "constantFirstWord", label), "machine.vdp.rpu.commands.constantFirstWord", VDP_RPU_CONSTANT_BINDING_CAPACITY), state.constantBindingCount, "machine.vdp.rpu.commands.constantFirstWord");
-	state.constantWordCount = requireVectorSize(decodeU16Vector(requireField(object, "constantWordCount", label), "machine.vdp.rpu.commands.constantWordCount", VDP_RPU_CONSTANT_BINDING_CAPACITY), state.constantBindingCount, "machine.vdp.rpu.commands.constantWordCount");
+	state.constantVramAddr = requireVectorSize(decodeU32Vector(requireField(object, "constantVramAddr", label), "machine.vdp.rpu.commands.constantVramAddr", VDP_RPU_CONSTANT_BINDING_CAPACITY), state.constantBindingCount, "machine.vdp.rpu.commands.constantVramAddr");
+	state.constantByteLength = requireVectorSize(decodeU32Vector(requireField(object, "constantByteLength", label), "machine.vdp.rpu.commands.constantByteLength", VDP_RPU_CONSTANT_BINDING_CAPACITY), state.constantBindingCount, "machine.vdp.rpu.commands.constantByteLength");
 	state.textureSlot = requireVectorSize(decodeU8Vector(requireField(object, "textureSlot", label), "machine.vdp.rpu.commands.textureSlot", VDP_RPU_TEXTURE_BINDING_CAPACITY), state.textureBindingCount, "machine.vdp.rpu.commands.textureSlot");
-	state.textureSurfaceRef = requireVectorSize(decodeU16Vector(requireField(object, "textureSurfaceRef", label), "machine.vdp.rpu.commands.textureSurfaceRef", VDP_RPU_TEXTURE_BINDING_CAPACITY), state.textureBindingCount, "machine.vdp.rpu.commands.textureSurfaceRef");
+	state.textureSurfaceDescAddr = requireVectorSize(decodeU32Vector(requireField(object, "textureSurfaceDescAddr", label), "machine.vdp.rpu.commands.textureSurfaceDescAddr", VDP_RPU_TEXTURE_BINDING_CAPACITY), state.textureBindingCount, "machine.vdp.rpu.commands.textureSurfaceDescAddr");
 	return state;
 }
 
 BinValue encodeRpuFrameState(const VdpRpuFrameSaveState& state) {
 	return BinValue(BinObject{
 		{"commands", encodeRpuCommandBufferState(state.commands)},
-		{"bufferRefs", encodeVector<VdpRpuFrameBufferRefSaveState>(state.bufferRefs, encodeRpuFrameBufferRefState)},
-		{"bufferBytes", encodeVector<u8>(state.bufferBytes, encodeScalar<i64, u8>)},
-		{"surfaceRefs", encodeVector<VdpRpuFrameSurfaceRefSaveState>(state.surfaceRefs, encodeRpuFrameSurfaceRefState)},
-		{"constantWords", encodeVector<u32>(state.constantWords, encodeScalar<i64, u32>)},
-		{"constantBanks", encodeVector<VdpRpuConstantBankSaveState>(state.constantBanks, encodeRpuConstantBankState)},
 	});
 }
 
@@ -809,37 +660,21 @@ VdpRpuFrameSaveState decodeRpuFrameState(const BinValue& value, const char* labe
 	const BinObject& object = requireObject(value, label);
 	VdpRpuFrameSaveState state;
 	state.commands = decodeRpuCommandBufferState(requireField(object, "commands", label), "machine.vdp.rpu.commands");
-	state.bufferRefs = decodeVector<VdpRpuFrameBufferRefSaveState>(requireField(object, "bufferRefs", label), "machine.vdp.rpu.bufferRefs", [](const BinValue& entry, size_t) { return decodeRpuFrameBufferRefState(entry, "machine.vdp.rpu.bufferRefs[]"); });
-	state.bufferBytes = decodeU8Vector(requireField(object, "bufferBytes", label), "machine.vdp.rpu.bufferBytes", VDP_RPU_FRAME_BUFFER_BYTE_CAPACITY);
-	state.surfaceRefs = decodeVector<VdpRpuFrameSurfaceRefSaveState>(requireField(object, "surfaceRefs", label), "machine.vdp.rpu.surfaceRefs", [](const BinValue& entry, size_t) { return decodeRpuFrameSurfaceRefState(entry, "machine.vdp.rpu.surfaceRefs[]"); });
-	state.constantWords = decodeU32Vector(requireField(object, "constantWords", label), "machine.vdp.rpu.constantWords", VDP_RPU_CONSTANT_WORD_CAPACITY);
-	state.constantBanks = decodeVector<VdpRpuConstantBankSaveState>(requireField(object, "constantBanks", label), "machine.vdp.rpu.constantBanks", [](const BinValue& entry, size_t) { return decodeRpuConstantBankState(entry, "machine.vdp.rpu.constantBanks[]"); });
-	if (state.bufferRefs.size() > VDP_RPU_BUFFER_REF_CAPACITY || state.surfaceRefs.size() > VDP_RPU_SURFACE_REF_CAPACITY || state.constantBanks.size() > VDP_RPU_CONSTANT_BANK_CAPACITY) {
-		throw BMSX_RUNTIME_ERROR(std::string(label) + " exceeds RPU frame capacity.");
-	}
 	return state;
 }
 
 BinValue encodeRpuState(const VdpRpuSaveState& state) {
 	return BinValue(BinObject{
 		{"buildState", static_cast<i64>(state.buildState)},
-		{"openPassIndex", static_cast<i64>(state.openPassIndex)},
-		{"openDrawIndex", static_cast<i64>(state.openDrawIndex)},
-		{"buffers", encodeVector<VdpRpuBufferRecordSaveState>(state.buffers, encodeRpuBufferRecordState)},
-		{"bufferImages", encodeVector<VdpRpuBufferImageSaveState>(state.bufferImages, encodeRpuBufferImageState)},
-		{"surfaces", encodeVector<VdpRpuSurfaceRecordSaveState>(state.surfaces, encodeRpuSurfaceRecordState)},
+		{"vdpVram", encodeVector<u8>(state.vdpVram, encodeScalar<i64, u8>)},
 	});
 }
 
 VdpRpuSaveState decodeRpuState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	VdpRpuSaveState state;
-	state.buildState = requireBoundedU32(requireField(object, "buildState", label), "machine.vdp.rpu.buildState", VDP_RPU_FRAME_IDLE, VDP_RPU_DRAW_OPEN);
-	state.openPassIndex = requireBoundedU32(requireField(object, "openPassIndex", label), "machine.vdp.rpu.openPassIndex", 0u, static_cast<u32>(VDP_RPU_PASS_CAPACITY));
-	state.openDrawIndex = requireBoundedU32(requireField(object, "openDrawIndex", label), "machine.vdp.rpu.openDrawIndex", 0u, static_cast<u32>(VDP_RPU_DRAW_CAPACITY));
-	state.buffers = decodeVector<VdpRpuBufferRecordSaveState>(requireField(object, "buffers", label), "machine.vdp.rpu.buffers", [](const BinValue& entry, size_t) { return decodeRpuBufferRecordState(entry, "machine.vdp.rpu.buffers[]"); });
-	state.bufferImages = decodeVector<VdpRpuBufferImageSaveState>(requireField(object, "bufferImages", label), "machine.vdp.rpu.bufferImages", [](const BinValue& entry, size_t) { return decodeRpuBufferImageState(entry, "machine.vdp.rpu.bufferImages[]"); });
-	state.surfaces = decodeVector<VdpRpuSurfaceRecordSaveState>(requireField(object, "surfaces", label), "machine.vdp.rpu.surfaces", [](const BinValue& entry, size_t) { return decodeRpuSurfaceRecordState(entry, "machine.vdp.rpu.surfaces[]"); });
+	state.buildState = requireBoundedU32(requireField(object, "buildState", label), "machine.vdp.rpu.buildState", VDP_RPU_FRAME_IDLE, VDP_RPU_FRAME_OPEN);
+	state.vdpVram = decodeU8Vector(requireField(object, "vdpVram", label), "machine.vdp.rpu.vdpVram", VDP_RPU_PARAM_MEM_SIZE);
 	return state;
 }
 
