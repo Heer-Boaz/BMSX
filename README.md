@@ -4,7 +4,7 @@ BMSX is a fantasy console with real console discipline.
 
 It is fictional hardware, but the architecture is treated like a real machine: carts run against CPU, RAM/ROM, MMIO registers, and device controllers. Host code exists to present audio, video, input, files, and platform entrypoints; it should not become the cart-facing hardware contract.
 
-The TypeScript implementation is the canonical browser/headless/CLI machine runtime and host stack. The C++ implementation mirrors the machine structure for libretro/custom hosts.
+The TypeScript implementation is the canonical browser/headless/CLI machine runtime and host stack. The C++ implementation mirrors the machine structure and supplies native adapter/host build artifacts.
 
 See `docs/architecture.md` for the machine/host boundary rules.
 
@@ -21,9 +21,11 @@ See `docs/architecture.md` for the machine/host boundary rules.
 - `src/bmsx/audio`: host-side audio playback/output code, not the machine audio device
 - `src/bmsx/ide`: editor, terminal, workbench, and IDE runtime tooling
 - `src/bmsx/res`: BIOS/system ROM resources
-- `src/bmsx_hostplatform`: browser/headless/CLI host platform code
-- `src/bmsx_cpp`: C++ machine/runtime implementation for libretro/custom hosts
-- `src/carts`: Lua carts and cart-local resources
+- `src/bmsx_hostplatform`: browser, headless, and CLI host services
+- `src/bmsx_cpp/machine`: C++ machine/runtime implementation
+- `src/bmsx_cpp/platform/libretro`: native libretro adapter exposing BMSX as a libretro core
+- `src/bmsx_cpp/platform/libretro_host`: native host executable that loads a libretro adapter/core
+- `src/carts`: Lua cart software for the machine and cart-local resources
 - `scripts/rompacker`: BIOS/cart/platform builders
 - `scripts/bootrom`: browser and Node boot entrypoints
 - `dist`: generated ROMs and runtime artifacts
@@ -31,8 +33,8 @@ See `docs/architecture.md` for the machine/host boundary rules.
 ## Build Model
 
 - BIOS/system assets live in `src/bmsx/res`
-- carts live in `src/carts/<cart-folder>`
-- cart resources live in `src/carts/<cart-folder>/res`
+- current carts live in `src/carts/<cart-folder>`
+- current cart resources live in `src/carts/<cart-folder>/res`
 - `build:game` takes the cart folder name, not the ROM manifest name
 - headless/CLI use debug artifacts
 - libretro/custom-host runs require non-debug BIOS and non-debug cart ROMs
@@ -53,7 +55,7 @@ Avoid this for new hardware-facing behavior:
 cart Lua -> native host/runtime shortcut
 ```
 
-The host may accelerate implementation details, but it must not own the semantics of console hardware. Existing build artifact names still use `engine` in a few places; treat that as historical naming unless referring to concrete files such as `engine.debug.js`.
+The host may accelerate implementation details, but it must not own the semantics of console hardware. Use the architecture roles precisely: the machine owns cart-observable semantics, an adapter exposes the machine through a foreign ABI, a host owns the process and physical services, and a mode is a behavior variant inside one host. Names such as `engine.debug.js` identify current artifacts only; they are not ownership terms.
 
 ## Runtime Timing
 

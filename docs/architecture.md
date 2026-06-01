@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-05-25.
+Last checked: 2026-06-01.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -26,6 +26,64 @@ Forbidden cart-visible shapes:
 
 Host code may load files, build ROMs, display frames, play samples, edit source,
 and inject input events. It must not be the owner of cart-observable semantics.
+
+A BMSX host owns the process and physical host services. A BMSX adapter exposes
+the machine through a foreign embedding ABI. Neither owns cart-observable
+machine semantics.
+
+## Runtime container vocabulary
+
+Ownership terms are architectural roles, not interchangeable directory labels:
+
+- `machine` owns cart-observable semantics: CPU, memory, MMIO, firmware,
+  scheduler, devices, ROM/program formats, and deterministic save-state.
+- `adapter` exposes the machine through an external ABI or embedding contract.
+  It translates that ABI at the edge and then consumes the BMSX machine/runtime.
+- `host` owns the process, window/device/runtime environment, files, physical
+  input, audio/video presentation, and execution loop.
+- `mode` is a behavior variant inside one host. A mode may choose pacing,
+  capture, CLI, headless, or test-runner behavior; it is not a separate machine.
+
+Current artifact roles:
+
+- `bmsx_core` / a future installed `libbmsx.a`: machine library.
+- `bmsx_libretro.so` / `.dll` / `.dylib`: adapter exposing the libretro ABI.
+- `bmsx_libretro_host`: host executable that loads a libretro adapter/core and
+  owns SDL, ALSA, EGL/fbdev, input devices, screenshots, and the process loop.
+- `engine.debug.js` and related browser artifacts: browser host/bootstrap
+  artifacts that import the console runtime; the `engine` filename is not an
+  ownership category.
+- headless and CLI entrypoints: Node host modes unless a future split gives them
+  separate host packages.
+
+Do not use `platform` as an architecture category for both `libretro` and
+`libretro_host`. The first is an adapter; the second is a host. Current path
+names do not override these roles.
+
+## Repository and package boundary policy
+
+Keep this repository as one monorepo while TS and C++ machine implementations
+need lockstep parity, the public machine API still moves, ROM/program/save-state
+wire formats still change, adapters still move with machine internals, and
+cross-language parity/golden cases need one CI slice.
+
+Split repositories only after all of these are true:
+
+- `bmsx-console` / native machine libraries have a stable public API.
+- Adapters use only that public API, not internal imports/includes.
+- ROM, program, and save-state formats are releasable with explicit versions.
+- Parity audits and golden cases can run as a published conformance suite.
+- External consumers exist that need independent versioning.
+
+The package boundary is `machine`, `adapters`, `hosts`, `tools`, `carts`, and
+`tests`. Carts are software for the machine, not part of the machine package.
+Current `src/carts/<name>` folders are cart collections with cart-local
+resources. If cart source moves during a package split, it should move toward a
+top-level `carts/` collection, not under `machine`.
+
+The exception is firmware/source material that ships with the console runtime:
+BIOS, system-ROM helpers, and default boot/source assets belong under the
+machine firmware owner. That is not a general cart collection.
 
 ## Mirrored core contract
 
