@@ -75,6 +75,11 @@ Direct `IO_VDP_CMD` accepts:
 
 FIFO/DMA stream packets use `VDP_PKT_*` headers:
 
+Header word-count fields count payload words only; the header word itself is
+not part of the count. For RPU packets, payload word 0 is the RPU operation.
+ABI harness structs may model a full packet record as header plus payload, but
+the public word-count constants remain payload counts.
+
 | Packet | Effect |
 |---|---|
 | `VDP_PKT_END` | Terminates a sealed stream. It must be the final word. |

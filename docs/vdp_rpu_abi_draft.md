@@ -91,7 +91,14 @@ calculation uses register-word arithmetic; count overflow wraps into the pinned
 span instead of becoming a semantic draw rejection. The backend still receives
 the original draw counts.
 
-## Stream packet header
+## Stream packet words
+
+Vocabulary in this document:
+
+- packet header: the single sealed-stream header word;
+- packet payload: the words counted by bits 23..16 of the header;
+- RPU op: payload word 0;
+- packet record: header plus payload words, as used by ABI harness structs.
 
 The RPU uses the same sealed-stream header shape as other VDP unit packets.
 
@@ -129,7 +136,7 @@ export const VDP_RPU_OP_BIND_TEXTURE = 43;
 export const VDP_RPU_OP_END_DRAW = 44;
 ```
 
-Exact payload word counts:
+Exact payload word counts, excluding the header word and including the RPU op word:
 
 ```ts
 export const VDP_RPU_BUFFER_DEFINE_WORDS = 4;
@@ -188,7 +195,7 @@ Lifecycle rules:
 - `END_PASS` commits the current pass.
 - `VDP_CMD_END_FRAME` requires no open pass/draw and seals the frame.
 
-## Packet payload schemas
+## Packet payload schemas, header excluded
 
 ```ts
 export type VdpRpuBufferDefinePacket = readonly [
@@ -295,8 +302,11 @@ Stream slots are fixed shader inputs, not semantic unit categories. Slot `0`
 feeds the vertex attribute stream for the selected fixed shader variant. Slot
 `1` feeds the instance attribute stream for instanced variants. Other
 representable slot values are retained but not consumed by the baseline fixed
-shader inputs. Multiple binds to the same consumed slot are deterministic: the
-last bind in the draw wins.
+shader inputs. `layoutId` is the sole owner of stream layout. Shader variants do
+not carry a second vertex or instance layout owner. Multiple binds to the same
+consumed slot are deterministic: the last bind in the draw wins. `stepRate` is
+decoded as an 8-bit stream divisor: zero pins per-vertex data, and nonzero pins
+`ceil(instanceCount / stepRate)` elements using integer datapath arithmetic.
 
 ## Device constant upload
 
@@ -486,11 +496,11 @@ export const VDP_RPU_DRAW_INDEX_TYPE_MASK = 0x0000ff00;
 
 Representable raw-word rules:
 
-- `passOps`, `pipelineWord`, primitive bits, and index-type bits are retained as raw words after structural packet/resource admission.
+- `passOps`, `pipelineWord`, primitive bits, index-type bits, and the low 16 bits of the shader word are retained after structural packet/resource admission.
+- Shader word bits 0..2 select the fixed shader variant. Bits 3 and 4 are retained feature flags for morph and T1 sampling.
 - Unknown enum values in blend/depth/cull/primitive/index fields do not fault merely because they are weird.
-- Unknown stream layout ids do not fault once the buffer range can be pinned;
-  admission uses the baseline `V2_C4` stride for range pinning, and the backend
-  consumes the retained layout id through its deterministic layout decoder.
+- Stream slots and step rates are retained as low 8-bit fields. Stream layout ids are retained as low 16-bit fields.
+- Unknown retained stream layout ids do not fault once the buffer range can be pinned; admission and backend layout decode use the same retained layout id and deterministic baseline `V2_C4` layout for unknown ids.
 - The backend maps the retained raw words onto WebGL/GLES2 state deterministically; weird-but-representable state may render weirdly. Texture sampling is fixed nearest/clamp and is not part of the packet ABI.
 
 ## Retained command buffer
@@ -717,8 +727,6 @@ export type VdpRpuShaderConstantSlotSpec = Readonly<{
 export type VdpRpuShaderVariantSpec = Readonly<{
 	id: number;
 	requiredFeatureMask: number;
-	vertexLayout: number;
-	instanceLayout: number;
 	textureSlotCount: number;
 	constantSlots: readonly VdpRpuShaderConstantSlotSpec[];
 }>;
@@ -731,24 +739,18 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 	{
 		id: VDP_RPU_SHADER_V2_C4,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V2_C4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		textureSlotCount: 0,
 		constantSlots: [],
 	},
 	{
 		id: VDP_RPU_SHADER_V2_T2_C4,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V2_T2_C4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		textureSlotCount: 1,
 		constantSlots: [],
 	},
 	{
 		id: VDP_RPU_SHADER_V3_C4_C0,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V3_C4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		textureSlotCount: 0,
 		constantSlots: [
 			{ slot: 0, maxWords: 32, vertexVisible: 1, fragmentVisible: 0 },
@@ -757,8 +759,6 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 	{
 		id: VDP_RPU_SHADER_V3_T2_C4_C0,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V3_T2_C4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		textureSlotCount: 1,
 		constantSlots: [
 			{ slot: 0, maxWords: 32, vertexVisible: 1, fragmentVisible: 0 },
@@ -767,39 +767,31 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 	{
 		id: VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V3_N3_T2_C4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		textureSlotCount: 1,
 		constantSlots: [
 			{ slot: 0, maxWords: 32, vertexVisible: 1, fragmentVisible: 0 },
-			{ slot: 1, maxWords: 64, vertexVisible: 0, fragmentVisible: 1 },
+			{ slot: 1, maxWords: 72, vertexVisible: 0, fragmentVisible: 1 },
 		],
 	},
 	{
 		id: VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		textureSlotCount: 1,
 		constantSlots: [
 			{ slot: 0, maxWords: 32, vertexVisible: 1, fragmentVisible: 0 },
 			{ slot: 1, maxWords: 384, vertexVisible: 1, fragmentVisible: 0 },
-			{ slot: 2, maxWords: 64, vertexVisible: 0, fragmentVisible: 1 },
+			{ slot: 2, maxWords: 72, vertexVisible: 0, fragmentVisible: 1 },
 		],
 	},
 	{
 		id: VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2,
 		requiredFeatureMask: VDP_RPU_FEATURE_INSTANCED_ARRAYS,
-		vertexLayout: VDP_RPU_LAYOUT_V2_T2_C4,
-		instanceLayout: VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4,
 		textureSlotCount: 1,
 		constantSlots: [],
 	},
 	{
 		id: VDP_RPU_SHADER_V3_C4_I_MAT4,
 		requiredFeatureMask: VDP_RPU_FEATURE_INSTANCED_ARRAYS,
-		vertexLayout: VDP_RPU_LAYOUT_V3_C4,
-		instanceLayout: VDP_RPU_LAYOUT_I_MAT4_C4,
 		textureSlotCount: 0,
 		constantSlots: [],
 	},
@@ -808,10 +800,10 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 
 `C0`, `C1`, and `C2` are generic constant slots. Their contents are defined by the fixed shader variant and uploaded by the cart as raw words.
 
-`BEGIN_DRAW.shaderVariant` is decoded with `VDP_RPU_SHADER_VARIANT_MASK`.
-The retained command buffer stores the decoded fixed variant selector; high
-shader-word bits are weird-but-representable cart state, not a host-shader
-validation fault.
+`BEGIN_DRAW.shaderVariant` is retained as a low-16-bit shader word. The fixed
+shader selector is decoded with `VDP_RPU_SHADER_VARIANT_MASK` at consuming
+datapaths, while feature bits such as `MORPH` and `T1` remain visible to the
+backend.
 
 ## Fault model
 

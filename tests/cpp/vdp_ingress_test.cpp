@@ -3,6 +3,7 @@
 #include "machine/devices/vdp/contracts.h"
 #include "machine/devices/vdp/frame.h"
 #include "machine/devices/vdp/registers.h"
+#include "machine/devices/vdp/rpu.h"
 #include "machine/devices/vdp/vdp.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
@@ -131,18 +132,23 @@ void testRpuFrameRetainsPassAndDraw() {
 	Harness h;
 	constexpr uint32_t rpuHeader = 0x18000000u;
 	constexpr uint32_t resourceNone = 0xffffffffu;
+	constexpr uint32_t opBufferDefine = 1u;
 	constexpr uint32_t opBeginPass = 32u;
 	constexpr uint32_t opEndPass = 33u;
 	constexpr uint32_t opBeginDraw = 40u;
+	constexpr uint32_t opBindStream = 41u;
 	constexpr uint32_t opEndDraw = 44u;
-	constexpr uint32_t shaderV2C4 = 0u;
+	constexpr uint32_t streamBuffer = 7u;
+	constexpr uint32_t shaderVariantWord = bmsx::VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1 | bmsx::VDP_RPU_SHADER_FLAG_MORPH | bmsx::VDP_RPU_SHADER_FLAG_T1;
 	constexpr uint32_t primitiveTriangles = 0u;
 	constexpr uint32_t indexNone = 0u;
 	constexpr uint32_t pipeColorWriteRgba = 0x000f0000u;
 
 	sealFifo(h, {
+		rpuHeader | (4u << 16u), opBufferDefine, streamBuffer, 64u, bmsx::VDP_RPU_BUFFER_USAGE_VERTEX,
 		rpuHeader | (8u << 16u), opBeginPass, resourceNone, resourceNone, 0u, 256u | (212u << 16u), 1u, 0xff102030u, 0xffffffffu,
-		rpuHeader | (9u << 16u), opBeginDraw, shaderV2C4, primitiveTriangles | (indexNone << 8u), pipeColorWriteRgba, 3u, 1u, resourceNone, 0u, 0u,
+		rpuHeader | (9u << 16u), opBeginDraw, shaderVariantWord, primitiveTriangles | (indexNone << 8u), pipeColorWriteRgba, 3u, 5u, resourceNone, 0u, 0u,
+		rpuHeader | (6u << 16u), opBindStream, 1u, bmsx::VDP_RPU_LAYOUT_V2_C4, streamBuffer, 0u, 2u,
 		rpuHeader | (1u << 16u), opEndDraw,
 		rpuHeader | (1u << 16u), opEndPass,
 		bmsx::VDP_PKT_END,
@@ -155,8 +161,11 @@ void testRpuFrameRetainsPassAndDraw() {
 	require(output.rpu->commands.passCount == 1u, "RPU output should retain one pass");
 	require(output.rpu->commands.drawCount == 1u, "RPU output should retain one draw");
 	require(output.rpu->commands.passClearColor[0u] == 0xff102030u, "RPU pass should retain clear color");
+	require(output.rpu->commands.drawShaderVariant[0u] == shaderVariantWord, "RPU draw should retain shader flags");
 	require(output.rpu->commands.drawVertexCount[0u] == 3u, "RPU draw should retain vertex count");
-	require(output.rpu->commands.drawInstanceCount[0u] == 1u, "RPU draw should retain instance count");
+	require(output.rpu->commands.drawInstanceCount[0u] == 5u, "RPU draw should retain instance count");
+	require(output.rpu->commands.streamStepRate[0u] == 2u, "RPU stream should retain step rate");
+	require(output.rpu->resources.bufferRefs.byteLength[0u] == 36u, "RPU instance stream pin should use step-rate element count");
 }
 
 void testFifoReplayAndFaults() {
@@ -289,10 +298,10 @@ void testFaultLatchStickyFirstUntilAck() {
 	require(h.vdp.readVdpData() == 0u, "unsupported readback should return open-bus zero");
 	expectVdpFault(h, bmsx::VDP_FAULT_RD_UNSUPPORTED_MODE, "first fault should latch");
 	const std::array<bmsx::u8, 4> data{{1u, 2u, 3u, 4u}};
-	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 1u, data.data(), data.size());
+	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 1u, data.data(), 0u, data.size());
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_RD_UNSUPPORTED_MODE, "second fault should not overwrite sticky-first latch");
 	clearVdpFault(h);
-	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 1u, data.data(), data.size());
+	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 1u, data.data(), 0u, data.size());
 	expectVdpFault(h, bmsx::VDP_FAULT_VRAM_WRITE_UNALIGNED, "ACK should allow the next fault to latch");
 }
 
@@ -327,7 +336,7 @@ void testVramWriteFaultsLatchStatus() {
 	Harness h;
 	const uint8_t bytes[4] = {1u, 2u, 3u, 4u};
 
-	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 1u, bytes, sizeof(bytes));
+	h.vdp.writeVram(bmsx::VRAM_PRIMARY_SLOT_BASE + 1u, bytes, 0u, sizeof(bytes));
 
 	require(h.memory.readIoU32(bmsx::IO_VDP_FAULT_CODE) == bmsx::VDP_FAULT_VRAM_WRITE_UNALIGNED, "unaligned VRAM write should latch fault code");
 	require((h.memory.readIoU32(bmsx::IO_VDP_STATUS) & bmsx::VDP_STATUS_FAULT) != 0u, "unaligned VRAM write should set VDP fault status");

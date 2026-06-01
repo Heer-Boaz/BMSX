@@ -440,8 +440,6 @@ export type VdpRpuShaderConstantSlotSpec = Readonly<{
 export type VdpRpuShaderVariantSpec = Readonly<{
 	id: number;
 	requiredFeatureMask: number;
-	vertexLayout: number;
-	instanceLayout: number;
 	instanceMode: number;
 	textureSlotCount: number;
 	usesC0: 0 | 1;
@@ -455,8 +453,6 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 	{
 		id: VDP_RPU_SHADER_V2_C4,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V2_C4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		instanceMode: VDP_RPU_INSTANCE_MODE_NONE,
 		textureSlotCount: 0,
 		usesC0: 0,
@@ -468,8 +464,6 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 	{
 		id: VDP_RPU_SHADER_V2_T2_C4,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V2_T2_C4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		instanceMode: VDP_RPU_INSTANCE_MODE_NONE,
 		textureSlotCount: 1,
 		usesC0: 0,
@@ -481,8 +475,6 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 	{
 		id: VDP_RPU_SHADER_V3_C4_C0,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V3_C4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		instanceMode: VDP_RPU_INSTANCE_MODE_NONE,
 		textureSlotCount: 0,
 		usesC0: 1,
@@ -496,8 +488,6 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 	{
 		id: VDP_RPU_SHADER_V3_T2_C4_C0,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V3_T2_C4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		instanceMode: VDP_RPU_INSTANCE_MODE_NONE,
 		textureSlotCount: 1,
 		usesC0: 1,
@@ -511,8 +501,6 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 	{
 		id: VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V3_N3_T2_C4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		instanceMode: VDP_RPU_INSTANCE_MODE_NONE,
 		textureSlotCount: 1,
 		usesC0: 1,
@@ -527,8 +515,6 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 	{
 		id: VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1,
 		requiredFeatureMask: 0,
-		vertexLayout: VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4,
-		instanceLayout: VDP_RPU_RESOURCE_NONE,
 		instanceMode: VDP_RPU_INSTANCE_MODE_NONE,
 		textureSlotCount: 1,
 		usesC0: 1,
@@ -544,8 +530,6 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 	{
 		id: VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2,
 		requiredFeatureMask: VDP_RPU_FEATURE_INSTANCED_ARRAYS,
-		vertexLayout: VDP_RPU_LAYOUT_V2_T2_C4,
-		instanceLayout: VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4,
 		instanceMode: VDP_RPU_INSTANCE_MODE_AFFINE2,
 		textureSlotCount: 1,
 		usesC0: 0,
@@ -557,8 +541,6 @@ export const VDP_RPU_SHADER_VARIANTS: readonly VdpRpuShaderVariantSpec[] = [
 	{
 		id: VDP_RPU_SHADER_V3_C4_I_MAT4,
 		requiredFeatureMask: VDP_RPU_FEATURE_INSTANCED_ARRAYS,
-		vertexLayout: VDP_RPU_LAYOUT_V3_C4,
-		instanceLayout: VDP_RPU_LAYOUT_I_MAT4_C4,
 		instanceMode: VDP_RPU_INSTANCE_MODE_MAT4,
 		textureSlotCount: 0,
 		usesC0: 0,
@@ -1421,7 +1403,7 @@ export class VdpRpuUnit {
 			this.fault.raise(VDP_FAULT_RPU_BAD_STATE, this.buildState);
 			return false;
 		}
-		const shaderVariant = shaderVariantWord & VDP_RPU_SHADER_VARIANT_MASK;
+		const shaderWord = shaderVariantWord & 0xffff;
 		const primitive = primitiveIndexType & VDP_RPU_DRAW_PRIMITIVE_MASK;
 		const indexType = (primitiveIndexType & VDP_RPU_DRAW_INDEX_TYPE_MASK) >>> VDP_RPU_DRAW_INDEX_TYPE_SHIFT;
 		let indexRef = VDP_RPU_REF_NONE;
@@ -1431,7 +1413,7 @@ export class VdpRpuUnit {
 			indexRef = this.pinBuffer(frame, indexBufferId, indexByteOffset, indexByteLength, VDP_RPU_BUFFER_USAGE_INDEX);
 		}
 		const drawIndex = frame.commands.drawCount;
-		frame.commands.drawShaderVariant[drawIndex] = shaderVariant;
+		frame.commands.drawShaderVariant[drawIndex] = shaderWord;
 		frame.commands.drawPrimitive[drawIndex] = primitive;
 		frame.commands.drawPipelineWord[drawIndex] = pipelineWord >>> 0;
 		frame.commands.drawVertexCount[drawIndex] = vertexCount >>> 0;
@@ -1657,16 +1639,23 @@ export class VdpRpuUnit {
 			return false;
 		}
 		const drawIndex = this.openDrawIndex;
-		const elementCount = stepRate === 0 ? frame.commands.drawVertexCount[drawIndex] : frame.commands.drawInstanceCount[drawIndex];
-		const byteStride = this.streamLayoutStride(layoutId);
+		const streamLayoutId = layoutId & 0xffff;
+		const streamSlotId = streamSlot & 0xff;
+		const streamStepRate = stepRate & 0xff;
+		let elementCount = frame.commands.drawVertexCount[drawIndex];
+		if (streamStepRate !== 0) {
+			const instanceCount = frame.commands.drawInstanceCount[drawIndex];
+			elementCount = instanceCount === 0 ? 0 : ((((instanceCount - 1) / streamStepRate) >>> 0) + 1);
+		}
+		const byteStride = this.streamLayoutStride(streamLayoutId);
 		const byteLength = (elementCount * byteStride) >>> 0;
 		const bufferRef = this.pinBuffer(frame, bufferId, byteOffset, byteLength, VDP_RPU_BUFFER_USAGE_VERTEX);
 		const bindingIndex = frame.commands.streamBindingCount;
-		frame.commands.streamLayoutId[bindingIndex] = layoutId;
-		frame.commands.streamSlot[bindingIndex] = streamSlot;
+		frame.commands.streamLayoutId[bindingIndex] = streamLayoutId;
+		frame.commands.streamSlot[bindingIndex] = streamSlotId;
 		frame.commands.streamBufferRef[bindingIndex] = bufferRef;
 		frame.commands.streamByteOffset[bindingIndex] = byteOffset >>> 0;
-		frame.commands.streamStepRate[bindingIndex] = stepRate;
+		frame.commands.streamStepRate[bindingIndex] = streamStepRate;
 		frame.commands.streamBindingCount += 1;
 		this.lastPacketCost = VDP_RPU_BIND_COST;
 		return true;

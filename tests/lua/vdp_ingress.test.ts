@@ -78,6 +78,13 @@ import {
 } from '../../src/bmsx/machine/devices/vdp/registers';
 import { VDP_VOUT_SCANOUT_PHASE_ACTIVE, VDP_VOUT_SCANOUT_PHASE_VBLANK } from '../../src/bmsx/machine/devices/vdp/vout';
 import {
+	VDP_RPU_BUFFER_USAGE_VERTEX,
+	VDP_RPU_LAYOUT_V2_C4,
+	VDP_RPU_SHADER_FLAG_MORPH,
+	VDP_RPU_SHADER_FLAG_T1,
+	VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1,
+} from '../../src/bmsx/machine/devices/vdp/rpu';
+import {
 	VDP_XF_MATRIX_COUNT,
 	VDP_XF_MATRIX_PACKET_PAYLOAD_WORDS,
 	VDP_XF_MATRIX_REGISTER_WORDS,
@@ -222,18 +229,23 @@ test('VDP stream retains RPU pass and draw commands as device output', () => {
 	const { memory, vdp } = createVdp();
 	const rpuHeader = 0x18000000;
 	const resourceNone = 0xffffffff;
+	const opBufferDefine = 1;
 	const opBeginPass = 32;
 	const opEndPass = 33;
 	const opBeginDraw = 40;
+	const opBindStream = 41;
 	const opEndDraw = 44;
-	const shaderV2C4 = 0;
+	const streamBuffer = 7;
+	const shaderVariantWord = VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1 | VDP_RPU_SHADER_FLAG_MORPH | VDP_RPU_SHADER_FLAG_T1;
 	const primitiveTriangles = 0;
 	const indexNone = 0;
 	const pipeColorWriteRgba = 0x000f0000;
 
 	sealFifo(memory, [
+		rpuHeader | (4 << 16), opBufferDefine, streamBuffer, 64, VDP_RPU_BUFFER_USAGE_VERTEX,
 		rpuHeader | (8 << 16), opBeginPass, resourceNone, resourceNone, 0, 256 | (212 << 16), 1, 0xff102030, 0xffffffff,
-		rpuHeader | (9 << 16), opBeginDraw, shaderV2C4, primitiveTriangles | (indexNone << 8), pipeColorWriteRgba, 3, 1, resourceNone, 0, 0,
+		rpuHeader | (9 << 16), opBeginDraw, shaderVariantWord, primitiveTriangles | (indexNone << 8), pipeColorWriteRgba, 3, 5, resourceNone, 0, 0,
+		rpuHeader | (6 << 16), opBindStream, 1, VDP_RPU_LAYOUT_V2_C4, streamBuffer, 0, 2,
 		rpuHeader | (1 << 16), opEndDraw,
 		rpuHeader | (1 << 16), opEndPass,
 		VDP_PKT_END,
@@ -246,8 +258,11 @@ test('VDP stream retains RPU pass and draw commands as device output', () => {
 	assert.equal(output.rpu.commands.passCount, 1);
 	assert.equal(output.rpu.commands.drawCount, 1);
 	assert.equal(output.rpu.commands.passClearColor[0], 0xff102030);
+	assert.equal(output.rpu.commands.drawShaderVariant[0], shaderVariantWord);
 	assert.equal(output.rpu.commands.drawVertexCount[0], 3);
-	assert.equal(output.rpu.commands.drawInstanceCount[0], 1);
+	assert.equal(output.rpu.commands.drawInstanceCount[0], 5);
+	assert.equal(output.rpu.commands.streamStepRate[0], 2);
+	assert.equal(output.rpu.resources.bufferRefs.byteLength[0], 36);
 });
 
 test('VDP packet FIFO faults cancel the frame while preserving prior register side effects', () => {

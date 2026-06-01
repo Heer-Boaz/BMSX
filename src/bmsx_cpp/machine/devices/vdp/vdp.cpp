@@ -869,9 +869,7 @@ const VdpDeviceOutput& VDP::readDeviceOutput() {
 }
 
 void VDP::commitActiveVisualState() {
-	if (m_activeFrame.hasCommands) {
-		m_vout.presentFrame(m_activeFrame);
-	}
+	m_vout.presentFrame(m_activeFrame);
 }
 
 void VDP::finishCommittedFrameOnVblankEdge() {

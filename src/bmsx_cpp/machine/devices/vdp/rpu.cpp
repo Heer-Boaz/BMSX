@@ -839,7 +839,7 @@ bool VdpRpuUnit::acceptBeginDraw(VdpRpuFrameOutput& frame, u32 shaderVariantWord
 		m_fault.raise(VDP_FAULT_RPU_BAD_STATE, m_buildState);
 		return false;
 	}
-	const u32 shaderVariant = shaderVariantWord & VDP_RPU_SHADER_VARIANT_MASK;
+	const u32 shaderWord = shaderVariantWord & 0xffffu;
 	const u32 primitive = primitiveIndexType & VDP_RPU_DRAW_PRIMITIVE_MASK;
 	const u32 indexType = (primitiveIndexType & VDP_RPU_DRAW_INDEX_TYPE_MASK) >> VDP_RPU_DRAW_INDEX_TYPE_SHIFT;
 	i32 indexRef = static_cast<i32>(VDP_RPU_REF_NONE);
@@ -849,7 +849,7 @@ bool VdpRpuUnit::acceptBeginDraw(VdpRpuFrameOutput& frame, u32 shaderVariantWord
 		indexRef = pinBuffer(frame, indexBufferId, indexByteOffset, indexByteLength, VDP_RPU_BUFFER_USAGE_INDEX);
 	}
 	const size_t drawIndex = frame.commands.drawCount;
-	frame.commands.drawShaderVariant[drawIndex] = static_cast<u16>(shaderVariant);
+	frame.commands.drawShaderVariant[drawIndex] = static_cast<u16>(shaderWord);
 	frame.commands.drawPrimitive[drawIndex] = static_cast<u8>(primitive);
 	frame.commands.drawPipelineWord[drawIndex] = pipelineWord;
 	frame.commands.drawVertexCount[drawIndex] = vertexCount;
@@ -1075,16 +1075,23 @@ bool VdpRpuUnit::acceptBindStream(VdpRpuFrameOutput& frame, u32 streamSlot, u32 
 		return false;
 	}
 	const size_t drawIndex = m_openDrawIndex;
-	const u32 elementCount = stepRate == 0u ? frame.commands.drawVertexCount[drawIndex] : frame.commands.drawInstanceCount[drawIndex];
-	const u32 byteStride = streamLayoutStride(layoutId);
+	const u32 streamLayoutId = layoutId & 0xffffu;
+	const u32 streamSlotId = streamSlot & 0xffu;
+	const u32 streamStepRate = stepRate & 0xffu;
+	u32 elementCount = frame.commands.drawVertexCount[drawIndex];
+	if (streamStepRate != 0u) {
+		const u32 instanceCount = frame.commands.drawInstanceCount[drawIndex];
+		elementCount = instanceCount == 0u ? 0u : ((instanceCount - 1u) / streamStepRate) + 1u;
+	}
+	const u32 byteStride = streamLayoutStride(streamLayoutId);
 	const u32 byteLength = elementCount * byteStride;
 	const i32 bufferRef = pinBuffer(frame, bufferId, byteOffset, byteLength, VDP_RPU_BUFFER_USAGE_VERTEX);
 	const size_t bindingIndex = frame.commands.streamBindingCount;
-	frame.commands.streamLayoutId[bindingIndex] = static_cast<u16>(layoutId);
-	frame.commands.streamSlot[bindingIndex] = static_cast<u8>(streamSlot);
+	frame.commands.streamLayoutId[bindingIndex] = static_cast<u16>(streamLayoutId);
+	frame.commands.streamSlot[bindingIndex] = static_cast<u8>(streamSlotId);
 	frame.commands.streamBufferRef[bindingIndex] = static_cast<u16>(bufferRef);
 	frame.commands.streamByteOffset[bindingIndex] = byteOffset;
-	frame.commands.streamStepRate[bindingIndex] = static_cast<u8>(stepRate);
+	frame.commands.streamStepRate[bindingIndex] = static_cast<u8>(streamStepRate);
 	frame.commands.streamBindingCount += 1u;
 	lastPacketCost = VDP_RPU_BIND_COST;
 	return true;

@@ -975,9 +975,7 @@ export class VDP implements VramWriteSink {
 
 
 	private commitActiveVisualState(): void {
-		if (this.activeFrame.hasCommands) {
-			this.vout.presentFrame(this.activeFrame);
-		}
+		this.vout.presentFrame(this.activeFrame);
 	}
 
 	private finishCommittedFrameOnVblankEdge(): void {

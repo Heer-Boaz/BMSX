@@ -307,8 +307,6 @@ struct VdpRpuShaderConstantSlotSpec {
 struct VdpRpuShaderVariantSpec {
 	u32 id = 0u;
 	u32 requiredFeatureMask = 0U;
-	u32 vertexLayout = 0U;
-	u32 instanceLayout = 0U;
 	u32 instanceMode = 0U;
 	u32 textureSlotCount = 0U;
 	u32 usesC0 = 0U;
@@ -332,14 +330,14 @@ inline constexpr std::array<VdpRpuStreamLayoutSpec, 10U> VDP_RPU_STREAM_LAYOUTS{
 }};
 
 inline constexpr std::array<VdpRpuShaderVariantSpec, 8U> VDP_RPU_SHADER_VARIANTS{{
-	{VDP_RPU_SHADER_V2_C4, 0U, VDP_RPU_LAYOUT_V2_C4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 0U, 0U, VDP_RPU_RESOURCE_NONE, VDP_RPU_RESOURCE_NONE, 0U, {}},
-	{VDP_RPU_SHADER_V2_T2_C4, 0U, VDP_RPU_LAYOUT_V2_T2_C4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 1u, 0U, VDP_RPU_RESOURCE_NONE, VDP_RPU_RESOURCE_NONE, 0U, {}},
-	{VDP_RPU_SHADER_V3_C4_C0, 0U, VDP_RPU_LAYOUT_V3_C4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 0U, 1U, VDP_RPU_RESOURCE_NONE, VDP_RPU_RESOURCE_NONE, 1U, {{{.slot=0U, .maxWords=32U, .vertexVisible=1U, .fragmentVisible=0U}}}},
-	{VDP_RPU_SHADER_V3_T2_C4_C0, 0U, VDP_RPU_LAYOUT_V3_T2_C4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 1U, 1U, VDP_RPU_RESOURCE_NONE, VDP_RPU_RESOURCE_NONE, 1u, {{{.slot=0U, .maxWords=32U, .vertexVisible=1U, .fragmentVisible=0U}}}},
-	{VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1, 0U, VDP_RPU_LAYOUT_V3_N3_T2_C4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 1u, 1U, 1U, VDP_RPU_RESOURCE_NONE, 2U, {{{.slot=0U, .maxWords=32U, .vertexVisible=1u, .fragmentVisible=0U}, {.slot=1U, .maxWords=72U, .vertexVisible=0U, .fragmentVisible=1U}}}},
-	{VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1, 0u, VDP_RPU_LAYOUT_V3_N3_T2_C4_J4_W4, VDP_RPU_RESOURCE_NONE, VDP_RPU_INSTANCE_MODE_NONE, 1U, 1U, 2U, 1U, 3U, {{{.slot=0U, .maxWords=32U, .vertexVisible=1U, .fragmentVisible=0U}, {.slot=1U, .maxWords=384U, .vertexVisible=1U, .fragmentVisible=0U}, {.slot=2U, .maxWords=72U, .vertexVisible=0U, .fragmentVisible=1U}}}},
-	{VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2, VDP_RPU_FEATURE_INSTANCED_ARRAYS, VDP_RPU_LAYOUT_V2_T2_C4, VDP_RPU_LAYOUT_I_AFFINE2_TRECT_C4, VDP_RPU_INSTANCE_MODE_AFFINE2, 1U, 0U, VDP_RPU_RESOURCE_NONE, VDP_RPU_RESOURCE_NONE, 0U, {}},
-	{.id=VDP_RPU_SHADER_V3_C4_I_MAT4, .requiredFeatureMask=VDP_RPU_FEATURE_INSTANCED_ARRAYS, .vertexLayout=VDP_RPU_LAYOUT_V3_C4, .instanceLayout=VDP_RPU_LAYOUT_I_MAT4_C4, .instanceMode=VDP_RPU_INSTANCE_MODE_MAT4, .textureSlotCount=0U, .usesC0=0U, .lightingConstantSlot=VDP_RPU_RESOURCE_NONE, .jointConstantSlot=VDP_RPU_RESOURCE_NONE, .constantSlotCount=0U, .constantSlots={}},
+	{.id=VDP_RPU_SHADER_V2_C4, .requiredFeatureMask=0U, .instanceMode=VDP_RPU_INSTANCE_MODE_NONE, .textureSlotCount=0U, .usesC0=0U, .lightingConstantSlot=VDP_RPU_RESOURCE_NONE, .jointConstantSlot=VDP_RPU_RESOURCE_NONE, .constantSlotCount=0U, .constantSlots={}},
+	{.id=VDP_RPU_SHADER_V2_T2_C4, .requiredFeatureMask=0U, .instanceMode=VDP_RPU_INSTANCE_MODE_NONE, .textureSlotCount=1U, .usesC0=0U, .lightingConstantSlot=VDP_RPU_RESOURCE_NONE, .jointConstantSlot=VDP_RPU_RESOURCE_NONE, .constantSlotCount=0U, .constantSlots={}},
+	{.id=VDP_RPU_SHADER_V3_C4_C0, .requiredFeatureMask=0U, .instanceMode=VDP_RPU_INSTANCE_MODE_NONE, .textureSlotCount=0U, .usesC0=1U, .lightingConstantSlot=VDP_RPU_RESOURCE_NONE, .jointConstantSlot=VDP_RPU_RESOURCE_NONE, .constantSlotCount=1U, .constantSlots={{{.slot=0U, .maxWords=32U, .vertexVisible=1U, .fragmentVisible=0U}}}},
+	{.id=VDP_RPU_SHADER_V3_T2_C4_C0, .requiredFeatureMask=0U, .instanceMode=VDP_RPU_INSTANCE_MODE_NONE, .textureSlotCount=1U, .usesC0=1U, .lightingConstantSlot=VDP_RPU_RESOURCE_NONE, .jointConstantSlot=VDP_RPU_RESOURCE_NONE, .constantSlotCount=1U, .constantSlots={{{.slot=0U, .maxWords=32U, .vertexVisible=1U, .fragmentVisible=0U}}}},
+	{.id=VDP_RPU_SHADER_V3_N3_T2_C4_C0_C1, .requiredFeatureMask=0U, .instanceMode=VDP_RPU_INSTANCE_MODE_NONE, .textureSlotCount=1U, .usesC0=1U, .lightingConstantSlot=1U, .jointConstantSlot=VDP_RPU_RESOURCE_NONE, .constantSlotCount=2U, .constantSlots={{{.slot=0U, .maxWords=32U, .vertexVisible=1U, .fragmentVisible=0U}, {.slot=1U, .maxWords=72U, .vertexVisible=0U, .fragmentVisible=1U}}}},
+	{.id=VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1, .requiredFeatureMask=0U, .instanceMode=VDP_RPU_INSTANCE_MODE_NONE, .textureSlotCount=1U, .usesC0=1U, .lightingConstantSlot=2U, .jointConstantSlot=1U, .constantSlotCount=3U, .constantSlots={{{.slot=0U, .maxWords=32U, .vertexVisible=1U, .fragmentVisible=0U}, {.slot=1U, .maxWords=384U, .vertexVisible=1U, .fragmentVisible=0U}, {.slot=2U, .maxWords=72U, .vertexVisible=0U, .fragmentVisible=1U}}}},
+	{.id=VDP_RPU_SHADER_V2_T2_C4_I_AFFINE2, .requiredFeatureMask=VDP_RPU_FEATURE_INSTANCED_ARRAYS, .instanceMode=VDP_RPU_INSTANCE_MODE_AFFINE2, .textureSlotCount=1U, .usesC0=0U, .lightingConstantSlot=VDP_RPU_RESOURCE_NONE, .jointConstantSlot=VDP_RPU_RESOURCE_NONE, .constantSlotCount=0U, .constantSlots={}},
+	{.id=VDP_RPU_SHADER_V3_C4_I_MAT4, .requiredFeatureMask=VDP_RPU_FEATURE_INSTANCED_ARRAYS, .instanceMode=VDP_RPU_INSTANCE_MODE_MAT4, .textureSlotCount=0U, .usesC0=0U, .lightingConstantSlot=VDP_RPU_RESOURCE_NONE, .jointConstantSlot=VDP_RPU_RESOURCE_NONE, .constantSlotCount=0U, .constantSlots={}},
 }};
 
 auto resolveVdpRpuStreamLayoutSpec(u32 layoutId) -> const VdpRpuStreamLayoutSpec&;

@@ -205,8 +205,7 @@ end
 
 struct bm_surface_define_desc
 	surface_id: word
-	width: word
-	height: word
+	size: word
 	format_usage: word
 end
 
@@ -256,10 +255,8 @@ end
 struct bm_pass_desc
 	color_surface_id: word
 	depth_surface_id: word
-	viewport_x: word
-	viewport_y: word
-	viewport_w: word
-	viewport_h: word
+	viewport_xy: word
+	viewport_wh: word
 	pass_ops: word
 	clear_color: word
 	clear_depth_word: word
@@ -462,22 +459,13 @@ local submit_current_stream<const> = function()
 	end
 end
 
-local wait_dma<const> = function()
+local wait_interrupt<const> = function(flag_mask)
 	local flags = 0
 	repeat
 		halt_until_irq
 		flags = *irq_flags_register
 		*irq_ack_register = flags
-	until (flags & (irq_dma_done | irq_dma_error)) ~= 0
-end
-
-local wait_vblank<const> = function()
-	local flags = 0
-	repeat
-		halt_until_irq
-		flags = *irq_flags_register
-		*irq_ack_register = flags
-	until (flags & irq_vblank) ~= 0
+	until (flags & flag_mask) ~= 0
 end
 
 local build_lua_atlas<const> = function()
@@ -532,7 +520,7 @@ local upload_atlas_to_vram<const> = function()
 	*dma_dst_register = vram_primary_slot_base
 	*dma_len_register = atlas_bytes
 	*dma_ctrl_register = dma_ctrl_start
-	wait_dma()
+	wait_interrupt(irq_dma_done | irq_dma_error)
 end
 
 local write_background_vertices<const> = function()
@@ -1398,16 +1386,13 @@ end
 local write_vdp_command_descriptors<const> = function()
 	local surfaces<const>: *bm_surface_define_desc[surface_desc_count] = surface_desc_addr
 	surfaces[0].surface_id = atlas_surface
-	surfaces[0].width = atlas_width
-	surfaces[0].height = atlas_height
+	surfaces[0].size = atlas_width | (atlas_height << 16)
 	surfaces[0].format_usage = rpu_surface_rgba_texture
 	surfaces[1].surface_id = scene_color_surface
-	surfaces[1].width = screen_width
-	surfaces[1].height = screen_height
+	surfaces[1].size = screen_width | (screen_height << 16)
 	surfaces[1].format_usage = rpu_surface_rgba_color_texture
 	surfaces[2].surface_id = scene_depth_surface
-	surfaces[2].width = screen_width
-	surfaces[2].height = screen_height
+	surfaces[2].size = screen_width | (screen_height << 16)
 	surfaces[2].format_usage = rpu_surface_depth
 
 	local buffers<const>: *bm_buffer_define_desc[buffer_desc_count] = buffer_desc_addr
@@ -1535,10 +1520,8 @@ local write_vdp_command_descriptors<const> = function()
 	local passes<const>: *bm_pass_desc[pass_desc_count] = pass_desc_addr
 	passes[0].color_surface_id = scene_color_surface
 	passes[0].depth_surface_id = scene_depth_surface
-	passes[0].viewport_x = 0
-	passes[0].viewport_y = 0
-	passes[0].viewport_w = screen_width
-	passes[0].viewport_h = screen_height
+	passes[0].viewport_xy = 0
+	passes[0].viewport_wh = screen_width | (screen_height << 16)
 	passes[0].pass_ops = sys_rpu_pass_color_clear | sys_rpu_pass_depth_clear
 	passes[0].clear_color = 0xff071a3a
 	passes[0].clear_depth_word = 0xffffffff
@@ -1546,10 +1529,8 @@ local write_vdp_command_descriptors<const> = function()
 	passes[0].draw_count = scene_draw_count
 	passes[1].color_surface_id = sys_rpu_resource_none
 	passes[1].depth_surface_id = sys_rpu_resource_none
-	passes[1].viewport_x = 0
-	passes[1].viewport_y = 0
-	passes[1].viewport_w = screen_width
-	passes[1].viewport_h = screen_height
+	passes[1].viewport_xy = 0
+	passes[1].viewport_wh = screen_width | (screen_height << 16)
 	passes[1].pass_ops = 0
 	passes[1].clear_color = 0
 	passes[1].clear_depth_word = 0
@@ -1798,7 +1779,7 @@ local initialize_vdp_resources<const> = function()
 		packet->header = sys_rpu_packet_kind | (sys_rpu_words_surface_define << 16)
 		packet->op = sys_rpu_op_surface_define
 		packet->surface_id = desc->surface_id
-		packet->size = desc->width | (desc->height << 16)
+		packet->size = desc->size
 		packet->format_usage = desc->format_usage
 		wp = wp + sizeof(bm_rpu_surface_define_packet)
 		surface_index = surface_index + 1
@@ -1831,7 +1812,7 @@ local initialize_vdp_resources<const> = function()
 	wp = wp + sys_vdp_arg_stride
 	vdp_stream_cursor = wp
 	submit_current_stream()
-	wait_dma()
+	wait_interrupt(irq_dma_done | irq_dma_error)
 end
 
 
@@ -1937,8 +1918,8 @@ local draw_frame<const> = function()
 		pass_packet->op = sys_rpu_op_begin_pass
 		pass_packet->color_surface_id = pass->color_surface_id
 		pass_packet->depth_surface_id = pass->depth_surface_id
-		pass_packet->viewport_xy = pass->viewport_x | (pass->viewport_y << 16)
-		pass_packet->viewport_wh = pass->viewport_w | (pass->viewport_h << 16)
+		pass_packet->viewport_xy = pass->viewport_xy
+		pass_packet->viewport_wh = pass->viewport_wh
 		pass_packet->pass_ops = pass->pass_ops
 		pass_packet->clear_color = pass->clear_color
 		pass_packet->clear_depth_word = pass->clear_depth_word
@@ -2017,7 +1998,7 @@ local draw_frame<const> = function()
 	wp = wp + sys_vdp_arg_stride
 	vdp_stream_cursor = wp
 	submit_current_stream()
-	wait_dma()
+	wait_interrupt(irq_dma_done | irq_dma_error)
 end
 
 
@@ -2029,7 +2010,7 @@ setup_camera_input()
 *inp_ctrl_register = inp_ctrl_arm
 
 while true do
-	wait_vblank()
+	wait_interrupt(irq_vblank)
 	frame = frame + 1
 	sprite_x = sprite_x + (sprite_direction * sprite_step)
 	if sprite_x >= 184 then
