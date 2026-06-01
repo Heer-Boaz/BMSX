@@ -35,6 +35,31 @@ const VdpRpuShaderVariantSpec& resolveVdpRpuShaderVariantSpec(u32 shaderVariant)
 	return VDP_RPU_SHADER_VARIANTS[shaderVariant & VDP_RPU_SHADER_VARIANT_MASK];
 }
 
+void bumpVdpRpuVramPageRevisions(u32* pageRevisions, u32 offset, size_t byteLength) {
+	if (byteLength == 0u) {
+		return;
+	}
+	const size_t firstPage = static_cast<size_t>(offset >> VDP_RPU_PARAM_MEM_PAGE_SHIFT);
+	const size_t lastPage = (static_cast<size_t>(offset) + byteLength - 1u) >> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+	for (size_t page = firstPage; page <= lastPage; ++page) {
+		pageRevisions[page] += 1u;
+	}
+}
+
+u32 vdpRpuVramRangeRevision(const VdpRpuFrameOutput& frame, u32 vramAddr, u32 byteLength) {
+	if (byteLength == 0u) {
+		return 0u;
+	}
+	const size_t firstPage = static_cast<size_t>(vramAddr >> VDP_RPU_PARAM_MEM_PAGE_SHIFT);
+	const size_t lastPage = (static_cast<size_t>(vramAddr) + byteLength - 1u) >> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+	const auto& pageRevisions = *frame.vdpVramPageRevisions;
+	u32 revision = byteLength;
+	for (size_t page = firstPage; page <= lastPage; ++page) {
+		revision = (revision << 5u) - revision + pageRevisions[page];
+	}
+	return revision;
+}
+
 namespace {
 
 template <typename T, size_t N>
@@ -159,6 +184,7 @@ bool VdpRpuUnit::beginFrame(VdpRpuFrameOutput& frame) {
 	}
 	resetVdpRpuFrameOutput(frame);
 	frame.vdpVram = &vdpVram;
+	frame.vdpVramPageRevisions = &vdpVramPageRevisions;
 	m_buildState = VDP_RPU_FRAME_OPEN;
 	return true;
 }
@@ -168,6 +194,7 @@ void VdpRpuUnit::cancelFrame(VdpRpuFrameOutput& frame) {
 	lastPacketSealedFrame = false;
 	resetVdpRpuFrameOutput(frame);
 	frame.vdpVram = &vdpVram;
+	frame.vdpVramPageRevisions = &vdpVramPageRevisions;
 	m_buildState = VDP_RPU_FRAME_IDLE;
 }
 
@@ -185,6 +212,7 @@ bool VdpRpuUnit::endFrame(VdpRpuFrameOutput& frame) {
 
 void VdpRpuUnit::rebindFrameResources(VdpRpuFrameOutput& frame) {
 	frame.vdpVram = &vdpVram;
+	frame.vdpVramPageRevisions = &vdpVramPageRevisions;
 }
 
 VdpRpuSaveState VdpRpuUnit::captureState() const {
@@ -202,6 +230,7 @@ void VdpRpuUnit::restoreState(const VdpRpuSaveState& state) {
 	for (size_t index = 0u; index < state.vdpVram.size(); ++index) {
 		vdpVram[index] = state.vdpVram[index];
 	}
+	bumpVdpRpuVramPageRevisions(vdpVramPageRevisions.data(), 0u, vdpVram.size());
 }
 
 u32 VdpRpuUnit::consumePacketFromMemory(VdpRpuFrameOutput& frame, u32 headerWord, u32 cursor, u32 end) {

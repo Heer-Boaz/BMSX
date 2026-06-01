@@ -42,6 +42,8 @@ import {
 	VDP_RPU_SHADER_FLAG_T1,
 	resolveVdpRpuStreamLayoutSpec,
 	resolveVdpRpuShaderVariantSpec,
+	vdpRpuVramRangeRevision,
+	VDP_RPU_PARAM_MEM_SIZE,
 	VDP_RPU_RESOURCE_NONE,
 	VDP_RPU_SURFACE_FORMAT_DEPTH16,
 	type VdpRpuFrameOutput,
@@ -97,12 +99,13 @@ let vdpRpuSkinningModeLocation: WebGLUniformLocation = null;
 let vdpRpuMorphModeLocation: WebGLUniformLocation = null;
 let vdpRpuNormalModeLocation: WebGLUniformLocation = null;
 let vdpRpuLightingModeLocation: WebGLUniformLocation = null;
-const VDP_RPU_GL_BUFFER_VERTEX = 0;
-const VDP_RPU_GL_BUFFER_INSTANCE = 1;
-const VDP_RPU_GL_BUFFER_MORPH = 2;
-const VDP_RPU_GL_BUFFER_INDEX = 3;
-const VDP_RPU_GL_BUFFER_COUNT = 4;
-const vdpRpuBufferObject: (WebGLBuffer | null)[] = [];
+const VDP_RPU_GL_BUFFER_CACHE_STRIDE = VDP_RPU_PARAM_MEM_SIZE + 1;
+type VdpRpuWebglBuffer = {
+	buffer: WebGLBuffer;
+	revision: number;
+};
+const vdpRpuArrayBuffers = new Map<number, VdpRpuWebglBuffer>();
+const vdpRpuIndexBuffers = new Map<number, VdpRpuWebglBuffer>();
 let vdpRpuFrameSerial = 0;
 type VdpRpuWebglSurface = {
 	baseAddr: number;
@@ -112,6 +115,8 @@ type VdpRpuWebglSurface = {
 	format: number;
 	renderedFrame: number;
 	uploadedFrame: number;
+	sourceRevision: number;
+	sourceUploaded: number;
 	texture: WebGLTexture | null;
 	depthBuffer: WebGLRenderbuffer | null;
 	framebuffer: WebGLFramebuffer | null;
@@ -119,9 +124,6 @@ type VdpRpuWebglSurface = {
 const vdpRpuSurfaces = new Map<number, VdpRpuWebglSurface>();
 const vdpRpuColorDrawBuffers = [0];
 const vdpRpuNoColorDrawBuffers = [0];
-for (let index = 0; index < VDP_RPU_GL_BUFFER_COUNT; index += 1) {
-	vdpRpuBufferObject[index] = null;
-}
 
 const vdpRpuIdentityC0 = new Float32Array(16);
 vdpRpuIdentityC0[0] = 1;
@@ -206,22 +208,38 @@ function deleteVdpRpuSurfaceStorage(surface: VdpRpuWebglSurface): void {
 	}
 }
 
-function uploadVdpRpuBuffer(frame: VdpRpuFrameOutput, bufferSlot: number, target: number, vramAddr: number, byteLength: number): WebGLBuffer {
+function uploadVdpRpuBuffer(frame: VdpRpuFrameOutput, target: number, vramAddr: number, byteLength: number): WebGLBuffer {
 	const backend = vdpRpuBackend;
 	const gl = vdpRpuGl;
-	let buffer = vdpRpuBufferObject[bufferSlot];
-	if (buffer === null) {
-		buffer = gl.createBuffer()!;
-		vdpRpuBufferObject[bufferSlot] = buffer;
+	const bufferCache = target === gl.ARRAY_BUFFER ? vdpRpuArrayBuffers : vdpRpuIndexBuffers;
+	const key = vramAddr * VDP_RPU_GL_BUFFER_CACHE_STRIDE + byteLength;
+	let storage = bufferCache.get(key);
+	const revision = vdpRpuVramRangeRevision(frame, vramAddr, byteLength);
+	if (storage === undefined) {
+		storage = {
+			buffer: gl.createBuffer()!,
+			revision,
+		};
+		bufferCache.set(key, storage);
+		if (target === gl.ARRAY_BUFFER) {
+			backend.bindArrayBuffer(storage.buffer);
+		} else {
+			backend.bindElementArrayBuffer(storage.buffer);
+		}
+		gl.bufferData(target, byteLength, gl.DYNAMIC_DRAW);
+		gl.bufferSubData(target, 0, frame.vdpVram, vramAddr, byteLength);
+		return storage.buffer;
 	}
 	if (target === gl.ARRAY_BUFFER) {
-		backend.bindArrayBuffer(buffer);
+		backend.bindArrayBuffer(storage.buffer);
 	} else {
-		backend.bindElementArrayBuffer(buffer);
+		backend.bindElementArrayBuffer(storage.buffer);
 	}
-	gl.bufferData(target, byteLength, gl.STREAM_DRAW);
-	gl.bufferSubData(target, 0, frame.vdpVram, vramAddr, byteLength);
-	return buffer;
+	if (storage.revision !== revision) {
+		gl.bufferSubData(target, 0, frame.vdpVram, vramAddr, byteLength);
+		storage.revision = revision;
+	}
+	return storage.buffer;
 }
 
 function ensureVdpRpuSurfaceStorage(backend: WebGLBackend, frame: VdpRpuFrameOutput, surfaceDescAddr: number): VdpRpuWebglSurface {
@@ -237,6 +255,8 @@ function ensureVdpRpuSurfaceStorage(backend: WebGLBackend, frame: VdpRpuFrameOut
 			format: 0,
 			renderedFrame: 0,
 			uploadedFrame: 0,
+			sourceRevision: 0,
+			sourceUploaded: 0,
 			texture: null,
 			depthBuffer: null,
 			framebuffer: null,
@@ -283,12 +303,19 @@ function ensureVdpRpuSurfaceStorage(backend: WebGLBackend, frame: VdpRpuFrameOut
 	surface.format = format;
 	surface.renderedFrame = 0;
 	surface.uploadedFrame = 0;
+	surface.sourceRevision = 0;
+	surface.sourceUploaded = 0;
 	surface.framebuffer = gl.createFramebuffer()!;
 	return surface;
 }
 
 function uploadVdpRpuTextureSurface(backend: WebGLBackend, frame: VdpRpuFrameOutput, surface: VdpRpuWebglSurface): void {
 	if (surface.renderedFrame === vdpRpuFrameSerial || surface.uploadedFrame === vdpRpuFrameSerial || surface.format === VDP_RPU_SURFACE_FORMAT_DEPTH16) {
+		return;
+	}
+	const sourceByteLength = (surface.height - 1) * surface.pitchBytes + surface.width * 4;
+	const sourceRevision = vdpRpuVramRangeRevision(frame, surface.baseAddr, sourceByteLength);
+	if (surface.sourceUploaded !== 0 && surface.sourceRevision === sourceRevision) {
 		return;
 	}
 	const gl = vdpRpuGl;
@@ -300,6 +327,8 @@ function uploadVdpRpuTextureSurface(backend: WebGLBackend, frame: VdpRpuFrameOut
 	gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
 	backend.invalidateTextureBindingCache();
 	surface.uploadedFrame = vdpRpuFrameSerial;
+	surface.sourceRevision = sourceRevision;
+	surface.sourceUploaded = 1;
 }
 
 function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutput, passIndex: number, framebuffer: WebGLFramebuffer, width: number, height: number): void {
@@ -322,6 +351,7 @@ function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutp
 		const colorSurface = ensureVdpRpuSurfaceStorage(backend, frame, colorSurfaceDescAddr);
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, colorSurface.texture, 0);
 		colorSurface.renderedFrame = vdpRpuFrameSerial;
+		colorSurface.sourceUploaded = 0;
 		vdpRpuColorDrawBuffers[0] = gl.COLOR_ATTACHMENT0;
 		gl.drawBuffers(vdpRpuColorDrawBuffers);
 	} else {
@@ -333,6 +363,7 @@ function bindVdpRpuPassFramebuffer(backend: WebGLBackend, frame: VdpRpuFrameOutp
 		const depthSurface = ensureVdpRpuSurfaceStorage(backend, frame, depthSurfaceDescAddr);
 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthSurface.depthBuffer);
 		depthSurface.renderedFrame = vdpRpuFrameSerial;
+		depthSurface.sourceUploaded = 0;
 	} else {
 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, null);
 	}
@@ -443,7 +474,7 @@ function bindVdpRpuVertexStream(frame: VdpRpuFrameOutput, streamBindingIndex: nu
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
 	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
-	uploadVdpRpuBuffer(frame, VDP_RPU_GL_BUFFER_VERTEX, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
+	uploadVdpRpuBuffer(frame, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
 	for (let index = 0; index < layout.attributeCount; index += 1) {
 		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0, 0);
 	}
@@ -504,7 +535,7 @@ function bindVdpRpuInstanceStream(frame: VdpRpuFrameOutput, streamBindingIndex: 
 	const commands = frame.commands;
 	const stepRate = commands.streamStepRate[streamBindingIndex];
 	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
-	uploadVdpRpuBuffer(frame, VDP_RPU_GL_BUFFER_INSTANCE, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
+	uploadVdpRpuBuffer(frame, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
 	for (let index = 0; index < layout.attributeCount; index += 1) {
 		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0, stepRate);
 	}
@@ -514,7 +545,7 @@ function bindVdpRpuMorphStream(frame: VdpRpuFrameOutput, streamBindingIndex: num
 	const gl = vdpRpuGl;
 	const commands = frame.commands;
 	const layout = resolveVdpRpuStreamLayoutSpec(commands.streamLayoutId[streamBindingIndex]);
-	uploadVdpRpuBuffer(frame, VDP_RPU_GL_BUFFER_MORPH, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
+	uploadVdpRpuBuffer(frame, gl.ARRAY_BUFFER, commands.streamVramAddr[streamBindingIndex], commands.streamByteLength[streamBindingIndex]);
 	for (let index = 0; index < layout.attributeCount; index += 1) {
 		bindVdpRpuStreamAttribute(layout.attributes[index], layout.byteStride, 0, 0);
 	}
@@ -720,7 +751,7 @@ function drawVdpRpuCommand(runtime: VdpRpuRuntime, frame: VdpRpuFrameOutput, dra
 		return;
 	}
 	const indexByteLength = indexCount * (indexType === VDP_RPU_INDEX_U16 ? 2 : 4);
-	uploadVdpRpuBuffer(frame, VDP_RPU_GL_BUFFER_INDEX, gl.ELEMENT_ARRAY_BUFFER, indexVramAddr, indexByteLength);
+	uploadVdpRpuBuffer(frame, gl.ELEMENT_ARRAY_BUFFER, indexVramAddr, indexByteLength);
 	if (instanceMode !== VDP_RPU_INSTANCE_MODE_NONE) {
 		gl.drawElementsInstanced(primitive, indexCount, vdpRpuIndexType(indexType), 0, instanceCount);
 		return;

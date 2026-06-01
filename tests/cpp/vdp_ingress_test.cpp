@@ -183,6 +183,12 @@ void testRpuFrameRetainsPassAndDraw() {
 	require(output.rpu->commands.streamVramAddr[0u] == streamVramAddr, "RPU stream should retain VDP-local address");
 	require(output.rpu->commands.streamByteLength[0u] == 36u, "RPU stream should retain declared byte window");
 	require(output.rpu->commands.streamStepRate[0u] == 2u, "RPU stream should retain step rate");
+	require(output.rpu->vdpVram->size() == bmsx::VDP_RPU_PARAM_MEM_SIZE, "RPU output should retain VDP-local memory binding");
+	require(output.rpu->vdpVramPageRevisions->size() == bmsx::VDP_RPU_PARAM_MEM_PAGE_COUNT, "RPU output should retain VDP-local memory page revisions");
+	const uint32_t revisionBefore = bmsx::vdpRpuVramRangeRevision(*output.rpu, streamVramAddr, 36u);
+	h.memory.writeU32(bmsx::VRAM_STAGING_BASE + streamVramAddr + 12u, 0xccddeeffu);
+	const uint32_t revisionAfter = bmsx::vdpRpuVramRangeRevision(*output.rpu, streamVramAddr, 36u);
+	require(revisionAfter != revisionBefore, "RPU VDP-local memory writes should bump page revisions");
 }
 
 void testFifoReplayAndFaults() {

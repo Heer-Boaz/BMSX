@@ -48,7 +48,7 @@ public:
 	explicit VdpVramUnit(VdpEntropySeeds entropySeeds = DEFAULT_VDP_ENTROPY_SEEDS);
 
 	void initializeSurfaces(const std::array<VdpVramSurface, VDP_RD_SURFACE_COUNT>& surfaces);
-	void setExternalStaging(u8* bytes, size_t length);
+	void setExternalStaging(u8* bytes, size_t length, u32* pageRevisions);
 	bool writeStaging(u32 addr, const u8* bytes, size_t srcOffset, size_t length);
 	bool readStaging(u32 addr, u8* out, size_t length) const;
 	void writeSurfaceBytes(VdpSurfaceUploadSlot& slot, u32 offset, const u8* bytes, size_t srcOffset, size_t length);
@@ -78,11 +78,14 @@ private:
 	void markSlotDirtySpan(VdpSurfaceUploadSlot& slot, u32 row, u32 xStart, u32 xEnd);
 	void updateCpuReadback(VdpSurfaceUploadSlot& surface, const u8* bytes, size_t srcOffset, size_t length, u32 x, u32 y);
 	void seedSlotPixels(VdpSurfaceUploadSlot& slot);
+	void markStagingDirty(u32 offset, size_t byteLength);
 
 	std::vector<VdpSurfaceUploadSlot> m_slots;
 	VdpSurfaceUpload m_surfaceUploadOutput;
 	std::vector<u8> m_ownedStaging;
+	std::vector<u32> m_ownedStagingPageRevisions;
 	u8* m_staging = nullptr;
+	u32* m_stagingPageRevisions = nullptr;
 	size_t m_stagingLength = 0u;
 	std::vector<u8> m_garbageScratch;
 	std::array<u8, 4u> m_seedPixel{{0u, 0u, 0u, 0u}};

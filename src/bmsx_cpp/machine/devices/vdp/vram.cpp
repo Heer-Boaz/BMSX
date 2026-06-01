@@ -1,4 +1,5 @@
 #include "machine/devices/vdp/vram.h"
+#include "machine/devices/vdp/rpu.h"
 #include "machine/memory/map.h"
 #include <algorithm>
 #include <string>
@@ -24,7 +25,9 @@ std::array<VdpVramSurface, VDP_RD_SURFACE_COUNT> defaultVdpVramSurfaces(VdpFrame
 
 VdpVramUnit::VdpVramUnit(VdpEntropySeeds entropySeeds)
 	: m_ownedStaging(VRAM_STAGING_SIZE)
+	, m_ownedStagingPageRevisions(VDP_RPU_PARAM_MEM_PAGE_COUNT)
 	, m_staging(m_ownedStaging.data())
+	, m_stagingPageRevisions(m_ownedStagingPageRevisions.data())
 	, m_stagingLength(m_ownedStaging.size())
 	, m_garbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
 	, m_machineSeed(entropySeeds.machineSeed)
@@ -35,14 +38,17 @@ void VdpVramUnit::initializeSurfaces(const std::array<VdpVramSurface, VDP_RD_SUR
 	m_slots.reserve(surfaces.size());
 	VramGarbageStream stream{m_machineSeed, m_bootSeed, VRAM_GARBAGE_SPACE_SALT, VRAM_STAGING_BASE};
 	fillVramGarbageScratch(m_staging, m_stagingLength, stream);
+	markStagingDirty(0u, m_stagingLength);
 	for (const auto& surface : surfaces) {
 		registerSlot(surface);
 	}
 }
 
-void VdpVramUnit::setExternalStaging(u8* bytes, size_t length) {
+void VdpVramUnit::setExternalStaging(u8* bytes, size_t length, u32* pageRevisions) {
 	m_staging = bytes;
 	m_stagingLength = length;
+	m_stagingPageRevisions = pageRevisions;
+	markStagingDirty(0u, m_stagingLength);
 }
 
 bool VdpVramUnit::writeStaging(u32 addr, const u8* bytes, size_t srcOffset, size_t length) {
@@ -53,6 +59,7 @@ bool VdpVramUnit::writeStaging(u32 addr, const u8* bytes, size_t srcOffset, size
 	for (size_t index = 0u; index < length; ++index) {
 		m_staging[static_cast<size_t>(offset) + index] = bytes[srcOffset + index];
 	}
+	markStagingDirty(offset, length);
 	return true;
 }
 
@@ -230,6 +237,7 @@ void VdpVramUnit::restoreState(const VdpVramState& state) {
 	for (size_t index = 0u; index < state.staging.size(); ++index) {
 		m_staging[index] = state.staging[index];
 	}
+	markStagingDirty(0u, state.staging.size());
 	for (const VdpSurfacePixelsState& surface : state.surfacePixels) {
 		restoreSurfacePixels(surface);
 	}
@@ -371,6 +379,10 @@ void VdpVramUnit::seedSlotPixels(VdpSurfaceUploadSlot& slot) {
 			}
 		}
 	}
+}
+
+void VdpVramUnit::markStagingDirty(u32 offset, size_t byteLength) {
+	bumpVdpRpuVramPageRevisions(m_stagingPageRevisions, offset, byteLength);
 }
 
 } // namespace bmsx

@@ -84,6 +84,7 @@ import {
 	VDP_RPU_OP_EXEC_PASS_LIST,
 	VDP_RPU_OP_SEAL_FRAME,
 	VDP_RPU_PACKET_KIND,
+	VDP_RPU_PARAM_MEM_PAGE_COUNT,
 	VDP_RPU_PARAM_MEM_SIZE,
 	VDP_RPU_PASS_COLOR_CLEAR,
 	VDP_RPU_PRIM_TRIANGLES,
@@ -91,6 +92,7 @@ import {
 	VDP_RPU_SHADER_FLAG_MORPH,
 	VDP_RPU_SHADER_FLAG_T1,
 	VDP_RPU_SHADER_V3_N3_T2_C4_J4_W4_C0_C1,
+	vdpRpuVramRangeRevision,
 } from '../../src/bmsx/machine/devices/vdp/rpu';
 import {
 	RPU_DRAW_DESC_CONSTANT_DESCS_ADDR_OFFSET,
@@ -313,7 +315,12 @@ test('VDP stream retains RPU pass and draw commands as device output', () => {
 	assert.equal(output.rpu.commands.streamByteLength[0], 36);
 	assert.equal(output.rpu.commands.streamStepRate[0], 2);
 	assert.equal(output.rpu.vdpVram.length, VDP_RPU_PARAM_MEM_SIZE);
+	assert.equal(output.rpu.vdpVramPageRevisions.length, VDP_RPU_PARAM_MEM_PAGE_COUNT);
 	assert.equal(readRpuDescU32(output.rpu.vdpVram, streamVramAddr), 0x00112233);
+	const revisionBefore = vdpRpuVramRangeRevision(output.rpu, streamVramAddr, 36);
+	memory.writeU32(VRAM_STAGING_BASE + streamVramAddr + 12, 0xccddeeff);
+	const revisionAfter = vdpRpuVramRangeRevision(output.rpu, streamVramAddr, 36);
+	assert.notEqual(revisionAfter, revisionBefore);
 });
 
 test('VDP packet FIFO faults cancel the frame while preserving prior register side effects', () => {

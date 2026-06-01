@@ -37,7 +37,7 @@ VDP::VDP(
 	, m_configuredFrameBufferSize(frameBufferSize)
 	, m_scheduler(scheduler)
 	, m_unitRegisterPort(m_fault, m_xf, m_lpu, m_mfu, m_jtu) {
-	m_vram.setExternalStaging(m_rpu.vdpVram.data(), m_rpu.vdpVram.size());
+	m_vram.setExternalStaging(m_rpu.vdpVram.data(), m_rpu.vdpVram.size(), m_rpu.vdpVramPageRevisions.data());
 	m_rpu.rebindFrameResources(*m_buildFrame.rpu);
 	m_rpu.rebindFrameResources(*m_activeFrame.rpu);
 	m_rpu.rebindFrameResources(*m_pendingFrame.rpu);

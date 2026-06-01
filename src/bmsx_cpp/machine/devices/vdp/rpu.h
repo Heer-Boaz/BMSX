@@ -16,6 +16,9 @@ constexpr size_t VDP_RPU_STREAM_BINDING_CAPACITY = 8192u;
 constexpr size_t VDP_RPU_CONSTANT_BINDING_CAPACITY = 8192u;
 constexpr size_t VDP_RPU_TEXTURE_BINDING_CAPACITY = 4096u;
 constexpr size_t VDP_RPU_PARAM_MEM_SIZE = 0x00400000u;
+constexpr u32 VDP_RPU_PARAM_MEM_PAGE_SHIFT = 12u;
+constexpr u32 VDP_RPU_PARAM_MEM_PAGE_SIZE = 1u << VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+constexpr size_t VDP_RPU_PARAM_MEM_PAGE_COUNT = VDP_RPU_PARAM_MEM_SIZE >> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
 constexpr u32 VDP_RPU_RESOURCE_NONE = 0xffffffffu;
 constexpr u32 VDP_RPU_FAULT_SENTINEL = 0xffffffffu;
 
@@ -171,6 +174,7 @@ struct VdpRpuCommandBuffer {
 struct VdpRpuFrameOutput {
 	VdpRpuCommandBuffer commands{};
 	std::array<u8, VDP_RPU_PARAM_MEM_SIZE>* vdpVram = nullptr;
+	std::array<u32, VDP_RPU_PARAM_MEM_PAGE_COUNT>* vdpVramPageRevisions = nullptr;
 };
 
 struct VdpRpuStreamAttributeSpec {
@@ -233,6 +237,8 @@ inline constexpr std::array<VdpRpuShaderVariantSpec, 8U> VDP_RPU_SHADER_VARIANTS
 
 auto resolveVdpRpuStreamLayoutSpec(u32 layoutId) -> const VdpRpuStreamLayoutSpec&;
 auto resolveVdpRpuShaderVariantSpec(u32 shaderVariant) -> const VdpRpuShaderVariantSpec&;
+void bumpVdpRpuVramPageRevisions(u32* pageRevisions, u32 offset, size_t byteLength);
+auto vdpRpuVramRangeRevision(const VdpRpuFrameOutput& frame, u32 vramAddr, u32 byteLength) -> u32;
 
 
 struct VdpRpuCommandBufferSaveState {
@@ -290,6 +296,7 @@ public:
 	VdpRpuUnit(Memory& memory, DeviceStatusLatch& fault);
 
 	std::array<u8, VDP_RPU_PARAM_MEM_SIZE> vdpVram{};
+	std::array<u32, VDP_RPU_PARAM_MEM_PAGE_COUNT> vdpVramPageRevisions{};
 	void reset();
 	auto beginFrame(VdpRpuFrameOutput& frame) -> bool;
 	void cancelFrame(VdpRpuFrameOutput& frame);

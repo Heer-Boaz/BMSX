@@ -56,6 +56,9 @@ export const VDP_RPU_STREAM_BINDING_CAPACITY = 8192;
 export const VDP_RPU_CONSTANT_BINDING_CAPACITY = 8192;
 export const VDP_RPU_TEXTURE_BINDING_CAPACITY = 4096;
 export const VDP_RPU_PARAM_MEM_SIZE = 0x00400000; // 4MB VDP-local memory
+export const VDP_RPU_PARAM_MEM_PAGE_SHIFT = 12;
+export const VDP_RPU_PARAM_MEM_PAGE_SIZE = 1 << VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+export const VDP_RPU_PARAM_MEM_PAGE_COUNT = VDP_RPU_PARAM_MEM_SIZE >>> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
 
 export const VDP_RPU_FEATURE_INSTANCED_ARRAYS = 1 << 0;
 export const VDP_RPU_FEATURE_UINT_INDEX = 1 << 1;
@@ -194,6 +197,7 @@ export type VdpRpuFrameBuildState =
 export type VdpRpuFrameOutput = {
 	commands: VdpRpuCommandBuffer;
 	vdpVram: Uint8Array;
+	vdpVramPageRevisions: Uint32Array;
 };
 
 export class VdpRpuCommandBuffer {
@@ -572,6 +576,7 @@ export function createVdpRpuFrameOutput(): VdpRpuFrameOutput {
 	return {
 		commands: new VdpRpuCommandBuffer(),
 		vdpVram: new Uint8Array(0),
+		vdpVramPageRevisions: new Uint32Array(0),
 	};
 }
 
@@ -583,10 +588,36 @@ export function resetVdpRpuFrameOutput(frame: VdpRpuFrameOutput): void {
 	frame.commands.textureBindingCount = 0;
 }
 
+export function bumpVdpRpuVramPageRevisions(pageRevisions: Uint32Array, offset: number, byteLength: number): void {
+	if (byteLength === 0) {
+		return;
+	}
+	const firstPage = offset >>> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+	const lastPage = (offset + byteLength - 1) >>> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+	for (let page = firstPage; page <= lastPage; page += 1) {
+		pageRevisions[page] = (pageRevisions[page]! + 1) >>> 0;
+	}
+}
+
+export function vdpRpuVramRangeRevision(frame: VdpRpuFrameOutput, vramAddr: number, byteLength: number): number {
+	if (byteLength === 0) {
+		return 0;
+	}
+	const firstPage = vramAddr >>> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+	const lastPage = (vramAddr + byteLength - 1) >>> VDP_RPU_PARAM_MEM_PAGE_SHIFT;
+	const pageRevisions = frame.vdpVramPageRevisions;
+	let revision = byteLength >>> 0;
+	for (let page = firstPage; page <= lastPage; page += 1) {
+		revision = (((revision << 5) - revision + pageRevisions[page]!) >>> 0);
+	}
+	return revision;
+}
+
 export class VdpRpuUnit {
 	public lastPacketCost = 0;
 	public lastPacketSealedFrame = false;
 	public readonly vdpVram = new Uint8Array(VDP_RPU_PARAM_MEM_SIZE);
+	public readonly vdpVramPageRevisions = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
 	private buildState: VdpRpuFrameBuildState = VDP_RPU_FRAME_IDLE;
 
 	public constructor(
@@ -609,6 +640,7 @@ export class VdpRpuUnit {
 		}
 		resetVdpRpuFrameOutput(frame);
 		frame.vdpVram = this.vdpVram;
+		frame.vdpVramPageRevisions = this.vdpVramPageRevisions;
 		this.buildState = VDP_RPU_FRAME_OPEN;
 		return true;
 	}
@@ -618,6 +650,7 @@ export class VdpRpuUnit {
 		this.lastPacketSealedFrame = false;
 		resetVdpRpuFrameOutput(frame);
 		frame.vdpVram = this.vdpVram;
+		frame.vdpVramPageRevisions = this.vdpVramPageRevisions;
 		this.buildState = VDP_RPU_FRAME_IDLE;
 	}
 
@@ -635,6 +668,7 @@ export class VdpRpuUnit {
 
 	public rebindFrameResources(frame: VdpRpuFrameOutput): void {
 		frame.vdpVram = this.vdpVram;
+		frame.vdpVramPageRevisions = this.vdpVramPageRevisions;
 	}
 
 	public captureState(): VdpRpuSaveState {
@@ -647,6 +681,7 @@ export class VdpRpuUnit {
 	public restoreState(state: VdpRpuSaveState): void {
 		this.buildState = state.buildState;
 		this.vdpVram.set(state.vdpVram);
+		bumpVdpRpuVramPageRevisions(this.vdpVramPageRevisions, 0, this.vdpVram.byteLength);
 	}
 
 	public consumePacketFromMemory(frame: VdpRpuFrameOutput, headerWord: number, cursor: number, end: number): number {

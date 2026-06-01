@@ -192,7 +192,7 @@ export class VDP implements VramWriteSink {
 			this.memory,
 			this.fault,
 		);
-		this.vram.setExternalStaging(this.rpu.vdpVram);
+		this.vram.setExternalStaging(this.rpu.vdpVram, this.rpu.vdpVramPageRevisions);
 		this.rpu.rebindFrameResources(this.buildFrame.rpu);
 		this.rpu.rebindFrameResources(this.activeFrame.rpu);
 		this.rpu.rebindFrameResources(this.pendingFrame.rpu);

@@ -28,6 +28,10 @@ import {
 	type VdpSurfaceUploadSink,
 	type VdpSurfaceUploadSlot,
 } from './device_output';
+import {
+	VDP_RPU_PARAM_MEM_PAGE_COUNT,
+	bumpVdpRpuVramPageRevisions,
+} from './rpu';
 
 export type VdpFrameBufferSize = {
 	width: number;
@@ -108,6 +112,7 @@ export function defaultVdpVramSurfaces(frameBufferSize: VdpFrameBufferSize): Vdp
 export class VdpVramUnit {
 	private readonly _slots: VdpSurfaceUploadSlot[] = [];
 	private staging: Uint8Array = new Uint8Array(VRAM_STAGING_SIZE);
+	private stagingPageRevisions: Uint32Array = new Uint32Array(VDP_RPU_PARAM_MEM_PAGE_COUNT);
 	private readonly garbageScratch = new Uint8Array(VRAM_GARBAGE_CHUNK_BYTES);
 	private readonly seedPixel = new Uint8Array(4);
 	private readonly surfaceUploadOutput: MutableVdpSurfaceUpload = {
@@ -128,8 +133,10 @@ export class VdpVramUnit {
 		this.bootSeed = entropySeeds.bootSeed >>> 0;
 	}
 
-	public setExternalStaging(buffer: Uint8Array): void {
+	public setExternalStaging(buffer: Uint8Array, pageRevisions: Uint32Array): void {
 		this.staging = buffer;
+		this.stagingPageRevisions = pageRevisions;
+		this.markStagingDirty(0, this.staging.byteLength);
 	}
 
 	public get slots(): VdpSurfaceUploadSlot[] {
@@ -144,6 +151,7 @@ export class VdpVramUnit {
 			slotSalt: VRAM_GARBAGE_SPACE_SALT >>> 0,
 			addr: VRAM_STAGING_BASE >>> 0,
 		});
+		this.markStagingDirty(0, this.staging.byteLength);
 		for (let index = 0; index < surfaces.length; index += 1) {
 			this.registerSlot(surfaces[index]!);
 		}
@@ -157,6 +165,7 @@ export class VdpVramUnit {
 		for (let index = 0; index < length; index += 1) {
 			this.staging[offset + index] = bytes[srcOffset + index]!;
 		}
+		this.markStagingDirty(offset, length);
 		return true;
 	}
 
@@ -322,6 +331,7 @@ export class VdpVramUnit {
 		for (let index = 0; index < state.staging.byteLength; index += 1) {
 			this.staging[index] = state.staging[index]!;
 		}
+		this.markStagingDirty(0, state.staging.byteLength);
 		for (let index = 0; index < state.surfacePixels.length; index += 1) {
 			this.restoreSurfacePixels(state.surfacePixels[index]!);
 		}
@@ -363,6 +373,10 @@ export class VdpVramUnit {
 		if (slot.surfaceId !== VDP_RD_SURFACE_SYSTEM) {
 			this.seedSlotPixels(slot);
 		}
+	}
+
+	private markStagingDirty(offset: number, byteLength: number): void {
+		bumpVdpRpuVramPageRevisions(this.stagingPageRevisions, offset, byteLength);
 	}
 
 	private captureSurfacePixels(): VdpSurfacePixelsState[] {
